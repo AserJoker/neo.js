@@ -59,9 +59,9 @@ void noix_delete_allocator(noix_allocator_t allocator) {
   }
 }
 
-void *noix_allocator_alloc(noix_allocator_t self, size_t size,
-                           noix_destructor_fn_t destructor_fn, const char *file,
-                           size_t line) {
+void *noix_allocator_alloc_ex(noix_allocator_t self, size_t size,
+                              noix_destructor_fn_t destructor_fn,
+                              const char *file, size_t line) {
   noix_alloc_chunk chunk =
       (noix_alloc_chunk)self->alloc(sizeof(struct _noix_alloc_chunk) + size);
   if (!chunk) {

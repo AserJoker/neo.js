@@ -22,9 +22,13 @@ static inline noix_allocator_t noix_create_default_allocator() {
   return noix_create_allocator(NULL);
 }
 
-void *noix_allocator_alloc(noix_allocator_t self, size_t size,
-                           noix_destructor_fn_t destructor_fn, const char *file,
-                           size_t line);
+void *noix_allocator_alloc_ex(noix_allocator_t self, size_t size,
+                              noix_destructor_fn_t destructor_fn,
+                              const char *file, size_t line);
+
+#define noix_allocator_alloc(self, size, destructor)                           \
+  noix_allocator_alloc_ex(self, size, (noix_destructor_fn_t)destructor,        \
+                          __FILE__, __LINE__)
 
 void noix_allocator_free(noix_allocator_t self, void *ptr);
 
