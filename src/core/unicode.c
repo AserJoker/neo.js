@@ -2,7 +2,24 @@
 #include "core/allocator.h"
 noix_utf8_char noix_utf8_read_char(const char *str) {
   noix_utf8_char chr = {str, str};
-  if ((*str & 0xe0) == 0xc0) {
+  if (*str == 0) {
+    return chr;
+  }
+  if (*str == '\\') {
+    if (*(str + 1) == 'x') {
+      chr.end += 4;
+    } else if (*(str + 1) == '0') {
+      chr.end += 4;
+    } else if (*(str + 1) == 'u') {
+      if (*(str + 2) == '{') {
+        chr.end += 7; // \u{xxx}
+      } else {
+        chr.end += 6; // \uxxxx
+      }
+    } else {
+      chr.end += 2;
+    }
+  } else if ((*str & 0xe0) == 0xc0) {
     chr.end += 2;
   } else if ((*str & 0xf0) == 0xe0) {
     chr.end += 3;
@@ -39,4 +56,20 @@ size_t noix_utf8_get_len(const char *str) {
     len++;
   }
   return len;
+}
+
+bool noix_utf8_char_is(noix_utf8_char chr, const char *s) {
+  const char *src = chr.begin;
+  const char *dst = s;
+  if (dst[chr.end - chr.begin] != 0) {
+    return false;
+  }
+  while (src != chr.end) {
+    if (*src != *dst) {
+      return false;
+    }
+    src++;
+    dst++;
+  }
+  return true;
 }
