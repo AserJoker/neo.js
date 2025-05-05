@@ -5,21 +5,7 @@ noix_utf8_char noix_utf8_read_char(const char *str) {
   if (*str == 0) {
     return chr;
   }
-  if (*str == '\\') {
-    if (*(str + 1) == 'x') {
-      chr.end += 4;
-    } else if (*(str + 1) == '0') {
-      chr.end += 4;
-    } else if (*(str + 1) == 'u') {
-      if (*(str + 2) == '{') {
-        chr.end += 7; // \u{xxx}
-      } else {
-        chr.end += 6; // \uxxxx
-      }
-    } else {
-      chr.end += 2;
-    }
-  } else if ((*str & 0xe0) == 0xc0) {
+  if ((*str & 0xe0) == 0xc0) {
     chr.end += 2;
   } else if ((*str & 0xf0) == 0xe0) {
     chr.end += 3;

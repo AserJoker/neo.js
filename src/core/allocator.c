@@ -51,7 +51,7 @@ void noix_delete_allocator(noix_allocator_t allocator) {
   if (allocator) {
     noix_alloc_chunk chunk = allocator->begin.next;
     while (chunk != &allocator->end) {
-      printf("memory leak: %zu bytes,allocated at %s:%zu", chunk->size,
+      printf("memory leak: %zu bytes,allocated at %s:%zu\n", chunk->size,
              chunk->file, chunk->line);
       chunk = chunk->next;
     }
