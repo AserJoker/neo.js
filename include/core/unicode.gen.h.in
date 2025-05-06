@@ -1,2 +1,2 @@
-#define IS_ID_START(chr) @ID_STARTS@
-#define IS_ID_CONTINUE(chr) @ID_CONTINUES@
+#define IS_ID_START(chr) (@ID_STARTS@)
+#define IS_ID_CONTINUE(chr) (@ID_CONTINUES@)

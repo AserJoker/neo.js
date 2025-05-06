@@ -389,13 +389,23 @@ noix_token_t noix_read_identify_token(noix_allocator_t allocator,
         while ((*current.offset >= '0' && *current.offset <= '9') ||
                (*current.offset >= 'a' && *current.offset <= 'f') ||
                (*current.offset >= 'A' && *current.offset <= 'F')) {
+          utf32 *= 16;
           if (*current.offset >= '0' && *current.offset <= '9') {
             utf32 += *current.offset - '0';
           } else if (*current.offset >= 'a' && *current.offset <= 'f') {
-            utf32 += *current.offset - 'a';
+            utf32 += *current.offset - 'a' + 10;
           } else if (*current.offset >= 'A' && *current.offset <= 'F') {
-            utf32 += *current.offset - 'A';
+            utf32 += *current.offset - 'A' + 10;
           }
+          current.offset++;
+          current.column++;
+        }
+        if (*current.offset != '}') {
+          current = backup;
+          THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
+                file, current.line, current.column);
+          return NULL;
+        } else {
           current.offset++;
           current.column++;
         }
@@ -418,9 +428,9 @@ noix_token_t noix_read_identify_token(noix_allocator_t allocator,
         if (*current.offset >= '0' && *current.offset <= '9') {
           utf32 += *current.offset - '0';
         } else if (*current.offset >= 'a' && *current.offset <= 'f') {
-          utf32 += *current.offset - 'a';
+          utf32 += *current.offset - 'a' + 10;
         } else if (*current.offset >= 'A' && *current.offset <= 'F') {
-          utf32 += *current.offset - 'A';
+          utf32 += *current.offset - 'A' + 10;
         } else {
           THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
                 file, current.line, current.column);
@@ -459,17 +469,27 @@ noix_token_t noix_read_identify_token(noix_allocator_t allocator,
           while ((*current.offset >= '0' && *current.offset <= '9') ||
                  (*current.offset >= 'a' && *current.offset <= 'f') ||
                  (*current.offset >= 'A' && *current.offset <= 'F')) {
+            utf32 *= 16;
             if (*current.offset >= '0' && *current.offset <= '9') {
               utf32 += *current.offset - '0';
             } else if (*current.offset >= 'a' && *current.offset <= 'f') {
-              utf32 += *current.offset - 'a';
+              utf32 += *current.offset - 'a' + 10;
             } else if (*current.offset >= 'A' && *current.offset <= 'F') {
-              utf32 += *current.offset - 'A';
+              utf32 += *current.offset - 'A' + 10;
             }
             current.offset++;
             current.column++;
           }
-          if (utf32 != '$' && utf32 != '_' && !IS_ID_START(utf32)) {
+          if (*current.offset != '}') {
+            current = backup;
+            THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
+                  file, current.line, current.column);
+            return NULL;
+          } else {
+            current.offset++;
+            current.column++;
+          }
+          if (utf32 != '$' && utf32 != '_' && !IS_ID_CONTINUE(utf32)) {
             current = backup;
             THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
                   file, current.line, current.column);
@@ -488,9 +508,9 @@ noix_token_t noix_read_identify_token(noix_allocator_t allocator,
           if (*current.offset >= '0' && *current.offset <= '9') {
             utf32 += *current.offset - '0';
           } else if (*current.offset >= 'a' && *current.offset <= 'f') {
-            utf32 += *current.offset - 'a';
+            utf32 += *current.offset - 'a' + 10;
           } else if (*current.offset >= 'A' && *current.offset <= 'F') {
-            utf32 += *current.offset - 'A';
+            utf32 += *current.offset - 'A' + 10;
           } else {
             THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
                   file, current.line, current.column);
@@ -510,7 +530,6 @@ noix_token_t noix_read_identify_token(noix_allocator_t allocator,
               file, current.line, current.column);
         return NULL;
       }
-      continue;
     } else if (noix_utf8_char_is_id_continue(chr) ||
                noix_utf8_char_is(chr, "$") || noix_utf8_char_is(chr, "_")) {
       current.column += chr.end - chr.begin;

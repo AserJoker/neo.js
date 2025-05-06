@@ -433,3 +433,71 @@ TEST_F(TEST_token, read_regexp_token_re2) {
       source);
   noix_allocator_free(_allocator, token);
 }
+
+TEST_F(TEST_token, read_identify_base) {
+  const char *source = "$test data";
+  noix_position_t position;
+  position.line = 1;
+  position.column = 1;
+  position.offset = source;
+  noix_token_t token =
+      noix_read_identify_token(_allocator, "test.js", &position);
+  ASSERT_FALSE(noix_has_error());
+  ASSERT_TRUE(token != NULL);
+  ASSERT_EQ(token->type, NOIX_TOKEN_TYPE_IDENTIFY);
+  ASSERT_EQ(
+      std::string(token->position.begin.offset, token->position.end.offset),
+      "$test");
+  noix_allocator_free(_allocator, token);
+}
+
+TEST_F(TEST_token, read_identify_unicode) {
+  const char *source = "t\\u{aa}est data";
+  noix_position_t position;
+  position.line = 1;
+  position.column = 1;
+  position.offset = source;
+  noix_token_t token =
+      noix_read_identify_token(_allocator, "test.js", &position);
+  ASSERT_FALSE(noix_has_error());
+  ASSERT_TRUE(token != NULL);
+  ASSERT_EQ(token->type, NOIX_TOKEN_TYPE_IDENTIFY);
+  ASSERT_EQ(
+      std::string(token->position.begin.offset, token->position.end.offset),
+      "t\\u{aa}est");
+  noix_allocator_free(_allocator, token);
+}
+
+TEST_F(TEST_token, read_identify_unicode2) {
+  const char *source = "t\\u00aaest data";
+  noix_position_t position;
+  position.line = 1;
+  position.column = 1;
+  position.offset = source;
+  noix_token_t token =
+      noix_read_identify_token(_allocator, "test.js", &position);
+  ASSERT_FALSE(noix_has_error());
+  ASSERT_TRUE(token != NULL);
+  ASSERT_EQ(token->type, NOIX_TOKEN_TYPE_IDENTIFY);
+  ASSERT_EQ(
+      std::string(token->position.begin.offset, token->position.end.offset),
+      "t\\u00aaest");
+  noix_allocator_free(_allocator, token);
+}
+
+TEST_F(TEST_token, read_identify_unicode3) {
+  const char *source = "tªest data";
+  noix_position_t position;
+  position.line = 1;
+  position.column = 1;
+  position.offset = source;
+  noix_token_t token =
+      noix_read_identify_token(_allocator, "test.js", &position);
+  ASSERT_FALSE(noix_has_error());
+  ASSERT_TRUE(token != NULL);
+  ASSERT_EQ(token->type, NOIX_TOKEN_TYPE_IDENTIFY);
+  ASSERT_EQ(
+      std::string(token->position.begin.offset, token->position.end.offset),
+      "tªest");
+  noix_allocator_free(_allocator, token);
+}
