@@ -1,9 +1,10 @@
 #ifndef _H_NOIX_COMMON_
 #define _H_NOIX_COMMON_
+#include <stddef.h>
+#include <stdint.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
-#include <stdint.h>
 
 typedef void *(*noix_alloc_fn_t)(size_t size);
 

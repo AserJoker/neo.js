@@ -3,3 +3,5 @@ build
 .vscode
 cmake-build
 third_party
+*.gen.h
+ucd

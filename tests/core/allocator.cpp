@@ -2,7 +2,7 @@
 #include <cstdlib>
 #include <gtest/gtest.h>
 
-class TestAllocator : public testing::Test {};
+class TEST_allocator : public testing::Test {};
 
 size_t g_count = 0;
 
@@ -16,7 +16,7 @@ static void free_stub(void *ptr) {
   g_count--;
 }
 
-TEST_F(TestAllocator, alloc_and_free) {
+TEST_F(TEST_allocator, alloc_and_free) {
   noix_allocator_initialize_t initialize = {alloc_stub, free_stub};
   noix_allocator_t allocator = noix_create_allocator(&initialize);
   int *data = (int *)noix_allocator_alloc(allocator, sizeof(int), NULL);
@@ -29,7 +29,7 @@ static int g_data = 0;
 
 static void desc(noix_allocator_t allocator, int *data) { g_data = *data; }
 
-TEST_F(TestAllocator, desctructor) {
+TEST_F(TEST_allocator, desctructor) {
   noix_allocator_t allocator = noix_create_default_allocator();
   int *data = (int *)noix_allocator_alloc(allocator, sizeof(int), desc);
   *data = 123;

@@ -21,6 +21,52 @@ noix_utf8_char noix_utf8_read_char(const char *str) {
   return chr;
 }
 
+uint32_t noix_utf8_char_to_utf32(noix_utf8_char chr) {
+  uint32_t value = 0;
+  if (chr.end - chr.begin == 1) {
+    value = *chr.begin;
+  } else if (chr.end - chr.begin == 2) {
+    value = *chr.begin & 0x1f;
+    value <<= 6;
+    value |= *(chr.begin + 1) & 0x3f;
+  } else if (chr.end - chr.begin == 3) {
+    value = *chr.begin & 0xf;
+    value <<= 6;
+    value |= *(chr.begin + 1) & 0x3f;
+    value <<= 6;
+    value |= *(chr.begin + 2) & 0x3f;
+  } else if (chr.end - chr.begin == 4) {
+    value = *chr.begin & 0x7;
+    value <<= 6;
+    value = *(chr.begin + 1) & 0xf;
+    value <<= 6;
+    value |= *(chr.begin + 2) & 0x3f;
+    value <<= 6;
+    value |= *(chr.begin + 3) & 0x3f;
+  } else if (chr.end - chr.begin == 5) {
+    value = *chr.begin & 0x2;
+    value <<= 6;
+    value = *(chr.begin + 1) & 0x3f;
+    value <<= 6;
+    value = *(chr.begin + 2) & 0x3f;
+    value <<= 6;
+    value |= *(chr.begin + 3) & 0x3f;
+    value <<= 6;
+    value |= *(chr.begin + 4) & 0x3f;
+  } else if (chr.end - chr.begin == 6) {
+    value = *chr.begin & 0x1;
+    value <<= 6;
+    value = *(chr.begin + 1) & 0x3f;
+    value <<= 6;
+    value = *(chr.begin + 2) & 0x3f;
+    value <<= 6;
+    value |= *(chr.begin + 3) & 0x3f;
+    value <<= 6;
+    value |= *(chr.begin + 4) & 0x3f;
+  }
+  return value;
+}
+
 char *noix_utf8_char_to_string(noix_allocator_t allocator, noix_utf8_char chr) {
   char *buf =
       (char *)noix_allocator_alloc(allocator, chr.end - chr.begin + 1, NULL);
@@ -58,4 +104,20 @@ bool noix_utf8_char_is(noix_utf8_char chr, const char *s) {
     dst++;
   }
   return true;
+}
+
+bool noix_utf8_char_is_id_start(noix_utf8_char chr) {
+  if (chr.end - chr.begin == 0) {
+    return false;
+  }
+  uint32_t utf32 = noix_utf8_char_to_utf32(chr);
+  return IS_ID_START(utf32);
+}
+
+bool noix_utf8_char_is_id_continue(noix_utf8_char chr) {
+  if (chr.end - chr.begin == 0) {
+    return false;
+  }
+  uint32_t utf32 = noix_utf8_char_to_utf32(chr);
+  return IS_ID_CONTINUE(utf32);
 }

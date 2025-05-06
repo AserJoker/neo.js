@@ -6,14 +6,22 @@ extern "C" {
 #include "core/allocator.h"
 #include <stdbool.h>
 typedef struct _noix_error_t *noix_error_t;
+
 void noix_error_initialize(noix_allocator_t allocator);
+
 bool noix_has_error();
+
 void noix_push_error(const char *type, const char *message);
+
 void noix_push_stack(const char *funcname, const char *filename, int32_t line);
+
 noix_error_t noix_poll_error(const char *funcname, const char *filename,
                              int32_t line);
+
 const char *noix_error_get_type(noix_error_t self);
+
 const char *noix_error_get_message(noix_error_t self);
+
 char *noix_error_to_string(noix_error_t self);
 #define THROW(type, fmt, ...)                                                  \
   do {                                                                         \
@@ -22,6 +30,7 @@ char *noix_error_to_string(noix_error_t self);
     noix_push_error(type, message);                                            \
     noix_push_stack(__FUNCTION__, __FILE__, __LINE__);                         \
   } while (0)
+  
 #define CHECK_AND_THROW(cleanup)                                               \
   if (noix_has_error()) {                                                      \
     noix_push_stack(__FUNCTION__, __FILE__, __LINE__ - 1);                     \
