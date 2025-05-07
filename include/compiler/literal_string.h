@@ -4,12 +4,14 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-typedef struct _noix_string_literal_node_t {
+
+typedef struct _noix_ast_literal_string_node_t {
   struct _noix_ast_node_t node;
-} *noix_string_literal_node_t;
-noix_ast_node_t noix_read_string_literal(noix_allocator_t allocator,
-                                         const char *file,
-                                         noix_position_t *position);
+} *noix_ast_literal_string_node_t;
+
+noix_ast_node_t noix_ast_read_literal_string(noix_allocator_t allocator,
+                                             const char *file,
+                                             noix_position_t *position);
 #ifdef __cplusplus
 }
 #endif

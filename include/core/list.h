@@ -9,12 +9,12 @@ typedef struct _noix_list_t *noix_list_t;
 
 typedef struct _noix_list_node_t *noix_list_node_t;
 
-typedef struct _noix_list_initialize {
+typedef struct _noix_list_initialize_t {
   bool auto_free;
-} noix_list_initialize;
+} noix_list_initialize_t;
 
 noix_list_t noix_create_list(noix_allocator_t allocator,
-                             noix_list_initialize *initialize);
+                             noix_list_initialize_t *initialize);
 
 void *noix_list_at(noix_list_t self, size_t idx);
 

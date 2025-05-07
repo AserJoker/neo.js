@@ -35,7 +35,7 @@ TEST_F(TEST_parser, read_program_empty) {
   ASSERT_FALSE(noix_has_error());
   ASSERT_TRUE(node != NULL);
   ASSERT_EQ(node->type, NOIX_NODE_TYPE_PROGRAM);
-  noix_program_node_t program = (noix_program_node_t)node;
+  noix_ast_program_node_t program = (noix_ast_program_node_t)node;
   ASSERT_EQ(program->interpreter, nullptr);
   ASSERT_EQ(noix_list_get_size(program->directives), 0);
   noix_allocator_free(_allocator, node);
@@ -47,7 +47,7 @@ TEST_F(TEST_parser, read_program_comment) {
   ASSERT_FALSE(noix_has_error());
   ASSERT_TRUE(node != NULL);
   ASSERT_EQ(node->type, NOIX_NODE_TYPE_PROGRAM);
-  noix_program_node_t program = (noix_program_node_t)node;
+  noix_ast_program_node_t program = (noix_ast_program_node_t)node;
   ASSERT_EQ(program->interpreter, nullptr);
   ASSERT_EQ(noix_list_get_size(program->directives), 0);
   noix_allocator_free(_allocator, node);
@@ -59,7 +59,7 @@ TEST_F(TEST_parser, read_interpreter) {
   ASSERT_FALSE(noix_has_error());
   ASSERT_TRUE(node != NULL);
   ASSERT_EQ(node->type, NOIX_NODE_TYPE_PROGRAM);
-  noix_program_node_t program = (noix_program_node_t)node;
+  noix_ast_program_node_t program = (noix_ast_program_node_t)node;
   ASSERT_TRUE(program->interpreter != NULL);
   ASSERT_EQ(std::string(program->interpreter->location.begin.offset,
                         program->interpreter->location.end.offset),
@@ -73,11 +73,11 @@ TEST_F(TEST_parser, read_directive) {
   ASSERT_FALSE(noix_has_error());
   ASSERT_TRUE(node != NULL);
   ASSERT_EQ(node->type, NOIX_NODE_TYPE_PROGRAM);
-  noix_program_node_t program = (noix_program_node_t)node;
+  noix_ast_program_node_t program = (noix_ast_program_node_t)node;
   ASSERT_TRUE(noix_list_get_size(program->directives) != 0);
   noix_list_node_t it = noix_list_get_first(program->directives);
-  noix_string_literal_node_t directive =
-      (noix_string_literal_node_t)noix_list_node_get(it);
+  noix_ast_literal_string_node_t directive =
+      (noix_ast_literal_string_node_t)noix_list_node_get(it);
   ASSERT_EQ(std::string(directive->node.location.begin.offset,
                         directive->node.location.end.offset),
             "'use strict'");
@@ -90,11 +90,11 @@ TEST_F(TEST_parser, read_directive2) {
   ASSERT_FALSE(noix_has_error());
   ASSERT_TRUE(node != NULL);
   ASSERT_EQ(node->type, NOIX_NODE_TYPE_PROGRAM);
-  noix_program_node_t program = (noix_program_node_t)node;
+  noix_ast_program_node_t program = (noix_ast_program_node_t)node;
   ASSERT_TRUE(noix_list_get_size(program->directives) != 0);
   noix_list_node_t it = noix_list_get_first(program->directives);
-  noix_string_literal_node_t directive =
-      (noix_string_literal_node_t)noix_list_node_get(it);
+  noix_ast_literal_string_node_t directive =
+      (noix_ast_literal_string_node_t)noix_list_node_get(it);
   ASSERT_EQ(std::string(directive->node.location.begin.offset,
                         directive->node.location.end.offset),
             "'use strict'");
@@ -107,16 +107,16 @@ TEST_F(TEST_parser, read_directive3) {
   ASSERT_FALSE(noix_has_error());
   ASSERT_TRUE(node != NULL);
   ASSERT_EQ(node->type, NOIX_NODE_TYPE_PROGRAM);
-  noix_program_node_t program = (noix_program_node_t)node;
+  noix_ast_program_node_t program = (noix_ast_program_node_t)node;
   ASSERT_TRUE(noix_list_get_size(program->directives) == 2);
   noix_list_node_t it = noix_list_get_first(program->directives);
-  noix_string_literal_node_t directive =
-      (noix_string_literal_node_t)noix_list_node_get(it);
+  noix_ast_literal_string_node_t directive =
+      (noix_ast_literal_string_node_t)noix_list_node_get(it);
   ASSERT_EQ(std::string(directive->node.location.begin.offset,
                         directive->node.location.end.offset),
             "'use a'");
   it = noix_list_node_next(it);
-  directive = (noix_string_literal_node_t)noix_list_node_get(it);
+  directive = (noix_ast_literal_string_node_t)noix_list_node_get(it);
   ASSERT_EQ(std::string(directive->node.location.begin.offset,
                         directive->node.location.end.offset),
             "'use b'");
@@ -129,7 +129,7 @@ TEST_F(TEST_parser, read_empty_statement) {
   ASSERT_FALSE(noix_has_error());
   ASSERT_TRUE(node != NULL);
   ASSERT_EQ(node->type, NOIX_NODE_TYPE_PROGRAM);
-  noix_program_node_t program = (noix_program_node_t)node;
+  noix_ast_program_node_t program = (noix_ast_program_node_t)node;
   ASSERT_EQ(noix_list_get_size(program->body), 4);
   noix_allocator_free(_allocator, node);
 }

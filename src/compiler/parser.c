@@ -13,7 +13,8 @@ noix_ast_node_t noix_parse_code(noix_allocator_t allocator, const char *file,
   current.line = 1;
   current.offset = source;
   SKIP_ALL();
-  noix_ast_node_t program = TRY(noix_read_program(allocator, file, &current)) {
+  noix_ast_node_t program =
+      TRY(noix_ast_read_program(allocator, file, &current)) {
     goto onerror;
   };
   SKIP_ALL();

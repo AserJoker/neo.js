@@ -37,7 +37,7 @@ void noix_push_error(const char *type, const char *message) {
   }
   g_error = (noix_error_t)noix_allocator_alloc(
       g_allocator, sizeof(struct _noix_error_t), noix_error_dispose);
-  noix_list_initialize initialize;
+  noix_list_initialize_t initialize;
   initialize.auto_free = true;
   g_error->stack = noix_create_list(g_allocator, &initialize);
   size_t message_len = strlen(message);

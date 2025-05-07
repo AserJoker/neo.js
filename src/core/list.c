@@ -35,7 +35,7 @@ static void noix_list_dispose(noix_allocator_t allocator, noix_list_t self) {
 }
 
 noix_list_t noix_create_list(noix_allocator_t allocator,
-                             noix_list_initialize *initialize) {
+                             noix_list_initialize_t *initialize) {
   noix_list_t list = noix_allocator_alloc(
       allocator, sizeof(struct _noix_list_t), noix_list_dispose);
   if (!list) {
