@@ -6,7 +6,7 @@ extern "C" {
 #endif
 typedef struct _neo_ast_statement_debugger_t {
   struct _neo_ast_node_t node;
-} *_neo_ast_statement_debugger_t;
+} *neo_ast_statement_debugger_t;
 
 neo_ast_node_t neo_ast_read_statement_debugger(neo_allocator_t allocator,
                                                const char *file,

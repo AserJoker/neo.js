@@ -1,7 +1,9 @@
 #ifndef _H_NEO_COMPILER_NODE_
 #define _H_NEO_COMPILER_NODE_
 
+#include "core/allocator.h"
 #include "core/location.h"
+#include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
