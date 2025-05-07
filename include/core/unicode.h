@@ -27,6 +27,8 @@ bool noix_utf8_char_is_id_start(noix_utf8_char chr);
 
 bool noix_utf8_char_is_id_continue(noix_utf8_char chr);
 
+bool noix_utf8_char_is_space_separator(noix_utf8_char chr);
+
 #ifdef __cplusplus
 };
 #endif

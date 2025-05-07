@@ -336,6 +336,10 @@ noix_token_t noix_read_identify_token(noix_allocator_t allocator,
                                       noix_position_t *position) {
 
   noix_position_t current = *position;
+  if (*current.offset == '#') {
+    current.offset++;
+    current.column++;
+  }
   noix_utf8_char chr = noix_utf8_read_char(current.offset);
   if (*current.offset == '\\' && *(current.offset + 1) == 'u') {
     const char *start = current.offset + 2;
@@ -380,6 +384,10 @@ noix_token_t noix_read_identify_token(noix_allocator_t allocator,
   }
   if (!noix_utf8_char_is_id_start(chr) && !noix_utf8_char_is(chr, "$") &&
       !noix_utf8_char_is(chr, "_")) {
+    if (*position->offset == '#') {
+      THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
+            current.line, current.column);
+    }
     return NULL;
   }
   current.column += chr.end - chr.begin;
@@ -441,6 +449,9 @@ noix_token_t noix_read_identify_token(noix_allocator_t allocator,
   token->position.end = current;
   token->position.file = file;
   token->type = NOIX_TOKEN_TYPE_IDENTIFY;
+  if (*position->offset == '#') {
+    token->type = NOIX_TOKEN_TYPE_PRIVATE_IDENTIFY;
+  }
   *position = current;
   return token;
 }

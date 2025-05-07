@@ -121,3 +121,10 @@ bool noix_utf8_char_is_id_continue(noix_utf8_char chr) {
   uint32_t utf32 = noix_utf8_char_to_utf32(chr);
   return IS_ID_CONTINUE(utf32);
 }
+bool noix_utf8_char_is_space_separator(noix_utf8_char chr) {
+  if (chr.end - chr.begin == 0) {
+    return false;
+  }
+  uint32_t utf32 = noix_utf8_char_to_utf32(chr);
+  return IS_SPACE_SEPARATOR(utf32);
+}

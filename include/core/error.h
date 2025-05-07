@@ -30,12 +30,18 @@ char *noix_error_to_string(noix_error_t self);
     noix_push_error(type, message);                                            \
     noix_push_stack(__FUNCTION__, __FILE__, __LINE__);                         \
   } while (0)
-  
+
 #define CHECK_AND_THROW(cleanup)                                               \
   if (noix_has_error()) {                                                      \
     noix_push_stack(__FUNCTION__, __FILE__, __LINE__ - 1);                     \
     cleanup                                                                    \
   }
+
+#define TRY(expr)                                                              \
+  expr;                                                                        \
+  if (noix_has_error())                                                        \
+    noix_push_stack(__FUNCTION__, __FILE__, __LINE__);                         \
+  if (noix_has_error())
 #ifdef __cplusplus
 };
 #endif
