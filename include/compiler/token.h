@@ -45,6 +45,29 @@ noix_token_t noix_read_identify_token(noix_allocator_t allocator,
                                       const char *file,
                                       noix_position_t *position);
 
+noix_token_t noix_read_comment_token(noix_allocator_t allocator,
+                                     const char *file,
+                                     noix_position_t *position);
+
+noix_token_t noix_read_multiline_comment_token(noix_allocator_t allocator,
+                                               const char *file,
+                                               noix_position_t *position);
+
+noix_token_t noix_read_template_string_token(noix_allocator_t allocator,
+                                             const char *file,
+                                             noix_position_t *position);
+
+noix_token_t noix_read_template_string_start_token(noix_allocator_t allocator,
+                                                   const char *file,
+                                                   noix_position_t *position);
+
+noix_token_t noix_read_template_string_part_token(noix_allocator_t allocator,
+                                                  const char *file,
+                                                  noix_position_t *position);
+
+noix_token_t noix_read_template_string_end_token(noix_allocator_t allocator,
+                                                 const char *file,
+                                                 noix_position_t *position);
 #ifdef __cplusplus
 }
 #endif

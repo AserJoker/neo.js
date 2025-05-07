@@ -501,3 +501,173 @@ TEST_F(TEST_token, read_identify_unicode3) {
       "tªest");
   noix_allocator_free(_allocator, token);
 }
+
+TEST_F(TEST_token, read_comment_base) {
+  const char *source = "//comment";
+  noix_position_t position;
+  position.line = 1;
+  position.column = 1;
+  position.offset = source;
+  noix_token_t token =
+      noix_read_comment_token(_allocator, "test.js", &position);
+  ASSERT_FALSE(noix_has_error());
+  ASSERT_TRUE(token != NULL);
+  ASSERT_EQ(token->type, NOIX_TOKEN_TYPE_COMMENT);
+  ASSERT_EQ(
+      std::string(token->position.begin.offset, token->position.end.offset),
+      "//comment");
+  noix_allocator_free(_allocator, token);
+}
+
+TEST_F(TEST_token, read_comment_base2) {
+  const char *source = "//comment\nabc";
+  noix_position_t position;
+  position.line = 1;
+  position.column = 1;
+  position.offset = source;
+  noix_token_t token =
+      noix_read_comment_token(_allocator, "test.js", &position);
+  ASSERT_FALSE(noix_has_error());
+  ASSERT_TRUE(token != NULL);
+  ASSERT_EQ(token->type, NOIX_TOKEN_TYPE_COMMENT);
+  ASSERT_EQ(
+      std::string(token->position.begin.offset, token->position.end.offset),
+      "//comment");
+  noix_allocator_free(_allocator, token);
+}
+
+TEST_F(TEST_token, read_multiline_comment_base) {
+  const char *source = "/*aaaaaaaaaa*/";
+  noix_position_t position;
+  position.line = 1;
+  position.column = 1;
+  position.offset = source;
+  noix_token_t token =
+      noix_read_multiline_comment_token(_allocator, "test.js", &position);
+  ASSERT_FALSE(noix_has_error());
+  ASSERT_TRUE(token != NULL);
+  ASSERT_EQ(token->type, NOIX_TOKEN_TYPE_MULTILINE_COMMENT);
+  ASSERT_EQ(
+      std::string(token->position.begin.offset, token->position.end.offset),
+      "/*aaaaaaaaaa*/");
+  noix_allocator_free(_allocator, token);
+}
+
+TEST_F(TEST_token, read_multiline_comment_base2) {
+  const char *source = "/*abc\ndef*/";
+  noix_position_t position;
+  position.line = 1;
+  position.column = 1;
+  position.offset = source;
+  noix_token_t token =
+      noix_read_multiline_comment_token(_allocator, "test.js", &position);
+  ASSERT_FALSE(noix_has_error());
+  ASSERT_TRUE(token != NULL);
+  ASSERT_EQ(token->type, NOIX_TOKEN_TYPE_MULTILINE_COMMENT);
+  ASSERT_EQ(
+      std::string(token->position.begin.offset, token->position.end.offset),
+      "/*abc\ndef*/");
+  noix_allocator_free(_allocator, token);
+}
+
+TEST_F(TEST_token, read_template_string_base) {
+  const char *source = "`ab\nc`";
+  noix_position_t position;
+  position.line = 1;
+  position.column = 1;
+  position.offset = source;
+  noix_token_t token =
+      noix_read_template_string_token(_allocator, "test.js", &position);
+  ASSERT_FALSE(noix_has_error());
+  ASSERT_TRUE(token != NULL);
+  ASSERT_EQ(token->type, NOIX_TOKEN_TYPE_TEMPLATE_STRING);
+  ASSERT_EQ(
+      std::string(token->position.begin.offset, token->position.end.offset),
+      "`ab\nc`");
+  noix_allocator_free(_allocator, token);
+}
+
+TEST_F(TEST_token, read_template_string_base2) {
+  const char *source = "`ab\n\\tc` def";
+  noix_position_t position;
+  position.line = 1;
+  position.column = 1;
+  position.offset = source;
+  noix_token_t token =
+      noix_read_template_string_token(_allocator, "test.js", &position);
+  ASSERT_FALSE(noix_has_error());
+  ASSERT_TRUE(token != NULL);
+  ASSERT_EQ(token->type, NOIX_TOKEN_TYPE_TEMPLATE_STRING);
+  ASSERT_EQ(
+      std::string(token->position.begin.offset, token->position.end.offset),
+      "`ab\n\\tc`");
+  noix_allocator_free(_allocator, token);
+}
+
+TEST_F(TEST_token, read_template_string_start) {
+  const char *source = "`abc${def}`";
+  noix_position_t position;
+  position.line = 1;
+  position.column = 1;
+  position.offset = source;
+  noix_token_t token =
+      noix_read_template_string_token(_allocator, "test.js", &position);
+  ASSERT_FALSE(noix_has_error());
+  ASSERT_TRUE(token != NULL);
+  ASSERT_EQ(token->type, NOIX_TOKEN_TYPE_TEMPLATE_STRING_START);
+  ASSERT_EQ(
+      std::string(token->position.begin.offset, token->position.end.offset),
+      "`abc${");
+  noix_allocator_free(_allocator, token);
+}
+
+TEST_F(TEST_token, read_template_string_start2) {
+  const char *source = "`abc\\${def}`";
+  noix_position_t position;
+  position.line = 1;
+  position.column = 1;
+  position.offset = source;
+  noix_token_t token =
+      noix_read_template_string_token(_allocator, "test.js", &position);
+  ASSERT_FALSE(noix_has_error());
+  ASSERT_TRUE(token != NULL);
+  ASSERT_EQ(token->type, NOIX_TOKEN_TYPE_TEMPLATE_STRING);
+  ASSERT_EQ(
+      std::string(token->position.begin.offset, token->position.end.offset),
+      "`abc\\${def}`");
+  noix_allocator_free(_allocator, token);
+}
+
+TEST_F(TEST_token, read_template_string_part) {
+  const char *source = "}test\\${${def";
+  noix_position_t position;
+  position.line = 1;
+  position.column = 1;
+  position.offset = source;
+  noix_token_t token =
+      noix_read_template_string_token(_allocator, "test.js", &position);
+  ASSERT_FALSE(noix_has_error());
+  ASSERT_TRUE(token != NULL);
+  ASSERT_EQ(token->type, NOIX_TOKEN_TYPE_TEMPLATE_STRING_PART);
+  ASSERT_EQ(
+      std::string(token->position.begin.offset, token->position.end.offset),
+      "}test\\${${");
+  noix_allocator_free(_allocator, token);
+}
+
+TEST_F(TEST_token, read_template_string_end) {
+  const char *source = "}\\`aaa`def";
+  noix_position_t position;
+  position.line = 1;
+  position.column = 1;
+  position.offset = source;
+  noix_token_t token =
+      noix_read_template_string_token(_allocator, "test.js", &position);
+  ASSERT_FALSE(noix_has_error());
+  ASSERT_TRUE(token != NULL);
+  ASSERT_EQ(token->type, NOIX_TOKEN_TYPE_TEMPLATE_STRING_END);
+  ASSERT_EQ(
+      std::string(token->position.begin.offset, token->position.end.offset),
+      "}\\`aaa`");
+  noix_allocator_free(_allocator, token);
+}

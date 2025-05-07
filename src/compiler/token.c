@@ -5,6 +5,117 @@
 #include "core/unicode.h"
 #include <stdio.h>
 
+#define IS_HEX(ch)                                                             \
+  (((ch) >= '0' && (ch) <= '9') || ((ch) >= 'a' && (ch) <= 'f') ||             \
+   ((ch) >= 'A' && (ch) <= 'F'))
+
+#define IS_OCT(ch) ((ch) >= '0' && (ch) <= '7')
+
+#define IS_DEC(ch) ((ch) >= '0' && (ch) <= '9')
+
+static int32_t noix_read_hex(const char *file, noix_position_t *position) {
+  noix_position_t current = *position;
+  if (IS_HEX(*current.offset)) {
+    while (IS_HEX(*current.offset)) {
+      current.offset++;
+      current.column++;
+    }
+  } else {
+    return -1;
+  }
+  int32_t size = current.offset - position->offset;
+  *position = current;
+  return size;
+}
+
+static int32_t noix_read_oct(const char *file, noix_position_t *position) {
+  noix_position_t current = *position;
+  if (IS_OCT(*current.offset)) {
+    while (IS_OCT(*current.offset)) {
+      current.offset++;
+      current.column++;
+    }
+  } else {
+    return -1;
+  }
+  int32_t size = current.offset - position->offset;
+  *position = current;
+  return size;
+}
+
+static int32_t noix_read_dec(const char *file, noix_position_t *position) {
+  noix_position_t current = *position;
+  if (IS_DEC(*current.offset)) {
+    while (IS_DEC(*current.offset)) {
+      current.offset++;
+      current.column++;
+    }
+  } else {
+    return -1;
+  }
+  int32_t size = current.offset - position->offset;
+  *position = current;
+  return size;
+}
+
+static int32_t noix_read_escape(const char *file, noix_position_t *position) {
+  noix_position_t current = *position;
+  if (*current.offset == '\\') {
+    current.offset++;
+    current.column++;
+    if (*current.offset == 'u') {
+      current.offset++;
+      current.column++;
+      if (*current.offset == '{') {
+        current.offset++;
+        current.column++;
+        noix_read_hex(file, &current);
+        if (*current.offset != '}') {
+          THROW("SyntaxError",
+                "Invalid hexadecimal escape sequence \n  at %s:%d:%d", file,
+                current.line, current.column);
+          return -1;
+        } else {
+          current.offset++;
+          current.column++;
+        }
+      } else {
+        for (int32_t idx = 0; idx < 4; idx++) {
+          if (!IS_HEX(*current.offset)) {
+            THROW("SyntaxError",
+                  "Invalid hexadecimal escape sequence \n  at %s:%d:%d", file,
+                  current.line, current.column);
+            return -1;
+          }
+          current.offset++;
+          current.column++;
+        }
+      }
+    } else if (*current.offset == 'x') {
+      current.offset++;
+      current.column++;
+      for (int32_t idx = 0; idx < 2; idx++) {
+        if (!IS_HEX(*current.offset)) {
+          THROW("SyntaxError",
+                "Invalid hexadecimal escape sequence \n  at %s:%d:%d", file,
+                current.line, current.column);
+          return -1;
+        }
+        current.offset++;
+        current.column++;
+      }
+    } else {
+      current.offset++;
+      current.column++;
+    }
+  } else {
+    return 0;
+  }
+  int32_t size = current.offset - position->offset;
+  *position = current;
+  return size;
+}
+
 noix_token_t noix_read_string_token(noix_allocator_t allocator,
                                     const char *file,
                                     noix_position_t *position) {
@@ -23,72 +134,9 @@ noix_token_t noix_read_string_token(noix_allocator_t allocator,
       return NULL;
     }
     if (noix_utf8_char_is(chr, "\\")) {
-      current.offset++;
-      current.column++;
-      if (*current.offset == 'u') {
-        current.offset++;
-        current.column++;
-        if (*current.offset == '{') {
-          current.offset++;
-          current.column++;
-          if (*current.offset >= '0' && *current.offset <= '9' ||
-              (*current.offset >= 'a' && *current.offset <= 'f') ||
-              (*current.offset >= 'A' && *current.offset <= 'F')) {
-            while (*current.offset >= '0' && *current.offset <= '9' ||
-                   (*current.offset >= 'a' && *current.offset <= 'f') ||
-                   (*current.offset >= 'A' && *current.offset <= 'F')) {
-              current.offset++;
-              current.column++;
-            }
-            if (*current.offset == '}') {
-              current.offset++;
-              current.column++;
-            } else {
-              THROW("SyntaxError",
-                    "Invalid hexadecimal escape sequence \n  at %s:%d:%d", file,
-                    current.line, current.column);
-            }
-          } else {
-            THROW("SyntaxError",
-                  "Invalid hexadecimal escape sequence \n  at %s:%d:%d", file,
-                  current.line, current.column);
-          }
-        } else {
-          for (int8_t i = 0; i < 4; i++) {
-            if ((*current.offset >= '0' && *current.offset <= '9') ||
-                (*current.offset >= 'a' && *current.offset <= 'f') ||
-                (*current.offset >= 'A' && *current.offset <= 'F')) {
-              current.offset++;
-              current.column++;
-            } else {
-              THROW("SyntaxError",
-                    "Invalid hexadecimal escape sequence \n  at %s:%d:%d", file,
-                    current.line, current.column);
-            }
-          }
-        }
-        continue;
-      } else if (*current.offset == 'x') {
-        current.offset++;
-        current.column++;
-        for (int8_t i = 0; i < 2; i++) {
-          if ((*current.offset >= '0' && *current.offset <= '9') ||
-              (*current.offset >= 'a' && *current.offset <= 'f') ||
-              (*current.offset >= 'A' && *current.offset <= 'F')) {
-            current.offset++;
-            current.column++;
-          } else {
-            THROW("SyntaxError",
-                  "Invalid hexadecimal escape sequence \n  at %s:%d:%d", file,
-                  current.line, current.column);
-          }
-        }
-        continue;
-      } else {
-        current.column++;
-        current.offset++;
-        continue;
-      }
+      noix_read_escape(file, &current);
+      CHECK_AND_THROW({ return NULL; })
+      continue;
     }
     if (*chr.begin == *position->offset) {
       current.column++;
@@ -117,15 +165,8 @@ noix_token_t noix_read_number_token(noix_allocator_t allocator,
       (*(current.offset + 1) == 'x' || *(current.offset + 1) == 'X')) {
     current.offset += 2;
     current.column += 2;
-    if ((*current.offset >= '0' && *current.offset <= '9') ||
-        (*current.offset >= 'a' && *current.offset <= 'f') ||
-        (*current.offset >= 'A' && *current.offset <= 'F')) {
-      while ((*current.offset >= '0' && *current.offset <= '9') ||
-             (*current.offset >= 'a' && *current.offset <= 'f') ||
-             (*current.offset >= 'A' && *current.offset <= 'F')) {
-        current.offset++;
-        current.column++;
-      }
+    if (IS_HEX(*current.offset)) {
+      noix_read_hex(file, &current);
     } else {
       THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
             current.line, current.column);
@@ -135,39 +176,26 @@ noix_token_t noix_read_number_token(noix_allocator_t allocator,
              (*(current.offset + 1) == 'o' || *(current.offset + 1) == 'O')) {
     current.offset += 2;
     current.column += 2;
-    if ((*current.offset >= '0' && *current.offset <= '7')) {
-      while ((*current.offset >= '0' && *current.offset <= '7')) {
-        current.offset++;
-        current.column++;
-      }
+    if (IS_OCT(*current.offset)) {
+      noix_read_oct(file, &current);
     } else {
       THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
             current.line, current.column);
       return NULL;
     }
   } else {
-    if (*current.offset == '.' && *(current.offset + 1) >= '0' &&
-        *(current.offset + 1) <= '9') {
+    if (*current.offset == '.' && IS_DEC(*(current.offset + 1))) {
       current.offset += 2;
       current.column += 2;
-      while ((*current.offset >= '0' && *current.offset <= '9')) {
-        current.offset++;
-        current.column++;
-      }
-    } else if (*current.offset >= '0' && *current.offset <= '9') {
+      noix_read_dec(file, &current);
+    } else if (IS_DEC(*current.offset)) {
       current.offset += 1;
       current.column += 1;
-      while ((*current.offset >= '0' && *current.offset <= '9')) {
-        current.offset++;
-        current.column++;
-      }
+      noix_read_dec(file, &current);
       if (*current.offset == '.') {
         current.offset += 1;
         current.column += 1;
-        while ((*current.offset >= '0' && *current.offset <= '9')) {
-          current.offset++;
-          current.column++;
-        }
+        noix_read_dec(file, &current);
       }
     } else {
       return NULL;
@@ -179,11 +207,8 @@ noix_token_t noix_read_number_token(noix_allocator_t allocator,
         current.offset++;
         current.column++;
       }
-      if (*current.offset >= '0' && *current.offset <= '9') {
-        while ((*current.offset >= '0' && *current.offset <= '9')) {
-          current.offset++;
-          current.column++;
-        }
+      if (IS_DEC(*current.offset)) {
+        noix_read_dec(file, &current);
       } else {
         THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
               file, current.line, current.column);
@@ -268,72 +293,9 @@ noix_token_t noix_read_regexp_token(noix_allocator_t allocator,
         break;
       }
       if (noix_utf8_char_is(chr, "\\")) {
-        current.offset++;
-        current.column++;
-        if (*current.offset == 'u') {
-          current.offset++;
-          current.column++;
-          if (*current.offset == '{') {
-            current.offset++;
-            current.column++;
-            if (*current.offset >= '0' && *current.offset <= '9' ||
-                (*current.offset >= 'a' && *current.offset <= 'f') ||
-                (*current.offset >= 'A' && *current.offset <= 'F')) {
-              while (*current.offset >= '0' && *current.offset <= '9' ||
-                     (*current.offset >= 'a' && *current.offset <= 'f') ||
-                     (*current.offset >= 'A' && *current.offset <= 'F')) {
-                current.offset++;
-                current.column++;
-              }
-              if (*current.offset == '}') {
-                current.offset++;
-                current.column++;
-              } else {
-                THROW("SyntaxError",
-                      "Invalid hexadecimal escape sequence \n  at %s:%d:%d",
-                      file, current.line, current.column);
-              }
-            } else {
-              THROW("SyntaxError",
-                    "Invalid hexadecimal escape sequence \n  at %s:%d:%d", file,
-                    current.line, current.column);
-            }
-          } else {
-            for (int8_t i = 0; i < 4; i++) {
-              if ((*current.offset >= '0' && *current.offset <= '9') ||
-                  (*current.offset >= 'a' && *current.offset <= 'f') ||
-                  (*current.offset >= 'A' && *current.offset <= 'F')) {
-                current.offset++;
-                current.column++;
-              } else {
-                THROW("SyntaxError",
-                      "Invalid hexadecimal escape sequence \n  at %s:%d:%d",
-                      file, current.line, current.column);
-              }
-            }
-          }
-          continue;
-        } else if (*current.offset == 'x') {
-          current.offset++;
-          current.column++;
-          for (int8_t i = 0; i < 2; i++) {
-            if ((*current.offset >= '0' && *current.offset <= '9') ||
-                (*current.offset >= 'a' && *current.offset <= 'f') ||
-                (*current.offset >= 'A' && *current.offset <= 'F')) {
-              current.offset++;
-              current.column++;
-            } else {
-              THROW("SyntaxError",
-                    "Invalid hexadecimal escape sequence \n  at %s:%d:%d", file,
-                    current.line, current.column);
-            }
-          }
-          continue;
-        } else {
-          current.offset++;
-          current.column++;
-          continue;
-        }
+        noix_read_escape(file, &current);
+        CHECK_AND_THROW({ return NULL; });
+        continue;
       }
       if (*chr.begin == '[') {
         level++;
@@ -376,72 +338,41 @@ noix_token_t noix_read_identify_token(noix_allocator_t allocator,
   noix_position_t current = *position;
   noix_utf8_char chr = noix_utf8_read_char(current.offset);
   if (*current.offset == '\\' && *(current.offset + 1) == 'u') {
-    noix_position_t backup = current;
-    current.offset += 2;
-    current.column += 2;
-    uint32_t utf32 = 0;
-    if (*current.offset == '{') {
-      current.offset++;
-      current.column++;
-      if ((*current.offset >= '0' && *current.offset <= '9') ||
-          (*current.offset >= 'a' && *current.offset <= 'f') ||
-          (*current.offset >= 'A' && *current.offset <= 'F')) {
-        while ((*current.offset >= '0' && *current.offset <= '9') ||
-               (*current.offset >= 'a' && *current.offset <= 'f') ||
-               (*current.offset >= 'A' && *current.offset <= 'F')) {
-          utf32 *= 16;
-          if (*current.offset >= '0' && *current.offset <= '9') {
-            utf32 += *current.offset - '0';
-          } else if (*current.offset >= 'a' && *current.offset <= 'f') {
-            utf32 += *current.offset - 'a' + 10;
-          } else if (*current.offset >= 'A' && *current.offset <= 'F') {
-            utf32 += *current.offset - 'A' + 10;
-          }
-          current.offset++;
-          current.column++;
-        }
-        if (*current.offset != '}') {
-          current = backup;
-          THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
-                file, current.line, current.column);
-          return NULL;
-        } else {
-          current.offset++;
-          current.column++;
-        }
-        if (utf32 != '$' && utf32 != '_' && !IS_ID_START(utf32)) {
-          current = backup;
-          THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
-                file, current.line, current.column);
-          return NULL;
-        }
-      } else {
-        THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
-              file, current.line, current.column);
-        return NULL;
-      }
-    } else if ((*current.offset >= '0' && *current.offset <= '9') ||
-               (*current.offset >= 'a' && *current.offset <= 'f') ||
-               (*current.offset >= 'A' && *current.offset <= 'F')) {
-      for (int32_t idx = 0; idx < 4; idx++) {
+    const char *start = current.offset + 2;
+    noix_read_escape(file, &current);
+    CHECK_AND_THROW({ return NULL; });
+    int32_t utf32 = 0;
+    if (*start == '{') {
+      start++;
+      while (*start != '}') {
         utf32 *= 16;
-        if (*current.offset >= '0' && *current.offset <= '9') {
-          utf32 += *current.offset - '0';
-        } else if (*current.offset >= 'a' && *current.offset <= 'f') {
-          utf32 += *current.offset - 'a' + 10;
-        } else if (*current.offset >= 'A' && *current.offset <= 'F') {
-          utf32 += *current.offset - 'A' + 10;
-        } else {
-          THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
-                file, current.line, current.column);
-          return NULL;
+        if (*start >= '0' && *start <= '9') {
+          utf32 += *start - '0';
         }
-        current.offset++;
-        current.column++;
+        if (*start >= 'a' && *start <= 'f') {
+          utf32 += *start - 'a' + 10;
+        }
+        if (*start >= 'A' && *start <= 'F') {
+          utf32 += *start - 'F' + 10;
+        }
+        start++;
+      }
+    } else {
+      for (int8_t idx = 0; idx < 4; idx++) {
+        utf32 *= 16;
+        if (*start >= '0' && *start <= '9') {
+          utf32 += *start - '0';
+        }
+        if (*start >= 'a' && *start <= 'f') {
+          utf32 += *start - 'a' + 10;
+        }
+        if (*start >= 'A' && *start <= 'F') {
+          utf32 += *start - 'F' + 10;
+        }
+        start++;
       }
     }
     if (utf32 != '$' && utf32 != '_' && !IS_ID_START(utf32)) {
-      current = backup;
       THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
             current.line, current.column);
       return NULL;
@@ -456,76 +387,41 @@ noix_token_t noix_read_identify_token(noix_allocator_t allocator,
   chr = noix_utf8_read_char(current.offset);
   while (true) {
     if (*current.offset == '\\' && *(current.offset + 1) == 'u') {
-      noix_position_t backup = current;
-      current.offset += 2;
-      current.column += 2;
-      uint32_t utf32 = 0;
-      if (*current.offset == '{') {
-        current.offset++;
-        current.column++;
-        if ((*current.offset >= '0' && *current.offset <= '9') ||
-            (*current.offset >= 'a' && *current.offset <= 'f') ||
-            (*current.offset >= 'A' && *current.offset <= 'F')) {
-          while ((*current.offset >= '0' && *current.offset <= '9') ||
-                 (*current.offset >= 'a' && *current.offset <= 'f') ||
-                 (*current.offset >= 'A' && *current.offset <= 'F')) {
-            utf32 *= 16;
-            if (*current.offset >= '0' && *current.offset <= '9') {
-              utf32 += *current.offset - '0';
-            } else if (*current.offset >= 'a' && *current.offset <= 'f') {
-              utf32 += *current.offset - 'a' + 10;
-            } else if (*current.offset >= 'A' && *current.offset <= 'F') {
-              utf32 += *current.offset - 'A' + 10;
-            }
-            current.offset++;
-            current.column++;
-          }
-          if (*current.offset != '}') {
-            current = backup;
-            THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
-                  file, current.line, current.column);
-            return NULL;
-          } else {
-            current.offset++;
-            current.column++;
-          }
-          if (utf32 != '$' && utf32 != '_' && !IS_ID_CONTINUE(utf32)) {
-            current = backup;
-            THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
-                  file, current.line, current.column);
-            return NULL;
-          }
-        } else {
-          THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
-                file, current.line, current.column);
-          return NULL;
-        }
-      } else if ((*current.offset >= '0' && *current.offset <= '9') ||
-                 (*current.offset >= 'a' && *current.offset <= 'f') ||
-                 (*current.offset >= 'A' && *current.offset <= 'F')) {
-        for (int32_t idx = 0; idx < 4; idx++) {
+      const char *start = current.offset + 2;
+      noix_read_escape(file, &current);
+      CHECK_AND_THROW({ return NULL; });
+      int32_t utf32 = 0;
+      if (*start == '{') {
+        start++;
+        while (*start != '}') {
           utf32 *= 16;
-          if (*current.offset >= '0' && *current.offset <= '9') {
-            utf32 += *current.offset - '0';
-          } else if (*current.offset >= 'a' && *current.offset <= 'f') {
-            utf32 += *current.offset - 'a' + 10;
-          } else if (*current.offset >= 'A' && *current.offset <= 'F') {
-            utf32 += *current.offset - 'A' + 10;
-          } else {
-            THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
-                  file, current.line, current.column);
-            return NULL;
+          if (*start >= '0' && *start <= '9') {
+            utf32 += *start - '0';
           }
-          current.offset++;
-          current.column++;
+          if (*start >= 'a' && *start <= 'f') {
+            utf32 += *start - 'a' + 10;
+          }
+          if (*start >= 'A' && *start <= 'F') {
+            utf32 += *start - 'F' + 10;
+          }
+          start++;
         }
       } else {
-        THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
-              file, current.line, current.column);
-        return NULL;
+        for (int8_t idx = 0; idx < 4; idx++) {
+          utf32 *= 16;
+          if (*start >= '0' && *start <= '9') {
+            utf32 += *start - '0';
+          }
+          if (*start >= 'a' && *start <= 'f') {
+            utf32 += *start - 'a' + 10;
+          }
+          if (*start >= 'A' && *start <= 'F') {
+            utf32 += *start - 'F' + 10;
+          }
+          start++;
+        }
       }
       if (utf32 != '$' && utf32 != '_' && !IS_ID_CONTINUE(utf32)) {
-        current = backup;
         THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
               file, current.line, current.column);
         return NULL;
@@ -545,6 +441,145 @@ noix_token_t noix_read_identify_token(noix_allocator_t allocator,
   token->position.end = current;
   token->position.file = file;
   token->type = NOIX_TOKEN_TYPE_IDENTIFY;
+  *position = current;
+  return token;
+}
+
+noix_token_t noix_read_comment_token(noix_allocator_t allocator,
+                                     const char *file,
+                                     noix_position_t *position) {
+  noix_position_t current = *position;
+  if (*current.offset == '/' && *(current.offset + 1) == '/') {
+    current.offset += 2;
+    current.column += 2;
+    while (true) {
+      noix_utf8_char chr = noix_utf8_read_char(current.offset);
+      if (*chr.begin == 0xa || *chr.begin == 0xd || *chr.begin == '\0' ||
+          noix_utf8_char_is(chr, "\u2028") ||
+          noix_utf8_char_is(chr, "\u2029")) {
+        break;
+      } else {
+        current.column += chr.end - chr.begin;
+        current.offset = chr.end;
+      }
+    }
+  } else {
+    return NULL;
+  }
+  noix_token_t token = (noix_token_t)noix_allocator_alloc(
+      allocator, sizeof(struct _noix_token_t), NULL);
+  token->position.begin = *position;
+  token->position.end = current;
+  token->position.file = file;
+  token->type = NOIX_TOKEN_TYPE_COMMENT;
+  *position = current;
+  return token;
+}
+
+noix_token_t noix_read_multiline_comment_token(noix_allocator_t allocator,
+                                               const char *file,
+                                               noix_position_t *position) {
+  noix_position_t current = *position;
+  if (*current.offset == '/' && *(current.offset + 1) == '*') {
+    current.offset += 2;
+    current.column += 2;
+    while (true) {
+      if (*current.offset == 0) {
+        THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
+              file, current.line, current.column);
+        return NULL;
+      }
+      if (*current.offset == '*' && *(current.offset + 1) == '/') {
+        current.offset += 2;
+        current.column += 2;
+        break;
+      }
+      noix_utf8_char chr = noix_utf8_read_char(current.offset);
+      if (*chr.begin == 0xa || *chr.begin == 0xd ||
+          noix_utf8_char_is(chr, "\u2028") ||
+          noix_utf8_char_is(chr, "\u2029")) {
+        current.line++;
+        current.column = 1;
+        current.offset = chr.end;
+      } else {
+        current.column += chr.end - chr.begin;
+        current.offset = chr.end;
+      }
+    }
+  } else {
+    return NULL;
+  }
+  noix_token_t token = (noix_token_t)noix_allocator_alloc(
+      allocator, sizeof(struct _noix_token_t), NULL);
+  token->position.begin = *position;
+  token->position.end = current;
+  token->position.file = file;
+  token->type = NOIX_TOKEN_TYPE_MULTILINE_COMMENT;
+  *position = current;
+  return token;
+}
+
+noix_token_t noix_read_template_string_token(noix_allocator_t allocator,
+                                             const char *file,
+                                             noix_position_t *position) {
+  noix_position_t current = *position;
+  if (*current.offset == '`' || *current.offset == '}') {
+    current.offset++;
+    current.column++;
+    while (true) {
+      if (*current.offset == '\0') {
+        THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
+              file, current.line, current.column);
+        return NULL;
+      }
+      if (*current.offset == '$' && *(current.offset + 1) == '{') {
+        current.column += 2;
+        current.offset += 2;
+        break;
+      }
+      if (*current.offset == '`') {
+        current.column++;
+        current.offset++;
+        break;
+      }
+      noix_utf8_char chr = noix_utf8_read_char(current.offset);
+      if (*chr.begin == 0xa || *chr.begin == 0xd ||
+          noix_utf8_char_is(chr, "\u2028") ||
+          noix_utf8_char_is(chr, "\u2029")) {
+        current.line++;
+        current.column = 1;
+        current.offset = chr.end;
+        continue;
+      } else if (noix_utf8_char_is(chr, "\\")) {
+        noix_read_escape(file, &current);
+        CHECK_AND_THROW({ return NULL; })
+        continue;
+      }
+      current.offset = chr.end;
+      current.column += chr.end - chr.begin;
+    }
+  } else {
+    return NULL;
+  }
+  noix_token_t token = (noix_token_t)noix_allocator_alloc(
+      allocator, sizeof(struct _noix_token_t), NULL);
+  token->position.begin = *position;
+  token->position.end = current;
+  token->position.file = file;
+  token->type = NOIX_TOKEN_TYPE_TEMPLATE_STRING;
+  if (*position->offset == '}') {
+    if (*(current.offset - 1) == '`') {
+      token->type = NOIX_TOKEN_TYPE_TEMPLATE_STRING_END;
+    } else {
+      token->type = NOIX_TOKEN_TYPE_TEMPLATE_STRING_PART;
+    }
+  } else {
+    if (*(current.offset - 1) == '`') {
+      token->type = NOIX_TOKEN_TYPE_TEMPLATE_STRING;
+    } else {
+      token->type = NOIX_TOKEN_TYPE_TEMPLATE_STRING_START;
+    }
+  }
   *position = current;
   return token;
 }
