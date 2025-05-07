@@ -1,13 +1,13 @@
-#ifndef _H_NOIX_COMPILER_STATEMENT_
-#define _H_NOIX_COMPILER_STATEMENT_
+#ifndef _H_NEO_COMPILER_STATEMENT_
+#define _H_NEO_COMPILER_STATEMENT_
 #include "compiler/node.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-noix_ast_node_t noix_ast_read_statement(noix_allocator_t allocator,
-                                        const char *file,
-                                        noix_position_t *position);
+neo_ast_node_t neo_ast_read_statement(neo_allocator_t allocator,
+                                      const char *file,
+                                      neo_position_t *position);
 #ifdef __cplusplus
 }
 #endif

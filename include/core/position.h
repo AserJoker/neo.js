@@ -1,5 +1,5 @@
-#ifndef _H_NOIX_CORE_POSITION_
-#define _H_NOIX_CORE_POSITION_
+#ifndef _H_NEO_CORE_POSITION_
+#define _H_NEO_CORE_POSITION_
 
 #include "core/unicode.h"
 #include <stdint.h>
@@ -7,13 +7,13 @@
 extern "C" {
 #endif
 
-typedef struct _noix_position_t {
+typedef struct _neo_position_t {
   int32_t line;
   int32_t column;
   const char *offset;
-} noix_position_t;
+} neo_position_t;
 
-noix_utf8_char noix_location_next(noix_position_t *location);
+neo_utf8_char neo_location_next(neo_position_t *location);
 
 #ifdef __cplusplus
 };

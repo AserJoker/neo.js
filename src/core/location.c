@@ -1,13 +1,13 @@
 #include "core/location.h"
 #include "core/unicode.h"
 
-noix_utf8_char noix_location_next(noix_position_t *location) {
-  noix_utf8_char chr = noix_utf8_read_char(location->offset);
+neo_utf8_char neo_location_next(neo_position_t *location) {
+  neo_utf8_char chr = neo_utf8_read_char(location->offset);
   if (*location->offset == '\r' && *(location->offset + 1) == '\n') {
     location->offset++;
   }
   if (*location->offset == 0xa || *location->offset == 0xd ||
-      noix_utf8_char_is(chr, "\u2028") || noix_utf8_char_is(chr, "\u2029")) {
+      neo_utf8_char_is(chr, "\u2028") || neo_utf8_char_is(chr, "\u2029")) {
     location->line++;
     location->column = 1;
   } else {

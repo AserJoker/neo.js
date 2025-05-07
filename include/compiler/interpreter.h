@@ -1,16 +1,16 @@
-#ifndef _H_NOIX_COMPILER_INTERPRETER_
-#define _H_NOIX_COMPILER_INTERPRETER_
+#ifndef _H_NEO_COMPILER_INTERPRETER_
+#define _H_NEO_COMPILER_INTERPRETER_
 #include "compiler/node.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
-typedef struct _noix_ast_interpreter_node_t {
-  struct _noix_ast_node_t node;
-} *noix_ast_interpreter_node_t;
+typedef struct _neo_ast_interpreter_node_t {
+  struct _neo_ast_node_t node;
+} *neo_ast_interpreter_node_t;
 
-noix_ast_node_t noix_ast_read_interpreter(noix_allocator_t allocator,
-                                          const char *file,
-                                          noix_position_t *position);
+neo_ast_node_t neo_ast_read_interpreter(neo_allocator_t allocator,
+                                        const char *file,
+                                        neo_position_t *position);
 #ifdef __cplusplus
 }
 #endif

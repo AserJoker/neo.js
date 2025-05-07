@@ -1,24 +1,24 @@
 #include "core/list.h"
 #include "core/allocator.h"
 #include <stddef.h>
-struct _noix_list_node_t {
-  noix_list_node_t next;
-  noix_list_node_t last;
+struct _neo_list_node_t {
+  neo_list_node_t next;
+  neo_list_node_t last;
   void *data;
 };
 
-struct _noix_list_t {
-  struct _noix_list_node_t head;
-  struct _noix_list_node_t tail;
-  noix_allocator_t allocator;
+struct _neo_list_t {
+  struct _neo_list_node_t head;
+  struct _neo_list_node_t tail;
+  neo_allocator_t allocator;
   size_t size;
   bool auto_free;
 };
 
-static noix_list_node_t noix_create_list_node(noix_allocator_t allocator,
-                                              void *data) {
-  noix_list_node_t node =
-      noix_allocator_alloc(allocator, sizeof(struct _noix_list_node_t), NULL);
+static neo_list_node_t neo_create_list_node(neo_allocator_t allocator,
+                                            void *data) {
+  neo_list_node_t node =
+      neo_allocator_alloc(allocator, sizeof(struct _neo_list_node_t), NULL);
   if (!node) {
     return NULL;
   }
@@ -28,16 +28,16 @@ static noix_list_node_t noix_create_list_node(noix_allocator_t allocator,
   return node;
 }
 
-static void noix_list_dispose(noix_allocator_t allocator, noix_list_t self) {
+static void neo_list_dispose(neo_allocator_t allocator, neo_list_t self) {
   while (self->size > 0) {
-    noix_list_erase(self, self->head.next);
+    neo_list_erase(self, self->head.next);
   }
 }
 
-noix_list_t noix_create_list(noix_allocator_t allocator,
-                             noix_list_initialize_t *initialize) {
-  noix_list_t list = noix_allocator_alloc(
-      allocator, sizeof(struct _noix_list_t), noix_list_dispose);
+neo_list_t neo_create_list(neo_allocator_t allocator,
+                           neo_list_initialize_t *initialize) {
+  neo_list_t list = neo_allocator_alloc(allocator, sizeof(struct _neo_list_t),
+                                        neo_list_dispose);
   if (!list) {
     return NULL;
   }
@@ -55,11 +55,11 @@ noix_list_t noix_create_list(noix_allocator_t allocator,
   return list;
 }
 
-void *noix_list_at(noix_list_t self, size_t idx) {
+void *neo_list_at(neo_list_t self, size_t idx) {
   if (idx >= self->size) {
     return NULL;
   }
-  noix_list_node_t node = self->head.next;
+  neo_list_node_t node = self->head.next;
   while (idx > 0) {
     node = node->next;
     idx--;
@@ -67,32 +67,32 @@ void *noix_list_at(noix_list_t self, size_t idx) {
   return node->data;
 }
 
-noix_list_node_t noix_list_get_head(noix_list_t self) { return &self->head; }
+neo_list_node_t neo_list_get_head(neo_list_t self) { return &self->head; }
 
-noix_list_node_t noix_list_get_tail(noix_list_t self) { return &self->tail; }
+neo_list_node_t neo_list_get_tail(neo_list_t self) { return &self->tail; }
 
-noix_list_node_t noix_list_get_first(noix_list_t self) {
+neo_list_node_t neo_list_get_first(neo_list_t self) {
   if (self->size) {
     return self->head.next;
   }
   return NULL;
 }
 
-noix_list_node_t noix_list_get_last(noix_list_t self) {
+neo_list_node_t neo_list_get_last(neo_list_t self) {
   if (self->size) {
     return self->tail.last;
   }
   return NULL;
 }
 
-size_t noix_list_get_size(noix_list_t self) { return self->size; }
+size_t neo_list_get_size(neo_list_t self) { return self->size; }
 
-noix_list_node_t noix_list_insert(noix_list_t self, noix_list_node_t position,
-                                  void *data) {
+neo_list_node_t neo_list_insert(neo_list_t self, neo_list_node_t position,
+                                void *data) {
   if (!position->next) {
     return NULL;
   }
-  noix_list_node_t node = noix_create_list_node(self->allocator, data);
+  neo_list_node_t node = neo_create_list_node(self->allocator, data);
   node->last = position;
   node->next = position->next;
   node->next->last = node;
@@ -101,46 +101,42 @@ noix_list_node_t noix_list_insert(noix_list_t self, noix_list_node_t position,
   return node;
 }
 
-noix_list_node_t noix_list_push(noix_list_t self, void *data) {
-  return noix_list_insert(self, self->tail.last, data);
+neo_list_node_t neo_list_push(neo_list_t self, void *data) {
+  return neo_list_insert(self, self->tail.last, data);
 }
 
-void noix_list_pop(noix_list_t self) {
+void neo_list_pop(neo_list_t self) {
   if (self->size) {
-    noix_list_erase(self, self->tail.last);
+    neo_list_erase(self, self->tail.last);
   }
 }
 
-noix_list_node_t noix_list_unshift(noix_list_t self, void *data) {
-  return noix_list_insert(self, &self->head, data);
+neo_list_node_t neo_list_unshift(neo_list_t self, void *data) {
+  return neo_list_insert(self, &self->head, data);
 }
 
-void noix_list_shift(noix_list_t self) {
+void neo_list_shift(neo_list_t self) {
   if (self->size) {
-    noix_list_erase(self, self->head.next);
+    neo_list_erase(self, self->head.next);
   }
 }
 
-noix_list_node_t noix_list_erase(noix_list_t self, noix_list_node_t position) {
+neo_list_node_t neo_list_erase(neo_list_t self, neo_list_node_t position) {
   if (self->size == 0) {
     return NULL;
   }
   position->last->next = position->next;
   position->next->last = position->last;
   if (self->auto_free) {
-    noix_allocator_free(self->allocator, position->data);
+    neo_allocator_free(self->allocator, position->data);
   }
-  noix_allocator_free(self->allocator, position);
+  neo_allocator_free(self->allocator, position);
   self->size--;
   return position->next;
 }
 
-noix_list_node_t noix_list_node_next(noix_list_node_t self) {
-  return self->next;
-}
+neo_list_node_t neo_list_node_next(neo_list_node_t self) { return self->next; }
 
-noix_list_node_t noix_list_node_last(noix_list_node_t self) {
-  return self->last;
-}
+neo_list_node_t neo_list_node_last(neo_list_node_t self) { return self->last; }
 
-void *noix_list_node_get(noix_list_node_t self) { return self->data; }
+void *neo_list_node_get(neo_list_node_t self) { return self->data; }

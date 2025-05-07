@@ -1,31 +1,31 @@
 #include "core/map.h"
 #include "core/allocator.h"
 #include <stdint.h>
-struct _noix_map_node_t {
+struct _neo_map_node_t {
   void *key;
   void *value;
-  noix_map_node_t next;
-  noix_map_node_t last;
+  neo_map_node_t next;
+  neo_map_node_t last;
 };
 
-struct _noix_map_t {
+struct _neo_map_t {
   bool auto_free_key;
   bool auto_free_value;
-  struct _noix_map_node_t head;
-  struct _noix_map_node_t tail;
-  noix_allocator_t allocator;
-  noix_compare_fn_t compare;
+  struct _neo_map_node_t head;
+  struct _neo_map_node_t tail;
+  neo_allocator_t allocator;
+  neo_compare_fn_t compare;
   size_t size;
 };
 
-static void noix_map_dispose(noix_allocator_t allocator, noix_map_t self) {
-  noix_map_node_t item = self->head.next;
+static void neo_map_dispose(neo_allocator_t allocator, neo_map_t self) {
+  neo_map_node_t item = self->head.next;
   while (self->size) {
-    noix_map_erase(self, self->head.next);
+    neo_map_erase(self, self->head.next);
   }
 }
 
-static int8_t noix_map_compare(void *a, void *b) {
+static int8_t neo_map_compare(void *a, void *b) {
   if ((intptr_t)a - (intptr_t)b) {
     return 1;
   }
@@ -35,11 +35,11 @@ static int8_t noix_map_compare(void *a, void *b) {
   return 0;
 }
 
-noix_map_t noix_create_map(noix_allocator_t allocator,
-                           noix_map_initialize *initialize) {
-  noix_map_t map =
-      (noix_map_t)noix_allocator_alloc(allocator, sizeof(struct _noix_map_t),
-                                       (noix_destructor_fn_t)noix_map_dispose);
+neo_map_t neo_create_map(neo_allocator_t allocator,
+                         neo_map_initialize *initialize) {
+  neo_map_t map =
+      (neo_map_t)neo_allocator_alloc(allocator, sizeof(struct _neo_map_t),
+                                     (neo_destructor_fn_t)neo_map_dispose);
   map->allocator = allocator;
   map->size = 0;
   if (initialize) {
@@ -49,7 +49,7 @@ noix_map_t noix_create_map(noix_allocator_t allocator,
   } else {
     map->auto_free_value = false;
     map->auto_free_key = false;
-    map->compare = &noix_map_compare;
+    map->compare = &neo_map_compare;
   }
   map->head.next = &map->tail;
   map->tail.last = &map->head;
@@ -58,11 +58,11 @@ noix_map_t noix_create_map(noix_allocator_t allocator,
   return map;
 }
 
-void noix_map_set(noix_map_t self, void *key, void *value) {
-  noix_map_node_t node = noix_map_find(self, key);
+void neo_map_set(neo_map_t self, void *key, void *value) {
+  neo_map_node_t node = neo_map_find(self, key);
   if (!node) {
-    node = (noix_map_node_t)noix_allocator_alloc(
-        self->allocator, sizeof(struct _noix_map_node_t), NULL);
+    node = (neo_map_node_t)neo_allocator_alloc(
+        self->allocator, sizeof(struct _neo_map_node_t), NULL);
     node->last = self->tail.last;
     node->next = &self->tail;
     node->last->next = node;
@@ -74,46 +74,46 @@ void noix_map_set(noix_map_t self, void *key, void *value) {
   }
   if (node->value != value) {
     if (self->auto_free_value) {
-      noix_allocator_free(self->allocator, node->value);
+      neo_allocator_free(self->allocator, node->value);
     }
     node->value = value;
   }
 }
 
-void *noix_map_get(noix_map_t self, void *key) {
-  noix_map_node_t node = noix_map_find(self, key);
+void *neo_map_get(neo_map_t self, void *key) {
+  neo_map_node_t node = neo_map_find(self, key);
   if (node) {
     return node->value;
   }
   return NULL;
 }
 
-bool noix_map_has(noix_map_t self, void *key) {
-  return noix_map_find(self, key) != NULL;
+bool neo_map_has(neo_map_t self, void *key) {
+  return neo_map_find(self, key) != NULL;
 }
 
-void noix_map_delete(noix_map_t self, void *key) {
-  noix_map_node_t node = noix_map_find(self, key);
-  noix_map_erase(self, node);
+void neo_map_delete(neo_map_t self, void *key) {
+  neo_map_node_t node = neo_map_find(self, key);
+  neo_map_erase(self, node);
 }
 
-void noix_map_erase(noix_map_t self, noix_map_node_t position) {
+void neo_map_erase(neo_map_t self, neo_map_node_t position) {
   if (position) {
     position->last->next = position->next;
     position->next->last = position->last;
     if (self->auto_free_key) {
-      noix_allocator_free(self->allocator, position->key);
+      neo_allocator_free(self->allocator, position->key);
     }
     if (self->auto_free_value) {
-      noix_allocator_free(self->allocator, position->value);
+      neo_allocator_free(self->allocator, position->value);
     }
-    noix_allocator_free(self->allocator, position);
+    neo_allocator_free(self->allocator, position);
     self->size--;
   }
 }
 
-noix_map_node_t noix_map_find(noix_map_t self, void *key) {
-  noix_map_node_t node = self->head.next;
+neo_map_node_t neo_map_find(neo_map_t self, void *key) {
+  neo_map_node_t node = self->head.next;
   while (node != &self->tail) {
     if (self->compare(node->key, key) == 0) {
       return node;
@@ -123,30 +123,30 @@ noix_map_node_t noix_map_find(noix_map_t self, void *key) {
   return NULL;
 }
 
-size_t noix_map_get_size(noix_map_t self) { return self->size; }
+size_t neo_map_get_size(neo_map_t self) { return self->size; }
 
-noix_map_node_t noix_map_get_head(noix_map_t self) { return &self->head; }
+neo_map_node_t neo_map_get_head(neo_map_t self) { return &self->head; }
 
-noix_map_node_t noix_map_get_tail(noix_map_t self) { return &self->tail; }
+neo_map_node_t neo_map_get_tail(neo_map_t self) { return &self->tail; }
 
-noix_map_node_t noix_map_get_first(noix_map_t self) {
+neo_map_node_t neo_map_get_first(neo_map_t self) {
   if (!self->size) {
     return NULL;
   }
   return self->head.next;
 }
 
-noix_map_node_t noix_map_get_last(noix_map_t self) {
+neo_map_node_t neo_map_get_last(neo_map_t self) {
   if (!self->size) {
     return NULL;
   }
   return self->tail.last;
 }
 
-void *noix_map_node_get_key(noix_map_node_t self) { return self->key; }
+void *neo_map_node_get_key(neo_map_node_t self) { return self->key; }
 
-void *noix_map_node_get_value(noix_map_node_t self) { return self->value; }
+void *neo_map_node_get_value(neo_map_node_t self) { return self->value; }
 
-noix_map_node_t noix_map_node_next(noix_map_node_t self) { return self->next; }
+neo_map_node_t neo_map_node_next(neo_map_node_t self) { return self->next; }
 
-noix_map_node_t noix_map_node_last(noix_map_node_t self) { return self->last; }
+neo_map_node_t neo_map_node_last(neo_map_node_t self) { return self->last; }

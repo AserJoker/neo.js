@@ -1,7 +1,7 @@
 #include "core/unicode.h"
 #include "core/allocator.h"
-noix_utf8_char noix_utf8_read_char(const char *str) {
-  noix_utf8_char chr = {str, str};
+neo_utf8_char neo_utf8_read_char(const char *str) {
+  neo_utf8_char chr = {str, str};
   if (*str == 0) {
     return chr;
   }
@@ -21,7 +21,7 @@ noix_utf8_char noix_utf8_read_char(const char *str) {
   return chr;
 }
 
-uint32_t noix_utf8_char_to_utf32(noix_utf8_char chr) {
+uint32_t neo_utf8_char_to_utf32(neo_utf8_char chr) {
   uint32_t value = 0;
   if (chr.end - chr.begin == 1) {
     value = *chr.begin;
@@ -67,9 +67,9 @@ uint32_t noix_utf8_char_to_utf32(noix_utf8_char chr) {
   return value;
 }
 
-char *noix_utf8_char_to_string(noix_allocator_t allocator, noix_utf8_char chr) {
+char *neo_utf8_char_to_string(neo_allocator_t allocator, neo_utf8_char chr) {
   char *buf =
-      (char *)noix_allocator_alloc(allocator, chr.end - chr.begin + 1, NULL);
+      (char *)neo_allocator_alloc(allocator, chr.end - chr.begin + 1, NULL);
   buf[chr.end - chr.begin] = 0;
   char *dst = buf;
   const char *src = chr.begin;
@@ -79,18 +79,18 @@ char *noix_utf8_char_to_string(noix_allocator_t allocator, noix_utf8_char chr) {
   return buf;
 }
 
-size_t noix_utf8_get_len(const char *str) {
+size_t neo_utf8_get_len(const char *str) {
   const char *ptr = str;
   size_t len = 0;
   while (*ptr != 0) {
-    noix_utf8_char chr = noix_utf8_read_char(ptr);
+    neo_utf8_char chr = neo_utf8_read_char(ptr);
     ptr = chr.end;
     len++;
   }
   return len;
 }
 
-bool noix_utf8_char_is(noix_utf8_char chr, const char *s) {
+bool neo_utf8_char_is(neo_utf8_char chr, const char *s) {
   const char *src = chr.begin;
   const char *dst = s;
   if (dst[chr.end - chr.begin] != 0) {
@@ -106,25 +106,25 @@ bool noix_utf8_char_is(noix_utf8_char chr, const char *s) {
   return true;
 }
 
-bool noix_utf8_char_is_id_start(noix_utf8_char chr) {
+bool neo_utf8_char_is_id_start(neo_utf8_char chr) {
   if (chr.end - chr.begin == 0) {
     return false;
   }
-  uint32_t utf32 = noix_utf8_char_to_utf32(chr);
+  uint32_t utf32 = neo_utf8_char_to_utf32(chr);
   return IS_ID_START(utf32);
 }
 
-bool noix_utf8_char_is_id_continue(noix_utf8_char chr) {
+bool neo_utf8_char_is_id_continue(neo_utf8_char chr) {
   if (chr.end - chr.begin == 0) {
     return false;
   }
-  uint32_t utf32 = noix_utf8_char_to_utf32(chr);
+  uint32_t utf32 = neo_utf8_char_to_utf32(chr);
   return IS_ID_CONTINUE(utf32);
 }
-bool noix_utf8_char_is_space_separator(noix_utf8_char chr) {
+bool neo_utf8_char_is_space_separator(neo_utf8_char chr) {
   if (chr.end - chr.begin == 0) {
     return false;
   }
-  uint32_t utf32 = noix_utf8_char_to_utf32(chr);
+  uint32_t utf32 = neo_utf8_char_to_utf32(chr);
   return IS_SPACE_SEPARATOR(utf32);
 }

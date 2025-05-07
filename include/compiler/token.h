@@ -1,5 +1,5 @@
-#ifndef _H_NOIX_COMPILER_TOKEN_
-#define _H_NOIX_COMPILER_TOKEN_
+#ifndef _H_NEO_COMPILER_TOKEN_
+#define _H_NEO_COMPILER_TOKEN_
 #include "core/allocator.h"
 #include "core/location.h"
 #include "core/position.h"
@@ -7,68 +7,63 @@
 extern "C" {
 #endif
 
-typedef enum _noix_token_type_t {
-  NOIX_TOKEN_TYPE_STRING,
-  NOIX_TOKEN_TYPE_NUMBER,
-  NOIX_TOKEN_TYPE_SYMBOL,
-  NOIX_TOKEN_TYPE_REGEXP,
-  NOIX_TOKEN_TYPE_IDENTIFY,
-  NOIX_TOKEN_TYPE_PRIVATE_IDENTIFY,
-  NOIX_TOKEN_TYPE_COMMENT,
-  NOIX_TOKEN_TYPE_MULTILINE_COMMENT,
-  NOIX_TOKEN_TYPE_TEMPLATE_STRING,
-  NOIX_TOKEN_TYPE_TEMPLATE_STRING_START,
-  NOIX_TOKEN_TYPE_TEMPLATE_STRING_END,
-  NOIX_TOKEN_TYPE_TEMPLATE_STRING_PART,
-} noix_token_type_t;
+typedef enum _neo_token_type_t {
+  NEO_TOKEN_TYPE_STRING,
+  NEO_TOKEN_TYPE_NUMBER,
+  NEO_TOKEN_TYPE_SYMBOL,
+  NEO_TOKEN_TYPE_REGEXP,
+  NEO_TOKEN_TYPE_IDENTIFY,
+  NEO_TOKEN_TYPE_PRIVATE_IDENTIFY,
+  NEO_TOKEN_TYPE_COMMENT,
+  NEO_TOKEN_TYPE_MULTILINE_COMMENT,
+  NEO_TOKEN_TYPE_TEMPLATE_STRING,
+  NEO_TOKEN_TYPE_TEMPLATE_STRING_START,
+  NEO_TOKEN_TYPE_TEMPLATE_STRING_END,
+  NEO_TOKEN_TYPE_TEMPLATE_STRING_PART,
+} neo_token_type_t;
 
-typedef struct _noix_token_t {
-  noix_token_type_t type;
-  noix_location_t position;
-} *noix_token_t;
+typedef struct _neo_token_t {
+  neo_token_type_t type;
+  neo_location_t position;
+} *neo_token_t;
 
-noix_token_t noix_read_string_token(noix_allocator_t allocator,
-                                    const char *file, noix_position_t *positon);
+neo_token_t neo_read_string_token(neo_allocator_t allocator, const char *file,
+                                  neo_position_t *positon);
 
-noix_token_t noix_read_number_token(noix_allocator_t allocator,
-                                    const char *file,
-                                    noix_position_t *position);
+neo_token_t neo_read_number_token(neo_allocator_t allocator, const char *file,
+                                  neo_position_t *position);
 
-noix_token_t noix_read_symbol_token(noix_allocator_t allocator,
-                                    const char *file,
-                                    noix_position_t *position);
+neo_token_t neo_read_symbol_token(neo_allocator_t allocator, const char *file,
+                                  neo_position_t *position);
 
-noix_token_t noix_read_regexp_token(noix_allocator_t allocator,
-                                    const char *file,
-                                    noix_position_t *position);
+neo_token_t neo_read_regexp_token(neo_allocator_t allocator, const char *file,
+                                  neo_position_t *position);
 
-noix_token_t noix_read_identify_token(noix_allocator_t allocator,
-                                      const char *file,
-                                      noix_position_t *position);
+neo_token_t neo_read_identify_token(neo_allocator_t allocator, const char *file,
+                                    neo_position_t *position);
 
-noix_token_t noix_read_comment_token(noix_allocator_t allocator,
-                                     const char *file,
-                                     noix_position_t *position);
+neo_token_t neo_read_comment_token(neo_allocator_t allocator, const char *file,
+                                   neo_position_t *position);
 
-noix_token_t noix_read_multiline_comment_token(noix_allocator_t allocator,
-                                               const char *file,
-                                               noix_position_t *position);
-
-noix_token_t noix_read_template_string_token(noix_allocator_t allocator,
+neo_token_t neo_read_multiline_comment_token(neo_allocator_t allocator,
                                              const char *file,
-                                             noix_position_t *position);
+                                             neo_position_t *position);
 
-noix_token_t noix_read_template_string_start_token(noix_allocator_t allocator,
-                                                   const char *file,
-                                                   noix_position_t *position);
+neo_token_t neo_read_template_string_token(neo_allocator_t allocator,
+                                           const char *file,
+                                           neo_position_t *position);
 
-noix_token_t noix_read_template_string_part_token(noix_allocator_t allocator,
-                                                  const char *file,
-                                                  noix_position_t *position);
-
-noix_token_t noix_read_template_string_end_token(noix_allocator_t allocator,
+neo_token_t neo_read_template_string_start_token(neo_allocator_t allocator,
                                                  const char *file,
-                                                 noix_position_t *position);
+                                                 neo_position_t *position);
+
+neo_token_t neo_read_template_string_part_token(neo_allocator_t allocator,
+                                                const char *file,
+                                                neo_position_t *position);
+
+neo_token_t neo_read_template_string_end_token(neo_allocator_t allocator,
+                                               const char *file,
+                                               neo_position_t *position);
 #ifdef __cplusplus
 }
 #endif

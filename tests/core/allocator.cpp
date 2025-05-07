@@ -17,23 +17,23 @@ static void free_stub(void *ptr) {
 }
 
 TEST_F(TEST_allocator, alloc_and_free) {
-  noix_allocator_initialize_t initialize = {alloc_stub, free_stub};
-  noix_allocator_t allocator = noix_create_allocator(&initialize);
-  int *data = (int *)noix_allocator_alloc(allocator, sizeof(int), NULL);
-  noix_allocator_free(allocator, data);
-  noix_delete_allocator(allocator);
+  neo_allocator_initialize_t initialize = {alloc_stub, free_stub};
+  neo_allocator_t allocator = neo_create_allocator(&initialize);
+  int *data = (int *)neo_allocator_alloc(allocator, sizeof(int), NULL);
+  neo_allocator_free(allocator, data);
+  neo_delete_allocator(allocator);
   ASSERT_EQ(g_count, 0);
 }
 
 static int g_data = 0;
 
-static void desc(noix_allocator_t allocator, int *data) { g_data = *data; }
+static void desc(neo_allocator_t allocator, int *data) { g_data = *data; }
 
 TEST_F(TEST_allocator, desctructor) {
-  noix_allocator_t allocator = noix_create_default_allocator();
-  int *data = (int *)noix_allocator_alloc(allocator, sizeof(int), desc);
+  neo_allocator_t allocator = neo_create_default_allocator();
+  int *data = (int *)neo_allocator_alloc(allocator, sizeof(int), desc);
   *data = 123;
-  noix_allocator_free(allocator, data);
-  noix_delete_allocator(allocator);
+  neo_allocator_free(allocator, data);
+  neo_delete_allocator(allocator);
   ASSERT_EQ(g_data, 123);
 }

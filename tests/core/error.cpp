@@ -16,16 +16,16 @@ static void func1() {
 }
 
 TEST_F(TEST_error, tostring) {
-  noix_allocator_t allocator = noix_create_default_allocator();
-  noix_error_initialize(allocator);
+  neo_allocator_t allocator = neo_create_default_allocator();
+  neo_error_initialize(allocator);
   func1();
-  ASSERT_EQ(noix_has_error(), true);
-  noix_error_t error = noix_poll_error(__FUNCTION__, __FILE__, __LINE__ - 2);
-  char *message = noix_error_to_string(error);
+  ASSERT_EQ(neo_has_error(), true);
+  neo_error_t error = neo_poll_error(__FUNCTION__, __FILE__, __LINE__ - 2);
+  char *message = neo_error_to_string(error);
   printf("%s\n", message);
-  noix_allocator_free(allocator, error);
+  neo_allocator_free(allocator, error);
   ASSERT_TRUE(
       std::string(message).starts_with("TestError: this is a test error"));
-  noix_allocator_free(allocator, message);
-  noix_delete_allocator(allocator);
+  neo_allocator_free(allocator, message);
+  neo_delete_allocator(allocator);
 }

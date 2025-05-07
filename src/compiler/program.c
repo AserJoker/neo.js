@@ -6,48 +6,46 @@
 #include "core/error.h"
 #include <stdio.h>
 
-static void noix_program_node_dispose(noix_allocator_t allocator,
-                                      noix_ast_program_node_t program) {
+static void neo_program_node_dispose(neo_allocator_t allocator,
+                                     neo_ast_program_node_t program) {
   if (program->interpreter) {
-    noix_allocator_free(allocator, program->interpreter);
+    neo_allocator_free(allocator, program->interpreter);
   }
-  noix_allocator_free(allocator, program->directives);
-  noix_allocator_free(allocator, program->body);
+  neo_allocator_free(allocator, program->directives);
+  neo_allocator_free(allocator, program->body);
 }
 
-static noix_ast_program_node_t
-noix_create_program_node(noix_allocator_t allocator) {
-  noix_ast_program_node_t node = (noix_ast_program_node_t)noix_allocator_alloc(
-      allocator, sizeof(struct _noix_ast_program_node_t),
-      noix_program_node_dispose);
-  node->node.type = NOIX_NODE_TYPE_PROGRAM;
+static neo_ast_program_node_t
+neo_create_program_node(neo_allocator_t allocator) {
+  neo_ast_program_node_t node = (neo_ast_program_node_t)neo_allocator_alloc(
+      allocator, sizeof(struct _neo_ast_program_node_t),
+      neo_program_node_dispose);
+  node->node.type = NEO_NODE_TYPE_PROGRAM;
   node->interpreter = NULL;
-  noix_list_initialize_t initialize = {};
+  neo_list_initialize_t initialize = {};
   initialize.auto_free = true;
-  node->directives = noix_create_list(allocator, &initialize);
-  node->body = noix_create_list(allocator, &initialize);
+  node->directives = neo_create_list(allocator, &initialize);
+  node->body = neo_create_list(allocator, &initialize);
   return node;
 }
 
-noix_ast_node_t noix_ast_read_program(noix_allocator_t allocator,
-                                      const char *file,
-                                      noix_position_t *position) {
-  noix_position_t current = *position;
-  noix_ast_program_node_t node = noix_create_program_node(allocator);
-  node->interpreter =
-      TRY(noix_ast_read_interpreter(allocator, file, &current)) {
+neo_ast_node_t neo_ast_read_program(neo_allocator_t allocator, const char *file,
+                                    neo_position_t *position) {
+  neo_position_t current = *position;
+  neo_ast_program_node_t node = neo_create_program_node(allocator);
+  node->interpreter = TRY(neo_ast_read_interpreter(allocator, file, &current)) {
     goto onerror;
   }
   SKIP_ALL();
   for (;;) {
-    noix_ast_node_t directive =
-        TRY(noix_ast_read_literal_string(allocator, file, &current)) {
+    neo_ast_node_t directive =
+        TRY(neo_ast_read_literal_string(allocator, file, &current)) {
       goto onerror;
     };
     if (!directive) {
       break;
     }
-    noix_list_push(node->directives, directive);
+    neo_list_push(node->directives, directive);
     int32_t line = current.line;
     SKIP_ALL();
     if (current.line == line) {
@@ -66,14 +64,14 @@ noix_ast_node_t noix_ast_read_program(noix_allocator_t allocator,
   }
   SKIP_ALL();
   for (;;) {
-    noix_ast_node_t statement =
-        TRY(noix_ast_read_statement(allocator, file, &current)) {
+    neo_ast_node_t statement =
+        TRY(neo_ast_read_statement(allocator, file, &current)) {
       goto onerror;
     }
     if (!statement) {
       break;
     }
-    noix_list_push(node->body, statement);
+    neo_list_push(node->body, statement);
     SKIP_ALL();
   }
   node->node.location.end = *position;
@@ -83,7 +81,7 @@ noix_ast_node_t noix_ast_read_program(noix_allocator_t allocator,
   return &node->node;
 onerror:
   if (node) {
-    noix_allocator_free(allocator, node);
+    neo_allocator_free(allocator, node);
   }
   return NULL;
 }

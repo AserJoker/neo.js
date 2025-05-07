@@ -1,51 +1,51 @@
-#ifndef _H_NOIX_CORE_LIST_
-#define _H_NOIX_CORE_LIST_
+#ifndef _H_NEO_CORE_LIST_
+#define _H_NEO_CORE_LIST_
 #ifdef __cplusplus
 extern "C" {
 #endif
 #include "core/allocator.h"
 #include <stdbool.h>
-typedef struct _noix_list_t *noix_list_t;
+typedef struct _neo_list_t *neo_list_t;
 
-typedef struct _noix_list_node_t *noix_list_node_t;
+typedef struct _neo_list_node_t *neo_list_node_t;
 
-typedef struct _noix_list_initialize_t {
+typedef struct _neo_list_initialize_t {
   bool auto_free;
-} noix_list_initialize_t;
+} neo_list_initialize_t;
 
-noix_list_t noix_create_list(noix_allocator_t allocator,
-                             noix_list_initialize_t *initialize);
+neo_list_t neo_create_list(neo_allocator_t allocator,
+                           neo_list_initialize_t *initialize);
 
-void *noix_list_at(noix_list_t self, size_t idx);
+void *neo_list_at(neo_list_t self, size_t idx);
 
-noix_list_node_t noix_list_get_head(noix_list_t self);
+neo_list_node_t neo_list_get_head(neo_list_t self);
 
-noix_list_node_t noix_list_get_tail(noix_list_t self);
+neo_list_node_t neo_list_get_tail(neo_list_t self);
 
-noix_list_node_t noix_list_get_first(noix_list_t self);
+neo_list_node_t neo_list_get_first(neo_list_t self);
 
-noix_list_node_t noix_list_get_last(noix_list_t self);
+neo_list_node_t neo_list_get_last(neo_list_t self);
 
-size_t noix_list_get_size(noix_list_t self);
+size_t neo_list_get_size(neo_list_t self);
 
-noix_list_node_t noix_list_insert(noix_list_t self, noix_list_node_t position,
-                                  void *data);
+neo_list_node_t neo_list_insert(neo_list_t self, neo_list_node_t position,
+                                void *data);
 
-noix_list_node_t noix_list_push(noix_list_t self, void *data);
+neo_list_node_t neo_list_push(neo_list_t self, void *data);
 
-void noix_list_pop(noix_list_t self);
+void neo_list_pop(neo_list_t self);
 
-noix_list_node_t noix_list_unshift(noix_list_t self, void *data);
+neo_list_node_t neo_list_unshift(neo_list_t self, void *data);
 
-void noix_list_shift(noix_list_t self);
+void neo_list_shift(neo_list_t self);
 
-noix_list_node_t noix_list_erase(noix_list_t self, noix_list_node_t position);
+neo_list_node_t neo_list_erase(neo_list_t self, neo_list_node_t position);
 
-noix_list_node_t noix_list_node_next(noix_list_node_t self);
+neo_list_node_t neo_list_node_next(neo_list_node_t self);
 
-noix_list_node_t noix_list_node_last(noix_list_node_t self);
+neo_list_node_t neo_list_node_last(neo_list_node_t self);
 
-void *noix_list_node_get(noix_list_node_t self);
+void *neo_list_node_get(neo_list_node_t self);
 
 #ifdef __cplusplus
 };

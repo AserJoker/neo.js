@@ -1,15 +1,16 @@
-#ifndef _H_NOIX_COMPILER_STATEMENT_EMPTY_
-#define _H_NOIX_COMPILER_STATEMENT_EMPTY_
+#ifndef _H_NEO_COMPILER_STATEMENT_EMPTY_
+#define _H_NEO_COMPILER_STATEMENT_EMPTY_
 #include "compiler/node.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
-typedef struct _noix_ast_statement_empty_t {
-  struct _noix_ast_node_t node;
-} *noix_ast_statement_empty_t;
-noix_ast_node_t noix_ast_read_statement_empty(noix_allocator_t allocator,
-                                              const char *file,
-                                              noix_position_t *position);
+typedef struct _neo_ast_statement_empty_t {
+  struct _neo_ast_node_t node;
+} *neo_ast_statement_empty_t;
+
+neo_ast_node_t neo_ast_read_statement_empty(neo_allocator_t allocator,
+                                            const char *file,
+                                            neo_position_t *position);
 #ifdef __cplusplus
 }
 #endif

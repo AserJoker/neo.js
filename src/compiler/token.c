@@ -13,8 +13,8 @@
 
 #define IS_DEC(ch) ((ch) >= '0' && (ch) <= '9')
 
-static int32_t noix_read_hex(const char *file, noix_position_t *position) {
-  noix_position_t current = *position;
+static int32_t neo_read_hex(const char *file, neo_position_t *position) {
+  neo_position_t current = *position;
   if (IS_HEX(*current.offset)) {
     while (IS_HEX(*current.offset)) {
       current.offset++;
@@ -28,8 +28,8 @@ static int32_t noix_read_hex(const char *file, noix_position_t *position) {
   return size;
 }
 
-static int32_t noix_read_oct(const char *file, noix_position_t *position) {
-  noix_position_t current = *position;
+static int32_t neo_read_oct(const char *file, neo_position_t *position) {
+  neo_position_t current = *position;
   if (IS_OCT(*current.offset)) {
     while (IS_OCT(*current.offset)) {
       current.offset++;
@@ -43,8 +43,8 @@ static int32_t noix_read_oct(const char *file, noix_position_t *position) {
   return size;
 }
 
-static int32_t noix_read_dec(const char *file, noix_position_t *position) {
-  noix_position_t current = *position;
+static int32_t neo_read_dec(const char *file, neo_position_t *position) {
+  neo_position_t current = *position;
   if (IS_DEC(*current.offset)) {
     while (IS_DEC(*current.offset)) {
       current.offset++;
@@ -58,8 +58,8 @@ static int32_t noix_read_dec(const char *file, noix_position_t *position) {
   return size;
 }
 
-static int32_t noix_read_escape(const char *file, noix_position_t *position) {
-  noix_position_t current = *position;
+static int32_t neo_read_escape(const char *file, neo_position_t *position) {
+  neo_position_t current = *position;
   if (*current.offset == '\\') {
     current.offset++;
     current.column++;
@@ -69,7 +69,7 @@ static int32_t noix_read_escape(const char *file, noix_position_t *position) {
       if (*current.offset == '{') {
         current.offset++;
         current.column++;
-        noix_read_hex(file, &current);
+        neo_read_hex(file, &current);
         if (*current.offset != '}') {
           THROW("SyntaxError",
                 "Invalid hexadecimal escape sequence \n  at %s:%d:%d", file,
@@ -116,25 +116,24 @@ static int32_t noix_read_escape(const char *file, noix_position_t *position) {
   return size;
 }
 
-noix_token_t noix_read_string_token(noix_allocator_t allocator,
-                                    const char *file,
-                                    noix_position_t *position) {
-  noix_position_t current = *position;
+neo_token_t neo_read_string_token(neo_allocator_t allocator, const char *file,
+                                  neo_position_t *position) {
+  neo_position_t current = *position;
   if (*current.offset != '\'' && *current.offset != '\"') {
     return NULL;
   }
   current.column++;
   current.offset++;
   while (true) {
-    noix_utf8_char chr = noix_utf8_read_char(current.offset);
+    neo_utf8_char chr = neo_utf8_read_char(current.offset);
     if (*chr.begin == 0xa || *chr.begin == 0xd || *chr.begin == '\0' ||
-        noix_utf8_char_is(chr, "\u2028") || noix_utf8_char_is(chr, "\u2029")) {
+        neo_utf8_char_is(chr, "\u2028") || neo_utf8_char_is(chr, "\u2029")) {
       THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
             current.line, current.column);
       return NULL;
     }
-    if (noix_utf8_char_is(chr, "\\")) {
-      noix_read_escape(file, &current);
+    if (neo_utf8_char_is(chr, "\\")) {
+      neo_read_escape(file, &current);
       CHECK_AND_THROW({ return NULL; })
       continue;
     }
@@ -146,27 +145,26 @@ noix_token_t noix_read_string_token(noix_allocator_t allocator,
     current.offset = chr.end;
     current.column += chr.end - chr.begin;
   }
-  noix_token_t token = (noix_token_t)noix_allocator_alloc(
-      allocator, sizeof(struct _noix_token_t), NULL);
-  token->type = NOIX_TOKEN_TYPE_STRING;
+  neo_token_t token = (neo_token_t)neo_allocator_alloc(
+      allocator, sizeof(struct _neo_token_t), NULL);
+  token->type = NEO_TOKEN_TYPE_STRING;
   token->position.begin = *position;
   token->position.end = current;
   token->position.file = file;
-  token->type = NOIX_TOKEN_TYPE_STRING;
+  token->type = NEO_TOKEN_TYPE_STRING;
   *position = current;
   return token;
 }
 
-noix_token_t noix_read_number_token(noix_allocator_t allocator,
-                                    const char *file,
-                                    noix_position_t *position) {
-  noix_position_t current = *position;
+neo_token_t neo_read_number_token(neo_allocator_t allocator, const char *file,
+                                  neo_position_t *position) {
+  neo_position_t current = *position;
   if (*current.offset == '0' &&
       (*(current.offset + 1) == 'x' || *(current.offset + 1) == 'X')) {
     current.offset += 2;
     current.column += 2;
     if (IS_HEX(*current.offset)) {
-      noix_read_hex(file, &current);
+      neo_read_hex(file, &current);
     } else {
       THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
             current.line, current.column);
@@ -177,7 +175,7 @@ noix_token_t noix_read_number_token(noix_allocator_t allocator,
     current.offset += 2;
     current.column += 2;
     if (IS_OCT(*current.offset)) {
-      noix_read_oct(file, &current);
+      neo_read_oct(file, &current);
     } else {
       THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
             current.line, current.column);
@@ -187,15 +185,15 @@ noix_token_t noix_read_number_token(noix_allocator_t allocator,
     if (*current.offset == '.' && IS_DEC(*(current.offset + 1))) {
       current.offset += 2;
       current.column += 2;
-      noix_read_dec(file, &current);
+      neo_read_dec(file, &current);
     } else if (IS_DEC(*current.offset)) {
       current.offset += 1;
       current.column += 1;
-      noix_read_dec(file, &current);
+      neo_read_dec(file, &current);
       if (*current.offset == '.') {
         current.offset += 1;
         current.column += 1;
-        noix_read_dec(file, &current);
+        neo_read_dec(file, &current);
       }
     } else {
       return NULL;
@@ -208,7 +206,7 @@ noix_token_t noix_read_number_token(noix_allocator_t allocator,
         current.column++;
       }
       if (IS_DEC(*current.offset)) {
-        noix_read_dec(file, &current);
+        neo_read_dec(file, &current);
       } else {
         THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
               file, current.line, current.column);
@@ -217,19 +215,18 @@ noix_token_t noix_read_number_token(noix_allocator_t allocator,
     }
   }
 
-  noix_token_t token = (noix_token_t)noix_allocator_alloc(
-      allocator, sizeof(struct _noix_token_t), NULL);
+  neo_token_t token = (neo_token_t)neo_allocator_alloc(
+      allocator, sizeof(struct _neo_token_t), NULL);
   token->position.begin = *position;
   token->position.end = current;
   token->position.file = file;
-  token->type = NOIX_TOKEN_TYPE_NUMBER;
+  token->type = NEO_TOKEN_TYPE_NUMBER;
   *position = current;
   return token;
 }
 
-noix_token_t noix_read_symbol_token(noix_allocator_t allocator,
-                                    const char *file,
-                                    noix_position_t *position) {
+neo_token_t neo_read_symbol_token(neo_allocator_t allocator, const char *file,
+                                  neo_position_t *position) {
   static const char *operators[] = {
       ">>>=", "...", "<<=", ">>>", "===", "!==", "**=", ">>=", "&&=", R"(??=)",
       "**",   "==",  "!=",  "<<",  ">>",  "<=",  ">=",  "&&",  "||",  "??",
@@ -238,7 +235,7 @@ noix_token_t noix_read_symbol_token(noix_allocator_t allocator,
       ">",    "&",   "^",   "|",   ",",   "!",   "~",   "(",   ")",   "[",
       "]",    "{",   "}",   "@",   "#",   ".",   "?",   ":",   ";",   0,
   };
-  noix_position_t current = *position;
+  neo_position_t current = *position;
   int32_t idx = 0;
   const char *pstr = NULL;
   for (; operators[idx] != 0; idx++) {
@@ -260,29 +257,27 @@ noix_token_t noix_read_symbol_token(noix_allocator_t allocator,
   }
   current.column += pstr - current.offset;
   current.offset = pstr;
-  noix_token_t token = (noix_token_t)noix_allocator_alloc(
-      allocator, sizeof(struct _noix_token_t), NULL);
+  neo_token_t token = (neo_token_t)neo_allocator_alloc(
+      allocator, sizeof(struct _neo_token_t), NULL);
   token->position.begin = *position;
   token->position.end = current;
   token->position.file = file;
-  token->type = NOIX_TOKEN_TYPE_SYMBOL;
+  token->type = NEO_TOKEN_TYPE_SYMBOL;
   *position = current;
   return token;
 }
 
-noix_token_t noix_read_regexp_token(noix_allocator_t allocator,
-                                    const char *file,
-                                    noix_position_t *position) {
-  noix_position_t current = *position;
+neo_token_t neo_read_regexp_token(neo_allocator_t allocator, const char *file,
+                                  neo_position_t *position) {
+  neo_position_t current = *position;
   if (*current.offset == '/' && *(current.offset + 1) != '/') {
     current.offset++;
     current.column++;
     int32_t level = 0;
     while (true) {
-      noix_utf8_char chr = noix_utf8_read_char(current.offset);
+      neo_utf8_char chr = neo_utf8_read_char(current.offset);
       if (*chr.begin == 0xa || *chr.begin == 0xd || *chr.begin == '\0' ||
-          noix_utf8_char_is(chr, "\u2028") ||
-          noix_utf8_char_is(chr, "\u2029")) {
+          neo_utf8_char_is(chr, "\u2028") || neo_utf8_char_is(chr, "\u2029")) {
         THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
               file, current.line, current.column);
         return NULL;
@@ -292,8 +287,8 @@ noix_token_t noix_read_regexp_token(noix_allocator_t allocator,
         current.column++;
         break;
       }
-      if (noix_utf8_char_is(chr, "\\")) {
-        noix_read_escape(file, &current);
+      if (neo_utf8_char_is(chr, "\\")) {
+        neo_read_escape(file, &current);
         CHECK_AND_THROW({ return NULL; });
         continue;
       }
@@ -321,29 +316,28 @@ noix_token_t noix_read_regexp_token(noix_allocator_t allocator,
   } else {
     return NULL;
   }
-  noix_token_t token = (noix_token_t)noix_allocator_alloc(
-      allocator, sizeof(struct _noix_token_t), NULL);
+  neo_token_t token = (neo_token_t)neo_allocator_alloc(
+      allocator, sizeof(struct _neo_token_t), NULL);
   token->position.begin = *position;
   token->position.end = current;
   token->position.file = file;
-  token->type = NOIX_TOKEN_TYPE_REGEXP;
+  token->type = NEO_TOKEN_TYPE_REGEXP;
   *position = current;
   return token;
 }
 
-noix_token_t noix_read_identify_token(noix_allocator_t allocator,
-                                      const char *file,
-                                      noix_position_t *position) {
+neo_token_t neo_read_identify_token(neo_allocator_t allocator, const char *file,
+                                    neo_position_t *position) {
 
-  noix_position_t current = *position;
+  neo_position_t current = *position;
   if (*current.offset == '#') {
     current.offset++;
     current.column++;
   }
-  noix_utf8_char chr = noix_utf8_read_char(current.offset);
+  neo_utf8_char chr = neo_utf8_read_char(current.offset);
   if (*current.offset == '\\' && *(current.offset + 1) == 'u') {
     const char *start = current.offset + 2;
-    noix_read_escape(file, &current);
+    neo_read_escape(file, &current);
     CHECK_AND_THROW({ return NULL; });
     int32_t utf32 = 0;
     if (*start == '{') {
@@ -382,8 +376,8 @@ noix_token_t noix_read_identify_token(noix_allocator_t allocator,
       return NULL;
     }
   }
-  if (!noix_utf8_char_is_id_start(chr) && !noix_utf8_char_is(chr, "$") &&
-      !noix_utf8_char_is(chr, "_")) {
+  if (!neo_utf8_char_is_id_start(chr) && !neo_utf8_char_is(chr, "$") &&
+      !neo_utf8_char_is(chr, "_")) {
     if (*position->offset == '#') {
       THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
             current.line, current.column);
@@ -392,11 +386,11 @@ noix_token_t noix_read_identify_token(noix_allocator_t allocator,
   }
   current.column += chr.end - chr.begin;
   current.offset = chr.end;
-  chr = noix_utf8_read_char(current.offset);
+  chr = neo_utf8_read_char(current.offset);
   while (true) {
     if (*current.offset == '\\' && *(current.offset + 1) == 'u') {
       const char *start = current.offset + 2;
-      noix_read_escape(file, &current);
+      neo_read_escape(file, &current);
       CHECK_AND_THROW({ return NULL; });
       int32_t utf32 = 0;
       if (*start == '{') {
@@ -434,40 +428,38 @@ noix_token_t noix_read_identify_token(noix_allocator_t allocator,
               file, current.line, current.column);
         return NULL;
       }
-    } else if (noix_utf8_char_is_id_continue(chr) ||
-               noix_utf8_char_is(chr, "$") || noix_utf8_char_is(chr, "_")) {
+    } else if (neo_utf8_char_is_id_continue(chr) ||
+               neo_utf8_char_is(chr, "$") || neo_utf8_char_is(chr, "_")) {
       current.column += chr.end - chr.begin;
       current.offset = chr.end;
     } else {
       break;
     }
-    chr = noix_utf8_read_char(current.offset);
+    chr = neo_utf8_read_char(current.offset);
   }
-  noix_token_t token = (noix_token_t)noix_allocator_alloc(
-      allocator, sizeof(struct _noix_token_t), NULL);
+  neo_token_t token = (neo_token_t)neo_allocator_alloc(
+      allocator, sizeof(struct _neo_token_t), NULL);
   token->position.begin = *position;
   token->position.end = current;
   token->position.file = file;
-  token->type = NOIX_TOKEN_TYPE_IDENTIFY;
+  token->type = NEO_TOKEN_TYPE_IDENTIFY;
   if (*position->offset == '#') {
-    token->type = NOIX_TOKEN_TYPE_PRIVATE_IDENTIFY;
+    token->type = NEO_TOKEN_TYPE_PRIVATE_IDENTIFY;
   }
   *position = current;
   return token;
 }
 
-noix_token_t noix_read_comment_token(noix_allocator_t allocator,
-                                     const char *file,
-                                     noix_position_t *position) {
-  noix_position_t current = *position;
+neo_token_t neo_read_comment_token(neo_allocator_t allocator, const char *file,
+                                   neo_position_t *position) {
+  neo_position_t current = *position;
   if (*current.offset == '/' && *(current.offset + 1) == '/') {
     current.offset += 2;
     current.column += 2;
     while (true) {
-      noix_utf8_char chr = noix_utf8_read_char(current.offset);
+      neo_utf8_char chr = neo_utf8_read_char(current.offset);
       if (*chr.begin == 0xa || *chr.begin == 0xd || *chr.begin == '\0' ||
-          noix_utf8_char_is(chr, "\u2028") ||
-          noix_utf8_char_is(chr, "\u2029")) {
+          neo_utf8_char_is(chr, "\u2028") || neo_utf8_char_is(chr, "\u2029")) {
         break;
       } else {
         current.column += chr.end - chr.begin;
@@ -477,20 +469,20 @@ noix_token_t noix_read_comment_token(noix_allocator_t allocator,
   } else {
     return NULL;
   }
-  noix_token_t token = (noix_token_t)noix_allocator_alloc(
-      allocator, sizeof(struct _noix_token_t), NULL);
+  neo_token_t token = (neo_token_t)neo_allocator_alloc(
+      allocator, sizeof(struct _neo_token_t), NULL);
   token->position.begin = *position;
   token->position.end = current;
   token->position.file = file;
-  token->type = NOIX_TOKEN_TYPE_COMMENT;
+  token->type = NEO_TOKEN_TYPE_COMMENT;
   *position = current;
   return token;
 }
 
-noix_token_t noix_read_multiline_comment_token(noix_allocator_t allocator,
-                                               const char *file,
-                                               noix_position_t *position) {
-  noix_position_t current = *position;
+neo_token_t neo_read_multiline_comment_token(neo_allocator_t allocator,
+                                             const char *file,
+                                             neo_position_t *position) {
+  neo_position_t current = *position;
   if (*current.offset == '/' && *(current.offset + 1) == '*') {
     current.offset += 2;
     current.column += 2;
@@ -505,10 +497,9 @@ noix_token_t noix_read_multiline_comment_token(noix_allocator_t allocator,
         current.column += 2;
         break;
       }
-      noix_utf8_char chr = noix_utf8_read_char(current.offset);
+      neo_utf8_char chr = neo_utf8_read_char(current.offset);
       if (*chr.begin == 0xa || *chr.begin == 0xd ||
-          noix_utf8_char_is(chr, "\u2028") ||
-          noix_utf8_char_is(chr, "\u2029")) {
+          neo_utf8_char_is(chr, "\u2028") || neo_utf8_char_is(chr, "\u2029")) {
         current.line++;
         current.column = 1;
         current.offset = chr.end;
@@ -520,20 +511,20 @@ noix_token_t noix_read_multiline_comment_token(noix_allocator_t allocator,
   } else {
     return NULL;
   }
-  noix_token_t token = (noix_token_t)noix_allocator_alloc(
-      allocator, sizeof(struct _noix_token_t), NULL);
+  neo_token_t token = (neo_token_t)neo_allocator_alloc(
+      allocator, sizeof(struct _neo_token_t), NULL);
   token->position.begin = *position;
   token->position.end = current;
   token->position.file = file;
-  token->type = NOIX_TOKEN_TYPE_MULTILINE_COMMENT;
+  token->type = NEO_TOKEN_TYPE_MULTILINE_COMMENT;
   *position = current;
   return token;
 }
 
-noix_token_t noix_read_template_string_token(noix_allocator_t allocator,
-                                             const char *file,
-                                             noix_position_t *position) {
-  noix_position_t current = *position;
+neo_token_t neo_read_template_string_token(neo_allocator_t allocator,
+                                           const char *file,
+                                           neo_position_t *position) {
+  neo_position_t current = *position;
   if (*current.offset == '`' || *current.offset == '}') {
     current.offset++;
     current.column++;
@@ -553,16 +544,15 @@ noix_token_t noix_read_template_string_token(noix_allocator_t allocator,
         current.offset++;
         break;
       }
-      noix_utf8_char chr = noix_utf8_read_char(current.offset);
+      neo_utf8_char chr = neo_utf8_read_char(current.offset);
       if (*chr.begin == 0xa || *chr.begin == 0xd ||
-          noix_utf8_char_is(chr, "\u2028") ||
-          noix_utf8_char_is(chr, "\u2029")) {
+          neo_utf8_char_is(chr, "\u2028") || neo_utf8_char_is(chr, "\u2029")) {
         current.line++;
         current.column = 1;
         current.offset = chr.end;
         continue;
-      } else if (noix_utf8_char_is(chr, "\\")) {
-        noix_read_escape(file, &current);
+      } else if (neo_utf8_char_is(chr, "\\")) {
+        neo_read_escape(file, &current);
         CHECK_AND_THROW({ return NULL; })
         continue;
       }
@@ -572,23 +562,23 @@ noix_token_t noix_read_template_string_token(noix_allocator_t allocator,
   } else {
     return NULL;
   }
-  noix_token_t token = (noix_token_t)noix_allocator_alloc(
-      allocator, sizeof(struct _noix_token_t), NULL);
+  neo_token_t token = (neo_token_t)neo_allocator_alloc(
+      allocator, sizeof(struct _neo_token_t), NULL);
   token->position.begin = *position;
   token->position.end = current;
   token->position.file = file;
-  token->type = NOIX_TOKEN_TYPE_TEMPLATE_STRING;
+  token->type = NEO_TOKEN_TYPE_TEMPLATE_STRING;
   if (*position->offset == '}') {
     if (*(current.offset - 1) == '`') {
-      token->type = NOIX_TOKEN_TYPE_TEMPLATE_STRING_END;
+      token->type = NEO_TOKEN_TYPE_TEMPLATE_STRING_END;
     } else {
-      token->type = NOIX_TOKEN_TYPE_TEMPLATE_STRING_PART;
+      token->type = NEO_TOKEN_TYPE_TEMPLATE_STRING_PART;
     }
   } else {
     if (*(current.offset - 1) == '`') {
-      token->type = NOIX_TOKEN_TYPE_TEMPLATE_STRING;
+      token->type = NEO_TOKEN_TYPE_TEMPLATE_STRING;
     } else {
-      token->type = NOIX_TOKEN_TYPE_TEMPLATE_STRING_START;
+      token->type = NEO_TOKEN_TYPE_TEMPLATE_STRING_START;
     }
   }
   *position = current;

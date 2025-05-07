@@ -1,35 +1,35 @@
-#ifndef _H_NOIX_CORE_ALLOCATOR_
-#define _H_NOIX_CORE_ALLOCATOR_
+#ifndef _H_NEO_CORE_ALLOCATOR_
+#define _H_NEO_CORE_ALLOCATOR_
 #ifdef __cplusplus
 extern "C" {
 #endif
 #include "common.h"
 #include <stddef.h>
-typedef struct _noix_allocator_t *noix_allocator_t;
+typedef struct _neo_allocator_t *neo_allocator_t;
 
-typedef void (*noix_destructor_fn_t)(noix_allocator_t allocator, void *pobject);
-typedef struct _noix_allocator_initialize_t {
-  noix_alloc_fn_t alloc;
-  noix_free_fn_t free;
-} noix_allocator_initialize_t;
+typedef void (*neo_destructor_fn_t)(neo_allocator_t allocator, void *pobject);
+typedef struct _neo_allocator_initialize_t {
+  neo_alloc_fn_t alloc;
+  neo_free_fn_t free;
+} neo_allocator_initialize_t;
 
-noix_allocator_t noix_create_allocator(noix_allocator_initialize_t *initialize);
+neo_allocator_t neo_create_allocator(neo_allocator_initialize_t *initialize);
 
-void noix_delete_allocator(noix_allocator_t allocator);
+void neo_delete_allocator(neo_allocator_t allocator);
 
-static inline noix_allocator_t noix_create_default_allocator() {
-  return noix_create_allocator(NULL);
+static inline neo_allocator_t neo_create_default_allocator() {
+  return neo_create_allocator(NULL);
 }
 
-void *noix_allocator_alloc_ex(noix_allocator_t self, size_t size,
-                              noix_destructor_fn_t destructor_fn,
-                              const char *file, size_t line);
+void *neo_allocator_alloc_ex(neo_allocator_t self, size_t size,
+                             neo_destructor_fn_t destructor_fn,
+                             const char *file, size_t line);
 
-#define noix_allocator_alloc(self, size, destructor)                           \
-  noix_allocator_alloc_ex(self, size, (noix_destructor_fn_t)destructor,        \
-                          __FILE__, __LINE__)
+#define neo_allocator_alloc(self, size, destructor)                            \
+  neo_allocator_alloc_ex(self, size, (neo_destructor_fn_t)destructor,          \
+                         __FILE__, __LINE__)
 
-void noix_allocator_free(noix_allocator_t self, void *ptr);
+void neo_allocator_free(neo_allocator_t self, void *ptr);
 #ifdef __cplusplus
 };
 #endif
