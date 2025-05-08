@@ -42,7 +42,7 @@ TEST_F(TEST_token, read_string_token_base) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_STRING);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       str);
   neo_allocator_free(_allocator, token);
 }
@@ -58,7 +58,7 @@ TEST_F(TEST_token, read_string_token_re) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_STRING);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       str);
   neo_allocator_free(_allocator, token);
 }
@@ -74,7 +74,7 @@ TEST_F(TEST_token, read_string_token_end) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_STRING);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       "'hello world'");
   neo_allocator_free(_allocator, token);
 }
@@ -141,7 +141,7 @@ TEST_F(TEST_token, read_string_token_with_hex) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_STRING);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       str);
   neo_allocator_free(_allocator, token);
 }
@@ -157,7 +157,7 @@ TEST_F(TEST_token, read_string_token_with_unicode) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_STRING);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       str);
   neo_allocator_free(_allocator, token);
 }
@@ -173,7 +173,7 @@ TEST_F(TEST_token, read_string_token_with_unicode_ex) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_STRING);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       str);
   neo_allocator_free(_allocator, token);
 }
@@ -189,7 +189,7 @@ TEST_F(TEST_token, read_number_token_base) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_NUMBER);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       source);
   neo_allocator_free(_allocator, token);
 }
@@ -205,7 +205,7 @@ TEST_F(TEST_token, read_number_token_oct) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_NUMBER);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       source);
   neo_allocator_free(_allocator, token);
 }
@@ -221,7 +221,7 @@ TEST_F(TEST_token, read_number_token_oct2) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_NUMBER);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       source);
   neo_allocator_free(_allocator, token);
 }
@@ -269,7 +269,7 @@ TEST_F(TEST_token, read_number_token_float) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_NUMBER);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       source);
   neo_allocator_free(_allocator, token);
 }
@@ -285,7 +285,7 @@ TEST_F(TEST_token, read_number_token_float2) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_NUMBER);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       source);
   neo_allocator_free(_allocator, token);
 }
@@ -301,7 +301,7 @@ TEST_F(TEST_token, read_number_token_float3) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_NUMBER);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       source);
   neo_allocator_free(_allocator, token);
 }
@@ -317,7 +317,7 @@ TEST_F(TEST_token, read_number_token_exp) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_NUMBER);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       source);
   neo_allocator_free(_allocator, token);
 }
@@ -333,7 +333,7 @@ TEST_F(TEST_token, read_number_token_exp2) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_NUMBER);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       source);
   neo_allocator_free(_allocator, token);
 }
@@ -349,7 +349,7 @@ TEST_F(TEST_token, read_number_token_exp3) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_NUMBER);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       source);
   neo_allocator_free(_allocator, token);
 }
@@ -365,7 +365,7 @@ TEST_F(TEST_token, read_symbol_token_base) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_SYMBOL);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       "+");
   neo_allocator_free(_allocator, token);
 }
@@ -381,7 +381,7 @@ TEST_F(TEST_token, read_symbol_token_greedy) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_SYMBOL);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       "++");
   neo_allocator_free(_allocator, token);
 }
@@ -397,7 +397,7 @@ TEST_F(TEST_token, read_regexp_token_base) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_REGEXP);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       source);
   neo_allocator_free(_allocator, token);
 }
@@ -413,7 +413,7 @@ TEST_F(TEST_token, read_regexp_token_re) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_REGEXP);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       source);
   neo_allocator_free(_allocator, token);
 }
@@ -429,7 +429,7 @@ TEST_F(TEST_token, read_regexp_token_re2) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_REGEXP);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       source);
   neo_allocator_free(_allocator, token);
 }
@@ -445,7 +445,7 @@ TEST_F(TEST_token, read_identify_base) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_IDENTIFY);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       "$test");
   neo_allocator_free(_allocator, token);
 }
@@ -461,7 +461,7 @@ TEST_F(TEST_token, read_identify_unicode) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_IDENTIFY);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       "t\\u{aa}est");
   neo_allocator_free(_allocator, token);
 }
@@ -477,7 +477,7 @@ TEST_F(TEST_token, read_identify_unicode2) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_IDENTIFY);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       "t\\u00aaest");
   neo_allocator_free(_allocator, token);
 }
@@ -493,7 +493,7 @@ TEST_F(TEST_token, read_identify_unicode3) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_IDENTIFY);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       "tªest");
   neo_allocator_free(_allocator, token);
 }
@@ -509,7 +509,7 @@ TEST_F(TEST_token, read_comment_base) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_COMMENT);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       "//comment");
   neo_allocator_free(_allocator, token);
 }
@@ -525,7 +525,7 @@ TEST_F(TEST_token, read_comment_base2) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_COMMENT);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       "//comment");
   neo_allocator_free(_allocator, token);
 }
@@ -542,7 +542,7 @@ TEST_F(TEST_token, read_multiline_comment_base) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_MULTILINE_COMMENT);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       "/*aaaaaaaaaa*/");
   neo_allocator_free(_allocator, token);
 }
@@ -559,7 +559,7 @@ TEST_F(TEST_token, read_multiline_comment_base2) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_MULTILINE_COMMENT);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       "/*abc\ndef*/");
   neo_allocator_free(_allocator, token);
 }
@@ -576,7 +576,7 @@ TEST_F(TEST_token, read_template_string_base) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_TEMPLATE_STRING);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       "`ab\nc`");
   neo_allocator_free(_allocator, token);
 }
@@ -593,7 +593,7 @@ TEST_F(TEST_token, read_template_string_base2) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_TEMPLATE_STRING);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       "`ab\n\\tc`");
   neo_allocator_free(_allocator, token);
 }
@@ -610,7 +610,7 @@ TEST_F(TEST_token, read_template_string_start) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_TEMPLATE_STRING_START);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       "`abc${");
   neo_allocator_free(_allocator, token);
 }
@@ -627,7 +627,7 @@ TEST_F(TEST_token, read_template_string_start2) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_TEMPLATE_STRING);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       "`abc\\${def}`");
   neo_allocator_free(_allocator, token);
 }
@@ -644,7 +644,7 @@ TEST_F(TEST_token, read_template_string_part) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_TEMPLATE_STRING_PART);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       "}test\\${${");
   neo_allocator_free(_allocator, token);
 }
@@ -661,7 +661,7 @@ TEST_F(TEST_token, read_template_string_end) {
   ASSERT_TRUE(token != NULL);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_TEMPLATE_STRING_END);
   ASSERT_EQ(
-      std::string(token->position.begin.offset, token->position.end.offset),
+      std::string(token->location.begin.offset, token->location.end.offset),
       "}\\`aaa`");
   neo_allocator_free(_allocator, token);
 }

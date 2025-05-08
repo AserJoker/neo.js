@@ -1,6 +1,7 @@
 #include "compiler/statement.h"
 #include "compiler/statement_block.h"
 #include "compiler/statement_empty.h"
+#include "compiler/statement_expression.h"
 #include "core/error.h"
 neo_ast_node_t neo_ast_read_statement(neo_allocator_t allocator,
                                       const char *file,
@@ -11,6 +12,11 @@ neo_ast_node_t neo_ast_read_statement(neo_allocator_t allocator,
   }
   if (!node) {
     node = TRY(neo_ast_read_statement_block(allocator, file, position)) {
+      goto onerror;
+    }
+  }
+  if (!node) {
+    node = TRY(neo_ast_read_statement_expression(allocator, file, position)) {
       goto onerror;
     }
   }

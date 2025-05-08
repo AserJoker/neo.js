@@ -34,7 +34,7 @@ neo_ast_node_t neo_ast_read_statement_block(neo_allocator_t allocator,
   neo_ast_statement_block_t node = neo_create_statement_block(allocator);
   current.offset++;
   current.column++;
-  SKIP_ALL();
+  SKIP_ALL(allocator, file, &current, onerror);
   while (true) {
     neo_ast_node_t statement =
         TRY(neo_ast_read_statement(allocator, file, &current)) {
@@ -44,9 +44,14 @@ neo_ast_node_t neo_ast_read_statement_block(neo_allocator_t allocator,
       break;
     }
     neo_list_push(node->body, statement);
-    SKIP_ALL();
+    SKIP_ALL(allocator, file, &current, onerror);
+    if (*current.offset == ';') {
+      current.offset++;
+      current.column++;
+      SKIP_ALL(allocator, file, &current, onerror);
+    }
   }
-  SKIP_ALL();
+  SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != '}') {
     THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
           current.line, current.column);

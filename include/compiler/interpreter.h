@@ -4,9 +4,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-typedef struct _neo_ast_interpreter_node_t {
+typedef struct _neo_ast_interpreter_t {
   struct _neo_ast_node_t node;
-} *neo_ast_interpreter_node_t;
+} *neo_ast_interpreter_t;
 
 neo_ast_node_t neo_ast_read_interpreter(neo_allocator_t allocator,
                                         const char *file,

@@ -5,9 +5,9 @@
 extern "C" {
 #endif
 
-typedef struct _neo_ast_literal_string_node_t {
+typedef struct _neo_ast_literal_string_t {
   struct _neo_ast_node_t node;
-} *neo_ast_literal_string_node_t;
+} *neo_ast_literal_string_t;
 
 neo_ast_node_t neo_ast_read_literal_string(neo_allocator_t allocator,
                                            const char *file,

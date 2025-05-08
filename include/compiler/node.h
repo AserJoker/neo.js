@@ -54,17 +54,13 @@ typedef enum _neo_ast_node_type_t {
   NEO_NODE_TYPE_EXPRESSION_THIS,
   NEO_NODE_TYPE_EXPRESSION_ARROW_FUNCTION,
   NEO_NODE_TYPE_EXPRESSION_YIELD,
-  NEO_NODE_TYPE_EXPRESSION_AWAIT,
   NEO_NODE_TYPE_EXPRESSION_ARRAY,
   NEO_NODE_TYPE_EXPRESSION_OBJECT,
   NEO_NODE_TYPE_EXPRESSION_RECORD,
   NEO_NODE_TYPE_EXPRESSION_TUPLE,
   NEO_NODE_TYPE_EXPRESSION_FUNCTION,
-  NEO_NODE_TYPE_EXPRESSION_UNARY,
-  NEO_NODE_TYPE_EXPRESSION_UPDATE,
   NEO_NODE_TYPE_EXPRESSION_BINARY,
   NEO_NODE_TYPE_EXPRESSION_ASSIGMENT,
-  NEO_NODE_TYPE_EXPRESSION_LOGICAL,
   NEO_NODE_TYPE_EXPRESSION_SPREAD,
   NEO_NODE_TYPE_EXPRESSION_MEMBER,
   NEO_NODE_TYPE_EXPRESSION_OPTIONAL_MEMBER,
@@ -74,7 +70,6 @@ typedef enum _neo_ast_node_type_t {
   NEO_NODE_TYPE_EXPRESSION_CALL,
   NEO_NODE_TYPE_EXPRESSION_OPTIONAL_CALL,
   NEO_NODE_TYPE_EXPRESSION_NEW,
-  NEO_NODE_TYPE_EXPRESSION_SEQUENCE,
   NEO_NODE_TYPE_EXPRESSION_GROUP,
   NEO_NODE_TYPE_PATTERN_OBJECT,
   NEO_NODE_TYPE_PATTERN_ARRAY,
@@ -105,15 +100,15 @@ bool neo_skip_line_terminator(neo_allocator_t allocator, const char *file,
 
 bool neo_skip_comment(neo_allocator_t allocator, const char *file,
                       neo_position_t *position);
-#define SKIP_ALL()                                                             \
+#define SKIP_ALL(allocator, file, position, onerror)                           \
   for (;;) {                                                                   \
-    if (neo_skip_white_space(allocator, file, &current)) {                     \
+    if (neo_skip_white_space(allocator, file, position)) {                     \
       continue;                                                                \
     }                                                                          \
-    if (neo_skip_line_terminator(allocator, file, &current)) {                 \
+    if (neo_skip_line_terminator(allocator, file, position)) {                 \
       continue;                                                                \
     }                                                                          \
-    TRY(if (neo_skip_comment(allocator, file, &current)) { continue; }) {      \
+    TRY(if (neo_skip_comment(allocator, file, position)) { continue; }) {      \
       goto onerror;                                                            \
     }                                                                          \
     break;                                                                     \

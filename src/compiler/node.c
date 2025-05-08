@@ -1,6 +1,7 @@
 #include "compiler/node.h"
 #include "compiler/token.h"
 #include "core/error.h"
+#include "core/unicode.h"
 
 bool neo_skip_white_space(neo_allocator_t allocator, const char *file,
                           neo_position_t *position) {
@@ -29,6 +30,9 @@ bool neo_skip_line_terminator(neo_allocator_t allocator, const char *file,
     position->column = 1;
     position->line++;
     position->offset = chr.end;
+    if (*position->offset == '\n') {
+      position->offset++;
+    }
     return true;
   } else if (*position->offset == '\n') {
     position->column = 1;

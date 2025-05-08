@@ -29,6 +29,10 @@ void *neo_allocator_alloc_ex(neo_allocator_t self, size_t size,
   neo_allocator_alloc_ex(self, size, (neo_destructor_fn_t)destructor,          \
                          __FILE__, __LINE__)
 
+#define neo_allocator_alloc2(self, type)                                       \
+  (type##_t)                                                                   \
+      neo_allocator_alloc(self, sizeof(struct _##type##_t), type##_dispose)
+
 void neo_allocator_free(neo_allocator_t self, void *ptr);
 #ifdef __cplusplus
 };

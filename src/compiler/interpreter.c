@@ -1,10 +1,12 @@
 
 #include "compiler/interpreter.h"
-static neo_ast_interpreter_node_t
+#include "core/unicode.h"
+static void neo_ast_interpreter_dispose() {};
+
+static neo_ast_interpreter_t
 neo_create_interpreter_node(neo_allocator_t allocator) {
-  neo_ast_interpreter_node_t node =
-      (neo_ast_interpreter_node_t)neo_allocator_alloc(
-          allocator, sizeof(struct _neo_ast_interpreter_node_t), NULL);
+  neo_ast_interpreter_t node =
+      neo_allocator_alloc2(allocator, neo_ast_interpreter);
   node->node.type = NEO_NODE_TYPE_INTERPRETER_DIRECTIVE;
   return node;
 }
@@ -26,7 +28,7 @@ neo_ast_node_t neo_ast_read_interpreter(neo_allocator_t allocator,
       current.column = chr.end - chr.begin;
       current.offset = chr.end;
     }
-    neo_ast_interpreter_node_t node = neo_create_interpreter_node(allocator);
+    neo_ast_interpreter_t node = neo_create_interpreter_node(allocator);
     node->node.location.begin = *position;
     node->node.location.end = current;
     node->node.location.file = file;

@@ -23,7 +23,7 @@ neo_ast_node_t neo_ast_read_statement_debugger(neo_allocator_t allocator,
   neo_token_t token = TRY(neo_read_identify_token(allocator, file, &current)) {
     goto onerror;
   }
-  if (!neo_location_is(token->position, "debugger")) {
+  if (!neo_location_is(token->location, "debugger")) {
     neo_allocator_free(allocator, token);
     return NULL;
   }

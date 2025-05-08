@@ -133,8 +133,7 @@ neo_token_t neo_read_string_token(neo_allocator_t allocator, const char *file,
       return NULL;
     }
     if (neo_utf8_char_is(chr, "\\")) {
-      neo_read_escape(file, &current);
-      CHECK_AND_THROW({ return NULL; })
+      TRY(neo_read_escape(file, &current)) { return NULL; };
       continue;
     }
     if (*chr.begin == *position->offset) {
@@ -148,9 +147,9 @@ neo_token_t neo_read_string_token(neo_allocator_t allocator, const char *file,
   neo_token_t token = (neo_token_t)neo_allocator_alloc(
       allocator, sizeof(struct _neo_token_t), NULL);
   token->type = NEO_TOKEN_TYPE_STRING;
-  token->position.begin = *position;
-  token->position.end = current;
-  token->position.file = file;
+  token->location.begin = *position;
+  token->location.end = current;
+  token->location.file = file;
   token->type = NEO_TOKEN_TYPE_STRING;
   *position = current;
   return token;
@@ -217,9 +216,9 @@ neo_token_t neo_read_number_token(neo_allocator_t allocator, const char *file,
 
   neo_token_t token = (neo_token_t)neo_allocator_alloc(
       allocator, sizeof(struct _neo_token_t), NULL);
-  token->position.begin = *position;
-  token->position.end = current;
-  token->position.file = file;
+  token->location.begin = *position;
+  token->location.end = current;
+  token->location.file = file;
   token->type = NEO_TOKEN_TYPE_NUMBER;
   *position = current;
   return token;
@@ -259,9 +258,9 @@ neo_token_t neo_read_symbol_token(neo_allocator_t allocator, const char *file,
   current.offset = pstr;
   neo_token_t token = (neo_token_t)neo_allocator_alloc(
       allocator, sizeof(struct _neo_token_t), NULL);
-  token->position.begin = *position;
-  token->position.end = current;
-  token->position.file = file;
+  token->location.begin = *position;
+  token->location.end = current;
+  token->location.file = file;
   token->type = NEO_TOKEN_TYPE_SYMBOL;
   *position = current;
   return token;
@@ -288,8 +287,7 @@ neo_token_t neo_read_regexp_token(neo_allocator_t allocator, const char *file,
         break;
       }
       if (neo_utf8_char_is(chr, "\\")) {
-        neo_read_escape(file, &current);
-        CHECK_AND_THROW({ return NULL; });
+        TRY(neo_read_escape(file, &current)) { return NULL; };
         continue;
       }
       if (*chr.begin == '[') {
@@ -318,9 +316,9 @@ neo_token_t neo_read_regexp_token(neo_allocator_t allocator, const char *file,
   }
   neo_token_t token = (neo_token_t)neo_allocator_alloc(
       allocator, sizeof(struct _neo_token_t), NULL);
-  token->position.begin = *position;
-  token->position.end = current;
-  token->position.file = file;
+  token->location.begin = *position;
+  token->location.end = current;
+  token->location.file = file;
   token->type = NEO_TOKEN_TYPE_REGEXP;
   *position = current;
   return token;
@@ -337,8 +335,7 @@ neo_token_t neo_read_identify_token(neo_allocator_t allocator, const char *file,
   neo_utf8_char chr = neo_utf8_read_char(current.offset);
   if (*current.offset == '\\' && *(current.offset + 1) == 'u') {
     const char *start = current.offset + 2;
-    neo_read_escape(file, &current);
-    CHECK_AND_THROW({ return NULL; });
+    TRY(neo_read_escape(file, &current)) { return NULL; };
     int32_t utf32 = 0;
     if (*start == '{') {
       start++;
@@ -390,8 +387,7 @@ neo_token_t neo_read_identify_token(neo_allocator_t allocator, const char *file,
   while (true) {
     if (*current.offset == '\\' && *(current.offset + 1) == 'u') {
       const char *start = current.offset + 2;
-      neo_read_escape(file, &current);
-      CHECK_AND_THROW({ return NULL; });
+      TRY(neo_read_escape(file, &current)) { return NULL; };
       int32_t utf32 = 0;
       if (*start == '{') {
         start++;
@@ -439,9 +435,9 @@ neo_token_t neo_read_identify_token(neo_allocator_t allocator, const char *file,
   }
   neo_token_t token = (neo_token_t)neo_allocator_alloc(
       allocator, sizeof(struct _neo_token_t), NULL);
-  token->position.begin = *position;
-  token->position.end = current;
-  token->position.file = file;
+  token->location.begin = *position;
+  token->location.end = current;
+  token->location.file = file;
   token->type = NEO_TOKEN_TYPE_IDENTIFY;
   if (*position->offset == '#') {
     token->type = NEO_TOKEN_TYPE_PRIVATE_IDENTIFY;
@@ -471,9 +467,9 @@ neo_token_t neo_read_comment_token(neo_allocator_t allocator, const char *file,
   }
   neo_token_t token = (neo_token_t)neo_allocator_alloc(
       allocator, sizeof(struct _neo_token_t), NULL);
-  token->position.begin = *position;
-  token->position.end = current;
-  token->position.file = file;
+  token->location.begin = *position;
+  token->location.end = current;
+  token->location.file = file;
   token->type = NEO_TOKEN_TYPE_COMMENT;
   *position = current;
   return token;
@@ -513,9 +509,9 @@ neo_token_t neo_read_multiline_comment_token(neo_allocator_t allocator,
   }
   neo_token_t token = (neo_token_t)neo_allocator_alloc(
       allocator, sizeof(struct _neo_token_t), NULL);
-  token->position.begin = *position;
-  token->position.end = current;
-  token->position.file = file;
+  token->location.begin = *position;
+  token->location.end = current;
+  token->location.file = file;
   token->type = NEO_TOKEN_TYPE_MULTILINE_COMMENT;
   *position = current;
   return token;
@@ -552,8 +548,7 @@ neo_token_t neo_read_template_string_token(neo_allocator_t allocator,
         current.offset = chr.end;
         continue;
       } else if (neo_utf8_char_is(chr, "\\")) {
-        neo_read_escape(file, &current);
-        CHECK_AND_THROW({ return NULL; })
+        TRY(neo_read_escape(file, &current)) { return NULL; };
         continue;
       }
       current.offset = chr.end;
@@ -564,9 +559,9 @@ neo_token_t neo_read_template_string_token(neo_allocator_t allocator,
   }
   neo_token_t token = (neo_token_t)neo_allocator_alloc(
       allocator, sizeof(struct _neo_token_t), NULL);
-  token->position.begin = *position;
-  token->position.end = current;
-  token->position.file = file;
+  token->location.begin = *position;
+  token->location.end = current;
+  token->location.file = file;
   token->type = NEO_TOKEN_TYPE_TEMPLATE_STRING;
   if (*position->offset == '}') {
     if (*(current.offset - 1) == '`') {

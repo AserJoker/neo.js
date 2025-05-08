@@ -6,8 +6,8 @@
 extern "C" {
 #endif
 
-neo_ast_node_t neo_parse_code(neo_allocator_t allocator, const char *file,
-                              const char *source);
+neo_ast_node_t neo_ast_parse_code(neo_allocator_t allocator, const char *file,
+                                  const char *source);
 
 #ifdef __cplusplus
 }

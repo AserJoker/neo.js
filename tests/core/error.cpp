@@ -10,10 +10,7 @@ static void func2() {
   return;
 }
 
-static void func1() {
-  func2();
-  CHECK_AND_THROW();
-}
+static void func1() { TRY(func2()){}; }
 
 TEST_F(TEST_error, tostring) {
   neo_allocator_t allocator = neo_create_default_allocator();

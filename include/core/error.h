@@ -31,12 +31,6 @@ char *neo_error_to_string(neo_error_t self);
     neo_push_stack(__FUNCTION__, __FILE__, __LINE__);                          \
   } while (0)
 
-#define CHECK_AND_THROW(cleanup)                                               \
-  if (neo_has_error()) {                                                       \
-    neo_push_stack(__FUNCTION__, __FILE__, __LINE__ - 1);                      \
-    cleanup                                                                    \
-  }
-
 #define TRY(expr)                                                              \
   expr;                                                                        \
   if (neo_has_error())                                                         \

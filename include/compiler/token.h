@@ -24,7 +24,7 @@ typedef enum _neo_token_type_t {
 
 typedef struct _neo_token_t {
   neo_token_type_t type;
-  neo_location_t position;
+  neo_location_t location;
 } *neo_token_t;
 
 neo_token_t neo_read_string_token(neo_allocator_t allocator, const char *file,
