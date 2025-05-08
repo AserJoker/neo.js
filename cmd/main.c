@@ -1,5 +1,6 @@
 #include "compiler/expression.h"
 #include "compiler/interpreter.h"
+#include "compiler/literal_numeric.h"
 #include "compiler/literal_string.h"
 #include "compiler/node.h"
 #include "compiler/parser.h"
@@ -106,6 +107,15 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
     printf(JSON_END);
   } break;
+
+  case NEO_NODE_TYPE_LITERAL_NUMERIC: {
+    neo_ast_literal_numeric_t n = (neo_ast_literal_numeric_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_LITERAL_NUMERIC"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_END);
+  } break;
   case NEO_NODE_TYPE_EXPRESSION_BINARY: {
     neo_ast_binary_expression_t n = (neo_ast_binary_expression_t)node;
     printf(JSON_START);
@@ -199,7 +209,6 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
   } break;
   case NEO_NODE_TYPE_LITERAL_NULL:
   case NEO_NODE_TYPE_LITERAL_BOOLEAN:
-  case NEO_NODE_TYPE_LITERAL_NUMERIC:
   case NEO_NODE_TYPE_LITERAL_BIGINT:
   case NEO_NODE_TYPE_LITERAL_DECIMAL:
   case NEO_NODE_TYPE_LITERAL_TEMPLATE:

@@ -1,4 +1,5 @@
 #include "compiler/expression.h"
+#include "compiler/literal_numeric.h"
 #include "compiler/literal_string.h"
 #include "compiler/node.h"
 #include "compiler/token.h"
@@ -39,6 +40,11 @@ static neo_ast_node_t neo_ast_read_expression_19(neo_allocator_t allocator,
       TRY(neo_ast_read_literal_string(allocator, file, position)) {
     goto onerror;
   };
+  if (!node) {
+    node = TRY(neo_ast_read_literal_numeric(allocator, file, position)) {
+      goto onerror;
+    }
+  }
   return node;
 onerror:
   if (node) {
