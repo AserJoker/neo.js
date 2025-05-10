@@ -1,0 +1,102 @@
+#include "compiler/expression_assigment.h"
+#include "compiler/expression.h"
+#include "compiler/identifier.h"
+#include "compiler/node.h"
+#include "compiler/pattern_array.h"
+#include "compiler/pattern_object.h"
+#include "compiler/token.h"
+#include "core/allocator.h"
+#include "core/error.h"
+#include "core/location.h"
+#include "core/position.h"
+#include <stdio.h>
+
+static void
+neo_ast_expression_assigment_dispose(neo_allocator_t allocator,
+                                     neo_ast_expression_assigment_t self) {
+  neo_allocator_free(allocator, self->identifier);
+  neo_allocator_free(allocator, self->value);
+  neo_allocator_free(allocator, self->opt);
+}
+
+static neo_ast_expression_assigment_t
+neo_create_ast_expression_assigment(neo_allocator_t allocator) {
+  neo_ast_expression_assigment_t node =
+      neo_allocator_alloc2(allocator, neo_ast_expression_assigment);
+  node->identifier = NULL;
+  node->value = NULL;
+  node->opt = NULL;
+  node->node.type = NEO_NODE_TYPE_EXPRESSION_ASSIGMENT;
+  return node;
+}
+
+neo_ast_node_t neo_ast_read_expression_assigment(neo_allocator_t allocator,
+                                                 const char *file,
+                                                 neo_position_t *position) {
+  neo_position_t current = *position;
+  neo_ast_expression_assigment_t node = NULL;
+  neo_token_t token = NULL;
+  node = neo_create_ast_expression_assigment(allocator);
+  node->identifier = TRY(neo_ast_read_identifier(allocator, file, &current)) {
+    goto onerror;
+  };
+  if (!node->identifier) {
+    node->identifier =
+        TRY(neo_ast_read_pattern_object(allocator, file, &current)) {
+      goto onerror;
+    }
+  }
+  if (!node->identifier) {
+    node->identifier =
+        TRY(neo_ast_read_pattern_array(allocator, file, &current)) {
+      goto onerror;
+    }
+  }
+  if (!node->identifier) {
+    goto onerror;
+  }
+  SKIP_ALL(allocator, file, &current, onerror);
+  token = TRY(neo_read_symbol_token(allocator, file, &current)) {
+    goto onerror;
+  };
+  if (!token) {
+    goto onerror;
+  }
+  if (!neo_location_is(token->location, "=") &&
+      !neo_location_is(token->location, "+=") &&
+      !neo_location_is(token->location, "-=") &&
+      !neo_location_is(token->location, "**=") &&
+      !neo_location_is(token->location, "*=") &&
+      !neo_location_is(token->location, "/=") &&
+      !neo_location_is(token->location, "%=") &&
+      !neo_location_is(token->location, "<<=") &&
+      !neo_location_is(token->location, ">>=") &&
+      !neo_location_is(token->location, ">>>=") &&
+      !neo_location_is(token->location, "&=") &&
+      !neo_location_is(token->location, "|=") &&
+      !neo_location_is(token->location, "^=") &&
+      !neo_location_is(token->location, "&&=") &&
+      !neo_location_is(token->location, "||=") &&
+      !neo_location_is(token->location, R"(??=)")) {
+    goto onerror;
+  }
+  node->opt = token;
+  SKIP_ALL(allocator, file, &current, onerror);
+  node->value = TRY(neo_ast_read_expression_2(allocator, file, &current)) {
+    goto onerror;
+  };
+  if (!node->value) {
+    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
+          current.line, current.column);
+    goto onerror;
+  }
+  node->node.location.begin = *position;
+  node->node.location.end = current;
+  node->node.location.file = file;
+  *position = current;
+  return &node->node;
+onerror:
+  neo_allocator_free(allocator, node);
+  neo_allocator_free(allocator, token);
+  return NULL;
+}

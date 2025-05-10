@@ -1,5 +1,6 @@
 #include "compiler/expression.h"
 #include "compiler/expression_arrow_function.h"
+#include "compiler/expression_assigment.h"
 #include "compiler/function_argument.h"
 #include "compiler/function_body.h"
 #include "compiler/interpreter.h"
@@ -335,6 +336,27 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     print(allocator, n->identifier);
     printf(JSON_END);
   } break;
+
+  case NEO_NODE_TYPE_EXPRESSION_ASSIGMENT: {
+    neo_ast_expression_assigment_t n = (neo_ast_expression_assigment_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_EXPRESSION_ASSIGMENT"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(identifier));
+    print(allocator, n->identifier);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(value));
+    print(allocator, n->value);
+    char opt[1024];
+    size_t len = n->opt->location.end.offset - n->opt->location.begin.offset;
+    opt[len] = 0;
+    strncpy(opt, n->opt->location.begin.offset, len);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(opt) JSON_VALUE("%s"), opt);
+    printf(JSON_END);
+  } break;
   case NEO_NODE_TYPE_LITERAL_NULL:
   case NEO_NODE_TYPE_LITERAL_BOOLEAN:
   case NEO_NODE_TYPE_LITERAL_BIGINT:
@@ -373,7 +395,6 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
   case NEO_NODE_TYPE_EXPRESSION_RECORD:
   case NEO_NODE_TYPE_EXPRESSION_TUPLE:
   case NEO_NODE_TYPE_EXPRESSION_FUNCTION:
-  case NEO_NODE_TYPE_EXPRESSION_ASSIGMENT:
   case NEO_NODE_TYPE_EXPRESSION_SPREAD:
   case NEO_NODE_TYPE_EXPRESSION_MEMBER:
   case NEO_NODE_TYPE_EXPRESSION_OPTIONAL_MEMBER:
