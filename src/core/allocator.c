@@ -77,7 +77,7 @@ void *neo_allocator_alloc_ex(neo_allocator_t self, size_t size,
   return &chunk[1];
 }
 
-void neo_allocator_free(neo_allocator_t self, void *ptr) {
+void neo_allocator_free_ex(neo_allocator_t self, void *ptr) {
   if (!ptr) {
     return;
   }

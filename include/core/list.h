@@ -39,7 +39,7 @@ neo_list_node_t neo_list_unshift(neo_list_t self, void *data);
 
 void neo_list_shift(neo_list_t self);
 
-neo_list_node_t neo_list_erase(neo_list_t self, neo_list_node_t position);
+void neo_list_erase(neo_list_t self, neo_list_node_t position);
 
 neo_list_node_t neo_list_node_next(neo_list_node_t self);
 

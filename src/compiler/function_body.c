@@ -1,40 +1,41 @@
-
-#include "compiler/program.h"
+#include "compiler/function_body.h"
 #include "compiler/directive.h"
-#include "compiler/interpreter.h"
 #include "compiler/node.h"
 #include "compiler/statement.h"
 #include "core/allocator.h"
 #include "core/error.h"
+#include "core/list.h"
+#include "core/position.h"
 #include <stdio.h>
-
-static void neo_ast_program_dispose(neo_allocator_t allocator,
-                                    neo_ast_program_t program) {
-  if (program->interpreter) {
-    neo_allocator_free(allocator, program->interpreter);
-  }
-  neo_allocator_free(allocator, program->directives);
-  neo_allocator_free(allocator, program->body);
+static void neo_ast_function_body_dispose(neo_allocator_t allocator,
+                                          neo_ast_function_body_t node) {
+  neo_allocator_free(allocator, node->directives);
+  neo_allocator_free(allocator, node->body);
 }
 
-static neo_ast_program_t neo_create_ast_program(neo_allocator_t allocator) {
-  neo_ast_program_t node = neo_allocator_alloc2(allocator, neo_ast_program);
-  node->node.type = NEO_NODE_TYPE_PROGRAM;
-  node->interpreter = NULL;
-  neo_list_initialize_t initialize = {};
-  initialize.auto_free = true;
+static neo_ast_function_body_t
+neo_create_ast_function_body(neo_allocator_t allocator) {
+  neo_ast_function_body_t node =
+      neo_allocator_alloc2(allocator, neo_ast_function_body);
+  neo_list_initialize_t initialize = {true};
   node->directives = neo_create_list(allocator, &initialize);
   node->body = neo_create_list(allocator, &initialize);
+  node->node.type = NEO_NODE_TYPE_FUNCTION_BODY;
   return node;
 }
 
-neo_ast_node_t neo_ast_read_program(neo_allocator_t allocator, const char *file,
-                                    neo_position_t *position) {
+neo_ast_node_t neo_ast_read_function_body(neo_allocator_t allocator,
+                                          const char *file,
+                                          neo_position_t *position) {
   neo_position_t current = *position;
-  neo_ast_program_t node = neo_create_ast_program(allocator);
-  node->interpreter = TRY(neo_ast_read_interpreter(allocator, file, &current)) {
-    goto onerror;
+  neo_ast_function_body_t node = NULL;
+  if (*current.offset != '{') {
+    return NULL;
+  } else {
+    current.offset++;
+    current.column++;
   }
+  node = neo_create_ast_function_body(allocator);
   SKIP_ALL(allocator, file, &current, onerror);
   for (;;) {
     neo_ast_node_t directive =
@@ -68,6 +69,15 @@ neo_ast_node_t neo_ast_read_program(neo_allocator_t allocator, const char *file,
       current.column++;
       SKIP_ALL(allocator, file, &current, onerror);
     }
+  }
+  SKIP_ALL(allocator, file, &current, onerror);
+  if (*current.offset != '}') {
+    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
+          current.line, current.column);
+    goto onerror;
+  } else {
+    current.offset++;
+    current.column++;
   }
   node->node.location.begin = *position;
   node->node.location.end = current;

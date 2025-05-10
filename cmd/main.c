@@ -1,4 +1,7 @@
 #include "compiler/expression.h"
+#include "compiler/expression_arrow_function.h"
+#include "compiler/function_argument.h"
+#include "compiler/function_body.h"
 #include "compiler/interpreter.h"
 #include "compiler/literal_numeric.h"
 #include "compiler/literal_string.h"
@@ -117,7 +120,7 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     printf(JSON_END);
   } break;
   case NEO_NODE_TYPE_EXPRESSION_BINARY: {
-    neo_ast_binary_expression_t n = (neo_ast_binary_expression_t)node;
+    neo_ast_expression_binary_t n = (neo_ast_expression_binary_t)node;
     printf(JSON_START);
     printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_EXPRESSION_BINARY"));
     printf(JSON_SPLIT);
@@ -141,7 +144,7 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     printf(JSON_END);
   } break;
   case NEO_NODE_TYPE_DIRECTIVE: {
-    neo_ast_binary_expression_t n = (neo_ast_binary_expression_t)node;
+    neo_ast_expression_binary_t n = (neo_ast_expression_binary_t)node;
     printf(JSON_START);
     printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_DIRECTIVE"));
     printf(JSON_SPLIT);
@@ -207,6 +210,54 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
     printf(JSON_END);
   } break;
+  case NEO_NODE_TYPE_FUNCTION_ARGUMENT: {
+    neo_ast_function_argument_t n = (neo_ast_function_argument_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_FUNCTION_ARGUMENT"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(identifier));
+    print(allocator, n->identifier);
+    if (n->value) {
+      printf(JSON_SPLIT);
+      printf(JSON_FIELD(value));
+      print(allocator, n->value);
+    }
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_FUNCTION_BODY: {
+    neo_ast_function_body_t n = (neo_ast_function_body_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_FUNCTION_BODY"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(statements));
+    print_list(allocator, n->body);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(directives));
+    print_list(allocator, n->directives);
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_EXPRESSION_ARROW_FUNCTION: {
+    neo_ast_expression_arrow_function_t n =
+        (neo_ast_expression_arrow_function_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type)
+               JSON_VALUE("NEO_NODE_TYPE_EXPRESSION_ARROW_FUNCTION"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(arguments));
+    print_list(allocator, n->arguments);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(body));
+    print(allocator, n->body);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(async) JSON_VALUE("%s"), n->async ? "true" : "false");
+    printf(JSON_END);
+  } break;
   case NEO_NODE_TYPE_LITERAL_NULL:
   case NEO_NODE_TYPE_LITERAL_BOOLEAN:
   case NEO_NODE_TYPE_LITERAL_BIGINT:
@@ -239,7 +290,6 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
   case NEO_NODE_TYPE_DECORATOR:
   case NEO_NODE_TYPE_EXPRESSION_SUPER:
   case NEO_NODE_TYPE_EXPRESSION_THIS:
-  case NEO_NODE_TYPE_EXPRESSION_ARROW_FUNCTION:
   case NEO_NODE_TYPE_EXPRESSION_YIELD:
   case NEO_NODE_TYPE_EXPRESSION_ARRAY:
   case NEO_NODE_TYPE_EXPRESSION_OBJECT:
@@ -277,35 +327,35 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
 }
 
 int main(int argc, char *argv[]) {
-  // if (argc > 1) {
-  neo_allocator_t allocator = neo_create_default_allocator();
-  neo_error_initialize(allocator);
-  FILE *fp = fopen("demo.js", "r");
-  if (!fp) {
-    fprintf(stderr, "cannot open file: %s\n", argv[1]);
-    return -1;
+  if (argc > 1) {
+    neo_allocator_t allocator = neo_create_default_allocator();
+    neo_error_initialize(allocator);
+    FILE *fp = fopen(argv[1], "r");
+    if (!fp) {
+      fprintf(stderr, "cannot open file: %s\n", argv[1]);
+      return -1;
+    }
+    fseek(fp, 0, SEEK_END);
+    size_t size = ftell(fp);
+    char *buf = (char *)neo_allocator_alloc(allocator, size + 1, NULL);
+    buf[size] = 0;
+    fseek(fp, 0, SEEK_SET);
+    fread(buf, size, 1, fp);
+    fclose(fp);
+    neo_ast_node_t node = neo_ast_parse_code(allocator, argv[1], buf);
+    if (neo_has_error()) {
+      neo_error_t error = neo_poll_error(__FUNCTION__, __FILE__, __LINE__);
+      char *msg = neo_error_to_string(error);
+      fprintf(stderr, "%s\n", msg);
+      neo_allocator_free(allocator, msg);
+      neo_allocator_free(allocator, error);
+    } else {
+      print(allocator, node);
+      printf("\n");
+    }
+    neo_allocator_free(allocator, node);
+    neo_allocator_free(allocator, buf);
+    neo_delete_allocator(allocator);
   }
-  fseek(fp, 0, SEEK_END);
-  size_t size = ftell(fp);
-  char *buf = (char *)neo_allocator_alloc(allocator, size + 1, NULL);
-  buf[size] = 0;
-  fseek(fp, 0, SEEK_SET);
-  fread(buf, size, 1, fp);
-  fclose(fp);
-  neo_ast_node_t node = neo_ast_parse_code(allocator, argv[1], buf);
-  if (neo_has_error()) {
-    neo_error_t error = neo_poll_error(__FUNCTION__, __FILE__, __LINE__);
-    char *msg = neo_error_to_string(error);
-    fprintf(stderr, "%s\n", msg);
-    neo_allocator_free(allocator, msg);
-    neo_allocator_free(allocator, error);
-  } else {
-    print(allocator, node);
-    printf("\n");
-  }
-  neo_allocator_free(allocator, node);
-  neo_allocator_free(allocator, buf);
-  neo_delete_allocator(allocator);
-  // }
   return 0;
 }

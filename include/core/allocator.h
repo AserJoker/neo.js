@@ -33,7 +33,13 @@ void *neo_allocator_alloc_ex(neo_allocator_t self, size_t size,
   (type##_t)                                                                   \
       neo_allocator_alloc(self, sizeof(struct _##type##_t), type##_dispose)
 
-void neo_allocator_free(neo_allocator_t self, void *ptr);
+void neo_allocator_free_ex(neo_allocator_t self, void *ptr);
+
+#define neo_allocator_free(self, ptr)                                          \
+  do {                                                                         \
+    neo_allocator_free_ex(self, ptr);                                          \
+    ptr = NULL;                                                                \
+  } while (0)
 #ifdef __cplusplus
 };
 #endif

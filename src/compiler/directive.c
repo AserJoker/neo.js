@@ -17,6 +17,7 @@ neo_ast_node_t neo_ast_read_directive(neo_allocator_t allocator,
                                       const char *file,
                                       neo_position_t *position) {
   neo_position_t current = *position;
+  neo_ast_directive_t node = NULL;
   neo_ast_node_t token =
       TRY(neo_ast_read_expression(allocator, file, &current)) {
     goto onerror;
@@ -34,15 +35,13 @@ neo_ast_node_t neo_ast_read_directive(neo_allocator_t allocator,
       return NULL;
     }
   }
-  neo_ast_directive_t node = neo_create_ast_directive(allocator);
+  node = neo_create_ast_directive(allocator);
   node->node.location.begin = *position;
   node->node.location.end = backup;
   node->node.location.file = file;
   *position = backup;
   return &node->node;
 onerror:
-  if (node) {
-    neo_allocator_free(allocator, node);
-  }
+  neo_allocator_free(allocator, node);
   return NULL;
 }

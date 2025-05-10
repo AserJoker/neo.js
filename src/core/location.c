@@ -10,5 +10,8 @@ bool neo_location_is(neo_location_t loc, const char *str) {
     dst++;
     src++;
   }
-  return true;
+  if (src - str + loc.begin.offset == loc.end.offset) {
+    return true;
+  }
+  return false;
 }

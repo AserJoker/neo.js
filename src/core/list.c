@@ -121,9 +121,9 @@ void neo_list_shift(neo_list_t self) {
   }
 }
 
-neo_list_node_t neo_list_erase(neo_list_t self, neo_list_node_t position) {
+void neo_list_erase(neo_list_t self, neo_list_node_t position) {
   if (self->size == 0) {
-    return NULL;
+    return;
   }
   position->last->next = position->next;
   position->next->last = position->last;
@@ -132,7 +132,7 @@ neo_list_node_t neo_list_erase(neo_list_t self, neo_list_node_t position) {
   }
   neo_allocator_free(self->allocator, position);
   self->size--;
-  return position->next;
+  return;
 }
 
 neo_list_node_t neo_list_node_next(neo_list_node_t self) { return self->next; }

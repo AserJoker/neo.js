@@ -85,6 +85,8 @@ typedef enum _neo_ast_node_type_t {
   NEO_NODE_TYPE_IMPORT_ATTRIBUTE,
   NEO_NODE_TYPE_EXPORT_SPECIFIER,
   NEO_NODE_TYPE_EXPORT_NAMESPACE_SPECIFIER,
+  NEO_NODE_TYPE_FUNCTION_BODY,
+  NEO_NODE_TYPE_FUNCTION_ARGUMENT,
 } neo_ast_node_type_t;
 
 typedef struct _neo_ast_node_t {

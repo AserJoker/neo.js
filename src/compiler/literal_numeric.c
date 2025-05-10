@@ -34,11 +34,7 @@ neo_ast_node_t neo_ast_read_literal_numeric(neo_allocator_t allocator,
   *position = current;
   return &node->node;
 onerror:
-  if (token) {
-    neo_allocator_free(allocator, token);
-  }
-  if (node) {
-    neo_allocator_free(allocator, node);
-  }
+  neo_allocator_free(allocator, token);
+  neo_allocator_free(allocator, node);
   return NULL;
 }

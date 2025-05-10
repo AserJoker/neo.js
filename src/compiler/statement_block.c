@@ -65,8 +65,6 @@ neo_ast_node_t neo_ast_read_statement_block(neo_allocator_t allocator,
   *position = current;
   return &node->node;
 onerror:
-  if (node) {
-    neo_allocator_free(allocator, node);
-  }
+  neo_allocator_free(allocator, node);
   return NULL;
 }
