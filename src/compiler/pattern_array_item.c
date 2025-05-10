@@ -1,0 +1,63 @@
+#include "compiler/pattern_array_item.h"
+#include "compiler/expression.h"
+#include "compiler/identifier.h"
+#include "compiler/node.h"
+#include "compiler/pattern_array.h"
+#include "compiler/pattern_object.h"
+#include "core/allocator.h"
+#include "core/error.h"
+#include "core/position.h"
+static void
+neo_ast_pattern_array_item_dispose(neo_allocator_t allocator,
+                                   neo_ast_pattern_array_item_t self) {
+  neo_allocator_free(allocator, self->identifier);
+  neo_allocator_free(allocator, self->value);
+}
+
+static neo_ast_pattern_array_item_t
+neo_create_ast_pattern_array_item(neo_allocator_t allocator) {
+  neo_ast_pattern_array_item_t node =
+      neo_allocator_alloc2(allocator, neo_ast_pattern_array_item);
+  node->identifier = NULL;
+  node->value = NULL;
+  node->node.type = NEO_NODE_TYPE_PATTERN_ARRAY_ITEM;
+  return node;
+}
+
+neo_ast_node_t neo_ast_read_pattern_array_item(neo_allocator_t allocator,
+                                               const char *file,
+                                               neo_position_t *position) {
+  neo_ast_pattern_array_item_t node = NULL;
+  neo_position_t current = *position;
+  node = neo_create_ast_pattern_array_item(allocator);
+  node->identifier = TRY(neo_ast_read_identifier(allocator, file, &current)) {
+    goto onerror;
+  };
+  if (!node->identifier) {
+    node->identifier = neo_ast_read_pattern_array(allocator, file, &current);
+  }
+  if (!node->identifier) {
+    node->identifier = neo_ast_read_pattern_object(allocator, file, &current);
+  }
+  if (!node->identifier) {
+    goto onerror;
+  }
+  SKIP_ALL(allocator, file, &current, onerror);
+  if (*current.offset == '=') {
+    current.offset++;
+    current.column++;
+    SKIP_ALL(allocator, file, &current, onerror);
+    node->value = neo_ast_read_expression_2(allocator, file, &current);
+    if (!node->value) {
+      goto onerror;
+    }
+  }
+  node->node.location.begin = *position;
+  node->node.location.end = current;
+  node->node.location.file = file;
+  *position = current;
+  return &node->node;
+onerror:
+  neo_allocator_free(allocator, node);
+  return NULL;
+}

@@ -7,6 +7,11 @@
 #include "compiler/literal_string.h"
 #include "compiler/node.h"
 #include "compiler/parser.h"
+#include "compiler/pattern_array.h"
+#include "compiler/pattern_array_item.h"
+#include "compiler/pattern_object.h"
+#include "compiler/pattern_object_item.h"
+#include "compiler/pattern_rest.h"
 #include "compiler/program.h"
 #include "compiler/statement_block.h"
 #include "compiler/statement_expression.h"
@@ -258,6 +263,78 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     printf(JSON_FIELD(async) JSON_VALUE("%s"), n->async ? "true" : "false");
     printf(JSON_END);
   } break;
+  case NEO_NODE_TYPE_PATTERN_OBJECT: {
+    neo_ast_pattern_object_t n = (neo_ast_pattern_object_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_PATTERN_OBJECT"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(items));
+    print_list(allocator, n->items);
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_PATTERN_ARRAY: {
+    neo_ast_pattern_array_t n = (neo_ast_pattern_array_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_PATTERN_ARRAY"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(items));
+    print_list(allocator, n->items);
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_PATTERN_OBJECT_ITEM: {
+    neo_ast_pattern_object_item_t n = (neo_ast_pattern_object_item_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_PATTERN_OBJECT_ITEM"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(identifier));
+    print(allocator, n->identifier);
+    if (n->alias) {
+      printf(JSON_SPLIT);
+      printf(JSON_FIELD(alias));
+      print(allocator, n->alias);
+    }
+    if (n->value) {
+      printf(JSON_SPLIT);
+      printf(JSON_FIELD(value));
+      print(allocator, n->value);
+    }
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_PATTERN_ARRAY_ITEM: {
+    neo_ast_pattern_array_item_t n = (neo_ast_pattern_array_item_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_PATTERN_ARRAY_ITEM"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(identifier));
+    print(allocator, n->identifier);
+    if (n->value) {
+      printf(JSON_SPLIT);
+      printf(JSON_FIELD(value));
+      print(allocator, n->value);
+    }
+    printf(JSON_END);
+  } break;
+
+  case NEO_NODE_TYPE_PATTERN_REST: {
+    neo_ast_pattern_rest_t n = (neo_ast_pattern_rest_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_PATTERN_REST"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(identifier));
+    print(allocator, n->identifier);
+    printf(JSON_END);
+  } break;
   case NEO_NODE_TYPE_LITERAL_NULL:
   case NEO_NODE_TYPE_LITERAL_BOOLEAN:
   case NEO_NODE_TYPE_LITERAL_BIGINT:
@@ -307,9 +384,6 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
   case NEO_NODE_TYPE_EXPRESSION_OPTIONAL_CALL:
   case NEO_NODE_TYPE_EXPRESSION_NEW:
   case NEO_NODE_TYPE_EXPRESSION_GROUP:
-  case NEO_NODE_TYPE_PATTERN_OBJECT:
-  case NEO_NODE_TYPE_PATTERN_ARRAY:
-  case NEO_NODE_TYPE_PATTERN_REST:
   case NEO_NODE_TYPE_PATTERN_ASSIGMENT:
   case NEO_NODE_TYPE_PATTERN_CLASS:
   case NEO_NODE_TYPE_CLASS_METHOD:

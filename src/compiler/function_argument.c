@@ -2,6 +2,9 @@
 #include "compiler/expression.h"
 #include "compiler/identifier.h"
 #include "compiler/node.h"
+#include "compiler/pattern_array.h"
+#include "compiler/pattern_object.h"
+#include "compiler/pattern_rest.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/error.h"
@@ -31,12 +34,29 @@ neo_ast_node_t neo_ast_read_function_argument(neo_allocator_t allocator,
   neo_ast_function_argument_t node = NULL;
   neo_token_t token = NULL;
   node = neo_create_ast_function_argument(allocator);
-  if (*current.offset == '[') {
-  } else if (*current.offset == '{') {
-  } else {
-    node->identifier = TRY(neo_ast_read_identifier(allocator, file, &current)) {
+  node->identifier = TRY(neo_ast_read_identifier(allocator, file, &current)) {
+    goto onerror;
+  };
+  if (!node->identifier) {
+    node->identifier =
+        TRY(neo_ast_read_pattern_array(allocator, file, &current)) {
       goto onerror;
-    };
+    }
+  }
+  if (!node->identifier) {
+    node->identifier =
+        TRY(neo_ast_read_pattern_object(allocator, file, &current)) {
+      goto onerror;
+    }
+  }
+  if (!node->identifier) {
+    node->identifier =
+        TRY(neo_ast_read_pattern_rest(allocator, file, &current)) {
+      goto onerror;
+    }
+  }
+  if (!node->identifier) {
+    goto onerror;
   }
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset == '=') {

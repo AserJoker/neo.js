@@ -1,0 +1,63 @@
+#include "compiler/pattern_rest.h"
+#include "compiler/identifier.h"
+#include "compiler/node.h"
+#include "compiler/pattern_array.h"
+#include "compiler/pattern_object.h"
+#include "compiler/token.h"
+#include "core/allocator.h"
+#include "core/error.h"
+#include "core/location.h"
+#include "core/position.h"
+static void neo_ast_pattern_rest_dispose(neo_allocator_t allocator,
+                                         neo_ast_pattern_rest_t self) {
+  neo_allocator_free(allocator, self->identifier);
+}
+
+static neo_ast_pattern_rest_t
+neo_create_ast_pattern_rest(neo_allocator_t allocator) {
+
+  neo_ast_pattern_rest_t node =
+      neo_allocator_alloc2(allocator, neo_ast_pattern_rest);
+  node->identifier = NULL;
+  node->node.type = NEO_NODE_TYPE_PATTERN_REST;
+  return node;
+}
+
+neo_ast_node_t neo_ast_read_pattern_rest(neo_allocator_t allocator,
+                                         const char *file,
+                                         neo_position_t *position) {
+  neo_ast_pattern_rest_t node = NULL;
+  neo_token_t token = NULL;
+  neo_position_t current = *position;
+  token = neo_read_symbol_token(allocator, file, &current);
+  if (!neo_location_is(token->location, "...")) {
+    goto onerror;
+  }
+  neo_allocator_free(allocator, token);
+  SKIP_ALL(allocator, file, &current, onerror);
+  node = neo_create_ast_pattern_rest(allocator);
+  node->identifier = TRY(neo_ast_read_identifier(allocator, file, &current)) {
+    goto onerror;
+  }
+  if (!node->identifier) {
+    node->identifier =
+        TRY(neo_ast_read_pattern_array(allocator, file, &current)) {
+      goto onerror;
+    }
+  }
+  if (!node->identifier) {
+    node->identifier =
+        TRY(neo_ast_read_pattern_object(allocator, file, &current)) {
+      goto onerror;
+    }
+  }
+  node->node.location.begin = *position;
+  node->node.location.end = current;
+  node->node.location.file = file;
+  *position = current;
+  return &node->node;
+onerror:
+  neo_allocator_free(allocator, token);
+  neo_allocator_free(allocator, node);
+  return NULL;
+}
