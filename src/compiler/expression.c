@@ -2,6 +2,7 @@
 #include "compiler/expression_arrow_function.h"
 #include "compiler/expression_assigment.h"
 #include "compiler/expression_condition.h"
+#include "compiler/expression_group.h"
 #include "compiler/expression_yield.h"
 #include "compiler/identifier.h"
 #include "compiler/literal_numeric.h"
@@ -66,9 +67,14 @@ neo_ast_node_t neo_ast_read_expression_18(neo_allocator_t allocator,
                                           const char *file,
                                           neo_position_t *position) {
   neo_ast_node_t node = NULL;
-  node = TRY(neo_ast_read_expression_19(allocator, file, position)) {
+  node = TRY(neo_ast_read_expression_group(allocator, file, position)) {
     goto onerror;
-  };
+  }
+  if (!node) {
+    node = TRY(neo_ast_read_expression_19(allocator, file, position)) {
+      goto onerror;
+    };
+  }
   return node;
 onerror:
   neo_allocator_free(allocator, node);

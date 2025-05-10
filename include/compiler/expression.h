@@ -24,9 +24,6 @@ neo_ast_node_t neo_ast_read_expression_2(neo_allocator_t allocator,
 neo_ast_node_t neo_ast_read_expression_3(neo_allocator_t allocator,
                                          const char *file,
                                          neo_position_t *position);
-neo_ast_node_t neo_ast_read_expression_3(neo_allocator_t allocator,
-                                         const char *file,
-                                         neo_position_t *position);
 neo_ast_node_t neo_ast_read_expression_4(neo_allocator_t allocator,
                                          const char *file,
                                          neo_position_t *position);
