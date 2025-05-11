@@ -1,12 +1,15 @@
 #include "compiler/expression.h"
 #include "compiler/expression_arrow_function.h"
 #include "compiler/expression_assigment.h"
+#include "compiler/expression_call.h"
 #include "compiler/expression_condition.h"
 #include "compiler/expression_group.h"
+#include "compiler/expression_member.h"
 #include "compiler/expression_yield.h"
 #include "compiler/identifier.h"
 #include "compiler/literal_numeric.h"
 #include "compiler/literal_string.h"
+#include "compiler/literal_template.h"
 #include "compiler/node.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
@@ -57,6 +60,11 @@ neo_ast_node_t neo_ast_read_expression_19(neo_allocator_t allocator,
       goto onerror;
     }
   }
+  if (!node) {
+    node = TRY(neo_ast_read_literal_template(allocator, file, position)) {
+      goto onerror;
+    };
+  }
   return node;
 onerror:
   neo_allocator_free(allocator, node);
@@ -85,9 +93,48 @@ neo_ast_node_t neo_ast_read_expression_17(neo_allocator_t allocator,
                                           const char *file,
                                           neo_position_t *position) {
   neo_ast_node_t node = NULL;
-  node = TRY(neo_ast_read_expression_18(allocator, file, position)) {
+  neo_position_t current = *position;
+  node = TRY(neo_ast_read_expression_18(allocator, file, &current)) {
     goto onerror;
   };
+  if (node) {
+    neo_position_t cur = current;
+    SKIP_ALL(allocator, file, &cur, onerror);
+    for (;;) {
+      neo_ast_node_t bnode = NULL;
+      bnode = TRY(neo_ast_read_expression_member(allocator, file, &cur)) {
+        goto onerror;
+      };
+      if (bnode) {
+        ((neo_ast_expression_member_t)bnode)->host = node;
+      }
+      if (!bnode) {
+        bnode = TRY(neo_ast_read_expression_call(allocator, file, &cur)) {
+          goto onerror;
+        };
+        if (bnode) {
+          ((neo_ast_expression_call_t)bnode)->host = node;
+        }
+      }
+      if (!bnode) {
+        bnode = TRY(neo_ast_read_literal_template(allocator, file, &cur)) {
+          goto onerror;
+        };
+        if (bnode) {
+          ((neo_ast_literal_template_t)bnode)->tag = node;
+        }
+      }
+      if (!bnode) {
+        break;
+      }
+      node = bnode;
+      node->location.begin = *position;
+      node->location.end = cur;
+      node->location.file = file;
+      SKIP_ALL(allocator, file, &cur, onerror);
+    }
+  }
+  *position = current;
   return node;
 onerror:
   neo_allocator_free(allocator, node);

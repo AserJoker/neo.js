@@ -35,34 +35,31 @@ neo_ast_node_t neo_ast_read_pattern_object(neo_allocator_t allocator,
   current.column++;
   node = neo_create_ast_pattern_object(allocator);
   SKIP_ALL(allocator, file, &current, onerror);
-  for (;;) {
-    neo_ast_node_t item =
-        TRY(neo_ast_read_pattern_object_item(allocator, file, &current)) {
-      goto onerror;
-    };
-    if (!item) {
-      item = TRY(neo_ast_read_pattern_rest(allocator, file, &current)) {
+  if (*current.offset != '}') {
+    for (;;) {
+      neo_ast_node_t item =
+          TRY(neo_ast_read_pattern_object_item(allocator, file, &current)) {
+        goto onerror;
+      };
+      if (!item) {
+        item = TRY(neo_ast_read_pattern_rest(allocator, file, &current)) {
+          goto onerror;
+        }
+      }
+      if (!item) {
         goto onerror;
       }
-    }
-    if (!item) {
+      neo_list_push(node->items, item);
       SKIP_ALL(allocator, file, &current, onerror);
-      if (*current.offset == '}') {
+      if (*current.offset == ',') {
+        current.offset++;
+        current.column++;
+        SKIP_ALL(allocator, file, &current, onerror);
+      } else if (*current.offset == '}') {
         break;
       } else {
         goto onerror;
       }
-    }
-    neo_list_push(node->items, item);
-    SKIP_ALL(allocator, file, &current, onerror);
-    if (*current.offset == ',') {
-      current.offset++;
-      current.column++;
-      SKIP_ALL(allocator, file, &current, onerror);
-    } else if (*current.offset == '}') {
-      break;
-    } else {
-      goto onerror;
     }
   }
   if (*current.offset != '}') {

@@ -53,17 +53,6 @@ neo_token_t neo_read_template_string_token(neo_allocator_t allocator,
                                            const char *file,
                                            neo_position_t *position);
 
-neo_token_t neo_read_template_string_start_token(neo_allocator_t allocator,
-                                                 const char *file,
-                                                 neo_position_t *position);
-
-neo_token_t neo_read_template_string_part_token(neo_allocator_t allocator,
-                                                const char *file,
-                                                neo_position_t *position);
-
-neo_token_t neo_read_template_string_end_token(neo_allocator_t allocator,
-                                               const char *file,
-                                               neo_position_t *position);
 #ifdef __cplusplus
 }
 #endif
