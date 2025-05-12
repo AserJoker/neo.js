@@ -1,4 +1,5 @@
 #include "compiler/expression.h"
+#include "compiler/expression_array.h"
 #include "compiler/expression_arrow_function.h"
 #include "compiler/expression_assigment.h"
 #include "compiler/expression_call.h"
@@ -53,6 +54,11 @@ neo_ast_node_t neo_ast_read_expression_19(neo_allocator_t allocator,
   };
   if (!node) {
     node = TRY(neo_ast_read_literal_numeric(allocator, file, position)) {
+      goto onerror;
+    }
+  }
+  if (!node) {
+    node = TRY(neo_ast_read_expression_array(allocator, file, position)) {
       goto onerror;
     }
   }

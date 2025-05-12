@@ -1,4 +1,5 @@
 #include "compiler/expression.h"
+#include "compiler/expression_array.h"
 #include "compiler/expression_arrow_function.h"
 #include "compiler/expression_assigment.h"
 #include "compiler/expression_call.h"
@@ -58,6 +59,10 @@ void print_list(neo_allocator_t allocator, neo_list_t list) {
 }
 
 void print(neo_allocator_t allocator, neo_ast_node_t node) {
+  if (!node) {
+    printf("null");
+    return;
+  }
   size_t len = node->location.end.offset - node->location.begin.offset;
   char *tmp = neo_allocator_alloc(allocator, len + 1, NULL);
   tmp[len] = 0;
@@ -553,6 +558,17 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     print(allocator, n->value);
     printf(JSON_END);
   } break;
+  case NEO_NODE_TYPE_EXPRESSION_ARRAY: {
+    neo_ast_expression_array_t n = (neo_ast_expression_array_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_EXPRESSION_ARRAY"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(items));
+    print_list(allocator, n->items);
+    printf(JSON_END);
+  } break;
   case NEO_NODE_TYPE_LITERAL_NULL:
   case NEO_NODE_TYPE_LITERAL_BOOLEAN:
   case NEO_NODE_TYPE_LITERAL_BIGINT:
@@ -584,7 +600,6 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
   case NEO_NODE_TYPE_DECORATOR:
   case NEO_NODE_TYPE_EXPRESSION_SUPER:
   case NEO_NODE_TYPE_EXPRESSION_THIS:
-  case NEO_NODE_TYPE_EXPRESSION_ARRAY:
   case NEO_NODE_TYPE_EXPRESSION_OBJECT:
   // case NEO_NODE_TYPE_EXPRESSION_RECORD:
   // case NEO_NODE_TYPE_EXPRESSION_TUPLE:
