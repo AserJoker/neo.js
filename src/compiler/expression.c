@@ -4,6 +4,7 @@
 #include "compiler/expression_assigment.h"
 #include "compiler/expression_call.h"
 #include "compiler/expression_condition.h"
+#include "compiler/expression_function.h"
 #include "compiler/expression_group.h"
 #include "compiler/expression_member.h"
 #include "compiler/expression_new.h"
@@ -76,14 +77,19 @@ neo_ast_node_t neo_ast_read_expression_19(neo_allocator_t allocator,
     }
   }
   if (!node) {
-    node = TRY(neo_ast_read_identifier(allocator, file, position)) {
+    node = TRY(neo_ast_read_literal_template(allocator, file, position)) {
+      goto onerror;
+    };
+  }
+  if (!node) {
+    node = TRY(neo_ast_read_expression_function(allocator, file, position)) {
       goto onerror;
     }
   }
   if (!node) {
-    node = TRY(neo_ast_read_literal_template(allocator, file, position)) {
+    node = TRY(neo_ast_read_identifier(allocator, file, position)) {
       goto onerror;
-    };
+    }
   }
   return node;
 onerror:
@@ -152,8 +158,8 @@ neo_ast_node_t neo_ast_read_expression_17(neo_allocator_t allocator,
       node->location.end = cur;
       node->location.file = file;
       SKIP_ALL(allocator, file, &cur, onerror);
+      current = cur;
     }
-    current = cur;
   }
   *position = current;
   return node;

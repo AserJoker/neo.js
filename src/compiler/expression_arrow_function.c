@@ -62,7 +62,9 @@ neo_ast_node_t neo_ast_read_expression_arrow_function(
         goto onerror;
       }
       if (!argument) {
-        break;
+        THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
+              file, current.line, current.column);
+        goto onerror;
       }
       neo_list_push(node->arguments, argument);
       SKIP_ALL(allocator, file, &current, onerror);
@@ -70,6 +72,12 @@ neo_ast_node_t neo_ast_read_expression_arrow_function(
         break;
       }
       if (*current.offset != ',') {
+        goto onerror;
+      }
+      if (((neo_ast_function_argument_t)argument)->identifier->type ==
+          NEO_NODE_TYPE_PATTERN_REST) {
+        THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
+              file, current.line, current.column);
         goto onerror;
       }
       current.offset++;
