@@ -4,6 +4,8 @@
 #include "compiler/expression_call.h"
 #include "compiler/expression_condition.h"
 #include "compiler/expression_member.h"
+#include "compiler/expression_new.h"
+#include "compiler/expression_yield.h"
 #include "compiler/function_argument.h"
 #include "compiler/function_body.h"
 #include "compiler/interpreter.h"
@@ -445,8 +447,8 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     printf(JSON_SPLIT);
     printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
     printf(JSON_SPLIT);
-    printf(JSON_FIELD(host));
-    print(allocator, n->host);
+    printf(JSON_FIELD(callee));
+    print(allocator, n->callee);
     printf(JSON_SPLIT);
     printf(JSON_FIELD(arguments));
     print_list(allocator, n->arguments);
@@ -461,7 +463,7 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
     printf(JSON_SPLIT);
     printf(JSON_FIELD(host));
-    print(allocator, n->host);
+    print(allocator, n->callee);
     printf(JSON_SPLIT);
     printf(JSON_FIELD(arguments));
     print_list(allocator, n->arguments);
@@ -511,6 +513,34 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     print_list(allocator, n->expressions);
     printf(JSON_END);
   } break;
+  case NEO_NODE_TYPE_EXPRESSION_NEW: {
+    neo_ast_expression_new_t n = (neo_ast_expression_new_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_EXPRESSION_NEW"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(callee));
+    print(allocator, n->callee);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(arguments));
+    print_list(allocator, n->arguments);
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_EXPRESSION_YIELD: {
+    neo_ast_expression_yield_t n = (neo_ast_expression_yield_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_EXPRESSION_YIELD"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(value));
+    print(allocator, n->value);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(degelate));
+    printf(JSON_VALUE("%s"), n->degelate ? "true" : "false");
+    printf(JSON_END);
+  } break;
   case NEO_NODE_TYPE_LITERAL_NULL:
   case NEO_NODE_TYPE_LITERAL_BOOLEAN:
   case NEO_NODE_TYPE_LITERAL_BIGINT:
@@ -542,14 +572,12 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
   case NEO_NODE_TYPE_DECORATOR:
   case NEO_NODE_TYPE_EXPRESSION_SUPER:
   case NEO_NODE_TYPE_EXPRESSION_THIS:
-  case NEO_NODE_TYPE_EXPRESSION_YIELD:
   case NEO_NODE_TYPE_EXPRESSION_ARRAY:
   case NEO_NODE_TYPE_EXPRESSION_OBJECT:
-  case NEO_NODE_TYPE_EXPRESSION_RECORD:
-  case NEO_NODE_TYPE_EXPRESSION_TUPLE:
+  // case NEO_NODE_TYPE_EXPRESSION_RECORD:
+  // case NEO_NODE_TYPE_EXPRESSION_TUPLE:
   case NEO_NODE_TYPE_EXPRESSION_FUNCTION:
   case NEO_NODE_TYPE_EXPRESSION_SPREAD:
-  case NEO_NODE_TYPE_EXPRESSION_NEW:
   case NEO_NODE_TYPE_PATTERN_ASSIGMENT:
   case NEO_NODE_TYPE_PATTERN_CLASS:
   case NEO_NODE_TYPE_CLASS_METHOD:

@@ -5,6 +5,7 @@
 #include "compiler/expression_condition.h"
 #include "compiler/expression_group.h"
 #include "compiler/expression_member.h"
+#include "compiler/expression_new.h"
 #include "compiler/expression_yield.h"
 #include "compiler/identifier.h"
 #include "compiler/literal_numeric.h"
@@ -113,7 +114,7 @@ neo_ast_node_t neo_ast_read_expression_17(neo_allocator_t allocator,
           goto onerror;
         };
         if (bnode) {
-          ((neo_ast_expression_call_t)bnode)->host = node;
+          ((neo_ast_expression_call_t)bnode)->callee = node;
         }
       }
       if (!bnode) {
@@ -133,6 +134,7 @@ neo_ast_node_t neo_ast_read_expression_17(neo_allocator_t allocator,
       node->location.file = file;
       SKIP_ALL(allocator, file, &cur, onerror);
     }
+    current = cur;
   }
   *position = current;
   return node;
@@ -145,9 +147,14 @@ neo_ast_node_t neo_ast_read_expression_16(neo_allocator_t allocator,
                                           const char *file,
                                           neo_position_t *position) {
   neo_ast_node_t node = NULL;
-  node = TRY(neo_ast_read_expression_17(allocator, file, position)) {
+  node = TRY(neo_ast_read_expression_new(allocator, file, position)) {
     goto onerror;
-  };
+  }
+  if (!node) {
+    node = TRY(neo_ast_read_expression_17(allocator, file, position)) {
+      goto onerror;
+    };
+  }
   return node;
 onerror:
   neo_allocator_free(allocator, node);

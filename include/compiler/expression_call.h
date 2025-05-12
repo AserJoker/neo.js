@@ -9,7 +9,7 @@ extern "C" {
 
 typedef struct _neo_ast_expression_call_t {
   struct _neo_ast_node_t node;
-  neo_ast_node_t host;
+  neo_ast_node_t callee;
   neo_list_t arguments;
 } *neo_ast_expression_call_t;
 
