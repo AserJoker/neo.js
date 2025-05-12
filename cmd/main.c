@@ -9,6 +9,8 @@
 #include "compiler/expression_new.h"
 #include "compiler/expression_object.h"
 #include "compiler/expression_spread.h"
+#include "compiler/expression_super.h"
+#include "compiler/expression_this.h"
 #include "compiler/expression_yield.h"
 #include "compiler/function_argument.h"
 #include "compiler/function_body.h"
@@ -698,6 +700,22 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     printf(JSON_VALUE("%s"), n->kind == NEO_ACCESSOR_KIND_GET ? "GET" : "SET");
     printf(JSON_END);
   } break;
+  case NEO_NODE_TYPE_EXPRESSION_SUPER: {
+    neo_ast_expression_this_t n = (neo_ast_expression_this_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_EXPRESSION_SUPER"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_EXPRESSION_THIS: {
+    neo_ast_expression_super_t n = (neo_ast_expression_super_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_EXPRESSION_THIS"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_END);
+  } break;
   // case NEO_NODE_TYPE_LITERAL_DECIMAL:
   // case NEO_NODE_TYPE_STATEMENT_WITH:
   case NEO_NODE_TYPE_STATEMENT_RETURN:
@@ -724,8 +742,6 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
   case NEO_NODE_TYPE_DECLARATION_EXPORT_DEFAULT:
   case NEO_NODE_TYPE_DECLARATION_EXPORT_ALL:
   case NEO_NODE_TYPE_DECORATOR:
-  case NEO_NODE_TYPE_EXPRESSION_SUPER:
-  case NEO_NODE_TYPE_EXPRESSION_THIS:
   // case NEO_NODE_TYPE_EXPRESSION_RECORD:
   // case NEO_NODE_TYPE_EXPRESSION_TUPLE:
   case NEO_NODE_TYPE_PATTERN_ASSIGMENT:
