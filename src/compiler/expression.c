@@ -9,6 +9,8 @@
 #include "compiler/expression_new.h"
 #include "compiler/expression_yield.h"
 #include "compiler/identifier.h"
+#include "compiler/literal_boolean.h"
+#include "compiler/literal_null.h"
 #include "compiler/literal_numeric.h"
 #include "compiler/literal_string.h"
 #include "compiler/literal_template.h"
@@ -45,6 +47,7 @@ neo_create_ast_expression_binary(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_EXPRESSION_BINARY;
   return node;
 }
+
 neo_ast_node_t neo_ast_read_expression_19(neo_allocator_t allocator,
                                           const char *file,
                                           neo_position_t *position) {
@@ -54,6 +57,16 @@ neo_ast_node_t neo_ast_read_expression_19(neo_allocator_t allocator,
   };
   if (!node) {
     node = TRY(neo_ast_read_literal_numeric(allocator, file, position)) {
+      goto onerror;
+    }
+  }
+  if (!node) {
+    node = TRY(neo_ast_read_literal_null(allocator, file, position)) {
+      goto onerror;
+    }
+  }
+  if (!node) {
+    node = TRY(neo_ast_read_literal_boolean(allocator, file, position)) {
       goto onerror;
     }
   }
