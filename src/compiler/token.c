@@ -328,10 +328,6 @@ neo_token_t neo_read_identify_token(neo_allocator_t allocator, const char *file,
                                     neo_position_t *position) {
 
   neo_position_t current = *position;
-  if (*current.offset == '#') {
-    current.offset++;
-    current.column++;
-  }
   neo_utf8_char chr = neo_utf8_read_char(current.offset);
   if (*current.offset == '\\' && *(current.offset + 1) == 'u') {
     const char *start = current.offset + 2;
@@ -375,10 +371,6 @@ neo_token_t neo_read_identify_token(neo_allocator_t allocator, const char *file,
   }
   if (!neo_utf8_char_is_id_start(chr) && !neo_utf8_char_is(chr, "$") &&
       !neo_utf8_char_is(chr, "_")) {
-    if (*position->offset == '#') {
-      THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-            current.line, current.column);
-    }
     return NULL;
   }
   current.column += chr.end - chr.begin;
@@ -439,9 +431,6 @@ neo_token_t neo_read_identify_token(neo_allocator_t allocator, const char *file,
   token->location.end = current;
   token->location.file = file;
   token->type = NEO_TOKEN_TYPE_IDENTIFY;
-  if (*position->offset == '#') {
-    token->type = NEO_TOKEN_TYPE_PRIVATE_IDENTIFY;
-  }
   *position = current;
   return token;
 }
