@@ -8,6 +8,7 @@
 #include "compiler/expression_group.h"
 #include "compiler/expression_member.h"
 #include "compiler/expression_new.h"
+#include "compiler/expression_object.h"
 #include "compiler/expression_yield.h"
 #include "compiler/identifier.h"
 #include "compiler/literal_boolean.h"
@@ -23,6 +24,7 @@
 #include "core/position.h"
 #include <stdbool.h>
 #include <stdio.h>
+
 
 static void
 neo_ast_expression_binary_dispose(neo_allocator_t allocator,
@@ -73,6 +75,11 @@ neo_ast_node_t neo_ast_read_expression_19(neo_allocator_t allocator,
   }
   if (!node) {
     node = TRY(neo_ast_read_expression_array(allocator, file, position)) {
+      goto onerror;
+    }
+  }
+  if (!node) {
+    node = TRY(neo_ast_read_expression_object(allocator, file, position)) {
       goto onerror;
     }
   }

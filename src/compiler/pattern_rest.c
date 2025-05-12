@@ -30,7 +30,7 @@ neo_ast_node_t neo_ast_read_pattern_rest(neo_allocator_t allocator,
   neo_token_t token = NULL;
   neo_position_t current = *position;
   token = neo_read_symbol_token(allocator, file, &current);
-  if (!neo_location_is(token->location, "...")) {
+  if (!token || !neo_location_is(token->location, "...")) {
     goto onerror;
   }
   neo_allocator_free(allocator, token);

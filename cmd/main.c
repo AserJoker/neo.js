@@ -7,6 +7,7 @@
 #include "compiler/expression_function.h"
 #include "compiler/expression_member.h"
 #include "compiler/expression_new.h"
+#include "compiler/expression_object.h"
 #include "compiler/expression_spread.h"
 #include "compiler/expression_yield.h"
 #include "compiler/function_argument.h"
@@ -16,6 +17,9 @@
 #include "compiler/literal_string.h"
 #include "compiler/literal_template.h"
 #include "compiler/node.h"
+#include "compiler/object_accessor.h"
+#include "compiler/object_method.h"
+#include "compiler/object_property.h"
 #include "compiler/parser.h"
 #include "compiler/pattern_array.h"
 #include "compiler/pattern_array_item.h"
@@ -617,6 +621,83 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     printf(JSON_VALUE("%s"), n->generator ? "true" : "false");
     printf(JSON_END);
   } break;
+  case NEO_NODE_TYPE_EXPRESSION_OBJECT: {
+    neo_ast_expression_object_t n = (neo_ast_expression_object_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_EXPRESSION_OBJECT"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(items));
+    print_list(allocator, n->items);
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_OBJECT_PROPERTY: {
+    neo_ast_object_property_t n = (neo_ast_object_property_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_OBJECT_PROPERTY"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(identifier));
+    print(allocator, n->identifier);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(value));
+    print(allocator, n->value);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(computed));
+    printf(JSON_VALUE("%s"), n->computed ? "true" : "false");
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_OBJECT_METHOD: {
+    neo_ast_object_method_t n = (neo_ast_object_method_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_OBJECT_METHOD"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(name));
+    print(allocator, n->name);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(body));
+    print(allocator, n->body);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(arguments));
+    print_list(allocator, n->arguments);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(computed));
+    printf(JSON_VALUE("%s"), n->computed ? "true" : "false");
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(async));
+    printf(JSON_VALUE("%s"), n->async ? "true" : "false");
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(generator));
+    printf(JSON_VALUE("%s"), n->generator ? "true" : "false");
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_OBJECT_ACCESSOR: {
+    neo_ast_object_accessor_t n = (neo_ast_object_accessor_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_OBJECT_ACCESSOR"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(name));
+    print(allocator, n->name);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(body));
+    print(allocator, n->body);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(arguments));
+    print_list(allocator, n->arguments);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(computed));
+    printf(JSON_VALUE("%s"), n->computed ? "true" : "false");
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(kind));
+    printf(JSON_VALUE("%s"), n->kind == NEO_ACCESSOR_KIND_GET ? "GET" : "SET");
+    printf(JSON_END);
+  } break;
   // case NEO_NODE_TYPE_LITERAL_DECIMAL:
   // case NEO_NODE_TYPE_STATEMENT_WITH:
   case NEO_NODE_TYPE_STATEMENT_RETURN:
@@ -645,7 +726,6 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
   case NEO_NODE_TYPE_DECORATOR:
   case NEO_NODE_TYPE_EXPRESSION_SUPER:
   case NEO_NODE_TYPE_EXPRESSION_THIS:
-  case NEO_NODE_TYPE_EXPRESSION_OBJECT:
   // case NEO_NODE_TYPE_EXPRESSION_RECORD:
   // case NEO_NODE_TYPE_EXPRESSION_TUPLE:
   case NEO_NODE_TYPE_PATTERN_ASSIGMENT:
