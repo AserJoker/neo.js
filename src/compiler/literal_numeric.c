@@ -3,6 +3,7 @@
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/error.h"
+#include "core/location.h"
 #include "core/position.h"
 
 static void neo_ast_literal_numeric_dispose() {}
@@ -28,6 +29,13 @@ neo_ast_node_t neo_ast_read_literal_numeric(neo_allocator_t allocator,
   }
   neo_allocator_free(allocator, token);
   node = neo_create_ast_literal_numeric(allocator);
+  neo_position_t cur = current;
+  token = TRY(neo_read_identify_token(allocator, file, &cur)) { goto onerror; }
+  if (token && neo_location_is(token->location, "n")) {
+    node->node.type = NEO_NODE_TYPE_LITERAL_BIGINT;
+    current = cur;
+  }
+  neo_allocator_free(allocator, token);
   node->node.location.begin = *position;
   node->node.location.end = current;
   node->node.location.file = file;

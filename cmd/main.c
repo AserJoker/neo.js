@@ -138,6 +138,15 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
     printf(JSON_END);
   } break;
+
+  case NEO_NODE_TYPE_LITERAL_BIGINT: {
+    neo_ast_literal_numeric_t n = (neo_ast_literal_numeric_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_LITERAL_BIGINT"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_END);
+  } break;
   case NEO_NODE_TYPE_EXPRESSION_BINARY: {
     neo_ast_expression_binary_t n = (neo_ast_expression_binary_t)node;
     printf(JSON_START);
@@ -571,8 +580,7 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
   } break;
   case NEO_NODE_TYPE_LITERAL_NULL:
   case NEO_NODE_TYPE_LITERAL_BOOLEAN:
-  case NEO_NODE_TYPE_LITERAL_BIGINT:
-  case NEO_NODE_TYPE_LITERAL_DECIMAL:
+  // case NEO_NODE_TYPE_LITERAL_DECIMAL:
   case NEO_NODE_TYPE_STATEMENT_WITH:
   case NEO_NODE_TYPE_STATEMENT_RETURN:
   case NEO_NODE_TYPE_STATEMENT_LABELED:
