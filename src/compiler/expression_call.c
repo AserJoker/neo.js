@@ -1,5 +1,6 @@
 #include "compiler/expression_call.h"
 #include "compiler/expression.h"
+#include "compiler/expression_spread.h"
 #include "compiler/node.h"
 #include "core/allocator.h"
 #include "core/error.h"
@@ -46,6 +47,12 @@ neo_ast_node_t neo_ast_read_expression_call(neo_allocator_t allocator,
       neo_ast_node_t argument =
           TRY(neo_ast_read_expression_2(allocator, file, &current)) {
         goto onerror;
+      }
+      if (!argument) {
+        argument =
+            TRY(neo_ast_read_expression_spread(allocator, file, &current)) {
+          goto onerror;
+        }
       }
       if (!argument) {
         THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
