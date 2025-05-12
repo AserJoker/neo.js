@@ -716,6 +716,7 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
     printf(JSON_END);
   } break;
+  case NEO_NODE_TYPE_EXPRESSION_CLASS:
   // case NEO_NODE_TYPE_LITERAL_DECIMAL:
   // case NEO_NODE_TYPE_STATEMENT_WITH:
   case NEO_NODE_TYPE_STATEMENT_RETURN:
@@ -744,8 +745,6 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
   case NEO_NODE_TYPE_DECORATOR:
   // case NEO_NODE_TYPE_EXPRESSION_RECORD:
   // case NEO_NODE_TYPE_EXPRESSION_TUPLE:
-  case NEO_NODE_TYPE_PATTERN_ASSIGMENT:
-  case NEO_NODE_TYPE_PATTERN_CLASS:
   case NEO_NODE_TYPE_CLASS_METHOD:
   case NEO_NODE_TYPE_CLASS_PROPERTY:
   case NEO_NODE_TYPE_CLASS_STATIC_BLOCK:
@@ -755,6 +754,8 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
   case NEO_NODE_TYPE_IMPORT_ATTRIBUTE:
   case NEO_NODE_TYPE_EXPORT_SPECIFIER:
   case NEO_NODE_TYPE_EXPORT_NAMESPACE_SPECIFIER:
+    break;
+  case NEO_NODE_TYPE_DECLARATION_CLASS:
     break;
   }
   neo_allocator_free(allocator, source);
