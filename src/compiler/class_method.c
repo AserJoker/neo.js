@@ -1,4 +1,4 @@
-#include "compiler/object_accessor.h"
+#include "compiler/class_method.h"
 #include "compiler/function_argument.h"
 #include "compiler/function_body.h"
 #include "compiler/node.h"
@@ -10,42 +10,65 @@
 #include "core/location.h"
 #include "core/position.h"
 #include <stdio.h>
-static void neo_ast_object_accessor_dispose(neo_allocator_t allocator,
-                                            neo_ast_object_accessor_t node) {
+
+static void neo_ast_class_method_dispose(neo_allocator_t allocator,
+                                         neo_ast_class_method_t node) {
   neo_allocator_free(allocator, node->arguments);
   neo_allocator_free(allocator, node->body);
+  neo_allocator_free(allocator, node->decorators);
   neo_allocator_free(allocator, node->name);
 }
 
-static neo_ast_object_accessor_t
-neo_create_ast_object_accessor(neo_allocator_t allocator) {
-  neo_ast_object_accessor_t node =
-      neo_allocator_alloc2(allocator, neo_ast_object_accessor);
-  node->node.type = NEO_NODE_TYPE_OBJECT_ACCESSOR;
-  node->body = NULL;
-  node->name = NULL;
-  node->kind = NEO_ACCESSOR_KIND_GET;
-  node->computed = false;
+static neo_ast_class_method_t
+neo_create_ast_class_method(neo_allocator_t allocator) {
+  neo_ast_class_method_t node =
+      neo_allocator_alloc2(allocator, neo_ast_class_method);
   neo_list_initialize_t initialize = {true};
+  node->node.type = NEO_NODE_TYPE_CLASS_METHOD;
   node->arguments = neo_create_list(allocator, &initialize);
+  node->body = NULL;
+  node->computed = false;
+  node->decorators = neo_create_list(allocator, &initialize);
+  node->name = NULL;
+  node->static_ = false;
+  node->async = false;
+  node->generator = false;
   return node;
 }
 
-neo_ast_node_t neo_ast_read_object_accessor(neo_allocator_t allocator,
-                                            const char *file,
-                                            neo_position_t *position) {
+neo_ast_node_t neo_ast_read_class_method(neo_allocator_t allocator,
+                                         const char *file,
+                                         neo_position_t *position) {
   neo_position_t current = *position;
-  neo_ast_object_accessor_t node = neo_create_ast_object_accessor(allocator);
   neo_token_t token = NULL;
+  neo_ast_class_method_t node = NULL;
+  node = neo_create_ast_class_method(allocator);
   token = neo_read_identify_token(allocator, file, &current);
-  if (!token || (!neo_location_is(token->location, "get") &&
-                 !neo_location_is(token->location, "set"))) {
-    goto onerror;
+  if (token && neo_location_is(token->location, "static")) {
+    node->static_ = true;
+  } else if (token) {
+    current = token->location.begin;
   }
-  if (neo_location_is(token->location, "get")) {
-    node->kind = NEO_ACCESSOR_KIND_GET;
-  } else {
-    node->kind = NEO_ACCESSOR_KIND_SET;
+  neo_allocator_free(allocator, token);
+  SKIP_ALL(allocator, file, &current, onerror);
+  token = neo_read_identify_token(allocator, file, &current);
+  if (token && neo_location_is(token->location, "async")) {
+    SKIP_ALL(allocator, file, &current, onerror);
+    if (*current.offset != '(') {
+      node->async = true;
+    } else {
+      current = token->location.begin;
+    }
+  } else if (token) {
+    current = token->location.begin;
+  }
+  neo_allocator_free(allocator, token);
+  SKIP_ALL(allocator, file, &current, onerror);
+  token = neo_read_symbol_token(allocator, file, &current);
+  if (token && neo_location_is(token->location, "*")) {
+    node->generator = true;
+  } else if (token) {
+    current = token->location.begin;
   }
   neo_allocator_free(allocator, token);
   SKIP_ALL(allocator, file, &current, onerror);
@@ -64,8 +87,6 @@ neo_ast_node_t neo_ast_read_object_accessor(neo_allocator_t allocator,
   }
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != '(') {
-    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-          current.line, current.column);
     goto onerror;
   }
   current.offset++;

@@ -3,6 +3,7 @@
 #include "compiler/expression_arrow_function.h"
 #include "compiler/expression_assigment.h"
 #include "compiler/expression_call.h"
+#include "compiler/expression_class.h"
 #include "compiler/expression_condition.h"
 #include "compiler/expression_function.h"
 #include "compiler/expression_group.h"
@@ -91,6 +92,11 @@ neo_ast_node_t neo_ast_read_expression_19(neo_allocator_t allocator,
   }
   if (!node) {
     node = TRY(neo_ast_read_expression_function(allocator, file, position)) {
+      goto onerror;
+    }
+  }
+  if (!node) {
+    node = TRY(neo_ast_read_expression_class(allocator, file, position)) {
       goto onerror;
     }
   }

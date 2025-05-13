@@ -1,0 +1,86 @@
+#include "compiler/class_property.h"
+#include "compiler/expression.h"
+#include "compiler/node.h"
+#include "compiler/object_key.h"
+#include "compiler/token.h"
+#include "core/allocator.h"
+#include "core/error.h"
+#include "core/list.h"
+#include "core/location.h"
+#include "core/position.h"
+#include <stdio.h>
+static void neo_ast_class_property_dispose(neo_allocator_t allocator,
+                                           neo_ast_class_property_t node) {
+  neo_allocator_free(allocator, node->decorators);
+  neo_allocator_free(allocator, node->identifier);
+  neo_allocator_free(allocator, node->value);
+}
+
+static neo_ast_class_property_t
+neo_create_ast_class_property(neo_allocator_t allocator) {
+  neo_ast_class_property_t node =
+      neo_allocator_alloc2(allocator, neo_ast_class_property);
+  node->node.type = NEO_NODE_TYPE_CLASS_PROPERTY;
+  node->computed = false;
+  node->static_ = false;
+  node->value = NULL;
+  node->identifier = NULL;
+  neo_list_initialize_t initialize = {true};
+  node->decorators = neo_create_list(allocator, &initialize);
+  return node;
+}
+
+neo_ast_node_t neo_ast_read_class_property(neo_allocator_t allocator,
+                                           const char *file,
+                                           neo_position_t *position) {
+  neo_position_t current = *position;
+  neo_token_t token = NULL;
+  neo_ast_class_property_t node = NULL;
+  node = neo_create_ast_class_property(allocator);
+  token = neo_read_identify_token(allocator, file, &current);
+  if (token && neo_location_is(token->location, "static")) {
+    node->static_ = true;
+  } else if (token) {
+    current = token->location.begin;
+  }
+  neo_allocator_free(allocator, token);
+  SKIP_ALL(allocator, file, &current, onerror);
+  node->identifier = TRY(neo_ast_read_object_key(allocator, file, &current)) {
+    goto onerror;
+  }
+  if (!node->identifier) {
+    node->identifier =
+        TRY(neo_ast_read_object_computed_key(allocator, file, &current)) {
+      goto onerror;
+    }
+    node->computed = true;
+  }
+  if (!node->identifier) {
+    goto onerror;
+  }
+  SKIP_ALL(allocator, file, &current, onerror);
+  token = neo_read_symbol_token(allocator, file, &current);
+  if (token && neo_location_is(token->location, "=")) {
+    SKIP_ALL(allocator, file, &current, onerror);
+    node->value = TRY(neo_ast_read_expression_2(allocator, file, &current)) {
+      goto onerror;
+    }
+    if (!node->value) {
+      THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
+            current.line, current.column);
+      goto onerror;
+    }
+  } else if (token) {
+    current = token->location.begin;
+  }
+  neo_allocator_free(allocator, token);
+  node->node.location.begin = *position;
+  node->node.location.end = current;
+  node->node.location.file = file;
+  *position = current;
+  return &node->node;
+onerror:
+  neo_allocator_free(allocator, node);
+  neo_allocator_free(allocator, token);
+  return NULL;
+}

@@ -1,8 +1,12 @@
+#include "compiler/class_accessor.h"
+#include "compiler/class_method.h"
+#include "compiler/class_property.h"
 #include "compiler/expression.h"
 #include "compiler/expression_array.h"
 #include "compiler/expression_arrow_function.h"
 #include "compiler/expression_assigment.h"
 #include "compiler/expression_call.h"
+#include "compiler/expression_class.h"
 #include "compiler/expression_condition.h"
 #include "compiler/expression_function.h"
 #include "compiler/expression_member.h"
@@ -31,6 +35,7 @@
 #include "compiler/program.h"
 #include "compiler/statement_block.h"
 #include "compiler/statement_expression.h"
+#include "compiler/static_block.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/error.h"
@@ -716,7 +721,121 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
     printf(JSON_END);
   } break;
-  case NEO_NODE_TYPE_EXPRESSION_CLASS:
+  case NEO_NODE_TYPE_EXPRESSION_CLASS: {
+    neo_ast_expression_class_t n = (neo_ast_expression_class_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_EXPRESSION_CLASS"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(name));
+    print(allocator, n->name);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(extends));
+    print(allocator, n->extends);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(items));
+    print_list(allocator, n->items);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(decorators));
+    print_list(allocator, n->decorators);
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_CLASS_METHOD: {
+    neo_ast_class_method_t n = (neo_ast_class_method_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_CLASS_METHOD"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(name));
+    print(allocator, n->name);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(body));
+    print(allocator, n->body);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(arguments));
+    print_list(allocator, n->arguments);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(computed));
+    printf(JSON_VALUE("%s"), n->computed ? "true" : "false");
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(async));
+    printf(JSON_VALUE("%s"), n->async ? "true" : "false");
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(generator));
+    printf(JSON_VALUE("%s"), n->generator ? "true" : "false");
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(static));
+    printf(JSON_VALUE("%s"), n->static_ ? "true" : "false");
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(decorators));
+    print_list(allocator, n->decorators);
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_CLASS_ACCESSOR: {
+    neo_ast_class_accessor_t n = (neo_ast_class_accessor_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_CLASS_ACCESSOR"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(name));
+    print(allocator, n->name);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(body));
+    print(allocator, n->body);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(arguments));
+    print_list(allocator, n->arguments);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(computed));
+    printf(JSON_VALUE("%s"), n->computed ? "true" : "false");
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(kind));
+    printf(JSON_VALUE("%s"), n->kind == NEO_ACCESSOR_KIND_GET ? "get" : "set");
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(static));
+    printf(JSON_VALUE("%s"), n->static_ ? "true" : "false");
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(decorators));
+    print_list(allocator, n->decorators);
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_CLASS_PROPERTY: {
+    neo_ast_class_property_t n = (neo_ast_class_property_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_CLASS_PROPERTY"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(identifier));
+    print(allocator, n->identifier);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(value));
+    print(allocator, n->value);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(computed));
+    printf(JSON_VALUE("%s"), n->computed ? "true" : "false");
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(static));
+    printf(JSON_VALUE("%s"), n->static_ ? "true" : "false");
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(decorators));
+    print_list(allocator, n->decorators);
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_STATIC_BLOCK: {
+    neo_ast_static_block_t n = (neo_ast_static_block_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_STATIC_BLOCK"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(body));
+    print_list(allocator, n->body);
+    printf(JSON_END);
+  } break;
   // case NEO_NODE_TYPE_LITERAL_DECIMAL:
   // case NEO_NODE_TYPE_STATEMENT_WITH:
   case NEO_NODE_TYPE_STATEMENT_RETURN:
@@ -735,6 +854,7 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
   case NEO_NODE_TYPE_STATEMENT_FOR_IN:
   case NEO_NODE_TYPE_STATEMENT_FOR_OF:
   case NEO_NODE_TYPE_STATEMENT_FOR_AWAIT_OF:
+  case NEO_NODE_TYPE_DECLARATION_CLASS:
   case NEO_NODE_TYPE_DECLARATION_FUNCTION:
   case NEO_NODE_TYPE_DECLARATION_VARIABLE:
   case NEO_NODE_TYPE_DECLARATION_VARIABLE_DECLARATOR:
@@ -745,17 +865,12 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
   case NEO_NODE_TYPE_DECORATOR:
   // case NEO_NODE_TYPE_EXPRESSION_RECORD:
   // case NEO_NODE_TYPE_EXPRESSION_TUPLE:
-  case NEO_NODE_TYPE_CLASS_METHOD:
-  case NEO_NODE_TYPE_CLASS_PROPERTY:
-  case NEO_NODE_TYPE_CLASS_STATIC_BLOCK:
   case NEO_NODE_TYPE_IMPORT_SPECIFIER:
   case NEO_NODE_TYPE_IMPORT_DEFAULT_SPECIFIER:
   case NEO_NODE_TYPE_IMPORT_NAMESPACE_SPECIFIER:
   case NEO_NODE_TYPE_IMPORT_ATTRIBUTE:
   case NEO_NODE_TYPE_EXPORT_SPECIFIER:
   case NEO_NODE_TYPE_EXPORT_NAMESPACE_SPECIFIER:
-    break;
-  case NEO_NODE_TYPE_DECLARATION_CLASS:
     break;
   }
   neo_allocator_free(allocator, source);

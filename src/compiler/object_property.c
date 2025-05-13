@@ -1,9 +1,7 @@
 #include "compiler/object_property.h"
 #include "compiler/expression.h"
-#include "compiler/identifier.h"
-#include "compiler/literal_numeric.h"
-#include "compiler/literal_string.h"
 #include "compiler/node.h"
+#include "compiler/object_key.h"
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/position.h"
@@ -31,42 +29,14 @@ neo_ast_node_t neo_ast_read_object_property(neo_allocator_t allocator,
                                             neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_object_property_t node = neo_create_ast_object_property(allocator);
-  node->identifier = TRY(neo_ast_read_identifier(allocator, file, &current)) {
+  node->identifier = TRY(neo_ast_read_object_key(allocator, file, &current)) {
     goto onerror;
-  };
-  if (!node->identifier) {
-    node->identifier =
-        TRY(neo_ast_read_literal_string(allocator, file, &current)) {
-      goto onerror;
-    }
   }
   if (!node->identifier) {
     node->identifier =
-        TRY(neo_ast_read_literal_numeric(allocator, file, &current)) {
+        TRY(neo_ast_read_object_computed_key(allocator, file, &current)) {
       goto onerror;
     }
-  }
-  if (*current.offset == '[') {
-    current.offset++;
-    current.column++;
-    SKIP_ALL(allocator, file, &current, onerror);
-    node->identifier =
-        TRY(neo_ast_read_expression_2(allocator, file, &current)) {
-      goto onerror;
-    }
-    if (!node->identifier) {
-      THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-            current.line, current.column);
-      goto onerror;
-    }
-    SKIP_ALL(allocator, file, &current, onerror);
-    if (*current.offset != ']') {
-      THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-            current.line, current.column);
-      goto onerror;
-    }
-    current.offset++;
-    current.column++;
     node->computed = true;
   }
   if (!node->identifier) {
