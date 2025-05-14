@@ -2,6 +2,7 @@
 #include "compiler/class_accessor.h"
 #include "compiler/class_method.h"
 #include "compiler/class_property.h"
+#include "compiler/decorator.h"
 #include "compiler/expression.h"
 #include "compiler/identifier.h"
 #include "compiler/node.h"
@@ -41,13 +42,24 @@ neo_ast_node_t neo_ast_read_expression_class(neo_allocator_t allocator,
   neo_position_t current = *position;
   neo_ast_expression_class_t node = NULL;
   neo_token_t token = NULL;
+  node = neo_create_ast_expression_class(allocator);
+  for (;;) {
+    neo_ast_node_t decorator =
+        TRY(neo_ast_read_decorator(allocator, file, &current)) {
+      goto onerror;
+    }
+    if (!decorator) {
+      break;
+    }
+    neo_list_push(node->decorators, decorator);
+    SKIP_ALL(allocator, file, &current, onerror);
+  }
   token = neo_read_identify_token(allocator, file, &current);
   if (!token || !neo_location_is(token->location, "class")) {
     goto onerror;
   }
   neo_allocator_free(allocator, token);
   SKIP_ALL(allocator, file, &current, onerror);
-  node = neo_create_ast_expression_class(allocator);
   node->name = TRY(neo_ast_read_identifier(allocator, file, &current)) {
     goto onerror;
   }
@@ -72,6 +84,7 @@ neo_ast_node_t neo_ast_read_expression_class(neo_allocator_t allocator,
   }
   current.offset++;
   current.column++;
+  SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != '}') {
     for (;;) {
       neo_ast_node_t item = NULL;

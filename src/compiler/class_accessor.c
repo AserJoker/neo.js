@@ -1,4 +1,5 @@
 #include "compiler/class_accessor.h"
+#include "compiler/decorator.h"
 #include "compiler/function_argument.h"
 #include "compiler/function_body.h"
 #include "compiler/node.h"
@@ -11,6 +12,7 @@
 #include "core/location.h"
 #include "core/position.h"
 #include <stdio.h>
+
 
 static void neo_ast_class_accessor_dispose(neo_allocator_t allocator,
                                            neo_ast_class_accessor_t node) {
@@ -43,6 +45,17 @@ neo_ast_node_t neo_ast_read_class_accessor(neo_allocator_t allocator,
   neo_ast_class_accessor_t node = NULL;
   neo_token_t token = NULL;
   node = neo_create_ast_class_accessor(allocator);
+  for (;;) {
+    neo_ast_node_t decorator =
+        TRY(neo_ast_read_decorator(allocator, file, &current)) {
+      goto onerror;
+    }
+    if (!decorator) {
+      break;
+    }
+    neo_list_push(node->decorators, decorator);
+    SKIP_ALL(allocator, file, &current, onerror);
+  }
   token = neo_read_identify_token(allocator, file, &current);
   if (token && neo_location_is(token->location, "static")) {
     node->static_ = true;
