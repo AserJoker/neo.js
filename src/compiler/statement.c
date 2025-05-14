@@ -3,6 +3,7 @@
 #include "compiler/statement_debugger.h"
 #include "compiler/statement_empty.h"
 #include "compiler/statement_expression.h"
+#include "compiler/statement_return.h"
 #include "core/error.h"
 neo_ast_node_t neo_ast_read_statement(neo_allocator_t allocator,
                                       const char *file,
@@ -18,6 +19,11 @@ neo_ast_node_t neo_ast_read_statement(neo_allocator_t allocator,
   }
   if (!node) {
     node = TRY(neo_ast_read_statement_debugger(allocator, file, position)) {
+      goto onerror;
+    }
+  }
+  if (!node) {
+    node = TRY(neo_ast_read_statement_return(allocator, file, position)) {
       goto onerror;
     }
   }

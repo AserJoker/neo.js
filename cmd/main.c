@@ -36,6 +36,7 @@
 #include "compiler/program.h"
 #include "compiler/statement_block.h"
 #include "compiler/statement_expression.h"
+#include "compiler/statement_return.h"
 #include "compiler/static_block.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
@@ -851,9 +852,19 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     print_list(allocator, n->arguments);
     printf(JSON_END);
   } break;
+  case NEO_NODE_TYPE_STATEMENT_RETURN: {
+    neo_ast_statement_return_t n = (neo_ast_statement_return_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_STATEMENT_RETURN"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(value));
+    print(allocator, n->value);
+    printf(JSON_END);
+  } break;
   // case NEO_NODE_TYPE_LITERAL_DECIMAL:
   // case NEO_NODE_TYPE_STATEMENT_WITH:
-  case NEO_NODE_TYPE_STATEMENT_RETURN:
   case NEO_NODE_TYPE_STATEMENT_LABELED:
   case NEO_NODE_TYPE_STATEMENT_BREAK:
   case NEO_NODE_TYPE_STATEMENT_CONTINUE:
