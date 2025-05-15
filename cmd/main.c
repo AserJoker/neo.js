@@ -38,6 +38,7 @@
 #include "compiler/statement_break.h"
 #include "compiler/statement_continue.h"
 #include "compiler/statement_expression.h"
+#include "compiler/statement_labeled.h"
 #include "compiler/statement_return.h"
 #include "compiler/static_block.h"
 #include "compiler/token.h"
@@ -887,7 +888,20 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     print(allocator, n->label);
     printf(JSON_END);
   } break;
-  case NEO_NODE_TYPE_STATEMENT_LABELED:
+  case NEO_NODE_TYPE_STATEMENT_LABELED: {
+    neo_ast_statement_labeled_t n = (neo_ast_statement_labeled_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_STATEMENT_CONTINUE"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(label));
+    print(allocator, n->label);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(statement));
+    print(allocator, n->statement);
+    printf(JSON_END);
+  } break;
   case NEO_NODE_TYPE_STATEMENT_IF:
   case NEO_NODE_TYPE_STATEMENT_SWITCH:
   case NEO_NODE_TYPE_STATEMENT_SWITCH_CASE:

@@ -6,8 +6,9 @@
 #include "core/location.h"
 #include "core/position.h"
 #include <stdio.h>
-static void neo_ast_statement_continue_dispose(neo_allocator_t allocator,
-                                            neo_ast_statement_continue_t node) {
+static void
+neo_ast_statement_continue_dispose(neo_allocator_t allocator,
+                                   neo_ast_statement_continue_t node) {
   neo_allocator_free(allocator, node->label);
 }
 
@@ -21,11 +22,12 @@ neo_create_ast_statement_continue(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_statement_continue(neo_allocator_t allocator,
-                                            const char *file,
-                                            neo_position_t *position) {
+                                               const char *file,
+                                               neo_position_t *position) {
   neo_position_t current = *position;
   neo_token_t token = NULL;
-  neo_ast_statement_continue_t node = neo_create_ast_statement_continue(allocator);
+  neo_ast_statement_continue_t node =
+      neo_create_ast_statement_continue(allocator);
   token = neo_read_identify_token(allocator, file, &current);
   if (!token || !neo_location_is(token->location, "continue")) {
     goto onerror;
@@ -44,11 +46,7 @@ neo_ast_node_t neo_ast_read_statement_continue(neo_allocator_t allocator,
       SKIP_ALL(allocator, file, &cur, onerror);
     }
   }
-  if (*cur.offset == ';') {
-    cur.offset++;
-    cur.column++;
-    current = cur;
-  } else if (*cur.offset != '}' && line == cur.line) {
+  if (*cur.offset != '}' && *cur.offset != ';' && line == cur.line) {
     THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
           current.line, current.column);
     goto onerror;

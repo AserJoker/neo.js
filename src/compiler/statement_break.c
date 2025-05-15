@@ -44,11 +44,7 @@ neo_ast_node_t neo_ast_read_statement_break(neo_allocator_t allocator,
       SKIP_ALL(allocator, file, &cur, onerror);
     }
   }
-  if (*cur.offset == ';') {
-    cur.offset++;
-    cur.column++;
-    current = cur;
-  } else if (*cur.offset != '}' && line == cur.line) {
+  if (*cur.offset != '}' && *cur.offset != ';' && line == cur.line) {
     THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
           current.line, current.column);
     goto onerror;
