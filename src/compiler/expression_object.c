@@ -40,10 +40,7 @@ neo_ast_node_t neo_ast_read_expression_object(neo_allocator_t allocator,
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != '}') {
     for (;;) {
-      neo_ast_node_t item =
-          TRY(neo_ast_read_object_property(allocator, file, &current)) {
-        goto onerror;
-      };
+      neo_ast_node_t item = NULL;
       if (!item) {
         item = TRY(neo_ast_read_object_accessor(allocator, file, &current)) {
           goto onerror;
@@ -58,6 +55,11 @@ neo_ast_node_t neo_ast_read_expression_object(neo_allocator_t allocator,
         item = TRY(neo_ast_read_expression_spread(allocator, file, &current)) {
           goto onerror;
         }
+      }
+      if (!item) {
+        item = TRY(neo_ast_read_object_property(allocator, file, &current)) {
+          goto onerror;
+        };
       }
       if (!item) {
         THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",

@@ -4,6 +4,7 @@
 #include "core/allocator.h"
 #include "core/location.h"
 #include <stdbool.h>
+#include "core/error.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

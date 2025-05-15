@@ -1,5 +1,5 @@
 #include "compiler/directive.h"
-#include "compiler/expression.h"
+#include "compiler/literal_string.h"
 #include "compiler/node.h"
 #include "core/allocator.h"
 #include "core/error.h"
@@ -19,10 +19,10 @@ neo_ast_node_t neo_ast_read_directive(neo_allocator_t allocator,
   neo_position_t current = *position;
   neo_ast_directive_t node = NULL;
   neo_ast_node_t token =
-      TRY(neo_ast_read_expression(allocator, file, &current)) {
+      TRY(neo_ast_read_literal_string(allocator, file, &current)) {
     goto onerror;
   };
-  if (!token || token->type != NEO_NODE_TYPE_LITERAL_STRING) {
+  if (!token) {
     neo_allocator_free(allocator, token);
     return NULL;
   }

@@ -1,5 +1,7 @@
 #include "compiler/statement.h"
 #include "compiler/statement_block.h"
+#include "compiler/statement_break.h"
+#include "compiler/statement_continue.h"
 #include "compiler/statement_debugger.h"
 #include "compiler/statement_empty.h"
 #include "compiler/statement_expression.h"
@@ -19,6 +21,16 @@ neo_ast_node_t neo_ast_read_statement(neo_allocator_t allocator,
   }
   if (!node) {
     node = TRY(neo_ast_read_statement_debugger(allocator, file, position)) {
+      goto onerror;
+    }
+  }
+  if (!node) {
+    node = TRY(neo_ast_read_statement_break(allocator, file, position)) {
+      goto onerror;
+    }
+  }
+  if (!node) {
+    node = TRY(neo_ast_read_statement_continue(allocator, file, position)) {
       goto onerror;
     }
   }
