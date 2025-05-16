@@ -1,0 +1,103 @@
+#include "compiler/statement_switch.h"
+#include "compiler/expression.h"
+#include "compiler/node.h"
+#include "compiler/switch_case.h"
+#include "compiler/token.h"
+#include "core/allocator.h"
+#include "core/error.h"
+#include "core/list.h"
+#include "core/location.h"
+#include "core/position.h"
+#include <stdio.h>
+
+static void neo_ast_statement_switch_dispose(neo_allocator_t allocator,
+                                             neo_ast_statement_switch_t node) {
+  neo_allocator_free(allocator, node->cases);
+  neo_allocator_free(allocator, node->condition);
+}
+
+static neo_ast_statement_switch_t
+neo_create_ast_statement_switch(neo_allocator_t allocator) {
+  neo_ast_statement_switch_t node =
+      neo_allocator_alloc2(allocator, neo_ast_statement_switch);
+  node->node.type = NEO_NODE_TYPE_STATEMENT_SWITCH;
+  node->condition = NULL;
+  neo_list_initialize_t initialize = {true};
+  node->cases = neo_create_list(allocator, &initialize);
+  return node;
+}
+
+neo_ast_node_t neo_ast_read_statement_switch(neo_allocator_t allocator,
+                                             const char *file,
+                                             neo_position_t *position) {
+  neo_position_t current = *position;
+  neo_ast_statement_switch_t node = neo_create_ast_statement_switch(allocator);
+  neo_token_t token = NULL;
+  token = neo_read_identify_token(allocator, file, &current);
+  if (!token || !neo_location_is(token->location, "switch")) {
+    goto onerror;
+  }
+  neo_allocator_free(allocator, token);
+  SKIP_ALL(allocator, file, &current, onerror);
+  if (*current.offset != '(') {
+    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
+          current.line, current.column);
+    goto onerror;
+  }
+  current.offset++;
+  current.column++;
+  SKIP_ALL(allocator, file, &current, onerror);
+  node->condition = TRY(neo_ast_read_expression(allocator, file, &current)) {
+    goto onerror;
+  }
+  if (!node->condition) {
+    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
+          current.line, current.column);
+    goto onerror;
+  }
+  SKIP_ALL(allocator, file, &current, onerror);
+  if (*current.offset != ')') {
+    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
+          current.line, current.column);
+    goto onerror;
+  }
+  current.offset++;
+  current.column++;
+  SKIP_ALL(allocator, file, &current, onerror);
+  if (*current.offset != '{') {
+    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
+          current.line, current.column);
+    goto onerror;
+  }
+  current.offset++;
+  current.column++;
+  SKIP_ALL(allocator, file, &current, onerror);
+  for (;;) {
+    neo_ast_node_t cas =
+        TRY(neo_ast_read_switch_case(allocator, file, &current)) {
+      goto onerror;
+    }
+    if (!cas) {
+      break;
+    }
+    neo_list_push(node->cases, cas);
+    SKIP_ALL(allocator, file, &current, onerror);
+  }
+  SKIP_ALL(allocator, file, &current, onerror);
+  if (*current.offset != '}') {
+    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
+          current.line, current.column);
+    goto onerror;
+  }
+  current.offset++;
+  current.column++;
+  node->node.location.begin = *position;
+  node->node.location.end = current;
+  node->node.location.file = file;
+  *position = current;
+  return &node->node;
+onerror:
+  neo_allocator_free(allocator, token);
+  neo_allocator_free(allocator, node);
+  return NULL;
+}

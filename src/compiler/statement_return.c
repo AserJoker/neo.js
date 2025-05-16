@@ -1,6 +1,6 @@
 #include "compiler/statement_return.h"
+#include "compiler/expression.h"
 #include "compiler/node.h"
-#include "compiler/statement_expression.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/error.h"
@@ -37,12 +37,21 @@ neo_ast_node_t neo_ast_read_statement_return(neo_allocator_t allocator,
   uint32_t line = current.line;
   SKIP_ALL(allocator, file, &cur, onerror);
   if (cur.line == line) {
-    node->value =
-        TRY(neo_ast_read_statement_expression(allocator, file, &cur)) {
+    node->value = TRY(neo_ast_read_expression(allocator, file, &cur)) {
       goto onerror;
     }
     if (node->value) {
       current = cur;
+      uint32_t line = current.line;
+      SKIP_ALL(allocator, file, &current, onerror);
+      if (current.line == line) {
+        if (*current.offset && *current.offset != ';' &&
+            *current.offset != '}') {
+          THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
+                file, current.line, current.column);
+          goto onerror;
+        }
+      }
     }
   }
   node->node.location.begin = *position;

@@ -2,9 +2,10 @@
 #define _H_NEO_COMPILER_NODE_
 
 #include "core/allocator.h"
+#include "core/error.h"
 #include "core/location.h"
 #include <stdbool.h>
-#include "core/error.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -31,10 +32,10 @@ typedef enum _neo_ast_node_type_t {
   NEO_NODE_TYPE_STATEMENT_CONTINUE,
   NEO_NODE_TYPE_STATEMENT_IF,
   NEO_NODE_TYPE_STATEMENT_SWITCH,
-  NEO_NODE_TYPE_STATEMENT_SWITCH_CASE,
+  NEO_NODE_TYPE_SWITCH_CASE,
   NEO_NODE_TYPE_STATEMENT_THROW,
   NEO_NODE_TYPE_STATEMENT_TRY,
-  NEO_NODE_TYPE_STATEMENT_TRY_CATCH,
+  NEO_NODE_TYPE_TRY_CATCH,
   NEO_NODE_TYPE_STATEMENT_WHILE,
   NEO_NODE_TYPE_STATEMENT_DO_WHILE,
   NEO_NODE_TYPE_STATEMENT_FOR,

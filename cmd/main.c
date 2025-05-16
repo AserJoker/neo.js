@@ -41,7 +41,9 @@
 #include "compiler/statement_if.h"
 #include "compiler/statement_labeled.h"
 #include "compiler/statement_return.h"
+#include "compiler/statement_switch.h"
 #include "compiler/static_block.h"
+#include "compiler/switch_case.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/error.h"
@@ -920,11 +922,37 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     print(allocator, n->consequent);
     printf(JSON_END);
   } break;
-  case NEO_NODE_TYPE_STATEMENT_SWITCH:
-  case NEO_NODE_TYPE_STATEMENT_SWITCH_CASE:
+  case NEO_NODE_TYPE_STATEMENT_SWITCH: {
+    neo_ast_statement_switch_t n = (neo_ast_statement_switch_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_STATEMENT_SWITCH"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(condition));
+    print(allocator, n->condition);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(cases));
+    print_list(allocator, n->cases);
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_SWITCH_CASE: {
+    neo_ast_switch_case_t n = (neo_ast_switch_case_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_SWITCH_CASE"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(condition));
+    print(allocator, n->condition);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(body));
+    print_list(allocator, n->body);
+    printf(JSON_END);
+  } break;
   case NEO_NODE_TYPE_STATEMENT_THROW:
   case NEO_NODE_TYPE_STATEMENT_TRY:
-  case NEO_NODE_TYPE_STATEMENT_TRY_CATCH:
+  case NEO_NODE_TYPE_TRY_CATCH:
   case NEO_NODE_TYPE_STATEMENT_WHILE:
   case NEO_NODE_TYPE_STATEMENT_DO_WHILE:
   case NEO_NODE_TYPE_STATEMENT_FOR:
