@@ -1,6 +1,7 @@
 #include "compiler/statement.h"
 #include "compiler/declaration_class.h"
 #include "compiler/declaration_function.h"
+#include "compiler/declaration_variable.h"
 #include "compiler/statement_block.h"
 #include "compiler/statement_break.h"
 #include "compiler/statement_continue.h"
@@ -79,6 +80,11 @@ neo_ast_node_t neo_ast_read_statement(neo_allocator_t allocator,
     }
   }
   if (!node) {
+    node = TRY(neo_ast_read_statement_labeled(allocator, file, position)) {
+      goto onerror;
+    }
+  }
+  if (!node) {
     node = TRY(neo_ast_read_declaration_class(allocator, file, position)) {
       goto onerror;
     }
@@ -89,7 +95,7 @@ neo_ast_node_t neo_ast_read_statement(neo_allocator_t allocator,
     }
   }
   if (!node) {
-    node = TRY(neo_ast_read_statement_labeled(allocator, file, position)) {
+    node = TRY(neo_ast_read_declaration_variable(allocator, file, position)) {
       goto onerror;
     }
   }

@@ -3,6 +3,7 @@
 #include "compiler/class_property.h"
 #include "compiler/declaration_class.h"
 #include "compiler/declaration_function.h"
+#include "compiler/declaration_variable.h"
 #include "compiler/decorator.h"
 #include "compiler/expression.h"
 #include "compiler/expression_array.h"
@@ -52,6 +53,7 @@
 #include "compiler/switch_case.h"
 #include "compiler/token.h"
 #include "compiler/try_catch.h"
+#include "compiler/variable_declarator.h"
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/list.h"
@@ -1054,8 +1056,40 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     print(allocator, n->declaration);
     printf(JSON_END);
   } break;
-  case NEO_NODE_TYPE_DECLARATION_VARIABLE:
-  case NEO_NODE_TYPE_VARIABLE_DECLARATOR:
+  case NEO_NODE_TYPE_DECLARATION_VARIABLE: {
+    neo_ast_declaration_variable_t n = (neo_ast_declaration_variable_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_DECLARATION_VARIABLE"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(declarators));
+    print_list(allocator, n->declarators);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(kind));
+    if (n->kind == NEO_AST_DECLARATION_VAR) {
+      printf(JSON_VALUE("%s"), "var");
+    } else if (n->kind == NEO_AST_DECLARATION_CONST) {
+      printf(JSON_VALUE("%s"), "const");
+    } else if (n->kind == NEO_AST_DECLARATION_LET) {
+      printf(JSON_VALUE("%s"), "let");
+    }
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_VARIABLE_DECLARATOR: {
+    neo_ast_variable_declarator_t n = (neo_ast_variable_declarator_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_VARIABLE_DECLARATOR"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(identifier));
+    print(allocator, n->identifier);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(initialize));
+    print(allocator, n->initialize);
+    printf(JSON_END);
+  } break;
   case NEO_NODE_TYPE_DECLARATION_IMPORT:
   case NEO_NODE_TYPE_DECLARATION_EXPORT:
   case NEO_NODE_TYPE_DECLARATION_EXPORT_DEFAULT:
