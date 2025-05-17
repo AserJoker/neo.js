@@ -1,6 +1,8 @@
 #include "compiler/class_accessor.h"
 #include "compiler/class_method.h"
 #include "compiler/class_property.h"
+#include "compiler/declaration_class.h"
+#include "compiler/declaration_function.h"
 #include "compiler/decorator.h"
 #include "compiler/expression.h"
 #include "compiler/expression_array.h"
@@ -1029,8 +1031,29 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
   case NEO_NODE_TYPE_STATEMENT_FOR_IN:
   case NEO_NODE_TYPE_STATEMENT_FOR_OF:
   case NEO_NODE_TYPE_STATEMENT_FOR_AWAIT_OF:
-  case NEO_NODE_TYPE_DECLARATION_CLASS:
-  case NEO_NODE_TYPE_DECLARATION_FUNCTION:
+    break;
+  case NEO_NODE_TYPE_DECLARATION_CLASS: {
+    neo_ast_declaration_class_t n = (neo_ast_declaration_class_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_DECLARATION_CLASS"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(declaration));
+    print(allocator, n->declaration);
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_DECLARATION_FUNCTION: {
+    neo_ast_declaration_function_t n = (neo_ast_declaration_function_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_DECLARATION_FUNCTION"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(declaration));
+    print(allocator, n->declaration);
+    printf(JSON_END);
+  } break;
   case NEO_NODE_TYPE_DECLARATION_VARIABLE:
   case NEO_NODE_TYPE_VARIABLE_DECLARATOR:
   case NEO_NODE_TYPE_DECLARATION_IMPORT:
