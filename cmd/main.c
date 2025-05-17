@@ -43,9 +43,11 @@
 #include "compiler/statement_return.h"
 #include "compiler/statement_switch.h"
 #include "compiler/statement_throw.h"
+#include "compiler/statement_try.h"
 #include "compiler/static_block.h"
 #include "compiler/switch_case.h"
 #include "compiler/token.h"
+#include "compiler/try_catch.h"
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/list.h"
@@ -962,8 +964,37 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     print(allocator, n->value);
     printf(JSON_END);
   } break;
-  case NEO_NODE_TYPE_STATEMENT_TRY:
-  case NEO_NODE_TYPE_TRY_CATCH:
+  case NEO_NODE_TYPE_STATEMENT_TRY: {
+    neo_ast_statement_try_t n = (neo_ast_statement_try_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_STATEMENT_TRY"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(body));
+    print(allocator, n->body);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(catch));
+    print(allocator, n->catch);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(finally));
+    print(allocator, n->finally);
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_TRY_CATCH: {
+    neo_ast_try_catch_t n = (neo_ast_try_catch_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_TRY_CATCH"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(error));
+    print(allocator, n->error);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(body));
+    print(allocator, n->body);
+    printf(JSON_END);
+  } break;
   case NEO_NODE_TYPE_STATEMENT_WHILE:
   case NEO_NODE_TYPE_STATEMENT_DO_WHILE:
   case NEO_NODE_TYPE_STATEMENT_FOR:
@@ -1001,7 +1032,7 @@ int main(int argc, char *argv[]) {
     fseek(fp, 0, SEEK_END);
     size_t size = ftell(fp);
     char *buf = (char *)neo_allocator_alloc(allocator, size + 1, NULL);
-    buf[size] = 0;
+    memset(buf, 0, size + 1);
     fseek(fp, 0, SEEK_SET);
     fread(buf, size, 1, fp);
     fclose(fp);
