@@ -42,6 +42,7 @@
 #include "compiler/statement_continue.h"
 #include "compiler/statement_do_while.h"
 #include "compiler/statement_expression.h"
+#include "compiler/statement_for.h"
 #include "compiler/statement_for_await_of.h"
 #include "compiler/statement_for_in.h"
 #include "compiler/statement_for_of.h"
@@ -1032,8 +1033,26 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     print(allocator, n->body);
     printf(JSON_END);
   } break;
-  case NEO_NODE_TYPE_STATEMENT_FOR:
-    break;
+  case NEO_NODE_TYPE_STATEMENT_FOR: {
+    neo_ast_statement_for_t n = (neo_ast_statement_for_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_STATEMENT_FOR"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(initialize));
+    print(allocator, n->initialize);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(condition));
+    print(allocator, n->condition);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(after));
+    print(allocator, n->after);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(body));
+    print(allocator, n->body);
+    printf(JSON_END);
+  } break;
   case NEO_NODE_TYPE_STATEMENT_FOR_IN: {
     neo_ast_statement_for_in_t n = (neo_ast_statement_for_in_t)node;
     printf(JSON_START);

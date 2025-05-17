@@ -541,7 +541,7 @@ neo_ast_node_t neo_ast_read_expression_9(neo_allocator_t allocator,
       bnode->node.location.begin = *position;
       bnode->node.location.end = curr;
       bnode->node.location.file = file;
-      *position = current;
+      *position = curr;
       return &bnode->node;
     } else {
       if (token) {

@@ -9,6 +9,7 @@
 #include "compiler/statement_do_while.h"
 #include "compiler/statement_empty.h"
 #include "compiler/statement_expression.h"
+#include "compiler/statement_for.h"
 #include "compiler/statement_for_await_of.h"
 #include "compiler/statement_for_in.h"
 #include "compiler/statement_for_of.h"
@@ -94,6 +95,11 @@ neo_ast_node_t neo_ast_read_statement(neo_allocator_t allocator,
   }
   if (!node) {
     node = TRY(neo_ast_read_statement_for_of(allocator, file, position)) {
+      goto onerror;
+    }
+  }
+  if (!node) {
+    node = TRY(neo_ast_read_statement_for(allocator, file, position)) {
       goto onerror;
     }
   }
