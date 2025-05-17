@@ -42,6 +42,9 @@
 #include "compiler/statement_continue.h"
 #include "compiler/statement_do_while.h"
 #include "compiler/statement_expression.h"
+#include "compiler/statement_for_await_of.h"
+#include "compiler/statement_for_in.h"
+#include "compiler/statement_for_of.h"
 #include "compiler/statement_if.h"
 #include "compiler/statement_labeled.h"
 #include "compiler/statement_return.h"
@@ -1030,10 +1033,91 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     printf(JSON_END);
   } break;
   case NEO_NODE_TYPE_STATEMENT_FOR:
-  case NEO_NODE_TYPE_STATEMENT_FOR_IN:
-  case NEO_NODE_TYPE_STATEMENT_FOR_OF:
-  case NEO_NODE_TYPE_STATEMENT_FOR_AWAIT_OF:
     break;
+  case NEO_NODE_TYPE_STATEMENT_FOR_IN: {
+    neo_ast_statement_for_in_t n = (neo_ast_statement_for_in_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_STATEMENT_FOR_IN"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(left));
+    print(allocator, n->left);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(right));
+    print(allocator, n->right);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(kind));
+    if (n->kind == NEO_AST_DECLARATION_VAR) {
+      printf(JSON_VALUE("%s"), "var");
+    } else if (n->kind == NEO_AST_DECLARATION_CONST) {
+      printf(JSON_VALUE("%s"), "const");
+    } else if (n->kind == NEO_AST_DECLARATION_LET) {
+      printf(JSON_VALUE("%s"), "let");
+    } else if (n->kind == NEO_AST_DECLARATION_NONE) {
+      printf(JSON_VALUE("%s"), "none");
+    }
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(body));
+    print(allocator, n->body);
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_STATEMENT_FOR_OF: {
+    neo_ast_statement_for_of_t n = (neo_ast_statement_for_of_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_STATEMENT_FOR_OF"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(left));
+    print(allocator, n->left);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(right));
+    print(allocator, n->right);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(kind));
+    if (n->kind == NEO_AST_DECLARATION_VAR) {
+      printf(JSON_VALUE("%s"), "var");
+    } else if (n->kind == NEO_AST_DECLARATION_CONST) {
+      printf(JSON_VALUE("%s"), "const");
+    } else if (n->kind == NEO_AST_DECLARATION_LET) {
+      printf(JSON_VALUE("%s"), "let");
+    } else if (n->kind == NEO_AST_DECLARATION_NONE) {
+      printf(JSON_VALUE("%s"), "none");
+    }
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(body));
+    print(allocator, n->body);
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_STATEMENT_FOR_AWAIT_OF: {
+    neo_ast_statement_for_await_of_t n = (neo_ast_statement_for_await_of_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_STATEMENT_FOR_AWAIT_OF"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(left));
+    print(allocator, n->left);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(right));
+    print(allocator, n->right);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(kind));
+    if (n->kind == NEO_AST_DECLARATION_VAR) {
+      printf(JSON_VALUE("%s"), "var");
+    } else if (n->kind == NEO_AST_DECLARATION_CONST) {
+      printf(JSON_VALUE("%s"), "const");
+    } else if (n->kind == NEO_AST_DECLARATION_LET) {
+      printf(JSON_VALUE("%s"), "let");
+    } else if (n->kind == NEO_AST_DECLARATION_NONE) {
+      printf(JSON_VALUE("%s"), "none");
+    }
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(body));
+    print(allocator, n->body);
+    printf(JSON_END);
+  } break;
   case NEO_NODE_TYPE_DECLARATION_CLASS: {
     neo_ast_declaration_class_t n = (neo_ast_declaration_class_t)node;
     printf(JSON_START);

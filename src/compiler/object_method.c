@@ -70,8 +70,6 @@ neo_ast_node_t neo_ast_read_object_method(neo_allocator_t allocator,
   }
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != '(') {
-    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-          current.line, current.column);
     goto onerror;
   }
   current.offset++;
