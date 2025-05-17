@@ -44,6 +44,7 @@
 #include "compiler/statement_switch.h"
 #include "compiler/statement_throw.h"
 #include "compiler/statement_try.h"
+#include "compiler/statement_while.h"
 #include "compiler/static_block.h"
 #include "compiler/switch_case.h"
 #include "compiler/token.h"
@@ -995,7 +996,20 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     print(allocator, n->body);
     printf(JSON_END);
   } break;
-  case NEO_NODE_TYPE_STATEMENT_WHILE:
+  case NEO_NODE_TYPE_STATEMENT_WHILE: {
+    neo_ast_statement_while_t n = (neo_ast_statement_while_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_STATEMENT_WHILE"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(condition));
+    print(allocator, n->condition);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(body));
+    print(allocator, n->body);
+    printf(JSON_END);
+  } break;
   case NEO_NODE_TYPE_STATEMENT_DO_WHILE:
   case NEO_NODE_TYPE_STATEMENT_FOR:
   case NEO_NODE_TYPE_STATEMENT_FOR_IN:

@@ -11,6 +11,7 @@
 #include "compiler/statement_switch.h"
 #include "compiler/statement_throw.h"
 #include "compiler/statement_try.h"
+#include "compiler/statement_while.h"
 #include "core/error.h"
 neo_ast_node_t neo_ast_read_statement(neo_allocator_t allocator,
                                       const char *file,
@@ -61,6 +62,11 @@ neo_ast_node_t neo_ast_read_statement(neo_allocator_t allocator,
   }
   if (!node) {
     node = TRY(neo_ast_read_statement_try(allocator, file, position)) {
+      goto onerror;
+    }
+  }
+  if (!node) {
+    node = TRY(neo_ast_read_statement_while(allocator, file, position)) {
       goto onerror;
     }
   }
