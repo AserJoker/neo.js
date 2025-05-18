@@ -3,6 +3,7 @@
 #include "compiler/class_property.h"
 #include "compiler/declaration_class.h"
 #include "compiler/declaration_function.h"
+#include "compiler/declaration_import.h"
 #include "compiler/declaration_variable.h"
 #include "compiler/decorator.h"
 #include "compiler/expression.h"
@@ -22,6 +23,10 @@
 #include "compiler/expression_yield.h"
 #include "compiler/function_argument.h"
 #include "compiler/function_body.h"
+#include "compiler/import_attribute.h"
+#include "compiler/import_default_specifier.h"
+#include "compiler/import_namespace_specifier.h"
+#include "compiler/import_specifier.h"
 #include "compiler/interpreter.h"
 #include "compiler/literal_numeric.h"
 #include "compiler/literal_string.h"
@@ -1193,14 +1198,81 @@ void print(neo_allocator_t allocator, neo_ast_node_t node) {
     print(allocator, n->initialize);
     printf(JSON_END);
   } break;
-  case NEO_NODE_TYPE_DECLARATION_IMPORT:
+  case NEO_NODE_TYPE_DECLARATION_IMPORT: {
+    neo_ast_declaration_import_t n = (neo_ast_declaration_import_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_DECLARATION_IMPORT"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(src));
+    print(allocator, n->source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(specifiers));
+    print_list(allocator, n->specifiers);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(attributes));
+    print_list(allocator, n->attributes);
+    printf(JSON_END);
+  } break;
   case NEO_NODE_TYPE_DECLARATION_EXPORT:
   case NEO_NODE_TYPE_DECLARATION_EXPORT_DEFAULT:
   case NEO_NODE_TYPE_DECLARATION_EXPORT_ALL:
-  case NEO_NODE_TYPE_IMPORT_SPECIFIER:
-  case NEO_NODE_TYPE_IMPORT_DEFAULT_SPECIFIER:
-  case NEO_NODE_TYPE_IMPORT_NAMESPACE_SPECIFIER:
-  case NEO_NODE_TYPE_IMPORT_ATTRIBUTE:
+    break;
+  case NEO_NODE_TYPE_IMPORT_SPECIFIER: {
+    neo_ast_import_specifier_t n = (neo_ast_import_specifier_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_IMPORT_SPECIFIER"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(identifier));
+    print(allocator, n->identifier);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(alias));
+    print(allocator, n->alias);
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_IMPORT_DEFAULT_SPECIFIER: {
+    neo_ast_import_default_specifier_t n =
+        (neo_ast_import_default_specifier_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type)
+               JSON_VALUE("NEO_NODE_TYPE_IMPORT_DEFAULT_SPECIFIER"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(identifier));
+    print(allocator, n->identifier);
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_IMPORT_NAMESPACE_SPECIFIER: {
+    neo_ast_import_namespace_specifier_t n =
+        (neo_ast_import_namespace_specifier_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type)
+               JSON_VALUE("NEO_NODE_TYPE_IMPORT_NAMESPACE_SPECIFIER"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(identifier));
+    print(allocator, n->identifier);
+    printf(JSON_END);
+  } break;
+  case NEO_NODE_TYPE_IMPORT_ATTRIBUTE: {
+    neo_ast_import_attribute_t n = (neo_ast_import_attribute_t)node;
+    printf(JSON_START);
+    printf(JSON_FIELD(type) JSON_VALUE("NEO_NODE_TYPE_IMPORT_ATTRIBUTE"));
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(source) JSON_VALUE("%s"), source);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(identifier));
+    print(allocator, n->identifier);
+    printf(JSON_SPLIT);
+    printf(JSON_FIELD(value));
+    print(allocator, n->value);
+    printf(JSON_END);
+  } break;
   case NEO_NODE_TYPE_EXPORT_SPECIFIER:
   case NEO_NODE_TYPE_EXPORT_NAMESPACE_SPECIFIER:
     break;
