@@ -1,27 +1,27 @@
-#include "compiler/import_namespace_specifier.h"
+#include "compiler/import_namespace.h"
 #include "compiler/identifier.h"
 #include "compiler/token.h"
 #include <stdio.h>
-static void neo_ast_import_namespace_specifier_dispose(
-    neo_allocator_t allocator, neo_ast_import_namespace_specifier_t node) {
+static void neo_ast_import_namespace_dispose(neo_allocator_t allocator,
+                                             neo_ast_import_namespace_t node) {
   neo_allocator_free(allocator, node->identifier);
 }
 
-static neo_ast_import_namespace_specifier_t
-neo_create_ast_import_namespace_specifier(neo_allocator_t allocator) {
-  neo_ast_import_namespace_specifier_t node =
-      neo_allocator_alloc2(allocator, neo_ast_import_namespace_specifier);
-  node->node.type = NEO_NODE_TYPE_IMPORT_NAMESPACE_SPECIFIER;
+static neo_ast_import_namespace_t
+neo_create_ast_import_namespace(neo_allocator_t allocator) {
+  neo_ast_import_namespace_t node =
+      neo_allocator_alloc2(allocator, neo_ast_import_namespace);
+  node->node.type = NEO_NODE_TYPE_IMPORT_NAMESPACE;
   node->identifier = NULL;
   return node;
 }
 
-neo_ast_node_t neo_ast_read_import_namespace_specifier(
-    neo_allocator_t allocator, const char *file, neo_position_t *position) {
+neo_ast_node_t neo_ast_read_import_namespace(neo_allocator_t allocator,
+                                             const char *file,
+                                             neo_position_t *position) {
   neo_position_t current = *position;
   neo_token_t token = NULL;
-  neo_ast_import_namespace_specifier_t node =
-      neo_create_ast_import_namespace_specifier(allocator);
+  neo_ast_import_namespace_t node = neo_create_ast_import_namespace(allocator);
   if (*current.offset != '*') {
     goto onerror;
   }

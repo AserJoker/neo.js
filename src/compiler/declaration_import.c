@@ -1,7 +1,7 @@
 #include "compiler/declaration_import.h"
 #include "compiler/import_attribute.h"
-#include "compiler/import_default_specifier.h"
-#include "compiler/import_namespace_specifier.h"
+#include "compiler/import_default.h"
+#include "compiler/import_namespace.h"
 #include "compiler/import_specifier.h"
 #include "compiler/literal_string.h"
 #include "compiler/token.h"
@@ -45,8 +45,8 @@ neo_ast_node_t neo_ast_read_declaration_import(neo_allocator_t allocator,
   }
   if (!node->source) {
     if (*current.offset == '*') {
-      neo_ast_node_t specifier = TRY(
-          neo_ast_read_import_namespace_specifier(allocator, file, &current)) {
+      neo_ast_node_t specifier =
+          TRY(neo_ast_read_import_namespace(allocator, file, &current)) {
         goto onerror;
       }
       if (!specifier) {
@@ -56,8 +56,8 @@ neo_ast_node_t neo_ast_read_declaration_import(neo_allocator_t allocator,
       }
       neo_list_push(node->specifiers, specifier);
     } else {
-      neo_ast_node_t specifier = TRY(
-          neo_ast_read_import_default_specifier(allocator, file, &current)) {
+      neo_ast_node_t specifier =
+          TRY(neo_ast_read_import_default(allocator, file, &current)) {
         goto onerror;
       }
       if (specifier) {
