@@ -1,6 +1,8 @@
 #include "compiler/import_specifier.h"
 #include "compiler/identifier.h"
+#include "compiler/literal_string.h"
 #include "compiler/token.h"
+#include "core/error.h"
 #include <stdio.h>
 
 static void neo_ast_import_specifier_dispose(neo_allocator_t allocator,
@@ -26,6 +28,12 @@ neo_ast_node_t neo_ast_read_import_specifier(neo_allocator_t allocator,
   neo_token_t token = NULL;
   neo_ast_import_specifier_t node = neo_create_ast_import_specifier(allocator);
   node->identifier = neo_ast_read_identifier(allocator, file, &current);
+  if (!node->identifier) {
+    node->identifier =
+        TRY(neo_ast_read_literal_string(allocator, file, &current)) {
+      goto onerror;
+    }
+  }
   if (!node->identifier) {
     goto onerror;
   }

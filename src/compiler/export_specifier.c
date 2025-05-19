@@ -1,0 +1,64 @@
+#include "compiler/export_specifier.h"
+#include "compiler/identifier.h"
+#include "compiler/literal_string.h"
+#include "compiler/token.h"
+#include "core/error.h"
+#include <stdio.h>
+
+static void neo_ast_export_specifier_dispose(neo_allocator_t allocator,
+                                             neo_ast_export_specifier_t node) {
+  neo_allocator_free(allocator, node->alias);
+  neo_allocator_free(allocator, node->identifier);
+}
+
+static neo_ast_export_specifier_t
+neo_create_ast_export_specifier(neo_allocator_t allocator) {
+  neo_ast_export_specifier_t node =
+      neo_allocator_alloc2(allocator, neo_ast_export_specifier);
+  node->node.type = NEO_NODE_TYPE_EXPORT_SPECIFIER;
+  node->alias = NULL;
+  node->identifier = NULL;
+  return node;
+}
+
+neo_ast_node_t neo_ast_read_export_specifier(neo_allocator_t allocator,
+                                             const char *file,
+                                             neo_position_t *position) {
+  neo_position_t current = *position;
+  neo_token_t token = NULL;
+  neo_ast_export_specifier_t node = neo_create_ast_export_specifier(allocator);
+  node->identifier = neo_ast_read_identifier(allocator, file, &current);
+  if (!node->identifier) {
+    goto onerror;
+  }
+  neo_position_t cur = current;
+  SKIP_ALL(allocator, file, &cur, onerror);
+  token = neo_read_identify_token(allocator, file, &cur);
+  if (token && neo_location_is(token->location, "as")) {
+    neo_allocator_free(allocator, token);
+    current = cur;
+    SKIP_ALL(allocator, file, &current, onerror);
+    node->alias = neo_ast_read_identifier(allocator, file, &current);
+    if (!node->alias) {
+      node->alias =
+          TRY(neo_ast_read_literal_string(allocator, file, &current)) {
+        goto onerror;
+      }
+    }
+    if (!node->alias) {
+      THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
+            current.line, current.column);
+      goto onerror;
+    }
+  }
+  neo_allocator_free(allocator, token);
+  node->node.location.begin = *position;
+  node->node.location.end = current;
+  node->node.location.file = file;
+  *position = current;
+  return &node->node;
+onerror:
+  neo_allocator_free(allocator, node);
+  neo_allocator_free(allocator, token);
+  return NULL;
+}

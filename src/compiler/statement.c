@@ -1,5 +1,6 @@
 #include "compiler/statement.h"
 #include "compiler/declaration_class.h"
+#include "compiler/declaration_export.h"
 #include "compiler/declaration_function.h"
 #include "compiler/declaration_import.h"
 #include "compiler/declaration_variable.h"
@@ -111,6 +112,11 @@ neo_ast_node_t neo_ast_read_statement(neo_allocator_t allocator,
   }
   if (!node) {
     node = TRY(neo_ast_read_declaration_import(allocator, file, position)) {
+      goto onerror;
+    }
+  }
+  if (!node) {
+    node = TRY(neo_ast_read_declaration_export(allocator, file, position)) {
       goto onerror;
     }
   }

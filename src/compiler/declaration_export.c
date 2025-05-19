@@ -188,7 +188,7 @@ neo_ast_node_t neo_ast_read_declaration_export(neo_allocator_t allocator,
       neo_allocator_free(allocator, token);
     }
   }
-onfinish:
+onfinish: {
   uint32_t line = current.line;
   cur = current;
   SKIP_ALL(allocator, file, &cur, onerror);
@@ -199,6 +199,7 @@ onfinish:
       goto onerror;
     }
   }
+}
   node->node.location.begin = *position;
   node->node.location.end = current;
   node->node.location.file = file;
