@@ -2,6 +2,8 @@
 #include "compiler/class_accessor.h"
 #include "compiler/class_method.h"
 #include "compiler/class_property.h"
+#include "compiler/declaration_class.h"
+#include "compiler/declaration_export.h"
 #include "compiler/decorator.h"
 #include "compiler/expression.h"
 #include "compiler/identifier.h"
@@ -55,6 +57,48 @@ neo_ast_node_t neo_ast_read_expression_class(neo_allocator_t allocator,
     SKIP_ALL(allocator, file, &current, onerror);
   }
   token = neo_read_identify_token(allocator, file, &current);
+  if (token && neo_location_is(token->location, "export") &&
+      neo_list_get_size(node->decorators) != 0) {
+    neo_position_t cur = token->location.begin;
+    neo_allocator_free(allocator, token);
+    SKIP_ALL(allocator, file, &cur, onerror);
+    neo_ast_declaration_export_t export = (neo_ast_declaration_export_t)TRY(
+        neo_ast_read_declaration_export(allocator, file, &cur)) {
+      goto onerror;
+    };
+    if (!export) {
+      THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
+            current.line, current.column);
+      goto onerror;
+    }
+    if (neo_list_get_size(export->specifiers) != 1) {
+      THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
+            current.line, current.column);
+      neo_allocator_free(allocator, export);
+      goto onerror;
+    }
+    neo_ast_declaration_class_t dclazz =
+        (neo_ast_declaration_class_t)neo_list_node_get(
+            neo_list_get_first(export->specifiers));
+    if (dclazz->node.type != NEO_NODE_TYPE_DECLARATION_CLASS) {
+      THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
+            current.line, current.column);
+      neo_allocator_free(allocator, export);
+      goto onerror;
+    }
+    neo_ast_expression_class_t clazz =
+        (neo_ast_expression_class_t)dclazz->declaration;
+    neo_allocator_free(allocator, clazz->decorators);
+    clazz->decorators = node->decorators;
+    node->decorators = NULL;
+    neo_allocator_free(allocator, node);
+    current = cur;
+    export->node.location.begin = *position;
+    dclazz->node.location.begin = *position;
+    clazz->node.location.begin = *position;
+    *position = current;
+    return &export->node;
+  }
   if (!token || !neo_location_is(token->location, "class")) {
     goto onerror;
   }
