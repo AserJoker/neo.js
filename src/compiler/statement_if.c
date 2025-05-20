@@ -14,6 +14,7 @@ static void neo_ast_statement_if_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->condition);
   neo_allocator_free(allocator, node->alternate);
   neo_allocator_free(allocator, node->consequent);
+  neo_allocator_free(allocator, node->node.scope);
 }
 static neo_variable_t
 neo_serialize_ast_statement_if(neo_allocator_t allocator,
@@ -37,6 +38,8 @@ neo_create_ast_statement_if(neo_allocator_t allocator) {
   neo_ast_statement_if_t node =
       neo_allocator_alloc2(allocator, neo_ast_statement_if);
   node->node.type = NEO_NODE_TYPE_STATEMENT_IF;
+
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_statement_if;
   node->condition = NULL;
   node->alternate = NULL;

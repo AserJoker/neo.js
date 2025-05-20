@@ -8,6 +8,7 @@ static void
 neo_ast_declaration_variable_dispose(neo_allocator_t allocator,
                                      neo_ast_declaration_variable_t node) {
   neo_allocator_free(allocator, node->declarators);
+  neo_allocator_free(allocator, node->node.scope);
 }
 static neo_variable_t
 neo_serialize_ast_declaration_variable(neo_allocator_t allocator,
@@ -50,6 +51,7 @@ neo_create_ast_declaration_variable(neo_allocator_t allocator) {
   neo_ast_declaration_variable_t node =
       neo_allocator_alloc2(allocator, neo_ast_declaration_variable);
   neo_list_initialize_t initialize = {true};
+  node->node.scope = NULL;
   node->node.serialize =
       (neo_serialize_fn)neo_serialize_ast_declaration_variable;
   node->node.type = NEO_NODE_TYPE_DECLARATION_VARIABLE;

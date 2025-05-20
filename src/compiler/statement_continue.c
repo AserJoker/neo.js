@@ -11,6 +11,7 @@ static void
 neo_ast_statement_continue_dispose(neo_allocator_t allocator,
                                    neo_ast_statement_continue_t node) {
   neo_allocator_free(allocator, node->label);
+  neo_allocator_free(allocator, node->node.scope);
 }
 static neo_variable_t
 neo_serialize_ast_statement_continue(neo_allocator_t allocator,
@@ -32,6 +33,8 @@ neo_create_ast_statement_continue(neo_allocator_t allocator) {
       neo_allocator_alloc2(allocator, neo_ast_statement_continue);
   node->label = NULL;
   node->node.type = NEO_NODE_TYPE_STATEMENT_CONTINUE;
+
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_statement_continue;
   return node;
 }

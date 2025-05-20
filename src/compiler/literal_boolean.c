@@ -7,7 +7,10 @@
 #include "core/position.h"
 #include "core/variable.h"
 
-static void neo_ast_literal_boolean_dispose() {}
+static void neo_ast_literal_boolean_dispose(neo_allocator_t allocator,
+                                            neo_ast_literal_boolean_t node) {
+  neo_allocator_free(allocator, node->node.scope);
+}
 
 static neo_variable_t
 neo_serialize_ast_literal_boolean(neo_allocator_t allocator,
@@ -26,6 +29,8 @@ neo_create_ast_literal_boolean(neo_allocator_t allocator) {
   neo_ast_literal_boolean_t node =
       neo_allocator_alloc2(allocator, neo_ast_literal_boolean);
   node->node.type = NEO_NODE_TYPE_LITERAL_BOOLEAN;
+
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_literal_boolean;
   return node;
 }

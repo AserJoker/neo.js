@@ -16,6 +16,7 @@ neo_ast_function_argument_dispose(neo_allocator_t allocator,
                                   neo_ast_function_argument_t node) {
   neo_allocator_free(allocator, node->identifier);
   neo_allocator_free(allocator, node->value);
+  neo_allocator_free(allocator, node->node.scope);
 }
 
 static neo_variable_t
@@ -41,6 +42,8 @@ neo_create_ast_function_argument(neo_allocator_t allocator) {
   node->identifier = NULL;
   node->value = NULL;
   node->node.type = NEO_NODE_TYPE_FUNCTION_ARGUMENT;
+
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_function_argument;
   return node;
 }

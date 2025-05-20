@@ -14,6 +14,7 @@ neo_ast_declaration_import_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->specifiers);
   neo_allocator_free(allocator, node->attributes);
   neo_allocator_free(allocator, node->source);
+  neo_allocator_free(allocator, node->node.scope);
 }
 
 static neo_variable_t
@@ -39,6 +40,8 @@ neo_create_ast_declaration_import(neo_allocator_t allocator) {
   neo_ast_declaration_import_t node =
       neo_allocator_alloc2(allocator, neo_ast_declaration_import);
   node->node.type = NEO_NODE_TYPE_DECLARATION_IMPORT;
+
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_declaration_import;
   neo_list_initialize_t initialize = {true};
   node->specifiers = neo_create_list(allocator, &initialize);

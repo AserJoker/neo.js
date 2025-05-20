@@ -13,6 +13,7 @@ neo_ast_statement_for_await_of_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->left);
   neo_allocator_free(allocator, node->right);
   neo_allocator_free(allocator, node->body);
+  neo_allocator_free(allocator, node->node.scope);
 }
 static neo_variable_t neo_serialize_ast_statement_for_await_of(
     neo_allocator_t allocator, neo_ast_statement_for_await_of_t node) {
@@ -20,8 +21,8 @@ static neo_variable_t neo_serialize_ast_statement_for_await_of(
   neo_variable_set(variable, "type",
                    neo_create_variable_string(
                        allocator, "NEO_NODE_TYPE_STATEMENT_FOR_AWAIT_OF"));
-  neo_variable_set(variable, "location",
-                   neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "text",
+                   neo_ast_node_source_serialize(allocator, &node->node));
   neo_variable_set(variable, "left",
                    neo_ast_node_serialize(allocator, node->left));
   neo_variable_set(variable, "right",
@@ -57,6 +58,7 @@ neo_create_ast_statement_for_await_of(neo_allocator_t allocator) {
   neo_ast_statement_for_await_of_t node =
       neo_allocator_alloc2(allocator, neo_ast_statement_for_await_of);
   node->node.type = NEO_NODE_TYPE_STATEMENT_FOR_AWAIT_OF;
+  node->node.scope = NULL;
   node->node.serialize =
       (neo_serialize_fn)neo_serialize_ast_statement_for_await_of;
   node->left = NULL;

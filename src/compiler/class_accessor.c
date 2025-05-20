@@ -20,6 +20,7 @@ static void neo_ast_class_accessor_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->body);
   neo_allocator_free(allocator, node->decorators);
   neo_allocator_free(allocator, node->name);
+  neo_allocator_free(allocator, node->node.scope);
 }
 
 static neo_variable_t
@@ -57,6 +58,7 @@ neo_create_ast_class_accessor(neo_allocator_t allocator) {
       neo_allocator_alloc2(allocator, neo_ast_class_accessor);
   neo_list_initialize_t initialize = {true};
   node->node.type = NEO_NODE_TYPE_CLASS_ACCESSOR;
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_class_accessor;
   node->arguments = neo_create_list(allocator, &initialize);
   node->body = NULL;

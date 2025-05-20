@@ -11,10 +11,11 @@
 
 static void
 neo_ast_expression_condition_dispose(neo_allocator_t allocator,
-                                     neo_ast_expression_condition_t condition) {
-  neo_allocator_free(allocator, condition->condition);
-  neo_allocator_free(allocator, condition->alternate);
-  neo_allocator_free(allocator, condition->consequent);
+                                     neo_ast_expression_condition_t node) {
+  neo_allocator_free(allocator, node->condition);
+  neo_allocator_free(allocator, node->alternate);
+  neo_allocator_free(allocator, node->consequent);
+  neo_allocator_free(allocator, node->node.scope);
 }
 
 static neo_variable_t
@@ -40,6 +41,7 @@ neo_create_ast_expression_condition(neo_allocator_t allocator) {
   neo_ast_expression_condition_t node =
       neo_allocator_alloc2(allocator, neo_ast_expression_condition);
   node->node.type = NEO_NODE_TYPE_EXPRESSION_CONDITION;
+  node->node.scope = NULL;
   node->node.serialize =
       (neo_serialize_fn)neo_serialize_ast_expression_condition;
   node->condition = NULL;

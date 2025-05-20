@@ -8,6 +8,7 @@ static void neo_ast_import_attribute_dispose(neo_allocator_t allocator,
                                              neo_ast_import_attribute_t node) {
   neo_allocator_free(allocator, node->value);
   neo_allocator_free(allocator, node->identifier);
+  neo_allocator_free(allocator, node->node.scope);
 }
 
 static neo_variable_t
@@ -31,6 +32,8 @@ neo_create_ast_import_attribute(neo_allocator_t allocator) {
   neo_ast_import_attribute_t node =
       neo_allocator_alloc2(allocator, neo_ast_import_attribute);
   node->node.type = NEO_NODE_TYPE_IMPORT_SPECIFIER;
+
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_import_attribute;
   node->value = NULL;
   node->identifier = NULL;

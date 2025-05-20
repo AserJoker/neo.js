@@ -10,8 +10,9 @@
 #include "core/position.h"
 #include "core/variable.h"
 static void neo_ast_pattern_rest_dispose(neo_allocator_t allocator,
-                                         neo_ast_pattern_rest_t self) {
-  neo_allocator_free(allocator, self->identifier);
+                                         neo_ast_pattern_rest_t node) {
+  neo_allocator_free(allocator, node->identifier);
+  neo_allocator_free(allocator, node->node.scope);
 }
 
 static neo_variable_t
@@ -35,6 +36,8 @@ neo_create_ast_pattern_rest(neo_allocator_t allocator) {
       neo_allocator_alloc2(allocator, neo_ast_pattern_rest);
   node->identifier = NULL;
   node->node.type = NEO_NODE_TYPE_PATTERN_REST;
+
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_pattern_object;
   return node;
 }

@@ -11,6 +11,7 @@
 static void neo_ast_expression_array_dispose(neo_allocator_t allocator,
                                              neo_ast_expression_array_t node) {
   neo_allocator_free(allocator, node->items);
+  neo_allocator_free(allocator, node->node.scope);
 }
 static neo_variable_t
 neo_serialize_ast_expression_array(neo_allocator_t allocator,
@@ -32,6 +33,8 @@ neo_create_ast_expression_array(neo_allocator_t allocator) {
       neo_allocator_alloc2(allocator, neo_ast_expression_array);
   neo_list_initialize_t initialize = {true};
   node->node.type = NEO_NODE_TYPE_EXPRESSION_ARRAY;
+
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_expression_array;
   node->items = neo_create_list(allocator, &initialize);
   return node;

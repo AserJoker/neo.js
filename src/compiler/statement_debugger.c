@@ -7,8 +7,13 @@
 #include "core/position.h"
 #include "core/variable.h"
 
+static void neo_statement_debugger(neo_allocator_t allocator,
+                                   neo_ast_statement_debugger_t node) {
+  neo_allocator_free(allocator, node->node.scope);
+}
+
 static neo_variable_t
-neo_serialize_ast_statement_continue(neo_allocator_t allocator,
+neo_serialize_ast_statement_debugger(neo_allocator_t allocator,
                                      neo_ast_statement_debugger_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
   neo_variable_set(variable, "type",
@@ -25,7 +30,9 @@ neo_create_statement_debugger(neo_allocator_t allocator) {
       (neo_ast_statement_debugger_t)neo_allocator_alloc(
           allocator, sizeof(struct _neo_ast_statement_debugger_t), NULL);
   node->node.type = NEO_NODE_TYPE_STATEMENT_DEBUGGER;
-  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_statement_continue;
+
+  node->node.scope = NULL;
+  node->node.serialize = (neo_serialize_fn)neo_statement_debugger;
   return node;
 }
 

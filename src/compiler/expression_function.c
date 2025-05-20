@@ -18,6 +18,7 @@ neo_ast_expression_function_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->arguments);
   neo_allocator_free(allocator, node->body);
   neo_allocator_free(allocator, node->name);
+  neo_allocator_free(allocator, node->node.scope);
 }
 
 static neo_variable_t
@@ -48,6 +49,7 @@ neo_create_ast_expression_function(neo_allocator_t allocator, const char *file,
   neo_ast_expression_function_t node =
       neo_allocator_alloc2(allocator, neo_ast_expression_function);
   node->node.type = NEO_NODE_TYPE_EXPRESSION_FUNCTION;
+  node->node.scope = NULL;
   node->node.serialize =
       (neo_serialize_fn)neo_serialize_ast_expression_function;
   node->async = false;

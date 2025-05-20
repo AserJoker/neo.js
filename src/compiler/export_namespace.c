@@ -10,6 +10,7 @@
 static void neo_ast_export_namespace_dispose(neo_allocator_t allocator,
                                              neo_ast_export_namespace_t node) {
   neo_allocator_free(allocator, node->identifier);
+  neo_allocator_free(allocator, node->node.scope);
 }
 
 static neo_variable_t
@@ -31,6 +32,8 @@ neo_create_ast_export_namespace(neo_allocator_t allocator) {
   neo_ast_export_namespace_t node =
       neo_allocator_alloc2(allocator, neo_ast_export_namespace);
   node->node.type = NEO_NODE_TYPE_EXPORT_NAMESPACE;
+
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_export_namespace;
   node->identifier = NULL;
   return node;

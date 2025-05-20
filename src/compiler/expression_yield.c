@@ -10,8 +10,9 @@
 #include <stdbool.h>
 
 static void neo_ast_expression_yield_dispose(neo_allocator_t allocator,
-                                             neo_ast_expression_yield_t self) {
-  neo_allocator_free(allocator, self->value);
+                                             neo_ast_expression_yield_t node) {
+  neo_allocator_free(allocator, node->value);
+  neo_allocator_free(allocator, node->node.scope);
 }
 
 static neo_variable_t
@@ -36,6 +37,8 @@ neo_create_ast_expression_yield(neo_allocator_t allocator) {
       (neo_ast_expression_yield_t)neo_allocator_alloc2(
           allocator, neo_ast_expression_yield);
   node->node.type = NEO_NODE_TYPE_EXPRESSION_YIELD;
+
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_expression_yield;
   node->value = NULL;
   node->degelate = false;

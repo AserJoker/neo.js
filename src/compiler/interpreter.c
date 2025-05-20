@@ -2,7 +2,10 @@
 #include "compiler/interpreter.h"
 #include "core/unicode.h"
 #include "core/variable.h"
-static void neo_ast_interpreter_dispose() {};
+static void neo_ast_interpreter_dispose(neo_allocator_t allocator,
+                                        neo_ast_interpreter_t node) {
+  neo_allocator_free(allocator, node->node.scope);
+};
 static neo_variable_t
 neo_serialize_ast_interpreter(neo_allocator_t allocator,
                               neo_ast_interpreter_t node) {
@@ -20,6 +23,8 @@ neo_create_interpreter_node(neo_allocator_t allocator) {
   neo_ast_interpreter_t node =
       neo_allocator_alloc2(allocator, neo_ast_interpreter);
   node->node.type = NEO_NODE_TYPE_INTERPRETER_DIRECTIVE;
+
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_interpreter;
   return node;
 }

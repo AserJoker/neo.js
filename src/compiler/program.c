@@ -10,12 +10,11 @@
 #include <stdio.h>
 
 static void neo_ast_program_dispose(neo_allocator_t allocator,
-                                    neo_ast_program_t program) {
-  if (program->interpreter) {
-    neo_allocator_free(allocator, program->interpreter);
-  }
-  neo_allocator_free(allocator, program->directives);
-  neo_allocator_free(allocator, program->body);
+                                    neo_ast_program_t node) {
+  neo_allocator_free(allocator, node->interpreter);
+  neo_allocator_free(allocator, node->directives);
+  neo_allocator_free(allocator, node->body);
+  neo_allocator_free(allocator, node->node.scope);
 }
 
 static neo_variable_t neo_serialize_ast_program(neo_allocator_t allocator,
@@ -38,6 +37,8 @@ static neo_variable_t neo_serialize_ast_program(neo_allocator_t allocator,
 static neo_ast_program_t neo_create_ast_program(neo_allocator_t allocator) {
   neo_ast_program_t node = neo_allocator_alloc2(allocator, neo_ast_program);
   node->node.type = NEO_NODE_TYPE_PROGRAM;
+
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_program;
   node->interpreter = NULL;
   neo_list_initialize_t initialize = {};

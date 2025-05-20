@@ -12,6 +12,7 @@
 static void neo_ast_statement_throw_dispose(neo_allocator_t allocator,
                                             neo_ast_statement_throw_t node) {
   neo_allocator_free(allocator, node->value);
+  neo_allocator_free(allocator, node->node.scope);
 }
 static neo_variable_t
 neo_serialize_ast_statement_throw(neo_allocator_t allocator,
@@ -31,6 +32,8 @@ neo_ast_create_statement_throw(neo_allocator_t allocator) {
   neo_ast_statement_throw_t node =
       neo_allocator_alloc2(allocator, neo_ast_statement_throw);
   node->node.type = NEO_NODE_TYPE_STATEMENT_THROW;
+
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_statement_throw;
   node->value = NULL;
   return node;

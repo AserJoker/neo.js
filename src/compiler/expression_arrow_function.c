@@ -14,9 +14,10 @@
 #include <stdio.h>
 
 static void neo_ast_expression_arrow_function_dispose(
-    neo_allocator_t allocattor, neo_ast_expression_arrow_function_t node) {
-  neo_allocator_free(allocattor, node->arguments);
-  neo_allocator_free(allocattor, node->body);
+    neo_allocator_t allocator, neo_ast_expression_arrow_function_t node) {
+  neo_allocator_free(allocator, node->arguments);
+  neo_allocator_free(allocator, node->body);
+  neo_allocator_free(allocator, node->node.scope);
 }
 static neo_variable_t neo_serialize_ast_expression_arrow_function(
     neo_allocator_t allocator, neo_ast_expression_arrow_function_t node) {
@@ -39,6 +40,7 @@ neo_create_ast_expression_arrow_function(neo_allocator_t allocator) {
   neo_ast_expression_arrow_function_t node =
       neo_allocator_alloc2(allocator, neo_ast_expression_arrow_function);
   node->node.type = NEO_NODE_TYPE_EXPRESSION_ARROW_FUNCTION;
+  node->node.scope = NULL;
   node->node.serialize =
       (neo_serialize_fn)neo_serialize_ast_expression_arrow_function;
   neo_list_initialize_t initialize = {true};

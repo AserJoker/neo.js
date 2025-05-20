@@ -1,6 +1,7 @@
 #ifndef _H_NEO_COMPILER_NODE_
 #define _H_NEO_COMPILER_NODE_
 
+#include "compiler/scope.h"
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/location.h"
@@ -103,6 +104,7 @@ struct _neo_ast_node_t {
   neo_ast_node_type_t type;
   neo_location_t location;
   neo_serialize_fn serialize;
+  neo_compile_scope_t scope;
 };
 
 neo_variable_t neo_ast_node_serialize(neo_allocator_t allocator,

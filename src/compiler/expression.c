@@ -32,16 +32,11 @@
 
 static void
 neo_ast_expression_binary_dispose(neo_allocator_t allocator,
-                                  neo_ast_expression_binary_t self) {
-  if (self->left) {
-    neo_allocator_free(allocator, self->left);
-  }
-  if (self->right) {
-    neo_allocator_free(allocator, self->right);
-  }
-  if (self->opt) {
-    neo_allocator_free(allocator, self->opt);
-  }
+                                  neo_ast_expression_binary_t node) {
+  neo_allocator_free(allocator, node->left);
+  neo_allocator_free(allocator, node->right);
+  neo_allocator_free(allocator, node->opt);
+  neo_allocator_free(allocator, node->node.scope);
 }
 
 static neo_variable_t
@@ -75,6 +70,8 @@ neo_create_ast_expression_binary(neo_allocator_t allocator) {
   node->right = NULL;
   node->opt = NULL;
   node->node.type = NEO_NODE_TYPE_EXPRESSION_BINARY;
+
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_expression_binary;
   return node;
 }

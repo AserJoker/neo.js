@@ -13,6 +13,7 @@ static void neo_ast_expression_call_dispose(neo_allocator_t allocator,
                                             neo_ast_expression_call_t node) {
   neo_allocator_free(allocator, node->callee);
   neo_allocator_free(allocator, node->arguments);
+  neo_allocator_free(allocator, node->node.scope);
 }
 
 static neo_variable_t
@@ -36,6 +37,7 @@ neo_create_ast_expression_call(neo_allocator_t allocator) {
   neo_ast_expression_call_t node =
       neo_allocator_alloc2(allocator, neo_ast_expression_call);
   node->node.type = NEO_NODE_TYPE_EXPRESSION_CALL;
+  node->node.scope = NULL;
   node->node.serialize =
       (neo_serialize_fn)neo_serialize_ast_expression_assigment;
   neo_list_initialize_t initialize = {true};

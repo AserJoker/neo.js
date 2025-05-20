@@ -13,10 +13,11 @@
 #include "core/variable.h"
 static void
 neo_ast_pattern_object_item_dispose(neo_allocator_t allocator,
-                                    neo_ast_pattern_object_item_t self) {
-  neo_allocator_free(allocator, self->identifier);
-  neo_allocator_free(allocator, self->alias);
-  neo_allocator_free(allocator, self->value);
+                                    neo_ast_pattern_object_item_t node) {
+  neo_allocator_free(allocator, node->identifier);
+  neo_allocator_free(allocator, node->alias);
+  neo_allocator_free(allocator, node->value);
+  neo_allocator_free(allocator, node->node.scope);
 }
 static neo_variable_t
 neo_serialize_ast_pattern_object_item(neo_allocator_t allocator,
@@ -42,6 +43,7 @@ neo_create_ast_pattern_object_item(neo_allocator_t allocator) {
       neo_allocator_alloc2(allocator, neo_ast_pattern_object_item);
   neo_list_initialize_t initialize = {true};
   node->node.type = NEO_NODE_TYPE_PATTERN_OBJECT_ITEM;
+  node->node.scope = NULL;
   node->node.serialize =
       (neo_serialize_fn)neo_serialize_ast_pattern_object_item;
   node->identifier = NULL;

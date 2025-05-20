@@ -10,9 +10,10 @@
 #include "core/variable.h"
 static void
 neo_ast_pattern_array_item_dispose(neo_allocator_t allocator,
-                                   neo_ast_pattern_array_item_t self) {
-  neo_allocator_free(allocator, self->identifier);
-  neo_allocator_free(allocator, self->value);
+                                   neo_ast_pattern_array_item_t node) {
+  neo_allocator_free(allocator, node->identifier);
+  neo_allocator_free(allocator, node->value);
+  neo_allocator_free(allocator, node->node.scope);
 }
 
 static neo_variable_t
@@ -38,6 +39,8 @@ neo_create_ast_pattern_array_item(neo_allocator_t allocator) {
   node->identifier = NULL;
   node->value = NULL;
   node->node.type = NEO_NODE_TYPE_PATTERN_ARRAY_ITEM;
+
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_pattern_array_item;
   return node;
 }

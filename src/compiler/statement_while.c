@@ -9,6 +9,7 @@ static void neo_ast_statement_while_dispose(neo_allocator_t allocator,
                                             neo_ast_statement_while_t node) {
   neo_allocator_free(allocator, node->body);
   neo_allocator_free(allocator, node->condition);
+  neo_allocator_free(allocator, node->node.scope);
 }
 static neo_variable_t
 neo_serialize_ast_statement_while(neo_allocator_t allocator,
@@ -30,6 +31,8 @@ neo_create_ast_statement_while(neo_allocator_t allocator) {
   neo_ast_statement_while_t node =
       neo_allocator_alloc2(allocator, neo_ast_statement_while);
   node->node.type = NEO_NODE_TYPE_STATEMENT_WHILE;
+
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_statement_while;
   node->body = NULL;
   node->condition = NULL;

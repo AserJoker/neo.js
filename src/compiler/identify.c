@@ -7,7 +7,10 @@
 #include "core/position.h"
 #include "core/variable.h"
 
-static void neo_ast_identifier_dispose() {}
+static void neo_ast_identifier_dispose(neo_allocator_t allocator,
+                                       neo_ast_identifier_t node) {
+  neo_allocator_free(allocator, node->node.scope);
+}
 static neo_variable_t neo_serialize_ast_identifier(neo_allocator_t allocator,
                                                    neo_ast_identifier_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
@@ -23,6 +26,8 @@ neo_create_ast_literal_identify(neo_allocator_t allocator) {
   neo_ast_identifier_t node =
       neo_allocator_alloc2(allocator, neo_ast_identifier);
   node->node.type = NEO_NODE_TYPE_IDENTIFIER;
+
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_identifier;
   return node;
 }

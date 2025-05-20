@@ -14,6 +14,7 @@ static void neo_ast_decorator_dispose(neo_allocator_t allocator,
                                       neo_ast_decorator_t node) {
   neo_allocator_free(allocator, node->callee);
   neo_allocator_free(allocator, node->arguments);
+  neo_allocator_free(allocator, node->node.scope);
 }
 
 static neo_variable_t neo_serialize_ast_decorator(neo_allocator_t allocator,
@@ -34,6 +35,8 @@ static neo_variable_t neo_serialize_ast_decorator(neo_allocator_t allocator,
 static neo_ast_decorator_t neo_create_ast_decorator(neo_allocator_t allocator) {
   neo_ast_decorator_t node = neo_allocator_alloc2(allocator, neo_ast_decorator);
   node->node.type = NEO_NODE_TYPE_DECORATOR;
+
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_decorator;
   node->callee = NULL;
   neo_list_initialize_t intialize = {true};

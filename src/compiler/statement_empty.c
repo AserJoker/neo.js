@@ -1,7 +1,10 @@
 #include "compiler/statement_empty.h"
 #include "core/variable.h"
 
-static void neo_ast_statement_empty_dispose() {}
+static void neo_ast_statement_empty_dispose(neo_allocator_t allocator,
+                                            neo_ast_statement_empty_t node) {
+  neo_allocator_free(allocator, node->node.scope);
+}
 static neo_variable_t
 neo_serialize_ast_statement_empty(neo_allocator_t allocator,
                                   neo_ast_statement_empty_t node) {
@@ -18,6 +21,8 @@ neo_create_empty_statement(neo_allocator_t allocator) {
   neo_ast_statement_empty_t node =
       neo_allocator_alloc2(allocator, neo_ast_statement_empty);
   node->node.type = NEO_NODE_TYPE_STATEMENT_EMPTY;
+
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_statement_empty;
   return node;
 }

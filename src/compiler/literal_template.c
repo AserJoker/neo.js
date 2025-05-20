@@ -14,6 +14,7 @@ static void neo_ast_literal_template_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->expressions);
   neo_allocator_free(allocator, node->quasis);
   neo_allocator_free(allocator, node->tag);
+  neo_allocator_free(allocator, node->node.scope);
 }
 
 static neo_variable_t neo_token_serialize(neo_allocator_t allocator,
@@ -71,6 +72,8 @@ neo_create_ast_literal_template(neo_allocator_t allocator) {
   node->quasis = neo_create_list(allocator, &initialize);
   node->tag = NULL;
   node->node.type = NEO_NODE_TYPE_LITERAL_TEMPLATE;
+
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_literal_template;
   return node;
 }

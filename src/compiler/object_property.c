@@ -12,6 +12,7 @@ static void neo_ast_object_property_dispose(neo_allocator_t allocator,
                                             neo_ast_object_property_t node) {
   neo_allocator_free(allocator, node->identifier);
   neo_allocator_free(allocator, node->value);
+  neo_allocator_free(allocator, node->node.scope);
 }
 
 static neo_variable_t
@@ -39,6 +40,8 @@ neo_create_ast_object_property(neo_allocator_t allocator) {
   node->identifier = NULL;
   node->value = NULL;
   node->node.type = NEO_NODE_TYPE_OBJECT_PROPERTY;
+
+  node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn)neo_serialize_ast_object_property;
   node->computed = false;
   return node;
