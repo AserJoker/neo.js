@@ -9,12 +9,29 @@
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/position.h"
+#include "core/variable.h"
 
 static void
 neo_ast_function_argument_dispose(neo_allocator_t allocator,
                                   neo_ast_function_argument_t node) {
   neo_allocator_free(allocator, node->identifier);
   neo_allocator_free(allocator, node->value);
+}
+
+static neo_variable_t
+neo_serialize_ast_function_argument(neo_allocator_t allocator,
+                                    neo_ast_function_argument_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(
+      variable, "type",
+      neo_create_variable_string(allocator, "NEO_NODE_TYPE_FUNCTION_ARGUMENT"));
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "identifier",
+                   neo_ast_node_serialize(allocator, node->identifier));
+  neo_variable_set(variable, "value",
+                   neo_ast_node_serialize(allocator, node->value));
+  return variable;
 }
 
 static neo_ast_function_argument_t
@@ -24,6 +41,7 @@ neo_create_ast_function_argument(neo_allocator_t allocator) {
   node->identifier = NULL;
   node->value = NULL;
   node->node.type = NEO_NODE_TYPE_FUNCTION_ARGUMENT;
+  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_function_argument;
   return node;
 }
 

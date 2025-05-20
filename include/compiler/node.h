@@ -4,6 +4,7 @@
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/location.h"
+#include "core/variable.h"
 #include <stdbool.h>
 
 #ifdef __cplusplus
@@ -96,10 +97,25 @@ typedef enum _neo_ast_node_type_t {
   NEO_NODE_TYPE_OBJECT_ACCESSOR,
 } neo_ast_node_type_t;
 
-typedef struct _neo_ast_node_t {
+typedef struct _neo_ast_node_t *neo_ast_node_t;
+
+struct _neo_ast_node_t {
   neo_ast_node_type_t type;
   neo_location_t location;
-} *neo_ast_node_t;
+  neo_serialize_fn serialize;
+};
+
+neo_variable_t neo_ast_node_serialize(neo_allocator_t allocator,
+                                      neo_ast_node_t node);
+
+neo_variable_t neo_ast_node_list_serialize(neo_allocator_t allocator,
+                                           neo_list_t list);
+
+neo_variable_t neo_ast_node_source_serialize(neo_allocator_t allocator,
+                                             neo_ast_node_t node);
+
+neo_variable_t neo_ast_node_location_serialize(neo_allocator_t allocator,
+                                               neo_ast_node_t node);
 
 bool neo_skip_white_space(neo_allocator_t allocator, const char *file,
                           neo_position_t *position);
@@ -109,6 +125,7 @@ bool neo_skip_line_terminator(neo_allocator_t allocator, const char *file,
 
 bool neo_skip_comment(neo_allocator_t allocator, const char *file,
                       neo_position_t *position);
+
 #define SKIP_ALL(allocator, file, position, onerror)                           \
   for (;;) {                                                                   \
     if (neo_skip_white_space(allocator, file, position)) {                     \

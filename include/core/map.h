@@ -14,10 +14,10 @@ typedef struct _neo_map_initialize {
   bool auto_free_key;
   bool auto_free_value;
   neo_compare_fn_t compare;
-} neo_map_initialize;
+} neo_map_initialize_t;
 
 neo_map_t neo_create_map(neo_allocator_t allocator,
-                         neo_map_initialize *initialize);
+                         neo_map_initialize_t *initialize);
 
 void neo_map_set(neo_map_t self, void *key, void *value);
 

@@ -5,12 +5,31 @@
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/position.h"
+#include "core/variable.h"
 #include <stdio.h>
 
 static void neo_ast_object_property_dispose(neo_allocator_t allocator,
                                             neo_ast_object_property_t node) {
   neo_allocator_free(allocator, node->identifier);
   neo_allocator_free(allocator, node->value);
+}
+
+static neo_variable_t
+neo_serialize_ast_object_property(neo_allocator_t allocator,
+                                  neo_ast_object_property_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(
+      variable, "type",
+      neo_create_variable_string(allocator, "NEO_NODE_TYPE_OBJECT_PROPERTY"));
+  neo_variable_set(variable, "identifier",
+                   neo_ast_node_serialize(allocator, node->identifier));
+  neo_variable_set(variable, "value",
+                   neo_ast_node_serialize(allocator, node->value));
+  neo_variable_set(variable, "computed",
+                   neo_create_variable_boolean(allocator, node->computed));
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  return variable;
 }
 
 static neo_ast_object_property_t
@@ -20,6 +39,7 @@ neo_create_ast_object_property(neo_allocator_t allocator) {
   node->identifier = NULL;
   node->value = NULL;
   node->node.type = NEO_NODE_TYPE_OBJECT_PROPERTY;
+  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_object_property;
   node->computed = false;
   return node;
 }

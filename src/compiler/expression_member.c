@@ -7,6 +7,7 @@
 #include "core/error.h"
 #include "core/location.h"
 #include "core/position.h"
+#include "core/variable.h"
 #include <stdio.h>
 static void
 neo_ast_expression_member_dispose(neo_allocator_t allocator,
@@ -14,13 +15,49 @@ neo_ast_expression_member_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->field);
   neo_allocator_free(allocator, node->host);
 }
+
+static neo_variable_t
+neo_serialize_ast_expression_member(neo_allocator_t allocator,
+                                    neo_ast_expression_member_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  if (node->node.type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
+    neo_variable_set(variable, "type",
+                     neo_create_variable_string(
+                         allocator, "NEO_NODE_TYPE_EXPRESSION_MEMBER"));
+  } else if (node->node.type == NEO_NODE_TYPE_EXPRESSION_COMPUTED_MEMBER) {
+    neo_variable_set(
+        variable, "type",
+        neo_create_variable_string(allocator,
+                                   "NEO_NODE_TYPE_EXPRESSION_COMPUTED_MEMBER"));
+  } else if (node->node.type == NEO_NODE_TYPE_EXPRESSION_OPTIONAL_MEMBER) {
+    neo_variable_set(
+        variable, "type",
+        neo_create_variable_string(allocator,
+                                   "NEO_NODE_TYPE_EXPRESSION_OPTIONAL_MEMBER"));
+  } else if (node->node.type ==
+             NEO_NODE_TYPE_EXPRESSION_OPTIONAL_COMPUTED_MEMBER) {
+    neo_variable_set(
+        variable, "type",
+        neo_create_variable_string(
+            allocator, "NEO_NODE_TYPE_EXPRESSION_OPTIONAL_COMPUTED_MEMBER"));
+  }
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "host",
+                   neo_ast_node_serialize(allocator, node->host));
+  neo_variable_set(variable, "field",
+                   neo_ast_node_serialize(allocator, node->field));
+  return variable;
+}
+
 static neo_ast_expression_member_t
 neo_create_ast_expression_member(neo_allocator_t allocator) {
   neo_ast_expression_member_t node =
       neo_allocator_alloc2(allocator, neo_ast_expression_member);
+  node->node.type = NEO_NODE_TYPE_EXPRESSION_MEMBER;
+  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_expression_member;
   node->field = NULL;
   node->host = NULL;
-  node->node.type = NEO_NODE_TYPE_EXPRESSION_MEMBER;
   return node;
 }
 

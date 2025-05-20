@@ -8,6 +8,7 @@
 #include "core/list.h"
 #include "core/location.h"
 #include "core/position.h"
+#include "core/variable.h"
 #include <stdio.h>
 
 static void neo_ast_statement_switch_dispose(neo_allocator_t allocator,
@@ -15,12 +16,27 @@ static void neo_ast_statement_switch_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->cases);
   neo_allocator_free(allocator, node->condition);
 }
-
+static neo_variable_t
+neo_serialize_ast_statement_switch(neo_allocator_t allocator,
+                                   neo_ast_statement_switch_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(
+      variable, "type",
+      neo_create_variable_string(allocator, "NEO_NODE_TYPE_STATEMENT_SWITCH"));
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "condition",
+                   neo_ast_node_serialize(allocator, node->condition));
+  neo_variable_set(variable, "cases",
+                   neo_ast_node_list_serialize(allocator, node->cases));
+  return variable;
+}
 static neo_ast_statement_switch_t
 neo_create_ast_statement_switch(neo_allocator_t allocator) {
   neo_ast_statement_switch_t node =
       neo_allocator_alloc2(allocator, neo_ast_statement_switch);
   node->node.type = NEO_NODE_TYPE_STATEMENT_SWITCH;
+  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_statement_switch;
   node->condition = NULL;
   neo_list_initialize_t initialize = {true};
   node->cases = neo_create_list(allocator, &initialize);

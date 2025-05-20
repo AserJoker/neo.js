@@ -6,17 +6,33 @@
 #include "core/error.h"
 #include "core/list.h"
 #include "core/position.h"
+#include "core/variable.h"
 #include <stdio.h>
 static void neo_ast_expression_array_dispose(neo_allocator_t allocator,
                                              neo_ast_expression_array_t node) {
   neo_allocator_free(allocator, node->items);
 }
+static neo_variable_t
+neo_serialize_ast_expression_array(neo_allocator_t allocator,
+                                   neo_ast_expression_array_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(
+      variable, "type",
+      neo_create_variable_string(allocator, "NEO_NODE_TYPE_EXPRESSION_ARRAY"));
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "items",
+                   neo_ast_node_list_serialize(allocator, node->items));
+  return variable;
+}
+
 static neo_ast_expression_array_t
 neo_create_ast_expression_array(neo_allocator_t allocator) {
   neo_ast_expression_array_t node =
       neo_allocator_alloc2(allocator, neo_ast_expression_array);
   neo_list_initialize_t initialize = {true};
   node->node.type = NEO_NODE_TYPE_EXPRESSION_ARRAY;
+  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_expression_array;
   node->items = neo_create_list(allocator, &initialize);
   return node;
 }

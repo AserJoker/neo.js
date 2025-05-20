@@ -2,6 +2,7 @@
 #include "compiler/expression.h"
 #include "compiler/statement.h"
 #include "compiler/token.h"
+#include "core/variable.h"
 #include <stdio.h>
 
 static void
@@ -10,12 +11,27 @@ neo_ast_statement_do_while_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->body);
   neo_allocator_free(allocator, node->condition);
 }
-
+static neo_variable_t
+neo_serialize_ast_statement_do_while(neo_allocator_t allocator,
+                                     neo_ast_statement_do_while_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(variable, "type",
+                   neo_create_variable_string(
+                       allocator, "NEO_NODE_TYPE_STATEMENT_DO_WHILE"));
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "body",
+                   neo_ast_node_serialize(allocator, node->body));
+  neo_variable_set(variable, "condition",
+                   neo_ast_node_serialize(allocator, node->condition));
+  return variable;
+}
 static neo_ast_statement_do_while_t
 neo_create_ast_statement_do_while(neo_allocator_t allocator) {
   neo_ast_statement_do_while_t node =
       neo_allocator_alloc2(allocator, neo_ast_statement_do_while);
   node->node.type = NEO_NODE_TYPE_STATEMENT_DO_WHILE;
+  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_statement_do_while;
   node->body = NULL;
   node->condition = NULL;
   return node;

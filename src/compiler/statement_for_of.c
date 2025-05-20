@@ -5,6 +5,7 @@
 #include "compiler/pattern_object.h"
 #include "compiler/statement.h"
 #include "compiler/token.h"
+#include "core/variable.h"
 #include <stdio.h>
 static void neo_ast_statement_for_of_dispose(neo_allocator_t allocator,
                                              neo_ast_statement_for_of_t node) {
@@ -12,12 +13,51 @@ static void neo_ast_statement_for_of_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->right);
   neo_allocator_free(allocator, node->body);
 }
-
+static neo_variable_t
+neo_serialize_ast_statement_for_of(neo_allocator_t allocator,
+                                   neo_ast_statement_for_of_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(
+      variable, "type",
+      neo_create_variable_string(allocator, "NEO_NODE_TYPE_STATEMENT_FOR_OF"));
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "left",
+                   neo_ast_node_serialize(allocator, node->left));
+  neo_variable_set(variable, "right",
+                   neo_ast_node_serialize(allocator, node->right));
+  neo_variable_set(variable, "body",
+                   neo_ast_node_serialize(allocator, node->body));
+  switch (node->kind) {
+  case NEO_AST_DECLARATION_VAR:
+    neo_variable_set(
+        variable, "kind",
+        neo_create_variable_string(allocator, "NEO_AST_DECLARATION_VAR"));
+    break;
+  case NEO_AST_DECLARATION_CONST:
+    neo_variable_set(
+        variable, "kind",
+        neo_create_variable_string(allocator, "NEO_AST_DECLARATION_CONST"));
+    break;
+  case NEO_AST_DECLARATION_LET:
+    neo_variable_set(
+        variable, "kind",
+        neo_create_variable_string(allocator, "NEO_AST_DECLARATION_LET"));
+    break;
+  case NEO_AST_DECLARATION_NONE:
+    neo_variable_set(
+        variable, "kind",
+        neo_create_variable_string(allocator, "NEO_AST_DECLARATION_NONE"));
+    break;
+  }
+  return variable;
+}
 static neo_ast_statement_for_of_t
 neo_create_ast_statement_for_of(neo_allocator_t allocator) {
   neo_ast_statement_for_of_t node =
       neo_allocator_alloc2(allocator, neo_ast_statement_for_of);
   node->node.type = NEO_NODE_TYPE_STATEMENT_FOR_OF;
+  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_statement_for_of;
   node->left = NULL;
   node->right = NULL;
   node->body = NULL;

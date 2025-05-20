@@ -6,11 +6,28 @@
 #include "core/error.h"
 #include "core/location.h"
 #include "core/position.h"
+#include "core/variable.h"
 #include <stdbool.h>
 
 static void neo_ast_expression_yield_dispose(neo_allocator_t allocator,
                                              neo_ast_expression_yield_t self) {
   neo_allocator_free(allocator, self->value);
+}
+
+static neo_variable_t
+neo_serialize_ast_expression_yield(neo_allocator_t allocator,
+                                   neo_ast_expression_yield_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(
+      variable, "type",
+      neo_create_variable_string(allocator, "NEO_NODE_TYPE_EXPRESSION_YIELD"));
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "value",
+                   neo_ast_node_serialize(allocator, node->value));
+  neo_variable_set(variable, "degelate",
+                   neo_create_variable_boolean(allocator, node->degelate));
+  return variable;
 }
 
 static neo_ast_expression_yield_t
@@ -19,6 +36,7 @@ neo_create_ast_expression_yield(neo_allocator_t allocator) {
       (neo_ast_expression_yield_t)neo_allocator_alloc2(
           allocator, neo_ast_expression_yield);
   node->node.type = NEO_NODE_TYPE_EXPRESSION_YIELD;
+  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_expression_yield;
   node->value = NULL;
   node->degelate = false;
   return node;

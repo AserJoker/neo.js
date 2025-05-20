@@ -10,6 +10,7 @@
 #include "core/list.h"
 #include "core/location.h"
 #include "core/position.h"
+#include "core/variable.h"
 #include <stdio.h>
 
 static void neo_ast_expression_arrow_function_dispose(
@@ -17,17 +18,34 @@ static void neo_ast_expression_arrow_function_dispose(
   neo_allocator_free(allocattor, node->arguments);
   neo_allocator_free(allocattor, node->body);
 }
-
+static neo_variable_t neo_serialize_ast_expression_arrow_function(
+    neo_allocator_t allocator, neo_ast_expression_arrow_function_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(variable, "type",
+                   neo_create_variable_string(
+                       allocator, "NEO_NODE_TYPE_EXPRESSION_ARROW_FUNCTION"));
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "arguments",
+                   neo_ast_node_list_serialize(allocator, node->arguments));
+  neo_variable_set(variable, "body",
+                   neo_ast_node_serialize(allocator, node->body));
+  neo_variable_set(variable, "async",
+                   neo_create_variable_boolean(allocator, node->async));
+  return variable;
+}
 static neo_ast_expression_arrow_function_t
 neo_create_ast_expression_arrow_function(neo_allocator_t allocator) {
   neo_ast_expression_arrow_function_t node =
       neo_allocator_alloc2(allocator, neo_ast_expression_arrow_function);
+  node->node.type = NEO_NODE_TYPE_EXPRESSION_ARROW_FUNCTION;
+  node->node.serialize =
+      (neo_serialize_fn)neo_serialize_ast_expression_arrow_function;
   neo_list_initialize_t initialize = {true};
 
   node->arguments = neo_create_list(allocator, &initialize);
   node->body = NULL;
   node->async = false;
-  node->node.type = NEO_NODE_TYPE_EXPRESSION_ARROW_FUNCTION;
   return node;
 }
 

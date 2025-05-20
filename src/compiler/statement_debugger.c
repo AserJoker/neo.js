@@ -5,6 +5,19 @@
 #include "core/error.h"
 #include "core/location.h"
 #include "core/position.h"
+#include "core/variable.h"
+
+static neo_variable_t
+neo_serialize_ast_statement_continue(neo_allocator_t allocator,
+                                     neo_ast_statement_debugger_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(variable, "type",
+                   neo_create_variable_string(
+                       allocator, "NEO_NODE_TYPE_STATEMENT_DEBUGGER"));
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  return variable;
+}
 
 static neo_ast_statement_debugger_t
 neo_create_statement_debugger(neo_allocator_t allocator) {
@@ -12,6 +25,7 @@ neo_create_statement_debugger(neo_allocator_t allocator) {
       (neo_ast_statement_debugger_t)neo_allocator_alloc(
           allocator, sizeof(struct _neo_ast_statement_debugger_t), NULL);
   node->node.type = NEO_NODE_TYPE_STATEMENT_DEBUGGER;
+  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_statement_continue;
   return node;
 }
 

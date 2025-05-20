@@ -1,5 +1,6 @@
 #include "compiler/declaration_class.h"
 #include "compiler/expression_class.h"
+#include "core/variable.h"
 #include <stdio.h>
 static void
 neo_ast_declaration_class_dispose(neo_allocator_t allocator,
@@ -7,10 +8,25 @@ neo_ast_declaration_class_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->declaration);
 }
 
+static neo_variable_t
+neo_serialize_ast_declaration_class(neo_allocator_t allocator,
+                                    neo_ast_declaration_class_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(
+      variable, "type",
+      neo_create_variable_string(allocator, "NEO_NODE_TYPE_DECLARATION_CLASS"));
+  neo_variable_set(variable, "declaration",
+                   neo_ast_node_serialize(allocator, node->declaration));
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  return variable;
+}
+
 static neo_ast_declaration_class_t
 neo_create_ast_declaration_class(neo_allocator_t allocator) {
   neo_ast_declaration_class_t node =
       neo_allocator_alloc2(allocator, neo_ast_declaration_class);
+  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_declaration_class;
   node->node.type = NEO_NODE_TYPE_DECLARATION_CLASS;
   node->declaration = NULL;
   return node;

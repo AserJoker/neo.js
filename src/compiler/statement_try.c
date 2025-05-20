@@ -2,6 +2,7 @@
 #include "compiler/statement_block.h"
 #include "compiler/token.h"
 #include "compiler/try_catch.h"
+#include "core/variable.h"
 #include <stdio.h>
 
 static void neo_ast_statement_try_dispose(neo_allocator_t allocator,
@@ -10,12 +11,29 @@ static void neo_ast_statement_try_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->catch);
   neo_allocator_free(allocator, node->finally);
 }
-
+static neo_variable_t
+neo_serialize_ast_statement_try(neo_allocator_t allocator,
+                                neo_ast_statement_try_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(
+      variable, "type",
+      neo_create_variable_string(allocator, "NEO_NODE_TYPE_STATEMENT_TRY"));
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "body",
+                   neo_ast_node_serialize(allocator, node->body));
+  neo_variable_set(variable, "catch",
+                   neo_ast_node_serialize(allocator, node->catch));
+  neo_variable_set(variable, "finally",
+                   neo_ast_node_serialize(allocator, node->finally));
+  return variable;
+}
 static neo_ast_statement_try_t
 neo_create_ast_statement_try(neo_allocator_t allocator) {
   neo_ast_statement_try_t node =
       neo_allocator_alloc2(allocator, neo_ast_statement_try);
   node->node.type = NEO_NODE_TYPE_STATEMENT_TRY;
+  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_statement_try;
   node->body = NULL;
   node->catch = NULL;
   node->finally = NULL;

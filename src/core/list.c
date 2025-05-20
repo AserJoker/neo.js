@@ -71,19 +71,9 @@ neo_list_node_t neo_list_get_head(neo_list_t self) { return &self->head; }
 
 neo_list_node_t neo_list_get_tail(neo_list_t self) { return &self->tail; }
 
-neo_list_node_t neo_list_get_first(neo_list_t self) {
-  if (self->size) {
-    return self->head.next;
-  }
-  return NULL;
-}
+neo_list_node_t neo_list_get_first(neo_list_t self) { return self->head.next; }
 
-neo_list_node_t neo_list_get_last(neo_list_t self) {
-  if (self->size) {
-    return self->tail.last;
-  }
-  return NULL;
-}
+neo_list_node_t neo_list_get_last(neo_list_t self) { return self->tail.last; }
 
 size_t neo_list_get_size(neo_list_t self) { return self->size; }
 

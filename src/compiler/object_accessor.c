@@ -9,6 +9,7 @@
 #include "core/list.h"
 #include "core/location.h"
 #include "core/position.h"
+#include "core/variable.h"
 #include <stdio.h>
 static void neo_ast_object_accessor_dispose(neo_allocator_t allocator,
                                             neo_ast_object_accessor_t node) {
@@ -17,11 +18,37 @@ static void neo_ast_object_accessor_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->name);
 }
 
+static neo_variable_t
+neo_serialize_ast_object_accessor(neo_allocator_t allocator,
+                                  neo_ast_object_accessor_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(
+      variable, "type",
+      neo_create_variable_string(allocator, "NEO_NODE_TYPE_OBJECT_ACCESSOR"));
+  neo_variable_set(variable, "arguments",
+                   neo_ast_node_list_serialize(allocator, node->arguments));
+  neo_variable_set(variable, "name",
+                   neo_ast_node_serialize(allocator, node->name));
+  neo_variable_set(variable, "body",
+                   neo_ast_node_serialize(allocator, node->body));
+  neo_variable_set(
+      variable, "kind",
+      neo_create_variable_string(allocator, node->kind == NEO_ACCESSOR_KIND_GET
+                                                ? "NEO_ACCESSOR_KIND_GET"
+                                                : "NEO_ACCESSOR_KIND_SET"));
+  neo_variable_set(variable, "computed",
+                   neo_create_variable_boolean(allocator, node->computed));
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  return variable;
+}
+
 static neo_ast_object_accessor_t
 neo_create_ast_object_accessor(neo_allocator_t allocator) {
   neo_ast_object_accessor_t node =
       neo_allocator_alloc2(allocator, neo_ast_object_accessor);
   node->node.type = NEO_NODE_TYPE_OBJECT_ACCESSOR;
+  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_object_accessor;
   node->body = NULL;
   node->name = NULL;
   node->kind = NEO_ACCESSOR_KIND_GET;

@@ -10,12 +10,30 @@
 #include "core/error.h"
 #include "core/list.h"
 #include "core/position.h"
+#include "core/variable.h"
 static void
 neo_ast_pattern_object_item_dispose(neo_allocator_t allocator,
                                     neo_ast_pattern_object_item_t self) {
   neo_allocator_free(allocator, self->identifier);
   neo_allocator_free(allocator, self->alias);
   neo_allocator_free(allocator, self->value);
+}
+static neo_variable_t
+neo_serialize_ast_pattern_object_item(neo_allocator_t allocator,
+                                      neo_ast_pattern_object_item_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(variable, "type",
+                   neo_create_variable_string(
+                       allocator, "NEO_NODE_TYPE_PATTERN_OBJECT_ITEM"));
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "identifier",
+                   neo_ast_node_serialize(allocator, node->identifier));
+  neo_variable_set(variable, "value",
+                   neo_ast_node_serialize(allocator, node->value));
+  neo_variable_set(variable, "alias",
+                   neo_ast_node_serialize(allocator, node->alias));
+  return variable;
 }
 
 static neo_ast_pattern_object_item_t
@@ -24,6 +42,8 @@ neo_create_ast_pattern_object_item(neo_allocator_t allocator) {
       neo_allocator_alloc2(allocator, neo_ast_pattern_object_item);
   neo_list_initialize_t initialize = {true};
   node->node.type = NEO_NODE_TYPE_PATTERN_OBJECT_ITEM;
+  node->node.serialize =
+      (neo_serialize_fn)neo_serialize_ast_pattern_object_item;
   node->identifier = NULL;
   node->alias = NULL;
   node->value = NULL;

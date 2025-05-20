@@ -1,7 +1,73 @@
 #include "compiler/node.h"
 #include "compiler/token.h"
+#include "core/allocator.h"
 #include "core/error.h"
 #include "core/unicode.h"
+#include "core/variable.h"
+#include <string.h>
+
+neo_variable_t neo_ast_node_serialize(neo_allocator_t allocator,
+                                      neo_ast_node_t node) {
+  if (!node) {
+    return neo_create_variable_nil(allocator);
+  }
+  return node->serialize(allocator, node);
+}
+neo_variable_t neo_ast_node_list_serialize(neo_allocator_t allocator,
+                                           neo_list_t list) {
+  return neo_create_variable_array(allocator, list,
+                                   (neo_serialize_fn)neo_ast_node_serialize);
+}
+
+neo_variable_t neo_ast_node_source_serialize(neo_allocator_t allocator,
+                                             neo_ast_node_t node) {
+  size_t size = node->location.end.offset - node->location.begin.offset;
+  char *buf = neo_allocator_alloc(allocator, size * 2, NULL);
+  char *dst = buf;
+  const char *src = node->location.begin.offset;
+  while (src != node->location.end.offset) {
+    if (*src == '\"') {
+      *dst++ = '\\';
+      *dst++ = '\"';
+    } else if (*src == '\n') {
+      *dst++ = '\\';
+      *dst++ = 'n';
+    } else if (*src == '\r') {
+      *dst++ = '\\';
+      *dst++ = 'r';
+    } else {
+      *dst++ = *src++;
+    }
+  }
+  *dst = 0;
+  neo_variable_t variable = neo_create_variable_string(allocator, buf);
+  neo_allocator_free(allocator, buf);
+  return variable;
+}
+
+neo_variable_t neo_ast_node_location_serialize(neo_allocator_t allocator,
+                                               neo_ast_node_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_t begin = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(
+      begin, "column",
+      neo_create_variable_integer(allocator, node->location.begin.column));
+  neo_variable_set(
+      begin, "line",
+      neo_create_variable_integer(allocator, node->location.begin.line));
+  neo_variable_set(variable, "begin", begin);
+  neo_variable_t end = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(
+      end, "column",
+      neo_create_variable_integer(allocator, node->location.end.column));
+  neo_variable_set(
+      end, "line",
+      neo_create_variable_integer(allocator, node->location.end.line));
+  neo_variable_set(variable, "end", end);
+  neo_variable_set(variable, "text",
+                   neo_ast_node_source_serialize(allocator, node));
+  return variable;
+}
 
 bool neo_skip_white_space(neo_allocator_t allocator, const char *file,
                           neo_position_t *position) {

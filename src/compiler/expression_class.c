@@ -15,6 +15,7 @@
 #include "core/list.h"
 #include "core/location.h"
 #include "core/position.h"
+#include "core/variable.h"
 #include <stdio.h>
 
 static void neo_ast_expression_class_dispose(neo_allocator_t allocator,
@@ -25,11 +26,32 @@ static void neo_ast_expression_class_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->decorators);
 }
 
+static neo_variable_t
+neo_serialize_ast_expression_class(neo_allocator_t allocator,
+                                   neo_ast_expression_class_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(
+      variable, "type",
+      neo_create_variable_string(allocator, "NEO_NODE_TYPE_EXPRESSION_CALL"));
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "name",
+                   neo_ast_node_serialize(allocator, node->name));
+  neo_variable_set(variable, "extends",
+                   neo_ast_node_serialize(allocator, node->extends));
+  neo_variable_set(variable, "items",
+                   neo_ast_node_list_serialize(allocator, node->items));
+  neo_variable_set(variable, "decorators",
+                   neo_ast_node_list_serialize(allocator, node->decorators));
+  return variable;
+}
+
 static neo_ast_expression_class_t
 neo_create_ast_expression_class(neo_allocator_t allocator) {
   neo_ast_expression_class_t node =
       neo_allocator_alloc2(allocator, neo_ast_expression_class);
   node->node.type = NEO_NODE_TYPE_EXPRESSION_CLASS;
+  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_expression_class;
   node->name = NULL;
   node->extends = NULL;
   neo_list_initialize_t initialize = {true};

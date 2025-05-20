@@ -5,18 +5,32 @@
 #include "core/allocator.h"
 #include "core/location.h"
 #include "core/position.h"
+#include "core/variable.h"
 #include <stdio.h>
 static void neo_ast_statement_break_dispose(neo_allocator_t allocator,
                                             neo_ast_statement_break_t node) {
   neo_allocator_free(allocator, node->label);
 }
-
+static neo_variable_t
+neo_serialize_ast_statement_break(neo_allocator_t allocator,
+                                  neo_ast_statement_break_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(
+      variable, "type",
+      neo_create_variable_string(allocator, "NEO_NODE_TYPE_STATEMENT_BREAK"));
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "label",
+                   neo_ast_node_serialize(allocator, node->label));
+  return variable;
+}
 static neo_ast_statement_break_t
 neo_create_ast_statement_break(neo_allocator_t allocator) {
   neo_ast_statement_break_t node =
       neo_allocator_alloc2(allocator, neo_ast_statement_break);
   node->label = NULL;
   node->node.type = NEO_NODE_TYPE_STATEMENT_BREAK;
+  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_statement_break;
   return node;
 }
 

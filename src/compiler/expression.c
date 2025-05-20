@@ -25,8 +25,10 @@
 #include "core/error.h"
 #include "core/location.h"
 #include "core/position.h"
+#include "core/variable.h"
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 
 static void
 neo_ast_expression_binary_dispose(neo_allocator_t allocator,
@@ -42,6 +44,29 @@ neo_ast_expression_binary_dispose(neo_allocator_t allocator,
   }
 }
 
+static neo_variable_t
+neo_serialize_ast_expression_binary(neo_allocator_t allocator,
+                                    neo_ast_expression_binary_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(
+      variable, "type",
+      neo_create_variable_string(allocator, "NEO_NODE_TYPE_EXPRESSION_BINARY"));
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "left",
+                   neo_ast_node_serialize(allocator, node->left));
+  neo_variable_set(variable, "right",
+                   neo_ast_node_serialize(allocator, node->right));
+  char opt[16];
+  size_t size =
+      node->opt->location.begin.offset - node->opt->location.end.offset;
+  strncpy(opt, node->opt->location.begin.offset, size);
+  opt[size] = 0;
+  neo_variable_set(variable, "operator",
+                   neo_create_variable_string(allocator, opt));
+  return variable;
+}
+
 static neo_ast_expression_binary_t
 neo_create_ast_expression_binary(neo_allocator_t allocator) {
   neo_ast_expression_binary_t node =
@@ -50,6 +75,7 @@ neo_create_ast_expression_binary(neo_allocator_t allocator) {
   node->right = NULL;
   node->opt = NULL;
   node->node.type = NEO_NODE_TYPE_EXPRESSION_BINARY;
+  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_expression_binary;
   return node;
 }
 

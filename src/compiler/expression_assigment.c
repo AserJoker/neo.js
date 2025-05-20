@@ -9,6 +9,7 @@
 #include "core/error.h"
 #include "core/location.h"
 #include "core/position.h"
+#include "core/variable.h"
 #include <stdio.h>
 
 static void
@@ -19,14 +20,32 @@ neo_ast_expression_assigment_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, self->opt);
 }
 
+static neo_variable_t
+neo_serialize_ast_expression_assigment(neo_allocator_t allocator,
+                                       neo_ast_expression_assigment_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(variable, "type",
+                   neo_create_variable_string(
+                       allocator, "NEO_NODE_TYPE_EXPRESSION_ASSIGMENT"));
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "identifier",
+                   neo_ast_node_serialize(allocator, node->identifier));
+  neo_variable_set(variable, "value",
+                   neo_ast_node_serialize(allocator, node->value));
+  return variable;
+}
+
 static neo_ast_expression_assigment_t
 neo_create_ast_expression_assigment(neo_allocator_t allocator) {
   neo_ast_expression_assigment_t node =
       neo_allocator_alloc2(allocator, neo_ast_expression_assigment);
+  node->node.type = NEO_NODE_TYPE_EXPRESSION_ASSIGMENT;
+  node->node.serialize =
+      (neo_serialize_fn)neo_serialize_ast_expression_assigment;
   node->identifier = NULL;
   node->value = NULL;
   node->opt = NULL;
-  node->node.type = NEO_NODE_TYPE_EXPRESSION_ASSIGMENT;
   return node;
 }
 

@@ -4,12 +4,25 @@
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/position.h"
+#include "core/variable.h"
 
 static void neo_ast_directive_dispose() {}
+
+static neo_variable_t neo_serialize_ast_directive(neo_allocator_t allocator,
+                                                  neo_ast_directive_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(
+      variable, "type",
+      neo_create_variable_string(allocator, "NEO_NODE_TYPE_DIRECTIVE"));
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  return variable;
+}
 
 static neo_ast_directive_t neo_create_ast_directive(neo_allocator_t allocator) {
   neo_ast_directive_t node = neo_allocator_alloc2(allocator, neo_ast_directive);
   node->node.type = NEO_NODE_TYPE_DIRECTIVE;
+  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_directive;
   return node;
 }
 

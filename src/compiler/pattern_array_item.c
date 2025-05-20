@@ -7,11 +7,28 @@
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/position.h"
+#include "core/variable.h"
 static void
 neo_ast_pattern_array_item_dispose(neo_allocator_t allocator,
                                    neo_ast_pattern_array_item_t self) {
   neo_allocator_free(allocator, self->identifier);
   neo_allocator_free(allocator, self->value);
+}
+
+static neo_variable_t
+neo_serialize_ast_pattern_array_item(neo_allocator_t allocator,
+                                     neo_ast_pattern_array_item_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(variable, "type",
+                   neo_create_variable_string(
+                       allocator, "NEO_NODE_TYPE_PATTERN_ARRAY_ITEM"));
+  neo_variable_set(variable, "identifier",
+                   neo_ast_node_serialize(allocator, node->identifier));
+  neo_variable_set(variable, "value",
+                   neo_ast_node_serialize(allocator, node->value));
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  return variable;
 }
 
 static neo_ast_pattern_array_item_t
@@ -21,6 +38,7 @@ neo_create_ast_pattern_array_item(neo_allocator_t allocator) {
   node->identifier = NULL;
   node->value = NULL;
   node->node.type = NEO_NODE_TYPE_PATTERN_ARRAY_ITEM;
+  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_pattern_array_item;
   return node;
 }
 

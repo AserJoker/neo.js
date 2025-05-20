@@ -6,11 +6,28 @@
 #include "core/error.h"
 #include "core/list.h"
 #include "core/position.h"
+#include "core/variable.h"
 #include <stdio.h>
 static void neo_ast_function_body_dispose(neo_allocator_t allocator,
                                           neo_ast_function_body_t node) {
   neo_allocator_free(allocator, node->directives);
   neo_allocator_free(allocator, node->body);
+}
+
+static neo_variable_t
+neo_serialize_ast_function_body(neo_allocator_t allocator,
+                                neo_ast_function_body_t node) {
+  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_variable_set(
+      variable, "type",
+      neo_create_variable_string(allocator, "NEO_NODE_TYPE_FUNCTION_BODY"));
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "body",
+                   neo_ast_node_list_serialize(allocator, node->body));
+  neo_variable_set(variable, "directives",
+                   neo_ast_node_list_serialize(allocator, node->directives));
+  return variable;
 }
 
 static neo_ast_function_body_t
@@ -21,6 +38,7 @@ neo_create_ast_function_body(neo_allocator_t allocator) {
   node->directives = neo_create_list(allocator, &initialize);
   node->body = neo_create_list(allocator, &initialize);
   node->node.type = NEO_NODE_TYPE_FUNCTION_BODY;
+  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_function_body;
   return node;
 }
 
