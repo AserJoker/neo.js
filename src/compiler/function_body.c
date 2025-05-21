@@ -1,6 +1,7 @@
 #include "compiler/function_body.h"
 #include "compiler/directive.h"
 #include "compiler/node.h"
+#include "compiler/scope.h"
 #include "compiler/statement.h"
 #include "core/allocator.h"
 #include "core/error.h"
@@ -49,15 +50,16 @@ neo_ast_node_t neo_ast_read_function_body(neo_allocator_t allocator,
                                           const char *file,
                                           neo_position_t *position) {
   neo_position_t current = *position;
+  neo_compile_scope_t scope = NULL;
   neo_ast_function_body_t node = NULL;
   if (*current.offset != '{') {
     return NULL;
-  } else {
-    current.offset++;
-    current.column++;
   }
+  current.offset++;
+  current.column++;
   node = neo_create_ast_function_body(allocator);
   SKIP_ALL(allocator, file, &current, onerror);
+  scope = neo_compile_scope_push(allocator, NEO_COMPILE_SCOPE_BLOCK);
   for (;;) {
     neo_ast_node_t directive =
         TRY(neo_ast_read_directive(allocator, file, &current)) {
@@ -103,9 +105,14 @@ neo_ast_node_t neo_ast_read_function_body(neo_allocator_t allocator,
   node->node.location.begin = *position;
   node->node.location.end = current;
   node->node.location.file = file;
+  node->node.scope = neo_compile_scope_pop(scope);
   *position = current;
   return &node->node;
 onerror:
+  if (scope && !node->node.scope) {
+    scope = neo_compile_scope_pop(scope);
+    neo_allocator_free(allocator, scope);
+  }
   neo_allocator_free(allocator, node);
   return NULL;
 }

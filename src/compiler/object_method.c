@@ -3,6 +3,7 @@
 #include "compiler/function_body.h"
 #include "compiler/node.h"
 #include "compiler/object_key.h"
+#include "compiler/scope.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/error.h"
@@ -68,6 +69,7 @@ neo_ast_node_t neo_ast_read_object_method(neo_allocator_t allocator,
   neo_position_t current = *position;
   neo_ast_object_method_t node = neo_create_ast_object_method(allocator);
   neo_token_t token = NULL;
+  neo_compile_scope_t scope = NULL;
   neo_position_t cur = current;
   token = neo_read_identify_token(allocator, file, &cur);
   if (token && neo_location_is(token->location, "async")) {
@@ -103,6 +105,7 @@ neo_ast_node_t neo_ast_read_object_method(neo_allocator_t allocator,
   }
   current.offset++;
   current.column++;
+  scope = neo_compile_scope_push(allocator, NEO_COMPILE_SCOPE_FUNCTION);
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != ')') {
     for (;;) {
@@ -148,9 +151,14 @@ neo_ast_node_t neo_ast_read_object_method(neo_allocator_t allocator,
   node->node.location.begin = *position;
   node->node.location.end = current;
   node->node.location.file = file;
+  node->node.scope = neo_compile_scope_pop(scope);
   *position = current;
   return &node->node;
 onerror:
+  if (scope && !node->node.scope) {
+    scope = neo_compile_scope_pop(scope);
+    neo_allocator_free(allocator, scope);
+  }
   neo_allocator_free(allocator, token);
   neo_allocator_free(allocator, node);
   return NULL;

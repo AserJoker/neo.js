@@ -1,5 +1,6 @@
 #include "compiler/static_block.h"
 #include "compiler/node.h"
+#include "compiler/scope.h"
 #include "compiler/statement.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
@@ -47,6 +48,7 @@ neo_ast_node_t neo_ast_read_static_block(neo_allocator_t allocator,
   neo_position_t current = *position;
   neo_ast_static_block_t node = NULL;
   neo_token_t token = NULL;
+  neo_compile_scope_t scope = NULL;
   token = neo_read_identify_token(allocator, file, &current);
   if (!token || !neo_location_is(token->location, "static")) {
     goto onerror;
@@ -59,6 +61,7 @@ neo_ast_node_t neo_ast_read_static_block(neo_allocator_t allocator,
   }
   current.offset++;
   current.column++;
+  scope = neo_compile_scope_push(allocator, NEO_COMPILE_SCOPE_BLOCK);
   SKIP_ALL(allocator, file, &current, onerror);
   while (true) {
     neo_ast_node_t statement =
@@ -87,9 +90,14 @@ neo_ast_node_t neo_ast_read_static_block(neo_allocator_t allocator,
   node->node.location.begin = *position;
   node->node.location.end = current;
   node->node.location.file = file;
+  node->node.scope = neo_compile_scope_pop(scope);
   *position = current;
   return &node->node;
 onerror:
+  if (scope && !node->node.scope) {
+    scope = neo_compile_scope_pop(scope);
+    neo_allocator_free(allocator, scope);
+  }
   neo_allocator_free(allocator, token);
   neo_allocator_free(allocator, node);
   return NULL;

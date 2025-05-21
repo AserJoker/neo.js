@@ -18,12 +18,15 @@ static neo_compile_scope_t neo_create_compile_scope(neo_allocator_t allocator) {
   neo_list_initialize_t initialize = {true};
   scope->bindings = neo_create_list(allocator, &initialize);
   scope->variables = neo_create_list(allocator, &initialize);
+  scope->type = NEO_COMPILE_SCOPE_FUNCTION;
   return scope;
 }
 
-neo_compile_scope_t neo_compile_scope_push(neo_allocator_t allocator) {
+neo_compile_scope_t neo_compile_scope_push(neo_allocator_t allocator,
+                                           neo_compile_scope_type_t type) {
   neo_compile_scope_t scope = neo_create_compile_scope(allocator);
   scope->parent = current;
+  scope->type = type;
   neo_compile_scope_t curr = current;
   current = scope;
   return curr;

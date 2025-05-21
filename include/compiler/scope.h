@@ -31,9 +31,11 @@ struct _neo_compile_scope_t {
   neo_compile_scope_t parent;
   neo_list_t variables;
   neo_list_t bindings;
+  neo_compile_scope_type_t type;
 };
 
-neo_compile_scope_t neo_compile_scope_push(neo_allocator_t allocator);
+neo_compile_scope_t neo_compile_scope_push(neo_allocator_t allocator,
+                                           neo_compile_scope_type_t type);
 
 neo_compile_scope_t neo_compile_scope_pop(neo_compile_scope_t scope);
 

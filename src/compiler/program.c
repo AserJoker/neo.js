@@ -3,6 +3,7 @@
 #include "compiler/directive.h"
 #include "compiler/interpreter.h"
 #include "compiler/node.h"
+#include "compiler/scope.h"
 #include "compiler/statement.h"
 #include "core/allocator.h"
 #include "core/error.h"
@@ -51,6 +52,8 @@ static neo_ast_program_t neo_create_ast_program(neo_allocator_t allocator) {
 neo_ast_node_t neo_ast_read_program(neo_allocator_t allocator, const char *file,
                                     neo_position_t *position) {
   neo_position_t current = *position;
+  neo_compile_scope_t scope =
+      neo_compile_scope_push(allocator, NEO_COMPILE_SCOPE_FUNCTION);
   neo_ast_program_t node = neo_create_ast_program(allocator);
   node->interpreter = TRY(neo_ast_read_interpreter(allocator, file, &current)) {
     goto onerror;
@@ -92,9 +95,12 @@ neo_ast_node_t neo_ast_read_program(neo_allocator_t allocator, const char *file,
   node->node.location.begin = *position;
   node->node.location.end = current;
   node->node.location.file = file;
+  node->node.scope = neo_compile_scope_pop(scope);
   *position = current;
   return &node->node;
 onerror:
   neo_allocator_free(allocator, node);
+  scope = neo_compile_scope_pop(scope);
+  neo_allocator_free(allocator, scope);
   return NULL;
 }
