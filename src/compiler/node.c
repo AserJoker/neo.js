@@ -29,12 +29,15 @@ neo_variable_t neo_ast_node_source_serialize(neo_allocator_t allocator,
     if (*src == '\"') {
       *dst++ = '\\';
       *dst++ = '\"';
+      src++;
     } else if (*src == '\n') {
       *dst++ = '\\';
       *dst++ = 'n';
+      src++;
     } else if (*src == '\r') {
       *dst++ = '\\';
       *dst++ = 'r';
+      src++;
     } else {
       *dst++ = *src++;
     }

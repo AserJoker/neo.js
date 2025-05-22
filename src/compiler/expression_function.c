@@ -31,6 +31,8 @@ neo_serialize_ast_expression_function(neo_allocator_t allocator,
                        allocator, "NEO_NODE_TYPE_EXPRESSION_FUNCTION"));
   neo_variable_set(variable, "location",
                    neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "scope",
+                   neo_serialize_scope(allocator, node->node.scope));
   neo_variable_set(variable, "name",
                    neo_ast_node_serialize(allocator, node->name));
   neo_variable_set(variable, "body",
@@ -156,8 +158,6 @@ neo_ast_node_t neo_ast_read_expression_function(neo_allocator_t allocator,
   node->node.location.end = current;
   node->node.location.file = file;
   node->node.scope = neo_compile_scope_pop(scope);
-  neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
-                           &node->node, NEO_COMPILE_VARIABLE_FUNCTION);
   *position = current;
   return &node->node;
 onerror:

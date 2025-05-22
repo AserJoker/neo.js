@@ -29,6 +29,8 @@ neo_serialize_ast_pattern_array_item(neo_allocator_t allocator,
                    neo_ast_node_serialize(allocator, node->value));
   neo_variable_set(variable, "location",
                    neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "scope",
+                   neo_serialize_scope(allocator, node->node.scope));
   return variable;
 }
 

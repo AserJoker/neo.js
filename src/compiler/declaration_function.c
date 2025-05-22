@@ -1,5 +1,6 @@
 #include "compiler/declaration_function.h"
 #include "compiler/expression_function.h"
+#include "compiler/scope.h"
 #include "core/variable.h"
 #include <stdio.h>
 static void
@@ -19,6 +20,8 @@ neo_serialize_ast_declaration_function(neo_allocator_t allocator,
                    neo_ast_node_serialize(allocator, node->declaration));
   neo_variable_set(variable, "location",
                    neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "scope",
+                   neo_serialize_scope(allocator, node->node.scope));
   return variable;
 }
 
@@ -56,6 +59,8 @@ neo_ast_node_t neo_ast_read_declaration_function(neo_allocator_t allocator,
   node->node.location.end = current;
   node->node.location.file = file;
   *position = current;
+  neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
+                           node->declaration, NEO_COMPILE_VARIABLE_FUNCTION);
   return &node->node;
 onerror:
   neo_allocator_free(allocator, node);

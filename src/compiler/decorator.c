@@ -29,6 +29,8 @@ static neo_variable_t neo_serialize_ast_decorator(neo_allocator_t allocator,
                    neo_ast_node_list_serialize(allocator, node->arguments));
   neo_variable_set(variable, "location",
                    neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "scope",
+                   neo_serialize_scope(allocator, node->node.scope));
   return variable;
 }
 

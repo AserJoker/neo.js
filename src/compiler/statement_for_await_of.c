@@ -24,6 +24,10 @@ static neo_variable_t neo_serialize_ast_statement_for_await_of(
   neo_variable_set(variable, "type",
                    neo_create_variable_string(
                        allocator, "NEO_NODE_TYPE_STATEMENT_FOR_AWAIT_OF"));
+  neo_variable_set(variable, "location",
+                   neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "scope",
+                   neo_serialize_scope(allocator, node->node.scope));
   neo_variable_set(variable, "text",
                    neo_ast_node_source_serialize(allocator, &node->node));
   neo_variable_set(variable, "left",

@@ -25,6 +25,8 @@ neo_serialize_ast_function_body(neo_allocator_t allocator,
       neo_create_variable_string(allocator, "NEO_NODE_TYPE_FUNCTION_BODY"));
   neo_variable_set(variable, "location",
                    neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "scope",
+                   neo_serialize_scope(allocator, node->node.scope));
   neo_variable_set(variable, "body",
                    neo_ast_node_list_serialize(allocator, node->body));
   neo_variable_set(variable, "directives",

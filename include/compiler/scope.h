@@ -2,6 +2,7 @@
 #define _H_NEO_COMPILER_SCOPE_
 #include "core/allocator.h"
 #include "core/list.h"
+#include "core/variable.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -49,6 +50,9 @@ void neo_compile_scope_declar(neo_allocator_t allocator,
                               neo_compile_variable_type_t type);
 
 neo_compile_scope_t neo_complile_scope_get_current();
+
+neo_variable_t neo_serialize_scope(neo_allocator_t allocator,
+                                   neo_compile_scope_t scope);
 
 #ifdef __cplusplus
 }

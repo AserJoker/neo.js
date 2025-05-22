@@ -26,6 +26,8 @@ neo_serialize_ast_expression_object(neo_allocator_t allocator,
       neo_create_variable_string(allocator, "NEO_NODE_TYPE_EXPRESSION_OBJECT"));
   neo_variable_set(variable, "location",
                    neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "scope",
+                   neo_serialize_scope(allocator, node->node.scope));
   neo_variable_set(variable, "items",
                    neo_ast_node_list_serialize(allocator, node->items));
   return variable;

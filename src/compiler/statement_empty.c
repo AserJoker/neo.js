@@ -14,6 +14,8 @@ neo_serialize_ast_statement_empty(neo_allocator_t allocator,
       neo_create_variable_string(allocator, "NEO_NODE_TYPE_STATEMENT_EMPTY"));
   neo_variable_set(variable, "location",
                    neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "scope",
+                   neo_serialize_scope(allocator, node->node.scope));
   return variable;
 }
 static neo_ast_statement_empty_t

@@ -52,6 +52,8 @@ neo_serialize_ast_literal_template(neo_allocator_t allocator,
       neo_create_variable_string(allocator, "NEO_NODE_TYPE_LITERAL_TEMPLATE"));
   neo_variable_set(variable, "location",
                    neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "scope",
+                   neo_serialize_scope(allocator, node->node.scope));
   neo_variable_set(variable, "tag",
                    neo_ast_node_serialize(allocator, node->tag));
   neo_variable_set(variable, "expressions",

@@ -42,6 +42,8 @@ neo_serialize_ast_object_accessor(neo_allocator_t allocator,
                    neo_create_variable_boolean(allocator, node->computed));
   neo_variable_set(variable, "location",
                    neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "scope",
+                   neo_serialize_scope(allocator, node->node.scope));
   return variable;
 }
 
