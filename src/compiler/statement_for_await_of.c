@@ -2,6 +2,7 @@
 #include "compiler/declaration_variable.h"
 #include "compiler/expression.h"
 #include "compiler/identifier.h"
+#include "compiler/node.h"
 #include "compiler/pattern_array.h"
 #include "compiler/pattern_object.h"
 #include "compiler/scope.h"
@@ -137,21 +138,23 @@ neo_ast_node_t neo_ast_read_statement_for_await_of(neo_allocator_t allocator,
   if (!node->left) {
     goto onerror;
   }
-  switch (node->kind) {
-  case NEO_AST_DECLARATION_VAR:
-    neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
-                             node->left, NEO_COMPILE_VARIABLE_VAR);
-    break;
-  case NEO_AST_DECLARATION_CONST:
-    neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
-                             node->left, NEO_COMPILE_VARIABLE_CONST);
-    break;
-  case NEO_AST_DECLARATION_LET:
-    neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
-                             node->left, NEO_COMPILE_VARIABLE_LET);
-    break;
-  case NEO_AST_DECLARATION_NONE:
-    break;
+  if (node->left->type == NEO_NODE_TYPE_IDENTIFIER) {
+    switch (node->kind) {
+    case NEO_AST_DECLARATION_VAR:
+      neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
+                               node->left, NEO_COMPILE_VARIABLE_VAR);
+      break;
+    case NEO_AST_DECLARATION_CONST:
+      neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
+                               node->left, NEO_COMPILE_VARIABLE_CONST);
+      break;
+    case NEO_AST_DECLARATION_LET:
+      neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
+                               node->left, NEO_COMPILE_VARIABLE_LET);
+      break;
+    case NEO_AST_DECLARATION_NONE:
+      break;
+    }
   }
   SKIP_ALL(allocator, file, &current, onerror);
   token = neo_read_identify_token(allocator, file, &current);

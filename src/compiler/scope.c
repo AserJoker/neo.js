@@ -74,8 +74,11 @@ void neo_compile_scope_declar_value(neo_allocator_t allocator,
   variable->name = neo_allocator_alloc(allocator, len + 1, NULL);
   strcpy(variable->name, name);
   variable->name[len] = 0;
-  while (self->type == NEO_COMPILE_SCOPE_BLOCK) {
-    self = self->parent;
+  if (type == NEO_COMPILE_VARIABLE_VAR ||
+      type == NEO_COMPILE_VARIABLE_FUNCTION) {
+    while (self->type == NEO_COMPILE_SCOPE_BLOCK) {
+      self = self->parent;
+    }
   }
   neo_list_push(self->variables, variable);
 }
