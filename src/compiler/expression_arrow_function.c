@@ -81,35 +81,37 @@ neo_ast_node_t neo_ast_read_expression_arrow_function(
     current.offset++;
     current.column++;
     scope = neo_compile_scope_push(allocator, NEO_COMPILE_SCOPE_FUNCTION);
-    for (;;) {
-      neo_ast_node_t argument =
-          TRY(neo_ast_read_function_argument(allocator, file, &current)) {
-        goto onerror;
+    if (*current.offset != ')') {
+      for (;;) {
+        neo_ast_node_t argument =
+            TRY(neo_ast_read_function_argument(allocator, file, &current)) {
+          goto onerror;
+        }
+        if (!argument) {
+          THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
+                file, current.line, current.column);
+          goto onerror;
+        }
+        neo_list_push(node->arguments, argument);
+        neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
+                                 argument, NEO_COMPILE_VARIABLE_LET);
+        SKIP_ALL(allocator, file, &current, onerror);
+        if (*current.offset == ')') {
+          break;
+        }
+        if (*current.offset != ',') {
+          goto onerror;
+        }
+        if (((neo_ast_function_argument_t)argument)->identifier->type ==
+            NEO_NODE_TYPE_PATTERN_REST) {
+          THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
+                file, current.line, current.column);
+          goto onerror;
+        }
+        current.offset++;
+        current.column++;
+        SKIP_ALL(allocator, file, &current, onerror);
       }
-      if (!argument) {
-        THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
-              file, current.line, current.column);
-        goto onerror;
-      }
-      neo_list_push(node->arguments, argument);
-      neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
-                               argument, NEO_COMPILE_VARIABLE_LET);
-      SKIP_ALL(allocator, file, &current, onerror);
-      if (*current.offset == ')') {
-        break;
-      }
-      if (*current.offset != ',') {
-        goto onerror;
-      }
-      if (((neo_ast_function_argument_t)argument)->identifier->type ==
-          NEO_NODE_TYPE_PATTERN_REST) {
-        THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
-              file, current.line, current.column);
-        goto onerror;
-      }
-      current.offset++;
-      current.column++;
-      SKIP_ALL(allocator, file, &current, onerror);
     }
     SKIP_ALL(allocator, file, &current, onerror);
     if (*current.offset != ')') {
