@@ -56,7 +56,7 @@ neo_serialize_ast_expression_binary(neo_allocator_t allocator,
                    neo_ast_node_serialize(allocator, node->right));
   char opt[16];
   size_t size =
-      node->opt->location.begin.offset - node->opt->location.end.offset;
+      node->opt->location.end.offset - node->opt->location.begin.offset;
   strncpy(opt, node->opt->location.begin.offset, size);
   opt[size] = 0;
   neo_variable_set(variable, "operator",
