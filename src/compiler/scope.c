@@ -1,8 +1,20 @@
 #include "compiler/scope.h"
+#include "compiler/expression_class.h"
+#include "compiler/expression_function.h"
+#include "compiler/function_argument.h"
+#include "compiler/node.h"
+#include "compiler/pattern_array_item.h"
+#include "compiler/pattern_object_item.h"
+#include "compiler/pattern_rest.h"
+#include "compiler/variable_declarator.h"
 #include "core/allocator.h"
+#include "core/error.h"
 #include "core/list.h"
+#include "core/location.h"
+#include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
+
 neo_compile_scope_t current = NULL;
 
 static void neo_compile_scope_dispose(neo_allocator_t allocator,
@@ -65,6 +77,60 @@ void neo_compile_scope_declar_value(neo_allocator_t allocator,
     self = self->parent;
   }
   neo_list_push(self->variables, variable);
+}
+void neo_compile_scope_declar(neo_allocator_t allocator,
+                              neo_compile_scope_t self, neo_ast_node_t node,
+                              neo_compile_variable_type_t type) {
+  if (node->type == NEO_NODE_TYPE_IDENTIFIER) {
+    char *name = neo_location_get(allocator, node->location);
+    neo_compile_scope_declar_value(allocator, self, name, type);
+    neo_allocator_free(allocator, name);
+
+  } else if (node->type == NEO_NODE_TYPE_FUNCTION_ARGUMENT) {
+    neo_ast_function_argument_t argument = (neo_ast_function_argument_t)node;
+    neo_compile_scope_declar(allocator, self, argument->identifier,
+                             NEO_COMPILE_VARIABLE_LET);
+  } else if (node->type == NEO_NODE_TYPE_EXPRESSION_FUNCTION) {
+    neo_ast_expression_function_t function =
+        (neo_ast_expression_function_t)node;
+    if (function->name) {
+      neo_compile_scope_declar(allocator, self, function->name,
+                               NEO_COMPILE_VARIABLE_FUNCTION);
+    }
+  } else if (node->type == NEO_NODE_TYPE_EXPRESSION_CLASS) {
+    neo_ast_expression_class_t clazz = (neo_ast_expression_class_t)node;
+    if (clazz->name) {
+      neo_compile_scope_declar(allocator, self, clazz->name, type);
+    }
+  } else if (node->type == NEO_NODE_TYPE_EXPRESSION_CLASS) {
+    neo_ast_expression_class_t clazz = (neo_ast_expression_class_t)node;
+    if (clazz->name) {
+      neo_compile_scope_declar(allocator, self, clazz->name, type);
+    }
+  } else if (node->type == NEO_NODE_TYPE_PATTERN_REST) {
+    neo_ast_pattern_rest_t rest = (neo_ast_pattern_rest_t)node;
+    neo_compile_scope_declar(allocator, self, rest->identifier, type);
+  } else if (node->type == NEO_NODE_TYPE_PATTERN_ARRAY_ITEM) {
+    neo_ast_pattern_array_item_t array = (neo_ast_pattern_array_item_t)node;
+    neo_compile_scope_declar(allocator, self, array->identifier, type);
+  } else if (node->type == NEO_NODE_TYPE_PATTERN_OBJECT_ITEM) {
+    neo_ast_pattern_object_item_t object = (neo_ast_pattern_object_item_t)node;
+    if (object->alias) {
+      neo_compile_scope_declar(allocator, self, object->alias, type);
+    } else {
+      neo_compile_scope_declar(allocator, self, object->identifier, type);
+    }
+  } else if (node->type == NEO_NODE_TYPE_VARIABLE_DECLARATOR) {
+    neo_ast_variable_declarator_t variable =
+        (neo_ast_variable_declarator_t)node;
+    neo_compile_scope_declar(allocator, self, variable->identifier, type);
+  } else {
+    THROW("SyntaxError",
+          "Illegal property in declaration context\n  at %s:%d:%d",
+          node->location.file, node->location.begin.line,
+          node->location.begin.column);
+    return;
+  }
 }
 
 neo_compile_scope_t neo_complile_scope_get_current() { return current; }

@@ -156,6 +156,8 @@ neo_ast_node_t neo_ast_read_expression_function(neo_allocator_t allocator,
   node->node.location.end = current;
   node->node.location.file = file;
   node->node.scope = neo_compile_scope_pop(scope);
+  neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
+                           &node->node, NEO_COMPILE_VARIABLE_FUNCTION);
   *position = current;
   return &node->node;
 onerror:

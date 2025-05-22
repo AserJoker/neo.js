@@ -90,6 +90,8 @@ neo_ast_node_t neo_ast_read_expression_arrow_function(
         goto onerror;
       }
       neo_list_push(node->arguments, argument);
+      neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
+                               argument, NEO_COMPILE_VARIABLE_LET);
       SKIP_ALL(allocator, file, &current, onerror);
       if (*current.offset == ')') {
         break;
@@ -123,6 +125,8 @@ neo_ast_node_t neo_ast_read_expression_arrow_function(
       goto onerror;
     }
     neo_list_push(node->arguments, argument);
+    neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
+                             argument, NEO_COMPILE_VARIABLE_LET);
   }
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != '=' || *(current.offset + 1) != '>') {

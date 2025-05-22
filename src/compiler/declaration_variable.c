@@ -91,6 +91,22 @@ neo_ast_node_t neo_ast_read_declaration_variable(neo_allocator_t allocator,
       THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
             current.line, current.column);
     }
+    switch (node->kind) {
+    case NEO_AST_DECLARATION_VAR:
+      neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
+                               declarator, NEO_COMPILE_VARIABLE_VAR);
+      break;
+    case NEO_AST_DECLARATION_CONST:
+      neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
+                               declarator, NEO_COMPILE_VARIABLE_CONST);
+      break;
+    case NEO_AST_DECLARATION_LET:
+      neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
+                               declarator, NEO_COMPILE_VARIABLE_LET);
+      break;
+    case NEO_AST_DECLARATION_NONE:
+      break;
+    }
     neo_list_push(node->declarators, declarator);
     neo_position_t cur = current;
     SKIP_ALL(allocator, file, &cur, onerror);

@@ -10,6 +10,8 @@ typedef struct _neo_compile_scope_t *neo_compile_scope_t;
 
 typedef struct _neo_compile_variable_t *neo_compile_variable_t;
 
+typedef struct _neo_ast_node_t *neo_ast_node_t;
+
 typedef enum _neo_compile_scope_type_t {
   NEO_COMPILE_SCOPE_BLOCK,
   NEO_COMPILE_SCOPE_FUNCTION,
@@ -41,7 +43,11 @@ neo_compile_scope_t neo_compile_scope_pop(neo_compile_scope_t scope);
 void neo_compile_scope_declar_value(neo_allocator_t allocator,
                                     neo_compile_scope_t self, const char *name,
                                     neo_compile_variable_type_t type);
-                                    
+
+void neo_compile_scope_declar(neo_allocator_t allocator,
+                              neo_compile_scope_t self, neo_ast_node_t node,
+                              neo_compile_variable_type_t type);
+
 neo_compile_scope_t neo_complile_scope_get_current();
 
 #ifdef __cplusplus
