@@ -30,7 +30,6 @@ struct _neo_compile_variable_t {
 struct _neo_compile_scope_t {
   neo_compile_scope_t parent;
   neo_list_t variables;
-  neo_list_t bindings;
   neo_compile_scope_type_t type;
 };
 
@@ -39,10 +38,11 @@ neo_compile_scope_t neo_compile_scope_push(neo_allocator_t allocator,
 
 neo_compile_scope_t neo_compile_scope_pop(neo_compile_scope_t scope);
 
-void neo_compile_declar_value(neo_allocator_t allocator, const char *name,
-                              neo_compile_variable_type_t type);
-
-void neo_compile_bind_variable(neo_allocator_t allocator, const char *name);
+void neo_compile_scope_declar_value(neo_allocator_t allocator,
+                                    neo_compile_scope_t self, const char *name,
+                                    neo_compile_variable_type_t type);
+                                    
+neo_compile_scope_t neo_complile_scope_get_current();
 
 #ifdef __cplusplus
 }
