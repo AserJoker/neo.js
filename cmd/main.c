@@ -4,7 +4,6 @@
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/json.h"
-#include "core/string.h"
 #include "core/variable.h"
 #include <stdio.h>
 #include <string.h>
@@ -34,8 +33,8 @@ int main(int argc, char *argv[]) {
       neo_allocator_free(allocator, error);
     } else {
       neo_variable_t variable = neo_ast_node_serialize(allocator, node);
-      neo_string_t json = neo_json_stringify(allocator, variable);
-      printf("%s\n", neo_string_get(json));
+      char *json = neo_json_stringify(allocator, variable);
+      printf("%s\n", json);
       neo_allocator_free(allocator, json);
       neo_allocator_free(allocator, variable);
     }
