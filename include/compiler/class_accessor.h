@@ -19,6 +19,7 @@ typedef struct _neo_ast_class_accessor_t {
   neo_list_t decorators;
   bool computed;
   bool static_;
+  neo_list_t closure;
 } *neo_ast_class_accessor_t;
 
 neo_ast_node_t neo_ast_read_class_accessor(neo_allocator_t allocator,

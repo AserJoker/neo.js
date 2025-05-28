@@ -16,6 +16,7 @@
 
 static void neo_ast_expression_arrow_function_dispose(
     neo_allocator_t allocator, neo_ast_expression_arrow_function_t node) {
+  neo_allocator_free(allocator, node->closure);
   neo_allocator_free(allocator, node->arguments);
   neo_allocator_free(allocator, node->body);
   neo_allocator_free(allocator, node->node.scope);
@@ -49,6 +50,7 @@ neo_create_ast_expression_arrow_function(neo_allocator_t allocator) {
   neo_list_initialize_t initialize = {true};
 
   node->arguments = neo_create_list(allocator, &initialize);
+  node->closure = neo_create_list(allocator, &initialize);
   node->body = NULL;
   node->async = false;
   return node;

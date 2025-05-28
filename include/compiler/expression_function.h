@@ -14,6 +14,7 @@ typedef struct _neo_ast_expression_function_t {
   neo_ast_node_t body;
   bool async;
   bool generator;
+  neo_list_t closure;
 } *neo_ast_expression_function_t;
 
 neo_ast_node_t neo_ast_read_expression_function(neo_allocator_t allocator,

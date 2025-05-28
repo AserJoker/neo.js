@@ -21,6 +21,7 @@ typedef struct _neo_ast_object_accessor_t {
   neo_ast_node_t body;
   neo_accessor_kind_t kind;
   bool computed;
+  neo_list_t closure;
 } *neo_ast_object_accessor_t;
 
 neo_ast_node_t neo_ast_read_object_accessor(neo_allocator_t allocator,

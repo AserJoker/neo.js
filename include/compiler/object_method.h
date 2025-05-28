@@ -17,6 +17,7 @@ typedef struct _neo_ast_object_method_t {
   bool async;
   bool generator;
   bool computed;
+  neo_list_t closure;
 } *neo_ast_object_method_t;
 
 neo_ast_node_t neo_ast_read_object_method(neo_allocator_t allocator,

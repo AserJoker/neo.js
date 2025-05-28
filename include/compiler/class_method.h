@@ -19,6 +19,7 @@ typedef struct _neo_ast_class_method_t {
   bool generator;
   bool computed;
   bool static_;
+  neo_list_t closure;
 } *neo_ast_class_method_t;
 
 neo_ast_node_t neo_ast_read_class_method(neo_allocator_t allocator,

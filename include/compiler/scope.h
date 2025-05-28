@@ -54,6 +54,9 @@ neo_compile_scope_t neo_complile_scope_get_current();
 neo_variable_t neo_serialize_scope(neo_allocator_t allocator,
                                    neo_compile_scope_t scope);
 
+void neo_resolve_closure(neo_allocator_t allocator, neo_ast_node_t node,
+                         neo_list_t closure);
+
 #ifdef __cplusplus
 }
 #endif

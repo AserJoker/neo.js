@@ -12,6 +12,7 @@ extern "C" {
 typedef struct _neo_ast_expression_arrow_function_t {
   struct _neo_ast_node_t node;
   neo_list_t arguments;
+  neo_list_t closure;
   neo_ast_node_t body;
   bool async;
 } *neo_ast_expression_arrow_function_t;
