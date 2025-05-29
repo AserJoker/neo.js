@@ -2,6 +2,7 @@
 #include "compiler/node.h"
 #include "compiler/pattern_object_item.h"
 #include "compiler/pattern_rest.h"
+#include "compiler/scope.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/error.h"

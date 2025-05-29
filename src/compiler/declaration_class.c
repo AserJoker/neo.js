@@ -58,7 +58,7 @@ neo_ast_node_t neo_ast_read_declaration_class(neo_allocator_t allocator,
   node->node.location.end = current;
   node->node.location.file = file;
   *position = current;
-  neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
+  neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
                            node->declaration, NEO_COMPILE_VARIABLE_LET);
   return &node->node;
 onerror:

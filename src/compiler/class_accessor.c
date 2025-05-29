@@ -21,6 +21,7 @@ static void neo_ast_class_accessor_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->body);
   neo_allocator_free(allocator, node->decorators);
   neo_allocator_free(allocator, node->name);
+  neo_allocator_free(allocator, node->closure);
   neo_allocator_free(allocator, node->node.scope);
 }
 
@@ -50,6 +51,8 @@ neo_serialize_ast_class_accessor(neo_allocator_t allocator,
                    neo_create_variable_boolean(allocator, node->computed));
   neo_variable_set(variable, "location",
                    neo_ast_node_location_serialize(allocator, &node->node));
+  neo_variable_set(variable, "closure",
+                   neo_ast_node_list_serialize(allocator, node->closure));
   neo_variable_set(variable, "scope",
                    neo_serialize_scope(allocator, node->node.scope));
   return variable;
@@ -70,6 +73,7 @@ neo_create_ast_class_accessor(neo_allocator_t allocator) {
   node->kind = NEO_ACCESSOR_KIND_GET;
   node->name = NULL;
   node->static_ = false;
+  node->closure = neo_create_list(allocator, NULL);
   return node;
 }
 
@@ -144,8 +148,7 @@ neo_ast_node_t neo_ast_read_class_accessor(neo_allocator_t allocator,
         goto onerror;
       }
       neo_list_push(node->arguments, argument);
-      neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
-                               argument, NEO_COMPILE_VARIABLE_LET);
+      neo_resolve_closure(allocator, argument, node->closure);
       SKIP_ALL(allocator, file, &current, onerror);
       if (*current.offset == ')') {
         break;
@@ -175,6 +178,7 @@ neo_ast_node_t neo_ast_read_class_accessor(neo_allocator_t allocator,
           current.line, current.column);
     goto onerror;
   }
+  neo_resolve_closure(allocator, node->body, node->closure);
   node->node.location.begin = *position;
   node->node.location.end = current;
   node->node.location.file = file;

@@ -131,15 +131,15 @@ neo_ast_node_t neo_ast_read_statement_for_in(neo_allocator_t allocator,
   if (node->left->type == NEO_NODE_TYPE_IDENTIFIER) {
     switch (node->kind) {
     case NEO_AST_DECLARATION_VAR:
-      neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
+      neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
                                node->left, NEO_COMPILE_VARIABLE_VAR);
       break;
     case NEO_AST_DECLARATION_CONST:
-      neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
+      neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
                                node->left, NEO_COMPILE_VARIABLE_CONST);
       break;
     case NEO_AST_DECLARATION_LET:
-      neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
+      neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
                                node->left, NEO_COMPILE_VARIABLE_LET);
       break;
     case NEO_AST_DECLARATION_NONE:

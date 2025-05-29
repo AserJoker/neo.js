@@ -49,7 +49,7 @@ neo_ast_node_t neo_ast_read_import_default(neo_allocator_t allocator,
   node->node.location.begin = *position;
   node->node.location.end = current;
   node->node.location.file = file;
-  neo_compile_scope_declar(allocator, neo_complile_scope_get_current(),
+  neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
                            node->identifier, NEO_COMPILE_VARIABLE_CONST);
   *position = current;
   return &node->node;

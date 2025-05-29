@@ -173,6 +173,21 @@ void neo_compile_scope_declar(neo_allocator_t allocator,
     neo_ast_variable_declarator_t variable =
         (neo_ast_variable_declarator_t)node;
     neo_compile_scope_declar(allocator, self, variable->identifier, type);
+  } else if (node->type == NEO_NODE_TYPE_FUNCTION_ARGUMENT) {
+    neo_ast_function_argument_t argument = (neo_ast_function_argument_t)node;
+    neo_compile_scope_declar(allocator, self, argument->identifier, type);
+  } else if (node->type == NEO_NODE_TYPE_PATTERN_OBJECT) {
+    neo_ast_pattern_object_t object = (neo_ast_pattern_object_t)node;
+    for (neo_list_node_t it = neo_list_get_first(object->items);
+         it != neo_list_get_tail(object->items); it = neo_list_node_next(it)) {
+      neo_compile_scope_declar(allocator, self, neo_list_node_get(it), type);
+    }
+  } else if (node->type == NEO_NODE_TYPE_PATTERN_ARRAY) {
+    neo_ast_pattern_object_t object = (neo_ast_pattern_object_t)node;
+    for (neo_list_node_t it = neo_list_get_first(object->items);
+         it != neo_list_get_tail(object->items); it = neo_list_node_next(it)) {
+      neo_compile_scope_declar(allocator, self, neo_list_node_get(it), type);
+    }
   } else {
     THROW("SyntaxError",
           "Illegal property in declaration context\n  at %s:%d:%d",
@@ -181,7 +196,7 @@ void neo_compile_scope_declar(neo_allocator_t allocator,
     return;
   }
 }
-neo_compile_scope_t neo_complile_scope_get_current() { return current; }
+neo_compile_scope_t neo_compile_scope_get_current() { return current; }
 
 static neo_variable_t
 neo_serialize_compile_variable(neo_allocator_t allocator,
@@ -238,15 +253,34 @@ neo_variable_t neo_serialize_scope(neo_allocator_t allocator,
                        (neo_serialize_fn)neo_serialize_compile_variable));
   return variable;
 }
+
 void neo_resolve_closure(neo_allocator_t allocator, neo_ast_node_t node,
                          neo_list_t closure) {
   if (!node) {
     return;
   }
   switch (node->type) {
-  case NEO_NODE_TYPE_IDENTIFIER:
-    neo_list_push(closure, neo_location_get(allocator, node->location));
-    break;
+  case NEO_NODE_TYPE_IDENTIFIER: {
+    neo_compile_scope_t scope = neo_compile_scope_get_current();
+    char *name = neo_location_get(allocator, node->location);
+    for (;;) {
+      for (neo_list_node_t it = neo_list_get_first(scope->variables);
+           it != neo_list_get_tail(scope->variables);
+           it = neo_list_node_next(it)) {
+        neo_compile_variable_t variable = neo_list_node_get(it);
+        if (strcmp(variable->name, name) == 0) {
+          neo_allocator_free(allocator, name);
+          return;
+        }
+      }
+      if (scope->type == NEO_COMPILE_SCOPE_FUNCTION) {
+        break;
+      }
+      scope = scope->parent;
+    }
+    neo_allocator_free(allocator, name);
+    neo_list_push(closure, node);
+  } break;
   case NEO_NODE_TYPE_PRIVATE_NAME:
   case NEO_NODE_TYPE_LITERAL_REGEXP:
   case NEO_NODE_TYPE_LITERAL_NULL:
@@ -439,6 +473,11 @@ void neo_resolve_closure(neo_allocator_t allocator, neo_ast_node_t node,
   case NEO_NODE_TYPE_EXPRESSION_ARROW_FUNCTION: {
     neo_ast_expression_arrow_function_t function =
         (neo_ast_expression_arrow_function_t)node;
+    for (neo_list_node_t it = neo_list_get_first(function->arguments);
+         it != neo_list_get_tail(function->arguments);
+         it = neo_list_node_next(it)) {
+      neo_resolve_closure(allocator, neo_list_node_get(it), closure);
+    }
     for (neo_list_node_t it = neo_list_get_first(function->closure);
          it != neo_list_get_tail(function->closure);
          it = neo_list_node_next(it)) {
@@ -466,6 +505,11 @@ void neo_resolve_closure(neo_allocator_t allocator, neo_ast_node_t node,
   case NEO_NODE_TYPE_EXPRESSION_FUNCTION: {
     neo_ast_expression_function_t function =
         (neo_ast_expression_function_t)node;
+    for (neo_list_node_t it = neo_list_get_first(function->arguments);
+         it != neo_list_get_tail(function->arguments);
+         it = neo_list_node_next(it)) {
+      neo_resolve_closure(allocator, neo_list_node_get(it), closure);
+    }
     for (neo_list_node_t it = neo_list_get_first(function->closure);
          it != neo_list_get_tail(function->closure);
          it = neo_list_node_next(it)) {
@@ -599,6 +643,11 @@ void neo_resolve_closure(neo_allocator_t allocator, neo_ast_node_t node,
          it = neo_list_node_next(it)) {
       neo_resolve_closure(allocator, neo_list_node_get(it), closure);
     }
+    for (neo_list_node_t it = neo_list_get_first(function->arguments);
+         it != neo_list_get_tail(function->arguments);
+         it = neo_list_node_next(it)) {
+      neo_resolve_closure(allocator, neo_list_node_get(it), closure);
+    }
     for (neo_list_node_t it = neo_list_get_first(function->closure);
          it != neo_list_get_tail(function->closure);
          it = neo_list_node_next(it)) {
@@ -612,6 +661,11 @@ void neo_resolve_closure(neo_allocator_t allocator, neo_ast_node_t node,
     }
     for (neo_list_node_t it = neo_list_get_first(function->decorators);
          it != neo_list_get_tail(function->decorators);
+         it = neo_list_node_next(it)) {
+      neo_resolve_closure(allocator, neo_list_node_get(it), closure);
+    }
+    for (neo_list_node_t it = neo_list_get_first(function->arguments);
+         it != neo_list_get_tail(function->arguments);
          it = neo_list_node_next(it)) {
       neo_resolve_closure(allocator, neo_list_node_get(it), closure);
     }
@@ -686,6 +740,11 @@ void neo_resolve_closure(neo_allocator_t allocator, neo_ast_node_t node,
     if (function->computed) {
       neo_resolve_closure(allocator, function->name, closure);
     }
+    for (neo_list_node_t it = neo_list_get_first(function->arguments);
+         it != neo_list_get_tail(function->arguments);
+         it = neo_list_node_next(it)) {
+      neo_resolve_closure(allocator, neo_list_node_get(it), closure);
+    }
     for (neo_list_node_t it = neo_list_get_first(function->closure);
          it != neo_list_get_tail(function->closure);
          it = neo_list_node_next(it)) {
@@ -696,6 +755,11 @@ void neo_resolve_closure(neo_allocator_t allocator, neo_ast_node_t node,
     neo_ast_object_accessor_t function = (neo_ast_object_accessor_t)node;
     if (function->computed) {
       neo_resolve_closure(allocator, function->name, closure);
+    }
+    for (neo_list_node_t it = neo_list_get_first(function->arguments);
+         it != neo_list_get_tail(function->arguments);
+         it = neo_list_node_next(it)) {
+      neo_resolve_closure(allocator, neo_list_node_get(it), closure);
     }
     for (neo_list_node_t it = neo_list_get_first(function->closure);
          it != neo_list_get_tail(function->closure);

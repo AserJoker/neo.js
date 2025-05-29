@@ -5,6 +5,7 @@
 #include "compiler/pattern_array.h"
 #include "compiler/pattern_object.h"
 #include "compiler/pattern_rest.h"
+#include "compiler/scope.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/error.h"
@@ -93,6 +94,8 @@ neo_ast_node_t neo_ast_read_function_argument(neo_allocator_t allocator,
       goto onerror;
     }
   }
+  neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
+                           node->identifier, NEO_COMPILE_VARIABLE_VAR);
   node->node.location.begin = *position;
   node->node.location.end = current;
   node->node.location.file = file;
