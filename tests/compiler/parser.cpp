@@ -1,6 +1,6 @@
 #include "compiler/parser.h"
-#include "compiler/literal_string.h"
-#include "compiler/program.h"
+#include "compiler/ast/literal_string.h"
+#include "compiler/ast/program.h"
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/list.h"

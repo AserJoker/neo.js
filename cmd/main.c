@@ -1,5 +1,5 @@
 
-#include "compiler/node.h"
+#include "compiler/ast/node.h"
 #include "compiler/parser.h"
 #include "core/allocator.h"
 #include "core/error.h"

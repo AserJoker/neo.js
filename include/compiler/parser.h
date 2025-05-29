@@ -1,6 +1,6 @@
 #ifndef _H_NEO_COMPILER_PARSER_
 #define _H_NEO_COMPILER_PARSER_
-#include "compiler/node.h"
+#include "compiler/ast/node.h"
 #include "core/allocator.h"
 #ifdef __cplusplus
 extern "C" {

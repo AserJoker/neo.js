@@ -1,6 +1,6 @@
 #include "compiler/parser.h"
-#include "compiler/node.h"
-#include "compiler/program.h"
+#include "compiler/ast/node.h"
+#include "compiler/ast/program.h"
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/position.h"
