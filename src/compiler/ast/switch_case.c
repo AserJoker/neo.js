@@ -40,7 +40,7 @@ neo_create_ast_switch_case(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_SWITCH_CASE;
 
   node->node.scope = NULL;
-  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_switch_case;
+  node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_switch_case;
   neo_list_initialize_t initialize = {true};
   node->body = neo_create_list(allocator, &initialize);
   return node;

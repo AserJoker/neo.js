@@ -35,7 +35,7 @@ neo_create_ast_statement_expreesion(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_STATEMENT_EXPRESSION;
   node->node.scope = NULL;
   node->node.serialize =
-      (neo_serialize_fn)neo_serialize_ast_statement_expreesion;
+      (neo_serialize_fn_t)neo_serialize_ast_statement_expreesion;
   node->expression = NULL;
   return node;
 }

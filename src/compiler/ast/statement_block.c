@@ -36,7 +36,7 @@ neo_create_statement_block(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_STATEMENT_BLOCK;
 
   node->node.scope = NULL;
-  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_statement_block;
+  node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_statement_block;
   neo_list_initialize_t initialize = {};
   initialize.auto_free = true;
   node->body = neo_create_list(allocator, &initialize);

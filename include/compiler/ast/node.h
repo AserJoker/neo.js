@@ -1,6 +1,7 @@
 #ifndef _H_NEO_COMPILER_NODE_
 #define _H_NEO_COMPILER_NODE_
 
+#include "compiler/program.h"
 #include "compiler/scope.h"
 #include "core/allocator.h"
 #include "core/error.h"
@@ -100,10 +101,15 @@ typedef enum _neo_ast_node_type_t {
 
 typedef struct _neo_ast_node_t *neo_ast_node_t;
 
+typedef void (*neo_write_fn_t)(neo_allocator_t allocator, const char *file,
+                               const char *source, neo_ast_node_t node,
+                               neo_program_t program);
+
 struct _neo_ast_node_t {
   neo_ast_node_type_t type;
   neo_location_t location;
-  neo_serialize_fn serialize;
+  neo_serialize_fn_t serialize;
+  neo_write_fn_t write;
   neo_compile_scope_t scope;
 };
 

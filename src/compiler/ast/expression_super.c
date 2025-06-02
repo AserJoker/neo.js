@@ -33,7 +33,7 @@ neo_create_ast_expression_super(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_EXPRESSION_SUPER;
 
   node->node.scope = NULL;
-  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_expression_super;
+  node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_expression_super;
   return node;
 }
 

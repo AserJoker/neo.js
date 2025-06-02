@@ -18,8 +18,8 @@ typedef enum _neo_variable_type_t {
   NEO_VARIABLE_DICT,
 } neo_variable_type_t;
 
-typedef neo_variable_t (*neo_serialize_fn)(neo_allocator_t allocator,
-                                           void *item);
+typedef neo_variable_t (*neo_serialize_fn_t)(neo_allocator_t allocator,
+                                             void *item);
 
 neo_variable_t neo_create_variable_nil(neo_allocator_t allocator);
 
@@ -37,11 +37,11 @@ neo_variable_t neo_create_variable_boolean(neo_allocator_t allocator,
 
 neo_variable_t neo_create_variable_array(neo_allocator_t allocator,
                                          neo_list_t list,
-                                         neo_serialize_fn serialize);
+                                         neo_serialize_fn_t serialize);
 
 neo_variable_t neo_create_variable_dict(neo_allocator_t allocator,
                                         neo_map_t map,
-                                        neo_serialize_fn serialize);
+                                        neo_serialize_fn_t serialize);
 
 neo_variable_type_t neo_variable_get_type(neo_variable_t variable);
 
@@ -56,10 +56,10 @@ neo_variable_t neo_variable_set_string(neo_variable_t self, const char *value);
 neo_variable_t neo_variable_set_boolean(neo_variable_t self, bool value);
 
 neo_variable_t neo_variable_set_array(neo_variable_t self, neo_list_t list,
-                                      neo_serialize_fn serialize);
+                                      neo_serialize_fn_t serialize);
 
 neo_variable_t neo_variable_set_dict(neo_variable_t self, neo_map_t map,
-                                     neo_serialize_fn serialize);
+                                     neo_serialize_fn_t serialize);
 
 double neo_variable_get_number(neo_variable_t self);
 

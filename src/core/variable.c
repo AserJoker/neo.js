@@ -63,14 +63,14 @@ neo_variable_t neo_create_variable_boolean(neo_allocator_t allocator,
 
 neo_variable_t neo_create_variable_array(neo_allocator_t allocator,
                                          neo_list_t list,
-                                         neo_serialize_fn serizalize) {
+                                         neo_serialize_fn_t serizalize) {
   neo_variable_t variable = neo_create_variable_nil(allocator);
   return neo_variable_set_array(variable, list, serizalize);
 }
 
 neo_variable_t neo_create_variable_dict(neo_allocator_t allocator,
                                         neo_map_t map,
-                                        neo_serialize_fn serizalize) {
+                                        neo_serialize_fn_t serizalize) {
   neo_variable_t variable = neo_create_variable_nil(allocator);
   return neo_variable_set_dict(variable, map, serizalize);
 }
@@ -117,7 +117,7 @@ neo_variable_t neo_variable_set_boolean(neo_variable_t self, bool value) {
 }
 
 neo_variable_t neo_variable_set_array(neo_variable_t self, neo_list_t list,
-                                      neo_serialize_fn serialize) {
+                                      neo_serialize_fn_t serialize) {
   neo_variable_dispose(self->allocator, self);
   self->type = NEO_VARIABLE_ARRAY;
   neo_list_initialize_t initialize = {true};
@@ -133,7 +133,7 @@ neo_variable_t neo_variable_set_array(neo_variable_t self, neo_list_t list,
 }
 
 neo_variable_t neo_variable_set_dict(neo_variable_t self, neo_map_t map,
-                                     neo_serialize_fn serialize) {
+                                     neo_serialize_fn_t serialize) {
   neo_variable_dispose(self->allocator, self);
   self->type = NEO_VARIABLE_DICT;
   neo_map_initialize_t initialize = {true, true, (neo_compare_fn_t)strcmp};

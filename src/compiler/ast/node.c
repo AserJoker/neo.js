@@ -16,7 +16,7 @@ neo_variable_t neo_ast_node_serialize(neo_allocator_t allocator,
 neo_variable_t neo_ast_node_list_serialize(neo_allocator_t allocator,
                                            neo_list_t list) {
   return neo_create_variable_array(allocator, list,
-                                   (neo_serialize_fn)neo_ast_node_serialize);
+                                   (neo_serialize_fn_t)neo_ast_node_serialize);
 }
 
 neo_variable_t neo_ast_node_source_serialize(neo_allocator_t allocator,

@@ -44,7 +44,7 @@ neo_create_ast_object_property(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_OBJECT_PROPERTY;
 
   node->node.scope = NULL;
-  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_object_property;
+  node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_object_property;
   node->computed = false;
   return node;
 }

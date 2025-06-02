@@ -44,7 +44,8 @@ neo_create_ast_declaration_import(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_DECLARATION_IMPORT;
 
   node->node.scope = NULL;
-  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_declaration_import;
+  node->node.serialize =
+      (neo_serialize_fn_t)neo_serialize_ast_declaration_import;
   neo_list_initialize_t initialize = {true};
   node->specifiers = neo_create_list(allocator, &initialize);
   node->attributes = neo_create_list(allocator, &initialize);

@@ -57,7 +57,7 @@ neo_create_ast_expression_function(neo_allocator_t allocator, const char *file,
   node->node.type = NEO_NODE_TYPE_EXPRESSION_FUNCTION;
   node->node.scope = NULL;
   node->node.serialize =
-      (neo_serialize_fn)neo_serialize_ast_expression_function;
+      (neo_serialize_fn_t)neo_serialize_ast_expression_function;
   node->async = false;
   node->generator = false;
   node->body = NULL;

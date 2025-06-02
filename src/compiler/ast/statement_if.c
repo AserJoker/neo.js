@@ -42,7 +42,7 @@ neo_create_ast_statement_if(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_STATEMENT_IF;
 
   node->node.scope = NULL;
-  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_statement_if;
+  node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_statement_if;
   node->condition = NULL;
   node->alternate = NULL;
   node->consequent = NULL;

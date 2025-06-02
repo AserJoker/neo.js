@@ -25,6 +25,7 @@ static void neo_ast_expression_class_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->items);
   neo_allocator_free(allocator, node->decorators);
   neo_allocator_free(allocator, node->node.scope);
+  neo_allocator_free(allocator, node->closure);
 }
 
 static neo_variable_t
@@ -46,6 +47,8 @@ neo_serialize_ast_expression_class(neo_allocator_t allocator,
                    neo_ast_node_list_serialize(allocator, node->items));
   neo_variable_set(variable, "decorators",
                    neo_ast_node_list_serialize(allocator, node->decorators));
+  neo_variable_set(variable, "closure",
+                   neo_ast_node_list_serialize(allocator, node->closure));
   return variable;
 }
 
@@ -56,12 +59,13 @@ neo_create_ast_expression_class(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_EXPRESSION_CLASS;
 
   node->node.scope = NULL;
-  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_expression_class;
+  node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_expression_class;
   node->name = NULL;
   node->extends = NULL;
   neo_list_initialize_t initialize = {true};
   node->items = neo_create_list(allocator, &initialize);
   node->decorators = neo_create_list(allocator, &initialize);
+  node->closure = neo_create_list(allocator, NULL);
   return node;
 }
 
@@ -184,6 +188,7 @@ neo_ast_node_t neo_ast_read_expression_class(neo_allocator_t allocator,
               file, current.line, current.column);
         goto onerror;
       }
+      neo_resolve_closure(allocator, item, node->closure);
       neo_list_push(node->items, item);
       uint32_t line = current.line;
       SKIP_ALL(allocator, file, &current, onerror);

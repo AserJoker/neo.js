@@ -63,7 +63,7 @@ neo_create_ast_statement_for_of(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_STATEMENT_FOR_OF;
 
   node->node.scope = NULL;
-  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_statement_for_of;
+  node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_statement_for_of;
   node->left = NULL;
   node->right = NULL;
   node->body = NULL;

@@ -39,7 +39,7 @@ static neo_ast_decorator_t neo_create_ast_decorator(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_DECORATOR;
 
   node->node.scope = NULL;
-  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_decorator;
+  node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_decorator;
   node->callee = NULL;
   neo_list_initialize_t intialize = {true};
   node->arguments = neo_create_list(allocator, &intialize);

@@ -11,7 +11,6 @@
 #include "core/variable.h"
 #include <stdio.h>
 
-
 static void neo_ast_static_block_dispose(neo_allocator_t allocator,
                                          neo_ast_static_block_t node) {
   neo_allocator_free(allocator, node->body);
@@ -39,7 +38,7 @@ neo_create_ast_static_block(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_STATIC_BLOCK;
 
   node->node.scope = NULL;
-  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_statement_block;
+  node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_statement_block;
   neo_list_initialize_t initialize = {true};
   node->body = neo_create_list(allocator, &initialize);
   return node;

@@ -30,7 +30,7 @@ neo_create_string_litreral(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_LITERAL_STRING;
 
   node->node.scope = NULL;
-  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_literal_string;
+  node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_literal_string;
   return node;
 }
 

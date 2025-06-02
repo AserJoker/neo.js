@@ -49,7 +49,7 @@ neo_create_ast_class_property(neo_allocator_t allocator) {
       neo_allocator_alloc2(allocator, neo_ast_class_property);
   node->node.type = NEO_NODE_TYPE_CLASS_PROPERTY;
   node->node.scope = NULL;
-  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_class_property;
+  node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_class_property;
   node->computed = false;
   node->static_ = false;
   node->value = NULL;

@@ -64,7 +64,7 @@ neo_create_ast_class_method(neo_allocator_t allocator) {
   neo_list_initialize_t initialize = {true};
   node->node.type = NEO_NODE_TYPE_CLASS_METHOD;
   node->node.scope = NULL;
-  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_class_method;
+  node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_class_method;
   node->arguments = neo_create_list(allocator, &initialize);
   node->body = NULL;
   node->computed = false;

@@ -57,7 +57,7 @@ neo_create_ast_object_accessor(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_OBJECT_ACCESSOR;
 
   node->node.scope = NULL;
-  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_object_accessor;
+  node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_object_accessor;
   node->body = NULL;
   node->name = NULL;
   node->kind = NEO_ACCESSOR_KIND_GET;

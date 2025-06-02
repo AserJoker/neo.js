@@ -13,6 +13,7 @@ typedef struct _neo_ast_expression_class_t {
   neo_ast_node_t extends;
   neo_list_t items;
   neo_list_t decorators;
+  neo_list_t closure;
 } *neo_ast_expression_class_t;
 
 neo_ast_node_t neo_ast_read_expression_class(neo_allocator_t allocator,

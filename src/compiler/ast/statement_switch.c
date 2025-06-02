@@ -12,7 +12,6 @@
 #include "core/variable.h"
 #include <stdio.h>
 
-
 static void neo_ast_statement_switch_dispose(neo_allocator_t allocator,
                                              neo_ast_statement_switch_t node) {
   neo_allocator_free(allocator, node->cases);
@@ -43,7 +42,7 @@ neo_create_ast_statement_switch(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_STATEMENT_SWITCH;
 
   node->node.scope = NULL;
-  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_statement_switch;
+  node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_statement_switch;
   node->condition = NULL;
   neo_list_initialize_t initialize = {true};
   node->cases = neo_create_list(allocator, &initialize);

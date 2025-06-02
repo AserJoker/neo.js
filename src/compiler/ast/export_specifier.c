@@ -38,7 +38,7 @@ neo_create_ast_export_specifier(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_EXPORT_SPECIFIER;
 
   node->node.scope = NULL;
-  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_export_specifier;
+  node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_export_specifier;
   node->alias = NULL;
   node->identifier = NULL;
   return node;

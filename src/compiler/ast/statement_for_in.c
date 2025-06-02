@@ -65,7 +65,7 @@ neo_create_ast_statement_for_in(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_STATEMENT_FOR_IN;
 
   node->node.scope = NULL;
-  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_statement_for_in;
+  node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_statement_for_in;
   node->left = NULL;
   node->right = NULL;
   node->body = NULL;

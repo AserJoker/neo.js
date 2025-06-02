@@ -33,7 +33,7 @@ neo_create_ast_literal_null(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_LITERAL_NULL;
 
   node->node.scope = NULL;
-  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_literal_null;
+  node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_literal_null;
   return node;
 }
 

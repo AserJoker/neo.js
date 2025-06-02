@@ -250,7 +250,7 @@ neo_variable_t neo_serialize_scope(neo_allocator_t allocator,
   neo_variable_set(variable, "variables",
                    neo_create_variable_array(
                        allocator, scope->variables,
-                       (neo_serialize_fn)neo_serialize_compile_variable));
+                       (neo_serialize_fn_t)neo_serialize_compile_variable));
   return variable;
 }
 
@@ -524,8 +524,8 @@ void neo_resolve_closure(neo_allocator_t allocator, neo_ast_node_t node,
          it = neo_list_node_next(it)) {
       neo_resolve_closure(allocator, neo_list_node_get(it), closure);
     }
-    for (neo_list_node_t it = neo_list_get_first(clazz->items);
-         it != neo_list_get_tail(clazz->items); it = neo_list_node_next(it)) {
+    for (neo_list_node_t it = neo_list_get_first(clazz->closure);
+         it != neo_list_get_tail(clazz->closure); it = neo_list_node_next(it)) {
       neo_resolve_closure(allocator, neo_list_node_get(it), closure);
     }
   } break;

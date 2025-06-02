@@ -61,7 +61,7 @@ neo_serialize_ast_literal_template(neo_allocator_t allocator,
   neo_variable_set(
       variable, "quasis",
       neo_create_variable_array(allocator, node->quasis,
-                                (neo_serialize_fn)neo_token_serialize));
+                                (neo_serialize_fn_t)neo_token_serialize));
   return variable;
 }
 
@@ -76,7 +76,7 @@ neo_create_ast_literal_template(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_LITERAL_TEMPLATE;
 
   node->node.scope = NULL;
-  node->node.serialize = (neo_serialize_fn)neo_serialize_ast_literal_template;
+  node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_literal_template;
   return node;
 }
 

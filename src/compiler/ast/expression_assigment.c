@@ -46,7 +46,7 @@ neo_create_ast_expression_assigment(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_EXPRESSION_ASSIGMENT;
   node->node.scope = NULL;
   node->node.serialize =
-      (neo_serialize_fn)neo_serialize_ast_expression_assigment;
+      (neo_serialize_fn_t)neo_serialize_ast_expression_assigment;
   node->identifier = NULL;
   node->value = NULL;
   node->opt = NULL;

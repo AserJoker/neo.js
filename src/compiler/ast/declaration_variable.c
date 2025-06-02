@@ -55,7 +55,7 @@ neo_create_ast_declaration_variable(neo_allocator_t allocator) {
   neo_list_initialize_t initialize = {true};
   node->node.scope = NULL;
   node->node.serialize =
-      (neo_serialize_fn)neo_serialize_ast_declaration_variable;
+      (neo_serialize_fn_t)neo_serialize_ast_declaration_variable;
   node->node.type = NEO_NODE_TYPE_DECLARATION_VARIABLE;
   node->declarators = neo_create_list(allocator, &initialize);
   node->kind = NEO_AST_DECLARATION_VAR;
