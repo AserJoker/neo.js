@@ -33,6 +33,7 @@ neo_create_ast_expression_this(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_EXPRESSION_THIS;
 
   node->node.scope = NULL;
+  node->node.resolve_closure = neo_ast_node_resolve_closure;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_expression_this;
   return node;
 }

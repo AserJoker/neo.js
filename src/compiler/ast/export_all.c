@@ -29,9 +29,9 @@ neo_create_ast_export_all(neo_allocator_t allocator) {
   neo_ast_export_all_t node =
       neo_allocator_alloc2(allocator, neo_ast_export_all);
   node->node.type = NEO_NODE_TYPE_EXPORT_ALL;
-
   node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_export_all;
+  node->node.resolve_closure = neo_ast_node_resolve_closure;
   return node;
 }
 

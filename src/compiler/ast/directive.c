@@ -27,9 +27,9 @@ static neo_variable_t neo_serialize_ast_directive(neo_allocator_t allocator,
 static neo_ast_directive_t neo_create_ast_directive(neo_allocator_t allocator) {
   neo_ast_directive_t node = neo_allocator_alloc2(allocator, neo_ast_directive);
   node->node.type = NEO_NODE_TYPE_DIRECTIVE;
-
   node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_directive;
+  node->node.resolve_closure = neo_ast_node_resolve_closure;
   return node;
 }
 

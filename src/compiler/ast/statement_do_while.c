@@ -1,5 +1,6 @@
 #include "compiler/ast/statement_do_while.h"
 #include "compiler/ast/expression.h"
+#include "compiler/ast/node.h"
 #include "compiler/ast/statement.h"
 #include "compiler/token.h"
 #include "core/variable.h"
@@ -11,6 +12,13 @@ neo_ast_statement_do_while_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->body);
   neo_allocator_free(allocator, node->condition);
   neo_allocator_free(allocator, node->node.scope);
+}
+static void
+neo_ast_statement_do_while_resolve_closure(neo_allocator_t allocator,
+                                           neo_ast_statement_do_while_t self,
+                                           neo_list_t closure) {
+  self->condition->resolve_closure(allocator, self->condition, closure);
+  self->body->resolve_closure(allocator, self->body, closure);
 }
 static neo_variable_t
 neo_serialize_ast_statement_do_while(neo_allocator_t allocator,
@@ -38,6 +46,8 @@ neo_create_ast_statement_do_while(neo_allocator_t allocator) {
   node->node.scope = NULL;
   node->node.serialize =
       (neo_serialize_fn_t)neo_serialize_ast_statement_do_while;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_statement_do_while_resolve_closure;
   node->body = NULL;
   node->condition = NULL;
   return node;

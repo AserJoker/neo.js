@@ -1,9 +1,11 @@
 #include "compiler/ast/try_catch.h"
 #include "compiler/ast/identifier.h"
+#include "compiler/ast/node.h"
 #include "compiler/ast/pattern_array.h"
 #include "compiler/ast/pattern_object.h"
 #include "compiler/ast/statement_block.h"
 #include "compiler/token.h"
+#include "core/allocator.h"
 #include "core/variable.h"
 #include <stdio.h>
 
@@ -12,6 +14,14 @@ static void neo_ast_try_catch_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->error);
   neo_allocator_free(allocator, node->body);
   neo_allocator_free(allocator, node->node.scope);
+}
+static void neo_ast_try_catch_resolve_closure(neo_allocator_t allocator,
+                                              neo_ast_try_catch_t self,
+                                              neo_list_t closure) {
+  if (self->error) {
+    self->error->resolve_closure(allocator, self->error, closure);
+  }
+  self->body->resolve_closure(allocator, self->body, closure);
 }
 static neo_variable_t neo_serialize_ast_try_catch(neo_allocator_t allocator,
                                                   neo_ast_try_catch_t node) {
@@ -35,6 +45,8 @@ static neo_ast_try_catch_t neo_create_ast_try_catch(neo_allocator_t allocator) {
 
   node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_try_catch;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_try_catch_resolve_closure;
   node->body = NULL;
   node->error = NULL;
   return node;

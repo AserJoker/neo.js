@@ -7,6 +7,7 @@
 #include "core/list.h"
 #include "core/position.h"
 #include "core/variable.h"
+#include <stdbool.h>
 #include <stdio.h>
 
 static void neo_ast_expression_call_dispose(neo_allocator_t allocator,
@@ -14,6 +15,18 @@ static void neo_ast_expression_call_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->callee);
   neo_allocator_free(allocator, node->arguments);
   neo_allocator_free(allocator, node->node.scope);
+}
+
+static void
+neo_ast_expression_call_resolve_closure(neo_allocator_t allocator,
+                                        neo_ast_expression_call_t self,
+                                        neo_list_t closure) {
+  self->callee->resolve_closure(allocator, self->callee, closure);
+  for (neo_list_node_t it = neo_list_get_first(self->arguments);
+       it != neo_list_get_tail(self->arguments); it = neo_list_node_next(it)) {
+    neo_ast_node_t item = (neo_ast_node_t)neo_list_node_get(it);
+    item->resolve_closure(allocator, item, closure);
+  }
 }
 
 static neo_variable_t
@@ -42,6 +55,8 @@ neo_create_ast_expression_call(neo_allocator_t allocator) {
   node->node.scope = NULL;
   node->node.serialize =
       (neo_serialize_fn_t)neo_serialize_ast_expression_assigment;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_expression_call_resolve_closure;
   neo_list_initialize_t initialize = {true};
   node->callee = NULL;
   node->arguments = neo_create_list(allocator, &initialize);

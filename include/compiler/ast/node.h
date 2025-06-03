@@ -101,15 +101,23 @@ typedef enum _neo_ast_node_type_t {
 
 typedef struct _neo_ast_node_t *neo_ast_node_t;
 
-typedef void (*neo_write_fn_t)(neo_allocator_t allocator, const char *file,
-                               const char *source, neo_ast_node_t node,
-                               neo_program_t program);
+typedef struct _neo_write_context_t {
+  neo_program_t program;
+} *neo_write_context_t;
+
+typedef void (*neo_write_fn_t)(neo_allocator_t allocator,
+                               neo_write_context_t ctx, neo_ast_node_t node);
+
+typedef void (*neo_resolve_closure_fn_t)(neo_allocator_t allocator,
+                                         neo_ast_node_t self,
+                                         neo_list_t closure);
 
 struct _neo_ast_node_t {
   neo_ast_node_type_t type;
   neo_location_t location;
   neo_serialize_fn_t serialize;
   neo_write_fn_t write;
+  neo_resolve_closure_fn_t resolve_closure;
   neo_compile_scope_t scope;
 };
 
@@ -124,6 +132,9 @@ neo_variable_t neo_ast_node_source_serialize(neo_allocator_t allocator,
 
 neo_variable_t neo_ast_node_location_serialize(neo_allocator_t allocator,
                                                neo_ast_node_t node);
+
+void neo_ast_node_resolve_closure(neo_allocator_t allocator,
+                                  neo_ast_node_t self, neo_list_t closure);
 
 bool neo_skip_white_space(neo_allocator_t allocator, const char *file,
                           neo_position_t *position);

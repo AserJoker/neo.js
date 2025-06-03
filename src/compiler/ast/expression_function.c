@@ -23,6 +23,22 @@ neo_ast_expression_function_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->closure);
 }
 
+static void
+neo_ast_expression_function_resolve_closure(neo_allocator_t allocator,
+                                            neo_ast_expression_function_t self,
+                                            neo_list_t closure) {
+  for (neo_list_node_t it = neo_list_get_first(self->arguments);
+       it != neo_list_get_tail(self->arguments); it = neo_list_node_next(it)) {
+    neo_ast_node_t item = (neo_ast_node_t)neo_list_node_get(it);
+    item->resolve_closure(allocator, item, closure);
+  }
+  for (neo_list_node_t it = neo_list_get_first(self->closure);
+       it != neo_list_get_tail(self->closure); it = neo_list_node_next(it)) {
+    neo_ast_node_t item = (neo_ast_node_t)neo_list_node_get(it);
+    item->resolve_closure(allocator, item, closure);
+  }
+}
+
 static neo_variable_t
 neo_serialize_ast_expression_function(neo_allocator_t allocator,
                                       neo_ast_expression_function_t node) {
@@ -58,6 +74,8 @@ neo_create_ast_expression_function(neo_allocator_t allocator, const char *file,
   node->node.scope = NULL;
   node->node.serialize =
       (neo_serialize_fn_t)neo_serialize_ast_expression_function;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_expression_function_resolve_closure;
   node->async = false;
   node->generator = false;
   node->body = NULL;
@@ -133,7 +151,7 @@ neo_ast_node_t neo_ast_read_expression_function(neo_allocator_t allocator,
         goto onerror;
       }
       neo_list_push(node->arguments, argument);
-      neo_resolve_closure(allocator, argument, node->closure);
+      argument->resolve_closure(allocator, argument, node->closure);
       SKIP_ALL(allocator, file, &current, onerror);
       if (*current.offset == ')') {
         break;
@@ -163,7 +181,7 @@ neo_ast_node_t neo_ast_read_expression_function(neo_allocator_t allocator,
           current.line, current.column);
     goto onerror;
   }
-  neo_resolve_closure(allocator, node->body, node->closure);
+  node->body->resolve_closure(allocator, node->body, node->closure);
   node->node.location.begin = *position;
   node->node.location.end = current;
   node->node.location.file = file;

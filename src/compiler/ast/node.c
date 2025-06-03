@@ -51,26 +51,29 @@ neo_variable_t neo_ast_node_source_serialize(neo_allocator_t allocator,
 neo_variable_t neo_ast_node_location_serialize(neo_allocator_t allocator,
                                                neo_ast_node_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_t begin = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_set(
-      begin, "column",
-      neo_create_variable_integer(allocator, node->location.begin.column));
-  neo_variable_set(
-      begin, "line",
-      neo_create_variable_integer(allocator, node->location.begin.line));
-  neo_variable_set(variable, "begin", begin);
-  neo_variable_t end = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_set(
-      end, "column",
-      neo_create_variable_integer(allocator, node->location.end.column));
-  neo_variable_set(
-      end, "line",
-      neo_create_variable_integer(allocator, node->location.end.line));
-  neo_variable_set(variable, "end", end);
+  // neo_variable_t begin = neo_create_variable_dict(allocator, NULL, NULL);
+  // neo_variable_set(
+  //     begin, "column",
+  //     neo_create_variable_integer(allocator, node->location.begin.column));
+  // neo_variable_set(
+  //     begin, "line",
+  //     neo_create_variable_integer(allocator, node->location.begin.line));
+  // neo_variable_set(variable, "begin", begin);
+  // neo_variable_t end = neo_create_variable_dict(allocator, NULL, NULL);
+  // neo_variable_set(
+  //     end, "column",
+  //     neo_create_variable_integer(allocator, node->location.end.column));
+  // neo_variable_set(
+  //     end, "line",
+  //     neo_create_variable_integer(allocator, node->location.end.line));
+  // neo_variable_set(variable, "end", end);
   neo_variable_set(variable, "text",
                    neo_ast_node_source_serialize(allocator, node));
   return variable;
 }
+
+void neo_ast_node_resolve_closure(neo_allocator_t allocator,
+                                  neo_ast_node_t self, neo_list_t closure) {}
 
 bool neo_skip_white_space(neo_allocator_t allocator, const char *file,
                           neo_position_t *position) {

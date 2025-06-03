@@ -1,6 +1,7 @@
 #include "compiler/ast/statement_for.h"
 #include "compiler/ast/declaration_variable.h"
 #include "compiler/ast/expression.h"
+#include "compiler/ast/node.h"
 #include "compiler/ast/statement.h"
 #include "compiler/scope.h"
 #include "compiler/token.h"
@@ -15,6 +16,15 @@ static void neo_ast_statement_for_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->body);
   neo_allocator_free(allocator, node->node.scope);
 }
+static void neo_ast_statement_for_resolve_closure(neo_allocator_t allocator,
+                                                  neo_ast_statement_for_t self,
+                                                  neo_list_t closure) {
+  self->initialize->resolve_closure(allocator, self->initialize, closure);
+  self->condition->resolve_closure(allocator, self->condition, closure);
+  self->after->resolve_closure(allocator, self->after, closure);
+  self->body->resolve_closure(allocator, self->body, closure);
+}
+
 static neo_variable_t
 neo_serialize_ast_statement_for(neo_allocator_t allocator,
                                 neo_ast_statement_for_t node) {
@@ -42,6 +52,8 @@ neo_create_ast_statement_for(neo_allocator_t allocator) {
 
   node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_statement_for;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_statement_for_resolve_closure;
   node->initialize = NULL;
   node->condition = NULL;
   node->after = NULL;

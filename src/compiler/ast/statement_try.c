@@ -1,7 +1,9 @@
 #include "compiler/ast/statement_try.h"
+#include "compiler/ast/node.h"
 #include "compiler/ast/statement_block.h"
 #include "compiler/ast/try_catch.h"
 #include "compiler/token.h"
+#include "core/allocator.h"
 #include "core/variable.h"
 #include <stdio.h>
 
@@ -11,6 +13,17 @@ static void neo_ast_statement_try_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->catch);
   neo_allocator_free(allocator, node->finally);
   neo_allocator_free(allocator, node->node.scope);
+}
+static void neo_ast_statement_try_resolve_closure(neo_allocator_t allocator,
+                                                  neo_ast_statement_try_t self,
+                                                  neo_list_t closure) {
+  self->body->resolve_closure(allocator, self->body, closure);
+  if (self->catch) {
+    self->catch->resolve_closure(allocator, self->catch, closure);
+  }
+  if (self->finally) {
+    self->catch->resolve_closure(allocator, self->finally, closure);
+  }
 }
 static neo_variable_t
 neo_serialize_ast_statement_try(neo_allocator_t allocator,
@@ -39,6 +52,8 @@ neo_create_ast_statement_try(neo_allocator_t allocator) {
 
   node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_statement_try;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_statement_try_resolve_closure;
   node->body = NULL;
   node->catch = NULL;
   node->finally = NULL;

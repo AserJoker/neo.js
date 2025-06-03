@@ -14,6 +14,12 @@ static void neo_ast_statement_throw_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->value);
   neo_allocator_free(allocator, node->node.scope);
 }
+static void
+neo_ast_statement_throw_resolve_closure(neo_allocator_t allocator,
+                                        neo_ast_statement_throw_t self,
+                                        neo_list_t closure) {
+  self->value->resolve_closure(allocator, self->value, closure);
+}
 static neo_variable_t
 neo_serialize_ast_statement_throw(neo_allocator_t allocator,
                                   neo_ast_statement_throw_t node) {
@@ -37,6 +43,8 @@ neo_ast_create_statement_throw(neo_allocator_t allocator) {
 
   node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_statement_throw;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_statement_throw_resolve_closure;
   node->value = NULL;
   return node;
 }

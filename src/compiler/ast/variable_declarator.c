@@ -1,8 +1,11 @@
 #include "compiler/ast/variable_declarator.h"
 #include "compiler/ast/expression.h"
 #include "compiler/ast/identifier.h"
+#include "compiler/ast/node.h"
 #include "compiler/ast/pattern_array.h"
 #include "compiler/ast/pattern_object.h"
+#include "core/allocator.h"
+#include "core/list.h"
 #include "core/variable.h"
 #include <stdio.h>
 static void
@@ -11,6 +14,15 @@ neo_ast_variable_declarator_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->identifier);
   neo_allocator_free(allocator, node->initialize);
   neo_allocator_free(allocator, node->node.scope);
+}
+static void
+neo_ast_variable_declarator_resolve_closure(neo_allocator_t allocator,
+                                            neo_ast_variable_declarator_t self,
+                                            neo_list_t closure) {
+  if (self->initialize) {
+    self->initialize->resolve_closure(allocator, self->initialize, closure);
+  }
+  self->identifier->resolve_closure(allocator, self->identifier, closure);
 }
 static neo_variable_t
 neo_serialize_ast_variable_declarator(neo_allocator_t allocator,
@@ -37,6 +49,8 @@ neo_create_ast_variable_declarator(neo_allocator_t allocator) {
   node->node.scope = NULL;
   node->node.serialize =
       (neo_serialize_fn_t)neo_serialize_ast_variable_declarator;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_variable_declarator_resolve_closure;
   node->identifier = NULL;
   node->initialize = NULL;
   return node;

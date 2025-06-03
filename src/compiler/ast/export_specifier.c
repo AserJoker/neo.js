@@ -1,9 +1,12 @@
 #include "compiler/ast/export_specifier.h"
 #include "compiler/ast/identifier.h"
 #include "compiler/ast/literal_string.h"
+#include "compiler/ast/node.h"
 #include "compiler/token.h"
+#include "core/allocator.h"
 #include "core/error.h"
 #include "core/variable.h"
+#include <stdbool.h>
 #include <stdio.h>
 
 static void neo_ast_export_specifier_dispose(neo_allocator_t allocator,
@@ -11,6 +14,13 @@ static void neo_ast_export_specifier_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->alias);
   neo_allocator_free(allocator, node->identifier);
   neo_allocator_free(allocator, node->node.scope);
+}
+
+static void
+neo_ast_export_specifier_resolve_closure(neo_allocator_t allocator,
+                                         neo_ast_export_specifier_t node,
+                                         neo_list_t closure) {
+  node->identifier->resolve_closure(allocator, node->identifier, closure);
 }
 
 static neo_variable_t
@@ -39,6 +49,8 @@ neo_create_ast_export_specifier(neo_allocator_t allocator) {
 
   node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_export_specifier;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_export_specifier_resolve_closure;
   node->alias = NULL;
   node->identifier = NULL;
   return node;

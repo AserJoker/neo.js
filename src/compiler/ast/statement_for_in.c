@@ -1,6 +1,7 @@
 #include "compiler/ast/statement_for_in.h"
 #include "compiler/ast/expression.h"
 #include "compiler/ast/identifier.h"
+#include "compiler/ast/node.h"
 #include "compiler/ast/pattern_array.h"
 #include "compiler/ast/pattern_object.h"
 #include "compiler/ast/statement.h"
@@ -16,6 +17,16 @@ static void neo_ast_statement_for_in_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->body);
   neo_allocator_free(allocator, node->node.scope);
 }
+
+static void
+neo_ast_statement_for_in_resolve_closure(neo_allocator_t allocator,
+                                         neo_ast_statement_for_in_t self,
+                                         neo_list_t closure) {
+  self->left->resolve_closure(allocator, self->left, closure);
+  self->right->resolve_closure(allocator, self->right, closure);
+  self->body->resolve_closure(allocator, self->body, closure);
+}
+
 static neo_variable_t
 neo_serialize_ast_statement_for_in(neo_allocator_t allocator,
                                    neo_ast_statement_for_in_t node) {
@@ -66,6 +77,8 @@ neo_create_ast_statement_for_in(neo_allocator_t allocator) {
 
   node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_statement_for_in;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_statement_for_in_resolve_closure;
   node->left = NULL;
   node->right = NULL;
   node->body = NULL;

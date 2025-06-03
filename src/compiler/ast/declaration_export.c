@@ -20,6 +20,21 @@ neo_ast_declaration_export_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->specifiers);
   neo_allocator_free(allocator, node->node.scope);
 }
+
+static void
+neo_ast_declaration_export_resolve_closure(neo_allocator_t allocator,
+                                           neo_ast_declaration_export_t self,
+                                           neo_list_t closure) {
+  if (!self->source) {
+    for (neo_list_node_t it = neo_list_get_first(self->specifiers);
+         it != neo_list_get_tail(self->specifiers);
+         it = neo_list_node_next(it)) {
+      neo_ast_node_t item = (neo_ast_node_t)neo_list_node_get(it);
+      item->resolve_closure(allocator, item, closure);
+    }
+  }
+}
+
 static neo_variable_t
 neo_serialize_ast_declaration_export(neo_allocator_t allocator,
                                      neo_ast_declaration_export_t node) {

@@ -1,6 +1,9 @@
 #include "compiler/ast/declaration_function.h"
 #include "compiler/ast/expression_function.h"
+#include "compiler/ast/node.h"
 #include "compiler/scope.h"
+#include "core/allocator.h"
+#include "core/list.h"
 #include "core/variable.h"
 #include <stdio.h>
 static void
@@ -9,6 +12,13 @@ neo_ast_declaration_function_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->declaration);
   neo_allocator_free(allocator, node->node.scope);
 }
+
+static void neo_ast_declaration_function_resolve_closure(
+    neo_allocator_t allocator, neo_ast_declaration_function_t node,
+    neo_list_t closure) {
+  node->declaration->resolve_closure(allocator, node->declaration, closure);
+}
+
 static neo_variable_t
 neo_serialize_ast_declaration_function(neo_allocator_t allocator,
                                        neo_ast_declaration_function_t node) {
@@ -33,6 +43,8 @@ neo_create_ast_declaration_function(neo_allocator_t allocator) {
   node->node.scope = NULL;
   node->node.serialize =
       (neo_serialize_fn_t)neo_serialize_ast_declaration_function;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_declaration_function_resolve_closure;
   node->declaration = NULL;
   return node;
 }

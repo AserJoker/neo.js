@@ -13,6 +13,11 @@ neo_ast_statement_expression_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->expression);
   neo_allocator_free(allocator, node->node.scope);
 }
+static void neo_ast_statement_expression_resolve_closure(
+    neo_allocator_t allocator, neo_ast_statement_expression_t self,
+    neo_list_t closure) {
+  self->expression->resolve_closure(allocator, self->expression, closure);
+}
 static neo_variable_t
 neo_serialize_ast_statement_expreesion(neo_allocator_t allocator,
                                        neo_ast_statement_expression_t node) {
@@ -36,6 +41,8 @@ neo_create_ast_statement_expreesion(neo_allocator_t allocator) {
   node->node.scope = NULL;
   node->node.serialize =
       (neo_serialize_fn_t)neo_serialize_ast_statement_expreesion;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_statement_expression_resolve_closure;
   node->expression = NULL;
   return node;
 }

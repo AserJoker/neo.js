@@ -17,6 +17,17 @@ neo_ast_expression_member_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->node.scope);
 }
 
+static void
+neo_ast_expression_member_resolve_closure(neo_allocator_t allocator,
+                                          neo_ast_expression_member_t self,
+                                          neo_list_t closure) {
+  self->host->resolve_closure(allocator, self->host, closure);
+  if (self->node.type == NEO_NODE_TYPE_EXPRESSION_COMPUTED_MEMBER ||
+      self->node.type == NEO_NODE_TYPE_EXPRESSION_OPTIONAL_COMPUTED_MEMBER) {
+    self->field->resolve_closure(allocator, self->field, closure);
+  }
+}
+
 static neo_variable_t
 neo_serialize_ast_expression_member(neo_allocator_t allocator,
                                     neo_ast_expression_member_t node) {
@@ -62,6 +73,8 @@ neo_create_ast_expression_member(neo_allocator_t allocator) {
   node->node.scope = NULL;
   node->node.serialize =
       (neo_serialize_fn_t)neo_serialize_ast_expression_member;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_expression_member_resolve_closure;
   node->field = NULL;
   node->host = NULL;
   return node;

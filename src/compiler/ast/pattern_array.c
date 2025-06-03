@@ -14,6 +14,17 @@ static void neo_ast_pattern_array_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->items);
   neo_allocator_free(allocator, node->node.scope);
 }
+
+static void neo_ast_pattern_array_resolve_closure(neo_allocator_t allocator,
+                                                  neo_ast_pattern_array_t self,
+                                                  neo_list_t closure) {
+  for (neo_list_node_t it = neo_list_get_first(self->items);
+       it != neo_list_get_tail(self->items); it = neo_list_node_next(it)) {
+    neo_ast_node_t item = (neo_ast_node_t)neo_list_node_get(it);
+    item->resolve_closure(allocator, item, closure);
+  }
+}
+
 static neo_variable_t
 neo_serialize_ast_pattern_array(neo_allocator_t allocator,
                                 neo_ast_pattern_array_t node) {
@@ -40,6 +51,8 @@ neo_create_ast_pattern_array(neo_allocator_t allocator) {
 
   node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_pattern_array;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_pattern_array_resolve_closure;
   return node;
 }
 

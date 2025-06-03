@@ -1,10 +1,12 @@
 #include "compiler/ast/export_default.h"
 #include "compiler/ast/expression.h"
+#include "compiler/ast/node.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/location.h"
 #include "core/position.h"
 #include "core/variable.h"
+#include <stdbool.h>
 #include <stdio.h>
 
 static void neo_ast_export_default_dispose(neo_allocator_t allocator,
@@ -12,6 +14,14 @@ static void neo_ast_export_default_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->value);
   neo_allocator_free(allocator, node->node.scope);
 }
+
+static void
+neo_ast_export_default_resolve_closure(neo_allocator_t allocator,
+                                       neo_ast_export_default_t node,
+                                       neo_list_t closure) {
+  node->value->resolve_closure(allocator, node->value, closure);
+}
+
 static neo_variable_t
 neo_serialize_ast_export_default(neo_allocator_t allocator,
                                  neo_ast_export_default_t node) {
@@ -33,9 +43,10 @@ neo_create_ast_export_default(neo_allocator_t allocator) {
   neo_ast_export_default_t node =
       neo_allocator_alloc2(allocator, neo_ast_export_default);
   node->node.type = NEO_NODE_TYPE_EXPORT_DEFAULT;
-
   node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_export_default;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_export_default_resolve_closure;
   node->value = NULL;
   return node;
 }

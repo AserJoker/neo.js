@@ -17,6 +17,21 @@ static void neo_ast_literal_template_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->node.scope);
 }
 
+static void
+neo_ast_literal_template_resolve_closure(neo_allocator_t allocator,
+                                         neo_ast_literal_template_t self,
+                                         neo_list_t closure) {
+  if (self->tag) {
+    self->tag->resolve_closure(allocator, self->tag, closure);
+  }
+  for (neo_list_node_t it = neo_list_get_first(self->expressions);
+       it != neo_list_get_tail(self->expressions);
+       it = neo_list_node_next(it)) {
+    neo_ast_node_t item = (neo_ast_node_t)neo_list_node_get(it);
+    item->resolve_closure(allocator, item, closure);
+  }
+}
+
 static neo_variable_t neo_token_serialize(neo_allocator_t allocator,
                                           neo_token_t token) {
   size_t len = token->location.end.offset - token->location.begin.offset;
@@ -77,6 +92,8 @@ neo_create_ast_literal_template(neo_allocator_t allocator) {
 
   node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_literal_template;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_literal_template_resolve_closure;
   return node;
 }
 

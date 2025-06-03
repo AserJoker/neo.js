@@ -1,4 +1,5 @@
 #include "compiler/ast/declaration_variable.h"
+#include "compiler/ast/node.h"
 #include "compiler/ast/variable_declarator.h"
 #include "compiler/token.h"
 #include "core/variable.h"
@@ -10,6 +11,18 @@ neo_ast_declaration_variable_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->declarators);
   neo_allocator_free(allocator, node->node.scope);
 }
+
+static void neo_ast_declaration_variable(neo_allocator_t allocator,
+                                         neo_ast_declaration_variable_t node,
+                                         neo_list_t closure) {
+  for (neo_list_node_t it = neo_list_get_first(node->declarators);
+       it != neo_list_get_tail(node->declarators);
+       it = neo_list_node_next(it)) {
+    neo_ast_node_t item = (neo_ast_node_t)neo_list_node_get(it);
+    item->resolve_closure(allocator, item, closure);
+  }
+}
+
 static neo_variable_t
 neo_serialize_ast_declaration_variable(neo_allocator_t allocator,
                                        neo_ast_declaration_variable_t node) {
@@ -56,6 +69,8 @@ neo_create_ast_declaration_variable(neo_allocator_t allocator) {
   node->node.scope = NULL;
   node->node.serialize =
       (neo_serialize_fn_t)neo_serialize_ast_declaration_variable;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_declaration_variable;
   node->node.type = NEO_NODE_TYPE_DECLARATION_VARIABLE;
   node->declarators = neo_create_list(allocator, &initialize);
   node->kind = NEO_AST_DECLARATION_VAR;

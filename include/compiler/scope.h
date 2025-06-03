@@ -27,7 +27,7 @@ typedef enum _neo_compile_variable_type_t {
 
 struct _neo_compile_variable_t {
   neo_compile_variable_type_t type;
-  char *name;
+  neo_ast_node_t node;
 };
 
 struct _neo_compile_scope_t {
@@ -42,7 +42,8 @@ neo_compile_scope_t neo_compile_scope_push(neo_allocator_t allocator,
 neo_compile_scope_t neo_compile_scope_pop(neo_compile_scope_t scope);
 
 void neo_compile_scope_declar_value(neo_allocator_t allocator,
-                                    neo_compile_scope_t self, const char *name,
+                                    neo_compile_scope_t self,
+                                    neo_ast_node_t node,
                                     neo_compile_variable_type_t type);
 
 void neo_compile_scope_declar(neo_allocator_t allocator,
@@ -53,9 +54,6 @@ neo_compile_scope_t neo_compile_scope_get_current();
 
 neo_variable_t neo_serialize_scope(neo_allocator_t allocator,
                                    neo_compile_scope_t scope);
-
-void neo_resolve_closure(neo_allocator_t allocator, neo_ast_node_t node,
-                         neo_list_t closure);
 
 #ifdef __cplusplus
 }

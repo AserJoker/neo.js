@@ -1,15 +1,59 @@
 #include "compiler/ast/identifier.h"
 #include "compiler/ast/node.h"
+#include "compiler/scope.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/error.h"
+#include "core/list.h"
 #include "core/location.h"
 #include "core/position.h"
 #include "core/variable.h"
+#include <string.h>
 
 static void neo_ast_identifier_dispose(neo_allocator_t allocator,
                                        neo_ast_identifier_t node) {
   neo_allocator_free(allocator, node->node.scope);
+}
+static void neo_ast_identifier_resolve_closure(neo_allocator_t allocator,
+                                               neo_ast_identifier_t self,
+                                               neo_list_t closure) {
+  neo_compile_scope_t scope = neo_compile_scope_get_current();
+  char *name = neo_location_get(allocator, self->node.location);
+  for (;;) {
+    for (neo_list_node_t it = neo_list_get_first(scope->variables);
+         it != neo_list_get_tail(scope->variables);
+         it = neo_list_node_next(it)) {
+      neo_compile_variable_t variable = neo_list_node_get(it);
+      char *varname = neo_location_get(allocator, variable->node->location);
+      if (strcmp(varname, name) == 0) {
+        neo_allocator_free(allocator, varname);
+        neo_allocator_free(allocator, name);
+        return;
+      }
+      neo_allocator_free(allocator, varname);
+    }
+    if (scope->type != NEO_COMPILE_SCOPE_FUNCTION) {
+      scope = scope->parent;
+    } else {
+      break;
+    }
+    if (!scope) {
+      break;
+    }
+  }
+  for (neo_list_node_t it = neo_list_get_first(closure);
+       it != neo_list_get_tail(closure); it = neo_list_node_next(it)) {
+    neo_ast_node_t node = neo_list_node_get(it);
+    char *current = neo_location_get(allocator, node->location);
+    if (strcmp(current, name) == 0) {
+      neo_allocator_free(allocator, name);
+      neo_allocator_free(allocator, current);
+      return;
+    }
+    neo_allocator_free(allocator, current);
+  }
+  neo_allocator_free(allocator, name);
+  neo_list_push(closure, self);
 }
 static neo_variable_t neo_serialize_ast_identifier(neo_allocator_t allocator,
                                                    neo_ast_identifier_t node) {
@@ -31,6 +75,8 @@ neo_create_ast_literal_identify(neo_allocator_t allocator) {
 
   node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_identifier;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_identifier_resolve_closure;
   return node;
 }
 

@@ -15,6 +15,22 @@ static void neo_ast_object_property_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->node.scope);
 }
 
+static void
+neo_ast_object_property_resolve_closure(neo_allocator_t allocator,
+                                        neo_ast_object_property_t self,
+                                        neo_list_t closure) {
+  if (self->value) {
+    self->value->resolve_closure(allocator, self->value, closure);
+  } else {
+    self->identifier->resolve_closure(allocator, self->identifier, closure
+                                      );
+  }
+  if (self->computed) {
+    self->identifier->resolve_closure(allocator, self->identifier, closure
+                                      );
+  }
+}
+
 static neo_variable_t
 neo_serialize_ast_object_property(neo_allocator_t allocator,
                                   neo_ast_object_property_t node) {
@@ -45,6 +61,8 @@ neo_create_ast_object_property(neo_allocator_t allocator) {
 
   node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_object_property;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_object_property_resolve_closure;
   node->computed = false;
   return node;
 }

@@ -16,6 +16,12 @@ neo_ast_statement_labeled_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->statement);
   neo_allocator_free(allocator, node->node.scope);
 }
+static void
+neo_ast_statement_label_resolve_closure(neo_allocator_t allocator,
+                                        neo_ast_statement_labeled_t self,
+                                        neo_list_t closure) {
+  self->statement->resolve_closure(allocator, self->statement, closure);
+}
 static neo_variable_t
 neo_serialize_ast_statement_labeled(neo_allocator_t allocator,
                                     neo_ast_statement_labeled_t node) {
@@ -42,6 +48,8 @@ neo_create_ast_statement_labeled(neo_allocator_t allocator) {
   node->node.scope = NULL;
   node->node.serialize =
       (neo_serialize_fn_t)neo_serialize_ast_statement_labeled;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_statement_label_resolve_closure;
   node->label = NULL;
   node->statement = NULL;
   return node;

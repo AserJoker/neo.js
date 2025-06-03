@@ -16,6 +16,15 @@ static void neo_ast_static_block_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->body);
   neo_allocator_free(allocator, node->node.scope);
 }
+static void neo_ast_static_block_resolve_closure(neo_allocator_t allocator,
+                                                 neo_ast_static_block_t self,
+                                                 neo_list_t closure) {
+  for (neo_list_node_t it = neo_list_get_first(self->body);
+       it != neo_list_get_tail(self->body); it = neo_list_node_next(it)) {
+    neo_ast_node_t item = (neo_ast_node_t)neo_list_node_get(it);
+    item->resolve_closure(allocator, item, closure);
+  }
+}
 static neo_variable_t
 neo_serialize_ast_statement_block(neo_allocator_t allocator,
                                   neo_ast_static_block_t node) {
@@ -39,6 +48,8 @@ neo_create_ast_static_block(neo_allocator_t allocator) {
 
   node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_statement_block;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_static_block_resolve_closure;
   neo_list_initialize_t initialize = {true};
   node->body = neo_create_list(allocator, &initialize);
   return node;

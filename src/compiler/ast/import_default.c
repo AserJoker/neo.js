@@ -33,6 +33,7 @@ neo_create_ast_import_default(neo_allocator_t allocator) {
 
   node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_import_default;
+  node->node.resolve_closure = neo_ast_node_resolve_closure;
   node->identifier = NULL;
   return node;
 }

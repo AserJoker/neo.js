@@ -14,10 +14,14 @@ static void neo_ast_pattern_rest_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->identifier);
   neo_allocator_free(allocator, node->node.scope);
 }
-
+static void neo_ast_pattern_rest_resolve_closure(neo_allocator_t allocator,
+                                                 neo_ast_pattern_rest_t self,
+                                                 neo_list_t closure) {
+  self->identifier->resolve_closure(allocator, self->identifier, closure);
+}
 static neo_variable_t
-neo_serialize_ast_pattern_object(neo_allocator_t allocator,
-                                 neo_ast_pattern_rest_t node) {
+neo_serialize_ast_pattern_rest(neo_allocator_t allocator,
+                               neo_ast_pattern_rest_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
   neo_variable_set(
       variable, "type",
@@ -40,7 +44,9 @@ neo_create_ast_pattern_rest(neo_allocator_t allocator) {
   node->node.type = NEO_NODE_TYPE_PATTERN_REST;
 
   node->node.scope = NULL;
-  node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_pattern_object;
+  node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_pattern_rest;
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_pattern_rest_resolve_closure;
   return node;
 }
 

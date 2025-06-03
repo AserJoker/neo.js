@@ -39,6 +39,7 @@ neo_create_ast_import_attribute(neo_allocator_t allocator) {
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_import_attribute;
   node->value = NULL;
   node->identifier = NULL;
+  node->node.resolve_closure = neo_ast_node_resolve_closure;
   return node;
 }
 
