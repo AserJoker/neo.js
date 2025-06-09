@@ -1,6 +1,8 @@
 #include "compiler/ast/statement_expression.h"
+#include "compiler/asm.h"
 #include "compiler/ast/expression.h"
 #include "compiler/ast/node.h"
+#include "compiler/program.h"
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/position.h"
@@ -13,11 +15,23 @@ neo_ast_statement_expression_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->expression);
   neo_allocator_free(allocator, node->node.scope);
 }
+
+static void
+neo_ast_statement_expression_write(neo_allocator_t allocator,
+                                   neo_write_context_t ctx,
+                                   neo_ast_statement_expression_t self) {
+  TRY(self->expression->write(allocator, ctx, self->expression)) { return; }
+  if (self->expression->type != NEO_NODE_TYPE_EXPRESSION_ASSIGMENT) {
+    neo_program_add_code(ctx->program, NEO_ASM_POP);
+  }
+}
+
 static void neo_ast_statement_expression_resolve_closure(
     neo_allocator_t allocator, neo_ast_statement_expression_t self,
     neo_list_t closure) {
   self->expression->resolve_closure(allocator, self->expression, closure);
 }
+
 static neo_variable_t
 neo_serialize_ast_statement_expreesion(neo_allocator_t allocator,
                                        neo_ast_statement_expression_t node) {
@@ -43,6 +57,7 @@ neo_create_ast_statement_expreesion(neo_allocator_t allocator) {
       (neo_serialize_fn_t)neo_serialize_ast_statement_expreesion;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_statement_expression_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_statement_expression_write;
   node->expression = NULL;
   return node;
 }

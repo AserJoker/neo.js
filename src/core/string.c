@@ -1,4 +1,5 @@
 #include "core/string.h"
+#include "core/allocator.h"
 #include <string.h>
 
 char *neo_string_concat(neo_allocator_t allocator, char *src, size_t *max,
@@ -18,4 +19,25 @@ char *neo_string_concat(neo_allocator_t allocator, char *src, size_t *max,
   strcpy(result + base, str);
   result[base + len] = 0;
   return result;
+}
+
+char *neo_string_encode(neo_allocator_t allocator, const char *src) {
+  size_t len = strlen(src);
+  char *str = neo_allocator_alloc(allocator, len * 2 + 1, NULL);
+  str[0] = 0;
+  size_t idx = 0;
+  size_t current = 0;
+  for (; current < len; current++) {
+    if (src[current] == '\n') {
+      str[idx++] = '\\';
+      str[idx++] = 'n';
+    } else if (src[current] == '\r') {
+      str[idx++] = '\\';
+      str[idx++] = 'r';
+    } else {
+      str[idx++] = src[current];
+    }
+  }
+  str[idx] = 0;
+  return str;
 }

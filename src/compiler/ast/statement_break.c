@@ -1,6 +1,8 @@
 #include "compiler/ast/statement_break.h"
+#include "compiler/asm.h"
 #include "compiler/ast/identifier.h"
 #include "compiler/ast/node.h"
+#include "compiler/program.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/location.h"
@@ -11,6 +13,18 @@ static void neo_ast_statement_break_dispose(neo_allocator_t allocator,
                                             neo_ast_statement_break_t node) {
   neo_allocator_free(allocator, node->label);
   neo_allocator_free(allocator, node->node.scope);
+}
+static void neo_ast_statement_break_write(neo_allocator_t allocator,
+                                          neo_write_context_t ctx,
+                                          neo_ast_statement_break_t self) {
+  neo_program_add_code(ctx->program, NEO_ASM_BREAK);
+  if (self->label) {
+    char *label = neo_location_get(allocator, self->label->location);
+    neo_program_add_string(ctx->program, label);
+    neo_allocator_free(allocator, label);
+  } else {
+    neo_program_add_string(ctx->program, "");
+  }
 }
 static neo_variable_t
 neo_serialize_ast_statement_break(neo_allocator_t allocator,
@@ -37,6 +51,7 @@ neo_create_ast_statement_break(neo_allocator_t allocator) {
   node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_statement_break;
   node->node.resolve_closure = neo_ast_node_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_statement_break_write;
   return node;
 }
 

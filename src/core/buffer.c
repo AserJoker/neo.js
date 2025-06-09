@@ -81,4 +81,5 @@ void neo_buffer_write(neo_buffer_t self, size_t offset, void *data,
     neo_buffer_reserve(self, self->size + size + offset);
   }
   memcpy((uint8_t *)self->data + offset, data, size);
+  self->size = offset + size;
 }

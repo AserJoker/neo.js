@@ -1,8 +1,12 @@
 #include "compiler/ast/expression_condition.h"
+#include "compiler/asm.h"
 #include "compiler/ast/expression.h"
 #include "compiler/ast/node.h"
+#include "compiler/program.h"
 #include "compiler/token.h"
+#include "compiler/writer.h"
 #include "core/allocator.h"
+#include "core/buffer.h"
 #include "core/error.h"
 #include "core/location.h"
 #include "core/position.h"
@@ -16,6 +20,24 @@ neo_ast_expression_condition_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->alternate);
   neo_allocator_free(allocator, node->consequent);
   neo_allocator_free(allocator, node->node.scope);
+}
+
+static void
+neo_ast_expression_condition_write(neo_allocator_t allocator,
+                                   neo_write_context_t ctx,
+                                   neo_ast_expression_condition_t self) {
+  TRY(self->condition->write(allocator, ctx, self->condition)) { return; }
+  neo_program_add_code(ctx->program, NEO_ASM_JFALSE);
+  size_t address = neo_buffer_get_size(ctx->program->codes);
+  neo_program_add_address(ctx->program, 0);
+  TRY(self->consequent->write(allocator, ctx, self->consequent)) { return; }
+  neo_program_add_code(ctx->program, NEO_ASM_JMP);
+  size_t end = neo_buffer_get_size(ctx->program->codes);
+  neo_program_add_address(ctx->program, 0);
+  neo_program_set_current(ctx->program, address);
+  TRY(self->alternate->write(allocator, ctx, self->alternate)) { return; }
+  neo_program_set_current(ctx->program, end);
+  neo_program_add_code(ctx->program, NEO_ASM_POP);
 }
 
 static void neo_ast_expression_condition_resolve_closure(
@@ -56,6 +78,7 @@ neo_create_ast_expression_condition(neo_allocator_t allocator) {
       (neo_serialize_fn_t)neo_serialize_ast_expression_condition;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_expression_condition_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_expression_condition_write;
   node->condition = NULL;
   node->alternate = NULL;
   node->consequent = NULL;

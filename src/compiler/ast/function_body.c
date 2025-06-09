@@ -1,7 +1,9 @@
 #include "compiler/ast/function_body.h"
+#include "compiler/asm.h"
 #include "compiler/ast/directive.h"
 #include "compiler/ast/node.h"
 #include "compiler/ast/statement.h"
+#include "compiler/program.h"
 #include "compiler/scope.h"
 #include "core/allocator.h"
 #include "core/error.h"
@@ -26,7 +28,22 @@ static void neo_ast_function_body_resolve_closure(neo_allocator_t allocator,
     item->resolve_closure(allocator, item, closure);
   }
 }
-
+static void neo_ast_function_body_write(neo_allocator_t allocator,
+                                        neo_write_context_t ctx,
+                                        neo_ast_function_body_t self) {
+  for (neo_list_node_t it = neo_list_get_first(self->directives);
+       it != neo_list_get_tail(self->directives); it = neo_list_node_next(it)) {
+    neo_ast_node_t item = neo_list_node_get(it);
+    TRY(item->write(allocator, ctx, item)) { return; }
+  }
+  for (neo_list_node_t it = neo_list_get_first(self->body);
+       it != neo_list_get_tail(self->body); it = neo_list_node_next(it)) {
+    neo_ast_node_t item = neo_list_node_get(it);
+    TRY(item->write(allocator, ctx, item)) { return; }
+  }
+  neo_program_add_code(ctx->program, NEO_ASM_PUSH_UNDEFINED);
+  neo_program_add_code(ctx->program, NEO_ASM_RET);
+}
 static neo_variable_t
 neo_serialize_ast_function_body(neo_allocator_t allocator,
                                 neo_ast_function_body_t node) {
@@ -58,6 +75,7 @@ neo_create_ast_function_body(neo_allocator_t allocator) {
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_function_body;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_function_body_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_function_body_write;
   return node;
 }
 

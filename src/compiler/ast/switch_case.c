@@ -57,6 +57,7 @@ neo_create_ast_switch_case(neo_allocator_t allocator) {
       (neo_resolve_closure_fn_t)neo_ast_switch_case_resolve_closure;
   neo_list_initialize_t initialize = {true};
   node->body = neo_create_list(allocator, &initialize);
+  node->node.write = NULL;
   return node;
 }
 

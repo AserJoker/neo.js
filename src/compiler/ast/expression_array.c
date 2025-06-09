@@ -1,7 +1,10 @@
 #include "compiler/ast/expression_array.h"
+#include "compiler/asm.h"
 #include "compiler/ast/expression.h"
 #include "compiler/ast/expression_spread.h"
 #include "compiler/ast/node.h"
+#include "compiler/program.h"
+#include "compiler/writer.h"
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/list.h"
@@ -44,6 +47,21 @@ neo_serialize_ast_expression_array(neo_allocator_t allocator,
   return variable;
 }
 
+static void neo_ast_expression_array_write(neo_allocator_t allocator,
+                                           neo_write_context_t ctx,
+                                           neo_ast_expression_array_t self) {
+  neo_program_add_code(ctx->program, NEO_ASM_PUSH_ARRAY);
+  size_t idx = 0;
+  for (neo_list_node_t it = neo_list_get_first(self->items);
+       it != neo_list_get_tail(self->items); it = neo_list_node_next(it)) {
+    neo_program_add_code(ctx->program, NEO_ASM_PUSH_NUMBER);
+    neo_program_add_number(ctx->program, idx);
+    neo_ast_node_t item = neo_list_node_get(it);
+    TRY(item->write(allocator, ctx, item)) { return; }
+    neo_program_add_code(ctx->program, NEO_ASM_SET_FIELD);
+    idx++;
+  }
+}
 static neo_ast_expression_array_t
 neo_create_ast_expression_array(neo_allocator_t allocator) {
   neo_ast_expression_array_t node =
@@ -55,6 +73,7 @@ neo_create_ast_expression_array(neo_allocator_t allocator) {
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_expression_array;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_expression_array_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_expression_array_write;
   node->items = neo_create_list(allocator, &initialize);
   return node;
 }
@@ -88,6 +107,9 @@ neo_ast_node_t neo_ast_read_expression_array(neo_allocator_t allocator,
         current.offset++;
         current.column++;
         SKIP_ALL(allocator, file, &current, onerror);
+        if (*current.offset == ']') {
+          break;
+        }
       } else if (*current.offset == ']') {
         break;
       } else {

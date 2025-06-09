@@ -1,9 +1,12 @@
 #include "compiler/ast/statement_try.h"
+#include "compiler/asm.h"
 #include "compiler/ast/node.h"
 #include "compiler/ast/statement_block.h"
 #include "compiler/ast/try_catch.h"
+#include "compiler/program.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
+#include "core/buffer.h"
 #include "core/variable.h"
 #include <stdio.h>
 
@@ -23,6 +26,34 @@ static void neo_ast_statement_try_resolve_closure(neo_allocator_t allocator,
   }
   if (self->finally) {
     self->catch->resolve_closure(allocator, self->finally, closure);
+  }
+}
+static void neo_ast_statement_try_write(neo_allocator_t allocator,
+                                        neo_write_context_t ctx,
+                                        neo_ast_statement_try_t self) {
+  neo_program_add_code(ctx->program, NEO_ASM_TRY);
+  size_t catchaddr = neo_buffer_get_size(ctx->program->codes);
+  neo_program_add_address(ctx->program, 0);
+  size_t deferaddr = 0;
+  if (self->finally) {
+    neo_program_add_code(ctx->program, NEO_ASM_DEFER);
+    deferaddr = neo_buffer_get_size(ctx->program->codes);
+    neo_program_add_address(ctx->program, 0);
+  }
+  TRY(self->body->write(allocator, ctx, self->body)) { return; }
+  neo_program_add_code(ctx->program, NEO_ASM_JMP);
+  size_t end = neo_buffer_get_size(ctx->program->codes);
+  neo_program_add_address(ctx->program, 0);
+  if (self->catch) {
+    neo_program_set_current(ctx->program, catchaddr);
+    TRY(self->catch->write(allocator, ctx, self->catch)) { return; }
+  }
+  if (self->finally) {
+    neo_program_set_current(ctx->program, deferaddr);
+    neo_program_set_current(ctx->program, end);
+    TRY(self->finally->write(allocator, ctx, self->finally)) { return; }
+  } else {
+    neo_program_set_current(ctx->program, end);
   }
 }
 static neo_variable_t
@@ -54,6 +85,7 @@ neo_create_ast_statement_try(neo_allocator_t allocator) {
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_statement_try;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_statement_try_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_statement_try_write;
   node->body = NULL;
   node->catch = NULL;
   node->finally = NULL;

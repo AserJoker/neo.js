@@ -1,4 +1,5 @@
 #include "compiler/ast/statement_throw.h"
+#include "compiler/asm.h"
 #include "compiler/ast/expression.h"
 #include "compiler/ast/node.h"
 #include "compiler/token.h"
@@ -19,6 +20,16 @@ neo_ast_statement_throw_resolve_closure(neo_allocator_t allocator,
                                         neo_ast_statement_throw_t self,
                                         neo_list_t closure) {
   self->value->resolve_closure(allocator, self->value, closure);
+}
+static void neo_ast_statement_throw_write(neo_allocator_t allocator,
+                                          neo_write_context_t ctx,
+                                          neo_ast_statement_throw_t self) {
+  if (self->value) {
+    TRY(self->value->write(allocator, ctx, self->value)) { return; }
+  } else {
+    neo_program_add_code(ctx->program, NEO_ASM_PUSH_UNDEFINED);
+  }
+  neo_program_add_code(ctx->program, NEO_ASM_THROW);
 }
 static neo_variable_t
 neo_serialize_ast_statement_throw(neo_allocator_t allocator,
@@ -45,6 +56,7 @@ neo_ast_create_statement_throw(neo_allocator_t allocator) {
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_statement_throw;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_statement_throw_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_statement_throw_write;
   node->value = NULL;
   return node;
 }

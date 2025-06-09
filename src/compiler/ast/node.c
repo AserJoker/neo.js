@@ -1,7 +1,10 @@
 #include "compiler/ast/node.h"
+#include "compiler/scope.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/error.h"
+#include "core/list.h"
+#include "core/location.h"
 #include "core/unicode.h"
 #include "core/variable.h"
 #include <string.h>

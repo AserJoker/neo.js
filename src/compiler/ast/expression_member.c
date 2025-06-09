@@ -3,6 +3,7 @@
 #include "compiler/ast/identifier.h"
 #include "compiler/ast/node.h"
 #include "compiler/token.h"
+#include "compiler/writer.h"
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/location.h"
@@ -26,6 +27,23 @@ neo_ast_expression_member_resolve_closure(neo_allocator_t allocator,
       self->node.type == NEO_NODE_TYPE_EXPRESSION_OPTIONAL_COMPUTED_MEMBER) {
     self->field->resolve_closure(allocator, self->field, closure);
   }
+}
+
+static void neo_ast_expression_member_write(neo_allocator_t allocator,
+                                            neo_write_context_t ctx,
+                                            neo_ast_expression_member_t self) {
+  neo_list_initialize_t initialize = {true};
+  neo_list_t addresses = neo_create_list(allocator, &initialize);
+  TRY(neo_write_optional_chain(allocator, ctx, &self->node, addresses)) {
+    neo_allocator_free(allocator, addresses);
+    return;
+  }
+  for (neo_list_node_t it = neo_list_get_first(addresses);
+       it != neo_list_get_tail(addresses); it = neo_list_node_next(it)) {
+    size_t *address = neo_list_node_get(it);
+    neo_program_set_current(ctx->program, *address);
+  }
+  neo_allocator_free(allocator, addresses);
 }
 
 static neo_variable_t
@@ -77,6 +95,7 @@ neo_create_ast_expression_member(neo_allocator_t allocator) {
       (neo_resolve_closure_fn_t)neo_ast_expression_member_resolve_closure;
   node->field = NULL;
   node->host = NULL;
+  node->node.write = (neo_write_fn_t)neo_ast_expression_member_write;
   return node;
 }
 
@@ -152,8 +171,7 @@ neo_ast_node_t neo_ast_read_expression_member(neo_allocator_t allocator,
       return &node->node;
     }
   } else if (neo_location_is(token->location, "[")) {
-    current.offset++;
-    current.column++;
+    neo_allocator_free(allocator, token);
     SKIP_ALL(allocator, file, &current, onerror);
     node->field = TRY(neo_ast_read_expression(allocator, file, &current)) {
       goto onerror;

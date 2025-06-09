@@ -1,6 +1,10 @@
 #include "compiler/ast/import_namespace.h"
+#include "compiler/asm.h"
 #include "compiler/ast/identifier.h"
+#include "compiler/ast/node.h"
+#include "compiler/program.h"
 #include "compiler/token.h"
+#include "core/allocator.h"
 #include "core/variable.h"
 #include <stdio.h>
 static void neo_ast_import_namespace_dispose(neo_allocator_t allocator,
@@ -8,7 +12,16 @@ static void neo_ast_import_namespace_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->identifier);
   neo_allocator_free(allocator, node->node.scope);
 }
-
+static void neo_ast_import_namespace_write(neo_allocator_t allocator,
+                                           neo_write_context_t ctx,
+                                           neo_ast_import_namespace_t self) {
+  neo_program_add_code(ctx->program, NEO_ASM_PUSH_VALUE);
+  neo_program_add_integer(ctx->program, 1);
+  char *name = neo_location_get(allocator, self->identifier->location);
+  neo_program_add_code(ctx->program, NEO_ASM_STORE);
+  neo_program_add_string(ctx->program, name);
+  neo_allocator_free(allocator, name);
+}
 static neo_variable_t
 neo_serialize_ast_import_namespace(neo_allocator_t allocator,
                                    neo_ast_import_namespace_t node) {
@@ -34,6 +47,7 @@ neo_create_ast_import_namespace(neo_allocator_t allocator) {
   node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_import_namespace;
   node->node.resolve_closure = neo_ast_node_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_import_namespace_write;
   node->identifier = NULL;
   return node;
 }
@@ -64,8 +78,10 @@ neo_ast_node_t neo_ast_read_import_namespace(neo_allocator_t allocator,
           current.line, current.column);
     goto onerror;
   }
-  neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
-                           node->identifier, NEO_COMPILE_VARIABLE_CONST);
+  TRY(neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
+                               node->identifier, NEO_COMPILE_VARIABLE_CONST)) {
+    goto onerror;
+  };
   node->node.location.begin = *position;
   node->node.location.end = current;
   node->node.location.file = file;

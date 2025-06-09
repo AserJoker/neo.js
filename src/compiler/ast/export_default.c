@@ -1,6 +1,8 @@
 #include "compiler/ast/export_default.h"
+#include "compiler/asm.h"
 #include "compiler/ast/expression.h"
 #include "compiler/ast/node.h"
+#include "compiler/program.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/location.h"
@@ -13,6 +15,14 @@ static void neo_ast_export_default_dispose(neo_allocator_t allocator,
                                            neo_ast_export_default_t node) {
   neo_allocator_free(allocator, node->value);
   neo_allocator_free(allocator, node->node.scope);
+}
+
+static void neo_ast_export_default_write(neo_allocator_t allocator,
+                                         neo_write_context_t ctx,
+                                         neo_ast_export_default_t self) {
+  TRY(self->value->write(allocator, ctx, self->value)) { return; }
+  neo_program_add_string(ctx->program, "default");
+  neo_program_add_code(ctx->program, NEO_ASM_EXPORT);
 }
 
 static void
@@ -47,6 +57,7 @@ neo_create_ast_export_default(neo_allocator_t allocator) {
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_export_default;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_export_default_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_export_default_write;
   node->value = NULL;
   return node;
 }

@@ -29,6 +29,8 @@ bool neo_utf8_char_is_id_continue(neo_utf8_char chr);
 
 bool neo_utf8_char_is_space_separator(neo_utf8_char chr);
 
+char *neo_utf8_decode(neo_allocator_t allocator, const char *str);
+
 #ifdef __cplusplus
 };
 #endif

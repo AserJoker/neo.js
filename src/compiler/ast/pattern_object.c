@@ -1,7 +1,9 @@
 #include "compiler/ast/pattern_object.h"
+#include "compiler/asm.h"
 #include "compiler/ast/node.h"
 #include "compiler/ast/pattern_object_item.h"
 #include "compiler/ast/pattern_rest.h"
+#include "compiler/program.h"
 #include "compiler/scope.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
@@ -24,6 +26,19 @@ neo_ast_pattern_object_resolve_closure(neo_allocator_t allocator,
     neo_ast_node_t item = (neo_ast_node_t)neo_list_node_get(it);
     item->resolve_closure(allocator, item, closure);
   }
+}
+
+static void neo_ast_pattern_object_write(neo_allocator_t allocator,
+                                         neo_write_context_t ctx,
+                                         neo_ast_pattern_object_t self) {
+  neo_program_add_code(ctx->program, NEO_ASM_ENTRIES);
+  for (neo_list_node_t it = neo_list_get_first(self->items);
+       it != neo_list_get_tail(self->items); it = neo_list_node_next(it)) {
+    neo_ast_node_t item = neo_list_node_get(it);
+    TRY(item->write(allocator, ctx, item)) { return; }
+  }
+  neo_program_add_code(ctx->program, NEO_ASM_POP);
+  neo_program_add_code(ctx->program, NEO_ASM_POP);
 }
 
 static neo_variable_t
@@ -53,6 +68,7 @@ neo_create_ast_pattern_object(neo_allocator_t allocator) {
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_pattern_object;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_pattern_object_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_pattern_object_write;
   return node;
 }
 

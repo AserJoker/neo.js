@@ -1,6 +1,8 @@
 #include "compiler/ast/declaration_class.h"
+#include "compiler/asm.h"
 #include "compiler/ast/expression_class.h"
 #include "compiler/ast/node.h"
+#include "core/allocator.h"
 #include "core/variable.h"
 #include <stdio.h>
 static void
@@ -9,6 +11,19 @@ neo_ast_declaration_class_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->declaration);
   neo_allocator_free(allocator, node->node.scope);
 }
+
+static void neo_ast_declaration_class_write(neo_allocator_t allocator,
+                                            neo_write_context_t ctx,
+                                            neo_ast_declaration_class_t self) {
+  TRY(self->declaration->write(allocator, ctx, self->declaration)) { return; }
+  neo_ast_expression_class_t clazz =
+      (neo_ast_expression_class_t)self->declaration;
+  char *name = neo_location_get(allocator, clazz->name->location);
+  neo_program_add_code(ctx->program, NEO_ASM_STORE);
+  neo_program_add_string(ctx->program, name);
+  neo_allocator_free(allocator, name);
+}
+
 static void
 neo_ast_declaration_class_resolve_closure(neo_allocator_t allocator,
                                           neo_ast_declaration_class_t self,
@@ -41,6 +56,7 @@ neo_create_ast_declaration_class(neo_allocator_t allocator) {
       (neo_serialize_fn_t)neo_serialize_ast_declaration_class;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_declaration_class_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_declaration_class_write;
   node->node.type = NEO_NODE_TYPE_DECLARATION_CLASS;
   node->declaration = NULL;
   return node;
@@ -68,8 +84,10 @@ neo_ast_node_t neo_ast_read_declaration_class(neo_allocator_t allocator,
   node->node.location.end = current;
   node->node.location.file = file;
   *position = current;
-  neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
-                           node->declaration, NEO_COMPILE_VARIABLE_LET);
+  TRY(neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
+                               node->declaration, NEO_COMPILE_VARIABLE_LET)) {
+    goto onerror;
+  };
   return &node->node;
 onerror:
   neo_allocator_free(allocator, node);

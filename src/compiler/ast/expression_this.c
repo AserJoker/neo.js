@@ -1,6 +1,8 @@
 #include "compiler/ast/expression_this.h"
+#include "compiler/asm.h"
 #include "compiler/ast/node.h"
 #include "compiler/token.h"
+#include "compiler/writer.h"
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/location.h"
@@ -26,6 +28,13 @@ neo_serialize_ast_expression_this(neo_allocator_t allocator,
   return variable;
 }
 
+static void neo_ast_expression_this_write(neo_allocator_t allocator,
+                                          neo_write_context_t ctx,
+                                          neo_ast_expression_this_t self) {
+  neo_program_add_code(ctx->program, NEO_ASM_LOAD);
+  neo_program_add_string(ctx->program, "this");
+}
+
 static neo_ast_expression_this_t
 neo_create_ast_expression_this(neo_allocator_t allocator) {
   neo_ast_expression_this_t node =
@@ -35,6 +44,7 @@ neo_create_ast_expression_this(neo_allocator_t allocator) {
   node->node.scope = NULL;
   node->node.resolve_closure = neo_ast_node_resolve_closure;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_expression_this;
+  node->node.write = (neo_write_fn_t)neo_ast_expression_this_write;
   return node;
 }
 

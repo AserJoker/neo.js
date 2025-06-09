@@ -1,8 +1,10 @@
 #include "compiler/ast/expression_function.h"
+#include "compiler/asm.h"
 #include "compiler/ast/function_argument.h"
 #include "compiler/ast/function_body.h"
 #include "compiler/ast/identifier.h"
 #include "compiler/ast/node.h"
+#include "compiler/program.h"
 #include "compiler/scope.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
@@ -36,6 +38,54 @@ neo_ast_expression_function_resolve_closure(neo_allocator_t allocator,
        it != neo_list_get_tail(self->closure); it = neo_list_node_next(it)) {
     neo_ast_node_t item = (neo_ast_node_t)neo_list_node_get(it);
     item->resolve_closure(allocator, item, closure);
+  }
+}
+
+static void
+neo_ast_expression_function_write(neo_allocator_t allocator,
+                                  neo_write_context_t ctx,
+                                  neo_ast_expression_function_t self) {
+  neo_program_add_code(ctx->program, NEO_ASM_JMP);
+  size_t endaddr = neo_buffer_get_size(ctx->program->codes);
+  neo_program_add_address(ctx->program, 0);
+  size_t begin = neo_buffer_get_size(ctx->program->codes);
+  neo_writer_push_scope(allocator, ctx, self->node.scope);
+  if (neo_list_get_size(self->arguments)) {
+    neo_program_add_code(ctx->program, NEO_ASM_LOAD);
+    neo_program_add_string(ctx->program, "arguments");
+    neo_program_add_code(ctx->program, NEO_ASM_ITERATOR);
+    for (neo_list_node_t it = neo_list_get_first(self->arguments);
+         it != neo_list_get_tail(self->arguments);
+         it = neo_list_node_next(it)) {
+      neo_ast_node_t argument = neo_list_node_get(it);
+      TRY(argument->write(allocator, ctx, argument)) { return; }
+    }
+    neo_program_add_code(ctx->program, NEO_ASM_POP);
+    neo_program_add_code(ctx->program, NEO_ASM_POP);
+  }
+  TRY(self->body->write(allocator, ctx, self->body)) { return; }
+  neo_writer_pop_scope(allocator, ctx, self->node.scope);
+  neo_program_set_current(ctx->program, endaddr);
+  neo_program_add_code(ctx->program, NEO_ASM_PUSH_FUNCTION);
+  neo_program_add_code(ctx->program, NEO_ASM_SET_ADDRESS);
+  neo_program_add_address(ctx->program, begin);
+  char *source = neo_location_get(allocator, self->node.location);
+  neo_program_add_code(ctx->program, NEO_ASM_SET_SOURCE);
+  neo_program_add_string(ctx->program, source);
+  neo_allocator_free(allocator, source);
+  for (neo_list_node_t it = neo_list_get_first(self->closure);
+       it != neo_list_get_tail(self->closure); it = neo_list_node_next(it)) {
+    neo_ast_node_t node = neo_list_node_get(it);
+    neo_program_add_code(ctx->program, NEO_ASM_SET_CLOSURE);
+    char *name = neo_location_get(allocator, node->location);
+    neo_program_add_string(ctx->program, name);
+    neo_allocator_free(allocator, name);
+  }
+  if (self->async) {
+    neo_program_add_code(ctx->program, NEO_ASM_SET_ASYNC);
+  }
+  if (self->generator) {
+    neo_program_add_code(ctx->program, NEO_ASM_SET_GENERATOR);
   }
 }
 
@@ -76,6 +126,7 @@ neo_create_ast_expression_function(neo_allocator_t allocator, const char *file,
       (neo_serialize_fn_t)neo_serialize_ast_expression_function;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_expression_function_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_expression_function_write;
   node->async = false;
   node->generator = false;
   node->body = NULL;
@@ -134,10 +185,6 @@ neo_ast_node_t neo_ast_read_expression_function(neo_allocator_t allocator,
   current.offset++;
   current.column++;
   scope = neo_compile_scope_push(allocator, NEO_COMPILE_SCOPE_FUNCTION);
-  if (node->name) {
-    neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
-                             &node->node, NEO_COMPILE_VARIABLE_VAR);
-  }
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != ')') {
     for (;;) {

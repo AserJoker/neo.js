@@ -1,10 +1,12 @@
 #include "compiler/ast/expression_new.h"
+#include "compiler/asm.h"
 #include "compiler/ast/expression.h"
 #include "compiler/ast/expression_call.h"
 #include "compiler/ast/expression_member.h"
 #include "compiler/ast/literal_template.h"
 #include "compiler/ast/node.h"
 #include "compiler/token.h"
+#include "compiler/writer.h"
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/list.h"
@@ -49,6 +51,33 @@ neo_serialize_ast_expression_new(neo_allocator_t allocator,
                    neo_ast_node_list_serialize(allocator, node->arguments));
   return variable;
 }
+static void neo_ast_expression_new_write(neo_allocator_t allocator,
+                                         neo_write_context_t ctx,
+                                         neo_ast_expression_new_t self) {
+  neo_list_initialize_t initialize = {true};
+  neo_list_t addresses = neo_create_list(allocator, &initialize);
+  TRY(neo_write_optional_chain(allocator, ctx, self->callee, addresses)) {
+    neo_allocator_free(allocator, addresses);
+    return;
+  }
+  if (neo_list_get_size(addresses) != 0) {
+    neo_allocator_free(allocator, addresses);
+    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
+          ctx->program->file, self->callee->location.begin.line,
+          self->callee->location.begin.column);
+    return;
+  }
+  neo_allocator_free(allocator, addresses);
+  size_t idx = 0;
+  for (neo_list_node_t it = neo_list_get_first(self->arguments);
+       it != neo_list_get_tail(self->arguments); it = neo_list_node_next(it)) {
+    neo_ast_node_t argument = neo_list_node_get(it);
+    TRY(argument->write(allocator, ctx, argument)) { return; }
+    idx++;
+  }
+  neo_program_add_code(ctx->program, NEO_ASM_NEW);
+  neo_program_add_integer(ctx->program, idx);
+}
 
 static neo_ast_expression_new_t
 neo_create_ast_expression_new(neo_allocator_t allocator) {
@@ -63,6 +92,7 @@ neo_create_ast_expression_new(neo_allocator_t allocator) {
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_expression_new;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_expression_new_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_expression_new_write;
   return node;
 }
 

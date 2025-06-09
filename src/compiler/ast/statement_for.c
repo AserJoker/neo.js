@@ -1,10 +1,14 @@
 #include "compiler/ast/statement_for.h"
+#include "compiler/asm.h"
 #include "compiler/ast/declaration_variable.h"
 #include "compiler/ast/expression.h"
 #include "compiler/ast/node.h"
 #include "compiler/ast/statement.h"
+#include "compiler/program.h"
 #include "compiler/scope.h"
 #include "compiler/token.h"
+#include "core/allocator.h"
+#include "core/buffer.h"
 #include "core/variable.h"
 #include <stdio.h>
 
@@ -23,6 +27,38 @@ static void neo_ast_statement_for_resolve_closure(neo_allocator_t allocator,
   self->condition->resolve_closure(allocator, self->condition, closure);
   self->after->resolve_closure(allocator, self->after, closure);
   self->body->resolve_closure(allocator, self->body, closure);
+}
+
+static void neo_ast_statement_for_write(neo_allocator_t allocator,
+                                        neo_write_context_t ctx,
+                                        neo_ast_statement_for_t self) {
+  neo_program_add_code(ctx->program, NEO_ASM_PUSH_LABEL);
+  neo_program_add_string(ctx->program, "");
+  size_t labeladdr = neo_buffer_get_size(ctx->program->codes);
+  neo_program_add_address(ctx->program, 0);
+  neo_writer_push_scope(allocator, ctx, self->node.scope);
+  if (self->initialize) {
+    TRY(self->initialize->write(allocator, ctx, self->initialize)) { return; }
+  }
+  size_t begin = neo_buffer_get_size(ctx->program->codes);
+  if (self->condition) {
+    TRY(self->condition->write(allocator, ctx, self->condition)) { return; }
+  } else {
+    neo_program_add_code(ctx->program, NEO_ASM_PUSH_TRUE);
+  }
+  neo_program_add_code(ctx->program, NEO_ASM_JFALSE);
+  size_t end = neo_buffer_get_size(ctx->program->codes);
+  neo_program_add_address(ctx->program, 0);
+  TRY(self->body->write(allocator, ctx, self->body)) { return; }
+  if (self->after) {
+    TRY(self->after->write(allocator, ctx, self->after)) { return; }
+  }
+  neo_program_add_code(ctx->program, NEO_ASM_JMP);
+  neo_program_add_address(ctx->program, begin);
+  neo_program_set_current(ctx->program, end);
+  neo_writer_pop_scope(allocator, ctx, self->node.scope);
+  neo_program_set_current(ctx->program, labeladdr);
+  neo_program_add_code(ctx->program, NEO_ASM_POP_LABEL);
 }
 
 static neo_variable_t
@@ -54,6 +90,7 @@ neo_create_ast_statement_for(neo_allocator_t allocator) {
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_statement_for;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_statement_for_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_statement_for_write;
   node->initialize = NULL;
   node->condition = NULL;
   node->after = NULL;

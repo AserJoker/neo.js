@@ -1,11 +1,14 @@
 #include "compiler/ast/literal_boolean.h"
+#include "compiler/asm.h"
 #include "compiler/ast/node.h"
+#include "compiler/program.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/location.h"
 #include "core/position.h"
 #include "core/variable.h"
+#include <string.h>
 
 static void neo_ast_literal_boolean_dispose(neo_allocator_t allocator,
                                             neo_ast_literal_boolean_t node) {
@@ -25,7 +28,15 @@ neo_serialize_ast_literal_boolean(neo_allocator_t allocator,
                    neo_serialize_scope(allocator, node->node.scope));
   return variable;
 }
-
+static void neo_ast_literal_boolean_write(neo_allocator_t allocator,
+                                          neo_write_context_t ctx,
+                                          neo_ast_literal_boolean_t self) {
+  if (neo_location_is(self->node.location, "true")) {
+    neo_program_add_code(ctx->program, NEO_ASM_PUSH_TRUE);
+  } else {
+    neo_program_add_code(ctx->program, NEO_ASM_PUSH_FALSE);
+  }
+}
 static neo_ast_literal_boolean_t
 neo_create_ast_literal_boolean(neo_allocator_t allocator) {
   neo_ast_literal_boolean_t node =
@@ -55,6 +66,7 @@ neo_ast_node_t neo_ast_read_literal_boolean(neo_allocator_t allocator,
   node->node.location.begin = *position;
   node->node.location.end = current;
   node->node.location.file = file;
+  node->node.write = (neo_write_fn_t)neo_ast_literal_boolean_write;
   *position = current;
   return &node->node;
 onerror:

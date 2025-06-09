@@ -1,13 +1,19 @@
 #include "compiler/ast/declaration_import.h"
+#include "compiler/asm.h"
 #include "compiler/ast/import_attribute.h"
 #include "compiler/ast/import_default.h"
 #include "compiler/ast/import_namespace.h"
 #include "compiler/ast/import_specifier.h"
 #include "compiler/ast/literal_string.h"
 #include "compiler/ast/node.h"
+#include "compiler/program.h"
 #include "compiler/token.h"
+#include "core/allocator.h"
+#include "core/list.h"
+#include "core/location.h"
 #include "core/variable.h"
 #include <stdio.h>
+#include <string.h>
 
 static void
 neo_ast_declaration_import_dispose(neo_allocator_t allocator,
@@ -16,6 +22,27 @@ neo_ast_declaration_import_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->attributes);
   neo_allocator_free(allocator, node->source);
   neo_allocator_free(allocator, node->node.scope);
+}
+
+static void
+neo_ast_declaration_import_write(neo_allocator_t allocator,
+                                 neo_write_context_t ctx,
+                                 neo_ast_declaration_import_t self) {
+  char *name = neo_location_get(allocator, self->source->location);
+  name[strlen(name) - 1] = 0;
+  neo_program_add_code(ctx->program, NEO_ASM_IMPORT);
+  neo_program_add_string(ctx->program, name + 1);
+  neo_allocator_free(allocator, name);
+  for (neo_list_node_t it = neo_list_get_first(self->attributes);
+       it != neo_list_get_tail(self->attributes); it = neo_list_node_next(it)) {
+    neo_ast_node_t attr = neo_list_node_get(it);
+    TRY(attr->write(allocator, ctx, attr)) { return; }
+  }
+  for (neo_list_node_t it = neo_list_get_first(self->specifiers);
+       it != neo_list_get_tail(self->specifiers); it = neo_list_node_next(it)) {
+    neo_ast_node_t spec = neo_list_node_get(it);
+    TRY(spec->write(allocator, ctx, spec)) { return; }
+  }
 }
 
 static neo_variable_t
@@ -48,6 +75,7 @@ neo_create_ast_declaration_import(neo_allocator_t allocator) {
   node->node.serialize =
       (neo_serialize_fn_t)neo_serialize_ast_declaration_import;
   node->node.resolve_closure = neo_ast_node_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_declaration_import_write;
   neo_list_initialize_t initialize = {true};
   node->specifiers = neo_create_list(allocator, &initialize);
   node->attributes = neo_create_list(allocator, &initialize);

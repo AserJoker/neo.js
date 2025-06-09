@@ -3,4 +3,5 @@
 #include "core/allocator.h"
 char *neo_string_concat(neo_allocator_t allocator, char *src, size_t *max,
                         const char *str);
+char *neo_string_encode(neo_allocator_t allocator, const char *src);
 #endif

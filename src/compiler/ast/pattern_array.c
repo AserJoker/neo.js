@@ -1,7 +1,9 @@
 #include "compiler/ast/pattern_array.h"
+#include "compiler/asm.h"
 #include "compiler/ast/node.h"
 #include "compiler/ast/pattern_array_item.h"
 #include "compiler/ast/pattern_rest.h"
+#include "compiler/program.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/error.h"
@@ -15,13 +17,34 @@ static void neo_ast_pattern_array_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->node.scope);
 }
 
+static void neo_ast_pattern_array_write(neo_allocator_t allocator,
+                                        neo_write_context_t ctx,
+                                        neo_ast_pattern_array_t self) {
+  neo_program_add_code(ctx->program, NEO_ASM_ITERATOR);
+  for (neo_list_node_t it = neo_list_get_first(self->items);
+       it != neo_list_get_tail(self->items); it = neo_list_node_next(it)) {
+    neo_ast_node_t item = neo_list_node_get(it);
+    if (item) {
+      TRY(item->write(allocator, ctx, item)) { return; }
+    } else {
+      neo_program_add_code(ctx->program, NEO_ASM_NEXT);
+      neo_program_add_code(ctx->program, NEO_ASM_POP);
+      neo_program_add_code(ctx->program, NEO_ASM_POP);
+    }
+  }
+  neo_program_add_code(ctx->program, NEO_ASM_POP);
+  neo_program_add_code(ctx->program, NEO_ASM_POP);
+}
+
 static void neo_ast_pattern_array_resolve_closure(neo_allocator_t allocator,
                                                   neo_ast_pattern_array_t self,
                                                   neo_list_t closure) {
   for (neo_list_node_t it = neo_list_get_first(self->items);
        it != neo_list_get_tail(self->items); it = neo_list_node_next(it)) {
     neo_ast_node_t item = (neo_ast_node_t)neo_list_node_get(it);
-    item->resolve_closure(allocator, item, closure);
+    if (item) {
+      item->resolve_closure(allocator, item, closure);
+    }
   }
 }
 
@@ -53,6 +76,7 @@ neo_create_ast_pattern_array(neo_allocator_t allocator) {
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_pattern_array;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_pattern_array_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_pattern_array_write;
   return node;
 }
 
@@ -69,26 +93,31 @@ neo_ast_node_t neo_ast_read_pattern_array(neo_allocator_t allocator,
   current.column++;
   node = neo_create_ast_pattern_array(allocator);
   SKIP_ALL(allocator, file, &current, onerror);
-  for (;;) {
-    neo_ast_node_t item =
-        TRY(neo_ast_read_pattern_array_item(allocator, file, &current)) {
-      goto onerror;
-    }
-    if (!item) {
-      item = TRY(neo_ast_read_pattern_rest(allocator, file, &current)) {
+  if (*current.offset != ']') {
+    for (;;) {
+      neo_ast_node_t item =
+          TRY(neo_ast_read_pattern_array_item(allocator, file, &current)) {
         goto onerror;
       }
-    }
-    neo_list_push(node->items, item);
-    SKIP_ALL(allocator, file, &current, onerror);
-    if (*current.offset == ',') {
-      current.offset++;
-      current.column++;
+      if (!item) {
+        item = TRY(neo_ast_read_pattern_rest(allocator, file, &current)) {
+          goto onerror;
+        }
+      }
+      neo_list_push(node->items, item);
       SKIP_ALL(allocator, file, &current, onerror);
-    } else if (*current.offset == ']') {
-      break;
-    } else {
-      goto onerror;
+      if (*current.offset == ',') {
+        current.offset++;
+        current.column++;
+        SKIP_ALL(allocator, file, &current, onerror);
+        if (*current.offset == ']') {
+          break;
+        }
+      } else if (*current.offset == ']') {
+        break;
+      } else {
+        goto onerror;
+      }
     }
   }
   SKIP_ALL(allocator, file, &current, onerror);

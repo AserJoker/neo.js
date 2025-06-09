@@ -1,10 +1,16 @@
 #include "compiler/ast/import_specifier.h"
+#include "compiler/asm.h"
 #include "compiler/ast/identifier.h"
 #include "compiler/ast/literal_string.h"
+#include "compiler/ast/node.h"
+#include "compiler/program.h"
 #include "compiler/token.h"
+#include "core/allocator.h"
 #include "core/error.h"
+#include "core/location.h"
 #include "core/variable.h"
 #include <stdio.h>
+#include <string.h>
 
 static void neo_ast_import_specifier_dispose(neo_allocator_t allocator,
                                              neo_ast_import_specifier_t node) {
@@ -12,7 +18,35 @@ static void neo_ast_import_specifier_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->identifier);
   neo_allocator_free(allocator, node->node.scope);
 }
-
+static void neo_ast_import_specifier_write(neo_allocator_t allocator,
+                                           neo_write_context_t ctx,
+                                           neo_ast_import_specifier_t self) {
+  neo_program_add_code(ctx->program, NEO_ASM_PUSH_VALUE);
+  neo_program_add_integer(ctx->program, 1);
+  char *name = neo_location_get(allocator, self->identifier->location);
+  neo_program_add_code(ctx->program, NEO_ASM_PUSH_STRING);
+  if (self->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
+    neo_program_add_string(ctx->program, name);
+  } else {
+    name[strlen(name) - 1] = 0;
+    neo_program_add_string(ctx->program, name + 1);
+  }
+  neo_allocator_free(allocator, name);
+  neo_program_add_code(ctx->program, NEO_ASM_GET_FIELD);
+  neo_ast_node_t identifier = self->alias;
+  if (!identifier) {
+    identifier = self->identifier;
+  }
+  name = neo_location_get(allocator, identifier->location);
+  neo_program_add_code(ctx->program, NEO_ASM_STORE);
+  if (identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
+    neo_program_add_string(ctx->program, name);
+  } else {
+    name[strlen(name) - 1] = 0;
+    neo_program_add_string(ctx->program, name + 1);
+  }
+  neo_allocator_free(allocator, name);
+}
 static neo_variable_t
 neo_serialize_ast_import_specifier(neo_allocator_t allocator,
                                    neo_ast_import_specifier_t node) {
@@ -40,6 +74,7 @@ neo_create_ast_import_specifier(neo_allocator_t allocator) {
   node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_import_specifier;
   node->node.resolve_closure = neo_ast_node_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_import_specifier_write;
   node->alias = NULL;
   node->identifier = NULL;
   return node;
@@ -77,11 +112,16 @@ neo_ast_node_t neo_ast_read_import_specifier(neo_allocator_t allocator,
   }
   neo_allocator_free(allocator, token);
   if (node->alias) {
-    neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
-                             node->alias, NEO_COMPILE_VARIABLE_CONST);
+    TRY(neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
+                                 node->alias, NEO_COMPILE_VARIABLE_CONST)) {
+      goto onerror;
+    };
   } else {
-    neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
-                             node->identifier, NEO_COMPILE_VARIABLE_CONST);
+    TRY(neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
+                                 node->identifier,
+                                 NEO_COMPILE_VARIABLE_CONST)) {
+      goto onerror;
+    };
   }
   node->node.location.begin = *position;
   node->node.location.end = current;

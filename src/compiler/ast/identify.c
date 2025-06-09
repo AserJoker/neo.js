@@ -1,5 +1,7 @@
+#include "compiler/asm.h"
 #include "compiler/ast/identifier.h"
 #include "compiler/ast/node.h"
+#include "compiler/program.h"
 #include "compiler/scope.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
@@ -55,6 +57,14 @@ static void neo_ast_identifier_resolve_closure(neo_allocator_t allocator,
   neo_allocator_free(allocator, name);
   neo_list_push(closure, self);
 }
+static void neo_ast_identifier_write(neo_allocator_t allocator,
+                                     neo_write_context_t ctx,
+                                     neo_ast_identifier_t self) {
+  char *name = neo_location_get(allocator, self->node.location);
+  neo_program_add_code(ctx->program, NEO_ASM_LOAD);
+  neo_program_add_string(ctx->program, name);
+  neo_allocator_free(allocator, name);
+}
 static neo_variable_t neo_serialize_ast_identifier(neo_allocator_t allocator,
                                                    neo_ast_identifier_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
@@ -77,6 +87,7 @@ neo_create_ast_literal_identify(neo_allocator_t allocator) {
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_identifier;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_identifier_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_identifier_write;
   return node;
 }
 

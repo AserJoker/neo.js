@@ -1,7 +1,10 @@
 #include "compiler/ast/expression_yield.h"
+#include "compiler/asm.h"
 #include "compiler/ast/expression.h"
 #include "compiler/ast/node.h"
+#include "compiler/program.h"
 #include "compiler/token.h"
+#include "compiler/writer.h"
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/location.h"
@@ -21,6 +24,21 @@ neo_ast_expression_yield_resolve_closure(neo_allocator_t allocator,
                                          neo_list_t closure) {
   if (self->value) {
     self->value->resolve_closure(allocator, self->value, closure);
+  }
+}
+
+static void neo_ast_expression_yield_write(neo_allocator_t allocator,
+                                           neo_write_context_t ctx,
+                                           neo_ast_expression_yield_t self) {
+  if (self->value) {
+    TRY(self->value->write(allocator, ctx, self->value)) { return; }
+  } else {
+    neo_program_add_code(ctx->program, NEO_ASM_PUSH_UNDEFINED);
+  }
+  if (self->degelate) {
+    neo_program_add_code(ctx->program, NEO_ASM_YIELD_DEGELATE);
+  } else {
+    neo_program_add_code(ctx->program, NEO_ASM_YIELD);
   }
 }
 
@@ -53,6 +71,7 @@ neo_create_ast_expression_yield(neo_allocator_t allocator) {
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_expression_yield;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_expression_yield_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_expression_yield_write;
   node->value = NULL;
   node->degelate = false;
   return node;

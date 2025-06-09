@@ -51,6 +51,9 @@ neo_map_t neo_create_map(neo_allocator_t allocator,
     map->auto_free_key = false;
     map->compare = &neo_map_compare;
   }
+  if (!map->compare) {
+    map->compare = &neo_map_compare;
+  }
   map->head.next = &map->tail;
   map->tail.last = &map->head;
   map->head.last = NULL;

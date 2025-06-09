@@ -1,6 +1,10 @@
 #include "compiler/ast/import_attribute.h"
+#include "compiler/asm.h"
 #include "compiler/ast/identifier.h"
 #include "compiler/ast/literal_string.h"
+#include "compiler/ast/node.h"
+#include "compiler/program.h"
+#include "core/allocator.h"
 #include "core/variable.h"
 #include <stdio.h>
 
@@ -9,6 +13,14 @@ static void neo_ast_import_attribute_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->value);
   neo_allocator_free(allocator, node->identifier);
   neo_allocator_free(allocator, node->node.scope);
+}
+
+static void neo_ast_import_attribute_write(neo_allocator_t allocator,
+                                           neo_write_context_t ctx,
+                                           neo_ast_import_attribute_t self) {
+  TRY(self->value->write(allocator, ctx, self->value)) { return; }
+  TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
+  neo_program_add_code(ctx->program, NEO_ASM_ASSERT);
 }
 
 static neo_variable_t
@@ -40,6 +52,7 @@ neo_create_ast_import_attribute(neo_allocator_t allocator) {
   node->value = NULL;
   node->identifier = NULL;
   node->node.resolve_closure = neo_ast_node_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_import_attribute_write;
   return node;
 }
 

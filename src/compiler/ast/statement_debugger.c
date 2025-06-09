@@ -1,5 +1,7 @@
 #include "compiler/ast/statement_debugger.h"
+#include "compiler/asm.h"
 #include "compiler/ast/node.h"
+#include "compiler/program.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/error.h"
@@ -10,6 +12,13 @@
 static void neo_statement_debugger(neo_allocator_t allocator,
                                    neo_ast_statement_debugger_t node) {
   neo_allocator_free(allocator, node->node.scope);
+}
+
+static void
+neo_ast_statement_debugger_write(neo_allocator_t allocator,
+                                 neo_write_context_t ctx,
+                                 neo_ast_statement_debugger_t self) {
+  neo_program_add_code(ctx->program, NEO_ASM_BREAKPOINT);
 }
 
 static neo_variable_t
@@ -36,6 +45,7 @@ neo_create_statement_debugger(neo_allocator_t allocator) {
   node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn_t)neo_statement_debugger;
   node->node.resolve_closure = neo_ast_node_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_statement_debugger_write;
   return node;
 }
 

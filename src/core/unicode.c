@@ -1,5 +1,6 @@
 #include "core/unicode.h"
 #include "core/allocator.h"
+#include <string.h>
 neo_utf8_char neo_utf8_read_char(const char *str) {
   neo_utf8_char chr = {str, str};
   if (*str == 0) {

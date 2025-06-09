@@ -2,6 +2,7 @@
 #include "compiler/ast/node.h"
 #include "compiler/ast/variable_declarator.h"
 #include "compiler/token.h"
+#include "core/list.h"
 #include "core/variable.h"
 #include <stdio.h>
 
@@ -22,7 +23,17 @@ static void neo_ast_declaration_variable(neo_allocator_t allocator,
     item->resolve_closure(allocator, item, closure);
   }
 }
-
+static void
+neo_ast_declaration_variable_write(neo_allocator_t allocator,
+                                   neo_write_context_t ctx,
+                                   neo_ast_declaration_variable_t self) {
+  for (neo_list_node_t it = neo_list_get_first(self->declarators);
+       it != neo_list_get_tail(self->declarators);
+       it = neo_list_node_next(it)) {
+    neo_ast_node_t item = neo_list_node_get(it);
+    TRY(item->write(allocator, ctx, item)) { return; }
+  }
+}
 static neo_variable_t
 neo_serialize_ast_declaration_variable(neo_allocator_t allocator,
                                        neo_ast_declaration_variable_t node) {
@@ -71,6 +82,7 @@ neo_create_ast_declaration_variable(neo_allocator_t allocator) {
       (neo_serialize_fn_t)neo_serialize_ast_declaration_variable;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_declaration_variable;
+  node->node.write = (neo_write_fn_t)neo_ast_declaration_variable_write;
   node->node.type = NEO_NODE_TYPE_DECLARATION_VARIABLE;
   node->declarators = neo_create_list(allocator, &initialize);
   node->kind = NEO_AST_DECLARATION_VAR;
@@ -110,16 +122,22 @@ neo_ast_node_t neo_ast_read_declaration_variable(neo_allocator_t allocator,
     }
     switch (node->kind) {
     case NEO_AST_DECLARATION_VAR:
-      neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
-                               declarator, NEO_COMPILE_VARIABLE_VAR);
+      TRY(neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
+                                   declarator, NEO_COMPILE_VARIABLE_VAR)) {
+        goto onerror;
+      };
       break;
     case NEO_AST_DECLARATION_CONST:
-      neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
-                               declarator, NEO_COMPILE_VARIABLE_CONST);
+      TRY(neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
+                                   declarator, NEO_COMPILE_VARIABLE_CONST)) {
+        goto onerror;
+      };
       break;
     case NEO_AST_DECLARATION_LET:
-      neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
-                               declarator, NEO_COMPILE_VARIABLE_LET);
+      TRY(neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
+                                   declarator, NEO_COMPILE_VARIABLE_LET)) {
+        goto onerror;
+      };
       break;
     case NEO_AST_DECLARATION_NONE:
       break;

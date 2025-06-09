@@ -3,6 +3,7 @@
 #include "compiler/ast/expression_function.h"
 #include "compiler/ast/function_argument.h"
 #include "compiler/ast/node.h"
+#include "compiler/ast/pattern_array.h"
 #include "compiler/ast/pattern_array_item.h"
 #include "compiler/ast/pattern_object.h"
 #include "compiler/ast/pattern_object_item.h"
@@ -71,6 +72,38 @@ void neo_compile_scope_declar_value(neo_allocator_t allocator,
   neo_compile_variable_t variable = neo_create_compile_variable(allocator);
   variable->type = type;
   variable->node = node;
+  char *name = NULL;
+  if (type == NEO_COMPILE_VARIABLE_FUNCTION) {
+    neo_ast_expression_function_t fn = (neo_ast_expression_function_t)node;
+    name = neo_location_get(allocator, fn->name->location);
+  } else {
+    name = neo_location_get(allocator, node->location);
+  }
+  for (neo_list_node_t it = neo_list_get_first(self->variables);
+       it != neo_list_get_tail(self->variables); it = neo_list_node_next(it)) {
+    neo_compile_variable_t variable = neo_list_node_get(it);
+    char *current = NULL;
+    if (variable->type == NEO_COMPILE_VARIABLE_FUNCTION) {
+      neo_ast_expression_function_t fn =
+          (neo_ast_expression_function_t)variable->node;
+      current = neo_location_get(allocator, fn->name->location);
+    } else {
+      current = neo_location_get(allocator, variable->node->location);
+    }
+    if (strcmp(name, current) == 0) {
+      if (type == NEO_COMPILE_VARIABLE_LET ||
+          type == NEO_COMPILE_VARIABLE_CONST ||
+          variable->type == NEO_COMPILE_VARIABLE_LET ||
+          variable->type == NEO_COMPILE_VARIABLE_CONST) {
+        THROW("SyntaxError", "Identifier '%s' has aleady been declared", name);
+        neo_allocator_free(allocator, name);
+        neo_allocator_free(allocator, current);
+        return;
+      }
+    }
+    neo_allocator_free(allocator, current);
+  }
+  neo_allocator_free(allocator, name);
   if (type == NEO_COMPILE_VARIABLE_VAR ||
       type == NEO_COMPILE_VARIABLE_FUNCTION) {
     while (self->type == NEO_COMPILE_SCOPE_BLOCK) {
@@ -91,20 +124,11 @@ void neo_compile_scope_declar(neo_allocator_t allocator,
   } else if (node->type == NEO_NODE_TYPE_EXPRESSION_FUNCTION) {
     neo_ast_expression_function_t function =
         (neo_ast_expression_function_t)node;
-    if (function->name) {
-      neo_compile_scope_declar(allocator, self, function->name,
-                               NEO_COMPILE_VARIABLE_FUNCTION);
-    }
+    neo_compile_scope_declar_value(allocator, self, &function->node,
+                                   NEO_COMPILE_VARIABLE_FUNCTION);
   } else if (node->type == NEO_NODE_TYPE_EXPRESSION_CLASS) {
     neo_ast_expression_class_t clazz = (neo_ast_expression_class_t)node;
-    if (clazz->name) {
-      neo_compile_scope_declar(allocator, self, clazz->name, type);
-    }
-  } else if (node->type == NEO_NODE_TYPE_EXPRESSION_CLASS) {
-    neo_ast_expression_class_t clazz = (neo_ast_expression_class_t)node;
-    if (clazz->name) {
-      neo_compile_scope_declar(allocator, self, clazz->name, type);
-    }
+    neo_compile_scope_declar_value(allocator, self, clazz->name, type);
   } else if (node->type == NEO_NODE_TYPE_PATTERN_REST) {
     neo_ast_pattern_rest_t rest = (neo_ast_pattern_rest_t)node;
     neo_compile_scope_declar(allocator, self, rest->identifier, type);
@@ -132,10 +156,13 @@ void neo_compile_scope_declar(neo_allocator_t allocator,
       neo_compile_scope_declar(allocator, self, neo_list_node_get(it), type);
     }
   } else if (node->type == NEO_NODE_TYPE_PATTERN_ARRAY) {
-    neo_ast_pattern_object_t object = (neo_ast_pattern_object_t)node;
-    for (neo_list_node_t it = neo_list_get_first(object->items);
-         it != neo_list_get_tail(object->items); it = neo_list_node_next(it)) {
-      neo_compile_scope_declar(allocator, self, neo_list_node_get(it), type);
+    neo_ast_pattern_array_t array = (neo_ast_pattern_array_t)node;
+    for (neo_list_node_t it = neo_list_get_first(array->items);
+         it != neo_list_get_tail(array->items); it = neo_list_node_next(it)) {
+      neo_ast_node_t item = neo_list_node_get(it);
+      if (item) {
+        neo_compile_scope_declar(allocator, self, item, type);
+      }
     }
   } else {
     THROW("SyntaxError",

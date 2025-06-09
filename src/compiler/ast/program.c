@@ -7,6 +7,8 @@
 #include "compiler/scope.h"
 #include "core/allocator.h"
 #include "core/error.h"
+#include "core/list.h"
+#include "core/location.h"
 #include "core/variable.h"
 #include <stdio.h>
 
@@ -26,6 +28,23 @@ static void neo_ast_program_resolve_closure(neo_allocator_t allocator,
     neo_ast_node_t item = (neo_ast_node_t)neo_list_node_get(it);
     item->resolve_closure(allocator, item, closure);
   }
+}
+
+static void neo_ast_program_write(neo_allocator_t allocator,
+                                  neo_write_context_t ctx,
+                                  neo_ast_program_t self) {
+  neo_writer_push_scope(allocator, ctx, self->node.scope);
+  for (neo_list_node_t it = neo_list_get_first(self->directives);
+       it != neo_list_get_tail(self->directives); it = neo_list_node_next(it)) {
+    neo_ast_node_t item = neo_list_node_get(it);
+    TRY(item->write(allocator, ctx, item)) { return; }
+  }
+  for (neo_list_node_t it = neo_list_get_first(self->body);
+       it != neo_list_get_tail(self->body); it = neo_list_node_next(it)) {
+    neo_ast_node_t item = neo_list_node_get(it);
+    TRY(item->write(allocator, ctx, item)) { return; }
+  }
+  neo_writer_pop_scope(allocator, ctx, self->node.scope);
 }
 
 static neo_variable_t neo_serialize_ast_program(neo_allocator_t allocator,
@@ -55,6 +74,7 @@ static neo_ast_program_t neo_create_ast_program(neo_allocator_t allocator) {
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_program;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_program_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_program_write;
   node->interpreter = NULL;
   neo_list_initialize_t initialize = {};
   initialize.auto_free = true;

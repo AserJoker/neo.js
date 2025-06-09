@@ -1,4 +1,5 @@
 #include "compiler/ast/statement_empty.h"
+#include "compiler/ast/node.h"
 #include "core/variable.h"
 
 static void neo_ast_statement_empty_dispose(neo_allocator_t allocator,
@@ -18,6 +19,9 @@ neo_serialize_ast_statement_empty(neo_allocator_t allocator,
                    neo_serialize_scope(allocator, node->node.scope));
   return variable;
 }
+static void neo_ast_statement_empty_write(neo_allocator_t allocator,
+                                          neo_write_context_t ctx,
+                                          neo_ast_statement_empty_t self) {}
 static neo_ast_statement_empty_t
 neo_create_empty_statement(neo_allocator_t allocator) {
   neo_ast_statement_empty_t node =
@@ -27,6 +31,7 @@ neo_create_empty_statement(neo_allocator_t allocator) {
   node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_statement_empty;
   node->node.resolve_closure = neo_ast_node_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_statement_empty_write;
   return node;
 }
 

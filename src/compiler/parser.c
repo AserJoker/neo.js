@@ -1,6 +1,8 @@
 #include "compiler/parser.h"
 #include "compiler/ast/node.h"
 #include "compiler/ast/program.h"
+#include "compiler/program.h"
+#include "compiler/writer.h"
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/position.h"
@@ -29,4 +31,17 @@ neo_ast_node_t neo_ast_parse_code(neo_allocator_t allocator, const char *file,
   return program;
 onerror:
   return NULL;
+}
+
+neo_program_t neo_ast_write_node(neo_allocator_t allocator, const char *file,
+                                 neo_ast_node_t node) {
+  neo_program_t program = neo_create_program(allocator, file);
+  neo_write_context_t ctx = neo_create_write_context(allocator, program);
+  TRY(node->write(allocator, ctx, node)) {
+    neo_allocator_free(allocator, ctx);
+    neo_allocator_free(allocator, program);
+    return NULL;
+  }
+  neo_allocator_free(allocator, ctx);
+  return program;
 }

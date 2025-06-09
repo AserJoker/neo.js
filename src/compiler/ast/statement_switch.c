@@ -1,15 +1,20 @@
 #include "compiler/ast/statement_switch.h"
+#include "compiler/asm.h"
 #include "compiler/ast/expression.h"
 #include "compiler/ast/node.h"
 #include "compiler/ast/switch_case.h"
+#include "compiler/program.h"
 #include "compiler/scope.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
+#include "core/buffer.h"
 #include "core/error.h"
 #include "core/list.h"
 #include "core/location.h"
+#include "core/map.h"
 #include "core/position.h"
 #include "core/variable.h"
+#include <stddef.h>
 #include <stdio.h>
 
 static void neo_ast_statement_switch_dispose(neo_allocator_t allocator,
@@ -28,6 +33,71 @@ neo_ast_statement_switch_resolve_closure(neo_allocator_t allocator,
     neo_ast_node_t item = (neo_ast_node_t)neo_list_node_get(it);
     item->resolve_closure(allocator, item, closure);
   }
+}
+
+static void neo_ast_statement_switch_write(neo_allocator_t allocator,
+                                           neo_write_context_t ctx,
+                                           neo_ast_statement_switch_t self) {
+  neo_program_add_code(ctx->program, NEO_ASM_PUSH_LABEL);
+  neo_program_add_string(ctx->program, "");
+  size_t labeladdr = neo_buffer_get_size(ctx->program->codes);
+  neo_program_add_address(ctx->program, 0);
+  TRY(self->condition->write(allocator, ctx, self->condition)) { return; }
+  neo_ast_switch_case_t def = NULL;
+  neo_map_initialize_t initialize;
+  initialize.auto_free_key = false;
+  initialize.auto_free_value = true;
+  initialize.compare = NULL;
+  neo_map_t addresses = neo_create_map(allocator, &initialize);
+  for (neo_list_node_t it = neo_list_get_first(self->cases);
+       it != neo_list_get_tail(self->cases); it = neo_list_node_next(it)) {
+    neo_ast_switch_case_t cas = neo_list_node_get(it);
+    if (!cas->condition) {
+      def = cas;
+    } else {
+      neo_program_add_code(ctx->program, NEO_ASM_PUSH_VALUE);
+      neo_program_add_integer(ctx->program, 1);
+      TRY(cas->condition->write(allocator, ctx, cas->condition)) { return; }
+      neo_program_add_code(ctx->program, NEO_ASM_SEQ);
+      neo_program_add_code(ctx->program, NEO_ASM_JTRUE);
+      size_t *address = neo_allocator_alloc(allocator, sizeof(size_t), NULL);
+      *address = neo_buffer_get_size(ctx->program->codes);
+      neo_program_add_address(ctx->program, 0);
+      neo_program_add_code(ctx->program, NEO_ASM_POP);
+      neo_map_set(addresses, cas, address);
+    }
+  }
+  size_t endaddr = 0;
+  if (def) {
+    size_t *address = neo_allocator_alloc(allocator, sizeof(size_t), NULL);
+    neo_program_add_code(ctx->program, NEO_ASM_JMP);
+    *address = neo_buffer_get_size(ctx->program->codes);
+    neo_program_add_address(ctx->program, 0);
+    neo_map_set(addresses, def, address);
+  } else {
+    neo_program_add_code(ctx->program, NEO_ASM_JMP);
+    endaddr = neo_buffer_get_size(ctx->program->codes);
+    neo_program_add_address(ctx->program, 0);
+  }
+  for (neo_list_node_t it = neo_list_get_first(self->cases);
+       it != neo_list_get_tail(self->cases); it = neo_list_node_next(it)) {
+    neo_ast_switch_case_t cas = neo_list_node_get(it);
+    size_t *address = neo_map_get(addresses, cas);
+    neo_program_set_current(ctx->program, *address);
+    neo_program_add_code(ctx->program, NEO_ASM_POP);
+    for (neo_list_node_t it = neo_list_get_first(cas->body);
+         it != neo_list_get_tail(cas->body); it = neo_list_node_next(it)) {
+      neo_ast_node_t item = neo_list_node_get(it);
+      TRY(item->write(allocator, ctx, item)) { return; }
+    }
+  }
+  if (endaddr) {
+    neo_program_set_current(ctx->program, endaddr);
+  }
+  neo_program_add_code(ctx->program, NEO_ASM_POP);
+  neo_allocator_free(allocator, addresses);
+  neo_program_set_current(ctx->program, labeladdr);
+  neo_program_add_code(ctx->program, NEO_ASM_POP_LABEL);
 }
 
 static neo_variable_t
@@ -57,6 +127,7 @@ neo_create_ast_statement_switch(neo_allocator_t allocator) {
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_statement_switch;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_statement_switch_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_statement_switch_write;
   node->condition = NULL;
   neo_list_initialize_t initialize = {true};
   node->cases = neo_create_list(allocator, &initialize);

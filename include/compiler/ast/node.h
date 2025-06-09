@@ -1,8 +1,8 @@
 #ifndef _H_NEO_COMPILER_NODE_
 #define _H_NEO_COMPILER_NODE_
 
-#include "compiler/program.h"
 #include "compiler/scope.h"
+#include "compiler/writer.h"
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/location.h"
@@ -100,13 +100,6 @@ typedef enum _neo_ast_node_type_t {
 } neo_ast_node_type_t;
 
 typedef struct _neo_ast_node_t *neo_ast_node_t;
-
-typedef struct _neo_write_context_t {
-  neo_program_t program;
-} *neo_write_context_t;
-
-typedef void (*neo_write_fn_t)(neo_allocator_t allocator,
-                               neo_write_context_t ctx, neo_ast_node_t node);
 
 typedef void (*neo_resolve_closure_fn_t)(neo_allocator_t allocator,
                                          neo_ast_node_t self,

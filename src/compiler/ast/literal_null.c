@@ -1,5 +1,7 @@
 #include "compiler/ast/literal_null.h"
+#include "compiler/asm.h"
 #include "compiler/ast/node.h"
+#include "compiler/program.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/error.h"
@@ -25,7 +27,11 @@ neo_serialize_ast_literal_null(neo_allocator_t allocator,
                    neo_serialize_scope(allocator, node->node.scope));
   return variable;
 }
-
+static void neo_ast_literal_null_write(neo_allocator_t allocator,
+                                       neo_write_context_t ctx,
+                                       neo_ast_literal_null_t self) {
+  neo_program_add_code(ctx->program, NEO_ASM_PUSH_NULL);
+}
 static neo_ast_literal_null_t
 neo_create_ast_literal_null(neo_allocator_t allocator) {
   neo_ast_literal_null_t node =
@@ -35,6 +41,7 @@ neo_create_ast_literal_null(neo_allocator_t allocator) {
   node->node.scope = NULL;
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_literal_null;
   node->node.resolve_closure = neo_ast_node_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_literal_null_write;
   return node;
 }
 

@@ -16,6 +16,7 @@ typedef struct _neo_ast_class_property_t {
   neo_list_t decorators;
   bool computed;
   bool static_;
+  bool accessor;
 } *neo_ast_class_property_t;
 
 neo_ast_node_t neo_ast_read_class_property(neo_allocator_t allocator,

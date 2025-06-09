@@ -1,7 +1,10 @@
 #include "compiler/ast/expression_spread.h"
+#include "compiler/asm.h"
 #include "compiler/ast/expression.h"
 #include "compiler/ast/node.h"
+#include "compiler/program.h"
 #include "compiler/token.h"
+#include "compiler/writer.h"
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/location.h"
@@ -21,6 +24,13 @@ neo_ast_expression_spread_resolve_closure(neo_allocator_t allocator,
                                           neo_ast_expression_spread_t self,
                                           neo_list_t closure) {
   self->value->resolve_closure(allocator, self->value, closure);
+}
+
+static void neo_ast_expression_spread_write(neo_allocator_t allocator,
+                                            neo_write_context_t ctx,
+                                            neo_ast_expression_spread_t self) {
+  TRY(self->value->write(allocator, ctx, self->value)) { return; }
+  neo_program_add_code(ctx->program, NEO_ASM_SPREAD);
 }
 
 static neo_variable_t
@@ -50,6 +60,7 @@ neo_create_ast_expression_spread(neo_allocator_t allocator) {
       (neo_serialize_fn_t)neo_serialize_ast_expression_function;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_expression_spread_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_expression_spread_write;
   return node;
 }
 

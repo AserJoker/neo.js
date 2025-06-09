@@ -1,7 +1,9 @@
 #include "compiler/ast/statement_labeled.h"
+#include "compiler/asm.h"
 #include "compiler/ast/identifier.h"
 #include "compiler/ast/node.h"
 #include "compiler/ast/statement.h"
+#include "compiler/program.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/error.h"
@@ -21,6 +23,19 @@ neo_ast_statement_label_resolve_closure(neo_allocator_t allocator,
                                         neo_ast_statement_labeled_t self,
                                         neo_list_t closure) {
   self->statement->resolve_closure(allocator, self->statement, closure);
+}
+static void neo_ast_statement_labeled_write(neo_allocator_t allocator,
+                                            neo_write_context_t ctx,
+                                            neo_ast_statement_labeled_t self) {
+  char *label = neo_location_get(allocator, self->label->location);
+  neo_program_add_code(ctx->program, NEO_ASM_PUSH_LABEL);
+  neo_program_add_string(ctx->program, label);
+  size_t labeladdr = neo_buffer_get_size(ctx->program->codes);
+  neo_program_add_address(ctx->program, 0);
+  TRY(self->statement->write(allocator, ctx, self->statement)) { return; }
+  neo_program_set_current(ctx->program, labeladdr);
+  neo_program_add_code(ctx->program, NEO_ASM_POP_LABEL);
+  neo_allocator_free_ex(allocator, label);
 }
 static neo_variable_t
 neo_serialize_ast_statement_labeled(neo_allocator_t allocator,
@@ -50,6 +65,7 @@ neo_create_ast_statement_labeled(neo_allocator_t allocator) {
       (neo_serialize_fn_t)neo_serialize_ast_statement_labeled;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_statement_label_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_statement_labeled_write;
   node->label = NULL;
   node->statement = NULL;
   return node;

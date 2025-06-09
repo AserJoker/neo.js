@@ -1,4 +1,5 @@
 #include "compiler/ast/declaration_export.h"
+#include "compiler/asm.h"
 #include "compiler/ast/declaration_class.h"
 #include "compiler/ast/declaration_function.h"
 #include "compiler/ast/declaration_variable.h"
@@ -6,11 +7,25 @@
 #include "compiler/ast/export_default.h"
 #include "compiler/ast/export_namespace.h"
 #include "compiler/ast/export_specifier.h"
+#include "compiler/ast/expression_class.h"
+#include "compiler/ast/expression_function.h"
 #include "compiler/ast/import_attribute.h"
 #include "compiler/ast/literal_string.h"
+#include "compiler/ast/node.h"
+#include "compiler/ast/pattern_array.h"
+#include "compiler/ast/pattern_array_item.h"
+#include "compiler/ast/pattern_object.h"
+#include "compiler/ast/pattern_object_item.h"
+#include "compiler/ast/pattern_rest.h"
+#include "compiler/ast/variable_declarator.h"
+#include "compiler/program.h"
 #include "compiler/token.h"
+#include "core/allocator.h"
+#include "core/list.h"
+#include "core/location.h"
 #include "core/variable.h"
 #include <stdio.h>
+#include <string.h>
 
 static void
 neo_ast_declaration_export_dispose(neo_allocator_t allocator,
@@ -20,7 +35,155 @@ neo_ast_declaration_export_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->specifiers);
   neo_allocator_free(allocator, node->node.scope);
 }
+static void neo_ast_declaration_export_variable(neo_allocator_t allocator,
+                                                neo_write_context_t ctx,
+                                                neo_ast_node_t node) {
+  if (node->type == NEO_NODE_TYPE_IDENTIFIER) {
+    char *name = neo_location_get(allocator, node->location);
+    neo_program_add_code(ctx->program, NEO_ASM_LOAD);
+    neo_program_add_string(ctx->program, name);
+    neo_program_add_code(ctx->program, NEO_ASM_EXPORT);
+    neo_program_add_string(ctx->program, name);
+    neo_allocator_free(allocator, name);
+  } else if (node->type == NEO_NODE_TYPE_PATTERN_REST) {
+    neo_ast_pattern_rest_t rest = (neo_ast_pattern_rest_t)node;
+    neo_ast_declaration_export_variable(allocator, ctx, rest->identifier);
+  } else if (node->type == NEO_NODE_TYPE_PATTERN_ARRAY) {
+    neo_ast_pattern_array_t array = (neo_ast_pattern_array_t)node;
+    for (neo_list_node_t it = neo_list_get_first(array->items);
+         it != neo_list_get_tail(array->items); it = neo_list_node_next(it)) {
+      neo_ast_node_t item = neo_list_node_get(it);
+      if (item) {
+        neo_ast_declaration_export_variable(allocator, ctx, item);
+      }
+    }
+  } else if (node->type == NEO_NODE_TYPE_PATTERN_OBJECT) {
+    neo_ast_pattern_object_t object = (neo_ast_pattern_object_t)node;
+    for (neo_list_node_t it = neo_list_get_first(object->items);
+         it != neo_list_get_tail(object->items); it = neo_list_node_next(it)) {
+      neo_ast_node_t item = neo_list_node_get(it);
+      neo_ast_declaration_export_variable(allocator, ctx, item);
+    }
+  } else if (node->type == NEO_NODE_TYPE_PATTERN_ARRAY_ITEM) {
+    neo_ast_pattern_array_item_t item = (neo_ast_pattern_array_item_t)node;
+    neo_ast_declaration_export_variable(allocator, ctx, item->identifier);
+  } else if (node->type == NEO_NODE_TYPE_PATTERN_OBJECT_ITEM) {
+    neo_ast_pattern_object_item_t item = (neo_ast_pattern_object_item_t)node;
+    if (item->alias) {
+      neo_ast_declaration_export_variable(allocator, ctx, item->alias);
+    } else {
+      neo_ast_declaration_export_variable(allocator, ctx, item->identifier);
+    }
+  }
+}
 
+static void
+neo_ast_declaration_export_write(neo_allocator_t allocator,
+                                 neo_write_context_t ctx,
+                                 neo_ast_declaration_export_t self) {
+  if (self->source) {
+    char *name = neo_location_get(allocator, self->source->location);
+    name[strlen(name) - 1] = 0;
+    neo_program_add_code(ctx->program, NEO_ASM_IMPORT);
+    neo_program_add_string(ctx->program, name + 1);
+    neo_allocator_free(allocator, name);
+    for (neo_list_node_t it = neo_list_get_first(self->attributes);
+         it != neo_list_get_tail(self->attributes);
+         it = neo_list_node_next(it)) {
+      neo_ast_node_t attr = neo_list_node_get(it);
+      TRY(attr->write(allocator, ctx, attr)) { return; }
+    }
+    for (neo_list_node_t it = neo_list_get_first(self->specifiers);
+         it != neo_list_get_tail(self->specifiers);
+         it = neo_list_node_get(it)) {
+      neo_program_add_code(ctx->program, NEO_ASM_PUSH_VALUE);
+      neo_program_add_integer(ctx->program, 1);
+      neo_ast_node_t spec = neo_list_node_get(it);
+      if (spec->type == NEO_NODE_TYPE_EXPORT_NAMESPACE) {
+        neo_ast_export_namespace_t exp = (neo_ast_export_namespace_t)spec;
+        char *name = neo_location_get(allocator, exp->identifier->location);
+        neo_program_add_code(ctx->program, NEO_ASM_EXPORT);
+        if (exp->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
+          neo_program_add_string(ctx->program, name);
+        } else {
+          name[strlen(name) - 1] = 0;
+          neo_program_add_string(ctx->program, name + 1);
+        }
+        neo_allocator_free(allocator, name);
+        return;
+      } else if (spec->type == NEO_NODE_TYPE_EXPORT_ALL) {
+        neo_program_add_code(ctx->program, NEO_ASM_EXPORT_ALL);
+        return;
+      } else if (spec->type == NEO_NODE_TYPE_EXPORT_SPECIFIER) {
+        neo_ast_export_specifier_t exp = (neo_ast_export_specifier_t)spec;
+        char *name = neo_location_get(allocator, exp->identifier->location);
+        if (exp->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
+          neo_program_add_string(ctx->program, name);
+        } else {
+          name[strlen(name) - 1] = 0;
+          neo_program_add_string(ctx->program, name + 1);
+        }
+        neo_program_add_code(ctx->program, NEO_ASM_GET_FIELD);
+        neo_ast_node_t identifier = exp->alias;
+        if (!identifier) {
+          identifier = exp->identifier;
+        }
+        neo_program_add_code(ctx->program, NEO_ASM_EXPORT);
+        if (identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
+          neo_program_add_string(ctx->program, name);
+        } else {
+          name[strlen(name) - 1] = 0;
+          neo_program_add_string(ctx->program, name + 1);
+        }
+        neo_allocator_free(allocator, name);
+      }
+    }
+    neo_program_add_code(ctx->program, NEO_ASM_POP);
+  } else {
+    for (neo_list_node_t it = neo_list_get_first(self->specifiers);
+         it != neo_list_get_tail(self->specifiers);
+         it = neo_list_node_next(it)) {
+      neo_ast_node_t item = neo_list_node_get(it);
+      if (item->type == NEO_NODE_TYPE_DECLARATION_FUNCTION) {
+        neo_ast_declaration_function_t declar =
+            (neo_ast_declaration_function_t)item;
+        neo_ast_expression_function_t func =
+            (neo_ast_expression_function_t)declar->declaration;
+        TRY(item->write(allocator, ctx, item)) { return; }
+        char *name = neo_location_get(allocator, func->name->location);
+        neo_program_add_code(ctx->program, NEO_ASM_LOAD);
+        neo_program_add_string(ctx->program, name);
+        neo_program_add_code(ctx->program, NEO_ASM_EXPORT);
+        neo_program_add_string(ctx->program, name);
+        neo_allocator_free(allocator, name);
+      } else if (item->type == NEO_NODE_TYPE_DECLARATION_CLASS) {
+        neo_ast_declaration_class_t declar = (neo_ast_declaration_class_t)item;
+        neo_ast_expression_class_t clazz =
+            (neo_ast_expression_class_t)declar->declaration;
+        TRY(item->write(allocator, ctx, item)) { return; }
+        char *name = neo_location_get(allocator, clazz->name->location);
+        neo_program_add_code(ctx->program, NEO_ASM_LOAD);
+        neo_program_add_string(ctx->program, name);
+        neo_program_add_code(ctx->program, NEO_ASM_EXPORT);
+        neo_program_add_string(ctx->program, name);
+        neo_allocator_free(allocator, name);
+      } else if (item->type == NEO_NODE_TYPE_DECLARATION_VARIABLE) {
+        neo_ast_declaration_variable_t declar =
+            (neo_ast_declaration_variable_t)item;
+        TRY(item->write(allocator, ctx, item)) { return; }
+        for (neo_list_node_t it = neo_list_get_first(declar->declarators);
+             it != neo_list_get_tail(declar->declarators);
+             it = neo_list_node_next(it)) {
+          neo_ast_variable_declarator_t declarator = neo_list_node_get(it);
+          neo_ast_declaration_export_variable(allocator, ctx,
+                                              declarator->identifier);
+        }
+      } else {
+        TRY(item->write(allocator, ctx, item)) { return; }
+      }
+    }
+  }
+}
 static void
 neo_ast_declaration_export_resolve_closure(neo_allocator_t allocator,
                                            neo_ast_declaration_export_t self,
@@ -63,6 +226,7 @@ neo_create_ast_declaration_export(neo_allocator_t allocator) {
   node->node.scope = NULL;
   node->node.serialize =
       (neo_serialize_fn_t)neo_serialize_ast_declaration_export;
+  node->node.write = (neo_write_fn_t)neo_ast_declaration_export_write;
   node->source = NULL;
   neo_list_initialize_t initialize = {true};
   node->attributes = neo_create_list(allocator, &initialize);

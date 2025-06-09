@@ -1,8 +1,12 @@
 #include "compiler/ast/statement_while.h"
+#include "compiler/asm.h"
 #include "compiler/ast/expression.h"
 #include "compiler/ast/node.h"
 #include "compiler/ast/statement.h"
+#include "compiler/program.h"
 #include "compiler/token.h"
+#include "core/allocator.h"
+#include "core/buffer.h"
 #include "core/variable.h"
 #include <stdio.h>
 
@@ -18,6 +22,26 @@ neo_ast_statement_while_resolve_closure(neo_allocator_t allocator,
                                         neo_list_t closure) {
   self->condition->resolve_closure(allocator, self->condition, closure);
   self->body->resolve_closure(allocator, self->body, closure);
+}
+static void neo_ast_statement_while_write(neo_allocator_t allocator,
+                                          neo_write_context_t ctx,
+                                          neo_ast_statement_while_t self) {
+  neo_program_add_code(ctx->program, NEO_ASM_PUSH_LABEL);
+  neo_program_add_string(ctx->program, "");
+  size_t labeladdr = neo_buffer_get_size(ctx->program->codes);
+  neo_program_add_address(ctx->program, 0);
+  size_t begin = neo_buffer_get_size(ctx->program->codes);
+  TRY(self->condition->write(allocator, ctx, self->condition)) { return; }
+  neo_program_add_code(ctx->program, NEO_ASM_JFALSE);
+  size_t end = neo_buffer_get_size(ctx->program->codes);
+  neo_program_add_address(ctx->program, 0);
+  neo_program_add_code(ctx->program, NEO_ASM_POP);
+  TRY(self->body->write(allocator, ctx, self->body)) { return; }
+  neo_program_add_code(ctx->program, NEO_ASM_JMP);
+  neo_program_add_address(ctx->program, begin);
+  neo_program_set_current(ctx->program, end);
+  neo_program_set_current(ctx->program, labeladdr);
+  neo_program_add_code(ctx->program, NEO_ASM_POP_LABEL);
 }
 static neo_variable_t
 neo_serialize_ast_statement_while(neo_allocator_t allocator,
@@ -46,6 +70,7 @@ neo_create_ast_statement_while(neo_allocator_t allocator) {
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_statement_while;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_statement_while_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_statement_while_write;
   node->body = NULL;
   node->condition = NULL;
   return node;

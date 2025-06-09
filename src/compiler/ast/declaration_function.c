@@ -1,9 +1,12 @@
 #include "compiler/ast/declaration_function.h"
+#include "compiler/asm.h"
 #include "compiler/ast/expression_function.h"
 #include "compiler/ast/node.h"
+#include "compiler/program.h"
 #include "compiler/scope.h"
 #include "core/allocator.h"
 #include "core/list.h"
+#include "core/location.h"
 #include "core/variable.h"
 #include <stdio.h>
 static void
@@ -13,6 +16,27 @@ neo_ast_declaration_function_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->node.scope);
 }
 
+static void
+neo_ast_declaration_function_write(neo_allocator_t allocator,
+                                   neo_write_context_t ctx,
+                                   neo_ast_declaration_function_t self) {
+  neo_ast_expression_function_t function =
+      (neo_ast_expression_function_t)self->declaration;
+  char *name = neo_location_get(allocator, function->name->location);
+  neo_program_add_code(ctx->program, NEO_ASM_LOAD);
+  neo_program_add_string(ctx->program, name);
+  neo_allocator_free(allocator, name);
+  for (neo_list_node_t it = neo_list_get_first(function->closure);
+       it != neo_list_get_tail(function->closure);
+       it = neo_list_node_next(it)) {
+    neo_ast_node_t node = neo_list_node_get(it);
+    neo_program_add_code(ctx->program, NEO_ASM_SET_CLOSURE);
+    char *name = neo_location_get(allocator, node->location);
+    neo_program_add_string(ctx->program, name);
+    neo_allocator_free(allocator, name);
+  }
+  neo_program_add_code(ctx->program, NEO_ASM_POP);
+}
 static void neo_ast_declaration_function_resolve_closure(
     neo_allocator_t allocator, neo_ast_declaration_function_t node,
     neo_list_t closure) {
@@ -45,6 +69,7 @@ neo_create_ast_declaration_function(neo_allocator_t allocator) {
       (neo_serialize_fn_t)neo_serialize_ast_declaration_function;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_declaration_function_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_declaration_function_write;
   node->declaration = NULL;
   return node;
 }
@@ -71,8 +96,11 @@ neo_ast_node_t neo_ast_read_declaration_function(neo_allocator_t allocator,
   node->node.location.end = current;
   node->node.location.file = file;
   *position = current;
-  neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
-                           node->declaration, NEO_COMPILE_VARIABLE_FUNCTION);
+  TRY(neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
+                               node->declaration,
+                               NEO_COMPILE_VARIABLE_FUNCTION)) {
+    goto onerror;
+  };
   return &node->node;
 onerror:
   neo_allocator_free(allocator, node);

@@ -1,9 +1,13 @@
 #include "compiler/ast/object_property.h"
+#include "compiler/asm.h"
 #include "compiler/ast/expression.h"
 #include "compiler/ast/node.h"
 #include "compiler/ast/object_key.h"
+#include "compiler/program.h"
+#include "compiler/writer.h"
 #include "core/allocator.h"
 #include "core/error.h"
+#include "core/location.h"
 #include "core/position.h"
 #include "core/variable.h"
 #include <stdio.h>
@@ -22,13 +26,38 @@ neo_ast_object_property_resolve_closure(neo_allocator_t allocator,
   if (self->value) {
     self->value->resolve_closure(allocator, self->value, closure);
   } else {
-    self->identifier->resolve_closure(allocator, self->identifier, closure
-                                      );
+    self->identifier->resolve_closure(allocator, self->identifier, closure);
   }
   if (self->computed) {
-    self->identifier->resolve_closure(allocator, self->identifier, closure
-                                      );
+    self->identifier->resolve_closure(allocator, self->identifier, closure);
   }
+}
+
+static void neo_ast_object_property_write(neo_allocator_t allocator,
+                                          neo_write_context_t ctx,
+                                          neo_ast_object_property_t self) {
+  if (self->computed) {
+    TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
+  } else {
+    neo_program_add_code(ctx->program, NEO_ASM_PUSH_STRING);
+    char *name = neo_location_get(allocator, self->identifier->location);
+    neo_program_add_string(ctx->program, name);
+    neo_allocator_free(allocator, name);
+  }
+  if (self->value) {
+    self->value->write(allocator, ctx, self->value);
+  } else if (self->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
+    neo_program_add_code(ctx->program, NEO_ASM_LOAD);
+    char *name = neo_location_get(allocator, self->identifier->location);
+    neo_program_add_string(ctx->program, name);
+    neo_allocator_free(allocator, name);
+  } else {
+    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
+          ctx->program->file, self->identifier->location.begin.line,
+          self->identifier->location.begin.column);
+    return;
+  }
+  neo_program_add_code(ctx->program, NEO_ASM_SET_FIELD);
 }
 
 static neo_variable_t
@@ -63,6 +92,7 @@ neo_create_ast_object_property(neo_allocator_t allocator) {
   node->node.serialize = (neo_serialize_fn_t)neo_serialize_ast_object_property;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_object_property_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_object_property_write;
   node->computed = false;
   return node;
 }

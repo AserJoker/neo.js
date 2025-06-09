@@ -2,6 +2,8 @@
 #include "compiler/ast/expression.h"
 #include "compiler/ast/expression_spread.h"
 #include "compiler/ast/node.h"
+#include "compiler/program.h"
+#include "compiler/writer.h"
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/list.h"
@@ -27,6 +29,23 @@ neo_ast_expression_call_resolve_closure(neo_allocator_t allocator,
     neo_ast_node_t item = (neo_ast_node_t)neo_list_node_get(it);
     item->resolve_closure(allocator, item, closure);
   }
+}
+
+static void neo_ast_expression_call_write(neo_allocator_t allocator,
+                                          neo_write_context_t ctx,
+                                          neo_ast_expression_call_t self) {
+  neo_list_initialize_t initialize = {true};
+  neo_list_t addresses = neo_create_list(allocator, &initialize);
+  TRY(neo_write_optional_chain(allocator, ctx, &self->node, addresses)) {
+    neo_allocator_free(allocator, addresses);
+    return;
+  }
+  for (neo_list_node_t it = neo_list_get_first(addresses);
+       it != neo_list_get_tail(addresses); it = neo_list_node_next(it)) {
+    size_t *address = neo_list_node_get(it);
+    neo_program_set_current(ctx->program, *address);
+  }
+  neo_allocator_free(allocator, addresses);
 }
 
 static neo_variable_t
@@ -60,6 +79,7 @@ neo_create_ast_expression_call(neo_allocator_t allocator) {
   neo_list_initialize_t initialize = {true};
   node->callee = NULL;
   node->arguments = neo_create_list(allocator, &initialize);
+  node->node.write = (neo_write_fn_t)neo_ast_expression_call_write;
   return node;
 }
 

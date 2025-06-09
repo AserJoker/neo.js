@@ -1,11 +1,15 @@
 #include "compiler/ast/pattern_array_item.h"
+#include "compiler/asm.h"
 #include "compiler/ast/expression.h"
 #include "compiler/ast/identifier.h"
 #include "compiler/ast/node.h"
 #include "compiler/ast/pattern_array.h"
 #include "compiler/ast/pattern_object.h"
+#include "compiler/program.h"
 #include "core/allocator.h"
+#include "core/buffer.h"
 #include "core/error.h"
+#include "core/location.h"
 #include "core/position.h"
 #include "core/variable.h"
 static void
@@ -24,6 +28,30 @@ neo_ast_pattern_array_item_resolve_closure(neo_allocator_t allocator,
     self->value->resolve_closure(allocator, self->value, closure);
   }
   self->identifier->resolve_closure(allocator, self->identifier, closure);
+}
+
+static void
+neo_ast_pattern_array_item_write(neo_allocator_t allocator,
+                                 neo_write_context_t ctx,
+                                 neo_ast_pattern_array_item_t self) {
+  neo_program_add_code(ctx->program, NEO_ASM_NEXT);
+  neo_program_add_code(ctx->program, NEO_ASM_POP);
+  if (self->value) {
+    neo_program_add_code(ctx->program, NEO_ASM_JNOT_NULL);
+    size_t address = neo_buffer_get_size(ctx->program->codes);
+    neo_program_add_address(ctx->program, 0);
+    neo_program_add_code(ctx->program, NEO_ASM_POP);
+    TRY(self->value->write(allocator, ctx, self->value)) { return; }
+    neo_program_set_current(ctx->program, address);
+  }
+  if (self->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
+    char *name = neo_location_get(allocator, self->identifier->location);
+    neo_program_add_code(ctx->program, NEO_ASM_STORE);
+    neo_program_add_string(ctx->program, name);
+    neo_allocator_free(allocator, name);
+  } else {
+    TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
+  }
 }
 
 static neo_variable_t
@@ -57,6 +85,7 @@ neo_create_ast_pattern_array_item(neo_allocator_t allocator) {
       (neo_serialize_fn_t)neo_serialize_ast_pattern_array_item;
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_pattern_array_item_resolve_closure;
+  node->node.write = (neo_write_fn_t)neo_ast_pattern_array_item_write;
   return node;
 }
 
