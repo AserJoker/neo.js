@@ -22,6 +22,7 @@ typedef enum _neo_compile_variable_type_t {
   NEO_COMPILE_VARIABLE_VAR,
   NEO_COMPILE_VARIABLE_LET,
   NEO_COMPILE_VARIABLE_CONST,
+  NEO_COMPILE_VARIABLE_USING,
   NEO_COMPILE_VARIABLE_FUNCTION,
 } neo_compile_variable_type_t;
 

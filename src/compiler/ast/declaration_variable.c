@@ -54,6 +54,11 @@ neo_serialize_ast_declaration_variable(neo_allocator_t allocator,
         variable, "kind",
         neo_create_variable_string(allocator, "NEO_AST_DECLARATION_CONST"));
     break;
+  case NEO_AST_DECLARATION_USING:
+    neo_variable_set(
+        variable, "kind",
+        neo_create_variable_string(allocator, "NEO_AST_DECLARATION_USING"));
+    break;
   case NEO_AST_DECLARATION_LET:
     neo_variable_set(
         variable, "kind",
@@ -106,6 +111,8 @@ neo_ast_node_t neo_ast_read_declaration_variable(neo_allocator_t allocator,
     node->kind = NEO_AST_DECLARATION_LET;
   } else if (neo_location_is(token->location, "var")) {
     node->kind = NEO_AST_DECLARATION_VAR;
+  } else if (neo_location_is(token->location, "using")) {
+    node->kind = NEO_AST_DECLARATION_USING;
   } else {
     goto onerror;
   }
@@ -130,6 +137,12 @@ neo_ast_node_t neo_ast_read_declaration_variable(neo_allocator_t allocator,
     case NEO_AST_DECLARATION_CONST:
       TRY(neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
                                    declarator, NEO_COMPILE_VARIABLE_CONST)) {
+        goto onerror;
+      };
+      break;
+    case NEO_AST_DECLARATION_USING:
+      TRY(neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
+                                   declarator, NEO_COMPILE_VARIABLE_USING)) {
         goto onerror;
       };
       break;

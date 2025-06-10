@@ -9,6 +9,7 @@ extern "C" {
 typedef enum _neo_ast_declaration_kind_t {
   NEO_AST_DECLARATION_VAR,
   NEO_AST_DECLARATION_CONST,
+  NEO_AST_DECLARATION_USING,
   NEO_AST_DECLARATION_LET,
   NEO_AST_DECLARATION_NONE,
 } neo_ast_declaration_kind_t;

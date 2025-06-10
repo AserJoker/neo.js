@@ -1,55 +1,28 @@
 
-#include "compiler/ast/node.h"
-#include "compiler/parser.h"
-#include "compiler/program.h"
 #include "core/allocator.h"
 #include "core/error.h"
+#include "core/unicode.h"
+#include "js/context.h"
+#include "js/runtime.h"
+#include "js/string.h"
+#include "js/type.h"
+#include "js/variable.h"
 #include <stdio.h>
-#include <string.h>
 
 int main(int argc, char *argv[]) {
+  neo_utf8_char ustr = neo_utf8_read_char("中");
+  uint32_t utf32 = neo_utf8_char_to_utf32(ustr);
   neo_allocator_t allocator = neo_create_default_allocator();
   neo_error_initialize(allocator);
-  if (argc > 1) {
-    FILE *fp = fopen(argv[1], "r");
-    if (!fp) {
-      fprintf(stderr, "cannot open file: %s\n", argv[1]);
-      return -1;
-    }
-    fseek(fp, 0, SEEK_END);
-    size_t size = ftell(fp);
-    char *buf = (char *)neo_allocator_alloc(allocator, size + 1, NULL);
-    memset(buf, 0, size + 1);
-    fseek(fp, 0, SEEK_SET);
-    fread(buf, size, 1, fp);
-    fclose(fp);
-    neo_ast_node_t node = neo_ast_parse_code(allocator, argv[1], buf);
-    if (neo_has_error()) {
-      neo_error_t error = neo_poll_error(__FUNCTION__, __FILE__, __LINE__);
-      char *msg = neo_error_to_string(error);
-      fprintf(stderr, "%s\n", msg);
-      neo_allocator_free(allocator, msg);
-      neo_allocator_free(allocator, error);
-    } else {
-      neo_program_t program = neo_ast_write_node(allocator, argv[1], node);
-      if (neo_has_error()) {
-        neo_error_t error = neo_poll_error(__FUNCTION__, __FILE__, __LINE__);
-        char *msg = neo_error_to_string(error);
-        fprintf(stderr, "%s\n", msg);
-        neo_allocator_free(allocator, msg);
-        neo_allocator_free(allocator, error);
-      } else {
-        neo_program_write(allocator, stdout, program);
-      }
-      // neo_variable_t variable = neo_ast_node_serialize(allocator, node);
-      // char *json = neo_json_stringify(allocator, variable);
-      // neo_allocator_free(allocator, json);
-      // neo_allocator_free(allocator, variable);
-      neo_allocator_free(allocator, program);
-    }
-    neo_allocator_free(allocator, node);
-    neo_allocator_free(allocator, buf);
-  }
+  neo_js_runtime_t runtime = neo_create_js_runtime(allocator);
+  neo_js_context_t ctx = neo_create_js_context(allocator, runtime);
+  neo_js_variable_t num = neo_js_context_create_number(ctx, 123.0f);
+  neo_js_variable_t str = neo_js_context_tostring(ctx, num);
+  neo_js_string_t string =
+      neo_js_value_to_string(neo_js_variable_get_value(str));
+  printf("%ls\n", neo_js_string_get_value(string));
+  neo_allocator_free(allocator, ctx);
+  neo_allocator_free(allocator, runtime);
   neo_delete_allocator(allocator);
   return 0;
 }

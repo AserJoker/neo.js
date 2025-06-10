@@ -25,7 +25,7 @@ static void neo_map_dispose(neo_allocator_t allocator, neo_map_t self) {
   }
 }
 
-static int8_t neo_map_compare(void *a, void *b) {
+static int8_t neo_map_compare(const void *a, const void *b) {
   if ((intptr_t)a - (intptr_t)b) {
     return 1;
   }
@@ -83,7 +83,7 @@ void neo_map_set(neo_map_t self, void *key, void *value) {
   }
 }
 
-void *neo_map_get(neo_map_t self, void *key) {
+void *neo_map_get(neo_map_t self, const void *key) {
   neo_map_node_t node = neo_map_find(self, key);
   if (node) {
     return node->value;
@@ -115,7 +115,7 @@ void neo_map_erase(neo_map_t self, neo_map_node_t position) {
   }
 }
 
-neo_map_node_t neo_map_find(neo_map_t self, void *key) {
+neo_map_node_t neo_map_find(neo_map_t self, const void *key) {
   neo_map_node_t node = self->head.next;
   while (node != &self->tail) {
     if (self->compare(node->key, key) == 0) {

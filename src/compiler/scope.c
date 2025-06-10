@@ -93,6 +93,7 @@ void neo_compile_scope_declar_value(neo_allocator_t allocator,
     if (strcmp(name, current) == 0) {
       if (type == NEO_COMPILE_VARIABLE_LET ||
           type == NEO_COMPILE_VARIABLE_CONST ||
+          type == NEO_COMPILE_VARIABLE_USING ||
           variable->type == NEO_COMPILE_VARIABLE_LET ||
           variable->type == NEO_COMPILE_VARIABLE_CONST) {
         THROW("SyntaxError", "Identifier '%s' has aleady been declared", name);
@@ -195,6 +196,11 @@ neo_serialize_compile_variable(neo_allocator_t allocator,
     neo_variable_set(
         variable, "type",
         neo_create_variable_string(allocator, "NEO_COMPILE_VARIABLE_CONST"));
+    break;
+  case NEO_COMPILE_VARIABLE_USING:
+    neo_variable_set(
+        variable, "type",
+        neo_create_variable_string(allocator, "NEO_COMPILE_VARIABLE_USING"));
     break;
   case NEO_COMPILE_VARIABLE_FUNCTION:
     neo_variable_set(

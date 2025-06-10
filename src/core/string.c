@@ -44,3 +44,8 @@ char *neo_string_encode(neo_allocator_t allocator, const char *src) {
   str[idx] = 0;
   return str;
 }
+char *neo_create_string(neo_allocator_t allocator, const char *src) {
+  char *str = neo_allocator_alloc(allocator, strlen(str) + 1, NULL);
+  strcpy(str, src);
+  return str;
+}

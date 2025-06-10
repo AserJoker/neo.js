@@ -125,6 +125,22 @@ void neo_list_erase(neo_list_t self, neo_list_node_t position) {
   return;
 }
 
+neo_list_node_t neo_list_find(neo_list_t self, void *item) {
+  for (neo_list_node_t it = self->head.next; it != &self->tail; it = it->next) {
+    if (it->data == item) {
+      return it;
+    }
+  }
+  return NULL;
+}
+
+void neo_list_delete(neo_list_t self, void *item) {
+  neo_list_node_t it = neo_list_find(self, item);
+  if (it) {
+    neo_list_erase(self, it);
+  }
+}
+
 neo_list_node_t neo_list_node_next(neo_list_node_t self) { return self->next; }
 
 neo_list_node_t neo_list_node_last(neo_list_node_t self) { return self->last; }
