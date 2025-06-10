@@ -34,6 +34,9 @@ char *neo_string_encode(neo_allocator_t allocator, const char *src) {
     } else if (src[current] == '\r') {
       str[idx++] = '\\';
       str[idx++] = 'r';
+    } else if (src[current] == '\"') {
+      str[idx++] = '\\';
+      str[idx++] = '"';
     } else {
       str[idx++] = src[current];
     }
