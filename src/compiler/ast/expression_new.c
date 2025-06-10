@@ -75,8 +75,8 @@ static void neo_ast_expression_new_write(neo_allocator_t allocator,
     TRY(argument->write(allocator, ctx, argument)) { return; }
     idx++;
   }
-  neo_program_add_code(ctx->program, NEO_ASM_NEW);
-  neo_program_add_integer(ctx->program, idx);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_NEW);
+  neo_program_add_integer(allocator, ctx->program, idx);
 }
 
 static neo_ast_expression_new_t

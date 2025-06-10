@@ -17,14 +17,14 @@ static void neo_ast_import_default_dispose(neo_allocator_t allocator,
 static void neo_ast_import_default_write(neo_allocator_t allocator,
                                          neo_write_context_t ctx,
                                          neo_ast_import_default_t self) {
-  neo_program_add_code(ctx->program, NEO_ASM_PUSH_VALUE);
-  neo_program_add_integer(ctx->program, 1);
-  neo_program_add_code(ctx->program, NEO_ASM_PUSH_STRING);
-  neo_program_add_string(ctx->program, "default");
-  neo_program_add_code(ctx->program, NEO_ASM_GET_FIELD);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+  neo_program_add_integer(allocator, ctx->program, 1);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+  neo_program_add_string(allocator, ctx->program, "default");
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
   char *name = neo_location_get(allocator, self->identifier->location);
-  neo_program_add_code(ctx->program, NEO_ASM_STORE);
-  neo_program_add_string(ctx->program, name);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
+  neo_program_add_string(allocator, ctx->program, name);
   neo_allocator_free(allocator, name);
 }
 

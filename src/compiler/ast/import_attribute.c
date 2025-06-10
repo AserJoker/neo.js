@@ -20,7 +20,7 @@ static void neo_ast_import_attribute_write(neo_allocator_t allocator,
                                            neo_ast_import_attribute_t self) {
   TRY(self->value->write(allocator, ctx, self->value)) { return; }
   TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
-  neo_program_add_code(ctx->program, NEO_ASM_ASSERT);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_ASSERT);
 }
 
 static neo_variable_t

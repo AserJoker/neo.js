@@ -33,12 +33,12 @@ static void neo_ast_expression_yield_write(neo_allocator_t allocator,
   if (self->value) {
     TRY(self->value->write(allocator, ctx, self->value)) { return; }
   } else {
-    neo_program_add_code(ctx->program, NEO_ASM_PUSH_UNDEFINED);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_UNDEFINED);
   }
   if (self->degelate) {
-    neo_program_add_code(ctx->program, NEO_ASM_YIELD_DEGELATE);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_YIELD_DEGELATE);
   } else {
-    neo_program_add_code(ctx->program, NEO_ASM_YIELD);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_YIELD);
   }
 }
 

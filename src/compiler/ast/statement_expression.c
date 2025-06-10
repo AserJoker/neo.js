@@ -22,7 +22,7 @@ neo_ast_statement_expression_write(neo_allocator_t allocator,
                                    neo_ast_statement_expression_t self) {
   TRY(self->expression->write(allocator, ctx, self->expression)) { return; }
   if (self->expression->type != NEO_NODE_TYPE_EXPRESSION_ASSIGMENT) {
-    neo_program_add_code(ctx->program, NEO_ASM_POP);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   }
 }
 

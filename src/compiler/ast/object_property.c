@@ -39,17 +39,17 @@ static void neo_ast_object_property_write(neo_allocator_t allocator,
   if (self->computed) {
     TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
   } else {
-    neo_program_add_code(ctx->program, NEO_ASM_PUSH_STRING);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
     char *name = neo_location_get(allocator, self->identifier->location);
-    neo_program_add_string(ctx->program, name);
+    neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   }
   if (self->value) {
     self->value->write(allocator, ctx, self->value);
   } else if (self->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
-    neo_program_add_code(ctx->program, NEO_ASM_LOAD);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
     char *name = neo_location_get(allocator, self->identifier->location);
-    neo_program_add_string(ctx->program, name);
+    neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   } else {
     THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
@@ -57,7 +57,7 @@ static void neo_ast_object_property_write(neo_allocator_t allocator,
           self->identifier->location.begin.column);
     return;
   }
-  neo_program_add_code(ctx->program, NEO_ASM_SET_FIELD);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
 }
 
 static neo_variable_t

@@ -20,8 +20,8 @@ static void neo_ast_directive_write(neo_allocator_t allocator,
                                     neo_ast_directive_t self) {
   char *direcitve = neo_location_get(allocator, self->node.location);
   direcitve[strlen(direcitve) - 1] = '\0';
-  neo_program_add_code(ctx->program, NEO_ASM_DIRECTIVE);
-  neo_program_add_string(ctx->program, direcitve + 1);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_DIRECTIVE);
+  neo_program_add_string(allocator, ctx->program, direcitve + 1);
   neo_allocator_free(allocator, direcitve);
 }
 

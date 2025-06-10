@@ -39,7 +39,7 @@ int main(int argc, char *argv[]) {
         neo_allocator_free(allocator, msg);
         neo_allocator_free(allocator, error);
       } else {
-        neo_program_write(stdout, program);
+        neo_program_write(allocator, stdout, program);
       }
       // neo_variable_t variable = neo_ast_node_serialize(allocator, node);
       // char *json = neo_json_stringify(allocator, variable);

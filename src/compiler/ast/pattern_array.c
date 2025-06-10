@@ -20,20 +20,20 @@ static void neo_ast_pattern_array_dispose(neo_allocator_t allocator,
 static void neo_ast_pattern_array_write(neo_allocator_t allocator,
                                         neo_write_context_t ctx,
                                         neo_ast_pattern_array_t self) {
-  neo_program_add_code(ctx->program, NEO_ASM_ITERATOR);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_ITERATOR);
   for (neo_list_node_t it = neo_list_get_first(self->items);
        it != neo_list_get_tail(self->items); it = neo_list_node_next(it)) {
     neo_ast_node_t item = neo_list_node_get(it);
     if (item) {
       TRY(item->write(allocator, ctx, item)) { return; }
     } else {
-      neo_program_add_code(ctx->program, NEO_ASM_NEXT);
-      neo_program_add_code(ctx->program, NEO_ASM_POP);
-      neo_program_add_code(ctx->program, NEO_ASM_POP);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_NEXT);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
     }
   }
-  neo_program_add_code(ctx->program, NEO_ASM_POP);
-  neo_program_add_code(ctx->program, NEO_ASM_POP);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
 }
 
 static void neo_ast_pattern_array_resolve_closure(neo_allocator_t allocator,

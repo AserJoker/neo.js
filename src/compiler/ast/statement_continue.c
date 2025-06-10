@@ -34,13 +34,13 @@ static void
 neo_ast_statement_continue_write(neo_allocator_t allocator,
                                  neo_write_context_t ctx,
                                  neo_ast_statement_continue_t self) {
-  neo_program_add_code(ctx->program, NEO_ASM_CONTINUE);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_CONTINUE);
   if (self->label) {
     char *label = neo_location_get(allocator, self->label->location);
-    neo_program_add_string(ctx->program, label);
+    neo_program_add_string(allocator, ctx->program, label);
     neo_allocator_free(allocator, label);
   } else {
-    neo_program_add_string(ctx->program, "");
+    neo_program_add_string(allocator, ctx->program, "");
   }
 }
 static neo_ast_statement_continue_t

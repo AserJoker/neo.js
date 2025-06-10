@@ -28,18 +28,18 @@ neo_ast_pattern_object_item_write(neo_allocator_t allocator,
                                   neo_write_context_t ctx,
                                   neo_ast_pattern_object_item_t self) {
 
-  neo_program_add_code(ctx->program, NEO_ASM_PUSH_VALUE);
-  neo_program_add_integer(ctx->program, 1);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+  neo_program_add_integer(allocator, ctx->program, 1);
   if (self->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
     char *name = neo_location_get(allocator, self->identifier->location);
-    neo_program_add_code(ctx->program, NEO_ASM_PUSH_STRING);
-    neo_program_add_string(ctx->program, name);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+    neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   } else if (self->identifier->type == NEO_NODE_TYPE_LITERAL_STRING) {
     char *name = neo_location_get(allocator, self->identifier->location);
     name[strlen(name) - 1] = 0;
-    neo_program_add_code(ctx->program, NEO_ASM_PUSH_STRING);
-    neo_program_add_string(ctx->program, name + 1);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+    neo_program_add_string(allocator, ctx->program, name + 1);
     neo_allocator_free(allocator, name);
   } else {
     THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
@@ -47,28 +47,28 @@ neo_ast_pattern_object_item_write(neo_allocator_t allocator,
           self->identifier->location.begin.column);
     return;
   }
-  neo_program_add_code(ctx->program, NEO_ASM_GET_FIELD);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
   if (self->value) {
-    neo_program_add_code(ctx->program, NEO_ASM_JNOT_NULL);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_JNOT_NULL);
     size_t address = neo_buffer_get_size(ctx->program->codes);
-    neo_program_add_address(ctx->program, 0);
-    neo_program_add_code(ctx->program, NEO_ASM_POP);
+    neo_program_add_address(allocator, ctx->program, 0);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
     TRY(self->value->write(allocator, ctx, self->value)) { return; }
     neo_program_set_current(ctx->program, address);
   }
   if (self->alias) {
     if (self->alias->type == NEO_NODE_TYPE_IDENTIFIER) {
       char *name = neo_location_get(allocator, self->alias->location);
-      neo_program_add_code(ctx->program, NEO_ASM_STORE);
-      neo_program_add_string(ctx->program, name);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
+      neo_program_add_string(allocator, ctx->program, name);
       neo_allocator_free(allocator, name);
     } else {
       TRY(self->alias->write(allocator, ctx, self->alias)) { return; }
     }
   } else if (self->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
     char *name = neo_location_get(allocator, self->identifier->location);
-    neo_program_add_code(ctx->program, NEO_ASM_STORE);
-    neo_program_add_string(ctx->program, name);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
+    neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   } else {
     THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",

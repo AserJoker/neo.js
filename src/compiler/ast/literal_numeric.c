@@ -34,19 +34,19 @@ static void neo_ast_literal_numeric_write(neo_allocator_t allocator,
                                           neo_ast_literal_numeric_t self) {
   if (self->node.type == NEO_NODE_TYPE_LITERAL_BIGINT) {
     char *name = neo_location_get(allocator, self->node.location);
-    neo_program_add_code(ctx->program, NEO_ASM_PUSH_BIGINT);
-    neo_program_add_string(ctx->program, name);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_BIGINT);
+    neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   } else if (neo_location_is(self->node.location, "NaN")) {
-    neo_program_add_code(ctx->program, NEO_ASM_PUSH_NAN);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_NAN);
   } else if (neo_location_is(self->node.location, "Infinity")) {
-    neo_program_add_code(ctx->program, NEO_ASM_PUSH_INFINTY);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_INFINTY);
   } else {
     char *str = neo_location_get(allocator, self->node.location);
     double value = atof(str);
     neo_allocator_free(allocator, str);
-    neo_program_add_code(ctx->program, NEO_ASM_PUSH_NUMBER);
-    neo_program_add_number(ctx->program, value);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_NUMBER);
+    neo_program_add_number(allocator, ctx->program, value);
   }
 }
 

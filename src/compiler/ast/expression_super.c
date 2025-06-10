@@ -32,8 +32,8 @@ neo_serialize_ast_expression_super(neo_allocator_t allocator,
 static void neo_ast_expression_super_write(neo_allocator_t allocator,
                                            neo_write_context_t ctx,
                                            neo_ast_expression_super_t self) {
-  neo_program_add_code(ctx->program, NEO_ASM_LOAD);
-  neo_program_add_string(ctx->program, "super");
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
+  neo_program_add_string(allocator, ctx->program, "super");
 }
 
 static neo_ast_expression_super_t

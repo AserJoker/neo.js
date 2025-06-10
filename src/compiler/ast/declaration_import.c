@@ -30,8 +30,8 @@ neo_ast_declaration_import_write(neo_allocator_t allocator,
                                  neo_ast_declaration_import_t self) {
   char *name = neo_location_get(allocator, self->source->location);
   name[strlen(name) - 1] = 0;
-  neo_program_add_code(ctx->program, NEO_ASM_IMPORT);
-  neo_program_add_string(ctx->program, name + 1);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_IMPORT);
+  neo_program_add_string(allocator, ctx->program, name + 1);
   neo_allocator_free(allocator, name);
   for (neo_list_node_t it = neo_list_get_first(self->attributes);
        it != neo_list_get_tail(self->attributes); it = neo_list_node_next(it)) {

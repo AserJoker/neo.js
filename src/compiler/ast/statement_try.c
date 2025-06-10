@@ -31,19 +31,19 @@ static void neo_ast_statement_try_resolve_closure(neo_allocator_t allocator,
 static void neo_ast_statement_try_write(neo_allocator_t allocator,
                                         neo_write_context_t ctx,
                                         neo_ast_statement_try_t self) {
-  neo_program_add_code(ctx->program, NEO_ASM_TRY);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_TRY);
   size_t catchaddr = neo_buffer_get_size(ctx->program->codes);
-  neo_program_add_address(ctx->program, 0);
+  neo_program_add_address(allocator, ctx->program, 0);
   size_t deferaddr = 0;
   if (self->finally) {
-    neo_program_add_code(ctx->program, NEO_ASM_DEFER);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_DEFER);
     deferaddr = neo_buffer_get_size(ctx->program->codes);
-    neo_program_add_address(ctx->program, 0);
+    neo_program_add_address(allocator, ctx->program, 0);
   }
   TRY(self->body->write(allocator, ctx, self->body)) { return; }
-  neo_program_add_code(ctx->program, NEO_ASM_JMP);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
   size_t end = neo_buffer_get_size(ctx->program->codes);
-  neo_program_add_address(ctx->program, 0);
+  neo_program_add_address(allocator, ctx->program, 0);
   if (self->catch) {
     neo_program_set_current(ctx->program, catchaddr);
     TRY(self->catch->write(allocator, ctx, self->catch)) { return; }

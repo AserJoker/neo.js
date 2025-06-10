@@ -28,13 +28,13 @@ static void neo_ast_statement_labeled_write(neo_allocator_t allocator,
                                             neo_write_context_t ctx,
                                             neo_ast_statement_labeled_t self) {
   char *label = neo_location_get(allocator, self->label->location);
-  neo_program_add_code(ctx->program, NEO_ASM_PUSH_LABEL);
-  neo_program_add_string(ctx->program, label);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_LABEL);
+  neo_program_add_string(allocator, ctx->program, label);
   size_t labeladdr = neo_buffer_get_size(ctx->program->codes);
-  neo_program_add_address(ctx->program, 0);
+  neo_program_add_address(allocator, ctx->program, 0);
   TRY(self->statement->write(allocator, ctx, self->statement)) { return; }
   neo_program_set_current(ctx->program, labeladdr);
-  neo_program_add_code(ctx->program, NEO_ASM_POP_LABEL);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_POP_LABEL);
   neo_allocator_free_ex(allocator, label);
 }
 static neo_variable_t

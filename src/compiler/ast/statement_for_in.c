@@ -30,40 +30,40 @@ neo_ast_statement_for_in_resolve_closure(neo_allocator_t allocator,
 static void neo_ast_statement_for_in_write(neo_allocator_t allocator,
                                            neo_write_context_t ctx,
                                            neo_ast_statement_for_in_t self) {
-  neo_program_add_code(ctx->program, NEO_ASM_PUSH_LABEL);
-  neo_program_add_string(ctx->program, "");
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_LABEL);
+  neo_program_add_string(allocator, ctx->program, "");
   size_t labeladdr = neo_buffer_get_size(ctx->program->codes);
-  neo_program_add_address(ctx->program, 0);
+  neo_program_add_address(allocator, ctx->program, 0);
   TRY(self->right->write(allocator, ctx, self->right)) { return; }
-  neo_program_add_code(ctx->program, NEO_ASM_KEYS);
-  neo_program_add_code(ctx->program, NEO_ASM_ITERATOR);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_KEYS);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_ITERATOR);
   size_t begin = neo_buffer_get_size(ctx->program->codes);
   neo_writer_push_scope(allocator, ctx, self->node.scope);
-  neo_program_add_code(ctx->program, NEO_ASM_NEXT);
-  neo_program_add_code(ctx->program, NEO_ASM_JTRUE);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_NEXT);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_JTRUE);
   size_t address = neo_buffer_get_size(ctx->program->codes);
-  neo_program_add_address(ctx->program, 0);
-  neo_program_add_code(ctx->program, NEO_ASM_POP);
+  neo_program_add_address(allocator, ctx->program, 0);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   if (self->left->type == NEO_NODE_TYPE_IDENTIFIER) {
     char *name = neo_location_get(allocator, self->left->location);
-    neo_program_add_code(ctx->program, NEO_ASM_STORE);
-    neo_program_add_string(ctx->program, name);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
+    neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   } else {
     TRY(self->left->write(allocator, ctx, self->left)) { return; }
   }
   TRY(self->body->write(allocator, ctx, self->body)) { return; }
-  neo_program_add_code(ctx->program, NEO_ASM_JMP);
-  neo_program_add_address(ctx->program, begin);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
+  neo_program_add_address(allocator, ctx->program, begin);
   neo_program_set_current(ctx->program, address);
-  neo_program_add_code(ctx->program, NEO_ASM_POP);
-  neo_program_add_code(ctx->program, NEO_ASM_POP);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   neo_writer_pop_scope(allocator, ctx, self->node.scope);
-  neo_program_add_code(ctx->program, NEO_ASM_POP);
-  neo_program_add_code(ctx->program, NEO_ASM_POP);
-  neo_program_add_code(ctx->program, NEO_ASM_POP);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   neo_program_set_current(ctx->program, labeladdr);
-  neo_program_add_code(ctx->program, NEO_ASM_POP_LABEL);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_POP_LABEL);
 }
 
 static neo_variable_t
