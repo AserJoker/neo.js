@@ -35,11 +35,19 @@ static neo_js_variable_t neo_js_boolean_to_boolean(neo_js_context_t ctx,
   return self;
 }
 
+static neo_js_variable_t neo_js_boolean_to_number(neo_js_context_t ctx,
+                                                  neo_js_variable_t self) {
+  neo_js_boolean_t boolean = neo_js_value_to_boolean(
+      neo_js_handle_get_value(neo_js_variable_get_handle(self)));
+  return neo_js_context_create_number(ctx, boolean->boolean ? 1 : 0);
+}
+
 neo_js_type_t neo_get_js_boolean_type() {
   static struct _neo_js_type_t type = {
       neo_js_boolean_typeof,
       neo_js_boolean_to_string,
       neo_js_boolean_to_boolean,
+      neo_js_boolean_to_number,
   };
   return &type;
 }

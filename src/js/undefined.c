@@ -10,7 +10,6 @@
 
 struct _neo_js_undefined_t {
   struct _neo_js_value_t value;
-  bool undefined;
 };
 
 static const wchar_t *neo_js_undefined_typeof(neo_js_context_t ctx,
@@ -31,12 +30,16 @@ static neo_js_variable_t neo_js_undefined_to_boolean(neo_js_context_t ctx,
                                                      neo_js_variable_t self) {
   return neo_js_context_create_boolean(ctx, false);
 }
-
+static neo_js_variable_t neo_js_undefined_to_number(neo_js_context_t ctx,
+                                                    neo_js_variable_t self) {
+  return neo_js_context_create_nan(ctx);
+}
 neo_js_type_t neo_get_js_undefined_type() {
   static struct _neo_js_type_t type = {
       neo_js_undefined_typeof,
       neo_js_undefined_to_string,
       neo_js_undefined_to_boolean,
+      neo_js_undefined_to_number,
   };
   return &type;
 }

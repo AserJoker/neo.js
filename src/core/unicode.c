@@ -1,6 +1,9 @@
 #include "core/unicode.h"
 #include "core/allocator.h"
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 neo_utf8_char neo_utf8_read_char(const char *str) {
   neo_utf8_char chr = {str, str};
   if (*str == 0) {
@@ -128,4 +131,41 @@ bool neo_utf8_char_is_space_separator(neo_utf8_char chr) {
   }
   uint32_t utf32 = neo_utf8_char_to_utf32(chr);
   return IS_SPACE_SEPARATOR(utf32);
+}
+
+char *neo_wstring_to_string(neo_allocator_t allocator, wchar_t *wstring) {
+  size_t len = wcslen(wstring);
+  char *string = neo_allocator_alloc(allocator, len * 2 + 1, NULL);
+  size_t offset = 0;
+  for (size_t idx = 0; idx < len; idx++) {
+    wchar_t chr = wstring[idx];
+    char utf8[4];
+    int clength = wctomb(utf8, chr);
+    for (size_t idx = 0; idx < clength; idx++) {
+      string[offset++] = utf8[idx];
+    }
+  }
+  string[offset] = 0;
+  return string;
+}
+
+wchar_t *neo_string_to_wstring(neo_allocator_t allocator, char *string) {
+  size_t len = strlen(string);
+  wchar_t *wstring =
+      neo_allocator_alloc(allocator, sizeof(wchar_t) * (len + 1), NULL);
+  size_t offset = 0;
+  const char *pstring = string;
+  while (*pstring) {
+    neo_utf8_char chr = neo_utf8_read_char(pstring);
+    pstring = chr.end;
+    uint32_t utf32 = neo_utf8_char_to_utf32(chr);
+    if (utf32 < 0xffff) {
+      wstring[offset++] = (uint16_t)utf32;
+    } else if (utf32 < 0xeffff) {
+      wstring[offset++] = (uint16_t)(0xd800 + (utf32 >> 10) - 0x40);
+      wstring[offset++] = (uint16_t)(0xdc00 + (utf32 & 0x3ff));
+    }
+  }
+  wstring[offset] = 0;
+  return wstring;
 }

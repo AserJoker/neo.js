@@ -23,10 +23,14 @@ typedef neo_js_variable_t (*neo_js_to_string_fn_t)(neo_js_context_t ctx,
 typedef neo_js_variable_t (*neo_js_to_boolean_fn_t)(neo_js_context_t ctx,
                                                     neo_js_variable_t self);
 
+typedef neo_js_variable_t (*neo_js_to_number_fn_t)(neo_js_context_t ctx,
+                                                   neo_js_variable_t self);
+
 typedef struct _neo_js_type_t {
   neo_js_typeof_fn_t typeof_fn;
-  neo_js_to_string_fn_t tostring_fn;
-  neo_js_to_boolean_fn_t toboolean_fn;
+  neo_js_to_string_fn_t to_string_fn;
+  neo_js_to_boolean_fn_t to_boolean_fn;
+  neo_js_to_number_fn_t to_number_fn;
 } *neo_js_type_t;
 #ifdef __cplusplus
 }

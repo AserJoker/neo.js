@@ -2,6 +2,7 @@
 #include "core/allocator.h"
 #include "js/boolean.h"
 #include "js/handle.h"
+#include "js/infinity.h"
 #include "js/nan.h"
 #include "js/number.h"
 #include "js/runtime.h"
@@ -90,6 +91,14 @@ neo_js_variable_t neo_js_context_create_nan(neo_js_context_t self) {
   return neo_js_context_create_variable(
       self, neo_create_js_handle(allocator, neo_js_nan_to_value(nan)));
 }
+neo_js_variable_t neo_js_context_create_infinity(neo_js_context_t self,
+                                                 bool negative) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  neo_js_infinity_t infinity = neo_create_js_infinity(allocator, negative);
+  return neo_js_context_create_variable(
+      self,
+      neo_create_js_handle(allocator, neo_js_infinity_to_value(infinity)));
+}
 
 neo_js_variable_t neo_js_context_create_number(neo_js_context_t self,
                                                double value) {
@@ -119,14 +128,20 @@ const wchar_t *neo_js_context_typeof(neo_js_context_t self,
   neo_js_value_t value = neo_js_variable_get_value(variable);
   return value->type->typeof_fn(self, variable);
 }
-neo_js_variable_t neo_js_context_tostring(neo_js_context_t self,
-                                          neo_js_variable_t variable) {
-  neo_js_value_t value = neo_js_variable_get_value(variable);
-  return value->type->tostring_fn(self, variable);
-}
-
-neo_js_variable_t neo_js_context_toboolean(neo_js_context_t self,
+neo_js_variable_t neo_js_context_to_string(neo_js_context_t self,
                                            neo_js_variable_t variable) {
   neo_js_value_t value = neo_js_variable_get_value(variable);
-  return value->type->toboolean_fn(self, variable);
+  return value->type->to_string_fn(self, variable);
+}
+
+neo_js_variable_t neo_js_context_to_boolean(neo_js_context_t self,
+                                            neo_js_variable_t variable) {
+  neo_js_value_t value = neo_js_variable_get_value(variable);
+  return value->type->to_boolean_fn(self, variable);
+}
+
+neo_js_variable_t neo_js_context_to_number(neo_js_context_t self,
+                                           neo_js_variable_t variable) {
+  neo_js_value_t value = neo_js_variable_get_value(variable);
+  return value->type->to_number_fn(self, variable);
 }

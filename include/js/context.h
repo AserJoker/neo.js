@@ -35,6 +35,9 @@ neo_js_variable_t neo_js_context_create_undefined(neo_js_context_t self);
 
 neo_js_variable_t neo_js_context_create_nan(neo_js_context_t self);
 
+neo_js_variable_t neo_js_context_create_infinity(neo_js_context_t self,
+                                                 bool negative);
+
 neo_js_variable_t neo_js_context_create_number(neo_js_context_t self,
                                                double value);
 
@@ -47,10 +50,13 @@ neo_js_variable_t neo_js_context_create_boolean(neo_js_context_t self,
 const wchar_t *neo_js_context_typeof(neo_js_context_t self,
                                      neo_js_variable_t variable);
 
-neo_js_variable_t neo_js_context_tostring(neo_js_context_t self,
-                                          neo_js_variable_t variable);
+neo_js_variable_t neo_js_context_to_string(neo_js_context_t self,
+                                           neo_js_variable_t variable);
 
-neo_js_variable_t neo_js_context_toboolean(neo_js_context_t self,
+neo_js_variable_t neo_js_context_to_boolean(neo_js_context_t self,
+                                            neo_js_variable_t variable);
+
+neo_js_variable_t neo_js_context_to_number(neo_js_context_t self,
                                            neo_js_variable_t variable);
 
 #ifdef __cplusplus

@@ -37,12 +37,17 @@ static neo_js_variable_t neo_js_number_to_boolean(neo_js_context_t ctx,
       neo_js_value_to_number(neo_js_variable_get_value(self));
   return neo_js_context_create_boolean(ctx, number->number != 0);
 }
+static neo_js_variable_t neo_js_number_to_number(neo_js_context_t ctx,
+                                                 neo_js_variable_t self) {
+  return self;
+}
 
 neo_js_type_t neo_get_js_number_type() {
   static struct _neo_js_type_t type = {
       neo_js_number_typeof,
       neo_js_number_to_string,
       neo_js_number_to_boolean,
+      neo_js_number_to_number,
   };
   return &type;
 }
