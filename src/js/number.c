@@ -8,11 +8,6 @@
 #include "js/value.h"
 #include "js/variable.h"
 
-struct _neo_js_number_t {
-  struct _neo_js_value_t value;
-  double number;
-};
-
 static const wchar_t *neo_js_number_typeof(neo_js_context_t ctx,
                                            neo_js_variable_t variable) {
   return L"number";
@@ -25,10 +20,10 @@ static neo_js_variable_t neo_js_number_to_string(neo_js_context_t ctx,
   neo_js_number_t number = neo_js_value_to_number(
       neo_js_handle_get_value(neo_js_variable_get_handle(self)));
   wchar_t str[32];
-  swprintf(str, 32, L"%lf", number->number);
+  swprintf(str, 32, L"%lg", number->number);
   neo_js_string_t string = neo_create_js_string(allocator, str);
   return neo_js_context_create_variable(
-      ctx, neo_create_js_handle(allocator, neo_js_string_to_value(string)));
+      ctx, neo_create_js_handle(allocator, &string->value));
 }
 
 static neo_js_variable_t neo_js_number_to_boolean(neo_js_context_t ctx,
@@ -63,15 +58,9 @@ neo_js_number_t neo_create_js_number(neo_allocator_t allocator, double value) {
   return number;
 }
 
-neo_js_value_t neo_js_number_to_value(neo_js_number_t self) {
-  return &self->value;
-}
-
 neo_js_number_t neo_js_value_to_number(neo_js_value_t value) {
   if (value->type == neo_get_js_number_type()) {
     return (neo_js_number_t)value;
   }
   return NULL;
 }
-
-double neo_js_number_get_value(neo_js_number_t self) { return self->number; }

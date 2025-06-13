@@ -8,11 +8,6 @@
 #include "js/value.h"
 #include "js/variable.h"
 
-struct _neo_js_boolean_t {
-  struct _neo_js_value_t value;
-  bool boolean;
-};
-
 static const wchar_t *neo_js_boolean_typeof(neo_js_context_t ctx,
                                             neo_js_variable_t variable) {
   return L"boolean";
@@ -27,7 +22,7 @@ static neo_js_variable_t neo_js_boolean_to_string(neo_js_context_t ctx,
   neo_js_string_t string =
       neo_create_js_string(allocator, boolean->boolean ? L"true" : L"false");
   return neo_js_context_create_variable(
-      ctx, neo_create_js_handle(allocator, neo_js_string_to_value(string)));
+      ctx, neo_create_js_handle(allocator, &string->value));
 }
 
 static neo_js_variable_t neo_js_boolean_to_boolean(neo_js_context_t ctx,
@@ -63,15 +58,9 @@ neo_js_boolean_t neo_create_js_boolean(neo_allocator_t allocator, bool value) {
   return boolean;
 }
 
-neo_js_value_t neo_js_boolean_to_value(neo_js_boolean_t self) {
-  return &self->value;
-}
-
 neo_js_boolean_t neo_js_value_to_boolean(neo_js_value_t value) {
   if (value->type == neo_get_js_boolean_type()) {
     return (neo_js_boolean_t)value;
   }
   return NULL;
 }
-
-bool neo_js_boolean_get_value(neo_js_boolean_t self) { return self->boolean; }

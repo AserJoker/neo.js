@@ -10,11 +10,13 @@ extern "C" {
 
 typedef struct _neo_js_nan_t *neo_js_nan_t;
 
-neo_js_nan_t neo_create_js_nan(neo_allocator_t allocator);
+struct _neo_js_nan_t {
+  struct _neo_js_value_t value;
+};
 
 neo_js_type_t neo_get_js_nan_type();
 
-neo_js_value_t neo_js_nan_to_value(neo_js_nan_t self);
+neo_js_nan_t neo_create_js_nan(neo_allocator_t allocator);
 
 neo_js_nan_t neo_js_value_to_nan(neo_js_value_t value);
 

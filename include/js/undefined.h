@@ -10,11 +10,13 @@ extern "C" {
 
 typedef struct _neo_js_undefined_t *neo_js_undefined_t;
 
-neo_js_undefined_t neo_create_js_undefined(neo_allocator_t allocator);
+struct _neo_js_undefined_t {
+  struct _neo_js_value_t value;
+};
 
 neo_js_type_t neo_get_js_undefined_type();
 
-neo_js_value_t neo_js_undefined_to_value(neo_js_undefined_t self);
+neo_js_undefined_t neo_create_js_undefined(neo_allocator_t allocator);
 
 neo_js_undefined_t neo_js_value_to_undefined(neo_js_value_t value);
 

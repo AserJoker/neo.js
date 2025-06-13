@@ -173,6 +173,6 @@ neo_variable_t neo_variable_set(neo_variable_t self, const char *key,
   char *buf = neo_allocator_alloc(self->allocator, len + 1, NULL);
   strcpy(buf, key);
   buf[len] = 0;
-  neo_map_set(self->dict, buf, item);
+  neo_map_set(self->dict, buf, item, NULL);
   return self;
 }

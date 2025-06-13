@@ -9,6 +9,7 @@ typedef enum _neo_asm_code_t {
   NEO_ASM_POP_SCOPE,
   NEO_ASM_POP,
   NEO_ASM_STORE,
+  NEO_ASM_DEF,
   NEO_ASM_LOAD,
   NEO_ASM_CLONE,
   NEO_ASM_WITH,

@@ -85,10 +85,10 @@ void neo_writer_push_scope(neo_allocator_t allocator, neo_write_context_t ctx,
         size_t *address = neo_allocator_alloc(allocator, sizeof(size_t), NULL);
         *address = neo_buffer_get_size(ctx->program->codes);
         neo_program_add_address(allocator, ctx->program, 0);
-        neo_map_set(ctx->scope->functions, variable, address);
+        neo_map_set(ctx->scope->functions, variable, address, NULL);
       } break;
       }
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_DEF);
       neo_program_add_string(allocator, ctx->program, name);
       neo_allocator_free(allocator, name);
     }
@@ -106,7 +106,7 @@ void neo_writer_pop_scope(neo_allocator_t allocator, neo_write_context_t ctx,
         neo_ast_expression_function_t function =
             (neo_ast_expression_function_t)variable->node;
         size_t address =
-            *(size_t *)neo_map_get(ctx->scope->functions, variable);
+            *(size_t *)neo_map_get(ctx->scope->functions, variable, NULL);
         neo_program_set_current(ctx->program, address);
         neo_writer_push_scope(allocator, ctx, function->node.scope);
         if (neo_list_get_size(function->arguments)) {
