@@ -5,7 +5,6 @@
 #include "core/string.h"
 #include "js/handle.h"
 #include "js/variable.h"
-#include <alloca.h>
 #include <string.h>
 struct _neo_js_scope_t {
   neo_js_scope_t parent;
@@ -139,14 +138,15 @@ neo_js_handle_t neo_js_scope_get_root_handle(neo_js_scope_t self) {
   return self->root;
 }
 neo_js_variable_t neo_js_scope_get_variable(neo_js_scope_t self,
-                                            const char *name) {
+                                            const wchar_t *name) {
   return neo_map_get(self->named_variables, name, NULL);
 }
 void neo_js_scope_set_variable(neo_allocator_t allocator, neo_js_scope_t self,
-                               neo_js_variable_t variable, const char *name) {
+                               neo_js_variable_t variable,
+                               const wchar_t *name) {
   neo_list_push(self->variables, variable);
   if (name) {
-    neo_map_set(self->named_variables, neo_create_string(allocator, name),
+    neo_map_set(self->named_variables, neo_create_wstring(allocator, name),
                 variable, NULL);
   }
 }

@@ -39,11 +39,17 @@ static neo_js_variable_t neo_js_function_to_string(neo_js_context_t ctx,
 
 neo_js_type_t neo_get_js_function_type() {
   static struct _neo_js_type_t type = {0};
-  type.typeof_fn = neo_js_function_typeof;
   neo_js_type_t otype = neo_get_js_object_type();
+  type.typeof_fn = neo_js_function_typeof;
   type.to_boolean_fn = otype->to_boolean_fn;
   type.to_number_fn = otype->to_number_fn;
   type.to_string_fn = otype->to_string_fn;
+  type.to_primitive_fn = otype->to_primitive_fn;
+  type.to_object_fn = otype->to_object_fn;
+  type.get_field_fn = otype->get_field_fn;
+  type.set_field_fn = otype->set_field_fn;
+  type.del_field_fn = otype->del_field_fn;
+  type.is_equal_fn = otype->is_equal_fn;
   return &type;
 }
 

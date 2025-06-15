@@ -63,7 +63,6 @@ uint32_t neo_js_object_key_hash(neo_js_handle_t *handle1, uint32_t max_bucket) {
 neo_js_object_t neo_create_js_object(neo_allocator_t allocator) {
   neo_js_object_t object = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_object_t), neo_js_object_dispose);
-  object->constructor = NULL;
   object->prototype = NULL;
   neo_hash_map_initialize_t initialize = {0};
   initialize.compare = (neo_compare_fn_t)neo_js_object_compare_key;

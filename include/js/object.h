@@ -15,7 +15,6 @@ struct _neo_js_object_t {
   struct _neo_js_value_t value;
   neo_hash_map_t properties;
   neo_js_handle_t prototype;
-  neo_js_handle_t constructor;
 };
 
 neo_js_type_t neo_get_js_object_type();

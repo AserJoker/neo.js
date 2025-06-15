@@ -35,6 +35,20 @@ void neo_js_context_push_stackframe(neo_js_context_t ctx,
 
 void neo_js_context_pop_stackframe(neo_js_context_t ctx);
 
+neo_js_variable_t neo_js_context_get_object_constructor(neo_js_context_t ctx);
+
+neo_js_variable_t neo_js_context_get_function_constructor(neo_js_context_t ctx);
+
+neo_js_variable_t neo_js_context_get_string_constructor(neo_js_context_t ctx);
+
+neo_js_variable_t neo_js_context_get_boolean_constructor(neo_js_context_t ctx);
+
+neo_js_variable_t neo_js_context_get_number_constructor(neo_js_context_t ctx);
+
+neo_js_variable_t neo_js_context_get_symbol_constructor(neo_js_context_t ctx);
+
+neo_js_variable_t neo_js_context_get_array_constructor(neo_js_context_t ctx);
+
 neo_js_variable_t neo_js_context_clone_variable(neo_js_context_t ctx,
                                                 neo_js_variable_t variable);
 
@@ -56,20 +70,25 @@ neo_js_variable_t neo_js_context_set_field(neo_js_context_t ctx,
                                            neo_js_variable_t field,
                                            neo_js_variable_t value);
 
+neo_js_variable_t neo_js_context_del_field(neo_js_context_t ctx,
+                                           neo_js_variable_t object,
+                                           neo_js_variable_t field);
+
 neo_js_variable_t neo_js_context_call(neo_js_context_t ctx,
                                       neo_js_variable_t callee,
-                                      neo_js_variable_t self, neo_list_t argv);
+                                      neo_js_variable_t self, uint32_t argc,
+                                      neo_js_variable_t *argv);
+
+neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
+                                           neo_js_variable_t constructor,
+                                           uint32_t argc,
+                                           neo_js_variable_t *argv);
 
 neo_js_variable_t neo_js_context_create_error(neo_js_context_t ctx,
                                               const wchar_t *type,
                                               const wchar_t *message);
 
 neo_js_variable_t neo_js_context_create_undefined(neo_js_context_t ctx);
-
-neo_js_variable_t neo_js_context_create_nan(neo_js_context_t ctx);
-
-neo_js_variable_t neo_js_context_create_infinity(neo_js_context_t ctx,
-                                                 bool negative);
 
 neo_js_variable_t neo_js_context_create_number(neo_js_context_t ctx,
                                                double value);
