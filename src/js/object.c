@@ -30,7 +30,7 @@ static neo_js_variable_t neo_js_object_to_boolean(neo_js_context_t ctx,
 }
 static neo_js_variable_t neo_js_object_to_number(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
-  return neo_js_context_create_nan(ctx);
+  return NULL;
 }
 
 neo_js_type_t neo_get_js_object_type() {

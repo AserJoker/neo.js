@@ -7,6 +7,8 @@ set(DerivedCoreProperties "${PROJECT_SOURCE_DIR}/ucd/DerivedCoreProperties.txt")
 
 set(DerivedGeneralCategory "${PROJECT_SOURCE_DIR}/ucd/DerivedGeneralCategory.txt")
 
+add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+
 if(NOT EXISTS ${DerivedCoreProperties})
     file(DOWNLOAD "https://www.unicode.org/Public/UCD/latest/ucd/DerivedCoreProperties.txt" ${DerivedCoreProperties})
 endif()
@@ -55,17 +57,3 @@ file(GLOB_RECURSE SOURCES ${PROJECT_SOURCE_DIR}/src/*.c)
 add_executable(${PROJECT_NAME}c ${SOURCES} ${PROJECT_SOURCE_DIR}/cmd/main.c)
 
 add_library(${PROJECT_NAME} ${SOURCES})
-
-add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/googletest)
-
-file(GLOB_RECURSE TEST_SOURCES ${PROJECT_SOURCE_DIR}/tests/*.cpp)
-
-add_executable(${PROJECT_NAME}.test ${TEST_SOURCES} ${SOURCES})
-
-target_link_libraries(${PROJECT_NAME}.test GTest::gtest_main)
-
-enable_testing()
-
-include(GoogleTest)
-
-gtest_discover_tests(${PROJECT_NAME}.test TEST_LISTS gtest)

@@ -2,8 +2,6 @@
 #include "core/allocator.h"
 #include "js/boolean.h"
 #include "js/handle.h"
-#include "js/infinity.h"
-#include "js/nan.h"
 #include "js/null.h"
 #include "js/number.h"
 #include "js/string.h"
@@ -31,8 +29,7 @@ neo_js_handle_t neo_js_variable_get_handle(neo_js_variable_t variable) {
 
 bool neo_js_variable_is_number(neo_js_variable_t variable) {
   neo_js_type_t type = neo_js_variable_get_type(variable);
-  return type == neo_get_js_number_type() || type == neo_get_js_nan_type() ||
-         type == neo_get_js_infinity_type();
+  return type == neo_get_js_number_type();
 }
 
 bool neo_js_variable_is_primitive(neo_js_variable_t variable) {
