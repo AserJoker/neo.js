@@ -10,7 +10,6 @@
 #include <stdio.h>
 
 int main(int argc, char *argv[]) {
-  char *old_locale = setlocale(LC_ALL, NULL);
   setlocale(LC_ALL, "");
   neo_allocator_t allocator = neo_create_default_allocator();
   neo_error_initialize(allocator);
@@ -25,6 +24,5 @@ int main(int argc, char *argv[]) {
   neo_allocator_free(allocator, ctx);
   neo_allocator_free(allocator, runtime);
   neo_delete_allocator(allocator);
-  setlocale(LC_ALL, old_locale);
   return 0;
 }

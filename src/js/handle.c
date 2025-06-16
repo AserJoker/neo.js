@@ -10,7 +10,7 @@ struct _neo_js_handle_t {
 
 static void neo_js_handle_dispose(neo_allocator_t allocator,
                                   neo_js_handle_t self) {
-  if (!--self->value) {
+  if (self->value && !--self->value->ref) {
     neo_allocator_free(allocator, self->value);
   }
   neo_allocator_free(allocator, self->parents);
@@ -24,7 +24,9 @@ neo_js_handle_t neo_create_js_handle(neo_allocator_t allocator,
   handle->value = value;
   handle->children = neo_create_list(allocator, NULL);
   handle->parents = neo_create_list(allocator, NULL);
-  value->ref++;
+  if (value) {
+    value->ref++;
+  }
   return handle;
 }
 

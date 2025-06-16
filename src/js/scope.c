@@ -121,6 +121,12 @@ neo_js_scope_t neo_create_js_scope(neo_allocator_t allocator,
   }
   neo_list_initialize_t initialize = {true};
   scope->variables = neo_create_list(allocator, &initialize);
+  neo_map_initialize_t map_initialize = {
+      true,
+      true,
+      (neo_compare_fn_t)wcscmp,
+  };
+  scope->named_variables = neo_create_map(allocator, &map_initialize);
   scope->children = neo_create_list(allocator, NULL);
   scope->root = neo_create_js_handle(allocator, NULL);
   return scope;
