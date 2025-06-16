@@ -7,6 +7,7 @@
 #include "js/type.h"
 #include "js/value.h"
 #include "js/variable.h"
+#include <math.h>
 
 static const wchar_t *neo_js_number_typeof(neo_js_context_t ctx,
                                            neo_js_variable_t variable) {
@@ -19,6 +20,16 @@ static neo_js_variable_t neo_js_number_to_string(neo_js_context_t ctx,
       neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
   neo_js_number_t number = neo_js_value_to_number(
       neo_js_handle_get_value(neo_js_variable_get_handle(self)));
+  if (isnan(number->number)) {
+    return neo_js_context_create_string(ctx, L"NaN");
+  }
+  if (isinf(number->number)) {
+    if (number->number > 0.0f) {
+      return neo_js_context_create_string(ctx, L"Infinity");
+    } else {
+      return neo_js_context_create_string(ctx, L"-Infinity");
+    }
+  }
   wchar_t str[32];
   swprintf(str, 32, L"%lg", number->number);
   neo_js_string_t string = neo_create_js_string(allocator, str);

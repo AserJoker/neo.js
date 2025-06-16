@@ -33,15 +33,15 @@ static neo_js_variable_t neo_js_string_to_number(neo_js_context_t ctx,
   neo_js_string_t string =
       neo_js_value_to_string(neo_js_variable_get_value(self));
   if (wcscmp(string->string, L"Infinity") == 0) {
-    return NULL;
+    return neo_js_context_create_number(ctx, INFINITY);
+  }
+  if (wcscmp(string->string, L"-Infinity") == 0) {
+    return neo_js_context_create_number(ctx, -INFINITY);
   }
   wchar_t *end = 0;
   double val = wcstod(string->string, &end);
   if (*end != 0) {
-    return NULL;
-  }
-  if (isnan(val)) {
-    return NULL;
+    return neo_js_context_create_number(ctx, NAN);
   }
   return neo_js_context_create_number(ctx, val);
 }
