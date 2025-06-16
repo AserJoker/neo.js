@@ -102,6 +102,7 @@ neo_js_boolean_t neo_create_js_boolean(neo_allocator_t allocator, bool value) {
   neo_js_boolean_t boolean = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_boolean_t), neo_js_boolean_dispose);
   boolean->value.type = neo_get_js_boolean_type();
+  boolean->value.ref = 0;
   boolean->boolean = value;
   return boolean;
 }

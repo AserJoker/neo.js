@@ -68,6 +68,8 @@ neo_js_object_t neo_create_js_object(neo_allocator_t allocator) {
   initialize.compare = (neo_compare_fn_t)neo_js_object_compare_key;
   initialize.hash = (neo_hash_fn_t)neo_js_object_key_hash;
   object->properties = neo_create_hash_map(allocator, &initialize);
+  object->value.ref = 0;
+  object->value.type = neo_get_js_object_type();
   return object;
 }
 

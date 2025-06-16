@@ -51,14 +51,15 @@ neo_js_symbol_t neo_create_js_symbol(neo_allocator_t allocator,
     description = L"";
   }
   size_t len = wcslen(description);
-  neo_js_symbol_t self = neo_allocator_alloc(
+  neo_js_symbol_t symbol = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_symbol_t), neo_js_symbol_dispose);
-  self->value.type = neo_get_js_symbol_type();
-  self->description =
+  symbol->value.type = neo_get_js_symbol_type();
+  symbol->value.ref = 0;
+  symbol->description =
       neo_allocator_alloc(allocator, (len + 1) * sizeof(wchar_t), NULL);
-  wcscpy(self->description, description);
-  self->description[len] = 0;
-  return self;
+  wcscpy(symbol->description, description);
+  symbol->description[len] = 0;
+  return symbol;
 }
 neo_js_symbol_t neo_js_value_to_symbol(neo_js_value_t value) {
   if (value->type == neo_get_js_symbol_type()) {

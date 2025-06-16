@@ -107,6 +107,7 @@ neo_js_number_t neo_create_js_number(neo_allocator_t allocator, double value) {
       allocator, sizeof(struct _neo_js_number_t), neo_js_number_dispose);
   number->value.type = neo_get_js_number_type();
   number->number = value;
+  number->value.ref = 0;
   return number;
 }
 

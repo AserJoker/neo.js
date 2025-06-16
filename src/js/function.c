@@ -72,6 +72,7 @@ neo_js_function_t neo_create_js_function(neo_allocator_t allocator,
   function->closure = neo_create_hash_map(allocator, &initialize);
 
   function->object.value.type = neo_get_js_function_type();
+  function->object.value.ref = 0;
   initialize.auto_free_key = false;
   initialize.auto_free_value = false;
   initialize.compare = (neo_compare_fn_t)neo_js_object_compare_key;

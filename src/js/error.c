@@ -26,6 +26,7 @@ neo_js_error_t neo_create_js_error(neo_allocator_t allocator,
   neo_js_error_t error = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_error_t), neo_js_error_dispose);
   error->value.type = neo_get_js_error_type();
+  error->value.ref = 0;
   size_t len = wcslen(type);
   error->type =
       neo_allocator_alloc(allocator, (len + 1) * sizeof(wchar_t), NULL);

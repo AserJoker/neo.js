@@ -6,6 +6,7 @@ extern "C" {
 #endif
 struct _neo_js_value_t {
   neo_js_type_t type;
+  uint32_t ref;
 };
 
 typedef struct _neo_js_value_t *neo_js_value_t;

@@ -110,6 +110,7 @@ neo_js_array_t neo_create_js_array(neo_allocator_t allocator) {
       allocator, sizeof(struct _neo_js_array_t), neo_js_array_dispose);
   array->length = 0;
   array->object.value.type = neo_get_js_array_type();
+  array->object.value.ref = 0;
   array->object.prototype = NULL;
   neo_hash_map_initialize_t initialize = {0};
   initialize.auto_free_key = false;

@@ -48,6 +48,7 @@ neo_js_null_t neo_create_js_null(neo_allocator_t allocator) {
   neo_js_null_t null = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_null_t), neo_js_null_dispose);
   null->value.type = neo_get_js_null_type();
+  null->value.ref = 0;
   return null;
 }
 

@@ -67,14 +67,15 @@ neo_js_string_t neo_create_js_string(neo_allocator_t allocator,
     value = L"";
   }
   size_t len = wcslen(value);
-  neo_js_string_t self = neo_allocator_alloc(
+  neo_js_string_t string = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_string_t), neo_js_string_dispose);
-  self->value.type = neo_get_js_string_type();
-  self->string =
+  string->value.type = neo_get_js_string_type();
+  string->value.ref = 0;
+  string->string =
       neo_allocator_alloc(allocator, (len + 1) * sizeof(wchar_t), NULL);
-  wcscpy(self->string, value);
-  self->string[len] = 0;
-  return self;
+  wcscpy(string->string, value);
+  string->string[len] = 0;
+  return string;
 }
 
 neo_js_string_t neo_js_value_to_string(neo_js_value_t value) {
