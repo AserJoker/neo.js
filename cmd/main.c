@@ -14,8 +14,7 @@ static neo_js_variable_t js_println(neo_js_context_t ctx,
                                     neo_js_variable_t *argv) {
   for (uint32_t idx = 0; idx < argc; idx++) {
     neo_js_variable_t string = neo_js_context_to_string(ctx, argv[idx]);
-    neo_js_string_t str =
-        neo_js_value_to_string(neo_js_variable_get_value(string));
+    neo_js_string_t str = neo_js_variable_to_string(string);
     printf("%ls", str->string);
     if (idx != argc - 1) {
       printf(", ");

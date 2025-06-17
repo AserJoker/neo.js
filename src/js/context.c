@@ -82,6 +82,7 @@ neo_js_context_t neo_create_js_context(neo_allocator_t allocator,
   ctx->runtime = runtime;
   ctx->root = neo_create_js_scope(allocator, NULL);
   ctx->scope = ctx->root;
+  memset(&ctx->std, 0, sizeof(ctx->std));
   neo_list_initialize_t initialize = {true};
   ctx->stacktrace = neo_create_list(allocator, &initialize);
   neo_js_context_ininitialize_std(ctx);
