@@ -5,7 +5,6 @@
 #include "js/number.h"
 #include "js/string.h"
 #include "js/type.h"
-#include "js/undefined.h"
 #include "js/variable.h"
 
 static neo_js_variable_t neo_js_array_get_field(neo_js_context_t ctx,
@@ -14,7 +13,7 @@ static neo_js_variable_t neo_js_array_get_field(neo_js_context_t ctx,
   neo_js_array_t array =
       neo_js_value_to_array(neo_js_variable_get_value(object));
   neo_js_type_t otype = neo_get_js_object_type();
-  if (neo_js_variable_get_type(field) == neo_get_js_string_type()) {
+  if (neo_js_variable_get_type(field)->kind == NEO_TYPE_STRING) {
     neo_js_string_t field_str =
         neo_js_value_to_string(neo_js_variable_get_value(field));
     if (wcscmp(field_str->string, L"length") == 0) {
@@ -33,59 +32,45 @@ static neo_js_variable_t neo_js_array_set_field(neo_js_context_t ctx,
   neo_js_type_t otype = neo_get_js_object_type();
   neo_js_array_t array =
       neo_js_value_to_array(neo_js_variable_get_value(object));
-  if (neo_js_variable_get_type(field) == neo_get_js_string_type()) {
+  if (neo_js_variable_get_type(field)->kind == NEO_TYPE_STRING) {
     neo_js_string_t field_str =
         neo_js_value_to_string(neo_js_variable_get_value(field));
     if (wcscmp(field_str->string, L"length") == 0) {
-      double length = neo_js_variable_is_number(value);
+      double length =
+          neo_js_value_to_number(neo_js_variable_get_value(value))->number;
       if (length < 0) {
         return neo_js_context_create_error(ctx, L"RangeError",
                                            L"Invalid array length");
       }
-      if (length < array->length) {
-        for (size_t i = length; i < array->length; i++) {
-          neo_js_variable_t idx = neo_js_context_create_number(ctx, i);
-          neo_js_variable_t item = neo_js_array_get_field(ctx, object, idx);
-          if (neo_js_variable_get_type(item) != neo_get_js_undefined_type()) {
-            neo_js_variable_t error =
-                neo_js_context_del_field(ctx, object, idx);
-            if (error) {
-              return error;
-            }
+      for (size_t i = length; i < array->length; i++) {
+        neo_js_variable_t idx = neo_js_context_create_number(ctx, i);
+        neo_js_variable_t item = neo_js_array_get_field(ctx, object, idx);
+        if (neo_js_variable_get_type(item)->kind != NEO_TYPE_UNDEFINED) {
+          neo_js_variable_t error = neo_js_context_del_field(ctx, object, idx);
+          if (error) {
+            return error;
           }
         }
       }
       array->length = (size_t)length;
       return NULL;
     }
-  } else if (neo_js_variable_get_type(field) == neo_get_js_number_type()) {
+  } else if (neo_js_variable_get_type(field)->kind == NEO_TYPE_NUMBER) {
     neo_js_number_t field_num =
         neo_js_value_to_number(neo_js_variable_get_value(field));
-    if (field_num->number < 0) {
-      wchar_t field_str[32];
-      swprintf(field_str, 32, L"%d", (int)field_num->number);
-      return otype->set_field_fn(
-          ctx, object, neo_js_context_create_string(ctx, field_str), value);
-    }
-    size_t idx = (size_t)field_num->number;
-    if (idx >= array->length) {
-      array->length = idx + 1;
-    }
-    neo_js_variable_t error = otype->set_field_fn(ctx, object, field, value);
-    if (error) {
-      return error;
-    }
-  } else {
-    neo_js_variable_t error = otype->set_field_fn(ctx, object, field, value);
-    if (error) {
-      return error;
+    if (field_num->number >= 0) {
+      size_t idx = (size_t)field_num->number;
+      if (idx >= array->length) {
+        array->length = idx + 1;
+      }
     }
   }
-  return NULL;
+  return otype->set_field_fn(ctx, object, field, value);
 }
 
 neo_js_type_t neo_get_js_array_type() {
   static struct _neo_js_type_t type = {0};
+  type.kind = NEO_TYPE_OBJECT;
   neo_js_type_t otype = neo_get_js_object_type();
   type.typeof_fn = otype->typeof_fn;
   type.to_boolean_fn = otype->to_boolean_fn;

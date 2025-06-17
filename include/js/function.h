@@ -1,9 +1,7 @@
 #ifndef _H_NEO_JS_FUNCTION_
 #define _H_NEO_JS_FUNCTION_
 #include "core/allocator.h"
-#include "core/hash_map.h"
-#include "js/handle.h"
-#include "js/object.h"
+#include "js/callable.h"
 #include "js/type.h"
 #include "js/value.h"
 #ifdef __cplusplus
@@ -13,11 +11,8 @@ extern "C" {
 typedef struct _neo_js_function_t *neo_js_function_t;
 
 struct _neo_js_function_t {
-  struct _neo_js_object_t object;
+  struct _neo_js_callable_t callable;
   neo_js_cfunction_fn_t callee;
-  neo_hash_map_t closure;
-  neo_js_handle_t name;
-  wchar_t *source;
 };
 
 neo_js_type_t neo_get_js_function_type();

@@ -2,14 +2,15 @@
 #include "core/allocator.h"
 #include "core/list.h"
 #include "js/stackframe.h"
+#include "js/type.h"
 #include "js/value.h"
 #include "js/variable.h"
 #include <stddef.h>
 #include <wchar.h>
 
-
 neo_js_type_t neo_get_js_error_type() {
   static neo_js_type_t type = {0};
+  type->kind = NEO_TYPE_ERROR;
   return type;
 }
 

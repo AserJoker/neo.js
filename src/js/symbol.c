@@ -30,12 +30,52 @@ static neo_js_variable_t neo_js_symbol_to_number(neo_js_context_t ctx,
       ctx, L"TypeError", L"Cannot convert a Symbol value to a number");
 }
 
+static neo_js_variable_t neo_js_symbol_to_primitive(neo_js_context_t ctx,
+                                                    neo_js_variable_t self) {
+  return self;
+}
+
+static neo_js_variable_t neo_js_symbol_to_object(neo_js_context_t ctx,
+                                                 neo_js_variable_t self) {
+  return neo_js_context_construct(
+      ctx, neo_js_context_get_symbol_constructor(ctx), 1, &self);
+}
+
+static neo_js_variable_t neo_js_symbol_get_field(neo_js_context_t ctx,
+                                                 neo_js_variable_t self,
+                                                 neo_js_variable_t field) {
+  return neo_js_context_get_field(ctx, neo_js_symbol_to_object(ctx, self),
+                                  field);
+}
+
+static neo_js_variable_t neo_js_symbol_set_field(neo_js_context_t ctx,
+                                                 neo_js_variable_t self,
+                                                 neo_js_variable_t field,
+                                                 neo_js_variable_t value) {
+  return neo_js_context_set_field(ctx, neo_js_symbol_to_object(ctx, self),
+                                  field, value);
+}
+
+static neo_js_variable_t neo_js_symbol_del_field(neo_js_context_t ctx,
+                                                 neo_js_variable_t self,
+                                                 neo_js_variable_t field) {
+  return neo_js_context_del_field(ctx, neo_js_symbol_to_object(ctx, self),
+                                  field);
+}
+
+static bool neo_js_symbol_is_equal(neo_js_context_t ctx, neo_js_variable_t self,
+                                   neo_js_variable_t another) {
+  return neo_js_variable_get_value(self) == neo_js_variable_get_value(another);
+}
+
 neo_js_type_t neo_get_js_symbol_type() {
   static struct _neo_js_type_t type = {
-      neo_js_symbol_typeof,
-      neo_js_symbol_to_string,
-      neo_js_symbol_to_boolean,
-      neo_js_symbol_to_number,
+      NEO_TYPE_SYMBOL,         neo_js_symbol_typeof,
+      neo_js_symbol_to_string, neo_js_symbol_to_boolean,
+      neo_js_symbol_to_number, neo_js_symbol_to_primitive,
+      neo_js_symbol_to_object, neo_js_symbol_get_field,
+      neo_js_symbol_set_field, neo_js_symbol_del_field,
+      neo_js_symbol_is_equal,
   };
   return &type;
 }
@@ -62,7 +102,7 @@ neo_js_symbol_t neo_create_js_symbol(neo_allocator_t allocator,
   return symbol;
 }
 neo_js_symbol_t neo_js_value_to_symbol(neo_js_value_t value) {
-  if (value->type == neo_get_js_symbol_type()) {
+  if (value->type->kind == NEO_TYPE_SYMBOL) {
     return (neo_js_symbol_t)value;
   }
   return NULL;

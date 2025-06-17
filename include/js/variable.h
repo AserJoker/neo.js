@@ -22,8 +22,6 @@ neo_js_variable_get_type(neo_js_variable_t variable) {
   return neo_js_variable_get_value(variable)->type;
 }
 
-bool neo_js_variable_is_number(neo_js_variable_t variable);
-
 bool neo_js_variable_is_primitive(neo_js_variable_t variable);
 
 #ifdef __cplusplus

@@ -236,8 +236,8 @@ neo_js_variable_t neo_js_context_call(neo_js_context_t ctx,
     neo_js_handle_t harg = neo_js_variable_get_handle(arg);
     neo_js_handle_add_parent(harg, neo_js_scope_get_root_handle(scope));
   }
-  for (neo_hash_map_node_t it = neo_hash_map_get_first(function->closure);
-       it != neo_hash_map_get_tail(function->closure);
+  for (neo_hash_map_node_t it = neo_hash_map_get_first(function->callable.closure);
+       it != neo_hash_map_get_tail(function->callable.closure);
        it = neo_hash_map_node_next(it)) {
     const wchar_t *name = neo_hash_map_node_get_key(it);
     neo_js_handle_t hvalue = neo_hash_map_node_get_value(it);
@@ -260,7 +260,7 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
                                            neo_js_variable_t constructor,
                                            uint32_t argc,
                                            neo_js_variable_t *argv) {
-  if (neo_js_variable_get_type(constructor) != neo_get_js_function_type()) {
+  if (neo_js_variable_get_type(constructor)->kind != NEO_TYPE_FUNCTION) {
     return neo_js_context_create_error(ctx, L"TypeError",
                                        L"Constructor is not a function");
   }
@@ -274,13 +274,13 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
   neo_js_variable_t error = neo_js_context_set_field(
       ctx, object, neo_js_context_create_string(ctx, L"constructor"),
       constructor);
-  if (neo_js_variable_get_type(error) != neo_get_js_undefined_type()) {
+  if (neo_js_variable_get_type(error)->kind != NEO_TYPE_UNDEFINED) {
     object = error;
   } else {
     neo_js_variable_t result =
         neo_js_context_call(ctx, constructor, object, argc, argv);
     if (result) {
-      if (neo_js_variable_get_type(result) == neo_get_js_object_type()) {
+      if (neo_js_variable_get_type(result)->kind >= NEO_TYPE_OBJECT) {
         object = result;
       }
     }
@@ -373,18 +373,18 @@ neo_js_context_create_cfunction(neo_js_context_t ctx, const wchar_t *name,
   neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
   neo_js_function_t func = neo_create_js_function(allocator, function);
   neo_js_handle_t hfunction =
-      neo_create_js_handle(allocator, &func->object.value);
+      neo_create_js_handle(allocator, &func->callable.object.value);
   if (ctx->std.function_constructor) {
     neo_js_handle_t hproto = hproto =
         neo_js_variable_get_handle(neo_js_context_get_field(
             ctx, neo_js_context_create_string(ctx, L"prototype"),
             ctx->std.function_constructor));
-    func->object.prototype = hproto;
+    func->callable.object.prototype = hproto;
   };
   if (name) {
     neo_js_handle_t hname =
         neo_js_variable_get_handle(neo_js_context_create_string(ctx, name));
-    func->name = hname;
+    func->callable.name = hname;
     neo_js_handle_add_parent(hname, hfunction);
   }
   neo_js_variable_t result = neo_js_context_create_variable(ctx, hfunction);

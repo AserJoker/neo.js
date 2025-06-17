@@ -52,7 +52,20 @@ typedef bool (*neo_js_is_equal_fn_t)(neo_js_context_t ctx,
                                      neo_js_variable_t self,
                                      neo_js_variable_t another);
 
+typedef enum _neo_js_type_kind_t {
+  NEO_TYPE_NULL,
+  NEO_TYPE_UNDEFINED,
+  NEO_TYPE_NUMBER,
+  NEO_TYPE_STRING,
+  NEO_TYPE_BOOLEAN,
+  NEO_TYPE_SYMBOL,
+  NEO_TYPE_ERROR,
+  NEO_TYPE_OBJECT,
+  NEO_TYPE_FUNCTION,
+} neo_js_type_kind_t;
+
 typedef struct _neo_js_type_t {
+  neo_js_type_kind_t kind;
   neo_js_typeof_fn_t typeof_fn;
   neo_js_to_string_fn_t to_string_fn;
   neo_js_to_boolean_fn_t to_boolean_fn;

@@ -1,6 +1,7 @@
 #include "core/string.h"
 #include "core/allocator.h"
 #include <string.h>
+#include <wchar.h>
 
 char *neo_string_concat(neo_allocator_t allocator, char *src, size_t *max,
                         const char *str) {

@@ -86,11 +86,12 @@ static bool neo_js_boolean_is_equal(neo_js_context_t ctx,
 
 neo_js_type_t neo_get_js_boolean_type() {
   static struct _neo_js_type_t type = {
-      neo_js_boolean_typeof,       neo_js_boolean_to_string,
-      neo_js_boolean_to_boolean,   neo_js_boolean_to_number,
-      neo_js_boolean_to_primitive, neo_js_boolean_to_object,
-      neo_js_boolean_get_field,    neo_js_boolean_set_field,
-      neo_js_boolean_del_field,    neo_js_boolean_is_equal,
+      NEO_TYPE_BOOLEAN,         neo_js_boolean_typeof,
+      neo_js_boolean_to_string, neo_js_boolean_to_boolean,
+      neo_js_boolean_to_number, neo_js_boolean_to_primitive,
+      neo_js_boolean_to_object, neo_js_boolean_get_field,
+      neo_js_boolean_set_field, neo_js_boolean_del_field,
+      neo_js_boolean_is_equal,
   };
   return &type;
 }
@@ -108,7 +109,7 @@ neo_js_boolean_t neo_create_js_boolean(neo_allocator_t allocator, bool value) {
 }
 
 neo_js_boolean_t neo_js_value_to_boolean(neo_js_value_t value) {
-  if (value->type == neo_get_js_boolean_type()) {
+  if (value->type->kind == NEO_TYPE_BOOLEAN) {
     return (neo_js_boolean_t)value;
   }
   return NULL;
