@@ -1,4 +1,4 @@
-#include "js/error.h"
+#include "js/basetype/error.h"
 #include "core/allocator.h"
 #include "core/list.h"
 #include "js/stackframe.h"

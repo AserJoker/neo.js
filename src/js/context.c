@@ -1,22 +1,24 @@
 #include "js/context.h"
 #include "core/allocator.h"
 #include "core/list.h"
-#include "js/boolean.h"
-#include "js/error.h"
-#include "js/function.h"
+#include "js/basetype/boolean.h"
+#include "js/basetype/error.h"
+#include "js/basetype/function.h"
+#include "js/basetype/number.h"
+#include "js/basetype/object.h"
+#include "js/basetype/string.h"
+#include "js/basetype/symbol.h"
+#include "js/basetype/undefined.h"
 #include "js/handle.h"
-#include "js/number.h"
-#include "js/object.h"
 #include "js/runtime.h"
 #include "js/scope.h"
 #include "js/stackframe.h"
-#include "js/string.h"
-#include "js/symbol.h"
 #include "js/type.h"
-#include "js/undefined.h"
 #include "js/value.h"
 #include "js/variable.h"
 #include <wchar.h>
+
+
 struct _neo_js_context_t {
   neo_js_runtime_t runtime;
   neo_js_scope_t scope;
@@ -236,7 +238,8 @@ neo_js_variable_t neo_js_context_call(neo_js_context_t ctx,
     neo_js_handle_t harg = neo_js_variable_get_handle(arg);
     neo_js_handle_add_parent(harg, neo_js_scope_get_root_handle(scope));
   }
-  for (neo_hash_map_node_t it = neo_hash_map_get_first(function->callable.closure);
+  for (neo_hash_map_node_t it =
+           neo_hash_map_get_first(function->callable.closure);
        it != neo_hash_map_get_tail(function->callable.closure);
        it = neo_hash_map_node_next(it)) {
     const wchar_t *name = neo_hash_map_node_get_key(it);

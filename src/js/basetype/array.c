@@ -1,9 +1,9 @@
-#include "js/array.h"
+#include "js/basetype/array.h"
 #include "core/allocator.h"
 #include "core/hash_map.h"
 #include "js/context.h"
-#include "js/number.h"
-#include "js/string.h"
+#include "js/basetype/number.h"
+#include "js/basetype/string.h"
 #include "js/type.h"
 #include "js/variable.h"
 

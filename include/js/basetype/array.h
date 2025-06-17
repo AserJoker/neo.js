@@ -1,7 +1,7 @@
 #ifndef _H_NEO_JS_ARRAY_
 #define _H_NEO_JS_ARRAY_
 #include "core/allocator.h"
-#include "js/object.h"
+#include "js/basetype/object.h"
 #include "js/type.h"
 #include "js/value.h"
 #ifdef __cplusplus

@@ -1,7 +1,7 @@
 #ifndef _H_NEO_JS_FUNCTION_
 #define _H_NEO_JS_FUNCTION_
 #include "core/allocator.h"
-#include "js/callable.h"
+#include "js/basetype/callable.h"
 #include "js/type.h"
 #include "js/value.h"
 #ifdef __cplusplus

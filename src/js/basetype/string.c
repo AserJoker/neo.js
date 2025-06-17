@@ -1,4 +1,4 @@
-#include "js/string.h"
+#include "js/basetype/string.h"
 #include "core/allocator.h"
 #include "js/context.h"
 #include "js/runtime.h"

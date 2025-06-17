@@ -1,4 +1,4 @@
-#include "js/symbol.h"
+#include "js/basetype/symbol.h"
 #include "core/allocator.h"
 #include "js/context.h"
 #include "js/type.h"

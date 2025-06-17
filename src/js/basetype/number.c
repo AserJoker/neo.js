@@ -1,13 +1,14 @@
-#include "js/number.h"
+#include "js/basetype/number.h"
 #include "core/allocator.h"
+#include "js/basetype/string.h"
 #include "js/context.h"
 #include "js/handle.h"
 #include "js/runtime.h"
-#include "js/string.h"
 #include "js/type.h"
 #include "js/value.h"
 #include "js/variable.h"
 #include <math.h>
+
 
 static const wchar_t *neo_js_number_typeof(neo_js_context_t ctx,
                                            neo_js_variable_t variable) {

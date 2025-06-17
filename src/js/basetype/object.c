@@ -1,18 +1,19 @@
-#include "js/object.h"
+#include "js/basetype/object.h"
 #include "core/allocator.h"
 #include "core/common.h"
 #include "core/hash_map.h"
+#include "js/basetype/string.h"
+#include "js/basetype/symbol.h"
 #include "js/context.h"
 #include "js/handle.h"
 #include "js/runtime.h"
 #include "js/scope.h"
-#include "js/string.h"
-#include "js/symbol.h"
 #include "js/type.h"
 #include "js/value.h"
 #include "js/variable.h"
 #include <stdbool.h>
 #include <wchar.h>
+
 
 static const wchar_t *neo_js_object_typeof(neo_js_context_t ctx,
                                            neo_js_variable_t variable) {
