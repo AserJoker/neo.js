@@ -1,5 +1,5 @@
-#ifndef _H_NEO_JS_CALLABLE_
-#define _H_NEO_JS_CALLABLE_
+#ifndef _H_NEO_JS_BASETYPE_CALLABLE_
+#define _H_NEO_JS_BASETYPE_CALLABLE_
 #include "core/hash_map.h"
 #include "js/basetype/object.h"
 #include "js/handle.h"

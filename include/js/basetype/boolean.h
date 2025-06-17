@@ -1,5 +1,5 @@
-#ifndef _H_NEO_JS_BOOLEAN_
-#define _H_NEO_JS_BOOLEAN_
+#ifndef _H_NEO_JS_BASETYPE_BOOLEAN_
+#define _H_NEO_JS_BASETYPE_BOOLEAN_
 #include "core/allocator.h"
 #include "js/type.h"
 #include "js/value.h"

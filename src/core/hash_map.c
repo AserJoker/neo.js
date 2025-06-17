@@ -56,6 +56,7 @@ static void neo_hash_map_dispsoe(neo_allocator_t allocator,
       neo_allocator_free(allocator, node);
     }
   }
+  neo_allocator_free(allocator, self->buckets);
 }
 
 neo_hash_map_t neo_create_hash_map(neo_allocator_t allocator,

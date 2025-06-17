@@ -1,5 +1,5 @@
-#ifndef _H_NEO_JS_ERROR_
-#define _H_NEO_JS_ERROR_
+#ifndef _H_NEO_JS_BASETYPE_ERROR_
+#define _H_NEO_JS_BASETYPE_ERROR_
 #include "core/allocator.h"
 #include "core/list.h"
 #include "js/type.h"

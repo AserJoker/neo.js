@@ -10,7 +10,6 @@
 #include "js/variable.h"
 #include <math.h>
 
-
 static const wchar_t *neo_js_undefined_typeof(neo_js_context_t ctx,
                                               neo_js_variable_t variable) {
   return L"undefined";
@@ -122,6 +121,15 @@ static bool neo_js_undefined_is_equal(neo_js_context_t ctx,
                                       neo_js_variable_t another) {
   return neo_js_variable_get_type(another)->kind = NEO_TYPE_UNDEFINED;
 }
+static void neo_js_undefined_copy(neo_js_context_t ctx, neo_js_variable_t self,
+                                  neo_js_variable_t target) {
+
+  neo_js_handle_t htarget = neo_js_variable_get_handle(target);
+  neo_allocator_t allocaotr =
+      neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
+  neo_js_handle_set_value(allocaotr, htarget,
+                          &neo_create_js_undefined(allocaotr)->value);
+}
 
 neo_js_type_t neo_get_js_undefined_type() {
   static struct _neo_js_type_t type = {
@@ -130,7 +138,8 @@ neo_js_type_t neo_get_js_undefined_type() {
       neo_js_undefined_to_number, neo_js_undefined_to_primitive,
       neo_js_undefined_to_object, neo_js_undefined_get_field,
       neo_js_undefined_set_field, neo_js_undefined_del_field,
-      neo_js_undefined_is_equal};
+      neo_js_undefined_is_equal,  neo_js_undefined_copy,
+  };
   return &type;
 }
 

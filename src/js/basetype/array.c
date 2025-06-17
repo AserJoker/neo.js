@@ -1,9 +1,9 @@
 #include "js/basetype/array.h"
 #include "core/allocator.h"
 #include "core/hash_map.h"
-#include "js/context.h"
 #include "js/basetype/number.h"
 #include "js/basetype/string.h"
+#include "js/context.h"
 #include "js/type.h"
 #include "js/variable.h"
 
@@ -82,6 +82,7 @@ neo_js_type_t neo_get_js_array_type() {
   type.set_field_fn = neo_js_array_set_field;
   type.del_field_fn = otype->del_field_fn;
   type.is_equal_fn = otype->is_equal_fn;
+  type.copy_fn = otype->copy_fn;
   return &type;
 }
 

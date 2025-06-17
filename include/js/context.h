@@ -10,6 +10,7 @@
 extern "C" {
 #endif
 typedef struct _neo_js_context_t *neo_js_context_t;
+
 neo_js_context_t neo_create_js_context(neo_allocator_t allocator,
                                        neo_js_runtime_t runtime);
 
@@ -49,9 +50,6 @@ neo_js_variable_t neo_js_context_get_symbol_constructor(neo_js_context_t ctx);
 
 neo_js_variable_t neo_js_context_get_array_constructor(neo_js_context_t ctx);
 
-neo_js_variable_t neo_js_context_clone_variable(neo_js_context_t ctx,
-                                                neo_js_variable_t variable);
-
 neo_js_variable_t neo_js_context_create_variable(neo_js_context_t ctx,
                                                  neo_js_handle_t handle);
 
@@ -74,6 +72,13 @@ neo_js_variable_t neo_js_context_del_field(neo_js_context_t ctx,
                                            neo_js_variable_t object,
                                            neo_js_variable_t field);
 
+neo_js_variable_t neo_js_context_clone(neo_js_context_t ctx,
+                                       neo_js_variable_t self);
+
+neo_js_variable_t neo_js_context_assigment(neo_js_context_t ctx,
+                                           neo_js_variable_t self,
+                                           neo_js_variable_t target);
+
 neo_js_variable_t neo_js_context_call(neo_js_context_t ctx,
                                       neo_js_variable_t callee,
                                       neo_js_variable_t self, uint32_t argc,
@@ -89,6 +94,8 @@ neo_js_variable_t neo_js_context_create_error(neo_js_context_t ctx,
                                               const wchar_t *message);
 
 neo_js_variable_t neo_js_context_create_undefined(neo_js_context_t ctx);
+
+neo_js_variable_t neo_js_context_create_null(neo_js_context_t ctx);
 
 neo_js_variable_t neo_js_context_create_number(neo_js_context_t ctx,
                                                double value);

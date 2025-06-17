@@ -111,6 +111,7 @@ neo_js_type_t neo_get_js_function_type() {
   type.set_field_fn = neo_js_function_set_field;
   type.del_field_fn = neo_js_function_del_field;
   type.is_equal_fn = otype->is_equal_fn;
+  type.copy_fn = otype->copy_fn;
   return &type;
 }
 
@@ -145,7 +146,7 @@ neo_js_function_t neo_create_js_function(neo_allocator_t allocator,
 }
 
 neo_js_function_t neo_js_value_to_function(neo_js_value_t value) {
-  if (value->type->kind == NEO_TYPE_FUNCTION) {
+  if (value->type->kind >= NEO_TYPE_FUNCTION) {
     return (neo_js_function_t)value;
   }
   return NULL;

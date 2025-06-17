@@ -10,7 +10,6 @@
 #include "js/variable.h"
 #include <wchar.h>
 
-
 static const wchar_t *neo_js_null_typeof(neo_js_context_t ctx,
                                          neo_js_variable_t variable) {
   return L"object";
@@ -108,13 +107,21 @@ static bool neo_js_null_is_equal(neo_js_context_t ctx, neo_js_variable_t self,
                                  neo_js_variable_t another) {
   return neo_js_variable_get_type(another)->kind == NEO_TYPE_NULL;
 }
+static void neo_js_null_copy(neo_js_context_t ctx, neo_js_variable_t self,
+                             neo_js_variable_t target) {
 
+  neo_js_handle_t htarget = neo_js_variable_get_handle(target);
+  neo_allocator_t allocaotr =
+      neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
+  neo_js_handle_set_value(allocaotr, htarget,
+                          &neo_create_js_null(allocaotr)->value);
+}
 neo_js_type_t neo_get_js_null_type() {
   static struct _neo_js_type_t type = {
       NEO_TYPE_NULL,          neo_js_null_typeof,    neo_js_null_to_string,
       neo_js_null_to_boolean, neo_js_null_to_number, neo_js_null_to_primitive,
       neo_js_null_to_object,  neo_js_null_get_field, neo_js_null_set_field,
-      neo_js_null_del_field,  neo_js_null_is_equal,
+      neo_js_null_del_field,  neo_js_null_is_equal,  neo_js_null_copy,
   };
   return &type;
 }

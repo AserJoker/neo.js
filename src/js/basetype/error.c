@@ -9,9 +9,9 @@
 #include <wchar.h>
 
 neo_js_type_t neo_get_js_error_type() {
-  static neo_js_type_t type = {0};
-  type->kind = NEO_TYPE_ERROR;
-  return type;
+  static struct _neo_js_type_t type = {0};
+  type.kind = NEO_TYPE_ERROR;
+  return &type;
 }
 
 static void neo_js_error_dispose(neo_allocator_t allocator,

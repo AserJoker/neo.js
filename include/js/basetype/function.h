@@ -1,5 +1,5 @@
-#ifndef _H_NEO_JS_FUNCTION_
-#define _H_NEO_JS_FUNCTION_
+#ifndef _H_NEO_JS_BASETYPE_FUNCTION_
+#define _H_NEO_JS_BASETYPE_FUNCTION_
 #include "core/allocator.h"
 #include "js/basetype/callable.h"
 #include "js/type.h"

@@ -1,5 +1,5 @@
-#ifndef _H_NEO_JS_ARRAY_
-#define _H_NEO_JS_ARRAY_
+#ifndef _H_NEO_JS_BASETYPE_ARRAY_
+#define _H_NEO_JS_BASETYPE_ARRAY_
 #include "core/allocator.h"
 #include "js/basetype/object.h"
 #include "js/type.h"

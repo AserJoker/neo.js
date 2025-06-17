@@ -1,5 +1,5 @@
-#ifndef _H_NEO_JS_NULL_
-#define _H_NEO_JS_NULL_
+#ifndef _H_NEO_JS_BASETYPE_NULL_
+#define _H_NEO_JS_BASETYPE_NULL_
 #include "core/allocator.h"
 #include "js/type.h"
 #include "js/value.h"

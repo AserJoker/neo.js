@@ -14,7 +14,6 @@
 #include <stdbool.h>
 #include <wchar.h>
 
-
 static const wchar_t *neo_js_object_typeof(neo_js_context_t ctx,
                                            neo_js_variable_t variable) {
   return L"object";
@@ -177,6 +176,10 @@ neo_create_js_object_property(neo_allocator_t allocator) {
 neo_js_object_property_t
 neo_js_object_get_own_property(neo_js_context_t ctx, neo_js_variable_t self,
                                neo_js_variable_t field) {
+  if (neo_js_variable_get_type(field)->kind != NEO_TYPE_SYMBOL) {
+    field = neo_js_context_to_string(ctx, field);
+  }
+  field = neo_js_context_clone(ctx, field);
   neo_js_object_t object =
       neo_js_value_to_object(neo_js_variable_get_value(self));
   neo_js_object_property_t property = NULL;
@@ -188,12 +191,15 @@ neo_js_object_get_own_property(neo_js_context_t ctx, neo_js_variable_t self,
 neo_js_object_property_t neo_js_object_get_property(neo_js_context_t ctx,
                                                     neo_js_variable_t self,
                                                     neo_js_variable_t field) {
-
+  if (neo_js_variable_get_type(field)->kind != NEO_TYPE_SYMBOL) {
+    field = neo_js_context_to_string(ctx, field);
+  }
+  field = neo_js_context_clone(ctx, field);
   neo_js_object_t object =
       neo_js_value_to_object(neo_js_variable_get_value(self));
   neo_js_object_property_t property = NULL;
   neo_js_handle_t hfield = neo_js_variable_get_handle(field);
-  while (!property) {
+  while (!property && object) {
     property = neo_hash_map_get(object->properties, hfield, ctx, ctx);
     if (property) {
       break;
@@ -230,9 +236,14 @@ static neo_js_variable_t neo_js_object_set_field(neo_js_context_t ctx,
   neo_js_object_t object =
       neo_js_value_to_object(neo_js_variable_get_value(self));
   neo_js_handle_t hvalue = neo_js_variable_get_handle(value);
-
   if (!proptype) {
+    if (neo_js_variable_get_type(field)->kind != NEO_TYPE_SYMBOL) {
+      field = neo_js_context_to_string(ctx, field);
+    }
+    field = neo_js_context_clone(ctx, field);
     if (!object->extensible || object->frozen || object->sealed) {
+      return neo_js_context_create_error(ctx, L"TypeError",
+                                         L"Object is not extensible");
     }
     proptype = neo_create_js_object_property(
         neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx)));
@@ -325,6 +336,10 @@ static neo_js_variable_t neo_js_object_set_field(neo_js_context_t ctx,
 static neo_js_variable_t neo_js_object_del_field(neo_js_context_t ctx,
                                                  neo_js_variable_t self,
                                                  neo_js_variable_t field) {
+  if (neo_js_variable_get_type(field)->kind != NEO_TYPE_SYMBOL) {
+    field = neo_js_context_to_string(ctx, field);
+  }
+  field = neo_js_context_clone(ctx, field);
   neo_js_object_property_t property =
       neo_js_object_get_own_property(ctx, self, field);
   neo_js_object_t object =
@@ -393,6 +408,14 @@ static bool neo_js_object_is_equal(neo_js_context_t ctx, neo_js_variable_t self,
   return neo_js_variable_get_value(self) == neo_js_variable_get_value(another);
 }
 
+static void neo_js_object_copy(neo_js_context_t ctx, neo_js_variable_t self,
+                               neo_js_variable_t another) {
+  neo_allocator_t allocaotr =
+      neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
+  neo_js_handle_set_value(allocaotr, neo_js_variable_get_handle(another),
+                          neo_js_variable_get_value(self));
+}
+
 neo_js_type_t neo_get_js_object_type() {
   static struct _neo_js_type_t type = {
       NEO_TYPE_OBJECT,         neo_js_object_typeof,
@@ -400,7 +423,7 @@ neo_js_type_t neo_get_js_object_type() {
       neo_js_object_to_number, neo_js_object_to_primitive,
       neo_js_object_to_object, neo_js_object_get_field,
       neo_js_object_set_field, neo_js_object_del_field,
-      neo_js_object_is_equal,
+      neo_js_object_is_equal,  neo_js_object_copy,
   };
   return &type;
 }
@@ -429,6 +452,7 @@ neo_js_object_t neo_create_js_object(neo_allocator_t allocator) {
   neo_hash_map_initialize_t initialize = {0};
   initialize.compare = (neo_compare_fn_t)neo_js_object_compare_key;
   initialize.hash = (neo_hash_fn_t)neo_js_object_key_hash;
+  initialize.auto_free_value = true;
   object->properties = neo_create_hash_map(allocator, &initialize);
   object->value.ref = 0;
   object->value.type = neo_get_js_object_type();
@@ -439,7 +463,7 @@ neo_js_object_t neo_create_js_object(neo_allocator_t allocator) {
 }
 
 neo_js_object_t neo_js_value_to_object(neo_js_value_t value) {
-  if (value->type->kind == NEO_TYPE_OBJECT) {
+  if (value->type->kind >= NEO_TYPE_OBJECT) {
     return (neo_js_object_t)value;
   }
   return NULL;

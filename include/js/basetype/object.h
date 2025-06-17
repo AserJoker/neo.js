@@ -1,5 +1,5 @@
-#ifndef _H_NEO_JS_OBJECT_
-#define _H_NEO_JS_OBJECT_
+#ifndef _H_NEO_JS_BASETYPE_OBJECT_
+#define _H_NEO_JS_BASETYPE_OBJECT_
 #include "core/allocator.h"
 #include "core/hash_map.h"
 #include "js/handle.h"

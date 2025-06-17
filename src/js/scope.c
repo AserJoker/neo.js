@@ -4,6 +4,7 @@
 #include "core/map.h"
 #include "core/string.h"
 #include "js/handle.h"
+#include "js/type.h"
 #include "js/variable.h"
 #include <string.h>
 struct _neo_js_scope_t {
@@ -12,6 +13,7 @@ struct _neo_js_scope_t {
   neo_list_t variables;
   neo_map_t named_variables;
   neo_js_handle_t root;
+  uint32_t ref;
 };
 
 static bool neo_js_scope_check_alive(neo_allocator_t allocator,
@@ -123,14 +125,21 @@ neo_js_scope_t neo_create_js_scope(neo_allocator_t allocator,
   scope->variables = neo_create_list(allocator, &initialize);
   neo_map_initialize_t map_initialize = {
       true,
-      true,
+      false,
       (neo_compare_fn_t)wcscmp,
   };
   scope->named_variables = neo_create_map(allocator, &map_initialize);
   scope->children = neo_create_list(allocator, NULL);
   scope->root = neo_create_js_handle(allocator, NULL);
+  scope->ref = 1;
   return scope;
 }
+uint32_t neo_js_scope_add_ref(neo_js_scope_t self) { return ++self->ref; }
+
+uint32_t neo_js_scope_ref(neo_js_scope_t self) { return self->ref; }
+
+uint32_t neo_js_scope_release(neo_js_scope_t self) { return --self->ref; }
+
 neo_js_scope_t neo_js_scope_get_parent(neo_js_scope_t self) {
   return self->parent;
 }
@@ -155,4 +164,13 @@ void neo_js_scope_set_variable(neo_allocator_t allocator, neo_js_scope_t self,
     neo_map_set(self->named_variables, neo_create_wstring(allocator, name),
                 variable, NULL);
   }
+}
+
+neo_js_variable_t neo_js_scope_create_variable(neo_allocator_t allocator,
+                                               neo_js_scope_t self,
+                                               neo_js_handle_t handle) {
+  neo_js_variable_t variable = neo_create_js_variable(allocator, handle);
+  neo_js_handle_add_parent(handle, self->root);
+  neo_list_push(self->variables, variable);
+  return variable;
 }

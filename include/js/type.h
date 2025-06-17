@@ -52,6 +52,9 @@ typedef bool (*neo_js_is_equal_fn_t)(neo_js_context_t ctx,
                                      neo_js_variable_t self,
                                      neo_js_variable_t another);
 
+typedef void (*neo_js_copy_fn_t)(neo_js_context_t ctx, neo_js_variable_t self,
+                                 neo_js_variable_t target);
+
 typedef enum _neo_js_type_kind_t {
   NEO_TYPE_NULL,
   NEO_TYPE_UNDEFINED,
@@ -76,6 +79,7 @@ typedef struct _neo_js_type_t {
   neo_js_set_field_fn_t set_field_fn;
   neo_js_del_field_fn_t del_field_fn;
   neo_js_is_equal_fn_t is_equal_fn;
+  neo_js_copy_fn_t copy_fn;
 } *neo_js_type_t;
 
 typedef neo_js_variable_t (*neo_js_cfunction_fn_t)(neo_js_context_t ctx,
