@@ -97,10 +97,13 @@ neo_js_array_t neo_create_js_array(neo_allocator_t allocator) {
   array->length = 0;
   array->object.value.type = neo_get_js_array_type();
   array->object.value.ref = 0;
+  array->object.extensible = true;
+  array->object.frozen = false;
+  array->object.sealed = false;
   array->object.prototype = NULL;
   neo_hash_map_initialize_t initialize = {0};
   initialize.auto_free_key = false;
-  initialize.auto_free_value = false;
+  initialize.auto_free_value = true;
   initialize.compare = (neo_compare_fn_t)neo_js_object_compare_key;
   initialize.hash = (neo_hash_fn_t)neo_js_object_key_hash;
   array->object.properties = neo_create_hash_map(allocator, &initialize);

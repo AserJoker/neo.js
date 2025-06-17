@@ -447,8 +447,8 @@ neo_js_context_create_cfunction(neo_js_context_t ctx, const wchar_t *name,
   neo_js_handle_t hproto = NULL;
   if (ctx->std.function_constructor) {
     hproto = neo_js_variable_get_handle(neo_js_context_get_field(
-        ctx, neo_js_context_create_string(ctx, L"prototype"),
-        ctx->std.function_constructor));
+        ctx, ctx->std.function_constructor,
+        neo_js_context_create_string(ctx, L"prototype")));
   } else {
     hproto = neo_js_variable_get_handle(neo_js_context_create_null(ctx));
   }

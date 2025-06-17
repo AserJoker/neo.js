@@ -1,6 +1,7 @@
 #include "js/basetype/object.h"
 #include "core/allocator.h"
 #include "core/common.h"
+#include "core/hash.h"
 #include "core/hash_map.h"
 #include "js/basetype/string.h"
 #include "js/basetype/symbol.h"
@@ -12,6 +13,7 @@
 #include "js/value.h"
 #include "js/variable.h"
 #include <stdbool.h>
+#include <stdint.h>
 #include <wchar.h>
 
 static const wchar_t *neo_js_object_typeof(neo_js_context_t ctx,
@@ -438,11 +440,16 @@ int8_t neo_js_object_compare_key(neo_js_handle_t handle1,
                                  neo_js_context_t ctx) {
   neo_js_variable_t val1 = neo_js_context_create_variable(ctx, handle1);
   neo_js_variable_t val2 = neo_js_context_create_variable(ctx, handle2);
-  return neo_js_context_is_equal(ctx, val1, val2);
+  return neo_js_context_is_equal(ctx, val1, val2) ? 0 : 1;
 }
 
-uint32_t neo_js_object_key_hash(neo_js_handle_t *handle1, uint32_t max_bucket) {
-  return (uintptr_t)handle1 % max_bucket;
+uint32_t neo_js_object_key_hash(neo_js_handle_t handle, uint32_t max_bucket) {
+  neo_js_value_t value = neo_js_handle_get_value(handle);
+  if (value->type->kind == NEO_TYPE_STRING) {
+    return neo_hash_sdb(neo_js_value_to_string(value)->string, max_bucket);
+  } else {
+    return (intptr_t)value % max_bucket;
+  }
 }
 
 neo_js_object_t neo_create_js_object(neo_allocator_t allocator) {

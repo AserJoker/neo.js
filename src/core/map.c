@@ -128,19 +128,9 @@ neo_map_node_t neo_map_get_head(neo_map_t self) { return &self->head; }
 
 neo_map_node_t neo_map_get_tail(neo_map_t self) { return &self->tail; }
 
-neo_map_node_t neo_map_get_first(neo_map_t self) {
-  if (!self->size) {
-    return NULL;
-  }
-  return self->head.next;
-}
+neo_map_node_t neo_map_get_first(neo_map_t self) { return self->head.next; }
 
-neo_map_node_t neo_map_get_last(neo_map_t self) {
-  if (!self->size) {
-    return NULL;
-  }
-  return self->tail.last;
-}
+neo_map_node_t neo_map_get_last(neo_map_t self) { return self->tail.last; }
 
 void *neo_map_node_get_key(neo_map_node_t self) { return self->key; }
 

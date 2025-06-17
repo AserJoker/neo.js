@@ -208,22 +208,16 @@ neo_hash_map_node_t neo_hash_map_get_tail(neo_hash_map_t self) {
 }
 
 neo_hash_map_node_t neo_hash_map_get_first(neo_hash_map_t self) {
-  if (!self->size) {
-    return NULL;
-  }
   neo_hash_map_node_t head = self->head;
-  while (head->manager) {
+  while (head->manager && head != self->tail) {
     head = head->next;
   }
   return head;
 }
 
 neo_hash_map_node_t neo_hash_map_get_last(neo_hash_map_t self) {
-  if (!self->size) {
-    return NULL;
-  }
   neo_hash_map_node_t tail = self->tail;
-  while (tail->manager) {
+  while (tail->manager && tail != self->head) {
     tail = tail->last;
   }
   return tail;

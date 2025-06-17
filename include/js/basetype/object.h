@@ -34,7 +34,7 @@ neo_js_type_t neo_get_js_object_type();
 int8_t neo_js_object_compare_key(neo_js_handle_t handle1,
                                  neo_js_handle_t handle2, neo_js_context_t ctx);
 
-uint32_t neo_js_object_key_hash(neo_js_handle_t *handle1, uint32_t max_bucket);
+uint32_t neo_js_object_key_hash(neo_js_handle_t handle, uint32_t max_bucket);
 
 neo_js_object_t neo_create_js_object(neo_allocator_t allocator);
 

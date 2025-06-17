@@ -48,7 +48,7 @@ static neo_js_variable_t neo_js_function_get_field(neo_js_context_t ctx,
     if (wcscmp(string->string, L"name") == 0) {
       neo_js_function_t function =
           neo_js_value_to_function(neo_js_variable_get_value(self));
-      if (function->callable.name) {
+      if (!function->callable.name) {
         return neo_js_context_create_string(ctx, L"");
       } else {
         return neo_js_context_create_variable(ctx, function->callable.name);
@@ -135,8 +135,11 @@ neo_js_function_t neo_create_js_function(neo_allocator_t allocator,
 
   function->callable.object.value.type = neo_get_js_function_type();
   function->callable.object.value.ref = 0;
+  function->callable.object.extensible = true;
+  function->callable.object.frozen = false;
+  function->callable.object.sealed = false;
   initialize.auto_free_key = false;
-  initialize.auto_free_value = false;
+  initialize.auto_free_value = true;
   initialize.compare = (neo_compare_fn_t)neo_js_object_compare_key;
   initialize.hash = (neo_hash_fn_t)neo_js_object_key_hash;
   function->callable.object.properties =
