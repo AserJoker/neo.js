@@ -116,11 +116,13 @@ static neo_js_variable_t neo_js_undefined_del_field(neo_js_context_t ctx,
   return neo_js_context_create_error(
       ctx, L"TypeError", L"Cannot convert undefined or undefined to object");
 }
+
 static bool neo_js_undefined_is_equal(neo_js_context_t ctx,
                                       neo_js_variable_t self,
                                       neo_js_variable_t another) {
   return neo_js_variable_get_type(another)->kind = NEO_TYPE_UNDEFINED;
 }
+
 static void neo_js_undefined_copy(neo_js_context_t ctx, neo_js_variable_t self,
                                   neo_js_variable_t target) {
 

@@ -119,6 +119,7 @@ static void neo_js_function_dispose(neo_allocator_t allocator,
                                     neo_js_function_t self) {
   neo_allocator_free(allocator, self->callable.closure);
   neo_allocator_free(allocator, self->callable.object.properties);
+  neo_allocator_free(allocator, self->callable.object.internal);
 }
 
 neo_js_function_t neo_create_js_function(neo_allocator_t allocator,
@@ -144,7 +145,15 @@ neo_js_function_t neo_create_js_function(neo_allocator_t allocator,
   initialize.hash = (neo_hash_fn_t)neo_js_object_key_hash;
   function->callable.object.properties =
       neo_create_hash_map(allocator, &initialize);
+
+  initialize.auto_free_key = true;
+  initialize.auto_free_value = true;
+  initialize.compare = (neo_compare_fn_t)wcscmp;
+  initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
+  function->callable.object.internal =
+      neo_create_hash_map(allocator, &initialize);
   function->callable.source = NULL;
+  function->callable.object.constructor = NULL;
   return function;
 }
 

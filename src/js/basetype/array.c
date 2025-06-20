@@ -1,5 +1,6 @@
 #include "js/basetype/array.h"
 #include "core/allocator.h"
+#include "core/hash.h"
 #include "core/hash_map.h"
 #include "js/basetype/number.h"
 #include "js/basetype/string.h"
@@ -89,6 +90,7 @@ neo_js_type_t neo_get_js_array_type() {
 static void neo_js_array_dispose(neo_allocator_t allocator,
                                  neo_js_array_t self) {
   neo_allocator_free(allocator, self->object.properties);
+  neo_allocator_free(allocator, self->object.internal);
 }
 
 neo_js_array_t neo_create_js_array(neo_allocator_t allocator) {
@@ -107,6 +109,13 @@ neo_js_array_t neo_create_js_array(neo_allocator_t allocator) {
   initialize.compare = (neo_compare_fn_t)neo_js_object_compare_key;
   initialize.hash = (neo_hash_fn_t)neo_js_object_key_hash;
   array->object.properties = neo_create_hash_map(allocator, &initialize);
+
+  initialize.auto_free_key = true;
+  initialize.auto_free_value = true;
+  initialize.compare = (neo_compare_fn_t)wcscmp;
+  initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
+  array->object.internal = neo_create_hash_map(allocator, &initialize);
+  array->object.constructor = NULL;
   return array;
 }
 

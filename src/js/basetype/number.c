@@ -76,6 +76,7 @@ static neo_js_variable_t neo_js_number_del_field(neo_js_context_t ctx,
   return neo_js_context_del_field(ctx, neo_js_number_to_object(ctx, self),
                                   field);
 }
+
 static bool neo_js_number_is_equal(neo_js_context_t ctx, neo_js_variable_t self,
                                    neo_js_variable_t another) {
   neo_js_value_t val1 = neo_js_variable_get_value(self);

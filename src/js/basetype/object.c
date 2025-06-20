@@ -162,7 +162,7 @@ static neo_js_variable_t neo_js_object_to_object(neo_js_context_t ctx,
   return self;
 }
 
-static neo_js_object_property_t
+neo_js_object_property_t
 neo_create_js_object_property(neo_allocator_t allocator) {
   neo_js_object_property_t property = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_object_property_t), NULL);
@@ -433,6 +433,7 @@ neo_js_type_t neo_get_js_object_type() {
 static void neo_js_object_dispose(neo_allocator_t allocator,
                                   neo_js_object_t self) {
   neo_allocator_free(allocator, self->properties);
+  neo_allocator_free(allocator, self->internal);
 }
 
 int8_t neo_js_object_compare_key(neo_js_handle_t handle1,
@@ -461,11 +462,16 @@ neo_js_object_t neo_create_js_object(neo_allocator_t allocator) {
   initialize.hash = (neo_hash_fn_t)neo_js_object_key_hash;
   initialize.auto_free_value = true;
   object->properties = neo_create_hash_map(allocator, &initialize);
+  initialize.auto_free_key = true;
+  initialize.compare = (neo_compare_fn_t)wcscmp;
+  initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
+  object->internal = neo_create_hash_map(allocator, &initialize);
   object->value.ref = 0;
   object->value.type = neo_get_js_object_type();
   object->frozen = false;
   object->extensible = true;
   object->sealed = false;
+  object->constructor = NULL;
   return object;
 }
 

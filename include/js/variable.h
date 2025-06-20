@@ -7,6 +7,7 @@
 #include "js/basetype/null.h"
 #include "js/basetype/number.h"
 #include "js/basetype/string.h"
+#include "js/basetype/symbol.h"
 #include "js/basetype/undefined.h"
 #include "js/handle.h"
 
@@ -55,6 +56,11 @@ neo_js_variable_to_null(neo_js_variable_t variable) {
 static inline neo_js_undefined_t
 neo_js_variable_to_undefined(neo_js_variable_t variable) {
   return neo_js_value_to_undefined(neo_js_variable_get_value(variable));
+}
+
+static inline neo_js_symbol_t
+neo_js_variable_to_symbol(neo_js_variable_t variable) {
+  return neo_js_value_to_symbol(neo_js_variable_get_value(variable));
 }
 
 static inline neo_js_function_t

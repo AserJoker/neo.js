@@ -23,7 +23,9 @@ typedef struct _neo_js_object_property_t {
 struct _neo_js_object_t {
   struct _neo_js_value_t value;
   neo_hash_map_t properties;
+  neo_hash_map_t internal;
   neo_js_handle_t prototype;
+  neo_js_handle_t constructor;
   bool sealed;
   bool frozen;
   bool extensible;
@@ -37,6 +39,9 @@ int8_t neo_js_object_compare_key(neo_js_handle_t handle1,
 uint32_t neo_js_object_key_hash(neo_js_handle_t handle, uint32_t max_bucket);
 
 neo_js_object_t neo_create_js_object(neo_allocator_t allocator);
+
+neo_js_object_property_t
+neo_create_js_object_property(neo_allocator_t allocator);
 
 neo_js_object_t neo_js_value_to_object(neo_js_value_t value);
 
