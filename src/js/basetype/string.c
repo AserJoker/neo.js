@@ -148,6 +148,7 @@ neo_js_string_t neo_create_js_string(neo_allocator_t allocator,
   string->value.ref = 0;
   string->string =
       neo_allocator_alloc(allocator, (len + 1) * sizeof(wchar_t), NULL);
+  string->string[0] = 0;
   wcscpy(string->string, value);
   string->string[len] = 0;
   return string;

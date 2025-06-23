@@ -41,9 +41,6 @@ void neo_js_context_push_stackframe(neo_js_context_t ctx,
 
 void neo_js_context_pop_stackframe(neo_js_context_t ctx);
 
-neo_js_variable_t
-neo_js_context_get_primitive_value_symbol(neo_js_context_t ctx);
-
 neo_js_variable_t neo_js_context_get_object_constructor(neo_js_context_t ctx);
 
 neo_js_variable_t neo_js_context_get_function_constructor(neo_js_context_t ctx);
@@ -75,6 +72,10 @@ neo_js_variable_t neo_js_context_set_field(neo_js_context_t ctx,
                                            neo_js_variable_t object,
                                            neo_js_variable_t field,
                                            neo_js_variable_t value);
+
+neo_js_variable_t neo_js_context_has_field(neo_js_context_t ctx,
+                                           neo_js_variable_t object,
+                                           neo_js_variable_t field);
 
 neo_js_variable_t
 neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
@@ -139,7 +140,10 @@ neo_js_variable_t neo_js_context_create_symbol(neo_js_context_t ctx,
                                                const wchar_t *description);
 
 neo_js_variable_t neo_js_context_create_object(neo_js_context_t ctx,
-                                               neo_js_variable_t prototype);
+                                               neo_js_variable_t prototype,
+                                               neo_js_object_t object);
+
+neo_js_variable_t neo_js_context_create_array(neo_js_context_t ctx);
 
 neo_js_variable_t
 neo_js_context_create_cfunction(neo_js_context_t ctx, const wchar_t *name,

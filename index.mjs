@@ -1,4 +1,6 @@
-function Test(){
-    console.trace();
+'use strict';
+const sym = Symbol();
+const obj = {
+    [sym]: 123
 }
-Test();
+console.log(Object.keys(obj))

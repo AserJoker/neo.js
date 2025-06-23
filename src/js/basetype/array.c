@@ -71,7 +71,7 @@ static neo_js_variable_t neo_js_array_set_field(neo_js_context_t ctx,
 
 neo_js_type_t neo_get_js_array_type() {
   static struct _neo_js_type_t type = {0};
-  type.kind = NEO_TYPE_OBJECT;
+  type.kind = NEO_TYPE_ARRAY;
   neo_js_type_t otype = neo_get_js_object_type();
   type.typeof_fn = otype->typeof_fn;
   type.to_boolean_fn = otype->to_boolean_fn;

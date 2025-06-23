@@ -48,7 +48,7 @@ static neo_js_variable_t neo_js_object_to_string(neo_js_context_t ctx,
   if (!primitive ||
       neo_js_variable_get_type(primitive)->kind >= NEO_TYPE_OBJECT) {
     neo_js_variable_t to_string = neo_js_context_get_field(
-        ctx, self, neo_js_context_create_string(ctx, L"to_string"));
+        ctx, self, neo_js_context_create_string(ctx, L"toString"));
     if (neo_js_variable_get_type(to_string)->kind == NEO_TYPE_FUNCTION) {
       primitive = neo_js_context_call(ctx, to_string, self, 0, NULL);
       if (neo_js_variable_get_type(primitive)->kind == NEO_TYPE_ERROR) {
@@ -57,7 +57,7 @@ static neo_js_variable_t neo_js_object_to_string(neo_js_context_t ctx,
     }
   }
   if (!primitive ||
-      neo_js_variable_get_type(primitive)->kind != NEO_TYPE_OBJECT) {
+      neo_js_variable_get_type(primitive)->kind >= NEO_TYPE_OBJECT) {
     return neo_js_context_create_error(
         ctx, L"TypeError", L"Cannot convert object to primitive value");
   }
@@ -239,25 +239,7 @@ static neo_js_variable_t neo_js_object_set_field(neo_js_context_t ctx,
       neo_js_value_to_object(neo_js_variable_get_value(self));
   neo_js_handle_t hvalue = neo_js_variable_get_handle(value);
   if (!proptype) {
-    if (neo_js_variable_get_type(field)->kind != NEO_TYPE_SYMBOL) {
-      field = neo_js_context_to_string(ctx, field);
-    }
-    field = neo_js_context_clone(ctx, field);
-    if (!object->extensible || object->frozen || object->sealed) {
-      return neo_js_context_create_error(ctx, L"TypeError",
-                                         L"Object is not extensible");
-    }
-    proptype = neo_create_js_object_property(
-        neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx)));
-    proptype->value = hvalue;
-    proptype->enumerable = true;
-    proptype->writable = true;
-    proptype->configurable = true;
-    neo_js_handle_t hfield = neo_js_variable_get_handle(field);
-    neo_js_handle_add_parent(hvalue, hobject);
-    neo_js_handle_add_parent(hfield, hobject);
-    neo_hash_map_set(object->properties, hfield, proptype, ctx, ctx);
-    return neo_js_context_create_undefined(ctx);
+    return neo_js_context_def_field(ctx, self, field, value, true, true, true);
   } else {
     if (proptype->value) {
       if (!proptype->writable) {
@@ -297,7 +279,7 @@ static neo_js_variable_t neo_js_object_set_field(neo_js_context_t ctx,
           neo_js_handle_add_parent(proptype->value, root);
           proptype->value = hvalue;
         }
-        return neo_js_context_create_undefined(ctx);
+        return self;
       }
     } else if (proptype->set) {
       neo_js_variable_t setter =

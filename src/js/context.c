@@ -3,6 +3,7 @@
 #include "core/hash_map.h"
 #include "core/list.h"
 #include "core/string.h"
+#include "js/basetype/array.h"
 #include "js/basetype/boolean.h"
 #include "js/basetype/error.h"
 #include "js/basetype/function.h"
@@ -16,12 +17,14 @@
 #include "js/runtime.h"
 #include "js/scope.h"
 #include "js/stackframe.h"
+#include "js/std/array.h"
 #include "js/std/function.h"
 #include "js/std/object.h"
 #include "js/std/symbol.h"
 #include "js/type.h"
 #include "js/value.h"
 #include "js/variable.h"
+#include <stdbool.h>
 #include <string.h>
 #include <wchar.h>
 
@@ -48,7 +51,6 @@ struct _neo_js_context_t {
     neo_js_variable_t generator_iterator_constructor;
     neo_js_variable_t async_generator_constructor;
     neo_js_variable_t async_generator_iterator_constructor;
-    neo_js_variable_t primitive_value_symbol;
   } std;
 };
 
@@ -56,78 +58,81 @@ static void neo_js_context_init_std_symbol(neo_js_context_t ctx) {
   neo_js_context_push_scope(ctx);
   neo_js_variable_t async_iterator =
       neo_js_context_create_symbol(ctx, L"asyncIterator");
-  neo_js_context_set_field(ctx, ctx->std.symbol_constructor,
+  neo_js_context_def_field(ctx, ctx->std.symbol_constructor,
                            neo_js_context_create_string(ctx, L"asyncIterator"),
-                           async_iterator);
+                           async_iterator, true, false, true);
 
   neo_js_variable_t has_instance =
       neo_js_context_create_symbol(ctx, L"hasInstance");
-  neo_js_context_set_field(ctx, ctx->std.symbol_constructor,
+  neo_js_context_def_field(ctx, ctx->std.symbol_constructor,
                            neo_js_context_create_string(ctx, L"hasInstance"),
-                           has_instance);
+                           has_instance, true, false, true);
 
   neo_js_variable_t is_concat_spreadable =
       neo_js_context_create_symbol(ctx, L"isConcatSpreadable");
-  neo_js_context_set_field(
+  neo_js_context_def_field(
       ctx, ctx->std.symbol_constructor,
       neo_js_context_create_string(ctx, L"isConcatSpreadable"),
-      is_concat_spreadable);
+      is_concat_spreadable, true, false, true);
 
   neo_js_variable_t iterator = neo_js_context_create_symbol(ctx, L"iterator");
-  neo_js_context_set_field(ctx, ctx->std.symbol_constructor,
+  neo_js_context_def_field(ctx, ctx->std.symbol_constructor,
                            neo_js_context_create_string(ctx, L"iterator"),
-                           iterator);
+                           iterator, true, false, true);
 
   neo_js_variable_t match = neo_js_context_create_symbol(ctx, L"match");
-  neo_js_context_set_field(ctx, ctx->std.symbol_constructor,
-                           neo_js_context_create_string(ctx, L"match"), match);
+  neo_js_context_def_field(ctx, ctx->std.symbol_constructor,
+                           neo_js_context_create_string(ctx, L"match"), match,
+                           true, false, true);
 
   neo_js_variable_t match_all = neo_js_context_create_symbol(ctx, L"matchAll");
-  neo_js_context_set_field(ctx, ctx->std.symbol_constructor,
+  neo_js_context_def_field(ctx, ctx->std.symbol_constructor,
                            neo_js_context_create_string(ctx, L"matchAll"),
-                           match_all);
+                           match_all, true, false, true);
 
   neo_js_variable_t replace = neo_js_context_create_symbol(ctx, L"replace");
-  neo_js_context_set_field(ctx, ctx->std.symbol_constructor,
+  neo_js_context_def_field(ctx, ctx->std.symbol_constructor,
                            neo_js_context_create_string(ctx, L"replace"),
-                           replace);
+                           replace, true, false, true);
 
   neo_js_variable_t search = neo_js_context_create_symbol(ctx, L"search");
-  neo_js_context_set_field(ctx, ctx->std.symbol_constructor,
-                           neo_js_context_create_string(ctx, L"search"),
-                           search);
+  neo_js_context_def_field(ctx, ctx->std.symbol_constructor,
+                           neo_js_context_create_string(ctx, L"search"), search,
+                           true, false, true);
 
   neo_js_variable_t species = neo_js_context_create_symbol(ctx, L"species");
-  neo_js_context_set_field(ctx, ctx->std.symbol_constructor,
+  neo_js_context_def_field(ctx, ctx->std.symbol_constructor,
                            neo_js_context_create_string(ctx, L"species"),
-                           species);
+                           species, true, false, true);
 
   neo_js_variable_t split = neo_js_context_create_symbol(ctx, L"split");
-  neo_js_context_set_field(ctx, ctx->std.symbol_constructor,
-                           neo_js_context_create_string(ctx, L"split"), split);
+  neo_js_context_def_field(ctx, ctx->std.symbol_constructor,
+                           neo_js_context_create_string(ctx, L"split"), split,
+                           true, false, true);
 
   neo_js_variable_t to_primitive =
       neo_js_context_create_symbol(ctx, L"toPrimitive");
-  neo_js_context_set_field(ctx, ctx->std.symbol_constructor,
+  neo_js_context_def_field(ctx, ctx->std.symbol_constructor,
                            neo_js_context_create_string(ctx, L"toPrimitive"),
-                           to_primitive);
+                           to_primitive, true, false, true);
 
   neo_js_variable_t to_string_tag =
       neo_js_context_create_symbol(ctx, L"toStringTag");
-  neo_js_context_set_field(ctx, ctx->std.symbol_constructor,
+  neo_js_context_def_field(ctx, ctx->std.symbol_constructor,
                            neo_js_context_create_string(ctx, L"toStringTag"),
-                           to_string_tag);
+                           to_string_tag, true, false, true);
 
   neo_js_variable_t for_ =
       neo_js_context_create_cfunction(ctx, L"for", &neo_js_symbol_for);
-  neo_js_context_set_field(ctx, ctx->std.symbol_constructor,
-                           neo_js_context_create_string(ctx, L"for"), for_);
+  neo_js_context_def_field(ctx, ctx->std.symbol_constructor,
+                           neo_js_context_create_string(ctx, L"for"), for_,
+                           true, false, true);
 
   neo_js_variable_t key_for =
       neo_js_context_create_cfunction(ctx, L"keyFor", &neo_js_symbol_key_for);
-  neo_js_context_set_field(ctx, ctx->std.symbol_constructor,
+  neo_js_context_def_field(ctx, ctx->std.symbol_constructor,
                            neo_js_context_create_string(ctx, L"keyFor"),
-                           key_for);
+                           key_for, true, false, true);
 
   neo_js_variable_t prototype =
       neo_js_context_get_field(ctx, ctx->std.symbol_constructor,
@@ -135,19 +140,82 @@ static void neo_js_context_init_std_symbol(neo_js_context_t ctx) {
 
   neo_js_variable_t to_string = neo_js_context_create_cfunction(
       ctx, L"toString", &neo_js_symbol_to_string);
-  neo_js_context_set_field(ctx, prototype,
+  neo_js_context_def_field(ctx, prototype,
                            neo_js_context_create_string(ctx, L"toString"),
-                           to_string);
+                           to_string, true, false, true);
 
   neo_js_variable_t value_of =
       neo_js_context_create_cfunction(ctx, L"valueOf", &neo_js_symbol_value_of);
-  neo_js_context_set_field(
-      ctx, prototype, neo_js_context_create_string(ctx, L"valueOf"), value_of);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"valueOf"),
+                           value_of, true, false, true);
 
   neo_js_variable_t to_primitive_func = neo_js_context_create_cfunction(
       ctx, L"[Symbol.toPrimitive]", &neo_js_symbol_to_primitive);
-  neo_js_context_set_field(ctx, prototype, to_primitive, to_primitive_func);
+
+  neo_js_context_def_field(ctx, prototype, to_primitive, to_primitive_func,
+                           true, false, true);
   neo_js_context_pop_scope(ctx);
+}
+
+static void neo_js_context_init_std_object(neo_js_context_t ctx) {
+
+  neo_js_context_def_field(
+      ctx, ctx->std.object_constructor,
+      neo_js_context_create_string(ctx, L"keys"),
+      neo_js_context_create_cfunction(ctx, L"keys", neo_js_object_keys), true,
+      false, true);
+
+  neo_js_variable_t prototype =
+      neo_js_context_get_field(ctx, ctx->std.object_constructor,
+                               neo_js_context_create_string(ctx, L"prototype"));
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"valueOf"),
+      neo_js_context_create_cfunction(ctx, L"valueOf", neo_js_object_value_of),
+      true, false, true);
+
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"toString"),
+                           neo_js_context_create_cfunction(
+                               ctx, L"toString", neo_js_object_to_string),
+                           true, false, true);
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"toLocalString"),
+      neo_js_context_create_cfunction(ctx, L"toLocalString",
+                                      neo_js_object_to_local_string),
+      true, false, true);
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"hasOwnProperty"),
+      neo_js_context_create_cfunction(ctx, L"hasOwnProperty",
+                                      neo_js_object_has_own_property),
+      true, false, true);
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"isPrototypeOf"),
+      neo_js_context_create_cfunction(ctx, L"isPrototypeOf",
+                                      neo_js_object_is_prototype_of),
+      true, false, true);
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"isPrototypeOf"),
+      neo_js_context_create_cfunction(ctx, L"isPrototypeOf",
+                                      neo_js_object_property_is_enumerable),
+      true, false, true);
+}
+
+static void neo_js_context_init_std_function(neo_js_context_t ctx) {}
+
+static void neo_js_context_init_std_array(neo_js_context_t ctx) {
+  neo_js_variable_t prototype =
+      neo_js_context_get_field(ctx, ctx->std.array_constructor,
+                               neo_js_context_create_string(ctx, L"prototype"));
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"toString"),
+      neo_js_context_create_cfunction(ctx, L"toString", neo_js_array_to_string),
+      true, false, true);
 }
 
 static void neo_js_context_init_std(neo_js_context_t ctx) {
@@ -155,28 +223,43 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
       ctx, L"Object", &neo_js_object_constructor);
 
   neo_js_variable_t prototype =
-      neo_js_context_get_field(ctx, ctx->std.object_constructor,
-                               neo_js_context_create_string(ctx, L"prototype"));
+      neo_js_context_create_object(ctx, neo_js_context_create_null(ctx), NULL);
 
-  neo_js_context_set_field(ctx, prototype,
+  neo_js_context_def_field(ctx, ctx->std.object_constructor,
+                           neo_js_context_create_string(ctx, L"prototype"),
+                           prototype, true, false, true);
+
+  neo_js_context_def_field(ctx, prototype,
                            neo_js_context_create_string(ctx, L"constructor"),
-                           ctx->std.object_constructor);
+                           ctx->std.object_constructor, true, false, true);
 
   ctx->std.function_constructor = neo_js_context_create_cfunction(
       ctx, L"Function", &neo_js_function_constructor);
 
-  neo_js_context_set_field(ctx, ctx->std.object_constructor,
+  neo_js_context_def_field(ctx, ctx->std.object_constructor,
                            neo_js_context_create_string(ctx, L"constructor"),
-                           ctx->std.function_constructor);
+                           ctx->std.function_constructor, true, false, true);
 
-  ctx->std.primitive_value_symbol = neo_js_context_create_symbol(ctx, NULL);
+  neo_js_context_def_field(ctx, ctx->std.function_constructor,
+                           neo_js_context_create_string(ctx, L"prototype"),
+                           neo_js_context_create_object(ctx, NULL, NULL), true,
+                           false, true);
 
   ctx->std.symbol_constructor = neo_js_context_create_cfunction(
       ctx, L"Symbol", neo_js_symbol_constructor);
 
   neo_js_context_init_std_symbol(ctx);
 
-  ctx->std.global = neo_js_context_create_object(ctx, NULL);
+  neo_js_context_init_std_object(ctx);
+
+  neo_js_context_init_std_function(ctx);
+
+  ctx->std.array_constructor =
+      neo_js_context_create_cfunction(ctx, L"Array", neo_js_array_constructor);
+
+  neo_js_context_init_std_array(ctx);
+
+  ctx->std.global = neo_js_context_create_object(ctx, NULL, NULL);
 
   neo_js_context_set_field(ctx, ctx->std.global,
                            neo_js_context_create_string(ctx, L"global"),
@@ -193,6 +276,10 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
   neo_js_context_set_field(ctx, ctx->std.global,
                            neo_js_context_create_string(ctx, L"Symbol"),
                            ctx->std.symbol_constructor);
+
+  neo_js_context_set_field(ctx, ctx->std.global,
+                           neo_js_context_create_string(ctx, L"Array"),
+                           ctx->std.array_constructor);
 }
 
 static void neo_js_context_dispose(neo_allocator_t allocator,
@@ -290,11 +377,6 @@ void neo_js_context_pop_stackframe(neo_js_context_t ctx) {
   frame->column = 0;
 }
 
-neo_js_variable_t
-neo_js_context_get_primitive_value_symbol(neo_js_context_t ctx) {
-  return ctx->std.primitive_value_symbol;
-}
-
 neo_js_variable_t neo_js_context_get_object_constructor(neo_js_context_t ctx) {
   return ctx->std.object_constructor;
 }
@@ -385,6 +467,14 @@ neo_js_variable_t neo_js_context_set_field(neo_js_context_t ctx,
   return result;
 }
 
+neo_js_variable_t neo_js_context_has_field(neo_js_context_t ctx,
+                                           neo_js_variable_t object,
+                                           neo_js_variable_t field) {
+  object = neo_js_context_to_object(ctx, object);
+  return neo_js_context_create_boolean(
+      ctx, neo_js_object_get_property(ctx, object, field));
+}
+
 neo_js_variable_t
 neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
                          neo_js_variable_t field, neo_js_variable_t value,
@@ -404,6 +494,10 @@ neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
   neo_js_handle_t hvalue = neo_js_variable_get_handle(value);
   neo_js_handle_t hobject = neo_js_variable_get_handle(object);
   if (!prop) {
+    if (obj->sealed || obj->frozen || !obj->extensible) {
+      return neo_js_context_create_error(ctx, L"TypeError",
+                                         L"Object is not extensible");
+    }
     prop = neo_create_js_object_property(allocator);
     prop->configurable = configurable;
     prop->enumerable = enumable;
@@ -411,7 +505,15 @@ neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
     prop->value = hvalue;
     prop->get = NULL;
     prop->set = NULL;
+    neo_js_handle_t hfield = neo_js_variable_get_handle(field);
+    neo_hash_map_set(obj->properties, hfield, prop, ctx, ctx);
+    neo_js_handle_add_parent(hvalue, hobject);
+    neo_js_handle_add_parent(hfield, hobject);
   } else {
+    if (obj->frozen) {
+      return neo_js_context_create_error(ctx, L"TypeError",
+                                         L"Object is not extensible");
+    }
     if (prop->value != NULL) {
       neo_js_variable_t current =
           neo_js_context_create_variable(ctx, prop->value);
@@ -515,6 +617,10 @@ neo_js_context_def_accessor(neo_js_context_t ctx, neo_js_variable_t object,
     hsetter = neo_js_variable_get_handle(setter);
   }
   if (!prop) {
+    if (obj->sealed || obj->frozen || !obj->extensible) {
+      return neo_js_context_create_error(ctx, L"TypeError",
+                                         L"Object is not extensible");
+    }
     prop = neo_create_js_object_property(allocator);
     prop->configurable = configurable;
     prop->enumerable = enumable;
@@ -715,30 +821,34 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
     return neo_js_context_create_error(ctx, L"TypeError",
                                        L"Constructor is not a function");
   }
-  neo_js_scope_t current_scope = neo_js_context_get_scope(ctx);
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
+  neo_js_scope_t current = neo_js_context_get_scope(ctx);
   neo_js_context_push_scope(ctx);
   neo_js_variable_t prototype = neo_js_context_get_field(
       ctx, constructor, neo_js_context_create_string(ctx, L"prototype"));
-  neo_js_variable_t object = neo_js_context_create_object(ctx, prototype);
-  neo_js_object_t obj_value =
-      neo_js_value_to_object(neo_js_variable_get_value(object));
-  neo_js_variable_t error = neo_js_context_set_field(
-      ctx, object, neo_js_context_create_string(ctx, L"constructor"),
-      constructor);
-  if (neo_js_variable_get_type(error)->kind != NEO_TYPE_UNDEFINED) {
-    object = error;
+  neo_js_object_t obj = NULL;
+  if (neo_js_variable_get_value(constructor) ==
+      neo_js_variable_get_value(ctx->std.array_constructor)) {
+    obj = &neo_create_js_array(allocator)->object;
   } else {
-    neo_js_variable_t result =
-        neo_js_context_call(ctx, constructor, object, argc, argv);
-    if (result) {
-      if (neo_js_variable_get_type(result)->kind >= NEO_TYPE_OBJECT) {
-        object = result;
-      }
+    obj = neo_create_js_object(allocator);
+  }
+  neo_js_variable_t object = neo_js_context_create_object(ctx, prototype, obj);
+  neo_js_handle_t hobject = neo_js_variable_get_handle(object);
+  obj->constructor = neo_js_variable_get_handle(constructor);
+  neo_js_handle_add_parent(obj->constructor, hobject);
+  neo_js_context_def_field(ctx, object,
+                           neo_js_context_create_string(ctx, L"constructor"),
+                           constructor, true, false, true);
+  neo_js_variable_t result =
+      neo_js_context_call(ctx, constructor, object, argc, argv);
+  if (result) {
+    if (neo_js_variable_get_type(result)->kind >= NEO_TYPE_OBJECT) {
+      object = result;
     }
   }
-  neo_js_handle_t hobject = neo_js_variable_get_handle(object);
-  neo_js_handle_add_parent(hobject,
-                           neo_js_scope_get_root_handle(current_scope));
+  hobject = neo_js_variable_get_handle(object);
+  object = neo_js_scope_create_variable(allocator, current, hobject);
   neo_js_context_pop_scope(ctx);
   return object;
 }
@@ -798,9 +908,12 @@ neo_js_variable_t neo_js_context_create_symbol(neo_js_context_t ctx,
       ctx, neo_create_js_handle(allocator, &symbol->value));
 }
 neo_js_variable_t neo_js_context_create_object(neo_js_context_t ctx,
-                                               neo_js_variable_t prototype) {
+                                               neo_js_variable_t prototype,
+                                               neo_js_object_t object) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
-  neo_js_object_t object = neo_create_js_object(allocator);
+  if (!object) {
+    object = neo_create_js_object(allocator);
+  }
   neo_js_handle_t hobject = neo_create_js_handle(allocator, &object->value);
   if (!prototype) {
     if (ctx->std.object_constructor) {
@@ -816,11 +929,15 @@ neo_js_variable_t neo_js_context_create_object(neo_js_context_t ctx,
   object->prototype = hproto;
   neo_js_variable_t result = neo_js_context_create_variable(ctx, hobject);
   if (ctx->std.object_constructor) {
-    neo_js_context_set_field(ctx, result,
+    neo_js_context_def_field(ctx, result,
                              neo_js_context_create_string(ctx, L"constructor"),
-                             ctx->std.object_constructor);
+                             ctx->std.object_constructor, true, false, true);
   }
   return result;
+}
+
+neo_js_variable_t neo_js_context_create_array(neo_js_context_t ctx) {
+  return neo_js_context_construct(ctx, ctx->std.array_constructor, 0, NULL);
 }
 
 neo_js_variable_t
@@ -848,13 +965,13 @@ neo_js_context_create_cfunction(neo_js_context_t ctx, const wchar_t *name,
   }
   neo_js_variable_t result = neo_js_context_create_variable(ctx, hfunction);
   if (ctx->std.function_constructor) {
-    neo_js_context_set_field(ctx, result,
+    neo_js_context_def_field(ctx, result,
                              neo_js_context_create_string(ctx, L"constructor"),
-                             ctx->std.function_constructor);
+                             ctx->std.function_constructor, true, false, true);
   }
-  neo_js_context_set_field(ctx, result,
-                           neo_js_context_create_string(ctx, L"prototype"),
-                           neo_js_context_create_object(ctx, NULL));
+  neo_js_context_def_field(
+      ctx, result, neo_js_context_create_string(ctx, L"prototype"),
+      neo_js_context_create_object(ctx, NULL, NULL), true, false, true);
   return result;
 }
 
@@ -902,6 +1019,7 @@ neo_js_variable_t neo_js_context_to_number(neo_js_context_t ctx,
   neo_js_context_pop_scope(ctx);
   return result;
 }
+
 bool neo_js_context_is_equal(neo_js_context_t ctx, neo_js_variable_t variable,
                              neo_js_variable_t another) {
   neo_js_type_t lefttype = neo_js_variable_get_type(variable);
@@ -980,12 +1098,13 @@ bool neo_js_context_instance_of(neo_js_context_t ctx,
     return neo_js_context_call(ctx, hasInstance, constructor, 1, &variable);
   }
   neo_js_object_t object = neo_js_variable_to_object(variable);
-  neo_js_variable_t current_constructor = NULL;
-  if (object->constructor) {
-    current_constructor =
-        neo_js_context_create_variable(ctx, object->constructor);
-  } else {
-    current_constructor = ctx->std.object_constructor;
+  neo_js_variable_t prototype = neo_js_context_get_field(
+      ctx, constructor, neo_js_context_create_string(ctx, L"prototype"));
+  while (object) {
+    if (object == neo_js_variable_to_object(prototype)) {
+      return neo_js_context_create_boolean(ctx, true);
+    }
+    object = neo_js_value_to_object(neo_js_handle_get_value(object->prototype));
   }
-  return neo_js_context_is_equal(ctx, current_constructor, constructor);
+  return neo_js_context_create_boolean(ctx, false);
 }
