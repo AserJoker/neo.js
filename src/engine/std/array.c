@@ -1,0 +1,69 @@
+#include "engine/std/array.h"
+#include "core/allocator.h"
+#include "core/list.h"
+#include "engine/basetype/object.h"
+#include "engine/context.h"
+#include "engine/type.h"
+#include "engine/variable.h"
+#include <wchar.h>
+
+neo_engine_variable_t
+neo_engine_array_constructor(neo_engine_context_t ctx,
+                             neo_engine_variable_t self, uint32_t argc,
+                             neo_engine_variable_t *argv) {
+  return neo_engine_context_create_undefined(ctx);
+}
+
+neo_engine_variable_t neo_engine_array_to_string(neo_engine_context_t ctx,
+                                                 neo_engine_variable_t self,
+                                                 uint32_t argc,
+                                                 neo_engine_variable_t *argv) {
+  neo_allocator_t allocator = neo_engine_context_get_allocator(ctx);
+
+  neo_engine_variable_t length = neo_engine_context_get_field(
+      ctx, self, neo_engine_context_create_string(ctx, L"length"));
+  int64_t len = neo_engine_variable_to_number(length)->number;
+  size_t strlen = 0;
+  neo_list_t list = neo_create_list(allocator, NULL);
+  for (int64_t idx = 0; idx < len; idx++) {
+    neo_engine_variable_t field = neo_engine_context_create_number(ctx, idx);
+    neo_engine_object_property_t prop =
+        neo_engine_object_get_property(ctx, self, field);
+    if (prop) {
+      neo_engine_variable_t item =
+          neo_engine_context_get_field(ctx, self, field);
+      if (!neo_engine_context_is_equal(ctx, self, item)) {
+        item = neo_engine_context_to_string(ctx, item);
+        neo_engine_string_t string = neo_engine_variable_to_string(item);
+        neo_list_push(list, string->string);
+        strlen += wcslen(string->string);
+      }
+    }
+    if (idx != len - 1) {
+      strlen += 1;
+    }
+  }
+  wchar_t *str =
+      neo_allocator_alloc(allocator, (strlen + 1) * sizeof(wchar_t), NULL);
+  wchar_t *pstr = str;
+  str[len] = 0;
+  for (neo_list_node_t it = neo_list_get_first(list);
+       it != neo_list_get_tail(list); it = neo_list_node_next(it)) {
+    if (it != neo_list_get_first(list)) {
+      *pstr = L',';
+      pstr++;
+    }
+    wchar_t *s = neo_list_node_get(it);
+    if (s) {
+      while (*s != 0) {
+        *pstr = *s;
+        pstr++;
+        s++;
+      }
+    }
+  }
+  neo_allocator_free(allocator, list);
+  neo_engine_variable_t result = neo_engine_context_create_string(ctx, str);
+  neo_allocator_free(allocator, str);
+  return result;
+}
