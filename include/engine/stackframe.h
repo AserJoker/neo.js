@@ -5,13 +5,13 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-typedef struct _neo_engine_stackframe_t {
+typedef struct _neo_js_stackframe_t {
   const wchar_t *filename;
   wchar_t *function;
   uint32_t line;
   uint32_t column;
-} *neo_engine_stackframe_t;
-neo_engine_stackframe_t neo_create_js_stackframe(neo_allocator_t allocator);
+} *neo_js_stackframe_t;
+neo_js_stackframe_t neo_create_js_stackframe(neo_allocator_t allocator);
 #ifdef __cplusplus
 }
 #endif

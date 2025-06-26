@@ -8,18 +8,18 @@
 extern "C" {
 #endif
 
-typedef struct _neo_engine_array_t *neo_engine_array_t;
+typedef struct _neo_js_array_t *neo_js_array_t;
 
-struct _neo_engine_array_t {
-  struct _neo_engine_object_t object;
+struct _neo_js_array_t {
+  struct _neo_js_object_t object;
   size_t length;
 };
 
-neo_engine_type_t neo_get_js_array_type();
+neo_js_type_t neo_get_js_array_type();
 
-neo_engine_array_t neo_create_js_array(neo_allocator_t allocator);
+neo_js_array_t neo_create_js_array(neo_allocator_t allocator);
 
-neo_engine_array_t neo_engine_value_to_array(neo_engine_value_t value);
+neo_js_array_t neo_js_value_to_array(neo_js_value_t value);
 
 #ifdef __cplusplus
 }

@@ -332,12 +332,6 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
     case NEO_ASM_JMP:
       fprintf(fp, "NEO_ASM_JMP %ld\n", neo_program_get_address(self, &offset));
       break;
-    case NEO_ASM_LABEL: {
-      char *constant =
-          neo_string_encode(allocator, neo_program_get_string(self, &offset));
-      fprintf(fp, "NEO_ASM_LABEL \"%s\"\n", constant);
-      neo_allocator_free(allocator, constant);
-    } break;
     case NEO_ASM_BREAK: {
       char *constant =
           neo_string_encode(allocator, neo_program_get_string(self, &offset));

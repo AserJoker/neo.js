@@ -21,9 +21,9 @@ char *neo_utf8_char_to_string(neo_allocator_t allocator, neo_utf8_char chr);
 
 wchar_t *neo_utf8_char_to_wstring(neo_allocator_t allocator, neo_utf8_char chr);
 
-char *neo_wstring_to_string(neo_allocator_t allocator, wchar_t *wstring);
+char *neo_wstring_to_string(neo_allocator_t allocator, const wchar_t *wstring);
 
-wchar_t *neo_string_to_wstring(neo_allocator_t allocator, char *string);
+wchar_t *neo_string_to_wstring(neo_allocator_t allocator, const char *string);
 
 size_t neo_utf8_get_len(const char *str);
 

@@ -8,19 +8,18 @@
 extern "C" {
 #endif
 
-typedef struct _neo_engine_boolean_t *neo_engine_boolean_t;
+typedef struct _neo_js_boolean_t *neo_js_boolean_t;
 
-struct _neo_engine_boolean_t {
-  struct _neo_engine_value_t value;
+struct _neo_js_boolean_t {
+  struct _neo_js_value_t value;
   bool boolean;
 };
 
-neo_engine_boolean_t neo_create_js_boolean(neo_allocator_t allocator,
-                                           bool value);
+neo_js_boolean_t neo_create_js_boolean(neo_allocator_t allocator, bool value);
 
-neo_engine_type_t neo_get_js_boolean_type();
+neo_js_type_t neo_get_js_boolean_type();
 
-neo_engine_boolean_t neo_engine_value_to_boolean(neo_engine_value_t value);
+neo_js_boolean_t neo_js_value_to_boolean(neo_js_value_t value);
 #ifdef __cplusplus
 }
 #endif

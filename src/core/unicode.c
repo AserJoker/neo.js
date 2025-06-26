@@ -133,7 +133,7 @@ bool neo_utf8_char_is_space_separator(neo_utf8_char chr) {
   return IS_SPACE_SEPARATOR(utf32);
 }
 
-char *neo_wstring_to_string(neo_allocator_t allocator, wchar_t *wstring) {
+char *neo_wstring_to_string(neo_allocator_t allocator, const wchar_t *wstring) {
   size_t len = wcslen(wstring);
   char *string = neo_allocator_alloc(allocator, len * 2 + 1, NULL);
   size_t offset = 0;
@@ -149,7 +149,7 @@ char *neo_wstring_to_string(neo_allocator_t allocator, wchar_t *wstring) {
   return string;
 }
 
-wchar_t *neo_string_to_wstring(neo_allocator_t allocator, char *string) {
+wchar_t *neo_string_to_wstring(neo_allocator_t allocator, const char *string) {
   size_t len = strlen(string);
   wchar_t *wstring =
       neo_allocator_alloc(allocator, sizeof(wchar_t) * (len + 1), NULL);

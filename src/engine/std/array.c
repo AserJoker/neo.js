@@ -7,34 +7,32 @@
 #include "engine/variable.h"
 #include <wchar.h>
 
-neo_engine_variable_t
-neo_engine_array_constructor(neo_engine_context_t ctx,
-                             neo_engine_variable_t self, uint32_t argc,
-                             neo_engine_variable_t *argv) {
-  return neo_engine_context_create_undefined(ctx);
+neo_js_variable_t neo_js_array_constructor(neo_js_context_t ctx,
+                                           neo_js_variable_t self,
+                                           uint32_t argc,
+                                           neo_js_variable_t *argv) {
+  return neo_js_context_create_undefined(ctx);
 }
 
-neo_engine_variable_t neo_engine_array_to_string(neo_engine_context_t ctx,
-                                                 neo_engine_variable_t self,
-                                                 uint32_t argc,
-                                                 neo_engine_variable_t *argv) {
-  neo_allocator_t allocator = neo_engine_context_get_allocator(ctx);
+neo_js_variable_t neo_js_array_to_string(neo_js_context_t ctx,
+                                         neo_js_variable_t self, uint32_t argc,
+                                         neo_js_variable_t *argv) {
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
 
-  neo_engine_variable_t length = neo_engine_context_get_field(
-      ctx, self, neo_engine_context_create_string(ctx, L"length"));
-  int64_t len = neo_engine_variable_to_number(length)->number;
+  neo_js_variable_t length = neo_js_context_get_field(
+      ctx, self, neo_js_context_create_string(ctx, L"length"));
+  int64_t len = neo_js_variable_to_number(length)->number;
   size_t strlen = 0;
   neo_list_t list = neo_create_list(allocator, NULL);
   for (int64_t idx = 0; idx < len; idx++) {
-    neo_engine_variable_t field = neo_engine_context_create_number(ctx, idx);
-    neo_engine_object_property_t prop =
-        neo_engine_object_get_property(ctx, self, field);
+    neo_js_variable_t field = neo_js_context_create_number(ctx, idx);
+    neo_js_object_property_t prop =
+        neo_js_object_get_property(ctx, self, field);
     if (prop) {
-      neo_engine_variable_t item =
-          neo_engine_context_get_field(ctx, self, field);
-      if (!neo_engine_context_is_equal(ctx, self, item)) {
-        item = neo_engine_context_to_string(ctx, item);
-        neo_engine_string_t string = neo_engine_variable_to_string(item);
+      neo_js_variable_t item = neo_js_context_get_field(ctx, self, field);
+      if (!neo_js_context_is_equal(ctx, self, item)) {
+        item = neo_js_context_to_string(ctx, item);
+        neo_js_string_t string = neo_js_variable_to_string(item);
         neo_list_push(list, string->string);
         strlen += wcslen(string->string);
       }
@@ -63,7 +61,7 @@ neo_engine_variable_t neo_engine_array_to_string(neo_engine_context_t ctx,
     }
   }
   neo_allocator_free(allocator, list);
-  neo_engine_variable_t result = neo_engine_context_create_string(ctx, str);
+  neo_js_variable_t result = neo_js_context_create_string(ctx, str);
   neo_allocator_free(allocator, str);
   return result;
 }

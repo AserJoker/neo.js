@@ -59,7 +59,6 @@ typedef enum _neo_asm_code_t {
   NEO_ASM_JFALSE,
   NEO_ASM_JTRUE,
   NEO_ASM_JMP,
-  NEO_ASM_LABEL,
   NEO_ASM_BREAK,
   NEO_ASM_CONTINUE,
   NEO_ASM_THROW,

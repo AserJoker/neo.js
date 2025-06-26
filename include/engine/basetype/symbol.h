@@ -8,19 +8,19 @@
 extern "C" {
 #endif
 
-typedef struct _neo_engine_symbol_t *neo_engine_symbol_t;
+typedef struct _neo_js_symbol_t *neo_js_symbol_t;
 
-struct _neo_engine_symbol_t {
-  struct _neo_engine_value_t value;
+struct _neo_js_symbol_t {
+  struct _neo_js_value_t value;
   wchar_t *description;
 };
 
-neo_engine_type_t neo_get_js_symbol_type();
+neo_js_type_t neo_get_js_symbol_type();
 
-neo_engine_symbol_t neo_create_js_symbol(neo_allocator_t allocator,
-                                         const wchar_t *value);
+neo_js_symbol_t neo_create_js_symbol(neo_allocator_t allocator,
+                                     const wchar_t *value);
 
-neo_engine_symbol_t neo_engine_value_to_symbol(neo_engine_value_t value);
+neo_js_symbol_t neo_js_value_to_symbol(neo_js_value_t value);
 
 #ifdef __cplusplus
 }
