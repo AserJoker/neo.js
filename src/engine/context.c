@@ -1171,17 +1171,11 @@ bool neo_js_context_is_equal(neo_js_context_t ctx, neo_js_variable_t variable,
         righttype->kind < NEO_TYPE_OBJECT) {
       left = neo_js_context_to_primitive(ctx, left);
       lefttype = neo_js_variable_get_type(left);
-      if (lefttype->kind == NEO_TYPE_ERROR) {
-        return false;
-      }
     }
     if (righttype->kind >= NEO_TYPE_OBJECT &&
         lefttype->kind < NEO_TYPE_OBJECT) {
       right = neo_js_context_to_primitive(ctx, right);
       righttype = neo_js_variable_get_type(right);
-      if (righttype->kind == NEO_TYPE_ERROR) {
-        return false;
-      }
     }
     if (lefttype->kind != righttype->kind) {
       if (lefttype->kind == NEO_TYPE_SYMBOL ||
