@@ -376,10 +376,10 @@ void neo_js_context_push_stackframe(neo_js_context_t ctx,
   frame->line = line;
   frame = neo_create_js_stackframe(allocator);
   size_t len = wcslen(cfunction);
-  frame->cfunction =
+  frame->function =
       neo_allocator_alloc(allocator, sizeof(wchar_t) * (len + 1), NULL);
-  wcscpy(frame->cfunction, cfunction);
-  frame->cfunction[len] = 0;
+  wcscpy(frame->function, cfunction);
+  frame->function[len] = 0;
   frame->filename = filename;
   neo_list_push(ctx->stacktrace, frame);
 }
@@ -852,35 +852,38 @@ neo_js_variable_t neo_js_context_call(neo_js_context_t ctx,
                                       neo_js_variable_t self, uint32_t argc,
                                       neo_js_variable_t *argv) {
   neo_js_value_t value = neo_js_variable_get_value(callee);
-  if (value->type->kind < NEO_TYPE_CFUNCTION) {
+  if (value->type->kind < NEO_TYPE_CALLABLE) {
     return neo_js_context_create_error(ctx, L"TypeError",
                                        L"Callee is not a cfunction");
   }
-  neo_js_cfunction_t cfunction = neo_js_value_to_cfunction(value);
-  neo_js_scope_t current = neo_js_context_get_scope(ctx);
-  neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
-  neo_js_context_push_scope(ctx);
-  neo_js_scope_t scope = neo_js_context_get_scope(ctx);
-  for (uint32_t idx = 0; idx < argc; idx++) {
-    neo_js_variable_t arg = argv[idx];
-    neo_js_handle_t harg = neo_js_variable_get_handle(arg);
-    neo_js_handle_add_parent(harg, neo_js_scope_get_root_handle(scope));
+  if (value->type->kind == NEO_TYPE_CFUNCTION) {
+    neo_js_cfunction_t cfunction = neo_js_value_to_cfunction(value);
+    neo_js_scope_t current = neo_js_context_get_scope(ctx);
+    neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
+    neo_js_context_push_scope(ctx);
+    neo_js_scope_t scope = neo_js_context_get_scope(ctx);
+    for (uint32_t idx = 0; idx < argc; idx++) {
+      neo_js_variable_t arg = argv[idx];
+      neo_js_handle_t harg = neo_js_variable_get_handle(arg);
+      neo_js_handle_add_parent(harg, neo_js_scope_get_root_handle(scope));
+    }
+    for (neo_hash_map_node_t it =
+             neo_hash_map_get_first(cfunction->callable.closure);
+         it != neo_hash_map_get_tail(cfunction->callable.closure);
+         it = neo_hash_map_node_next(it)) {
+      const wchar_t *name = neo_hash_map_node_get_key(it);
+      neo_js_handle_t hvalue = neo_hash_map_node_get_value(it);
+      neo_js_variable_t variable = neo_js_context_create_variable(ctx, hvalue);
+      neo_js_scope_set_variable(neo_js_runtime_get_allocator(ctx->runtime),
+                                scope, variable, name);
+    }
+    neo_js_variable_t result = cfunction->callee(ctx, self, argc, argv);
+    neo_js_handle_t hresult = neo_js_variable_get_handle(result);
+    result = neo_js_scope_create_variable(allocator, current, hresult);
+    neo_js_context_pop_scope(ctx);
+    return result;
   }
-  for (neo_hash_map_node_t it =
-           neo_hash_map_get_first(cfunction->callable.closure);
-       it != neo_hash_map_get_tail(cfunction->callable.closure);
-       it = neo_hash_map_node_next(it)) {
-    const wchar_t *name = neo_hash_map_node_get_key(it);
-    neo_js_handle_t hvalue = neo_hash_map_node_get_value(it);
-    neo_js_variable_t variable = neo_js_context_create_variable(ctx, hvalue);
-    neo_js_scope_set_variable(neo_js_runtime_get_allocator(ctx->runtime), scope,
-                              variable, name);
-  }
-  neo_js_variable_t result = cfunction->callee(ctx, self, argc, argv);
-  neo_js_handle_t hresult = neo_js_variable_get_handle(result);
-  result = neo_js_scope_create_variable(allocator, current, hresult);
-  neo_js_context_pop_scope(ctx);
-  return result;
+  return neo_js_context_create_undefined(ctx);
 }
 
 neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
@@ -1050,6 +1053,33 @@ neo_js_context_create_cfunction(neo_js_context_t ctx, const wchar_t *name,
       neo_js_context_create_object(ctx, NULL, NULL), true, false, true);
   return result;
 }
+neo_js_variable_t neo_js_context_create_function(neo_js_context_t ctx,
+                                                 neo_program_t program) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
+  neo_js_function_t func = neo_create_js_function(allocator, program);
+  neo_js_handle_t hfunction =
+      neo_create_js_handle(allocator, &func->callable.object.value);
+  neo_js_handle_t hproto = NULL;
+  if (ctx->std.function_constructor) {
+    hproto = neo_js_variable_get_handle(neo_js_context_get_field(
+        ctx, ctx->std.function_constructor,
+        neo_js_context_create_string(ctx, L"prototype")));
+  } else {
+    hproto = neo_js_variable_get_handle(neo_js_context_create_null(ctx));
+  }
+  func->callable.object.prototype = hproto;
+  neo_js_handle_add_parent(hproto, hfunction);
+  neo_js_variable_t result = neo_js_context_create_variable(ctx, hfunction);
+  if (ctx->std.function_constructor) {
+    neo_js_context_def_field(ctx, result,
+                             neo_js_context_create_string(ctx, L"constructor"),
+                             ctx->std.function_constructor, true, false, true);
+  }
+  neo_js_context_def_field(
+      ctx, result, neo_js_context_create_string(ctx, L"prototype"),
+      neo_js_context_create_object(ctx, NULL, NULL), true, false, true);
+  return result;
+}
 
 const wchar_t *neo_js_context_typeof(neo_js_context_t ctx,
                                      neo_js_variable_t variable) {
@@ -1200,6 +1230,7 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
       neo_js_variable_t error = neo_js_context_create_error(ctx, type, message);
       neo_allocator_free(allocator, type);
       neo_allocator_free(allocator, message);
+      neo_allocator_free(allocator, err);
       return error;
     };
     program = TRY(neo_ast_write_node(allocator, file, root)) {

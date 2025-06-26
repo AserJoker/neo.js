@@ -15,7 +15,6 @@ struct _neo_js_callable_t {
   struct _neo_js_object_t object;
   neo_hash_map_t closure;
   neo_js_handle_t name;
-  wchar_t *source;
 };
 neo_js_callable_t neo_js_value_to_callable(neo_js_value_t value);
 

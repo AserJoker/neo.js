@@ -5,7 +5,9 @@
 #include "core/buffer.h"
 #include "core/list.h"
 #include "core/unicode.h"
+#include "engine/basetype/function.h"
 #include "engine/context.h"
+#include "engine/handle.h"
 #include "engine/scope.h"
 #include "engine/type.h"
 #include "engine/variable.h"
@@ -195,6 +197,9 @@ void neo_js_vm_push_string(neo_js_vm_t vm, neo_program_t program) {
   neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
   neo_allocator_free(allocator, value);
 }
+void neo_js_vm_push_function(neo_js_vm_t vm, neo_program_t program) {
+  neo_list_push(vm->stack, neo_js_context_create_function(vm->ctx, program));
+}
 void neo_js_vm_push_object(neo_js_vm_t vm, neo_program_t program) {
   neo_list_push(vm->stack, neo_js_context_create_object(vm->ctx, NULL, NULL));
 }
@@ -214,6 +219,100 @@ void neo_js_vm_push_value(neo_js_vm_t vm, neo_program_t program) {
 void neo_js_vm_set_const(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t variable = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_js_variable_set_const(variable, true);
+}
+
+void neo_js_set_generator(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t variable = neo_list_node_get(neo_list_get_last(vm->stack));
+  if (neo_js_variable_get_type(variable)->kind != NEO_TYPE_FUNCTION) {
+    neo_list_push(vm->stack,
+                  neo_js_context_create_error(vm->ctx, L"TypeError",
+                                              L"variable is not a function"));
+    vm->offset = neo_buffer_get_size(program->codes);
+    return;
+  }
+  neo_js_function_t function = neo_js_variable_to_function(variable);
+  function->is_generator = true;
+}
+void neo_js_set_address(neo_js_vm_t vm, neo_program_t program) {
+  size_t address = neo_js_vm_read_address(vm, program);
+  neo_js_variable_t variable = neo_list_node_get(neo_list_get_last(vm->stack));
+  if (neo_js_variable_get_type(variable)->kind != NEO_TYPE_FUNCTION) {
+    neo_list_push(vm->stack,
+                  neo_js_context_create_error(vm->ctx, L"TypeError",
+                                              L"variable is not a function"));
+    vm->offset = neo_buffer_get_size(program->codes);
+    return;
+  }
+  neo_js_function_t function = neo_js_variable_to_function(variable);
+  function->address = address;
+}
+
+void neo_js_set_name(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t name = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t variable = neo_list_node_get(neo_list_get_last(vm->stack));
+  if (neo_js_variable_get_type(variable)->kind != NEO_TYPE_FUNCTION) {
+    neo_list_push(vm->stack,
+                  neo_js_context_create_error(vm->ctx, L"TypeError",
+                                              L"variable is not a function"));
+    vm->offset = neo_buffer_get_size(program->codes);
+    return;
+  }
+  neo_js_function_t function = neo_js_variable_to_function(variable);
+  neo_js_handle_t hname = neo_js_variable_get_handle(name);
+  neo_js_handle_t hfunction = neo_js_variable_get_handle(variable);
+  function->callable.name = hname;
+  neo_js_handle_add_parent(hname, hfunction);
+}
+
+void neo_js_set_closure(neo_js_vm_t vm, neo_program_t program) {
+  wchar_t *name = neo_js_vm_read_string(vm, program);
+  neo_js_variable_t variable = neo_list_node_get(neo_list_get_last(vm->stack));
+  if (neo_js_variable_get_type(variable)->kind != NEO_TYPE_FUNCTION) {
+    neo_list_push(vm->stack,
+                  neo_js_context_create_error(vm->ctx, L"TypeError",
+                                              L"variable is not a function"));
+    vm->offset = neo_buffer_get_size(program->codes);
+    return;
+  }
+  neo_js_variable_t value = neo_js_context_load_variable(vm->ctx, name);
+  if (neo_js_variable_get_type(value)->kind == NEO_TYPE_ERROR) {
+    neo_list_push(vm->stack, value);
+    vm->offset = neo_buffer_get_size(program->codes);
+    return;
+  }
+  neo_js_function_t function = neo_js_variable_to_function(variable);
+  neo_js_handle_t hvalue = neo_js_variable_get_handle(value);
+  neo_js_handle_t hfunction = neo_js_variable_get_handle(variable);
+  neo_hash_map_set(function->callable.closure, name, hvalue, NULL, NULL);
+  neo_js_handle_add_parent(hvalue, hfunction);
+}
+
+void neo_js_set_source(neo_js_vm_t vm, neo_program_t program) {
+  wchar_t *source = neo_js_vm_read_string(vm, program);
+  neo_js_variable_t variable = neo_list_node_get(neo_list_get_last(vm->stack));
+  if (neo_js_variable_get_type(variable)->kind != NEO_TYPE_FUNCTION) {
+    neo_list_push(vm->stack,
+                  neo_js_context_create_error(vm->ctx, L"TypeError",
+                                              L"variable is not a function"));
+    vm->offset = neo_buffer_get_size(program->codes);
+    return;
+  }
+  neo_js_function_t function = neo_js_variable_to_function(variable);
+  function->source = source;
+}
+
+void neo_js_set_async(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t variable = neo_list_node_get(neo_list_get_last(vm->stack));
+  if (neo_js_variable_get_type(variable)->kind != NEO_TYPE_FUNCTION) {
+    neo_list_push(vm->stack,
+                  neo_js_context_create_error(vm->ctx, L"TypeError",
+                                              L"variable is not a function"));
+    vm->offset = neo_buffer_get_size(program->codes);
+    return;
+  }
+  neo_js_function_t function = neo_js_variable_to_function(variable);
+  function->is_async = true;
 }
 
 void neo_js_vm_direcitve(neo_js_vm_t vm, neo_program_t program) {}
@@ -341,6 +440,12 @@ void neo_js_vm_jmp(neo_js_vm_t vm, neo_program_t program) {
 void neo_js_vm_ret(neo_js_vm_t vm, neo_program_t program) {
   vm->offset = neo_buffer_get_size(program->codes);
 }
+void neo_js_vm_hlt(neo_js_vm_t vm, neo_program_t program) {
+  if (!neo_list_get_size(vm->stack)) {
+    neo_list_push(vm->stack, neo_js_context_create_undefined(vm->ctx));
+  }
+  vm->offset = neo_buffer_get_size(program->codes);
+}
 
 const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_push_scope,        // NEO_ASM_PUSH_SCOPE
@@ -364,8 +469,7 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_push_string,       // NEO_ASM_PUSH_STRING
     NULL,                        // NEO_ASM_PUSH_BIGINT
     NULL,                        // NEO_ASM_PUSH_REGEX
-    NULL,                        // NEO_ASM_PUSH_FUNCTION
-    NULL,                        // NEO_ASM_PUSH_CLASS
+    neo_js_vm_push_function,     // NEO_ASM_PUSH_FUNCTION
     neo_js_vm_push_object,       // NEO_ASM_PUSH_OBJECT
     neo_js_vm_push_array,        // NEO_ASM_PUSH_ARRAY
     NULL,                        // NEO_ASM_PUSH_THIS
@@ -373,15 +477,15 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_push_value,        // NEO_ASM_PUSH_VALUE
     NULL,                        // NEO_ASM_PUSH_LABEL
     NULL,                        // NEO_ASM_POP_LABEL
-    NULL,                        // NEO_ASM_SET_ASYNC
+    neo_js_set_async,            // NEO_ASM_SET_ASYNC
     neo_js_vm_set_const,         // NEO_ASM_SET_CONST
     NULL,                        // NEO_ASM_SET_USING
     NULL,                        // NEO_ASM_SET_LAMBDA
-    NULL,                        // NEO_ASM_SET_GENERATOR
-    NULL,                        // NEO_ASM_SET_SOURCE
-    NULL,                        // NEO_ASM_SET_ADDRESS
-    NULL,                        // NEO_ASM_SET_NAME
-    NULL,                        // NEO_ASM_SET_CLOSURE
+    neo_js_set_generator,        // NEO_ASM_SET_GENERATOR
+    neo_js_set_source,           // NEO_ASM_SET_SOURCE
+    neo_js_set_address,          // NEO_ASM_SET_ADDRESS
+    neo_js_set_name,             // NEO_ASM_SET_NAME
+    neo_js_set_closure,          // NEO_ASM_SET_CLOSURE
     NULL,                        // NEO_ASM_EXTEND
     NULL,                        // NEO_ASM_DECORATOR
     neo_js_vm_direcitve,         // NEO_ASM_DIRECTIVE
@@ -403,6 +507,7 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     NULL,                        // NEO_ASM_DEFER
     NULL,                        // NEO_ASM_TRY
     neo_js_vm_ret,               // NEO_ASM_RET
+    neo_js_vm_hlt,               // NEO_ASM_HLT
     NULL,                        // NEO_ASM_KEYS
     NULL,                        // NEO_ASM_AWAIT
     NULL,                        // NEO_ASM_YIELD

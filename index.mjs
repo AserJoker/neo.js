@@ -1,1 +1,2 @@
-global.println(global.println)
+async function test() {
+}

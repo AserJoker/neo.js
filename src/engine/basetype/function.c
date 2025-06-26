@@ -1,18 +1,15 @@
-#include "engine/basetype/cfunction.h"
+#include "engine/basetype/function.h"
 #include "core/allocator.h"
 #include "core/hash.h"
-#include "core/hash_map.h"
-#include "engine/basetype/object.h"
-#include "engine/basetype/string.h"
 #include "engine/context.h"
-#include "engine/handle.h"
-#include "engine/scope.h"
 #include "engine/type.h"
 #include "engine/variable.h"
-#include <stdbool.h>
 #include <wchar.h>
 
-static const wchar_t *neo_js_function_typeof() { return L"function"; }
+static const wchar_t *neo_js_function_typeof(neo_js_context_t ctx,
+                                             neo_js_variable_t self) {
+  return L"function";
+}
 
 static neo_js_variable_t neo_js_function_get_field(neo_js_context_t ctx,
                                                    neo_js_variable_t self,
@@ -73,9 +70,9 @@ static neo_js_variable_t neo_js_function_del_field(neo_js_context_t ctx,
   return otype->del_field_fn(ctx, self, field);
 }
 
-neo_js_type_t neo_get_js_cfunction_type() {
+neo_js_type_t neo_get_js_function_type() {
   static struct _neo_js_type_t type = {0};
-  type.kind = NEO_TYPE_CFUNCTION;
+  type.kind = NEO_TYPE_FUNCTION;
   neo_js_type_t otype = neo_get_js_object_type();
   type.typeof_fn = neo_js_function_typeof;
   type.to_boolean_fn = otype->to_boolean_fn;
@@ -91,50 +88,54 @@ neo_js_type_t neo_get_js_cfunction_type() {
   return &type;
 }
 
-static void neo_js_function_dispose(neo_allocator_t allocator,
-                                    neo_js_cfunction_t self) {
+void neo_js_function_dispose(neo_allocator_t allocator,
+                             neo_js_function_t self) {
+  neo_allocator_free(allocator, self->source);
   neo_allocator_free(allocator, self->callable.closure);
   neo_allocator_free(allocator, self->callable.object.properties);
   neo_allocator_free(allocator, self->callable.object.internal);
 }
 
-neo_js_cfunction_t neo_create_js_cfunction(neo_allocator_t allocator,
-                                           neo_js_cfunction_fn_t callee) {
-  neo_js_cfunction_t cfunction = neo_allocator_alloc(
-      allocator, sizeof(struct _neo_js_cfunction_t), neo_js_function_dispose);
-  cfunction->callee = callee;
-  cfunction->callable.name = NULL;
+neo_js_function_t neo_create_js_function(neo_allocator_t allocator,
+                                         neo_program_t program) {
+  neo_js_function_t func = neo_allocator_alloc(
+      allocator, sizeof(struct _neo_js_function_t), neo_js_function_dispose);
+  func->callable.name = NULL;
   neo_hash_map_initialize_t initialize = {0};
   initialize.auto_free_key = true;
   initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
   initialize.compare = (neo_compare_fn_t)wcscmp;
-  cfunction->callable.closure = neo_create_hash_map(allocator, &initialize);
+  func->callable.closure = neo_create_hash_map(allocator, &initialize);
 
-  cfunction->callable.object.value.type = neo_get_js_cfunction_type();
-  cfunction->callable.object.value.ref = 0;
-  cfunction->callable.object.extensible = true;
-  cfunction->callable.object.frozen = false;
-  cfunction->callable.object.sealed = false;
+  func->callable.object.value.type = neo_get_js_function_type();
+  func->callable.object.value.ref = 0;
+  func->callable.object.extensible = true;
+  func->callable.object.frozen = false;
+  func->callable.object.sealed = false;
   initialize.auto_free_key = false;
   initialize.auto_free_value = true;
   initialize.compare = (neo_compare_fn_t)neo_js_object_compare_key;
   initialize.hash = (neo_hash_fn_t)neo_js_object_key_hash;
-  cfunction->callable.object.properties =
+  func->callable.object.properties =
       neo_create_hash_map(allocator, &initialize);
 
   initialize.auto_free_key = true;
   initialize.auto_free_value = true;
   initialize.compare = (neo_compare_fn_t)wcscmp;
   initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
-  cfunction->callable.object.internal =
-      neo_create_hash_map(allocator, &initialize);
-  cfunction->callable.object.constructor = NULL;
-  return cfunction;
+  func->callable.object.internal = neo_create_hash_map(allocator, &initialize);
+  func->callable.object.constructor = NULL;
+  func->address = 0;
+  func->program = program;
+  func->source = NULL;
+  func->is_async = false;
+  func->is_generator = false;
+  return func;
 }
 
-neo_js_cfunction_t neo_js_value_to_cfunction(neo_js_value_t value) {
-  if (value->type->kind == NEO_TYPE_CFUNCTION) {
-    return (neo_js_cfunction_t)value;
+neo_js_function_t neo_js_value_to_function(neo_js_value_t value) {
+  if (value->type->kind == NEO_TYPE_FUNCTION) {
+    return (neo_js_function_t)value;
   }
   return NULL;
 }

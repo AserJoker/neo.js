@@ -1,9 +1,11 @@
 
 #include "compiler/ast/program.h"
+#include "compiler/asm.h"
 #include "compiler/ast/directive.h"
 #include "compiler/ast/interpreter.h"
 #include "compiler/ast/node.h"
 #include "compiler/ast/statement.h"
+#include "compiler/program.h"
 #include "compiler/scope.h"
 #include "core/allocator.h"
 #include "core/error.h"
@@ -44,6 +46,7 @@ static void neo_ast_program_write(neo_allocator_t allocator,
     neo_ast_node_t item = neo_list_node_get(it);
     TRY(item->write(allocator, ctx, item)) { return; }
   }
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_HLT);
   neo_writer_pop_scope(allocator, ctx, self->node.scope);
 }
 

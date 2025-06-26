@@ -226,9 +226,6 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
     case NEO_ASM_PUSH_FUNCTION:
       fprintf(fp, "NEO_ASM_PUSH_FUNCTION\n");
       break;
-    case NEO_ASM_PUSH_CLASS:
-      fprintf(fp, "NEO_ASM_PUSH_CLASS\n");
-      break;
     case NEO_ASM_PUSH_OBJECT:
       fprintf(fp, "NEO_ASM_PUSH_OBJECT\n");
       break;
@@ -356,6 +353,9 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       break;
     case NEO_ASM_RET:
       fprintf(fp, "NEO_ASM_RET\n");
+      break;
+    case NEO_ASM_HLT:
+      fprintf(fp, "NEO_ASM_HLT\n");
       break;
     case NEO_ASM_AWAIT:
       fprintf(fp, "NEO_ASM_AWAIT\n");

@@ -111,10 +111,10 @@ neo_map_node_t neo_map_find(neo_map_t self, const void *key, void *arg) {
     if (self->compare) {
       if (self->compare(node->key, key, arg) == 0) {
         return node;
-      } else {
-        if (node->key == key) {
-          return node;
-        }
+      }
+    } else {
+      if (node->key == key) {
+        return node;
       }
     }
     node = node->next;

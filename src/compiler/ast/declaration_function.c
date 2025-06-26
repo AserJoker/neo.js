@@ -20,14 +20,14 @@ static void
 neo_ast_declaration_function_write(neo_allocator_t allocator,
                                    neo_write_context_t ctx,
                                    neo_ast_declaration_function_t self) {
-  neo_ast_expression_function_t cfunction =
+  neo_ast_expression_function_t function =
       (neo_ast_expression_function_t)self->declaration;
-  char *name = neo_location_get(allocator, cfunction->name->location);
+  char *name = neo_location_get(allocator, function->name->location);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
   neo_program_add_string(allocator, ctx->program, name);
   neo_allocator_free(allocator, name);
-  for (neo_list_node_t it = neo_list_get_first(cfunction->closure);
-       it != neo_list_get_tail(cfunction->closure);
+  for (neo_list_node_t it = neo_list_get_first(function->closure);
+       it != neo_list_get_tail(function->closure);
        it = neo_list_node_next(it)) {
     neo_ast_node_t node = neo_list_node_get(it);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_CLOSURE);
