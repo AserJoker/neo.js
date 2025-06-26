@@ -36,6 +36,8 @@ neo_js_variable_t neo_js_array_to_string(neo_js_context_t ctx,
         neo_list_push(list, string->string);
         strlen += wcslen(string->string);
       }
+    } else {
+      neo_list_push(list, "");
     }
     if (idx != len - 1) {
       strlen += 1;

@@ -54,11 +54,13 @@ static void neo_ast_expression_array_write(neo_allocator_t allocator,
   size_t idx = 0;
   for (neo_list_node_t it = neo_list_get_first(self->items);
        it != neo_list_get_tail(self->items); it = neo_list_node_next(it)) {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_NUMBER);
-    neo_program_add_number(allocator, ctx->program, idx);
     neo_ast_node_t item = neo_list_node_get(it);
-    TRY(item->write(allocator, ctx, item)) { return; }
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+    if (item) {
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_NUMBER);
+      neo_program_add_number(allocator, ctx->program, idx);
+      TRY(item->write(allocator, ctx, item)) { return; }
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+    }
     idx++;
   }
 }
