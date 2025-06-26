@@ -3,8 +3,8 @@
 #include "core/allocator.h"
 #include "engine/basetype/array.h"
 #include "engine/basetype/boolean.h"
+#include "engine/basetype/cfunction.h"
 #include "engine/basetype/error.h"
-#include "engine/basetype/function.h"
 #include "engine/basetype/null.h"
 #include "engine/basetype/number.h"
 #include "engine/basetype/string.h"
@@ -69,9 +69,9 @@ neo_js_variable_to_symbol(neo_js_variable_t variable) {
   return neo_js_value_to_symbol(neo_js_variable_get_value(variable));
 }
 
-static inline neo_js_function_t
+static inline neo_js_cfunction_t
 neo_js_variable_to_function(neo_js_variable_t variable) {
-  return neo_js_value_to_function(neo_js_variable_get_value(variable));
+  return neo_js_value_to_cfunction(neo_js_variable_get_value(variable));
 }
 
 static inline neo_js_callable_t

@@ -270,6 +270,7 @@ void neo_js_vm_get_field(neo_js_vm_t vm, neo_program_t program) {
     vm->offset = neo_buffer_get_size(program->codes);
   }
 }
+
 void neo_js_vm_set_field(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_list_pop(vm->stack);
@@ -283,6 +284,64 @@ void neo_js_vm_set_field(neo_js_vm_t vm, neo_program_t program) {
     vm->offset = neo_buffer_get_size(program->codes);
   }
 }
+
+void neo_js_vm_set_method(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t field = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t host = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_js_variable_t error =
+      neo_js_context_set_field(vm->ctx, host, field, value);
+  if (neo_js_variable_get_type(error)->kind == NEO_TYPE_ERROR) {
+    neo_list_push(vm->stack, error);
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
+
+void neo_js_vm_jnull(neo_js_vm_t vm, neo_program_t program) {
+  size_t address = neo_js_vm_read_address(vm, program);
+  neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
+  if (neo_js_variable_get_type(value)->kind == NEO_TYPE_UNDEFINED ||
+      neo_js_variable_get_type(value)->kind == NEO_TYPE_NULL) {
+    vm->offset = address;
+  }
+}
+
+void neo_js_vm_jnot_null(neo_js_vm_t vm, neo_program_t program) {
+  size_t address = neo_js_vm_read_address(vm, program);
+  neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
+  if (neo_js_variable_get_type(value)->kind != NEO_TYPE_UNDEFINED &&
+      neo_js_variable_get_type(value)->kind != NEO_TYPE_NULL) {
+    vm->offset = address;
+  }
+}
+void neo_js_vm_jfalse(neo_js_vm_t vm, neo_program_t program) {
+  size_t address = neo_js_vm_read_address(vm, program);
+  neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
+  value = neo_js_context_to_boolean(vm->ctx, value);
+  neo_js_boolean_t boolean = neo_js_variable_to_boolean(value);
+  if (!boolean->boolean) {
+    vm->offset = address;
+  }
+}
+void neo_js_vm_jtrue(neo_js_vm_t vm, neo_program_t program) {
+  size_t address = neo_js_vm_read_address(vm, program);
+  neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
+  value = neo_js_context_to_boolean(vm->ctx, value);
+  neo_js_boolean_t boolean = neo_js_variable_to_boolean(value);
+  if (boolean->boolean) {
+    vm->offset = address;
+  }
+}
+void neo_js_vm_jmp(neo_js_vm_t vm, neo_program_t program) {
+  size_t address = neo_js_vm_read_address(vm, program);
+  vm->offset = address;
+}
+void neo_js_vm_ret(neo_js_vm_t vm, neo_program_t program) {
+  vm->offset = neo_buffer_get_size(program->codes);
+}
+
 const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_push_scope,        // NEO_ASM_PUSH_SCOPE
     neo_js_vm_pop_scope,         // NEO_ASM_POP_SCOPE
@@ -332,18 +391,18 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_set_field,         // NEO_ASM_SET_FIELD
     NULL,                        // NEO_ASM_SET_GETTER
     NULL,                        // NEO_ASM_SET_SETTER
-    NULL,                        // NEO_ASM_SET_METHOD
-    NULL,                        // NEO_ASM_JNULL
-    NULL,                        // NEO_ASM_JNOT_NULL
-    NULL,                        // NEO_ASM_JFALSE
-    NULL,                        // NEO_ASM_JTRUE
-    NULL,                        // NEO_ASM_JMP
+    neo_js_vm_set_method,        // NEO_ASM_SET_METHOD
+    neo_js_vm_jnull,             // NEO_ASM_JNULL
+    neo_js_vm_jnot_null,         // NEO_ASM_JNOT_NULL
+    neo_js_vm_jfalse,            // NEO_ASM_JFALSE
+    neo_js_vm_jtrue,             // NEO_ASM_JTRUE
+    neo_js_vm_jmp,               // NEO_ASM_JMP
     NULL,                        // NEO_ASM_BREAK
     NULL,                        // NEO_ASM_CONTINUE
     NULL,                        // NEO_ASM_THROW
     NULL,                        // NEO_ASM_DEFER
     NULL,                        // NEO_ASM_TRY
-    NULL,                        // NEO_ASM_RET
+    neo_js_vm_ret,               // NEO_ASM_RET
     NULL,                        // NEO_ASM_KEYS
     NULL,                        // NEO_ASM_AWAIT
     NULL,                        // NEO_ASM_YIELD

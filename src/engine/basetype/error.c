@@ -47,12 +47,12 @@ neo_js_error_t neo_create_js_error(neo_allocator_t allocator,
     frame->filename = stackframe->filename;
     frame->line = stackframe->line;
     frame->column = stackframe->column;
-    if (stackframe->function) {
-      size_t len = wcslen(stackframe->function);
-      frame->function =
+    if (stackframe->cfunction) {
+      size_t len = wcslen(stackframe->cfunction);
+      frame->cfunction =
           neo_allocator_alloc(allocator, sizeof(wchar_t) * (len + 1), NULL);
-      wcscpy(frame->function, stackframe->function);
-      frame->function[len] = 0;
+      wcscpy(frame->cfunction, stackframe->cfunction);
+      frame->cfunction[len] = 0;
     }
     neo_list_push(error->stacktrace, frame);
   }

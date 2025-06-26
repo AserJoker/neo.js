@@ -93,12 +93,12 @@ neo_create_ast_literal_identify(neo_allocator_t allocator) {
 
 bool neo_is_keyword(neo_location_t location) {
   static const char *keywords[] = {
-      "break",    "case",    "catch",      "class", "const",    "continue",
-      "debugger", "default", "delete",     "do",    "else",     "export",
-      "extends",  "false",   "finally",    "for",   "function", "if",
-      "import",   "in",      "instanceof", "new",   "null",     "return",
-      "super",    "switch",  "this",       "throw", "true",     "try",
-      "typeof",   "var",     "void",       "while", "with",     "let",
+      "break",    "case",    "catch",      "class", "const",     "continue",
+      "debugger", "default", "delete",     "do",    "else",      "export",
+      "extends",  "false",   "finally",    "for",   "cfunction", "if",
+      "import",   "in",      "instanceof", "new",   "null",      "return",
+      "super",    "switch",  "this",       "throw", "true",      "try",
+      "typeof",   "var",     "void",       "while", "with",      "let",
       "static",   0};
   for (size_t idx = 0; keywords[idx] != 0; idx++) {
     if (neo_location_is(location, keywords[idx])) {

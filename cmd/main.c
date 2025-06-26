@@ -37,10 +37,10 @@ static void disp_js_variable(neo_js_context_t ctx, neo_js_variable_t variable) {
          it != neo_list_get_tail(stacktrace); it = neo_list_node_next(it)) {
       neo_js_stackframe_t frame = neo_list_node_get(it);
       if (frame->filename) {
-        printf("  at %ls(%ls:%d:%d)\n", frame->function, frame->filename,
+        printf("  at %ls(%ls:%d:%d)\n", frame->cfunction, frame->filename,
                frame->line, frame->column);
       } else {
-        printf("  at %ls(<internal>)\n", frame->function);
+        printf("  at %ls(<internal>)\n", frame->cfunction);
       }
     }
 

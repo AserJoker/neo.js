@@ -149,7 +149,7 @@ neo_ast_node_t neo_ast_read_expression_function(neo_allocator_t allocator,
     goto onerror;
   }
   if (!token || (!neo_location_is(token->location, "async") &&
-                 !neo_location_is(token->location, "function"))) {
+                 !neo_location_is(token->location, "cfunction"))) {
     goto onerror;
   }
   if (neo_location_is(token->location, "async")) {
@@ -159,7 +159,7 @@ neo_ast_node_t neo_ast_read_expression_function(neo_allocator_t allocator,
     token = TRY(neo_read_identify_token(allocator, file, &current)) {
       goto onerror;
     }
-    if (!token || !neo_location_is(token->location, "function")) {
+    if (!token || !neo_location_is(token->location, "cfunction")) {
       goto onerror;
     }
   }

@@ -123,9 +123,9 @@ void neo_compile_scope_declar(neo_allocator_t allocator,
     neo_compile_scope_declar(allocator, self, argument->identifier,
                              NEO_COMPILE_VARIABLE_LET);
   } else if (node->type == NEO_NODE_TYPE_EXPRESSION_FUNCTION) {
-    neo_ast_expression_function_t function =
+    neo_ast_expression_function_t cfunction =
         (neo_ast_expression_function_t)node;
-    neo_compile_scope_declar_value(allocator, self, &function->node,
+    neo_compile_scope_declar_value(allocator, self, &cfunction->node,
                                    NEO_COMPILE_VARIABLE_FUNCTION);
   } else if (node->type == NEO_NODE_TYPE_EXPRESSION_CLASS) {
     neo_ast_expression_class_t clazz = (neo_ast_expression_class_t)node;

@@ -1,12 +1,13 @@
-#include "engine/std/function.h"
 #include "core/allocator.h"
 #include "engine/basetype/callable.h"
 #include "engine/basetype/string.h"
 #include "engine/context.h"
 #include "engine/handle.h"
+#include "engine/std/function.h"
 #include "engine/type.h"
 #include "engine/variable.h"
 #include <wchar.h>
+
 neo_js_variable_t neo_js_function_constructor(neo_js_context_t ctx,
                                               neo_js_variable_t self,
                                               uint32_t argc,
@@ -36,10 +37,10 @@ neo_js_variable_t neo_js_function_to_string(neo_js_context_t ctx,
     wchar_t *str = neo_allocator_alloc(
         allocator, sizeof(wchar_t) * (wcslen(string->string) + 32), NULL);
     swprintf(str, 32 + wcslen(string->string),
-             L"function %ls(){ [native code] }", string->string);
+             L"cfunction %ls(){ [native code] }", string->string);
     neo_js_variable_t result = neo_js_context_create_string(ctx, str);
     neo_allocator_free(allocator, str);
     return result;
   }
-  return neo_js_context_create_string(ctx, L"[function Function]");
+  return neo_js_context_create_string(ctx, L"[cfunction Function]");
 }

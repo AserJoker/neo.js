@@ -103,18 +103,18 @@ void neo_writer_pop_scope(neo_allocator_t allocator, neo_write_context_t ctx,
          it = neo_list_node_next(it)) {
       neo_compile_variable_t variable = neo_list_node_get(it);
       if (variable->type == NEO_COMPILE_VARIABLE_FUNCTION) {
-        neo_ast_expression_function_t function =
+        neo_ast_expression_function_t cfunction =
             (neo_ast_expression_function_t)variable->node;
         size_t address =
             *(size_t *)neo_map_get(ctx->scope->functions, variable, NULL);
         neo_program_set_current(ctx->program, address);
-        neo_writer_push_scope(allocator, ctx, function->node.scope);
-        if (neo_list_get_size(function->arguments)) {
+        neo_writer_push_scope(allocator, ctx, cfunction->node.scope);
+        if (neo_list_get_size(cfunction->arguments)) {
           neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
           neo_program_add_string(allocator, ctx->program, "arguments");
           neo_program_add_code(allocator, ctx->program, NEO_ASM_ITERATOR);
-          for (neo_list_node_t it = neo_list_get_first(function->arguments);
-               it != neo_list_get_tail(function->arguments);
+          for (neo_list_node_t it = neo_list_get_first(cfunction->arguments);
+               it != neo_list_get_tail(cfunction->arguments);
                it = neo_list_node_next(it)) {
             neo_ast_node_t argument = neo_list_node_get(it);
             TRY(argument->write(allocator, ctx, argument)) { return; }
@@ -122,8 +122,8 @@ void neo_writer_pop_scope(neo_allocator_t allocator, neo_write_context_t ctx,
           neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
           neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
         }
-        TRY(function->body->write(allocator, ctx, function->body)) { return; }
-        neo_writer_pop_scope(allocator, ctx, function->node.scope);
+        TRY(cfunction->body->write(allocator, ctx, cfunction->body)) { return; }
+        neo_writer_pop_scope(allocator, ctx, cfunction->node.scope);
       }
     }
     neo_write_scope_t scope = ctx->scope;

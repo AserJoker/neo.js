@@ -36,7 +36,7 @@ neo_list_t neo_js_context_get_stacktrace(neo_js_context_t ctx, uint32_t line,
 
 void neo_js_context_push_stackframe(neo_js_context_t ctx,
                                     const wchar_t *filename,
-                                    const wchar_t *function, uint32_t column,
+                                    const wchar_t *cfunction, uint32_t column,
                                     uint32_t line);
 
 void neo_js_context_pop_stackframe(neo_js_context_t ctx);
@@ -159,7 +159,7 @@ neo_js_variable_t neo_js_context_create_array(neo_js_context_t ctx);
 
 neo_js_variable_t
 neo_js_context_create_cfunction(neo_js_context_t ctx, const wchar_t *name,
-                                neo_js_cfunction_fn_t function);
+                                neo_js_cfunction_fn_t cfunction);
 
 const wchar_t *neo_js_context_typeof(neo_js_context_t ctx,
                                      neo_js_variable_t variable);
