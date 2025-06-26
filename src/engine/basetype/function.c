@@ -112,6 +112,7 @@ neo_js_function_t neo_create_js_function(neo_allocator_t allocator,
   func->callable.object.extensible = true;
   func->callable.object.frozen = false;
   func->callable.object.sealed = false;
+  func->callable.bind = NULL;
   initialize.auto_free_key = false;
   initialize.auto_free_value = true;
   initialize.compare = (neo_compare_fn_t)neo_js_object_compare_key;

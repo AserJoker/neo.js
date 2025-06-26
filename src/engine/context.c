@@ -9,8 +9,10 @@
 #include "core/unicode.h"
 #include "engine/basetype/array.h"
 #include "engine/basetype/boolean.h"
+#include "engine/basetype/callable.h"
 #include "engine/basetype/cfunction.h"
 #include "engine/basetype/error.h"
+#include "engine/basetype/function.h"
 #include "engine/basetype/null.h"
 #include "engine/basetype/number.h"
 #include "engine/basetype/object.h"
@@ -856,12 +858,18 @@ neo_js_variable_t neo_js_context_call(neo_js_context_t ctx,
     return neo_js_context_create_error(ctx, L"TypeError",
                                        L"Callee is not a cfunction");
   }
+  neo_js_callable_t callable = neo_js_variable_to_callable(callee);
+
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
+  neo_js_scope_t current = neo_js_context_get_scope(ctx);
+  neo_js_scope_t scope = neo_js_context_get_scope(ctx);
+  neo_js_context_push_scope(ctx);
+  if (callable->bind) {
+    self = neo_js_context_create_variable(ctx, callable->bind);
+  }
+  neo_js_variable_t result = neo_js_context_create_undefined(ctx);
   if (value->type->kind == NEO_TYPE_CFUNCTION) {
     neo_js_cfunction_t cfunction = neo_js_value_to_cfunction(value);
-    neo_js_scope_t current = neo_js_context_get_scope(ctx);
-    neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
-    neo_js_context_push_scope(ctx);
-    neo_js_scope_t scope = neo_js_context_get_scope(ctx);
     for (uint32_t idx = 0; idx < argc; idx++) {
       neo_js_variable_t arg = argv[idx];
       neo_js_handle_t harg = neo_js_variable_get_handle(arg);
@@ -878,12 +886,18 @@ neo_js_variable_t neo_js_context_call(neo_js_context_t ctx,
                                 scope, variable, name);
     }
     neo_js_variable_t result = cfunction->callee(ctx, self, argc, argv);
-    neo_js_handle_t hresult = neo_js_variable_get_handle(result);
-    result = neo_js_scope_create_variable(allocator, current, hresult);
-    neo_js_context_pop_scope(ctx);
-    return result;
+  } else if (value->type->kind == NEO_TYPE_FUNCTION) {
+    neo_js_function_t function = neo_js_variable_to_function(callee);
+    if (!function->is_async && !function->is_generator) {
+      neo_js_vm_t vm = neo_create_js_vm(ctx, self, function->address);
+      result = neo_js_vm_eval(vm, function->program);
+      neo_allocator_free(neo_js_context_get_allocator(ctx), vm);
+    }
   }
-  return neo_js_context_create_undefined(ctx);
+  neo_js_handle_t hresult = neo_js_variable_get_handle(result);
+  result = neo_js_scope_create_variable(allocator, current, hresult);
+  neo_js_context_pop_scope(ctx);
+  return result;
 }
 
 neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
@@ -1252,7 +1266,7 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
     fclose(fp);
   }
   neo_allocator_free(allocator, u16file);
-  neo_js_vm_t vm = neo_create_js_vm(ctx);
+  neo_js_vm_t vm = neo_create_js_vm(ctx, NULL, 0);
   neo_js_variable_t result = neo_js_vm_eval(vm, program);
   neo_allocator_free(allocator, vm);
   return result;

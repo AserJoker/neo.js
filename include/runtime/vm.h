@@ -6,7 +6,8 @@
 extern "C" {
 #endif
 typedef struct _neo_js_vm_t *neo_js_vm_t;
-neo_js_vm_t neo_create_js_vm(neo_js_context_t ctx);
+neo_js_vm_t neo_create_js_vm(neo_js_context_t ctx, neo_js_variable_t self,
+                             size_t offset);
 neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program);
 
 #ifdef __cplusplus

@@ -115,6 +115,7 @@ neo_js_cfunction_t neo_create_js_cfunction(neo_allocator_t allocator,
   cfunction->callable.object.extensible = true;
   cfunction->callable.object.frozen = false;
   cfunction->callable.object.sealed = false;
+  cfunction->callable.bind = NULL;
   initialize.auto_free_key = false;
   initialize.auto_free_value = true;
   initialize.compare = (neo_compare_fn_t)neo_js_object_compare_key;

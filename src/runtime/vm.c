@@ -23,6 +23,8 @@ struct _neo_js_try_frame_t {
   size_t onfinish;
   size_t onerror;
 };
+typedef struct _neo_js_label_frame_t *neo_js_label_frame_t;
+
 struct _neo_js_label_frame_t {
   neo_js_scope_t scope;
   size_t stack_top;
@@ -44,7 +46,8 @@ void neo_js_vm_dispose(neo_allocator_t allocator, neo_js_vm_t vm) {
   neo_allocator_free(allocator, vm->label_stack);
 }
 
-neo_js_vm_t neo_create_js_vm(neo_js_context_t ctx) {
+neo_js_vm_t neo_create_js_vm(neo_js_context_t ctx, neo_js_variable_t self,
+                             size_t offset) {
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_js_vm_t vm = neo_allocator_alloc(allocator, sizeof(struct _neo_js_vm_t),
                                        neo_js_vm_dispose);
@@ -53,8 +56,8 @@ neo_js_vm_t neo_create_js_vm(neo_js_context_t ctx) {
   vm->try_stack = neo_create_list(allocator, &initialize);
   vm->label_stack = neo_create_list(allocator, &initialize);
   vm->ctx = ctx;
-  vm->offset = 0;
-  vm->self = neo_js_context_create_undefined(ctx);
+  vm->offset = offset;
+  vm->self = self ? self : neo_js_context_create_undefined(ctx);
   return vm;
 }
 
