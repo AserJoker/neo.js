@@ -1,4 +1,2 @@
-function test() {
-    return 123;
-}
-println(test());
+const arr = [1, , 3]
+println(arr, arr.length)

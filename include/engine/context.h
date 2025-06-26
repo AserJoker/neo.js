@@ -156,7 +156,8 @@ neo_js_variable_t neo_js_context_create_object(neo_js_context_t ctx,
                                                neo_js_variable_t prototype,
                                                neo_js_object_t object);
 
-neo_js_variable_t neo_js_context_create_array(neo_js_context_t ctx);
+neo_js_variable_t neo_js_context_create_array(neo_js_context_t ctx,
+                                              uint32_t length);
 
 neo_js_variable_t
 neo_js_context_create_cfunction(neo_js_context_t ctx, const wchar_t *name,

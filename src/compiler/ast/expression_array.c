@@ -51,6 +51,8 @@ static void neo_ast_expression_array_write(neo_allocator_t allocator,
                                            neo_write_context_t ctx,
                                            neo_ast_expression_array_t self) {
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARRAY);
+  neo_program_add_number(allocator, ctx->program,
+                          neo_list_get_size(self->items));
   size_t idx = 0;
   for (neo_list_node_t it = neo_list_get_first(self->items);
        it != neo_list_get_tail(self->items); it = neo_list_node_next(it)) {

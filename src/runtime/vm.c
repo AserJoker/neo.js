@@ -207,7 +207,8 @@ void neo_js_vm_push_object(neo_js_vm_t vm, neo_program_t program) {
   neo_list_push(vm->stack, neo_js_context_create_object(vm->ctx, NULL, NULL));
 }
 void neo_js_vm_push_array(neo_js_vm_t vm, neo_program_t program) {
-  neo_list_push(vm->stack, neo_js_context_create_array(vm->ctx));
+  double length = neo_js_vm_read_number(vm, program);
+  neo_list_push(vm->stack, neo_js_context_create_array(vm->ctx, length));
 }
 void neo_js_vm_push_value(neo_js_vm_t vm, neo_program_t program) {
   int32_t offset = neo_js_vm_read_integer(vm, program);

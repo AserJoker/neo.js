@@ -202,7 +202,7 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       fprintf(fp, "NEO_ASM_PUSH_FALSE\n");
       break;
     case NEO_ASM_PUSH_NUMBER: {
-      fprintf(fp, "NEO_ASM_PUSH_NUMBER %lf\n",
+      fprintf(fp, "NEO_ASM_PUSH_NUMBER %lg\n",
               neo_program_get_number(self, &offset));
     } break;
     case NEO_ASM_PUSH_STRING: {
@@ -230,7 +230,8 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       fprintf(fp, "NEO_ASM_PUSH_OBJECT\n");
       break;
     case NEO_ASM_PUSH_ARRAY:
-      fprintf(fp, "NEO_ASM_PUSH_ARRAY\n");
+      fprintf(fp, "NEO_ASM_PUSH_ARRAY %lg\n",
+              neo_program_get_number(self, &offset));
       break;
     case NEO_ASM_PUSH_THIS:
       fprintf(fp, "NEO_ASM_PUSH_THIS\n");

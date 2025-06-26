@@ -1029,8 +1029,14 @@ neo_js_variable_t neo_js_context_create_object(neo_js_context_t ctx,
   return result;
 }
 
-neo_js_variable_t neo_js_context_create_array(neo_js_context_t ctx) {
-  return neo_js_context_construct(ctx, ctx->std.array_constructor, 0, NULL);
+neo_js_variable_t neo_js_context_create_array(neo_js_context_t ctx,
+                                              uint32_t length) {
+  neo_js_variable_t array =
+      neo_js_context_construct(ctx, ctx->std.array_constructor, 0, NULL);
+  neo_js_context_set_field(ctx, array,
+                           neo_js_context_create_string(ctx, L"length"),
+                           neo_js_context_create_number(ctx, length));
+  return array;
 }
 
 neo_js_variable_t

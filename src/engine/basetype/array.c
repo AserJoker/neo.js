@@ -54,7 +54,7 @@ static neo_js_variable_t neo_js_array_set_field(neo_js_context_t ctx,
         }
       }
       array->length = (size_t)length;
-      return NULL;
+      return neo_js_context_create_undefined(ctx);
     }
   } else if (neo_js_variable_get_type(field)->kind == NEO_TYPE_NUMBER) {
     neo_js_number_t field_num =

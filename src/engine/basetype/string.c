@@ -79,7 +79,7 @@ static neo_js_variable_t neo_js_string_set_field(neo_js_context_t ctx,
     neo_js_string_t string =
         neo_js_value_to_string(neo_js_variable_get_value(field));
     if (wcscmp(string->string, L"length") == 0) {
-      return NULL;
+      return neo_js_context_create_undefined(ctx);
     }
   }
   return neo_js_context_set_field(ctx, neo_js_string_to_object(ctx, self),
