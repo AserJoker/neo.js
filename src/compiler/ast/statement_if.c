@@ -33,17 +33,18 @@ static void neo_ast_statement_if_write(neo_allocator_t allocator,
   neo_program_add_code(allocator, ctx->program, NEO_ASM_JFALSE);
   size_t alternate = neo_buffer_get_size(ctx->program->codes);
   neo_program_add_address(allocator, ctx->program, 0);
-  TRY(self->consequent->write(allocator, ctx, self->consequent)) { return; }
-  if (self->alternate) {
+  TRY(self->alternate->write(allocator, ctx, self->alternate)) { return; }
+  if (self->consequent) {
     neo_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
     size_t end = neo_buffer_get_size(ctx->program->codes);
     neo_program_add_address(allocator, ctx->program, 0);
     neo_program_set_current(ctx->program, alternate);
-    TRY(self->alternate->write(allocator, ctx, self->alternate)) { return; }
+    TRY(self->consequent->write(allocator, ctx, self->consequent)) { return; }
     neo_program_set_current(ctx->program, end);
   } else {
     neo_program_set_current(ctx->program, alternate);
   }
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
 }
 static neo_variable_t
 neo_serialize_ast_statement_if(neo_allocator_t allocator,
