@@ -27,7 +27,7 @@ static neo_js_variable_t neo_js_object_to_string(neo_js_context_t ctx,
       ctx, neo_js_context_get_symbol_constructor(ctx),
       neo_js_context_create_string(ctx, L"toPrimitive"));
   neo_js_variable_t primitive = NULL;
-  if (neo_js_variable_get_type(to_primitive)->kind == NEO_TYPE_CFUNCTION) {
+  if (neo_js_variable_get_type(to_primitive)->kind >= NEO_TYPE_CFUNCTION) {
     neo_js_variable_t hint = neo_js_context_create_string(ctx, L"string");
     primitive = neo_js_context_call(ctx, to_primitive, self, 1, &hint);
     if (neo_js_variable_get_type(primitive)->kind == NEO_TYPE_ERROR) {
@@ -38,7 +38,7 @@ static neo_js_variable_t neo_js_object_to_string(neo_js_context_t ctx,
       neo_js_variable_get_type(primitive)->kind >= NEO_TYPE_OBJECT) {
     neo_js_variable_t value_of = neo_js_context_get_field(
         ctx, self, neo_js_context_create_string(ctx, L"valueOf"));
-    if (neo_js_variable_get_type(value_of)->kind == NEO_TYPE_CFUNCTION) {
+    if (neo_js_variable_get_type(value_of)->kind >= NEO_TYPE_CFUNCTION) {
       primitive = neo_js_context_call(ctx, value_of, self, 0, NULL);
       if (neo_js_variable_get_type(primitive)->kind == NEO_TYPE_ERROR) {
         return primitive;
@@ -49,7 +49,7 @@ static neo_js_variable_t neo_js_object_to_string(neo_js_context_t ctx,
       neo_js_variable_get_type(primitive)->kind >= NEO_TYPE_OBJECT) {
     neo_js_variable_t to_string = neo_js_context_get_field(
         ctx, self, neo_js_context_create_string(ctx, L"toString"));
-    if (neo_js_variable_get_type(to_string)->kind == NEO_TYPE_CFUNCTION) {
+    if (neo_js_variable_get_type(to_string)->kind >= NEO_TYPE_CFUNCTION) {
       primitive = neo_js_context_call(ctx, to_string, self, 0, NULL);
       if (neo_js_variable_get_type(primitive)->kind == NEO_TYPE_ERROR) {
         return primitive;

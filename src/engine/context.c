@@ -885,7 +885,7 @@ neo_js_variable_t neo_js_context_call(neo_js_context_t ctx,
       neo_js_scope_set_variable(neo_js_runtime_get_allocator(ctx->runtime),
                                 scope, variable, name);
     }
-    neo_js_variable_t result = cfunction->callee(ctx, self, argc, argv);
+    result = cfunction->callee(ctx, self, argc, argv);
   } else if (value->type->kind == NEO_TYPE_FUNCTION) {
     neo_js_function_t function = neo_js_variable_to_function(callee);
     if (!function->is_async && !function->is_generator) {
@@ -1165,11 +1165,17 @@ bool neo_js_context_is_equal(neo_js_context_t ctx, neo_js_variable_t variable,
         righttype->kind < NEO_TYPE_OBJECT) {
       left = neo_js_context_to_primitive(ctx, left);
       lefttype = neo_js_variable_get_type(left);
+      if (lefttype->kind == NEO_TYPE_ERROR) {
+        return false;
+      }
     }
     if (righttype->kind >= NEO_TYPE_OBJECT &&
         lefttype->kind < NEO_TYPE_OBJECT) {
       right = neo_js_context_to_primitive(ctx, right);
       righttype = neo_js_variable_get_type(right);
+      if (righttype->kind == NEO_TYPE_ERROR) {
+        return false;
+      }
     }
     if (lefttype->kind != righttype->kind) {
       if (lefttype->kind == NEO_TYPE_SYMBOL ||

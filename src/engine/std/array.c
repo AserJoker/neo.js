@@ -44,7 +44,7 @@ neo_js_variable_t neo_js_array_to_string(neo_js_context_t ctx,
   wchar_t *str =
       neo_allocator_alloc(allocator, (strlen + 1) * sizeof(wchar_t), NULL);
   wchar_t *pstr = str;
-  str[len] = 0;
+  str[strlen] = 0;
   for (neo_list_node_t it = neo_list_get_first(list);
        it != neo_list_get_tail(list); it = neo_list_node_next(it)) {
     if (it != neo_list_get_first(list)) {
