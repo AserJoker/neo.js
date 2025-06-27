@@ -21,6 +21,10 @@ static void neo_ast_identifier_resolve_closure(neo_allocator_t allocator,
                                                neo_list_t closure) {
   neo_compile_scope_t scope = neo_compile_scope_get_current();
   char *name = neo_location_get(allocator, self->node.location);
+  if (strcmp(name, "arguments") == 0) {
+    neo_allocator_free(allocator, name);
+    return;
+  }
   for (;;) {
     for (neo_list_node_t it = neo_list_get_first(scope->variables);
          it != neo_list_get_tail(scope->variables);
@@ -121,6 +125,30 @@ neo_ast_node_t neo_ast_read_identifier(neo_allocator_t allocator,
   }
   if (neo_is_keyword(token->location)) {
     neo_allocator_free(allocator, token);
+    return NULL;
+  }
+  neo_allocator_free(allocator, token);
+  node = neo_create_ast_literal_identify(allocator);
+  node->node.location.begin = *position;
+  node->node.location.end = current;
+  node->node.location.file = file;
+  *position = current;
+  return &node->node;
+onerror:
+  neo_allocator_free(allocator, token);
+  neo_allocator_free(allocator, node);
+  return NULL;
+}
+
+neo_ast_node_t neo_ast_read_identifier_compat(neo_allocator_t allocator,
+                                              const char *file,
+                                              neo_position_t *position) {
+  neo_position_t current = *position;
+  neo_ast_identifier_t node = NULL;
+  neo_token_t token = TRY(neo_read_identify_token(allocator, file, &current)) {
+    goto onerror;
+  };
+  if (!token) {
     return NULL;
   }
   neo_allocator_free(allocator, token);

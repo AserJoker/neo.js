@@ -21,8 +21,10 @@ static void
 neo_ast_statement_do_while_resolve_closure(neo_allocator_t allocator,
                                            neo_ast_statement_do_while_t self,
                                            neo_list_t closure) {
+  neo_compile_scope_t scope = neo_compile_scope_set(self->node.scope);
   self->condition->resolve_closure(allocator, self->condition, closure);
   self->body->resolve_closure(allocator, self->body, closure);
+  neo_compile_scope_pop(self->node.scope);
 }
 static void
 neo_ast_statement_do_while_write(neo_allocator_t allocator,

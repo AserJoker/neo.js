@@ -67,3 +67,14 @@ neo_js_variable_t neo_js_array_to_string(neo_js_context_t ctx,
   neo_allocator_free(allocator, str);
   return result;
 }
+
+neo_js_variable_t neo_js_array_values(neo_js_context_t ctx,
+                                      neo_js_variable_t self, uint32_t argc,
+                                      neo_js_variable_t *argv) {
+  neo_js_variable_t iterator = neo_js_context_construct(
+      ctx, neo_js_context_get_array_iterator_constructor(ctx), 0, NULL);
+  neo_js_variable_t index = neo_js_context_create_number(ctx, 0);
+  neo_js_context_set_internal(ctx, iterator, L"[[array]]", self);
+  neo_js_context_set_internal(ctx, iterator, L"[[index]]", index);
+  return iterator;
+}

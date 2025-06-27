@@ -90,10 +90,13 @@ static void neo_ast_expression_arrow_function_write(
   }
   neo_writer_pop_scope(allocator, ctx, self->node.scope);
   neo_program_set_current(ctx->program, endaddr);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_FUNCTION);
+  if (self->async) {
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ASYNC_LAMBDA);
+  } else {
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_LAMBDA);
+  }
   neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_ADDRESS);
   neo_program_add_address(allocator, ctx->program, begin);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_LAMBDA);
   char *source = neo_location_get(allocator, self->node.location);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_SOURCE);
   neo_program_add_string(allocator, ctx->program, source);
@@ -105,9 +108,6 @@ static void neo_ast_expression_arrow_function_write(
     char *name = neo_location_get(allocator, node->location);
     neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
-  }
-  if (self->async) {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_ASYNC);
   }
 }
 static neo_ast_expression_arrow_function_t

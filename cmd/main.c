@@ -1,4 +1,3 @@
-
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/list.h"
@@ -10,6 +9,7 @@
 #include "engine/type.h"
 #include "engine/variable.h"
 #include <locale.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <wchar.h>
 
@@ -70,15 +70,32 @@ int main(int argc, char *argv[]) {
   neo_error_initialize(allocator);
   neo_js_runtime_t runtime = neo_create_js_runtime(allocator);
   neo_js_context_t ctx = neo_create_js_context(allocator, runtime);
-  neo_js_variable_t global = neo_js_context_get_global(ctx);
   neo_js_variable_t println =
       neo_js_context_create_cfunction(ctx, L"println", js_println);
+  neo_js_variable_t global = neo_js_context_get_global(ctx);
   neo_js_context_set_field(
       ctx, global, neo_js_context_create_string(ctx, L"println"), println);
-  neo_js_variable_t result = neo_js_context_eval(ctx, "./index.mjs", buf);
+  neo_js_variable_t result = neo_js_context_eval(ctx, "index.mjs", buf);
   disp_js_variable(ctx, result);
   neo_allocator_free(allocator, ctx);
   neo_allocator_free(allocator, runtime);
+  // neo_ast_node_t node = TRY(neo_ast_parse_code(allocator, "index.mjs", buf))
+  // {
+  //   neo_error_t error = neo_poll_error(__FUNCTION__, __FILE__, __LINE__);
+  //   char *s = neo_error_to_string(error);
+  //   printf("%s\n", s);
+  //   neo_allocator_free(allocator, s);
+  //   neo_allocator_free(allocator, error);
+  //   neo_allocator_free(allocator, buf);
+  //   neo_delete_allocator(allocator);
+  //   return -1;
+  // }
+  // neo_variable_t val = neo_ast_node_serialize(allocator, node);
+  // char *json = neo_json_stringify(allocator, val);
+  // printf("%s\n", json);
+  // neo_allocator_free(allocator, json);
+  // neo_allocator_free(allocator, val);
+  // neo_allocator_free(allocator, node);
   neo_allocator_free(allocator, buf);
   neo_delete_allocator(allocator);
   return 0;

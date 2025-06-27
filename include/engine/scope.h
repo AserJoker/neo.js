@@ -33,7 +33,8 @@ void neo_js_scope_set_variable(neo_allocator_t allocator, neo_js_scope_t self,
 
 neo_js_variable_t neo_js_scope_create_variable(neo_allocator_t allocator,
                                                neo_js_scope_t self,
-                                               neo_js_handle_t handle);
+                                               neo_js_handle_t handle,
+                                               const wchar_t *name);
 #ifdef __cplusplus
 }
 #endif

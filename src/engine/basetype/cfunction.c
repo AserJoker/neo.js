@@ -27,7 +27,8 @@ static neo_js_variable_t neo_js_function_get_field(neo_js_context_t ctx,
       if (!cfunction->callable.name) {
         return neo_js_context_create_string(ctx, L"");
       } else {
-        return neo_js_context_create_variable(ctx, cfunction->callable.name);
+        return neo_js_context_create_variable(ctx, cfunction->callable.name,
+                                              NULL);
       }
     }
   }

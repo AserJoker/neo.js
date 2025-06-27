@@ -134,7 +134,7 @@ neo_js_variable_t neo_js_symbol_key_for(neo_js_context_t ctx,
     neo_js_handle_t key = neo_hash_map_node_get_key(it);
     neo_js_handle_t value = neo_hash_map_node_get_value(it);
     if (neo_js_handle_get_value(value) == neo_js_variable_get_value(sym)) {
-      return neo_js_context_create_variable(ctx, key);
+      return neo_js_context_create_variable(ctx, key, NULL);
     }
   }
   return neo_js_context_create_undefined(ctx);

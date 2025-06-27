@@ -64,14 +64,24 @@ void neo_writer_push_scope(neo_allocator_t allocator, neo_write_context_t ctx,
         neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_USING);
         break;
       case NEO_COMPILE_VARIABLE_FUNCTION: {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_FUNCTION);
         neo_ast_expression_function_t func =
             (neo_ast_expression_function_t)variable->node;
-        if (func->async) {
-          neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_ASYNC);
-        }
         if (func->generator) {
-          neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_GENERATOR);
+          if (func->async) {
+            neo_program_add_code(allocator, ctx->program,
+                                 NEO_ASM_PUSH_ASYNC_GENERATOR);
+          } else {
+            neo_program_add_code(allocator, ctx->program,
+                                 NEO_ASM_PUSH_GENERATOR);
+          }
+        } else {
+          if (func->async) {
+            neo_program_add_code(allocator, ctx->program,
+                                 NEO_ASM_PUSH_ASYNC_FUNCTION);
+          } else {
+            neo_program_add_code(allocator, ctx->program,
+                                 NEO_ASM_PUSH_FUNCTION);
+          }
         }
         neo_allocator_free(allocator, name);
         char *funcname = neo_location_get(allocator, func->name->location);

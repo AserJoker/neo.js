@@ -93,7 +93,21 @@ static void neo_ast_class_method_write(neo_allocator_t allocator,
   }
   neo_writer_pop_scope(allocator, ctx, self->node.scope);
   neo_program_set_current(ctx->program, endaddr);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_FUNCTION);
+  if (self->generator) {
+    if (self->async) {
+      neo_program_add_code(allocator, ctx->program,
+                           NEO_ASM_PUSH_ASYNC_GENERATOR);
+    } else {
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_GENERATOR);
+    }
+  } else {
+    if (self->async) {
+      neo_program_add_code(allocator, ctx->program,
+                           NEO_ASM_PUSH_ASYNC_FUNCTION);
+    } else {
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_FUNCTION);
+    }
+  }
   neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_ADDRESS);
   neo_program_add_address(allocator, ctx->program, begin);
   char *source = neo_location_get(allocator, self->node.location);
@@ -107,12 +121,6 @@ static void neo_ast_class_method_write(neo_allocator_t allocator,
     char *name = neo_location_get(allocator, node->location);
     neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
-  }
-  if (self->generator) {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_GENERATOR);
-  }
-  if (self->async) {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_ASYNC);
   }
   neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_METHOD);
   if (!self->static_) {

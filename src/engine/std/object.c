@@ -76,13 +76,17 @@ neo_js_variable_t neo_js_object_to_string(neo_js_context_t ctx,
   neo_js_variable_t toStringTag = neo_js_context_get_field(
       ctx, neo_js_context_get_symbol_constructor(ctx),
       neo_js_context_create_string(ctx, L"toStringTag"));
-
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_js_variable_t tag = neo_js_context_get_field(ctx, self, toStringTag);
   tag = neo_js_context_to_primitive(ctx, tag);
   if (neo_js_variable_get_type(tag)->kind == NEO_TYPE_STRING) {
-    wchar_t msg[16];
-    swprintf(msg, 16, L"[object %s]", neo_js_variable_to_string(tag)->string);
-    return neo_js_context_create_string(ctx, msg);
+    size_t len = wcslen(neo_js_variable_to_string(tag)->string);
+    len += 16;
+    wchar_t *msg = neo_allocator_alloc(allocator, len * sizeof(wchar_t), NULL);
+    swprintf(msg, len, L"[object %ls]", neo_js_variable_to_string(tag)->string);
+    neo_js_variable_t str = neo_js_context_create_string(ctx, msg);
+    neo_allocator_free(allocator, msg);
+    return str;
   } else {
     return neo_js_context_create_string(ctx, L"[object Object]");
   }

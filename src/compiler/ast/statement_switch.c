@@ -27,12 +27,14 @@ static void
 neo_ast_statement_switch_resolve_closure(neo_allocator_t allocator,
                                          neo_ast_statement_switch_t self,
                                          neo_list_t closure) {
+  neo_compile_scope_t scope = neo_compile_scope_set(self->node.scope);
   self->condition->resolve_closure(allocator, self->condition, closure);
   for (neo_list_node_t it = neo_list_get_first(self->cases);
        it != neo_list_get_tail(self->cases); it = neo_list_node_next(it)) {
     neo_ast_node_t item = (neo_ast_node_t)neo_list_node_get(it);
     item->resolve_closure(allocator, item, closure);
   }
+  neo_compile_scope_pop(self->node.scope);
 }
 
 static void neo_ast_statement_switch_write(neo_allocator_t allocator,

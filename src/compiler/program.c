@@ -226,6 +226,21 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
     case NEO_ASM_PUSH_FUNCTION:
       fprintf(fp, "NEO_ASM_PUSH_FUNCTION\n");
       break;
+    case NEO_ASM_PUSH_ASYNC_FUNCTION:
+      fprintf(fp, "NEO_ASM_PUSH_ASYNC_FUNCTION\n");
+      break;
+    case NEO_ASM_PUSH_LAMBDA:
+      fprintf(fp, "NEO_ASM_PUSH_LAMBDA\n");
+      break;
+    case NEO_ASM_PUSH_ASYNC_LAMBDA:
+      fprintf(fp, "NEO_ASM_PUSH_ASYNC_LAMBDA\n");
+      break;
+    case NEO_ASM_PUSH_GENERATOR:
+      fprintf(fp, "NEO_ASM_PUSH_GENERATOR\n");
+      break;
+    case NEO_ASM_PUSH_ASYNC_GENERATOR:
+      fprintf(fp, "NEO_ASM_PUSH_ASYNC_GENERATOR\n");
+      break;
     case NEO_ASM_PUSH_OBJECT:
       fprintf(fp, "NEO_ASM_PUSH_OBJECT\n");
       break;
@@ -242,15 +257,6 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
     case NEO_ASM_PUSH_VALUE:
       fprintf(fp, "NEO_ASM_PUSH_VALUE %d\n",
               neo_program_get_integer(self, &offset));
-      break;
-    case NEO_ASM_SET_ASYNC:
-      fprintf(fp, "NEO_ASM_SET_ASYNC\n");
-      break;
-    case NEO_ASM_SET_LAMBDA:
-      fprintf(fp, "NEO_ASM_SET_LAMBDA\n");
-      break;
-    case NEO_ASM_SET_GENERATOR:
-      fprintf(fp, "NEO_ASM_SET_GENERATOR\n");
       break;
     case NEO_ASM_SET_NAME:
       fprintf(fp, "NEO_ASM_SET_NAME\n");

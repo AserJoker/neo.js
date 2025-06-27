@@ -22,9 +22,11 @@ static void
 neo_ast_statement_for_of_resolve_closure(neo_allocator_t allocator,
                                          neo_ast_statement_for_of_t self,
                                          neo_list_t closure) {
+  neo_compile_scope_t scope = neo_compile_scope_set(self->node.scope);
   self->left->resolve_closure(allocator, self->left, closure);
   self->right->resolve_closure(allocator, self->right, closure);
   self->body->resolve_closure(allocator, self->body, closure);
+  neo_compile_scope_pop(self->node.scope);
 }
 static void neo_ast_statement_for_of_write(neo_allocator_t allocator,
                                            neo_write_context_t ctx,
@@ -95,6 +97,11 @@ neo_serialize_ast_statement_for_of(neo_allocator_t allocator,
         variable, "kind",
         neo_create_variable_string(allocator, "NEO_AST_DECLARATION_LET"));
     break;
+  case NEO_AST_DECLARATION_USING:
+    neo_variable_set(
+        variable, "kind",
+        neo_create_variable_string(allocator, "NEO_AST_DECLARATION_USING"));
+    break;
   case NEO_AST_DECLARATION_NONE:
     neo_variable_set(
         variable, "kind",
@@ -156,6 +163,10 @@ neo_ast_node_t neo_ast_read_statement_for_of(neo_allocator_t allocator,
     node->kind = NEO_AST_DECLARATION_VAR;
     current = cur;
     SKIP_ALL(allocator, file, &current, onerror);
+  } else if (token && neo_location_is(token->location, "using")) {
+    node->kind = NEO_AST_DECLARATION_USING;
+    current = cur;
+    SKIP_ALL(allocator, file, &current, onerror);
   } else {
     node->kind = NEO_AST_DECLARATION_NONE;
   }
@@ -197,6 +208,12 @@ neo_ast_node_t neo_ast_read_statement_for_of(neo_allocator_t allocator,
       };
       break;
     case NEO_AST_DECLARATION_NONE:
+      break;
+    case NEO_AST_DECLARATION_USING:
+      TRY(neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
+                                   node->left, NEO_COMPILE_VARIABLE_USING)) {
+        goto onerror;
+      };
       break;
     }
   }

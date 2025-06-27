@@ -6,6 +6,7 @@
 #include "engine/value.h"
 #include "engine/variable.h"
 #include <stddef.h>
+#include <string.h>
 #include <wchar.h>
 
 neo_js_type_t neo_get_js_error_type() {
@@ -31,8 +32,8 @@ neo_js_error_t neo_create_js_error(neo_allocator_t allocator,
   size_t len = wcslen(type);
   error->type =
       neo_allocator_alloc(allocator, (len + 1) * sizeof(wchar_t), NULL);
+  memset(error->type, 0, (len + 1) * sizeof(wchar_t));
   wcscpy(error->type, type);
-  error->type[len] = 0;
   len = wcslen(message);
   error->message =
       neo_allocator_alloc(allocator, (len + 1) * sizeof(wchar_t), NULL);

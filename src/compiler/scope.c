@@ -51,6 +51,9 @@ neo_compile_scope_t neo_compile_scope_pop(neo_compile_scope_t scope) {
   current = scope;
   return curr;
 }
+neo_compile_scope_t neo_compile_scope_set(neo_compile_scope_t scope) {
+  return neo_compile_scope_pop(scope);
+}
 
 static void neo_compile_variable_dispose(neo_allocator_t allocator,
                                          neo_compile_variable_t variable) {}

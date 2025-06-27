@@ -34,7 +34,7 @@ static neo_js_variable_t neo_js_number_to_string(neo_js_context_t ctx,
   swprintf(str, 32, L"%lg", number->number);
   neo_js_string_t string = neo_create_js_string(allocator, str);
   return neo_js_context_create_variable(
-      ctx, neo_create_js_handle(allocator, &string->value));
+      ctx, neo_create_js_handle(allocator, &string->value), NULL);
 }
 
 static neo_js_variable_t neo_js_number_to_boolean(neo_js_context_t ctx,

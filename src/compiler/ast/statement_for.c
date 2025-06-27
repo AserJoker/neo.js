@@ -23,10 +23,12 @@ static void neo_ast_statement_for_dispose(neo_allocator_t allocator,
 static void neo_ast_statement_for_resolve_closure(neo_allocator_t allocator,
                                                   neo_ast_statement_for_t self,
                                                   neo_list_t closure) {
+  neo_compile_scope_t scope = neo_compile_scope_set(self->node.scope);
   self->initialize->resolve_closure(allocator, self->initialize, closure);
   self->condition->resolve_closure(allocator, self->condition, closure);
   self->after->resolve_closure(allocator, self->after, closure);
   self->body->resolve_closure(allocator, self->body, closure);
+  neo_compile_scope_pop(self->node.scope);
 }
 
 static void neo_ast_statement_for_write(neo_allocator_t allocator,

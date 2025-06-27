@@ -7,13 +7,10 @@ struct _neo_js_variable_t {
   bool is_const;
 };
 
-static void neo_js_variable_dispose(neo_allocator_t allocator,
-                                    neo_js_variable_t variable) {}
-
 neo_js_variable_t neo_create_js_variable(neo_allocator_t allocator,
                                          neo_js_handle_t handle) {
-  neo_js_variable_t variable = neo_allocator_alloc(
-      allocator, sizeof(struct _neo_js_variable_t), neo_js_variable_dispose);
+  neo_js_variable_t variable =
+      neo_allocator_alloc(allocator, sizeof(struct _neo_js_variable_t), NULL);
   variable->handle = handle;
   variable->is_const = false;
   return variable;

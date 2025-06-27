@@ -10,6 +10,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+typedef struct _neo_js_vm_t *neo_js_vm_t;
+
 typedef struct _neo_js_context_t *neo_js_context_t;
 
 neo_js_context_t neo_create_js_context(neo_allocator_t allocator,
@@ -23,6 +25,9 @@ neo_js_context_get_allocator(neo_js_context_t ctx) {
 }
 
 neo_js_scope_t neo_js_context_get_scope(neo_js_context_t ctx);
+
+neo_js_scope_t neo_js_context_set_scope(neo_js_context_t ctx,
+                                        neo_js_scope_t scope);
 
 neo_js_scope_t neo_js_context_get_root(neo_js_context_t ctx);
 
@@ -56,8 +61,12 @@ neo_js_variable_t neo_js_context_get_symbol_constructor(neo_js_context_t ctx);
 
 neo_js_variable_t neo_js_context_get_array_constructor(neo_js_context_t ctx);
 
+neo_js_variable_t
+neo_js_context_get_array_iterator_constructor(neo_js_context_t ctx);
+
 neo_js_variable_t neo_js_context_create_variable(neo_js_context_t ctx,
-                                                 neo_js_handle_t handle);
+                                                 neo_js_handle_t handle,
+                                                 const wchar_t *name);
 
 neo_js_variable_t neo_js_context_def_variable(neo_js_context_t ctx,
                                               neo_js_variable_t variable,
@@ -159,12 +168,28 @@ neo_js_variable_t neo_js_context_create_object(neo_js_context_t ctx,
 neo_js_variable_t neo_js_context_create_array(neo_js_context_t ctx,
                                               uint32_t length);
 
+neo_js_variable_t neo_js_context_create_coroutine(neo_js_context_t ctx,
+                                                  neo_js_vm_t vm,
+                                                  neo_program_t program,
+                                                  neo_js_scope_t scope);
+
+neo_js_variable_t neo_js_context_create_interrupt(neo_js_context_t ctx,
+                                                  neo_js_variable_t variable,
+                                                  size_t offset);
+
 neo_js_variable_t
 neo_js_context_create_cfunction(neo_js_context_t ctx, const wchar_t *name,
                                 neo_js_cfunction_fn_t cfunction);
 
 neo_js_variable_t neo_js_context_create_function(neo_js_context_t ctx,
                                                  neo_program_t program);
+
+neo_js_variable_t neo_js_context_create_generator(neo_js_context_t ctx,
+                                                  neo_program_t program);
+
+neo_js_variable_t neo_js_context_bind(neo_js_context_t ctx,
+                                      neo_js_variable_t func,
+                                      neo_js_variable_t self);
 
 const wchar_t *neo_js_context_typeof(neo_js_context_t ctx,
                                      neo_js_variable_t variable);

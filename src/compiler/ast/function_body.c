@@ -22,15 +22,18 @@ static void neo_ast_function_body_dispose(neo_allocator_t allocator,
 static void neo_ast_function_body_resolve_closure(neo_allocator_t allocator,
                                                   neo_ast_function_body_t self,
                                                   neo_list_t closure) {
+  neo_compile_scope_t scope = neo_compile_scope_set(self->node.scope);
   for (neo_list_node_t it = neo_list_get_first(self->body);
        it != neo_list_get_tail(self->body); it = neo_list_node_next(it)) {
     neo_ast_node_t item = (neo_ast_node_t)neo_list_node_get(it);
     item->resolve_closure(allocator, item, closure);
   }
+  neo_compile_scope_set(scope);
 }
 static void neo_ast_function_body_write(neo_allocator_t allocator,
                                         neo_write_context_t ctx,
                                         neo_ast_function_body_t self) {
+  neo_writer_push_scope(allocator, ctx, self->node.scope);
   for (neo_list_node_t it = neo_list_get_first(self->directives);
        it != neo_list_get_tail(self->directives); it = neo_list_node_next(it)) {
     neo_ast_node_t item = neo_list_node_get(it);
@@ -43,6 +46,7 @@ static void neo_ast_function_body_write(neo_allocator_t allocator,
   }
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_UNDEFINED);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_RET);
+  neo_writer_pop_scope(allocator, ctx, self->node.scope);
 }
 static neo_variable_t
 neo_serialize_ast_function_body(neo_allocator_t allocator,

@@ -221,10 +221,10 @@ static neo_js_variable_t neo_js_object_get_field(neo_js_context_t ctx,
   }
   if (property->get) {
     neo_js_variable_t getter =
-        neo_js_context_create_variable(ctx, property->get);
+        neo_js_context_create_variable(ctx, property->get, NULL);
     return neo_js_context_call(ctx, getter, self, 1, NULL);
   } else {
-    return neo_js_context_create_variable(ctx, property->value);
+    return neo_js_context_create_variable(ctx, property->value, NULL);
   }
 }
 
@@ -283,7 +283,7 @@ static neo_js_variable_t neo_js_object_set_field(neo_js_context_t ctx,
       }
     } else if (proptype->set) {
       neo_js_variable_t setter =
-          neo_js_context_create_variable(ctx, proptype->set);
+          neo_js_context_create_variable(ctx, proptype->set, NULL);
       return neo_js_context_call(ctx, setter, self, 1, &value);
     } else {
       wchar_t *message = NULL;
@@ -421,8 +421,8 @@ static void neo_js_object_dispose(neo_allocator_t allocator,
 int8_t neo_js_object_compare_key(neo_js_handle_t handle1,
                                  neo_js_handle_t handle2,
                                  neo_js_context_t ctx) {
-  neo_js_variable_t val1 = neo_js_context_create_variable(ctx, handle1);
-  neo_js_variable_t val2 = neo_js_context_create_variable(ctx, handle2);
+  neo_js_variable_t val1 = neo_js_context_create_variable(ctx, handle1, NULL);
+  neo_js_variable_t val2 = neo_js_context_create_variable(ctx, handle2, NULL);
   return neo_js_context_is_equal(ctx, val1, val2) ? 0 : 1;
 }
 
@@ -447,6 +447,7 @@ neo_js_object_t neo_create_js_object(neo_allocator_t allocator) {
   initialize.auto_free_key = true;
   initialize.compare = (neo_compare_fn_t)wcscmp;
   initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
+  initialize.auto_free_value = false;
   object->internal = neo_create_hash_map(allocator, &initialize);
   object->value.ref = 0;
   object->value.type = neo_get_js_object_type();

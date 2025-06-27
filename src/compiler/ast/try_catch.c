@@ -18,10 +18,12 @@ static void neo_ast_try_catch_dispose(neo_allocator_t allocator,
 static void neo_ast_try_catch_resolve_closure(neo_allocator_t allocator,
                                               neo_ast_try_catch_t self,
                                               neo_list_t closure) {
+  neo_compile_scope_t scope = neo_compile_scope_set(self->node.scope);
   if (self->error) {
     self->error->resolve_closure(allocator, self->error, closure);
   }
   self->body->resolve_closure(allocator, self->body, closure);
+  neo_compile_scope_set(scope);
 }
 static neo_variable_t neo_serialize_ast_try_catch(neo_allocator_t allocator,
                                                   neo_ast_try_catch_t node) {

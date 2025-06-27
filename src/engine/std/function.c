@@ -37,13 +37,12 @@ neo_js_variable_t neo_js_function_to_string(neo_js_context_t ctx,
     wchar_t *str = neo_allocator_alloc(
         allocator, sizeof(wchar_t) * (wcslen(string->string) + 32), NULL);
     swprintf(str, 32 + wcslen(string->string),
-             L"cfunction %ls(){ [native code] }", string->string);
+             L"function %ls(){ [native code] }", string->string);
     neo_js_variable_t result = neo_js_context_create_string(ctx, str);
     neo_allocator_free(allocator, str);
     return result;
-  } else if (type->kind == NEO_TYPE_FUNCTION) {
+  } else {
     neo_js_function_t func = neo_js_variable_to_function(self);
     return neo_js_context_create_string(ctx, func->source);
   }
-  return neo_js_context_create_string(ctx, L"[cfunction Function]");
 }

@@ -25,7 +25,9 @@ neo_ast_variable_declarator_resolve_closure(neo_allocator_t allocator,
   if (self->initialize) {
     self->initialize->resolve_closure(allocator, self->initialize, closure);
   }
-  self->identifier->resolve_closure(allocator, self->identifier, closure);
+  if (self->identifier->type != NEO_NODE_TYPE_IDENTIFIER) {
+    self->identifier->resolve_closure(allocator, self->identifier, closure);
+  }
 }
 static void
 neo_ast_variable_declarator_write(neo_allocator_t allocator,

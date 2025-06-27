@@ -1,7 +1,4 @@
-const obj = {
-    id: 1123,
-    print() {
-        println(this.id)
-    }
+function Test(_, ...a) {
+    println(a.length)
 }
-obj.print()
+Test(0, 1, 2)

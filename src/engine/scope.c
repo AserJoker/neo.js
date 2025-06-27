@@ -98,6 +98,7 @@ static void neo_js_scope_dispose(neo_allocator_t allocator,
                                  neo_js_scope_t self) {
   if (self->parent) {
     neo_list_delete(self->parent->children, self);
+    self->parent = NULL;
   }
   while (neo_list_get_size(self->children)) {
     neo_list_node_t it = neo_list_get_first(self->children);
@@ -156,21 +157,24 @@ neo_js_variable_t neo_js_scope_get_variable(neo_js_scope_t self,
                                             const wchar_t *name) {
   return neo_map_get(self->named_variables, name, NULL);
 }
-void neo_js_scope_set_variable(neo_allocator_t allocator, neo_js_scope_t self,
-                               neo_js_variable_t variable,
-                               const wchar_t *name) {
+void neo_js_scope_set_variable(neo_allocator_t allocator,
+                                            neo_js_scope_t self,
+                                            neo_js_variable_t variable,
+                                            const wchar_t *name) {
+  neo_map_set(self->named_variables, neo_create_wstring(allocator, name),
+              variable, NULL);
+}
+
+neo_js_variable_t neo_js_scope_create_variable(neo_allocator_t allocator,
+                                               neo_js_scope_t self,
+                                               neo_js_handle_t handle,
+                                               const wchar_t *name) {
+  neo_js_variable_t variable = neo_create_js_variable(allocator, handle);
+  neo_js_handle_add_parent(handle, self->root);
   neo_list_push(self->variables, variable);
   if (name) {
     neo_map_set(self->named_variables, neo_create_wstring(allocator, name),
                 variable, NULL);
   }
-}
-
-neo_js_variable_t neo_js_scope_create_variable(neo_allocator_t allocator,
-                                               neo_js_scope_t self,
-                                               neo_js_handle_t handle) {
-  neo_js_variable_t variable = neo_create_js_variable(allocator, handle);
-  neo_js_handle_add_parent(handle, self->root);
-  neo_list_push(self->variables, variable);
   return variable;
 }

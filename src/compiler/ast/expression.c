@@ -334,7 +334,6 @@ neo_ast_node_t neo_ast_read_expression_17(neo_allocator_t allocator,
       node->location.begin = *position;
       node->location.end = cur;
       node->location.file = file;
-      SKIP_ALL(allocator, file, &cur, onerror);
       current = cur;
     }
   }

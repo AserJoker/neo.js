@@ -42,6 +42,8 @@ neo_compile_scope_t neo_compile_scope_push(neo_allocator_t allocator,
 
 neo_compile_scope_t neo_compile_scope_pop(neo_compile_scope_t scope);
 
+neo_compile_scope_t neo_compile_scope_set(neo_compile_scope_t scope);
+
 void neo_compile_scope_declar_value(neo_allocator_t allocator,
                                     neo_compile_scope_t self,
                                     neo_ast_node_t node,

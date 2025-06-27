@@ -115,7 +115,8 @@ neo_ast_node_t neo_ast_read_expression_member(neo_allocator_t allocator,
   SKIP_ALL(allocator, file, &current, onerror);
   if (neo_location_is(token->location, ".")) {
     neo_allocator_free(allocator, token);
-    node->field = TRY(neo_ast_read_identifier(allocator, file, &current)) {
+    node->field =
+        TRY(neo_ast_read_identifier_compat(allocator, file, &current)) {
       goto onerror;
     }
     if (!node->field) {

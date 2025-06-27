@@ -21,7 +21,7 @@ static neo_js_variable_t neo_js_undefined_to_string(neo_js_context_t ctx,
       neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
   neo_js_string_t string = neo_create_js_string(allocator, L"undefined");
   return neo_js_context_create_variable(
-      ctx, neo_create_js_handle(allocator, &string->value));
+      ctx, neo_create_js_handle(allocator, &string->value), NULL);
 }
 
 static neo_js_variable_t neo_js_undefined_to_boolean(neo_js_context_t ctx,
