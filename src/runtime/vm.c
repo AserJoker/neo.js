@@ -210,6 +210,10 @@ void neo_js_vm_push_array(neo_js_vm_t vm, neo_program_t program) {
   double length = neo_js_vm_read_number(vm, program);
   neo_list_push(vm->stack, neo_js_context_create_array(vm->ctx, length));
 }
+void neo_js_vm_push_this(neo_js_vm_t vm, neo_program_t program) {
+  neo_list_push(vm->stack, neo_js_context_create_variable(
+                               vm->ctx, neo_js_variable_get_handle(vm->self)));
+}
 void neo_js_vm_push_value(neo_js_vm_t vm, neo_program_t program) {
   int32_t offset = neo_js_vm_read_integer(vm, program);
   neo_list_node_t it = neo_list_get_tail(vm->stack);
@@ -476,7 +480,7 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_push_function,     // NEO_ASM_PUSH_FUNCTION
     neo_js_vm_push_object,       // NEO_ASM_PUSH_OBJECT
     neo_js_vm_push_array,        // NEO_ASM_PUSH_ARRAY
-    NULL,                        // NEO_ASM_PUSH_THIS
+    neo_js_vm_push_this,         // NEO_ASM_PUSH_THIS
     NULL,                        // NEO_ASM_PUSH_SUPER
     neo_js_vm_push_value,        // NEO_ASM_PUSH_VALUE
     NULL,                        // NEO_ASM_PUSH_LABEL

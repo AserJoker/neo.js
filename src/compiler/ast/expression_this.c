@@ -31,8 +31,7 @@ neo_serialize_ast_expression_this(neo_allocator_t allocator,
 static void neo_ast_expression_this_write(neo_allocator_t allocator,
                                           neo_write_context_t ctx,
                                           neo_ast_expression_this_t self) {
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
-  neo_program_add_string(allocator, ctx->program, "this");
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_THIS);
 }
 
 static neo_ast_expression_this_t
