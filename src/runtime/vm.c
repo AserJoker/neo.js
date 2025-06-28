@@ -32,8 +32,8 @@ struct _neo_js_label_frame_t {
   size_t stack_top;
   size_t try_stack_top;
   wchar_t *label;
-  size_t end;
-  size_t begin;
+  size_t continueaddr;
+  size_t breakaddr;
 };
 
 struct _neo_js_vm_t {
@@ -247,14 +247,15 @@ void neo_js_vm_push_value(neo_js_vm_t vm, neo_program_t program) {
 }
 void neo_js_vm_push_label(neo_js_vm_t vm, neo_program_t program) {
   wchar_t *label = neo_js_vm_read_string(vm, program);
-  size_t offset = neo_js_vm_read_address(vm, program);
+  size_t breakaddr = neo_js_vm_read_address(vm, program);
+  size_t continueaddr = neo_js_vm_read_address(vm, program);
   neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
   neo_js_label_frame_t frame =
       neo_allocator_alloc(allocator, sizeof(struct _neo_js_label_frame_t),
                           neo_js_label_frame_dispose);
   frame->label = label;
-  frame->begin = vm->offset;
-  frame->end = offset;
+  frame->breakaddr = breakaddr;
+  frame->continueaddr = continueaddr;
   frame->scope = neo_js_context_get_scope(vm->ctx);
   frame->stack_top = neo_list_get_size(vm->stack);
   frame->try_stack_top = neo_list_get_size(vm->try_stack);
@@ -511,7 +512,7 @@ void neo_js_vm_break(neo_js_vm_t vm, neo_program_t program) {
   while (neo_list_get_last(vm->label_stack) != it) {
     neo_list_pop(vm->label_stack);
   }
-  vm->offset = frame->end;
+  vm->offset = frame->breakaddr;
 }
 void neo_js_vm_continue(neo_js_vm_t vm, neo_program_t program) {
   wchar_t *label = neo_js_vm_read_string(vm, program);
@@ -556,7 +557,7 @@ void neo_js_vm_continue(neo_js_vm_t vm, neo_program_t program) {
   while (neo_list_get_last(vm->label_stack) != it) {
     neo_list_pop(vm->label_stack);
   }
-  vm->offset = frame->begin;
+  vm->offset = frame->continueaddr;
 }
 void neo_js_vm_ret(neo_js_vm_t vm, neo_program_t program) {
   vm->offset = neo_buffer_get_size(program->codes);

@@ -26,9 +26,13 @@ neo_ast_statement_while_resolve_closure(neo_allocator_t allocator,
 static void neo_ast_statement_while_write(neo_allocator_t allocator,
                                           neo_write_context_t ctx,
                                           neo_ast_statement_while_t self) {
+  char *label = ctx->label;
+  ctx->label = NULL;
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_LABEL);
-  neo_program_add_string(allocator, ctx->program, "");
-  size_t labeladdr = neo_buffer_get_size(ctx->program->codes);
+  neo_program_add_string(allocator, ctx->program, label ? label : "");
+  size_t breakaddr = neo_buffer_get_size(ctx->program->codes);
+  neo_program_add_address(allocator, ctx->program, 0);
+  size_t continueaddr = neo_buffer_get_size(ctx->program->codes);
   neo_program_add_address(allocator, ctx->program, 0);
   size_t begin = neo_buffer_get_size(ctx->program->codes);
   TRY(self->condition->write(allocator, ctx, self->condition)) { return; }
@@ -37,11 +41,13 @@ static void neo_ast_statement_while_write(neo_allocator_t allocator,
   neo_program_add_address(allocator, ctx->program, 0);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   TRY(self->body->write(allocator, ctx, self->body)) { return; }
+  neo_program_set_current(ctx->program, continueaddr);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
   neo_program_add_address(allocator, ctx->program, begin);
   neo_program_set_current(ctx->program, end);
-  neo_program_set_current(ctx->program, labeladdr);
+  neo_program_set_current(ctx->program, breakaddr);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_POP_LABEL);
+  ctx->label = label;
 }
 static neo_variable_t
 neo_serialize_ast_statement_while(neo_allocator_t allocator,

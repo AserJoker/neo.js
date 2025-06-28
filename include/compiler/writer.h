@@ -13,6 +13,7 @@ typedef struct _neo_ast_node_t *neo_ast_node_t;
 typedef struct _neo_write_context_t {
   neo_program_t program;
   neo_write_scope_t scope;
+  char *label;
 } *neo_write_context_t;
 
 typedef void (*neo_write_fn_t)(neo_allocator_t allocator,

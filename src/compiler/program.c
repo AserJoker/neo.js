@@ -388,7 +388,8 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
     case NEO_ASM_PUSH_LABEL: {
       char *constant =
           neo_string_encode(allocator, neo_program_get_string(self, &offset));
-      fprintf(fp, "NEO_ASM_PUSH_LABEL \"%s\",%ld\n", constant,
+      fprintf(fp, "NEO_ASM_PUSH_LABEL \"%s\",%ld,%ld\n", constant,
+              neo_program_get_address(self, &offset),
               neo_program_get_address(self, &offset));
       neo_allocator_free(allocator, constant);
     } break;

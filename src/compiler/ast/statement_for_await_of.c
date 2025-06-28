@@ -36,11 +36,15 @@ static void
 neo_ast_statement_for_await_of_write(neo_allocator_t allocator,
                                      neo_write_context_t ctx,
                                      neo_ast_statement_for_await_of_t self) {
+  char *label = ctx->label;
+  ctx->label = NULL;
   TRY(self->right->write(allocator, ctx, self->right)) { return; }
   neo_program_add_code(allocator, ctx->program, NEO_ASM_ITERATOR);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_LABEL);
-  neo_program_add_string(allocator, ctx->program, "");
-  size_t labeladdr = neo_buffer_get_size(ctx->program->codes);
+  neo_program_add_string(allocator, ctx->program, label ? label : "");
+  size_t breakaddr = neo_buffer_get_size(ctx->program->codes);
+  neo_program_add_address(allocator, ctx->program, 0);
+  size_t continueaddr = neo_buffer_get_size(ctx->program->codes);
   neo_program_add_address(allocator, ctx->program, 0);
   size_t begin = neo_buffer_get_size(ctx->program->codes);
   neo_writer_push_scope(allocator, ctx, self->node.scope);
@@ -59,16 +63,18 @@ neo_ast_statement_for_await_of_write(neo_allocator_t allocator,
     TRY(self->left->write(allocator, ctx, self->left)) { return; }
   }
   TRY(self->body->write(allocator, ctx, self->body)) { return; }
+  neo_program_set_current(ctx->program, continueaddr);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
   neo_program_add_address(allocator, ctx->program, begin);
   neo_program_set_current(ctx->program, address);
-  neo_program_set_current(ctx->program, labeladdr);
+  neo_program_set_current(ctx->program, breakaddr);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_POP_LABEL);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   neo_writer_pop_scope(allocator, ctx, self->node.scope);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+  ctx->label = NULL;
 }
 static neo_variable_t neo_serialize_ast_statement_for_await_of(
     neo_allocator_t allocator, neo_ast_statement_for_await_of_t node) {
