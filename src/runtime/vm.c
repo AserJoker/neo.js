@@ -17,19 +17,23 @@
 #include <wchar.h>
 
 typedef struct _neo_js_try_frame_t *neo_js_try_frame_t;
+typedef struct _neo_js_label_frame_t *neo_js_label_frame_t;
 
 struct _neo_js_try_frame_t {
   neo_js_scope_t scope;
   size_t stack_top;
+  size_t label_stack_top;
   size_t onfinish;
   size_t onerror;
 };
-typedef struct _neo_js_label_frame_t *neo_js_label_frame_t;
 
 struct _neo_js_label_frame_t {
   neo_js_scope_t scope;
   size_t stack_top;
+  size_t try_stack_top;
   wchar_t *label;
+  size_t end;
+  size_t begin;
 };
 
 struct _neo_js_vm_t {
@@ -40,6 +44,11 @@ struct _neo_js_vm_t {
   size_t offset;
   neo_js_variable_t self;
 };
+
+static void neo_js_label_frame_dispose(neo_allocator_t allocator,
+                                       neo_js_label_frame_t frame) {
+  neo_allocator_free(allocator, frame->label);
+}
 
 void neo_js_vm_dispose(neo_allocator_t allocator, neo_js_vm_t vm) {
   neo_allocator_free(allocator, vm->stack);
@@ -236,6 +245,24 @@ void neo_js_vm_push_value(neo_js_vm_t vm, neo_program_t program) {
                 neo_js_context_create_variable(
                     vm->ctx, neo_js_variable_get_handle(variable), NULL));
 }
+void neo_js_vm_push_label(neo_js_vm_t vm, neo_program_t program) {
+  wchar_t *label = neo_js_vm_read_string(vm, program);
+  size_t offset = neo_js_vm_read_address(vm, program);
+  neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
+  neo_js_label_frame_t frame =
+      neo_allocator_alloc(allocator, sizeof(struct _neo_js_label_frame_t),
+                          neo_js_label_frame_dispose);
+  frame->label = label;
+  frame->begin = vm->offset;
+  frame->end = offset;
+  frame->scope = neo_js_context_get_scope(vm->ctx);
+  frame->stack_top = neo_list_get_size(vm->stack);
+  frame->try_stack_top = neo_list_get_size(vm->try_stack);
+  neo_list_push(vm->label_stack, frame);
+}
+void neo_js_vm_pop_label(neo_js_vm_t vm, neo_program_t program) {
+  neo_list_pop(vm->label_stack);
+}
 
 void neo_js_vm_set_const(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t variable = neo_list_node_get(neo_list_get_last(vm->stack));
@@ -312,7 +339,11 @@ void neo_js_set_source(neo_js_vm_t vm, neo_program_t program) {
   function->source = source;
 }
 
-void neo_js_vm_direcitve(neo_js_vm_t vm, neo_program_t program) {}
+void neo_js_vm_direcitve(neo_js_vm_t vm, neo_program_t program) {
+  wchar_t *msg = neo_js_vm_read_string(vm, program);
+  neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
+  neo_allocator_free(allocator, msg);
+}
 
 void neo_js_vm_call(neo_js_vm_t vm, neo_program_t program) {
   int32_t argc = neo_js_vm_read_integer(vm, program);
@@ -437,6 +468,96 @@ void neo_js_vm_jmp(neo_js_vm_t vm, neo_program_t program) {
   size_t address = neo_js_vm_read_address(vm, program);
   vm->offset = address;
 }
+void neo_js_vm_break(neo_js_vm_t vm, neo_program_t program) {
+  wchar_t *label = neo_js_vm_read_string(vm, program);
+  neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
+  neo_js_label_frame_t frame = NULL;
+  neo_list_node_t it = neo_list_get_last(vm->label_stack);
+  while (it != neo_list_get_head(vm->label_stack)) {
+    neo_js_label_frame_t f = neo_list_node_get(it);
+    if (wcscmp(label, L"") == 0) {
+      frame = f;
+      break;
+    }
+    if (wcscmp(label, f->label) == 0) {
+      frame = f;
+      break;
+    }
+    it = neo_list_node_last(it);
+  }
+  if (!frame) {
+    size_t len = wcslen(label);
+    len += 32;
+    wchar_t *msg = neo_allocator_alloc(allocator, len * sizeof(wchar_t), NULL);
+    swprintf(msg, len, L"Undefined label '%ls'", label);
+    neo_js_variable_t error =
+        neo_js_context_create_error(vm->ctx, L"SyntaxError", msg);
+    neo_allocator_free(allocator, msg);
+    neo_allocator_free(allocator, label);
+    neo_list_push(vm->stack, error);
+    vm->offset = neo_buffer_get_size(program->codes);
+    return;
+  }
+  neo_allocator_free(allocator, label);
+  while (neo_list_get_size(vm->try_stack) != frame->try_stack_top) {
+    neo_list_pop(vm->try_stack);
+  }
+  while (neo_list_get_size(vm->stack) != frame->stack_top) {
+    neo_list_pop(vm->stack);
+  }
+  while (neo_js_context_get_scope(vm->ctx) != frame->scope) {
+    neo_js_context_pop_scope(vm->ctx);
+  }
+  while (neo_list_get_last(vm->label_stack) != it) {
+    neo_list_pop(vm->label_stack);
+  }
+  vm->offset = frame->end;
+}
+void neo_js_vm_continue(neo_js_vm_t vm, neo_program_t program) {
+  wchar_t *label = neo_js_vm_read_string(vm, program);
+  neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
+  neo_js_label_frame_t frame = NULL;
+  neo_list_node_t it = neo_list_get_last(vm->label_stack);
+  while (it != neo_list_get_head(vm->label_stack)) {
+    neo_js_label_frame_t f = neo_list_node_get(it);
+    if (wcscmp(label, L"") == 0) {
+      frame = f;
+      break;
+    }
+    if (wcscmp(label, f->label) == 0) {
+      frame = f;
+      break;
+    }
+    it = neo_list_node_last(it);
+  }
+  if (!frame) {
+    size_t len = wcslen(label);
+    len += 32;
+    wchar_t *msg = neo_allocator_alloc(allocator, len * sizeof(wchar_t), NULL);
+    swprintf(msg, len, L"Undefined label '%ls'", label);
+    neo_js_variable_t error =
+        neo_js_context_create_error(vm->ctx, L"SyntaxError", msg);
+    neo_allocator_free(allocator, msg);
+    neo_allocator_free(allocator, label);
+    neo_list_push(vm->stack, error);
+    vm->offset = neo_buffer_get_size(program->codes);
+    return;
+  }
+  neo_allocator_free(allocator, label);
+  while (neo_list_get_size(vm->try_stack) != frame->try_stack_top) {
+    neo_list_pop(vm->try_stack);
+  }
+  while (neo_list_get_size(vm->stack) != frame->stack_top) {
+    neo_list_pop(vm->stack);
+  }
+  while (neo_js_context_get_scope(vm->ctx) != frame->scope) {
+    neo_js_context_pop_scope(vm->ctx);
+  }
+  while (neo_list_get_last(vm->label_stack) != it) {
+    neo_list_pop(vm->label_stack);
+  }
+  vm->offset = frame->begin;
+}
 void neo_js_vm_ret(neo_js_vm_t vm, neo_program_t program) {
   vm->offset = neo_buffer_get_size(program->codes);
 }
@@ -445,6 +566,15 @@ void neo_js_vm_hlt(neo_js_vm_t vm, neo_program_t program) {
     neo_list_push(vm->stack, neo_js_context_create_undefined(vm->ctx));
   }
   vm->offset = neo_buffer_get_size(program->codes);
+}
+void neo_js_vm_keys(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  value = neo_js_context_get_keys(vm->ctx, value);
+  neo_list_push(vm->stack, value);
+  if (neo_js_variable_get_type(value)->kind == NEO_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
 }
 void neo_js_vm_yield(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
@@ -684,6 +814,176 @@ void neo_js_vm_add(neo_js_vm_t vm, neo_program_t program) {
     vm->offset = neo_buffer_get_size(program->codes);
   }
 }
+void neo_js_vm_sub(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t right = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t left = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t result = neo_js_context_sub(vm->ctx, left, right);
+  neo_list_push(vm->stack, result);
+  if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
+void neo_js_vm_mul(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t right = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t left = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t result = neo_js_context_mul(vm->ctx, left, right);
+  neo_list_push(vm->stack, result);
+  if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
+void neo_js_vm_div(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t right = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t left = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t result = neo_js_context_div(vm->ctx, left, right);
+  neo_list_push(vm->stack, result);
+  if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
+void neo_js_vm_mod(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t right = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t left = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t result = neo_js_context_mod(vm->ctx, left, right);
+  neo_list_push(vm->stack, result);
+  if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
+void neo_js_vm_pow(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t right = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t left = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t result = neo_js_context_pow(vm->ctx, left, right);
+  neo_list_push(vm->stack, result);
+  if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
+void neo_js_vm_not(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t variable = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t result = neo_js_context_not(vm->ctx, variable);
+  neo_list_push(vm->stack, result);
+  if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
+void neo_js_vm_and(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t right = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t left = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t result = neo_js_context_and(vm->ctx, left, right);
+  neo_list_push(vm->stack, result);
+  if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
+void neo_js_vm_or(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t right = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t left = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t result = neo_js_context_or(vm->ctx, left, right);
+  neo_list_push(vm->stack, result);
+  if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
+void neo_js_vm_xor(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t right = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t left = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t result = neo_js_context_xor(vm->ctx, left, right);
+  neo_list_push(vm->stack, result);
+  if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
+void neo_js_vm_shr(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t right = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t left = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t result = neo_js_context_shr(vm->ctx, left, right);
+  neo_list_push(vm->stack, result);
+  if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
+void neo_js_vm_shl(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t right = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t left = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t result = neo_js_context_shl(vm->ctx, left, right);
+  neo_list_push(vm->stack, result);
+  if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
+void neo_js_vm_ushr(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t right = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t left = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t result = neo_js_context_ushr(vm->ctx, left, right);
+  neo_list_push(vm->stack, result);
+  if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
+void neo_js_vm_plus(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t result = neo_js_context_to_number(vm->ctx, value);
+  neo_list_push(vm->stack, result);
+  if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
+void neo_js_vm_neg(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_number_t num = neo_js_variable_to_number(value);
+  neo_js_variable_t result =
+      neo_js_context_create_number(vm->ctx, -num->number);
+  neo_list_push(vm->stack, result);
+  if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
+void neo_js_vm_logical_not(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t variable = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t result = neo_js_context_logical_not(vm->ctx, variable);
+  neo_list_push(vm->stack, result);
+  if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
+void neo_js_vm_concat(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t right = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t left = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t result = neo_js_context_concat(vm->ctx, left, right);
+  neo_list_push(vm->stack, result);
+  if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
 
 const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_push_scope,        // NEO_ASM_PUSH_SCOPE
@@ -718,8 +1018,8 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_push_this,         // NEO_ASM_PUSH_THIS
     NULL,                        // NEO_ASM_PUSH_SUPER
     neo_js_vm_push_value,        // NEO_ASM_PUSH_VALUE
-    NULL,                        // NEO_ASM_PUSH_LABEL
-    NULL,                        // NEO_ASM_POP_LABEL
+    neo_js_vm_push_label,        // NEO_ASM_PUSH_LABEL
+    neo_js_vm_pop_label,         // NEO_ASM_POP_LABEL
     neo_js_vm_set_const,         // NEO_ASM_SET_CONST
     NULL,                        // NEO_ASM_SET_USING
     neo_js_set_source,           // NEO_ASM_SET_SOURCE
@@ -741,14 +1041,14 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_jfalse,            // NEO_ASM_JFALSE
     neo_js_vm_jtrue,             // NEO_ASM_JTRUE
     neo_js_vm_jmp,               // NEO_ASM_JMP
-    NULL,                        // NEO_ASM_BREAK
-    NULL,                        // NEO_ASM_CONTINUE
+    neo_js_vm_break,             // NEO_ASM_BREAK
+    neo_js_vm_continue,          // NEO_ASM_CONTINUE
     NULL,                        // NEO_ASM_THROW
     NULL,                        // NEO_ASM_DEFER
     NULL,                        // NEO_ASM_TRY
     neo_js_vm_ret,               // NEO_ASM_RET
     neo_js_vm_hlt,               // NEO_ASM_HLT
-    NULL,                        // NEO_ASM_KEYS
+    neo_js_vm_keys,              // NEO_ASM_KEYS
     NULL,                        // NEO_ASM_AWAIT
     neo_js_vm_yield,             // NEO_ASM_YIELD
     NULL,                        // NEO_ASM_YIELD_DEGELATE
@@ -776,23 +1076,22 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     NULL,                        // NEO_ASM_INC
     NULL,                        // NEO_ASM_DEC
     neo_js_vm_add,               // NEO_ASM_ADD
-    NULL,                        // NEO_ASM_SUB
-    NULL,                        // NEO_ASM_MUL
-    NULL,                        // NEO_ASM_DIV
-    NULL,                        // NEO_ASM_MOD
-    NULL,                        // NEO_ASM_POW
-    NULL,                        // NEO_ASM_NOT
-    NULL,                        // NEO_ASM_AND
-    NULL,                        // NEO_ASM_OR
-    NULL,                        // NEO_ASM_XOR
-    NULL,                        // NEO_ASM_SHR
-    NULL,                        // NEO_ASM_SHL
-    NULL,                        // NEO_ASM_USHR
-    NULL,                        // NEO_ASM_PLUS
-    NULL,                        // NEO_ASM_NEG
-    NULL,                        // NEO_ASM_LOGICAL_NOT
-    NULL,                        // NEO_ASM_CONCAT
-    NULL,                        // NEO_ASM_MERGE
+    neo_js_vm_sub,               // NEO_ASM_SUB
+    neo_js_vm_mul,               // NEO_ASM_MUL
+    neo_js_vm_div,               // NEO_ASM_DIV
+    neo_js_vm_mod,               // NEO_ASM_MOD
+    neo_js_vm_pow,               // NEO_ASM_POW
+    neo_js_vm_not,               // NEO_ASM_NOT
+    neo_js_vm_and,               // NEO_ASM_AND
+    neo_js_vm_or,                // NEO_ASM_OR
+    neo_js_vm_xor,               // NEO_ASM_XOR
+    neo_js_vm_shr,               // NEO_ASM_SHR
+    neo_js_vm_shl,               // NEO_ASM_SHL
+    neo_js_vm_ushr,              // NEO_ASM_USHR
+    neo_js_vm_plus,              // NEO_ASM_PLUS
+    neo_js_vm_neg,               // NEO_ASM_NEG
+    neo_js_vm_logical_not,       // NEO_ASM_LOGICAL_NOT
+    neo_js_vm_concat,            // NEO_ASM_CONCAT
     NULL,                        // NEO_ASM_SPREAD
 };
 

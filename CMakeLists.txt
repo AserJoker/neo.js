@@ -56,4 +56,6 @@ file(GLOB_RECURSE SOURCES ${PROJECT_SOURCE_DIR}/src/*.c)
 
 add_executable(${PROJECT_NAME}c ${SOURCES} ${PROJECT_SOURCE_DIR}/cmd/main.c)
 
+target_link_libraries(${PROJECT_NAME}c m)
+
 add_library(${PROJECT_NAME} ${SOURCES})

@@ -166,10 +166,7 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       neo_allocator_free(allocator, constant);
     } break;
     case NEO_ASM_CLONE: {
-      char *constant =
-          neo_string_encode(allocator, neo_program_get_string(self, &offset));
-      fprintf(fp, "NEO_ASM_CLONE \"%s\"\n", constant);
-      neo_allocator_free(allocator, constant);
+      fprintf(fp, "NEO_ASM_CLONE\n");
     } break;
     case NEO_ASM_WITH:
       fprintf(fp, "NEO_ASM_WITH\n");
@@ -345,7 +342,7 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
     case NEO_ASM_CONTINUE: {
       char *constant =
           neo_string_encode(allocator, neo_program_get_string(self, &offset));
-      fprintf(fp, "NEO_ASM_BREAK \"%s\"\n", constant);
+      fprintf(fp, "NEO_ASM_CONTINUE \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
     case NEO_ASM_THROW:
@@ -451,9 +448,6 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       break;
     case NEO_ASM_CONCAT:
       fprintf(fp, "NEO_ASM_CONCAT\n");
-      break;
-    case NEO_ASM_MERGE:
-      fprintf(fp, "NEO_ASM_MERGE\n");
       break;
     case NEO_ASM_SPREAD:
       fprintf(fp, "NEO_ASM_SPREAD\n");

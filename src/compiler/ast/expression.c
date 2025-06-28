@@ -107,7 +107,7 @@ static void neo_ast_expression_binary_write(neo_allocator_t allocator,
       neo_program_add_code(allocator, ctx->program, NEO_ASM_NOT);
     }
   } else if (!self->right) {
-    TRY(self->right->write(allocator, ctx, self->right)) { return; }
+    TRY(self->left->write(allocator, ctx, self->left)) { return; }
     neo_program_add_code(allocator, ctx->program, NEO_ASM_CLONE);
     if (neo_location_is(self->opt->location, "++")) {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_INC);

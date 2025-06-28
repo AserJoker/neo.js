@@ -111,7 +111,6 @@ typedef enum _neo_asm_code_t {
   NEO_ASM_NEG,
   NEO_ASM_LOGICAL_NOT,
   NEO_ASM_CONCAT,
-  NEO_ASM_MERGE,
   NEO_ASM_SPREAD,
 } neo_asm_code_t;
 

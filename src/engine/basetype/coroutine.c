@@ -13,7 +13,9 @@ neo_js_type_t neo_get_js_coroutine_type() {
 void neo_js_coroutine_dispose(neo_allocator_t allocator,
                               neo_js_coroutine_t self) {
   neo_allocator_free(allocator, self->vm);
-  neo_allocator_free(allocator, self->scope);
+  if (neo_js_scope_release(self->scope) == 0) {
+    neo_allocator_free(allocator, self->scope);
+  }
 }
 
 neo_js_coroutine_t neo_create_js_coroutine(neo_allocator_t allocator,
@@ -29,6 +31,7 @@ neo_js_coroutine_t neo_create_js_coroutine(neo_allocator_t allocator,
   coroutine->program = program;
   coroutine->result = NULL;
   coroutine->done = false;
+  neo_js_scope_add_ref(scope);
   return coroutine;
 }
 

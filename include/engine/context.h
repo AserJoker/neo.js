@@ -123,6 +123,9 @@ neo_js_variable_t neo_js_context_del_field(neo_js_context_t ctx,
                                            neo_js_variable_t object,
                                            neo_js_variable_t field);
 
+neo_js_variable_t neo_js_context_get_keys(neo_js_context_t ctx,
+                                          neo_js_variable_t variable);
+
 neo_js_variable_t neo_js_context_clone(neo_js_context_t ctx,
                                        neo_js_variable_t self);
 
@@ -227,6 +230,60 @@ neo_js_variable_t neo_js_context_is_le(neo_js_context_t ctx,
 neo_js_variable_t neo_js_context_add(neo_js_context_t ctx,
                                      neo_js_variable_t variable,
                                      neo_js_variable_t another);
+
+neo_js_variable_t neo_js_context_sub(neo_js_context_t ctx,
+                                     neo_js_variable_t variable,
+                                     neo_js_variable_t another);
+
+neo_js_variable_t neo_js_context_mul(neo_js_context_t ctx,
+                                     neo_js_variable_t variable,
+                                     neo_js_variable_t another);
+
+neo_js_variable_t neo_js_context_div(neo_js_context_t ctx,
+                                     neo_js_variable_t variable,
+                                     neo_js_variable_t another);
+
+neo_js_variable_t neo_js_context_mod(neo_js_context_t ctx,
+                                     neo_js_variable_t variable,
+                                     neo_js_variable_t another);
+
+neo_js_variable_t neo_js_context_pow(neo_js_context_t ctx,
+                                     neo_js_variable_t variable,
+                                     neo_js_variable_t another);
+
+neo_js_variable_t neo_js_context_not(neo_js_context_t ctx,
+                                     neo_js_variable_t variable);
+
+neo_js_variable_t neo_js_context_and(neo_js_context_t ctx,
+                                     neo_js_variable_t variable,
+                                     neo_js_variable_t another);
+
+neo_js_variable_t neo_js_context_or(neo_js_context_t ctx,
+                                    neo_js_variable_t variable,
+                                    neo_js_variable_t another);
+
+neo_js_variable_t neo_js_context_xor(neo_js_context_t ctx,
+                                     neo_js_variable_t variable,
+                                     neo_js_variable_t another);
+
+neo_js_variable_t neo_js_context_shr(neo_js_context_t ctx,
+                                     neo_js_variable_t variable,
+                                     neo_js_variable_t another);
+
+neo_js_variable_t neo_js_context_shl(neo_js_context_t ctx,
+                                     neo_js_variable_t variable,
+                                     neo_js_variable_t another);
+
+neo_js_variable_t neo_js_context_ushr(neo_js_context_t ctx,
+                                      neo_js_variable_t variable,
+                                      neo_js_variable_t another);
+
+neo_js_variable_t neo_js_context_logical_not(neo_js_context_t ctx,
+                                             neo_js_variable_t variable);
+
+neo_js_variable_t neo_js_context_concat(neo_js_context_t ctx,
+                                        neo_js_variable_t variable,
+                                        neo_js_variable_t another);
 
 neo_js_variable_t neo_js_context_instance_of(neo_js_context_t ctx,
                                              neo_js_variable_t variable,
