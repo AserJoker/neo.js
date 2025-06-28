@@ -7,6 +7,7 @@
 #include "engine/type.h"
 #include "engine/value.h"
 #include "engine/variable.h"
+#include <wchar.h>
 
 static const wchar_t *neo_js_boolean_typeof(neo_js_context_t ctx,
                                             neo_js_variable_t variable) {
@@ -38,7 +39,8 @@ static neo_js_variable_t neo_js_boolean_to_number(neo_js_context_t ctx,
 }
 
 static neo_js_variable_t neo_js_boolean_to_primitive(neo_js_context_t ctx,
-                                                     neo_js_variable_t self) {
+                                                     neo_js_variable_t self,
+                                                     const wchar_t *type) {
   return self;
 }
 

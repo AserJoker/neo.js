@@ -78,7 +78,7 @@ neo_js_variable_t neo_js_object_to_string(neo_js_context_t ctx,
       neo_js_context_create_string(ctx, L"toStringTag"));
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_js_variable_t tag = neo_js_context_get_field(ctx, self, toStringTag);
-  tag = neo_js_context_to_primitive(ctx, tag);
+  tag = neo_js_context_to_primitive(ctx, tag, L"default");
   if (neo_js_variable_get_type(tag)->kind == NEO_TYPE_STRING) {
     size_t len = wcslen(neo_js_variable_to_string(tag)->string);
     len += 16;

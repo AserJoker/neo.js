@@ -48,7 +48,8 @@ static neo_js_variable_t neo_js_number_to_number(neo_js_context_t ctx,
   return self;
 }
 static neo_js_variable_t neo_js_number_to_primitive(neo_js_context_t ctx,
-                                                    neo_js_variable_t self) {
+                                                    neo_js_variable_t self,
+                                                    const wchar_t *type) {
   return self;
 }
 static neo_js_variable_t neo_js_number_to_object(neo_js_context_t ctx,

@@ -3,6 +3,7 @@
 #include "core/common.h"
 #include "core/hash.h"
 #include "core/hash_map.h"
+#include "engine/basetype/boolean.h"
 #include "engine/basetype/string.h"
 #include "engine/basetype/symbol.h"
 #include "engine/context.h"
@@ -112,13 +113,14 @@ static neo_js_variable_t neo_js_object_to_number(neo_js_context_t ctx,
   return neo_js_context_to_number(ctx, primitive);
 }
 static neo_js_variable_t neo_js_object_to_primitive(neo_js_context_t ctx,
-                                                    neo_js_variable_t self) {
+                                                    neo_js_variable_t self,
+                                                    const wchar_t *type) {
   neo_js_variable_t to_primitive = neo_js_context_get_field(
       ctx, neo_js_context_get_symbol_constructor(ctx),
       neo_js_context_create_string(ctx, L"toPrimitive"));
   neo_js_variable_t primitive = NULL;
   if (neo_js_variable_get_type(to_primitive)->kind == NEO_TYPE_CFUNCTION) {
-    neo_js_variable_t hint = neo_js_context_create_string(ctx, L"default");
+    neo_js_variable_t hint = neo_js_context_create_string(ctx, type);
     primitive = neo_js_context_call(ctx, to_primitive, self, 1, &hint);
     if (neo_js_variable_get_type(primitive)->kind < NEO_TYPE_OBJECT) {
       return primitive;
@@ -423,7 +425,9 @@ int8_t neo_js_object_compare_key(neo_js_handle_t handle1,
                                  neo_js_context_t ctx) {
   neo_js_variable_t val1 = neo_js_context_create_variable(ctx, handle1, NULL);
   neo_js_variable_t val2 = neo_js_context_create_variable(ctx, handle2, NULL);
-  return neo_js_context_is_equal(ctx, val1, val2) ? 0 : 1;
+  neo_js_variable_t result = neo_js_context_is_equal(ctx, val1, val2);
+  neo_js_boolean_t boolean = neo_js_variable_to_boolean(result);
+  return boolean->boolean ? 0 : 1;
 }
 
 uint32_t neo_js_object_key_hash(neo_js_handle_t handle, uint32_t max_bucket) {

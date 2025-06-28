@@ -589,12 +589,13 @@ neo_js_variable_t neo_js_context_load_variable(neo_js_context_t ctx,
 }
 
 neo_js_variable_t neo_js_context_to_primitive(neo_js_context_t ctx,
-                                              neo_js_variable_t variable) {
+                                              neo_js_variable_t variable,
+                                              const wchar_t *hint) {
   neo_js_scope_t current = ctx->scope;
   neo_js_context_push_scope(ctx);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
   neo_js_value_t value = neo_js_variable_get_value(variable);
-  neo_js_variable_t result = value->type->to_primitive_fn(ctx, variable);
+  neo_js_variable_t result = value->type->to_primitive_fn(ctx, variable, hint);
   neo_js_handle_t hresult = neo_js_variable_get_handle(result);
   result = neo_js_scope_create_variable(allocator, current, hresult, NULL);
   neo_js_context_pop_scope(ctx);
@@ -659,7 +660,7 @@ neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
         ctx, L"TypeError", L"Object.defineProperty called on non-object");
   }
   neo_js_object_t obj = neo_js_variable_to_object(object);
-  field = neo_js_context_to_primitive(ctx, field);
+  field = neo_js_context_to_primitive(ctx, field, L"default");
   if (neo_js_variable_get_type(field)->kind != NEO_TYPE_SYMBOL) {
     field = neo_js_context_to_string(ctx, field);
   }
@@ -775,7 +776,7 @@ neo_js_context_def_accessor(neo_js_context_t ctx, neo_js_variable_t object,
         ctx, L"TypeError", L"Object.defineProperty called on non-object");
   }
   neo_js_object_t obj = neo_js_variable_to_object(object);
-  field = neo_js_context_to_primitive(ctx, field);
+  field = neo_js_context_to_primitive(ctx, field, L"default");
   if (neo_js_variable_get_type(field)->kind != NEO_TYPE_SYMBOL) {
     field = neo_js_context_to_string(ctx, field);
   }
@@ -1359,10 +1360,11 @@ neo_js_variable_t neo_js_context_bind(neo_js_context_t ctx,
   return neo_js_context_create_undefined(ctx);
 }
 
-const wchar_t *neo_js_context_typeof(neo_js_context_t ctx,
-                                     neo_js_variable_t variable) {
+neo_js_variable_t neo_js_context_typeof(neo_js_context_t ctx,
+                                        neo_js_variable_t variable) {
   neo_js_value_t value = neo_js_variable_get_value(variable);
-  return value->type->typeof_fn(ctx, variable);
+  const wchar_t *type = value->type->typeof_fn(ctx, variable);
+  return neo_js_context_create_string(ctx, type);
 }
 
 neo_js_variable_t neo_js_context_to_string(neo_js_context_t ctx,
@@ -1404,8 +1406,9 @@ neo_js_variable_t neo_js_context_to_number(neo_js_context_t ctx,
   return result;
 }
 
-bool neo_js_context_is_equal(neo_js_context_t ctx, neo_js_variable_t variable,
-                             neo_js_variable_t another) {
+neo_js_variable_t neo_js_context_is_equal(neo_js_context_t ctx,
+                                          neo_js_variable_t variable,
+                                          neo_js_variable_t another) {
   neo_js_type_t lefttype = neo_js_variable_get_type(variable);
   neo_js_type_t righttype = neo_js_variable_get_type(another);
   neo_js_variable_t left = variable;
@@ -1415,30 +1418,36 @@ bool neo_js_context_is_equal(neo_js_context_t ctx, neo_js_variable_t variable,
         lefttype->kind == NEO_TYPE_UNDEFINED) {
       if (righttype->kind == NEO_TYPE_NULL ||
           righttype->kind == NEO_TYPE_UNDEFINED) {
-        return true;
+        return neo_js_context_create_boolean(ctx, true);
       }
     }
     if (righttype->kind == NEO_TYPE_NULL ||
         righttype->kind == NEO_TYPE_UNDEFINED) {
       if (righttype->kind == NEO_TYPE_NULL ||
           righttype->kind == NEO_TYPE_UNDEFINED) {
-        return true;
+        return neo_js_context_create_boolean(ctx, true);
       }
     }
     if (lefttype->kind >= NEO_TYPE_OBJECT &&
         righttype->kind < NEO_TYPE_OBJECT) {
-      left = neo_js_context_to_primitive(ctx, left);
+      left = neo_js_context_to_primitive(ctx, left, L"default");
+      if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+        return left;
+      }
       lefttype = neo_js_variable_get_type(left);
     }
     if (righttype->kind >= NEO_TYPE_OBJECT &&
         lefttype->kind < NEO_TYPE_OBJECT) {
-      right = neo_js_context_to_primitive(ctx, right);
+      right = neo_js_context_to_primitive(ctx, right, L"default");
+      if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+        return right;
+      }
       righttype = neo_js_variable_get_type(right);
     }
     if (lefttype->kind != righttype->kind) {
       if (lefttype->kind == NEO_TYPE_SYMBOL ||
           righttype->kind == NEO_TYPE_SYMBOL) {
-        return false;
+        return neo_js_context_create_boolean(ctx, false);
       }
     }
     if (lefttype->kind == NEO_TYPE_BOOLEAN) {
@@ -1459,21 +1468,201 @@ bool neo_js_context_is_equal(neo_js_context_t ctx, neo_js_variable_t variable,
       righttype = neo_js_variable_get_type(right);
     }
   }
-  return lefttype->is_equal_fn(ctx, left, right);
+  return neo_js_context_create_boolean(ctx,
+                                       lefttype->is_equal_fn(ctx, left, right));
 }
 
-bool neo_js_context_is_not_equal(neo_js_context_t ctx,
-                                 neo_js_variable_t variable,
-                                 neo_js_variable_t another) {
-  return !neo_js_context_is_equal(ctx, variable, another);
+neo_js_variable_t neo_js_context_is_gt(neo_js_context_t ctx,
+                                       neo_js_variable_t variable,
+                                       neo_js_variable_t another) {
+  neo_js_variable_t left = variable;
+  neo_js_variable_t right = another;
+  left = neo_js_context_to_primitive(ctx, left, L"number");
+  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    return left;
+  }
+  right = neo_js_context_to_primitive(ctx, right, L"number");
+  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+    return right;
+  }
+  neo_js_type_t lefttype = neo_js_variable_get_type(left);
+  neo_js_type_t righttype = neo_js_variable_get_type(right);
+  if (lefttype->kind == NEO_TYPE_STRING && righttype->kind == NEO_TYPE_STRING) {
+    neo_js_string_t lstring = neo_js_variable_to_string(left);
+    neo_js_string_t rstring = neo_js_variable_to_string(right);
+    int res = wcscmp(lstring->string, rstring->string);
+    return neo_js_context_create_boolean(ctx, res > 0);
+  }
+  left = neo_js_context_to_number(ctx, left);
+  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    return left;
+  }
+  right = neo_js_context_to_number(ctx, right);
+  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    return right;
+  }
+  neo_js_number_t lnum = neo_js_variable_to_number(left);
+  neo_js_number_t rnum = neo_js_variable_to_number(right);
+  return neo_js_context_create_boolean(ctx, lnum->number > rnum->number);
 }
 
-bool neo_js_context_instance_of(neo_js_context_t ctx,
-                                neo_js_variable_t variable,
-                                neo_js_variable_t constructor) {
+neo_js_variable_t neo_js_context_is_lt(neo_js_context_t ctx,
+                                       neo_js_variable_t variable,
+                                       neo_js_variable_t another) {
+  neo_js_variable_t left = variable;
+  neo_js_variable_t right = another;
+  left = neo_js_context_to_primitive(ctx, left, L"number");
+  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    return left;
+  }
+  right = neo_js_context_to_primitive(ctx, right, L"number");
+  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+    return right;
+  }
+  neo_js_type_t lefttype = neo_js_variable_get_type(left);
+  neo_js_type_t righttype = neo_js_variable_get_type(right);
+  if (lefttype->kind == NEO_TYPE_STRING && righttype->kind == NEO_TYPE_STRING) {
+    neo_js_string_t lstring = neo_js_variable_to_string(left);
+    neo_js_string_t rstring = neo_js_variable_to_string(right);
+    int res = wcscmp(lstring->string, rstring->string);
+    return neo_js_context_create_boolean(ctx, res < 0);
+  }
+  left = neo_js_context_to_number(ctx, left);
+  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    return left;
+  }
+  right = neo_js_context_to_number(ctx, right);
+  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    return right;
+  }
+  neo_js_number_t lnum = neo_js_variable_to_number(left);
+  neo_js_number_t rnum = neo_js_variable_to_number(right);
+  return neo_js_context_create_boolean(ctx, lnum->number < rnum->number);
+}
+
+neo_js_variable_t neo_js_context_is_ge(neo_js_context_t ctx,
+                                       neo_js_variable_t variable,
+                                       neo_js_variable_t another) {
+  neo_js_variable_t left = variable;
+  neo_js_variable_t right = another;
+  left = neo_js_context_to_primitive(ctx, left, L"number");
+  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    return left;
+  }
+  right = neo_js_context_to_primitive(ctx, right, L"number");
+  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+    return right;
+  }
+  neo_js_type_t lefttype = neo_js_variable_get_type(left);
+  neo_js_type_t righttype = neo_js_variable_get_type(right);
+  if (lefttype->kind == NEO_TYPE_STRING && righttype->kind == NEO_TYPE_STRING) {
+    neo_js_string_t lstring = neo_js_variable_to_string(left);
+    neo_js_string_t rstring = neo_js_variable_to_string(right);
+    int res = wcscmp(lstring->string, rstring->string);
+    return neo_js_context_create_boolean(ctx, res >= 0);
+  }
+  left = neo_js_context_to_number(ctx, left);
+  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    return left;
+  }
+  right = neo_js_context_to_number(ctx, right);
+  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    return right;
+  }
+  neo_js_number_t lnum = neo_js_variable_to_number(left);
+  neo_js_number_t rnum = neo_js_variable_to_number(right);
+  return neo_js_context_create_boolean(ctx, lnum->number >= rnum->number);
+}
+
+neo_js_variable_t neo_js_context_is_le(neo_js_context_t ctx,
+                                       neo_js_variable_t variable,
+                                       neo_js_variable_t another) {
+  neo_js_variable_t left = variable;
+  neo_js_variable_t right = another;
+  left = neo_js_context_to_primitive(ctx, left, L"number");
+  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    return left;
+  }
+  right = neo_js_context_to_primitive(ctx, right, L"number");
+  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+    return right;
+  }
+  neo_js_type_t lefttype = neo_js_variable_get_type(left);
+  neo_js_type_t righttype = neo_js_variable_get_type(right);
+  if (lefttype->kind == NEO_TYPE_STRING && righttype->kind == NEO_TYPE_STRING) {
+    neo_js_string_t lstring = neo_js_variable_to_string(left);
+    neo_js_string_t rstring = neo_js_variable_to_string(right);
+    int res = wcscmp(lstring->string, rstring->string);
+    return neo_js_context_create_boolean(ctx, res <= 0);
+  }
+  left = neo_js_context_to_number(ctx, left);
+  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    return left;
+  }
+  right = neo_js_context_to_number(ctx, right);
+  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    return right;
+  }
+  neo_js_number_t lnum = neo_js_variable_to_number(left);
+  neo_js_number_t rnum = neo_js_variable_to_number(right);
+  return neo_js_context_create_boolean(ctx, lnum->number <= rnum->number);
+}
+
+neo_js_variable_t neo_js_context_add(neo_js_context_t ctx,
+                                     neo_js_variable_t variable,
+                                     neo_js_variable_t another) {
+  neo_js_variable_t left = variable;
+  neo_js_variable_t right = another;
+  left = neo_js_context_to_primitive(ctx, left, L"default");
+  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    return left;
+  }
+  right = neo_js_context_to_primitive(ctx, right, L"default");
+  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+    return right;
+  }
+  neo_js_type_t lefttype = neo_js_variable_get_type(left);
+  neo_js_type_t righttype = neo_js_variable_get_type(right);
+  if (lefttype->kind == NEO_TYPE_STRING || righttype->kind == NEO_TYPE_STRING) {
+    left = neo_js_context_to_string(ctx, left);
+    if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+      return left;
+    }
+    right = neo_js_context_to_string(ctx, right);
+    if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+      return right;
+    }
+    neo_js_string_t lstring = neo_js_variable_to_string(left);
+    neo_js_string_t rstring = neo_js_variable_to_string(right);
+    neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+    size_t len = wcslen(lstring->string);
+    len += wcslen(rstring->string);
+    len++;
+    wchar_t *str = neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
+    swprintf(str, len, L"%ls%ls", lstring->string, rstring->string);
+    neo_js_variable_t result = neo_js_context_create_string(ctx, str);
+    neo_allocator_free(allocator, str);
+    return result;
+  }
+  left = neo_js_context_to_number(ctx, left);
+  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    return left;
+  }
+  right = neo_js_context_to_number(ctx, right);
+  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+    return right;
+  }
+  neo_js_number_t lnum = neo_js_variable_to_number(left);
+  neo_js_number_t rnum = neo_js_variable_to_number(right);
+  return neo_js_context_create_number(ctx, lnum->number + rnum->number);
+}
+
+neo_js_variable_t neo_js_context_instance_of(neo_js_context_t ctx,
+                                             neo_js_variable_t variable,
+                                             neo_js_variable_t constructor) {
   neo_js_type_t type = neo_js_variable_get_type(variable);
   if (type->kind != NEO_TYPE_OBJECT) {
-    return false;
+    return neo_js_context_create_boolean(ctx, true);
   }
   neo_js_variable_t hasInstance = neo_js_context_get_field(
       ctx, constructor, neo_js_context_create_string(ctx, L"hasInstance"));

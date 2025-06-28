@@ -80,7 +80,8 @@ neo_js_variable_t neo_js_context_load_variable(neo_js_context_t ctx,
                                                const wchar_t *name);
 
 neo_js_variable_t neo_js_context_to_primitive(neo_js_context_t ctx,
-                                              neo_js_variable_t variable);
+                                              neo_js_variable_t variable,
+                                              const wchar_t *hint);
 
 neo_js_variable_t neo_js_context_to_object(neo_js_context_t ctx,
                                            neo_js_variable_t variable);
@@ -191,8 +192,8 @@ neo_js_variable_t neo_js_context_bind(neo_js_context_t ctx,
                                       neo_js_variable_t func,
                                       neo_js_variable_t self);
 
-const wchar_t *neo_js_context_typeof(neo_js_context_t ctx,
-                                     neo_js_variable_t variable);
+neo_js_variable_t neo_js_context_typeof(neo_js_context_t ctx,
+                                        neo_js_variable_t variable);
 
 neo_js_variable_t neo_js_context_to_string(neo_js_context_t ctx,
                                            neo_js_variable_t variable);
@@ -203,16 +204,33 @@ neo_js_variable_t neo_js_context_to_boolean(neo_js_context_t ctx,
 neo_js_variable_t neo_js_context_to_number(neo_js_context_t ctx,
                                            neo_js_variable_t variable);
 
-bool neo_js_context_is_equal(neo_js_context_t ctx, neo_js_variable_t variable,
-                             neo_js_variable_t another);
+neo_js_variable_t neo_js_context_is_equal(neo_js_context_t ctx,
+                                          neo_js_variable_t variable,
+                                          neo_js_variable_t another);
 
-bool neo_js_context_is_not_equal(neo_js_context_t ctx,
-                                 neo_js_variable_t variable,
-                                 neo_js_variable_t another);
+neo_js_variable_t neo_js_context_is_gt(neo_js_context_t ctx,
+                                       neo_js_variable_t variable,
+                                       neo_js_variable_t another);
 
-bool neo_js_context_instance_of(neo_js_context_t ctx,
-                                neo_js_variable_t variable,
-                                neo_js_variable_t constructor);
+neo_js_variable_t neo_js_context_is_lt(neo_js_context_t ctx,
+                                       neo_js_variable_t variable,
+                                       neo_js_variable_t another);
+
+neo_js_variable_t neo_js_context_is_ge(neo_js_context_t ctx,
+                                       neo_js_variable_t variable,
+                                       neo_js_variable_t another);
+
+neo_js_variable_t neo_js_context_is_le(neo_js_context_t ctx,
+                                       neo_js_variable_t variable,
+                                       neo_js_variable_t another);
+
+neo_js_variable_t neo_js_context_add(neo_js_context_t ctx,
+                                     neo_js_variable_t variable,
+                                     neo_js_variable_t another);
+
+neo_js_variable_t neo_js_context_instance_of(neo_js_context_t ctx,
+                                             neo_js_variable_t variable,
+                                             neo_js_variable_t constructor);
 
 neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
                                       const char *source);

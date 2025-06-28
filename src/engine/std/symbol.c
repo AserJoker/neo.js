@@ -30,7 +30,7 @@ neo_js_variable_t neo_js_symbol_to_string(neo_js_context_t ctx,
   if (type->kind == NEO_TYPE_OBJECT) {
     if (neo_js_context_instance_of(
             ctx, symbol, neo_js_context_get_symbol_constructor(ctx))) {
-      symbol = neo_js_context_to_primitive(ctx, symbol);
+      symbol = neo_js_context_to_primitive(ctx, symbol, L"default");
       type = neo_js_variable_get_type(symbol);
     } else {
       return neo_js_context_create_error(

@@ -33,7 +33,8 @@ typedef neo_js_variable_t (*neo_js_to_object_fn_t)(neo_js_context_t ctx,
                                                    neo_js_variable_t self);
 
 typedef neo_js_variable_t (*neo_js_to_primitive_fn_t)(neo_js_context_t ctx,
-                                                      neo_js_variable_t self);
+                                                      neo_js_variable_t self,
+                                                      const wchar_t *hint);
 
 typedef neo_js_variable_t (*neo_js_get_field_fn_t)(neo_js_context_t ctx,
                                                    neo_js_variable_t object,
