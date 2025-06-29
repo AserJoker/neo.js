@@ -46,6 +46,10 @@ neo_map_t neo_create_map(neo_allocator_t allocator,
   map->tail.last = &map->head;
   map->head.last = NULL;
   map->tail.next = NULL;
+  map->head.key = NULL;
+  map->head.value = NULL;
+  map->tail.key = NULL;
+  map->tail.value = NULL;
   return map;
 }
 

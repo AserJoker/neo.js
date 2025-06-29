@@ -162,6 +162,7 @@ neo_write_context_t neo_create_write_context(neo_allocator_t allocator,
                           neo_write_context_dispose);
   ctx->program = program;
   ctx->scope = NULL;
+  ctx->label = NULL;
   return ctx;
 }
 

@@ -52,7 +52,7 @@ char *neo_create_string(neo_allocator_t allocator, const char *src) {
 }
 wchar_t *neo_create_wstring(neo_allocator_t allocator, const wchar_t *src) {
   wchar_t *str =
-      neo_allocator_alloc(allocator, wcslen(src) * sizeof(wchar_t) + 1, NULL);
+      neo_allocator_alloc(allocator, (wcslen(src) + 1) * sizeof(wchar_t), NULL);
   wcscpy(str, src);
   return str;
 }
