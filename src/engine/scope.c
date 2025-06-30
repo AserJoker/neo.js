@@ -13,7 +13,6 @@ struct _neo_js_scope_t {
   neo_list_t variables;
   neo_map_t named_variables;
   neo_js_handle_t root;
-  uint32_t ref;
 };
 
 static bool neo_js_scope_check_alive(neo_allocator_t allocator,
@@ -105,9 +104,7 @@ static void neo_js_scope_dispose(neo_allocator_t allocator,
     neo_js_scope_t child = neo_list_node_get(it);
     neo_list_erase(self->children, it);
     child->parent = NULL;
-    if (!neo_js_scope_release(child)) {
-      neo_allocator_free(allocator, child);
-    }
+    neo_allocator_free(allocator, child);
   }
   neo_allocator_free(allocator, self->children);
   neo_allocator_free(allocator, self->variables);
@@ -136,14 +133,8 @@ neo_js_scope_t neo_create_js_scope(neo_allocator_t allocator,
   scope->named_variables = neo_create_map(allocator, &map_initialize);
   scope->children = neo_create_list(allocator, NULL);
   scope->root = neo_create_js_handle(allocator, NULL);
-  scope->ref = 1;
   return scope;
 }
-uint32_t neo_js_scope_add_ref(neo_js_scope_t self) { return ++self->ref; }
-
-uint32_t neo_js_scope_ref(neo_js_scope_t self) { return self->ref; }
-
-uint32_t neo_js_scope_release(neo_js_scope_t self) { return --self->ref; }
 
 neo_js_scope_t neo_js_scope_get_parent(neo_js_scope_t self) {
   return self->parent;

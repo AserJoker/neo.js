@@ -6,6 +6,7 @@
 #include "compiler/token.h"
 #include "compiler/writer.h"
 #include "core/allocator.h"
+#include "core/buffer.h"
 #include "core/error.h"
 #include "core/location.h"
 #include "core/position.h"
@@ -36,7 +37,19 @@ static void neo_ast_expression_yield_write(neo_allocator_t allocator,
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_UNDEFINED);
   }
   if (self->degelate) {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_YIELD_DEGELATE);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_ITERATOR);
+    size_t begin = neo_buffer_get_size(ctx->program->codes);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_NEXT);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_JTRUE);
+    size_t addr = neo_buffer_get_size(ctx->program->codes);
+    neo_program_add_address(allocator, ctx->program, 0);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_YIELD);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
+    neo_program_add_address(allocator, ctx->program, begin);
+    neo_program_set_current(ctx->program, addr);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   } else {
     neo_program_add_code(allocator, ctx->program, NEO_ASM_YIELD);
   }
@@ -100,6 +113,7 @@ neo_ast_node_t neo_ast_read_expression_yield(neo_allocator_t allocator,
     current.column++;
     node->degelate = true;
   }
+  SKIP_ALL(allocator, file, &current, onerror);
   node->value = TRY(neo_ast_read_expression_2(allocator, file, &current)) {
     goto onerror;
   }

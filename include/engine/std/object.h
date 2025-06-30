@@ -12,6 +12,10 @@ neo_js_variable_t neo_js_object_constructor(neo_js_context_t ctx,
                                             uint32_t argc,
                                             neo_js_variable_t *argv);
 
+neo_js_variable_t neo_js_object_create(neo_js_context_t ctx,
+                                       neo_js_variable_t self, uint32_t argc,
+                                       neo_js_variable_t *argv);
+
 neo_js_variable_t neo_js_object_keys(neo_js_context_t ctx,
                                      neo_js_variable_t self, uint32_t argc,
                                      neo_js_variable_t *argv);

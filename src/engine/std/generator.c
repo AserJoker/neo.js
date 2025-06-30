@@ -25,6 +25,7 @@ neo_js_variable_t neo_js_generator_next(neo_js_context_t ctx,
       neo_js_context_get_internal(ctx, self, L"[[coroutine]]");
   neo_js_coroutine_t coroutine = neo_js_variable_to_coroutine(co);
   neo_js_handle_t hcoroutine = neo_js_variable_get_handle(co);
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   if (coroutine->done) {
     neo_js_context_set_field(
         ctx, result, neo_js_context_create_string(ctx, L"done"),
@@ -60,6 +61,7 @@ neo_js_variable_t neo_js_generator_next(neo_js_context_t ctx,
       neo_js_context_set_field(
           ctx, result, neo_js_context_create_string(ctx, L"value"),
           neo_js_context_create_variable(ctx, coroutine->result, NULL));
+      coroutine->scope = interrupt->scope;
     } else if (neo_js_variable_get_type(value)->kind == NEO_TYPE_ERROR) {
       neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
       result = neo_js_scope_create_variable(

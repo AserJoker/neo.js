@@ -1097,7 +1097,6 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_keys,                // NEO_ASM_KEYS
     NULL,                          // NEO_ASM_AWAIT
     neo_js_vm_yield,               // NEO_ASM_YIELD
-    NULL,                          // NEO_ASM_YIELD_DEGELATE
     neo_js_vm_next,                // NEO_ASM_NEXT
     neo_js_vm_iterator,            // NEO_ASM_ITERATOR
     NULL,                          // NEO_ASM_ENTRIES
@@ -1158,14 +1157,17 @@ neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t result = NULL;
   if (neo_list_get_size(vm->stack)) {
     result = neo_list_node_get(neo_list_get_last(vm->stack));
+    neo_list_pop(vm->stack);
   } else {
     result = neo_js_context_create_undefined(vm->ctx);
   }
   neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
   result = neo_js_scope_create_variable(
       allocator, scope, neo_js_variable_get_handle(result), NULL);
-  while (neo_js_context_get_scope(vm->ctx) != scope) {
-    neo_js_context_pop_scope(vm->ctx);
+  if (neo_js_variable_get_type(result)->kind != NEO_TYPE_INTERRUPT) {
+    while (neo_js_context_get_scope(vm->ctx) != scope) {
+      neo_js_context_pop_scope(vm->ctx);
+    }
   }
   return result;
 }

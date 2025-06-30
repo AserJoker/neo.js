@@ -16,6 +16,7 @@ struct _neo_js_coroutine_t {
   struct _neo_js_value_t value;
   neo_js_vm_t vm;
   neo_program_t program;
+  neo_js_scope_t root;
   neo_js_scope_t scope;
   neo_js_handle_t result;
   bool done;

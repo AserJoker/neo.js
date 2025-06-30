@@ -1,3 +1,1 @@
-let a = 1;
---a;
-println(a)
+const { a, b, ...c } = {}
