@@ -828,6 +828,25 @@ void neo_js_vm_void(neo_js_vm_t vm, neo_program_t program) {
   neo_list_pop(vm->stack);
   neo_list_push(vm->stack, neo_js_context_create_undefined(vm->ctx));
 }
+void neo_js_vm_inc(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  value = neo_js_context_inc(vm->ctx, value);
+  neo_list_push(vm->stack, value);
+  if (neo_js_variable_get_type(value)->kind == NEO_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
+void neo_js_vm_dec(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  value = neo_js_context_dec(vm->ctx, value);
+  neo_list_push(vm->stack, value);
+  if (neo_js_variable_get_type(value)->kind == NEO_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
+
 void neo_js_vm_add(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t right = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_list_pop(vm->stack);
@@ -839,6 +858,7 @@ void neo_js_vm_add(neo_js_vm_t vm, neo_program_t program) {
     vm->offset = neo_buffer_get_size(program->codes);
   }
 }
+
 void neo_js_vm_sub(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t right = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_list_pop(vm->stack);
@@ -1099,8 +1119,8 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     NULL,                          // NEO_ASM_DEL
     neo_js_vm_typeof,              // NEO_ASM_TYPEOF
     neo_js_vm_void,                // NEO_ASM_VOID
-    NULL,                          // NEO_ASM_INC
-    NULL,                          // NEO_ASM_DEC
+    neo_js_vm_inc,                 // NEO_ASM_INC
+    neo_js_vm_dec,                 // NEO_ASM_DEC
     neo_js_vm_add,                 // NEO_ASM_ADD
     neo_js_vm_sub,                 // NEO_ASM_SUB
     neo_js_vm_mul,                 // NEO_ASM_MUL

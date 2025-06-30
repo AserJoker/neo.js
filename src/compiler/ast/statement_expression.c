@@ -5,6 +5,7 @@
 #include "compiler/program.h"
 #include "core/allocator.h"
 #include "core/error.h"
+#include "core/location.h"
 #include "core/position.h"
 #include "core/variable.h"
 #include <stdio.h>

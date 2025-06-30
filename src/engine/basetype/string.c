@@ -16,13 +16,13 @@ static const wchar_t *neo_js_string_typeof(neo_js_context_t ctx,
 
 static neo_js_variable_t neo_js_string_to_string(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
-  return self;
+  neo_js_string_t string = neo_js_variable_to_string(self);
+  return neo_js_context_create_string(ctx, string->string);
 }
 
 static neo_js_variable_t neo_js_string_to_boolean(neo_js_context_t ctx,
                                                   neo_js_variable_t self) {
-  neo_js_string_t string =
-      neo_js_value_to_string(neo_js_variable_get_value(self));
+  neo_js_string_t string = neo_js_variable_to_string(self);
   return neo_js_context_create_boolean(ctx, string->string[0] != 0);
 }
 

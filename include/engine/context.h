@@ -278,6 +278,12 @@ neo_js_variable_t neo_js_context_ushr(neo_js_context_t ctx,
                                       neo_js_variable_t variable,
                                       neo_js_variable_t another);
 
+neo_js_variable_t neo_js_context_inc(neo_js_context_t ctx,
+                                     neo_js_variable_t variable);
+
+neo_js_variable_t neo_js_context_dec(neo_js_context_t ctx,
+                                     neo_js_variable_t variable);
+
 neo_js_variable_t neo_js_context_logical_not(neo_js_context_t ctx,
                                              neo_js_variable_t variable);
 

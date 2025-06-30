@@ -28,7 +28,8 @@ static neo_js_variable_t neo_js_boolean_to_string(neo_js_context_t ctx,
 
 static neo_js_variable_t neo_js_boolean_to_boolean(neo_js_context_t ctx,
                                                    neo_js_variable_t self) {
-  return self;
+  neo_js_boolean_t boolean = neo_js_variable_to_boolean(self);
+  return neo_js_context_create_boolean(ctx, boolean->boolean);
 }
 
 static neo_js_variable_t neo_js_boolean_to_number(neo_js_context_t ctx,

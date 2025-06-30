@@ -39,13 +39,13 @@ static neo_js_variable_t neo_js_number_to_string(neo_js_context_t ctx,
 
 static neo_js_variable_t neo_js_number_to_boolean(neo_js_context_t ctx,
                                                   neo_js_variable_t self) {
-  neo_js_number_t number =
-      neo_js_value_to_number(neo_js_variable_get_value(self));
+  neo_js_number_t number = neo_js_variable_to_number(self);
   return neo_js_context_create_boolean(ctx, number->number != 0);
 }
 static neo_js_variable_t neo_js_number_to_number(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
-  return self;
+  neo_js_number_t number = neo_js_variable_to_number(self);
+  return neo_js_context_create_number(ctx, number->number);
 }
 static neo_js_variable_t neo_js_number_to_primitive(neo_js_context_t ctx,
                                                     neo_js_variable_t self,

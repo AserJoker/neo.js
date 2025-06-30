@@ -27,6 +27,7 @@
 #include "core/allocator.h"
 #include "core/buffer.h"
 #include "core/error.h"
+#include "core/list.h"
 #include "core/location.h"
 #include "core/position.h"
 #include "core/variable.h"
@@ -95,8 +96,124 @@ static void neo_ast_expression_binary_write(neo_allocator_t allocator,
       neo_program_add_code(allocator, ctx->program, NEO_ASM_TYPEOF);
     } else if (neo_location_is(self->opt->location, "++")) {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_INC);
+      if (self->right->type == NEO_NODE_TYPE_IDENTIFIER) {
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+        neo_program_add_integer(allocator, ctx->program, 1);
+        char *name = neo_location_get(allocator, self->right->location);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
+        neo_program_add_string(allocator, ctx->program, name);
+        neo_allocator_free(allocator, name);
+      } else if (self->right->type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
+        neo_ast_expression_member_t member =
+            (neo_ast_expression_member_t)self->right;
+        neo_list_initialize_t initialize = {true};
+        neo_list_t addresses = neo_create_list(allocator, &initialize);
+        TRY(neo_write_optional_chain(allocator, ctx, member->host, addresses)) {
+          neo_allocator_free(allocator, addresses);
+          return;
+        }
+        if (neo_list_get_size(addresses)) {
+          neo_allocator_free(allocator, addresses);
+          THROW("SyntaxError",
+                "Invalid left-hand side expression in postfix operation");
+          return;
+        }
+        neo_allocator_free(allocator, addresses);
+        char *name = neo_location_get(allocator, member->field->location);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+        neo_program_add_string(allocator, ctx->program, name);
+        neo_allocator_free(allocator, name);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+        neo_program_add_integer(allocator, ctx->program, 3);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+      } else if (self->right->type ==
+                 NEO_NODE_TYPE_EXPRESSION_COMPUTED_MEMBER) {
+        neo_ast_expression_member_t member =
+            (neo_ast_expression_member_t)self->right;
+        neo_list_initialize_t initialize = {true};
+        neo_list_t addresses = neo_create_list(allocator, &initialize);
+        TRY(neo_write_optional_chain(allocator, ctx, member->host, addresses)) {
+          neo_allocator_free(allocator, addresses);
+          return;
+        }
+        if (neo_list_get_size(addresses)) {
+          neo_allocator_free(allocator, addresses);
+          THROW("SyntaxError",
+                "Invalid left-hand side expression in postfix operation");
+          return;
+        }
+        neo_allocator_free(allocator, addresses);
+        TRY(member->field->write(allocator, ctx, member->field)) { return; }
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+        neo_program_add_integer(allocator, ctx->program, 3);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+      } else {
+        THROW("SyntaxError",
+              "Invalid left-hand side expression in postfix operation");
+        return;
+      }
     } else if (neo_location_is(self->opt->location, "--")) {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_DEC);
+      if (self->right->type == NEO_NODE_TYPE_IDENTIFIER) {
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+        neo_program_add_integer(allocator, ctx->program, 1);
+        char *name = neo_location_get(allocator, self->right->location);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
+        neo_program_add_string(allocator, ctx->program, name);
+        neo_allocator_free(allocator, name);
+      } else if (self->right->type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
+        neo_ast_expression_member_t member =
+            (neo_ast_expression_member_t)self->right;
+        neo_list_initialize_t initialize = {true};
+        neo_list_t addresses = neo_create_list(allocator, &initialize);
+        TRY(neo_write_optional_chain(allocator, ctx, member->host, addresses)) {
+          neo_allocator_free(allocator, addresses);
+          return;
+        }
+        if (neo_list_get_size(addresses)) {
+          neo_allocator_free(allocator, addresses);
+          THROW("SyntaxError",
+                "Invalid left-hand side expression in postfix operation");
+          return;
+        }
+        neo_allocator_free(allocator, addresses);
+        char *name = neo_location_get(allocator, member->field->location);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+        neo_program_add_string(allocator, ctx->program, name);
+        neo_allocator_free(allocator, name);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+        neo_program_add_integer(allocator, ctx->program, 3);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+      } else if (self->right->type ==
+                 NEO_NODE_TYPE_EXPRESSION_COMPUTED_MEMBER) {
+        neo_ast_expression_member_t member =
+            (neo_ast_expression_member_t)self->right;
+        neo_list_initialize_t initialize = {true};
+        neo_list_t addresses = neo_create_list(allocator, &initialize);
+        TRY(neo_write_optional_chain(allocator, ctx, member->host, addresses)) {
+          neo_allocator_free(allocator, addresses);
+          return;
+        }
+        if (neo_list_get_size(addresses)) {
+          neo_allocator_free(allocator, addresses);
+          THROW("SyntaxError",
+                "Invalid left-hand side expression in postfix operation");
+          return;
+        }
+        neo_allocator_free(allocator, addresses);
+        TRY(member->field->write(allocator, ctx, member->field)) { return; }
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+        neo_program_add_integer(allocator, ctx->program, 3);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+      } else {
+        THROW("SyntaxError",
+              "Invalid left-hand side expression in postfix operation");
+        return;
+      }
     } else if (neo_location_is(self->opt->location, "+")) {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PLUS);
     } else if (neo_location_is(self->opt->location, "-")) {
@@ -108,13 +225,78 @@ static void neo_ast_expression_binary_write(neo_allocator_t allocator,
     }
   } else if (!self->right) {
     TRY(self->left->write(allocator, ctx, self->left)) { return; }
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_CLONE);
-    if (neo_location_is(self->opt->location, "++")) {
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_INC);
-    } else if (neo_location_is(self->opt->location, "--")) {
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_DEC);
+    if (self->left->type == NEO_NODE_TYPE_IDENTIFIER) {
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+      neo_program_add_integer(allocator, ctx->program, 1);
+      if (neo_location_is(self->opt->location, "++")) {
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_INC);
+      } else if (neo_location_is(self->opt->location, "--")) {
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_DEC);
+      }
+      char *name = neo_location_get(allocator, self->left->location);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
+      neo_program_add_string(allocator, ctx->program, name);
+      neo_allocator_free(allocator, name);
+    } else if (self->left->type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
+      neo_ast_expression_member_t member =
+          (neo_ast_expression_member_t)self->left;
+      neo_list_initialize_t initialize = {true};
+      neo_list_t addresses = neo_create_list(allocator, &initialize);
+      TRY(neo_write_optional_chain(allocator, ctx, member->host, addresses)) {
+        neo_allocator_free(allocator, addresses);
+        return;
+      }
+      if (neo_list_get_size(addresses)) {
+        neo_allocator_free(allocator, addresses);
+        THROW("SyntaxError",
+              "Invalid left-hand side expression in postfix operation");
+        return;
+      }
+      neo_allocator_free(allocator, addresses);
+      char *name = neo_location_get(allocator, member->field->location);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+      neo_program_add_string(allocator, ctx->program, name);
+      neo_allocator_free(allocator, name);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+      neo_program_add_integer(allocator, ctx->program, 3);
+      if (neo_location_is(self->opt->location, "++")) {
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_INC);
+      } else if (neo_location_is(self->opt->location, "--")) {
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_DEC);
+      }
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+    } else if (self->left->type == NEO_NODE_TYPE_EXPRESSION_COMPUTED_MEMBER) {
+      neo_ast_expression_member_t member =
+          (neo_ast_expression_member_t)self->left;
+      neo_list_initialize_t initialize = {true};
+      neo_list_t addresses = neo_create_list(allocator, &initialize);
+      TRY(neo_write_optional_chain(allocator, ctx, member->host, addresses)) {
+        neo_allocator_free(allocator, addresses);
+        return;
+      }
+      if (neo_list_get_size(addresses)) {
+        neo_allocator_free(allocator, addresses);
+        THROW("SyntaxError",
+              "Invalid left-hand side expression in postfix operation");
+        return;
+      }
+      neo_allocator_free(allocator, addresses);
+      TRY(member->field->write(allocator, ctx, member->field)) { return; }
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+      neo_program_add_integer(allocator, ctx->program, 3);
+      if (neo_location_is(self->opt->location, "++")) {
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_INC);
+      } else if (neo_location_is(self->opt->location, "--")) {
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_DEC);
+      }
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+    } else {
+      THROW("SyntaxError",
+            "Invalid left-hand side expression in postfix operation");
+      return;
     }
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   } else {
     TRY(self->left->write(allocator, ctx, self->left)) { return; }
     if (neo_location_is(self->opt->location, ",")) {

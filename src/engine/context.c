@@ -2031,6 +2031,28 @@ neo_js_variable_t neo_js_context_ushr(neo_js_context_t ctx,
   return neo_js_context_create_number(ctx, uleft);
 }
 
+neo_js_variable_t neo_js_context_inc(neo_js_context_t ctx,
+                                     neo_js_variable_t variable) {
+  neo_js_variable_t vnum = neo_js_context_to_number(ctx, variable);
+  if (neo_js_variable_get_type(vnum)->kind == NEO_TYPE_ERROR) {
+    return vnum;
+  }
+  neo_js_number_t num = neo_js_variable_to_number(vnum);
+  num->number += 1;
+  return vnum;
+}
+
+neo_js_variable_t neo_js_context_dec(neo_js_context_t ctx,
+                                     neo_js_variable_t variable) {
+  neo_js_variable_t vnum = neo_js_context_to_number(ctx, variable);
+  if (neo_js_variable_get_type(vnum)->kind == NEO_TYPE_ERROR) {
+    return vnum;
+  }
+  neo_js_number_t num = neo_js_variable_to_number(vnum);
+  num->number -= 1;
+  return vnum;
+}
+
 neo_js_variable_t neo_js_context_logical_not(neo_js_context_t ctx,
                                              neo_js_variable_t variable) {
   neo_js_variable_t left = variable;
