@@ -681,6 +681,10 @@ neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
     neo_hash_map_set(obj->properties, hfield, prop, ctx, ctx);
     neo_js_handle_add_parent(hvalue, hobject);
     neo_js_handle_add_parent(hfield, hobject);
+    if (neo_js_variable_get_type(field)->kind == NEO_TYPE_STRING &&
+        prop->enumerable) {
+      neo_list_push(obj->keys, hfield);
+    }
   } else {
     if (obj->frozen) {
       return neo_js_context_create_error(ctx, L"TypeError",

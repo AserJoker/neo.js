@@ -1,8 +1,7 @@
 #include "engine/basetype/array.h"
 #include "core/allocator.h"
-#include "core/hash.h"
-#include "core/hash_map.h"
 #include "engine/basetype/number.h"
+#include "engine/basetype/object.h"
 #include "engine/basetype/string.h"
 #include "engine/context.h"
 #include "engine/type.h"
@@ -89,33 +88,15 @@ neo_js_type_t neo_get_js_array_type() {
 
 static void neo_js_array_dispose(neo_allocator_t allocator,
                                  neo_js_array_t self) {
-  neo_allocator_free(allocator, self->object.properties);
-  neo_allocator_free(allocator, self->object.internal);
+  neo_js_object_dispose(allocator, &self->object);
 }
 
 neo_js_array_t neo_create_js_array(neo_allocator_t allocator) {
   neo_js_array_t array = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_array_t), neo_js_array_dispose);
   array->length = 0;
+  neo_js_object_init(allocator, &array->object);
   array->object.value.type = neo_get_js_array_type();
-  array->object.value.ref = 0;
-  array->object.extensible = true;
-  array->object.frozen = false;
-  array->object.sealed = false;
-  array->object.prototype = NULL;
-  neo_hash_map_initialize_t initialize = {0};
-  initialize.auto_free_key = false;
-  initialize.auto_free_value = true;
-  initialize.compare = (neo_compare_fn_t)neo_js_object_compare_key;
-  initialize.hash = (neo_hash_fn_t)neo_js_object_key_hash;
-  array->object.properties = neo_create_hash_map(allocator, &initialize);
-
-  initialize.auto_free_key = true;
-  initialize.auto_free_value = true;
-  initialize.compare = (neo_compare_fn_t)wcscmp;
-  initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
-  array->object.internal = neo_create_hash_map(allocator, &initialize);
-  array->object.constructor = NULL;
   return array;
 }
 

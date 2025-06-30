@@ -3,6 +3,7 @@
 #include "core/common.h"
 #include "core/hash.h"
 #include "core/hash_map.h"
+#include "core/list.h"
 #include "engine/basetype/boolean.h"
 #include "engine/basetype/string.h"
 #include "engine/basetype/symbol.h"
@@ -414,10 +415,31 @@ neo_js_type_t neo_get_js_object_type() {
   return &type;
 }
 
-static void neo_js_object_dispose(neo_allocator_t allocator,
-                                  neo_js_object_t self) {
+void neo_js_object_dispose(neo_allocator_t allocator, neo_js_object_t self) {
   neo_allocator_free(allocator, self->properties);
   neo_allocator_free(allocator, self->internal);
+  neo_allocator_free(allocator, self->keys);
+}
+
+void neo_js_object_init(neo_allocator_t allocator, neo_js_object_t object) {
+  object->prototype = NULL;
+  neo_hash_map_initialize_t initialize = {0};
+  initialize.compare = (neo_compare_fn_t)neo_js_object_compare_key;
+  initialize.hash = (neo_hash_fn_t)neo_js_object_key_hash;
+  initialize.auto_free_value = true;
+  object->properties = neo_create_hash_map(allocator, &initialize);
+  initialize.auto_free_key = true;
+  initialize.compare = (neo_compare_fn_t)wcscmp;
+  initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
+  initialize.auto_free_value = false;
+  object->internal = neo_create_hash_map(allocator, &initialize);
+  object->value.ref = 0;
+  object->value.type = neo_get_js_object_type();
+  object->frozen = false;
+  object->extensible = true;
+  object->sealed = false;
+  object->constructor = NULL;
+  object->keys = neo_create_list(allocator, NULL);
 }
 
 int8_t neo_js_object_compare_key(neo_js_handle_t handle1,
@@ -442,23 +464,7 @@ uint32_t neo_js_object_key_hash(neo_js_handle_t handle, uint32_t max_bucket) {
 neo_js_object_t neo_create_js_object(neo_allocator_t allocator) {
   neo_js_object_t object = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_object_t), neo_js_object_dispose);
-  object->prototype = NULL;
-  neo_hash_map_initialize_t initialize = {0};
-  initialize.compare = (neo_compare_fn_t)neo_js_object_compare_key;
-  initialize.hash = (neo_hash_fn_t)neo_js_object_key_hash;
-  initialize.auto_free_value = true;
-  object->properties = neo_create_hash_map(allocator, &initialize);
-  initialize.auto_free_key = true;
-  initialize.compare = (neo_compare_fn_t)wcscmp;
-  initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
-  initialize.auto_free_value = false;
-  object->internal = neo_create_hash_map(allocator, &initialize);
-  object->value.ref = 0;
-  object->value.type = neo_get_js_object_type();
-  object->frozen = false;
-  object->extensible = true;
-  object->sealed = false;
-  object->constructor = NULL;
+  neo_js_object_init(allocator, object);
   return object;
 }
 

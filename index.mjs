@@ -1,1 +1,1 @@
-const { a, b, ...c } = {}
+println('999'<'a')

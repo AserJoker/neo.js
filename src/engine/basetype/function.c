@@ -1,6 +1,8 @@
 #include "engine/basetype/function.h"
 #include "core/allocator.h"
 #include "core/hash.h"
+#include "engine/basetype/cfunction.h"
+#include "engine/basetype/object.h"
 #include "engine/context.h"
 #include "engine/type.h"
 #include "engine/variable.h"
@@ -91,42 +93,24 @@ neo_js_type_t neo_get_js_function_type() {
 
 void neo_js_function_dispose(neo_allocator_t allocator,
                              neo_js_function_t self) {
+  neo_js_object_dispose(allocator, &self->callable.object);
   neo_allocator_free(allocator, self->source);
   neo_allocator_free(allocator, self->callable.closure);
-  neo_allocator_free(allocator, self->callable.object.properties);
-  neo_allocator_free(allocator, self->callable.object.internal);
 }
 
 neo_js_function_t neo_create_js_function(neo_allocator_t allocator,
                                          neo_program_t program) {
   neo_js_function_t func = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_function_t), neo_js_function_dispose);
-  func->callable.name = NULL;
+  neo_js_object_init(allocator, &func->callable.object);
+  func->callable.object.value.type = neo_get_js_function_type();
   neo_hash_map_initialize_t initialize = {0};
   initialize.auto_free_key = true;
   initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
   initialize.compare = (neo_compare_fn_t)wcscmp;
   func->callable.closure = neo_create_hash_map(allocator, &initialize);
-
-  func->callable.object.value.type = neo_get_js_function_type();
-  func->callable.object.value.ref = 0;
-  func->callable.object.extensible = true;
-  func->callable.object.frozen = false;
-  func->callable.object.sealed = false;
+  func->callable.name = NULL;
   func->callable.bind = NULL;
-  initialize.auto_free_key = false;
-  initialize.auto_free_value = true;
-  initialize.compare = (neo_compare_fn_t)neo_js_object_compare_key;
-  initialize.hash = (neo_hash_fn_t)neo_js_object_key_hash;
-  func->callable.object.properties =
-      neo_create_hash_map(allocator, &initialize);
-
-  initialize.auto_free_key = true;
-  initialize.auto_free_value = true;
-  initialize.compare = (neo_compare_fn_t)wcscmp;
-  initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
-  func->callable.object.internal = neo_create_hash_map(allocator, &initialize);
-  func->callable.object.constructor = NULL;
   func->address = 0;
   func->program = program;
   func->source = NULL;
