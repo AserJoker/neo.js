@@ -180,6 +180,12 @@ static void neo_js_context_init_std_object(neo_js_context_t ctx) {
       neo_js_context_create_cfunction(ctx, L"keys", neo_js_object_keys), true,
       false, true);
 
+  neo_js_context_def_field(
+      ctx, ctx->std.object_constructor,
+      neo_js_context_create_string(ctx, L"create"),
+      neo_js_context_create_cfunction(ctx, L"create", neo_js_object_create),
+      true, false, true);
+
   neo_js_variable_t prototype =
       neo_js_context_get_field(ctx, ctx->std.object_constructor,
                                neo_js_context_create_string(ctx, L"prototype"));
@@ -933,28 +939,25 @@ neo_js_variable_t neo_js_context_del_field(neo_js_context_t ctx,
 
 neo_js_variable_t neo_js_context_get_keys(neo_js_context_t ctx,
                                           neo_js_variable_t variable) {
+  variable = neo_js_context_to_object(ctx, variable);
+  if (neo_js_variable_get_type(variable)->kind == NEO_TYPE_ERROR) {
+    return variable;
+  }
   neo_js_scope_t current = ctx->scope;
   neo_js_context_push_scope(ctx);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
-  neo_js_variable_t result = neo_js_context_create_array(ctx, 0);
-  variable = neo_js_context_to_object(ctx, variable);
-  neo_js_object_t obj = neo_js_variable_to_object(variable);
+  neo_list_t keys = neo_js_object_get_keys(ctx, variable);
+  neo_js_variable_t result =
+      neo_js_context_create_array(ctx, neo_list_get_size(keys));
   size_t idx = 0;
-  if (obj) {
-    for (neo_hash_map_node_t it = neo_hash_map_get_first(obj->properties);
-         it != neo_hash_map_get_tail(obj->properties);
-         it = neo_hash_map_node_next(it)) {
-      neo_js_handle_t hkey = neo_hash_map_node_get_key(it);
-      neo_js_object_property_t prop = neo_hash_map_node_get_value(it);
-      if (neo_js_handle_get_value(hkey)->type->kind == NEO_TYPE_STRING &&
-          prop->enumerable) {
-        neo_js_variable_t key = neo_js_context_create_variable(ctx, hkey, NULL);
-        neo_js_context_set_field(ctx, result,
-                                 neo_js_context_create_number(ctx, idx), key);
-      }
-      idx++;
-    }
+  for (neo_list_node_t it = neo_list_get_first(keys);
+       it != neo_list_get_tail(keys); it = neo_list_node_next(it)) {
+    neo_js_context_set_field(ctx, result,
+                             neo_js_context_create_number(ctx, idx),
+                             neo_list_node_get(it));
+    idx++;
   }
+  neo_allocator_free(allocator, keys);
   neo_js_handle_t hresult = neo_js_variable_get_handle(result);
   result = neo_js_scope_create_variable(allocator, current, hresult, NULL);
   neo_js_context_pop_scope(ctx);

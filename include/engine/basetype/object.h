@@ -56,6 +56,11 @@ neo_js_object_property_t
 neo_js_object_get_own_property(neo_js_context_t ctx, neo_js_variable_t self,
                                neo_js_variable_t field);
 
+neo_list_t neo_js_object_get_own_keys(neo_js_context_t ctx,
+                                      neo_js_variable_t self);
+
+neo_list_t neo_js_object_get_keys(neo_js_context_t ctx, neo_js_variable_t self);
+
 #ifdef __cplusplus
 }
 #endif

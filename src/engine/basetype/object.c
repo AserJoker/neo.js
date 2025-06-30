@@ -5,6 +5,7 @@
 #include "core/hash_map.h"
 #include "core/list.h"
 #include "engine/basetype/boolean.h"
+#include "engine/basetype/number.h"
 #include "engine/basetype/string.h"
 #include "engine/basetype/symbol.h"
 #include "engine/context.h"
@@ -14,6 +15,7 @@
 #include "engine/type.h"
 #include "engine/value.h"
 #include "engine/variable.h"
+#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <wchar.h>
@@ -191,6 +193,134 @@ neo_js_object_get_own_property(neo_js_context_t ctx, neo_js_variable_t self,
   neo_js_handle_t hfield = neo_js_variable_get_handle(field);
   property = neo_hash_map_get(object->properties, hfield, ctx, ctx);
   return property;
+}
+
+static neo_list_t neo_js_object_sort_keys(neo_allocator_t allocator,
+                                          neo_list_t keys) {
+  if (neo_list_get_size(keys) <= 1) {
+    return keys;
+  }
+  neo_list_t left = neo_create_list(allocator, NULL);
+  neo_list_t right = neo_create_list(allocator, NULL);
+  neo_list_node_t it = neo_list_get_first(keys);
+  neo_js_variable_t pin = neo_list_node_get(it);
+  neo_js_string_t spin = neo_js_variable_to_string(pin);
+  it = neo_list_node_next(it);
+  while (it != neo_list_get_tail(keys)) {
+    neo_js_variable_t key = neo_list_node_get(it);
+    neo_js_string_t skey = neo_js_variable_to_string(key);
+    if (wcscmp(skey->string, spin->string) < 0) {
+      neo_list_push(left, key);
+    } else {
+      neo_list_push(right, key);
+    }
+    it = neo_list_node_next(it);
+  }
+  left = neo_js_object_sort_keys(allocator, left);
+  right = neo_js_object_sort_keys(allocator, right);
+  neo_list_push(left, pin);
+  for (neo_list_node_t it = neo_list_get_first(right);
+       it != neo_list_get_tail(right); it = neo_list_node_next(it)) {
+    neo_list_push(left, neo_list_node_get(it));
+  }
+  neo_allocator_free(allocator, right);
+  neo_allocator_free(allocator, keys);
+  return left;
+}
+
+neo_list_t neo_js_object_get_own_keys(neo_js_context_t ctx,
+                                      neo_js_variable_t self) {
+  neo_js_object_t object =
+      neo_js_value_to_object(neo_js_variable_get_value(self));
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  neo_list_t keys = neo_create_list(allocator, NULL);
+  neo_list_t num_keys = neo_create_list(allocator, NULL);
+  for (neo_list_node_t it = neo_list_get_first(object->keys);
+       it != neo_list_get_tail(object->keys); it = neo_list_node_next(it)) {
+    neo_js_handle_t hkey = neo_list_node_get(it);
+    neo_js_variable_t key = neo_js_context_create_variable(ctx, hkey, NULL);
+    neo_js_variable_t nkey = neo_js_context_to_number(ctx, key);
+    neo_js_number_t num = neo_js_variable_to_number(nkey);
+    if (!isnan(num->number) && num->number >= 0) {
+      neo_list_push(num_keys, key);
+    } else {
+      neo_list_push(keys, key);
+    }
+  }
+  num_keys = neo_js_object_sort_keys(allocator, num_keys);
+  for (neo_list_node_t it = neo_list_get_first(keys);
+       it != neo_list_get_tail(keys); it = neo_list_node_next(it)) {
+    neo_js_variable_t key = neo_list_node_get(it);
+    neo_list_push(num_keys, key);
+  }
+  neo_allocator_free(allocator, keys);
+  return num_keys;
+}
+
+static void neo_js_object_get_keys_list(neo_js_context_t ctx,
+                                        neo_js_object_t proto,
+                                        neo_list_t num_keys, neo_list_t keys) {
+  if (!proto) {
+    return;
+  }
+  if (proto->prototype) {
+    neo_js_object_t obj =
+        neo_js_value_to_object(neo_js_handle_get_value(proto->prototype));
+    neo_js_object_get_keys_list(ctx, obj, num_keys, keys);
+  }
+  for (neo_list_node_t it = neo_list_get_first(proto->keys);
+       it != neo_list_get_tail(proto->keys); it = neo_list_node_next(it)) {
+    neo_js_handle_t hkey = neo_list_node_get(it);
+    neo_js_variable_t key = neo_js_context_create_variable(ctx, hkey, NULL);
+    neo_js_string_t skey = neo_js_variable_to_string(key);
+    neo_js_variable_t nkey = neo_js_context_to_number(ctx, key);
+    neo_js_number_t num = neo_js_variable_to_number(nkey);
+    if (!isnan(num->number) && num->number >= 0) {
+      neo_list_node_t it2 = NULL;
+      for (it2 = neo_list_get_first(num_keys);
+           it2 != neo_list_get_tail(num_keys); it2 = neo_list_node_next(it2)) {
+        neo_js_variable_t current = neo_list_node_get(it2);
+        neo_js_string_t scur = neo_js_variable_to_string(current);
+        if (wcscmp(scur->string, skey->string) == 0) {
+          break;
+        }
+      }
+      if (it2 == neo_list_get_tail(num_keys)) {
+        neo_list_push(num_keys, key);
+      }
+    } else {
+      neo_list_node_t it2 = NULL;
+      for (it2 = neo_list_get_first(keys); it2 != neo_list_get_tail(keys);
+           it2 = neo_list_node_next(it2)) {
+        neo_js_variable_t current = neo_list_node_get(it2);
+        neo_js_string_t scur = neo_js_variable_to_string(current);
+        if (wcscmp(scur->string, skey->string) == 0) {
+          break;
+        }
+      }
+      if (it2 == neo_list_get_tail(keys)) {
+        neo_list_push(keys, key);
+      }
+    }
+  }
+}
+
+neo_list_t neo_js_object_get_keys(neo_js_context_t ctx,
+                                  neo_js_variable_t self) {
+  neo_js_object_t object =
+      neo_js_value_to_object(neo_js_variable_get_value(self));
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  neo_list_t keys = neo_create_list(allocator, NULL);
+  neo_list_t num_keys = neo_create_list(allocator, NULL);
+  neo_js_object_get_keys_list(ctx, object, num_keys, keys);
+  num_keys = neo_js_object_sort_keys(allocator, num_keys);
+  for (neo_list_node_t it = neo_list_get_first(keys);
+       it != neo_list_get_tail(keys); it = neo_list_node_next(it)) {
+    neo_js_variable_t key = neo_list_node_get(it);
+    neo_list_push(num_keys, key);
+  }
+  neo_allocator_free(allocator, keys);
+  return num_keys;
 }
 
 neo_js_object_property_t neo_js_object_get_property(neo_js_context_t ctx,

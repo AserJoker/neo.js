@@ -30,7 +30,7 @@ neo_js_variable_t neo_js_array_to_string(neo_js_context_t ctx,
         neo_js_object_get_property(ctx, self, field);
     if (prop) {
       neo_js_variable_t item = neo_js_context_get_field(ctx, self, field);
-      if (neo_js_variable_get_type(item) != neo_js_variable_get_type(self)) {
+      if (neo_js_variable_get_type(item)->kind >= NEO_TYPE_OBJECT) {
         neo_js_variable_t result = neo_js_context_is_equal(ctx, item, self);
         neo_js_boolean_t boolean = neo_js_variable_to_boolean(result);
         if (!boolean->boolean) {
@@ -39,6 +39,11 @@ neo_js_variable_t neo_js_array_to_string(neo_js_context_t ctx,
           neo_list_push(list, string->string);
           strlen += wcslen(string->string);
         }
+      } else {
+        item = neo_js_context_to_string(ctx, item);
+        neo_js_string_t string = neo_js_variable_to_string(item);
+        neo_list_push(list, string->string);
+        strlen += wcslen(string->string);
       }
     } else {
       neo_list_push(list, "");

@@ -98,6 +98,7 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
       TRY(self->value->write(allocator, ctx, self->value)) { return; }
     }
     neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   } else if (self->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
     if (!neo_location_is(self->opt->location, "=")) {
       TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
