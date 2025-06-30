@@ -1,7 +1,9 @@
-const arr = ['a', 'b', 'c', 'd']
-for (const i of arr) {
-    if (i == 'c') {
-        continue
-    }
-    println(i)
+let i = 1
+switch (i) {
+    default:
+        println("default");
+    case 0:
+        println("0");
+    case 1:
+        println("1");
 }

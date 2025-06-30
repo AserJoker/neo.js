@@ -6,6 +6,7 @@
 #include "compiler/program.h"
 #include "compiler/scope.h"
 #include "compiler/token.h"
+#include "compiler/writer.h"
 #include "core/allocator.h"
 #include "core/buffer.h"
 #include "core/error.h"
@@ -40,7 +41,8 @@ neo_ast_statement_switch_resolve_closure(neo_allocator_t allocator,
 static void neo_ast_statement_switch_write(neo_allocator_t allocator,
                                            neo_write_context_t ctx,
                                            neo_ast_statement_switch_t self) {
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_LABEL);
+  neo_writer_push_scope(allocator, ctx, self->node.scope);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_BREAK_LABEL);
   neo_program_add_string(allocator, ctx->program, "");
   size_t labeladdr = neo_buffer_get_size(ctx->program->codes);
   neo_program_add_address(allocator, ctx->program, 0);
@@ -92,6 +94,9 @@ static void neo_ast_statement_switch_write(neo_allocator_t allocator,
       neo_ast_node_t item = neo_list_node_get(it);
       TRY(item->write(allocator, ctx, item)) { return; }
     }
+    if (it != neo_list_get_last(self->cases)) {
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_UNDEFINED);
+    }
   }
   if (endaddr) {
     neo_program_set_current(ctx->program, endaddr);
@@ -100,6 +105,7 @@ static void neo_ast_statement_switch_write(neo_allocator_t allocator,
   neo_allocator_free(allocator, addresses);
   neo_program_set_current(ctx->program, labeladdr);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_POP_LABEL);
+  neo_writer_pop_scope(allocator, ctx, self->node.scope);
 }
 
 static neo_variable_t

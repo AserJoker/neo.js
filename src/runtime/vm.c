@@ -28,12 +28,12 @@ struct _neo_js_try_frame_t {
 };
 
 struct _neo_js_label_frame_t {
+  enum { NEO_LABEL_BREAK, NEO_LABEL_CONTINUE } kind;
   neo_js_scope_t scope;
   size_t stack_top;
   size_t try_stack_top;
   wchar_t *label;
-  size_t continueaddr;
-  size_t breakaddr;
+  size_t addr;
 };
 
 struct _neo_js_vm_t {
@@ -131,6 +131,12 @@ void neo_js_vm_pop_scope(neo_js_vm_t vm, neo_program_t program) {
 }
 
 void neo_js_vm_pop(neo_js_vm_t vm, neo_program_t program) {
+  if (!neo_list_get_size(vm->stack)) {
+    neo_list_push(vm->stack,
+                  neo_js_context_create_error(vm->ctx, L"InternalError",
+                                              L"stack size == 0"));
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
   neo_list_pop(vm->stack);
 }
 
@@ -245,20 +251,34 @@ void neo_js_vm_push_value(neo_js_vm_t vm, neo_program_t program) {
                 neo_js_context_create_variable(
                     vm->ctx, neo_js_variable_get_handle(variable), NULL));
 }
-void neo_js_vm_push_label(neo_js_vm_t vm, neo_program_t program) {
+void neo_js_vm_push_break_label(neo_js_vm_t vm, neo_program_t program) {
   wchar_t *label = neo_js_vm_read_string(vm, program);
   size_t breakaddr = neo_js_vm_read_address(vm, program);
-  size_t continueaddr = neo_js_vm_read_address(vm, program);
   neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
   neo_js_label_frame_t frame =
       neo_allocator_alloc(allocator, sizeof(struct _neo_js_label_frame_t),
                           neo_js_label_frame_dispose);
   frame->label = label;
-  frame->breakaddr = breakaddr;
-  frame->continueaddr = continueaddr;
+  frame->addr = breakaddr;
   frame->scope = neo_js_context_get_scope(vm->ctx);
   frame->stack_top = neo_list_get_size(vm->stack);
   frame->try_stack_top = neo_list_get_size(vm->try_stack);
+  frame->kind = NEO_LABEL_BREAK;
+  neo_list_push(vm->label_stack, frame);
+}
+void neo_js_vm_push_continue_label(neo_js_vm_t vm, neo_program_t program) {
+  wchar_t *label = neo_js_vm_read_string(vm, program);
+  size_t breakaddr = neo_js_vm_read_address(vm, program);
+  neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
+  neo_js_label_frame_t frame =
+      neo_allocator_alloc(allocator, sizeof(struct _neo_js_label_frame_t),
+                          neo_js_label_frame_dispose);
+  frame->label = label;
+  frame->addr = breakaddr;
+  frame->scope = neo_js_context_get_scope(vm->ctx);
+  frame->stack_top = neo_list_get_size(vm->stack);
+  frame->try_stack_top = neo_list_get_size(vm->try_stack);
+  frame->kind = NEO_LABEL_CONTINUE;
   neo_list_push(vm->label_stack, frame);
 }
 void neo_js_vm_pop_label(neo_js_vm_t vm, neo_program_t program) {
@@ -476,13 +496,15 @@ void neo_js_vm_break(neo_js_vm_t vm, neo_program_t program) {
   neo_list_node_t it = neo_list_get_last(vm->label_stack);
   while (it != neo_list_get_head(vm->label_stack)) {
     neo_js_label_frame_t f = neo_list_node_get(it);
-    if (wcscmp(label, L"") == 0) {
-      frame = f;
-      break;
-    }
-    if (wcscmp(label, f->label) == 0) {
-      frame = f;
-      break;
+    if (f->kind == NEO_LABEL_BREAK) {
+      if (wcscmp(label, L"") == 0) {
+        frame = f;
+        break;
+      }
+      if (wcscmp(label, f->label) == 0) {
+        frame = f;
+        break;
+      }
     }
     it = neo_list_node_last(it);
   }
@@ -512,7 +534,7 @@ void neo_js_vm_break(neo_js_vm_t vm, neo_program_t program) {
   while (neo_list_get_last(vm->label_stack) != it) {
     neo_list_pop(vm->label_stack);
   }
-  vm->offset = frame->breakaddr;
+  vm->offset = frame->addr;
 }
 void neo_js_vm_continue(neo_js_vm_t vm, neo_program_t program) {
   wchar_t *label = neo_js_vm_read_string(vm, program);
@@ -521,13 +543,15 @@ void neo_js_vm_continue(neo_js_vm_t vm, neo_program_t program) {
   neo_list_node_t it = neo_list_get_last(vm->label_stack);
   while (it != neo_list_get_head(vm->label_stack)) {
     neo_js_label_frame_t f = neo_list_node_get(it);
-    if (wcscmp(label, L"") == 0) {
-      frame = f;
-      break;
-    }
-    if (wcscmp(label, f->label) == 0) {
-      frame = f;
-      break;
+    if (f->kind == NEO_LABEL_CONTINUE) {
+      if (wcscmp(label, L"") == 0) {
+        frame = f;
+        break;
+      }
+      if (wcscmp(label, f->label) == 0) {
+        frame = f;
+        break;
+      }
     }
     it = neo_list_node_last(it);
   }
@@ -557,7 +581,7 @@ void neo_js_vm_continue(neo_js_vm_t vm, neo_program_t program) {
   while (neo_list_get_last(vm->label_stack) != it) {
     neo_list_pop(vm->label_stack);
   }
-  vm->offset = frame->continueaddr;
+  vm->offset = frame->addr;
 }
 void neo_js_vm_ret(neo_js_vm_t vm, neo_program_t program) {
   vm->offset = neo_buffer_get_size(program->codes);
@@ -713,7 +737,7 @@ void neo_js_vm_seq(neo_js_vm_t vm, neo_program_t program) {
       is_equal &= boolean->boolean;
     }
   }
-  if (neo_js_variable_get_type(result)->kind != NEO_TYPE_ERROR) {
+  if (!result || neo_js_variable_get_type(result)->kind != NEO_TYPE_ERROR) {
     result = neo_js_context_create_boolean(vm->ctx, is_equal);
   }
   neo_list_push(vm->stack, result);
@@ -737,7 +761,7 @@ void neo_js_vm_sne(neo_js_vm_t vm, neo_program_t program) {
       is_equal |= boolean->boolean;
     }
   }
-  if (neo_js_variable_get_type(result)->kind != NEO_TYPE_ERROR) {
+  if (!result || neo_js_variable_get_type(result)->kind != NEO_TYPE_ERROR) {
     result = neo_js_context_create_boolean(vm->ctx, !is_equal);
   }
   neo_list_push(vm->stack, result);
@@ -987,113 +1011,114 @@ void neo_js_vm_concat(neo_js_vm_t vm, neo_program_t program) {
 }
 
 const neo_js_vm_cmd_fn_t cmds[] = {
-    neo_js_vm_push_scope,        // NEO_ASM_PUSH_SCOPE
-    neo_js_vm_pop_scope,         // NEO_ASM_POP_SCOPE
-    neo_js_vm_pop,               // NEO_ASM_POP
-    neo_js_vm_store,             // NEO_ASM_STORE
-    neo_js_vm_def,               // NEO_ASM_DEF
-    neo_js_vm_load,              // NEO_ASM_LOAD
-    neo_js_vm_clone,             // NEO_ASM_CLONE
-    NULL,                        // NEO_ASM_WITH
-    NULL,                        // NEO_ASM_INIT_ACCESSOR
-    NULL,                        // NEO_ASM_INIT_FIELD
-    neo_js_vm_push_undefined,    // NEO_ASM_PUSH_UNDEFINED
-    neo_js_vm_push_null,         // NEO_ASM_PUSH_NULL
-    neo_js_vm_push_nan,          // NEO_ASM_PUSH_NAN
-    neo_js_vm_push_infinity,     // NEO_ASM_PUSH_INFINTY
-    neo_js_vm_push_uninitialize, // NEO_ASM_PUSH_UNINITIALIZED
-    neo_js_vm_push_true,         // NEO_ASM_PUSH_TRUE
-    neo_js_vm_push_false,        // NEO_ASM_PUSH_FALSE
-    neo_js_vm_push_number,       // NEO_ASM_PUSH_NUMBER
-    neo_js_vm_push_string,       // NEO_ASM_PUSH_STRING
-    NULL,                        // NEO_ASM_PUSH_BIGINT
-    NULL,                        // NEO_ASM_PUSH_REGEX
-    neo_js_vm_push_function,     // NEO_ASM_PUSH_FUNCTION
-    NULL,                        // NEO_ASM_PUSH_ASYNC_FUNCTION
-    neo_js_vm_push_lambda,       // NEO_ASM_PUSH_LAMBDA
-    NULL,                        // NEO_ASM_PUSH_ASYNC_LAMBDA
-    neo_js_vm_push_generator,    // NEO_ASM_PUSH_GENERATOR
-    NULL,                        // NEO_ASM_PUSH_ASYNC_GENERATOR
-    neo_js_vm_push_object,       // NEO_ASM_PUSH_OBJECT
-    neo_js_vm_push_array,        // NEO_ASM_PUSH_ARRAY
-    neo_js_vm_push_this,         // NEO_ASM_PUSH_THIS
-    NULL,                        // NEO_ASM_PUSH_SUPER
-    neo_js_vm_push_value,        // NEO_ASM_PUSH_VALUE
-    neo_js_vm_push_label,        // NEO_ASM_PUSH_LABEL
-    neo_js_vm_pop_label,         // NEO_ASM_POP_LABEL
-    neo_js_vm_set_const,         // NEO_ASM_SET_CONST
-    NULL,                        // NEO_ASM_SET_USING
-    neo_js_set_source,           // NEO_ASM_SET_SOURCE
-    neo_js_set_address,          // NEO_ASM_SET_ADDRESS
-    neo_js_set_name,             // NEO_ASM_SET_NAME
-    neo_js_set_closure,          // NEO_ASM_SET_CLOSURE
-    NULL,                        // NEO_ASM_EXTEND
-    NULL,                        // NEO_ASM_DECORATOR
-    neo_js_vm_direcitve,         // NEO_ASM_DIRECTIVE
-    neo_js_vm_call,              // NEO_ASM_CALL
-    neo_js_vm_member_call,       // NEO_ASM_MEMBER_CALL
-    neo_js_vm_get_field,         // NEO_ASM_GET_FIELD
-    neo_js_vm_set_field,         // NEO_ASM_SET_FIELD
-    NULL,                        // NEO_ASM_SET_GETTER
-    NULL,                        // NEO_ASM_SET_SETTER
-    neo_js_vm_set_method,        // NEO_ASM_SET_METHOD
-    neo_js_vm_jnull,             // NEO_ASM_JNULL
-    neo_js_vm_jnot_null,         // NEO_ASM_JNOT_NULL
-    neo_js_vm_jfalse,            // NEO_ASM_JFALSE
-    neo_js_vm_jtrue,             // NEO_ASM_JTRUE
-    neo_js_vm_jmp,               // NEO_ASM_JMP
-    neo_js_vm_break,             // NEO_ASM_BREAK
-    neo_js_vm_continue,          // NEO_ASM_CONTINUE
-    NULL,                        // NEO_ASM_THROW
-    NULL,                        // NEO_ASM_DEFER
-    NULL,                        // NEO_ASM_TRY
-    neo_js_vm_ret,               // NEO_ASM_RET
-    neo_js_vm_hlt,               // NEO_ASM_HLT
-    neo_js_vm_keys,              // NEO_ASM_KEYS
-    NULL,                        // NEO_ASM_AWAIT
-    neo_js_vm_yield,             // NEO_ASM_YIELD
-    NULL,                        // NEO_ASM_YIELD_DEGELATE
-    neo_js_vm_next,              // NEO_ASM_NEXT
-    neo_js_vm_iterator,          // NEO_ASM_ITERATOR
-    NULL,                        // NEO_ASM_ENTRIES
-    neo_js_vm_rest,              // NEO_ASM_REST
-    NULL,                        // NEO_ASM_IMPORT
-    NULL,                        // NEO_ASM_ASSERT
-    NULL,                        // NEO_ASM_EXPORT
-    NULL,                        // NEO_ASM_EXPORT_ALL
-    NULL,                        // NEO_ASM_BREAKPOINT
-    NULL,                        // NEO_ASM_NEW
-    neo_js_vm_eq,                // NEO_ASM_EQ
-    neo_js_vm_ne,                // NEO_ASM_NE
-    neo_js_vm_seq,               // NEO_ASM_SEQ
-    neo_js_vm_gt,                // NEO_ASM_GT
-    neo_js_vm_lt,                // NEO_ASM_LT
-    neo_js_vm_ge,                // NEO_ASM_GE
-    neo_js_vm_le,                // NEO_ASM_LE
-    neo_js_vm_sne,               // NEO_ASM_SNE
-    NULL,                        // NEO_ASM_DEL
-    neo_js_vm_typeof,            // NEO_ASM_TYPEOF
-    neo_js_vm_void,              // NEO_ASM_VOID
-    NULL,                        // NEO_ASM_INC
-    NULL,                        // NEO_ASM_DEC
-    neo_js_vm_add,               // NEO_ASM_ADD
-    neo_js_vm_sub,               // NEO_ASM_SUB
-    neo_js_vm_mul,               // NEO_ASM_MUL
-    neo_js_vm_div,               // NEO_ASM_DIV
-    neo_js_vm_mod,               // NEO_ASM_MOD
-    neo_js_vm_pow,               // NEO_ASM_POW
-    neo_js_vm_not,               // NEO_ASM_NOT
-    neo_js_vm_and,               // NEO_ASM_AND
-    neo_js_vm_or,                // NEO_ASM_OR
-    neo_js_vm_xor,               // NEO_ASM_XOR
-    neo_js_vm_shr,               // NEO_ASM_SHR
-    neo_js_vm_shl,               // NEO_ASM_SHL
-    neo_js_vm_ushr,              // NEO_ASM_USHR
-    neo_js_vm_plus,              // NEO_ASM_PLUS
-    neo_js_vm_neg,               // NEO_ASM_NEG
-    neo_js_vm_logical_not,       // NEO_ASM_LOGICAL_NOT
-    neo_js_vm_concat,            // NEO_ASM_CONCAT
-    NULL,                        // NEO_ASM_SPREAD
+    neo_js_vm_push_scope,          // NEO_ASM_PUSH_SCOPE
+    neo_js_vm_pop_scope,           // NEO_ASM_POP_SCOPE
+    neo_js_vm_pop,                 // NEO_ASM_POP
+    neo_js_vm_store,               // NEO_ASM_STORE
+    neo_js_vm_def,                 // NEO_ASM_DEF
+    neo_js_vm_load,                // NEO_ASM_LOAD
+    neo_js_vm_clone,               // NEO_ASM_CLONE
+    NULL,                          // NEO_ASM_WITH
+    NULL,                          // NEO_ASM_INIT_ACCESSOR
+    NULL,                          // NEO_ASM_INIT_FIELD
+    neo_js_vm_push_undefined,      // NEO_ASM_PUSH_UNDEFINED
+    neo_js_vm_push_null,           // NEO_ASM_PUSH_NULL
+    neo_js_vm_push_nan,            // NEO_ASM_PUSH_NAN
+    neo_js_vm_push_infinity,       // NEO_ASM_PUSH_INFINTY
+    neo_js_vm_push_uninitialize,   // NEO_ASM_PUSH_UNINITIALIZED
+    neo_js_vm_push_true,           // NEO_ASM_PUSH_TRUE
+    neo_js_vm_push_false,          // NEO_ASM_PUSH_FALSE
+    neo_js_vm_push_number,         // NEO_ASM_PUSH_NUMBER
+    neo_js_vm_push_string,         // NEO_ASM_PUSH_STRING
+    NULL,                          // NEO_ASM_PUSH_BIGINT
+    NULL,                          // NEO_ASM_PUSH_REGEX
+    neo_js_vm_push_function,       // NEO_ASM_PUSH_FUNCTION
+    NULL,                          // NEO_ASM_PUSH_ASYNC_FUNCTION
+    neo_js_vm_push_lambda,         // NEO_ASM_PUSH_LAMBDA
+    NULL,                          // NEO_ASM_PUSH_ASYNC_LAMBDA
+    neo_js_vm_push_generator,      // NEO_ASM_PUSH_GENERATOR
+    NULL,                          // NEO_ASM_PUSH_ASYNC_GENERATOR
+    neo_js_vm_push_object,         // NEO_ASM_PUSH_OBJECT
+    neo_js_vm_push_array,          // NEO_ASM_PUSH_ARRAY
+    neo_js_vm_push_this,           // NEO_ASM_PUSH_THIS
+    NULL,                          // NEO_ASM_PUSH_SUPER
+    neo_js_vm_push_value,          // NEO_ASM_PUSH_VALUE
+    neo_js_vm_push_break_label,    // NEO_ASM_PUSH_BREAK_LABEL
+    neo_js_vm_push_continue_label, // NEO_ASM_PUSH_CONTINUE_LABEL
+    neo_js_vm_pop_label,           // NEO_ASM_POP_LABEL
+    neo_js_vm_set_const,           // NEO_ASM_SET_CONST
+    NULL,                          // NEO_ASM_SET_USING
+    neo_js_set_source,             // NEO_ASM_SET_SOURCE
+    neo_js_set_address,            // NEO_ASM_SET_ADDRESS
+    neo_js_set_name,               // NEO_ASM_SET_NAME
+    neo_js_set_closure,            // NEO_ASM_SET_CLOSURE
+    NULL,                          // NEO_ASM_EXTEND
+    NULL,                          // NEO_ASM_DECORATOR
+    neo_js_vm_direcitve,           // NEO_ASM_DIRECTIVE
+    neo_js_vm_call,                // NEO_ASM_CALL
+    neo_js_vm_member_call,         // NEO_ASM_MEMBER_CALL
+    neo_js_vm_get_field,           // NEO_ASM_GET_FIELD
+    neo_js_vm_set_field,           // NEO_ASM_SET_FIELD
+    NULL,                          // NEO_ASM_SET_GETTER
+    NULL,                          // NEO_ASM_SET_SETTER
+    neo_js_vm_set_method,          // NEO_ASM_SET_METHOD
+    neo_js_vm_jnull,               // NEO_ASM_JNULL
+    neo_js_vm_jnot_null,           // NEO_ASM_JNOT_NULL
+    neo_js_vm_jfalse,              // NEO_ASM_JFALSE
+    neo_js_vm_jtrue,               // NEO_ASM_JTRUE
+    neo_js_vm_jmp,                 // NEO_ASM_JMP
+    neo_js_vm_break,               // NEO_ASM_BREAK
+    neo_js_vm_continue,            // NEO_ASM_CONTINUE
+    NULL,                          // NEO_ASM_THROW
+    NULL,                          // NEO_ASM_DEFER
+    NULL,                          // NEO_ASM_TRY
+    neo_js_vm_ret,                 // NEO_ASM_RET
+    neo_js_vm_hlt,                 // NEO_ASM_HLT
+    neo_js_vm_keys,                // NEO_ASM_KEYS
+    NULL,                          // NEO_ASM_AWAIT
+    neo_js_vm_yield,               // NEO_ASM_YIELD
+    NULL,                          // NEO_ASM_YIELD_DEGELATE
+    neo_js_vm_next,                // NEO_ASM_NEXT
+    neo_js_vm_iterator,            // NEO_ASM_ITERATOR
+    NULL,                          // NEO_ASM_ENTRIES
+    neo_js_vm_rest,                // NEO_ASM_REST
+    NULL,                          // NEO_ASM_IMPORT
+    NULL,                          // NEO_ASM_ASSERT
+    NULL,                          // NEO_ASM_EXPORT
+    NULL,                          // NEO_ASM_EXPORT_ALL
+    NULL,                          // NEO_ASM_BREAKPOINT
+    NULL,                          // NEO_ASM_NEW
+    neo_js_vm_eq,                  // NEO_ASM_EQ
+    neo_js_vm_ne,                  // NEO_ASM_NE
+    neo_js_vm_seq,                 // NEO_ASM_SEQ
+    neo_js_vm_gt,                  // NEO_ASM_GT
+    neo_js_vm_lt,                  // NEO_ASM_LT
+    neo_js_vm_ge,                  // NEO_ASM_GE
+    neo_js_vm_le,                  // NEO_ASM_LE
+    neo_js_vm_sne,                 // NEO_ASM_SNE
+    NULL,                          // NEO_ASM_DEL
+    neo_js_vm_typeof,              // NEO_ASM_TYPEOF
+    neo_js_vm_void,                // NEO_ASM_VOID
+    NULL,                          // NEO_ASM_INC
+    NULL,                          // NEO_ASM_DEC
+    neo_js_vm_add,                 // NEO_ASM_ADD
+    neo_js_vm_sub,                 // NEO_ASM_SUB
+    neo_js_vm_mul,                 // NEO_ASM_MUL
+    neo_js_vm_div,                 // NEO_ASM_DIV
+    neo_js_vm_mod,                 // NEO_ASM_MOD
+    neo_js_vm_pow,                 // NEO_ASM_POW
+    neo_js_vm_not,                 // NEO_ASM_NOT
+    neo_js_vm_and,                 // NEO_ASM_AND
+    neo_js_vm_or,                  // NEO_ASM_OR
+    neo_js_vm_xor,                 // NEO_ASM_XOR
+    neo_js_vm_shr,                 // NEO_ASM_SHR
+    neo_js_vm_shl,                 // NEO_ASM_SHL
+    neo_js_vm_ushr,                // NEO_ASM_USHR
+    neo_js_vm_plus,                // NEO_ASM_PLUS
+    neo_js_vm_neg,                 // NEO_ASM_NEG
+    neo_js_vm_logical_not,         // NEO_ASM_LOGICAL_NOT
+    neo_js_vm_concat,              // NEO_ASM_CONCAT
+    NULL,                          // NEO_ASM_SPREAD
 };
 
 neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {

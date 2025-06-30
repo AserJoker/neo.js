@@ -48,12 +48,17 @@ static void neo_ast_statement_labeled_write(neo_allocator_t allocator,
     THROW("SyntaxError", "export declaration cannot be labelled");
   } else {
     char *label = neo_location_get(allocator, self->label->location);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_LABEL);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_BREAK_LABEL);
     neo_program_add_string(allocator, ctx->program, label);
     size_t breakaddr = neo_buffer_get_size(ctx->program->codes);
     neo_program_add_address(allocator, ctx->program, 0);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_CONTINUE_LABEL);
+    neo_program_add_string(allocator, ctx->program, label);
+    size_t continueaddr = neo_buffer_get_size(ctx->program->codes);
     neo_program_add_address(allocator, ctx->program, 0);
     TRY(self->statement->write(allocator, ctx, self->statement)) { return; }
+    neo_program_set_current(ctx->program, continueaddr);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP_LABEL);
     neo_program_set_current(ctx->program, breakaddr);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_POP_LABEL);
     neo_allocator_free_ex(allocator, label);

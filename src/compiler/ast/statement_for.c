@@ -40,11 +40,9 @@ static void neo_ast_statement_for_write(neo_allocator_t allocator,
   if (self->initialize) {
     TRY(self->initialize->write(allocator, ctx, self->initialize)) { return; }
   }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_LABEL);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_BREAK_LABEL);
   neo_program_add_string(allocator, ctx->program, label ? label : "");
   size_t breakaddr = neo_buffer_get_size(ctx->program->codes);
-  neo_program_add_address(allocator, ctx->program, 0);
-  size_t continueaddr = neo_buffer_get_size(ctx->program->codes);
   neo_program_add_address(allocator, ctx->program, 0);
   size_t begin = neo_buffer_get_size(ctx->program->codes);
   if (self->condition) {
@@ -56,8 +54,13 @@ static void neo_ast_statement_for_write(neo_allocator_t allocator,
   size_t end = neo_buffer_get_size(ctx->program->codes);
   neo_program_add_address(allocator, ctx->program, 0);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_CONTINUE_LABEL);
+  neo_program_add_string(allocator, ctx->program, label ? label : "");
+  size_t continueaddr = neo_buffer_get_size(ctx->program->codes);
+  neo_program_add_address(allocator, ctx->program, 0);
   TRY(self->body->write(allocator, ctx, self->body)) { return; }
   neo_program_set_current(ctx->program, continueaddr);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_POP_LABEL);
   if (self->after) {
     TRY(self->after->write(allocator, ctx, self->after)) { return; }
   }
