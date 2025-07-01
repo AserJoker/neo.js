@@ -84,8 +84,11 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
       }
       neo_allocator_free(allocator, addresses);
     }
-
     size_t idx = 0;
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARRAY);
+    neo_program_add_number(allocator, ctx->program, 0);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_NUMBER);
+    neo_program_add_number(allocator, ctx->program, idx);
     size_t count = 0;
     neo_list_node_t qit = neo_list_get_first(self->quasis);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARRAY);
@@ -111,21 +114,23 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
       qit = neo_list_node_next(qit);
       count++;
     }
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
     idx++;
     for (neo_list_node_t it = neo_list_get_first(self->expressions);
          it != neo_list_get_tail(self->expressions);
          it = neo_list_node_next(it)) {
       neo_ast_node_t item = neo_list_node_get(it);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_NUMBER);
+      neo_program_add_number(allocator, ctx->program, idx);
       TRY(item->write(allocator, ctx, item)) { return; }
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
       idx++;
     }
     if (self->tag->type == NEO_NODE_TYPE_EXPRESSION_MEMBER ||
         self->tag->type == NEO_NODE_TYPE_EXPRESSION_COMPUTED_MEMBER) {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_MEMBER_CALL);
-      neo_program_add_integer(allocator, ctx->program, idx);
     } else {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_CALL);
-      neo_program_add_integer(allocator, ctx->program, idx);
     }
   } else {
     neo_list_node_t qit = neo_list_get_first(self->quasis);

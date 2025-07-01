@@ -293,11 +293,10 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       neo_allocator_free(allocator, constant);
     } break;
     case NEO_ASM_CALL:
-      fprintf(fp, "NEO_ASM_CALL %d\n", neo_program_get_integer(self, &offset));
+      fprintf(fp, "NEO_ASM_CALL\n");
       break;
     case NEO_ASM_MEMBER_CALL:
-      fprintf(fp, "NEO_ASM_MEMBER_CALL %d\n",
-              neo_program_get_integer(self, &offset));
+      fprintf(fp, "NEO_ASM_MEMBER_CALL\n");
       break;
     case NEO_ASM_GET_FIELD:
       fprintf(fp, "NEO_ASM_GET_FIELD\n");

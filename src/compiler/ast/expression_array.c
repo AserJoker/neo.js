@@ -51,19 +51,33 @@ static void neo_ast_expression_array_write(neo_allocator_t allocator,
                                            neo_write_context_t ctx,
                                            neo_ast_expression_array_t self) {
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARRAY);
-  neo_program_add_number(allocator, ctx->program,
-                         neo_list_get_size(self->items));
-  size_t idx = 0;
+  neo_program_add_number(allocator, ctx->program, 0);
   for (neo_list_node_t it = neo_list_get_first(self->items);
        it != neo_list_get_tail(self->items); it = neo_list_node_next(it)) {
     neo_ast_node_t item = neo_list_node_get(it);
     if (item) {
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_NUMBER);
-      neo_program_add_number(allocator, ctx->program, idx);
-      TRY(item->write(allocator, ctx, item)) { return; }
+      if (item->type == NEO_NODE_TYPE_EXPRESSION_SPREAD) {
+        TRY(item->write(allocator, ctx, item)) { return; }
+      } else {
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+        neo_program_add_integer(allocator, ctx->program, 1);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+        neo_program_add_string(allocator, ctx->program, "length");
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
+        TRY(item->write(allocator, ctx, item)) { return; }
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+      }
+    } else {
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+      neo_program_add_string(allocator, ctx->program, "length");
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+      neo_program_add_integer(allocator, ctx->program, 2);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+      neo_program_add_string(allocator, ctx->program, "length");
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_INC);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
     }
-    idx++;
   }
 }
 static neo_ast_expression_array_t

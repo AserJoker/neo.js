@@ -213,13 +213,23 @@ void neo_write_optional_chain(neo_allocator_t allocator,
         return;
       }
     }
-    size_t idx = 0;
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARRAY);
+    neo_program_add_number(allocator, ctx->program, 0);
     for (neo_list_node_t it = neo_list_get_first(call->arguments);
          it != neo_list_get_tail(call->arguments);
          it = neo_list_node_next(it)) {
       neo_ast_node_t argument = neo_list_node_get(it);
-      TRY(argument->write(allocator, ctx, argument)) { return; }
-      idx++;
+      if (argument->type != NEO_NODE_TYPE_EXPRESSION_SPREAD) {
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+        neo_program_add_integer(allocator, ctx->program, 1);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+        neo_program_add_string(allocator, ctx->program, "length");
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
+        TRY(argument->write(allocator, ctx, argument)) { return; }
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+      } else {
+        TRY(argument->write(allocator, ctx, argument)) { return; }
+      }
     }
     if (node->type == NEO_NODE_TYPE_EXPRESSION_OPTIONAL_CALL) {
       size_t *address = neo_allocator_alloc(allocator, sizeof(size_t), NULL);
@@ -237,7 +247,6 @@ void neo_write_optional_chain(neo_allocator_t allocator,
     } else {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_CALL);
     }
-    neo_program_add_integer(allocator, ctx->program, idx);
   } else if (node->type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
     neo_ast_expression_member_t member = (neo_ast_expression_member_t)node;
     TRY(neo_write_optional_chain(allocator, ctx, member->host, addresses)) {
