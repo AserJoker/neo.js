@@ -120,8 +120,8 @@ neo_ast_node_t neo_ast_read_expression_member(neo_allocator_t allocator,
       goto onerror;
     }
     if (!node->field) {
-      THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-            current.line, current.column);
+      THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+            current.column);
       goto onerror;
     }
     node->node.location.file = file;
@@ -139,14 +139,14 @@ neo_ast_node_t neo_ast_read_expression_member(neo_allocator_t allocator,
         goto onerror;
       };
       if (!node->field) {
-        THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
-              file, current.line, current.column);
+        THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+              current.column);
         goto onerror;
       }
       SKIP_ALL(allocator, file, &current, onerror);
       if (*current.offset != ']') {
-        THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
-              file, current.line, current.column);
+        THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+              current.column);
         goto onerror;
       }
       current.offset++;
@@ -178,14 +178,14 @@ neo_ast_node_t neo_ast_read_expression_member(neo_allocator_t allocator,
       goto onerror;
     };
     if (!node->field) {
-      THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-            current.line, current.column);
+      THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+            current.column);
       goto onerror;
     }
     SKIP_ALL(allocator, file, &current, onerror);
     if (*current.offset != ']') {
-      THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-            current.line, current.column);
+      THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+            current.column);
       goto onerror;
     }
     current.offset++;

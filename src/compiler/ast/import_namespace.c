@@ -66,16 +66,16 @@ neo_ast_node_t neo_ast_read_import_namespace(neo_allocator_t allocator,
   SKIP_ALL(allocator, file, &current, onerror);
   token = neo_read_identify_token(allocator, file, &current);
   if (!token || !neo_location_is(token->location, "as")) {
-    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-          current.line, current.column);
+    THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+          current.column);
     goto onerror;
   }
   neo_allocator_free(allocator, token);
   SKIP_ALL(allocator, file, &current, onerror);
   node->identifier = neo_ast_read_identifier(allocator, file, &current);
   if (!node->identifier) {
-    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-          current.line, current.column);
+    THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+          current.column);
     goto onerror;
   }
   TRY(neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),

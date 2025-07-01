@@ -34,7 +34,7 @@ neo_js_variable_t neo_js_symbol_to_string(neo_js_context_t ctx,
       type = neo_js_variable_get_type(symbol);
     } else {
       return neo_js_context_create_error(
-          ctx, L"TypeError",
+          ctx, NEO_ERROR_TYPE,
           L" Symbol.prototype.toString requires that 'this' be a Symbol");
     }
   }
@@ -43,7 +43,7 @@ neo_js_variable_t neo_js_symbol_to_string(neo_js_context_t ctx,
   }
   if (type->kind != NEO_TYPE_SYMBOL) {
     return neo_js_context_create_error(
-        ctx, L"TypeError",
+        ctx, NEO_ERROR_TYPE,
         L" Symbol.prototype.toString requires that 'this' be a Symbol");
   }
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
@@ -72,7 +72,7 @@ neo_js_variable_t neo_js_symbol_to_primitive(neo_js_context_t ctx,
     if (!neo_js_context_instance_of(
             ctx, symbol, neo_js_context_get_symbol_constructor(ctx))) {
       return neo_js_context_create_error(
-          ctx, L"TypeError",
+          ctx, NEO_ERROR_TYPE,
           L" Symbol.prototype.toString requires that 'this' be a Symbol");
     } else {
       return neo_js_context_get_internal(ctx, symbol, L"[[primitive]]");
@@ -80,7 +80,7 @@ neo_js_variable_t neo_js_symbol_to_primitive(neo_js_context_t ctx,
   }
   if (type->kind != NEO_TYPE_SYMBOL) {
     return neo_js_context_create_error(
-        ctx, L"TypeError",
+        ctx, NEO_ERROR_TYPE,
         L" Symbol.prototype.toString requires that 'this' be a Symbol");
   }
   return symbol;

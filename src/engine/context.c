@@ -549,7 +549,7 @@ neo_js_variable_t neo_js_context_def_variable(neo_js_context_t ctx,
   if (current != NULL) {
     wchar_t msg[1024];
     swprintf(msg, 1024, L"cannot redefine variable: '%ls'", name);
-    return neo_js_context_create_error(ctx, L"SyntaxError", msg);
+    return neo_js_context_create_error(ctx, NEO_ERROR_SYNTAX, msg);
   }
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_js_handle_t handle = neo_js_variable_get_handle(variable);
@@ -588,7 +588,7 @@ neo_js_variable_t neo_js_context_load_variable(neo_js_context_t ctx,
   }
   wchar_t msg[1024];
   swprintf(msg, 1024, L"variable '%ls' is not defined", name);
-  return neo_js_context_create_error(ctx, L"SyntaxError", msg);
+  return neo_js_context_create_error(ctx, NEO_ERROR_REFERENCE, msg);
 }
 
 neo_js_variable_t neo_js_context_to_primitive(neo_js_context_t ctx,
@@ -660,7 +660,7 @@ neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   if (neo_js_variable_get_type(object)->kind < NEO_TYPE_OBJECT) {
     return neo_js_context_create_error(
-        ctx, L"TypeError", L"Object.defineProperty called on non-object");
+        ctx, NEO_ERROR_TYPE, L"Object.defineProperty called on non-object");
   }
   neo_js_object_t obj = neo_js_variable_to_object(object);
   field = neo_js_context_to_primitive(ctx, field, L"default");
@@ -673,7 +673,7 @@ neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
   neo_js_handle_t hobject = neo_js_variable_get_handle(object);
   if (!prop) {
     if (obj->sealed || obj->frozen || !obj->extensible) {
-      return neo_js_context_create_error(ctx, L"TypeError",
+      return neo_js_context_create_error(ctx, NEO_ERROR_TYPE,
                                          L"Object is not extensible");
     }
     prop = neo_create_js_object_property(allocator);
@@ -696,7 +696,7 @@ neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
     }
   } else {
     if (obj->frozen) {
-      return neo_js_context_create_error(ctx, L"TypeError",
+      return neo_js_context_create_error(ctx, NEO_ERROR_TYPE,
                                          L"Object is not extensible");
     }
     if (prop->value != NULL) {
@@ -727,7 +727,7 @@ neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
                    str->string);
         }
         neo_js_variable_t error =
-            neo_js_context_create_error(ctx, L"TypeError", message);
+            neo_js_context_create_error(ctx, NEO_ERROR_TYPE, message);
         neo_allocator_free(allocator, message);
         return error;
       }
@@ -751,7 +751,7 @@ neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
                    str->string);
         }
         neo_js_variable_t error =
-            neo_js_context_create_error(ctx, L"TypeError", message);
+            neo_js_context_create_error(ctx, NEO_ERROR_TYPE, message);
         neo_allocator_free(allocator, message);
         return error;
       }
@@ -783,7 +783,7 @@ neo_js_context_def_accessor(neo_js_context_t ctx, neo_js_variable_t object,
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   if (neo_js_variable_get_type(object)->kind < NEO_TYPE_OBJECT) {
     return neo_js_context_create_error(
-        ctx, L"TypeError", L"Object.defineProperty called on non-object");
+        ctx, NEO_ERROR_TYPE, L"Object.defineProperty called on non-object");
   }
   neo_js_object_t obj = neo_js_variable_to_object(object);
   field = neo_js_context_to_primitive(ctx, field, L"default");
@@ -803,7 +803,7 @@ neo_js_context_def_accessor(neo_js_context_t ctx, neo_js_variable_t object,
   }
   if (!prop) {
     if (obj->sealed || obj->frozen || !obj->extensible) {
-      return neo_js_context_create_error(ctx, L"TypeError",
+      return neo_js_context_create_error(ctx, NEO_ERROR_TYPE,
                                          L"Object is not extensible");
     }
     prop = neo_create_js_object_property(allocator);
@@ -839,7 +839,7 @@ neo_js_context_def_accessor(neo_js_context_t ctx, neo_js_variable_t object,
                    str->string);
         }
         neo_js_variable_t error =
-            neo_js_context_create_error(ctx, L"TypeError", message);
+            neo_js_context_create_error(ctx, NEO_ERROR_TYPE, message);
         neo_allocator_free(allocator, message);
         return error;
       }
@@ -865,7 +865,7 @@ neo_js_context_def_accessor(neo_js_context_t ctx, neo_js_variable_t object,
                    str->string);
         }
         neo_js_variable_t error =
-            neo_js_context_create_error(ctx, L"TypeError", message);
+            neo_js_context_create_error(ctx, NEO_ERROR_TYPE, message);
         neo_allocator_free(allocator, message);
         return error;
       }
@@ -982,7 +982,7 @@ neo_js_variable_t neo_js_context_assigment(neo_js_context_t ctx,
                                            neo_js_variable_t self,
                                            neo_js_variable_t target) {
   if (neo_js_variable_is_const(target)) {
-    return neo_js_context_create_error(ctx, L"TypeError",
+    return neo_js_context_create_error(ctx, NEO_ERROR_TYPE,
                                        L"Assignment to constant variable.");
   }
   neo_js_context_push_scope(ctx);
@@ -1162,12 +1162,12 @@ neo_js_variable_t neo_js_context_call(neo_js_context_t ctx,
   } else if (neo_js_variable_get_type(callee)->kind == NEO_TYPE_FUNCTION) {
     return neo_js_context_call_function(ctx, callee, self, argc, argv);
   } else {
-    return neo_js_context_create_error(ctx, L"TypeError",
+    return neo_js_context_create_error(ctx, NEO_ERROR_TYPE,
                                        L"callee is not a function");
   }
   neo_js_value_t value = neo_js_variable_get_value(callee);
   if (value->type->kind < NEO_TYPE_CALLABLE) {
-    return neo_js_context_create_error(ctx, L"TypeError",
+    return neo_js_context_create_error(ctx, NEO_ERROR_TYPE,
                                        L"callee is not a function");
   }
   neo_js_callable_t callable = neo_js_variable_to_callable(callee);
@@ -1297,7 +1297,7 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
                                            uint32_t argc,
                                            neo_js_variable_t *argv) {
   if (neo_js_variable_get_type(constructor)->kind != NEO_TYPE_CFUNCTION) {
-    return neo_js_context_create_error(ctx, L"TypeError",
+    return neo_js_context_create_error(ctx, NEO_ERROR_TYPE,
                                        L"Constructor is not a cfunction");
   }
   neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
@@ -1333,7 +1333,7 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
 }
 
 neo_js_variable_t neo_js_context_create_error(neo_js_context_t ctx,
-                                              const wchar_t *type,
+                                              neo_js_error_type_t type,
                                               const wchar_t *message) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
   neo_js_error_t error =
@@ -2277,11 +2277,10 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
     neo_ast_node_t root = TRY(neo_ast_parse_code(allocator, file, source)) {
       neo_allocator_free(allocator, u16file);
       neo_error_t err = neo_poll_error(__FUNCTION__, __FILE__, __LINE__);
-      wchar_t *type = neo_string_to_wstring(allocator, neo_error_get_type(err));
       wchar_t *message =
           neo_string_to_wstring(allocator, neo_error_get_message(err));
-      neo_js_variable_t error = neo_js_context_create_error(ctx, type, message);
-      neo_allocator_free(allocator, type);
+      neo_js_variable_t error =
+          neo_js_context_create_error(ctx, NEO_ERROR_SYNTAX, message);
       neo_allocator_free(allocator, message);
       neo_allocator_free(allocator, err);
       return error;
@@ -2290,11 +2289,10 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
       neo_allocator_free(allocator, root);
       neo_allocator_free(allocator, u16file);
       neo_error_t err = neo_poll_error(__FUNCTION__, __FILE__, __LINE__);
-      wchar_t *type = neo_string_to_wstring(allocator, neo_error_get_type(err));
       wchar_t *message =
           neo_string_to_wstring(allocator, neo_error_get_message(err));
-      neo_js_variable_t error = neo_js_context_create_error(ctx, type, message);
-      neo_allocator_free(allocator, type);
+      neo_js_variable_t error =
+          neo_js_context_create_error(ctx, NEO_ERROR_SYNTAX, message);
       neo_allocator_free(allocator, message);
       return error;
     }

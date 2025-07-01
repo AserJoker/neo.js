@@ -144,7 +144,7 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
                                            neo_js_variable_t *argv);
 
 neo_js_variable_t neo_js_context_create_error(neo_js_context_t ctx,
-                                              const wchar_t *type,
+                                              neo_js_error_type_t type,
                                               const wchar_t *message);
 
 neo_js_variable_t neo_js_context_create_undefined(neo_js_context_t ctx);

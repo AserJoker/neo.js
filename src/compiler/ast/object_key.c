@@ -52,14 +52,14 @@ neo_ast_node_t neo_ast_read_object_computed_key(neo_allocator_t allocator,
     goto onerror;
   }
   if (!node) {
-    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-          current.line, current.column);
+    THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+          current.column);
     goto onerror;
   }
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != ']') {
-    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-          current.line, current.column);
+    THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+          current.column);
     goto onerror;
   }
   current.offset++;

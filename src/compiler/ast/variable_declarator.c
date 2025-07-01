@@ -102,8 +102,8 @@ neo_ast_node_t neo_ast_read_variable_declarator(neo_allocator_t allocator,
     }
   }
   if (!node->identifier) {
-    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-          current.line, current.column);
+    THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+          current.column);
     goto onerror;
   }
   neo_position_t cur = current;
@@ -118,8 +118,8 @@ neo_ast_node_t neo_ast_read_variable_declarator(neo_allocator_t allocator,
       goto onerror;
     };
     if (!node->initialize) {
-      THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-            current.line, current.column);
+      THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+            current.column);
       goto onerror;
     }
   }

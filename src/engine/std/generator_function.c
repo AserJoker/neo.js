@@ -21,7 +21,7 @@ neo_js_variable_t neo_js_generator_function_to_string(neo_js_context_t ctx,
   if (neo_js_variable_get_type(self)->kind != NEO_TYPE_FUNCTION || !generator ||
       !generator->is_generator) {
     return neo_js_context_create_error(
-        ctx, L"TypeError",
+        ctx, NEO_ERROR_TYPE,
         L" GeneratorFunction.prototype.toString requires that 'this' be a "
         L"GeneratorFunction");
   }

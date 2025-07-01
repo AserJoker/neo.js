@@ -24,8 +24,8 @@ neo_ast_node_t neo_ast_parse_code(neo_allocator_t allocator, const char *file,
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != '\0') {
     neo_allocator_free(allocator, program);
-    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-          current.line, current.column);
+    THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+          current.column);
     goto onerror;
   }
   return program;

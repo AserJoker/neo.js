@@ -73,7 +73,7 @@ static neo_js_variable_t neo_js_undefined_get_field(neo_js_context_t ctx,
              field_name);
   }
   neo_js_variable_t error =
-      neo_js_context_create_error(ctx, L"TypeError", message);
+      neo_js_context_create_error(ctx, NEO_ERROR_TYPE, message);
   neo_allocator_free(allocator, message);
   return error;
 }
@@ -107,7 +107,7 @@ static neo_js_variable_t neo_js_undefined_set_field(neo_js_context_t ctx,
              field_name);
   }
   neo_js_variable_t error =
-      neo_js_context_create_error(ctx, L"TypeError", message);
+      neo_js_context_create_error(ctx, NEO_ERROR_TYPE, message);
   neo_allocator_free(allocator, message);
   return error;
 }
@@ -115,7 +115,7 @@ static neo_js_variable_t neo_js_undefined_del_field(neo_js_context_t ctx,
                                                     neo_js_variable_t self,
                                                     neo_js_variable_t field) {
   return neo_js_context_create_error(
-      ctx, L"TypeError", L"Cannot convert undefined or undefined to object");
+      ctx, NEO_ERROR_TYPE, L"Cannot convert undefined or undefined to object");
 }
 
 static bool neo_js_undefined_is_equal(neo_js_context_t ctx,

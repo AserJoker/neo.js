@@ -181,8 +181,8 @@ neo_ast_node_t neo_ast_read_object_accessor(neo_allocator_t allocator,
   }
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != '(') {
-    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-          current.line, current.column);
+    THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+          current.column);
     goto onerror;
   }
   current.offset++;
@@ -196,8 +196,8 @@ neo_ast_node_t neo_ast_read_object_accessor(neo_allocator_t allocator,
         goto onerror;
       }
       if (!argument) {
-        THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
-              file, current.line, current.column);
+        THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+              current.column);
         goto onerror;
       }
       neo_list_push(node->arguments, argument);
@@ -211,8 +211,8 @@ neo_ast_node_t neo_ast_read_object_accessor(neo_allocator_t allocator,
       }
       if (((neo_ast_function_argument_t)argument)->identifier->type ==
           NEO_NODE_TYPE_PATTERN_REST) {
-        THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
-              file, current.line, current.column);
+        THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+              current.column);
         goto onerror;
       }
       current.offset++;
@@ -227,8 +227,8 @@ neo_ast_node_t neo_ast_read_object_accessor(neo_allocator_t allocator,
     goto onerror;
   }
   if (!node->body) {
-    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-          current.line, current.column);
+    THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+          current.column);
     goto onerror;
   }
   node->body->resolve_closure(allocator, node->body, node->closure);

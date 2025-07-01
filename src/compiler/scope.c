@@ -99,7 +99,7 @@ void neo_compile_scope_declar_value(neo_allocator_t allocator,
           type == NEO_COMPILE_VARIABLE_USING ||
           variable->type == NEO_COMPILE_VARIABLE_LET ||
           variable->type == NEO_COMPILE_VARIABLE_CONST) {
-        THROW("SyntaxError", "Identifier '%s' has aleady been declared", name);
+        THROW("Identifier '%s' has aleady been declared", name);
         neo_allocator_free(allocator, name);
         neo_allocator_free(allocator, current);
         return;
@@ -169,8 +169,7 @@ void neo_compile_scope_declar(neo_allocator_t allocator,
       }
     }
   } else {
-    THROW("SyntaxError",
-          "Illegal property in declaration context\n  at %s:%d:%d",
+    THROW("Illegal property in declaration context\n  at %s:%d:%d",
           node->location.file, node->location.begin.line,
           node->location.begin.column);
     return;

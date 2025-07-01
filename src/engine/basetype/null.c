@@ -67,7 +67,7 @@ static neo_js_variable_t neo_js_null_get_field(neo_js_context_t ctx,
   swprintf(message, len, L"Cannot read properties of null (reading '%ls')",
            field_name);
   neo_js_variable_t error =
-      neo_js_context_create_error(ctx, L"TypeError", message);
+      neo_js_context_create_error(ctx, NEO_ERROR_TYPE, message);
   neo_allocator_free(allocator, message);
   return error;
 }
@@ -94,7 +94,7 @@ static neo_js_variable_t neo_js_null_set_field(neo_js_context_t ctx,
   swprintf(message, len, L"Cannot set properties of null (reading '%ls')",
            field_name);
   neo_js_variable_t error =
-      neo_js_context_create_error(ctx, L"TypeError", message);
+      neo_js_context_create_error(ctx, NEO_ERROR_TYPE, message);
   neo_allocator_free(allocator, message);
   return error;
 }
@@ -102,7 +102,7 @@ static neo_js_variable_t neo_js_null_del_field(neo_js_context_t ctx,
                                                neo_js_variable_t self,
                                                neo_js_variable_t field) {
   return neo_js_context_create_error(
-      ctx, L"TypeError", L"Cannot convert undefined or null to object");
+      ctx, NEO_ERROR_TYPE, L"Cannot convert undefined or null to object");
 }
 
 static neo_js_variable_t
@@ -110,7 +110,7 @@ neo_js_null_def_field(neo_js_context_t ctx, neo_js_variable_t object,
                       neo_js_variable_t field, neo_js_variable_t value,
                       bool configurable, bool enumable, bool writable) {
   return neo_js_context_create_error(
-      ctx, L"TypeError", L"Cannot convert undefined or null to object");
+      ctx, NEO_ERROR_TYPE, L"Cannot convert undefined or null to object");
 }
 
 static neo_js_variable_t
@@ -119,7 +119,7 @@ neo_js_null_def_accessor(neo_js_context_t ctx, neo_js_variable_t object,
                          neo_js_variable_t setter, bool configurable,
                          bool enumable) {
   return neo_js_context_create_error(
-      ctx, L"TypeError", L"Cannot convert undefined or null to object");
+      ctx, NEO_ERROR_TYPE, L"Cannot convert undefined or null to object");
 }
 
 static bool neo_js_null_is_equal(neo_js_context_t ctx, neo_js_variable_t self,

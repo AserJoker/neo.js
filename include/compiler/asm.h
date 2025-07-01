@@ -73,7 +73,6 @@ typedef enum _neo_asm_code_t {
   NEO_ASM_YIELD,
   NEO_ASM_NEXT,
   NEO_ASM_ITERATOR,
-  NEO_ASM_ENTRIES,
   NEO_ASM_REST,
   NEO_ASM_REST_OBJECT,
   NEO_ASM_IMPORT,

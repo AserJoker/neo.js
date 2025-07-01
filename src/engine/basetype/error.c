@@ -1,6 +1,9 @@
 #include "engine/basetype/error.h"
 #include "core/allocator.h"
 #include "core/list.h"
+#include "engine/context.h"
+#include "engine/handle.h"
+#include "engine/scope.h"
 #include "engine/stackframe.h"
 #include "engine/type.h"
 #include "engine/value.h"
@@ -17,24 +20,20 @@ neo_js_type_t neo_get_js_error_type() {
 
 static void neo_js_error_dispose(neo_allocator_t allocator,
                                  neo_js_error_t self) {
-  neo_allocator_free(allocator, self->type);
   neo_allocator_free(allocator, self->message);
   neo_allocator_free(allocator, self->stacktrace);
 }
 
 neo_js_error_t neo_create_js_error(neo_allocator_t allocator,
-                                   const wchar_t *type, const wchar_t *message,
+                                   neo_js_error_type_t type,
+                                   const wchar_t *message,
                                    neo_list_t stacktrace) {
   neo_js_error_t error = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_error_t), neo_js_error_dispose);
   error->value.type = neo_get_js_error_type();
   error->value.ref = 0;
-  size_t len = wcslen(type);
-  error->type =
-      neo_allocator_alloc(allocator, (len + 1) * sizeof(wchar_t), NULL);
-  memset(error->type, 0, (len + 1) * sizeof(wchar_t));
-  wcscpy(error->type, type);
-  len = wcslen(message);
+  error->type = type;
+  size_t len = wcslen(message);
   error->message =
       neo_allocator_alloc(allocator, (len + 1) * sizeof(wchar_t), NULL);
   wcscpy(error->message, message);
@@ -71,7 +70,7 @@ neo_js_error_t neo_js_value_to_error(neo_js_value_t value) {
   return NULL;
 }
 
-const wchar_t *neo_js_error_get_type(neo_js_variable_t variable) {
+neo_js_error_type_t neo_js_error_get_type(neo_js_variable_t variable) {
   neo_js_error_t error =
       neo_js_value_to_error(neo_js_variable_get_value(variable));
   return error->type;
@@ -87,4 +86,25 @@ neo_list_t neo_js_error_get_stacktrace(neo_js_variable_t variable) {
   neo_js_error_t error =
       neo_js_value_to_error(neo_js_variable_get_value(variable));
   return error->stacktrace;
+}
+neo_js_variable_t neo_js_error_get_custom(neo_js_context_t ctx,
+                                          neo_js_variable_t self) {
+  neo_js_error_t error = neo_js_variable_to_error(self);
+  return neo_js_context_create_variable(ctx, error->custom, NULL);
+}
+
+void neo_js_error_set_custom(neo_js_context_t ctx, neo_js_variable_t self,
+                             neo_js_variable_t custom) {
+  neo_js_error_t error = neo_js_variable_to_error(self);
+  neo_js_handle_t herror = neo_js_variable_get_handle(self);
+  if (error->custom) {
+    neo_js_handle_add_parent(error->custom, neo_js_scope_get_root_handle(
+                                                neo_js_context_get_scope(ctx)));
+    error->custom = NULL;
+  }
+  if (custom) {
+    neo_js_handle_t hcustom = neo_js_variable_get_handle(custom);
+    neo_js_handle_add_parent(hcustom, herror);
+    error->custom = hcustom;
+  }
 }

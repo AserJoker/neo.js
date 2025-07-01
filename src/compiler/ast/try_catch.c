@@ -84,8 +84,8 @@ neo_ast_node_t neo_ast_read_try_catch(neo_allocator_t allocator,
       }
     }
     if (!node->error) {
-      THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-            current.line, current.column);
+      THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+            current.column);
       goto onerror;
     }
     TRY(neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
@@ -94,8 +94,8 @@ neo_ast_node_t neo_ast_read_try_catch(neo_allocator_t allocator,
     };
     SKIP_ALL(allocator, file, &current, onerror);
     if (*current.offset != ')') {
-      THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-            current.line, current.column);
+      THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+            current.column);
       goto onerror;
     }
     current.offset++;
@@ -106,8 +106,8 @@ neo_ast_node_t neo_ast_read_try_catch(neo_allocator_t allocator,
     goto onerror;
   }
   if (!node->body) {
-    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-          current.line, current.column);
+    THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+          current.column);
     goto onerror;
   }
   node->node.location.begin = *position;

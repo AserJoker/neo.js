@@ -26,7 +26,7 @@ neo_js_variable_t neo_js_function_to_string(neo_js_context_t ctx,
   type = neo_js_variable_get_type(self);
   if (neo_js_variable_get_type(self)->kind < NEO_TYPE_CALLABLE) {
     return neo_js_context_create_error(
-        ctx, L"TypeError",
+        ctx, NEO_ERROR_TYPE,
         L" Function.prototype.toString requires that 'this' be a Function");
   }
   neo_js_callable_t callable = neo_js_variable_to_callable(self);

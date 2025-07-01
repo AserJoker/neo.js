@@ -63,7 +63,7 @@ static neo_js_variable_t neo_js_object_to_string(neo_js_context_t ctx,
   if (!primitive ||
       neo_js_variable_get_type(primitive)->kind >= NEO_TYPE_OBJECT) {
     return neo_js_context_create_error(
-        ctx, L"TypeError", L"Cannot convert object to primitive value");
+        ctx, NEO_ERROR_TYPE, L"Cannot convert object to primitive value");
   }
   return neo_js_context_to_string(ctx, primitive);
 }
@@ -111,7 +111,7 @@ static neo_js_variable_t neo_js_object_to_number(neo_js_context_t ctx,
   if (!primitive ||
       neo_js_variable_get_type(primitive)->kind != NEO_TYPE_OBJECT) {
     return neo_js_context_create_error(
-        ctx, L"TypeError", L"Cannot convert object to primitive value");
+        ctx, NEO_ERROR_TYPE, L"Cannot convert object to primitive value");
   }
   return neo_js_context_to_number(ctx, primitive);
 }
@@ -157,10 +157,10 @@ static neo_js_variable_t neo_js_object_to_primitive(neo_js_context_t ctx,
   if (!primitive ||
       neo_js_variable_get_type(primitive)->kind >= NEO_TYPE_OBJECT) {
     return neo_js_context_create_error(
-        ctx, L"TypeError", L"Cannot convert object to primitive value");
+        ctx, NEO_ERROR_TYPE, L"Cannot convert object to primitive value");
   }
   return neo_js_context_create_error(
-      ctx, L"TypeError", L"Cannot convert object to primitive value");
+      ctx, NEO_ERROR_TYPE, L"Cannot convert object to primitive value");
 }
 static neo_js_variable_t neo_js_object_to_object(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
@@ -413,7 +413,7 @@ static neo_js_variable_t neo_js_object_set_field(neo_js_context_t ctx,
                    name->string);
         }
         neo_js_variable_t error =
-            neo_js_context_create_error(ctx, L"TypeError", message);
+            neo_js_context_create_error(ctx, NEO_ERROR_TYPE, message);
         neo_allocator_free(allocator, message);
         return error;
       } else {
@@ -456,7 +456,7 @@ static neo_js_variable_t neo_js_object_set_field(neo_js_context_t ctx,
             name->string);
       }
       neo_js_variable_t error =
-          neo_js_context_create_error(ctx, L"TypeError", message);
+          neo_js_context_create_error(ctx, NEO_ERROR_TYPE, message);
       neo_allocator_free(allocator, message);
       return error;
     }
@@ -495,7 +495,7 @@ static neo_js_variable_t neo_js_object_del_field(neo_js_context_t ctx,
                name->string);
     }
     neo_js_variable_t error =
-        neo_js_context_create_error(ctx, L"TypeError", message);
+        neo_js_context_create_error(ctx, NEO_ERROR_TYPE, message);
     neo_allocator_free(allocator, message);
     return error;
   }
@@ -522,7 +522,7 @@ static neo_js_variable_t neo_js_object_del_field(neo_js_context_t ctx,
                  name->string);
       }
       neo_js_variable_t error =
-          neo_js_context_create_error(ctx, L"TypeError", message);
+          neo_js_context_create_error(ctx, NEO_ERROR_TYPE, message);
       neo_allocator_free(allocator, message);
       return error;
     } else {

@@ -82,8 +82,8 @@ neo_ast_node_t neo_ast_read_expression_spread(neo_allocator_t allocator,
     goto onerror;
   };
   if (!node->value) {
-    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-          current.line, current.column);
+    THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+          current.column);
     goto onerror;
   }
   node->node.location.file = file;

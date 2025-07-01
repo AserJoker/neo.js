@@ -37,15 +37,15 @@ static void neo_ast_statement_labeled_write(neo_allocator_t allocator,
     TRY(self->statement->write(allocator, ctx, self->statement)) { return; }
     neo_allocator_free_ex(allocator, ctx->label);
   } else if (self->statement->type == NEO_NODE_TYPE_DECLARATION_FUNCTION) {
-    THROW("SyntaxError", "functions cannot be labelled");
+    THROW("functions cannot be labelled");
   } else if (self->statement->type == NEO_NODE_TYPE_DECLARATION_CLASS) {
-    THROW("SyntaxError", "classes cannot be labelled");
+    THROW("classes cannot be labelled");
   } else if (self->statement->type == NEO_NODE_TYPE_DECLARATION_VARIABLE) {
-    THROW("SyntaxError", "variable declaration cannot be labelled");
+    THROW("variable declaration cannot be labelled");
   } else if (self->statement->type == NEO_NODE_TYPE_DECLARATION_IMPORT) {
-    THROW("SyntaxError", "import declaration cannot be labelled");
+    THROW("import declaration cannot be labelled");
   } else if (self->statement->type == NEO_NODE_TYPE_DECLARATION_EXPORT) {
-    THROW("SyntaxError", "export declaration cannot be labelled");
+    THROW("export declaration cannot be labelled");
   } else {
     char *label = neo_location_get(allocator, self->label->location);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_BREAK_LABEL);
@@ -120,8 +120,8 @@ neo_ast_node_t neo_ast_read_statement_labeled(neo_allocator_t allocator,
     goto onerror;
   };
   if (!node->statement) {
-    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-          current.line, current.column);
+    THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+          current.column);
     goto onerror;
   }
   node->node.location.begin = *position;

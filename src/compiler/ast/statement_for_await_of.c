@@ -164,8 +164,8 @@ neo_ast_node_t neo_ast_read_statement_for_await_of(neo_allocator_t allocator,
   neo_allocator_free(allocator, token);
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != '(') {
-    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-          current.line, current.column);
+    THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+          current.column);
     goto onerror;
   }
   current.offset++;
@@ -243,8 +243,8 @@ neo_ast_node_t neo_ast_read_statement_for_await_of(neo_allocator_t allocator,
   SKIP_ALL(allocator, file, &current, onerror);
   token = neo_read_identify_token(allocator, file, &current);
   if (!token || !neo_location_is(token->location, "of")) {
-    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-          current.line, current.column);
+    THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+          current.column);
     goto onerror;
   }
   neo_allocator_free(allocator, token);
@@ -253,14 +253,14 @@ neo_ast_node_t neo_ast_read_statement_for_await_of(neo_allocator_t allocator,
     goto onerror;
   }
   if (!node->right) {
-    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-          current.line, current.column);
+    THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+          current.column);
     goto onerror;
   }
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != ')') {
-    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-          current.line, current.column);
+    THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+          current.column);
     goto onerror;
   }
   current.offset++;
@@ -270,8 +270,8 @@ neo_ast_node_t neo_ast_read_statement_for_await_of(neo_allocator_t allocator,
     goto onerror;
   }
   if (!node->body) {
-    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-          current.line, current.column);
+    THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+          current.column);
     goto onerror;
   }
   node->node.location.begin = *position;

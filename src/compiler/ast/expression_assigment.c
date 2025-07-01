@@ -48,8 +48,7 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
       return;
     }
     if (neo_list_get_size(addresses)) {
-      THROW("SyntaxError",
-            "Invalid left-hand side in assignment \n  at %s:%d:%d",
+      THROW("Invalid left-hand side in assignment \n  at %s:%d:%d",
             ctx->program->file, self->identifier->location.begin.line,
             self->identifier->location.begin.column);
       neo_allocator_free(allocator, addresses);
@@ -138,7 +137,7 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
     neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   } else {
-    THROW("SyntaxError", "Invalid left-hand side in assignment \n  at %s:%d:%d",
+    THROW("Invalid left-hand side in assignment \n  at %s:%d:%d",
           ctx->program->file, self->identifier->location.begin.line,
           self->identifier->location.begin.column);
     return;
@@ -238,8 +237,8 @@ neo_ast_node_t neo_ast_read_expression_assigment(neo_allocator_t allocator,
     goto onerror;
   };
   if (!node->value) {
-    THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d", file,
-          current.line, current.column);
+    THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
+          current.column);
     goto onerror;
   }
   node->node.location.begin = *position;
