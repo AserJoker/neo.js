@@ -347,12 +347,14 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
     case NEO_ASM_THROW:
       fprintf(fp, "NEO_ASM_THROW\n");
       break;
-    case NEO_ASM_DEFER:
-      fprintf(fp, "NEO_ASM_DEFER %ld\n",
-              neo_program_get_address(self, &offset));
+    case NEO_ASM_TRY_BEGIN: {
+      size_t onerror = neo_program_get_address(self, &offset);
+      size_t onfinish = neo_program_get_address(self, &offset);
+      fprintf(fp, "NEO_ASM_TRY_BEGIN %ld,%ld\n", onerror, onfinish);
       break;
-    case NEO_ASM_TRY:
-      fprintf(fp, "NEO_ASM_TRY %ld\n", neo_program_get_address(self, &offset));
+    }
+    case NEO_ASM_TRY_END:
+      fprintf(fp, "NEO_ASM_TRY_END\n");
       break;
     case NEO_ASM_RET:
       fprintf(fp, "NEO_ASM_RET\n");

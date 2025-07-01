@@ -30,38 +30,43 @@ static neo_js_variable_t js_println(neo_js_context_t ctx,
 static void disp_js_variable(neo_js_context_t ctx, neo_js_variable_t variable) {
   if (neo_js_variable_get_type(variable)->kind == NEO_TYPE_ERROR) {
     neo_js_error_type_t type = neo_js_error_get_type(variable);
-    const wchar_t *message = neo_js_error_get_message(variable);
-    neo_list_t stacktrace = neo_js_error_get_stacktrace(variable);
-    const wchar_t *stype = NULL;
-    switch (type) {
-    case NEO_ERROR_SYNTAX:
-      stype = L"SyntaxError";
-      break;
-    case NEO_ERROR_RANGE:
-      stype = L"RangeError";
-      break;
-    case NEO_ERROR_TYPE:
-      stype = L"TypeError";
-      break;
-    case NEO_ERROR_REFERENCE:
-      stype = L"ReferenceError";
-      break;
-    case NEO_ERROR_CUSTOM:
-      stype = L"Error";
-      break;
-    }
-    printf("Uncaught %ls: %ls\n", stype, message);
-    for (neo_list_node_t it = neo_list_get_first(stacktrace);
-         it != neo_list_get_tail(stacktrace); it = neo_list_node_next(it)) {
-      neo_js_stackframe_t frame = neo_list_node_get(it);
-      if (frame->filename) {
-        printf("  at %ls(%ls:%d:%d)\n", frame->function, frame->filename,
-               frame->line, frame->column);
-      } else {
-        printf("  at %ls(<internal>)\n", frame->function);
+    if (type == NEO_ERROR_CUSTOM) {
+      neo_js_variable_t custom = neo_js_error_get_custom(ctx, variable);
+      custom = neo_js_context_to_string(ctx, custom);
+      neo_js_string_t string = neo_js_variable_to_string(custom);
+      fprintf(stderr, "Uncaught Error: %ls\n", string->string);
+    } else {
+      const wchar_t *message = neo_js_error_get_message(variable);
+      neo_list_t stacktrace = neo_js_error_get_stacktrace(variable);
+      const wchar_t *stype = NULL;
+      switch (type) {
+      case NEO_ERROR_SYNTAX:
+        stype = L"SyntaxError";
+        break;
+      case NEO_ERROR_RANGE:
+        stype = L"RangeError";
+        break;
+      case NEO_ERROR_TYPE:
+        stype = L"TypeError";
+        break;
+      case NEO_ERROR_REFERENCE:
+        stype = L"ReferenceError";
+        break;
+      default:
+        break;
+      }
+      printf("Uncaught %ls: %ls\n", stype, message);
+      for (neo_list_node_t it = neo_list_get_first(stacktrace);
+           it != neo_list_get_tail(stacktrace); it = neo_list_node_next(it)) {
+        neo_js_stackframe_t frame = neo_list_node_get(it);
+        if (frame->filename) {
+          printf("  at %ls(%ls:%d:%d)\n", frame->function, frame->filename,
+                 frame->line, frame->column);
+        } else {
+          printf("  at %ls(<internal>)\n", frame->function);
+        }
       }
     }
-
   } else {
     neo_js_variable_t string = neo_js_context_to_string(ctx, variable);
     neo_js_string_t str = neo_js_variable_to_string(string);

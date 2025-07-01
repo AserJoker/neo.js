@@ -1,2 +1,9 @@
-const arr = [1, 2, 3]
-println(0, ...arr, 4)
+try {
+    try {
+        throw "Test error"
+    } finally {
+        println("finally")
+    }
+} catch (e) {
+    println("catch" + e)
+}

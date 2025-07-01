@@ -18,7 +18,7 @@
 #include <string.h>
 #include <sys/types.h>
 
-neo_compile_scope_t current = NULL;
+neo_compile_scope_t g_current_scope = NULL;
 
 static void neo_compile_scope_dispose(neo_allocator_t allocator,
                                       neo_compile_scope_t scope) {
@@ -39,16 +39,16 @@ static neo_compile_scope_t neo_create_compile_scope(neo_allocator_t allocator) {
 neo_compile_scope_t neo_compile_scope_push(neo_allocator_t allocator,
                                            neo_compile_scope_type_t type) {
   neo_compile_scope_t scope = neo_create_compile_scope(allocator);
-  scope->parent = current;
+  scope->parent = g_current_scope;
   scope->type = type;
-  neo_compile_scope_t curr = current;
-  current = scope;
+  neo_compile_scope_t curr = g_current_scope;
+  g_current_scope = scope;
   return curr;
 }
 
 neo_compile_scope_t neo_compile_scope_pop(neo_compile_scope_t scope) {
-  neo_compile_scope_t curr = current;
-  current = scope;
+  neo_compile_scope_t curr = g_current_scope;
+  g_current_scope = scope;
   return curr;
 }
 neo_compile_scope_t neo_compile_scope_set(neo_compile_scope_t scope) {
@@ -175,7 +175,7 @@ void neo_compile_scope_declar(neo_allocator_t allocator,
     return;
   }
 }
-neo_compile_scope_t neo_compile_scope_get_current() { return current; }
+neo_compile_scope_t neo_compile_scope_get_current() { return g_current_scope; }
 
 static neo_variable_t
 neo_serialize_compile_variable(neo_allocator_t allocator,

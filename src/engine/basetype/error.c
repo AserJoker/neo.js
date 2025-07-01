@@ -33,11 +33,15 @@ neo_js_error_t neo_create_js_error(neo_allocator_t allocator,
   error->value.type = neo_get_js_error_type();
   error->value.ref = 0;
   error->type = type;
-  size_t len = wcslen(message);
-  error->message =
-      neo_allocator_alloc(allocator, (len + 1) * sizeof(wchar_t), NULL);
-  wcscpy(error->message, message);
-  error->message[len] = 0;
+  if (message) {
+    size_t len = wcslen(message);
+    error->message =
+        neo_allocator_alloc(allocator, (len + 1) * sizeof(wchar_t), NULL);
+    wcscpy(error->message, message);
+    error->message[len] = 0;
+  } else {
+    error->message = NULL;
+  }
   neo_list_initialize_t initialize = {true};
   error->stacktrace = neo_create_list(allocator, &initialize);
   for (neo_list_node_t it = neo_list_get_first(stacktrace);
@@ -56,6 +60,7 @@ neo_js_error_t neo_create_js_error(neo_allocator_t allocator,
     }
     neo_list_push(error->stacktrace, frame);
   }
+  error->custom = NULL;
   return error;
 }
 
