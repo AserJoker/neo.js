@@ -97,14 +97,15 @@ void neo_js_error_set_custom(neo_js_context_t ctx, neo_js_variable_t self,
                              neo_js_variable_t custom) {
   neo_js_error_t error = neo_js_variable_to_error(self);
   neo_js_handle_t herror = neo_js_variable_get_handle(self);
+  neo_js_handle_t hcustom = neo_js_variable_get_handle(custom);
+  neo_js_handle_add_parent(hcustom, herror);
   if (error->custom) {
     neo_js_handle_add_parent(error->custom, neo_js_scope_get_root_handle(
                                                 neo_js_context_get_scope(ctx)));
+    neo_js_handle_remove_parent(herror, hcustom);
     error->custom = NULL;
   }
   if (custom) {
-    neo_js_handle_t hcustom = neo_js_variable_get_handle(custom);
-    neo_js_handle_add_parent(hcustom, herror);
     error->custom = hcustom;
   }
 }

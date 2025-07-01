@@ -441,6 +441,81 @@ void neo_js_vm_set_field(neo_js_vm_t vm, neo_program_t program) {
     vm->offset = neo_buffer_get_size(program->codes);
   }
 }
+void neo_js_vm_set_getter(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t getter = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t field = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t host = neo_list_node_get(neo_list_get_last(vm->stack));
+  host = neo_js_context_to_object(vm->ctx, host);
+  if (neo_js_variable_get_type(host)->kind == NEO_TYPE_ERROR) {
+    neo_list_push(vm->stack, host);
+    vm->offset = neo_buffer_get_size(program->codes);
+    return;
+  }
+  neo_js_object_property_t prop =
+      neo_js_object_get_own_property(vm->ctx, host, field);
+  neo_js_handle_t hobject = neo_js_variable_get_handle(host);
+  neo_js_handle_t hgetter = neo_js_variable_get_handle(getter);
+  neo_js_handle_add_parent(hgetter, hobject);
+  if (prop) {
+    if (prop->get) {
+      neo_js_handle_add_parent(
+          prop->get,
+          neo_js_scope_get_root_handle(neo_js_context_get_scope(vm->ctx)));
+      neo_js_handle_remove_parent(prop->get, hobject);
+      prop->get = NULL;
+    }
+    prop->get = hgetter;
+  } else {
+    neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
+    prop = neo_create_js_object_property(allocator);
+    prop->configurable = true;
+    prop->enumerable = true;
+    prop->get = hgetter;
+    neo_js_object_t obj = neo_js_variable_to_object(host);
+    neo_hash_map_set(obj->properties, neo_js_variable_get_handle(field), prop,
+                     vm->ctx, vm->ctx);
+  }
+}
+
+void neo_js_vm_set_setter(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t setter = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t field = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t host = neo_list_node_get(neo_list_get_last(vm->stack));
+  host = neo_js_context_to_object(vm->ctx, host);
+  if (neo_js_variable_get_type(host)->kind == NEO_TYPE_ERROR) {
+    neo_list_push(vm->stack, host);
+    vm->offset = neo_buffer_get_size(program->codes);
+    return;
+  }
+  neo_js_object_property_t prop =
+      neo_js_object_get_own_property(vm->ctx, host, field);
+  neo_js_handle_t hobject = neo_js_variable_get_handle(host);
+  neo_js_handle_t hsetter = neo_js_variable_get_handle(setter);
+  neo_js_handle_add_parent(hsetter, hobject);
+  if (prop) {
+    if (prop->set) {
+      neo_js_handle_add_parent(
+          prop->set,
+          neo_js_scope_get_root_handle(neo_js_context_get_scope(vm->ctx)));
+      neo_js_handle_remove_parent(prop->set, hobject);
+      prop->set = NULL;
+    }
+    prop->set = hsetter;
+  } else {
+    neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
+    prop = neo_create_js_object_property(allocator);
+    prop->configurable = true;
+    prop->enumerable = true;
+    prop->set = hsetter;
+    neo_js_object_t obj = neo_js_variable_to_object(host);
+    neo_hash_map_set(obj->properties, neo_js_variable_get_handle(field), prop,
+                     vm->ctx, vm->ctx);
+  }
+}
 
 void neo_js_vm_set_method(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
@@ -1168,8 +1243,8 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_member_call,         // NEO_ASM_MEMBER_CALL
     neo_js_vm_get_field,           // NEO_ASM_GET_FIELD
     neo_js_vm_set_field,           // NEO_ASM_SET_FIELD
-    NULL,                          // NEO_ASM_SET_GETTER
-    NULL,                          // NEO_ASM_SET_SETTER
+    neo_js_vm_set_getter,          // NEO_ASM_SET_GETTER
+    neo_js_vm_set_setter,          // NEO_ASM_SET_SETTER
     neo_js_vm_set_method,          // NEO_ASM_SET_METHOD
     neo_js_vm_jnull,               // NEO_ASM_JNULL
     neo_js_vm_jnot_null,           // NEO_ASM_JNOT_NULL

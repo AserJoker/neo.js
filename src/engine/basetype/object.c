@@ -368,7 +368,9 @@ static neo_js_variable_t neo_js_object_get_field(neo_js_context_t ctx,
   if (property->get) {
     neo_js_variable_t getter =
         neo_js_context_create_variable(ctx, property->get, NULL);
-    return neo_js_context_call(ctx, getter, self, 1, NULL);
+    return neo_js_context_call(ctx, getter, self, 0, NULL);
+  } else if (property->set) {
+    return neo_js_context_create_undefined(ctx);
   } else {
     return neo_js_context_create_variable(ctx, property->value, NULL);
   }
