@@ -691,6 +691,9 @@ neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
         prop->enumerable) {
       neo_list_push(obj->keys, hfield);
     }
+    if (neo_js_variable_get_type(field)->kind == NEO_TYPE_SYMBOL) {
+      neo_list_push(obj->symbol_keys, hfield);
+    }
   } else {
     if (obj->frozen) {
       return neo_js_context_create_error(ctx, L"TypeError",

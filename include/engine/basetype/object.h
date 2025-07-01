@@ -25,6 +25,7 @@ struct _neo_js_object_t {
   neo_hash_map_t properties;
   neo_hash_map_t internal;
   neo_list_t keys;
+  neo_list_t symbol_keys;
   neo_js_handle_t prototype;
   neo_js_handle_t constructor;
   bool sealed;
@@ -33,7 +34,9 @@ struct _neo_js_object_t {
 };
 
 neo_js_type_t neo_get_js_object_type();
+
 void neo_js_object_dispose(neo_allocator_t allocator, neo_js_object_t self);
+
 void neo_js_object_init(neo_allocator_t allocator, neo_js_object_t object);
 
 int8_t neo_js_object_compare_key(neo_js_handle_t handle1,
@@ -60,6 +63,9 @@ neo_list_t neo_js_object_get_own_keys(neo_js_context_t ctx,
                                       neo_js_variable_t self);
 
 neo_list_t neo_js_object_get_keys(neo_js_context_t ctx, neo_js_variable_t self);
+
+neo_list_t neo_js_object_get_own_symbol_keys(neo_js_context_t ctx,
+                                             neo_js_variable_t self);
 
 #ifdef __cplusplus
 }

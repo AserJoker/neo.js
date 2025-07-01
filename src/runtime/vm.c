@@ -7,6 +7,8 @@
 #include "core/unicode.h"
 #include "engine/basetype/boolean.h"
 #include "engine/basetype/function.h"
+#include "engine/basetype/number.h"
+#include "engine/basetype/object.h"
 #include "engine/context.h"
 #include "engine/handle.h"
 #include "engine/scope.h"
@@ -14,6 +16,8 @@
 #include "engine/variable.h"
 #include <math.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <wchar.h>
 
 typedef struct _neo_js_try_frame_t *neo_js_try_frame_t;
@@ -136,6 +140,7 @@ void neo_js_vm_pop(neo_js_vm_t vm, neo_program_t program) {
                   neo_js_context_create_error(vm->ctx, L"InternalError",
                                               L"stack size == 0"));
     vm->offset = neo_buffer_get_size(program->codes);
+    return;
   }
   neo_list_pop(vm->stack);
 }
@@ -694,6 +699,54 @@ void neo_js_vm_rest(neo_js_vm_t vm, neo_program_t program) {
   neo_list_push(vm->stack, array);
 }
 
+void neo_js_vm_rest_object(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t keys = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t object = neo_list_node_get(neo_list_get_last(vm->stack));
+
+  neo_list_t field_keys = neo_js_object_get_keys(vm->ctx, object);
+  neo_list_t symbol_keys = neo_js_object_get_own_symbol_keys(vm->ctx, object);
+
+  neo_js_variable_t result = neo_js_context_create_object(vm->ctx, NULL, NULL);
+  neo_js_variable_t length = neo_js_context_get_field(
+      vm->ctx, keys, neo_js_context_create_string(vm->ctx, L"length"));
+  neo_js_number_t num = neo_js_variable_to_number(length);
+  for (int64_t idx = 0; idx < num->number; idx++) {
+    neo_js_variable_t key = neo_js_context_get_field(
+        vm->ctx, keys, neo_js_context_create_number(vm->ctx, idx));
+    neo_list_t okeys = field_keys;
+    if (neo_js_variable_get_type(key)->kind == NEO_TYPE_SYMBOL) {
+      okeys = symbol_keys;
+    }
+    for (neo_list_node_t it = neo_list_get_first(okeys);
+         it != neo_list_get_tail(okeys); it = neo_list_node_next(it)) {
+      neo_js_variable_t current = neo_list_node_get(it);
+      neo_js_variable_t result = neo_js_context_is_equal(vm->ctx, current, key);
+      neo_js_boolean_t boolean = neo_js_variable_to_boolean(result);
+      if (boolean->boolean) {
+        neo_list_erase(okeys, it);
+        break;
+      }
+    }
+  }
+  for (neo_list_node_t it = neo_list_get_first(field_keys);
+       it != neo_list_get_tail(field_keys); it = neo_list_node_next(it)) {
+    neo_js_variable_t key = neo_list_node_get(it);
+    neo_js_context_set_field(vm->ctx, result, key,
+                             neo_js_context_get_field(vm->ctx, object, key));
+  }
+  for (neo_list_node_t it = neo_list_get_first(symbol_keys);
+       it != neo_list_get_tail(symbol_keys); it = neo_list_node_next(it)) {
+    neo_js_variable_t key = neo_list_node_get(it);
+    neo_js_context_set_field(vm->ctx, result, key,
+                             neo_js_context_get_field(vm->ctx, object, key));
+  }
+  neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
+  neo_allocator_free(allocator, field_keys);
+  neo_allocator_free(allocator, symbol_keys);
+  neo_list_push(vm->stack, result);
+}
+
 void neo_js_vm_eq(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t right = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_list_pop(vm->stack);
@@ -1101,6 +1154,7 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_iterator,            // NEO_ASM_ITERATOR
     NULL,                          // NEO_ASM_ENTRIES
     neo_js_vm_rest,                // NEO_ASM_REST
+    neo_js_vm_rest_object,         // NEO_ASM_REST_OBJECT
     NULL,                          // NEO_ASM_IMPORT
     NULL,                          // NEO_ASM_ASSERT
     NULL,                          // NEO_ASM_EXPORT

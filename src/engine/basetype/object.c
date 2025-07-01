@@ -323,6 +323,19 @@ neo_list_t neo_js_object_get_keys(neo_js_context_t ctx,
   return num_keys;
 }
 
+neo_list_t neo_js_object_get_own_symbol_keys(neo_js_context_t ctx,
+                                             neo_js_variable_t self) {
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  neo_js_object_t obj = neo_js_variable_to_object(self);
+  neo_list_t symbol_keys = neo_create_list(allocator, NULL);
+  for (neo_list_node_t it = neo_list_get_first(obj->symbol_keys);
+       it != neo_list_get_tail(obj->symbol_keys); it = neo_list_node_next(it)) {
+    neo_js_handle_t hkey = neo_list_node_get(it);
+    neo_list_push(symbol_keys, neo_js_context_create_variable(ctx, hkey, NULL));
+  }
+  return symbol_keys;
+}
+
 neo_js_object_property_t neo_js_object_get_property(neo_js_context_t ctx,
                                                     neo_js_variable_t self,
                                                     neo_js_variable_t field) {
@@ -549,6 +562,7 @@ void neo_js_object_dispose(neo_allocator_t allocator, neo_js_object_t self) {
   neo_allocator_free(allocator, self->properties);
   neo_allocator_free(allocator, self->internal);
   neo_allocator_free(allocator, self->keys);
+  neo_allocator_free(allocator, self->symbol_keys);
 }
 
 void neo_js_object_init(neo_allocator_t allocator, neo_js_object_t object) {
@@ -570,6 +584,7 @@ void neo_js_object_init(neo_allocator_t allocator, neo_js_object_t object) {
   object->sealed = false;
   object->constructor = NULL;
   object->keys = neo_create_list(allocator, NULL);
+  object->symbol_keys = neo_create_list(allocator, NULL);
 }
 
 int8_t neo_js_object_compare_key(neo_js_handle_t handle1,

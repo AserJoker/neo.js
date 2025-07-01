@@ -11,6 +11,7 @@
 #include "core/list.h"
 #include "core/position.h"
 #include "core/variable.h"
+#include <string.h>
 static void neo_ast_pattern_object_dispose(neo_allocator_t allocator,
                                            neo_ast_pattern_object_t node) {
   neo_allocator_free(allocator, node->items);
@@ -31,13 +32,90 @@ neo_ast_pattern_object_resolve_closure(neo_allocator_t allocator,
 static void neo_ast_pattern_object_write(neo_allocator_t allocator,
                                          neo_write_context_t ctx,
                                          neo_ast_pattern_object_t self) {
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_ENTRIES);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARRAY);
+  neo_program_add_number(allocator, ctx->program, 0);
+  size_t idx = 0;
   for (neo_list_node_t it = neo_list_get_first(self->items);
        it != neo_list_get_tail(self->items); it = neo_list_node_next(it)) {
     neo_ast_node_t item = neo_list_node_get(it);
-    TRY(item->write(allocator, ctx, item)) { return; }
+    // TRY(item->write(allocator, ctx, item)) { return; }
+    if (item->type == NEO_NODE_TYPE_PATTERN_OBJECT_ITEM) {
+      neo_ast_pattern_object_item_t oitem = (neo_ast_pattern_object_item_t)item;
+      if (oitem->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
+        char *name = neo_location_get(allocator, oitem->identifier->location);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+        neo_program_add_string(allocator, ctx->program, name);
+        neo_allocator_free(allocator, name);
+      } else if (oitem->identifier->type == NEO_NODE_TYPE_LITERAL_STRING) {
+        char *name = neo_location_get(allocator, oitem->identifier->location);
+        name[strlen(name) - 1] = 0;
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+        neo_program_add_string(allocator, ctx->program, name + 1);
+        neo_allocator_free(allocator, name);
+      } else {
+        THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
+              ctx->program->file, oitem->identifier->location.begin.line,
+              oitem->identifier->location.begin.column);
+        return;
+      }
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+      neo_program_add_integer(allocator, ctx->program, 2);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_NUMBER);
+      neo_program_add_number(allocator, ctx->program, idx);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+      neo_program_add_integer(allocator, ctx->program, 3);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+      neo_program_add_integer(allocator, ctx->program, 3);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+      neo_program_add_integer(allocator, ctx->program, 2);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
+      if (oitem->value) {
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_JNOT_NULL);
+        size_t address = neo_buffer_get_size(ctx->program->codes);
+        neo_program_add_address(allocator, ctx->program, 0);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+        TRY(oitem->value->write(allocator, ctx, oitem->value)) { return; }
+        neo_program_set_current(ctx->program, address);
+      }
+      if (oitem->alias) {
+        if (oitem->alias->type == NEO_NODE_TYPE_IDENTIFIER) {
+          char *name = neo_location_get(allocator, oitem->alias->location);
+          neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
+          neo_program_add_string(allocator, ctx->program, name);
+          neo_allocator_free(allocator, name);
+        } else {
+          TRY(oitem->alias->write(allocator, ctx, oitem->alias)) { return; }
+        }
+      } else if (oitem->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
+        char *name = neo_location_get(allocator, oitem->identifier->location);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
+        neo_program_add_string(allocator, ctx->program, name);
+        neo_allocator_free(allocator, name);
+      } else {
+        THROW("SyntaxError", "Invalid or unexpected token \n  at %s:%d:%d",
+              ctx->program->file, oitem->identifier->location.begin.line,
+              oitem->identifier->location.begin.column);
+        return;
+      }
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+    } else if (item->type == NEO_NODE_TYPE_PATTERN_REST) {
+      neo_ast_pattern_rest_t rest = (neo_ast_pattern_rest_t)item;
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_REST_OBJECT);
+      if (rest->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
+        char *name = neo_location_get(allocator, rest->identifier->location);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
+        neo_program_add_string(allocator, ctx->program, name);
+        neo_allocator_free(allocator, name);
+      } else {
+        TRY(rest->identifier->write(allocator, ctx, rest->identifier)) {
+          return;
+        }
+      }
+    }
+    idx++;
   }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
 }
 
