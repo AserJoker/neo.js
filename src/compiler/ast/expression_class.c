@@ -42,9 +42,11 @@ neo_ast_expression_class_resolve_closure(neo_allocator_t allocator,
     neo_ast_node_t item = (neo_ast_node_t)neo_list_node_get(it);
     item->resolve_closure(allocator, item, closure);
   }
+  neo_compile_scope_t current = neo_compile_scope_set(self->node.scope);
   if (self->extends) {
     self->extends->resolve_closure(allocator, self->extends, closure);
   }
+  neo_compile_scope_set(current);
   for (neo_list_node_t it = neo_list_get_first(self->closure);
        it != neo_list_get_tail(self->closure); it = neo_list_node_next(it)) {
     neo_ast_node_t item = (neo_ast_node_t)neo_list_node_get(it);

@@ -1,9 +1,9 @@
-try {
-    try {
-        throw "Test error"
-    } finally {
-        println("finally")
+let count = 0;
+const id = setInterval(() => {
+    println("timeout: " + count)
+    if (count == 10) {
+        clearInterval(id)
     }
-} catch (e) {
-    println("catch" + e)
-}
+    count++
+}, 1000)
+println("start")

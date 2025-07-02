@@ -23,8 +23,12 @@ static void neo_ast_statement_if_resolve_closure(neo_allocator_t allocator,
                                                  neo_ast_statement_if_t self,
                                                  neo_list_t closure) {
   self->condition->resolve_closure(allocator, self->condition, closure);
-  self->consequent->resolve_closure(allocator, self->consequent, closure);
-  self->alternate->resolve_closure(allocator, self->alternate, closure);
+  if (self->consequent) {
+    self->consequent->resolve_closure(allocator, self->consequent, closure);
+  }
+  if (self->alternate) {
+    self->alternate->resolve_closure(allocator, self->alternate, closure);
+  }
 }
 static void neo_ast_statement_if_write(neo_allocator_t allocator,
                                        neo_write_context_t ctx,

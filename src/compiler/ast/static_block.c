@@ -29,7 +29,6 @@ static void neo_ast_static_block_resolve_closure(neo_allocator_t allocator,
 static void neo_ast_static_block_write(neo_allocator_t allocator,
                                        neo_write_context_t ctx,
                                        neo_ast_static_block_t self) {
-
   for (neo_list_node_t it = neo_list_get_first(self->body);
        it != neo_list_get_tail(self->body); it = neo_list_node_next(it)) {
     neo_ast_node_t item = neo_list_node_get(it);

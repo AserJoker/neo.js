@@ -9,6 +9,7 @@
 #include "compiler/program.h"
 #include "compiler/scope.h"
 #include "compiler/token.h"
+#include "compiler/writer.h"
 #include "core/allocator.h"
 #include "core/buffer.h"
 #include "core/error.h"

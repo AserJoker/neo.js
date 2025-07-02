@@ -24,6 +24,22 @@ neo_js_context_get_allocator(neo_js_context_t ctx) {
   return neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
 }
 
+void neo_js_context_next_tick(neo_js_context_t ctx);
+
+bool neo_js_context_is_ready(neo_js_context_t ctx);
+
+uint32_t neo_js_context_create_micro_task(neo_js_context_t ctx,
+                                          neo_js_variable_t callable,
+                                          uint64_t timeout, bool keepalive);
+
+uint32_t neo_js_context_create_macro_task(neo_js_context_t ctx,
+                                          neo_js_variable_t callable,
+                                          uint64_t timeout, bool keepalive);
+
+void neo_js_context_kill_micro_task(neo_js_context_t ctx, uint32_t id);
+
+void neo_js_context_kill_macro_task(neo_js_context_t ctx, uint32_t id);
+
 neo_js_scope_t neo_js_context_get_scope(neo_js_context_t ctx);
 
 neo_js_scope_t neo_js_context_set_scope(neo_js_context_t ctx,

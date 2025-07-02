@@ -46,6 +46,8 @@ neo_js_variable_t neo_js_error_get_custom(neo_js_context_t ctx,
 void neo_js_error_set_custom(neo_js_context_t ctx, neo_js_variable_t self,
                              neo_js_variable_t custom);
 
+void neo_js_error_print(neo_js_context_t ctx, neo_js_variable_t error);
+
 #ifdef __cplusplus
 }
 #endif

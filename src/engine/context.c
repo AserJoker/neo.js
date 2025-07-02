@@ -1,9 +1,12 @@
 #include "engine/context.h"
+#include "compiler/ast/node.h"
 #include "compiler/parser.h"
 #include "compiler/program.h"
 #include "core/allocator.h"
+#include "core/clock.h"
 #include "core/error.h"
 #include "core/hash_map.h"
+#include "core/json.h"
 #include "core/list.h"
 #include "core/string.h"
 #include "core/unicode.h"
@@ -42,11 +45,23 @@
 #include <string.h>
 #include <wchar.h>
 
+typedef struct _neo_js_task_t *neo_js_task_t;
+
+struct _neo_js_task_t {
+  neo_js_handle_t function;
+  uint64_t start;
+  uint64_t timeout;
+  uint32_t id;
+  bool keepalive;
+};
+
 struct _neo_js_context_t {
   neo_js_runtime_t runtime;
   neo_js_scope_t scope;
   neo_js_scope_t root;
   neo_list_t stacktrace;
+  neo_list_t micro_tasks;
+  neo_list_t macro_tasks;
   struct {
     neo_js_variable_t global;
     neo_js_variable_t object_constructor;
@@ -403,6 +418,18 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
 
 static void neo_js_context_dispose(neo_allocator_t allocator,
                                    neo_js_context_t ctx) {
+  for (neo_list_node_t it = neo_list_get_first(ctx->micro_tasks);
+       it != neo_list_get_tail(ctx->micro_tasks); it = neo_list_node_next(it)) {
+    neo_js_task_t task = neo_list_node_get(it);
+    neo_allocator_free(allocator, task);
+  }
+  neo_allocator_free(allocator, ctx->micro_tasks);
+  for (neo_list_node_t it = neo_list_get_first(ctx->macro_tasks);
+       it != neo_list_get_tail(ctx->macro_tasks); it = neo_list_node_next(it)) {
+    neo_js_task_t task = neo_list_node_get(it);
+    neo_allocator_free(allocator, task);
+  }
+  neo_allocator_free(allocator, ctx->macro_tasks);
   neo_allocator_free(allocator, ctx->root);
   ctx->scope = NULL;
   ctx->root = NULL;
@@ -422,11 +449,122 @@ neo_js_context_t neo_create_js_context(neo_allocator_t allocator,
   neo_list_initialize_t initialize = {true};
   ctx->stacktrace = neo_create_list(allocator, &initialize);
   neo_js_context_init_std(ctx);
+  ctx->macro_tasks = neo_create_list(allocator, NULL);
+  ctx->micro_tasks = neo_create_list(allocator, NULL);
   return ctx;
 }
 
 neo_js_runtime_t neo_js_context_get_runtime(neo_js_context_t ctx) {
   return ctx->runtime;
+}
+
+void neo_js_context_next_tick(neo_js_context_t ctx) {
+  uint64_t now = neo_clock_get_timestamp();
+  neo_list_t tasks = NULL;
+  if (neo_list_get_size(ctx->micro_tasks)) {
+    tasks = ctx->micro_tasks;
+  } else if (neo_list_get_size(ctx->macro_tasks)) {
+    tasks = ctx->macro_tasks;
+  }
+  if (!tasks) {
+    return;
+  }
+  neo_js_task_t task = neo_list_node_get(neo_list_get_first(tasks));
+  neo_list_erase(tasks, neo_list_get_first(tasks));
+  if (now - task->start < task->timeout) {
+    neo_list_push(tasks, task);
+    return;
+  }
+  if (task->keepalive) {
+    task->start = now;
+    neo_list_push(tasks, task);
+  }
+  neo_js_context_push_scope(ctx);
+  neo_js_variable_t function =
+      neo_js_context_create_variable(ctx, task->function, NULL);
+  neo_js_variable_t error = neo_js_context_call(
+      ctx, function, neo_js_context_create_undefined(ctx), 0, NULL);
+  if (!task->keepalive) {
+    neo_js_handle_remove_parent(task->function,
+                                neo_js_scope_get_root_handle(ctx->root));
+  }
+  if (neo_js_variable_get_type(error)->kind == NEO_TYPE_ERROR) {
+    neo_js_error_print(ctx, error);
+  }
+  neo_js_context_pop_scope(ctx);
+  if (!task->keepalive) {
+    neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+    neo_allocator_free(allocator, task);
+  }
+}
+
+bool neo_js_context_is_ready(neo_js_context_t ctx) {
+  return neo_list_get_size(ctx->micro_tasks) == 0 &&
+         neo_list_get_size(ctx->macro_tasks) == 0;
+}
+
+uint32_t neo_js_context_create_micro_task(neo_js_context_t ctx,
+                                          neo_js_variable_t callable,
+                                          uint64_t timeout, bool keepalive) {
+  static uint32_t id = 0;
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  neo_js_task_t task =
+      neo_allocator_alloc(allocator, sizeof(struct _neo_js_task_t), NULL);
+  task->function = neo_js_variable_get_handle(callable);
+  task->id = id;
+  id++;
+  task->timeout = timeout;
+  task->keepalive = keepalive;
+  task->start = neo_clock_get_timestamp();
+  neo_list_push(ctx->micro_tasks, task);
+  neo_js_handle_add_parent(task->function,
+                           neo_js_scope_get_root_handle(ctx->root));
+  return task->id;
+}
+
+uint32_t neo_js_context_create_macro_task(neo_js_context_t ctx,
+                                          neo_js_variable_t callable,
+                                          uint64_t timeout, bool keepalive) {
+  static uint32_t id = 0;
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  neo_js_task_t task =
+      neo_allocator_alloc(allocator, sizeof(struct _neo_js_task_t), NULL);
+  task->function = neo_js_variable_get_handle(callable);
+  task->id = id;
+  id++;
+  task->timeout = timeout;
+  task->keepalive = keepalive;
+  task->start = neo_clock_get_timestamp();
+  neo_list_push(ctx->macro_tasks, task);
+  neo_js_handle_add_parent(task->function,
+                           neo_js_scope_get_root_handle(ctx->root));
+  return task->id;
+}
+
+void neo_js_context_kill_micro_task(neo_js_context_t ctx, uint32_t id) {
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  for (neo_list_node_t it = neo_list_get_first(ctx->micro_tasks);
+       it != neo_list_get_tail(ctx->micro_tasks); it = neo_list_node_next(it)) {
+    neo_js_task_t task = neo_list_node_get(it);
+    if (task->id == id) {
+      neo_allocator_free(allocator, task);
+      neo_list_erase(ctx->micro_tasks, it);
+      return;
+    }
+  }
+}
+
+void neo_js_context_kill_macro_task(neo_js_context_t ctx, uint32_t id) {
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  for (neo_list_node_t it = neo_list_get_first(ctx->macro_tasks);
+       it != neo_list_get_tail(ctx->macro_tasks); it = neo_list_node_next(it)) {
+    neo_js_task_t task = neo_list_node_get(it);
+    if (task->id == id) {
+      neo_allocator_free(allocator, task);
+      neo_list_erase(ctx->macro_tasks, it);
+      return;
+    }
+  }
 }
 
 neo_js_scope_t neo_js_context_get_scope(neo_js_context_t ctx) {
@@ -2285,6 +2423,13 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
       neo_allocator_free(allocator, err);
       return error;
     };
+    neo_variable_t json = neo_ast_node_serialize(allocator, root);
+    char *json_str = neo_json_stringify(allocator, json);
+    FILE *fp = fopen("../index.json", "w");
+    fprintf(fp, "%s", json_str);
+    fclose(fp);
+    neo_allocator_free(allocator, json_str);
+    neo_allocator_free(allocator, json);
     program = TRY(neo_ast_write_node(allocator, file, root)) {
       neo_allocator_free(allocator, root);
       neo_allocator_free(allocator, u16file);
@@ -2298,7 +2443,7 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
     }
     neo_allocator_free(allocator, root);
     neo_js_runtime_set_program(ctx->runtime, u16file, program);
-    FILE *fp = fopen("../index.asm", "w");
+    fp = fopen("../index.asm", "w");
     neo_program_write(allocator, fp, program);
     fclose(fp);
   }
