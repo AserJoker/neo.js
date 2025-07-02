@@ -12,7 +12,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
-#include <unistd.h>
 #include <wchar.h>
 
 static neo_js_variable_t js_println(neo_js_context_t ctx,

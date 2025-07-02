@@ -8,8 +8,8 @@ char *neo_string_concat(neo_allocator_t allocator, char *src, size_t *max,
   char *result = src;
   size_t len = strlen(str);
   size_t base = strlen(src);
-  if (base + len > *max) {
-    while (base + len > *max) {
+  if (base + len + 1 > *max) {
+    while (base + len + 1 > *max) {
       *max += 128;
     }
     result = neo_allocator_alloc(allocator, *max, NULL);

@@ -10,7 +10,7 @@
 .6: "then"
 .7: "val"
 .8: "println"
-.9: "(val) => {\r\n    println(val)\r\n}"
+.9: "(val) => {\r\n    println(val);\r\n}"
 [section .data]
 0: NEO_ASM_PUSH_SCOPE
 2: NEO_ASM_PUSH_UNINITIALIZED
@@ -85,7 +85,7 @@
 372: NEO_ASM_POP_SCOPE
 374: NEO_ASM_PUSH_LAMBDA
 376: NEO_ASM_SET_ADDRESS 266
-386: NEO_ASM_SET_SOURCE "(val) => {\r\n    println(val)\r\n}"
+386: NEO_ASM_SET_SOURCE "(val) => {\r\n    println(val);\r\n}"
 396: NEO_ASM_SET_CLOSURE "println"
 406: NEO_ASM_SET_FIELD
 408: NEO_ASM_MEMBER_CALL

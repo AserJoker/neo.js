@@ -1,14 +1,15 @@
 #include "core/clock.h"
-#include <time.h>
-#ifdef __WIN32__
+#ifdef _WIN32
+#include <Windows.h>
+#pragma comment(lib, "winmm.lib")
 #else
 #include <errno.h>
 #include <sys/time.h>
-
 #endif
 
 uint64_t neo_clock_get_timestamp() {
-#ifdef __WIN32__
+#ifdef _WIN32
+  return timeGetTime();
 #else
   struct timeval tv;
   gettimeofday(&tv, NULL);
@@ -17,7 +18,8 @@ uint64_t neo_clock_get_timestamp() {
 #endif
 }
 void neo_clock_sleep(uint64_t timeout) {
-#ifdef __WIN32__
+#ifdef _WIN32
+  Sleep(timeout);
 #else
   struct timespec req, rem;
   int ret;

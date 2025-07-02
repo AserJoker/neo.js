@@ -40,7 +40,7 @@ void neo_js_runtime_set_program(neo_js_runtime_t self, const wchar_t *filename,
                                 neo_program_t program) {
   size_t len = wcslen(filename);
   wchar_t *key =
-      neo_allocator_alloc(self->allocator, sizeof(wchar_t) * len, NULL);
+      neo_allocator_alloc(self->allocator, sizeof(wchar_t) * (len + 1), NULL);
   memset(key, 0, len * sizeof(wchar_t));
   wcscpy(key, filename);
   neo_hash_map_set(self->programs, key, program, NULL, NULL);
