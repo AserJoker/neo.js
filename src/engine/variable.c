@@ -2,6 +2,7 @@
 #include "core/allocator.h"
 #include "engine/handle.h"
 #include "engine/type.h"
+#include <wchar.h>
 struct _neo_js_variable_t {
   neo_js_handle_t handle;
   bool is_const;

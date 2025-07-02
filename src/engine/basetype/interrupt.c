@@ -9,15 +9,17 @@ neo_js_type_t neo_get_js_interrupt_type() {
 }
 
 static void neo_js_interrupt_dispose(neo_allocator_t allocator,
-                                     neo_js_interrupt_t self) {}
+                                     neo_js_interrupt_t self) {
+  neo_js_value_dispose(allocator, &self->value);
+}
 
 neo_js_interrupt_t neo_create_js_interrupt(neo_allocator_t allocator,
                                            neo_js_handle_t result,
                                            size_t offset,
                                            neo_js_scope_t scope) {
-  neo_js_interrupt_t interrupt =
-      neo_allocator_alloc(allocator, sizeof(struct _neo_js_interrupt_t), NULL);
-  interrupt->value.ref = 0;
+  neo_js_interrupt_t interrupt = neo_allocator_alloc(
+      allocator, sizeof(struct _neo_js_interrupt_t), neo_js_interrupt_dispose);
+  neo_js_value_init(allocator, &interrupt->value);
   interrupt->value.type = neo_get_js_interrupt_type();
   interrupt->offset = offset;
   interrupt->result = result;

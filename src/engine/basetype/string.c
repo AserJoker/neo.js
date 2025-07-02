@@ -135,6 +135,7 @@ neo_js_type_t neo_get_js_string_type() {
 static void neo_js_string_dispose(neo_allocator_t allocator,
                                   neo_js_string_t self) {
   neo_allocator_free(allocator, self->string);
+  neo_js_value_dispose(allocator, &self->value);
 }
 
 neo_js_string_t neo_create_js_string(neo_allocator_t allocator,
@@ -145,8 +146,8 @@ neo_js_string_t neo_create_js_string(neo_allocator_t allocator,
   size_t len = wcslen(value);
   neo_js_string_t string = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_string_t), neo_js_string_dispose);
+  neo_js_value_init(allocator, &string->value);
   string->value.type = neo_get_js_string_type();
-  string->value.ref = 0;
   string->string =
       neo_allocator_alloc(allocator, (len + 1) * sizeof(wchar_t), NULL);
   string->string[0] = 0;

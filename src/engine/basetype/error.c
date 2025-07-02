@@ -20,6 +20,7 @@ neo_js_type_t neo_get_js_error_type() {
 
 static void neo_js_error_dispose(neo_allocator_t allocator,
                                  neo_js_error_t self) {
+  neo_js_value_dispose(allocator, &self->value);
   neo_allocator_free(allocator, self->message);
   neo_allocator_free(allocator, self->stacktrace);
 }
@@ -30,8 +31,8 @@ neo_js_error_t neo_create_js_error(neo_allocator_t allocator,
                                    neo_list_t stacktrace) {
   neo_js_error_t error = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_error_t), neo_js_error_dispose);
+  neo_js_value_init(allocator, &error->value);
   error->value.type = neo_get_js_error_type();
-  error->value.ref = 0;
   error->type = type;
   if (message) {
     size_t len = wcslen(message);

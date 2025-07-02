@@ -11,6 +11,7 @@ neo_js_type_t neo_get_js_coroutine_type() {
 
 void neo_js_coroutine_dispose(neo_allocator_t allocator,
                               neo_js_coroutine_t self) {
+  neo_js_value_dispose(allocator, &self->value);
   neo_allocator_free(allocator, self->vm);
   neo_allocator_free(allocator, self->root);
 }
@@ -21,7 +22,7 @@ neo_js_coroutine_t neo_create_js_coroutine(neo_allocator_t allocator,
                                            neo_js_scope_t scope) {
   neo_js_coroutine_t coroutine = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_coroutine_t), neo_js_coroutine_dispose);
-  coroutine->value.ref = 0;
+  neo_js_value_init(allocator, &coroutine->value);
   coroutine->value.type = neo_get_js_coroutine_type();
   coroutine->vm = vm;
   coroutine->root = scope;

@@ -1,5 +1,4 @@
 #include "core/allocator.h"
-#include "core/clock.h"
 #include "core/error.h"
 #include "engine/basetype/error.h"
 #include "engine/basetype/number.h"
@@ -49,7 +48,8 @@ static neo_js_variable_t js_set_timeout(neo_js_context_t ctx,
       timeout = num->number;
     }
   }
-  uint32_t id = neo_js_context_create_macro_task(ctx, argv[0], timeout, false);
+  uint32_t id =
+      neo_js_context_create_macro_task(ctx, argv[0], 0, NULL, timeout, false);
   return neo_js_context_create_number(ctx, id);
 }
 
@@ -84,7 +84,8 @@ static neo_js_variable_t js_set_interval(neo_js_context_t ctx,
       timeout = num->number;
     }
   }
-  uint32_t id = neo_js_context_create_macro_task(ctx, argv[0], timeout, true);
+  uint32_t id =
+      neo_js_context_create_macro_task(ctx, argv[0], 0, NULL, timeout, true);
   return neo_js_context_create_number(ctx, id);
 }
 
@@ -153,7 +154,6 @@ int main(int argc, char *argv[]) {
   disp_js_variable(ctx, result);
   while (!neo_js_context_is_ready(ctx)) {
     neo_js_context_next_tick(ctx);
-    neo_clock_sleep(4);
   }
   neo_allocator_free(allocator, ctx);
   neo_allocator_free(allocator, runtime);

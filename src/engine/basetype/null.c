@@ -146,13 +146,14 @@ neo_js_type_t neo_get_js_null_type() {
 }
 
 static void neo_js_null_dispose(neo_allocator_t allocator, neo_js_null_t self) {
+  neo_js_value_dispose(allocator, &self->value);
 }
 
 neo_js_null_t neo_create_js_null(neo_allocator_t allocator) {
   neo_js_null_t null = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_null_t), neo_js_null_dispose);
+  neo_js_value_init(allocator, &null->value);
   null->value.type = neo_get_js_null_type();
-  null->value.ref = 0;
   return null;
 }
 

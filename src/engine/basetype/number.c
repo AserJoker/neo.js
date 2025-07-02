@@ -113,14 +113,16 @@ neo_js_type_t neo_get_js_number_type() {
 }
 
 static void neo_js_number_dispose(neo_allocator_t allocator,
-                                  neo_js_number_t self) {}
+                                  neo_js_number_t self) {
+  neo_js_value_dispose(allocator, &self->value);
+}
 
 neo_js_number_t neo_create_js_number(neo_allocator_t allocator, double value) {
   neo_js_number_t number = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_number_t), neo_js_number_dispose);
+  neo_js_value_init(allocator, &number->value);
   number->value.type = neo_get_js_number_type();
   number->number = value;
-  number->value.ref = 0;
   return number;
 }
 

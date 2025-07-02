@@ -30,10 +30,14 @@ bool neo_js_context_is_ready(neo_js_context_t ctx);
 
 uint32_t neo_js_context_create_micro_task(neo_js_context_t ctx,
                                           neo_js_variable_t callable,
+                                          uint32_t argc,
+                                          neo_js_variable_t *argv,
                                           uint64_t timeout, bool keepalive);
 
 uint32_t neo_js_context_create_macro_task(neo_js_context_t ctx,
                                           neo_js_variable_t callable,
+                                          uint32_t argc,
+                                          neo_js_variable_t *argv,
                                           uint64_t timeout, bool keepalive);
 
 void neo_js_context_kill_micro_task(neo_js_context_t ctx, uint32_t id);
@@ -79,6 +83,8 @@ neo_js_variable_t neo_js_context_get_array_constructor(neo_js_context_t ctx);
 
 neo_js_variable_t
 neo_js_context_get_array_iterator_constructor(neo_js_context_t ctx);
+
+neo_js_variable_t neo_js_context_get_promise_constructor(neo_js_context_t ctx);
 
 neo_js_variable_t neo_js_context_create_variable(neo_js_context_t ctx,
                                                  neo_js_handle_t handle,
@@ -130,10 +136,14 @@ neo_js_variable_t neo_js_context_get_internal(neo_js_context_t ctx,
                                               neo_js_variable_t object,
                                               const wchar_t *field);
 
-neo_js_variable_t neo_js_context_set_internal(neo_js_context_t ctx,
-                                              neo_js_variable_t object,
-                                              const wchar_t *field,
-                                              neo_js_variable_t value);
+void neo_js_context_set_internal(neo_js_context_t ctx, neo_js_variable_t object,
+                                 const wchar_t *field, neo_js_variable_t value);
+
+void *neo_js_context_get_opaque(neo_js_context_t ctx, neo_js_variable_t object,
+                                const wchar_t *field);
+
+void neo_js_context_set_opaque(neo_js_context_t ctx, neo_js_variable_t object,
+                               const wchar_t *field, void *value);
 
 neo_js_variable_t neo_js_context_del_field(neo_js_context_t ctx,
                                            neo_js_variable_t object,
@@ -207,9 +217,8 @@ neo_js_variable_t neo_js_context_create_function(neo_js_context_t ctx,
 neo_js_variable_t neo_js_context_create_generator(neo_js_context_t ctx,
                                                   neo_program_t program);
 
-neo_js_variable_t neo_js_context_bind(neo_js_context_t ctx,
-                                      neo_js_variable_t func,
-                                      neo_js_variable_t self);
+void neo_js_context_bind(neo_js_context_t ctx, neo_js_variable_t func,
+                         neo_js_variable_t self);
 
 neo_js_variable_t neo_js_context_typeof(neo_js_context_t ctx,
                                         neo_js_variable_t variable);

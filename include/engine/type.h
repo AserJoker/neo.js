@@ -8,6 +8,7 @@
 extern "C" {
 #endif
 typedef struct _neo_js_context_t *neo_js_context_t;
+
 typedef struct _neo_js_variable_t *neo_js_variable_t;
 
 typedef const wchar_t *(*neo_js_typeof_fn_t)(neo_js_context_t ctx,
