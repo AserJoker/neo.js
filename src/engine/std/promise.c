@@ -83,19 +83,6 @@ static neo_js_promise_t neo_create_js_promise(neo_allocator_t allocator) {
   return promise;
 }
 
-static bool neo_js_variable_is_thenable(neo_js_context_t ctx,
-                                        neo_js_variable_t variable) {
-  if (neo_js_variable_get_type(variable)->kind < NEO_TYPE_OBJECT) {
-    return false;
-  }
-  neo_js_variable_t then = neo_js_context_get_field(
-      ctx, variable, neo_js_context_create_string(ctx, L"then"));
-  if (neo_js_variable_get_type(then)->kind < NEO_TYPE_CALLABLE) {
-    return false;
-  }
-  return true;
-}
-
 static neo_js_variable_t neo_js_resolve(neo_js_context_t ctx,
                                         neo_js_variable_t self, uint32_t argc,
                                         neo_js_variable_t *argv) {
@@ -112,7 +99,7 @@ static neo_js_variable_t neo_js_resolve(neo_js_context_t ctx,
     } else {
       value = neo_js_context_create_undefined(ctx);
     }
-    if (neo_js_variable_is_thenable(ctx, value)) {
+    if (neo_js_context_is_thenable(ctx, value)) {
       neo_js_variable_t then = neo_js_context_get_field(
           ctx, value, neo_js_context_create_string(ctx, L"then"));
       neo_js_variable_t argv[] = {resolve, reject};
@@ -132,7 +119,9 @@ static neo_js_variable_t neo_js_resolve(neo_js_context_t ctx,
         neo_js_handle_t hcallback = neo_list_node_get(it);
         neo_js_variable_t callback =
             neo_js_context_create_variable(ctx, hcallback, NULL);
-        neo_js_context_create_micro_task(ctx, callback, 1, &value, 0, false);
+        neo_js_context_create_micro_task(ctx, callback,
+                                         neo_js_context_create_undefined(ctx),
+                                         1, &value, 0, false);
       }
     }
   }
@@ -161,7 +150,9 @@ static neo_js_variable_t neo_js_reject(neo_js_context_t ctx,
       neo_js_handle_t hcallback = neo_list_node_get(it);
       neo_js_variable_t callback =
           neo_js_context_create_variable(ctx, hcallback, NULL);
-      neo_js_context_create_micro_task(ctx, callback, 1, &value, 0, false);
+      neo_js_context_create_micro_task(ctx, callback,
+                                       neo_js_context_create_undefined(ctx), 1,
+                                       &value, 0, false);
     }
   }
   return neo_js_context_create_undefined(ctx);
@@ -278,11 +269,15 @@ static neo_js_variable_t neo_js_resolver(neo_js_context_t ctx,
   } else if (promise->status == NEO_PROMISE_FULFILLED) {
     neo_js_variable_t value =
         neo_js_context_create_variable(ctx, promise->value, NULL);
-    neo_js_context_create_micro_task(ctx, packed_resolve, 1, &value, 0, false);
+    neo_js_context_create_micro_task(ctx, packed_resolve,
+                                     neo_js_context_create_undefined(ctx), 1,
+                                     &value, 0, false);
   } else if (promise->status == NEO_PROMISE_REJECTED) {
     neo_js_variable_t value =
         neo_js_context_create_variable(ctx, promise->value, NULL);
-    neo_js_context_create_micro_task(ctx, packed_reject, 1, &value, 0, false);
+    neo_js_context_create_micro_task(ctx, packed_reject,
+                                     neo_js_context_create_undefined(ctx), 1,
+                                     &value, 0, false);
   }
   return neo_js_context_create_undefined(ctx);
 }

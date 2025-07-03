@@ -82,7 +82,16 @@ static void neo_ast_expression_arrow_function_write(
          it != neo_list_get_tail(self->arguments);
          it = neo_list_node_next(it)) {
       neo_ast_node_t argument = neo_list_node_get(it);
-      TRY(argument->write(allocator, ctx, argument)) { return; }
+      if (argument->type == NEO_NODE_TYPE_IDENTIFIER) {
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_NEXT);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
+        char *name = neo_location_get(allocator, argument->location);
+        neo_program_add_string(allocator, ctx->program, name);
+        neo_allocator_free(allocator, name);
+      } else {
+        TRY(argument->write(allocator, ctx, argument)) { return; }
+      }
     }
     neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);

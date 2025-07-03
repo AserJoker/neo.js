@@ -86,13 +86,11 @@ static void neo_ast_expression_new_write(neo_allocator_t allocator,
       TRY(argument->write(allocator, ctx, argument)) { return; }
     }
   }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_CALL_STACK);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_NEW);
   neo_program_add_integer(allocator, ctx->program,
                           self->node.location.begin.line);
   neo_program_add_integer(allocator, ctx->program,
                           self->node.location.begin.column);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_NEW);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_POP_CALL_STACK);
 }
 
 static neo_ast_expression_new_t

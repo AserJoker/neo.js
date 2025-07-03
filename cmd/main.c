@@ -47,8 +47,9 @@ static neo_js_variable_t js_set_timeout(neo_js_context_t ctx,
       timeout = num->number;
     }
   }
-  uint32_t id =
-      neo_js_context_create_macro_task(ctx, argv[0], 0, NULL, timeout, false);
+  uint32_t id = neo_js_context_create_macro_task(
+      ctx, argv[0], neo_js_context_create_undefined(ctx), 0, NULL, timeout,
+      false);
   return neo_js_context_create_number(ctx, id);
 }
 
@@ -83,8 +84,9 @@ static neo_js_variable_t js_set_interval(neo_js_context_t ctx,
       timeout = num->number;
     }
   }
-  uint32_t id =
-      neo_js_context_create_macro_task(ctx, argv[0], 0, NULL, timeout, true);
+  uint32_t id = neo_js_context_create_macro_task(
+      ctx, argv[0], neo_js_context_create_undefined(ctx), 0, NULL, timeout,
+      true);
   return neo_js_context_create_number(ctx, id);
 }
 

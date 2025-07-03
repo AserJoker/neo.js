@@ -37,13 +37,13 @@ bool neo_js_context_is_ready(neo_js_context_t ctx);
 
 uint32_t neo_js_context_create_micro_task(neo_js_context_t ctx,
                                           neo_js_variable_t callable,
-                                          uint32_t argc,
+                                          neo_js_variable_t self, uint32_t argc,
                                           neo_js_variable_t *argv,
                                           uint64_t timeout, bool keepalive);
 
 uint32_t neo_js_context_create_macro_task(neo_js_context_t ctx,
                                           neo_js_variable_t callable,
-                                          uint32_t argc,
+                                          neo_js_variable_t self, uint32_t argc,
                                           neo_js_variable_t *argv,
                                           uint64_t timeout, bool keepalive);
 
@@ -170,6 +170,9 @@ void *neo_js_context_get_opaque(neo_js_context_t ctx, neo_js_variable_t object,
 void neo_js_context_set_opaque(neo_js_context_t ctx, neo_js_variable_t object,
                                const wchar_t *field, void *value);
 
+bool neo_js_context_is_thenable(neo_js_context_t ctx,
+                                neo_js_variable_t variable);
+
 neo_js_variable_t neo_js_context_del_field(neo_js_context_t ctx,
                                            neo_js_variable_t object,
                                            neo_js_variable_t field);
@@ -242,8 +245,12 @@ neo_js_context_create_cfunction(neo_js_context_t ctx, const wchar_t *name,
 neo_js_variable_t neo_js_context_create_function(neo_js_context_t ctx,
                                                  neo_program_t program);
 
-neo_js_variable_t neo_js_context_create_generator(neo_js_context_t ctx,
-                                                  neo_program_t program);
+neo_js_variable_t
+neo_js_context_create_generator_function(neo_js_context_t ctx,
+                                         neo_program_t program);
+
+neo_js_variable_t neo_js_context_create_async_function(neo_js_context_t ctx,
+                                                       neo_program_t program);
 
 void neo_js_context_bind(neo_js_context_t ctx, neo_js_variable_t func,
                          neo_js_variable_t self);

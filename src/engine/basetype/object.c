@@ -544,8 +544,37 @@ static void neo_js_object_copy(neo_js_context_t ctx, neo_js_variable_t self,
                                neo_js_variable_t another) {
   neo_allocator_t allocaotr =
       neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
-  neo_js_handle_set_value(allocaotr, neo_js_variable_get_handle(another),
-                          neo_js_variable_get_value(self));
+  neo_js_object_t object = neo_js_variable_to_object(self);
+  neo_js_handle_t htarget = neo_js_variable_get_handle(another);
+  if (object->constructor) {
+    neo_js_handle_add_parent(object->constructor, htarget);
+  }
+  if (object->prototype) {
+    neo_js_handle_add_parent(object->prototype, htarget);
+  }
+  for (neo_hash_map_node_t it = neo_hash_map_get_first(object->properties);
+       it != neo_hash_map_get_tail(object->properties);
+       it = neo_hash_map_node_next(it)) {
+    neo_js_handle_t hkey = neo_hash_map_node_get_key(it);
+    neo_js_object_property_t prop = neo_hash_map_node_get_value(it);
+    neo_js_handle_add_parent(hkey, htarget);
+    if (prop->value) {
+      neo_js_handle_add_parent(prop->value, htarget);
+    }
+    if (prop->get) {
+      neo_js_handle_add_parent(prop->get, htarget);
+    }
+    if (prop->set) {
+      neo_js_handle_add_parent(prop->set, htarget);
+    }
+  }
+  for (neo_hash_map_node_t it = neo_hash_map_get_first(object->internal);
+       it != neo_hash_map_get_tail(object->internal);
+       it = neo_hash_map_node_next(it)) {
+    neo_js_handle_t hvalue = neo_hash_map_node_get_value(it);
+    neo_js_handle_add_parent(hvalue, htarget);
+  }
+  neo_js_handle_set_value(allocaotr, htarget, &object->value);
 }
 
 neo_js_type_t neo_get_js_object_type() {

@@ -68,6 +68,26 @@ static neo_js_variable_t neo_js_function_del_field(neo_js_context_t ctx,
   return otype->del_field_fn(ctx, self, field);
 }
 
+static void neo_js_function_copy_fn(neo_js_context_t ctx,
+                                    neo_js_variable_t self,
+                                    neo_js_variable_t target) {
+  neo_js_type_t otype = neo_get_js_object_type();
+  otype->copy_fn(ctx, self, target);
+  neo_js_handle_t htarget = neo_js_variable_get_handle(target);
+  neo_js_function_t func = neo_js_variable_to_function(self);
+  if (func->callable.bind) {
+    neo_js_handle_add_parent(func->callable.bind, htarget);
+  }
+  for (neo_hash_map_node_t it = neo_hash_map_get_first(func->callable.closure);
+       it != neo_hash_map_get_tail(func->callable.closure);
+       it = neo_hash_map_node_next(it)) {
+    neo_js_handle_t hkey = neo_hash_map_node_get_key(it);
+    neo_js_handle_t hvalue = neo_hash_map_node_get_value(it);
+    neo_js_handle_add_parent(hkey, htarget);
+    neo_js_handle_add_parent(hvalue, htarget);
+  }
+}
+
 neo_js_type_t neo_get_js_function_type() {
   static struct _neo_js_type_t type = {0};
   type.kind = NEO_TYPE_FUNCTION;
@@ -82,7 +102,7 @@ neo_js_type_t neo_get_js_function_type() {
   type.set_field_fn = neo_js_function_set_field;
   type.del_field_fn = neo_js_function_del_field;
   type.is_equal_fn = otype->is_equal_fn;
-  type.copy_fn = otype->copy_fn;
+  type.copy_fn = neo_js_function_copy_fn;
   return &type;
 }
 

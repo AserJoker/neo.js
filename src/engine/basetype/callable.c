@@ -14,6 +14,7 @@ neo_js_callable_t neo_js_value_to_callable(neo_js_value_t value) {
   return NULL;
 }
 
+
 void neo_js_callable_set_closure(neo_js_context_t ctx, neo_js_variable_t self,
                                  const wchar_t *name,
                                  neo_js_variable_t closure) {

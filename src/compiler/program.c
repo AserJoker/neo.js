@@ -2,6 +2,7 @@
 #include "compiler/asm.h"
 #include "core/allocator.h"
 #include "core/buffer.h"
+#include "core/error.h"
 #include "core/list.h"
 #include "core/string.h"
 #include <string.h>
@@ -295,12 +296,16 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       fprintf(fp, "NEO_ASM_DIRECTIVE \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
-    case NEO_ASM_CALL:
-      fprintf(fp, "NEO_ASM_CALL\n");
-      break;
-    case NEO_ASM_MEMBER_CALL:
-      fprintf(fp, "NEO_ASM_MEMBER_CALL\n");
-      break;
+    case NEO_ASM_CALL: {
+      uint32_t line = neo_program_get_integer(self, &offset);
+      uint32_t column = neo_program_get_integer(self, &offset);
+      fprintf(fp, "NEO_ASM_CALL %d,%d\n", line, column);
+    } break;
+    case NEO_ASM_MEMBER_CALL: {
+      uint32_t line = neo_program_get_integer(self, &offset);
+      uint32_t column = neo_program_get_integer(self, &offset);
+      fprintf(fp, "NEO_ASM_MEMBER_CALL %d,%d\n", line, column);
+    } break;
     case NEO_ASM_GET_FIELD:
       fprintf(fp, "NEO_ASM_GET_FIELD\n");
       break;
@@ -442,9 +447,11 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
     case NEO_ASM_BREAKPOINT:
       fprintf(fp, "NEO_ASM_BREAKPOINT\n");
       break;
-    case NEO_ASM_NEW:
-      fprintf(fp, "NEO_ASM_NEW\n");
-      break;
+    case NEO_ASM_NEW: {
+      uint32_t line = neo_program_get_integer(self, &offset);
+      uint32_t column = neo_program_get_integer(self, &offset);
+      fprintf(fp, "NEO_ASM_NEW %d,%d\n", line, column);
+    } break;
     case NEO_ASM_DEL:
       fprintf(fp, "NEO_ASM_DEL\n");
       break;
@@ -526,14 +533,9 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
     case NEO_ASM_LOGICAL_NOT:
       fprintf(fp, "NEO_ASM_LOGICAL_NOT\n");
       break;
-    case NEO_ASM_PUSH_CALL_STACK: {
-      uint32_t line = neo_program_get_integer(self, &offset);
-      uint32_t column = neo_program_get_integer(self, &offset);
-      fprintf(fp, "NEO_ASM_PUSH_CALL_STACK %d,%d\n", line, column);
-    } break;
-    case NEO_ASM_POP_CALL_STACK:
-      fprintf(fp, "NEO_ASM_POP_CALL_STACK\n");
-      break;
+    default:
+      THROW("Invalid operator");
+      return;
     }
   }
 }

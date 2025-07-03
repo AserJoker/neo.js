@@ -13,9 +13,6 @@ neo_js_variable_t neo_js_generator_function_to_string(neo_js_context_t ctx,
                                                       neo_js_variable_t *argv) {
 
   neo_js_type_t type = neo_js_variable_get_type(self);
-  if (type->kind == NEO_TYPE_OBJECT) {
-    self = neo_js_context_get_internal(ctx, self, L"[[primitive]]");
-  }
   type = neo_js_variable_get_type(self);
   neo_js_function_t generator = neo_js_variable_to_function(self);
   if (neo_js_variable_get_type(self)->kind != NEO_TYPE_FUNCTION || !generator ||

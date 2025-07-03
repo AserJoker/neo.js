@@ -77,8 +77,8 @@ void neo_buffer_reserve(neo_buffer_t self, size_t capacity) {
 void *neo_buffer_get(neo_buffer_t self) { return self->data; }
 void neo_buffer_write(neo_buffer_t self, size_t offset, void *data,
                       size_t size) {
-  if (self->size + size + offset > self->capacity) {
-    neo_buffer_reserve(self, self->size + size + offset);
+  if (size + offset > self->capacity) {
+    neo_buffer_reserve(self, size + offset);
   }
   memcpy((uint8_t *)self->data + offset, data, size);
   self->size = offset + size;

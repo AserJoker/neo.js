@@ -238,10 +238,6 @@ void neo_write_optional_chain(neo_allocator_t allocator,
       neo_program_add_address(allocator, ctx->program, 0);
     }
 
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_CALL_STACK);
-    neo_program_add_integer(allocator, ctx->program, node->location.begin.line);
-    neo_program_add_integer(allocator, ctx->program,
-                            node->location.begin.column);
     if (call->callee->type == NEO_NODE_TYPE_EXPRESSION_MEMBER ||
         call->callee->type == NEO_NODE_TYPE_EXPRESSION_COMPUTED_MEMBER ||
         call->callee->type == NEO_NODE_TYPE_EXPRESSION_OPTIONAL_MEMBER ||
@@ -251,7 +247,9 @@ void neo_write_optional_chain(neo_allocator_t allocator,
     } else {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_CALL);
     }
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP_CALL_STACK);
+    neo_program_add_integer(allocator, ctx->program, node->location.begin.line);
+    neo_program_add_integer(allocator, ctx->program,
+                            node->location.begin.column);
   } else if (node->type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
     neo_ast_expression_member_t member = (neo_ast_expression_member_t)node;
     TRY(neo_write_optional_chain(allocator, ctx, member->host, addresses)) {
