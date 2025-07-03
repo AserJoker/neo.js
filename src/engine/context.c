@@ -335,6 +335,19 @@ static void neo_js_context_init_std_array_iterator(neo_js_context_t ctx) {
 }
 
 static void neo_js_context_init_std_promise(neo_js_context_t ctx) {
+
+  neo_js_context_def_field(
+      ctx, ctx->std.promise_constructor,
+      neo_js_context_create_string(ctx, L"resolve"),
+      neo_js_context_create_cfunction(ctx, L"resolve", neo_js_promise_resolve),
+      true, false, true);
+
+  neo_js_context_def_field(
+      ctx, ctx->std.promise_constructor,
+      neo_js_context_create_string(ctx, L"reject"),
+      neo_js_context_create_cfunction(ctx, L"reject", neo_js_promise_reject),
+      true, false, true);
+
   neo_js_variable_t prototype =
       neo_js_context_get_field(ctx, ctx->std.promise_constructor,
                                neo_js_context_create_string(ctx, L"prototype"));
@@ -346,8 +359,13 @@ static void neo_js_context_init_std_promise(neo_js_context_t ctx) {
 
   neo_js_context_def_field(
       ctx, prototype, neo_js_context_create_string(ctx, L"catch"),
-      neo_js_context_create_cfunction(ctx, L"catch", neo_js_promise_then), true,
-      false, true);
+      neo_js_context_create_cfunction(ctx, L"catch", neo_js_promise_catch),
+      true, false, true);
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"finally"),
+      neo_js_context_create_cfunction(ctx, L"finally", neo_js_promise_finally),
+      true, false, true);
 }
 
 static void neo_js_context_init_std(neo_js_context_t ctx) {

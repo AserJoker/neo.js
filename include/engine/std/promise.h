@@ -5,11 +5,6 @@
 extern "C" {
 #endif
 
-neo_js_variable_t neo_js_promise_constructor(neo_js_context_t ctx,
-                                             neo_js_variable_t self,
-                                             uint32_t argc,
-                                             neo_js_variable_t *argv);
-
 neo_js_variable_t neo_js_promise_resolve(neo_js_context_t ctx,
                                          neo_js_variable_t self, uint32_t argc,
                                          neo_js_variable_t *argv);
@@ -25,6 +20,11 @@ neo_js_variable_t neo_js_promise_all(neo_js_context_t ctx,
 neo_js_variable_t neo_js_promise_race(neo_js_context_t ctx,
                                       neo_js_variable_t self, uint32_t argc,
                                       neo_js_variable_t *argv);
+                                      
+neo_js_variable_t neo_js_promise_constructor(neo_js_context_t ctx,
+                                             neo_js_variable_t self,
+                                             uint32_t argc,
+                                             neo_js_variable_t *argv);
 
 neo_js_variable_t neo_js_promise_then(neo_js_context_t ctx,
                                       neo_js_variable_t self, uint32_t argc,

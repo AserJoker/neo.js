@@ -19,6 +19,58 @@ struct _neo_js_promise_t {
   neo_list_t on_rejected_callbacks;
   neo_js_handle_t value;
 };
+
+static neo_js_variable_t
+neo_js_promise_resolve_callback(neo_js_context_t ctx, neo_js_variable_t self,
+                                uint32_t argc, neo_js_variable_t *argv) {
+  neo_js_variable_t resolve = argv[0];
+  neo_js_variable_t reject = argv[1];
+  neo_js_variable_t value = neo_js_context_load_variable(ctx, L"value");
+  if (neo_js_variable_get_type(value)->kind == NEO_TYPE_ERROR) {
+    neo_js_context_call(ctx, reject, neo_js_context_create_undefined(ctx), 1,
+                        &value);
+  } else {
+    neo_js_context_call(ctx, resolve, neo_js_context_create_undefined(ctx), 1,
+                        &value);
+  }
+  return neo_js_context_create_undefined(ctx);
+}
+
+neo_js_variable_t neo_js_promise_resolve(neo_js_context_t ctx,
+                                         neo_js_variable_t self, uint32_t argc,
+                                         neo_js_variable_t *argv) {
+  neo_js_variable_t value = NULL;
+  if (argc) {
+    value = argv[0];
+  } else {
+    value = neo_js_context_create_undefined(ctx);
+  }
+  neo_js_variable_t callback = neo_js_context_create_cfunction(
+      ctx, NULL, neo_js_promise_resolve_callback);
+  neo_js_callable_set_closure(ctx, callback, L"value", value);
+  return neo_js_context_construct(
+      ctx, neo_js_context_get_promise_constructor(ctx), 1, &callback);
+}
+
+neo_js_variable_t neo_js_promise_reject(neo_js_context_t ctx,
+                                        neo_js_variable_t self, uint32_t argc,
+                                        neo_js_variable_t *argv) {
+  neo_js_variable_t value = NULL;
+  if (argc) {
+    value = argv[0];
+  } else {
+    value = neo_js_context_create_undefined(ctx);
+  }
+  neo_js_variable_t error =
+      neo_js_context_create_error(ctx, NEO_ERROR_CUSTOM, NULL);
+  neo_js_error_set_custom(ctx, error, value);
+  neo_js_variable_t callback = neo_js_context_create_cfunction(
+      ctx, NULL, neo_js_promise_resolve_callback);
+  neo_js_callable_set_closure(ctx, callback, L"value", error);
+  return neo_js_context_construct(
+      ctx, neo_js_context_get_promise_constructor(ctx), 1, &callback);
+}
+
 static void neo_js_promise_dispose(neo_allocator_t allocator,
                                    neo_js_promise_t promise) {
   neo_allocator_free(allocator, promise->on_fulfilled_callbacks);
@@ -269,6 +321,15 @@ neo_js_variable_t neo_js_promise_catch(neo_js_context_t ctx,
                                        neo_js_variable_t *argv) {
   if (argc > 0) {
     neo_js_variable_t args[] = {neo_js_context_create_undefined(ctx), argv[0]};
+    return neo_js_promise_then(ctx, self, 2, args);
+  }
+  return neo_js_promise_then(ctx, self, 0, NULL);
+}
+neo_js_variable_t neo_js_promise_finally(neo_js_context_t ctx,
+                                         neo_js_variable_t self, uint32_t argc,
+                                         neo_js_variable_t *argv) {
+  if (argc > 0) {
+    neo_js_variable_t args[] = {argv[0], argv[0]};
     return neo_js_promise_then(ctx, self, 2, args);
   }
   return neo_js_promise_then(ctx, self, 0, NULL);
