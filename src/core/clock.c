@@ -5,6 +5,7 @@
 #else
 #include <errno.h>
 #include <sys/time.h>
+#include <time.h>
 #endif
 
 uint64_t neo_clock_get_timestamp() {
@@ -25,7 +26,7 @@ void neo_clock_sleep(uint64_t timeout) {
   int ret;
 
   req.tv_sec = 0;
-  req.tv_nsec = 1000000 * timeout; // 1 毫秒
+  req.tv_nsec = 1000000 * timeout;
 
   while ((ret = nanosleep(&req, &rem)) == -1 && errno == EINTR) {
     req = rem;
