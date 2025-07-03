@@ -67,6 +67,10 @@ neo_list_t neo_js_object_get_keys(neo_js_context_t ctx, neo_js_variable_t self);
 neo_list_t neo_js_object_get_own_symbol_keys(neo_js_context_t ctx,
                                              neo_js_variable_t self);
 
+neo_js_variable_t neo_js_object_set_prototype(neo_js_context_t ctx,
+                                              neo_js_variable_t self,
+                                              neo_js_variable_t prototype);
+
 #ifdef __cplusplus
 }
 #endif

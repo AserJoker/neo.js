@@ -255,9 +255,12 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       fprintf(fp, "NEO_ASM_PUSH_VALUE %d\n",
               neo_program_get_integer(self, &offset));
       break;
-    case NEO_ASM_SET_NAME:
-      fprintf(fp, "NEO_ASM_SET_NAME\n");
-      break;
+    case NEO_ASM_SET_NAME: {
+      char *constant =
+          neo_string_encode(allocator, neo_program_get_string(self, &offset));
+      fprintf(fp, "NEO_ASM_SET_NAME \"%s\"\n", constant);
+      neo_allocator_free(allocator, constant);
+    } break;
     case NEO_ASM_SET_SOURCE: {
       char *constant =
           neo_string_encode(allocator, neo_program_get_string(self, &offset));
@@ -522,6 +525,14 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       break;
     case NEO_ASM_LOGICAL_NOT:
       fprintf(fp, "NEO_ASM_LOGICAL_NOT\n");
+      break;
+    case NEO_ASM_PUSH_CALL_STACK: {
+      uint32_t line = neo_program_get_integer(self, &offset);
+      uint32_t column = neo_program_get_integer(self, &offset);
+      fprintf(fp, "NEO_ASM_PUSH_CALL_STACK %d,%d\n", line, column);
+    } break;
+    case NEO_ASM_POP_CALL_STACK:
+      fprintf(fp, "NEO_ASM_POP_CALL_STACK\n");
       break;
     }
   }

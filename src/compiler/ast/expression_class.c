@@ -121,9 +121,8 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
   }
   if (self->name) {
     char *name = neo_location_get(allocator, self->name->location);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-    neo_program_add_string(allocator, ctx->program, name);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_NAME);
+    neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   }
   if (self->extends) {

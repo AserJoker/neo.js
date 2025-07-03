@@ -2,11 +2,10 @@
 #include "core/allocator.h"
 #include "core/hash.h"
 #include "core/hash_map.h"
+#include "core/string.h"
 #include "engine/basetype/object.h"
 #include "engine/basetype/string.h"
 #include "engine/context.h"
-#include "engine/handle.h"
-#include "engine/scope.h"
 #include "engine/type.h"
 #include "engine/variable.h"
 #include <stdbool.h>
@@ -27,8 +26,7 @@ static neo_js_variable_t neo_js_function_get_field(neo_js_context_t ctx,
       if (!cfunction->callable.name) {
         return neo_js_context_create_string(ctx, L"");
       } else {
-        return neo_js_context_create_variable(ctx, cfunction->callable.name,
-                                              NULL);
+        return neo_js_context_create_string(ctx, cfunction->callable.name);
       }
     }
   }
@@ -60,14 +58,9 @@ static neo_js_variable_t neo_js_function_del_field(neo_js_context_t ctx,
     if (wcscmp(string->string, L"name") == 0) {
       neo_js_cfunction_t cfunction =
           neo_js_value_to_cfunction(neo_js_variable_get_value(self));
-      if (cfunction->callable.name) {
-        neo_js_scope_t scope = neo_js_context_get_scope(ctx);
-        neo_js_handle_t root = neo_js_scope_get_root_handle(scope);
-        neo_js_handle_add_parent(cfunction->callable.name, root);
-        neo_js_handle_remove_parent(cfunction->callable.name,
-                                    neo_js_variable_get_handle(self));
-        cfunction->callable.name = NULL;
-      }
+      neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+      neo_allocator_free(allocator, cfunction->callable.name);
+      cfunction->callable.name = neo_create_wstring(allocator, L"");
       return neo_js_context_create_boolean(ctx, true);
     }
   }
@@ -96,6 +89,7 @@ static void neo_js_function_dispose(neo_allocator_t allocator,
                                     neo_js_cfunction_t self) {
   neo_js_object_dispose(allocator, &self->callable.object);
   neo_allocator_free(allocator, self->callable.closure);
+  neo_allocator_free(allocator, self->callable.name);
 }
 
 neo_js_cfunction_t neo_create_js_cfunction(neo_allocator_t allocator,

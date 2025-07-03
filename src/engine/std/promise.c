@@ -2,7 +2,6 @@
 #include "core/allocator.h"
 #include "core/list.h"
 #include "engine/basetype/callable.h"
-#include "engine/basetype/error.h"
 #include "engine/context.h"
 #include "engine/handle.h"
 #include "engine/type.h"
@@ -61,9 +60,7 @@ neo_js_variable_t neo_js_promise_reject(neo_js_context_t ctx,
   } else {
     value = neo_js_context_create_undefined(ctx);
   }
-  neo_js_variable_t error =
-      neo_js_context_create_error(ctx, NEO_ERROR_CUSTOM, NULL);
-  neo_js_error_set_custom(ctx, error, value);
+  neo_js_variable_t error = neo_js_context_create_value_error(ctx, value);
   neo_js_variable_t callback = neo_js_context_create_cfunction(
       ctx, NULL, neo_js_promise_resolve_callback);
   neo_js_callable_set_closure(ctx, callback, L"value", error);

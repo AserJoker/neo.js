@@ -126,12 +126,18 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
       neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
       idx++;
     }
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_CALL_STACK);
+    neo_program_add_integer(allocator, ctx->program,
+                            self->node.location.begin.line);
+    neo_program_add_integer(allocator, ctx->program,
+                            self->node.location.begin.column);
     if (self->tag->type == NEO_NODE_TYPE_EXPRESSION_MEMBER ||
         self->tag->type == NEO_NODE_TYPE_EXPRESSION_COMPUTED_MEMBER) {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_MEMBER_CALL);
     } else {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_CALL);
     }
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP_CALL_STACK);
   } else {
     neo_list_node_t qit = neo_list_get_first(self->quasis);
     neo_token_t str = neo_list_node_get(qit);

@@ -326,8 +326,7 @@ void neo_js_set_address(neo_js_vm_t vm, neo_program_t program) {
 }
 
 void neo_js_set_name(neo_js_vm_t vm, neo_program_t program) {
-  neo_js_variable_t name = neo_list_node_get(neo_list_get_last(vm->stack));
-  neo_list_pop(vm->stack);
+  wchar_t *name = neo_js_vm_read_string(vm, program);
   neo_js_variable_t variable = neo_list_node_get(neo_list_get_last(vm->stack));
   if (neo_js_variable_get_type(variable)->kind != NEO_TYPE_FUNCTION) {
     neo_list_push(vm->stack,
@@ -337,10 +336,8 @@ void neo_js_set_name(neo_js_vm_t vm, neo_program_t program) {
     return;
   }
   neo_js_function_t function = neo_js_variable_to_function(variable);
-  neo_js_handle_t hname = neo_js_variable_get_handle(name);
-  neo_js_handle_t hfunction = neo_js_variable_get_handle(variable);
-  function->callable.name = hname;
-  neo_js_handle_add_parent(hname, hfunction);
+  function->callable.name = name;
+  neo_allocator_free(neo_js_context_get_allocator(vm->ctx), name);
 }
 
 void neo_js_set_closure(neo_js_vm_t vm, neo_program_t program) {
@@ -690,9 +687,7 @@ void neo_js_vm_continue(neo_js_vm_t vm, neo_program_t program) {
 void neo_js_vm_throw(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_list_pop(vm->stack);
-  neo_js_variable_t error =
-      neo_js_context_create_error(vm->ctx, NEO_ERROR_CUSTOM, NULL);
-  neo_js_error_set_custom(vm->ctx, error, value);
+  neo_js_variable_t error = neo_js_context_create_value_error(vm->ctx, value);
   neo_list_push(vm->stack, error);
   vm->offset = neo_buffer_get_size(program->codes);
 }
@@ -1371,6 +1366,28 @@ void neo_js_vm_spread(neo_js_vm_t vm, neo_program_t program) {
     vm->offset = neo_buffer_get_size(program->codes);
   }
 }
+void neo_js_vm_push_call_stack(neo_js_vm_t vm, neo_program_t program) {
+  uint32_t line = neo_js_vm_read_integer(vm, program);
+  uint32_t column = neo_js_vm_read_integer(vm, program);
+  neo_js_variable_t callee =
+      neo_list_node_get(neo_list_node_last(neo_list_get_last(vm->stack)));
+  neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
+  wchar_t *filename = neo_string_to_wstring(allocator, program->file);
+  if (neo_js_variable_get_type(callee)->kind >= NEO_TYPE_CALLABLE) {
+    neo_js_callable_t fun = neo_js_variable_to_callable(callee);
+    neo_js_context_push_stackframe(vm->ctx, filename, fun->name, column, line);
+  } else {
+    neo_list_push(vm->stack,
+                  neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
+                                              L"variable is not a function"));
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+  neo_allocator_free(allocator, filename);
+}
+
+void neo_js_vm_pop_call_stack(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_context_pop_stackframe(vm->ctx);
+}
 
 const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_push_scope,          // NEO_ASM_PUSH_SCOPE
@@ -1480,6 +1497,8 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_logical_not,         // NEO_ASM_LOGICAL_NOT
     neo_js_vm_concat,              // NEO_ASM_CONCAT
     neo_js_vm_spread,              // NEO_ASM_SPREAD
+    neo_js_vm_push_call_stack,     // NEO_ASM_PUSH_CALL_STACK
+    neo_js_vm_pop_call_stack,      // NEO_ASM_POP_CALL_STACK
 };
 
 neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
@@ -1510,7 +1529,7 @@ neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
         }
         if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
           if (frame->onerror) {
-            result = neo_js_error_get_custom(vm->ctx, result);
+            result = neo_js_error_get_error(vm->ctx, result);
             neo_list_push(vm->stack, result);
             vm->offset = frame->onerror;
             frame->onerror = 0;

@@ -6,7 +6,7 @@
 extern "C" {
 #endif
 typedef struct _neo_js_stackframe_t {
-  const wchar_t *filename;
+  wchar_t *filename;
   wchar_t *function;
   uint32_t line;
   uint32_t column;

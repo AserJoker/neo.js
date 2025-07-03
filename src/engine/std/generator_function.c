@@ -26,8 +26,6 @@ neo_js_variable_t neo_js_generator_function_to_string(neo_js_context_t ctx,
         L"GeneratorFunction");
   }
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
-  neo_js_string_t string =
-      neo_js_value_to_string(neo_js_handle_get_value(generator->callable.name));
   neo_js_function_t func = neo_js_variable_to_function(self);
   return neo_js_context_create_string(ctx, func->source);
 }

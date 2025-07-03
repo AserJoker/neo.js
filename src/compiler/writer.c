@@ -88,10 +88,9 @@ void neo_writer_push_scope(neo_allocator_t allocator, neo_write_context_t ctx,
         name = neo_allocator_alloc(allocator, strlen(funcname) + 1, NULL);
         strcpy(name, funcname);
         name[strlen(funcname)] = 0;
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_NAME);
         neo_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, funcname);
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_NAME);
         char *source = neo_location_get(allocator, func->node.location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_SOURCE);
         neo_program_add_string(allocator, ctx->program, source);
@@ -238,6 +237,11 @@ void neo_write_optional_chain(neo_allocator_t allocator,
       *address = neo_buffer_get_size(ctx->program->codes);
       neo_program_add_address(allocator, ctx->program, 0);
     }
+
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_CALL_STACK);
+    neo_program_add_integer(allocator, ctx->program, node->location.begin.line);
+    neo_program_add_integer(allocator, ctx->program,
+                            node->location.begin.column);
     if (call->callee->type == NEO_NODE_TYPE_EXPRESSION_MEMBER ||
         call->callee->type == NEO_NODE_TYPE_EXPRESSION_COMPUTED_MEMBER ||
         call->callee->type == NEO_NODE_TYPE_EXPRESSION_OPTIONAL_MEMBER ||
@@ -247,6 +251,7 @@ void neo_write_optional_chain(neo_allocator_t allocator,
     } else {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_CALL);
     }
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP_CALL_STACK);
   } else if (node->type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
     neo_ast_expression_member_t member = (neo_ast_expression_member_t)node;
     TRY(neo_write_optional_chain(allocator, ctx, member->host, addresses)) {

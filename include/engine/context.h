@@ -14,6 +14,13 @@ typedef struct _neo_js_vm_t *neo_js_vm_t;
 
 typedef struct _neo_js_context_t *neo_js_context_t;
 
+typedef enum _neo_js_error_type_t {
+  NEO_ERROR_SYNTAX,
+  NEO_ERROR_RANGE,
+  NEO_ERROR_TYPE,
+  NEO_ERROR_REFERENCE
+} neo_js_error_type_t;
+
 neo_js_context_t neo_create_js_context(neo_allocator_t allocator,
                                        neo_js_runtime_t runtime);
 
@@ -67,6 +74,20 @@ void neo_js_context_push_stackframe(neo_js_context_t ctx,
 
 void neo_js_context_pop_stackframe(neo_js_context_t ctx);
 
+neo_js_variable_t neo_js_context_get_error_constructor(neo_js_context_t ctx);
+
+neo_js_variable_t
+neo_js_context_get_type_error_constructor(neo_js_context_t ctx);
+
+neo_js_variable_t
+neo_js_context_get_range_error_constructor(neo_js_context_t ctx);
+
+neo_js_variable_t
+neo_js_context_get_reference_error_constructor(neo_js_context_t ctx);
+
+neo_js_variable_t
+neo_js_context_get_syntax_error_constructor(neo_js_context_t ctx);
+
 neo_js_variable_t neo_js_context_get_object_constructor(neo_js_context_t ctx);
 
 neo_js_variable_t neo_js_context_get_function_constructor(neo_js_context_t ctx);
@@ -100,6 +121,10 @@ neo_js_variable_t neo_js_context_store_variable(neo_js_context_t ctx,
 
 neo_js_variable_t neo_js_context_load_variable(neo_js_context_t ctx,
                                                const wchar_t *name);
+
+neo_js_variable_t neo_js_context_extends(neo_js_context_t ctx,
+                                         neo_js_variable_t variable,
+                                         neo_js_variable_t parent);
 
 neo_js_variable_t neo_js_context_to_primitive(neo_js_context_t ctx,
                                               neo_js_variable_t variable,
@@ -172,6 +197,9 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
 neo_js_variable_t neo_js_context_create_error(neo_js_context_t ctx,
                                               neo_js_error_type_t type,
                                               const wchar_t *message);
+
+neo_js_variable_t neo_js_context_create_value_error(neo_js_context_t ctx,
+                                                    neo_js_variable_t value);
 
 neo_js_variable_t neo_js_context_create_undefined(neo_js_context_t ctx);
 

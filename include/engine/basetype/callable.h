@@ -15,7 +15,7 @@ typedef struct _neo_js_callable_t *neo_js_callable_t;
 struct _neo_js_callable_t {
   struct _neo_js_object_t object;
   neo_hash_map_t closure;
-  neo_js_handle_t name;
+  wchar_t *name;
   neo_js_handle_t bind;
 };
 

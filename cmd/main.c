@@ -104,7 +104,10 @@ static neo_js_variable_t js_clear_interval(neo_js_context_t ctx,
 
 static void disp_js_variable(neo_js_context_t ctx, neo_js_variable_t variable) {
   if (neo_js_variable_get_type(variable)->kind == NEO_TYPE_ERROR) {
-    neo_js_error_print(ctx, variable);
+    neo_js_variable_t error = neo_js_error_get_error(ctx, variable);
+    error = neo_js_context_to_string(ctx, error);
+    neo_js_string_t serror = neo_js_variable_to_string(error);
+    fprintf(stderr, "Uncaught %ls\n", serror->string);
   } else {
     neo_js_variable_t string = neo_js_context_to_string(ctx, variable);
     neo_js_string_t str = neo_js_variable_to_string(string);
@@ -150,9 +153,12 @@ int main(int argc, char *argv[]) {
                            neo_js_context_create_cfunction(
                                ctx, L"clearInterval", js_clear_interval));
   neo_js_variable_t result = neo_js_context_eval(ctx, "index.mjs", buf);
-  disp_js_variable(ctx, result);
-  while (!neo_js_context_is_ready(ctx)) {
-    neo_js_context_next_tick(ctx);
+  if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    disp_js_variable(ctx, result);
+  } else {
+    while (!neo_js_context_is_ready(ctx)) {
+      neo_js_context_next_tick(ctx);
+    }
   }
   neo_allocator_free(allocator, ctx);
   neo_allocator_free(allocator, runtime);

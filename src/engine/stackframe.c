@@ -3,6 +3,7 @@
 static void neo_js_stackframe_dispose(neo_allocator_t allocator,
                                       neo_js_stackframe_t self) {
   neo_allocator_free(allocator, self->function);
+  neo_allocator_free(allocator, self->filename);
 }
 neo_js_stackframe_t neo_create_js_stackframe(neo_allocator_t allocator) {
   neo_js_stackframe_t frame =

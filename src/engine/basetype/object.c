@@ -622,3 +622,20 @@ neo_js_object_t neo_js_value_to_object(neo_js_value_t value) {
   }
   return NULL;
 }
+
+neo_js_variable_t neo_js_object_set_prototype(neo_js_context_t ctx,
+                                              neo_js_variable_t self,
+                                              neo_js_variable_t prototype) {
+  if (neo_js_variable_get_type(self)->kind < NEO_TYPE_OBJECT) {
+    return neo_js_context_create_error(ctx, NEO_ERROR_TYPE,
+                                       L"variable is not a object");
+  }
+  neo_js_object_t obj = neo_js_variable_to_object(self);
+  neo_js_handle_add_parent(obj->prototype, neo_js_scope_get_root_handle(
+                                               neo_js_context_get_scope(ctx)));
+  neo_js_handle_remove_parent(obj->prototype, neo_js_variable_get_handle(self));
+  neo_js_handle_t hprototype = neo_js_variable_get_handle(prototype);
+  obj->prototype = hprototype;
+  neo_js_handle_add_parent(hprototype, neo_js_variable_get_handle(self));
+  return neo_js_context_create_undefined(ctx);
+}
