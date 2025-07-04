@@ -92,11 +92,6 @@ static const char *neo_program_get_string(neo_program_t program,
   }
   return (const char *)neo_list_node_get(it);
 }
-static const bool neo_program_get_bool(neo_program_t program, size_t *offset) {
-  bool value = *(bool *)((char *)neo_buffer_get(program->codes) + *offset);
-  *offset += sizeof(bool);
-  return value;
-}
 static const double neo_program_get_number(neo_program_t program,
                                            size_t *offset) {
   double value = *(double *)((char *)neo_buffer_get(program->codes) + *offset);

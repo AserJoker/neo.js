@@ -44,7 +44,7 @@ void neo_buffer_shrink_to_fit(neo_buffer_t self) {
 void neo_buffer_reserve(neo_buffer_t self, size_t capacity) {
   size_t size = capacity;
   if (size % self->align != 0) {
-    size = size % self->align + 1;
+    size = size / self->align + 1;
     size *= self->align;
   }
   void *data = NULL;

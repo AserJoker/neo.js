@@ -798,7 +798,6 @@ neo_js_scope_t neo_js_context_pop_scope(neo_js_context_t ctx) {
 
 neo_list_t neo_js_context_get_stacktrace(neo_js_context_t ctx, uint32_t line,
                                          uint32_t column) {
-  neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
   neo_list_node_t it = neo_list_get_last(ctx->stacktrace);
   neo_js_stackframe_t frame = neo_list_node_get(it);
 
@@ -1365,7 +1364,6 @@ neo_js_variable_t neo_js_context_get_keys(neo_js_context_t ctx,
 neo_js_variable_t neo_js_context_clone(neo_js_context_t ctx,
                                        neo_js_variable_t self) {
   neo_js_variable_t variable = neo_js_context_create_undefined(ctx);
-  neo_js_scope_t current = ctx->scope;
   neo_js_context_push_scope(ctx);
   neo_js_type_t type = neo_js_variable_get_type(self);
   type->copy_fn(ctx, self, variable);
@@ -1466,8 +1464,6 @@ static neo_js_variable_t neo_js_context_call_generator_function(
        it = neo_hash_map_node_next(it)) {
     const wchar_t *name = neo_hash_map_node_get_key(it);
     neo_js_handle_t hvalue = neo_hash_map_node_get_value(it);
-    neo_js_variable_t variable =
-        neo_js_context_create_variable(ctx, hvalue, NULL);
     neo_js_scope_create_variable(neo_js_runtime_get_allocator(ctx->runtime),
                                  scope, hvalue, name);
   }
@@ -1605,8 +1601,6 @@ static neo_js_variable_t neo_js_context_call_async_function(
        it = neo_hash_map_node_next(it)) {
     const wchar_t *name = neo_hash_map_node_get_key(it);
     neo_js_handle_t hvalue = neo_hash_map_node_get_value(it);
-    neo_js_variable_t variable =
-        neo_js_context_create_variable(ctx, hvalue, NULL);
     neo_js_scope_create_variable(neo_js_runtime_get_allocator(ctx->runtime),
                                  scope, hvalue, name);
   }
@@ -1682,8 +1676,6 @@ static neo_js_variable_t neo_js_context_call_function(neo_js_context_t ctx,
            it = neo_hash_map_node_next(it)) {
         const wchar_t *name = neo_hash_map_node_get_key(it);
         neo_js_handle_t hvalue = neo_hash_map_node_get_value(it);
-        neo_js_variable_t variable =
-            neo_js_context_create_variable(ctx, hvalue, NULL);
         neo_js_scope_create_variable(neo_js_runtime_get_allocator(ctx->runtime),
                                      scope, hvalue, name);
       }
@@ -1779,8 +1771,6 @@ neo_js_variable_t neo_js_context_call(neo_js_context_t ctx,
              it = neo_hash_map_node_next(it)) {
           const wchar_t *name = neo_hash_map_node_get_key(it);
           neo_js_handle_t hvalue = neo_hash_map_node_get_value(it);
-          neo_js_variable_t variable =
-              neo_js_context_create_variable(ctx, hvalue, NULL);
           neo_js_scope_create_variable(
               neo_js_runtime_get_allocator(ctx->runtime), scope, hvalue, name);
         }
@@ -1820,8 +1810,6 @@ neo_js_variable_t neo_js_context_call(neo_js_context_t ctx,
              it = neo_hash_map_node_next(it)) {
           const wchar_t *name = neo_hash_map_node_get_key(it);
           neo_js_handle_t hvalue = neo_hash_map_node_get_value(it);
-          neo_js_variable_t variable =
-              neo_js_context_create_variable(ctx, hvalue, NULL);
           neo_js_scope_create_variable(
               neo_js_runtime_get_allocator(ctx->runtime), scope, hvalue, name);
         }
@@ -2888,7 +2876,7 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
     };
     neo_variable_t json = neo_ast_node_serialize(allocator, root);
     char *json_str = neo_json_stringify(allocator, json);
-    FILE *fp = fopen("../index.json", "w");
+    FILE *fp = fopen("./index.json", "w");
     fprintf(fp, "%s", json_str);
     fclose(fp);
     neo_allocator_free(allocator, json_str);
@@ -2907,7 +2895,7 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
     }
     neo_allocator_free(allocator, root);
     neo_js_runtime_set_program(ctx->runtime, u16file, program);
-    fp = fopen("../index.asm", "w");
+    fp = fopen("./index.asm", "w");
     TRY(neo_program_write(allocator, fp, program)) {
       fclose(fp);
       neo_allocator_free(allocator, u16file);
