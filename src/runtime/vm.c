@@ -803,6 +803,25 @@ void neo_js_vm_iterator(neo_js_vm_t vm, neo_program_t program) {
     }
   }
 }
+
+void neo_js_vm_async_iterator(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_js_variable_t iterator = neo_js_context_get_field(
+      vm->ctx, neo_js_context_get_symbol_constructor(vm->ctx),
+      neo_js_context_create_string(vm->ctx, L"asyncIterator"));
+  neo_js_variable_t it = neo_js_context_get_field(vm->ctx, value, iterator);
+  if (neo_js_variable_get_type(it)->kind >= NEO_TYPE_CALLABLE) {
+    neo_js_variable_t iterator =
+        neo_js_context_call(vm->ctx, it, value, 0, NULL);
+    neo_list_push(vm->stack, iterator);
+    if (neo_js_variable_get_type(iterator)->kind == NEO_TYPE_ERROR) {
+      vm->offset = neo_buffer_get_size(program->codes);
+    }
+    return;
+  }
+  neo_js_vm_iterator(vm, program);
+}
+
 void neo_js_vm_next(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t iterator = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_js_variable_t next = neo_js_context_get_field(
@@ -1490,6 +1509,7 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_yield,               // NEO_ASM_YIELD
     neo_js_vm_next,                // NEO_ASM_NEXT
     neo_js_vm_iterator,            // NEO_ASM_ITERATOR
+    neo_js_vm_async_iterator,      // NEO_ASM_ASYNC_ITERATOR
     neo_js_vm_rest,                // NEO_ASM_REST
     neo_js_vm_rest_object,         // NEO_ASM_REST_OBJECT
     NULL,                          // NEO_ASM_IMPORT

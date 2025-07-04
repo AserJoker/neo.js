@@ -32,6 +32,8 @@
 #include "engine/std/array.h"
 #include "engine/std/array_iterator.h"
 #include "engine/std/async_function.h"
+#include "engine/std/async_generator.h"
+#include "engine/std/async_generator_function.h"
 #include "engine/std/error.h"
 #include "engine/std/function.h"
 #include "engine/std/generator.h"
@@ -301,6 +303,18 @@ static void neo_js_context_init_std_generator_function(neo_js_context_t ctx) {
                                       neo_js_generator_function_to_string),
       true, false, true);
 }
+static void
+neo_js_context_init_std_async_generator_function(neo_js_context_t ctx) {
+  neo_js_variable_t prototype = neo_js_context_get_field(
+      ctx, ctx->std.async_generator_function_constructor,
+      neo_js_context_create_string(ctx, L"prototype"));
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"toString"),
+      neo_js_context_create_cfunction(
+          ctx, L"toString", neo_js_async_generator_function_to_string),
+      true, false, true);
+}
 static void neo_js_context_init_std_async_function(neo_js_context_t ctx) {
   neo_js_variable_t prototype =
       neo_js_context_get_field(ctx, ctx->std.async_function_constructor,
@@ -338,6 +352,38 @@ static void neo_js_context_init_std_generator(neo_js_context_t ctx) {
       ctx, prototype, neo_js_context_create_string(ctx, L"throw"),
       neo_js_context_create_cfunction(ctx, L"throw", neo_js_generator_throw),
       true, false, true);
+}
+
+static void neo_js_context_init_std_async_generator(neo_js_context_t ctx) {
+  neo_js_variable_t prototype =
+      neo_js_context_get_field(ctx, ctx->std.async_generator_constructor,
+                               neo_js_context_create_string(ctx, L"prototype"));
+
+  neo_js_variable_t to_string_tag = neo_js_context_get_field(
+      ctx, ctx->std.symbol_constructor,
+      neo_js_context_create_string(ctx, L"toStringTag"));
+
+  neo_js_context_set_field(
+      ctx, prototype, to_string_tag,
+      neo_js_context_create_string(ctx, L"AsyncGenerator"));
+
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"next"),
+                           neo_js_context_create_cfunction(
+                               ctx, L"next", neo_js_async_generator_next),
+                           true, false, true);
+
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"return"),
+                           neo_js_context_create_cfunction(
+                               ctx, L"return", neo_js_async_generator_return),
+                           true, false, true);
+
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"throw"),
+                           neo_js_context_create_cfunction(
+                               ctx, L"throw", neo_js_async_generator_throw),
+                           true, false, true);
 }
 
 static void neo_js_context_init_std_array_iterator(neo_js_context_t ctx) {
@@ -478,11 +524,19 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
   ctx->std.generator_function_constructor = neo_js_context_create_cfunction(
       ctx, L"GeneratorFunction", neo_js_generator_function_constructor);
 
+  ctx->std.async_generator_function_constructor =
+      neo_js_context_create_cfunction(
+          ctx, L"AsyncGeneratorFunction",
+          neo_js_async_generator_function_constructor);
+
   ctx->std.async_function_constructor = neo_js_context_create_cfunction(
       ctx, L"AsyncFunction", neo_js_async_function_constructor);
 
   ctx->std.generator_constructor = neo_js_context_create_cfunction(
       ctx, L"Generator", neo_js_generator_constructor);
+
+  ctx->std.async_generator_constructor = neo_js_context_create_cfunction(
+      ctx, L"AsyncGenerator", neo_js_async_generator_constructor);
 
   ctx->std.promise_constructor = neo_js_context_create_cfunction(
       ctx, L"Promise", neo_js_promise_constructor);
@@ -499,9 +553,13 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
 
   neo_js_context_init_std_generator_function(ctx);
 
+  neo_js_context_init_std_async_generator_function(ctx);
+
   neo_js_context_init_std_async_function(ctx);
 
   neo_js_context_init_std_generator(ctx);
+
+  neo_js_context_init_std_async_generator(ctx);
 
   neo_js_context_init_std_promise(ctx);
 

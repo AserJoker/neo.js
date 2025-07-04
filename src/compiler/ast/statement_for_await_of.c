@@ -39,7 +39,7 @@ neo_ast_statement_for_await_of_write(neo_allocator_t allocator,
   char *label = ctx->label;
   ctx->label = NULL;
   TRY(self->right->write(allocator, ctx, self->right)) { return; }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_ITERATOR);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_ASYNC_ITERATOR);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_BREAK_LABEL);
   neo_program_add_string(allocator, ctx->program, label ? label : "");
   size_t breakaddr = neo_buffer_get_size(ctx->program->codes);
