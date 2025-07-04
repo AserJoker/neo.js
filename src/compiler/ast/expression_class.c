@@ -343,7 +343,7 @@ neo_ast_node_t neo_ast_read_expression_class(neo_allocator_t allocator,
         }
       } else if (*current.offset == '}') {
         break;
-      } else if (current.line == line &
+      } else if (current.line == line &&
                  item->type == NEO_NODE_TYPE_CLASS_PROPERTY) {
         THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
               current.column);

@@ -224,7 +224,7 @@ neo_token_t neo_read_number_token(neo_allocator_t allocator, const char *file,
 neo_token_t neo_read_symbol_token(neo_allocator_t allocator, const char *file,
                                   neo_position_t *position) {
   static const char *operators[] = {
-      ">>>=", "...", "<<=", ">>>", "===", "!==", "**=", ">>=", "&&=", R"(??=)",
+      ">>>=", "...", "<<=", ">>>", "===", "!==", "**=", ">>=", "&&=", "(??=)",
       "**",   "==",  "!=",  "<<",  ">>",  "<=",  ">=",  "&&",  "||",  "??",
       "++",   "--",  "+=",  "-=",  "*=",  "/=",  "%=",  "||=", "&=",  "^=",
       "|=",   "=>",  "?.",  "=",   "*",   "/",   "%",   "+",   "-",   "<",

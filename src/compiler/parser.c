@@ -12,7 +12,7 @@
 
 neo_ast_node_t neo_ast_parse_code(neo_allocator_t allocator, const char *file,
                                   const char *source) {
-  neo_position_t current = {};
+  neo_position_t current = {0};
   current.column = 1;
   current.line = 1;
   current.offset = source;

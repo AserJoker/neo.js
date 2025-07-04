@@ -105,23 +105,6 @@ static neo_js_variable_t neo_js_null_del_field(neo_js_context_t ctx,
       ctx, NEO_ERROR_TYPE, L"Cannot convert undefined or null to object");
 }
 
-static neo_js_variable_t
-neo_js_null_def_field(neo_js_context_t ctx, neo_js_variable_t object,
-                      neo_js_variable_t field, neo_js_variable_t value,
-                      bool configurable, bool enumable, bool writable) {
-  return neo_js_context_create_error(
-      ctx, NEO_ERROR_TYPE, L"Cannot convert undefined or null to object");
-}
-
-static neo_js_variable_t
-neo_js_null_def_accessor(neo_js_context_t ctx, neo_js_variable_t object,
-                         neo_js_variable_t field, neo_js_variable_t getter,
-                         neo_js_variable_t setter, bool configurable,
-                         bool enumable) {
-  return neo_js_context_create_error(
-      ctx, NEO_ERROR_TYPE, L"Cannot convert undefined or null to object");
-}
-
 static bool neo_js_null_is_equal(neo_js_context_t ctx, neo_js_variable_t self,
                                  neo_js_variable_t another) {
   return neo_js_variable_get_type(another)->kind == NEO_TYPE_NULL;

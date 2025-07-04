@@ -227,7 +227,7 @@ neo_ast_node_t neo_ast_read_expression_assigment(neo_allocator_t allocator,
       !neo_location_is(token->location, "^=") &&
       !neo_location_is(token->location, "&&=") &&
       !neo_location_is(token->location, "||=") &&
-      !neo_location_is(token->location, R"(??=)")) {
+      !neo_location_is(token->location, "(??=)")) {
     neo_allocator_free(allocator, token);
     goto onerror;
   }

@@ -79,7 +79,7 @@ static neo_ast_program_t neo_create_ast_program(neo_allocator_t allocator) {
       (neo_resolve_closure_fn_t)neo_ast_program_resolve_closure;
   node->node.write = (neo_write_fn_t)neo_ast_program_write;
   node->interpreter = NULL;
-  neo_list_initialize_t initialize = {};
+  neo_list_initialize_t initialize = {0};
   initialize.auto_free = true;
   node->directives = neo_create_list(allocator, &initialize);
   node->body = neo_create_list(allocator, &initialize);

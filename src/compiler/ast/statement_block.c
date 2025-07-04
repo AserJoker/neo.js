@@ -35,7 +35,7 @@ neo_ast_statement_block_resolve_closure(neo_allocator_t allocator,
     neo_ast_node_t item = (neo_ast_node_t)neo_list_node_get(it);
     item->resolve_closure(allocator, item, closure);
   }
-  neo_compile_scope_pop(self->node.scope);
+  neo_compile_scope_pop(scope);
 }
 
 static neo_variable_t
@@ -64,7 +64,7 @@ neo_create_statement_block(neo_allocator_t allocator) {
   node->node.resolve_closure =
       (neo_resolve_closure_fn_t)neo_ast_statement_block_resolve_closure;
   node->node.write = (neo_write_fn_t)neo_ast_statement_block_write;
-  neo_list_initialize_t initialize = {};
+  neo_list_initialize_t initialize = {0};
   initialize.auto_free = true;
   node->body = neo_create_list(allocator, &initialize);
   return node;
