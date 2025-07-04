@@ -46,6 +46,7 @@ neo_js_variable_t neo_js_generator_next(neo_js_context_t ctx,
     neo_list_t stack = neo_js_vm_get_stack(coroutine->vm);
     neo_list_push(stack, arg);
     neo_js_variable_t value = neo_js_vm_eval(coroutine->vm, coroutine->program);
+    coroutine->scope = neo_js_context_set_scope(ctx, current);
     if (neo_js_variable_get_type(value)->kind == NEO_TYPE_INTERRUPT) {
       neo_js_interrupt_t interrupt = neo_js_variable_to_interrupt(value);
       neo_js_vm_set_offset(coroutine->vm, interrupt->offset);
@@ -67,17 +68,29 @@ neo_js_variable_t neo_js_generator_next(neo_js_context_t ctx,
       neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
       result = neo_js_scope_create_variable(
           allocator, current, neo_js_variable_get_handle(value), NULL);
+      current = neo_js_context_set_scope(ctx, coroutine->scope);
+      while (coroutine->scope != coroutine->root) {
+        neo_js_context_pop_scope(ctx);
+        coroutine->scope = neo_js_context_get_scope(ctx);
+      }
+      neo_js_context_set_scope(ctx, current);
     } else {
       coroutine->done = true;
       coroutine->result = neo_js_variable_get_handle(value);
+
       neo_js_context_set_field(
           ctx, result, neo_js_context_create_string(ctx, L"done"),
           neo_js_context_create_boolean(ctx, coroutine->done));
       neo_js_context_set_field(
           ctx, result, neo_js_context_create_string(ctx, L"value"),
           neo_js_context_create_variable(ctx, coroutine->result, NULL));
+      current = neo_js_context_set_scope(ctx, coroutine->scope);
+      while (coroutine->scope != coroutine->root) {
+        neo_js_context_pop_scope(ctx);
+        coroutine->scope = neo_js_context_get_scope(ctx);
+      }
+      neo_js_context_set_scope(ctx, current);
     }
-    coroutine->scope = neo_js_context_set_scope(ctx, current);
   }
   return result;
 }

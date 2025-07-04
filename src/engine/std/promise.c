@@ -300,7 +300,7 @@ neo_js_variable_t neo_js_promise_then(neo_js_context_t ctx,
     on_rejected = neo_js_context_create_undefined(ctx);
   }
   neo_js_variable_t resolver =
-      neo_js_context_create_cfunction(ctx, L"", neo_js_resolver);
+      neo_js_context_create_cfunction(ctx, NULL, neo_js_resolver);
   neo_js_callable_set_closure(ctx, resolver, L"onFulfilled", on_fulfilled);
   neo_js_callable_set_closure(ctx, resolver, L"onRejected", on_rejected);
   neo_js_context_bind(ctx, resolver, self);

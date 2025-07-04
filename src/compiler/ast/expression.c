@@ -524,6 +524,43 @@ neo_ast_node_t neo_ast_read_expression_16(neo_allocator_t allocator,
   node = TRY(neo_ast_read_expression_new(allocator, file, position)) {
     goto onerror;
   }
+  if (node) {
+    neo_position_t current = *position;
+    SKIP_ALL(allocator, file, &current, onerror);
+    for (;;) {
+      neo_ast_node_t bnode = NULL;
+      bnode = TRY(neo_ast_read_expression_member(allocator, file, &current)) {
+        goto onerror;
+      };
+      if (bnode) {
+        ((neo_ast_expression_member_t)bnode)->host = node;
+      }
+      if (!bnode) {
+        bnode = TRY(neo_ast_read_expression_call(allocator, file, &current)) {
+          goto onerror;
+        };
+        if (bnode) {
+          ((neo_ast_expression_call_t)bnode)->callee = node;
+        }
+      }
+      if (!bnode) {
+        bnode = TRY(neo_ast_read_literal_template(allocator, file, &current)) {
+          goto onerror;
+        };
+        if (bnode) {
+          ((neo_ast_literal_template_t)bnode)->tag = node;
+        }
+      }
+      if (!bnode) {
+        break;
+      }
+      node = bnode;
+      node->location.begin = *position;
+      node->location.end = current;
+      node->location.file = file;
+      *position = current;
+    }
+  }
   if (!node) {
     node = TRY(neo_ast_read_expression_17(allocator, file, position)) {
       goto onerror;

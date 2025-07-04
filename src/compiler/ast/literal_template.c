@@ -43,7 +43,7 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
                                            neo_ast_literal_template_t self) {
   if (self->tag) {
     if (self->tag->type == NEO_NODE_TYPE_EXPRESSION_MEMBER ||
-        NEO_NODE_TYPE_EXPRESSION_COMPUTED_MEMBER) {
+        self->tag->type == NEO_NODE_TYPE_EXPRESSION_COMPUTED_MEMBER) {
       neo_ast_expression_member_t member =
           (neo_ast_expression_member_t)self->tag;
       neo_list_initialize_t initialize = {true};
