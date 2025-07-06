@@ -236,7 +236,8 @@ neo_js_variable_t neo_js_context_create_coroutine(neo_js_context_t ctx,
 
 neo_js_variable_t neo_js_context_create_interrupt(neo_js_context_t ctx,
                                                   neo_js_variable_t variable,
-                                                  size_t offset);
+                                                  size_t offset,
+                                                  neo_js_interrupt_type_t type);
 
 neo_js_variable_t
 neo_js_context_create_cfunction(neo_js_context_t ctx, const wchar_t *name,

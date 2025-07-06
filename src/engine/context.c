@@ -1975,13 +1975,13 @@ neo_js_variable_t neo_js_context_create_coroutine(neo_js_context_t ctx,
   return neo_js_context_create_variable(
       ctx, neo_create_js_handle(allocator, &coroutine->value), NULL);
 }
-neo_js_variable_t neo_js_context_create_interrupt(neo_js_context_t ctx,
-                                                  neo_js_variable_t result,
-                                                  size_t offset) {
+neo_js_variable_t
+neo_js_context_create_interrupt(neo_js_context_t ctx, neo_js_variable_t result,
+                                size_t offset, neo_js_interrupt_type_t type) {
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_js_handle_t hresult = neo_js_variable_get_handle(result);
   neo_js_interrupt_t interrupt =
-      neo_create_js_interrupt(allocator, hresult, offset, ctx->scope);
+      neo_create_js_interrupt(allocator, hresult, offset, type);
   neo_js_variable_t variable = neo_js_context_create_variable(
       ctx, neo_create_js_handle(allocator, &interrupt->value), NULL);
   neo_js_handle_t hvariable = neo_js_variable_get_handle(variable);

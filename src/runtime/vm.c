@@ -769,16 +769,16 @@ void neo_js_vm_keys(neo_js_vm_t vm, neo_program_t program) {
 void neo_js_vm_await(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_list_pop(vm->stack);
-  neo_js_variable_t interrupt =
-      neo_js_context_create_interrupt(vm->ctx, value, vm->offset);
+  neo_js_variable_t interrupt = neo_js_context_create_interrupt(
+      vm->ctx, value, vm->offset, NEO_JS_INTERRUPT_AWAIT);
   neo_list_push(vm->stack, interrupt);
   vm->offset = neo_buffer_get_size(program->codes);
 }
 void neo_js_vm_yield(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_list_pop(vm->stack);
-  neo_js_variable_t interrupt =
-      neo_js_context_create_interrupt(vm->ctx, value, vm->offset);
+  neo_js_variable_t interrupt = neo_js_context_create_interrupt(
+      vm->ctx, value, vm->offset, NEO_JS_INTERRUPT_YIELD);
   neo_list_push(vm->stack, interrupt);
   vm->offset = neo_buffer_get_size(program->codes);
 }
