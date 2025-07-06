@@ -4,7 +4,6 @@
 #include "engine/basetype/array.h"
 #include "engine/basetype/boolean.h"
 #include "engine/basetype/cfunction.h"
-#include "engine/basetype/coroutine.h"
 #include "engine/basetype/error.h"
 #include "engine/basetype/function.h"
 #include "engine/basetype/interrupt.h"
@@ -105,10 +104,6 @@ neo_js_variable_to_error(neo_js_variable_t variable) {
   return neo_js_value_to_error(neo_js_variable_get_value(variable));
 }
 
-static inline neo_js_coroutine_t
-neo_js_variable_to_coroutine(neo_js_variable_t variable) {
-  return neo_js_value_to_coroutine(neo_js_variable_get_value(variable));
-}
 static inline neo_js_interrupt_t
 neo_js_variable_to_interrupt(neo_js_variable_t variable) {
   return neo_js_value_to_interrupt(neo_js_variable_get_value(variable));

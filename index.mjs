@@ -1,15 +1,9 @@
-function* get() {
-  try {
-    yield 1;
-    yield 2;
-    yield 3;
-  } catch {
-    return 4;
-  }
-}
-
-const iterator = get();
-iterator.next();
-println(123);
-const gen = iterator.throw(4);
-println(gen.value);
+const it = (function* () {
+  println(123);
+  yield 1;
+  println(234);
+})();
+it.next();
+it.next();
+it.next();
+it.next();
