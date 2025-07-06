@@ -1612,7 +1612,8 @@ neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
           frame->onfinish = 0;
         }
       }
-      if (!frame->onerror && !frame->onerror) {
+      if (!frame->onerror && !frame->onerror &&
+          vm->offset == neo_buffer_get_size(program->codes)) {
         neo_list_pop(vm->try_stack);
       }
       continue;
