@@ -1555,6 +1555,13 @@ neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
   neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
   while (true) {
     if (vm->offset == neo_buffer_get_size(program->codes)) {
+      if (neo_list_get_size(vm->stack) > 0) {
+        neo_js_variable_t result =
+            neo_list_node_get(neo_list_get_last(vm->stack));
+        if (neo_js_variable_get_type(result)->kind == NEO_TYPE_INTERRUPT) {
+          break;
+        }
+      }
       if (!neo_list_get_size(vm->try_stack)) {
         break;
       }
@@ -1604,6 +1611,9 @@ neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
           vm->offset = frame->onfinish;
           frame->onfinish = 0;
         }
+      }
+      if (!frame->onerror && !frame->onerror) {
+        neo_list_pop(vm->try_stack);
       }
       continue;
     }
