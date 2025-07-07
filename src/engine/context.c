@@ -14,6 +14,7 @@
 #include "engine/basetype/boolean.h"
 #include "engine/basetype/callable.h"
 #include "engine/basetype/cfunction.h"
+#include "engine/basetype/coroutine.h"
 #include "engine/basetype/error.h"
 #include "engine/basetype/function.h"
 #include "engine/basetype/interrupt.h"
@@ -24,7 +25,6 @@
 #include "engine/basetype/symbol.h"
 #include "engine/basetype/undefined.h"
 #include "engine/basetype/uninitialize.h"
-#include "engine/coroutine.h"
 #include "engine/handle.h"
 #include "engine/runtime.h"
 #include "engine/scope.h"
@@ -433,6 +433,13 @@ static void neo_js_context_init_std_promise(neo_js_context_t ctx) {
       neo_js_context_get_field(ctx, ctx->std.promise_constructor,
                                neo_js_context_create_string(ctx, L"prototype"));
 
+  neo_js_variable_t to_string_tag = neo_js_context_get_field(
+      ctx, ctx->std.symbol_constructor,
+      neo_js_context_create_string(ctx, L"toStringTag"));
+
+  neo_js_context_set_field(ctx, prototype, to_string_tag,
+                           neo_js_context_create_string(ctx, L"Promise"));
+
   neo_js_context_def_field(
       ctx, prototype, neo_js_context_create_string(ctx, L"then"),
       neo_js_context_create_cfunction(ctx, L"then", neo_js_promise_then), true,
@@ -614,7 +621,7 @@ static void neo_js_context_dispose(neo_allocator_t allocator,
                                    neo_js_context_t ctx) {
   for (neo_list_node_t it = neo_list_get_first(ctx->coroutines);
        it != neo_list_get_tail(ctx->coroutines); it = neo_list_node_next(it)) {
-    neo_js_coroutine_t coroutine = neo_list_node_get(it);
+    neo_js_co_context_t coroutine = neo_list_node_get(it);
     neo_allocator_free(allocator, coroutine->root);
   }
   neo_allocator_free(allocator, ctx->coroutines);
@@ -1503,17 +1510,15 @@ static neo_js_variable_t neo_js_context_call_generator_function(
   neo_js_variable_t result =
       neo_js_context_construct(ctx, ctx->std.generator_constructor, 0, NULL);
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
-  neo_js_scope_t scope = neo_create_js_scope(allocator, ctx->root);
   neo_js_vm_t vm = neo_create_js_vm(ctx, self, function->address);
+  neo_js_variable_t coroutine =
+      neo_js_context_create_coroutine(ctx, vm, function->program);
 
-  neo_js_coroutine_t coroutine = neo_js_context_create_coroutine(ctx);
+  neo_js_co_context_t co_ctx = neo_js_coroutine_get_context(coroutine);
 
-  coroutine->program = function->program;
-  coroutine->vm = vm;
-  coroutine->root = scope;
-  coroutine->scope = coroutine->root;
+  neo_js_scope_t scope = co_ctx->scope;
 
-  neo_js_context_set_opaque(ctx, result, L"coroutine", coroutine);
+  neo_js_context_set_internal(ctx, result, L"[[coroutine]]", coroutine);
 
   neo_js_scope_t current = neo_js_context_set_scope(ctx, scope);
   neo_js_handle_t bind = function->callable.bind;
@@ -1563,17 +1568,26 @@ bool neo_js_context_is_thenable(neo_js_context_t ctx,
   return true;
 }
 
-neo_js_coroutine_t neo_js_context_create_coroutine(neo_js_context_t ctx) {
-  neo_js_coroutine_t coroutine =
-      neo_create_js_coroutine(neo_js_runtime_get_allocator(ctx->runtime));
-  neo_list_push(ctx->coroutines, coroutine);
-  return coroutine;
-}
-void neo_js_context_recycle_coroutine(neo_js_context_t ctx,
-                                      neo_js_coroutine_t coroutine) {
-  neo_list_delete(ctx->coroutines, coroutine);
+neo_js_variable_t neo_js_context_create_coroutine(neo_js_context_t ctx,
+                                                  neo_js_vm_t vm,
+                                                  neo_program_t program) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
-  neo_allocator_free(allocator, coroutine->scope);
+  neo_js_co_context_t co_ctx = neo_create_js_co_context(
+      allocator, vm, program, neo_create_js_scope(allocator, ctx->root));
+  neo_list_push(ctx->coroutines, co_ctx);
+  neo_js_coroutine_t coroutine = neo_create_js_coroutine(allocator, co_ctx);
+  return neo_js_context_create_variable(
+      ctx, neo_create_js_handle(allocator, &coroutine->value), NULL);
+}
+
+void neo_js_context_recycle_coroutine(neo_js_context_t ctx,
+                                      neo_js_variable_t coroutine) {
+  neo_js_co_context_t co_ctx = neo_js_coroutine_get_context(coroutine);
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  neo_allocator_free(allocator, co_ctx->root);
+  co_ctx->root = NULL;
+  co_ctx->scope = NULL;
+  neo_list_delete(ctx->coroutines, co_ctx);
 }
 
 static neo_js_variable_t neo_js_context_call_async_function(

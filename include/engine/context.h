@@ -2,7 +2,6 @@
 #define _H_NEO_ENGINE_CONTEXT_
 #include "compiler/program.h"
 #include "core/allocator.h"
-#include "engine/coroutine.h"
 #include "engine/runtime.h"
 #include "engine/scope.h"
 #include "engine/type.h"
@@ -174,10 +173,12 @@ void neo_js_context_set_opaque(neo_js_context_t ctx, neo_js_variable_t object,
 bool neo_js_context_is_thenable(neo_js_context_t ctx,
                                 neo_js_variable_t variable);
 
-neo_js_coroutine_t neo_js_context_create_coroutine(neo_js_context_t ctx);
+neo_js_variable_t neo_js_context_create_coroutine(neo_js_context_t ctx,
+                                                  neo_js_vm_t vm,
+                                                  neo_program_t program);
 
 void neo_js_context_recycle_coroutine(neo_js_context_t ctx,
-                                      neo_js_coroutine_t coroutine);
+                                      neo_js_variable_t coroutine);
 
 neo_js_variable_t neo_js_context_del_field(neo_js_context_t ctx,
                                            neo_js_variable_t object,

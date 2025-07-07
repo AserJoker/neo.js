@@ -58,6 +58,7 @@ typedef void (*neo_js_copy_fn_t)(neo_js_context_t ctx, neo_js_variable_t self,
                                  neo_js_variable_t target);
 
 typedef enum _neo_js_type_kind_t {
+  NEO_TYPE_COROUTINE,
   NEO_TYPE_UNINITIALIZE,
   NEO_TYPE_ERROR,
   NEO_TYPE_INTERRUPT,
