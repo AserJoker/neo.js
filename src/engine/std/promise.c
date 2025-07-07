@@ -260,12 +260,16 @@ static neo_js_variable_t neo_js_resolver(neo_js_context_t ctx,
       neo_js_context_get_opaque(ctx, self, L"[[promise]]");
   neo_js_handle_t hpromise = neo_js_variable_get_handle(self);
   if (promise->status == NEO_PROMISE_PENDDING) {
-    neo_js_handle_t hfulfilled = neo_js_variable_get_handle(on_fulfilled);
-    neo_js_handle_t hrejected = neo_js_variable_get_handle(on_rejected);
-    neo_list_push(promise->on_fulfilled_callbacks, hfulfilled);
-    neo_list_push(promise->on_rejected_callbacks, hrejected);
-    neo_js_handle_add_parent(hfulfilled, hpromise);
-    neo_js_handle_add_parent(hrejected, hpromise);
+    if (neo_js_variable_get_type(on_fulfilled)->kind >= NEO_TYPE_CALLABLE) {
+      neo_js_handle_t hfulfilled = neo_js_variable_get_handle(on_fulfilled);
+      neo_list_push(promise->on_fulfilled_callbacks, hfulfilled);
+      neo_js_handle_add_parent(hfulfilled, hpromise);
+    }
+    if (neo_js_variable_get_type(on_rejected)->kind >= NEO_TYPE_CALLABLE) {
+      neo_js_handle_t hrejected = neo_js_variable_get_handle(on_rejected);
+      neo_list_push(promise->on_rejected_callbacks, hrejected);
+      neo_js_handle_add_parent(hrejected, hpromise);
+    }
   } else if (promise->status == NEO_PROMISE_FULFILLED) {
     neo_js_variable_t value =
         neo_js_context_create_variable(ctx, promise->value, NULL);
@@ -294,10 +298,10 @@ neo_js_variable_t neo_js_promise_then(neo_js_context_t ctx,
     on_rejected = argv[1];
   }
   if (!on_fulfilled) {
-    on_fulfilled = neo_js_context_create_undefined(ctx);
+    on_fulfilled = neo_js_context_create_null(ctx);
   }
   if (!on_rejected) {
-    on_rejected = neo_js_context_create_undefined(ctx);
+    on_rejected = neo_js_context_create_null(ctx);
   }
   neo_js_variable_t resolver =
       neo_js_context_create_cfunction(ctx, NULL, neo_js_resolver);

@@ -81,9 +81,7 @@ static void neo_js_function_copy_fn(neo_js_context_t ctx,
   for (neo_hash_map_node_t it = neo_hash_map_get_first(func->callable.closure);
        it != neo_hash_map_get_tail(func->callable.closure);
        it = neo_hash_map_node_next(it)) {
-    neo_js_handle_t hkey = neo_hash_map_node_get_key(it);
     neo_js_handle_t hvalue = neo_hash_map_node_get_value(it);
-    neo_js_handle_add_parent(hkey, htarget);
     neo_js_handle_add_parent(hvalue, htarget);
   }
 }

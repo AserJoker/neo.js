@@ -1595,6 +1595,10 @@ neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
             frame->onfinish = 0;
           }
         } else {
+          if (frame->onerror) {
+            frame->onerror = 0;
+          }
+          neo_list_push(vm->stack, result);
           if (frame->onfinish) {
             vm->offset = frame->onfinish;
             frame->onfinish = 0;
