@@ -3,6 +3,7 @@ const fn = () => {
 }
 async function test() {
   try {
+    await fn();
   } catch (e) {
     println(e);
     return 2;
