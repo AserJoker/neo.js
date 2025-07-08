@@ -135,24 +135,28 @@ neo_js_variable_t neo_js_generator_return(neo_js_context_t ctx,
     neo_list_push(stack, arg);
     neo_js_vm_set_offset(co_ctx->vm,
                          neo_buffer_get_size(co_ctx->program->codes));
+
     co_ctx->running = true;
     neo_js_variable_t value = neo_js_vm_eval(co_ctx->vm, co_ctx->program);
     co_ctx->running = false;
     co_ctx->scope = neo_js_context_set_scope(ctx, current);
-    if (neo_js_variable_get_type(value)->kind == NEO_TYPE_ERROR) {
+    if (neo_js_variable_get_type(value)->kind == NEO_TYPE_INTERRUPT) {
+      neo_js_interrupt_t interrupt = neo_js_variable_to_interrupt(value);
+      neo_js_vm_set_offset(co_ctx->vm, interrupt->offset);
+      neo_js_context_set_field(ctx, result,
+                               neo_js_context_create_string(ctx, L"done"),
+                               neo_js_context_create_boolean(ctx, false));
+      neo_js_context_set_field(
+          ctx, result, neo_js_context_create_string(ctx, L"value"),
+          neo_js_context_create_variable(ctx, interrupt->result, NULL));
+    } else if (neo_js_variable_get_type(value)->kind == NEO_TYPE_ERROR) {
       co_ctx->result = neo_js_variable_get_handle(value);
       neo_js_handle_add_parent(co_ctx->result,
                                neo_js_variable_get_handle(self));
       neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
       result = neo_js_scope_create_variable(
           allocator, current, neo_js_variable_get_handle(value), NULL);
-      current = neo_js_context_set_scope(ctx, co_ctx->scope);
-      while (co_ctx->scope != co_ctx->root) {
-        neo_js_context_pop_scope(ctx);
-        co_ctx->scope = neo_js_context_get_scope(ctx);
-      }
-      neo_js_context_set_scope(ctx, current);
-      neo_allocator_free(allocator, co_ctx->scope);
+      neo_js_context_recycle_coroutine(ctx, coroutine);
     } else {
       co_ctx->result = neo_js_variable_get_handle(value);
       neo_js_handle_add_parent(co_ctx->result,
@@ -163,13 +167,7 @@ neo_js_variable_t neo_js_generator_return(neo_js_context_t ctx,
       neo_js_context_set_field(
           ctx, result, neo_js_context_create_string(ctx, L"value"),
           neo_js_context_create_variable(ctx, co_ctx->result, NULL));
-      current = neo_js_context_set_scope(ctx, co_ctx->scope);
-      while (co_ctx->scope != co_ctx->root) {
-        neo_js_context_pop_scope(ctx);
-        co_ctx->scope = neo_js_context_get_scope(ctx);
-      }
-      neo_js_context_set_scope(ctx, current);
-      neo_allocator_free(allocator, co_ctx->scope);
+      neo_js_context_recycle_coroutine(ctx, coroutine);
     }
   }
   return result;

@@ -1,7 +1,6 @@
-async function test() {
-  println(234)
-  throw new Error('test')
+async function* getArr() {
+  yield* ['a', 'b', 'c'];
 }
-println(123)
-await test()
-println(345)
+for await (const item of getArr()) {
+  println(item)
+}

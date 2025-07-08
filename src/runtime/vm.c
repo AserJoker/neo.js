@@ -9,6 +9,7 @@
 #include "engine/basetype/callable.h"
 #include "engine/basetype/error.h"
 #include "engine/basetype/function.h"
+#include "engine/basetype/interrupt.h"
 #include "engine/basetype/number.h"
 #include "engine/basetype/object.h"
 #include "engine/context.h"
@@ -852,6 +853,37 @@ void neo_js_vm_next(neo_js_vm_t vm, neo_program_t program) {
   }
 }
 
+void neo_js_vm_await_next(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t iterator = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_js_variable_t next = neo_js_context_get_field(
+      vm->ctx, iterator, neo_js_context_create_string(vm->ctx, L"next"));
+  if (neo_js_variable_get_type(next)->kind < NEO_TYPE_CALLABLE) {
+    neo_list_push(vm->stack,
+                  neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
+                                              L"variable is not iterable"));
+    vm->offset = neo_buffer_get_size(program->codes);
+    return;
+  }
+  neo_js_variable_t result =
+      neo_js_context_call(vm->ctx, next, iterator, 0, NULL);
+  if (neo_js_variable_get_type(result)->kind != NEO_TYPE_ERROR) {
+    result = neo_js_context_create_interrupt(vm->ctx, result, vm->offset,
+                                             NEO_JS_INTERRUPT_AWAIT);
+  }
+  neo_list_push(vm->stack, result);
+  vm->offset = neo_buffer_get_size(program->codes);
+}
+void neo_js_vm_resolve_next(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t result = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t value = neo_js_context_get_field(
+      vm->ctx, result, neo_js_context_create_string(vm->ctx, L"value"));
+  neo_js_variable_t done = neo_js_context_get_field(
+      vm->ctx, result, neo_js_context_create_string(vm->ctx, L"done"));
+  neo_list_push(vm->stack, value);
+  neo_list_push(vm->stack, done);
+}
+
 void neo_js_vm_rest(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t iterator = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_js_variable_t next = neo_js_context_get_field(
@@ -1512,6 +1544,8 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_await,                // NEO_ASM_AWAIT
     neo_js_vm_yield,                // NEO_ASM_YIELD
     neo_js_vm_next,                 // NEO_ASM_NEXT
+    neo_js_vm_await_next,           // NEO_ASM_AWAIT_NEXT
+    neo_js_vm_resolve_next,         // NEO_ASM_RESOLVE_NEXT
     neo_js_vm_iterator,             // NEO_ASM_ITERATOR
     neo_js_vm_async_iterator,       // NEO_ASM_ASYNC_ITERATOR
     neo_js_vm_rest,                 // NEO_ASM_REST

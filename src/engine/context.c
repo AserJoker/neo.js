@@ -3002,7 +3002,7 @@ static neo_js_variable_t neo_js_context_eval_resolver(neo_js_context_t ctx,
         ctx, value, neo_js_context_create_string(ctx, L"then"));
 
     neo_js_variable_t args[] = {on_fulfilled, on_rejected};
-    
+
     return neo_js_context_call(ctx, then, value, 2, args);
   } else {
     return neo_js_awaiter_resolver(ctx, self, argc, argv);
@@ -3087,6 +3087,8 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
     return neo_js_context_construct(ctx, ctx->std.promise_constructor, 1,
                                     &resolver);
   } else {
+    result = neo_js_scope_create_variable(
+        allocator, current, neo_js_variable_get_handle(result), NULL);
     neo_allocator_free(allocator, vm);
     while (ctx->scope != scope) {
       neo_js_context_pop_scope(ctx);

@@ -44,9 +44,11 @@ static void neo_ast_expression_yield_write(neo_allocator_t allocator,
       neo_program_add_code(allocator, ctx->program, NEO_ASM_ASYNC_ITERATOR);
     }
     size_t begin = neo_buffer_get_size(ctx->program->codes);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_NEXT);
     if (ctx->is_async) {
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_AWAIT);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_AWAIT_NEXT);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_RESOLVE_NEXT);
+    } else {
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_NEXT);
     }
     neo_program_add_code(allocator, ctx->program, NEO_ASM_JTRUE);
     size_t addr = neo_buffer_get_size(ctx->program->codes);
