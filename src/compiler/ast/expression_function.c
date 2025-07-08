@@ -66,13 +66,9 @@ neo_ast_expression_function_write(neo_allocator_t allocator,
     neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   }
   bool is_async = ctx->is_async;
-  if (self->async) {
-    ctx->is_async = true;
-  }
+  ctx->is_async = self->async;
   bool is_generator = ctx->is_generator;
-  if (self->generator) {
-    ctx->is_generator = true;
-  }
+  ctx->is_generator = self->generator;
   TRY(self->body->write(allocator, ctx, self->body)) { return; }
   ctx->is_async = is_async;
   ctx->is_generator = is_generator;

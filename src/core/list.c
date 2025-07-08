@@ -46,6 +46,8 @@ neo_list_t neo_create_list(neo_allocator_t allocator,
   list->tail.last = &list->head;
   list->head.last = NULL;
   list->tail.next = NULL;
+  list->head.data = NULL;
+  list->tail.data = NULL;
   list->allocator = allocator;
   if (initialize && initialize->auto_free) {
     list->auto_free = true;

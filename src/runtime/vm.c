@@ -43,15 +43,6 @@ struct _neo_js_label_frame_t {
   size_t addr;
 };
 
-struct _neo_js_vm_t {
-  neo_list_t stack;
-  neo_list_t try_stack;
-  neo_list_t label_stack;
-  neo_js_context_t ctx;
-  size_t offset;
-  neo_js_variable_t self;
-};
-
 static void neo_js_label_frame_dispose(neo_allocator_t allocator,
                                        neo_js_label_frame_t frame) {
   neo_allocator_free(allocator, frame->label);
@@ -79,7 +70,7 @@ neo_js_try_frame_t neo_create_js_try_frame(neo_allocator_t allocator) {
 }
 
 neo_js_vm_t neo_create_js_vm(neo_js_context_t ctx, neo_js_variable_t self,
-                             size_t offset) {
+                             size_t offset, neo_js_scope_t scope) {
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_js_vm_t vm = neo_allocator_alloc(allocator, sizeof(struct _neo_js_vm_t),
                                        neo_js_vm_dispose);
@@ -90,6 +81,8 @@ neo_js_vm_t neo_create_js_vm(neo_js_context_t ctx, neo_js_variable_t self,
   vm->ctx = ctx;
   vm->offset = offset;
   vm->self = self ? self : neo_js_context_create_undefined(ctx);
+  vm->root = scope;
+  vm->scope = scope;
   return vm;
 }
 
@@ -1601,6 +1594,7 @@ const neo_js_vm_cmd_fn_t cmds[] = {
 };
 
 neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_scope_t current = neo_js_context_set_scope(vm->ctx, vm->scope);
   neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
   while (true) {
     if (vm->offset == neo_buffer_get_size(program->codes)) {
@@ -1679,12 +1673,23 @@ neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
                                          L"Unsupport ASM");
     }
   }
+  vm->scope = neo_js_context_set_scope(vm->ctx, current);
   neo_js_variable_t result = NULL;
   if (neo_list_get_size(vm->stack)) {
     result = neo_list_node_get(neo_list_get_last(vm->stack));
+    result = neo_js_context_create_variable(
+        vm->ctx, neo_js_variable_get_handle(result), NULL);
     neo_list_pop(vm->stack);
   } else {
     result = neo_js_context_create_undefined(vm->ctx);
+  }
+  if (neo_js_variable_get_type(result)->kind != NEO_TYPE_INTERRUPT) {
+    current = neo_js_context_set_scope(vm->ctx, vm->scope);
+    while (vm->scope != vm->root) {
+      neo_js_context_pop_scope(vm->ctx);
+      vm->scope = neo_js_context_get_scope(vm->ctx);
+    }
+    vm->scope = neo_js_context_set_scope(vm->ctx, current);
   }
   return result;
 }

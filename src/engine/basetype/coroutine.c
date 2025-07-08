@@ -17,15 +17,12 @@ static void neo_js_co_context_dispose(neo_allocator_t allocator,
 
 neo_js_co_context_t neo_create_js_co_context(neo_allocator_t allocator,
                                              neo_js_vm_t vm,
-                                             neo_program_t program,
-                                             neo_js_scope_t root) {
+                                             neo_program_t program) {
   neo_js_co_context_t ctx =
       neo_allocator_alloc(allocator, sizeof(struct _neo_js_co_context_t),
                           neo_js_co_context_dispose);
   ctx->program = program;
   ctx->result = NULL;
-  ctx->root = root;
-  ctx->scope = root;
   ctx->vm = vm;
   ctx->running = false;
   return ctx;

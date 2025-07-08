@@ -142,13 +142,9 @@ void neo_writer_pop_scope(neo_allocator_t allocator, neo_write_context_t ctx,
           neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
         }
         bool is_async = ctx->is_async;
-        if (function->async) {
-          ctx->is_async = true;
-        }
+        ctx->is_async = function->async;
         bool is_generator = ctx->is_generator;
-        if (function->generator) {
-          ctx->is_generator = true;
-        }
+        ctx->is_generator = function->generator;
         TRY(function->body->write(allocator, ctx, function->body)) { return; }
         ctx->is_async = is_async;
         ctx->is_generator = is_generator;

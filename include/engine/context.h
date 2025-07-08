@@ -175,8 +175,7 @@ bool neo_js_context_is_thenable(neo_js_context_t ctx,
 
 neo_js_variable_t neo_js_context_create_coroutine(neo_js_context_t ctx,
                                                   neo_js_vm_t vm,
-                                                  neo_program_t program,
-                                                  neo_js_scope_t scope);
+                                                  neo_program_t program);
 
 void neo_js_context_recycle_coroutine(neo_js_context_t ctx,
                                       neo_js_variable_t coroutine);

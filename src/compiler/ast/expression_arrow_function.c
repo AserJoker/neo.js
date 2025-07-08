@@ -97,13 +97,14 @@ static void neo_ast_expression_arrow_function_write(
     neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   }
   bool is_async = ctx->is_async;
-  if (self->async) {
-    ctx->is_async = true;
-  }
+  ctx->is_async = self->async;
+  bool is_generator = ctx->is_generator;
+  ctx->is_generator = false;
   TRY(self->body->write(allocator, ctx, self->body)) { return; }
   if (self->body->type != NEO_NODE_TYPE_FUNCTION_BODY) {
     neo_program_add_code(allocator, ctx->program, NEO_ASM_RET);
   }
+  ctx->is_generator = is_generator;
   ctx->is_async = is_async;
   neo_writer_pop_scope(allocator, ctx, self->node.scope);
   neo_program_set_current(ctx->program, endaddr);

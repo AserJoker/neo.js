@@ -99,10 +99,15 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
       neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
     }
+    bool is_async = ctx->is_async;
+    bool is_generator = ctx->is_generator;
+    ctx->is_async = false;
+    ctx->is_generator = false;
     TRY(constructor->body->write(allocator, ctx, constructor->body)) { return; }
+    ctx->is_generator = is_generator;
+    ctx->is_async = is_async;
   }
   neo_writer_pop_scope(allocator, ctx, self->node.scope);
-
   neo_program_set_current(ctx->program, endaddr);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_FUNCTION);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_ADDRESS);

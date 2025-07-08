@@ -72,7 +72,13 @@ static void neo_ast_object_accessor_write(neo_allocator_t allocator,
     neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   }
+  bool is_async = ctx->is_async;
+  bool is_generator = ctx->is_generator;
+  ctx->is_async = false;
+  ctx->is_generator = false;
   TRY(self->body->write(allocator, ctx, self->body)) { return; }
+  ctx->is_generator = is_generator;
+  ctx->is_async = is_async;
   if (self->body->type != NEO_NODE_TYPE_FUNCTION_BODY) {
     neo_program_add_code(allocator, ctx->program, NEO_ASM_RET);
   }
