@@ -25,7 +25,7 @@ static void neo_ast_statement_try_resolve_closure(neo_allocator_t allocator,
     self->catch->resolve_closure(allocator, self->catch, closure);
   }
   if (self->finally) {
-    self->catch->resolve_closure(allocator, self->finally, closure);
+    self->finally->resolve_closure(allocator, self->finally, closure);
   }
 }
 static void neo_ast_statement_try_write(neo_allocator_t allocator,
