@@ -252,6 +252,9 @@ neo_js_variable_t neo_js_context_create_function(neo_js_context_t ctx,
 neo_js_variable_t
 neo_js_context_create_generator_function(neo_js_context_t ctx,
                                          neo_program_t program);
+neo_js_variable_t
+neo_js_context_create_async_generator_function(neo_js_context_t ctx,
+                                               neo_program_t program);
 
 neo_js_variable_t neo_js_context_create_async_function(neo_js_context_t ctx,
                                                        neo_program_t program);

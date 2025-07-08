@@ -105,8 +105,8 @@ neo_ast_node_t neo_ast_read_import_specifier(neo_allocator_t allocator,
     SKIP_ALL(allocator, file, &current, onerror);
     node->alias = neo_ast_read_identifier(allocator, file, &current);
     if (!node->alias) {
-      THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
-            current.column);
+      THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+            current.line, current.column);
       goto onerror;
     }
   }

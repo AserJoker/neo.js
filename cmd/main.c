@@ -160,6 +160,15 @@ int main(int argc, char *argv[]) {
   if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
     disp_js_variable(ctx, result);
   } else {
+    if (neo_js_context_is_thenable(ctx, result)) {
+      neo_js_variable_t then = neo_js_context_get_field(
+          ctx, result, neo_js_context_create_string(ctx, L"then"));
+      neo_js_variable_t args[] = {
+          neo_js_context_create_null(ctx),
+          neo_js_context_get_field(
+              ctx, global, neo_js_context_create_string(ctx, L"println"))};
+      neo_js_context_call(ctx, then, result, 2, args);
+    }
     while (!neo_js_context_is_ready(ctx)) {
       neo_js_context_next_tick(ctx);
     }

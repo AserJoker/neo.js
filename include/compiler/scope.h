@@ -35,14 +35,21 @@ struct _neo_compile_scope_t {
   neo_compile_scope_t parent;
   neo_list_t variables;
   neo_compile_scope_type_t type;
+  bool is_generator;
+  bool is_async;
 };
 
 neo_compile_scope_t neo_compile_scope_push(neo_allocator_t allocator,
-                                           neo_compile_scope_type_t type);
+                                           neo_compile_scope_type_t type,
+                                           bool is_generator, bool is_async);
 
 neo_compile_scope_t neo_compile_scope_pop(neo_compile_scope_t scope);
 
 neo_compile_scope_t neo_compile_scope_set(neo_compile_scope_t scope);
+
+bool neo_compile_scope_is_generator();
+
+bool neo_compile_scope_is_async();
 
 void neo_compile_scope_declar_value(neo_allocator_t allocator,
                                     neo_compile_scope_t self,

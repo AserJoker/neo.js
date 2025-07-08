@@ -63,8 +63,8 @@ neo_ast_node_t neo_ast_read_export_namespace(neo_allocator_t allocator,
   SKIP_ALL(allocator, file, &current, onerror);
   node->identifier = neo_ast_read_identifier(allocator, file, &current);
   if (!node->identifier) {
-    THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
-          current.column);
+    THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+          current.line, current.column);
     goto onerror;
   }
   node->node.location.begin = *position;

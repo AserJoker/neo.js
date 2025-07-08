@@ -53,8 +53,8 @@ static void neo_ast_pattern_object_write(neo_allocator_t allocator,
         neo_program_add_string(allocator, ctx->program, name + 1);
         neo_allocator_free(allocator, name);
       } else {
-        THROW("Invalid or unexpected token \n  at %s:%d:%d", ctx->program->file,
-              oitem->identifier->location.begin.line,
+        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)",
+              ctx->program->file, oitem->identifier->location.begin.line,
               oitem->identifier->location.begin.column);
         return;
       }
@@ -94,8 +94,8 @@ static void neo_ast_pattern_object_write(neo_allocator_t allocator,
         neo_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);
       } else {
-        THROW("Invalid or unexpected token \n  at %s:%d:%d", ctx->program->file,
-              oitem->identifier->location.begin.line,
+        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)",
+              ctx->program->file, oitem->identifier->location.begin.line,
               oitem->identifier->location.begin.column);
         return;
       }

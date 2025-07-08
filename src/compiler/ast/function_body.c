@@ -96,7 +96,8 @@ neo_ast_node_t neo_ast_read_function_body(neo_allocator_t allocator,
   current.column++;
   node = neo_create_ast_function_body(allocator);
   SKIP_ALL(allocator, file, &current, onerror);
-  scope = neo_compile_scope_push(allocator, NEO_COMPILE_SCOPE_BLOCK);
+  scope =
+      neo_compile_scope_push(allocator, NEO_COMPILE_SCOPE_BLOCK, false, false);
   for (;;) {
     neo_ast_node_t directive =
         TRY(neo_ast_read_directive(allocator, file, &current)) {
@@ -132,8 +133,8 @@ neo_ast_node_t neo_ast_read_function_body(neo_allocator_t allocator,
   }
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != '}') {
-    THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
-          current.column);
+    THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+          current.line, current.column);
     goto onerror;
   } else {
     current.offset++;

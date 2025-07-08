@@ -37,13 +37,32 @@ static neo_compile_scope_t neo_create_compile_scope(neo_allocator_t allocator) {
 }
 
 neo_compile_scope_t neo_compile_scope_push(neo_allocator_t allocator,
-                                           neo_compile_scope_type_t type) {
+                                           neo_compile_scope_type_t type,
+                                           bool is_generator, bool is_async) {
   neo_compile_scope_t scope = neo_create_compile_scope(allocator);
   scope->parent = g_current_scope;
   scope->type = type;
+  scope->is_generator = is_generator;
+  scope->is_async = is_async;
   neo_compile_scope_t curr = g_current_scope;
   g_current_scope = scope;
   return curr;
+}
+
+bool neo_compile_scope_is_generator() {
+  neo_compile_scope_t scope = g_current_scope;
+  while (scope->type != NEO_COMPILE_SCOPE_FUNCTION) {
+    scope = scope->parent;
+  }
+  return scope->is_generator;
+}
+
+bool neo_compile_scope_is_async() {
+  neo_compile_scope_t scope = g_current_scope;
+  while (scope->type != NEO_COMPILE_SCOPE_FUNCTION) {
+    scope = scope->parent;
+  }
+  return scope->is_async;
 }
 
 neo_compile_scope_t neo_compile_scope_pop(neo_compile_scope_t scope) {
@@ -169,7 +188,7 @@ void neo_compile_scope_declar(neo_allocator_t allocator,
       }
     }
   } else {
-    THROW("Illegal property in declaration context\n  at %s:%d:%d",
+    THROW("Illegal property in declaration context\n  at _.compile(%s:%d:%d)",
           node->location.file, node->location.begin.line,
           node->location.begin.column);
     return;

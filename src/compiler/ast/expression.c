@@ -22,6 +22,7 @@
 #include "compiler/ast/literal_template.h"
 #include "compiler/ast/node.h"
 #include "compiler/program.h"
+#include "compiler/scope.h"
 #include "compiler/token.h"
 #include "compiler/writer.h"
 #include "core/allocator.h"
@@ -633,6 +634,13 @@ neo_ast_node_t neo_ast_read_expression_14(neo_allocator_t allocator,
                 neo_location_is(token->location, "void") ||
                 neo_location_is(token->location, "delete") ||
                 neo_location_is(token->location, "await"))) {
+    if (neo_location_is(token->location, "await") &&
+        !neo_compile_scope_is_async()) {
+      if (!neo_compile_scope_is_async()) {
+        THROW("await only used in generator context");
+        goto onerror;
+      }
+    }
     neo_ast_expression_binary_t bnode =
         neo_create_ast_expression_binary(allocator);
     SKIP_ALL(allocator, file, &current, onerror);
@@ -641,8 +649,8 @@ neo_ast_node_t neo_ast_read_expression_14(neo_allocator_t allocator,
       goto onerror;
     };
     if (!bnode->right) {
-      THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
-            current.column);
+      THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+            current.line, current.column);
       goto onerror;
     }
     bnode->node.location.begin = *position;
@@ -690,8 +698,8 @@ neo_ast_node_t neo_ast_read_expression_13(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at %s:%d:%d", file, curr.line,
-              curr.column);
+        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+              curr.line, curr.column);
         goto onerror;
       }
       bnode->node.location.begin = *position;
@@ -740,8 +748,8 @@ neo_ast_node_t neo_ast_read_expression_12(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at %s:%d:%d", file, curr.line,
-              curr.column);
+        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+              curr.line, curr.column);
         goto onerror;
       }
       bnode->node.location.begin = *position;
@@ -788,8 +796,8 @@ neo_ast_node_t neo_ast_read_expression_11(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at %s:%d:%d", file, curr.line,
-              curr.column);
+        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+              curr.line, curr.column);
         goto onerror;
       }
       bnode->node.location.begin = *position;
@@ -838,8 +846,8 @@ neo_ast_node_t neo_ast_read_expression_10(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at %s:%d:%d", file, curr.line,
-              curr.column);
+        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+              curr.line, curr.column);
         goto onerror;
       }
       bnode->node.location.begin = *position;
@@ -896,8 +904,8 @@ neo_ast_node_t neo_ast_read_expression_9(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at %s:%d:%d", file, curr.line,
-              curr.column);
+        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+              curr.line, curr.column);
         goto onerror;
       }
       bnode->node.location.begin = *position;
@@ -946,8 +954,8 @@ neo_ast_node_t neo_ast_read_expression_8(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
-              current.column);
+        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+              current.line, current.column);
         goto onerror;
       }
       bnode->node.location.begin = *position;
@@ -994,8 +1002,8 @@ neo_ast_node_t neo_ast_read_expression_7(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at %s:%d:%d", file, curr.line,
-              curr.column);
+        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+              curr.line, curr.column);
         goto onerror;
       }
       bnode->node.location.begin = *position;
@@ -1042,8 +1050,8 @@ neo_ast_node_t neo_ast_read_expression_6(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at %s:%d:%d", file, curr.line,
-              curr.column);
+        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+              curr.line, curr.column);
         goto onerror;
       }
       bnode->node.location.begin = *position;
@@ -1090,8 +1098,8 @@ neo_ast_node_t neo_ast_read_expression_5(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at %s:%d:%d", file, curr.line,
-              curr.column);
+        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+              curr.line, curr.column);
         goto onerror;
       }
       bnode->node.location.begin = *position;
@@ -1138,8 +1146,8 @@ neo_ast_node_t neo_ast_read_expression_4(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at %s:%d:%d", file, curr.line,
-              curr.column);
+        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+              curr.line, curr.column);
         goto onerror;
       }
       bnode->node.location.begin = *position;
@@ -1187,8 +1195,8 @@ neo_ast_node_t neo_ast_read_expression_3(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at %s:%d:%d", file, curr.line,
-              curr.column);
+        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+              curr.line, curr.column);
         goto onerror;
       }
       bnode->node.location.begin = *position;

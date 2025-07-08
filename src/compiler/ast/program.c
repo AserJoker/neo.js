@@ -35,6 +35,8 @@ static void neo_ast_program_resolve_closure(neo_allocator_t allocator,
 static void neo_ast_program_write(neo_allocator_t allocator,
                                   neo_write_context_t ctx,
                                   neo_ast_program_t self) {
+  bool is_async = ctx->is_async;
+  ctx->is_async = true;
   neo_writer_push_scope(allocator, ctx, self->node.scope);
   for (neo_list_node_t it = neo_list_get_first(self->directives);
        it != neo_list_get_tail(self->directives); it = neo_list_node_next(it)) {
@@ -48,6 +50,7 @@ static void neo_ast_program_write(neo_allocator_t allocator,
   }
   neo_program_add_code(allocator, ctx->program, NEO_ASM_HLT);
   neo_writer_pop_scope(allocator, ctx, self->node.scope);
+  ctx->is_async = is_async;
 }
 
 static neo_variable_t neo_serialize_ast_program(neo_allocator_t allocator,
@@ -89,8 +92,8 @@ static neo_ast_program_t neo_create_ast_program(neo_allocator_t allocator) {
 neo_ast_node_t neo_ast_read_program(neo_allocator_t allocator, const char *file,
                                     neo_position_t *position) {
   neo_position_t current = *position;
-  neo_compile_scope_t scope =
-      neo_compile_scope_push(allocator, NEO_COMPILE_SCOPE_FUNCTION);
+  neo_compile_scope_t scope = neo_compile_scope_push(
+      allocator, NEO_COMPILE_SCOPE_FUNCTION, false, true);
   neo_ast_program_t node = neo_create_ast_program(allocator);
   node->interpreter = TRY(neo_ast_read_interpreter(allocator, file, &current)) {
     goto onerror;

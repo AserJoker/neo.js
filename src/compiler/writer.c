@@ -136,7 +136,17 @@ void neo_writer_pop_scope(neo_allocator_t allocator, neo_write_context_t ctx,
           neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
           neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
         }
+        bool is_async = ctx->is_async;
+        if (function->async) {
+          ctx->is_async = true;
+        }
+        bool is_generator = ctx->is_generator;
+        if (function->generator) {
+          ctx->is_generator = true;
+        }
         TRY(function->body->write(allocator, ctx, function->body)) { return; }
+        ctx->is_async = is_async;
+        ctx->is_generator = is_generator;
         neo_writer_pop_scope(allocator, ctx, function->node.scope);
       }
     }
@@ -162,6 +172,8 @@ neo_write_context_t neo_create_write_context(neo_allocator_t allocator,
   ctx->program = program;
   ctx->scope = NULL;
   ctx->label = NULL;
+  ctx->is_async = false;
+  ctx->is_generator = true;
   return ctx;
 }
 

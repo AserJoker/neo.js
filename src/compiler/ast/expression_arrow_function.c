@@ -96,10 +96,15 @@ static void neo_ast_expression_arrow_function_write(
     neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   }
+  bool is_async = ctx->is_async;
+  if (self->async) {
+    ctx->is_async = true;
+  }
   TRY(self->body->write(allocator, ctx, self->body)) { return; }
   if (self->body->type != NEO_NODE_TYPE_FUNCTION_BODY) {
     neo_program_add_code(allocator, ctx->program, NEO_ASM_RET);
   }
+  ctx->is_async = is_async;
   neo_writer_pop_scope(allocator, ctx, self->node.scope);
   neo_program_set_current(ctx->program, endaddr);
   if (self->async) {
@@ -168,7 +173,8 @@ neo_ast_node_t neo_ast_read_expression_arrow_function(
   if (*current.offset == '(') {
     current.offset++;
     current.column++;
-    scope = neo_compile_scope_push(allocator, NEO_COMPILE_SCOPE_FUNCTION);
+    scope = neo_compile_scope_push(allocator, NEO_COMPILE_SCOPE_FUNCTION, false,
+                                   node->async);
     if (*current.offset != ')') {
       for (;;) {
         neo_ast_node_t argument =
@@ -203,7 +209,8 @@ neo_ast_node_t neo_ast_read_expression_arrow_function(
     current.offset++;
     current.column++;
   } else {
-    scope = neo_compile_scope_push(allocator, NEO_COMPILE_SCOPE_FUNCTION);
+    scope = neo_compile_scope_push(allocator, NEO_COMPILE_SCOPE_FUNCTION, false,
+                                   node->async);
     neo_ast_node_t argument =
         TRY(neo_ast_read_identifier(allocator, file, &current)) {
       goto onerror;
@@ -237,8 +244,8 @@ neo_ast_node_t neo_ast_read_expression_arrow_function(
   }
 
   if (!node->body) {
-    THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current.line,
-          current.column);
+    THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+          current.line, current.column);
     goto onerror;
   }
   node->body->resolve_closure(allocator, node->body, node->closure);

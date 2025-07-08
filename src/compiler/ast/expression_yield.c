@@ -3,6 +3,7 @@
 #include "compiler/ast/expression.h"
 #include "compiler/ast/node.h"
 #include "compiler/program.h"
+#include "compiler/scope.h"
 #include "compiler/token.h"
 #include "compiler/writer.h"
 #include "core/allocator.h"
@@ -37,9 +38,16 @@ static void neo_ast_expression_yield_write(neo_allocator_t allocator,
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_UNDEFINED);
   }
   if (self->degelate) {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_ITERATOR);
+    if (!ctx->is_async) {
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_ITERATOR);
+    } else {
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_ASYNC_ITERATOR);
+    }
     size_t begin = neo_buffer_get_size(ctx->program->codes);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_NEXT);
+    if (ctx->is_async) {
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_AWAIT);
+    }
     neo_program_add_code(allocator, ctx->program, NEO_ASM_JTRUE);
     size_t addr = neo_buffer_get_size(ctx->program->codes);
     neo_program_add_address(allocator, ctx->program, 0);
@@ -93,6 +101,7 @@ neo_create_ast_expression_yield(neo_allocator_t allocator) {
 neo_ast_node_t neo_ast_read_expression_yield(neo_allocator_t allocator,
                                              const char *file,
                                              neo_position_t *position) {
+
   neo_position_t current = *position;
   neo_token_t token = NULL;
   neo_ast_expression_yield_t node = NULL;
@@ -103,6 +112,11 @@ neo_ast_node_t neo_ast_read_expression_yield(neo_allocator_t allocator,
     return NULL;
   }
   if (!neo_location_is(token->location, "yield")) {
+    goto onerror;
+  }
+  if (!neo_compile_scope_is_generator()) {
+    THROW("yield only used in generator context\n  at _.compile(%s:%d:%d)",
+          file, position->line, position->column);
     goto onerror;
   }
   neo_allocator_free(allocator, token);

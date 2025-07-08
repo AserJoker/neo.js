@@ -1,13 +1,7 @@
-const fn = () => {
-  return new Promise((_, reject) => reject(new Error('test')));
-}
 async function test() {
-  try {
-    await fn();
-  } catch (e) {
-    println(e);
-    return 2;
-  }
-  return 3
+  println(234)
+  throw new Error('test')
 }
-test().then(println)
+println(123)
+await test()
+println(345)
