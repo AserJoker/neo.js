@@ -1036,6 +1036,9 @@ neo_js_variable_t neo_js_context_def_variable(neo_js_context_t ctx,
   neo_js_variable_set_using(current, neo_js_variable_is_using(variable));
   neo_js_variable_set_await_using(current,
                                   neo_js_variable_is_await_using(variable));
+  neo_js_variable_set_const(variable, false);
+  neo_js_variable_set_using(variable, false);
+  neo_js_variable_set_await_using(variable, false);
   return neo_js_context_create_undefined(ctx);
 }
 
@@ -1495,6 +1498,43 @@ neo_js_variable_t neo_js_context_clone(neo_js_context_t ctx,
   type->copy_fn(ctx, self, variable);
   neo_js_context_pop_scope(ctx);
   return variable;
+}
+
+neo_js_variable_t neo_js_context_scope_dispose(neo_js_context_t ctx) {
+  neo_js_variable_t result = NULL;
+  neo_js_scope_t scope = neo_js_context_get_scope(ctx);
+  neo_js_scope_t parent = neo_js_scope_get_parent(scope);
+  neo_list_t variables = neo_js_scope_get_variables(scope);
+  neo_js_variable_t dispose =
+      neo_js_context_get_field(ctx, ctx->std.symbol_constructor,
+                               neo_js_context_create_string(ctx, L"dispose"));
+  for (neo_list_node_t it = neo_list_get_first(variables);
+       it != neo_list_get_tail(variables); it = neo_list_node_next(it)) {
+    neo_js_variable_t variable = neo_list_node_get(it);
+    if (!neo_js_variable_is_using(variable)) {
+      continue;
+    }
+    neo_js_variable_set_using(variable, false);
+    neo_js_variable_t dispose_fn =
+        neo_js_context_get_field(ctx, variable, dispose);
+    if (neo_js_variable_get_type(dispose_fn)->kind < NEO_TYPE_CALLABLE) {
+      continue;
+    }
+    neo_js_context_push_stackframe(ctx, NULL, L"[Symbol.dispose]", 0, 0);
+    neo_js_variable_t error =
+        neo_js_context_call(ctx, dispose_fn, variable, 0, NULL);
+    neo_js_context_pop_stackframe(ctx);
+    if (neo_js_variable_get_type(error)->kind == NEO_TYPE_ERROR) {
+      result = error;
+    }
+  }
+  if (!result) {
+    result = neo_js_context_create_undefined(ctx);
+  }
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  result = neo_js_scope_create_variable(
+      allocator, parent, neo_js_variable_get_handle(result), NULL);
+  return result;
 }
 
 static neo_js_variable_t

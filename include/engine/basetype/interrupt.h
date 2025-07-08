@@ -13,6 +13,7 @@ typedef struct _neo_js_interrupt_t *neo_js_interrupt_t;
 typedef enum _neo_js_interrupt_type_t {
   NEO_JS_INTERRUPT_AWAIT,
   NEO_JS_INTERRUPT_YIELD,
+  NEO_JS_INTERRUPT_GOTO,
 } neo_js_interrupt_type_t;
 
 struct _neo_js_interrupt_t {

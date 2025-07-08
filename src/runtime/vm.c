@@ -51,6 +51,11 @@ static void neo_js_label_frame_dispose(neo_allocator_t allocator,
 void neo_js_vm_dispose(neo_allocator_t allocator, neo_js_vm_t vm) {
   neo_allocator_free(allocator, vm->stack);
   neo_allocator_free(allocator, vm->try_stack);
+  for (neo_list_node_t it = neo_list_get_first(vm->label_stack);
+       it != neo_list_get_tail(vm->label_stack); it = neo_list_node_next(it)) {
+    neo_js_label_frame_t frame = neo_list_node_get(it);
+    neo_allocator_free(allocator, frame);
+  }
   neo_allocator_free(allocator, vm->label_stack);
 }
 
@@ -77,7 +82,7 @@ neo_js_vm_t neo_create_js_vm(neo_js_context_t ctx, neo_js_variable_t self,
   vm->stack = neo_create_list(allocator, NULL);
   neo_list_initialize_t initialize = {true};
   vm->try_stack = neo_create_list(allocator, &initialize);
-  vm->label_stack = neo_create_list(allocator, &initialize);
+  vm->label_stack = neo_create_list(allocator, NULL);
   vm->ctx = ctx;
   vm->offset = offset;
   vm->self = self ? self : neo_js_context_create_undefined(ctx);
@@ -142,7 +147,12 @@ void neo_js_vm_push_scope(neo_js_vm_t vm, neo_program_t program) {
 }
 
 void neo_js_vm_pop_scope(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t error = neo_js_context_scope_dispose(vm->ctx);
   neo_js_context_pop_scope(vm->ctx);
+  if (neo_js_variable_get_type(error)->kind == NEO_TYPE_ERROR) {
+    neo_list_push(vm->stack, error);
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
 }
 
 void neo_js_vm_pop(neo_js_vm_t vm, neo_program_t program) {
@@ -667,20 +677,12 @@ void neo_js_vm_break(neo_js_vm_t vm, neo_program_t program) {
     vm->offset = neo_buffer_get_size(program->codes);
     return;
   }
-  neo_allocator_free(allocator, label);
-  while (neo_list_get_size(vm->try_stack) != frame->try_stack_top) {
-    neo_list_pop(vm->try_stack);
-  }
-  while (neo_list_get_size(vm->stack) != frame->stack_top) {
-    neo_list_pop(vm->stack);
-  }
-  while (neo_js_context_get_scope(vm->ctx) != frame->scope) {
-    neo_js_context_pop_scope(vm->ctx);
-  }
-  while (neo_list_get_last(vm->label_stack) != it) {
-    neo_list_pop(vm->label_stack);
-  }
-  vm->offset = frame->addr;
+  neo_js_variable_t interrupt = neo_js_context_create_interrupt(
+      vm->ctx, neo_js_context_create_undefined(vm->ctx), 0,
+      NEO_JS_INTERRUPT_GOTO);
+  neo_js_context_set_opaque(vm->ctx, interrupt, L"#label", frame);
+  neo_list_push(vm->stack, interrupt);
+  vm->offset = neo_buffer_get_size(program->codes);
 }
 void neo_js_vm_continue(neo_js_vm_t vm, neo_program_t program) {
   wchar_t *label = neo_js_vm_read_string(vm, program);
@@ -714,20 +716,12 @@ void neo_js_vm_continue(neo_js_vm_t vm, neo_program_t program) {
     vm->offset = neo_buffer_get_size(program->codes);
     return;
   }
-  neo_allocator_free(allocator, label);
-  while (neo_list_get_size(vm->try_stack) != frame->try_stack_top) {
-    neo_list_pop(vm->try_stack);
-  }
-  while (neo_list_get_size(vm->stack) != frame->stack_top) {
-    neo_list_pop(vm->stack);
-  }
-  while (neo_js_context_get_scope(vm->ctx) != frame->scope) {
-    neo_js_context_pop_scope(vm->ctx);
-  }
-  while (neo_list_get_last(vm->label_stack) != it) {
-    neo_list_pop(vm->label_stack);
-  }
-  vm->offset = frame->addr;
+  neo_js_variable_t interrupt = neo_js_context_create_interrupt(
+      vm->ctx, neo_js_context_create_undefined(vm->ctx), 0,
+      NEO_JS_INTERRUPT_GOTO);
+  neo_js_context_set_opaque(vm->ctx, interrupt, L"#label", frame);
+  neo_list_push(vm->stack, interrupt);
+  vm->offset = neo_buffer_get_size(program->codes);
 }
 void neo_js_vm_throw(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
@@ -1613,46 +1607,36 @@ neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
       while (neo_list_get_size(vm->label_stack) != frame->label_stack_top) {
         neo_list_pop(vm->label_stack);
       }
-      if (neo_list_get_size(vm->stack) > 0) {
-        neo_js_variable_t result =
-            neo_list_node_get(neo_list_get_last(vm->stack));
+      neo_js_variable_t result =
+          neo_list_node_get(neo_list_get_last(vm->stack));
+      result = neo_js_scope_create_variable(
+          allocator, frame->scope, neo_js_variable_get_handle(result), NULL);
+      while (neo_list_get_size(vm->stack) != frame->stack_top) {
         neo_list_pop(vm->stack);
-        neo_js_handle_t handle = neo_js_variable_get_handle(result);
-        result =
-            neo_js_scope_create_variable(allocator, frame->scope, handle, NULL);
-        while (neo_list_get_size(vm->stack) != frame->stack_top) {
+      }
+      while (neo_js_context_get_scope(vm->ctx) != frame->scope) {
+        neo_js_variable_t error = neo_js_context_scope_dispose(vm->ctx);
+        if (neo_js_variable_get_type(error)->kind == NEO_TYPE_ERROR) {
+          result = neo_js_scope_create_variable(
+              allocator, frame->scope, neo_js_variable_get_handle(error), NULL);
+        }
+        neo_js_context_pop_scope(vm->ctx);
+      }
+      neo_list_push(vm->stack, result);
+      if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+        if (frame->onerror) {
+          result = neo_js_error_get_error(vm->ctx, result);
           neo_list_pop(vm->stack);
-        }
-        while (neo_js_context_get_scope(vm->ctx) != frame->scope) {
-          neo_js_context_pop_scope(vm->ctx);
-        }
-        if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
-          if (frame->onerror) {
-            result = neo_js_error_get_error(vm->ctx, result);
-            neo_list_push(vm->stack, result);
-            vm->offset = frame->onerror;
-            frame->onerror = 0;
-          } else {
-            neo_list_push(vm->stack, result);
-            vm->offset = frame->onfinish;
-            frame->onfinish = 0;
-          }
-        } else {
-          if (frame->onerror) {
-            frame->onerror = 0;
-          }
           neo_list_push(vm->stack, result);
-          if (frame->onfinish) {
-            vm->offset = frame->onfinish;
-            frame->onfinish = 0;
-          }
+          vm->offset = frame->onerror;
+          frame->onerror = 0;
+        } else {
+          vm->offset = frame->onfinish;
+          frame->onfinish = 0;
         }
       } else {
-        while (neo_list_get_size(vm->stack) != frame->stack_top) {
-          neo_list_pop(vm->stack);
-        }
-        while (neo_js_context_get_scope(vm->ctx) != frame->scope) {
-          neo_js_context_pop_scope(vm->ctx);
+        if (frame->onerror) {
+          frame->onerror = 0;
         }
         if (frame->onfinish) {
           vm->offset = frame->onfinish;
@@ -1686,7 +1670,12 @@ neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
   if (neo_js_variable_get_type(result)->kind != NEO_TYPE_INTERRUPT) {
     current = neo_js_context_set_scope(vm->ctx, vm->scope);
     while (vm->scope != vm->root) {
+      neo_js_variable_t error = neo_js_context_scope_dispose(vm->ctx);
       neo_js_context_pop_scope(vm->ctx);
+      if (neo_js_variable_get_type(error)->kind == NEO_TYPE_ERROR) {
+        result = neo_js_scope_create_variable(
+            allocator, current, neo_js_variable_get_handle(error), NULL);
+      }
       vm->scope = neo_js_context_get_scope(vm->ctx);
     }
     vm->scope = neo_js_context_set_scope(vm->ctx, current);
