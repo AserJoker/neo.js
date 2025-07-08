@@ -112,6 +112,17 @@ static void neo_js_context_init_std_symbol(neo_js_context_t ctx) {
                            neo_js_context_create_string(ctx, L"asyncIterator"),
                            async_iterator, true, false, true);
 
+  neo_js_variable_t async_dispose =
+      neo_js_context_create_symbol(ctx, L"asyncDispose");
+  neo_js_context_def_field(ctx, ctx->std.symbol_constructor,
+                           neo_js_context_create_string(ctx, L"asyncDispose"),
+                           async_dispose, true, false, true);
+
+  neo_js_variable_t dispose = neo_js_context_create_symbol(ctx, L"dispose");
+  neo_js_context_def_field(ctx, ctx->std.symbol_constructor,
+                           neo_js_context_create_string(ctx, L"dispose"),
+                           dispose, true, false, true);
+
   neo_js_variable_t has_instance =
       neo_js_context_create_symbol(ctx, L"hasInstance");
   neo_js_context_def_field(ctx, ctx->std.symbol_constructor,
@@ -1020,7 +1031,11 @@ neo_js_variable_t neo_js_context_def_variable(neo_js_context_t ctx,
   }
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_js_handle_t handle = neo_js_variable_get_handle(variable);
-  neo_js_scope_create_variable(allocator, ctx->scope, handle, name);
+  current = neo_js_scope_create_variable(allocator, ctx->scope, handle, name);
+  neo_js_variable_set_const(current, neo_js_variable_is_const(variable));
+  neo_js_variable_set_using(current, neo_js_variable_is_using(variable));
+  neo_js_variable_set_await_using(current,
+                                  neo_js_variable_is_await_using(variable));
   return neo_js_context_create_undefined(ctx);
 }
 
@@ -1033,6 +1048,14 @@ neo_js_variable_t neo_js_context_store_variable(neo_js_context_t ctx,
   }
   if (neo_js_variable_get_type(variable)->kind == NEO_TYPE_ERROR) {
     return variable;
+  }
+  if (neo_js_variable_get_type(current)->kind != NEO_TYPE_UNINITIALIZE) {
+    if (neo_js_variable_is_const(current) ||
+        neo_js_variable_is_using(current) ||
+        neo_js_variable_is_await_using(current)) {
+      return neo_js_context_create_error(ctx, NEO_ERROR_TYPE,
+                                         L"assignment to constant variable.");
+    }
   }
   neo_js_type_t type = neo_js_variable_get_type(variable);
   neo_js_context_push_scope(ctx);
@@ -1047,8 +1070,7 @@ neo_js_variable_t neo_js_context_load_variable(neo_js_context_t ctx,
   while (scope) {
     neo_js_variable_t variable = neo_js_scope_get_variable(scope, name);
     if (variable) {
-      return neo_js_context_create_variable(
-          ctx, neo_js_variable_get_handle(variable), NULL);
+      return variable;
     }
     scope = neo_js_scope_get_parent(scope);
   }
@@ -1473,20 +1495,6 @@ neo_js_variable_t neo_js_context_clone(neo_js_context_t ctx,
   type->copy_fn(ctx, self, variable);
   neo_js_context_pop_scope(ctx);
   return variable;
-}
-
-neo_js_variable_t neo_js_context_assigment(neo_js_context_t ctx,
-                                           neo_js_variable_t self,
-                                           neo_js_variable_t target) {
-  if (neo_js_variable_is_const(target)) {
-    return neo_js_context_create_error(ctx, NEO_ERROR_TYPE,
-                                       L"Assignment to constant variable.");
-  }
-  neo_js_context_push_scope(ctx);
-  neo_js_type_t type = neo_js_variable_get_type(self);
-  type->copy_fn(ctx, self, target);
-  neo_js_context_pop_scope(ctx);
-  return neo_js_context_create_undefined(ctx);
 }
 
 static neo_js_variable_t

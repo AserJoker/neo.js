@@ -1,6 +1,12 @@
-async function* getArr() {
-  yield* ['a', 'b', 'c'];
+function test() {
+  try {
+    using obj = {
+      [Symbol.dispose]() {
+        throw new Error('test')
+      }
+    }
+  } catch (e) {
+    console.log(e)
+  }
 }
-for await (const item of getArr()) {
-  println(item)
-}
+test();

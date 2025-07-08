@@ -63,6 +63,11 @@ void neo_writer_push_scope(neo_allocator_t allocator, neo_write_context_t ctx,
                              NEO_ASM_PUSH_UNINITIALIZED);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_USING);
         break;
+      case NEO_COMPILE_VARIABLE_AWAIT_USING:
+        neo_program_add_code(allocator, ctx->program,
+                             NEO_ASM_PUSH_UNINITIALIZED);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_AWAIT_USING);
+        break;
       case NEO_COMPILE_VARIABLE_FUNCTION: {
         neo_ast_expression_function_t func =
             (neo_ast_expression_function_t)variable->node;

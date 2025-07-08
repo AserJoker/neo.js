@@ -328,6 +328,16 @@ void neo_js_vm_set_const(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_set_const(variable, true);
 }
 
+void neo_js_vm_set_using(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t variable = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_js_variable_set_using(variable, true);
+}
+
+void neo_js_vm_set_await_using(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t variable = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_js_variable_set_await_using(variable, true);
+}
+
 void neo_js_set_address(neo_js_vm_t vm, neo_program_t program) {
   size_t address = neo_js_vm_read_address(vm, program);
   neo_js_variable_t variable = neo_list_node_get(neo_list_get_last(vm->stack));
@@ -1513,7 +1523,8 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_push_continue_label,  // NEO_ASM_PUSH_CONTINUE_LABEL
     neo_js_vm_pop_label,            // NEO_ASM_POP_LABEL
     neo_js_vm_set_const,            // NEO_ASM_SET_CONST
-    NULL,                           // NEO_ASM_SET_USING
+    neo_js_vm_set_using,            // NEO_ASM_SET_USING
+    neo_js_vm_set_await_using,      // NEO_ASM_SET_AWAIT_USING
     neo_js_set_source,              // NEO_ASM_SET_SOURCE
     neo_js_set_address,             // NEO_ASM_SET_ADDRESS
     neo_js_set_name,                // NEO_ASM_SET_NAME

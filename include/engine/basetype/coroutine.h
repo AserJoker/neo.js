@@ -34,13 +34,14 @@ neo_js_co_context_t neo_create_js_co_context(neo_allocator_t allocator,
                                              neo_js_vm_t vm,
                                              neo_program_t program,
                                              neo_js_scope_t root);
-                                             
+
 neo_js_coroutine_t neo_create_js_coroutine(neo_allocator_t allocator,
                                            neo_js_co_context_t ctx);
 
 neo_js_coroutine_t neo_js_value_to_coroutine(neo_js_value_t variable);
 
 neo_js_co_context_t neo_js_coroutine_get_context(neo_js_variable_t coroutine);
+
 
 #ifdef __cplusplus
 }

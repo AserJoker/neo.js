@@ -7,6 +7,7 @@ struct _neo_js_variable_t {
   neo_js_handle_t handle;
   bool is_const;
   bool is_using;
+  bool is_await_using;
 };
 
 neo_js_variable_t neo_create_js_variable(neo_allocator_t allocator,
@@ -16,6 +17,7 @@ neo_js_variable_t neo_create_js_variable(neo_allocator_t allocator,
   variable->handle = handle;
   variable->is_const = false;
   variable->is_using = false;
+  variable->is_await_using = false;
   return variable;
 }
 
@@ -39,9 +41,11 @@ bool neo_js_variable_is_using(neo_js_variable_t variable) {
   return variable->is_using;
 }
 
-bool neo_js_variable_is_primitive(neo_js_variable_t variable) {
-  neo_js_type_t type = neo_js_variable_get_type(variable);
-  return type->kind == NEO_TYPE_NUMBER || type->kind == NEO_TYPE_STRING ||
-         type->kind == NEO_TYPE_BOOLEAN || type->kind == NEO_TYPE_UNDEFINED ||
-         type->kind == NEO_TYPE_NULL || type->kind == NEO_TYPE_SYMBOL;
+void neo_js_variable_set_await_using(neo_js_variable_t variable,
+                                     bool is_using) {
+  variable->is_await_using = is_using;
+}
+
+bool neo_js_variable_is_await_using(neo_js_variable_t variable) {
+  return variable->is_await_using;
 }

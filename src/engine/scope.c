@@ -172,3 +172,6 @@ neo_js_variable_t neo_js_scope_create_variable(neo_allocator_t allocator,
   }
   return variable;
 }
+neo_list_t neo_js_scope_get_variables(neo_js_scope_t scope) {
+  return scope->variables;
+}

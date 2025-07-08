@@ -29,6 +29,8 @@ neo_js_variable_t neo_js_scope_create_variable(neo_allocator_t allocator,
                                                neo_js_scope_t self,
                                                neo_js_handle_t handle,
                                                const wchar_t *name);
+
+neo_list_t neo_js_scope_get_variables(neo_js_scope_t scope);
 #ifdef __cplusplus
 }
 #endif

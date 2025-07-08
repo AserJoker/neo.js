@@ -123,6 +123,11 @@ static neo_variable_t neo_serialize_ast_statement_for_await_of(
         variable, "kind",
         neo_create_variable_string(allocator, "NEO_AST_DECLARATION_USING"));
     break;
+  case NEO_AST_DECLARATION_AWAIT_USING:
+    neo_variable_set(variable, "kind",
+                     neo_create_variable_string(
+                         allocator, "NEO_AST_DECLARATION_AWAIT_USING"));
+    break;
   }
   return variable;
 }
@@ -179,7 +184,21 @@ neo_ast_node_t neo_ast_read_statement_for_await_of(neo_allocator_t allocator,
   SKIP_ALL(allocator, file, &current, onerror);
   neo_position_t cur = current;
   token = neo_read_identify_token(allocator, file, &cur);
-  if (token && neo_location_is(token->location, "const")) {
+  if (neo_location_is(token->location, "await")) {
+    SKIP_ALL(allocator, file, &current, onerror);
+    neo_allocator_free(allocator, token);
+    token = neo_read_identify_token(allocator, file, &current);
+    if (!token) {
+      goto onerror;
+    }
+    if (neo_location_is(token->location, "using")) {
+      node->kind = NEO_AST_DECLARATION_AWAIT_USING;
+      current = cur;
+      SKIP_ALL(allocator, file, &current, onerror);
+    } else {
+      goto onerror;
+    }
+  } else if (token && neo_location_is(token->location, "const")) {
     node->kind = NEO_AST_DECLARATION_CONST;
     current = cur;
     SKIP_ALL(allocator, file, &current, onerror);
@@ -240,6 +259,13 @@ neo_ast_node_t neo_ast_read_statement_for_await_of(neo_allocator_t allocator,
     case NEO_AST_DECLARATION_USING:
       TRY(neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
                                    node->left, NEO_COMPILE_VARIABLE_USING)) {
+        goto onerror;
+      };
+      break;
+    case NEO_AST_DECLARATION_AWAIT_USING:
+      TRY(neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
+                                   node->left,
+                                   NEO_COMPILE_VARIABLE_AWAIT_USING)) {
         goto onerror;
       };
       break;
