@@ -2,86 +2,116 @@
 .file: index.mjs
 [section .constants]
 .0: "test"
-.1: "function test() {\r\n  try {\r\n    using obj = {\r\n      [Symbol.dispose]() {\r\n        throw new Error('test')\r\n      }\r\n    }\r\n  } catch (e) {\r\n    println(e)\r\n  }\r\n}"
-.2: "Symbol"
-.3: "Error"
-.4: "println"
-.5: "obj"
-.6: "dispose"
-.7: "length"
-.8: "[Symbol.dispose]() {\r\n        throw new Error('test')\r\n      }"
-.9: "e"
+.1: "function test() {\r\n  aaa: {\r\n    println('123')\r\n    try {\r\n      using obj = {\r\n        [Symbol.dispose]() {\r\n          throw new Error('test')\r\n        }\r\n      }\r\n      break aaa;\r\n    } catch (e) {\r\n      println(e)\r\n    } finally {\r\n      println('234')\r\n    }\r\n  }\r\n}"
+.2: "println"
+.3: "Symbol"
+.4: "Error"
+.5: "aaa"
+.6: "length"
+.7: "123"
+.8: "obj"
+.9: "dispose"
+.10: "[Symbol.dispose]() {\r\n          throw new Error('test')\r\n        }"
+.11: "e"
+.12: "234"
 [section .data]
 0: NEO_ASM_PUSH_SCOPE
 2: NEO_ASM_PUSH_FUNCTION
 4: NEO_ASM_SET_NAME "test"
-14: NEO_ASM_SET_SOURCE "function test() {\r\n  try {\r\n    using obj = {\r\n      [Symbol.dispose]() {\r\n        throw new Error('test')\r\n      }\r\n    }\r\n  } catch (e) {\r\n    println(e)\r\n  }\r\n}"
+14: NEO_ASM_SET_SOURCE "function test() {\r\n  aaa: {\r\n    println('123')\r\n    try {\r\n      using obj = {\r\n        [Symbol.dispose]() {\r\n          throw new Error('test')\r\n        }\r\n      }\r\n      break aaa;\r\n    } catch (e) {\r\n      println(e)\r\n    } finally {\r\n      println('234')\r\n    }\r\n  }\r\n}"
 24: NEO_ASM_SET_ADDRESS 120
 34: NEO_ASM_DEF "test"
 44: NEO_ASM_LOAD "test"
-54: NEO_ASM_SET_CLOSURE "Symbol"
-64: NEO_ASM_SET_CLOSURE "Error"
-74: NEO_ASM_SET_CLOSURE "println"
+54: NEO_ASM_SET_CLOSURE "println"
+64: NEO_ASM_SET_CLOSURE "Symbol"
+74: NEO_ASM_SET_CLOSURE "Error"
 84: NEO_ASM_POP
 86: NEO_ASM_LOAD "test"
 96: NEO_ASM_PUSH_ARRAY 0
-106: NEO_ASM_CALL 12,1
+106: NEO_ASM_CALL 18,1
 116: NEO_ASM_POP
 118: NEO_ASM_HLT
 120: NEO_ASM_PUSH_SCOPE
 122: NEO_ASM_PUSH_SCOPE
-124: NEO_ASM_TRY_BEGIN 322,0
-142: NEO_ASM_PUSH_SCOPE
-144: NEO_ASM_PUSH_UNINITIALIZED
-146: NEO_ASM_SET_USING
-148: NEO_ASM_DEF "obj"
-158: NEO_ASM_PUSH_OBJECT
-160: NEO_ASM_LOAD "Symbol"
-170: NEO_ASM_PUSH_STRING "dispose"
-180: NEO_ASM_GET_FIELD
-182: NEO_ASM_JMP 266
-192: NEO_ASM_PUSH_SCOPE
-194: NEO_ASM_PUSH_SCOPE
-196: NEO_ASM_LOAD "Error"
-206: NEO_ASM_PUSH_ARRAY 0
-216: NEO_ASM_PUSH_VALUE 1
-222: NEO_ASM_PUSH_STRING "length"
-232: NEO_ASM_GET_FIELD
-234: NEO_ASM_PUSH_STRING "test"
-244: NEO_ASM_SET_FIELD
-246: NEO_ASM_NEW 5,15
-256: NEO_ASM_THROW
-258: NEO_ASM_PUSH_UNDEFINED
-260: NEO_ASM_RET
-262: NEO_ASM_POP_SCOPE
-264: NEO_ASM_POP_SCOPE
-266: NEO_ASM_PUSH_FUNCTION
-268: NEO_ASM_SET_ADDRESS 192
-278: NEO_ASM_SET_SOURCE "[Symbol.dispose]() {\r\n        throw new Error('test')\r\n      }"
-288: NEO_ASM_SET_CLOSURE "Error"
-298: NEO_ASM_SET_METHOD
-300: NEO_ASM_STORE "obj"
-310: NEO_ASM_POP_SCOPE
-312: NEO_ASM_JMP 414
-322: NEO_ASM_PUSH_SCOPE
-324: NEO_ASM_PUSH_UNINITIALIZED
-326: NEO_ASM_DEF "e"
-336: NEO_ASM_STORE "e"
-346: NEO_ASM_PUSH_SCOPE
-348: NEO_ASM_LOAD "println"
-358: NEO_ASM_PUSH_ARRAY 0
-368: NEO_ASM_PUSH_VALUE 1
-374: NEO_ASM_PUSH_STRING "length"
-384: NEO_ASM_GET_FIELD
-386: NEO_ASM_LOAD "e"
-396: NEO_ASM_SET_FIELD
-398: NEO_ASM_CALL 9,5
-408: NEO_ASM_POP
-410: NEO_ASM_POP_SCOPE
-412: NEO_ASM_POP_SCOPE
-414: NEO_ASM_TRY_END
-416: NEO_ASM_PUSH_UNDEFINED
-418: NEO_ASM_RET
+124: NEO_ASM_PUSH_BREAK_LABEL "aaa",596
+142: NEO_ASM_PUSH_CONTINUE_LABEL "aaa",594
+160: NEO_ASM_PUSH_SCOPE
+162: NEO_ASM_LOAD "println"
+172: NEO_ASM_PUSH_ARRAY 0
+182: NEO_ASM_PUSH_VALUE 1
+188: NEO_ASM_PUSH_STRING "length"
+198: NEO_ASM_GET_FIELD
+200: NEO_ASM_PUSH_STRING "123"
+210: NEO_ASM_SET_FIELD
+212: NEO_ASM_CALL 3,5
+222: NEO_ASM_POP
+224: NEO_ASM_TRY_BEGIN 432,524
+242: NEO_ASM_PUSH_SCOPE
+244: NEO_ASM_PUSH_UNINITIALIZED
+246: NEO_ASM_SET_USING
+248: NEO_ASM_DEF "obj"
+258: NEO_ASM_PUSH_OBJECT
+260: NEO_ASM_LOAD "Symbol"
+270: NEO_ASM_PUSH_STRING "dispose"
+280: NEO_ASM_GET_FIELD
+282: NEO_ASM_JMP 366
+292: NEO_ASM_PUSH_SCOPE
+294: NEO_ASM_PUSH_SCOPE
+296: NEO_ASM_LOAD "Error"
+306: NEO_ASM_PUSH_ARRAY 0
+316: NEO_ASM_PUSH_VALUE 1
+322: NEO_ASM_PUSH_STRING "length"
+332: NEO_ASM_GET_FIELD
+334: NEO_ASM_PUSH_STRING "test"
+344: NEO_ASM_SET_FIELD
+346: NEO_ASM_NEW 7,17
+356: NEO_ASM_THROW
+358: NEO_ASM_PUSH_UNDEFINED
+360: NEO_ASM_RET
+362: NEO_ASM_POP_SCOPE
+364: NEO_ASM_POP_SCOPE
+366: NEO_ASM_PUSH_FUNCTION
+368: NEO_ASM_SET_ADDRESS 292
+378: NEO_ASM_SET_SOURCE "[Symbol.dispose]() {\r\n          throw new Error('test')\r\n        }"
+388: NEO_ASM_SET_CLOSURE "Error"
+398: NEO_ASM_SET_METHOD
+400: NEO_ASM_STORE "obj"
+410: NEO_ASM_BREAK "aaa"
 420: NEO_ASM_POP_SCOPE
-422: NEO_ASM_POP_SCOPE
-424: NEO_ASM_POP_SCOPE
+422: NEO_ASM_JMP 524
+432: NEO_ASM_PUSH_SCOPE
+434: NEO_ASM_PUSH_UNINITIALIZED
+436: NEO_ASM_DEF "e"
+446: NEO_ASM_STORE "e"
+456: NEO_ASM_PUSH_SCOPE
+458: NEO_ASM_LOAD "println"
+468: NEO_ASM_PUSH_ARRAY 0
+478: NEO_ASM_PUSH_VALUE 1
+484: NEO_ASM_PUSH_STRING "length"
+494: NEO_ASM_GET_FIELD
+496: NEO_ASM_LOAD "e"
+506: NEO_ASM_SET_FIELD
+508: NEO_ASM_CALL 12,7
+518: NEO_ASM_POP
+520: NEO_ASM_POP_SCOPE
+522: NEO_ASM_POP_SCOPE
+524: NEO_ASM_PUSH_SCOPE
+526: NEO_ASM_LOAD "println"
+536: NEO_ASM_PUSH_ARRAY 0
+546: NEO_ASM_PUSH_VALUE 1
+552: NEO_ASM_PUSH_STRING "length"
+562: NEO_ASM_GET_FIELD
+564: NEO_ASM_PUSH_STRING "234"
+574: NEO_ASM_SET_FIELD
+576: NEO_ASM_CALL 14,7
+586: NEO_ASM_POP
+588: NEO_ASM_POP_SCOPE
+590: NEO_ASM_TRY_END
+592: NEO_ASM_POP_SCOPE
+594: NEO_ASM_POP_LABEL
+596: NEO_ASM_POP_LABEL
+598: NEO_ASM_PUSH_UNDEFINED
+600: NEO_ASM_RET
+602: NEO_ASM_POP_SCOPE
+604: NEO_ASM_POP_SCOPE
+606: NEO_ASM_POP_SCOPE

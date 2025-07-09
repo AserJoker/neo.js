@@ -696,7 +696,7 @@ neo_js_context_t neo_create_js_context(neo_allocator_t allocator,
   neo_js_stackframe_t frame = neo_create_js_stackframe(allocator);
   frame->function = neo_create_wstring(allocator, L"start");
   neo_list_push(ctx->stacktrace, frame);
-  neo_js_context_push_stackframe(ctx, NULL, L"", 0, 0);
+  neo_js_context_push_stackframe(ctx, NULL, L"_.eval", 0, 0);
   neo_js_context_init_std(ctx);
   return ctx;
 }
@@ -1511,7 +1511,8 @@ neo_js_variable_t neo_js_context_scope_dispose(neo_js_context_t ctx) {
   for (neo_list_node_t it = neo_list_get_first(variables);
        it != neo_list_get_tail(variables); it = neo_list_node_next(it)) {
     neo_js_variable_t variable = neo_list_node_get(it);
-    if (!neo_js_variable_is_using(variable)) {
+    if (!neo_js_variable_is_using(variable) ||
+        neo_js_variable_get_type(variable)->kind < NEO_TYPE_OBJECT) {
       continue;
     }
     neo_js_variable_set_using(variable, false);
@@ -1520,7 +1521,8 @@ neo_js_variable_t neo_js_context_scope_dispose(neo_js_context_t ctx) {
     if (neo_js_variable_get_type(dispose_fn)->kind < NEO_TYPE_CALLABLE) {
       continue;
     }
-    neo_js_context_push_stackframe(ctx, NULL, L"[Symbol.dispose]", 0, 0);
+    neo_js_callable_t callble = neo_js_variable_to_callable(dispose_fn);
+    neo_js_context_push_stackframe(ctx, NULL, callble->name, 0, 0);
     neo_js_variable_t error =
         neo_js_context_call(ctx, dispose_fn, variable, 0, NULL);
     neo_js_context_pop_stackframe(ctx);
@@ -1982,6 +1984,8 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
       neo_js_context_call(ctx, constructor, object, argc, argv);
   if (result) {
     if (neo_js_variable_get_type(result)->kind >= NEO_TYPE_OBJECT) {
+      object = result;
+    } else if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
       object = result;
     }
   }

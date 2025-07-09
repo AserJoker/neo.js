@@ -31,7 +31,7 @@ wchar_t *neo_wstring_concat(neo_allocator_t allocator, wchar_t *src,
     while (base + len + 1 > *max) {
       *max += 128;
     }
-    result = neo_allocator_alloc(allocator, *max, NULL);
+    result = neo_allocator_alloc(allocator, *max * sizeof(wchar_t), NULL);
     wcscpy(result, src);
     result[base] = 0;
     neo_allocator_free(allocator, src);

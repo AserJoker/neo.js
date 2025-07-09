@@ -39,8 +39,12 @@ static neo_js_variable_t neo_js_symbol_to_primitive(neo_js_context_t ctx,
 
 static neo_js_variable_t neo_js_symbol_to_object(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
-  return neo_js_context_construct(
-      ctx, neo_js_context_get_symbol_constructor(ctx), 1, &self);
+  neo_js_variable_t symbol = neo_js_context_get_symbol_constructor(ctx);
+  neo_js_variable_t prototype = neo_js_context_get_field(
+      ctx, symbol, neo_js_context_create_string(ctx, L"prototype"));
+  neo_js_variable_t object = neo_js_context_create_object(ctx, prototype, NULL);
+  neo_js_context_set_internal(ctx, object, L"[[primitive]]", self);
+  return object;
 }
 
 static neo_js_variable_t neo_js_symbol_get_field(neo_js_context_t ctx,

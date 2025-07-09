@@ -109,10 +109,10 @@ neo_js_variable_t neo_js_error_to_string(neo_js_context_t ctx,
     neo_js_stackframe_t frame = neo_list_node_get(it);
     wchar_t tmp[1024];
     if (frame->filename) {
-      swprintf(tmp, 1024, L"  at %ls(%ls:%d:%d)\n", frame->function,
+      swprintf(tmp, 1024, L"  at %ls (%ls:%d:%d)\n", frame->function,
                frame->filename, frame->line, frame->column);
     } else {
-      swprintf(tmp, 1024, L"  at %ls(<internal>)\n", frame->function);
+      swprintf(tmp, 1024, L"  at %ls (<internal>)\n", frame->function);
     }
     result = neo_wstring_concat(allocator, result, &max, tmp);
   }

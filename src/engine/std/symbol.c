@@ -15,7 +15,12 @@ neo_js_variable_t neo_js_symbol_constructor(neo_js_context_t ctx,
                                             neo_js_variable_t *argv) {
   const wchar_t *description = NULL;
   if (argc > 0) {
-    description = neo_js_variable_to_string(argv[0])->string;
+    neo_js_variable_t str = argv[0];
+    str = neo_js_context_to_string(ctx, str);
+    if (neo_js_variable_get_type(str)->kind == NEO_TYPE_ERROR) {
+      return str;
+    }
+    description = neo_js_variable_to_string(str)->string;
   } else {
     description = L"";
   }
@@ -48,7 +53,7 @@ neo_js_variable_t neo_js_symbol_to_string(neo_js_context_t ctx,
   }
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_js_symbol_t sym = neo_js_variable_to_symbol(symbol);
-  size_t len = wcslen(sym->description) + 8;
+  size_t len = wcslen(sym->description) + 16;
   wchar_t *raw = neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
   swprintf(raw, len, L"Symbol(%ls)", sym->description);
   neo_js_variable_t result = neo_js_context_create_string(ctx, raw);
