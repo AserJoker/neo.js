@@ -1,17 +1,6 @@
-async function test() {
-  try {
-    aaa: {
-      await using obj = {
-        async [Symbol.asyncDispose]() {
-          await new Promise(resolve => setTimeout(resolve, 1000))
-          throw new Error('test')
-        }
-      }
-      break aaa
-    }
-  } catch (e) {
-    println(e)
+await using obj = {
+  async [Symbol.asyncDispose]() {
+    await new Promise(resolve => setTimeout(resolve))
+    throw new Error('test')
   }
 }
-const item = await test()
-println(item)

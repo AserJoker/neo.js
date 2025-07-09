@@ -67,6 +67,11 @@ neo_js_scope_t neo_js_context_pop_scope(neo_js_context_t ctx);
 neo_list_t neo_js_context_get_stacktrace(neo_js_context_t ctx, uint32_t line,
                                          uint32_t column);
 
+neo_list_t neo_js_context_clone_stacktrace(neo_js_context_t ctx);
+
+neo_list_t neo_js_context_set_stacktrace(neo_js_context_t ctx,
+                                         neo_list_t stacktrace);
+
 void neo_js_context_push_stackframe(neo_js_context_t ctx,
                                     const wchar_t *filename,
                                     const wchar_t *function, uint32_t column,

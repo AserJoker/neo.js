@@ -918,6 +918,34 @@ neo_list_t neo_js_context_get_stacktrace(neo_js_context_t ctx, uint32_t line,
   return ctx->stacktrace;
 }
 
+neo_list_t neo_js_context_clone_stacktrace(neo_js_context_t ctx) {
+  neo_list_initialize_t initialize = {true};
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  neo_list_t result = neo_create_list(allocator, &initialize);
+  for (neo_list_node_t it = neo_list_get_first(ctx->stacktrace);
+       it != neo_list_get_tail(ctx->stacktrace); it = neo_list_node_next(it)) {
+    neo_js_stackframe_t frame = neo_list_node_get(it);
+    neo_js_stackframe_t target = neo_create_js_stackframe(allocator);
+    target->column = frame->column;
+    target->line = frame->line;
+    if (frame->filename) {
+      target->filename = neo_create_wstring(allocator, frame->filename);
+    }
+    if (frame->function) {
+      target->function = neo_create_wstring(allocator, frame->function);
+    }
+    neo_list_push(result, target);
+  }
+  return result;
+}
+
+neo_list_t neo_js_context_set_stacktrace(neo_js_context_t ctx,
+                                         neo_list_t stacktrace) {
+  neo_list_t current = ctx->stacktrace;
+  ctx->stacktrace = stacktrace;
+  return current;
+}
+
 void neo_js_context_push_stackframe(neo_js_context_t ctx,
                                     const wchar_t *filename,
                                     const wchar_t *function, uint32_t column,
@@ -1602,7 +1630,8 @@ neo_js_variable_t neo_js_context_create_coroutine(neo_js_context_t ctx,
                                                   neo_js_vm_t vm,
                                                   neo_program_t program) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
-  neo_js_co_context_t co_ctx = neo_create_js_co_context(allocator, vm, program);
+  neo_js_co_context_t co_ctx = neo_create_js_co_context(
+      allocator, vm, program, neo_js_context_clone_stacktrace(ctx));
   neo_list_push(ctx->coroutines, co_ctx);
   neo_js_coroutine_t coroutine = neo_create_js_coroutine(allocator, co_ctx);
   return neo_js_context_create_variable(
@@ -1674,7 +1703,12 @@ static neo_js_variable_t neo_js_awaiter_task(neo_js_context_t ctx,
       neo_js_context_load_variable(ctx, L"#onRejected");
   neo_js_variable_t task = neo_js_context_load_variable(ctx, L"#task");
   neo_js_co_context_t co_ctx = neo_js_coroutine_get_context(coroutine);
+  neo_list_t stacktrace =
+      neo_js_context_set_stacktrace(ctx, co_ctx->stacktrace);
+  neo_js_context_push_stackframe(ctx, NULL, L"_.awaiter", 0, 0);
   neo_js_variable_t value = neo_js_vm_eval(co_ctx->vm, co_ctx->program);
+  neo_js_context_pop_stackframe(ctx);
+  neo_js_context_set_stacktrace(ctx, stacktrace);
   if (neo_js_variable_get_type(value)->kind == NEO_TYPE_INTERRUPT) {
     neo_js_interrupt_t interrupt = neo_js_variable_to_interrupt(value);
     value = neo_js_context_create_variable(ctx, interrupt->result, NULL);

@@ -20,6 +20,7 @@ struct _neo_js_co_context_t {
   neo_js_vm_t vm;
   neo_program_t program;
   bool running;
+  neo_list_t stacktrace;
 };
 
 struct _neo_js_coroutine_t {
@@ -28,9 +29,11 @@ struct _neo_js_coroutine_t {
 };
 
 neo_js_type_t neo_get_js_coroutine_type();
+
 neo_js_co_context_t neo_create_js_co_context(neo_allocator_t allocator,
                                              neo_js_vm_t vm,
-                                             neo_program_t program);
+                                             neo_program_t program,
+                                             neo_list_t stacktrace);
 
 neo_js_coroutine_t neo_create_js_coroutine(neo_allocator_t allocator,
                                            neo_js_co_context_t ctx);
