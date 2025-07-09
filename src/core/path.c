@@ -48,10 +48,10 @@ neo_path_t neo_create_path(neo_allocator_t allocator, const wchar_t *source) {
   path->allocator = allocator;
   neo_list_initialize_t initialze = {true};
   path->parts = neo_create_list(allocator, &initialze);
-  wchar_t *part = NULL;
-  size_t offset = 0;
-  size_t len = wcslen(source) + 1;
   if (source) {
+    wchar_t *part = NULL;
+    size_t offset = 0;
+    size_t len = wcslen(source) + 1;
     if (*source == '/') {
       neo_list_push(path->parts, neo_create_wstring(allocator, L"/"));
       source++;
@@ -128,6 +128,25 @@ neo_path_t neo_path_absolute(neo_path_t current) {
   neo_path_t result = neo_path_current(current->allocator);
   neo_path_concat(result, current);
   return result;
+}
+
+neo_path_t neo_path_parent(neo_path_t current) {
+  if (neo_list_get_size(current->parts) < 1) {
+    return NULL;
+  }
+  neo_path_t result = neo_create_path(current->allocator, NULL);
+  for (neo_list_node_t it = neo_list_get_first(current->parts);
+       it != neo_list_get_tail(current->parts); it = neo_list_node_next(it)) {
+    wchar_t *part = neo_list_node_get(it);
+    neo_list_push(result->parts, neo_create_wstring(current->allocator, part));
+  }
+  return result;
+}
+const wchar_t *neo_path_filename(neo_path_t current) {
+  if (neo_list_get_size(current->parts)) {
+    return neo_list_node_get(neo_list_get_tail(current->parts));
+  }
+  return NULL;
 }
 
 wchar_t *neo_path_to_string(neo_path_t path) {

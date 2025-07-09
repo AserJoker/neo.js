@@ -63,8 +63,8 @@ static void neo_ast_expression_new_write(neo_allocator_t allocator,
   }
   if (neo_list_get_size(addresses) != 0) {
     neo_allocator_free(allocator, addresses);
-    THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)",
-          ctx->program->file, self->callee->location.begin.line,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+          ctx->program->filename, self->callee->location.begin.line,
           self->callee->location.begin.column);
     return;
   }
@@ -135,7 +135,7 @@ neo_ast_node_t neo_ast_read_expression_new(neo_allocator_t allocator,
     }
   }
   if (!node->callee) {
-    THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }
@@ -174,7 +174,7 @@ neo_ast_node_t neo_ast_read_expression_new(neo_allocator_t allocator,
       goto onerror;
     };
     if (!call) {
-      THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
             current.line, current.column);
       goto onerror;
     }

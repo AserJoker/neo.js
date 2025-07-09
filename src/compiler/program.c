@@ -4,21 +4,28 @@
 #include "core/buffer.h"
 #include "core/error.h"
 #include "core/list.h"
+#include "core/path.h"
 #include "core/string.h"
+#include "core/unicode.h"
 #include <string.h>
 
 static void neo_program_dispose(neo_allocator_t allocator,
                                 neo_program_t program) {
   neo_allocator_free(allocator, program->constants);
   neo_allocator_free(allocator, program->codes);
-  neo_allocator_free(allocator, program->file);
+  neo_allocator_free(allocator, program->filename);
+  neo_allocator_free(allocator, program->dirname);
 }
 
 neo_program_t neo_create_program(neo_allocator_t allocator, const char *file) {
   neo_program_t program = (neo_program_t)neo_allocator_alloc(
       allocator, sizeof(struct _neo_program_t), neo_program_dispose);
-  program->file = neo_allocator_alloc(allocator, strlen(file) + 1, NULL);
-  strcpy(program->file, file);
+  program->filename = neo_string_to_wstring(allocator, file);
+  neo_path_t path = neo_create_path(allocator, program->filename);
+  neo_path_t parent = neo_path_parent(path);
+  neo_allocator_free(allocator, path);
+  program->dirname = neo_path_to_string(parent);
+  neo_allocator_free(allocator, parent);
   program->codes = neo_create_buffer(allocator, 128);
   neo_list_initialize_t initialize = {true};
   program->constants = neo_create_list(allocator, &initialize);
@@ -115,7 +122,8 @@ static const int32_t neo_program_get_integer(neo_program_t program,
 void neo_program_write(neo_allocator_t allocator, FILE *fp,
                        neo_program_t self) {
   fprintf(fp, "[section .metadata]\n");
-  fprintf(fp, ".file: %s\n", self->file);
+  fprintf(fp, ".filename: %ls\n", self->filename);
+  fprintf(fp, ".dirname: %ls\n", self->dirname);
   size_t idx = 0;
   fprintf(fp, "[section .constants]\n");
   for (neo_list_node_t it = neo_list_get_first(self->constants);

@@ -505,22 +505,20 @@ void neo_js_vm_call(neo_js_vm_t vm, neo_program_t program) {
   }
   neo_js_variable_t callee = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_list_pop(vm->stack);
-  wchar_t *filename = neo_string_to_wstring(allocator, program->file);
   neo_js_callable_t callable = neo_js_variable_to_callable(callee);
   if (!callable) {
-    neo_js_context_push_stackframe(vm->ctx, filename, L"", column, line);
+    neo_js_context_push_stackframe(vm->ctx, program->filename, L"", column,
+                                   line);
     neo_list_push(vm->stack,
                   neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
                                               L"variable is not a function"));
     neo_js_context_pop_stackframe(vm->ctx);
     vm->offset = neo_buffer_get_size(program->codes);
     neo_allocator_free(allocator, argv);
-    neo_allocator_free(allocator, filename);
     return;
   }
-  neo_js_context_push_stackframe(vm->ctx, filename, callable->name, column,
-                                 line);
-  neo_allocator_free(allocator, filename);
+  neo_js_context_push_stackframe(vm->ctx, program->filename, callable->name,
+                                 column, line);
   neo_js_variable_t result = neo_js_context_call(
       vm->ctx, callee, neo_js_context_create_undefined(vm->ctx), argc, argv);
   neo_js_context_pop_stackframe(vm->ctx);
@@ -551,11 +549,9 @@ void neo_js_vm_member_call(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t host = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_list_pop(vm->stack);
   neo_js_variable_t callee = neo_js_context_get_field(vm->ctx, host, field);
-  wchar_t *filename = neo_string_to_wstring(allocator, program->file);
   neo_js_callable_t callable = neo_js_variable_to_callable(callee);
-  neo_js_context_push_stackframe(vm->ctx, filename, callable->name, column,
+  neo_js_context_push_stackframe(vm->ctx, program->filename, callable->name, column,
                                  line);
-  neo_allocator_free(allocator, filename);
   neo_js_variable_t result =
       neo_js_context_call(vm->ctx, callee, host, argc, argv);
   neo_js_context_pop_stackframe(vm->ctx);
@@ -1099,12 +1095,10 @@ void neo_js_vm_new(neo_js_vm_t vm, neo_program_t program) {
   }
   neo_js_variable_t callee = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_list_pop(vm->stack);
-  wchar_t *filename = neo_string_to_wstring(allocator, program->file);
   wchar_t *funcname = NULL;
   neo_js_callable_t callable = neo_js_variable_to_callable(callee);
-  neo_js_context_push_stackframe(vm->ctx, filename, callable->name, column,
+  neo_js_context_push_stackframe(vm->ctx, program->filename, callable->name, column,
                                  line);
-  neo_allocator_free(allocator, filename);
   neo_js_variable_t result =
       neo_js_context_construct(vm->ctx, callee, argc, argv);
   neo_js_context_pop_stackframe(vm->ctx);

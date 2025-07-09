@@ -88,7 +88,7 @@ neo_ast_node_t neo_ast_read_declaration_function(neo_allocator_t allocator,
   }
   node->declaration = &declaration->node;
   if (!declaration->name) {
-    THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }

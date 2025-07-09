@@ -117,7 +117,7 @@ neo_ast_node_t neo_ast_read_expression_yield(neo_allocator_t allocator,
     goto onerror;
   }
   if (!neo_compile_scope_is_generator()) {
-    THROW("yield only used in generator context\n  at _.compile(%s:%d:%d)",
+    THROW("yield only used in generator context\n  at _.compile (%s:%d:%d)",
           file, position->line, position->column);
     goto onerror;
   }

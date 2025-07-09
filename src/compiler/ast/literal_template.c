@@ -54,8 +54,8 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
       }
       if (neo_list_get_size(addresses)) {
         THROW("Invalid tagged template on optional chain \n  at "
-              "_.compile(%s:%d:%d)",
-              ctx->program->file, self->tag->location.begin.line,
+              "_.compile (%s:%d:%d)",
+              ctx->program->filename, self->tag->location.begin.line,
               self->tag->location.begin.column);
         neo_allocator_free(allocator, addresses);
         return;
@@ -78,8 +78,8 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
       }
       if (neo_list_get_size(addresses)) {
         THROW("Invalid tagged template on optional chain \n  at "
-              "_.compile(%s:%d:%d)",
-              ctx->program->file, self->tag->location.begin.line,
+              "_.compile (%s:%d:%d)",
+              ctx->program->filename, self->tag->location.begin.line,
               self->tag->location.begin.column);
         neo_allocator_free(allocator, addresses);
         return;
@@ -271,7 +271,7 @@ neo_ast_node_t neo_ast_read_literal_template(neo_allocator_t allocator,
         goto onerror;
       };
       if (!expr) {
-        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               current.line, current.column);
         goto onerror;
       }
@@ -281,7 +281,7 @@ neo_ast_node_t neo_ast_read_literal_template(neo_allocator_t allocator,
         goto onerror;
       };
       if (!token) {
-        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               current.line, current.column);
         goto onerror;
       }

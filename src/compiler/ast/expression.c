@@ -649,7 +649,7 @@ neo_ast_node_t neo_ast_read_expression_14(neo_allocator_t allocator,
       goto onerror;
     };
     if (!bnode->right) {
-      THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
             current.line, current.column);
       goto onerror;
     }
@@ -698,7 +698,7 @@ neo_ast_node_t neo_ast_read_expression_13(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               curr.line, curr.column);
         goto onerror;
       }
@@ -748,7 +748,7 @@ neo_ast_node_t neo_ast_read_expression_12(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               curr.line, curr.column);
         goto onerror;
       }
@@ -796,7 +796,7 @@ neo_ast_node_t neo_ast_read_expression_11(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               curr.line, curr.column);
         goto onerror;
       }
@@ -846,7 +846,7 @@ neo_ast_node_t neo_ast_read_expression_10(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               curr.line, curr.column);
         goto onerror;
       }
@@ -904,7 +904,7 @@ neo_ast_node_t neo_ast_read_expression_9(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               curr.line, curr.column);
         goto onerror;
       }
@@ -954,7 +954,7 @@ neo_ast_node_t neo_ast_read_expression_8(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               current.line, current.column);
         goto onerror;
       }
@@ -1002,7 +1002,7 @@ neo_ast_node_t neo_ast_read_expression_7(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               curr.line, curr.column);
         goto onerror;
       }
@@ -1050,7 +1050,7 @@ neo_ast_node_t neo_ast_read_expression_6(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               curr.line, curr.column);
         goto onerror;
       }
@@ -1098,7 +1098,7 @@ neo_ast_node_t neo_ast_read_expression_5(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               curr.line, curr.column);
         goto onerror;
       }
@@ -1146,7 +1146,7 @@ neo_ast_node_t neo_ast_read_expression_4(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               curr.line, curr.column);
         goto onerror;
       }
@@ -1195,7 +1195,7 @@ neo_ast_node_t neo_ast_read_expression_3(neo_allocator_t allocator,
         goto onerror;
       };
       if (!bnode->right) {
-        THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               curr.line, curr.column);
         goto onerror;
       }

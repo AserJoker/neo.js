@@ -86,7 +86,7 @@ neo_ast_node_t neo_ast_read_statement_throw(neo_allocator_t allocator,
       if (current.line == line) {
         if (*current.offset && *current.offset != ';' &&
             *current.offset != '}') {
-          THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+          THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
                 current.line, current.column);
           goto onerror;
         }

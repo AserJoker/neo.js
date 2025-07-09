@@ -19,6 +19,10 @@ neo_path_t neo_path_current(neo_allocator_t allocator);
 
 neo_path_t neo_path_absolute(neo_path_t current);
 
+neo_path_t neo_path_parent(neo_path_t current);
+
+const wchar_t *neo_path_filename(neo_path_t current);
+
 wchar_t *neo_path_to_string(neo_path_t path);
 
 #ifdef __cplusplus

@@ -106,21 +106,21 @@ neo_ast_node_t neo_ast_read_statement_do_while(neo_allocator_t allocator,
     goto onerror;
   }
   if (!node->body) {
-    THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }
   SKIP_ALL(allocator, file, &current, onerror);
   token = neo_read_identify_token(allocator, file, &current);
   if (!token || !neo_location_is(token->location, "while")) {
-    THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }
   neo_allocator_free(allocator, token);
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != '(') {
-    THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }
@@ -131,13 +131,13 @@ neo_ast_node_t neo_ast_read_statement_do_while(neo_allocator_t allocator,
     goto onerror;
   }
   if (!node->condition) {
-    THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != ')') {
-    THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }

@@ -189,7 +189,7 @@ void neo_compile_scope_declar(neo_allocator_t allocator,
       }
     }
   } else {
-    THROW("Illegal property in declaration context\n  at _.compile(%s:%d:%d)",
+    THROW("Illegal property in declaration context\n  at _.compile (%s:%d:%d)",
           node->location.file, node->location.begin.line,
           node->location.begin.column);
     return;

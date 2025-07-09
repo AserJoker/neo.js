@@ -10,7 +10,8 @@ extern "C" {
 typedef struct _neo_program_t *neo_program_t;
 
 struct _neo_program_t {
-  char *file;
+  wchar_t *filename;
+  wchar_t *dirname;
   neo_buffer_t codes;
   neo_list_t constants;
 };

@@ -48,8 +48,8 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
       return;
     }
     if (neo_list_get_size(addresses)) {
-      THROW("Invalid left-hand side in assignment \n  at _.compile(%s:%d:%d)",
-            ctx->program->file, self->identifier->location.begin.line,
+      THROW("Invalid left-hand side in assignment \n  at _.compile (%ls:%d:%d)",
+            ctx->program->filename, self->identifier->location.begin.line,
             self->identifier->location.begin.column);
       neo_allocator_free(allocator, addresses);
       return;
@@ -137,8 +137,8 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
     neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   } else {
-    THROW("Invalid left-hand side in assignment \n  at _.compile(%s:%d:%d)",
-          ctx->program->file, self->identifier->location.begin.line,
+    THROW("Invalid left-hand side in assignment \n  at _.compile (%ls:%d:%d)",
+          ctx->program->filename, self->identifier->location.begin.line,
           self->identifier->location.begin.column);
     return;
   }
@@ -237,7 +237,7 @@ neo_ast_node_t neo_ast_read_expression_assigment(neo_allocator_t allocator,
     goto onerror;
   };
   if (!node->value) {
-    THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }

@@ -77,6 +77,7 @@ struct _neo_js_context_t {
   neo_list_t micro_tasks;
   neo_list_t macro_tasks;
   neo_list_t coroutines;
+  const wchar_t *dirname;
   struct {
     neo_js_variable_t global;
     neo_js_variable_t object_constructor;
@@ -695,6 +696,7 @@ neo_js_context_t neo_create_js_context(neo_allocator_t allocator,
   ctx->coroutines = neo_create_list(allocator, NULL);
   neo_js_stackframe_t frame = neo_create_js_stackframe(allocator);
   frame->function = neo_create_wstring(allocator, L"start");
+  ctx->dirname = NULL;
   neo_list_push(ctx->stacktrace, frame);
   neo_js_context_push_stackframe(ctx, NULL, L"_.eval", 0, 0);
   neo_js_context_init_std(ctx);
@@ -3157,4 +3159,15 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
     neo_allocator_free(allocator, vm);
     return result;
   }
+}
+
+const wchar_t *neo_js_context_get_dirname(neo_js_context_t ctx) {
+  return ctx->dirname;
+}
+
+const wchar_t *neo_js_context_set_dirname(neo_js_context_t ctx,
+                                          const wchar_t *dirname) {
+  const wchar_t *current = ctx->dirname;
+  ctx->dirname = dirname;
+  return current;
 }

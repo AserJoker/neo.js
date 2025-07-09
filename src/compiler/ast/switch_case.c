@@ -74,7 +74,7 @@ neo_ast_node_t neo_ast_read_switch_case(neo_allocator_t allocator,
       goto onerror;
     }
     if (!node->condition) {
-      THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
             current.line, current.column);
       goto onerror;
     }
@@ -84,7 +84,7 @@ neo_ast_node_t neo_ast_read_switch_case(neo_allocator_t allocator,
   neo_allocator_free(allocator, token);
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != ':') {
-    THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }
@@ -108,7 +108,7 @@ neo_ast_node_t neo_ast_read_switch_case(neo_allocator_t allocator,
       goto onerror;
     }
     if (!statement) {
-      THROW("Invalid or unexpected token \n  at _.compile(%s:%d:%d)", file,
+      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
             current.line, current.column);
       goto onerror;
     }
