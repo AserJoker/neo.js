@@ -285,6 +285,9 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
     case NEO_ASM_SET_USING:
       fprintf(fp, "NEO_ASM_SET_USING\n");
       break;
+    case NEO_ASM_SET_AWAIT_USING:
+      fprintf(fp, "NEO_ASM_SET_AWAIT_USING\n");
+      break;
     case NEO_ASM_DIRECTIVE: {
       char *constant =
           neo_string_encode(allocator, neo_program_get_string(self, &offset));

@@ -124,6 +124,17 @@ static neo_js_variable_t neo_js_async_generator_task(neo_js_context_t ctx,
         neo_js_context_create_micro_task(
             ctx, task, neo_js_context_create_undefined(ctx), 0, NULL, 0, false);
       }
+    } else if (interrupt->type == NEO_JS_INTERRUPT_BACKEND_AWAIT) {
+      if (neo_js_context_is_thenable(ctx, value)) {
+        neo_js_variable_t then = neo_js_context_get_field(
+            ctx, value, neo_js_context_create_string(ctx, L"then"));
+        neo_js_variable_t args[] = {task, on_await_rejected};
+        neo_js_context_call(ctx, then, value, 2, args);
+      } else {
+        neo_list_push(co_ctx->vm->stack, value);
+        neo_js_context_create_micro_task(
+            ctx, task, neo_js_context_create_undefined(ctx), 0, NULL, 0, false);
+      }
     } else {
       if (neo_js_context_is_thenable(ctx, value)) {
         neo_js_variable_t then = neo_js_context_get_field(

@@ -1500,45 +1500,6 @@ neo_js_variable_t neo_js_context_clone(neo_js_context_t ctx,
   return variable;
 }
 
-neo_js_variable_t neo_js_context_scope_dispose(neo_js_context_t ctx) {
-  neo_js_variable_t result = NULL;
-  neo_js_scope_t scope = neo_js_context_get_scope(ctx);
-  neo_js_scope_t parent = neo_js_scope_get_parent(scope);
-  neo_list_t variables = neo_js_scope_get_variables(scope);
-  neo_js_variable_t dispose =
-      neo_js_context_get_field(ctx, ctx->std.symbol_constructor,
-                               neo_js_context_create_string(ctx, L"dispose"));
-  for (neo_list_node_t it = neo_list_get_first(variables);
-       it != neo_list_get_tail(variables); it = neo_list_node_next(it)) {
-    neo_js_variable_t variable = neo_list_node_get(it);
-    if (!neo_js_variable_is_using(variable) ||
-        neo_js_variable_get_type(variable)->kind < NEO_TYPE_OBJECT) {
-      continue;
-    }
-    neo_js_variable_set_using(variable, false);
-    neo_js_variable_t dispose_fn =
-        neo_js_context_get_field(ctx, variable, dispose);
-    if (neo_js_variable_get_type(dispose_fn)->kind < NEO_TYPE_CALLABLE) {
-      continue;
-    }
-    neo_js_callable_t callble = neo_js_variable_to_callable(dispose_fn);
-    neo_js_context_push_stackframe(ctx, NULL, callble->name, 0, 0);
-    neo_js_variable_t error =
-        neo_js_context_call(ctx, dispose_fn, variable, 0, NULL);
-    neo_js_context_pop_stackframe(ctx);
-    if (neo_js_variable_get_type(error)->kind == NEO_TYPE_ERROR) {
-      result = error;
-    }
-  }
-  if (!result) {
-    result = neo_js_context_create_undefined(ctx);
-  }
-  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
-  result = neo_js_scope_create_variable(
-      allocator, parent, neo_js_variable_get_handle(result), NULL);
-  return result;
-}
-
 static neo_js_variable_t
 neo_js_context_call_cfunction(neo_js_context_t ctx, neo_js_variable_t callee,
                               neo_js_variable_t self, uint32_t argc,
@@ -1721,8 +1682,13 @@ static neo_js_variable_t neo_js_awaiter_task(neo_js_context_t ctx,
     if (neo_js_context_is_thenable(ctx, value)) {
       neo_js_variable_t then = neo_js_context_get_field(
           ctx, value, neo_js_context_create_string(ctx, L"then"));
-      neo_js_variable_t args[] = {on_fulfilled, on_rejected};
-      neo_js_context_call(ctx, then, value, 2, args);
+      if (interrupt->type == NEO_JS_INTERRUPT_BACKEND_AWAIT) {
+        neo_js_variable_t args[] = {task, on_rejected};
+        neo_js_context_call(ctx, then, value, 2, args);
+      } else {
+        neo_js_variable_t args[] = {on_fulfilled, on_rejected};
+        neo_js_context_call(ctx, then, value, 2, args);
+      }
     } else {
       neo_list_t stack = co_ctx->vm->stack;
       neo_js_scope_t current = neo_js_context_set_scope(ctx, co_ctx->vm->scope);
@@ -3051,6 +3017,44 @@ static neo_js_variable_t neo_js_context_eval_resolver(neo_js_context_t ctx,
   }
 }
 
+static neo_js_variable_t
+neo_js_context_eval_backend_resolver(neo_js_context_t ctx,
+                                     neo_js_variable_t self, uint32_t argc,
+                                     neo_js_variable_t *argv) {
+  neo_js_variable_t coroutine =
+      neo_js_context_load_variable(ctx, L"#coroutine");
+  neo_js_co_context_t co_ctx = neo_js_coroutine_get_context(coroutine);
+  neo_list_t stack = co_ctx->vm->stack;
+  neo_js_variable_t value = neo_list_node_get(neo_list_get_last(stack));
+  if (neo_js_context_is_thenable(ctx, value)) {
+    neo_list_pop(stack);
+    neo_js_variable_t resolve = argv[0];
+    neo_js_variable_t reject = argv[1];
+    neo_js_variable_t task =
+        neo_js_context_create_cfunction(ctx, NULL, &neo_js_awaiter_task);
+    neo_js_variable_t on_rejected =
+        neo_js_context_create_cfunction(ctx, NULL, neo_js_awaiter_on_rejected);
+    neo_js_callable_set_closure(ctx, task, L"#coroutine", coroutine);
+    neo_js_callable_set_closure(ctx, task, L"#resolve", resolve);
+    neo_js_callable_set_closure(ctx, task, L"#reject", reject);
+    neo_js_callable_set_closure(ctx, task, L"#onFulfilled", task);
+    neo_js_callable_set_closure(ctx, task, L"#onRejected", on_rejected);
+    neo_js_callable_set_closure(ctx, task, L"#task", task);
+
+    neo_js_callable_set_closure(ctx, on_rejected, L"#task", task);
+    neo_js_callable_set_closure(ctx, on_rejected, L"#coroutine", coroutine);
+
+    neo_js_variable_t then = neo_js_context_get_field(
+        ctx, value, neo_js_context_create_string(ctx, L"then"));
+
+    neo_js_variable_t args[] = {task, on_rejected};
+
+    return neo_js_context_call(ctx, then, value, 2, args);
+  } else {
+    return neo_js_awaiter_resolver(ctx, self, argc, argv);
+  }
+}
+
 neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
                                       const char *source) {
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
@@ -3110,17 +3114,20 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
   neo_js_variable_t result = neo_js_vm_eval(vm, program);
   if (neo_js_variable_get_type(result)->kind == NEO_TYPE_INTERRUPT) {
     neo_js_interrupt_t interrupt = neo_js_variable_to_interrupt(result);
-    neo_js_scope_t current = neo_js_context_set_scope(ctx, vm->scope);
     result = neo_js_context_create_variable(ctx, interrupt->result, NULL);
-    neo_js_context_set_scope(ctx, current);
     vm->offset = interrupt->offset;
     neo_js_variable_t coroutine =
         neo_js_context_create_coroutine(ctx, vm, program);
     neo_js_co_context_t co_ctx = neo_js_coroutine_get_context(coroutine);
     neo_js_variable_t resolver = NULL;
     neo_list_push(vm->stack, result);
-    resolver = neo_js_context_create_cfunction(ctx, NULL,
-                                               neo_js_context_eval_resolver);
+    if (interrupt->type == NEO_JS_INTERRUPT_BACKEND_AWAIT) {
+      resolver = neo_js_context_create_cfunction(
+          ctx, NULL, neo_js_context_eval_backend_resolver);
+    } else {
+      resolver = neo_js_context_create_cfunction(ctx, NULL,
+                                                 neo_js_context_eval_resolver);
+    }
     neo_js_callable_set_closure(ctx, resolver, L"#coroutine", coroutine);
     return neo_js_context_construct(ctx, ctx->std.promise_constructor, 1,
                                     &resolver);

@@ -133,6 +133,7 @@ int main(int argc, char *argv[]) {
   buf[len] = 0;
   fread(buf, len, 1, fp);
   fclose(fp);
+  // const char *buf = str;
   neo_error_initialize(allocator);
   neo_js_runtime_t runtime = neo_create_js_runtime(allocator);
   neo_js_context_t ctx = neo_create_js_context(allocator, runtime);
