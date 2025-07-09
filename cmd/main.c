@@ -133,7 +133,6 @@ int main(int argc, char *argv[]) {
   buf[len] = 0;
   fread(buf, len, 1, fp);
   fclose(fp);
-  // const char *buf = str;
   neo_error_initialize(allocator);
   neo_js_runtime_t runtime = neo_create_js_runtime(allocator);
   neo_js_context_t ctx = neo_create_js_context(allocator, runtime);
@@ -157,7 +156,7 @@ int main(int argc, char *argv[]) {
                            neo_js_context_create_cfunction(
                                ctx, L"clearInterval", js_clear_interval));
   neo_js_context_pop_scope(ctx);
-  neo_js_variable_t result = neo_js_context_eval(ctx, "index.mjs", buf);
+  neo_js_variable_t result = neo_js_context_eval(ctx, "../index.mjs", buf);
   if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
     disp_js_variable(ctx, result);
   } else {

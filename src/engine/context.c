@@ -7,8 +7,8 @@
 #include "core/clock.h"
 #include "core/error.h"
 #include "core/hash_map.h"
-#include "core/json.h"
 #include "core/list.h"
+#include "core/path.h"
 #include "core/string.h"
 #include "core/unicode.h"
 #include "engine/basetype/array.h"
@@ -3089,60 +3089,47 @@ neo_js_context_eval_backend_resolver(neo_js_context_t ctx,
   }
 }
 
+neo_js_variable_t neo_js_context_create_compile_error(neo_js_context_t ctx) {
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  neo_error_t err = neo_poll_error(__FUNCTION__, __FILE__, __LINE__);
+  wchar_t *message =
+      neo_string_to_wstring(allocator, neo_error_get_message(err));
+  neo_js_variable_t error =
+      neo_js_context_create_error(ctx, NEO_ERROR_SYNTAX, message);
+  neo_allocator_free(allocator, message);
+  neo_allocator_free(allocator, err);
+  return error;
+}
+
 neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
                                       const char *source) {
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
-  wchar_t *u16file = neo_string_to_wstring(allocator, file);
-  neo_program_t program = neo_js_runtime_get_program(ctx->runtime, u16file);
+  wchar_t *filepath = neo_string_to_wstring(allocator, file);
+  neo_path_t path = neo_create_path(allocator, filepath);
+  neo_allocator_free(allocator, filepath);
+  neo_path_t total = neo_path_absolute(path);
+  neo_allocator_free(allocator, path);
+  filepath = neo_path_to_string(total);
+  neo_allocator_free(allocator, total);
+  neo_program_t program = neo_js_runtime_get_program(ctx->runtime, filepath);
   if (!program) {
     neo_ast_node_t root = TRY(neo_ast_parse_code(allocator, file, source)) {
-      neo_allocator_free(allocator, u16file);
-      neo_error_t err = neo_poll_error(__FUNCTION__, __FILE__, __LINE__);
-      wchar_t *message =
-          neo_string_to_wstring(allocator, neo_error_get_message(err));
-      neo_js_variable_t error =
-          neo_js_context_create_error(ctx, NEO_ERROR_SYNTAX, message);
-      neo_allocator_free(allocator, message);
-      neo_allocator_free(allocator, err);
-      return error;
+      neo_allocator_free(allocator, filepath);
+
+      return neo_js_context_create_compile_error(ctx);
     };
-    neo_variable_t json = neo_ast_node_serialize(allocator, root);
-    char *json_str = neo_json_stringify(allocator, json);
-    FILE *fp = fopen("../index.json", "w");
-    fprintf(fp, "%s", json_str);
-    fclose(fp);
-    neo_allocator_free(allocator, json_str);
-    neo_allocator_free(allocator, json);
-    program = TRY(neo_ast_write_node(allocator, file, root)) {
+    char *cfilepath = neo_wstring_to_string(allocator, filepath);
+    program = TRY(neo_ast_write_node(allocator, cfilepath, root)) {
       neo_allocator_free(allocator, root);
-      neo_allocator_free(allocator, u16file);
-      neo_error_t err = neo_poll_error(__FUNCTION__, __FILE__, __LINE__);
-      wchar_t *message =
-          neo_string_to_wstring(allocator, neo_error_get_message(err));
-      neo_js_variable_t error =
-          neo_js_context_create_error(ctx, NEO_ERROR_SYNTAX, message);
-      neo_allocator_free(allocator, message);
-      neo_allocator_free(allocator, err);
-      return error;
+      neo_allocator_free(allocator, filepath);
+      neo_allocator_free(allocator, cfilepath);
+      return neo_js_context_create_compile_error(ctx);
     }
+    neo_allocator_free(allocator, cfilepath);
     neo_allocator_free(allocator, root);
-    neo_js_runtime_set_program(ctx->runtime, u16file, program);
-    fp = fopen("../index.asm", "w");
-    TRY(neo_program_write(allocator, fp, program)) {
-      fclose(fp);
-      neo_allocator_free(allocator, u16file);
-      neo_error_t err = neo_poll_error(__FUNCTION__, __FILE__, __LINE__);
-      wchar_t *message =
-          neo_string_to_wstring(allocator, neo_error_get_message(err));
-      neo_js_variable_t error =
-          neo_js_context_create_error(ctx, NEO_ERROR_SYNTAX, message);
-      neo_allocator_free(allocator, message);
-      neo_allocator_free(allocator, err);
-      return error;
-    }
-    fclose(fp);
+    neo_js_runtime_set_program(ctx->runtime, filepath, program);
   }
-  neo_allocator_free(allocator, u16file);
+  neo_allocator_free(allocator, filepath);
   neo_js_scope_t scope = neo_create_js_scope(allocator, ctx->root);
   neo_js_vm_t vm = neo_create_js_vm(ctx, NULL, 0, scope);
   neo_js_variable_t result = neo_js_vm_eval(vm, program);
