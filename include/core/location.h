@@ -17,7 +17,8 @@ typedef struct _neo_location_t {
 
 bool neo_location_is(neo_location_t loc, const char *str);
 
-char *neo_location_get(neo_allocator_t allocator, neo_location_t self);
+wchar_t *neo_location_get(neo_allocator_t allocator, neo_location_t self);
+
 
 #ifdef __cplusplus
 };

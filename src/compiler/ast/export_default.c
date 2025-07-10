@@ -21,7 +21,7 @@ static void neo_ast_export_default_write(neo_allocator_t allocator,
                                          neo_write_context_t ctx,
                                          neo_ast_export_default_t self) {
   TRY(self->value->write(allocator, ctx, self->value)) { return; }
-  neo_program_add_string(allocator, ctx->program, "default");
+  neo_program_add_string(allocator, ctx->program, L"default");
   neo_program_add_code(allocator, ctx->program, NEO_ASM_EXPORT);
 }
 

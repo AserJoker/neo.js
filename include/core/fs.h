@@ -6,7 +6,7 @@
 extern "C" {
 #endif
 
-wchar_t *neo_fs_read_file(neo_allocator_t allocator, const wchar_t *filename);
+char *neo_fs_read_file(neo_allocator_t allocator, const wchar_t *filename);
 
 #ifdef __cplusplus
 };

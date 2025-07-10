@@ -1,5 +1,6 @@
 #include "core/allocator.h"
 #include "core/error.h"
+#include "core/fs.h"
 #include "engine/basetype/error.h"
 #include "engine/basetype/number.h"
 #include "engine/basetype/string.h"
@@ -120,20 +121,9 @@ static void disp_js_variable(neo_js_context_t ctx, neo_js_variable_t variable) {
 int main(int argc, char *argv[]) {
   setlocale(LC_ALL, "");
   neo_allocator_t allocator = neo_create_default_allocator();
-  FILE *fp = fopen("../index.mjs", "rb");
-  if (!fp) {
-    neo_delete_allocator(allocator);
-    fprintf(stderr, "Failed open index.mjs\n");
-    return -1;
-  }
-  fseek(fp, 0, SEEK_END);
-  size_t len = ftell(fp);
-  fseek(fp, 0, SEEK_SET);
-  char *buf = neo_allocator_alloc(allocator, len + 1, NULL);
-  buf[len] = 0;
-  fread(buf, len, 1, fp);
-  fclose(fp);
   neo_error_initialize(allocator);
+  char *buf = neo_fs_read_file(allocator, L"../index.mjs");
+  const wchar_t *s = L"中文";
   neo_js_runtime_t runtime = neo_create_js_runtime(allocator);
   neo_js_context_t ctx = neo_create_js_context(allocator, runtime);
   neo_js_context_push_scope(ctx);

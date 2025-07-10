@@ -42,13 +42,15 @@ static void neo_ast_pattern_object_write(neo_allocator_t allocator,
     if (item->type == NEO_NODE_TYPE_PATTERN_OBJECT_ITEM) {
       neo_ast_pattern_object_item_t oitem = (neo_ast_pattern_object_item_t)item;
       if (oitem->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
-        char *name = neo_location_get(allocator, oitem->identifier->location);
+        wchar_t *name =
+            neo_location_get(allocator, oitem->identifier->location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
         neo_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);
       } else if (oitem->identifier->type == NEO_NODE_TYPE_LITERAL_STRING) {
-        char *name = neo_location_get(allocator, oitem->identifier->location);
-        name[strlen(name) - 1] = 0;
+        wchar_t *name =
+            neo_location_get(allocator, oitem->identifier->location);
+        name[wcslen(name) - 1] = 0;
         neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
         neo_program_add_string(allocator, ctx->program, name + 1);
         neo_allocator_free(allocator, name);
@@ -81,7 +83,7 @@ static void neo_ast_pattern_object_write(neo_allocator_t allocator,
       }
       if (oitem->alias) {
         if (oitem->alias->type == NEO_NODE_TYPE_IDENTIFIER) {
-          char *name = neo_location_get(allocator, oitem->alias->location);
+          wchar_t *name = neo_location_get(allocator, oitem->alias->location);
           neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
           neo_program_add_string(allocator, ctx->program, name);
           neo_allocator_free(allocator, name);
@@ -89,7 +91,8 @@ static void neo_ast_pattern_object_write(neo_allocator_t allocator,
           TRY(oitem->alias->write(allocator, ctx, oitem->alias)) { return; }
         }
       } else if (oitem->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
-        char *name = neo_location_get(allocator, oitem->identifier->location);
+        wchar_t *name =
+            neo_location_get(allocator, oitem->identifier->location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
         neo_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);
@@ -104,7 +107,7 @@ static void neo_ast_pattern_object_write(neo_allocator_t allocator,
       neo_ast_pattern_rest_t rest = (neo_ast_pattern_rest_t)item;
       neo_program_add_code(allocator, ctx->program, NEO_ASM_REST_OBJECT);
       if (rest->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
-        char *name = neo_location_get(allocator, rest->identifier->location);
+        wchar_t *name = neo_location_get(allocator, rest->identifier->location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
         neo_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);

@@ -17,6 +17,7 @@
 #include "core/variable.h"
 #include <stddef.h>
 #include <stdio.h>
+#include <wchar.h>
 
 static void neo_ast_class_method_dispose(neo_allocator_t allocator,
                                          neo_ast_class_method_t node) {
@@ -60,12 +61,12 @@ static void neo_ast_class_method_write(neo_allocator_t allocator,
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
     neo_program_add_integer(allocator, ctx->program, 1);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-    neo_program_add_string(allocator, ctx->program, "prototype");
+    neo_program_add_string(allocator, ctx->program, L"prototype");
     neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
   }
   if (!self->computed && self->name->type == NEO_NODE_TYPE_IDENTIFIER) {
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-    char *name = neo_location_get(allocator, self->name->location);
+    wchar_t *name = neo_location_get(allocator, self->name->location);
     neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   } else {
@@ -78,7 +79,7 @@ static void neo_ast_class_method_write(neo_allocator_t allocator,
   neo_writer_push_scope(allocator, ctx, self->node.scope);
   if (neo_list_get_size(self->arguments)) {
     neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
-    neo_program_add_string(allocator, ctx->program, "arguments");
+    neo_program_add_string(allocator, ctx->program, L"arguments");
     neo_program_add_code(allocator, ctx->program, NEO_ASM_ITERATOR);
     for (neo_list_node_t it = neo_list_get_first(self->arguments);
          it != neo_list_get_tail(self->arguments);
@@ -115,7 +116,7 @@ static void neo_ast_class_method_write(neo_allocator_t allocator,
   }
   neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_ADDRESS);
   neo_program_add_address(allocator, ctx->program, begin);
-  char *source = neo_location_get(allocator, self->node.location);
+  wchar_t *source = neo_location_get(allocator, self->node.location);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_SOURCE);
   neo_program_add_string(allocator, ctx->program, source);
   neo_allocator_free(allocator, source);
@@ -123,7 +124,7 @@ static void neo_ast_class_method_write(neo_allocator_t allocator,
        it != neo_list_get_tail(self->closure); it = neo_list_node_next(it)) {
     neo_ast_node_t node = neo_list_node_get(it);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_CLOSURE);
-    char *name = neo_location_get(allocator, node->location);
+    wchar_t *name = neo_location_get(allocator, node->location);
     neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   }

@@ -373,13 +373,13 @@ neo_token_t neo_read_identify_token(neo_allocator_t allocator,
             current.line, current.column);
       return NULL;
     }
-  }
-  if (!neo_utf8_char_is_id_start(chr) && !neo_utf8_char_is(chr, "$") &&
-      !neo_utf8_char_is(chr, "_")) {
+  } else if (!neo_utf8_char_is_id_start(chr) && !neo_utf8_char_is(chr, "$") &&
+             !neo_utf8_char_is(chr, "_")) {
     return NULL;
+  } else {
+    current.column += chr.end - chr.begin;
+    current.offset = chr.end;
   }
-  current.column += chr.end - chr.begin;
-  current.offset = chr.end;
   chr = neo_utf8_read_char(current.offset);
   while (true) {
     if (*current.offset == '\\' && *(current.offset + 1) == 'u') {

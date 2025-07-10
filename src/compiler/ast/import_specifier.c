@@ -9,6 +9,7 @@
 #include "core/error.h"
 #include "core/location.h"
 #include "core/variable.h"
+#include <wchar.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -23,12 +24,12 @@ static void neo_ast_import_specifier_write(neo_allocator_t allocator,
                                            neo_ast_import_specifier_t self) {
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
   neo_program_add_integer(allocator, ctx->program, 1);
-  char *name = neo_location_get(allocator, self->identifier->location);
+  wchar_t *name = neo_location_get(allocator, self->identifier->location);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
   if (self->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
     neo_program_add_string(allocator, ctx->program, name);
   } else {
-    name[strlen(name) - 1] = 0;
+    name[wcslen(name) - 1] = 0;
     neo_program_add_string(allocator, ctx->program, name + 1);
   }
   neo_allocator_free(allocator, name);
@@ -42,7 +43,7 @@ static void neo_ast_import_specifier_write(neo_allocator_t allocator,
   if (identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
     neo_program_add_string(allocator, ctx->program, name);
   } else {
-    name[strlen(name) - 1] = 0;
+    name[wcslen(name) - 1] = 0;
     neo_program_add_string(allocator, ctx->program, name + 1);
   }
   neo_allocator_free(allocator, name);

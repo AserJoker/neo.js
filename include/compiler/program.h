@@ -17,10 +17,11 @@ struct _neo_program_t {
   neo_list_t constants;
 };
 
-neo_program_t neo_create_program(neo_allocator_t allocator, const wchar_t *file);
+neo_program_t neo_create_program(neo_allocator_t allocator,
+                                 const wchar_t *file);
 
 size_t neo_program_add_constant(neo_allocator_t allocator, neo_program_t self,
-                                const char *constant);
+                                const wchar_t *constant);
 
 void neo_program_add_code(neo_allocator_t allocator, neo_program_t self,
                           uint16_t code);
@@ -29,7 +30,7 @@ void neo_program_add_address(neo_allocator_t allocator, neo_program_t self,
                              size_t code);
 
 void neo_program_add_string(neo_allocator_t allocator, neo_program_t self,
-                            const char *string);
+                            const wchar_t *string);
 
 void neo_program_add_number(neo_allocator_t allocator, neo_program_t self,
                             double number);

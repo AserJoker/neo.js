@@ -26,6 +26,7 @@
 #include "core/variable.h"
 #include <stdio.h>
 #include <string.h>
+#include <wchar.h>
 
 static void
 neo_ast_declaration_export_dispose(neo_allocator_t allocator,
@@ -39,7 +40,7 @@ static void neo_ast_declaration_export_variable(neo_allocator_t allocator,
                                                 neo_write_context_t ctx,
                                                 neo_ast_node_t node) {
   if (node->type == NEO_NODE_TYPE_IDENTIFIER) {
-    char *name = neo_location_get(allocator, node->location);
+    wchar_t *name = neo_location_get(allocator, node->location);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
     neo_program_add_string(allocator, ctx->program, name);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_EXPORT);
@@ -82,8 +83,8 @@ neo_ast_declaration_export_write(neo_allocator_t allocator,
                                  neo_write_context_t ctx,
                                  neo_ast_declaration_export_t self) {
   if (self->source) {
-    char *name = neo_location_get(allocator, self->source->location);
-    name[strlen(name) - 1] = 0;
+    wchar_t *name = neo_location_get(allocator, self->source->location);
+    name[wcslen(name) - 1] = 0;
     neo_program_add_code(allocator, ctx->program, NEO_ASM_IMPORT);
     neo_program_add_string(allocator, ctx->program, name + 1);
     neo_allocator_free(allocator, name);
@@ -101,12 +102,12 @@ neo_ast_declaration_export_write(neo_allocator_t allocator,
       neo_ast_node_t spec = neo_list_node_get(it);
       if (spec->type == NEO_NODE_TYPE_EXPORT_NAMESPACE) {
         neo_ast_export_namespace_t exp = (neo_ast_export_namespace_t)spec;
-        char *name = neo_location_get(allocator, exp->identifier->location);
+        wchar_t *name = neo_location_get(allocator, exp->identifier->location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_EXPORT);
         if (exp->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
           neo_program_add_string(allocator, ctx->program, name);
         } else {
-          name[strlen(name) - 1] = 0;
+          name[wcslen(name) - 1] = 0;
           neo_program_add_string(allocator, ctx->program, name + 1);
         }
         neo_allocator_free(allocator, name);
@@ -116,11 +117,11 @@ neo_ast_declaration_export_write(neo_allocator_t allocator,
         return;
       } else if (spec->type == NEO_NODE_TYPE_EXPORT_SPECIFIER) {
         neo_ast_export_specifier_t exp = (neo_ast_export_specifier_t)spec;
-        char *name = neo_location_get(allocator, exp->identifier->location);
+        wchar_t *name = neo_location_get(allocator, exp->identifier->location);
         if (exp->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
           neo_program_add_string(allocator, ctx->program, name);
         } else {
-          name[strlen(name) - 1] = 0;
+          name[wcslen(name) - 1] = 0;
           neo_program_add_string(allocator, ctx->program, name + 1);
         }
         neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
@@ -132,7 +133,7 @@ neo_ast_declaration_export_write(neo_allocator_t allocator,
         if (identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
           neo_program_add_string(allocator, ctx->program, name);
         } else {
-          name[strlen(name) - 1] = 0;
+          name[wcslen(name) - 1] = 0;
           neo_program_add_string(allocator, ctx->program, name + 1);
         }
         neo_allocator_free(allocator, name);
@@ -150,7 +151,7 @@ neo_ast_declaration_export_write(neo_allocator_t allocator,
         neo_ast_expression_function_t func =
             (neo_ast_expression_function_t)declar->declaration;
         TRY(item->write(allocator, ctx, item)) { return; }
-        char *name = neo_location_get(allocator, func->name->location);
+        wchar_t *name = neo_location_get(allocator, func->name->location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
         neo_program_add_string(allocator, ctx->program, name);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_EXPORT);
@@ -161,7 +162,7 @@ neo_ast_declaration_export_write(neo_allocator_t allocator,
         neo_ast_expression_class_t clazz =
             (neo_ast_expression_class_t)declar->declaration;
         TRY(item->write(allocator, ctx, item)) { return; }
-        char *name = neo_location_get(allocator, clazz->name->location);
+        wchar_t *name = neo_location_get(allocator, clazz->name->location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
         neo_program_add_string(allocator, ctx->program, name);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_EXPORT);

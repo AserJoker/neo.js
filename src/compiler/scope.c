@@ -13,6 +13,7 @@
 #include "core/error.h"
 #include "core/list.h"
 #include "core/location.h"
+#include "core/unicode.h"
 #include "core/variable.h"
 #include <stdio.h>
 #include <string.h>
@@ -94,7 +95,7 @@ void neo_compile_scope_declar_value(neo_allocator_t allocator,
   neo_compile_variable_t variable = neo_create_compile_variable(allocator);
   variable->type = type;
   variable->node = node;
-  char *name = NULL;
+  wchar_t *name = NULL;
   if (type == NEO_COMPILE_VARIABLE_FUNCTION) {
     neo_ast_expression_function_t fn = (neo_ast_expression_function_t)node;
     name = neo_location_get(allocator, fn->name->location);
@@ -104,7 +105,7 @@ void neo_compile_scope_declar_value(neo_allocator_t allocator,
   for (neo_list_node_t it = neo_list_get_first(self->variables);
        it != neo_list_get_tail(self->variables); it = neo_list_node_next(it)) {
     neo_compile_variable_t variable = neo_list_node_get(it);
-    char *current = NULL;
+    wchar_t *current = NULL;
     if (variable->type == NEO_COMPILE_VARIABLE_FUNCTION) {
       neo_ast_expression_function_t fn =
           (neo_ast_expression_function_t)variable->node;
@@ -112,14 +113,16 @@ void neo_compile_scope_declar_value(neo_allocator_t allocator,
     } else {
       current = neo_location_get(allocator, variable->node->location);
     }
-    if (strcmp(name, current) == 0) {
+    if (wcscmp(name, current) == 0) {
       if (type == NEO_COMPILE_VARIABLE_LET ||
           type == NEO_COMPILE_VARIABLE_CONST ||
           type == NEO_COMPILE_VARIABLE_USING ||
           type == NEO_COMPILE_VARIABLE_AWAIT_USING ||
           variable->type == NEO_COMPILE_VARIABLE_LET ||
           variable->type == NEO_COMPILE_VARIABLE_CONST) {
-        THROW("Identifier '%s' has aleady been declared", name);
+        char *cname = neo_wstring_to_string(allocator, name);
+        THROW("Identifier '%s' has aleady been declared", cname);
+        neo_allocator_free(allocator, cname);
         neo_allocator_free(allocator, name);
         neo_allocator_free(allocator, current);
         return;

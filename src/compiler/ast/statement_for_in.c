@@ -32,13 +32,13 @@ neo_ast_statement_for_in_resolve_closure(neo_allocator_t allocator,
 static void neo_ast_statement_for_in_write(neo_allocator_t allocator,
                                            neo_write_context_t ctx,
                                            neo_ast_statement_for_in_t self) {
-  char *label = ctx->label;
+  wchar_t *label = ctx->label;
   ctx->label = NULL;
   TRY(self->right->write(allocator, ctx, self->right)) { return; }
   neo_program_add_code(allocator, ctx->program, NEO_ASM_KEYS);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_ITERATOR);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_BREAK_LABEL);
-  neo_program_add_string(allocator, ctx->program, label ? label : "");
+  neo_program_add_string(allocator, ctx->program, label ? label : L"");
   size_t breakaddr = neo_buffer_get_size(ctx->program->codes);
   neo_program_add_address(allocator, ctx->program, 0);
   size_t begin = neo_buffer_get_size(ctx->program->codes);
@@ -49,7 +49,7 @@ static void neo_ast_statement_for_in_write(neo_allocator_t allocator,
   neo_program_add_address(allocator, ctx->program, 0);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   if (self->left->type == NEO_NODE_TYPE_IDENTIFIER) {
-    char *name = neo_location_get(allocator, self->left->location);
+    wchar_t *name = neo_location_get(allocator, self->left->location);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
     neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
@@ -57,7 +57,7 @@ static void neo_ast_statement_for_in_write(neo_allocator_t allocator,
     TRY(self->left->write(allocator, ctx, self->left)) { return; }
   }
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_CONTINUE_LABEL);
-  neo_program_add_string(allocator, ctx->program, label ? label : "");
+  neo_program_add_string(allocator, ctx->program, label ? label : L"");
   size_t continueaddr = neo_buffer_get_size(ctx->program->codes);
   neo_program_add_address(allocator, ctx->program, 0);
   TRY(self->body->write(allocator, ctx, self->body)) { return; }

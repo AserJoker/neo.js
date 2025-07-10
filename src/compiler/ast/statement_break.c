@@ -19,11 +19,11 @@ static void neo_ast_statement_break_write(neo_allocator_t allocator,
                                           neo_ast_statement_break_t self) {
   neo_program_add_code(allocator, ctx->program, NEO_ASM_BREAK);
   if (self->label) {
-    char *label = neo_location_get(allocator, self->label->location);
+    wchar_t *label = neo_location_get(allocator, self->label->location);
     neo_program_add_string(allocator, ctx->program, label);
     neo_allocator_free(allocator, label);
   } else {
-    neo_program_add_string(allocator, ctx->program, "");
+    neo_program_add_string(allocator, ctx->program, L"");
   }
 }
 static neo_variable_t

@@ -11,6 +11,7 @@
 #include "core/location.h"
 #include <stddef.h>
 #include <string.h>
+#include <wchar.h>
 
 struct _neo_write_scope_t {
   neo_map_t functions;
@@ -44,7 +45,7 @@ void neo_writer_push_scope(neo_allocator_t allocator, neo_write_context_t ctx,
          it != neo_list_get_tail(scope->variables);
          it = neo_list_node_next(it)) {
       neo_compile_variable_t variable = neo_list_node_get(it);
-      char *name = neo_location_get(allocator, variable->node->location);
+      wchar_t *name = neo_location_get(allocator, variable->node->location);
       switch (variable->type) {
       case NEO_COMPILE_VARIABLE_VAR:
         neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_UNDEFINED);
@@ -89,14 +90,15 @@ void neo_writer_push_scope(neo_allocator_t allocator, neo_write_context_t ctx,
           }
         }
         neo_allocator_free(allocator, name);
-        char *funcname = neo_location_get(allocator, func->name->location);
-        name = neo_allocator_alloc(allocator, strlen(funcname) + 1, NULL);
-        strcpy(name, funcname);
-        name[strlen(funcname)] = 0;
+        wchar_t *funcname = neo_location_get(allocator, func->name->location);
+        name = neo_allocator_alloc(
+            allocator, (wcslen(funcname) + 1) * sizeof(wchar_t), NULL);
+        wcscpy(name, funcname);
+        name[wcslen(funcname)] = 0;
         neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_NAME);
         neo_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, funcname);
-        char *source = neo_location_get(allocator, func->node.location);
+        wchar_t *source = neo_location_get(allocator, func->node.location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_SOURCE);
         neo_program_add_string(allocator, ctx->program, source);
         neo_allocator_free(allocator, source);
@@ -130,7 +132,7 @@ void neo_writer_pop_scope(neo_allocator_t allocator, neo_write_context_t ctx,
         neo_writer_push_scope(allocator, ctx, function->node.scope);
         if (neo_list_get_size(function->arguments)) {
           neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
-          neo_program_add_string(allocator, ctx->program, "arguments");
+          neo_program_add_string(allocator, ctx->program, L"arguments");
           neo_program_add_code(allocator, ctx->program, NEO_ASM_ITERATOR);
           for (neo_list_node_t it = neo_list_get_first(function->arguments);
                it != neo_list_get_tail(function->arguments);
@@ -192,7 +194,7 @@ void neo_write_optional_chain(neo_allocator_t allocator,
         return;
       }
       if (member->node.type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
-        char *name = neo_location_get(allocator, member->field->location);
+        wchar_t *name = neo_location_get(allocator, member->field->location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
         neo_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);
@@ -213,7 +215,7 @@ void neo_write_optional_chain(neo_allocator_t allocator,
       *address = neo_buffer_get_size(ctx->program->codes);
       neo_program_add_address(allocator, ctx->program, 0);
       if (member->node.type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
-        char *name = neo_location_get(allocator, member->field->location);
+        wchar_t *name = neo_location_get(allocator, member->field->location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
         neo_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);
@@ -235,7 +237,7 @@ void neo_write_optional_chain(neo_allocator_t allocator,
         neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
         neo_program_add_integer(allocator, ctx->program, 1);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-        neo_program_add_string(allocator, ctx->program, "length");
+        neo_program_add_string(allocator, ctx->program, L"length");
         neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
         TRY(argument->write(allocator, ctx, argument)) { return; }
         neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
@@ -269,7 +271,7 @@ void neo_write_optional_chain(neo_allocator_t allocator,
       return;
     }
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-    char *field = neo_location_get(allocator, member->field->location);
+    wchar_t *field = neo_location_get(allocator, member->field->location);
     neo_program_add_string(allocator, ctx->program, field);
     neo_allocator_free(allocator, field);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
@@ -291,7 +293,7 @@ void neo_write_optional_chain(neo_allocator_t allocator,
     neo_program_add_address(allocator, ctx->program, 0);
     neo_list_push(addresses, address);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-    char *field = neo_location_get(allocator, member->field->location);
+    wchar_t *field = neo_location_get(allocator, member->field->location);
     neo_program_add_string(allocator, ctx->program, field);
     neo_allocator_free(allocator, field);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);

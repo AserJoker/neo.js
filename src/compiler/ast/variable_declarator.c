@@ -39,7 +39,7 @@ neo_ast_variable_declarator_write(neo_allocator_t allocator,
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_UNDEFINED);
   }
   if (self->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
-    char *name = neo_location_get(allocator, self->identifier->location);
+    wchar_t *name = neo_location_get(allocator, self->identifier->location);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
     neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);

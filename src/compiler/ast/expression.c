@@ -100,7 +100,7 @@ static void neo_ast_expression_binary_write(neo_allocator_t allocator,
       if (self->right->type == NEO_NODE_TYPE_IDENTIFIER) {
         neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
         neo_program_add_integer(allocator, ctx->program, 1);
-        char *name = neo_location_get(allocator, self->right->location);
+        wchar_t *name = neo_location_get(allocator, self->right->location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
         neo_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);
@@ -119,7 +119,7 @@ static void neo_ast_expression_binary_write(neo_allocator_t allocator,
           return;
         }
         neo_allocator_free(allocator, addresses);
-        char *name = neo_location_get(allocator, member->field->location);
+        wchar_t *name = neo_location_get(allocator, member->field->location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
         neo_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);
@@ -157,7 +157,7 @@ static void neo_ast_expression_binary_write(neo_allocator_t allocator,
       if (self->right->type == NEO_NODE_TYPE_IDENTIFIER) {
         neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
         neo_program_add_integer(allocator, ctx->program, 1);
-        char *name = neo_location_get(allocator, self->right->location);
+        wchar_t *name = neo_location_get(allocator, self->right->location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
         neo_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);
@@ -176,7 +176,7 @@ static void neo_ast_expression_binary_write(neo_allocator_t allocator,
           return;
         }
         neo_allocator_free(allocator, addresses);
-        char *name = neo_location_get(allocator, member->field->location);
+        wchar_t *name = neo_location_get(allocator, member->field->location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
         neo_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);
@@ -228,7 +228,7 @@ static void neo_ast_expression_binary_write(neo_allocator_t allocator,
       } else if (neo_location_is(self->opt->location, "--")) {
         neo_program_add_code(allocator, ctx->program, NEO_ASM_DEC);
       }
-      char *name = neo_location_get(allocator, self->left->location);
+      wchar_t *name = neo_location_get(allocator, self->left->location);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
       neo_program_add_string(allocator, ctx->program, name);
       neo_allocator_free(allocator, name);
@@ -247,7 +247,7 @@ static void neo_ast_expression_binary_write(neo_allocator_t allocator,
         return;
       }
       neo_allocator_free(allocator, addresses);
-      char *name = neo_location_get(allocator, member->field->location);
+      wchar_t *name = neo_location_get(allocator, member->field->location);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
       neo_program_add_string(allocator, ctx->program, name);
       neo_allocator_free(allocator, name);

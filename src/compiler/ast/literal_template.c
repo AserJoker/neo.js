@@ -62,7 +62,7 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
       }
       neo_allocator_free(allocator, addresses);
       if (member->node.type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
-        char *name = neo_location_get(allocator, member->field->location);
+        wchar_t *name = neo_location_get(allocator, member->field->location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
         neo_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);
@@ -100,15 +100,15 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
       neo_token_t str = neo_list_node_get(qit);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_NUMBER);
       neo_program_add_number(allocator, ctx->program, count);
-      char *s = neo_location_get(allocator, str->location);
+      wchar_t *s = neo_location_get(allocator, str->location);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
       if (str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING ||
           str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING_END) {
-        s[strlen(s) - 1] = '\0';
+        s[wcslen(s) - 1] = '\0';
         neo_program_add_string(allocator, ctx->program, s + 1);
       } else if (str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING_START ||
                  str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING_PART) {
-        s[strlen(s) - 2] = '\0';
+        s[wcslen(s) - 2] = '\0';
         neo_program_add_string(allocator, ctx->program, s + 1);
       }
       neo_allocator_free(allocator, s);
@@ -142,15 +142,15 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
     neo_list_node_t qit = neo_list_get_first(self->quasis);
     neo_token_t str = neo_list_node_get(qit);
     qit = neo_list_node_next(qit);
-    char *s = neo_location_get(allocator, str->location);
+    wchar_t *s = neo_location_get(allocator, str->location);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
     if (str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING ||
         str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING_END) {
-      s[strlen(s) - 1] = '\0';
+      s[wcslen(s) - 1] = '\0';
       neo_program_add_string(allocator, ctx->program, s + 1);
     } else if (str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING_START ||
                str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING_PART) {
-      s[strlen(s) - 2] = '\0';
+      s[wcslen(s) - 2] = '\0';
       neo_program_add_string(allocator, ctx->program, s + 1);
     }
     neo_allocator_free(allocator, s);
@@ -161,15 +161,15 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
       TRY(item->write(allocator, ctx, item)) { return; }
       neo_program_add_code(allocator, ctx->program, NEO_ASM_CONCAT);
       str = neo_list_node_get(qit);
-      char *s = neo_location_get(allocator, str->location);
+      wchar_t *s = neo_location_get(allocator, str->location);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
       if (str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING ||
           str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING_END) {
-        s[strlen(s) - 1] = '\0';
+        s[wcslen(s) - 1] = '\0';
         neo_program_add_string(allocator, ctx->program, s + 1);
       } else if (str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING_START ||
                  str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING_PART) {
-        s[strlen(s) - 2] = '\0';
+        s[wcslen(s) - 2] = '\0';
         neo_program_add_string(allocator, ctx->program, s + 1);
       }
       neo_allocator_free(allocator, s);

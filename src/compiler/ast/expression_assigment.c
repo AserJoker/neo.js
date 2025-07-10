@@ -56,7 +56,7 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
     }
     neo_allocator_free(allocator, addresses);
     if (self->identifier->type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
-      char *field = neo_location_get(allocator, member->field->location);
+      wchar_t *field = neo_location_get(allocator, member->field->location);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
       neo_program_add_string(allocator, ctx->program, field);
       neo_allocator_free(allocator, field);
@@ -132,7 +132,7 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
     } else {
       TRY(self->value->write(allocator, ctx, self->value)) { return; }
     }
-    char *name = neo_location_get(allocator, self->identifier->location);
+    wchar_t *name = neo_location_get(allocator, self->identifier->location);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
     neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);

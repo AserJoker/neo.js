@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <wchar.h>
 
-wchar_t *neo_fs_read_file(neo_allocator_t allocator, const wchar_t *filename) {
+char *neo_fs_read_file(neo_allocator_t allocator, const wchar_t *filename) {
   char *file = neo_wstring_to_string(allocator, filename);
   FILE *fp = fopen(file, "r");
   if (fp == NULL) {
@@ -20,9 +20,7 @@ wchar_t *neo_fs_read_file(neo_allocator_t allocator, const wchar_t *filename) {
   buf[len] = 0;
   fread(buf, len, 1, fp);
   fclose(fp);
-  wchar_t *result = neo_string_to_wstring(allocator, buf);
-  neo_allocator_free(allocator, buf);
-  return result;
+  return buf;
 onerror:
   if (fp) {
     fclose(fp);

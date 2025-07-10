@@ -107,7 +107,6 @@ neo_js_type_t neo_get_js_function_type() {
 void neo_js_function_dispose(neo_allocator_t allocator,
                              neo_js_function_t self) {
   neo_js_object_dispose(allocator, &self->callable.object);
-  neo_allocator_free(allocator, self->source);
   neo_allocator_free(allocator, self->callable.closure);
   neo_allocator_free(allocator, self->callable.name);
 }

@@ -13,7 +13,7 @@ struct _neo_js_function_t {
   struct _neo_js_callable_t callable;
   size_t address;
   neo_program_t program;
-  wchar_t *source;
+  const wchar_t *source;
   bool is_async;
   bool is_generator;
 };

@@ -47,7 +47,7 @@ static void neo_ast_statement_labeled_write(neo_allocator_t allocator,
   } else if (self->statement->type == NEO_NODE_TYPE_DECLARATION_EXPORT) {
     THROW("export declaration cannot be labelled");
   } else {
-    char *label = neo_location_get(allocator, self->label->location);
+    wchar_t *label = neo_location_get(allocator, self->label->location);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_BREAK_LABEL);
     neo_program_add_string(allocator, ctx->program, label);
     size_t breakaddr = neo_buffer_get_size(ctx->program->codes);

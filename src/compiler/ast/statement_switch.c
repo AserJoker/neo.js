@@ -43,7 +43,7 @@ static void neo_ast_statement_switch_write(neo_allocator_t allocator,
                                            neo_ast_statement_switch_t self) {
   neo_writer_push_scope(allocator, ctx, self->node.scope);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_BREAK_LABEL);
-  neo_program_add_string(allocator, ctx->program, "");
+  neo_program_add_string(allocator, ctx->program, L"");
   size_t labeladdr = neo_buffer_get_size(ctx->program->codes);
   neo_program_add_address(allocator, ctx->program, 0);
   TRY(self->condition->write(allocator, ctx, self->condition)) { return; }
