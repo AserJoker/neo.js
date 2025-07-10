@@ -24,7 +24,7 @@
 #include "compiler/ast/statement_while.h"
 #include "core/error.h"
 neo_ast_node_t neo_ast_read_statement(neo_allocator_t allocator,
-                                      const char *file,
+                                      const wchar_t *file,
                                       neo_position_t *position) {
   neo_ast_node_t node = NULL;
   node = TRY(neo_ast_read_statement_empty(allocator, file, position)) {

@@ -3150,7 +3150,7 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
   neo_allocator_free(allocator, total);
   neo_program_t program = neo_js_runtime_get_program(ctx->runtime, filepath);
   if (!program) {
-    neo_ast_node_t root = TRY(neo_ast_parse_code(allocator, file, source)) {
+    neo_ast_node_t root = TRY(neo_ast_parse_code(allocator, filepath, source)) {
       neo_allocator_free(allocator, filepath);
       return neo_js_context_create_compile_error(ctx);
     };
@@ -3163,14 +3163,11 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
     neo_hash_map_set(ctx->modules, neo_create_wstring(allocator, filepath),
                      hmodule, NULL, NULL);
 
-    char *cfilepath = neo_wstring_to_string(allocator, filepath);
-    program = TRY(neo_ast_write_node(allocator, cfilepath, root)) {
+    program = TRY(neo_ast_write_node(allocator, filepath, root)) {
       neo_allocator_free(allocator, root);
       neo_allocator_free(allocator, filepath);
-      neo_allocator_free(allocator, cfilepath);
       return neo_js_context_create_compile_error(ctx);
     }
-    neo_allocator_free(allocator, cfilepath);
     neo_allocator_free(allocator, root);
     neo_js_runtime_set_program(ctx->runtime, filepath, program);
 

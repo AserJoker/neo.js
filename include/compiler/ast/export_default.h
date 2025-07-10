@@ -10,7 +10,7 @@ typedef struct _neo_ast_export_default_t {
 } *neo_ast_export_default_t;
 
 neo_ast_node_t neo_ast_read_export_default(neo_allocator_t allocator,
-                                           const char *file,
+                                           const wchar_t *file,
                                            neo_position_t *position);
 #ifdef __cplusplus
 }

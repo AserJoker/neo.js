@@ -12,7 +12,7 @@ typedef struct _neo_ast_pattern_rest_t {
 } *neo_ast_pattern_rest_t;
 
 neo_ast_node_t neo_ast_read_pattern_rest(neo_allocator_t allocator,
-                                         const char *file,
+                                         const wchar_t *file,
                                          neo_position_t *position);
 
 #ifdef __cplusplus

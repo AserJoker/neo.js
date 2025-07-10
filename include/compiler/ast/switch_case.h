@@ -12,7 +12,7 @@ typedef struct _neo_ast_switch_case_t {
 } *neo_ast_switch_case_t;
 
 neo_ast_node_t neo_ast_read_switch_case(neo_allocator_t allocator,
-                                        const char *file,
+                                        const wchar_t *file,
                                         neo_position_t *position);
 #ifdef __cplusplus
 }

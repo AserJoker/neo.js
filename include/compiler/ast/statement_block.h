@@ -10,7 +10,7 @@ typedef struct _neo_ast_statement_block_t {
   neo_list_t body;
 } *neo_ast_statement_block_t;
 neo_ast_node_t neo_ast_read_statement_block(neo_allocator_t allocator,
-                                            const char *file,
+                                            const wchar_t *file,
                                             neo_position_t *position);
 #ifdef __cplusplus
 }

@@ -156,7 +156,7 @@ neo_create_ast_object_accessor(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_object_accessor(neo_allocator_t allocator,
-                                            const char *file,
+                                            const wchar_t *file,
                                             neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_object_accessor_t node = neo_create_ast_object_accessor(allocator);
@@ -189,7 +189,7 @@ neo_ast_node_t neo_ast_read_object_accessor(neo_allocator_t allocator,
   }
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != '(') {
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }
@@ -205,7 +205,7 @@ neo_ast_node_t neo_ast_read_object_accessor(neo_allocator_t allocator,
         goto onerror;
       }
       if (!argument) {
-        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
               current.line, current.column);
         goto onerror;
       }
@@ -220,7 +220,7 @@ neo_ast_node_t neo_ast_read_object_accessor(neo_allocator_t allocator,
       }
       if (((neo_ast_function_argument_t)argument)->identifier->type ==
           NEO_NODE_TYPE_PATTERN_REST) {
-        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
               current.line, current.column);
         goto onerror;
       }
@@ -236,7 +236,7 @@ neo_ast_node_t neo_ast_read_object_accessor(neo_allocator_t allocator,
     goto onerror;
   }
   if (!node->body) {
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }

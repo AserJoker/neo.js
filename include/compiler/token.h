@@ -27,30 +27,35 @@ typedef struct _neo_token_t {
   neo_location_t location;
 } *neo_token_t;
 
-neo_token_t neo_read_string_token(neo_allocator_t allocator, const char *file,
-                                  neo_position_t *positon);
+neo_token_t neo_read_string_token(neo_allocator_t allocator,
+                                  const wchar_t *file, neo_position_t *positon);
 
-neo_token_t neo_read_number_token(neo_allocator_t allocator, const char *file,
+neo_token_t neo_read_number_token(neo_allocator_t allocator,
+                                  const wchar_t *file,
                                   neo_position_t *position);
 
-neo_token_t neo_read_symbol_token(neo_allocator_t allocator, const char *file,
+neo_token_t neo_read_symbol_token(neo_allocator_t allocator,
+                                  const wchar_t *file,
                                   neo_position_t *position);
 
-neo_token_t neo_read_regexp_token(neo_allocator_t allocator, const char *file,
+neo_token_t neo_read_regexp_token(neo_allocator_t allocator,
+                                  const wchar_t *file,
                                   neo_position_t *position);
 
-neo_token_t neo_read_identify_token(neo_allocator_t allocator, const char *file,
+neo_token_t neo_read_identify_token(neo_allocator_t allocator,
+                                    const wchar_t *file,
                                     neo_position_t *position);
 
-neo_token_t neo_read_comment_token(neo_allocator_t allocator, const char *file,
+neo_token_t neo_read_comment_token(neo_allocator_t allocator,
+                                   const wchar_t *file,
                                    neo_position_t *position);
 
 neo_token_t neo_read_multiline_comment_token(neo_allocator_t allocator,
-                                             const char *file,
+                                             const wchar_t *file,
                                              neo_position_t *position);
 
 neo_token_t neo_read_template_string_token(neo_allocator_t allocator,
-                                           const char *file,
+                                           const wchar_t *file,
                                            neo_position_t *position);
 
 #ifdef __cplusplus

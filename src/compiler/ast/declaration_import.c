@@ -84,7 +84,7 @@ neo_create_ast_declaration_import(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_declaration_import(neo_allocator_t allocator,
-                                               const char *file,
+                                               const wchar_t *file,
                                                neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_declaration_import_t node =
@@ -106,7 +106,7 @@ neo_ast_node_t neo_ast_read_declaration_import(neo_allocator_t allocator,
         goto onerror;
       }
       if (!specifier) {
-        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
               current.line, current.column);
         goto onerror;
       }
@@ -146,15 +146,15 @@ neo_ast_node_t neo_ast_read_declaration_import(neo_allocator_t allocator,
               current.column++;
               SKIP_ALL(allocator, file, &current, onerror);
             } else {
-              THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+              THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)",
                     file, current.line, current.column);
               goto onerror;
             }
           }
         }
         if (*current.offset != '}') {
-          THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-                current.line, current.column);
+          THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)",
+                file, current.line, current.column);
           goto onerror;
         }
         current.column++;
@@ -165,7 +165,7 @@ neo_ast_node_t neo_ast_read_declaration_import(neo_allocator_t allocator,
     SKIP_ALL(allocator, file, &current, onerror);
     token = neo_read_identify_token(allocator, file, &current);
     if (!token || !neo_location_is(token->location, "from")) {
-      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+      THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
             current.line, current.column);
       goto onerror;
     }
@@ -175,7 +175,7 @@ neo_ast_node_t neo_ast_read_declaration_import(neo_allocator_t allocator,
       goto onerror;
     }
     if (!node->source) {
-      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+      THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
             current.line, current.column);
       goto onerror;
     }
@@ -188,7 +188,7 @@ neo_ast_node_t neo_ast_read_declaration_import(neo_allocator_t allocator,
     neo_allocator_free(allocator, token);
     SKIP_ALL(allocator, file, &current, onerror);
     if (*current.offset != '{') {
-      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+      THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
             current.line, current.column);
       goto onerror;
     }
@@ -202,8 +202,8 @@ neo_ast_node_t neo_ast_read_declaration_import(neo_allocator_t allocator,
           goto onerror;
         }
         if (!attribute) {
-          THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-                current.line, current.column);
+          THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)",
+                file, current.line, current.column);
           goto onerror;
         }
         neo_list_push(node->attributes, attribute);
@@ -215,13 +215,13 @@ neo_ast_node_t neo_ast_read_declaration_import(neo_allocator_t allocator,
           current.column++;
           SKIP_ALL(allocator, file, &current, onerror);
         } else {
-          THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-                current.line, current.column);
+          THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)",
+                file, current.line, current.column);
           goto onerror;
         }
       }
       if (*current.offset != '}') {
-        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
               current.line, current.column);
         goto onerror;
       }
@@ -235,7 +235,7 @@ neo_ast_node_t neo_ast_read_declaration_import(neo_allocator_t allocator,
   SKIP_ALL(allocator, file, &cur, onerror);
   if (cur.line == line) {
     if (*cur.offset && *cur.offset != ';') {
-      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+      THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
             cur.line, cur.column);
       goto onerror;
     }

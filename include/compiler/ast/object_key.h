@@ -9,11 +9,11 @@ extern "C" {
 #endif
 
 neo_ast_node_t neo_ast_read_object_key(neo_allocator_t allocator,
-                                       const char *file,
+                                       const wchar_t *file,
                                        neo_position_t *position);
 
 neo_ast_node_t neo_ast_read_object_computed_key(neo_allocator_t allocator,
-                                                const char *file,
+                                                const wchar_t *file,
                                                 neo_position_t *position);
 #ifdef __cplusplus
 }

@@ -113,7 +113,7 @@ bool neo_is_keyword(neo_location_t location) {
 }
 
 neo_ast_node_t neo_ast_read_identifier(neo_allocator_t allocator,
-                                       const char *file,
+                                       const wchar_t *file,
                                        neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_identifier_t node = NULL;
@@ -141,7 +141,7 @@ onerror:
 }
 
 neo_ast_node_t neo_ast_read_identifier_compat(neo_allocator_t allocator,
-                                              const char *file,
+                                              const wchar_t *file,
                                               neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_identifier_t node = NULL;

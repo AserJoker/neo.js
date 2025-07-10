@@ -4,6 +4,7 @@
 #include "core/allocator.h"
 #include "position.h"
 #include <stdbool.h>
+#include <wchar.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -11,7 +12,7 @@ extern "C" {
 typedef struct _neo_location_t {
   neo_position_t begin;
   neo_position_t end;
-  const char *file;
+  const wchar_t *file;
 } neo_location_t;
 
 bool neo_location_is(neo_location_t loc, const char *str);

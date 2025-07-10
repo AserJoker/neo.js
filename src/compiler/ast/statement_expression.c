@@ -64,7 +64,7 @@ neo_create_ast_statement_expreesion(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_statement_expression(neo_allocator_t allocator,
-                                                 const char *file,
+                                                 const wchar_t *file,
                                                  neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_statement_expression_t node = NULL;
@@ -81,7 +81,7 @@ neo_ast_node_t neo_ast_read_statement_expression(neo_allocator_t allocator,
   SKIP_ALL(allocator, file, &current, onerror);
   if (current.line == line) {
     if (*current.offset && *current.offset != ';' && *current.offset != '}') {
-      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+      THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
             current.line, current.column);
       goto onerror;
     }

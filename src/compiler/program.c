@@ -6,8 +6,8 @@
 #include "core/list.h"
 #include "core/path.h"
 #include "core/string.h"
-#include "core/unicode.h"
 #include <string.h>
+#include <wchar.h>
 
 static void neo_program_dispose(neo_allocator_t allocator,
                                 neo_program_t program) {
@@ -17,10 +17,11 @@ static void neo_program_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, program->dirname);
 }
 
-neo_program_t neo_create_program(neo_allocator_t allocator, const char *file) {
+neo_program_t neo_create_program(neo_allocator_t allocator,
+                                 const wchar_t *file) {
   neo_program_t program = (neo_program_t)neo_allocator_alloc(
       allocator, sizeof(struct _neo_program_t), neo_program_dispose);
-  program->filename = neo_string_to_wstring(allocator, file);
+  program->filename = neo_create_wstring(allocator, file);
   neo_path_t path = neo_create_path(allocator, program->filename);
   neo_path_t parent = neo_path_parent(path);
   neo_allocator_free(allocator, path);

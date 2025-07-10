@@ -36,7 +36,7 @@ neo_create_empty_statement(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_statement_empty(neo_allocator_t allocator,
-                                            const char *file,
+                                            const wchar_t *file,
                                             neo_position_t *position) {
   if (*position->offset == ';') {
     neo_ast_statement_empty_t node = neo_create_empty_statement(allocator);

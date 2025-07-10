@@ -12,7 +12,8 @@ typedef struct _neo_ast_program_t {
   neo_list_t directives;
 } *neo_ast_program_t;
 
-neo_ast_node_t neo_ast_read_program(neo_allocator_t allocator, const char *file,
+neo_ast_node_t neo_ast_read_program(neo_allocator_t allocator,
+                                    const wchar_t *file,
                                     neo_position_t *position);
 #ifdef __cplusplus
 }

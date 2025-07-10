@@ -1,5 +1,6 @@
 #ifndef _H_NEO_COMPILER_PROGRAM_
 #define _H_NEO_COMPILER_PROGRAM_
+#include <wchar.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -16,7 +17,7 @@ struct _neo_program_t {
   neo_list_t constants;
 };
 
-neo_program_t neo_create_program(neo_allocator_t allocator, const char *file);
+neo_program_t neo_create_program(neo_allocator_t allocator, const wchar_t *file);
 
 size_t neo_program_add_constant(neo_allocator_t allocator, neo_program_t self,
                                 const char *constant);

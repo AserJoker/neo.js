@@ -34,7 +34,7 @@ neo_create_interpreter_node(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_interpreter(neo_allocator_t allocator,
-                                        const char *file,
+                                        const wchar_t *file,
                                         neo_position_t *position) {
   neo_position_t current = *position;
   if (*current.offset == '#' && *(current.offset + 1) == '!') {

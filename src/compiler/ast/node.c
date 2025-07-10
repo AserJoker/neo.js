@@ -78,7 +78,7 @@ neo_variable_t neo_ast_node_location_serialize(neo_allocator_t allocator,
 void neo_ast_node_resolve_closure(neo_allocator_t allocator,
                                   neo_ast_node_t self, neo_list_t closure) {}
 
-bool neo_skip_white_space(neo_allocator_t allocator, const char *file,
+bool neo_skip_white_space(neo_allocator_t allocator, const wchar_t *file,
                           neo_position_t *position) {
   if (*position->offset == '\0') {
     return false;
@@ -94,7 +94,7 @@ bool neo_skip_white_space(neo_allocator_t allocator, const char *file,
   return false;
 }
 
-bool neo_skip_line_terminator(neo_allocator_t allocator, const char *file,
+bool neo_skip_line_terminator(neo_allocator_t allocator, const wchar_t *file,
                               neo_position_t *position) {
   if (*position->offset == '\0') {
     return false;
@@ -121,7 +121,7 @@ bool neo_skip_line_terminator(neo_allocator_t allocator, const char *file,
   return false;
 }
 
-bool neo_skip_comment(neo_allocator_t allocator, const char *file,
+bool neo_skip_comment(neo_allocator_t allocator, const wchar_t *file,
                       neo_position_t *position) {
   neo_token_t token = TRY(neo_read_comment_token(allocator, file, position)) {
     return false;

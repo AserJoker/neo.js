@@ -101,7 +101,7 @@ neo_create_ast_declaration_variable(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_declaration_variable(neo_allocator_t allocator,
-                                                 const char *file,
+                                                 const wchar_t *file,
                                                  neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_declaration_variable_t node =
@@ -121,7 +121,7 @@ neo_ast_node_t neo_ast_read_declaration_variable(neo_allocator_t allocator,
     if (neo_location_is(token->location, "using")) {
       if (!neo_compile_scope_is_async()) {
         THROW("await using only used in async context\n  at _.compile "
-              "(%s:%d:%d)",
+              "(%ls:%d:%d)",
               file, position->line, position->column);
         goto onerror;
       }
@@ -148,7 +148,7 @@ neo_ast_node_t neo_ast_read_declaration_variable(neo_allocator_t allocator,
       goto onerror;
     };
     if (!declarator) {
-      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+      THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
             current.line, current.column);
     }
     switch (node->kind) {
@@ -203,7 +203,7 @@ neo_ast_node_t neo_ast_read_declaration_variable(neo_allocator_t allocator,
   SKIP_ALL(allocator, file, &cur, onerror);
   if (cur.line == line) {
     if (*cur.offset && *cur.offset != ';' && *cur.offset != '}') {
-      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+      THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
             cur.line, cur.column);
       goto onerror;
     }

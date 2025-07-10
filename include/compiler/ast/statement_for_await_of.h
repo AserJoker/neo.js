@@ -18,7 +18,7 @@ typedef struct _neo_ast_statement_for_await_of_t {
 } *neo_ast_statement_for_await_of_t;
 
 neo_ast_node_t neo_ast_read_statement_for_await_of(neo_allocator_t allocator,
-                                                   const char *file,
+                                                   const wchar_t *file,
                                                    neo_position_t *position);
 #ifdef __cplusplus
 }

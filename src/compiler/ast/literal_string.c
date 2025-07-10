@@ -50,7 +50,7 @@ neo_create_string_litreral(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_literal_string(neo_allocator_t allocator,
-                                           const char *file,
+                                           const wchar_t *file,
                                            neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_literal_string_t node = NULL;

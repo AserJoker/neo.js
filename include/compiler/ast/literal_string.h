@@ -10,7 +10,7 @@ typedef struct _neo_ast_literal_string_t {
 } *neo_ast_literal_string_t;
 
 neo_ast_node_t neo_ast_read_literal_string(neo_allocator_t allocator,
-                                           const char *file,
+                                           const wchar_t *file,
                                            neo_position_t *position);
 #ifdef __cplusplus
 }

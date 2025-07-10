@@ -13,7 +13,7 @@ typedef struct _neo_ast_declaration_export_t {
 } *neo_ast_declaration_export_t;
 
 neo_ast_node_t neo_ast_read_declaration_export(neo_allocator_t allocator,
-                                               const char *file,
+                                               const wchar_t *file,
                                                neo_position_t *position);
 #ifdef __cplusplus
 }

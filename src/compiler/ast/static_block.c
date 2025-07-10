@@ -67,7 +67,7 @@ neo_create_ast_static_block(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_static_block(neo_allocator_t allocator,
-                                         const char *file,
+                                         const wchar_t *file,
                                          neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_static_block_t node = NULL;
@@ -106,7 +106,7 @@ neo_ast_node_t neo_ast_read_static_block(neo_allocator_t allocator,
   }
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != '}') {
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }

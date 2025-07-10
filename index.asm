@@ -1,5 +1,6 @@
 [section .metadata]
-.file: /home/aserjoker/neo.js/index.mjs
+.filename: /home/aserjoker/neo.js/index.mjs
+.dirname: /home/aserjoker/neo.js/index.mjs
 [section .constants]
 .0: "obj"
 .1: "Symbol"

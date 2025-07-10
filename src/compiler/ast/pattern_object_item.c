@@ -128,7 +128,7 @@ neo_create_ast_pattern_object_item(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_pattern_object_item(neo_allocator_t allocator,
-                                                const char *file,
+                                                const wchar_t *file,
                                                 neo_position_t *position) {
   neo_ast_pattern_object_item_t node = NULL;
   neo_position_t current = *position;

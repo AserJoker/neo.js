@@ -23,7 +23,7 @@ typedef struct _neo_ast_class_accessor_t {
 } *neo_ast_class_accessor_t;
 
 neo_ast_node_t neo_ast_read_class_accessor(neo_allocator_t allocator,
-                                           const char *file,
+                                           const wchar_t *file,
                                            neo_position_t *position);
 
 #ifdef __cplusplus
