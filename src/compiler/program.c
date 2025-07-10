@@ -441,9 +441,13 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
           neo_wstring_encode(allocator, neo_program_get_string(self, &offset));
       wchar_t *value =
           neo_wstring_encode(allocator, neo_program_get_string(self, &offset));
-      fprintf(fp, "NEO_ASM_ASSERT \"%ls\",\"%ls\"\n", type, value);
+      wchar_t *module =
+          neo_wstring_encode(allocator, neo_program_get_string(self, &offset));
+      fprintf(fp, "NEO_ASM_ASSERT \"%ls\",\"%ls\",\"%ls\"\n", type, value,
+              module);
       neo_allocator_free(allocator, value);
       neo_allocator_free(allocator, type);
+      neo_allocator_free(allocator, module);
     } break;
     case NEO_ASM_EQ:
       fprintf(fp, "NEO_ASM_EQ\n");

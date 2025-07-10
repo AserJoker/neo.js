@@ -17,7 +17,7 @@ struct _neo_path_t {
   neo_allocator_t allocator;
 };
 
-static bool neo_path_append(neo_path_t path, wchar_t *part) {
+bool neo_path_append(neo_path_t path, wchar_t *part) {
   if (wcscmp(part, L".") == 0) {
     return false;
   }
@@ -92,6 +92,7 @@ neo_path_t neo_path_concat(neo_path_t current, neo_path_t another) {
       return neo_path_clone(another);
     }
   }
+  current = neo_path_clone(current);
   for (neo_list_node_t it = neo_list_get_first(another->parts);
        it != neo_list_get_tail(another->parts); it = neo_list_node_next(it)) {
     wchar_t *part = neo_list_node_get(it);
@@ -125,8 +126,10 @@ neo_path_t neo_path_current(neo_allocator_t allocator) {
 }
 
 neo_path_t neo_path_absolute(neo_path_t current) {
-  neo_path_t result = neo_path_current(current->allocator);
-  neo_path_concat(result, current);
+  neo_path_t cwd = neo_path_current(current->allocator);
+  neo_path_t result = neo_path_concat(cwd, current);
+  neo_allocator_free(cwd->allocator, cwd);
+  neo_allocator_free(current->allocator, current);
   return result;
 }
 
@@ -136,7 +139,7 @@ neo_path_t neo_path_parent(neo_path_t current) {
   }
   neo_path_t result = neo_create_path(current->allocator, NULL);
   for (neo_list_node_t it = neo_list_get_first(current->parts);
-       it != neo_list_get_tail(current->parts); it = neo_list_node_next(it)) {
+       it != neo_list_get_last(current->parts); it = neo_list_node_next(it)) {
     wchar_t *part = neo_list_node_get(it);
     neo_list_push(result->parts, neo_create_wstring(current->allocator, part));
   }

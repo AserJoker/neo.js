@@ -2,6 +2,9 @@
 #include "core/allocator.h"
 #include "core/unicode.h"
 #include <stdio.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include <wchar.h>
 
 char *neo_fs_read_file(neo_allocator_t allocator, const wchar_t *filename) {
@@ -27,4 +30,26 @@ onerror:
   }
   neo_allocator_free(allocator, file);
   return NULL;
+}
+
+bool neo_fs_is_dir(neo_allocator_t allocator, const wchar_t *filename) {
+  char *path = neo_wstring_to_string(allocator, filename);
+  struct stat st;
+  if (stat(path, &st) != 0) {
+    return false;
+  }
+  neo_allocator_free(allocator, path);
+  return S_ISDIR(st.st_mode);
+}
+
+bool neo_fs_exist(neo_allocator_t allocator, const wchar_t *filename) {
+  char *path = neo_wstring_to_string(allocator, filename);
+  struct stat st;
+  if (stat(path, &st) == -1) {
+    neo_allocator_free(allocator, path);
+    return false;
+  } else {
+    neo_allocator_free(allocator, path);
+    return true;
+  }
 }

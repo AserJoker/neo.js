@@ -3138,23 +3138,23 @@ neo_js_variable_t neo_js_context_get_module(neo_js_context_t ctx,
   return neo_js_context_create_variable(ctx, hmodule, NULL);
 }
 
-neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
+bool neo_js_context_has_module(neo_js_context_t ctx, const wchar_t *name) {
+  neo_js_handle_t hmodule = neo_hash_map_get(ctx->modules, name, NULL, NULL);
+  if (!hmodule) {
+    return false;
+  }
+  return true;
+}
+
+neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const wchar_t *file,
                                       const char *source) {
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
-  wchar_t *filepath = neo_string_to_wstring(allocator, file);
-  neo_path_t path = neo_create_path(allocator, filepath);
-  neo_allocator_free(allocator, filepath);
-  neo_path_t total = neo_path_absolute(path);
+  neo_path_t path = neo_create_path(allocator, file);
+  path = neo_path_absolute(path);
+  wchar_t *filepath = neo_path_to_string(path);
   neo_allocator_free(allocator, path);
-  filepath = neo_path_to_string(total);
-  neo_allocator_free(allocator, total);
   neo_program_t program = neo_js_runtime_get_program(ctx->runtime, filepath);
   if (!program) {
-    neo_ast_node_t root = TRY(neo_ast_parse_code(allocator, filepath, source)) {
-      neo_allocator_free(allocator, filepath);
-      return neo_js_context_create_compile_error(ctx);
-    };
-
     neo_js_variable_t module = neo_js_context_create_object(
         ctx, neo_js_context_create_null(ctx), NULL);
 
@@ -3163,6 +3163,11 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
     neo_hash_map_set(ctx->modules, neo_create_wstring(allocator, filepath),
                      hmodule, NULL, NULL);
 
+    neo_ast_node_t root = TRY(neo_ast_parse_code(allocator, filepath, source)) {
+      neo_allocator_free(allocator, filepath);
+      return neo_js_context_create_compile_error(ctx);
+    };
+    
     program = TRY(neo_ast_write_node(allocator, filepath, root)) {
       neo_allocator_free(allocator, root);
       neo_allocator_free(allocator, filepath);
@@ -3170,12 +3175,17 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
     }
     neo_allocator_free(allocator, root);
     neo_js_runtime_set_program(ctx->runtime, filepath, program);
-
-    FILE *fp = fopen("../index.asm", "w");
+    wchar_t *asmpath = neo_create_wstring(allocator, filepath);
+    size_t max = wcslen(asmpath) + 1;
+    asmpath = neo_wstring_concat(allocator, asmpath, &max, L".asm");
+    char *casmpath = neo_wstring_to_string(allocator, asmpath);
+    neo_allocator_free(allocator, asmpath);
+    FILE *fp = fopen(casmpath, "w");
     neo_program_write(allocator, fp, program);
     fclose(fp);
+    neo_allocator_free(allocator, casmpath);
+    neo_allocator_free(allocator, filepath);
   }
-  neo_allocator_free(allocator, filepath);
   neo_js_scope_t scope = neo_create_js_scope(allocator, ctx->root);
   neo_js_vm_t vm = neo_create_js_vm(ctx, NULL, 0, scope);
   neo_js_variable_t result = neo_js_vm_eval(vm, program);

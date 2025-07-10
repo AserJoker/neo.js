@@ -13,6 +13,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <string.h>
 #include <wchar.h>
 
 static neo_js_variable_t js_println(neo_js_context_t ctx,
@@ -123,15 +124,17 @@ int main(int argc, char *argv[]) {
   neo_allocator_t allocator = neo_create_default_allocator();
   neo_error_initialize(allocator);
   char *buf = neo_fs_read_file(allocator, L"../index.mjs");
-  const char *s = "中文";
   neo_js_runtime_t runtime = neo_create_js_runtime(allocator);
   neo_js_context_t ctx = neo_create_js_context(allocator, runtime);
   neo_js_context_push_scope(ctx);
+  neo_js_variable_t std = neo_js_context_create_object(ctx, NULL, NULL);
   neo_js_variable_t println =
       neo_js_context_create_cfunction(ctx, L"println", js_println);
-  neo_js_variable_t global = neo_js_context_get_global(ctx);
   neo_js_context_set_field(
-      ctx, global, neo_js_context_create_string(ctx, L"println"), println);
+      ctx, std, neo_js_context_create_string(ctx, L"println"), println);
+  neo_js_context_create_module(ctx, L"std", std);
+
+  neo_js_variable_t global = neo_js_context_get_global(ctx);
   neo_js_context_set_field(
       ctx, global, neo_js_context_create_string(ctx, L"setTimeout"),
       neo_js_context_create_cfunction(ctx, L"setTimeout", js_set_timeout));
@@ -146,7 +149,7 @@ int main(int argc, char *argv[]) {
                            neo_js_context_create_cfunction(
                                ctx, L"clearInterval", js_clear_interval));
   neo_js_context_pop_scope(ctx);
-  neo_js_variable_t result = neo_js_context_eval(ctx, "../index.mjs", buf);
+  neo_js_variable_t result = neo_js_context_eval(ctx, L"../index.mjs", buf);
   if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
     disp_js_variable(ctx, result);
   } else {

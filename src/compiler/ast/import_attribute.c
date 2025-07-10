@@ -5,8 +5,10 @@
 #include "compiler/ast/node.h"
 #include "compiler/program.h"
 #include "core/allocator.h"
+#include "core/location.h"
 #include "core/variable.h"
 #include <stdio.h>
+#include <wchar.h>
 
 static void neo_ast_import_attribute_dispose(neo_allocator_t allocator,
                                              neo_ast_import_attribute_t node) {
@@ -18,9 +20,14 @@ static void neo_ast_import_attribute_dispose(neo_allocator_t allocator,
 static void neo_ast_import_attribute_write(neo_allocator_t allocator,
                                            neo_write_context_t ctx,
                                            neo_ast_import_attribute_t self) {
-  TRY(self->value->write(allocator, ctx, self->value)) { return; }
-  TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
   neo_program_add_code(allocator, ctx->program, NEO_ASM_ASSERT);
+  wchar_t *name = neo_location_get(allocator, self->identifier->location);
+  neo_program_add_string(allocator, ctx->program, name);
+  neo_allocator_free(allocator, name);
+  wchar_t *value = neo_location_get(allocator, self->value->location);
+  value[wcslen(value) - 1] = 0;
+  neo_program_add_string(allocator, ctx->program, value + 1);
+  neo_allocator_free(allocator, value);
 }
 
 static neo_variable_t
