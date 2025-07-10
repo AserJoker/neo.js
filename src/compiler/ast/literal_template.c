@@ -54,7 +54,7 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
       }
       if (neo_list_get_size(addresses)) {
         THROW("Invalid tagged template on optional chain \n  at "
-              "_.compile (%s:%d:%d)",
+              "_.compile (%ls:%d:%d)",
               ctx->program->filename, self->tag->location.begin.line,
               self->tag->location.begin.column);
         neo_allocator_free(allocator, addresses);
@@ -78,7 +78,7 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
       }
       if (neo_list_get_size(addresses)) {
         THROW("Invalid tagged template on optional chain \n  at "
-              "_.compile (%s:%d:%d)",
+              "_.compile (%ls:%d:%d)",
               ctx->program->filename, self->tag->location.begin.line,
               self->tag->location.begin.column);
         neo_allocator_free(allocator, addresses);

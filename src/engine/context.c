@@ -3130,6 +3130,10 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
     neo_allocator_free(allocator, cfilepath);
     neo_allocator_free(allocator, root);
     neo_js_runtime_set_program(ctx->runtime, filepath, program);
+
+    FILE *fp = fopen("../index.asm", "w");
+    neo_program_write(allocator, fp, program);
+    fclose(fp);
   }
   neo_allocator_free(allocator, filepath);
   neo_js_scope_t scope = neo_create_js_scope(allocator, ctx->root);

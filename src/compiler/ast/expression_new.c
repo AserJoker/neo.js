@@ -63,7 +63,7 @@ static void neo_ast_expression_new_write(neo_allocator_t allocator,
   }
   if (neo_list_get_size(addresses) != 0) {
     neo_allocator_free(allocator, addresses);
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+    THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)",
           ctx->program->filename, self->callee->location.begin.line,
           self->callee->location.begin.column);
     return;

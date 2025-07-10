@@ -550,8 +550,8 @@ void neo_js_vm_member_call(neo_js_vm_t vm, neo_program_t program) {
   neo_list_pop(vm->stack);
   neo_js_variable_t callee = neo_js_context_get_field(vm->ctx, host, field);
   neo_js_callable_t callable = neo_js_variable_to_callable(callee);
-  neo_js_context_push_stackframe(vm->ctx, program->filename, callable->name, column,
-                                 line);
+  neo_js_context_push_stackframe(vm->ctx, program->filename, callable->name,
+                                 column, line);
   neo_js_variable_t result =
       neo_js_context_call(vm->ctx, callee, host, argc, argv);
   neo_js_context_pop_stackframe(vm->ctx);
@@ -1077,6 +1077,8 @@ void neo_js_vm_rest_object(neo_js_vm_t vm, neo_program_t program) {
   neo_allocator_free(allocator, symbol_keys);
   neo_list_push(vm->stack, result);
 }
+void neo_js_import(neo_js_vm_t vm, neo_program_t program) {}
+
 void neo_js_vm_new(neo_js_vm_t vm, neo_program_t program) {
   uint32_t line = neo_js_vm_read_integer(vm, program);
   uint32_t column = neo_js_vm_read_integer(vm, program);
@@ -1097,8 +1099,8 @@ void neo_js_vm_new(neo_js_vm_t vm, neo_program_t program) {
   neo_list_pop(vm->stack);
   wchar_t *funcname = NULL;
   neo_js_callable_t callable = neo_js_variable_to_callable(callee);
-  neo_js_context_push_stackframe(vm->ctx, program->filename, callable->name, column,
-                                 line);
+  neo_js_context_push_stackframe(vm->ctx, program->filename, callable->name,
+                                 column, line);
   neo_js_variable_t result =
       neo_js_context_construct(vm->ctx, callee, argc, argv);
   neo_js_context_pop_stackframe(vm->ctx);
@@ -1851,6 +1853,7 @@ neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
     if (cmds[code]) {
       cmds[code](vm, program);
     } else {
+      vm->scope = neo_js_context_set_scope(vm->ctx, current);
       return neo_js_context_create_error(vm->ctx, NEO_ERROR_SYNTAX,
                                          L"Unsupport ASM");
     }

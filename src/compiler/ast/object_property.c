@@ -52,7 +52,7 @@ static void neo_ast_object_property_write(neo_allocator_t allocator,
     neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   } else {
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+    THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)",
           ctx->program->filename, self->identifier->location.begin.line,
           self->identifier->location.begin.column);
     return;
