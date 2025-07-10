@@ -2,10 +2,13 @@
 #include "compiler/ast/node.h"
 #include "compiler/parser.h"
 #include "compiler/program.h"
+#include "compiler/writer.h"
 #include "core/allocator.h"
 #include "core/buffer.h"
 #include "core/clock.h"
+#include "core/common.h"
 #include "core/error.h"
+#include "core/hash.h"
 #include "core/hash_map.h"
 #include "core/list.h"
 #include "core/path.h"
@@ -77,7 +80,7 @@ struct _neo_js_context_t {
   neo_list_t micro_tasks;
   neo_list_t macro_tasks;
   neo_list_t coroutines;
-  const wchar_t *dirname;
+  neo_hash_map_t modules;
   struct {
     neo_js_variable_t global;
     neo_js_variable_t object_constructor;
@@ -671,6 +674,7 @@ static void neo_js_context_dispose(neo_allocator_t allocator,
   }
   neo_allocator_free(allocator, ctx->macro_tasks);
   neo_allocator_free(allocator, ctx->task);
+  neo_allocator_free(allocator, ctx->modules);
   neo_allocator_free(allocator, ctx->root);
   ctx->scope = NULL;
   ctx->task = NULL;
@@ -694,9 +698,14 @@ neo_js_context_t neo_create_js_context(neo_allocator_t allocator,
   ctx->macro_tasks = neo_create_list(allocator, NULL);
   ctx->micro_tasks = neo_create_list(allocator, NULL);
   ctx->coroutines = neo_create_list(allocator, NULL);
+  neo_hash_map_initialize_t module_initialize = {0};
+  module_initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
+  module_initialize.compare = (neo_compare_fn_t)wcscmp;
+  module_initialize.auto_free_key = true;
+  module_initialize.auto_free_value = false;
+  ctx->modules = neo_create_hash_map(allocator, &module_initialize);
   neo_js_stackframe_t frame = neo_create_js_stackframe(allocator);
   frame->function = neo_create_wstring(allocator, L"start");
-  ctx->dirname = NULL;
   neo_list_push(ctx->stacktrace, frame);
   neo_js_context_push_stackframe(ctx, NULL, L"_.eval", 0, 0);
   neo_js_context_init_std(ctx);
@@ -3103,6 +3112,32 @@ neo_js_variable_t neo_js_context_create_compile_error(neo_js_context_t ctx) {
   return error;
 }
 
+void neo_js_context_create_module(neo_js_context_t ctx, const wchar_t *name,
+                                  neo_js_variable_t module) {
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  neo_js_handle_t hmodule = neo_js_variable_get_handle(module);
+  neo_js_handle_add_parent(hmodule, neo_js_scope_get_root_handle(ctx->root));
+  neo_hash_map_set(ctx->modules, neo_create_wstring(allocator, name), hmodule,
+                   NULL, NULL);
+}
+
+neo_js_variable_t neo_js_context_get_module(neo_js_context_t ctx,
+                                            const wchar_t *name) {
+  neo_js_handle_t hmodule = neo_hash_map_get(ctx->modules, name, NULL, NULL);
+  if (!hmodule) {
+    size_t len = 64 + wcslen(name);
+    neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+    wchar_t *message =
+        neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
+    swprintf(message, len, L"Cannot find package '%ls'", name);
+    neo_js_variable_t result =
+        neo_js_context_create_error(ctx, NEO_ERROR_REFERENCE, message);
+    neo_allocator_free(allocator, message);
+    return result;
+  }
+  return neo_js_context_create_variable(ctx, hmodule, NULL);
+}
+
 neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
                                       const char *source) {
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
@@ -3117,9 +3152,17 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
   if (!program) {
     neo_ast_node_t root = TRY(neo_ast_parse_code(allocator, file, source)) {
       neo_allocator_free(allocator, filepath);
-
       return neo_js_context_create_compile_error(ctx);
     };
+
+    neo_js_variable_t module = neo_js_context_create_object(
+        ctx, neo_js_context_create_null(ctx), NULL);
+
+    neo_js_handle_t hmodule = neo_js_variable_get_handle(module);
+    neo_js_handle_add_parent(hmodule, neo_js_scope_get_root_handle(ctx->root));
+    neo_hash_map_set(ctx->modules, neo_create_wstring(allocator, filepath),
+                     hmodule, NULL, NULL);
+
     char *cfilepath = neo_wstring_to_string(allocator, filepath);
     program = TRY(neo_ast_write_node(allocator, cfilepath, root)) {
       neo_allocator_free(allocator, root);
@@ -3163,15 +3206,4 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
     neo_allocator_free(allocator, vm);
     return result;
   }
-}
-
-const wchar_t *neo_js_context_get_dirname(neo_js_context_t ctx) {
-  return ctx->dirname;
-}
-
-const wchar_t *neo_js_context_set_dirname(neo_js_context_t ctx,
-                                          const wchar_t *dirname) {
-  const wchar_t *current = ctx->dirname;
-  ctx->dirname = dirname;
-  return current;
 }

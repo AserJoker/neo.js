@@ -71,14 +71,14 @@ neo_hash_map_t neo_create_hash_map(neo_allocator_t allocator,
     hmap->max_bucket = initialize->max_bucket;
     hmap->compare = initialize->compare;
   } else {
-    hmap->max_bucket = 1024;
+    hmap->max_bucket = 128;
     hmap->auto_free_key = false;
     hmap->auto_free_value = false;
     hmap->hash = NULL;
     hmap->compare = NULL;
   }
   if (hmap->max_bucket == 0) {
-    hmap->max_bucket = 1024;
+    hmap->max_bucket = 128;
   }
   hmap->buckets = neo_allocator_alloc(
       allocator, hmap->max_bucket * sizeof(neo_hash_map_entry_t), NULL);

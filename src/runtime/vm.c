@@ -1077,7 +1077,9 @@ void neo_js_vm_rest_object(neo_js_vm_t vm, neo_program_t program) {
   neo_allocator_free(allocator, symbol_keys);
   neo_list_push(vm->stack, result);
 }
-void neo_js_import(neo_js_vm_t vm, neo_program_t program) {}
+void neo_js_vm_import(neo_js_vm_t vm, neo_program_t program) {
+  wchar_t *name = neo_js_vm_read_string(vm, program);
+}
 
 void neo_js_vm_new(neo_js_vm_t vm, neo_program_t program) {
   uint32_t line = neo_js_vm_read_integer(vm, program);
@@ -1653,7 +1655,7 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_async_iterator,       // NEO_ASM_ASYNC_ITERATOR
     neo_js_vm_rest,                 // NEO_ASM_REST
     neo_js_vm_rest_object,          // NEO_ASM_REST_OBJECT
-    NULL,                           // NEO_ASM_IMPORT
+    neo_js_vm_import,               // NEO_ASM_IMPORT
     NULL,                           // NEO_ASM_ASSERT
     NULL,                           // NEO_ASM_EXPORT
     NULL,                           // NEO_ASM_EXPORT_ALL
