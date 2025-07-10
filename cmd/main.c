@@ -123,7 +123,7 @@ int main(int argc, char *argv[]) {
   neo_allocator_t allocator = neo_create_default_allocator();
   neo_error_initialize(allocator);
   char *buf = neo_fs_read_file(allocator, L"../index.mjs");
-  const wchar_t *s = L"中文";
+  const char *s = "中文";
   neo_js_runtime_t runtime = neo_create_js_runtime(allocator);
   neo_js_context_t ctx = neo_create_js_context(allocator, runtime);
   neo_js_context_push_scope(ctx);

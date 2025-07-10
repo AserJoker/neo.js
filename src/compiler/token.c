@@ -337,7 +337,7 @@ neo_token_t neo_read_identify_token(neo_allocator_t allocator,
   if (*current.offset == '\\' && *(current.offset + 1) == 'u') {
     const char *start = current.offset + 2;
     TRY(neo_read_escape(file, &current)) { return NULL; };
-    int32_t utf32 = 0;
+    uint32_t utf32 = 0;
     if (*start == '{') {
       start++;
       while (*start != '}') {
@@ -349,10 +349,11 @@ neo_token_t neo_read_identify_token(neo_allocator_t allocator,
           utf32 += *start - 'a' + 10;
         }
         if (*start >= 'A' && *start <= 'F') {
-          utf32 += *start - 'F' + 10;
+          utf32 += *start - 'A' + 10;
         }
         start++;
       }
+      start++;
     } else {
       for (int8_t idx = 0; idx < 4; idx++) {
         utf32 *= 16;
@@ -363,7 +364,7 @@ neo_token_t neo_read_identify_token(neo_allocator_t allocator,
           utf32 += *start - 'a' + 10;
         }
         if (*start >= 'A' && *start <= 'F') {
-          utf32 += *start - 'F' + 10;
+          utf32 += *start - 'A' + 10;
         }
         start++;
       }
