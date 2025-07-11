@@ -291,6 +291,11 @@ static void neo_js_context_init_std_function(neo_js_context_t ctx) {
                            neo_js_context_create_cfunction(
                                ctx, L"toString", neo_js_function_to_string),
                            true, false, true);
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"call"),
+      neo_js_context_create_cfunction(ctx, L"call", neo_js_function_call), true,
+      false, true);
 }
 
 static void neo_js_context_init_std_array(neo_js_context_t ctx) {
@@ -2011,9 +2016,9 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
                                            neo_js_variable_t constructor,
                                            uint32_t argc,
                                            neo_js_variable_t *argv) {
-  if (neo_js_variable_get_type(constructor)->kind != NEO_TYPE_CFUNCTION) {
+  if (neo_js_variable_get_type(constructor)->kind < NEO_TYPE_CALLABLE) {
     return neo_js_context_create_error(ctx, NEO_ERROR_TYPE,
-                                       L"Constructor is not a cfunction");
+                                       L"Constructor is not a function");
   }
   neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
   neo_js_scope_t current = neo_js_context_get_scope(ctx);
