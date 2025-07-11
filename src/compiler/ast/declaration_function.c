@@ -47,14 +47,14 @@ static neo_variable_t
 neo_serialize_ast_declaration_function(neo_allocator_t allocator,
                                        neo_ast_declaration_function_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_set(variable, "type",
+  neo_variable_set(variable, L"type",
                    neo_create_variable_string(
-                       allocator, "NEO_NODE_TYPE_DECLARATION_FUNCTION"));
-  neo_variable_set(variable, "declaration",
+                       allocator, L"NEO_NODE_TYPE_DECLARATION_FUNCTION"));
+  neo_variable_set(variable, L"declaration",
                    neo_ast_node_serialize(allocator, node->declaration));
-  neo_variable_set(variable, "location",
+  neo_variable_set(variable, L"location",
                    neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, "scope",
+  neo_variable_set(variable, L"scope",
                    neo_serialize_scope(allocator, node->node.scope));
   return variable;
 }

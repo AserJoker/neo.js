@@ -61,24 +61,22 @@ static neo_variable_t
 neo_serialize_ast_expression_binary(neo_allocator_t allocator,
                                     neo_ast_expression_binary_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_set(
-      variable, "type",
-      neo_create_variable_string(allocator, "NEO_NODE_TYPE_EXPRESSION_BINARY"));
-  neo_variable_set(variable, "location",
+  neo_variable_set(variable, L"type",
+                   neo_create_variable_string(
+                       allocator, L"NEO_NODE_TYPE_EXPRESSION_BINARY"));
+  neo_variable_set(variable, L"location",
                    neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, "scope",
+  neo_variable_set(variable, L"scope",
                    neo_serialize_scope(allocator, node->node.scope));
-  neo_variable_set(variable, "left",
+  neo_variable_set(variable, L"left",
                    neo_ast_node_serialize(allocator, node->left));
-  neo_variable_set(variable, "right",
+  neo_variable_set(variable, L"right",
                    neo_ast_node_serialize(allocator, node->right));
-  char opt[16];
-  size_t size =
-      node->opt->location.end.offset - node->opt->location.begin.offset;
-  strncpy(opt, node->opt->location.begin.offset, size);
-  opt[size] = 0;
-  neo_variable_set(variable, "operator",
+
+  wchar_t *opt = neo_location_get(allocator, node->opt->location);
+  neo_variable_set(variable, L"operator",
                    neo_create_variable_string(allocator, opt));
+  neo_allocator_free(allocator, opt);
   return variable;
 }
 

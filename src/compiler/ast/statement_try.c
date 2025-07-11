@@ -58,17 +58,17 @@ neo_serialize_ast_statement_try(neo_allocator_t allocator,
                                 neo_ast_statement_try_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
   neo_variable_set(
-      variable, "type",
-      neo_create_variable_string(allocator, "NEO_NODE_TYPE_STATEMENT_TRY"));
-  neo_variable_set(variable, "location",
+      variable, L"type",
+      neo_create_variable_string(allocator, L"NEO_NODE_TYPE_STATEMENT_TRY"));
+  neo_variable_set(variable, L"location",
                    neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, "scope",
+  neo_variable_set(variable, L"scope",
                    neo_serialize_scope(allocator, node->node.scope));
-  neo_variable_set(variable, "body",
+  neo_variable_set(variable, L"body",
                    neo_ast_node_serialize(allocator, node->body));
-  neo_variable_set(variable, "catch",
+  neo_variable_set(variable, L"catch",
                    neo_ast_node_serialize(allocator, node->catch));
-  neo_variable_set(variable, "finally",
+  neo_variable_set(variable, L"finally",
                    neo_ast_node_serialize(allocator, node->finally));
   return variable;
 }

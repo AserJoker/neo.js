@@ -30,7 +30,7 @@ neo_variable_t neo_create_variable_integer(neo_allocator_t allocator,
                                            int64_t value);
 
 neo_variable_t neo_create_variable_string(neo_allocator_t allocator,
-                                          const char *value);
+                                          const wchar_t *value);
 
 neo_variable_t neo_create_variable_boolean(neo_allocator_t allocator,
                                            bool value);
@@ -51,7 +51,8 @@ neo_variable_t neo_variable_set_number(neo_variable_t self, double value);
 
 neo_variable_t neo_variable_set_integer(neo_variable_t self, int64_t value);
 
-neo_variable_t neo_variable_set_string(neo_variable_t self, const char *value);
+neo_variable_t neo_variable_set_string(neo_variable_t self,
+                                       const wchar_t *value);
 
 neo_variable_t neo_variable_set_boolean(neo_variable_t self, bool value);
 
@@ -65,7 +66,7 @@ double neo_variable_get_number(neo_variable_t self);
 
 int64_t neo_variable_get_integer(neo_variable_t self);
 
-char *neo_variable_get_string(neo_variable_t self);
+wchar_t *neo_variable_get_string(neo_variable_t self);
 
 bool neo_variable_get_boolean(neo_variable_t self);
 
@@ -75,7 +76,7 @@ neo_map_t neo_variable_get_dict(neo_variable_t self);
 
 neo_variable_t neo_variable_push(neo_variable_t self, neo_variable_t item);
 
-neo_variable_t neo_variable_set(neo_variable_t self, const char *key,
+neo_variable_t neo_variable_set(neo_variable_t self, const wchar_t *key,
                                 neo_variable_t item);
 
 #endif

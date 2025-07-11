@@ -8,6 +8,7 @@
 #include "core/unicode.h"
 #include "core/variable.h"
 #include <string.h>
+#include <wchar.h>
 
 neo_variable_t neo_ast_node_serialize(neo_allocator_t allocator,
                                       neo_ast_node_t node) {
@@ -25,8 +26,9 @@ neo_variable_t neo_ast_node_list_serialize(neo_allocator_t allocator,
 neo_variable_t neo_ast_node_source_serialize(neo_allocator_t allocator,
                                              neo_ast_node_t node) {
   size_t size = node->location.end.offset - node->location.begin.offset;
-  char *buf = neo_allocator_alloc(allocator, size * 2, NULL);
-  char *dst = buf;
+  wchar_t *buf =
+      neo_allocator_alloc(allocator, size * 2 * sizeof(wchar_t), NULL);
+  wchar_t *dst = buf;
   const char *src = node->location.begin.offset;
   while (src != node->location.end.offset) {
     if (*src == '\"') {
@@ -54,23 +56,8 @@ neo_variable_t neo_ast_node_source_serialize(neo_allocator_t allocator,
 neo_variable_t neo_ast_node_location_serialize(neo_allocator_t allocator,
                                                neo_ast_node_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  // neo_variable_t begin = neo_create_variable_dict(allocator, NULL, NULL);
-  // neo_variable_set(
-  //     begin, "column",
-  //     neo_create_variable_integer(allocator, node->location.begin.column));
-  // neo_variable_set(
-  //     begin, "line",
-  //     neo_create_variable_integer(allocator, node->location.begin.line));
-  // neo_variable_set(variable, "begin", begin);
-  // neo_variable_t end = neo_create_variable_dict(allocator, NULL, NULL);
-  // neo_variable_set(
-  //     end, "column",
-  //     neo_create_variable_integer(allocator, node->location.end.column));
-  // neo_variable_set(
-  //     end, "line",
-  //     neo_create_variable_integer(allocator, node->location.end.line));
-  // neo_variable_set(variable, "end", end);
-  neo_variable_set(variable, "text",
+
+  neo_variable_set(variable, L"text",
                    neo_ast_node_source_serialize(allocator, node));
   return variable;
 }

@@ -177,21 +177,21 @@ neo_serialize_ast_expression_class(neo_allocator_t allocator,
                                    neo_ast_expression_class_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
   neo_variable_set(
-      variable, "type",
-      neo_create_variable_string(allocator, "NEO_NODE_TYPE_EXPRESSION_CALL"));
-  neo_variable_set(variable, "location",
+      variable, L"type",
+      neo_create_variable_string(allocator, L"NEO_NODE_TYPE_EXPRESSION_CALL"));
+  neo_variable_set(variable, L"location",
                    neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, "scope",
+  neo_variable_set(variable, L"scope",
                    neo_serialize_scope(allocator, node->node.scope));
-  neo_variable_set(variable, "name",
+  neo_variable_set(variable, L"name",
                    neo_ast_node_serialize(allocator, node->name));
-  neo_variable_set(variable, "extends",
+  neo_variable_set(variable, L"extends",
                    neo_ast_node_serialize(allocator, node->extends));
-  neo_variable_set(variable, "items",
+  neo_variable_set(variable, L"items",
                    neo_ast_node_list_serialize(allocator, node->items));
-  neo_variable_set(variable, "decorators",
+  neo_variable_set(variable, L"decorators",
                    neo_ast_node_list_serialize(allocator, node->decorators));
-  neo_variable_set(variable, "closure",
+  neo_variable_set(variable, L"closure",
                    neo_ast_node_list_serialize(allocator, node->closure));
   return variable;
 }

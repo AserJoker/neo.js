@@ -50,18 +50,18 @@ static neo_variable_t
 neo_serialize_ast_declaration_import(neo_allocator_t allocator,
                                      neo_ast_declaration_import_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_set(variable, "type",
+  neo_variable_set(variable, L"type",
                    neo_create_variable_string(
-                       allocator, "NEO_NODE_TYPE_DECLARATION_IMPORT"));
-  neo_variable_set(variable, "specifiers",
+                       allocator, L"NEO_NODE_TYPE_DECLARATION_IMPORT"));
+  neo_variable_set(variable, L"specifiers",
                    neo_ast_node_list_serialize(allocator, node->specifiers));
-  neo_variable_set(variable, "attributes",
+  neo_variable_set(variable, L"attributes",
                    neo_ast_node_list_serialize(allocator, node->attributes));
-  neo_variable_set(variable, "source",
+  neo_variable_set(variable, L"source",
                    neo_ast_node_serialize(allocator, node->source));
-  neo_variable_set(variable, "location",
+  neo_variable_set(variable, L"location",
                    neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, "scope",
+  neo_variable_set(variable, L"scope",
                    neo_serialize_scope(allocator, node->node.scope));
   return variable;
 }

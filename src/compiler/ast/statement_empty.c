@@ -11,11 +11,11 @@ neo_serialize_ast_statement_empty(neo_allocator_t allocator,
                                   neo_ast_statement_empty_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
   neo_variable_set(
-      variable, "type",
-      neo_create_variable_string(allocator, "NEO_NODE_TYPE_STATEMENT_EMPTY"));
-  neo_variable_set(variable, "location",
+      variable, L"type",
+      neo_create_variable_string(allocator, L"NEO_NODE_TYPE_STATEMENT_EMPTY"));
+  neo_variable_set(variable, L"location",
                    neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, "scope",
+  neo_variable_set(variable, L"scope",
                    neo_serialize_scope(allocator, node->node.scope));
   return variable;
 }

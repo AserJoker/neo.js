@@ -2,14 +2,17 @@
 #include "core/allocator.h"
 #include "core/list.h"
 #include "core/map.h"
+#include "core/string.h"
 #include <string.h>
+#include <wchar.h>
+
 struct _neo_variable_t {
   neo_variable_type_t type;
   neo_allocator_t allocator;
   union {
     double number;
     int64_t integer;
-    char *string;
+    wchar_t *string;
     bool boolean;
     neo_list_t array;
     neo_map_t dict;
@@ -50,7 +53,7 @@ neo_variable_t neo_create_variable_integer(neo_allocator_t allocator,
 }
 
 neo_variable_t neo_create_variable_string(neo_allocator_t allocator,
-                                          const char *value) {
+                                          const wchar_t *value) {
   neo_variable_t variable = neo_create_variable_nil(allocator);
   return neo_variable_set_string(variable, value);
 }
@@ -99,13 +102,11 @@ neo_variable_t neo_variable_set_integer(neo_variable_t self, int64_t value) {
   return self;
 }
 
-neo_variable_t neo_variable_set_string(neo_variable_t self, const char *value) {
+neo_variable_t neo_variable_set_string(neo_variable_t self,
+                                       const wchar_t *value) {
   neo_variable_dispose(self->allocator, self);
   self->type = NEO_VARIABLE_STRING;
-  size_t len = strlen(value);
-  self->string = (char *)neo_allocator_alloc(self->allocator, len + 1, NULL);
-  strcpy(self->string, value);
-  self->string[len] = 0;
+  self->string = neo_create_wstring(self->allocator, value);
   return self;
 }
 
@@ -141,7 +142,7 @@ neo_variable_t neo_variable_set_dict(neo_variable_t self, neo_map_t map,
   if (map && neo_map_get_size(map)) {
     for (neo_map_node_t it = neo_map_get_first(map);
          it != neo_map_get_tail(map); it = neo_map_node_next(it)) {
-      const char *key = neo_map_node_get_key(it);
+      const wchar_t *key = neo_map_node_get_key(it);
       neo_variable_set(self, key,
                        serialize(self->allocator, neo_map_node_get_value(it)));
     }
@@ -153,7 +154,7 @@ double neo_variable_get_number(neo_variable_t self) { return self->number; }
 
 int64_t neo_variable_get_integer(neo_variable_t self) { return self->integer; }
 
-char *neo_variable_get_string(neo_variable_t self) { return self->string; }
+wchar_t *neo_variable_get_string(neo_variable_t self) { return self->string; }
 
 bool neo_variable_get_boolean(neo_variable_t self) { return self->boolean; }
 
@@ -167,12 +168,9 @@ neo_variable_t neo_variable_push(neo_variable_t self, neo_variable_t item) {
   return self;
 }
 
-neo_variable_t neo_variable_set(neo_variable_t self, const char *key,
+neo_variable_t neo_variable_set(neo_variable_t self, const wchar_t *key,
                                 neo_variable_t item) {
-  size_t len = strlen(key);
-  char *buf = neo_allocator_alloc(self->allocator, len + 1, NULL);
-  strcpy(buf, key);
-  buf[len] = 0;
+  wchar_t *buf = neo_create_wstring(self->allocator, key);
   neo_map_set(self->dict, buf, item, NULL);
   return self;
 }

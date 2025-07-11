@@ -125,30 +125,30 @@ neo_serialize_ast_class_accessor(neo_allocator_t allocator,
                                  neo_ast_class_accessor_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
   neo_variable_set(
-      variable, "type",
-      neo_create_variable_string(allocator, "NEO_NODE_TYPE_CLASS_ACCESSOR"));
-  neo_variable_set(variable, "arguments",
+      variable, L"type",
+      neo_create_variable_string(allocator, L"NEO_NODE_TYPE_CLASS_ACCESSOR"));
+  neo_variable_set(variable, L"arguments",
                    neo_ast_node_list_serialize(allocator, node->arguments));
-  neo_variable_set(variable, "name",
+  neo_variable_set(variable, L"name",
                    neo_ast_node_serialize(allocator, node->name));
-  neo_variable_set(variable, "body",
+  neo_variable_set(variable, L"body",
                    neo_ast_node_serialize(allocator, node->body));
-  neo_variable_set(variable, "decorators",
+  neo_variable_set(variable, L"decorators",
                    neo_ast_node_list_serialize(allocator, node->decorators));
   neo_variable_set(
-      variable, "kind",
+      variable, L"kind",
       neo_create_variable_string(allocator, node->kind == NEO_ACCESSOR_KIND_GET
-                                                ? "NEO_ACCESSOR_KIND_GET"
-                                                : "NEO_ACCESSOR_KIND_SET"));
-  neo_variable_set(variable, "static",
+                                                ? L"NEO_ACCESSOR_KIND_GET"
+                                                : L"NEO_ACCESSOR_KIND_SET"));
+  neo_variable_set(variable, L"static",
                    neo_create_variable_boolean(allocator, node->static_));
-  neo_variable_set(variable, "computed",
+  neo_variable_set(variable, L"computed",
                    neo_create_variable_boolean(allocator, node->computed));
-  neo_variable_set(variable, "location",
+  neo_variable_set(variable, L"location",
                    neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, "closure",
+  neo_variable_set(variable, L"closure",
                    neo_ast_node_list_serialize(allocator, node->closure));
-  neo_variable_set(variable, "scope",
+  neo_variable_set(variable, L"scope",
                    neo_serialize_scope(allocator, node->node.scope));
   return variable;
 }
