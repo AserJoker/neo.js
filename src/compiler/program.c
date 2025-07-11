@@ -247,9 +247,22 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
     case NEO_ASM_PUSH_THIS:
       fprintf(fp, "NEO_ASM_PUSH_THIS\n");
       break;
-    case NEO_ASM_PUSH_SUPER:
-      fprintf(fp, "NEO_ASM_PUSH_SUPER\n");
-      break;
+    case NEO_ASM_SUPER_CALL: {
+      uint32_t line = neo_program_get_integer(self, &offset);
+      uint32_t column = neo_program_get_integer(self, &offset);
+      fprintf(fp, "NEO_ASM_SUPER_CALL %d,%d\n", line, column);
+    } break;
+    case NEO_ASM_SUPER_MEMBER_CALL: {
+      uint32_t line = neo_program_get_integer(self, &offset);
+      uint32_t column = neo_program_get_integer(self, &offset);
+      fprintf(fp, "NEO_ASM_SUPER_MEMBER_CALL %d,%d\n", line, column);
+    } break;
+    case NEO_ASM_GET_SUPER_FIELD: {
+      fprintf(fp, "NEO_ASM_GET_SUPER_FIELD\n");
+    } break;
+    case NEO_ASM_SET_SUPER_FIELD: {
+      fprintf(fp, "NEO_ASM_SET_SUPER_FIELD\n");
+    } break;
     case NEO_ASM_PUSH_VALUE:
       fprintf(fp, "NEO_ASM_PUSH_VALUE %d\n",
               neo_program_get_integer(self, &offset));

@@ -357,6 +357,18 @@ neo_js_object_property_t neo_js_object_get_property(neo_js_context_t ctx,
   return property;
 }
 
+neo_js_variable_t neo_js_object_get_constructor(neo_js_context_t ctx,
+                                                neo_js_variable_t self) {
+  neo_js_object_t obj = neo_js_variable_to_object(self);
+  return neo_js_context_create_variable(ctx, obj->constructor, NULL);
+}
+
+neo_js_variable_t neo_js_object_get_prototype(neo_js_context_t ctx,
+                                              neo_js_variable_t self) {
+  neo_js_object_t obj = neo_js_variable_to_object(self);
+  return neo_js_context_create_variable(ctx, obj->prototype, NULL);
+}
+
 static neo_js_variable_t neo_js_object_get_field(neo_js_context_t ctx,
                                                  neo_js_variable_t self,
                                                  neo_js_variable_t field) {
@@ -381,13 +393,21 @@ static neo_js_variable_t neo_js_object_set_field(neo_js_context_t ctx,
                                                  neo_js_variable_t field,
                                                  neo_js_variable_t value) {
   neo_js_object_property_t proptype =
-      neo_js_object_get_property(ctx, self, field);
+      neo_js_object_get_own_property(ctx, self, field);
   neo_js_handle_t hobject = neo_js_variable_get_handle(self);
   neo_js_object_t object =
       neo_js_value_to_object(neo_js_variable_get_value(self));
   neo_js_handle_t hvalue = neo_js_variable_get_handle(value);
   if (!proptype) {
-    return neo_js_context_def_field(ctx, self, field, value, true, true, true);
+    proptype = neo_js_object_get_property(ctx, self, field);
+    if (proptype && proptype->set) {
+      neo_js_variable_t setter =
+          neo_js_context_create_variable(ctx, proptype->set, NULL);
+      return neo_js_context_call(ctx, setter, self, 1, &value);
+    } else {
+      return neo_js_context_def_field(ctx, self, field, value, true, true,
+                                      true);
+    }
   } else {
     if (proptype->value) {
       if (!proptype->writable) {

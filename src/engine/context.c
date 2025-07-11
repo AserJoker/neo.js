@@ -1493,8 +1493,12 @@ neo_js_variable_t neo_js_context_get_internal(neo_js_context_t ctx,
                                               const wchar_t *field) {
   neo_js_object_t object = neo_js_variable_to_object(self);
   if (object) {
-    return neo_js_context_create_variable(
-        ctx, neo_hash_map_get(object->internal, field, NULL, NULL), NULL);
+    neo_js_handle_t internal =
+        neo_hash_map_get(object->internal, field, NULL, NULL);
+    if (!internal) {
+      return neo_js_context_create_undefined(ctx);
+    }
+    return neo_js_context_create_variable(ctx, internal, NULL);
   }
   return neo_js_context_create_undefined(ctx);
 }

@@ -371,6 +371,108 @@ void neo_js_vm_push_this(neo_js_vm_t vm, neo_program_t program) {
                 neo_js_context_create_variable(
                     vm->ctx, neo_js_variable_get_handle(vm->self), NULL));
 }
+
+void neo_js_vm_super_call(neo_js_vm_t vm, neo_program_t program) {
+  uint32_t line = neo_js_vm_read_integer(vm, program);
+  uint32_t column = neo_js_vm_read_integer(vm, program);
+  neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
+  neo_js_variable_t args = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_js_variable_t length = neo_js_context_get_field(
+      vm->ctx, args, neo_js_context_create_string(vm->ctx, L"length"));
+  neo_js_number_t num = neo_js_variable_to_number(length);
+  size_t argc = num->number;
+  neo_js_variable_t *argv =
+      neo_allocator_alloc(allocator, sizeof(neo_js_variable_t) * argc, NULL);
+  for (size_t idx = 0; idx < argc; idx++) {
+    argv[idx] = neo_js_context_get_field(
+        vm->ctx, args, neo_js_context_create_number(vm->ctx, idx));
+  }
+  neo_list_pop(vm->stack);
+  neo_js_variable_t constructor =
+      neo_js_object_get_constructor(vm->ctx, vm->self);
+  neo_js_variable_t extend = neo_js_object_get_prototype(vm->ctx, constructor);
+
+  neo_js_callable_t callable = neo_js_variable_to_callable(extend);
+  neo_js_variable_t result = NULL;
+  if (callable) {
+    neo_js_context_push_stackframe(vm->ctx, program->filename, callable->name,
+                                   column, line);
+    result = neo_js_context_call(vm->ctx, extend, vm->self, argc, argv);
+    neo_js_context_pop_stackframe(vm->ctx);
+  } else if (!callable) {
+    neo_js_context_push_stackframe(vm->ctx, program->filename, NULL, column,
+                                   line);
+    result = neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
+                                         L"super is not callable");
+    neo_js_context_pop_stackframe(vm->ctx);
+  }
+  neo_allocator_free(allocator, argv);
+  neo_list_push(vm->stack, result);
+  if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
+void neo_js_vm_super_member_call(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t host = NULL;
+  if (neo_js_variable_get_type(vm->self)->kind >= NEO_TYPE_CALLABLE) {
+    host = neo_js_object_get_prototype(vm->ctx, vm->self);
+  } else {
+    host = neo_js_object_get_prototype(vm->ctx, vm->self);
+    host = neo_js_object_get_prototype(vm->ctx, host);
+  }
+  uint32_t line = neo_js_vm_read_integer(vm, program);
+  uint32_t column = neo_js_vm_read_integer(vm, program);
+  neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
+  neo_js_variable_t args = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t length = neo_js_context_get_field(
+      vm->ctx, args, neo_js_context_create_string(vm->ctx, L"length"));
+  neo_js_number_t num = neo_js_variable_to_number(length);
+  size_t argc = num->number;
+  neo_js_variable_t *argv =
+      neo_allocator_alloc(allocator, sizeof(neo_js_variable_t) * argc, NULL);
+  for (size_t idx = 0; idx < argc; idx++) {
+    argv[idx] = neo_js_context_get_field(
+        vm->ctx, args, neo_js_context_create_number(vm->ctx, idx));
+  }
+  neo_js_variable_t field = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+
+  neo_js_variable_t callee = neo_js_context_get_field(vm->ctx, host, field);
+  neo_js_callable_t callable = neo_js_variable_to_callable(callee);
+  neo_js_variable_t result = NULL;
+  if (callable) {
+    neo_js_context_push_stackframe(vm->ctx, program->filename, callable->name,
+                                   column, line);
+    result = neo_js_context_call(vm->ctx, callee, vm->self, argc, argv);
+    neo_js_context_pop_stackframe(vm->ctx);
+  } else if (!callable) {
+    neo_js_context_push_stackframe(vm->ctx, program->filename, NULL, column,
+                                   line);
+    result = neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
+                                         L"variable is not callable");
+    neo_js_context_pop_stackframe(vm->ctx);
+  }
+  neo_allocator_free(allocator, argv);
+  neo_list_push(vm->stack, result);
+  if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
+void neo_js_vm_get_super_member(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t host = NULL;
+  if (neo_js_variable_get_type(vm->self)->kind >= NEO_TYPE_CALLABLE) {
+    host = neo_js_object_get_prototype(vm->ctx, vm->self);
+  } else {
+    host = neo_js_object_get_prototype(vm->ctx, vm->self);
+    host = neo_js_object_get_prototype(vm->ctx, host);
+  }
+  neo_js_variable_t field = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t value = neo_js_context_get_field(vm->ctx, host, field);
+  neo_list_push(vm->stack, value);
+}
+
 void neo_js_vm_push_value(neo_js_vm_t vm, neo_program_t program) {
   int32_t offset = neo_js_vm_read_integer(vm, program);
   neo_list_node_t it = neo_list_get_tail(vm->stack);
@@ -497,6 +599,7 @@ void neo_js_vm_extends(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t proto = neo_js_context_get_field(
       vm->ctx, parent, neo_js_context_create_string(vm->ctx, L"prototype"));
   neo_js_object_set_prototype(vm->ctx, prototype, proto);
+  neo_js_object_set_prototype(vm->ctx, self, parent);
 }
 
 void neo_js_vm_set_source(neo_js_vm_t vm, neo_program_t program) {
@@ -1798,7 +1901,10 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_push_object,          // NEO_ASM_PUSH_OBJECT
     neo_js_vm_push_array,           // NEO_ASM_PUSH_ARRAY
     neo_js_vm_push_this,            // NEO_ASM_PUSH_THIS
-    NULL,                           // NEO_ASM_PUSH_SUPER
+    neo_js_vm_super_call,           // NEO_ASM_SUPER_CALL
+    neo_js_vm_super_member_call,    // NEO_ASM_SUPER_MEMBER_CALL
+    neo_js_vm_get_super_member,     // NEO_ASM_GET_SUPER_FIELD
+    neo_js_vm_set_field,            // NEO_ASM_SET_SUPER_FIELD
     neo_js_vm_push_value,           // NEO_ASM_PUSH_VALUE
     neo_js_vm_push_break_label,     // NEO_ASM_PUSH_BREAK_LABEL
     neo_js_vm_push_continue_label,  // NEO_ASM_PUSH_CONTINUE_LABEL

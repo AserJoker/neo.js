@@ -41,20 +41,23 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
       self->identifier->type == NEO_NODE_TYPE_EXPRESSION_COMPUTED_MEMBER) {
     neo_ast_expression_member_t member =
         (neo_ast_expression_member_t)self->identifier;
-    neo_list_initialize_t initialize = {true};
-    neo_list_t addresses = neo_create_list(allocator, &initialize);
-    TRY(neo_write_optional_chain(allocator, ctx, member->host, addresses)) {
-      neo_allocator_free(allocator, addresses);
-      return;
-    }
-    if (neo_list_get_size(addresses)) {
-      THROW("Invalid left-hand side in assignment \n  at _.compile (%ls:%d:%d)",
+    if (member->host->type != NEO_NODE_TYPE_EXPRESSION_SUPER) {
+      neo_list_initialize_t initialize = {true};
+      neo_list_t addresses = neo_create_list(allocator, &initialize);
+      TRY(neo_write_optional_chain(allocator, ctx, member->host, addresses)) {
+        neo_allocator_free(allocator, addresses);
+        return;
+      }
+      if (neo_list_get_size(addresses)) {
+        THROW(
+            "Invalid left-hand side in assignment \n  at _.compile (%ls:%d:%d)",
             ctx->program->filename, self->identifier->location.begin.line,
             self->identifier->location.begin.column);
+        neo_allocator_free(allocator, addresses);
+        return;
+      }
       neo_allocator_free(allocator, addresses);
-      return;
     }
-    neo_allocator_free(allocator, addresses);
     if (self->identifier->type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
       wchar_t *field = neo_location_get(allocator, member->field->location);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
@@ -96,7 +99,11 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
     } else {
       TRY(self->value->write(allocator, ctx, self->value)) { return; }
     }
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+    if (member->host->type == NEO_NODE_TYPE_EXPRESSION_SUPER) {
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_SUPER_FIELD);
+    } else {
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+    }
     neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   } else if (self->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
     if (!neo_location_is(self->opt->location, "=")) {

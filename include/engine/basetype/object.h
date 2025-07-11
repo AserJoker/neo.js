@@ -55,6 +55,12 @@ neo_js_object_property_t neo_js_object_get_property(neo_js_context_t ctx,
                                                     neo_js_variable_t self,
                                                     neo_js_variable_t field);
 
+neo_js_variable_t neo_js_object_get_constructor(neo_js_context_t ctx,
+                                                neo_js_variable_t self);
+
+neo_js_variable_t neo_js_object_get_prototype(neo_js_context_t ctx,
+                                              neo_js_variable_t self);
+
 neo_js_object_property_t
 neo_js_object_get_own_property(neo_js_context_t ctx, neo_js_variable_t self,
                                neo_js_variable_t field);

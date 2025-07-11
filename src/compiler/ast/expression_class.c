@@ -70,7 +70,8 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
        it != neo_list_get_tail(self->items); it = neo_list_node_next(it)) {
     neo_ast_node_t node = neo_list_node_get(it);
     if (node->type == NEO_NODE_TYPE_CLASS_METHOD &&
-        neo_location_is(node->location, "constructor")) {
+        neo_location_is(((neo_ast_class_method_t)node)->name->location,
+                        "constructor")) {
       constructor = (neo_ast_class_method_t)node;
     }
     if (node->type == NEO_NODE_TYPE_CLASS_PROPERTY) {
@@ -107,6 +108,14 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
     TRY(constructor->body->write(allocator, ctx, constructor->body)) { return; }
     ctx->is_generator = is_generator;
     ctx->is_async = is_async;
+  } else if (self->extends) {
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
+    neo_program_add_string(allocator, ctx->program, L"arguments");
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_SUPER_CALL);
+    neo_program_add_integer(allocator, ctx->program,
+                            self->node.location.begin.line);
+    neo_program_add_integer(allocator, ctx->program,
+                            self->node.location.begin.column);
   }
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_UNDEFINED);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_RET);
