@@ -544,11 +544,19 @@ void neo_js_vm_member_call(neo_js_vm_t vm, neo_program_t program) {
   neo_list_pop(vm->stack);
   neo_js_variable_t callee = neo_js_context_get_field(vm->ctx, host, field);
   neo_js_callable_t callable = neo_js_variable_to_callable(callee);
-  neo_js_context_push_stackframe(vm->ctx, program->filename, callable->name,
-                                 column, line);
-  neo_js_variable_t result =
-      neo_js_context_call(vm->ctx, callee, host, argc, argv);
-  neo_js_context_pop_stackframe(vm->ctx);
+  neo_js_variable_t result = NULL;
+  if (callable) {
+    neo_js_context_push_stackframe(vm->ctx, program->filename, callable->name,
+                                   column, line);
+    result = neo_js_context_call(vm->ctx, callee, host, argc, argv);
+    neo_js_context_pop_stackframe(vm->ctx);
+  } else if (!callable) {
+    neo_js_context_push_stackframe(vm->ctx, program->filename, NULL, column,
+                                   line);
+    result = neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
+                                         L"variable is not callable");
+    neo_js_context_pop_stackframe(vm->ctx);
+  }
   neo_allocator_free(allocator, argv);
   neo_list_push(vm->stack, result);
   if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {

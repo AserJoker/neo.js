@@ -2,173 +2,37 @@
 #include "core/error.h"
 #include "core/fs.h"
 #include "engine/basetype/error.h"
-#include "engine/basetype/number.h"
-#include "engine/basetype/string.h"
 #include "engine/context.h"
 #include "engine/runtime.h"
 #include "engine/type.h"
 #include "engine/variable.h"
 #include <locale.h>
-#include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include <stdio.h>
-#include <string.h>
-#include <wchar.h>
-
-static neo_js_variable_t js_println(neo_js_context_t ctx,
-                                    neo_js_variable_t self, uint32_t argc,
-                                    neo_js_variable_t *argv) {
-  for (uint32_t idx = 0; idx < argc; idx++) {
-    neo_js_variable_t string = neo_js_context_to_string(ctx, argv[idx]);
-    neo_js_string_t str = neo_js_variable_to_string(string);
-    printf("%ls", str->string);
-    if (idx != argc - 1) {
-      printf(", ");
-    }
-  }
-  printf("\n");
-  return neo_js_context_create_undefined(ctx);
-}
-
-static neo_js_variable_t js_set_timeout(neo_js_context_t ctx,
-                                        neo_js_variable_t self, uint32_t argc,
-                                        neo_js_variable_t *argv) {
-  if (argc < 1) {
-    return neo_js_context_create_error(
-        ctx, NEO_ERROR_TYPE,
-        L"The \" callback\" argument must be of type function.");
-  }
-  uint32_t timeout = 0;
-  if (argc > 1) {
-    neo_js_variable_t time = neo_js_context_to_number(ctx, argv[1]);
-    neo_js_number_t num = neo_js_variable_to_number(time);
-    if (isnan(num->number) || num->number <= 0) {
-      timeout = 0;
-    } else {
-      timeout = num->number;
-    }
-  }
-  uint32_t id = neo_js_context_create_macro_task(
-      ctx, argv[0], neo_js_context_create_undefined(ctx), 0, NULL, timeout,
-      false);
-  return neo_js_context_create_number(ctx, id);
-}
-
-static neo_js_variable_t js_clear_timeout(neo_js_context_t ctx,
-                                          neo_js_variable_t self, uint32_t argc,
-                                          neo_js_variable_t *argv) {
-  if (argc > 0) {
-    neo_js_variable_t vid = neo_js_context_to_number(ctx, argv[0]);
-    neo_js_number_t id = neo_js_variable_to_number(vid);
-    if (!isnan(id->number) && id->number >= 0) {
-      neo_js_context_kill_macro_task(ctx, id->number);
-    }
-  }
-  return neo_js_context_create_undefined(ctx);
-}
-
-static neo_js_variable_t js_set_interval(neo_js_context_t ctx,
-                                         neo_js_variable_t self, uint32_t argc,
-                                         neo_js_variable_t *argv) {
-  if (argc < 1) {
-    return neo_js_context_create_error(
-        ctx, NEO_ERROR_TYPE,
-        L"The \" callback\" argument must be of type function.");
-  }
-  uint32_t timeout = 0;
-  if (argc > 1) {
-    neo_js_variable_t time = neo_js_context_to_number(ctx, argv[1]);
-    neo_js_number_t num = neo_js_variable_to_number(time);
-    if (isnan(num->number) || num->number <= 0) {
-      timeout = 0;
-    } else {
-      timeout = num->number;
-    }
-  }
-  uint32_t id = neo_js_context_create_macro_task(
-      ctx, argv[0], neo_js_context_create_undefined(ctx), 0, NULL, timeout,
-      true);
-  return neo_js_context_create_number(ctx, id);
-}
-
-static neo_js_variable_t js_clear_interval(neo_js_context_t ctx,
-                                           neo_js_variable_t self,
-                                           uint32_t argc,
-                                           neo_js_variable_t *argv) {
-  if (argc > 0) {
-    neo_js_variable_t vid = neo_js_context_to_number(ctx, argv[0]);
-    neo_js_number_t id = neo_js_variable_to_number(vid);
-    if (!isnan(id->number) && id->number >= 0) {
-      neo_js_context_kill_macro_task(ctx, id->number);
-    }
-  }
-  return neo_js_context_create_undefined(ctx);
-}
-
-static void disp_js_variable(neo_js_context_t ctx, neo_js_variable_t variable) {
-  if (neo_js_variable_get_type(variable)->kind == NEO_TYPE_ERROR) {
-    neo_js_variable_t error = neo_js_error_get_error(ctx, variable);
-    error = neo_js_context_to_string(ctx, error);
-    neo_js_string_t serror = neo_js_variable_to_string(error);
-    fprintf(stderr, "Uncaught %ls\n", serror->string);
-  } else {
-    neo_js_variable_t string = neo_js_context_to_string(ctx, variable);
-    neo_js_string_t str = neo_js_variable_to_string(string);
-    printf("%ls\n", str->string);
-  }
-}
 
 int main(int argc, char *argv[]) {
   setlocale(LC_ALL, "");
   neo_allocator_t allocator = neo_create_default_allocator();
   neo_error_initialize(allocator);
-  char *buf = neo_fs_read_file(allocator, L"../index.mjs");
   neo_js_runtime_t runtime = neo_create_js_runtime(allocator);
   neo_js_context_t ctx = neo_create_js_context(allocator, runtime);
-  neo_js_context_push_scope(ctx);
-  neo_js_variable_t std = neo_js_context_create_object(ctx, NULL, NULL);
-  neo_js_variable_t println =
-      neo_js_context_create_cfunction(ctx, L"println", js_println);
-  neo_js_context_set_field(
-      ctx, std, neo_js_context_create_string(ctx, L"println"), println);
-  neo_js_context_create_module(ctx, L"std", std);
 
-  neo_js_variable_t global = neo_js_context_get_global(ctx);
-  neo_js_context_set_field(
-      ctx, global, neo_js_context_create_string(ctx, L"setTimeout"),
-      neo_js_context_create_cfunction(ctx, L"setTimeout", js_set_timeout));
-  neo_js_context_set_field(
-      ctx, global, neo_js_context_create_string(ctx, L"clearTimeout"),
-      neo_js_context_create_cfunction(ctx, L"clearTimeout", js_clear_timeout));
-  neo_js_context_set_field(
-      ctx, global, neo_js_context_create_string(ctx, L"setInterval"),
-      neo_js_context_create_cfunction(ctx, L"setInterval", js_set_interval));
-  neo_js_context_set_field(ctx, global,
-                           neo_js_context_create_string(ctx, L"clearInterval"),
-                           neo_js_context_create_cfunction(
-                               ctx, L"clearInterval", js_clear_interval));
-  neo_js_context_pop_scope(ctx);
+  char *buf = neo_fs_read_file(allocator, L"../index.mjs");
   neo_js_variable_t result = neo_js_context_eval(ctx, L"../index.mjs", buf);
+  neo_allocator_free(allocator, buf);
+
   if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
-    disp_js_variable(ctx, result);
+    result = neo_js_error_get_error(ctx, result);
+    result = neo_js_context_to_string(ctx, result);
+    fprintf(stderr, "Uncaught %ls\n",
+            neo_js_variable_to_string(result)->string);
   } else {
-    if (neo_js_context_is_thenable(ctx, result)) {
-      neo_js_variable_t then = neo_js_context_get_field(
-          ctx, result, neo_js_context_create_string(ctx, L"then"));
-      neo_js_variable_t args[] = {
-          neo_js_context_create_null(ctx),
-          neo_js_context_get_field(
-              ctx, global, neo_js_context_create_string(ctx, L"println"))};
-      neo_js_context_call(ctx, then, result, 2, args);
-    }
     while (!neo_js_context_is_ready(ctx)) {
       neo_js_context_next_tick(ctx);
     }
   }
   neo_allocator_free(allocator, ctx);
   neo_allocator_free(allocator, runtime);
-  neo_allocator_free(allocator, buf);
   neo_delete_allocator(allocator);
   return 0;
 }

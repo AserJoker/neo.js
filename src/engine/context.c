@@ -30,6 +30,10 @@
 #include "engine/basetype/undefined.h"
 #include "engine/basetype/uninitialize.h"
 #include "engine/handle.h"
+#include "engine/lib/clear_interval.h"
+#include "engine/lib/clear_timeout.h"
+#include "engine/lib/set_interval.h"
+#include "engine/lib/set_timeout.h"
 #include "engine/runtime.h"
 #include "engine/scope.h"
 #include "engine/stackframe.h"
@@ -38,6 +42,7 @@
 #include "engine/std/async_function.h"
 #include "engine/std/async_generator.h"
 #include "engine/std/async_generator_function.h"
+#include "engine/std/console.h"
 #include "engine/std/error.h"
 #include "engine/std/function.h"
 #include "engine/std/generator.h"
@@ -492,6 +497,41 @@ static void neo_js_context_init_std_promise(neo_js_context_t ctx) {
       true, false, true);
 }
 
+static void neo_js_context_init_std_console(neo_js_context_t ctx) {
+  neo_js_variable_t console_constructor = neo_js_context_create_cfunction(
+      ctx, L"Console", neo_js_console_constructor);
+  neo_js_variable_t prototype =
+      neo_js_context_get_field(ctx, console_constructor,
+                               neo_js_context_create_string(ctx, L"prototype"));
+  neo_js_context_set_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"log"),
+      neo_js_context_create_cfunction(ctx, L"log", neo_js_console_log));
+
+  neo_js_variable_t console =
+      neo_js_context_construct(ctx, console_constructor, 0, NULL);
+  neo_js_context_set_field(ctx, ctx->std.global,
+                           neo_js_context_create_string(ctx, L"console"),
+                           console);
+}
+
+static void neo_js_context_init_lib(neo_js_context_t ctx) {
+  neo_js_context_set_field(
+      ctx, ctx->std.global, neo_js_context_create_string(ctx, L"setTimeout"),
+      neo_js_context_create_cfunction(ctx, L"setTimeout", neo_js_set_timeout));
+  neo_js_context_set_field(ctx, ctx->std.global,
+                           neo_js_context_create_string(ctx, L"clearTimeout"),
+                           neo_js_context_create_cfunction(
+                               ctx, L"clearTimeout", neo_js_clear_timeout));
+  neo_js_context_set_field(ctx, ctx->std.global,
+                           neo_js_context_create_string(ctx, L"setInterval"),
+                           neo_js_context_create_cfunction(
+                               ctx, L"setInterval", neo_js_set_interval));
+  neo_js_context_set_field(ctx, ctx->std.global,
+                           neo_js_context_create_string(ctx, L"clearInterval"),
+                           neo_js_context_create_cfunction(
+                               ctx, L"clearInterval", neo_js_clear_interval));
+}
+
 static void neo_js_context_init_std(neo_js_context_t ctx) {
   ctx->std.object_constructor = neo_js_context_create_cfunction(
       ctx, L"Object", &neo_js_object_constructor);
@@ -607,6 +647,8 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
 
   neo_js_context_init_std_promise(ctx);
 
+  neo_js_context_init_std_console(ctx);
+
   neo_js_context_set_field(ctx, ctx->std.global,
                            neo_js_context_create_string(ctx, L"global"),
                            ctx->std.global);
@@ -709,6 +751,7 @@ neo_js_context_t neo_create_js_context(neo_allocator_t allocator,
   neo_list_push(ctx->stacktrace, frame);
   neo_js_context_push_stackframe(ctx, NULL, L"_.eval", 0, 0);
   neo_js_context_init_std(ctx);
+  neo_js_context_init_lib(ctx);
   return ctx;
 }
 
@@ -3167,7 +3210,7 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const wchar_t *file,
       neo_allocator_free(allocator, filepath);
       return neo_js_context_create_compile_error(ctx);
     };
-    
+
     program = TRY(neo_ast_write_node(allocator, filepath, root)) {
       neo_allocator_free(allocator, root);
       neo_allocator_free(allocator, filepath);
