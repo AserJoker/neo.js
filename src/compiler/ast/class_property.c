@@ -4,6 +4,7 @@
 #include "compiler/ast/expression.h"
 #include "compiler/ast/node.h"
 #include "compiler/ast/object_key.h"
+#include "compiler/ast/private_name.h"
 #include "compiler/program.h"
 #include "compiler/token.h"
 #include "compiler/writer.h"
@@ -44,7 +45,7 @@ static void neo_ast_class_property_write(neo_allocator_t allocator,
   if (!self->static_) {
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_THIS);
   }
-  if (!self->computed && self->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
+  if (!self->computed) {
     wchar_t *name = neo_location_get(allocator, self->identifier->location);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
     neo_program_add_string(allocator, ctx->program, name);
@@ -173,6 +174,12 @@ neo_ast_node_t neo_ast_read_class_property(neo_allocator_t allocator,
   SKIP_ALL(allocator, file, &current, onerror);
   node->identifier = TRY(neo_ast_read_object_key(allocator, file, &current)) {
     goto onerror;
+  }
+  if (!node->identifier) {
+    node->identifier =
+        TRY(neo_ast_read_private_name(allocator, file, &current)) {
+      goto onerror;
+    }
   }
   if (!node->identifier) {
     node->identifier =

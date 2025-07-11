@@ -5,6 +5,7 @@
 #include "compiler/ast/function_body.h"
 #include "compiler/ast/node.h"
 #include "compiler/ast/object_key.h"
+#include "compiler/ast/private_name.h"
 #include "compiler/program.h"
 #include "compiler/scope.h"
 #include "compiler/token.h"
@@ -64,7 +65,7 @@ static void neo_ast_class_method_write(neo_allocator_t allocator,
     neo_program_add_string(allocator, ctx->program, L"prototype");
     neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
   }
-  if (!self->computed && self->name->type == NEO_NODE_TYPE_IDENTIFIER) {
+  if (!self->computed) {
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
     wchar_t *name = neo_location_get(allocator, self->name->location);
     neo_program_add_string(allocator, ctx->program, name);
@@ -239,6 +240,11 @@ neo_ast_node_t neo_ast_read_class_method(neo_allocator_t allocator,
   SKIP_ALL(allocator, file, &current, onerror);
   node->name = TRY(neo_ast_read_object_key(allocator, file, &current)) {
     goto onerror;
+  }
+  if (!node->name) {
+    node->name = TRY(neo_ast_read_private_name(allocator, file, &current)) {
+      goto onerror;
+    }
   }
   if (!node->name) {
     node->name =

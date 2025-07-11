@@ -127,6 +127,10 @@ neo_ast_node_t neo_ast_read_identifier(neo_allocator_t allocator,
     neo_allocator_free(allocator, token);
     return NULL;
   }
+  if (*token->location.begin.offset == '#') {
+    neo_allocator_free(allocator, token);
+    return NULL;
+  }
   neo_allocator_free(allocator, token);
   node = neo_create_ast_literal_identify(allocator);
   node->node.location.begin = *position;

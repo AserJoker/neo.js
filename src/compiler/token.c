@@ -375,7 +375,7 @@ neo_token_t neo_read_identify_token(neo_allocator_t allocator,
       return NULL;
     }
   } else if (!neo_utf8_char_is_id_start(chr) && !neo_utf8_char_is(chr, "$") &&
-             !neo_utf8_char_is(chr, "_")) {
+             !neo_utf8_char_is(chr, "_") && !neo_utf8_char_is(chr, "#")) {
     return NULL;
   } else {
     current.column += chr.end - chr.begin;
