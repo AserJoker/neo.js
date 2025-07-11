@@ -1,1 +1,5 @@
-setTimeout(() => console.log('hello world'), 1000)
+async function test() {
+  return 123;
+}
+const val = await test();
+console.log(val)

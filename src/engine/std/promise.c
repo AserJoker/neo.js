@@ -17,6 +17,8 @@ struct _neo_js_promise_t {
   neo_list_t on_fulfilled_callbacks;
   neo_list_t on_rejected_callbacks;
   neo_js_handle_t value;
+  neo_js_handle_t error;
+  neo_js_context_t ctx;
 };
 
 static neo_js_variable_t
@@ -70,16 +72,28 @@ neo_js_variable_t neo_js_promise_reject(neo_js_context_t ctx,
 
 static void neo_js_promise_dispose(neo_allocator_t allocator,
                                    neo_js_promise_t promise) {
+  if (promise->error) {
+    if (neo_list_get_size(promise->on_rejected_callbacks) == 0) {
+      neo_js_variable_t error =
+          neo_js_context_create_variable(promise->ctx, promise->error, NULL);
+      error = neo_js_context_to_string(promise->ctx, error);
+      fprintf(stderr, "Uncaught promisify %ls\n",
+              neo_js_variable_to_string(error)->string);
+    }
+  }
   neo_allocator_free(allocator, promise->on_fulfilled_callbacks);
   neo_allocator_free(allocator, promise->on_rejected_callbacks);
 }
-static neo_js_promise_t neo_create_js_promise(neo_allocator_t allocator) {
+static neo_js_promise_t neo_create_js_promise(neo_allocator_t allocator,
+                                              neo_js_context_t ctx) {
   neo_js_promise_t promise = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_promise_t), neo_js_promise_dispose);
   promise->status = NEO_PROMISE_PENDDING;
   promise->on_fulfilled_callbacks = neo_create_list(allocator, NULL);
   promise->on_rejected_callbacks = neo_create_list(allocator, NULL);
   promise->value = NULL;
+  promise->error = NULL;
+  promise->ctx = ctx;
   return promise;
 }
 
@@ -141,8 +155,8 @@ static neo_js_variable_t neo_js_reject(neo_js_context_t ctx,
     } else {
       value = neo_js_context_create_undefined(ctx);
     }
-    promise->value = neo_js_variable_get_handle(value);
-    neo_js_handle_add_parent(promise->value, neo_js_variable_get_handle(self));
+    promise->error = neo_js_variable_get_handle(value);
+    neo_js_handle_add_parent(promise->error, neo_js_variable_get_handle(self));
     for (neo_list_node_t it =
              neo_list_get_first(promise->on_rejected_callbacks);
          it != neo_list_get_tail(promise->on_rejected_callbacks);
@@ -167,7 +181,7 @@ neo_js_variable_t neo_js_promise_constructor(neo_js_context_t ctx,
         ctx, NEO_ERROR_TYPE, L" Promise resolver undefined is not a function");
   }
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
-  neo_js_promise_t promise = neo_create_js_promise(allocator);
+  neo_js_promise_t promise = neo_create_js_promise(allocator, ctx);
   neo_js_variable_t resolve =
       neo_js_context_create_cfunction(ctx, L"resolve", neo_js_resolve);
   neo_js_context_bind(ctx, resolve, self);
@@ -278,7 +292,7 @@ static neo_js_variable_t neo_js_resolver(neo_js_context_t ctx,
                                      &value, 0, false);
   } else if (promise->status == NEO_PROMISE_REJECTED) {
     neo_js_variable_t value =
-        neo_js_context_create_variable(ctx, promise->value, NULL);
+        neo_js_context_create_variable(ctx, promise->error, NULL);
     neo_js_context_create_micro_task(ctx, packed_reject,
                                      neo_js_context_create_undefined(ctx), 1,
                                      &value, 0, false);
