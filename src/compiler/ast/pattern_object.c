@@ -38,7 +38,6 @@ static void neo_ast_pattern_object_write(neo_allocator_t allocator,
   for (neo_list_node_t it = neo_list_get_first(self->items);
        it != neo_list_get_tail(self->items); it = neo_list_node_next(it)) {
     neo_ast_node_t item = neo_list_node_get(it);
-    // TRY(item->write(allocator, ctx, item)) { return; }
     if (item->type == NEO_NODE_TYPE_PATTERN_OBJECT_ITEM) {
       neo_ast_pattern_object_item_t oitem = (neo_ast_pattern_object_item_t)item;
       if (oitem->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {

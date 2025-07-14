@@ -184,11 +184,11 @@ neo_js_variable_t neo_js_promise_constructor(neo_js_context_t ctx,
   neo_js_promise_t promise = neo_create_js_promise(allocator, ctx);
   neo_js_variable_t resolve =
       neo_js_context_create_cfunction(ctx, L"resolve", neo_js_resolve);
-  neo_js_context_bind(ctx, resolve, self);
+  neo_js_callable_set_bind(ctx, resolve, self);
   neo_js_context_set_internal(ctx, self, L"[[resolve]]", resolve);
   neo_js_variable_t reject =
       neo_js_context_create_cfunction(ctx, L"reject", neo_js_reject);
-  neo_js_context_bind(ctx, reject, self);
+  neo_js_callable_set_bind(ctx, reject, self);
   neo_js_context_set_internal(ctx, self, L"[[reject]]", reject);
   neo_js_context_set_opaque(ctx, self, L"[[promise]]", promise);
   neo_js_variable_t resolver = argv[0];
@@ -321,7 +321,7 @@ neo_js_variable_t neo_js_promise_then(neo_js_context_t ctx,
       neo_js_context_create_cfunction(ctx, NULL, neo_js_resolver);
   neo_js_callable_set_closure(ctx, resolver, L"onFulfilled", on_fulfilled);
   neo_js_callable_set_closure(ctx, resolver, L"onRejected", on_rejected);
-  neo_js_context_bind(ctx, resolver, self);
+  neo_js_callable_set_bind(ctx, resolver, self);
   neo_js_variable_t promise = neo_js_context_get_promise_constructor(ctx);
   return neo_js_context_construct(ctx, promise, 1, &resolver);
 }

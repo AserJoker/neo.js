@@ -102,7 +102,12 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
     if (member->host->type == NEO_NODE_TYPE_EXPRESSION_SUPER) {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_SUPER_FIELD);
     } else {
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+      if (member->field->type == NEO_NODE_TYPE_PRIVATE_NAME) {
+        neo_program_add_code(allocator, ctx->program,
+                             NEO_ASM_SET_PRIVATE_FIELD);
+      } else {
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+      }
     }
     neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   } else if (self->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {

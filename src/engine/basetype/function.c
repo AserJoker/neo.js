@@ -78,6 +78,9 @@ static void neo_js_function_copy_fn(neo_js_context_t ctx,
   if (func->callable.bind) {
     neo_js_handle_add_parent(func->callable.bind, htarget);
   }
+  if (func->callable.clazz) {
+    neo_js_handle_add_parent(func->callable.clazz, htarget);
+  }
   for (neo_hash_map_node_t it = neo_hash_map_get_first(func->callable.closure);
        it != neo_hash_map_get_tail(func->callable.closure);
        it = neo_hash_map_node_next(it)) {
@@ -124,6 +127,7 @@ neo_js_function_t neo_create_js_function(neo_allocator_t allocator,
   func->callable.closure = neo_create_hash_map(allocator, &initialize);
   func->callable.name = NULL;
   func->callable.bind = NULL;
+  func->callable.clazz = NULL;
   func->address = 0;
   func->program = program;
   func->source = NULL;

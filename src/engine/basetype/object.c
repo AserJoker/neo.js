@@ -179,6 +179,15 @@ neo_create_js_object_property(neo_allocator_t allocator) {
   property->set = NULL;
   return property;
 }
+neo_js_object_private_t
+neo_create_js_object_private(neo_allocator_t allocator) {
+  neo_js_object_private_t property = neo_allocator_alloc(
+      allocator, sizeof(struct _neo_js_object_private_t), NULL);
+  property->value = NULL;
+  property->get = NULL;
+  property->set = NULL;
+  return property;
+}
 
 neo_js_object_property_t
 neo_js_object_get_own_property(neo_js_context_t ctx, neo_js_variable_t self,
@@ -615,6 +624,7 @@ void neo_js_object_dispose(neo_allocator_t allocator, neo_js_object_t self) {
   neo_allocator_free(allocator, self->internal);
   neo_allocator_free(allocator, self->keys);
   neo_allocator_free(allocator, self->symbol_keys);
+  neo_allocator_free(allocator, self->privates);
 }
 
 void neo_js_object_init(neo_allocator_t allocator, neo_js_object_t object) {
@@ -637,6 +647,7 @@ void neo_js_object_init(neo_allocator_t allocator, neo_js_object_t object) {
   object->constructor = NULL;
   object->keys = neo_create_list(allocator, NULL);
   object->symbol_keys = neo_create_list(allocator, NULL);
+  object->privates = NULL;
 }
 
 int8_t neo_js_object_compare_key(neo_js_handle_t handle1,

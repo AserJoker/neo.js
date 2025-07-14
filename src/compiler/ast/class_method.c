@@ -129,7 +129,11 @@ static void neo_ast_class_method_write(neo_allocator_t allocator,
     neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_METHOD);
+  if (self->name->type == NEO_NODE_TYPE_PRIVATE_NAME) {
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_DEF_PRIVATE_METHOD);
+  } else {
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_METHOD);
+  }
   if (!self->static_) {
     neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   }

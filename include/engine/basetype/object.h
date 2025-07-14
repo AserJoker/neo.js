@@ -20,9 +20,16 @@ typedef struct _neo_js_object_property_t {
   bool enumerable;
 } *neo_js_object_property_t;
 
+typedef struct _neo_js_object_private_t {
+  neo_js_handle_t value;
+  neo_js_handle_t get;
+  neo_js_handle_t set;
+} *neo_js_object_private_t;
+
 struct _neo_js_object_t {
   struct _neo_js_value_t value;
   neo_hash_map_t properties;
+  neo_hash_map_t privates;
   neo_hash_map_t internal;
   neo_list_t keys;
   neo_list_t symbol_keys;
@@ -48,6 +55,8 @@ neo_js_object_t neo_create_js_object(neo_allocator_t allocator);
 
 neo_js_object_property_t
 neo_create_js_object_property(neo_allocator_t allocator);
+
+neo_js_object_private_t neo_create_js_object_private(neo_allocator_t allocator);
 
 neo_js_object_t neo_js_value_to_object(neo_js_value_t value);
 

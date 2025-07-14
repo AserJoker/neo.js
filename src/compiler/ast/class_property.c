@@ -59,9 +59,18 @@ static void neo_ast_class_property_write(neo_allocator_t allocator,
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_UNDEFINED);
   }
   if (self->accessor) {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_INIT_ACCESSOR);
+    if (self->identifier->type == NEO_NODE_TYPE_PRIVATE_NAME) {
+      neo_program_add_code(allocator, ctx->program,
+                           NEO_ASM_INIT_PRIVATE_ACCESSOR);
+    } else {
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_INIT_ACCESSOR);
+    }
   } else {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_INIT_FIELD);
+    if (self->identifier->type == NEO_NODE_TYPE_PRIVATE_NAME) {
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_INIT_PRIVATE_FIELD);
+    } else {
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_INIT_FIELD);
+    }
   }
   if (!self->static_) {
     neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);

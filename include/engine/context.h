@@ -16,6 +16,7 @@ typedef struct _neo_js_context_t *neo_js_context_t;
 
 typedef enum _neo_js_error_type_t {
   NEO_ERROR_SYNTAX,
+  NEO_ERROR_INTERNAL,
   NEO_ERROR_RANGE,
   NEO_ERROR_TYPE,
   NEO_ERROR_REFERENCE
@@ -147,6 +148,26 @@ neo_js_variable_t neo_js_context_set_field(neo_js_context_t ctx,
                                            neo_js_variable_t field,
                                            neo_js_variable_t value);
 
+neo_js_variable_t neo_js_context_get_private(neo_js_context_t ctx,
+                                             neo_js_variable_t object,
+                                             neo_js_variable_t field);
+
+neo_js_variable_t neo_js_context_set_private(neo_js_context_t ctx,
+                                             neo_js_variable_t object,
+                                             neo_js_variable_t field,
+                                             neo_js_variable_t value);
+
+neo_js_variable_t neo_js_context_def_private(neo_js_context_t ctx,
+                                             neo_js_variable_t object,
+                                             neo_js_variable_t field,
+                                             neo_js_variable_t value);
+
+neo_js_variable_t neo_js_context_def_private_accessor(neo_js_context_t ctx,
+                                                      neo_js_variable_t object,
+                                                      neo_js_variable_t field,
+                                                      neo_js_variable_t getter,
+                                                      neo_js_variable_t setter);
+
 bool neo_js_context_has_field(neo_js_context_t ctx, neo_js_variable_t object,
                               neo_js_variable_t field);
 
@@ -258,9 +279,6 @@ neo_js_context_create_async_generator_function(neo_js_context_t ctx,
 
 neo_js_variable_t neo_js_context_create_async_function(neo_js_context_t ctx,
                                                        neo_program_t program);
-
-void neo_js_context_bind(neo_js_context_t ctx, neo_js_variable_t func,
-                         neo_js_variable_t self);
 
 neo_js_variable_t neo_js_context_typeof(neo_js_context_t ctx,
                                         neo_js_variable_t variable);

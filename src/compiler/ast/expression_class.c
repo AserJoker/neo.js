@@ -122,7 +122,7 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
   neo_writer_pop_scope(allocator, ctx, self->node.scope);
   neo_program_set_current(ctx->program, endaddr);
 
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_FUNCTION);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_CLASS);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_ADDRESS);
   neo_program_add_address(allocator, ctx->program, begin);
   wchar_t *source = neo_location_get(allocator, self->node.location);
@@ -185,6 +185,12 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
   neo_program_add_code(allocator, ctx->program, NEO_ASM_RET);
   neo_program_set_current(ctx->program, static_init_end);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_FUNCTION);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+  neo_program_add_integer(allocator, ctx->program, 2);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_BIND);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+  neo_program_add_integer(allocator, ctx->program, 2);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_CLASS);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_ADDRESS);
   neo_program_add_address(allocator, ctx->program, static_init_begin);
   for (neo_list_node_t it = neo_list_get_first(self->closure);
@@ -195,16 +201,9 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
     neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-  neo_program_add_string(allocator, ctx->program, L"call");
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARRAY);
   neo_program_add_number(allocator, ctx->program, 0);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_NUMBER);
-  neo_program_add_number(allocator, ctx->program, 0);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
-  neo_program_add_integer(allocator, ctx->program, 5);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_MEMBER_CALL);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_CALL);
   neo_program_add_integer(allocator, ctx->program,
                           self->node.location.begin.line);
   neo_program_add_integer(allocator, ctx->program,

@@ -112,9 +112,9 @@ static void neo_ast_class_accessor_write(neo_allocator_t allocator,
     neo_allocator_free(allocator, name);
   }
   if (self->kind == NEO_ACCESSOR_KIND_GET) {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_GETTER);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_DEF_PRIVATE_GETTER);
   } else {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_SETTER);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_DEF_PRIVATE_SETTER);
   }
   if (!self->static_) {
     neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
@@ -217,16 +217,16 @@ neo_ast_node_t neo_ast_read_class_accessor(neo_allocator_t allocator,
     goto onerror;
   }
   if (!node->name) {
+    node->name = TRY(neo_ast_read_private_name(allocator, file, &current)) {
+      goto onerror;
+    }
+  }
+  if (!node->name) {
     node->name =
         TRY(neo_ast_read_object_computed_key(allocator, file, &current)) {
       goto onerror;
     }
     node->computed = true;
-  }
-  if (!node->name) {
-    node->name = TRY(neo_ast_read_private_name(allocator, file, &current)) {
-      goto onerror;
-    }
   }
   if (!node->name) {
     goto onerror;

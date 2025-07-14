@@ -47,6 +47,7 @@
 #include "engine/std/function.h"
 #include "engine/std/generator.h"
 #include "engine/std/generator_function.h"
+#include "engine/std/internal_error.h"
 #include "engine/std/object.h"
 #include "engine/std/promise.h"
 #include "engine/std/range_error.h"
@@ -109,6 +110,7 @@ struct _neo_js_context_t {
     neo_js_variable_t syntax_error_constructor;
     neo_js_variable_t type_error_constructor;
     neo_js_variable_t reference_error_constructor;
+    neo_js_variable_t internal_error_constructor;
     neo_js_variable_t range_error_constructor;
   } std;
 };
@@ -602,6 +604,11 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
   ctx->std.reference_error_constructor = neo_js_context_create_cfunction(
       ctx, L"ReferenceError", neo_js_reference_error_constructor);
   neo_js_context_extends(ctx, ctx->std.reference_error_constructor,
+                         ctx->std.error_constructor);
+
+  ctx->std.internal_error_constructor = neo_js_context_create_cfunction(
+      ctx, L"InternalError", neo_js_internal_error_constructor);
+  neo_js_context_extends(ctx, ctx->std.internal_error_constructor,
                          ctx->std.error_constructor);
 
   ctx->std.array_constructor =
@@ -1241,6 +1248,198 @@ neo_js_variable_t neo_js_context_set_field(neo_js_context_t ctx,
   return result;
 }
 
+neo_js_variable_t neo_js_context_get_private(neo_js_context_t ctx,
+                                             neo_js_variable_t object,
+                                             neo_js_variable_t field) {
+  neo_js_object_t obj = neo_js_variable_to_object(object);
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  neo_js_string_t key = neo_js_variable_to_string(field);
+  if (!obj->privates) {
+    size_t len = wcslen(key->string) + 64;
+    wchar_t *message =
+        neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
+    swprintf(message, len,
+             L"Private field '%ls' must be declared in an enclosing class.",
+             key->string);
+    neo_js_variable_t error =
+        neo_js_context_create_error(ctx, NEO_ERROR_TYPE, message);
+    neo_allocator_free(allocator, message);
+    return error;
+  }
+  neo_js_object_private_t prop =
+      neo_hash_map_get(obj->privates, key->string, NULL, NULL);
+  if (prop) {
+    if (prop->value) {
+      return neo_js_context_create_variable(ctx, prop->value, NULL);
+    } else {
+      if (prop->get) {
+        neo_js_variable_t getter =
+            neo_js_context_create_variable(ctx, prop->get, NULL);
+        return neo_js_context_call(ctx, getter, object, 0, NULL);
+      } else {
+        size_t len = wcslen(key->string) + 64;
+        wchar_t *message =
+            neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
+        swprintf(message, len, L"Private field '%ls' hasn't getter.",
+                 key->string);
+        neo_js_variable_t error =
+            neo_js_context_create_error(ctx, NEO_ERROR_TYPE, message);
+        neo_allocator_free(allocator, message);
+        return error;
+      }
+    }
+  } else {
+    size_t len = wcslen(key->string) + 64;
+    wchar_t *message =
+        neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
+    swprintf(message, len,
+             L"Private field '%ls' must be declared in an enclosing class.",
+             key->string);
+    neo_js_variable_t error =
+        neo_js_context_create_error(ctx, NEO_ERROR_TYPE, message);
+    neo_allocator_free(allocator, message);
+    return error;
+  }
+}
+
+neo_js_variable_t neo_js_context_set_private(neo_js_context_t ctx,
+                                             neo_js_variable_t object,
+                                             neo_js_variable_t field,
+                                             neo_js_variable_t value) {
+  neo_js_object_t obj = neo_js_variable_to_object(object);
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  neo_js_string_t key = neo_js_variable_to_string(field);
+  if (!obj->privates) {
+    size_t len = wcslen(key->string) + 64;
+    wchar_t *message =
+        neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
+    swprintf(message, len,
+             L"Private field '%ls' must be declared in an enclosing class.",
+             key->string);
+    neo_js_variable_t error =
+        neo_js_context_create_error(ctx, NEO_ERROR_TYPE, message);
+    neo_allocator_free(allocator, message);
+    return error;
+  }
+  neo_js_object_private_t prop =
+      neo_hash_map_get(obj->privates, key->string, NULL, NULL);
+  if (!prop) {
+    size_t len = wcslen(key->string) + 64;
+    wchar_t *message =
+        neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
+    swprintf(message, len,
+             L"Private field '%ls' must be declared in an enclosing class.",
+             key->string);
+    neo_js_variable_t error =
+        neo_js_context_create_error(ctx, NEO_ERROR_TYPE, message);
+    neo_allocator_free(allocator, message);
+    return error;
+  } else {
+    if (prop->value) {
+      neo_js_handle_t root = neo_js_scope_get_root_handle(ctx->scope);
+      neo_js_handle_add_parent(prop->value, root);
+      prop->value = neo_js_variable_get_handle(value);
+      neo_js_handle_add_parent(prop->value, neo_js_variable_get_handle(object));
+    } else if (prop->set) {
+      neo_js_variable_t setter =
+          neo_js_context_create_variable(ctx, prop->set, NULL);
+      return neo_js_context_call(ctx, setter, object, 0, NULL);
+    } else {
+      size_t len = wcslen(key->string) + 64;
+      wchar_t *message =
+          neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
+      swprintf(message, len, L"Private field '%ls' is readonly.", key->string);
+      neo_js_variable_t error =
+          neo_js_context_create_error(ctx, NEO_ERROR_TYPE, message);
+      neo_allocator_free(allocator, message);
+      return error;
+    }
+  }
+  return neo_js_context_create_undefined(ctx);
+}
+
+neo_js_variable_t neo_js_context_def_private(neo_js_context_t ctx,
+                                             neo_js_variable_t object,
+                                             neo_js_variable_t field,
+                                             neo_js_variable_t value) {
+  neo_js_string_t key = neo_js_variable_to_string(field);
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  neo_js_object_t obj = neo_js_variable_to_object(object);
+  if (!obj->privates) {
+    neo_hash_map_initialize_t initialize = {0};
+    initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
+    initialize.compare = (neo_compare_fn_t)wcscmp;
+    initialize.auto_free_key = true;
+    initialize.auto_free_value = true;
+    obj->privates = neo_create_hash_map(allocator, &initialize);
+  }
+  if (neo_hash_map_has(obj->privates, key->string, NULL, NULL)) {
+    neo_js_string_t str = neo_js_variable_to_string(field);
+    size_t len = wcslen(str->string) + 64;
+    wchar_t *message =
+        neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
+    swprintf(message, len, L"Identifier '%ls' has already been declared",
+             str->string);
+    neo_js_variable_t error =
+        neo_js_context_create_error(ctx, NEO_ERROR_SYNTAX, message);
+    neo_allocator_free(allocator, message);
+    return error;
+  }
+  neo_js_object_private_t prop = neo_create_js_object_private(allocator);
+  prop->value = neo_js_variable_get_handle(value);
+  neo_hash_map_set(obj->privates, neo_create_wstring(allocator, key->string),
+                   prop, NULL, NULL);
+  neo_js_handle_add_parent(prop->value, neo_js_variable_get_handle(object));
+  return neo_js_context_create_undefined(ctx);
+}
+
+neo_js_variable_t neo_js_context_def_private_accessor(
+    neo_js_context_t ctx, neo_js_variable_t object, neo_js_variable_t field,
+    neo_js_variable_t getter, neo_js_variable_t setter) {
+  neo_js_string_t key = neo_js_variable_to_string(field);
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  neo_js_object_t obj = neo_js_variable_to_object(object);
+  if (!obj->privates) {
+    neo_hash_map_initialize_t initialize = {0};
+    initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
+    initialize.compare = (neo_compare_fn_t)wcscmp;
+    initialize.auto_free_key = true;
+    initialize.auto_free_value = true;
+    obj->privates = neo_create_hash_map(allocator, &initialize);
+  }
+  neo_js_object_private_t prop =
+      neo_hash_map_get(obj->privates, key->string, NULL, NULL);
+  if (!prop) {
+    prop = neo_create_js_object_private(allocator);
+    prop->get = neo_js_variable_get_handle(getter);
+    prop->set = neo_js_variable_get_handle(setter);
+    neo_hash_map_set(obj->privates, neo_create_wstring(allocator, key->string),
+                     prop, NULL, NULL);
+  } else {
+    if (prop->value || (prop->get && getter) || (prop->set && setter)) {
+      neo_js_string_t str = neo_js_variable_to_string(field);
+      size_t len = wcslen(str->string) + 64;
+      wchar_t *message =
+          neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
+      swprintf(message, len, L"Identifier '%ls' has already been declared",
+               str->string);
+      neo_js_variable_t error =
+          neo_js_context_create_error(ctx, NEO_ERROR_SYNTAX, message);
+      neo_allocator_free(allocator, message);
+      return error;
+    }
+    if (getter) {
+      prop->get = neo_js_variable_get_handle(getter);
+      neo_js_handle_add_parent(prop->get, neo_js_variable_get_handle(object));
+    }
+    if (setter) {
+      prop->set = neo_js_variable_get_handle(setter);
+      neo_js_handle_add_parent(prop->set, neo_js_variable_get_handle(object));
+    }
+  }
+  return neo_js_context_create_undefined(ctx);
+}
+
 bool neo_js_context_has_field(neo_js_context_t ctx, neo_js_variable_t object,
                               neo_js_variable_t field) {
   object = neo_js_context_to_object(ctx, object);
@@ -1595,12 +1794,12 @@ static neo_js_variable_t
 neo_js_context_call_cfunction(neo_js_context_t ctx, neo_js_variable_t callee,
                               neo_js_variable_t self, uint32_t argc,
                               neo_js_variable_t *argv) {
-  neo_js_callable_t callable = neo_js_variable_to_callable(callee);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
   neo_js_scope_t scope = neo_create_js_scope(allocator, ctx->root);
   neo_js_scope_t current = neo_js_context_set_scope(ctx, scope);
-  if (callable->bind) {
-    self = neo_js_context_create_variable(ctx, callable->bind, NULL);
+  neo_js_variable_t bind = neo_js_callable_get_bind(ctx, callee);
+  if (bind) {
+    self = bind;
   } else {
     self = neo_js_scope_create_variable(allocator, scope,
                                         neo_js_variable_get_handle(self), NULL);
@@ -1638,11 +1837,14 @@ static neo_js_variable_t neo_js_context_call_generator_function(
   neo_js_variable_t result =
       neo_js_context_construct(ctx, ctx->std.generator_constructor, 0, NULL);
   neo_js_scope_t current = neo_js_context_set_scope(ctx, scope);
-  neo_js_handle_t bind = function->callable.bind;
-  if (!function->callable.bind) {
-    bind = neo_js_variable_get_handle(self);
+  neo_js_variable_t bind = neo_js_callable_get_bind(ctx, callee);
+  if (bind) {
+    self = bind;
+  } else {
+    self = neo_js_context_create_variable(ctx, neo_js_variable_get_handle(self),
+                                          NULL);
   }
-  self = neo_js_context_create_variable(ctx, bind, NULL);
+  neo_js_variable_t clazz = neo_js_callable_get_class(ctx, callee);
   neo_js_variable_t arguments = neo_js_context_create_object(ctx, NULL, NULL);
   neo_js_scope_set_variable(allocator, scope, arguments, L"arguments");
   for (uint32_t idx = 0; idx < argc; idx++) {
@@ -1669,7 +1871,7 @@ static neo_js_variable_t neo_js_context_call_generator_function(
                                  scope, hvalue, name);
   }
   neo_js_context_set_scope(ctx, current);
-  neo_js_vm_t vm = neo_create_js_vm(ctx, self, function->address, scope);
+  neo_js_vm_t vm = neo_create_js_vm(ctx, self, clazz, function->address, scope);
   neo_js_variable_t coroutine =
       neo_js_context_create_coroutine(ctx, vm, function->program);
   neo_js_context_set_internal(ctx, result, L"[[coroutine]]", coroutine);
@@ -1851,11 +2053,14 @@ static neo_js_variable_t neo_js_context_call_async_function(
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_js_scope_t scope = neo_create_js_scope(allocator, ctx->root);
   neo_js_scope_t current = neo_js_context_set_scope(ctx, scope);
-  neo_js_handle_t bind = function->callable.bind;
-  if (!bind) {
-    bind = neo_js_variable_get_handle(self);
+  neo_js_variable_t bind = neo_js_callable_get_bind(ctx, callee);
+  if (bind) {
+    self = bind;
+  } else {
+    self = neo_js_context_create_variable(ctx, neo_js_variable_get_handle(self),
+                                          NULL);
   }
-  self = neo_js_context_create_variable(ctx, bind, NULL);
+  neo_js_variable_t clazz = neo_js_callable_get_class(ctx, callee);
   neo_js_variable_t arguments = neo_js_context_create_object(ctx, NULL, NULL);
   neo_js_scope_set_variable(allocator, scope, arguments, L"arguments");
   for (uint32_t idx = 0; idx < argc; idx++) {
@@ -1882,7 +2087,7 @@ static neo_js_variable_t neo_js_context_call_async_function(
                                  scope, hvalue, name);
   }
   neo_js_context_set_scope(ctx, current);
-  neo_js_vm_t vm = neo_create_js_vm(ctx, self, function->address, scope);
+  neo_js_vm_t vm = neo_create_js_vm(ctx, self, clazz, function->address, scope);
   neo_js_variable_t coroutine =
       neo_js_context_create_coroutine(ctx, vm, function->program);
   neo_js_callable_set_closure(ctx, resolver, L"#coroutine", coroutine);
@@ -1899,11 +2104,14 @@ static neo_js_variable_t neo_js_context_call_async_generator_function(
   neo_js_variable_t result = neo_js_context_construct(
       ctx, ctx->std.async_generator_constructor, 0, NULL);
   neo_js_scope_t current = neo_js_context_set_scope(ctx, scope);
-  neo_js_handle_t bind = function->callable.bind;
-  if (!function->callable.bind) {
-    bind = neo_js_variable_get_handle(self);
+  neo_js_variable_t bind = neo_js_callable_get_bind(ctx, callee);
+  if (bind) {
+    self = bind;
+  } else {
+    self = neo_js_context_create_variable(ctx, neo_js_variable_get_handle(self),
+                                          NULL);
   }
-  self = neo_js_context_create_variable(ctx, bind, NULL);
+  neo_js_variable_t clazz = neo_js_callable_get_class(ctx, callee);
   neo_js_variable_t arguments = neo_js_context_create_object(ctx, NULL, NULL);
   neo_js_scope_set_variable(allocator, scope, arguments, L"arguments");
   for (uint32_t idx = 0; idx < argc; idx++) {
@@ -1930,7 +2138,7 @@ static neo_js_variable_t neo_js_context_call_async_generator_function(
                                  scope, hvalue, name);
   }
   neo_js_context_set_scope(ctx, current);
-  neo_js_vm_t vm = neo_create_js_vm(ctx, self, function->address, scope);
+  neo_js_vm_t vm = neo_create_js_vm(ctx, self, clazz, function->address, scope);
   neo_js_variable_t coroutine =
       neo_js_context_create_coroutine(ctx, vm, function->program);
   neo_js_context_set_internal(ctx, result, L"[[coroutine]]", coroutine);
@@ -1959,13 +2167,14 @@ static neo_js_variable_t neo_js_context_call_function(neo_js_context_t ctx,
       neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
       neo_js_scope_t scope = neo_create_js_scope(allocator, ctx->root);
       neo_js_scope_t current = neo_js_context_set_scope(ctx, scope);
-      if (function->callable.bind) {
-        self =
-            neo_js_context_create_variable(ctx, function->callable.bind, NULL);
+      neo_js_variable_t bind = neo_js_callable_get_bind(ctx, callee);
+      if (bind) {
+        self = bind;
       } else {
-        self = neo_js_scope_create_variable(
-            allocator, scope, neo_js_variable_get_handle(self), NULL);
+        self = neo_js_context_create_variable(
+            ctx, neo_js_variable_get_handle(self), NULL);
       }
+      neo_js_variable_t clazz = neo_js_callable_get_class(ctx, callee);
       neo_js_variable_t arguments =
           neo_js_context_create_object(ctx, NULL, NULL);
       neo_js_scope_set_variable(allocator, scope, arguments, L"arguments");
@@ -1993,7 +2202,8 @@ static neo_js_variable_t neo_js_context_call_function(neo_js_context_t ctx,
                                      scope, hvalue, name);
       }
       neo_js_context_set_scope(ctx, current);
-      neo_js_vm_t vm = neo_create_js_vm(ctx, self, function->address, scope);
+      neo_js_vm_t vm =
+          neo_create_js_vm(ctx, self, clazz, function->address, scope);
       neo_js_variable_t result = neo_js_vm_eval(vm, function->program);
       neo_allocator_free(neo_js_context_get_allocator(ctx), vm);
       neo_allocator_free(allocator, scope);
@@ -2078,6 +2288,10 @@ neo_js_variable_t neo_js_context_create_error(neo_js_context_t ctx,
     break;
   case NEO_ERROR_REFERENCE:
     value = neo_js_context_construct(ctx, ctx->std.reference_error_constructor,
+                                     1, &msg);
+    break;
+  case NEO_ERROR_INTERNAL:
+    value = neo_js_context_construct(ctx, ctx->std.internal_error_constructor,
                                      1, &msg);
     break;
   }
@@ -2352,21 +2566,6 @@ neo_js_variable_t neo_js_context_create_async_function(neo_js_context_t ctx,
       ctx, result, neo_js_context_create_string(ctx, L"prototype"),
       neo_js_context_create_object(ctx, NULL, NULL), true, false, true);
   return result;
-}
-
-void neo_js_context_bind(neo_js_context_t ctx, neo_js_variable_t func,
-                         neo_js_variable_t self) {
-  neo_js_callable_t callable = neo_js_variable_to_callable(func);
-  if (callable->bind) {
-    neo_js_handle_t root = neo_js_scope_get_root_handle(ctx->scope);
-    neo_js_handle_add_parent(callable->bind, root);
-    callable->bind = NULL;
-  }
-  if (self) {
-    neo_js_handle_t handle = neo_js_variable_get_handle(self);
-    callable->bind = handle;
-    neo_js_handle_add_parent(handle, neo_js_variable_get_handle(func));
-  }
 }
 
 neo_js_variable_t neo_js_context_typeof(neo_js_context_t ctx,
@@ -3239,7 +3438,8 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const wchar_t *file,
     neo_allocator_free(allocator, filepath);
   }
   neo_js_scope_t scope = neo_create_js_scope(allocator, ctx->root);
-  neo_js_vm_t vm = neo_create_js_vm(ctx, NULL, 0, scope);
+  neo_js_vm_t vm = neo_create_js_vm(ctx, neo_js_context_create_undefined(ctx),
+                                    NULL, 0, scope);
   neo_js_variable_t result = neo_js_vm_eval(vm, program);
   if (neo_js_variable_get_type(result)->kind == NEO_TYPE_INTERRUPT) {
     neo_js_interrupt_t interrupt = neo_js_variable_to_interrupt(result);
