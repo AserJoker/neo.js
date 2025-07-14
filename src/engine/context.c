@@ -1343,7 +1343,7 @@ neo_js_variable_t neo_js_context_set_private(neo_js_context_t ctx,
     } else if (prop->set) {
       neo_js_variable_t setter =
           neo_js_context_create_variable(ctx, prop->set, NULL);
-      return neo_js_context_call(ctx, setter, object, 0, NULL);
+      return neo_js_context_call(ctx, setter, object, 1, &value);
     } else {
       size_t len = wcslen(key->string) + 64;
       wchar_t *message =
@@ -1411,8 +1411,14 @@ neo_js_variable_t neo_js_context_def_private_accessor(
       neo_hash_map_get(obj->privates, key->string, NULL, NULL);
   if (!prop) {
     prop = neo_create_js_object_private(allocator);
-    prop->get = neo_js_variable_get_handle(getter);
-    prop->set = neo_js_variable_get_handle(setter);
+    if (getter) {
+      prop->get = neo_js_variable_get_handle(getter);
+      neo_js_handle_add_parent(prop->get, neo_js_variable_get_handle(object));
+    }
+    if (setter) {
+      prop->set = neo_js_variable_get_handle(setter);
+      neo_js_handle_add_parent(prop->set, neo_js_variable_get_handle(object));
+    }
     neo_hash_map_set(obj->privates, neo_create_wstring(allocator, key->string),
                      prop, NULL, NULL);
   } else {
