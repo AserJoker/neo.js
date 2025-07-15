@@ -67,6 +67,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <wchar.h>
+#include <xkeycheck.h>
 
 typedef struct _neo_js_task_t *neo_js_task_t;
 
@@ -81,6 +82,11 @@ struct _neo_js_task_t {
   bool keepalive;
 };
 
+typedef struct _neo_js_feature_t {
+  neo_js_feature_fn_t enable_fn;
+  neo_js_feature_fn_t disable_fn;
+} *neo_js_feature_t;
+
 struct _neo_js_context_t {
   neo_js_runtime_t runtime;
   neo_js_scope_t scope;
@@ -91,6 +97,8 @@ struct _neo_js_context_t {
   neo_list_t macro_tasks;
   neo_list_t coroutines;
   neo_hash_map_t modules;
+  neo_hash_map_t features;
+  neo_js_assert_fn_t assert_fn;
   struct {
     neo_js_variable_t global;
     neo_js_variable_t object_constructor;
@@ -742,8 +750,16 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
   neo_js_context_pop_scope(ctx);
 }
 
+static neo_js_variable_t neo_js_context_default_assert(neo_js_context_t ctx,
+                                                       const wchar_t *type,
+                                                       const wchar_t *value,
+                                                       const wchar_t *file) {
+  return neo_js_context_create_undefined(ctx);
+}
+
 static void neo_js_context_dispose(neo_allocator_t allocator,
                                    neo_js_context_t ctx) {
+  neo_allocator_free(allocator, ctx->features);
   for (neo_list_node_t it = neo_list_get_first(ctx->coroutines);
        it != neo_list_get_tail(ctx->coroutines); it = neo_list_node_next(it)) {
     neo_js_co_context_t coroutine = neo_list_node_get(it);
@@ -781,6 +797,7 @@ neo_js_context_t neo_create_js_context(neo_allocator_t allocator,
   ctx->root = neo_create_js_scope(allocator, NULL);
   ctx->task = neo_create_js_scope(allocator, ctx->root);
   ctx->scope = ctx->root;
+  ctx->assert_fn = neo_js_context_default_assert;
   memset(&ctx->std, 0, sizeof(ctx->std));
   neo_list_initialize_t initialize = {true};
   ctx->stacktrace = neo_create_list(allocator, &initialize);
@@ -793,6 +810,12 @@ neo_js_context_t neo_create_js_context(neo_allocator_t allocator,
   module_initialize.auto_free_key = true;
   module_initialize.auto_free_value = false;
   ctx->modules = neo_create_hash_map(allocator, &module_initialize);
+  neo_hash_map_initialize_t feature_initialize = {0};
+  feature_initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
+  feature_initialize.compare = (neo_compare_fn_t)wcscmp;
+  feature_initialize.auto_free_key = true;
+  feature_initialize.auto_free_value = true;
+  ctx->features = neo_create_hash_map(allocator, &feature_initialize);
   neo_js_stackframe_t frame = neo_create_js_stackframe(allocator);
   frame->function = neo_create_wstring(allocator, L"start");
   neo_list_push(ctx->stacktrace, frame);
@@ -3947,4 +3970,43 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const wchar_t *file,
     neo_allocator_free(allocator, vm);
     return result;
   }
+}
+neo_js_variable_t neo_js_context_assert(neo_js_context_t ctx,
+                                        const wchar_t *type,
+                                        const wchar_t *value,
+                                        const wchar_t *file) {
+  return ctx->assert_fn(ctx, type, value, file);
+}
+
+neo_js_assert_fn_t neo_js_context_set_assert_fn(neo_js_context_t ctx,
+                                                neo_js_assert_fn_t assert_fn) {
+  neo_js_assert_fn_t current = ctx->assert_fn;
+  ctx->assert_fn = assert_fn;
+  return current;
+}
+
+void neo_js_context_enable(neo_js_context_t ctx, const wchar_t *feature) {
+  neo_js_feature_t feat = neo_hash_map_get(ctx->features, feature, NULL, NULL);
+  if (feat && feat->enable_fn) {
+    feat->enable_fn(ctx, feature);
+  }
+}
+
+void neo_js_context_disable(neo_js_context_t ctx, const wchar_t *feature) {
+  neo_js_feature_t feat = neo_hash_map_get(ctx->features, feature, NULL, NULL);
+  if (feat && feat->disable_fn) {
+    feat->disable_fn(ctx, feature);
+  }
+}
+
+void neo_js_context_set_feature(neo_js_context_t ctx, const wchar_t *feature,
+                                neo_js_feature_fn_t enable_fn,
+                                neo_js_feature_fn_t disable_fn) {
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  neo_js_feature_t feat =
+      neo_allocator_alloc(allocator, sizeof(struct _neo_js_feature_t), NULL);
+  feat->enable_fn = enable_fn;
+  feat->disable_fn = disable_fn;
+  neo_hash_map_set(ctx->features, neo_create_wstring(allocator, feature), feat,
+                   NULL, NULL);
 }

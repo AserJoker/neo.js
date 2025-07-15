@@ -15,6 +15,14 @@ typedef struct _neo_js_vm_t *neo_js_vm_t;
 
 typedef struct _neo_js_context_t *neo_js_context_t;
 
+typedef neo_js_variable_t (*neo_js_assert_fn_t)(neo_js_context_t ctx,
+                                                const wchar_t *type,
+                                                const wchar_t *value,
+                                                const wchar_t *file);
+
+typedef neo_js_variable_t (*neo_js_feature_fn_t)(neo_js_context_t ctx,
+                                                 const wchar_t *feature);
+
 typedef enum _neo_js_error_type_t {
   NEO_ERROR_SYNTAX,
   NEO_ERROR_INTERNAL,
@@ -28,10 +36,8 @@ neo_js_context_t neo_create_js_context(neo_allocator_t allocator,
 
 neo_js_runtime_t neo_js_context_get_runtime(neo_js_context_t ctx);
 
-static inline neo_allocator_t
-neo_js_context_get_allocator(neo_js_context_t ctx) {
-  return neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
-}
+#define neo_js_context_get_allocator(ctx)                                      \
+  neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx))
 
 void neo_js_context_next_tick(neo_js_context_t ctx);
 
@@ -398,6 +404,22 @@ bool neo_js_context_has_module(neo_js_context_t ctx, const wchar_t *name);
 
 neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const wchar_t *file,
                                       const char *source);
+
+neo_js_variable_t neo_js_context_assert(neo_js_context_t ctx,
+                                        const wchar_t *type,
+                                        const wchar_t *value,
+                                        const wchar_t *file);
+
+neo_js_assert_fn_t neo_js_context_set_assert_fn(neo_js_context_t ctx,
+                                                neo_js_assert_fn_t assert_fn);
+
+void neo_js_context_enable(neo_js_context_t ctx, const wchar_t *feature);
+
+void neo_js_context_disable(neo_js_context_t ctx, const wchar_t *feature);
+
+void neo_js_context_set_feature(neo_js_context_t ctx, const wchar_t *feature,
+                                neo_js_feature_fn_t enable_fn,
+                                neo_js_feature_fn_t disable_fn);
 
 #ifdef __cplusplus
 }

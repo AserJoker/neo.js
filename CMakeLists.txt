@@ -9,6 +9,12 @@ set(DerivedGeneralCategory "${PROJECT_SOURCE_DIR}/ucd/DerivedGeneralCategory.txt
 
 add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 
+set(PCRE2_BUILD_PCRE2_16 ON)
+
+add_subdirectory(third_party/pcre2)
+
+include_directories(build/third_party/pcre2/interface)
+
 if(NOT EXISTS ${DerivedCoreProperties})
     file(DOWNLOAD "https://www.unicode.org/Public/UCD/latest/ucd/DerivedCoreProperties.txt" ${DerivedCoreProperties})
 endif()
@@ -61,3 +67,5 @@ if(UNIX)
 endif()
 
 add_library(${PROJECT_NAME} ${SOURCES})
+
+target_link_libraries(${PROJECT_NAME}c pcre2-posix pcre2-8 pcre2-16)

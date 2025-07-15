@@ -10,7 +10,6 @@
 #include "core/list.h"
 #include "core/position.h"
 #include "core/variable.h"
-#include <stdio.h>
 
 static void neo_ast_function_body_dispose(neo_allocator_t allocator,
                                           neo_ast_function_body_t node) {

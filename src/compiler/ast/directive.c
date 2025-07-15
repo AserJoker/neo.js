@@ -8,7 +8,6 @@
 #include "core/location.h"
 #include "core/position.h"
 #include "core/variable.h"
-#include <string.h>
 
 static void neo_ast_directive_dispose(neo_allocator_t allocator,
                                       neo_ast_directive_t node) {

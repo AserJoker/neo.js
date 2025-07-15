@@ -68,6 +68,7 @@ void neo_js_vm_dispose(neo_allocator_t allocator, neo_js_vm_t vm) {
     neo_allocator_free(allocator, frame);
   }
   neo_allocator_free(allocator, vm->label_stack);
+  neo_allocator_free(allocator, vm->active_features);
 }
 
 neo_js_try_frame_t neo_create_js_try_frame(neo_allocator_t allocator) {
@@ -98,6 +99,7 @@ neo_js_vm_t neo_create_js_vm(neo_js_context_t ctx, neo_js_variable_t self,
   vm->root = scope;
   vm->scope = scope;
   vm->clazz = clazz;
+  vm->active_features = neo_create_list(allocator, NULL);
   return vm;
 }
 
@@ -683,7 +685,9 @@ void neo_js_vm_set_class(neo_js_vm_t vm, neo_program_t program) {
 }
 
 void neo_js_vm_direcitve(neo_js_vm_t vm, neo_program_t program) {
-  const wchar_t *msg = neo_js_vm_read_string(vm, program);
+  const wchar_t *feature = neo_js_vm_read_string(vm, program);
+  neo_js_context_enable(vm->ctx, feature);
+  neo_list_push(vm->active_features, (void *)feature);
 }
 
 void neo_js_vm_call(neo_js_vm_t vm, neo_program_t program) {
@@ -1557,6 +1561,8 @@ void neo_js_vm_assert(neo_js_vm_t vm, neo_program_t program) {
   const wchar_t *type = neo_js_vm_read_string(vm, program);
   const wchar_t *value = neo_js_vm_read_string(vm, program);
   const wchar_t *path = neo_js_vm_read_string(vm, program);
+  CHECK_AND_THROW(neo_js_context_assert(vm->ctx, type, value, path), vm,
+                  program);
 }
 void neo_js_vm_export(neo_js_vm_t vm, neo_program_t program) {
   const wchar_t *name = neo_js_vm_read_string(vm, program);
@@ -2372,6 +2378,12 @@ neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
     }
     neo_js_context_pop_scope(vm->ctx);
     vm->scope = neo_js_context_get_scope(vm->ctx);
+  }
+  for (neo_list_node_t it = neo_list_get_last(vm->active_features);
+       it != neo_list_get_head(vm->active_features);
+       it = neo_list_node_last(it)) {
+    const wchar_t *feature = neo_list_node_get(it);
+    neo_js_context_disable(vm->ctx, feature);
   }
   vm->scope = neo_js_context_set_scope(vm->ctx, current);
   return result;

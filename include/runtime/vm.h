@@ -13,6 +13,7 @@ struct _neo_js_vm_t {
   neo_list_t stack;
   neo_list_t try_stack;
   neo_list_t label_stack;
+  neo_list_t active_features;
   neo_js_context_t ctx;
   size_t offset;
   neo_js_variable_t self;
