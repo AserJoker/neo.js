@@ -219,11 +219,14 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       fprintf(fp, "NEO_ASM_PUSH_BIGINT \"%ls\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
-    case NEO_ASM_PUSH_REGEX: {
-      wchar_t *constant =
+    case NEO_ASM_PUSH_REGEXP: {
+      wchar_t *content =
           neo_wstring_encode(allocator, neo_program_get_string(self, &offset));
-      fprintf(fp, "NEO_ASM_PUSH_REGEX \"%ls\"\n", constant);
-      neo_allocator_free(allocator, constant);
+      wchar_t *flag =
+          neo_wstring_encode(allocator, neo_program_get_string(self, &offset));
+      fprintf(fp, "NEO_ASM_PUSH_REGEXP \"%ls\",\"%ls\"\n", content, flag);
+      neo_allocator_free(allocator, flag);
+      neo_allocator_free(allocator, content);
     } break;
     case NEO_ASM_PUSH_FUNCTION:
       fprintf(fp, "NEO_ASM_PUSH_FUNCTION\n");

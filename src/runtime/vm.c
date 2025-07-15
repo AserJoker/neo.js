@@ -370,6 +370,19 @@ void neo_js_vm_push_bigint(neo_js_vm_t vm, neo_program_t program) {
   neo_allocator_free(allocator, format);
   neo_list_push(vm->stack, neo_js_context_create_bigint(vm->ctx, bigint));
 }
+void neo_js_vm_push_regexp(neo_js_vm_t vm, neo_program_t program) {
+  const wchar_t *rule = neo_js_vm_read_string(vm, program);
+  const wchar_t *flag = neo_js_vm_read_string(vm, program);
+  neo_js_variable_t regexp = neo_js_context_get_regexp_constructor(vm->ctx);
+  neo_js_variable_t argv[] = {
+      neo_js_context_create_string(vm->ctx, rule),
+      neo_js_context_create_string(vm->ctx, flag),
+  };
+  neo_js_variable_t result = neo_js_context_construct(vm->ctx, regexp, 2, argv);
+  CHECK_AND_THROW(result, vm, program);
+  neo_list_push(vm->stack, result);
+}
+
 void neo_js_vm_push_function(neo_js_vm_t vm, neo_program_t program) {
   neo_list_push(vm->stack, neo_js_context_create_function(vm->ctx, program));
 }
@@ -2068,7 +2081,7 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_push_number,           // NEO_ASM_PUSH_NUMBER
     neo_js_vm_push_string,           // NEO_ASM_PUSH_STRING
     neo_js_vm_push_bigint,           // NEO_ASM_PUSH_BIGINT
-    NULL,                            // NEO_ASM_PUSH_REGEX
+    neo_js_vm_push_regexp,           // NEO_ASM_PUSH_REGEXP
     neo_js_vm_push_function,         // NEO_ASM_PUSH_FUNCTION
     neo_js_vm_push_class,            // NEO_ASM_PUSH_CLASS
     neo_js_vm_push_async_function,   // NEO_ASM_PUSH_ASYNC_FUNCTION

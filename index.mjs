@@ -1,2 +1,1 @@
-
-console.log(1024n | 257n)
+console.log(/\w+\s/g)

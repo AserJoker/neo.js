@@ -54,6 +54,7 @@
 #include "engine/std/promise.h"
 #include "engine/std/range_error.h"
 #include "engine/std/reference_error.h"
+#include "engine/std/regexp.h"
 #include "engine/std/symbol.h"
 #include "engine/std/syntax_error.h"
 #include "engine/std/type_error.h"
@@ -508,6 +509,28 @@ static void neo_js_context_init_std_promise(neo_js_context_t ctx) {
       true, false, true);
 }
 
+static void neo_js_context_init_std_regexp(neo_js_context_t ctx) {
+  neo_js_variable_t prototype =
+      neo_js_context_get_field(ctx, ctx->std.regexp_constructor,
+                               neo_js_context_create_string(ctx, L"prototype"));
+
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"toString"),
+                           neo_js_context_create_cfunction(
+                               ctx, L"toString", neo_js_regexp_to_string),
+                           true, false, true);
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"exec"),
+      neo_js_context_create_cfunction(ctx, L"exec", neo_js_regexp_exec), true,
+      false, true);
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"test"),
+      neo_js_context_create_cfunction(ctx, L"test", neo_js_regexp_test), true,
+      false, true);
+}
+
 static void neo_js_context_init_std_console(neo_js_context_t ctx) {
   neo_js_variable_t console_constructor = neo_js_context_create_cfunction(
       ctx, L"Console", neo_js_console_constructor);
@@ -641,6 +664,9 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
   ctx->std.promise_constructor = neo_js_context_create_cfunction(
       ctx, L"Promise", neo_js_promise_constructor);
 
+  ctx->std.regexp_constructor = neo_js_context_create_cfunction(
+      ctx, L"RegExp", neo_js_regexp_constructor);
+
   ctx->std.global = neo_js_context_create_object(ctx, NULL, NULL);
 
   neo_js_context_push_scope(ctx);
@@ -662,6 +688,8 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
   neo_js_context_init_std_async_generator(ctx);
 
   neo_js_context_init_std_promise(ctx);
+
+  neo_js_context_init_std_regexp(ctx);
 
   neo_js_context_init_std_console(ctx);
 
@@ -708,6 +736,10 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
   neo_js_context_set_field(ctx, ctx->std.global,
                            neo_js_context_create_string(ctx, L"Promise"),
                            ctx->std.promise_constructor);
+
+  neo_js_context_set_field(ctx, ctx->std.global,
+                           neo_js_context_create_string(ctx, L"RegExp"),
+                           ctx->std.regexp_constructor);
   neo_js_context_pop_scope(ctx);
 }
 
@@ -1113,6 +1145,10 @@ neo_js_context_get_array_iterator_constructor(neo_js_context_t ctx) {
 
 neo_js_variable_t neo_js_context_get_promise_constructor(neo_js_context_t ctx) {
   return ctx->std.promise_constructor;
+}
+
+neo_js_variable_t neo_js_context_get_regexp_constructor(neo_js_context_t ctx) {
+  return ctx->std.regexp_constructor;
 }
 
 neo_js_variable_t neo_js_context_create_variable(neo_js_context_t ctx,

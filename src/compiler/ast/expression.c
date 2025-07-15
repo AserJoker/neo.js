@@ -18,6 +18,7 @@
 #include "compiler/ast/literal_boolean.h"
 #include "compiler/ast/literal_null.h"
 #include "compiler/ast/literal_numeric.h"
+#include "compiler/ast/literal_regexp.h"
 #include "compiler/ast/literal_string.h"
 #include "compiler/ast/literal_template.h"
 #include "compiler/ast/node.h"
@@ -397,6 +398,11 @@ neo_ast_node_t neo_ast_read_expression_19(neo_allocator_t allocator,
   }
   if (!node) {
     node = TRY(neo_ast_read_literal_boolean(allocator, file, position)) {
+      goto onerror;
+    }
+  }
+  if (!node) {
+    node = TRY(neo_ast_read_literal_regexp(allocator, file, position)) {
       goto onerror;
     }
   }

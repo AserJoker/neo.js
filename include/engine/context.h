@@ -116,6 +116,8 @@ neo_js_context_get_array_iterator_constructor(neo_js_context_t ctx);
 
 neo_js_variable_t neo_js_context_get_promise_constructor(neo_js_context_t ctx);
 
+neo_js_variable_t neo_js_context_get_regexp_constructor(neo_js_context_t ctx);
+
 neo_js_variable_t neo_js_context_create_variable(neo_js_context_t ctx,
                                                  neo_js_handle_t handle,
                                                  const wchar_t *name);
