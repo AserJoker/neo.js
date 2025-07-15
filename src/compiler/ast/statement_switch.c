@@ -35,7 +35,7 @@ neo_ast_statement_switch_resolve_closure(neo_allocator_t allocator,
     neo_ast_node_t item = (neo_ast_node_t)neo_list_node_get(it);
     item->resolve_closure(allocator, item, closure);
   }
-  neo_compile_scope_pop(self->node.scope);
+  neo_compile_scope_set(scope);
 }
 
 static void neo_ast_statement_switch_write(neo_allocator_t allocator,

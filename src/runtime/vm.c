@@ -70,9 +70,6 @@ void neo_js_vm_dispose(neo_allocator_t allocator, neo_js_vm_t vm) {
   neo_allocator_free(allocator, vm->label_stack);
 }
 
-static void neo_js_try_frame_dispose(neo_allocator_t allocator,
-                                     neo_js_try_frame_t frame) {}
-
 neo_js_try_frame_t neo_create_js_try_frame(neo_allocator_t allocator) {
   neo_js_try_frame_t frame =
       neo_allocator_alloc(allocator, sizeof(struct _neo_js_try_frame_t), NULL);
@@ -1606,7 +1603,6 @@ void neo_js_vm_new(neo_js_vm_t vm, neo_program_t program) {
   }
   neo_js_variable_t callee = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_list_pop(vm->stack);
-  wchar_t *funcname = NULL;
   neo_js_callable_t callable = neo_js_variable_to_callable(callee);
   neo_js_variable_t result = NULL;
   if (!callable) {
@@ -1764,7 +1760,7 @@ void neo_js_vm_typeof(neo_js_vm_t vm, neo_program_t program) {
   }
 }
 void neo_js_vm_void(neo_js_vm_t vm, neo_program_t program) {
-  neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_node_get(neo_list_get_last(vm->stack));
   neo_list_pop(vm->stack);
   neo_list_push(vm->stack, neo_js_context_create_undefined(vm->ctx));
 }
@@ -1973,7 +1969,6 @@ void neo_js_vm_spread(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_list_pop(vm->stack);
   neo_js_variable_t host = neo_list_node_get(neo_list_get_last(vm->stack));
-  neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
   if (neo_js_variable_get_type(host)->kind == NEO_TYPE_ARRAY) {
     neo_js_variable_t length = neo_js_context_get_field(
         vm->ctx, host, neo_js_context_create_string(vm->ctx, L"length"));

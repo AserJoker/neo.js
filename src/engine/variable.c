@@ -2,17 +2,12 @@
 #include "core/allocator.h"
 #include "engine/handle.h"
 #include "engine/type.h"
-#include <wchar.h>
 struct _neo_js_variable_t {
   neo_js_handle_t handle;
   bool is_const;
   bool is_using;
   bool is_await_using;
 };
-
-static void neo_js_variable_dispose(neo_allocator_t allocator,neo_js_variable_t self){
-  (void)self;
-}
 
 neo_js_variable_t neo_create_js_variable(neo_allocator_t allocator,
                                          neo_js_handle_t handle) {

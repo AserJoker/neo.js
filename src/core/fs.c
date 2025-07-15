@@ -4,7 +4,11 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#ifdef _WIN32
+#define S_ISDIR(m) (((m) & 0170000) == (0040000))
+#else
 #include <unistd.h>
+#endif
 #include <wchar.h>
 
 char *neo_fs_read_file(neo_allocator_t allocator, const wchar_t *filename) {
@@ -20,7 +24,7 @@ char *neo_fs_read_file(neo_allocator_t allocator, const wchar_t *filename) {
   len = ftell(fp);
   fseek(fp, 0, SEEK_SET);
   char *buf = neo_allocator_alloc(allocator, len + 1, NULL);
-  buf[len] = 0;
+  memset(buf, 0, len);
   fread(buf, len, 1, fp);
   fclose(fp);
   return buf;

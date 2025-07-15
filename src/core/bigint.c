@@ -132,7 +132,6 @@ wchar_t *neo_bigint_to_string(neo_bigint_t bigint) {
       result = neo_wstring_concat(bigint->allocator, result, &max, s);
       neo_allocator_free(bigint->allocator, mod_res);
       mod_res = neo_bigint_div(tmp, mod);
-      double r = neo_bigint_to_number(mod_res);
       neo_allocator_free(bigint->allocator, tmp);
       tmp = mod_res;
     }
@@ -181,10 +180,6 @@ neo_bigint_t neo_bigint_abs(neo_bigint_t self) {
   neo_bigint_t res = neo_bigint_clone(self);
   res->negative = false;
   return res;
-}
-static bool neo_bigint_is_zero(neo_bigint_t self) {
-  return neo_list_get_size(self->data) &&
-         *(chunk_t *)neo_list_node_get(neo_list_get_first(self->data));
 }
 
 static neo_bigint_t neo_bigint_uadd(neo_bigint_t self, neo_bigint_t another) {
@@ -613,7 +608,7 @@ neo_bigint_t neo_bigint_shr(neo_bigint_t self, neo_bigint_t another) {
     result = div_res;
 
     neo_bigint_t add_arg = neo_number_to_bigint(self->allocator, 1);
-    neo_bigint_t add_res = neo_bigint_add(idx, add_res);
+    neo_bigint_t add_res = neo_bigint_add(idx, add_arg);
     neo_allocator_free(self->allocator, add_arg);
     neo_allocator_free(self->allocator, idx);
     idx = add_res;
@@ -633,7 +628,7 @@ neo_bigint_t neo_bigint_shl(neo_bigint_t self, neo_bigint_t another) {
     result = mul_res;
 
     neo_bigint_t add_arg = neo_number_to_bigint(self->allocator, 1);
-    neo_bigint_t add_res = neo_bigint_add(idx, add_res);
+    neo_bigint_t add_res = neo_bigint_add(idx, add_arg);
     neo_allocator_free(self->allocator, add_arg);
     neo_allocator_free(self->allocator, idx);
     idx = add_res;

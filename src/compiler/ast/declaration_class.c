@@ -4,7 +4,6 @@
 #include "compiler/ast/node.h"
 #include "core/allocator.h"
 #include "core/variable.h"
-#include <stdio.h>
 static void
 neo_ast_declaration_class_dispose(neo_allocator_t allocator,
                                   neo_ast_declaration_class_t node) {

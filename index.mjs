@@ -1,1 +1,7 @@
-console.log(/\w+\s/g)
+class Test {
+    #data = 123
+    print() {
+        console.log(this.#data)
+    }
+};
+new Test().print()

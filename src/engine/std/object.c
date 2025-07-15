@@ -75,7 +75,6 @@ neo_js_variable_t neo_js_object_has_own_property(neo_js_context_t ctx,
     return neo_js_context_create_boolean(ctx, false);
   }
   self = neo_js_context_to_object(ctx, self);
-  neo_js_object_t obj = neo_js_variable_to_object(self);
   neo_js_object_property_t prop =
       neo_js_object_get_own_property(ctx, self, argv[0]);
   return neo_js_context_create_boolean(ctx, prop != NULL);

@@ -26,7 +26,7 @@ neo_ast_statement_for_of_resolve_closure(neo_allocator_t allocator,
   self->left->resolve_closure(allocator, self->left, closure);
   self->right->resolve_closure(allocator, self->right, closure);
   self->body->resolve_closure(allocator, self->body, closure);
-  neo_compile_scope_pop(self->node.scope);
+  neo_compile_scope_set(scope);
 }
 static void neo_ast_statement_for_of_write(neo_allocator_t allocator,
                                            neo_write_context_t ctx,

@@ -62,7 +62,6 @@
 #include "engine/value.h"
 #include "engine/variable.h"
 #include "runtime/vm.h"
-#include <endian.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -3931,7 +3930,6 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const wchar_t *file,
     vm->offset = interrupt->offset;
     neo_js_variable_t coroutine =
         neo_js_context_create_coroutine(ctx, vm, program);
-    neo_js_co_context_t co_ctx = neo_js_coroutine_get_context(coroutine);
     neo_js_variable_t resolver = NULL;
     neo_list_push(vm->stack, result);
     if (interrupt->type == NEO_JS_INTERRUPT_BACKEND_AWAIT) {

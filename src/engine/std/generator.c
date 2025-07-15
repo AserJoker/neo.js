@@ -1,5 +1,4 @@
 #include "engine/std/generator.h"
-#include "core/allocator.h"
 #include "core/buffer.h"
 #include "core/list.h"
 #include "engine/basetype/coroutine.h"
@@ -35,7 +34,6 @@ neo_js_variable_t neo_js_generator_next(neo_js_context_t ctx,
     return neo_js_context_create_error(ctx, NEO_ERROR_TYPE,
                                        L"Generator is running");
   }
-  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   if (co_ctx->result) {
     neo_js_context_set_field(ctx, result,
                              neo_js_context_create_string(ctx, L"done"),
@@ -70,7 +68,6 @@ neo_js_variable_t neo_js_generator_next(neo_js_context_t ctx,
       co_ctx->result = neo_js_variable_get_handle(value);
       neo_js_handle_add_parent(co_ctx->result,
                                neo_js_variable_get_handle(self));
-      neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
       neo_js_context_recycle_coroutine(ctx, coroutine);
     } else {
       co_ctx->result = neo_js_variable_get_handle(value);
@@ -99,7 +96,6 @@ neo_js_variable_t neo_js_generator_return(neo_js_context_t ctx,
     return neo_js_context_create_error(ctx, NEO_ERROR_TYPE,
                                        L"Generator is running");
   }
-  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   if (co_ctx->result) {
     neo_js_context_set_field(ctx, result,
                              neo_js_context_create_string(ctx, L"done"),
@@ -135,7 +131,6 @@ neo_js_variable_t neo_js_generator_return(neo_js_context_t ctx,
       co_ctx->result = neo_js_variable_get_handle(value);
       neo_js_handle_add_parent(co_ctx->result,
                                neo_js_variable_get_handle(self));
-      neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
       neo_js_context_recycle_coroutine(ctx, coroutine);
     } else {
       co_ctx->result = neo_js_variable_get_handle(value);
@@ -164,7 +159,6 @@ neo_js_variable_t neo_js_generator_throw(neo_js_context_t ctx,
     return neo_js_context_create_error(ctx, NEO_ERROR_TYPE,
                                        L"Generator is running");
   }
-  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   if (co_ctx->result) {
     neo_js_context_set_field(ctx, result,
                              neo_js_context_create_string(ctx, L"done"),
@@ -201,7 +195,6 @@ neo_js_variable_t neo_js_generator_throw(neo_js_context_t ctx,
       co_ctx->result = neo_js_variable_get_handle(value);
       neo_js_handle_add_parent(co_ctx->result,
                                neo_js_variable_get_handle(self));
-      neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
       neo_js_context_recycle_coroutine(ctx, coroutine);
     } else {
       co_ctx->result = neo_js_variable_get_handle(value);

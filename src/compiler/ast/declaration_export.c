@@ -24,8 +24,6 @@
 #include "core/list.h"
 #include "core/location.h"
 #include "core/variable.h"
-#include <stdio.h>
-#include <string.h>
 #include <wchar.h>
 
 static void
@@ -232,6 +230,8 @@ neo_create_ast_declaration_export(neo_allocator_t allocator) {
   neo_list_initialize_t initialize = {true};
   node->attributes = neo_create_list(allocator, &initialize);
   node->specifiers = neo_create_list(allocator, &initialize);
+  node->node.resolve_closure =
+      (neo_resolve_closure_fn_t)neo_ast_declaration_export_resolve_closure;
   return node;
 }
 

@@ -11,8 +11,6 @@ neo_js_async_generator_function_to_string(neo_js_context_t ctx,
                                           neo_js_variable_t self, uint32_t argc,
                                           neo_js_variable_t *argv) {
 
-  neo_js_type_t type = neo_js_variable_get_type(self);
-  type = neo_js_variable_get_type(self);
   neo_js_function_t generator = neo_js_variable_to_function(self);
   if (neo_js_variable_get_type(self)->kind != NEO_TYPE_FUNCTION || !generator ||
       !generator->is_generator) {
@@ -21,7 +19,6 @@ neo_js_async_generator_function_to_string(neo_js_context_t ctx,
         L"AsyncGeneratorFunction.prototype.toString requires that 'this' be a "
         L"AsyncGeneratorFunction");
   }
-  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_js_function_t func = neo_js_variable_to_function(self);
   return neo_js_context_create_string(ctx, func->source);
 }

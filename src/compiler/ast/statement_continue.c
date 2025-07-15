@@ -7,7 +7,6 @@
 #include "core/location.h"
 #include "core/position.h"
 #include "core/variable.h"
-#include <stdio.h>
 static void
 neo_ast_statement_continue_dispose(neo_allocator_t allocator,
                                    neo_ast_statement_continue_t node) {

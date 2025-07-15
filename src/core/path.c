@@ -4,7 +4,12 @@
 #include "core/string.h"
 #include "core/unicode.h"
 #include <stdlib.h>
+#ifdef _WIN32
+#include <direct.h>
+#define getcwd _getcwd
+#else
 #include <unistd.h>
+#endif
 #include <wchar.h>
 #ifdef _WIN32
 #define DEFAULT_PATH_SPLITER '\\'

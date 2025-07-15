@@ -28,8 +28,6 @@ static neo_js_variable_t neo_js_string_to_boolean(neo_js_context_t ctx,
 
 static neo_js_variable_t neo_js_string_to_number(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
-  neo_allocator_t allocator =
-      neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
   neo_js_string_t string =
       neo_js_value_to_string(neo_js_variable_get_value(self));
   if (wcscmp(string->string, L"Infinity") == 0) {

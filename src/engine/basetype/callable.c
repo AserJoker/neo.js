@@ -36,7 +36,6 @@ neo_js_variable_t neo_js_callable_get_closure(neo_js_context_t ctx,
                                               neo_js_variable_t self,
                                               const wchar_t *name) {
   neo_js_callable_t callable = neo_js_variable_to_callable(self);
-  neo_js_handle_t hvariable = neo_js_variable_get_handle(self);
   neo_js_handle_t current =
       neo_hash_map_get(callable->closure, name, NULL, NULL);
   return neo_js_context_create_variable(ctx, current, NULL);

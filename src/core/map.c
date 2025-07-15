@@ -19,7 +19,6 @@ struct _neo_map_t {
 };
 
 static void neo_map_dispose(neo_allocator_t allocator, neo_map_t self) {
-  neo_map_node_t item = self->head.next;
   while (self->size) {
     neo_map_erase(self, self->head.next);
   }

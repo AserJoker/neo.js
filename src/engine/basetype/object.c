@@ -404,8 +404,6 @@ static neo_js_variable_t neo_js_object_set_field(neo_js_context_t ctx,
   neo_js_object_property_t proptype =
       neo_js_object_get_own_property(ctx, self, field);
   neo_js_handle_t hobject = neo_js_variable_get_handle(self);
-  neo_js_object_t object =
-      neo_js_value_to_object(neo_js_variable_get_value(self));
   neo_js_handle_t hvalue = neo_js_variable_get_handle(value);
   if (!proptype) {
     proptype = neo_js_object_get_property(ctx, self, field);
