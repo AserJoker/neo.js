@@ -2,6 +2,7 @@
 #include "core/allocator.h"
 #include "core/unicode.h"
 #include <stdio.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #ifdef _WIN32

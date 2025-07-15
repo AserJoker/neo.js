@@ -127,14 +127,14 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
        it != neo_list_get_tail(self->constants); it = neo_list_node_next(it)) {
     const wchar_t *current = neo_list_node_get(it);
     wchar_t *constant = neo_wstring_encode(allocator, current);
-    fprintf(fp, ".%lld: \"%ls\"\n", idx, constant);
+    fprintf(fp, ".%zu: \"%ls\"\n", idx, constant);
     neo_allocator_free(allocator, constant);
     idx++;
   }
   fprintf(fp, "[section .data]\n");
   size_t offset = 0;
   while (offset < neo_buffer_get_size(self->codes)) {
-    fprintf(fp, "%lld: ", offset);
+    fprintf(fp, "%zu: ", offset);
     neo_asm_code_t code =
         (neo_asm_code_t) *
         (uint16_t *)((char *)neo_buffer_get(self->codes) + offset);
@@ -298,7 +298,7 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       fprintf(fp, "NEO_ASM_SET_CLASS\n");
       break;
     case NEO_ASM_SET_ADDRESS:
-      fprintf(fp, "NEO_ASM_SET_ADDRESS %lld\n",
+      fprintf(fp, "NEO_ASM_SET_ADDRESS %zu\n",
               neo_program_get_address(self, &offset));
       break;
     case NEO_ASM_SET_CLOSURE: {
@@ -374,23 +374,23 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       fprintf(fp, "NEO_ASM_DEF_PRIVATE_METHOD\n");
       break;
     case NEO_ASM_JNULL:
-      fprintf(fp, "NEO_ASM_JNULL %lld\n",
+      fprintf(fp, "NEO_ASM_JNULL %zu\n",
               neo_program_get_address(self, &offset));
       break;
     case NEO_ASM_JNOT_NULL:
-      fprintf(fp, "NEO_ASM_JNOT_NULL %lld\n",
+      fprintf(fp, "NEO_ASM_JNOT_NULL %zu\n",
               neo_program_get_address(self, &offset));
       break;
     case NEO_ASM_JFALSE:
-      fprintf(fp, "NEO_ASM_JFALSE %lld\n",
+      fprintf(fp, "NEO_ASM_JFALSE %zu\n",
               neo_program_get_address(self, &offset));
       break;
     case NEO_ASM_JTRUE:
-      fprintf(fp, "NEO_ASM_JTRUE %lld\n",
+      fprintf(fp, "NEO_ASM_JTRUE %zu\n",
               neo_program_get_address(self, &offset));
       break;
     case NEO_ASM_JMP:
-      fprintf(fp, "NEO_ASM_JMP %lld\n", neo_program_get_address(self, &offset));
+      fprintf(fp, "NEO_ASM_JMP %zu\n", neo_program_get_address(self, &offset));
       break;
     case NEO_ASM_BREAK: {
       wchar_t *constant =
@@ -410,7 +410,7 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
     case NEO_ASM_TRY_BEGIN: {
       size_t onerror = neo_program_get_address(self, &offset);
       size_t onfinish = neo_program_get_address(self, &offset);
-      fprintf(fp, "NEO_ASM_TRY_BEGIN %lld,%lld\n", onerror, onfinish);
+      fprintf(fp, "NEO_ASM_TRY_BEGIN %zu,%zu\n", onerror, onfinish);
       break;
     }
     case NEO_ASM_TRY_END:
@@ -455,14 +455,14 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
     case NEO_ASM_PUSH_BREAK_LABEL: {
       wchar_t *constant =
           neo_wstring_encode(allocator, neo_program_get_string(self, &offset));
-      fprintf(fp, "NEO_ASM_PUSH_BREAK_LABEL \"%ls\",%lld\n", constant,
+      fprintf(fp, "NEO_ASM_PUSH_BREAK_LABEL \"%ls\",%zu\n", constant,
               neo_program_get_address(self, &offset));
       neo_allocator_free(allocator, constant);
     } break;
     case NEO_ASM_PUSH_CONTINUE_LABEL: {
       wchar_t *constant =
           neo_wstring_encode(allocator, neo_program_get_string(self, &offset));
-      fprintf(fp, "NEO_ASM_PUSH_CONTINUE_LABEL \"%ls\",%lld\n", constant,
+      fprintf(fp, "NEO_ASM_PUSH_CONTINUE_LABEL \"%ls\",%zu\n", constant,
               neo_program_get_address(self, &offset));
       neo_allocator_free(allocator, constant);
     } break;
