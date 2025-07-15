@@ -67,7 +67,6 @@
 #include <stdint.h>
 #include <string.h>
 #include <wchar.h>
-#include <xkeycheck.h>
 
 typedef struct _neo_js_task_t *neo_js_task_t;
 
