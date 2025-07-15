@@ -2,6 +2,7 @@
 #define _H_NEO_ENGINE_VARIABLE_
 #include "core/allocator.h"
 #include "engine/basetype/array.h"
+#include "engine/basetype/bigint.h"
 #include "engine/basetype/boolean.h"
 #include "engine/basetype/cfunction.h"
 #include "engine/basetype/coroutine.h"
@@ -58,6 +59,10 @@ neo_js_variable_to_number(neo_js_variable_t variable) {
   return neo_js_value_to_number(neo_js_variable_get_value(variable));
 }
 
+static inline neo_js_bigint_t
+neo_js_variable_to_bigint(neo_js_variable_t variable) {
+  return neo_js_value_to_bigint(neo_js_variable_get_value(variable));
+}
 static inline neo_js_boolean_t
 neo_js_variable_to_boolean(neo_js_variable_t variable) {
   return neo_js_value_to_boolean(neo_js_variable_get_value(variable));

@@ -51,6 +51,8 @@ neo_list_node_t neo_list_node_last(neo_list_node_t self);
 
 void *neo_list_node_get(neo_list_node_t self);
 
+void neo_list_clear(neo_list_t self);
+
 #ifdef __cplusplus
 };
 #endif

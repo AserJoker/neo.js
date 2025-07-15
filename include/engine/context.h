@@ -2,6 +2,7 @@
 #define _H_NEO_ENGINE_CONTEXT_
 #include "compiler/program.h"
 #include "core/allocator.h"
+#include "core/bigint.h"
 #include "engine/runtime.h"
 #include "engine/scope.h"
 #include "engine/type.h"
@@ -103,6 +104,8 @@ neo_js_variable_t neo_js_context_get_string_constructor(neo_js_context_t ctx);
 neo_js_variable_t neo_js_context_get_boolean_constructor(neo_js_context_t ctx);
 
 neo_js_variable_t neo_js_context_get_number_constructor(neo_js_context_t ctx);
+
+neo_js_variable_t neo_js_context_get_bigint_constructor(neo_js_context_t ctx);
 
 neo_js_variable_t neo_js_context_get_symbol_constructor(neo_js_context_t ctx);
 
@@ -241,6 +244,9 @@ neo_js_variable_t neo_js_context_create_null(neo_js_context_t ctx);
 
 neo_js_variable_t neo_js_context_create_number(neo_js_context_t ctx,
                                                double value);
+
+neo_js_variable_t neo_js_context_create_bigint(neo_js_context_t ctx,
+                                               neo_bigint_t value);
 
 neo_js_variable_t neo_js_context_create_string(neo_js_context_t ctx,
                                                const wchar_t *value);

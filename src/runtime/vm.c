@@ -2,6 +2,7 @@
 #include "compiler/asm.h"
 #include "compiler/program.h"
 #include "core/allocator.h"
+#include "core/bigint.h"
 #include "core/buffer.h"
 #include "core/fs.h"
 #include "core/list.h"
@@ -359,6 +360,15 @@ void neo_js_vm_push_number(neo_js_vm_t vm, neo_program_t program) {
 void neo_js_vm_push_string(neo_js_vm_t vm, neo_program_t program) {
   const wchar_t *value = neo_js_vm_read_string(vm, program);
   neo_list_push(vm->stack, neo_js_context_create_string(vm->ctx, value));
+}
+void neo_js_vm_push_bigint(neo_js_vm_t vm, neo_program_t program) {
+  const wchar_t *value = neo_js_vm_read_string(vm, program);
+  neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
+  wchar_t *format = neo_create_wstring(allocator, value);
+  format[wcslen(value) - 1] = L'\0';
+  neo_bigint_t bigint = neo_string_to_bigint(allocator, format);
+  neo_allocator_free(allocator, format);
+  neo_list_push(vm->stack, neo_js_context_create_bigint(vm->ctx, bigint));
 }
 void neo_js_vm_push_function(neo_js_vm_t vm, neo_program_t program) {
   neo_list_push(vm->stack, neo_js_context_create_function(vm->ctx, program));
@@ -2057,7 +2067,7 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_push_false,            // NEO_ASM_PUSH_FALSE
     neo_js_vm_push_number,           // NEO_ASM_PUSH_NUMBER
     neo_js_vm_push_string,           // NEO_ASM_PUSH_STRING
-    NULL,                            // NEO_ASM_PUSH_BIGINT
+    neo_js_vm_push_bigint,           // NEO_ASM_PUSH_BIGINT
     NULL,                            // NEO_ASM_PUSH_REGEX
     neo_js_vm_push_function,         // NEO_ASM_PUSH_FUNCTION
     neo_js_vm_push_class,            // NEO_ASM_PUSH_CLASS

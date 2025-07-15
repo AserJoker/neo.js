@@ -148,3 +148,8 @@ neo_list_node_t neo_list_node_next(neo_list_node_t self) { return self->next; }
 neo_list_node_t neo_list_node_last(neo_list_node_t self) { return self->last; }
 
 void *neo_list_node_get(neo_list_node_t self) { return self->data; }
+void neo_list_clear(neo_list_t self) {
+  while (self->size) {
+    neo_list_erase(self, self->head.next);
+  }
+}
