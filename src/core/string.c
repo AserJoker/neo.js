@@ -1,5 +1,6 @@
 #include "core/string.h"
 #include "core/allocator.h"
+#include <stdint.h>
 #include <string.h>
 #include <wchar.h>
 
@@ -70,6 +71,22 @@ wchar_t *neo_create_wstring(neo_allocator_t allocator, const wchar_t *src) {
   wcscpy(str, src);
   str[wcslen(src)] = 0;
   return str;
+}
+
+uint16_t *neo_wstring_to_char16(neo_allocator_t allocator, const wchar_t *src) {
+  if (sizeof(wchar_t) != sizeof(uint16_t)) {
+    size_t len = wcslen(src) + 1;
+    uint16_t *pstr =
+        neo_allocator_alloc(allocator, len * sizeof(uint16_t), NULL);
+    size_t idx = 0;
+    for (idx = 0; src[idx] != 0; idx++) {
+      pstr[idx] = src[idx];
+    }
+    pstr[idx] = 0;
+    return pstr;
+  } else {
+    return (uint16_t *)neo_create_wstring(allocator, src);
+  }
 }
 
 bool neo_wstring_end_with(const wchar_t *src, const wchar_t *text) {

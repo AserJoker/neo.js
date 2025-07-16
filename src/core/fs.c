@@ -25,8 +25,9 @@ char *neo_fs_read_file(neo_allocator_t allocator, const wchar_t *filename) {
   len = ftell(fp);
   fseek(fp, 0, SEEK_SET);
   char *buf = neo_allocator_alloc(allocator, len + 1, NULL);
-  memset(buf, 0, len);
+  memset(buf, 0, len + 1);
   fread(buf, len, 1, fp);
+  buf[len] = 0;
   fclose(fp);
   return buf;
 onerror:
