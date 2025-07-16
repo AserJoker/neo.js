@@ -13,6 +13,10 @@ set(PCRE2_BUILD_PCRE2_16 ON)
 
 add_subdirectory(third_party/pcre2)
 
+add_subdirectory(third_party/googletest)
+
+include(GoogleTest)
+
 include_directories(build/third_party/pcre2/interface)
 
 if(NOT EXISTS ${DerivedCoreProperties})
