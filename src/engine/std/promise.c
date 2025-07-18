@@ -176,6 +176,11 @@ neo_js_variable_t neo_js_promise_constructor(neo_js_context_t ctx,
                                              neo_js_variable_t self,
                                              uint32_t argc,
                                              neo_js_variable_t *argv) {
+  if (neo_js_context_get_call_type(ctx) != NEO_JS_CONSTRUCT_CALL) {
+    return neo_js_context_create_simple_error(
+        ctx, NEO_ERROR_TYPE,
+        L"Promise constructor cannot be invoked without 'new'");
+  }
   if (argc < 1 || neo_js_variable_get_type(argv[0])->kind < NEO_TYPE_CALLABLE) {
     return neo_js_context_create_simple_error(
         ctx, NEO_ERROR_TYPE, L" Promise resolver undefined is not a function");

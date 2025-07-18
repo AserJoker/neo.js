@@ -98,6 +98,7 @@ struct _neo_js_context_t {
   neo_hash_map_t modules;
   neo_hash_map_t features;
   neo_js_assert_fn_t assert_fn;
+  neo_js_call_type_t call_type;
   struct {
     neo_js_variable_t global;
     neo_js_variable_t object_constructor;
@@ -1103,6 +1104,7 @@ neo_js_context_t neo_create_js_context(neo_allocator_t allocator,
   neo_js_context_push_stackframe(ctx, NULL, L"_.eval", 0, 0);
   neo_js_context_init_std(ctx);
   neo_js_context_init_lib(ctx);
+  ctx->call_type = NEO_JS_FUNCTION_CALL;
   return ctx;
 }
 
@@ -1410,6 +1412,10 @@ neo_js_context_get_reference_error_constructor(neo_js_context_t ctx) {
 neo_js_variable_t
 neo_js_context_get_syntax_error_constructor(neo_js_context_t ctx) {
   return ctx->std.syntax_error_constructor;
+}
+neo_js_variable_t
+neo_js_context_get_internal_error_constructor(neo_js_context_t ctx) {
+  return ctx->std.internal_error_constructor;
 }
 
 neo_js_variable_t neo_js_context_get_object_constructor(neo_js_context_t ctx) {
@@ -2563,10 +2569,30 @@ neo_js_variable_t neo_js_context_call(neo_js_context_t ctx,
                                       neo_js_variable_t callee,
                                       neo_js_variable_t self, uint32_t argc,
                                       neo_js_variable_t *argv) {
+  neo_js_call_type_t current = ctx->call_type;
+  ctx->call_type = NEO_JS_FUNCTION_CALL;
+  neo_js_variable_t result = NULL;
   if (neo_js_variable_get_type(callee)->kind == NEO_TYPE_CFUNCTION) {
-    return neo_js_context_call_cfunction(ctx, callee, self, argc, argv);
+    result = neo_js_context_call_cfunction(ctx, callee, self, argc, argv);
   } else if (neo_js_variable_get_type(callee)->kind == NEO_TYPE_FUNCTION) {
-    return neo_js_context_call_function(ctx, callee, self, argc, argv);
+    result = neo_js_context_call_function(ctx, callee, self, argc, argv);
+  } else {
+    result = neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE,
+                                                L"callee is not a function");
+  }
+  ctx->call_type = current;
+  return result;
+}
+
+neo_js_variable_t neo_js_context_simple_call(neo_js_context_t ctx,
+                                            neo_js_variable_t super,
+                                            neo_js_variable_t self,
+                                            uint32_t argc,
+                                            neo_js_variable_t *argv) {
+  if (neo_js_variable_get_type(super)->kind == NEO_TYPE_CFUNCTION) {
+    return neo_js_context_call_cfunction(ctx, super, self, argc, argv);
+  } else if (neo_js_variable_get_type(super)->kind == NEO_TYPE_FUNCTION) {
+    return neo_js_context_call_function(ctx, super, self, argc, argv);
   } else {
     return neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE,
                                               L"callee is not a function");
@@ -2581,6 +2607,8 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
     return neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE,
                                               L"Constructor is not a function");
   }
+  neo_js_call_type_t current_call_type = ctx->call_type;
+  ctx->call_type = NEO_JS_CONSTRUCT_CALL;
   neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
   neo_js_scope_t current = neo_js_context_get_scope(ctx);
   neo_js_context_push_scope(ctx);
@@ -2607,6 +2635,7 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
   hobject = neo_js_variable_get_handle(object);
   object = neo_js_scope_create_variable(current, hobject, NULL);
   neo_js_context_pop_scope(ctx);
+  ctx->call_type = current_call_type;
   return object;
 }
 
@@ -4309,4 +4338,7 @@ void neo_js_context_set_feature(neo_js_context_t ctx, const wchar_t *feature,
   feat->disable_fn = disable_fn;
   neo_hash_map_set(ctx->features, neo_create_wstring(allocator, feature), feat,
                    NULL, NULL);
+}
+neo_js_call_type_t neo_js_context_get_call_type(neo_js_context_t ctx) {
+  return ctx->call_type;
 }

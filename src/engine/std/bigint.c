@@ -1,0 +1,112 @@
+#include "engine/std/bigint.h"
+#include "core/allocator.h"
+#include "core/bigint.h"
+#include "engine/basetype/boolean.h"
+#include "engine/basetype/number.h"
+#include "engine/basetype/string.h"
+#include "engine/context.h"
+#include "engine/type.h"
+#include "engine/variable.h"
+#include <wchar.h>
+neo_js_variable_t neo_js_bigint_as_int_n(neo_js_context_t ctx,
+                                         neo_js_variable_t self, uint32_t argc,
+                                         neo_js_variable_t *argv) {}
+
+neo_js_variable_t neo_js_bigint_as_uint_n(neo_js_context_t ctx,
+                                          neo_js_variable_t self, uint32_t argc,
+                                          neo_js_variable_t *argv) {}
+
+neo_js_variable_t neo_js_bigint_constructor(neo_js_context_t ctx,
+                                            neo_js_variable_t self,
+                                            uint32_t argc,
+                                            neo_js_variable_t *argv) {
+  if (neo_js_context_get_call_type(ctx) == NEO_JS_CONSTRUCT_CALL) {
+    return neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE,
+                                              L"BigInt is not a constructor");
+  }
+  if (argc == 0 ||
+      neo_js_variable_get_type(argv[0])->kind == NEO_TYPE_UNDEFINED) {
+    return neo_js_context_create_simple_error(
+        ctx, NEO_ERROR_TYPE, L"Cannot convert undefined to a BigInt");
+  }
+  if (neo_js_variable_get_type(argv[0])->kind == NEO_TYPE_NULL) {
+    return neo_js_context_create_simple_error(
+        ctx, NEO_ERROR_TYPE, L"Cannot convert null to a BigInt");
+  }
+  neo_js_variable_t variable = neo_js_context_to_primitive(ctx, argv[0], NULL);
+  NEO_JS_TRY_AND_THROW(variable);
+  if (neo_js_variable_get_type(variable)->kind == NEO_TYPE_SYMBOL) {
+    return neo_js_context_create_simple_error(
+        ctx, NEO_ERROR_TYPE, L"Cannot convert symbol to a BigInt");
+  }
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  if (neo_js_variable_get_type(variable)->kind == NEO_TYPE_NUMBER) {
+    neo_js_number_t num = neo_js_variable_to_number(variable);
+    neo_bigint_t bigint = neo_number_to_bigint(allocator, num->number);
+    return neo_js_context_create_bigint(ctx, bigint);
+  } else if (neo_js_variable_get_type(variable)->kind == NEO_TYPE_BOOLEAN) {
+    neo_js_boolean_t boolean = neo_js_variable_to_boolean(variable);
+    neo_bigint_t bigint = neo_number_to_bigint(allocator, boolean->boolean);
+    return neo_js_context_create_bigint(ctx, bigint);
+  } else {
+    variable = neo_js_context_to_string(ctx, variable);
+    NEO_JS_TRY_AND_THROW(variable);
+    neo_js_string_t string = neo_js_variable_to_string(variable);
+    neo_bigint_t bigint = neo_string_to_bigint(allocator, string->string);
+    if (!bigint) {
+      size_t len = wcslen(string->string) + 64;
+      wchar_t *message =
+          neo_allocator_alloc(allocator, len * sizeof(wchar_t), NULL);
+      neo_js_context_defer_free(ctx, message);
+      swprintf(message, len, L"Cannot convert %ls to a BigInt", string->string);
+    }
+    return neo_js_context_create_bigint(ctx, bigint);
+  }
+}
+
+neo_js_variable_t neo_js_bigint_to_string(neo_js_context_t ctx,
+                                          neo_js_variable_t self, uint32_t argc,
+                                          neo_js_variable_t *argv) {
+  uint32_t radix = 10;
+  if (argc > 0) {
+    neo_js_variable_t v_radix = neo_js_context_to_integer(ctx, argv[0]);
+    NEO_JS_TRY_AND_THROW(v_radix);
+    radix = neo_js_variable_to_number(v_radix)->number;
+    if (radix > 36 || radix < 2) {
+      return neo_js_context_create_simple_error(
+          ctx, NEO_ERROR_RANGE,
+          L"toString() radix argument must be between 2 and 36");
+    }
+  }
+  neo_js_variable_t primitive =
+      neo_js_context_get_internal(ctx, self, L"[[primitive]]");
+  if (neo_js_variable_get_type(primitive)->kind != NEO_TYPE_BIGINT) {
+    return neo_js_context_create_simple_error(
+        ctx, NEO_ERROR_TYPE,
+        L"BigInt.prototype.valueOf requires that 'this' be a BigInt");
+  }
+  neo_bigint_t bigint = neo_js_variable_to_bigint(primitive)->bigint;
+  wchar_t *str = neo_bigint_to_string(bigint, radix);
+  neo_js_context_defer_free(ctx, str);
+  return neo_js_context_create_string(ctx, str);
+}
+
+neo_js_variable_t neo_js_bigint_to_local_string(neo_js_context_t ctx,
+                                                neo_js_variable_t self,
+                                                uint32_t argc,
+                                                neo_js_variable_t *argv) {
+  return neo_js_bigint_to_string(ctx, self, argc, argv);
+}
+
+neo_js_variable_t neo_js_bigint_value_of(neo_js_context_t ctx,
+                                         neo_js_variable_t self, uint32_t argc,
+                                         neo_js_variable_t *argv) {
+  neo_js_variable_t primitive =
+      neo_js_context_get_internal(ctx, self, L"[[primitive]]");
+  if (neo_js_variable_get_type(primitive)->kind != NEO_TYPE_BIGINT) {
+    return neo_js_context_create_simple_error(
+        ctx, NEO_ERROR_TYPE,
+        L"BigInt.prototype.valueOf requires that 'this' be a BigInt");
+  }
+  return primitive;
+}

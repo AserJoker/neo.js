@@ -103,6 +103,9 @@ neo_js_context_get_reference_error_constructor(neo_js_context_t ctx);
 neo_js_variable_t
 neo_js_context_get_syntax_error_constructor(neo_js_context_t ctx);
 
+neo_js_variable_t
+neo_js_context_get_internal_error_constructor(neo_js_context_t ctx);
+
 neo_js_variable_t neo_js_context_get_object_constructor(neo_js_context_t ctx);
 
 neo_js_variable_t neo_js_context_get_function_constructor(neo_js_context_t ctx);
@@ -230,6 +233,12 @@ neo_js_variable_t neo_js_context_call(neo_js_context_t ctx,
                                       neo_js_variable_t callee,
                                       neo_js_variable_t self, uint32_t argc,
                                       neo_js_variable_t *argv);
+
+neo_js_variable_t neo_js_context_simple_call(neo_js_context_t ctx,
+                                             neo_js_variable_t super,
+                                             neo_js_variable_t self,
+                                             uint32_t argc,
+                                             neo_js_variable_t *argv);
 
 neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
                                            neo_js_variable_t constructor,
@@ -421,6 +430,8 @@ void neo_js_context_disable(neo_js_context_t ctx, const wchar_t *feature);
 void neo_js_context_set_feature(neo_js_context_t ctx, const wchar_t *feature,
                                 neo_js_feature_fn_t enable_fn,
                                 neo_js_feature_fn_t disable_fn);
+
+neo_js_call_type_t neo_js_context_get_call_type(neo_js_context_t ctx);
 
 #define NEO_JS_TRY(expr)                                                       \
   if (neo_js_variable_get_type(expr)->kind == NEO_TYPE_ERROR)

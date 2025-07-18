@@ -110,7 +110,7 @@ neo_bigint_t neo_bigint_clone(neo_bigint_t self) {
   return bigint;
 }
 
-wchar_t *neo_bigint_to_string(neo_bigint_t bigint) {
+wchar_t *neo_bigint_to_string(neo_bigint_t bigint, uint32_t radix) {
   size_t max = 128;
   wchar_t *result =
       neo_allocator_alloc(bigint->allocator, sizeof(wchar_t) * max, NULL);
@@ -123,12 +123,15 @@ wchar_t *neo_bigint_to_string(neo_bigint_t bigint) {
     result[0] = '0';
     result[1] = 0;
   } else {
-    neo_bigint_t mod = neo_number_to_bigint(bigint->allocator, 10);
+    neo_bigint_t mod = neo_number_to_bigint(bigint->allocator, radix);
     while (neo_bigint_is_greater(tmp, another)) {
       neo_bigint_t mod_res = neo_bigint_mod(tmp, mod);
       chunk_t val =
           *(chunk_t *)(neo_list_node_get(neo_list_get_first(mod_res->data)));
       wchar_t s[2] = {val + '0', 0};
+      if (val >= 10) {
+        s[0] = val - 10 + 'a';
+      }
       result = neo_wstring_concat(bigint->allocator, result, &max, s);
       neo_allocator_free(bigint->allocator, mod_res);
       mod_res = neo_bigint_div(tmp, mod);

@@ -7,11 +7,7 @@ neo_js_variable_t neo_js_syntax_error_constructor(neo_js_context_t ctx,
                                                   neo_js_variable_t self,
                                                   uint32_t argc,
                                                   neo_js_variable_t *argv) {
-  neo_js_variable_t is_instance_of = neo_js_context_instance_of(
-      ctx, self, neo_js_context_get_syntax_error_constructor(ctx));
-  neo_js_boolean_t bl_is_instance_of =
-      neo_js_variable_to_boolean(is_instance_of);
-  if (!bl_is_instance_of->boolean) {
+  if (neo_js_context_get_call_type(ctx) == NEO_JS_FUNCTION_CALL) {
     neo_js_variable_t constructor =
         neo_js_context_get_syntax_error_constructor(ctx);
     neo_js_variable_t prototype = neo_js_context_get_field(

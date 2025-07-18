@@ -21,7 +21,7 @@ static neo_js_variable_t neo_js_bigint_to_string(neo_js_context_t ctx,
       neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
   neo_js_bigint_t bigint = neo_js_value_to_bigint(
       neo_js_handle_get_value(neo_js_variable_get_handle(self)));
-  wchar_t *bigint_str = neo_bigint_to_string(bigint->bigint);
+  wchar_t *bigint_str = neo_bigint_to_string(bigint->bigint, 10);
   neo_js_string_t string = neo_create_js_string(allocator, bigint_str);
   neo_allocator_free(allocator, bigint_str);
   return neo_js_context_create_variable(

@@ -453,7 +453,7 @@ void neo_js_vm_super_call(neo_js_vm_t vm, neo_program_t program) {
   if (callable) {
     neo_js_context_push_stackframe(vm->ctx, program->filename, callable->name,
                                    column, line);
-    result = neo_js_context_call(vm->ctx, extend, vm->self, argc, argv);
+    result = neo_js_context_simple_call(vm->ctx, extend, vm->self, argc, argv);
     neo_js_context_pop_stackframe(vm->ctx);
   } else if (!callable) {
     neo_js_context_push_stackframe(vm->ctx, program->filename, NULL, column,

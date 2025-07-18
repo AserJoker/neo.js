@@ -7,6 +7,12 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef enum _neo_js_call_type_t {
+  NEO_JS_FUNCTION_CALL,
+  NEO_JS_CONSTRUCT_CALL
+} neo_js_call_type_t;
+
 typedef struct _neo_js_context_t *neo_js_context_t;
 
 typedef struct _neo_js_variable_t *neo_js_variable_t;

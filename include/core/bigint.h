@@ -20,7 +20,7 @@ neo_bigint_t neo_string_to_bigint(neo_allocator_t allocator,
 
 neo_bigint_t neo_bigint_clone(neo_bigint_t self);
 
-wchar_t *neo_bigint_to_string(neo_bigint_t bigint);
+wchar_t *neo_bigint_to_string(neo_bigint_t bigint, uint32_t redix);
 
 double neo_bigint_to_number(neo_bigint_t bigint);
 

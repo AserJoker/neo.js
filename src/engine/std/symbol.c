@@ -13,6 +13,10 @@ neo_js_variable_t neo_js_symbol_constructor(neo_js_context_t ctx,
                                             neo_js_variable_t self,
                                             uint32_t argc,
                                             neo_js_variable_t *argv) {
+  if (neo_js_context_get_call_type(ctx) == NEO_JS_CONSTRUCT_CALL) {
+    return neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE,
+                                              L"Symbol is not a constructor");
+  }
   const wchar_t *description = NULL;
   if (argc > 0) {
     neo_js_variable_t str = argv[0];
