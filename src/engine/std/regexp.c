@@ -87,7 +87,7 @@ neo_js_variable_t neo_js_regexp_constructor(neo_js_context_t ctx,
       swprintf(message, len,
                L"Invalid flags supplied to RegExp constructor '%ls'", s_flag);
       neo_js_variable_t error =
-          neo_js_context_create_error(ctx, NEO_ERROR_SYNTAX, message);
+          neo_js_context_create_simple_error(ctx, NEO_ERROR_SYNTAX, message);
       neo_allocator_free(allocator, message);
       return error;
     }
@@ -131,7 +131,7 @@ neo_js_variable_t neo_js_regexp_constructor(neo_js_context_t ctx,
         L"Invalid regular expression: /%ls/%ls: Unterminated character class",
         rule, s_flag);
     neo_js_variable_t error =
-        neo_js_context_create_error(ctx, NEO_ERROR_SYNTAX, message);
+        neo_js_context_create_simple_error(ctx, NEO_ERROR_SYNTAX, message);
     neo_allocator_free(allocator, message);
     return error;
   }
@@ -246,7 +246,7 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
     }
   }
   if (rc > 0) {
-    result = neo_js_context_create_array(ctx, 0);
+    result = neo_js_context_create_array(ctx);
     size_t start = ovector[0];
     size_t end = ovector[(rc - 1) * 2 + 1];
     size_t len = end - start;
@@ -264,7 +264,7 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
         ctx, result, neo_js_context_create_string(ctx, L"input"), argv[0]);
     neo_js_variable_t indices = NULL;
     if (regex->flag & NEO_REGEXP_FLAG_HAS_INDICES) {
-      indices = neo_js_context_create_array(ctx, 0);
+      indices = neo_js_context_create_array(ctx);
       neo_js_context_set_field(
           ctx, result, neo_js_context_create_string(ctx, L"indices"), indices);
     }
@@ -280,7 +280,7 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
                                neo_js_context_create_string(ctx, part));
       neo_allocator_free(allocator, part);
       if (regex->flag & NEO_REGEXP_FLAG_HAS_INDICES) {
-        neo_js_variable_t item = neo_js_context_create_array(ctx, 2);
+        neo_js_variable_t item = neo_js_context_create_array(ctx);
         neo_js_context_set_field(ctx, item,
                                  neo_js_context_create_number(ctx, 0),
                                  neo_js_context_create_number(ctx, start));
@@ -330,7 +330,7 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
                                  neo_js_context_create_string(ctx, s_name),
                                  neo_js_context_create_string(ctx, part));
         neo_allocator_free(allocator, part);
-        neo_js_variable_t item = neo_js_context_create_array(ctx, 2);
+        neo_js_variable_t item = neo_js_context_create_array(ctx);
         neo_js_context_set_field(ctx, item,
                                  neo_js_context_create_number(ctx, 0),
                                  neo_js_context_create_number(ctx, start));

@@ -89,14 +89,11 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
     }
     size_t idx = 0;
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARRAY);
-    neo_program_add_number(allocator, ctx->program, 0);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_NUMBER);
     neo_program_add_number(allocator, ctx->program, idx);
     size_t count = 0;
     neo_list_node_t qit = neo_list_get_first(self->quasis);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARRAY);
-    neo_program_add_number(allocator, ctx->program,
-                           neo_list_get_size(self->quasis));
     while (qit != neo_list_get_tail(self->quasis)) {
       neo_token_t str = neo_list_node_get(qit);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_NUMBER);

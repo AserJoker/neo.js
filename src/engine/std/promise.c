@@ -62,7 +62,7 @@ neo_js_variable_t neo_js_promise_reject(neo_js_context_t ctx,
   } else {
     value = neo_js_context_create_undefined(ctx);
   }
-  neo_js_variable_t error = neo_js_context_create_value_error(ctx, value);
+  neo_js_variable_t error = neo_js_context_create_error(ctx, value);
   neo_js_variable_t callback = neo_js_context_create_cfunction(
       ctx, NULL, neo_js_promise_resolve_callback);
   neo_js_callable_set_closure(ctx, callback, L"value", error);
@@ -177,7 +177,7 @@ neo_js_variable_t neo_js_promise_constructor(neo_js_context_t ctx,
                                              uint32_t argc,
                                              neo_js_variable_t *argv) {
   if (argc < 1 || neo_js_variable_get_type(argv[0])->kind < NEO_TYPE_CALLABLE) {
-    return neo_js_context_create_error(
+    return neo_js_context_create_simple_error(
         ctx, NEO_ERROR_TYPE, L" Promise resolver undefined is not a function");
   }
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);

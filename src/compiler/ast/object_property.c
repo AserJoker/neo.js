@@ -39,10 +39,14 @@ static void neo_ast_object_property_write(neo_allocator_t allocator,
   if (self->computed) {
     TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
   } else {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-    wchar_t *name = neo_location_get(allocator, self->identifier->location);
-    neo_program_add_string(allocator, ctx->program, name);
-    neo_allocator_free(allocator, name);
+    if (self->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+      wchar_t *name = neo_location_get(allocator, self->identifier->location);
+      neo_program_add_string(allocator, ctx->program, name);
+      neo_allocator_free(allocator, name);
+    } else {
+      TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
+    }
   }
   if (self->value) {
     self->value->write(allocator, ctx, self->value);

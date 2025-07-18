@@ -319,14 +319,14 @@ neo_js_variable_t neo_js_async_generator_throw(neo_js_context_t ctx,
   neo_js_scope_t current = neo_js_context_set_scope(ctx, co->vm->scope);
   neo_js_variable_t arg = NULL;
   if (argc > 0) {
-    arg = neo_js_context_create_value_error(ctx, argv[0]);
+    arg = neo_js_context_create_error(ctx, argv[0]);
   } else {
-    arg = neo_js_context_create_value_error(
+    arg = neo_js_context_create_error(
         ctx, neo_js_context_construct(
                  ctx, neo_js_context_get_error_constructor(ctx), 0, NULL));
   }
   neo_js_context_set_scope(ctx, current);
-  neo_list_push(co->vm->stack, neo_js_context_create_value_error(ctx, arg));
+  neo_list_push(co->vm->stack, neo_js_context_create_error(ctx, arg));
   co->vm->offset = neo_buffer_get_size(co->program->codes);
   neo_js_variable_t resolver = neo_js_context_create_cfunction(
       ctx, NULL, neo_js_async_generator_resolver);

@@ -1,6 +1,5 @@
 #include "engine/basetype/array.h"
 #include "core/allocator.h"
-#include "engine/basetype/error.h"
 #include "engine/basetype/number.h"
 #include "engine/basetype/object.h"
 #include "engine/basetype/string.h"
@@ -40,8 +39,8 @@ static neo_js_variable_t neo_js_array_set_field(neo_js_context_t ctx,
       double length =
           neo_js_value_to_number(neo_js_variable_get_value(value))->number;
       if (length < 0) {
-        return neo_js_context_create_error(ctx, NEO_ERROR_RANGE,
-                                           L"Invalid array length");
+        return neo_js_context_create_simple_error(ctx, NEO_ERROR_RANGE,
+                                                  L"Invalid array length");
       }
       for (size_t i = length; i < array->length; i++) {
         neo_js_variable_t idx = neo_js_context_create_number(ctx, i);

@@ -153,3 +153,24 @@ void neo_list_clear(neo_list_t self) {
     neo_list_erase(self, self->head.next);
   }
 }
+void neo_list_swap(neo_list_t self, neo_list_node_t a, neo_list_node_t b) {
+  void *dataa = a->data;
+  void *datab = b->data;
+  b->data = dataa;
+  a->data = datab;
+}
+
+void neo_list_move(neo_list_t self, neo_list_node_t pos,
+                   neo_list_node_t current) {
+  if (pos == current) {
+    return;
+  }
+  current->last->next = current->next;
+  current->next->last = current->last;
+
+  current->last = pos;
+  current->next = pos->next;
+
+  current->next->last = current;
+  current->last->next = current;
+}

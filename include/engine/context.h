@@ -39,6 +39,8 @@ neo_js_runtime_t neo_js_context_get_runtime(neo_js_context_t ctx);
 #define neo_js_context_get_allocator(ctx)                                      \
   neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx))
 
+void neo_js_context_defer_free(neo_js_context_t ctx, void *data);
+
 void neo_js_context_next_tick(neo_js_context_t ctx);
 
 bool neo_js_context_is_ready(neo_js_context_t ctx);
@@ -153,12 +155,10 @@ neo_js_variable_t neo_js_context_to_object(neo_js_context_t ctx,
 neo_js_variable_t neo_js_context_get_field(neo_js_context_t ctx,
                                            neo_js_variable_t object,
                                            neo_js_variable_t field);
-
 neo_js_variable_t neo_js_context_set_field(neo_js_context_t ctx,
                                            neo_js_variable_t object,
                                            neo_js_variable_t field,
                                            neo_js_variable_t value);
-
 neo_js_variable_t neo_js_context_get_private(neo_js_context_t ctx,
                                              neo_js_variable_t object,
                                              neo_js_variable_t field);
@@ -181,7 +181,6 @@ neo_js_variable_t neo_js_context_def_private_accessor(neo_js_context_t ctx,
 
 bool neo_js_context_has_field(neo_js_context_t ctx, neo_js_variable_t object,
                               neo_js_variable_t field);
-
 neo_js_variable_t
 neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
                          neo_js_variable_t field, neo_js_variable_t value,
@@ -237,12 +236,12 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
                                            uint32_t argc,
                                            neo_js_variable_t *argv);
 
-neo_js_variable_t neo_js_context_create_error(neo_js_context_t ctx,
-                                              neo_js_error_type_t type,
-                                              const wchar_t *message);
+neo_js_variable_t neo_js_context_create_simple_error(neo_js_context_t ctx,
+                                                     neo_js_error_type_t type,
+                                                     const wchar_t *message);
 
-neo_js_variable_t neo_js_context_create_value_error(neo_js_context_t ctx,
-                                                    neo_js_variable_t value);
+neo_js_variable_t neo_js_context_create_error(neo_js_context_t ctx,
+                                              neo_js_variable_t value);
 
 neo_js_variable_t neo_js_context_create_undefined(neo_js_context_t ctx);
 
@@ -269,8 +268,7 @@ neo_js_variable_t neo_js_context_create_object(neo_js_context_t ctx,
                                                neo_js_variable_t prototype,
                                                neo_js_object_t object);
 
-neo_js_variable_t neo_js_context_create_array(neo_js_context_t ctx,
-                                              uint32_t length);
+neo_js_variable_t neo_js_context_create_array(neo_js_context_t ctx);
 
 neo_js_variable_t neo_js_context_create_interrupt(neo_js_context_t ctx,
                                                   neo_js_variable_t variable,
@@ -305,6 +303,9 @@ neo_js_variable_t neo_js_context_to_boolean(neo_js_context_t ctx,
 
 neo_js_variable_t neo_js_context_to_number(neo_js_context_t ctx,
                                            neo_js_variable_t variable);
+
+neo_js_variable_t neo_js_context_to_integer(neo_js_context_t ctx,
+                                            neo_js_variable_t variable);
 
 neo_js_variable_t neo_js_context_is_equal(neo_js_context_t ctx,
                                           neo_js_variable_t variable,
@@ -421,6 +422,13 @@ void neo_js_context_set_feature(neo_js_context_t ctx, const wchar_t *feature,
                                 neo_js_feature_fn_t enable_fn,
                                 neo_js_feature_fn_t disable_fn);
 
+#define NEO_JS_TRY(expr)                                                       \
+  if (neo_js_variable_get_type(expr)->kind == NEO_TYPE_ERROR)
+#define NEO_JS_TRY_AND_THROW(expr)                                             \
+  do {                                                                         \
+    neo_js_variable_t error = (expr);                                          \
+    NEO_JS_TRY(error) { return error; }                                        \
+  } while (0);
 #ifdef __cplusplus
 }
 #endif

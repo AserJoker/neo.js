@@ -35,7 +35,7 @@ neo_js_variable_t neo_js_object_keys(neo_js_context_t ctx,
                                      neo_js_variable_t *argv) {
 
   if (argc < 1) {
-    return neo_js_context_create_array(ctx, 0);
+    return neo_js_context_create_array(ctx);
   }
   return neo_js_context_get_keys(ctx, argv[0]);
 }

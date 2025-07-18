@@ -20,6 +20,8 @@ neo_js_number_t neo_create_js_number(neo_allocator_t allocator, double value);
 
 neo_js_number_t neo_js_value_to_number(neo_js_value_t value);
 
+#define NEO_MAX_INTEGER 9007199254740991
+
 #ifdef __cplusplus
 }
 #endif

@@ -53,6 +53,11 @@ void *neo_list_node_get(neo_list_node_t self);
 
 void neo_list_clear(neo_list_t self);
 
+void neo_list_swap(neo_list_t self, neo_list_node_t a, neo_list_node_t b);
+
+void neo_list_move(neo_list_t self, neo_list_node_t pos,
+                   neo_list_node_t current);
+
 #ifdef __cplusplus
 };
 #endif

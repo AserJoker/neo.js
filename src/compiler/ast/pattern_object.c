@@ -33,7 +33,6 @@ static void neo_ast_pattern_object_write(neo_allocator_t allocator,
                                          neo_write_context_t ctx,
                                          neo_ast_pattern_object_t self) {
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARRAY);
-  neo_program_add_number(allocator, ctx->program, 0);
   size_t idx = 0;
   for (neo_list_node_t it = neo_list_get_first(self->items);
        it != neo_list_get_tail(self->items); it = neo_list_node_next(it)) {

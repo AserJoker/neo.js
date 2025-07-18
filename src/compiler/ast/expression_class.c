@@ -202,7 +202,6 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
     neo_allocator_free(allocator, name);
   }
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARRAY);
-  neo_program_add_number(allocator, ctx->program, 0);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_CALL);
   neo_program_add_integer(allocator, ctx->program,
                           self->node.location.begin.line);

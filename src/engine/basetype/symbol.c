@@ -16,7 +16,7 @@ static const wchar_t *neo_js_symbol_typeof(neo_js_context_t ctx,
 
 static neo_js_variable_t neo_js_symbol_to_string(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
-  return neo_js_context_create_error(
+  return neo_js_context_create_simple_error(
       ctx, NEO_ERROR_TYPE, L"Cannot convert a Symbol value to a string");
 }
 
@@ -27,7 +27,7 @@ static neo_js_variable_t neo_js_symbol_to_boolean(neo_js_context_t ctx,
 
 static neo_js_variable_t neo_js_symbol_to_number(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
-  return neo_js_context_create_error(
+  return neo_js_context_create_simple_error(
       ctx, NEO_ERROR_TYPE, L"Cannot convert a Symbol value to a number");
 }
 

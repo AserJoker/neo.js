@@ -65,13 +65,18 @@ static void neo_ast_class_method_write(neo_allocator_t allocator,
     neo_program_add_string(allocator, ctx->program, L"prototype");
     neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
   }
-  if (!self->computed) {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-    wchar_t *name = neo_location_get(allocator, self->name->location);
-    neo_program_add_string(allocator, ctx->program, name);
-    neo_allocator_free(allocator, name);
-  } else {
+  if (self->computed) {
     TRY(self->name->write(allocator, ctx, self->name)) { return; }
+  } else {
+    if (self->name->type == NEO_NODE_TYPE_IDENTIFIER ||
+        self->name->type == NEO_NODE_TYPE_PRIVATE_NAME) {
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+      wchar_t *name = neo_location_get(allocator, self->name->location);
+      neo_program_add_string(allocator, ctx->program, name);
+      neo_allocator_free(allocator, name);
+    } else {
+      TRY(self->name->write(allocator, ctx, self->name)) { return; }
+    }
   }
   neo_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
   size_t endaddr = neo_buffer_get_size(ctx->program->codes);

@@ -70,7 +70,6 @@ static void neo_ast_expression_new_write(neo_allocator_t allocator,
   }
   neo_allocator_free(allocator, addresses);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARRAY);
-  neo_program_add_number(allocator, ctx->program, 0);
   for (neo_list_node_t it = neo_list_get_first(self->arguments);
        it != neo_list_get_tail(self->arguments); it = neo_list_node_next(it)) {
     neo_ast_node_t argument = neo_list_node_get(it);

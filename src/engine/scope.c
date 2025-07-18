@@ -13,6 +13,8 @@ struct _neo_js_scope_t {
   neo_list_t variables;
   neo_map_t named_variables;
   neo_js_handle_t root;
+  neo_list_t defer_free;
+  neo_allocator_t allocator;
 };
 
 static bool neo_js_scope_check_alive(neo_allocator_t allocator,
@@ -109,6 +111,7 @@ static void neo_js_scope_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, self->children);
   neo_allocator_free(allocator, self->variables);
   neo_allocator_free(allocator, self->named_variables);
+  neo_allocator_free(allocator, self->defer_free);
   neo_js_scope_gc(allocator, self);
   neo_allocator_free(allocator, self->root);
 }
@@ -133,6 +136,8 @@ neo_js_scope_t neo_create_js_scope(neo_allocator_t allocator,
   scope->named_variables = neo_create_map(allocator, &map_initialize);
   scope->children = neo_create_list(allocator, NULL);
   scope->root = neo_create_js_handle(allocator, NULL);
+  scope->defer_free = neo_create_list(allocator, &initialize);
+  scope->allocator = allocator;
   return scope;
 }
 
@@ -152,26 +157,28 @@ neo_js_variable_t neo_js_scope_get_variable(neo_js_scope_t self,
                                             const wchar_t *name) {
   return neo_map_get(self->named_variables, name, NULL);
 }
-void neo_js_scope_set_variable(neo_allocator_t allocator, neo_js_scope_t self,
-                               neo_js_variable_t variable,
+void neo_js_scope_set_variable(neo_js_scope_t self, neo_js_variable_t variable,
                                const wchar_t *name) {
-  neo_map_set(self->named_variables, neo_create_wstring(allocator, name),
+  neo_map_set(self->named_variables, neo_create_wstring(self->allocator, name),
               variable, NULL);
 }
 
-neo_js_variable_t neo_js_scope_create_variable(neo_allocator_t allocator,
-                                               neo_js_scope_t self,
+neo_js_variable_t neo_js_scope_create_variable(neo_js_scope_t self,
                                                neo_js_handle_t handle,
                                                const wchar_t *name) {
-  neo_js_variable_t variable = neo_create_js_variable(allocator, handle);
+  neo_js_variable_t variable = neo_create_js_variable(self->allocator, handle);
   neo_js_handle_add_parent(handle, self->root);
   neo_list_push(self->variables, variable);
   if (name) {
-    neo_map_set(self->named_variables, neo_create_wstring(allocator, name),
-                variable, NULL);
+    neo_map_set(self->named_variables,
+                neo_create_wstring(self->allocator, name), variable, NULL);
   }
   return variable;
 }
 neo_list_t neo_js_scope_get_variables(neo_js_scope_t scope) {
   return scope->variables;
+}
+
+void neo_js_scope_defer_free(neo_js_scope_t scope, void *data) {
+  neo_list_push(scope->defer_free, data);
 }

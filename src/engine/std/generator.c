@@ -31,8 +31,8 @@ neo_js_variable_t neo_js_generator_next(neo_js_context_t ctx,
       neo_js_context_get_internal(ctx, self, L"[[coroutine]]");
   neo_js_co_context_t co_ctx = neo_js_coroutine_get_context(coroutine);
   if (co_ctx->running) {
-    return neo_js_context_create_error(ctx, NEO_ERROR_TYPE,
-                                       L"Generator is running");
+    return neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE,
+                                              L"Generator is running");
   }
   if (co_ctx->result) {
     neo_js_context_set_field(ctx, result,
@@ -93,8 +93,8 @@ neo_js_variable_t neo_js_generator_return(neo_js_context_t ctx,
       neo_js_context_get_internal(ctx, self, L"[[coroutine]]");
   neo_js_co_context_t co_ctx = neo_js_coroutine_get_context(coroutine);
   if (co_ctx->running) {
-    return neo_js_context_create_error(ctx, NEO_ERROR_TYPE,
-                                       L"Generator is running");
+    return neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE,
+                                              L"Generator is running");
   }
   if (co_ctx->result) {
     neo_js_context_set_field(ctx, result,
@@ -156,8 +156,8 @@ neo_js_variable_t neo_js_generator_throw(neo_js_context_t ctx,
       neo_js_context_get_internal(ctx, self, L"[[coroutine]]");
   neo_js_co_context_t co_ctx = neo_js_coroutine_get_context(coroutine);
   if (co_ctx->running) {
-    return neo_js_context_create_error(ctx, NEO_ERROR_TYPE,
-                                       L"Generator is running");
+    return neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE,
+                                              L"Generator is running");
   }
   if (co_ctx->result) {
     neo_js_context_set_field(ctx, result,
@@ -170,9 +170,9 @@ neo_js_variable_t neo_js_generator_throw(neo_js_context_t ctx,
     neo_js_scope_t current = neo_js_context_set_scope(ctx, co_ctx->vm->scope);
     neo_js_variable_t arg = NULL;
     if (argc) {
-      arg = neo_js_context_create_value_error(ctx, argv[0]);
+      arg = neo_js_context_create_error(ctx, argv[0]);
     } else {
-      arg = neo_js_context_create_value_error(
+      arg = neo_js_context_create_error(
           ctx, neo_js_context_construct(
                    ctx, neo_js_context_get_error_constructor(ctx), 0, NULL));
     }

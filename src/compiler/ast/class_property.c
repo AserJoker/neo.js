@@ -45,13 +45,18 @@ static void neo_ast_class_property_write(neo_allocator_t allocator,
   if (!self->static_) {
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_THIS);
   }
-  if (!self->computed) {
-    wchar_t *name = neo_location_get(allocator, self->identifier->location);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-    neo_program_add_string(allocator, ctx->program, name);
-    neo_allocator_free(allocator, name);
-  } else {
+  if (self->computed) {
     TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
+  } else {
+    if (self->identifier->type == NEO_NODE_TYPE_IDENTIFIER ||
+        self->identifier->type == NEO_NODE_TYPE_PRIVATE_NAME) {
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+      wchar_t *name = neo_location_get(allocator, self->identifier->location);
+      neo_program_add_string(allocator, ctx->program, name);
+      neo_allocator_free(allocator, name);
+    } else {
+      TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
+    }
   }
   if (self->value) {
     TRY(self->value->write(allocator, ctx, self->value)) { return; }

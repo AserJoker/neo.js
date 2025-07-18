@@ -210,9 +210,8 @@ static neo_js_variable_t neo_js_vm_scope_dispose(neo_js_vm_t vm) {
   if (!result) {
     result = neo_js_context_create_undefined(vm->ctx);
   }
-  neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
   result = neo_js_scope_create_variable(
-      allocator, parent, neo_js_variable_get_handle(result), NULL);
+      parent, neo_js_variable_get_handle(result), NULL);
   return result;
 }
 
@@ -239,8 +238,8 @@ void neo_js_vm_pop_scope(neo_js_vm_t vm, neo_program_t program) {
 void neo_js_vm_pop(neo_js_vm_t vm, neo_program_t program) {
   if (!neo_list_get_size(vm->stack)) {
     neo_list_push(vm->stack,
-                  neo_js_context_create_error(vm->ctx, NEO_ERROR_INTERNAL,
-                                              L"vm stack overflow"));
+                  neo_js_context_create_simple_error(
+                      vm->ctx, NEO_ERROR_INTERNAL, L"vm stack overflow"));
     vm->offset = neo_buffer_get_size(program->codes);
     return;
   }
@@ -272,7 +271,8 @@ void neo_js_vm_load(neo_js_vm_t vm, neo_program_t program) {
     wchar_t *message =
         neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
     swprintf(message, len, L"'%ls' is not initialized", name);
-    variable = neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE, message);
+    variable =
+        neo_js_context_create_simple_error(vm->ctx, NEO_ERROR_TYPE, message);
     neo_allocator_free(allocator, message);
   }
   neo_list_push(vm->stack, variable);
@@ -420,8 +420,7 @@ void neo_js_vm_push_object(neo_js_vm_t vm, neo_program_t program) {
   neo_list_push(vm->stack, neo_js_context_create_object(vm->ctx, NULL, NULL));
 }
 void neo_js_vm_push_array(neo_js_vm_t vm, neo_program_t program) {
-  double length = neo_js_vm_read_number(vm, program);
-  neo_list_push(vm->stack, neo_js_context_create_array(vm->ctx, length));
+  neo_list_push(vm->stack, neo_js_context_create_array(vm->ctx));
 }
 void neo_js_vm_push_this(neo_js_vm_t vm, neo_program_t program) {
   neo_list_push(vm->stack,
@@ -459,14 +458,17 @@ void neo_js_vm_super_call(neo_js_vm_t vm, neo_program_t program) {
   } else if (!callable) {
     neo_js_context_push_stackframe(vm->ctx, program->filename, NULL, column,
                                    line);
-    result = neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
-                                         L"super is not callable");
+    result = neo_js_context_create_simple_error(vm->ctx, NEO_ERROR_TYPE,
+                                                L"super is not callable");
     neo_js_context_pop_stackframe(vm->ctx);
   }
   neo_allocator_free(allocator, argv);
-  neo_list_push(vm->stack, result);
   if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    neo_list_push(vm->stack, result);
     vm->offset = neo_buffer_get_size(program->codes);
+  } else if (neo_js_variable_get_type(result)->kind >= NEO_TYPE_OBJECT) {
+    neo_js_type_t type = neo_js_variable_get_type(result);
+    type->copy_fn(vm->ctx, result, vm->self);
   }
 }
 void neo_js_vm_super_member_call(neo_js_vm_t vm, neo_program_t program) {
@@ -506,8 +508,8 @@ void neo_js_vm_super_member_call(neo_js_vm_t vm, neo_program_t program) {
   } else if (!callable) {
     neo_js_context_push_stackframe(vm->ctx, program->filename, NULL, column,
                                    line);
-    result = neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
-                                         L"variable is not callable");
+    result = neo_js_context_create_simple_error(vm->ctx, NEO_ERROR_TYPE,
+                                                L"variable is not callable");
     neo_js_context_pop_stackframe(vm->ctx);
   }
   neo_allocator_free(allocator, argv);
@@ -598,9 +600,9 @@ void neo_js_vm_set_address(neo_js_vm_t vm, neo_program_t program) {
   size_t address = neo_js_vm_read_address(vm, program);
   neo_js_variable_t variable = neo_list_node_get(neo_list_get_last(vm->stack));
   if (neo_js_variable_get_type(variable)->kind != NEO_TYPE_FUNCTION) {
-    neo_list_push(vm->stack,
-                  neo_js_context_create_error(vm->ctx, NEO_ERROR_SYNTAX,
-                                              L"variable is not a function"));
+    neo_list_push(vm->stack, neo_js_context_create_simple_error(
+                                 vm->ctx, NEO_ERROR_SYNTAX,
+                                 L"variable is not a function"));
     vm->offset = neo_buffer_get_size(program->codes);
     return;
   }
@@ -613,8 +615,8 @@ void neo_js_vm_set_name(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t variable = neo_list_node_get(neo_list_get_last(vm->stack));
   if (neo_js_variable_get_type(variable)->kind != NEO_TYPE_FUNCTION) {
     neo_list_push(vm->stack,
-                  neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
-                                              L"variable is not a function"));
+                  neo_js_context_create_simple_error(
+                      vm->ctx, NEO_ERROR_TYPE, L"variable is not a function"));
     vm->offset = neo_buffer_get_size(program->codes);
     return;
   }
@@ -628,8 +630,8 @@ void neo_js_vm_set_closure(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t variable = neo_list_node_get(neo_list_get_last(vm->stack));
   if (neo_js_variable_get_type(variable)->kind != NEO_TYPE_FUNCTION) {
     neo_list_push(vm->stack,
-                  neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
-                                              L"variable is not a function"));
+                  neo_js_context_create_simple_error(
+                      vm->ctx, NEO_ERROR_TYPE, L"variable is not a function"));
     vm->offset = neo_buffer_get_size(program->codes);
     return;
   }
@@ -660,8 +662,8 @@ void neo_js_vm_set_source(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t variable = neo_list_node_get(neo_list_get_last(vm->stack));
   if (neo_js_variable_get_type(variable)->kind != NEO_TYPE_FUNCTION) {
     neo_list_push(vm->stack,
-                  neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
-                                              L"variable is not a function"));
+                  neo_js_context_create_simple_error(
+                      vm->ctx, NEO_ERROR_TYPE, L"variable is not a function"));
     vm->offset = neo_buffer_get_size(program->codes);
     return;
   }
@@ -713,8 +715,8 @@ void neo_js_vm_call(neo_js_vm_t vm, neo_program_t program) {
     neo_js_context_push_stackframe(vm->ctx, program->filename, L"", column,
                                    line);
     neo_list_push(vm->stack,
-                  neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
-                                              L"variable is not a function"));
+                  neo_js_context_create_simple_error(
+                      vm->ctx, NEO_ERROR_TYPE, L"variable is not a function"));
     neo_js_context_pop_stackframe(vm->ctx);
     vm->offset = neo_buffer_get_size(program->codes);
     neo_allocator_free(allocator, argv);
@@ -763,8 +765,8 @@ void neo_js_vm_member_call(neo_js_vm_t vm, neo_program_t program) {
   } else if (!callable) {
     neo_js_context_push_stackframe(vm->ctx, program->filename, NULL, column,
                                    line);
-    result = neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
-                                         L"variable is not callable");
+    result = neo_js_context_create_simple_error(vm->ctx, NEO_ERROR_TYPE,
+                                                L"variable is not callable");
     neo_js_context_pop_stackframe(vm->ctx);
   }
   neo_allocator_free(allocator, argv);
@@ -822,7 +824,7 @@ void neo_js_vm_private_member_call(neo_js_vm_t vm, neo_program_t program) {
              L"not declare it",
              str->string);
     neo_js_variable_t error =
-        neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE, message);
+        neo_js_context_create_simple_error(vm->ctx, NEO_ERROR_TYPE, message);
     neo_allocator_free(allocator, message);
     neo_list_push(vm->stack, error);
     vm->offset = neo_buffer_get_size(program->codes);
@@ -849,8 +851,8 @@ void neo_js_vm_private_member_call(neo_js_vm_t vm, neo_program_t program) {
   } else if (!callable) {
     neo_js_context_push_stackframe(vm->ctx, program->filename, NULL, column,
                                    line);
-    result = neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
-                                         L"variable is not callable");
+    result = neo_js_context_create_simple_error(vm->ctx, NEO_ERROR_TYPE,
+                                                L"variable is not callable");
     neo_js_context_pop_stackframe(vm->ctx);
   }
   neo_allocator_free(allocator, argv);
@@ -878,7 +880,7 @@ void neo_js_vm_get_private_field(neo_js_vm_t vm, neo_program_t program) {
              L"not declare it",
              str->string);
     neo_js_variable_t error =
-        neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE, message);
+        neo_js_context_create_simple_error(vm->ctx, NEO_ERROR_TYPE, message);
     neo_allocator_free(allocator, message);
     neo_list_push(vm->stack, error);
     vm->offset = neo_buffer_get_size(program->codes);
@@ -911,7 +913,7 @@ void neo_js_vm_set_private_field(neo_js_vm_t vm, neo_program_t program) {
              L"not declare it",
              str->string);
     neo_js_variable_t error =
-        neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE, message);
+        neo_js_context_create_simple_error(vm->ctx, NEO_ERROR_TYPE, message);
     neo_allocator_free(allocator, message);
     neo_list_push(vm->stack, error);
     vm->offset = neo_buffer_get_size(program->codes);
@@ -1149,7 +1151,7 @@ void neo_js_vm_break(neo_js_vm_t vm, neo_program_t program) {
     wchar_t *msg = neo_allocator_alloc(allocator, len * sizeof(wchar_t), NULL);
     swprintf(msg, len, L"Undefined label '%ls'", label);
     neo_js_variable_t error =
-        neo_js_context_create_error(vm->ctx, NEO_ERROR_SYNTAX, msg);
+        neo_js_context_create_simple_error(vm->ctx, NEO_ERROR_SYNTAX, msg);
     neo_allocator_free(allocator, msg);
     neo_list_push(vm->stack, error);
     vm->offset = neo_buffer_get_size(program->codes);
@@ -1190,7 +1192,7 @@ void neo_js_vm_continue(neo_js_vm_t vm, neo_program_t program) {
     wchar_t *msg = neo_allocator_alloc(allocator, len * sizeof(wchar_t), NULL);
     swprintf(msg, len, L"Undefined label '%ls'", label);
     neo_js_variable_t error =
-        neo_js_context_create_error(vm->ctx, NEO_ERROR_SYNTAX, msg);
+        neo_js_context_create_simple_error(vm->ctx, NEO_ERROR_SYNTAX, msg);
     neo_allocator_free(allocator, msg);
     neo_list_push(vm->stack, error);
     vm->offset = neo_buffer_get_size(program->codes);
@@ -1207,7 +1209,7 @@ void neo_js_vm_continue(neo_js_vm_t vm, neo_program_t program) {
 void neo_js_vm_throw(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_list_pop(vm->stack);
-  neo_js_variable_t error = neo_js_context_create_value_error(vm->ctx, value);
+  neo_js_variable_t error = neo_js_context_create_error(vm->ctx, value);
   neo_list_push(vm->stack, error);
   vm->offset = neo_buffer_get_size(program->codes);
 }
@@ -1273,8 +1275,8 @@ void neo_js_vm_iterator(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t it = neo_js_context_get_field(vm->ctx, value, iterator);
   if (neo_js_variable_get_type(it)->kind < NEO_TYPE_CALLABLE) {
     neo_list_push(vm->stack,
-                  neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
-                                              L"variable is not iterable"));
+                  neo_js_context_create_simple_error(
+                      vm->ctx, NEO_ERROR_TYPE, L"variable is not iterable"));
     vm->offset = neo_buffer_get_size(program->codes);
     return;
   } else {
@@ -1311,8 +1313,8 @@ void neo_js_vm_next(neo_js_vm_t vm, neo_program_t program) {
       vm->ctx, iterator, neo_js_context_create_string(vm->ctx, L"next"));
   if (neo_js_variable_get_type(next)->kind < NEO_TYPE_CALLABLE) {
     neo_list_push(vm->stack,
-                  neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
-                                              L"variable is not iterable"));
+                  neo_js_context_create_simple_error(
+                      vm->ctx, NEO_ERROR_TYPE, L"variable is not iterable"));
     vm->offset = neo_buffer_get_size(program->codes);
     return;
   }
@@ -1337,8 +1339,8 @@ void neo_js_vm_await_next(neo_js_vm_t vm, neo_program_t program) {
       vm->ctx, iterator, neo_js_context_create_string(vm->ctx, L"next"));
   if (neo_js_variable_get_type(next)->kind < NEO_TYPE_CALLABLE) {
     neo_list_push(vm->stack,
-                  neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
-                                              L"variable is not iterable"));
+                  neo_js_context_create_simple_error(
+                      vm->ctx, NEO_ERROR_TYPE, L"variable is not iterable"));
     vm->offset = neo_buffer_get_size(program->codes);
     return;
   }
@@ -1368,12 +1370,12 @@ void neo_js_vm_rest(neo_js_vm_t vm, neo_program_t program) {
       vm->ctx, iterator, neo_js_context_create_string(vm->ctx, L"next"));
   if (neo_js_variable_get_type(next)->kind < NEO_TYPE_CALLABLE) {
     neo_list_push(vm->stack,
-                  neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
-                                              L"variable is not iterable"));
+                  neo_js_context_create_simple_error(
+                      vm->ctx, NEO_ERROR_TYPE, L"variable is not iterable"));
     vm->offset = neo_buffer_get_size(program->codes);
   }
   neo_js_variable_t result = NULL;
-  neo_js_variable_t array = neo_js_context_create_array(vm->ctx, 0);
+  neo_js_variable_t array = neo_js_context_create_array(vm->ctx);
   int64_t idx = 0;
   for (;;) {
     result = neo_js_context_call(vm->ctx, next, iterator, 0, NULL);
@@ -1533,7 +1535,7 @@ void neo_js_vm_import(neo_js_vm_t vm, neo_program_t program) {
     swprintf(message, len, L"Cannot find module '%ls' imported from %ls", name,
              program->filename);
     neo_js_variable_t error =
-        neo_js_context_create_error(vm->ctx, NEO_ERROR_SYNTAX, message);
+        neo_js_context_create_simple_error(vm->ctx, NEO_ERROR_SYNTAX, message);
     neo_allocator_free(allocator, message);
     neo_list_push(vm->stack, error);
     vm->offset = neo_buffer_get_size(program->codes);
@@ -1614,8 +1616,8 @@ void neo_js_vm_new(neo_js_vm_t vm, neo_program_t program) {
   if (!callable) {
     neo_js_context_push_stackframe(vm->ctx, program->filename, NULL, column,
                                    line);
-    result = neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
-                                         L"variable is not constructable");
+    result = neo_js_context_create_simple_error(
+        vm->ctx, NEO_ERROR_TYPE, L"variable is not constructable");
     neo_js_context_pop_stackframe(vm->ctx);
   } else {
     neo_js_context_push_stackframe(vm->ctx, program->filename, callable->name,
@@ -1981,9 +1983,9 @@ void neo_js_vm_spread(neo_js_vm_t vm, neo_program_t program) {
     CHECK_AND_THROW(length, vm, program);
     neo_js_number_t nlength = neo_js_variable_to_number(length);
     if (!nlength) {
-      neo_list_push(vm->stack,
-                    neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
-                                                L"variable is not array-link"));
+      neo_list_push(vm->stack, neo_js_context_create_simple_error(
+                                   vm->ctx, NEO_ERROR_TYPE,
+                                   L"variable is not array-link"));
       vm->offset = neo_buffer_get_size(program->codes);
       return;
     }
@@ -1994,8 +1996,8 @@ void neo_js_vm_spread(neo_js_vm_t vm, neo_program_t program) {
     CHECK_AND_THROW(iterator, vm, program);
     if (neo_js_variable_get_type(iterator)->kind < NEO_TYPE_CALLABLE) {
       neo_list_push(vm->stack,
-                    neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
-                                                L"variable is not iterable"));
+                    neo_js_context_create_simple_error(
+                        vm->ctx, NEO_ERROR_TYPE, L"variable is not iterable"));
       vm->offset = neo_buffer_get_size(program->codes);
       return;
     }
@@ -2006,8 +2008,8 @@ void neo_js_vm_spread(neo_js_vm_t vm, neo_program_t program) {
     CHECK_AND_THROW(next, vm, program);
     if (neo_js_variable_get_type(next)->kind < NEO_TYPE_CALLABLE) {
       neo_list_push(vm->stack,
-                    neo_js_context_create_error(vm->ctx, NEO_ERROR_TYPE,
-                                                L"variable is not iterable"));
+                    neo_js_context_create_simple_error(
+                        vm->ctx, NEO_ERROR_TYPE, L"variable is not iterable"));
       vm->offset = neo_buffer_get_size(program->codes);
       return;
     }
@@ -2053,7 +2055,7 @@ void neo_js_vm_spread(neo_js_vm_t vm, neo_program_t program) {
                                neo_js_context_get_field(vm->ctx, value, key));
     }
   } else {
-    neo_list_push(vm->stack, neo_js_context_create_error(
+    neo_list_push(vm->stack, neo_js_context_create_simple_error(
                                  vm->ctx, NEO_ERROR_TYPE,
                                  L"variable is not a object/array"));
     vm->offset = neo_buffer_get_size(program->codes);
@@ -2205,8 +2207,7 @@ neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
             neo_js_try_frame_t frame =
                 neo_list_node_get(neo_list_get_last(vm->try_stack));
             goto_interrupt = neo_js_scope_create_variable(
-                allocator, frame->scope,
-                neo_js_variable_get_handle(goto_interrupt), NULL);
+                frame->scope, neo_js_variable_get_handle(goto_interrupt), NULL);
             neo_js_variable_t result = NULL;
             while (neo_list_get_size(vm->stack) != frame->stack_top) {
               neo_list_pop(vm->stack);
@@ -2220,8 +2221,7 @@ neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
               } else if (neo_js_variable_get_type(res)->kind ==
                          NEO_TYPE_ERROR) {
                 result = neo_js_scope_create_variable(
-                    allocator, frame->scope, neo_js_variable_get_handle(res),
-                    NULL);
+                    frame->scope, neo_js_variable_get_handle(res), NULL);
               }
               neo_js_context_pop_scope(vm->ctx);
             }
@@ -2267,7 +2267,7 @@ neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
               return res;
             } else if (neo_js_variable_get_type(res)->kind == NEO_TYPE_ERROR) {
               result = neo_js_scope_create_variable(
-                  allocator, scope, neo_js_variable_get_handle(res), NULL);
+                  scope, neo_js_variable_get_handle(res), NULL);
             }
             neo_js_context_pop_scope(vm->ctx);
           }
@@ -2301,7 +2301,7 @@ neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
       neo_js_variable_t result =
           neo_list_node_get(neo_list_get_last(vm->stack));
       result = neo_js_scope_create_variable(
-          allocator, frame->scope, neo_js_variable_get_handle(result), NULL);
+          frame->scope, neo_js_variable_get_handle(result), NULL);
       while (neo_list_get_size(vm->stack) != frame->stack_top) {
         neo_list_pop(vm->stack);
       }
@@ -2313,7 +2313,7 @@ neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
           return res;
         } else if (neo_js_variable_get_type(res)->kind == NEO_TYPE_ERROR) {
           result = neo_js_scope_create_variable(
-              allocator, frame->scope, neo_js_variable_get_handle(res), NULL);
+              frame->scope, neo_js_variable_get_handle(res), NULL);
         }
         neo_js_context_pop_scope(vm->ctx);
       }
@@ -2349,8 +2349,8 @@ neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
       cmds[code](vm, program);
     } else {
       vm->scope = neo_js_context_set_scope(vm->ctx, current);
-      return neo_js_context_create_error(vm->ctx, NEO_ERROR_SYNTAX,
-                                         L"Unsupport ASM");
+      return neo_js_context_create_simple_error(vm->ctx, NEO_ERROR_SYNTAX,
+                                                L"Unsupport ASM");
     }
   }
   vm->scope = neo_js_context_set_scope(vm->ctx, current);
@@ -2374,7 +2374,7 @@ neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
       return res;
     } else if (neo_js_variable_get_type(res)->kind == NEO_TYPE_ERROR) {
       result = neo_js_scope_create_variable(
-          allocator, current, neo_js_variable_get_handle(res), NULL);
+          current, neo_js_variable_get_handle(res), NULL);
     }
     neo_js_context_pop_scope(vm->ctx);
     vm->scope = neo_js_context_get_scope(vm->ctx);
