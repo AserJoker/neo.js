@@ -2,6 +2,7 @@
 #include "core/allocator.h"
 #include "engine/basetype/callable.h"
 #include "engine/context.h"
+#include "engine/handle.h"
 #include "engine/type.h"
 #include "engine/variable.h"
 #include <wchar.h>
@@ -55,4 +56,22 @@ neo_js_variable_t neo_js_function_call(neo_js_context_t ctx,
     return neo_js_context_call(ctx, self, neo_js_context_create_undefined(ctx),
                                0, NULL);
   }
+}
+
+neo_js_variable_t neo_js_function_bind(neo_js_context_t ctx,
+                                       neo_js_variable_t self, uint32_t argc,
+                                       neo_js_variable_t *argv) {
+  neo_js_variable_t result = neo_js_context_clone(ctx, self);
+  neo_js_variable_t bind = NULL;
+  if (argc > 0) {
+    bind = argv[0];
+  } else {
+    bind = neo_js_context_create_undefined(ctx);
+  }
+  neo_js_callable_t callable = neo_js_variable_to_callable(result);
+  if (!callable->bind) {
+    callable->bind = neo_js_variable_get_handle(bind);
+    neo_js_handle_add_parent(callable->bind, neo_js_variable_get_handle(self));
+  }
+  return result;
 }

@@ -309,6 +309,11 @@ static void neo_js_context_init_std_function(neo_js_context_t ctx) {
       ctx, prototype, neo_js_context_create_string(ctx, L"call"),
       neo_js_context_create_cfunction(ctx, L"call", neo_js_function_call), true,
       false, true);
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"bind"),
+      neo_js_context_create_cfunction(ctx, L"bind", neo_js_function_bind), true,
+      false, true);
 }
 
 static void neo_js_context_init_std_array(neo_js_context_t ctx) {
@@ -963,6 +968,15 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
   neo_js_context_init_std_promise(ctx);
 
   neo_js_context_init_std_regexp(ctx);
+
+  neo_js_context_extends(ctx, ctx->std.generator_function_constructor,
+                         ctx->std.function_constructor);
+
+  neo_js_context_extends(ctx, ctx->std.async_function_constructor,
+                         ctx->std.function_constructor);
+
+  neo_js_context_extends(ctx, ctx->std.async_generator_function_constructor,
+                         ctx->std.function_constructor);
 
   neo_js_context_init_std_console(ctx);
 
