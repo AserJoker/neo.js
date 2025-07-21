@@ -108,15 +108,11 @@ neo_js_variable_t neo_js_array_from(neo_js_context_t ctx,
                  neo_js_context_create_string(ctx, L"length"))) {
     neo_js_variable_t vlength = neo_js_context_get_field(
         ctx, array_like, neo_js_context_create_string(ctx, L"length"));
-    vlength = neo_js_context_to_number(ctx, vlength);
+    vlength = neo_js_context_to_integer(ctx, vlength);
     if (neo_js_variable_get_type(vlength)->kind == NEO_TYPE_ERROR) {
       return vlength;
     }
     neo_js_number_t num = neo_js_variable_to_number(vlength);
-    uint64_t length = num->number;
-    if (isnan(num->number)) {
-      length = 0;
-    }
     if (num->number < 0 || num->number > NEO_MAX_INTEGER) {
       return neo_js_context_create_simple_error(ctx, NEO_ERROR_RANGE,
                                                 L"Invalid array length");
@@ -1651,7 +1647,7 @@ neo_js_variable_t neo_js_array_splice(neo_js_context_t ctx,
       neo_js_variable_t key_new = neo_js_context_create_number(ctx, idx);
       neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
       NEO_JS_TRY_AND_THROW(item);
-      NEO_JS_TRY_AND_THROW(neo_js_context_set_field(ctx, result, key, item));
+      NEO_JS_TRY_AND_THROW(neo_js_context_set_field(ctx, result, key_new, item));
     }
   }
   double move_start = start + delete_count;

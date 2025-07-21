@@ -383,7 +383,7 @@ static void neo_js_context_init_std_array(neo_js_context_t ctx) {
   neo_js_variable_t every =
       neo_js_context_create_cfunction(ctx, L"every", neo_js_array_every);
   neo_js_context_def_field(ctx, prototype,
-                           neo_js_context_create_string(ctx, L"every"), entries,
+                           neo_js_context_create_string(ctx, L"every"), every,
                            true, false, true);
 
   neo_js_variable_t fill =
@@ -2708,7 +2708,6 @@ neo_js_variable_t neo_js_context_call_async_cfunction(neo_js_context_t ctx,
     self = neo_js_context_create_variable(ctx, neo_js_variable_get_handle(self),
                                           NULL);
   }
-  neo_js_variable_t clazz = neo_js_callable_get_class(ctx, callee);
   neo_js_variable_t *args =
       neo_allocator_alloc(allocator, sizeof(neo_js_variable_t) * argc, NULL);
   for (uint32_t idx = 0; idx < argc; idx++) {
@@ -3178,7 +3177,6 @@ neo_js_variable_t neo_js_context_to_boolean(neo_js_context_t ctx,
                                             neo_js_variable_t self) {
   neo_js_scope_t current = ctx->scope;
   neo_js_context_push_scope(ctx);
-  neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
   neo_js_type_t type = neo_js_variable_get_type(self);
   neo_js_variable_t result = type->to_boolean_fn(ctx, self);
   neo_js_handle_t hresult = neo_js_variable_get_handle(result);
@@ -3191,7 +3189,6 @@ neo_js_variable_t neo_js_context_to_number(neo_js_context_t ctx,
                                            neo_js_variable_t self) {
   neo_js_scope_t current = ctx->scope;
   neo_js_context_push_scope(ctx);
-  neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
   neo_js_type_t type = neo_js_variable_get_type(self);
   neo_js_variable_t result = type->to_number_fn(ctx, self);
   neo_js_handle_t hresult = neo_js_variable_get_handle(result);

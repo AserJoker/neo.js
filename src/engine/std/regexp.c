@@ -110,7 +110,6 @@ neo_js_variable_t neo_js_regexp_constructor(neo_js_context_t ctx,
     compile_options |= PCRE2_UTF | PCRE2_UCP;
   }
   compile_options |= PCRE2_DUPNAMES;
-  pcre2_compile_context *reg_ctx = pcre2_compile_context_create(NULL);
 #ifdef __linux__
   uint16_t *prule = neo_wstring_to_char16(allocator, rule);
   pcre2_code *code =
