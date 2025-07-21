@@ -45,6 +45,7 @@
 #include "engine/std/async_generator.h"
 #include "engine/std/async_generator_function.h"
 #include "engine/std/bigint.h"
+#include "engine/std/boolean.h"
 #include "engine/std/console.h"
 #include "engine/std/error.h"
 #include "engine/std/function.h"
@@ -822,7 +823,7 @@ static void neo_js_context_init_std_console(neo_js_context_t ctx) {
                            console, true, true, true);
 }
 
-static void neo_js_context_init_bigint(neo_js_context_t ctx) {
+static void neo_js_context_init_std_bigint(neo_js_context_t ctx) {
   neo_js_context_def_field(
       ctx, ctx->std.bigint_constructor,
       neo_js_context_create_string(ctx, L"asIntN"),
@@ -856,6 +857,25 @@ static void neo_js_context_init_bigint(neo_js_context_t ctx) {
   neo_js_context_def_field(ctx, prototype,
                            neo_js_context_create_string(ctx, L"toLocalString"),
                            to_local_string, true, false, true);
+}
+
+static void neo_js_context_init_std_boolean(neo_js_context_t ctx) {
+
+  neo_js_variable_t prototype =
+      neo_js_context_get_field(ctx, ctx->std.boolean_constructor,
+                               neo_js_context_create_string(ctx, L"prototype"));
+
+  neo_js_variable_t value_of =
+      neo_js_context_create_cfunction(ctx, L"valueOf", neo_js_boolean_value_of);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"valueOf"),
+                           value_of, true, false, true);
+
+  neo_js_variable_t to_string = neo_js_context_create_cfunction(
+      ctx, L"toString", neo_js_boolean_to_string);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"toString"),
+                           to_string, true, false, true);
 }
 
 static void neo_js_context_init_lib(neo_js_context_t ctx) {
@@ -986,6 +1006,9 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
   ctx->std.bigint_constructor = neo_js_context_create_cfunction(
       ctx, L"BigInt", neo_js_bigint_constructor);
 
+  ctx->std.boolean_constructor = neo_js_context_create_cfunction(
+      ctx, L"Boolean", neo_js_boolean_constructor);
+
   ctx->std.promise_constructor = neo_js_context_create_cfunction(
       ctx, L"Promise", neo_js_promise_constructor);
 
@@ -1006,7 +1029,9 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
 
   neo_js_context_init_std_async_generator(ctx);
 
-  neo_js_context_init_bigint(ctx);
+  neo_js_context_init_std_bigint(ctx);
+
+  neo_js_context_init_std_boolean(ctx);
 
   neo_js_context_init_std_error(ctx);
 
@@ -1081,6 +1106,10 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
   neo_js_context_def_field(ctx, ctx->std.global,
                            neo_js_context_create_string(ctx, L"BigInt"),
                            ctx->std.bigint_constructor, true, true, true);
+
+  neo_js_context_def_field(ctx, ctx->std.global,
+                           neo_js_context_create_string(ctx, L"Boolean"),
+                           ctx->std.boolean_constructor, true, true, true);
 
   neo_js_context_pop_scope(ctx);
 }
