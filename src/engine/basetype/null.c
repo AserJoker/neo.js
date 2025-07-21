@@ -42,7 +42,7 @@ static neo_js_variable_t neo_js_null_to_primitive(neo_js_context_t ctx,
 
 static neo_js_variable_t neo_js_null_to_object(neo_js_context_t ctx,
                                                neo_js_variable_t self) {
-  return neo_js_context_create_object(ctx, NULL, NULL);
+  return neo_js_context_create_object(ctx, NULL);
 }
 
 static neo_js_variable_t neo_js_null_get_field(neo_js_context_t ctx,

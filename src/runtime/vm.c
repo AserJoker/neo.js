@@ -417,7 +417,7 @@ void neo_js_vm_push_async_lambda(neo_js_vm_t vm, neo_program_t program) {
 }
 
 void neo_js_vm_push_object(neo_js_vm_t vm, neo_program_t program) {
-  neo_list_push(vm->stack, neo_js_context_create_object(vm->ctx, NULL, NULL));
+  neo_list_push(vm->stack, neo_js_context_create_object(vm->ctx, NULL));
 }
 void neo_js_vm_push_array(neo_js_vm_t vm, neo_program_t program) {
   neo_list_push(vm->stack, neo_js_context_create_array(vm->ctx));
@@ -1406,7 +1406,7 @@ void neo_js_vm_rest_object(neo_js_vm_t vm, neo_program_t program) {
   neo_list_t field_keys = neo_js_object_get_keys(vm->ctx, object);
   neo_list_t symbol_keys = neo_js_object_get_own_symbol_keys(vm->ctx, object);
 
-  neo_js_variable_t result = neo_js_context_create_object(vm->ctx, NULL, NULL);
+  neo_js_variable_t result = neo_js_context_create_object(vm->ctx, NULL);
   neo_js_variable_t length = neo_js_context_get_field(
       vm->ctx, keys, neo_js_context_create_string(vm->ctx, L"length"));
   neo_js_number_t num = neo_js_variable_to_number(length);

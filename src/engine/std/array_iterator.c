@@ -24,7 +24,7 @@ neo_js_variable_t neo_js_array_iterator_next(neo_js_context_t ctx,
   int64_t length = neo_js_variable_to_number(vlength)->number;
   int64_t index = neo_js_variable_to_number(vidx)->number;
   if (index < length) {
-    neo_js_variable_t result = neo_js_context_create_object(ctx, NULL, NULL);
+    neo_js_variable_t result = neo_js_context_create_object(ctx, NULL);
     neo_js_context_set_field(ctx, result,
                              neo_js_context_create_string(ctx, L"value"),
                              neo_js_context_get_field(ctx, array, vidx));
@@ -34,7 +34,7 @@ neo_js_variable_t neo_js_array_iterator_next(neo_js_context_t ctx,
     neo_js_variable_to_number(vidx)->number += 1;
     return result;
   } else {
-    neo_js_variable_t result = neo_js_context_create_object(ctx, NULL, NULL);
+    neo_js_variable_t result = neo_js_context_create_object(ctx, NULL);
     neo_js_context_set_field(ctx, result,
                              neo_js_context_create_string(ctx, L"value"),
                              neo_js_context_create_undefined(ctx));

@@ -32,7 +32,7 @@ neo_js_variable_t neo_js_error_constructor(neo_js_context_t ctx,
     neo_js_variable_t constructor = neo_js_context_get_error_constructor(ctx);
     neo_js_variable_t prototype = neo_js_context_get_field(
         ctx, constructor, neo_js_context_create_string(ctx, L"prototype"));
-    self = neo_js_context_create_object(ctx, prototype, NULL);
+    self = neo_js_context_create_object(ctx, prototype);
     neo_js_context_set_field(ctx, self,
                              neo_js_context_create_string(ctx, L"constructor"),
                              constructor);

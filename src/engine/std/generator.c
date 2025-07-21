@@ -26,7 +26,7 @@ neo_js_variable_t neo_js_generator_constructor(neo_js_context_t ctx,
 neo_js_variable_t neo_js_generator_next(neo_js_context_t ctx,
                                         neo_js_variable_t self, uint32_t argc,
                                         neo_js_variable_t *argv) {
-  neo_js_variable_t result = neo_js_context_create_object(ctx, NULL, NULL);
+  neo_js_variable_t result = neo_js_context_create_object(ctx, NULL);
   neo_js_variable_t coroutine =
       neo_js_context_get_internal(ctx, self, L"[[coroutine]]");
   neo_js_co_context_t co_ctx = neo_js_coroutine_get_context(coroutine);
@@ -88,7 +88,7 @@ neo_js_variable_t neo_js_generator_next(neo_js_context_t ctx,
 neo_js_variable_t neo_js_generator_return(neo_js_context_t ctx,
                                           neo_js_variable_t self, uint32_t argc,
                                           neo_js_variable_t *argv) {
-  neo_js_variable_t result = neo_js_context_create_object(ctx, NULL, NULL);
+  neo_js_variable_t result = neo_js_context_create_object(ctx, NULL);
   neo_js_variable_t coroutine =
       neo_js_context_get_internal(ctx, self, L"[[coroutine]]");
   neo_js_co_context_t co_ctx = neo_js_coroutine_get_context(coroutine);
@@ -151,7 +151,7 @@ neo_js_variable_t neo_js_generator_return(neo_js_context_t ctx,
 neo_js_variable_t neo_js_generator_throw(neo_js_context_t ctx,
                                          neo_js_variable_t self, uint32_t argc,
                                          neo_js_variable_t *argv) {
-  neo_js_variable_t result = neo_js_context_create_object(ctx, NULL, NULL);
+  neo_js_variable_t result = neo_js_context_create_object(ctx, NULL);
   neo_js_variable_t coroutine =
       neo_js_context_get_internal(ctx, self, L"[[coroutine]]");
   neo_js_co_context_t co_ctx = neo_js_coroutine_get_context(coroutine);
