@@ -203,11 +203,15 @@ neo_js_variable_t neo_js_array_from_async(neo_js_context_t ctx,
     return neo_js_context_create_interrupt(ctx, res, 2, NEO_JS_INTERRUPT_AWAIT);
   }
   case 2: {
+    NEO_JS_TRY_AND_THROW(value);
     neo_js_variable_t vdone = neo_js_context_get_field(
         ctx, value, neo_js_context_create_string(ctx, L"done"));
+    NEO_JS_TRY_AND_THROW(vdone);
     neo_js_variable_t val = neo_js_context_get_field(
         ctx, value, neo_js_context_create_string(ctx, L"value"));
+    NEO_JS_TRY_AND_THROW(val);
     neo_js_variable_t result = neo_js_context_load_variable(ctx, L"result");
+    NEO_JS_TRY_AND_THROW(result);
     bool done = neo_js_variable_to_boolean(vdone)->boolean;
     if (done) {
       return result;
