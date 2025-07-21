@@ -63,18 +63,19 @@ void neo_clock_sleep(uint64_t timeout) {
 #endif
 }
 neo_time_t neo_clock_resolve(int64_t timestamp, int32_t timezone) {
-  timestamp -= timezone * 60000;
+  int64_t now = timestamp;
+  now -= timezone * 60000;
   int64_t year = 1970;
-  while (timestamp < 0) {
+  while (now < 0) {
     if (year % 4 == 0) {
-      timestamp += 366 * 24 * 3600 * 1000L;
+      now += 366 * 24 * 3600 * 1000L;
     } else {
-      timestamp += 365 * 24 * 3600 * 1000L;
+      now += 365 * 24 * 3600 * 1000L;
     }
     year--;
   }
-  int64_t milliseconds = timestamp % 1000;
-  int64_t seconds = timestamp / 1000;
+  int64_t milliseconds = now % 1000;
+  int64_t seconds = now / 1000;
   int64_t days = seconds / 86400;
   seconds %= 86400;
   int64_t hour = seconds / 3600;
