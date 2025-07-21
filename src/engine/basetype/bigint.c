@@ -46,8 +46,14 @@ static neo_js_variable_t neo_js_bigint_to_primitive(neo_js_context_t ctx,
 }
 static neo_js_variable_t neo_js_bigint_to_object(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
-  return neo_js_context_construct(
-      ctx, neo_js_context_get_bigint_constructor(ctx), 1, &self);
+  neo_js_variable_t bigint = neo_js_context_get_bigint_constructor(ctx);
+  neo_js_variable_t prototype = neo_js_context_get_field(
+      ctx, bigint, neo_js_context_create_string(ctx, L"prototype"));
+  neo_js_variable_t result = neo_js_context_create_object(ctx, prototype);
+  neo_js_context_set_field(
+      ctx, result, neo_js_context_create_string(ctx, L"constructor"), bigint);
+  neo_js_context_set_internal(ctx, result, L"[[primitive]]", self);
+  return result;
 }
 static neo_js_variable_t neo_js_bigint_get_field(neo_js_context_t ctx,
                                                  neo_js_variable_t self,

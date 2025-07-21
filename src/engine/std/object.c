@@ -13,7 +13,7 @@ neo_js_variable_t neo_js_object_constructor(neo_js_context_t ctx,
                                             uint32_t argc,
                                             neo_js_variable_t *argv) {
   if (neo_js_variable_get_type(self)->kind < NEO_TYPE_OBJECT) {
-    return neo_js_context_create_object(ctx, NULL, NULL);
+    return neo_js_context_create_object(ctx, NULL);
   }
   if (argc > 0) {
     return neo_js_context_to_object(ctx, argv[0]);
@@ -27,7 +27,7 @@ neo_js_variable_t neo_js_object_create(neo_js_context_t ctx,
   if (argc > 0) {
     prototype = argv[0];
   }
-  return neo_js_context_create_object(ctx, prototype, NULL);
+  return neo_js_context_create_object(ctx, prototype);
 }
 
 neo_js_variable_t neo_js_object_keys(neo_js_context_t ctx,

@@ -297,10 +297,10 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
     PCRE2_SPTR name_table = NULL;
     pcre2_pattern_info(regex->code, PCRE2_INFO_NAMETABLE, &name_table);
     if (ngroups) {
-      neo_js_variable_t groups = neo_js_context_create_object(ctx, NULL, NULL);
+      neo_js_variable_t groups = neo_js_context_create_object(ctx, NULL);
       neo_js_context_set_field(
           ctx, result, neo_js_context_create_string(ctx, L"groups"), groups);
-      neo_js_variable_t igroups = neo_js_context_create_object(ctx, NULL, NULL);
+      neo_js_variable_t igroups = neo_js_context_create_object(ctx, NULL);
       neo_js_context_set_field(
           ctx, indices, neo_js_context_create_string(ctx, L"groups"), igroups);
       PCRE2_SPTR tabptr = name_table;

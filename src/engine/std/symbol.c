@@ -108,7 +108,7 @@ neo_js_variable_t neo_js_symbol_for(neo_js_context_t ctx,
     key = neo_js_context_create_string(ctx, L"");
   }
   if (neo_js_variable_get_type(registry)->kind != NEO_TYPE_OBJECT) {
-    registry = neo_js_context_create_object(ctx, NULL, NULL);
+    registry = neo_js_context_create_object(ctx, NULL);
     neo_js_context_set_internal(ctx, constructor, L"[[registry]]", registry);
   }
   neo_js_variable_t sym = neo_js_context_get_field(ctx, registry, key);
@@ -133,7 +133,7 @@ neo_js_variable_t neo_js_symbol_key_for(neo_js_context_t ctx,
     sym = neo_js_context_create_symbol(ctx, L"");
   }
   if (neo_js_variable_get_type(registry)->kind != NEO_TYPE_OBJECT) {
-    registry = neo_js_context_create_object(ctx, NULL, NULL);
+    registry = neo_js_context_create_object(ctx, NULL);
     neo_js_context_set_internal(ctx, constructor, L"[[registry]]", registry);
   }
   neo_js_object_t object = neo_js_variable_to_object(registry);
