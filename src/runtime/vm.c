@@ -1936,7 +1936,7 @@ void neo_js_vm_ushr(neo_js_vm_t vm, neo_program_t program) {
 void neo_js_vm_plus(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_list_pop(vm->stack);
-  neo_js_variable_t result = neo_js_context_to_number(vm->ctx, value);
+  neo_js_variable_t result = neo_js_context_plus(vm->ctx, value);
   neo_list_push(vm->stack, result);
   if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
     vm->offset = neo_buffer_get_size(program->codes);
@@ -1945,9 +1945,7 @@ void neo_js_vm_plus(neo_js_vm_t vm, neo_program_t program) {
 void neo_js_vm_neg(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_list_pop(vm->stack);
-  neo_js_number_t num = neo_js_variable_to_number(value);
-  neo_js_variable_t result =
-      neo_js_context_create_number(vm->ctx, -num->number);
+  neo_js_variable_t result = neo_js_context_neg(vm->ctx, value);
   neo_list_push(vm->stack, result);
   if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
     vm->offset = neo_buffer_get_size(program->codes);

@@ -52,6 +52,8 @@ neo_bigint_t neo_bigint_shl(neo_bigint_t self, neo_bigint_t another);
 
 neo_bigint_t neo_bigint_not(neo_bigint_t self);
 
+neo_bigint_t neo_bigint_neg(neo_bigint_t self);
+
 bool neo_bigint_is_equal(neo_bigint_t self, neo_bigint_t another);
 
 bool neo_bigint_is_greater(neo_bigint_t self, neo_bigint_t another);

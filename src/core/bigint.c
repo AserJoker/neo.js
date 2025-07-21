@@ -142,14 +142,14 @@ wchar_t *neo_bigint_to_string(neo_bigint_t bigint, uint32_t radix) {
     neo_allocator_free(bigint->allocator, another);
   }
   neo_allocator_free(bigint->allocator, tmp);
+  if (bigint->negative) {
+    result = neo_wstring_concat(bigint->allocator, result, &max, L"-");
+  }
   size_t len = wcslen(result);
-  for (size_t idx = 0; idx <= len / 2; idx++) {
+  for (size_t idx = 0; idx < len / 2; idx++) {
     wchar_t tmp = result[idx];
     result[idx] = result[len - 1 - idx];
     result[len - 1 - idx] = tmp;
-  }
-  if (bigint->negative) {
-    result = neo_wstring_concat(bigint->allocator, result, &max, L"-");
   }
   return result;
 }
@@ -641,13 +641,16 @@ neo_bigint_t neo_bigint_shl(neo_bigint_t self, neo_bigint_t another) {
 }
 
 neo_bigint_t neo_bigint_not(neo_bigint_t self) {
-  neo_bigint_t result = neo_bigint_clone(self);
   neo_bigint_t add_arg = neo_number_to_bigint(self->allocator, 1);
-  neo_bigint_t add_res = neo_bigint_add(result, add_arg);
+  neo_bigint_t result = neo_bigint_add(self, add_arg);
   neo_allocator_free(self->allocator, add_arg);
-  neo_allocator_free(self->allocator, result);
-  result = add_res;
   result->negative = !result->negative;
+  return result;
+}
+
+neo_bigint_t neo_bigint_neg(neo_bigint_t self) {
+  neo_bigint_t result = neo_bigint_clone(self);
+  result->negative = !self->negative;
   return result;
 }
 

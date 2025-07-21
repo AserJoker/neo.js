@@ -7,14 +7,95 @@
 #include "engine/context.h"
 #include "engine/type.h"
 #include "engine/variable.h"
+#include <math.h>
 #include <wchar.h>
 neo_js_variable_t neo_js_bigint_as_int_n(neo_js_context_t ctx,
                                          neo_js_variable_t self, uint32_t argc,
-                                         neo_js_variable_t *argv) {}
+                                         neo_js_variable_t *argv) {
+  neo_js_variable_t v_width = NULL;
+  neo_js_variable_t v_input = NULL;
+  if (argc > 0) {
+    v_width = argv[0];
+  } else {
+    v_width = neo_js_context_create_undefined(ctx);
+  }
+  if (argc > 1) {
+    v_input = argv[1];
+  } else {
+    v_input = neo_js_context_create_undefined(ctx);
+  }
+  v_width = neo_js_context_to_integer(ctx, v_width);
+  NEO_JS_TRY_AND_THROW(v_width);
+  v_input = neo_js_context_to_primitive(ctx, v_input, L"bigint");
+  NEO_JS_TRY_AND_THROW(v_input);
+  if (neo_js_variable_get_type(v_input)->kind != NEO_TYPE_BIGINT) {
+    return neo_js_context_create_simple_error(
+        ctx, NEO_ERROR_SYNTAX, L"cannot convert variable to bigint");
+  }
+  double width = neo_js_variable_to_number(v_width)->number;
+  neo_bigint_t bigint = neo_js_variable_to_bigint(v_input)->bigint;
+  neo_bigint_t input = bigint;
+  if (neo_bigint_is_negative(bigint)) {
+    input = neo_bigint_neg(input);
+    neo_js_context_defer_free(ctx, input);
+  }
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  neo_bigint_t max = neo_number_to_bigint(allocator, pow(2, width));
+  neo_js_context_defer_free(ctx, max);
+  neo_bigint_t max_sub = neo_number_to_bigint(allocator, pow(2, width - 1));
+  neo_js_context_defer_free(ctx, max_sub);
+  neo_bigint_t result = neo_bigint_mod(input, max);
+  if (neo_bigint_is_greater_or_equal(result, max_sub)) {
+    neo_js_context_defer_free(ctx, result);
+    result = neo_bigint_sub(result, max);
+  }
+  if (neo_bigint_is_negative(bigint)) {
+    neo_js_context_defer_free(ctx, result);
+    result = neo_bigint_neg(result);
+  }
+  return neo_js_context_create_bigint(ctx, result);
+}
 
 neo_js_variable_t neo_js_bigint_as_uint_n(neo_js_context_t ctx,
                                           neo_js_variable_t self, uint32_t argc,
-                                          neo_js_variable_t *argv) {}
+                                          neo_js_variable_t *argv) {
+  neo_js_variable_t v_width = NULL;
+  neo_js_variable_t v_input = NULL;
+  if (argc > 0) {
+    v_width = argv[0];
+  } else {
+    v_width = neo_js_context_create_undefined(ctx);
+  }
+  if (argc > 1) {
+    v_input = argv[1];
+  } else {
+    v_input = neo_js_context_create_undefined(ctx);
+  }
+  v_width = neo_js_context_to_integer(ctx, v_width);
+  NEO_JS_TRY_AND_THROW(v_width);
+  v_input = neo_js_context_to_primitive(ctx, v_input, L"bigint");
+  NEO_JS_TRY_AND_THROW(v_input);
+  if (neo_js_variable_get_type(v_input)->kind != NEO_TYPE_BIGINT) {
+    return neo_js_context_create_simple_error(
+        ctx, NEO_ERROR_SYNTAX, L"cannot convert variable to bigint");
+  }
+  double width = neo_js_variable_to_number(v_width)->number;
+  neo_bigint_t bigint = neo_js_variable_to_bigint(v_input)->bigint;
+  neo_bigint_t input = bigint;
+  if (neo_bigint_is_negative(bigint)) {
+    input = neo_bigint_neg(input);
+    neo_js_context_defer_free(ctx, input);
+  }
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  neo_bigint_t max = neo_number_to_bigint(allocator, pow(2, width));
+  neo_js_context_defer_free(ctx, max);
+  neo_bigint_t result = neo_bigint_mod(input, max);
+  if (neo_bigint_is_negative(bigint)) {
+    neo_js_context_defer_free(ctx, result);
+    result = neo_bigint_sub(max, result);
+  }
+  return neo_js_context_create_bigint(ctx, result);
+}
 
 neo_js_variable_t neo_js_bigint_constructor(neo_js_context_t ctx,
                                             neo_js_variable_t self,

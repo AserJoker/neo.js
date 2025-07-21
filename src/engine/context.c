@@ -44,6 +44,7 @@
 #include "engine/std/async_function.h"
 #include "engine/std/async_generator.h"
 #include "engine/std/async_generator_function.h"
+#include "engine/std/bigint.h"
 #include "engine/std/console.h"
 #include "engine/std/error.h"
 #include "engine/std/function.h"
@@ -815,6 +816,42 @@ static void neo_js_context_init_std_console(neo_js_context_t ctx) {
                            console, true, true, true);
 }
 
+static void neo_js_context_init_bigint(neo_js_context_t ctx) {
+  neo_js_context_def_field(
+      ctx, ctx->std.bigint_constructor,
+      neo_js_context_create_string(ctx, L"asIntN"),
+      neo_js_context_create_cfunction(ctx, L"asIntN", neo_js_bigint_as_int_n),
+      true, false, true);
+
+  neo_js_context_def_field(
+      ctx, ctx->std.bigint_constructor,
+      neo_js_context_create_string(ctx, L"asUintN"),
+      neo_js_context_create_cfunction(ctx, L"asUintN", neo_js_bigint_as_uint_n),
+      true, false, true);
+
+  neo_js_variable_t prototype =
+      neo_js_context_get_field(ctx, ctx->std.bigint_constructor,
+                               neo_js_context_create_string(ctx, L"prototype"));
+
+  neo_js_variable_t value_of =
+      neo_js_context_create_cfunction(ctx, L"valueOf", neo_js_bigint_value_of);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"valueOf"),
+                           value_of, true, false, true);
+
+  neo_js_variable_t to_string = neo_js_context_create_cfunction(
+      ctx, L"toString", neo_js_bigint_to_string);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"toString"),
+                           to_string, true, false, true);
+
+  neo_js_variable_t to_local_string = neo_js_context_create_cfunction(
+      ctx, L"toLocalString", neo_js_bigint_to_string);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"toLocalString"),
+                           to_local_string, true, false, true);
+}
+
 static void neo_js_context_init_lib(neo_js_context_t ctx) {
   neo_js_context_def_field(
       ctx, ctx->std.global, neo_js_context_create_string(ctx, L"setTimeout"),
@@ -940,6 +977,9 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
   ctx->std.async_generator_constructor = neo_js_context_create_cfunction(
       ctx, L"AsyncGenerator", neo_js_async_generator_constructor);
 
+  ctx->std.bigint_constructor = neo_js_context_create_cfunction(
+      ctx, L"BigInt", neo_js_bigint_constructor);
+
   ctx->std.promise_constructor = neo_js_context_create_cfunction(
       ctx, L"Promise", neo_js_promise_constructor);
 
@@ -950,21 +990,23 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
 
   neo_js_context_push_scope(ctx);
 
-  neo_js_context_init_std_error(ctx);
-
   neo_js_context_init_std_array(ctx);
 
   neo_js_context_init_std_array_iterator(ctx);
-
-  neo_js_context_init_std_generator_function(ctx);
 
   neo_js_context_init_std_async_generator_function(ctx);
 
   neo_js_context_init_std_async_function(ctx);
 
-  neo_js_context_init_std_generator(ctx);
-
   neo_js_context_init_std_async_generator(ctx);
+
+  neo_js_context_init_bigint(ctx);
+
+  neo_js_context_init_std_error(ctx);
+
+  neo_js_context_init_std_generator_function(ctx);
+
+  neo_js_context_init_std_generator(ctx);
 
   neo_js_context_init_std_promise(ctx);
 
@@ -1029,6 +1071,11 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
   neo_js_context_def_field(ctx, ctx->std.global,
                            neo_js_context_create_string(ctx, L"RegExp"),
                            ctx->std.regexp_constructor, true, true, true);
+
+  neo_js_context_def_field(ctx, ctx->std.global,
+                           neo_js_context_create_string(ctx, L"BigInt"),
+                           ctx->std.bigint_constructor, true, true, true);
+
   neo_js_context_pop_scope(ctx);
 }
 
@@ -2585,10 +2632,10 @@ neo_js_variable_t neo_js_context_call(neo_js_context_t ctx,
 }
 
 neo_js_variable_t neo_js_context_simple_call(neo_js_context_t ctx,
-                                            neo_js_variable_t super,
-                                            neo_js_variable_t self,
-                                            uint32_t argc,
-                                            neo_js_variable_t *argv) {
+                                             neo_js_variable_t super,
+                                             neo_js_variable_t self,
+                                             uint32_t argc,
+                                             neo_js_variable_t *argv) {
   if (neo_js_variable_get_type(super)->kind == NEO_TYPE_CFUNCTION) {
     return neo_js_context_call_cfunction(ctx, super, self, argc, argv);
   } else if (neo_js_variable_get_type(super)->kind == NEO_TYPE_FUNCTION) {
@@ -4079,6 +4126,34 @@ neo_js_variable_t neo_js_context_logical_not(neo_js_context_t ctx,
   }
   neo_js_boolean_t boolean = neo_js_variable_to_boolean(left);
   return neo_js_context_create_boolean(ctx, !boolean->boolean);
+}
+
+neo_js_variable_t neo_js_context_plus(neo_js_context_t ctx,
+                                      neo_js_variable_t variable) {
+  variable = neo_js_context_to_primitive(ctx, variable, L"default");
+  NEO_JS_TRY_AND_THROW(variable);
+  if (neo_js_variable_get_type(variable)->kind == NEO_TYPE_BIGINT ||
+      neo_js_variable_get_type(variable)->kind == NEO_TYPE_NUMBER) {
+    return variable;
+  }
+  variable = neo_js_context_to_number(ctx, variable);
+  NEO_JS_TRY_AND_THROW(variable);
+  return variable;
+}
+
+neo_js_variable_t neo_js_context_neg(neo_js_context_t ctx,
+                                     neo_js_variable_t variable) {
+  variable = neo_js_context_to_primitive(ctx, variable, L"default");
+  NEO_JS_TRY_AND_THROW(variable);
+  if (neo_js_variable_get_type(variable)->kind == NEO_TYPE_BIGINT) {
+    neo_bigint_t bigint = neo_js_variable_to_bigint(variable)->bigint;
+    bigint = neo_bigint_neg(bigint);
+    return neo_js_context_create_bigint(ctx, bigint);
+  }
+  variable = neo_js_context_to_number(ctx, variable);
+  NEO_JS_TRY_AND_THROW(variable);
+  return neo_js_context_create_number(
+      ctx, -neo_js_variable_to_number(variable)->number);
 }
 
 neo_js_variable_t neo_js_context_concat(neo_js_context_t ctx,
