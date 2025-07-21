@@ -1,2 +1,2 @@
 'use strict'
-console.log(new Date().getTimezoneOffset())
+console.log(Date.now(), new Date().getTimezoneOffset())

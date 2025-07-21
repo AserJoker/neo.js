@@ -19,6 +19,8 @@ int32_t neo_clock_get_timezone() {
     return tzInfo.StandardBias + tzInfo.Bias;
   case TIME_ZONE_ID_DAYLIGHT:
     return tzInfo.DaylightBias + tzInfo.Bias;
+  case TIME_ZONE_ID_UNKNOWN:
+    return tzInfo.Bias;
   default:
     return 0;
   }
@@ -28,19 +30,20 @@ int32_t neo_clock_get_timezone() {
 #endif
 }
 
-int64_t neo_clock_get_timestamp() {
+uint64_t neo_clock_get_timestamp() {
 #ifdef _WIN32
+
   FILETIME ft;
-  ULARGE_INTEGER li;
+  ULARGE_INTEGER uli;
   GetSystemTimeAsFileTime(&ft);
-  li.LowPart = ft.dwLowDateTime;
-  li.HighPart = ft.dwHighDateTime;
-  long long milliseconds = li.QuadPart / 10000;
+  uli.LowPart = ft.dwLowDateTime;
+  uli.HighPart = ft.dwHighDateTime;
+  uint64_t milliseconds = (uli.QuadPart / 10000) - 11644473600000ULL;
   return milliseconds;
 #else
   struct timespec ts;
   clock_gettime(CLOCK_REALTIME, &ts);
-  long long milliseconds = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+  uint64_t milliseconds = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
   return milliseconds;
 #endif
 }
