@@ -1,9 +1,10 @@
 #include "core/clock.h"
-#include <bits/time.h>
 #ifdef _WIN32
 #include <Windows.h>
+#include <winnt.h>
 #pragma comment(lib, "winmm.lib")
 #else
+#include <bits/time.h>
 #include <errno.h>
 #include <sys/time.h>
 #include <time.h>
@@ -11,6 +12,16 @@
 
 int32_t neo_clock_get_timezone() {
 #ifdef _WIN32
+  TIME_ZONE_INFORMATION tzInfo;
+  DWORD result = GetTimeZoneInformation(&tzInfo);
+  switch (result) {
+  case TIME_ZONE_ID_STANDARD:
+    return tzInfo.StandardBias + tzInfo.Bias;
+  case TIME_ZONE_ID_DAYLIGHT:
+    return tzInfo.DaylightBias + tzInfo.Bias;
+  default:
+    return 0;
+  }
 #else
   return timezone;
 #endif
