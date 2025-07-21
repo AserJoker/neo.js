@@ -910,11 +910,71 @@ static void neo_js_context_init_std_date(neo_js_context_t ctx) {
       neo_js_context_get_field(ctx, ctx->std.date_constructor,
                                neo_js_context_create_string(ctx, L"prototype"));
 
+  neo_js_variable_t get_date =
+      neo_js_context_create_cfunction(ctx, L"getDate", neo_js_date_get_date);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"getDate"),
+                           get_date, true, false, true);
+
+  neo_js_variable_t get_day =
+      neo_js_context_create_cfunction(ctx, L"getDay", neo_js_date_get_day);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"getDay"),
+                           get_day, true, false, true);
+
+  neo_js_variable_t get_full_year = neo_js_context_create_cfunction(
+      ctx, L"getFullYear", neo_js_date_get_full_year);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"getFullYear"),
+                           get_full_year, true, false, true);
+
+  neo_js_variable_t get_hours =
+      neo_js_context_create_cfunction(ctx, L"getHours", neo_js_date_get_hours);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"getHours"),
+                           get_hours, true, false, true);
+
+  neo_js_variable_t get_milliseconds = neo_js_context_create_cfunction(
+      ctx, L"getMilliseconds", neo_js_date_get_milliseconds);
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"getMilliseconds"),
+      get_milliseconds, true, false, true);
+
+  neo_js_variable_t get_minutes = neo_js_context_create_cfunction(
+      ctx, L"getMinutes", neo_js_date_get_minutes);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"getMinutes"),
+                           get_minutes, true, false, true);
+
+  neo_js_variable_t get_month =
+      neo_js_context_create_cfunction(ctx, L"getMonth", neo_js_date_get_month);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"getMonth"),
+                           get_month, true, false, true);
+
+  neo_js_variable_t get_seconds = neo_js_context_create_cfunction(
+      ctx, L"getSeconds", neo_js_date_get_seconds);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"getSeconds"),
+                           get_seconds, true, false, true);
+
+  neo_js_variable_t get_time =
+      neo_js_context_create_cfunction(ctx, L"getTime", neo_js_date_get_time);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"getTime"),
+                           get_time, true, false, true);
+
   neo_js_variable_t get_timezone_offset = neo_js_context_create_cfunction(
       ctx, L"getTimezoneOffset", neo_js_date_get_timezone_offset);
   neo_js_context_def_field(
       ctx, prototype, neo_js_context_create_string(ctx, L"getTimezoneOffset"),
       get_timezone_offset, true, false, true);
+
+  neo_js_variable_t value_of =
+      neo_js_context_create_cfunction(ctx, L"valueOf", neo_js_date_value_of);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"valueOf"),
+                           value_of, true, false, true);
 }
 
 static void neo_js_context_init_std(neo_js_context_t ctx) {
@@ -1553,6 +1613,10 @@ neo_js_variable_t neo_js_context_get_number_constructor(neo_js_context_t ctx) {
 
 neo_js_variable_t neo_js_context_get_bigint_constructor(neo_js_context_t ctx) {
   return ctx->std.bigint_constructor;
+}
+
+neo_js_variable_t neo_js_context_get_date_constructor(neo_js_context_t ctx) {
+  return ctx->std.date_constructor;
 }
 
 neo_js_variable_t neo_js_context_get_symbol_constructor(neo_js_context_t ctx) {

@@ -30,7 +30,7 @@ int32_t neo_clock_get_timezone() {
 #endif
 }
 
-uint64_t neo_clock_get_timestamp() {
+int64_t neo_clock_get_timestamp() {
 #ifdef _WIN32
 
   FILETIME ft;
@@ -38,12 +38,12 @@ uint64_t neo_clock_get_timestamp() {
   GetSystemTimeAsFileTime(&ft);
   uli.LowPart = ft.dwLowDateTime;
   uli.HighPart = ft.dwHighDateTime;
-  uint64_t milliseconds = (uli.QuadPart / 10000) - 11644473600000ULL;
+  int64_t milliseconds = (uli.QuadPart / 10000) - 11644473600000ULL;
   return milliseconds;
 #else
   struct timespec ts;
   clock_gettime(CLOCK_REALTIME, &ts);
-  uint64_t milliseconds = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+  int64_t milliseconds = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
   return milliseconds;
 #endif
 }
@@ -61,4 +61,50 @@ void neo_clock_sleep(uint64_t timeout) {
     req = rem;
   }
 #endif
+}
+neo_time_t neo_clock_resolve(int64_t timestamp, int32_t timezone) {
+  timestamp -= timezone * 60000;
+  int64_t year = 1970;
+  while (timestamp < 0) {
+    if (year % 4 == 0) {
+      timestamp += 366 * 24 * 3600 * 1000L;
+    } else {
+      timestamp += 365 * 24 * 3600 * 1000L;
+    }
+    year--;
+  }
+  int64_t milliseconds = timestamp % 1000;
+  int64_t seconds = timestamp / 1000;
+  int64_t days = seconds / 86400;
+  seconds %= 86400;
+  int64_t hour = seconds / 3600;
+  seconds %= 3600;
+  int64_t minute = seconds / 60;
+  seconds %= 60;
+  int64_t weakday = (4 + days) % 7;
+  while (days > 366) {
+    if (year % 4 == 0) {
+      days -= 366;
+    } else {
+      days -= 365;
+    }
+    year++;
+  }
+  if (year % 4 != 0 && days > 365) {
+    days -= 365;
+    year++;
+  }
+  int64_t months[] = {
+      31, year % 4 == 0 ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+  };
+  int64_t month = 0;
+  while (days > months[month]) {
+    days -= months[month];
+    month++;
+  }
+  neo_time_t time = {
+      year,    month + 1,    days + 1, hour,      minute,
+      seconds, milliseconds, weakday,  timestamp, timezone,
+  };
+  return time;
 }

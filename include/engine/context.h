@@ -119,6 +119,8 @@ neo_js_variable_t neo_js_context_get_number_constructor(neo_js_context_t ctx);
 
 neo_js_variable_t neo_js_context_get_bigint_constructor(neo_js_context_t ctx);
 
+neo_js_variable_t neo_js_context_get_date_constructor(neo_js_context_t ctx);
+
 neo_js_variable_t neo_js_context_get_symbol_constructor(neo_js_context_t ctx);
 
 neo_js_variable_t neo_js_context_get_array_constructor(neo_js_context_t ctx);
