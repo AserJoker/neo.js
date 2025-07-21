@@ -29,6 +29,33 @@ neo_js_co_context_t neo_create_js_co_context(neo_allocator_t allocator,
   ctx->vm = vm;
   ctx->running = false;
   ctx->stacktrace = stacktrace;
+  ctx->stage = 0;
+  ctx->callee = NULL;
+  ctx->argc = 0;
+  ctx->argv = NULL;
+  ctx->self = NULL;
+  ctx->scope = NULL;
+  return ctx;
+}
+
+neo_js_co_context_t neo_create_js_native_co_context(
+    neo_allocator_t allocator, neo_js_async_cfunction_fn_t callee,
+    neo_js_variable_t self, uint32_t argc, neo_js_variable_t *argv,
+    neo_js_scope_t scope, neo_list_t stacktrace) {
+  neo_js_co_context_t ctx =
+      neo_allocator_alloc(allocator, sizeof(struct _neo_js_co_context_t),
+                          neo_js_co_context_dispose);
+  ctx->program = NULL;
+  ctx->result = NULL;
+  ctx->vm = NULL;
+  ctx->running = false;
+  ctx->stacktrace = stacktrace;
+  ctx->stage = 0;
+  ctx->callee = callee;
+  ctx->argc = argc;
+  ctx->argv = argv;
+  ctx->self = self;
+  ctx->scope = scope;
   return ctx;
 }
 

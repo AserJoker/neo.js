@@ -5,7 +5,7 @@
 neo_js_variable_t neo_js_set_interval(neo_js_context_t ctx,
                                       neo_js_variable_t self, uint32_t argc,
                                       neo_js_variable_t *argv) {
-  if (argc < 1) {
+  if (argc < 1 || neo_js_variable_get_type(argv[0])->kind < NEO_TYPE_CALLABLE) {
     return neo_js_context_create_simple_error(
         ctx, NEO_ERROR_TYPE,
         L"The \" callback\" argument must be of type function.");

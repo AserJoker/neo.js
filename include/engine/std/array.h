@@ -9,6 +9,12 @@ neo_js_variable_t neo_js_array_from(neo_js_context_t ctx,
                                     neo_js_variable_t self, uint32_t argc,
                                     neo_js_variable_t *argv);
 
+neo_js_variable_t neo_js_array_from_async(neo_js_context_t ctx,
+                                          neo_js_variable_t self, uint32_t argc,
+                                          neo_js_variable_t *argv,
+                                          neo_js_variable_t value,
+                                          size_t stage);
+
 neo_js_variable_t neo_js_array_is_array(neo_js_context_t ctx,
                                         neo_js_variable_t self, uint32_t argc,
                                         neo_js_variable_t *argv);

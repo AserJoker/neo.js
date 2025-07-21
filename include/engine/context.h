@@ -3,6 +3,7 @@
 #include "compiler/program.h"
 #include "core/allocator.h"
 #include "core/bigint.h"
+#include "engine/basetype/coroutine.h"
 #include "engine/runtime.h"
 #include "engine/scope.h"
 #include "engine/type.h"
@@ -216,6 +217,11 @@ neo_js_variable_t neo_js_context_create_coroutine(neo_js_context_t ctx,
                                                   neo_js_vm_t vm,
                                                   neo_program_t program);
 
+neo_js_variable_t neo_js_context_create_native_coroutine(
+    neo_js_context_t ctx, neo_js_async_cfunction_fn_t callee,
+    neo_js_variable_t self, uint32_t argc, neo_js_variable_t *argv,
+    neo_js_scope_t scope);
+
 void neo_js_context_recycle_coroutine(neo_js_context_t ctx,
                                       neo_js_variable_t coroutine);
 
@@ -235,7 +241,7 @@ neo_js_variable_t neo_js_context_call(neo_js_context_t ctx,
                                       neo_js_variable_t *argv);
 
 neo_js_variable_t neo_js_context_simple_call(neo_js_context_t ctx,
-                                             neo_js_variable_t super,
+                                             neo_js_variable_t callee,
                                              neo_js_variable_t self,
                                              uint32_t argc,
                                              neo_js_variable_t *argv);
@@ -287,6 +293,10 @@ neo_js_variable_t neo_js_context_create_interrupt(neo_js_context_t ctx,
 neo_js_variable_t
 neo_js_context_create_cfunction(neo_js_context_t ctx, const wchar_t *name,
                                 neo_js_cfunction_fn_t cfunction);
+
+neo_js_variable_t
+neo_js_context_create_async_cfunction(neo_js_context_t ctx, const wchar_t *name,
+                                      neo_js_async_cfunction_fn_t cfunction);
 
 neo_js_variable_t neo_js_context_create_function(neo_js_context_t ctx,
                                                  neo_program_t program);

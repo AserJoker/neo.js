@@ -2,6 +2,7 @@
 #define _H_NEO_ENGINE_VARIABLE_
 #include "core/allocator.h"
 #include "engine/basetype/array.h"
+#include "engine/basetype/async_cfunction.h"
 #include "engine/basetype/bigint.h"
 #include "engine/basetype/boolean.h"
 #include "engine/basetype/cfunction.h"
@@ -91,6 +92,11 @@ neo_js_variable_to_cfunction(neo_js_variable_t variable) {
 static inline neo_js_function_t
 neo_js_variable_to_function(neo_js_variable_t variable) {
   return neo_js_value_to_function(neo_js_variable_get_value(variable));
+}
+
+static inline neo_js_async_cfunction_t
+neo_js_variable_to_async_cfunction(neo_js_variable_t variable) {
+  return neo_js_value_to_async_cfunction(neo_js_variable_get_value(variable));
 }
 
 static inline neo_js_callable_t

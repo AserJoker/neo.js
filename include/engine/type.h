@@ -79,6 +79,7 @@ typedef enum _neo_js_type_kind_t {
   NEO_TYPE_ARRAY,
   NEO_TYPE_CALLABLE,
   NEO_TYPE_CFUNCTION,
+  NEO_TYPE_ASYNC_CFUNCTION,
   NEO_TYPE_FUNCTION,
 } neo_js_type_kind_t;
 

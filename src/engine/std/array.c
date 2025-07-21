@@ -1,6 +1,7 @@
 #include "engine/std/array.h"
 #include "core/list.h"
 #include "engine/basetype/boolean.h"
+#include "engine/basetype/interrupt.h"
 #include "engine/basetype/number.h"
 #include "engine/basetype/object.h"
 #include "engine/context.h"
@@ -146,6 +147,81 @@ neo_js_variable_t neo_js_array_from(neo_js_context_t ctx,
   } else {
     return neo_js_context_create_array(ctx);
   }
+}
+
+neo_js_variable_t neo_js_array_from_async(neo_js_context_t ctx,
+                                          neo_js_variable_t self, uint32_t argc,
+                                          neo_js_variable_t *argv,
+                                          neo_js_variable_t value,
+                                          size_t stage) {
+  switch (stage) {
+  case 0: {
+    if (argc < 1) {
+      break;
+    }
+    neo_js_variable_t array_like = argv[0];
+    neo_js_variable_t async_iterator = neo_js_context_get_field(
+        ctx, neo_js_context_get_symbol_constructor(ctx),
+        neo_js_context_create_string(ctx, L"asyncIterator"));
+    if (!neo_js_context_has_field(ctx, array_like, async_iterator)) {
+      break;
+    }
+    async_iterator = neo_js_context_get_field(ctx, array_like, async_iterator);
+    NEO_JS_TRY_AND_THROW(async_iterator);
+    if (neo_js_variable_get_type(async_iterator)->kind < NEO_TYPE_CALLABLE) {
+      return neo_js_context_create_simple_error(
+          ctx, NEO_ERROR_TYPE,
+          L"%Array%.from requires that the property of the first argument, "
+          L"items[Symbol.asyncIterator], when exists, be a function");
+    }
+    neo_js_variable_t generator =
+        neo_js_context_call(ctx, async_iterator, array_like, 0, NULL);
+    NEO_JS_TRY_AND_THROW(generator);
+    if (neo_js_variable_get_type(generator)->kind < NEO_TYPE_OBJECT) {
+      return neo_js_context_create_simple_error(
+          ctx, NEO_ERROR_TYPE,
+          L"Result of the Symbol.asyncIterator method is not an object");
+    }
+    neo_js_context_def_variable(ctx, generator, L"generator");
+    neo_js_variable_t result = neo_js_context_create_array(ctx);
+    neo_js_context_def_variable(ctx, result, L"result");
+
+    return neo_js_context_create_interrupt(
+        ctx, neo_js_context_create_undefined(ctx), 1, NEO_JS_INTERRUPT_AWAIT);
+  }
+  case 1: {
+    neo_js_variable_t generator =
+        neo_js_context_load_variable(ctx, L"generator");
+    NEO_JS_TRY_AND_THROW(generator);
+    neo_js_variable_t next = neo_js_context_get_field(
+        ctx, generator, neo_js_context_create_string(ctx, L"next"));
+    if (neo_js_variable_get_type(next)->kind < NEO_TYPE_CALLABLE) {
+      return neo_js_context_create_simple_error(
+          ctx, NEO_ERROR_TYPE, L"#Object.next is not a function");
+    }
+    neo_js_variable_t res = neo_js_context_call(ctx, next, generator, 0, NULL);
+    return neo_js_context_create_interrupt(ctx, res, 2, NEO_JS_INTERRUPT_AWAIT);
+  }
+  case 2: {
+    neo_js_variable_t vdone = neo_js_context_get_field(
+        ctx, value, neo_js_context_create_string(ctx, L"done"));
+    neo_js_variable_t val = neo_js_context_get_field(
+        ctx, value, neo_js_context_create_string(ctx, L"value"));
+    neo_js_variable_t result = neo_js_context_load_variable(ctx, L"result");
+    bool done = neo_js_variable_to_boolean(vdone)->boolean;
+    if (done) {
+      return result;
+    }
+    neo_js_variable_t v_length = neo_js_context_get_field(
+        ctx, result, neo_js_context_create_string(ctx, L"length"));
+    NEO_JS_TRY_AND_THROW(neo_js_context_set_field(ctx, result, v_length, val));
+    return neo_js_context_create_interrupt(
+        ctx, neo_js_context_create_undefined(ctx), 1, NEO_JS_INTERRUPT_AWAIT);
+  }
+  default:
+    break;
+  }
+  return neo_js_array_from(ctx, self, argc, argv);
 }
 
 neo_js_variable_t neo_js_array_is_array(neo_js_context_t ctx,
