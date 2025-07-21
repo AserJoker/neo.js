@@ -8,13 +8,19 @@
 #include <time.h>
 #endif
 
-uint64_t neo_clock_get_timestamp() {
+int64_t neo_clock_get_timestamp() {
 #ifdef _WIN32
-  return timeGetTime();
+  FILETIME ft;
+  ULARGE_INTEGER li;
+  GetSystemTimeAsFileTime(&ft);
+  li.LowPart = ft.dwLowDateTime;
+  li.HighPart = ft.dwHighDateTime;
+  long long milliseconds = li.QuadPart / 10000;
+  return milliseconds;
 #else
   struct timeval tv;
   gettimeofday(&tv, NULL);
-  unsigned long milliseconds = tv.tv_sec * 1000 + tv.tv_usec / 1000;
+  long long milliseconds = tv.tv_sec * 1000 + tv.tv_usec / 1000;
   return milliseconds;
 #endif
 }

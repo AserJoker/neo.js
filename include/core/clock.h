@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-uint64_t neo_clock_get_timestamp();
+int64_t neo_clock_get_timestamp();
 
 void neo_clock_sleep(uint64_t timeout);
 
