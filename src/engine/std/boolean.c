@@ -40,7 +40,6 @@ neo_js_variable_t neo_js_boolean_to_string(neo_js_context_t ctx,
   }
   neo_js_variable_t primitive =
       neo_js_context_get_internal(ctx, self, L"[[primitive]]");
-  neo_js_boolean_t boolean = neo_js_variable_to_boolean(primitive);
   return neo_js_context_to_string(ctx, primitive);
 }
 

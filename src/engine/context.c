@@ -2798,7 +2798,6 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
   }
   neo_js_call_type_t current_call_type = ctx->call_type;
   ctx->call_type = NEO_JS_CONSTRUCT_CALL;
-  neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
   neo_js_scope_t current = neo_js_context_get_scope(ctx);
   neo_js_context_push_scope(ctx);
   neo_js_variable_t prototype = neo_js_context_get_field(
