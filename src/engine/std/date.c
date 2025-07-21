@@ -1,10 +1,12 @@
 #include "engine/std/date.h"
 #include "core/clock.h"
 #include "engine/context.h"
-NEO_JS_CFUNCTION(neo_js_date_constructor);
+NEO_JS_CFUNCTION(neo_js_date_constructor) {
+  return neo_js_context_create_undefined(ctx);
+}
 
 NEO_JS_CFUNCTION(neo_js_date_now) {
-  int64_t now = neo_clock_get_utc_timestamp();
+  int64_t now = neo_clock_get_timestamp();
   return neo_js_context_create_number(ctx, now);
 }
 
@@ -20,7 +22,10 @@ NEO_JS_CFUNCTION(neo_js_date_get_minutes);
 NEO_JS_CFUNCTION(neo_js_date_get_month);
 NEO_JS_CFUNCTION(neo_js_date_get_seconds);
 NEO_JS_CFUNCTION(neo_js_date_get_time);
-NEO_JS_CFUNCTION(neo_js_date_get_timezone_offset);
+NEO_JS_CFUNCTION(neo_js_date_get_timezone_offset) {
+  int64_t timestamp = neo_clock_get_timezone();
+  return neo_js_context_create_number(ctx, timestamp);
+}
 NEO_JS_CFUNCTION(neo_js_date_get_utc_date);
 NEO_JS_CFUNCTION(neo_js_date_get_utc_day);
 NEO_JS_CFUNCTION(neo_js_date_get_utc_full_year);

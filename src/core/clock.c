@@ -23,11 +23,12 @@ int32_t neo_clock_get_timezone() {
     return 0;
   }
 #else
-  return timezone;
+  tzset();
+  return timezone / 60;
 #endif
 }
 
-int64_t neo_clock_get_utc_timestamp() {
+int64_t neo_clock_get_timestamp() {
 #ifdef _WIN32
   FILETIME ft;
   ULARGE_INTEGER li;

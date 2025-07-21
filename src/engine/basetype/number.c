@@ -31,7 +31,11 @@ static neo_js_variable_t neo_js_number_to_string(neo_js_context_t ctx,
     }
   }
   wchar_t str[32];
-  swprintf(str, 32, L"%lg", number->number);
+  if (number->number == (int64_t)(number->number)) {
+    swprintf(str, 32, L"%ld", (int64_t)number->number);
+  } else {
+    swprintf(str, 32, L"%lg", number->number);
+  }
   neo_js_string_t string = neo_create_js_string(allocator, str);
   return neo_js_context_create_variable(
       ctx, neo_create_js_handle(allocator, &string->value), NULL);

@@ -47,6 +47,7 @@
 #include "engine/std/bigint.h"
 #include "engine/std/boolean.h"
 #include "engine/std/console.h"
+#include "engine/std/date.h"
 #include "engine/std/error.h"
 #include "engine/std/function.h"
 #include "engine/std/generator.h"
@@ -110,6 +111,7 @@ struct _neo_js_context_t {
     neo_js_variable_t boolean_constructor;
     neo_js_variable_t string_constructor;
     neo_js_variable_t symbol_constructor;
+    neo_js_variable_t date_constructor;
     neo_js_variable_t array_constructor;
     neo_js_variable_t bigint_constructor;
     neo_js_variable_t regexp_constructor;
@@ -898,6 +900,22 @@ static void neo_js_context_init_lib(neo_js_context_t ctx) {
                                ctx, L"clearInterval", neo_js_clear_interval),
                            true, true, true);
 }
+static void neo_js_context_init_std_date(neo_js_context_t ctx) {
+  neo_js_context_def_field(
+      ctx, ctx->std.date_constructor, neo_js_context_create_string(ctx, L"now"),
+      neo_js_context_create_cfunction(ctx, L"now", neo_js_date_now), true,
+      false, true);
+
+  neo_js_variable_t prototype =
+      neo_js_context_get_field(ctx, ctx->std.date_constructor,
+                               neo_js_context_create_string(ctx, L"prototype"));
+
+  neo_js_variable_t get_timezone_offset = neo_js_context_create_cfunction(
+      ctx, L"getTimezoneOffset", neo_js_date_get_timezone_offset);
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"getTimezoneOffset"),
+      get_timezone_offset, true, false, true);
+}
 
 static void neo_js_context_init_std(neo_js_context_t ctx) {
   ctx->std.object_constructor = neo_js_context_create_cfunction(
@@ -997,9 +1015,6 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
   ctx->std.async_function_constructor = neo_js_context_create_cfunction(
       ctx, L"AsyncFunction", neo_js_async_function_constructor);
 
-  ctx->std.generator_constructor = neo_js_context_create_cfunction(
-      ctx, L"Generator", neo_js_generator_constructor);
-
   ctx->std.async_generator_constructor = neo_js_context_create_cfunction(
       ctx, L"AsyncGenerator", neo_js_async_generator_constructor);
 
@@ -1008,6 +1023,12 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
 
   ctx->std.boolean_constructor = neo_js_context_create_cfunction(
       ctx, L"Boolean", neo_js_boolean_constructor);
+
+  ctx->std.date_constructor =
+      neo_js_context_create_cfunction(ctx, L"Date", neo_js_date_constructor);
+
+  ctx->std.generator_constructor = neo_js_context_create_cfunction(
+      ctx, L"Generator", neo_js_generator_constructor);
 
   ctx->std.promise_constructor = neo_js_context_create_cfunction(
       ctx, L"Promise", neo_js_promise_constructor);
@@ -1032,6 +1053,8 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
   neo_js_context_init_std_bigint(ctx);
 
   neo_js_context_init_std_boolean(ctx);
+
+  neo_js_context_init_std_date(ctx);
 
   neo_js_context_init_std_error(ctx);
 
@@ -1110,6 +1133,10 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
   neo_js_context_def_field(ctx, ctx->std.global,
                            neo_js_context_create_string(ctx, L"Boolean"),
                            ctx->std.boolean_constructor, true, true, true);
+
+  neo_js_context_def_field(ctx, ctx->std.global,
+                           neo_js_context_create_string(ctx, L"Date"),
+                           ctx->std.date_constructor, true, true, true);
 
   neo_js_context_pop_scope(ctx);
 }
@@ -1199,7 +1226,7 @@ void neo_js_context_defer_free(neo_js_context_t ctx, void *data) {
 }
 
 void neo_js_context_next_tick(neo_js_context_t ctx) {
-  uint64_t now = neo_clock_get_utc_timestamp();
+  uint64_t now = neo_clock_get_timestamp();
   neo_list_t tasks = NULL;
   if (neo_list_get_size(ctx->micro_tasks)) {
     tasks = ctx->micro_tasks;
@@ -1275,7 +1302,7 @@ uint32_t neo_js_context_create_micro_task(neo_js_context_t ctx,
   task->id = id;
   task->timeout = timeout;
   task->keepalive = keepalive;
-  task->start = neo_clock_get_utc_timestamp();
+  task->start = neo_clock_get_timestamp();
   task->function = neo_js_variable_get_handle(callable);
   task->self = neo_js_variable_get_handle(self);
   neo_js_handle_add_parent(task->function,
@@ -1312,7 +1339,7 @@ uint32_t neo_js_context_create_macro_task(neo_js_context_t ctx,
   id++;
   task->timeout = timeout;
   task->keepalive = keepalive;
-  task->start = neo_clock_get_utc_timestamp();
+  task->start = neo_clock_get_timestamp();
   task->function = neo_js_variable_get_handle(callable);
   task->self = neo_js_variable_get_handle(self);
   neo_js_handle_add_parent(task->function,
