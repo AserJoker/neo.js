@@ -1199,7 +1199,7 @@ void neo_js_context_defer_free(neo_js_context_t ctx, void *data) {
 }
 
 void neo_js_context_next_tick(neo_js_context_t ctx) {
-  uint64_t now = neo_clock_get_timestamp();
+  uint64_t now = neo_clock_get_utc_timestamp();
   neo_list_t tasks = NULL;
   if (neo_list_get_size(ctx->micro_tasks)) {
     tasks = ctx->micro_tasks;
@@ -1275,7 +1275,7 @@ uint32_t neo_js_context_create_micro_task(neo_js_context_t ctx,
   task->id = id;
   task->timeout = timeout;
   task->keepalive = keepalive;
-  task->start = neo_clock_get_timestamp();
+  task->start = neo_clock_get_utc_timestamp();
   task->function = neo_js_variable_get_handle(callable);
   task->self = neo_js_variable_get_handle(self);
   neo_js_handle_add_parent(task->function,
@@ -1312,7 +1312,7 @@ uint32_t neo_js_context_create_macro_task(neo_js_context_t ctx,
   id++;
   task->timeout = timeout;
   task->keepalive = keepalive;
-  task->start = neo_clock_get_timestamp();
+  task->start = neo_clock_get_utc_timestamp();
   task->function = neo_js_variable_get_handle(callable);
   task->self = neo_js_variable_get_handle(self);
   neo_js_handle_add_parent(task->function,

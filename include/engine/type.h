@@ -107,6 +107,10 @@ typedef neo_js_variable_t (*neo_js_async_cfunction_fn_t)(
     neo_js_context_t ctx, neo_js_variable_t self, uint32_t argc,
     neo_js_variable_t *argv, neo_js_variable_t last, size_t stage);
 
+#define NEO_JS_CFUNCTION(func)                                                 \
+  neo_js_variable_t func(neo_js_context_t ctx, neo_js_variable_t self,         \
+                         uint32_t argc, neo_js_variable_t *argv)
+
 #ifdef __cplusplus
 }
 #endif

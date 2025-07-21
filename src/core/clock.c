@@ -1,4 +1,5 @@
 #include "core/clock.h"
+#include <bits/time.h>
 #ifdef _WIN32
 #include <Windows.h>
 #pragma comment(lib, "winmm.lib")
@@ -8,7 +9,14 @@
 #include <time.h>
 #endif
 
-int64_t neo_clock_get_timestamp() {
+int32_t neo_clock_get_timezone() {
+#ifdef _WIN32
+#else
+  return timezone;
+#endif
+}
+
+int64_t neo_clock_get_utc_timestamp() {
 #ifdef _WIN32
   FILETIME ft;
   ULARGE_INTEGER li;
@@ -18,9 +26,9 @@ int64_t neo_clock_get_timestamp() {
   long long milliseconds = li.QuadPart / 10000;
   return milliseconds;
 #else
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
-  long long milliseconds = tv.tv_sec * 1000 + tv.tv_usec / 1000;
+  struct timespec ts;
+  clock_gettime(CLOCK_REALTIME, &ts);
+  long long milliseconds = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
   return milliseconds;
 #endif
 }
