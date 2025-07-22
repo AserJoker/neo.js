@@ -1,2 +1,3 @@
 'use strict'
-console.log(Date.now(), new Date().getTimezoneOffset())
+const date = new Date();
+console.log(date.toTimeString())

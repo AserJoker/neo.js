@@ -10,6 +10,37 @@
 #include <time.h>
 #endif
 
+static int64_t months[2][12] = {
+    {
+        31,
+        28,
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    },
+    {
+        31,
+        29,
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    },
+};
+
 int32_t neo_clock_get_timezone() {
 #ifdef _WIN32
   TIME_ZONE_INFORMATION tzInfo;
@@ -95,17 +126,102 @@ neo_time_t neo_clock_resolve(int64_t timestamp, int32_t timezone) {
     days -= 365;
     year++;
   }
-  int64_t months[] = {
-      31, year % 4 == 0 ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
-  };
   int64_t month = 0;
-  while (days > months[month]) {
-    days -= months[month];
+  while (days >= months[year % 4 == 0][month]) {
+    days -= months[year % 4 == 0][month];
     month++;
   }
   neo_time_t time = {
-      year,    month + 1,    days + 1, hour,      minute,
-      seconds, milliseconds, weakday,  timestamp, timezone,
+      year,    month,        days,    hour,      minute,
+      seconds, milliseconds, weakday, timestamp, timezone,
   };
   return time;
+}
+
+void neo_clock_format(neo_time_t *time) {
+  while (time->millisecond < 0) {
+    time->second--;
+    time->millisecond += 1000;
+  }
+  while (time->millisecond >= 1000) {
+    time->millisecond -= 1000;
+    time->second++;
+  }
+  while (time->second < 0) {
+    time->minute--;
+    time->second += 60;
+  }
+  while (time->second >= 60) {
+    time->second -= 60;
+    time->minute++;
+  }
+  while (time->minute < 0) {
+    time->hour--;
+    time->minute += 60;
+  }
+  while (time->minute >= 60) {
+    time->minute -= 60;
+    time->hour++;
+  }
+  while (time->hour < 0) {
+    time->day--;
+    time->hour += 24;
+  }
+  while (time->hour >= 24) {
+    time->hour -= 24;
+    time->day++;
+  }
+  while (time->day < 0) {
+    while (time->month < 0) {
+      time->year--;
+      time->month += 12;
+    }
+    time->month--;
+    time->day += months[time->year % 4 == 0][time->month];
+  }
+  while (time->day >= months[time->year % 4 == 0][time->month]) {
+    time->day -= months[time->year % 4 == 0][time->month];
+    time->month++;
+    while (time->month >= 12) {
+      time->month -= 12;
+      time->year++;
+    }
+  }
+  while (time->month < 0) {
+    time->year--;
+    time->month += 12;
+  }
+  while (time->month >= 12) {
+    time->month -= 12;
+    time->year++;
+  }
+  int64_t timestamp = 0;
+  for (int64_t year = 1970; year > time->year; year--) {
+    if (year % 4 == 0) {
+      timestamp -= 366;
+    } else {
+      timestamp -= 365;
+    }
+  }
+  for (int64_t year = 1970; year < time->year; year++) {
+    if (year % 4 == 0) {
+      timestamp += 366;
+    } else {
+      timestamp += 365;
+    }
+  }
+  for (int8_t month = 0; month < time->month; month++) {
+    timestamp += months[time->year % 4 == 0][month];
+  }
+  timestamp += time->day;
+  timestamp *= 24;
+  timestamp += time->hour;
+  timestamp *= 60;
+  timestamp += time->timezone;
+  timestamp += time->minute;
+  timestamp *= 60;
+  timestamp += time->second;
+  timestamp *= 1000;
+  timestamp += time->millisecond;
+  time->timestamp = timestamp;
 }

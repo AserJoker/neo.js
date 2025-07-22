@@ -17,7 +17,7 @@ struct _neo_time_t {
   int64_t millisecond;
   int64_t weakday;
   int64_t timestamp;
-  int32_t timezone;
+  int64_t timezone;
 };
 
 typedef struct _neo_time_t neo_time_t;
@@ -25,6 +25,8 @@ typedef struct _neo_time_t neo_time_t;
 int64_t neo_clock_get_timestamp();
 
 neo_time_t neo_clock_resolve(int64_t timestamp, int32_t timezone);
+
+void neo_clock_format(neo_time_t *time);
 
 void neo_clock_sleep(uint64_t timeout);
 
