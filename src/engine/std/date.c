@@ -648,7 +648,7 @@ NEO_JS_CFUNCTION(neo_js_date_to_time_string) {
   time(&raw_time);
   local_time = localtime(&raw_time);
   if (local_time != NULL) {
-    strftime(timezone_name, 100, "GMP%z (%Z)", local_time);
+    strftime(timezone_name, 100, "GMT%z (%Z)", local_time);
   }
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   wchar_t *zone = neo_string_to_wstring(allocator, timezone_name);
