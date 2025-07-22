@@ -1,6 +1,7 @@
 #include "engine/std/date.h"
 #include "core/allocator.h"
 #include "core/clock.h"
+#include "core/unicode.h"
 #include "engine/context.h"
 #include "engine/type.h"
 #include "engine/variable.h"
@@ -50,7 +51,6 @@ NEO_JS_CFUNCTION(neo_js_date_constructor) {
 
 NEO_JS_CFUNCTION(neo_js_date_now) {
   int64_t now = neo_clock_get_timestamp();
-  neo_time_t time = neo_clock_resolve(now, neo_clock_get_timezone());
   return neo_js_context_create_number(ctx, now);
 }
 
@@ -650,9 +650,12 @@ NEO_JS_CFUNCTION(neo_js_date_to_time_string) {
   if (local_time != NULL) {
     strftime(timezone_name, 100, "GMP%z (%Z)", local_time);
   }
-  wchar_t result[64];
-  swprintf(result, 64, L"%02d:%02d:%02d %s", tm->hour, tm->minute, tm->second,
-           &timezone_name[0]);
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  wchar_t *zone = neo_string_to_wstring(allocator, timezone_name);
+  neo_js_context_defer_free(ctx, zone);
+  wchar_t result[128];
+  swprintf(result, 128, L"%02d:%02d:%02d %ls", tm->hour, tm->minute, tm->second,
+           zone);
   return neo_js_context_create_string(ctx, result);
 }
 NEO_JS_CFUNCTION(neo_js_date_to_utc_string);

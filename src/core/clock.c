@@ -99,9 +99,9 @@ neo_time_t neo_clock_resolve(int64_t timestamp, int32_t timezone) {
   int64_t year = 1970;
   while (now < 0) {
     if (year % 4 == 0) {
-      now += 366 * 24 * 3600 * 1000L;
+      now += 366 * 24 * 3600 * 1000LL;
     } else {
-      now += 365 * 24 * 3600 * 1000L;
+      now += 365 * 24 * 3600 * 1000LL;
     }
     year--;
   }

@@ -980,7 +980,7 @@ static void neo_js_context_init_std_date(neo_js_context_t ctx) {
       ctx, L"getUTCDay", neo_js_date_get_utc_day);
   neo_js_context_def_field(ctx, prototype,
                            neo_js_context_create_string(ctx, L"getUTCDay"),
-                           get_day, true, false, true);
+                           get_utc_day, true, false, true);
 
   neo_js_variable_t get_utc_full_year = neo_js_context_create_cfunction(
       ctx, L"getUTCFullYear", neo_js_date_get_utc_full_year);
@@ -998,7 +998,7 @@ static void neo_js_context_init_std_date(neo_js_context_t ctx) {
       ctx, L"getUTCMilliseconds", neo_js_date_get_utc_milliseconds);
   neo_js_context_def_field(
       ctx, prototype, neo_js_context_create_string(ctx, L"getUTCMilliseconds"),
-      get_milliseconds, true, false, true);
+      get_utc_milliseconds, true, false, true);
 
   neo_js_variable_t get_utc_minutes = neo_js_context_create_cfunction(
       ctx, L"getUTCMinutes", neo_js_date_get_utc_minutes);
@@ -1010,7 +1010,7 @@ static void neo_js_context_init_std_date(neo_js_context_t ctx) {
       ctx, L"getUTCMonth", neo_js_date_get_utc_month);
   neo_js_context_def_field(ctx, prototype,
                            neo_js_context_create_string(ctx, L"getUTCMonth"),
-                           get_month, true, false, true);
+                           get_utc_month, true, false, true);
 
   neo_js_variable_t get_utc_seconds = neo_js_context_create_cfunction(
       ctx, L"getUTCSeconds", neo_js_date_get_utc_seconds);
