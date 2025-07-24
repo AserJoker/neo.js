@@ -2764,7 +2764,7 @@ static neo_js_variable_t neo_js_awaiter_task(neo_js_context_t ctx,
                            co_ctx->stage);
     neo_js_context_set_scope(ctx, current);
   } else if (co_ctx->vm) {
-    value = neo_js_vm_eval(co_ctx->vm, co_ctx->program);
+    value = neo_js_vm_exec(co_ctx->vm, co_ctx->program);
   } else {
     return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_INTERNAL,
                                               L"Broken coroutine context");
@@ -3011,7 +3011,7 @@ static neo_js_variable_t neo_js_context_call_function(neo_js_context_t ctx,
       neo_js_context_set_scope(ctx, current);
       neo_js_vm_t vm =
           neo_create_js_vm(ctx, self, clazz, function->address, scope);
-      neo_js_variable_t result = neo_js_vm_eval(vm, function->program);
+      neo_js_variable_t result = neo_js_vm_exec(vm, function->program);
       neo_allocator_free(neo_js_context_get_allocator(ctx), vm);
       neo_allocator_free(allocator, scope);
       return result;
@@ -4847,7 +4847,7 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const wchar_t *file,
   neo_js_scope_t scope = neo_create_js_scope(allocator, ctx->root);
   neo_js_vm_t vm = neo_create_js_vm(ctx, neo_js_context_create_undefined(ctx),
                                     NULL, 0, scope);
-  neo_js_variable_t result = neo_js_vm_eval(vm, program);
+  neo_js_variable_t result = neo_js_vm_exec(vm, program);
   if (neo_js_variable_get_type(result)->kind == NEO_JS_TYPE_INTERRUPT) {
     neo_js_interrupt_t interrupt = neo_js_variable_to_interrupt(result);
     result = neo_js_context_create_variable(ctx, interrupt->result, NULL);

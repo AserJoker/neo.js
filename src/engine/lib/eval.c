@@ -37,5 +37,5 @@ NEO_JS_CFUNCTION(neo_js_eval) {
                                     neo_js_context_create_undefined(ctx), 0,
                                     neo_js_context_get_scope(ctx));
   neo_js_context_defer_free(ctx, vm);
-  return neo_js_vm_eval(vm, program);
+  return neo_js_vm_exec(vm, program);
 }

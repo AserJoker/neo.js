@@ -186,6 +186,12 @@ void neo_write_optional_chain(neo_allocator_t allocator,
   if (node->type == NEO_NODE_TYPE_EXPRESSION_CALL ||
       node->type == NEO_NODE_TYPE_EXPRESSION_OPTIONAL_CALL) {
     neo_ast_expression_call_t call = (neo_ast_expression_call_t)node;
+    bool is_eval = false;
+    if (call->callee->type == NEO_NODE_TYPE_IDENTIFIER) {
+      if (neo_location_is(call->callee->location, "eval")) {
+        is_eval = true;
+      }
+    }
     if (call->callee->type == NEO_NODE_TYPE_EXPRESSION_MEMBER ||
         call->callee->type == NEO_NODE_TYPE_EXPRESSION_COMPUTED_MEMBER) {
       neo_ast_expression_member_t member =
@@ -227,8 +233,10 @@ void neo_write_optional_chain(neo_allocator_t allocator,
         TRY(member->field->write(allocator, ctx, member->field)) { return; };
       }
     } else if (call->callee->type != NEO_NODE_TYPE_EXPRESSION_SUPER) {
-      TRY(neo_write_optional_chain(allocator, ctx, call->callee, addresses)) {
-        return;
+      if (!is_eval) {
+        TRY(neo_write_optional_chain(allocator, ctx, call->callee, addresses)) {
+          return;
+        }
       }
     }
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARRAY);
@@ -277,6 +285,8 @@ void neo_write_optional_chain(neo_allocator_t allocator,
       }
     } else if (call->callee->type == NEO_NODE_TYPE_EXPRESSION_SUPER) {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_SUPER_CALL);
+    } else if (is_eval) {
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_EVAL);
     } else {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_CALL);
     }

@@ -1,5 +1,6 @@
 #include "runtime/vm.h"
 #include "compiler/asm.h"
+#include "compiler/parser.h"
 #include "compiler/program.h"
 #include "core/allocator.h"
 #include "core/bigint.h"
@@ -8,6 +9,7 @@
 #include "core/list.h"
 #include "core/path.h"
 #include "core/string.h"
+#include "core/unicode.h"
 #include "engine/basetype/boolean.h"
 #include "engine/basetype/callable.h"
 #include "engine/basetype/error.h"
@@ -729,6 +731,63 @@ void neo_js_vm_call(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t result = neo_js_context_call(
       vm->ctx, callee, neo_js_context_create_undefined(vm->ctx), argc, argv);
   neo_js_context_pop_stackframe(vm->ctx);
+  neo_allocator_free(allocator, argv);
+  neo_list_push(vm->stack, result);
+  if (neo_js_variable_get_type(result)->kind == NEO_JS_TYPE_ERROR) {
+    vm->offset = neo_buffer_get_size(program->codes);
+  }
+}
+void neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
+  uint32_t line = neo_js_vm_read_integer(vm, program);
+  uint32_t column = neo_js_vm_read_integer(vm, program);
+  neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
+  neo_js_variable_t args = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t length = neo_js_context_get_field(
+      vm->ctx, args, neo_js_context_create_string(vm->ctx, L"length"));
+  neo_js_number_t num = neo_js_variable_to_number(length);
+  size_t argc = num->number;
+  neo_js_variable_t *argv =
+      neo_allocator_alloc(allocator, sizeof(neo_js_variable_t) * argc, NULL);
+  for (size_t idx = 0; idx < argc; idx++) {
+    argv[idx] = neo_js_context_get_field(
+        vm->ctx, args, neo_js_context_create_number(vm->ctx, idx));
+  }
+
+  neo_js_variable_t arg = NULL;
+  if (argc) {
+    arg = argv[0];
+  } else {
+    neo_list_push(vm->stack, neo_js_context_create_undefined(vm->ctx));
+    return;
+  }
+  if (neo_js_variable_get_type(arg)->kind != NEO_JS_TYPE_STRING) {
+    neo_list_push(vm->stack, arg);
+    return;
+  }
+  const wchar_t *source = neo_js_variable_to_string(arg)->string;
+  char *src = neo_wstring_to_string(allocator, source);
+  neo_js_context_defer_free(vm->ctx, src);
+  neo_ast_node_t node =
+      TRY(neo_ast_parse_code(allocator, L"<anonymouse_script>", src)) {
+    neo_js_variable_t error = neo_js_context_create_compile_error(vm->ctx);
+    neo_list_push(vm->stack, error);
+    vm->offset = neo_buffer_get_size(program->codes);
+    return;
+  };
+  neo_js_context_defer_free(vm->ctx, node);
+  neo_program_t custom =
+      TRY(neo_ast_write_node(allocator, L"<anonymouse_script>", node)) {
+    neo_js_variable_t error = neo_js_context_create_compile_error(vm->ctx);
+    neo_list_push(vm->stack, error);
+    vm->offset = neo_buffer_get_size(program->codes);
+    return;
+  };
+  neo_js_context_defer_free(vm->ctx, custom);
+  neo_js_vm_t custom_vm = neo_create_js_vm(vm->ctx, vm->self, vm->clazz, 0,
+                                           neo_js_context_get_scope(vm->ctx));
+  neo_js_context_defer_free(vm->ctx, custom_vm);
+  neo_js_variable_t result = neo_js_vm_exec(custom_vm, custom);
   neo_allocator_free(allocator, argv);
   neo_list_push(vm->stack, result);
   if (neo_js_variable_get_type(result)->kind == NEO_JS_TYPE_ERROR) {
@@ -2118,6 +2177,7 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     NULL,                            // NEO_ASM_DECORATOR
     neo_js_vm_direcitve,             // NEO_ASM_DIRECTIVE
     neo_js_vm_call,                  // NEO_ASM_CALL
+    neo_js_vm_eval,                  // NEO_ASM_EVAL
     neo_js_vm_member_call,           // NEO_ASM_MEMBER_CALL
     neo_js_vm_get_field,             // NEO_ASM_GET_FIELD
     neo_js_vm_set_field,             // NEO_ASM_SET_FIELD
@@ -2191,7 +2251,7 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_spread,                // NEO_ASM_SPREAD
 };
 
-neo_js_variable_t neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
+neo_js_variable_t neo_js_vm_exec(neo_js_vm_t vm, neo_program_t program) {
   neo_js_scope_t current = neo_js_context_set_scope(vm->ctx, vm->scope);
   neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
   while (true) {

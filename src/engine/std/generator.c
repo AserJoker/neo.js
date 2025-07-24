@@ -53,7 +53,7 @@ neo_js_variable_t neo_js_generator_next(neo_js_context_t ctx,
     neo_js_context_set_scope(ctx, current);
     neo_list_push(co_ctx->vm->stack, arg);
     co_ctx->running = true;
-    neo_js_variable_t value = neo_js_vm_eval(co_ctx->vm, co_ctx->program);
+    neo_js_variable_t value = neo_js_vm_exec(co_ctx->vm, co_ctx->program);
     co_ctx->running = false;
     if (neo_js_variable_get_type(value)->kind == NEO_JS_TYPE_INTERRUPT) {
       neo_js_interrupt_t interrupt = neo_js_variable_to_interrupt(value);
@@ -116,7 +116,7 @@ neo_js_variable_t neo_js_generator_return(neo_js_context_t ctx,
     neo_list_push(co_ctx->vm->stack, arg);
     co_ctx->vm->offset = neo_buffer_get_size(co_ctx->program->codes);
     co_ctx->running = true;
-    neo_js_variable_t value = neo_js_vm_eval(co_ctx->vm, co_ctx->program);
+    neo_js_variable_t value = neo_js_vm_exec(co_ctx->vm, co_ctx->program);
     co_ctx->running = false;
     if (neo_js_variable_get_type(value)->kind == NEO_JS_TYPE_INTERRUPT) {
       neo_js_interrupt_t interrupt = neo_js_variable_to_interrupt(value);
@@ -180,7 +180,7 @@ neo_js_variable_t neo_js_generator_throw(neo_js_context_t ctx,
     neo_list_push(co_ctx->vm->stack, arg);
     co_ctx->vm->offset = neo_buffer_get_size(co_ctx->program->codes);
     co_ctx->running = true;
-    neo_js_variable_t value = neo_js_vm_eval(co_ctx->vm, co_ctx->program);
+    neo_js_variable_t value = neo_js_vm_exec(co_ctx->vm, co_ctx->program);
     co_ctx->running = false;
     if (neo_js_variable_get_type(value)->kind == NEO_JS_TYPE_INTERRUPT) {
       neo_js_interrupt_t interrupt = neo_js_variable_to_interrupt(value);

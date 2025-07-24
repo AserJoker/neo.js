@@ -1,4 +1,4 @@
 'use strict'
 const item = 1
-1 + 2
-4 + 5
+const data = eval("item + 2");
+console.log(data)

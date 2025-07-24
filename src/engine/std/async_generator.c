@@ -109,7 +109,7 @@ static neo_js_variable_t neo_js_async_generator_task(neo_js_context_t ctx,
   neo_list_t stacktrace =
       neo_js_context_set_stacktrace(ctx, co_ctx->stacktrace);
   neo_js_context_push_stackframe(ctx, NULL, L"_.awaiter", 0, 0);
-  neo_js_variable_t value = neo_js_vm_eval(co_ctx->vm, co_ctx->program);
+  neo_js_variable_t value = neo_js_vm_exec(co_ctx->vm, co_ctx->program);
   neo_js_context_pop_stackframe(ctx);
   neo_js_context_set_stacktrace(ctx, stacktrace);
   if (neo_js_variable_get_type(value)->kind == NEO_JS_TYPE_INTERRUPT) {
