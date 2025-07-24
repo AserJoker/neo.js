@@ -26,16 +26,16 @@ neo_js_variable_t neo_js_boolean_to_string(neo_js_context_t ctx,
                                            neo_js_variable_t self,
                                            uint32_t argc,
                                            neo_js_variable_t *argv) {
-  if (neo_js_variable_get_type(self)->kind < NEO_TYPE_OBJECT) {
+  if (neo_js_variable_get_type(self)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE,
         L"Boolean.prototype.toString requires that 'this' be a Boolean");
   }
   neo_js_object_t obj = neo_js_variable_to_object(self);
   if (obj->constructor !=
       neo_js_variable_get_handle(neo_js_context_get_boolean_constructor(ctx))) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE,
         L"Boolean.prototype.toString requires that 'this' be a Boolean");
   }
   neo_js_variable_t primitive =
@@ -46,16 +46,16 @@ neo_js_variable_t neo_js_boolean_to_string(neo_js_context_t ctx,
 neo_js_variable_t neo_js_boolean_value_of(neo_js_context_t ctx,
                                           neo_js_variable_t self, uint32_t argc,
                                           neo_js_variable_t *argv) {
-  if (neo_js_variable_get_type(self)->kind < NEO_TYPE_OBJECT) {
+  if (neo_js_variable_get_type(self)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE,
         L"Boolean.prototype.valueOf requires that 'this' be a Boolean");
   }
   neo_js_object_t obj = neo_js_variable_to_object(self);
   if (obj->constructor !=
       neo_js_variable_get_handle(neo_js_context_get_boolean_constructor(ctx))) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE,
         L"Boolean.prototype.valueOf requires that 'this' be a Boolean");
   }
   return neo_js_context_get_internal(ctx, self, L"[[primitive]]");

@@ -1,3 +1,4 @@
 'use strict'
-
-console.log(new Date("2021-10-23 08:00:00+08:00").toUTCString())
+const uri = "a%2Db";
+console.log(decodeURIComponent(uri));
+console.log(decodeURI(uri))

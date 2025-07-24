@@ -98,7 +98,7 @@ static void neo_js_bigint_copy(neo_js_context_t ctx, neo_js_variable_t self,
 }
 neo_js_type_t neo_get_js_bigint_type() {
   static struct _neo_js_type_t type = {
-      NEO_TYPE_BIGINT,         neo_js_bigint_typeof,
+      NEO_JS_TYPE_BIGINT,      neo_js_bigint_typeof,
       neo_js_bigint_to_string, neo_js_bigint_to_boolean,
       neo_js_bigint_to_number, neo_js_bigint_to_primitive,
       neo_js_bigint_to_object, neo_js_bigint_get_field,
@@ -125,7 +125,7 @@ neo_js_bigint_t neo_create_js_bigint(neo_allocator_t allocator,
 }
 
 neo_js_bigint_t neo_js_value_to_bigint(neo_js_value_t value) {
-  if (value->type->kind == NEO_TYPE_BIGINT) {
+  if (value->type->kind == NEO_JS_TYPE_BIGINT) {
     return (neo_js_bigint_t)value;
   }
   return NULL;

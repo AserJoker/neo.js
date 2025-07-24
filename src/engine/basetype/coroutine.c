@@ -7,7 +7,7 @@
 
 neo_js_type_t neo_get_js_coroutine_type() {
   static struct _neo_js_type_t type = {0};
-  type.kind = NEO_TYPE_COROUTINE;
+  type.kind = NEO_JS_TYPE_COROUTINE;
   return &type;
 }
 
@@ -75,7 +75,7 @@ neo_js_coroutine_t neo_create_js_coroutine(neo_allocator_t allocator,
   return coroutine;
 }
 neo_js_coroutine_t neo_js_value_to_coroutine(neo_js_value_t value) {
-  if (value->type->kind == NEO_TYPE_COROUTINE) {
+  if (value->type->kind == NEO_JS_TYPE_COROUTINE) {
     return (neo_js_coroutine_t)value;
   }
   return NULL;

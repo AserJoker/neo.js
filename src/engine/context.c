@@ -34,6 +34,10 @@
 #include "engine/handle.h"
 #include "engine/lib/clear_interval.h"
 #include "engine/lib/clear_timeout.h"
+#include "engine/lib/decode_uri.h"
+#include "engine/lib/decode_uri_component.h"
+#include "engine/lib/encode_uri.h"
+#include "engine/lib/encode_uri_component.h"
 #include "engine/lib/set_interval.h"
 #include "engine/lib/set_timeout.h"
 #include "engine/runtime.h"
@@ -61,6 +65,7 @@
 #include "engine/std/symbol.h"
 #include "engine/std/syntax_error.h"
 #include "engine/std/type_error.h"
+#include "engine/std/uri_error.h"
 #include "engine/type.h"
 #include "engine/value.h"
 #include "engine/variable.h"
@@ -128,6 +133,7 @@ struct _neo_js_context_t {
     neo_js_variable_t reference_error_constructor;
     neo_js_variable_t internal_error_constructor;
     neo_js_variable_t range_error_constructor;
+    neo_js_variable_t uri_error_constructor;
   } std;
 };
 
@@ -899,6 +905,26 @@ static void neo_js_context_init_lib(neo_js_context_t ctx) {
                            neo_js_context_create_cfunction(
                                ctx, L"clearInterval", neo_js_clear_interval),
                            true, true, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.global, neo_js_context_create_string(ctx, L"encodeURI"),
+      neo_js_context_create_cfunction(ctx, L"encodeURI", neo_js_encode_uri),
+      true, true, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.global,
+      neo_js_context_create_string(ctx, L"encodeURIComponent"),
+      neo_js_context_create_cfunction(ctx, L"encodeURIComponent",
+                                      neo_js_encode_uri_component),
+      true, true, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.global, neo_js_context_create_string(ctx, L"decodeURI"),
+      neo_js_context_create_cfunction(ctx, L"decodeURI", neo_js_decode_uri),
+      true, true, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.global,
+      neo_js_context_create_string(ctx, L"decodeURIComponent"),
+      neo_js_context_create_cfunction(ctx, L"decodeURIComponent",
+                                      neo_js_decode_uri_component),
+      true, true, true);
 }
 static void neo_js_context_init_std_date(neo_js_context_t ctx) {
   neo_js_context_def_field(
@@ -1188,6 +1214,11 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
   neo_js_context_extends(ctx, ctx->std.range_error_constructor,
                          ctx->std.error_constructor);
 
+  ctx->std.uri_error_constructor = neo_js_context_create_cfunction(
+      ctx, L"URIError", neo_js_uri_error_constructor);
+  neo_js_context_extends(ctx, ctx->std.uri_error_constructor,
+                         ctx->std.error_constructor);
+
   ctx->std.type_error_constructor = neo_js_context_create_cfunction(
       ctx, L"TypeError", neo_js_type_error_constructor);
   neo_js_context_extends(ctx, ctx->std.type_error_constructor,
@@ -1307,6 +1338,10 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
   neo_js_context_def_field(ctx, ctx->std.global,
                            neo_js_context_create_string(ctx, L"RangeError"),
                            ctx->std.range_error_constructor, true, true, true);
+
+  neo_js_context_def_field(ctx, ctx->std.global,
+                           neo_js_context_create_string(ctx, L"URIError"),
+                           ctx->std.uri_error_constructor, true, true, true);
 
   neo_js_context_def_field(ctx, ctx->std.global,
                            neo_js_context_create_string(ctx, L"TypeError"),
@@ -1444,6 +1479,13 @@ void neo_js_context_defer_free(neo_js_context_t ctx, void *data) {
   neo_js_scope_defer_free(ctx->scope, data);
 }
 
+void *neo_js_context_alloc_ex(neo_js_context_t ctx, size_t size,
+                              neo_destructor_fn_t dispose, const char *filename,
+                              size_t line) {
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  return neo_allocator_alloc_ex(allocator, size, dispose, filename, line);
+}
+
 void neo_js_context_next_tick(neo_js_context_t ctx) {
   uint64_t now = neo_clock_get_timestamp();
   neo_list_t tasks = NULL;
@@ -1485,7 +1527,7 @@ void neo_js_context_next_tick(neo_js_context_t ctx) {
     neo_js_handle_remove_parent(task->function,
                                 neo_js_scope_get_root_handle(ctx->task));
   }
-  if (neo_js_variable_get_type(error)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(error)->kind == NEO_JS_TYPE_ERROR) {
     error = neo_js_error_get_error(ctx, error);
     error = neo_js_context_to_string(ctx, error);
     neo_js_string_t serror = neo_js_variable_to_string(error);
@@ -1509,7 +1551,7 @@ uint32_t neo_js_context_create_micro_task(neo_js_context_t ctx,
                                           neo_js_variable_t self, uint32_t argc,
                                           neo_js_variable_t *argv,
                                           uint64_t timeout, bool keepalive) {
-  if (neo_js_variable_get_type(callable)->kind < NEO_TYPE_CALLABLE) {
+  if (neo_js_variable_get_type(callable)->kind < NEO_JS_TYPE_CALLABLE) {
     return 0;
   }
   static uint32_t id = 0;
@@ -1546,7 +1588,7 @@ uint32_t neo_js_context_create_macro_task(neo_js_context_t ctx,
                                           neo_js_variable_t self, uint32_t argc,
                                           neo_js_variable_t *argv,
                                           uint64_t timeout, bool keepalive) {
-  if (neo_js_variable_get_type(callable)->kind < NEO_TYPE_CALLABLE) {
+  if (neo_js_variable_get_type(callable)->kind < NEO_JS_TYPE_CALLABLE) {
     return 0;
   }
   static uint32_t id = 0;
@@ -1737,6 +1779,11 @@ neo_js_context_get_range_error_constructor(neo_js_context_t ctx) {
 }
 
 neo_js_variable_t
+neo_js_context_get_uri_error_constructor(neo_js_context_t ctx) {
+  return ctx->std.uri_error_constructor;
+}
+
+neo_js_variable_t
 neo_js_context_get_reference_error_constructor(neo_js_context_t ctx) {
   return ctx->std.reference_error_constructor;
 }
@@ -1812,7 +1859,7 @@ neo_js_variable_t neo_js_context_def_variable(neo_js_context_t ctx,
   if (current != NULL) {
     wchar_t msg[1024];
     swprintf(msg, 1024, L"cannot redefine variable: '%ls'", name);
-    return neo_js_context_create_simple_error(ctx, NEO_ERROR_SYNTAX, msg);
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_SYNTAX, msg);
   }
   neo_js_handle_t handle = neo_js_variable_get_handle(variable);
   current = neo_js_scope_create_variable(ctx->scope, handle, name);
@@ -1830,18 +1877,18 @@ neo_js_variable_t neo_js_context_store_variable(neo_js_context_t ctx,
                                                 neo_js_variable_t variable,
                                                 const wchar_t *name) {
   neo_js_variable_t current = neo_js_context_load_variable(ctx, name);
-  if (neo_js_variable_get_type(current)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(current)->kind == NEO_JS_TYPE_ERROR) {
     return current;
   }
-  if (neo_js_variable_get_type(variable)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(variable)->kind == NEO_JS_TYPE_ERROR) {
     return variable;
   }
-  if (neo_js_variable_get_type(current)->kind != NEO_TYPE_UNINITIALIZE) {
+  if (neo_js_variable_get_type(current)->kind != NEO_JS_TYPE_UNINITIALIZE) {
     if (neo_js_variable_is_const(current) ||
         neo_js_variable_is_using(current) ||
         neo_js_variable_is_await_using(current)) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_ERROR_TYPE, L"assignment to constant variable.");
+          ctx, NEO_JS_ERROR_TYPE, L"assignment to constant variable.");
     }
   }
   neo_js_type_t type = neo_js_variable_get_type(variable);
@@ -1867,7 +1914,7 @@ neo_js_variable_t neo_js_context_load_variable(neo_js_context_t ctx,
   }
   wchar_t msg[1024];
   swprintf(msg, 1024, L"variable '%ls' is not defined", name);
-  return neo_js_context_create_simple_error(ctx, NEO_ERROR_REFERENCE, msg);
+  return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_REFERENCE, msg);
 }
 
 neo_js_variable_t neo_js_context_extends(neo_js_context_t ctx,
@@ -1948,7 +1995,7 @@ neo_js_variable_t neo_js_context_get_private(neo_js_context_t ctx,
              L"Private field '%ls' must be declared in an enclosing class.",
              key->string);
     neo_js_variable_t error =
-        neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE, message);
+        neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
     neo_allocator_free(allocator, message);
     return error;
   }
@@ -1969,7 +2016,7 @@ neo_js_variable_t neo_js_context_get_private(neo_js_context_t ctx,
         swprintf(message, len, L"Private field '%ls' hasn't getter.",
                  key->string);
         neo_js_variable_t error =
-            neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE, message);
+            neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
         neo_allocator_free(allocator, message);
         return error;
       }
@@ -1982,7 +2029,7 @@ neo_js_variable_t neo_js_context_get_private(neo_js_context_t ctx,
              L"Private field '%ls' must be declared in an enclosing class.",
              key->string);
     neo_js_variable_t error =
-        neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE, message);
+        neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
     neo_allocator_free(allocator, message);
     return error;
   }
@@ -2003,7 +2050,7 @@ neo_js_variable_t neo_js_context_set_private(neo_js_context_t ctx,
              L"Private field '%ls' must be declared in an enclosing class.",
              key->string);
     neo_js_variable_t error =
-        neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE, message);
+        neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
     neo_allocator_free(allocator, message);
     return error;
   }
@@ -2017,7 +2064,7 @@ neo_js_variable_t neo_js_context_set_private(neo_js_context_t ctx,
              L"Private field '%ls' must be declared in an enclosing class.",
              key->string);
     neo_js_variable_t error =
-        neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE, message);
+        neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
     neo_allocator_free(allocator, message);
     return error;
   } else {
@@ -2036,7 +2083,7 @@ neo_js_variable_t neo_js_context_set_private(neo_js_context_t ctx,
           neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
       swprintf(message, len, L"Private field '%ls' is readonly.", key->string);
       neo_js_variable_t error =
-          neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE, message);
+          neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
       neo_allocator_free(allocator, message);
       return error;
     }
@@ -2067,7 +2114,7 @@ neo_js_variable_t neo_js_context_def_private(neo_js_context_t ctx,
     swprintf(message, len, L"Identifier '%ls' has already been declared",
              str->string);
     neo_js_variable_t error =
-        neo_js_context_create_simple_error(ctx, NEO_ERROR_SYNTAX, message);
+        neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_SYNTAX, message);
     neo_allocator_free(allocator, message);
     return error;
   }
@@ -2116,7 +2163,7 @@ neo_js_variable_t neo_js_context_def_private_accessor(
       swprintf(message, len, L"Identifier '%ls' has already been declared",
                str->string);
       neo_js_variable_t error =
-          neo_js_context_create_simple_error(ctx, NEO_ERROR_SYNTAX, message);
+          neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_SYNTAX, message);
       neo_allocator_free(allocator, message);
       return error;
     }
@@ -2143,13 +2190,13 @@ neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
                          neo_js_variable_t field, neo_js_variable_t value,
                          bool configurable, bool enumable, bool writable) {
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
-  if (neo_js_variable_get_type(object)->kind < NEO_TYPE_OBJECT) {
+  if (neo_js_variable_get_type(object)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_ERROR_TYPE, L"Object.defineProperty called on non-object");
+        ctx, NEO_JS_ERROR_TYPE, L"Object.defineProperty called on non-object");
   }
   neo_js_object_t obj = neo_js_variable_to_object(object);
   field = neo_js_context_to_primitive(ctx, field, L"default");
-  if (neo_js_variable_get_type(field)->kind != NEO_TYPE_SYMBOL) {
+  if (neo_js_variable_get_type(field)->kind != NEO_JS_TYPE_SYMBOL) {
     field = neo_js_context_to_string(ctx, field);
   }
   neo_js_object_property_t prop =
@@ -2158,7 +2205,7 @@ neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
   neo_js_handle_t hobject = neo_js_variable_get_handle(object);
   if (!prop) {
     if (obj->sealed || obj->frozen || !obj->extensible) {
-      return neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE,
+      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
                                                 L"Object is not extensible");
     }
     prop = neo_create_js_object_property(allocator);
@@ -2172,16 +2219,16 @@ neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
     neo_hash_map_set(obj->properties, hfield, prop, ctx, ctx);
     neo_js_handle_add_parent(hvalue, hobject);
     neo_js_handle_add_parent(hfield, hobject);
-    if (neo_js_variable_get_type(field)->kind == NEO_TYPE_STRING &&
+    if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_STRING &&
         prop->enumerable) {
       neo_list_push(obj->keys, hfield);
     }
-    if (neo_js_variable_get_type(field)->kind == NEO_TYPE_SYMBOL) {
+    if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_SYMBOL) {
       neo_list_push(obj->symbol_keys, hfield);
     }
   } else {
     if (obj->frozen) {
-      return neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE,
+      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
                                                 L"Object is not extensible");
     }
     if (prop->value != NULL) {
@@ -2194,7 +2241,7 @@ neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
       }
       if (!prop->configurable || !prop->writable) {
         wchar_t *message = NULL;
-        if (neo_js_variable_get_type(field)->kind == NEO_TYPE_SYMBOL) {
+        if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_SYMBOL) {
           neo_js_symbol_t sym = neo_js_variable_to_symbol(field);
           size_t len = wcslen(sym->description) + 64;
           message = neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
@@ -2212,7 +2259,7 @@ neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
                    str->string);
         }
         neo_js_variable_t error =
-            neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE, message);
+            neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
         neo_allocator_free(allocator, message);
         return error;
       }
@@ -2222,7 +2269,7 @@ neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
     } else {
       if (!prop->configurable) {
         wchar_t *message = NULL;
-        if (neo_js_variable_get_type(field)->kind == NEO_TYPE_SYMBOL) {
+        if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_SYMBOL) {
           neo_js_symbol_t sym = neo_js_variable_to_symbol(field);
           size_t len = wcslen(sym->description) + 64;
           message = neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
@@ -2236,7 +2283,7 @@ neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
                    str->string);
         }
         neo_js_variable_t error =
-            neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE, message);
+            neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
         neo_allocator_free(allocator, message);
         return error;
       }
@@ -2266,13 +2313,13 @@ neo_js_context_def_accessor(neo_js_context_t ctx, neo_js_variable_t object,
                             neo_js_variable_t setter, bool configurable,
                             bool enumable) {
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
-  if (neo_js_variable_get_type(object)->kind < NEO_TYPE_OBJECT) {
+  if (neo_js_variable_get_type(object)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_ERROR_TYPE, L"Object.defineProperty called on non-object");
+        ctx, NEO_JS_ERROR_TYPE, L"Object.defineProperty called on non-object");
   }
   neo_js_object_t obj = neo_js_variable_to_object(object);
   field = neo_js_context_to_primitive(ctx, field, L"default");
-  if (neo_js_variable_get_type(field)->kind != NEO_TYPE_SYMBOL) {
+  if (neo_js_variable_get_type(field)->kind != NEO_JS_TYPE_SYMBOL) {
     field = neo_js_context_to_string(ctx, field);
   }
   neo_js_object_property_t prop =
@@ -2289,7 +2336,7 @@ neo_js_context_def_accessor(neo_js_context_t ctx, neo_js_variable_t object,
   neo_js_handle_t hfield = neo_js_variable_get_handle(field);
   if (!prop) {
     if (obj->sealed || obj->frozen || !obj->extensible) {
-      return neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE,
+      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
                                                 L"Object is not extensible");
     }
     prop = neo_create_js_object_property(allocator);
@@ -2309,7 +2356,7 @@ neo_js_context_def_accessor(neo_js_context_t ctx, neo_js_variable_t object,
     if (prop->value != NULL) {
       if (!prop->configurable) {
         wchar_t *message = NULL;
-        if (neo_js_variable_get_type(field)->kind == NEO_TYPE_SYMBOL) {
+        if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_SYMBOL) {
           neo_js_symbol_t sym = neo_js_variable_to_symbol(field);
           size_t len = wcslen(sym->description) + 64;
           message = neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
@@ -2327,7 +2374,7 @@ neo_js_context_def_accessor(neo_js_context_t ctx, neo_js_variable_t object,
                    str->string);
         }
         neo_js_variable_t error =
-            neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE, message);
+            neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
         neo_allocator_free(allocator, message);
         return error;
       }
@@ -2339,7 +2386,7 @@ neo_js_context_def_accessor(neo_js_context_t ctx, neo_js_variable_t object,
     } else {
       if (!prop->configurable) {
         wchar_t *message = NULL;
-        if (neo_js_variable_get_type(field)->kind == NEO_TYPE_SYMBOL) {
+        if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_SYMBOL) {
           neo_js_symbol_t sym = neo_js_variable_to_symbol(field);
           size_t len = wcslen(sym->description) + 64;
           message = neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
@@ -2353,7 +2400,7 @@ neo_js_context_def_accessor(neo_js_context_t ctx, neo_js_variable_t object,
                    str->string);
         }
         neo_js_variable_t error =
-            neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE, message);
+            neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
         neo_allocator_free(allocator, message);
         return error;
       }
@@ -2450,7 +2497,7 @@ neo_js_variable_t neo_js_context_del_field(neo_js_context_t ctx,
 neo_js_variable_t neo_js_context_get_keys(neo_js_context_t ctx,
                                           neo_js_variable_t variable) {
   variable = neo_js_context_to_object(ctx, variable);
-  if (neo_js_variable_get_type(variable)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(variable)->kind == NEO_JS_TYPE_ERROR) {
     return variable;
   }
   neo_js_scope_t current = ctx->scope;
@@ -2571,12 +2618,12 @@ static neo_js_variable_t neo_js_context_call_generator_function(
 
 bool neo_js_context_is_thenable(neo_js_context_t ctx,
                                 neo_js_variable_t variable) {
-  if (neo_js_variable_get_type(variable)->kind < NEO_TYPE_OBJECT) {
+  if (neo_js_variable_get_type(variable)->kind < NEO_JS_TYPE_OBJECT) {
     return false;
   }
   neo_js_variable_t then = neo_js_context_get_field(
       ctx, variable, neo_js_context_create_string(ctx, L"then"));
-  if (neo_js_variable_get_type(then)->kind < NEO_TYPE_CALLABLE) {
+  if (neo_js_variable_get_type(then)->kind < NEO_JS_TYPE_CALLABLE) {
     return false;
   }
   return true;
@@ -2714,12 +2761,12 @@ static neo_js_variable_t neo_js_awaiter_task(neo_js_context_t ctx,
   } else if (co_ctx->vm) {
     value = neo_js_vm_eval(co_ctx->vm, co_ctx->program);
   } else {
-    return neo_js_context_create_simple_error(ctx, NEO_ERROR_INTERNAL,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_INTERNAL,
                                               L"Broken coroutine context");
   }
   neo_js_context_pop_stackframe(ctx);
   neo_js_context_set_stacktrace(ctx, stacktrace);
-  if (neo_js_variable_get_type(value)->kind == NEO_TYPE_INTERRUPT) {
+  if (neo_js_variable_get_type(value)->kind == NEO_JS_TYPE_INTERRUPT) {
     neo_js_interrupt_t interrupt = neo_js_variable_to_interrupt(value);
     value = neo_js_context_create_variable(ctx, interrupt->result, NULL);
     if (co_ctx->callee) {
@@ -2757,7 +2804,7 @@ static neo_js_variable_t neo_js_awaiter_task(neo_js_context_t ctx,
           ctx, task, neo_js_context_create_undefined(ctx), 0, NULL, 0, false);
     }
   } else {
-    if (neo_js_variable_get_type(value)->kind == NEO_TYPE_ERROR) {
+    if (neo_js_variable_get_type(value)->kind == NEO_JS_TYPE_ERROR) {
       value = neo_js_error_get_error(ctx, value);
       neo_js_context_call(ctx, reject, neo_js_context_create_undefined(ctx), 1,
                           &value);
@@ -3025,15 +3072,15 @@ neo_js_variable_t neo_js_context_simple_call(neo_js_context_t ctx,
                                              neo_js_variable_t self,
                                              uint32_t argc,
                                              neo_js_variable_t *argv) {
-  if (neo_js_variable_get_type(callee)->kind == NEO_TYPE_CFUNCTION) {
+  if (neo_js_variable_get_type(callee)->kind == NEO_JS_TYPE_CFUNCTION) {
     return neo_js_context_call_cfunction(ctx, callee, self, argc, argv);
   } else if (neo_js_variable_get_type(callee)->kind ==
-             NEO_TYPE_ASYNC_CFUNCTION) {
+             NEO_JS_TYPE_ASYNC_CFUNCTION) {
     return neo_js_context_call_async_cfunction(ctx, callee, self, argc, argv);
-  } else if (neo_js_variable_get_type(callee)->kind == NEO_TYPE_FUNCTION) {
+  } else if (neo_js_variable_get_type(callee)->kind == NEO_JS_TYPE_FUNCTION) {
     return neo_js_context_call_function(ctx, callee, self, argc, argv);
   } else {
-    return neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
                                               L"callee is not a function");
   }
 }
@@ -3042,8 +3089,8 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
                                            neo_js_variable_t constructor,
                                            uint32_t argc,
                                            neo_js_variable_t *argv) {
-  if (neo_js_variable_get_type(constructor)->kind < NEO_TYPE_CALLABLE) {
-    return neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE,
+  if (neo_js_variable_get_type(constructor)->kind < NEO_JS_TYPE_CALLABLE) {
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
                                               L"Constructor is not a function");
   }
   neo_js_call_type_t current_call_type = ctx->call_type;
@@ -3063,9 +3110,9 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
   neo_js_variable_t result =
       neo_js_context_simple_call(ctx, constructor, object, argc, argv);
   if (result) {
-    if (neo_js_variable_get_type(result)->kind >= NEO_TYPE_OBJECT) {
+    if (neo_js_variable_get_type(result)->kind >= NEO_JS_TYPE_OBJECT) {
       object = result;
-    } else if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    } else if (neo_js_variable_get_type(result)->kind == NEO_JS_TYPE_ERROR) {
       object = result;
     }
   }
@@ -3082,23 +3129,27 @@ neo_js_variable_t neo_js_context_create_simple_error(neo_js_context_t ctx,
   neo_js_variable_t msg = neo_js_context_create_string(ctx, message);
   neo_js_variable_t value = NULL;
   switch (type) {
-  case NEO_ERROR_SYNTAX:
+  case NEO_JS_ERROR_SYNTAX:
     value = neo_js_context_construct(ctx, ctx->std.syntax_error_constructor, 1,
                                      &msg);
     break;
-  case NEO_ERROR_RANGE:
+  case NEO_JS_ERROR_RANGE:
     value = neo_js_context_construct(ctx, ctx->std.range_error_constructor, 1,
                                      &msg);
     break;
-  case NEO_ERROR_TYPE:
+  case NEO_JS_ERROR_URI:
+    value =
+        neo_js_context_construct(ctx, ctx->std.uri_error_constructor, 1, &msg);
+    break;
+  case NEO_JS_ERROR_TYPE:
     value =
         neo_js_context_construct(ctx, ctx->std.type_error_constructor, 1, &msg);
     break;
-  case NEO_ERROR_REFERENCE:
+  case NEO_JS_ERROR_REFERENCE:
     value = neo_js_context_construct(ctx, ctx->std.reference_error_constructor,
                                      1, &msg);
     break;
-  case NEO_ERROR_INTERNAL:
+  case NEO_JS_ERROR_INTERNAL:
     value = neo_js_context_construct(ctx, ctx->std.internal_error_constructor,
                                      1, &msg);
     break;
@@ -3473,7 +3524,7 @@ neo_js_variable_t neo_js_context_to_number(neo_js_context_t ctx,
 neo_js_variable_t neo_js_context_to_integer(neo_js_context_t ctx,
                                             neo_js_variable_t variable) {
   variable = neo_js_context_to_number(ctx, variable);
-  if (neo_js_variable_get_type(variable)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(variable)->kind == NEO_JS_TYPE_ERROR) {
     return variable;
   }
   neo_js_number_t num = neo_js_variable_to_number(variable);
@@ -3494,53 +3545,53 @@ neo_js_variable_t neo_js_context_is_equal(neo_js_context_t ctx,
   neo_js_variable_t left = variable;
   neo_js_variable_t right = another;
   if (lefttype->kind != righttype->kind) {
-    if (lefttype->kind == NEO_TYPE_NULL ||
-        lefttype->kind == NEO_TYPE_UNDEFINED) {
-      if (righttype->kind == NEO_TYPE_NULL ||
-          righttype->kind == NEO_TYPE_UNDEFINED) {
+    if (lefttype->kind == NEO_JS_TYPE_NULL ||
+        lefttype->kind == NEO_JS_TYPE_UNDEFINED) {
+      if (righttype->kind == NEO_JS_TYPE_NULL ||
+          righttype->kind == NEO_JS_TYPE_UNDEFINED) {
         return neo_js_context_create_boolean(ctx, true);
       }
     }
-    if (righttype->kind == NEO_TYPE_NULL ||
-        righttype->kind == NEO_TYPE_UNDEFINED) {
-      if (righttype->kind == NEO_TYPE_NULL ||
-          righttype->kind == NEO_TYPE_UNDEFINED) {
+    if (righttype->kind == NEO_JS_TYPE_NULL ||
+        righttype->kind == NEO_JS_TYPE_UNDEFINED) {
+      if (righttype->kind == NEO_JS_TYPE_NULL ||
+          righttype->kind == NEO_JS_TYPE_UNDEFINED) {
         return neo_js_context_create_boolean(ctx, true);
       }
     }
-    if (lefttype->kind >= NEO_TYPE_OBJECT &&
-        righttype->kind < NEO_TYPE_OBJECT) {
+    if (lefttype->kind >= NEO_JS_TYPE_OBJECT &&
+        righttype->kind < NEO_JS_TYPE_OBJECT) {
       left = neo_js_context_to_primitive(ctx, left, L"default");
-      if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+      if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
         return left;
       }
       lefttype = neo_js_variable_get_type(left);
     }
-    if (righttype->kind >= NEO_TYPE_OBJECT &&
-        lefttype->kind < NEO_TYPE_OBJECT) {
+    if (righttype->kind >= NEO_JS_TYPE_OBJECT &&
+        lefttype->kind < NEO_JS_TYPE_OBJECT) {
       right = neo_js_context_to_primitive(ctx, right, L"default");
-      if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+      if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
         return right;
       }
       righttype = neo_js_variable_get_type(right);
     }
     if (lefttype->kind != righttype->kind) {
-      if (lefttype->kind == NEO_TYPE_SYMBOL ||
-          righttype->kind == NEO_TYPE_SYMBOL) {
+      if (lefttype->kind == NEO_JS_TYPE_SYMBOL ||
+          righttype->kind == NEO_JS_TYPE_SYMBOL) {
         return neo_js_context_create_boolean(ctx, false);
       }
     }
-    if (lefttype->kind == NEO_TYPE_BOOLEAN) {
+    if (lefttype->kind == NEO_JS_TYPE_BOOLEAN) {
       left = neo_js_context_to_number(ctx, left);
       return neo_js_context_is_equal(ctx, left, right);
     }
-    if (righttype->kind == NEO_TYPE_BOOLEAN) {
+    if (righttype->kind == NEO_JS_TYPE_BOOLEAN) {
       right = neo_js_context_to_number(ctx, right);
       return neo_js_context_is_equal(ctx, left, right);
     }
 
-    if (lefttype->kind == NEO_TYPE_BIGINT &&
-        righttype->kind == NEO_TYPE_NUMBER) {
+    if (lefttype->kind == NEO_JS_TYPE_BIGINT &&
+        righttype->kind == NEO_JS_TYPE_NUMBER) {
       double r = neo_js_variable_to_number(right)->number;
       if (isnan(r) || isinf(r)) {
         return neo_js_context_create_boolean(ctx, false);
@@ -3552,8 +3603,8 @@ neo_js_variable_t neo_js_context_is_equal(neo_js_context_t ctx,
       return neo_js_context_create_boolean(ctx, is_equ);
     }
 
-    if (righttype->kind == NEO_TYPE_BIGINT &&
-        lefttype->kind == NEO_TYPE_NUMBER) {
+    if (righttype->kind == NEO_JS_TYPE_BIGINT &&
+        lefttype->kind == NEO_JS_TYPE_NUMBER) {
       double r = neo_js_variable_to_number(left)->number;
       if (isnan(r) || isinf(r)) {
         return neo_js_context_create_boolean(ctx, false);
@@ -3565,8 +3616,8 @@ neo_js_variable_t neo_js_context_is_equal(neo_js_context_t ctx,
       return neo_js_context_create_boolean(ctx, is_equ);
     }
 
-    if (lefttype->kind == NEO_TYPE_BIGINT &&
-        righttype->kind == NEO_TYPE_STRING) {
+    if (lefttype->kind == NEO_JS_TYPE_BIGINT &&
+        righttype->kind == NEO_JS_TYPE_STRING) {
       const wchar_t *r = neo_js_variable_to_string(right)->string;
       neo_bigint_t b = neo_string_to_bigint(allocator, r);
       if (!b) {
@@ -3578,8 +3629,8 @@ neo_js_variable_t neo_js_context_is_equal(neo_js_context_t ctx,
       return neo_js_context_create_boolean(ctx, is_equ);
     }
 
-    if (righttype->kind == NEO_TYPE_BIGINT &&
-        lefttype->kind == NEO_TYPE_STRING) {
+    if (righttype->kind == NEO_JS_TYPE_BIGINT &&
+        lefttype->kind == NEO_JS_TYPE_STRING) {
       const wchar_t *r = neo_js_variable_to_string(left)->string;
       neo_bigint_t b = neo_string_to_bigint(allocator, r);
       if (!b) {
@@ -3591,12 +3642,12 @@ neo_js_variable_t neo_js_context_is_equal(neo_js_context_t ctx,
       return neo_js_context_create_boolean(ctx, is_equ);
     }
 
-    if (lefttype->kind == NEO_TYPE_STRING &&
-        righttype->kind == NEO_TYPE_NUMBER) {
+    if (lefttype->kind == NEO_JS_TYPE_STRING &&
+        righttype->kind == NEO_JS_TYPE_NUMBER) {
       left = neo_js_context_to_number(ctx, left);
       lefttype = neo_js_variable_get_type(left);
-    } else if (lefttype->kind == NEO_TYPE_NUMBER &&
-               righttype->kind == NEO_TYPE_STRING) {
+    } else if (lefttype->kind == NEO_JS_TYPE_NUMBER &&
+               righttype->kind == NEO_JS_TYPE_STRING) {
       right = neo_js_context_to_number(ctx, right);
       righttype = neo_js_variable_get_type(right);
     }
@@ -3611,39 +3662,42 @@ neo_js_variable_t neo_js_context_is_gt(neo_js_context_t ctx,
   neo_js_variable_t left = variable;
   neo_js_variable_t right = another;
   left = neo_js_context_to_primitive(ctx, left, L"number");
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_primitive(ctx, right, L"number");
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_type_t lefttype = neo_js_variable_get_type(left);
   neo_js_type_t righttype = neo_js_variable_get_type(right);
-  if (lefttype->kind == NEO_TYPE_STRING && righttype->kind == NEO_TYPE_STRING) {
+  if (lefttype->kind == NEO_JS_TYPE_STRING &&
+      righttype->kind == NEO_JS_TYPE_STRING) {
     neo_js_string_t lstring = neo_js_variable_to_string(left);
     neo_js_string_t rstring = neo_js_variable_to_string(right);
     int res = wcscmp(lstring->string, rstring->string);
     return neo_js_context_create_boolean(ctx, res > 0);
   }
-  if (lefttype->kind != NEO_TYPE_NUMBER && lefttype->kind != NEO_TYPE_BIGINT) {
+  if (lefttype->kind != NEO_JS_TYPE_NUMBER &&
+      lefttype->kind != NEO_JS_TYPE_BIGINT) {
     left = neo_js_context_to_number(ctx, left);
-    if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
       return left;
     }
   }
-  if (righttype->kind != NEO_TYPE_NUMBER &&
-      righttype->kind != NEO_TYPE_BIGINT) {
+  if (righttype->kind != NEO_JS_TYPE_NUMBER &&
+      righttype->kind != NEO_JS_TYPE_BIGINT) {
     right = neo_js_context_to_number(ctx, right);
-    if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
       return right;
     }
   }
-  if (lefttype->kind == NEO_TYPE_BIGINT || righttype->kind == NEO_TYPE_BIGINT) {
+  if (lefttype->kind == NEO_JS_TYPE_BIGINT ||
+      righttype->kind == NEO_JS_TYPE_BIGINT) {
     neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
     neo_js_bigint_t b = neo_js_variable_to_bigint(right);
-    if (lefttype->kind == NEO_TYPE_NUMBER) {
+    if (lefttype->kind == NEO_JS_TYPE_NUMBER) {
       neo_js_number_t num = neo_js_variable_to_number(left);
       if (isnan(num->number)) {
         return neo_js_context_create_boolean(ctx, false);
@@ -3659,7 +3713,7 @@ neo_js_variable_t neo_js_context_is_gt(neo_js_context_t ctx,
       neo_allocator_free(allocator, bigint);
       return neo_js_context_create_boolean(ctx, res);
     }
-    if (righttype->kind == NEO_TYPE_NUMBER) {
+    if (righttype->kind == NEO_JS_TYPE_NUMBER) {
       neo_js_number_t num = neo_js_variable_to_number(right);
       if (isnan(num->number)) {
         return neo_js_context_create_boolean(ctx, false);
@@ -3690,39 +3744,42 @@ neo_js_variable_t neo_js_context_is_lt(neo_js_context_t ctx,
   neo_js_variable_t left = variable;
   neo_js_variable_t right = another;
   left = neo_js_context_to_primitive(ctx, left, L"number");
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_primitive(ctx, right, L"number");
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_type_t lefttype = neo_js_variable_get_type(left);
   neo_js_type_t righttype = neo_js_variable_get_type(right);
-  if (lefttype->kind == NEO_TYPE_STRING && righttype->kind == NEO_TYPE_STRING) {
+  if (lefttype->kind == NEO_JS_TYPE_STRING &&
+      righttype->kind == NEO_JS_TYPE_STRING) {
     neo_js_string_t lstring = neo_js_variable_to_string(left);
     neo_js_string_t rstring = neo_js_variable_to_string(right);
     int res = wcscmp(lstring->string, rstring->string);
     return neo_js_context_create_boolean(ctx, res < 0);
   }
-  if (lefttype->kind != NEO_TYPE_NUMBER && lefttype->kind != NEO_TYPE_BIGINT) {
+  if (lefttype->kind != NEO_JS_TYPE_NUMBER &&
+      lefttype->kind != NEO_JS_TYPE_BIGINT) {
     left = neo_js_context_to_number(ctx, left);
-    if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
       return left;
     }
   }
-  if (righttype->kind != NEO_TYPE_NUMBER &&
-      righttype->kind != NEO_TYPE_BIGINT) {
+  if (righttype->kind != NEO_JS_TYPE_NUMBER &&
+      righttype->kind != NEO_JS_TYPE_BIGINT) {
     right = neo_js_context_to_number(ctx, right);
-    if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
       return right;
     }
   }
-  if (lefttype->kind == NEO_TYPE_BIGINT || righttype->kind == NEO_TYPE_BIGINT) {
+  if (lefttype->kind == NEO_JS_TYPE_BIGINT ||
+      righttype->kind == NEO_JS_TYPE_BIGINT) {
     neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
     neo_js_bigint_t b = neo_js_variable_to_bigint(right);
-    if (lefttype->kind == NEO_TYPE_NUMBER) {
+    if (lefttype->kind == NEO_JS_TYPE_NUMBER) {
       neo_js_number_t num = neo_js_variable_to_number(left);
       if (isnan(num->number)) {
         return neo_js_context_create_boolean(ctx, false);
@@ -3738,7 +3795,7 @@ neo_js_variable_t neo_js_context_is_lt(neo_js_context_t ctx,
       neo_allocator_free(allocator, bigint);
       return neo_js_context_create_boolean(ctx, res);
     }
-    if (righttype->kind == NEO_TYPE_NUMBER) {
+    if (righttype->kind == NEO_JS_TYPE_NUMBER) {
       neo_js_number_t num = neo_js_variable_to_number(right);
       if (isnan(num->number)) {
         return neo_js_context_create_boolean(ctx, false);
@@ -3769,39 +3826,42 @@ neo_js_variable_t neo_js_context_is_ge(neo_js_context_t ctx,
   neo_js_variable_t left = variable;
   neo_js_variable_t right = another;
   left = neo_js_context_to_primitive(ctx, left, L"number");
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_primitive(ctx, right, L"number");
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_type_t lefttype = neo_js_variable_get_type(left);
   neo_js_type_t righttype = neo_js_variable_get_type(right);
-  if (lefttype->kind == NEO_TYPE_STRING && righttype->kind == NEO_TYPE_STRING) {
+  if (lefttype->kind == NEO_JS_TYPE_STRING &&
+      righttype->kind == NEO_JS_TYPE_STRING) {
     neo_js_string_t lstring = neo_js_variable_to_string(left);
     neo_js_string_t rstring = neo_js_variable_to_string(right);
     int res = wcscmp(lstring->string, rstring->string);
     return neo_js_context_create_boolean(ctx, res >= 0);
   }
-  if (lefttype->kind != NEO_TYPE_NUMBER && lefttype->kind != NEO_TYPE_BIGINT) {
+  if (lefttype->kind != NEO_JS_TYPE_NUMBER &&
+      lefttype->kind != NEO_JS_TYPE_BIGINT) {
     left = neo_js_context_to_number(ctx, left);
-    if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
       return left;
     }
   }
-  if (righttype->kind != NEO_TYPE_NUMBER &&
-      righttype->kind != NEO_TYPE_BIGINT) {
+  if (righttype->kind != NEO_JS_TYPE_NUMBER &&
+      righttype->kind != NEO_JS_TYPE_BIGINT) {
     right = neo_js_context_to_number(ctx, right);
-    if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
       return right;
     }
   }
-  if (lefttype->kind == NEO_TYPE_BIGINT || righttype->kind == NEO_TYPE_BIGINT) {
+  if (lefttype->kind == NEO_JS_TYPE_BIGINT ||
+      righttype->kind == NEO_JS_TYPE_BIGINT) {
     neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
     neo_js_bigint_t b = neo_js_variable_to_bigint(right);
-    if (lefttype->kind == NEO_TYPE_NUMBER) {
+    if (lefttype->kind == NEO_JS_TYPE_NUMBER) {
       neo_js_number_t num = neo_js_variable_to_number(left);
       if (isnan(num->number)) {
         return neo_js_context_create_boolean(ctx, false);
@@ -3814,7 +3874,7 @@ neo_js_variable_t neo_js_context_is_ge(neo_js_context_t ctx,
       neo_allocator_free(allocator, bigint);
       return neo_js_context_create_boolean(ctx, res);
     }
-    if (righttype->kind == NEO_TYPE_NUMBER) {
+    if (righttype->kind == NEO_JS_TYPE_NUMBER) {
       neo_js_number_t num = neo_js_variable_to_number(right);
       if (isnan(num->number)) {
         return neo_js_context_create_boolean(ctx, false);
@@ -3842,39 +3902,42 @@ neo_js_variable_t neo_js_context_is_le(neo_js_context_t ctx,
   neo_js_variable_t left = variable;
   neo_js_variable_t right = another;
   left = neo_js_context_to_primitive(ctx, left, L"number");
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_primitive(ctx, right, L"number");
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_type_t lefttype = neo_js_variable_get_type(left);
   neo_js_type_t righttype = neo_js_variable_get_type(right);
-  if (lefttype->kind == NEO_TYPE_STRING && righttype->kind == NEO_TYPE_STRING) {
+  if (lefttype->kind == NEO_JS_TYPE_STRING &&
+      righttype->kind == NEO_JS_TYPE_STRING) {
     neo_js_string_t lstring = neo_js_variable_to_string(left);
     neo_js_string_t rstring = neo_js_variable_to_string(right);
     int res = wcscmp(lstring->string, rstring->string);
     return neo_js_context_create_boolean(ctx, res <= 0);
   }
-  if (lefttype->kind != NEO_TYPE_NUMBER && lefttype->kind != NEO_TYPE_BIGINT) {
+  if (lefttype->kind != NEO_JS_TYPE_NUMBER &&
+      lefttype->kind != NEO_JS_TYPE_BIGINT) {
     left = neo_js_context_to_number(ctx, left);
-    if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
       return left;
     }
   }
-  if (righttype->kind != NEO_TYPE_NUMBER &&
-      righttype->kind != NEO_TYPE_BIGINT) {
+  if (righttype->kind != NEO_JS_TYPE_NUMBER &&
+      righttype->kind != NEO_JS_TYPE_BIGINT) {
     right = neo_js_context_to_number(ctx, right);
-    if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
       return right;
     }
   }
-  if (lefttype->kind == NEO_TYPE_BIGINT || righttype->kind == NEO_TYPE_BIGINT) {
+  if (lefttype->kind == NEO_JS_TYPE_BIGINT ||
+      righttype->kind == NEO_JS_TYPE_BIGINT) {
     neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
     neo_js_bigint_t b = neo_js_variable_to_bigint(right);
-    if (lefttype->kind == NEO_TYPE_NUMBER) {
+    if (lefttype->kind == NEO_JS_TYPE_NUMBER) {
       neo_js_number_t num = neo_js_variable_to_number(left);
       if (isnan(num->number)) {
         return neo_js_context_create_boolean(ctx, false);
@@ -3887,7 +3950,7 @@ neo_js_variable_t neo_js_context_is_le(neo_js_context_t ctx,
       neo_allocator_free(allocator, bigint);
       return neo_js_context_create_boolean(ctx, res);
     }
-    if (righttype->kind == NEO_TYPE_NUMBER) {
+    if (righttype->kind == NEO_JS_TYPE_NUMBER) {
       neo_js_number_t num = neo_js_variable_to_number(right);
       if (isnan(num->number)) {
         return neo_js_context_create_boolean(ctx, false);
@@ -3915,22 +3978,23 @@ neo_js_variable_t neo_js_context_add(neo_js_context_t ctx,
   neo_js_variable_t left = variable;
   neo_js_variable_t right = another;
   left = neo_js_context_to_primitive(ctx, left, L"default");
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_primitive(ctx, right, L"default");
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_type_t lefttype = neo_js_variable_get_type(left);
   neo_js_type_t righttype = neo_js_variable_get_type(right);
-  if (lefttype->kind == NEO_TYPE_STRING || righttype->kind == NEO_TYPE_STRING) {
+  if (lefttype->kind == NEO_JS_TYPE_STRING ||
+      righttype->kind == NEO_JS_TYPE_STRING) {
     left = neo_js_context_to_string(ctx, left);
-    if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+    if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
       return left;
     }
     right = neo_js_context_to_string(ctx, right);
-    if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+    if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
       return right;
     }
     neo_js_string_t lstring = neo_js_variable_to_string(left);
@@ -3945,11 +4009,12 @@ neo_js_variable_t neo_js_context_add(neo_js_context_t ctx,
     neo_allocator_free(allocator, str);
     return result;
   }
-  if (lefttype->kind == NEO_TYPE_BIGINT || righttype->kind == NEO_TYPE_BIGINT) {
-    if (lefttype->kind != NEO_TYPE_BIGINT ||
-        righttype->kind != NEO_TYPE_BIGINT) {
+  if (lefttype->kind == NEO_JS_TYPE_BIGINT ||
+      righttype->kind == NEO_JS_TYPE_BIGINT) {
+    if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
+        righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
@@ -3958,11 +4023,11 @@ neo_js_variable_t neo_js_context_add(neo_js_context_t ctx,
                                         neo_bigint_add(a->bigint, b->bigint));
   }
   left = neo_js_context_to_number(ctx, left);
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_number(ctx, right);
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_number_t lnum = neo_js_variable_to_number(left);
@@ -3976,20 +4041,21 @@ neo_js_variable_t neo_js_context_sub(neo_js_context_t ctx,
   neo_js_variable_t left = variable;
   neo_js_variable_t right = another;
   left = neo_js_context_to_primitive(ctx, left, L"default");
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_primitive(ctx, right, L"default");
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_type_t lefttype = neo_js_variable_get_type(left);
   neo_js_type_t righttype = neo_js_variable_get_type(right);
-  if (lefttype->kind == NEO_TYPE_BIGINT || righttype->kind == NEO_TYPE_BIGINT) {
-    if (lefttype->kind != NEO_TYPE_BIGINT ||
-        righttype->kind != NEO_TYPE_BIGINT) {
+  if (lefttype->kind == NEO_JS_TYPE_BIGINT ||
+      righttype->kind == NEO_JS_TYPE_BIGINT) {
+    if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
+        righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
@@ -3998,11 +4064,11 @@ neo_js_variable_t neo_js_context_sub(neo_js_context_t ctx,
                                         neo_bigint_sub(a->bigint, b->bigint));
   }
   left = neo_js_context_to_number(ctx, left);
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_number(ctx, right);
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_number_t lnum = neo_js_variable_to_number(left);
@@ -4016,20 +4082,21 @@ neo_js_variable_t neo_js_context_mul(neo_js_context_t ctx,
   neo_js_variable_t left = variable;
   neo_js_variable_t right = another;
   left = neo_js_context_to_primitive(ctx, left, L"default");
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_primitive(ctx, right, L"default");
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_type_t lefttype = neo_js_variable_get_type(left);
   neo_js_type_t righttype = neo_js_variable_get_type(right);
-  if (lefttype->kind == NEO_TYPE_BIGINT || righttype->kind == NEO_TYPE_BIGINT) {
-    if (lefttype->kind != NEO_TYPE_BIGINT ||
-        righttype->kind != NEO_TYPE_BIGINT) {
+  if (lefttype->kind == NEO_JS_TYPE_BIGINT ||
+      righttype->kind == NEO_JS_TYPE_BIGINT) {
+    if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
+        righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
@@ -4038,11 +4105,11 @@ neo_js_variable_t neo_js_context_mul(neo_js_context_t ctx,
                                         neo_bigint_mul(a->bigint, b->bigint));
   }
   left = neo_js_context_to_number(ctx, left);
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_number(ctx, right);
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_number_t lnum = neo_js_variable_to_number(left);
@@ -4056,37 +4123,38 @@ neo_js_variable_t neo_js_context_div(neo_js_context_t ctx,
   neo_js_variable_t left = variable;
   neo_js_variable_t right = another;
   left = neo_js_context_to_primitive(ctx, left, L"default");
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_primitive(ctx, right, L"default");
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_type_t lefttype = neo_js_variable_get_type(left);
   neo_js_type_t righttype = neo_js_variable_get_type(right);
-  if (lefttype->kind == NEO_TYPE_BIGINT || righttype->kind == NEO_TYPE_BIGINT) {
-    if (lefttype->kind != NEO_TYPE_BIGINT ||
-        righttype->kind != NEO_TYPE_BIGINT) {
+  if (lefttype->kind == NEO_JS_TYPE_BIGINT ||
+      righttype->kind == NEO_JS_TYPE_BIGINT) {
+    if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
+        righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
     neo_js_bigint_t b = neo_js_variable_to_bigint(right);
     neo_bigint_t res = neo_bigint_div(a->bigint, b->bigint);
     if (!res) {
-      return neo_js_context_create_simple_error(ctx, NEO_ERROR_RANGE,
+      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_RANGE,
                                                 L"Division by zero");
     }
     return neo_js_context_create_bigint(ctx, res);
   }
   left = neo_js_context_to_number(ctx, left);
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_number(ctx, right);
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_number_t lnum = neo_js_variable_to_number(left);
@@ -4099,37 +4167,38 @@ neo_js_variable_t neo_js_context_mod(neo_js_context_t ctx,
   neo_js_variable_t left = variable;
   neo_js_variable_t right = another;
   left = neo_js_context_to_primitive(ctx, left, L"default");
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_primitive(ctx, right, L"default");
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_type_t lefttype = neo_js_variable_get_type(left);
   neo_js_type_t righttype = neo_js_variable_get_type(right);
-  if (lefttype->kind == NEO_TYPE_BIGINT || righttype->kind == NEO_TYPE_BIGINT) {
-    if (lefttype->kind != NEO_TYPE_BIGINT ||
-        righttype->kind != NEO_TYPE_BIGINT) {
+  if (lefttype->kind == NEO_JS_TYPE_BIGINT ||
+      righttype->kind == NEO_JS_TYPE_BIGINT) {
+    if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
+        righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
     neo_js_bigint_t b = neo_js_variable_to_bigint(right);
     neo_bigint_t res = neo_bigint_div(a->bigint, b->bigint);
     if (!res) {
-      return neo_js_context_create_simple_error(ctx, NEO_ERROR_RANGE,
+      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_RANGE,
                                                 L"Division by zero");
     }
     return neo_js_context_create_bigint(ctx, res);
   }
   left = neo_js_context_to_number(ctx, left);
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_number(ctx, right);
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_number_t lnum = neo_js_variable_to_number(left);
@@ -4145,20 +4214,21 @@ neo_js_variable_t neo_js_context_pow(neo_js_context_t ctx,
   neo_js_variable_t left = variable;
   neo_js_variable_t right = another;
   left = neo_js_context_to_primitive(ctx, left, L"default");
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_primitive(ctx, right, L"default");
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_type_t lefttype = neo_js_variable_get_type(left);
   neo_js_type_t righttype = neo_js_variable_get_type(right);
-  if (lefttype->kind == NEO_TYPE_BIGINT || righttype->kind == NEO_TYPE_BIGINT) {
-    if (lefttype->kind != NEO_TYPE_BIGINT ||
-        righttype->kind != NEO_TYPE_BIGINT) {
+  if (lefttype->kind == NEO_JS_TYPE_BIGINT ||
+      righttype->kind == NEO_JS_TYPE_BIGINT) {
+    if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
+        righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
@@ -4167,11 +4237,11 @@ neo_js_variable_t neo_js_context_pow(neo_js_context_t ctx,
     return neo_js_context_create_bigint(ctx, res);
   }
   left = neo_js_context_to_number(ctx, left);
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_number(ctx, right);
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_number_t lnum = neo_js_variable_to_number(left);
@@ -4183,15 +4253,15 @@ neo_js_variable_t neo_js_context_not(neo_js_context_t ctx,
                                      neo_js_variable_t variable) {
   neo_js_variable_t left = variable;
   left = neo_js_context_to_primitive(ctx, left, L"default");
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   left = neo_js_context_to_number(ctx, left);
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   neo_js_type_t lefttype = neo_js_variable_get_type(left);
-  if (lefttype->kind == NEO_TYPE_BIGINT) {
+  if (lefttype->kind == NEO_JS_TYPE_BIGINT) {
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
     neo_bigint_t res = neo_bigint_not(a->bigint);
     return neo_js_context_create_bigint(ctx, res);
@@ -4205,13 +4275,13 @@ neo_js_variable_t neo_js_context_instance_of(neo_js_context_t ctx,
                                              neo_js_variable_t variable,
                                              neo_js_variable_t constructor) {
   neo_js_type_t type = neo_js_variable_get_type(variable);
-  if (type->kind != NEO_TYPE_OBJECT) {
+  if (type->kind != NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_boolean(ctx, false);
   }
   neo_js_variable_t hasInstance = neo_js_context_get_field(
       ctx, constructor, neo_js_context_create_string(ctx, L"hasInstance"));
   if (hasInstance &&
-      neo_js_variable_get_type(hasInstance)->kind == NEO_TYPE_CFUNCTION) {
+      neo_js_variable_get_type(hasInstance)->kind == NEO_JS_TYPE_CFUNCTION) {
     return neo_js_context_call(ctx, hasInstance, constructor, 1, &variable);
   }
   neo_js_object_t object = neo_js_variable_to_object(variable);
@@ -4232,20 +4302,21 @@ neo_js_variable_t neo_js_context_and(neo_js_context_t ctx,
   neo_js_variable_t left = variable;
   neo_js_variable_t right = another;
   left = neo_js_context_to_primitive(ctx, left, L"default");
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_primitive(ctx, right, L"default");
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_type_t lefttype = neo_js_variable_get_type(left);
   neo_js_type_t righttype = neo_js_variable_get_type(right);
-  if (lefttype->kind == NEO_TYPE_BIGINT || righttype->kind == NEO_TYPE_BIGINT) {
-    if (lefttype->kind != NEO_TYPE_BIGINT ||
-        righttype->kind != NEO_TYPE_BIGINT) {
+  if (lefttype->kind == NEO_JS_TYPE_BIGINT ||
+      righttype->kind == NEO_JS_TYPE_BIGINT) {
+    if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
+        righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
@@ -4254,11 +4325,11 @@ neo_js_variable_t neo_js_context_and(neo_js_context_t ctx,
     return neo_js_context_create_bigint(ctx, res);
   }
   left = neo_js_context_to_number(ctx, left);
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_number(ctx, right);
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_number_t lnum = neo_js_variable_to_number(left);
@@ -4274,20 +4345,21 @@ neo_js_variable_t neo_js_context_or(neo_js_context_t ctx,
   neo_js_variable_t left = variable;
   neo_js_variable_t right = another;
   left = neo_js_context_to_primitive(ctx, left, L"default");
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_primitive(ctx, right, L"default");
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_type_t lefttype = neo_js_variable_get_type(left);
   neo_js_type_t righttype = neo_js_variable_get_type(right);
-  if (lefttype->kind == NEO_TYPE_BIGINT || righttype->kind == NEO_TYPE_BIGINT) {
-    if (lefttype->kind != NEO_TYPE_BIGINT ||
-        righttype->kind != NEO_TYPE_BIGINT) {
+  if (lefttype->kind == NEO_JS_TYPE_BIGINT ||
+      righttype->kind == NEO_JS_TYPE_BIGINT) {
+    if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
+        righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
@@ -4296,11 +4368,11 @@ neo_js_variable_t neo_js_context_or(neo_js_context_t ctx,
     return neo_js_context_create_bigint(ctx, res);
   }
   left = neo_js_context_to_number(ctx, left);
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_number(ctx, right);
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_number_t lnum = neo_js_variable_to_number(left);
@@ -4316,20 +4388,21 @@ neo_js_variable_t neo_js_context_xor(neo_js_context_t ctx,
   neo_js_variable_t left = variable;
   neo_js_variable_t right = another;
   left = neo_js_context_to_primitive(ctx, left, L"default");
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_primitive(ctx, right, L"default");
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_type_t lefttype = neo_js_variable_get_type(left);
   neo_js_type_t righttype = neo_js_variable_get_type(right);
-  if (lefttype->kind == NEO_TYPE_BIGINT || righttype->kind == NEO_TYPE_BIGINT) {
-    if (lefttype->kind != NEO_TYPE_BIGINT ||
-        righttype->kind != NEO_TYPE_BIGINT) {
+  if (lefttype->kind == NEO_JS_TYPE_BIGINT ||
+      righttype->kind == NEO_JS_TYPE_BIGINT) {
+    if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
+        righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
@@ -4338,11 +4411,11 @@ neo_js_variable_t neo_js_context_xor(neo_js_context_t ctx,
     return neo_js_context_create_bigint(ctx, res);
   }
   left = neo_js_context_to_number(ctx, left);
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_number(ctx, right);
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_number_t lnum = neo_js_variable_to_number(left);
@@ -4358,20 +4431,21 @@ neo_js_variable_t neo_js_context_shr(neo_js_context_t ctx,
   neo_js_variable_t left = variable;
   neo_js_variable_t right = another;
   left = neo_js_context_to_primitive(ctx, left, L"default");
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_primitive(ctx, right, L"default");
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_type_t lefttype = neo_js_variable_get_type(left);
   neo_js_type_t righttype = neo_js_variable_get_type(right);
-  if (lefttype->kind == NEO_TYPE_BIGINT || righttype->kind == NEO_TYPE_BIGINT) {
-    if (lefttype->kind != NEO_TYPE_BIGINT ||
-        righttype->kind != NEO_TYPE_BIGINT) {
+  if (lefttype->kind == NEO_JS_TYPE_BIGINT ||
+      righttype->kind == NEO_JS_TYPE_BIGINT) {
+    if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
+        righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
@@ -4380,11 +4454,11 @@ neo_js_variable_t neo_js_context_shr(neo_js_context_t ctx,
     return neo_js_context_create_bigint(ctx, res);
   }
   left = neo_js_context_to_number(ctx, left);
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_number(ctx, right);
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_number_t lnum = neo_js_variable_to_number(left);
@@ -4400,20 +4474,21 @@ neo_js_variable_t neo_js_context_shl(neo_js_context_t ctx,
   neo_js_variable_t left = variable;
   neo_js_variable_t right = another;
   left = neo_js_context_to_primitive(ctx, left, L"default");
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_primitive(ctx, right, L"default");
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_type_t lefttype = neo_js_variable_get_type(left);
   neo_js_type_t righttype = neo_js_variable_get_type(right);
-  if (lefttype->kind == NEO_TYPE_BIGINT || righttype->kind == NEO_TYPE_BIGINT) {
-    if (lefttype->kind != NEO_TYPE_BIGINT ||
-        righttype->kind != NEO_TYPE_BIGINT) {
+  if (lefttype->kind == NEO_JS_TYPE_BIGINT ||
+      righttype->kind == NEO_JS_TYPE_BIGINT) {
+    if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
+        righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
@@ -4422,11 +4497,11 @@ neo_js_variable_t neo_js_context_shl(neo_js_context_t ctx,
     return neo_js_context_create_bigint(ctx, res);
   }
   left = neo_js_context_to_number(ctx, left);
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_number(ctx, right);
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_number_t lnum = neo_js_variable_to_number(left);
@@ -4442,32 +4517,33 @@ neo_js_variable_t neo_js_context_ushr(neo_js_context_t ctx,
   neo_js_variable_t left = variable;
   neo_js_variable_t right = another;
   left = neo_js_context_to_primitive(ctx, left, L"default");
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_primitive(ctx, right, L"default");
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_type_t lefttype = neo_js_variable_get_type(left);
   neo_js_type_t righttype = neo_js_variable_get_type(right);
-  if (lefttype->kind == NEO_TYPE_BIGINT || righttype->kind == NEO_TYPE_BIGINT) {
-    if (lefttype->kind != NEO_TYPE_BIGINT ||
-        righttype->kind != NEO_TYPE_BIGINT) {
+  if (lefttype->kind == NEO_JS_TYPE_BIGINT ||
+      righttype->kind == NEO_JS_TYPE_BIGINT) {
+    if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
+        righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     return neo_js_context_create_simple_error(
-        ctx, NEO_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE,
         L"BigInts have no unsigned right shift, use >> instead");
   }
   left = neo_js_context_to_number(ctx, left);
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   right = neo_js_context_to_number(ctx, right);
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_number_t lnum = neo_js_variable_to_number(left);
@@ -4482,10 +4558,10 @@ neo_js_variable_t neo_js_context_ushr(neo_js_context_t ctx,
 neo_js_variable_t neo_js_context_inc(neo_js_context_t ctx,
                                      neo_js_variable_t left) {
   left = neo_js_context_to_primitive(ctx, left, L"default");
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_BIGINT) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_BIGINT) {
     neo_js_bigint_t bigint = neo_js_variable_to_bigint(left);
     neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
     neo_bigint_t add_arg = neo_number_to_bigint(allocator, 1);
@@ -4496,7 +4572,7 @@ neo_js_variable_t neo_js_context_inc(neo_js_context_t ctx,
     return left;
   }
   left = neo_js_context_to_number(ctx, left);
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   neo_js_number_t num = neo_js_variable_to_number(left);
@@ -4507,10 +4583,10 @@ neo_js_variable_t neo_js_context_inc(neo_js_context_t ctx,
 neo_js_variable_t neo_js_context_dec(neo_js_context_t ctx,
                                      neo_js_variable_t left) {
   left = neo_js_context_to_primitive(ctx, left, L"default");
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_BIGINT) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_BIGINT) {
     neo_js_bigint_t bigint = neo_js_variable_to_bigint(left);
     neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
     neo_bigint_t add_arg = neo_number_to_bigint(allocator, 1);
@@ -4521,7 +4597,7 @@ neo_js_variable_t neo_js_context_dec(neo_js_context_t ctx,
     return left;
   }
   left = neo_js_context_to_number(ctx, left);
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   neo_js_number_t num = neo_js_variable_to_number(left);
@@ -4533,11 +4609,11 @@ neo_js_variable_t neo_js_context_logical_not(neo_js_context_t ctx,
                                              neo_js_variable_t variable) {
   neo_js_variable_t left = variable;
   left = neo_js_context_to_primitive(ctx, left, L"default");
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   left = neo_js_context_to_boolean(ctx, left);
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   neo_js_boolean_t boolean = neo_js_variable_to_boolean(left);
@@ -4548,8 +4624,8 @@ neo_js_variable_t neo_js_context_plus(neo_js_context_t ctx,
                                       neo_js_variable_t variable) {
   variable = neo_js_context_to_primitive(ctx, variable, L"default");
   NEO_JS_TRY_AND_THROW(variable);
-  if (neo_js_variable_get_type(variable)->kind == NEO_TYPE_BIGINT ||
-      neo_js_variable_get_type(variable)->kind == NEO_TYPE_NUMBER) {
+  if (neo_js_variable_get_type(variable)->kind == NEO_JS_TYPE_BIGINT ||
+      neo_js_variable_get_type(variable)->kind == NEO_JS_TYPE_NUMBER) {
     return variable;
   }
   variable = neo_js_context_to_number(ctx, variable);
@@ -4561,7 +4637,7 @@ neo_js_variable_t neo_js_context_neg(neo_js_context_t ctx,
                                      neo_js_variable_t variable) {
   variable = neo_js_context_to_primitive(ctx, variable, L"default");
   NEO_JS_TRY_AND_THROW(variable);
-  if (neo_js_variable_get_type(variable)->kind == NEO_TYPE_BIGINT) {
+  if (neo_js_variable_get_type(variable)->kind == NEO_JS_TYPE_BIGINT) {
     neo_bigint_t bigint = neo_js_variable_to_bigint(variable)->bigint;
     bigint = neo_bigint_neg(bigint);
     return neo_js_context_create_bigint(ctx, bigint);
@@ -4576,11 +4652,11 @@ neo_js_variable_t neo_js_context_concat(neo_js_context_t ctx,
                                         neo_js_variable_t variable,
                                         neo_js_variable_t another) {
   neo_js_variable_t left = neo_js_context_to_string(ctx, variable);
-  if (neo_js_variable_get_type(left)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(left)->kind == NEO_JS_TYPE_ERROR) {
     return left;
   }
   neo_js_variable_t right = neo_js_context_to_string(ctx, another);
-  if (neo_js_variable_get_type(right)->kind == NEO_TYPE_ERROR) {
+  if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
   neo_js_string_t lstring = neo_js_variable_to_string(left);
@@ -4683,7 +4759,7 @@ neo_js_variable_t neo_js_context_create_compile_error(neo_js_context_t ctx) {
   wchar_t *message =
       neo_string_to_wstring(allocator, neo_error_get_message(err));
   neo_js_variable_t error =
-      neo_js_context_create_simple_error(ctx, NEO_ERROR_SYNTAX, message);
+      neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_SYNTAX, message);
   neo_allocator_free(allocator, message);
   neo_allocator_free(allocator, err);
   return error;
@@ -4707,8 +4783,8 @@ neo_js_variable_t neo_js_context_get_module(neo_js_context_t ctx,
     wchar_t *message =
         neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
     swprintf(message, len, L"Cannot find package '%ls'", name);
-    neo_js_variable_t result =
-        neo_js_context_create_simple_error(ctx, NEO_ERROR_REFERENCE, message);
+    neo_js_variable_t result = neo_js_context_create_simple_error(
+        ctx, NEO_JS_ERROR_REFERENCE, message);
     neo_allocator_free(allocator, message);
     return result;
   }
@@ -4767,7 +4843,7 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const wchar_t *file,
   neo_js_vm_t vm = neo_create_js_vm(ctx, neo_js_context_create_undefined(ctx),
                                     NULL, 0, scope);
   neo_js_variable_t result = neo_js_vm_eval(vm, program);
-  if (neo_js_variable_get_type(result)->kind == NEO_TYPE_INTERRUPT) {
+  if (neo_js_variable_get_type(result)->kind == NEO_JS_TYPE_INTERRUPT) {
     neo_js_interrupt_t interrupt = neo_js_variable_to_interrupt(result);
     result = neo_js_context_create_variable(ctx, interrupt->result, NULL);
     vm->offset = interrupt->offset;

@@ -42,14 +42,14 @@ neo_js_variable_t neo_js_regexp_constructor(neo_js_context_t ctx,
   const wchar_t *s_flag = L"";
   if (argc > 0) {
     neo_js_variable_t v_rule = neo_js_context_to_string(ctx, argv[0]);
-    if (neo_js_variable_get_type(v_rule)->kind == NEO_TYPE_ERROR) {
+    if (neo_js_variable_get_type(v_rule)->kind == NEO_JS_TYPE_ERROR) {
       return v_rule;
     }
     rule = neo_js_variable_to_string(v_rule)->string;
   }
   if (argc > 1) {
     neo_js_variable_t v_flag = neo_js_context_to_string(ctx, argv[1]);
-    if (neo_js_variable_get_type(v_flag)->kind == NEO_TYPE_ERROR) {
+    if (neo_js_variable_get_type(v_flag)->kind == NEO_JS_TYPE_ERROR) {
       return v_flag;
     }
     s_flag = neo_js_variable_to_string(v_flag)->string;
@@ -87,7 +87,7 @@ neo_js_variable_t neo_js_regexp_constructor(neo_js_context_t ctx,
       swprintf(message, len,
                L"Invalid flags supplied to RegExp constructor '%ls'", s_flag);
       neo_js_variable_t error =
-          neo_js_context_create_simple_error(ctx, NEO_ERROR_SYNTAX, message);
+          neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_SYNTAX, message);
       neo_allocator_free(allocator, message);
       return error;
     }
@@ -130,7 +130,7 @@ neo_js_variable_t neo_js_regexp_constructor(neo_js_context_t ctx,
         L"Invalid regular expression: /%ls/%ls: Unterminated character class",
         rule, s_flag);
     neo_js_variable_t error =
-        neo_js_context_create_simple_error(ctx, NEO_ERROR_SYNTAX, message);
+        neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_SYNTAX, message);
     neo_allocator_free(allocator, message);
     return error;
   }
@@ -214,7 +214,7 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
       regex->flag & NEO_REGEXP_FLAG_STICKY) {
     neo_js_variable_t v_last_index = neo_js_context_get_field(
         ctx, self, neo_js_context_create_string(ctx, L"lastIndex"));
-    if (neo_js_variable_get_type(v_last_index)->kind != NEO_TYPE_NUMBER) {
+    if (neo_js_variable_get_type(v_last_index)->kind != NEO_JS_TYPE_NUMBER) {
       v_last_index = neo_js_context_to_number(ctx, v_last_index);
       neo_js_context_set_field(ctx, self,
                                neo_js_context_create_string(ctx, L"lastIndex"),
@@ -375,7 +375,7 @@ neo_js_variable_t neo_js_regexp_test(neo_js_context_t ctx,
       regex->flag & NEO_REGEXP_FLAG_STICKY) {
     neo_js_variable_t v_last_index = neo_js_context_get_field(
         ctx, self, neo_js_context_create_string(ctx, L"lastIndex"));
-    if (neo_js_variable_get_type(v_last_index)->kind != NEO_TYPE_NUMBER) {
+    if (neo_js_variable_get_type(v_last_index)->kind != NEO_JS_TYPE_NUMBER) {
       v_last_index = neo_js_context_to_number(ctx, v_last_index);
       neo_js_context_set_field(ctx, self,
                                neo_js_context_create_string(ctx, L"lastIndex"),

@@ -48,7 +48,8 @@ neo_js_variable_t neo_js_error_constructor(neo_js_context_t ctx,
     options = argv[1];
   }
   neo_js_variable_t cause = NULL;
-  if (options && neo_js_variable_get_type(options)->kind >= NEO_TYPE_OBJECT) {
+  if (options &&
+      neo_js_variable_get_type(options)->kind >= NEO_JS_TYPE_OBJECT) {
     cause = neo_js_context_get_field(
         ctx, options, neo_js_context_create_string(ctx, L"cause"));
   }
@@ -113,7 +114,7 @@ neo_js_variable_t neo_js_error_to_string(neo_js_context_t ctx,
   }
   neo_js_variable_t cause = neo_js_context_get_field(
       ctx, self, neo_js_context_create_string(ctx, L"cause"));
-  if (neo_js_variable_get_type(cause)->kind == NEO_TYPE_OBJECT) {
+  if (neo_js_variable_get_type(cause)->kind == NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t scause = neo_js_context_to_string(ctx, cause);
     result = neo_wstring_concat(allocator, result, &max, L"caused by:\n");
     neo_js_string_t next = neo_js_variable_to_string(scause);

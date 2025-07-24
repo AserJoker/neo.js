@@ -12,7 +12,7 @@
 
 neo_js_type_t neo_get_js_error_type() {
   static struct _neo_js_type_t type = {0};
-  type.kind = NEO_TYPE_ERROR;
+  type.kind = NEO_JS_TYPE_ERROR;
   return &type;
 }
 

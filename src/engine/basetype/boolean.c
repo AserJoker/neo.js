@@ -101,7 +101,7 @@ static void neo_js_boolean_copy(neo_js_context_t ctx, neo_js_variable_t self,
 
 neo_js_type_t neo_get_js_boolean_type() {
   static struct _neo_js_type_t type = {
-      NEO_TYPE_BOOLEAN,         neo_js_boolean_typeof,
+      NEO_JS_TYPE_BOOLEAN,      neo_js_boolean_typeof,
       neo_js_boolean_to_string, neo_js_boolean_to_boolean,
       neo_js_boolean_to_number, neo_js_boolean_to_primitive,
       neo_js_boolean_to_object, neo_js_boolean_get_field,
@@ -127,7 +127,7 @@ neo_js_boolean_t neo_create_js_boolean(neo_allocator_t allocator, bool value) {
 }
 
 neo_js_boolean_t neo_js_value_to_boolean(neo_js_value_t value) {
-  if (value->type->kind == NEO_TYPE_BOOLEAN) {
+  if (value->type->kind == NEO_JS_TYPE_BOOLEAN) {
     return (neo_js_boolean_t)value;
   }
   return NULL;

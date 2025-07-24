@@ -4,7 +4,7 @@
 
 neo_js_type_t neo_get_js_uninitialize_type() {
   static struct _neo_js_type_t type = {0};
-  type.kind = NEO_TYPE_UNINITIALIZE;
+  type.kind = NEO_JS_TYPE_UNINITIALIZE;
   return &type;
 }
 static void neo_js_uninitialize_dispose(neo_allocator_t allocator,

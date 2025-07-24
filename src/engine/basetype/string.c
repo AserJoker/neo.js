@@ -59,7 +59,7 @@ static neo_js_variable_t neo_js_string_to_object(neo_js_context_t ctx,
 static neo_js_variable_t neo_js_string_get_field(neo_js_context_t ctx,
                                                  neo_js_variable_t self,
                                                  neo_js_variable_t field) {
-  if (neo_js_variable_get_type(field)->kind == NEO_TYPE_STRING) {
+  if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_STRING) {
     neo_js_string_t string =
         neo_js_value_to_string(neo_js_variable_get_value(field));
     if (wcscmp(string->string, L"length") == 0) {
@@ -74,7 +74,7 @@ static neo_js_variable_t neo_js_string_set_field(neo_js_context_t ctx,
                                                  neo_js_variable_t self,
                                                  neo_js_variable_t field,
                                                  neo_js_variable_t value) {
-  if (neo_js_variable_get_type(field)->kind == NEO_TYPE_STRING) {
+  if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_STRING) {
     neo_js_string_t string =
         neo_js_value_to_string(neo_js_variable_get_value(field));
     if (wcscmp(string->string, L"length") == 0) {
@@ -88,7 +88,7 @@ static neo_js_variable_t neo_js_string_set_field(neo_js_context_t ctx,
 static neo_js_variable_t neo_js_string_del_field(neo_js_context_t ctx,
                                                  neo_js_variable_t self,
                                                  neo_js_variable_t field) {
-  if (neo_js_variable_get_type(field)->kind == NEO_TYPE_STRING) {
+  if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_STRING) {
     neo_js_string_t string =
         neo_js_value_to_string(neo_js_variable_get_value(field));
     if (wcscmp(string->string, L"length") == 0) {
@@ -120,7 +120,7 @@ static void neo_js_string_copy(neo_js_context_t ctx, neo_js_variable_t self,
 }
 neo_js_type_t neo_get_js_string_type() {
   static struct _neo_js_type_t type = {
-      NEO_TYPE_STRING,         neo_js_string_typeof,
+      NEO_JS_TYPE_STRING,      neo_js_string_typeof,
       neo_js_string_to_string, neo_js_string_to_boolean,
       neo_js_string_to_number, neo_js_string_to_primitive,
       neo_js_string_to_object, neo_js_string_get_field,
@@ -155,7 +155,7 @@ neo_js_string_t neo_create_js_string(neo_allocator_t allocator,
 }
 
 neo_js_string_t neo_js_value_to_string(neo_js_value_t value) {
-  if (value->type->kind == NEO_TYPE_STRING) {
+  if (value->type->kind == NEO_JS_TYPE_STRING) {
     return (neo_js_string_t)value;
   }
   return NULL;

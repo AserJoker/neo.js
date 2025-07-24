@@ -17,10 +17,10 @@ neo_js_variable_t neo_js_console_log(neo_js_context_t ctx,
       printf(",");
     }
     neo_js_variable_t arg = argv[idx];
-    if (neo_js_variable_get_type(arg)->kind == NEO_TYPE_SYMBOL) {
+    if (neo_js_variable_get_type(arg)->kind == NEO_JS_TYPE_SYMBOL) {
       neo_js_symbol_t sym = neo_js_variable_to_symbol(arg);
       printf("Symbol(%ls)", sym->description);
-    } else if (neo_js_variable_get_type(arg)->kind == NEO_TYPE_OBJECT) {
+    } else if (neo_js_variable_get_type(arg)->kind == NEO_JS_TYPE_OBJECT) {
       neo_js_variable_t to_string = neo_js_context_get_field(
           ctx, arg, neo_js_context_create_string(ctx, L"toString"));
       NEO_JS_TRY_AND_THROW(to_string);

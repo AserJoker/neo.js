@@ -18,7 +18,7 @@ static neo_js_variable_t
 neo_js_async_cfunction_get_field(neo_js_context_t ctx, neo_js_variable_t self,
                                  neo_js_variable_t field) {
   neo_js_type_t otype = neo_get_js_object_type();
-  if (neo_js_variable_get_type(field)->kind == NEO_TYPE_STRING) {
+  if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_STRING) {
     neo_js_string_t string =
         neo_js_value_to_string(neo_js_variable_get_value(field));
     if (wcscmp(string->string, L"name") == 0) {
@@ -39,7 +39,7 @@ neo_js_async_cfunction_set_field(neo_js_context_t ctx, neo_js_variable_t self,
                                  neo_js_variable_t field,
                                  neo_js_variable_t value) {
   neo_js_type_t otype = neo_get_js_object_type();
-  if (neo_js_variable_get_type(field)->kind == NEO_TYPE_STRING) {
+  if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_STRING) {
     neo_js_string_t string =
         neo_js_value_to_string(neo_js_variable_get_value(field));
     if (wcscmp(string->string, L"name") == 0) {
@@ -53,7 +53,7 @@ static neo_js_variable_t
 neo_js_async_cfunction_del_field(neo_js_context_t ctx, neo_js_variable_t self,
                                  neo_js_variable_t field) {
   neo_js_type_t otype = neo_get_js_object_type();
-  if (neo_js_variable_get_type(field)->kind == NEO_TYPE_STRING) {
+  if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_STRING) {
     neo_js_string_t string =
         neo_js_value_to_string(neo_js_variable_get_value(field));
     if (wcscmp(string->string, L"name") == 0) {
@@ -91,7 +91,7 @@ static void neo_js_async_cfunction_copy_fn(neo_js_context_t ctx,
 
 neo_js_type_t neo_get_js_async_cfunction_type() {
   static struct _neo_js_type_t type = {0};
-  type.kind = NEO_TYPE_ASYNC_CFUNCTION;
+  type.kind = NEO_JS_TYPE_ASYNC_CFUNCTION;
   neo_js_type_t otype = neo_get_js_object_type();
   type.typeof_fn = neo_js_async_cfunction_typeof;
   type.to_boolean_fn = otype->to_boolean_fn;
@@ -135,7 +135,7 @@ neo_create_js_async_cfunction(neo_allocator_t allocator,
 }
 
 neo_js_async_cfunction_t neo_js_value_to_async_cfunction(neo_js_value_t value) {
-  if (value->type->kind == NEO_TYPE_ASYNC_CFUNCTION) {
+  if (value->type->kind == NEO_JS_TYPE_ASYNC_CFUNCTION) {
     return (neo_js_async_cfunction_t)value;
   }
   return NULL;

@@ -25,11 +25,12 @@ typedef neo_js_variable_t (*neo_js_feature_fn_t)(neo_js_context_t ctx,
                                                  const wchar_t *feature);
 
 typedef enum _neo_js_error_type_t {
-  NEO_ERROR_SYNTAX,
-  NEO_ERROR_INTERNAL,
-  NEO_ERROR_RANGE,
-  NEO_ERROR_TYPE,
-  NEO_ERROR_REFERENCE
+  NEO_JS_ERROR_SYNTAX,
+  NEO_JS_ERROR_INTERNAL,
+  NEO_JS_ERROR_RANGE,
+  NEO_JS_ERROR_URI,
+  NEO_JS_ERROR_TYPE,
+  NEO_JS_ERROR_REFERENCE
 } neo_js_error_type_t;
 
 neo_js_context_t neo_create_js_context(neo_allocator_t allocator,
@@ -41,6 +42,14 @@ neo_js_runtime_t neo_js_context_get_runtime(neo_js_context_t ctx);
   neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx))
 
 void neo_js_context_defer_free(neo_js_context_t ctx, void *data);
+
+void *neo_js_context_alloc_ex(neo_js_context_t ctx, size_t size,
+                              neo_destructor_fn_t dispose, const char *filename,
+                              size_t line);
+
+#define neo_js_context_alloc(ctx, size, dispose)                               \
+  neo_js_context_alloc_ex(ctx, size, (neo_destructor_fn_t)dispose, __FILE__,   \
+                          __LINE__)
 
 void neo_js_context_next_tick(neo_js_context_t ctx);
 
@@ -97,6 +106,9 @@ neo_js_context_get_type_error_constructor(neo_js_context_t ctx);
 
 neo_js_variable_t
 neo_js_context_get_range_error_constructor(neo_js_context_t ctx);
+
+neo_js_variable_t
+neo_js_context_get_uri_error_constructor(neo_js_context_t ctx);
 
 neo_js_variable_t
 neo_js_context_get_reference_error_constructor(neo_js_context_t ctx);
@@ -451,7 +463,7 @@ void neo_js_context_set_feature(neo_js_context_t ctx, const wchar_t *feature,
 neo_js_call_type_t neo_js_context_get_call_type(neo_js_context_t ctx);
 
 #define NEO_JS_TRY(expr)                                                       \
-  if (neo_js_variable_get_type(expr)->kind == NEO_TYPE_ERROR)
+  if (neo_js_variable_get_type(expr)->kind == NEO_JS_TYPE_ERROR)
 #define NEO_JS_TRY_AND_THROW(expr)                                             \
   do {                                                                         \
     neo_js_variable_t error = (expr);                                          \

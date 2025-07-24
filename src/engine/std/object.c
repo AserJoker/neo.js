@@ -12,7 +12,7 @@ neo_js_variable_t neo_js_object_constructor(neo_js_context_t ctx,
                                             neo_js_variable_t self,
                                             uint32_t argc,
                                             neo_js_variable_t *argv) {
-  if (neo_js_variable_get_type(self)->kind < NEO_TYPE_OBJECT) {
+  if (neo_js_variable_get_type(self)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_object(ctx, NULL);
   }
   if (argc > 0) {
@@ -55,7 +55,7 @@ neo_js_variable_t neo_js_object_to_string(neo_js_context_t ctx,
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_js_variable_t tag = neo_js_context_get_field(ctx, self, toStringTag);
   tag = neo_js_context_to_primitive(ctx, tag, L"default");
-  if (neo_js_variable_get_type(tag)->kind == NEO_TYPE_STRING) {
+  if (neo_js_variable_get_type(tag)->kind == NEO_JS_TYPE_STRING) {
     size_t len = wcslen(neo_js_variable_to_string(tag)->string);
     len += 16;
     wchar_t *msg = neo_allocator_alloc(allocator, len * sizeof(wchar_t), NULL);
@@ -87,7 +87,7 @@ neo_js_variable_t neo_js_object_is_prototype_of(neo_js_context_t ctx,
   if (argc < 1) {
     return neo_js_context_create_boolean(ctx, false);
   }
-  if (neo_js_variable_get_type(self)->kind < NEO_TYPE_OBJECT) {
+  if (neo_js_variable_get_type(self)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_boolean(ctx, false);
   }
   neo_js_object_t obj = neo_js_variable_to_object(self);
@@ -105,7 +105,7 @@ neo_js_variable_t
 neo_js_object_property_is_enumerable(neo_js_context_t ctx,
                                      neo_js_variable_t self, uint32_t argc,
                                      neo_js_variable_t *argv) {
-  if (neo_js_variable_get_type(self)->kind < NEO_TYPE_OBJECT || argc < 1) {
+  if (neo_js_variable_get_type(self)->kind < NEO_JS_TYPE_OBJECT || argc < 1) {
     return neo_js_context_create_boolean(ctx, false);
   }
   neo_js_object_property_t prop =

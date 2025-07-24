@@ -112,7 +112,7 @@ static neo_js_variable_t neo_js_async_generator_task(neo_js_context_t ctx,
   neo_js_variable_t value = neo_js_vm_eval(co_ctx->vm, co_ctx->program);
   neo_js_context_pop_stackframe(ctx);
   neo_js_context_set_stacktrace(ctx, stacktrace);
-  if (neo_js_variable_get_type(value)->kind == NEO_TYPE_INTERRUPT) {
+  if (neo_js_variable_get_type(value)->kind == NEO_JS_TYPE_INTERRUPT) {
     neo_js_interrupt_t interrupt = neo_js_variable_to_interrupt(value);
     neo_js_scope_t current = neo_js_context_set_scope(ctx, co_ctx->vm->scope);
     value = neo_js_context_create_variable(ctx, interrupt->result, NULL);
@@ -158,7 +158,7 @@ static neo_js_variable_t neo_js_async_generator_task(neo_js_context_t ctx,
       }
     }
   } else {
-    if (neo_js_variable_get_type(value)->kind == NEO_TYPE_ERROR) {
+    if (neo_js_variable_get_type(value)->kind == NEO_JS_TYPE_ERROR) {
       value = neo_js_error_get_error(ctx, value);
       neo_js_context_call(ctx, reject, neo_js_context_create_undefined(ctx), 1,
                           &value);

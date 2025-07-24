@@ -17,7 +17,7 @@ static const wchar_t *neo_js_symbol_typeof(neo_js_context_t ctx,
 static neo_js_variable_t neo_js_symbol_to_string(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
   return neo_js_context_create_simple_error(
-      ctx, NEO_ERROR_TYPE, L"Cannot convert a Symbol value to a string");
+      ctx, NEO_JS_ERROR_TYPE, L"Cannot convert a Symbol value to a string");
 }
 
 static neo_js_variable_t neo_js_symbol_to_boolean(neo_js_context_t ctx,
@@ -28,7 +28,7 @@ static neo_js_variable_t neo_js_symbol_to_boolean(neo_js_context_t ctx,
 static neo_js_variable_t neo_js_symbol_to_number(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
   return neo_js_context_create_simple_error(
-      ctx, NEO_ERROR_TYPE, L"Cannot convert a Symbol value to a number");
+      ctx, NEO_JS_ERROR_TYPE, L"Cannot convert a Symbol value to a number");
 }
 
 static neo_js_variable_t neo_js_symbol_to_primitive(neo_js_context_t ctx,
@@ -86,7 +86,7 @@ static void neo_js_symbol_copy(neo_js_context_t ctx, neo_js_variable_t self,
 
 neo_js_type_t neo_get_js_symbol_type() {
   static struct _neo_js_type_t type = {
-      NEO_TYPE_SYMBOL,         neo_js_symbol_typeof,
+      NEO_JS_TYPE_SYMBOL,      neo_js_symbol_typeof,
       neo_js_symbol_to_string, neo_js_symbol_to_boolean,
       neo_js_symbol_to_number, neo_js_symbol_to_primitive,
       neo_js_symbol_to_object, neo_js_symbol_get_field,
@@ -119,7 +119,7 @@ neo_js_symbol_t neo_create_js_symbol(neo_allocator_t allocator,
   return symbol;
 }
 neo_js_symbol_t neo_js_value_to_symbol(neo_js_value_t value) {
-  if (value->type->kind == NEO_TYPE_SYMBOL) {
+  if (value->type->kind == NEO_JS_TYPE_SYMBOL) {
     return (neo_js_symbol_t)value;
   }
   return NULL;

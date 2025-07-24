@@ -23,7 +23,7 @@ int main(int argc, char *argv[]) {
     neo_js_variable_t result = neo_js_context_eval(ctx, L"../index.mjs", buf);
     neo_allocator_free(allocator, buf);
 
-    if (neo_js_variable_get_type(result)->kind == NEO_TYPE_ERROR) {
+    if (neo_js_variable_get_type(result)->kind == NEO_JS_TYPE_ERROR) {
       result = neo_js_error_get_error(ctx, result);
       result = neo_js_context_to_string(ctx, result);
       fprintf(stderr, "Uncaught %ls\n",

@@ -14,14 +14,14 @@ neo_js_variable_t neo_js_symbol_constructor(neo_js_context_t ctx,
                                             uint32_t argc,
                                             neo_js_variable_t *argv) {
   if (neo_js_context_get_call_type(ctx) == NEO_JS_CONSTRUCT_CALL) {
-    return neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
                                               L"Symbol is not a constructor");
   }
   const wchar_t *description = NULL;
   if (argc > 0) {
     neo_js_variable_t str = argv[0];
     str = neo_js_context_to_string(ctx, str);
-    if (neo_js_variable_get_type(str)->kind == NEO_TYPE_ERROR) {
+    if (neo_js_variable_get_type(str)->kind == NEO_JS_TYPE_ERROR) {
       return str;
     }
     description = neo_js_variable_to_string(str)->string;
@@ -36,23 +36,23 @@ neo_js_variable_t neo_js_symbol_to_string(neo_js_context_t ctx,
                                           neo_js_variable_t *argv) {
   neo_js_variable_t symbol = self;
   neo_js_type_t type = neo_js_variable_get_type(self);
-  if (type->kind == NEO_TYPE_OBJECT) {
+  if (type->kind == NEO_JS_TYPE_OBJECT) {
     if (neo_js_context_instance_of(
             ctx, symbol, neo_js_context_get_symbol_constructor(ctx))) {
       symbol = neo_js_context_to_primitive(ctx, symbol, L"default");
       type = neo_js_variable_get_type(symbol);
     } else {
       return neo_js_context_create_simple_error(
-          ctx, NEO_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE,
           L" Symbol.prototype.toString requires that 'this' be a Symbol");
     }
   }
-  if (type->kind == NEO_TYPE_ERROR) {
+  if (type->kind == NEO_JS_TYPE_ERROR) {
     return symbol;
   }
-  if (type->kind != NEO_TYPE_SYMBOL) {
+  if (type->kind != NEO_JS_TYPE_SYMBOL) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE,
         L" Symbol.prototype.toString requires that 'this' be a Symbol");
   }
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
@@ -77,19 +77,19 @@ neo_js_variable_t neo_js_symbol_to_primitive(neo_js_context_t ctx,
                                              neo_js_variable_t *argv) {
   neo_js_type_t type = neo_js_variable_get_type(self);
   neo_js_variable_t symbol = self;
-  if (type->kind == NEO_TYPE_OBJECT) {
+  if (type->kind == NEO_JS_TYPE_OBJECT) {
     if (!neo_js_context_instance_of(
             ctx, symbol, neo_js_context_get_symbol_constructor(ctx))) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE,
           L" Symbol.prototype.toString requires that 'this' be a Symbol");
     } else {
       return neo_js_context_get_internal(ctx, symbol, L"[[primitive]]");
     }
   }
-  if (type->kind != NEO_TYPE_SYMBOL) {
+  if (type->kind != NEO_JS_TYPE_SYMBOL) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE,
         L" Symbol.prototype.toString requires that 'this' be a Symbol");
   }
   return symbol;
@@ -107,12 +107,12 @@ neo_js_variable_t neo_js_symbol_for(neo_js_context_t ctx,
   } else {
     key = neo_js_context_create_string(ctx, L"");
   }
-  if (neo_js_variable_get_type(registry)->kind != NEO_TYPE_OBJECT) {
+  if (neo_js_variable_get_type(registry)->kind != NEO_JS_TYPE_OBJECT) {
     registry = neo_js_context_create_object(ctx, NULL);
     neo_js_context_set_internal(ctx, constructor, L"[[registry]]", registry);
   }
   neo_js_variable_t sym = neo_js_context_get_field(ctx, registry, key);
-  if (neo_js_variable_get_type(sym)->kind != NEO_TYPE_SYMBOL) {
+  if (neo_js_variable_get_type(sym)->kind != NEO_JS_TYPE_SYMBOL) {
     sym = neo_js_context_create_symbol(ctx,
                                        neo_js_variable_to_string(key)->string);
     neo_js_context_set_field(ctx, sym, key, sym);
@@ -132,7 +132,7 @@ neo_js_variable_t neo_js_symbol_key_for(neo_js_context_t ctx,
   } else {
     sym = neo_js_context_create_symbol(ctx, L"");
   }
-  if (neo_js_variable_get_type(registry)->kind != NEO_TYPE_OBJECT) {
+  if (neo_js_variable_get_type(registry)->kind != NEO_JS_TYPE_OBJECT) {
     registry = neo_js_context_create_object(ctx, NULL);
     neo_js_context_set_internal(ctx, constructor, L"[[registry]]", registry);
   }
