@@ -432,6 +432,8 @@ neo_js_variable_t neo_js_context_concat(neo_js_context_t ctx,
 neo_js_variable_t neo_js_context_instance_of(neo_js_context_t ctx,
                                              neo_js_variable_t variable,
                                              neo_js_variable_t constructor);
+                                             
+neo_js_variable_t neo_js_context_create_compile_error(neo_js_context_t ctx);
 
 void neo_js_context_create_module(neo_js_context_t ctx, const wchar_t *name,
                                   neo_js_variable_t module);

@@ -1,8 +1,6 @@
 #include "compiler/ast/statement_expression.h"
-#include "compiler/asm.h"
 #include "compiler/ast/expression.h"
 #include "compiler/ast/node.h"
-#include "compiler/program.h"
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/location.h"
@@ -21,9 +19,6 @@ neo_ast_statement_expression_write(neo_allocator_t allocator,
                                    neo_write_context_t ctx,
                                    neo_ast_statement_expression_t self) {
   TRY(self->expression->write(allocator, ctx, self->expression)) { return; }
-  if (self->expression->type != NEO_NODE_TYPE_EXPRESSION_ASSIGMENT) {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
-  }
 }
 
 static void neo_ast_statement_expression_resolve_closure(

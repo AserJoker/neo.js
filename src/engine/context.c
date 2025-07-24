@@ -38,6 +38,7 @@
 #include "engine/lib/decode_uri_component.h"
 #include "engine/lib/encode_uri.h"
 #include "engine/lib/encode_uri_component.h"
+#include "engine/lib/eval.h"
 #include "engine/lib/set_interval.h"
 #include "engine/lib/set_timeout.h"
 #include "engine/runtime.h"
@@ -925,6 +926,10 @@ static void neo_js_context_init_lib(neo_js_context_t ctx) {
       neo_js_context_create_cfunction(ctx, L"decodeURIComponent",
                                       neo_js_decode_uri_component),
       true, true, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.global, neo_js_context_create_string(ctx, L"eval"),
+      neo_js_context_create_cfunction(ctx, L"eval", neo_js_eval), true, true,
+      true);
 }
 static void neo_js_context_init_std_date(neo_js_context_t ctx) {
   neo_js_context_def_field(
