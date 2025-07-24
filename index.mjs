@@ -1,2 +1,3 @@
 'use strict'
-console.log(new Date("Wed,Jul 23 2025 14:40:25 GMT+00:00").toUTCString())
+
+console.log(new Date("2021-10-23 08:00:00+08:00").toUTCString())

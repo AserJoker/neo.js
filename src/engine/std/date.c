@@ -21,9 +21,8 @@ NEO_JS_CFUNCTION(neo_js_date_constructor) {
 
   for (uint32_t idx = 0; idx < argc; idx++) {
     if (neo_js_variable_get_type(argv[idx])->kind == NEO_TYPE_OBJECT) {
-      if (neo_js_variable_to_object(argv[idx])->constructor ==
-          neo_js_variable_get_handle(
-              neo_js_context_get_date_constructor(ctx))) {
+      neo_time_t *time = neo_js_context_get_opaque(ctx, argv[idx], L"#time");
+      if (time) {
         continue;
       }
     }
@@ -36,26 +35,35 @@ NEO_JS_CFUNCTION(neo_js_date_constructor) {
         neo_clock_resolve(neo_clock_get_timestamp(), neo_clock_get_timezone());
     *utc = neo_clock_resolve(neo_clock_get_timestamp(), 0);
   } else if (argc == 1) {
-    if (neo_js_variable_get_type(argv[0])->kind == NEO_TYPE_NUMBER) {
+    if (neo_js_variable_get_type(argv[0])->kind == NEO_TYPE_OBJECT) {
+      *time = *(neo_time_t *)neo_js_context_get_opaque(ctx, argv[0], L"#time");
+      *utc = *(neo_time_t *)neo_js_context_get_opaque(ctx, argv[0], L"#utc");
+      return neo_js_context_create_undefined(ctx);
+    }
+    if (neo_js_variable_get_type(argv[0])->kind == NEO_TYPE_STRING) {
+      int64_t timestamp = 0;
+      int64_t timezone = neo_clock_get_timezone();
+      if (neo_clock_parse_iso(neo_js_variable_to_string(argv[0])->string,
+                              &timestamp)) {
+        *time = neo_clock_resolve(timestamp, timezone);
+        *utc = neo_clock_resolve(timestamp, 0);
+        return neo_js_context_create_undefined(ctx);
+      } else if (neo_clock_parse_rfc(neo_js_variable_to_string(argv[0])->string,
+                                     &timestamp)) {
+        *time = neo_clock_resolve(timestamp, timezone);
+        *utc = neo_clock_resolve(timestamp, 0);
+        return neo_js_context_create_undefined(ctx);
+      }
+    }
+    argv[0] = neo_js_context_to_number(ctx, argv[0]);
+    NEO_JS_TRY_AND_THROW(argv[0]);
+    if (isnan(neo_js_variable_to_number(argv[0])->number)) {
+      time->invalid = true;
+      utc->invalid = true;
+    } else {
       int64_t timestamp = neo_js_variable_to_number(argv[0])->number;
       *time = neo_clock_resolve(timestamp, neo_clock_get_timezone());
       *utc = neo_clock_resolve(timestamp, 0);
-    } else if (neo_js_variable_get_type(argv[0])->kind == NEO_TYPE_STRING) {
-      int64_t timestamp = 0;
-      int64_t timezone = 0;
-      if (neo_clock_parse_iso(neo_js_variable_to_string(argv[0])->string,
-                              &timestamp, &timezone)) {
-        *time = neo_clock_resolve(timestamp, timezone);
-        *utc = neo_clock_resolve(timestamp, 0);
-      } else if (neo_clock_parse_rfc(neo_js_variable_to_string(argv[0])->string,
-                                     &timestamp, &timezone)) {
-        *time = neo_clock_resolve(timestamp, timezone);
-        *utc = neo_clock_resolve(timestamp, 0);
-      } else {
-        time->invalid = true;
-        utc->invalid = true;
-      }
-    } else {
     }
   } else {
     neo_js_variable_t v_year = neo_js_context_to_integer(ctx, argv[0]);
@@ -129,7 +137,23 @@ NEO_JS_CFUNCTION(neo_js_date_now) {
   return neo_js_context_create_number(ctx, now);
 }
 
-NEO_JS_CFUNCTION(neo_js_date_parse);
+NEO_JS_CFUNCTION(neo_js_date_parse) {
+  if (!argc) {
+    return neo_js_context_create_number(ctx, NAN);
+  }
+  neo_js_variable_t source = neo_js_context_to_string(ctx, argv[0]);
+  NEO_JS_TRY_AND_THROW(source);
+  int64_t timestamp = 0;
+  if (neo_clock_parse_iso(neo_js_variable_to_string(source)->string,
+                          &timestamp)) {
+    return neo_js_context_create_number(ctx, timestamp);
+  } else if (neo_clock_parse_rfc(neo_js_variable_to_string(source)->string,
+                                 &timestamp)) {
+    return neo_js_context_create_number(ctx, timestamp);
+  } else {
+    return neo_js_context_create_number(ctx, NAN);
+  }
+}
 
 NEO_JS_CFUNCTION(neo_js_date_utc) {
   if (!argc) {
@@ -868,7 +892,27 @@ NEO_JS_CFUNCTION(neo_js_date_set_year) {
   *utc = neo_clock_resolve(tm->timestamp, 0);
   return neo_js_context_create_number(ctx, tm->timestamp);
 }
-NEO_JS_CFUNCTION(neo_js_date_to_date_string);
+NEO_JS_CFUNCTION(neo_js_date_to_date_string) {
+  neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
+  if (!tm) {
+    return neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE,
+                                              L"this is not a Date object.");
+  }
+  if (tm->invalid) {
+    return neo_js_context_create_number(ctx, NAN);
+  }
+  static const wchar_t *week_names[] = {
+      L"Sun", L"Mon", L"Tue", L"Wed", L"Thu", L"Fri", L"Sat",
+  };
+  static const wchar_t *month_names[] = {
+      L"Jan", L"Feb", L"Mar", L"Apr", L"May", L"Jun",
+      L"Jul", L"Aug", L"Sep", L"Oct", L"Nov", L"Dec",
+  };
+  wchar_t result[1024];
+  swprintf(result, 1024, L"%ls,%ls %d %d", week_names[tm->weakday],
+           month_names[tm->month], tm->day + 1, tm->year);
+  return neo_js_context_create_string(ctx, result);
+}
 NEO_JS_CFUNCTION(neo_js_date_to_iso_string) {
   neo_time_t *utc = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!utc) {
@@ -918,10 +962,22 @@ NEO_JS_CFUNCTION(neo_js_date_to_string) {
       L"Jan", L"Feb", L"Mar", L"Apr", L"May", L"Jun",
       L"Jul", L"Aug", L"Sep", L"Oct", L"Nov", L"Dec",
   };
+  struct tm *local_time = NULL;
+  time_t raw_time;
+  char timezone_name[100];
+  timezone_name[0] = 0;
+  time(&raw_time);
+  local_time = localtime(&raw_time);
+  if (local_time != NULL) {
+    strftime(timezone_name, 100, "GMT%z (%Z)", local_time);
+  }
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  wchar_t *zone = neo_string_to_wstring(allocator, timezone_name);
+  neo_js_context_defer_free(ctx, zone);
   wchar_t result[1024];
-  swprintf(result, 1024, L"%ls,%ls %d %d %d:%d:%d", week_names[tm->weakday],
-           month_names[tm->month], tm->day + 1, tm->year, tm->hour, tm->minute,
-           tm->second);
+  swprintf(result, 1024, L"%ls, %02d %ls %d %02d:%02d:%02d %ls",
+           week_names[tm->weakday], tm->day + 1, month_names[tm->month],
+           tm->year, tm->hour, tm->minute, tm->second, zone);
   return neo_js_context_create_string(ctx, result);
 }
 NEO_JS_CFUNCTION(neo_js_date_to_time_string) {
@@ -967,9 +1023,9 @@ NEO_JS_CFUNCTION(neo_js_date_to_utc_string) {
       L"Jul", L"Aug", L"Sep", L"Oct", L"Nov", L"Dec",
   };
   wchar_t result[1024];
-  swprintf(result, 1024, L"%ls,%ls %d %d %d:%d:%d", week_names[tm->weakday],
-           month_names[tm->month], tm->day + 1, tm->year, tm->hour, tm->minute,
-           tm->second);
+  swprintf(result, 1024, L"%ls, %02d %ls %d %02d:%02d:%02d GMT",
+           week_names[tm->weakday], tm->day + 1, month_names[tm->month],
+           tm->year, tm->hour, tm->minute, tm->second);
   return neo_js_context_create_string(ctx, result);
 }
 NEO_JS_CFUNCTION(neo_js_date_value_of) {
@@ -983,4 +1039,26 @@ NEO_JS_CFUNCTION(neo_js_date_value_of) {
   }
   return neo_js_context_create_number(ctx, tm->timestamp);
 }
-NEO_JS_CFUNCTION(neo_js_date_to_primitive);
+NEO_JS_CFUNCTION(neo_js_date_to_primitive) {
+  if (!argc) {
+    return neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE,
+                                              L"Invalid hint: undefined");
+  }
+  neo_js_variable_t hint = neo_js_context_to_string(ctx, argv[0]);
+  NEO_JS_TRY_AND_THROW(hint);
+  const wchar_t *hint_string = neo_js_variable_to_string(hint)->string;
+  if (wcscmp(hint_string, L"default") == 0 ||
+      wcscmp(hint_string, L"string") == 0) {
+    return neo_js_date_to_string(ctx, self, 0, NULL);
+  } else if (wcscmp(hint_string, L"number") == 0) {
+    return neo_js_date_value_of(ctx, self, 0, NULL);
+  } else {
+    neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+    size_t len = wcslen(hint_string);
+    wchar_t *message =
+        neo_allocator_alloc(allocator, sizeof(wchar_t) * (len + 16), NULL);
+    neo_js_context_defer_free(ctx, message);
+    swprintf(message, len + 16, L"Invalid hint: %ls", hint_string);
+    return neo_js_context_create_simple_error(ctx, NEO_ERROR_TYPE, message);
+  }
+}

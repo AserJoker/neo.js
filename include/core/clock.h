@@ -33,11 +33,9 @@ void neo_clock_format(neo_time_t *time);
 
 void neo_clock_sleep(uint64_t timeout);
 
-bool neo_clock_parse_iso(const wchar_t *source, int64_t *timestamp,
-                         int64_t *timezone);
+bool neo_clock_parse_iso(const wchar_t *source, int64_t *timestamp);
 
-bool neo_clock_parse_rfc(const wchar_t *source, int64_t *timestamp,
-                         int64_t *timezone);
+bool neo_clock_parse_rfc(const wchar_t *source, int64_t *timestamp);
 
 #ifdef __cplusplus
 };

@@ -906,6 +906,12 @@ static void neo_js_context_init_std_date(neo_js_context_t ctx) {
       neo_js_context_create_cfunction(ctx, L"now", neo_js_date_now), true,
       false, true);
 
+  neo_js_variable_t parse =
+      neo_js_context_create_cfunction(ctx, L"parse", neo_js_date_parse);
+  neo_js_context_def_field(ctx, ctx->std.date_constructor,
+                           neo_js_context_create_string(ctx, L"parse"), parse,
+                           true, false, true);
+
   neo_js_variable_t utc =
       neo_js_context_create_cfunction(ctx, L"UTC", neo_js_date_utc);
   neo_js_context_def_field(ctx, ctx->std.date_constructor,
@@ -1096,6 +1102,12 @@ static void neo_js_context_init_std_date(neo_js_context_t ctx) {
                            neo_js_context_create_string(ctx, L"toString"),
                            to_string, true, false, true);
 
+  neo_js_variable_t to_date_string = neo_js_context_create_cfunction(
+      ctx, L"toDateString", neo_js_date_to_date_string);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"toDateString"),
+                           to_date_string, true, false, true);
+
   neo_js_variable_t to_iso_string = neo_js_context_create_cfunction(
       ctx, L"toISOString", neo_js_date_to_iso_string);
   neo_js_context_def_field(ctx, prototype,
@@ -1113,6 +1125,15 @@ static void neo_js_context_init_std_date(neo_js_context_t ctx) {
   neo_js_context_def_field(ctx, prototype,
                            neo_js_context_create_string(ctx, L"valueOf"),
                            value_of, true, false, true);
+
+  neo_js_variable_t to_primitive = neo_js_context_create_cfunction(
+      ctx, L"[Symbol.toPrimitive]", neo_js_date_to_primitive);
+  neo_js_context_def_field(
+      ctx, prototype,
+      neo_js_context_get_field(
+          ctx, ctx->std.symbol_constructor,
+          neo_js_context_create_string(ctx, L"toPrimitive")),
+      to_primitive, true, false, true);
 }
 
 static void neo_js_context_init_std(neo_js_context_t ctx) {
