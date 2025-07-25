@@ -251,7 +251,6 @@ void neo_js_vm_pop(neo_js_vm_t vm, neo_program_t program) {
 void neo_js_vm_store(neo_js_vm_t vm, neo_program_t program) {
   const wchar_t *name = neo_js_vm_read_string(vm, program);
   neo_js_variable_t current = neo_list_node_get(neo_list_get_last(vm->stack));
-  neo_list_pop(vm->stack);
   CHECK_AND_THROW(neo_js_context_store_variable(vm->ctx, current, name), vm,
                   program);
 }
