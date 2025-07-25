@@ -89,6 +89,7 @@ static void neo_ast_expression_arrow_function_write(
         wchar_t *name = neo_location_get(allocator, argument->location);
         neo_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
       } else {
         TRY(argument->write(allocator, ctx, argument)) { return; }
       }

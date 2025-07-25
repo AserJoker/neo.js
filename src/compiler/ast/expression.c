@@ -104,6 +104,7 @@ static void neo_ast_expression_binary_write(neo_allocator_t allocator,
         neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
         neo_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
       } else if (self->right->type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
         neo_ast_expression_member_t member =
             (neo_ast_expression_member_t)self->right;
@@ -161,6 +162,7 @@ static void neo_ast_expression_binary_write(neo_allocator_t allocator,
         neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
         neo_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
       } else if (self->right->type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
         neo_ast_expression_member_t member =
             (neo_ast_expression_member_t)self->right;
@@ -232,6 +234,7 @@ static void neo_ast_expression_binary_write(neo_allocator_t allocator,
       neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
       neo_program_add_string(allocator, ctx->program, name);
       neo_allocator_free(allocator, name);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
     } else if (self->left->type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
       neo_ast_expression_member_t member =
           (neo_ast_expression_member_t)self->left;
