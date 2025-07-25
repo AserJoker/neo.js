@@ -47,7 +47,6 @@ static void neo_ast_import_specifier_write(neo_allocator_t allocator,
     neo_program_add_string(allocator, ctx->program, name + 1);
   }
   neo_allocator_free(allocator, name);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_SAVE);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
 }
 static neo_variable_t

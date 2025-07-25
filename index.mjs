@@ -1,7 +1,2 @@
 'use strict'
-let i = 0;
-while (i < 10) {
-    console.log(i)
-    i++;
-    100
-}
+console.log(eval("const a = 1"))
