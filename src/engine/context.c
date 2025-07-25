@@ -39,6 +39,9 @@
 #include "engine/lib/encode_uri.h"
 #include "engine/lib/encode_uri_component.h"
 #include "engine/lib/eval.h"
+#include "engine/lib/is_finite.h"
+#include "engine/lib/is_nan.h"
+#include "engine/lib/json.h"
 #include "engine/lib/set_interval.h"
 #include "engine/lib/set_timeout.h"
 #include "engine/runtime.h"
@@ -749,7 +752,24 @@ static void neo_js_context_init_std_error(neo_js_context_t ctx) {
       neo_js_context_create_cfunction(ctx, L"toString", neo_js_error_to_string),
       true, false, true);
 }
+static void neo_js_context_init_lib_json(neo_js_context_t ctx) {
+  neo_js_variable_t json =
+      neo_js_context_create_object(ctx, neo_js_context_create_null(ctx));
 
+  neo_js_context_def_field(
+      ctx, json, neo_js_context_create_string(ctx, L"parse"),
+      neo_js_context_create_cfunction(ctx, L"parse", neo_js_json_parse), true,
+      false, true);
+
+  neo_js_context_def_field(
+      ctx, json, neo_js_context_create_string(ctx, L"stringify"),
+      neo_js_context_create_cfunction(ctx, L"stringify", neo_js_json_stringify),
+      true, false, true);
+
+  neo_js_context_def_field(ctx, ctx->std.global,
+                           neo_js_context_create_string(ctx, L"JSON"), json,
+                           true, false, true);
+}
 static void neo_js_context_init_std_promise(neo_js_context_t ctx) {
 
   neo_js_context_def_field(
@@ -930,6 +950,16 @@ static void neo_js_context_init_lib(neo_js_context_t ctx) {
       ctx, ctx->std.global, neo_js_context_create_string(ctx, L"eval"),
       neo_js_context_create_cfunction(ctx, L"eval", neo_js_eval), true, true,
       true);
+  neo_js_context_def_field(
+      ctx, ctx->std.global, neo_js_context_create_string(ctx, L"isFinite"),
+      neo_js_context_create_cfunction(ctx, L"isFinite", neo_js_is_finite), true,
+      true, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.global, neo_js_context_create_string(ctx, L"isNaN"),
+      neo_js_context_create_cfunction(ctx, L"isNaN", neo_js_is_nan), true, true,
+      true);
+
+  neo_js_context_init_lib_json(ctx);
 }
 static void neo_js_context_init_std_date(neo_js_context_t ctx) {
   neo_js_context_def_field(
@@ -4839,7 +4869,11 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const wchar_t *file,
     char *casmpath = neo_wstring_to_string(allocator, asmpath);
     neo_allocator_free(allocator, asmpath);
     FILE *fp = fopen(casmpath, "w");
-    neo_program_write(allocator, fp, program);
+    TRY(neo_program_write(allocator, fp, program)) {
+      neo_allocator_free(allocator, root);
+      neo_allocator_free(allocator, filepath);
+      return neo_js_context_create_compile_error(ctx);
+    };
     fclose(fp);
     neo_allocator_free(allocator, casmpath);
     neo_allocator_free(allocator, filepath);

@@ -1,2 +1,3 @@
 'use strict'
-console.log(eval("const a = 1"))
+const obj = JSON.parse("{\"data\":\"test data\"}");
+console.log(obj.data)

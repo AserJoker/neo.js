@@ -6,9 +6,10 @@
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/location.h"
+#include "core/string.h"
 #include "core/variable.h"
-#include <wchar.h>
 #include <string.h>
+#include <wchar.h>
 
 static void neo_ast_literal_string_dispose(neo_allocator_t allocator,
                                            neo_ast_literal_string_t node) {
@@ -19,8 +20,10 @@ static void neo_ast_literal_string_write(neo_allocator_t allocator,
                                          neo_ast_literal_string_t self) {
   wchar_t *str = neo_location_get(allocator, self->node.location);
   str[wcslen(str) - 1] = 0;
+  wchar_t *ss = neo_wstring_decode(allocator, str + 1);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-  neo_program_add_string(allocator, ctx->program, str + 1);
+  neo_program_add_string(allocator, ctx->program, ss);
+  neo_allocator_free(allocator, ss);
   neo_allocator_free(allocator, str);
 }
 static neo_variable_t

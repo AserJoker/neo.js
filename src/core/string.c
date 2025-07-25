@@ -49,7 +49,10 @@ wchar_t *neo_wstring_encode(neo_allocator_t allocator, const wchar_t *src) {
   size_t idx = 0;
   size_t current = 0;
   for (; current < len; current++) {
-    if (src[current] == '\n') {
+    if (src[current] == '\\') {
+      str[idx++] = '\\';
+      str[idx++] = '\\';
+    } else if (src[current] == '\n') {
       str[idx++] = '\\';
       str[idx++] = 'n';
     } else if (src[current] == '\r') {
@@ -58,6 +61,38 @@ wchar_t *neo_wstring_encode(neo_allocator_t allocator, const wchar_t *src) {
     } else if (src[current] == '\"') {
       str[idx++] = '\\';
       str[idx++] = '"';
+    } else if (src[current] == '\'') {
+      str[idx++] = '\\';
+      str[idx++] = '\'';
+    } else {
+      str[idx++] = src[current];
+    }
+  }
+  str[idx] = 0;
+  return str;
+}
+
+wchar_t *neo_wstring_decode(neo_allocator_t allocator, const wchar_t *src) {
+  size_t len = wcslen(src);
+  wchar_t *str =
+      neo_allocator_alloc(allocator, (len * 2 + 1) * sizeof(wchar_t), NULL);
+  size_t idx = 0;
+  size_t current = 0;
+  for (; current < len; current++) {
+    if (src[current] == '\\') {
+      current++;
+      if (current == 'n') {
+        str[idx++] = '\n';
+      } else if (current == 'r') {
+        str[idx++] = '\r';
+      } else if (current == '\\') {
+        str[idx++] = '\\';
+      } else if (current == '\"') {
+        str[idx++] = '\"';
+      } else {
+        str[idx++] = src[current];
+      }
+      continue;
     } else {
       str[idx++] = src[current];
     }

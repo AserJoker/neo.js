@@ -125,6 +125,8 @@ void neo_json_skip_invisible(neo_allocator_t allocator, const wchar_t *file,
 }
 void neo_json_read_string(neo_allocator_t allocator, const wchar_t *file,
                           neo_position_t *current) {
+  current->offset++;
+  current->column++;
   while (*current->offset) {
     if (*current->offset == '\\') {
       current->offset += 2;
@@ -227,7 +229,8 @@ neo_variable_t neo_json_read_dict(neo_allocator_t allocator,
       value = TRY(neo_json_read_variable(allocator, file, position)) {
         goto onerror;
       }
-      neo_variable_set(dict, key, value);
+      key[wcslen(key) - 1] = 0;
+      neo_variable_set(dict, key + 1, value);
       neo_allocator_free(allocator, key);
       neo_json_skip_invisible(allocator, file, position);
       if (*position->offset == ',') {
@@ -321,15 +324,15 @@ neo_variable_t neo_json_read_variable(neo_allocator_t allocator,
     neo_allocator_free(allocator, str);
     *position = current;
     return res;
-  } else if (strcmp(position->offset, "true")) {
+  } else if (strcmp(position->offset, "true") == 0) {
     position->offset += 4;
     position->column += 4;
     return neo_create_variable_boolean(allocator, true);
-  } else if (strcmp(position->offset, "false")) {
+  } else if (strcmp(position->offset, "false") == 0) {
     position->offset += 5;
     position->column += 5;
     return neo_create_variable_boolean(allocator, false);
-  } else if (strcmp(position->offset, "null")) {
+  } else if (strcmp(position->offset, "null") == 0) {
     position->offset += 4;
     position->column += 4;
     return neo_create_variable_nil(allocator);
@@ -344,9 +347,11 @@ neo_variable_t neo_json_parse(neo_allocator_t allocator, const wchar_t *file,
   neo_position_t position;
   position.offset = source;
   position.column = 0;
-  position.offset = 0;
+  position.line = 0;
   neo_variable_t result =
-      TRY(neo_json_read_variable(allocator, file, &position)) {}
+      TRY(neo_json_read_variable(allocator, file, &position)) {
+    return NULL;
+  }
   if (*position.offset) {
     neo_allocator_free(allocator, result);
     THROW("Invalid or unexpected token \n  at %ls:%d:%d", file, position.line,

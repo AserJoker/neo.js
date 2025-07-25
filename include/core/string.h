@@ -10,6 +10,8 @@ wchar_t *neo_wstring_concat(neo_allocator_t allocator, wchar_t *src,
 
 wchar_t *neo_wstring_encode(neo_allocator_t allocator, const wchar_t *src);
 
+wchar_t *neo_wstring_decode(neo_allocator_t allocator, const wchar_t *src);
+
 wchar_t *neo_create_wstring(neo_allocator_t allocator, const wchar_t *src);
 
 uint16_t *neo_wstring_to_char16(neo_allocator_t allocator, const wchar_t *src);
