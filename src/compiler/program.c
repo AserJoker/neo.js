@@ -155,6 +155,9 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       fprintf(fp, "NEO_ASM_STORE \"%ls\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
+    case NEO_ASM_SAVE: {
+      fprintf(fp, "NEO_ASM_SAVE\n");
+    } break;
     case NEO_ASM_DEF: {
       wchar_t *constant =
           neo_wstring_encode(allocator, neo_program_get_string(self, &offset));

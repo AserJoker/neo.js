@@ -255,10 +255,21 @@ void neo_js_vm_store(neo_js_vm_t vm, neo_program_t program) {
                   program);
 }
 
+void neo_js_vm_save(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_js_handle_t root = neo_js_scope_get_root_handle(vm->root);
+  neo_js_handle_t current = neo_js_scope_get_root_handle(vm->scope);
+  if (vm->result) {
+    neo_js_handle_add_parent(vm->result, current);
+    neo_js_handle_remove_parent(vm->result, root);
+  }
+  vm->result = neo_js_variable_get_handle(value);
+  neo_js_handle_add_parent(vm->result, root);
+}
+
 void neo_js_vm_def(neo_js_vm_t vm, neo_program_t program) {
   const wchar_t *name = neo_js_vm_read_string(vm, program);
   neo_js_variable_t current = neo_list_node_get(neo_list_get_last(vm->stack));
-  neo_list_pop(vm->stack);
   CHECK_AND_THROW(neo_js_context_def_variable(vm->ctx, current, name), vm,
                   program);
 }
@@ -1299,9 +1310,13 @@ void neo_js_vm_ret(neo_js_vm_t vm, neo_program_t program) {
   vm->offset = neo_buffer_get_size(program->codes);
 }
 void neo_js_vm_hlt(neo_js_vm_t vm, neo_program_t program) {
-  if (!neo_list_get_size(vm->stack)) {
-    neo_list_push(vm->stack, neo_js_context_create_undefined(vm->ctx));
+  neo_js_variable_t result = NULL;
+  if (vm->result) {
+    result = neo_js_context_create_variable(vm->ctx, vm->result, NULL);
+  } else {
+    result = neo_js_context_create_undefined(vm->ctx);
   }
+  neo_list_push(vm->stack, result);
   vm->offset = neo_buffer_get_size(program->codes);
 }
 void neo_js_vm_keys(neo_js_vm_t vm, neo_program_t program) {
@@ -2127,6 +2142,7 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_pop_scope,             // NEO_ASM_POP_SCOPE
     neo_js_vm_pop,                   // NEO_ASM_POP
     neo_js_vm_store,                 // NEO_ASM_STORE
+    neo_js_vm_save,                  // NEO_ASM_SAVE
     neo_js_vm_def,                   // NEO_ASM_DEF
     neo_js_vm_load,                  // NEO_ASM_LOAD
     neo_js_vm_clone,                 // NEO_ASM_CLONE

@@ -112,6 +112,8 @@ void neo_writer_push_scope(neo_allocator_t allocator, neo_write_context_t ctx,
       neo_program_add_code(allocator, ctx->program, NEO_ASM_DEF);
       neo_program_add_string(allocator, ctx->program, name);
       neo_allocator_free(allocator, name);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_SAVE);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
     }
   }
 }

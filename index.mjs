@@ -1,3 +1,7 @@
 'use strict'
-const item = 1
-if (item == 1) item + 2
+let i = 0;
+while (i < 10) {
+    console.log(i)
+    i++;
+    100
+}

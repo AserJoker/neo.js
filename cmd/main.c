@@ -29,6 +29,9 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "Uncaught %ls\n",
               neo_js_variable_to_string(result)->string);
     } else {
+      result = neo_js_context_to_string(ctx, result);
+      fprintf(stderr, "%ls\n",
+              neo_js_variable_to_string(result)->string);
       while (!neo_js_context_is_ready(ctx)) {
         neo_js_context_next_tick(ctx);
       }

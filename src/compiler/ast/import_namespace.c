@@ -21,6 +21,7 @@ static void neo_ast_import_namespace_write(neo_allocator_t allocator,
   neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
   neo_program_add_string(allocator, ctx->program, name);
   neo_allocator_free(allocator, name);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_SAVE);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
 }
 static neo_variable_t
