@@ -123,6 +123,18 @@ uint16_t *neo_wstring_to_char16(neo_allocator_t allocator, const wchar_t *src) {
     return (uint16_t *)neo_create_wstring(allocator, src);
   }
 }
+wchar_t *neo_wstring_to_lower(neo_allocator_t allocator, const wchar_t *src) {
+  size_t len = wcslen(src) + 1;
+  wchar_t *str = neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
+  for (size_t idx = 0; idx < len; idx++) {
+    if (src[idx] >= 'A' && src[idx] <= 'Z') {
+      str[idx] = src[idx] - 'A';
+    } else {
+      str[idx] = src[idx];
+    }
+  }
+  return str;
+}
 
 bool neo_wstring_end_with(const wchar_t *src, const wchar_t *text) {
   size_t len = wcslen(src);

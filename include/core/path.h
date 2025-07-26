@@ -26,6 +26,8 @@ neo_path_t neo_path_parent(neo_path_t current);
 
 const wchar_t *neo_path_filename(neo_path_t current);
 
+const wchar_t *neo_path_extname(neo_path_t current);
+
 wchar_t *neo_path_to_string(neo_path_t path);
 
 #ifdef __cplusplus

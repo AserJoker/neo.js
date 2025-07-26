@@ -13,6 +13,7 @@
 #include "core/hash_map.h"
 #include "core/list.h"
 #include "core/path.h"
+#include "core/position.h"
 #include "core/string.h"
 #include "core/unicode.h"
 #include "engine/basetype/array.h"
@@ -4840,7 +4841,25 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const wchar_t *file,
   neo_path_t path = neo_create_path(allocator, file);
   path = neo_path_absolute(path);
   wchar_t *filepath = neo_path_to_string(path);
+  const wchar_t *path_ext_name = neo_path_extname(path);
+  wchar_t *ext_name = NULL;
+  if (path_ext_name) {
+    ext_name = neo_wstring_to_lower(allocator, path_ext_name);
+  }
   neo_allocator_free(allocator, path);
+  if (ext_name && wcscmp(ext_name, L".json") == 0) {
+    neo_allocator_free(allocator, ext_name);
+    neo_position_t position = {0, 0, source};
+    neo_js_variable_t module =
+        neo_js_json_read_variable(ctx, &position, NULL, filepath);
+    neo_js_handle_t hmodule = neo_js_variable_get_handle(module);
+    neo_js_handle_add_parent(hmodule, neo_js_scope_get_root_handle(ctx->root));
+    neo_hash_map_set(ctx->modules, neo_create_wstring(allocator, filepath),
+                     hmodule, NULL, NULL);
+    neo_allocator_free(allocator, filepath);
+    return module;
+  }
+  neo_allocator_free(allocator, ext_name);
   neo_program_t program = neo_js_runtime_get_program(ctx->runtime, filepath);
   if (!program) {
     neo_js_variable_t module =

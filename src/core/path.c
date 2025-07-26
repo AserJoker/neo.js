@@ -152,7 +152,20 @@ neo_path_t neo_path_parent(neo_path_t current) {
 }
 const wchar_t *neo_path_filename(neo_path_t current) {
   if (neo_list_get_size(current->parts)) {
-    return neo_list_node_get(neo_list_get_tail(current->parts));
+    return neo_list_node_get(neo_list_get_last(current->parts));
+  }
+  return NULL;
+}
+const wchar_t *neo_path_extname(neo_path_t current) {
+  const wchar_t *filename = neo_path_filename(current);
+  if (filename) {
+    size_t idx = wcslen(filename) - 1;
+    while (idx != 0) {
+      if (filename[idx] == '.') {
+        return &filename[idx];
+      }
+      idx--;
+    }
   }
   return NULL;
 }
