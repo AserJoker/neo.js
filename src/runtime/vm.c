@@ -747,8 +747,6 @@ void neo_js_vm_call(neo_js_vm_t vm, neo_program_t program) {
   }
 }
 void neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
-  uint32_t line = neo_js_vm_read_integer(vm, program);
-  uint32_t column = neo_js_vm_read_integer(vm, program);
   neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
   neo_js_variable_t args = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_list_pop(vm->stack);

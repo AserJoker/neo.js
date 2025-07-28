@@ -164,7 +164,6 @@ neo_js_variable_t neo_js_json_read_object(neo_js_context_t ctx,
   current.offset++;
   current.line++;
   neo_js_json_skip_invisible(&current);
-  size_t idx = 0;
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_js_variable_t result = neo_js_context_create_object(ctx, NULL);
   if (*current.offset != '}') {
@@ -264,7 +263,7 @@ neo_js_variable_t neo_js_json_read_variable(neo_js_context_t ctx,
     position->offset += 5;
     position->column += 5;
     return neo_js_context_create_boolean(ctx, false);
-  } else if (*position->offset >= '0' && *position->offset <= '9' ||
+  } else if ((*position->offset >= '0' && *position->offset <= '9') ||
              *position->offset == '-') {
     neo_position_t current = *position;
     if (neo_js_json_read_number(&current)) {
