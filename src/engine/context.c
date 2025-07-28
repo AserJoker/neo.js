@@ -4850,10 +4850,15 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const wchar_t *file,
   if (ext_name && wcscmp(ext_name, L".json") == 0) {
     neo_allocator_free(allocator, ext_name);
     neo_position_t position = {0, 0, source};
-    neo_js_variable_t module =
+    neo_js_variable_t def =
         neo_js_json_read_variable(ctx, &position, NULL, filepath);
+    NEO_JS_TRY_AND_THROW(def);
+    neo_js_variable_t module =
+        neo_js_context_create_object(ctx, neo_js_context_create_null(ctx));
     neo_js_handle_t hmodule = neo_js_variable_get_handle(module);
     neo_js_handle_add_parent(hmodule, neo_js_scope_get_root_handle(ctx->root));
+    neo_js_context_set_field(
+        ctx, module, neo_js_context_create_string(ctx, L"default"), def);
     neo_hash_map_set(ctx->modules, neo_create_wstring(allocator, filepath),
                      hmodule, NULL, NULL);
     neo_allocator_free(allocator, filepath);

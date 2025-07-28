@@ -1,3 +1,3 @@
 'use strict'
 import d from './data.json'
-console.log(d)
+console.log(d.data)

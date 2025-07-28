@@ -102,6 +102,7 @@ neo_js_vm_t neo_create_js_vm(neo_js_context_t ctx, neo_js_variable_t self,
   vm->scope = scope;
   vm->clazz = clazz;
   vm->active_features = neo_create_list(allocator, NULL);
+  vm->result = NULL;
   return vm;
 }
 
@@ -553,9 +554,7 @@ void neo_js_vm_push_value(neo_js_vm_t vm, neo_program_t program) {
     it = neo_list_node_last(it);
   }
   neo_js_variable_t variable = neo_list_node_get(it);
-  neo_list_push(vm->stack,
-                neo_js_context_create_variable(
-                    vm->ctx, neo_js_variable_get_handle(variable), NULL));
+  neo_list_push(vm->stack, variable);
 }
 void neo_js_vm_push_break_label(neo_js_vm_t vm, neo_program_t program) {
   const wchar_t *label = neo_js_vm_read_string(vm, program);
