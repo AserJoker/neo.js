@@ -215,6 +215,9 @@ neo_js_variable_t neo_js_context_get_internal(neo_js_context_t ctx,
                                               neo_js_variable_t object,
                                               const wchar_t *field);
 
+bool neo_js_context_has_internal(neo_js_context_t ctx, neo_js_variable_t object,
+                                 const wchar_t *field);
+
 void neo_js_context_set_internal(neo_js_context_t ctx, neo_js_variable_t object,
                                  const wchar_t *field, neo_js_variable_t value);
 
@@ -432,7 +435,7 @@ neo_js_variable_t neo_js_context_concat(neo_js_context_t ctx,
 neo_js_variable_t neo_js_context_instance_of(neo_js_context_t ctx,
                                              neo_js_variable_t variable,
                                              neo_js_variable_t constructor);
-                                             
+
 neo_js_variable_t neo_js_context_create_compile_error(neo_js_context_t ctx);
 
 void neo_js_context_create_module(neo_js_context_t ctx, const wchar_t *name,

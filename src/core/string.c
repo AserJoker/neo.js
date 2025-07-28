@@ -61,6 +61,9 @@ wchar_t *neo_wstring_encode(neo_allocator_t allocator, const wchar_t *src) {
     } else if (src[current] == '\"') {
       str[idx++] = '\\';
       str[idx++] = '"';
+    } else if (src[current] == '\t') {
+      str[idx++] = '\\';
+      str[idx++] = 't';
     } else if (src[current] == '\'') {
       str[idx++] = '\\';
       str[idx++] = '\'';
@@ -81,14 +84,18 @@ wchar_t *neo_wstring_decode(neo_allocator_t allocator, const wchar_t *src) {
   for (; current < len; current++) {
     if (src[current] == '\\') {
       current++;
-      if (current == 'n') {
+      if (src[current] == 'n') {
         str[idx++] = '\n';
-      } else if (current == 'r') {
+      } else if (src[current] == 'r') {
         str[idx++] = '\r';
-      } else if (current == '\\') {
+      } else if (src[current] == 't') {
+        str[idx++] = '\t';
+      } else if (src[current] == '\\') {
         str[idx++] = '\\';
-      } else if (current == '\"') {
+      } else if (src[current] == '\"') {
         str[idx++] = '\"';
+      } else if (src[current] == '\'') {
+        str[idx++] = '\'';
       } else {
         str[idx++] = src[current];
       }

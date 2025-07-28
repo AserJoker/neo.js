@@ -2480,6 +2480,20 @@ neo_js_variable_t neo_js_context_get_internal(neo_js_context_t ctx,
   return neo_js_context_create_undefined(ctx);
 }
 
+bool neo_js_context_has_internal(neo_js_context_t ctx, neo_js_variable_t self,
+                                 const wchar_t *field) {
+  neo_js_object_t object = neo_js_variable_to_object(self);
+  if (object) {
+    neo_js_handle_t internal =
+        neo_hash_map_get(object->internal, field, NULL, NULL);
+    if (!internal) {
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+
 void neo_js_context_set_internal(neo_js_context_t ctx, neo_js_variable_t self,
                                  const wchar_t *field,
                                  neo_js_variable_t value) {

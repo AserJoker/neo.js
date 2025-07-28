@@ -1,3 +1,2 @@
 'use strict'
-import d from './data.json'
-console.log(d.data)
+console.log(JSON.stringify({ data: 1e31 }, null, '\t'))

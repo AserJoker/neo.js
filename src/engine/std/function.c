@@ -19,10 +19,6 @@ neo_js_variable_t neo_js_function_to_string(neo_js_context_t ctx,
                                             uint32_t argc,
                                             neo_js_variable_t *argv) {
   neo_js_type_t type = neo_js_variable_get_type(self);
-  if (type->kind == NEO_JS_TYPE_OBJECT) {
-    self = neo_js_context_get_internal(ctx, self, L"[[primitive]]");
-  }
-  type = neo_js_variable_get_type(self);
   if (neo_js_variable_get_type(self)->kind < NEO_JS_TYPE_CALLABLE) {
     return neo_js_context_create_simple_error(
         ctx, NEO_JS_ERROR_TYPE,
