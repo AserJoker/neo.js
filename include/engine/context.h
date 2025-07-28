@@ -33,6 +33,37 @@ typedef enum _neo_js_error_type_t {
   NEO_JS_ERROR_REFERENCE
 } neo_js_error_type_t;
 
+typedef struct _neo_js_std_t {
+  neo_js_variable_t global;
+  neo_js_variable_t object_constructor;
+  neo_js_variable_t function_constructor;
+  neo_js_variable_t async_function_constructor;
+  neo_js_variable_t number_constructor;
+  neo_js_variable_t boolean_constructor;
+  neo_js_variable_t string_constructor;
+  neo_js_variable_t symbol_constructor;
+  neo_js_variable_t date_constructor;
+  neo_js_variable_t array_constructor;
+  neo_js_variable_t bigint_constructor;
+  neo_js_variable_t regexp_constructor;
+  neo_js_variable_t iterator_constructor;
+  neo_js_variable_t array_iterator_constructor;
+  neo_js_variable_t generator_constructor;
+  neo_js_variable_t generator_function_constructor;
+  neo_js_variable_t async_generator_constructor;
+  neo_js_variable_t async_generator_function_constructor;
+  neo_js_variable_t promise_constructor;
+  neo_js_variable_t error_constructor;
+  neo_js_variable_t syntax_error_constructor;
+  neo_js_variable_t type_error_constructor;
+  neo_js_variable_t reference_error_constructor;
+  neo_js_variable_t internal_error_constructor;
+  neo_js_variable_t range_error_constructor;
+  neo_js_variable_t uri_error_constructor;
+  neo_js_variable_t map_constructor;
+  neo_js_variable_t set_constructor;
+} neo_js_std_t;
+
 neo_js_context_t neo_create_js_context(neo_allocator_t allocator,
                                        neo_js_runtime_t runtime);
 
@@ -99,50 +130,7 @@ void neo_js_context_push_stackframe(neo_js_context_t ctx,
 
 void neo_js_context_pop_stackframe(neo_js_context_t ctx);
 
-neo_js_variable_t neo_js_context_get_error_constructor(neo_js_context_t ctx);
-
-neo_js_variable_t
-neo_js_context_get_type_error_constructor(neo_js_context_t ctx);
-
-neo_js_variable_t
-neo_js_context_get_range_error_constructor(neo_js_context_t ctx);
-
-neo_js_variable_t
-neo_js_context_get_uri_error_constructor(neo_js_context_t ctx);
-
-neo_js_variable_t
-neo_js_context_get_reference_error_constructor(neo_js_context_t ctx);
-
-neo_js_variable_t
-neo_js_context_get_syntax_error_constructor(neo_js_context_t ctx);
-
-neo_js_variable_t
-neo_js_context_get_internal_error_constructor(neo_js_context_t ctx);
-
-neo_js_variable_t neo_js_context_get_object_constructor(neo_js_context_t ctx);
-
-neo_js_variable_t neo_js_context_get_function_constructor(neo_js_context_t ctx);
-
-neo_js_variable_t neo_js_context_get_string_constructor(neo_js_context_t ctx);
-
-neo_js_variable_t neo_js_context_get_boolean_constructor(neo_js_context_t ctx);
-
-neo_js_variable_t neo_js_context_get_number_constructor(neo_js_context_t ctx);
-
-neo_js_variable_t neo_js_context_get_bigint_constructor(neo_js_context_t ctx);
-
-neo_js_variable_t neo_js_context_get_date_constructor(neo_js_context_t ctx);
-
-neo_js_variable_t neo_js_context_get_symbol_constructor(neo_js_context_t ctx);
-
-neo_js_variable_t neo_js_context_get_array_constructor(neo_js_context_t ctx);
-
-neo_js_variable_t
-neo_js_context_get_array_iterator_constructor(neo_js_context_t ctx);
-
-neo_js_variable_t neo_js_context_get_promise_constructor(neo_js_context_t ctx);
-
-neo_js_variable_t neo_js_context_get_regexp_constructor(neo_js_context_t ctx);
+neo_js_std_t neo_js_context_get_std(neo_js_context_t ctx);
 
 neo_js_variable_t neo_js_context_create_variable(neo_js_context_t ctx,
                                                  neo_js_handle_t handle,

@@ -56,6 +56,8 @@ neo_hash_map_node_t neo_hash_map_node_next(neo_hash_map_node_t self);
 
 neo_hash_map_node_t neo_hash_map_node_last(neo_hash_map_node_t self);
 
+void neo_hash_map_clear(neo_hash_map_t self);
+
 #ifdef __cplusplus
 };
 #endif

@@ -33,13 +33,13 @@ neo_js_variable_t neo_js_array_from(neo_js_context_t ctx,
   if (map_fn && !this_arg) {
     this_arg = neo_js_context_create_undefined(ctx);
   }
-  neo_js_variable_t iterator =
-      neo_js_context_get_field(ctx, neo_js_context_get_symbol_constructor(ctx),
-                               neo_js_context_create_string(ctx, L"iterator"));
+  neo_js_variable_t iterator = neo_js_context_get_field(
+      ctx, neo_js_context_get_std(ctx).symbol_constructor,
+      neo_js_context_create_string(ctx, L"iterator"));
 
   neo_js_variable_t constructor = self;
   if (neo_js_variable_get_type(constructor)->kind < NEO_JS_TYPE_CALLABLE) {
-    constructor = neo_js_context_get_array_constructor(ctx);
+    constructor = neo_js_context_get_std(ctx).array_constructor;
   }
   if (neo_js_context_has_field(ctx, array_like, iterator)) {
     iterator = neo_js_context_get_field(ctx, array_like, iterator);
@@ -157,7 +157,7 @@ neo_js_variable_t neo_js_array_from_async(neo_js_context_t ctx,
     }
     neo_js_variable_t array_like = argv[0];
     neo_js_variable_t async_iterator = neo_js_context_get_field(
-        ctx, neo_js_context_get_symbol_constructor(ctx),
+        ctx, neo_js_context_get_std(ctx).symbol_constructor,
         neo_js_context_create_string(ctx, L"asyncIterator"));
     if (!neo_js_context_has_field(ctx, array_like, async_iterator)) {
       break;
@@ -230,7 +230,7 @@ neo_js_variable_t neo_js_array_is_array(neo_js_context_t ctx,
   if (argc < 1) {
     return neo_js_context_create_boolean(ctx, false);
   }
-  neo_js_variable_t array = neo_js_context_get_array_constructor(ctx);
+  neo_js_variable_t array = neo_js_context_get_std(ctx).array_constructor;
   neo_js_variable_t item = argv[0];
   if (neo_js_variable_get_type(item)->kind >= NEO_JS_TYPE_OBJECT) {
     neo_js_object_t obj = neo_js_variable_to_object(item);
@@ -337,7 +337,7 @@ neo_js_variable_t neo_js_array_concat(neo_js_context_t ctx,
   neo_js_variable_t res = neo_js_context_create_array(ctx);
 
   neo_js_variable_t isConcatSpreadable = neo_js_context_get_field(
-      ctx, neo_js_context_get_symbol_constructor(ctx),
+      ctx, neo_js_context_get_std(ctx).symbol_constructor,
       neo_js_context_create_string(ctx, L"isConcatSpreadable"));
   size_t index = 0;
   for (size_t count = 0; count < argc + 1; count++) {
@@ -1079,9 +1079,9 @@ neo_js_variable_t neo_js_array_keys(neo_js_context_t ctx,
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
     neo_js_context_set_field(ctx, result, key, key);
   }
-  neo_js_variable_t iterator =
-      neo_js_context_get_field(ctx, neo_js_context_get_symbol_constructor(ctx),
-                               neo_js_context_create_string(ctx, L"iterator"));
+  neo_js_variable_t iterator = neo_js_context_get_field(
+      ctx, neo_js_context_get_std(ctx).symbol_constructor,
+      neo_js_context_create_string(ctx, L"iterator"));
   iterator = neo_js_context_get_field(ctx, result, iterator);
   return neo_js_context_call(ctx, iterator, result, 0, NULL);
 }
@@ -1811,7 +1811,7 @@ neo_js_variable_t neo_js_array_values(neo_js_context_t ctx,
                                       neo_js_variable_t self, uint32_t argc,
                                       neo_js_variable_t *argv) {
   neo_js_variable_t iterator = neo_js_context_construct(
-      ctx, neo_js_context_get_array_iterator_constructor(ctx), 0, NULL);
+      ctx, neo_js_context_get_std(ctx).array_iterator_constructor, 0, NULL);
   neo_js_variable_t index = neo_js_context_create_number(ctx, 0);
   neo_js_context_set_internal(ctx, iterator, L"[[array]]", self);
   neo_js_context_set_internal(ctx, iterator, L"[[index]]", index);

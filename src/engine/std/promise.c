@@ -50,7 +50,7 @@ neo_js_variable_t neo_js_promise_resolve(neo_js_context_t ctx,
       ctx, NULL, neo_js_promise_resolve_callback);
   neo_js_callable_set_closure(ctx, callback, L"value", value);
   return neo_js_context_construct(
-      ctx, neo_js_context_get_promise_constructor(ctx), 1, &callback);
+      ctx, neo_js_context_get_std(ctx).promise_constructor, 1, &callback);
 }
 
 neo_js_variable_t neo_js_promise_reject(neo_js_context_t ctx,
@@ -67,7 +67,7 @@ neo_js_variable_t neo_js_promise_reject(neo_js_context_t ctx,
       ctx, NULL, neo_js_promise_resolve_callback);
   neo_js_callable_set_closure(ctx, callback, L"value", error);
   return neo_js_context_construct(
-      ctx, neo_js_context_get_promise_constructor(ctx), 1, &callback);
+      ctx, neo_js_context_get_std(ctx).promise_constructor, 1, &callback);
 }
 
 static void neo_js_promise_dispose(neo_allocator_t allocator,
@@ -329,7 +329,7 @@ neo_js_variable_t neo_js_promise_then(neo_js_context_t ctx,
   neo_js_callable_set_closure(ctx, resolver, L"onFulfilled", on_fulfilled);
   neo_js_callable_set_closure(ctx, resolver, L"onRejected", on_rejected);
   neo_js_callable_set_bind(ctx, resolver, self);
-  neo_js_variable_t promise = neo_js_context_get_promise_constructor(ctx);
+  neo_js_variable_t promise = neo_js_context_get_std(ctx).promise_constructor;
   return neo_js_context_construct(ctx, promise, 1, &resolver);
 }
 

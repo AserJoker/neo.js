@@ -38,7 +38,7 @@ neo_js_variable_t neo_js_symbol_to_string(neo_js_context_t ctx,
   neo_js_type_t type = neo_js_variable_get_type(self);
   if (type->kind == NEO_JS_TYPE_OBJECT) {
     if (neo_js_context_instance_of(
-            ctx, symbol, neo_js_context_get_symbol_constructor(ctx))) {
+            ctx, symbol, neo_js_context_get_std(ctx).symbol_constructor)) {
       symbol = neo_js_context_to_primitive(ctx, symbol, L"default");
       type = neo_js_variable_get_type(symbol);
     } else {
@@ -79,7 +79,7 @@ neo_js_variable_t neo_js_symbol_to_primitive(neo_js_context_t ctx,
   neo_js_variable_t symbol = self;
   if (type->kind == NEO_JS_TYPE_OBJECT) {
     if (!neo_js_context_instance_of(
-            ctx, symbol, neo_js_context_get_symbol_constructor(ctx))) {
+            ctx, symbol, neo_js_context_get_std(ctx).symbol_constructor)) {
       return neo_js_context_create_simple_error(
           ctx, NEO_JS_ERROR_TYPE,
           L" Symbol.prototype.toString requires that 'this' be a Symbol");
@@ -98,7 +98,8 @@ neo_js_variable_t neo_js_symbol_to_primitive(neo_js_context_t ctx,
 neo_js_variable_t neo_js_symbol_for(neo_js_context_t ctx,
                                     neo_js_variable_t self, uint32_t argc,
                                     neo_js_variable_t *argv) {
-  neo_js_variable_t constructor = neo_js_context_get_symbol_constructor(ctx);
+  neo_js_variable_t constructor =
+      neo_js_context_get_std(ctx).symbol_constructor;
   neo_js_variable_t registry =
       neo_js_context_get_internal(ctx, constructor, L"[[registry]]");
   neo_js_variable_t key = NULL;
@@ -123,7 +124,8 @@ neo_js_variable_t neo_js_symbol_for(neo_js_context_t ctx,
 neo_js_variable_t neo_js_symbol_key_for(neo_js_context_t ctx,
                                         neo_js_variable_t self, uint32_t argc,
                                         neo_js_variable_t *argv) {
-  neo_js_variable_t constructor = neo_js_context_get_symbol_constructor(ctx);
+  neo_js_variable_t constructor =
+      neo_js_context_get_std(ctx).symbol_constructor;
   neo_js_variable_t registry =
       neo_js_context_get_internal(ctx, constructor, L"[[registry]]");
   neo_js_variable_t sym = NULL;

@@ -9,7 +9,7 @@ neo_js_variable_t neo_js_uri_error_constructor(neo_js_context_t ctx,
                                                neo_js_variable_t *argv) {
   if (neo_js_context_get_call_type(ctx) == NEO_JS_FUNCTION_CALL) {
     neo_js_variable_t constructor =
-        neo_js_context_get_uri_error_constructor(ctx);
+        neo_js_context_get_std(ctx).uri_error_constructor;
     neo_js_variable_t prototype = neo_js_context_get_field(
         ctx, constructor, neo_js_context_create_string(ctx, L"prototype"));
     self = neo_js_context_create_object(ctx, prototype);

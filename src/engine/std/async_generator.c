@@ -229,7 +229,7 @@ neo_js_variable_t neo_js_async_generator_next(neo_js_context_t ctx,
   neo_js_variable_t coroutine =
       neo_js_context_get_internal(ctx, self, L"[[coroutine]]");
   neo_js_co_context_t co = neo_js_coroutine_get_context(coroutine);
-  neo_js_variable_t promise = neo_js_context_get_promise_constructor(ctx);
+  neo_js_variable_t promise = neo_js_context_get_std(ctx).promise_constructor;
   if (co->result) {
     neo_js_variable_t result = neo_js_context_create_object(ctx, NULL);
     neo_js_context_set_field(ctx, result,
@@ -265,7 +265,7 @@ neo_js_variable_t neo_js_async_generator_return(neo_js_context_t ctx,
   neo_js_variable_t coroutine =
       neo_js_context_get_internal(ctx, self, L"[[coroutine]]");
   neo_js_co_context_t co = neo_js_coroutine_get_context(coroutine);
-  neo_js_variable_t promise = neo_js_context_get_promise_constructor(ctx);
+  neo_js_variable_t promise = neo_js_context_get_std(ctx).promise_constructor;
   if (co->result) {
     neo_js_variable_t result = neo_js_context_create_object(ctx, NULL);
     neo_js_context_set_field(ctx, result,
@@ -302,7 +302,7 @@ neo_js_variable_t neo_js_async_generator_throw(neo_js_context_t ctx,
   neo_js_variable_t coroutine =
       neo_js_context_get_internal(ctx, self, L"[[coroutine]]");
   neo_js_co_context_t co = neo_js_coroutine_get_context(coroutine);
-  neo_js_variable_t promise = neo_js_context_get_promise_constructor(ctx);
+  neo_js_variable_t promise = neo_js_context_get_std(ctx).promise_constructor;
   if (co->result) {
     neo_js_variable_t result = neo_js_context_create_object(ctx, NULL);
     neo_js_context_set_field(ctx, result,
@@ -322,7 +322,7 @@ neo_js_variable_t neo_js_async_generator_throw(neo_js_context_t ctx,
   } else {
     arg = neo_js_context_create_error(
         ctx, neo_js_context_construct(
-                 ctx, neo_js_context_get_error_constructor(ctx), 0, NULL));
+                 ctx, neo_js_context_get_std(ctx).error_constructor, 0, NULL));
   }
   neo_js_context_set_scope(ctx, current);
   neo_list_push(co->vm->stack, neo_js_context_create_error(ctx, arg));

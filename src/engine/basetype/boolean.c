@@ -47,7 +47,7 @@ static neo_js_variable_t neo_js_boolean_to_primitive(neo_js_context_t ctx,
 
 static neo_js_variable_t neo_js_boolean_to_object(neo_js_context_t ctx,
                                                   neo_js_variable_t self) {
-  neo_js_variable_t constructor = neo_js_context_get_boolean_constructor(ctx);
+  neo_js_variable_t constructor = neo_js_context_get_std(ctx).boolean_constructor;
   neo_js_variable_t argv[] = {self};
   return neo_js_context_construct(ctx, constructor, 1, argv);
 }

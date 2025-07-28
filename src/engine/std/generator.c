@@ -173,8 +173,9 @@ neo_js_variable_t neo_js_generator_throw(neo_js_context_t ctx,
       arg = neo_js_context_create_error(ctx, argv[0]);
     } else {
       arg = neo_js_context_create_error(
-          ctx, neo_js_context_construct(
-                   ctx, neo_js_context_get_error_constructor(ctx), 0, NULL));
+          ctx,
+          neo_js_context_construct(
+              ctx, neo_js_context_get_std(ctx).error_constructor, 0, NULL));
     }
     neo_js_context_set_scope(ctx, current);
     neo_list_push(co_ctx->vm->stack, arg);

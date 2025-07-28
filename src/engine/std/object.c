@@ -50,7 +50,7 @@ neo_js_variable_t neo_js_object_to_string(neo_js_context_t ctx,
                                           neo_js_variable_t self, uint32_t argc,
                                           neo_js_variable_t *argv) {
   neo_js_variable_t toStringTag = neo_js_context_get_field(
-      ctx, neo_js_context_get_symbol_constructor(ctx),
+      ctx, neo_js_context_get_std(ctx).symbol_constructor,
       neo_js_context_create_string(ctx, L"toStringTag"));
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_js_variable_t tag = neo_js_context_get_field(ctx, self, toStringTag);

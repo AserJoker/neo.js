@@ -244,3 +244,8 @@ neo_hash_map_node_t neo_hash_map_node_last(neo_hash_map_node_t self) {
   }
   return self;
 }
+void neo_hash_map_clear(neo_hash_map_t self) {
+  while (self->size) {
+    neo_hash_map_erase(self, neo_hash_map_get_first(self));
+  }
+}

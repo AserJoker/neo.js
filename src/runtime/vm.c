@@ -159,7 +159,7 @@ static neo_js_variable_t neo_js_vm_scope_dispose(neo_js_vm_t vm) {
   neo_js_scope_t scope = neo_js_context_get_scope(vm->ctx);
   neo_js_scope_t parent = neo_js_scope_get_parent(scope);
   neo_list_t variables = neo_js_scope_get_variables(scope);
-  neo_js_variable_t symbol = neo_js_context_get_symbol_constructor(vm->ctx);
+  neo_js_variable_t symbol = neo_js_context_get_std(vm->ctx).symbol_constructor;
   neo_js_variable_t dispose = neo_js_context_get_field(
       vm->ctx, symbol, neo_js_context_create_string(vm->ctx, L"dispose"));
   neo_js_variable_t asyncDispose = neo_js_context_get_field(
@@ -387,7 +387,7 @@ void neo_js_vm_push_bigint(neo_js_vm_t vm, neo_program_t program) {
 void neo_js_vm_push_regexp(neo_js_vm_t vm, neo_program_t program) {
   const wchar_t *rule = neo_js_vm_read_string(vm, program);
   const wchar_t *flag = neo_js_vm_read_string(vm, program);
-  neo_js_variable_t regexp = neo_js_context_get_regexp_constructor(vm->ctx);
+  neo_js_variable_t regexp = neo_js_context_get_std(vm->ctx).regexp_constructor;
   neo_js_variable_t argv[] = {
       neo_js_context_create_string(vm->ctx, rule),
       neo_js_context_create_string(vm->ctx, flag),
@@ -1344,7 +1344,7 @@ void neo_js_vm_yield(neo_js_vm_t vm, neo_program_t program) {
 void neo_js_vm_iterator(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_js_variable_t iterator = neo_js_context_get_field(
-      vm->ctx, neo_js_context_get_symbol_constructor(vm->ctx),
+      vm->ctx, neo_js_context_get_std(vm->ctx).symbol_constructor,
       neo_js_context_create_string(vm->ctx, L"iterator"));
   neo_js_variable_t it = neo_js_context_get_field(vm->ctx, value, iterator);
   if (neo_js_variable_get_type(it)->kind < NEO_JS_TYPE_CALLABLE) {
@@ -1366,7 +1366,7 @@ void neo_js_vm_iterator(neo_js_vm_t vm, neo_program_t program) {
 void neo_js_vm_async_iterator(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_js_variable_t iterator = neo_js_context_get_field(
-      vm->ctx, neo_js_context_get_symbol_constructor(vm->ctx),
+      vm->ctx, neo_js_context_get_std(vm->ctx).symbol_constructor,
       neo_js_context_create_string(vm->ctx, L"asyncIterator"));
   neo_js_variable_t it = neo_js_context_get_field(vm->ctx, value, iterator);
   if (neo_js_variable_get_type(it)->kind >= NEO_JS_TYPE_CALLABLE) {
@@ -2062,7 +2062,7 @@ void neo_js_vm_spread(neo_js_vm_t vm, neo_program_t program) {
       return;
     }
     neo_js_variable_t iterator = neo_js_context_get_field(
-        vm->ctx, neo_js_context_get_symbol_constructor(vm->ctx),
+        vm->ctx, neo_js_context_get_std(vm->ctx).symbol_constructor,
         neo_js_context_create_string(vm->ctx, L"iterator"));
     iterator = neo_js_context_get_field(vm->ctx, value, iterator);
     CHECK_AND_THROW(iterator, vm, program);

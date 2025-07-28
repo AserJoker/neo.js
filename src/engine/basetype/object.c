@@ -28,7 +28,7 @@ static const wchar_t *neo_js_object_typeof(neo_js_context_t ctx,
 static neo_js_variable_t neo_js_object_to_string(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
   neo_js_variable_t to_primitive = neo_js_context_get_field(
-      ctx, neo_js_context_get_symbol_constructor(ctx),
+      ctx, neo_js_context_get_std(ctx).symbol_constructor,
       neo_js_context_create_string(ctx, L"toPrimitive"));
   neo_js_variable_t primitive = NULL;
   if (neo_js_variable_get_type(to_primitive)->kind >= NEO_JS_TYPE_CFUNCTION) {
@@ -75,7 +75,7 @@ static neo_js_variable_t neo_js_object_to_boolean(neo_js_context_t ctx,
 static neo_js_variable_t neo_js_object_to_number(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
   neo_js_variable_t to_primitive = neo_js_context_get_field(
-      ctx, neo_js_context_get_symbol_constructor(ctx),
+      ctx, neo_js_context_get_std(ctx).symbol_constructor,
       neo_js_context_create_string(ctx, L"toPrimitive"));
   neo_js_variable_t primitive = NULL;
   if (neo_js_variable_get_type(to_primitive)->kind == NEO_JS_TYPE_CFUNCTION) {
@@ -119,7 +119,7 @@ static neo_js_variable_t neo_js_object_to_primitive(neo_js_context_t ctx,
                                                     neo_js_variable_t self,
                                                     const wchar_t *type) {
   neo_js_variable_t to_primitive = neo_js_context_get_field(
-      ctx, neo_js_context_get_symbol_constructor(ctx),
+      ctx, neo_js_context_get_std(ctx).symbol_constructor,
       neo_js_context_create_string(ctx, L"toPrimitive"));
   neo_js_variable_t primitive = NULL;
   if (neo_js_variable_get_type(to_primitive)->kind == NEO_JS_TYPE_CFUNCTION) {

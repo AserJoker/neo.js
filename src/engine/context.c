@@ -62,6 +62,7 @@
 #include "engine/std/generator.h"
 #include "engine/std/generator_function.h"
 #include "engine/std/internal_error.h"
+#include "engine/std/map.h"
 #include "engine/std/object.h"
 #include "engine/std/promise.h"
 #include "engine/std/range_error.h"
@@ -112,34 +113,7 @@ struct _neo_js_context_t {
   neo_hash_map_t features;
   neo_js_assert_fn_t assert_fn;
   neo_js_call_type_t call_type;
-  struct {
-    neo_js_variable_t global;
-    neo_js_variable_t object_constructor;
-    neo_js_variable_t function_constructor;
-    neo_js_variable_t async_function_constructor;
-    neo_js_variable_t number_constructor;
-    neo_js_variable_t boolean_constructor;
-    neo_js_variable_t string_constructor;
-    neo_js_variable_t symbol_constructor;
-    neo_js_variable_t date_constructor;
-    neo_js_variable_t array_constructor;
-    neo_js_variable_t bigint_constructor;
-    neo_js_variable_t regexp_constructor;
-    neo_js_variable_t iterator_constructor;
-    neo_js_variable_t array_iterator_constructor;
-    neo_js_variable_t generator_constructor;
-    neo_js_variable_t generator_function_constructor;
-    neo_js_variable_t async_generator_constructor;
-    neo_js_variable_t async_generator_function_constructor;
-    neo_js_variable_t promise_constructor;
-    neo_js_variable_t error_constructor;
-    neo_js_variable_t syntax_error_constructor;
-    neo_js_variable_t type_error_constructor;
-    neo_js_variable_t reference_error_constructor;
-    neo_js_variable_t internal_error_constructor;
-    neo_js_variable_t range_error_constructor;
-    neo_js_variable_t uri_error_constructor;
-  } std;
+  neo_js_std_t std;
 };
 
 static void neo_js_context_init_std_symbol(neo_js_context_t ctx) {
@@ -717,6 +691,74 @@ static void neo_js_context_init_std_async_generator(neo_js_context_t ctx) {
                            true, false, true);
 }
 
+static void neo_js_context_init_std_map(neo_js_context_t ctx) {
+  neo_js_variable_t group_by =
+      neo_js_context_create_cfunction(ctx, L"groupBy", neo_js_map_group_by);
+  neo_js_context_def_field(ctx, ctx->std.map_constructor,
+                           neo_js_context_create_string(ctx, L"groupBy"),
+                           group_by, true, false, true);
+
+  neo_js_variable_t species = neo_js_context_create_cfunction(
+      ctx, L"[Symbol.species]", neo_js_map_species);
+  neo_js_context_def_accessor(
+      ctx, ctx->std.map_constructor,
+      neo_js_context_get_field(ctx, ctx->std.symbol_constructor,
+                               neo_js_context_create_string(ctx, L"species")),
+      species, NULL, true, false);
+  neo_js_variable_t prototype =
+      neo_js_context_get_field(ctx, ctx->std.map_constructor,
+                               neo_js_context_create_string(ctx, L"prototype"));
+  neo_js_variable_t clear =
+      neo_js_context_create_cfunction(ctx, L"clear", neo_js_map_clear);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"clear"), clear,
+                           true, false, true);
+  neo_js_variable_t delete =
+      neo_js_context_create_cfunction(ctx, L"delete", neo_js_map_delete);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"delete"), delete,
+                           true, false, true);
+  neo_js_variable_t entries =
+      neo_js_context_create_cfunction(ctx, L"entries", neo_js_map_entries);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"entries"),
+                           entries, true, false, true);
+  neo_js_variable_t for_each =
+      neo_js_context_create_cfunction(ctx, L"forEach", neo_js_map_for_each);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"forEach"),
+                           for_each, true, false, true);
+  neo_js_variable_t get =
+      neo_js_context_create_cfunction(ctx, L"get", neo_js_map_get);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"get"), get, true,
+                           false, true);
+  neo_js_variable_t has =
+      neo_js_context_create_cfunction(ctx, L"has", neo_js_map_has);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"has"), has, true,
+                           false, true);
+  neo_js_variable_t keys =
+      neo_js_context_create_cfunction(ctx, L"keys", neo_js_map_keys);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"keys"), keys,
+                           true, false, true);
+  neo_js_variable_t set =
+      neo_js_context_create_cfunction(ctx, L"set", neo_js_map_set);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"set"), set, true,
+                           false, true);
+  neo_js_variable_t values =
+      neo_js_context_create_cfunction(ctx, L"values", neo_js_map_values);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"values"), values,
+                           true, false, true);
+  neo_js_context_def_field(
+      ctx, prototype,
+      neo_js_context_get_field(ctx, ctx->std.symbol_constructor,
+                               neo_js_context_create_string(ctx, L"iterator")),
+      entries, true, false, true);
+}
 static void neo_js_context_init_std_array_iterator(neo_js_context_t ctx) {
   neo_js_variable_t prototype =
       neo_js_context_get_field(ctx, ctx->std.array_iterator_constructor,
@@ -1316,6 +1358,9 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
   ctx->std.generator_constructor = neo_js_context_create_cfunction(
       ctx, L"Generator", neo_js_generator_constructor);
 
+  ctx->std.map_constructor =
+      neo_js_context_create_cfunction(ctx, L"Map", neo_js_map_constructor);
+
   ctx->std.promise_constructor = neo_js_context_create_cfunction(
       ctx, L"Promise", neo_js_promise_constructor);
 
@@ -1347,6 +1392,8 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
   neo_js_context_init_std_generator_function(ctx);
 
   neo_js_context_init_std_generator(ctx);
+
+  neo_js_context_init_std_map(ctx);
 
   neo_js_context_init_std_promise(ctx);
 
@@ -1427,6 +1474,10 @@ static void neo_js_context_init_std(neo_js_context_t ctx) {
   neo_js_context_def_field(ctx, ctx->std.global,
                            neo_js_context_create_string(ctx, L"Date"),
                            ctx->std.date_constructor, true, true, true);
+
+  neo_js_context_def_field(ctx, ctx->std.global,
+                           neo_js_context_create_string(ctx, L"Map"),
+                           ctx->std.map_constructor, true, true, true);
 
   neo_js_context_pop_scope(ctx);
 }
@@ -1799,6 +1850,8 @@ void neo_js_context_pop_stackframe(neo_js_context_t ctx) {
   frame->column = 0;
   neo_allocator_free(allocator, frame->filename);
 }
+
+neo_js_std_t neo_js_context_get_std(neo_js_context_t ctx) { return ctx->std; }
 
 neo_js_variable_t neo_js_context_get_error_constructor(neo_js_context_t ctx) {
   return ctx->std.error_constructor;

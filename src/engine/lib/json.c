@@ -16,7 +16,7 @@
 #include <string.h>
 #include <wchar.h>
 
-neo_js_variable_t
+static neo_js_variable_t
 neo_js_json_variable_stringify(neo_js_context_t ctx, neo_js_variable_t variable,
                                neo_js_variable_t replacer, const wchar_t *space,
                                neo_hash_map_t cache, size_t depth) {
@@ -262,16 +262,23 @@ neo_js_json_variable_stringify(neo_js_context_t ctx, neo_js_variable_t variable,
       ctx, NEO_JS_ERROR_INTERNAL, L"Cannot convert internal variable to json");
 }
 
-uint32_t neo_js_json_hash(neo_js_variable_t variable, uint32_t max,
-                          neo_js_context_t ctx) {
+static uint32_t neo_js_json_hash(neo_js_variable_t variable, uint32_t max,
+                                 neo_js_context_t ctx) {
   neo_js_value_t value = neo_js_variable_get_value(variable);
   return (intptr_t)value % max;
 }
 
-bool neo_js_json_compare(neo_js_variable_t a, neo_js_variable_t b,
-                         neo_js_context_t ctx) {
-
-  return neo_js_variable_get_value(a) - neo_js_variable_get_value(b);
+static int32_t neo_js_json_compare(neo_js_variable_t a, neo_js_variable_t b,
+                                  neo_js_context_t ctx) {
+  intptr_t addr_a = (intptr_t)neo_js_variable_get_value(a);
+  intptr_t addr_b = (intptr_t)neo_js_variable_get_value(b);
+  if (addr_a > addr_b) {
+    return 1;
+  } else if (addr_a == addr_b) {
+    return 0;
+  } else {
+    return -1;
+  }
 }
 
 NEO_JS_CFUNCTION(neo_js_json_stringify) {
@@ -358,7 +365,7 @@ void neo_js_json_skip_invisible(neo_position_t *position) {
   }
 }
 
-bool neo_js_json_read_number(neo_position_t *position) {
+static bool neo_js_json_read_number(neo_position_t *position) {
   neo_position_t current = *position;
   if (*current.offset == '-') {
     current.offset++;
@@ -400,7 +407,7 @@ bool neo_js_json_read_number(neo_position_t *position) {
   return true;
 }
 
-bool neo_js_json_read_string(neo_position_t *position) {
+static bool neo_js_json_read_string(neo_position_t *position) {
   neo_position_t current = *position;
   current.offset++;
   current.column++;
@@ -439,10 +446,10 @@ neo_js_variable_t neo_js_json_read_variable(neo_js_context_t ctx,
                                             neo_js_variable_t receiver,
                                             const wchar_t *file);
 
-neo_js_variable_t neo_js_json_read_array(neo_js_context_t ctx,
-                                         neo_position_t *posistion,
-                                         neo_js_variable_t receiver,
-                                         const wchar_t *file) {
+static neo_js_variable_t neo_js_json_read_array(neo_js_context_t ctx,
+                                                neo_position_t *posistion,
+                                                neo_js_variable_t receiver,
+                                                const wchar_t *file) {
   neo_position_t current = *posistion;
   current.offset++;
   current.line++;
@@ -492,10 +499,10 @@ neo_js_variable_t neo_js_json_read_array(neo_js_context_t ctx,
   return result;
 }
 
-neo_js_variable_t neo_js_json_read_object(neo_js_context_t ctx,
-                                          neo_position_t *posistion,
-                                          neo_js_variable_t receiver,
-                                          const wchar_t *file) {
+static neo_js_variable_t neo_js_json_read_object(neo_js_context_t ctx,
+                                                 neo_position_t *posistion,
+                                                 neo_js_variable_t receiver,
+                                                 const wchar_t *file) {
   neo_position_t current = *posistion;
   current.offset++;
   current.line++;

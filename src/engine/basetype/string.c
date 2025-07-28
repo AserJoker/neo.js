@@ -53,7 +53,7 @@ static neo_js_variable_t neo_js_string_to_primitive(neo_js_context_t ctx,
 static neo_js_variable_t neo_js_string_to_object(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
   return neo_js_context_construct(
-      ctx, neo_js_context_get_string_constructor(ctx), 1, &self);
+      ctx, neo_js_context_get_std(ctx).string_constructor, 1, &self);
 }
 
 static neo_js_variable_t neo_js_string_get_field(neo_js_context_t ctx,

@@ -59,7 +59,7 @@ static neo_js_variable_t neo_js_number_to_primitive(neo_js_context_t ctx,
 static neo_js_variable_t neo_js_number_to_object(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
   return neo_js_context_construct(
-      ctx, neo_js_context_get_number_constructor(ctx), 1, &self);
+      ctx, neo_js_context_get_std(ctx).number_constructor, 1, &self);
 }
 static neo_js_variable_t neo_js_number_get_field(neo_js_context_t ctx,
                                                  neo_js_variable_t self,
