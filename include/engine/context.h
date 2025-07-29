@@ -62,6 +62,7 @@ typedef struct _neo_js_std_t {
   neo_js_variable_t uri_error_constructor;
   neo_js_variable_t map_constructor;
   neo_js_variable_t set_constructor;
+  neo_js_variable_t math;
 } neo_js_std_t;
 
 neo_js_context_t neo_create_js_context(neo_allocator_t allocator,
