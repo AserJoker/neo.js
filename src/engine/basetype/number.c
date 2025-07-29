@@ -31,7 +31,9 @@ static neo_js_variable_t neo_js_number_to_string(neo_js_context_t ctx,
     }
   }
   wchar_t str[32];
-  if (number->number == (int64_t)(number->number)) {
+  if (number->number == -0.f) {
+    swprintf(str, 32, L"%lg", number->number);
+  } else if (number->number == (int64_t)(number->number)) {
     swprintf(str, 32, L"%lld", (int64_t)number->number);
   } else {
     swprintf(str, 32, L"%lg", number->number);

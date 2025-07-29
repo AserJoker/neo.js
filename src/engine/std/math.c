@@ -285,7 +285,7 @@ NEO_JS_CFUNCTION(neo_js_math_sign) {
   if (isnan(val)) {
     return neo_js_context_create_number(ctx, val);
   }
-  int8_t flag = 0;
+  double flag = 0;
   if (val > 0) {
     flag = 1;
   }
