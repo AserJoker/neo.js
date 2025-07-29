@@ -265,6 +265,7 @@ NEO_JS_CFUNCTION(neo_js_map_keys) {
 NEO_JS_CFUNCTION(neo_js_map_set) {
   neo_js_variable_t key = argv[0];
   neo_js_variable_t value = argv[1];
+  key = neo_js_context_clone(ctx, key);
   neo_js_handle_t hkey = neo_js_variable_get_handle(key);
   neo_js_handle_t hvalue = neo_js_variable_get_handle(value);
   neo_js_map_data data = neo_js_context_get_opaque(ctx, self, L"#map");
