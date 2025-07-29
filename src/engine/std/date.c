@@ -11,6 +11,10 @@
 #include <wchar.h>
 
 NEO_JS_CFUNCTION(neo_js_date_constructor) {
+  if (neo_js_context_get_call_type(ctx) != NEO_JS_CONSTRUCT_CALL) {
+    return neo_js_context_construct(
+        ctx, neo_js_context_get_std(ctx).date_constructor, 0, NULL);
+  }
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_time_t *time =
       neo_allocator_alloc(allocator, sizeof(struct _neo_time_t), NULL);
