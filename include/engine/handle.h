@@ -24,6 +24,11 @@ neo_list_t neo_js_handle_get_parents(neo_js_handle_t self);
 
 neo_list_t neo_js_handle_get_children(neo_js_handle_t self);
 
+bool neo_js_handle_check_alive(neo_allocator_t allocator,
+                               neo_js_handle_t handle);
+
+void neo_js_handle_gc(neo_allocator_t allocator, neo_js_handle_t root);
+
 #ifdef __cplusplus
 }
 #endif

@@ -6,10 +6,13 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+typedef void (*neo_on_dispose_fn_t)(void *ctx);
 struct _neo_js_value_t {
   neo_js_type_t type;
   neo_hash_map_t opaque;
   uint32_t ref;
+  neo_on_dispose_fn_t on_dispose;
+  void *dispos_ctx;
 };
 
 typedef struct _neo_js_value_t *neo_js_value_t;
