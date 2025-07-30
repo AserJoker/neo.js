@@ -68,6 +68,8 @@ add_executable(${PROJECT_NAME}c ${SOURCES} ${PROJECT_SOURCE_DIR}/cmd/main.c)
 
 if(UNIX)
     target_link_libraries(${PROJECT_NAME}c m)
+else()
+    add_definitions(-D_USE_MATH_DEFINES)
 endif()
 
 add_library(${PROJECT_NAME} ${SOURCES})

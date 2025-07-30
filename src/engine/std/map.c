@@ -81,7 +81,6 @@ NEO_JS_CFUNCTION(neo_js_map_group_by) {
   neo_js_variable_t callback = argv[1];
   neo_js_variable_t map = neo_js_context_construct(
       ctx, neo_js_context_get_std(ctx).map_constructor, 0, NULL);
-  neo_js_map_data data = neo_js_context_get_opaque(ctx, map, L"#map");
   neo_js_variable_t iterator = neo_js_context_get_field(
       ctx, neo_js_context_get_std(ctx).symbol_constructor,
       neo_js_context_create_string(ctx, L"iterator"));
