@@ -130,6 +130,7 @@ neo_create_js_async_cfunction(neo_allocator_t allocator,
   cfunction->callable.bind = NULL;
   cfunction->callable.clazz = NULL;
   cfunction->callable.name = NULL;
+  cfunction->callable.is_class = false;
   cfunction->callee = callee;
   return cfunction;
 }

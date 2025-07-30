@@ -133,6 +133,7 @@ neo_js_function_t neo_create_js_function(neo_allocator_t allocator,
   func->source = NULL;
   func->is_async = false;
   func->is_generator = false;
+  func->callable.is_class = false;
   return func;
 }
 

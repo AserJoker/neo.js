@@ -795,7 +795,7 @@ static void neo_js_context_init_std_math(neo_js_context_t ctx) {
   neo_js_context_set_field(ctx, ctx->std.math,
                            neo_js_context_create_string(ctx, L"SQRT2"),
                            neo_js_context_create_number(ctx, M_SQRT2));
-                           
+
   neo_js_context_def_field(
       ctx, math, neo_js_context_create_string(ctx, L"abs"),
       neo_js_context_create_cfunction(ctx, L"abs", neo_js_math_abs), true,
@@ -3350,6 +3350,12 @@ neo_js_variable_t neo_js_context_call(neo_js_context_t ctx,
                                       neo_js_variable_t callee,
                                       neo_js_variable_t self, uint32_t argc,
                                       neo_js_variable_t *argv) {
+  neo_js_callable_t callable = neo_js_variable_to_callable(callee);
+  if (callable && callable->is_class) {
+    return neo_js_context_create_simple_error(
+        ctx, NEO_JS_ERROR_TYPE,
+        L"Class constructor cannot be invoked without 'new'");
+  }
   neo_js_call_type_t current = ctx->call_type;
   ctx->call_type = NEO_JS_FUNCTION_CALL;
   neo_js_variable_t result =
@@ -3382,7 +3388,19 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
                                            neo_js_variable_t *argv) {
   if (neo_js_variable_get_type(constructor)->kind < NEO_JS_TYPE_CALLABLE) {
     return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
-                                              L"Constructor is not a function");
+                                              L"variable is not a constructor");
+  }
+  if (neo_js_variable_get_type(constructor)->kind ==
+      NEO_JS_TYPE_ASYNC_CFUNCTION) {
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+                                              L"variable is not a constructor");
+  }
+  if (neo_js_variable_get_type(constructor)->kind == NEO_JS_TYPE_FUNCTION) {
+    neo_js_function_t fn = neo_js_variable_to_function(constructor);
+    if (fn->is_async || fn->is_generator) {
+      return neo_js_context_create_simple_error(
+          ctx, NEO_JS_ERROR_TYPE, L"variable is not a constructor");
+    }
   }
   neo_js_call_type_t current_call_type = ctx->call_type;
   ctx->call_type = NEO_JS_CONSTRUCT_CALL;

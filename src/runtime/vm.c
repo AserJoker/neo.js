@@ -403,6 +403,8 @@ void neo_js_vm_push_function(neo_js_vm_t vm, neo_program_t program) {
 void neo_js_vm_push_class(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t clazz = neo_js_context_create_function(vm->ctx, program);
   neo_list_push(vm->stack, clazz);
+  neo_js_callable_t callable = neo_js_variable_to_callable(clazz);
+  callable->is_class = true;
   neo_js_callable_set_class(vm->ctx, clazz, clazz);
 }
 void neo_js_vm_push_async_function(neo_js_vm_t vm, neo_program_t program) {
