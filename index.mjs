@@ -1,2 +1,3 @@
 'use strict'
-console.log(Math.sign(-0))
+const num = new Number(12);
+console.log(num.toExponential(2))

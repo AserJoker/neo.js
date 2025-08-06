@@ -32,11 +32,11 @@ static neo_js_variable_t neo_js_number_to_string(neo_js_context_t ctx,
   }
   wchar_t str[32];
   if (number->number == -0.f) {
-    swprintf(str, 32, L"%lg", number->number);
+    swprintf(str, 32, L"%.20lg", number->number);
   } else if (number->number == (int64_t)(number->number)) {
     swprintf(str, 32, L"%lld", (int64_t)number->number);
   } else {
-    swprintf(str, 32, L"%lg", number->number);
+    swprintf(str, 32, L"%.20lg", number->number);
   }
   neo_js_string_t string = neo_create_js_string(allocator, str);
   return neo_js_context_create_variable(
