@@ -247,6 +247,124 @@ static void neo_js_context_init_std_object(neo_js_context_t ctx) {
       neo_js_context_create_cfunction(ctx, L"create", neo_js_object_create),
       true, false, true);
 
+  neo_js_context_def_field(
+      ctx, ctx->std.object_constructor,
+      neo_js_context_create_string(ctx, L"assign"),
+      neo_js_context_create_cfunction(ctx, L"assign", neo_js_object_assign),
+      true, false, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.object_constructor,
+      neo_js_context_create_string(ctx, L"defineProperties"),
+      neo_js_context_create_cfunction(ctx, L"defineProperties",
+                                      neo_js_object_define_properties),
+      true, false, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.object_constructor,
+      neo_js_context_create_string(ctx, L"defineProperty"),
+      neo_js_context_create_cfunction(ctx, L"defineProperty",
+                                      neo_js_object_define_property),
+      true, false, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.object_constructor,
+      neo_js_context_create_string(ctx, L"entries"),
+      neo_js_context_create_cfunction(ctx, L"entries", neo_js_object_entries),
+      true, false, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.object_constructor,
+      neo_js_context_create_string(ctx, L"freeze"),
+      neo_js_context_create_cfunction(ctx, L"freeze", neo_js_object_freeze),
+      true, false, true);
+  neo_js_context_def_field(ctx, ctx->std.object_constructor,
+                           neo_js_context_create_string(ctx, L"fromEntries"),
+                           neo_js_context_create_cfunction(
+                               ctx, L"fromEntries", neo_js_object_from_entries),
+                           true, false, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.object_constructor,
+      neo_js_context_create_string(ctx, L"getOwnPropertyDescriptor"),
+      neo_js_context_create_cfunction(
+          ctx, L"getOwnPropertyDescriptor",
+          neo_js_object_get_own_property_descriptor),
+      true, false, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.object_constructor,
+      neo_js_context_create_string(ctx, L"getOwnPropertyDescriptors"),
+      neo_js_context_create_cfunction(
+          ctx, L"getOwnPropertyDescriptors",
+          neo_js_object_get_own_property_descriptors),
+      true, false, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.object_constructor,
+      neo_js_context_create_string(ctx, L"getOwnPropertyNames"),
+      neo_js_context_create_cfunction(ctx, L"getOwnPropertyNames",
+                                      neo_js_object_get_own_property_names),
+      true, false, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.object_constructor,
+      neo_js_context_create_string(ctx, L"getOwnPropertySymbols"),
+      neo_js_context_create_cfunction(ctx, L"getOwnPropertySymbols",
+                                      neo_js_object_get_own_property_symbols),
+      true, false, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.object_constructor,
+      neo_js_context_create_string(ctx, L"getPrototypeOf"),
+      neo_js_context_create_cfunction(ctx, L"getPrototypeOf",
+                                      neo_js_object_get_prototype_of),
+      true, false, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.object_constructor,
+      neo_js_context_create_string(ctx, L"groupBy"),
+      neo_js_context_create_cfunction(ctx, L"groupBy", neo_js_object_group_by),
+      true, false, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.object_constructor,
+      neo_js_context_create_string(ctx, L"hasOwn"),
+      neo_js_context_create_cfunction(ctx, L"hasOwn", neo_js_object_has_own),
+      true, false, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.object_constructor,
+      neo_js_context_create_string(ctx, L"is"),
+      neo_js_context_create_cfunction(ctx, L"is", neo_js_object_is), true,
+      false, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.object_constructor,
+      neo_js_context_create_string(ctx, L"isExtensible"),
+      neo_js_context_create_cfunction(ctx, L"isExtensible",
+                                      neo_js_object_is_extensible),
+      true, false, true);
+  neo_js_context_def_field(ctx, ctx->std.object_constructor,
+                           neo_js_context_create_string(ctx, L"isFrozen"),
+                           neo_js_context_create_cfunction(
+                               ctx, L"isFrozen", neo_js_object_is_frozen),
+                           true, false, true);
+  neo_js_context_def_field(ctx, ctx->std.object_constructor,
+                           neo_js_context_create_string(ctx, L"isSealed"),
+                           neo_js_context_create_cfunction(
+                               ctx, L"isSealed", neo_js_object_is_sealed),
+                           true, false, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.object_constructor,
+      neo_js_context_create_string(ctx, L"preventExtensions"),
+      neo_js_context_create_cfunction(ctx, L"preventExtensions",
+                                      neo_js_object_prevent_extensions),
+      true, false, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.object_constructor,
+      neo_js_context_create_string(ctx, L"seal"),
+      neo_js_context_create_cfunction(ctx, L"seal", neo_js_object_seal), true,
+      false, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.object_constructor,
+      neo_js_context_create_string(ctx, L"setPrototypeOf"),
+      neo_js_context_create_cfunction(ctx, L"setPrototypeOf",
+                                      neo_js_object_set_prototype_of),
+      true, false, true);
+  neo_js_context_def_field(
+      ctx, ctx->std.object_constructor,
+      neo_js_context_create_string(ctx, L"values"),
+      neo_js_context_create_cfunction(ctx, L"values", neo_js_object_values),
+      true, false, true);
+
   neo_js_variable_t prototype =
       neo_js_context_get_field(ctx, ctx->std.object_constructor,
                                neo_js_context_create_string(ctx, L"prototype"));

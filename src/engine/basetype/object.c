@@ -690,6 +690,10 @@ neo_js_variable_t neo_js_object_set_prototype(neo_js_context_t ctx,
                                               L"variable is not a object");
   }
   neo_js_object_t obj = neo_js_variable_to_object(self);
+  if (obj->sealed || obj->frozen || !obj->extensible) {
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+                                              L"#<Object> is not extensible");
+  }
   neo_js_handle_add_parent(obj->prototype, neo_js_scope_get_root_handle(
                                                neo_js_context_get_scope(ctx)));
   neo_js_handle_remove_parent(obj->prototype, neo_js_variable_get_handle(self));
