@@ -1078,7 +1078,8 @@ static void neo_js_context_init_std_number(neo_js_context_t ctx) {
   neo_js_context_def_field(ctx, ctx->std.number_constructor,
                            neo_js_context_create_string(ctx, L"isSafeInteger"),
                            is_safe_integer, true, false, true);
-  neo_js_variable_t epsilon = neo_js_context_create_number(ctx, pow(2, -52));
+  neo_js_variable_t epsilon =
+      neo_js_context_create_number(ctx, 2.220446049250313e-16);
   neo_js_context_def_field(ctx, ctx->std.number_constructor,
                            neo_js_context_create_string(ctx, L"EPSILON"),
                            epsilon, false, false, false);
@@ -1088,8 +1089,7 @@ static void neo_js_context_init_std_number(neo_js_context_t ctx) {
       ctx, ctx->std.number_constructor,
       neo_js_context_create_string(ctx, L"MAX_SAFE_INTEGER"), max_safe_integer,
       false, false, false);
-  neo_js_variable_t max_value =
-      neo_js_context_create_number(ctx, pow(2, 1024) - 1);
+  neo_js_variable_t max_value = neo_js_context_create_number(ctx, 2e52 - 1);
   neo_js_context_def_field(ctx, ctx->std.number_constructor,
                            neo_js_context_create_string(ctx, L"MAX_VALUE"),
                            max_value, false, false, false);
@@ -1100,8 +1100,7 @@ static void neo_js_context_init_std_number(neo_js_context_t ctx) {
       neo_js_context_create_string(ctx, L"MIN_SAFE_INTEGER"), min_safe_integer,
       false, false, false);
 
-  neo_js_variable_t min_value =
-      neo_js_context_create_number(ctx, pow(2, -1074));
+  neo_js_variable_t min_value = neo_js_context_create_number(ctx, 5E-324);
   neo_js_context_def_field(ctx, ctx->std.number_constructor,
                            neo_js_context_create_string(ctx, L"MIN_VALUE"),
                            min_value, false, false, false);
