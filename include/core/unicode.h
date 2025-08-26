@@ -35,6 +35,9 @@ bool neo_utf8_char_is_id_continue(neo_utf8_char chr);
 
 bool neo_utf8_char_is_space_separator(neo_utf8_char chr);
 
+#define NEO_IS_SPACE(ch)                                                       \
+  ((ch) == 0xfeff || (ch) == 0x9 || (ch) == 0xb || (ch) == 0xc)
+
 #ifdef __cplusplus
 };
 #endif

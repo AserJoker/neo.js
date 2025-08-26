@@ -3,6 +3,7 @@
 #include "core/hash.h"
 #include "core/hash_map.h"
 #include "core/string.h"
+#include "engine/basetype/callable.h"
 #include "engine/basetype/object.h"
 #include "engine/basetype/string.h"
 #include "engine/context.h"
@@ -16,7 +17,8 @@ static const wchar_t *neo_js_function_typeof() { return L"function"; }
 
 static neo_js_variable_t neo_js_function_get_field(neo_js_context_t ctx,
                                                    neo_js_variable_t self,
-                                                   neo_js_variable_t field) {
+                                                   neo_js_variable_t field,
+                                                   neo_js_variable_t receiver) {
   neo_js_type_t otype = neo_get_js_object_type();
   if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_STRING) {
     neo_js_string_t string =
@@ -31,13 +33,14 @@ static neo_js_variable_t neo_js_function_get_field(neo_js_context_t ctx,
       }
     }
   }
-  return otype->get_field_fn(ctx, self, field);
+  return otype->get_field_fn(ctx, self, field, receiver);
 }
 
 static neo_js_variable_t neo_js_function_set_field(neo_js_context_t ctx,
                                                    neo_js_variable_t self,
                                                    neo_js_variable_t field,
-                                                   neo_js_variable_t value) {
+                                                   neo_js_variable_t value,
+                                                   neo_js_variable_t receiver) {
   neo_js_type_t otype = neo_get_js_object_type();
   if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_STRING) {
     neo_js_string_t string =
@@ -46,7 +49,7 @@ static neo_js_variable_t neo_js_function_set_field(neo_js_context_t ctx,
       return neo_js_context_create_undefined(ctx);
     }
   }
-  return otype->set_field_fn(ctx, self, field, value);
+  return otype->set_field_fn(ctx, self, field, value, receiver);
 }
 
 static neo_js_variable_t neo_js_function_del_field(neo_js_context_t ctx,
@@ -85,6 +88,7 @@ static void neo_js_cfunction_copy_fn(neo_js_context_t ctx,
        it != neo_hash_map_get_tail(func->callable.closure);
        it = neo_hash_map_node_next(it)) {
     neo_js_handle_t hvalue = neo_hash_map_node_get_value(it);
+    const wchar_t *key = neo_hash_map_node_get_key(it);
     neo_js_handle_add_parent(hvalue, htarget);
   }
 }

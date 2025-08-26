@@ -44,9 +44,10 @@ static neo_js_variable_t neo_js_undefined_to_object(neo_js_context_t ctx,
   return neo_js_context_create_object(ctx, NULL);
 }
 
-static neo_js_variable_t neo_js_undefined_get_field(neo_js_context_t ctx,
-                                                    neo_js_variable_t self,
-                                                    neo_js_variable_t field) {
+static neo_js_variable_t
+neo_js_undefined_get_field(neo_js_context_t ctx, neo_js_variable_t self,
+                           neo_js_variable_t field,
+                           neo_js_variable_t receiver) {
   neo_allocator_t allocator =
       neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
   const wchar_t *field_name = NULL;
@@ -77,10 +78,10 @@ static neo_js_variable_t neo_js_undefined_get_field(neo_js_context_t ctx,
   neo_allocator_free(allocator, message);
   return error;
 }
-static neo_js_variable_t neo_js_undefined_set_field(neo_js_context_t ctx,
-                                                    neo_js_variable_t self,
-                                                    neo_js_variable_t field,
-                                                    neo_js_variable_t value) {
+static neo_js_variable_t
+neo_js_undefined_set_field(neo_js_context_t ctx, neo_js_variable_t self,
+                           neo_js_variable_t field, neo_js_variable_t value,
+                           neo_js_variable_t receiver) {
   neo_allocator_t allocator =
       neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
   const wchar_t *field_name = NULL;

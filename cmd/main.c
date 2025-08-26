@@ -9,6 +9,19 @@
 #include <locale.h>
 #include <stdbool.h>
 #include <stddef.h>
+NEO_JS_CFUNCTION(js_on_fulfilled) {
+  neo_js_variable_t result = argv[0];
+  result = neo_js_context_to_string(ctx, result);
+  fprintf(stderr, "%ls\n", neo_js_variable_to_string(result)->string);
+  return neo_js_context_create_undefined(ctx);
+}
+NEO_JS_CFUNCTION(js_on_rejected) {
+  neo_js_variable_t result = argv[0];
+  result = neo_js_context_to_string(ctx, result);
+  fprintf(stderr, "Uncaught error: %ls\n",
+          neo_js_variable_to_string(result)->string);
+  return neo_js_context_create_undefined(ctx);
+}
 
 int main(int argc, char *argv[]) {
   setlocale(LC_ALL, "");
@@ -29,9 +42,19 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "Uncaught %ls\n",
               neo_js_variable_to_string(result)->string);
     } else {
-      result = neo_js_context_to_string(ctx, result);
-      fprintf(stderr, "%ls\n",
-              neo_js_variable_to_string(result)->string);
+      if (neo_js_context_is_thenable(ctx, result)) {
+        neo_js_variable_t on_fullfilled =
+            neo_js_context_create_cfunction(ctx, NULL, js_on_fulfilled);
+        neo_js_variable_t on_rejected =
+            neo_js_context_create_cfunction(ctx, NULL, js_on_rejected);
+        neo_js_variable_t then = neo_js_context_get_field(
+            ctx, result, neo_js_context_create_string(ctx, L"then"), NULL);
+        neo_js_variable_t args[] = {on_fullfilled, on_rejected};
+        neo_js_context_call(ctx, then, result, 2, args);
+      } else {
+        result = neo_js_context_to_string(ctx, result);
+        fprintf(stderr, "%ls\n", neo_js_variable_to_string(result)->string);
+      }
       while (!neo_js_context_is_ready(ctx)) {
         neo_js_context_next_tick(ctx);
       }

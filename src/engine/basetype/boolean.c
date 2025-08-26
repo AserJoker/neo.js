@@ -47,24 +47,27 @@ static neo_js_variable_t neo_js_boolean_to_primitive(neo_js_context_t ctx,
 
 static neo_js_variable_t neo_js_boolean_to_object(neo_js_context_t ctx,
                                                   neo_js_variable_t self) {
-  neo_js_variable_t constructor = neo_js_context_get_std(ctx).boolean_constructor;
+  neo_js_variable_t constructor =
+      neo_js_context_get_std(ctx).boolean_constructor;
   neo_js_variable_t argv[] = {self};
   return neo_js_context_construct(ctx, constructor, 1, argv);
 }
 
 static neo_js_variable_t neo_js_boolean_get_field(neo_js_context_t ctx,
                                                   neo_js_variable_t object,
-                                                  neo_js_variable_t field) {
+                                                  neo_js_variable_t field,
+                                                  neo_js_variable_t receiver) {
   return neo_js_context_get_field(ctx, neo_js_context_to_object(ctx, object),
-                                  field);
+                                  field, receiver);
 }
 
 static neo_js_variable_t neo_js_boolean_set_field(neo_js_context_t ctx,
                                                   neo_js_variable_t object,
                                                   neo_js_variable_t field,
-                                                  neo_js_variable_t value) {
+                                                  neo_js_variable_t value,
+                                                  neo_js_variable_t receiver) {
   return neo_js_context_set_field(ctx, neo_js_context_to_object(ctx, object),
-                                  field, value);
+                                  field, value, receiver);
 }
 
 static neo_js_variable_t neo_js_boolean_del_field(neo_js_context_t ctx,

@@ -1,6 +1,7 @@
 #include "core/hash_map.h"
 #include "core/allocator.h"
 #include "core/common.h"
+#define NEO_HASH_MAP_BUCKET_SIZE 32
 
 struct _neo_hash_map_node_t {
   neo_hash_map_node_t next;
@@ -71,14 +72,14 @@ neo_hash_map_t neo_create_hash_map(neo_allocator_t allocator,
     hmap->max_bucket = initialize->max_bucket;
     hmap->compare = initialize->compare;
   } else {
-    hmap->max_bucket = 16;
+    hmap->max_bucket = NEO_HASH_MAP_BUCKET_SIZE;
     hmap->auto_free_key = false;
     hmap->auto_free_value = false;
     hmap->hash = NULL;
     hmap->compare = NULL;
   }
   if (hmap->max_bucket == 0) {
-    hmap->max_bucket = 16;
+    hmap->max_bucket = NEO_HASH_MAP_BUCKET_SIZE;
   }
   hmap->buckets = neo_allocator_alloc(
       allocator, hmap->max_bucket * sizeof(neo_hash_map_entry_t), NULL);

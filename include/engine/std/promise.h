@@ -5,38 +5,19 @@
 extern "C" {
 #endif
 
-neo_js_variable_t neo_js_promise_resolve(neo_js_context_t ctx,
-                                         neo_js_variable_t self, uint32_t argc,
-                                         neo_js_variable_t *argv);
-
-neo_js_variable_t neo_js_promise_reject(neo_js_context_t ctx,
-                                        neo_js_variable_t self, uint32_t argc,
-                                        neo_js_variable_t *argv);
-
-neo_js_variable_t neo_js_promise_all(neo_js_context_t ctx,
-                                     neo_js_variable_t self, uint32_t argc,
-                                     neo_js_variable_t *argv);
-
-neo_js_variable_t neo_js_promise_race(neo_js_context_t ctx,
-                                      neo_js_variable_t self, uint32_t argc,
-                                      neo_js_variable_t *argv);
-
-neo_js_variable_t neo_js_promise_constructor(neo_js_context_t ctx,
-                                             neo_js_variable_t self,
-                                             uint32_t argc,
-                                             neo_js_variable_t *argv);
-
-neo_js_variable_t neo_js_promise_then(neo_js_context_t ctx,
-                                      neo_js_variable_t self, uint32_t argc,
-                                      neo_js_variable_t *argv);
-
-neo_js_variable_t neo_js_promise_catch(neo_js_context_t ctx,
-                                       neo_js_variable_t self, uint32_t argc,
-                                       neo_js_variable_t *argv);
-
-neo_js_variable_t neo_js_promise_finally(neo_js_context_t ctx,
-                                         neo_js_variable_t self, uint32_t argc,
-                                         neo_js_variable_t *argv);
+NEO_JS_CFUNCTION(neo_js_promise_all);
+NEO_JS_CFUNCTION(neo_js_promise_all_settled);
+NEO_JS_CFUNCTION(neo_js_promise_any);
+NEO_JS_CFUNCTION(neo_js_promise_race);
+NEO_JS_CFUNCTION(neo_js_promise_resolve);
+NEO_JS_CFUNCTION(neo_js_promise_reject);
+NEO_JS_CFUNCTION(neo_js_promise_try);
+NEO_JS_CFUNCTION(neo_js_promise_with_resolvers);
+NEO_JS_CFUNCTION(neo_js_promise_species);
+NEO_JS_CFUNCTION(neo_js_promise_constructor);
+NEO_JS_CFUNCTION(neo_js_promise_then);
+NEO_JS_CFUNCTION(neo_js_promise_catch);
+NEO_JS_CFUNCTION(neo_js_promise_finally);
 
 #ifdef __cplusplus
 }

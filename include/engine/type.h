@@ -45,7 +45,8 @@ typedef neo_js_variable_t (*neo_js_to_primitive_fn_t)(neo_js_context_t ctx,
 
 typedef neo_js_variable_t (*neo_js_get_field_fn_t)(neo_js_context_t ctx,
                                                    neo_js_variable_t object,
-                                                   neo_js_variable_t field);
+                                                   neo_js_variable_t field,
+                                                   neo_js_variable_t receiver);
 
 typedef neo_js_variable_t (*neo_js_del_field_fn_t)(neo_js_context_t ctx,
                                                    neo_js_variable_t object,
@@ -54,7 +55,8 @@ typedef neo_js_variable_t (*neo_js_del_field_fn_t)(neo_js_context_t ctx,
 typedef neo_js_variable_t (*neo_js_set_field_fn_t)(neo_js_context_t ctx,
                                                    neo_js_variable_t object,
                                                    neo_js_variable_t field,
-                                                   neo_js_variable_t value);
+                                                   neo_js_variable_t value,
+                                                   neo_js_variable_t receiver);
 
 typedef bool (*neo_js_is_equal_fn_t)(neo_js_context_t ctx,
                                      neo_js_variable_t self,

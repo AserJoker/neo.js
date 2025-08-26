@@ -16,7 +16,8 @@ static const wchar_t *neo_js_function_typeof(neo_js_context_t ctx,
 
 static neo_js_variable_t neo_js_function_get_field(neo_js_context_t ctx,
                                                    neo_js_variable_t self,
-                                                   neo_js_variable_t field) {
+                                                   neo_js_variable_t field,
+                                                   neo_js_variable_t receiver) {
   neo_js_type_t otype = neo_get_js_object_type();
   if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_STRING) {
     neo_js_string_t string =
@@ -31,13 +32,14 @@ static neo_js_variable_t neo_js_function_get_field(neo_js_context_t ctx,
       }
     }
   }
-  return otype->get_field_fn(ctx, self, field);
+  return otype->get_field_fn(ctx, self, field, receiver);
 }
 
 static neo_js_variable_t neo_js_function_set_field(neo_js_context_t ctx,
                                                    neo_js_variable_t self,
                                                    neo_js_variable_t field,
-                                                   neo_js_variable_t value) {
+                                                   neo_js_variable_t value,
+                                                   neo_js_variable_t receiver) {
   neo_js_type_t otype = neo_get_js_object_type();
   if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_STRING) {
     neo_js_string_t string =
@@ -46,7 +48,7 @@ static neo_js_variable_t neo_js_function_set_field(neo_js_context_t ctx,
       return neo_js_context_create_undefined(ctx);
     }
   }
-  return otype->set_field_fn(ctx, self, field, value);
+  return otype->set_field_fn(ctx, self, field, value, receiver);
 }
 
 static neo_js_variable_t neo_js_function_del_field(neo_js_context_t ctx,

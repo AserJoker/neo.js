@@ -64,6 +64,8 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 
 file(GLOB_RECURSE SOURCES ${PROJECT_SOURCE_DIR}/src/*.c)
 
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pg")
+
 add_executable(${PROJECT_NAME}c ${SOURCES} ${PROJECT_SOURCE_DIR}/cmd/main.c)
 
 if(UNIX)

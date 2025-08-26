@@ -48,25 +48,28 @@ static neo_js_variable_t neo_js_bigint_to_object(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
   neo_js_variable_t bigint = neo_js_context_get_std(ctx).bigint_constructor;
   neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, bigint, neo_js_context_create_string(ctx, L"prototype"));
+      ctx, bigint, neo_js_context_create_string(ctx, L"prototype"), NULL);
   neo_js_variable_t result = neo_js_context_create_object(ctx, prototype);
-  neo_js_context_set_field(
-      ctx, result, neo_js_context_create_string(ctx, L"constructor"), bigint);
+  neo_js_context_set_field(ctx, result,
+                           neo_js_context_create_string(ctx, L"constructor"),
+                           bigint, NULL);
   neo_js_context_set_internal(ctx, result, L"[[primitive]]", self);
   return result;
 }
 static neo_js_variable_t neo_js_bigint_get_field(neo_js_context_t ctx,
                                                  neo_js_variable_t self,
-                                                 neo_js_variable_t field) {
+                                                 neo_js_variable_t field,
+                                                 neo_js_variable_t receiver) {
   return neo_js_context_get_field(ctx, neo_js_bigint_to_object(ctx, self),
-                                  field);
+                                  field, receiver);
 }
 static neo_js_variable_t neo_js_bigint_set_field(neo_js_context_t ctx,
                                                  neo_js_variable_t self,
                                                  neo_js_variable_t field,
-                                                 neo_js_variable_t value) {
+                                                 neo_js_variable_t value,
+                                                 neo_js_variable_t receiver) {
   return neo_js_context_set_field(ctx, neo_js_bigint_to_object(ctx, self),
-                                  field, value);
+                                  field, value, receiver);
 }
 
 static neo_js_variable_t neo_js_bigint_del_field(neo_js_context_t ctx,

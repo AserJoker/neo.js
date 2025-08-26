@@ -83,38 +83,38 @@ NEO_JS_CFUNCTION(neo_js_map_group_by) {
       ctx, neo_js_context_get_std(ctx).map_constructor, 0, NULL);
   neo_js_variable_t iterator = neo_js_context_get_field(
       ctx, neo_js_context_get_std(ctx).symbol_constructor,
-      neo_js_context_create_string(ctx, L"iterator"));
-  iterator = neo_js_context_get_field(ctx, inventory, iterator);
+      neo_js_context_create_string(ctx, L"iterator"), NULL);
+  iterator = neo_js_context_get_field(ctx, inventory, iterator, NULL);
   NEO_JS_TRY_AND_THROW(iterator);
   if (neo_js_variable_get_type(iterator)->kind < NEO_JS_TYPE_CALLABLE) {
     return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
-                                              L"variable is not iteratorable");
+                                              L"variable is not iterable");
   }
   neo_js_variable_t generator =
       neo_js_context_call(ctx, iterator, inventory, 0, NULL);
   NEO_JS_TRY_AND_THROW(generator);
   if (neo_js_variable_get_type(iterator)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
-                                              L"variable is not iteratorable");
+                                              L"variable is not iterable");
   }
   neo_js_variable_t next = neo_js_context_get_field(
-      ctx, generator, neo_js_context_create_string(ctx, L"next"));
+      ctx, generator, neo_js_context_create_string(ctx, L"next"), NULL);
   NEO_JS_TRY_AND_THROW(next);
   if (neo_js_variable_get_type(next)->kind < NEO_JS_TYPE_CALLABLE) {
     return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
-                                              L"variable is not iteratorable");
+                                              L"variable is not iterable");
   }
   neo_js_variable_t res = neo_js_context_call(ctx, next, generator, 0, NULL);
   NEO_JS_TRY_AND_THROW(res);
   if (neo_js_variable_get_type(res)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
-                                              L"variable is not iteratorable");
+                                              L"variable is not iterable");
   }
   neo_js_variable_t value = neo_js_context_get_field(
-      ctx, res, neo_js_context_create_string(ctx, L"value"));
+      ctx, res, neo_js_context_create_string(ctx, L"value"), NULL);
   NEO_JS_TRY_AND_THROW(value);
   neo_js_variable_t done = neo_js_context_get_field(
-      ctx, res, neo_js_context_create_string(ctx, L"done"));
+      ctx, res, neo_js_context_create_string(ctx, L"done"), NULL);
   NEO_JS_TRY_AND_THROW(done);
   done = neo_js_context_to_boolean(ctx, done);
   NEO_JS_TRY_AND_THROW(done);
@@ -131,20 +131,20 @@ NEO_JS_CFUNCTION(neo_js_map_group_by) {
       neo_js_map_set(ctx, map, 2, argv);
     }
     neo_js_variable_t len = neo_js_context_get_field(
-        ctx, item, neo_js_context_create_string(ctx, L"length"));
-    neo_js_context_set_field(ctx, item, len, value);
+        ctx, item, neo_js_context_create_string(ctx, L"length"), NULL);
+    neo_js_context_set_field(ctx, item, len, value, NULL);
 
     res = neo_js_context_call(ctx, next, generator, 0, NULL);
     NEO_JS_TRY_AND_THROW(res);
     if (neo_js_variable_get_type(res)->kind < NEO_JS_TYPE_OBJECT) {
-      return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE, L"variable is not iteratorable");
+      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+                                                L"variable is not iterable");
     }
     value = neo_js_context_get_field(
-        ctx, res, neo_js_context_create_string(ctx, L"value"));
+        ctx, res, neo_js_context_create_string(ctx, L"value"), NULL);
     NEO_JS_TRY_AND_THROW(value);
-    done = neo_js_context_get_field(ctx, res,
-                                    neo_js_context_create_string(ctx, L"done"));
+    done = neo_js_context_get_field(
+        ctx, res, neo_js_context_create_string(ctx, L"done"), NULL);
     NEO_JS_TRY_AND_THROW(done);
     done = neo_js_context_to_boolean(ctx, done);
     NEO_JS_TRY_AND_THROW(done);
@@ -158,14 +158,14 @@ NEO_JS_CFUNCTION(neo_js_map_constructor) {
   neo_js_context_set_opaque(ctx, self, L"#map", data);
   neo_js_context_set_field(ctx, self,
                            neo_js_context_create_string(ctx, L"size"),
-                           neo_js_context_create_number(ctx, 0));
+                           neo_js_context_create_number(ctx, 0), NULL);
   return self;
 }
 NEO_JS_CFUNCTION(neo_js_map_clear) {
   neo_js_map_data data = neo_js_context_get_opaque(ctx, self, L"#map");
   neo_js_context_set_field(ctx, self,
                            neo_js_context_create_string(ctx, L"size"),
-                           neo_js_context_create_number(ctx, 0));
+                           neo_js_context_create_number(ctx, 0), NULL);
   neo_list_clear(data->keys);
   neo_hash_map_clear(data->data);
   return neo_js_context_create_undefined(ctx);
@@ -186,7 +186,7 @@ NEO_JS_CFUNCTION(neo_js_map_delete) {
     neo_list_push(data->keys, hkey);
     neo_js_context_set_field(
         ctx, self, neo_js_context_create_string(ctx, L"size"),
-        neo_js_context_create_number(ctx, neo_list_get_size(data->keys)));
+        neo_js_context_create_number(ctx, neo_list_get_size(data->keys)), NULL);
     return neo_js_context_create_boolean(ctx, true);
   }
   return neo_js_context_create_boolean(ctx, false);
@@ -203,11 +203,11 @@ NEO_JS_CFUNCTION(neo_js_map_entries) {
     neo_js_handle_t hvalue = neo_hash_map_get(data->data, hkey, ctx, ctx);
     neo_js_variable_t value = neo_js_context_create_variable(ctx, hvalue, NULL);
     neo_js_context_set_field(ctx, item, neo_js_context_create_number(ctx, 0),
-                             key);
+                             key, NULL);
     neo_js_context_set_field(ctx, item, neo_js_context_create_number(ctx, 1),
-                             value);
+                             value, NULL);
     neo_js_context_set_field(ctx, array, neo_js_context_create_number(ctx, idx),
-                             item);
+                             item, NULL);
     idx++;
   }
   return neo_js_array_values(ctx, array, 0, NULL);
@@ -256,7 +256,7 @@ NEO_JS_CFUNCTION(neo_js_map_keys) {
     neo_js_handle_t hkey = neo_list_node_get(it);
     neo_js_variable_t key = neo_js_context_create_variable(ctx, hkey, NULL);
     neo_js_context_set_field(ctx, array, neo_js_context_create_number(ctx, idx),
-                             key);
+                             key, NULL);
     idx++;
   }
   return neo_js_array_values(ctx, array, 0, NULL);
@@ -264,7 +264,6 @@ NEO_JS_CFUNCTION(neo_js_map_keys) {
 NEO_JS_CFUNCTION(neo_js_map_set) {
   neo_js_variable_t key = argv[0];
   neo_js_variable_t value = argv[1];
-  key = neo_js_context_clone(ctx, key);
   neo_js_handle_t hkey = neo_js_variable_get_handle(key);
   neo_js_handle_t hvalue = neo_js_variable_get_handle(value);
   neo_js_map_data data = neo_js_context_get_opaque(ctx, self, L"#map");
@@ -284,7 +283,7 @@ NEO_JS_CFUNCTION(neo_js_map_set) {
   neo_list_push(data->keys, hkey);
   neo_js_context_set_field(
       ctx, self, neo_js_context_create_string(ctx, L"size"),
-      neo_js_context_create_number(ctx, neo_list_get_size(data->keys)));
+      neo_js_context_create_number(ctx, neo_list_get_size(data->keys)), NULL);
   return self;
 }
 NEO_JS_CFUNCTION(neo_js_map_values) {
@@ -297,7 +296,7 @@ NEO_JS_CFUNCTION(neo_js_map_values) {
     neo_js_handle_t hvalue = neo_hash_map_get(data->data, hkey, ctx, ctx);
     neo_js_variable_t value = neo_js_context_create_variable(ctx, hvalue, NULL);
     neo_js_context_set_field(ctx, array, neo_js_context_create_number(ctx, idx),
-                             value);
+                             value, NULL);
     idx++;
   }
   return neo_js_array_values(ctx, array, 0, NULL);

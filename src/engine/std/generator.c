@@ -37,10 +37,10 @@ neo_js_variable_t neo_js_generator_next(neo_js_context_t ctx,
   if (co_ctx->result) {
     neo_js_context_set_field(ctx, result,
                              neo_js_context_create_string(ctx, L"done"),
-                             neo_js_context_create_boolean(ctx, true));
+                             neo_js_context_create_boolean(ctx, true), NULL);
     neo_js_context_set_field(
         ctx, result, neo_js_context_create_string(ctx, L"value"),
-        neo_js_context_create_variable(ctx, co_ctx->result, NULL));
+        neo_js_context_create_variable(ctx, co_ctx->result, NULL), NULL);
   } else {
     neo_js_scope_t current = neo_js_context_set_scope(ctx, co_ctx->vm->scope);
     neo_js_variable_t arg = NULL;
@@ -60,10 +60,10 @@ neo_js_variable_t neo_js_generator_next(neo_js_context_t ctx,
       co_ctx->vm->offset = interrupt->offset;
       neo_js_context_set_field(ctx, result,
                                neo_js_context_create_string(ctx, L"done"),
-                               neo_js_context_create_boolean(ctx, false));
+                               neo_js_context_create_boolean(ctx, false), NULL);
       neo_js_context_set_field(
           ctx, result, neo_js_context_create_string(ctx, L"value"),
-          neo_js_context_create_variable(ctx, interrupt->result, NULL));
+          neo_js_context_create_variable(ctx, interrupt->result, NULL), NULL);
     } else if (neo_js_variable_get_type(value)->kind == NEO_JS_TYPE_ERROR) {
       co_ctx->result = neo_js_variable_get_handle(value);
       neo_js_handle_add_parent(co_ctx->result,
@@ -75,10 +75,10 @@ neo_js_variable_t neo_js_generator_next(neo_js_context_t ctx,
                                neo_js_variable_get_handle(self));
       neo_js_context_set_field(ctx, result,
                                neo_js_context_create_string(ctx, L"done"),
-                               neo_js_context_create_boolean(ctx, true));
+                               neo_js_context_create_boolean(ctx, true), NULL);
       neo_js_context_set_field(
           ctx, result, neo_js_context_create_string(ctx, L"value"),
-          neo_js_context_create_variable(ctx, co_ctx->result, NULL));
+          neo_js_context_create_variable(ctx, co_ctx->result, NULL), NULL);
       neo_js_context_recycle_coroutine(ctx, coroutine);
     }
   }
@@ -99,10 +99,10 @@ neo_js_variable_t neo_js_generator_return(neo_js_context_t ctx,
   if (co_ctx->result) {
     neo_js_context_set_field(ctx, result,
                              neo_js_context_create_string(ctx, L"done"),
-                             neo_js_context_create_boolean(ctx, true));
+                             neo_js_context_create_boolean(ctx, true), NULL);
     neo_js_context_set_field(
         ctx, result, neo_js_context_create_string(ctx, L"value"),
-        neo_js_context_create_variable(ctx, co_ctx->result, NULL));
+        neo_js_context_create_variable(ctx, co_ctx->result, NULL), NULL);
   } else {
     neo_js_scope_t current = neo_js_context_set_scope(ctx, co_ctx->vm->scope);
     neo_js_variable_t arg = NULL;
@@ -123,10 +123,10 @@ neo_js_variable_t neo_js_generator_return(neo_js_context_t ctx,
       co_ctx->vm->offset = interrupt->offset;
       neo_js_context_set_field(ctx, result,
                                neo_js_context_create_string(ctx, L"done"),
-                               neo_js_context_create_boolean(ctx, false));
+                               neo_js_context_create_boolean(ctx, false), NULL);
       neo_js_context_set_field(
           ctx, result, neo_js_context_create_string(ctx, L"value"),
-          neo_js_context_create_variable(ctx, interrupt->result, NULL));
+          neo_js_context_create_variable(ctx, interrupt->result, NULL), NULL);
     } else if (neo_js_variable_get_type(value)->kind == NEO_JS_TYPE_ERROR) {
       co_ctx->result = neo_js_variable_get_handle(value);
       neo_js_handle_add_parent(co_ctx->result,
@@ -138,10 +138,10 @@ neo_js_variable_t neo_js_generator_return(neo_js_context_t ctx,
                                neo_js_variable_get_handle(self));
       neo_js_context_set_field(ctx, result,
                                neo_js_context_create_string(ctx, L"done"),
-                               neo_js_context_create_boolean(ctx, true));
+                               neo_js_context_create_boolean(ctx, true), NULL);
       neo_js_context_set_field(
           ctx, result, neo_js_context_create_string(ctx, L"value"),
-          neo_js_context_create_variable(ctx, co_ctx->result, NULL));
+          neo_js_context_create_variable(ctx, co_ctx->result, NULL), NULL);
       neo_js_context_recycle_coroutine(ctx, coroutine);
     }
   }
@@ -162,10 +162,10 @@ neo_js_variable_t neo_js_generator_throw(neo_js_context_t ctx,
   if (co_ctx->result) {
     neo_js_context_set_field(ctx, result,
                              neo_js_context_create_string(ctx, L"done"),
-                             neo_js_context_create_boolean(ctx, true));
+                             neo_js_context_create_boolean(ctx, true), NULL);
     neo_js_context_set_field(
         ctx, result, neo_js_context_create_string(ctx, L"value"),
-        neo_js_context_create_variable(ctx, co_ctx->result, NULL));
+        neo_js_context_create_variable(ctx, co_ctx->result, NULL), NULL);
   } else {
     neo_js_scope_t current = neo_js_context_set_scope(ctx, co_ctx->vm->scope);
     neo_js_variable_t arg = NULL;
@@ -188,10 +188,10 @@ neo_js_variable_t neo_js_generator_throw(neo_js_context_t ctx,
       co_ctx->vm->offset = interrupt->offset;
       neo_js_context_set_field(ctx, result,
                                neo_js_context_create_string(ctx, L"done"),
-                               neo_js_context_create_boolean(ctx, false));
+                               neo_js_context_create_boolean(ctx, false), NULL);
       neo_js_context_set_field(
           ctx, result, neo_js_context_create_string(ctx, L"value"),
-          neo_js_context_create_variable(ctx, interrupt->result, NULL));
+          neo_js_context_create_variable(ctx, interrupt->result, NULL), NULL);
     } else if (neo_js_variable_get_type(value)->kind == NEO_JS_TYPE_ERROR) {
       co_ctx->result = neo_js_variable_get_handle(value);
       neo_js_handle_add_parent(co_ctx->result,
@@ -203,10 +203,10 @@ neo_js_variable_t neo_js_generator_throw(neo_js_context_t ctx,
                                neo_js_variable_get_handle(self));
       neo_js_context_set_field(ctx, result,
                                neo_js_context_create_string(ctx, L"done"),
-                               neo_js_context_create_boolean(ctx, true));
+                               neo_js_context_create_boolean(ctx, true), NULL);
       neo_js_context_set_field(
           ctx, result, neo_js_context_create_string(ctx, L"value"),
-          neo_js_context_create_variable(ctx, co_ctx->result, NULL));
+          neo_js_context_create_variable(ctx, co_ctx->result, NULL), NULL);
       neo_js_context_recycle_coroutine(ctx, coroutine);
     }
   }

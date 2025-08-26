@@ -605,6 +605,12 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
     case NEO_ASM_LOGICAL_NOT:
       fprintf(fp, "NEO_ASM_LOGICAL_NOT\n");
       break;
+    case NEO_ASM_IN:
+      fprintf(fp, "NEO_ASM_IN\n");
+      break;
+    case NEO_ASM_INSTANCE_OF:
+      fprintf(fp, "NEO_ASM_INSTANCE_OF\n");
+      break;
     default:
       THROW("Invalid operator");
       return;

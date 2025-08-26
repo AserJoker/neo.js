@@ -35,14 +35,14 @@ neo_js_variable_t neo_js_array_from(neo_js_context_t ctx,
   }
   neo_js_variable_t iterator = neo_js_context_get_field(
       ctx, neo_js_context_get_std(ctx).symbol_constructor,
-      neo_js_context_create_string(ctx, L"iterator"));
+      neo_js_context_create_string(ctx, L"iterator"), NULL);
 
   neo_js_variable_t constructor = self;
   if (neo_js_variable_get_type(constructor)->kind < NEO_JS_TYPE_CALLABLE) {
     constructor = neo_js_context_get_std(ctx).array_constructor;
   }
   if (neo_js_context_has_field(ctx, array_like, iterator)) {
-    iterator = neo_js_context_get_field(ctx, array_like, iterator);
+    iterator = neo_js_context_get_field(ctx, array_like, iterator, NULL);
     if (neo_js_variable_get_type(iterator)->kind < NEO_JS_TYPE_CALLABLE) {
       return neo_js_context_create_simple_error(
           ctx, NEO_JS_ERROR_TYPE,
@@ -61,7 +61,7 @@ neo_js_variable_t neo_js_array_from(neo_js_context_t ctx,
     }
 
     neo_js_variable_t next = neo_js_context_get_field(
-        ctx, generator, neo_js_context_create_string(ctx, L"next"));
+        ctx, generator, neo_js_context_create_string(ctx, L"next"), NULL);
     if (neo_js_variable_get_type(next)->kind < NEO_JS_TYPE_CALLABLE) {
       return neo_js_context_create_simple_error(
           ctx, NEO_JS_ERROR_TYPE, L"#Object.next is not a function");
@@ -71,10 +71,10 @@ neo_js_variable_t neo_js_array_from(neo_js_context_t ctx,
       return res;
     }
     neo_js_variable_t done = neo_js_context_get_field(
-        ctx, res, neo_js_context_create_string(ctx, L"done"));
+        ctx, res, neo_js_context_create_string(ctx, L"done"), NULL);
 
     neo_js_variable_t value = neo_js_context_get_field(
-        ctx, res, neo_js_context_create_string(ctx, L"value"));
+        ctx, res, neo_js_context_create_string(ctx, L"value"), NULL);
 
     done = neo_js_context_to_boolean(ctx, done);
     if (neo_js_variable_get_type(done)->kind == NEO_JS_TYPE_ERROR) {
@@ -85,7 +85,7 @@ neo_js_variable_t neo_js_array_from(neo_js_context_t ctx,
     size_t idx = 0;
     while (!neo_js_variable_to_boolean(done)->boolean) {
       neo_js_variable_t error = neo_js_context_set_field(
-          ctx, array, neo_js_context_create_number(ctx, idx), value);
+          ctx, array, neo_js_context_create_number(ctx, idx), value, NULL);
       if (neo_js_variable_get_type(error)->kind == NEO_JS_TYPE_ERROR) {
         return error;
       }
@@ -94,9 +94,9 @@ neo_js_variable_t neo_js_array_from(neo_js_context_t ctx,
         return res;
       }
       done = neo_js_context_get_field(
-          ctx, res, neo_js_context_create_string(ctx, L"done"));
+          ctx, res, neo_js_context_create_string(ctx, L"done"), NULL);
       value = neo_js_context_get_field(
-          ctx, res, neo_js_context_create_string(ctx, L"value"));
+          ctx, res, neo_js_context_create_string(ctx, L"value"), NULL);
       done = neo_js_context_to_boolean(ctx, done);
       if (neo_js_variable_get_type(done)->kind == NEO_JS_TYPE_ERROR) {
         return done;
@@ -107,7 +107,7 @@ neo_js_variable_t neo_js_array_from(neo_js_context_t ctx,
                  ctx, array_like,
                  neo_js_context_create_string(ctx, L"length"))) {
     neo_js_variable_t vlength = neo_js_context_get_field(
-        ctx, array_like, neo_js_context_create_string(ctx, L"length"));
+        ctx, array_like, neo_js_context_create_string(ctx, L"length"), NULL);
     vlength = neo_js_context_to_integer(ctx, vlength);
     if (neo_js_variable_get_type(vlength)->kind == NEO_JS_TYPE_ERROR) {
       return vlength;
@@ -121,7 +121,8 @@ neo_js_variable_t neo_js_array_from(neo_js_context_t ctx,
         neo_js_context_construct(ctx, constructor, 1, &vlength);
     for (uint32_t idx = 0; idx < num->number; idx++) {
       neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-      neo_js_variable_t item = neo_js_context_get_field(ctx, array_like, key);
+      neo_js_variable_t item =
+          neo_js_context_get_field(ctx, array_like, key, NULL);
       if (map_fn) {
         neo_js_variable_t args[] = {item, key};
         item = neo_js_context_call(ctx, map_fn, this_arg, 2, args);
@@ -129,13 +130,15 @@ neo_js_variable_t neo_js_array_from(neo_js_context_t ctx,
           return item;
         }
       }
-      neo_js_variable_t error = neo_js_context_set_field(ctx, array, key, item);
+      neo_js_variable_t error =
+          neo_js_context_set_field(ctx, array, key, item, NULL);
       if (neo_js_variable_get_type(error)->kind == NEO_JS_TYPE_ERROR) {
         return error;
       }
     }
     neo_js_variable_t error = neo_js_context_set_field(
-        ctx, array, neo_js_context_create_string(ctx, L"length"), vlength);
+        ctx, array, neo_js_context_create_string(ctx, L"length"), vlength,
+        NULL);
     if (neo_js_variable_get_type(error)->kind == NEO_JS_TYPE_ERROR) {
       return error;
     }
@@ -158,11 +161,12 @@ neo_js_variable_t neo_js_array_from_async(neo_js_context_t ctx,
     neo_js_variable_t array_like = argv[0];
     neo_js_variable_t async_iterator = neo_js_context_get_field(
         ctx, neo_js_context_get_std(ctx).symbol_constructor,
-        neo_js_context_create_string(ctx, L"asyncIterator"));
+        neo_js_context_create_string(ctx, L"asyncIterator"), NULL);
     if (!neo_js_context_has_field(ctx, array_like, async_iterator)) {
       break;
     }
-    async_iterator = neo_js_context_get_field(ctx, array_like, async_iterator);
+    async_iterator =
+        neo_js_context_get_field(ctx, array_like, async_iterator, NULL);
     NEO_JS_TRY_AND_THROW(async_iterator);
     if (neo_js_variable_get_type(async_iterator)->kind < NEO_JS_TYPE_CALLABLE) {
       return neo_js_context_create_simple_error(
@@ -190,7 +194,7 @@ neo_js_variable_t neo_js_array_from_async(neo_js_context_t ctx,
         neo_js_context_load_variable(ctx, L"generator");
     NEO_JS_TRY_AND_THROW(generator);
     neo_js_variable_t next = neo_js_context_get_field(
-        ctx, generator, neo_js_context_create_string(ctx, L"next"));
+        ctx, generator, neo_js_context_create_string(ctx, L"next"), NULL);
     if (neo_js_variable_get_type(next)->kind < NEO_JS_TYPE_CALLABLE) {
       return neo_js_context_create_simple_error(
           ctx, NEO_JS_ERROR_TYPE, L"#Object.next is not a function");
@@ -201,10 +205,10 @@ neo_js_variable_t neo_js_array_from_async(neo_js_context_t ctx,
   case 2: {
     NEO_JS_TRY_AND_THROW(value);
     neo_js_variable_t vdone = neo_js_context_get_field(
-        ctx, value, neo_js_context_create_string(ctx, L"done"));
+        ctx, value, neo_js_context_create_string(ctx, L"done"), NULL);
     NEO_JS_TRY_AND_THROW(vdone);
     neo_js_variable_t val = neo_js_context_get_field(
-        ctx, value, neo_js_context_create_string(ctx, L"value"));
+        ctx, value, neo_js_context_create_string(ctx, L"value"), NULL);
     NEO_JS_TRY_AND_THROW(val);
     neo_js_variable_t result = neo_js_context_load_variable(ctx, L"result");
     NEO_JS_TRY_AND_THROW(result);
@@ -213,8 +217,9 @@ neo_js_variable_t neo_js_array_from_async(neo_js_context_t ctx,
       return result;
     }
     neo_js_variable_t v_length = neo_js_context_get_field(
-        ctx, result, neo_js_context_create_string(ctx, L"length"));
-    NEO_JS_TRY_AND_THROW(neo_js_context_set_field(ctx, result, v_length, val));
+        ctx, result, neo_js_context_create_string(ctx, L"length"), NULL);
+    NEO_JS_TRY_AND_THROW(
+        neo_js_context_set_field(ctx, result, v_length, val, NULL));
     return neo_js_context_create_interrupt(
         ctx, neo_js_context_create_undefined(ctx), 1, NEO_JS_INTERRUPT_AWAIT);
   }
@@ -247,7 +252,7 @@ neo_js_variable_t neo_js_array_of(neo_js_context_t ctx, neo_js_variable_t self,
   if (argc == 1) {
     neo_js_variable_t array = neo_js_context_create_array(ctx);
     neo_js_variable_t error = neo_js_context_set_field(
-        ctx, array, neo_js_context_create_number(ctx, 0), argv[0]);
+        ctx, array, neo_js_context_create_number(ctx, 0), argv[0], NULL);
     if (neo_js_variable_get_type(error)->kind == NEO_JS_TYPE_ERROR) {
       return error;
     }
@@ -279,7 +284,7 @@ neo_js_variable_t neo_js_array_constructor(neo_js_context_t ctx,
     neo_js_variable_t array = neo_js_context_create_array(ctx);
     neo_js_variable_t error = neo_js_context_set_field(
         ctx, array, neo_js_context_create_string(ctx, L"length"),
-        neo_js_context_create_number(ctx, length));
+        neo_js_context_create_number(ctx, length), NULL);
     if (neo_js_variable_get_type(error)->kind == NEO_JS_TYPE_ERROR) {
       return error;
     }
@@ -288,7 +293,7 @@ neo_js_variable_t neo_js_array_constructor(neo_js_context_t ctx,
   neo_js_variable_t array = neo_js_context_create_array(ctx);
   for (uint32_t idx = 0; idx < argc; idx++) {
     neo_js_variable_t error = neo_js_context_set_field(
-        ctx, array, neo_js_context_create_number(ctx, idx), argv[idx]);
+        ctx, array, neo_js_context_create_number(ctx, idx), argv[idx], NULL);
     if (neo_js_variable_get_type(error)->kind == NEO_JS_TYPE_ERROR) {
       return error;
     }
@@ -309,7 +314,7 @@ neo_js_variable_t neo_js_array_at(neo_js_context_t ctx, neo_js_variable_t self,
   }
   if (idx < 0) {
     neo_js_variable_t length = neo_js_context_get_field(
-        ctx, self, neo_js_context_create_string(ctx, L"length"));
+        ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
     length = neo_js_context_to_number(ctx, length);
     neo_js_number_t num = neo_js_variable_to_number(length);
     if (isnan(num->number) || num->number < 0 ||
@@ -322,7 +327,7 @@ neo_js_variable_t neo_js_array_at(neo_js_context_t ctx, neo_js_variable_t self,
     return neo_js_context_create_undefined(ctx);
   }
   return neo_js_context_get_field(ctx, self,
-                                  neo_js_context_create_number(ctx, idx));
+                                  neo_js_context_create_number(ctx, idx), NULL);
 }
 
 neo_js_variable_t neo_js_array_concat(neo_js_context_t ctx,
@@ -336,9 +341,9 @@ neo_js_variable_t neo_js_array_concat(neo_js_context_t ctx,
   }
   neo_js_variable_t res = neo_js_context_create_array(ctx);
 
-  neo_js_variable_t isConcatSpreadable = neo_js_context_get_field(
+  neo_js_variable_t is_concat_spreadable = neo_js_context_get_field(
       ctx, neo_js_context_get_std(ctx).symbol_constructor,
-      neo_js_context_create_string(ctx, L"isConcatSpreadable"));
+      neo_js_context_create_string(ctx, L"is_concat_spreadable"), NULL);
   size_t index = 0;
   for (size_t count = 0; count < argc + 1; count++) {
     neo_js_variable_t item = NULL;
@@ -356,14 +361,15 @@ neo_js_variable_t neo_js_array_concat(neo_js_context_t ctx,
     }
     if (neo_js_variable_get_type(item)->kind == NEO_JS_TYPE_ARRAY) {
       neo_js_variable_t vlength = neo_js_context_get_field(
-          ctx, item, neo_js_context_create_string(ctx, L"length"));
+          ctx, item, neo_js_context_create_string(ctx, L"length"), NULL);
       neo_js_number_t num = neo_js_variable_to_number(vlength);
       for (uint32_t idx = 0; idx < num->number; idx++) {
         neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
         if (neo_js_context_has_field(ctx, item, key)) {
-          neo_js_variable_t value = neo_js_context_get_field(ctx, item, key);
+          neo_js_variable_t value =
+              neo_js_context_get_field(ctx, item, key, NULL);
           neo_js_variable_t error = neo_js_context_set_field(
-              ctx, res, neo_js_context_create_number(ctx, index), value);
+              ctx, res, neo_js_context_create_number(ctx, index), value, NULL);
           if (neo_js_variable_get_type(error)->kind == NEO_JS_TYPE_ERROR) {
             return error;
           }
@@ -372,18 +378,18 @@ neo_js_variable_t neo_js_array_concat(neo_js_context_t ctx,
       }
     } else if (neo_js_variable_get_type(item)->kind < NEO_JS_TYPE_OBJECT) {
       neo_js_variable_t error = neo_js_context_set_field(
-          ctx, res, neo_js_context_create_number(ctx, index), item);
+          ctx, res, neo_js_context_create_number(ctx, index), item, NULL);
       if (neo_js_variable_get_type(error)->kind == NEO_JS_TYPE_ERROR) {
         return error;
       }
       index++;
     } else {
       neo_js_variable_t flag =
-          neo_js_context_get_field(ctx, item, isConcatSpreadable);
+          neo_js_context_get_field(ctx, item, is_concat_spreadable, NULL);
       flag = neo_js_context_to_boolean(ctx, flag);
       if (neo_js_variable_to_boolean(flag)->boolean) {
         neo_js_variable_t vlength = neo_js_context_get_field(
-            ctx, item, neo_js_context_create_string(ctx, L"length"));
+            ctx, item, neo_js_context_create_string(ctx, L"length"), NULL);
         vlength = neo_js_context_to_number(ctx, vlength);
         neo_js_number_t num = neo_js_variable_to_number(vlength);
         uint32_t length = 0;
@@ -398,9 +404,11 @@ neo_js_variable_t neo_js_array_concat(neo_js_context_t ctx,
         for (uint32_t idx = 0; idx < length; idx++) {
           neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
           if (neo_js_context_has_field(ctx, item, key)) {
-            neo_js_variable_t value = neo_js_context_get_field(ctx, item, key);
+            neo_js_variable_t value =
+                neo_js_context_get_field(ctx, item, key, NULL);
             neo_js_variable_t error = neo_js_context_set_field(
-                ctx, res, neo_js_context_create_number(ctx, index), value);
+                ctx, res, neo_js_context_create_number(ctx, index), value,
+                NULL);
             if (neo_js_variable_get_type(error)->kind == NEO_JS_TYPE_ERROR) {
               return error;
             }
@@ -409,7 +417,7 @@ neo_js_variable_t neo_js_array_concat(neo_js_context_t ctx,
         }
       } else {
         neo_js_variable_t error = neo_js_context_set_field(
-            ctx, res, neo_js_context_create_number(ctx, index), item);
+            ctx, res, neo_js_context_create_number(ctx, index), item, NULL);
         if (neo_js_variable_get_type(error)->kind == NEO_JS_TYPE_ERROR) {
           return error;
         }
@@ -419,7 +427,7 @@ neo_js_variable_t neo_js_array_concat(neo_js_context_t ctx,
   }
   neo_js_variable_t error = neo_js_context_set_field(
       ctx, res, neo_js_context_create_string(ctx, L"length"),
-      neo_js_context_create_number(ctx, index));
+      neo_js_context_create_number(ctx, index), NULL);
   if (neo_js_variable_get_type(error)->kind == NEO_JS_TYPE_ERROR) {
     return error;
   }
@@ -437,7 +445,7 @@ neo_js_variable_t neo_js_array_copy_within(neo_js_context_t ctx,
     }
   }
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -490,7 +498,7 @@ neo_js_variable_t neo_js_array_copy_within(neo_js_context_t ctx,
     if (neo_js_context_has_field(ctx, self, src_key)) {
       neo_js_variable_t error = neo_js_context_set_field(
           ctx, self, neo_js_context_create_number(ctx, dst),
-          neo_js_context_get_field(ctx, self, src_key));
+          neo_js_context_get_field(ctx, self, src_key, NULL), NULL);
       if (neo_js_variable_get_type(error)->kind == NEO_JS_TYPE_ERROR) {
         return error;
       }
@@ -509,7 +517,7 @@ neo_js_variable_t neo_js_array_entries(neo_js_context_t ctx,
                                        neo_js_variable_t *argv) {
   neo_js_variable_t array = neo_js_context_create_array(ctx);
   neo_js_variable_t v_length = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(v_length);
   v_length = neo_js_context_to_integer(ctx, v_length);
   NEO_JS_TRY_AND_THROW(v_length);
@@ -517,19 +525,19 @@ neo_js_variable_t neo_js_array_entries(neo_js_context_t ctx,
   for (double idx = 0; idx < length; idx += 1) {
     neo_js_variable_t item = neo_js_context_create_array(ctx);
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-    neo_js_variable_t value = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t value = neo_js_context_get_field(ctx, self, key, NULL);
     NEO_JS_TRY_AND_THROW(value);
     neo_js_variable_t err = neo_js_context_set_field(
-        ctx, item, neo_js_context_create_number(ctx, 0), key);
+        ctx, item, neo_js_context_create_number(ctx, 0), key, NULL);
     NEO_JS_TRY_AND_THROW(err);
-    err = neo_js_context_set_field(ctx, item,
-                                   neo_js_context_create_number(ctx, 1), value);
+    err = neo_js_context_set_field(
+        ctx, item, neo_js_context_create_number(ctx, 1), value, NULL);
     NEO_JS_TRY_AND_THROW(err);
-    err = neo_js_context_set_field(ctx, array, key, item);
+    err = neo_js_context_set_field(ctx, array, key, item, NULL);
     NEO_JS_TRY_AND_THROW(err);
   }
   neo_js_variable_t values = neo_js_context_get_field(
-      ctx, array, neo_js_context_create_string(ctx, L"values"));
+      ctx, array, neo_js_context_create_string(ctx, L"values"), NULL);
   NEO_JS_TRY_AND_THROW(values);
   return neo_js_context_call(ctx, values, array, 0, NULL);
 }
@@ -547,14 +555,14 @@ neo_js_variable_t neo_js_array_every(neo_js_context_t ctx,
     this_arg = argv[1];
   }
   neo_js_variable_t v_length = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(v_length);
   v_length = neo_js_context_to_integer(ctx, v_length);
   NEO_JS_TRY_AND_THROW(v_length);
   double length = neo_js_variable_to_number(v_length)->number;
   for (double idx = 0; idx < length; idx++) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
     NEO_JS_TRY_AND_THROW(item);
     neo_js_variable_t args[] = {item, key, self};
     neo_js_variable_t res = neo_js_context_call(ctx, fn, this_arg, 3, args);
@@ -578,7 +586,7 @@ neo_js_variable_t neo_js_array_fill(neo_js_context_t ctx,
     }
   }
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -622,7 +630,7 @@ neo_js_variable_t neo_js_array_fill(neo_js_context_t ctx,
       break;
     }
     neo_js_variable_t key = neo_js_context_create_number(ctx, dst);
-    NEO_JS_TRY_AND_THROW(neo_js_context_set_field(ctx, self, key, value));
+    NEO_JS_TRY_AND_THROW(neo_js_context_set_field(ctx, self, key, value, NULL));
   }
   return self;
 }
@@ -643,7 +651,7 @@ neo_js_variable_t neo_js_array_filter(neo_js_context_t ctx,
     this_arg = neo_js_context_create_undefined(ctx);
   }
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -651,7 +659,7 @@ neo_js_variable_t neo_js_array_filter(neo_js_context_t ctx,
   double index = 0;
   for (double idx = 0; idx < length; idx += 1) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
     NEO_JS_TRY_AND_THROW(item);
     neo_js_variable_t args[] = {item, key, self};
     neo_js_variable_t res = neo_js_context_call(ctx, fn, this_arg, 3, args);
@@ -660,7 +668,7 @@ neo_js_variable_t neo_js_array_filter(neo_js_context_t ctx,
     NEO_JS_TRY_AND_THROW(res);
     if (neo_js_variable_to_boolean(res)->boolean) {
       NEO_JS_TRY_AND_THROW(neo_js_context_set_field(
-          ctx, array, neo_js_context_create_number(ctx, index), item));
+          ctx, array, neo_js_context_create_number(ctx, index), item, NULL));
       index += 1;
     }
   }
@@ -682,7 +690,7 @@ neo_js_variable_t neo_js_array_find(neo_js_context_t ctx,
     this_arg = neo_js_context_create_undefined(ctx);
   }
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -690,7 +698,7 @@ neo_js_variable_t neo_js_array_find(neo_js_context_t ctx,
 
   for (double idx = 0; idx < length; idx += 1) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
     NEO_JS_TRY_AND_THROW(item);
     neo_js_variable_t args[] = {item, key, self};
     neo_js_variable_t res = neo_js_context_call(ctx, fn, this_arg, 3, args);
@@ -719,7 +727,7 @@ neo_js_variable_t neo_js_array_find_index(neo_js_context_t ctx,
     this_arg = neo_js_context_create_undefined(ctx);
   }
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -727,7 +735,7 @@ neo_js_variable_t neo_js_array_find_index(neo_js_context_t ctx,
 
   for (double idx = 0; idx < length; idx += 1) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
     NEO_JS_TRY_AND_THROW(item);
     neo_js_variable_t args[] = {item, key, self};
     neo_js_variable_t res = neo_js_context_call(ctx, fn, this_arg, 3, args);
@@ -756,7 +764,7 @@ neo_js_variable_t neo_js_array_find_last(neo_js_context_t ctx,
     this_arg = neo_js_context_create_undefined(ctx);
   }
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -764,7 +772,7 @@ neo_js_variable_t neo_js_array_find_last(neo_js_context_t ctx,
 
   for (double idx = length - 1; idx >= 0; idx -= 1) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
     NEO_JS_TRY_AND_THROW(item);
     neo_js_variable_t args[] = {item, key, self};
     neo_js_variable_t res = neo_js_context_call(ctx, fn, this_arg, 3, args);
@@ -794,7 +802,7 @@ neo_js_variable_t neo_js_array_find_last_index(neo_js_context_t ctx,
     this_arg = neo_js_context_create_undefined(ctx);
   }
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -802,7 +810,7 @@ neo_js_variable_t neo_js_array_find_last_index(neo_js_context_t ctx,
 
   for (double idx = length - 1; idx >= 0; idx -= 1) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
     NEO_JS_TRY_AND_THROW(item);
     neo_js_variable_t args[] = {item, key, self};
     neo_js_variable_t res = neo_js_context_call(ctx, fn, this_arg, 3, args);
@@ -822,14 +830,14 @@ static neo_js_variable_t neo_js_array_flat_depth(neo_js_context_t ctx,
                                                  neo_js_variable_t self,
                                                  double depth, double current) {
   neo_js_variable_t v_length = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(v_length);
   v_length = neo_js_context_to_integer(ctx, v_length);
   NEO_JS_TRY_AND_THROW(v_length);
   double length = neo_js_variable_to_number(v_length)->number;
   for (double idx = 0; idx < length; idx += 1) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
     if (neo_js_variable_get_type(item)->kind == NEO_JS_TYPE_ARRAY &&
         current < depth) {
       neo_js_variable_t error =
@@ -838,8 +846,8 @@ static neo_js_variable_t neo_js_array_flat_depth(neo_js_context_t ctx,
         return error;
       }
     } else {
-      neo_js_context_set_field(ctx, array,
-                               neo_js_context_create_number(ctx, *index), item);
+      neo_js_context_set_field(
+          ctx, array, neo_js_context_create_number(ctx, *index), item, NULL);
       (*index) += 1;
     }
   }
@@ -858,7 +866,7 @@ neo_js_variable_t neo_js_array_flat(neo_js_context_t ctx,
   }
   neo_js_variable_t array = neo_js_context_create_array(ctx);
   neo_js_variable_t v_length = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(v_length);
   v_length = neo_js_context_to_integer(ctx, v_length);
   NEO_JS_TRY_AND_THROW(v_length);
@@ -866,7 +874,7 @@ neo_js_variable_t neo_js_array_flat(neo_js_context_t ctx,
   double index = 0;
   for (double idx = 0; idx < length; idx += 1) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
     NEO_JS_TRY_AND_THROW(item);
     if (neo_js_variable_get_type(item)->kind == NEO_JS_TYPE_ARRAY &&
         depth >= 1) {
@@ -876,8 +884,8 @@ neo_js_variable_t neo_js_array_flat(neo_js_context_t ctx,
         return error;
       }
     } else {
-      neo_js_context_set_field(ctx, array,
-                               neo_js_context_create_number(ctx, index), item);
+      neo_js_context_set_field(
+          ctx, array, neo_js_context_create_number(ctx, index), item, NULL);
       index += 1;
     }
   }
@@ -899,7 +907,7 @@ neo_js_variable_t neo_js_array_flat_map(neo_js_context_t ctx,
     this_arg = neo_js_context_create_undefined(ctx);
   }
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -909,23 +917,24 @@ neo_js_variable_t neo_js_array_flat_map(neo_js_context_t ctx,
   double index = 0;
   for (double idx = 0; idx < length; idx += 1) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
     NEO_JS_TRY_AND_THROW(item);
     if (neo_js_variable_get_type(item)->kind == NEO_JS_TYPE_ARRAY) {
       neo_js_variable_t vlength = neo_js_context_get_field(
-          ctx, item, neo_js_context_create_string(ctx, L"length"));
+          ctx, item, neo_js_context_create_string(ctx, L"length"), NULL);
       NEO_JS_TRY_AND_THROW(vlength);
       vlength = neo_js_context_to_integer(ctx, vlength);
       NEO_JS_TRY_AND_THROW(vlength);
       double length = neo_js_variable_to_number(vlength)->number;
       for (double idx = 0; idx < length; idx += 1) {
         neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-        neo_js_variable_t item2 = neo_js_context_get_field(ctx, item, key);
+        neo_js_variable_t item2 =
+            neo_js_context_get_field(ctx, item, key, NULL);
         neo_js_variable_t args[] = {item2, key, item};
         item2 = neo_js_context_call(ctx, fn, this_arg, 3, args);
         NEO_JS_TRY_AND_THROW(item2);
         NEO_JS_TRY_AND_THROW(neo_js_context_set_field(
-            ctx, array, neo_js_context_create_number(ctx, index), item2));
+            ctx, array, neo_js_context_create_number(ctx, index), item2, NULL));
         index += 1;
       }
     } else {
@@ -933,7 +942,7 @@ neo_js_variable_t neo_js_array_flat_map(neo_js_context_t ctx,
       item = neo_js_context_call(ctx, fn, this_arg, 3, args);
       NEO_JS_TRY_AND_THROW(item);
       NEO_JS_TRY_AND_THROW(neo_js_context_set_field(
-          ctx, array, neo_js_context_create_number(ctx, index), item));
+          ctx, array, neo_js_context_create_number(ctx, index), item, NULL));
       index += 1;
     }
   }
@@ -955,14 +964,14 @@ neo_js_variable_t neo_js_array_for_each(neo_js_context_t ctx,
     this_arg = neo_js_context_create_undefined(ctx);
   }
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
   double length = neo_js_variable_to_number(vlength)->number;
   for (double idx = 0; idx < length; idx += 1) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
     NEO_JS_TRY_AND_THROW(item);
     neo_js_variable_t args[] = {item, key, self};
     NEO_JS_TRY_AND_THROW(neo_js_context_call(ctx, fn, this_arg, 3, args));
@@ -980,7 +989,7 @@ neo_js_variable_t neo_js_array_includes(neo_js_context_t ctx,
     val = neo_js_context_create_undefined(ctx);
   }
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -988,7 +997,7 @@ neo_js_variable_t neo_js_array_includes(neo_js_context_t ctx,
 
   for (double idx = 0; idx < length; idx += 1) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
     NEO_JS_TRY_AND_THROW(item);
     if (neo_js_variable_get_type(item) == neo_js_variable_get_type(val)) {
       neo_js_variable_t res = neo_js_context_is_equal(ctx, val, item);
@@ -1010,7 +1019,7 @@ neo_js_variable_t neo_js_array_index_of(neo_js_context_t ctx,
     val = neo_js_context_create_undefined(ctx);
   }
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -1018,7 +1027,7 @@ neo_js_variable_t neo_js_array_index_of(neo_js_context_t ctx,
 
   for (double idx = 0; idx < length; idx += 1) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
     NEO_JS_TRY_AND_THROW(item);
     if (neo_js_variable_get_type(item) == neo_js_variable_get_type(val)) {
       neo_js_variable_t res = neo_js_context_is_equal(ctx, val, item);
@@ -1042,7 +1051,7 @@ neo_js_variable_t neo_js_array_join(neo_js_context_t ctx,
     split = neo_js_context_create_string(ctx, L"");
   }
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -1050,7 +1059,7 @@ neo_js_variable_t neo_js_array_join(neo_js_context_t ctx,
   neo_js_variable_t result = neo_js_context_create_string(ctx, L"");
   for (double idx = 0; idx < length; idx += 1) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
     NEO_JS_TRY_AND_THROW(item);
     if (idx != 0) {
       result = neo_js_context_concat(ctx, result, split);
@@ -1069,7 +1078,7 @@ neo_js_variable_t neo_js_array_keys(neo_js_context_t ctx,
                                     neo_js_variable_t self, uint32_t argc,
                                     neo_js_variable_t *argv) {
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -1077,12 +1086,12 @@ neo_js_variable_t neo_js_array_keys(neo_js_context_t ctx,
   neo_js_variable_t result = neo_js_context_create_array(ctx);
   for (double idx = 0; idx < length; idx += 1) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-    neo_js_context_set_field(ctx, result, key, key);
+    neo_js_context_set_field(ctx, result, key, key, NULL);
   }
   neo_js_variable_t iterator = neo_js_context_get_field(
       ctx, neo_js_context_get_std(ctx).symbol_constructor,
-      neo_js_context_create_string(ctx, L"iterator"));
-  iterator = neo_js_context_get_field(ctx, result, iterator);
+      neo_js_context_create_string(ctx, L"iterator"), NULL);
+  iterator = neo_js_context_get_field(ctx, result, iterator, NULL);
   return neo_js_context_call(ctx, iterator, result, 0, NULL);
 }
 
@@ -1098,7 +1107,7 @@ neo_js_variable_t neo_js_array_last_index_of(neo_js_context_t ctx,
     val = neo_js_context_create_undefined(ctx);
   }
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -1106,7 +1115,7 @@ neo_js_variable_t neo_js_array_last_index_of(neo_js_context_t ctx,
 
   for (double idx = length - 1; idx >= 0; idx -= 1) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
     NEO_JS_TRY_AND_THROW(item);
     if (neo_js_variable_get_type(item) == neo_js_variable_get_type(val)) {
       neo_js_variable_t res = neo_js_context_is_equal(ctx, val, item);
@@ -1132,7 +1141,7 @@ neo_js_variable_t neo_js_array_map(neo_js_context_t ctx, neo_js_variable_t self,
     this_arg = neo_js_context_create_undefined(ctx);
   }
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -1140,12 +1149,12 @@ neo_js_variable_t neo_js_array_map(neo_js_context_t ctx, neo_js_variable_t self,
   neo_js_variable_t result = neo_js_context_create_array(ctx);
   for (double idx = 0; idx < length; idx += 1) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
     NEO_JS_TRY_AND_THROW(item);
     neo_js_variable_t args[] = {item, key, self};
     item = neo_js_context_call(ctx, fn, this_arg, 3, args);
     NEO_JS_TRY_AND_THROW(item);
-    neo_js_context_set_field(ctx, result, key, result);
+    neo_js_context_set_field(ctx, result, key, result, NULL);
   }
   return result;
 }
@@ -1153,7 +1162,7 @@ neo_js_variable_t neo_js_array_map(neo_js_context_t ctx, neo_js_variable_t self,
 neo_js_variable_t neo_js_array_pop(neo_js_context_t ctx, neo_js_variable_t self,
                                    uint32_t argc, neo_js_variable_t *argv) {
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -1162,12 +1171,12 @@ neo_js_variable_t neo_js_array_pop(neo_js_context_t ctx, neo_js_variable_t self,
     return neo_js_context_create_undefined(ctx);
   }
   neo_js_variable_t key = neo_js_context_create_number(ctx, length - 1);
-  neo_js_variable_t res = neo_js_context_get_field(ctx, self, key);
+  neo_js_variable_t res = neo_js_context_get_field(ctx, self, key, NULL);
   NEO_JS_TRY_AND_THROW(res);
   NEO_JS_TRY_AND_THROW(neo_js_context_del_field(ctx, self, key));
   neo_js_variable_to_number(vlength)->number = length - 1;
   NEO_JS_TRY_AND_THROW(neo_js_context_set_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"), vlength));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), vlength, NULL));
   return res;
 }
 
@@ -1175,18 +1184,19 @@ neo_js_variable_t neo_js_array_push(neo_js_context_t ctx,
                                     neo_js_variable_t self, uint32_t argc,
                                     neo_js_variable_t *argv) {
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
   double length = neo_js_variable_to_number(vlength)->number;
   for (uint32_t idx = 0; idx < argc; idx++) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx + length);
-    NEO_JS_TRY_AND_THROW(neo_js_context_set_field(ctx, self, key, argv[idx]));
+    NEO_JS_TRY_AND_THROW(
+        neo_js_context_set_field(ctx, self, key, argv[idx], NULL));
   }
   neo_js_variable_to_number(vlength)->number = length + argc;
   NEO_JS_TRY_AND_THROW(neo_js_context_set_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"), vlength));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), vlength, NULL));
   return vlength;
 }
 
@@ -1199,7 +1209,7 @@ neo_js_variable_t neo_js_array_reduce(neo_js_context_t ctx,
   }
   neo_js_variable_t fn = argv[0];
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -1217,13 +1227,13 @@ neo_js_variable_t neo_js_array_reduce(neo_js_context_t ctx,
     result = argv[1];
     idx = 0;
   } else {
-    result = neo_js_context_get_field(ctx, self,
-                                      neo_js_context_create_number(ctx, 0));
+    result = neo_js_context_get_field(
+        ctx, self, neo_js_context_create_number(ctx, 0), NULL);
   }
   while (idx < length) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
     if (neo_js_context_has_field(ctx, self, key)) {
-      neo_js_variable_t value = neo_js_context_get_field(ctx, self, key);
+      neo_js_variable_t value = neo_js_context_get_field(ctx, self, key, NULL);
       NEO_JS_TRY_AND_THROW(value);
       neo_js_variable_t args[] = {result, value, key, self};
       result = neo_js_context_call(
@@ -1245,7 +1255,7 @@ neo_js_variable_t neo_js_array_reduce_right(neo_js_context_t ctx,
   }
   neo_js_variable_t fn = argv[0];
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -1264,12 +1274,12 @@ neo_js_variable_t neo_js_array_reduce_right(neo_js_context_t ctx,
     idx = length - 1;
   } else {
     result = neo_js_context_get_field(
-        ctx, self, neo_js_context_create_number(ctx, length - 1));
+        ctx, self, neo_js_context_create_number(ctx, length - 1), NULL);
   }
   while (idx >= 0) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
     if (neo_js_context_has_field(ctx, self, key)) {
-      neo_js_variable_t value = neo_js_context_get_field(ctx, self, key);
+      neo_js_variable_t value = neo_js_context_get_field(ctx, self, key, NULL);
       NEO_JS_TRY_AND_THROW(value);
       neo_js_variable_t args[] = {result, value, key, self};
       result = neo_js_context_call(
@@ -1285,7 +1295,7 @@ neo_js_variable_t neo_js_array_reverse(neo_js_context_t ctx,
                                        neo_js_variable_t self, uint32_t argc,
                                        neo_js_variable_t *argv) {
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -1297,20 +1307,22 @@ neo_js_variable_t neo_js_array_reverse(neo_js_context_t ctx,
     neo_js_variable_t value_1 = NULL;
     neo_js_variable_t value_2 = NULL;
     if (neo_js_context_has_field(ctx, self, key_1)) {
-      value_1 = neo_js_context_get_field(ctx, self, key_1);
+      value_1 = neo_js_context_get_field(ctx, self, key_1, NULL);
       NEO_JS_TRY_AND_THROW(value_1);
     }
     if (neo_js_context_has_field(ctx, self, key_2)) {
-      value_2 = neo_js_context_get_field(ctx, self, key_2);
+      value_2 = neo_js_context_get_field(ctx, self, key_2, NULL);
       NEO_JS_TRY_AND_THROW(value_2);
     }
     if (value_1) {
-      NEO_JS_TRY_AND_THROW(neo_js_context_set_field(ctx, self, key_2, value_1));
+      NEO_JS_TRY_AND_THROW(
+          neo_js_context_set_field(ctx, self, key_2, value_1, NULL));
     } else {
       NEO_JS_TRY_AND_THROW(neo_js_context_del_field(ctx, self, key_2));
     }
     if (value_2) {
-      NEO_JS_TRY_AND_THROW(neo_js_context_set_field(ctx, self, key_1, value_2));
+      NEO_JS_TRY_AND_THROW(
+          neo_js_context_set_field(ctx, self, key_1, value_2, NULL));
     } else {
       NEO_JS_TRY_AND_THROW(neo_js_context_del_field(ctx, self, key_1));
     }
@@ -1322,7 +1334,7 @@ neo_js_variable_t neo_js_array_shift(neo_js_context_t ctx,
                                      neo_js_variable_t self, uint32_t argc,
                                      neo_js_variable_t *argv) {
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -1331,23 +1343,24 @@ neo_js_variable_t neo_js_array_shift(neo_js_context_t ctx,
     return neo_js_context_create_undefined(ctx);
   }
   neo_js_variable_t key = neo_js_context_create_number(ctx, 0);
-  neo_js_variable_t res = neo_js_context_get_field(ctx, self, key);
+  neo_js_variable_t res = neo_js_context_get_field(ctx, self, key, NULL);
   NEO_JS_TRY_AND_THROW(res);
   NEO_JS_TRY_AND_THROW(neo_js_context_del_field(ctx, self, key));
   for (double idx = 1; idx < length; idx += 1) {
     key = neo_js_context_create_number(ctx, idx);
     neo_js_variable_t key_new = neo_js_context_create_number(ctx, idx - 1);
     if (neo_js_context_has_field(ctx, self, key)) {
-      neo_js_variable_t value = neo_js_context_get_field(ctx, self, key);
+      neo_js_variable_t value = neo_js_context_get_field(ctx, self, key, NULL);
       NEO_JS_TRY_AND_THROW(value);
-      NEO_JS_TRY_AND_THROW(neo_js_context_set_field(ctx, self, key_new, value));
+      NEO_JS_TRY_AND_THROW(
+          neo_js_context_set_field(ctx, self, key_new, value, NULL));
     } else {
       NEO_JS_TRY_AND_THROW(neo_js_context_del_field(ctx, self, key_new));
     }
   }
   neo_js_variable_to_number(vlength)->number = length - 1;
   NEO_JS_TRY_AND_THROW(neo_js_context_set_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"), vlength));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), vlength, NULL));
   return res;
 }
 
@@ -1357,7 +1370,7 @@ neo_js_variable_t neo_js_array_slice(neo_js_context_t ctx,
   double start = 0;
   double end = 0;
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -1384,9 +1397,10 @@ neo_js_variable_t neo_js_array_slice(neo_js_context_t ctx,
   for (double idx = 0; idx < end - start; idx += 1) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx + start);
     neo_js_variable_t key_new = neo_js_context_create_number(ctx, idx);
-    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
     NEO_JS_TRY_AND_THROW(item);
-    NEO_JS_TRY_AND_THROW(neo_js_context_set_field(ctx, array, key_new, item));
+    NEO_JS_TRY_AND_THROW(
+        neo_js_context_set_field(ctx, array, key_new, item, NULL));
   }
   return array;
 }
@@ -1404,14 +1418,14 @@ neo_js_variable_t neo_js_array_some(neo_js_context_t ctx,
     this_arg = argv[1];
   }
   neo_js_variable_t v_length = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(v_length);
   v_length = neo_js_context_to_integer(ctx, v_length);
   NEO_JS_TRY_AND_THROW(v_length);
   double length = neo_js_variable_to_number(v_length)->number;
   for (double idx = 0; idx < length; idx++) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
     NEO_JS_TRY_AND_THROW(item);
     neo_js_variable_t args[] = {item, key, self};
     neo_js_variable_t res = neo_js_context_call(ctx, fn, this_arg, 3, args);
@@ -1504,8 +1518,8 @@ static neo_js_variable_t neo_js_array_quick_sort(neo_js_context_t ctx,
   neo_js_variable_t flag = NULL;
   neo_js_variable_t key = neo_js_context_create_number(ctx, begin);
   if (neo_js_context_has_field(ctx, self, key)) {
-    flag = neo_js_context_get_field(ctx, self,
-                                    neo_js_context_create_number(ctx, begin));
+    flag = neo_js_context_get_field(
+        ctx, self, neo_js_context_create_number(ctx, begin), NULL);
     NEO_JS_TRY_AND_THROW(flag);
   }
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
@@ -1517,7 +1531,7 @@ static neo_js_variable_t neo_js_array_quick_sort(neo_js_context_t ctx,
     neo_js_variable_t key = neo_js_context_create_number(ctx, index + begin);
     neo_js_variable_t item = NULL;
     if (neo_js_context_has_field(ctx, self, key)) {
-      item = neo_js_context_get_field(ctx, self, key);
+      item = neo_js_context_get_field(ctx, self, key, NULL);
       NEO_JS_TRY_AND_THROW(item);
     }
     if (flag) {
@@ -1576,7 +1590,8 @@ static neo_js_variable_t neo_js_array_quick_sort(neo_js_context_t ctx,
     neo_js_variable_t item = neo_list_node_get(it);
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
     if (item) {
-      NEO_JS_TRY_AND_THROW(neo_js_context_set_field(ctx, self, key, item));
+      NEO_JS_TRY_AND_THROW(
+          neo_js_context_set_field(ctx, self, key, item, NULL));
     } else {
       NEO_JS_TRY_AND_THROW(neo_js_context_del_field(ctx, self, key));
     }
@@ -1593,7 +1608,7 @@ neo_js_variable_t neo_js_array_sort(neo_js_context_t ctx,
     compare = argv[0];
   }
   neo_js_variable_t v_length = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(v_length);
   v_length = neo_js_context_to_integer(ctx, v_length);
   NEO_JS_TRY_AND_THROW(v_length);
@@ -1604,7 +1619,7 @@ neo_js_variable_t neo_js_array_sort(neo_js_context_t ctx,
   NEO_JS_TRY_AND_THROW(neo_js_array_quick_sort(ctx, self, 0, length, compare));
   neo_js_variable_to_number(v_length)->number = length;
   NEO_JS_TRY_AND_THROW(neo_js_context_set_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"), v_length));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), v_length, NULL));
   return self;
 }
 
@@ -1614,7 +1629,7 @@ neo_js_variable_t neo_js_array_splice(neo_js_context_t ctx,
   double start = 0;
   double delete_count = 0;
   neo_js_variable_t v_length = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(v_length);
   v_length = neo_js_context_to_integer(ctx, v_length);
   NEO_JS_TRY_AND_THROW(v_length);
@@ -1648,10 +1663,10 @@ neo_js_variable_t neo_js_array_splice(neo_js_context_t ctx,
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx + start);
     if (neo_js_context_has_field(ctx, self, key)) {
       neo_js_variable_t key_new = neo_js_context_create_number(ctx, idx);
-      neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+      neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
       NEO_JS_TRY_AND_THROW(item);
       NEO_JS_TRY_AND_THROW(
-          neo_js_context_set_field(ctx, result, key_new, item));
+          neo_js_context_set_field(ctx, result, key_new, item, NULL));
     }
   }
   double move_start = start + delete_count;
@@ -1662,10 +1677,10 @@ neo_js_variable_t neo_js_array_splice(neo_js_context_t ctx,
       neo_js_variable_t key_new =
           neo_js_context_create_number(ctx, idx + move_step);
       if (neo_js_context_has_field(ctx, self, key)) {
-        neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+        neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
         NEO_JS_TRY_AND_THROW(item);
         NEO_JS_TRY_AND_THROW(
-            neo_js_context_set_field(ctx, self, key_new, item));
+            neo_js_context_set_field(ctx, self, key_new, item, NULL));
       } else {
         NEO_JS_TRY_AND_THROW(neo_js_context_del_field(ctx, self, key_new));
       }
@@ -1676,10 +1691,10 @@ neo_js_variable_t neo_js_array_splice(neo_js_context_t ctx,
       neo_js_variable_t key_new =
           neo_js_context_create_number(ctx, idx + move_step);
       if (neo_js_context_has_field(ctx, self, key)) {
-        neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+        neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
         NEO_JS_TRY_AND_THROW(item);
         NEO_JS_TRY_AND_THROW(
-            neo_js_context_set_field(ctx, self, key_new, item));
+            neo_js_context_set_field(ctx, self, key_new, item, NULL));
       } else {
         NEO_JS_TRY_AND_THROW(neo_js_context_del_field(ctx, self, key_new));
       }
@@ -1688,12 +1703,12 @@ neo_js_variable_t neo_js_array_splice(neo_js_context_t ctx,
   for (double idx = 2; idx < argc; idx += 1) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx - 2 + start);
     NEO_JS_TRY_AND_THROW(
-        neo_js_context_set_field(ctx, self, key, argv[(uint32_t)idx]));
+        neo_js_context_set_field(ctx, self, key, argv[(uint32_t)idx], NULL));
   }
   neo_js_variable_to_number(v_length)->number =
       length - delete_count + insert_count;
   NEO_JS_TRY_AND_THROW(neo_js_context_set_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"), v_length));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), v_length, NULL));
   return result;
 }
 
@@ -1709,7 +1724,7 @@ neo_js_variable_t neo_js_array_to_reversed(neo_js_context_t ctx,
                                            uint32_t argc,
                                            neo_js_variable_t *argv) {
   neo_js_variable_t v_length = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(v_length);
   v_length = neo_js_context_to_integer(ctx, v_length);
   NEO_JS_TRY_AND_THROW(v_length);
@@ -1719,9 +1734,10 @@ neo_js_variable_t neo_js_array_to_reversed(neo_js_context_t ctx,
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
     neo_js_variable_t key_new =
         neo_js_context_create_number(ctx, length - 1 - idx);
-    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
     NEO_JS_TRY_AND_THROW(item);
-    NEO_JS_TRY_AND_THROW(neo_js_context_set_field(ctx, result, key_new, item));
+    NEO_JS_TRY_AND_THROW(
+        neo_js_context_set_field(ctx, result, key_new, item, NULL));
   }
   return result;
 }
@@ -1731,16 +1747,17 @@ neo_js_variable_t neo_js_array_to_sorted(neo_js_context_t ctx,
                                          neo_js_variable_t *argv) {
   neo_js_variable_t result = neo_js_context_create_array(ctx);
   neo_js_variable_t v_length = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(v_length);
   v_length = neo_js_context_to_integer(ctx, v_length);
   NEO_JS_TRY_AND_THROW(v_length);
   double length = neo_js_variable_to_number(v_length)->number;
   for (double idx = 0; idx < length; idx += 1) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
     NEO_JS_TRY_AND_THROW(item);
-    NEO_JS_TRY_AND_THROW(neo_js_context_set_field(ctx, result, key, item));
+    NEO_JS_TRY_AND_THROW(
+        neo_js_context_set_field(ctx, result, key, item, NULL));
   }
   NEO_JS_TRY_AND_THROW(neo_js_array_sort(ctx, result, argc, argv));
   return result;
@@ -1751,16 +1768,17 @@ neo_js_variable_t neo_js_array_to_spliced(neo_js_context_t ctx,
                                           neo_js_variable_t *argv) {
   neo_js_variable_t result = neo_js_context_create_array(ctx);
   neo_js_variable_t v_length = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(v_length);
   v_length = neo_js_context_to_integer(ctx, v_length);
   NEO_JS_TRY_AND_THROW(v_length);
   double length = neo_js_variable_to_number(v_length)->number;
   for (double idx = 0; idx < length; idx += 1) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
     NEO_JS_TRY_AND_THROW(item);
-    NEO_JS_TRY_AND_THROW(neo_js_context_set_field(ctx, result, key, item));
+    NEO_JS_TRY_AND_THROW(
+        neo_js_context_set_field(ctx, result, key, item, NULL));
   }
   NEO_JS_TRY_AND_THROW(neo_js_array_splice(ctx, result, argc, argv));
   return result;
@@ -1783,7 +1801,7 @@ neo_js_variable_t neo_js_array_unshift(neo_js_context_t ctx,
     value = neo_js_context_create_undefined(ctx);
   }
   neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -1792,18 +1810,19 @@ neo_js_variable_t neo_js_array_unshift(neo_js_context_t ctx,
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx - 1);
     neo_js_variable_t key_new = neo_js_context_create_number(ctx, idx);
     if (neo_js_context_has_field(ctx, self, key)) {
-      neo_js_variable_t value = neo_js_context_get_field(ctx, self, key);
+      neo_js_variable_t value = neo_js_context_get_field(ctx, self, key, NULL);
       NEO_JS_TRY_AND_THROW(value);
-      NEO_JS_TRY_AND_THROW(neo_js_context_set_field(ctx, self, key_new, value));
+      NEO_JS_TRY_AND_THROW(
+          neo_js_context_set_field(ctx, self, key_new, value, NULL));
     } else {
       NEO_JS_TRY_AND_THROW(neo_js_context_del_field(ctx, self, key_new));
     }
   }
   NEO_JS_TRY_AND_THROW(neo_js_context_set_field(
-      ctx, self, neo_js_context_create_number(ctx, 0), value));
+      ctx, self, neo_js_context_create_number(ctx, 0), value, NULL));
   neo_js_variable_to_number(vlength)->number = length + 1;
   NEO_JS_TRY_AND_THROW(neo_js_context_set_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"), vlength));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), vlength, NULL));
   return vlength;
 }
 
@@ -1823,16 +1842,17 @@ neo_js_variable_t neo_js_array_with(neo_js_context_t ctx,
                                     neo_js_variable_t *argv) {
   neo_js_variable_t result = neo_js_context_create_array(ctx);
   neo_js_variable_t v_length = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"length"));
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
   NEO_JS_TRY_AND_THROW(v_length);
   v_length = neo_js_context_to_integer(ctx, v_length);
   NEO_JS_TRY_AND_THROW(v_length);
   double length = neo_js_variable_to_number(v_length)->number;
   for (double idx = 0; idx < length; idx += 1) {
     neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key);
+    neo_js_variable_t item = neo_js_context_get_field(ctx, self, key, NULL);
     NEO_JS_TRY_AND_THROW(item);
-    NEO_JS_TRY_AND_THROW(neo_js_context_set_field(ctx, result, key, item));
+    NEO_JS_TRY_AND_THROW(
+        neo_js_context_set_field(ctx, result, key, item, NULL));
   }
   if (argc > 0) {
     double idx = 0;
@@ -1852,8 +1872,8 @@ neo_js_variable_t neo_js_array_with(neo_js_context_t ctx,
     } else {
       value = neo_js_context_create_undefined(ctx);
     }
-    neo_js_context_set_field(ctx, result,
-                             neo_js_context_create_number(ctx, idx), value);
+    neo_js_context_set_field(
+        ctx, result, neo_js_context_create_number(ctx, idx), value, NULL);
   }
   return result;
 }

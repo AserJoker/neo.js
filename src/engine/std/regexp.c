@@ -213,12 +213,12 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
   if (regex->flag & NEO_REGEXP_FLAG_GLOBAL ||
       regex->flag & NEO_REGEXP_FLAG_STICKY) {
     neo_js_variable_t v_last_index = neo_js_context_get_field(
-        ctx, self, neo_js_context_create_string(ctx, L"lastIndex"));
+        ctx, self, neo_js_context_create_string(ctx, L"lastIndex"), NULL);
     if (neo_js_variable_get_type(v_last_index)->kind != NEO_JS_TYPE_NUMBER) {
       v_last_index = neo_js_context_to_number(ctx, v_last_index);
       neo_js_context_set_field(ctx, self,
                                neo_js_context_create_string(ctx, L"lastIndex"),
-                               v_last_index);
+                               v_last_index, NULL);
     }
     last_index = neo_js_variable_to_number(v_last_index);
 
@@ -254,18 +254,20 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
     wcsncpy(part, str + start, len);
     part[len] = 0;
     neo_js_context_set_field(ctx, result, neo_js_context_create_number(ctx, 0),
-                             neo_js_context_create_string(ctx, part));
+                             neo_js_context_create_string(ctx, part), NULL);
     neo_allocator_free(allocator, part);
     neo_js_context_set_field(ctx, result,
                              neo_js_context_create_string(ctx, L"index"),
-                             neo_js_context_create_number(ctx, start));
-    neo_js_context_set_field(
-        ctx, result, neo_js_context_create_string(ctx, L"input"), argv[0]);
+                             neo_js_context_create_number(ctx, start), NULL);
+    neo_js_context_set_field(ctx, result,
+                             neo_js_context_create_string(ctx, L"input"),
+                             argv[0], NULL);
     neo_js_variable_t indices = NULL;
     if (regex->flag & NEO_REGEXP_FLAG_HAS_INDICES) {
       indices = neo_js_context_create_array(ctx);
-      neo_js_context_set_field(
-          ctx, result, neo_js_context_create_string(ctx, L"indices"), indices);
+      neo_js_context_set_field(ctx, result,
+                               neo_js_context_create_string(ctx, L"indices"),
+                               indices, NULL);
     }
     for (size_t idx = 0; idx < rc; idx++) {
       size_t start = ovector[idx * 2];
@@ -276,18 +278,18 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
       part[len] = 0;
       neo_js_context_set_field(ctx, result,
                                neo_js_context_create_number(ctx, idx + 1),
-                               neo_js_context_create_string(ctx, part));
+                               neo_js_context_create_string(ctx, part), NULL);
       neo_allocator_free(allocator, part);
       if (regex->flag & NEO_REGEXP_FLAG_HAS_INDICES) {
         neo_js_variable_t item = neo_js_context_create_array(ctx);
-        neo_js_context_set_field(ctx, item,
-                                 neo_js_context_create_number(ctx, 0),
-                                 neo_js_context_create_number(ctx, start));
+        neo_js_context_set_field(
+            ctx, item, neo_js_context_create_number(ctx, 0),
+            neo_js_context_create_number(ctx, start), NULL);
         neo_js_context_set_field(ctx, item,
                                  neo_js_context_create_number(ctx, 1),
-                                 neo_js_context_create_number(ctx, end));
-        neo_js_context_set_field(ctx, indices,
-                                 neo_js_context_create_number(ctx, idx), item);
+                                 neo_js_context_create_number(ctx, end), NULL);
+        neo_js_context_set_field(
+            ctx, indices, neo_js_context_create_number(ctx, idx), item, NULL);
       }
     }
     size_t ngroups = 0;
@@ -298,11 +300,13 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
     pcre2_pattern_info(regex->code, PCRE2_INFO_NAMETABLE, &name_table);
     if (ngroups) {
       neo_js_variable_t groups = neo_js_context_create_object(ctx, NULL);
-      neo_js_context_set_field(
-          ctx, result, neo_js_context_create_string(ctx, L"groups"), groups);
+      neo_js_context_set_field(ctx, result,
+                               neo_js_context_create_string(ctx, L"groups"),
+                               groups, NULL);
       neo_js_variable_t igroups = neo_js_context_create_object(ctx, NULL);
-      neo_js_context_set_field(
-          ctx, indices, neo_js_context_create_string(ctx, L"groups"), igroups);
+      neo_js_context_set_field(ctx, indices,
+                               neo_js_context_create_string(ctx, L"groups"),
+                               igroups, NULL);
       PCRE2_SPTR tabptr = name_table;
       for (uint32_t i = 0; i < ngroups; i++) {
 #if PCRE2_CODE_UNIT_WIDTH != 16
@@ -327,24 +331,25 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
         part[len] = 0;
         neo_js_context_set_field(ctx, groups,
                                  neo_js_context_create_string(ctx, s_name),
-                                 neo_js_context_create_string(ctx, part));
+                                 neo_js_context_create_string(ctx, part), NULL);
         neo_allocator_free(allocator, part);
         neo_js_variable_t item = neo_js_context_create_array(ctx);
-        neo_js_context_set_field(ctx, item,
-                                 neo_js_context_create_number(ctx, 0),
-                                 neo_js_context_create_number(ctx, start));
+        neo_js_context_set_field(
+            ctx, item, neo_js_context_create_number(ctx, 0),
+            neo_js_context_create_number(ctx, start), NULL);
         neo_js_context_set_field(ctx, item,
                                  neo_js_context_create_number(ctx, 1),
-                                 neo_js_context_create_number(ctx, end));
-        neo_js_context_set_field(
-            ctx, igroups, neo_js_context_create_string(ctx, s_name), item);
+                                 neo_js_context_create_number(ctx, end), NULL);
+        neo_js_context_set_field(ctx, igroups,
+                                 neo_js_context_create_string(ctx, s_name),
+                                 item, NULL);
         neo_allocator_free(allocator, s_name);
         tabptr += name_entry_size;
       }
     } else {
       neo_js_context_set_field(ctx, result,
                                neo_js_context_create_string(ctx, L"groups"),
-                               neo_js_context_create_undefined(ctx));
+                               neo_js_context_create_undefined(ctx), NULL);
     }
   }
   neo_allocator_free(allocator, pstr);
@@ -374,12 +379,12 @@ neo_js_variable_t neo_js_regexp_test(neo_js_context_t ctx,
   if (regex->flag & NEO_REGEXP_FLAG_GLOBAL ||
       regex->flag & NEO_REGEXP_FLAG_STICKY) {
     neo_js_variable_t v_last_index = neo_js_context_get_field(
-        ctx, self, neo_js_context_create_string(ctx, L"lastIndex"));
+        ctx, self, neo_js_context_create_string(ctx, L"lastIndex"), NULL);
     if (neo_js_variable_get_type(v_last_index)->kind != NEO_JS_TYPE_NUMBER) {
       v_last_index = neo_js_context_to_number(ctx, v_last_index);
       neo_js_context_set_field(ctx, self,
                                neo_js_context_create_string(ctx, L"lastIndex"),
-                               v_last_index);
+                               v_last_index, NULL);
     }
     last_index = neo_js_variable_to_number(v_last_index);
 

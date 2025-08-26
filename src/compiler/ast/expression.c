@@ -360,6 +360,10 @@ static void neo_ast_expression_binary_write(neo_allocator_t allocator,
         neo_program_add_code(allocator, ctx->program, NEO_ASM_SEQ);
       } else if (neo_location_is(self->opt->location, "!==")) {
         neo_program_add_code(allocator, ctx->program, NEO_ASM_SNE);
+      } else if (neo_location_is(self->opt->location, "in")) {
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_IN);
+      } else if (neo_location_is(self->opt->location, "instanceof")) {
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_INSTANCE_OF);
       }
     }
   }
@@ -1241,13 +1245,13 @@ neo_ast_node_t neo_ast_read_expression_2(neo_allocator_t allocator,
     }
   }
   if (!node) {
-    node = TRY(neo_ast_read_expression_assigment(allocator, file, position)) {
+    node =
+        TRY(neo_ast_read_expression_arrow_function(allocator, file, position)) {
       goto onerror;
     }
   }
   if (!node) {
-    node =
-        TRY(neo_ast_read_expression_arrow_function(allocator, file, position)) {
+    node = TRY(neo_ast_read_expression_assigment(allocator, file, position)) {
       goto onerror;
     }
   }

@@ -131,6 +131,8 @@ typedef enum _neo_asm_code_t {
   NEO_ASM_LOGICAL_NOT,
   NEO_ASM_CONCAT,
   NEO_ASM_SPREAD,
+  NEO_ASM_IN,
+  NEO_ASM_INSTANCE_OF,
 } neo_asm_code_t;
 
 #ifdef __cplusplus

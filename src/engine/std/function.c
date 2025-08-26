@@ -5,6 +5,7 @@
 #include "engine/handle.h"
 #include "engine/type.h"
 #include "engine/variable.h"
+#include <stdint.h>
 #include <wchar.h>
 
 neo_js_variable_t neo_js_function_constructor(neo_js_context_t ctx,
@@ -64,6 +65,35 @@ neo_js_variable_t neo_js_function_call(neo_js_context_t ctx,
     return neo_js_context_call(ctx, self, neo_js_context_create_undefined(ctx),
                                0, NULL);
   }
+}
+
+NEO_JS_CFUNCTION(neo_js_function_apply) {
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  neo_js_variable_t self_object = NULL;
+  neo_js_variable_t arguments = NULL;
+  if (argc) {
+    self_object = argv[0];
+  } else {
+    self_object = neo_js_context_create_undefined(ctx);
+  }
+  neo_js_variable_t *args = NULL;
+  uint32_t argc2 = 0;
+  if (arguments) {
+    neo_js_variable_t vlength = neo_js_context_get_field(
+        ctx, arguments, neo_js_context_create_string(ctx, L"length"), NULL);
+    NEO_JS_TRY_AND_THROW(vlength);
+    vlength = neo_js_context_to_integer(ctx, vlength);
+    argc2 = neo_js_variable_to_number(vlength)->number;
+    args = neo_allocator_alloc(allocator, argc2, NULL);
+    for (uint32_t idx = 0; idx < argc2; idx++) {
+      neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
+      neo_js_variable_t field =
+          neo_js_context_get_field(ctx, arguments, key, NULL);
+      NEO_JS_TRY_AND_THROW(field);
+      args[idx] = field;
+    }
+  }
+  return neo_js_context_call(ctx, self, self_object, argc2, args);
 }
 
 neo_js_variable_t neo_js_function_bind(neo_js_context_t ctx,

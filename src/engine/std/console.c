@@ -1,5 +1,6 @@
 #include "engine/std/console.h"
 #include "engine/context.h"
+#include "engine/std/object.h"
 #include "engine/type.h"
 #include "engine/variable.h"
 neo_js_variable_t neo_js_console_constructor(neo_js_context_t ctx,
@@ -22,9 +23,15 @@ neo_js_variable_t neo_js_console_log(neo_js_context_t ctx,
       printf("Symbol(%ls)", sym->description);
     } else if (neo_js_variable_get_type(arg)->kind == NEO_JS_TYPE_OBJECT) {
       neo_js_variable_t to_string = neo_js_context_get_field(
-          ctx, arg, neo_js_context_create_string(ctx, L"toString"));
+          ctx, arg, neo_js_context_create_string(ctx, L"toString"), NULL);
       NEO_JS_TRY_AND_THROW(to_string);
-      neo_js_variable_t res = neo_js_context_call(ctx, to_string, arg, 0, NULL);
+
+      neo_js_variable_t res = NULL;
+      if (neo_js_variable_get_type(to_string)->kind < NEO_JS_TYPE_CALLABLE) {
+        res = neo_js_object_to_string(ctx, arg, 0, NULL);
+      } else {
+        res = neo_js_context_call(ctx, to_string, arg, 0, NULL);
+      }
       NEO_JS_TRY_AND_THROW(res);
       res = neo_js_context_to_string(ctx, res);
       NEO_JS_TRY_AND_THROW(res);

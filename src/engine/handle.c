@@ -62,7 +62,7 @@ neo_list_t neo_js_handle_get_children(neo_js_handle_t self) {
 
 bool neo_js_handle_check_alive(neo_allocator_t allocator,
                                neo_js_handle_t handle) {
-  neo_list_t cache = neo_create_list(allocator, NULL);
+  neo_hash_map_t cache = neo_create_hash_map(allocator, NULL);
   neo_list_t workflow = neo_create_list(allocator, NULL);
   neo_js_handle_t root = NULL;
   neo_list_push(workflow, handle);
@@ -70,10 +70,10 @@ bool neo_js_handle_check_alive(neo_allocator_t allocator,
     neo_list_node_t it = neo_list_get_first(workflow);
     neo_js_handle_t item = neo_list_node_get(it);
     neo_list_erase(workflow, it);
-    if (neo_list_find(cache, item)) {
+    if (neo_hash_map_get(cache, item, NULL, NULL)) {
       continue;
     }
-    neo_list_push(cache, item);
+    neo_hash_map_set(cache, item, item, NULL, NULL);
     neo_list_t parents = neo_js_handle_get_parents(item);
     for (neo_list_node_t it = neo_list_get_first(parents);
          it != neo_list_get_tail(parents); it = neo_list_node_next(it)) {
@@ -100,7 +100,7 @@ bool neo_js_handle_check_alive(neo_allocator_t allocator,
 void neo_js_handle_gc(neo_allocator_t allocator, neo_js_handle_t root) {
   neo_list_t children = neo_js_handle_get_children(root);
   neo_list_t workflow = neo_create_list(allocator, NULL);
-  neo_list_t cache = neo_create_list(allocator, NULL);
+  neo_hash_map_t cache = neo_create_hash_map(allocator, NULL);
   neo_list_t queue = neo_create_list(allocator, NULL);
   while (neo_list_get_size(children)) {
     neo_list_node_t it = neo_list_get_first(children);
@@ -112,10 +112,10 @@ void neo_js_handle_gc(neo_allocator_t allocator, neo_js_handle_t root) {
     neo_list_node_t it = neo_list_get_first(workflow);
     neo_js_handle_t item = neo_list_node_get(it);
     neo_list_erase(workflow, it);
-    if (neo_list_find(cache, item)) {
+    if (neo_hash_map_has(cache, item, NULL, NULL)) {
       continue;
     }
-    neo_list_push(cache, item);
+    neo_hash_map_set(cache, item, item, NULL, NULL);
     if (!neo_js_handle_check_alive(allocator, item)) {
       children = neo_js_handle_get_children(item);
       while (neo_list_get_size(children)) {

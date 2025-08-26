@@ -52,6 +52,7 @@ typedef struct _neo_js_std_t {
   neo_js_variable_t generator_function_constructor;
   neo_js_variable_t async_generator_constructor;
   neo_js_variable_t async_generator_function_constructor;
+  neo_js_variable_t aggregate_error_constructor;
   neo_js_variable_t promise_constructor;
   neo_js_variable_t error_constructor;
   neo_js_variable_t syntax_error_constructor;
@@ -62,7 +63,6 @@ typedef struct _neo_js_std_t {
   neo_js_variable_t uri_error_constructor;
   neo_js_variable_t map_constructor;
   neo_js_variable_t set_constructor;
-  neo_js_variable_t math;
 } neo_js_std_t;
 
 neo_js_context_t neo_create_js_context(neo_allocator_t allocator,
@@ -161,19 +161,25 @@ neo_js_variable_t neo_js_context_to_object(neo_js_context_t ctx,
 
 neo_js_variable_t neo_js_context_get_field(neo_js_context_t ctx,
                                            neo_js_variable_t object,
-                                           neo_js_variable_t field);
+                                           neo_js_variable_t field,
+                                           neo_js_variable_t receiver);
+
 neo_js_variable_t neo_js_context_set_field(neo_js_context_t ctx,
                                            neo_js_variable_t object,
                                            neo_js_variable_t field,
-                                           neo_js_variable_t value);
+                                           neo_js_variable_t value,
+                                           neo_js_variable_t receiver);
+
 neo_js_variable_t neo_js_context_get_private(neo_js_context_t ctx,
                                              neo_js_variable_t object,
-                                             neo_js_variable_t field);
+                                             neo_js_variable_t field,
+                                             neo_js_variable_t receiver);
 
 neo_js_variable_t neo_js_context_set_private(neo_js_context_t ctx,
                                              neo_js_variable_t object,
                                              neo_js_variable_t field,
-                                             neo_js_variable_t value);
+                                             neo_js_variable_t value,
+                                             neo_js_variable_t receiver);
 
 neo_js_variable_t neo_js_context_def_private(neo_js_context_t ctx,
                                              neo_js_variable_t object,
@@ -424,6 +430,10 @@ neo_js_variable_t neo_js_context_concat(neo_js_context_t ctx,
 neo_js_variable_t neo_js_context_instance_of(neo_js_context_t ctx,
                                              neo_js_variable_t variable,
                                              neo_js_variable_t constructor);
+
+neo_js_variable_t neo_js_context_in(neo_js_context_t ctx,
+                                    neo_js_variable_t field,
+                                    neo_js_variable_t variable);
 
 neo_js_variable_t neo_js_context_create_compile_error(neo_js_context_t ctx);
 

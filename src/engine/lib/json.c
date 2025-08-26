@@ -30,7 +30,7 @@ neo_js_json_variable_stringify(neo_js_context_t ctx, neo_js_variable_t variable,
   }
   if (neo_js_variable_get_type(variable)->kind >= NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t to_json = neo_js_context_create_string(ctx, L"toJSON");
-    to_json = neo_js_context_get_field(ctx, variable, to_json);
+    to_json = neo_js_context_get_field(ctx, variable, to_json, NULL);
     NEO_JS_TRY_AND_THROW(to_json);
     if (neo_js_variable_get_type(to_json)->kind >= NEO_JS_TYPE_CALLABLE) {
       variable = neo_js_context_call(ctx, to_json, variable, 0, NULL);
@@ -81,7 +81,7 @@ neo_js_json_variable_stringify(neo_js_context_t ctx, neo_js_variable_t variable,
     s[0] = 0;
     s = neo_wstring_concat(allocator, s, &max, L"[");
     neo_js_variable_t length = neo_js_context_get_field(
-        ctx, variable, neo_js_context_create_string(ctx, L"length"));
+        ctx, variable, neo_js_context_create_string(ctx, L"length"), NULL);
     neo_js_number_t num = neo_js_variable_to_number(length);
     int64_t len = num->number;
     for (int64_t idx = 0; idx < len; idx++) {
@@ -89,7 +89,8 @@ neo_js_json_variable_stringify(neo_js_context_t ctx, neo_js_variable_t variable,
         s = neo_wstring_concat(allocator, s, &max, L",");
       }
       neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
-      neo_js_variable_t item = neo_js_context_get_field(ctx, variable, key);
+      neo_js_variable_t item =
+          neo_js_context_get_field(ctx, variable, key, NULL);
       NEO_JS_TRY(item) {
         neo_js_context_defer_free(ctx, s);
         return item;
@@ -113,7 +114,8 @@ neo_js_json_variable_stringify(neo_js_context_t ctx, neo_js_variable_t variable,
             }
           } else {
             neo_js_variable_t v_length = neo_js_context_get_field(
-                ctx, replacer, neo_js_context_create_string(ctx, L"length"));
+                ctx, replacer, neo_js_context_create_string(ctx, L"length"),
+                NULL);
             NEO_JS_TRY(v_length) {
               neo_js_context_defer_free(ctx, s);
               return v_length;
@@ -122,7 +124,7 @@ neo_js_json_variable_stringify(neo_js_context_t ctx, neo_js_variable_t variable,
             neo_js_variable_t found = NULL;
             for (int64_t idx = 0; idx < length; idx++) {
               neo_js_variable_t current = neo_js_context_get_field(
-                  ctx, replacer, neo_js_context_create_number(ctx, idx));
+                  ctx, replacer, neo_js_context_create_number(ctx, idx), NULL);
               NEO_JS_TRY(current) {
                 neo_js_context_defer_free(ctx, s);
                 return current;
@@ -169,12 +171,13 @@ neo_js_json_variable_stringify(neo_js_context_t ctx, neo_js_variable_t variable,
       return keys;
     }
     neo_js_variable_t v_length = neo_js_context_get_field(
-        ctx, keys, neo_js_context_create_string(ctx, L"length"));
+        ctx, keys, neo_js_context_create_string(ctx, L"length"), NULL);
     int64_t length = neo_js_variable_to_number(v_length)->number;
     for (int64_t idx = 0; idx < length; idx++) {
       neo_js_variable_t v_key = neo_js_context_get_field(
-          ctx, keys, neo_js_context_create_number(ctx, idx));
-      neo_js_variable_t item = neo_js_context_get_field(ctx, variable, v_key);
+          ctx, keys, neo_js_context_create_number(ctx, idx), NULL);
+      neo_js_variable_t item =
+          neo_js_context_get_field(ctx, variable, v_key, NULL);
       NEO_JS_TRY(item) {
         neo_js_context_defer_free(ctx, s);
         return item;
@@ -198,7 +201,8 @@ neo_js_json_variable_stringify(neo_js_context_t ctx, neo_js_variable_t variable,
             }
           } else {
             neo_js_variable_t v_length = neo_js_context_get_field(
-                ctx, replacer, neo_js_context_create_string(ctx, L"length"));
+                ctx, replacer, neo_js_context_create_string(ctx, L"length"),
+                NULL);
             NEO_JS_TRY(v_length) {
               neo_js_context_defer_free(ctx, s);
               return v_length;
@@ -207,7 +211,7 @@ neo_js_json_variable_stringify(neo_js_context_t ctx, neo_js_variable_t variable,
             neo_js_variable_t found = NULL;
             for (int64_t idx = 0; idx < length; idx++) {
               neo_js_variable_t current = neo_js_context_get_field(
-                  ctx, replacer, neo_js_context_create_number(ctx, idx));
+                  ctx, replacer, neo_js_context_create_number(ctx, idx), NULL);
               NEO_JS_TRY(current) {
                 neo_js_context_defer_free(ctx, s);
                 return current;
@@ -269,7 +273,7 @@ static uint32_t neo_js_json_hash(neo_js_variable_t variable, uint32_t max,
 }
 
 static int32_t neo_js_json_compare(neo_js_variable_t a, neo_js_variable_t b,
-                                  neo_js_context_t ctx) {
+                                   neo_js_context_t ctx) {
   intptr_t addr_a = (intptr_t)neo_js_variable_get_value(a);
   intptr_t addr_b = (intptr_t)neo_js_variable_get_value(b);
   if (addr_a > addr_b) {
@@ -474,12 +478,12 @@ static neo_js_variable_t neo_js_json_read_array(neo_js_context_t ctx,
         neo_js_variable_t context = neo_js_context_create_object(ctx, NULL);
         neo_js_context_set_field(ctx, context,
                                  neo_js_context_create_string(ctx, L"source"),
-                                 neo_js_context_create_string(ctx, src));
+                                 neo_js_context_create_string(ctx, src), NULL);
         neo_js_variable_t argv[] = {key, item, context};
         item = neo_js_context_call(ctx, receiver, result, 3, argv);
         NEO_JS_TRY_AND_THROW(item);
       }
-      neo_js_context_set_field(ctx, result, key, item);
+      neo_js_context_set_field(ctx, result, key, item, NULL);
       neo_js_json_skip_invisible(&current);
       if (*current.offset == ']') {
         break;
@@ -545,14 +549,15 @@ static neo_js_variable_t neo_js_json_read_object(neo_js_context_t ctx,
         wchar_t *value_src = neo_location_get(allocator, value_loc);
         neo_js_context_defer_free(ctx, value_src);
         neo_js_variable_t context = neo_js_context_create_object(ctx, NULL);
-        neo_js_context_set_field(ctx, context,
-                                 neo_js_context_create_string(ctx, L"source"),
-                                 neo_js_context_create_string(ctx, value_src));
+        neo_js_context_set_field(
+            ctx, context, neo_js_context_create_string(ctx, L"source"),
+            neo_js_context_create_string(ctx, value_src), NULL);
         neo_js_variable_t argv[] = {key, value, context};
         value = neo_js_context_call(ctx, receiver, result, 3, argv);
         NEO_JS_TRY_AND_THROW(value);
       }
-      NEO_JS_TRY_AND_THROW(neo_js_context_set_field(ctx, result, key, value));
+      NEO_JS_TRY_AND_THROW(
+          neo_js_context_set_field(ctx, result, key, value, NULL));
       neo_js_json_skip_invisible(&current);
       if (*current.offset == ',') {
         current.offset++;
@@ -657,7 +662,7 @@ NEO_JS_CFUNCTION(neo_js_json_parse) {
     neo_js_variable_t context = neo_js_context_create_object(ctx, NULL);
     neo_js_context_set_field(ctx, context,
                              neo_js_context_create_string(ctx, L"source"),
-                             neo_js_context_create_string(ctx, source));
+                             neo_js_context_create_string(ctx, source), NULL);
     neo_js_variable_t key = neo_js_context_create_string(ctx, L"");
     neo_js_variable_t argv[] = {key, variable, context};
     variable = neo_js_context_call(ctx, receiver, variable, 3, argv);

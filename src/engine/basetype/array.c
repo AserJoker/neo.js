@@ -9,7 +9,8 @@
 
 static neo_js_variable_t neo_js_array_get_field(neo_js_context_t ctx,
                                                 neo_js_variable_t object,
-                                                neo_js_variable_t field) {
+                                                neo_js_variable_t field,
+                                                neo_js_variable_t receiver) {
   neo_js_array_t array =
       neo_js_value_to_array(neo_js_variable_get_value(object));
   neo_js_type_t otype = neo_get_js_object_type();
@@ -22,13 +23,14 @@ static neo_js_variable_t neo_js_array_get_field(neo_js_context_t ctx,
       return length;
     }
   }
-  return otype->get_field_fn(ctx, object, field);
+  return otype->get_field_fn(ctx, object, field, receiver);
 }
 
 static neo_js_variable_t neo_js_array_set_field(neo_js_context_t ctx,
                                                 neo_js_variable_t object,
                                                 neo_js_variable_t field,
-                                                neo_js_variable_t value) {
+                                                neo_js_variable_t value,
+                                                neo_js_variable_t receiver) {
   neo_js_type_t otype = neo_get_js_object_type();
   neo_js_array_t array =
       neo_js_value_to_array(neo_js_variable_get_value(object));
@@ -44,7 +46,8 @@ static neo_js_variable_t neo_js_array_set_field(neo_js_context_t ctx,
       }
       for (size_t i = length; i < array->length; i++) {
         neo_js_variable_t idx = neo_js_context_create_number(ctx, i);
-        neo_js_variable_t item = neo_js_array_get_field(ctx, object, idx);
+        neo_js_variable_t item =
+            neo_js_array_get_field(ctx, object, idx, receiver);
         if (neo_js_variable_get_type(item)->kind != NEO_JS_TYPE_UNDEFINED) {
           neo_js_variable_t error = neo_js_context_del_field(ctx, object, idx);
           if (error) {
@@ -65,7 +68,7 @@ static neo_js_variable_t neo_js_array_set_field(neo_js_context_t ctx,
       }
     }
   }
-  return otype->set_field_fn(ctx, object, field, value);
+  return otype->set_field_fn(ctx, object, field, value, receiver);
 }
 
 neo_js_type_t neo_get_js_array_type() {

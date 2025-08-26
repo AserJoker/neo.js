@@ -58,7 +58,8 @@ static neo_js_variable_t neo_js_string_to_object(neo_js_context_t ctx,
 
 static neo_js_variable_t neo_js_string_get_field(neo_js_context_t ctx,
                                                  neo_js_variable_t self,
-                                                 neo_js_variable_t field) {
+                                                 neo_js_variable_t field,
+                                                 neo_js_variable_t receiver) {
   if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_STRING) {
     neo_js_string_t string =
         neo_js_value_to_string(neo_js_variable_get_value(field));
@@ -67,13 +68,14 @@ static neo_js_variable_t neo_js_string_get_field(neo_js_context_t ctx,
     }
   }
   return neo_js_context_get_field(ctx, neo_js_string_to_object(ctx, self),
-                                  field);
+                                  field, receiver);
 }
 
 static neo_js_variable_t neo_js_string_set_field(neo_js_context_t ctx,
                                                  neo_js_variable_t self,
                                                  neo_js_variable_t field,
-                                                 neo_js_variable_t value) {
+                                                 neo_js_variable_t value,
+                                                 neo_js_variable_t receiver) {
   if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_STRING) {
     neo_js_string_t string =
         neo_js_value_to_string(neo_js_variable_get_value(field));
@@ -82,7 +84,7 @@ static neo_js_variable_t neo_js_string_set_field(neo_js_context_t ctx,
     }
   }
   return neo_js_context_set_field(ctx, neo_js_string_to_object(ctx, self),
-                                  field, value);
+                                  field, value, receiver);
 }
 
 static neo_js_variable_t neo_js_string_del_field(neo_js_context_t ctx,
