@@ -28,6 +28,8 @@ neo_js_variable_t neo_create_js_variable(neo_allocator_t allocator,
 
 neo_js_handle_t neo_js_variable_get_handle(neo_js_variable_t variable);
 
+neo_js_handle_t neo_js_variable_get_raw_handle(neo_js_variable_t variable);
+
 void neo_js_variable_set_const(neo_js_variable_t variable, bool is_const);
 
 bool neo_js_variable_is_const(neo_js_variable_t variable);
@@ -40,6 +42,8 @@ void neo_js_variable_set_await_using(neo_js_variable_t variable, bool is_using);
 
 bool neo_js_variable_is_await_using(neo_js_variable_t variable);
 
+bool neo_js_variable_is_ref(neo_js_variable_t variable);
+
 static inline neo_js_value_t
 neo_js_variable_get_value(neo_js_variable_t variable) {
   return neo_js_handle_get_value(neo_js_variable_get_handle(variable));
@@ -47,7 +51,8 @@ neo_js_variable_get_value(neo_js_variable_t variable) {
 
 static inline neo_js_type_t
 neo_js_variable_get_type(neo_js_variable_t variable) {
-  return neo_js_variable_get_value(variable)->type;
+  neo_js_handle_t handle = neo_js_variable_get_raw_handle(variable);
+  return neo_js_handle_get_value(handle)->type;
 }
 
 static inline neo_js_string_t

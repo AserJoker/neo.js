@@ -28,6 +28,7 @@
 #include "engine/basetype/null.h"
 #include "engine/basetype/number.h"
 #include "engine/basetype/object.h"
+#include "engine/basetype/ref.h"
 #include "engine/basetype/string.h"
 #include "engine/basetype/symbol.h"
 #include "engine/basetype/undefined.h"
@@ -2457,6 +2458,20 @@ neo_js_variable_t neo_js_context_create_variable(neo_js_context_t ctx,
   return neo_js_scope_create_variable(ctx->scope, handle, NULL);
 }
 
+neo_js_variable_t neo_js_context_to_ref(neo_js_context_t ctx,
+                                        neo_js_variable_t variable) {
+  neo_js_variable_t val = neo_js_context_create_undefined(ctx);
+  neo_js_context_copy(ctx, variable, val);
+  neo_js_handle_t hval = neo_js_variable_get_handle(val);
+  neo_js_handle_t hvariable = neo_js_variable_get_handle(variable);
+  neo_js_ref_t ref = neo_create_js_ref(neo_js_context_get_allocator(ctx));
+  ref->target = hval;
+  neo_js_handle_add_parent(hval, hvariable);
+  neo_js_handle_set_value(neo_js_context_get_allocator(ctx), hvariable,
+                          &ref->value);
+  return variable;
+}
+
 neo_js_variable_t neo_js_context_def_variable(neo_js_context_t ctx,
                                               neo_js_variable_t variable,
                                               const wchar_t *name) {
@@ -2496,9 +2511,14 @@ neo_js_variable_t neo_js_context_store_variable(neo_js_context_t ctx,
           ctx, NEO_JS_ERROR_TYPE, L"assignment to constant variable.");
     }
   }
-  neo_js_type_t type = neo_js_variable_get_type(variable);
   neo_js_context_push_scope(ctx);
-  type->copy_fn(ctx, variable, current);
+  if (neo_js_variable_is_ref(current)) {
+    neo_js_variable_t val = neo_js_context_clone(ctx, variable);
+    neo_js_ref_set_target(ctx, current, val);
+  } else {
+    neo_js_type_t type = neo_js_variable_get_type(variable);
+    type->copy_fn(ctx, variable, current);
+  }
   neo_js_context_pop_scope(ctx);
   return neo_js_context_create_undefined(ctx);
 }
@@ -3152,6 +3172,7 @@ neo_js_variable_t neo_js_context_clone(neo_js_context_t ctx,
   if (type->kind < NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t variable = neo_js_context_create_undefined(ctx);
     neo_js_variable_t error = neo_js_context_copy(ctx, self, variable);
+    NEO_JS_TRY_AND_THROW(error);
     return variable;
   } else {
     return neo_js_context_create_variable(ctx, neo_js_variable_get_handle(self),
@@ -3725,6 +3746,9 @@ neo_js_variable_t neo_js_context_simple_call(neo_js_context_t ctx,
                                              neo_js_variable_t self,
                                              uint32_t argc,
                                              neo_js_variable_t *argv) {
+  for (uint32_t i = 0; i < argc; i++) {
+    argv[i] = neo_js_context_clone(ctx, argv[i]);
+  }
   if (neo_js_variable_get_type(callee)->kind == NEO_JS_TYPE_CFUNCTION) {
     return neo_js_context_call_cfunction(ctx, callee, self, argc, argv);
   } else if (neo_js_variable_get_type(callee)->kind ==

@@ -21,7 +21,10 @@ void neo_js_callable_set_closure(neo_js_context_t ctx, neo_js_variable_t self,
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_js_callable_t callable = neo_js_variable_to_callable(self);
   neo_js_handle_t hvariable = neo_js_variable_get_handle(self);
-  neo_js_handle_t hclosure = neo_js_variable_get_handle(closure);
+  if (!neo_js_variable_is_ref(closure)) {
+    closure = neo_js_context_to_ref(ctx, closure);
+  }
+  neo_js_handle_t hclosure = neo_js_variable_get_raw_handle(closure);
   neo_js_handle_t current =
       neo_hash_map_get(callable->closure, name, NULL, NULL);
   neo_js_handle_add_parent(hclosure, hvariable);

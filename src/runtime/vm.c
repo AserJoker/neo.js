@@ -655,13 +655,7 @@ void neo_js_vm_set_closure(neo_js_vm_t vm, neo_program_t program) {
   }
   neo_js_variable_t value = neo_js_context_load_variable(vm->ctx, name);
   CHECK_AND_THROW(value, vm, program);
-  neo_js_function_t function = neo_js_variable_to_function(variable);
-  neo_js_handle_t hvalue = neo_js_variable_get_handle(value);
-  neo_js_handle_t hfunction = neo_js_variable_get_handle(variable);
-  neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
-  neo_hash_map_set(function->callable.closure,
-                   neo_create_wstring(allocator, name), hvalue, NULL, NULL);
-  neo_js_handle_add_parent(hvalue, hfunction);
+  neo_js_callable_set_closure(vm->ctx, variable, name, value);
 }
 void neo_js_vm_extends(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t parent = neo_list_node_get(neo_list_get_last(vm->stack));
