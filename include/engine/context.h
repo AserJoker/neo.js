@@ -247,6 +247,10 @@ neo_js_variable_t neo_js_context_get_keys(neo_js_context_t ctx,
 neo_js_variable_t neo_js_context_clone(neo_js_context_t ctx,
                                        neo_js_variable_t self);
 
+neo_js_variable_t neo_js_context_copy(neo_js_context_t ctx,
+                                      neo_js_variable_t self,
+                                      neo_js_variable_t target);
+
 neo_js_variable_t neo_js_context_call(neo_js_context_t ctx,
                                       neo_js_variable_t callee,
                                       neo_js_variable_t self, uint32_t argc,

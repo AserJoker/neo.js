@@ -62,7 +62,7 @@ typedef bool (*neo_js_is_equal_fn_t)(neo_js_context_t ctx,
                                      neo_js_variable_t self,
                                      neo_js_variable_t another);
 
-typedef void (*neo_js_copy_fn_t)(neo_js_context_t ctx, neo_js_variable_t self,
+typedef neo_js_variable_t (*neo_js_copy_fn_t)(neo_js_context_t ctx, neo_js_variable_t self,
                                  neo_js_variable_t target);
 
 typedef enum _neo_js_type_kind_t {

@@ -111,14 +111,16 @@ static bool neo_js_null_is_equal(neo_js_context_t ctx, neo_js_variable_t self,
                                  neo_js_variable_t another) {
   return neo_js_variable_get_type(another)->kind == NEO_JS_TYPE_NULL;
 }
-static void neo_js_null_copy(neo_js_context_t ctx, neo_js_variable_t self,
-                             neo_js_variable_t target) {
+static neo_js_variable_t neo_js_null_copy(neo_js_context_t ctx,
+                                          neo_js_variable_t self,
+                                          neo_js_variable_t target) {
 
   neo_js_handle_t htarget = neo_js_variable_get_handle(target);
   neo_allocator_t allocaotr =
       neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
   neo_js_handle_set_value(allocaotr, htarget,
                           &neo_create_js_null(allocaotr)->value);
+  return target;
 }
 neo_js_type_t neo_get_js_null_type() {
   static struct _neo_js_type_t type = {

@@ -90,8 +90,9 @@ static bool neo_js_boolean_is_equal(neo_js_context_t ctx,
   return b1->boolean == b2->boolean;
 }
 
-static void neo_js_boolean_copy(neo_js_context_t ctx, neo_js_variable_t self,
-                                neo_js_variable_t target) {
+static neo_js_variable_t neo_js_boolean_copy(neo_js_context_t ctx,
+                                             neo_js_variable_t self,
+                                             neo_js_variable_t target) {
   neo_js_boolean_t boolean =
       neo_js_value_to_boolean(neo_js_variable_get_value(self));
   neo_js_handle_t htarget = neo_js_variable_get_handle(target);
@@ -100,6 +101,7 @@ static void neo_js_boolean_copy(neo_js_context_t ctx, neo_js_variable_t self,
   neo_js_handle_set_value(
       allocaotr, htarget,
       &neo_create_js_boolean(allocaotr, boolean->boolean)->value);
+  return target;
 }
 
 neo_js_type_t neo_get_js_boolean_type() {

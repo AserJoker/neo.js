@@ -569,8 +569,9 @@ static bool neo_js_object_is_equal(neo_js_context_t ctx, neo_js_variable_t self,
   return neo_js_variable_get_value(self) == neo_js_variable_get_value(another);
 }
 
-static void neo_js_object_copy(neo_js_context_t ctx, neo_js_variable_t self,
-                               neo_js_variable_t another) {
+static neo_js_variable_t neo_js_object_copy(neo_js_context_t ctx,
+                                            neo_js_variable_t self,
+                                            neo_js_variable_t another) {
   neo_allocator_t allocaotr =
       neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
   neo_js_object_t object = neo_js_variable_to_object(self);
@@ -604,6 +605,7 @@ static void neo_js_object_copy(neo_js_context_t ctx, neo_js_variable_t self,
     neo_js_handle_add_parent(hvalue, htarget);
   }
   neo_js_handle_set_value(allocaotr, htarget, &object->value);
+  return another;
 }
 
 neo_js_type_t neo_get_js_object_type() {

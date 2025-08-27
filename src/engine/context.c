@@ -3148,12 +3148,22 @@ neo_js_variable_t neo_js_context_get_keys(neo_js_context_t ctx,
 
 neo_js_variable_t neo_js_context_clone(neo_js_context_t ctx,
                                        neo_js_variable_t self) {
-  neo_js_variable_t variable = neo_js_context_create_undefined(ctx);
-  neo_js_context_push_scope(ctx);
   neo_js_type_t type = neo_js_variable_get_type(self);
-  type->copy_fn(ctx, self, variable);
-  neo_js_context_pop_scope(ctx);
-  return variable;
+  if (type->kind < NEO_JS_TYPE_OBJECT) {
+    neo_js_variable_t variable = neo_js_context_create_undefined(ctx);
+    neo_js_variable_t error = neo_js_context_copy(ctx, self, variable);
+    return variable;
+  } else {
+    return neo_js_context_create_variable(ctx, neo_js_variable_get_handle(self),
+                                          NULL);
+  }
+}
+
+neo_js_variable_t neo_js_context_copy(neo_js_context_t ctx,
+                                      neo_js_variable_t self,
+                                      neo_js_variable_t target) {
+  neo_js_type_t type = neo_js_variable_get_type(self);
+  return type->copy_fn(ctx, self, target);
 }
 
 static neo_js_variable_t

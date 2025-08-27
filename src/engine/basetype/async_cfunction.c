@@ -68,9 +68,9 @@ neo_js_async_cfunction_del_field(neo_js_context_t ctx, neo_js_variable_t self,
   return otype->del_field_fn(ctx, self, field);
 }
 
-static void neo_js_async_cfunction_copy_fn(neo_js_context_t ctx,
-                                           neo_js_variable_t self,
-                                           neo_js_variable_t target) {
+static neo_js_variable_t
+neo_js_async_cfunction_copy_fn(neo_js_context_t ctx, neo_js_variable_t self,
+                               neo_js_variable_t target) {
   neo_js_type_t otype = neo_get_js_object_type();
   otype->copy_fn(ctx, self, target);
   neo_js_handle_t htarget = neo_js_variable_get_handle(target);
@@ -87,6 +87,7 @@ static void neo_js_async_cfunction_copy_fn(neo_js_context_t ctx,
     neo_js_handle_t hvalue = neo_hash_map_node_get_value(it);
     neo_js_handle_add_parent(hvalue, htarget);
   }
+  return target;
 }
 
 neo_js_type_t neo_get_js_async_cfunction_type() {

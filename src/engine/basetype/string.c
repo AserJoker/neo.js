@@ -109,8 +109,9 @@ static bool neo_js_string_is_equal(neo_js_context_t ctx, neo_js_variable_t self,
   neo_js_string_t str2 = neo_js_value_to_string(val2);
   return wcscmp(str1->string, str2->string) == 0;
 }
-static void neo_js_string_copy(neo_js_context_t ctx, neo_js_variable_t self,
-                               neo_js_variable_t target) {
+static neo_js_variable_t neo_js_string_copy(neo_js_context_t ctx,
+                                            neo_js_variable_t self,
+                                            neo_js_variable_t target) {
   neo_js_string_t string =
       neo_js_value_to_string(neo_js_variable_get_value(self));
   neo_js_handle_t htarget = neo_js_variable_get_handle(target);
@@ -119,6 +120,7 @@ static void neo_js_string_copy(neo_js_context_t ctx, neo_js_variable_t self,
   neo_js_handle_set_value(
       allocaotr, htarget,
       &neo_create_js_string(allocaotr, string->string)->value);
+  return target;
 }
 neo_js_type_t neo_get_js_string_type() {
   static struct _neo_js_type_t type = {
