@@ -10,7 +10,6 @@ void neo_js_value_dispose(neo_allocator_t allocaotr, neo_js_value_t value) {
 }
 
 void neo_js_value_init(neo_allocator_t allocator, neo_js_value_t value) {
-  value->ref = 0;
   value->type = NULL;
   neo_hash_map_initialize_t initialize = {0};
   initialize.auto_free_key = true;
