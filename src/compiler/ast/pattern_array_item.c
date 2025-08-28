@@ -75,8 +75,9 @@ neo_serialize_ast_pattern_array_item(neo_allocator_t allocator,
 
 static neo_ast_pattern_array_item_t
 neo_create_ast_pattern_array_item(neo_allocator_t allocator) {
-  neo_ast_pattern_array_item_t node =
-      neo_allocator_alloc2(allocator, neo_ast_pattern_array_item);
+  neo_ast_pattern_array_item_t node = neo_allocator_alloc(
+      allocator, sizeof(struct _neo_ast_pattern_array_item_t),
+      neo_ast_pattern_array_item_dispose);
   node->identifier = NULL;
   node->value = NULL;
   node->node.type = NEO_NODE_TYPE_PATTERN_ARRAY_ITEM;

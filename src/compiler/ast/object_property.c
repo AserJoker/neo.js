@@ -87,7 +87,8 @@ neo_serialize_ast_object_property(neo_allocator_t allocator,
 static neo_ast_object_property_t
 neo_create_ast_object_property(neo_allocator_t allocator) {
   neo_ast_object_property_t node =
-      neo_allocator_alloc2(allocator, neo_ast_object_property);
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_object_property_t),
+                          neo_ast_object_property_dispose);
   node->identifier = NULL;
   node->value = NULL;
   node->node.type = NEO_NODE_TYPE_OBJECT_PROPERTY;

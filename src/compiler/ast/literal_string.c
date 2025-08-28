@@ -43,7 +43,8 @@ neo_serialize_ast_literal_string(neo_allocator_t allocator,
 static neo_ast_literal_string_t
 neo_create_string_litreral(neo_allocator_t allocator) {
   neo_ast_literal_string_t node =
-      neo_allocator_alloc2(allocator, neo_ast_literal_string);
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_literal_string_t),
+                          neo_ast_literal_string_dispose);
   node->node.type = NEO_NODE_TYPE_LITERAL_STRING;
 
   node->node.scope = NULL;

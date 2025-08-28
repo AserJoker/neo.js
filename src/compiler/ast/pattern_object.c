@@ -141,7 +141,8 @@ neo_serialize_ast_pattern_object(neo_allocator_t allocator,
 static neo_ast_pattern_object_t
 neo_create_ast_pattern_object(neo_allocator_t allocator) {
   neo_ast_pattern_object_t node =
-      neo_allocator_alloc2(allocator, neo_ast_pattern_object);
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_pattern_object_t),
+                          neo_ast_pattern_object_dispose);
   neo_list_initialize_t initialize = {true};
   node->items = neo_create_list(allocator, &initialize);
   node->node.type = NEO_NODE_TYPE_PATTERN_OBJECT;

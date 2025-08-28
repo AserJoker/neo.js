@@ -55,7 +55,8 @@ static neo_ast_pattern_rest_t
 neo_create_ast_pattern_rest(neo_allocator_t allocator) {
 
   neo_ast_pattern_rest_t node =
-      neo_allocator_alloc2(allocator, neo_ast_pattern_rest);
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_pattern_rest_t),
+                          neo_ast_pattern_rest_dispose);
   node->identifier = NULL;
   node->node.type = NEO_NODE_TYPE_PATTERN_REST;
 

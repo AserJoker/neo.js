@@ -30,7 +30,8 @@ neo_serialize_ast_expression_super(neo_allocator_t allocator,
 static neo_ast_expression_super_t
 neo_create_ast_expression_super(neo_allocator_t allocator) {
   neo_ast_expression_super_t node =
-      neo_allocator_alloc2(allocator, neo_ast_expression_super);
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_expression_super_t),
+                          neo_ast_expression_super_dispose);
   node->node.type = NEO_NODE_TYPE_EXPRESSION_SUPER;
 
   node->node.scope = NULL;

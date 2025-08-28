@@ -25,7 +25,8 @@ static void neo_ast_statement_empty_write(neo_allocator_t allocator,
 static neo_ast_statement_empty_t
 neo_create_empty_statement(neo_allocator_t allocator) {
   neo_ast_statement_empty_t node =
-      neo_allocator_alloc2(allocator, neo_ast_statement_empty);
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_statement_empty_t),
+                          neo_ast_statement_empty_dispose);
   node->node.type = NEO_NODE_TYPE_STATEMENT_EMPTY;
 
   node->node.scope = NULL;

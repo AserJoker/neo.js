@@ -35,7 +35,8 @@ static void neo_ast_literal_null_write(neo_allocator_t allocator,
 static neo_ast_literal_null_t
 neo_create_ast_literal_null(neo_allocator_t allocator) {
   neo_ast_literal_null_t node =
-      neo_allocator_alloc2(allocator, neo_ast_literal_null);
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_literal_null_t),
+                          neo_ast_literal_null_dispose);
   node->node.type = NEO_NODE_TYPE_LITERAL_NULL;
 
   node->node.scope = NULL;

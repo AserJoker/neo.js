@@ -5,7 +5,7 @@
 
 typedef struct _neo_alloc_chunk {
   size_t size;
-  neo_destructor_fn_t destructor_fn;
+  neo_dispose_fn_t destructor_fn;
   const char *file;
   size_t line;
   struct _neo_alloc_chunk *next;
@@ -59,8 +59,8 @@ void neo_delete_allocator(neo_allocator_t allocator) {
 }
 
 void *neo_allocator_alloc_ex(neo_allocator_t self, size_t size,
-                             neo_destructor_fn_t destructor_fn,
-                             const char *file, size_t line) {
+                             neo_dispose_fn_t destructor_fn, const char *file,
+                             size_t line) {
   neo_alloc_chunk chunk =
       (neo_alloc_chunk)self->alloc(sizeof(struct _neo_alloc_chunk) + size);
   if (!chunk) {

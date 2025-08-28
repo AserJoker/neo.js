@@ -68,7 +68,8 @@ neo_serialize_ast_function_body(neo_allocator_t allocator,
 static neo_ast_function_body_t
 neo_create_ast_function_body(neo_allocator_t allocator) {
   neo_ast_function_body_t node =
-      neo_allocator_alloc2(allocator, neo_ast_function_body);
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_function_body_t),
+                          neo_ast_function_body_dispose);
   neo_list_initialize_t initialize = {true};
   node->directives = neo_create_list(allocator, &initialize);
   node->body = neo_create_list(allocator, &initialize);

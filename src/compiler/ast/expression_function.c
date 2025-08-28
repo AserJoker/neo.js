@@ -133,8 +133,9 @@ neo_serialize_ast_expression_function(neo_allocator_t allocator,
 
 static neo_ast_expression_function_t neo_create_ast_expression_function(
     neo_allocator_t allocator, const wchar_t *file, neo_position_t *position) {
-  neo_ast_expression_function_t node =
-      neo_allocator_alloc2(allocator, neo_ast_expression_function);
+  neo_ast_expression_function_t node = neo_allocator_alloc(
+      allocator, sizeof(struct _neo_ast_expression_function_t),
+      neo_ast_expression_function_dispose);
   node->node.type = NEO_NODE_TYPE_EXPRESSION_FUNCTION;
   node->node.scope = NULL;
   node->node.serialize =

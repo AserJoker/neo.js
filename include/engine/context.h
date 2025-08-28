@@ -76,11 +76,11 @@ neo_js_runtime_t neo_js_context_get_runtime(neo_js_context_t ctx);
 void neo_js_context_defer_free(neo_js_context_t ctx, void *data);
 
 void *neo_js_context_alloc_ex(neo_js_context_t ctx, size_t size,
-                              neo_destructor_fn_t dispose, const char *filename,
+                              neo_dispose_fn_t dispose, const char *filename,
                               size_t line);
 
 #define neo_js_context_alloc(ctx, size, dispose)                               \
-  neo_js_context_alloc_ex(ctx, size, (neo_destructor_fn_t)dispose, __FILE__,   \
+  neo_js_context_alloc_ex(ctx, size, (neo_dispose_fn_t)dispose, __FILE__,      \
                           __LINE__)
 
 void neo_js_context_next_tick(neo_js_context_t ctx);

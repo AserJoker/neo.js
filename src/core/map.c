@@ -26,9 +26,8 @@ static void neo_map_dispose(neo_allocator_t allocator, neo_map_t self) {
 
 neo_map_t neo_create_map(neo_allocator_t allocator,
                          neo_map_initialize_t *initialize) {
-  neo_map_t map =
-      (neo_map_t)neo_allocator_alloc(allocator, sizeof(struct _neo_map_t),
-                                     (neo_destructor_fn_t)neo_map_dispose);
+  neo_map_t map = (neo_map_t)neo_allocator_alloc(
+      allocator, sizeof(struct _neo_map_t), (neo_dispose_fn_t)neo_map_dispose);
   map->allocator = allocator;
   map->size = 0;
   if (initialize) {

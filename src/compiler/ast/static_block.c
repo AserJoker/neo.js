@@ -53,7 +53,8 @@ neo_serialize_ast_statement_block(neo_allocator_t allocator,
 static neo_ast_static_block_t
 neo_create_ast_static_block(neo_allocator_t allocator) {
   neo_ast_static_block_t node =
-      neo_allocator_alloc2(allocator, neo_ast_static_block);
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_static_block_t),
+                          neo_ast_static_block_dispose);
   node->node.type = NEO_NODE_TYPE_STATIC_BLOCK;
 
   node->node.scope = NULL;

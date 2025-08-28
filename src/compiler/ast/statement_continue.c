@@ -44,8 +44,9 @@ neo_ast_statement_continue_write(neo_allocator_t allocator,
 }
 static neo_ast_statement_continue_t
 neo_create_ast_statement_continue(neo_allocator_t allocator) {
-  neo_ast_statement_continue_t node =
-      neo_allocator_alloc2(allocator, neo_ast_statement_continue);
+  neo_ast_statement_continue_t node = neo_allocator_alloc(
+      allocator, sizeof(struct _neo_ast_statement_continue_t),
+      neo_ast_statement_continue_dispose);
   node->label = NULL;
   node->node.type = NEO_NODE_TYPE_STATEMENT_CONTINUE;
 

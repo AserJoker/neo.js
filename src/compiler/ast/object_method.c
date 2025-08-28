@@ -147,7 +147,8 @@ neo_serialize_ast_object_method(neo_allocator_t allocator,
 static neo_ast_object_method_t
 neo_create_ast_object_method(neo_allocator_t allocator) {
   neo_ast_object_method_t node =
-      neo_allocator_alloc2(allocator, neo_ast_object_method);
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_object_method_t),
+                          neo_ast_object_method_dispose);
   node->name = NULL;
   node->body = NULL;
   neo_list_initialize_t initialize = {true};

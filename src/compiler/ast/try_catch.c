@@ -68,7 +68,9 @@ static void neo_ast_try_catch_write(neo_allocator_t allocator,
 }
 
 static neo_ast_try_catch_t neo_create_ast_try_catch(neo_allocator_t allocator) {
-  neo_ast_try_catch_t node = neo_allocator_alloc2(allocator, neo_ast_try_catch);
+  neo_ast_try_catch_t node =
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_try_catch_t),
+                          neo_ast_try_catch_dispose);
   node->node.type = NEO_NODE_TYPE_TRY_CATCH;
 
   node->node.scope = NULL;

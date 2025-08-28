@@ -23,7 +23,8 @@ neo_serialize_ast_interpreter(neo_allocator_t allocator,
 static neo_ast_interpreter_t
 neo_create_interpreter_node(neo_allocator_t allocator) {
   neo_ast_interpreter_t node =
-      neo_allocator_alloc2(allocator, neo_ast_interpreter);
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_interpreter_t),
+                          neo_ast_interpreter_dispose);
   node->node.type = NEO_NODE_TYPE_INTERPRETER_DIRECTIVE;
 
   node->node.scope = NULL;

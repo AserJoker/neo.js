@@ -70,7 +70,8 @@ static void neo_ast_export_specifier_write(neo_allocator_t allocator,
 static neo_ast_export_specifier_t
 neo_create_ast_export_specifier(neo_allocator_t allocator) {
   neo_ast_export_specifier_t node =
-      neo_allocator_alloc2(allocator, neo_ast_export_specifier);
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_export_specifier_t),
+                          neo_ast_export_specifier_dispose);
   node->node.type = NEO_NODE_TYPE_EXPORT_SPECIFIER;
 
   node->node.scope = NULL;

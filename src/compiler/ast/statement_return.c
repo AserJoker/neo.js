@@ -52,7 +52,8 @@ neo_serialize_ast_statement_return(neo_allocator_t allocator,
 static neo_ast_statement_return_t
 neo_ast_create_statement_return(neo_allocator_t allocator) {
   neo_ast_statement_return_t node =
-      neo_allocator_alloc2(allocator, neo_ast_statement_return);
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_statement_return_t),
+                          neo_ast_statement_return_dispose);
   node->node.type = NEO_NODE_TYPE_STATEMENT_RETURN;
 
   node->node.scope = NULL;

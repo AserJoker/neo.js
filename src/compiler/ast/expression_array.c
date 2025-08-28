@@ -82,7 +82,8 @@ static void neo_ast_expression_array_write(neo_allocator_t allocator,
 static neo_ast_expression_array_t
 neo_create_ast_expression_array(neo_allocator_t allocator) {
   neo_ast_expression_array_t node =
-      neo_allocator_alloc2(allocator, neo_ast_expression_array);
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_expression_array_t),
+                          neo_ast_expression_array_dispose);
   neo_list_initialize_t initialize = {true};
   node->node.type = NEO_NODE_TYPE_EXPRESSION_ARRAY;
 

@@ -371,8 +371,9 @@ static void neo_ast_expression_binary_write(neo_allocator_t allocator,
 
 static neo_ast_expression_binary_t
 neo_create_ast_expression_binary(neo_allocator_t allocator) {
-  neo_ast_expression_binary_t node =
-      neo_allocator_alloc2(allocator, neo_ast_expression_binary);
+  neo_ast_expression_binary_t node = neo_allocator_alloc(
+      allocator, sizeof(struct _neo_ast_expression_binary_t),
+      neo_ast_expression_binary_dispose);
   node->left = NULL;
   node->right = NULL;
   node->opt = NULL;

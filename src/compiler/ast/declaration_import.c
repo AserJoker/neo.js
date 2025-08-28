@@ -68,8 +68,9 @@ neo_serialize_ast_declaration_import(neo_allocator_t allocator,
 
 static neo_ast_declaration_import_t
 neo_create_ast_declaration_import(neo_allocator_t allocator) {
-  neo_ast_declaration_import_t node =
-      neo_allocator_alloc2(allocator, neo_ast_declaration_import);
+  neo_ast_declaration_import_t node = neo_allocator_alloc(
+      allocator, sizeof(struct _neo_ast_declaration_import_t),
+      neo_ast_declaration_import_dispose);
   node->node.type = NEO_NODE_TYPE_DECLARATION_IMPORT;
 
   node->node.scope = NULL;

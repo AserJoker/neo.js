@@ -134,8 +134,9 @@ static neo_variable_t neo_serialize_ast_statement_for_await_of(
 }
 static neo_ast_statement_for_await_of_t
 neo_create_ast_statement_for_await_of(neo_allocator_t allocator) {
-  neo_ast_statement_for_await_of_t node =
-      neo_allocator_alloc2(allocator, neo_ast_statement_for_await_of);
+  neo_ast_statement_for_await_of_t node = neo_allocator_alloc(
+      allocator, sizeof(struct _neo_ast_statement_for_await_of_t),
+      neo_ast_statement_for_await_of_dispose);
   node->node.type = NEO_NODE_TYPE_STATEMENT_FOR_AWAIT_OF;
   node->node.scope = NULL;
   node->node.serialize =

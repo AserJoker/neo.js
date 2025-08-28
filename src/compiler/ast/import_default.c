@@ -48,7 +48,8 @@ neo_serialize_ast_import_default(neo_allocator_t allocator,
 static neo_ast_import_default_t
 neo_create_ast_import_default(neo_allocator_t allocator) {
   neo_ast_import_default_t node =
-      neo_allocator_alloc2(allocator, neo_ast_import_default);
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_import_default_t),
+                          neo_ast_import_default_dispose);
   node->node.type = NEO_NODE_TYPE_IMPORT_DEFAULT;
 
   node->node.scope = NULL;

@@ -7,7 +7,7 @@ extern "C" {
 #include <stddef.h>
 typedef struct _neo_allocator_t *neo_allocator_t;
 
-typedef void (*neo_destructor_fn_t)(neo_allocator_t allocator, void *pobject);
+typedef void (*neo_dispose_fn_t)(neo_allocator_t allocator, void *pobject);
 typedef struct _neo_allocator_initialize_t {
   neo_alloc_fn_t alloc;
   neo_free_fn_t free;
@@ -22,16 +22,12 @@ static inline neo_allocator_t neo_create_default_allocator() {
 }
 
 void *neo_allocator_alloc_ex(neo_allocator_t self, size_t size,
-                             neo_destructor_fn_t destructor_fn,
-                             const char *file, size_t line);
+                             neo_dispose_fn_t destructor_fn, const char *file,
+                             size_t line);
 
 #define neo_allocator_alloc(self, size, destructor)                            \
-  neo_allocator_alloc_ex(self, size, (neo_destructor_fn_t)destructor,          \
-                         __FILE__, __LINE__)
-
-#define neo_allocator_alloc2(self, type)                                       \
-  (type##_t)                                                                   \
-      neo_allocator_alloc(self, sizeof(struct _##type##_t), type##_dispose)
+  neo_allocator_alloc_ex(self, size, (neo_dispose_fn_t)destructor, __FILE__,   \
+                         __LINE__)
 
 void neo_allocator_free_ex(neo_allocator_t self, void *ptr);
 

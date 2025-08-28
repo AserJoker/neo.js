@@ -70,8 +70,9 @@ neo_serialize_ast_expression_condition(neo_allocator_t allocator,
 
 static neo_ast_expression_condition_t
 neo_create_ast_expression_condition(neo_allocator_t allocator) {
-  neo_ast_expression_condition_t node =
-      neo_allocator_alloc2(allocator, neo_ast_expression_condition);
+  neo_ast_expression_condition_t node = neo_allocator_alloc(
+      allocator, sizeof(struct _neo_ast_expression_condition_t),
+      neo_ast_expression_condition_dispose);
   node->node.type = NEO_NODE_TYPE_EXPRESSION_CONDITION;
   node->node.scope = NULL;
   node->node.serialize =

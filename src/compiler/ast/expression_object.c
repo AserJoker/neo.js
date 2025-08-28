@@ -47,9 +47,9 @@ static neo_variable_t
 neo_serialize_ast_expression_object(neo_allocator_t allocator,
                                     neo_ast_expression_object_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_set(
-      variable, L"type",
-      neo_create_variable_string(allocator, L"NEO_NODE_TYPE_EXPRESSION_OBJECT"));
+  neo_variable_set(variable, L"type",
+                   neo_create_variable_string(
+                       allocator, L"NEO_NODE_TYPE_EXPRESSION_OBJECT"));
   neo_variable_set(variable, L"location",
                    neo_ast_node_location_serialize(allocator, &node->node));
   neo_variable_set(variable, L"scope",
@@ -61,8 +61,9 @@ neo_serialize_ast_expression_object(neo_allocator_t allocator,
 
 static neo_ast_expression_object_t
 neo_create_ast_expression_object(neo_allocator_t allocator) {
-  neo_ast_expression_object_t node =
-      neo_allocator_alloc2(allocator, neo_ast_expression_object);
+  neo_ast_expression_object_t node = neo_allocator_alloc(
+      allocator, sizeof(struct _neo_ast_expression_object_t),
+      neo_ast_expression_object_dispose);
   node->node.type = NEO_NODE_TYPE_EXPRESSION_OBJECT;
 
   node->node.scope = NULL;

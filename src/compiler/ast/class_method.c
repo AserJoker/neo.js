@@ -20,7 +20,7 @@
 #include <stdio.h>
 #include <wchar.h>
 
-static void neo_ast_class_method_dispose(neo_allocator_t allocator,
+static bool neo_ast_class_method_dispose(neo_allocator_t allocator,
                                          neo_ast_class_method_t node) {
   neo_allocator_free(allocator, node->arguments);
   neo_allocator_free(allocator, node->body);
@@ -28,6 +28,7 @@ static void neo_ast_class_method_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, node->name);
   neo_allocator_free(allocator, node->node.scope);
   neo_allocator_free(allocator, node->closure);
+  return true;
 }
 
 static void neo_ast_class_method_resolve_closure(neo_allocator_t allocator,
@@ -179,7 +180,8 @@ neo_serialize_ast_class_method(neo_allocator_t allocator,
 static neo_ast_class_method_t
 neo_create_ast_class_method(neo_allocator_t allocator) {
   neo_ast_class_method_t node =
-      neo_allocator_alloc2(allocator, neo_ast_class_method);
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_class_method_t),
+                          neo_ast_class_method_dispose);
   neo_list_initialize_t initialize = {true};
   node->node.type = NEO_NODE_TYPE_CLASS_METHOD;
   node->node.scope = NULL;

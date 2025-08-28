@@ -48,7 +48,8 @@ neo_serialize_ast_switch_case(neo_allocator_t allocator,
 static neo_ast_switch_case_t
 neo_create_ast_switch_case(neo_allocator_t allocator) {
   neo_ast_switch_case_t node =
-      neo_allocator_alloc2(allocator, neo_ast_switch_case);
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_switch_case_t),
+                          neo_ast_switch_case_dispose);
   node->node.type = NEO_NODE_TYPE_SWITCH_CASE;
 
   node->node.scope = NULL;

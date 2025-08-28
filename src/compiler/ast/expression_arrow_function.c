@@ -131,8 +131,9 @@ static void neo_ast_expression_arrow_function_write(
 }
 static neo_ast_expression_arrow_function_t
 neo_create_ast_expression_arrow_function(neo_allocator_t allocator) {
-  neo_ast_expression_arrow_function_t node =
-      neo_allocator_alloc2(allocator, neo_ast_expression_arrow_function);
+  neo_ast_expression_arrow_function_t node = neo_allocator_alloc(
+      allocator, sizeof(struct _neo_ast_expression_arrow_function_t),
+      neo_ast_expression_arrow_function_dispose);
   node->node.type = NEO_NODE_TYPE_EXPRESSION_ARROW_FUNCTION;
   node->node.scope = NULL;
   node->node.serialize =

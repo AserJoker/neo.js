@@ -37,7 +37,8 @@ static void neo_ast_expression_this_write(neo_allocator_t allocator,
 static neo_ast_expression_this_t
 neo_create_ast_expression_this(neo_allocator_t allocator) {
   neo_ast_expression_this_t node =
-      neo_allocator_alloc2(allocator, neo_ast_expression_this);
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_expression_this_t),
+                          neo_ast_expression_this_dispose);
   node->node.type = NEO_NODE_TYPE_EXPRESSION_THIS;
 
   node->node.scope = NULL;

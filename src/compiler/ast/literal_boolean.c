@@ -40,7 +40,8 @@ static void neo_ast_literal_boolean_write(neo_allocator_t allocator,
 static neo_ast_literal_boolean_t
 neo_create_ast_literal_boolean(neo_allocator_t allocator) {
   neo_ast_literal_boolean_t node =
-      neo_allocator_alloc2(allocator, neo_ast_literal_boolean);
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_literal_boolean_t),
+                          neo_ast_literal_boolean_dispose);
   node->node.type = NEO_NODE_TYPE_LITERAL_BOOLEAN;
 
   node->node.scope = NULL;

@@ -63,9 +63,9 @@ static neo_variable_t
 neo_serialize_ast_function_argument(neo_allocator_t allocator,
                                     neo_ast_function_argument_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_set(
-      variable, L"type",
-      neo_create_variable_string(allocator, L"NEO_NODE_TYPE_FUNCTION_ARGUMENT"));
+  neo_variable_set(variable, L"type",
+                   neo_create_variable_string(
+                       allocator, L"NEO_NODE_TYPE_FUNCTION_ARGUMENT"));
   neo_variable_set(variable, L"location",
                    neo_ast_node_location_serialize(allocator, &node->node));
   neo_variable_set(variable, L"scope",
@@ -79,8 +79,9 @@ neo_serialize_ast_function_argument(neo_allocator_t allocator,
 
 static neo_ast_function_argument_t
 neo_create_ast_function_argument(neo_allocator_t allocator) {
-  neo_ast_function_argument_t node =
-      neo_allocator_alloc2(allocator, neo_ast_function_argument);
+  neo_ast_function_argument_t node = neo_allocator_alloc(
+      allocator, sizeof(struct _neo_ast_function_argument_t),
+      neo_ast_function_argument_dispose);
   node->identifier = NULL;
   node->value = NULL;
   node->node.type = NEO_NODE_TYPE_FUNCTION_ARGUMENT;

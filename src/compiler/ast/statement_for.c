@@ -96,7 +96,8 @@ neo_serialize_ast_statement_for(neo_allocator_t allocator,
 static neo_ast_statement_for_t
 neo_create_ast_statement_for(neo_allocator_t allocator) {
   neo_ast_statement_for_t node =
-      neo_allocator_alloc2(allocator, neo_ast_statement_for);
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_statement_for_t),
+                          neo_ast_statement_for_dispose);
   node->node.type = NEO_NODE_TYPE_STATEMENT_FOR;
 
   node->node.scope = NULL;

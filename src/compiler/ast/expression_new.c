@@ -95,7 +95,8 @@ static void neo_ast_expression_new_write(neo_allocator_t allocator,
 static neo_ast_expression_new_t
 neo_create_ast_expression_new(neo_allocator_t allocator) {
   neo_ast_expression_new_t node =
-      neo_allocator_alloc2(allocator, neo_ast_expression_new);
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_expression_new_t),
+                          neo_ast_expression_new_dispose);
   node->callee = NULL;
   neo_list_initialize_t initialize = {true};
   node->arguments = neo_create_list(allocator, &initialize);

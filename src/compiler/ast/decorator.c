@@ -47,7 +47,9 @@ static neo_variable_t neo_serialize_ast_decorator(neo_allocator_t allocator,
 }
 
 static neo_ast_decorator_t neo_create_ast_decorator(neo_allocator_t allocator) {
-  neo_ast_decorator_t node = neo_allocator_alloc2(allocator, neo_ast_decorator);
+  neo_ast_decorator_t node =
+      neo_allocator_alloc(allocator, sizeof(struct _neo_ast_decorator_t),
+                          neo_ast_decorator_dispose);
   node->node.type = NEO_NODE_TYPE_DECORATOR;
 
   node->node.scope = NULL;

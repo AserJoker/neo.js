@@ -2166,7 +2166,7 @@ void neo_js_context_defer_free(neo_js_context_t ctx, void *data) {
 }
 
 void *neo_js_context_alloc_ex(neo_js_context_t ctx, size_t size,
-                              neo_destructor_fn_t dispose, const char *filename,
+                              neo_dispose_fn_t dispose, const char *filename,
                               size_t line) {
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   return neo_allocator_alloc_ex(allocator, size, dispose, filename, line);

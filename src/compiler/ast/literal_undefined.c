@@ -35,8 +35,9 @@ static void neo_ast_literal_undefined_write(neo_allocator_t allocator,
 }
 static neo_ast_literal_undefined_t
 neo_create_ast_literal_undefined(neo_allocator_t allocator) {
-  neo_ast_literal_undefined_t node =
-      neo_allocator_alloc2(allocator, neo_ast_literal_undefined);
+  neo_ast_literal_undefined_t node = neo_allocator_alloc(
+      allocator, sizeof(struct _neo_ast_literal_undefined_t),
+      neo_ast_literal_undefined_dispose);
   node->node.type = NEO_NODE_TYPE_LITERAL_UNDEFINED;
 
   node->node.scope = NULL;
