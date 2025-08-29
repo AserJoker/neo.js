@@ -10,7 +10,6 @@
 #include "engine/variable.h"
 #include <stdint.h>
 
-
 typedef struct _neo_js_promise_t *neo_js_promise_t;
 struct _neo_js_promise_t {
   enum {
@@ -694,8 +693,9 @@ static neo_js_variable_t neo_js_resolve(neo_js_context_t ctx,
       }
     } else {
       promise->status = NEO_PROMISE_FULFILLED;
-      promise->value = neo_js_variable_get_handle(value);
-      neo_js_chunk_add_parent(promise->value, neo_js_variable_get_handle(self));
+      promise->value = neo_js_variable_getneo_create_js_chunk(value);
+      neo_js_chunk_add_parent(promise->value,
+                              neo_js_variable_getneo_create_js_chunk(self));
       for (neo_list_node_t it =
                neo_list_get_first(promise->on_fulfilled_callbacks);
            it != neo_list_get_tail(promise->on_fulfilled_callbacks);
@@ -725,8 +725,9 @@ static neo_js_variable_t neo_js_reject(neo_js_context_t ctx,
     } else {
       value = neo_js_context_create_undefined(ctx);
     }
-    promise->error = neo_js_variable_get_handle(value);
-    neo_js_chunk_add_parent(promise->error, neo_js_variable_get_handle(self));
+    promise->error = neo_js_variable_getneo_create_js_chunk(value);
+    neo_js_chunk_add_parent(promise->error,
+                            neo_js_variable_getneo_create_js_chunk(self));
     for (neo_list_node_t it =
              neo_list_get_first(promise->on_rejected_callbacks);
          it != neo_list_get_tail(promise->on_rejected_callbacks);
@@ -849,15 +850,17 @@ static neo_js_variable_t neo_js_resolver(neo_js_context_t ctx,
 
   neo_js_promise_t promise =
       neo_js_context_get_opaque(ctx, self, L"[[promise]]");
-  neo_js_chunk_t hpromise = neo_js_variable_get_handle(self);
+  neo_js_chunk_t hpromise = neo_js_variable_getneo_create_js_chunk(self);
   if (promise->status == NEO_PROMISE_PENDDING) {
     if (neo_js_variable_get_type(on_fulfilled)->kind >= NEO_JS_TYPE_CALLABLE) {
-      neo_js_chunk_t hfulfilled = neo_js_variable_get_handle(on_fulfilled);
+      neo_js_chunk_t hfulfilled =
+          neo_js_variable_getneo_create_js_chunk(on_fulfilled);
       neo_list_push(promise->on_fulfilled_callbacks, hfulfilled);
       neo_js_chunk_add_parent(hfulfilled, hpromise);
     }
     if (neo_js_variable_get_type(on_rejected)->kind >= NEO_JS_TYPE_CALLABLE) {
-      neo_js_chunk_t hrejected = neo_js_variable_get_handle(on_rejected);
+      neo_js_chunk_t hrejected =
+          neo_js_variable_getneo_create_js_chunk(on_rejected);
       neo_list_push(promise->on_rejected_callbacks, hrejected);
       neo_js_chunk_add_parent(hrejected, hpromise);
     }

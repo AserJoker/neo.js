@@ -17,7 +17,7 @@ neo_js_scope_t neo_js_scope_get_parent(neo_js_scope_t self);
 neo_js_scope_t neo_js_scope_set_parent(neo_js_scope_t self,
                                        neo_js_scope_t parent);
 
-neo_js_chunk_t neo_js_scope_get_root_handle(neo_js_scope_t self);
+neo_js_chunk_t neo_js_scope_get_rootneo_create_js_chunk(neo_js_scope_t self);
 
 neo_js_variable_t neo_js_scope_get_variable(neo_js_scope_t self,
                                             const wchar_t *name);

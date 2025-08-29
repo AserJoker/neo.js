@@ -21,7 +21,8 @@ neo_js_variable_t neo_create_js_variable(neo_allocator_t allocator,
   return variable;
 }
 
-neo_js_chunk_t neo_js_variable_get_handle(neo_js_variable_t variable) {
+neo_js_chunk_t
+neo_js_variable_getneo_create_js_chunk(neo_js_variable_t variable) {
   neo_js_chunk_t handle = variable->handle;
   while (neo_js_chunk_get_value(handle)->type->kind == NEO_JS_TYPE_REF) {
     neo_js_value_t value = neo_js_chunk_get_value(handle);
@@ -30,7 +31,8 @@ neo_js_chunk_t neo_js_variable_get_handle(neo_js_variable_t variable) {
   }
   return handle;
 }
-neo_js_chunk_t neo_js_variable_get_raw_handle(neo_js_variable_t variable) {
+neo_js_chunk_t
+neo_js_variable_get_rawneo_create_js_chunk(neo_js_variable_t variable) {
   return variable->handle;
 }
 

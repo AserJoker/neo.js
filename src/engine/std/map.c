@@ -173,13 +173,13 @@ NEO_JS_CFUNCTION(neo_js_map_clear) {
 }
 NEO_JS_CFUNCTION(neo_js_map_delete) {
   neo_js_variable_t key = argv[0];
-  neo_js_chunk_t hkey = neo_js_variable_get_handle(key);
+  neo_js_chunk_t hkey = neo_js_variable_getneo_create_js_chunk(key);
   neo_js_map_data data = neo_js_context_get_opaque(ctx, self, L"#map");
   neo_js_chunk_t current = neo_hash_map_get(data->data, hkey, ctx, ctx);
-  neo_js_chunk_t hself = neo_js_variable_get_handle(self);
+  neo_js_chunk_t hself = neo_js_variable_getneo_create_js_chunk(self);
   if (current) {
     neo_js_chunk_t hroot =
-        neo_js_scope_get_root_handle(neo_js_context_get_scope(ctx));
+        neo_js_scope_get_rootneo_create_js_chunk(neo_js_context_get_scope(ctx));
     neo_js_chunk_add_parent(current, hroot);
     neo_js_chunk_remove_parent(current, hself);
     neo_hash_map_delete(data->data, hkey, ctx, ctx);
@@ -231,7 +231,7 @@ NEO_JS_CFUNCTION(neo_js_map_for_each) {
 }
 NEO_JS_CFUNCTION(neo_js_map_get) {
   neo_js_variable_t key = argv[0];
-  neo_js_chunk_t hkey = neo_js_variable_get_handle(key);
+  neo_js_chunk_t hkey = neo_js_variable_getneo_create_js_chunk(key);
   neo_js_map_data data = neo_js_context_get_opaque(ctx, self, L"#map");
   neo_js_chunk_t current = neo_hash_map_get(data->data, hkey, ctx, ctx);
   if (current) {
@@ -241,7 +241,7 @@ NEO_JS_CFUNCTION(neo_js_map_get) {
 }
 NEO_JS_CFUNCTION(neo_js_map_has) {
   neo_js_variable_t key = argv[0];
-  neo_js_chunk_t hkey = neo_js_variable_get_handle(key);
+  neo_js_chunk_t hkey = neo_js_variable_getneo_create_js_chunk(key);
   neo_js_map_data data = neo_js_context_get_opaque(ctx, self, L"#map");
   if (neo_hash_map_has(data->data, hkey, ctx, ctx)) {
     return neo_js_context_create_boolean(ctx, true);
@@ -265,14 +265,14 @@ NEO_JS_CFUNCTION(neo_js_map_keys) {
 NEO_JS_CFUNCTION(neo_js_map_set) {
   neo_js_variable_t key = argv[0];
   neo_js_variable_t value = argv[1];
-  neo_js_chunk_t hkey = neo_js_variable_get_handle(key);
-  neo_js_chunk_t hvalue = neo_js_variable_get_handle(value);
+  neo_js_chunk_t hkey = neo_js_variable_getneo_create_js_chunk(key);
+  neo_js_chunk_t hvalue = neo_js_variable_getneo_create_js_chunk(value);
   neo_js_map_data data = neo_js_context_get_opaque(ctx, self, L"#map");
   neo_js_chunk_t current = neo_hash_map_get(data->data, hkey, ctx, ctx);
-  neo_js_chunk_t hself = neo_js_variable_get_handle(self);
+  neo_js_chunk_t hself = neo_js_variable_getneo_create_js_chunk(self);
   if (current) {
     neo_js_chunk_t hroot =
-        neo_js_scope_get_root_handle(neo_js_context_get_scope(ctx));
+        neo_js_scope_get_rootneo_create_js_chunk(neo_js_context_get_scope(ctx));
     neo_js_chunk_add_parent(current, hroot);
     neo_js_chunk_remove_parent(current, hself);
     neo_hash_map_delete(data->data, hkey, ctx, ctx);

@@ -15,8 +15,8 @@ static void neo_js_chunk_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, self->children);
 }
 
-neo_js_chunk_t neo_create_js_handle(neo_allocator_t allocator,
-                                    neo_js_value_t value) {
+neo_js_chunk_t neo_create_js_chunk(neo_allocator_t allocator,
+                                   neo_js_value_t value) {
   neo_js_chunk_t handle = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_chunk_t), neo_js_chunk_dispose);
   handle->value = value;

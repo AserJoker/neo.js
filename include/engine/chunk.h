@@ -8,8 +8,8 @@ extern "C" {
 #endif
 typedef struct _neo_js_chunk_t *neo_js_chunk_t;
 
-neo_js_chunk_t neo_create_js_handle(neo_allocator_t allocator,
-                                    neo_js_value_t value);
+neo_js_chunk_t neo_create_js_chunk(neo_allocator_t allocator,
+                                   neo_js_value_t value);
 
 neo_js_value_t neo_js_chunk_get_value(neo_js_chunk_t self);
 

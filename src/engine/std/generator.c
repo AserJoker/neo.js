@@ -47,7 +47,7 @@ neo_js_variable_t neo_js_generator_next(neo_js_context_t ctx,
     neo_js_variable_t arg = NULL;
     if (argc) {
       arg = neo_js_context_create_variable(
-          ctx, neo_js_variable_get_handle(argv[0]), NULL);
+          ctx, neo_js_variable_getneo_create_js_chunk(argv[0]), NULL);
     } else {
       arg = neo_js_context_create_undefined(ctx);
     }
@@ -66,12 +66,14 @@ neo_js_variable_t neo_js_generator_next(neo_js_context_t ctx,
           ctx, result, neo_js_context_create_string(ctx, L"value"),
           neo_js_context_create_variable(ctx, interrupt->result, NULL), NULL);
     } else if (neo_js_variable_get_type(value)->kind == NEO_JS_TYPE_ERROR) {
-      co_ctx->result = neo_js_variable_get_handle(value);
-      neo_js_chunk_add_parent(co_ctx->result, neo_js_variable_get_handle(self));
+      co_ctx->result = neo_js_variable_getneo_create_js_chunk(value);
+      neo_js_chunk_add_parent(co_ctx->result,
+                              neo_js_variable_getneo_create_js_chunk(self));
       neo_js_context_recycle_coroutine(ctx, coroutine);
     } else {
-      co_ctx->result = neo_js_variable_get_handle(value);
-      neo_js_chunk_add_parent(co_ctx->result, neo_js_variable_get_handle(self));
+      co_ctx->result = neo_js_variable_getneo_create_js_chunk(value);
+      neo_js_chunk_add_parent(co_ctx->result,
+                              neo_js_variable_getneo_create_js_chunk(self));
       neo_js_context_set_field(ctx, result,
                                neo_js_context_create_string(ctx, L"done"),
                                neo_js_context_create_boolean(ctx, true), NULL);
@@ -107,7 +109,7 @@ neo_js_variable_t neo_js_generator_return(neo_js_context_t ctx,
     neo_js_variable_t arg = NULL;
     if (argc) {
       arg = neo_js_context_create_variable(
-          ctx, neo_js_variable_get_handle(argv[0]), NULL);
+          ctx, neo_js_variable_getneo_create_js_chunk(argv[0]), NULL);
     } else {
       arg = neo_js_context_create_undefined(ctx);
     }
@@ -127,12 +129,14 @@ neo_js_variable_t neo_js_generator_return(neo_js_context_t ctx,
           ctx, result, neo_js_context_create_string(ctx, L"value"),
           neo_js_context_create_variable(ctx, interrupt->result, NULL), NULL);
     } else if (neo_js_variable_get_type(value)->kind == NEO_JS_TYPE_ERROR) {
-      co_ctx->result = neo_js_variable_get_handle(value);
-      neo_js_chunk_add_parent(co_ctx->result, neo_js_variable_get_handle(self));
+      co_ctx->result = neo_js_variable_getneo_create_js_chunk(value);
+      neo_js_chunk_add_parent(co_ctx->result,
+                              neo_js_variable_getneo_create_js_chunk(self));
       neo_js_context_recycle_coroutine(ctx, coroutine);
     } else {
-      co_ctx->result = neo_js_variable_get_handle(value);
-      neo_js_chunk_add_parent(co_ctx->result, neo_js_variable_get_handle(self));
+      co_ctx->result = neo_js_variable_getneo_create_js_chunk(value);
+      neo_js_chunk_add_parent(co_ctx->result,
+                              neo_js_variable_getneo_create_js_chunk(self));
       neo_js_context_set_field(ctx, result,
                                neo_js_context_create_string(ctx, L"done"),
                                neo_js_context_create_boolean(ctx, true), NULL);
@@ -190,12 +194,14 @@ neo_js_variable_t neo_js_generator_throw(neo_js_context_t ctx,
           ctx, result, neo_js_context_create_string(ctx, L"value"),
           neo_js_context_create_variable(ctx, interrupt->result, NULL), NULL);
     } else if (neo_js_variable_get_type(value)->kind == NEO_JS_TYPE_ERROR) {
-      co_ctx->result = neo_js_variable_get_handle(value);
-      neo_js_chunk_add_parent(co_ctx->result, neo_js_variable_get_handle(self));
+      co_ctx->result = neo_js_variable_getneo_create_js_chunk(value);
+      neo_js_chunk_add_parent(co_ctx->result,
+                              neo_js_variable_getneo_create_js_chunk(self));
       neo_js_context_recycle_coroutine(ctx, coroutine);
     } else {
-      co_ctx->result = neo_js_variable_get_handle(value);
-      neo_js_chunk_add_parent(co_ctx->result, neo_js_variable_get_handle(self));
+      co_ctx->result = neo_js_variable_getneo_create_js_chunk(value);
+      neo_js_chunk_add_parent(co_ctx->result,
+                              neo_js_variable_getneo_create_js_chunk(self));
       neo_js_context_set_field(ctx, result,
                                neo_js_context_create_string(ctx, L"done"),
                                neo_js_context_create_boolean(ctx, true), NULL);

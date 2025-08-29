@@ -8,7 +8,6 @@
 #include <stdint.h>
 #include <wchar.h>
 
-
 neo_js_variable_t neo_js_function_constructor(neo_js_context_t ctx,
                                               neo_js_variable_t self,
                                               uint32_t argc,
@@ -110,8 +109,9 @@ neo_js_variable_t neo_js_function_bind(neo_js_context_t ctx,
   }
   neo_js_callable_t callable = neo_js_variable_to_callable(result);
   if (!callable->bind) {
-    callable->bind = neo_js_variable_get_handle(bind);
-    neo_js_chunk_add_parent(callable->bind, neo_js_variable_get_handle(self));
+    callable->bind = neo_js_variable_getneo_create_js_chunk(bind);
+    neo_js_chunk_add_parent(callable->bind,
+                            neo_js_variable_getneo_create_js_chunk(self));
   }
   return result;
 }

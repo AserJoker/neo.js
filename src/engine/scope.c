@@ -57,7 +57,7 @@ neo_js_scope_t neo_create_js_scope(neo_allocator_t allocator,
   };
   scope->named_variables = neo_create_map(allocator, &map_initialize);
   scope->children = neo_create_list(allocator, NULL);
-  scope->root = neo_create_js_handle(allocator, NULL);
+  scope->root = neo_create_js_chunk(allocator, NULL);
   scope->defer_free = neo_create_list(allocator, &initialize);
   scope->allocator = allocator;
   return scope;
@@ -72,7 +72,7 @@ neo_js_scope_t neo_js_scope_set_parent(neo_js_scope_t self,
   self->parent = parent;
   return current;
 }
-neo_js_chunk_t neo_js_scope_get_root_handle(neo_js_scope_t self) {
+neo_js_chunk_t neo_js_scope_get_rootneo_create_js_chunk(neo_js_scope_t self) {
   return self->root;
 }
 neo_js_variable_t neo_js_scope_get_variable(neo_js_scope_t self,

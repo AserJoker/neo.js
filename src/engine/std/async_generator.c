@@ -57,7 +57,7 @@ neo_js_async_generator_on_await_fulfilled(neo_js_context_t ctx,
   neo_js_variable_t value = NULL;
   if (argc > 0) {
     value = neo_js_context_create_variable(
-        ctx, neo_js_variable_get_handle(argv[0]), NULL);
+        ctx, neo_js_variable_getneo_create_js_chunk(argv[0]), NULL);
   } else {
     value = neo_js_context_create_undefined(ctx);
   }
@@ -79,7 +79,7 @@ neo_js_async_generator_on_await_rejected(neo_js_context_t ctx,
   neo_js_variable_t value = NULL;
   if (argc > 0) {
     value = neo_js_context_create_variable(
-        ctx, neo_js_variable_get_handle(argv[0]), NULL);
+        ctx, neo_js_variable_getneo_create_js_chunk(argv[0]), NULL);
   } else {
     value = neo_js_context_create_undefined(ctx);
   }
@@ -175,9 +175,9 @@ static neo_js_variable_t neo_js_async_generator_task(neo_js_context_t ctx,
       neo_js_context_call(ctx, resolve, neo_js_context_create_undefined(ctx), 1,
                           &result);
     }
-    co_ctx->result = neo_js_variable_get_handle(value);
+    co_ctx->result = neo_js_variable_getneo_create_js_chunk(value);
     neo_js_chunk_add_parent(co_ctx->result,
-                            neo_js_variable_get_handle(coroutine));
+                            neo_js_variable_getneo_create_js_chunk(coroutine));
     neo_js_context_recycle_coroutine(ctx, coroutine);
   }
   return neo_js_context_create_undefined(ctx);
@@ -249,7 +249,7 @@ neo_js_variable_t neo_js_async_generator_next(neo_js_context_t ctx,
   neo_js_variable_t arg = NULL;
   if (argc > 0) {
     arg = neo_js_context_create_variable(
-        ctx, neo_js_variable_get_handle(argv[0]), NULL);
+        ctx, neo_js_variable_getneo_create_js_chunk(argv[0]), NULL);
   } else {
     arg = neo_js_context_create_undefined(ctx);
   }
@@ -285,7 +285,7 @@ neo_js_variable_t neo_js_async_generator_return(neo_js_context_t ctx,
   neo_js_variable_t arg = NULL;
   if (argc > 0) {
     arg = neo_js_context_create_variable(
-        ctx, neo_js_variable_get_handle(argv[0]), NULL);
+        ctx, neo_js_variable_getneo_create_js_chunk(argv[0]), NULL);
   } else {
     arg = neo_js_context_create_undefined(ctx);
   }

@@ -13,7 +13,6 @@
 #include <stdbool.h>
 #include <wchar.h>
 
-
 static const wchar_t *neo_js_function_typeof() { return L"function"; }
 
 static neo_js_variable_t neo_js_function_get_field(neo_js_context_t ctx,
@@ -77,7 +76,7 @@ static neo_js_variable_t neo_js_cfunction_copy_fn(neo_js_context_t ctx,
                                                   neo_js_variable_t target) {
   neo_js_type_t otype = neo_get_js_object_type();
   otype->copy_fn(ctx, self, target);
-  neo_js_chunk_t htarget = neo_js_variable_get_handle(target);
+  neo_js_chunk_t htarget = neo_js_variable_getneo_create_js_chunk(target);
   neo_js_cfunction_t func = neo_js_variable_to_cfunction(self);
   if (func->callable.bind) {
     neo_js_chunk_add_parent(func->callable.bind, htarget);

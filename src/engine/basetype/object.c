@@ -20,7 +20,6 @@
 #include <stdint.h>
 #include <wchar.h>
 
-
 static const wchar_t *neo_js_object_typeof(neo_js_context_t ctx,
                                            neo_js_variable_t variable) {
   return L"object";
@@ -199,7 +198,7 @@ neo_js_object_get_own_property(neo_js_context_t ctx, neo_js_variable_t self,
   neo_js_object_t object =
       neo_js_value_to_object(neo_js_variable_get_value(self));
   neo_js_object_property_t property = NULL;
-  neo_js_chunk_t hfield = neo_js_variable_get_handle(field);
+  neo_js_chunk_t hfield = neo_js_variable_getneo_create_js_chunk(field);
   property = neo_hash_map_get(object->properties, hfield, ctx, ctx);
   return property;
 }
@@ -354,7 +353,7 @@ neo_js_object_property_t neo_js_object_get_property(neo_js_context_t ctx,
   neo_js_object_t object =
       neo_js_value_to_object(neo_js_variable_get_value(self));
   neo_js_object_property_t property = NULL;
-  neo_js_chunk_t hfield = neo_js_variable_get_handle(field);
+  neo_js_chunk_t hfield = neo_js_variable_getneo_create_js_chunk(field);
   while (!property && object) {
     property = neo_hash_map_get(object->properties, hfield, ctx, ctx);
     if (property) {
@@ -405,8 +404,8 @@ static neo_js_variable_t neo_js_object_set_field(neo_js_context_t ctx,
                                                  neo_js_variable_t receiver) {
   neo_js_object_property_t property =
       neo_js_object_get_own_property(ctx, self, field);
-  neo_js_chunk_t hobject = neo_js_variable_get_handle(self);
-  neo_js_chunk_t hvalue = neo_js_variable_get_handle(value);
+  neo_js_chunk_t hobject = neo_js_variable_getneo_create_js_chunk(self);
+  neo_js_chunk_t hvalue = neo_js_variable_getneo_create_js_chunk(value);
   if (!property) {
     property = neo_js_object_get_property(ctx, self, field);
     if (property && property->set) {
@@ -453,7 +452,7 @@ static neo_js_variable_t neo_js_object_set_field(neo_js_context_t ctx,
           neo_js_chunk_remove_parent(property->value, hobject);
           neo_js_chunk_add_parent(hvalue, hobject);
           neo_js_scope_t scope = neo_js_context_get_scope(ctx);
-          neo_js_chunk_t root = neo_js_scope_get_root_handle(scope);
+          neo_js_chunk_t root = neo_js_scope_get_rootneo_create_js_chunk(scope);
           neo_js_chunk_add_parent(property->value, root);
           property->value = hvalue;
         }
@@ -558,8 +557,9 @@ static neo_js_variable_t neo_js_object_del_field(neo_js_context_t ctx,
       neo_allocator_free(allocator, message);
       return error;
     } else {
-      neo_hash_map_delete(object->properties, neo_js_variable_get_handle(field),
-                          ctx, ctx);
+      neo_hash_map_delete(object->properties,
+                          neo_js_variable_getneo_create_js_chunk(field), ctx,
+                          ctx);
     }
   }
   return neo_js_context_create_boolean(ctx, true);
@@ -576,7 +576,7 @@ static neo_js_variable_t neo_js_object_copy(neo_js_context_t ctx,
   neo_allocator_t allocaotr =
       neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
   neo_js_object_t object = neo_js_variable_to_object(self);
-  neo_js_chunk_t htarget = neo_js_variable_get_handle(another);
+  neo_js_chunk_t htarget = neo_js_variable_getneo_create_js_chunk(another);
   if (object->constructor) {
     neo_js_chunk_add_parent(object->constructor, htarget);
   }
@@ -697,11 +697,14 @@ neo_js_variable_t neo_js_object_set_prototype(neo_js_context_t ctx,
     return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
                                               L"#<Object> is not extensible");
   }
-  neo_js_chunk_add_parent(obj->prototype, neo_js_scope_get_root_handle(
-                                              neo_js_context_get_scope(ctx)));
-  neo_js_chunk_remove_parent(obj->prototype, neo_js_variable_get_handle(self));
-  neo_js_chunk_t hprototype = neo_js_variable_get_handle(prototype);
+  neo_js_chunk_add_parent(
+      obj->prototype,
+      neo_js_scope_get_rootneo_create_js_chunk(neo_js_context_get_scope(ctx)));
+  neo_js_chunk_remove_parent(obj->prototype,
+                             neo_js_variable_getneo_create_js_chunk(self));
+  neo_js_chunk_t hprototype = neo_js_variable_getneo_create_js_chunk(prototype);
   obj->prototype = hprototype;
-  neo_js_chunk_add_parent(hprototype, neo_js_variable_get_handle(self));
+  neo_js_chunk_add_parent(hprototype,
+                          neo_js_variable_getneo_create_js_chunk(self));
   return neo_js_context_create_undefined(ctx);
 }

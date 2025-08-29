@@ -125,12 +125,12 @@ neo_js_ref_t neo_js_value_to_ref(neo_js_value_t value) {
 neo_js_variable_t neo_js_ref_set_target(neo_js_context_t ctx,
                                         neo_js_variable_t self,
                                         neo_js_variable_t target) {
-  neo_js_chunk_t hself = neo_js_variable_get_raw_handle(self);
+  neo_js_chunk_t hself = neo_js_variable_get_rawneo_create_js_chunk(self);
   neo_js_value_t value = neo_js_chunk_get_value(hself);
   neo_js_ref_t ref = neo_js_value_to_ref(value);
-  neo_js_chunk_t htarget = neo_js_variable_get_handle(target);
+  neo_js_chunk_t htarget = neo_js_variable_getneo_create_js_chunk(target);
   neo_js_scope_t scope = neo_js_context_get_scope(ctx);
-  neo_js_chunk_t hroot = neo_js_scope_get_root_handle(scope);
+  neo_js_chunk_t hroot = neo_js_scope_get_rootneo_create_js_chunk(scope);
   neo_js_chunk_add_parent(htarget, hself);
   if (ref->target) {
     neo_js_chunk_remove_parent(ref->target, hself);
@@ -142,7 +142,7 @@ neo_js_variable_t neo_js_ref_set_target(neo_js_context_t ctx,
 
 neo_js_variable_t neo_js_ref_get_target(neo_js_context_t ctx,
                                         neo_js_variable_t self) {
-  neo_js_chunk_t hself = neo_js_variable_get_raw_handle(self);
+  neo_js_chunk_t hself = neo_js_variable_get_rawneo_create_js_chunk(self);
   neo_js_value_t value = neo_js_chunk_get_value(hself);
   neo_js_ref_t ref = neo_js_value_to_ref(value);
   return neo_js_context_create_variable(ctx, ref->target, NULL);
