@@ -19,6 +19,8 @@ include(GoogleTest)
 
 include_directories(build/third_party/pcre2/interface)
 
+include_directories(third_party/googletest/googletest/include)
+
 if(NOT EXISTS ${DerivedCoreProperties})
     file(DOWNLOAD "https://www.unicode.org/Public/UCD/latest/ucd/DerivedCoreProperties.txt" ${DerivedCoreProperties})
 endif()
@@ -64,9 +66,11 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 
 file(GLOB_RECURSE SOURCES ${PROJECT_SOURCE_DIR}/src/*.c)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pg")
+file(GLOB_RECURSE TEST_SOURCES ${PROJECT_SOURCE_DIR}/tests/*.cpp)
 
 add_executable(${PROJECT_NAME}c ${SOURCES} ${PROJECT_SOURCE_DIR}/cmd/main.c)
+
+add_executable(${PROJECT_NAME}.test ${SOURCES} ${TEST_SOURCES} ${PROJECT_SOURCE_DIR}/tests/main.cpp)
 
 if(UNIX)
     target_link_libraries(${PROJECT_NAME}c m)
@@ -77,3 +81,9 @@ endif()
 add_library(${PROJECT_NAME} ${SOURCES})
 
 target_link_libraries(${PROJECT_NAME}c pcre2-posix pcre2-8 pcre2-16)
+
+target_link_libraries(${PROJECT_NAME}.test pcre2-posix pcre2-8 pcre2-16 gtest gtest_main gmock gmock_main)
+
+enable_testing()
+
+gtest_discover_tests(${PROJECT_NAME}.test)

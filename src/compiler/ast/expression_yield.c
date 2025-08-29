@@ -86,8 +86,9 @@ neo_serialize_ast_expression_yield(neo_allocator_t allocator,
 static neo_ast_expression_yield_t
 neo_create_ast_expression_yield(neo_allocator_t allocator) {
   neo_ast_expression_yield_t node =
-      (neo_ast_expression_yield_t)neo_allocator_alloc2(
-          allocator, neo_ast_expression_yield);
+      (neo_ast_expression_yield_t)neo_allocator_alloc(
+          allocator, sizeof(struct _neo_ast_expression_yield_t),
+          neo_ast_expression_yield_dispose);
   node->node.type = NEO_NODE_TYPE_EXPRESSION_YIELD;
 
   node->node.scope = NULL;
