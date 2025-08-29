@@ -45,3 +45,21 @@ neo_js_variable_t neo_js_console_log(neo_js_context_t ctx,
   printf("\n");
   return neo_js_context_create_undefined(ctx);
 }
+
+void neo_js_context_init_std_console(neo_js_context_t ctx) {
+  neo_js_variable_t console_constructor = neo_js_context_create_cfunction(
+      ctx, L"Console", neo_js_console_constructor);
+  neo_js_variable_t prototype = neo_js_context_get_field(
+      ctx, console_constructor, neo_js_context_create_string(ctx, L"prototype"),
+      NULL);
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"log"),
+      neo_js_context_create_cfunction(ctx, L"log", neo_js_console_log), true,
+      false, true);
+
+  neo_js_variable_t console =
+      neo_js_context_construct(ctx, console_constructor, 0, NULL);
+  neo_js_context_def_field(ctx, neo_js_context_get_std(ctx).global,
+                           neo_js_context_create_string(ctx, L"console"),
+                           console, true, true, true);
+}

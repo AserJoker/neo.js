@@ -109,9 +109,35 @@ neo_js_variable_t neo_js_function_bind(neo_js_context_t ctx,
   }
   neo_js_callable_t callable = neo_js_variable_to_callable(result);
   if (!callable->bind) {
-    callable->bind = neo_js_variable_getneo_create_js_chunk(bind);
-    neo_js_chunk_add_parent(callable->bind,
-                            neo_js_variable_getneo_create_js_chunk(self));
+    callable->bind = neo_js_variable_get_chunk(bind);
+    neo_js_chunk_add_parent(callable->bind, neo_js_variable_get_chunk(self));
   }
   return result;
+}
+
+void neo_js_context_init_std_function(neo_js_context_t ctx) {
+  neo_js_variable_t prototype = neo_js_context_get_field(
+      ctx, neo_js_context_get_std(ctx).function_constructor,
+      neo_js_context_create_string(ctx, L"prototype"), NULL);
+
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"toString"),
+                           neo_js_context_create_cfunction(
+                               ctx, L"toString", neo_js_function_to_string),
+                           true, false, true);
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"call"),
+      neo_js_context_create_cfunction(ctx, L"call", neo_js_function_call), true,
+      false, true);
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"apply"),
+      neo_js_context_create_cfunction(ctx, L"apply", neo_js_function_apply),
+      true, false, true);
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"bind"),
+      neo_js_context_create_cfunction(ctx, L"bind", neo_js_function_bind), true,
+      false, true);
 }

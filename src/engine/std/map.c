@@ -173,13 +173,13 @@ NEO_JS_CFUNCTION(neo_js_map_clear) {
 }
 NEO_JS_CFUNCTION(neo_js_map_delete) {
   neo_js_variable_t key = argv[0];
-  neo_js_chunk_t hkey = neo_js_variable_getneo_create_js_chunk(key);
+  neo_js_chunk_t hkey = neo_js_variable_get_chunk(key);
   neo_js_map_data data = neo_js_context_get_opaque(ctx, self, L"#map");
   neo_js_chunk_t current = neo_hash_map_get(data->data, hkey, ctx, ctx);
-  neo_js_chunk_t hself = neo_js_variable_getneo_create_js_chunk(self);
+  neo_js_chunk_t hself = neo_js_variable_get_chunk(self);
   if (current) {
     neo_js_chunk_t hroot =
-        neo_js_scope_get_rootneo_create_js_chunk(neo_js_context_get_scope(ctx));
+        neo_js_scope_get_root_chunk(neo_js_context_get_scope(ctx));
     neo_js_chunk_add_parent(current, hroot);
     neo_js_chunk_remove_parent(current, hself);
     neo_hash_map_delete(data->data, hkey, ctx, ctx);
@@ -231,7 +231,7 @@ NEO_JS_CFUNCTION(neo_js_map_for_each) {
 }
 NEO_JS_CFUNCTION(neo_js_map_get) {
   neo_js_variable_t key = argv[0];
-  neo_js_chunk_t hkey = neo_js_variable_getneo_create_js_chunk(key);
+  neo_js_chunk_t hkey = neo_js_variable_get_chunk(key);
   neo_js_map_data data = neo_js_context_get_opaque(ctx, self, L"#map");
   neo_js_chunk_t current = neo_hash_map_get(data->data, hkey, ctx, ctx);
   if (current) {
@@ -241,7 +241,7 @@ NEO_JS_CFUNCTION(neo_js_map_get) {
 }
 NEO_JS_CFUNCTION(neo_js_map_has) {
   neo_js_variable_t key = argv[0];
-  neo_js_chunk_t hkey = neo_js_variable_getneo_create_js_chunk(key);
+  neo_js_chunk_t hkey = neo_js_variable_get_chunk(key);
   neo_js_map_data data = neo_js_context_get_opaque(ctx, self, L"#map");
   if (neo_hash_map_has(data->data, hkey, ctx, ctx)) {
     return neo_js_context_create_boolean(ctx, true);
@@ -265,14 +265,14 @@ NEO_JS_CFUNCTION(neo_js_map_keys) {
 NEO_JS_CFUNCTION(neo_js_map_set) {
   neo_js_variable_t key = argv[0];
   neo_js_variable_t value = argv[1];
-  neo_js_chunk_t hkey = neo_js_variable_getneo_create_js_chunk(key);
-  neo_js_chunk_t hvalue = neo_js_variable_getneo_create_js_chunk(value);
+  neo_js_chunk_t hkey = neo_js_variable_get_chunk(key);
+  neo_js_chunk_t hvalue = neo_js_variable_get_chunk(value);
   neo_js_map_data data = neo_js_context_get_opaque(ctx, self, L"#map");
   neo_js_chunk_t current = neo_hash_map_get(data->data, hkey, ctx, ctx);
-  neo_js_chunk_t hself = neo_js_variable_getneo_create_js_chunk(self);
+  neo_js_chunk_t hself = neo_js_variable_get_chunk(self);
   if (current) {
     neo_js_chunk_t hroot =
-        neo_js_scope_get_rootneo_create_js_chunk(neo_js_context_get_scope(ctx));
+        neo_js_scope_get_root_chunk(neo_js_context_get_scope(ctx));
     neo_js_chunk_add_parent(current, hroot);
     neo_js_chunk_remove_parent(current, hself);
     neo_hash_map_delete(data->data, hkey, ctx, ctx);
@@ -303,3 +303,74 @@ NEO_JS_CFUNCTION(neo_js_map_values) {
   return neo_js_array_values(ctx, array, 0, NULL);
 }
 NEO_JS_CFUNCTION(neo_js_map_species) { return self; }
+
+void neo_js_context_init_std_map(neo_js_context_t ctx) {
+  neo_js_variable_t group_by =
+      neo_js_context_create_cfunction(ctx, L"groupBy", neo_js_map_group_by);
+  neo_js_context_def_field(ctx, neo_js_context_get_std(ctx).map_constructor,
+                           neo_js_context_create_string(ctx, L"groupBy"),
+                           group_by, true, false, true);
+
+  neo_js_variable_t species = neo_js_context_create_cfunction(
+      ctx, L"[Symbol.species]", neo_js_map_species);
+  neo_js_context_def_accessor(
+      ctx, neo_js_context_get_std(ctx).map_constructor,
+      neo_js_context_get_field(
+          ctx, neo_js_context_get_std(ctx).symbol_constructor,
+          neo_js_context_create_string(ctx, L"species"), NULL),
+      species, NULL, true, false);
+  neo_js_variable_t prototype = neo_js_context_get_field(
+      ctx, neo_js_context_get_std(ctx).map_constructor,
+      neo_js_context_create_string(ctx, L"prototype"), NULL);
+  neo_js_variable_t clear =
+      neo_js_context_create_cfunction(ctx, L"clear", neo_js_map_clear);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"clear"), clear,
+                           true, false, true);
+  neo_js_variable_t delete =
+      neo_js_context_create_cfunction(ctx, L"delete", neo_js_map_delete);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"delete"), delete,
+                           true, false, true);
+  neo_js_variable_t entries =
+      neo_js_context_create_cfunction(ctx, L"entries", neo_js_map_entries);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"entries"),
+                           entries, true, false, true);
+  neo_js_variable_t for_each =
+      neo_js_context_create_cfunction(ctx, L"forEach", neo_js_map_for_each);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"forEach"),
+                           for_each, true, false, true);
+  neo_js_variable_t get =
+      neo_js_context_create_cfunction(ctx, L"get", neo_js_map_get);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"get"), get, true,
+                           false, true);
+  neo_js_variable_t has =
+      neo_js_context_create_cfunction(ctx, L"has", neo_js_map_has);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"has"), has, true,
+                           false, true);
+  neo_js_variable_t keys =
+      neo_js_context_create_cfunction(ctx, L"keys", neo_js_map_keys);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"keys"), keys,
+                           true, false, true);
+  neo_js_variable_t set =
+      neo_js_context_create_cfunction(ctx, L"set", neo_js_map_set);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"set"), set, true,
+                           false, true);
+  neo_js_variable_t values =
+      neo_js_context_create_cfunction(ctx, L"values", neo_js_map_values);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"values"), values,
+                           true, false, true);
+  neo_js_context_def_field(
+      ctx, prototype,
+      neo_js_context_get_field(
+          ctx, neo_js_context_get_std(ctx).symbol_constructor,
+          neo_js_context_create_string(ctx, L"iterator"), NULL),
+      entries, true, false, true);
+}

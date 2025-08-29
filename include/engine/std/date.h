@@ -55,6 +55,7 @@ NEO_JS_CFUNCTION(neo_js_date_to_time_string);
 NEO_JS_CFUNCTION(neo_js_date_to_utc_string);
 NEO_JS_CFUNCTION(neo_js_date_value_of);
 NEO_JS_CFUNCTION(neo_js_date_to_primitive);
+void neo_js_context_init_std_date(neo_js_context_t ctx);
 
 #ifdef __cplusplus
 }

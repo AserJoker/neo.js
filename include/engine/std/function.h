@@ -23,6 +23,7 @@ NEO_JS_CFUNCTION(neo_js_function_apply);
 neo_js_variable_t neo_js_function_bind(neo_js_context_t ctx,
                                        neo_js_variable_t self, uint32_t argc,
                                        neo_js_variable_t *argv);
+void neo_js_context_init_std_function(neo_js_context_t ctx);
 #ifdef __cplusplus
 }
 #endif

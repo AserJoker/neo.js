@@ -1,5 +1,6 @@
 #ifndef _H_NEO_ENGINE_BASETYPE_CALLABLE_
 #define _H_NEO_ENGINE_BASETYPE_CALLABLE_
+#include "core/allocator.h"
 #include "core/hash_map.h"
 #include "engine/basetype/object.h"
 #include "engine/chunk.h"
@@ -44,6 +45,12 @@ neo_js_variable_t neo_js_callable_set_class(neo_js_context_t ctx,
 
 neo_js_variable_t neo_js_callable_get_class(neo_js_context_t ctx,
                                             neo_js_variable_t self);
+
+void neo_js_callable_init(neo_allocator_t allocator,
+                          neo_js_callable_t callable);
+
+void neo_js_callable_dispose(neo_allocator_t allocator,
+                             neo_js_callable_t callable);
 
 #ifdef __cplusplus
 }

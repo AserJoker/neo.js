@@ -669,3 +669,22 @@ NEO_JS_CFUNCTION(neo_js_json_parse) {
   }
   return variable;
 }
+
+void neo_js_context_init_lib_json(neo_js_context_t ctx) {
+  neo_js_variable_t json =
+      neo_js_context_create_object(ctx, neo_js_context_create_null(ctx));
+
+  neo_js_context_def_field(
+      ctx, json, neo_js_context_create_string(ctx, L"parse"),
+      neo_js_context_create_cfunction(ctx, L"parse", neo_js_json_parse), true,
+      false, true);
+
+  neo_js_context_def_field(
+      ctx, json, neo_js_context_create_string(ctx, L"stringify"),
+      neo_js_context_create_cfunction(ctx, L"stringify", neo_js_json_stringify),
+      true, false, true);
+
+  neo_js_context_def_field(ctx, neo_js_context_get_std(ctx).global,
+                           neo_js_context_create_string(ctx, L"JSON"), json,
+                           true, false, true);
+}

@@ -36,6 +36,7 @@ NEO_JS_CFUNCTION(neo_js_object_property_is_enumerable);
 NEO_JS_CFUNCTION(neo_js_object_to_local_string);
 NEO_JS_CFUNCTION(neo_js_object_to_string);
 NEO_JS_CFUNCTION(neo_js_object_value_of);
+void neo_js_context_init_std_object(neo_js_context_t ctx);
 #ifdef __cplusplus
 }
 #endif

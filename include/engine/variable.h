@@ -16,6 +16,7 @@
 #include "engine/basetype/symbol.h"
 #include "engine/basetype/undefined.h"
 #include "engine/chunk.h"
+#include "engine/handle.h"
 #include "engine/type.h"
 
 #ifdef __cplusplus
@@ -24,13 +25,17 @@ extern "C" {
 typedef struct _neo_js_variable_t *neo_js_variable_t;
 
 neo_js_variable_t neo_create_js_variable(neo_allocator_t allocator,
-                                         neo_js_chunk_t handle);
+                                         neo_js_chunk_t chunk);
 
-neo_js_chunk_t
-neo_js_variable_getneo_create_js_chunk(neo_js_variable_t variable);
+neo_js_variable_t neo_create_js_ref_variable(neo_allocator_t allocator,
+                                             neo_js_handle_t handle);
 
-neo_js_chunk_t
-neo_js_variable_get_rawneo_create_js_chunk(neo_js_variable_t variable);
+neo_js_chunk_t neo_js_variable_get_chunk(neo_js_variable_t variable);
+
+neo_js_handle_t neo_js_variable_get_handle(neo_js_variable_t variable);
+
+void neo_js_variable_set_handle(neo_js_variable_t variable,
+                                neo_js_handle_t handle);
 
 void neo_js_variable_set_const(neo_js_variable_t variable, bool is_const);
 
@@ -44,17 +49,14 @@ void neo_js_variable_set_await_using(neo_js_variable_t variable, bool is_using);
 
 bool neo_js_variable_is_await_using(neo_js_variable_t variable);
 
-bool neo_js_variable_is_ref(neo_js_variable_t variable);
-
 static inline neo_js_value_t
 neo_js_variable_get_value(neo_js_variable_t variable) {
-  return neo_js_chunk_get_value(
-      neo_js_variable_getneo_create_js_chunk(variable));
+  return neo_js_chunk_get_value(neo_js_variable_get_chunk(variable));
 }
 
 static inline neo_js_type_t
 neo_js_variable_get_type(neo_js_variable_t variable) {
-  neo_js_chunk_t handle = neo_js_variable_get_rawneo_create_js_chunk(variable);
+  neo_js_chunk_t handle = neo_js_variable_get_chunk(variable);
   return neo_js_chunk_get_value(handle)->type;
 }
 

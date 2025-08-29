@@ -17,6 +17,7 @@ NEO_JS_CFUNCTION(neo_js_map_keys);
 NEO_JS_CFUNCTION(neo_js_map_set);
 NEO_JS_CFUNCTION(neo_js_map_values);
 NEO_JS_CFUNCTION(neo_js_map_species);
+void neo_js_context_init_std_map(neo_js_context_t ctx);
 
 #ifdef __cplusplus
 }

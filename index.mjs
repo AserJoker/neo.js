@@ -1,2 +1,9 @@
 'use strict'
-const str = 'a\u{000a}b'
+let obj = null
+const fn = () => {
+    obj = {}
+    obj.data = 123
+}
+const get = () => obj.data;
+fn()
+console.log(get())

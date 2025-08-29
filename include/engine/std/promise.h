@@ -18,6 +18,7 @@ NEO_JS_CFUNCTION(neo_js_promise_constructor);
 NEO_JS_CFUNCTION(neo_js_promise_then);
 NEO_JS_CFUNCTION(neo_js_promise_catch);
 NEO_JS_CFUNCTION(neo_js_promise_finally);
+void neo_js_context_init_std_promise(neo_js_context_t ctx);
 
 #ifdef __cplusplus
 }

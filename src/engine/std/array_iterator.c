@@ -52,3 +52,31 @@ neo_js_variable_t neo_js_array_iterator_iterator(neo_js_context_t ctx,
                                                  neo_js_variable_t *argv) {
   return self;
 }
+
+void neo_js_context_init_std_array_iterator(neo_js_context_t ctx) {
+  neo_js_variable_t prototype = neo_js_context_get_field(
+      ctx, neo_js_context_get_std(ctx).array_iterator_constructor,
+      neo_js_context_create_string(ctx, L"prototype"), NULL);
+
+  neo_js_variable_t to_string_tag = neo_js_context_get_field(
+      ctx, neo_js_context_get_std(ctx).symbol_constructor,
+      neo_js_context_create_string(ctx, L"toStringTag"), NULL);
+
+  neo_js_context_def_field(ctx, prototype, to_string_tag,
+                           neo_js_context_create_string(ctx, L"ArrayIterator"),
+                           true, false, true);
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"next"),
+      neo_js_context_create_cfunction(ctx, L"next", neo_js_array_iterator_next),
+      true, false, true);
+
+  neo_js_context_def_field(
+      ctx, prototype,
+      neo_js_context_get_field(ctx, neo_js_context_get_std(ctx).symbol_constructor,
+                               neo_js_context_create_string(ctx, L"iterator"),
+                               NULL),
+      neo_js_context_create_cfunction(ctx, L"iterator",
+                                      neo_js_array_iterator_iterator),
+      true, false, true);
+}

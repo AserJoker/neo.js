@@ -17,7 +17,7 @@ NEO_JS_CFUNCTION(neo_js_number_to_local_string);
 NEO_JS_CFUNCTION(neo_js_number_to_precision);
 NEO_JS_CFUNCTION(neo_js_number_to_string);
 NEO_JS_CFUNCTION(neo_js_number_value_of);
-
+void neo_js_context_init_std_number(neo_js_context_t ctx);
 #ifdef __cplusplus
 }
 #endif

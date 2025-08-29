@@ -84,8 +84,7 @@ static neo_js_variable_t neo_js_symbol_copy(neo_js_context_t ctx,
                                             neo_js_variable_t another) {
   neo_allocator_t allocaotr =
       neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
-  neo_js_chunk_set_value(allocaotr,
-                         neo_js_variable_getneo_create_js_chunk(another),
+  neo_js_chunk_set_value(allocaotr, neo_js_variable_get_chunk(another),
                          neo_js_variable_get_value(self));
   return another;
 }

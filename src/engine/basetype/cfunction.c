@@ -1,12 +1,9 @@
 #include "engine/basetype/cfunction.h"
 #include "core/allocator.h"
-#include "core/hash.h"
-#include "core/hash_map.h"
 #include "core/string.h"
 #include "engine/basetype/callable.h"
 #include "engine/basetype/object.h"
 #include "engine/basetype/string.h"
-#include "engine/chunk.h"
 #include "engine/context.h"
 #include "engine/type.h"
 #include "engine/variable.h"
@@ -71,29 +68,6 @@ static neo_js_variable_t neo_js_function_del_field(neo_js_context_t ctx,
   return otype->del_field_fn(ctx, self, field);
 }
 
-static neo_js_variable_t neo_js_cfunction_copy_fn(neo_js_context_t ctx,
-                                                  neo_js_variable_t self,
-                                                  neo_js_variable_t target) {
-  neo_js_type_t otype = neo_get_js_object_type();
-  otype->copy_fn(ctx, self, target);
-  neo_js_chunk_t htarget = neo_js_variable_getneo_create_js_chunk(target);
-  neo_js_cfunction_t func = neo_js_variable_to_cfunction(self);
-  if (func->callable.bind) {
-    neo_js_chunk_add_parent(func->callable.bind, htarget);
-  }
-  if (func->callable.clazz) {
-    neo_js_chunk_add_parent(func->callable.clazz, htarget);
-  }
-  for (neo_hash_map_node_t it = neo_hash_map_get_first(func->callable.closure);
-       it != neo_hash_map_get_tail(func->callable.closure);
-       it = neo_hash_map_node_next(it)) {
-    neo_js_chunk_t hvalue = neo_hash_map_node_get_value(it);
-    const wchar_t *key = neo_hash_map_node_get_key(it);
-    neo_js_chunk_add_parent(hvalue, htarget);
-  }
-  return target;
-}
-
 neo_js_type_t neo_get_js_cfunction_type() {
   static struct _neo_js_type_t type = {0};
   type.kind = NEO_JS_TYPE_CFUNCTION;
@@ -108,32 +82,21 @@ neo_js_type_t neo_get_js_cfunction_type() {
   type.set_field_fn = neo_js_function_set_field;
   type.del_field_fn = neo_js_function_del_field;
   type.is_equal_fn = otype->is_equal_fn;
-  type.copy_fn = neo_js_cfunction_copy_fn;
+  type.copy_fn = otype->copy_fn;
   return &type;
 }
 
 static void neo_js_function_dispose(neo_allocator_t allocator,
                                     neo_js_cfunction_t self) {
-  neo_js_object_dispose(allocator, &self->callable.object);
-  neo_allocator_free(allocator, self->callable.closure);
-  neo_allocator_free(allocator, self->callable.name);
+  neo_js_callable_dispose(allocator, &self->callable);
 }
 
 neo_js_cfunction_t neo_create_js_cfunction(neo_allocator_t allocator,
                                            neo_js_cfunction_fn_t callee) {
   neo_js_cfunction_t cfunction = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_cfunction_t), neo_js_function_dispose);
-  neo_js_object_init(allocator, &cfunction->callable.object);
+  neo_js_callable_init(allocator, &cfunction->callable);
   cfunction->callable.object.value.type = neo_get_js_cfunction_type();
-  neo_hash_map_initialize_t initialize = {0};
-  initialize.auto_free_key = true;
-  initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
-  initialize.compare = (neo_compare_fn_t)wcscmp;
-  cfunction->callable.closure = neo_create_hash_map(allocator, &initialize);
-  cfunction->callable.bind = NULL;
-  cfunction->callable.clazz = NULL;
-  cfunction->callable.name = NULL;
-  cfunction->callable.is_class = false;
   cfunction->callee = callee;
   return cfunction;
 }

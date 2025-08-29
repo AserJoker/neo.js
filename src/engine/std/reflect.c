@@ -214,3 +214,85 @@ NEO_JS_CFUNCTION(neo_js_reflect_set_prototype_of) {
   return neo_js_object_set_prototype_of(
       ctx, neo_js_context_get_std(ctx).object_constructor, 1, &obj);
 }
+
+void neo_js_context_init_std_reflect(neo_js_context_t ctx) {
+  neo_js_variable_t reflect =
+      neo_js_context_create_object(ctx, neo_js_context_create_null(ctx));
+  neo_js_context_set_field(ctx, neo_js_context_get_std(ctx).global,
+                           neo_js_context_create_string(ctx, L"Reflect"),
+                           reflect, NULL);
+  neo_js_context_set_field(
+      ctx, reflect,
+      neo_js_context_get_field(
+          ctx, neo_js_context_get_std(ctx).symbol_constructor,
+          neo_js_context_create_string(ctx, L"toStringTag"), NULL),
+      neo_js_context_create_string(ctx, L"Reflect"), NULL);
+  neo_js_variable_t apply =
+      neo_js_context_create_cfunction(ctx, L"apply", neo_js_reflect_apply);
+  neo_js_context_def_field(ctx, reflect,
+                           neo_js_context_create_string(ctx, L"apply"), apply,
+                           true, false, true);
+  neo_js_variable_t construct = neo_js_context_create_cfunction(
+      ctx, L"construct", neo_js_reflect_construct);
+  neo_js_context_def_field(ctx, reflect,
+                           neo_js_context_create_string(ctx, L"construct"),
+                           construct, true, false, true);
+  neo_js_variable_t define_property = neo_js_context_create_cfunction(
+      ctx, L"defineProperty", neo_js_reflect_define_property);
+  neo_js_context_def_field(ctx, reflect,
+                           neo_js_context_create_string(ctx, L"defineProperty"),
+                           define_property, true, false, true);
+  neo_js_variable_t delete_property = neo_js_context_create_cfunction(
+      ctx, L"deleteProperty", neo_js_reflect_delete_property);
+  neo_js_context_def_field(ctx, reflect,
+                           neo_js_context_create_string(ctx, L"deleteProperty"),
+                           delete_property, true, false, true);
+  neo_js_variable_t get =
+      neo_js_context_create_cfunction(ctx, L"get", neo_js_reflect_get);
+  neo_js_context_def_field(ctx, reflect,
+                           neo_js_context_create_string(ctx, L"get"), get, true,
+                           false, true);
+  neo_js_variable_t get_own_property_descriptor =
+      neo_js_context_create_cfunction(
+          ctx, L"getOwnPropertyDescriptor",
+          neo_js_reflect_get_own_property_descriptor);
+  neo_js_context_def_field(
+      ctx, reflect,
+      neo_js_context_create_string(ctx, L"getOwnPropertyDescriptor"),
+      get_own_property_descriptor, true, false, true);
+  neo_js_variable_t get_prototype_of = neo_js_context_create_cfunction(
+      ctx, L"getPrototypeOf", neo_js_reflect_get_prototype_of);
+  neo_js_context_def_field(ctx, reflect,
+                           neo_js_context_create_string(ctx, L"getPrototypeOf"),
+                           get_prototype_of, true, false, true);
+  neo_js_variable_t has =
+      neo_js_context_create_cfunction(ctx, L"has", neo_js_reflect_has);
+  neo_js_context_def_field(ctx, reflect,
+                           neo_js_context_create_string(ctx, L"has"), has, true,
+                           false, true);
+  neo_js_variable_t is_extensible = neo_js_context_create_cfunction(
+      ctx, L"isExtensible", neo_js_reflect_is_extensible);
+  neo_js_context_def_field(ctx, reflect,
+                           neo_js_context_create_string(ctx, L"isExtensible"),
+                           is_extensible, true, false, true);
+  neo_js_variable_t own_keys =
+      neo_js_context_create_cfunction(ctx, L"ownKeys", neo_js_reflect_own_keys);
+  neo_js_context_def_field(ctx, reflect,
+                           neo_js_context_create_string(ctx, L"ownKeys"),
+                           own_keys, true, false, true);
+  neo_js_variable_t prevent_extensions = neo_js_context_create_cfunction(
+      ctx, L"preventExtensions", neo_js_reflect_prevent_extensions);
+  neo_js_context_def_field(
+      ctx, reflect, neo_js_context_create_string(ctx, L"preventExtensions"),
+      prevent_extensions, true, false, true);
+  neo_js_variable_t set =
+      neo_js_context_create_cfunction(ctx, L"set", neo_js_reflect_set);
+  neo_js_context_def_field(ctx, reflect,
+                           neo_js_context_create_string(ctx, L"set"), set, true,
+                           false, true);
+  neo_js_variable_t set_prototype_of = neo_js_context_create_cfunction(
+      ctx, L"setPrototypeOf", neo_js_reflect_set_prototype_of);
+  neo_js_context_def_field(ctx, reflect,
+                           neo_js_context_create_string(ctx, L"setPrototypeOf"),
+                           set_prototype_of, true, false, true);
+}

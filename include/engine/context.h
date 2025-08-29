@@ -68,6 +68,8 @@ typedef struct _neo_js_std_t {
 neo_js_context_t neo_create_js_context(neo_allocator_t allocator,
                                        neo_js_runtime_t runtime);
 
+void neo_js_context_init_std(neo_js_context_t ctx);
+
 neo_js_runtime_t neo_js_context_get_runtime(neo_js_context_t ctx);
 
 #define neo_js_context_get_allocator(ctx)                                      \
@@ -137,8 +139,9 @@ neo_js_variable_t neo_js_context_create_variable(neo_js_context_t ctx,
                                                  neo_js_chunk_t handle,
                                                  const wchar_t *name);
 
-neo_js_variable_t neo_js_context_to_ref(neo_js_context_t ctx,
-                                        neo_js_variable_t variable);
+neo_js_variable_t neo_js_context_create_ref_variable(neo_js_context_t ctx,
+                                                     neo_js_handle_t handle,
+                                                     const wchar_t *name);
 
 neo_js_variable_t neo_js_context_def_variable(neo_js_context_t ctx,
                                               neo_js_variable_t variable,
@@ -477,8 +480,8 @@ neo_js_call_type_t neo_js_context_get_call_type(neo_js_context_t ctx);
   if (neo_js_variable_get_type(expr)->kind == NEO_JS_TYPE_ERROR)
 #define NEO_JS_TRY_AND_THROW(expr)                                             \
   do {                                                                         \
-    neo_js_variable_t error = (expr);                                          \
-    NEO_JS_TRY(error) { return error; }                                        \
+    neo_js_variable_t error##__LINE__ = (expr);                                \
+    NEO_JS_TRY(error##__LINE__) { return error##__LINE__; }                    \
   } while (0);
 #ifdef __cplusplus
 }

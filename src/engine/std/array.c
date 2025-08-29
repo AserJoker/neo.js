@@ -12,7 +12,6 @@
 #include <stdbool.h>
 #include <wchar.h>
 
-
 neo_js_variable_t neo_js_array_from(neo_js_context_t ctx,
                                     neo_js_variable_t self, uint32_t argc,
                                     neo_js_variable_t *argv) {
@@ -1877,4 +1876,276 @@ neo_js_variable_t neo_js_array_with(neo_js_context_t ctx,
         ctx, result, neo_js_context_create_number(ctx, idx), value, NULL);
   }
   return result;
+}
+
+void neo_js_context_init_std_array(neo_js_context_t ctx) {
+
+  neo_js_variable_t from =
+      neo_js_context_create_cfunction(ctx, L"from", neo_js_array_from);
+  neo_js_context_def_field(ctx, neo_js_context_get_std(ctx).array_constructor,
+                           neo_js_context_create_string(ctx, L"from"), from,
+                           true, false, true);
+
+  neo_js_variable_t from_async = neo_js_context_create_async_cfunction(
+      ctx, L"fromAsync", neo_js_array_from_async);
+  neo_js_context_def_field(ctx, neo_js_context_get_std(ctx).array_constructor,
+                           neo_js_context_create_string(ctx, L"fromAsync"),
+                           from_async, true, false, true);
+
+  neo_js_variable_t is_array =
+      neo_js_context_create_cfunction(ctx, L"isArray", neo_js_array_is_array);
+  neo_js_context_def_field(ctx, neo_js_context_get_std(ctx).array_constructor,
+                           neo_js_context_create_string(ctx, L"isArray"),
+                           is_array, true, false, true);
+
+  neo_js_variable_t of =
+      neo_js_context_create_cfunction(ctx, L"of", neo_js_array_of);
+  neo_js_context_def_field(ctx, neo_js_context_get_std(ctx).array_constructor,
+                           neo_js_context_create_string(ctx, L"of"), of, true,
+                           false, true);
+
+  neo_js_variable_t species = neo_js_context_create_cfunction(
+      ctx, L"[Symbol.species]", neo_js_array_species);
+  neo_js_context_def_accessor(
+      ctx, neo_js_context_get_std(ctx).array_constructor,
+      neo_js_context_get_field(ctx, neo_js_context_get_std(ctx).symbol_constructor,
+                               neo_js_context_create_string(ctx, L"species"),
+                               NULL),
+      species, NULL, true, false);
+
+  neo_js_variable_t prototype = neo_js_context_get_field(
+      ctx, neo_js_context_get_std(ctx).array_constructor,
+      neo_js_context_create_string(ctx, L"prototype"), NULL);
+
+  neo_js_variable_t at =
+      neo_js_context_create_cfunction(ctx, L"at", neo_js_array_at);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"at"), at, true,
+                           false, true);
+
+  neo_js_variable_t concat =
+      neo_js_context_create_cfunction(ctx, L"concat", neo_js_array_concat);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"concat"), concat,
+                           true, false, true);
+
+  neo_js_variable_t copy_within = neo_js_context_create_cfunction(
+      ctx, L"copyWithin", neo_js_array_copy_within);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"copyWithin"),
+                           copy_within, true, false, true);
+
+  neo_js_variable_t entries =
+      neo_js_context_create_cfunction(ctx, L"entries", neo_js_array_entries);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"entries"),
+                           entries, true, false, true);
+
+  neo_js_variable_t every =
+      neo_js_context_create_cfunction(ctx, L"every", neo_js_array_every);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"every"), every,
+                           true, false, true);
+
+  neo_js_variable_t fill =
+      neo_js_context_create_cfunction(ctx, L"fill", neo_js_array_fill);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"fill"), fill,
+                           true, false, true);
+
+  neo_js_variable_t filter =
+      neo_js_context_create_cfunction(ctx, L"filter", neo_js_array_filter);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"filter"), filter,
+                           true, false, true);
+
+  neo_js_variable_t find =
+      neo_js_context_create_cfunction(ctx, L"find", neo_js_array_find);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"find"), find,
+                           true, false, true);
+
+  neo_js_variable_t find_index = neo_js_context_create_cfunction(
+      ctx, L"findIndex", neo_js_array_find_index);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"findIndex"),
+                           find_index, true, false, true);
+
+  neo_js_variable_t find_last =
+      neo_js_context_create_cfunction(ctx, L"findLast", neo_js_array_find_last);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"findLast"),
+                           find_last, true, false, true);
+
+  neo_js_variable_t find_last_index = neo_js_context_create_cfunction(
+      ctx, L"findLastIndex", neo_js_array_find_last_index);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"findLastIndex"),
+                           find_last_index, true, false, true);
+
+  neo_js_variable_t flat =
+      neo_js_context_create_cfunction(ctx, L"flat", neo_js_array_flat);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"flat"), flat,
+                           true, false, true);
+
+  neo_js_variable_t flat_map =
+      neo_js_context_create_cfunction(ctx, L"flatMap", neo_js_array_flat_map);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"flat_map"),
+                           flat_map, true, false, true);
+
+  neo_js_variable_t for_each =
+      neo_js_context_create_cfunction(ctx, L"forEach", neo_js_array_for_each);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"forEach"),
+                           for_each, true, false, true);
+
+  neo_js_variable_t includes =
+      neo_js_context_create_cfunction(ctx, L"includes", neo_js_array_includes);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"includes"),
+                           includes, true, false, true);
+
+  neo_js_variable_t index_of =
+      neo_js_context_create_cfunction(ctx, L"indexOf", neo_js_array_index_of);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"indexOf"),
+                           index_of, true, false, true);
+
+  neo_js_variable_t join =
+      neo_js_context_create_cfunction(ctx, L"join", neo_js_array_join);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"join"), join,
+                           true, false, true);
+
+  neo_js_variable_t keys =
+      neo_js_context_create_cfunction(ctx, L"keys", neo_js_array_keys);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"keys"), keys,
+                           true, false, true);
+
+  neo_js_variable_t last_index_of = neo_js_context_create_cfunction(
+      ctx, L"lastIndexOf", neo_js_array_last_index_of);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"lastIndexOf"),
+                           last_index_of, true, false, true);
+
+  neo_js_variable_t map =
+      neo_js_context_create_cfunction(ctx, L"map", neo_js_array_map);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"map"), map, true,
+                           false, true);
+
+  neo_js_variable_t pop =
+      neo_js_context_create_cfunction(ctx, L"pop", neo_js_array_pop);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"pop"), pop, true,
+                           false, true);
+
+  neo_js_variable_t push =
+      neo_js_context_create_cfunction(ctx, L"push", neo_js_array_push);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"push"), push,
+                           true, false, true);
+
+  neo_js_variable_t reduce =
+      neo_js_context_create_cfunction(ctx, L"reduce", neo_js_array_reduce);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"reduce"), reduce,
+                           true, false, true);
+
+  neo_js_variable_t reduce_right = neo_js_context_create_cfunction(
+      ctx, L"reduceRight", neo_js_array_reduce_right);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"reduceRight"),
+                           reduce_right, true, false, true);
+
+  neo_js_variable_t reverse =
+      neo_js_context_create_cfunction(ctx, L"reverse", neo_js_array_reverse);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"reverse"),
+                           reverse, true, false, true);
+
+  neo_js_variable_t shift =
+      neo_js_context_create_cfunction(ctx, L"shift", neo_js_array_shift);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"shift"), shift,
+                           true, false, true);
+
+  neo_js_variable_t slice =
+      neo_js_context_create_cfunction(ctx, L"slice", neo_js_array_slice);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"slice"), slice,
+                           true, false, true);
+
+  neo_js_variable_t some =
+      neo_js_context_create_cfunction(ctx, L"some", neo_js_array_some);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"some"), some,
+                           true, false, true);
+
+  neo_js_variable_t sort =
+      neo_js_context_create_cfunction(ctx, L"sort", neo_js_array_sort);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"sort"), sort,
+                           true, false, true);
+
+  neo_js_variable_t splice =
+      neo_js_context_create_cfunction(ctx, L"splice", neo_js_array_splice);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"splice"), splice,
+                           true, false, true);
+
+  neo_js_variable_t to_local_string = neo_js_context_create_cfunction(
+      ctx, L"toLocalString", neo_js_array_to_local_string);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"toLocalString"),
+                           to_local_string, true, false, true);
+
+  neo_js_variable_t to_reversed = neo_js_context_create_cfunction(
+      ctx, L"toReversed", neo_js_array_to_reversed);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"toReversed"),
+                           to_reversed, true, false, true);
+
+  neo_js_variable_t to_sorted =
+      neo_js_context_create_cfunction(ctx, L"toSorted", neo_js_array_to_sorted);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"toSorted"),
+                           to_sorted, true, false, true);
+
+  neo_js_variable_t to_spliced = neo_js_context_create_cfunction(
+      ctx, L"toSpliced", neo_js_array_to_spliced);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"toSpliced"),
+                           to_spliced, true, false, true);
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"toString"),
+      neo_js_context_create_cfunction(ctx, L"toString", neo_js_array_to_string),
+      true, false, true);
+
+  neo_js_variable_t unshift =
+      neo_js_context_create_cfunction(ctx, L"unshift", neo_js_array_unshift);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"unshift"),
+                           unshift, true, false, true);
+
+  neo_js_variable_t values =
+      neo_js_context_create_cfunction(ctx, L"values", neo_js_array_values);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"values"), values,
+                           true, false, true);
+
+  neo_js_variable_t with =
+      neo_js_context_create_cfunction(ctx, L"with", neo_js_array_with);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"with"), with,
+                           true, false, true);
+
+  neo_js_variable_t iterator = neo_js_context_get_field(
+      ctx, neo_js_context_get_std(ctx).symbol_constructor,
+      neo_js_context_create_string(ctx, L"iterator"), NULL);
+  neo_js_context_def_field(ctx, prototype, iterator, values, true, false, true);
 }

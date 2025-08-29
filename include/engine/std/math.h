@@ -40,6 +40,7 @@ NEO_JS_CFUNCTION(neo_js_math_sqrt);
 NEO_JS_CFUNCTION(neo_js_math_tan);
 NEO_JS_CFUNCTION(neo_js_math_tanh);
 NEO_JS_CFUNCTION(neo_js_math_trunc);
+void neo_js_context_init_std_math(neo_js_context_t ctx);
 
 #ifdef __cplusplus
 }

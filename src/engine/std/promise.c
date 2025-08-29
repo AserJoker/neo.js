@@ -693,9 +693,8 @@ static neo_js_variable_t neo_js_resolve(neo_js_context_t ctx,
       }
     } else {
       promise->status = NEO_PROMISE_FULFILLED;
-      promise->value = neo_js_variable_getneo_create_js_chunk(value);
-      neo_js_chunk_add_parent(promise->value,
-                              neo_js_variable_getneo_create_js_chunk(self));
+      promise->value = neo_js_variable_get_chunk(value);
+      neo_js_chunk_add_parent(promise->value, neo_js_variable_get_chunk(self));
       for (neo_list_node_t it =
                neo_list_get_first(promise->on_fulfilled_callbacks);
            it != neo_list_get_tail(promise->on_fulfilled_callbacks);
@@ -725,9 +724,8 @@ static neo_js_variable_t neo_js_reject(neo_js_context_t ctx,
     } else {
       value = neo_js_context_create_undefined(ctx);
     }
-    promise->error = neo_js_variable_getneo_create_js_chunk(value);
-    neo_js_chunk_add_parent(promise->error,
-                            neo_js_variable_getneo_create_js_chunk(self));
+    promise->error = neo_js_variable_get_chunk(value);
+    neo_js_chunk_add_parent(promise->error, neo_js_variable_get_chunk(self));
     for (neo_list_node_t it =
              neo_list_get_first(promise->on_rejected_callbacks);
          it != neo_list_get_tail(promise->on_rejected_callbacks);
@@ -850,17 +848,15 @@ static neo_js_variable_t neo_js_resolver(neo_js_context_t ctx,
 
   neo_js_promise_t promise =
       neo_js_context_get_opaque(ctx, self, L"[[promise]]");
-  neo_js_chunk_t hpromise = neo_js_variable_getneo_create_js_chunk(self);
+  neo_js_chunk_t hpromise = neo_js_variable_get_chunk(self);
   if (promise->status == NEO_PROMISE_PENDDING) {
     if (neo_js_variable_get_type(on_fulfilled)->kind >= NEO_JS_TYPE_CALLABLE) {
-      neo_js_chunk_t hfulfilled =
-          neo_js_variable_getneo_create_js_chunk(on_fulfilled);
+      neo_js_chunk_t hfulfilled = neo_js_variable_get_chunk(on_fulfilled);
       neo_list_push(promise->on_fulfilled_callbacks, hfulfilled);
       neo_js_chunk_add_parent(hfulfilled, hpromise);
     }
     if (neo_js_variable_get_type(on_rejected)->kind >= NEO_JS_TYPE_CALLABLE) {
-      neo_js_chunk_t hrejected =
-          neo_js_variable_getneo_create_js_chunk(on_rejected);
+      neo_js_chunk_t hrejected = neo_js_variable_get_chunk(on_rejected);
       neo_list_push(promise->on_rejected_callbacks, hrejected);
       neo_js_chunk_add_parent(hrejected, hpromise);
     }
@@ -923,4 +919,91 @@ neo_js_variable_t neo_js_promise_finally(neo_js_context_t ctx,
     return neo_js_promise_then(ctx, self, 2, args);
   }
   return neo_js_promise_then(ctx, self, 0, NULL);
+}
+
+void neo_js_context_init_std_promise(neo_js_context_t ctx) {
+  neo_js_context_def_field(
+      ctx, neo_js_context_get_std(ctx).promise_constructor,
+      neo_js_context_create_string(ctx, L"all"),
+      neo_js_context_create_cfunction(ctx, L"all", neo_js_promise_all), true,
+      false, true);
+
+  neo_js_context_def_field(ctx, neo_js_context_get_std(ctx).promise_constructor,
+                           neo_js_context_create_string(ctx, L"allSettled"),
+                           neo_js_context_create_cfunction(
+                               ctx, L"allSettled", neo_js_promise_all_settled),
+                           true, false, true);
+
+  neo_js_context_def_field(
+      ctx, neo_js_context_get_std(ctx).promise_constructor,
+      neo_js_context_create_string(ctx, L"any"),
+      neo_js_context_create_cfunction(ctx, L"any", neo_js_promise_any), true,
+      false, true);
+
+  neo_js_context_def_field(
+      ctx, neo_js_context_get_std(ctx).promise_constructor,
+      neo_js_context_create_string(ctx, L"race"),
+      neo_js_context_create_cfunction(ctx, L"race", neo_js_promise_race), true,
+      false, true);
+
+  neo_js_context_def_field(
+      ctx, neo_js_context_get_std(ctx).promise_constructor,
+      neo_js_context_create_string(ctx, L"resolve"),
+      neo_js_context_create_cfunction(ctx, L"resolve", neo_js_promise_resolve),
+      true, false, true);
+
+  neo_js_context_def_field(
+      ctx, neo_js_context_get_std(ctx).promise_constructor,
+      neo_js_context_create_string(ctx, L"reject"),
+      neo_js_context_create_cfunction(ctx, L"reject", neo_js_promise_reject),
+      true, false, true);
+
+  neo_js_context_def_field(
+      ctx, neo_js_context_get_std(ctx).promise_constructor,
+      neo_js_context_create_string(ctx, L"try"),
+      neo_js_context_create_cfunction(ctx, L"try", neo_js_promise_try), true,
+      false, true);
+
+  neo_js_context_def_field(
+      ctx, neo_js_context_get_std(ctx).promise_constructor,
+      neo_js_context_create_string(ctx, L"withResolvers"),
+      neo_js_context_create_cfunction(ctx, L"withResolvers",
+                                      neo_js_promise_with_resolvers),
+      true, false, true);
+
+  neo_js_context_def_accessor(
+      ctx, neo_js_context_get_std(ctx).promise_constructor,
+      neo_js_context_get_field(
+          ctx, neo_js_context_get_std(ctx).symbol_constructor,
+          neo_js_context_create_string(ctx, L"species"), NULL),
+      neo_js_context_create_cfunction(ctx, L"[Symbol.species]",
+                                      neo_js_promise_species),
+      NULL, true, true);
+
+  neo_js_variable_t prototype = neo_js_context_get_field(
+      ctx, neo_js_context_get_std(ctx).promise_constructor,
+      neo_js_context_create_string(ctx, L"prototype"), NULL);
+
+  neo_js_variable_t to_string_tag = neo_js_context_get_field(
+      ctx, neo_js_context_get_std(ctx).symbol_constructor,
+      neo_js_context_create_string(ctx, L"toStringTag"), NULL);
+
+  neo_js_context_def_field(ctx, prototype, to_string_tag,
+                           neo_js_context_create_string(ctx, L"Promise"), true,
+                           false, true);
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"then"),
+      neo_js_context_create_cfunction(ctx, L"then", neo_js_promise_then), true,
+      false, true);
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"catch"),
+      neo_js_context_create_cfunction(ctx, L"catch", neo_js_promise_catch),
+      true, false, true);
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"finally"),
+      neo_js_context_create_cfunction(ctx, L"finally", neo_js_promise_finally),
+      true, false, true);
 }

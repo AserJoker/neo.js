@@ -17,6 +17,7 @@ NEO_JS_CFUNCTION(neo_js_reflect_own_keys);
 NEO_JS_CFUNCTION(neo_js_reflect_prevent_extensions);
 NEO_JS_CFUNCTION(neo_js_reflect_set);
 NEO_JS_CFUNCTION(neo_js_reflect_set_prototype_of);
+void neo_js_context_init_std_reflect(neo_js_context_t ctx);
 #ifdef __cplusplus
 }
 #endif

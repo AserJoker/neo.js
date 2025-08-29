@@ -414,3 +414,25 @@ neo_js_variable_t neo_js_regexp_test(neo_js_context_t ctx,
   pcre2_match_data_free(match_data);
   return neo_js_context_create_boolean(ctx, rc > 0);
 }
+
+void neo_js_context_init_std_regexp(neo_js_context_t ctx) {
+  neo_js_variable_t prototype = neo_js_context_get_field(
+      ctx, neo_js_context_get_std(ctx).regexp_constructor,
+      neo_js_context_create_string(ctx, L"prototype"), NULL);
+
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"toString"),
+                           neo_js_context_create_cfunction(
+                               ctx, L"toString", neo_js_regexp_to_string),
+                           true, false, true);
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"exec"),
+      neo_js_context_create_cfunction(ctx, L"exec", neo_js_regexp_exec), true,
+      false, true);
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"test"),
+      neo_js_context_create_cfunction(ctx, L"test", neo_js_regexp_test), true,
+      false, true);
+}

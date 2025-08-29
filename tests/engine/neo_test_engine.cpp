@@ -14,6 +14,7 @@ public:
     allocator = neo_create_allocator(NULL);
     runtime = neo_create_js_runtime(allocator);
     ctx = neo_create_js_context(allocator, runtime);
+    neo_js_context_init_std(ctx);
   }
   void TearDown() override {
     neo_allocator_free(allocator, ctx);

@@ -28,6 +28,8 @@ bool neo_js_chunk_check_alive(neo_allocator_t allocator, neo_js_chunk_t handle);
 
 void neo_js_chunk_gc(neo_allocator_t allocator, neo_js_chunk_t root);
 
+size_t *neo_js_chunk_get_ref(neo_js_chunk_t self);
+
 #ifdef __cplusplus
 }
 #endif

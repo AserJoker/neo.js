@@ -29,6 +29,7 @@ neo_js_variable_t neo_js_bigint_to_local_string(neo_js_context_t ctx,
 neo_js_variable_t neo_js_bigint_value_of(neo_js_context_t ctx,
                                          neo_js_variable_t self, uint32_t argc,
                                          neo_js_variable_t *argv);
+void neo_js_context_init_std_bigint(neo_js_context_t ctx);
 #ifdef __cplusplus
 }
 #endif

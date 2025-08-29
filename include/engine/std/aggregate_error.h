@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 NEO_JS_CFUNCTION(neo_js_aggregate_error_constructor);
+void neo_js_context_init_std_aggregate_error(neo_js_context_t ctx);
 
 #ifdef __cplusplus
 }

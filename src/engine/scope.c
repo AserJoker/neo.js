@@ -4,6 +4,7 @@
 #include "core/map.h"
 #include "core/string.h"
 #include "engine/chunk.h"
+#include "engine/handle.h"
 #include "engine/type.h"
 #include "engine/variable.h"
 #include <string.h>
@@ -72,7 +73,7 @@ neo_js_scope_t neo_js_scope_set_parent(neo_js_scope_t self,
   self->parent = parent;
   return current;
 }
-neo_js_chunk_t neo_js_scope_get_rootneo_create_js_chunk(neo_js_scope_t self) {
+neo_js_chunk_t neo_js_scope_get_root_chunk(neo_js_scope_t self) {
   return self->root;
 }
 neo_js_variable_t neo_js_scope_get_variable(neo_js_scope_t self,
@@ -97,6 +98,22 @@ neo_js_variable_t neo_js_scope_create_variable(neo_js_scope_t self,
   }
   return variable;
 }
+
+neo_js_variable_t neo_js_scope_create_ref_variable(neo_js_scope_t self,
+                                                   neo_js_handle_t handle,
+                                                   const wchar_t *name) {
+  neo_js_variable_t variable =
+      neo_create_js_ref_variable(self->allocator, handle);
+  neo_js_chunk_t chunk = neo_js_handle_get_chunk(handle);
+  neo_js_chunk_add_parent(chunk, self->root);
+  neo_list_push(self->variables, variable);
+  if (name) {
+    neo_map_set(self->named_variables,
+                neo_create_wstring(self->allocator, name), variable, NULL);
+  }
+  return variable;
+}
+
 neo_list_t neo_js_scope_get_variables(neo_js_scope_t scope) {
   return scope->variables;
 }

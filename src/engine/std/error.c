@@ -126,3 +126,13 @@ neo_js_variable_t neo_js_error_to_string(neo_js_context_t ctx,
   neo_allocator_free(allocator, result);
   return res;
 }
+void neo_js_context_init_std_error(neo_js_context_t ctx) {
+  neo_js_variable_t prototype = neo_js_context_get_field(
+      ctx, neo_js_context_get_std(ctx).error_constructor,
+      neo_js_context_create_string(ctx, L"prototype"), NULL);
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, L"toString"),
+      neo_js_context_create_cfunction(ctx, L"toString", neo_js_error_to_string),
+      true, false, true);
+}

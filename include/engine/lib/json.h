@@ -11,6 +11,7 @@ neo_js_variable_t neo_js_json_read_variable(neo_js_context_t ctx,
                                             const wchar_t *file);
 NEO_JS_CFUNCTION(neo_js_json_stringify);
 NEO_JS_CFUNCTION(neo_js_json_parse);
+void neo_js_context_init_lib_json(neo_js_context_t ctx);
 #ifdef __cplusplus
 }
 #endif

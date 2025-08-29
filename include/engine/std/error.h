@@ -18,6 +18,7 @@ neo_js_variable_t neo_js_error_constructor(neo_js_context_t ctx,
 neo_js_variable_t neo_js_error_to_string(neo_js_context_t ctx,
                                          neo_js_variable_t self, uint32_t argc,
                                          neo_js_variable_t *argv);
+void neo_js_context_init_std_error(neo_js_context_t ctx);
 
 #ifdef __cplusplus
 }

@@ -19,6 +19,8 @@ neo_js_variable_t neo_js_array_iterator_iterator(neo_js_context_t ctx,
                                                  neo_js_variable_t self,
                                                  uint32_t argc,
                                                  neo_js_variable_t *argv);
+
+void neo_js_context_init_std_array_iterator(neo_js_context_t ctx);
 #ifdef __cplusplus
 }
 #endif

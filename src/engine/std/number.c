@@ -238,3 +238,103 @@ NEO_JS_CFUNCTION(neo_js_number_value_of) {
   }
   return primitive;
 }
+
+void neo_js_context_init_std_number(neo_js_context_t ctx) {
+  neo_js_variable_t is_finite = neo_js_context_create_cfunction(
+      ctx, L"isFinite", neo_js_number_is_finite);
+  neo_js_context_def_field(ctx, neo_js_context_get_std(ctx).number_constructor,
+                           neo_js_context_create_string(ctx, L"isFinite"),
+                           is_finite, true, false, true);
+  neo_js_variable_t is_integer = neo_js_context_create_cfunction(
+      ctx, L"isInteger", neo_js_number_is_integer);
+  neo_js_context_def_field(ctx, neo_js_context_get_std(ctx).number_constructor,
+                           neo_js_context_create_string(ctx, L"isInteger"),
+                           is_integer, true, false, true);
+  neo_js_variable_t is_nan =
+      neo_js_context_create_cfunction(ctx, L"isNaN", neo_js_number_is_nan);
+  neo_js_context_def_field(ctx, neo_js_context_get_std(ctx).number_constructor,
+                           neo_js_context_create_string(ctx, L"isNaN"), is_nan,
+                           true, false, true);
+  neo_js_variable_t is_safe_integer = neo_js_context_create_cfunction(
+      ctx, L"isSafeInteger", neo_js_number_is_safe_integer);
+  neo_js_context_def_field(ctx, neo_js_context_get_std(ctx).number_constructor,
+                           neo_js_context_create_string(ctx, L"isSafeInteger"),
+                           is_safe_integer, true, false, true);
+  neo_js_variable_t epsilon =
+      neo_js_context_create_number(ctx, 2.220446049250313e-16);
+  neo_js_context_def_field(ctx, neo_js_context_get_std(ctx).number_constructor,
+                           neo_js_context_create_string(ctx, L"EPSILON"),
+                           epsilon, false, false, false);
+  neo_js_variable_t max_safe_integer =
+      neo_js_context_create_number(ctx, NEO_MAX_INTEGER);
+  neo_js_context_def_field(
+      ctx, neo_js_context_get_std(ctx).number_constructor,
+      neo_js_context_create_string(ctx, L"MAX_SAFE_INTEGER"), max_safe_integer,
+      false, false, false);
+  neo_js_variable_t max_value = neo_js_context_create_number(ctx, 2e52 - 1);
+  neo_js_context_def_field(ctx, neo_js_context_get_std(ctx).number_constructor,
+                           neo_js_context_create_string(ctx, L"MAX_VALUE"),
+                           max_value, false, false, false);
+  neo_js_variable_t min_safe_integer =
+      neo_js_context_create_number(ctx, -9007199254740991);
+  neo_js_context_def_field(
+      ctx, neo_js_context_get_std(ctx).number_constructor,
+      neo_js_context_create_string(ctx, L"MIN_SAFE_INTEGER"), min_safe_integer,
+      false, false, false);
+
+  neo_js_variable_t min_value = neo_js_context_create_number(ctx, 5E-324);
+  neo_js_context_def_field(ctx, neo_js_context_get_std(ctx).number_constructor,
+                           neo_js_context_create_string(ctx, L"MIN_VALUE"),
+                           min_value, false, false, false);
+  neo_js_variable_t nan = neo_js_context_create_number(ctx, NAN);
+  neo_js_context_def_field(ctx, neo_js_context_get_std(ctx).number_constructor,
+                           neo_js_context_create_string(ctx, L"NaN"), nan,
+                           false, false, false);
+  neo_js_variable_t negative_infinity =
+      neo_js_context_create_number(ctx, -INFINITY);
+  neo_js_context_def_field(
+      ctx, neo_js_context_get_std(ctx).number_constructor,
+      neo_js_context_create_string(ctx, L"NEGATIVE_INFINITY"),
+      negative_infinity, false, false, false);
+
+  neo_js_variable_t positive_infinity =
+      neo_js_context_create_number(ctx, INFINITY);
+  neo_js_context_def_field(
+      ctx, neo_js_context_get_std(ctx).number_constructor,
+      neo_js_context_create_string(ctx, L"POSITIVE_INFINITY"),
+      positive_infinity, false, false, false);
+
+  neo_js_variable_t prototype = neo_js_context_get_field(
+      ctx, neo_js_context_get_std(ctx).number_constructor,
+      neo_js_context_create_string(ctx, L"prototype"), NULL);
+  neo_js_variable_t to_exponential = neo_js_context_create_cfunction(
+      ctx, L"toExponential", neo_js_number_to_exponential);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"toExponential"),
+                           to_exponential, true, false, true);
+  neo_js_variable_t to_fixed =
+      neo_js_context_create_cfunction(ctx, L"toFixed", neo_js_number_to_fixed);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"toFixed"),
+                           to_fixed, true, false, true);
+  neo_js_variable_t to_local_string = neo_js_context_create_cfunction(
+      ctx, L"toLocalString", neo_js_number_to_local_string);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"toLocalString"),
+                           to_local_string, true, false, true);
+  neo_js_variable_t to_precision = neo_js_context_create_cfunction(
+      ctx, L"toPrecision", neo_js_number_to_precision);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"toPrecision"),
+                           to_precision, true, false, true);
+  neo_js_variable_t to_string = neo_js_context_create_cfunction(
+      ctx, L"toString", neo_js_number_to_string);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"toString"),
+                           to_string, true, false, true);
+  neo_js_variable_t value_of =
+      neo_js_context_create_cfunction(ctx, L"valueOf", neo_js_number_value_of);
+  neo_js_context_def_field(ctx, prototype,
+                           neo_js_context_create_string(ctx, L"valueOf"),
+                           value_of, true, false, true);
+}

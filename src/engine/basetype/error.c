@@ -27,7 +27,7 @@ neo_js_error_t neo_create_js_error(neo_allocator_t allocator,
       allocator, sizeof(struct _neo_js_error_t), neo_js_error_dispose);
   neo_js_value_init(allocator, &error->value);
   error->value.type = neo_get_js_error_type();
-  error->error = neo_js_variable_getneo_create_js_chunk(err);
+  error->error = neo_js_variable_get_chunk(err);
   return error;
 }
 
@@ -51,11 +51,10 @@ neo_js_variable_t neo_js_error_get_error(neo_js_context_t ctx,
 void neo_js_error_set_error(neo_js_context_t ctx, neo_js_variable_t self,
                             neo_js_variable_t err) {
   neo_js_error_t error = neo_js_variable_to_error(self);
-  neo_js_chunk_t herror = neo_js_variable_getneo_create_js_chunk(self);
-  neo_js_chunk_t herr = neo_js_variable_getneo_create_js_chunk(err);
+  neo_js_chunk_t herror = neo_js_variable_get_chunk(self);
+  neo_js_chunk_t herr = neo_js_variable_get_chunk(err);
   neo_js_chunk_add_parent(
-      error->error,
-      neo_js_scope_get_rootneo_create_js_chunk(neo_js_context_get_scope(ctx)));
+      error->error, neo_js_scope_get_root_chunk(neo_js_context_get_scope(ctx)));
   neo_js_chunk_remove_parent(error->error, herror);
   neo_js_chunk_add_parent(herror, herr);
   error->error = herr;
