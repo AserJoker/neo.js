@@ -1,12 +1,13 @@
 #include "engine/std/function.h"
 #include "core/allocator.h"
 #include "engine/basetype/callable.h"
+#include "engine/chunk.h"
 #include "engine/context.h"
-#include "engine/handle.h"
 #include "engine/type.h"
 #include "engine/variable.h"
 #include <stdint.h>
 #include <wchar.h>
+
 
 neo_js_variable_t neo_js_function_constructor(neo_js_context_t ctx,
                                               neo_js_variable_t self,
@@ -100,7 +101,7 @@ neo_js_variable_t neo_js_function_bind(neo_js_context_t ctx,
                                        neo_js_variable_t self, uint32_t argc,
                                        neo_js_variable_t *argv) {
   neo_js_variable_t result = neo_js_context_create_undefined(ctx);
-  NEO_JS_TRY_AND_THROW(neo_js_context_copy(ctx,self,result));
+  NEO_JS_TRY_AND_THROW(neo_js_context_copy(ctx, self, result));
   neo_js_variable_t bind = NULL;
   if (argc > 0) {
     bind = argv[0];
@@ -110,7 +111,7 @@ neo_js_variable_t neo_js_function_bind(neo_js_context_t ctx,
   neo_js_callable_t callable = neo_js_variable_to_callable(result);
   if (!callable->bind) {
     callable->bind = neo_js_variable_get_handle(bind);
-    neo_js_handle_add_parent(callable->bind, neo_js_variable_get_handle(self));
+    neo_js_chunk_add_parent(callable->bind, neo_js_variable_get_handle(self));
   }
   return result;
 }

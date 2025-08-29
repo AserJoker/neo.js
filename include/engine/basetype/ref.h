@@ -1,7 +1,7 @@
 #ifndef _H_NEO_ENGINE_BASETYPE_REF_
 #define _H_NEO_ENGINE_BASETYPE_REF_
 #include "core/allocator.h"
-#include "engine/handle.h"
+#include "engine/chunk.h"
 #include "engine/type.h"
 #include "engine/value.h"
 #include <stdbool.h>
@@ -13,7 +13,7 @@ typedef struct _neo_js_ref_t *neo_js_ref_t;
 
 struct _neo_js_ref_t {
   struct _neo_js_value_t value;
-  neo_js_handle_t target;
+  neo_js_chunk_t target;
 };
 
 neo_js_type_t neo_get_js_ref_type();

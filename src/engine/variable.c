@@ -1,17 +1,17 @@
 #include "engine/variable.h"
 #include "core/allocator.h"
 #include "engine/basetype/ref.h"
-#include "engine/handle.h"
+#include "engine/chunk.h"
 #include "engine/type.h"
 struct _neo_js_variable_t {
-  neo_js_handle_t handle;
+  neo_js_chunk_t handle;
   bool is_const;
   bool is_using;
   bool is_await_using;
 };
 
 neo_js_variable_t neo_create_js_variable(neo_allocator_t allocator,
-                                         neo_js_handle_t handle) {
+                                         neo_js_chunk_t handle) {
   neo_js_variable_t variable =
       neo_allocator_alloc(allocator, sizeof(struct _neo_js_variable_t), NULL);
   variable->handle = handle;
@@ -21,16 +21,16 @@ neo_js_variable_t neo_create_js_variable(neo_allocator_t allocator,
   return variable;
 }
 
-neo_js_handle_t neo_js_variable_get_handle(neo_js_variable_t variable) {
-  neo_js_handle_t handle = variable->handle;
-  while (neo_js_handle_get_value(handle)->type->kind == NEO_JS_TYPE_REF) {
-    neo_js_value_t value = neo_js_handle_get_value(handle);
+neo_js_chunk_t neo_js_variable_get_handle(neo_js_variable_t variable) {
+  neo_js_chunk_t handle = variable->handle;
+  while (neo_js_chunk_get_value(handle)->type->kind == NEO_JS_TYPE_REF) {
+    neo_js_value_t value = neo_js_chunk_get_value(handle);
     neo_js_ref_t ref = neo_js_value_to_ref(value);
     handle = ref->target;
   }
   return handle;
 }
-neo_js_handle_t neo_js_variable_get_raw_handle(neo_js_variable_t variable) {
+neo_js_chunk_t neo_js_variable_get_raw_handle(neo_js_variable_t variable) {
   return variable->handle;
 }
 
@@ -60,6 +60,6 @@ bool neo_js_variable_is_await_using(neo_js_variable_t variable) {
 }
 
 bool neo_js_variable_is_ref(neo_js_variable_t variable) {
-  neo_js_value_t value = neo_js_handle_get_value(variable->handle);
+  neo_js_value_t value = neo_js_chunk_get_value(variable->handle);
   return value->type == neo_get_js_ref_type();
 }

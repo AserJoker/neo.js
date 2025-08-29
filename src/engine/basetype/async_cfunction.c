@@ -5,12 +5,13 @@
 #include "core/string.h"
 #include "engine/basetype/object.h"
 #include "engine/basetype/string.h"
+#include "engine/chunk.h"
 #include "engine/context.h"
-#include "engine/handle.h"
 #include "engine/type.h"
 #include "engine/variable.h"
 #include <stdbool.h>
 #include <wchar.h>
+
 
 static const wchar_t *neo_js_async_cfunction_typeof() { return L"function"; }
 
@@ -73,19 +74,19 @@ neo_js_async_cfunction_copy_fn(neo_js_context_t ctx, neo_js_variable_t self,
                                neo_js_variable_t target) {
   neo_js_type_t otype = neo_get_js_object_type();
   otype->copy_fn(ctx, self, target);
-  neo_js_handle_t htarget = neo_js_variable_get_handle(target);
+  neo_js_chunk_t htarget = neo_js_variable_get_handle(target);
   neo_js_cfunction_t func = neo_js_variable_to_cfunction(self);
   if (func->callable.bind) {
-    neo_js_handle_add_parent(func->callable.bind, htarget);
+    neo_js_chunk_add_parent(func->callable.bind, htarget);
   }
   if (func->callable.clazz) {
-    neo_js_handle_add_parent(func->callable.clazz, htarget);
+    neo_js_chunk_add_parent(func->callable.clazz, htarget);
   }
   for (neo_hash_map_node_t it = neo_hash_map_get_first(func->callable.closure);
        it != neo_hash_map_get_tail(func->callable.closure);
        it = neo_hash_map_node_next(it)) {
-    neo_js_handle_t hvalue = neo_hash_map_node_get_value(it);
-    neo_js_handle_add_parent(hvalue, htarget);
+    neo_js_chunk_t hvalue = neo_hash_map_node_get_value(it);
+    neo_js_chunk_add_parent(hvalue, htarget);
   }
   return target;
 }

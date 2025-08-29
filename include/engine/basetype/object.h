@@ -2,7 +2,7 @@
 #define _H_NEO_ENGINE_BASETYPE_OBJECT_
 #include "core/allocator.h"
 #include "core/hash_map.h"
-#include "engine/handle.h"
+#include "engine/chunk.h"
 #include "engine/type.h"
 #include "engine/value.h"
 #ifdef __cplusplus
@@ -12,18 +12,18 @@ extern "C" {
 typedef struct _neo_js_object_t *neo_js_object_t;
 
 typedef struct _neo_js_object_property_t {
-  neo_js_handle_t value;
-  neo_js_handle_t get;
-  neo_js_handle_t set;
+  neo_js_chunk_t value;
+  neo_js_chunk_t get;
+  neo_js_chunk_t set;
   bool configurable;
   bool writable;
   bool enumerable;
 } *neo_js_object_property_t;
 
 typedef struct _neo_js_object_private_t {
-  neo_js_handle_t value;
-  neo_js_handle_t get;
-  neo_js_handle_t set;
+  neo_js_chunk_t value;
+  neo_js_chunk_t get;
+  neo_js_chunk_t set;
 } *neo_js_object_private_t;
 
 struct _neo_js_object_t {
@@ -33,8 +33,8 @@ struct _neo_js_object_t {
   neo_hash_map_t internal;
   neo_list_t keys;
   neo_list_t symbol_keys;
-  neo_js_handle_t prototype;
-  neo_js_handle_t constructor;
+  neo_js_chunk_t prototype;
+  neo_js_chunk_t constructor;
   bool sealed;
   bool frozen;
   bool extensible;
@@ -46,10 +46,10 @@ void neo_js_object_dispose(neo_allocator_t allocator, neo_js_object_t self);
 
 void neo_js_object_init(neo_allocator_t allocator, neo_js_object_t object);
 
-int8_t neo_js_object_compare_key(neo_js_handle_t handle1,
-                                 neo_js_handle_t handle2, neo_js_context_t ctx);
+int8_t neo_js_object_compare_key(neo_js_chunk_t handle1, neo_js_chunk_t handle2,
+                                 neo_js_context_t ctx);
 
-uint32_t neo_js_object_key_hash(neo_js_handle_t handle, uint32_t max_bucket);
+uint32_t neo_js_object_key_hash(neo_js_chunk_t handle, uint32_t max_bucket);
 
 neo_js_object_t neo_create_js_object(neo_allocator_t allocator);
 

@@ -2,7 +2,7 @@
 #define _H_NEO_ENGINE_BASETYPE_CALLABLE_
 #include "core/hash_map.h"
 #include "engine/basetype/object.h"
-#include "engine/handle.h"
+#include "engine/chunk.h"
 #include "engine/type.h"
 #include "engine/value.h"
 
@@ -16,8 +16,8 @@ struct _neo_js_callable_t {
   struct _neo_js_object_t object;
   neo_hash_map_t closure;
   wchar_t *name;
-  neo_js_handle_t bind;
-  neo_js_handle_t clazz;
+  neo_js_chunk_t bind;
+  neo_js_chunk_t clazz;
   bool is_class;
 };
 

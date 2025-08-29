@@ -5,13 +5,14 @@
 #include "engine/basetype/coroutine.h"
 #include "engine/basetype/error.h"
 #include "engine/basetype/interrupt.h"
+#include "engine/chunk.h"
 #include "engine/context.h"
-#include "engine/handle.h"
 #include "engine/type.h"
 #include "engine/variable.h"
 #include "runtime/vm.h"
 #include <stdbool.h>
 #include <string.h>
+
 neo_js_variable_t neo_js_async_generator_iterator(neo_js_context_t ctx,
                                                   neo_js_variable_t self,
                                                   uint32_t argc,
@@ -175,8 +176,8 @@ static neo_js_variable_t neo_js_async_generator_task(neo_js_context_t ctx,
                           &result);
     }
     co_ctx->result = neo_js_variable_get_handle(value);
-    neo_js_handle_add_parent(co_ctx->result,
-                             neo_js_variable_get_handle(coroutine));
+    neo_js_chunk_add_parent(co_ctx->result,
+                            neo_js_variable_get_handle(coroutine));
     neo_js_context_recycle_coroutine(ctx, coroutine);
   }
   return neo_js_context_create_undefined(ctx);

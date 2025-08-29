@@ -1,7 +1,7 @@
 #include "engine/basetype/error.h"
 #include "core/allocator.h"
+#include "engine/chunk.h"
 #include "engine/context.h"
-#include "engine/handle.h"
 #include "engine/scope.h"
 #include "engine/type.h"
 #include "engine/value.h"
@@ -9,6 +9,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <wchar.h>
+
 
 neo_js_type_t neo_get_js_error_type() {
   static struct _neo_js_type_t type = {0};
@@ -51,11 +52,11 @@ neo_js_variable_t neo_js_error_get_error(neo_js_context_t ctx,
 void neo_js_error_set_error(neo_js_context_t ctx, neo_js_variable_t self,
                             neo_js_variable_t err) {
   neo_js_error_t error = neo_js_variable_to_error(self);
-  neo_js_handle_t herror = neo_js_variable_get_handle(self);
-  neo_js_handle_t herr = neo_js_variable_get_handle(err);
-  neo_js_handle_add_parent(error->error, neo_js_scope_get_root_handle(
-                                             neo_js_context_get_scope(ctx)));
-  neo_js_handle_remove_parent(error->error, herror);
-  neo_js_handle_add_parent(herror, herr);
+  neo_js_chunk_t herror = neo_js_variable_get_handle(self);
+  neo_js_chunk_t herr = neo_js_variable_get_handle(err);
+  neo_js_chunk_add_parent(error->error, neo_js_scope_get_root_handle(
+                                            neo_js_context_get_scope(ctx)));
+  neo_js_chunk_remove_parent(error->error, herror);
+  neo_js_chunk_add_parent(herror, herr);
   error->error = herr;
 }

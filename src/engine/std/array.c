@@ -4,13 +4,14 @@
 #include "engine/basetype/interrupt.h"
 #include "engine/basetype/number.h"
 #include "engine/basetype/object.h"
+#include "engine/chunk.h"
 #include "engine/context.h"
-#include "engine/handle.h"
 #include "engine/type.h"
 #include "engine/variable.h"
 #include <math.h>
 #include <stdbool.h>
 #include <wchar.h>
+
 
 neo_js_variable_t neo_js_array_from(neo_js_context_t ctx,
                                     neo_js_variable_t self, uint32_t argc,
@@ -239,7 +240,7 @@ neo_js_variable_t neo_js_array_is_array(neo_js_context_t ctx,
   neo_js_variable_t item = argv[0];
   if (neo_js_variable_get_type(item)->kind >= NEO_JS_TYPE_OBJECT) {
     neo_js_object_t obj = neo_js_variable_to_object(item);
-    if (obj->constructor && neo_js_handle_get_value(obj->constructor) ==
+    if (obj->constructor && neo_js_chunk_get_value(obj->constructor) ==
                                 neo_js_variable_get_value(array)) {
       return neo_js_context_create_boolean(ctx, true);
     }

@@ -17,8 +17,8 @@
 #include "engine/basetype/interrupt.h"
 #include "engine/basetype/number.h"
 #include "engine/basetype/object.h"
+#include "engine/chunk.h"
 #include "engine/context.h"
-#include "engine/handle.h"
 #include "engine/scope.h"
 #include "engine/type.h"
 #include "engine/variable.h"
@@ -27,6 +27,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <wchar.h>
+
 
 #define CHECK_AND_THROW(expr, vm, program)                                     \
   {                                                                            \
@@ -259,14 +260,14 @@ void neo_js_vm_store(neo_js_vm_t vm, neo_program_t program) {
 
 void neo_js_vm_save(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
-  neo_js_handle_t root = neo_js_scope_get_root_handle(vm->root);
-  neo_js_handle_t current = neo_js_scope_get_root_handle(vm->scope);
+  neo_js_chunk_t root = neo_js_scope_get_root_handle(vm->root);
+  neo_js_chunk_t current = neo_js_scope_get_root_handle(vm->scope);
   if (vm->result) {
-    neo_js_handle_add_parent(vm->result, current);
-    neo_js_handle_remove_parent(vm->result, root);
+    neo_js_chunk_add_parent(vm->result, current);
+    neo_js_chunk_remove_parent(vm->result, root);
   }
   vm->result = neo_js_variable_get_handle(value);
-  neo_js_handle_add_parent(vm->result, root);
+  neo_js_chunk_add_parent(vm->result, root);
 }
 
 void neo_js_vm_def(neo_js_vm_t vm, neo_program_t program) {
@@ -883,7 +884,7 @@ void neo_js_vm_private_member_call(neo_js_vm_t vm, neo_program_t program) {
   neo_list_pop(vm->stack);
   neo_js_object_t obj = neo_js_variable_to_object(host);
   if (!obj->constructor || !vm->clazz ||
-      neo_js_handle_get_value(obj->constructor) !=
+      neo_js_chunk_get_value(obj->constructor) !=
           neo_js_variable_get_value(vm->clazz)) {
     neo_js_string_t str = neo_js_variable_to_string(field);
     size_t len = wcslen(str->string) + 128;
@@ -940,7 +941,7 @@ void neo_js_vm_get_private_field(neo_js_vm_t vm, neo_program_t program) {
   neo_list_pop(vm->stack);
   neo_js_object_t obj = neo_js_variable_to_object(host);
   if (!obj->constructor || !vm->clazz ||
-      neo_js_handle_get_value(obj->constructor) !=
+      neo_js_chunk_get_value(obj->constructor) !=
           neo_js_variable_get_value(vm->clazz)) {
     neo_js_string_t str = neo_js_variable_to_string(field);
     size_t len = wcslen(str->string) + 128;
@@ -974,7 +975,7 @@ void neo_js_vm_set_private_field(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t host = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_js_object_t obj = neo_js_variable_to_object(host);
   if (!obj->constructor || !vm->clazz ||
-      neo_js_handle_get_value(obj->constructor) !=
+      neo_js_chunk_get_value(obj->constructor) !=
           neo_js_variable_get_value(vm->clazz)) {
     neo_js_string_t str = neo_js_variable_to_string(field);
     size_t len = wcslen(str->string) + 128;
@@ -1010,15 +1011,15 @@ void neo_js_vm_set_getter(neo_js_vm_t vm, neo_program_t program) {
   CHECK_AND_THROW(host, vm, program);
   neo_js_object_property_t prop =
       neo_js_object_get_own_property(vm->ctx, host, field);
-  neo_js_handle_t hobject = neo_js_variable_get_handle(host);
-  neo_js_handle_t hgetter = neo_js_variable_get_handle(getter);
-  neo_js_handle_add_parent(hgetter, hobject);
+  neo_js_chunk_t hobject = neo_js_variable_get_handle(host);
+  neo_js_chunk_t hgetter = neo_js_variable_get_handle(getter);
+  neo_js_chunk_add_parent(hgetter, hobject);
   if (prop) {
     if (prop->get) {
-      neo_js_handle_add_parent(
+      neo_js_chunk_add_parent(
           prop->get,
           neo_js_scope_get_root_handle(neo_js_context_get_scope(vm->ctx)));
-      neo_js_handle_remove_parent(prop->get, hobject);
+      neo_js_chunk_remove_parent(prop->get, hobject);
       prop->get = NULL;
     }
     prop->get = hgetter;
@@ -1044,15 +1045,15 @@ void neo_js_vm_set_setter(neo_js_vm_t vm, neo_program_t program) {
   CHECK_AND_THROW(host, vm, program);
   neo_js_object_property_t prop =
       neo_js_object_get_own_property(vm->ctx, host, field);
-  neo_js_handle_t hobject = neo_js_variable_get_handle(host);
-  neo_js_handle_t hsetter = neo_js_variable_get_handle(setter);
-  neo_js_handle_add_parent(hsetter, hobject);
+  neo_js_chunk_t hobject = neo_js_variable_get_handle(host);
+  neo_js_chunk_t hsetter = neo_js_variable_get_handle(setter);
+  neo_js_chunk_add_parent(hsetter, hobject);
   if (prop) {
     if (prop->set) {
-      neo_js_handle_add_parent(
+      neo_js_chunk_add_parent(
           prop->set,
           neo_js_scope_get_root_handle(neo_js_context_get_scope(vm->ctx)));
-      neo_js_handle_remove_parent(prop->set, hobject);
+      neo_js_chunk_remove_parent(prop->set, hobject);
       prop->set = NULL;
     }
     prop->set = hsetter;

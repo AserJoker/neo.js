@@ -134,7 +134,7 @@ void neo_js_context_pop_stackframe(neo_js_context_t ctx);
 neo_js_std_t neo_js_context_get_std(neo_js_context_t ctx);
 
 neo_js_variable_t neo_js_context_create_variable(neo_js_context_t ctx,
-                                                 neo_js_handle_t handle,
+                                                 neo_js_chunk_t handle,
                                                  const wchar_t *name);
 
 neo_js_variable_t neo_js_context_to_ref(neo_js_context_t ctx,

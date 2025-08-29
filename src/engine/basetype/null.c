@@ -2,13 +2,14 @@
 #include "core/allocator.h"
 #include "engine/basetype/string.h"
 #include "engine/basetype/symbol.h"
+#include "engine/chunk.h"
 #include "engine/context.h"
-#include "engine/handle.h"
 #include "engine/runtime.h"
 #include "engine/type.h"
 #include "engine/value.h"
 #include "engine/variable.h"
 #include <wchar.h>
+
 
 static const wchar_t *neo_js_null_typeof(neo_js_context_t ctx,
                                          neo_js_variable_t variable) {
@@ -115,11 +116,11 @@ static neo_js_variable_t neo_js_null_copy(neo_js_context_t ctx,
                                           neo_js_variable_t self,
                                           neo_js_variable_t target) {
 
-  neo_js_handle_t htarget = neo_js_variable_get_handle(target);
+  neo_js_chunk_t htarget = neo_js_variable_get_handle(target);
   neo_allocator_t allocaotr =
       neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
-  neo_js_handle_set_value(allocaotr, htarget,
-                          &neo_create_js_null(allocaotr)->value);
+  neo_js_chunk_set_value(allocaotr, htarget,
+                         &neo_create_js_null(allocaotr)->value);
   return target;
 }
 neo_js_type_t neo_get_js_null_type() {

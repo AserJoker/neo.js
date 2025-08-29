@@ -149,7 +149,7 @@ NEO_JS_CFUNCTION(neo_js_reflect_own_keys) {
   neo_js_variable_t result = neo_js_context_create_array(ctx);
   neo_hash_map_node_t it = neo_hash_map_get_first(object->properties);
   while (it != neo_hash_map_get_tail(object->properties)) {
-    neo_js_handle_t hkey = neo_hash_map_node_get_key(it);
+    neo_js_chunk_t hkey = neo_hash_map_node_get_key(it);
     neo_js_variable_t key = neo_js_context_create_variable(ctx, hkey, NULL);
     neo_js_array_push(ctx, result, 1, &key);
   }

@@ -1,7 +1,7 @@
 #ifndef _H_NEO_ENGINE_BASETYPE_ERROR_
 #define _H_NEO_ENGINE_BASETYPE_ERROR_
 #include "core/allocator.h"
-#include "engine/handle.h"
+#include "engine/chunk.h"
 #include "engine/type.h"
 #include "engine/value.h"
 #ifdef __cplusplus
@@ -12,7 +12,7 @@ typedef struct _neo_js_error_t *neo_js_error_t;
 
 struct _neo_js_error_t {
   struct _neo_js_value_t value;
-  neo_js_handle_t error;
+  neo_js_chunk_t error;
 };
 
 neo_js_type_t neo_get_js_error_type();
