@@ -1,7 +1,6 @@
 #include "engine/std/function.h"
 #include "core/allocator.h"
 #include "engine/basetype/callable.h"
-#include "engine/chunk.h"
 #include "engine/context.h"
 #include "engine/type.h"
 #include "engine/variable.h"
@@ -96,22 +95,25 @@ NEO_JS_CFUNCTION(neo_js_function_apply) {
   return neo_js_context_call(ctx, self, self_object, argc2, args);
 }
 
+static NEO_JS_CFUNCTION(neo_js_function_bind_callback) {
+  neo_js_variable_t callee = neo_js_context_load_variable(ctx, L"callee");
+  neo_js_variable_t bind = neo_js_context_load_variable(ctx, L"bind");
+  return neo_js_context_call(ctx, callee, bind, argc, argv);
+}
+
 neo_js_variable_t neo_js_function_bind(neo_js_context_t ctx,
                                        neo_js_variable_t self, uint32_t argc,
                                        neo_js_variable_t *argv) {
-  neo_js_variable_t result = neo_js_context_create_undefined(ctx);
-  NEO_JS_TRY_AND_THROW(neo_js_context_copy(ctx, self, result));
+  neo_js_variable_t result = neo_js_context_create_cfunction(
+      ctx, NULL, &neo_js_function_bind_callback);
   neo_js_variable_t bind = NULL;
   if (argc > 0) {
     bind = argv[0];
   } else {
     bind = neo_js_context_create_undefined(ctx);
   }
-  neo_js_callable_t callable = neo_js_variable_to_callable(result);
-  if (!callable->bind) {
-    callable->bind = neo_js_variable_get_chunk(bind);
-    neo_js_chunk_add_parent(callable->bind, neo_js_variable_get_chunk(self));
-  }
+  neo_js_callable_set_closure(ctx, result, L"callee", self);
+  neo_js_callable_set_closure(ctx, result, L"bind", bind);
   return result;
 }
 

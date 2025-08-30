@@ -577,7 +577,12 @@ static neo_js_variable_t neo_js_object_copy(neo_js_context_t ctx,
   neo_js_chunk_t old_chunk = neo_js_handle_get_chunk(old);
   neo_js_chunk_t chunk = neo_js_variable_get_chunk(self);
   neo_js_handle_set_chunk(old, chunk);
-  neo_js_chunk_add_parent(chunk, old_chunk);
+  neo_list_t parents = neo_js_chunk_get_parents(old_chunk);
+  for (neo_list_node_t it = neo_list_get_first(parents);
+       it != neo_list_get_tail(parents); it = neo_list_node_next(it)) {
+    neo_js_chunk_t parent = neo_list_node_get(it);
+    neo_js_chunk_add_parent(chunk, parent);
+  }
   return another;
 }
 
