@@ -1,6 +1,7 @@
 #include "core/string.h"
 #include "core/allocator.h"
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <wchar.h>
 
@@ -42,7 +43,8 @@ wchar_t *neo_wstring_concat(neo_allocator_t allocator, wchar_t *src,
   return result;
 }
 
-wchar_t *neo_wstring_encode(neo_allocator_t allocator, const wchar_t *src) {
+wchar_t *neo_wstring_encode_escape(neo_allocator_t allocator,
+                                   const wchar_t *src) {
   size_t len = wcslen(src);
   wchar_t *str =
       neo_allocator_alloc(allocator, (len * 2 + 1) * sizeof(wchar_t), NULL);
@@ -75,10 +77,11 @@ wchar_t *neo_wstring_encode(neo_allocator_t allocator, const wchar_t *src) {
   return str;
 }
 
-wchar_t *neo_wstring_decode(neo_allocator_t allocator, const wchar_t *src) {
+wchar_t *neo_wstring_decode_escape(neo_allocator_t allocator,
+                                   const wchar_t *src) {
   size_t len = wcslen(src);
   wchar_t *str =
-      neo_allocator_alloc(allocator, (len * 2 + 1) * sizeof(wchar_t), NULL);
+      neo_allocator_alloc(allocator, (len + 1) * sizeof(wchar_t), NULL);
   size_t idx = 0;
   size_t current = 0;
   for (; current < len; current++) {
@@ -99,7 +102,6 @@ wchar_t *neo_wstring_decode(neo_allocator_t allocator, const wchar_t *src) {
       } else {
         str[idx++] = src[current];
       }
-      continue;
     } else {
       str[idx++] = src[current];
     }
@@ -107,6 +109,104 @@ wchar_t *neo_wstring_decode(neo_allocator_t allocator, const wchar_t *src) {
   str[idx] = 0;
   return str;
 }
+
+static uint8_t neo_char_to_int(wchar_t chr) {
+  if (chr >= '0' && chr <= '9') {
+    return chr - '0';
+  } else if (chr >= 'a' && chr <= 'f') {
+    return chr - 'a' + 10;
+  } else if (chr >= 'A' && chr <= 'F') {
+    return chr - 'A' + 10;
+  }
+  return (uint8_t)-1;
+}
+
+wchar_t *neo_wstring_decode(neo_allocator_t allocator, const wchar_t *src) {
+  size_t len = wcslen(src) + 1;
+  wchar_t *str = neo_allocator_alloc(allocator, len * sizeof(wchar_t), NULL);
+  wchar_t *dst = str;
+  while (*src) {
+    if (*src == '\\') {
+      wchar_t code = 0;
+      src++;
+      if (*src == 'x') {
+        for (int8_t idx = 0; idx < 2; idx++) {
+          code *= 16;
+          uint8_t ch = neo_char_to_int(*src);
+          if (ch == (uint8_t)-1) {
+            goto onerror;
+          }
+          code += ch;
+          src++;
+        }
+        *dst++ = code;
+      } else if (*src == 'u') {
+        src++;
+        uint32_t utf32 = 0;
+        if (*src == '{') {
+          src++;
+          while (*src && *src != '}') {
+            utf32 *= 16;
+            uint8_t ch = neo_char_to_int(*src);
+            if (ch == (uint8_t)-1) {
+              goto onerror;
+            }
+            utf32 += ch;
+            src++;
+          }
+          if (!*src) {
+            goto onerror;
+          }
+          src++;
+        } else {
+          for (int8_t idx = 0; idx < 4; idx++) {
+            utf32 *= 16;
+            uint8_t ch = neo_char_to_int(*src);
+            if (ch == (uint8_t)-1) {
+              goto onerror;
+            }
+            utf32 += ch;
+            src++;
+          }
+        }
+        if (utf32 < 0xffff) {
+          *dst++ = (uint16_t)utf32;
+        } else if (utf32 < 0xeffff) {
+          *dst++ = (uint16_t)(0xd800 + (utf32 >> 10) - 0x40);
+          *dst++ = (uint16_t)(0xdc00 + (utf32 & 0x3ff));
+        }
+      } else if (*src == 'n') {
+        src++;
+        *dst++ = '\n';
+      } else if (*src == 'r') {
+        src++;
+        *dst++ = '\r';
+      } else if (*src == 't') {
+        src++;
+        *dst++ = '\t';
+      } else if (*src == '\\') {
+        src++;
+        *dst++ = '\\';
+      } else if (*src == '\"') {
+        src++;
+        *dst++ = '\"';
+      } else if (*src == '\'') {
+        src++;
+        *dst++ = '\'';
+      } else {
+        *dst++ = *src++;
+      }
+    } else {
+      *dst++ = *src++;
+    }
+  }
+  *dst = 0;
+  return str;
+onerror:
+  neo_allocator_free(allocator, str);
+  return NULL;
+}
+
 wchar_t *neo_create_wstring(neo_allocator_t allocator, const wchar_t *src) {
   size_t len = wcslen(src) + 1;
   wchar_t *str = neo_allocator_alloc(allocator, len * sizeof(wchar_t), NULL);

@@ -19,6 +19,7 @@ bool neo_location_is(neo_location_t loc, const char *str);
 
 wchar_t *neo_location_get(neo_allocator_t allocator, neo_location_t self);
 
+wchar_t *neo_location_get_raw(neo_allocator_t allocator, neo_location_t self);
 
 #ifdef __cplusplus
 };

@@ -67,7 +67,7 @@ neo_js_json_variable_stringify(neo_js_context_t ctx, neo_js_variable_t variable,
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   if (neo_js_variable_get_type(variable)->kind == NEO_JS_TYPE_STRING) {
     neo_js_string_t str = neo_js_variable_to_string(variable);
-    wchar_t *encoded = neo_wstring_encode(allocator, str->string);
+    wchar_t *encoded = neo_wstring_encode_escape(allocator, str->string);
     neo_js_context_defer_free(ctx, encoded);
     size_t len = wcslen(str->string) + 3;
     wchar_t *ss = neo_js_context_alloc(ctx, sizeof(wchar_t) * len, NULL);
@@ -526,7 +526,7 @@ static neo_js_variable_t neo_js_json_read_object(neo_js_context_t ctx,
       current = key_position;
       wchar_t *key_str = neo_location_get(allocator, key_loc);
       neo_js_context_defer_free(ctx, key_str);
-      key_str = neo_wstring_decode(allocator, key_str);
+      key_str = neo_wstring_decode_escape(allocator, key_str);
       neo_js_context_defer_free(ctx, key_str);
       key_str[wcslen(key_str) - 1] = 0;
       neo_js_variable_t key = neo_js_context_create_string(ctx, key_str + 1);
@@ -594,7 +594,7 @@ neo_js_variable_t neo_js_json_read_variable(neo_js_context_t ctx,
       *position = current;
       wchar_t *s = neo_location_get(allocator, loc);
       neo_js_context_defer_free(ctx, s);
-      wchar_t *decoded = neo_wstring_decode(allocator, s);
+      wchar_t *decoded = neo_wstring_decode_escape(allocator, s);
       neo_js_context_defer_free(ctx, decoded);
       decoded[wcslen(decoded) - 1] = 0;
       return neo_js_context_create_string(ctx, decoded + 1);

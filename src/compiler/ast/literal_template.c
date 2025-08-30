@@ -11,6 +11,7 @@
 #include "core/list.h"
 #include "core/location.h"
 #include "core/position.h"
+#include "core/string.h"
 #include "core/variable.h"
 #include <stdio.h>
 #include <string.h>
@@ -98,7 +99,7 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
       neo_token_t str = neo_list_node_get(qit);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_NUMBER);
       neo_program_add_number(allocator, ctx->program, count);
-      wchar_t *s = neo_location_get(allocator, str->location);
+      wchar_t *s = neo_location_get_raw(allocator, str->location);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
       if (str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING ||
           str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING_END) {
@@ -141,6 +142,9 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
     neo_token_t str = neo_list_node_get(qit);
     qit = neo_list_node_next(qit);
     wchar_t *s = neo_location_get(allocator, str->location);
+    wchar_t *ss = neo_wstring_decode_escape(allocator, s);
+    neo_allocator_free(allocator, s);
+    s = ss;
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
     if (str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING ||
         str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING_END) {
@@ -160,6 +164,9 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
       neo_program_add_code(allocator, ctx->program, NEO_ASM_CONCAT);
       str = neo_list_node_get(qit);
       wchar_t *s = neo_location_get(allocator, str->location);
+      wchar_t *ss = neo_wstring_decode_escape(allocator, s);
+      neo_allocator_free(allocator, s);
+      s = ss;
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
       if (str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING ||
           str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING_END) {

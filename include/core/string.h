@@ -8,7 +8,11 @@ char *neo_string_concat(neo_allocator_t allocator, char *src, size_t *max,
 wchar_t *neo_wstring_concat(neo_allocator_t allocator, wchar_t *src,
                             size_t *max, const wchar_t *str);
 
-wchar_t *neo_wstring_encode(neo_allocator_t allocator, const wchar_t *src);
+wchar_t *neo_wstring_encode_escape(neo_allocator_t allocator,
+                                   const wchar_t *src);
+
+wchar_t *neo_wstring_decode_escape(neo_allocator_t allocator,
+                                   const wchar_t *src);
 
 wchar_t *neo_wstring_decode(neo_allocator_t allocator, const wchar_t *src);
 
