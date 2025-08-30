@@ -64,7 +64,8 @@ static neo_js_variable_t neo_js_string_get_field(neo_js_context_t ctx,
     neo_js_string_t string =
         neo_js_value_to_string(neo_js_variable_get_value(field));
     if (wcscmp(string->string, L"length") == 0) {
-      return neo_js_context_create_number(ctx, wcslen(string->string));
+      neo_js_string_t str = neo_js_variable_to_string(self);
+      return neo_js_context_create_number(ctx, wcslen(str->string));
     }
   }
   return neo_js_context_get_field(ctx, neo_js_string_to_object(ctx, self),
