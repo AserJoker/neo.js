@@ -3,6 +3,10 @@ project(neo)
 
 set(CMAKE_CXX_STANDARD 20)
 
+set(BUILD_STATIC_LIBS on)
+
+set(gtest_force_shared_crt on)
+
 set(DerivedCoreProperties "${PROJECT_SOURCE_DIR}/ucd/DerivedCoreProperties.txt")
 
 set(DerivedGeneralCategory "${PROJECT_SOURCE_DIR}/ucd/DerivedGeneralCategory.txt")
@@ -78,7 +82,7 @@ else()
     add_definitions(-D_USE_MATH_DEFINES)
 endif()
 
-add_library(${PROJECT_NAME} ${SOURCES})
+add_library(${PROJECT_NAME} STATIC ${SOURCES})
 
 target_link_libraries(${PROJECT_NAME}c pcre2-posix pcre2-8 pcre2-16)
 
