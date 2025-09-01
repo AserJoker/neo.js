@@ -129,9 +129,20 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
     }
     if (self->tag->type == NEO_NODE_TYPE_EXPRESSION_MEMBER ||
         self->tag->type == NEO_NODE_TYPE_EXPRESSION_COMPUTED_MEMBER) {
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_MEMBER_CALL);
+      neo_ast_expression_member_t member =
+          (neo_ast_expression_member_t)(self->tag);
+      if (member->field->type == NEO_NODE_TYPE_PRIVATE_NAME) {
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_PRIVATE_TAG);
+      } else {
+        if (member->host->type == NEO_NODE_TYPE_EXPRESSION_SUPER) {
+          neo_program_add_code(allocator, ctx->program,
+                               NEO_ASM_SUPER_MEMBER_TAG);
+        } else {
+          neo_program_add_code(allocator, ctx->program, NEO_ASM_MEMBER_TAG);
+        }
+      }
     } else {
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_CALL);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_TAG);
     }
     neo_program_add_integer(allocator, ctx->program,
                             self->node.location.begin.line);

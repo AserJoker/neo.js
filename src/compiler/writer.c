@@ -278,8 +278,7 @@ void neo_write_optional_chain(neo_allocator_t allocator,
                              NEO_ASM_SUPER_MEMBER_CALL);
       } else {
         if (member->field->type == NEO_NODE_TYPE_PRIVATE_NAME) {
-          neo_program_add_code(allocator, ctx->program,
-                               NEO_ASM_PRIVATE_MEMBER_CALL);
+          neo_program_add_code(allocator, ctx->program, NEO_ASM_PRIVATE_CALL);
         } else {
           neo_program_add_code(allocator, ctx->program, NEO_ASM_MEMBER_CALL);
         }

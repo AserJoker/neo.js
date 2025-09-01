@@ -1,2 +1,3 @@
 'use strict'
-console.log(`1\n2`)
+const fn = (...args) => console.log(args[0][0])
+fn`a\nb${123}`

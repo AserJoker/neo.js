@@ -351,10 +351,10 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
     case NEO_ASM_SET_FIELD:
       fprintf(fp, "NEO_ASM_SET_FIELD\n");
       break;
-    case NEO_ASM_PRIVATE_MEMBER_CALL: {
+    case NEO_ASM_PRIVATE_CALL: {
       uint32_t line = neo_program_get_integer(self, &offset);
       uint32_t column = neo_program_get_integer(self, &offset);
-      fprintf(fp, "NEO_ASM_PRIVATE_MEMBER_CALL %d,%d\n", line, column);
+      fprintf(fp, "NEO_ASM_PRIVATE_CALL %d,%d\n", line, column);
     } break;
     case NEO_ASM_GET_PRIVATE_FIELD:
       fprintf(fp, "NEO_ASM_GET_PRIVATE_FIELD\n");
@@ -611,6 +611,26 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
     case NEO_ASM_INSTANCE_OF:
       fprintf(fp, "NEO_ASM_INSTANCE_OF\n");
       break;
+    case NEO_ASM_TAG: {
+      uint32_t line = neo_program_get_integer(self, &offset);
+      uint32_t column = neo_program_get_integer(self, &offset);
+      fprintf(fp, "NEO_ASM_TAG %d,%d\n", line, column);
+    } break;
+    case NEO_ASM_MEMBER_TAG: {
+      uint32_t line = neo_program_get_integer(self, &offset);
+      uint32_t column = neo_program_get_integer(self, &offset);
+      fprintf(fp, "NEO_ASM_MEMBER_TAG %d,%d\n", line, column);
+    } break;
+    case NEO_ASM_PRIVATE_TAG: {
+      uint32_t line = neo_program_get_integer(self, &offset);
+      uint32_t column = neo_program_get_integer(self, &offset);
+      fprintf(fp, "NEO_ASM_PRIVATE_TAG %d,%d\n", line, column);
+    } break;
+    case NEO_ASM_SUPER_MEMBER_TAG: {
+      uint32_t line = neo_program_get_integer(self, &offset);
+      uint32_t column = neo_program_get_integer(self, &offset);
+      fprintf(fp, "NEO_ASM_SUPER_MEMBER_TAG %d,%d\n", line, column);
+    } break;
     default:
       THROW("Invalid operator");
       return;

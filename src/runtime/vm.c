@@ -2168,6 +2168,101 @@ void neo_js_vm_instanceof(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t res = neo_js_context_instance_of(vm->ctx, left, right);
   neo_list_push(vm->stack, res);
 }
+void neo_js_vm_tag(neo_js_vm_t vm, neo_program_t program) {
+  neo_list_node_t it = neo_list_get_last(vm->stack);
+  neo_js_variable_t arguments = neo_list_node_get(it);
+  it = neo_list_node_last(it);
+  neo_js_variable_t callee = neo_list_node_get(it);
+  // TODO: String.raw
+  neo_js_variable_t qusis = neo_js_context_get_field(
+      vm->ctx, arguments, neo_js_context_create_string(vm->ctx, L"0"), NULL);
+  neo_js_variable_t vlength = neo_js_context_get_field(
+      vm->ctx, qusis, neo_js_context_create_string(vm->ctx, L"length"), NULL);
+  int64_t length = neo_js_variable_to_number(vlength)->number;
+  neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
+  for (int64_t idx = 0; idx < length; idx++) {
+    neo_js_variable_t item = neo_js_context_get_field(
+        vm->ctx, qusis, neo_js_context_create_number(vm->ctx, idx), NULL);
+    neo_js_string_t str = neo_js_variable_to_string(item);
+    wchar_t *decode_string = neo_wstring_decode(allocator, str->string);
+    neo_allocator_free(allocator, str->string);
+    str->string = decode_string;
+  }
+  neo_js_vm_call(vm, program);
+}
+
+void neo_js_vm_member_tag(neo_js_vm_t vm, neo_program_t program) {
+  neo_list_node_t it = neo_list_get_last(vm->stack);
+  neo_js_variable_t arguments = neo_list_node_get(it);
+  it = neo_list_node_last(it);
+  neo_js_variable_t field = neo_list_node_get(it);
+  it = neo_list_node_last(it);
+  neo_js_variable_t host = neo_list_node_get(it);
+  // TODO: String.raw
+  neo_js_variable_t qusis = neo_js_context_get_field(
+      vm->ctx, arguments, neo_js_context_create_string(vm->ctx, L"0"), NULL);
+  neo_js_variable_t vlength = neo_js_context_get_field(
+      vm->ctx, qusis, neo_js_context_create_string(vm->ctx, L"length"), NULL);
+  int64_t length = neo_js_variable_to_number(vlength)->number;
+  neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
+  for (int64_t idx = 0; idx < length; idx++) {
+    neo_js_variable_t item = neo_js_context_get_field(
+        vm->ctx, qusis, neo_js_context_create_number(vm->ctx, idx), NULL);
+    neo_js_string_t str = neo_js_variable_to_string(item);
+    wchar_t *decode_string = neo_wstring_decode(allocator, str->string);
+    neo_allocator_free(allocator, str->string);
+    str->string = decode_string;
+  }
+  neo_js_vm_member_call(vm, program);
+}
+
+void neo_js_vm_private_tag(neo_js_vm_t vm, neo_program_t program) {
+  neo_list_node_t it = neo_list_get_last(vm->stack);
+  neo_js_variable_t arguments = neo_list_node_get(it);
+  it = neo_list_node_last(it);
+  neo_js_variable_t field = neo_list_node_get(it);
+  it = neo_list_node_last(it);
+  neo_js_variable_t host = neo_list_node_get(it);
+  // TODO: String.raw
+  neo_js_variable_t qusis = neo_js_context_get_field(
+      vm->ctx, arguments, neo_js_context_create_string(vm->ctx, L"0"), NULL);
+  neo_js_variable_t vlength = neo_js_context_get_field(
+      vm->ctx, qusis, neo_js_context_create_string(vm->ctx, L"length"), NULL);
+  int64_t length = neo_js_variable_to_number(vlength)->number;
+  neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
+  for (int64_t idx = 0; idx < length; idx++) {
+    neo_js_variable_t item = neo_js_context_get_field(
+        vm->ctx, qusis, neo_js_context_create_number(vm->ctx, idx), NULL);
+    neo_js_string_t str = neo_js_variable_to_string(item);
+    wchar_t *decode_string = neo_wstring_decode(allocator, str->string);
+    neo_allocator_free(allocator, str->string);
+    str->string = decode_string;
+  }
+  neo_js_vm_private_member_call(vm, program);
+}
+
+void neo_js_vm_super_member_tag(neo_js_vm_t vm, neo_program_t program) {
+  neo_list_node_t it = neo_list_get_last(vm->stack);
+  neo_js_variable_t arguments = neo_list_node_get(it);
+  it = neo_list_node_last(it);
+  neo_js_variable_t field = neo_list_node_get(it);
+  // TODO: String.raw
+  neo_js_variable_t qusis = neo_js_context_get_field(
+      vm->ctx, arguments, neo_js_context_create_string(vm->ctx, L"0"), NULL);
+  neo_js_variable_t vlength = neo_js_context_get_field(
+      vm->ctx, qusis, neo_js_context_create_string(vm->ctx, L"length"), NULL);
+  int64_t length = neo_js_variable_to_number(vlength)->number;
+  neo_allocator_t allocator = neo_js_context_get_allocator(vm->ctx);
+  for (int64_t idx = 0; idx < length; idx++) {
+    neo_js_variable_t item = neo_js_context_get_field(
+        vm->ctx, qusis, neo_js_context_create_number(vm->ctx, idx), NULL);
+    neo_js_string_t str = neo_js_variable_to_string(item);
+    wchar_t *decode_string = neo_wstring_decode(allocator, str->string);
+    neo_allocator_free(allocator, str->string);
+    str->string = decode_string;
+  }
+  neo_js_vm_super_member_call(vm, program);
+}
 
 const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_push_scope,            // NEO_ASM_PUSH_SCOPE
@@ -2228,7 +2323,7 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_member_call,           // NEO_ASM_MEMBER_CALL
     neo_js_vm_get_field,             // NEO_ASM_GET_FIELD
     neo_js_vm_set_field,             // NEO_ASM_SET_FIELD
-    neo_js_vm_private_member_call,   // NEO_ASM_PRIVATE_MEMBER_CALL
+    neo_js_vm_private_member_call,   // NEO_ASM_PRIVATE_CALL
     neo_js_vm_get_private_field,     // NEO_ASM_GET_PRIVATE_FIELD
     neo_js_vm_set_private_field,     // NEO_ASM_SET_PRIVATE_FIELD
     neo_js_vm_set_getter,            // NEO_ASM_SET_GETTER
@@ -2298,6 +2393,10 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_spread,                // NEO_ASM_SPREAD
     neo_js_vm_in,                    // NEO_ASM_IN
     neo_js_vm_instanceof,            // NEO_ASM_INSTANCE_OF
+    neo_js_vm_tag,                   // NEO_ASM_TAG
+    neo_js_vm_member_tag,            // NEO_ASM_MEMBER_TAG
+    neo_js_vm_private_tag,           // NEO_ASM_PRIVATE_TAG
+    neo_js_vm_super_member_tag,      // NEO_ASM_SUPER_MEMBER_TAG
 };
 
 neo_js_variable_t neo_js_vm_exec(neo_js_vm_t vm, neo_program_t program) {
