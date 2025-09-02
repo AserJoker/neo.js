@@ -693,24 +693,25 @@ void neo_js_context_init_std_set(neo_js_context_t ctx) {
 
   neo_js_variable_t prototype = neo_js_context_get_field(
       ctx, constructor, neo_js_context_create_string(ctx, L"prototype"), NULL);
-  NEO_SET_SYMBOL_METHOD(constructor, L"species", neo_js_set_species);
-  NEO_SET_METHOD(prototype, L"add", neo_js_set_add);
-  NEO_SET_METHOD(prototype, L"clear", neo_js_set_clear);
-  NEO_SET_METHOD(prototype, L"delete", neo_js_set_delete);
-  NEO_SET_METHOD(prototype, L"difference", neo_js_set_difference);
-  NEO_SET_METHOD(prototype, L"entries", neo_js_set_entries);
-  NEO_SET_METHOD(prototype, L"forEach", neo_js_set_for_each);
-  NEO_SET_METHOD(prototype, L"has", neo_js_set_has);
-  NEO_SET_METHOD(prototype, L"intersection", neo_js_set_intersection);
-  NEO_SET_METHOD(prototype, L"isDisjoinFrom", neo_js_set_is_disjoin_form);
-  NEO_SET_METHOD(prototype, L"isSubsetOf", neo_js_set_is_subset_of);
-  NEO_SET_METHOD(prototype, L"isSuperSetOf", neo_js_set_is_superset_of);
-  NEO_SET_METHOD(prototype, L"keys", neo_js_set_keys);
-  NEO_SET_METHOD(prototype, L"symmetricDifference",
-                 neo_js_set_symmetric_difference);
-  NEO_SET_METHOD(prototype, L"union", neo_js_set_union);
-  NEO_SET_METHOD(prototype, L"values", neo_js_set_values);
-  NEO_SET_SYMBOL_METHOD(prototype, L"iterator", neo_js_set_iterator);
+  NEO_JS_SET_SYMBOL_METHOD(ctx, constructor, L"species", neo_js_set_species);
+  NEO_JS_SET_METHOD(ctx, prototype, L"add", neo_js_set_add);
+  NEO_JS_SET_METHOD(ctx, prototype, L"clear", neo_js_set_clear);
+  NEO_JS_SET_METHOD(ctx, prototype, L"delete", neo_js_set_delete);
+  NEO_JS_SET_METHOD(ctx, prototype, L"difference", neo_js_set_difference);
+  NEO_JS_SET_METHOD(ctx, prototype, L"entries", neo_js_set_entries);
+  NEO_JS_SET_METHOD(ctx, prototype, L"forEach", neo_js_set_for_each);
+  NEO_JS_SET_METHOD(ctx, prototype, L"has", neo_js_set_has);
+  NEO_JS_SET_METHOD(ctx, prototype, L"intersection", neo_js_set_intersection);
+  NEO_JS_SET_METHOD(ctx, prototype, L"isDisjoinFrom",
+                    neo_js_set_is_disjoin_form);
+  NEO_JS_SET_METHOD(ctx, prototype, L"isSubsetOf", neo_js_set_is_subset_of);
+  NEO_JS_SET_METHOD(ctx, prototype, L"isSuperSetOf", neo_js_set_is_superset_of);
+  NEO_JS_SET_METHOD(ctx, prototype, L"keys", neo_js_set_keys);
+  NEO_JS_SET_METHOD(ctx, prototype, L"symmetricDifference",
+                    neo_js_set_symmetric_difference);
+  NEO_JS_SET_METHOD(ctx, prototype, L"union", neo_js_set_union);
+  NEO_JS_SET_METHOD(ctx, prototype, L"values", neo_js_set_values);
+  NEO_JS_SET_SYMBOL_METHOD(ctx, prototype, L"iterator", neo_js_set_iterator);
   neo_js_std_t std = neo_js_context_get_std(ctx);
   std.set_constructor = constructor;
 }

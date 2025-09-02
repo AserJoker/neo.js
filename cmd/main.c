@@ -9,6 +9,10 @@
 #include <locale.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <wchar.h>
+#ifdef __WIN32__
+#include <windows.h>
+#endif
 NEO_JS_CFUNCTION(js_on_fulfilled) {
   neo_js_variable_t result = argv[0];
   result = neo_js_context_to_string(ctx, result);
@@ -24,6 +28,9 @@ NEO_JS_CFUNCTION(js_on_rejected) {
 }
 
 int main(int argc, char *argv[]) {
+#ifdef __WIN32__
+  SetConsoleOutputCP(CP_UTF8);
+#endif
   setlocale(LC_ALL, "");
   neo_allocator_t allocator = neo_create_default_allocator();
   neo_error_initialize(allocator);

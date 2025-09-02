@@ -75,6 +75,7 @@
 #include "engine/std/reflect.h"
 #include "engine/std/regexp.h"
 #include "engine/std/set.h"
+#include "engine/std/string.h"
 #include "engine/std/symbol.h"
 #include "engine/std/syntax_error.h"
 #include "engine/std/type_error.h"
@@ -375,6 +376,8 @@ void neo_js_context_init_std(neo_js_context_t ctx) {
   neo_js_context_init_std_regexp(ctx);
 
   neo_js_context_init_std_set(ctx);
+
+  neo_js_context_init_std_string(ctx);
 
   neo_js_context_extends(ctx, ctx->std.generator_function_constructor,
                          ctx->std.function_constructor);

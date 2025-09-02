@@ -490,14 +490,14 @@ neo_js_call_type_t neo_js_context_get_call_type(neo_js_context_t ctx);
     NEO_JS_TRY(error##__LINE__) { return error##__LINE__; }                    \
   } while (0);
 
-#define NEO_SET_METHOD(obj, name, func)                                        \
+#define NEO_JS_SET_METHOD(ctx, obj, name, func)                                \
   do {                                                                         \
     neo_js_variable_t fn = neo_js_context_create_cfunction(ctx, name, func);   \
     neo_js_context_def_field(ctx, obj,                                         \
                              neo_js_context_create_string(ctx, name), fn,      \
                              true, false, true);                               \
   } while (0)
-#define NEO_SET_SYMBOL_METHOD(obj, name, func)                                 \
+#define NEO_JS_SET_SYMBOL_METHOD(ctx, obj, name, func)                         \
   do {                                                                         \
     neo_js_variable_t fn = neo_js_context_create_cfunction(ctx, name, func);   \
     neo_js_variable_t field = neo_js_context_get_field(                        \
@@ -505,6 +505,7 @@ neo_js_call_type_t neo_js_context_get_call_type(neo_js_context_t ctx);
         neo_js_context_create_string(ctx, name), NULL);                        \
     neo_js_context_def_field(ctx, obj, field, fn, true, false, true);          \
   } while (0)
+
 #ifdef __cplusplus
 }
 
