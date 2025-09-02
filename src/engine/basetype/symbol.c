@@ -123,7 +123,7 @@ neo_js_symbol_t neo_create_js_symbol(neo_allocator_t allocator,
   wcscpy(symbol->description, description);
   symbol->description[len] = 0;
   symbol->string =
-      neo_allocator_alloc(allocator, sizeof(wchar_t) * (len + 8), NULL);
+      neo_allocator_alloc(allocator, sizeof(wchar_t) * (len + 16), NULL);
   swprintf(symbol->string, len + 16, L"Symbol(%ls)", symbol->description);
   return symbol;
 }
