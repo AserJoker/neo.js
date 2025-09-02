@@ -18,7 +18,8 @@
 NEO_JS_CFUNCTION(neo_js_object_assign) {
   if (!argc) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Cannot convert undefined or null to object");
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        L"Cannot convert undefined or null to object");
   }
   neo_js_variable_t target = argv[0];
   if (neo_js_variable_get_type(target)->kind < NEO_JS_TYPE_OBJECT) {
@@ -66,13 +67,14 @@ NEO_JS_CFUNCTION(neo_js_object_define_properties) {
   if (argc < 1 ||
       neo_js_variable_get_type(argv[0])->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE, 0,
         L"Object.defineProperties called on non-object");
   }
   neo_js_variable_t target = argv[0];
   if (argc < 2) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Cannot convert undefined or null to object");
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        L"Cannot convert undefined or null to object");
   }
   neo_js_variable_t props = argv[1];
   if (neo_js_variable_get_type(props)->kind < NEO_JS_TYPE_OBJECT) {
@@ -101,7 +103,7 @@ NEO_JS_CFUNCTION(neo_js_object_define_property) {
   if (argc < 1 ||
       neo_js_variable_get_type(argv[0])->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE,0, 
         L"Object.defineProperties called on non-object");
   }
   neo_js_variable_t target = argv[0];
@@ -113,12 +115,12 @@ NEO_JS_CFUNCTION(neo_js_object_define_property) {
   if (argc < 3 ||
       neo_js_variable_get_type(argv[2])->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Property description must be an object");
+        ctx, NEO_JS_ERROR_TYPE, 0, L"Property description must be an object");
   }
   neo_js_variable_t prop = argv[2];
   if (neo_js_variable_get_type(prop)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Property description must be an object");
+        ctx, NEO_JS_ERROR_TYPE, 0, L"Property description must be an object");
   }
   neo_js_variable_t configurable = neo_js_context_get_field(
       ctx, prop, neo_js_context_create_string(ctx, L"configurable"), NULL);
@@ -142,7 +144,7 @@ NEO_JS_CFUNCTION(neo_js_object_define_property) {
       ctx, prop, neo_js_context_create_string(ctx, L"set"));
   if ((has_value || has_writable) && (has_get || has_set)) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE, 0,
         L"Invalid property descriptor. Cannot both specify accessors and a "
         L"value or writable attribute, #<Object>");
   }
@@ -178,7 +180,8 @@ NEO_JS_CFUNCTION(neo_js_object_entries) {
   if (argc < 1 || neo_js_variable_get_type(argv[0])->kind == NEO_JS_TYPE_NULL ||
       neo_js_variable_get_type(argv[0])->kind == NEO_JS_TYPE_UNDEFINED) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Cannot convert undefined or null to object");
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        L"Cannot convert undefined or null to object");
   }
   neo_js_variable_t object = argv[0];
   object = neo_js_context_to_object(ctx, object);
@@ -226,7 +229,7 @@ NEO_JS_CFUNCTION(neo_js_object_freeze) {
 }
 NEO_JS_CFUNCTION(neo_js_object_from_entries) {
   if (!argc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"variable is not iterable");
   }
   neo_js_variable_t entries = argv[0];
@@ -238,7 +241,7 @@ NEO_JS_CFUNCTION(neo_js_object_from_entries) {
       neo_js_context_get_field(ctx, entries, iterator_symbol, NULL);
   NEO_JS_TRY_AND_THROW(iterator);
   if (neo_js_variable_get_type(iterator)->kind < NEO_JS_TYPE_CALLABLE) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"variable is not iterable");
   }
   neo_js_variable_t generator =
@@ -248,14 +251,14 @@ NEO_JS_CFUNCTION(neo_js_object_from_entries) {
       ctx, generator, neo_js_context_create_string(ctx, L"next"), NULL);
   NEO_JS_TRY_AND_THROW(next);
   if (neo_js_variable_get_type(next)->kind < NEO_JS_TYPE_CALLABLE) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"variable is not iterable");
   }
   for (;;) {
     neo_js_variable_t res = neo_js_context_call(ctx, next, generator, 0, NULL);
     NEO_JS_TRY_AND_THROW(res);
     if (neo_js_variable_get_type(res)->kind < NEO_JS_TYPE_OBJECT) {
-      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                                 L"variable is not iterable");
     }
     neo_js_variable_t done = neo_js_context_get_field(
@@ -285,7 +288,8 @@ NEO_JS_CFUNCTION(neo_js_object_get_own_property_descriptor) {
   if (!argc || neo_js_variable_get_type(argv[0])->kind == NEO_JS_TYPE_NULL ||
       neo_js_variable_get_type(argv[0])->kind == NEO_JS_TYPE_UNDEFINED) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Cannot convert undefined or null to object");
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        L"Cannot convert undefined or null to object");
   }
   neo_js_variable_t object = argv[0];
   object = neo_js_context_to_object(ctx, object);
@@ -340,7 +344,8 @@ NEO_JS_CFUNCTION(neo_js_object_get_own_property_descriptors) {
   if (!argc || neo_js_variable_get_type(argv[0])->kind == NEO_JS_TYPE_NULL ||
       neo_js_variable_get_type(argv[0])->kind == NEO_JS_TYPE_UNDEFINED) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Cannot convert undefined or null to object");
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        L"Cannot convert undefined or null to object");
   }
   neo_js_variable_t object = argv[0];
   object = neo_js_context_to_object(ctx, object);
@@ -390,7 +395,8 @@ NEO_JS_CFUNCTION(neo_js_object_get_own_property_names) {
   if (!argc || neo_js_variable_get_type(argv[0])->kind == NEO_JS_TYPE_NULL ||
       neo_js_variable_get_type(argv[0])->kind == NEO_JS_TYPE_UNDEFINED) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Cannot convert undefined or null to object");
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        L"Cannot convert undefined or null to object");
   }
   neo_js_variable_t object = argv[0];
   object = neo_js_context_to_object(ctx, object);
@@ -418,7 +424,8 @@ NEO_JS_CFUNCTION(neo_js_object_get_own_property_symbols) {
   if (!argc || neo_js_variable_get_type(argv[0])->kind == NEO_JS_TYPE_NULL ||
       neo_js_variable_get_type(argv[0])->kind == NEO_JS_TYPE_UNDEFINED) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Cannot convert undefined or null to object");
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        L"Cannot convert undefined or null to object");
   }
   neo_js_variable_t object = argv[0];
   object = neo_js_context_to_object(ctx, object);
@@ -446,7 +453,8 @@ NEO_JS_CFUNCTION(neo_js_object_get_prototype_of) {
   if (!argc || neo_js_variable_get_type(argv[0])->kind == NEO_JS_TYPE_NULL ||
       neo_js_variable_get_type(argv[0])->kind == NEO_JS_TYPE_UNDEFINED) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Cannot convert undefined or null to object");
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        L"Cannot convert undefined or null to object");
   }
   neo_js_variable_t object = argv[0];
   object = neo_js_context_to_object(ctx, object);
@@ -459,12 +467,13 @@ NEO_JS_CFUNCTION(neo_js_object_group_by) {
   if (!argc || neo_js_variable_get_type(argv[0])->kind == NEO_JS_TYPE_NULL ||
       neo_js_variable_get_type(argv[0])->kind == NEO_JS_TYPE_UNDEFINED) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Object.groupBy called on null or undefined");
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        L"Object.groupBy called on null or undefined");
   }
   neo_js_variable_t object = argv[0];
   if (argc < 2 ||
       neo_js_variable_get_type(argv[1])->kind < NEO_JS_TYPE_CALLABLE) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"variable is not a function");
   }
   neo_js_variable_t callbackfn = argv[1];
@@ -475,7 +484,7 @@ NEO_JS_CFUNCTION(neo_js_object_group_by) {
       neo_js_context_get_field(ctx, object, iterator_symbol, NULL);
   NEO_JS_TRY_AND_THROW(iterator);
   if (neo_js_variable_get_type(iterator)->kind < NEO_JS_TYPE_CALLABLE) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"variable is not iterable");
   }
   neo_js_variable_t generator =
@@ -485,7 +494,7 @@ NEO_JS_CFUNCTION(neo_js_object_group_by) {
       ctx, generator, neo_js_context_create_string(ctx, L"next"), NULL);
   NEO_JS_TRY_AND_THROW(next);
   if (neo_js_variable_get_type(next)->kind < NEO_JS_TYPE_CALLABLE) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"variable is not iterable");
   }
   neo_js_variable_t result = neo_js_context_create_object(ctx, NULL);
@@ -523,7 +532,8 @@ NEO_JS_CFUNCTION(neo_js_object_has_own) {
   if (!argc || neo_js_variable_get_type(argv[0])->kind == NEO_JS_TYPE_NULL ||
       neo_js_variable_get_type(argv[0])->kind == NEO_JS_TYPE_UNDEFINED) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Cannot convert undefined or null to object");
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        L"Cannot convert undefined or null to object");
   }
   neo_js_variable_t object = argv[0];
   object = neo_js_context_to_object(ctx, object);
@@ -657,7 +667,7 @@ NEO_JS_CFUNCTION(neo_js_object_set_prototype_of) {
   if (!argc || neo_js_variable_get_type(argv[0])->kind == NEO_JS_TYPE_NULL ||
       neo_js_variable_get_type(argv[0])->kind == NEO_JS_TYPE_UNDEFINED) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE, 0,
         L"Object.setPrototypeOf called on null or undefined");
   }
   neo_js_variable_t object = argv[0];
@@ -668,7 +678,7 @@ NEO_JS_CFUNCTION(neo_js_object_set_prototype_of) {
       (neo_js_variable_get_type(argv[1])->kind != NEO_JS_TYPE_NULL &&
        neo_js_variable_get_type(argv[1])->kind != NEO_JS_TYPE_OBJECT)) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE, 0,
         L"Object prototype may only be an Object or null");
   }
   neo_js_variable_t prop = argv[1];

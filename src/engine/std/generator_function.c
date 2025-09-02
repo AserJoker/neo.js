@@ -17,7 +17,7 @@ neo_js_variable_t neo_js_generator_function_to_string(neo_js_context_t ctx,
       !generator || !generator->is_generator) {
     return neo_js_context_create_simple_error(
         ctx, NEO_JS_ERROR_TYPE,
-        L" GeneratorFunction.prototype.toString requires that 'this' be a "
+        0, L" GeneratorFunction.prototype.toString requires that 'this' be a "
         L"GeneratorFunction");
   }
   neo_js_function_t func = neo_js_variable_to_function(self);

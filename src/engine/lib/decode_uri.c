@@ -39,7 +39,7 @@ NEO_JS_CFUNCTION(neo_js_decode_uri) {
         } else if (*psrc >= 'A' && *psrc <= 'F') {
           *pdst += *psrc - 'A' + 10;
         } else {
-          return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_URI,
+          return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_URI, 0,
                                                     L"malformed URI sequence");
         }
         psrc++;

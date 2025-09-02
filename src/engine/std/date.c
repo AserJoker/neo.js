@@ -240,7 +240,7 @@ NEO_JS_CFUNCTION(neo_js_date_utc) {
 NEO_JS_CFUNCTION(neo_js_date_get_date) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -251,7 +251,7 @@ NEO_JS_CFUNCTION(neo_js_date_get_date) {
 NEO_JS_CFUNCTION(neo_js_date_get_day) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -262,7 +262,7 @@ NEO_JS_CFUNCTION(neo_js_date_get_day) {
 NEO_JS_CFUNCTION(neo_js_date_get_full_year) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -273,7 +273,7 @@ NEO_JS_CFUNCTION(neo_js_date_get_full_year) {
 NEO_JS_CFUNCTION(neo_js_date_get_hours) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -284,7 +284,7 @@ NEO_JS_CFUNCTION(neo_js_date_get_hours) {
 NEO_JS_CFUNCTION(neo_js_date_get_milliseconds) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -295,7 +295,7 @@ NEO_JS_CFUNCTION(neo_js_date_get_milliseconds) {
 NEO_JS_CFUNCTION(neo_js_date_get_minutes) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -306,7 +306,7 @@ NEO_JS_CFUNCTION(neo_js_date_get_minutes) {
 NEO_JS_CFUNCTION(neo_js_date_get_month) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -317,7 +317,7 @@ NEO_JS_CFUNCTION(neo_js_date_get_month) {
 NEO_JS_CFUNCTION(neo_js_date_get_seconds) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -328,7 +328,7 @@ NEO_JS_CFUNCTION(neo_js_date_get_seconds) {
 NEO_JS_CFUNCTION(neo_js_date_get_time) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -340,7 +340,7 @@ NEO_JS_CFUNCTION(neo_js_date_get_time) {
 NEO_JS_CFUNCTION(neo_js_date_get_timezone_offset) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -352,7 +352,7 @@ NEO_JS_CFUNCTION(neo_js_date_get_timezone_offset) {
 NEO_JS_CFUNCTION(neo_js_date_get_utc_date) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -363,7 +363,7 @@ NEO_JS_CFUNCTION(neo_js_date_get_utc_date) {
 NEO_JS_CFUNCTION(neo_js_date_get_utc_day) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -374,7 +374,7 @@ NEO_JS_CFUNCTION(neo_js_date_get_utc_day) {
 NEO_JS_CFUNCTION(neo_js_date_get_utc_full_year) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -385,7 +385,7 @@ NEO_JS_CFUNCTION(neo_js_date_get_utc_full_year) {
 NEO_JS_CFUNCTION(neo_js_date_get_utc_hours) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -396,7 +396,7 @@ NEO_JS_CFUNCTION(neo_js_date_get_utc_hours) {
 NEO_JS_CFUNCTION(neo_js_date_get_utc_milliseconds) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -407,7 +407,7 @@ NEO_JS_CFUNCTION(neo_js_date_get_utc_milliseconds) {
 NEO_JS_CFUNCTION(neo_js_date_get_utc_minutes) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -418,7 +418,7 @@ NEO_JS_CFUNCTION(neo_js_date_get_utc_minutes) {
 NEO_JS_CFUNCTION(neo_js_date_get_utc_month) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -429,7 +429,7 @@ NEO_JS_CFUNCTION(neo_js_date_get_utc_month) {
 NEO_JS_CFUNCTION(neo_js_date_get_utc_seconds) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -440,7 +440,7 @@ NEO_JS_CFUNCTION(neo_js_date_get_utc_seconds) {
 NEO_JS_CFUNCTION(neo_js_date_get_year) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -451,7 +451,7 @@ NEO_JS_CFUNCTION(neo_js_date_get_year) {
 NEO_JS_CFUNCTION(neo_js_date_set_date) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -459,7 +459,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_date) {
   }
   neo_time_t *utc = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!utc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   neo_js_variable_t date = NULL;
@@ -479,7 +479,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_date) {
 NEO_JS_CFUNCTION(neo_js_date_set_full_year) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -487,7 +487,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_full_year) {
   }
   neo_time_t *utc = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!utc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   neo_js_variable_t val = NULL;
@@ -507,7 +507,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_full_year) {
 NEO_JS_CFUNCTION(neo_js_date_set_hours) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -515,7 +515,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_hours) {
   }
   neo_time_t *utc = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!utc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   neo_js_variable_t val = NULL;
@@ -535,7 +535,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_hours) {
 NEO_JS_CFUNCTION(neo_js_date_set_milliseconds) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -543,7 +543,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_milliseconds) {
   }
   neo_time_t *utc = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!utc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   neo_js_variable_t val = NULL;
@@ -563,7 +563,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_milliseconds) {
 NEO_JS_CFUNCTION(neo_js_date_set_minutes) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -571,7 +571,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_minutes) {
   }
   neo_time_t *utc = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!utc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   neo_js_variable_t val = NULL;
@@ -591,7 +591,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_minutes) {
 NEO_JS_CFUNCTION(neo_js_date_set_month) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -599,7 +599,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_month) {
   }
   neo_time_t *utc = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!utc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   neo_js_variable_t val = NULL;
@@ -619,7 +619,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_month) {
 NEO_JS_CFUNCTION(neo_js_date_set_seconds) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -627,7 +627,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_seconds) {
   }
   neo_time_t *utc = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!utc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   neo_js_variable_t val = NULL;
@@ -647,7 +647,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_seconds) {
 NEO_JS_CFUNCTION(neo_js_date_set_time) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -655,7 +655,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_time) {
   }
   neo_time_t *utc = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!utc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   neo_js_variable_t val = NULL;
@@ -675,7 +675,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_time) {
 NEO_JS_CFUNCTION(neo_js_date_set_utc_date) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -683,7 +683,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_utc_date) {
   }
   neo_time_t *utc = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!utc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   neo_js_variable_t val = NULL;
@@ -703,7 +703,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_utc_date) {
 NEO_JS_CFUNCTION(neo_js_date_set_utc_full_year) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -711,7 +711,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_utc_full_year) {
   }
   neo_time_t *utc = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!utc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   neo_js_variable_t val = NULL;
@@ -731,7 +731,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_utc_full_year) {
 NEO_JS_CFUNCTION(neo_js_date_set_utc_hours) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -739,7 +739,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_utc_hours) {
   }
   neo_time_t *utc = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!utc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   neo_js_variable_t val = NULL;
@@ -759,7 +759,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_utc_hours) {
 NEO_JS_CFUNCTION(neo_js_date_set_utc_milliseconds) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -767,7 +767,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_utc_milliseconds) {
   }
   neo_time_t *utc = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!utc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   neo_js_variable_t val = NULL;
@@ -787,7 +787,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_utc_milliseconds) {
 NEO_JS_CFUNCTION(neo_js_date_set_utc_minutes) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -795,7 +795,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_utc_minutes) {
   }
   neo_time_t *utc = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!utc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   neo_js_variable_t val = NULL;
@@ -815,7 +815,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_utc_minutes) {
 NEO_JS_CFUNCTION(neo_js_date_set_utc_month) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -823,7 +823,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_utc_month) {
   }
   neo_time_t *utc = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!utc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   neo_js_variable_t val = NULL;
@@ -843,7 +843,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_utc_month) {
 NEO_JS_CFUNCTION(neo_js_date_set_utc_seconds) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -851,7 +851,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_utc_seconds) {
   }
   neo_time_t *utc = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!utc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   neo_js_variable_t val = NULL;
@@ -871,7 +871,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_utc_seconds) {
 NEO_JS_CFUNCTION(neo_js_date_set_year) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -879,7 +879,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_year) {
   }
   neo_time_t *utc = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!utc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   neo_js_variable_t val = NULL;
@@ -899,7 +899,7 @@ NEO_JS_CFUNCTION(neo_js_date_set_year) {
 NEO_JS_CFUNCTION(neo_js_date_to_date_string) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -920,7 +920,7 @@ NEO_JS_CFUNCTION(neo_js_date_to_date_string) {
 NEO_JS_CFUNCTION(neo_js_date_to_iso_string) {
   neo_time_t *utc = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!utc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (utc->invalid) {
@@ -935,7 +935,7 @@ NEO_JS_CFUNCTION(neo_js_date_to_iso_string) {
 NEO_JS_CFUNCTION(neo_js_date_to_json) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -953,7 +953,7 @@ NEO_JS_CFUNCTION(neo_js_date_to_local_time_string);
 NEO_JS_CFUNCTION(neo_js_date_to_string) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -987,7 +987,7 @@ NEO_JS_CFUNCTION(neo_js_date_to_string) {
 NEO_JS_CFUNCTION(neo_js_date_to_time_string) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -1013,7 +1013,7 @@ NEO_JS_CFUNCTION(neo_js_date_to_time_string) {
 NEO_JS_CFUNCTION(neo_js_date_to_utc_string) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#utc");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -1035,7 +1035,7 @@ NEO_JS_CFUNCTION(neo_js_date_to_utc_string) {
 NEO_JS_CFUNCTION(neo_js_date_value_of) {
   neo_time_t *tm = neo_js_context_get_opaque(ctx, self, L"#time");
   if (!tm) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"this is not a Date object.");
   }
   if (tm->invalid) {
@@ -1045,7 +1045,7 @@ NEO_JS_CFUNCTION(neo_js_date_value_of) {
 }
 NEO_JS_CFUNCTION(neo_js_date_to_primitive) {
   if (!argc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"Invalid hint: undefined");
   }
   neo_js_variable_t hint = neo_js_context_to_string(ctx, argv[0]);
@@ -1063,13 +1063,15 @@ NEO_JS_CFUNCTION(neo_js_date_to_primitive) {
         neo_allocator_alloc(allocator, sizeof(wchar_t) * (len + 16), NULL);
     neo_js_context_defer_free(ctx, message);
     swprintf(message, len + 16, L"Invalid hint: %ls", hint_string);
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
+                                              message);
   }
 }
 
 void neo_js_context_init_std_date(neo_js_context_t ctx) {
   neo_js_context_def_field(
-      ctx, neo_js_context_get_std(ctx).date_constructor, neo_js_context_create_string(ctx, L"now"),
+      ctx, neo_js_context_get_std(ctx).date_constructor,
+      neo_js_context_create_string(ctx, L"now"),
       neo_js_context_create_cfunction(ctx, L"now", neo_js_date_now), true,
       false, true);
 

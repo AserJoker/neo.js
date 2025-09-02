@@ -243,6 +243,8 @@ neo_js_variable_t neo_js_context_create_native_coroutine(
 void neo_js_context_recycle_coroutine(neo_js_context_t ctx,
                                       neo_js_variable_t coroutine);
 
+void neo_js_context_recycle(neo_js_context_t ctx, neo_js_chunk_t chunk);
+
 neo_js_variable_t neo_js_context_del_field(neo_js_context_t ctx,
                                            neo_js_variable_t object,
                                            neo_js_variable_t field);
@@ -275,7 +277,11 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
 
 neo_js_variable_t neo_js_context_create_simple_error(neo_js_context_t ctx,
                                                      neo_js_error_type_t type,
-                                                     const wchar_t *message);
+                                                     size_t len,
+                                                     const wchar_t *fmt, ...);
+
+const wchar_t *neo_js_context_to_error_name(neo_js_context_t ctx,
+                                            neo_js_variable_t variable);
 
 neo_js_variable_t neo_js_context_create_error(neo_js_context_t ctx,
                                               neo_js_variable_t value);
@@ -483,7 +489,24 @@ neo_js_call_type_t neo_js_context_get_call_type(neo_js_context_t ctx);
     neo_js_variable_t error##__LINE__ = (expr);                                \
     NEO_JS_TRY(error##__LINE__) { return error##__LINE__; }                    \
   } while (0);
+
+#define NEO_SET_METHOD(obj, name, func)                                        \
+  do {                                                                         \
+    neo_js_variable_t fn = neo_js_context_create_cfunction(ctx, name, func);   \
+    neo_js_context_def_field(ctx, obj,                                         \
+                             neo_js_context_create_string(ctx, name), fn,      \
+                             true, false, true);                               \
+  } while (0)
+#define NEO_SET_SYMBOL_METHOD(obj, name, func)                                 \
+  do {                                                                         \
+    neo_js_variable_t fn = neo_js_context_create_cfunction(ctx, name, func);   \
+    neo_js_variable_t field = neo_js_context_get_field(                        \
+        ctx, neo_js_context_get_std(ctx).symbol_constructor,                   \
+        neo_js_context_create_string(ctx, name), NULL);                        \
+    neo_js_context_def_field(ctx, obj, field, fn, true, false, true);          \
+  } while (0)
 #ifdef __cplusplus
 }
+
 #endif
 #endif

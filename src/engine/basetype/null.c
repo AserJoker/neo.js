@@ -63,13 +63,9 @@ static neo_js_variable_t neo_js_null_get_field(neo_js_context_t ctx,
     field_name = string->string;
   }
   size_t len = wcslen(field_name) + 64;
-  wchar_t *message = neo_allocator_alloc(
-      allocator, sizeof(wchar_t) * (wcslen(field_name) + 64), NULL);
-  swprintf(message, len, L"Cannot read properties of null (reading '%ls')",
-           field_name);
-  neo_js_variable_t error =
-      neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
-  neo_allocator_free(allocator, message);
+  neo_js_variable_t error = neo_js_context_create_simple_error(
+      ctx, NEO_JS_ERROR_TYPE, len,
+      L"Cannot read properties of null (reading '%ls')", field_name);
   return error;
 }
 static neo_js_variable_t neo_js_null_set_field(neo_js_context_t ctx,
@@ -91,20 +87,15 @@ static neo_js_variable_t neo_js_null_set_field(neo_js_context_t ctx,
     field_name = string->string;
   }
   size_t len = wcslen(field_name) + 64;
-  wchar_t *message = neo_allocator_alloc(
-      allocator, sizeof(wchar_t) * (wcslen(field_name) + 64), NULL);
-  swprintf(message, len, L"Cannot set properties of null (reading '%ls')",
-           field_name);
-  neo_js_variable_t error =
-      neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
-  neo_allocator_free(allocator, message);
-  return error;
+  return neo_js_context_create_simple_error(
+      ctx, NEO_JS_ERROR_TYPE, len,
+      L"Cannot set properties of null (reading '%ls')", field_name);
 }
 static neo_js_variable_t neo_js_null_del_field(neo_js_context_t ctx,
                                                neo_js_variable_t self,
                                                neo_js_variable_t field) {
   return neo_js_context_create_simple_error(
-      ctx, NEO_JS_ERROR_TYPE, L"Cannot convert undefined or null to object");
+      ctx, NEO_JS_ERROR_TYPE, 0, L"Cannot convert undefined or null to object");
 }
 
 static bool neo_js_null_is_equal(neo_js_context_t ctx, neo_js_variable_t self,

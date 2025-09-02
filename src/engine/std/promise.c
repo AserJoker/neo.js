@@ -75,7 +75,7 @@ static NEO_JS_CFUNCTION(neo_js_promise_all_callback) {
   }
   if (neo_js_variable_get_type(next)->kind < NEO_JS_TYPE_CALLABLE) {
     neo_js_variable_t error = neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"variable is not iterable");
+        ctx, NEO_JS_ERROR_TYPE, 0, L"variable is not iterable");
     error = neo_js_error_get_error(ctx, error);
     neo_js_context_call(ctx, reject, neo_js_context_create_undefined(ctx), 1,
                         &error);
@@ -98,7 +98,7 @@ static NEO_JS_CFUNCTION(neo_js_promise_all_callback) {
     }
     if (neo_js_variable_get_type(res)->kind != NEO_JS_TYPE_OBJECT) {
       neo_js_variable_t error = neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE, L"variable is not iterable");
+          ctx, NEO_JS_ERROR_TYPE, 0, L"variable is not iterable");
       neo_js_context_call(ctx, reject, neo_js_context_create_undefined(ctx), 1,
                           &error);
       return neo_js_context_create_undefined(ctx);
@@ -231,7 +231,7 @@ static NEO_JS_CFUNCTION(neo_js_promise_all_settled_callback) {
   }
   if (neo_js_variable_get_type(next)->kind < NEO_JS_TYPE_CALLABLE) {
     neo_js_variable_t error = neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"variable is not iterable");
+        ctx, NEO_JS_ERROR_TYPE, 0, L"variable is not iterable");
     error = neo_js_error_get_error(ctx, error);
     neo_js_context_call(ctx, reject, neo_js_context_create_undefined(ctx), 1,
                         &error);
@@ -251,7 +251,7 @@ static NEO_JS_CFUNCTION(neo_js_promise_all_settled_callback) {
     }
     if (neo_js_variable_get_type(res)->kind != NEO_JS_TYPE_OBJECT) {
       neo_js_variable_t error = neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE, L"variable is not iterable");
+          ctx, NEO_JS_ERROR_TYPE, 0, L"variable is not iterable");
       neo_js_context_call(ctx, reject, neo_js_context_create_undefined(ctx), 1,
                           &error);
       return neo_js_context_create_undefined(ctx);
@@ -381,7 +381,7 @@ static NEO_JS_CFUNCTION(neo_js_promise_any_callback) {
   }
   if (neo_js_variable_get_type(next)->kind < NEO_JS_TYPE_CALLABLE) {
     neo_js_variable_t error = neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"variable is not iterable");
+        ctx, NEO_JS_ERROR_TYPE, 0, L"variable is not iterable");
     error = neo_js_error_get_error(ctx, error);
     neo_js_context_call(ctx, reject, neo_js_context_create_undefined(ctx), 1,
                         &error);
@@ -401,7 +401,7 @@ static NEO_JS_CFUNCTION(neo_js_promise_any_callback) {
     }
     if (neo_js_variable_get_type(res)->kind != NEO_JS_TYPE_OBJECT) {
       neo_js_variable_t error = neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE, L"variable is not iterable");
+          ctx, NEO_JS_ERROR_TYPE, 0, L"variable is not iterable");
       neo_js_context_call(ctx, reject, neo_js_context_create_undefined(ctx), 1,
                           &error);
       return neo_js_context_create_undefined(ctx);
@@ -501,7 +501,7 @@ static NEO_JS_CFUNCTION(neo_js_promise_race_callback) {
   }
   if (neo_js_variable_get_type(next)->kind < NEO_JS_TYPE_CALLABLE) {
     neo_js_variable_t error = neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"variable is not iterable");
+        ctx, NEO_JS_ERROR_TYPE, 0, L"variable is not iterable");
     error = neo_js_error_get_error(ctx, error);
     neo_js_context_call(ctx, reject, neo_js_context_create_undefined(ctx), 1,
                         &error);
@@ -517,7 +517,7 @@ static NEO_JS_CFUNCTION(neo_js_promise_race_callback) {
     }
     if (neo_js_variable_get_type(res)->kind != NEO_JS_TYPE_OBJECT) {
       neo_js_variable_t error = neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE, L"variable is not iterable");
+          ctx, NEO_JS_ERROR_TYPE, 0, L"variable is not iterable");
       neo_js_context_call(ctx, reject, neo_js_context_create_undefined(ctx), 1,
                           &error);
       return neo_js_context_create_undefined(ctx);
@@ -747,13 +747,13 @@ neo_js_variable_t neo_js_promise_constructor(neo_js_context_t ctx,
                                              neo_js_variable_t *argv) {
   if (neo_js_context_get_call_type(ctx) != NEO_JS_CONSTRUCT_CALL) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE, 0,
         L"Promise constructor cannot be invoked without 'new'");
   }
   if (argc < 1 ||
       neo_js_variable_get_type(argv[0])->kind < NEO_JS_TYPE_CALLABLE) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE, 0,
         L" Promise resolver undefined is not a function");
   }
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);

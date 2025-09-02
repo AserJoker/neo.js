@@ -74,6 +74,7 @@
 #include "engine/std/reference_error.h"
 #include "engine/std/reflect.h"
 #include "engine/std/regexp.h"
+#include "engine/std/set.h"
 #include "engine/std/symbol.h"
 #include "engine/std/syntax_error.h"
 #include "engine/std/type_error.h"
@@ -83,6 +84,7 @@
 #include "engine/variable.h"
 #include "runtime/vm.h"
 #include <math.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -371,6 +373,8 @@ void neo_js_context_init_std(neo_js_context_t ctx) {
   neo_js_context_init_std_reflect(ctx);
 
   neo_js_context_init_std_regexp(ctx);
+
+  neo_js_context_init_std_set(ctx);
 
   neo_js_context_extends(ctx, ctx->std.generator_function_constructor,
                          ctx->std.function_constructor);
@@ -852,7 +856,7 @@ neo_js_variable_t neo_js_context_def_variable(neo_js_context_t ctx,
   if (current != NULL) {
     wchar_t msg[1024];
     swprintf(msg, 1024, L"cannot redefine variable: '%ls'", name);
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_SYNTAX, msg);
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_SYNTAX, 0, msg);
   }
   neo_js_chunk_t handle = neo_js_variable_get_chunk(variable);
   current = neo_js_scope_create_variable(ctx->scope, handle, name);
@@ -881,7 +885,7 @@ neo_js_variable_t neo_js_context_store_variable(neo_js_context_t ctx,
         neo_js_variable_is_using(current) ||
         neo_js_variable_is_await_using(current)) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE, L"assignment to constant variable.");
+          ctx, NEO_JS_ERROR_TYPE, 0, L"assignment to constant variable.");
     }
   }
   neo_js_type_t type = neo_js_variable_get_type(variable);
@@ -905,7 +909,8 @@ neo_js_variable_t neo_js_context_load_variable(neo_js_context_t ctx,
   }
   wchar_t msg[1024];
   swprintf(msg, 1024, L"variable '%ls' is not defined", name);
-  return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_REFERENCE, msg);
+  return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_REFERENCE, 0,
+                                            msg);
 }
 
 neo_js_variable_t neo_js_context_extends(neo_js_context_t ctx,
@@ -984,15 +989,10 @@ neo_js_variable_t neo_js_context_get_private(neo_js_context_t ctx,
   neo_js_string_t key = neo_js_variable_to_string(field);
   if (!obj->privates) {
     size_t len = wcslen(key->string) + 64;
-    wchar_t *message =
-        neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
-    swprintf(message, len,
-             L"Private field '%ls' must be declared in an enclosing class.",
-             key->string);
-    neo_js_variable_t error =
-        neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
-    neo_allocator_free(allocator, message);
-    return error;
+    return neo_js_context_create_simple_error(
+        ctx, NEO_JS_ERROR_TYPE, len,
+        L"Private field '%ls' must be declared in an enclosing class.",
+        key->string);
   }
   neo_js_object_private_t prop =
       neo_hash_map_get(obj->privates, key->string, NULL, NULL);
@@ -1007,27 +1007,17 @@ neo_js_variable_t neo_js_context_get_private(neo_js_context_t ctx,
                                    NULL);
       } else {
         size_t len = wcslen(key->string) + 64;
-        wchar_t *message =
-            neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
-        swprintf(message, len, L"Private field '%ls' hasn't getter.",
-                 key->string);
-        neo_js_variable_t error =
-            neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
-        neo_allocator_free(allocator, message);
-        return error;
+        return neo_js_context_create_simple_error(
+            ctx, NEO_JS_ERROR_TYPE, len, L"Private field '%ls' hasn't getter.",
+            key->string);
       }
     }
   } else {
     size_t len = wcslen(key->string) + 64;
-    wchar_t *message =
-        neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
-    swprintf(message, len,
-             L"Private field '%ls' must be declared in an enclosing class.",
-             key->string);
-    neo_js_variable_t error =
-        neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
-    neo_allocator_free(allocator, message);
-    return error;
+    return neo_js_context_create_simple_error(
+        ctx, NEO_JS_ERROR_TYPE, len,
+        L"Private field '%ls' must be declared in an enclosing class.",
+        key->string);
   }
 }
 
@@ -1041,29 +1031,19 @@ neo_js_variable_t neo_js_context_set_private(neo_js_context_t ctx,
   neo_js_string_t key = neo_js_variable_to_string(field);
   if (!obj->privates) {
     size_t len = wcslen(key->string) + 64;
-    wchar_t *message =
-        neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
-    swprintf(message, len,
-             L"Private field '%ls' must be declared in an enclosing class.",
-             key->string);
-    neo_js_variable_t error =
-        neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
-    neo_allocator_free(allocator, message);
-    return error;
+    return neo_js_context_create_simple_error(
+        ctx, NEO_JS_ERROR_TYPE, len,
+        L"Private field '%ls' must be declared in an enclosing class.",
+        key->string);
   }
   neo_js_object_private_t prop =
       neo_hash_map_get(obj->privates, key->string, NULL, NULL);
   if (!prop) {
     size_t len = wcslen(key->string) + 64;
-    wchar_t *message =
-        neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
-    swprintf(message, len,
-             L"Private field '%ls' must be declared in an enclosing class.",
-             key->string);
-    neo_js_variable_t error =
-        neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
-    neo_allocator_free(allocator, message);
-    return error;
+    return neo_js_context_create_simple_error(
+        ctx, NEO_JS_ERROR_TYPE, len,
+        L"Private field '%ls' must be declared in an enclosing class.",
+        key->string);
   } else {
     if (prop->value) {
       neo_js_chunk_t root = neo_js_scope_get_root_chunk(ctx->scope);
@@ -1077,13 +1057,9 @@ neo_js_variable_t neo_js_context_set_private(neo_js_context_t ctx,
                                  &value);
     } else {
       size_t len = wcslen(key->string) + 64;
-      wchar_t *message =
-          neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
-      swprintf(message, len, L"Private field '%ls' is readonly.", key->string);
-      neo_js_variable_t error =
-          neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
-      neo_allocator_free(allocator, message);
-      return error;
+      return neo_js_context_create_simple_error(
+          ctx, NEO_JS_ERROR_TYPE, len, L"Private field '%ls' is readonly.",
+          key->string);
     }
   }
   return neo_js_context_create_undefined(ctx);
@@ -1107,14 +1083,9 @@ neo_js_variable_t neo_js_context_def_private(neo_js_context_t ctx,
   if (neo_hash_map_has(obj->privates, key->string, NULL, NULL)) {
     neo_js_string_t str = neo_js_variable_to_string(field);
     size_t len = wcslen(str->string) + 64;
-    wchar_t *message =
-        neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
-    swprintf(message, len, L"Identifier '%ls' has already been declared",
-             str->string);
-    neo_js_variable_t error =
-        neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_SYNTAX, message);
-    neo_allocator_free(allocator, message);
-    return error;
+    return neo_js_context_create_simple_error(
+        ctx, NEO_JS_ERROR_SYNTAX, len,
+        L"Identifier '%ls' has already been declared", str->string);
   }
   neo_js_object_private_t prop = neo_create_js_object_private(allocator);
   prop->value = neo_js_variable_get_chunk(value);
@@ -1156,14 +1127,9 @@ neo_js_variable_t neo_js_context_def_private_accessor(
     if (prop->value || (prop->get && getter) || (prop->set && setter)) {
       neo_js_string_t str = neo_js_variable_to_string(field);
       size_t len = wcslen(str->string) + 64;
-      wchar_t *message =
-          neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
-      swprintf(message, len, L"Identifier '%ls' has already been declared",
-               str->string);
-      neo_js_variable_t error =
-          neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_SYNTAX, message);
-      neo_allocator_free(allocator, message);
-      return error;
+      return neo_js_context_create_simple_error(
+          ctx, NEO_JS_ERROR_SYNTAX, len,
+          L"Identifier '%ls' has already been declared", str->string);
     }
     if (getter) {
       prop->get = neo_js_variable_get_chunk(getter);
@@ -1190,7 +1156,8 @@ neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   if (neo_js_variable_get_type(object)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Object.defineProperty called on non-object");
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        L"Object.defineProperty called on non-object");
   }
   neo_js_object_t obj = neo_js_variable_to_object(object);
   field = neo_js_context_to_primitive(ctx, field, L"default");
@@ -1203,7 +1170,7 @@ neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
   neo_js_chunk_t hobject = neo_js_variable_get_chunk(object);
   if (!prop) {
     if (obj->sealed || obj->frozen || !obj->extensible) {
-      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                                 L"Object is not extensible");
     }
     prop = neo_create_js_object_property(allocator);
@@ -1226,7 +1193,7 @@ neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
     }
   } else {
     if (obj->frozen) {
-      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                                 L"Object is not extensible");
     }
     if (prop->value != NULL) {
@@ -1238,52 +1205,24 @@ neo_js_context_def_field(neo_js_context_t ctx, neo_js_variable_t object,
         return object;
       }
       if (!prop->configurable || !prop->writable) {
-        wchar_t *message = NULL;
-        if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_SYMBOL) {
-          neo_js_symbol_t sym = neo_js_variable_to_symbol(field);
-          size_t len = wcslen(sym->description) + 64;
-          message = neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
-          swprintf(message, len,
-                   L"Cannot assign to read only property Symbol(%ls) of object "
-                   L"'#<Object>'",
-                   sym->description);
-        } else {
-          neo_js_string_t str = neo_js_variable_to_string(field);
-          size_t len = wcslen(str->string) + 64;
-          message = neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
-          swprintf(message, len,
-                   L"Cannot assign to read only property '%ls' of object "
-                   L"'#<Object>'",
-                   str->string);
-        }
-        neo_js_variable_t error =
-            neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
-        neo_allocator_free(allocator, message);
-        return error;
+        const wchar_t *field_name = neo_js_context_to_error_name(ctx, field);
+        size_t len = wcslen(field_name) + 64;
+        return neo_js_context_create_simple_error(
+            ctx, NEO_JS_ERROR_TYPE, len,
+            L"Cannot assign to read only property '%ls' of object "
+            L"'#<Object>'",
+            field_name);
       }
       neo_js_chunk_remove_parent(prop->value, hobject);
       neo_js_chunk_add_parent(prop->value,
                               neo_js_scope_get_root_chunk(ctx->scope));
     } else {
       if (!prop->configurable) {
-        wchar_t *message = NULL;
-        if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_SYMBOL) {
-          neo_js_symbol_t sym = neo_js_variable_to_symbol(field);
-          size_t len = wcslen(sym->description) + 64;
-          message = neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
-          swprintf(message, len, L"Cannot redefine property: Symbol(%ls)",
-                   sym->description);
-        } else {
-          neo_js_string_t str = neo_js_variable_to_string(field);
-          size_t len = wcslen(str->string) + 64;
-          message = neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
-          swprintf(message, len, L"Cannot redefine property: '%ls'",
-                   str->string);
-        }
-        neo_js_variable_t error =
-            neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
-        neo_allocator_free(allocator, message);
-        return error;
+        const wchar_t *field_name = neo_js_context_to_error_name(ctx, field);
+        size_t len = wcslen(field_name) + 64;
+        return neo_js_context_create_simple_error(
+            ctx, NEO_JS_ERROR_TYPE, len, L"Cannot redefine property: '%ls'",
+            field_name);
       }
       if (prop->get) {
         neo_js_chunk_add_parent(prop->get,
@@ -1313,7 +1252,8 @@ neo_js_context_def_accessor(neo_js_context_t ctx, neo_js_variable_t object,
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   if (neo_js_variable_get_type(object)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Object.defineProperty called on non-object");
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        L"Object.defineProperty called on non-object");
   }
   neo_js_object_t obj = neo_js_variable_to_object(object);
   field = neo_js_context_to_primitive(ctx, field, L"default");
@@ -1334,7 +1274,7 @@ neo_js_context_def_accessor(neo_js_context_t ctx, neo_js_variable_t object,
   neo_js_chunk_t hfield = neo_js_variable_get_chunk(field);
   if (!prop) {
     if (obj->sealed || obj->frozen || !obj->extensible) {
-      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                                 L"Object is not extensible");
     }
     prop = neo_create_js_object_property(allocator);
@@ -1353,28 +1293,13 @@ neo_js_context_def_accessor(neo_js_context_t ctx, neo_js_variable_t object,
   } else {
     if (prop->value != NULL) {
       if (!prop->configurable) {
-        wchar_t *message = NULL;
-        if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_SYMBOL) {
-          neo_js_symbol_t sym = neo_js_variable_to_symbol(field);
-          size_t len = wcslen(sym->description) + 64;
-          message = neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
-          swprintf(message, len,
-                   L"Cannot assign to read only property Symbol(%ls) of object "
-                   L"'#<Object>'",
-                   sym->description);
-        } else {
-          neo_js_string_t str = neo_js_variable_to_string(field);
-          size_t len = wcslen(str->string) + 64;
-          message = neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
-          swprintf(message, len,
-                   L"Cannot assign to read only property '%ls' of object "
-                   L"'#<Object>'",
-                   str->string);
-        }
-        neo_js_variable_t error =
-            neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
-        neo_allocator_free(allocator, message);
-        return error;
+        const wchar_t *field_name = neo_js_context_to_error_name(ctx, field);
+        size_t len = wcslen(field_name) + 64;
+        return neo_js_context_create_simple_error(
+            ctx, NEO_JS_ERROR_TYPE, len,
+            L"Cannot assign to read only property '%ls' of object "
+            L"'#<Object>'",
+            field_name);
       }
       neo_js_chunk_add_parent(prop->value,
                               neo_js_scope_get_root_chunk(ctx->scope));
@@ -1383,24 +1308,11 @@ neo_js_context_def_accessor(neo_js_context_t ctx, neo_js_variable_t object,
       prop->writable = false;
     } else {
       if (!prop->configurable) {
-        wchar_t *message = NULL;
-        if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_SYMBOL) {
-          neo_js_symbol_t sym = neo_js_variable_to_symbol(field);
-          size_t len = wcslen(sym->description) + 64;
-          message = neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
-          swprintf(message, len, L"Cannot redefine property: Symbol(%ls)",
-                   sym->description);
-        } else {
-          neo_js_string_t str = neo_js_variable_to_string(field);
-          size_t len = wcslen(str->string) + 64;
-          message = neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
-          swprintf(message, len, L"Cannot redefine property: '%ls'",
-                   str->string);
-        }
-        neo_js_variable_t error =
-            neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
-        neo_allocator_free(allocator, message);
-        return error;
+        const wchar_t *field_name = neo_js_context_to_error_name(ctx, field);
+        size_t len = wcslen(field_name) + 64;
+        return neo_js_context_create_simple_error(
+            ctx, NEO_JS_ERROR_TYPE, len, L"Cannot redefine property: '%ls'",
+            field_name);
       }
     }
     if (prop->get) {
@@ -1694,6 +1606,12 @@ void neo_js_context_recycle_coroutine(neo_js_context_t ctx,
   }
   neo_list_delete(ctx->coroutines, co_ctx);
 }
+
+void neo_js_context_recycle(neo_js_context_t ctx, neo_js_chunk_t chunk) {
+  neo_js_chunk_t current = neo_js_scope_get_root_chunk(ctx->scope);
+  neo_js_chunk_add_parent(chunk, current);
+}
+
 static neo_js_variable_t neo_js_awaiter_on_fulfilled(neo_js_context_t ctx,
                                                      neo_js_variable_t self,
                                                      uint32_t argc,
@@ -1786,7 +1704,7 @@ static neo_js_variable_t neo_js_awaiter_task(neo_js_context_t ctx,
   } else if (co_ctx->vm) {
     value = neo_js_vm_exec(co_ctx->vm, co_ctx->program);
   } else {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_INTERNAL,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_INTERNAL, 0,
                                               L"Broken coroutine context");
   }
   neo_js_context_pop_stackframe(ctx);
@@ -2095,7 +2013,7 @@ neo_js_variable_t neo_js_context_call(neo_js_context_t ctx,
   neo_js_callable_t callable = neo_js_variable_to_callable(callee);
   if (callable && callable->is_class) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE, 0,
         L"Class constructor cannot be invoked without 'new'");
   }
   neo_js_call_type_t current = ctx->call_type;
@@ -2122,7 +2040,7 @@ neo_js_variable_t neo_js_context_simple_call(neo_js_context_t ctx,
   } else if (neo_js_variable_get_type(callee)->kind == NEO_JS_TYPE_FUNCTION) {
     return neo_js_context_call_function(ctx, callee, self, argc, argv);
   } else {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"callee is not a function");
   }
 }
@@ -2132,19 +2050,19 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
                                            uint32_t argc,
                                            neo_js_variable_t *argv) {
   if (neo_js_variable_get_type(constructor)->kind < NEO_JS_TYPE_CALLABLE) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"variable is not a constructor");
   }
   if (neo_js_variable_get_type(constructor)->kind ==
       NEO_JS_TYPE_ASYNC_CFUNCTION) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"variable is not a constructor");
   }
   if (neo_js_variable_get_type(constructor)->kind == NEO_JS_TYPE_FUNCTION) {
     neo_js_function_t fn = neo_js_variable_to_function(constructor);
     if (fn->is_async || fn->is_generator) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE, L"variable is not a constructor");
+          ctx, NEO_JS_ERROR_TYPE, 0, L"variable is not a constructor");
     }
   }
   neo_js_call_type_t current_call_type = ctx->call_type;
@@ -2177,9 +2095,36 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
   return object;
 }
 
+const wchar_t *neo_js_context_to_error_name(neo_js_context_t ctx,
+                                            neo_js_variable_t variable) {
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  const wchar_t *receiver = NULL;
+  if (neo_js_variable_get_type(variable)->kind == NEO_JS_TYPE_SYMBOL) {
+    return neo_js_variable_to_symbol(variable)->string;
+  } else if (neo_js_variable_get_type(variable)->kind != NEO_JS_TYPE_OBJECT) {
+    neo_js_variable_t s = neo_js_context_to_string(ctx, variable);
+    receiver = neo_js_variable_to_string(s)->string;
+  } else {
+    receiver = L"#<Object>";
+  }
+  return receiver;
+}
+
 neo_js_variable_t neo_js_context_create_simple_error(neo_js_context_t ctx,
                                                      neo_js_error_type_t type,
-                                                     const wchar_t *message) {
+                                                     size_t len,
+                                                     const wchar_t *fmt, ...) {
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  if (!len) {
+    len = wcslen(fmt) + 64;
+  }
+  wchar_t *message =
+      neo_allocator_alloc(allocator, sizeof(wchar_t) * (len + 1), NULL);
+  neo_js_context_defer_free(ctx, message);
+  va_list args;
+  va_start(args, fmt);
+  vswprintf(message, len, fmt, args);
+  va_end(args);
   neo_js_variable_t msg = neo_js_context_create_string(ctx, message);
   neo_js_variable_t value = NULL;
   switch (type) {
@@ -3068,7 +3013,7 @@ neo_js_variable_t neo_js_context_add(neo_js_context_t ctx,
     if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
         righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE, 0,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
@@ -3109,7 +3054,7 @@ neo_js_variable_t neo_js_context_sub(neo_js_context_t ctx,
     if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
         righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE, 0,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
@@ -3150,7 +3095,7 @@ neo_js_variable_t neo_js_context_mul(neo_js_context_t ctx,
     if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
         righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE, 0,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
@@ -3191,14 +3136,14 @@ neo_js_variable_t neo_js_context_div(neo_js_context_t ctx,
     if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
         righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE, 0,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
     neo_js_bigint_t b = neo_js_variable_to_bigint(right);
     neo_bigint_t res = neo_bigint_div(a->bigint, b->bigint);
     if (!res) {
-      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_RANGE,
+      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_RANGE, 0,
                                                 L"Division by zero");
     }
     return neo_js_context_create_bigint(ctx, res);
@@ -3235,14 +3180,14 @@ neo_js_variable_t neo_js_context_mod(neo_js_context_t ctx,
     if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
         righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE, 0,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
     neo_js_bigint_t b = neo_js_variable_to_bigint(right);
     neo_bigint_t res = neo_bigint_div(a->bigint, b->bigint);
     if (!res) {
-      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_RANGE,
+      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_RANGE, 0,
                                                 L"Division by zero");
     }
     return neo_js_context_create_bigint(ctx, res);
@@ -3282,7 +3227,7 @@ neo_js_variable_t neo_js_context_pow(neo_js_context_t ctx,
     if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
         righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE, 0,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
@@ -3382,7 +3327,7 @@ neo_js_variable_t neo_js_context_and(neo_js_context_t ctx,
     if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
         righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE, 0,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
@@ -3425,7 +3370,7 @@ neo_js_variable_t neo_js_context_or(neo_js_context_t ctx,
     if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
         righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE, 0,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
@@ -3468,7 +3413,7 @@ neo_js_variable_t neo_js_context_xor(neo_js_context_t ctx,
     if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
         righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE, 0,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
@@ -3511,7 +3456,7 @@ neo_js_variable_t neo_js_context_shr(neo_js_context_t ctx,
     if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
         righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE, 0,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
@@ -3554,7 +3499,7 @@ neo_js_variable_t neo_js_context_shl(neo_js_context_t ctx,
     if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
         righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE, 0,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     neo_js_bigint_t a = neo_js_variable_to_bigint(left);
@@ -3597,11 +3542,11 @@ neo_js_variable_t neo_js_context_ushr(neo_js_context_t ctx,
     if (lefttype->kind != NEO_JS_TYPE_BIGINT ||
         righttype->kind != NEO_JS_TYPE_BIGINT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE, 0,
           L"Cannot mix BigInt and other types, use explicit conversions");
     }
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE, 0,
         L"BigInts have no unsigned right shift, use >> instead");
   }
   left = neo_js_context_to_number(ctx, left);
@@ -3825,7 +3770,7 @@ neo_js_variable_t neo_js_context_create_compile_error(neo_js_context_t ctx) {
   wchar_t *message =
       neo_string_to_wstring(allocator, neo_error_get_message(err));
   neo_js_variable_t error =
-      neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_SYNTAX, message);
+      neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_SYNTAX, 0, message);
   neo_allocator_free(allocator, message);
   neo_allocator_free(allocator, err);
   return error;
@@ -3845,14 +3790,8 @@ neo_js_variable_t neo_js_context_get_module(neo_js_context_t ctx,
   neo_js_chunk_t hmodule = neo_hash_map_get(ctx->modules, name, NULL, NULL);
   if (!hmodule) {
     size_t len = 64 + wcslen(name);
-    neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
-    wchar_t *message =
-        neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
-    swprintf(message, len, L"Cannot find package '%ls'", name);
-    neo_js_variable_t result = neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_REFERENCE, message);
-    neo_allocator_free(allocator, message);
-    return result;
+    return neo_js_context_create_simple_error(
+        ctx, NEO_JS_ERROR_REFERENCE, len, L"Cannot find module '%ls'", name);
   }
   return neo_js_context_create_variable(ctx, hmodule, NULL);
 }

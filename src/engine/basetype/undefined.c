@@ -1,7 +1,6 @@
 #include "engine/basetype/undefined.h"
 #include "core/allocator.h"
 #include "engine/basetype/string.h"
-#include "engine/basetype/symbol.h"
 #include "engine/chunk.h"
 #include "engine/context.h"
 #include "engine/runtime.h"
@@ -48,75 +47,27 @@ static neo_js_variable_t
 neo_js_undefined_get_field(neo_js_context_t ctx, neo_js_variable_t self,
                            neo_js_variable_t field,
                            neo_js_variable_t receiver) {
-  neo_allocator_t allocator =
-      neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
-  const wchar_t *field_name = NULL;
-  if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_SYMBOL) {
-    neo_js_symbol_t symbol =
-        neo_js_value_to_symbol(neo_js_variable_get_value(field));
-    field_name = symbol->description;
-  } else {
-    neo_js_variable_t valstring = neo_js_context_to_string(ctx, field);
-    neo_js_value_t value = neo_js_variable_get_value(valstring);
-    neo_js_string_t string = neo_js_value_to_string(value);
-    field_name = string->string;
-  }
+  const wchar_t *field_name = neo_js_context_to_error_name(ctx, field);
   size_t len = wcslen(field_name) + 64;
-  wchar_t *message = neo_allocator_alloc(
-      allocator, sizeof(wchar_t) * (wcslen(field_name) + 64), NULL);
-  if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_SYMBOL) {
-    swprintf(message, len,
-             L"Cannot read properties of undefined (reading 'Symbol(%ls)')",
-             field_name);
-  } else {
-    swprintf(message, len,
-             L"Cannot read properties of undefined (reading '%ls')",
-             field_name);
-  }
-  neo_js_variable_t error =
-      neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
-  neo_allocator_free(allocator, message);
-  return error;
+  return neo_js_context_create_simple_error(
+      ctx, NEO_JS_ERROR_TYPE, len,
+      L"Cannot read properties of undefined (reading '%ls')", field_name);
 }
 static neo_js_variable_t
 neo_js_undefined_set_field(neo_js_context_t ctx, neo_js_variable_t self,
                            neo_js_variable_t field, neo_js_variable_t value,
                            neo_js_variable_t receiver) {
-  neo_allocator_t allocator =
-      neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
-  const wchar_t *field_name = NULL;
-  if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_SYMBOL) {
-    neo_js_symbol_t symbol =
-        neo_js_value_to_symbol(neo_js_variable_get_value(field));
-    field_name = symbol->description;
-  } else {
-    neo_js_variable_t valstring = neo_js_context_to_string(ctx, field);
-    neo_js_value_t value = neo_js_variable_get_value(valstring);
-    neo_js_string_t string = neo_js_value_to_string(value);
-    field_name = string->string;
-  }
+  const wchar_t *field_name = neo_js_context_to_error_name(ctx, field);
   size_t len = wcslen(field_name) + 64;
-  wchar_t *message = neo_allocator_alloc(
-      allocator, sizeof(wchar_t) * (wcslen(field_name) + 64), NULL);
-  if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_SYMBOL) {
-    swprintf(message, len,
-             L"Cannot read properties of undefined (reading 'Symbol(%ls)')",
-             field_name);
-  } else {
-    swprintf(message, len,
-             L"Cannot read properties of undefined (reading '%ls')",
-             field_name);
-  }
-  neo_js_variable_t error =
-      neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
-  neo_allocator_free(allocator, message);
-  return error;
+  return neo_js_context_create_simple_error(
+      ctx, NEO_JS_ERROR_TYPE, len,
+      L"Cannot read properties of undefined (reading '%ls')", field_name);
 }
 static neo_js_variable_t neo_js_undefined_del_field(neo_js_context_t ctx,
                                                     neo_js_variable_t self,
                                                     neo_js_variable_t field) {
   return neo_js_context_create_simple_error(
-      ctx, NEO_JS_ERROR_TYPE,
+      ctx, NEO_JS_ERROR_TYPE, 0,
       L"Cannot convert undefined or undefined to object");
 }
 

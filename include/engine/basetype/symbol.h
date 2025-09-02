@@ -13,6 +13,7 @@ typedef struct _neo_js_symbol_t *neo_js_symbol_t;
 struct _neo_js_symbol_t {
   struct _neo_js_value_t value;
   wchar_t *description;
+  wchar_t *string;
 };
 
 neo_js_type_t neo_get_js_symbol_type();

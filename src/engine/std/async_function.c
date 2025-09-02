@@ -16,7 +16,7 @@ neo_js_variable_t neo_js_async_function_to_string(neo_js_context_t ctx,
   if (neo_js_variable_get_type(self)->kind != NEO_JS_TYPE_FUNCTION ||
       !generator || !generator->is_generator) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE, 0,
         L" AsyncFunction.prototype.toString requires that 'this' be a "
         L"AsyncFunction");
   }

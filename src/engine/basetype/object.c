@@ -7,11 +7,9 @@
 #include "engine/basetype/boolean.h"
 #include "engine/basetype/number.h"
 #include "engine/basetype/string.h"
-#include "engine/basetype/symbol.h"
 #include "engine/chunk.h"
 #include "engine/context.h"
 #include "engine/handle.h"
-#include "engine/runtime.h"
 #include "engine/scope.h"
 #include "engine/type.h"
 #include "engine/value.h"
@@ -64,7 +62,7 @@ static neo_js_variable_t neo_js_object_to_string(neo_js_context_t ctx,
   if (!primitive ||
       neo_js_variable_get_type(primitive)->kind >= NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Cannot convert object to primitive value");
+        ctx, NEO_JS_ERROR_TYPE, 0, L"Cannot convert object to primitive value");
   }
   return neo_js_context_to_string(ctx, primitive);
 }
@@ -112,7 +110,7 @@ static neo_js_variable_t neo_js_object_to_number(neo_js_context_t ctx,
   if (!primitive ||
       neo_js_variable_get_type(primitive)->kind != NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Cannot convert object to primitive value");
+        ctx, NEO_JS_ERROR_TYPE, 0, L"Cannot convert object to primitive value");
   }
   return neo_js_context_to_number(ctx, primitive);
 }
@@ -158,10 +156,10 @@ static neo_js_variable_t neo_js_object_to_primitive(neo_js_context_t ctx,
   if (!primitive ||
       neo_js_variable_get_type(primitive)->kind >= NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Cannot convert object to primitive value");
+        ctx, NEO_JS_ERROR_TYPE, 0, L"Cannot convert object to primitive value");
   }
   return neo_js_context_create_simple_error(
-      ctx, NEO_JS_ERROR_TYPE, L"Cannot convert object to primitive value");
+      ctx, NEO_JS_ERROR_TYPE, 0, L"Cannot convert object to primitive value");
 }
 static neo_js_variable_t neo_js_object_to_object(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
@@ -420,34 +418,13 @@ static neo_js_variable_t neo_js_object_set_field(neo_js_context_t ctx,
   } else {
     if (property->value) {
       if (!property->writable) {
-        wchar_t *message = NULL;
-        neo_allocator_t allocator =
-            neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
-        if (neo_js_variable_get_value(field)->type->kind ==
-            NEO_JS_TYPE_SYMBOL) {
-          neo_js_symbol_t symbol =
-              neo_js_value_to_symbol(neo_js_variable_get_value(field));
-          size_t len = wcslen(symbol->description) + 64;
-          message = neo_allocator_alloc(allocator, len, NULL);
-          swprintf(message, len,
-                   L"Cannot assign to read only property Symbol(%ls) of object "
-                   L"'#<Object>'",
-                   symbol->description);
-        } else {
-          neo_js_variable_t sfield = neo_js_context_to_string(ctx, field);
-          neo_js_string_t name =
-              neo_js_value_to_string(neo_js_variable_get_value(sfield));
-          size_t len = wcslen(name->string) + 64;
-          message = neo_allocator_alloc(allocator, len, NULL);
-          swprintf(message, len,
-                   L"Cannot assign to read only property '%ls' of object "
-                   L"'#<Object>'",
-                   name->string);
-        }
-        neo_js_variable_t error =
-            neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
-        neo_allocator_free(allocator, message);
-        return error;
+        const wchar_t *field_name = neo_js_context_to_error_name(ctx, field);
+        size_t len = wcslen(field_name) + 128;
+        return neo_js_context_create_simple_error(
+            ctx, NEO_JS_ERROR_TYPE, len,
+            L"Cannot assign to read only property Symbol(%ls) of object "
+            L"'#<Object>'",
+            field_name);
       } else {
         if (property->value != hvalue) {
           neo_js_chunk_remove_parent(property->value, hobject);
@@ -465,33 +442,13 @@ static neo_js_variable_t neo_js_object_set_field(neo_js_context_t ctx,
       return neo_js_context_call(ctx, setter, receiver ? receiver : self, 1,
                                  &value);
     } else {
-      wchar_t *message = NULL;
-      neo_allocator_t allocator =
-          neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
-      if (neo_js_variable_get_value(field)->type->kind == NEO_JS_TYPE_SYMBOL) {
-        neo_js_symbol_t symbol =
-            neo_js_value_to_symbol(neo_js_variable_get_value(field));
-        size_t len = wcslen(symbol->description) + 64;
-        message = neo_allocator_alloc(allocator, len, NULL);
-        swprintf(message, len,
-                 L"Cannot set property Symbol(%ls) of #<Object> which has only "
-                 L"a getter",
-                 symbol->description);
-      } else {
-        neo_js_variable_t sfield = neo_js_context_to_string(ctx, field);
-        neo_js_string_t name =
-            neo_js_value_to_string(neo_js_variable_get_value(sfield));
-        size_t len = wcslen(name->string) + 64;
-        message = neo_allocator_alloc(allocator, len, NULL);
-        swprintf(
-            message, len,
-            L"Cannot set property '%ls' of #<Object> which has only a getter",
-            name->string);
-      }
-      neo_js_variable_t error =
-          neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
-      neo_allocator_free(allocator, message);
-      return error;
+      const wchar_t *field_name = neo_js_context_to_error_name(ctx, field);
+      size_t len = wcslen(field_name) + 128;
+      return neo_js_context_create_simple_error(
+          ctx, NEO_JS_ERROR_TYPE, len,
+          L"Cannot set property Symbol(%ls) of #<Object> which has only "
+          L"a getter",
+          field_name);
     }
   }
 }
@@ -506,57 +463,18 @@ static neo_js_variable_t neo_js_object_del_field(neo_js_context_t ctx,
       neo_js_object_get_own_property(ctx, self, field);
   neo_js_object_t object =
       neo_js_value_to_object(neo_js_variable_get_value(self));
+  const wchar_t *field_name = neo_js_context_to_error_name(ctx, field);
+  size_t len = wcslen(field_name) + 64;
   if (object->frozen || object->sealed) {
-    wchar_t *message = NULL;
-    neo_allocator_t allocator =
-        neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
-    if (neo_js_variable_get_value(field)->type->kind == NEO_JS_TYPE_SYMBOL) {
-      neo_js_symbol_t symbol =
-          neo_js_value_to_symbol(neo_js_variable_get_value(field));
-      size_t len = wcslen(symbol->description) + 64;
-      message = neo_allocator_alloc(allocator, len, NULL);
-      swprintf(message, len, L"Cannot delete property Symbol(%ls) of #<Object>",
-               symbol->description);
-    } else {
-      neo_js_variable_t sfield = neo_js_context_to_string(ctx, field);
-      neo_js_string_t name =
-          neo_js_value_to_string(neo_js_variable_get_value(sfield));
-      size_t len = wcslen(name->string) + 64;
-      message = neo_allocator_alloc(allocator, len, NULL);
-      swprintf(message, len, L"Cannot delete property '%ls' of #<Object>",
-               name->string);
-    }
-    neo_js_variable_t error =
-        neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
-    neo_allocator_free(allocator, message);
-    return error;
+    return neo_js_context_create_simple_error(
+        ctx, NEO_JS_ERROR_TYPE, len, L"Cannot delete property %ls of #<Object>",
+        field_name);
   }
   if (property) {
     if (!property->configurable) {
-      wchar_t *message = NULL;
-      neo_allocator_t allocator =
-          neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
-      if (neo_js_variable_get_value(field)->type->kind == NEO_JS_TYPE_SYMBOL) {
-        neo_js_symbol_t symbol =
-            neo_js_value_to_symbol(neo_js_variable_get_value(field));
-        size_t len = wcslen(symbol->description) + 64;
-        message = neo_allocator_alloc(allocator, len, NULL);
-        swprintf(message, len,
-                 L"Cannot delete property Symbol(%ls) of #<Object>",
-                 symbol->description);
-      } else {
-        neo_js_variable_t sfield = neo_js_context_to_string(ctx, field);
-        neo_js_string_t name =
-            neo_js_value_to_string(neo_js_variable_get_value(sfield));
-        size_t len = wcslen(name->string) + 64;
-        message = neo_allocator_alloc(allocator, len, NULL);
-        swprintf(message, len, L"Cannot delete property '%ls' of #<Object>",
-                 name->string);
-      }
-      neo_js_variable_t error =
-          neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, message);
-      neo_allocator_free(allocator, message);
-      return error;
+      return neo_js_context_create_simple_error(
+          ctx, NEO_JS_ERROR_TYPE, len,
+          L"Cannot delete property '%ls' of #<Object>", field_name);
     } else {
       neo_hash_map_delete(object->properties, neo_js_variable_get_chunk(field),
                           ctx, ctx);
@@ -666,12 +584,12 @@ neo_js_variable_t neo_js_object_set_prototype(neo_js_context_t ctx,
                                               neo_js_variable_t self,
                                               neo_js_variable_t prototype) {
   if (neo_js_variable_get_type(self)->kind < NEO_JS_TYPE_OBJECT) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"variable is not a object");
   }
   neo_js_object_t obj = neo_js_variable_to_object(self);
   if (obj->sealed || obj->frozen || !obj->extensible) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"#<Object> is not extensible");
   }
   neo_js_chunk_add_parent(obj->prototype, neo_js_scope_get_root_chunk(

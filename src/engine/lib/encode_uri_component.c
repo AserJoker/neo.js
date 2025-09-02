@@ -31,12 +31,12 @@ NEO_JS_CFUNCTION(neo_js_encode_uri_component) {
     } else {
       if (*psrc >= 0xd800 && *psrc <= 0xdbff) {
         if (*(psrc + 1) < 0xdc00 || *(psrc + 1) > 0xdfff) {
-          return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_URI,
+          return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_URI, 0,
                                                     L"URI malformed");
         }
       }
       if (*psrc >= 0xdc00 && *psrc <= 0xdfff) {
-        return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_URI,
+        return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_URI, 0,
                                                   L"URI malformed");
       }
       neo_allocator_t allocator = neo_js_context_get_allocator(ctx);

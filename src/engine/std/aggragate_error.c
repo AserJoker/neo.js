@@ -28,7 +28,7 @@ NEO_JS_CFUNCTION(neo_js_aggregate_error_constructor) {
   iterator = neo_js_context_get_field(ctx, arg, iterator, NULL);
   NEO_JS_TRY_AND_THROW(iterator);
   if (neo_js_variable_get_type(iterator)->kind < NEO_JS_TYPE_CALLABLE) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"variable is not iterable");
   }
   neo_js_variable_t gen = neo_js_context_call(ctx, iterator, arg, 0, NULL);

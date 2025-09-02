@@ -82,14 +82,9 @@ neo_js_variable_t neo_js_regexp_constructor(neo_js_context_t ctx,
       break;
     default: {
       size_t len = wcslen(s_flag) + 128;
-      wchar_t *message =
-          neo_allocator_alloc(allocator, len * sizeof(wchar_t), NULL);
-      swprintf(message, len,
-               L"Invalid flags supplied to RegExp constructor '%ls'", s_flag);
-      neo_js_variable_t error =
-          neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_SYNTAX, message);
-      neo_allocator_free(allocator, message);
-      return error;
+      return neo_js_context_create_simple_error(
+          ctx, NEO_JS_ERROR_SYNTAX, len,
+          L"Invalid flags supplied to RegExp constructor '%ls'", s_flag);
     }
     }
     pflag++;
@@ -123,16 +118,10 @@ neo_js_variable_t neo_js_regexp_constructor(neo_js_context_t ctx,
 #endif
   if (!code) {
     size_t len = wcslen(s_flag) + 128;
-    wchar_t *message =
-        neo_allocator_alloc(allocator, len * sizeof(wchar_t), NULL);
-    swprintf(
-        message, len,
+    return neo_js_context_create_simple_error(
+        ctx, NEO_JS_ERROR_SYNTAX, len,
         L"Invalid regular expression: /%ls/%ls: Unterminated character class",
         rule, s_flag);
-    neo_js_variable_t error =
-        neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_SYNTAX, message);
-    neo_allocator_free(allocator, message);
-    return error;
   }
   neo_js_regex_t regex = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_regex_t), neo_js_regex_dispose);

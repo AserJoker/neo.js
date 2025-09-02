@@ -37,7 +37,7 @@ NEO_JS_CFUNCTION(neo_js_reflect_delete_property) {
   }
   if (neo_js_variable_get_type(obj)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE, 0,
         L"Reflect.getOwnPropertyDescriptor called with non-object");
   }
   neo_js_variable_t key = NULL;
@@ -67,7 +67,7 @@ NEO_JS_CFUNCTION(neo_js_reflect_get) {
   }
   if (neo_js_variable_get_type(obj)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Reflect.get called with non-object");
+        ctx, NEO_JS_ERROR_TYPE, 0, L"Reflect.get called with non-object");
   }
   return neo_js_context_get_field(ctx, obj, field, receiver);
 }
@@ -80,7 +80,7 @@ NEO_JS_CFUNCTION(neo_js_reflect_get_own_property_descriptor) {
   }
   if (neo_js_variable_get_type(obj)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE, 0,
         L"Reflect.getOwnPropertyDescriptor called with non-object");
   }
   return neo_js_object_get_own_property_descriptor(
@@ -95,7 +95,7 @@ NEO_JS_CFUNCTION(neo_js_reflect_get_prototype_of) {
   }
   if (neo_js_variable_get_type(obj)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE,0, 
         L"Reflect.getPrototypeOf called with non-object");
   }
   return neo_js_object_get_prototype_of(
@@ -116,7 +116,7 @@ NEO_JS_CFUNCTION(neo_js_reflect_has) {
   }
   if (neo_js_variable_get_type(obj)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Reflect.has called with non-object");
+        ctx, NEO_JS_ERROR_TYPE, 0, L"Reflect.has called with non-object");
   }
   return neo_js_context_in(ctx, field, obj);
 }
@@ -129,7 +129,7 @@ NEO_JS_CFUNCTION(neo_js_reflect_is_extensible) {
   }
   if (neo_js_variable_get_type(obj)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Reflect.isExtensible called with non-object");
+        ctx, NEO_JS_ERROR_TYPE,0,  L"Reflect.isExtensible called with non-object");
   }
   return neo_js_object_is_extensible(
       ctx, neo_js_context_get_std(ctx).object_constructor, 1, &obj);
@@ -143,7 +143,7 @@ NEO_JS_CFUNCTION(neo_js_reflect_own_keys) {
   }
   if (neo_js_variable_get_type(obj)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Reflect.ownKeys called with non-object");
+        ctx, NEO_JS_ERROR_TYPE,0,  L"Reflect.ownKeys called with non-object");
   }
   neo_js_object_t object = neo_js_variable_to_object(obj);
   neo_js_variable_t result = neo_js_context_create_array(ctx);
@@ -164,7 +164,7 @@ NEO_JS_CFUNCTION(neo_js_reflect_prevent_extensions) {
   }
   if (neo_js_variable_get_type(obj)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE,0, 
         L"Reflect.preventExtensions called with non-object");
   }
   return neo_js_object_prevent_extensions(
@@ -195,7 +195,7 @@ NEO_JS_CFUNCTION(neo_js_reflect_set) {
   }
   if (neo_js_variable_get_type(obj)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Reflect.set called with non-object");
+        ctx, NEO_JS_ERROR_TYPE, 0, L"Reflect.set called with non-object");
   }
   return neo_js_context_set_field(ctx, obj, field, value, receiver);
 }
@@ -208,7 +208,7 @@ NEO_JS_CFUNCTION(neo_js_reflect_set_prototype_of) {
   }
   if (neo_js_variable_get_type(obj)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE,0, 
         L"Reflect.setPrototypeOf called with non-object");
   }
   return neo_js_object_set_prototype_of(

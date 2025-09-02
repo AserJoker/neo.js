@@ -17,7 +17,7 @@ neo_js_variable_t neo_js_array_from(neo_js_context_t ctx,
                                     neo_js_variable_t *argv) {
   if (argc < 1) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE, 0,
         L"undefined is not iterable (cannot read property "
         L"Symbol(Symbol.iterator))");
   }
@@ -45,7 +45,7 @@ neo_js_variable_t neo_js_array_from(neo_js_context_t ctx,
     iterator = neo_js_context_get_field(ctx, array_like, iterator, NULL);
     if (neo_js_variable_get_type(iterator)->kind < NEO_JS_TYPE_CALLABLE) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE, 0,
           L"%Array%.from requires that the property of the first argument, "
           L"items[Symbol.iterator], when exists, be a function");
     }
@@ -56,7 +56,7 @@ neo_js_variable_t neo_js_array_from(neo_js_context_t ctx,
     }
     if (neo_js_variable_get_type(generator)->kind < NEO_JS_TYPE_OBJECT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE, 0,
           L"Result of the Symbol.iterator method is not an object");
     }
 
@@ -64,7 +64,7 @@ neo_js_variable_t neo_js_array_from(neo_js_context_t ctx,
         ctx, generator, neo_js_context_create_string(ctx, L"next"), NULL);
     if (neo_js_variable_get_type(next)->kind < NEO_JS_TYPE_CALLABLE) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE, L"#Object.next is not a function");
+          ctx, NEO_JS_ERROR_TYPE, 0, L"#Object.next is not a function");
     }
     neo_js_variable_t res = neo_js_context_call(ctx, next, generator, 0, NULL);
     if (neo_js_variable_get_type(res)->kind == NEO_JS_TYPE_ERROR) {
@@ -114,7 +114,7 @@ neo_js_variable_t neo_js_array_from(neo_js_context_t ctx,
     }
     neo_js_number_t num = neo_js_variable_to_number(vlength);
     if (num->number < 0 || num->number > NEO_MAX_INTEGER) {
-      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_RANGE,
+      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_RANGE, 0,
                                                 L"Invalid array length");
     }
     neo_js_variable_t array =
@@ -170,7 +170,7 @@ neo_js_variable_t neo_js_array_from_async(neo_js_context_t ctx,
     NEO_JS_TRY_AND_THROW(async_iterator);
     if (neo_js_variable_get_type(async_iterator)->kind < NEO_JS_TYPE_CALLABLE) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE, 0,
           L"%Array%.from requires that the property of the first argument, "
           L"items[Symbol.asyncIterator], when exists, be a function");
     }
@@ -179,7 +179,7 @@ neo_js_variable_t neo_js_array_from_async(neo_js_context_t ctx,
     NEO_JS_TRY_AND_THROW(generator);
     if (neo_js_variable_get_type(generator)->kind < NEO_JS_TYPE_OBJECT) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE, 0,
           L"Result of the Symbol.asyncIterator method is not an object");
     }
     neo_js_context_def_variable(ctx, generator, L"generator");
@@ -197,7 +197,7 @@ neo_js_variable_t neo_js_array_from_async(neo_js_context_t ctx,
         ctx, generator, neo_js_context_create_string(ctx, L"next"), NULL);
     if (neo_js_variable_get_type(next)->kind < NEO_JS_TYPE_CALLABLE) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE, L"#Object.next is not a function");
+          ctx, NEO_JS_ERROR_TYPE, 0, L"#Object.next is not a function");
     }
     neo_js_variable_t res = neo_js_context_call(ctx, next, generator, 0, NULL);
     return neo_js_context_create_interrupt(ctx, res, 2, NEO_JS_INTERRUPT_AWAIT);
@@ -276,7 +276,7 @@ neo_js_variable_t neo_js_array_constructor(neo_js_context_t ctx,
     uint32_t length = 0;
     neo_js_number_t number = neo_js_variable_to_number(argv[0]);
     if (number->number < 0 || number->number > 0xffffffff) {
-      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_RANGE,
+      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_RANGE, 0,
                                                 L"Invalid array length");
     } else if (!isnan(number->number)) {
       length = number->number;
@@ -336,7 +336,7 @@ neo_js_variable_t neo_js_array_concat(neo_js_context_t ctx,
   if (neo_js_variable_get_type(self)->kind == NEO_JS_TYPE_UNDEFINED ||
       neo_js_variable_get_type(self)->kind == NEO_JS_TYPE_NULL) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE, 0,
         L"Array.prototype.concat called on null or undefined");
   }
   neo_js_variable_t res = neo_js_context_create_array(ctx);
@@ -396,7 +396,7 @@ neo_js_variable_t neo_js_array_concat(neo_js_context_t ctx,
         if (isnan(num->number) || isinf(num->number) || num->number < 0) {
           length = 0;
         } else if (num->number > NEO_MAX_INTEGER) {
-          return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_RANGE,
+          return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_RANGE, 0,
                                                     L"Invalid array length");
         } else {
           length = num->number;
@@ -546,7 +546,7 @@ neo_js_variable_t neo_js_array_every(neo_js_context_t ctx,
                                      neo_js_variable_t self, uint32_t argc,
                                      neo_js_variable_t *argv) {
   if (!argc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"undefined is not a function");
   }
   neo_js_variable_t fn = argv[0];
@@ -639,7 +639,7 @@ neo_js_variable_t neo_js_array_filter(neo_js_context_t ctx,
                                       neo_js_variable_t self, uint32_t argc,
                                       neo_js_variable_t *argv) {
   if (!argc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"undefined is not a function");
   }
   neo_js_variable_t array = neo_js_context_create_array(ctx);
@@ -679,7 +679,7 @@ neo_js_variable_t neo_js_array_find(neo_js_context_t ctx,
                                     neo_js_variable_t self, uint32_t argc,
                                     neo_js_variable_t *argv) {
   if (!argc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"undefined is not a function");
   }
   neo_js_variable_t fn = argv[0];
@@ -716,7 +716,7 @@ neo_js_variable_t neo_js_array_find_index(neo_js_context_t ctx,
                                           neo_js_variable_t self, uint32_t argc,
                                           neo_js_variable_t *argv) {
   if (!argc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"undefined is not a function");
   }
   neo_js_variable_t fn = argv[0];
@@ -753,7 +753,7 @@ neo_js_variable_t neo_js_array_find_last(neo_js_context_t ctx,
                                          neo_js_variable_t self, uint32_t argc,
                                          neo_js_variable_t *argv) {
   if (!argc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"undefined is not a function");
   }
   neo_js_variable_t fn = argv[0];
@@ -791,7 +791,7 @@ neo_js_variable_t neo_js_array_find_last_index(neo_js_context_t ctx,
                                                uint32_t argc,
                                                neo_js_variable_t *argv) {
   if (!argc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"undefined is not a function");
   }
   neo_js_variable_t fn = argv[0];
@@ -896,7 +896,7 @@ neo_js_variable_t neo_js_array_flat_map(neo_js_context_t ctx,
                                         neo_js_variable_t self, uint32_t argc,
                                         neo_js_variable_t *argv) {
   if (!argc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"undefined is not a function");
   }
   neo_js_variable_t fn = argv[0];
@@ -953,7 +953,7 @@ neo_js_variable_t neo_js_array_for_each(neo_js_context_t ctx,
                                         neo_js_variable_t self, uint32_t argc,
                                         neo_js_variable_t *argv) {
   if (!argc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"undefined is not a function");
   }
   neo_js_variable_t fn = argv[0];
@@ -1130,7 +1130,7 @@ neo_js_variable_t neo_js_array_last_index_of(neo_js_context_t ctx,
 neo_js_variable_t neo_js_array_map(neo_js_context_t ctx, neo_js_variable_t self,
                                    uint32_t argc, neo_js_variable_t *argv) {
   if (!argc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"undefined is not a function");
   }
   neo_js_variable_t fn = argv[0];
@@ -1204,7 +1204,7 @@ neo_js_variable_t neo_js_array_reduce(neo_js_context_t ctx,
                                       neo_js_variable_t self, uint32_t argc,
                                       neo_js_variable_t *argv) {
   if (!argc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"undefined is not a function");
   }
   neo_js_variable_t fn = argv[0];
@@ -1216,7 +1216,8 @@ neo_js_variable_t neo_js_array_reduce(neo_js_context_t ctx,
   double length = neo_js_variable_to_number(vlength)->number;
   if (length == 0 && argc < 2) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Reduce of empty array with no initial value");
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        L"Reduce of empty array with no initial value");
   }
   if (length == 0) {
     return argv[1];
@@ -1250,7 +1251,7 @@ neo_js_variable_t neo_js_array_reduce_right(neo_js_context_t ctx,
                                             uint32_t argc,
                                             neo_js_variable_t *argv) {
   if (!argc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"undefined is not a function");
   }
   neo_js_variable_t fn = argv[0];
@@ -1262,7 +1263,8 @@ neo_js_variable_t neo_js_array_reduce_right(neo_js_context_t ctx,
   double length = neo_js_variable_to_number(vlength)->number;
   if (length == 0 && argc < 2) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Reduce of empty array with no initial value");
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        L"Reduce of empty array with no initial value");
   }
   if (length == 0) {
     return argv[1];
@@ -1409,7 +1411,7 @@ neo_js_variable_t neo_js_array_some(neo_js_context_t ctx,
                                     neo_js_variable_t self, uint32_t argc,
                                     neo_js_variable_t *argv) {
   if (!argc) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"undefined is not a function");
   }
   neo_js_variable_t fn = argv[0];
@@ -1863,7 +1865,7 @@ neo_js_variable_t neo_js_array_with(neo_js_context_t ctx,
       idx += length;
     }
     if (idx < 0 || idx >= length) {
-      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_RANGE,
+      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_RANGE, 0,
                                                 L"Invalid array index");
     }
     neo_js_variable_t value = NULL;
@@ -1908,9 +1910,9 @@ void neo_js_context_init_std_array(neo_js_context_t ctx) {
       ctx, L"[Symbol.species]", neo_js_array_species);
   neo_js_context_def_accessor(
       ctx, neo_js_context_get_std(ctx).array_constructor,
-      neo_js_context_get_field(ctx, neo_js_context_get_std(ctx).symbol_constructor,
-                               neo_js_context_create_string(ctx, L"species"),
-                               NULL),
+      neo_js_context_get_field(
+          ctx, neo_js_context_get_std(ctx).symbol_constructor,
+          neo_js_context_create_string(ctx, L"species"), NULL),
       species, NULL, true, false);
 
   neo_js_variable_t prototype = neo_js_context_get_field(

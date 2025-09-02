@@ -10,7 +10,7 @@ neo_js_variable_t neo_js_set_timeout(neo_js_context_t ctx,
   if (argc < 1 ||
       neo_js_variable_get_type(argv[0])->kind < NEO_JS_TYPE_CALLABLE) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE, 0,
         L"The \" callback\" argument must be of type function.");
   }
   uint32_t timeout = 0;

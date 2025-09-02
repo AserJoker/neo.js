@@ -88,27 +88,27 @@ NEO_JS_CFUNCTION(neo_js_map_group_by) {
   iterator = neo_js_context_get_field(ctx, inventory, iterator, NULL);
   NEO_JS_TRY_AND_THROW(iterator);
   if (neo_js_variable_get_type(iterator)->kind < NEO_JS_TYPE_CALLABLE) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"variable is not iterable");
   }
   neo_js_variable_t generator =
       neo_js_context_call(ctx, iterator, inventory, 0, NULL);
   NEO_JS_TRY_AND_THROW(generator);
   if (neo_js_variable_get_type(iterator)->kind < NEO_JS_TYPE_OBJECT) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"variable is not iterable");
   }
   neo_js_variable_t next = neo_js_context_get_field(
       ctx, generator, neo_js_context_create_string(ctx, L"next"), NULL);
   NEO_JS_TRY_AND_THROW(next);
   if (neo_js_variable_get_type(next)->kind < NEO_JS_TYPE_CALLABLE) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"variable is not iterable");
   }
   neo_js_variable_t res = neo_js_context_call(ctx, next, generator, 0, NULL);
   NEO_JS_TRY_AND_THROW(res);
   if (neo_js_variable_get_type(res)->kind < NEO_JS_TYPE_OBJECT) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"variable is not iterable");
   }
   neo_js_variable_t value = neo_js_context_get_field(
@@ -138,7 +138,7 @@ NEO_JS_CFUNCTION(neo_js_map_group_by) {
     res = neo_js_context_call(ctx, next, generator, 0, NULL);
     NEO_JS_TRY_AND_THROW(res);
     if (neo_js_variable_get_type(res)->kind < NEO_JS_TYPE_OBJECT) {
-      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                                 L"variable is not iterable");
     }
     value = neo_js_context_get_field(

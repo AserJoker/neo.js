@@ -14,7 +14,7 @@ neo_js_variable_t neo_js_symbol_constructor(neo_js_context_t ctx,
                                             uint32_t argc,
                                             neo_js_variable_t *argv) {
   if (neo_js_context_get_call_type(ctx) == NEO_JS_CONSTRUCT_CALL) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               L"Symbol is not a constructor");
   }
   const wchar_t *description = NULL;
@@ -43,7 +43,7 @@ neo_js_variable_t neo_js_symbol_to_string(neo_js_context_t ctx,
       type = neo_js_variable_get_type(symbol);
     } else {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE, 0,
           L" Symbol.prototype.toString requires that 'this' be a Symbol");
     }
   }
@@ -52,7 +52,7 @@ neo_js_variable_t neo_js_symbol_to_string(neo_js_context_t ctx,
   }
   if (type->kind != NEO_JS_TYPE_SYMBOL) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE, 0,
         L" Symbol.prototype.toString requires that 'this' be a Symbol");
   }
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
@@ -81,7 +81,7 @@ neo_js_variable_t neo_js_symbol_to_primitive(neo_js_context_t ctx,
     if (!neo_js_context_instance_of(
             ctx, symbol, neo_js_context_get_std(ctx).symbol_constructor)) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE,
+          ctx, NEO_JS_ERROR_TYPE, 0,
           L" Symbol.prototype.toString requires that 'this' be a Symbol");
     } else {
       return neo_js_context_get_internal(ctx, symbol, L"[[primitive]]");
@@ -89,7 +89,7 @@ neo_js_variable_t neo_js_symbol_to_primitive(neo_js_context_t ctx,
   }
   if (type->kind != NEO_JS_TYPE_SYMBOL) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE, 0,
         L" Symbol.prototype.toString requires that 'this' be a Symbol");
   }
   return symbol;

@@ -17,7 +17,7 @@ static const wchar_t *neo_js_symbol_typeof(neo_js_context_t ctx,
 static neo_js_variable_t neo_js_symbol_to_string(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
   return neo_js_context_create_simple_error(
-      ctx, NEO_JS_ERROR_TYPE, L"Cannot convert a Symbol value to a string");
+      ctx, NEO_JS_ERROR_TYPE, 0, L"Cannot convert a Symbol value to a string");
 }
 
 static neo_js_variable_t neo_js_symbol_to_boolean(neo_js_context_t ctx,
@@ -28,7 +28,7 @@ static neo_js_variable_t neo_js_symbol_to_boolean(neo_js_context_t ctx,
 static neo_js_variable_t neo_js_symbol_to_number(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
   return neo_js_context_create_simple_error(
-      ctx, NEO_JS_ERROR_TYPE, L"Cannot convert a Symbol value to a number");
+      ctx, NEO_JS_ERROR_TYPE, 0, L"Cannot convert a Symbol value to a number");
 }
 
 static neo_js_variable_t neo_js_symbol_to_primitive(neo_js_context_t ctx,
@@ -104,6 +104,7 @@ neo_js_type_t neo_get_js_symbol_type() {
 static void neo_js_symbol_dispose(neo_allocator_t allocator,
                                   neo_js_symbol_t self) {
   neo_allocator_free(allocator, self->description);
+  neo_allocator_free(allocator, self->string);
   neo_js_value_dispose(allocator, &self->value);
 }
 
@@ -121,6 +122,9 @@ neo_js_symbol_t neo_create_js_symbol(neo_allocator_t allocator,
       neo_allocator_alloc(allocator, (len + 1) * sizeof(wchar_t), NULL);
   wcscpy(symbol->description, description);
   symbol->description[len] = 0;
+  symbol->string =
+      neo_allocator_alloc(allocator, sizeof(wchar_t) * (len + 8), NULL);
+  swprintf(symbol->string, len + 16, L"Symbol(%ls)", symbol->description);
   return symbol;
 }
 neo_js_symbol_t neo_js_value_to_symbol(neo_js_value_t value) {

@@ -85,7 +85,7 @@ NEO_JS_CFUNCTION(neo_js_number_to_exponential) {
   if (!primitive ||
       neo_js_variable_get_type(primitive)->kind != NEO_JS_TYPE_NUMBER) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE, 0,
         L"Number.prototype.toExponential requires that 'this' be a Number");
   }
   double val = neo_js_variable_to_number(primitive)->number;
@@ -94,7 +94,7 @@ NEO_JS_CFUNCTION(neo_js_number_to_exponential) {
     int64_t r = neo_js_variable_to_number(f)->number;
     if (r < 0 || r > 100) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_RANGE,
+          ctx, NEO_JS_ERROR_RANGE, 0,
           L"toExponential() argument must be between 0 and 100");
     }
     wchar_t format[16];
@@ -113,7 +113,7 @@ NEO_JS_CFUNCTION(neo_js_number_to_fixed) {
   if (!primitive ||
       neo_js_variable_get_type(primitive)->kind != NEO_JS_TYPE_NUMBER) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE, 0,
         L"Number.prototype.toFixed requires that 'this' be a Number");
   }
   double val = neo_js_variable_to_number(primitive)->number;
@@ -122,7 +122,7 @@ NEO_JS_CFUNCTION(neo_js_number_to_fixed) {
     int64_t r = neo_js_variable_to_number(f)->number;
     if (r < 0 || r > 100) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_RANGE,
+          ctx, NEO_JS_ERROR_RANGE, 0,
           L"toFixed() argument must be between 0 and 100");
     }
     wchar_t format[16];
@@ -147,7 +147,7 @@ NEO_JS_CFUNCTION(neo_js_number_to_precision) {
   if (!primitive ||
       neo_js_variable_get_type(primitive)->kind != NEO_JS_TYPE_NUMBER) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE, 0,
         L"Number.prototype.toPrecision requires that 'this' be a Number");
   }
   double val = neo_js_variable_to_number(primitive)->number;
@@ -156,7 +156,7 @@ NEO_JS_CFUNCTION(neo_js_number_to_precision) {
     int64_t r = neo_js_variable_to_number(f)->number;
     if (r < 0 || r > 100) {
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_RANGE,
+          ctx, NEO_JS_ERROR_RANGE, 0,
           L"toPrecision() argument must be between 0 and 100");
     }
     wchar_t format[16];
@@ -175,7 +175,7 @@ NEO_JS_CFUNCTION(neo_js_number_to_string) {
   if (!primitive ||
       neo_js_variable_get_type(primitive)->kind != NEO_JS_TYPE_NUMBER) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE, 0,
         L"Number.prototype.toString requires that 'this' be a Number");
   }
   if (!argc) {
@@ -186,7 +186,7 @@ NEO_JS_CFUNCTION(neo_js_number_to_string) {
   int64_t base = neo_js_variable_to_number(radix)->number;
   if (base < 2 || base > 36) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_RANGE,
+        ctx, NEO_JS_ERROR_RANGE, 0,
         L"toString() radix argument must be between 2 and 36");
   }
   int64_t precision = 16;
@@ -233,7 +233,7 @@ NEO_JS_CFUNCTION(neo_js_number_value_of) {
   if (!primitive ||
       neo_js_variable_get_type(primitive)->kind != NEO_JS_TYPE_NUMBER) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
+        ctx, NEO_JS_ERROR_TYPE, 0,
         L"Number.prototype.valueOf requires that 'this' be a Number");
   }
   return primitive;

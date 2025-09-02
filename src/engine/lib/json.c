@@ -22,7 +22,7 @@ neo_js_json_variable_stringify(neo_js_context_t ctx, neo_js_variable_t variable,
                                neo_hash_map_t cache, size_t depth) {
   if (neo_hash_map_has(cache, variable, ctx, ctx)) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"Converting circular structure to JSON");
+        ctx, NEO_JS_ERROR_TYPE, 0, L"Converting circular structure to JSON");
   }
   neo_hash_map_set(cache, variable, variable, ctx, ctx);
   if (neo_js_variable_get_type(variable)->kind >= NEO_JS_TYPE_CALLABLE) {
@@ -46,7 +46,7 @@ neo_js_json_variable_stringify(neo_js_context_t ctx, neo_js_variable_t variable,
   }
   if (neo_js_variable_get_type(variable)->kind == NEO_JS_TYPE_BIGINT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, L"BigInt value can't be serialized in JSON");
+        ctx, NEO_JS_ERROR_TYPE, 0, L"BigInt value can't be serialized in JSON");
   }
   if (neo_js_variable_get_type(variable)->kind == NEO_JS_TYPE_NULL) {
     return neo_js_context_create_string(ctx, L"null");
@@ -263,7 +263,8 @@ neo_js_json_variable_stringify(neo_js_context_t ctx, neo_js_variable_t variable,
     return neo_js_context_create_string(ctx, s);
   }
   return neo_js_context_create_simple_error(
-      ctx, NEO_JS_ERROR_INTERNAL, L"Cannot convert internal variable to json");
+      ctx, NEO_JS_ERROR_INTERNAL, 0,
+      L"Cannot convert internal variable to json");
 }
 
 static uint32_t neo_js_json_hash(neo_js_variable_t variable, uint32_t max,
@@ -442,7 +443,8 @@ static bool neo_js_json_read_string(neo_position_t *position) {
   do {                                                                         \
     wchar_t msg[1024];                                                         \
     swprintf(msg, 1024, message, ##__VA_ARGS__);                               \
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_SYNTAX, msg);  \
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_SYNTAX, 0,     \
+                                              msg);                            \
   } while (0)
 
 neo_js_variable_t neo_js_json_read_variable(neo_js_context_t ctx,
