@@ -79,7 +79,26 @@ NEO_JS_CFUNCTION(neo_js_string_raw) {
   neo_js_context_defer_free(ctx, result);
   return neo_js_context_create_string(ctx, result);
 }
-NEO_JS_CFUNCTION(neo_js_string_constructor) { return self; }
+NEO_JS_CFUNCTION(neo_js_string_constructor) {
+  neo_js_variable_t src = NULL;
+  if (argc) {
+    src = argv[0];
+  } else {
+    src = neo_js_context_create_undefined(ctx);
+  }
+  if (neo_js_context_get_call_type(ctx) == NEO_JS_FUNCTION_CALL) {
+    if (neo_js_variable_get_type(src)->kind == NEO_JS_TYPE_SYMBOL) {
+      return neo_js_context_create_string(
+          ctx, neo_js_variable_to_symbol(src)->string);
+    } else {
+      return neo_js_context_to_string(ctx, src);
+    }
+  }
+  src = neo_js_context_to_string(ctx, src);
+  NEO_JS_TRY_AND_THROW(src);
+  neo_js_context_set_internal(ctx, self, L"[[primitive]]", src);
+  return self;
+}
 NEO_JS_CFUNCTION(neo_js_string_at);
 NEO_JS_CFUNCTION(neo_js_string_char_at);
 NEO_JS_CFUNCTION(neo_js_string_char_code_at);

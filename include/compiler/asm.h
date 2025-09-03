@@ -137,6 +137,7 @@ typedef enum _neo_asm_code_t {
   NEO_ASM_MEMBER_TAG,
   NEO_ASM_PRIVATE_TAG,
   NEO_ASM_SUPER_MEMBER_TAG,
+  NEO_ASM_DEL_FIELD,
 } neo_asm_code_t;
 
 #ifdef __cplusplus

@@ -1,5 +1,7 @@
 #include "engine/std/array.h"
+#include "core/allocator.h"
 #include "core/list.h"
+#include "engine/basetype/array.h"
 #include "engine/basetype/boolean.h"
 #include "engine/basetype/interrupt.h"
 #include "engine/basetype/number.h"
@@ -271,6 +273,22 @@ neo_js_variable_t neo_js_array_constructor(neo_js_context_t ctx,
                                            neo_js_variable_t self,
                                            uint32_t argc,
                                            neo_js_variable_t *argv) {
+  neo_js_variable_t constructor = neo_js_object_get_constructor(ctx, self);
+  neo_js_variable_t prototype = neo_js_object_get_prototype(ctx, self);
+  neo_js_chunk_t hconstructor = neo_js_variable_get_chunk(constructor);
+  neo_js_chunk_t hprototype = neo_js_variable_get_chunk(prototype);
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  neo_js_array_t arr = neo_create_js_array(allocator);
+  neo_js_chunk_t harr = neo_create_js_chunk(allocator, &arr->object.value);
+  arr->object.constructor = hconstructor;
+  arr->object.prototype = hprototype;
+  neo_js_chunk_add_parent(hconstructor, harr);
+  neo_js_chunk_add_parent(hprototype, harr);
+  self = neo_js_context_create_variable(ctx, harr, NULL);
+  neo_js_context_def_field(
+      ctx, self, neo_js_context_create_string(ctx, L"length"),
+      neo_js_context_create_number(ctx, 0), false, false, true);
+
   if (argc == 1 &&
       neo_js_variable_get_type(argv[0])->kind == NEO_JS_TYPE_NUMBER) {
     uint32_t length = 0;
@@ -281,24 +299,24 @@ neo_js_variable_t neo_js_array_constructor(neo_js_context_t ctx,
     } else if (!isnan(number->number)) {
       length = number->number;
     }
-    neo_js_variable_t array = neo_js_context_create_array(ctx);
     neo_js_variable_t error = neo_js_context_set_field(
-        ctx, array, neo_js_context_create_string(ctx, L"length"),
+        ctx, self, neo_js_context_create_string(ctx, L"length"),
         neo_js_context_create_number(ctx, length), NULL);
     if (neo_js_variable_get_type(error)->kind == NEO_JS_TYPE_ERROR) {
       return error;
     }
-    return array;
+    return self;
   }
-  neo_js_variable_t array = neo_js_context_create_array(ctx);
   for (uint32_t idx = 0; idx < argc; idx++) {
     neo_js_variable_t error = neo_js_context_set_field(
-        ctx, array, neo_js_context_create_number(ctx, idx), argv[idx], NULL);
+        ctx, self, neo_js_context_create_number(ctx, idx), argv[idx], NULL);
     if (neo_js_variable_get_type(error)->kind == NEO_JS_TYPE_ERROR) {
       return error;
     }
   }
-  return array;
+  neo_js_variable_t len = neo_js_context_get_field(
+      ctx, self, neo_js_context_create_string(ctx, L"length"), NULL);
+  return self;
 }
 
 neo_js_variable_t neo_js_array_at(neo_js_context_t ctx, neo_js_variable_t self,

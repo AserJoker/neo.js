@@ -40,35 +40,7 @@ static neo_js_variable_t neo_js_undefined_to_primitive(neo_js_context_t ctx,
 
 static neo_js_variable_t neo_js_undefined_to_object(neo_js_context_t ctx,
                                                     neo_js_variable_t self) {
-  return neo_js_context_create_object(ctx, NULL);
-}
-
-static neo_js_variable_t
-neo_js_undefined_get_field(neo_js_context_t ctx, neo_js_variable_t self,
-                           neo_js_variable_t field,
-                           neo_js_variable_t receiver) {
-  const wchar_t *field_name = neo_js_context_to_error_name(ctx, field);
-  size_t len = wcslen(field_name) + 64;
-  return neo_js_context_create_simple_error(
-      ctx, NEO_JS_ERROR_TYPE, len,
-      L"Cannot read properties of undefined (reading '%ls')", field_name);
-}
-static neo_js_variable_t
-neo_js_undefined_set_field(neo_js_context_t ctx, neo_js_variable_t self,
-                           neo_js_variable_t field, neo_js_variable_t value,
-                           neo_js_variable_t receiver) {
-  const wchar_t *field_name = neo_js_context_to_error_name(ctx, field);
-  size_t len = wcslen(field_name) + 64;
-  return neo_js_context_create_simple_error(
-      ctx, NEO_JS_ERROR_TYPE, len,
-      L"Cannot read properties of undefined (reading '%ls')", field_name);
-}
-static neo_js_variable_t neo_js_undefined_del_field(neo_js_context_t ctx,
-                                                    neo_js_variable_t self,
-                                                    neo_js_variable_t field) {
-  return neo_js_context_create_simple_error(
-      ctx, NEO_JS_ERROR_TYPE, 0,
-      L"Cannot convert undefined or undefined to object");
+  return self;
 }
 
 static bool neo_js_undefined_is_equal(neo_js_context_t ctx,
@@ -91,12 +63,18 @@ static neo_js_variable_t neo_js_undefined_copy(neo_js_context_t ctx,
 
 neo_js_type_t neo_get_js_undefined_type() {
   static struct _neo_js_type_t type = {
-      NEO_JS_TYPE_UNDEFINED,      neo_js_undefined_typeof,
-      neo_js_undefined_to_string, neo_js_undefined_to_boolean,
-      neo_js_undefined_to_number, neo_js_undefined_to_primitive,
-      neo_js_undefined_to_object, neo_js_undefined_get_field,
-      neo_js_undefined_set_field, neo_js_undefined_del_field,
-      neo_js_undefined_is_equal,  neo_js_undefined_copy,
+      NEO_JS_TYPE_UNDEFINED,
+      neo_js_undefined_typeof,
+      neo_js_undefined_to_string,
+      neo_js_undefined_to_boolean,
+      neo_js_undefined_to_number,
+      neo_js_undefined_to_primitive,
+      neo_js_undefined_to_object,
+      NULL,
+      NULL,
+      NULL,
+      neo_js_undefined_is_equal,
+      neo_js_undefined_copy,
   };
   return &type;
 }

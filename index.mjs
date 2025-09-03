@@ -1,2 +1,3 @@
 'use strict'
-const set = new Set()
+let a = 1
+delete a

@@ -166,6 +166,7 @@ static void neo_write_context_dispose(neo_allocator_t allocator,
   while (self->scope) {
     neo_write_scope_t scope = self->scope;
     self->scope = scope->parent;
+    neo_allocator_free(allocator, scope);
   }
 }
 neo_write_context_t neo_create_write_context(neo_allocator_t allocator,

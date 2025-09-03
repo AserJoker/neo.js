@@ -631,6 +631,9 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       uint32_t column = neo_program_get_integer(self, &offset);
       fprintf(fp, "NEO_ASM_SUPER_MEMBER_TAG %d,%d\n", line, column);
     } break;
+    case NEO_ASM_DEL_FIELD: {
+      fprintf(fp, "NEO_ASM_DEL_FIELD\n");
+    } break;
     default:
       THROW("Invalid operator");
       return;

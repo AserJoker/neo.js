@@ -53,30 +53,6 @@ static neo_js_variable_t neo_js_boolean_to_object(neo_js_context_t ctx,
   return neo_js_context_construct(ctx, constructor, 1, argv);
 }
 
-static neo_js_variable_t neo_js_boolean_get_field(neo_js_context_t ctx,
-                                                  neo_js_variable_t object,
-                                                  neo_js_variable_t field,
-                                                  neo_js_variable_t receiver) {
-  return neo_js_context_get_field(ctx, neo_js_context_to_object(ctx, object),
-                                  field, receiver);
-}
-
-static neo_js_variable_t neo_js_boolean_set_field(neo_js_context_t ctx,
-                                                  neo_js_variable_t object,
-                                                  neo_js_variable_t field,
-                                                  neo_js_variable_t value,
-                                                  neo_js_variable_t receiver) {
-  return neo_js_context_set_field(ctx, neo_js_context_to_object(ctx, object),
-                                  field, value, receiver);
-}
-
-static neo_js_variable_t neo_js_boolean_del_field(neo_js_context_t ctx,
-                                                  neo_js_variable_t object,
-                                                  neo_js_variable_t field) {
-  return neo_js_context_del_field(ctx, neo_js_context_to_object(ctx, object),
-                                  field);
-}
-
 static bool neo_js_boolean_is_equal(neo_js_context_t ctx,
                                     neo_js_variable_t self,
                                     neo_js_variable_t another) {
@@ -106,12 +82,18 @@ static neo_js_variable_t neo_js_boolean_copy(neo_js_context_t ctx,
 
 neo_js_type_t neo_get_js_boolean_type() {
   static struct _neo_js_type_t type = {
-      NEO_JS_TYPE_BOOLEAN,      neo_js_boolean_typeof,
-      neo_js_boolean_to_string, neo_js_boolean_to_boolean,
-      neo_js_boolean_to_number, neo_js_boolean_to_primitive,
-      neo_js_boolean_to_object, neo_js_boolean_get_field,
-      neo_js_boolean_set_field, neo_js_boolean_del_field,
-      neo_js_boolean_is_equal,  neo_js_boolean_copy,
+      NEO_JS_TYPE_BOOLEAN,
+      neo_js_boolean_typeof,
+      neo_js_boolean_to_string,
+      neo_js_boolean_to_boolean,
+      neo_js_boolean_to_number,
+      neo_js_boolean_to_primitive,
+      neo_js_boolean_to_object,
+      NULL,
+      NULL,
+      NULL,
+      neo_js_boolean_is_equal,
+      neo_js_boolean_copy,
   };
   return &type;
 }

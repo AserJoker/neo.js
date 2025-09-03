@@ -56,52 +56,6 @@ static neo_js_variable_t neo_js_string_to_object(neo_js_context_t ctx,
       ctx, neo_js_context_get_std(ctx).string_constructor, 1, &self);
 }
 
-static neo_js_variable_t neo_js_string_get_field(neo_js_context_t ctx,
-                                                 neo_js_variable_t self,
-                                                 neo_js_variable_t field,
-                                                 neo_js_variable_t receiver) {
-  if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_STRING) {
-    neo_js_string_t string =
-        neo_js_value_to_string(neo_js_variable_get_value(field));
-    if (wcscmp(string->string, L"length") == 0) {
-      neo_js_string_t str = neo_js_variable_to_string(self);
-      return neo_js_context_create_number(ctx, wcslen(str->string));
-    }
-  }
-  return neo_js_context_get_field(ctx, neo_js_string_to_object(ctx, self),
-                                  field, receiver);
-}
-
-static neo_js_variable_t neo_js_string_set_field(neo_js_context_t ctx,
-                                                 neo_js_variable_t self,
-                                                 neo_js_variable_t field,
-                                                 neo_js_variable_t value,
-                                                 neo_js_variable_t receiver) {
-  if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_STRING) {
-    neo_js_string_t string =
-        neo_js_value_to_string(neo_js_variable_get_value(field));
-    if (wcscmp(string->string, L"length") == 0) {
-      return neo_js_context_create_undefined(ctx);
-    }
-  }
-  return neo_js_context_set_field(ctx, neo_js_string_to_object(ctx, self),
-                                  field, value, receiver);
-}
-
-static neo_js_variable_t neo_js_string_del_field(neo_js_context_t ctx,
-                                                 neo_js_variable_t self,
-                                                 neo_js_variable_t field) {
-  if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_STRING) {
-    neo_js_string_t string =
-        neo_js_value_to_string(neo_js_variable_get_value(field));
-    if (wcscmp(string->string, L"length") == 0) {
-      return neo_js_context_create_boolean(ctx, false);
-    }
-  }
-  return neo_js_context_del_field(ctx, neo_js_string_to_object(ctx, self),
-                                  field);
-}
-
 static bool neo_js_string_is_equal(neo_js_context_t ctx, neo_js_variable_t self,
                                    neo_js_variable_t another) {
   neo_js_value_t val1 = neo_js_variable_get_value(self);
@@ -125,12 +79,18 @@ static neo_js_variable_t neo_js_string_copy(neo_js_context_t ctx,
 }
 neo_js_type_t neo_get_js_string_type() {
   static struct _neo_js_type_t type = {
-      NEO_JS_TYPE_STRING,      neo_js_string_typeof,
-      neo_js_string_to_string, neo_js_string_to_boolean,
-      neo_js_string_to_number, neo_js_string_to_primitive,
-      neo_js_string_to_object, neo_js_string_get_field,
-      neo_js_string_set_field, neo_js_string_del_field,
-      neo_js_string_is_equal,  neo_js_string_copy,
+      NEO_JS_TYPE_STRING,
+      neo_js_string_typeof,
+      neo_js_string_to_string,
+      neo_js_string_to_boolean,
+      neo_js_string_to_number,
+      neo_js_string_to_primitive,
+      neo_js_string_to_object,
+      NULL,
+      NULL,
+      NULL,
+      neo_js_string_is_equal,
+      neo_js_string_copy,
   };
   return &type;
 }

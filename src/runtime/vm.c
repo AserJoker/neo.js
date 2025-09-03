@@ -1767,12 +1767,9 @@ void neo_js_vm_sne(neo_js_vm_t vm, neo_program_t program) {
   }
 }
 void neo_js_vm_del(neo_js_vm_t vm, neo_program_t program) {
-  neo_js_variable_t key = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_list_pop(vm->stack);
-  neo_js_variable_t object = neo_list_node_get(neo_list_get_last(vm->stack));
-  neo_list_pop(vm->stack);
-  NEO_VM_CHECK_AND_THROW(neo_js_context_del_field(vm->ctx, object, key), vm,
-                         program);
+  neo_js_variable_t res = neo_js_context_create_boolean(vm->ctx, true);
+  neo_list_push(vm->stack, res);
 }
 
 void neo_js_vm_gt(neo_js_vm_t vm, neo_program_t program) {
@@ -2266,6 +2263,15 @@ void neo_js_vm_super_member_tag(neo_js_vm_t vm, neo_program_t program) {
   neo_js_vm_super_member_call(vm, program);
 }
 
+void neo_js_vm_del_field(neo_js_vm_t vm, neo_program_t program) {
+  neo_js_variable_t key = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  neo_js_variable_t object = neo_list_node_get(neo_list_get_last(vm->stack));
+  neo_list_pop(vm->stack);
+  NEO_VM_CHECK_AND_THROW(neo_js_context_del_field(vm->ctx, object, key), vm,
+                         program);
+}
+
 const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_push_scope,            // NEO_ASM_PUSH_SCOPE
     neo_js_vm_pop_scope,             // NEO_ASM_POP_SCOPE
@@ -2399,6 +2405,7 @@ const neo_js_vm_cmd_fn_t cmds[] = {
     neo_js_vm_member_tag,            // NEO_ASM_MEMBER_TAG
     neo_js_vm_private_tag,           // NEO_ASM_PRIVATE_TAG
     neo_js_vm_super_member_tag,      // NEO_ASM_SUPER_MEMBER_TAG
+    neo_js_vm_del_field,             // NEO_ASM_DEL_FIELD
 };
 
 neo_js_variable_t neo_js_vm_exec(neo_js_vm_t vm, neo_program_t program) {

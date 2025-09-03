@@ -12,7 +12,6 @@ typedef struct _neo_js_array_t *neo_js_array_t;
 
 struct _neo_js_array_t {
   struct _neo_js_object_t object;
-  size_t length;
 };
 
 neo_js_type_t neo_get_js_array_type();
