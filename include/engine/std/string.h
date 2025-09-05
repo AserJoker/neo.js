@@ -11,7 +11,7 @@ NEO_JS_CFUNCTION(neo_js_string_constructor);
 NEO_JS_CFUNCTION(neo_js_string_at);
 NEO_JS_CFUNCTION(neo_js_string_char_at);
 NEO_JS_CFUNCTION(neo_js_string_char_code_at);
-NEO_JS_CFUNCTION(neo_js_string_char_point_at);
+NEO_JS_CFUNCTION(neo_js_string_code_point_at);
 NEO_JS_CFUNCTION(neo_js_string_concat);
 NEO_JS_CFUNCTION(neo_js_string_ends_with);
 NEO_JS_CFUNCTION(neo_js_string_includes);

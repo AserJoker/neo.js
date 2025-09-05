@@ -27,48 +27,43 @@ neo_utf8_char neo_utf8_read_char(const char *str) {
 
 uint32_t neo_utf8_char_to_utf32(neo_utf8_char chr) {
   uint32_t value = 0;
-  if (chr.end - chr.begin == 1) {
-    value = *chr.begin;
-  } else if (chr.end - chr.begin == 2) {
-    value = *chr.begin & 0x1f;
-    value <<= 6;
-    value |= *(chr.begin + 1) & 0x3f;
-  } else if (chr.end - chr.begin == 3) {
-    value = *chr.begin & 0xf;
-    value <<= 6;
-    value |= *(chr.begin + 1) & 0x3f;
-    value <<= 6;
-    value |= *(chr.begin + 2) & 0x3f;
-  } else if (chr.end - chr.begin == 4) {
-    value = *chr.begin & 0x7;
-    value <<= 6;
-    value = *(chr.begin + 1) & 0xf;
-    value <<= 6;
-    value |= *(chr.begin + 2) & 0x3f;
-    value <<= 6;
-    value |= *(chr.begin + 3) & 0x3f;
-  } else if (chr.end - chr.begin == 5) {
-    value = *chr.begin & 0x2;
-    value <<= 6;
-    value = *(chr.begin + 1) & 0x3f;
-    value <<= 6;
-    value = *(chr.begin + 2) & 0x3f;
-    value <<= 6;
-    value |= *(chr.begin + 3) & 0x3f;
-    value <<= 6;
-    value |= *(chr.begin + 4) & 0x3f;
-  } else if (chr.end - chr.begin == 6) {
-    value = *chr.begin & 0x1;
-    value <<= 6;
-    value = *(chr.begin + 1) & 0x3f;
-    value <<= 6;
-    value = *(chr.begin + 2) & 0x3f;
-    value <<= 6;
-    value |= *(chr.begin + 3) & 0x3f;
-    value <<= 6;
-    value |= *(chr.begin + 4) & 0x3f;
+  const char *s = chr.begin;
+  if ((*s & 0b10000000) == 0b00000000) {
+    value = *s;
+  } else if ((*s & 0b11100000) == 0b11000000) {
+    value = ((s[0] & 0b00011111) << 6) | (s[1] & 0b00111111);
+  } else if ((*s & 0b11110000) == 0b11100000) {
+    value = ((s[0] & 0b00001111) << 12) | ((s[1] & 0b00111111) << 6) |
+            (s[2] & 0b00111111);
+  } else if ((*s & 0b11111000) == 0b11110000) {
+    value = ((s[0] & 0b00000111) << 18) | ((s[1] & 0b00111111) << 12) |
+            ((s[2] & 0b00111111) << 6) | (s[3] & 0b00111111);
   }
   return value;
+}
+char *neo_utf32_to_utf8(neo_allocator_t allocator, uint32_t utf32) {
+  char *s = neo_allocator_alloc(allocator, 5, NULL);
+  s[0] = 0;
+  if (utf32 < 0x7f) {
+    s[0] = (uint8_t)utf32;
+    s[1] = 0;
+  } else if (utf32 < 0x7ff) {
+    s[0] = (utf32 >> 6) | 0xC0;
+    s[1] = (utf32 & 0x3F) | 0x80;
+    s[2] = 0;
+  } else if (utf32 < 0xFFFF) {
+    s[0] = (utf32 >> 12) | 0xE0;
+    s[1] = ((utf32 >> 6) & 0x3F) | 0x80;
+    s[2] = (utf32 & 0x3F) | 0x80;
+    s[3] = 0;
+  } else if (utf32 < 0x10FFFF) {
+    s[0] = (utf32 >> 18) | 0xF0;
+    s[1] = ((utf32 >> 12) & 0x3F) | 0x80;
+    s[2] = ((utf32 >> 6) & 0x3F) | 0x80;
+    s[3] = (utf32 & 0x3F) | 0x80;
+    s[4] = 0;
+  }
+  return s;
 }
 
 char *neo_utf8_char_to_string(neo_allocator_t allocator, neo_utf8_char chr) {

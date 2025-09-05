@@ -4,6 +4,7 @@
 #include "engine/context.h"
 #include "engine/type.h"
 #include "engine/variable.h"
+#include <math.h>
 #include <stdint.h>
 #include <wchar.h>
 
@@ -104,10 +105,121 @@ NEO_JS_CFUNCTION(neo_js_string_constructor) {
       false, false, false);
   return self;
 }
-NEO_JS_CFUNCTION(neo_js_string_at);
-NEO_JS_CFUNCTION(neo_js_string_char_at);
-NEO_JS_CFUNCTION(neo_js_string_char_code_at);
-NEO_JS_CFUNCTION(neo_js_string_char_point_at);
+NEO_JS_CFUNCTION(neo_js_string_at) {
+  if (neo_js_variable_get_type(self)->kind == NEO_JS_TYPE_UNDEFINED ||
+      neo_js_variable_get_type(self)->kind == NEO_JS_TYPE_NULL) {
+    return neo_js_context_create_simple_error(
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        L"String.prototype.at called on null or undefined");
+  }
+  self = neo_js_context_to_string(ctx, self);
+  NEO_JS_TRY_AND_THROW(self);
+  const wchar_t *s = neo_js_variable_to_string(self)->string;
+  size_t len = wcslen(s);
+  int64_t idx = 0;
+  if (argc) {
+    neo_js_variable_t index = neo_js_context_to_integer(ctx, argv[0]);
+    NEO_JS_TRY_AND_THROW(index);
+    idx = neo_js_variable_to_number(index)->number;
+  }
+  wchar_t res[2] = {0};
+  if (idx < 0) {
+    if (idx <= -len) {
+      return neo_js_context_create_undefined(ctx);
+    }
+    res[0] = s[len + idx];
+  } else {
+    if (idx >= len) {
+      return neo_js_context_create_undefined(ctx);
+    }
+    res[0] = s[idx];
+  }
+  return neo_js_context_create_string(ctx, res);
+}
+NEO_JS_CFUNCTION(neo_js_string_char_at) {
+  if (neo_js_variable_get_type(self)->kind == NEO_JS_TYPE_UNDEFINED ||
+      neo_js_variable_get_type(self)->kind == NEO_JS_TYPE_NULL) {
+    return neo_js_context_create_simple_error(
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        L"String.prototype.charAt called on null or undefined");
+  }
+  self = neo_js_context_to_string(ctx, self);
+  NEO_JS_TRY_AND_THROW(self);
+  const wchar_t *s = neo_js_variable_to_string(self)->string;
+  size_t len = wcslen(s);
+  int64_t idx = 0;
+  if (argc) {
+    neo_js_variable_t index = neo_js_context_to_integer(ctx, argv[0]);
+    NEO_JS_TRY_AND_THROW(index);
+    idx = neo_js_variable_to_number(index)->number;
+  }
+  wchar_t res[2] = {0};
+  if (idx >= 0 && idx < len) {
+    res[0] = s[idx];
+    return neo_js_context_create_string(ctx, res);
+  }
+  return neo_js_context_create_string(ctx, L"");
+}
+NEO_JS_CFUNCTION(neo_js_string_char_code_at) {
+  if (neo_js_variable_get_type(self)->kind == NEO_JS_TYPE_UNDEFINED ||
+      neo_js_variable_get_type(self)->kind == NEO_JS_TYPE_NULL) {
+    return neo_js_context_create_simple_error(
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        L"String.prototype.charCodeAt called on null or undefined");
+  }
+  self = neo_js_context_to_string(ctx, self);
+  NEO_JS_TRY_AND_THROW(self);
+  const wchar_t *s = neo_js_variable_to_string(self)->string;
+  size_t len = wcslen(s);
+  int64_t idx = 0;
+  if (argc) {
+    neo_js_variable_t index = neo_js_context_to_integer(ctx, argv[0]);
+    NEO_JS_TRY_AND_THROW(index);
+    idx = neo_js_variable_to_number(index)->number;
+  }
+  if (idx >= 0 && idx < len) {
+    return neo_js_context_create_number(ctx, s[idx]);
+  }
+  return neo_js_context_create_number(ctx, NAN);
+}
+NEO_JS_CFUNCTION(neo_js_string_code_point_at) {
+  if (neo_js_variable_get_type(self)->kind == NEO_JS_TYPE_UNDEFINED ||
+      neo_js_variable_get_type(self)->kind == NEO_JS_TYPE_NULL) {
+    return neo_js_context_create_simple_error(
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        L"String.prototype.charCodeAt called on null or undefined");
+  }
+  self = neo_js_context_to_string(ctx, self);
+  NEO_JS_TRY_AND_THROW(self);
+  const wchar_t *s = neo_js_variable_to_string(self)->string;
+  int64_t idx = 0;
+  if (argc) {
+    neo_js_variable_t index = neo_js_context_to_integer(ctx, argv[0]);
+    NEO_JS_TRY_AND_THROW(index);
+    idx = neo_js_variable_to_number(index)->number;
+  }
+  if (idx < 0) {
+    return neo_js_context_create_number(ctx, NAN);
+  }
+  int64_t i = 0;
+  uint32_t utf32 = 0;
+  while (i < idx) {
+    if (!s[i]) {
+      return neo_js_context_create_number(ctx, NAN);
+    }
+    if (s[i] >= 0xd800 && s[i] <= 0xdfff) {
+      i += 2;
+    } else {
+      i++;
+    }
+  }
+  utf32 = s[i];
+  if (utf32 >= 0xd800 && utf32 <= 0xdfff) {
+    uint16_t next = s[i + 1];
+    utf32 = (next & 0x03ff) + (((utf32 & 0x03ff) + 0x40) << 10);
+  }
+  return neo_js_context_create_number(ctx, utf32);
+}
 NEO_JS_CFUNCTION(neo_js_string_concat);
 NEO_JS_CFUNCTION(neo_js_string_ends_with);
 NEO_JS_CFUNCTION(neo_js_string_includes);
@@ -154,12 +266,11 @@ void neo_js_context_init_std_string(neo_js_context_t ctx) {
                     neo_js_string_from_code_point);
   NEO_JS_SET_METHOD(ctx, constructor, L"raw", neo_js_string_raw);
 
-  //   NEO_JS_SET_METHOD(ctx, prototype, L"at", neo_js_string_at);
-  //   NEO_JS_SET_METHOD(ctx, prototype, L"charAt", neo_js_string_char_at);
-  //   NEO_JS_SET_METHOD(ctx, prototype, L"charCodeAt",
-  //   neo_js_string_char_code_at); NEO_JS_SET_METHOD(ctx, prototype,
-  //   L"charPointAt",
-  //                     neo_js_string_char_point_at);
+  NEO_JS_SET_METHOD(ctx, prototype, L"at", neo_js_string_at);
+  NEO_JS_SET_METHOD(ctx, prototype, L"charAt", neo_js_string_char_at);
+  NEO_JS_SET_METHOD(ctx, prototype, L"charCodeAt", neo_js_string_char_code_at);
+  NEO_JS_SET_METHOD(ctx, prototype, L"codePointAt",
+                    neo_js_string_code_point_at);
   //   NEO_JS_SET_METHOD(ctx, prototype, L"concat", neo_js_string_concat);
   //   NEO_JS_SET_METHOD(ctx, prototype, L"endsWith", neo_js_string_ends_with);
   //   NEO_JS_SET_METHOD(ctx, prototype, L"includes", neo_js_string_includes);

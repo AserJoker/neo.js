@@ -1,5 +1,6 @@
 #ifndef _H_NEO_CORE_UNICODE_
 #define _H_NEO_CORE_UNICODE_
+#include <wchar.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -17,9 +18,11 @@ neo_utf8_char neo_utf8_read_char(const char *str);
 
 uint32_t neo_utf8_char_to_utf32(neo_utf8_char chr);
 
+char *neo_utf32_to_utf8(neo_allocator_t allocator, uint32_t utf32);
+
 char *neo_utf8_char_to_string(neo_allocator_t allocator, neo_utf8_char chr);
 
-wchar_t *neo_utf8_char_to_wstring(neo_allocator_t allocator, neo_utf8_char chr);
+uint32_t *neo_utf16_to_utf32(neo_allocator_t allocator, const wchar_t *wstring);
 
 char *neo_wstring_to_string(neo_allocator_t allocator, const wchar_t *wstring);
 

@@ -2,7 +2,13 @@
 #define _H_CORE_STRING_
 #include "core/allocator.h"
 #include <stdbool.h>
+#include <stdint.h>
 #include <wchar.h>
+
+typedef uint16_t char16;
+typedef uint8_t char8;
+typedef uint32_t char32;
+
 char *neo_string_concat(neo_allocator_t allocator, char *src, size_t *max,
                         const char *str);
 wchar_t *neo_wstring_concat(neo_allocator_t allocator, wchar_t *src,
