@@ -335,6 +335,12 @@ void neo_js_context_init_std(neo_js_context_t ctx) {
   ctx->std.number_constructor = neo_js_context_create_cfunction(
       ctx, L"Number", neo_js_number_constructor);
 
+  ctx->std.string_constructor = neo_js_context_create_cfunction(
+      ctx, L"String", &neo_js_string_constructor);
+
+  ctx->std.set_constructor = neo_js_context_create_cfunction(
+      ctx, L"Set", &neo_js_set_constructor);
+
   ctx->std.global = neo_js_context_create_object(ctx, NULL);
 
   neo_js_context_push_scope(ctx);

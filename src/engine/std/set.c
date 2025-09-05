@@ -682,8 +682,7 @@ NEO_JS_CFUNCTION(neo_js_set_iterator) {
   return neo_js_set_values(ctx, self, argc, argv);
 }
 void neo_js_context_init_std_set(neo_js_context_t ctx) {
-  neo_js_variable_t constructor =
-      neo_js_context_create_cfunction(ctx, L"Set", neo_js_set_constructor);
+  neo_js_variable_t constructor = neo_js_context_get_std(ctx).set_constructor;
 
   neo_js_variable_t global = neo_js_context_get_global(ctx);
 
@@ -712,6 +711,4 @@ void neo_js_context_init_std_set(neo_js_context_t ctx) {
   NEO_JS_SET_METHOD(ctx, prototype, L"union", neo_js_set_union);
   NEO_JS_SET_METHOD(ctx, prototype, L"values", neo_js_set_values);
   NEO_JS_SET_SYMBOL_METHOD(ctx, prototype, L"iterator", neo_js_set_iterator);
-  neo_js_std_t std = neo_js_context_get_std(ctx);
-  std.set_constructor = constructor;
 }

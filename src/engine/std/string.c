@@ -97,6 +97,11 @@ NEO_JS_CFUNCTION(neo_js_string_constructor) {
   src = neo_js_context_to_string(ctx, src);
   NEO_JS_TRY_AND_THROW(src);
   neo_js_context_set_internal(ctx, self, L"[[primitive]]", src);
+  neo_js_context_def_field(
+      ctx, self, neo_js_context_create_string(ctx, L"length"),
+      neo_js_context_create_number(
+          ctx, wcslen(neo_js_variable_to_string(src)->string)),
+      false, false, false);
   return self;
 }
 NEO_JS_CFUNCTION(neo_js_string_at);
@@ -135,8 +140,8 @@ NEO_JS_CFUNCTION(neo_js_string_trim_start);
 NEO_JS_CFUNCTION(neo_js_string_value_of);
 NEO_JS_CFUNCTION(neo_js_string_iterator);
 void neo_js_context_init_std_string(neo_js_context_t ctx) {
-  neo_js_variable_t constructor = neo_js_context_create_cfunction(
-      ctx, L"String", &neo_js_string_constructor);
+  neo_js_variable_t constructor =
+      neo_js_context_get_std(ctx).string_constructor;
   neo_js_variable_t prototype = neo_js_context_get_field(
       ctx, constructor, neo_js_context_create_string(ctx, L"prototype"), NULL);
   neo_js_variable_t global = neo_js_context_get_global(ctx);
