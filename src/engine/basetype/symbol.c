@@ -7,17 +7,17 @@
 #include "engine/variable.h"
 #include <stdbool.h>
 #include <stdlib.h>
-#include <wchar.h>
+#include <string.h>
 
-static const wchar_t *neo_js_symbol_typeof(neo_js_context_t ctx,
+static const char *neo_js_symbol_typeof(neo_js_context_t ctx,
                                            neo_js_variable_t variable) {
-  return L"symbol";
+  return "symbol";
 }
 
 static neo_js_variable_t neo_js_symbol_to_string(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
   return neo_js_context_create_simple_error(
-      ctx, NEO_JS_ERROR_TYPE, 0, L"Cannot convert a Symbol value to a string");
+      ctx, NEO_JS_ERROR_TYPE, 0, "Cannot convert a Symbol value to a string");
 }
 
 static neo_js_variable_t neo_js_symbol_to_boolean(neo_js_context_t ctx,
@@ -28,12 +28,12 @@ static neo_js_variable_t neo_js_symbol_to_boolean(neo_js_context_t ctx,
 static neo_js_variable_t neo_js_symbol_to_number(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
   return neo_js_context_create_simple_error(
-      ctx, NEO_JS_ERROR_TYPE, 0, L"Cannot convert a Symbol value to a number");
+      ctx, NEO_JS_ERROR_TYPE, 0, "Cannot convert a Symbol value to a number");
 }
 
 static neo_js_variable_t neo_js_symbol_to_primitive(neo_js_context_t ctx,
                                                     neo_js_variable_t self,
-                                                    const wchar_t *type) {
+                                                    const char *type) {
   return self;
 }
 
@@ -41,12 +41,12 @@ static neo_js_variable_t neo_js_symbol_to_object(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
   neo_js_variable_t symbol = neo_js_context_get_std(ctx).symbol_constructor;
   neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, symbol, neo_js_context_create_string(ctx, L"prototype"), NULL);
+      ctx, symbol, neo_js_context_create_string(ctx, "prototype"), NULL);
   neo_js_variable_t object = neo_js_context_create_object(ctx, prototype);
   neo_js_context_set_field(ctx, object,
-                           neo_js_context_create_string(ctx, L"constructor"),
+                           neo_js_context_create_string(ctx, "constructor"),
                            symbol, NULL);
-  neo_js_context_set_internal(ctx, object, L"[[primitive]]", self);
+  neo_js_context_set_internal(ctx, object, "[[primitive]]", self);
   return object;
 }
 
@@ -109,22 +109,22 @@ static void neo_js_symbol_dispose(neo_allocator_t allocator,
 }
 
 neo_js_symbol_t neo_create_js_symbol(neo_allocator_t allocator,
-                                     const wchar_t *description) {
+                                     const char *description) {
   if (!description) {
-    description = L"";
+    description = "";
   }
-  size_t len = wcslen(description);
+  size_t len = strlen(description);
   neo_js_symbol_t symbol = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_symbol_t), neo_js_symbol_dispose);
   neo_js_value_init(allocator, &symbol->value);
   symbol->value.type = neo_get_js_symbol_type();
   symbol->description =
-      neo_allocator_alloc(allocator, (len + 1) * sizeof(wchar_t), NULL);
-  wcscpy(symbol->description, description);
+      neo_allocator_alloc(allocator, (len + 1) * sizeof(char), NULL);
+  strcpy(symbol->description, description);
   symbol->description[len] = 0;
   symbol->string =
-      neo_allocator_alloc(allocator, sizeof(wchar_t) * (len + 16), NULL);
-  swprintf(symbol->string, len + 16, L"Symbol(%ls)", symbol->description);
+      neo_allocator_alloc(allocator, sizeof(char) * (len + 16), NULL);
+  sprintf(symbol->string, "Symbol(%s)", symbol->description);
   return symbol;
 }
 neo_js_symbol_t neo_js_value_to_symbol(neo_js_value_t value) {

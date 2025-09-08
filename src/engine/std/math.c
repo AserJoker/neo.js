@@ -355,176 +355,175 @@ void neo_js_context_init_std_math(neo_js_context_t ctx) {
       neo_js_context_create_object(ctx, neo_js_context_create_null(ctx));
 
   neo_js_context_set_field(ctx, neo_js_context_get_std(ctx).global,
-                           neo_js_context_create_string(ctx, L"Math"), math,
+                           neo_js_context_create_string(ctx, "Math"), math,
                            NULL);
 
-  neo_js_context_set_field(ctx, math, neo_js_context_create_string(ctx, L"E"),
+  neo_js_context_set_field(ctx, math, neo_js_context_create_string(ctx, "E"),
                            neo_js_context_create_number(ctx, M_E), NULL);
 
-  neo_js_context_set_field(ctx, math, neo_js_context_create_string(ctx, L"LN2"),
+  neo_js_context_set_field(ctx, math, neo_js_context_create_string(ctx, "LN2"),
                            neo_js_context_create_number(ctx, M_LN2), NULL);
 
-  neo_js_context_set_field(ctx, math,
-                           neo_js_context_create_string(ctx, L"LN10"),
+  neo_js_context_set_field(ctx, math, neo_js_context_create_string(ctx, "LN10"),
                            neo_js_context_create_number(ctx, M_LN10), NULL);
 
   neo_js_context_set_field(ctx, math,
-                           neo_js_context_create_string(ctx, L"LOG2E"),
+                           neo_js_context_create_string(ctx, "LOG2E"),
                            neo_js_context_create_number(ctx, M_LOG2E), NULL);
 
   neo_js_context_set_field(ctx, math,
-                           neo_js_context_create_string(ctx, L"LOG10E"),
+                           neo_js_context_create_string(ctx, "LOG10E"),
                            neo_js_context_create_number(ctx, M_LOG10E), NULL);
 
-  neo_js_context_set_field(ctx, math, neo_js_context_create_string(ctx, L"PI"),
+  neo_js_context_set_field(ctx, math, neo_js_context_create_string(ctx, "PI"),
                            neo_js_context_create_number(ctx, M_PI), NULL);
 
   neo_js_context_set_field(ctx, math,
-                           neo_js_context_create_string(ctx, L"SQRT1_2"),
+                           neo_js_context_create_string(ctx, "SQRT1_2"),
                            neo_js_context_create_number(ctx, M_SQRT1_2), NULL);
 
   neo_js_context_set_field(ctx, math,
-                           neo_js_context_create_string(ctx, L"SQRT2"),
+                           neo_js_context_create_string(ctx, "SQRT2"),
                            neo_js_context_create_number(ctx, M_SQRT2), NULL);
 
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"abs"),
-      neo_js_context_create_cfunction(ctx, L"abs", neo_js_math_abs), true,
+      ctx, math, neo_js_context_create_string(ctx, "abs"),
+      neo_js_context_create_cfunction(ctx, "abs", neo_js_math_abs), true, false,
+      true);
+  neo_js_context_def_field(
+      ctx, math, neo_js_context_create_string(ctx, "acos"),
+      neo_js_context_create_cfunction(ctx, "acos", neo_js_math_acos), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"acos"),
-      neo_js_context_create_cfunction(ctx, L"acos", neo_js_math_acos), true,
+      ctx, math, neo_js_context_create_string(ctx, "acosh"),
+      neo_js_context_create_cfunction(ctx, "acosh", neo_js_math_acosh), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"acosh"),
-      neo_js_context_create_cfunction(ctx, L"acosh", neo_js_math_acosh), true,
+      ctx, math, neo_js_context_create_string(ctx, "asin"),
+      neo_js_context_create_cfunction(ctx, "asin", neo_js_math_asin), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"asin"),
-      neo_js_context_create_cfunction(ctx, L"asin", neo_js_math_asin), true,
+      ctx, math, neo_js_context_create_string(ctx, "asinh"),
+      neo_js_context_create_cfunction(ctx, "asinh", neo_js_math_asinh), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"asinh"),
-      neo_js_context_create_cfunction(ctx, L"asinh", neo_js_math_asinh), true,
+      ctx, math, neo_js_context_create_string(ctx, "atan"),
+      neo_js_context_create_cfunction(ctx, "atan", neo_js_math_atan), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"atan"),
-      neo_js_context_create_cfunction(ctx, L"atan", neo_js_math_atan), true,
+      ctx, math, neo_js_context_create_string(ctx, "atan2"),
+      neo_js_context_create_cfunction(ctx, "atan2", neo_js_math_atan2), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"atan2"),
-      neo_js_context_create_cfunction(ctx, L"atan2", neo_js_math_atan2), true,
+      ctx, math, neo_js_context_create_string(ctx, "atanh"),
+      neo_js_context_create_cfunction(ctx, "atanh", neo_js_math_atanh), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"atanh"),
-      neo_js_context_create_cfunction(ctx, L"atanh", neo_js_math_atanh), true,
+      ctx, math, neo_js_context_create_string(ctx, "cbrt"),
+      neo_js_context_create_cfunction(ctx, "cbrt", neo_js_math_cbrt), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"cbrt"),
-      neo_js_context_create_cfunction(ctx, L"cbrt", neo_js_math_cbrt), true,
+      ctx, math, neo_js_context_create_string(ctx, "ceil"),
+      neo_js_context_create_cfunction(ctx, "ceil", neo_js_math_ceil), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"ceil"),
-      neo_js_context_create_cfunction(ctx, L"ceil", neo_js_math_ceil), true,
+      ctx, math, neo_js_context_create_string(ctx, "clz32"),
+      neo_js_context_create_cfunction(ctx, "clz32", neo_js_math_clz32), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"clz32"),
-      neo_js_context_create_cfunction(ctx, L"clz32", neo_js_math_clz32), true,
+      ctx, math, neo_js_context_create_string(ctx, "cos"),
+      neo_js_context_create_cfunction(ctx, "cos", neo_js_math_cos), true, false,
+      true);
+  neo_js_context_def_field(
+      ctx, math, neo_js_context_create_string(ctx, "cosh"),
+      neo_js_context_create_cfunction(ctx, "cosh", neo_js_math_cosh), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"cos"),
-      neo_js_context_create_cfunction(ctx, L"cos", neo_js_math_cos), true,
+      ctx, math, neo_js_context_create_string(ctx, "exp"),
+      neo_js_context_create_cfunction(ctx, "exp", neo_js_math_exp), true, false,
+      true);
+  neo_js_context_def_field(
+      ctx, math, neo_js_context_create_string(ctx, "expm1"),
+      neo_js_context_create_cfunction(ctx, "expm1", neo_js_math_expm1), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"cosh"),
-      neo_js_context_create_cfunction(ctx, L"cosh", neo_js_math_cosh), true,
+      ctx, math, neo_js_context_create_string(ctx, "floor"),
+      neo_js_context_create_cfunction(ctx, "floor", neo_js_math_floor), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"exp"),
-      neo_js_context_create_cfunction(ctx, L"exp", neo_js_math_exp), true,
+      ctx, math, neo_js_context_create_string(ctx, "fround"),
+      neo_js_context_create_cfunction(ctx, "fround", neo_js_math_fround), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"expm1"),
-      neo_js_context_create_cfunction(ctx, L"expm1", neo_js_math_expm1), true,
+      ctx, math, neo_js_context_create_string(ctx, "hypot"),
+      neo_js_context_create_cfunction(ctx, "hypot", neo_js_math_hypot), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"floor"),
-      neo_js_context_create_cfunction(ctx, L"floor", neo_js_math_floor), true,
+      ctx, math, neo_js_context_create_string(ctx, "imul"),
+      neo_js_context_create_cfunction(ctx, "imul", neo_js_math_imul), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"fround"),
-      neo_js_context_create_cfunction(ctx, L"fround", neo_js_math_fround), true,
+      ctx, math, neo_js_context_create_string(ctx, "log"),
+      neo_js_context_create_cfunction(ctx, "log", neo_js_math_log), true, false,
+      true);
+  neo_js_context_def_field(
+      ctx, math, neo_js_context_create_string(ctx, "log1p"),
+      neo_js_context_create_cfunction(ctx, "log1p", neo_js_math_log1p), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"hypot"),
-      neo_js_context_create_cfunction(ctx, L"hypot", neo_js_math_hypot), true,
+      ctx, math, neo_js_context_create_string(ctx, "log2"),
+      neo_js_context_create_cfunction(ctx, "log2", neo_js_math_log2), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"imul"),
-      neo_js_context_create_cfunction(ctx, L"imul", neo_js_math_imul), true,
+      ctx, math, neo_js_context_create_string(ctx, "log10"),
+      neo_js_context_create_cfunction(ctx, "log10", neo_js_math_log10), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"log"),
-      neo_js_context_create_cfunction(ctx, L"log", neo_js_math_log), true,
+      ctx, math, neo_js_context_create_string(ctx, "max"),
+      neo_js_context_create_cfunction(ctx, "max", neo_js_math_max), true, false,
+      true);
+  neo_js_context_def_field(
+      ctx, math, neo_js_context_create_string(ctx, "min"),
+      neo_js_context_create_cfunction(ctx, "min", neo_js_math_min), true, false,
+      true);
+  neo_js_context_def_field(
+      ctx, math, neo_js_context_create_string(ctx, "pow"),
+      neo_js_context_create_cfunction(ctx, "pow", neo_js_math_pow), true, false,
+      true);
+  neo_js_context_def_field(
+      ctx, math, neo_js_context_create_string(ctx, "random"),
+      neo_js_context_create_cfunction(ctx, "random", neo_js_math_random), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"log1p"),
-      neo_js_context_create_cfunction(ctx, L"log1p", neo_js_math_log1p), true,
+      ctx, math, neo_js_context_create_string(ctx, "round"),
+      neo_js_context_create_cfunction(ctx, "round", neo_js_math_round), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"log2"),
-      neo_js_context_create_cfunction(ctx, L"log2", neo_js_math_log2), true,
+      ctx, math, neo_js_context_create_string(ctx, "sign"),
+      neo_js_context_create_cfunction(ctx, "sign", neo_js_math_sign), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"log10"),
-      neo_js_context_create_cfunction(ctx, L"log10", neo_js_math_log10), true,
+      ctx, math, neo_js_context_create_string(ctx, "sin"),
+      neo_js_context_create_cfunction(ctx, "sin", neo_js_math_sin), true, false,
+      true);
+  neo_js_context_def_field(
+      ctx, math, neo_js_context_create_string(ctx, "sinh"),
+      neo_js_context_create_cfunction(ctx, "sinh", neo_js_math_sinh), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"max"),
-      neo_js_context_create_cfunction(ctx, L"max", neo_js_math_max), true,
+      ctx, math, neo_js_context_create_string(ctx, "sqrt"),
+      neo_js_context_create_cfunction(ctx, "sqrt", neo_js_math_sqrt), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"min"),
-      neo_js_context_create_cfunction(ctx, L"min", neo_js_math_min), true,
+      ctx, math, neo_js_context_create_string(ctx, "tan"),
+      neo_js_context_create_cfunction(ctx, "tan", neo_js_math_tan), true, false,
+      true);
+  neo_js_context_def_field(
+      ctx, math, neo_js_context_create_string(ctx, "tanh"),
+      neo_js_context_create_cfunction(ctx, "tanh", neo_js_math_tanh), true,
       false, true);
   neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"pow"),
-      neo_js_context_create_cfunction(ctx, L"pow", neo_js_math_pow), true,
-      false, true);
-  neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"random"),
-      neo_js_context_create_cfunction(ctx, L"random", neo_js_math_random), true,
-      false, true);
-  neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"round"),
-      neo_js_context_create_cfunction(ctx, L"round", neo_js_math_round), true,
-      false, true);
-  neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"sign"),
-      neo_js_context_create_cfunction(ctx, L"sign", neo_js_math_sign), true,
-      false, true);
-  neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"sin"),
-      neo_js_context_create_cfunction(ctx, L"sin", neo_js_math_sin), true,
-      false, true);
-  neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"sinh"),
-      neo_js_context_create_cfunction(ctx, L"sinh", neo_js_math_sinh), true,
-      false, true);
-  neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"sqrt"),
-      neo_js_context_create_cfunction(ctx, L"sqrt", neo_js_math_sqrt), true,
-      false, true);
-  neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"tan"),
-      neo_js_context_create_cfunction(ctx, L"tan", neo_js_math_tan), true,
-      false, true);
-  neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"tanh"),
-      neo_js_context_create_cfunction(ctx, L"tanh", neo_js_math_tanh), true,
-      false, true);
-  neo_js_context_def_field(
-      ctx, math, neo_js_context_create_string(ctx, L"trunc"),
-      neo_js_context_create_cfunction(ctx, L"trunc", neo_js_math_trunc), true,
+      ctx, math, neo_js_context_create_string(ctx, "trunc"),
+      neo_js_context_create_cfunction(ctx, "trunc", neo_js_math_trunc), true,
       false, true);
 }

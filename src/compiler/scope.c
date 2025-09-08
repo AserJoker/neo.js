@@ -201,38 +201,38 @@ static neo_variable_t
 neo_serialize_compile_variable(neo_allocator_t allocator,
                                neo_compile_variable_t val) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_set(variable, L"name",
+  neo_variable_set(variable, "name",
                    neo_ast_node_serialize(allocator, val->node));
   switch (val->type) {
   case NEO_COMPILE_VARIABLE_VAR:
     neo_variable_set(
-        variable, L"type",
-        neo_create_variable_string(allocator, L"NEO_COMPILE_VARIABLE_VAR"));
+        variable, "type",
+        neo_create_variable_string(allocator, "NEO_COMPILE_VARIABLE_VAR"));
     break;
   case NEO_COMPILE_VARIABLE_LET:
     neo_variable_set(
-        variable, L"type",
-        neo_create_variable_string(allocator, L"NEO_COMPILE_VARIABLE_LET"));
+        variable, "type",
+        neo_create_variable_string(allocator, "NEO_COMPILE_VARIABLE_LET"));
     break;
   case NEO_COMPILE_VARIABLE_CONST:
     neo_variable_set(
-        variable, L"type",
-        neo_create_variable_string(allocator, L"NEO_COMPILE_VARIABLE_CONST"));
+        variable, "type",
+        neo_create_variable_string(allocator, "NEO_COMPILE_VARIABLE_CONST"));
     break;
   case NEO_COMPILE_VARIABLE_USING:
     neo_variable_set(
-        variable, L"type",
-        neo_create_variable_string(allocator, L"NEO_COMPILE_VARIABLE_USING"));
+        variable, "type",
+        neo_create_variable_string(allocator, "NEO_COMPILE_VARIABLE_USING"));
     break;
   case NEO_COMPILE_VARIABLE_AWAIT_USING:
-    neo_variable_set(variable, L"type",
+    neo_variable_set(variable, "type",
                      neo_create_variable_string(
-                         allocator, L"NEO_COMPILE_VARIABLE_AWAIT_USING"));
+                         allocator, "NEO_COMPILE_VARIABLE_AWAIT_USING"));
     break;
   case NEO_COMPILE_VARIABLE_FUNCTION:
-    neo_variable_set(variable, L"type",
-                     neo_create_variable_string(
-                         allocator, L"NEO_COMPILE_VARIABLE_FUNCTION"));
+    neo_variable_set(
+        variable, "type",
+        neo_create_variable_string(allocator, "NEO_COMPILE_VARIABLE_FUNCTION"));
     break;
   }
   return variable;
@@ -247,16 +247,16 @@ neo_variable_t neo_serialize_scope(neo_allocator_t allocator,
   switch (scope->type) {
   case NEO_COMPILE_SCOPE_BLOCK:
     neo_variable_set(
-        variable, L"type",
-        neo_create_variable_string(allocator, L"NEO_COMPILE_SCOPE_BLOCK"));
+        variable, "type",
+        neo_create_variable_string(allocator, "NEO_COMPILE_SCOPE_BLOCK"));
     break;
   case NEO_COMPILE_SCOPE_FUNCTION:
     neo_variable_set(
-        variable, L"type",
-        neo_create_variable_string(allocator, L"NEO_COMPILE_SCOPE_FUNCTION"));
+        variable, "type",
+        neo_create_variable_string(allocator, "NEO_COMPILE_SCOPE_FUNCTION"));
     break;
   }
-  neo_variable_set(variable, L"variables",
+  neo_variable_set(variable, "variables",
                    neo_create_variable_array(
                        allocator, scope->variables,
                        (neo_serialize_fn_t)neo_serialize_compile_variable));

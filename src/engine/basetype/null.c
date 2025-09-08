@@ -9,16 +9,16 @@
 #include "engine/variable.h"
 #include <wchar.h>
 
-static const wchar_t *neo_js_null_typeof(neo_js_context_t ctx,
+static const char *neo_js_null_typeof(neo_js_context_t ctx,
                                          neo_js_variable_t variable) {
-  return L"object";
+  return "object";
 }
 
 static neo_js_variable_t neo_js_null_to_string(neo_js_context_t ctx,
                                                neo_js_variable_t self) {
   neo_allocator_t allocator =
       neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
-  neo_js_string_t string = neo_create_js_string(allocator, L"null");
+  neo_js_string_t string = neo_create_js_string(allocator, "null");
   return neo_js_context_create_variable(
       ctx, neo_create_js_chunk(allocator, &string->value), NULL);
 }
@@ -35,7 +35,7 @@ static neo_js_variable_t neo_js_null_to_number(neo_js_context_t ctx,
 
 static neo_js_variable_t neo_js_null_to_primitive(neo_js_context_t ctx,
                                                   neo_js_variable_t self,
-                                                  const wchar_t *type) {
+                                                  const char *type) {
   return self;
 }
 

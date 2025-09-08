@@ -112,8 +112,8 @@ neo_path_t neo_path_clone(neo_path_t current) {
   neo_path_t path = neo_create_path(current->allocator, NULL);
   for (neo_list_node_t it = neo_list_get_first(current->parts);
        it != neo_list_get_tail(current->parts); it = neo_list_node_next(it)) {
-    neo_list_push(path->parts, neo_create_wstring(current->allocator,
-                                                  neo_list_node_get(it)));
+    neo_list_push(path->parts,
+                  neo_create_string(current->allocator, neo_list_node_get(it)));
   }
   return path;
 }

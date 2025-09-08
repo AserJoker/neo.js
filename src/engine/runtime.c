@@ -21,7 +21,7 @@ neo_js_runtime_t neo_create_js_runtime(neo_allocator_t allocator) {
   neo_hash_map_initialize_t initialize;
   initialize.auto_free_key = true;
   initialize.auto_free_value = true;
-  initialize.compare = (neo_compare_fn_t)wcscmp;
+  initialize.compare = (neo_compare_fn_t)strcmp;
   initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
   initialize.max_bucket = 1024;
   runtime->programs = neo_create_hash_map(allocator, &initialize);
@@ -32,16 +32,16 @@ neo_allocator_t neo_js_runtime_get_allocator(neo_js_runtime_t self) {
   return self->allocator;
 }
 neo_program_t neo_js_runtime_get_program(neo_js_runtime_t self,
-                                         const wchar_t *filename) {
+                                         const char *filename) {
   return neo_hash_map_get(self->programs, filename, NULL, NULL);
 }
 
-void neo_js_runtime_set_program(neo_js_runtime_t self, const wchar_t *filename,
+void neo_js_runtime_set_program(neo_js_runtime_t self, const char *filename,
                                 neo_program_t program) {
-  size_t len = wcslen(filename);
-  wchar_t *key =
-      neo_allocator_alloc(self->allocator, sizeof(wchar_t) * (len + 1), NULL);
-  memset(key, 0, len * sizeof(wchar_t));
-  wcscpy(key, filename);
+  size_t len = strlen(filename);
+  char *key =
+      neo_allocator_alloc(self->allocator, sizeof(char) * (len + 1), NULL);
+  memset(key, 0, len * sizeof(char));
+  strcpy(key, filename);
   neo_hash_map_set(self->programs, key, program, NULL, NULL);
 }

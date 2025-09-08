@@ -7,7 +7,7 @@ extern "C" {
 #endif
 typedef struct _neo_js_error_info_t *neo_js_error_info_t;
 struct _neo_js_error_info_t {
-  const wchar_t *type;
+  const char *type;
   neo_list_t stacktrace;
 };
 neo_js_variable_t neo_js_error_constructor(neo_js_context_t ctx,

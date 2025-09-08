@@ -20,18 +20,18 @@ neo_js_scope_t neo_js_scope_set_parent(neo_js_scope_t self,
 neo_js_chunk_t neo_js_scope_get_root_chunk(neo_js_scope_t self);
 
 neo_js_variable_t neo_js_scope_get_variable(neo_js_scope_t self,
-                                            const wchar_t *name);
+                                            const char *name);
 
 void neo_js_scope_set_variable(neo_js_scope_t self, neo_js_variable_t variable,
-                               const wchar_t *name);
+                               const char *name);
 
 neo_js_variable_t neo_js_scope_create_variable(neo_js_scope_t self,
                                                neo_js_chunk_t handle,
-                                               const wchar_t *name);
+                                               const char *name);
 
 neo_js_variable_t neo_js_scope_create_ref_variable(neo_js_scope_t self,
                                                    neo_js_handle_t handle,
-                                                   const wchar_t *name);
+                                                   const char *name);
 
 neo_list_t neo_js_scope_get_variables(neo_js_scope_t scope);
 

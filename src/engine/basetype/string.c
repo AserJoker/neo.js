@@ -7,11 +7,11 @@
 #include "engine/variable.h"
 #include <math.h>
 #include <stdlib.h>
-#include <wchar.h>
+#include <string.h>
 
-static const wchar_t *neo_js_string_typeof(neo_js_context_t ctx,
+static const char *neo_js_string_typeof(neo_js_context_t ctx,
                                            neo_js_variable_t variable) {
-  return L"string";
+  return "string";
 }
 
 static neo_js_variable_t neo_js_string_to_string(neo_js_context_t ctx,
@@ -30,14 +30,14 @@ static neo_js_variable_t neo_js_string_to_number(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
   neo_js_string_t string =
       neo_js_value_to_string(neo_js_variable_get_value(self));
-  if (wcscmp(string->string, L"Infinity") == 0) {
+  if (strcmp(string->string, "Infinity") == 0) {
     return neo_js_context_create_number(ctx, INFINITY);
   }
-  if (wcscmp(string->string, L"-Infinity") == 0) {
+  if (strcmp(string->string, "-Infinity") == 0) {
     return neo_js_context_create_number(ctx, -INFINITY);
   }
-  wchar_t *end = 0;
-  double val = wcstod(string->string, &end);
+  char *end = 0;
+  double val = strtod(string->string, &end);
   if (*end != 0) {
     return neo_js_context_create_number(ctx, NAN);
   }
@@ -46,7 +46,7 @@ static neo_js_variable_t neo_js_string_to_number(neo_js_context_t ctx,
 
 static neo_js_variable_t neo_js_string_to_primitive(neo_js_context_t ctx,
                                                     neo_js_variable_t self,
-                                                    const wchar_t *type) {
+                                                    const char *type) {
   return self;
 }
 
@@ -62,7 +62,7 @@ static bool neo_js_string_is_equal(neo_js_context_t ctx, neo_js_variable_t self,
   neo_js_value_t val2 = neo_js_variable_get_value(another);
   neo_js_string_t str1 = neo_js_value_to_string(val1);
   neo_js_string_t str2 = neo_js_value_to_string(val2);
-  return wcscmp(str1->string, str2->string) == 0;
+  return strcmp(str1->string, str2->string) == 0;
 }
 static neo_js_variable_t neo_js_string_copy(neo_js_context_t ctx,
                                             neo_js_variable_t self,
@@ -102,19 +102,19 @@ static void neo_js_string_dispose(neo_allocator_t allocator,
 }
 
 neo_js_string_t neo_create_js_string(neo_allocator_t allocator,
-                                     const wchar_t *value) {
+                                     const char *value) {
   if (!value) {
-    value = L"";
+    value = "";
   }
-  size_t len = wcslen(value);
+  size_t len = strlen(value);
   neo_js_string_t string = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_string_t), neo_js_string_dispose);
   neo_js_value_init(allocator, &string->value);
   string->value.type = neo_get_js_string_type();
   string->string =
-      neo_allocator_alloc(allocator, (len + 1) * sizeof(wchar_t), NULL);
+      neo_allocator_alloc(allocator, (len + 1) * sizeof(char), NULL);
   string->string[0] = 0;
-  wcscpy(string->string, value);
+  strcpy(string->string, value);
   string->string[len] = 0;
   return string;
 }

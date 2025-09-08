@@ -55,17 +55,17 @@ neo_serialize_ast_statement_if(neo_allocator_t allocator,
                                neo_ast_statement_if_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
   neo_variable_set(
-      variable, L"type",
-      neo_create_variable_string(allocator, L"NEO_NODE_TYPE_STATEMENT_FOR"));
-  neo_variable_set(variable, L"location",
+      variable, "type",
+      neo_create_variable_string(allocator, "NEO_NODE_TYPE_STATEMENT_FOR"));
+  neo_variable_set(variable, "location",
                    neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, L"scope",
+  neo_variable_set(variable, "scope",
                    neo_serialize_scope(allocator, node->node.scope));
-  neo_variable_set(variable, L"condition",
+  neo_variable_set(variable, "condition",
                    neo_ast_node_serialize(allocator, node->condition));
-  neo_variable_set(variable, L"alternate",
+  neo_variable_set(variable, "alternate",
                    neo_ast_node_serialize(allocator, node->alternate));
-  neo_variable_set(variable, L"consequent",
+  neo_variable_set(variable, "consequent",
                    neo_ast_node_serialize(allocator, node->consequent));
   return variable;
 }

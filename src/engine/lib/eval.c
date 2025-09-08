@@ -3,7 +3,6 @@
 #include "compiler/program.h"
 #include "compiler/scope.h"
 #include "core/allocator.h"
-#include "core/unicode.h"
 #include "engine/context.h"
 #include "engine/type.h"
 #include "engine/variable.h"
@@ -19,10 +18,8 @@ NEO_JS_CFUNCTION(neo_js_eval) {
   if (neo_js_variable_get_type(arg)->kind != NEO_JS_TYPE_STRING) {
     return arg;
   }
-  const wchar_t *source = neo_js_variable_to_string(arg)->string;
+  const char *src = neo_js_variable_to_string(arg)->string;
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
-  char *src = neo_wstring_to_string(allocator, source);
-  neo_js_context_defer_free(ctx, src);
   neo_ast_node_t node =
       TRY(neo_ast_parse_code(allocator, "<anonymouse_script>", src)) {
     return neo_js_context_create_compile_error(ctx);

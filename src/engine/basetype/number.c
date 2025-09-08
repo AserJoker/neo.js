@@ -9,9 +9,9 @@
 #include "engine/variable.h"
 #include <math.h>
 
-static const wchar_t *neo_js_number_typeof(neo_js_context_t ctx,
+static const char *neo_js_number_typeof(neo_js_context_t ctx,
                                            neo_js_variable_t variable) {
-  return L"number";
+  return "number";
 }
 
 static neo_js_variable_t neo_js_number_to_string(neo_js_context_t ctx,
@@ -21,22 +21,22 @@ static neo_js_variable_t neo_js_number_to_string(neo_js_context_t ctx,
   neo_js_number_t number = neo_js_value_to_number(
       neo_js_chunk_get_value(neo_js_variable_get_chunk(self)));
   if (isnan(number->number)) {
-    return neo_js_context_create_string(ctx, L"NaN");
+    return neo_js_context_create_string(ctx, "NaN");
   }
   if (isinf(number->number)) {
     if (number->number > 0.0f) {
-      return neo_js_context_create_string(ctx, L"Infinity");
+      return neo_js_context_create_string(ctx, "Infinity");
     } else {
-      return neo_js_context_create_string(ctx, L"-Infinity");
+      return neo_js_context_create_string(ctx, "-Infinity");
     }
   }
-  wchar_t str[32];
+  char str[32];
   if (number->number == -0.f) {
-    swprintf(str, 32, L"%.20lg", number->number);
+    snprintf(str, 32, "%.20lg", number->number);
   } else if (number->number == (int64_t)(number->number)) {
-    swprintf(str, 32, L"%lld", (int64_t)number->number);
+    snprintf(str, 32, "%ld", (int64_t)number->number);
   } else {
-    swprintf(str, 32, L"%.20lg", number->number);
+    snprintf(str, 32, "%.20lg", number->number);
   }
   neo_js_string_t string = neo_create_js_string(allocator, str);
   return neo_js_context_create_variable(
@@ -55,7 +55,7 @@ static neo_js_variable_t neo_js_number_to_number(neo_js_context_t ctx,
 }
 static neo_js_variable_t neo_js_number_to_primitive(neo_js_context_t ctx,
                                                     neo_js_variable_t self,
-                                                    const wchar_t *type) {
+                                                    const char *type) {
   return self;
 }
 static neo_js_variable_t neo_js_number_to_object(neo_js_context_t ctx,

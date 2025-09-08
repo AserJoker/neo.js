@@ -16,13 +16,13 @@
 NEO_JS_CFUNCTION(js_on_fulfilled) {
   neo_js_variable_t result = argv[0];
   result = neo_js_context_to_string(ctx, result);
-  fprintf(stderr, "%ls\n", neo_js_variable_to_string(result)->string);
+  fprintf(stderr, "%s\n", neo_js_variable_to_string(result)->string);
   return neo_js_context_create_undefined(ctx);
 }
 NEO_JS_CFUNCTION(js_on_rejected) {
   neo_js_variable_t result = argv[0];
   result = neo_js_context_to_string(ctx, result);
-  fprintf(stderr, "Uncaught error: %ls\n",
+  fprintf(stderr, "Uncaught error: %s\n",
           neo_js_variable_to_string(result)->string);
   return neo_js_context_create_undefined(ctx);
 }
@@ -47,7 +47,7 @@ int main(int argc, char *argv[]) {
     if (neo_js_variable_get_type(result)->kind == NEO_JS_TYPE_ERROR) {
       result = neo_js_error_get_error(ctx, result);
       result = neo_js_context_to_string(ctx, result);
-      fprintf(stderr, "Uncaught %ls\n",
+      fprintf(stderr, "Uncaught %s\n",
               neo_js_variable_to_string(result)->string);
     } else {
       if (neo_js_context_is_thenable(ctx, result)) {
@@ -56,12 +56,12 @@ int main(int argc, char *argv[]) {
         neo_js_variable_t on_rejected =
             neo_js_context_create_cfunction(ctx, NULL, js_on_rejected);
         neo_js_variable_t then = neo_js_context_get_field(
-            ctx, result, neo_js_context_create_string(ctx, L"then"), NULL);
+            ctx, result, neo_js_context_create_string(ctx, "then"), NULL);
         neo_js_variable_t args[] = {on_fullfilled, on_rejected};
         neo_js_context_call(ctx, then, result, 2, args);
       } else {
         result = neo_js_context_to_string(ctx, result);
-        fprintf(stderr, "%ls\n", neo_js_variable_to_string(result)->string);
+        fprintf(stderr, "%s\n", neo_js_variable_to_string(result)->string);
       }
       while (!neo_js_context_is_ready(ctx)) {
         neo_js_context_next_tick(ctx);

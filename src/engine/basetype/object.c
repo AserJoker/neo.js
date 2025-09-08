@@ -17,21 +17,22 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 #include <wchar.h>
 
-static const wchar_t *neo_js_object_typeof(neo_js_context_t ctx,
-                                           neo_js_variable_t variable) {
-  return L"object";
+static const char *neo_js_object_typeof(neo_js_context_t ctx,
+                                        neo_js_variable_t variable) {
+  return "object";
 }
 
 static neo_js_variable_t neo_js_object_to_string(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
   neo_js_variable_t to_primitive = neo_js_context_get_field(
       ctx, neo_js_context_get_std(ctx).symbol_constructor,
-      neo_js_context_create_string(ctx, L"toPrimitive"), NULL);
+      neo_js_context_create_string(ctx, "toPrimitive"), NULL);
   neo_js_variable_t primitive = NULL;
   if (neo_js_variable_get_type(to_primitive)->kind >= NEO_JS_TYPE_CFUNCTION) {
-    neo_js_variable_t hint = neo_js_context_create_string(ctx, L"string");
+    neo_js_variable_t hint = neo_js_context_create_string(ctx, "string");
     primitive = neo_js_context_call(ctx, to_primitive, self, 1, &hint);
     if (neo_js_variable_get_type(primitive)->kind == NEO_JS_TYPE_ERROR) {
       return primitive;
@@ -40,7 +41,7 @@ static neo_js_variable_t neo_js_object_to_string(neo_js_context_t ctx,
   if (!primitive ||
       neo_js_variable_get_type(primitive)->kind >= NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t value_of = neo_js_context_get_field(
-        ctx, self, neo_js_context_create_string(ctx, L"valueOf"), NULL);
+        ctx, self, neo_js_context_create_string(ctx, "valueOf"), NULL);
     if (neo_js_variable_get_type(value_of)->kind >= NEO_JS_TYPE_CFUNCTION) {
       primitive = neo_js_context_call(ctx, value_of, self, 0, NULL);
       if (neo_js_variable_get_type(primitive)->kind == NEO_JS_TYPE_ERROR) {
@@ -51,7 +52,7 @@ static neo_js_variable_t neo_js_object_to_string(neo_js_context_t ctx,
   if (!primitive ||
       neo_js_variable_get_type(primitive)->kind >= NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t to_string = neo_js_context_get_field(
-        ctx, self, neo_js_context_create_string(ctx, L"toString"), NULL);
+        ctx, self, neo_js_context_create_string(ctx, "toString"), NULL);
     if (neo_js_variable_get_type(to_string)->kind >= NEO_JS_TYPE_CFUNCTION) {
       primitive = neo_js_context_call(ctx, to_string, self, 0, NULL);
       if (neo_js_variable_get_type(primitive)->kind == NEO_JS_TYPE_ERROR) {
@@ -62,7 +63,7 @@ static neo_js_variable_t neo_js_object_to_string(neo_js_context_t ctx,
   if (!primitive ||
       neo_js_variable_get_type(primitive)->kind >= NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, 0, L"Cannot convert object to primitive value");
+        ctx, NEO_JS_ERROR_TYPE, 0, "Cannot convert object to primitive value");
   }
   return neo_js_context_to_string(ctx, primitive);
 }
@@ -75,10 +76,10 @@ static neo_js_variable_t neo_js_object_to_number(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
   neo_js_variable_t to_primitive = neo_js_context_get_field(
       ctx, neo_js_context_get_std(ctx).symbol_constructor,
-      neo_js_context_create_string(ctx, L"toPrimitive"), NULL);
+      neo_js_context_create_string(ctx, "toPrimitive"), NULL);
   neo_js_variable_t primitive = NULL;
   if (neo_js_variable_get_type(to_primitive)->kind == NEO_JS_TYPE_CFUNCTION) {
-    neo_js_variable_t hint = neo_js_context_create_string(ctx, L"number");
+    neo_js_variable_t hint = neo_js_context_create_string(ctx, "number");
     primitive = neo_js_context_call(ctx, to_primitive, self, 1, &hint);
     if (neo_js_variable_get_type(primitive)->kind == NEO_JS_TYPE_ERROR) {
       return primitive;
@@ -87,7 +88,7 @@ static neo_js_variable_t neo_js_object_to_number(neo_js_context_t ctx,
   if (!primitive ||
       neo_js_variable_get_type(primitive)->kind >= NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t value_of = neo_js_context_get_field(
-        ctx, self, neo_js_context_create_string(ctx, L"valueOf"), NULL);
+        ctx, self, neo_js_context_create_string(ctx, "valueOf"), NULL);
     if (neo_js_variable_get_type(value_of)->kind == NEO_JS_TYPE_CFUNCTION) {
       primitive = neo_js_context_call(ctx, value_of, self, 0, NULL);
 
@@ -99,7 +100,7 @@ static neo_js_variable_t neo_js_object_to_number(neo_js_context_t ctx,
   if (!primitive ||
       neo_js_variable_get_type(primitive)->kind >= NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t to_string = neo_js_context_get_field(
-        ctx, self, neo_js_context_create_string(ctx, L"to_string"), NULL);
+        ctx, self, neo_js_context_create_string(ctx, "toString"), NULL);
     if (neo_js_variable_get_type(to_string)->kind == NEO_JS_TYPE_CFUNCTION) {
       primitive = neo_js_context_call(ctx, to_string, self, 0, NULL);
       if (neo_js_variable_get_type(primitive)->kind == NEO_JS_TYPE_ERROR) {
@@ -110,16 +111,16 @@ static neo_js_variable_t neo_js_object_to_number(neo_js_context_t ctx,
   if (!primitive ||
       neo_js_variable_get_type(primitive)->kind != NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, 0, L"Cannot convert object to primitive value");
+        ctx, NEO_JS_ERROR_TYPE, 0, "Cannot convert object to primitive value");
   }
   return neo_js_context_to_number(ctx, primitive);
 }
 static neo_js_variable_t neo_js_object_to_primitive(neo_js_context_t ctx,
                                                     neo_js_variable_t self,
-                                                    const wchar_t *type) {
+                                                    const char *type) {
   neo_js_variable_t to_primitive = neo_js_context_get_field(
       ctx, neo_js_context_get_std(ctx).symbol_constructor,
-      neo_js_context_create_string(ctx, L"toPrimitive"), NULL);
+      neo_js_context_create_string(ctx, "toPrimitive"), NULL);
   neo_js_variable_t primitive = NULL;
   if (neo_js_variable_get_type(to_primitive)->kind == NEO_JS_TYPE_CFUNCTION) {
     neo_js_variable_t hint = neo_js_context_create_string(ctx, type);
@@ -132,7 +133,7 @@ static neo_js_variable_t neo_js_object_to_primitive(neo_js_context_t ctx,
     }
   }
   neo_js_variable_t value_of = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"valueOf"), NULL);
+      ctx, self, neo_js_context_create_string(ctx, "valueOf"), NULL);
   if (neo_js_variable_get_type(value_of)->kind == NEO_JS_TYPE_CFUNCTION) {
     primitive = neo_js_context_call(ctx, value_of, self, 0, NULL);
     if (neo_js_variable_get_type(primitive)->kind < NEO_JS_TYPE_OBJECT) {
@@ -143,7 +144,7 @@ static neo_js_variable_t neo_js_object_to_primitive(neo_js_context_t ctx,
     }
   }
   neo_js_variable_t to_string = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, L"toString"), NULL);
+      ctx, self, neo_js_context_create_string(ctx, "toString"), NULL);
   if (neo_js_variable_get_type(to_string)->kind == NEO_JS_TYPE_CFUNCTION) {
     primitive = neo_js_context_call(ctx, to_string, self, 0, NULL);
     if (neo_js_variable_get_type(primitive)->kind < NEO_JS_TYPE_OBJECT) {
@@ -156,10 +157,10 @@ static neo_js_variable_t neo_js_object_to_primitive(neo_js_context_t ctx,
   if (!primitive ||
       neo_js_variable_get_type(primitive)->kind >= NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, 0, L"Cannot convert object to primitive value");
+        ctx, NEO_JS_ERROR_TYPE, 0, "Cannot convert object to primitive value");
   }
   return neo_js_context_create_simple_error(
-      ctx, NEO_JS_ERROR_TYPE, 0, L"Cannot convert object to primitive value");
+      ctx, NEO_JS_ERROR_TYPE, 0, "Cannot convert object to primitive value");
 }
 static neo_js_variable_t neo_js_object_to_object(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
@@ -216,7 +217,7 @@ static neo_list_t neo_js_object_sort_keys(neo_allocator_t allocator,
   while (it != neo_list_get_tail(keys)) {
     neo_js_variable_t key = neo_list_node_get(it);
     neo_js_string_t skey = neo_js_variable_to_string(key);
-    if (wcscmp(skey->string, spin->string) < 0) {
+    if (strcmp(skey->string, spin->string) < 0) {
       neo_list_push(left, key);
     } else {
       neo_list_push(right, key);
@@ -288,7 +289,7 @@ static void neo_js_object_get_keys_list(neo_js_context_t ctx,
            it2 != neo_list_get_tail(num_keys); it2 = neo_list_node_next(it2)) {
         neo_js_variable_t current = neo_list_node_get(it2);
         neo_js_string_t scur = neo_js_variable_to_string(current);
-        if (wcscmp(scur->string, skey->string) == 0) {
+        if (strcmp(scur->string, skey->string) == 0) {
           break;
         }
       }
@@ -301,7 +302,7 @@ static void neo_js_object_get_keys_list(neo_js_context_t ctx,
            it2 = neo_list_node_next(it2)) {
         neo_js_variable_t current = neo_list_node_get(it2);
         neo_js_string_t scur = neo_js_variable_to_string(current);
-        if (wcscmp(scur->string, skey->string) == 0) {
+        if (strcmp(scur->string, skey->string) == 0) {
           break;
         }
       }
@@ -418,12 +419,12 @@ static neo_js_variable_t neo_js_object_set_field(neo_js_context_t ctx,
   } else {
     if (property->value) {
       if (!property->writable) {
-        const wchar_t *field_name = neo_js_context_to_error_name(ctx, field);
-        size_t len = wcslen(field_name) + 128;
+        const char *field_name = neo_js_context_to_error_name(ctx, field);
+        size_t len = strlen(field_name) + 128;
         return neo_js_context_create_simple_error(
             ctx, NEO_JS_ERROR_TYPE, len,
-            L"Cannot assign to read only property Symbol(%ls) of object "
-            L"'#<Object>'",
+            "Cannot assign to read only property Symbol(%s) of object "
+            "'#<Object>'",
             field_name);
       } else {
         if (property->value != hvalue) {
@@ -442,12 +443,12 @@ static neo_js_variable_t neo_js_object_set_field(neo_js_context_t ctx,
       return neo_js_context_call(ctx, setter, receiver ? receiver : self, 1,
                                  &value);
     } else {
-      const wchar_t *field_name = neo_js_context_to_error_name(ctx, field);
-      size_t len = wcslen(field_name) + 128;
+      const char *field_name = neo_js_context_to_error_name(ctx, field);
+      size_t len = strlen(field_name) + 128;
       return neo_js_context_create_simple_error(
           ctx, NEO_JS_ERROR_TYPE, len,
-          L"Cannot set property Symbol(%ls) of #<Object> which has only "
-          L"a getter",
+          "Cannot set property Symbol(%s) of #<Object> which has only "
+          "a getter",
           field_name);
     }
   }
@@ -463,18 +464,18 @@ static neo_js_variable_t neo_js_object_del_field(neo_js_context_t ctx,
       neo_js_object_get_own_property(ctx, self, field);
   neo_js_object_t object =
       neo_js_value_to_object(neo_js_variable_get_value(self));
-  const wchar_t *field_name = neo_js_context_to_error_name(ctx, field);
-  size_t len = wcslen(field_name) + 64;
+  const char *field_name = neo_js_context_to_error_name(ctx, field);
+  size_t len = strlen(field_name) + 64;
   if (object->frozen || object->sealed) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, len, L"Cannot delete property %ls of #<Object>",
+        ctx, NEO_JS_ERROR_TYPE, len, "Cannot delete property %s of #<Object>",
         field_name);
   }
   if (property) {
     if (!property->configurable) {
       return neo_js_context_create_simple_error(
           ctx, NEO_JS_ERROR_TYPE, len,
-          L"Cannot delete property '%ls' of #<Object>", field_name);
+          "Cannot delete property '%s' of #<Object>", field_name);
     } else {
       neo_hash_map_delete(object->properties, neo_js_variable_get_chunk(field),
                           ctx, ctx);
@@ -535,7 +536,7 @@ void neo_js_object_init(neo_allocator_t allocator, neo_js_object_t object) {
   initialize.auto_free_value = true;
   object->properties = neo_create_hash_map(allocator, &initialize);
   initialize.auto_free_key = true;
-  initialize.compare = (neo_compare_fn_t)wcscmp;
+  initialize.compare = (neo_compare_fn_t)strcmp;
   initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
   initialize.auto_free_value = false;
   object->internal = neo_create_hash_map(allocator, &initialize);
@@ -585,12 +586,12 @@ neo_js_variable_t neo_js_object_set_prototype(neo_js_context_t ctx,
                                               neo_js_variable_t prototype) {
   if (neo_js_variable_get_type(self)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
-                                              L"variable is not a object");
+                                              "variable is not a object");
   }
   neo_js_object_t obj = neo_js_variable_to_object(self);
   if (obj->sealed || obj->frozen || !obj->extensible) {
     return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
-                                              L"#<Object> is not extensible");
+                                              "#<Object> is not extensible");
   }
   neo_js_chunk_add_parent(obj->prototype, neo_js_scope_get_root_chunk(
                                               neo_js_context_get_scope(ctx)));

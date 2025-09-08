@@ -3,7 +3,6 @@
 #include "core/allocator.h"
 #include "engine/type.h"
 #include "engine/value.h"
-#include <wchar.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -12,14 +11,14 @@ typedef struct _neo_js_symbol_t *neo_js_symbol_t;
 
 struct _neo_js_symbol_t {
   struct _neo_js_value_t value;
-  wchar_t *description;
-  wchar_t *string;
+  char *description;
+  char *string;
 };
 
 neo_js_type_t neo_get_js_symbol_type();
 
 neo_js_symbol_t neo_create_js_symbol(neo_allocator_t allocator,
-                                     const wchar_t *value);
+                                     const char *value);
 
 neo_js_symbol_t neo_js_value_to_symbol(neo_js_value_t value);
 

@@ -17,12 +17,12 @@ typedef struct _neo_js_vm_t *neo_js_vm_t;
 typedef struct _neo_js_context_t *neo_js_context_t;
 
 typedef neo_js_variable_t (*neo_js_assert_fn_t)(neo_js_context_t ctx,
-                                                const wchar_t *type,
-                                                const wchar_t *value,
-                                                const wchar_t *file);
+                                                const char *type,
+                                                const char *value,
+                                                const char *file);
 
 typedef neo_js_variable_t (*neo_js_feature_fn_t)(neo_js_context_t ctx,
-                                                 const wchar_t *feature);
+                                                 const char *feature);
 
 typedef enum _neo_js_error_type_t {
   NEO_JS_ERROR_SYNTAX,
@@ -127,8 +127,8 @@ neo_list_t neo_js_context_set_stacktrace(neo_js_context_t ctx,
                                          neo_list_t stacktrace);
 
 void neo_js_context_push_stackframe(neo_js_context_t ctx,
-                                    const wchar_t *filename,
-                                    const wchar_t *function, uint32_t column,
+                                    const char *filename,
+                                    const char *function, uint32_t column,
                                     uint32_t line);
 
 void neo_js_context_pop_stackframe(neo_js_context_t ctx);
@@ -137,22 +137,22 @@ neo_js_std_t neo_js_context_get_std(neo_js_context_t ctx);
 
 neo_js_variable_t neo_js_context_create_variable(neo_js_context_t ctx,
                                                  neo_js_chunk_t handle,
-                                                 const wchar_t *name);
+                                                 const char *name);
 
 neo_js_variable_t neo_js_context_create_ref_variable(neo_js_context_t ctx,
                                                      neo_js_handle_t handle,
-                                                     const wchar_t *name);
+                                                     const char *name);
 
 neo_js_variable_t neo_js_context_def_variable(neo_js_context_t ctx,
                                               neo_js_variable_t variable,
-                                              const wchar_t *name);
+                                              const char *name);
 
 neo_js_variable_t neo_js_context_store_variable(neo_js_context_t ctx,
                                                 neo_js_variable_t variable,
-                                                const wchar_t *name);
+                                                const char *name);
 
 neo_js_variable_t neo_js_context_load_variable(neo_js_context_t ctx,
-                                               const wchar_t *name);
+                                               const char *name);
 
 neo_js_variable_t neo_js_context_extends(neo_js_context_t ctx,
                                          neo_js_variable_t variable,
@@ -160,7 +160,7 @@ neo_js_variable_t neo_js_context_extends(neo_js_context_t ctx,
 
 neo_js_variable_t neo_js_context_to_primitive(neo_js_context_t ctx,
                                               neo_js_variable_t variable,
-                                              const wchar_t *hint);
+                                              const char *hint);
 
 neo_js_variable_t neo_js_context_to_object(neo_js_context_t ctx,
                                            neo_js_variable_t variable);
@@ -214,19 +214,19 @@ neo_js_variable_t neo_js_context_def_accessor(neo_js_context_t ctx,
 
 neo_js_variable_t neo_js_context_get_internal(neo_js_context_t ctx,
                                               neo_js_variable_t object,
-                                              const wchar_t *field);
+                                              const char *field);
 
 bool neo_js_context_has_internal(neo_js_context_t ctx, neo_js_variable_t object,
-                                 const wchar_t *field);
+                                 const char *field);
 
 void neo_js_context_set_internal(neo_js_context_t ctx, neo_js_variable_t object,
-                                 const wchar_t *field, neo_js_variable_t value);
+                                 const char *field, neo_js_variable_t value);
 
 void *neo_js_context_get_opaque(neo_js_context_t ctx, neo_js_variable_t object,
-                                const wchar_t *field);
+                                const char *field);
 
 void neo_js_context_set_opaque(neo_js_context_t ctx, neo_js_variable_t object,
-                               const wchar_t *field, void *value);
+                               const char *field, void *value);
 
 bool neo_js_context_is_thenable(neo_js_context_t ctx,
                                 neo_js_variable_t variable);
@@ -278,9 +278,9 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
 neo_js_variable_t neo_js_context_create_simple_error(neo_js_context_t ctx,
                                                      neo_js_error_type_t type,
                                                      size_t len,
-                                                     const wchar_t *fmt, ...);
+                                                     const char *fmt, ...);
 
-const wchar_t *neo_js_context_to_error_name(neo_js_context_t ctx,
+const char *neo_js_context_to_error_name(neo_js_context_t ctx,
                                             neo_js_variable_t variable);
 
 neo_js_variable_t neo_js_context_create_error(neo_js_context_t ctx,
@@ -299,13 +299,13 @@ neo_js_variable_t neo_js_context_create_bigint(neo_js_context_t ctx,
                                                neo_bigint_t value);
 
 neo_js_variable_t neo_js_context_create_string(neo_js_context_t ctx,
-                                               const wchar_t *value);
+                                               const char *value);
 
 neo_js_variable_t neo_js_context_create_boolean(neo_js_context_t ctx,
                                                 bool value);
 
 neo_js_variable_t neo_js_context_create_symbol(neo_js_context_t ctx,
-                                               const wchar_t *description);
+                                               const char *description);
 
 neo_js_variable_t neo_js_context_create_object(neo_js_context_t ctx,
                                                neo_js_variable_t prototype);
@@ -318,11 +318,11 @@ neo_js_variable_t neo_js_context_create_interrupt(neo_js_context_t ctx,
                                                   neo_js_interrupt_type_t type);
 
 neo_js_variable_t
-neo_js_context_create_cfunction(neo_js_context_t ctx, const wchar_t *name,
+neo_js_context_create_cfunction(neo_js_context_t ctx, const char *name,
                                 neo_js_cfunction_fn_t cfunction);
 
 neo_js_variable_t
-neo_js_context_create_async_cfunction(neo_js_context_t ctx, const wchar_t *name,
+neo_js_context_create_async_cfunction(neo_js_context_t ctx, const char *name,
                                       neo_js_async_cfunction_fn_t cfunction);
 
 neo_js_variable_t neo_js_context_create_function(neo_js_context_t ctx,
@@ -453,30 +453,30 @@ neo_js_variable_t neo_js_context_in(neo_js_context_t ctx,
 
 neo_js_variable_t neo_js_context_create_compile_error(neo_js_context_t ctx);
 
-void neo_js_context_create_module(neo_js_context_t ctx, const wchar_t *name,
+void neo_js_context_create_module(neo_js_context_t ctx, const char *name,
                                   neo_js_variable_t module);
 
 neo_js_variable_t neo_js_context_get_module(neo_js_context_t ctx,
-                                            const wchar_t *name);
+                                            const char *name);
 
-bool neo_js_context_has_module(neo_js_context_t ctx, const wchar_t *name);
+bool neo_js_context_has_module(neo_js_context_t ctx, const char *name);
 
 neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
                                       const char *source);
 
 neo_js_variable_t neo_js_context_assert(neo_js_context_t ctx,
-                                        const wchar_t *type,
-                                        const wchar_t *value,
-                                        const wchar_t *file);
+                                        const char *type,
+                                        const char *value,
+                                        const char *file);
 
 neo_js_assert_fn_t neo_js_context_set_assert_fn(neo_js_context_t ctx,
                                                 neo_js_assert_fn_t assert_fn);
 
-void neo_js_context_enable(neo_js_context_t ctx, const wchar_t *feature);
+void neo_js_context_enable(neo_js_context_t ctx, const char *feature);
 
-void neo_js_context_disable(neo_js_context_t ctx, const wchar_t *feature);
+void neo_js_context_disable(neo_js_context_t ctx, const char *feature);
 
-void neo_js_context_set_feature(neo_js_context_t ctx, const wchar_t *feature,
+void neo_js_context_set_feature(neo_js_context_t ctx, const char *feature,
                                 neo_js_feature_fn_t enable_fn,
                                 neo_js_feature_fn_t disable_fn);
 

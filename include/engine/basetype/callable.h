@@ -16,7 +16,7 @@ typedef struct _neo_js_callable_t *neo_js_callable_t;
 struct _neo_js_callable_t {
   struct _neo_js_object_t object;
   neo_hash_map_t closure;
-  wchar_t *name;
+  char *name;
   neo_js_chunk_t bind;
   neo_js_chunk_t clazz;
   bool is_class;
@@ -25,12 +25,11 @@ struct _neo_js_callable_t {
 neo_js_callable_t neo_js_value_to_callable(neo_js_value_t value);
 
 void neo_js_callable_set_closure(neo_js_context_t ctx, neo_js_variable_t self,
-                                 const wchar_t *name,
-                                 neo_js_variable_t closure);
+                                 const char *name, neo_js_variable_t closure);
 
 neo_js_variable_t neo_js_callable_get_closure(neo_js_context_t ctx,
                                               neo_js_variable_t self,
-                                              const wchar_t *name);
+                                              const char *name);
 
 neo_js_variable_t neo_js_callable_set_bind(neo_js_context_t ctx,
                                            neo_js_variable_t self,

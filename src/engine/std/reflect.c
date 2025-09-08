@@ -38,7 +38,7 @@ NEO_JS_CFUNCTION(neo_js_reflect_delete_property) {
   if (neo_js_variable_get_type(obj)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
         ctx, NEO_JS_ERROR_TYPE, 0,
-        L"Reflect.getOwnPropertyDescriptor called with non-object");
+        "Reflect.getOwnPropertyDescriptor called with non-object");
   }
   neo_js_variable_t key = NULL;
   if (argc > 1) {
@@ -67,7 +67,7 @@ NEO_JS_CFUNCTION(neo_js_reflect_get) {
   }
   if (neo_js_variable_get_type(obj)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, 0, L"Reflect.get called with non-object");
+        ctx, NEO_JS_ERROR_TYPE, 0, "Reflect.get called with non-object");
   }
   return neo_js_context_get_field(ctx, obj, field, receiver);
 }
@@ -81,7 +81,7 @@ NEO_JS_CFUNCTION(neo_js_reflect_get_own_property_descriptor) {
   if (neo_js_variable_get_type(obj)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
         ctx, NEO_JS_ERROR_TYPE, 0,
-        L"Reflect.getOwnPropertyDescriptor called with non-object");
+        "Reflect.getOwnPropertyDescriptor called with non-object");
   }
   return neo_js_object_get_own_property_descriptor(
       ctx, neo_js_context_get_std(ctx).object_constructor, argc, argv);
@@ -95,8 +95,8 @@ NEO_JS_CFUNCTION(neo_js_reflect_get_prototype_of) {
   }
   if (neo_js_variable_get_type(obj)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,0, 
-        L"Reflect.getPrototypeOf called with non-object");
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        "Reflect.getPrototypeOf called with non-object");
   }
   return neo_js_object_get_prototype_of(
       ctx, neo_js_context_get_std(ctx).object_constructor, 1, &obj);
@@ -116,7 +116,7 @@ NEO_JS_CFUNCTION(neo_js_reflect_has) {
   }
   if (neo_js_variable_get_type(obj)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, 0, L"Reflect.has called with non-object");
+        ctx, NEO_JS_ERROR_TYPE, 0, "Reflect.has called with non-object");
   }
   return neo_js_context_in(ctx, field, obj);
 }
@@ -129,7 +129,8 @@ NEO_JS_CFUNCTION(neo_js_reflect_is_extensible) {
   }
   if (neo_js_variable_get_type(obj)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,0,  L"Reflect.isExtensible called with non-object");
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        "Reflect.isExtensible called with non-object");
   }
   return neo_js_object_is_extensible(
       ctx, neo_js_context_get_std(ctx).object_constructor, 1, &obj);
@@ -143,7 +144,7 @@ NEO_JS_CFUNCTION(neo_js_reflect_own_keys) {
   }
   if (neo_js_variable_get_type(obj)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,0,  L"Reflect.ownKeys called with non-object");
+        ctx, NEO_JS_ERROR_TYPE, 0, "Reflect.ownKeys called with non-object");
   }
   neo_js_object_t object = neo_js_variable_to_object(obj);
   neo_js_variable_t result = neo_js_context_create_array(ctx);
@@ -164,8 +165,8 @@ NEO_JS_CFUNCTION(neo_js_reflect_prevent_extensions) {
   }
   if (neo_js_variable_get_type(obj)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,0, 
-        L"Reflect.preventExtensions called with non-object");
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        "Reflect.preventExtensions called with non-object");
   }
   return neo_js_object_prevent_extensions(
       ctx, neo_js_context_get_std(ctx).object_constructor, 1, &obj);
@@ -195,7 +196,7 @@ NEO_JS_CFUNCTION(neo_js_reflect_set) {
   }
   if (neo_js_variable_get_type(obj)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE, 0, L"Reflect.set called with non-object");
+        ctx, NEO_JS_ERROR_TYPE, 0, "Reflect.set called with non-object");
   }
   return neo_js_context_set_field(ctx, obj, field, value, receiver);
 }
@@ -208,8 +209,8 @@ NEO_JS_CFUNCTION(neo_js_reflect_set_prototype_of) {
   }
   if (neo_js_variable_get_type(obj)->kind < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,0, 
-        L"Reflect.setPrototypeOf called with non-object");
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        "Reflect.setPrototypeOf called with non-object");
   }
   return neo_js_object_set_prototype_of(
       ctx, neo_js_context_get_std(ctx).object_constructor, 1, &obj);
@@ -219,80 +220,80 @@ void neo_js_context_init_std_reflect(neo_js_context_t ctx) {
   neo_js_variable_t reflect =
       neo_js_context_create_object(ctx, neo_js_context_create_null(ctx));
   neo_js_context_set_field(ctx, neo_js_context_get_std(ctx).global,
-                           neo_js_context_create_string(ctx, L"Reflect"),
+                           neo_js_context_create_string(ctx, "Reflect"),
                            reflect, NULL);
   neo_js_context_set_field(
       ctx, reflect,
       neo_js_context_get_field(
           ctx, neo_js_context_get_std(ctx).symbol_constructor,
-          neo_js_context_create_string(ctx, L"toStringTag"), NULL),
-      neo_js_context_create_string(ctx, L"Reflect"), NULL);
+          neo_js_context_create_string(ctx, "toStringTag"), NULL),
+      neo_js_context_create_string(ctx, "Reflect"), NULL);
   neo_js_variable_t apply =
-      neo_js_context_create_cfunction(ctx, L"apply", neo_js_reflect_apply);
+      neo_js_context_create_cfunction(ctx, "apply", neo_js_reflect_apply);
   neo_js_context_def_field(ctx, reflect,
-                           neo_js_context_create_string(ctx, L"apply"), apply,
+                           neo_js_context_create_string(ctx, "apply"), apply,
                            true, false, true);
   neo_js_variable_t construct = neo_js_context_create_cfunction(
-      ctx, L"construct", neo_js_reflect_construct);
+      ctx, "construct", neo_js_reflect_construct);
   neo_js_context_def_field(ctx, reflect,
-                           neo_js_context_create_string(ctx, L"construct"),
+                           neo_js_context_create_string(ctx, "construct"),
                            construct, true, false, true);
   neo_js_variable_t define_property = neo_js_context_create_cfunction(
-      ctx, L"defineProperty", neo_js_reflect_define_property);
+      ctx, "defineProperty", neo_js_reflect_define_property);
   neo_js_context_def_field(ctx, reflect,
-                           neo_js_context_create_string(ctx, L"defineProperty"),
+                           neo_js_context_create_string(ctx, "defineProperty"),
                            define_property, true, false, true);
   neo_js_variable_t delete_property = neo_js_context_create_cfunction(
-      ctx, L"deleteProperty", neo_js_reflect_delete_property);
+      ctx, "deleteProperty", neo_js_reflect_delete_property);
   neo_js_context_def_field(ctx, reflect,
-                           neo_js_context_create_string(ctx, L"deleteProperty"),
+                           neo_js_context_create_string(ctx, "deleteProperty"),
                            delete_property, true, false, true);
   neo_js_variable_t get =
-      neo_js_context_create_cfunction(ctx, L"get", neo_js_reflect_get);
+      neo_js_context_create_cfunction(ctx, "get", neo_js_reflect_get);
   neo_js_context_def_field(ctx, reflect,
-                           neo_js_context_create_string(ctx, L"get"), get, true,
+                           neo_js_context_create_string(ctx, "get"), get, true,
                            false, true);
   neo_js_variable_t get_own_property_descriptor =
       neo_js_context_create_cfunction(
-          ctx, L"getOwnPropertyDescriptor",
+          ctx, "getOwnPropertyDescriptor",
           neo_js_reflect_get_own_property_descriptor);
   neo_js_context_def_field(
       ctx, reflect,
-      neo_js_context_create_string(ctx, L"getOwnPropertyDescriptor"),
+      neo_js_context_create_string(ctx, "getOwnPropertyDescriptor"),
       get_own_property_descriptor, true, false, true);
   neo_js_variable_t get_prototype_of = neo_js_context_create_cfunction(
-      ctx, L"getPrototypeOf", neo_js_reflect_get_prototype_of);
+      ctx, "getPrototypeOf", neo_js_reflect_get_prototype_of);
   neo_js_context_def_field(ctx, reflect,
-                           neo_js_context_create_string(ctx, L"getPrototypeOf"),
+                           neo_js_context_create_string(ctx, "getPrototypeOf"),
                            get_prototype_of, true, false, true);
   neo_js_variable_t has =
-      neo_js_context_create_cfunction(ctx, L"has", neo_js_reflect_has);
+      neo_js_context_create_cfunction(ctx, "has", neo_js_reflect_has);
   neo_js_context_def_field(ctx, reflect,
-                           neo_js_context_create_string(ctx, L"has"), has, true,
+                           neo_js_context_create_string(ctx, "has"), has, true,
                            false, true);
   neo_js_variable_t is_extensible = neo_js_context_create_cfunction(
-      ctx, L"isExtensible", neo_js_reflect_is_extensible);
+      ctx, "isExtensible", neo_js_reflect_is_extensible);
   neo_js_context_def_field(ctx, reflect,
-                           neo_js_context_create_string(ctx, L"isExtensible"),
+                           neo_js_context_create_string(ctx, "isExtensible"),
                            is_extensible, true, false, true);
   neo_js_variable_t own_keys =
-      neo_js_context_create_cfunction(ctx, L"ownKeys", neo_js_reflect_own_keys);
+      neo_js_context_create_cfunction(ctx, "ownKeys", neo_js_reflect_own_keys);
   neo_js_context_def_field(ctx, reflect,
-                           neo_js_context_create_string(ctx, L"ownKeys"),
+                           neo_js_context_create_string(ctx, "ownKeys"),
                            own_keys, true, false, true);
   neo_js_variable_t prevent_extensions = neo_js_context_create_cfunction(
-      ctx, L"preventExtensions", neo_js_reflect_prevent_extensions);
+      ctx, "preventExtensions", neo_js_reflect_prevent_extensions);
   neo_js_context_def_field(
-      ctx, reflect, neo_js_context_create_string(ctx, L"preventExtensions"),
+      ctx, reflect, neo_js_context_create_string(ctx, "preventExtensions"),
       prevent_extensions, true, false, true);
   neo_js_variable_t set =
-      neo_js_context_create_cfunction(ctx, L"set", neo_js_reflect_set);
+      neo_js_context_create_cfunction(ctx, "set", neo_js_reflect_set);
   neo_js_context_def_field(ctx, reflect,
-                           neo_js_context_create_string(ctx, L"set"), set, true,
+                           neo_js_context_create_string(ctx, "set"), set, true,
                            false, true);
   neo_js_variable_t set_prototype_of = neo_js_context_create_cfunction(
-      ctx, L"setPrototypeOf", neo_js_reflect_set_prototype_of);
+      ctx, "setPrototypeOf", neo_js_reflect_set_prototype_of);
   neo_js_context_def_field(ctx, reflect,
-                           neo_js_context_create_string(ctx, L"setPrototypeOf"),
+                           neo_js_context_create_string(ctx, "setPrototypeOf"),
                            set_prototype_of, true, false, true);
 }

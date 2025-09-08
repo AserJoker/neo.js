@@ -2,7 +2,6 @@
 #define _H_NEO_CORE_BIGINT_
 #include "core/allocator.h"
 #include <stdbool.h>
-#include <wchar.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -15,12 +14,11 @@ neo_bigint_t neo_create_bigint(neo_allocator_t allocaotr);
 
 neo_bigint_t neo_number_to_bigint(neo_allocator_t allocator, int64_t val);
 
-neo_bigint_t neo_string_to_bigint(neo_allocator_t allocator,
-                                  const wchar_t *val);
+neo_bigint_t neo_string_to_bigint(neo_allocator_t allocator, const char *val);
 
 neo_bigint_t neo_bigint_clone(neo_bigint_t self);
 
-wchar_t *neo_bigint_to_string(neo_bigint_t bigint, uint32_t redix);
+char *neo_bigint_to_string(neo_bigint_t bigint, uint32_t redix);
 
 double neo_bigint_to_number(neo_bigint_t bigint);
 

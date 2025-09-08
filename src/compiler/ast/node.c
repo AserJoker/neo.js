@@ -25,8 +25,8 @@ neo_variable_t neo_ast_node_list_serialize(neo_allocator_t allocator,
 neo_variable_t neo_ast_node_source_serialize(neo_allocator_t allocator,
                                              neo_ast_node_t node) {
   size_t size = node->location.end.offset - node->location.begin.offset;
-  wchar_t *buf = neo_allocator_alloc(allocator, size * 2 * sizeof(wchar_t), NULL);
-  wchar_t *dst = buf;
+  char *buf = neo_allocator_alloc(allocator, size * 2 * sizeof(char), NULL);
+  char *dst = buf;
   const char *src = node->location.begin.offset;
   while (src != node->location.end.offset) {
     if (*src == '\"') {
@@ -55,7 +55,7 @@ neo_variable_t neo_ast_node_location_serialize(neo_allocator_t allocator,
                                                neo_ast_node_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
 
-  neo_variable_set(variable, L"text",
+  neo_variable_set(variable, "text",
                    neo_ast_node_source_serialize(allocator, node));
   return variable;
 }

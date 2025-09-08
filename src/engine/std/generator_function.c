@@ -16,9 +16,9 @@ neo_js_variable_t neo_js_generator_function_to_string(neo_js_context_t ctx,
   if (neo_js_variable_get_type(self)->kind != NEO_JS_TYPE_FUNCTION ||
       !generator || !generator->is_generator) {
     return neo_js_context_create_simple_error(
-        ctx, NEO_JS_ERROR_TYPE,
-        0, L" GeneratorFunction.prototype.toString requires that 'this' be a "
-        L"GeneratorFunction");
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        " GeneratorFunction.prototype.toString requires that 'this' be a "
+        "GeneratorFunction");
   }
   neo_js_function_t func = neo_js_variable_to_function(self);
   return neo_js_context_create_string(ctx, func->source);
@@ -27,11 +27,11 @@ neo_js_variable_t neo_js_generator_function_to_string(neo_js_context_t ctx,
 void neo_js_context_init_std_generator_function(neo_js_context_t ctx) {
   neo_js_variable_t prototype = neo_js_context_get_field(
       ctx, neo_js_context_get_std(ctx).generator_function_constructor,
-      neo_js_context_create_string(ctx, L"prototype"), NULL);
+      neo_js_context_create_string(ctx, "prototype"), NULL);
 
   neo_js_context_def_field(
-      ctx, prototype, neo_js_context_create_string(ctx, L"toString"),
-      neo_js_context_create_cfunction(ctx, L"toString",
+      ctx, prototype, neo_js_context_create_string(ctx, "toString"),
+      neo_js_context_create_cfunction(ctx, "toString",
                                       neo_js_generator_function_to_string),
       true, false, true);
 }

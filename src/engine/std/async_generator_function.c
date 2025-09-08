@@ -16,8 +16,8 @@ neo_js_async_generator_function_to_string(neo_js_context_t ctx,
       !generator || !generator->is_generator) {
     return neo_js_context_create_simple_error(
         ctx, NEO_JS_ERROR_TYPE, 0,
-        L"AsyncGeneratorFunction.prototype.toString requires that 'this' be a "
-        L"AsyncGeneratorFunction");
+        "AsyncGeneratorFunction.prototype.toString requires that 'this' be a "
+        "AsyncGeneratorFunction");
   }
   neo_js_function_t func = neo_js_variable_to_function(self);
   return neo_js_context_create_string(ctx, func->source);
@@ -26,11 +26,11 @@ neo_js_async_generator_function_to_string(neo_js_context_t ctx,
 void neo_js_context_init_std_async_generator_function(neo_js_context_t ctx) {
   neo_js_variable_t prototype = neo_js_context_get_field(
       ctx, neo_js_context_get_std(ctx).async_generator_function_constructor,
-      neo_js_context_create_string(ctx, L"prototype"), NULL);
+      neo_js_context_create_string(ctx, "prototype"), NULL);
 
   neo_js_context_def_field(
-      ctx, prototype, neo_js_context_create_string(ctx, L"toString"),
+      ctx, prototype, neo_js_context_create_string(ctx, "toString"),
       neo_js_context_create_cfunction(
-          ctx, L"toString", neo_js_async_generator_function_to_string),
+          ctx, "toString", neo_js_async_generator_function_to_string),
       true, false, true);
 }

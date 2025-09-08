@@ -10,9 +10,9 @@
 #include "engine/variable.h"
 #include <wchar.h>
 
-static const wchar_t *neo_js_bigint_typeof(neo_js_context_t ctx,
+static const char *neo_js_bigint_typeof(neo_js_context_t ctx,
                                            neo_js_variable_t variable) {
-  return L"bigint";
+  return "bigint";
 }
 
 static neo_js_variable_t neo_js_bigint_to_string(neo_js_context_t ctx,
@@ -21,7 +21,7 @@ static neo_js_variable_t neo_js_bigint_to_string(neo_js_context_t ctx,
       neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
   neo_js_bigint_t bigint = neo_js_value_to_bigint(
       neo_js_chunk_get_value(neo_js_variable_get_chunk(self)));
-  wchar_t *bigint_str = neo_bigint_to_string(bigint->bigint, 10);
+  char *bigint_str = neo_bigint_to_string(bigint->bigint, 10);
   neo_js_string_t string = neo_create_js_string(allocator, bigint_str);
   neo_allocator_free(allocator, bigint_str);
   return neo_js_context_create_variable(
@@ -41,19 +41,19 @@ static neo_js_variable_t neo_js_bigint_to_number(neo_js_context_t ctx,
 }
 static neo_js_variable_t neo_js_bigint_to_primitive(neo_js_context_t ctx,
                                                     neo_js_variable_t self,
-                                                    const wchar_t *type) {
+                                                    const char *type) {
   return self;
 }
 static neo_js_variable_t neo_js_bigint_to_object(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
   neo_js_variable_t bigint = neo_js_context_get_std(ctx).bigint_constructor;
   neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, bigint, neo_js_context_create_string(ctx, L"prototype"), NULL);
+      ctx, bigint, neo_js_context_create_string(ctx, "prototype"), NULL);
   neo_js_variable_t result = neo_js_context_create_object(ctx, prototype);
   neo_js_context_set_field(ctx, result,
-                           neo_js_context_create_string(ctx, L"constructor"),
+                           neo_js_context_create_string(ctx, "constructor"),
                            bigint, NULL);
-  neo_js_context_set_internal(ctx, result, L"[[primitive]]", self);
+  neo_js_context_set_internal(ctx, result, "[[primitive]]", self);
   return result;
 }
 

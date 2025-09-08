@@ -197,8 +197,8 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
 static neo_variable_t neo_token_serialize(neo_allocator_t allocator,
                                           neo_token_t token) {
   size_t len = token->location.end.offset - token->location.begin.offset;
-  wchar_t *buf = neo_allocator_alloc(allocator, len * 2 * sizeof(wchar_t), NULL);
-  wchar_t *dst = buf;
+  char *buf = neo_allocator_alloc(allocator, len * 2 * sizeof(char), NULL);
+  char *dst = buf;
   const char *src = token->location.end.offset;
   while (src != token->location.end.offset) {
     if (*src == '\"') {
@@ -225,18 +225,18 @@ neo_serialize_ast_literal_template(neo_allocator_t allocator,
                                    neo_ast_literal_template_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
   neo_variable_set(
-      variable, L"type",
-      neo_create_variable_string(allocator, L"NEO_NODE_TYPE_LITERAL_TEMPLATE"));
-  neo_variable_set(variable, L"location",
+      variable, "type",
+      neo_create_variable_string(allocator, "NEO_NODE_TYPE_LITERAL_TEMPLATE"));
+  neo_variable_set(variable, "location",
                    neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, L"scope",
+  neo_variable_set(variable, "scope",
                    neo_serialize_scope(allocator, node->node.scope));
-  neo_variable_set(variable, L"tag",
+  neo_variable_set(variable, "tag",
                    neo_ast_node_serialize(allocator, node->tag));
-  neo_variable_set(variable, L"expressions",
+  neo_variable_set(variable, "expressions",
                    neo_ast_node_list_serialize(allocator, node->expressions));
   neo_variable_set(
-      variable, L"quasis",
+      variable, "quasis",
       neo_create_variable_array(allocator, node->quasis,
                                 (neo_serialize_fn_t)neo_token_serialize));
   return variable;

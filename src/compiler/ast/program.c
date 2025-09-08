@@ -56,17 +56,17 @@ static neo_variable_t neo_serialize_ast_program(neo_allocator_t allocator,
                                                 neo_ast_program_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
   neo_variable_set(
-      variable, L"type",
-      neo_create_variable_string(allocator, L"NEO_NODE_TYPE_PROGRAM"));
-  neo_variable_set(variable, L"location",
+      variable, "type",
+      neo_create_variable_string(allocator, "NEO_NODE_TYPE_PROGRAM"));
+  neo_variable_set(variable, "location",
                    neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, L"scope",
+  neo_variable_set(variable, "scope",
                    neo_serialize_scope(allocator, node->node.scope));
-  neo_variable_set(variable, L"interpreter",
+  neo_variable_set(variable, "interpreter",
                    neo_ast_node_serialize(allocator, node->interpreter));
-  neo_variable_set(variable, L"directives",
+  neo_variable_set(variable, "directives",
                    neo_ast_node_list_serialize(allocator, node->directives));
-  neo_variable_set(variable, L"body",
+  neo_variable_set(variable, "body",
                    neo_ast_node_list_serialize(allocator, node->body));
   return variable;
 }

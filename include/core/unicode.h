@@ -22,12 +22,6 @@ size_t neo_utf32_to_utf8(uint32_t utf32, char *output);
 
 char *neo_utf8_char_to_string(neo_allocator_t allocator, neo_utf8_char chr);
 
-uint32_t *neo_utf16_to_utf32(neo_allocator_t allocator, const wchar_t *wstring);
-
-char *neo_wstring_to_string(neo_allocator_t allocator, const wchar_t *wstring);
-
-wchar_t *neo_string_to_wstring(neo_allocator_t allocator, const char *string);
-
 size_t neo_utf8_get_len(const char *str);
 
 bool neo_utf8_char_is(neo_utf8_char chr, const char *s);

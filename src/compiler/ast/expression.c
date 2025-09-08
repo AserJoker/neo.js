@@ -33,7 +33,6 @@
 #include "core/list.h"
 #include "core/location.h"
 #include "core/position.h"
-#include "core/unicode.h"
 #include "core/variable.h"
 #include <stdbool.h>
 #include <stdio.h>
@@ -64,23 +63,21 @@ static neo_variable_t
 neo_serialize_ast_expression_binary(neo_allocator_t allocator,
                                     neo_ast_expression_binary_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_set(variable, L"type",
-                   neo_create_variable_string(
-                       allocator, L"NEO_NODE_TYPE_EXPRESSION_BINARY"));
-  neo_variable_set(variable, L"location",
+  neo_variable_set(
+      variable, "type",
+      neo_create_variable_string(allocator, "NEO_NODE_TYPE_EXPRESSION_BINARY"));
+  neo_variable_set(variable, "location",
                    neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, L"scope",
+  neo_variable_set(variable, "scope",
                    neo_serialize_scope(allocator, node->node.scope));
-  neo_variable_set(variable, L"left",
+  neo_variable_set(variable, "left",
                    neo_ast_node_serialize(allocator, node->left));
-  neo_variable_set(variable, L"right",
+  neo_variable_set(variable, "right",
                    neo_ast_node_serialize(allocator, node->right));
 
   char *opt = neo_location_get(allocator, node->opt->location);
-  wchar_t *wopt = neo_string_to_wstring(allocator, opt);
-  neo_variable_set(variable, L"operator",
-                   neo_create_variable_string(allocator, wopt));
-  neo_allocator_free(allocator, wopt);
+  neo_variable_set(variable, "operator",
+                   neo_create_variable_string(allocator, opt));
   neo_allocator_free(allocator, opt);
   return variable;
 }

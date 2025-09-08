@@ -4,6 +4,7 @@
 #include "engine/type.h"
 #include "engine/variable.h"
 #include <math.h>
+#include <stdlib.h>
 NEO_JS_CFUNCTION(neo_js_parse_float) {
   if (argc < 1) {
     return neo_js_context_create_number(ctx, NAN);
@@ -16,12 +17,16 @@ NEO_JS_CFUNCTION(neo_js_parse_float) {
     arg = neo_js_context_to_string(ctx, arg);
     NEO_JS_TRY_AND_THROW(arg);
   }
-  const wchar_t *source = neo_js_variable_to_string(arg)->string;
-  if (NEO_IS_SPACE(*source)) {
-    source++;
+  const char *source = neo_js_variable_to_string(arg)->string;
+  neo_utf8_char utf8 = neo_utf8_read_char(source);
+  uint32_t utf32 = neo_utf8_char_to_utf32(utf8);
+  if (NEO_IS_SPACE(utf32)) {
+    source = utf8.end;
+    utf8 = neo_utf8_read_char(source);
+    utf32 = neo_utf8_char_to_utf32(utf8);
   }
-  wchar_t *next = NULL;
-  double val = wcstod(source, &next);
+  char *next = NULL;
+  double val = strtof(source, &next);
   if (next == source) {
     return neo_js_context_create_number(ctx, NAN);
   }

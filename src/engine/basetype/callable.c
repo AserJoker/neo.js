@@ -11,6 +11,7 @@
 #include "engine/type.h"
 #include "engine/variable.h"
 #include <stdbool.h>
+#include <string.h>
 
 neo_js_callable_t neo_js_value_to_callable(neo_js_value_t value) {
   if (value->type->kind >= NEO_JS_TYPE_CFUNCTION) {
@@ -20,8 +21,7 @@ neo_js_callable_t neo_js_value_to_callable(neo_js_value_t value) {
 }
 
 void neo_js_callable_set_closure(neo_js_context_t ctx, neo_js_variable_t self,
-                                 const wchar_t *name,
-                                 neo_js_variable_t closure) {
+                                 const char *name, neo_js_variable_t closure) {
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_js_callable_t callable = neo_js_variable_to_callable(self);
   neo_js_chunk_t cvariable = neo_js_variable_get_chunk(self);
@@ -29,13 +29,13 @@ void neo_js_callable_set_closure(neo_js_context_t ctx, neo_js_variable_t self,
   neo_js_chunk_t cclosure = neo_js_handle_get_chunk(hclosure);
   neo_js_chunk_add_parent(cclosure, cvariable);
   neo_js_handle_add_ref(hclosure);
-  neo_hash_map_set(callable->closure, neo_create_wstring(allocator, name),
+  neo_hash_map_set(callable->closure, neo_create_string(allocator, name),
                    hclosure, NULL, NULL);
 }
 
 neo_js_variable_t neo_js_callable_get_closure(neo_js_context_t ctx,
                                               neo_js_variable_t self,
-                                              const wchar_t *name) {
+                                              const char *name) {
   neo_js_callable_t callable = neo_js_variable_to_callable(self);
   neo_js_handle_t current =
       neo_hash_map_get(callable->closure, name, NULL, NULL);
@@ -103,7 +103,7 @@ void neo_js_callable_init(neo_allocator_t allocator,
   initialize.auto_free_key = true;
   initialize.auto_free_value = false;
   initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
-  initialize.compare = (neo_compare_fn_t)wcscmp;
+  initialize.compare = (neo_compare_fn_t)strcmp;
   callable->closure = neo_create_hash_map(allocator, &initialize);
 }
 

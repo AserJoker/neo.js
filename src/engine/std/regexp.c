@@ -1,6 +1,5 @@
 #include "engine/std/regexp.h"
 #include "core/allocator.h"
-#include "core/string.h"
 #include "engine/basetype/object.h"
 #include "engine/context.h"
 #include "engine/type.h"
@@ -8,8 +7,9 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 #include <wchar.h>
-#define PCRE2_CODE_UNIT_WIDTH 16
+#define PCRE2_CODE_UNIT_WIDTH 8
 #include <pcre2.h>
 
 #define NEO_REGEXP_FLAG_GLOBAL (1 << 1)
@@ -23,7 +23,7 @@
 typedef struct _neo_js_regex_t {
   pcre2_code *code;
   uint8_t flag;
-  wchar_t *source;
+  char *source;
   size_t lastindex;
 } *neo_js_regex_t;
 
@@ -38,8 +38,8 @@ neo_js_variable_t neo_js_regexp_constructor(neo_js_context_t ctx,
                                             neo_js_variable_t self,
                                             uint32_t argc,
                                             neo_js_variable_t *argv) {
-  const wchar_t *rule = L"(?:)";
-  const wchar_t *s_flag = L"";
+  const char *rule = "(?:)";
+  const char *s_flag = "";
   if (argc > 0) {
     neo_js_variable_t v_rule = neo_js_context_to_string(ctx, argv[0]);
     if (neo_js_variable_get_type(v_rule)->kind == NEO_JS_TYPE_ERROR) {
@@ -56,7 +56,7 @@ neo_js_variable_t neo_js_regexp_constructor(neo_js_context_t ctx,
   }
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   uint8_t flag = 0;
-  const wchar_t *pflag = s_flag;
+  const char *pflag = s_flag;
   while (*pflag != 0) {
     switch (*pflag) {
     case 'g':
@@ -81,10 +81,10 @@ neo_js_variable_t neo_js_regexp_constructor(neo_js_context_t ctx,
       flag |= NEO_REGEXP_FLAG_STICKY;
       break;
     default: {
-      size_t len = wcslen(s_flag) + 128;
+      size_t len = strlen(s_flag) + 128;
       return neo_js_context_create_simple_error(
           ctx, NEO_JS_ERROR_SYNTAX, len,
-          L"Invalid flags supplied to RegExp constructor '%ls'", s_flag);
+          "Invalid flags supplied to RegExp constructor '%s'", s_flag);
     }
     }
     pflag++;
@@ -105,22 +105,14 @@ neo_js_variable_t neo_js_regexp_constructor(neo_js_context_t ctx,
     compile_options |= PCRE2_UTF | PCRE2_UCP;
   }
   compile_options |= PCRE2_DUPNAMES;
-#ifdef __linux__
-  uint16_t *prule = neo_wstring_to_char16(allocator, rule);
-  pcre2_code *code =
-      pcre2_compile((PCRE2_SPTR)prule, PCRE2_ZERO_TERMINATED, compile_options,
-                    &error_code, &error_offset, NULL);
-  neo_allocator_free(allocator, prule);
-#else
   pcre2_code *code =
       pcre2_compile((PCRE2_SPTR)rule, PCRE2_ZERO_TERMINATED, compile_options,
                     &error_code, &error_offset, NULL);
-#endif
   if (!code) {
-    size_t len = wcslen(s_flag) + 128;
+    size_t len = strlen(s_flag) + 128;
     return neo_js_context_create_simple_error(
         ctx, NEO_JS_ERROR_SYNTAX, len,
-        L"Invalid regular expression: /%ls/%ls: Unterminated character class",
+        "Invalid regular expression: /%s/%s: Unterminated character class",
         rule, s_flag);
   }
   neo_js_regex_t regex = neo_allocator_alloc(
@@ -128,49 +120,49 @@ neo_js_variable_t neo_js_regexp_constructor(neo_js_context_t ctx,
   regex->code = code;
   regex->flag = flag;
 
-  size_t len = wcslen(rule) + wcslen(s_flag) + 8;
-  wchar_t *str = neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
-  swprintf(str, len, L"/%ls/%ls", rule, s_flag);
+  size_t len = strlen(rule) + strlen(s_flag) + 8;
+  char *str = neo_allocator_alloc(allocator, sizeof(char) * len, NULL);
+  snprintf(str, len, "/%s/%s", rule, s_flag);
   regex->source = str;
-  neo_js_context_set_opaque(ctx, self, L"[[regex]]", regex);
+  neo_js_context_set_opaque(ctx, self, "[[regex]]", regex);
   neo_js_variable_t prototype = neo_js_object_get_prototype(ctx, self);
   neo_js_context_def_field(
-      ctx, prototype, neo_js_context_create_string(ctx, L"dotAll"),
+      ctx, prototype, neo_js_context_create_string(ctx, "dotAll"),
       neo_js_context_create_boolean(ctx, flag & NEO_REGEXP_FLAG_DOTALL), true,
       false, false);
   neo_js_context_def_field(
-      ctx, prototype, neo_js_context_create_string(ctx, L"global"),
+      ctx, prototype, neo_js_context_create_string(ctx, "global"),
       neo_js_context_create_boolean(ctx, flag & NEO_REGEXP_FLAG_GLOBAL), true,
       false, false);
   neo_js_context_def_field(
-      ctx, prototype, neo_js_context_create_string(ctx, L"hasIndices"),
+      ctx, prototype, neo_js_context_create_string(ctx, "hasIndices"),
       neo_js_context_create_boolean(ctx, flag & NEO_REGEXP_FLAG_HAS_INDICES),
       true, false, false);
   neo_js_context_def_field(
-      ctx, prototype, neo_js_context_create_string(ctx, L"ignoreCase"),
+      ctx, prototype, neo_js_context_create_string(ctx, "ignoreCase"),
       neo_js_context_create_boolean(ctx, flag & NEO_REGEXP_FLAG_IGNORECASE),
       true, false, false);
   neo_js_context_def_field(
-      ctx, prototype, neo_js_context_create_string(ctx, L"multiline"),
+      ctx, prototype, neo_js_context_create_string(ctx, "multiline"),
       neo_js_context_create_boolean(ctx, flag & NEO_REGEXP_FLAG_MULTILINE),
       true, false, false);
   neo_js_context_def_field(
-      ctx, prototype, neo_js_context_create_string(ctx, L"sticky"),
+      ctx, prototype, neo_js_context_create_string(ctx, "sticky"),
       neo_js_context_create_boolean(ctx, flag & NEO_REGEXP_FLAG_STICKY), true,
       false, false);
   neo_js_context_def_field(
-      ctx, prototype, neo_js_context_create_string(ctx, L"unicode"),
+      ctx, prototype, neo_js_context_create_string(ctx, "unicode"),
       neo_js_context_create_boolean(ctx, flag & NEO_REGEXP_FLAG_UNICODE), true,
       false, false);
   neo_js_context_def_field(
-      ctx, prototype, neo_js_context_create_string(ctx, L"source"),
+      ctx, prototype, neo_js_context_create_string(ctx, "source"),
       neo_js_context_create_string(ctx, rule), true, false, false);
   neo_js_context_def_field(
-      ctx, prototype, neo_js_context_create_string(ctx, L"flag"),
+      ctx, prototype, neo_js_context_create_string(ctx, "flag"),
       neo_js_context_create_string(ctx, s_flag), true, false, false);
 
   neo_js_context_def_field(
-      ctx, self, neo_js_context_create_string(ctx, L"lastIndex"),
+      ctx, self, neo_js_context_create_string(ctx, "lastIndex"),
       neo_js_context_create_number(ctx, 0), false, false, true);
 
   return neo_js_context_create_undefined(ctx);
@@ -179,15 +171,15 @@ neo_js_variable_t neo_js_regexp_constructor(neo_js_context_t ctx,
 neo_js_variable_t neo_js_regexp_to_string(neo_js_context_t ctx,
                                           neo_js_variable_t self, uint32_t argc,
                                           neo_js_variable_t *argv) {
-  neo_js_regex_t regex = neo_js_context_get_opaque(ctx, self, L"[[regex]]");
+  neo_js_regex_t regex = neo_js_context_get_opaque(ctx, self, "[[regex]]");
   return neo_js_context_create_string(ctx, regex->source);
 }
 
 neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
                                      neo_js_variable_t self, uint32_t argc,
                                      neo_js_variable_t *argv) {
-  neo_js_regex_t regex = neo_js_context_get_opaque(ctx, self, L"[[regex]]");
-  const wchar_t *str = L"";
+  neo_js_regex_t regex = neo_js_context_get_opaque(ctx, self, "[[regex]]");
+  const char *str = "";
   if (argc) {
     neo_js_variable_t v_str = neo_js_context_to_string(ctx, argv[0]);
     str = neo_js_variable_to_string(v_str)->string;
@@ -202,27 +194,26 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
   if (regex->flag & NEO_REGEXP_FLAG_GLOBAL ||
       regex->flag & NEO_REGEXP_FLAG_STICKY) {
     neo_js_variable_t v_last_index = neo_js_context_get_field(
-        ctx, self, neo_js_context_create_string(ctx, L"lastIndex"), NULL);
+        ctx, self, neo_js_context_create_string(ctx, "lastIndex"), NULL);
     if (neo_js_variable_get_type(v_last_index)->kind != NEO_JS_TYPE_NUMBER) {
       v_last_index = neo_js_context_to_number(ctx, v_last_index);
       neo_js_context_set_field(ctx, self,
-                               neo_js_context_create_string(ctx, L"lastIndex"),
+                               neo_js_context_create_string(ctx, "lastIndex"),
                                v_last_index, NULL);
     }
     last_index = neo_js_variable_to_number(v_last_index);
 
     if (isnan(last_index->number) || isinf(last_index->number) ||
-        last_index->number > wcslen(str) || last_index->number < 0) {
+        last_index->number > strlen(str) || last_index->number < 0) {
       last_index->number = 0;
       return neo_js_context_create_boolean(ctx, false);
     }
   }
   neo_js_variable_t result = NULL;
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
-  uint16_t *pstr = neo_wstring_to_char16(allocator, str);
   pcre2_match_data *match_data =
       pcre2_match_data_create_from_pattern(regex->code, NULL);
-  int rc = pcre2_match(regex->code, (PCRE2_SPTR)pstr, PCRE2_ZERO_TERMINATED,
+  int rc = pcre2_match(regex->code, (PCRE2_SPTR)str, PCRE2_ZERO_TERMINATED,
                        last_index->number, match_options, match_data, NULL);
   PCRE2_SIZE *ovector = pcre2_get_ovector_pointer(match_data);
   if (regex->flag & NEO_REGEXP_FLAG_GLOBAL ||
@@ -238,32 +229,30 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
     size_t start = ovector[0];
     size_t end = ovector[(rc - 1) * 2 + 1];
     size_t len = end - start;
-    wchar_t *part =
-        neo_allocator_alloc(allocator, (len + 1) * sizeof(wchar_t), NULL);
-    wcsncpy(part, str + start, len);
+    char *part = neo_allocator_alloc(allocator, (len + 1) * sizeof(char), NULL);
+    strncpy(part, str + start, len);
     part[len] = 0;
     neo_js_context_set_field(ctx, result, neo_js_context_create_number(ctx, 0),
                              neo_js_context_create_string(ctx, part), NULL);
     neo_allocator_free(allocator, part);
     neo_js_context_set_field(ctx, result,
-                             neo_js_context_create_string(ctx, L"index"),
+                             neo_js_context_create_string(ctx, "index"),
                              neo_js_context_create_number(ctx, start), NULL);
-    neo_js_context_set_field(ctx, result,
-                             neo_js_context_create_string(ctx, L"input"),
-                             argv[0], NULL);
+    neo_js_context_set_field(
+        ctx, result, neo_js_context_create_string(ctx, "input"), argv[0], NULL);
     neo_js_variable_t indices = NULL;
     if (regex->flag & NEO_REGEXP_FLAG_HAS_INDICES) {
       indices = neo_js_context_create_array(ctx);
       neo_js_context_set_field(ctx, result,
-                               neo_js_context_create_string(ctx, L"indices"),
+                               neo_js_context_create_string(ctx, "indices"),
                                indices, NULL);
     }
     for (size_t idx = 0; idx < rc; idx++) {
       size_t start = ovector[idx * 2];
       size_t end = ovector[idx * 2 + 1];
-      wchar_t *part =
-          neo_allocator_alloc(allocator, (len + 1) * sizeof(wchar_t), NULL);
-      wcsncpy(part, str + start, len);
+      char *part =
+          neo_allocator_alloc(allocator, (len + 1) * sizeof(char), NULL);
+      strncpy(part, str + start, len);
       part[len] = 0;
       neo_js_context_set_field(ctx, result,
                                neo_js_context_create_number(ctx, idx + 1),
@@ -290,33 +279,30 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
     if (ngroups) {
       neo_js_variable_t groups = neo_js_context_create_object(ctx, NULL);
       neo_js_context_set_field(ctx, result,
-                               neo_js_context_create_string(ctx, L"groups"),
+                               neo_js_context_create_string(ctx, "groups"),
                                groups, NULL);
       neo_js_variable_t igroups = neo_js_context_create_object(ctx, NULL);
       neo_js_context_set_field(ctx, indices,
-                               neo_js_context_create_string(ctx, L"groups"),
+                               neo_js_context_create_string(ctx, "groups"),
                                igroups, NULL);
       PCRE2_SPTR tabptr = name_table;
       for (uint32_t i = 0; i < ngroups; i++) {
-#if PCRE2_CODE_UNIT_WIDTH != 16
-#error "only support PCRE wide code mode"
-#endif
         int n = tabptr[0];
         size_t start = ovector[2 * n];
         size_t end = ovector[2 * n + 1];
         size_t len = name_entry_size - 2;
         PCRE2_SPTR name = tabptr + 1;
-        wchar_t *s_name =
-            neo_allocator_alloc(allocator, sizeof(wchar_t) * (len + 1), NULL);
+        char *s_name =
+            neo_allocator_alloc(allocator, sizeof(char) * (len + 1), NULL);
         size_t idx = 0;
         for (idx = 0; name[idx] != 0; idx++) {
           s_name[idx] = name[idx];
         }
         s_name[idx] = 0;
         len = end - start;
-        wchar_t *part =
-            neo_allocator_alloc(allocator, (len + 1) * sizeof(wchar_t), NULL);
-        wcsncpy(part, str + start, len);
+        char *part =
+            neo_allocator_alloc(allocator, (len + 1) * sizeof(char), NULL);
+        strncpy(part, str + start, len);
         part[len] = 0;
         neo_js_context_set_field(ctx, groups,
                                  neo_js_context_create_string(ctx, s_name),
@@ -337,11 +323,10 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
       }
     } else {
       neo_js_context_set_field(ctx, result,
-                               neo_js_context_create_string(ctx, L"groups"),
+                               neo_js_context_create_string(ctx, "groups"),
                                neo_js_context_create_undefined(ctx), NULL);
     }
   }
-  neo_allocator_free(allocator, pstr);
   pcre2_match_data_free(match_data);
   if (result) {
     return result;
@@ -352,8 +337,8 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
 neo_js_variable_t neo_js_regexp_test(neo_js_context_t ctx,
                                      neo_js_variable_t self, uint32_t argc,
                                      neo_js_variable_t *argv) {
-  neo_js_regex_t regex = neo_js_context_get_opaque(ctx, self, L"[[regex]]");
-  const wchar_t *str = L"";
+  neo_js_regex_t regex = neo_js_context_get_opaque(ctx, self, "[[regex]]");
+  const char *str = "";
   if (argc) {
     neo_js_variable_t v_str = neo_js_context_to_string(ctx, argv[0]);
     str = neo_js_variable_to_string(v_str)->string;
@@ -368,26 +353,24 @@ neo_js_variable_t neo_js_regexp_test(neo_js_context_t ctx,
   if (regex->flag & NEO_REGEXP_FLAG_GLOBAL ||
       regex->flag & NEO_REGEXP_FLAG_STICKY) {
     neo_js_variable_t v_last_index = neo_js_context_get_field(
-        ctx, self, neo_js_context_create_string(ctx, L"lastIndex"), NULL);
+        ctx, self, neo_js_context_create_string(ctx, "lastIndex"), NULL);
     if (neo_js_variable_get_type(v_last_index)->kind != NEO_JS_TYPE_NUMBER) {
       v_last_index = neo_js_context_to_number(ctx, v_last_index);
       neo_js_context_set_field(ctx, self,
-                               neo_js_context_create_string(ctx, L"lastIndex"),
+                               neo_js_context_create_string(ctx, "lastIndex"),
                                v_last_index, NULL);
     }
     last_index = neo_js_variable_to_number(v_last_index);
 
     if (isnan(last_index->number) || isinf(last_index->number) ||
-        last_index->number > wcslen(str) || last_index->number < 0) {
+        last_index->number > strlen(str) || last_index->number < 0) {
       last_index->number = 0;
       return neo_js_context_create_boolean(ctx, false);
     }
   }
-  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
-  uint16_t *pstr = neo_wstring_to_char16(allocator, str);
   pcre2_match_data *match_data =
       pcre2_match_data_create_from_pattern(regex->code, NULL);
-  int rc = pcre2_match(regex->code, (PCRE2_SPTR)pstr, PCRE2_ZERO_TERMINATED,
+  int rc = pcre2_match(regex->code, (PCRE2_SPTR)str, PCRE2_ZERO_TERMINATED,
                        last_index->number, match_options, match_data, NULL);
 
   if (regex->flag & NEO_REGEXP_FLAG_GLOBAL ||
@@ -399,7 +382,6 @@ neo_js_variable_t neo_js_regexp_test(neo_js_context_t ctx,
       last_index->number = 0;
     }
   }
-  neo_allocator_free(allocator, pstr);
   pcre2_match_data_free(match_data);
   return neo_js_context_create_boolean(ctx, rc > 0);
 }
@@ -407,21 +389,20 @@ neo_js_variable_t neo_js_regexp_test(neo_js_context_t ctx,
 void neo_js_context_init_std_regexp(neo_js_context_t ctx) {
   neo_js_variable_t prototype = neo_js_context_get_field(
       ctx, neo_js_context_get_std(ctx).regexp_constructor,
-      neo_js_context_create_string(ctx, L"prototype"), NULL);
-
-  neo_js_context_def_field(ctx, prototype,
-                           neo_js_context_create_string(ctx, L"toString"),
-                           neo_js_context_create_cfunction(
-                               ctx, L"toString", neo_js_regexp_to_string),
-                           true, false, true);
+      neo_js_context_create_string(ctx, "prototype"), NULL);
 
   neo_js_context_def_field(
-      ctx, prototype, neo_js_context_create_string(ctx, L"exec"),
-      neo_js_context_create_cfunction(ctx, L"exec", neo_js_regexp_exec), true,
+      ctx, prototype, neo_js_context_create_string(ctx, "toString"),
+      neo_js_context_create_cfunction(ctx, "toString", neo_js_regexp_to_string),
+      true, false, true);
+
+  neo_js_context_def_field(
+      ctx, prototype, neo_js_context_create_string(ctx, "exec"),
+      neo_js_context_create_cfunction(ctx, "exec", neo_js_regexp_exec), true,
       false, true);
 
   neo_js_context_def_field(
-      ctx, prototype, neo_js_context_create_string(ctx, L"test"),
-      neo_js_context_create_cfunction(ctx, L"test", neo_js_regexp_test), true,
+      ctx, prototype, neo_js_context_create_string(ctx, "test"),
+      neo_js_context_create_cfunction(ctx, "test", neo_js_regexp_test), true,
       false, true);
 }

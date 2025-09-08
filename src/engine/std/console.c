@@ -20,10 +20,10 @@ neo_js_variable_t neo_js_console_log(neo_js_context_t ctx,
     neo_js_variable_t arg = argv[idx];
     if (neo_js_variable_get_type(arg)->kind == NEO_JS_TYPE_SYMBOL) {
       neo_js_symbol_t sym = neo_js_variable_to_symbol(arg);
-      printf("Symbol(%ls)", sym->description);
+      printf("Symbol(%s)", sym->description);
     } else if (neo_js_variable_get_type(arg)->kind == NEO_JS_TYPE_OBJECT) {
       neo_js_variable_t to_string = neo_js_context_get_field(
-          ctx, arg, neo_js_context_create_string(ctx, L"toString"), NULL);
+          ctx, arg, neo_js_context_create_string(ctx, "toString"), NULL);
       NEO_JS_TRY_AND_THROW(to_string);
 
       neo_js_variable_t res = NULL;
@@ -35,11 +35,11 @@ neo_js_variable_t neo_js_console_log(neo_js_context_t ctx,
       NEO_JS_TRY_AND_THROW(res);
       res = neo_js_context_to_string(ctx, res);
       NEO_JS_TRY_AND_THROW(res);
-      printf("%ls", neo_js_variable_to_string(res)->string);
+      printf("%s", neo_js_variable_to_string(res)->string);
     } else {
       arg = neo_js_context_to_string(ctx, arg);
       neo_js_string_t str = neo_js_variable_to_string(arg);
-      printf("%ls", str->string);
+      printf("%s", str->string);
     }
   }
   printf("\n");
@@ -48,18 +48,18 @@ neo_js_variable_t neo_js_console_log(neo_js_context_t ctx,
 
 void neo_js_context_init_std_console(neo_js_context_t ctx) {
   neo_js_variable_t console_constructor = neo_js_context_create_cfunction(
-      ctx, L"Console", neo_js_console_constructor);
+      ctx, "Console", neo_js_console_constructor);
   neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, console_constructor, neo_js_context_create_string(ctx, L"prototype"),
+      ctx, console_constructor, neo_js_context_create_string(ctx, "prototype"),
       NULL);
   neo_js_context_def_field(
-      ctx, prototype, neo_js_context_create_string(ctx, L"log"),
-      neo_js_context_create_cfunction(ctx, L"log", neo_js_console_log), true,
+      ctx, prototype, neo_js_context_create_string(ctx, "log"),
+      neo_js_context_create_cfunction(ctx, "log", neo_js_console_log), true,
       false, true);
 
   neo_js_variable_t console =
       neo_js_context_construct(ctx, console_constructor, 0, NULL);
   neo_js_context_def_field(ctx, neo_js_context_get_std(ctx).global,
-                           neo_js_context_create_string(ctx, L"console"),
+                           neo_js_context_create_string(ctx, "console"),
                            console, true, true, true);
 }

@@ -4,6 +4,7 @@
 #include "engine/type.h"
 #include "engine/variable.h"
 #include <math.h>
+#include <stdlib.h>
 #include <wchar.h>
 NEO_JS_CFUNCTION(neo_js_parse_int) {
   if (argc < 1) {
@@ -29,31 +30,39 @@ NEO_JS_CFUNCTION(neo_js_parse_int) {
         vradix = neo_js_context_to_string(ctx, vradix);
         NEO_JS_TRY_AND_THROW(vradix);
       }
-      const wchar_t *sradix = neo_js_variable_to_string(vradix)->string;
-      while (NEO_IS_SPACE(*sradix)) {
-        sradix++;
+      const char *sradix = neo_js_variable_to_string(vradix)->string;
+      neo_utf8_char utf8 = neo_utf8_read_char(sradix);
+      uint32_t utf32 = neo_utf8_char_to_utf32(utf8);
+      while (NEO_IS_SPACE(utf32)) {
+        sradix = utf8.end;
+        utf8 = neo_utf8_read_char(sradix);
+        utf32 = neo_utf8_char_to_utf32(utf8);
       }
-      wchar_t *next = NULL;
+      char *next = NULL;
       if (sradix[0] == '0') {
         if (sradix[1] == 'x' || sradix[1] == 'X') {
-          radix = wcstol(sradix + 2, &next, 16);
+          radix = strtol(sradix + 2, &next, 16);
         } else {
-          radix = wcstol(sradix, &next, 8);
+          radix = strtol(sradix, &next, 8);
         }
       } else if (sradix[0] >= '0' && sradix[0] <= '9') {
-        radix = wcstol(sradix, &next, 10);
+        radix = strtol(sradix, &next, 10);
       }
     }
     if (radix < 2 || radix > 36) {
       return neo_js_context_create_number(ctx, NAN);
     }
   }
-  const wchar_t *source = neo_js_variable_to_string(arg)->string;
-  if (NEO_IS_SPACE(*source)) {
-    source++;
+  const char *source = neo_js_variable_to_string(arg)->string;
+  neo_utf8_char utf8 = neo_utf8_read_char(source);
+  uint32_t utf32 = neo_utf8_char_to_utf32(utf8);
+  if (NEO_IS_SPACE(utf32)) {
+    source=utf8.end;
+    utf8 = neo_utf8_read_char(source);
+    utf32 = neo_utf8_char_to_utf32(utf8);
   }
-  wchar_t *next = NULL;
-  int64_t val = wcstoll(source, &next, radix);
+  char *next = NULL;
+  int64_t val = strtoll(source, &next, radix);
   if (next == source) {
     return neo_js_context_create_number(ctx, NAN);
   }

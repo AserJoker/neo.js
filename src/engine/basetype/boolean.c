@@ -9,9 +9,9 @@
 #include "engine/variable.h"
 #include <wchar.h>
 
-static const wchar_t *neo_js_boolean_typeof(neo_js_context_t ctx,
+static const char *neo_js_boolean_typeof(neo_js_context_t ctx,
                                             neo_js_variable_t variable) {
-  return L"boolean";
+  return "boolean";
 }
 
 static neo_js_variable_t neo_js_boolean_to_string(neo_js_context_t ctx,
@@ -21,7 +21,7 @@ static neo_js_variable_t neo_js_boolean_to_string(neo_js_context_t ctx,
   neo_js_boolean_t boolean = neo_js_value_to_boolean(
       neo_js_chunk_get_value(neo_js_variable_get_chunk(self)));
   neo_js_string_t string =
-      neo_create_js_string(allocator, boolean->boolean ? L"true" : L"false");
+      neo_create_js_string(allocator, boolean->boolean ? "true" : "false");
   return neo_js_context_create_variable(
       ctx, neo_create_js_chunk(allocator, &string->value), NULL);
 }
@@ -41,7 +41,7 @@ static neo_js_variable_t neo_js_boolean_to_number(neo_js_context_t ctx,
 
 static neo_js_variable_t neo_js_boolean_to_primitive(neo_js_context_t ctx,
                                                      neo_js_variable_t self,
-                                                     const wchar_t *type) {
+                                                     const char *type) {
   return self;
 }
 

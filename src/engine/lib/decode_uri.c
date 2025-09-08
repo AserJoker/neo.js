@@ -1,6 +1,7 @@
 #include "engine/lib/decode_uri.h"
 #include "core/unicode.h"
 #include "engine/context.h"
+#include <string.h>
 #include <wchar.h>
 NEO_JS_CFUNCTION(neo_js_decode_uri) {
   neo_js_variable_t str = NULL;
@@ -11,12 +12,12 @@ NEO_JS_CFUNCTION(neo_js_decode_uri) {
   }
   str = neo_js_context_to_string(ctx, str);
   NEO_JS_TRY_AND_THROW(str);
-  const wchar_t *source = neo_js_variable_to_string(str)->string;
-  size_t len = wcslen(source);
-  uint8_t *utf8_string = neo_js_context_alloc(ctx, len + 1, NULL);
+  const char *source = neo_js_variable_to_string(str)->string;
+  size_t len = strlen(source);
+  char *utf8_string = neo_js_context_alloc(ctx, len + 1, NULL);
   neo_js_context_defer_free(ctx, utf8_string);
-  uint8_t *pdst = utf8_string;
-  const wchar_t *psrc = source;
+  char *pdst = utf8_string;
+  const char *psrc = source;
   while (*psrc) {
     if (*psrc == '%') {
       if ((*(psrc + 1) == '2' && *(psrc + 2) == '0') ||
@@ -40,7 +41,7 @@ NEO_JS_CFUNCTION(neo_js_decode_uri) {
           *pdst += *psrc - 'A' + 10;
         } else {
           return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_URI, 0,
-                                                    L"malformed URI sequence");
+                                                    "malformed URI sequence");
         }
         psrc++;
         if (idx == 0) {
@@ -52,8 +53,5 @@ NEO_JS_CFUNCTION(neo_js_decode_uri) {
       *pdst++ = *psrc++;
     }
   }
-  wchar_t *dst = neo_string_to_wstring(neo_js_context_get_allocator(ctx),
-                                       (char *)utf8_string);
-  neo_js_context_defer_free(ctx, dst);
-  return neo_js_context_create_string(ctx, dst);
+  return neo_js_context_create_string(ctx, utf8_string);
 }

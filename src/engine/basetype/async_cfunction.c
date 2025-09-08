@@ -10,9 +10,9 @@
 #include "engine/type.h"
 #include "engine/variable.h"
 #include <stdbool.h>
-#include <wchar.h>
+#include <string.h>
 
-static const wchar_t *neo_js_async_cfunction_typeof() { return L"function"; }
+static const char *neo_js_async_cfunction_typeof() { return "function"; }
 
 static neo_js_variable_t
 neo_js_async_cfunction_get_field(neo_js_context_t ctx, neo_js_variable_t self,
@@ -22,11 +22,11 @@ neo_js_async_cfunction_get_field(neo_js_context_t ctx, neo_js_variable_t self,
   if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_STRING) {
     neo_js_string_t string =
         neo_js_value_to_string(neo_js_variable_get_value(field));
-    if (wcscmp(string->string, L"name") == 0) {
+    if (strcmp(string->string, "name") == 0) {
       neo_js_cfunction_t cfunction =
           neo_js_value_to_cfunction(neo_js_variable_get_value(self));
       if (!cfunction->callable.name) {
-        return neo_js_context_create_string(ctx, L"");
+        return neo_js_context_create_string(ctx, "");
       } else {
         return neo_js_context_create_string(ctx, cfunction->callable.name);
       }
@@ -42,7 +42,7 @@ static neo_js_variable_t neo_js_async_cfunction_set_field(
   if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_STRING) {
     neo_js_string_t string =
         neo_js_value_to_string(neo_js_variable_get_value(field));
-    if (wcscmp(string->string, L"name") == 0) {
+    if (strcmp(string->string, "name") == 0) {
       return neo_js_context_create_undefined(ctx);
     }
   }
@@ -56,12 +56,12 @@ neo_js_async_cfunction_del_field(neo_js_context_t ctx, neo_js_variable_t self,
   if (neo_js_variable_get_type(field)->kind == NEO_JS_TYPE_STRING) {
     neo_js_string_t string =
         neo_js_value_to_string(neo_js_variable_get_value(field));
-    if (wcscmp(string->string, L"name") == 0) {
+    if (strcmp(string->string, "name") == 0) {
       neo_js_cfunction_t cfunction =
           neo_js_value_to_cfunction(neo_js_variable_get_value(self));
       neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
       neo_allocator_free(allocator, cfunction->callable.name);
-      cfunction->callable.name = neo_create_wstring(allocator, L"");
+      cfunction->callable.name = neo_create_string(allocator, "");
       return neo_js_context_create_boolean(ctx, true);
     }
   }

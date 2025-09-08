@@ -2,7 +2,6 @@
 #define _H_NEO_CORE_CLOCK_
 #include <stdbool.h>
 #include <stdint.h>
-#include <wchar.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -33,9 +32,9 @@ void neo_clock_format(neo_time_t *time);
 
 void neo_clock_sleep(uint64_t timeout);
 
-bool neo_clock_parse_iso(const wchar_t *source, int64_t *timestamp);
+bool neo_clock_parse_iso(const char *source, int64_t *timestamp);
 
-bool neo_clock_parse_rfc(const wchar_t *source, int64_t *timestamp);
+bool neo_clock_parse_rfc(const char *source, int64_t *timestamp);
 
 #ifdef __cplusplus
 };

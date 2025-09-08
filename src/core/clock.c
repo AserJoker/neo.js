@@ -1,5 +1,6 @@
 #include "core/clock.h"
 #include <stdbool.h>
+#include <string.h>
 #include <wchar.h>
 #ifdef _WIN32
 #include <Windows.h>
@@ -43,16 +44,15 @@ static int64_t months[2][12] = {
     },
 };
 
-static const wchar_t *week_names[] = {
-    L"Sun", L"Mon", L"Tue", L"Wed", L"Thu", L"Fri", L"Sat",
+static const char *week_names[] = {
+    "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat",
 };
-static const wchar_t *month_names[] = {
-    L"Jan", L"Feb", L"Mar", L"Apr", L"May", L"Jun",
-    L"Jul", L"Aug", L"Sep", L"Oct", L"Nov", L"Dec",
+static const char *month_names[] = {
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 };
-static const wchar_t *zone_names[] = {
-    L"UTC", L"GMT", L"EST", L"EDT", L"CST",
-    L"CDT", L"MST", L"MDT", L"PST", L"PDT",
+static const char *zone_names[] = {
+    "UTC", "GMT", "EST", "EDT", "CST", "CDT", "MST", "MDT", "PST", "PDT",
 };
 static int32_t zone_value[] = {
     0,       0,       -5 * 60, -4 * 60, -6 * 60,
@@ -245,10 +245,10 @@ void neo_clock_format(neo_time_t *time) {
   time->invalid = false;
 }
 
-bool neo_clock_parse_iso(const wchar_t *source, int64_t *timestamp) {
+bool neo_clock_parse_iso(const char *source, int64_t *timestamp) {
   neo_time_t time = {0};
-  const wchar_t *location = source;
-  const wchar_t *current = location;
+  const char *location = source;
+  const char *current = location;
   while (*current >= '0' && *current <= '9') {
     time.year *= 10;
     time.year += *current - '0';
@@ -347,7 +347,7 @@ bool neo_clock_parse_iso(const wchar_t *source, int64_t *timestamp) {
               time.timezone = 0;
               has_timezone = true;
             } else if (*current == '+' || *current == '-') {
-              wchar_t flag = *current;
+              char flag = *current;
               current++;
               while (*current >= '0' && *current <= '9') {
                 time.timezone *= 10;
@@ -398,11 +398,11 @@ bool neo_clock_parse_iso(const wchar_t *source, int64_t *timestamp) {
   return true;
 }
 
-bool neo_clock_parse_rfc(const wchar_t *source, int64_t *timestamp) {
+bool neo_clock_parse_rfc(const char *source, int64_t *timestamp) {
   neo_time_t time = {0};
-  const wchar_t *current = source;
+  const char *current = source;
   while (time.weakday < 7) {
-    if (wcsncmp(week_names[time.weakday], current, 3) == 0) {
+    if (strncmp(week_names[time.weakday], current, 3) == 0) {
       break;
     }
     time.weakday++;
@@ -417,7 +417,7 @@ bool neo_clock_parse_rfc(const wchar_t *source, int64_t *timestamp) {
     time.weakday = 0;
   }
   while (time.month < 12) {
-    if (wcsncmp(month_names[time.month], current, 3) == 0) {
+    if (strncmp(month_names[time.month], current, 3) == 0) {
       break;
     }
     time.month++;
@@ -485,7 +485,7 @@ bool neo_clock_parse_rfc(const wchar_t *source, int64_t *timestamp) {
       }
       uint32_t idx = 0;
       for (; zone_names[idx] != NULL; idx++) {
-        if (wcsncmp(zone_names[idx], current, 3) == 0) {
+        if (strncmp(zone_names[idx], current, 3) == 0) {
           break;
         }
       }
@@ -498,7 +498,7 @@ bool neo_clock_parse_rfc(const wchar_t *source, int64_t *timestamp) {
       current++;
     }
     if (*current == '+' || *current == '-') {
-      wchar_t flag = *current;
+      char flag = *current;
       current++;
       int64_t hour = 0;
       if (*current < '0' || *current > '9') {
@@ -533,7 +533,7 @@ bool neo_clock_parse_rfc(const wchar_t *source, int64_t *timestamp) {
     } else {
       uint32_t idx = 0;
       for (idx = 0; idx < 10; idx++) {
-        if (wcsncmp(current, zone_names[idx], 3) == 0) {
+        if (strncmp(current, zone_names[idx], 3) == 0) {
           break;
         }
       }

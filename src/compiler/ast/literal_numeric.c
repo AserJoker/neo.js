@@ -20,11 +20,11 @@ neo_serialize_ast_literal_numeric(neo_allocator_t allocator,
                                   neo_ast_literal_numeric_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
   neo_variable_set(
-      variable, L"type",
-      neo_create_variable_string(allocator, L"NEO_NODE_TYPE_LITERAL_NUL"));
-  neo_variable_set(variable, L"location",
+      variable, "type",
+      neo_create_variable_string(allocator, "NEO_NODE_TYPE_LITERAL_NU"));
+  neo_variable_set(variable, "location",
                    neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, L"scope",
+  neo_variable_set(variable, "scope",
                    neo_serialize_scope(allocator, node->node.scope));
   return variable;
 }

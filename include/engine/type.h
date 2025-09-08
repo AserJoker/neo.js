@@ -1,8 +1,8 @@
 #ifndef _H_NEO_ENGINE_TYPE_
 #define _H_NEO_ENGINE_TYPE_
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
-#include <wchar.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -17,7 +17,7 @@ typedef struct _neo_js_context_t *neo_js_context_t;
 
 typedef struct _neo_js_variable_t *neo_js_variable_t;
 
-typedef const wchar_t *(*neo_js_typeof_fn_t)(neo_js_context_t ctx,
+typedef const char *(*neo_js_typeof_fn_t)(neo_js_context_t ctx,
                                              neo_js_variable_t self);
 
 typedef neo_js_variable_t (*neo_js_void_fn_t)(neo_js_context_t ctx,
@@ -41,7 +41,7 @@ typedef neo_js_variable_t (*neo_js_to_object_fn_t)(neo_js_context_t ctx,
 
 typedef neo_js_variable_t (*neo_js_to_primitive_fn_t)(neo_js_context_t ctx,
                                                       neo_js_variable_t self,
-                                                      const wchar_t *hint);
+                                                      const char *hint);
 
 typedef neo_js_variable_t (*neo_js_get_field_fn_t)(neo_js_context_t ctx,
                                                    neo_js_variable_t object,
