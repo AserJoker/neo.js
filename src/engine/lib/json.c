@@ -450,12 +450,12 @@ static bool neo_js_json_read_string(neo_position_t *position) {
 neo_js_variable_t neo_js_json_read_variable(neo_js_context_t ctx,
                                             neo_position_t *position,
                                             neo_js_variable_t receiver,
-                                            const wchar_t *file);
+                                            const char *file);
 
 static neo_js_variable_t neo_js_json_read_array(neo_js_context_t ctx,
                                                 neo_position_t *posistion,
                                                 neo_js_variable_t receiver,
-                                                const wchar_t *file) {
+                                                const char *file) {
   neo_position_t current = *posistion;
   current.offset++;
   current.line++;
@@ -471,7 +471,9 @@ static neo_js_variable_t neo_js_json_read_array(neo_js_context_t ctx,
           neo_js_json_read_variable(ctx, &item_current, receiver, file);
       neo_location_t loc = {current, item_current, file};
       current = item_current;
-      wchar_t *src = neo_location_get(allocator, loc);
+      char *s = neo_location_get(allocator, loc);
+      wchar_t *src = neo_string_to_wstring(allocator, s);
+      neo_js_context_defer_free(ctx, s);
       neo_js_context_defer_free(ctx, src);
       NEO_JS_TRY_AND_THROW(item);
       neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
@@ -508,7 +510,7 @@ static neo_js_variable_t neo_js_json_read_array(neo_js_context_t ctx,
 static neo_js_variable_t neo_js_json_read_object(neo_js_context_t ctx,
                                                  neo_position_t *posistion,
                                                  neo_js_variable_t receiver,
-                                                 const wchar_t *file) {
+                                                 const char *file) {
   neo_position_t current = *posistion;
   current.offset++;
   current.line++;
@@ -526,7 +528,9 @@ static neo_js_variable_t neo_js_json_read_object(neo_js_context_t ctx,
       }
       neo_location_t key_loc = {current, key_position, file};
       current = key_position;
-      wchar_t *key_str = neo_location_get(allocator, key_loc);
+      char *s = neo_location_get(allocator, key_loc);
+      neo_js_context_defer_free(ctx, s);
+      wchar_t *key_str = neo_string_to_wstring(allocator, s);
       neo_js_context_defer_free(ctx, key_str);
       key_str = neo_wstring_decode_escape(allocator, key_str);
       neo_js_context_defer_free(ctx, key_str);
@@ -548,7 +552,9 @@ static neo_js_variable_t neo_js_json_read_object(neo_js_context_t ctx,
       neo_location_t value_loc = {current, value_position, file};
       current = value_position;
       if (receiver) {
-        wchar_t *value_src = neo_location_get(allocator, value_loc);
+        char *s = neo_location_get(allocator, value_loc);
+        neo_js_context_defer_free(ctx, s);
+        wchar_t *value_src = neo_string_to_wstring(allocator, s);
         neo_js_context_defer_free(ctx, value_src);
         neo_js_variable_t context = neo_js_context_create_object(ctx, NULL);
         neo_js_context_set_field(
@@ -582,7 +588,7 @@ static neo_js_variable_t neo_js_json_read_object(neo_js_context_t ctx,
 neo_js_variable_t neo_js_json_read_variable(neo_js_context_t ctx,
                                             neo_position_t *position,
                                             neo_js_variable_t receiver,
-                                            const wchar_t *file) {
+                                            const char *file) {
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_js_json_skip_invisible(position);
   if (*position->offset == '{') {
@@ -594,7 +600,9 @@ neo_js_variable_t neo_js_json_read_variable(neo_js_context_t ctx,
     if (neo_js_json_read_string(&current)) {
       neo_location_t loc = {*position, current, file};
       *position = current;
-      wchar_t *s = neo_location_get(allocator, loc);
+      char *ss = neo_location_get(allocator, loc);
+      neo_js_context_defer_free(ctx, ss);
+      wchar_t *s = neo_string_to_wstring(allocator, ss);
       neo_js_context_defer_free(ctx, s);
       wchar_t *decoded = neo_wstring_decode_escape(allocator, s);
       neo_js_context_defer_free(ctx, decoded);
@@ -623,7 +631,9 @@ neo_js_variable_t neo_js_json_read_variable(neo_js_context_t ctx,
     if (neo_js_json_read_number(&current)) {
       neo_location_t loc = {*position, current, file};
       *position = current;
-      wchar_t *s = neo_location_get(allocator, loc);
+      char *ss = neo_location_get(allocator, loc);
+      neo_js_context_defer_free(ctx, ss);
+      wchar_t *s = neo_string_to_wstring(allocator, ss);
       neo_js_context_defer_free(ctx, s);
       double val = wcstold(s, NULL);
       return neo_js_context_create_number(ctx, val);
@@ -658,7 +668,7 @@ NEO_JS_CFUNCTION(neo_js_json_parse) {
   neo_js_context_defer_free(ctx, utf8_source);
   neo_position_t position = {.column = 0, .line = 0, .offset = utf8_source};
   neo_js_variable_t variable =
-      neo_js_json_read_variable(ctx, &position, receiver, L"<anonymous_json>");
+      neo_js_json_read_variable(ctx, &position, receiver, "<anonymous_json>");
   NEO_JS_TRY_AND_THROW(variable);
   if (receiver) {
     neo_js_variable_t context = neo_js_context_create_object(ctx, NULL);

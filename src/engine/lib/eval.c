@@ -24,12 +24,12 @@ NEO_JS_CFUNCTION(neo_js_eval) {
   char *src = neo_wstring_to_string(allocator, source);
   neo_js_context_defer_free(ctx, src);
   neo_ast_node_t node =
-      TRY(neo_ast_parse_code(allocator, L"<anonymouse_script>", src)) {
+      TRY(neo_ast_parse_code(allocator, "<anonymouse_script>", src)) {
     return neo_js_context_create_compile_error(ctx);
   };
   neo_js_context_defer_free(ctx, node);
   neo_program_t program =
-      TRY(neo_ast_write_node(allocator, L"<anonymouse_script>", node)) {
+      TRY(neo_ast_write_node(allocator, "<anonymouse_script>", node)) {
     return neo_js_context_create_compile_error(ctx);
   };
   neo_js_context_defer_free(ctx, program);

@@ -2,7 +2,8 @@
 #include "compiler/asm.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
-#include <wchar.h>
+#include <string.h>
+
 static void neo_ast_literal_regexp_dispose(neo_allocator_t allocator,
                                            neo_ast_literal_regexp_t node) {
   neo_allocator_free(allocator, node->node.scope);
@@ -11,12 +12,12 @@ static void neo_ast_literal_regexp_dispose(neo_allocator_t allocator,
 static void neo_ast_literal_string_write(neo_allocator_t allocator,
                                          neo_write_context_t ctx,
                                          neo_ast_literal_regexp_t self) {
-  wchar_t *str = neo_location_get(allocator, self->node.location);
-  size_t spliter = wcslen(str) - 1;
+  char *str = neo_location_get(allocator, self->node.location);
+  size_t spliter = strlen(str) - 1;
   while (str[spliter] != '/') {
     spliter--;
   }
-  const wchar_t *flag = &str[spliter + 1];
+  const char *flag = &str[spliter + 1];
   str[spliter] = '\0';
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_REGEXP);
   neo_program_add_string(allocator, ctx->program, &str[1]);
@@ -53,7 +54,7 @@ neo_create_regexp_litreral(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_literal_regexp(neo_allocator_t allocator,
-                                           const wchar_t *file,
+                                           const char *file,
                                            neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_literal_regexp_t node = NULL;

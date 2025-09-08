@@ -1,7 +1,6 @@
 #ifndef _H_NEO_COMPILER_WRITER_
 #define _H_NEO_COMPILER_WRITER_
 #include "core/allocator.h"
-#include <wchar.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -14,7 +13,7 @@ typedef struct _neo_ast_node_t *neo_ast_node_t;
 typedef struct _neo_write_context_t {
   neo_program_t program;
   neo_write_scope_t scope;
-  wchar_t *label;
+  char *label;
   bool is_async;
   bool is_generator;
 } *neo_write_context_t;

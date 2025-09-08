@@ -26,10 +26,10 @@ neo_ast_statement_while_resolve_closure(neo_allocator_t allocator,
 static void neo_ast_statement_while_write(neo_allocator_t allocator,
                                           neo_write_context_t ctx,
                                           neo_ast_statement_while_t self) {
-  wchar_t *label = ctx->label;
+  char *label = ctx->label;
   ctx->label = NULL;
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_BREAK_LABEL);
-  neo_program_add_string(allocator, ctx->program, label ? label : L"");
+  neo_program_add_string(allocator, ctx->program, label ? label : "");
   size_t breakaddr = neo_buffer_get_size(ctx->program->codes);
   neo_program_add_address(allocator, ctx->program, 0);
   size_t begin = neo_buffer_get_size(ctx->program->codes);
@@ -39,7 +39,7 @@ static void neo_ast_statement_while_write(neo_allocator_t allocator,
   neo_program_add_address(allocator, ctx->program, 0);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_CONTINUE_LABEL);
-  neo_program_add_string(allocator, ctx->program, label ? label : L"");
+  neo_program_add_string(allocator, ctx->program, label ? label : "");
   size_t continueaddr = neo_buffer_get_size(ctx->program->codes);
   neo_program_add_address(allocator, ctx->program, 0);
   TRY(self->body->write(allocator, ctx, self->body)) { return; }
@@ -87,7 +87,7 @@ neo_create_ast_statement_while(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_statement_while(neo_allocator_t allocator,
-                                            const wchar_t *file,
+                                            const char *file,
                                             neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_statement_while_t node = neo_create_ast_statement_while(allocator);
@@ -99,7 +99,7 @@ neo_ast_node_t neo_ast_read_statement_while(neo_allocator_t allocator,
   neo_allocator_free(allocator, token);
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != '(') {
-    THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }
@@ -110,13 +110,13 @@ neo_ast_node_t neo_ast_read_statement_while(neo_allocator_t allocator,
     goto onerror;
   }
   if (!node->condition) {
-    THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != ')') {
-    THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }
@@ -127,7 +127,7 @@ neo_ast_node_t neo_ast_read_statement_while(neo_allocator_t allocator,
     goto onerror;
   }
   if (!node->body) {
-    THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }

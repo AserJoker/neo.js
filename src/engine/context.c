@@ -338,8 +338,8 @@ void neo_js_context_init_std(neo_js_context_t ctx) {
   ctx->std.string_constructor = neo_js_context_create_cfunction(
       ctx, L"String", &neo_js_string_constructor);
 
-  ctx->std.set_constructor = neo_js_context_create_cfunction(
-      ctx, L"Set", &neo_js_set_constructor);
+  ctx->std.set_constructor =
+      neo_js_context_create_cfunction(ctx, L"Set", &neo_js_set_constructor);
 
   ctx->std.global = neo_js_context_create_object(ctx, NULL);
 
@@ -3961,23 +3961,24 @@ bool neo_js_context_has_module(neo_js_context_t ctx, const wchar_t *name) {
   return true;
 }
 
-neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const wchar_t *file,
+neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
                                       const char *source) {
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_path_t path = neo_create_path(allocator, file);
   path = neo_path_absolute(path);
-  wchar_t *filepath = neo_path_to_string(path);
-  const wchar_t *path_ext_name = neo_path_extname(path);
-  wchar_t *ext_name = NULL;
+  char *f = neo_path_to_string(path);
+  const char *path_ext_name = neo_path_extname(path);
+  char *ext_name = NULL;
   if (path_ext_name) {
-    ext_name = neo_wstring_to_lower(allocator, path_ext_name);
+    ext_name = neo_string_to_lower(allocator, path_ext_name);
   }
   neo_allocator_free(allocator, path);
-  if (ext_name && wcscmp(ext_name, L".json") == 0) {
+  wchar_t *filepath = neo_string_to_wstring(allocator, f);
+  if (ext_name && strcmp(ext_name, ".json") == 0) {
     neo_allocator_free(allocator, ext_name);
     neo_position_t position = {0, 0, source};
     neo_js_variable_t def =
-        neo_js_json_read_variable(ctx, &position, NULL, filepath);
+        neo_js_json_read_variable(ctx, &position, NULL, f);
     NEO_JS_TRY_AND_THROW(def);
     neo_js_variable_t module =
         neo_js_context_create_object(ctx, neo_js_context_create_null(ctx));
@@ -4001,13 +4002,15 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const wchar_t *file,
     neo_hash_map_set(ctx->modules, neo_create_wstring(allocator, filepath),
                      hmodule, NULL, NULL);
 
-    neo_ast_node_t root = TRY(neo_ast_parse_code(allocator, filepath, source)) {
+    neo_ast_node_t root = TRY(neo_ast_parse_code(allocator, f, source)) {
+      neo_allocator_free(allocator, f);
       neo_allocator_free(allocator, filepath);
       return neo_js_context_create_compile_error(ctx);
     };
 
-    program = TRY(neo_ast_write_node(allocator, filepath, root)) {
+    program = TRY(neo_ast_write_node(allocator, f, root)) {
       neo_allocator_free(allocator, root);
+      neo_allocator_free(allocator, f);
       neo_allocator_free(allocator, filepath);
       return neo_js_context_create_compile_error(ctx);
     }
@@ -4021,11 +4024,13 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const wchar_t *file,
     FILE *fp = fopen(casmpath, "w");
     TRY(neo_program_write(allocator, fp, program)) {
       neo_allocator_free(allocator, root);
+      neo_allocator_free(allocator, f);
       neo_allocator_free(allocator, filepath);
       return neo_js_context_create_compile_error(ctx);
     };
     fclose(fp);
     neo_allocator_free(allocator, casmpath);
+    neo_allocator_free(allocator, f);
     neo_allocator_free(allocator, filepath);
   }
   neo_js_scope_t scope = neo_create_js_scope(allocator, ctx->root);

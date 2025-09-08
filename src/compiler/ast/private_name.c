@@ -32,7 +32,7 @@ neo_create_ast_private_name(neo_allocator_t allocator) {
   return node;
 }
 neo_ast_node_t neo_ast_read_private_name(neo_allocator_t allocator,
-                                         const wchar_t *file,
+                                         const char *file,
                                          neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_private_name_t node = NULL;

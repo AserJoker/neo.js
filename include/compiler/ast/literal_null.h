@@ -9,7 +9,7 @@ typedef struct _neo_ast_literal_null_t {
 } *neo_ast_literal_null_t;
 
 neo_ast_node_t neo_ast_read_literal_null(neo_allocator_t allocator,
-                                         const wchar_t *file,
+                                         const char *file,
                                          neo_position_t *position);
 #ifdef __cplusplus
 }

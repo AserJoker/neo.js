@@ -19,11 +19,11 @@ static void neo_ast_statement_break_write(neo_allocator_t allocator,
                                           neo_ast_statement_break_t self) {
   neo_program_add_code(allocator, ctx->program, NEO_ASM_BREAK);
   if (self->label) {
-    wchar_t *label = neo_location_get(allocator, self->label->location);
+    char *label = neo_location_get(allocator, self->label->location);
     neo_program_add_string(allocator, ctx->program, label);
     neo_allocator_free(allocator, label);
   } else {
-    neo_program_add_string(allocator, ctx->program, L"");
+    neo_program_add_string(allocator, ctx->program, "");
   }
 }
 static neo_variable_t
@@ -57,7 +57,7 @@ neo_create_ast_statement_break(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_statement_break(neo_allocator_t allocator,
-                                            const wchar_t *file,
+                                            const char *file,
                                             neo_position_t *position) {
   neo_position_t current = *position;
   neo_token_t token = NULL;
@@ -81,7 +81,7 @@ neo_ast_node_t neo_ast_read_statement_break(neo_allocator_t allocator,
     }
   }
   if (*cur.offset != '}' && *cur.offset != ';' && line == cur.line) {
-    THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }

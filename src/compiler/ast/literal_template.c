@@ -15,7 +15,6 @@
 #include "core/variable.h"
 #include <stdio.h>
 #include <string.h>
-#include <wchar.h>
 
 static void neo_ast_literal_template_dispose(neo_allocator_t allocator,
                                              neo_ast_literal_template_t node) {
@@ -56,7 +55,7 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
       }
       if (neo_list_get_size(addresses)) {
         THROW("Invalid tagged template on optional chain \n  at "
-              "_.compile (%ls:%d:%d)",
+              "_.compile (%s:%d:%d)",
               ctx->program->filename, self->tag->location.begin.line,
               self->tag->location.begin.column);
         neo_allocator_free(allocator, addresses);
@@ -64,7 +63,7 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
       }
       neo_allocator_free(allocator, addresses);
       if (member->node.type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
-        wchar_t *name = neo_location_get(allocator, member->field->location);
+        char *name = neo_location_get(allocator, member->field->location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
         neo_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);
@@ -80,7 +79,7 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
       }
       if (neo_list_get_size(addresses)) {
         THROW("Invalid tagged template on optional chain \n  at "
-              "_.compile (%ls:%d:%d)",
+              "_.compile (%s:%d:%d)",
               ctx->program->filename, self->tag->location.begin.line,
               self->tag->location.begin.column);
         neo_allocator_free(allocator, addresses);
@@ -99,15 +98,15 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
       neo_token_t str = neo_list_node_get(qit);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_NUMBER);
       neo_program_add_number(allocator, ctx->program, count);
-      wchar_t *s = neo_location_get_raw(allocator, str->location);
+      char *s = neo_location_get_raw(allocator, str->location);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
       if (str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING ||
           str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING_END) {
-        s[wcslen(s) - 1] = '\0';
+        s[strlen(s) - 1] = '\0';
         neo_program_add_string(allocator, ctx->program, s + 1);
       } else if (str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING_START ||
                  str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING_PART) {
-        s[wcslen(s) - 2] = '\0';
+        s[strlen(s) - 2] = '\0';
         neo_program_add_string(allocator, ctx->program, s + 1);
       }
       neo_allocator_free(allocator, s);
@@ -152,18 +151,18 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
     neo_list_node_t qit = neo_list_get_first(self->quasis);
     neo_token_t str = neo_list_node_get(qit);
     qit = neo_list_node_next(qit);
-    wchar_t *s = neo_location_get(allocator, str->location);
-    wchar_t *ss = neo_wstring_decode_escape(allocator, s);
+    char *s = neo_location_get(allocator, str->location);
+    char *ss = neo_string_decode_escape(allocator, s);
     neo_allocator_free(allocator, s);
     s = ss;
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
     if (str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING ||
         str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING_END) {
-      s[wcslen(s) - 1] = '\0';
+      s[strlen(s) - 1] = '\0';
       neo_program_add_string(allocator, ctx->program, s + 1);
     } else if (str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING_START ||
                str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING_PART) {
-      s[wcslen(s) - 2] = '\0';
+      s[strlen(s) - 2] = '\0';
       neo_program_add_string(allocator, ctx->program, s + 1);
     }
     neo_allocator_free(allocator, s);
@@ -174,18 +173,18 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
       TRY(item->write(allocator, ctx, item)) { return; }
       neo_program_add_code(allocator, ctx->program, NEO_ASM_CONCAT);
       str = neo_list_node_get(qit);
-      wchar_t *s = neo_location_get(allocator, str->location);
-      wchar_t *ss = neo_wstring_decode_escape(allocator, s);
+      char *s = neo_location_get(allocator, str->location);
+      char *ss = neo_string_decode_escape(allocator, s);
       neo_allocator_free(allocator, s);
       s = ss;
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
       if (str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING ||
           str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING_END) {
-        s[wcslen(s) - 1] = '\0';
+        s[strlen(s) - 1] = '\0';
         neo_program_add_string(allocator, ctx->program, s + 1);
       } else if (str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING_START ||
                  str->type == NEO_TOKEN_TYPE_TEMPLATE_STRING_PART) {
-        s[wcslen(s) - 2] = '\0';
+        s[strlen(s) - 2] = '\0';
         neo_program_add_string(allocator, ctx->program, s + 1);
       }
       neo_allocator_free(allocator, s);
@@ -198,8 +197,7 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
 static neo_variable_t neo_token_serialize(neo_allocator_t allocator,
                                           neo_token_t token) {
   size_t len = token->location.end.offset - token->location.begin.offset;
-  wchar_t *buf =
-      neo_allocator_alloc(allocator, len * 2 * sizeof(wchar_t), NULL);
+  wchar_t *buf = neo_allocator_alloc(allocator, len * 2 * sizeof(wchar_t), NULL);
   wchar_t *dst = buf;
   const char *src = token->location.end.offset;
   while (src != token->location.end.offset) {
@@ -264,7 +262,7 @@ neo_create_ast_literal_template(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_literal_template(neo_allocator_t allocator,
-                                             const wchar_t *file,
+                                             const char *file,
                                              neo_position_t *position) {
   neo_position_t current = *position;
   neo_token_t token = NULL;
@@ -289,7 +287,7 @@ neo_ast_node_t neo_ast_read_literal_template(neo_allocator_t allocator,
         goto onerror;
       };
       if (!expr) {
-        THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               current.line, current.column);
         goto onerror;
       }
@@ -299,7 +297,7 @@ neo_ast_node_t neo_ast_read_literal_template(neo_allocator_t allocator,
         goto onerror;
       };
       if (!token) {
-        THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               current.line, current.column);
         goto onerror;
       }

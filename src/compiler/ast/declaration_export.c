@@ -24,7 +24,7 @@
 #include "core/list.h"
 #include "core/location.h"
 #include "core/variable.h"
-#include <wchar.h>
+#include <string.h>
 
 static void
 neo_ast_declaration_export_dispose(neo_allocator_t allocator,
@@ -38,7 +38,7 @@ static void neo_ast_declaration_export_variable(neo_allocator_t allocator,
                                                 neo_write_context_t ctx,
                                                 neo_ast_node_t node) {
   if (node->type == NEO_NODE_TYPE_IDENTIFIER) {
-    wchar_t *name = neo_location_get(allocator, node->location);
+    char *name = neo_location_get(allocator, node->location);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
     neo_program_add_string(allocator, ctx->program, name);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_EXPORT);
@@ -81,8 +81,8 @@ neo_ast_declaration_export_write(neo_allocator_t allocator,
                                  neo_write_context_t ctx,
                                  neo_ast_declaration_export_t self) {
   if (self->source) {
-    wchar_t *name = neo_location_get(allocator, self->source->location);
-    name[wcslen(name) - 1] = 0;
+    char *name = neo_location_get(allocator, self->source->location);
+    name[strlen(name) - 1] = 0;
     neo_program_add_code(allocator, ctx->program, NEO_ASM_IMPORT);
     neo_program_add_string(allocator, ctx->program, name + 1);
     for (neo_list_node_t it = neo_list_get_first(self->attributes);
@@ -101,12 +101,12 @@ neo_ast_declaration_export_write(neo_allocator_t allocator,
       neo_ast_node_t spec = neo_list_node_get(it);
       if (spec->type == NEO_NODE_TYPE_EXPORT_NAMESPACE) {
         neo_ast_export_namespace_t exp = (neo_ast_export_namespace_t)spec;
-        wchar_t *name = neo_location_get(allocator, exp->identifier->location);
+        char *name = neo_location_get(allocator, exp->identifier->location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_EXPORT);
         if (exp->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
           neo_program_add_string(allocator, ctx->program, name);
         } else {
-          name[wcslen(name) - 1] = 0;
+          name[strlen(name) - 1] = 0;
           neo_program_add_string(allocator, ctx->program, name + 1);
         }
         neo_allocator_free(allocator, name);
@@ -114,11 +114,11 @@ neo_ast_declaration_export_write(neo_allocator_t allocator,
         neo_program_add_code(allocator, ctx->program, NEO_ASM_EXPORT_ALL);
       } else if (spec->type == NEO_NODE_TYPE_EXPORT_SPECIFIER) {
         neo_ast_export_specifier_t exp = (neo_ast_export_specifier_t)spec;
-        wchar_t *name = neo_location_get(allocator, exp->identifier->location);
+        char *name = neo_location_get(allocator, exp->identifier->location);
         if (exp->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
           neo_program_add_string(allocator, ctx->program, name);
         } else {
-          name[wcslen(name) - 1] = 0;
+          name[strlen(name) - 1] = 0;
           neo_program_add_string(allocator, ctx->program, name + 1);
         }
         neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
@@ -130,7 +130,7 @@ neo_ast_declaration_export_write(neo_allocator_t allocator,
         if (identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
           neo_program_add_string(allocator, ctx->program, name);
         } else {
-          name[wcslen(name) - 1] = 0;
+          name[strlen(name) - 1] = 0;
           neo_program_add_string(allocator, ctx->program, name + 1);
         }
         neo_allocator_free(allocator, name);
@@ -149,7 +149,7 @@ neo_ast_declaration_export_write(neo_allocator_t allocator,
         neo_ast_expression_function_t func =
             (neo_ast_expression_function_t)declar->declaration;
         TRY(item->write(allocator, ctx, item)) { return; }
-        wchar_t *name = neo_location_get(allocator, func->name->location);
+        char *name = neo_location_get(allocator, func->name->location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
         neo_program_add_string(allocator, ctx->program, name);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_EXPORT);
@@ -160,7 +160,7 @@ neo_ast_declaration_export_write(neo_allocator_t allocator,
         neo_ast_expression_class_t clazz =
             (neo_ast_expression_class_t)declar->declaration;
         TRY(item->write(allocator, ctx, item)) { return; }
-        wchar_t *name = neo_location_get(allocator, clazz->name->location);
+        char *name = neo_location_get(allocator, clazz->name->location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
         neo_program_add_string(allocator, ctx->program, name);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_EXPORT);
@@ -237,7 +237,7 @@ neo_create_ast_declaration_export(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_declaration_export(neo_allocator_t allocator,
-                                               const wchar_t *file,
+                                               const char *file,
                                                neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_declaration_export_t node =
@@ -285,7 +285,7 @@ neo_ast_node_t neo_ast_read_declaration_export(neo_allocator_t allocator,
   }
   if (!specifier) {
     if (*current.offset != '{') {
-      THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
             current.line, current.column);
       goto onerror;
     }
@@ -299,8 +299,8 @@ neo_ast_node_t neo_ast_read_declaration_export(neo_allocator_t allocator,
           goto onerror;
         }
         if (!specifier) {
-          THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)",
-                file, current.line, current.column);
+          THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+                current.line, current.column);
           goto onerror;
         }
         neo_list_push(node->specifiers, specifier);
@@ -312,8 +312,8 @@ neo_ast_node_t neo_ast_read_declaration_export(neo_allocator_t allocator,
         } else if (*current.offset == '}') {
           break;
         } else {
-          THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)",
-                file, current.line, current.column);
+          THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+                current.line, current.column);
           goto onerror;
         }
       }
@@ -329,7 +329,7 @@ neo_ast_node_t neo_ast_read_declaration_export(neo_allocator_t allocator,
   if (!token || !neo_location_is(token->location, "from")) {
     if (specifier && (specifier->type == NEO_NODE_TYPE_EXPORT_NAMESPACE ||
                       specifier->type == NEO_NODE_TYPE_EXPORT_ALL)) {
-      THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
             cur.line, cur.column);
       goto onerror;
     }
@@ -349,7 +349,7 @@ neo_ast_node_t neo_ast_read_declaration_export(neo_allocator_t allocator,
       neo_allocator_free(allocator, token);
       SKIP_ALL(allocator, file, &current, onerror);
       if (*current.offset != '{') {
-        THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               current.line, current.column);
         goto onerror;
       }
@@ -363,7 +363,7 @@ neo_ast_node_t neo_ast_read_declaration_export(neo_allocator_t allocator,
             goto onerror;
           }
           if (!attribute) {
-            THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)",
+            THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
                   file, current.line, current.column);
             goto onerror;
           }
@@ -376,14 +376,14 @@ neo_ast_node_t neo_ast_read_declaration_export(neo_allocator_t allocator,
             current.column++;
             SKIP_ALL(allocator, file, &current, onerror);
           } else {
-            THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)",
+            THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
                   file, current.line, current.column);
             goto onerror;
           }
         }
         if (*current.offset != '}') {
-          THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)",
-                file, current.line, current.column);
+          THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+                current.line, current.column);
           goto onerror;
         }
         current.offset++;
@@ -399,7 +399,7 @@ onfinish: {
   SKIP_ALL(allocator, file, &cur, onerror);
   if (cur.line == line) {
     if (*cur.offset && *cur.offset != ';') {
-      THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
             cur.line, cur.column);
       goto onerror;
     }

@@ -461,7 +461,7 @@ neo_js_variable_t neo_js_context_get_module(neo_js_context_t ctx,
 
 bool neo_js_context_has_module(neo_js_context_t ctx, const wchar_t *name);
 
-neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const wchar_t *file,
+neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
                                       const char *source);
 
 neo_js_variable_t neo_js_context_assert(neo_js_context_t ctx,

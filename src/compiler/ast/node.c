@@ -8,7 +8,6 @@
 #include "core/unicode.h"
 #include "core/variable.h"
 #include <string.h>
-#include <wchar.h>
 
 neo_variable_t neo_ast_node_serialize(neo_allocator_t allocator,
                                       neo_ast_node_t node) {
@@ -26,8 +25,7 @@ neo_variable_t neo_ast_node_list_serialize(neo_allocator_t allocator,
 neo_variable_t neo_ast_node_source_serialize(neo_allocator_t allocator,
                                              neo_ast_node_t node) {
   size_t size = node->location.end.offset - node->location.begin.offset;
-  wchar_t *buf =
-      neo_allocator_alloc(allocator, size * 2 * sizeof(wchar_t), NULL);
+  wchar_t *buf = neo_allocator_alloc(allocator, size * 2 * sizeof(wchar_t), NULL);
   wchar_t *dst = buf;
   const char *src = node->location.begin.offset;
   while (src != node->location.end.offset) {
@@ -65,7 +63,7 @@ neo_variable_t neo_ast_node_location_serialize(neo_allocator_t allocator,
 void neo_ast_node_resolve_closure(neo_allocator_t allocator,
                                   neo_ast_node_t self, neo_list_t closure) {}
 
-bool neo_skip_white_space(neo_allocator_t allocator, const wchar_t *file,
+bool neo_skip_white_space(neo_allocator_t allocator, const char *file,
                           neo_position_t *position) {
   if (*position->offset == '\0') {
     return false;
@@ -81,7 +79,7 @@ bool neo_skip_white_space(neo_allocator_t allocator, const wchar_t *file,
   return false;
 }
 
-bool neo_skip_line_terminator(neo_allocator_t allocator, const wchar_t *file,
+bool neo_skip_line_terminator(neo_allocator_t allocator, const char *file,
                               neo_position_t *position) {
   if (*position->offset == '\0') {
     return false;
@@ -108,7 +106,7 @@ bool neo_skip_line_terminator(neo_allocator_t allocator, const wchar_t *file,
   return false;
 }
 
-bool neo_skip_comment(neo_allocator_t allocator, const wchar_t *file,
+bool neo_skip_comment(neo_allocator_t allocator, const char *file,
                       neo_position_t *position) {
   neo_token_t token = TRY(neo_read_comment_token(allocator, file, position)) {
     return false;

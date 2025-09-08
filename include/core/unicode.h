@@ -18,7 +18,7 @@ neo_utf8_char neo_utf8_read_char(const char *str);
 
 uint32_t neo_utf8_char_to_utf32(neo_utf8_char chr);
 
-char *neo_utf32_to_utf8(neo_allocator_t allocator, uint32_t utf32);
+size_t neo_utf32_to_utf8(uint32_t utf32, char *output);
 
 char *neo_utf8_char_to_string(neo_allocator_t allocator, neo_utf8_char chr);
 

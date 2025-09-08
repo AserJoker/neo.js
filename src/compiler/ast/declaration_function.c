@@ -22,7 +22,7 @@ neo_ast_declaration_function_write(neo_allocator_t allocator,
                                    neo_ast_declaration_function_t self) {
   neo_ast_expression_function_t function =
       (neo_ast_expression_function_t)self->declaration;
-  wchar_t *name = neo_location_get(allocator, function->name->location);
+  char *name = neo_location_get(allocator, function->name->location);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
   neo_program_add_string(allocator, ctx->program, name);
   neo_allocator_free(allocator, name);
@@ -31,7 +31,7 @@ neo_ast_declaration_function_write(neo_allocator_t allocator,
        it = neo_list_node_next(it)) {
     neo_ast_node_t node = neo_list_node_get(it);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_CLOSURE);
-    wchar_t *name = neo_location_get(allocator, node->location);
+    char *name = neo_location_get(allocator, node->location);
     neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   }
@@ -76,7 +76,7 @@ neo_create_ast_declaration_function(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_declaration_function(neo_allocator_t allocator,
-                                                 const wchar_t *file,
+                                                 const char *file,
                                                  neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_expression_function_t declaration = NULL;
@@ -89,7 +89,7 @@ neo_ast_node_t neo_ast_read_declaration_function(neo_allocator_t allocator,
   }
   node->declaration = &declaration->node;
   if (!declaration->name) {
-    THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }

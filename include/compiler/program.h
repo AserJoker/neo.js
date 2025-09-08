@@ -1,6 +1,5 @@
 #ifndef _H_NEO_COMPILER_PROGRAM_
 #define _H_NEO_COMPILER_PROGRAM_
-#include <wchar.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -11,17 +10,16 @@ extern "C" {
 typedef struct _neo_program_t *neo_program_t;
 
 struct _neo_program_t {
-  wchar_t *filename;
-  wchar_t *dirname;
+  char *filename;
+  char *dirname;
   neo_buffer_t codes;
   neo_list_t constants;
 };
 
-neo_program_t neo_create_program(neo_allocator_t allocator,
-                                 const wchar_t *file);
+neo_program_t neo_create_program(neo_allocator_t allocator, const char *file);
 
 size_t neo_program_add_constant(neo_allocator_t allocator, neo_program_t self,
-                                const wchar_t *constant);
+                                const char *constant);
 
 void neo_program_add_code(neo_allocator_t allocator, neo_program_t self,
                           uint16_t code);
@@ -30,7 +28,7 @@ void neo_program_add_address(neo_allocator_t allocator, neo_program_t self,
                              size_t code);
 
 void neo_program_add_string(neo_allocator_t allocator, neo_program_t self,
-                            const wchar_t *string);
+                            const char *string);
 
 void neo_program_add_number(neo_allocator_t allocator, neo_program_t self,
                             double number);

@@ -2,8 +2,8 @@
 #include "core/allocator.h"
 #include "core/list.h"
 #include "core/string.h"
-#include "core/unicode.h"
 #include <stdlib.h>
+#include <string.h>
 #ifdef _WIN32
 #include <direct.h>
 #define getcwd _getcwd
@@ -22,17 +22,17 @@ struct _neo_path_t {
   neo_allocator_t allocator;
 };
 
-bool neo_path_append(neo_path_t path, wchar_t *part) {
-  if (wcscmp(part, L".") == 0) {
+bool neo_path_append(neo_path_t path, char *part) {
+  if (strcmp(part, ".") == 0) {
     return false;
   }
-  if (wcscmp(part, L"..") == 0) {
+  if (strcmp(part, "..") == 0) {
     if (neo_list_get_size(path->parts) == 0) {
       neo_list_push(path->parts, part);
       return true;
     }
-    wchar_t *last = neo_list_node_get(neo_list_get_last(path->parts));
-    if (wcscmp(last, L"..") == 0) {
+    char *last = neo_list_node_get(neo_list_get_last(path->parts));
+    if (strcmp(last, "..") == 0) {
       neo_list_push(path->parts, part);
       return true;
     }
@@ -47,27 +47,27 @@ static void neo_path_dispose(neo_allocator_t allocator, neo_path_t self) {
   neo_allocator_free(allocator, self->parts);
 }
 
-neo_path_t neo_create_path(neo_allocator_t allocator, const wchar_t *source) {
+neo_path_t neo_create_path(neo_allocator_t allocator, const char *source) {
   neo_path_t path = neo_allocator_alloc(allocator, sizeof(struct _neo_path_t),
                                         neo_path_dispose);
   path->allocator = allocator;
   neo_list_initialize_t initialze = {true};
   path->parts = neo_create_list(allocator, &initialze);
   if (source) {
-    wchar_t *part = NULL;
+    char *part = NULL;
     size_t offset = 0;
-    size_t len = wcslen(source) + 1;
+    size_t len = strlen(source) + 1;
     if (*source == '/') {
-      neo_list_push(path->parts, neo_create_wstring(allocator, L"/"));
+      neo_list_push(path->parts, neo_create_string(allocator, "/"));
       source++;
     }
     if (*source) {
-      part = neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
+      part = neo_allocator_alloc(allocator, sizeof(char) * len, NULL);
       while (*source) {
         if (*source == '/' || *source == '\\') {
           part[offset] = 0;
           if (neo_path_append(path, part)) {
-            part = neo_allocator_alloc(allocator, sizeof(wchar_t) * len, NULL);
+            part = neo_allocator_alloc(allocator, sizeof(char) * len, NULL);
           }
           offset = 0;
         } else {
@@ -89,19 +89,19 @@ neo_path_t neo_create_path(neo_allocator_t allocator, const wchar_t *source) {
 
 neo_path_t neo_path_concat(neo_path_t current, neo_path_t another) {
   if (neo_list_get_size(another->parts)) {
-    wchar_t *first = neo_list_node_get(neo_list_get_first(another->parts));
-    if (wcscmp(first, L"/") == 0) {
+    char *first = neo_list_node_get(neo_list_get_first(another->parts));
+    if (strcmp(first, "/") == 0) {
       return neo_path_clone(another);
     }
-    if (wcslen(first) > 1 && first[1] == ':') {
+    if (strlen(first) > 1 && first[1] == ':') {
       return neo_path_clone(another);
     }
   }
   current = neo_path_clone(current);
   for (neo_list_node_t it = neo_list_get_first(another->parts);
        it != neo_list_get_tail(another->parts); it = neo_list_node_next(it)) {
-    wchar_t *part = neo_list_node_get(it);
-    part = neo_create_wstring(current->allocator, part);
+    char *part = neo_list_node_get(it);
+    part = neo_create_string(current->allocator, part);
     if (!neo_path_append(current, part)) {
       neo_allocator_free(current->allocator, part);
     }
@@ -119,14 +119,12 @@ neo_path_t neo_path_clone(neo_path_t current) {
 }
 
 neo_path_t neo_path_current(neo_allocator_t allocator) {
-  char *buf = getcwd(NULL, 0);
-  if (!buf) {
+  char *source = getcwd(NULL, 0);
+  if (!source) {
     return NULL;
   }
-  wchar_t *source = neo_string_to_wstring(allocator, buf);
-  free(buf);
   neo_path_t path = neo_create_path(allocator, source);
-  neo_allocator_free(allocator, source);
+  free(source);
   return path;
 }
 
@@ -145,21 +143,21 @@ neo_path_t neo_path_parent(neo_path_t current) {
   neo_path_t result = neo_create_path(current->allocator, NULL);
   for (neo_list_node_t it = neo_list_get_first(current->parts);
        it != neo_list_get_last(current->parts); it = neo_list_node_next(it)) {
-    wchar_t *part = neo_list_node_get(it);
-    neo_list_push(result->parts, neo_create_wstring(current->allocator, part));
+    char *part = neo_list_node_get(it);
+    neo_list_push(result->parts, neo_create_string(current->allocator, part));
   }
   return result;
 }
-const wchar_t *neo_path_filename(neo_path_t current) {
+const char *neo_path_filename(neo_path_t current) {
   if (neo_list_get_size(current->parts)) {
     return neo_list_node_get(neo_list_get_last(current->parts));
   }
   return NULL;
 }
-const wchar_t *neo_path_extname(neo_path_t current) {
-  const wchar_t *filename = neo_path_filename(current);
+const char *neo_path_extname(neo_path_t current) {
+  const char *filename = neo_path_filename(current);
   if (filename) {
-    size_t idx = wcslen(filename) - 1;
+    size_t idx = strlen(filename) - 1;
     while (idx != 0) {
       if (filename[idx] == '.') {
         return &filename[idx];
@@ -170,18 +168,17 @@ const wchar_t *neo_path_extname(neo_path_t current) {
   return NULL;
 }
 
-wchar_t *neo_path_to_string(neo_path_t path) {
-  wchar_t *result =
-      neo_allocator_alloc(path->allocator, 128 * sizeof(wchar_t), NULL);
+char *neo_path_to_string(neo_path_t path) {
+  char *result = neo_allocator_alloc(path->allocator, 128 * sizeof(char), NULL);
   result[0] = 0;
   size_t max = 128;
   for (neo_list_node_t it = neo_list_get_first(path->parts);
        it != neo_list_get_tail(path->parts); it = neo_list_node_next(it)) {
-    wchar_t *part = neo_list_node_get(it);
-    result = neo_wstring_concat(path->allocator, result, &max, part);
-    if (it != neo_list_get_last(path->parts) && wcscmp(part, L"/") != 0) {
-      wchar_t spliter[2] = {DEFAULT_PATH_SPLITER, 0};
-      result = neo_wstring_concat(path->allocator, result, &max, spliter);
+    char *part = neo_list_node_get(it);
+    result = neo_string_concat(path->allocator, result, &max, part);
+    if (it != neo_list_get_last(path->parts) && strcmp(part, "/") != 0) {
+      char spliter[2] = {DEFAULT_PATH_SPLITER, 0};
+      result = neo_string_concat(path->allocator, result, &max, spliter);
     }
   }
   return result;

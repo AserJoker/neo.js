@@ -78,7 +78,7 @@ neo_create_ast_expression_object(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_expression_object(neo_allocator_t allocator,
-                                              const wchar_t *file,
+                                              const char *file,
                                               neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_expression_object_t node =
@@ -113,7 +113,7 @@ neo_ast_node_t neo_ast_read_expression_object(neo_allocator_t allocator,
         };
       }
       if (!item) {
-        THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               current.line, current.column);
         goto onerror;
       }
@@ -126,7 +126,7 @@ neo_ast_node_t neo_ast_read_expression_object(neo_allocator_t allocator,
       } else if (*current.offset == '}') {
         break;
       } else {
-        THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               current.line, current.column);
         goto onerror;
       }

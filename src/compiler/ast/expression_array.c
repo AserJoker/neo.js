@@ -61,18 +61,18 @@ static void neo_ast_expression_array_write(neo_allocator_t allocator,
         neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
         neo_program_add_integer(allocator, ctx->program, 1);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-        neo_program_add_string(allocator, ctx->program, L"length");
+        neo_program_add_string(allocator, ctx->program, "length");
         neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
         TRY(item->write(allocator, ctx, item)) { return; }
         neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
       }
     } else {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-      neo_program_add_string(allocator, ctx->program, L"length");
+      neo_program_add_string(allocator, ctx->program, "length");
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
       neo_program_add_integer(allocator, ctx->program, 2);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-      neo_program_add_string(allocator, ctx->program, L"length");
+      neo_program_add_string(allocator, ctx->program, "length");
       neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_INC);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
@@ -97,7 +97,7 @@ neo_create_ast_expression_array(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_expression_array(neo_allocator_t allocator,
-                                             const wchar_t *file,
+                                             const char *file,
                                              neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_expression_array_t node = NULL;
@@ -131,7 +131,7 @@ neo_ast_node_t neo_ast_read_expression_array(neo_allocator_t allocator,
       } else if (*current.offset == ']') {
         break;
       } else {
-        THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               current.line, current.column);
         goto onerror;
       }

@@ -42,7 +42,7 @@ neo_create_ast_expression_super(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_expression_super(neo_allocator_t allocator,
-                                             const wchar_t *file,
+                                             const char *file,
                                              neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_expression_super_t node = NULL;

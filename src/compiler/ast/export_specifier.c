@@ -48,7 +48,7 @@ neo_serialize_ast_export_specifier(neo_allocator_t allocator,
 static void neo_ast_export_specifier_write(neo_allocator_t allocator,
                                            neo_write_context_t ctx,
                                            neo_ast_export_specifier_t self) {
-  wchar_t *name = neo_location_get(allocator, self->identifier->location);
+  char *name = neo_location_get(allocator, self->identifier->location);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
   neo_program_add_string(allocator, ctx->program, name);
   neo_allocator_free(allocator, name);
@@ -61,7 +61,7 @@ static void neo_ast_export_specifier_write(neo_allocator_t allocator,
   if (identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
     neo_program_add_string(allocator, ctx->program, name);
   } else {
-    name[wcslen(name) - 1] = 0;
+    name[strlen(name) - 1] = 0;
     neo_program_add_string(allocator, ctx->program, name + 1);
   }
   neo_allocator_free(allocator, name);
@@ -85,7 +85,7 @@ neo_create_ast_export_specifier(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_export_specifier(neo_allocator_t allocator,
-                                             const wchar_t *file,
+                                             const char *file,
                                              neo_position_t *position) {
   neo_position_t current = *position;
   neo_token_t token = NULL;
@@ -109,7 +109,7 @@ neo_ast_node_t neo_ast_read_export_specifier(neo_allocator_t allocator,
       }
     }
     if (!node->alias) {
-      THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
             current.line, current.column);
       goto onerror;
     }

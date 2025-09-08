@@ -9,7 +9,6 @@
 #include "core/string.h"
 #include "core/variable.h"
 #include <string.h>
-#include <wchar.h>
 
 static void neo_ast_literal_string_dispose(neo_allocator_t allocator,
                                            neo_ast_literal_string_t node) {
@@ -18,9 +17,9 @@ static void neo_ast_literal_string_dispose(neo_allocator_t allocator,
 static void neo_ast_literal_string_write(neo_allocator_t allocator,
                                          neo_write_context_t ctx,
                                          neo_ast_literal_string_t self) {
-  wchar_t *str = neo_location_get(allocator, self->node.location);
-  str[wcslen(str) - 1] = 0;
-  wchar_t *ss = neo_wstring_decode_escape(allocator, str + 1);
+  char *str = neo_location_get(allocator, self->node.location);
+  str[strlen(str) - 1] = 0;
+  char *ss = neo_string_decode_escape(allocator, str + 1);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
   neo_program_add_string(allocator, ctx->program, ss);
   neo_allocator_free(allocator, ss);
@@ -55,7 +54,7 @@ neo_create_string_litreral(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_literal_string(neo_allocator_t allocator,
-                                           const wchar_t *file,
+                                           const char *file,
                                            neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_literal_string_t node = NULL;

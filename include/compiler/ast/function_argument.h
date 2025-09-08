@@ -14,7 +14,7 @@ typedef struct _neo_ast_function_argument_t {
 } *neo_ast_function_argument_t;
 
 neo_ast_node_t neo_ast_read_function_argument(neo_allocator_t allocator,
-                                              const wchar_t *file,
+                                              const char *file,
                                               neo_position_t *position);
 
 #ifdef __cplusplus

@@ -8,7 +8,7 @@
 #include "core/location.h"
 #include "core/variable.h"
 #include <stdio.h>
-#include <wchar.h>
+#include <string.h>
 
 static void neo_ast_import_attribute_dispose(neo_allocator_t allocator,
                                              neo_ast_import_attribute_t node) {
@@ -21,11 +21,11 @@ static void neo_ast_import_attribute_write(neo_allocator_t allocator,
                                            neo_write_context_t ctx,
                                            neo_ast_import_attribute_t self) {
   neo_program_add_code(allocator, ctx->program, NEO_ASM_ASSERT);
-  wchar_t *name = neo_location_get(allocator, self->identifier->location);
+  char *name = neo_location_get(allocator, self->identifier->location);
   neo_program_add_string(allocator, ctx->program, name);
   neo_allocator_free(allocator, name);
-  wchar_t *value = neo_location_get(allocator, self->value->location);
-  value[wcslen(value) - 1] = 0;
+  char *value = neo_location_get(allocator, self->value->location);
+  value[strlen(value) - 1] = 0;
   neo_program_add_string(allocator, ctx->program, value + 1);
   neo_allocator_free(allocator, value);
 }
@@ -65,7 +65,7 @@ neo_create_ast_import_attribute(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_import_attribute(neo_allocator_t allocator,
-                                             const wchar_t *file,
+                                             const char *file,
                                              neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_import_attribute_t node = neo_create_ast_import_attribute(allocator);
@@ -75,7 +75,7 @@ neo_ast_node_t neo_ast_read_import_attribute(neo_allocator_t allocator,
   }
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != ':') {
-    THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }
@@ -84,7 +84,7 @@ neo_ast_node_t neo_ast_read_import_attribute(neo_allocator_t allocator,
   SKIP_ALL(allocator, file, &current, onerror);
   node->value = neo_ast_read_literal_string(allocator, file, &current);
   if (!node->value) {
-    THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }

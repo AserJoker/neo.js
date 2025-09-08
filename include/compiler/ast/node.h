@@ -130,13 +130,13 @@ neo_variable_t neo_ast_node_location_serialize(neo_allocator_t allocator,
 void neo_ast_node_resolve_closure(neo_allocator_t allocator,
                                   neo_ast_node_t self, neo_list_t closure);
 
-bool neo_skip_white_space(neo_allocator_t allocator, const wchar_t *file,
+bool neo_skip_white_space(neo_allocator_t allocator, const char *file,
                           neo_position_t *position);
 
-bool neo_skip_line_terminator(neo_allocator_t allocator, const wchar_t *file,
+bool neo_skip_line_terminator(neo_allocator_t allocator, const char *file,
                               neo_position_t *position);
 
-bool neo_skip_comment(neo_allocator_t allocator, const wchar_t *file,
+bool neo_skip_comment(neo_allocator_t allocator, const char *file,
                       neo_position_t *position);
 
 #define SKIP_ALL(allocator, file, position, onerror)                           \

@@ -13,7 +13,7 @@
 
 #define IS_DEC(ch) ((ch) >= '0' && (ch) <= '9')
 
-static int32_t neo_read_hex(const wchar_t *file, neo_position_t *position) {
+static int32_t neo_read_hex(const char *file, neo_position_t *position) {
   neo_position_t current = *position;
   if (IS_HEX(*current.offset)) {
     while (IS_HEX(*current.offset)) {
@@ -28,7 +28,7 @@ static int32_t neo_read_hex(const wchar_t *file, neo_position_t *position) {
   return size;
 }
 
-static int32_t neo_read_oct(const wchar_t *file, neo_position_t *position) {
+static int32_t neo_read_oct(const char *file, neo_position_t *position) {
   neo_position_t current = *position;
   if (IS_OCT(*current.offset)) {
     while (IS_OCT(*current.offset)) {
@@ -43,7 +43,7 @@ static int32_t neo_read_oct(const wchar_t *file, neo_position_t *position) {
   return size;
 }
 
-static int32_t neo_read_dec(const wchar_t *file, neo_position_t *position) {
+static int32_t neo_read_dec(const char *file, neo_position_t *position) {
   neo_position_t current = *position;
   if (IS_DEC(*current.offset)) {
     while (IS_DEC(*current.offset)) {
@@ -58,7 +58,7 @@ static int32_t neo_read_dec(const wchar_t *file, neo_position_t *position) {
   return size;
 }
 
-static int32_t neo_read_escape(const wchar_t *file, neo_position_t *position) {
+static int32_t neo_read_escape(const char *file, neo_position_t *position) {
   neo_position_t current = *position;
   if (*current.offset == '\\') {
     current.offset++;
@@ -72,7 +72,7 @@ static int32_t neo_read_escape(const wchar_t *file, neo_position_t *position) {
         neo_read_hex(file, &current);
         if (*current.offset != '}') {
           THROW("Invalid hexadecimal escape sequence \n  at _.compile "
-                "(%ls:%d:%d)",
+                "(%s:%d:%d)",
                 file, current.line, current.column);
           return -1;
         } else {
@@ -83,7 +83,7 @@ static int32_t neo_read_escape(const wchar_t *file, neo_position_t *position) {
         for (int32_t idx = 0; idx < 4; idx++) {
           if (!IS_HEX(*current.offset)) {
             THROW("Invalid hexadecimal escape sequence \n  at "
-                  "_.compile (%ls:%d:%d)",
+                  "_.compile (%s:%d:%d)",
                   file, current.line, current.column);
             return -1;
           }
@@ -97,7 +97,7 @@ static int32_t neo_read_escape(const wchar_t *file, neo_position_t *position) {
       for (int32_t idx = 0; idx < 2; idx++) {
         if (!IS_HEX(*current.offset)) {
           THROW("Invalid hexadecimal escape sequence \n  at _.compile "
-                "(%ls:%d:%d)",
+                "(%s:%d:%d)",
                 file, current.line, current.column);
           return -1;
         }
@@ -117,7 +117,7 @@ static int32_t neo_read_escape(const wchar_t *file, neo_position_t *position) {
 }
 
 neo_token_t neo_read_string_token(neo_allocator_t allocator,
-                                  const wchar_t *file,
+                                  const char *file,
                                   neo_position_t *position) {
   neo_position_t current = *position;
   if (*current.offset != '\'' && *current.offset != '\"') {
@@ -129,7 +129,7 @@ neo_token_t neo_read_string_token(neo_allocator_t allocator,
     neo_utf8_char chr = neo_utf8_read_char(current.offset);
     if (*chr.begin == 0xa || *chr.begin == 0xd || *chr.begin == '\0' ||
         neo_utf8_char_is(chr, "\u2028") || neo_utf8_char_is(chr, "\u2029")) {
-      THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
             current.line, current.column);
       return NULL;
     }
@@ -157,7 +157,7 @@ neo_token_t neo_read_string_token(neo_allocator_t allocator,
 }
 
 neo_token_t neo_read_number_token(neo_allocator_t allocator,
-                                  const wchar_t *file,
+                                  const char *file,
                                   neo_position_t *position) {
   neo_position_t current = *position;
   if (*current.offset == '0' &&
@@ -167,7 +167,7 @@ neo_token_t neo_read_number_token(neo_allocator_t allocator,
     if (IS_HEX(*current.offset)) {
       neo_read_hex(file, &current);
     } else {
-      THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
             current.line, current.column);
       return NULL;
     }
@@ -178,7 +178,7 @@ neo_token_t neo_read_number_token(neo_allocator_t allocator,
     if (IS_OCT(*current.offset)) {
       neo_read_oct(file, &current);
     } else {
-      THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
             current.line, current.column);
       return NULL;
     }
@@ -209,7 +209,7 @@ neo_token_t neo_read_number_token(neo_allocator_t allocator,
       if (IS_DEC(*current.offset)) {
         neo_read_dec(file, &current);
       } else {
-        THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               current.line, current.column);
         return NULL;
       }
@@ -227,7 +227,7 @@ neo_token_t neo_read_number_token(neo_allocator_t allocator,
 }
 
 neo_token_t neo_read_symbol_token(neo_allocator_t allocator,
-                                  const wchar_t *file,
+                                  const char *file,
                                   neo_position_t *position) {
   static const char *operators[] = {
       ">>>=", "...", "<<=", ">>>", "===", "!==", "**=", ">>=", "&&=", "(?\?=)",
@@ -270,7 +270,7 @@ neo_token_t neo_read_symbol_token(neo_allocator_t allocator,
 }
 
 neo_token_t neo_read_regexp_token(neo_allocator_t allocator,
-                                  const wchar_t *file,
+                                  const char *file,
                                   neo_position_t *position) {
   neo_position_t current = *position;
   if (*current.offset == '/' && *(current.offset + 1) != '/') {
@@ -281,7 +281,7 @@ neo_token_t neo_read_regexp_token(neo_allocator_t allocator,
       neo_utf8_char chr = neo_utf8_read_char(current.offset);
       if (*chr.begin == 0xa || *chr.begin == 0xd || *chr.begin == '\0' ||
           neo_utf8_char_is(chr, "\u2028") || neo_utf8_char_is(chr, "\u2029")) {
-        THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               current.line, current.column);
         return NULL;
       }
@@ -308,7 +308,7 @@ neo_token_t neo_read_regexp_token(neo_allocator_t allocator,
           *current.offset != 'i' && *current.offset != 'm' &&
           *current.offset != 'u' && *current.offset != 'y' &&
           *current.offset != 's') {
-        THROW("Invalid regular expression flags \n  at _.compile (%ls:%d:%d)",
+        THROW("Invalid regular expression flags \n  at _.compile (%s:%d:%d)",
               file, current.line, current.column);
         return NULL;
       }
@@ -329,7 +329,7 @@ neo_token_t neo_read_regexp_token(neo_allocator_t allocator,
 }
 
 neo_token_t neo_read_identify_token(neo_allocator_t allocator,
-                                    const wchar_t *file,
+                                    const char *file,
                                     neo_position_t *position) {
 
   neo_position_t current = *position;
@@ -370,7 +370,7 @@ neo_token_t neo_read_identify_token(neo_allocator_t allocator,
       }
     }
     if (utf32 != '$' && utf32 != '_' && !IS_ID_START(utf32)) {
-      THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
             current.line, current.column);
       return NULL;
     }
@@ -418,7 +418,7 @@ neo_token_t neo_read_identify_token(neo_allocator_t allocator,
         }
       }
       if (utf32 != '$' && utf32 != '_' && !IS_ID_CONTINUE(utf32)) {
-        THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               current.line, current.column);
         return NULL;
       }
@@ -442,7 +442,7 @@ neo_token_t neo_read_identify_token(neo_allocator_t allocator,
 }
 
 neo_token_t neo_read_comment_token(neo_allocator_t allocator,
-                                   const wchar_t *file,
+                                   const char *file,
                                    neo_position_t *position) {
   neo_position_t current = *position;
   if (*current.offset == '/' && *(current.offset + 1) == '/') {
@@ -472,7 +472,7 @@ neo_token_t neo_read_comment_token(neo_allocator_t allocator,
 }
 
 neo_token_t neo_read_multiline_comment_token(neo_allocator_t allocator,
-                                             const wchar_t *file,
+                                             const char *file,
                                              neo_position_t *position) {
   neo_position_t current = *position;
   if (*current.offset == '/' && *(current.offset + 1) == '*') {
@@ -480,7 +480,7 @@ neo_token_t neo_read_multiline_comment_token(neo_allocator_t allocator,
     current.column += 2;
     while (true) {
       if (*current.offset == 0) {
-        THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               current.line, current.column);
         return NULL;
       }
@@ -514,7 +514,7 @@ neo_token_t neo_read_multiline_comment_token(neo_allocator_t allocator,
 }
 
 neo_token_t neo_read_template_string_token(neo_allocator_t allocator,
-                                           const wchar_t *file,
+                                           const char *file,
                                            neo_position_t *position) {
   neo_position_t current = *position;
   if (*current.offset == '`' || *current.offset == '}') {
@@ -522,7 +522,7 @@ neo_token_t neo_read_template_string_token(neo_allocator_t allocator,
     current.column++;
     while (true) {
       if (*current.offset == '\0') {
-        THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
               current.line, current.column);
         return NULL;
       }

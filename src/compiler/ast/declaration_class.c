@@ -17,7 +17,7 @@ static void neo_ast_declaration_class_write(neo_allocator_t allocator,
   TRY(self->declaration->write(allocator, ctx, self->declaration)) { return; }
   neo_ast_expression_class_t clazz =
       (neo_ast_expression_class_t)self->declaration;
-  wchar_t *name = neo_location_get(allocator, clazz->name->location);
+  char *name = neo_location_get(allocator, clazz->name->location);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
   neo_program_add_string(allocator, ctx->program, name);
   neo_allocator_free(allocator, name);
@@ -35,9 +35,9 @@ static neo_variable_t
 neo_serialize_ast_declaration_class(neo_allocator_t allocator,
                                     neo_ast_declaration_class_t node) {
   neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_set(variable, L"type",
-                   neo_create_variable_string(
-                       allocator, L"NEO_NODE_TYPE_DECLARATION_CLASS"));
+  neo_variable_set(
+      variable, L"type",
+      neo_create_variable_string(allocator, L"NEO_NODE_TYPE_DECLARATION_CLASS"));
   neo_variable_set(variable, L"declaration",
                    neo_ast_node_serialize(allocator, node->declaration));
   neo_variable_set(variable, L"location",
@@ -64,7 +64,7 @@ neo_create_ast_declaration_class(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_declaration_class(neo_allocator_t allocator,
-                                              const wchar_t *file,
+                                              const char *file,
                                               neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_expression_class_t declaration = NULL;
@@ -77,7 +77,7 @@ neo_ast_node_t neo_ast_read_declaration_class(neo_allocator_t allocator,
   }
   node->declaration = &declaration->node;
   if (!declaration->name) {
-    THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }

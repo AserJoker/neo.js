@@ -51,7 +51,7 @@ static void neo_ast_class_property_write(neo_allocator_t allocator,
     if (self->identifier->type == NEO_NODE_TYPE_IDENTIFIER ||
         self->identifier->type == NEO_NODE_TYPE_PRIVATE_NAME) {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-      wchar_t *name = neo_location_get(allocator, self->identifier->location);
+      char *name = neo_location_get(allocator, self->identifier->location);
       neo_program_add_string(allocator, ctx->program, name);
       neo_allocator_free(allocator, name);
     } else {
@@ -130,7 +130,7 @@ neo_create_ast_class_property(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_class_property(neo_allocator_t allocator,
-                                           const wchar_t *file,
+                                           const char *file,
                                            neo_position_t *position) {
   neo_position_t current = *position;
   neo_token_t token = NULL;
@@ -214,7 +214,7 @@ neo_ast_node_t neo_ast_read_class_property(neo_allocator_t allocator,
       goto onerror;
     }
     if (!node->value) {
-      THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
             current.line, current.column);
       goto onerror;
     }

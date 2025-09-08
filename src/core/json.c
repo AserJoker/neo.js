@@ -6,6 +6,7 @@
 #include "core/map.h"
 #include "core/position.h"
 #include "core/string.h"
+#include "core/unicode.h"
 #include "core/variable.h"
 #include <stdio.h>
 #include <string.h>
@@ -103,10 +104,10 @@ wchar_t *neo_json_stringify(neo_allocator_t allocator,
   return result;
 }
 neo_variable_t neo_json_read_variable(neo_allocator_t allocator,
-                                      const wchar_t *file,
+                                      const char *file,
                                       neo_position_t *position);
 
-void neo_json_skip_invisible(neo_allocator_t allocator, const wchar_t *file,
+void neo_json_skip_invisible(neo_allocator_t allocator, const char *file,
                              neo_position_t *position) {
   for (;;) {
     if (*position->offset == ' ' || *position->offset == '\t') {
@@ -123,7 +124,7 @@ void neo_json_skip_invisible(neo_allocator_t allocator, const wchar_t *file,
     }
   }
 }
-void neo_json_read_string(neo_allocator_t allocator, const wchar_t *file,
+void neo_json_read_string(neo_allocator_t allocator, const char *file,
                           neo_position_t *current) {
   current->offset++;
   current->column++;
@@ -137,7 +138,7 @@ void neo_json_read_string(neo_allocator_t allocator, const wchar_t *file,
       break;
     } else if (*current->offset == '\0' || *current->offset == '\n' ||
                *current->offset == '\r') {
-      THROW("Invalid or unexpected token \n  at %ls:%d:%d", file, current->line,
+      THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current->line,
             current->column);
       return;
     } else {
@@ -147,7 +148,7 @@ void neo_json_read_string(neo_allocator_t allocator, const wchar_t *file,
   }
 }
 
-void neo_json_read_number(neo_allocator_t allocator, const wchar_t *file,
+void neo_json_read_number(neo_allocator_t allocator, const char *file,
                           neo_position_t *current) {
   if (*current->offset == '-') {
     current->offset++;
@@ -164,7 +165,7 @@ void neo_json_read_number(neo_allocator_t allocator, const wchar_t *file,
     current->offset++;
     current->column++;
     if (*current->offset < '0' || *current->offset > '9') {
-      THROW("Invalid or unexpected token \n  at %ls:%d:%d", file, current->line,
+      THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current->line,
             current->column);
     }
     while (*current->offset >= '0' && *current->offset <= '9') {
@@ -186,7 +187,7 @@ void neo_json_read_number(neo_allocator_t allocator, const wchar_t *file,
         current->offset++;
         current->column++;
         if (*current->offset < '0' || *current->offset > '9') {
-          THROW("Invalid or unexpected token \n  at %ls:%d:%d", file,
+          THROW("Invalid or unexpected token \n  at %s:%d:%d", file,
                 current->line, current->column);
         }
         while (*current->offset >= '0' && *current->offset <= '9') {
@@ -195,14 +196,13 @@ void neo_json_read_number(neo_allocator_t allocator, const wchar_t *file,
         }
       }
     } else {
-      THROW("Invalid or unexpected token \n  at %ls:%d:%d", file, current->line,
+      THROW("Invalid or unexpected token \n  at %s:%d:%d", file, current->line,
             current->column);
     }
   }
 }
 
-neo_variable_t neo_json_read_dict(neo_allocator_t allocator,
-                                  const wchar_t *file,
+neo_variable_t neo_json_read_dict(neo_allocator_t allocator, const char *file,
                                   neo_position_t *position) {
   neo_variable_t dict = neo_create_variable_dict(allocator, NULL, NULL);
   position->column++;
@@ -215,11 +215,13 @@ neo_variable_t neo_json_read_dict(neo_allocator_t allocator,
       neo_position_t current = *position;
       TRY(neo_json_read_string(allocator, file, &current)) { goto onerror; }
       neo_location_t loc = {*position, current, file};
-      key = neo_location_get(allocator, loc);
+      char *ckey = neo_location_get(allocator, loc);
+      key = neo_string_to_wstring(allocator, ckey);
+      neo_allocator_free(allocator, ckey);
       *position = current;
       neo_json_skip_invisible(allocator, file, position);
       if (*position->offset != ':') {
-        THROW("Invalid or unexpected token \n  at %ls:%d:%d", file,
+        THROW("Invalid or unexpected token \n  at %s:%d:%d", file,
               position->line, position->column);
         goto onerror;
       }
@@ -240,7 +242,7 @@ neo_variable_t neo_json_read_dict(neo_allocator_t allocator,
       } else if (*position->offset == '}') {
         break;
       } else {
-        THROW("Invalid or unexpected token \n  at %ls:%d:%d", file,
+        THROW("Invalid or unexpected token \n  at %s:%d:%d", file,
               position->line, position->column);
         goto onerror;
       }
@@ -256,8 +258,7 @@ onerror:
   return NULL;
 }
 
-neo_variable_t neo_json_read_array(neo_allocator_t allocator,
-                                   const wchar_t *file,
+neo_variable_t neo_json_read_array(neo_allocator_t allocator, const char *file,
                                    neo_position_t *position) {
   neo_variable_t item = NULL;
   neo_variable_t array = neo_create_variable_array(allocator, NULL, NULL);
@@ -278,7 +279,7 @@ neo_variable_t neo_json_read_array(neo_allocator_t allocator,
       } else if (*position->offset == ']') {
         break;
       } else {
-        THROW("Invalid or unexpected token \n  at %ls:%d:%d", file,
+        THROW("Invalid or unexpected token \n  at %s:%d:%d", file,
               position->line, position->column);
         goto onerror;
       }
@@ -294,7 +295,7 @@ onerror:
 }
 
 neo_variable_t neo_json_read_variable(neo_allocator_t allocator,
-                                      const wchar_t *file,
+                                      const char *file,
                                       neo_position_t *position) {
   neo_json_skip_invisible(allocator, file, position);
   if (*position->offset == '{') {
@@ -305,7 +306,9 @@ neo_variable_t neo_json_read_variable(neo_allocator_t allocator,
     neo_position_t current = *position;
     TRY(neo_json_read_string(allocator, file, &current)) { return NULL; }
     neo_location_t loc = {*position, current, file};
-    wchar_t *str = neo_location_get(allocator, loc);
+    char *ss = neo_location_get(allocator, loc);
+    wchar_t *str = neo_string_to_wstring(allocator, ss);
+    neo_allocator_free(allocator, ss);
     neo_variable_t res = neo_create_variable_string(allocator, str);
     neo_allocator_free(allocator, str);
     *position = current;
@@ -317,7 +320,9 @@ neo_variable_t neo_json_read_variable(neo_allocator_t allocator,
     neo_position_t current = *position;
     TRY(neo_json_read_number(allocator, file, &current)) { return NULL; }
     neo_location_t loc = {*position, current, file};
-    wchar_t *str = neo_location_get(allocator, loc);
+    char *ss = neo_location_get(allocator, loc);
+    wchar_t *str = neo_string_to_wstring(allocator, ss);
+    neo_allocator_free(allocator, ss);
     wchar_t *next = NULL;
     double val = wcstod(str, &next);
     neo_variable_t res = neo_create_variable_number(allocator, val);
@@ -337,12 +342,12 @@ neo_variable_t neo_json_read_variable(neo_allocator_t allocator,
     position->column += 4;
     return neo_create_variable_nil(allocator);
   }
-  THROW("Invalid or unexpected token \n  at %ls:%d:%d", file, position->line,
+  THROW("Invalid or unexpected token \n  at %s:%d:%d", file, position->line,
         position->column);
   return NULL;
 }
 
-neo_variable_t neo_json_parse(neo_allocator_t allocator, const wchar_t *file,
+neo_variable_t neo_json_parse(neo_allocator_t allocator, const char *file,
                               const char *source) {
   neo_position_t position;
   position.offset = source;
@@ -354,7 +359,7 @@ neo_variable_t neo_json_parse(neo_allocator_t allocator, const wchar_t *file,
   }
   if (*position.offset) {
     neo_allocator_free(allocator, result);
-    THROW("Invalid or unexpected token \n  at %ls:%d:%d", file, position.line,
+    THROW("Invalid or unexpected token \n  at %s:%d:%d", file, position.line,
           position.column);
     return NULL;
   }

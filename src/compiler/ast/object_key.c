@@ -10,7 +10,7 @@
 #include <stdio.h>
 
 neo_ast_node_t neo_ast_read_object_key(neo_allocator_t allocator,
-                                       const wchar_t *file,
+                                       const char *file,
                                        neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_node_t node = NULL;
@@ -38,7 +38,7 @@ onerror:
 }
 
 neo_ast_node_t neo_ast_read_object_computed_key(neo_allocator_t allocator,
-                                                const wchar_t *file,
+                                                const char *file,
                                                 neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_node_t node = NULL;
@@ -52,13 +52,13 @@ neo_ast_node_t neo_ast_read_object_computed_key(neo_allocator_t allocator,
     goto onerror;
   }
   if (!node) {
-    THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }
   SKIP_ALL(allocator, file, &current, onerror);
   if (*current.offset != ']') {
-    THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }

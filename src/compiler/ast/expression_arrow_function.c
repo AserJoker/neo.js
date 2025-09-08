@@ -76,7 +76,7 @@ static void neo_ast_expression_arrow_function_write(
   neo_writer_push_scope(allocator, ctx, self->node.scope);
   if (neo_list_get_size(self->arguments)) {
     neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
-    neo_program_add_string(allocator, ctx->program, L"arguments");
+    neo_program_add_string(allocator, ctx->program, "arguments");
     neo_program_add_code(allocator, ctx->program, NEO_ASM_ITERATOR);
     for (neo_list_node_t it = neo_list_get_first(self->arguments);
          it != neo_list_get_tail(self->arguments);
@@ -86,7 +86,7 @@ static void neo_ast_expression_arrow_function_write(
         neo_program_add_code(allocator, ctx->program, NEO_ASM_NEXT);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
-        wchar_t *name = neo_location_get(allocator, argument->location);
+        char *name = neo_location_get(allocator, argument->location);
         neo_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
@@ -116,7 +116,7 @@ static void neo_ast_expression_arrow_function_write(
   }
   neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_ADDRESS);
   neo_program_add_address(allocator, ctx->program, begin);
-  wchar_t *source = neo_location_get(allocator, self->node.location);
+  char *source = neo_location_get(allocator, self->node.location);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_SOURCE);
   neo_program_add_string(allocator, ctx->program, source);
   neo_allocator_free(allocator, source);
@@ -124,7 +124,7 @@ static void neo_ast_expression_arrow_function_write(
        it != neo_list_get_tail(self->closure); it = neo_list_node_next(it)) {
     neo_ast_node_t node = neo_list_node_get(it);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_CLOSURE);
-    wchar_t *name = neo_location_get(allocator, node->location);
+    char *name = neo_location_get(allocator, node->location);
     neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   }
@@ -151,7 +151,7 @@ neo_create_ast_expression_arrow_function(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_expression_arrow_function(
-    neo_allocator_t allocator, const wchar_t *file, neo_position_t *position) {
+    neo_allocator_t allocator, const char *file, neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_expression_arrow_function_t node = NULL;
   neo_token_t token = NULL;
@@ -247,7 +247,7 @@ neo_ast_node_t neo_ast_read_expression_arrow_function(
   }
 
   if (!node->body) {
-    THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }

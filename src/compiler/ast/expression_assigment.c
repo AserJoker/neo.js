@@ -50,7 +50,7 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
       }
       if (neo_list_get_size(addresses)) {
         THROW(
-            "Invalid left-hand side in assignment \n  at _.compile (%ls:%d:%d)",
+            "Invalid left-hand side in assignment \n  at _.compile (%s:%d:%d)",
             ctx->program->filename, self->identifier->location.begin.line,
             self->identifier->location.begin.column);
         neo_allocator_free(allocator, addresses);
@@ -59,7 +59,7 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
       neo_allocator_free(allocator, addresses);
     }
     if (self->identifier->type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
-      wchar_t *field = neo_location_get(allocator, member->field->location);
+      char *field = neo_location_get(allocator, member->field->location);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
       neo_program_add_string(allocator, ctx->program, field);
       neo_allocator_free(allocator, field);
@@ -143,12 +143,12 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
     } else {
       TRY(self->value->write(allocator, ctx, self->value)) { return; }
     }
-    wchar_t *name = neo_location_get(allocator, self->identifier->location);
+    char *name = neo_location_get(allocator, self->identifier->location);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
     neo_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   } else {
-    THROW("Invalid left-hand side in assignment \n  at _.compile (%ls:%d:%d)",
+    THROW("Invalid left-hand side in assignment \n  at _.compile (%s:%d:%d)",
           ctx->program->filename, self->identifier->location.begin.line,
           self->identifier->location.begin.column);
     return;
@@ -192,7 +192,7 @@ neo_create_ast_expression_assigment(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_expression_assigment(neo_allocator_t allocator,
-                                                 const wchar_t *file,
+                                                 const char *file,
                                                  neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_expression_assigment_t node = NULL;
@@ -249,7 +249,7 @@ neo_ast_node_t neo_ast_read_expression_assigment(neo_allocator_t allocator,
     goto onerror;
   };
   if (!node->value) {
-    THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)", file,
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);
     goto onerror;
   }

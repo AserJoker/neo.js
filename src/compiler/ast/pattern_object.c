@@ -40,20 +40,18 @@ static void neo_ast_pattern_object_write(neo_allocator_t allocator,
     if (item->type == NEO_NODE_TYPE_PATTERN_OBJECT_ITEM) {
       neo_ast_pattern_object_item_t oitem = (neo_ast_pattern_object_item_t)item;
       if (oitem->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
-        wchar_t *name =
-            neo_location_get(allocator, oitem->identifier->location);
+        char *name = neo_location_get(allocator, oitem->identifier->location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
         neo_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);
       } else if (oitem->identifier->type == NEO_NODE_TYPE_LITERAL_STRING) {
-        wchar_t *name =
-            neo_location_get(allocator, oitem->identifier->location);
-        name[wcslen(name) - 1] = 0;
+        char *name = neo_location_get(allocator, oitem->identifier->location);
+        name[strlen(name) - 1] = 0;
         neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
         neo_program_add_string(allocator, ctx->program, name + 1);
         neo_allocator_free(allocator, name);
       } else {
-        THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)",
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
               ctx->program->filename, oitem->identifier->location.begin.line,
               oitem->identifier->location.begin.column);
         return;
@@ -81,7 +79,7 @@ static void neo_ast_pattern_object_write(neo_allocator_t allocator,
       }
       if (oitem->alias) {
         if (oitem->alias->type == NEO_NODE_TYPE_IDENTIFIER) {
-          wchar_t *name = neo_location_get(allocator, oitem->alias->location);
+          char *name = neo_location_get(allocator, oitem->alias->location);
           neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
           neo_program_add_string(allocator, ctx->program, name);
           neo_allocator_free(allocator, name);
@@ -90,14 +88,13 @@ static void neo_ast_pattern_object_write(neo_allocator_t allocator,
           TRY(oitem->alias->write(allocator, ctx, oitem->alias)) { return; }
         }
       } else if (oitem->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
-        wchar_t *name =
-            neo_location_get(allocator, oitem->identifier->location);
+        char *name = neo_location_get(allocator, oitem->identifier->location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
         neo_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
       } else {
-        THROW("Invalid or unexpected token \n  at _.compile (%ls:%d:%d)",
+        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
               ctx->program->filename, oitem->identifier->location.begin.line,
               oitem->identifier->location.begin.column);
         return;
@@ -107,7 +104,7 @@ static void neo_ast_pattern_object_write(neo_allocator_t allocator,
       neo_ast_pattern_rest_t rest = (neo_ast_pattern_rest_t)item;
       neo_program_add_code(allocator, ctx->program, NEO_ASM_REST_OBJECT);
       if (rest->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
-        wchar_t *name = neo_location_get(allocator, rest->identifier->location);
+        char *name = neo_location_get(allocator, rest->identifier->location);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
         neo_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);
@@ -156,7 +153,7 @@ neo_create_ast_pattern_object(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_pattern_object(neo_allocator_t allocator,
-                                           const wchar_t *file,
+                                           const char *file,
                                            neo_position_t *position) {
   neo_ast_pattern_object_t node = NULL;
   neo_token_t token = NULL;

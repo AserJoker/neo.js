@@ -37,11 +37,11 @@ int main(int argc, char *argv[]) {
   neo_js_runtime_t runtime = neo_create_js_runtime(allocator);
   neo_js_context_t ctx = neo_create_js_context(allocator, runtime);
   neo_js_context_init_std(ctx);
-  char *buf = neo_fs_read_file(allocator, L"../index.mjs");
+  char *buf = neo_fs_read_file(allocator, "../index.mjs");
   if (!buf) {
     fprintf(stderr, "cannot open file: ../index.mjs\n");
   } else {
-    neo_js_variable_t result = neo_js_context_eval(ctx, L"../index.mjs", buf);
+    neo_js_variable_t result = neo_js_context_eval(ctx, "../index.mjs", buf);
     neo_allocator_free(allocator, buf);
 
     if (neo_js_variable_get_type(result)->kind == NEO_JS_TYPE_ERROR) {

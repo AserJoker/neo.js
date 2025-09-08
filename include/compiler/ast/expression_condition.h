@@ -16,7 +16,7 @@ typedef struct _neo_ast_expression_condition_t {
 } *neo_ast_expression_condition_t;
 
 neo_ast_node_t neo_ast_read_expression_condition(neo_allocator_t allocator,
-                                                 const wchar_t *file,
+                                                 const char *file,
                                                  neo_position_t *position);
 #ifdef __cplusplus
 }

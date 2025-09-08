@@ -41,29 +41,29 @@ uint32_t neo_utf8_char_to_utf32(neo_utf8_char chr) {
   }
   return value;
 }
-char *neo_utf32_to_utf8(neo_allocator_t allocator, uint32_t utf32) {
-  char *s = neo_allocator_alloc(allocator, 5, NULL);
+size_t neo_utf32_to_utf8(uint32_t utf32, char *output) {
+  char *s = output;
   s[0] = 0;
   if (utf32 < 0x7f) {
     s[0] = (uint8_t)utf32;
-    s[1] = 0;
+    return 1;
   } else if (utf32 < 0x7ff) {
     s[0] = (utf32 >> 6) | 0xC0;
     s[1] = (utf32 & 0x3F) | 0x80;
-    s[2] = 0;
+    return 2;
   } else if (utf32 < 0xFFFF) {
     s[0] = (utf32 >> 12) | 0xE0;
     s[1] = ((utf32 >> 6) & 0x3F) | 0x80;
     s[2] = (utf32 & 0x3F) | 0x80;
-    s[3] = 0;
+    return 3;
   } else if (utf32 < 0x10FFFF) {
     s[0] = (utf32 >> 18) | 0xF0;
     s[1] = ((utf32 >> 12) & 0x3F) | 0x80;
     s[2] = ((utf32 >> 6) & 0x3F) | 0x80;
     s[3] = (utf32 & 0x3F) | 0x80;
-    s[4] = 0;
+    return 4;
   }
-  return s;
+  return 0;
 }
 
 char *neo_utf8_char_to_string(neo_allocator_t allocator, neo_utf8_char chr) {

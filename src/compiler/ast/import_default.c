@@ -20,9 +20,9 @@ static void neo_ast_import_default_write(neo_allocator_t allocator,
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
   neo_program_add_integer(allocator, ctx->program, 1);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-  neo_program_add_string(allocator, ctx->program, L"default");
+  neo_program_add_string(allocator, ctx->program, "default");
   neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
-  wchar_t *name = neo_location_get(allocator, self->identifier->location);
+  char *name = neo_location_get(allocator, self->identifier->location);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
   neo_program_add_string(allocator, ctx->program, name);
   neo_allocator_free(allocator, name);
@@ -61,7 +61,7 @@ neo_create_ast_import_default(neo_allocator_t allocator) {
 }
 
 neo_ast_node_t neo_ast_read_import_default(neo_allocator_t allocator,
-                                           const wchar_t *file,
+                                           const char *file,
                                            neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_import_default_t node = neo_create_ast_import_default(allocator);
