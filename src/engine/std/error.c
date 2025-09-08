@@ -2,7 +2,6 @@
 #include "core/allocator.h"
 #include "core/list.h"
 #include "core/string.h"
-#include "engine/basetype/string.h"
 #include "engine/context.h"
 #include "engine/stackframe.h"
 #include "engine/type.h"
@@ -96,8 +95,8 @@ neo_js_variable_t neo_js_error_to_string(neo_js_context_t ctx,
   result = neo_string_concat(allocator, result, &max, ": ");
   neo_js_variable_t message = neo_js_context_get_field(
       ctx, self, neo_js_context_create_string(ctx, "message"), NULL);
-  neo_js_string_t smessage = neo_js_variable_to_string(message);
-  result = neo_string_concat(allocator, result, &max, smessage->string);
+  const char *smessage = neo_js_context_to_cstring(ctx, message);
+  result = neo_string_concat(allocator, result, &max, smessage);
   result = neo_string_concat(allocator, result, &max, "\n");
   for (neo_list_node_t it =
            neo_list_node_last(neo_list_get_last(info->stacktrace));
@@ -117,8 +116,8 @@ neo_js_variable_t neo_js_error_to_string(neo_js_context_t ctx,
   if (neo_js_variable_get_type(cause)->kind == NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t scause = neo_js_context_to_string(ctx, cause);
     result = neo_string_concat(allocator, result, &max, "caused by:\n");
-    neo_js_string_t next = neo_js_variable_to_string(scause);
-    result = neo_string_concat(allocator, result, &max, next->string);
+    const char *next = neo_js_context_to_cstring(ctx, scause);
+    result = neo_string_concat(allocator, result, &max, next);
   }
   neo_js_variable_t res = neo_js_context_create_string(ctx, result);
   neo_allocator_free(allocator, result);

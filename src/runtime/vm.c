@@ -16,6 +16,7 @@
 #include "engine/basetype/interrupt.h"
 #include "engine/basetype/number.h"
 #include "engine/basetype/object.h"
+#include "engine/basetype/string.h"
 #include "engine/chunk.h"
 #include "engine/context.h"
 #include "engine/scope.h"
@@ -770,7 +771,7 @@ void neo_js_vm_eval(neo_js_vm_t vm, neo_program_t program) {
     neo_list_push(vm->stack, arg);
     return;
   }
-  const char *src = neo_js_variable_to_string(arg)->string;
+  const char *src = neo_js_context_to_cstring(vm->ctx, arg);
   neo_ast_node_t node =
       TRY(neo_ast_parse_code(allocator, "<anonymouse_script>", src)) {
     neo_js_variable_t error = neo_js_context_create_compile_error(vm->ctx);
@@ -881,13 +882,13 @@ void neo_js_vm_private_member_call(neo_js_vm_t vm, neo_program_t program) {
   if (!obj->constructor || !vm->clazz ||
       neo_js_chunk_get_value(obj->constructor) !=
           neo_js_variable_get_value(vm->clazz)) {
-    neo_js_string_t str = neo_js_variable_to_string(field);
-    size_t len = strlen(str->string) + 128;
+    const char *str = neo_js_context_to_cstring(vm->ctx, field);
+    size_t len = strlen(str) + 128;
     neo_js_variable_t error = neo_js_context_create_simple_error(
         vm->ctx, NEO_JS_ERROR_TYPE, len,
         "Cannot read private member '%s' from an object whose class did "
         "not declare it",
-        str->string);
+        str);
     neo_list_push(vm->stack, error);
     vm->offset = neo_buffer_get_size(program->codes);
     return;
@@ -933,13 +934,13 @@ void neo_js_vm_get_private_field(neo_js_vm_t vm, neo_program_t program) {
   if (!obj->constructor || !vm->clazz ||
       neo_js_chunk_get_value(obj->constructor) !=
           neo_js_variable_get_value(vm->clazz)) {
-    neo_js_string_t str = neo_js_variable_to_string(field);
-    size_t len = strlen(str->string) + 128;
+    const char *str = neo_js_context_to_cstring(vm->ctx, field);
+    size_t len = strlen(str) + 128;
     neo_js_variable_t error = neo_js_context_create_simple_error(
         vm->ctx, NEO_JS_ERROR_TYPE, len,
         "Cannot read private member '%s' from an object whose class did "
         "not declare it",
-        str->string);
+        str);
     neo_list_push(vm->stack, error);
     vm->offset = neo_buffer_get_size(program->codes);
     return;
@@ -962,13 +963,13 @@ void neo_js_vm_set_private_field(neo_js_vm_t vm, neo_program_t program) {
   if (!obj->constructor || !vm->clazz ||
       neo_js_chunk_get_value(obj->constructor) !=
           neo_js_variable_get_value(vm->clazz)) {
-    neo_js_string_t str = neo_js_variable_to_string(field);
-    size_t len = strlen(str->string) + 128;
+    const char *str = neo_js_context_to_cstring(vm->ctx, field);
+    size_t len = strlen(str) + 128;
     neo_js_variable_t error = neo_js_context_create_simple_error(
         vm->ctx, NEO_JS_ERROR_TYPE, len,
         "Cannot read private member '%s' from an object whose class did "
         "not declare it",
-        str->string);
+        str);
     neo_list_push(vm->stack, error);
     vm->offset = neo_buffer_get_size(program->codes);
     return;
@@ -1072,17 +1073,17 @@ void neo_js_vm_set_method(neo_js_vm_t vm, neo_program_t program) {
         NULL);
     neo_js_variable_t vname =
         neo_js_context_call(vm->ctx, to_string, oname, 0, NULL);
-    neo_js_string_t sname = neo_js_variable_to_string(vname);
-    size_t len = strlen(sname->string) + 8;
+    const char *sname = neo_js_context_to_cstring(vm->ctx, vname);
+    size_t len = strlen(sname) + 8;
     name = neo_allocator_alloc(allocator, len * sizeof(char), NULL);
     name[0] = 0;
-    snprintf(name, len, "[%s]", sname->string);
+    snprintf(name, len, "[%s]", sname);
   } else {
     neo_js_variable_t vname = neo_js_context_to_string(vm->ctx, field);
-    neo_js_string_t sname = neo_js_variable_to_string(vname);
-    size_t len = strlen(sname->string) + 8;
+    const char *sname = neo_js_context_to_cstring(vm->ctx, vname);
+    size_t len = strlen(sname) + 8;
     name = neo_allocator_alloc(allocator, len * sizeof(char), NULL);
-    snprintf(name, len, "[%s]", sname->string);
+    snprintf(name, len, "[%s]", sname);
   }
   neo_js_callable_t callable = neo_js_variable_to_callable(value);
   callable->name = name;
@@ -1127,17 +1128,17 @@ void neo_js_vm_def_private_method(neo_js_vm_t vm, neo_program_t program) {
         NULL);
     neo_js_variable_t vname =
         neo_js_context_call(vm->ctx, to_string, oname, 0, NULL);
-    neo_js_string_t sname = neo_js_variable_to_string(vname);
-    size_t len = strlen(sname->string) + 8;
+    const char *sname = neo_js_context_to_cstring(vm->ctx, vname);
+    size_t len = strlen(sname) + 8;
     name = neo_allocator_alloc(allocator, len * sizeof(char), NULL);
     name[0] = 0;
-    snprintf(name, len, "[%s]", sname->string);
+    snprintf(name, len, "[%s]", sname);
   } else {
     neo_js_variable_t vname = neo_js_context_to_string(vm->ctx, field);
-    neo_js_string_t sname = neo_js_variable_to_string(vname);
-    size_t len = strlen(sname->string) + 8;
+    const char *sname = neo_js_context_to_cstring(vm->ctx, vname);
+    size_t len = strlen(sname) + 8;
     name = neo_allocator_alloc(allocator, len * sizeof(char), NULL);
-    snprintf(name, len, "[%s]", sname->string);
+    snprintf(name, len, "[%s]", sname);
   }
   neo_js_callable_t callable = neo_js_variable_to_callable(value);
   callable->name = name;
@@ -2158,10 +2159,10 @@ void neo_js_vm_tag(neo_js_vm_t vm, neo_program_t program) {
   for (int64_t idx = 0; idx < length; idx++) {
     neo_js_variable_t item = neo_js_context_get_field(
         vm->ctx, qusis, neo_js_context_create_number(vm->ctx, idx), NULL);
-    neo_js_string_t str = neo_js_variable_to_string(item);
-    char *decode_string = neo_string_decode(allocator, str->string);
-    neo_allocator_free(allocator, str->string);
-    str->string = decode_string;
+    const char *str = neo_js_context_to_cstring(vm->ctx, item);
+    char *decode_string = neo_string_decode(allocator, str);
+    neo_js_string_set_cstring(allocator, item, decode_string);
+    neo_allocator_free(allocator, decode_string);
   }
   neo_js_vm_call(vm, program);
 }
@@ -2189,10 +2190,10 @@ void neo_js_vm_member_tag(neo_js_vm_t vm, neo_program_t program) {
   for (int64_t idx = 0; idx < length; idx++) {
     neo_js_variable_t item = neo_js_context_get_field(
         vm->ctx, qusis, neo_js_context_create_number(vm->ctx, idx), NULL);
-    neo_js_string_t str = neo_js_variable_to_string(item);
-    char *decode_string = neo_string_decode(allocator, str->string);
-    neo_allocator_free(allocator, str->string);
-    str->string = decode_string;
+    const char *str = neo_js_context_to_cstring(vm->ctx, item);
+    char *decode_string = neo_string_decode(allocator, str);
+    neo_js_string_set_cstring(allocator, item, decode_string);
+    neo_allocator_free(allocator, decode_string);
   }
   neo_js_vm_member_call(vm, program);
 }
@@ -2220,10 +2221,10 @@ void neo_js_vm_private_tag(neo_js_vm_t vm, neo_program_t program) {
   for (int64_t idx = 0; idx < length; idx++) {
     neo_js_variable_t item = neo_js_context_get_field(
         vm->ctx, qusis, neo_js_context_create_number(vm->ctx, idx), NULL);
-    neo_js_string_t str = neo_js_variable_to_string(item);
-    char *decode_string = neo_string_decode(allocator, str->string);
-    neo_allocator_free(allocator, str->string);
-    str->string = decode_string;
+    const char *str = neo_js_context_to_cstring(vm->ctx, item);
+    char *decode_string = neo_string_decode(allocator, str);
+    neo_js_string_set_cstring(allocator, item, decode_string);
+    neo_allocator_free(allocator, decode_string);
   }
   neo_js_vm_private_member_call(vm, program);
 }
@@ -2256,10 +2257,10 @@ void neo_js_vm_super_member_tag(neo_js_vm_t vm, neo_program_t program) {
   for (int64_t idx = 0; idx < length; idx++) {
     neo_js_variable_t item = neo_js_context_get_field(
         vm->ctx, qusis, neo_js_context_create_number(vm->ctx, idx), NULL);
-    neo_js_string_t str = neo_js_variable_to_string(item);
-    char *decode_string = neo_string_decode(allocator, str->string);
-    neo_allocator_free(allocator, str->string);
-    str->string = decode_string;
+    const char *str = neo_js_context_to_cstring(vm->ctx, item);
+    char *decode_string = neo_string_decode(allocator, str);
+    neo_js_string_set_cstring(allocator, item, decode_string);
+    neo_allocator_free(allocator, decode_string);
   }
   neo_js_vm_super_member_call(vm, program);
 }

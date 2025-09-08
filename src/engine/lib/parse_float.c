@@ -17,7 +17,7 @@ NEO_JS_CFUNCTION(neo_js_parse_float) {
     arg = neo_js_context_to_string(ctx, arg);
     NEO_JS_TRY_AND_THROW(arg);
   }
-  const char *source = neo_js_variable_to_string(arg)->string;
+  const char *source = neo_js_context_to_cstring(ctx, arg);
   neo_utf8_char utf8 = neo_utf8_read_char(source);
   uint32_t utf32 = neo_utf8_char_to_utf32(utf8);
   if (NEO_IS_SPACE(utf32)) {

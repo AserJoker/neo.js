@@ -18,7 +18,7 @@ NEO_JS_CFUNCTION(neo_js_eval) {
   if (neo_js_variable_get_type(arg)->kind != NEO_JS_TYPE_STRING) {
     return arg;
   }
-  const char *src = neo_js_variable_to_string(arg)->string;
+  const char *src = neo_js_context_to_cstring(ctx, arg);
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_ast_node_t node =
       TRY(neo_ast_parse_code(allocator, "<anonymouse_script>", src)) {

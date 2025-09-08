@@ -48,7 +48,7 @@ NEO_JS_CFUNCTION(neo_js_string_raw) {
       item = neo_js_context_to_string(ctx, item);
       NEO_JS_TRY_AND_THROW(item);
       result = neo_string_concat(allocator, result, &max,
-                                 neo_js_variable_to_string(item)->string);
+                                 neo_js_context_to_cstring(ctx, item));
     }
   }
   neo_js_context_defer_free(ctx, result);
@@ -75,7 +75,7 @@ NEO_JS_CFUNCTION(neo_js_string_constructor) {
   neo_js_context_def_field(
       ctx, self, neo_js_context_create_string(ctx, "length"),
       neo_js_context_create_number(
-          ctx, strlen(neo_js_variable_to_string(src)->string)),
+          ctx, neo_string16_length(neo_js_variable_to_string(src)->string)),
       false, false, false);
   return self;
 }

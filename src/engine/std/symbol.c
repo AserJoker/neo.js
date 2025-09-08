@@ -25,7 +25,7 @@ neo_js_variable_t neo_js_symbol_constructor(neo_js_context_t ctx,
     if (neo_js_variable_get_type(str)->kind == NEO_JS_TYPE_ERROR) {
       return str;
     }
-    description = neo_js_variable_to_string(str)->string;
+    description = neo_js_context_to_cstring(ctx, str);
   } else {
     description = "";
   }
@@ -115,8 +115,8 @@ neo_js_variable_t neo_js_symbol_for(neo_js_context_t ctx,
   }
   neo_js_variable_t sym = neo_js_context_get_field(ctx, registry, key, NULL);
   if (neo_js_variable_get_type(sym)->kind != NEO_JS_TYPE_SYMBOL) {
-    sym = neo_js_context_create_symbol(ctx,
-                                       neo_js_variable_to_string(key)->string);
+    sym =
+        neo_js_context_create_symbol(ctx, neo_js_context_to_cstring(ctx, key));
     neo_js_context_set_field(ctx, sym, key, sym, NULL);
   }
   return sym;

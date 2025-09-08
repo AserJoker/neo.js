@@ -13,7 +13,7 @@ char *neo_string_concat(neo_allocator_t allocator, char *src, size_t *max,
   size_t base = strlen(src);
   if (base + len + 1 > *max) {
     while (base + len + 1 > *max) {
-      *max += 128;
+      *max += NEO_STRING_CHUNK_SIZE;
     }
     result = neo_allocator_alloc(allocator, *max, NULL);
     strcpy(result, src);
@@ -199,4 +199,12 @@ char *neo_string_to_lower(neo_allocator_t allocator, const char *src) {
     }
   }
   return str;
+}
+size_t neo_string16_length(const uint16_t *str) {
+  size_t len = 0;
+  while (*str) {
+    str++;
+    len++;
+  }
+  return len;
 }

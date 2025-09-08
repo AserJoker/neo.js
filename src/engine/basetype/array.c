@@ -19,7 +19,7 @@ static neo_js_variable_t neo_js_array_set_field(neo_js_context_t ctx,
   if (neo_js_variable_get_type(field)->kind != NEO_JS_TYPE_SYMBOL) {
     neo_js_variable_t vlength = neo_js_context_to_string(ctx, field);
     NEO_JS_TRY_AND_THROW(vlength);
-    if (strcmp(neo_js_variable_to_string(vlength)->string, "length") == 0) {
+    if (strcmp(neo_js_context_to_cstring(ctx, vlength), "length") == 0) {
       neo_js_object_property_t plength = neo_js_object_get_property(
           ctx, object, neo_js_context_create_string(ctx, "length"));
       neo_js_value_t vlength = neo_js_chunk_get_value(plength->value);

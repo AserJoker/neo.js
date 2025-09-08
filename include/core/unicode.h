@@ -4,7 +4,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#include "core/allocator.h"
 #include "unicode.gen.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -14,15 +13,22 @@ typedef struct _neo_utf8_char {
   const char *end;
 } neo_utf8_char;
 
+typedef struct _neo_utf16_char {
+  const uint16_t *begin;
+  const uint16_t *end;
+} neo_utf16_char;
+
 neo_utf8_char neo_utf8_read_char(const char *str);
+
+neo_utf16_char neo_utf16_read_char(const uint16_t *str);
 
 uint32_t neo_utf8_char_to_utf32(neo_utf8_char chr);
 
+uint32_t neo_utf16_to_utf32(neo_utf16_char chr);
+
 size_t neo_utf32_to_utf8(uint32_t utf32, char *output);
 
-char *neo_utf8_char_to_string(neo_allocator_t allocator, neo_utf8_char chr);
-
-size_t neo_utf8_get_len(const char *str);
+size_t neo_utf32_to_utf16(uint32_t utf32, uint16_t *output);
 
 bool neo_utf8_char_is(neo_utf8_char chr, const char *s);
 

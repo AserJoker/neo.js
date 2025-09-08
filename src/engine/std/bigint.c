@@ -3,7 +3,6 @@
 #include "core/bigint.h"
 #include "engine/basetype/boolean.h"
 #include "engine/basetype/number.h"
-#include "engine/basetype/string.h"
 #include "engine/context.h"
 #include "engine/type.h"
 #include "engine/variable.h"
@@ -133,13 +132,13 @@ neo_js_variable_t neo_js_bigint_constructor(neo_js_context_t ctx,
   } else {
     variable = neo_js_context_to_string(ctx, variable);
     NEO_JS_TRY_AND_THROW(variable);
-    neo_js_string_t string = neo_js_variable_to_string(variable);
-    neo_bigint_t bigint = neo_string_to_bigint(allocator, string->string);
+    const char *string = neo_js_context_to_cstring(ctx, variable);
+    neo_bigint_t bigint = neo_string_to_bigint(allocator, string);
     if (!bigint) {
-      size_t len = strlen(string->string) + 64;
+      size_t len = strlen(string) + 64;
       char *message = neo_allocator_alloc(allocator, len * sizeof(char), NULL);
       neo_js_context_defer_free(ctx, message);
-      snprintf(message, len, "Cannot convert %s to a BigInt", string->string);
+      snprintf(message, len, "Cannot convert %s to a BigInt", string);
     }
     return neo_js_context_create_bigint(ctx, bigint);
   }

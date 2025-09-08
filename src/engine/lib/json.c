@@ -66,10 +66,10 @@ neo_js_json_variable_stringify(neo_js_context_t ctx, neo_js_variable_t variable,
   }
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   if (neo_js_variable_get_type(variable)->kind == NEO_JS_TYPE_STRING) {
-    neo_js_string_t str = neo_js_variable_to_string(variable);
-    char *encoded = neo_string_encode_escape(allocator, str->string);
+    const char *str = neo_js_context_to_cstring(ctx, variable);
+    char *encoded = neo_string_encode_escape(allocator, str);
     neo_js_context_defer_free(ctx, encoded);
-    size_t len = strlen(str->string) + 3;
+    size_t len = strlen(str) + 3;
     char *ss = neo_js_context_alloc(ctx, sizeof(char) * len, NULL);
     neo_js_context_defer_free(ctx, ss);
     snprintf(ss, len, "\"%s\"", encoded);
@@ -149,8 +149,8 @@ neo_js_json_variable_stringify(neo_js_context_t ctx, neo_js_variable_t variable,
           neo_js_context_defer_free(ctx, s);
           return item;
         }
-        neo_js_string_t str = neo_js_variable_to_string(item);
-        s = neo_string_concat(allocator, s, &max, str->string);
+        const char *str = neo_js_context_to_cstring(ctx, item);
+        s = neo_string_concat(allocator, s, &max, str);
       } else {
         s = neo_string_concat(allocator, s, &max, "null");
       }
@@ -243,12 +243,12 @@ neo_js_json_variable_stringify(neo_js_context_t ctx, neo_js_variable_t variable,
             s = neo_string_concat(allocator, s, &max, space);
           }
         }
-        const char *key = neo_js_variable_to_string(v_key)->string;
+        const char *key = neo_js_context_to_cstring(ctx, v_key);
         s = neo_string_concat(allocator, s, &max, "\"");
         s = neo_string_concat(allocator, s, &max, key);
         s = neo_string_concat(allocator, s, &max, "\"");
         s = neo_string_concat(allocator, s, &max, ":");
-        const char *s_item = neo_js_variable_to_string(item)->string;
+        const char *s_item = neo_js_context_to_cstring(ctx, item);
         s = neo_string_concat(allocator, s, &max, s_item);
         if (idx != length - 1) {
           s = neo_string_concat(allocator, s, &max, ",");
@@ -334,7 +334,7 @@ NEO_JS_CFUNCTION(neo_js_json_stringify) {
     } else {
       v_space = neo_js_context_to_string(ctx, v_space);
       NEO_JS_TRY_AND_THROW(v_space);
-      const char *s = neo_js_variable_to_string(v_space)->string;
+      const char *s = neo_js_context_to_cstring(ctx, v_space);
       size_t len = strlen(s);
       if (len > 10) {
         len = 10;
@@ -652,7 +652,7 @@ NEO_JS_CFUNCTION(neo_js_json_parse) {
   }
   v_source = neo_js_context_to_string(ctx, v_source);
   NEO_JS_TRY_AND_THROW(v_source);
-  const char *source = neo_js_variable_to_string(v_source)->string;
+  const char *source = neo_js_context_to_cstring(ctx, v_source);
   neo_position_t position = {.column = 0, .line = 0, .offset = source};
   neo_js_variable_t variable =
       neo_js_json_read_variable(ctx, &position, receiver, "<anonymous_json>");

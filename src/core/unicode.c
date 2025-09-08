@@ -1,5 +1,4 @@
 #include "core/unicode.h"
-#include "core/allocator.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,6 +24,18 @@ neo_utf8_char neo_utf8_read_char(const char *str) {
   return chr;
 }
 
+neo_utf16_char neo_utf16_read_char(const uint16_t *str) {
+  neo_utf16_char chr;
+  chr.begin = str;
+  chr.end = str;
+  if (*chr.end >= 0xd800 && *chr.end <= 0xdfff) {
+    chr.end += 2;
+  } else {
+    chr.end++;
+  }
+  return chr;
+}
+
 uint32_t neo_utf8_char_to_utf32(neo_utf8_char chr) {
   uint32_t value = 0;
   const char *s = chr.begin;
@@ -41,6 +52,16 @@ uint32_t neo_utf8_char_to_utf32(neo_utf8_char chr) {
   }
   return value;
 }
+
+uint32_t neo_utf16_to_utf32(neo_utf16_char chr) {
+  if (chr.end - chr.begin == 1) {
+    return *chr.begin;
+  } else {
+    return 0x10000 + (((((uint32_t)*chr.begin) - 0xD800) << 10) |
+                      (((uint32_t)*(chr.begin + 1)) - 0xDC00));
+  }
+}
+
 size_t neo_utf32_to_utf8(uint32_t utf32, char *output) {
   char *s = output;
   s[0] = 0;
@@ -65,28 +86,16 @@ size_t neo_utf32_to_utf8(uint32_t utf32, char *output) {
   }
   return 0;
 }
-
-char *neo_utf8_char_to_string(neo_allocator_t allocator, neo_utf8_char chr) {
-  char *buf =
-      (char *)neo_allocator_alloc(allocator, chr.end - chr.begin + 1, NULL);
-  buf[chr.end - chr.begin] = 0;
-  char *dst = buf;
-  const char *src = chr.begin;
-  while (src != chr.end) {
-    *dst++ = *src++;
+size_t neo_utf32_to_utf16(uint32_t utf32, uint16_t *output) {
+  if (utf32 < 0xffff) {
+    *output = (uint16_t)utf32;
+    return 1;
+  } else {
+    uint32_t offset = utf32 - 0x10000;
+    *output = (uint16_t)((offset >> 10) + 0xD800);
+    *(output + 1) = (uint16_t)((offset & 0x3FF) + 0xDC00);
+    return 2;
   }
-  return buf;
-}
-
-size_t neo_utf8_get_len(const char *str) {
-  const char *ptr = str;
-  size_t len = 0;
-  while (*ptr != 0) {
-    neo_utf8_char chr = neo_utf8_read_char(ptr);
-    ptr = chr.end;
-    len++;
-  }
-  return len;
 }
 
 bool neo_utf8_char_is(neo_utf8_char chr, const char *s) {

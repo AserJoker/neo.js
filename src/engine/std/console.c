@@ -35,11 +35,11 @@ neo_js_variable_t neo_js_console_log(neo_js_context_t ctx,
       NEO_JS_TRY_AND_THROW(res);
       res = neo_js_context_to_string(ctx, res);
       NEO_JS_TRY_AND_THROW(res);
-      printf("%s", neo_js_variable_to_string(res)->string);
+      printf("%s", neo_js_context_to_cstring(ctx, res));
     } else {
       arg = neo_js_context_to_string(ctx, arg);
-      neo_js_string_t str = neo_js_variable_to_string(arg);
-      printf("%s", str->string);
+      const char *str = neo_js_context_to_cstring(ctx, arg);
+      printf("%s", str);
     }
   }
   printf("\n");

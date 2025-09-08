@@ -1500,8 +1500,8 @@ neo_js_array_quick_sort_part(neo_js_context_t ctx, neo_list_t list,
             NEO_JS_TRY_AND_THROW(left);
             neo_js_variable_t right = neo_js_context_to_string(ctx, item);
             NEO_JS_TRY_AND_THROW(right);
-            const char *s1 = neo_js_variable_to_string(left)->string;
-            const char *s2 = neo_js_variable_to_string(right)->string;
+            const char *s1 = neo_js_context_to_cstring(ctx, left);
+            const char *s2 = neo_js_context_to_cstring(ctx, right);
             cmp = strcmp(s1, s2);
           }
           if (cmp <= 0) {
@@ -1581,8 +1581,8 @@ static neo_js_variable_t neo_js_array_quick_sort(neo_js_context_t ctx,
             NEO_JS_TRY_AND_THROW(left);
             neo_js_variable_t right = neo_js_context_to_string(ctx, item);
             NEO_JS_TRY_AND_THROW(right);
-            const char *s1 = neo_js_variable_to_string(left)->string;
-            const char *s2 = neo_js_variable_to_string(right)->string;
+            const char *s1 = neo_js_context_to_cstring(ctx, left);
+            const char *s2 = neo_js_context_to_cstring(ctx, right);
             cmp = strcmp(s1, s2);
           }
           if (cmp <= 0) {

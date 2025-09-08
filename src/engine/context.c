@@ -608,8 +608,8 @@ void neo_js_context_next_tick(neo_js_context_t ctx) {
   if (neo_js_variable_get_type(error)->kind == NEO_JS_TYPE_ERROR) {
     error = neo_js_error_get_error(ctx, error);
     error = neo_js_context_to_string(ctx, error);
-    neo_js_string_t serror = neo_js_variable_to_string(error);
-    fprintf(stderr, "Uncaught %s\n", serror->string);
+    const char *serror = neo_js_context_to_cstring(ctx, error);
+    fprintf(stderr, "Uncaught %s\n", serror);
   }
   neo_js_context_pop_scope(ctx);
   if (!task->keepalive) {
@@ -1041,16 +1041,15 @@ neo_js_variable_t neo_js_context_get_private(neo_js_context_t ctx,
   }
   neo_js_object_t obj = neo_js_variable_to_object(object);
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
-  neo_js_string_t key = neo_js_variable_to_string(field);
+  const char *key = neo_js_context_to_cstring(ctx, field);
   if (!obj->privates) {
-    size_t len = strlen(key->string) + 64;
+    size_t len = strlen(key) + 64;
     return neo_js_context_create_simple_error(
         ctx, NEO_JS_ERROR_TYPE, len,
-        "Private field '%s' must be declared in an enclosing class.",
-        key->string);
+        "Private field '%s' must be declared in an enclosing class.", key);
   }
   neo_js_object_private_t prop =
-      neo_hash_map_get(obj->privates, key->string, NULL, NULL);
+      neo_hash_map_get(obj->privates, key, NULL, NULL);
   if (prop) {
     if (prop->value) {
       return neo_js_context_create_variable(ctx, prop->value, NULL);
@@ -1061,18 +1060,17 @@ neo_js_variable_t neo_js_context_get_private(neo_js_context_t ctx,
         return neo_js_context_call(ctx, getter, receiver ? receiver : object, 0,
                                    NULL);
       } else {
-        size_t len = strlen(key->string) + 64;
+        size_t len = strlen(key) + 64;
         return neo_js_context_create_simple_error(
             ctx, NEO_JS_ERROR_TYPE, len, "Private field '%s' hasn't getter.",
-            key->string);
+            key);
       }
     }
   } else {
-    size_t len = strlen(key->string) + 64;
+    size_t len = strlen(key) + 64;
     return neo_js_context_create_simple_error(
         ctx, NEO_JS_ERROR_TYPE, len,
-        "Private field '%s' must be declared in an enclosing class.",
-        key->string);
+        "Private field '%s' must be declared in an enclosing class.", key);
   }
 }
 
@@ -1099,22 +1097,20 @@ neo_js_variable_t neo_js_context_set_private(neo_js_context_t ctx,
   }
   neo_js_object_t obj = neo_js_variable_to_object(object);
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
-  neo_js_string_t key = neo_js_variable_to_string(field);
+  const char *key = neo_js_context_to_cstring(ctx, field);
   if (!obj->privates) {
-    size_t len = strlen(key->string) + 64;
+    size_t len = strlen(key) + 64;
     return neo_js_context_create_simple_error(
         ctx, NEO_JS_ERROR_TYPE, len,
-        "Private field '%s' must be declared in an enclosing class.",
-        key->string);
+        "Private field '%s' must be declared in an enclosing class.", key);
   }
   neo_js_object_private_t prop =
-      neo_hash_map_get(obj->privates, key->string, NULL, NULL);
+      neo_hash_map_get(obj->privates, key, NULL, NULL);
   if (!prop) {
-    size_t len = strlen(key->string) + 64;
+    size_t len = strlen(key) + 64;
     return neo_js_context_create_simple_error(
         ctx, NEO_JS_ERROR_TYPE, len,
-        "Private field '%s' must be declared in an enclosing class.",
-        key->string);
+        "Private field '%s' must be declared in an enclosing class.", key);
   } else {
     if (prop->value) {
       neo_js_chunk_t root = neo_js_scope_get_root_chunk(ctx->scope);
@@ -1127,10 +1123,9 @@ neo_js_variable_t neo_js_context_set_private(neo_js_context_t ctx,
       return neo_js_context_call(ctx, setter, receiver ? receiver : object, 1,
                                  &value);
     } else {
-      size_t len = strlen(key->string) + 64;
+      size_t len = strlen(key) + 64;
       return neo_js_context_create_simple_error(
-          ctx, NEO_JS_ERROR_TYPE, len, "Private field '%s' is readonly.",
-          key->string);
+          ctx, NEO_JS_ERROR_TYPE, len, "Private field '%s' is readonly.", key);
     }
   }
   return neo_js_context_create_undefined(ctx);
@@ -1156,7 +1151,7 @@ neo_js_variable_t neo_js_context_def_private(neo_js_context_t ctx,
     object = neo_js_context_to_object(ctx, object);
     NEO_JS_TRY_AND_THROW(object);
   }
-  neo_js_string_t key = neo_js_variable_to_string(field);
+  const char *key = neo_js_context_to_cstring(ctx, field);
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_js_object_t obj = neo_js_variable_to_object(object);
   if (!obj->privates) {
@@ -1167,17 +1162,17 @@ neo_js_variable_t neo_js_context_def_private(neo_js_context_t ctx,
     initialize.auto_free_value = true;
     obj->privates = neo_create_hash_map(allocator, &initialize);
   }
-  if (neo_hash_map_has(obj->privates, key->string, NULL, NULL)) {
-    neo_js_string_t str = neo_js_variable_to_string(field);
-    size_t len = strlen(str->string) + 64;
+  if (neo_hash_map_has(obj->privates, key, NULL, NULL)) {
+    const char *str = neo_js_context_to_cstring(ctx, field);
+    size_t len = strlen(str) + 64;
     return neo_js_context_create_simple_error(
         ctx, NEO_JS_ERROR_SYNTAX, len,
-        "Identifier '%s' has already been declared", str->string);
+        "Identifier '%s' has already been declared", str);
   }
   neo_js_object_private_t prop = neo_create_js_object_private(allocator);
   prop->value = neo_js_variable_get_chunk(value);
-  neo_hash_map_set(obj->privates, neo_create_string(allocator, key->string),
-                   prop, NULL, NULL);
+  neo_hash_map_set(obj->privates, neo_create_string(allocator, key), prop, NULL,
+                   NULL);
   neo_js_chunk_add_parent(prop->value, neo_js_variable_get_chunk(object));
   return neo_js_context_create_undefined(ctx);
 }
@@ -1201,7 +1196,7 @@ neo_js_variable_t neo_js_context_def_private_accessor(
     object = neo_js_context_to_object(ctx, object);
     NEO_JS_TRY_AND_THROW(object);
   }
-  neo_js_string_t key = neo_js_variable_to_string(field);
+  const char *key = neo_js_context_to_cstring(ctx, field);
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_js_object_t obj = neo_js_variable_to_object(object);
   if (!obj->privates) {
@@ -1213,7 +1208,7 @@ neo_js_variable_t neo_js_context_def_private_accessor(
     obj->privates = neo_create_hash_map(allocator, &initialize);
   }
   neo_js_object_private_t prop =
-      neo_hash_map_get(obj->privates, key->string, NULL, NULL);
+      neo_hash_map_get(obj->privates, key, NULL, NULL);
   if (!prop) {
     prop = neo_create_js_object_private(allocator);
     if (getter) {
@@ -1224,15 +1219,15 @@ neo_js_variable_t neo_js_context_def_private_accessor(
       prop->set = neo_js_variable_get_chunk(setter);
       neo_js_chunk_add_parent(prop->set, neo_js_variable_get_chunk(object));
     }
-    neo_hash_map_set(obj->privates, neo_create_string(allocator, key->string),
-                     prop, NULL, NULL);
+    neo_hash_map_set(obj->privates, neo_create_string(allocator, key), prop,
+                     NULL, NULL);
   } else {
     if (prop->value || (prop->get && getter) || (prop->set && setter)) {
-      neo_js_string_t str = neo_js_variable_to_string(field);
-      size_t len = strlen(str->string) + 64;
+      const char *str = neo_js_context_to_cstring(ctx, field);
+      size_t len = strlen(str) + 64;
       return neo_js_context_create_simple_error(
           ctx, NEO_JS_ERROR_SYNTAX, len,
-          "Identifier '%s' has already been declared", str->string);
+          "Identifier '%s' has already been declared", str);
     }
     if (getter) {
       prop->get = neo_js_variable_get_chunk(getter);
@@ -2257,7 +2252,7 @@ const char *neo_js_context_to_error_name(neo_js_context_t ctx,
     return neo_js_variable_to_symbol(variable)->string;
   } else if (neo_js_variable_get_type(variable)->kind != NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t s = neo_js_context_to_string(ctx, variable);
-    receiver = neo_js_variable_to_string(s)->string;
+    receiver = neo_js_context_to_cstring(ctx, s);
   } else {
     receiver = "#<Object>";
   }
@@ -2641,6 +2636,16 @@ neo_js_variable_t neo_js_context_to_string(neo_js_context_t ctx,
   neo_js_context_pop_scope(ctx);
   return result;
 }
+const char *neo_js_context_to_cstring(neo_js_context_t ctx,
+                                      neo_js_variable_t variable) {
+  if (neo_js_variable_get_type(variable)->kind != NEO_JS_TYPE_STRING) {
+    return NULL;
+  }
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
+  char *s = neo_js_string_to_cstring(allocator, variable);
+  neo_js_context_defer_free(ctx, s);
+  return s;
+}
 
 neo_js_variable_t neo_js_context_to_boolean(neo_js_context_t ctx,
                                             neo_js_variable_t self) {
@@ -2763,7 +2768,7 @@ neo_js_variable_t neo_js_context_is_equal(neo_js_context_t ctx,
 
     if (lefttype->kind == NEO_JS_TYPE_BIGINT &&
         righttype->kind == NEO_JS_TYPE_STRING) {
-      const char *r = neo_js_variable_to_string(right)->string;
+      const char *r = neo_js_context_to_cstring(ctx, right);
       neo_bigint_t b = neo_string_to_bigint(allocator, r);
       if (!b) {
         return neo_js_context_create_boolean(ctx, false);
@@ -2776,7 +2781,7 @@ neo_js_variable_t neo_js_context_is_equal(neo_js_context_t ctx,
 
     if (righttype->kind == NEO_JS_TYPE_BIGINT &&
         lefttype->kind == NEO_JS_TYPE_STRING) {
-      const char *r = neo_js_variable_to_string(left)->string;
+      const char *r = neo_js_context_to_cstring(ctx, left);
       neo_bigint_t b = neo_string_to_bigint(allocator, r);
       if (!b) {
         return neo_js_context_create_boolean(ctx, false);
@@ -2818,9 +2823,9 @@ neo_js_variable_t neo_js_context_is_gt(neo_js_context_t ctx,
   neo_js_type_t righttype = neo_js_variable_get_type(right);
   if (lefttype->kind == NEO_JS_TYPE_STRING &&
       righttype->kind == NEO_JS_TYPE_STRING) {
-    neo_js_string_t lstring = neo_js_variable_to_string(left);
-    neo_js_string_t rstring = neo_js_variable_to_string(right);
-    int res = strcmp(lstring->string, rstring->string);
+    const char *lstring = neo_js_context_to_cstring(ctx, left);
+    const char *rstring = neo_js_context_to_cstring(ctx, right);
+    int res = strcmp(lstring, rstring);
     return neo_js_context_create_boolean(ctx, res > 0);
   }
   if (lefttype->kind != NEO_JS_TYPE_NUMBER &&
@@ -2900,9 +2905,9 @@ neo_js_variable_t neo_js_context_is_lt(neo_js_context_t ctx,
   neo_js_type_t righttype = neo_js_variable_get_type(right);
   if (lefttype->kind == NEO_JS_TYPE_STRING &&
       righttype->kind == NEO_JS_TYPE_STRING) {
-    neo_js_string_t lstring = neo_js_variable_to_string(left);
-    neo_js_string_t rstring = neo_js_variable_to_string(right);
-    int res = strcmp(lstring->string, rstring->string);
+    const char *lstring = neo_js_context_to_cstring(ctx, left);
+    const char *rstring = neo_js_context_to_cstring(ctx, right);
+    int res = strcmp(lstring, rstring);
     return neo_js_context_create_boolean(ctx, res < 0);
   }
   if (lefttype->kind != NEO_JS_TYPE_NUMBER &&
@@ -2982,9 +2987,9 @@ neo_js_variable_t neo_js_context_is_ge(neo_js_context_t ctx,
   neo_js_type_t righttype = neo_js_variable_get_type(right);
   if (lefttype->kind == NEO_JS_TYPE_STRING &&
       righttype->kind == NEO_JS_TYPE_STRING) {
-    neo_js_string_t lstring = neo_js_variable_to_string(left);
-    neo_js_string_t rstring = neo_js_variable_to_string(right);
-    int res = strcmp(lstring->string, rstring->string);
+    const char *lstring = neo_js_context_to_cstring(ctx, left);
+    const char *rstring = neo_js_context_to_cstring(ctx, right);
+    int res = strcmp(lstring, rstring);
     return neo_js_context_create_boolean(ctx, res >= 0);
   }
   if (lefttype->kind != NEO_JS_TYPE_NUMBER &&
@@ -3058,9 +3063,9 @@ neo_js_variable_t neo_js_context_is_le(neo_js_context_t ctx,
   neo_js_type_t righttype = neo_js_variable_get_type(right);
   if (lefttype->kind == NEO_JS_TYPE_STRING &&
       righttype->kind == NEO_JS_TYPE_STRING) {
-    neo_js_string_t lstring = neo_js_variable_to_string(left);
-    neo_js_string_t rstring = neo_js_variable_to_string(right);
-    int res = strcmp(lstring->string, rstring->string);
+    const char *lstring = neo_js_context_to_cstring(ctx, left);
+    const char *rstring = neo_js_context_to_cstring(ctx, right);
+    int res = strcmp(lstring, rstring);
     return neo_js_context_create_boolean(ctx, res <= 0);
   }
   if (lefttype->kind != NEO_JS_TYPE_NUMBER &&
@@ -3142,14 +3147,14 @@ neo_js_variable_t neo_js_context_add(neo_js_context_t ctx,
     if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
       return right;
     }
-    neo_js_string_t lstring = neo_js_variable_to_string(left);
-    neo_js_string_t rstring = neo_js_variable_to_string(right);
+    const char *lstring = neo_js_context_to_cstring(ctx, left);
+    const char *rstring = neo_js_context_to_cstring(ctx, right);
     neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
-    size_t len = strlen(lstring->string);
-    len += strlen(rstring->string);
+    size_t len = strlen(lstring);
+    len += strlen(rstring);
     len++;
     char *str = neo_allocator_alloc(allocator, sizeof(char) * len, NULL);
-    snprintf(str, len, "%s%s", lstring->string, rstring->string);
+    snprintf(str, len, "%s%s", lstring, rstring);
     neo_js_variable_t result = neo_js_context_create_string(ctx, str);
     neo_allocator_free(allocator, str);
     return result;
@@ -3815,14 +3820,14 @@ neo_js_variable_t neo_js_context_concat(neo_js_context_t ctx,
   if (neo_js_variable_get_type(right)->kind == NEO_JS_TYPE_ERROR) {
     return right;
   }
-  neo_js_string_t lstring = neo_js_variable_to_string(left);
-  neo_js_string_t rstring = neo_js_variable_to_string(right);
-  size_t len = strlen(lstring->string);
-  len += strlen(rstring->string);
+  const char *lstring = neo_js_context_to_cstring(ctx, left);
+  const char *rstring = neo_js_context_to_cstring(ctx, right);
+  size_t len = strlen(lstring);
+  len += strlen(rstring);
   len += 1;
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   char *str = neo_allocator_alloc(allocator, len * sizeof(char), NULL);
-  snprintf(str, len, "%s%s", lstring->string, rstring->string);
+  snprintf(str, len, "%s%s", lstring, rstring);
   neo_js_variable_t result = neo_js_context_create_string(ctx, str);
   neo_allocator_free(allocator, str);
   return result;

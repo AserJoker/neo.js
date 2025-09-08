@@ -27,10 +27,10 @@ void neo_hash_map_set(neo_hash_map_t self, void *key, void *value,
 void *neo_hash_map_get(neo_hash_map_t self, const void *key, void *cmp_arg,
                        void *hash_arg);
 
-bool neo_hash_map_has(neo_hash_map_t self, void *key, void *cmp_arg,
+bool neo_hash_map_has(neo_hash_map_t self, const void *key, void *cmp_arg,
                       void *hash_arg);
 
-void neo_hash_map_delete(neo_hash_map_t self, void *key, void *cmp_arg,
+void neo_hash_map_delete(neo_hash_map_t self,const void *key, void *cmp_arg,
                          void *hash_arg);
 
 void neo_hash_map_erase(neo_hash_map_t self, neo_hash_map_node_t position);

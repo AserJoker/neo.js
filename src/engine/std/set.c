@@ -21,7 +21,7 @@ static uint32_t neo_js_set_hash(neo_js_chunk_t hkey, uint32_t max,
   case NEO_JS_TYPE_NUMBER:
     return (int64_t)neo_js_value_to_number(value)->number % max;
   case NEO_JS_TYPE_STRING:
-    return neo_hash_sdb(neo_js_value_to_string(value)->string, max);
+    return neo_hash_sdb_utf16(neo_js_value_to_string(value)->string, max);
   case NEO_JS_TYPE_BOOLEAN:
     return neo_js_value_to_boolean(value)->boolean ? 1 : 0;
   default:

@@ -126,8 +126,7 @@ neo_list_t neo_js_context_clone_stacktrace(neo_js_context_t ctx);
 neo_list_t neo_js_context_set_stacktrace(neo_js_context_t ctx,
                                          neo_list_t stacktrace);
 
-void neo_js_context_push_stackframe(neo_js_context_t ctx,
-                                    const char *filename,
+void neo_js_context_push_stackframe(neo_js_context_t ctx, const char *filename,
                                     const char *function, uint32_t column,
                                     uint32_t line);
 
@@ -281,7 +280,7 @@ neo_js_variable_t neo_js_context_create_simple_error(neo_js_context_t ctx,
                                                      const char *fmt, ...);
 
 const char *neo_js_context_to_error_name(neo_js_context_t ctx,
-                                            neo_js_variable_t variable);
+                                         neo_js_variable_t variable);
 
 neo_js_variable_t neo_js_context_create_error(neo_js_context_t ctx,
                                               neo_js_variable_t value);
@@ -343,6 +342,9 @@ neo_js_variable_t neo_js_context_typeof(neo_js_context_t ctx,
 
 neo_js_variable_t neo_js_context_to_string(neo_js_context_t ctx,
                                            neo_js_variable_t variable);
+
+const char *neo_js_context_to_cstring(neo_js_context_t ctx,
+                                neo_js_variable_t variable);
 
 neo_js_variable_t neo_js_context_to_boolean(neo_js_context_t ctx,
                                             neo_js_variable_t variable);
@@ -464,10 +466,8 @@ bool neo_js_context_has_module(neo_js_context_t ctx, const char *name);
 neo_js_variable_t neo_js_context_eval(neo_js_context_t ctx, const char *file,
                                       const char *source);
 
-neo_js_variable_t neo_js_context_assert(neo_js_context_t ctx,
-                                        const char *type,
-                                        const char *value,
-                                        const char *file);
+neo_js_variable_t neo_js_context_assert(neo_js_context_t ctx, const char *type,
+                                        const char *value, const char *file);
 
 neo_js_assert_fn_t neo_js_context_set_assert_fn(neo_js_context_t ctx,
                                                 neo_js_assert_fn_t assert_fn);

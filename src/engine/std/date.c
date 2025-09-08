@@ -47,12 +47,12 @@ NEO_JS_CFUNCTION(neo_js_date_constructor) {
     if (neo_js_variable_get_type(argv[0])->kind == NEO_JS_TYPE_STRING) {
       int64_t timestamp = 0;
       int64_t timezone = neo_clock_get_timezone();
-      if (neo_clock_parse_iso(neo_js_variable_to_string(argv[0])->string,
+      if (neo_clock_parse_iso(neo_js_context_to_cstring(ctx, argv[0]),
                               &timestamp)) {
         *time = neo_clock_resolve(timestamp, timezone);
         *utc = neo_clock_resolve(timestamp, 0);
         return neo_js_context_create_undefined(ctx);
-      } else if (neo_clock_parse_rfc(neo_js_variable_to_string(argv[0])->string,
+      } else if (neo_clock_parse_rfc(neo_js_context_to_cstring(ctx, argv[0]),
                                      &timestamp)) {
         *time = neo_clock_resolve(timestamp, timezone);
         *utc = neo_clock_resolve(timestamp, 0);
@@ -148,10 +148,9 @@ NEO_JS_CFUNCTION(neo_js_date_parse) {
   neo_js_variable_t source = neo_js_context_to_string(ctx, argv[0]);
   NEO_JS_TRY_AND_THROW(source);
   int64_t timestamp = 0;
-  if (neo_clock_parse_iso(neo_js_variable_to_string(source)->string,
-                          &timestamp)) {
+  if (neo_clock_parse_iso(neo_js_context_to_cstring(ctx, source), &timestamp)) {
     return neo_js_context_create_number(ctx, timestamp);
-  } else if (neo_clock_parse_rfc(neo_js_variable_to_string(source)->string,
+  } else if (neo_clock_parse_rfc(neo_js_context_to_cstring(ctx, source),
                                  &timestamp)) {
     return neo_js_context_create_number(ctx, timestamp);
   } else {
@@ -1048,7 +1047,7 @@ NEO_JS_CFUNCTION(neo_js_date_to_primitive) {
   }
   neo_js_variable_t hint = neo_js_context_to_string(ctx, argv[0]);
   NEO_JS_TRY_AND_THROW(hint);
-  const char *hint_string = neo_js_variable_to_string(hint)->string;
+  const char *hint_string = neo_js_context_to_cstring(ctx,hint);
   if (strcmp(hint_string, "default") == 0 ||
       strcmp(hint_string, "string") == 0) {
     return neo_js_date_to_string(ctx, self, 0, NULL);

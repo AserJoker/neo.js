@@ -1,4 +1,4 @@
-#include "core/unicode.h"
+#include "core/string.h"
 #include "engine/context.h"
 #include "engine/lib/decode_uri_component.h"
 #include <string.h>
@@ -13,12 +13,12 @@ NEO_JS_CFUNCTION(neo_js_decode_uri_component) {
   }
   str = neo_js_context_to_string(ctx, str);
   NEO_JS_TRY_AND_THROW(str);
-  const char *source = neo_js_variable_to_string(str)->string;
-  size_t len = strlen(source);
+  const uint16_t *source = neo_js_variable_to_string(str)->string;
+  size_t len = neo_string16_length(source);
   char *utf8_string = neo_js_context_alloc(ctx, len + 1, NULL);
   neo_js_context_defer_free(ctx, utf8_string);
   char *pdst = utf8_string;
-  const char *psrc = source;
+  const uint16_t *psrc = source;
   while (*psrc) {
     if (*psrc == '%') {
       psrc++;

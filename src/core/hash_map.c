@@ -143,12 +143,12 @@ void *neo_hash_map_get(neo_hash_map_t self, const void *key, void *cmp_arg,
   }
 }
 
-bool neo_hash_map_has(neo_hash_map_t self, void *key, void *cmp_arg,
+bool neo_hash_map_has(neo_hash_map_t self, const void *key, void *cmp_arg,
                       void *hash_arg) {
   return neo_hash_map_get(self, key, cmp_arg, hash_arg) != NULL;
 }
 
-void neo_hash_map_delete(neo_hash_map_t self, void *key, void *cmp_arg,
+void neo_hash_map_delete(neo_hash_map_t self, const void *key, void *cmp_arg,
                          void *hash_arg) {
   neo_hash_map_node_t node = neo_hash_map_find(self, key, cmp_arg, hash_arg);
   neo_hash_map_erase(self, node);

@@ -45,14 +45,14 @@ neo_js_variable_t neo_js_regexp_constructor(neo_js_context_t ctx,
     if (neo_js_variable_get_type(v_rule)->kind == NEO_JS_TYPE_ERROR) {
       return v_rule;
     }
-    rule = neo_js_variable_to_string(v_rule)->string;
+    rule = neo_js_context_to_cstring(ctx, v_rule);
   }
   if (argc > 1) {
     neo_js_variable_t v_flag = neo_js_context_to_string(ctx, argv[1]);
     if (neo_js_variable_get_type(v_flag)->kind == NEO_JS_TYPE_ERROR) {
       return v_flag;
     }
-    s_flag = neo_js_variable_to_string(v_flag)->string;
+    s_flag = neo_js_context_to_cstring(ctx, v_flag);
   }
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   uint8_t flag = 0;
@@ -182,7 +182,7 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
   const char *str = "";
   if (argc) {
     neo_js_variable_t v_str = neo_js_context_to_string(ctx, argv[0]);
-    str = neo_js_variable_to_string(v_str)->string;
+    str = neo_js_context_to_cstring(ctx, v_str);
   } else {
     return neo_js_context_create_null(ctx);
   }
@@ -341,7 +341,7 @@ neo_js_variable_t neo_js_regexp_test(neo_js_context_t ctx,
   const char *str = "";
   if (argc) {
     neo_js_variable_t v_str = neo_js_context_to_string(ctx, argv[0]);
-    str = neo_js_variable_to_string(v_str)->string;
+    str = neo_js_context_to_cstring(ctx, v_str);
   } else {
     return neo_js_context_create_boolean(ctx, false);
   }

@@ -30,7 +30,7 @@ NEO_JS_CFUNCTION(neo_js_parse_int) {
         vradix = neo_js_context_to_string(ctx, vradix);
         NEO_JS_TRY_AND_THROW(vradix);
       }
-      const char *sradix = neo_js_variable_to_string(vradix)->string;
+      const char *sradix = neo_js_context_to_cstring(ctx, vradix);
       neo_utf8_char utf8 = neo_utf8_read_char(sradix);
       uint32_t utf32 = neo_utf8_char_to_utf32(utf8);
       while (NEO_IS_SPACE(utf32)) {
@@ -53,11 +53,11 @@ NEO_JS_CFUNCTION(neo_js_parse_int) {
       return neo_js_context_create_number(ctx, NAN);
     }
   }
-  const char *source = neo_js_variable_to_string(arg)->string;
+  const char *source = neo_js_context_to_cstring(ctx, arg);
   neo_utf8_char utf8 = neo_utf8_read_char(source);
   uint32_t utf32 = neo_utf8_char_to_utf32(utf8);
   if (NEO_IS_SPACE(utf32)) {
-    source=utf8.end;
+    source = utf8.end;
     utf8 = neo_utf8_read_char(source);
     utf32 = neo_utf8_char_to_utf32(utf8);
   }

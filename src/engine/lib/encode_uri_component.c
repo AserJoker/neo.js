@@ -1,5 +1,5 @@
 
-#include "core/unicode.h"
+#include "core/string.h"
 #include "engine/context.h"
 #include <string.h>
 NEO_JS_CFUNCTION(neo_js_encode_uri_component) {
@@ -11,11 +11,11 @@ NEO_JS_CFUNCTION(neo_js_encode_uri_component) {
   }
   str = neo_js_context_to_string(ctx, str);
   NEO_JS_TRY_AND_THROW(str);
-  const char *source = neo_js_variable_to_string(str)->string;
-  size_t len = strlen(source);
+  const uint16_t *source = neo_js_variable_to_string(str)->string;
+  size_t len = neo_string16_length(source);
   char *result = neo_js_context_alloc(ctx, sizeof(char) * (len * 6 + 1), NULL);
   neo_js_context_defer_free(ctx, result);
-  const char *psrc = source;
+  const uint16_t *psrc = source;
   char *pdst = result;
   while (*psrc) {
     if (*psrc >= 'a' && *psrc <= 'z') {
@@ -29,7 +29,6 @@ NEO_JS_CFUNCTION(neo_js_encode_uri_component) {
                *psrc == ')') {
       *pdst++ = *psrc++;
     } else {
-      neo_utf8_char utf8 = neo_utf8_read_char(psrc);
       if (*psrc >= 0xd800 && *psrc <= 0xdbff) {
         if (*(psrc + 1) < 0xdc00 || *(psrc + 1) > 0xdfff) {
           return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_URI, 0,
@@ -44,7 +43,7 @@ NEO_JS_CFUNCTION(neo_js_encode_uri_component) {
       if (*psrc >= 0xd800 && *psrc <= 0xdbff) {
         char s[] = {*psrc, *(psrc + 1), 0};
         psrc += 2;
-        uint8_t *utf8 = s;
+        uint8_t *utf8 = (uint8_t *)s;
         for (size_t idx = 0; utf8[idx] != 0; idx++) {
           char ss[8];
           sprintf(ss, "%%%2X", utf8[idx]);
@@ -55,7 +54,7 @@ NEO_JS_CFUNCTION(neo_js_encode_uri_component) {
       } else {
         char s[] = {*psrc, 0};
         psrc++;
-        uint8_t *utf8 = s;
+        uint8_t *utf8 = (uint8_t *)s;
         for (size_t idx = 0; utf8[idx] != 0; idx++) {
           char ss[8];
           sprintf(ss, "%%%2X", utf8[idx]);

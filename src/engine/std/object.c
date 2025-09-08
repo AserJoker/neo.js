@@ -4,7 +4,6 @@
 #include "engine/basetype/boolean.h"
 #include "engine/basetype/number.h"
 #include "engine/basetype/object.h"
-#include "engine/basetype/string.h"
 #include "engine/chunk.h"
 #include "engine/context.h"
 #include "engine/std/array.h"
@@ -737,10 +736,11 @@ neo_js_variable_t neo_js_object_to_string(neo_js_context_t ctx,
       neo_js_context_get_field(ctx, self, toStringTag, NULL);
   tag = neo_js_context_to_primitive(ctx, tag, "default");
   if (neo_js_variable_get_type(tag)->kind == NEO_JS_TYPE_STRING) {
-    size_t len = strlen(neo_js_variable_to_string(tag)->string);
+    const char *stag = neo_js_context_to_cstring(ctx, tag);
+    size_t len = strlen(stag);
     len += 16;
     char *msg = neo_allocator_alloc(allocator, len * sizeof(char), NULL);
-    snprintf(msg, len, "[object %s]", neo_js_variable_to_string(tag)->string);
+    snprintf(msg, len, "[object %s]", stag);
     neo_js_variable_t str = neo_js_context_create_string(ctx, msg);
     neo_allocator_free(allocator, msg);
     return str;
