@@ -98,7 +98,7 @@ NEO_JS_CFUNCTION(neo_js_number_to_exponential) {
           "toExponential() argument must be between 0 and 100");
     }
     char format[16];
-    snprintf(format, 16, "%%.%llde", r);
+    snprintf(format, 16, "%%.%llde", (long long)r);
     char msg[256];
     snprintf(msg, 256, format, val);
     return neo_js_context_create_string(ctx, msg);
@@ -126,7 +126,7 @@ NEO_JS_CFUNCTION(neo_js_number_to_fixed) {
           "toFixed() argument must be between 0 and 100");
     }
     char format[16];
-    snprintf(format, 16, "%%.%lldlf", r);
+    snprintf(format, 16, "%%.%lldlf", (long long)r);
     char msg[256];
     snprintf(msg, 256, format, val);
     return neo_js_context_create_string(ctx, msg);
@@ -160,7 +160,7 @@ NEO_JS_CFUNCTION(neo_js_number_to_precision) {
           "toPrecision() argument must be between 0 and 100");
     }
     char format[16];
-    snprintf(format, 16, "%%.%lldlg", r);
+    snprintf(format, 16, "%%.%lldlg", (long long)r);
     char msg[256];
     snprintf(msg, 256, format, val);
     return neo_js_context_create_string(ctx, msg);
