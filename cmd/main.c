@@ -6,11 +6,9 @@
 #include "engine/runtime.h"
 #include "engine/type.h"
 #include "engine/variable.h"
-#include <locale.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include <wchar.h>
-#ifdef __WIN32__
+#ifdef _WIN32
 #include <windows.h>
 #endif
 NEO_JS_CFUNCTION(js_on_fulfilled) {
@@ -28,10 +26,11 @@ NEO_JS_CFUNCTION(js_on_rejected) {
 }
 
 int main(int argc, char *argv[]) {
-#ifdef __WIN32__
+#ifdef _WIN32
   SetConsoleOutputCP(CP_UTF8);
-#endif
+#else
   setlocale(LC_ALL, "");
+#endif
   neo_allocator_t allocator = neo_create_default_allocator();
   neo_error_initialize(allocator);
   neo_js_runtime_t runtime = neo_create_js_runtime(allocator);
