@@ -41,15 +41,18 @@ char *neo_string_encode_escape(neo_allocator_t allocator, const char *src) {
     } else if (src[current] == '\r') {
       str[idx++] = '\\';
       str[idx++] = 'r';
-    } else if (src[current] == '\"') {
-      str[idx++] = '\\';
-      str[idx++] = '"';
     } else if (src[current] == '\t') {
       str[idx++] = '\\';
       str[idx++] = 't';
-    } else if (src[current] == '\'') {
+    } else if (src[current] == '\b') {
       str[idx++] = '\\';
-      str[idx++] = '\'';
+      str[idx++] = 'b';
+    } else if (src[current] == '\v') {
+      str[idx++] = '\\';
+      str[idx++] = 'v';
+    } else if (src[current] == '\f') {
+      str[idx++] = '\\';
+      str[idx++] = 'f';
     } else {
       str[idx++] = src[current];
     }

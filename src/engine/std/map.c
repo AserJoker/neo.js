@@ -15,6 +15,7 @@
 #include "engine/variable.h"
 #include <math.h>
 #include <stdbool.h>
+#include <string.h>
 
 typedef struct _neo_js_map_data_t *neo_js_map_data;
 struct _neo_js_map_data_t {
@@ -88,28 +89,36 @@ NEO_JS_CFUNCTION(neo_js_map_group_by) {
   iterator = neo_js_context_get_field(ctx, inventory, iterator, NULL);
   NEO_JS_TRY_AND_THROW(iterator);
   if (neo_js_variable_get_type(iterator)->kind < NEO_JS_TYPE_CALLABLE) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
-                                              "variable is not iterable");
+    const char *receiver = neo_js_context_to_error_name(ctx, iterator);
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+                                              strlen(receiver) + 32,
+                                              "%s is not iterable", receiver);
   }
   neo_js_variable_t generator =
       neo_js_context_call(ctx, iterator, inventory, 0, NULL);
   NEO_JS_TRY_AND_THROW(generator);
   if (neo_js_variable_get_type(iterator)->kind < NEO_JS_TYPE_OBJECT) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
-                                              "variable is not iterable");
+    const char *receiver = neo_js_context_to_error_name(ctx, iterator);
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+                                              strlen(receiver) + 32,
+                                              "%s is not iterable", receiver);
   }
   neo_js_variable_t next = neo_js_context_get_field(
       ctx, generator, neo_js_context_create_string(ctx, "next"), NULL);
   NEO_JS_TRY_AND_THROW(next);
   if (neo_js_variable_get_type(next)->kind < NEO_JS_TYPE_CALLABLE) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
-                                              "variable is not iterable");
+    const char *receiver = neo_js_context_to_error_name(ctx, iterator);
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+                                              strlen(receiver) + 32,
+                                              "%s is not iterable", receiver);
   }
   neo_js_variable_t res = neo_js_context_call(ctx, next, generator, 0, NULL);
   NEO_JS_TRY_AND_THROW(res);
   if (neo_js_variable_get_type(res)->kind < NEO_JS_TYPE_OBJECT) {
-    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
-                                              "variable is not iterable");
+    const char *receiver = neo_js_context_to_error_name(ctx, iterator);
+    return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+                                              strlen(receiver) + 32,
+                                              "%s is not iterable", receiver);
   }
   neo_js_variable_t value = neo_js_context_get_field(
       ctx, res, neo_js_context_create_string(ctx, "value"), NULL);
@@ -138,8 +147,10 @@ NEO_JS_CFUNCTION(neo_js_map_group_by) {
     res = neo_js_context_call(ctx, next, generator, 0, NULL);
     NEO_JS_TRY_AND_THROW(res);
     if (neo_js_variable_get_type(res)->kind < NEO_JS_TYPE_OBJECT) {
-      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
-                                                "variable is not iterable");
+      const char *receiver = neo_js_context_to_error_name(ctx, iterator);
+      return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE,
+                                                strlen(receiver) + 32,
+                                                "%s is not iterable", receiver);
     }
     value = neo_js_context_get_field(
         ctx, res, neo_js_context_create_string(ctx, "value"), NULL);

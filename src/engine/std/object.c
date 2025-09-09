@@ -474,7 +474,7 @@ NEO_JS_CFUNCTION(neo_js_object_group_by) {
   if (argc < 2 ||
       neo_js_variable_get_type(argv[1])->kind < NEO_JS_TYPE_CALLABLE) {
     return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
-                                              "variable is not a function");
+                                              "callback is not a function");
   }
   neo_js_variable_t callbackfn = argv[1];
   neo_js_variable_t iterator_symbol = neo_js_context_get_field(

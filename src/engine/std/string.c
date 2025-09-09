@@ -4,6 +4,7 @@
 #include "engine/context.h"
 #include "engine/type.h"
 #include "engine/variable.h"
+#include <math.h>
 #include <stdint.h>
 #include <string.h>
 #include <wchar.h>
@@ -80,7 +81,31 @@ NEO_JS_CFUNCTION(neo_js_string_constructor) {
   return self;
 }
 NEO_JS_CFUNCTION(neo_js_string_at) {
-  return neo_js_context_create_undefined(ctx);
+  if (neo_js_variable_get_type(self)->kind == NEO_JS_TYPE_NULL ||
+      neo_js_variable_get_type(self)->kind == NEO_JS_TYPE_UNDEFINED) {
+    return neo_js_context_create_simple_error(
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        "String.prototype.at called on null or undefined");
+  }
+  if (neo_js_variable_get_type(self)->kind != NEO_JS_TYPE_STRING) {
+    self = neo_js_context_to_string(ctx, self);
+    NEO_JS_TRY_AND_THROW(self);
+  }
+  int64_t idx = 0;
+  if (argc) {
+    neo_js_variable_t vidx = neo_js_context_to_integer(ctx, argv[0]);
+    NEO_JS_TRY_AND_THROW(vidx);
+    idx = neo_js_variable_to_number(vidx)->number;
+  }
+  neo_js_string_t s = neo_js_variable_to_string(self);
+  size_t len = neo_string16_length(s->string);
+  if (idx < 0) {
+    idx += len;
+  }
+  if (idx >= len) {
+    return neo_js_context_create_number(ctx, NAN);
+  }
+  return neo_js_context_create_number(ctx, s->string[idx]);
 }
 NEO_JS_CFUNCTION(neo_js_string_char_at) {
   return neo_js_context_create_undefined(ctx);

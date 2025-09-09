@@ -11,7 +11,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
-#include<locale.h>
+#include <locale.h>
 #endif
 NEO_JS_CFUNCTION(js_on_fulfilled) {
   neo_js_variable_t result = argv[0];
