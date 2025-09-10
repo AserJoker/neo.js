@@ -933,6 +933,9 @@ neo_js_variable_t neo_js_context_extends(neo_js_context_t ctx,
 neo_js_variable_t neo_js_context_to_primitive(neo_js_context_t ctx,
                                               neo_js_variable_t variable,
                                               const char *hint) {
+  if (neo_js_variable_get_type(variable)->kind < NEO_JS_TYPE_OBJECT) {
+    return variable;
+  }
   neo_js_scope_t current = ctx->scope;
   neo_js_context_push_scope(ctx);
   neo_js_value_t value = neo_js_variable_get_value(variable);

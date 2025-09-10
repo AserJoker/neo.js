@@ -10,7 +10,7 @@
 #include <wchar.h>
 
 static const char *neo_js_boolean_typeof(neo_js_context_t ctx,
-                                            neo_js_variable_t variable) {
+                                         neo_js_variable_t variable) {
   return "boolean";
 }
 
@@ -38,13 +38,6 @@ static neo_js_variable_t neo_js_boolean_to_number(neo_js_context_t ctx,
       neo_js_chunk_get_value(neo_js_variable_get_chunk(self)));
   return neo_js_context_create_number(ctx, boolean->boolean ? 1 : 0);
 }
-
-static neo_js_variable_t neo_js_boolean_to_primitive(neo_js_context_t ctx,
-                                                     neo_js_variable_t self,
-                                                     const char *type) {
-  return self;
-}
-
 static neo_js_variable_t neo_js_boolean_to_object(neo_js_context_t ctx,
                                                   neo_js_variable_t self) {
   neo_js_variable_t constructor =
@@ -87,7 +80,7 @@ neo_js_type_t neo_get_js_boolean_type() {
       neo_js_boolean_to_string,
       neo_js_boolean_to_boolean,
       neo_js_boolean_to_number,
-      neo_js_boolean_to_primitive,
+      NULL,
       neo_js_boolean_to_object,
       NULL,
       NULL,

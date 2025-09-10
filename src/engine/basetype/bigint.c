@@ -11,7 +11,7 @@
 #include <wchar.h>
 
 static const char *neo_js_bigint_typeof(neo_js_context_t ctx,
-                                           neo_js_variable_t variable) {
+                                        neo_js_variable_t variable) {
   return "bigint";
 }
 
@@ -39,22 +39,10 @@ static neo_js_variable_t neo_js_bigint_to_number(neo_js_context_t ctx,
   return neo_js_context_create_number(ctx,
                                       neo_bigint_to_number(bigint->bigint));
 }
-static neo_js_variable_t neo_js_bigint_to_primitive(neo_js_context_t ctx,
-                                                    neo_js_variable_t self,
-                                                    const char *type) {
-  return self;
-}
 static neo_js_variable_t neo_js_bigint_to_object(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
   neo_js_variable_t bigint = neo_js_context_get_std(ctx).bigint_constructor;
-  neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, bigint, neo_js_context_create_string(ctx, "prototype"), NULL);
-  neo_js_variable_t result = neo_js_context_create_object(ctx, prototype);
-  neo_js_context_set_field(ctx, result,
-                           neo_js_context_create_string(ctx, "constructor"),
-                           bigint, NULL);
-  neo_js_context_set_internal(ctx, result, "[[primitive]]", self);
-  return result;
+  return neo_js_context_construct(ctx, bigint, 1, &self);
 }
 
 static bool neo_js_bigint_is_equal(neo_js_context_t ctx, neo_js_variable_t self,
@@ -86,7 +74,7 @@ neo_js_type_t neo_get_js_bigint_type() {
       neo_js_bigint_to_string,
       neo_js_bigint_to_boolean,
       neo_js_bigint_to_number,
-      neo_js_bigint_to_primitive,
+      NULL,
       neo_js_bigint_to_object,
       NULL,
       NULL,

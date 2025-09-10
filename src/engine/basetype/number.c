@@ -10,7 +10,7 @@
 #include <math.h>
 
 static const char *neo_js_number_typeof(neo_js_context_t ctx,
-                                           neo_js_variable_t variable) {
+                                        neo_js_variable_t variable) {
   return "number";
 }
 
@@ -53,11 +53,6 @@ static neo_js_variable_t neo_js_number_to_number(neo_js_context_t ctx,
   neo_js_number_t number = neo_js_variable_to_number(self);
   return neo_js_context_create_number(ctx, number->number);
 }
-static neo_js_variable_t neo_js_number_to_primitive(neo_js_context_t ctx,
-                                                    neo_js_variable_t self,
-                                                    const char *type) {
-  return self;
-}
 static neo_js_variable_t neo_js_number_to_object(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
   return neo_js_context_construct(
@@ -95,7 +90,7 @@ neo_js_type_t neo_get_js_number_type() {
       neo_js_number_to_string,
       neo_js_number_to_boolean,
       neo_js_number_to_number,
-      neo_js_number_to_primitive,
+      NULL,
       neo_js_number_to_object,
       NULL,
       NULL,

@@ -10,7 +10,7 @@
 #include <string.h>
 
 static const char *neo_js_symbol_typeof(neo_js_context_t ctx,
-                                           neo_js_variable_t variable) {
+                                        neo_js_variable_t variable) {
   return "symbol";
 }
 
@@ -31,12 +31,6 @@ static neo_js_variable_t neo_js_symbol_to_number(neo_js_context_t ctx,
       ctx, NEO_JS_ERROR_TYPE, 0, "Cannot convert a Symbol value to a number");
 }
 
-static neo_js_variable_t neo_js_symbol_to_primitive(neo_js_context_t ctx,
-                                                    neo_js_variable_t self,
-                                                    const char *type) {
-  return self;
-}
-
 static neo_js_variable_t neo_js_symbol_to_object(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
   neo_js_variable_t symbol = neo_js_context_get_std(ctx).symbol_constructor;
@@ -48,30 +42,6 @@ static neo_js_variable_t neo_js_symbol_to_object(neo_js_context_t ctx,
                            symbol, NULL);
   neo_js_context_set_internal(ctx, object, "[[primitive]]", self);
   return object;
-}
-
-static neo_js_variable_t neo_js_symbol_get_field(neo_js_context_t ctx,
-                                                 neo_js_variable_t self,
-                                                 neo_js_variable_t field,
-                                                 neo_js_variable_t receiver) {
-  return neo_js_context_get_field(ctx, neo_js_symbol_to_object(ctx, self),
-                                  field, receiver);
-}
-
-static neo_js_variable_t neo_js_symbol_set_field(neo_js_context_t ctx,
-                                                 neo_js_variable_t self,
-                                                 neo_js_variable_t field,
-                                                 neo_js_variable_t value,
-                                                 neo_js_variable_t receiver) {
-  return neo_js_context_set_field(ctx, neo_js_symbol_to_object(ctx, self),
-                                  field, value, receiver);
-}
-
-static neo_js_variable_t neo_js_symbol_del_field(neo_js_context_t ctx,
-                                                 neo_js_variable_t self,
-                                                 neo_js_variable_t field) {
-  return neo_js_context_del_field(ctx, neo_js_symbol_to_object(ctx, self),
-                                  field);
 }
 
 static bool neo_js_symbol_is_equal(neo_js_context_t ctx, neo_js_variable_t self,
@@ -91,12 +61,18 @@ static neo_js_variable_t neo_js_symbol_copy(neo_js_context_t ctx,
 
 neo_js_type_t neo_get_js_symbol_type() {
   static struct _neo_js_type_t type = {
-      NEO_JS_TYPE_SYMBOL,      neo_js_symbol_typeof,
-      neo_js_symbol_to_string, neo_js_symbol_to_boolean,
-      neo_js_symbol_to_number, neo_js_symbol_to_primitive,
-      neo_js_symbol_to_object, neo_js_symbol_get_field,
-      neo_js_symbol_set_field, neo_js_symbol_del_field,
-      neo_js_symbol_is_equal,  neo_js_symbol_copy,
+      NEO_JS_TYPE_SYMBOL,
+      neo_js_symbol_typeof,
+      neo_js_symbol_to_string,
+      neo_js_symbol_to_boolean,
+      neo_js_symbol_to_number,
+      NULL,
+      neo_js_symbol_to_object,
+      NULL,
+      NULL,
+      NULL,
+      neo_js_symbol_is_equal,
+      neo_js_symbol_copy,
   };
   return &type;
 }

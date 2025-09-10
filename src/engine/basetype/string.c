@@ -49,12 +49,6 @@ static neo_js_variable_t neo_js_string_to_number(neo_js_context_t ctx,
   return neo_js_context_create_number(ctx, val);
 }
 
-static neo_js_variable_t neo_js_string_to_primitive(neo_js_context_t ctx,
-                                                    neo_js_variable_t self,
-                                                    const char *type) {
-  return self;
-}
-
 static neo_js_variable_t neo_js_string_to_object(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
   return neo_js_context_construct(
@@ -101,7 +95,7 @@ neo_js_type_t neo_get_js_string_type() {
       neo_js_string_to_string,
       neo_js_string_to_boolean,
       neo_js_string_to_number,
-      neo_js_string_to_primitive,
+      NULL,
       neo_js_string_to_object,
       NULL,
       NULL,

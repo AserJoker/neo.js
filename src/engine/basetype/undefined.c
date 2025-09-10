@@ -10,7 +10,7 @@
 #include <math.h>
 
 static const char *neo_js_undefined_typeof(neo_js_context_t ctx,
-                                              neo_js_variable_t variable) {
+                                           neo_js_variable_t variable) {
   return "undefined";
 }
 
@@ -30,12 +30,6 @@ static neo_js_variable_t neo_js_undefined_to_boolean(neo_js_context_t ctx,
 static neo_js_variable_t neo_js_undefined_to_number(neo_js_context_t ctx,
                                                     neo_js_variable_t self) {
   return neo_js_context_create_number(ctx, NAN);
-}
-
-static neo_js_variable_t neo_js_undefined_to_primitive(neo_js_context_t ctx,
-                                                       neo_js_variable_t self,
-                                                       const char *type) {
-  return self;
 }
 
 static neo_js_variable_t neo_js_undefined_to_object(neo_js_context_t ctx,
@@ -68,7 +62,7 @@ neo_js_type_t neo_get_js_undefined_type() {
       neo_js_undefined_to_string,
       neo_js_undefined_to_boolean,
       neo_js_undefined_to_number,
-      neo_js_undefined_to_primitive,
+      NULL,
       neo_js_undefined_to_object,
       NULL,
       NULL,
