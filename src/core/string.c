@@ -211,3 +211,37 @@ size_t neo_string16_length(const uint16_t *str) {
   }
   return len;
 }
+int64_t neo_string16_find(const uint16_t *source, const uint16_t *search) {
+  size_t search_len = neo_string16_length(search);
+  uint32_t next[search_len];
+  {
+    uint32_t j = 0;
+    uint32_t k = -1;
+    next[0] = -1;
+    while (k < search_len - 1) {
+      if (k == -1 || search[j] == search[k]) {
+        k++;
+        j++;
+        next[j] = k;
+      } else {
+        k = next[k];
+      }
+    }
+  }
+  uint32_t i = 0;
+  uint32_t j = 0;
+  uint32_t length = neo_string16_length(source);
+  while (i < length && j < search_len) {
+    if (j == -1 || source[i] == search[j]) {
+      i++;
+      j++;
+    } else {
+      j = next[j];
+    }
+  }
+  if (j == search_len) {
+    return i - j;
+  } else {
+    return -1;
+  }
+}

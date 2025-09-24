@@ -1,2 +1,3 @@
 'use strict'
-console.log("😍".length)
+
+console.log("😍".codePointAt(0))

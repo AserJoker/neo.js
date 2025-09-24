@@ -12,20 +12,16 @@
 #define PCRE2_CODE_UNIT_WIDTH 8
 #include <pcre2.h>
 
-#define NEO_REGEXP_FLAG_GLOBAL (1 << 1)
-#define NEO_REGEXP_FLAG_IGNORECASE (1 << 2)
-#define NEO_REGEXP_FLAG_MULTILINE (1 << 3)
-#define NEO_REGEXP_FLAG_DOTALL (1 << 4)
-#define NEO_REGEXP_FLAG_UNICODE (1 << 5)
-#define NEO_REGEXP_FLAG_STICKY (1 << 6)
-#define NEO_REGEXP_FLAG_HAS_INDICES (1 << 7)
-
 typedef struct _neo_js_regex_t {
   pcre2_code *code;
   uint8_t flag;
   char *source;
   size_t lastindex;
 } *neo_js_regex_t;
+uint8_t neo_js_regexp_get_flag(neo_js_context_t ctx, neo_js_variable_t self) {
+  neo_js_regex_t regex = neo_js_context_get_opaque(ctx, self, "[[regex]]");
+  return regex->flag;
+}
 
 static void neo_js_regex_dispose(neo_allocator_t allocator,
                                  neo_js_regex_t self) {
@@ -33,7 +29,6 @@ static void neo_js_regex_dispose(neo_allocator_t allocator,
   self->code = NULL;
   neo_allocator_free(allocator, self->source);
 }
-
 neo_js_variable_t neo_js_regexp_constructor(neo_js_context_t ctx,
                                             neo_js_variable_t self,
                                             uint32_t argc,

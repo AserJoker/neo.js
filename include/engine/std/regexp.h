@@ -4,6 +4,15 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#define NEO_REGEXP_FLAG_GLOBAL (1 << 1)
+#define NEO_REGEXP_FLAG_IGNORECASE (1 << 2)
+#define NEO_REGEXP_FLAG_MULTILINE (1 << 3)
+#define NEO_REGEXP_FLAG_DOTALL (1 << 4)
+#define NEO_REGEXP_FLAG_UNICODE (1 << 5)
+#define NEO_REGEXP_FLAG_STICKY (1 << 6)
+#define NEO_REGEXP_FLAG_HAS_INDICES (1 << 7)
+
+uint8_t neo_js_regexp_get_flag(neo_js_context_t ctx, neo_js_variable_t self);
 
 neo_js_variable_t neo_js_regexp_constructor(neo_js_context_t ctx,
                                             neo_js_variable_t self,
