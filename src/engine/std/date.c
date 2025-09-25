@@ -912,7 +912,7 @@ NEO_JS_CFUNCTION(neo_js_date_to_date_string) {
       "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
   };
   char result[1024];
-  snprintf(result, 1024, "%s,%s %ld %ld", week_names[tm->weakday],
+  snprintf(result, 1024, "%s,%s %lld %lld", week_names[tm->weakday],
            month_names[tm->month], tm->day + 1, tm->year);
   return neo_js_context_create_string(ctx, result);
 }
@@ -926,7 +926,7 @@ NEO_JS_CFUNCTION(neo_js_date_to_iso_string) {
     return neo_js_context_create_string(ctx, "Invalid Date");
   }
   char result[32];
-  snprintf(result, 32, "%04ld-%02ld-%02ldT%02ld:%02ld:%02ld.%03ldZ", utc->year,
+  snprintf(result, 32, "%04lld-%02lld-%02lldT%02lld:%02lld:%02lld.%03lldZ", utc->year,
            utc->month + 1, utc->day + 1, utc->hour, utc->minute, utc->second,
            utc->millisecond);
   return neo_js_context_create_string(ctx, result);
@@ -941,7 +941,7 @@ NEO_JS_CFUNCTION(neo_js_date_to_json) {
     return neo_js_context_create_string(ctx, "Invalid Date");
   }
   char result[32];
-  snprintf(result, 32, "%04ld-%02ld-%02ldT%02ld:%02ld:%02ld.%03ldZ", tm->year,
+  snprintf(result, 32, "%04lld-%02lld-%02lldT%02lld:%02lld:%02lld.%03lldZ", tm->year,
            tm->month + 1, tm->day + 1, tm->hour, tm->minute, tm->second,
            tm->millisecond);
   return neo_js_context_create_string(ctx, result);
@@ -977,7 +977,7 @@ NEO_JS_CFUNCTION(neo_js_date_to_string) {
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   char *zone = timezone_name;
   char result[1024];
-  snprintf(result, 1024, "%s, %02ld %s %ld %02ld:%02ld:%02ld %s",
+  snprintf(result, 1024, "%s, %02lld %s %lld %02lld:%02lld:%02lld %s",
            week_names[tm->weakday], tm->day + 1, month_names[tm->month],
            tm->year, tm->hour, tm->minute, tm->second, zone);
   return neo_js_context_create_string(ctx, result);
@@ -1003,7 +1003,7 @@ NEO_JS_CFUNCTION(neo_js_date_to_time_string) {
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   char *zone = timezone_name;
   char result[128];
-  snprintf(result, 128, "%02ld:%02ld:%02ld %s", tm->hour, tm->minute,
+  snprintf(result, 128, "%02lld:%02lld:%02lld %s", tm->hour, tm->minute,
            tm->second, zone);
   return neo_js_context_create_string(ctx, result);
 }
@@ -1024,7 +1024,7 @@ NEO_JS_CFUNCTION(neo_js_date_to_utc_string) {
       "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
   };
   char result[1024];
-  snprintf(result, 1024, "%s, %02ld %s %ld %02ld:%02ld:%02ld GMT",
+  snprintf(result, 1024, "%s, %02lld %s %lld %02lld:%02lld:%02lld GMT",
            week_names[tm->weakday], tm->day + 1, month_names[tm->month],
            tm->year, tm->hour, tm->minute, tm->second);
   return neo_js_context_create_string(ctx, result);

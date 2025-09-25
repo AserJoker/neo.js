@@ -20,6 +20,9 @@ neo_js_type_t neo_get_js_string_type();
 neo_js_string_t neo_create_js_string(neo_allocator_t allocator,
                                      const char *value);
 
+neo_js_string_t neo_create_js_string16(neo_allocator_t allocator,
+                                       const uint16_t *value);
+
 void neo_js_string_set_cstring(neo_allocator_t allocator,
                                neo_js_variable_t variable, const char *value);
 

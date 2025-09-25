@@ -136,6 +136,22 @@ neo_js_string_t neo_create_js_string(neo_allocator_t allocator,
   return string;
 }
 
+neo_js_string_t neo_create_js_string16(neo_allocator_t allocator,
+                                       const uint16_t *value) {
+
+  size_t len = neo_string16_length(value);
+  neo_js_string_t string = neo_allocator_alloc(
+      allocator, sizeof(struct _neo_js_string_t), neo_js_string_dispose);
+  neo_js_value_init(allocator, &string->value);
+  string->value.type = neo_get_js_string_type();
+  string->string =
+      neo_allocator_alloc(allocator, (len + 1) * sizeof(uint16_t), NULL);
+  uint16_t *dst = string->string;
+  dst[len] = 0;
+  memcpy(dst, value, len * sizeof(uint16_t));
+  return string;
+}
+
 void neo_js_string_set_cstring(neo_allocator_t allocator,
                                neo_js_variable_t variable, const char *value) {
   size_t len = strlen(value);

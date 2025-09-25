@@ -2363,6 +2363,14 @@ neo_js_variable_t neo_js_context_create_string(neo_js_context_t ctx,
       ctx, neo_create_js_chunk(allocator, &string->value), NULL);
 }
 
+neo_js_variable_t neo_js_context_create_string16(neo_js_context_t ctx,
+                                                 const uint16_t *value) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);
+  neo_js_string_t string = neo_create_js_string16(allocator, value);
+  return neo_js_context_create_variable(
+      ctx, neo_create_js_chunk(allocator, &string->value), NULL);
+}
+
 neo_js_variable_t neo_js_context_create_boolean(neo_js_context_t ctx,
                                                 bool value) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(ctx->runtime);

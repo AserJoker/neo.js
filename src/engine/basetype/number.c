@@ -34,7 +34,7 @@ static neo_js_variable_t neo_js_number_to_string(neo_js_context_t ctx,
   if (number->number == -0.f) {
     snprintf(str, 32, "%.20lg", number->number);
   } else if (number->number == (int64_t)(number->number)) {
-    snprintf(str, 32, "%ld", (int64_t)number->number);
+    snprintf(str, 32, "%lld", (int64_t)number->number);
   } else {
     snprintf(str, 32, "%.20lg", number->number);
   }

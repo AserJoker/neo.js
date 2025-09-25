@@ -300,6 +300,9 @@ neo_js_variable_t neo_js_context_create_bigint(neo_js_context_t ctx,
 neo_js_variable_t neo_js_context_create_string(neo_js_context_t ctx,
                                                const char *value);
 
+neo_js_variable_t neo_js_context_create_string16(neo_js_context_t ctx,
+                                                 const uint16_t *value);
+
 neo_js_variable_t neo_js_context_create_boolean(neo_js_context_t ctx,
                                                 bool value);
 
@@ -344,7 +347,7 @@ neo_js_variable_t neo_js_context_to_string(neo_js_context_t ctx,
                                            neo_js_variable_t variable);
 
 const char *neo_js_context_to_cstring(neo_js_context_t ctx,
-                                neo_js_variable_t variable);
+                                      neo_js_variable_t variable);
 
 neo_js_variable_t neo_js_context_to_boolean(neo_js_context_t ctx,
                                             neo_js_variable_t variable);
@@ -499,7 +502,8 @@ neo_js_call_type_t neo_js_context_get_call_type(neo_js_context_t ctx);
   } while (0)
 #define NEO_JS_SET_SYMBOL_METHOD(ctx, obj, name, func)                         \
   do {                                                                         \
-    neo_js_variable_t fn = neo_js_context_create_cfunction(ctx, name, func);   \
+    neo_js_variable_t fn =                                                     \
+        neo_js_context_create_cfunction(ctx, "[Symbol." name "]", func);       \
     neo_js_variable_t field = neo_js_context_get_field(                        \
         ctx, neo_js_context_get_std(ctx).symbol_constructor,                   \
         neo_js_context_create_string(ctx, name), NULL);                        \

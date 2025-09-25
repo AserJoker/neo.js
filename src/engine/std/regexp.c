@@ -18,6 +18,7 @@ typedef struct _neo_js_regex_t {
   char *source;
   size_t lastindex;
 } *neo_js_regex_t;
+
 uint8_t neo_js_regexp_get_flag(neo_js_context_t ctx, neo_js_variable_t self) {
   neo_js_regex_t regex = neo_js_context_get_opaque(ctx, self, "[[regex]]");
   return regex->flag;
@@ -114,6 +115,7 @@ neo_js_variable_t neo_js_regexp_constructor(neo_js_context_t ctx,
       allocator, sizeof(struct _neo_js_regex_t), neo_js_regex_dispose);
   regex->code = code;
   regex->flag = flag;
+  regex->lastindex = 0;
 
   size_t len = strlen(rule) + strlen(s_flag) + 8;
   char *str = neo_allocator_alloc(allocator, sizeof(char) * len, NULL);
@@ -209,7 +211,8 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
   pcre2_match_data *match_data =
       pcre2_match_data_create_from_pattern(regex->code, NULL);
   int rc = pcre2_match(regex->code, (PCRE2_SPTR)str, PCRE2_ZERO_TERMINATED,
-                       last_index->number, match_options, match_data, NULL);
+                       last_index ? last_index->number : 0, match_options,
+                       match_data, NULL);
   PCRE2_SIZE *ovector = pcre2_get_ovector_pointer(match_data);
   if (regex->flag & NEO_REGEXP_FLAG_GLOBAL ||
       regex->flag & NEO_REGEXP_FLAG_STICKY) {
@@ -224,12 +227,6 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
     size_t start = ovector[0];
     size_t end = ovector[(rc - 1) * 2 + 1];
     size_t len = end - start;
-    char *part = neo_allocator_alloc(allocator, (len + 1) * sizeof(char), NULL);
-    strncpy(part, str + start, len);
-    part[len] = 0;
-    neo_js_context_set_field(ctx, result, neo_js_context_create_number(ctx, 0),
-                             neo_js_context_create_string(ctx, part), NULL);
-    neo_allocator_free(allocator, part);
     neo_js_context_set_field(ctx, result,
                              neo_js_context_create_string(ctx, "index"),
                              neo_js_context_create_number(ctx, start), NULL);
@@ -250,7 +247,7 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
       strncpy(part, str + start, len);
       part[len] = 0;
       neo_js_context_set_field(ctx, result,
-                               neo_js_context_create_number(ctx, idx + 1),
+                               neo_js_context_create_number(ctx, idx),
                                neo_js_context_create_string(ctx, part), NULL);
       neo_allocator_free(allocator, part);
       if (regex->flag & NEO_REGEXP_FLAG_HAS_INDICES) {
@@ -400,4 +397,7 @@ void neo_js_context_init_std_regexp(neo_js_context_t ctx) {
       ctx, prototype, neo_js_context_create_string(ctx, "test"),
       neo_js_context_create_cfunction(ctx, "test", neo_js_regexp_test), true,
       false, true);
+
+  neo_js_variable_t symbol = neo_js_context_get_std(ctx).symbol_constructor;
+  NEO_JS_SET_SYMBOL_METHOD(ctx, prototype, "match", neo_js_regexp_exec);
 }
