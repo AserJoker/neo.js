@@ -3,12 +3,13 @@
 #include "core/list.h"
 #include "engine/basetype/callable.h"
 #include "engine/basetype/error.h"
-#include "engine/chunk.h"
 #include "engine/context.h"
+#include "engine/handle.h"
 #include "engine/std/array.h"
 #include "engine/type.h"
 #include "engine/variable.h"
 #include <stdint.h>
+
 
 typedef struct _neo_js_promise_t *neo_js_promise_t;
 struct _neo_js_promise_t {
@@ -19,8 +20,8 @@ struct _neo_js_promise_t {
   } status;
   neo_list_t on_fulfilled_callbacks;
   neo_list_t on_rejected_callbacks;
-  neo_js_chunk_t value;
-  neo_js_chunk_t error;
+  neo_js_handle_t value;
+  neo_js_handle_t error;
   neo_js_context_t ctx;
 };
 
@@ -693,13 +694,14 @@ static neo_js_variable_t neo_js_resolve(neo_js_context_t ctx,
       }
     } else {
       promise->status = NEO_PROMISE_FULFILLED;
-      promise->value = neo_js_variable_get_chunk(value);
-      neo_js_chunk_add_parent(promise->value, neo_js_variable_get_chunk(self));
+      promise->value = neo_js_variable_get_handle(value);
+      neo_js_handle_add_parent(promise->value,
+                               neo_js_variable_get_handle(self));
       for (neo_list_node_t it =
                neo_list_get_first(promise->on_fulfilled_callbacks);
            it != neo_list_get_tail(promise->on_fulfilled_callbacks);
            it = neo_list_node_next(it)) {
-        neo_js_chunk_t hcallback = neo_list_node_get(it);
+        neo_js_handle_t hcallback = neo_list_node_get(it);
         neo_js_variable_t callback =
             neo_js_context_create_variable(ctx, hcallback, NULL);
         neo_js_context_create_micro_task(ctx, callback,
@@ -724,13 +726,13 @@ static neo_js_variable_t neo_js_reject(neo_js_context_t ctx,
     } else {
       value = neo_js_context_create_undefined(ctx);
     }
-    promise->error = neo_js_variable_get_chunk(value);
-    neo_js_chunk_add_parent(promise->error, neo_js_variable_get_chunk(self));
+    promise->error = neo_js_variable_get_handle(value);
+    neo_js_handle_add_parent(promise->error, neo_js_variable_get_handle(self));
     for (neo_list_node_t it =
              neo_list_get_first(promise->on_rejected_callbacks);
          it != neo_list_get_tail(promise->on_rejected_callbacks);
          it = neo_list_node_next(it)) {
-      neo_js_chunk_t hcallback = neo_list_node_get(it);
+      neo_js_handle_t hcallback = neo_list_node_get(it);
       neo_js_variable_t callback =
           neo_js_context_create_variable(ctx, hcallback, NULL);
       neo_js_context_create_micro_task(ctx, callback,
@@ -847,17 +849,17 @@ static neo_js_variable_t neo_js_resolver(neo_js_context_t ctx,
 
   neo_js_promise_t promise =
       neo_js_context_get_opaque(ctx, self, "[[promise]]");
-  neo_js_chunk_t hpromise = neo_js_variable_get_chunk(self);
+  neo_js_handle_t hpromise = neo_js_variable_get_handle(self);
   if (promise->status == NEO_PROMISE_PENDDING) {
     if (neo_js_variable_get_type(on_fulfilled)->kind >= NEO_JS_TYPE_CALLABLE) {
-      neo_js_chunk_t hfulfilled = neo_js_variable_get_chunk(on_fulfilled);
+      neo_js_handle_t hfulfilled = neo_js_variable_get_handle(on_fulfilled);
       neo_list_push(promise->on_fulfilled_callbacks, hfulfilled);
-      neo_js_chunk_add_parent(hfulfilled, hpromise);
+      neo_js_handle_add_parent(hfulfilled, hpromise);
     }
     if (neo_js_variable_get_type(on_rejected)->kind >= NEO_JS_TYPE_CALLABLE) {
-      neo_js_chunk_t hrejected = neo_js_variable_get_chunk(on_rejected);
+      neo_js_handle_t hrejected = neo_js_variable_get_handle(on_rejected);
       neo_list_push(promise->on_rejected_callbacks, hrejected);
-      neo_js_chunk_add_parent(hrejected, hpromise);
+      neo_js_handle_add_parent(hrejected, hpromise);
     }
   } else if (promise->status == NEO_PROMISE_FULFILLED) {
     neo_js_variable_t value =

@@ -188,15 +188,12 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
   if (regex->flag & NEO_REGEXP_FLAG_STICKY) {
     match_options |= PCRE2_ANCHORED;
   }
+  neo_js_variable_t v_last_index = neo_js_context_get_field(
+      ctx, self, neo_js_context_create_string(ctx, "lastIndex"), NULL);
   if (regex->flag & NEO_REGEXP_FLAG_GLOBAL ||
       regex->flag & NEO_REGEXP_FLAG_STICKY) {
-    neo_js_variable_t v_last_index = neo_js_context_get_field(
-        ctx, self, neo_js_context_create_string(ctx, "lastIndex"), NULL);
     if (neo_js_variable_get_type(v_last_index)->kind != NEO_JS_TYPE_NUMBER) {
       v_last_index = neo_js_context_to_number(ctx, v_last_index);
-      neo_js_context_set_field(ctx, self,
-                               neo_js_context_create_string(ctx, "lastIndex"),
-                               v_last_index, NULL);
     }
     last_index = neo_js_variable_to_number(v_last_index);
 
@@ -211,17 +208,21 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
   pcre2_match_data *match_data =
       pcre2_match_data_create_from_pattern(regex->code, NULL);
   int rc = pcre2_match(regex->code, (PCRE2_SPTR)str, PCRE2_ZERO_TERMINATED,
-                       last_index ? last_index->number : 0, match_options,
-                       match_data, NULL);
+                       last_index ? (int64_t)last_index->number : 0,
+                       match_options, match_data, NULL);
   PCRE2_SIZE *ovector = pcre2_get_ovector_pointer(match_data);
   if (regex->flag & NEO_REGEXP_FLAG_GLOBAL ||
       regex->flag & NEO_REGEXP_FLAG_STICKY) {
     if (rc > 0) {
-      last_index->number = ovector[rc * 2 + 1];
+      size_t idx = ovector[0];
+      last_index->number = ovector[(rc - 1) * 2 + 1];
     } else {
       last_index->number = 0;
     }
   }
+  neo_js_context_set_field(ctx, self,
+                           neo_js_context_create_string(ctx, "lastIndex"),
+                           v_last_index, NULL);
   if (rc > 0) {
     result = neo_js_context_create_array(ctx);
     size_t start = ovector[0];
@@ -398,6 +399,81 @@ void neo_js_context_init_std_regexp(neo_js_context_t ctx) {
       neo_js_context_create_cfunction(ctx, "test", neo_js_regexp_test), true,
       false, true);
 
-  neo_js_variable_t symbol = neo_js_context_get_std(ctx).symbol_constructor;
   NEO_JS_SET_SYMBOL_METHOD(ctx, prototype, "match", neo_js_regexp_exec);
+  NEO_JS_SET_SYMBOL_METHOD(ctx, prototype, "matchAll", neo_js_regexp_match_all);
+  NEO_JS_SET_SYMBOL_METHOD(ctx, prototype, "search", neo_js_regexp_search);
+}
+static NEO_JS_CFUNCTION(neo_js_regexp_match_all_next) {
+  neo_js_variable_t string =
+      neo_js_context_get_internal(ctx, self, "[[string]]");
+  neo_js_variable_t regexp =
+      neo_js_context_get_internal(ctx, self, "[[regexp]]");
+  if (neo_js_variable_get_type(string)->kind != NEO_JS_TYPE_STRING) {
+    return neo_js_context_create_simple_error(
+        ctx, NEO_JS_ERROR_TYPE, 0,
+        "RegexpStringIterator.prototype.next called with out a regexp string "
+        "iterator");
+  }
+  neo_js_variable_t result = neo_js_context_create_object(ctx, NULL);
+  neo_js_variable_t value = neo_js_regexp_exec(ctx, regexp, 1, &string);
+  NEO_JS_TRY_AND_THROW(value);
+  if (neo_js_variable_get_type(value)->kind == NEO_JS_TYPE_NULL) {
+    neo_js_context_set_field(ctx, result,
+                             neo_js_context_create_string(ctx, "done"),
+                             neo_js_context_create_boolean(ctx, true), NULL);
+  } else {
+    neo_js_context_set_field(ctx, result,
+                             neo_js_context_create_string(ctx, "done"),
+                             neo_js_context_create_boolean(ctx, false), NULL);
+    neo_js_context_set_field(
+        ctx, result, neo_js_context_create_string(ctx, "value"), value, NULL);
+  }
+  return result;
+}
+
+static NEO_JS_CFUNCTION(neo_js_regexp_match_all_iterator) { return self; }
+NEO_JS_CFUNCTION(neo_js_regexp_match_all) {
+  neo_js_variable_t str = NULL;
+  if (argc) {
+    str = neo_js_context_to_string(ctx, argv[0]);
+    NEO_JS_TRY_AND_THROW(str);
+  } else {
+    str = neo_js_context_create_string(ctx, "undefined");
+  }
+  neo_js_variable_t result = neo_js_context_create_object(ctx, NULL);
+  NEO_JS_SET_METHOD(ctx, result, "next", neo_js_regexp_match_all_next);
+  neo_js_context_set_internal(ctx, result, "[[regexp]]", self);
+  neo_js_context_set_internal(ctx, result, "[[string]]", str);
+  NEO_JS_SET_SYMBOL_METHOD(ctx, result, "iterator",
+                           neo_js_regexp_match_all_iterator);
+  return result;
+}
+NEO_JS_CFUNCTION(neo_js_regexp_search) {
+  neo_js_variable_t string = NULL;
+  if (argc) {
+    string = neo_js_context_to_string(ctx, argv[0]);
+    NEO_JS_TRY_AND_THROW(string);
+  } else {
+    string = neo_js_context_create_string(ctx, "undefined");
+  }
+  const char *str = neo_js_context_to_cstring(ctx, string);
+  neo_js_regex_t regex = neo_js_context_get_opaque(ctx, self, "[[regex]]");
+  uint32_t match_options = 0;
+  if (regex->flag & NEO_REGEXP_FLAG_STICKY) {
+    match_options |= PCRE2_ANCHORED;
+  }
+  neo_js_variable_t v_last_index = neo_js_context_get_field(
+      ctx, self, neo_js_context_create_string(ctx, "lastIndex"), NULL);
+  neo_js_variable_t result = NULL;
+  neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
+  pcre2_match_data *match_data =
+      pcre2_match_data_create_from_pattern(regex->code, NULL);
+  int rc = pcre2_match(regex->code, (PCRE2_SPTR)str, PCRE2_ZERO_TERMINATED, 0,
+                       match_options, match_data, NULL);
+  PCRE2_SIZE *ovector = pcre2_get_ovector_pointer(match_data);
+  if (rc > 0) {
+    return neo_js_context_create_number(ctx, ovector[0]);
+  } else {
+    return neo_js_context_create_number(ctx, -1);
+  }
 }

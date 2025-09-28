@@ -17,8 +17,8 @@
 #include "engine/basetype/number.h"
 #include "engine/basetype/object.h"
 #include "engine/basetype/string.h"
-#include "engine/chunk.h"
 #include "engine/context.h"
+#include "engine/handle.h"
 #include "engine/scope.h"
 #include "engine/std/string.h"
 #include "engine/type.h"
@@ -29,6 +29,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <wchar.h>
+
 
 #define NEO_VM_CHECK_AND_THROW(expr, vm, program)                              \
   {                                                                            \
@@ -219,7 +220,7 @@ static neo_js_variable_t neo_js_vm_scope_dispose(neo_js_vm_t vm) {
     result = neo_js_context_create_undefined(vm->ctx);
   }
   result = neo_js_scope_create_variable(
-      parent, neo_js_variable_get_chunk(result), NULL);
+      parent, neo_js_variable_get_handle(result), NULL);
   return result;
 }
 
@@ -263,14 +264,14 @@ void neo_js_vm_store(neo_js_vm_t vm, neo_program_t program) {
 
 void neo_js_vm_save(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t value = neo_list_node_get(neo_list_get_last(vm->stack));
-  neo_js_chunk_t root = neo_js_scope_get_root_chunk(vm->root);
-  neo_js_chunk_t current = neo_js_scope_get_root_chunk(vm->scope);
+  neo_js_handle_t root = neo_js_scope_get_root_handle(vm->root);
+  neo_js_handle_t current = neo_js_scope_get_root_handle(vm->scope);
   if (vm->result) {
-    neo_js_chunk_add_parent(vm->result, current);
-    neo_js_chunk_remove_parent(vm->result, root);
+    neo_js_handle_add_parent(vm->result, current);
+    neo_js_handle_remove_parent(vm->result, root);
   }
-  vm->result = neo_js_variable_get_chunk(value);
-  neo_js_chunk_add_parent(vm->result, root);
+  vm->result = neo_js_variable_get_handle(value);
+  neo_js_handle_add_parent(vm->result, root);
 }
 
 void neo_js_vm_def(neo_js_vm_t vm, neo_program_t program) {
@@ -443,7 +444,7 @@ void neo_js_vm_push_array(neo_js_vm_t vm, neo_program_t program) {
 void neo_js_vm_push_this(neo_js_vm_t vm, neo_program_t program) {
   neo_list_push(vm->stack,
                 neo_js_context_create_variable(
-                    vm->ctx, neo_js_variable_get_chunk(vm->self), NULL));
+                    vm->ctx, neo_js_variable_get_handle(vm->self), NULL));
 }
 
 void neo_js_vm_super_call(neo_js_vm_t vm, neo_program_t program) {
@@ -880,7 +881,7 @@ void neo_js_vm_private_member_call(neo_js_vm_t vm, neo_program_t program) {
   neo_list_pop(vm->stack);
   neo_js_object_t obj = neo_js_variable_to_object(host);
   if (!obj->constructor || !vm->clazz ||
-      neo_js_chunk_get_value(obj->constructor) !=
+      neo_js_handle_get_value(obj->constructor) !=
           neo_js_variable_get_value(vm->clazz)) {
     const char *str = neo_js_context_to_cstring(vm->ctx, field);
     size_t len = strlen(str) + 128;
@@ -932,7 +933,7 @@ void neo_js_vm_get_private_field(neo_js_vm_t vm, neo_program_t program) {
   neo_list_pop(vm->stack);
   neo_js_object_t obj = neo_js_variable_to_object(host);
   if (!obj->constructor || !vm->clazz ||
-      neo_js_chunk_get_value(obj->constructor) !=
+      neo_js_handle_get_value(obj->constructor) !=
           neo_js_variable_get_value(vm->clazz)) {
     const char *str = neo_js_context_to_cstring(vm->ctx, field);
     size_t len = strlen(str) + 128;
@@ -961,7 +962,7 @@ void neo_js_vm_set_private_field(neo_js_vm_t vm, neo_program_t program) {
   neo_js_variable_t host = neo_list_node_get(neo_list_get_last(vm->stack));
   neo_js_object_t obj = neo_js_variable_to_object(host);
   if (!obj->constructor || !vm->clazz ||
-      neo_js_chunk_get_value(obj->constructor) !=
+      neo_js_handle_get_value(obj->constructor) !=
           neo_js_variable_get_value(vm->clazz)) {
     const char *str = neo_js_context_to_cstring(vm->ctx, field);
     size_t len = strlen(str) + 128;
@@ -993,15 +994,15 @@ void neo_js_vm_set_getter(neo_js_vm_t vm, neo_program_t program) {
   NEO_VM_CHECK_AND_THROW(host, vm, program);
   neo_js_object_property_t prop =
       neo_js_object_get_own_property(vm->ctx, host, field);
-  neo_js_chunk_t hobject = neo_js_variable_get_chunk(host);
-  neo_js_chunk_t hgetter = neo_js_variable_get_chunk(getter);
-  neo_js_chunk_add_parent(hgetter, hobject);
+  neo_js_handle_t hobject = neo_js_variable_get_handle(host);
+  neo_js_handle_t hgetter = neo_js_variable_get_handle(getter);
+  neo_js_handle_add_parent(hgetter, hobject);
   if (prop) {
     if (prop->get) {
-      neo_js_chunk_add_parent(
+      neo_js_handle_add_parent(
           prop->get,
-          neo_js_scope_get_root_chunk(neo_js_context_get_scope(vm->ctx)));
-      neo_js_chunk_remove_parent(prop->get, hobject);
+          neo_js_scope_get_root_handle(neo_js_context_get_scope(vm->ctx)));
+      neo_js_handle_remove_parent(prop->get, hobject);
       prop->get = NULL;
     }
     prop->get = hgetter;
@@ -1012,7 +1013,7 @@ void neo_js_vm_set_getter(neo_js_vm_t vm, neo_program_t program) {
     prop->enumerable = true;
     prop->get = hgetter;
     neo_js_object_t obj = neo_js_variable_to_object(host);
-    neo_hash_map_set(obj->properties, neo_js_variable_get_chunk(field), prop,
+    neo_hash_map_set(obj->properties, neo_js_variable_get_handle(field), prop,
                      vm->ctx, vm->ctx);
   }
 }
@@ -1027,15 +1028,15 @@ void neo_js_vm_set_setter(neo_js_vm_t vm, neo_program_t program) {
   NEO_VM_CHECK_AND_THROW(host, vm, program);
   neo_js_object_property_t prop =
       neo_js_object_get_own_property(vm->ctx, host, field);
-  neo_js_chunk_t hobject = neo_js_variable_get_chunk(host);
-  neo_js_chunk_t hsetter = neo_js_variable_get_chunk(setter);
-  neo_js_chunk_add_parent(hsetter, hobject);
+  neo_js_handle_t hobject = neo_js_variable_get_handle(host);
+  neo_js_handle_t hsetter = neo_js_variable_get_handle(setter);
+  neo_js_handle_add_parent(hsetter, hobject);
   if (prop) {
     if (prop->set) {
-      neo_js_chunk_add_parent(
+      neo_js_handle_add_parent(
           prop->set,
-          neo_js_scope_get_root_chunk(neo_js_context_get_scope(vm->ctx)));
-      neo_js_chunk_remove_parent(prop->set, hobject);
+          neo_js_scope_get_root_handle(neo_js_context_get_scope(vm->ctx)));
+      neo_js_handle_remove_parent(prop->set, hobject);
       prop->set = NULL;
     }
     prop->set = hsetter;
@@ -1046,7 +1047,7 @@ void neo_js_vm_set_setter(neo_js_vm_t vm, neo_program_t program) {
     prop->enumerable = true;
     prop->set = hsetter;
     neo_js_object_t obj = neo_js_variable_to_object(host);
-    neo_hash_map_set(obj->properties, neo_js_variable_get_chunk(field), prop,
+    neo_hash_map_set(obj->properties, neo_js_variable_get_handle(field), prop,
                      vm->ctx, vm->ctx);
   }
 }
@@ -2428,7 +2429,7 @@ neo_js_variable_t neo_js_vm_exec(neo_js_vm_t vm, neo_program_t program) {
             neo_js_try_frame_t frame =
                 neo_list_node_get(neo_list_get_last(vm->try_stack));
             goto_interrupt = neo_js_scope_create_variable(
-                frame->scope, neo_js_variable_get_chunk(goto_interrupt), NULL);
+                frame->scope, neo_js_variable_get_handle(goto_interrupt), NULL);
             neo_js_variable_t result = NULL;
             while (neo_list_get_size(vm->stack) != frame->stack_top) {
               neo_list_pop(vm->stack);
@@ -2443,7 +2444,7 @@ neo_js_variable_t neo_js_vm_exec(neo_js_vm_t vm, neo_program_t program) {
               } else if (neo_js_variable_get_type(res)->kind ==
                          NEO_JS_TYPE_ERROR) {
                 result = neo_js_scope_create_variable(
-                    frame->scope, neo_js_variable_get_chunk(res), NULL);
+                    frame->scope, neo_js_variable_get_handle(res), NULL);
               }
               neo_js_context_pop_scope(vm->ctx);
             }
@@ -2490,7 +2491,7 @@ neo_js_variable_t neo_js_vm_exec(neo_js_vm_t vm, neo_program_t program) {
             } else if (neo_js_variable_get_type(res)->kind ==
                        NEO_JS_TYPE_ERROR) {
               result = neo_js_scope_create_variable(
-                  scope, neo_js_variable_get_chunk(res), NULL);
+                  scope, neo_js_variable_get_handle(res), NULL);
             }
             neo_js_context_pop_scope(vm->ctx);
           }
@@ -2524,7 +2525,7 @@ neo_js_variable_t neo_js_vm_exec(neo_js_vm_t vm, neo_program_t program) {
       neo_js_variable_t result =
           neo_list_node_get(neo_list_get_last(vm->stack));
       result = neo_js_scope_create_variable(
-          frame->scope, neo_js_variable_get_chunk(result), NULL);
+          frame->scope, neo_js_variable_get_handle(result), NULL);
       while (neo_list_get_size(vm->stack) != frame->stack_top) {
         neo_list_pop(vm->stack);
       }
@@ -2536,7 +2537,7 @@ neo_js_variable_t neo_js_vm_exec(neo_js_vm_t vm, neo_program_t program) {
           return res;
         } else if (neo_js_variable_get_type(res)->kind == NEO_JS_TYPE_ERROR) {
           result = neo_js_scope_create_variable(
-              frame->scope, neo_js_variable_get_chunk(res), NULL);
+              frame->scope, neo_js_variable_get_handle(res), NULL);
         }
         neo_js_context_pop_scope(vm->ctx);
       }
@@ -2581,7 +2582,7 @@ neo_js_variable_t neo_js_vm_exec(neo_js_vm_t vm, neo_program_t program) {
   if (neo_list_get_size(vm->stack)) {
     result = neo_list_node_get(neo_list_get_last(vm->stack));
     result = neo_js_context_create_variable(
-        vm->ctx, neo_js_variable_get_chunk(result), NULL);
+        vm->ctx, neo_js_variable_get_handle(result), NULL);
     neo_list_pop(vm->stack);
   } else {
     result = neo_js_context_create_undefined(vm->ctx);
@@ -2591,13 +2592,13 @@ neo_js_variable_t neo_js_vm_exec(neo_js_vm_t vm, neo_program_t program) {
     neo_js_variable_t res = neo_js_vm_scope_dispose(vm);
     if (neo_js_variable_get_type(res)->kind == NEO_JS_TYPE_INTERRUPT) {
       result = neo_js_context_create_variable(
-          vm->ctx, neo_js_variable_get_chunk(result), NULL);
+          vm->ctx, neo_js_variable_get_handle(result), NULL);
       neo_list_push(vm->stack, result);
       vm->scope = neo_js_context_set_scope(vm->ctx, current);
       return res;
     } else if (neo_js_variable_get_type(res)->kind == NEO_JS_TYPE_ERROR) {
       result = neo_js_scope_create_variable(
-          current, neo_js_variable_get_chunk(res), NULL);
+          current, neo_js_variable_get_handle(res), NULL);
     }
     neo_js_context_pop_scope(vm->ctx);
     vm->scope = neo_js_context_get_scope(vm->ctx);

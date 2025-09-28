@@ -2,12 +2,13 @@
 #include "core/allocator.h"
 #include "engine/basetype/number.h"
 #include "engine/basetype/object.h"
-#include "engine/chunk.h"
 #include "engine/context.h"
+#include "engine/handle.h"
 #include "engine/type.h"
 #include "engine/variable.h"
 #include <math.h>
 #include <string.h>
+
 
 static neo_js_variable_t neo_js_array_set_field(neo_js_context_t ctx,
                                                 neo_js_variable_t object,
@@ -22,7 +23,7 @@ static neo_js_variable_t neo_js_array_set_field(neo_js_context_t ctx,
     if (strcmp(neo_js_context_to_cstring(ctx, vlength), "length") == 0) {
       neo_js_object_property_t plength = neo_js_object_get_property(
           ctx, object, neo_js_context_create_string(ctx, "length"));
-      neo_js_value_t vlength = neo_js_chunk_get_value(plength->value);
+      neo_js_value_t vlength = neo_js_handle_get_value(plength->value);
       neo_js_number_t nlength = neo_js_value_to_number(vlength);
       neo_js_variable_t newlength = neo_js_context_to_number(ctx, value);
       NEO_JS_TRY_AND_THROW(newlength);
@@ -44,7 +45,7 @@ static neo_js_variable_t neo_js_array_set_field(neo_js_context_t ctx,
       if (!isnan(idx) && !isinf(idx) && idx >= 0 && idx <= NEO_MAX_INTEGER) {
         neo_js_object_property_t prop = neo_js_object_get_property(
             ctx, object, neo_js_context_create_string(ctx, "length"));
-        neo_js_value_t vlength = neo_js_chunk_get_value(prop->value);
+        neo_js_value_t vlength = neo_js_handle_get_value(prop->value);
         neo_js_number_t nlength = neo_js_value_to_number(vlength);
         nlength->number = idx + 1;
       }

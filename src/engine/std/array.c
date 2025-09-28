@@ -6,14 +6,15 @@
 #include "engine/basetype/interrupt.h"
 #include "engine/basetype/number.h"
 #include "engine/basetype/object.h"
-#include "engine/chunk.h"
 #include "engine/context.h"
+#include "engine/handle.h"
 #include "engine/type.h"
 #include "engine/variable.h"
 #include <math.h>
 #include <stdbool.h>
 #include <string.h>
 #include <wchar.h>
+
 
 neo_js_variable_t neo_js_array_from(neo_js_context_t ctx,
                                     neo_js_variable_t self, uint32_t argc,
@@ -241,7 +242,7 @@ neo_js_variable_t neo_js_array_is_array(neo_js_context_t ctx,
   neo_js_variable_t item = argv[0];
   if (neo_js_variable_get_type(item)->kind >= NEO_JS_TYPE_OBJECT) {
     neo_js_object_t obj = neo_js_variable_to_object(item);
-    if (obj->constructor && neo_js_chunk_get_value(obj->constructor) ==
+    if (obj->constructor && neo_js_handle_get_value(obj->constructor) ==
                                 neo_js_variable_get_value(array)) {
       return neo_js_context_create_boolean(ctx, true);
     }
@@ -275,15 +276,15 @@ neo_js_variable_t neo_js_array_constructor(neo_js_context_t ctx,
                                            neo_js_variable_t *argv) {
   neo_js_variable_t constructor = neo_js_object_get_constructor(ctx, self);
   neo_js_variable_t prototype = neo_js_object_get_prototype(ctx, self);
-  neo_js_chunk_t hconstructor = neo_js_variable_get_chunk(constructor);
-  neo_js_chunk_t hprototype = neo_js_variable_get_chunk(prototype);
+  neo_js_handle_t hconstructor = neo_js_variable_get_handle(constructor);
+  neo_js_handle_t hprototype = neo_js_variable_get_handle(prototype);
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_js_array_t arr = neo_create_js_array(allocator);
-  neo_js_chunk_t harr = neo_create_js_chunk(allocator, &arr->object.value);
+  neo_js_handle_t harr = neo_create_js_handle(allocator, &arr->object.value);
   arr->object.constructor = hconstructor;
   arr->object.prototype = hprototype;
-  neo_js_chunk_add_parent(hconstructor, harr);
-  neo_js_chunk_add_parent(hprototype, harr);
+  neo_js_handle_add_parent(hconstructor, harr);
+  neo_js_handle_add_parent(hprototype, harr);
   self = neo_js_context_create_variable(ctx, harr, NULL);
   neo_js_context_def_field(
       ctx, self, neo_js_context_create_string(ctx, "length"),

@@ -13,7 +13,8 @@ static void neo_js_interrupt_dispose(neo_allocator_t allocator,
 }
 
 neo_js_interrupt_t neo_create_js_interrupt(neo_allocator_t allocator,
-                                           neo_js_chunk_t result, size_t offset,
+                                           neo_js_handle_t result,
+                                           size_t offset,
                                            neo_js_interrupt_type_t type) {
   neo_js_interrupt_t interrupt = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_interrupt_t), neo_js_interrupt_dispose);

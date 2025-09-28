@@ -3,17 +3,17 @@
 #include "core/list.h"
 #include "core/map.h"
 #include "core/string.h"
-#include "engine/chunk.h"
 #include "engine/handle.h"
 #include "engine/type.h"
 #include "engine/variable.h"
 #include <string.h>
+
 struct _neo_js_scope_t {
   neo_js_scope_t parent;
   neo_list_t children;
   neo_list_t variables;
   neo_map_t named_variables;
-  neo_js_chunk_t root;
+  neo_js_handle_t root;
   neo_list_t defer_free;
   neo_allocator_t allocator;
 };
@@ -35,7 +35,7 @@ static void neo_js_scope_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, self->variables);
   neo_allocator_free(allocator, self->named_variables);
   neo_allocator_free(allocator, self->defer_free);
-  neo_js_chunk_gc(allocator, self->root);
+  neo_js_handle_gc(allocator, self->root);
   neo_allocator_free(allocator, self->root);
 }
 
@@ -58,7 +58,7 @@ neo_js_scope_t neo_create_js_scope(neo_allocator_t allocator,
   };
   scope->named_variables = neo_create_map(allocator, &map_initialize);
   scope->children = neo_create_list(allocator, NULL);
-  scope->root = neo_create_js_chunk(allocator, NULL);
+  scope->root = neo_create_js_handle(allocator, NULL);
   scope->defer_free = neo_create_list(allocator, &initialize);
   scope->allocator = allocator;
   return scope;
@@ -73,7 +73,7 @@ neo_js_scope_t neo_js_scope_set_parent(neo_js_scope_t self,
   self->parent = parent;
   return current;
 }
-neo_js_chunk_t neo_js_scope_get_root_chunk(neo_js_scope_t self) {
+neo_js_handle_t neo_js_scope_get_root_handle(neo_js_scope_t self) {
   return self->root;
 }
 neo_js_variable_t neo_js_scope_get_variable(neo_js_scope_t self,
@@ -87,25 +87,10 @@ void neo_js_scope_set_variable(neo_js_scope_t self, neo_js_variable_t variable,
 }
 
 neo_js_variable_t neo_js_scope_create_variable(neo_js_scope_t self,
-                                               neo_js_chunk_t handle,
+                                               neo_js_handle_t handle,
                                                const char *name) {
   neo_js_variable_t variable = neo_create_js_variable(self->allocator, handle);
-  neo_js_chunk_add_parent(handle, self->root);
-  neo_list_push(self->variables, variable);
-  if (name) {
-    neo_map_set(self->named_variables, neo_create_string(self->allocator, name),
-                variable, NULL);
-  }
-  return variable;
-}
-
-neo_js_variable_t neo_js_scope_create_ref_variable(neo_js_scope_t self,
-                                                   neo_js_handle_t handle,
-                                                   const char *name) {
-  neo_js_variable_t variable =
-      neo_create_js_ref_variable(self->allocator, handle);
-  neo_js_chunk_t chunk = neo_js_handle_get_chunk(handle);
-  neo_js_chunk_add_parent(chunk, self->root);
+  neo_js_handle_add_parent(handle, self->root);
   neo_list_push(self->variables, variable);
   if (name) {
     neo_map_set(self->named_variables, neo_create_string(self->allocator, name),

@@ -1490,7 +1490,7 @@ static NEO_JS_CFUNCTION(neo_js_string_iterator_next) {
   neo_js_variable_to_number(index)->number = idx;
   return neo_js_context_create_string16(ctx, buf);
 }
-
+static NEO_JS_CFUNCTION(neo_js_string_iterator_iterator) { return self; }
 NEO_JS_CFUNCTION(neo_js_string_iterator) {
   if (neo_js_variable_get_type(self)->kind == NEO_JS_TYPE_NULL ||
       neo_js_variable_get_type(self)->kind == NEO_JS_TYPE_UNDEFINED) {
@@ -1506,10 +1506,9 @@ NEO_JS_CFUNCTION(neo_js_string_iterator) {
   neo_js_context_set_internal(ctx, iterator, "[[string]]", self);
   neo_js_context_set_internal(ctx, iterator, "[[index]]",
                               neo_js_context_create_number(ctx, 0));
-  neo_js_context_set_field(
-      ctx, iterator, neo_js_context_create_string(ctx, "next"),
-      neo_js_context_create_cfunction(ctx, "next", neo_js_string_iterator_next),
-      NULL);
+  NEO_JS_SET_METHOD(ctx, iterator, "next", neo_js_string_iterator_next);
+  NEO_JS_SET_SYMBOL_METHOD(ctx, iterator, "iterator",
+                           neo_js_string_iterator_iterator);
   neo_js_context_set_field(
       ctx, iterator,
       neo_js_context_get_field(

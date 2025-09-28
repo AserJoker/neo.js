@@ -17,7 +17,7 @@ struct _neo_js_ref_t {
 
 neo_js_type_t neo_get_js_ref_type();
 
-neo_js_ref_t neo_create_js_ref(neo_allocator_t allocator, neo_js_variable_t origin);
+neo_js_ref_t neo_create_js_ref(neo_allocator_t allocator, neo_js_handle_t origin);
 
 neo_js_ref_t neo_js_value_to_ref(neo_js_value_t value);
 

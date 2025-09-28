@@ -1,24 +1,33 @@
-#ifndef _H_NEO_ENGINE_HANDLE_
-#define _H_NEO_ENGINE_HANDLE_
+#ifndef _H_NEO_ENGINE_handle_
+#define _H_NEO_ENGINE_handle_
 #include "core/allocator.h"
-#include "engine/chunk.h"
+#include "core/list.h"
+#include "engine/value.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
-
 typedef struct _neo_js_handle_t *neo_js_handle_t;
 
 neo_js_handle_t neo_create_js_handle(neo_allocator_t allocator,
-                                     neo_js_chunk_t chunk);
+                                     neo_js_value_t value);
 
-neo_js_chunk_t neo_js_handle_get_chunk(neo_js_handle_t self);
+neo_js_value_t neo_js_handle_get_value(neo_js_handle_t self);
 
-void neo_js_handle_set_chunk(neo_js_handle_t self, neo_js_chunk_t chunk);
+void neo_js_handle_set_value(neo_allocator_t allocator, neo_js_handle_t self,
+                             neo_js_value_t value);
 
-size_t *neo_js_handle_get_ref(neo_js_handle_t self);
+void neo_js_handle_add_parent(neo_js_handle_t self, neo_js_handle_t parent);
 
-size_t neo_js_handle_add_ref(neo_js_handle_t self);
-size_t neo_js_handle_release(neo_js_handle_t self);
+void neo_js_handle_remove_parent(neo_js_handle_t self, neo_js_handle_t parent);
+
+neo_list_t neo_js_handle_get_parents(neo_js_handle_t self);
+
+neo_list_t neo_js_handle_get_children(neo_js_handle_t self);
+
+bool neo_js_handle_check_alive(neo_allocator_t allocator,
+                               neo_js_handle_t handle);
+
+void neo_js_handle_gc(neo_allocator_t allocator, neo_js_handle_t root);
 
 #ifdef __cplusplus
 }

@@ -135,12 +135,9 @@ void neo_js_context_pop_stackframe(neo_js_context_t ctx);
 neo_js_std_t neo_js_context_get_std(neo_js_context_t ctx);
 
 neo_js_variable_t neo_js_context_create_variable(neo_js_context_t ctx,
-                                                 neo_js_chunk_t handle,
+                                                 neo_js_handle_t handle,
                                                  const char *name);
 
-neo_js_variable_t neo_js_context_create_ref_variable(neo_js_context_t ctx,
-                                                     neo_js_handle_t handle,
-                                                     const char *name);
 
 neo_js_variable_t neo_js_context_def_variable(neo_js_context_t ctx,
                                               neo_js_variable_t variable,
@@ -242,7 +239,7 @@ neo_js_variable_t neo_js_context_create_native_coroutine(
 void neo_js_context_recycle_coroutine(neo_js_context_t ctx,
                                       neo_js_variable_t coroutine);
 
-void neo_js_context_recycle(neo_js_context_t ctx, neo_js_chunk_t chunk);
+void neo_js_context_recycle(neo_js_context_t ctx, neo_js_handle_t handle);
 
 neo_js_variable_t neo_js_context_del_field(neo_js_context_t ctx,
                                            neo_js_variable_t object,
@@ -286,6 +283,9 @@ neo_js_variable_t neo_js_context_create_error(neo_js_context_t ctx,
                                               neo_js_variable_t value);
 
 neo_js_variable_t neo_js_context_create_undefined(neo_js_context_t ctx);
+
+neo_js_variable_t neo_js_context_create_ref(neo_js_context_t ctx,
+                                            neo_js_variable_t origin);
 
 neo_js_variable_t neo_js_context_create_uninitialize(neo_js_context_t ctx);
 

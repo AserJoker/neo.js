@@ -2,8 +2,8 @@
 #include "core/allocator.h"
 #include "core/hash.h"
 #include "core/hash_map.h"
-#include "engine/chunk.h"
 #include "engine/context.h"
+#include "engine/handle.h"
 #include "engine/std/array.h"
 #include "engine/type.h"
 #include "engine/variable.h"
@@ -11,9 +11,10 @@
 #include <string.h>
 #include <wchar.h>
 
-static uint32_t neo_js_set_hash(neo_js_chunk_t hkey, uint32_t max,
+
+static uint32_t neo_js_set_hash(neo_js_handle_t hkey, uint32_t max,
                                 neo_js_context_t ctx) {
-  neo_js_value_t value = neo_js_chunk_get_value(hkey);
+  neo_js_value_t value = neo_js_handle_get_value(hkey);
   switch (value->type->kind) {
   case NEO_JS_TYPE_NULL:
   case NEO_JS_TYPE_UNDEFINED:
@@ -29,12 +30,12 @@ static uint32_t neo_js_set_hash(neo_js_chunk_t hkey, uint32_t max,
   }
 }
 
-static int32_t neo_js_set_cmp(neo_js_chunk_t ha, neo_js_chunk_t hb,
+static int32_t neo_js_set_cmp(neo_js_handle_t ha, neo_js_handle_t hb,
                               neo_js_context_t ctx) {
-  if (neo_js_chunk_get_value(ha)->type->kind == NEO_JS_TYPE_NUMBER &&
-      neo_js_chunk_get_value(hb)->type->kind == NEO_JS_TYPE_NUMBER) {
-    neo_js_number_t na = (neo_js_number_t)neo_js_chunk_get_value(ha);
-    neo_js_number_t nb = (neo_js_number_t)neo_js_chunk_get_value(hb);
+  if (neo_js_handle_get_value(ha)->type->kind == NEO_JS_TYPE_NUMBER &&
+      neo_js_handle_get_value(hb)->type->kind == NEO_JS_TYPE_NUMBER) {
+    neo_js_number_t na = (neo_js_number_t)neo_js_handle_get_value(ha);
+    neo_js_number_t nb = (neo_js_number_t)neo_js_handle_get_value(hb);
     if (isnan(na->number) && isnan(nb->number)) {
       return 0;
     }
@@ -134,11 +135,11 @@ NEO_JS_CFUNCTION(neo_js_set_add) {
   } else {
     value = neo_js_context_create_undefined(ctx);
   }
-  neo_js_chunk_t chunk = neo_js_variable_get_chunk(value);
-  if (!neo_hash_map_has(data, chunk, ctx, ctx)) {
-    neo_js_chunk_t self_chunk = neo_js_variable_get_chunk(self);
-    neo_js_chunk_add_parent(chunk, self_chunk);
-    neo_hash_map_set(data, chunk, chunk, ctx, ctx);
+  neo_js_handle_t handle = neo_js_variable_get_handle(value);
+  if (!neo_hash_map_has(data, handle, ctx, ctx)) {
+    neo_js_handle_t self_handle = neo_js_variable_get_handle(self);
+    neo_js_handle_add_parent(handle, self_handle);
+    neo_hash_map_set(data, handle, handle, ctx, ctx);
   }
   return self;
 }
@@ -152,12 +153,12 @@ NEO_JS_CFUNCTION(neo_js_set_clear) {
         "Method Set.prototype.clear called on incompatible receiver %s",
         receiver);
   }
-  neo_js_chunk_t self_chunk = neo_js_variable_get_chunk(self);
+  neo_js_handle_t self_handle = neo_js_variable_get_handle(self);
   neo_hash_map_node_t it = neo_hash_map_get_first(data);
   while (it != neo_hash_map_get_tail(data)) {
-    neo_js_chunk_t chunk = neo_hash_map_node_get_value(it);
-    neo_js_chunk_remove_parent(chunk, self_chunk);
-    neo_js_context_recycle(ctx, chunk);
+    neo_js_handle_t handle = neo_hash_map_node_get_value(it);
+    neo_js_handle_remove_parent(handle, self_handle);
+    neo_js_context_recycle(ctx, handle);
     it = neo_hash_map_node_next(it);
   }
   neo_hash_map_clear(data);
@@ -173,19 +174,19 @@ NEO_JS_CFUNCTION(neo_js_set_delete) {
         "Method Set.prototype.delete called on incompatible receiver %s",
         receiver);
   }
-  neo_js_chunk_t self_chunk = neo_js_variable_get_chunk(self);
+  neo_js_handle_t self_handle = neo_js_variable_get_handle(self);
   neo_js_variable_t value = NULL;
   if (argc) {
     value = argv[0];
   } else {
     value = neo_js_context_create_undefined(ctx);
   }
-  neo_js_chunk_t chunk = neo_js_variable_get_chunk(value);
-  neo_hash_map_node_t it = neo_hash_map_find(data, chunk, ctx, ctx);
+  neo_js_handle_t handle = neo_js_variable_get_handle(value);
+  neo_hash_map_node_t it = neo_hash_map_find(data, handle, ctx, ctx);
   if (it) {
-    chunk = neo_hash_map_node_get_value(it);
-    neo_js_chunk_remove_parent(chunk, self_chunk);
-    neo_js_context_recycle(ctx, chunk);
+    handle = neo_hash_map_node_get_value(it);
+    neo_js_handle_remove_parent(handle, self_handle);
+    neo_js_context_recycle(ctx, handle);
     neo_hash_map_erase(data, it);
   }
   return self;
@@ -219,8 +220,8 @@ NEO_JS_CFUNCTION(neo_js_set_difference) {
   }
   for (neo_hash_map_node_t it = neo_hash_map_get_first(data);
        it != neo_hash_map_get_tail(data); it = neo_hash_map_node_next(it)) {
-    neo_js_chunk_t chunk = neo_hash_map_node_get_value(it);
-    neo_js_variable_t val = neo_js_context_create_variable(ctx, chunk, NULL);
+    neo_js_handle_t handle = neo_hash_map_node_get_value(it);
+    neo_js_variable_t val = neo_js_context_create_variable(ctx, handle, NULL);
     neo_js_variable_t res = neo_js_context_call(ctx, another, has, 1, &val);
     NEO_JS_TRY_AND_THROW(res);
     res = neo_js_context_to_boolean(ctx, res);
@@ -244,8 +245,8 @@ NEO_JS_CFUNCTION(neo_js_set_entries) {
   neo_js_variable_t result = neo_js_context_create_array(ctx);
   for (neo_hash_map_node_t it = neo_hash_map_get_first(data);
        it != neo_hash_map_get_tail(data); it = neo_hash_map_node_next(it)) {
-    neo_js_chunk_t chunk = neo_hash_map_node_get_value(it);
-    neo_js_variable_t val = neo_js_context_create_variable(ctx, chunk, NULL);
+    neo_js_handle_t handle = neo_hash_map_node_get_value(it);
+    neo_js_variable_t val = neo_js_context_create_variable(ctx, handle, NULL);
     neo_js_variable_t item = neo_js_context_create_array(ctx);
     NEO_JS_TRY_AND_THROW(neo_js_array_push(ctx, item, 1, &val));
     NEO_JS_TRY_AND_THROW(neo_js_array_push(ctx, item, 1, &val));
@@ -280,8 +281,8 @@ NEO_JS_CFUNCTION(neo_js_set_for_each) {
   }
   for (neo_hash_map_node_t it = neo_hash_map_get_first(data);
        it != neo_hash_map_get_tail(data); it = neo_hash_map_node_next(it)) {
-    neo_js_chunk_t chunk = neo_hash_map_node_get_value(it);
-    neo_js_variable_t val = neo_js_context_create_variable(ctx, chunk, NULL);
+    neo_js_handle_t handle = neo_hash_map_node_get_value(it);
+    neo_js_variable_t val = neo_js_context_create_variable(ctx, handle, NULL);
     neo_js_variable_t args[] = {val, val, self};
     NEO_JS_TRY_AND_THROW(neo_js_context_call(ctx, fn, this_arg, 3, args));
   }
@@ -297,15 +298,15 @@ NEO_JS_CFUNCTION(neo_js_set_has) {
         "Method Set.prototype.has called on incompatible receiver %s",
         receiver);
   }
-  neo_js_chunk_t self_chunk = neo_js_variable_get_chunk(self);
+  neo_js_handle_t self_handle = neo_js_variable_get_handle(self);
   neo_js_variable_t value = NULL;
   if (argc) {
     value = argv[0];
   } else {
     value = neo_js_context_create_undefined(ctx);
   }
-  neo_js_chunk_t chunk = neo_js_variable_get_chunk(value);
-  if (neo_hash_map_find(data, chunk, ctx, ctx)) {
+  neo_js_handle_t handle = neo_js_variable_get_handle(value);
+  if (neo_hash_map_find(data, handle, ctx, ctx)) {
     return neo_js_context_create_boolean(ctx, true);
   }
   return neo_js_context_create_boolean(ctx, false);
@@ -340,8 +341,8 @@ NEO_JS_CFUNCTION(neo_js_set_intersection) {
   }
   for (neo_hash_map_node_t it = neo_hash_map_get_first(data);
        it != neo_hash_map_get_tail(data); it = neo_hash_map_node_next(it)) {
-    neo_js_chunk_t chunk = neo_hash_map_node_get_value(it);
-    neo_js_variable_t val = neo_js_context_create_variable(ctx, chunk, NULL);
+    neo_js_handle_t handle = neo_hash_map_node_get_value(it);
+    neo_js_variable_t val = neo_js_context_create_variable(ctx, handle, NULL);
     neo_js_variable_t res = neo_js_context_call(ctx, another, has, 1, &val);
     NEO_JS_TRY_AND_THROW(res);
     res = neo_js_context_to_boolean(ctx, res);
@@ -381,8 +382,8 @@ NEO_JS_CFUNCTION(neo_js_set_is_disjoin_form) {
   }
   for (neo_hash_map_node_t it = neo_hash_map_get_first(data);
        it != neo_hash_map_get_tail(data); it = neo_hash_map_node_next(it)) {
-    neo_js_chunk_t chunk = neo_hash_map_node_get_value(it);
-    neo_js_variable_t val = neo_js_context_create_variable(ctx, chunk, NULL);
+    neo_js_handle_t handle = neo_hash_map_node_get_value(it);
+    neo_js_variable_t val = neo_js_context_create_variable(ctx, handle, NULL);
     neo_js_variable_t res = neo_js_context_call(ctx, another, has, 1, &val);
     NEO_JS_TRY_AND_THROW(res);
     res = neo_js_context_to_boolean(ctx, res);
@@ -419,8 +420,8 @@ NEO_JS_CFUNCTION(neo_js_set_is_subset_of) {
   }
   for (neo_hash_map_node_t it = neo_hash_map_get_first(data);
        it != neo_hash_map_get_tail(data); it = neo_hash_map_node_next(it)) {
-    neo_js_chunk_t chunk = neo_hash_map_node_get_value(it);
-    neo_js_variable_t val = neo_js_context_create_variable(ctx, chunk, NULL);
+    neo_js_handle_t handle = neo_hash_map_node_get_value(it);
+    neo_js_variable_t val = neo_js_context_create_variable(ctx, handle, NULL);
     neo_js_variable_t res = neo_js_context_call(ctx, another, has, 1, &val);
     NEO_JS_TRY_AND_THROW(res);
     res = neo_js_context_to_boolean(ctx, res);
@@ -544,8 +545,8 @@ NEO_JS_CFUNCTION(neo_js_set_symmetric_difference) {
   }
   for (neo_hash_map_node_t it = neo_hash_map_get_first(data);
        it != neo_hash_map_get_tail(data); it = neo_hash_map_node_next(it)) {
-    neo_js_chunk_t chunk = neo_hash_map_node_get_value(it);
-    neo_js_variable_t val = neo_js_context_create_variable(ctx, chunk, NULL);
+    neo_js_handle_t handle = neo_hash_map_node_get_value(it);
+    neo_js_variable_t val = neo_js_context_create_variable(ctx, handle, NULL);
     neo_js_variable_t check = neo_js_context_call(ctx, has, another, 1, &val);
     NEO_JS_TRY_AND_THROW(check);
     check = neo_js_context_to_boolean(ctx, check);
@@ -648,8 +649,8 @@ NEO_JS_CFUNCTION(neo_js_set_union) {
   }
   for (neo_hash_map_node_t it = neo_hash_map_get_first(data);
        it != neo_hash_map_get_tail(data); it = neo_hash_map_node_next(it)) {
-    neo_js_chunk_t chunk = neo_hash_map_node_get_value(it);
-    neo_js_variable_t val = neo_js_context_create_variable(ctx, chunk, NULL);
+    neo_js_handle_t handle = neo_hash_map_node_get_value(it);
+    neo_js_variable_t val = neo_js_context_create_variable(ctx, handle, NULL);
     neo_js_variable_t check = neo_js_context_call(ctx, has, another, 1, &val);
     NEO_JS_TRY_AND_THROW(check);
     check = neo_js_context_to_boolean(ctx, check);
@@ -673,8 +674,8 @@ NEO_JS_CFUNCTION(neo_js_set_values) {
   neo_js_variable_t result = neo_js_context_create_array(ctx);
   for (neo_hash_map_node_t it = neo_hash_map_get_first(data);
        it != neo_hash_map_get_tail(data); it = neo_hash_map_node_next(it)) {
-    neo_js_chunk_t chunk = neo_hash_map_node_get_value(it);
-    neo_js_variable_t val = neo_js_context_create_variable(ctx, chunk, NULL);
+    neo_js_handle_t handle = neo_hash_map_node_get_value(it);
+    neo_js_variable_t val = neo_js_context_create_variable(ctx, handle, NULL);
     neo_js_array_push(ctx, result, 1, &val);
   }
   return result;

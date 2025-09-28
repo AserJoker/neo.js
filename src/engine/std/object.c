@@ -4,8 +4,8 @@
 #include "engine/basetype/boolean.h"
 #include "engine/basetype/number.h"
 #include "engine/basetype/object.h"
-#include "engine/chunk.h"
 #include "engine/context.h"
+#include "engine/handle.h"
 #include "engine/std/array.h"
 #include "engine/type.h"
 #include "engine/variable.h"
@@ -14,6 +14,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <wchar.h>
+
 
 NEO_JS_CFUNCTION(neo_js_object_assign) {
   if (!argc) {
@@ -773,11 +774,11 @@ neo_js_variable_t neo_js_object_is_prototype_of(neo_js_context_t ctx,
   }
   neo_js_object_t obj = neo_js_variable_to_object(self);
   while (obj) {
-    if (neo_js_chunk_get_value(obj->prototype) ==
+    if (neo_js_handle_get_value(obj->prototype) ==
         neo_js_variable_get_value(argv[0])) {
       return neo_js_context_create_boolean(ctx, true);
     }
-    obj = neo_js_value_to_object(neo_js_chunk_get_value(obj->prototype));
+    obj = neo_js_value_to_object(neo_js_handle_get_value(obj->prototype));
   }
   return neo_js_context_create_boolean(ctx, false);
 }

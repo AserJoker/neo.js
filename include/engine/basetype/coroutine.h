@@ -1,7 +1,7 @@
 #ifndef _H_NEO_ENGINE_BASETYPE_COROUTINE_
 #define _H_NEO_ENGINE_BASETYPE_COROUTINE_
 #include "core/allocator.h"
-#include "engine/chunk.h"
+#include "engine/handle.h"
 #include "engine/type.h"
 #include "engine/value.h"
 #include "runtime/vm.h"
@@ -16,7 +16,7 @@ typedef struct _neo_js_scope_t *neo_js_scope_t;
 typedef struct _neo_js_co_context_t *neo_js_co_context_t;
 
 struct _neo_js_co_context_t {
-  neo_js_chunk_t result;
+  neo_js_handle_t result;
   neo_js_vm_t vm;
   neo_program_t program;
   bool running;

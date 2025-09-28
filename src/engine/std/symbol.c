@@ -3,12 +3,13 @@
 #include "core/hash_map.h"
 #include "engine/basetype/object.h"
 #include "engine/basetype/symbol.h"
-#include "engine/chunk.h"
 #include "engine/context.h"
+#include "engine/handle.h"
 #include "engine/type.h"
 #include "engine/variable.h"
 #include <string.h>
 #include <wchar.h>
+
 
 neo_js_variable_t neo_js_symbol_constructor(neo_js_context_t ctx,
                                             neo_js_variable_t self,
@@ -143,9 +144,9 @@ neo_js_variable_t neo_js_symbol_key_for(neo_js_context_t ctx,
   for (neo_hash_map_node_t it = neo_hash_map_get_first(object->properties);
        it != neo_hash_map_get_tail(object->properties);
        it = neo_hash_map_node_next(it)) {
-    neo_js_chunk_t key = neo_hash_map_node_get_key(it);
-    neo_js_chunk_t value = neo_hash_map_node_get_value(it);
-    if (neo_js_chunk_get_value(value) == neo_js_variable_get_value(sym)) {
+    neo_js_handle_t key = neo_hash_map_node_get_key(it);
+    neo_js_handle_t value = neo_hash_map_node_get_value(it);
+    if (neo_js_handle_get_value(value) == neo_js_variable_get_value(sym)) {
       return neo_js_context_create_variable(ctx, key, NULL);
     }
   }
