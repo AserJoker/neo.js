@@ -6,22 +6,39 @@ struct _neo_js_handle_t {
   neo_js_value_t value;
   neo_list_t parents;
   neo_list_t children;
+  neo_list_t weak_children;
+  neo_list_t weak_parents;
 };
 
 static void neo_js_handle_dispose(neo_allocator_t allocator,
-                                 neo_js_handle_t self) {
+                                  neo_js_handle_t self) {
+  for (neo_list_node_t it = neo_list_get_first(self->weak_parents);
+       it != neo_list_get_tail(self->weak_parents);
+       it = neo_list_node_next(it)) {
+    neo_js_handle_t parent = neo_list_node_get(it);
+    neo_js_handle_remove_weak_parent(self, parent);
+  }
+  while (neo_list_get_size(self->weak_children)) {
+    neo_js_handle_t child =
+        neo_list_node_get(neo_list_get_first(self->weak_children));
+    neo_js_handle_remove_weak_parent(child, self);
+  }
   neo_allocator_free(allocator, self->value);
   neo_allocator_free(allocator, self->parents);
   neo_allocator_free(allocator, self->children);
+  neo_allocator_free(allocator, self->weak_children);
+  neo_allocator_free(allocator, self->weak_parents);
 }
 
 neo_js_handle_t neo_create_js_handle(neo_allocator_t allocator,
-                                   neo_js_value_t value) {
+                                     neo_js_value_t value) {
   neo_js_handle_t handle = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_handle_t), neo_js_handle_dispose);
   handle->value = value;
   handle->children = neo_create_list(allocator, NULL);
   handle->parents = neo_create_list(allocator, NULL);
+  handle->weak_parents = neo_create_list(allocator, NULL);
+  handle->weak_children = neo_create_list(allocator, NULL);
   return handle;
 }
 
@@ -29,7 +46,7 @@ neo_js_value_t neo_js_handle_get_value(neo_js_handle_t self) {
   return self->value;
 }
 void neo_js_handle_set_value(neo_allocator_t allocator, neo_js_handle_t self,
-                            neo_js_value_t value) {
+                             neo_js_value_t value) {
   if (value != self->value) {
     neo_allocator_free(allocator, self->value);
     self->value = value;
@@ -41,9 +58,21 @@ void neo_js_handle_add_parent(neo_js_handle_t self, neo_js_handle_t parent) {
   neo_list_push(parent->children, self);
 }
 
+void neo_js_handle_add_weak_parent(neo_js_handle_t self,
+                                   neo_js_handle_t parent) {
+  neo_list_push(self->weak_parents, parent);
+  neo_list_push(parent->weak_children, self);
+}
+
 void neo_js_handle_remove_parent(neo_js_handle_t self, neo_js_handle_t parent) {
   neo_list_delete(self->parents, parent);
   neo_list_delete(parent->children, self);
+}
+
+void neo_js_handle_remove_weak_parent(neo_js_handle_t self,
+                                      neo_js_handle_t parent) {
+  neo_list_delete(self->weak_parents, parent);
+  neo_list_delete(parent->weak_children, self);
 }
 
 neo_list_t neo_js_handle_get_parents(neo_js_handle_t self) {
@@ -54,8 +83,16 @@ neo_list_t neo_js_handle_get_children(neo_js_handle_t self) {
   return self->children;
 }
 
+neo_list_t neo_js_handle_get_week_children(neo_js_handle_t self) {
+  return self->weak_children;
+}
+
+neo_list_t neo_js_handle_get_week_parent(neo_js_handle_t self) {
+  return self->weak_parents;
+}
+
 bool neo_js_handle_check_alive(neo_allocator_t allocator,
-                              neo_js_handle_t handle) {
+                               neo_js_handle_t handle) {
   neo_hash_map_t cache = neo_create_hash_map(allocator, NULL);
   neo_list_t workflow = neo_create_list(allocator, NULL);
   neo_js_handle_t root = NULL;

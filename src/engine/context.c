@@ -80,6 +80,9 @@
 #include "engine/std/syntax_error.h"
 #include "engine/std/type_error.h"
 #include "engine/std/uri_error.h"
+#include "engine/std/weak_map.h"
+#include "engine/std/weak_ref.h"
+#include "engine/std/weak_set.h"
 #include "engine/type.h"
 #include "engine/value.h"
 #include "engine/variable.h"
@@ -341,6 +344,15 @@ void neo_js_context_init_std(neo_js_context_t ctx) {
   ctx->std.set_constructor =
       neo_js_context_create_cfunction(ctx, "Set", &neo_js_set_constructor);
 
+  ctx->std.weak_map_constructor = neo_js_context_create_cfunction(
+      ctx, "WeakMap", neo_js_weak_map_constructor);
+
+  ctx->std.weak_ref_constructor = neo_js_context_create_cfunction(
+      ctx, "WeakRef", neo_js_weak_ref_constructor);
+
+  ctx->std.weak_set_constructor = neo_js_context_create_cfunction(
+      ctx, "WeakSet", neo_js_weak_set_constructor);
+
   ctx->std.global = neo_js_context_create_object(ctx, NULL);
 
   neo_js_context_push_scope(ctx);
@@ -384,6 +396,10 @@ void neo_js_context_init_std(neo_js_context_t ctx) {
   neo_js_context_init_std_set(ctx);
 
   neo_js_context_init_std_string(ctx);
+
+  neo_js_context_init_std_weak_map(ctx);
+
+  neo_js_context_init_std_weak_ref(ctx);
 
   neo_js_context_extends(ctx, ctx->std.generator_function_constructor,
                          ctx->std.function_constructor);
@@ -471,6 +487,26 @@ void neo_js_context_init_std(neo_js_context_t ctx) {
   neo_js_context_def_field(ctx, ctx->std.global,
                            neo_js_context_create_string(ctx, "Number"),
                            ctx->std.number_constructor, true, true, true);
+
+  neo_js_context_def_field(ctx, ctx->std.global,
+                           neo_js_context_create_string(ctx, "String"),
+                           ctx->std.string_constructor, true, true, true);
+
+  neo_js_context_def_field(ctx, ctx->std.global,
+                           neo_js_context_create_string(ctx, "Set"),
+                           ctx->std.set_constructor, true, true, true);
+
+  neo_js_context_def_field(ctx, ctx->std.global,
+                           neo_js_context_create_string(ctx, "WeakMap"),
+                           ctx->std.weak_map_constructor, true, true, true);
+
+  neo_js_context_def_field(ctx, ctx->std.global,
+                           neo_js_context_create_string(ctx, "WeakRef"),
+                           ctx->std.weak_ref_constructor, true, true, true);
+
+  neo_js_context_def_field(ctx, ctx->std.global,
+                           neo_js_context_create_string(ctx, "WeakSet"),
+                           ctx->std.weak_set_constructor, true, true, true);
 
   neo_js_context_pop_scope(ctx);
   neo_js_context_init_lib(ctx);
