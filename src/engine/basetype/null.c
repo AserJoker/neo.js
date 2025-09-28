@@ -7,7 +7,6 @@
 #include "engine/type.h"
 #include "engine/value.h"
 #include "engine/variable.h"
-#include <wchar.h>
 
 static const char *neo_js_null_typeof(neo_js_context_t ctx,
                                       neo_js_variable_t variable) {
