@@ -1,9 +1,11 @@
 'use strict'
-let obj = null
-const fn = () => {
-    console.log(obj.data)
-}
-obj = {
-    data: 123
-}
-fn()
+const obj = {};
+const proxy = new Proxy(obj, {
+    get(target, key) {
+        if (key == "data") {
+            return 123;
+        }
+        return target[key];
+    }
+})
+console.log(proxy.data)

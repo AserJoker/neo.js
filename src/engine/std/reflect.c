@@ -147,6 +147,23 @@ NEO_JS_CFUNCTION(neo_js_reflect_own_keys) {
         ctx, NEO_JS_ERROR_TYPE, 0, "Reflect.ownKeys called with non-object");
   }
   neo_js_object_t object = neo_js_variable_to_object(obj);
+  if (neo_js_variable_get_type(obj)->kind >= NEO_JS_TYPE_OBJECT &&
+      neo_js_context_has_internal(ctx, obj, "[[target]]") &&
+      neo_js_context_has_internal(ctx, obj, "[[handler]]")) {
+    neo_js_variable_t target =
+        neo_js_context_get_internal(ctx, obj, "[[target]]");
+    neo_js_variable_t handler =
+        neo_js_context_get_internal(ctx, obj, "[[handler]]");
+    if (neo_js_context_has_field(
+            ctx, handler, neo_js_context_create_string(ctx, "ownKeys"))) {
+      neo_js_variable_t ownKeys = neo_js_context_get_field(
+          ctx, handler, neo_js_context_create_string(ctx, "ownKeys"), NULL);
+      NEO_JS_TRY_AND_THROW(ownKeys);
+      neo_js_variable_t args[] = {target};
+      return neo_js_context_call(ctx, ownKeys,
+                                 neo_js_context_create_undefined(ctx), 1, args);
+    }
+  }
   neo_js_variable_t result = neo_js_context_create_array(ctx);
   neo_hash_map_node_t it = neo_hash_map_get_first(object->properties);
   while (it != neo_hash_map_get_tail(object->properties)) {

@@ -372,6 +372,25 @@ neo_js_variable_t neo_js_object_get_constructor(neo_js_context_t ctx,
 
 neo_js_variable_t neo_js_object_get_prototype(neo_js_context_t ctx,
                                               neo_js_variable_t self) {
+  if (neo_js_variable_get_type(self)->kind >= NEO_JS_TYPE_OBJECT &&
+      neo_js_context_has_internal(ctx, self, "[[target]]") &&
+      neo_js_context_has_internal(ctx, self, "[[handler]]")) {
+    neo_js_variable_t target =
+        neo_js_context_get_internal(ctx, self, "[[target]]");
+    neo_js_variable_t handler =
+        neo_js_context_get_internal(ctx, self, "[[handler]]");
+    if (neo_js_context_has_field(
+            ctx, handler,
+            neo_js_context_create_string(ctx, "getPrototypeOf"))) {
+      neo_js_variable_t getPrototypeOf = neo_js_context_get_field(
+          ctx, handler, neo_js_context_create_string(ctx, "getPrototypeOf"),
+          NULL);
+      NEO_JS_TRY_AND_THROW(getPrototypeOf);
+      neo_js_variable_t args[] = {target};
+      return neo_js_context_call(ctx, getPrototypeOf,
+                                 neo_js_context_create_undefined(ctx), 1, args);
+    }
+  }
   neo_js_object_t obj = neo_js_variable_to_object(self);
   return neo_js_context_create_variable(ctx, obj->prototype, NULL);
 }

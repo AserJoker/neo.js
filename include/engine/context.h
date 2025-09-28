@@ -54,6 +54,7 @@ typedef struct _neo_js_std_t {
   neo_js_variable_t async_generator_function_constructor;
   neo_js_variable_t aggregate_error_constructor;
   neo_js_variable_t promise_constructor;
+  neo_js_variable_t proxy_constructor;
   neo_js_variable_t error_constructor;
   neo_js_variable_t syntax_error_constructor;
   neo_js_variable_t type_error_constructor;
