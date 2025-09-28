@@ -1,4 +1,21 @@
 cmake_minimum_required(VERSION 3.12)
+
+if(MSVC)
+    add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/execution_charset:utf-8>")
+    add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/source_charset:utf-8>")
+endif()
+
+if(WIN32)
+    set(VCPKG_TARGET_TRIPLET x64-windows)
+else()
+    set(VCPKG_TARGET_TRIPLET x64-linux)
+endif()
+
+add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+
+set(CMAKE_TOOLCHAIN_FILE $ENV{VCPKG_ROOT}\\scripts\\buildsystems\\vcpkg.cmake)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR})
+
 project(neo)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -13,17 +30,7 @@ set(DerivedGeneralCategory "${PROJECT_SOURCE_DIR}/ucd/DerivedGeneralCategory.txt
 
 add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 
-set(PCRE2_BUILD_PCRE2_16 ON)
-
-add_subdirectory(third_party/pcre2)
-
-add_subdirectory(third_party/googletest)
-
 include(GoogleTest)
-
-include_directories(build/third_party/pcre2/interface)
-
-include_directories(third_party/googletest/googletest/include)
 
 if(NOT EXISTS ${DerivedCoreProperties})
     file(DOWNLOAD "https://www.unicode.org/Public/UCD/latest/ucd/DerivedCoreProperties.txt" ${DerivedCoreProperties})
@@ -84,9 +91,15 @@ endif()
 
 add_library(${PROJECT_NAME} STATIC ${SOURCES})
 
-target_link_libraries(${PROJECT_NAME}c pcre2-posix pcre2-8 pcre2-16)
+find_package(pcre2 CONFIG REQUIRED)
 
-target_link_libraries(${PROJECT_NAME}.test pcre2-posix pcre2-8 pcre2-16 gtest gtest_main gmock gmock_main)
+find_package(GTest CONFIG REQUIRED)
+
+target_link_libraries(${PROJECT_NAME}c PRIVATE PCRE2::8BIT PCRE2::16BIT PCRE2::32BIT PCRE2::POSIX)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE PCRE2::8BIT PCRE2::16BIT PCRE2::32BIT PCRE2::POSIX)
+
+target_link_libraries(${PROJECT_NAME}.test PRIVATE PCRE2::8BIT PCRE2::16BIT PCRE2::32BIT PCRE2::POSIX GTest::gtest GTest::gtest_main GTest::gmock GTest::gmock_main)
 
 enable_testing()
 
