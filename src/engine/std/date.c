@@ -926,9 +926,9 @@ NEO_JS_CFUNCTION(neo_js_date_to_iso_string) {
     return neo_js_context_create_string(ctx, "Invalid Date");
   }
   char result[32];
-  snprintf(result, 32, "%04lld-%02lld-%02lldT%02lld:%02lld:%02lld.%03lldZ", utc->year,
-           utc->month + 1, utc->day + 1, utc->hour, utc->minute, utc->second,
-           utc->millisecond);
+  snprintf(result, 32, "%04lld-%02lld-%02lldT%02lld:%02lld:%02lld.%03lldZ",
+           utc->year, utc->month + 1, utc->day + 1, utc->hour, utc->minute,
+           utc->second, utc->millisecond);
   return neo_js_context_create_string(ctx, result);
 }
 NEO_JS_CFUNCTION(neo_js_date_to_json) {
@@ -941,9 +941,9 @@ NEO_JS_CFUNCTION(neo_js_date_to_json) {
     return neo_js_context_create_string(ctx, "Invalid Date");
   }
   char result[32];
-  snprintf(result, 32, "%04lld-%02lld-%02lldT%02lld:%02lld:%02lld.%03lldZ", tm->year,
-           tm->month + 1, tm->day + 1, tm->hour, tm->minute, tm->second,
-           tm->millisecond);
+  snprintf(result, 32, "%04lld-%02lld-%02lldT%02lld:%02lld:%02lld.%03lldZ",
+           tm->year, tm->month + 1, tm->day + 1, tm->hour, tm->minute,
+           tm->second, tm->millisecond);
   return neo_js_context_create_string(ctx, result);
 }
 NEO_JS_CFUNCTION(neo_js_date_to_local_date_string);
@@ -1047,7 +1047,7 @@ NEO_JS_CFUNCTION(neo_js_date_to_primitive) {
   }
   neo_js_variable_t hint = neo_js_context_to_string(ctx, argv[0]);
   NEO_JS_TRY_AND_THROW(hint);
-  const char *hint_string = neo_js_context_to_cstring(ctx,hint);
+  const char *hint_string = neo_js_context_to_cstring(ctx, hint);
   if (strcmp(hint_string, "default") == 0 ||
       strcmp(hint_string, "string") == 0) {
     return neo_js_date_to_string(ctx, self, 0, NULL);
@@ -1084,9 +1084,8 @@ void neo_js_context_init_std_date(neo_js_context_t ctx) {
                            neo_js_context_create_string(ctx, "UTC"), utc, true,
                            false, true);
 
-  neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, neo_js_context_get_std(ctx).date_constructor,
-      neo_js_context_create_string(ctx, "prototype"), NULL);
+  neo_js_variable_t prototype = neo_js_context_get_string_field(
+      ctx, neo_js_context_get_std(ctx).date_constructor, "prototype");
 
   neo_js_variable_t get_date =
       neo_js_context_create_cfunction(ctx, "getDate", neo_js_date_get_date);
@@ -1296,8 +1295,7 @@ void neo_js_context_init_std_date(neo_js_context_t ctx) {
       ctx, "[Symbol.toPrimitive]", neo_js_date_to_primitive);
   neo_js_context_def_field(
       ctx, prototype,
-      neo_js_context_get_field(
-          ctx, neo_js_context_get_std(ctx).symbol_constructor,
-          neo_js_context_create_string(ctx, "toPrimitive"), NULL),
+      neo_js_context_get_string_field(
+          ctx, neo_js_context_get_std(ctx).symbol_constructor, "toPrimitive"),
       to_primitive, true, false, true);
 }

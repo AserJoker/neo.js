@@ -10,7 +10,6 @@
 #include <string.h>
 #include <wchar.h>
 
-
 neo_js_variable_t neo_js_symbol_constructor(neo_js_context_t ctx,
                                             neo_js_variable_t self,
                                             uint32_t argc,
@@ -244,9 +243,8 @@ void neo_js_context_init_std_symbol(neo_js_context_t ctx) {
                            neo_js_context_create_string(ctx, "keyFor"), key_for,
                            true, false, true);
 
-  neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, neo_js_context_get_std(ctx).symbol_constructor,
-      neo_js_context_create_string(ctx, "prototype"), NULL);
+  neo_js_variable_t prototype = neo_js_context_get_string_field(
+      ctx, neo_js_context_get_std(ctx).symbol_constructor, "prototype");
 
   neo_js_variable_t to_string = neo_js_context_create_cfunction(
       ctx, "toString", &neo_js_symbol_to_string);

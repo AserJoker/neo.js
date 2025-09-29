@@ -9,7 +9,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-
 static const char *neo_js_symbol_typeof(neo_js_context_t ctx,
                                         neo_js_variable_t variable) {
   return "symbol";
@@ -35,8 +34,8 @@ static neo_js_variable_t neo_js_symbol_to_number(neo_js_context_t ctx,
 static neo_js_variable_t neo_js_symbol_to_object(neo_js_context_t ctx,
                                                  neo_js_variable_t self) {
   neo_js_variable_t symbol = neo_js_context_get_std(ctx).symbol_constructor;
-  neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, symbol, neo_js_context_create_string(ctx, "prototype"), NULL);
+  neo_js_variable_t prototype =
+      neo_js_context_get_string_field(ctx, symbol, "prototype");
   neo_js_variable_t object = neo_js_context_create_object(ctx, prototype);
   neo_js_context_set_field(ctx, object,
                            neo_js_context_create_string(ctx, "constructor"),

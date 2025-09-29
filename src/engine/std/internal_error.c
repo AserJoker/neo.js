@@ -10,8 +10,8 @@ neo_js_variable_t neo_js_internal_error_constructor(neo_js_context_t ctx,
   if (neo_js_context_get_call_type(ctx) == NEO_JS_FUNCTION_CALL) {
     neo_js_variable_t constructor =
         neo_js_context_get_std(ctx).internal_error_constructor;
-    neo_js_variable_t prototype = neo_js_context_get_field(
-        ctx, constructor, neo_js_context_create_string(ctx, "prototype"), NULL);
+    neo_js_variable_t prototype =
+        neo_js_context_get_string_field(ctx, constructor, "prototype");
     self = neo_js_context_create_object(ctx, prototype);
     neo_js_context_set_field(ctx, self,
                              neo_js_context_create_string(ctx, "constructor"),

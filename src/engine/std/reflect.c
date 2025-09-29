@@ -156,8 +156,8 @@ NEO_JS_CFUNCTION(neo_js_reflect_own_keys) {
         neo_js_context_get_internal(ctx, obj, "[[handler]]");
     if (neo_js_context_has_field(
             ctx, handler, neo_js_context_create_string(ctx, "ownKeys"))) {
-      neo_js_variable_t ownKeys = neo_js_context_get_field(
-          ctx, handler, neo_js_context_create_string(ctx, "ownKeys"), NULL);
+      neo_js_variable_t ownKeys =
+          neo_js_context_get_string_field(ctx, handler, "ownKeys");
       NEO_JS_TRY_AND_THROW(ownKeys);
       neo_js_variable_t args[] = {target};
       return neo_js_context_call(ctx, ownKeys,
@@ -241,9 +241,8 @@ void neo_js_context_init_std_reflect(neo_js_context_t ctx) {
                            reflect, NULL);
   neo_js_context_set_field(
       ctx, reflect,
-      neo_js_context_get_field(
-          ctx, neo_js_context_get_std(ctx).symbol_constructor,
-          neo_js_context_create_string(ctx, "toStringTag"), NULL),
+      neo_js_context_get_string_field(
+          ctx, neo_js_context_get_std(ctx).symbol_constructor, "toStringTag"),
       neo_js_context_create_string(ctx, "Reflect"), NULL);
   neo_js_variable_t apply =
       neo_js_context_create_cfunction(ctx, "apply", neo_js_reflect_apply);

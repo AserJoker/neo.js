@@ -963,11 +963,11 @@ neo_js_variable_t neo_js_context_load_variable(neo_js_context_t ctx,
 neo_js_variable_t neo_js_context_extends(neo_js_context_t ctx,
                                          neo_js_variable_t variable,
                                          neo_js_variable_t parent) {
-  neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, variable, neo_js_context_create_string(ctx, "prototype"), NULL);
+  neo_js_variable_t prototype =
+      neo_js_context_get_string_field(ctx, variable, "prototype");
 
-  neo_js_variable_t parent_prototype = neo_js_context_get_field(
-      ctx, parent, neo_js_context_create_string(ctx, "prototype"), NULL);
+  neo_js_variable_t parent_prototype =
+      neo_js_context_get_string_field(ctx, parent, "prototype");
 
   return neo_js_object_set_prototype(ctx, prototype, parent_prototype);
 }
@@ -1013,8 +1013,8 @@ neo_js_variable_t neo_js_context_get_field(neo_js_context_t ctx,
         neo_js_context_get_internal(ctx, object, "[[handler]]");
     if (neo_js_context_has_field(ctx, handler,
                                  neo_js_context_create_string(ctx, "get"))) {
-      neo_js_variable_t get = neo_js_context_get_field(
-          ctx, handler, neo_js_context_create_string(ctx, "get"), NULL);
+      neo_js_variable_t get =
+          neo_js_context_get_string_field(ctx, handler, "get");
       NEO_JS_TRY_AND_THROW(get);
       if (!receiver) {
         receiver = neo_js_context_create_undefined(ctx);
@@ -1051,6 +1051,13 @@ neo_js_variable_t neo_js_context_get_field(neo_js_context_t ctx,
   return result;
 }
 
+neo_js_variable_t neo_js_context_get_string_field(neo_js_context_t ctx,
+                                                  neo_js_variable_t object,
+                                                  const char *name) {
+  neo_js_variable_t f = neo_js_context_create_string(ctx, name);
+  return neo_js_context_get_field(ctx, object, f, NULL);
+}
+
 neo_js_variable_t neo_js_context_set_field(neo_js_context_t ctx,
                                            neo_js_variable_t object,
                                            neo_js_variable_t field,
@@ -1065,8 +1072,8 @@ neo_js_variable_t neo_js_context_set_field(neo_js_context_t ctx,
         neo_js_context_get_internal(ctx, object, "[[handler]]");
     if (neo_js_context_has_field(ctx, handler,
                                  neo_js_context_create_string(ctx, "set"))) {
-      neo_js_variable_t set = neo_js_context_get_field(
-          ctx, handler, neo_js_context_create_string(ctx, "set"), NULL);
+      neo_js_variable_t set =
+          neo_js_context_get_string_field(ctx, handler, "set");
       NEO_JS_TRY_AND_THROW(set);
       if (!receiver) {
         receiver = neo_js_context_create_undefined(ctx);
@@ -1102,6 +1109,14 @@ neo_js_variable_t neo_js_context_set_field(neo_js_context_t ctx,
   result = neo_js_scope_create_variable(current, hresult, NULL);
   neo_js_context_pop_scope(ctx);
   return result;
+}
+
+neo_js_variable_t neo_js_context_set_string_field(neo_js_context_t ctx,
+                                                  neo_js_variable_t object,
+                                                  const char *field,
+                                                  neo_js_variable_t value) {
+  neo_js_variable_t f = neo_js_context_create_string(ctx, field);
+  return neo_js_context_set_field(ctx, object, f, value, NULL);
 }
 
 neo_js_variable_t neo_js_context_get_private(neo_js_context_t ctx,
@@ -1646,9 +1661,8 @@ neo_js_variable_t neo_js_context_del_field(neo_js_context_t ctx,
     if (neo_js_context_has_field(
             ctx, handler,
             neo_js_context_create_string(ctx, "deleteProperty"))) {
-      neo_js_variable_t deleteProperty = neo_js_context_get_field(
-          ctx, handler, neo_js_context_create_string(ctx, "deleteProperty"),
-          NULL);
+      neo_js_variable_t deleteProperty =
+          neo_js_context_get_string_field(ctx, handler, "deleteProperty");
       NEO_JS_TRY_AND_THROW(deleteProperty);
       neo_js_variable_t args[] = {target, field};
       return neo_js_context_call(ctx, deleteProperty,
@@ -1789,9 +1803,8 @@ static neo_js_variable_t neo_js_context_call_generator_function(
 
   neo_js_context_set_field(
       ctx, arguments,
-      neo_js_context_get_field(ctx, ctx->std.symbol_constructor,
-                               neo_js_context_create_string(ctx, "iterator"),
-                               NULL),
+      neo_js_context_get_string_field(ctx, ctx->std.symbol_constructor,
+                                      "iterator"),
       neo_js_context_create_cfunction(ctx, "values", neo_js_array_values),
       NULL);
 
@@ -1816,8 +1829,8 @@ bool neo_js_context_is_thenable(neo_js_context_t ctx,
   if (neo_js_variable_get_type(variable)->kind < NEO_JS_TYPE_OBJECT) {
     return false;
   }
-  neo_js_variable_t then = neo_js_context_get_field(
-      ctx, variable, neo_js_context_create_string(ctx, "then"), NULL);
+  neo_js_variable_t then =
+      neo_js_context_get_string_field(ctx, variable, "then");
   if (neo_js_variable_get_type(then)->kind < NEO_JS_TYPE_CALLABLE) {
     return false;
   }
@@ -1973,8 +1986,8 @@ static neo_js_variable_t neo_js_awaiter_task(neo_js_context_t ctx,
       co_ctx->vm->offset = interrupt->offset;
     }
     if (neo_js_context_is_thenable(ctx, value)) {
-      neo_js_variable_t then = neo_js_context_get_field(
-          ctx, value, neo_js_context_create_string(ctx, "then"), NULL);
+      neo_js_variable_t then =
+          neo_js_context_get_string_field(ctx, value, "then");
       if (interrupt->type == NEO_JS_INTERRUPT_BACKEND_AWAIT) {
         neo_js_variable_t args[] = {task, on_rejected};
         neo_js_context_call(ctx, then, value, 2, args);
@@ -2077,9 +2090,8 @@ static neo_js_variable_t neo_js_context_call_async_function(
 
   neo_js_context_set_field(
       ctx, arguments,
-      neo_js_context_get_field(ctx, ctx->std.symbol_constructor,
-                               neo_js_context_create_string(ctx, "iterator"),
-                               NULL),
+      neo_js_context_get_string_field(ctx, ctx->std.symbol_constructor,
+                                      "iterator"),
       neo_js_context_create_cfunction(ctx, "values", neo_js_array_values),
       NULL);
 
@@ -2130,9 +2142,8 @@ static neo_js_variable_t neo_js_context_call_async_generator_function(
 
   neo_js_context_set_field(
       ctx, arguments,
-      neo_js_context_get_field(ctx, ctx->std.symbol_constructor,
-                               neo_js_context_create_string(ctx, "iterator"),
-                               NULL),
+      neo_js_context_get_string_field(ctx, ctx->std.symbol_constructor,
+                                      "iterator"),
       neo_js_context_create_cfunction(ctx, "values", neo_js_array_values),
       NULL);
 
@@ -2195,9 +2206,8 @@ static neo_js_variable_t neo_js_context_call_function(neo_js_context_t ctx,
 
       neo_js_context_set_field(
           ctx, arguments,
-          neo_js_context_get_field(
-              ctx, ctx->std.symbol_constructor,
-              neo_js_context_create_string(ctx, "iterator"), NULL),
+          neo_js_context_get_string_field(ctx, ctx->std.symbol_constructor,
+                                          "iterator"),
           neo_js_context_create_cfunction(ctx, "values", neo_js_array_values),
           NULL);
       for (neo_hash_map_node_t it =
@@ -2273,8 +2283,8 @@ neo_js_variable_t neo_js_context_call(neo_js_context_t ctx,
         neo_js_context_get_internal(ctx, callee, "[[handler]]");
     if (neo_js_context_has_field(ctx, handler,
                                  neo_js_context_create_string(ctx, "apply"))) {
-      neo_js_variable_t apply = neo_js_context_get_field(
-          ctx, handler, neo_js_context_create_string(ctx, "apply"), NULL);
+      neo_js_variable_t apply =
+          neo_js_context_get_string_field(ctx, handler, "apply");
       NEO_JS_TRY_AND_THROW(apply);
       neo_js_variable_t argumentsList = neo_js_context_create_array(ctx);
       for (uint32_t idx = 0; idx < argc; idx++) {
@@ -2334,8 +2344,8 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
         neo_js_context_get_internal(ctx, constructor, "[[handler]]");
     if (neo_js_context_has_field(
             ctx, handler, neo_js_context_create_string(ctx, "construct"))) {
-      neo_js_variable_t construct = neo_js_context_get_field(
-          ctx, handler, neo_js_context_create_string(ctx, "construct"), NULL);
+      neo_js_variable_t construct =
+          neo_js_context_get_string_field(ctx, handler, "construct");
       NEO_JS_TRY_AND_THROW(construct);
       neo_js_variable_t argumentsList = neo_js_context_create_array(ctx);
       for (uint32_t idx = 0; idx < argc; idx++) {
@@ -2367,8 +2377,8 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t ctx,
   ctx->call_type = NEO_JS_CONSTRUCT_CALL;
   neo_js_scope_t current = neo_js_context_get_scope(ctx);
   neo_js_context_push_scope(ctx);
-  neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, constructor, neo_js_context_create_string(ctx, "prototype"), NULL);
+  neo_js_variable_t prototype =
+      neo_js_context_get_string_field(ctx, constructor, "prototype");
   neo_js_variable_t object = neo_js_context_create_object(ctx, prototype);
   neo_js_handle_t hobject = neo_js_variable_get_handle(object);
   neo_js_object_t obj = neo_js_variable_to_object(object);
@@ -2552,9 +2562,8 @@ neo_js_variable_t neo_js_context_create_object(neo_js_context_t ctx,
   neo_js_handle_t hobject = neo_create_js_handle(allocator, &object->value);
   if (!prototype) {
     if (ctx->std.object_constructor) {
-      prototype = neo_js_context_get_field(
-          ctx, ctx->std.object_constructor,
-          neo_js_context_create_string(ctx, "prototype"), NULL);
+      prototype = neo_js_context_get_string_field(
+          ctx, ctx->std.object_constructor, "prototype");
     } else {
       prototype = neo_js_context_create_null(ctx);
     }
@@ -2612,9 +2621,8 @@ neo_js_context_create_cfunction(neo_js_context_t ctx, const char *name,
       neo_create_js_handle(allocator, &func->callable.object.value);
   neo_js_handle_t hproto = NULL;
   if (ctx->std.function_constructor) {
-    hproto = neo_js_variable_get_handle(neo_js_context_get_field(
-        ctx, ctx->std.function_constructor,
-        neo_js_context_create_string(ctx, "prototype"), NULL));
+    hproto = neo_js_variable_get_handle(neo_js_context_get_string_field(
+        ctx, ctx->std.function_constructor, "prototype"));
   } else {
     hproto = neo_js_variable_get_handle(neo_js_context_create_null(ctx));
   }
@@ -2645,9 +2653,8 @@ neo_js_context_create_async_cfunction(neo_js_context_t ctx, const char *name,
   neo_js_handle_t hfunction =
       neo_create_js_handle(allocator, &func->callable.object.value);
   neo_js_handle_t hproto = NULL;
-  hproto = neo_js_variable_get_handle(neo_js_context_get_field(
-      ctx, ctx->std.function_constructor,
-      neo_js_context_create_string(ctx, "prototype"), NULL));
+  hproto = neo_js_variable_get_handle(neo_js_context_get_string_field(
+      ctx, ctx->std.function_constructor, "prototype"));
   func->callable.object.prototype = hproto;
   neo_js_handle_add_parent(hproto, hfunction);
   if (name) {
@@ -2674,9 +2681,8 @@ neo_js_variable_t neo_js_context_create_function(neo_js_context_t ctx,
       neo_create_js_handle(allocator, &func->callable.object.value);
   neo_js_handle_t hproto = NULL;
   if (ctx->std.function_constructor) {
-    hproto = neo_js_variable_get_handle(neo_js_context_get_field(
-        ctx, ctx->std.function_constructor,
-        neo_js_context_create_string(ctx, "prototype"), NULL));
+    hproto = neo_js_variable_get_handle(neo_js_context_get_string_field(
+        ctx, ctx->std.function_constructor, "prototype"));
   } else {
     hproto = neo_js_variable_get_handle(neo_js_context_create_null(ctx));
   }
@@ -2705,9 +2711,8 @@ neo_js_context_create_generator_function(neo_js_context_t ctx,
       neo_create_js_handle(allocator, &func->callable.object.value);
   neo_js_handle_t hproto = NULL;
   if (ctx->std.generator_function_constructor) {
-    hproto = neo_js_variable_get_handle(neo_js_context_get_field(
-        ctx, ctx->std.generator_function_constructor,
-        neo_js_context_create_string(ctx, "prototype"), NULL));
+    hproto = neo_js_variable_get_handle(neo_js_context_get_string_field(
+        ctx, ctx->std.generator_function_constructor, "prototype"));
   } else {
     hproto = neo_js_variable_get_handle(neo_js_context_create_null(ctx));
   }
@@ -2737,9 +2742,8 @@ neo_js_context_create_async_generator_function(neo_js_context_t ctx,
       neo_create_js_handle(allocator, &func->callable.object.value);
   neo_js_handle_t hproto = NULL;
   if (ctx->std.async_generator_function_constructor) {
-    hproto = neo_js_variable_get_handle(neo_js_context_get_field(
-        ctx, ctx->std.async_generator_function_constructor,
-        neo_js_context_create_string(ctx, "prototype"), NULL));
+    hproto = neo_js_variable_get_handle(neo_js_context_get_string_field(
+        ctx, ctx->std.async_generator_function_constructor, "prototype"));
   } else {
     hproto = neo_js_variable_get_handle(neo_js_context_create_null(ctx));
   }
@@ -2767,9 +2771,8 @@ neo_js_variable_t neo_js_context_create_async_function(neo_js_context_t ctx,
       neo_create_js_handle(allocator, &func->callable.object.value);
   neo_js_handle_t hproto = NULL;
   if (ctx->std.async_function_constructor) {
-    hproto = neo_js_variable_get_handle(neo_js_context_get_field(
-        ctx, ctx->std.async_function_constructor,
-        neo_js_context_create_string(ctx, "prototype"), NULL));
+    hproto = neo_js_variable_get_handle(neo_js_context_get_string_field(
+        ctx, ctx->std.async_function_constructor, "prototype"));
   } else {
     hproto = neo_js_variable_get_handle(neo_js_context_create_null(ctx));
   }
@@ -3598,15 +3601,15 @@ neo_js_variable_t neo_js_context_instance_of(neo_js_context_t ctx,
   if (type->kind != NEO_JS_TYPE_OBJECT) {
     return neo_js_context_create_boolean(ctx, false);
   }
-  neo_js_variable_t hasInstance = neo_js_context_get_field(
-      ctx, constructor, neo_js_context_create_string(ctx, "hasInstance"), NULL);
+  neo_js_variable_t hasInstance =
+      neo_js_context_get_string_field(ctx, constructor, "hasInstance");
   if (hasInstance &&
       neo_js_variable_get_type(hasInstance)->kind == NEO_JS_TYPE_CFUNCTION) {
     return neo_js_context_call(ctx, hasInstance, constructor, 1, &variable);
   }
   neo_js_object_t object = neo_js_variable_to_object(variable);
-  neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, constructor, neo_js_context_create_string(ctx, "prototype"), NULL);
+  neo_js_variable_t prototype =
+      neo_js_context_get_string_field(ctx, constructor, "prototype");
   while (object) {
     if (object == neo_js_variable_to_object(prototype)) {
       return neo_js_context_create_boolean(ctx, true);
@@ -3628,8 +3631,8 @@ neo_js_variable_t neo_js_context_in(neo_js_context_t ctx,
         neo_js_context_get_internal(ctx, variable, "[[handler]]");
     if (neo_js_context_has_field(ctx, handler,
                                  neo_js_context_create_string(ctx, "has"))) {
-      neo_js_variable_t has = neo_js_context_get_field(
-          ctx, handler, neo_js_context_create_string(ctx, "has"), NULL);
+      neo_js_variable_t has =
+          neo_js_context_get_string_field(ctx, handler, "has");
       NEO_JS_TRY_AND_THROW(has);
       neo_js_variable_t args[] = {target, field};
       return neo_js_context_call(ctx, has, neo_js_context_create_undefined(ctx),
@@ -4051,8 +4054,8 @@ static neo_js_variable_t neo_js_context_eval_resolver(neo_js_context_t ctx,
     neo_js_callable_set_closure(ctx, on_rejected, "#task", task);
     neo_js_callable_set_closure(ctx, on_rejected, "#coroutine", coroutine);
 
-    neo_js_variable_t then = neo_js_context_get_field(
-        ctx, value, neo_js_context_create_string(ctx, "then"), NULL);
+    neo_js_variable_t then =
+        neo_js_context_get_string_field(ctx, value, "then");
 
     neo_js_variable_t args[] = {on_fulfilled, on_rejected};
 
@@ -4088,8 +4091,8 @@ neo_js_context_eval_backend_resolver(neo_js_context_t ctx,
     neo_js_callable_set_closure(ctx, on_rejected, "#task", task);
     neo_js_callable_set_closure(ctx, on_rejected, "#coroutine", coroutine);
 
-    neo_js_variable_t then = neo_js_context_get_field(
-        ctx, value, neo_js_context_create_string(ctx, "then"), NULL);
+    neo_js_variable_t then =
+        neo_js_context_get_string_field(ctx, value, "then");
 
     neo_js_variable_t args[] = {task, on_rejected};
 

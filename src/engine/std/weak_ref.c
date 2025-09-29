@@ -31,8 +31,7 @@ NEO_JS_CFUNCTION(neo_js_weak_ref_deref) {
   return neo_js_context_create_undefined(ctx);
 }
 void neo_js_context_init_std_weak_ref(neo_js_context_t ctx) {
-  neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, neo_js_context_get_std(ctx).weak_ref_constructor,
-      neo_js_context_create_string(ctx, "prototype"), NULL);
+  neo_js_variable_t prototype = neo_js_context_get_string_field(
+      ctx, neo_js_context_get_std(ctx).weak_ref_constructor, "prototype");
   NEO_JS_SET_METHOD(ctx, prototype, "deref", neo_js_weak_ref_deref);
 }

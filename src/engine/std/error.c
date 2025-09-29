@@ -29,8 +29,8 @@ neo_js_variable_t neo_js_error_constructor(neo_js_context_t ctx,
   if (neo_js_context_get_call_type(ctx) == NEO_JS_FUNCTION_CALL) {
     neo_js_variable_t constructor =
         neo_js_context_get_std(ctx).error_constructor;
-    neo_js_variable_t prototype = neo_js_context_get_field(
-        ctx, constructor, neo_js_context_create_string(ctx, "prototype"), NULL);
+    neo_js_variable_t prototype =
+        neo_js_context_get_string_field(ctx, constructor, "prototype");
     self = neo_js_context_create_object(ctx, prototype);
     neo_js_context_set_field(ctx, self,
                              neo_js_context_create_string(ctx, "constructor"),
@@ -49,8 +49,7 @@ neo_js_variable_t neo_js_error_constructor(neo_js_context_t ctx,
   neo_js_variable_t cause = NULL;
   if (options &&
       neo_js_variable_get_type(options)->kind >= NEO_JS_TYPE_OBJECT) {
-    cause = neo_js_context_get_field(
-        ctx, options, neo_js_context_create_string(ctx, "cause"), NULL);
+    cause = neo_js_context_get_string_field(ctx, options, "cause");
   }
   neo_js_context_set_field(
       ctx, self, neo_js_context_create_string(ctx, "message"), message, NULL);
@@ -93,8 +92,8 @@ neo_js_variable_t neo_js_error_to_string(neo_js_context_t ctx,
     result = neo_string_concat(allocator, result, &max, "Error");
   }
   result = neo_string_concat(allocator, result, &max, ": ");
-  neo_js_variable_t message = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, "message"), NULL);
+  neo_js_variable_t message =
+      neo_js_context_get_string_field(ctx, self, "message");
   const char *smessage = neo_js_context_to_cstring(ctx, message);
   result = neo_string_concat(allocator, result, &max, smessage);
   result = neo_string_concat(allocator, result, &max, "\n");
@@ -111,8 +110,7 @@ neo_js_variable_t neo_js_error_to_string(neo_js_context_t ctx,
     }
     result = neo_string_concat(allocator, result, &max, tmp);
   }
-  neo_js_variable_t cause = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, "cause"), NULL);
+  neo_js_variable_t cause = neo_js_context_get_string_field(ctx, self, "cause");
   if (neo_js_variable_get_type(cause)->kind == NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t scause = neo_js_context_to_string(ctx, cause);
     result = neo_string_concat(allocator, result, &max, "caused by:\n");
@@ -124,9 +122,8 @@ neo_js_variable_t neo_js_error_to_string(neo_js_context_t ctx,
   return res;
 }
 void neo_js_context_init_std_error(neo_js_context_t ctx) {
-  neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, neo_js_context_get_std(ctx).error_constructor,
-      neo_js_context_create_string(ctx, "prototype"), NULL);
+  neo_js_variable_t prototype = neo_js_context_get_string_field(
+      ctx, neo_js_context_get_std(ctx).error_constructor, "prototype");
 
   neo_js_context_def_field(
       ctx, prototype, neo_js_context_create_string(ctx, "toString"),

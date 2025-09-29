@@ -17,7 +17,6 @@
 #include <stdbool.h>
 #include <string.h>
 
-
 typedef struct _neo_js_map_data_t *neo_js_map_data;
 struct _neo_js_map_data_t {
   neo_hash_map_t data;
@@ -84,9 +83,8 @@ NEO_JS_CFUNCTION(neo_js_map_group_by) {
   neo_js_variable_t callback = argv[1];
   neo_js_variable_t map = neo_js_context_construct(
       ctx, neo_js_context_get_std(ctx).map_constructor, 0, NULL);
-  neo_js_variable_t iterator = neo_js_context_get_field(
-      ctx, neo_js_context_get_std(ctx).symbol_constructor,
-      neo_js_context_create_string(ctx, "iterator"), NULL);
+  neo_js_variable_t iterator = neo_js_context_get_string_field(
+      ctx, neo_js_context_get_std(ctx).symbol_constructor, "iterator");
   iterator = neo_js_context_get_field(ctx, inventory, iterator, NULL);
   NEO_JS_TRY_AND_THROW(iterator);
   if (neo_js_variable_get_type(iterator)->kind < NEO_JS_TYPE_CALLABLE) {
@@ -104,8 +102,8 @@ NEO_JS_CFUNCTION(neo_js_map_group_by) {
                                               strlen(receiver) + 32,
                                               "%s is not iterable", receiver);
   }
-  neo_js_variable_t next = neo_js_context_get_field(
-      ctx, generator, neo_js_context_create_string(ctx, "next"), NULL);
+  neo_js_variable_t next =
+      neo_js_context_get_string_field(ctx, generator, "next");
   NEO_JS_TRY_AND_THROW(next);
   if (neo_js_variable_get_type(next)->kind < NEO_JS_TYPE_CALLABLE) {
     const char *receiver = neo_js_context_to_error_name(ctx, iterator);
@@ -121,11 +119,9 @@ NEO_JS_CFUNCTION(neo_js_map_group_by) {
                                               strlen(receiver) + 32,
                                               "%s is not iterable", receiver);
   }
-  neo_js_variable_t value = neo_js_context_get_field(
-      ctx, res, neo_js_context_create_string(ctx, "value"), NULL);
+  neo_js_variable_t value = neo_js_context_get_string_field(ctx, res, "value");
   NEO_JS_TRY_AND_THROW(value);
-  neo_js_variable_t done = neo_js_context_get_field(
-      ctx, res, neo_js_context_create_string(ctx, "done"), NULL);
+  neo_js_variable_t done = neo_js_context_get_string_field(ctx, res, "done");
   NEO_JS_TRY_AND_THROW(done);
   done = neo_js_context_to_boolean(ctx, done);
   NEO_JS_TRY_AND_THROW(done);
@@ -141,8 +137,8 @@ NEO_JS_CFUNCTION(neo_js_map_group_by) {
       neo_js_variable_t argv[] = {key, item};
       neo_js_map_set(ctx, map, 2, argv);
     }
-    neo_js_variable_t len = neo_js_context_get_field(
-        ctx, item, neo_js_context_create_string(ctx, "length"), NULL);
+    neo_js_variable_t len =
+        neo_js_context_get_string_field(ctx, item, "length");
     neo_js_context_set_field(ctx, item, len, value, NULL);
 
     res = neo_js_context_call(ctx, next, generator, 0, NULL);
@@ -153,11 +149,9 @@ NEO_JS_CFUNCTION(neo_js_map_group_by) {
                                                 strlen(receiver) + 32,
                                                 "%s is not iterable", receiver);
     }
-    value = neo_js_context_get_field(
-        ctx, res, neo_js_context_create_string(ctx, "value"), NULL);
+    value = neo_js_context_get_string_field(ctx, res, "value");
     NEO_JS_TRY_AND_THROW(value);
-    done = neo_js_context_get_field(
-        ctx, res, neo_js_context_create_string(ctx, "done"), NULL);
+    done = neo_js_context_get_string_field(ctx, res, "done");
     NEO_JS_TRY_AND_THROW(done);
     done = neo_js_context_to_boolean(ctx, done);
     NEO_JS_TRY_AND_THROW(done);
@@ -325,13 +319,11 @@ void neo_js_context_init_std_map(neo_js_context_t ctx) {
       ctx, "[Symbol.species]", neo_js_map_species);
   neo_js_context_def_accessor(
       ctx, neo_js_context_get_std(ctx).map_constructor,
-      neo_js_context_get_field(
-          ctx, neo_js_context_get_std(ctx).symbol_constructor,
-          neo_js_context_create_string(ctx, "species"), NULL),
+      neo_js_context_get_string_field(
+          ctx, neo_js_context_get_std(ctx).symbol_constructor, "species"),
       species, NULL, true, false);
-  neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, neo_js_context_get_std(ctx).map_constructor,
-      neo_js_context_create_string(ctx, "prototype"), NULL);
+  neo_js_variable_t prototype = neo_js_context_get_string_field(
+      ctx, neo_js_context_get_std(ctx).map_constructor, "prototype");
   neo_js_variable_t clear =
       neo_js_context_create_cfunction(ctx, "clear", neo_js_map_clear);
   neo_js_context_def_field(ctx, prototype,
@@ -379,8 +371,7 @@ void neo_js_context_init_std_map(neo_js_context_t ctx) {
                            true, false, true);
   neo_js_context_def_field(
       ctx, prototype,
-      neo_js_context_get_field(
-          ctx, neo_js_context_get_std(ctx).symbol_constructor,
-          neo_js_context_create_string(ctx, "iterator"), NULL),
+      neo_js_context_get_string_field(
+          ctx, neo_js_context_get_std(ctx).symbol_constructor, "iterator"),
       entries, true, false, true);
 }

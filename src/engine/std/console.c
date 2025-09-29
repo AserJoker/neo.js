@@ -22,8 +22,8 @@ neo_js_variable_t neo_js_console_log(neo_js_context_t ctx,
       neo_js_symbol_t sym = neo_js_variable_to_symbol(arg);
       printf("Symbol(%s)", sym->description);
     } else if (neo_js_variable_get_type(arg)->kind == NEO_JS_TYPE_OBJECT) {
-      neo_js_variable_t to_string = neo_js_context_get_field(
-          ctx, arg, neo_js_context_create_string(ctx, "toString"), NULL);
+      neo_js_variable_t to_string =
+          neo_js_context_get_string_field(ctx, arg, "toString");
       NEO_JS_TRY_AND_THROW(to_string);
 
       neo_js_variable_t res = NULL;
@@ -49,9 +49,8 @@ neo_js_variable_t neo_js_console_log(neo_js_context_t ctx,
 void neo_js_context_init_std_console(neo_js_context_t ctx) {
   neo_js_variable_t console_constructor = neo_js_context_create_cfunction(
       ctx, "Console", neo_js_console_constructor);
-  neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, console_constructor, neo_js_context_create_string(ctx, "prototype"),
-      NULL);
+  neo_js_variable_t prototype =
+      neo_js_context_get_string_field(ctx, console_constructor, "prototype");
   neo_js_context_def_field(
       ctx, prototype, neo_js_context_create_string(ctx, "log"),
       neo_js_context_create_cfunction(ctx, "log", neo_js_console_log), true,

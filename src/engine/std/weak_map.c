@@ -151,9 +151,8 @@ NEO_JS_CFUNCTION(neo_js_weak_map_delete) {
 }
 
 void neo_js_context_init_std_weak_map(neo_js_context_t ctx) {
-  neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, neo_js_context_get_std(ctx).weak_map_constructor,
-      neo_js_context_create_string(ctx, "prototype"), NULL);
+  neo_js_variable_t prototype = neo_js_context_get_string_field(
+      ctx, neo_js_context_get_std(ctx).weak_map_constructor, "prototype");
   NEO_JS_SET_METHOD(ctx, prototype, "get", neo_js_weak_map_get);
   NEO_JS_SET_METHOD(ctx, prototype, "set", neo_js_weak_map_set);
   NEO_JS_SET_METHOD(ctx, prototype, "has", neo_js_weak_map_has);

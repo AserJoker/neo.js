@@ -55,8 +55,8 @@ int main(int argc, char *argv[]) {
             neo_js_context_create_cfunction(ctx, NULL, js_on_fulfilled);
         neo_js_variable_t on_rejected =
             neo_js_context_create_cfunction(ctx, NULL, js_on_rejected);
-        neo_js_variable_t then = neo_js_context_get_field(
-            ctx, result, neo_js_context_create_string(ctx, "then"), NULL);
+        neo_js_variable_t then =
+            neo_js_context_get_string_field(ctx, result, "then");
         neo_js_variable_t args[] = {on_fullfilled, on_rejected};
         neo_js_context_call(ctx, then, result, 2, args);
       } else {

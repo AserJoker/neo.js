@@ -129,9 +129,8 @@ NEO_JS_CFUNCTION(neo_js_weak_set_delete) {
 }
 
 void neo_js_context_init_std_weak_set(neo_js_context_t ctx) {
-  neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, neo_js_context_get_std(ctx).weak_set_constructor,
-      neo_js_context_create_string(ctx, "prototype"), NULL);
+  neo_js_variable_t prototype = neo_js_context_get_string_field(
+      ctx, neo_js_context_get_std(ctx).weak_set_constructor, "prototype");
   NEO_JS_SET_METHOD(ctx, prototype, "add", neo_js_weak_set_add);
   NEO_JS_SET_METHOD(ctx, prototype, "has", neo_js_weak_set_has);
   NEO_JS_SET_METHOD(ctx, prototype, "delete", neo_js_weak_set_delete);

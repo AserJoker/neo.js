@@ -11,7 +11,6 @@
 #include <string.h>
 #include <wchar.h>
 
-
 static uint32_t neo_js_set_hash(neo_js_handle_t hkey, uint32_t max,
                                 neo_js_context_t ctx) {
   neo_js_value_t value = neo_js_handle_get_value(hkey);
@@ -69,9 +68,8 @@ NEO_JS_CFUNCTION(neo_js_set_constructor) {
         neo_js_variable_get_type(arg)->kind == NEO_JS_TYPE_UNDEFINED) {
       return self;
     }
-    neo_js_variable_t iterator = neo_js_context_get_field(
-        ctx, neo_js_context_get_std(ctx).symbol_constructor,
-        neo_js_context_create_string(ctx, "iterator"), NULL);
+    neo_js_variable_t iterator = neo_js_context_get_string_field(
+        ctx, neo_js_context_get_std(ctx).symbol_constructor, "iterator");
     iterator = neo_js_context_get_field(ctx, arg, iterator, NULL);
     NEO_JS_TRY_AND_THROW(iterator);
     if (neo_js_variable_get_type(iterator)->kind < NEO_JS_TYPE_CALLABLE) {
@@ -86,8 +84,8 @@ NEO_JS_CFUNCTION(neo_js_set_constructor) {
       return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                                 "%s is not iterable", receiver);
     }
-    neo_js_variable_t next = neo_js_context_get_field(
-        ctx, iterator, neo_js_context_create_string(ctx, "next"), NULL);
+    neo_js_variable_t next =
+        neo_js_context_get_string_field(ctx, iterator, "next");
     NEO_JS_TRY_AND_THROW(next);
     if (neo_js_variable_get_type(next)->kind < NEO_JS_TYPE_CALLABLE) {
       const char *receiver = neo_js_context_to_error_name(ctx, arg);
@@ -102,16 +100,16 @@ NEO_JS_CFUNCTION(neo_js_set_constructor) {
         return neo_js_context_create_simple_error(
             ctx, NEO_JS_ERROR_TYPE, 0, "%s is not iterable", receiver);
       }
-      neo_js_variable_t done = neo_js_context_get_field(
-          ctx, res, neo_js_context_create_string(ctx, "done"), NULL);
+      neo_js_variable_t done =
+          neo_js_context_get_string_field(ctx, res, "done");
       NEO_JS_TRY_AND_THROW(done);
       done = neo_js_context_to_boolean(ctx, done);
       NEO_JS_TRY_AND_THROW(done);
       if (neo_js_variable_to_boolean(done)->boolean) {
         break;
       }
-      neo_js_variable_t value = neo_js_context_get_field(
-          ctx, res, neo_js_context_create_string(ctx, "value"), NULL);
+      neo_js_variable_t value =
+          neo_js_context_get_string_field(ctx, res, "value");
       NEO_JS_TRY_AND_THROW(value);
       neo_js_set_add(ctx, self, 1, &value);
     }
@@ -209,8 +207,7 @@ NEO_JS_CFUNCTION(neo_js_set_difference) {
   }
   neo_js_variable_t result = neo_js_context_construct(
       ctx, neo_js_context_get_std(ctx).set_constructor, 0, NULL);
-  neo_js_variable_t has = neo_js_context_get_field(
-      ctx, another, neo_js_context_create_string(ctx, "has"), NULL);
+  neo_js_variable_t has = neo_js_context_get_string_field(ctx, another, "has");
   NEO_JS_TRY_AND_THROW(has);
   if (neo_js_variable_get_type(has)->kind < NEO_JS_TYPE_CALLABLE) {
     const char *receiver = neo_js_context_to_error_name(ctx, another);
@@ -330,8 +327,7 @@ NEO_JS_CFUNCTION(neo_js_set_intersection) {
   }
   neo_js_variable_t result = neo_js_context_construct(
       ctx, neo_js_context_get_std(ctx).set_constructor, 0, NULL);
-  neo_js_variable_t has = neo_js_context_get_field(
-      ctx, another, neo_js_context_create_string(ctx, "has"), NULL);
+  neo_js_variable_t has = neo_js_context_get_string_field(ctx, another, "has");
   NEO_JS_TRY_AND_THROW(has);
   if (neo_js_variable_get_type(has)->kind < NEO_JS_TYPE_CALLABLE) {
     const char *receiver = neo_js_context_to_error_name(ctx, another);
@@ -371,8 +367,7 @@ NEO_JS_CFUNCTION(neo_js_set_is_disjoin_form) {
   } else {
     another = neo_js_context_create_undefined(ctx);
   }
-  neo_js_variable_t has = neo_js_context_get_field(
-      ctx, another, neo_js_context_create_string(ctx, "has"), NULL);
+  neo_js_variable_t has = neo_js_context_get_string_field(ctx, another, "has");
   NEO_JS_TRY_AND_THROW(has);
   if (neo_js_variable_get_type(has)->kind < NEO_JS_TYPE_CALLABLE) {
     const char *receiver = neo_js_context_to_error_name(ctx, another);
@@ -410,8 +405,7 @@ NEO_JS_CFUNCTION(neo_js_set_is_subset_of) {
   } else {
     another = neo_js_context_create_undefined(ctx);
   }
-  neo_js_variable_t has = neo_js_context_get_field(
-      ctx, another, neo_js_context_create_string(ctx, "has"), NULL);
+  neo_js_variable_t has = neo_js_context_get_string_field(ctx, another, "has");
   NEO_JS_TRY_AND_THROW(has);
   if (neo_js_variable_get_type(has)->kind < NEO_JS_TYPE_CALLABLE) {
     const char *receiver = neo_js_context_to_error_name(ctx, another);
@@ -449,8 +443,8 @@ NEO_JS_CFUNCTION(neo_js_set_is_superset_of) {
   } else {
     another = neo_js_context_create_undefined(ctx);
   }
-  neo_js_variable_t keys = neo_js_context_get_field(
-      ctx, another, neo_js_context_create_string(ctx, "keys"), NULL);
+  neo_js_variable_t keys =
+      neo_js_context_get_string_field(ctx, another, "keys");
   NEO_JS_TRY_AND_THROW(keys);
   if (neo_js_variable_get_type(keys)->kind < NEO_JS_TYPE_CALLABLE) {
     const char *receiver = neo_js_context_to_error_name(ctx, another);
@@ -459,9 +453,8 @@ NEO_JS_CFUNCTION(neo_js_set_is_superset_of) {
   }
   keys = neo_js_context_call(ctx, keys, another, 0, NULL);
   NEO_JS_TRY_AND_THROW(keys);
-  neo_js_variable_t iterator = neo_js_context_get_field(
-      ctx, neo_js_context_get_std(ctx).symbol_constructor,
-      neo_js_context_create_string(ctx, "iterator"), NULL);
+  neo_js_variable_t iterator = neo_js_context_get_string_field(
+      ctx, neo_js_context_get_std(ctx).symbol_constructor, "iterator");
   iterator = neo_js_context_get_field(ctx, keys, iterator, NULL);
   NEO_JS_TRY_AND_THROW(iterator);
   if (neo_js_variable_get_type(iterator)->kind < NEO_JS_TYPE_CALLABLE) {
@@ -476,8 +469,8 @@ NEO_JS_CFUNCTION(neo_js_set_is_superset_of) {
     return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               "%s is not iterable", receiver);
   }
-  neo_js_variable_t next = neo_js_context_get_field(
-      ctx, iterator, neo_js_context_create_string(ctx, "next"), NULL);
+  neo_js_variable_t next =
+      neo_js_context_get_string_field(ctx, iterator, "next");
   NEO_JS_TRY_AND_THROW(next);
   if (neo_js_variable_get_type(next)->kind < NEO_JS_TYPE_CALLABLE) {
     const char *receiver = neo_js_context_to_error_name(ctx, keys);
@@ -492,16 +485,15 @@ NEO_JS_CFUNCTION(neo_js_set_is_superset_of) {
       return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                                 "%s is not iterable", receiver);
     }
-    neo_js_variable_t done = neo_js_context_get_field(
-        ctx, res, neo_js_context_create_string(ctx, "done"), NULL);
+    neo_js_variable_t done = neo_js_context_get_string_field(ctx, res, "done");
     NEO_JS_TRY_AND_THROW(done);
     done = neo_js_context_to_boolean(ctx, done);
     NEO_JS_TRY_AND_THROW(done);
     if (neo_js_variable_to_boolean(done)->boolean) {
       break;
     }
-    neo_js_variable_t value = neo_js_context_get_field(
-        ctx, res, neo_js_context_create_string(ctx, "value"), NULL);
+    neo_js_variable_t value =
+        neo_js_context_get_string_field(ctx, res, "value");
     NEO_JS_TRY_AND_THROW(value);
     neo_js_variable_t check = neo_js_set_has(ctx, self, 1, &value);
     NEO_JS_TRY_AND_THROW(check);
@@ -535,8 +527,7 @@ NEO_JS_CFUNCTION(neo_js_set_symmetric_difference) {
   } else {
     another = neo_js_context_create_undefined(ctx);
   }
-  neo_js_variable_t has = neo_js_context_get_field(
-      ctx, another, neo_js_context_create_string(ctx, "has"), NULL);
+  neo_js_variable_t has = neo_js_context_get_string_field(ctx, another, "has");
   NEO_JS_TRY_AND_THROW(has);
   if (neo_js_variable_get_type(has)->kind < NEO_JS_TYPE_CALLABLE) {
     const char *receiver = neo_js_context_to_error_name(ctx, another);
@@ -556,8 +547,8 @@ NEO_JS_CFUNCTION(neo_js_set_symmetric_difference) {
     }
   }
 
-  neo_js_variable_t keys = neo_js_context_get_field(
-      ctx, another, neo_js_context_create_string(ctx, "keys"), NULL);
+  neo_js_variable_t keys =
+      neo_js_context_get_string_field(ctx, another, "keys");
   NEO_JS_TRY_AND_THROW(keys);
   if (neo_js_variable_get_type(keys)->kind < NEO_JS_TYPE_CALLABLE) {
     const char *receiver = neo_js_context_to_error_name(ctx, another);
@@ -566,9 +557,8 @@ NEO_JS_CFUNCTION(neo_js_set_symmetric_difference) {
   }
   keys = neo_js_context_call(ctx, keys, another, 0, NULL);
   NEO_JS_TRY_AND_THROW(keys);
-  neo_js_variable_t iterator = neo_js_context_get_field(
-      ctx, neo_js_context_get_std(ctx).symbol_constructor,
-      neo_js_context_create_string(ctx, "iterator"), NULL);
+  neo_js_variable_t iterator = neo_js_context_get_string_field(
+      ctx, neo_js_context_get_std(ctx).symbol_constructor, "iterator");
   iterator = neo_js_context_get_field(ctx, keys, iterator, NULL);
   NEO_JS_TRY_AND_THROW(iterator);
   if (neo_js_variable_get_type(iterator)->kind < NEO_JS_TYPE_CALLABLE) {
@@ -583,8 +573,8 @@ NEO_JS_CFUNCTION(neo_js_set_symmetric_difference) {
     return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                               "%s is not iterable", receiver);
   }
-  neo_js_variable_t next = neo_js_context_get_field(
-      ctx, iterator, neo_js_context_create_string(ctx, "next"), NULL);
+  neo_js_variable_t next =
+      neo_js_context_get_string_field(ctx, iterator, "next");
   NEO_JS_TRY_AND_THROW(next);
   if (neo_js_variable_get_type(next)->kind < NEO_JS_TYPE_CALLABLE) {
     const char *receiver = neo_js_context_to_error_name(ctx, keys);
@@ -599,16 +589,15 @@ NEO_JS_CFUNCTION(neo_js_set_symmetric_difference) {
       return neo_js_context_create_simple_error(ctx, NEO_JS_ERROR_TYPE, 0,
                                                 "%s is not iterable", receiver);
     }
-    neo_js_variable_t done = neo_js_context_get_field(
-        ctx, res, neo_js_context_create_string(ctx, "done"), NULL);
+    neo_js_variable_t done = neo_js_context_get_string_field(ctx, res, "done");
     NEO_JS_TRY_AND_THROW(done);
     done = neo_js_context_to_boolean(ctx, done);
     NEO_JS_TRY_AND_THROW(done);
     if (neo_js_variable_to_boolean(done)->boolean) {
       break;
     }
-    neo_js_variable_t value = neo_js_context_get_field(
-        ctx, res, neo_js_context_create_string(ctx, "value"), NULL);
+    neo_js_variable_t value =
+        neo_js_context_get_string_field(ctx, res, "value");
     NEO_JS_TRY_AND_THROW(value);
     neo_js_variable_t check = neo_js_set_has(ctx, self, 1, &value);
     NEO_JS_TRY_AND_THROW(check);
@@ -639,8 +628,7 @@ NEO_JS_CFUNCTION(neo_js_set_union) {
   } else {
     another = neo_js_context_create_undefined(ctx);
   }
-  neo_js_variable_t has = neo_js_context_get_field(
-      ctx, another, neo_js_context_create_string(ctx, "has"), NULL);
+  neo_js_variable_t has = neo_js_context_get_string_field(ctx, another, "has");
   NEO_JS_TRY_AND_THROW(has);
   if (neo_js_variable_get_type(has)->kind < NEO_JS_TYPE_CALLABLE) {
     const char *receiver = neo_js_context_to_error_name(ctx, another);
@@ -691,8 +679,8 @@ void neo_js_context_init_std_set(neo_js_context_t ctx) {
   neo_js_context_set_field(
       ctx, global, neo_js_context_create_string(ctx, "Set"), constructor, NULL);
 
-  neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, constructor, neo_js_context_create_string(ctx, "prototype"), NULL);
+  neo_js_variable_t prototype =
+      neo_js_context_get_string_field(ctx, constructor, "prototype");
   NEO_JS_SET_SYMBOL_METHOD(ctx, constructor, "species", neo_js_set_species);
   NEO_JS_SET_METHOD(ctx, prototype, "add", neo_js_set_add);
   NEO_JS_SET_METHOD(ctx, prototype, "clear", neo_js_set_clear);

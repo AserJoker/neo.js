@@ -11,8 +11,6 @@
 #include "engine/variable.h"
 #include "runtime/vm.h"
 #include <stdbool.h>
-#include <string.h>
-
 
 neo_js_variable_t neo_js_async_generator_iterator(neo_js_context_t ctx,
                                                   neo_js_variable_t self,
@@ -119,8 +117,8 @@ static neo_js_variable_t neo_js_async_generator_task(neo_js_context_t ctx,
     co_ctx->vm->offset = interrupt->offset;
     if (interrupt->type == NEO_JS_INTERRUPT_AWAIT) {
       if (neo_js_context_is_thenable(ctx, value)) {
-        neo_js_variable_t then = neo_js_context_get_field(
-            ctx, value, neo_js_context_create_string(ctx, "then"), NULL);
+        neo_js_variable_t then =
+            neo_js_context_get_string_field(ctx, value, "then");
         neo_js_variable_t args[] = {on_await_fulfilled, on_await_rejected};
         neo_js_context_call(ctx, then, value, 2, args);
       } else {
@@ -130,8 +128,8 @@ static neo_js_variable_t neo_js_async_generator_task(neo_js_context_t ctx,
       }
     } else if (interrupt->type == NEO_JS_INTERRUPT_BACKEND_AWAIT) {
       if (neo_js_context_is_thenable(ctx, value)) {
-        neo_js_variable_t then = neo_js_context_get_field(
-            ctx, value, neo_js_context_create_string(ctx, "then"), NULL);
+        neo_js_variable_t then =
+            neo_js_context_get_string_field(ctx, value, "then");
         neo_js_variable_t args[] = {task, on_await_rejected};
         neo_js_context_call(ctx, then, value, 2, args);
       } else {
@@ -141,8 +139,8 @@ static neo_js_variable_t neo_js_async_generator_task(neo_js_context_t ctx,
       }
     } else {
       if (neo_js_context_is_thenable(ctx, value)) {
-        neo_js_variable_t then = neo_js_context_get_field(
-            ctx, value, neo_js_context_create_string(ctx, "then"), NULL);
+        neo_js_variable_t then =
+            neo_js_context_get_string_field(ctx, value, "then");
         neo_js_variable_t args[] = {on_yield_fulfilled, reject};
         neo_js_context_call(ctx, then, value, 2, args);
       } else {
@@ -236,8 +234,8 @@ neo_js_variable_t neo_js_async_generator_next(neo_js_context_t ctx,
     neo_js_context_set_field(
         ctx, result, neo_js_context_create_string(ctx, "value"),
         neo_js_context_create_variable(ctx, co->result, NULL), NULL);
-    neo_js_variable_t resolve = neo_js_context_get_field(
-        ctx, promise, neo_js_context_create_string(ctx, "resolve"), NULL);
+    neo_js_variable_t resolve =
+        neo_js_context_get_string_field(ctx, promise, "resolve");
     return neo_js_context_call(ctx, resolve, promise, 1, &result);
   }
   neo_js_scope_t current = neo_js_context_set_scope(ctx, co->vm->scope);
@@ -272,8 +270,8 @@ neo_js_variable_t neo_js_async_generator_return(neo_js_context_t ctx,
     neo_js_context_set_field(
         ctx, result, neo_js_context_create_string(ctx, "value"),
         neo_js_context_create_variable(ctx, co->result, NULL), NULL);
-    neo_js_variable_t resolve = neo_js_context_get_field(
-        ctx, promise, neo_js_context_create_string(ctx, "resolve"), NULL);
+    neo_js_variable_t resolve =
+        neo_js_context_get_string_field(ctx, promise, "resolve");
     return neo_js_context_call(ctx, resolve, promise, 1, &result);
   }
   neo_js_scope_t current = neo_js_context_set_scope(ctx, co->vm->scope);
@@ -309,8 +307,8 @@ neo_js_variable_t neo_js_async_generator_throw(neo_js_context_t ctx,
     neo_js_context_set_field(
         ctx, result, neo_js_context_create_string(ctx, "value"),
         neo_js_context_create_variable(ctx, co->result, NULL), NULL);
-    neo_js_variable_t resolve = neo_js_context_get_field(
-        ctx, promise, neo_js_context_create_string(ctx, "resolve"), NULL);
+    neo_js_variable_t resolve =
+        neo_js_context_get_string_field(ctx, promise, "resolve");
     return neo_js_context_call(ctx, resolve, promise, 1, &result);
   }
   neo_js_scope_t current = neo_js_context_set_scope(ctx, co->vm->scope);
@@ -332,21 +330,19 @@ neo_js_variable_t neo_js_async_generator_throw(neo_js_context_t ctx,
 }
 
 void neo_js_context_init_std_async_generator(neo_js_context_t ctx) {
-  neo_js_variable_t prototype = neo_js_context_get_field(
+  neo_js_variable_t prototype = neo_js_context_get_string_field(
       ctx, neo_js_context_get_std(ctx).async_generator_constructor,
-      neo_js_context_create_string(ctx, "prototype"), NULL);
+      "prototype");
 
-  neo_js_variable_t to_string_tag = neo_js_context_get_field(
-      ctx, neo_js_context_get_std(ctx).symbol_constructor,
-      neo_js_context_create_string(ctx, "toStringTag"), NULL);
+  neo_js_variable_t to_string_tag = neo_js_context_get_string_field(
+      ctx, neo_js_context_get_std(ctx).symbol_constructor, "toStringTag");
 
   neo_js_context_def_field(ctx, prototype, to_string_tag,
                            neo_js_context_create_string(ctx, "AsyncGenerator"),
                            true, false, true);
 
-  neo_js_variable_t async_iterator = neo_js_context_get_field(
-      ctx, neo_js_context_get_std(ctx).symbol_constructor,
-      neo_js_context_create_string(ctx, "asyncIterator"), NULL);
+  neo_js_variable_t async_iterator = neo_js_context_get_string_field(
+      ctx, neo_js_context_get_std(ctx).symbol_constructor, "asyncIterator");
 
   neo_js_context_def_field(
       ctx, prototype, async_iterator,

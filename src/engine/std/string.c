@@ -32,8 +32,8 @@ NEO_JS_CFUNCTION(neo_js_string_raw) {
         ctx, NEO_JS_ERROR_TYPE, 0,
         "Cannot convert undefined or null to object");
   }
-  neo_js_variable_t vlength = neo_js_context_get_field(
-      ctx, qusis, neo_js_context_create_string(ctx, "length"), NULL);
+  neo_js_variable_t vlength =
+      neo_js_context_get_string_field(ctx, qusis, "length");
   NEO_JS_TRY_AND_THROW(vlength);
   vlength = neo_js_context_to_integer(ctx, vlength);
   NEO_JS_TRY_AND_THROW(vlength);
@@ -474,16 +474,15 @@ NEO_JS_CFUNCTION(neo_js_string_last_index_of) {
 }
 NEO_JS_CFUNCTION(neo_js_string_local_compare) {
   neo_js_variable_t global = neo_js_context_get_global(ctx);
-  neo_js_variable_t intl = neo_js_context_get_field(
-      ctx, global, neo_js_context_create_string(ctx, "Intl"), NULL);
+  neo_js_variable_t intl = neo_js_context_get_string_field(ctx, global, "Intl");
   NEO_JS_TRY_AND_THROW(intl);
-  neo_js_variable_t collator = neo_js_context_get_field(
-      ctx, intl, neo_js_context_create_string(ctx, "Collator"), NULL);
+  neo_js_variable_t collator =
+      neo_js_context_get_string_field(ctx, intl, "Collator");
   NEO_JS_TRY_AND_THROW(collator);
   neo_js_variable_t ins = neo_js_context_construct(ctx, collator, 1, &self);
   NEO_JS_TRY_AND_THROW(ins);
-  neo_js_variable_t compare = neo_js_context_get_field(
-      ctx, ins, neo_js_context_create_string(ctx, "compare"), NULL);
+  neo_js_variable_t compare =
+      neo_js_context_get_string_field(ctx, ins, "compare");
   NEO_JS_TRY_AND_THROW(compare);
   return neo_js_context_call(ctx, compare, ins, argc, argv);
 }
@@ -500,8 +499,7 @@ NEO_JS_CFUNCTION(neo_js_string_match) {
   }
   neo_js_variable_t match = NULL;
   neo_js_variable_t symbol = neo_js_context_get_std(ctx).symbol_constructor;
-  symbol = neo_js_context_get_field(
-      ctx, symbol, neo_js_context_create_string(ctx, "match"), NULL);
+  symbol = neo_js_context_get_string_field(ctx, symbol, "match");
   NEO_JS_TRY_AND_THROW(symbol);
   if (!argc) {
     match = neo_js_context_create_string(ctx, "/(?:)/");
@@ -530,8 +528,7 @@ NEO_JS_CFUNCTION(neo_js_string_match_all) {
   }
   neo_js_variable_t match = NULL;
   neo_js_variable_t symbol = neo_js_context_get_std(ctx).symbol_constructor;
-  symbol = neo_js_context_get_field(
-      ctx, symbol, neo_js_context_create_string(ctx, "matchAll"), NULL);
+  symbol = neo_js_context_get_string_field(ctx, symbol, "matchAll");
   NEO_JS_TRY_AND_THROW(symbol);
   if (!argc) {
     match = neo_js_context_create_string(ctx, "/(?:)/g");
@@ -722,8 +719,7 @@ NEO_JS_CFUNCTION(neo_js_string_replace) {
   size_t len = neo_string16_length(str);
   neo_js_variable_t replace = NULL;
   neo_js_variable_t symbol = neo_js_context_get_std(ctx).symbol_constructor;
-  symbol = neo_js_context_get_field(
-      ctx, symbol, neo_js_context_create_string(ctx, "replace"), NULL);
+  symbol = neo_js_context_get_string_field(ctx, symbol, "replace");
   NEO_JS_TRY_AND_THROW(symbol);
   if (!argc) {
     replace = neo_js_context_create_string(ctx, "");
@@ -839,8 +835,7 @@ NEO_JS_CFUNCTION(neo_js_string_replace_all) {
   size_t len = neo_string16_length(str);
   neo_js_variable_t replace = NULL;
   neo_js_variable_t symbol = neo_js_context_get_std(ctx).symbol_constructor;
-  symbol = neo_js_context_get_field(
-      ctx, symbol, neo_js_context_create_string(ctx, "replaceAll"), NULL);
+  symbol = neo_js_context_get_string_field(ctx, symbol, "replaceAll");
   NEO_JS_TRY_AND_THROW(symbol);
   if (!argc) {
     replace = neo_js_context_create_string(ctx, "");
@@ -967,8 +962,7 @@ NEO_JS_CFUNCTION(neo_js_string_search) {
   }
   neo_js_variable_t search = NULL;
   neo_js_variable_t symbol = neo_js_context_get_std(ctx).symbol_constructor;
-  symbol = neo_js_context_get_field(
-      ctx, symbol, neo_js_context_create_string(ctx, "search"), NULL);
+  symbol = neo_js_context_get_string_field(ctx, symbol, "search");
   NEO_JS_TRY_AND_THROW(symbol);
   if (!argc) {
     search = neo_js_context_create_string(ctx, "");
@@ -1511,17 +1505,16 @@ NEO_JS_CFUNCTION(neo_js_string_iterator) {
                            neo_js_string_iterator_iterator);
   neo_js_context_set_field(
       ctx, iterator,
-      neo_js_context_get_field(
-          ctx, neo_js_context_get_std(ctx).symbol_constructor,
-          neo_js_context_create_string(ctx, "StringTag"), NULL),
+      neo_js_context_get_string_field(
+          ctx, neo_js_context_get_std(ctx).symbol_constructor, "StringTag"),
       neo_js_context_create_string(ctx, "Symbol Iterator"), NULL);
   return iterator;
 }
 void neo_js_context_init_std_string(neo_js_context_t ctx) {
   neo_js_variable_t constructor =
       neo_js_context_get_std(ctx).string_constructor;
-  neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, constructor, neo_js_context_create_string(ctx, "prototype"), NULL);
+  neo_js_variable_t prototype =
+      neo_js_context_get_string_field(ctx, constructor, "prototype");
   neo_js_variable_t global = neo_js_context_get_global(ctx);
   neo_js_context_set_field(ctx, global,
                            neo_js_context_create_string(ctx, "String"),
@@ -1572,8 +1565,7 @@ void neo_js_context_init_std_string(neo_js_context_t ctx) {
   NEO_JS_SET_METHOD(ctx, prototype, "trimStart", neo_js_string_trim_start);
   NEO_JS_SET_METHOD(ctx, prototype, "valueOf", neo_js_string_value_of);
   neo_js_variable_t symbol = neo_js_context_get_std(ctx).symbol_constructor;
-  symbol = neo_js_context_get_field(
-      ctx, symbol, neo_js_context_create_string(ctx, "iterator"), NULL);
+  symbol = neo_js_context_get_string_field(ctx, symbol, "iterator");
   neo_js_context_set_field(
       ctx, prototype, symbol,
       neo_js_context_create_cfunction(ctx, "[Symbol.iterator]",

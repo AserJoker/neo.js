@@ -203,9 +203,8 @@ void neo_js_context_init_std_bigint(neo_js_context_t ctx) {
       neo_js_context_create_cfunction(ctx, "asUintN", neo_js_bigint_as_uint_n),
       true, false, true);
 
-  neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, neo_js_context_get_std(ctx).bigint_constructor,
-      neo_js_context_create_string(ctx, "prototype"), NULL);
+  neo_js_variable_t prototype = neo_js_context_get_string_field(
+      ctx, neo_js_context_get_std(ctx).bigint_constructor, "prototype");
 
   neo_js_variable_t value_of =
       neo_js_context_create_cfunction(ctx, "valueOf", neo_js_bigint_value_of);

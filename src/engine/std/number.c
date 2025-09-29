@@ -304,9 +304,8 @@ void neo_js_context_init_std_number(neo_js_context_t ctx) {
       neo_js_context_create_string(ctx, "POSITIVE_INFINITY"), positive_infinity,
       false, false, false);
 
-  neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, neo_js_context_get_std(ctx).number_constructor,
-      neo_js_context_create_string(ctx, "prototype"), NULL);
+  neo_js_variable_t prototype = neo_js_context_get_string_field(
+      ctx, neo_js_context_get_std(ctx).number_constructor, "prototype");
   neo_js_variable_t to_exponential = neo_js_context_create_cfunction(
       ctx, "toExponential", neo_js_number_to_exponential);
   neo_js_context_def_field(ctx, prototype,

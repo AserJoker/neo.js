@@ -10,7 +10,6 @@
 #include "engine/variable.h"
 #include "runtime/vm.h"
 
-
 neo_js_variable_t neo_js_generator_iterator(neo_js_context_t ctx,
                                             neo_js_variable_t self,
                                             uint32_t argc,
@@ -216,21 +215,18 @@ neo_js_variable_t neo_js_generator_throw(neo_js_context_t ctx,
 }
 
 void neo_js_context_init_std_generator(neo_js_context_t ctx) {
-  neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, neo_js_context_get_std(ctx).generator_constructor,
-      neo_js_context_create_string(ctx, "prototype"), NULL);
+  neo_js_variable_t prototype = neo_js_context_get_string_field(
+      ctx, neo_js_context_get_std(ctx).generator_constructor, "prototype");
 
-  neo_js_variable_t to_string_tag = neo_js_context_get_field(
-      ctx, neo_js_context_get_std(ctx).symbol_constructor,
-      neo_js_context_create_string(ctx, "toStringTag"), NULL);
+  neo_js_variable_t to_string_tag = neo_js_context_get_string_field(
+      ctx, neo_js_context_get_std(ctx).symbol_constructor, "toStringTag");
 
   neo_js_context_def_field(ctx, prototype, to_string_tag,
                            neo_js_context_create_string(ctx, "Generator"), true,
                            false, true);
 
-  neo_js_variable_t iterator = neo_js_context_get_field(
-      ctx, neo_js_context_get_std(ctx).symbol_constructor,
-      neo_js_context_create_string(ctx, "iterator"), NULL);
+  neo_js_variable_t iterator = neo_js_context_get_string_field(
+      ctx, neo_js_context_get_std(ctx).symbol_constructor, "iterator");
 
   neo_js_context_def_field(
       ctx, prototype, iterator,

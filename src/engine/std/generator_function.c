@@ -25,9 +25,9 @@ neo_js_variable_t neo_js_generator_function_to_string(neo_js_context_t ctx,
 }
 
 void neo_js_context_init_std_generator_function(neo_js_context_t ctx) {
-  neo_js_variable_t prototype = neo_js_context_get_field(
+  neo_js_variable_t prototype = neo_js_context_get_string_field(
       ctx, neo_js_context_get_std(ctx).generator_function_constructor,
-      neo_js_context_create_string(ctx, "prototype"), NULL);
+      "prototype");
 
   neo_js_context_def_field(
       ctx, prototype, neo_js_context_create_string(ctx, "toString"),

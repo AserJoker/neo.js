@@ -6,7 +6,6 @@
 #include "engine/variable.h"
 #include <stdint.h>
 #include <string.h>
-#include <wchar.h>
 
 neo_js_variable_t neo_js_function_constructor(neo_js_context_t ctx,
                                               neo_js_variable_t self,
@@ -79,8 +78,8 @@ NEO_JS_CFUNCTION(neo_js_function_apply) {
   neo_js_variable_t *args = NULL;
   uint32_t argc2 = 0;
   if (arguments) {
-    neo_js_variable_t vlength = neo_js_context_get_field(
-        ctx, arguments, neo_js_context_create_string(ctx, "length"), NULL);
+    neo_js_variable_t vlength =
+        neo_js_context_get_string_field(ctx, arguments, "length");
     NEO_JS_TRY_AND_THROW(vlength);
     vlength = neo_js_context_to_integer(ctx, vlength);
     argc2 = neo_js_variable_to_number(vlength)->number;
@@ -119,9 +118,8 @@ neo_js_variable_t neo_js_function_bind(neo_js_context_t ctx,
 }
 
 void neo_js_context_init_std_function(neo_js_context_t ctx) {
-  neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, neo_js_context_get_std(ctx).function_constructor,
-      neo_js_context_create_string(ctx, "prototype"), NULL);
+  neo_js_variable_t prototype = neo_js_context_get_string_field(
+      ctx, neo_js_context_get_std(ctx).function_constructor, "prototype");
 
   neo_js_context_def_field(ctx, prototype,
                            neo_js_context_create_string(ctx, "toString"),

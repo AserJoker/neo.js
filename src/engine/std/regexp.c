@@ -188,8 +188,8 @@ neo_js_variable_t neo_js_regexp_exec(neo_js_context_t ctx,
   if (regex->flag & NEO_REGEXP_FLAG_STICKY) {
     match_options |= PCRE2_ANCHORED;
   }
-  neo_js_variable_t v_last_index = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, "lastIndex"), NULL);
+  neo_js_variable_t v_last_index =
+      neo_js_context_get_string_field(ctx, self, "lastIndex");
   if (regex->flag & NEO_REGEXP_FLAG_GLOBAL ||
       regex->flag & NEO_REGEXP_FLAG_STICKY) {
     if (neo_js_variable_get_type(v_last_index)->kind != NEO_JS_TYPE_NUMBER) {
@@ -345,8 +345,8 @@ neo_js_variable_t neo_js_regexp_test(neo_js_context_t ctx,
   }
   if (regex->flag & NEO_REGEXP_FLAG_GLOBAL ||
       regex->flag & NEO_REGEXP_FLAG_STICKY) {
-    neo_js_variable_t v_last_index = neo_js_context_get_field(
-        ctx, self, neo_js_context_create_string(ctx, "lastIndex"), NULL);
+    neo_js_variable_t v_last_index =
+        neo_js_context_get_string_field(ctx, self, "lastIndex");
     if (neo_js_variable_get_type(v_last_index)->kind != NEO_JS_TYPE_NUMBER) {
       v_last_index = neo_js_context_to_number(ctx, v_last_index);
       neo_js_context_set_field(ctx, self,
@@ -380,9 +380,8 @@ neo_js_variable_t neo_js_regexp_test(neo_js_context_t ctx,
 }
 
 void neo_js_context_init_std_regexp(neo_js_context_t ctx) {
-  neo_js_variable_t prototype = neo_js_context_get_field(
-      ctx, neo_js_context_get_std(ctx).regexp_constructor,
-      neo_js_context_create_string(ctx, "prototype"), NULL);
+  neo_js_variable_t prototype = neo_js_context_get_string_field(
+      ctx, neo_js_context_get_std(ctx).regexp_constructor, "prototype");
 
   neo_js_context_def_field(
       ctx, prototype, neo_js_context_create_string(ctx, "toString"),
@@ -462,8 +461,6 @@ NEO_JS_CFUNCTION(neo_js_regexp_search) {
   if (regex->flag & NEO_REGEXP_FLAG_STICKY) {
     match_options |= PCRE2_ANCHORED;
   }
-  neo_js_variable_t v_last_index = neo_js_context_get_field(
-      ctx, self, neo_js_context_create_string(ctx, "lastIndex"), NULL);
   neo_js_variable_t result = NULL;
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   pcre2_match_data *match_data =

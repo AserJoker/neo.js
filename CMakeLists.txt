@@ -14,7 +14,6 @@ endif()
 add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 
 set(CMAKE_TOOLCHAIN_FILE $ENV{VCPKG_ROOT}\\scripts\\buildsystems\\vcpkg.cmake)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 project(neo)
 

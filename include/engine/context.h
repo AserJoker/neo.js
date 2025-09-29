@@ -142,7 +142,6 @@ neo_js_variable_t neo_js_context_create_variable(neo_js_context_t ctx,
                                                  neo_js_handle_t handle,
                                                  const char *name);
 
-
 neo_js_variable_t neo_js_context_def_variable(neo_js_context_t ctx,
                                               neo_js_variable_t variable,
                                               const char *name);
@@ -170,11 +169,20 @@ neo_js_variable_t neo_js_context_get_field(neo_js_context_t ctx,
                                            neo_js_variable_t field,
                                            neo_js_variable_t receiver);
 
+neo_js_variable_t neo_js_context_get_string_field(neo_js_context_t ctx,
+                                                  neo_js_variable_t object,
+                                                  const char *name);
+
 neo_js_variable_t neo_js_context_set_field(neo_js_context_t ctx,
                                            neo_js_variable_t object,
                                            neo_js_variable_t field,
                                            neo_js_variable_t value,
                                            neo_js_variable_t receiver);
+
+neo_js_variable_t neo_js_context_set_string_field(neo_js_context_t ctx,
+                                                  neo_js_variable_t object,
+                                                  const char *field,
+                                                  neo_js_variable_t value);
 
 neo_js_variable_t neo_js_context_get_private(neo_js_context_t ctx,
                                              neo_js_variable_t object,
@@ -513,7 +521,6 @@ neo_js_call_type_t neo_js_context_get_call_type(neo_js_context_t ctx);
         neo_js_context_create_string(ctx, name), NULL);                        \
     neo_js_context_def_field(ctx, obj, field, fn, true, false, true);          \
   } while (0)
-
 #ifdef __cplusplus
 }
 
