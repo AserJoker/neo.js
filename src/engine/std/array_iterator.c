@@ -24,23 +24,18 @@ neo_js_variable_t neo_js_array_iterator_next(neo_js_context_t ctx,
   int64_t index = neo_js_variable_to_number(vidx)->number;
   if (index < length) {
     neo_js_variable_t result = neo_js_context_create_object(ctx, NULL);
-    neo_js_context_set_field(
-        ctx, result, neo_js_context_create_string(ctx, "value"),
-        neo_js_context_get_field(ctx, array, vidx, NULL), NULL);
-    neo_js_context_set_field(ctx, result,
-                             neo_js_context_create_string(ctx, "done"),
-                             neo_js_context_create_boolean(ctx, false), NULL);
+    neo_js_context_set_string_field(
+        ctx, result, "value", neo_js_context_get_field(ctx, array, vidx, NULL));
+    neo_js_context_set_string_field(ctx, result, "done",
+                                    neo_js_context_create_boolean(ctx, false));
     neo_js_variable_to_number(vidx)->number += 1;
     return result;
   } else {
     neo_js_variable_t result = neo_js_context_create_object(ctx, NULL);
-    neo_js_context_set_field(ctx, result,
-                             neo_js_context_create_string(ctx, "value"),
-                             neo_js_context_create_undefined(ctx), NULL);
-
-    neo_js_context_set_field(ctx, result,
-                             neo_js_context_create_string(ctx, "done"),
-                             neo_js_context_create_boolean(ctx, true), NULL);
+    neo_js_context_set_string_field(ctx, result, "value",
+                                    neo_js_context_create_undefined(ctx));
+    neo_js_context_set_string_field(ctx, result, "done",
+                                    neo_js_context_create_boolean(ctx, true));
     return result;
   }
 }

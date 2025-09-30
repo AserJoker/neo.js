@@ -37,9 +37,7 @@ static neo_js_variable_t neo_js_symbol_to_object(neo_js_context_t ctx,
   neo_js_variable_t prototype =
       neo_js_context_get_string_field(ctx, symbol, "prototype");
   neo_js_variable_t object = neo_js_context_create_object(ctx, prototype);
-  neo_js_context_set_field(ctx, object,
-                           neo_js_context_create_string(ctx, "constructor"),
-                           symbol, NULL);
+  neo_js_context_set_string_field(ctx, object, "constructor", symbol);
   neo_js_context_set_internal(ctx, object, "[[primitive]]", self);
   return object;
 }

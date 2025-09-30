@@ -135,8 +135,8 @@ neo_js_variable_t neo_js_array_from(neo_js_context_t ctx,
         return error;
       }
     }
-    neo_js_variable_t error = neo_js_context_set_field(
-        ctx, array, neo_js_context_create_string(ctx, "length"), vlength, NULL);
+    neo_js_variable_t error =
+        neo_js_context_set_string_field(ctx, array, "length", vlength);
     if (neo_js_variable_get_type(error)->kind == NEO_JS_TYPE_ERROR) {
       return error;
     }
@@ -294,9 +294,8 @@ neo_js_variable_t neo_js_array_constructor(neo_js_context_t ctx,
     } else if (!isnan(number->number)) {
       length = number->number;
     }
-    neo_js_variable_t error = neo_js_context_set_field(
-        ctx, self, neo_js_context_create_string(ctx, "length"),
-        neo_js_context_create_number(ctx, length), NULL);
+    neo_js_variable_t error = neo_js_context_set_string_field(
+        ctx, self, "length", neo_js_context_create_number(ctx, length));
     if (neo_js_variable_get_type(error)->kind == NEO_JS_TYPE_ERROR) {
       return error;
     }
@@ -437,9 +436,8 @@ neo_js_variable_t neo_js_array_concat(neo_js_context_t ctx,
       }
     }
   }
-  neo_js_variable_t error = neo_js_context_set_field(
-      ctx, res, neo_js_context_create_string(ctx, "length"),
-      neo_js_context_create_number(ctx, index), NULL);
+  neo_js_variable_t error = neo_js_context_set_string_field(
+      ctx, res, "length", neo_js_context_create_number(ctx, index));
   if (neo_js_variable_get_type(error)->kind == NEO_JS_TYPE_ERROR) {
     return error;
   }
@@ -1186,8 +1184,8 @@ neo_js_variable_t neo_js_array_pop(neo_js_context_t ctx, neo_js_variable_t self,
   NEO_JS_TRY_AND_THROW(res);
   NEO_JS_TRY_AND_THROW(neo_js_context_del_field(ctx, self, key));
   neo_js_variable_to_number(vlength)->number = length - 1;
-  NEO_JS_TRY_AND_THROW(neo_js_context_set_field(
-      ctx, self, neo_js_context_create_string(ctx, "length"), vlength, NULL));
+  NEO_JS_TRY_AND_THROW(
+      neo_js_context_set_string_field(ctx, self, "length", vlength));
   return res;
 }
 
@@ -1206,8 +1204,8 @@ neo_js_variable_t neo_js_array_push(neo_js_context_t ctx,
         neo_js_context_set_field(ctx, self, key, argv[idx], NULL));
   }
   neo_js_variable_to_number(vlength)->number = length + argc;
-  NEO_JS_TRY_AND_THROW(neo_js_context_set_field(
-      ctx, self, neo_js_context_create_string(ctx, "length"), vlength, NULL));
+  NEO_JS_TRY_AND_THROW(
+      neo_js_context_set_string_field(ctx, self, "length", vlength));
   return vlength;
 }
 
@@ -1372,8 +1370,8 @@ neo_js_variable_t neo_js_array_shift(neo_js_context_t ctx,
     }
   }
   neo_js_variable_to_number(vlength)->number = length - 1;
-  NEO_JS_TRY_AND_THROW(neo_js_context_set_field(
-      ctx, self, neo_js_context_create_string(ctx, "length"), vlength, NULL));
+  NEO_JS_TRY_AND_THROW(
+      neo_js_context_set_string_field(ctx, self, "length", vlength));
   return res;
 }
 
@@ -1631,8 +1629,8 @@ neo_js_variable_t neo_js_array_sort(neo_js_context_t ctx,
   }
   NEO_JS_TRY_AND_THROW(neo_js_array_quick_sort(ctx, self, 0, length, compare));
   neo_js_variable_to_number(v_length)->number = length;
-  NEO_JS_TRY_AND_THROW(neo_js_context_set_field(
-      ctx, self, neo_js_context_create_string(ctx, "length"), v_length, NULL));
+  NEO_JS_TRY_AND_THROW(
+      neo_js_context_set_string_field(ctx, self, "length", v_length));
   return self;
 }
 
@@ -1720,8 +1718,8 @@ neo_js_variable_t neo_js_array_splice(neo_js_context_t ctx,
   }
   neo_js_variable_to_number(v_length)->number =
       length - delete_count + insert_count;
-  NEO_JS_TRY_AND_THROW(neo_js_context_set_field(
-      ctx, self, neo_js_context_create_string(ctx, "length"), v_length, NULL));
+  NEO_JS_TRY_AND_THROW(
+      neo_js_context_set_string_field(ctx, self, "length", v_length));
   return result;
 }
 
@@ -1834,8 +1832,8 @@ neo_js_variable_t neo_js_array_unshift(neo_js_context_t ctx,
   NEO_JS_TRY_AND_THROW(neo_js_context_set_field(
       ctx, self, neo_js_context_create_number(ctx, 0), value, NULL));
   neo_js_variable_to_number(vlength)->number = length + 1;
-  NEO_JS_TRY_AND_THROW(neo_js_context_set_field(
-      ctx, self, neo_js_context_create_string(ctx, "length"), vlength, NULL));
+  NEO_JS_TRY_AND_THROW(
+      neo_js_context_set_string_field(ctx, self, "length", vlength));
   return vlength;
 }
 

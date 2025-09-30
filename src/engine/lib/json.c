@@ -476,9 +476,8 @@ static neo_js_variable_t neo_js_json_read_array(neo_js_context_t ctx,
       idx++;
       if (receiver) {
         neo_js_variable_t context = neo_js_context_create_object(ctx, NULL);
-        neo_js_context_set_field(ctx, context,
-                                 neo_js_context_create_string(ctx, "source"),
-                                 neo_js_context_create_string(ctx, src), NULL);
+        neo_js_context_set_string_field(ctx, context, "source",
+                                        neo_js_context_create_string(ctx, src));
         neo_js_variable_t argv[] = {key, item, context};
         item = neo_js_context_call(ctx, receiver, result, 3, argv);
         NEO_JS_TRY_AND_THROW(item);
@@ -549,9 +548,9 @@ static neo_js_variable_t neo_js_json_read_object(neo_js_context_t ctx,
         char *value_src = neo_location_get(allocator, value_loc);
         neo_js_context_defer_free(ctx, value_src);
         neo_js_variable_t context = neo_js_context_create_object(ctx, NULL);
-        neo_js_context_set_field(
-            ctx, context, neo_js_context_create_string(ctx, "source"),
-            neo_js_context_create_string(ctx, value_src), NULL);
+        neo_js_context_set_string_field(
+            ctx, context, "source",
+            neo_js_context_create_string(ctx, value_src));
         neo_js_variable_t argv[] = {key, value, context};
         value = neo_js_context_call(ctx, receiver, result, 3, argv);
         NEO_JS_TRY_AND_THROW(value);
@@ -657,9 +656,8 @@ NEO_JS_CFUNCTION(neo_js_json_parse) {
   NEO_JS_TRY_AND_THROW(variable);
   if (receiver) {
     neo_js_variable_t context = neo_js_context_create_object(ctx, NULL);
-    neo_js_context_set_field(ctx, context,
-                             neo_js_context_create_string(ctx, "source"),
-                             neo_js_context_create_string(ctx, source), NULL);
+    neo_js_context_set_string_field(ctx, context, "source",
+                                    neo_js_context_create_string(ctx, source));
     neo_js_variable_t key = neo_js_context_create_string(ctx, "");
     neo_js_variable_t argv[] = {key, variable, context};
     variable = neo_js_context_call(ctx, receiver, variable, 3, argv);

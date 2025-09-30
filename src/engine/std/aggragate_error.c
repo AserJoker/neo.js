@@ -11,9 +11,7 @@ NEO_JS_CFUNCTION(neo_js_aggregate_error_constructor) {
     neo_js_variable_t prototype =
         neo_js_context_get_string_field(ctx, constructor, "prototype");
     self = neo_js_context_create_object(ctx, prototype);
-    neo_js_context_set_field(ctx, self,
-                             neo_js_context_create_string(ctx, "constructor"),
-                             constructor, NULL);
+    neo_js_context_set_string_field(ctx, self, "constructor", constructor);
   }
   neo_js_variable_t arg = NULL;
   if (!argc) {
@@ -55,8 +53,7 @@ NEO_JS_CFUNCTION(neo_js_aggregate_error_constructor) {
     message = neo_js_context_create_undefined(ctx);
   }
   neo_js_variable_t result = neo_js_error_constructor(ctx, self, 1, &message);
-  neo_js_context_set_field(
-      ctx, result, neo_js_context_create_string(ctx, "errors"), errors, NULL);
+  neo_js_context_set_string_field(ctx, result, "errors", errors);
   neo_js_error_info_t info = neo_js_context_get_opaque(ctx, result, "info");
   info->type = "AggregateError";
   return result;
