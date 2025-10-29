@@ -1,7 +1,9 @@
 #include "engine/context.h"
 #include "core/allocator.h"
+#include "engine/null.h"
 #include "engine/runtime.h"
 #include "engine/scope.h"
+#include "engine/undefined.h"
 #include <string.h>
 
 struct _neo_js_context_t {
@@ -41,4 +43,14 @@ void neo_js_context_pop_scope(neo_js_context_t self) {
 }
 neo_js_runtime_t neo_js_context_get_runtime(neo_js_context_t self) {
   return self->runtime;
+}
+neo_js_variable_t neo_js_context_create_undefined(neo_js_context_t self) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  neo_js_undefined_t value = neo_create_js_undefined(allocator);
+  return neo_js_scope_create_variable(self->current_scope, &value->super, NULL);
+}
+neo_js_variable_t neo_js_context_create_null(neo_js_context_t self) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  neo_js_null_t value = neo_create_js_null(allocator);
+  return neo_js_scope_create_variable(self->current_scope, &value->super, NULL);
 }

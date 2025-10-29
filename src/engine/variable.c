@@ -31,6 +31,7 @@ neo_js_variable_t neo_create_js_variable(neo_allocator_t allocator,
   variable->is_check = false;
   variable->is_disposed = false;
   variable->value = value;
+  value->ref++;
   return variable;
 }
 
