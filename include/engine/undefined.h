@@ -7,4 +7,8 @@ struct _neo_js_undefined_t {
 };
 typedef struct _neo_js_undefined_t *neo_js_undefined_t;
 neo_js_undefined_t neo_create_js_undefined(neo_allocator_t allocator);
+void neo_init_js_undefined(neo_js_undefined_t self, neo_allocator_t allocaotr);
+void neo_deinit_js_undefined(neo_js_undefined_t self,
+                             neo_allocator_t allocaotr);
+neo_js_value_t neo_js_undefined_to_value(neo_js_undefined_t self);
 #endif

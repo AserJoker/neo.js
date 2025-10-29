@@ -1,6 +1,8 @@
 #include "engine/context.h"
 #include "core/allocator.h"
+#include "engine/boolean.h"
 #include "engine/null.h"
+#include "engine/number.h"
 #include "engine/runtime.h"
 #include "engine/scope.h"
 #include "engine/undefined.h"
@@ -46,11 +48,27 @@ neo_js_runtime_t neo_js_context_get_runtime(neo_js_context_t self) {
 }
 neo_js_variable_t neo_js_context_create_undefined(neo_js_context_t self) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
-  neo_js_undefined_t value = neo_create_js_undefined(allocator);
-  return neo_js_scope_create_variable(self->current_scope, &value->super, NULL);
+  neo_js_undefined_t undefined = neo_create_js_undefined(allocator);
+  neo_js_value_t val = neo_js_undefined_to_value(undefined);
+  return neo_js_scope_create_variable(self->current_scope, val, NULL);
 }
 neo_js_variable_t neo_js_context_create_null(neo_js_context_t self) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
-  neo_js_null_t value = neo_create_js_null(allocator);
-  return neo_js_scope_create_variable(self->current_scope, &value->super, NULL);
+  neo_js_null_t null = neo_create_js_null(allocator);
+  neo_js_value_t val = neo_js_null_to_value(null);
+  return neo_js_scope_create_variable(self->current_scope, val, NULL);
+}
+neo_js_variable_t neo_js_context_create_number(neo_js_context_t self,
+                                               double value) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  neo_js_number_t number = neo_create_js_number(allocator, value);
+  neo_js_value_t val = neo_js_number_to_value(number);
+  return neo_js_scope_create_variable(self->current_scope, val, NULL);
+}
+neo_js_variable_t neo_js_context_create_boolean(neo_js_context_t self,
+                                                bool value) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  neo_js_boolean_t boolean = neo_create_js_boolean(allocator, value);
+  neo_js_value_t val = neo_js_boolean_to_value(boolean);
+  return neo_js_scope_create_variable(self->current_scope, val, NULL);
 }

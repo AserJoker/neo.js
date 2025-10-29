@@ -111,3 +111,11 @@ void neo_js_variable_gc(neo_allocator_t allocator, neo_list_t gclist) {
   }
   neo_allocator_free(allocator, disposed);
 }
+
+void neo_init_js_value(neo_js_value_t self, neo_allocator_t allocator,
+                       neo_js_variable_type_t type) {
+  self->type = type;
+  self->ref = 0;
+}
+
+void neo_deinit_js_value(neo_js_value_t self, neo_allocator_t allocator) {}

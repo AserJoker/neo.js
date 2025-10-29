@@ -13,7 +13,6 @@ typedef enum _neo_js_variable_type_t {
   NEO_JS_TYPE_UNDEFINED,
   NEO_JS_TYPE_NULL,
   NEO_JS_TYPE_NUMBER,
-  NEO_JS_TYPE_INTEGER,
   NEO_JS_TYPE_BOOLEAN,
   NEO_JS_TYPE_STRING,
   NEO_JS_TYPE_SYMBOL,
@@ -64,6 +63,10 @@ void neo_js_variable_add_weak_parent(neo_js_variable_t self,
 void neo_js_variable_remove_weak_parent(neo_js_variable_t self,
                                         neo_js_variable_t parent);
 void neo_js_variable_gc(neo_allocator_t allocator, neo_list_t gclist);
+
+void neo_init_js_value(neo_js_value_t self, neo_allocator_t allocator,
+                       neo_js_variable_type_t type);
+void neo_deinit_js_value(neo_js_value_t self, neo_allocator_t allocator);
 
 #ifdef __cplusplus
 }
