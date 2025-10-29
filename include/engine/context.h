@@ -16,6 +16,8 @@ neo_js_variable_t neo_js_context_create_number(neo_js_context_t self,
                                                double value);
 neo_js_variable_t neo_js_context_create_boolean(neo_js_context_t self,
                                                 bool value);
+neo_js_variable_t neo_js_context_create_string(neo_js_context_t self,
+                                               uint16_t *value);
 #ifdef __cplusplus
 }
 #endif
