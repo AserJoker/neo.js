@@ -83,7 +83,7 @@ add_executable(${PROJECT_NAME}c ${SOURCES} ${PROJECT_SOURCE_DIR}/cmd/main.c)
 add_executable(${PROJECT_NAME}.test ${SOURCES} ${TEST_SOURCES} ${PROJECT_SOURCE_DIR}/tests/main.cpp)
 
 if(UNIX)
-    target_link_libraries(${PROJECT_NAME}c m)
+    target_link_libraries(${PROJECT_NAME}c PRIVATE m)
 else()
     add_definitions(-D_USE_MATH_DEFINES)
 endif()
