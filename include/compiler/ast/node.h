@@ -4,10 +4,11 @@
 #include "compiler/scope.h"
 #include "compiler/writer.h"
 #include "core/allocator.h"
+#include "core/any.h"
 #include "core/error.h"
 #include "core/location.h"
-#include "core/variable.h"
 #include <stdbool.h>
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -115,17 +116,17 @@ struct _neo_ast_node_t {
   neo_compile_scope_t scope;
 };
 
-neo_variable_t neo_ast_node_serialize(neo_allocator_t allocator,
-                                      neo_ast_node_t node);
+neo_any_t neo_ast_node_serialize(neo_allocator_t allocator,
+                                 neo_ast_node_t node);
 
-neo_variable_t neo_ast_node_list_serialize(neo_allocator_t allocator,
-                                           neo_list_t list);
+neo_any_t neo_ast_node_list_serialize(neo_allocator_t allocator,
+                                      neo_list_t list);
 
-neo_variable_t neo_ast_node_source_serialize(neo_allocator_t allocator,
-                                             neo_ast_node_t node);
+neo_any_t neo_ast_node_source_serialize(neo_allocator_t allocator,
+                                        neo_ast_node_t node);
 
-neo_variable_t neo_ast_node_location_serialize(neo_allocator_t allocator,
-                                               neo_ast_node_t node);
+neo_any_t neo_ast_node_location_serialize(neo_allocator_t allocator,
+                                          neo_ast_node_t node);
 
 void neo_ast_node_resolve_closure(neo_allocator_t allocator,
                                   neo_ast_node_t self, neo_list_t closure);

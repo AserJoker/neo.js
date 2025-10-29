@@ -11,11 +11,12 @@
 #include "compiler/token.h"
 #include "compiler/writer.h"
 #include "core/allocator.h"
+#include "core/any.h"
 #include "core/buffer.h"
 #include "core/error.h"
 #include "core/location.h"
 #include "core/position.h"
-#include "core/variable.h"
+
 
 static void
 neo_ast_function_argument_dispose(neo_allocator_t allocator,
@@ -59,21 +60,21 @@ static void neo_ast_function_argument_write(neo_allocator_t allocator,
     TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
   }
 }
-static neo_variable_t
+static neo_any_t
 neo_serialize_ast_function_argument(neo_allocator_t allocator,
                                     neo_ast_function_argument_t node) {
-  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_set(
+  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_any_set(
       variable, "type",
       neo_create_variable_string(allocator, "NEO_NODE_TYPE_FUNCTION_ARGUMENT"));
-  neo_variable_set(variable, "location",
-                   neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, "scope",
-                   neo_serialize_scope(allocator, node->node.scope));
-  neo_variable_set(variable, "identifier",
-                   neo_ast_node_serialize(allocator, node->identifier));
-  neo_variable_set(variable, "value",
-                   neo_ast_node_serialize(allocator, node->value));
+  neo_any_set(variable, "location",
+              neo_ast_node_location_serialize(allocator, &node->node));
+  neo_any_set(variable, "scope",
+              neo_serialize_scope(allocator, node->node.scope));
+  neo_any_set(variable, "identifier",
+              neo_ast_node_serialize(allocator, node->identifier));
+  neo_any_set(variable, "value",
+              neo_ast_node_serialize(allocator, node->value));
   return variable;
 }
 

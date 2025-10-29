@@ -3,7 +3,7 @@
 #include "compiler/ast/expression_class.h"
 #include "compiler/ast/node.h"
 #include "core/allocator.h"
-#include "core/variable.h"
+#include "core/any.h"
 static void
 neo_ast_declaration_class_dispose(neo_allocator_t allocator,
                                   neo_ast_declaration_class_t node) {
@@ -31,19 +31,19 @@ neo_ast_declaration_class_resolve_closure(neo_allocator_t allocator,
   self->declaration->resolve_closure(allocator, self->declaration, closure);
 }
 
-static neo_variable_t
+static neo_any_t
 neo_serialize_ast_declaration_class(neo_allocator_t allocator,
                                     neo_ast_declaration_class_t node) {
-  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_set(
+  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_any_set(
       variable, "type",
       neo_create_variable_string(allocator, "NEO_NODE_TYPE_DECLARATION_CLASS"));
-  neo_variable_set(variable, "declaration",
-                   neo_ast_node_serialize(allocator, node->declaration));
-  neo_variable_set(variable, "location",
-                   neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, "scope",
-                   neo_serialize_scope(allocator, node->node.scope));
+  neo_any_set(variable, "declaration",
+              neo_ast_node_serialize(allocator, node->declaration));
+  neo_any_set(variable, "location",
+              neo_ast_node_location_serialize(allocator, &node->node));
+  neo_any_set(variable, "scope",
+              neo_serialize_scope(allocator, node->node.scope));
   return variable;
 }
 

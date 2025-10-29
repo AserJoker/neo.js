@@ -6,12 +6,13 @@
 #include "compiler/program.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
+#include "core/any.h"
 #include "core/buffer.h"
 #include "core/error.h"
 #include "core/location.h"
 #include "core/position.h"
-#include "core/variable.h"
 #include <stdio.h>
+
 static void neo_ast_statement_if_dispose(neo_allocator_t allocator,
                                          neo_ast_statement_if_t node) {
   neo_allocator_free(allocator, node->condition);
@@ -50,23 +51,22 @@ static void neo_ast_statement_if_write(neo_allocator_t allocator,
   }
   neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
 }
-static neo_variable_t
-neo_serialize_ast_statement_if(neo_allocator_t allocator,
-                               neo_ast_statement_if_t node) {
-  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_set(
+static neo_any_t neo_serialize_ast_statement_if(neo_allocator_t allocator,
+                                                neo_ast_statement_if_t node) {
+  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_any_set(
       variable, "type",
       neo_create_variable_string(allocator, "NEO_NODE_TYPE_STATEMENT_FOR"));
-  neo_variable_set(variable, "location",
-                   neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, "scope",
-                   neo_serialize_scope(allocator, node->node.scope));
-  neo_variable_set(variable, "condition",
-                   neo_ast_node_serialize(allocator, node->condition));
-  neo_variable_set(variable, "alternate",
-                   neo_ast_node_serialize(allocator, node->alternate));
-  neo_variable_set(variable, "consequent",
-                   neo_ast_node_serialize(allocator, node->consequent));
+  neo_any_set(variable, "location",
+              neo_ast_node_location_serialize(allocator, &node->node));
+  neo_any_set(variable, "scope",
+              neo_serialize_scope(allocator, node->node.scope));
+  neo_any_set(variable, "condition",
+              neo_ast_node_serialize(allocator, node->condition));
+  neo_any_set(variable, "alternate",
+              neo_ast_node_serialize(allocator, node->alternate));
+  neo_any_set(variable, "consequent",
+              neo_ast_node_serialize(allocator, node->consequent));
   return variable;
 }
 static neo_ast_statement_if_t

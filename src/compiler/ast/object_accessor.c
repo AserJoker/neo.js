@@ -8,12 +8,13 @@
 #include "compiler/token.h"
 #include "compiler/writer.h"
 #include "core/allocator.h"
+#include "core/any.h"
 #include "core/error.h"
 #include "core/list.h"
 #include "core/location.h"
 #include "core/position.h"
-#include "core/variable.h"
 #include <stdio.h>
+
 static void neo_ast_object_accessor_dispose(neo_allocator_t allocator,
                                             neo_ast_object_accessor_t node) {
   neo_allocator_free(allocator, node->arguments);
@@ -109,32 +110,30 @@ static void neo_ast_object_accessor_write(neo_allocator_t allocator,
     neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_SETTER);
   }
 }
-static neo_variable_t
+static neo_any_t
 neo_serialize_ast_object_accessor(neo_allocator_t allocator,
                                   neo_ast_object_accessor_t node) {
-  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_set(
+  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_any_set(
       variable, "type",
       neo_create_variable_string(allocator, "NEO_NODE_TYPE_OBJECT_ACCESSOR"));
-  neo_variable_set(variable, "arguments",
-                   neo_ast_node_list_serialize(allocator, node->arguments));
-  neo_variable_set(variable, "name",
-                   neo_ast_node_serialize(allocator, node->name));
-  neo_variable_set(variable, "body",
-                   neo_ast_node_serialize(allocator, node->body));
-  neo_variable_set(
+  neo_any_set(variable, "arguments",
+              neo_ast_node_list_serialize(allocator, node->arguments));
+  neo_any_set(variable, "name", neo_ast_node_serialize(allocator, node->name));
+  neo_any_set(variable, "body", neo_ast_node_serialize(allocator, node->body));
+  neo_any_set(
       variable, "kind",
       neo_create_variable_string(allocator, node->kind == NEO_ACCESSOR_KIND_GET
                                                 ? "NEO_ACCESSOR_KIND_GET"
                                                 : "NEO_ACCESSOR_KIND_SET"));
-  neo_variable_set(variable, "computed",
-                   neo_create_variable_boolean(allocator, node->computed));
-  neo_variable_set(variable, "location",
-                   neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, "closure",
-                   neo_ast_node_list_serialize(allocator, node->closure));
-  neo_variable_set(variable, "scope",
-                   neo_serialize_scope(allocator, node->node.scope));
+  neo_any_set(variable, "computed",
+              neo_create_variable_boolean(allocator, node->computed));
+  neo_any_set(variable, "location",
+              neo_ast_node_location_serialize(allocator, &node->node));
+  neo_any_set(variable, "closure",
+              neo_ast_node_list_serialize(allocator, node->closure));
+  neo_any_set(variable, "scope",
+              neo_serialize_scope(allocator, node->node.scope));
   return variable;
 }
 

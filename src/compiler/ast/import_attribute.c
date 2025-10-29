@@ -5,8 +5,8 @@
 #include "compiler/ast/node.h"
 #include "compiler/program.h"
 #include "core/allocator.h"
+#include "core/any.h"
 #include "core/location.h"
-#include "core/variable.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -30,21 +30,21 @@ static void neo_ast_import_attribute_write(neo_allocator_t allocator,
   neo_allocator_free(allocator, value);
 }
 
-static neo_variable_t
+static neo_any_t
 neo_serialize_ast_import_attribute(neo_allocator_t allocator,
                                    neo_ast_import_attribute_t node) {
-  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_set(
+  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_any_set(
       variable, "type",
       neo_create_variable_string(allocator, "NEO_NODE_TYPE_IMPORT_SPECIFIER"));
-  neo_variable_set(variable, "location",
-                   neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, "scope",
-                   neo_serialize_scope(allocator, node->node.scope));
-  neo_variable_set(variable, "value",
-                   neo_ast_node_serialize(allocator, node->value));
-  neo_variable_set(variable, "identifier",
-                   neo_ast_node_serialize(allocator, node->identifier));
+  neo_any_set(variable, "location",
+              neo_ast_node_location_serialize(allocator, &node->node));
+  neo_any_set(variable, "scope",
+              neo_serialize_scope(allocator, node->node.scope));
+  neo_any_set(variable, "value",
+              neo_ast_node_serialize(allocator, node->value));
+  neo_any_set(variable, "identifier",
+              neo_ast_node_serialize(allocator, node->identifier));
   return variable;
 }
 

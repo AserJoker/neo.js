@@ -6,8 +6,8 @@
 #include "compiler/program.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
+#include "core/any.h"
 #include "core/buffer.h"
-#include "core/variable.h"
 #include <stdio.h>
 
 static void neo_ast_statement_while_dispose(neo_allocator_t allocator,
@@ -52,21 +52,20 @@ static void neo_ast_statement_while_write(neo_allocator_t allocator,
   neo_program_add_code(allocator, ctx->program, NEO_ASM_POP_LABEL);
   ctx->label = label;
 }
-static neo_variable_t
+static neo_any_t
 neo_serialize_ast_statement_while(neo_allocator_t allocator,
                                   neo_ast_statement_while_t node) {
-  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_set(
+  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_any_set(
       variable, "type",
       neo_create_variable_string(allocator, "NEO_NODE_TYPE_STATEMENT_WHILE"));
-  neo_variable_set(variable, "location",
-                   neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, "scope",
-                   neo_serialize_scope(allocator, node->node.scope));
-  neo_variable_set(variable, "condition",
-                   neo_ast_node_serialize(allocator, node->condition));
-  neo_variable_set(variable, "body",
-                   neo_ast_node_serialize(allocator, node->body));
+  neo_any_set(variable, "location",
+              neo_ast_node_location_serialize(allocator, &node->node));
+  neo_any_set(variable, "scope",
+              neo_serialize_scope(allocator, node->node.scope));
+  neo_any_set(variable, "condition",
+              neo_ast_node_serialize(allocator, node->condition));
+  neo_any_set(variable, "body", neo_ast_node_serialize(allocator, node->body));
   return variable;
 }
 static neo_ast_statement_while_t

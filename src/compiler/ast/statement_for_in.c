@@ -9,7 +9,7 @@
 #include "compiler/scope.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
-#include "core/variable.h"
+#include "core/any.h"
 #include <stdio.h>
 static void neo_ast_statement_for_in_dispose(neo_allocator_t allocator,
                                              neo_ast_statement_for_in_t node) {
@@ -78,53 +78,51 @@ static void neo_ast_statement_for_in_write(neo_allocator_t allocator,
   ctx->label = label;
 }
 
-static neo_variable_t
+static neo_any_t
 neo_serialize_ast_statement_for_in(neo_allocator_t allocator,
                                    neo_ast_statement_for_in_t node) {
-  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_set(
+  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_any_set(
       variable, "type",
       neo_create_variable_string(allocator, "NEO_NODE_TYPE_STATEMENT_FOR_IN"));
-  neo_variable_set(variable, "location",
-                   neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, "scope",
-                   neo_serialize_scope(allocator, node->node.scope));
-  neo_variable_set(variable, "left",
-                   neo_ast_node_serialize(allocator, node->left));
-  neo_variable_set(variable, "right",
-                   neo_ast_node_serialize(allocator, node->right));
-  neo_variable_set(variable, "body",
-                   neo_ast_node_serialize(allocator, node->body));
+  neo_any_set(variable, "location",
+              neo_ast_node_location_serialize(allocator, &node->node));
+  neo_any_set(variable, "scope",
+              neo_serialize_scope(allocator, node->node.scope));
+  neo_any_set(variable, "left", neo_ast_node_serialize(allocator, node->left));
+  neo_any_set(variable, "right",
+              neo_ast_node_serialize(allocator, node->right));
+  neo_any_set(variable, "body", neo_ast_node_serialize(allocator, node->body));
   switch (node->kind) {
   case NEO_AST_DECLARATION_VAR:
-    neo_variable_set(
+    neo_any_set(
         variable, "kind",
         neo_create_variable_string(allocator, "NEO_AST_DECLARATION_VAR"));
     break;
   case NEO_AST_DECLARATION_CONST:
-    neo_variable_set(
+    neo_any_set(
         variable, "kind",
         neo_create_variable_string(allocator, "NEO_AST_DECLARATION_CONST"));
     break;
   case NEO_AST_DECLARATION_LET:
-    neo_variable_set(
+    neo_any_set(
         variable, "kind",
         neo_create_variable_string(allocator, "NEO_AST_DECLARATION_LET"));
     break;
   case NEO_AST_DECLARATION_NONE:
-    neo_variable_set(
+    neo_any_set(
         variable, "kind",
         neo_create_variable_string(allocator, "NEO_AST_DECLARATION_NONE"));
     break;
   case NEO_AST_DECLARATION_USING:
-    neo_variable_set(
+    neo_any_set(
         variable, "kind",
         neo_create_variable_string(allocator, "NEO_AST_DECLARATION_USING"));
     break;
   case NEO_AST_DECLARATION_AWAIT_USING:
-    neo_variable_set(variable, "kind",
-                     neo_create_variable_string(
-                         allocator, "NEO_AST_DECLARATION_AWAIT_USING"));
+    neo_any_set(variable, "kind",
+                neo_create_variable_string(allocator,
+                                           "NEO_AST_DECLARATION_AWAIT_USING"));
     break;
   }
   return variable;

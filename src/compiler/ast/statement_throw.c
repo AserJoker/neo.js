@@ -4,11 +4,12 @@
 #include "compiler/ast/node.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
+#include "core/any.h"
 #include "core/error.h"
 #include "core/location.h"
 #include "core/position.h"
-#include "core/variable.h"
 #include <stdio.h>
+
 
 static void neo_ast_statement_throw_dispose(neo_allocator_t allocator,
                                             neo_ast_statement_throw_t node) {
@@ -31,19 +32,19 @@ static void neo_ast_statement_throw_write(neo_allocator_t allocator,
   }
   neo_program_add_code(allocator, ctx->program, NEO_ASM_THROW);
 }
-static neo_variable_t
+static neo_any_t
 neo_serialize_ast_statement_throw(neo_allocator_t allocator,
                                   neo_ast_statement_throw_t node) {
-  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_set(
+  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_any_set(
       variable, "type",
       neo_create_variable_string(allocator, "NEO_NODE_TYPE_STATEMENT_THROW"));
-  neo_variable_set(variable, "location",
-                   neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, "scope",
-                   neo_serialize_scope(allocator, node->node.scope));
-  neo_variable_set(variable, "value",
-                   neo_ast_node_serialize(allocator, node->value));
+  neo_any_set(variable, "location",
+              neo_ast_node_location_serialize(allocator, &node->node));
+  neo_any_set(variable, "scope",
+              neo_serialize_scope(allocator, node->node.scope));
+  neo_any_set(variable, "value",
+              neo_ast_node_serialize(allocator, node->value));
   return variable;
 }
 static neo_ast_statement_throw_t

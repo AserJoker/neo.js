@@ -4,10 +4,10 @@
 #include "compiler/program.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
+#include "core/any.h"
 #include "core/error.h"
 #include "core/location.h"
 #include "core/position.h"
-#include "core/variable.h"
 
 static void neo_statement_debugger_dispose(neo_allocator_t allocator,
                                            neo_ast_statement_debugger_t node) {
@@ -21,17 +21,17 @@ neo_ast_statement_debugger_write(neo_allocator_t allocator,
   neo_program_add_code(allocator, ctx->program, NEO_ASM_BREAKPOINT);
 }
 
-static neo_variable_t
+static neo_any_t
 neo_serialize_ast_statement_debugger(neo_allocator_t allocator,
                                      neo_ast_statement_debugger_t node) {
-  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_set(variable, "type",
-                   neo_create_variable_string(
-                       allocator, "NEO_NODE_TYPE_STATEMENT_DEBUGGER"));
-  neo_variable_set(variable, "location",
-                   neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, "scope",
-                   neo_serialize_scope(allocator, node->node.scope));
+  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_any_set(variable, "type",
+              neo_create_variable_string(allocator,
+                                         "NEO_NODE_TYPE_STATEMENT_DEBUGGER"));
+  neo_any_set(variable, "location",
+              neo_ast_node_location_serialize(allocator, &node->node));
+  neo_any_set(variable, "scope",
+              neo_serialize_scope(allocator, node->node.scope));
   return variable;
 }
 

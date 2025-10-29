@@ -6,10 +6,11 @@
 #include "compiler/program.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
+#include "core/any.h"
 #include "core/error.h"
 #include "core/list.h"
 #include "core/position.h"
-#include "core/variable.h"
+
 
 static void neo_ast_pattern_array_dispose(neo_allocator_t allocator,
                                           neo_ast_pattern_array_t node) {
@@ -48,19 +49,18 @@ static void neo_ast_pattern_array_resolve_closure(neo_allocator_t allocator,
   }
 }
 
-static neo_variable_t
-neo_serialize_ast_pattern_array(neo_allocator_t allocator,
-                                neo_ast_pattern_array_t node) {
-  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_set(
+static neo_any_t neo_serialize_ast_pattern_array(neo_allocator_t allocator,
+                                                 neo_ast_pattern_array_t node) {
+  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_any_set(
       variable, "type",
       neo_create_variable_string(allocator, "NEO_NODE_TYPE_PATTERN_ARRAY"));
-  neo_variable_set(variable, "location",
-                   neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, "scope",
-                   neo_serialize_scope(allocator, node->node.scope));
-  neo_variable_set(variable, "items",
-                   neo_ast_node_list_serialize(allocator, node->items));
+  neo_any_set(variable, "location",
+              neo_ast_node_location_serialize(allocator, &node->node));
+  neo_any_set(variable, "scope",
+              neo_serialize_scope(allocator, node->node.scope));
+  neo_any_set(variable, "items",
+              neo_ast_node_list_serialize(allocator, node->items));
   return variable;
 }
 

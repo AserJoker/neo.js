@@ -10,14 +10,15 @@
 #include "compiler/token.h"
 #include "compiler/writer.h"
 #include "core/allocator.h"
+#include "core/any.h"
 #include "core/buffer.h"
 #include "core/error.h"
 #include "core/list.h"
 #include "core/location.h"
 #include "core/position.h"
-#include "core/variable.h"
 #include <stdbool.h>
 #include <stdio.h>
+
 
 static void neo_ast_expression_arrow_function_dispose(
     neo_allocator_t allocator, neo_ast_expression_arrow_function_t node) {
@@ -46,24 +47,23 @@ static void neo_ast_expression_arrow_resolve_closure(
   }
 }
 
-static neo_variable_t neo_serialize_ast_expression_arrow_function(
+static neo_any_t neo_serialize_ast_expression_arrow_function(
     neo_allocator_t allocator, neo_ast_expression_arrow_function_t node) {
-  neo_variable_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_variable_set(variable, "type",
-                   neo_create_variable_string(
-                       allocator, "NEO_NODE_TYPE_EXPRESSION_ARROW_FUNCTION"));
-  neo_variable_set(variable, "location",
-                   neo_ast_node_location_serialize(allocator, &node->node));
-  neo_variable_set(variable, "scope",
-                   neo_serialize_scope(allocator, node->node.scope));
-  neo_variable_set(variable, "arguments",
-                   neo_ast_node_list_serialize(allocator, node->arguments));
-  neo_variable_set(variable, "body",
-                   neo_ast_node_serialize(allocator, node->body));
-  neo_variable_set(variable, "closure",
-                   neo_ast_node_list_serialize(allocator, node->closure));
-  neo_variable_set(variable, "async",
-                   neo_create_variable_boolean(allocator, node->async));
+  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_any_set(variable, "type",
+              neo_create_variable_string(
+                  allocator, "NEO_NODE_TYPE_EXPRESSION_ARROW_FUNCTION"));
+  neo_any_set(variable, "location",
+              neo_ast_node_location_serialize(allocator, &node->node));
+  neo_any_set(variable, "scope",
+              neo_serialize_scope(allocator, node->node.scope));
+  neo_any_set(variable, "arguments",
+              neo_ast_node_list_serialize(allocator, node->arguments));
+  neo_any_set(variable, "body", neo_ast_node_serialize(allocator, node->body));
+  neo_any_set(variable, "closure",
+              neo_ast_node_list_serialize(allocator, node->closure));
+  neo_any_set(variable, "async",
+              neo_create_variable_boolean(allocator, node->async));
   return variable;
 }
 static void neo_ast_expression_arrow_function_write(
