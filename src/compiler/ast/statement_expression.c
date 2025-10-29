@@ -9,7 +9,6 @@
 #include "core/location.h"
 #include "core/position.h"
 
-
 static void
 neo_ast_statement_expression_dispose(neo_allocator_t allocator,
                                      neo_ast_statement_expression_t node) {
@@ -35,10 +34,10 @@ static void neo_ast_statement_expression_resolve_closure(
 static neo_any_t
 neo_serialize_ast_statement_expreesion(neo_allocator_t allocator,
                                        neo_ast_statement_expression_t node) {
-  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_any_set(variable, "type",
-              neo_create_variable_string(allocator,
-                                         "NEO_NODE_TYPE_STATEMENT_EXPRESSION"));
+  neo_any_t variable = neo_create_any_dict(allocator, NULL, NULL);
+  neo_any_set(
+      variable, "type",
+      neo_create_any_string(allocator, "NEO_NODE_TYPE_STATEMENT_EXPRESSION"));
   neo_any_set(variable, "location",
               neo_ast_node_location_serialize(allocator, &node->node));
   neo_any_set(variable, "scope",

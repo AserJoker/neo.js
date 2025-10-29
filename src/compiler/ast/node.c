@@ -9,18 +9,17 @@
 #include "core/unicode.h"
 #include <string.h>
 
-
 neo_any_t neo_ast_node_serialize(neo_allocator_t allocator,
                                  neo_ast_node_t node) {
   if (!node) {
-    return neo_create_variable_nil(allocator);
+    return neo_create_any_nil(allocator);
   }
   return node->serialize(allocator, node);
 }
 neo_any_t neo_ast_node_list_serialize(neo_allocator_t allocator,
                                       neo_list_t list) {
-  return neo_create_variable_array(allocator, list,
-                                   (neo_serialize_fn_t)neo_ast_node_serialize);
+  return neo_create_any_array(allocator, list,
+                              (neo_serialize_fn_t)neo_ast_node_serialize);
 }
 
 neo_any_t neo_ast_node_source_serialize(neo_allocator_t allocator,
@@ -47,14 +46,14 @@ neo_any_t neo_ast_node_source_serialize(neo_allocator_t allocator,
     }
   }
   *dst = 0;
-  neo_any_t variable = neo_create_variable_string(allocator, buf);
+  neo_any_t variable = neo_create_any_string(allocator, buf);
   neo_allocator_free(allocator, buf);
   return variable;
 }
 
 neo_any_t neo_ast_node_location_serialize(neo_allocator_t allocator,
                                           neo_ast_node_t node) {
-  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_any_t variable = neo_create_any_dict(allocator, NULL, NULL);
 
   neo_any_set(variable, "text", neo_ast_node_source_serialize(allocator, node));
   return variable;

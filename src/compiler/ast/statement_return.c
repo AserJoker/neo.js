@@ -11,7 +11,6 @@
 #include "core/position.h"
 #include <stdio.h>
 
-
 static void neo_ast_statement_return_dispose(neo_allocator_t allocator,
                                              neo_ast_statement_return_t node) {
   neo_allocator_free(allocator, node->value);
@@ -38,10 +37,10 @@ static void neo_ast_statement_return_write(neo_allocator_t allocator,
 static neo_any_t
 neo_serialize_ast_statement_return(neo_allocator_t allocator,
                                    neo_ast_statement_return_t node) {
-  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_any_t variable = neo_create_any_dict(allocator, NULL, NULL);
   neo_any_set(
       variable, "type",
-      neo_create_variable_string(allocator, "NEO_NODE_TYPE_STATEMENT_RETURN"));
+      neo_create_any_string(allocator, "NEO_NODE_TYPE_STATEMENT_RETURN"));
   neo_any_set(variable, "location",
               neo_ast_node_location_serialize(allocator, &node->node));
   neo_any_set(variable, "scope",

@@ -12,7 +12,6 @@
 #include "core/position.h"
 #include <stdio.h>
 
-
 static void neo_ast_object_property_dispose(neo_allocator_t allocator,
                                             neo_ast_object_property_t node) {
   neo_allocator_free(allocator, node->identifier);
@@ -68,16 +67,16 @@ static void neo_ast_object_property_write(neo_allocator_t allocator,
 static neo_any_t
 neo_serialize_ast_object_property(neo_allocator_t allocator,
                                   neo_ast_object_property_t node) {
-  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_any_t variable = neo_create_any_dict(allocator, NULL, NULL);
   neo_any_set(
       variable, "type",
-      neo_create_variable_string(allocator, "NEO_NODE_TYPE_OBJECT_PROPERTY"));
+      neo_create_any_string(allocator, "NEO_NODE_TYPE_OBJECT_PROPERTY"));
   neo_any_set(variable, "identifier",
               neo_ast_node_serialize(allocator, node->identifier));
   neo_any_set(variable, "value",
               neo_ast_node_serialize(allocator, node->value));
   neo_any_set(variable, "computed",
-              neo_create_variable_boolean(allocator, node->computed));
+              neo_create_any_boolean(allocator, node->computed));
   neo_any_set(variable, "location",
               neo_ast_node_location_serialize(allocator, &node->node));
   neo_any_set(variable, "scope",

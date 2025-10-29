@@ -15,7 +15,6 @@
 #include "core/position.h"
 #include <stdio.h>
 
-
 static void
 neo_ast_expression_function_dispose(neo_allocator_t allocator,
                                     neo_ast_expression_function_t node) {
@@ -109,10 +108,10 @@ neo_ast_expression_function_write(neo_allocator_t allocator,
 static neo_any_t
 neo_serialize_ast_expression_function(neo_allocator_t allocator,
                                       neo_ast_expression_function_t node) {
-  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_any_set(variable, "type",
-              neo_create_variable_string(allocator,
-                                         "NEO_NODE_TYPE_EXPRESSION_FUNCTION"));
+  neo_any_t variable = neo_create_any_dict(allocator, NULL, NULL);
+  neo_any_set(
+      variable, "type",
+      neo_create_any_string(allocator, "NEO_NODE_TYPE_EXPRESSION_FUNCTION"));
   neo_any_set(variable, "location",
               neo_ast_node_location_serialize(allocator, &node->node));
   neo_any_set(variable, "scope",
@@ -122,11 +121,11 @@ neo_serialize_ast_expression_function(neo_allocator_t allocator,
   neo_any_set(variable, "arguments",
               neo_ast_node_list_serialize(allocator, node->arguments));
   neo_any_set(variable, "async",
-              neo_create_variable_boolean(allocator, node->async));
+              neo_create_any_boolean(allocator, node->async));
   neo_any_set(variable, "closure",
               neo_ast_node_list_serialize(allocator, node->closure));
   neo_any_set(variable, "generator",
-              neo_create_variable_boolean(allocator, node->generator));
+              neo_create_any_boolean(allocator, node->generator));
   return variable;
 }
 

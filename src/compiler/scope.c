@@ -18,7 +18,6 @@
 #include <string.h>
 #include <sys/types.h>
 
-
 neo_compile_scope_t g_current_scope = NULL;
 
 static void neo_compile_scope_dispose(neo_allocator_t allocator,
@@ -200,38 +199,34 @@ neo_compile_scope_t neo_compile_scope_get_current() { return g_current_scope; }
 
 static neo_any_t neo_serialize_compile_variable(neo_allocator_t allocator,
                                                 neo_compile_variable_t val) {
-  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_any_t variable = neo_create_any_dict(allocator, NULL, NULL);
   neo_any_set(variable, "name", neo_ast_node_serialize(allocator, val->node));
   switch (val->type) {
   case NEO_COMPILE_VARIABLE_VAR:
-    neo_any_set(
-        variable, "type",
-        neo_create_variable_string(allocator, "NEO_COMPILE_VARIABLE_VAR"));
+    neo_any_set(variable, "type",
+                neo_create_any_string(allocator, "NEO_COMPILE_VARIABLE_VAR"));
     break;
   case NEO_COMPILE_VARIABLE_LET:
-    neo_any_set(
-        variable, "type",
-        neo_create_variable_string(allocator, "NEO_COMPILE_VARIABLE_LET"));
+    neo_any_set(variable, "type",
+                neo_create_any_string(allocator, "NEO_COMPILE_VARIABLE_LET"));
     break;
   case NEO_COMPILE_VARIABLE_CONST:
-    neo_any_set(
-        variable, "type",
-        neo_create_variable_string(allocator, "NEO_COMPILE_VARIABLE_CONST"));
+    neo_any_set(variable, "type",
+                neo_create_any_string(allocator, "NEO_COMPILE_VARIABLE_CONST"));
     break;
   case NEO_COMPILE_VARIABLE_USING:
-    neo_any_set(
-        variable, "type",
-        neo_create_variable_string(allocator, "NEO_COMPILE_VARIABLE_USING"));
+    neo_any_set(variable, "type",
+                neo_create_any_string(allocator, "NEO_COMPILE_VARIABLE_USING"));
     break;
   case NEO_COMPILE_VARIABLE_AWAIT_USING:
-    neo_any_set(variable, "type",
-                neo_create_variable_string(allocator,
-                                           "NEO_COMPILE_VARIABLE_AWAIT_USING"));
+    neo_any_set(
+        variable, "type",
+        neo_create_any_string(allocator, "NEO_COMPILE_VARIABLE_AWAIT_USING"));
     break;
   case NEO_COMPILE_VARIABLE_FUNCTION:
     neo_any_set(
         variable, "type",
-        neo_create_variable_string(allocator, "NEO_COMPILE_VARIABLE_FUNCTION"));
+        neo_create_any_string(allocator, "NEO_COMPILE_VARIABLE_FUNCTION"));
     break;
   }
   return variable;
@@ -240,24 +235,22 @@ static neo_any_t neo_serialize_compile_variable(neo_allocator_t allocator,
 neo_any_t neo_serialize_scope(neo_allocator_t allocator,
                               neo_compile_scope_t scope) {
   if (!scope) {
-    return neo_create_variable_nil(allocator);
+    return neo_create_any_nil(allocator);
   }
-  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_any_t variable = neo_create_any_dict(allocator, NULL, NULL);
   switch (scope->type) {
   case NEO_COMPILE_SCOPE_BLOCK:
-    neo_any_set(
-        variable, "type",
-        neo_create_variable_string(allocator, "NEO_COMPILE_SCOPE_BLOCK"));
+    neo_any_set(variable, "type",
+                neo_create_any_string(allocator, "NEO_COMPILE_SCOPE_BLOCK"));
     break;
   case NEO_COMPILE_SCOPE_FUNCTION:
-    neo_any_set(
-        variable, "type",
-        neo_create_variable_string(allocator, "NEO_COMPILE_SCOPE_FUNCTION"));
+    neo_any_set(variable, "type",
+                neo_create_any_string(allocator, "NEO_COMPILE_SCOPE_FUNCTION"));
     break;
   }
-  neo_any_set(variable, "variables",
-              neo_create_variable_array(
-                  allocator, scope->variables,
-                  (neo_serialize_fn_t)neo_serialize_compile_variable));
+  neo_any_set(
+      variable, "variables",
+      neo_create_any_array(allocator, scope->variables,
+                           (neo_serialize_fn_t)neo_serialize_compile_variable));
   return variable;
 }

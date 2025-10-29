@@ -20,22 +20,21 @@ typedef enum _neo_any_type_t {
 
 typedef neo_any_t (*neo_serialize_fn_t)(neo_allocator_t allocator, void *item);
 
-neo_any_t neo_create_variable_nil(neo_allocator_t allocator);
+neo_any_t neo_create_any_nil(neo_allocator_t allocator);
 
-neo_any_t neo_create_variable_number(neo_allocator_t allocator, double value);
+neo_any_t neo_create_any_number(neo_allocator_t allocator, double value);
 
-neo_any_t neo_create_variable_integer(neo_allocator_t allocator, int64_t value);
+neo_any_t neo_create_any_integer(neo_allocator_t allocator, int64_t value);
 
-neo_any_t neo_create_variable_string(neo_allocator_t allocator,
-                                     const char *value);
+neo_any_t neo_create_any_string(neo_allocator_t allocator, const char *value);
 
-neo_any_t neo_create_variable_boolean(neo_allocator_t allocator, bool value);
+neo_any_t neo_create_any_boolean(neo_allocator_t allocator, bool value);
 
-neo_any_t neo_create_variable_array(neo_allocator_t allocator, neo_list_t list,
-                                    neo_serialize_fn_t serialize);
+neo_any_t neo_create_any_array(neo_allocator_t allocator, neo_list_t list,
+                               neo_serialize_fn_t serialize);
 
-neo_any_t neo_create_variable_dict(neo_allocator_t allocator, neo_map_t map,
-                                   neo_serialize_fn_t serialize);
+neo_any_t neo_create_any_dict(neo_allocator_t allocator, neo_map_t map,
+                              neo_serialize_fn_t serialize);
 
 neo_any_type_t neo_any_get_type(neo_any_t variable);
 

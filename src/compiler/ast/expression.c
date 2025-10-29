@@ -38,7 +38,6 @@
 #include <stdio.h>
 #include <string.h>
 
-
 static void
 neo_ast_expression_binary_dispose(neo_allocator_t allocator,
                                   neo_ast_expression_binary_t node) {
@@ -63,10 +62,10 @@ neo_ast_expression_binary_resolve_closure(neo_allocator_t allocator,
 static neo_any_t
 neo_serialize_ast_expression_binary(neo_allocator_t allocator,
                                     neo_ast_expression_binary_t node) {
-  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_any_t variable = neo_create_any_dict(allocator, NULL, NULL);
   neo_any_set(
       variable, "type",
-      neo_create_variable_string(allocator, "NEO_NODE_TYPE_EXPRESSION_BINARY"));
+      neo_create_any_string(allocator, "NEO_NODE_TYPE_EXPRESSION_BINARY"));
   neo_any_set(variable, "location",
               neo_ast_node_location_serialize(allocator, &node->node));
   neo_any_set(variable, "scope",
@@ -76,7 +75,7 @@ neo_serialize_ast_expression_binary(neo_allocator_t allocator,
               neo_ast_node_serialize(allocator, node->right));
 
   char *opt = neo_location_get(allocator, node->opt->location);
-  neo_any_set(variable, "operator", neo_create_variable_string(allocator, opt));
+  neo_any_set(variable, "operator", neo_create_any_string(allocator, opt));
   neo_allocator_free(allocator, opt);
   return variable;
 }

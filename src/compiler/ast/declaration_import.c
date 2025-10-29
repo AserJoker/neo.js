@@ -49,10 +49,10 @@ neo_ast_declaration_import_write(neo_allocator_t allocator,
 static neo_any_t
 neo_serialize_ast_declaration_import(neo_allocator_t allocator,
                                      neo_ast_declaration_import_t node) {
-  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_any_set(variable, "type",
-              neo_create_variable_string(allocator,
-                                         "NEO_NODE_TYPE_DECLARATION_IMPORT"));
+  neo_any_t variable = neo_create_any_dict(allocator, NULL, NULL);
+  neo_any_set(
+      variable, "type",
+      neo_create_any_string(allocator, "NEO_NODE_TYPE_DECLARATION_IMPORT"));
   neo_any_set(variable, "specifiers",
               neo_ast_node_list_serialize(allocator, node->specifiers));
   neo_any_set(variable, "attributes",

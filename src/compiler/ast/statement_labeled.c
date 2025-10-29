@@ -68,10 +68,10 @@ static void neo_ast_statement_labeled_write(neo_allocator_t allocator,
 static neo_any_t
 neo_serialize_ast_statement_labeled(neo_allocator_t allocator,
                                     neo_ast_statement_labeled_t node) {
-  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_any_t variable = neo_create_any_dict(allocator, NULL, NULL);
   neo_any_set(
       variable, "type",
-      neo_create_variable_string(allocator, "NEO_NODE_TYPE_STATEMENT_LABELED"));
+      neo_create_any_string(allocator, "NEO_NODE_TYPE_STATEMENT_LABELED"));
   neo_any_set(variable, "location",
               neo_ast_node_location_serialize(allocator, &node->node));
   neo_any_set(variable, "scope",

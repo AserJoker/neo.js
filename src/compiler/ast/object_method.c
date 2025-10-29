@@ -16,7 +16,6 @@
 #include "core/position.h"
 #include <stdio.h>
 
-
 static void neo_ast_object_method_dispose(neo_allocator_t allocator,
                                           neo_ast_object_method_t node) {
   neo_allocator_free(allocator, node->arguments);
@@ -119,20 +118,19 @@ static void neo_ast_object_method_write(neo_allocator_t allocator,
 }
 static neo_any_t neo_serialize_ast_object_method(neo_allocator_t allocator,
                                                  neo_ast_object_method_t node) {
-  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_any_set(
-      variable, "type",
-      neo_create_variable_string(allocator, "NEO_NODE_TYPE_OBJECT_METHOD"));
+  neo_any_t variable = neo_create_any_dict(allocator, NULL, NULL);
+  neo_any_set(variable, "type",
+              neo_create_any_string(allocator, "NEO_NODE_TYPE_OBJECT_METHOD"));
   neo_any_set(variable, "arguments",
               neo_ast_node_list_serialize(allocator, node->arguments));
   neo_any_set(variable, "name", neo_ast_node_serialize(allocator, node->name));
   neo_any_set(variable, "body", neo_ast_node_serialize(allocator, node->body));
   neo_any_set(variable, "computed",
-              neo_create_variable_boolean(allocator, node->computed));
+              neo_create_any_boolean(allocator, node->computed));
   neo_any_set(variable, "async",
-              neo_create_variable_boolean(allocator, node->async));
+              neo_create_any_boolean(allocator, node->async));
   neo_any_set(variable, "generator",
-              neo_create_variable_boolean(allocator, node->generator));
+              neo_create_any_boolean(allocator, node->generator));
   neo_any_set(variable, "location",
               neo_ast_node_location_serialize(allocator, &node->node));
   neo_any_set(variable, "closure",

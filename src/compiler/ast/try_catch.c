@@ -32,10 +32,9 @@ static void neo_ast_try_catch_resolve_closure(neo_allocator_t allocator,
 }
 static neo_any_t neo_serialize_ast_try_catch(neo_allocator_t allocator,
                                              neo_ast_try_catch_t node) {
-  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_any_set(
-      variable, "type",
-      neo_create_variable_string(allocator, "NEO_NODE_TYPE_SWITCH_CASE"));
+  neo_any_t variable = neo_create_any_dict(allocator, NULL, NULL);
+  neo_any_set(variable, "type",
+              neo_create_any_string(allocator, "NEO_NODE_TYPE_SWITCH_CASE"));
   neo_any_set(variable, "location",
               neo_ast_node_location_serialize(allocator, &node->node));
   neo_any_set(variable, "scope",

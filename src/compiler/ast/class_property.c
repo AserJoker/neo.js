@@ -86,10 +86,9 @@ static void neo_ast_class_property_write(neo_allocator_t allocator,
 static neo_any_t
 neo_serialize_ast_class_property(neo_allocator_t allocator,
                                  neo_ast_class_property_t node) {
-  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_any_set(
-      variable, "type",
-      neo_create_variable_string(allocator, "NEO_NODE_TYPE_CLASS_PROPERTY"));
+  neo_any_t variable = neo_create_any_dict(allocator, NULL, NULL);
+  neo_any_set(variable, "type",
+              neo_create_any_string(allocator, "NEO_NODE_TYPE_CLASS_PROPERTY"));
   neo_any_set(variable, "identifier",
               neo_ast_node_serialize(allocator, node->identifier));
   neo_any_set(variable, "value",
@@ -97,11 +96,11 @@ neo_serialize_ast_class_property(neo_allocator_t allocator,
   neo_any_set(variable, "decorators",
               neo_ast_node_list_serialize(allocator, node->decorators));
   neo_any_set(variable, "computed",
-              neo_create_variable_boolean(allocator, node->computed));
+              neo_create_any_boolean(allocator, node->computed));
   neo_any_set(variable, "accessor",
-              neo_create_variable_boolean(allocator, node->accessor));
+              neo_create_any_boolean(allocator, node->accessor));
   neo_any_set(variable, "static",
-              neo_create_variable_boolean(allocator, node->static_));
+              neo_create_any_boolean(allocator, node->static_));
   neo_any_set(variable, "location",
               neo_ast_node_location_serialize(allocator, &node->node));
   neo_any_set(variable, "scope",

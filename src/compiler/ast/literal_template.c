@@ -16,7 +16,6 @@
 #include <stdio.h>
 #include <string.h>
 
-
 static void neo_ast_literal_template_dispose(neo_allocator_t allocator,
                                              neo_ast_literal_template_t node) {
   neo_allocator_free(allocator, node->expressions);
@@ -216,7 +215,7 @@ static neo_any_t neo_token_serialize(neo_allocator_t allocator,
     }
   }
   *dst = 0;
-  neo_any_t variable = neo_create_variable_string(allocator, buf);
+  neo_any_t variable = neo_create_any_string(allocator, buf);
   neo_allocator_free(allocator, buf);
   return variable;
 }
@@ -224,10 +223,10 @@ static neo_any_t neo_token_serialize(neo_allocator_t allocator,
 static neo_any_t
 neo_serialize_ast_literal_template(neo_allocator_t allocator,
                                    neo_ast_literal_template_t node) {
-  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_any_t variable = neo_create_any_dict(allocator, NULL, NULL);
   neo_any_set(
       variable, "type",
-      neo_create_variable_string(allocator, "NEO_NODE_TYPE_LITERAL_TEMPLATE"));
+      neo_create_any_string(allocator, "NEO_NODE_TYPE_LITERAL_TEMPLATE"));
   neo_any_set(variable, "location",
               neo_ast_node_location_serialize(allocator, &node->node));
   neo_any_set(variable, "scope",
@@ -235,10 +234,9 @@ neo_serialize_ast_literal_template(neo_allocator_t allocator,
   neo_any_set(variable, "tag", neo_ast_node_serialize(allocator, node->tag));
   neo_any_set(variable, "expressions",
               neo_ast_node_list_serialize(allocator, node->expressions));
-  neo_any_set(
-      variable, "quasis",
-      neo_create_variable_array(allocator, node->quasis,
-                                (neo_serialize_fn_t)neo_token_serialize));
+  neo_any_set(variable, "quasis",
+              neo_create_any_array(allocator, node->quasis,
+                                   (neo_serialize_fn_t)neo_token_serialize));
   return variable;
 }
 

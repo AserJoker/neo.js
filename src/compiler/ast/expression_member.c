@@ -51,24 +51,24 @@ static void neo_ast_expression_member_write(neo_allocator_t allocator,
 static neo_any_t
 neo_serialize_ast_expression_member(neo_allocator_t allocator,
                                     neo_ast_expression_member_t node) {
-  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_any_t variable = neo_create_any_dict(allocator, NULL, NULL);
   if (node->node.type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
-    neo_any_set(variable, "type",
-                neo_create_variable_string(allocator,
-                                           "NEO_NODE_TYPE_EXPRESSION_MEMBER"));
+    neo_any_set(
+        variable, "type",
+        neo_create_any_string(allocator, "NEO_NODE_TYPE_EXPRESSION_MEMBER"));
   } else if (node->node.type == NEO_NODE_TYPE_EXPRESSION_COMPUTED_MEMBER) {
     neo_any_set(variable, "type",
-                neo_create_variable_string(
+                neo_create_any_string(
                     allocator, "NEO_NODE_TYPE_EXPRESSION_COMPUTED_MEMBER"));
   } else if (node->node.type == NEO_NODE_TYPE_EXPRESSION_OPTIONAL_MEMBER) {
     neo_any_set(variable, "type",
-                neo_create_variable_string(
+                neo_create_any_string(
                     allocator, "NEO_NODE_TYPE_EXPRESSION_OPTIONAL_MEMBER"));
   } else if (node->node.type ==
              NEO_NODE_TYPE_EXPRESSION_OPTIONAL_COMPUTED_MEMBER) {
     neo_any_set(
         variable, "type",
-        neo_create_variable_string(
+        neo_create_any_string(
             allocator, "NEO_NODE_TYPE_EXPRESSION_OPTIONAL_COMPUTED_MEMBER"));
   }
   neo_any_set(variable, "location",

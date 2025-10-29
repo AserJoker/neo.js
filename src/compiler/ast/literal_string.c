@@ -10,7 +10,6 @@
 #include "core/string.h"
 #include <string.h>
 
-
 static void neo_ast_literal_string_dispose(neo_allocator_t allocator,
                                            neo_ast_literal_string_t node) {
   neo_allocator_free(allocator, node->node.scope);
@@ -29,10 +28,9 @@ static void neo_ast_literal_string_write(neo_allocator_t allocator,
 static neo_any_t
 neo_serialize_ast_literal_string(neo_allocator_t allocator,
                                  neo_ast_literal_string_t node) {
-  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_any_set(
-      variable, "type",
-      neo_create_variable_string(allocator, "NEO_NODE_TYPE_LITERAL_STRING"));
+  neo_any_t variable = neo_create_any_dict(allocator, NULL, NULL);
+  neo_any_set(variable, "type",
+              neo_create_any_string(allocator, "NEO_NODE_TYPE_LITERAL_STRING"));
   neo_any_set(variable, "location",
               neo_ast_node_location_serialize(allocator, &node->node));
   neo_any_set(variable, "scope",

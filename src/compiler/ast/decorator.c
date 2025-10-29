@@ -32,9 +32,9 @@ static void neo_ast_decorator_resolve_closure(neo_allocator_t allocator,
 
 static neo_any_t neo_serialize_ast_decorator(neo_allocator_t allocator,
                                              neo_ast_decorator_t node) {
-  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
+  neo_any_t variable = neo_create_any_dict(allocator, NULL, NULL);
   neo_any_set(variable, "type",
-              neo_create_variable_string(allocator, "NEO_NODE_TYPE_DECORATOR"));
+              neo_create_any_string(allocator, "NEO_NODE_TYPE_DECORATOR"));
   neo_any_set(variable, "callee",
               neo_ast_node_serialize(allocator, node->callee));
   neo_any_set(variable, "arguments",

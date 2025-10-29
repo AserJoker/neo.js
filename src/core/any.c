@@ -31,7 +31,7 @@ static void neo_any_dispose(neo_allocator_t allocator, neo_any_t variable) {
   }
 }
 
-neo_any_t neo_create_variable_nil(neo_allocator_t allocator) {
+neo_any_t neo_create_any_nil(neo_allocator_t allocator) {
   neo_any_t variable = (neo_any_t)neo_allocator_alloc(
       allocator, sizeof(struct _neo_any_t), neo_any_dispose);
   variable->type = NEO_ANY_NIL;
@@ -39,37 +39,35 @@ neo_any_t neo_create_variable_nil(neo_allocator_t allocator) {
   return variable;
 }
 
-neo_any_t neo_create_variable_number(neo_allocator_t allocator, double value) {
-  neo_any_t variable = neo_create_variable_nil(allocator);
+neo_any_t neo_create_any_number(neo_allocator_t allocator, double value) {
+  neo_any_t variable = neo_create_any_nil(allocator);
   return neo_any_set_number(variable, value);
 }
 
-neo_any_t neo_create_variable_integer(neo_allocator_t allocator,
-                                      int64_t value) {
-  neo_any_t variable = neo_create_variable_nil(allocator);
+neo_any_t neo_create_any_integer(neo_allocator_t allocator, int64_t value) {
+  neo_any_t variable = neo_create_any_nil(allocator);
   return neo_any_set_integer(variable, value);
 }
 
-neo_any_t neo_create_variable_string(neo_allocator_t allocator,
-                                     const char *value) {
-  neo_any_t variable = neo_create_variable_nil(allocator);
+neo_any_t neo_create_any_string(neo_allocator_t allocator, const char *value) {
+  neo_any_t variable = neo_create_any_nil(allocator);
   return neo_any_set_string(variable, value);
 }
 
-neo_any_t neo_create_variable_boolean(neo_allocator_t allocator, bool value) {
-  neo_any_t variable = neo_create_variable_nil(allocator);
+neo_any_t neo_create_any_boolean(neo_allocator_t allocator, bool value) {
+  neo_any_t variable = neo_create_any_nil(allocator);
   return neo_any_set_boolean(variable, value);
 }
 
-neo_any_t neo_create_variable_array(neo_allocator_t allocator, neo_list_t list,
-                                    neo_serialize_fn_t serizalize) {
-  neo_any_t variable = neo_create_variable_nil(allocator);
+neo_any_t neo_create_any_array(neo_allocator_t allocator, neo_list_t list,
+                               neo_serialize_fn_t serizalize) {
+  neo_any_t variable = neo_create_any_nil(allocator);
   return neo_any_set_array(variable, list, serizalize);
 }
 
-neo_any_t neo_create_variable_dict(neo_allocator_t allocator, neo_map_t map,
-                                   neo_serialize_fn_t serizalize) {
-  neo_any_t variable = neo_create_variable_nil(allocator);
+neo_any_t neo_create_any_dict(neo_allocator_t allocator, neo_map_t map,
+                              neo_serialize_fn_t serizalize) {
+  neo_any_t variable = neo_create_any_nil(allocator);
   return neo_any_set_dict(variable, map, serizalize);
 }
 

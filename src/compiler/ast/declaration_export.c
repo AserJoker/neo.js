@@ -200,10 +200,10 @@ neo_ast_declaration_export_resolve_closure(neo_allocator_t allocator,
 static neo_any_t
 neo_serialize_ast_declaration_export(neo_allocator_t allocator,
                                      neo_ast_declaration_export_t node) {
-  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_any_set(variable, "type",
-              neo_create_variable_string(allocator,
-                                         "NEO_NODE_TYPE_DECLARATION_EXPORT"));
+  neo_any_t variable = neo_create_any_dict(allocator, NULL, NULL);
+  neo_any_set(
+      variable, "type",
+      neo_create_any_string(allocator, "NEO_NODE_TYPE_DECLARATION_EXPORT"));
   neo_any_set(variable, "source",
               neo_ast_node_serialize(allocator, node->source));
   neo_any_set(variable, "attributes",

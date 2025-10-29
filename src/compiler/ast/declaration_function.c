@@ -46,10 +46,10 @@ static void neo_ast_declaration_function_resolve_closure(
 static neo_any_t
 neo_serialize_ast_declaration_function(neo_allocator_t allocator,
                                        neo_ast_declaration_function_t node) {
-  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_any_set(variable, "type",
-              neo_create_variable_string(allocator,
-                                         "NEO_NODE_TYPE_DECLARATION_FUNCTION"));
+  neo_any_t variable = neo_create_any_dict(allocator, NULL, NULL);
+  neo_any_set(
+      variable, "type",
+      neo_create_any_string(allocator, "NEO_NODE_TYPE_DECLARATION_FUNCTION"));
   neo_any_set(variable, "declaration",
               neo_ast_node_serialize(allocator, node->declaration));
   neo_any_set(variable, "location",

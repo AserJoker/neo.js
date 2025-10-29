@@ -24,10 +24,10 @@ neo_ast_statement_debugger_write(neo_allocator_t allocator,
 static neo_any_t
 neo_serialize_ast_statement_debugger(neo_allocator_t allocator,
                                      neo_ast_statement_debugger_t node) {
-  neo_any_t variable = neo_create_variable_dict(allocator, NULL, NULL);
-  neo_any_set(variable, "type",
-              neo_create_variable_string(allocator,
-                                         "NEO_NODE_TYPE_STATEMENT_DEBUGGER"));
+  neo_any_t variable = neo_create_any_dict(allocator, NULL, NULL);
+  neo_any_set(
+      variable, "type",
+      neo_create_any_string(allocator, "NEO_NODE_TYPE_STATEMENT_DEBUGGER"));
   neo_any_set(variable, "location",
               neo_ast_node_location_serialize(allocator, &node->node));
   neo_any_set(variable, "scope",
