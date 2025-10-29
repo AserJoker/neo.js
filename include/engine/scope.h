@@ -20,7 +20,6 @@ neo_js_variable_t neo_js_scope_set_variable(neo_js_scope_t self,
                                             const char *name);
 
 neo_js_variable_t neo_js_scope_create_variable(neo_js_scope_t self,
-                                               neo_js_variable_type_t type,
                                                neo_js_value_t value,
                                                const char *name);
 

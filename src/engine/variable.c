@@ -14,7 +14,6 @@ static void neo_js_variable_dispose(neo_allocator_t allocator,
 }
 
 neo_js_variable_t neo_create_js_variable(neo_allocator_t allocator,
-                                         neo_js_variable_type_t type,
                                          neo_js_value_t value) {
   neo_js_variable_t variable = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_variable_t), neo_js_variable_dispose);
@@ -31,7 +30,6 @@ neo_js_variable_t neo_create_js_variable(neo_allocator_t allocator,
   variable->is_alive = true;
   variable->is_check = false;
   variable->is_disposed = false;
-  variable->type = type;
   variable->value = value;
   return variable;
 }
