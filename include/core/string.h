@@ -26,4 +26,6 @@ char *neo_string_to_lower(neo_allocator_t allocator, const char *src);
 size_t neo_string16_length(const uint16_t *str);
 
 int64_t neo_string16_find(const uint16_t *source, const uint16_t *search);
+
+uint16_t *neo_string_to_string16(neo_allocator_t allocator, const char *src);
 #endif

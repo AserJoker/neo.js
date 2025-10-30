@@ -10,14 +10,14 @@ static void neo_js_string_dispose(neo_allocator_t allocator,
 }
 
 neo_js_string_t neo_create_js_string(neo_allocator_t allocator,
-                                     uint16_t *value) {
+                                     const uint16_t *value) {
   neo_js_string_t string = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_string_t), neo_js_string_dispose);
   neo_init_js_string(string, allocator, value);
   return string;
 }
 void neo_init_js_string(neo_js_string_t self, neo_allocator_t allocator,
-                        uint16_t *value) {
+                        const uint16_t *value) {
   neo_init_js_value(&self->super, allocator, NEO_JS_TYPE_STRING);
   size_t len = neo_string16_length(value);
   self->value =

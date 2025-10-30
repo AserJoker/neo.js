@@ -30,7 +30,7 @@ typedef struct _neo_js_value_t *neo_js_value_t;
 
 struct _neo_js_variable_t {
   neo_allocator_t allocator;
-  bool is_const;
+  bool is_;
   bool is_using;
   bool is_await_using;
 
@@ -67,6 +67,47 @@ void neo_js_variable_gc(neo_allocator_t allocator, neo_list_t gclist);
 void neo_init_js_value(neo_js_value_t self, neo_allocator_t allocator,
                        neo_js_variable_type_t type);
 void neo_deinit_js_value(neo_js_value_t self, neo_allocator_t allocator);
+
+neo_js_variable_t neo_js_variable_to_string(neo_js_variable_t self,
+                                            neo_js_context_t ctx);
+
+neo_js_variable_t neo_js_variable_to_number(neo_js_variable_t self,
+                                            neo_js_context_t ctx);
+
+neo_js_variable_t neo_js_variable_to_boolean(neo_js_variable_t self,
+                                             neo_js_context_t ctx);
+
+neo_js_variable_t neo_js_variable_to_object(neo_js_variable_t self,
+                                            neo_js_context_t ctx);
+
+neo_js_variable_t
+neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
+                          neo_js_variable_t key, neo_js_variable_t value,
+                          bool configurable, bool enumable, bool writable);
+
+neo_js_variable_t
+neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
+                             neo_js_variable_t key, neo_js_variable_t get,
+                             neo_js_variable_t set, bool configurable,
+                             bool enumable);
+
+neo_js_variable_t neo_js_variable_get_field(neo_js_variable_t self,
+                                            neo_js_context_t ctx,
+                                            neo_js_variable_t key);
+
+neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
+                                            neo_js_context_t ctx,
+                                            neo_js_variable_t key,
+                                            neo_js_variable_t value);
+
+neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
+                                       neo_js_context_t ctx,
+                                       neo_js_variable_t _this, uint32_t argc,
+                                       neo_js_variable_t *argv);
+
+neo_js_variable_t neo_js_variable_equal(neo_js_variable_t self,
+                                        neo_js_context_t ctx,
+                                        neo_js_variable_t another);
 
 #ifdef __cplusplus
 }

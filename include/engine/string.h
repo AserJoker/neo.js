@@ -8,9 +8,9 @@ struct _neo_js_string_t {
 };
 typedef struct _neo_js_string_t *neo_js_string_t;
 neo_js_string_t neo_create_js_string(neo_allocator_t allocator,
-                                     uint16_t *value);
+                                     const uint16_t *value);
 void neo_init_js_string(neo_js_string_t self, neo_allocator_t allocator,
-                        uint16_t *value);
+                        const uint16_t *value);
 void neo_deinit_js_string(neo_js_string_t self, neo_allocator_t allocator);
 neo_js_value_t neo_js_string_to_value(neo_js_string_t self);
 #endif

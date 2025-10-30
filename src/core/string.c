@@ -245,3 +245,16 @@ int64_t neo_string16_find(const uint16_t *source, const uint16_t *search) {
     return -1;
   }
 }
+uint16_t *neo_string_to_string16(neo_allocator_t allocator, const char *src) {
+  uint16_t *str = neo_allocator_alloc(
+      allocator, sizeof(uint16_t) * (strlen(src) + 1), NULL);
+  uint16_t *dst = str;
+  while (*src) {
+    neo_utf8_char chr = neo_utf8_read_char(src);
+    uint32_t utf32 = neo_utf8_char_to_utf32(chr);
+    dst += neo_utf32_to_utf16(utf32, dst);
+    src = chr.end;
+  }
+  *dst = 0;
+  return str;
+}
