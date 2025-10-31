@@ -13,6 +13,7 @@ typedef enum _neo_js_variable_type_t {
   NEO_JS_TYPE_UNDEFINED,
   NEO_JS_TYPE_NULL,
   NEO_JS_TYPE_NUMBER,
+  NEO_JS_TYPE_BIGINT,
   NEO_JS_TYPE_BOOLEAN,
   NEO_JS_TYPE_STRING,
   NEO_JS_TYPE_SYMBOL,
@@ -68,6 +69,13 @@ void neo_init_js_value(neo_js_value_t self, neo_allocator_t allocator,
                        neo_js_variable_type_t type);
 void neo_deinit_js_value(neo_js_value_t self, neo_allocator_t allocator);
 
+neo_js_variable_t neo_js_variable_clone(neo_js_variable_t self,
+                                        neo_js_context_t ctx);
+
+neo_js_variable_t neo_js_variable_to_primitive(neo_js_variable_t self,
+                                               neo_js_context_t ctx,
+                                               const char *kind);
+
 neo_js_variable_t neo_js_variable_to_string(neo_js_variable_t self,
                                             neo_js_context_t ctx);
 
@@ -95,6 +103,10 @@ neo_js_variable_t neo_js_variable_get_field(neo_js_variable_t self,
                                             neo_js_context_t ctx,
                                             neo_js_variable_t key);
 
+neo_js_variable_t neo_js_variable_del_field(neo_js_variable_t self,
+                                            neo_js_context_t ctx,
+                                            neo_js_variable_t key);
+
 neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
                                             neo_js_context_t ctx,
                                             neo_js_variable_t key,
@@ -102,8 +114,8 @@ neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
 
 neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
                                        neo_js_context_t ctx,
-                                       neo_js_variable_t _this, uint32_t argc,
-                                       neo_js_variable_t *argv);
+                                       neo_js_variable_t func_self,
+                                       uint32_t argc, neo_js_variable_t *argv);
 
 neo_js_variable_t neo_js_variable_equal(neo_js_variable_t self,
                                         neo_js_context_t ctx,

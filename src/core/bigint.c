@@ -59,8 +59,7 @@ neo_bigint_t neo_number_to_bigint(neo_allocator_t allocator, int64_t number) {
   return bigint;
 }
 
-neo_bigint_t neo_string_to_bigint(neo_allocator_t allocator,
-                                  const char *val) {
+neo_bigint_t neo_string_to_bigint(neo_allocator_t allocator, const char *val) {
   neo_bigint_t bigint = neo_create_bigint(allocator);
   const char *chr = val;
   if (*chr == L'+') {

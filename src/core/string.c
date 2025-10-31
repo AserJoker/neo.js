@@ -191,6 +191,12 @@ char *neo_create_string(neo_allocator_t allocator, const char *src) {
   str[strlen(src)] = 0;
   return str;
 }
+uint16_t *neo_create_string16(neo_allocator_t allocator, const uint16_t *src) {
+  size_t len = neo_string16_length(src) + 1;
+  uint16_t *str = neo_allocator_alloc(allocator, len * sizeof(uint16_t), NULL);
+  memcpy(str, src, len * sizeof(uint16_t));
+  return str;
+}
 char *neo_string_to_lower(neo_allocator_t allocator, const char *src) {
   size_t len = strlen(src) + 1;
   char *str = neo_allocator_alloc(allocator, sizeof(char) * len, NULL);
@@ -256,5 +262,30 @@ uint16_t *neo_string_to_string16(neo_allocator_t allocator, const char *src) {
     src = chr.end;
   }
   *dst = 0;
+  return str;
+}
+int neo_string16_compare(const uint16_t *str1, const uint16_t *str2) {
+  for (;;) {
+    if (*str1 != *str2) {
+      return *str1 - *str2;
+    }
+    if (!*str1) {
+      break;
+    }
+    str1++;
+    str2++;
+  }
+  return 0;
+}
+char *neo_string16_to_string(neo_allocator_t allocator, const uint16_t *src) {
+  size_t len = neo_string16_length(src);
+  char *str = neo_allocator_alloc(allocator, len * 2 + 1, NULL);
+  char *dst = str;
+  while (*src) {
+    neo_utf16_char chr = neo_utf16_read_char(src);
+    src = chr.end;
+    uint32_t utf32 = neo_utf16_to_utf32(chr);
+    dst += neo_utf32_to_utf8(utf32, dst);
+  }
   return str;
 }

@@ -1,6 +1,4 @@
 "use strict";
-const obj = {};
-Object.defineProperty(obj, "data", {
-  set: (val) => {},
-});
-console.log(obj.data);
+const obj = {a:1};
+Object.seal(obj)
+delete obj.b

@@ -55,6 +55,10 @@ void neo_js_context_pop_scope(neo_js_context_t self) {
 neo_js_runtime_t neo_js_context_get_runtime(neo_js_context_t self) {
   return self->runtime;
 }
+neo_js_variable_t neo_js_context_create_variable(neo_js_context_t self,
+                                                 neo_js_value_t value) {
+  return neo_js_scope_create_variable(self->current_scope, value, NULL);
+}
 neo_js_variable_t neo_js_context_create_exception(neo_js_context_t self,
                                                   neo_js_variable_t error) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
@@ -115,7 +119,8 @@ neo_js_variable_t neo_js_context_create_object(neo_js_context_t self,
   neo_js_variable_add_parent(prototype, result);
   return result;
 }
-uint16_t *neo_js_context_format(neo_js_context_t self, const char *fmt, ...) {
+neo_js_variable_t neo_js_context_format(neo_js_context_t self, const char *fmt,
+                                        ...) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   uint16_t *format = neo_string_to_string16(allocator, fmt);
   const uint16_t *pformat = format;
@@ -184,5 +189,13 @@ uint16_t *neo_js_context_format(neo_js_context_t self, const char *fmt, ...) {
   }
   va_end(args);
   neo_allocator_free(allocator, format);
-  return result;
+  neo_js_variable_t message = neo_js_context_create_string(self, result);
+  neo_allocator_free(allocator, message);
+  return message;
+}
+
+neo_js_variable_t neo_js_context_recycle(neo_js_context_t self,
+                                         neo_js_variable_t variable) {
+  neo_js_scope_set_variable(self->current_scope, variable, NULL);
+  return variable;
 }
