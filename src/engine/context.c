@@ -1,5 +1,6 @@
 #include "engine/context.h"
 #include "core/allocator.h"
+#include "core/list.h"
 #include "core/string.h"
 #include "engine/boolean.h"
 #include "engine/exception.h"
@@ -8,6 +9,7 @@
 #include "engine/object.h"
 #include "engine/runtime.h"
 #include "engine/scope.h"
+#include "engine/stackframe.h"
 #include "engine/string.h"
 #include "engine/symbol.h"
 #include "engine/undefined.h"
@@ -21,6 +23,7 @@ struct _neo_js_context_t {
   neo_js_runtime_t runtime;
   neo_js_scope_t root_scope;
   neo_js_scope_t current_scope;
+  neo_list_t callstack;
 };
 
 static void neo_js_context_dispose(neo_allocator_t allocator,
@@ -119,6 +122,59 @@ neo_js_variable_t neo_js_context_create_object(neo_js_context_t self,
   neo_js_variable_add_parent(prototype, result);
   return result;
 }
+
+neo_js_scope_t neo_js_context_get_scope(neo_js_context_t self) {
+  return self->current_scope;
+}
+neo_js_scope_t neo_js_context_get_root_scope(neo_js_context_t self) {
+  return self->root_scope;
+}
+
+void neo_js_context_push_callstack(neo_js_context_t self,
+                                   const uint16_t *filename,
+                                   const uint16_t *funcname, uint32_t line,
+                                   uint32_t column) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  neo_list_node_t last = neo_list_get_last(self->callstack);
+  neo_js_stackframe_t frame = neo_list_node_get(last);
+  frame->column = column;
+  frame->line = line;
+  frame = neo_create_js_stackframe(allocator, filename, funcname, 0, 0);
+  neo_list_push(self->callstack, frame);
+}
+void neo_js_context_pop_callstack(neo_js_context_t self) {
+  neo_list_pop(self->callstack);
+}
+neo_list_t neo_js_context_get_callstack(neo_js_context_t self) {
+  return self->callstack;
+}
+neo_list_t neo_js_context_set_callstack(neo_js_context_t self,
+                                        neo_list_t callstack) {
+  neo_list_t current = self->callstack;
+  self->callstack = callstack;
+  return current;
+}
+neo_list_t neo_js_context_trace(neo_js_context_t self, uint32_t line,
+                                uint32_t column) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  neo_list_initialize_t initialize = {true};
+  neo_list_t callstack = neo_create_list(allocator, &initialize);
+  neo_list_node_t it = neo_list_get_first(self->callstack);
+  while (it != neo_list_get_tail(self->callstack)) {
+    neo_js_stackframe_t frame = neo_list_node_get(it);
+    frame =
+        neo_create_js_stackframe(allocator, frame->filename, frame->funcname,
+                                 frame->line, frame->column);
+    neo_list_push(callstack, frame);
+    it = neo_list_node_next(it);
+  }
+  it = neo_list_get_tail(callstack);
+  neo_js_stackframe_t frame = neo_list_node_get(it);
+  frame->column = column;
+  frame->line = line;
+  return callstack;
+}
+
 neo_js_variable_t neo_js_context_format(neo_js_context_t self, const char *fmt,
                                         ...) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);

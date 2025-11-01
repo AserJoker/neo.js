@@ -3,6 +3,7 @@
 #include "engine/runtime.h"
 #include "engine/scope.h"
 #include "engine/variable.h"
+#include <stdint.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -10,6 +11,18 @@ typedef struct _neo_js_context_t *neo_js_context_t;
 neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime);
 void neo_js_context_push_scope(neo_js_context_t self);
 void neo_js_context_pop_scope(neo_js_context_t self);
+neo_js_scope_t neo_js_context_get_scope(neo_js_context_t self);
+neo_js_scope_t neo_js_context_get_root_scope(neo_js_context_t self);
+void neo_js_context_push_callstack(neo_js_context_t self,
+                                   const uint16_t *filename,
+                                   const uint16_t *funcname, uint32_t line,
+                                   uint32_t column);
+void neo_js_context_pop_callstack(neo_js_context_t self);
+neo_list_t neo_js_context_get_callstack(neo_js_context_t self);
+neo_list_t neo_js_context_set_callstack(neo_js_context_t self,
+                                        neo_list_t callstack);
+neo_list_t neo_js_context_trace(neo_js_context_t self, uint32_t line,
+                                uint32_t column);
 neo_js_runtime_t neo_js_context_get_runtime(neo_js_context_t self);
 neo_js_variable_t neo_js_context_create_variable(neo_js_context_t self,
                                                  neo_js_value_t value);
@@ -27,7 +40,6 @@ neo_js_variable_t neo_js_context_create_symbol(neo_js_context_t self,
                                                uint16_t *description);
 neo_js_variable_t neo_js_context_create_object(neo_js_context_t self,
                                                neo_js_variable_t prototype);
-neo_js_scope_t neo_js_context_get_scope(neo_js_context_t self);
 
 neo_js_variable_t neo_js_context_format(neo_js_context_t self, const char *fmt,
                                         ...);

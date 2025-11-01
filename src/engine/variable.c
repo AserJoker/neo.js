@@ -15,14 +15,12 @@
 #include "engine/runtime.h"
 #include "engine/scope.h"
 #include "engine/string.h"
-#include <alloca.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/types.h>
 
 static void neo_js_variable_dispose(neo_allocator_t allocator,
                                     neo_js_variable_t variable) {
@@ -419,7 +417,13 @@ neo_js_variable_t neo_js_variable_to_boolean(neo_js_variable_t self,
 }
 
 neo_js_variable_t neo_js_variable_to_object(neo_js_variable_t self,
-                                            neo_js_context_t ctx);
+                                            neo_js_context_t ctx) {
+  if (self->value->type >= NEO_JS_TYPE_OBJECT) {
+    return neo_js_variable_clone(self, ctx);
+  }
+  // TODO: wrapper object
+  return neo_js_context_create_object(ctx, NULL);
+}
 
 neo_js_variable_t
 neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
