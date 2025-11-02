@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 struct _neo_js_context_t {
   neo_js_runtime_t runtime;
@@ -32,6 +33,7 @@ static void neo_js_context_dispose(neo_allocator_t allocator,
   while (self->current_scope) {
     neo_js_context_pop_scope(self);
   }
+  neo_allocator_free(allocator, self->callstack);
 }
 
 neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime) {
@@ -41,6 +43,11 @@ neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime) {
   ctx->runtime = runtime;
   ctx->root_scope = neo_create_js_scope(allocator, NULL);
   ctx->current_scope = ctx->root_scope;
+  neo_list_initialize_t initialize = {true};
+  ctx->callstack = neo_create_list(allocator, &initialize);
+  neo_js_stackframe_t frame =
+      neo_create_js_stackframe(allocator, NULL, NULL, 0, 0);
+  neo_list_push(ctx->callstack, frame);
   return ctx;
 }
 
