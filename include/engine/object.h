@@ -3,6 +3,10 @@
 #include "core/allocator.h"
 #include "core/hash_map.h"
 #include "engine/variable.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef struct _neo_js_object_property_t *neo_js_object_property_t;
 struct _neo_js_object_property_t {
   neo_js_variable_t get;
@@ -40,5 +44,9 @@ uint32_t neo_js_object_key_hash(const neo_js_variable_t self, uint32_t max,
                                 neo_js_context_t ctx);
 
 neo_js_object_property_t
-neo_create_js_object_property(neo_allocator_t allocator); 
+neo_create_js_object_property(neo_allocator_t allocator);
+
+#ifdef __cplusplus
+}
+#endif
 #endif

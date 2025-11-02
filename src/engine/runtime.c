@@ -13,6 +13,7 @@ neo_js_runtime_t neo_create_js_runtime(neo_allocator_t allocator) {
   rt->allocator = allocator;
   return rt;
 }
+
 neo_allocator_t neo_js_runtime_get_allocator(neo_js_runtime_t self) {
   return self->allocator;
 }

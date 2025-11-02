@@ -36,11 +36,15 @@ neo_js_variable_t neo_js_context_create_boolean(neo_js_context_t self,
                                                 bool value);
 neo_js_variable_t neo_js_context_create_string(neo_js_context_t self,
                                                const uint16_t *value);
+neo_js_variable_t neo_js_context_create_cstring(neo_js_context_t self,
+                                                const char *value);
 neo_js_variable_t neo_js_context_create_symbol(neo_js_context_t self,
                                                uint16_t *description);
 neo_js_variable_t neo_js_context_create_object(neo_js_context_t self,
                                                neo_js_variable_t prototype);
-
+neo_js_variable_t neo_js_context_create_cfunction(neo_js_context_t self,
+                                                  neo_js_cfunc_t callee,
+                                                  const char *funcname);
 neo_js_variable_t neo_js_context_format(neo_js_context_t self, const char *fmt,
                                         ...);
 

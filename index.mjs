@@ -1,4 +1,3 @@
 "use strict";
-const obj = {a:1};
-Object.seal(obj)
-delete obj.b
+const prototype = Object.prototype;
+console.log(Object.getOwnPropertyDescriptor(prototype,"constructor"))

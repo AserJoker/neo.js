@@ -2,6 +2,10 @@
 #define _H_NEO_ENGINE_UNDEFINED_
 #include "core/allocator.h"
 #include "engine/variable.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 struct _neo_js_undefined_t {
   struct _neo_js_value_t super;
 };
@@ -11,4 +15,8 @@ void neo_init_js_undefined(neo_js_undefined_t self, neo_allocator_t allocaotr);
 void neo_deinit_js_undefined(neo_js_undefined_t self,
                              neo_allocator_t allocaotr);
 neo_js_value_t neo_js_undefined_to_value(neo_js_undefined_t self);
+
+#ifdef __cplusplus
+}
+#endif
 #endif

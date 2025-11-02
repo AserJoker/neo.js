@@ -4,6 +4,9 @@
 #include "core/hash_map.h"
 #include "engine/object.h"
 #include "engine/variable.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 struct _neo_js_function_t {
   struct _neo_js_object_t super;
   bool native;
@@ -24,4 +27,8 @@ void neo_init_js_function(neo_js_function_t self, neo_allocator_t allocaotr,
                           neo_js_variable_t prototype);
 void neo_deinit_js_function(neo_js_function_t self, neo_allocator_t allocaotr);
 neo_js_value_t neo_js_function_to_value(neo_js_function_t self);
+
+#ifdef __cplusplus
+}
+#endif
 #endif

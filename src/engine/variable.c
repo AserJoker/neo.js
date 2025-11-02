@@ -782,6 +782,12 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
   }
   func_self = neo_js_scope_set_variable(current_scope, func_self, NULL);
   neo_js_variable_t result = NULL;
+  neo_js_variable_t name = neo_js_context_create_cstring(ctx, "name");
+  name = neo_js_variable_get_field(self, ctx, name);
+  if (name->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return name;
+  }
+  const uint16_t *funcname = ((neo_js_string_t)name->value)->value;
   if (func->async) {
     // TODO: async function call
     neo_js_variable_t error = neo_js_context_format(ctx, "Not implement");
@@ -789,7 +795,9 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
   }
   if (func->native) {
     neo_js_cfunction_t cfunc = (neo_js_cfunction_t)func;
+    neo_js_context_push_callstack(ctx, NULL, funcname, 0, 0);
     result = cfunc->callee(ctx, func_self, argc, argv);
+    neo_js_context_pop_callstack(ctx);
   } else {
     // TODO: script function call
     neo_js_variable_t error = neo_js_context_format(ctx, "Not implement");

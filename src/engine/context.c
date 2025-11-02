@@ -3,6 +3,7 @@
 #include "core/list.h"
 #include "core/string.h"
 #include "engine/boolean.h"
+#include "engine/cfunction.h"
 #include "engine/exception.h"
 #include "engine/null.h"
 #include "engine/number.h"
@@ -14,7 +15,10 @@
 #include "engine/symbol.h"
 #include "engine/undefined.h"
 #include "engine/variable.h"
+#include "runtime/function.h"
+#include "runtime/object.h"
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -48,6 +52,10 @@ neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime) {
   neo_js_stackframe_t frame =
       neo_create_js_stackframe(allocator, NULL, NULL, 0, 0);
   neo_list_push(ctx->callstack, frame);
+  neo_js_context_push_scope(ctx);
+  neo_initialize_js_object(ctx);
+  neo_initialize_js_function(ctx);
+  neo_js_context_pop_scope(ctx);
   return ctx;
 }
 
@@ -112,6 +120,14 @@ neo_js_variable_t neo_js_context_create_string(neo_js_context_t self,
   neo_js_value_t val = neo_js_string_to_value(string);
   return neo_js_scope_create_variable(self->current_scope, val, NULL);
 }
+neo_js_variable_t neo_js_context_create_cstring(neo_js_context_t self,
+                                                const char *value) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  uint16_t *string = neo_string_to_string16(allocator, value);
+  neo_js_variable_t result = neo_js_context_create_string(self, string);
+  neo_allocator_free(allocator, string);
+  return result;
+}
 neo_js_variable_t neo_js_context_create_symbol(neo_js_context_t self,
                                                uint16_t *description) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
@@ -121,12 +137,37 @@ neo_js_variable_t neo_js_context_create_symbol(neo_js_context_t self,
 }
 neo_js_variable_t neo_js_context_create_object(neo_js_context_t self,
                                                neo_js_variable_t prototype) {
+  if (!prototype) {
+    prototype = neo_js_object_prototype;
+  }
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   neo_js_object_t object = neo_create_js_object(allocator, prototype);
   neo_js_value_t val = neo_js_object_to_value(object);
   neo_js_variable_t result =
       neo_js_scope_create_variable(self->current_scope, val, NULL);
   neo_js_variable_add_parent(prototype, result);
+  return result;
+}
+neo_js_variable_t neo_js_context_create_cfunction(neo_js_context_t self,
+                                                  neo_js_cfunc_t callee,
+                                                  const char *funcname) {
+  neo_js_variable_t prototype = neo_js_function_prototype;
+  if (!prototype) {
+    prototype = neo_js_context_create_null(self);
+  }
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  neo_js_cfunction_t func =
+      neo_create_js_cfunction(allocator, callee, prototype);
+  neo_js_variable_t result =
+      neo_js_context_create_variable(self, neo_js_cfunction_to_value(func));
+  neo_js_variable_t name = neo_js_context_create_cstring(self, funcname);
+  neo_js_variable_t key = neo_js_context_create_cstring(self, "name");
+  neo_js_variable_def_field(result, self, key, name, false, false, false);
+  prototype = neo_js_context_create_object(self, NULL);
+  key = neo_js_context_create_cstring(self, "prototype");
+  neo_js_variable_def_field(result, self, key, prototype, false, false, false);
+  key = neo_js_context_create_cstring(self, "constructor");
+  neo_js_variable_def_field(prototype, self, key, result, true, false, true);
   return result;
 }
 
@@ -207,11 +248,16 @@ neo_js_variable_t neo_js_context_format(neo_js_context_t self, const char *fmt,
         }
         break;
       }
+      case 0:
+        len += 1;
+        break;
       default:
         len += 2;
         break;
       }
-      pformat++;
+      if (*pformat) {
+        pformat++;
+      }
     } else {
       pformat++;
       len++;
@@ -240,12 +286,18 @@ neo_js_variable_t neo_js_context_format(neo_js_context_t self, const char *fmt,
         }
         break;
       }
+      case 0: {
+        *dst++ = '%';
+        break;
+      }
       default:
         *dst++ = '%';
         *dst++ = *pformat;
         break;
       }
-      pformat++;
+      if (*pformat) {
+        pformat++;
+      }
     } else {
       *dst++ = *pformat++;
     }
