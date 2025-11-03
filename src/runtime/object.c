@@ -18,4 +18,7 @@ void neo_initialize_js_object(neo_js_context_t ctx) {
   neo_js_variable_t key = neo_js_context_create_cstring(ctx, "prototype");
   neo_js_object_prototype =
       neo_js_variable_get_field(neo_js_object_class, ctx, key);
+  key = neo_js_context_create_cstring(ctx, "constructor");
+  neo_js_variable_def_field(neo_js_object_prototype, ctx, key,
+                            neo_js_object_class, true, false, true);
 }

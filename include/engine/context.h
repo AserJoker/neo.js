@@ -46,6 +46,10 @@ neo_js_variable_t neo_js_context_create_object(neo_js_context_t self,
 neo_js_variable_t neo_js_context_create_cfunction(neo_js_context_t self,
                                                   neo_js_cfunc_t callee,
                                                   const char *name);
+neo_js_variable_t neo_js_context_construct(neo_js_context_t self,
+                                           neo_js_variable_t constructor,
+                                           size_t argc,
+                                           neo_js_variable_t *argv);
 
 neo_js_variable_t neo_js_context_load(neo_js_context_t self,
                                       const uint16_t *name);
