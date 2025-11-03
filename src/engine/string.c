@@ -1,7 +1,6 @@
 #include "engine/string.h"
 #include "core/allocator.h"
 #include "core/string.h"
-#include "engine/variable.h"
 #include <stdint.h>
 #include <string.h>
 static void neo_js_string_dispose(neo_allocator_t allocator,

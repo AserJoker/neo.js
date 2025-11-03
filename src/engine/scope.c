@@ -13,6 +13,7 @@ struct _neo_js_scope_t {
   neo_map_t named_variables;
   neo_list_t defer_free;
   neo_allocator_t allocator;
+  neo_list_t gclist;
 };
 
 static void neo_js_scope_dispose(neo_allocator_t allocator,
@@ -28,17 +29,8 @@ static void neo_js_scope_dispose(neo_allocator_t allocator,
     child->parent = NULL;
     neo_allocator_free(allocator, child);
   }
-  neo_list_t gclist = neo_create_list(allocator, NULL);
-  neo_list_node_t it = neo_list_get_first(self->variables);
-  while (it != neo_list_get_tail(self->variables)) {
-    neo_js_variable_t variable = neo_list_node_get(it);
-    if (!--variable->ref) {
-      neo_list_push(gclist, variable);
-    }
-    it = neo_list_node_next(it);
-  }
-  neo_js_variable_gc(allocator, gclist);
-  neo_allocator_free(allocator, gclist);
+  neo_js_variable_gc(allocator, self->variables, self->gclist);
+  neo_allocator_free(allocator, self->gclist);
   neo_allocator_free(allocator, self->children);
   neo_allocator_free(allocator, self->variables);
   neo_allocator_free(allocator, self->named_variables);
@@ -66,6 +58,7 @@ neo_js_scope_t neo_create_js_scope(neo_allocator_t allocator,
   neo_list_initialize_t initialize = {true};
   scope->defer_free = neo_create_list(allocator, &initialize);
   scope->allocator = allocator;
+  scope->gclist = neo_create_list(allocator, NULL);
   return scope;
 }
 

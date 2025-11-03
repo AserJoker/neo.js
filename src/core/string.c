@@ -24,6 +24,34 @@ char *neo_string_concat(neo_allocator_t allocator, char *src, size_t *max,
   result[base + len] = 0;
   return result;
 }
+uint16_t *neo_string16_concat(neo_allocator_t allocator, uint16_t *src,
+                              size_t *max, const uint16_t *str) {
+  uint16_t *result = src;
+  size_t len = neo_string16_length(str);
+  uint16_t *dst = NULL;
+  const uint16_t *psrc = NULL;
+  size_t base = neo_string16_length(src);
+  if (base + len + 1 > *max) {
+    while (base + len + 1 > *max) {
+      *max += NEO_STRING_CHUNK_SIZE;
+    }
+    result = neo_allocator_alloc(allocator, *max, NULL);
+    psrc = src;
+    dst = result;
+    while (*psrc) {
+      *dst++ = *psrc;
+    }
+    result[base] = 0;
+    neo_allocator_free(allocator, src);
+  }
+  psrc = str;
+  dst = result + base;
+  while (*psrc) {
+    *dst++ = *psrc;
+  }
+  result[base + len] = 0;
+  return result;
+}
 
 char *neo_string_encode_escape(neo_allocator_t allocator, const char *src) {
   size_t len = strlen(src);

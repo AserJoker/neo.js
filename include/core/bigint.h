@@ -20,6 +20,8 @@ neo_bigint_t neo_bigint_clone(neo_bigint_t self);
 
 char *neo_bigint_to_string(neo_bigint_t bigint, uint32_t redix);
 
+uint16_t *neo_bigint_to_string16(neo_bigint_t bigint, uint32_t redix);
+
 double neo_bigint_to_number(neo_bigint_t bigint);
 
 bool neo_bigint_is_negative(neo_bigint_t bigint);

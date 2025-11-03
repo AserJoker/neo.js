@@ -1,6 +1,7 @@
 #include "core/allocator.h"
 #include "core/error.h"
-#include "engine/scope.h"
+#include "engine/context.h"
+#include "engine/runtime.h"
 #include "engine/variable.h"
 #include <stdbool.h>
 #include <stddef.h>
@@ -17,15 +18,10 @@ int main(int argc, char *argv[]) {
 #endif
   neo_allocator_t allocator = neo_create_default_allocator();
   neo_error_initialize(allocator);
-  neo_js_scope_t scope = neo_create_js_scope(allocator, NULL);
-  neo_js_variable_t a = neo_js_scope_create_variable(scope, NULL, NULL);
-  neo_js_scope_t sub = neo_create_js_scope(allocator, scope);
-  neo_js_variable_t b = neo_js_scope_create_variable(sub, NULL, NULL);
-  neo_js_variable_t v = neo_js_scope_create_variable(sub, NULL, NULL);
-  neo_js_variable_add_parent(v, b);
-  neo_js_variable_add_parent(b, a);
-  neo_allocator_free(allocator, sub);
-  neo_allocator_free(allocator, scope);
+  neo_js_runtime_t rt = neo_create_js_runtime(allocator);
+  neo_js_context_t ctx = neo_create_js_context(rt);
+  neo_allocator_free(allocator, ctx);
+  neo_allocator_free(allocator, rt);
   neo_delete_allocator(allocator);
   return 0;
 }

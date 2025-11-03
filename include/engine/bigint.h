@@ -2,7 +2,7 @@
 #define _H_NEO_ENGINE_BIGINT_
 #include "core/allocator.h"
 #include "core/bigint.h"
-#include "engine/variable.h"
+#include "engine/value.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

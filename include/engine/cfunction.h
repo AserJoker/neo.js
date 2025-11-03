@@ -13,9 +13,9 @@ struct _neo_js_cfunction_t {
 typedef struct _neo_js_cfunction_t *neo_js_cfunction_t;
 neo_js_cfunction_t neo_create_js_cfunction(neo_allocator_t allocator,
                                            neo_js_cfunc_t callee,
-                                           neo_js_variable_t prototype);
+                                           neo_js_value_t prototype);
 void neo_init_js_cfunction(neo_js_cfunction_t self, neo_allocator_t allocaotr,
-                           neo_js_cfunc_t callee, neo_js_variable_t prototype);
+                           neo_js_cfunc_t callee, neo_js_value_t prototype);
 void neo_deinit_js_cfunction(neo_js_cfunction_t self,
                              neo_allocator_t allocaotr);
 neo_js_value_t neo_js_cfunction_to_value(neo_js_cfunction_t self);

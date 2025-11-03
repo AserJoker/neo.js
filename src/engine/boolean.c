@@ -1,6 +1,5 @@
 #include "engine/boolean.h"
 #include "core/allocator.h"
-#include "engine/variable.h"
 static void neo_js_boolean_dispose(neo_allocator_t allocator,
                                    neo_js_boolean_t self) {
   neo_deinit_js_boolean(self, allocator);

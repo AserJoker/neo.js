@@ -154,6 +154,51 @@ char *neo_bigint_to_string(neo_bigint_t bigint, uint32_t radix) {
   return result;
 }
 
+uint16_t *neo_bigint_to_string16(neo_bigint_t bigint, uint32_t radix) {
+  size_t max = 128;
+  uint16_t *result =
+      neo_allocator_alloc(bigint->allocator, sizeof(uint16_t) * max, NULL);
+  result[0] = 0;
+  neo_bigint_t tmp = neo_bigint_clone(bigint);
+  tmp->negative = false;
+  neo_bigint_t another = neo_number_to_bigint(bigint->allocator, 0);
+  if (neo_bigint_is_equal(tmp, another)) {
+    neo_allocator_free(bigint->allocator, another);
+    result[0] = '0';
+    result[1] = 0;
+  } else {
+    neo_bigint_t mod = neo_number_to_bigint(bigint->allocator, radix);
+    while (neo_bigint_is_greater(tmp, another)) {
+      neo_bigint_t mod_res = neo_bigint_mod(tmp, mod);
+      chunk_t val =
+          *(chunk_t *)(neo_list_node_get(neo_list_get_first(mod_res->data)));
+      uint16_t s[2] = {val + '0', 0};
+      if (val >= 10) {
+        s[0] = val - 10 + 'a';
+      }
+      result = neo_string16_concat(bigint->allocator, result, &max, s);
+      neo_allocator_free(bigint->allocator, mod_res);
+      mod_res = neo_bigint_div(tmp, mod);
+      neo_allocator_free(bigint->allocator, tmp);
+      tmp = mod_res;
+    }
+    neo_allocator_free(bigint->allocator, mod);
+    neo_allocator_free(bigint->allocator, another);
+  }
+  neo_allocator_free(bigint->allocator, tmp);
+  if (bigint->negative) {
+    uint16_t symbol[2] = {'-', 0};
+    result = neo_string16_concat(bigint->allocator, result, &max, symbol);
+  }
+  size_t len = neo_string16_length(result);
+  for (size_t idx = 0; idx < len / 2; idx++) {
+    char tmp = result[idx];
+    result[idx] = result[len - 1 - idx];
+    result[len - 1 - idx] = tmp;
+  }
+  return result;
+}
+
 double neo_bigint_to_number(neo_bigint_t bigint) {
   int64_t result = 0;
   uint32_t step = 0;

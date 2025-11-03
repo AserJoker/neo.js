@@ -88,12 +88,16 @@ size_t neo_utf32_to_utf8(uint32_t utf32, char *output) {
 }
 size_t neo_utf32_to_utf16(uint32_t utf32, uint16_t *output) {
   if (utf32 < 0xffff) {
-    *output = (uint16_t)utf32;
+    if (output) {
+      *output = (uint16_t)utf32;
+    }
     return 1;
   } else {
     uint32_t offset = utf32 - 0x10000;
-    *output = (uint16_t)((offset >> 10) + 0xD800);
-    *(output + 1) = (uint16_t)((offset & 0x3FF) + 0xDC00);
+    if (output) {
+      *output = (uint16_t)((offset >> 10) + 0xD800);
+      *(output + 1) = (uint16_t)((offset & 0x3FF) + 0xDC00);
+    }
     return 2;
   }
 }

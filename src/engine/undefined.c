@@ -1,6 +1,5 @@
 #include "engine/undefined.h"
 #include "core/allocator.h"
-#include "engine/variable.h"
 
 static void neo_js_undefined_dispose(neo_allocator_t allocator,
                                      neo_js_undefined_t self) {

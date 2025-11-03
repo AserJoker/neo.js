@@ -4,6 +4,7 @@
 #include "core/hash.h"
 #include "core/hash_map.h"
 #include "engine/string.h"
+#include "engine/value.h"
 #include "engine/variable.h"
 #include <stdbool.h>
 #include <stddef.h>
@@ -12,14 +13,15 @@ static void neo_js_object_dispose(neo_allocator_t allocator,
   neo_deinit_js_object(self, allocator);
 }
 neo_js_object_t neo_create_js_object(neo_allocator_t allocator,
-                                     neo_js_variable_t prototype) {
+                                     neo_js_value_t prototype) {
   neo_js_object_t object = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_object_t), neo_js_object_dispose);
   neo_init_js_object(object, allocator, prototype);
+  neo_js_value_add_parent(prototype, &object->super);
   return object;
 }
 void neo_init_js_object(neo_js_object_t self, neo_allocator_t allocator,
-                        neo_js_variable_t prototype) {
+                        neo_js_value_t prototype) {
   neo_init_js_value(&self->super, allocator, NEO_JS_TYPE_OBJECT);
   self->prototype = prototype;
   neo_hash_map_initialize_t initialize = {
@@ -40,25 +42,25 @@ void neo_deinit_js_object(neo_js_object_t self, neo_allocator_t allocator) {
 neo_js_value_t neo_js_object_to_value(neo_js_object_t self) {
   return &self->super;
 }
-int32_t neo_js_object_key_compare(const neo_js_variable_t self,
-                                  const neo_js_variable_t another,
+int32_t neo_js_object_key_compare(const neo_js_value_t self,
+                                  const neo_js_value_t another,
                                   neo_js_context_t ctx) {
-  if (self->value->type != another->value->type) {
-    return self->value->type - another->value->type;
+  if (self->type != another->type) {
+    return self->type - another->type;
   }
-  if (self->value->type == NEO_JS_TYPE_SYMBOL) {
-    if (self->value == another->value) {
+  if (self->type == NEO_JS_TYPE_SYMBOL) {
+    if (self == another) {
       return 0;
     }
-    return (int32_t)(self->value - another->value);
+    return (int32_t)(self - another);
   }
-  neo_js_string_t str1 = (neo_js_string_t)self->value;
-  neo_js_string_t str2 = (neo_js_string_t)another->value;
+  const uint16_t *str1 = ((neo_js_string_t)self)->value;
+  const uint16_t *str2 = ((neo_js_string_t)another)->value;
   for (;;) {
-    if (*str1->value != *str2->value) {
-      return *str1->value - *str2->value;
+    if (*str1 != *str2) {
+      return *str1 - *str2;
     }
-    if (!*str1->value) {
+    if (!*str1) {
       return 0;
     }
     str1++;
@@ -66,12 +68,12 @@ int32_t neo_js_object_key_compare(const neo_js_variable_t self,
   }
   return 0;
 }
-uint32_t neo_js_object_key_hash(const neo_js_variable_t self, uint32_t max,
+uint32_t neo_js_object_key_hash(const neo_js_value_t self, uint32_t max,
                                 neo_js_context_t ctx) {
-  if (self->value->type == NEO_JS_TYPE_SYMBOL) {
-    return ((uint32_t)(ptrdiff_t)self->value) % max;
+  if (self->type == NEO_JS_TYPE_SYMBOL) {
+    return ((uint32_t)(ptrdiff_t)self) % max;
   }
-  neo_js_string_t str = (neo_js_string_t)self->value;
+  neo_js_string_t str = (neo_js_string_t)self;
   return neo_hash_sdb_utf16(str->value, max);
 }
 static void neo_js_object_property_dispose(neo_allocator_t allocator,
