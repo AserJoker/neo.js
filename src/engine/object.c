@@ -8,6 +8,7 @@
 #include "engine/variable.h"
 #include <stdbool.h>
 #include <stddef.h>
+#include <string.h>
 static void neo_js_object_dispose(neo_allocator_t allocator,
                                   neo_js_object_t self) {
   neo_deinit_js_object(self, allocator);
@@ -34,10 +35,16 @@ void neo_init_js_object(neo_js_object_t self, neo_allocator_t allocator,
   self->frozen = false;
   self->extensible = true;
   self->sealed = false;
+  initialize.compare = (neo_compare_fn_t)strcmp;
+  initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
+  initialize.auto_free_key = true;
+  initialize.auto_free_value = false;
+  self->internals = neo_create_hash_map(allocator, &initialize);
 }
 void neo_deinit_js_object(neo_js_object_t self, neo_allocator_t allocator) {
-  neo_deinit_js_value(&self->super, allocator);
   neo_allocator_free(allocator, self->properties);
+  neo_allocator_free(allocator, self->internals);
+  neo_deinit_js_value(&self->super, allocator);
 }
 neo_js_value_t neo_js_object_to_value(neo_js_object_t self) {
   return &self->super;

@@ -4,12 +4,14 @@
 #include "engine/scope.h"
 #include "engine/value.h"
 #include "engine/variable.h"
+#include "runtime/constant.h"
 #include <stdint.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
 typedef struct _neo_js_context_t *neo_js_context_t;
 neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime);
+neo_js_constant_t *neo_js_context_get_constant(neo_js_context_t self);
 neo_js_runtime_t neo_js_context_get_runtime(neo_js_context_t self);
 void neo_js_context_push_scope(neo_js_context_t self);
 void neo_js_context_pop_scope(neo_js_context_t self);
@@ -39,6 +41,8 @@ neo_js_variable_t neo_js_context_create_string(neo_js_context_t self,
                                                const uint16_t *val);
 neo_js_variable_t neo_js_context_create_cstring(neo_js_context_t self,
                                                 const char *val);
+neo_js_variable_t neo_js_context_create_symbol(neo_js_context_t self,
+                                               const uint16_t *description);
 neo_js_variable_t neo_js_context_create_exception(neo_js_context_t self,
                                                   neo_js_variable_t error);
 neo_js_variable_t neo_js_context_create_object(neo_js_context_t self,
@@ -50,12 +54,25 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t self,
                                            neo_js_variable_t constructor,
                                            size_t argc,
                                            neo_js_variable_t *argv);
-
 neo_js_variable_t neo_js_context_load(neo_js_context_t self,
                                       const uint16_t *name);
-
 neo_js_variable_t neo_js_context_format(neo_js_context_t self, const char *fmt,
                                         ...);
+
+#define NEO_DEF_METHOD(ctx, self, name, callee)                                \
+  do {                                                                         \
+    neo_js_variable_t key = neo_js_context_create_cstring(ctx, #name);         \
+    neo_js_variable_t method =                                                 \
+        neo_js_context_create_cfunction(ctx, callee, #name);                   \
+    neo_js_variable_def_field(self, ctx, key, method, true, false, true);      \
+  } while (0)
+
+#define NEO_DEF_SYMBOL_METHOD(ctx, self, symbol, name, callee)                 \
+  do {                                                                         \
+    neo_js_variable_t method =                                                 \
+        neo_js_context_create_cfunction(ctx, callee, #name);                   \
+    neo_js_variable_def_field(self, ctx, symbol, method, true, false, true);   \
+  } while (0)
 #ifdef __cplusplus
 }
 #endif

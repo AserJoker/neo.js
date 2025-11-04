@@ -1,6 +1,7 @@
 #ifndef _H_NEO_ENGINE_VALUE_
 #define _H_NEO_ENGINE_VALUE_
 #include "core/allocator.h"
+#include "core/hash_map.h"
 #include "core/list.h"
 #include <stdint.h>
 #ifdef __cplusplus
@@ -30,6 +31,7 @@ struct _neo_js_value_t {
   bool is_alive;
   bool is_disposed;
   uint32_t age;
+  neo_hash_map_t opaque;
 };
 
 typedef struct _neo_js_value_t *neo_js_value_t;

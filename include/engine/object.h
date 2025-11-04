@@ -22,6 +22,7 @@ struct _neo_js_object_t {
   struct _neo_js_value_t super;
   neo_js_value_t prototype;
   neo_hash_map_t properties;
+  neo_hash_map_t internals;
   bool frozen;
   bool extensible;
   bool sealed;

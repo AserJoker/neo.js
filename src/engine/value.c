@@ -1,9 +1,13 @@
 #include "engine/value.h"
 #include "core/allocator.h"
+#include "core/common.h"
+#include "core/hash.h"
+#include "core/hash_map.h"
 #include "core/list.h"
 #include "core/map.h"
 #include "engine/function.h"
 #include "engine/variable.h"
+#include <string.h>
 
 void neo_init_js_value(neo_js_value_t self, neo_allocator_t allocator,
                        neo_js_value_type_t type) {
@@ -15,11 +19,18 @@ void neo_init_js_value(neo_js_value_t self, neo_allocator_t allocator,
   self->is_disposed = false;
   self->parent = neo_create_list(allocator, NULL);
   self->children = neo_create_list(allocator, NULL);
+  neo_hash_map_initialize_t initialize = {0};
+  initialize.auto_free_key = true;
+  initialize.auto_free_value = true;
+  initialize.compare = (neo_compare_fn_t)strcmp;
+  initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
+  self->opaque = neo_create_hash_map(allocator, &initialize);
 }
 
 void neo_deinit_js_value(neo_js_value_t self, neo_allocator_t allocator) {
   neo_allocator_free(allocator, self->children);
   neo_allocator_free(allocator, self->parent);
+  neo_allocator_free(allocator, self->opaque);
 }
 
 neo_js_value_t neo_js_value_add_parent(neo_js_value_t self,

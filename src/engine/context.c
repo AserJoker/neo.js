@@ -17,8 +17,7 @@
 #include "engine/undefined.h"
 #include "engine/value.h"
 #include "engine/variable.h"
-#include "runtime/function.h"
-#include "runtime/object.h"
+#include "runtime/constant.h"
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -32,6 +31,7 @@ struct _neo_js_context_t {
   neo_js_scope_t root_scope;
   neo_js_scope_t current_scope;
   neo_list_t callstack;
+  neo_js_constant_t constant;
 };
 
 static void neo_js_context_dispose(neo_allocator_t allocator,
@@ -55,12 +55,17 @@ neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime) {
   neo_js_stackframe_t frame =
       neo_create_js_stackframe(allocator, NULL, NULL, 0, 0);
   neo_list_push(ctx->callstack, frame);
+  memset(&ctx->constant, 0, sizeof(neo_js_constant_t));
   neo_js_context_push_scope(ctx);
-  neo_initialize_js_object(ctx);
-  neo_initialize_js_function(ctx);
+  neo_initialize_js_constant(ctx);
   neo_js_context_pop_scope(ctx);
   return ctx;
 }
+
+neo_js_constant_t *neo_js_context_get_constant(neo_js_context_t self) {
+  return &self->constant;
+}
+
 neo_js_runtime_t neo_js_context_get_runtime(neo_js_context_t self) {
   return self->runtime;
 }
@@ -181,6 +186,13 @@ neo_js_variable_t neo_js_context_create_cstring(neo_js_context_t self,
   neo_allocator_free(allocator, str);
   return string;
 }
+neo_js_variable_t neo_js_context_create_symbol(neo_js_context_t self,
+                                               const uint16_t *description) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  neo_js_symbol_t symbol = neo_create_js_symbol(allocator, description);
+  neo_js_value_t value = neo_js_symbol_to_value(symbol);
+  return neo_js_context_create_variable(self, value);
+}
 neo_js_variable_t neo_js_context_create_exception(neo_js_context_t self,
                                                   neo_js_variable_t error) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
@@ -194,7 +206,7 @@ neo_js_variable_t neo_js_context_create_exception(neo_js_context_t self,
 neo_js_variable_t neo_js_context_create_object(neo_js_context_t self,
                                                neo_js_variable_t prototype) {
   if (!prototype) {
-    prototype = neo_js_object_prototype;
+    prototype = self->constant.object_prototype;
   }
   if (!prototype) {
     prototype = neo_js_context_create_null(self);
@@ -207,7 +219,7 @@ neo_js_variable_t neo_js_context_create_object(neo_js_context_t self,
 neo_js_variable_t neo_js_context_create_cfunction(neo_js_context_t self,
                                                   neo_js_cfunc_t callee,
                                                   const char *name) {
-  neo_js_variable_t prototype = neo_js_function_prototype;
+  neo_js_variable_t prototype = self->constant.function_prototype;
   if (!prototype) {
     prototype = neo_js_context_create_null(self);
   }

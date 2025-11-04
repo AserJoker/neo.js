@@ -1,7 +1,7 @@
 #include "core/hash_map.h"
 #include "core/allocator.h"
 #include "core/common.h"
-#define NEO_HASH_MAP_BUCKET_SIZE 64
+#define NEO_HASH_MAP_BUCKET_SIZE 16
 
 struct _neo_hash_map_node_t {
   neo_hash_map_node_t next;
