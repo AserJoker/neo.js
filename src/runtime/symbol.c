@@ -202,6 +202,9 @@ void neo_initialize_js_symbol(neo_js_context_t ctx) {
   initialize.hash = (neo_hash_fn_t)neo_hash_sdb_utf16;
   neo_hash_map_t symbols = neo_create_hash_map(allocator, &initialize);
   neo_js_variable_set_opaque(clazz, ctx, "symbols", symbols);
+  neo_js_variable_t string_tag = neo_js_context_create_cstring(ctx, "Symbol");
+  neo_js_variable_def_field(prototype, ctx, constant->symbol_to_string_tag,
+                            string_tag, true, false, true);
   neo_js_scope_set_variable(root_scope, constant->symbol_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->symbol_prototype, NULL);
   neo_js_scope_set_variable(root_scope, constant->symbol_async_dispose, NULL);

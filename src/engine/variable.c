@@ -15,6 +15,7 @@
 #include "engine/object.h"
 #include "engine/runtime.h"
 #include "engine/scope.h"
+#include "engine/symbol.h"
 #include "engine/value.h"
 #include "runtime/constant.h"
 #include <math.h>
@@ -161,6 +162,36 @@ neo_js_variable_t neo_js_variable_to_object(neo_js_variable_t self,
     return self;
   }
   // TODO: wrapper class constructor
+  switch (self->value->type) {
+  case NEO_JS_TYPE_NULL:
+  case NEO_JS_TYPE_UNDEFINED: {
+    neo_js_variable_t message = neo_js_context_create_cstring(
+        ctx, "Cannot convert undefined or null to object");
+    // TODO: message -> error
+    neo_js_variable_t error = message;
+    return neo_js_context_create_exception(ctx, error);
+  }
+  case NEO_JS_TYPE_NUMBER:
+    break;
+  case NEO_JS_TYPE_BIGINT:
+    break;
+  case NEO_JS_TYPE_BOOLEAN:
+    break;
+  case NEO_JS_TYPE_STRING:
+    break;
+  case NEO_JS_TYPE_SYMBOL: {
+    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_variable_t object =
+        neo_js_context_create_object(ctx, constant->symbol_prototype);
+    neo_js_variable_set_internal(object, ctx, "PrimitiveValue", self);
+    const uint16_t *desc = ((neo_js_symbol_t)self->value)->description;
+    neo_js_variable_t description = neo_js_context_create_string(ctx, desc);
+    neo_js_variable_t key = neo_js_context_create_cstring(ctx, "description");
+    neo_js_variable_def_field(object, ctx, key, description, true, false, true);
+  }
+  default:
+    break;
+  }
   return self;
 }
 
@@ -168,6 +199,20 @@ neo_js_variable_t
 neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
                           neo_js_variable_t key, neo_js_variable_t value,
                           bool configurable, bool enumable, bool writable) {
+  if (self->value->type == NEO_JS_TYPE_NULL) {
+    neo_js_variable_t message = neo_js_context_format(
+        ctx, "Cannot set properties of null (reading '%v')", key);
+    // TODO: message -> error
+    neo_js_variable_t error = message;
+    return neo_js_context_create_exception(ctx, error);
+  }
+  if (self->value->type == NEO_JS_TYPE_UNDEFINED) {
+    neo_js_variable_t message = neo_js_context_format(
+        ctx, "Cannot set properties of undefined (reading '%v')", key);
+    // TODO: message -> error
+    neo_js_variable_t error = message;
+    return neo_js_context_create_exception(ctx, error);
+  }
   neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
@@ -321,6 +366,20 @@ neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
 neo_js_variable_t neo_js_variable_get_field(neo_js_variable_t self,
                                             neo_js_context_t ctx,
                                             neo_js_variable_t key) {
+  if (self->value->type == NEO_JS_TYPE_NULL) {
+    neo_js_variable_t message = neo_js_context_format(
+        ctx, "Cannot read properties of null (reading '%v')", key);
+    // TODO: message -> error
+    neo_js_variable_t error = message;
+    return neo_js_context_create_exception(ctx, error);
+  }
+  if (self->value->type == NEO_JS_TYPE_UNDEFINED) {
+    neo_js_variable_t message = neo_js_context_format(
+        ctx, "Cannot read properties of undefined (reading '%v')", key);
+    // TODO: message -> error
+    neo_js_variable_t error = message;
+    return neo_js_context_create_exception(ctx, error);
+  }
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
     self = neo_js_variable_to_object(self, ctx);
     if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
@@ -354,6 +413,20 @@ neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
                                             neo_js_context_t ctx,
                                             neo_js_variable_t key,
                                             neo_js_variable_t value) {
+  if (self->value->type == NEO_JS_TYPE_NULL) {
+    neo_js_variable_t message = neo_js_context_format(
+        ctx, "Cannot set properties of null (reading '%v')", key);
+    // TODO: message -> error
+    neo_js_variable_t error = message;
+    return neo_js_context_create_exception(ctx, error);
+  }
+  if (self->value->type == NEO_JS_TYPE_UNDEFINED) {
+    neo_js_variable_t message = neo_js_context_format(
+        ctx, "Cannot set properties of undefined (reading '%v')", key);
+    // TODO: message -> error
+    neo_js_variable_t error = message;
+    return neo_js_context_create_exception(ctx, error);
+  }
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
     self = neo_js_variable_to_object(self, ctx);
     if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
