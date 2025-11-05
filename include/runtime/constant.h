@@ -31,6 +31,9 @@ struct _neo_js_constant_t {
   neo_js_variable_t symbol_split;
   neo_js_variable_t symbol_to_primitive;
   neo_js_variable_t symbol_to_string_tag;
+  // error
+  neo_js_variable_t error_prototype;
+  neo_js_variable_t error_class;
 };
 typedef struct _neo_js_constant_t neo_js_constant_t;
 void neo_initialize_js_constant(neo_js_context_t ctx);

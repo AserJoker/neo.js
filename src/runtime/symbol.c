@@ -175,11 +175,11 @@ void neo_initialize_js_symbol(neo_js_context_t ctx) {
   constant->symbol_prototype = neo_js_variable_get_field(
       constant->symbol_class, ctx, constant->key_prototype);
   neo_js_variable_t clazz = constant->symbol_class;
-  NEO_DEF_METHOD(ctx, clazz, "for", neo_js_symbol_for);
-  NEO_DEF_METHOD(ctx, clazz, "keyFor", neo_js_symbol_key_for);
+  NEO_JS_DEF_METHOD(ctx, clazz, "for", neo_js_symbol_for);
+  NEO_JS_DEF_METHOD(ctx, clazz, "keyFor", neo_js_symbol_key_for);
   neo_js_variable_t prototype = constant->symbol_prototype;
-  NEO_DEF_METHOD(ctx, prototype, "valueOf", neo_js_symbol_value_of);
-  NEO_DEF_METHOD(ctx, prototype, "toString", neo_js_symbol_to_string);
+  NEO_JS_DEF_METHOD(ctx, prototype, "valueOf", neo_js_symbol_value_of);
+  NEO_JS_DEF_METHOD(ctx, prototype, "toString", neo_js_symbol_to_string);
   DEF_SYMBOL(constant->symbol_async_dispose, asyncDispose);
   DEF_SYMBOL(constant->symbol_async_iterator, asyncIterator);
   DEF_SYMBOL(constant->symbol_iterator, iterator);

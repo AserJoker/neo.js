@@ -1,7 +1,7 @@
 #ifndef _H_NEO_ENGINE_BOOLEAN_
 #define _H_NEO_ENGINE_BOOLEAN_
 #include "core/allocator.h"
-#include "engine/variable.h"
+#include "engine/value.h"
 #include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {

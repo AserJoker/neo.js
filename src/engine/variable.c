@@ -10,11 +10,13 @@
 #include "engine/cfunction.h"
 #include "engine/context.h"
 #include "engine/function.h"
+#include "engine/handle.h"
 #include "engine/number.h"
 #include "engine/object.h"
 #include "engine/runtime.h"
 #include "engine/scope.h"
 #include "engine/value.h"
+#include "runtime/constant.h"
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -22,19 +24,20 @@
 #include <stdio.h>
 
 static void neo_js_variable_dispose(neo_allocator_t allocator,
-                                    neo_js_variable_t variable) {}
+                                    neo_js_variable_t variable) {
+  neo_deinit_js_handle(&variable->handle, allocator);
+}
 
 neo_js_variable_t neo_create_js_variable(neo_allocator_t allocator,
                                          neo_js_value_t value) {
   neo_js_variable_t variable = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_variable_t), neo_js_variable_dispose);
+  neo_init_js_handle(&variable->handle, allocator);
   variable->is_using = false;
   variable->is_await_using = false;
-  variable->ref = 0;
+  variable->is_const = false;
   variable->value = value;
-  if (value) {
-    value->ref++;
-  }
+  neo_js_handle_add_ref(&value->handle);
   return variable;
 }
 
@@ -96,9 +99,32 @@ neo_js_variable_t neo_js_variable_to_primitive(neo_js_variable_t self,
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
     return self;
   }
-  // TODO: [Symbol.toPrimitive](hint)
-  neo_js_variable_t key = neo_js_context_create_cstring(ctx, "valueOf");
+  neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+  neo_js_variable_t key = constant->symbol_to_primitive;
+  neo_js_variable_t to_primitive = neo_js_variable_get_field(self, ctx, key);
+  if (to_primitive->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return to_primitive;
+  }
+  if (to_primitive->value->type == NEO_JS_TYPE_FUNCTION) {
+    neo_js_variable_t vhint = neo_js_context_create_cstring(ctx, hint);
+    neo_js_variable_t res =
+        neo_js_variable_call(to_primitive, ctx, self, 1, &vhint);
+    if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
+      return res;
+    }
+    if (res->value->type >= NEO_JS_TYPE_OBJECT) {
+      neo_js_variable_t message = neo_js_context_format(
+          ctx, "Cannot convert object to primitive value");
+      // TODO: message -> error
+      neo_js_variable_t error = message;
+      return neo_js_context_create_exception(ctx, error);
+    }
+  }
+  key = neo_js_context_create_cstring(ctx, "valueOf");
   neo_js_variable_t value_of = neo_js_variable_get_field(self, ctx, key);
+  if (value_of->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return value_of;
+  }
   if (value_of->value->type == NEO_JS_TYPE_FUNCTION) {
     neo_js_variable_t res = neo_js_variable_call(value_of, ctx, self, 0, NULL);
     if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
@@ -110,6 +136,9 @@ neo_js_variable_t neo_js_variable_to_primitive(neo_js_variable_t self,
   }
   key = neo_js_context_create_cstring(ctx, "toString");
   neo_js_variable_t to_string = neo_js_variable_get_field(self, ctx, key);
+  if (to_string->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return to_string;
+  }
   if (to_string->value->type == NEO_JS_TYPE_FUNCTION) {
     neo_js_variable_t res = neo_js_variable_call(to_string, ctx, self, 0, NULL);
     if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
@@ -431,10 +460,12 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
     neo_js_variable_t error = message;
     return neo_js_context_create_exception(ctx, error);
   }
+  neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
   neo_js_function_t function = (neo_js_function_t)self->value;
   neo_js_scope_t origin_scope = neo_js_context_get_scope(ctx);
-  neo_js_context_push_scope(ctx);
-  neo_js_scope_t current_scope = neo_js_context_get_scope(ctx);
+  neo_js_scope_t root_scope = neo_js_context_get_root_scope(ctx);
+  neo_js_scope_t current_scope = neo_create_js_scope(allocator, root_scope);
   for (size_t idx = 0; idx < argc; idx++) {
     argv[idx] = neo_js_context_create_variable(ctx, argv[idx]->value);
   }
@@ -458,7 +489,8 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
     }
   }
   neo_js_scope_set_variable(origin_scope, result, NULL);
-  neo_js_context_pop_scope(ctx);
+  neo_js_context_set_scope(ctx, origin_scope);
+  neo_allocator_free(allocator, current_scope);
   return result;
 }
 
@@ -523,7 +555,8 @@ neo_js_variable_t
 neo_js_variable_set_prototype_of(neo_js_variable_t self, neo_js_context_t ctx,
                                  neo_js_variable_t prototype) {
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
-    neo_js_variable_t message = neo_js_context_format(ctx, "%v is not object");
+    neo_js_variable_t message =
+        neo_js_context_format(ctx, "%v is not object", self);
     // TODO: message -> error
     neo_js_variable_t error = message;
     return neo_js_context_create_exception(ctx, error);
@@ -540,7 +573,8 @@ neo_js_variable_t neo_js_variable_get_prototype_of(neo_js_variable_t self,
                                                    neo_js_context_t ctx) {
 
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
-    neo_js_variable_t message = neo_js_context_format(ctx, "%v is not object");
+    neo_js_variable_t message =
+        neo_js_context_format(ctx, "%v is not object", self);
     // TODO: message -> error
     neo_js_variable_t error = message;
     return neo_js_context_create_exception(ctx, error);
@@ -549,18 +583,71 @@ neo_js_variable_t neo_js_variable_get_prototype_of(neo_js_variable_t self,
   return neo_js_context_create_variable(ctx, object->prototype);
 }
 
-void neo_js_variable_gc(neo_allocator_t allocator, neo_list_t variables,
-                        neo_list_t gclist) {
-  neo_list_node_t it = neo_list_get_first(variables);
-  while (it != neo_list_get_tail(variables)) {
-    neo_js_variable_t variable = neo_list_node_get(it);
-    if (variable->ref && !--variable->ref) {
-      if (variable->value->ref && !--variable->value->ref) {
-        neo_list_push(gclist, variable->value);
-      }
-      neo_allocator_free(allocator, variable);
-    }
-    it = neo_list_node_next(it);
+neo_js_variable_t neo_js_variable_extends(neo_js_variable_t self,
+                                          neo_js_context_t ctx,
+                                          neo_js_variable_t parent) {
+  if (self->value->type != NEO_JS_TYPE_FUNCTION) {
+    neo_js_variable_t message =
+        neo_js_context_format(ctx, "%v is not function", self);
+    // TODO: message -> error
+    neo_js_variable_t error = message;
+    return neo_js_context_create_exception(ctx, error);
   }
-  neo_js_value_gc(allocator, gclist);
+  if (parent->value->type != NEO_JS_TYPE_FUNCTION) {
+    neo_js_variable_t message =
+        neo_js_context_format(ctx, "%v is not function", parent);
+    // TODO: message -> error
+    neo_js_variable_t error = message;
+    return neo_js_context_create_exception(ctx, error);
+  }
+  neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+  neo_js_variable_t parent_prototype =
+      neo_js_variable_get_field(parent, ctx, constant->key_prototype);
+  if (parent_prototype->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return parent_prototype;
+  }
+  neo_js_variable_t prototype =
+      neo_js_variable_get_field(self, ctx, constant->key_prototype);
+  if (prototype->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return prototype;
+  }
+  return neo_js_variable_set_prototype_of(prototype, ctx, parent_prototype);
+}
+
+neo_js_variable_t neo_js_variable_set_closure(neo_js_variable_t self,
+                                              neo_js_context_t ctx,
+                                              const uint16_t *name,
+                                              neo_js_variable_t value) {
+  if (self->value->type != NEO_JS_TYPE_FUNCTION) {
+    neo_js_variable_t message =
+        neo_js_context_format(ctx, "%v is not function", self);
+    // TODO: message -> error
+    neo_js_variable_t error = message;
+    return neo_js_context_create_exception(ctx, error);
+  }
+  neo_js_function_t function = (neo_js_function_t)self->value;
+  neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
+  neo_map_set(function->closure, neo_create_string16(allocator, name), value,
+              ctx);
+  neo_js_handle_add_parent(&value->handle, &self->handle);
+  return self;
+}
+
+static void neo_js_variable_on_gc(neo_allocator_t allocator,
+                                  neo_js_variable_t self, neo_list_t values) {
+  if (neo_js_handle_dispose(&self->value->handle)) {
+    neo_list_push(values, self->value);
+  }
+}
+
+void neo_js_variable_gc(neo_allocator_t allocator, neo_list_t variables) {
+  neo_list_initialize_t initalize = {true};
+  neo_list_t destroyed = neo_create_list(allocator, &initalize);
+  neo_list_t values = neo_create_list(allocator, NULL);
+  neo_js_handle_gc(allocator, variables, destroyed,
+                   (neo_js_handle_on_gc_fn_t)neo_js_variable_on_gc, values);
+  neo_allocator_free(allocator, destroyed);
+  neo_js_value_gc(allocator, values);
+  neo_allocator_free(allocator, values);
 }

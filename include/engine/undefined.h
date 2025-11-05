@@ -1,7 +1,7 @@
 #ifndef _H_NEO_ENGINE_UNDEFINED_
 #define _H_NEO_ENGINE_UNDEFINED_
 #include "core/allocator.h"
-#include "engine/variable.h"
+#include "engine/value.h"
 
 #ifdef __cplusplus
 extern "C" {

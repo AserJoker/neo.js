@@ -366,3 +366,12 @@ neo_js_variable_t neo_js_context_format(neo_js_context_t self, const char *fmt,
   neo_allocator_free(allocator, string);
   return result;
 }
+neo_js_variable_t neo_js_context_get_argument(neo_js_context_t self,
+                                              size_t argc,
+                                              neo_js_variable_t *argv,
+                                              size_t idx) {
+  if (idx >= argc) {
+    return neo_js_context_create_undefined(self);
+  }
+  return argv[idx];
+}

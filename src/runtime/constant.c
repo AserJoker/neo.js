@@ -1,6 +1,7 @@
 #include "runtime/constant.h"
 #include "engine/context.h"
 #include "engine/scope.h"
+#include "runtime/error.h"
 #include "runtime/function.h"
 #include "runtime/object.h"
 #include "runtime/symbol.h"
@@ -17,4 +18,5 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   neo_initialize_js_object(ctx);
   neo_initialize_js_function(ctx);
   neo_initialize_js_symbol(ctx);
+  neo_initialize_js_error(ctx);
 }

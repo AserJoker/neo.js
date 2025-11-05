@@ -4,6 +4,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+NEO_JS_CFUNCTION(neo_js_function_constructor);
 void neo_initialize_js_function(neo_js_context_t ctx);
 #ifdef __cplusplus
 }

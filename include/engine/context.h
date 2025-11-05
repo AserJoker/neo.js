@@ -58,8 +58,12 @@ neo_js_variable_t neo_js_context_load(neo_js_context_t self,
                                       const uint16_t *name);
 neo_js_variable_t neo_js_context_format(neo_js_context_t self, const char *fmt,
                                         ...);
+neo_js_variable_t neo_js_context_get_argument(neo_js_context_t self,
+                                              size_t argc,
+                                              neo_js_variable_t *argv,
+                                              size_t idx);
 
-#define NEO_DEF_METHOD(ctx, self, name, callee)                                \
+#define NEO_JS_DEF_METHOD(ctx, self, name, callee)                             \
   do {                                                                         \
     neo_js_variable_t key = neo_js_context_create_cstring(ctx, #name);         \
     neo_js_variable_t method =                                                 \

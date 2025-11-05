@@ -4,12 +4,7 @@
 #include "runtime/constant.h"
 #include <stdbool.h>
 
-static neo_js_variable_t neo_js_function_constructor(neo_js_context_t ctx,
-                                                     neo_js_variable_t self,
-                                                     size_t argc,
-                                                     neo_js_variable_t *argv) {
-  return self;
-}
+NEO_JS_CFUNCTION(neo_js_function_constructor) { return self; }
 void neo_initialize_js_function(neo_js_context_t ctx) {
   neo_js_scope_t root_scope = neo_js_context_get_root_scope(ctx);
   neo_js_constant_t *constant = neo_js_context_get_constant(ctx);

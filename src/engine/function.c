@@ -4,6 +4,7 @@
 #include "core/map.h"
 #include "core/string.h"
 #include "engine/object.h"
+#include "engine/value.h"
 #include <stdbool.h>
 static void neo_js_function_dispose(neo_allocator_t allocator,
                                     neo_js_function_t self) {
@@ -34,6 +35,8 @@ void neo_init_js_function(neo_js_function_t self, neo_allocator_t allocaotr,
   initialize.auto_free_key = true;
   initialize.auto_free_value = false;
   self->closure = neo_create_map(allocaotr, &initialize);
+  neo_js_value_t value = neo_js_function_to_value(self);
+  value->type = NEO_JS_TYPE_FUNCTION;
 }
 void neo_deinit_js_function(neo_js_function_t self, neo_allocator_t allocaotr) {
   neo_allocator_free(allocaotr, self->closure);
