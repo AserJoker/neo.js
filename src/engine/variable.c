@@ -531,9 +531,9 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
   neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
   neo_js_function_t function = (neo_js_function_t)self->value;
-  neo_js_scope_t origin_scope = neo_js_context_get_scope(ctx);
   neo_js_scope_t root_scope = neo_js_context_get_root_scope(ctx);
   neo_js_scope_t current_scope = neo_create_js_scope(allocator, root_scope);
+  neo_js_scope_t origin_scope = neo_js_context_set_scope(ctx, current_scope);
   for (size_t idx = 0; idx < argc; idx++) {
     argv[idx] = neo_js_context_create_variable(ctx, argv[idx]->value);
   }
@@ -545,21 +545,35 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
     neo_js_scope_set_variable(current_scope, variable, name);
     it = neo_map_node_next(it);
   }
-  neo_js_variable_t result = NULL;
   if (function->async) {
     // TODO: async call
+    neo_js_context_set_scope(ctx, origin_scope);
+    neo_allocator_free(allocator, current_scope);
+    neo_js_variable_t message = neo_js_context_format(ctx, "not implement");
+    // TODO: message -> error
+    neo_js_variable_t error = message;
+    return neo_js_context_create_exception(ctx, error);
   } else {
+    neo_js_variable_t result = NULL;
     if (function->native) {
       neo_js_cfunction_t cfunction = (neo_js_cfunction_t)function;
+      neo_js_context_type_t origin_ctx_type =
+          neo_js_context_set_type(ctx, NEO_JS_CONTEXT_FUNCTION);
       result = cfunction->callee(ctx, bind, argc, argv);
+      neo_js_context_set_type(ctx, origin_ctx_type);
+      neo_js_scope_set_variable(origin_scope, result, NULL);
+      return result;
     } else {
       // TODO: script function
+      neo_js_variable_t message = neo_js_context_format(ctx, "not implement");
+      // TODO: message -> error
+      neo_js_variable_t error = message;
+      result = neo_js_context_create_exception(ctx, error);
     }
+    neo_js_context_set_scope(ctx, origin_scope);
+    neo_allocator_free(allocator, current_scope);
+    return result;
   }
-  neo_js_scope_set_variable(origin_scope, result, NULL);
-  neo_js_context_set_scope(ctx, origin_scope);
-  neo_allocator_free(allocator, current_scope);
-  return result;
 }
 
 neo_js_variable_t neo_js_variable_get_internel(neo_js_variable_t self,

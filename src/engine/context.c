@@ -32,6 +32,7 @@ struct _neo_js_context_t {
   neo_js_scope_t current_scope;
   neo_list_t callstack;
   neo_js_constant_t constant;
+  neo_js_context_type_t type;
 };
 
 static void neo_js_context_dispose(neo_allocator_t allocator,
@@ -54,6 +55,7 @@ neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime) {
   ctx->callstack = neo_create_list(allocator, &initialize);
   neo_js_stackframe_t frame =
       neo_create_js_stackframe(allocator, NULL, NULL, 0, 0);
+  ctx->type = NEO_JS_CONTEXT_MODULE;
   neo_list_push(ctx->callstack, frame);
   memset(&ctx->constant, 0, sizeof(neo_js_constant_t));
   neo_js_context_push_scope(ctx);
@@ -68,6 +70,15 @@ neo_js_constant_t *neo_js_context_get_constant(neo_js_context_t self) {
 
 neo_js_runtime_t neo_js_context_get_runtime(neo_js_context_t self) {
   return self->runtime;
+}
+neo_js_context_type_t neo_js_context_get_type(neo_js_context_t self) {
+  return self->type;
+}
+neo_js_context_type_t neo_js_context_set_type(neo_js_context_t self,
+                                              neo_js_context_type_t type) {
+  neo_js_context_type_t current = self->type;
+  self->type = type;
+  return current;
 }
 
 void neo_js_context_push_scope(neo_js_context_t self) {

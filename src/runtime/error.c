@@ -1,9 +1,6 @@
 #include "runtime/error.h"
-#include "core/allocator.h"
-#include "core/list.h"
 #include "core/string.h"
 #include "engine/context.h"
-#include "engine/runtime.h"
 #include "engine/scope.h"
 #include "engine/stackframe.h"
 #include "engine/string.h"
@@ -39,59 +36,6 @@ NEO_JS_CFUNCTION(neo_js_error_constructor) {
   neo_js_variable_def_field(self, ctx, key, cause, true, false, true);
   key = neo_js_context_create_cstring(ctx, "message");
   neo_js_variable_def_field(self, ctx, key, message, true, false, true);
-  neo_list_t trace = neo_js_context_trace(ctx, 0, 0);
-  neo_list_pop(trace);
-  neo_list_node_t it = neo_list_get_first(trace);
-  neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
-  neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
-  neo_list_initialize_t initialize = {true};
-  neo_list_t list = neo_create_list(allocator, &initialize);
-  size_t len = 0;
-  while (it != neo_list_get_tail(trace)) {
-    neo_js_stackframe_t frame = neo_list_node_get(it);
-    uint16_t *string = neo_js_stackframe_to_string(allocator, frame);
-    len += neo_string16_length(string) + 8;
-    neo_list_push(list, string);
-    it = neo_list_node_next(it);
-  }
-  len++;
-  key = neo_js_context_create_cstring(ctx, "name");
-  neo_js_variable_t name = neo_js_variable_get_field(self, ctx, key);
-  const uint16_t *errname = ((neo_js_string_t)name->value)->value;
-  len += neo_string16_length(errname) + 2;
-  const uint16_t *msg = ((neo_js_string_t)message->value)->value;
-  len += neo_string16_length(msg) + 1;
-  uint16_t string[len];
-  uint16_t *dst = string;
-  const uint16_t *src = errname;
-  while (*src) {
-    *dst++ = *src++;
-  }
-  *dst++ = ':';
-  *dst++ = ' ';
-  src = msg;
-  while (*src) {
-    *dst++ = *src++;
-  }
-  *dst++ = '\n';
-  it = neo_list_get_first(list);
-  while (it != neo_list_get_tail(list)) {
-    const uint16_t *src = neo_list_node_get(it);
-    const char *prefix = "    at ";
-    while (*prefix) {
-      *dst++ = *prefix++;
-    }
-    while (*src) {
-      *dst++ = *src++;
-    }
-    *dst++ = '\n';
-    it = neo_list_node_next(it);
-  }
-  *dst = 0;
-  neo_allocator_free(allocator, list);
-  neo_js_variable_t stack = neo_js_context_create_string(ctx, string);
-  key = neo_js_context_create_cstring(ctx, "stack");
-  neo_js_variable_def_field(self, ctx, key, stack, true, false, true);
   return self;
 }
 NEO_JS_CFUNCTION(neo_js_error_to_string) {

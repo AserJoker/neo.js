@@ -17,7 +17,7 @@ neo_js_cfunction_t neo_create_js_cfunction(neo_allocator_t allocator,
 }
 void neo_init_js_cfunction(neo_js_cfunction_t self, neo_allocator_t allocaotr,
                            neo_js_cfunc_t callee, neo_js_value_t prototype) {
-  neo_init_js_function(&self->super, allocaotr, true, false, NULL, 0, 0,
+  neo_init_js_function(&self->super, allocaotr, true, false, false, NULL, 0, 0,
                        prototype);
   self->callee = callee;
 }

@@ -9,10 +9,22 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef enum _neo_js_context_type_t {
+  NEO_JS_CONTEXT_MODULE,
+  NEO_JS_CONTEXT_ASYNC_FUNCTION,
+  NEO_JS_CONTEXT_GENERATOR_FUNCTION,
+  NEO_JS_CONTEXT_ASYNC_GENERATOR_FUNCTION,
+  NEO_JS_CONTEXT_FUNCTION,
+  NEO_JS_CONTEXT_CONSTRUCT,
+} neo_js_context_type_t;
 typedef struct _neo_js_context_t *neo_js_context_t;
 neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime);
 neo_js_constant_t *neo_js_context_get_constant(neo_js_context_t self);
 neo_js_runtime_t neo_js_context_get_runtime(neo_js_context_t self);
+neo_js_context_type_t neo_js_context_get_type(neo_js_context_t self);
+neo_js_context_type_t neo_js_context_set_type(neo_js_context_t self,
+                                              neo_js_context_type_t type);
 void neo_js_context_push_scope(neo_js_context_t self);
 void neo_js_context_pop_scope(neo_js_context_t self);
 neo_js_scope_t neo_js_context_get_scope(neo_js_context_t self);
@@ -50,10 +62,6 @@ neo_js_variable_t neo_js_context_create_object(neo_js_context_t self,
 neo_js_variable_t neo_js_context_create_cfunction(neo_js_context_t self,
                                                   neo_js_cfunc_t callee,
                                                   const char *name);
-neo_js_variable_t neo_js_context_construct(neo_js_context_t self,
-                                           neo_js_variable_t constructor,
-                                           size_t argc,
-                                           neo_js_variable_t *argv);
 neo_js_variable_t neo_js_context_load(neo_js_context_t self,
                                       const uint16_t *name);
 neo_js_variable_t neo_js_context_format(neo_js_context_t self, const char *fmt,
