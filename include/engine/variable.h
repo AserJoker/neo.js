@@ -43,7 +43,7 @@ neo_js_variable_t
 neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
                              neo_js_variable_t key, neo_js_variable_t get,
                              neo_js_variable_t set, bool configurable,
-                             bool enumable, bool writable);
+                             bool enumable);
 neo_js_variable_t neo_js_variable_get_field(neo_js_variable_t self,
                                             neo_js_context_t ctx,
                                             neo_js_variable_t key);

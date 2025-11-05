@@ -167,6 +167,30 @@ NEO_JS_CFUNCTION(neo_js_symbol_symbol_to_primitive) {
   }
   return self;
 }
+
+NEO_JS_CFUNCTION(neo_js_symbol_get_description) {
+  if (self->value->type != NEO_JS_TYPE_SYMBOL) {
+    if (self->value->type < NEO_JS_TYPE_OBJECT) {
+      neo_js_variable_t message =
+          neo_js_context_format(ctx, "Symbol.prototype.description "
+                                     "requires that 'this' be a Symbol");
+      // TODO: message -> error
+      neo_js_variable_t error = message;
+      return neo_js_context_create_exception(ctx, error);
+    }
+    self = neo_js_variable_get_internel(self, ctx, "PrimitiveValue");
+    if (!self || self->value->type != NEO_JS_TYPE_SYMBOL) {
+      neo_js_variable_t message =
+          neo_js_context_format(ctx, "Symbol.prototype.description "
+                                     "requires that 'this' be a Symbol");
+      // TODO: message -> error
+      neo_js_variable_t error = message;
+      return neo_js_context_create_exception(ctx, error);
+    }
+  }
+  const uint16_t *description = ((neo_js_symbol_t)self->value)->description;
+  return neo_js_context_create_string(ctx, description);
+}
 void neo_initialize_js_symbol(neo_js_context_t ctx) {
   neo_js_scope_t root_scope = neo_js_context_get_root_scope(ctx);
   neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
@@ -205,6 +229,11 @@ void neo_initialize_js_symbol(neo_js_context_t ctx) {
   neo_js_variable_t string_tag = neo_js_context_create_cstring(ctx, "Symbol");
   neo_js_variable_def_field(prototype, ctx, constant->symbol_to_string_tag,
                             string_tag, true, false, true);
+  neo_js_variable_t get_description = neo_js_context_create_cfunction(
+      ctx, neo_js_symbol_get_description, "get description");
+  neo_js_variable_t key = neo_js_context_create_cstring(ctx, "description");
+  neo_js_variable_def_accessor(prototype, ctx, key, get_description, NULL, true, false);
+
   neo_js_scope_set_variable(root_scope, constant->symbol_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->symbol_prototype, NULL);
   neo_js_scope_set_variable(root_scope, constant->symbol_async_dispose, NULL);

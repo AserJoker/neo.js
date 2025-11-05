@@ -15,7 +15,6 @@
 #include "engine/object.h"
 #include "engine/runtime.h"
 #include "engine/scope.h"
-#include "engine/symbol.h"
 #include "engine/value.h"
 #include "runtime/constant.h"
 #include <math.h>
@@ -184,10 +183,7 @@ neo_js_variable_t neo_js_variable_to_object(neo_js_variable_t self,
     neo_js_variable_t object =
         neo_js_context_create_object(ctx, constant->symbol_prototype);
     neo_js_variable_set_internal(object, ctx, "PrimitiveValue", self);
-    const uint16_t *desc = ((neo_js_symbol_t)self->value)->description;
-    neo_js_variable_t description = neo_js_context_create_string(ctx, desc);
-    neo_js_variable_t key = neo_js_context_create_cstring(ctx, "description");
-    neo_js_variable_def_field(object, ctx, key, description, true, false, true);
+    return object;
   }
   default:
     break;
@@ -283,7 +279,7 @@ neo_js_variable_t
 neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
                              neo_js_variable_t key, neo_js_variable_t get,
                              neo_js_variable_t set, bool configurable,
-                             bool enumable, bool writable) {
+                             bool enumable) {
   neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
@@ -320,7 +316,6 @@ neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
     neo_js_object_property_t prop = neo_create_js_object_property(allocator);
     prop->configurable = configurable;
     prop->enumable = enumable;
-    prop->writable = writable;
     if (get) {
       prop->get = get->value;
     }
