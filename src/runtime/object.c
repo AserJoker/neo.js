@@ -6,7 +6,6 @@
 NEO_JS_CFUNCTION(neo_js_object_constructor) { return self; }
 
 void neo_initialize_js_object(neo_js_context_t ctx) {
-  neo_js_scope_t root_scope = neo_js_context_get_root_scope(ctx);
   neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
   constant->object_class =
       neo_js_context_create_cfunction(ctx, neo_js_object_constructor, "Object");
@@ -15,6 +14,4 @@ void neo_initialize_js_object(neo_js_context_t ctx) {
   neo_js_variable_def_field(constant->object_prototype, ctx,
                             constant->key_constructor, constant->object_class,
                             true, false, true);
-  neo_js_scope_set_variable(root_scope, constant->object_class, NULL);
-  neo_js_scope_set_variable(root_scope, constant->object_prototype, NULL);
 }

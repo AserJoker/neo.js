@@ -1,7 +1,6 @@
 #include "runtime/error.h"
 #include "core/string.h"
 #include "engine/context.h"
-#include "engine/scope.h"
 #include "engine/stackframe.h"
 #include "engine/string.h"
 #include "engine/value.h"
@@ -64,7 +63,6 @@ NEO_JS_CFUNCTION(neo_js_error_to_string) {
   return neo_js_context_create_string(ctx, string);
 }
 void neo_initialize_js_error(neo_js_context_t ctx) {
-  neo_js_scope_t root_scope = neo_js_context_get_root_scope(ctx);
   neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
   constant->error_class =
       neo_js_context_create_cfunction(ctx, neo_js_error_constructor, "Error");
@@ -75,5 +73,4 @@ void neo_initialize_js_error(neo_js_context_t ctx) {
   neo_js_variable_t key = neo_js_context_create_cstring(ctx, "name");
   neo_js_variable_def_field(error_prototype, ctx, key, string, true, false,
                             true);
-  neo_js_scope_set_variable(root_scope, constant->error_class, NULL);
 }

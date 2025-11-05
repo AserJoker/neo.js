@@ -201,7 +201,6 @@ NEO_JS_CFUNCTION(neo_js_symbol_get_description) {
   return neo_js_context_create_string(ctx, description);
 }
 void neo_initialize_js_symbol(neo_js_context_t ctx) {
-  neo_js_scope_t root_scope = neo_js_context_get_root_scope(ctx);
   neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
   constant->symbol_class =
       neo_js_context_create_cfunction(ctx, neo_js_symbol_constructor, "Symbol");
@@ -243,18 +242,4 @@ void neo_initialize_js_symbol(neo_js_context_t ctx) {
   neo_js_variable_t key = neo_js_context_create_cstring(ctx, "description");
   neo_js_variable_def_accessor(prototype, ctx, key, get_description, NULL, true,
                                false);
-
-  neo_js_scope_set_variable(root_scope, constant->symbol_class, NULL);
-  neo_js_scope_set_variable(root_scope, constant->symbol_prototype, NULL);
-  neo_js_scope_set_variable(root_scope, constant->symbol_async_dispose, NULL);
-  neo_js_scope_set_variable(root_scope, constant->symbol_async_iterator, NULL);
-  neo_js_scope_set_variable(root_scope, constant->symbol_iterator, NULL);
-  neo_js_scope_set_variable(root_scope, constant->symbol_match, NULL);
-  neo_js_scope_set_variable(root_scope, constant->symbol_match_all, NULL);
-  neo_js_scope_set_variable(root_scope, constant->symbol_replace, NULL);
-  neo_js_scope_set_variable(root_scope, constant->symbol_search, NULL);
-  neo_js_scope_set_variable(root_scope, constant->symbol_species, NULL);
-  neo_js_scope_set_variable(root_scope, constant->symbol_split, NULL);
-  neo_js_scope_set_variable(root_scope, constant->symbol_to_primitive, NULL);
-  neo_js_scope_set_variable(root_scope, constant->symbol_to_string_tag, NULL);
 }
