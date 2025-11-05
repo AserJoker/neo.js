@@ -590,6 +590,35 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
   }
 }
 
+neo_js_variable_t neo_js_variable_construct(neo_js_variable_t self,
+                                            neo_js_context_t ctx, size_t argc,
+                                            neo_js_variable_t *argv) {
+  if (self->value->type != NEO_JS_TYPE_FUNCTION) {
+    neo_js_variable_t message =
+        neo_js_context_format(ctx, "%v is not a constructor", self);
+    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_variable_t error =
+        neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  neo_js_variable_t prototype = neo_js_context_create_cstring(ctx, "prototype");
+  prototype = neo_js_variable_get_field(self, ctx, prototype);
+  if (prototype->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return prototype;
+  }
+  neo_js_variable_t object = neo_js_context_create_object(ctx, prototype);
+  neo_js_variable_t key = neo_js_context_create_cstring(ctx, "constructor");
+  neo_js_variable_def_field(object, ctx, key, self, true, false, true);
+  neo_js_variable_t res = neo_js_variable_call(self, ctx, object, argc, argv);
+  if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return res;
+  }
+  if (res->value->type >= NEO_JS_TYPE_OBJECT) {
+    return res;
+  }
+  return object;
+}
+
 neo_js_variable_t neo_js_variable_get_internel(neo_js_variable_t self,
                                                neo_js_context_t ctx,
                                                const char *name) {

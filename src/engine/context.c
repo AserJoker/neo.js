@@ -250,37 +250,6 @@ neo_js_variable_t neo_js_context_create_cfunction(neo_js_context_t self,
   return result;
 }
 
-neo_js_variable_t neo_js_context_construct(neo_js_context_t self,
-                                           neo_js_variable_t constructor,
-                                           size_t argc,
-                                           neo_js_variable_t *argv) {
-  if (constructor->value->type != NEO_JS_TYPE_FUNCTION) {
-    neo_js_variable_t message =
-        neo_js_context_format(self, "%v is not a constructor", constructor);
-    neo_js_variable_t error = neo_js_variable_construct(
-        self->constant.type_error_class, self, 1, &message);
-    return neo_js_context_create_exception(self, error);
-  }
-  neo_js_variable_t prototype =
-      neo_js_context_create_cstring(self, "prototype");
-  prototype = neo_js_variable_get_field(constructor, self, prototype);
-  if (prototype->value->type == NEO_JS_TYPE_EXCEPTION) {
-    return prototype;
-  }
-  neo_js_variable_t object = neo_js_context_create_object(self, prototype);
-  neo_js_variable_t key = neo_js_context_create_cstring(self, "constructor");
-  neo_js_variable_def_field(object, self, key, constructor, true, false, true);
-  neo_js_variable_t res =
-      neo_js_variable_call(constructor, self, object, argc, argv);
-  if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
-    return res;
-  }
-  if (res->value->type >= NEO_JS_TYPE_OBJECT) {
-    return res;
-  }
-  return object;
-}
-
 neo_js_variable_t neo_js_context_load(neo_js_context_t self,
                                       const uint16_t *name) {
   neo_js_variable_t variable = NULL;
