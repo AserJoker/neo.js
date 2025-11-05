@@ -206,9 +206,11 @@ neo_js_variable_t neo_js_context_create_symbol(neo_js_context_t self,
 }
 neo_js_variable_t neo_js_context_create_exception(neo_js_context_t self,
                                                   neo_js_variable_t error) {
+  neo_list_t trace = neo_js_context_trace(self, 0, 0);
+  neo_list_pop(trace);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   neo_js_exception_t exception =
-      neo_create_js_exception(allocator, error->value);
+      neo_create_js_exception(allocator, error->value, trace);
   neo_js_value_t value = neo_js_exception_to_value(exception);
   neo_js_variable_t result = neo_js_context_create_variable(self, value);
   return result;
@@ -255,8 +257,8 @@ neo_js_variable_t neo_js_context_construct(neo_js_context_t self,
   if (constructor->value->type != NEO_JS_TYPE_FUNCTION) {
     neo_js_variable_t message =
         neo_js_context_format(self, "%v is not a constructor", constructor);
-    // TODO: message -> error
-    neo_js_variable_t error = message;
+    neo_js_variable_t error = neo_js_variable_construct(
+        self->constant.type_error_class, self, 1, &message);
     return neo_js_context_create_exception(self, error);
   }
   neo_js_variable_t prototype =
