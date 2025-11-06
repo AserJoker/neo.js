@@ -10,6 +10,7 @@
 #include "engine/callable.h"
 #include "engine/cfunction.h"
 #include "engine/context.h"
+#include "engine/function.h"
 #include "engine/handle.h"
 #include "engine/number.h"
 #include "engine/object.h"
@@ -17,6 +18,7 @@
 #include "engine/scope.h"
 #include "engine/value.h"
 #include "runtime/constant.h"
+#include "runtime/vm.h"
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -551,7 +553,7 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
   }
   neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
-  neo_js_callable_t function = (neo_js_callable_t)self->value;
+  neo_js_callable_t callable = (neo_js_callable_t)self->value;
   neo_js_scope_t root_scope = neo_js_context_get_root_scope(ctx);
   neo_js_scope_t current_scope = neo_create_js_scope(allocator, root_scope);
   neo_js_scope_t origin_scope = neo_js_context_set_scope(ctx, current_scope);
@@ -559,43 +561,39 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
     argv[idx] = neo_js_context_create_variable(ctx, argv[idx]->value);
   }
   bind = neo_js_context_create_variable(ctx, bind->value);
-  neo_map_node_t it = neo_map_get_first(function->closure);
-  while (it != neo_map_get_tail(function->closure)) {
+  neo_map_node_t it = neo_map_get_first(callable->closure);
+  while (it != neo_map_get_tail(callable->closure)) {
     neo_js_variable_t variable = neo_map_node_get_value(it);
     const uint16_t *name = neo_map_node_get_key(it);
     neo_js_scope_set_variable(current_scope, variable, name);
     it = neo_map_node_next(it);
   }
-  if (function->async) {
-    // TODO: async call
-    neo_js_context_set_scope(ctx, origin_scope);
-    neo_allocator_free(allocator, current_scope);
-    neo_js_variable_t message = neo_js_context_format(ctx, "not implement");
-    // TODO: message -> error
-    neo_js_variable_t error = message;
-    return neo_js_context_create_exception(ctx, error);
+  neo_js_variable_t result = NULL;
+  if (callable->native) {
+    neo_js_cfunction_t cfunction = (neo_js_cfunction_t)callable;
+    neo_js_context_type_t origin_ctx_type =
+        neo_js_context_set_type(ctx, NEO_JS_CONTEXT_FUNCTION);
+    result = cfunction->callee(ctx, bind, argc, argv);
+    neo_js_context_set_type(ctx, origin_ctx_type);
   } else {
-    neo_js_variable_t result = NULL;
-    if (function->native) {
-      neo_js_cfunction_t cfunction = (neo_js_cfunction_t)function;
-      neo_js_context_type_t origin_ctx_type =
-          neo_js_context_set_type(ctx, NEO_JS_CONTEXT_FUNCTION);
-      result = cfunction->callee(ctx, bind, argc, argv);
-      neo_js_context_set_type(ctx, origin_ctx_type);
-      neo_js_scope_set_variable(origin_scope, result, NULL);
-      return result;
-    } else {
-      // TODO: script function
-      neo_js_variable_t message = neo_js_context_format(ctx, "not implement");
-      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
-      neo_js_variable_t error = neo_js_variable_construct(
-          constant->type_error_class, ctx, 1, &message);
-      result = neo_js_context_create_exception(ctx, error);
+    if (callable->async && callable->generator) {
     }
-    neo_js_context_set_scope(ctx, origin_scope);
-    neo_allocator_free(allocator, current_scope);
-    return result;
+    if (callable->async) {
+    }
+    if (callable->generator) {
+    }
+    neo_js_function_t function = (neo_js_function_t)callable;
+    neo_js_vm_t vm = neo_create_js_vm(allocator);
+    neo_js_context_type_t origin_ctx_type =
+        neo_js_context_set_type(ctx, NEO_JS_CONTEXT_FUNCTION);
+    result = neo_js_vm_run(vm, ctx, function->program, function->offset);
+    neo_js_context_set_type(ctx, origin_ctx_type);
+    neo_allocator_free(allocator, vm);
   }
+  neo_js_scope_set_variable(origin_scope, result, NULL);
+  neo_js_context_set_scope(ctx, origin_scope);
+  neo_allocator_free(allocator, current_scope);
+  return result;
 }
 
 neo_js_variable_t neo_js_variable_construct(neo_js_variable_t self,
