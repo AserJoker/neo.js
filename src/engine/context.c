@@ -1,11 +1,16 @@
 #include "engine/context.h"
+#include "compiler/parser.h"
+#include "compiler/program.h"
+#include "compiler/scope.h"
 #include "core/allocator.h"
+#include "core/error.h"
 #include "core/list.h"
 #include "core/string.h"
 #include "core/unicode.h"
 #include "engine/boolean.h"
 #include "engine/cfunction.h"
 #include "engine/exception.h"
+#include "engine/handle.h"
 #include "engine/null.h"
 #include "engine/number.h"
 #include "engine/object.h"
@@ -15,9 +20,11 @@
 #include "engine/string.h"
 #include "engine/symbol.h"
 #include "engine/undefined.h"
+#include "engine/uninitialized.h"
 #include "engine/value.h"
 #include "engine/variable.h"
 #include "runtime/constant.h"
+#include "runtime/vm.h"
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -51,11 +58,18 @@ neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime) {
   ctx->runtime = runtime;
   ctx->root_scope = neo_create_js_scope(allocator, NULL);
   ctx->current_scope = ctx->root_scope;
+  ctx->type = NEO_JS_CONTEXT_MODULE;
   neo_list_initialize_t initialize = {true};
   ctx->callstack = neo_create_list(allocator, &initialize);
+  const char *funcname = "_.compile";
+  uint16_t fname[16];
+  uint16_t *dst = fname;
+  while (*funcname) {
+    *dst++ = *funcname++;
+  }
+  *dst = 0;
   neo_js_stackframe_t frame =
-      neo_create_js_stackframe(allocator, NULL, NULL, 0, 0);
-  ctx->type = NEO_JS_CONTEXT_MODULE;
+      neo_create_js_stackframe(allocator, NULL, fname, 0, 0);
   neo_list_push(ctx->callstack, frame);
   memset(&ctx->constant, 0, sizeof(neo_js_constant_t));
   neo_js_context_push_scope(ctx);
@@ -144,7 +158,7 @@ neo_list_t neo_js_context_trace(neo_js_context_t self, uint32_t line,
     neo_list_push(callstack, frame);
     it = neo_list_node_next(it);
   }
-  it = neo_list_get_tail(callstack);
+  it = neo_list_get_last(callstack);
   neo_js_stackframe_t frame = neo_list_node_get(it);
   frame->column = column;
   frame->line = line;
@@ -156,6 +170,12 @@ neo_js_variable_t neo_js_context_create_variable(neo_js_context_t self,
   return neo_js_scope_create_variable(self->current_scope, value, NULL);
 }
 
+neo_js_variable_t neo_js_context_create_uninitialized(neo_js_context_t self) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  neo_js_uninitialized_t uninitialized = neo_create_js_uninitialized(allocator);
+  neo_js_value_t value = neo_js_uninitialized_to_value(uninitialized);
+  return neo_js_context_create_variable(self, value);
+}
 neo_js_variable_t neo_js_context_create_undefined(neo_js_context_t self) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   neo_js_undefined_t undefined = neo_create_js_undefined(allocator);
@@ -207,7 +227,6 @@ neo_js_variable_t neo_js_context_create_symbol(neo_js_context_t self,
 neo_js_variable_t neo_js_context_create_exception(neo_js_context_t self,
                                                   neo_js_variable_t error) {
   neo_list_t trace = neo_js_context_trace(self, 0, 0);
-  neo_list_pop(trace);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   neo_js_exception_t exception =
       neo_create_js_exception(allocator, error->value, trace);
@@ -261,6 +280,50 @@ neo_js_variable_t neo_js_context_load(neo_js_context_t self,
     }
     scope = neo_js_scope_get_parent(scope);
   }
+  if (!variable) {
+    const char *stuffix = " is not defined";
+    uint16_t msg[neo_string16_length(name) + 16];
+    uint16_t *dst = msg;
+    const uint16_t *src = name;
+    while (*src) {
+      *dst++ = *src++;
+    }
+    while (*stuffix) {
+      *dst++ = *stuffix++;
+    }
+    *dst = 0;
+    neo_js_variable_t message = neo_js_context_create_string(self, msg);
+    // message -> reference error
+    neo_js_variable_t error = message;
+    return neo_js_context_create_exception(self, error);
+  }
+  return variable;
+}
+
+neo_js_variable_t neo_js_context_store(neo_js_context_t self,
+                                       const uint16_t *name,
+                                       neo_js_variable_t variable) {
+  neo_js_variable_t current = neo_js_context_load(self, name);
+  if (current->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return current;
+  }
+  if (current->is_const && current->value->type != NEO_JS_TYPE_UNINITIALIZED) {
+    neo_js_variable_t message =
+        neo_js_context_create_cstring(self, "assignment to constant variable");
+    neo_js_variable_t error = neo_js_variable_construct(
+        self->constant.reference_error_class, self, 1, &message);
+    return neo_js_context_create_exception(self, error);
+  }
+  neo_js_context_create_variable(self, current->value);
+  neo_js_handle_dispose(&current->value->handle);
+  current->value = variable->value;
+  neo_js_handle_add_ref(&current->value->handle);
+  return current;
+}
+neo_js_variable_t neo_js_context_def(neo_js_context_t self,
+                                     const uint16_t *name,
+                                     neo_js_variable_t variable) {
+  neo_js_scope_set_variable(self->current_scope, variable, name);
   return variable;
 }
 
@@ -356,4 +419,31 @@ neo_js_variable_t neo_js_context_get_argument(neo_js_context_t self,
     return neo_js_context_create_undefined(self);
   }
   return argv[idx];
+}
+
+neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
+                                      const char *filename) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  neo_ast_node_t node = neo_ast_parse_code(allocator, filename, source);
+  if (neo_has_error()) {
+    neo_error_t err = neo_poll_error(NULL, NULL, 0);
+    const char *msg = neo_error_get_message(err);
+    neo_allocator_free(allocator, err);
+    neo_js_variable_t message = neo_js_context_create_cstring(self, msg);
+    neo_js_variable_t error = neo_js_variable_construct(
+        self->constant.syntax_error_class, self, 1, &message);
+    return neo_js_context_create_exception(self, error);
+  }
+  neo_program_t program = neo_ast_write_node(allocator, filename, node);
+  neo_allocator_free(allocator, node);
+  neo_js_runtime_set_program(self->runtime, filename, program);
+
+  FILE *fp = fopen("../export.asm", "w");
+  neo_program_write(allocator, fp, program);
+  fclose(fp);
+
+  neo_js_vm_t vm = neo_create_js_vm(allocator);
+  neo_js_variable_t result = neo_js_vm_run(vm, self, program, 0);
+  neo_allocator_free(allocator, vm);
+  return result;
 }

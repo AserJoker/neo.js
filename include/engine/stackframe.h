@@ -5,8 +5,8 @@
 extern "C" {
 #endif
 struct _neo_js_stackframe_t {
-  const uint16_t *filename;
-  const uint16_t *funcname;
+  uint16_t *filename;
+  uint16_t *funcname;
   uint32_t line;
   uint32_t column;
 };

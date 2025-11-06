@@ -315,5 +315,6 @@ char *neo_string16_to_string(neo_allocator_t allocator, const uint16_t *src) {
     uint32_t utf32 = neo_utf16_to_utf32(chr);
     dst += neo_utf32_to_utf8(utf32, dst);
   }
+  *dst = 0;
   return str;
 }

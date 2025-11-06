@@ -65,12 +65,21 @@ void neo_map_set(neo_map_t self, void *key, void *value, void *arg) {
     self->size++;
     return;
   }
-  if (node->value != value) {
-    if (self->auto_free_value) {
-      neo_allocator_free(self->allocator, node->value);
-    }
-    node->value = value;
+  if (self->auto_free_key) {
+    neo_allocator_free(self->allocator, node->key);
   }
+  node->key = key;
+  if (self->compare) {
+    if (self->compare(node->value, value, arg) == 0) {
+      return;
+    }
+  } else if (node->value == value) {
+    return;
+  }
+  if (self->auto_free_value) {
+    neo_allocator_free(self->allocator, node->value);
+  }
+  node->value = value;
 }
 
 void *neo_map_get(neo_map_t self, const void *key, void *arg) {

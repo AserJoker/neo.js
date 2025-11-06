@@ -35,6 +35,10 @@ struct _neo_js_constant_t {
   neo_js_variable_t error_class;
   // type_error
   neo_js_variable_t type_error_class;
+  // syntax_error
+  neo_js_variable_t syntax_error_class;
+  // reference_error
+  neo_js_variable_t reference_error_class;
 };
 typedef struct _neo_js_constant_t neo_js_constant_t;
 void neo_initialize_js_constant(neo_js_context_t ctx);

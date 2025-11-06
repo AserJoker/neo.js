@@ -103,23 +103,26 @@ void neo_compile_scope_declar_value(neo_allocator_t allocator,
   }
   for (neo_list_node_t it = neo_list_get_first(self->variables);
        it != neo_list_get_tail(self->variables); it = neo_list_node_next(it)) {
-    neo_compile_variable_t variable = neo_list_node_get(it);
+    neo_compile_variable_t curr = neo_list_node_get(it);
     char *current = NULL;
-    if (variable->type == NEO_COMPILE_VARIABLE_FUNCTION) {
+    if (curr->type == NEO_COMPILE_VARIABLE_FUNCTION) {
       neo_ast_expression_function_t fn =
-          (neo_ast_expression_function_t)variable->node;
+          (neo_ast_expression_function_t)curr->node;
       current = neo_location_get(allocator, fn->name->location);
     } else {
-      current = neo_location_get(allocator, variable->node->location);
+      current = neo_location_get(allocator, curr->node->location);
     }
     if (strcmp(name, current) == 0) {
       if (type == NEO_COMPILE_VARIABLE_LET ||
           type == NEO_COMPILE_VARIABLE_CONST ||
           type == NEO_COMPILE_VARIABLE_USING ||
           type == NEO_COMPILE_VARIABLE_AWAIT_USING ||
-          variable->type == NEO_COMPILE_VARIABLE_LET ||
-          variable->type == NEO_COMPILE_VARIABLE_CONST) {
-        THROW("Identifier '%s' has aleady been declared", name);
+          curr->type == NEO_COMPILE_VARIABLE_LET ||
+          curr->type == NEO_COMPILE_VARIABLE_CONST) {
+        THROW("Identifier '%s' has aleady been declared\n    at %s:%d:%d", name,
+              node->location.file, node->location.begin.line,
+              node->location.begin.column);
+        neo_allocator_free(allocator, variable);
         neo_allocator_free(allocator, name);
         neo_allocator_free(allocator, current);
         return;

@@ -66,7 +66,7 @@ const char *neo_error_get_message(neo_error_t self) { return self->message; }
 
 char *neo_error_to_string(neo_error_t self) {
   char *result = NULL;
-  size_t len = 0;
+  size_t len = strlen(self->message);
   neo_list_node_t node = neo_list_get_last(self->stack);
   while (node != neo_list_get_head(self->stack)) {
     neo_error_frame_t frame = (neo_error_frame_t)neo_list_node_get(node);

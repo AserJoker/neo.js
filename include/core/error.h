@@ -1,10 +1,10 @@
 #ifndef _H_NEO_CORE_ERROR_
 #define _H_NEO_CORE_ERROR_
+#include "core/allocator.h"
+#include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
-#include "core/allocator.h"
-#include <stdbool.h>
 typedef struct _neo_error_t *neo_error_t;
 
 void neo_error_initialize(neo_allocator_t allocator);

@@ -8,6 +8,7 @@
 extern "C" {
 #endif
 typedef enum _neo_js_value_type_t {
+  NEO_JS_TYPE_UNINITIALIZED,
   NEO_JS_TYPE_INTERRUPT,
   NEO_JS_TYPE_EXCEPTION,
   NEO_JS_TYPE_UNDEFINED,

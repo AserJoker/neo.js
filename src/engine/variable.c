@@ -227,8 +227,9 @@ neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
   if (obj->frozen) {
     neo_js_variable_t message =
         neo_js_context_format(ctx, "Cannot redefine property: %v", key);
-    // TODO: msg -> error
-    neo_js_variable_t error = message;
+    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_variable_t error =
+        neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
   }
   if (key->value->type != NEO_JS_TYPE_SYMBOL) {
@@ -243,8 +244,9 @@ neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
     if (obj->sealed || !obj->extensible) {
       neo_js_variable_t message = neo_js_context_format(
           ctx, "Cannot define property %v, object is not extensible", key);
-      // TODO: msg -> error
-      neo_js_variable_t error = message;
+      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+      neo_js_variable_t error = neo_js_variable_construct(
+          constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
     }
     neo_js_object_property_t prop = neo_create_js_object_property(allocator);
@@ -258,8 +260,9 @@ neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
     if (!prop->configurable) {
       neo_js_variable_t message =
           neo_js_context_format(ctx, "Cannot redefine property: %v", key);
-      // TODO: msg -> error
-      neo_js_variable_t error = message;
+      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+      neo_js_variable_t error = neo_js_variable_construct(
+          constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
     }
     if (prop->value) {
@@ -299,8 +302,9 @@ neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
   if (obj->frozen) {
     neo_js_variable_t message =
         neo_js_context_format(ctx, "Cannot redefine property: %v", key);
-    // TODO: msg -> error
-    neo_js_variable_t error = message;
+    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_variable_t error =
+        neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
   }
   if (key->value->type != NEO_JS_TYPE_SYMBOL) {
@@ -315,8 +319,9 @@ neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
     if (obj->sealed || !obj->extensible) {
       neo_js_variable_t message = neo_js_context_format(
           ctx, "Cannot define property '%v', object is not extensible", key);
-      // TODO: msg -> error
-      neo_js_variable_t error = message;
+      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+      neo_js_variable_t error = neo_js_variable_construct(
+          constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
     }
     neo_js_object_property_t prop = neo_create_js_object_property(allocator);
@@ -334,8 +339,9 @@ neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
     if (!prop->configurable) {
       neo_js_variable_t message =
           neo_js_context_format(ctx, "Cannot redefine property: %v", key);
-      // TODO: msg -> error
-      neo_js_variable_t error = message;
+      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+      neo_js_variable_t error = neo_js_variable_construct(
+          constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
     }
     if (prop->value) {
@@ -392,14 +398,14 @@ neo_js_variable_t neo_js_variable_get_field(neo_js_variable_t self,
   neo_js_object_t object = (neo_js_object_t)self->value;
   neo_hash_map_node_t it =
       neo_hash_map_find(object->properties, key->value, ctx, ctx);
-  while (it == neo_hash_map_get_tail(object->properties)) {
+  while (!it) {
     if (object->prototype->type < NEO_JS_TYPE_OBJECT) {
       break;
     }
     object = (neo_js_object_t)object->prototype;
     it = neo_hash_map_find(object->properties, key->value, ctx, ctx);
   }
-  if (it != neo_hash_map_get_tail(object->properties)) {
+  if (it) {
     neo_js_value_t key = neo_hash_map_node_get_key(it);
     neo_js_object_property_t prop = neo_hash_map_node_get_value(it);
     if (prop->value) {
@@ -501,14 +507,15 @@ neo_js_variable_t neo_js_variable_del_field(neo_js_variable_t self,
   neo_js_object_t obj = (neo_js_object_t)self->value;
   neo_hash_map_node_t it =
       neo_hash_map_find(obj->properties, key->value, ctx, ctx);
-  if (it != neo_hash_map_get_tail(obj->properties)) {
+  if (!it) {
     neo_js_value_t key = neo_hash_map_node_get_key(it);
     neo_js_object_property_t prop = neo_hash_map_node_get_value(it);
     if (!prop->configurable || obj->frozen || obj->sealed) {
       neo_js_variable_t message = neo_js_context_format(
           ctx, "Cannot delete property '%v' of #<Object>", key);
-      // TODO: msg -> error
-      neo_js_variable_t error = message;
+      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+      neo_js_variable_t error = neo_js_variable_construct(
+          constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
     }
     neo_js_context_create_variable(ctx, key);
@@ -580,8 +587,9 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
     } else {
       // TODO: script function
       neo_js_variable_t message = neo_js_context_format(ctx, "not implement");
-      // TODO: message -> error
-      neo_js_variable_t error = message;
+      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+      neo_js_variable_t error = neo_js_variable_construct(
+          constant->type_error_class, ctx, 1, &message);
       result = neo_js_context_create_exception(ctx, error);
     }
     neo_js_context_set_scope(ctx, origin_scope);

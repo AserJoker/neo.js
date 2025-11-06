@@ -1,6 +1,3 @@
 "use strict";
-
-const obj = {};
-obj[Symbol.toPrimitive] = () => obj;
-
-console.log(`${obj}`)
+const a = 1;
+a = 3;
