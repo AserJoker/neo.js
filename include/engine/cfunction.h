@@ -1,13 +1,13 @@
 #ifndef _H_NEO_ENGINE_CFUNCTION_
 #define _H_NEO_ENGINE_CFUNCTION_
 #include "core/allocator.h"
-#include "engine/function.h"
+#include "engine/callable.h"
 #include "engine/variable.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
 struct _neo_js_cfunction_t {
-  struct _neo_js_function_t super;
+  struct _neo_js_callable_t super;
   neo_js_cfunc_t callee;
 };
 typedef struct _neo_js_cfunction_t *neo_js_cfunction_t;

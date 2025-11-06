@@ -1,5 +1,6 @@
 #ifndef _H_NEO_ENGINE_CONTEXT_
 #define _H_NEO_ENGINE_CONTEXT_
+#include "compiler/program.h"
 #include "engine/runtime.h"
 #include "engine/scope.h"
 #include "engine/value.h"
@@ -63,6 +64,9 @@ neo_js_variable_t neo_js_context_create_object(neo_js_context_t self,
 neo_js_variable_t neo_js_context_create_cfunction(neo_js_context_t self,
                                                   neo_js_cfunc_t callee,
                                                   const char *name);
+neo_js_variable_t neo_js_context_create_function(neo_js_context_t self,
+                                                 neo_program_t program,
+                                                 const char *name);
 neo_js_variable_t neo_js_context_load(neo_js_context_t self,
                                       const uint16_t *name);
 neo_js_variable_t neo_js_context_store(neo_js_context_t self,

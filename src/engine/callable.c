@@ -1,0 +1,37 @@
+#include "engine/callable.h"
+#include "core/allocator.h"
+#include "core/common.h"
+#include "core/map.h"
+#include "core/string.h"
+#include "engine/object.h"
+#include "engine/value.h"
+#include <stdbool.h>
+
+
+static void neo_js_callable_dispose(neo_allocator_t allocator,
+                                    neo_js_callable_t self) {
+  neo_deinit_js_callable(self, allocator);
+}
+void neo_init_js_callable(neo_js_callable_t self, neo_allocator_t allocaotr,
+                          bool native, bool async, bool generator,
+
+                          neo_js_value_t prototype) {
+  neo_init_js_object(&self->super, allocaotr, prototype);
+  self->native = native;
+  self->async = async;
+  self->generator = generator;
+  neo_map_initialize_t initialize = {};
+  initialize.compare = (neo_compare_fn_t)neo_string16_compare;
+  initialize.auto_free_key = true;
+  initialize.auto_free_value = false;
+  self->closure = neo_create_map(allocaotr, &initialize);
+  neo_js_value_t value = neo_js_callable_to_value(self);
+  value->type = NEO_JS_TYPE_FUNCTION;
+}
+void neo_deinit_js_callable(neo_js_callable_t self, neo_allocator_t allocaotr) {
+  neo_allocator_free(allocaotr, self->closure);
+  neo_deinit_js_object(&self->super, allocaotr);
+}
+neo_js_value_t neo_js_callable_to_value(neo_js_callable_t self) {
+  return neo_js_object_to_value(&self->super);
+}

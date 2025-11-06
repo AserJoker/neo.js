@@ -10,6 +10,7 @@
 #include "engine/boolean.h"
 #include "engine/cfunction.h"
 #include "engine/exception.h"
+#include "engine/function.h"
 #include "engine/handle.h"
 #include "engine/null.h"
 #include "engine/number.h"
@@ -261,11 +262,29 @@ neo_js_variable_t neo_js_context_create_cfunction(neo_js_context_t self,
   neo_js_value_t value = neo_js_cfunction_to_value(cfunction);
   neo_js_variable_t result = neo_js_context_create_variable(self, value);
   prototype = neo_js_context_create_object(self, NULL);
-  neo_js_variable_t key = neo_js_context_create_cstring(self, "prototype");
-  neo_js_variable_def_field(result, self, key, prototype, false, false, false);
-  key = neo_js_context_create_cstring(self, "key");
+  neo_js_variable_t key = self->constant.key_prototype;
+  neo_js_variable_def_field(result, self, key, prototype, true, false, true);
+  key = self->constant.key_name;
   neo_js_variable_t funcname = neo_js_context_create_cstring(self, name);
   neo_js_variable_def_field(result, self, key, funcname, false, false, false);
+  return result;
+}
+
+neo_js_variable_t neo_js_context_create_function(neo_js_context_t self,
+                                                 neo_program_t program,
+                                                 const char *name) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  neo_js_function_t function = neo_create_js_function(
+      allocator, program, self->constant.function_prototype->value);
+  neo_js_value_t value = neo_js_function_to_value(function);
+  neo_js_variable_t result = neo_js_context_create_variable(self, value);
+  neo_js_variable_t prototype = neo_js_context_create_object(self, NULL);
+  neo_js_variable_t key = self->constant.key_prototype;
+  neo_js_variable_def_field(result, self, key, prototype, true, false, true);
+  key = self->constant.key_name;
+  neo_js_variable_t funcname = neo_js_context_create_cstring(self, name);
+  neo_js_variable_def_field(result, self, key, funcname, false, false, false);
+
   return result;
 }
 

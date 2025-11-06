@@ -7,9 +7,9 @@
 #include "core/string.h"
 #include "engine/bigint.h"
 #include "engine/boolean.h"
+#include "engine/callable.h"
 #include "engine/cfunction.h"
 #include "engine/context.h"
-#include "engine/function.h"
 #include "engine/handle.h"
 #include "engine/number.h"
 #include "engine/object.h"
@@ -551,7 +551,7 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
   }
   neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
-  neo_js_function_t function = (neo_js_function_t)self->value;
+  neo_js_callable_t function = (neo_js_callable_t)self->value;
   neo_js_scope_t root_scope = neo_js_context_get_root_scope(ctx);
   neo_js_scope_t current_scope = neo_create_js_scope(allocator, root_scope);
   neo_js_scope_t origin_scope = neo_js_context_set_scope(ctx, current_scope);
@@ -765,7 +765,7 @@ neo_js_variable_t neo_js_variable_set_closure(neo_js_variable_t self,
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
   }
-  neo_js_function_t function = (neo_js_function_t)self->value;
+  neo_js_callable_t function = (neo_js_callable_t)self->value;
   neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
   neo_map_set(function->closure, neo_create_string16(allocator, name), value,
