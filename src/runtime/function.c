@@ -6,7 +6,7 @@
 
 NEO_JS_CFUNCTION(neo_js_function_constructor) { return self; }
 void neo_initialize_js_function(neo_js_context_t ctx) {
-  neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+  neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   constant->function_class = neo_js_context_create_cfunction(
       ctx, neo_js_function_constructor, "Object");
   constant->function_prototype = neo_js_variable_get_field(

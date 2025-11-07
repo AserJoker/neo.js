@@ -30,6 +30,8 @@ neo_js_variable_t neo_create_js_variable(neo_allocator_t allocator,
                                          neo_js_value_t value);
 neo_js_variable_t neo_js_variable_to_string(neo_js_variable_t self,
                                             neo_js_context_t ctx);
+neo_js_variable_t neo_js_variable_to_number(neo_js_variable_t self,
+                                            neo_js_context_t ctx);
 neo_js_variable_t neo_js_variable_to_object(neo_js_variable_t self,
                                             neo_js_context_t ctx);
 neo_js_variable_t neo_js_variable_to_primitive(neo_js_variable_t self,
@@ -83,7 +85,7 @@ neo_js_variable_t neo_js_variable_extends(neo_js_variable_t self,
                                           neo_js_variable_t parent);
 neo_js_variable_t neo_js_variable_set_closure(neo_js_variable_t self,
                                               neo_js_context_t ctx,
-                                              const uint16_t *name,
+                                              const char *name,
                                               neo_js_variable_t value);
 void neo_js_variable_gc(neo_allocator_t allocator, neo_list_t variables);
 

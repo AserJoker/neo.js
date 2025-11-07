@@ -24,14 +24,14 @@
   } while (0)
 
 NEO_JS_CFUNCTION(neo_js_symbol_for) {
-  neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+  neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   neo_js_variable_t clazz = constant->symbol_class;
   neo_hash_map_t symbols = neo_js_variable_get_opaque(clazz, ctx, "symbols");
   neo_js_variable_t key = NULL;
   if (argc) {
     key = argv[0];
   } else {
-    key = neo_js_context_create_undefined(ctx);
+    key = neo_js_context_get_undefined(ctx);
   }
   key = neo_js_variable_to_string(key, ctx);
   if (key->value->type == NEO_JS_TYPE_EXCEPTION) {
@@ -51,19 +51,19 @@ NEO_JS_CFUNCTION(neo_js_symbol_for) {
   return symbol;
 }
 NEO_JS_CFUNCTION(neo_js_symbol_key_for) {
-  neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+  neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   neo_js_variable_t clazz = constant->symbol_class;
   neo_hash_map_t symbols = neo_js_variable_get_opaque(clazz, ctx, "symbols");
   neo_js_variable_t symbol = NULL;
   if (argc) {
     symbol = argv[0];
   } else {
-    symbol = neo_js_context_create_undefined(ctx);
+    symbol = neo_js_context_get_undefined(ctx);
   }
   if (symbol->value->type != NEO_JS_TYPE_SYMBOL) {
     neo_js_variable_t message =
         neo_js_context_format(ctx, "%v is not a symbol", symbol);
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -77,7 +77,7 @@ NEO_JS_CFUNCTION(neo_js_symbol_key_for) {
     }
     it = neo_hash_map_node_next(it);
   }
-  return neo_js_context_create_undefined(ctx);
+  return neo_js_context_get_undefined(ctx);
 }
 
 NEO_JS_CFUNCTION(neo_js_symbol_constructor) {
@@ -97,7 +97,7 @@ NEO_JS_CFUNCTION(neo_js_symbol_value_of) {
     if (self->value->type < NEO_JS_TYPE_OBJECT) {
       neo_js_variable_t message = neo_js_context_format(
           ctx, "Symbol.prototype.valueOf requires that 'this' be a Symbol");
-      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+      neo_js_constant_t constant = neo_js_context_get_constant(ctx);
       neo_js_variable_t error = neo_js_variable_construct(
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
@@ -106,7 +106,7 @@ NEO_JS_CFUNCTION(neo_js_symbol_value_of) {
     if (!self || self->value->type != NEO_JS_TYPE_SYMBOL) {
       neo_js_variable_t message = neo_js_context_format(
           ctx, "Symbol.prototype.valueOf requires that 'this' be a Symbol");
-      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+      neo_js_constant_t constant = neo_js_context_get_constant(ctx);
       neo_js_variable_t error = neo_js_variable_construct(
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
@@ -119,7 +119,7 @@ NEO_JS_CFUNCTION(neo_js_symbol_to_string) {
     if (self->value->type < NEO_JS_TYPE_OBJECT) {
       neo_js_variable_t message = neo_js_context_format(
           ctx, "Symbol.prototype.toString requires that 'this' be a Symbol");
-      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+      neo_js_constant_t constant = neo_js_context_get_constant(ctx);
       neo_js_variable_t error = neo_js_variable_construct(
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
@@ -128,7 +128,7 @@ NEO_JS_CFUNCTION(neo_js_symbol_to_string) {
     if (!self || self->value->type != NEO_JS_TYPE_SYMBOL) {
       neo_js_variable_t message = neo_js_context_format(
           ctx, "Symbol.prototype.toString requires that 'this' be a Symbol");
-      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+      neo_js_constant_t constant = neo_js_context_get_constant(ctx);
       neo_js_variable_t error = neo_js_variable_construct(
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
@@ -156,7 +156,7 @@ NEO_JS_CFUNCTION(neo_js_symbol_symbol_to_primitive) {
       neo_js_variable_t message =
           neo_js_context_format(ctx, "Symbol.prototype[Symbol.toPrimitive] "
                                      "requires that 'this' be a Symbol");
-      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+      neo_js_constant_t constant = neo_js_context_get_constant(ctx);
       neo_js_variable_t error = neo_js_variable_construct(
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
@@ -166,7 +166,7 @@ NEO_JS_CFUNCTION(neo_js_symbol_symbol_to_primitive) {
       neo_js_variable_t message =
           neo_js_context_format(ctx, "Symbol.prototype[Symbol.toPrimitive] "
                                      "requires that 'this' be a Symbol");
-      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+      neo_js_constant_t constant = neo_js_context_get_constant(ctx);
       neo_js_variable_t error = neo_js_variable_construct(
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
@@ -181,7 +181,7 @@ NEO_JS_CFUNCTION(neo_js_symbol_get_description) {
       neo_js_variable_t message =
           neo_js_context_format(ctx, "Symbol.prototype.description "
                                      "requires that 'this' be a Symbol");
-      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+      neo_js_constant_t constant = neo_js_context_get_constant(ctx);
       neo_js_variable_t error = neo_js_variable_construct(
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
@@ -191,7 +191,7 @@ NEO_JS_CFUNCTION(neo_js_symbol_get_description) {
       neo_js_variable_t message =
           neo_js_context_format(ctx, "Symbol.prototype.description "
                                      "requires that 'this' be a Symbol");
-      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+      neo_js_constant_t constant = neo_js_context_get_constant(ctx);
       neo_js_variable_t error = neo_js_variable_construct(
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
@@ -201,7 +201,7 @@ NEO_JS_CFUNCTION(neo_js_symbol_get_description) {
   return neo_js_context_create_string(ctx, description);
 }
 void neo_initialize_js_symbol(neo_js_context_t ctx) {
-  neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+  neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   constant->symbol_class =
       neo_js_context_create_cfunction(ctx, neo_js_symbol_constructor, "Symbol");
   constant->symbol_prototype = neo_js_variable_get_field(

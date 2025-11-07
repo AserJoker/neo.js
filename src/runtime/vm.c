@@ -4,12 +4,14 @@
 #include "core/allocator.h"
 #include "core/buffer.h"
 #include "core/list.h"
-#include "core/string.h"
 #include "engine/context.h"
+#include "engine/function.h"
 #include "engine/runtime.h"
 #include "engine/scope.h"
 #include "engine/value.h"
 #include "engine/variable.h"
+#include "runtime/constant.h"
+#include <math.h>
 #include <stdint.h>
 
 #define NEO_JS_VM_CHECK(vm, expression, program, offset)                       \
@@ -25,17 +27,25 @@
 struct _neo_js_vm_t {
   neo_list_t stack;
   neo_js_variable_t result;
+  neo_js_variable_t self;
 };
 
 static void neo_js_vm_dispose(neo_allocator_t allocator, neo_js_vm_t self) {
   neo_allocator_free(allocator, self->stack);
 }
 
-neo_js_vm_t neo_create_js_vm(neo_allocator_t allocator) {
+neo_js_vm_t neo_create_js_vm(neo_js_context_t ctx, neo_js_variable_t self) {
+  neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
   neo_js_vm_t vm = neo_allocator_alloc(allocator, sizeof(struct _neo_js_vm_t),
                                        neo_js_vm_dispose);
   vm->stack = neo_create_list(allocator, NULL);
-  vm->result = NULL;
+  vm->result = neo_js_context_get_undefined(ctx);
+  if (!self) {
+    vm->self = neo_js_context_get_undefined(ctx);
+  } else {
+    vm->self = self;
+  }
   return vm;
 }
 static neo_asm_code_t neo_js_vm_read_code(neo_program_t program,
@@ -43,6 +53,13 @@ static neo_asm_code_t neo_js_vm_read_code(neo_program_t program,
   uint8_t *codes = neo_buffer_get(program->codes);
   neo_asm_code_t code = (neo_asm_code_t) * (uint16_t *)&codes[*offset];
   *offset += sizeof(uint16_t);
+  return code;
+}
+
+static size_t neo_js_vm_read_address(neo_program_t program, size_t *offset) {
+  uint8_t *codes = neo_buffer_get(program->codes);
+  size_t code = (size_t)*(uint16_t *)&codes[*offset];
+  *offset += sizeof(size_t);
   return code;
 }
 
@@ -93,11 +110,7 @@ static void neo_js_vm_store(neo_js_vm_t vm, neo_js_context_t ctx,
                             neo_program_t program, size_t *offset) {
   const char *name = neo_js_vm_read_string(program, offset);
   neo_js_variable_t value = neo_js_vm_get_value(vm);
-  neo_js_runtime_t rt = neo_js_context_get_runtime(ctx);
-  neo_allocator_t allocator = neo_js_runtime_get_allocator(rt);
-  uint16_t *string = neo_string_to_string16(allocator, name);
-  neo_js_variable_t res = neo_js_context_store(ctx, string, value);
-  neo_allocator_free(allocator, string);
+  neo_js_variable_t res = neo_js_context_store(ctx, name, value);
   NEO_JS_VM_CHECK(vm, res, program, offset);
 }
 static void neo_js_vm_save(neo_js_vm_t vm, neo_js_context_t ctx,
@@ -109,37 +122,56 @@ static void neo_js_vm_def(neo_js_vm_t vm, neo_js_context_t ctx,
                           neo_program_t program, size_t *offset) {
   const char *name = neo_js_vm_read_string(program, offset);
   neo_js_variable_t value = neo_js_vm_get_value(vm);
-  neo_js_runtime_t rt = neo_js_context_get_runtime(ctx);
-  neo_allocator_t allocator = neo_js_runtime_get_allocator(rt);
-  uint16_t *string = neo_string_to_string16(allocator, name);
-  neo_js_variable_t res = neo_js_context_def(ctx, string, value);
-  neo_allocator_free(allocator, string);
+  neo_js_variable_t res = neo_js_context_def(ctx, name, value);
   NEO_JS_VM_CHECK(vm, res, program, offset);
 }
 
 static void neo_js_vm_load(neo_js_vm_t vm, neo_js_context_t ctx,
                            neo_program_t program, size_t *offset) {
   const char *name = neo_js_vm_read_string(program, offset);
-  neo_js_runtime_t rt = neo_js_context_get_runtime(ctx);
-  neo_allocator_t allocator = neo_js_runtime_get_allocator(rt);
-  uint16_t *string = neo_string_to_string16(allocator, name);
-  neo_js_variable_t value = neo_js_context_load(ctx, string);
-  neo_allocator_free(allocator, string);
+  neo_js_variable_t value = neo_js_context_load(ctx, name);
   NEO_JS_VM_CHECK(vm, value, program, offset);
   neo_list_push(vm->stack, value);
 }
 
 static void neo_js_vm_push_undefined(neo_js_vm_t vm, neo_js_context_t ctx,
                                      neo_program_t program, size_t *offset) {
-  neo_js_variable_t value = neo_js_context_create_undefined(ctx);
+  neo_js_variable_t value = neo_js_context_get_undefined(ctx);
+  neo_list_push(vm->stack, value);
+}
+static void neo_js_vm_push_null(neo_js_vm_t vm, neo_js_context_t ctx,
+                                neo_program_t program, size_t *offset) {
+  neo_js_variable_t value = neo_js_context_get_null(ctx);
+  neo_list_push(vm->stack, value);
+}
+static void neo_js_vm_push_nan(neo_js_vm_t vm, neo_js_context_t ctx,
+                               neo_program_t program, size_t *offset) {
+  neo_js_variable_t value = neo_js_context_create_number(ctx, NAN);
+  neo_list_push(vm->stack, value);
+}
+static void neo_js_vm_push_infinity(neo_js_vm_t vm, neo_js_context_t ctx,
+                                    neo_program_t program, size_t *offset) {
+  neo_js_variable_t value = neo_js_context_create_number(ctx, INFINITY);
   neo_list_push(vm->stack, value);
 }
 
 static void neo_js_vm_push_uninitialized(neo_js_vm_t vm, neo_js_context_t ctx,
                                          neo_program_t program,
                                          size_t *offset) {
-  neo_js_variable_t uninitialized = neo_js_context_create_uninitialized(ctx);
+  neo_js_variable_t uninitialized = neo_js_context_get_uninitialized(ctx);
   neo_list_push(vm->stack, uninitialized);
+}
+
+static void neo_js_vm_push_true(neo_js_vm_t vm, neo_js_context_t ctx,
+                                neo_program_t program, size_t *offset) {
+  neo_js_variable_t value = neo_js_context_get_true(ctx);
+  neo_list_push(vm->stack, value);
+}
+
+static void neo_js_vm_push_false(neo_js_vm_t vm, neo_js_context_t ctx,
+                                 neo_program_t program, size_t *offset) {
+  neo_js_variable_t value = neo_js_context_get_false(ctx);
+  neo_list_push(vm->stack, value);
 }
 
 static void neo_js_vm_push_number(neo_js_vm_t vm, neo_js_context_t ctx,
@@ -148,11 +180,88 @@ static void neo_js_vm_push_number(neo_js_vm_t vm, neo_js_context_t ctx,
   neo_js_variable_t value = neo_js_context_create_number(ctx, number);
   neo_list_push(vm->stack, value);
 }
+static void neo_js_vm_push_string(neo_js_vm_t vm, neo_js_context_t ctx,
+                                  neo_program_t program, size_t *offset) {
+  const char *string = neo_js_vm_read_string(program, offset);
+  neo_js_variable_t value = neo_js_context_create_cstring(ctx, string);
+  neo_list_push(vm->stack, value);
+}
+static void neo_js_vm_push_bigint(neo_js_vm_t vm, neo_js_context_t ctx,
+                                  neo_program_t program, size_t *offset) {
+  const char *string = neo_js_vm_read_string(program, offset);
+  neo_js_variable_t value = neo_js_context_create_bigint(ctx, string);
+  neo_list_push(vm->stack, value);
+}
+
+static void neo_js_vm_push_function(neo_js_vm_t vm, neo_js_context_t ctx,
+                                    neo_program_t program, size_t *offset) {
+  neo_js_variable_t function = neo_js_context_create_function(ctx, program);
+  neo_list_push(vm->stack, function);
+}
+
+static void neo_js_vm_push_object(neo_js_vm_t vm, neo_js_context_t ctx,
+                                  neo_program_t program, size_t *offset) {
+  neo_js_variable_t object = neo_js_context_create_object(ctx, NULL);
+  neo_list_push(vm->stack, object);
+}
+
+static void neo_js_vm_push_this(neo_js_vm_t vm, neo_js_context_t ctx,
+                                neo_program_t program, size_t *offset) {
+  neo_list_push(vm->stack, vm->self);
+}
+
+static void neo_js_vm_push_value(neo_js_vm_t vm, neo_js_context_t ctx,
+                                 neo_program_t program, size_t *offset) {
+  size_t idx = neo_js_vm_read_address(program, offset);
+  neo_list_node_t it = neo_list_get_tail(vm->stack);
+  while (idx > 0) {
+    it = neo_list_node_last(it);
+    idx--;
+  }
+  neo_js_variable_t value = neo_list_node_get(it);
+  neo_list_push(vm->stack, value);
+}
 
 static void neo_js_vm_set_const(neo_js_vm_t vm, neo_js_context_t ctx,
                                 neo_program_t program, size_t *offset) {
   neo_js_variable_t value = neo_js_vm_get_value(vm);
   value->is_const = true;
+}
+static void neo_js_vm_set_source(neo_js_vm_t vm, neo_js_context_t ctx,
+                                 neo_program_t program, size_t *offset) {
+  neo_js_variable_t function = neo_js_vm_get_value(vm);
+  const char *source = neo_js_vm_read_string(program, offset);
+  neo_js_function_t func = (neo_js_function_t)function->value;
+  func->source = source;
+}
+
+static void neo_js_vm_set_address(neo_js_vm_t vm, neo_js_context_t ctx,
+                                  neo_program_t program, size_t *offset) {
+  neo_js_variable_t function = neo_js_vm_get_value(vm);
+  size_t address = neo_js_vm_read_address(program, offset);
+  neo_js_function_t func = (neo_js_function_t)function->value;
+  func->address = address;
+}
+
+static void neo_js_vm_set_name(neo_js_vm_t vm, neo_js_context_t ctx,
+                               neo_program_t program, size_t *offset) {
+  neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+  neo_js_variable_t func = neo_js_vm_get_value(vm);
+  const char *name = neo_js_vm_read_string(program, offset);
+  neo_js_variable_t funcname = neo_js_context_create_cstring(ctx, name);
+  neo_js_variable_def_field(func, ctx, constant->key_name, funcname, false,
+                            false, false);
+}
+
+static void neo_js_vm_set_closure(neo_js_vm_t vm, neo_js_context_t ctx,
+                                  neo_program_t program, size_t *offset) {
+  neo_js_variable_t func = neo_js_vm_get_value(vm);
+  const char *name = neo_js_vm_read_string(program, offset);
+  neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
+  neo_js_variable_t result = neo_js_context_load(ctx, name);
+  NEO_JS_VM_CHECK(vm, result, program, offset);
+  result = neo_js_variable_set_closure(func, ctx, name, result);
+  NEO_JS_VM_CHECK(vm, result, program, offset);
 }
 
 static void neo_js_vm_directive(neo_js_vm_t vm, neo_js_context_t ctx,
@@ -163,9 +272,6 @@ static void neo_js_vm_directive(neo_js_vm_t vm, neo_js_context_t ctx,
 
 static void neo_js_vm_hlt(neo_js_vm_t vm, neo_js_context_t ctx,
                           neo_program_t program, size_t *offset) {
-  if (!vm->result) {
-    vm->result = neo_js_context_create_undefined(ctx);
-  }
   *offset = neo_buffer_get_size(program->codes);
 }
 
@@ -183,43 +289,43 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     NULL,                         // NEO_ASM_INIT_FIELD
     NULL,                         // NEO_ASM_INIT_PRIVATE_FIELD
     neo_js_vm_push_undefined,     // NEO_ASM_PUSH_UNDEFINED
-    NULL,                         // NEO_ASM_PUSH_NULL
-    NULL,                         // NEO_ASM_PUSH_NAN
-    NULL,                         // NEO_ASM_PUSH_INFINTY
+    neo_js_vm_push_null,          // NEO_ASM_PUSH_NULL
+    neo_js_vm_push_nan,           // NEO_ASM_PUSH_NAN
+    neo_js_vm_push_infinity,      // NEO_ASM_PUSH_INFINTY
     neo_js_vm_push_uninitialized, // NEO_ASM_PUSH_UNINITIALIZED
-    NULL,                         // NEO_ASM_PUSH_TRUE
-    NULL,                         // NEO_ASM_PUSH_FALSE
+    neo_js_vm_push_true,          // NEO_ASM_PUSH_TRUE
+    neo_js_vm_push_false,         // NEO_ASM_PUSH_FALSE
     neo_js_vm_push_number,        // NEO_ASM_PUSH_NUMBER
-    NULL,                         // NEO_ASM_PUSH_STRING
-    NULL,                         // NEO_ASM_PUSH_BIGINT
+    neo_js_vm_push_string,        // NEO_ASM_PUSH_STRING
+    neo_js_vm_push_bigint,        // NEO_ASM_PUSH_BIGINT
     NULL,                         // NEO_ASM_PUSH_REGEXP
-    NULL,                         // NEO_ASM_PUSH_FUNCTION
+    neo_js_vm_push_function,      // NEO_ASM_PUSH_FUNCTION
     NULL,                         // NEO_ASM_PUSH_CLASS
     NULL,                         // NEO_ASM_PUSH_ASYNC_FUNCTION
     NULL,                         // NEO_ASM_PUSH_LAMBDA
     NULL,                         // NEO_ASM_PUSH_ASYNC_LAMBDA
     NULL,                         // NEO_ASM_PUSH_GENERATOR
     NULL,                         // NEO_ASM_PUSH_ASYNC_GENERATOR
-    NULL,                         // NEO_ASM_PUSH_OBJECT
+    neo_js_vm_push_object,        // NEO_ASM_PUSH_OBJECT
     NULL,                         // NEO_ASM_PUSH_ARRAY
-    NULL,                         // NEO_ASM_PUSH_THIS
+    neo_js_vm_push_this,          // NEO_ASM_PUSH_THIS
     NULL,                         // NEO_ASM_SUPER_CALL
     NULL,                         // NEO_ASM_SUPER_MEMBER_CALL
     NULL,                         // NEO_ASM_GET_SUPER_FIELD
     NULL,                         // NEO_ASM_SET_SUPER_FIELD
-    NULL,                         // NEO_ASM_PUSH_VALUE
+    neo_js_vm_push_value,         // NEO_ASM_PUSH_VALUE
     NULL,                         // NEO_ASM_PUSH_BREAK_LABEL
     NULL,                         // NEO_ASM_PUSH_CONTINUE_LABEL
     NULL,                         // NEO_ASM_POP_LABEL
     neo_js_vm_set_const,          // NEO_ASM_SET_CONST
     NULL,                         // NEO_ASM_SET_USING
     NULL,                         // NEO_ASM_SET_AWAIT_USING
-    NULL,                         // NEO_ASM_SET_SOURCE
+    neo_js_vm_set_source,         // NEO_ASM_SET_SOURCE
     NULL,                         // NEO_ASM_SET_BIND
     NULL,                         // NEO_ASM_SET_CLASS
-    NULL,                         // NEO_ASM_SET_ADDRESS
-    NULL,                         // NEO_ASM_SET_NAME
-    NULL,                         // NEO_ASM_SET_CLOSURE
+    neo_js_vm_set_address,        // NEO_ASM_SET_ADDRESS
+    neo_js_vm_set_name,           // NEO_ASM_SET_NAME
+    neo_js_vm_set_closure,        // NEO_ASM_SET_CLOSURE
     NULL,                         // NEO_ASM_EXTENDS
     NULL,                         // NEO_ASM_DECORATOR
     neo_js_vm_directive,          // NEO_ASM_DIRECTIVE
@@ -311,7 +417,7 @@ neo_js_variable_t neo_js_vm_run(neo_js_vm_t self, neo_js_context_t ctx,
   for (;;) {
     if (offset == neo_buffer_get_size(program->codes)) {
       if (!self->result) {
-        self->result = neo_js_context_create_undefined(ctx);
+        self->result = neo_js_context_get_undefined(ctx);
       }
       neo_js_scope_set_variable(current_scope, self->result, NULL);
       if (self->result->value->type == NEO_JS_TYPE_INTERRUPT) {

@@ -19,6 +19,7 @@ typedef enum _neo_js_value_type_t {
   NEO_JS_TYPE_STRING,
   NEO_JS_TYPE_SYMBOL,
   NEO_JS_TYPE_OBJECT,
+  NEO_JS_TYPE_ARRAY,
   NEO_JS_TYPE_FUNCTION
 } neo_js_value_type_t;
 

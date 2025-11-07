@@ -7,7 +7,7 @@ NEO_JS_CFUNCTION(neo_js_type_error_constructor) {
   return neo_js_error_constructor(ctx, self, argc, argv);
 }
 void neo_initialize_js_type_error(neo_js_context_t ctx) {
-  neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+  neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   constant->type_error_class = neo_js_context_create_cfunction(
       ctx, neo_js_type_error_constructor, "TypeError");
   neo_js_variable_extends(constant->type_error_class, ctx,

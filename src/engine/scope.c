@@ -75,15 +75,15 @@ neo_js_scope_t neo_js_scope_get_parent(neo_js_scope_t self) {
 }
 
 neo_js_variable_t neo_js_scope_get_variable(neo_js_scope_t self,
-                                            const uint16_t *name) {
+                                            const char *name) {
   return neo_map_get(self->named_variables, name, NULL);
 }
 neo_js_variable_t neo_js_scope_set_variable(neo_js_scope_t self,
                                             neo_js_variable_t variable,
-                                            const uint16_t *name) {
+                                            const char *name) {
   if (name) {
-    neo_map_set(self->named_variables,
-                neo_create_string16(self->allocator, name), variable, NULL);
+    neo_map_set(self->named_variables, neo_create_string(self->allocator, name),
+                variable, NULL);
   }
   neo_list_push(self->variables, variable);
   neo_js_handle_add_ref(&variable->handle);
@@ -92,7 +92,7 @@ neo_js_variable_t neo_js_scope_set_variable(neo_js_scope_t self,
 
 neo_js_variable_t neo_js_scope_create_variable(neo_js_scope_t self,
                                                neo_js_value_t value,
-                                               const uint16_t *name) {
+                                               const char *name) {
   neo_js_variable_t variable = neo_create_js_variable(self->allocator, value);
   return neo_js_scope_set_variable(self, variable, name);
 }

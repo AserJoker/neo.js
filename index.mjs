@@ -1,3 +1,3 @@
 "use strict";
-const a = 1;
-a = 3;
+const arr = []
+delete arr.length

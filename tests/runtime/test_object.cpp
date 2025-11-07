@@ -10,7 +10,7 @@ TEST_F(test_object, constant_check) {
   neo_allocator_t allocator = neo_create_allocator(NULL);
   neo_js_runtime_t runtime = neo_create_js_runtime(allocator);
   neo_js_context_t ctx = neo_create_js_context(runtime);
-  neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+  neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   {
     neo_js_variable_t constructor = neo_js_variable_get_field(
         constant->object_prototype, ctx, constant->key_constructor);

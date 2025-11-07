@@ -7,7 +7,7 @@ NEO_JS_CFUNCTION(neo_js_reference_error_constructor) {
   return neo_js_error_constructor(ctx, self, argc, argv);
 }
 void neo_initialize_js_reference_error(neo_js_context_t ctx) {
-  neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+  neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   constant->reference_error_class = neo_js_context_create_cfunction(
       ctx, neo_js_reference_error_constructor, "ReferenceError");
   neo_js_variable_extends(constant->reference_error_class, ctx,

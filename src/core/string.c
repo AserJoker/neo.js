@@ -1,10 +1,10 @@
 #include "core/string.h"
 #include "core/allocator.h"
 #include "core/unicode.h"
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <wchar.h>
 
 char *neo_string_concat(neo_allocator_t allocator, char *src, size_t *max,
                         const char *str) {
@@ -317,4 +317,120 @@ char *neo_string16_to_string(neo_allocator_t allocator, const uint16_t *src) {
   }
   *dst = 0;
   return str;
+}
+double neo_string16_to_number(const uint16_t *str) {
+  double value = 0;
+  bool neg = false;
+  while (IS_SPACE_SEPARATOR(*str) || *str == L'\u2028' || *str == L'\u2029' ||
+         *str == '\n' || *str == '\r') {
+    str++;
+  }
+  if (*str == '-') {
+    neg = true;
+    str++;
+  } else {
+    neg = false;
+    str++;
+  }
+  if (*str == '0' && (str[1] == 'x' || str[1] == 'X')) {
+    str += 2;
+    while (*str) {
+      if (*str >= '0' && *str <= '9') {
+        value *= 16;
+        value += *str - '0';
+      } else if (*str >= 'a' && *str <= 'z') {
+        value *= 16;
+        value += *str - 'a';
+      } else if (*str >= 'A' && *str <= 'Z') {
+        value *= 16;
+        value += *str - 'A';
+      } else {
+        break;
+      }
+      str++;
+    }
+  } else if (*str == '0' && (str[1] == 'o' || str[1] == 'O')) {
+    str += 2;
+    while (*str) {
+      if (*str >= '0' && *str <= '7') {
+        value *= 8;
+        value += *str - '0';
+      } else {
+        break;
+      }
+      str++;
+    }
+  } else if (*str == '0' && (str[1] == 'b' || str[1] == 'B')) {
+    str += 2;
+    while (*str) {
+      if (*str >= '0' && *str <= '1') {
+        value *= 2;
+        value += *str - '0';
+      } else {
+        break;
+      }
+      str++;
+    }
+  } else {
+    while (*str) {
+      if (*str >= '0' && *str <= '9') {
+        value *= 10;
+        value += *str - '0';
+      } else {
+        break;
+      }
+      str++;
+    }
+    if (*str == '.') {
+      str++;
+      double dec = 0;
+      double offset = 1;
+      while (*str) {
+        if (*str >= '0' && *str <= '9') {
+          dec += (*str - '0') / offset;
+          offset /= 10;
+        } else {
+          break;
+        }
+        str++;
+      }
+      value += dec;
+    }
+    if (*str == 'e' || *str == 'E') {
+      str++;
+      bool pneg = false;
+      if (*str == '+') {
+        pneg = false;
+        str++;
+      } else if (*str == '-') {
+        pneg = true;
+        str++;
+      }
+      double p = 0;
+      while (*str) {
+        if (*str >= '0' && *str <= '9') {
+          p *= 10;
+          p += *str - '0';
+        } else {
+          break;
+        }
+        str++;
+      }
+      if (neg) {
+        p = -p;
+      }
+      value *= log10(p);
+    }
+  }
+  if (neg) {
+    value = -value;
+  }
+  while (IS_SPACE_SEPARATOR(*str) || *str == L'\u2028' || *str == L'\u2029' ||
+         *str == '\n' || *str == '\r') {
+    str++;
+  }
+  if (*str) {
+    value = NAN;
+  }
+  return value;
 }

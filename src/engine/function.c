@@ -17,6 +17,9 @@ neo_js_function_t neo_create_js_function(neo_allocator_t allocator,
 void neo_init_js_function(neo_js_function_t self, neo_allocator_t allocaotr,
                           neo_program_t program, neo_js_value_t prototype) {
   neo_init_js_callable(&self->super, allocaotr, false, false, false, prototype);
+  self->source = NULL;
+  self->program = program;
+  self->address = 0;
 }
 void neo_deinit_js_function(neo_js_function_t self, neo_allocator_t allocaotr) {
   neo_deinit_js_callable(&self->super, allocaotr);

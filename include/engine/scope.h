@@ -14,15 +14,15 @@ neo_js_scope_t neo_create_js_scope(neo_allocator_t allocator,
 neo_js_scope_t neo_js_scope_get_parent(neo_js_scope_t self);
 
 neo_js_variable_t neo_js_scope_get_variable(neo_js_scope_t self,
-                                            const uint16_t *name);
+                                            const char *name);
 
 neo_js_variable_t neo_js_scope_set_variable(neo_js_scope_t self,
                                             neo_js_variable_t variable,
-                                            const uint16_t *name);
+                                            const char *name);
 
 neo_js_variable_t neo_js_scope_create_variable(neo_js_scope_t self,
                                                neo_js_value_t value,
-                                               const uint16_t *name);
+                                               const char *name);
 
 neo_list_t neo_js_scope_get_variables(neo_js_scope_t self);
 

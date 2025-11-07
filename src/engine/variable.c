@@ -16,6 +16,7 @@
 #include "engine/object.h"
 #include "engine/runtime.h"
 #include "engine/scope.h"
+#include "engine/string.h"
 #include "engine/value.h"
 #include "runtime/constant.h"
 #include "runtime/vm.h"
@@ -24,6 +25,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 static void neo_js_variable_dispose(neo_allocator_t allocator,
                                     neo_js_variable_t variable) {
@@ -80,8 +82,16 @@ neo_js_variable_t neo_js_variable_to_string(neo_js_variable_t self,
   }
   case NEO_JS_TYPE_STRING:
     return self;
-  case NEO_JS_TYPE_SYMBOL:
+  case NEO_JS_TYPE_SYMBOL: {
+    neo_js_variable_t message =
+        neo_js_context_format(ctx, "Cannot convert a Symbol value to a string");
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+    neo_js_variable_t error =
+        neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
   case NEO_JS_TYPE_OBJECT:
+  case NEO_JS_TYPE_ARRAY:
   case NEO_JS_TYPE_FUNCTION: {
     neo_js_variable_t primitive =
         neo_js_variable_to_primitive(self, ctx, "string");
@@ -89,7 +99,55 @@ neo_js_variable_t neo_js_variable_to_string(neo_js_variable_t self,
       return primitive;
     }
     return neo_js_variable_to_string(primitive, ctx);
-  } break;
+  }
+  default:
+    return self;
+  }
+}
+neo_js_variable_t neo_js_variable_to_number(neo_js_variable_t self,
+                                            neo_js_context_t ctx) {
+  neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
+  neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+  switch (self->value->type) {
+  case NEO_JS_TYPE_UNDEFINED:
+    return constant->nan;
+  case NEO_JS_TYPE_NULL:
+    return neo_js_context_create_number(ctx, 0);
+  case NEO_JS_TYPE_NUMBER:
+    return self;
+  case NEO_JS_TYPE_BIGINT: {
+    neo_js_variable_t message =
+        neo_js_context_format(ctx, "Cannot convert a BigInt value to a number");
+    neo_js_variable_t error =
+        neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  case NEO_JS_TYPE_BOOLEAN:
+    return neo_js_context_create_number(ctx,
+                                        ((neo_js_boolean_t)self->value)->value);
+  case NEO_JS_TYPE_STRING: {
+    const uint16_t *string = ((neo_js_string_t)self->value)->value;
+    double value = neo_string16_to_number(string);
+    return neo_js_context_create_number(ctx, value);
+  }
+  case NEO_JS_TYPE_SYMBOL: {
+    neo_js_variable_t message =
+        neo_js_context_format(ctx, "Cannot convert a Symbol value to a number");
+    neo_js_variable_t error =
+        neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  case NEO_JS_TYPE_OBJECT:
+  case NEO_JS_TYPE_ARRAY:
+  case NEO_JS_TYPE_FUNCTION: {
+    neo_js_variable_t primitive =
+        neo_js_variable_to_primitive(self, ctx, "number");
+    if (primitive->value->type == NEO_JS_TYPE_EXCEPTION) {
+      return primitive;
+    }
+    return neo_js_variable_to_number(primitive, ctx);
+  }
   default:
     return self;
   }
@@ -101,7 +159,7 @@ neo_js_variable_t neo_js_variable_to_primitive(neo_js_variable_t self,
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
     return self;
   }
-  neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+  neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   neo_js_variable_t key = constant->symbol_to_primitive;
   neo_js_variable_t to_primitive = neo_js_variable_get_field(self, ctx, key);
   if (to_primitive->value->type == NEO_JS_TYPE_EXCEPTION) {
@@ -117,7 +175,7 @@ neo_js_variable_t neo_js_variable_to_primitive(neo_js_variable_t self,
     if (res->value->type >= NEO_JS_TYPE_OBJECT) {
       neo_js_variable_t message = neo_js_context_format(
           ctx, "Cannot convert object to primitive value");
-      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+      neo_js_constant_t constant = neo_js_context_get_constant(ctx);
       neo_js_variable_t error = neo_js_variable_construct(
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
@@ -169,7 +227,7 @@ neo_js_variable_t neo_js_variable_to_object(neo_js_variable_t self,
   case NEO_JS_TYPE_UNDEFINED: {
     neo_js_variable_t message = neo_js_context_create_cstring(
         ctx, "Cannot convert undefined or null to object");
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -183,7 +241,7 @@ neo_js_variable_t neo_js_variable_to_object(neo_js_variable_t self,
   case NEO_JS_TYPE_STRING:
     break;
   case NEO_JS_TYPE_SYMBOL: {
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t object =
         neo_js_context_create_object(ctx, constant->symbol_prototype);
     neo_js_variable_set_internal(object, ctx, "PrimitiveValue", self);
@@ -202,7 +260,7 @@ neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
   if (self->value->type == NEO_JS_TYPE_NULL) {
     neo_js_variable_t message = neo_js_context_format(
         ctx, "Cannot set properties of null (reading '%v')", key);
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -210,7 +268,7 @@ neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
   if (self->value->type == NEO_JS_TYPE_UNDEFINED) {
     neo_js_variable_t message = neo_js_context_format(
         ctx, "Cannot set properties of undefined (reading '%v')", key);
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -220,7 +278,7 @@ neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t message =
         neo_js_context_format(ctx, "define field on non-object");
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -229,7 +287,7 @@ neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
   if (obj->frozen) {
     neo_js_variable_t message =
         neo_js_context_format(ctx, "Cannot redefine property: %v", key);
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -246,7 +304,7 @@ neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
     if (obj->sealed || !obj->extensible) {
       neo_js_variable_t message = neo_js_context_format(
           ctx, "Cannot define property %v, object is not extensible", key);
-      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+      neo_js_constant_t constant = neo_js_context_get_constant(ctx);
       neo_js_variable_t error = neo_js_variable_construct(
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
@@ -258,11 +316,14 @@ neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
     prop->value = value->value;
     neo_hash_map_set(obj->properties, key->value, prop, ctx, ctx);
     neo_js_value_add_parent(key->value, self->value);
+    if (self->value->type == NEO_JS_TYPE_ARRAY) {
+      // TODO: update array length
+    }
   } else {
     if (!prop->configurable) {
       neo_js_variable_t message =
           neo_js_context_format(ctx, "Cannot redefine property: %v", key);
-      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+      neo_js_constant_t constant = neo_js_context_get_constant(ctx);
       neo_js_variable_t error = neo_js_variable_construct(
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
@@ -295,7 +356,7 @@ neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t message =
         neo_js_context_format(ctx, "define field on non-object");
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -304,7 +365,7 @@ neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
   if (obj->frozen) {
     neo_js_variable_t message =
         neo_js_context_format(ctx, "Cannot redefine property: %v", key);
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -321,7 +382,7 @@ neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
     if (obj->sealed || !obj->extensible) {
       neo_js_variable_t message = neo_js_context_format(
           ctx, "Cannot define property '%v', object is not extensible", key);
-      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+      neo_js_constant_t constant = neo_js_context_get_constant(ctx);
       neo_js_variable_t error = neo_js_variable_construct(
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
@@ -341,7 +402,7 @@ neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
     if (!prop->configurable) {
       neo_js_variable_t message =
           neo_js_context_format(ctx, "Cannot redefine property: %v", key);
-      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+      neo_js_constant_t constant = neo_js_context_get_constant(ctx);
       neo_js_variable_t error = neo_js_variable_construct(
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
@@ -378,7 +439,7 @@ neo_js_variable_t neo_js_variable_get_field(neo_js_variable_t self,
   if (self->value->type == NEO_JS_TYPE_NULL) {
     neo_js_variable_t message = neo_js_context_format(
         ctx, "Cannot read properties of null (reading '%v')", key);
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -386,7 +447,7 @@ neo_js_variable_t neo_js_variable_get_field(neo_js_variable_t self,
   if (self->value->type == NEO_JS_TYPE_UNDEFINED) {
     neo_js_variable_t message = neo_js_context_format(
         ctx, "Cannot read properties of undefined (reading '%v')", key);
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -417,7 +478,7 @@ neo_js_variable_t neo_js_variable_get_field(neo_js_variable_t self,
       return neo_js_variable_call(get, ctx, self, 0, NULL);
     }
   }
-  return neo_js_context_create_undefined(ctx);
+  return neo_js_context_get_undefined(ctx);
 }
 
 neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
@@ -427,7 +488,7 @@ neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
   if (self->value->type == NEO_JS_TYPE_NULL) {
     neo_js_variable_t message = neo_js_context_format(
         ctx, "Cannot set properties of null (reading '%v')", key);
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -435,7 +496,7 @@ neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
   if (self->value->type == NEO_JS_TYPE_UNDEFINED) {
     neo_js_variable_t message = neo_js_context_format(
         ctx, "Cannot set properties of undefined (reading '%v')", key);
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -451,7 +512,7 @@ neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
     neo_js_variable_t message = neo_js_context_format(
         ctx, "Cannot assign to read only property '%v' of object '#<Object>'",
         key);
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -470,7 +531,7 @@ neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
       neo_js_variable_t message = neo_js_context_format(
           ctx, "Cannot assign to read only property '%v' of object '#<Object>'",
           key);
-      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+      neo_js_constant_t constant = neo_js_context_get_constant(ctx);
       neo_js_variable_t error = neo_js_variable_construct(
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
@@ -478,6 +539,9 @@ neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
     neo_js_context_create_variable(ctx, prop->value);
     prop->value = value->value;
     neo_js_value_add_parent(value->value, self->value);
+    if (self->value->type == NEO_JS_TYPE_ARRAY) {
+      // TODO: update array length
+    }
   } else if (prop && prop->set) {
     neo_js_variable_t set = neo_js_context_create_variable(ctx, prop->set);
     return neo_js_variable_call(set, ctx, self, 1, &value);
@@ -485,7 +549,7 @@ neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
     neo_js_variable_t message = neo_js_context_format(
         ctx, "Cannot set property '%v' of #<Object> which has only a getter",
         key);
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -515,7 +579,7 @@ neo_js_variable_t neo_js_variable_del_field(neo_js_variable_t self,
     if (!prop->configurable || obj->frozen || obj->sealed) {
       neo_js_variable_t message = neo_js_context_format(
           ctx, "Cannot delete property '%v' of #<Object>", key);
-      neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+      neo_js_constant_t constant = neo_js_context_get_constant(ctx);
       neo_js_variable_t error = neo_js_variable_construct(
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
@@ -546,7 +610,7 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
   if (self->value->type != NEO_JS_TYPE_FUNCTION) {
     neo_js_variable_t message =
         neo_js_context_format(ctx, "%s is not a function", self);
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -564,9 +628,15 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
   neo_map_node_t it = neo_map_get_first(callable->closure);
   while (it != neo_map_get_tail(callable->closure)) {
     neo_js_variable_t variable = neo_map_node_get_value(it);
-    const uint16_t *name = neo_map_node_get_key(it);
+    const char *name = neo_map_node_get_key(it);
     neo_js_scope_set_variable(current_scope, variable, name);
     it = neo_map_node_next(it);
+  }
+  if (callable->async && callable->generator) {
+  }
+  if (callable->async) {
+  }
+  if (callable->generator) {
   }
   neo_js_variable_t result = NULL;
   if (callable->native) {
@@ -576,19 +646,13 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
     result = cfunction->callee(ctx, bind, argc, argv);
     neo_js_context_set_type(ctx, origin_ctx_type);
   } else {
-    if (callable->async && callable->generator) {
-    }
-    if (callable->async) {
-    }
-    if (callable->generator) {
-    }
     neo_js_function_t function = (neo_js_function_t)callable;
-    neo_js_vm_t vm = neo_create_js_vm(allocator);
     neo_js_context_type_t origin_ctx_type =
         neo_js_context_set_type(ctx, NEO_JS_CONTEXT_FUNCTION);
-    result = neo_js_vm_run(vm, ctx, function->program, function->offset);
-    neo_js_context_set_type(ctx, origin_ctx_type);
+    neo_js_vm_t vm = neo_create_js_vm(ctx, bind);
+    result = neo_js_vm_run(vm, ctx, function->program, function->address);
     neo_allocator_free(allocator, vm);
+    neo_js_context_set_type(ctx, origin_ctx_type);
   }
   neo_js_scope_set_variable(origin_scope, result, NULL);
   neo_js_context_set_scope(ctx, origin_scope);
@@ -602,7 +666,7 @@ neo_js_variable_t neo_js_variable_construct(neo_js_variable_t self,
   if (self->value->type != NEO_JS_TYPE_FUNCTION) {
     neo_js_variable_t message =
         neo_js_context_format(ctx, "%v is not a constructor", self);
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -631,7 +695,7 @@ neo_js_variable_t neo_js_variable_get_internel(neo_js_variable_t self,
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t message =
         neo_js_context_format(ctx, "%v is not a object", self);
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -651,7 +715,7 @@ neo_js_variable_t neo_js_variable_set_internal(neo_js_variable_t self,
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t message =
         neo_js_context_format(ctx, "%v is not a object", self);
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -690,7 +754,7 @@ neo_js_variable_set_prototype_of(neo_js_variable_t self, neo_js_context_t ctx,
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t message =
         neo_js_context_format(ctx, "%v is not object", self);
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -709,7 +773,7 @@ neo_js_variable_t neo_js_variable_get_prototype_of(neo_js_variable_t self,
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t message =
         neo_js_context_format(ctx, "%v is not object", self);
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -724,7 +788,7 @@ neo_js_variable_t neo_js_variable_extends(neo_js_variable_t self,
   if (self->value->type != NEO_JS_TYPE_FUNCTION) {
     neo_js_variable_t message =
         neo_js_context_format(ctx, "%v is not function", self);
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -732,12 +796,12 @@ neo_js_variable_t neo_js_variable_extends(neo_js_variable_t self,
   if (parent->value->type != NEO_JS_TYPE_FUNCTION) {
     neo_js_variable_t message =
         neo_js_context_format(ctx, "%v is not function", parent);
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
   }
-  neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+  neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   neo_js_variable_t parent_prototype =
       neo_js_variable_get_field(parent, ctx, constant->key_prototype);
   if (parent_prototype->value->type == NEO_JS_TYPE_EXCEPTION) {
@@ -753,12 +817,12 @@ neo_js_variable_t neo_js_variable_extends(neo_js_variable_t self,
 
 neo_js_variable_t neo_js_variable_set_closure(neo_js_variable_t self,
                                               neo_js_context_t ctx,
-                                              const uint16_t *name,
+                                              const char *name,
                                               neo_js_variable_t value) {
   if (self->value->type != NEO_JS_TYPE_FUNCTION) {
     neo_js_variable_t message =
         neo_js_context_format(ctx, "%v is not function", self);
-    neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -766,7 +830,7 @@ neo_js_variable_t neo_js_variable_set_closure(neo_js_variable_t self,
   neo_js_callable_t function = (neo_js_callable_t)self->value;
   neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
-  neo_map_set(function->closure, neo_create_string16(allocator, name), value,
+  neo_map_set(function->closure, neo_create_string(allocator, name), value,
               ctx);
   neo_js_handle_add_parent(&value->handle, &self->handle);
   return self;

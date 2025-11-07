@@ -18,7 +18,6 @@ neo_js_object_t neo_create_js_object(neo_allocator_t allocator,
   neo_js_object_t object = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_object_t), neo_js_object_dispose);
   neo_init_js_object(object, allocator, prototype);
-  neo_js_value_add_parent(prototype, &object->super);
   return object;
 }
 void neo_init_js_object(neo_js_object_t self, neo_allocator_t allocator,
@@ -40,6 +39,7 @@ void neo_init_js_object(neo_js_object_t self, neo_allocator_t allocator,
   initialize.auto_free_key = true;
   initialize.auto_free_value = false;
   self->internals = neo_create_hash_map(allocator, &initialize);
+  neo_js_value_add_parent(prototype, neo_js_object_to_value(self));
 }
 void neo_deinit_js_object(neo_js_object_t self, neo_allocator_t allocator) {
   neo_allocator_free(allocator, self->properties);

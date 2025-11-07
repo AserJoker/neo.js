@@ -21,7 +21,7 @@ typedef enum _neo_js_context_type_t {
 } neo_js_context_type_t;
 typedef struct _neo_js_context_t *neo_js_context_t;
 neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime);
-neo_js_constant_t *neo_js_context_get_constant(neo_js_context_t self);
+neo_js_constant_t neo_js_context_get_constant(neo_js_context_t self);
 neo_js_runtime_t neo_js_context_get_runtime(neo_js_context_t self);
 neo_js_context_type_t neo_js_context_get_type(neo_js_context_t self);
 neo_js_context_type_t neo_js_context_set_type(neo_js_context_t self,
@@ -44,36 +44,38 @@ neo_list_t neo_js_context_trace(neo_js_context_t self, uint32_t line,
                                 uint32_t column);
 neo_js_variable_t neo_js_context_create_variable(neo_js_context_t self,
                                                  neo_js_value_t value);
-neo_js_variable_t neo_js_context_create_uninitialized(neo_js_context_t self);
-neo_js_variable_t neo_js_context_create_undefined(neo_js_context_t self);
-neo_js_variable_t neo_js_context_create_null(neo_js_context_t self);
+neo_js_variable_t neo_js_context_get_uninitialized(neo_js_context_t self);
+neo_js_variable_t neo_js_context_get_undefined(neo_js_context_t self);
+neo_js_variable_t neo_js_context_get_null(neo_js_context_t self);
+neo_js_variable_t neo_js_context_get_nan(neo_js_context_t self);
+neo_js_variable_t neo_js_context_get_infinity(neo_js_context_t self);
+neo_js_variable_t neo_js_context_get_true(neo_js_context_t self);
+neo_js_variable_t neo_js_context_get_false(neo_js_context_t self);
+
 neo_js_variable_t neo_js_context_create_number(neo_js_context_t self,
                                                double val);
-neo_js_variable_t neo_js_context_create_boolean(neo_js_context_t self,
-                                                bool val);
 neo_js_variable_t neo_js_context_create_string(neo_js_context_t self,
                                                const uint16_t *val);
 neo_js_variable_t neo_js_context_create_cstring(neo_js_context_t self,
                                                 const char *val);
+neo_js_variable_t neo_js_context_create_bigint(neo_js_context_t self,
+                                               const char *val);
 neo_js_variable_t neo_js_context_create_symbol(neo_js_context_t self,
                                                const uint16_t *description);
 neo_js_variable_t neo_js_context_create_exception(neo_js_context_t self,
                                                   neo_js_variable_t error);
 neo_js_variable_t neo_js_context_create_object(neo_js_context_t self,
                                                neo_js_variable_t prototype);
+neo_js_variable_t neo_js_context_create_array(neo_js_context_t ctx);
 neo_js_variable_t neo_js_context_create_cfunction(neo_js_context_t self,
                                                   neo_js_cfunc_t callee,
                                                   const char *name);
 neo_js_variable_t neo_js_context_create_function(neo_js_context_t self,
-                                                 neo_program_t program,
-                                                 const char *name);
-neo_js_variable_t neo_js_context_load(neo_js_context_t self,
-                                      const uint16_t *name);
-neo_js_variable_t neo_js_context_store(neo_js_context_t self,
-                                       const uint16_t *name,
+                                                 neo_program_t program);
+neo_js_variable_t neo_js_context_load(neo_js_context_t self, const char *name);
+neo_js_variable_t neo_js_context_store(neo_js_context_t self, const char *name,
                                        neo_js_variable_t variable);
-neo_js_variable_t neo_js_context_def(neo_js_context_t self,
-                                     const uint16_t *name,
+neo_js_variable_t neo_js_context_def(neo_js_context_t self, const char *name,
                                      neo_js_variable_t variable);
 neo_js_variable_t neo_js_context_format(neo_js_context_t self, const char *fmt,
                                         ...);

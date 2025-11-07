@@ -2,11 +2,10 @@
 #include "core/allocator.h"
 #include "core/common.h"
 #include "core/map.h"
-#include "core/string.h"
 #include "engine/object.h"
 #include "engine/value.h"
 #include <stdbool.h>
-
+#include <string.h>
 
 static void neo_js_callable_dispose(neo_allocator_t allocator,
                                     neo_js_callable_t self) {
@@ -21,7 +20,7 @@ void neo_init_js_callable(neo_js_callable_t self, neo_allocator_t allocaotr,
   self->async = async;
   self->generator = generator;
   neo_map_initialize_t initialize = {};
-  initialize.compare = (neo_compare_fn_t)neo_string16_compare;
+  initialize.compare = (neo_compare_fn_t)strcmp;
   initialize.auto_free_key = true;
   initialize.auto_free_value = false;
   self->closure = neo_create_map(allocaotr, &initialize);

@@ -30,7 +30,7 @@ NEO_JS_CFUNCTION(neo_js_error_constructor) {
       return cause;
     }
   } else {
-    cause = neo_js_context_create_undefined(ctx);
+    cause = neo_js_context_get_undefined(ctx);
   }
   neo_js_variable_def_field(self, ctx, key, cause, true, false, true);
   key = neo_js_context_create_cstring(ctx, "message");
@@ -63,7 +63,7 @@ NEO_JS_CFUNCTION(neo_js_error_to_string) {
   return neo_js_context_create_string(ctx, string);
 }
 void neo_initialize_js_error(neo_js_context_t ctx) {
-  neo_js_constant_t *constant = neo_js_context_get_constant(ctx);
+  neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   constant->error_class =
       neo_js_context_create_cfunction(ctx, neo_js_error_constructor, "Error");
   neo_js_variable_t error_prototype = neo_js_variable_get_field(

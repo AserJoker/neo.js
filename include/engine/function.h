@@ -9,7 +9,8 @@ extern "C" {
 struct _neo_js_function_t {
   struct _neo_js_callable_t super;
   neo_program_t program;
-  size_t offset;
+  size_t address;
+  const char *source;
 };
 typedef struct _neo_js_function_t *neo_js_function_t;
 neo_js_function_t neo_create_js_function(neo_allocator_t allocator,

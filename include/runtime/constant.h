@@ -9,12 +9,23 @@ struct _neo_js_constant_t {
   neo_js_variable_t key_name;
   neo_js_variable_t key_prototype;
   neo_js_variable_t key_constructor;
+  // base
+  neo_js_variable_t uninitialized;
+  neo_js_variable_t undefined;
+  neo_js_variable_t null;
+  neo_js_variable_t nan;
+  neo_js_variable_t infinity;
+  neo_js_variable_t boolean_true;
+  neo_js_variable_t boolean_false;
   // function
   neo_js_variable_t function_prototype;
   neo_js_variable_t function_class;
   // object
   neo_js_variable_t object_prototype;
   neo_js_variable_t object_class;
+  // array
+  neo_js_variable_t array_prototype;
+  neo_js_variable_t array_class;
   // symbol
   neo_js_variable_t symbol_prototype;
   neo_js_variable_t symbol_class;
@@ -40,7 +51,7 @@ struct _neo_js_constant_t {
   // reference_error
   neo_js_variable_t reference_error_class;
 };
-typedef struct _neo_js_constant_t neo_js_constant_t;
+typedef struct _neo_js_constant_t *neo_js_constant_t;
 void neo_initialize_js_constant(neo_js_context_t ctx);
 #ifdef __cplusplus
 }
