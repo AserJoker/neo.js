@@ -1,3 +1,3 @@
 "use strict";
 const arr = []
-delete arr.length
+Object.defineProperty(arr, 'length', { value: 2 })

@@ -26,6 +26,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/types.h>
 
 static void neo_js_variable_dispose(neo_allocator_t allocator,
                                     neo_js_variable_t variable) {
@@ -309,6 +310,19 @@ neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
     }
+    if (self->value->type == NEO_JS_TYPE_ARRAY &&
+        key->value->type == NEO_JS_TYPE_STRING) {
+      neo_js_object_property_t length_prop = neo_hash_map_get(
+          obj->properties, neo_js_context_create_cstring(ctx, "length"), ctx,
+          ctx);
+      neo_js_number_t current_length = (neo_js_number_t)length_prop->value;
+      neo_js_variable_t index = neo_js_variable_to_number(key, ctx);
+      double idxf = ((neo_js_number_t)index->value)->value;
+      uint32_t idx = idxf;
+      if (!isnan(idxf) && idx == idxf && idx >= current_length->value) {
+        current_length->value = idx + 1;
+      }
+    }
     neo_js_object_property_t prop = neo_create_js_object_property(allocator);
     prop->configurable = configurable;
     prop->enumable = enumable;
@@ -316,17 +330,58 @@ neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
     prop->value = value->value;
     neo_hash_map_set(obj->properties, key->value, prop, ctx, ctx);
     neo_js_value_add_parent(key->value, self->value);
-    if (self->value->type == NEO_JS_TYPE_ARRAY) {
-      // TODO: update array length
-    }
   } else {
-    if (!prop->configurable) {
+    if (!prop->configurable &&
+        (prop->configurable != configurable || prop->enumable != enumable ||
+         prop->writable != writable || !prop->value)) {
       neo_js_variable_t message =
           neo_js_context_format(ctx, "Cannot redefine property: %v", key);
       neo_js_constant_t constant = neo_js_context_get_constant(ctx);
       neo_js_variable_t error = neo_js_variable_construct(
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
+    }
+    if (self->value->type == NEO_JS_TYPE_ARRAY &&
+        key->value->type == NEO_JS_TYPE_STRING) {
+      const uint16_t *string = ((neo_js_string_t)key->value)->value;
+      if (neo_string16_mix_compare(string, "length")) {
+        neo_js_number_t current_length = ((neo_js_number_t)prop->value);
+        value = neo_js_variable_to_number(value, ctx);
+        if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
+          return value;
+        }
+        double lenf = ((neo_js_number_t)value->value)->value;
+        uint32_t len = lenf;
+        if (len != lenf) {
+          neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+          neo_js_variable_t message =
+              neo_js_context_format(ctx, "Invalid array length");
+          neo_js_variable_t error = neo_js_variable_construct(
+              constant->range_error_class, ctx, 1, &message);
+          return neo_js_context_create_exception(ctx, error);
+        }
+        while (len < current_length->value) {
+          neo_js_variable_t res = neo_js_variable_del_field(
+              self, ctx,
+              neo_js_context_create_number(ctx, current_length->value - 1));
+          if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
+            return res;
+          }
+          current_length->value--;
+        }
+        return self;
+      } else {
+        neo_js_object_property_t length_prop = neo_hash_map_get(
+            obj->properties, neo_js_context_create_cstring(ctx, "length"), ctx,
+            ctx);
+        neo_js_number_t current_length = (neo_js_number_t)length_prop->value;
+        neo_js_variable_t index = neo_js_variable_to_number(key, ctx);
+        double idxf = ((neo_js_number_t)index->value)->value;
+        uint32_t idx = idxf;
+        if (!isnan(idxf) && idx == idxf && idx >= current_length->value) {
+          current_length->value = idx + 1;
+        }
+      }
     }
     if (prop->value) {
       neo_js_context_create_variable(ctx, prop->value);
@@ -341,6 +396,9 @@ neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
       neo_js_context_create_variable(ctx, prop->get);
       prop->set = NULL;
     }
+    prop->configurable = configurable;
+    prop->enumable = enumable;
+    prop->writable = writable;
   }
   neo_js_value_add_parent(value->value, self->value);
   return self;
@@ -387,6 +445,19 @@ neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
     }
+    if (self->value->type == NEO_JS_TYPE_ARRAY &&
+        key->value->type == NEO_JS_TYPE_STRING) {
+      neo_js_object_property_t length_prop = neo_hash_map_get(
+          obj->properties, neo_js_context_create_cstring(ctx, "length"), ctx,
+          ctx);
+      neo_js_number_t current_length = (neo_js_number_t)length_prop->value;
+      neo_js_variable_t index = neo_js_variable_to_number(key, ctx);
+      double idxf = ((neo_js_number_t)index->value)->value;
+      uint32_t idx = idxf;
+      if (!isnan(idxf) && idx == idxf && idx >= current_length->value) {
+        current_length->value = idx + 1;
+      }
+    }
     neo_js_object_property_t prop = neo_create_js_object_property(allocator);
     prop->configurable = configurable;
     prop->enumable = enumable;
@@ -400,12 +471,15 @@ neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
     neo_js_value_add_parent(key->value, self->value);
   } else {
     if (!prop->configurable) {
-      neo_js_variable_t message =
-          neo_js_context_format(ctx, "Cannot redefine property: %v", key);
-      neo_js_constant_t constant = neo_js_context_get_constant(ctx);
-      neo_js_variable_t error = neo_js_variable_construct(
-          constant->type_error_class, ctx, 1, &message);
-      return neo_js_context_create_exception(ctx, error);
+      if (prop->configurable != configurable || prop->enumable != enumable ||
+          prop->value) {
+        neo_js_variable_t message =
+            neo_js_context_format(ctx, "Cannot redefine property: %v", key);
+        neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+        neo_js_variable_t error = neo_js_variable_construct(
+            constant->type_error_class, ctx, 1, &message);
+        return neo_js_context_create_exception(ctx, error);
+      }
     }
     if (prop->value) {
       neo_js_context_create_variable(ctx, prop->value);
@@ -423,6 +497,8 @@ neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
         prop->set = set->value;
       }
     }
+    prop->configurable = configurable;
+    prop->enumable = enumable;
   }
   if (get) {
     neo_js_value_add_parent(get->value, self->value);
@@ -456,6 +532,12 @@ neo_js_variable_t neo_js_variable_get_field(neo_js_variable_t self,
     self = neo_js_variable_to_object(self, ctx);
     if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
       return self;
+    }
+  }
+  if (key->value->type != NEO_JS_TYPE_SYMBOL) {
+    key = neo_js_variable_to_string(key, ctx);
+    if (key->value->type == NEO_JS_TYPE_EXCEPTION) {
+      return key;
     }
   }
   neo_js_object_t object = (neo_js_object_t)self->value;
@@ -507,6 +589,12 @@ neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
       return self;
     }
   }
+  if (key->value->type != NEO_JS_TYPE_SYMBOL) {
+    key = neo_js_variable_to_string(key, ctx);
+    if (key->value->type == NEO_JS_TYPE_EXCEPTION) {
+      return key;
+    }
+  }
   neo_js_object_t object = (neo_js_object_t)self->value;
   if (object->frozen) {
     neo_js_variable_t message = neo_js_context_format(
@@ -536,12 +624,51 @@ neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
     }
+    if (self->value->type == NEO_JS_TYPE_ARRAY &&
+        key->value->type == NEO_JS_TYPE_STRING) {
+      const uint16_t *string = ((neo_js_string_t)key->value)->value;
+      if (neo_string16_mix_compare(string, "length")) {
+        neo_js_number_t current_length = ((neo_js_number_t)prop->value);
+        value = neo_js_variable_to_number(value, ctx);
+        if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
+          return value;
+        }
+        double lenf = ((neo_js_number_t)value->value)->value;
+        uint32_t len = lenf;
+        if (len != lenf) {
+          neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+          neo_js_variable_t message =
+              neo_js_context_format(ctx, "Invalid array length");
+          neo_js_variable_t error = neo_js_variable_construct(
+              constant->range_error_class, ctx, 1, &message);
+          return neo_js_context_create_exception(ctx, error);
+        }
+        while (len < current_length->value) {
+          neo_js_variable_t res = neo_js_variable_del_field(
+              self, ctx,
+              neo_js_context_create_number(ctx, current_length->value - 1));
+          if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
+            return res;
+          }
+          current_length->value--;
+        }
+        return self;
+      } else {
+        neo_js_object_property_t length_prop = neo_hash_map_get(
+            object->properties, neo_js_context_create_cstring(ctx, "length"),
+            ctx, ctx);
+        neo_js_number_t current_length = (neo_js_number_t)length_prop->value;
+        neo_js_variable_t index = neo_js_variable_to_number(key, ctx);
+        double idxf = ((neo_js_number_t)index->value)->value;
+        uint32_t idx = idxf;
+        if (!isnan(idxf) && idx == idxf && idx >= current_length->value) {
+          current_length->value = idx + 1;
+        }
+      }
+    }
     neo_js_context_create_variable(ctx, prop->value);
     prop->value = value->value;
     neo_js_value_add_parent(value->value, self->value);
-    if (self->value->type == NEO_JS_TYPE_ARRAY) {
-      // TODO: update array length
-    }
   } else if (prop && prop->set) {
     neo_js_variable_t set = neo_js_context_create_variable(ctx, prop->set);
     return neo_js_variable_call(set, ctx, self, 1, &value);
@@ -568,6 +695,12 @@ neo_js_variable_t neo_js_variable_del_field(neo_js_variable_t self,
     self = neo_js_variable_to_object(self, ctx);
     if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
       return self;
+    }
+  }
+  if (key->value->type != NEO_JS_TYPE_SYMBOL) {
+    key = neo_js_variable_to_string(key, ctx);
+    if (key->value->type == NEO_JS_TYPE_EXCEPTION) {
+      return key;
     }
   }
   neo_js_object_t obj = (neo_js_object_t)self->value;

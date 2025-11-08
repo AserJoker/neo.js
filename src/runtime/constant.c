@@ -81,4 +81,5 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   neo_js_scope_set_variable(root_scope, constant->type_error_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->syntax_error_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->reference_error_class, NULL);
+  neo_js_scope_set_variable(root_scope, constant->range_error_class, NULL);
 }

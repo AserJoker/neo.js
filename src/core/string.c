@@ -305,6 +305,21 @@ int neo_string16_compare(const uint16_t *str1, const uint16_t *str2) {
   }
   return 0;
 }
+
+int neo_string16_mix_compare(const uint16_t *str1, const char *str2) {
+  for (;;) {
+    if (*str1 != *str2) {
+      return *str1 - *str2;
+    }
+    if (!*str1) {
+      break;
+    }
+    str1++;
+    str2++;
+  }
+  return 0;
+}
+
 char *neo_string16_to_string(neo_allocator_t allocator, const uint16_t *src) {
   size_t len = neo_string16_length(src);
   char *str = neo_allocator_alloc(allocator, len * 2 + 1, NULL);

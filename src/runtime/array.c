@@ -22,12 +22,25 @@ NEO_JS_CFUNCTION(neo_js_array_constructor) {
     if (len != lenf) {
       neo_js_variable_t message =
           neo_js_context_format(ctx, "Invalid array length");
-          
+      neo_js_variable_t error = neo_js_variable_construct(
+          constant->range_error_class, ctx, 1, &message);
+      return neo_js_context_create_exception(ctx, error);
     }
+    neo_js_variable_t length = neo_js_context_create_number(ctx, len);
+    neo_js_variable_t key = neo_js_context_create_cstring(ctx, "length");
+    neo_js_variable_def_field(self, ctx, key, length, false, false, true);
   } else {
     neo_js_variable_t length = neo_js_context_create_number(ctx, 0);
     neo_js_variable_t key = neo_js_context_create_cstring(ctx, "length");
     neo_js_variable_def_field(self, ctx, key, length, false, false, true);
+    for (size_t idx = 0; idx < argc; idx++) {
+      neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
+      neo_js_variable_t res =
+          neo_js_variable_set_field(self, ctx, key, argv[idx]);
+      if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
+        return res;
+      }
+    }
   }
   return self;
 }

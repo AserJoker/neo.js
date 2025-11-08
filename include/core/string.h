@@ -23,6 +23,7 @@ size_t neo_string16_length(const uint16_t *str);
 int64_t neo_string16_find(const uint16_t *source, const uint16_t *search);
 uint16_t *neo_string_to_string16(neo_allocator_t allocator, const char *src);
 int neo_string16_compare(const uint16_t *str1, const uint16_t *str2);
+int neo_string16_mix_compare(const uint16_t *str1, const char *str2);
 char *neo_string16_to_string(neo_allocator_t allocator, const uint16_t *src);
 double neo_string16_to_number(const uint16_t *str);
 #endif
