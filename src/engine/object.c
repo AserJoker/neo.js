@@ -5,7 +5,6 @@
 #include "core/hash_map.h"
 #include "engine/string.h"
 #include "engine/value.h"
-#include "engine/variable.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
@@ -50,8 +49,7 @@ neo_js_value_t neo_js_object_to_value(neo_js_object_t self) {
   return &self->super;
 }
 int32_t neo_js_object_key_compare(const neo_js_value_t self,
-                                  const neo_js_value_t another,
-                                  neo_js_context_t ctx) {
+                                  const neo_js_value_t another) {
   if (self->type != another->type) {
     return self->type - another->type;
   }
@@ -75,8 +73,7 @@ int32_t neo_js_object_key_compare(const neo_js_value_t self,
   }
   return 0;
 }
-uint32_t neo_js_object_key_hash(const neo_js_value_t self, uint32_t max,
-                                neo_js_context_t ctx) {
+uint32_t neo_js_object_key_hash(const neo_js_value_t self, uint32_t max) {
   if (self->type == NEO_JS_TYPE_SYMBOL) {
     return ((uint32_t)(ptrdiff_t)self) % max;
   }

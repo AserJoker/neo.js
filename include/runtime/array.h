@@ -6,6 +6,8 @@ extern "C" {
 #endif
 NEO_JS_CFUNCTION(neo_js_array_constructor);
 NEO_JS_CFUNCTION(neo_js_array_to_string);
+NEO_JS_CFUNCTION(neo_js_array_values);
+NEO_JS_CFUNCTION(neo_js_array_push);
 void neo_initialize_js_array(neo_js_context_t ctx);
 #ifdef __cplusplus
 }

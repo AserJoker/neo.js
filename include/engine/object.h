@@ -2,7 +2,7 @@
 #define _H_NEO_ENGINE_OBJECT_
 #include "core/allocator.h"
 #include "core/hash_map.h"
-#include "engine/variable.h"
+#include "engine/value.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,11 +38,9 @@ void neo_deinit_js_object(neo_js_object_t self, neo_allocator_t allocator);
 neo_js_value_t neo_js_object_to_value(neo_js_object_t self);
 
 int32_t neo_js_object_key_compare(const neo_js_value_t self,
-                                  const neo_js_value_t another,
-                                  neo_js_context_t ctx);
+                                  const neo_js_value_t another);
 
-uint32_t neo_js_object_key_hash(const neo_js_value_t self, uint32_t max,
-                                neo_js_context_t ctx);
+uint32_t neo_js_object_key_hash(const neo_js_value_t self, uint32_t max);
 
 neo_js_object_property_t
 neo_create_js_object_property(neo_allocator_t allocator);

@@ -38,7 +38,7 @@ NEO_JS_CFUNCTION(neo_js_symbol_for) {
     return key;
   }
   const uint16_t *keystring = ((neo_js_string_t)key->value)->value;
-  neo_js_value_t value = neo_hash_map_get(symbols, keystring, NULL, NULL);
+  neo_js_value_t value = neo_hash_map_get(symbols, keystring);
   if (value) {
     return neo_js_context_create_variable(ctx, value);
   }
@@ -47,7 +47,7 @@ NEO_JS_CFUNCTION(neo_js_symbol_for) {
   neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
   neo_hash_map_set(symbols, neo_create_string16(allocator, keystring),
-                   symbol->value, NULL, NULL);
+                   symbol->value);
   return symbol;
 }
 NEO_JS_CFUNCTION(neo_js_symbol_key_for) {

@@ -8,9 +8,12 @@
 #include "engine/undefined.h"
 #include "engine/uninitialized.h"
 #include "runtime/array.h"
+#include "runtime/array_iterator.h"
 #include "runtime/error.h"
 #include "runtime/function.h"
+#include "runtime/iterator.h"
 #include "runtime/object.h"
+#include "runtime/range_error.h"
 #include "runtime/reference_error.h"
 #include "runtime/symbol.h"
 #include "runtime/syntax_error.h"
@@ -41,13 +44,18 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   constant->key_prototype = neo_js_context_create_cstring(ctx, "prototype");
   neo_initialize_js_object(ctx);
   neo_initialize_js_function(ctx);
+  constant->global = neo_js_context_create_object(ctx, NULL);
   neo_initialize_js_symbol(ctx);
   neo_initialize_js_array(ctx);
+  neo_initialize_js_iterator(ctx);
+  neo_initialize_js_array_iterator(ctx);
   neo_initialize_js_error(ctx);
   neo_initialize_js_type_error(ctx);
   neo_initialize_js_syntax_error(ctx);
   neo_initialize_js_reference_error(ctx);
+  neo_initialize_js_range_error(ctx);
 
+  neo_js_scope_set_variable(root_scope, constant->global, NULL);
   neo_js_scope_set_variable(root_scope, constant->uninitialized, NULL);
   neo_js_scope_set_variable(root_scope, constant->undefined, NULL);
   neo_js_scope_set_variable(root_scope, constant->null, NULL);
@@ -77,9 +85,32 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   neo_js_scope_set_variable(root_scope, constant->symbol_split, NULL);
   neo_js_scope_set_variable(root_scope, constant->symbol_to_primitive, NULL);
   neo_js_scope_set_variable(root_scope, constant->symbol_to_string_tag, NULL);
+  neo_js_scope_set_variable(root_scope, constant->iterator_class, NULL);
+  neo_js_scope_set_variable(root_scope, constant->iterator_prototype, NULL);
+  neo_js_scope_set_variable(root_scope, constant->array_iterator_prototype,
+                            NULL);
   neo_js_scope_set_variable(root_scope, constant->error_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->type_error_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->syntax_error_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->reference_error_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->range_error_class, NULL);
+
+  NEO_JS_DEF_FIELD(ctx, constant->global, "global", constant->global);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "undefined", constant->undefined);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "NaN", constant->nan);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "Infinity", constant->infinity);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "Object", constant->object_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "Function", constant->function_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "Array", constant->array_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "Iterator", constant->iterator_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "Symbol", constant->symbol_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "Error", constant->error_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "TypeError",
+                   constant->type_error_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "SyntaxError",
+                   constant->syntax_error_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "ReferenceError",
+                   constant->reference_error_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "RangeError",
+                   constant->range_error_class);
 }

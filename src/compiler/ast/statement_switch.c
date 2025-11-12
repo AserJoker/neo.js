@@ -68,7 +68,7 @@ static void neo_ast_statement_switch_write(neo_allocator_t allocator,
       *address = neo_buffer_get_size(ctx->program->codes);
       neo_program_add_address(allocator, ctx->program, 0);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
-      neo_map_set(addresses, cas, address, NULL);
+      neo_map_set(addresses, cas, address);
     }
   }
   size_t endaddr = 0;
@@ -77,7 +77,7 @@ static void neo_ast_statement_switch_write(neo_allocator_t allocator,
     neo_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
     *address = neo_buffer_get_size(ctx->program->codes);
     neo_program_add_address(allocator, ctx->program, 0);
-    neo_map_set(addresses, def, address, NULL);
+    neo_map_set(addresses, def, address);
   } else {
     neo_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
     endaddr = neo_buffer_get_size(ctx->program->codes);
@@ -86,7 +86,7 @@ static void neo_ast_statement_switch_write(neo_allocator_t allocator,
   for (neo_list_node_t it = neo_list_get_first(self->cases);
        it != neo_list_get_tail(self->cases); it = neo_list_node_next(it)) {
     neo_ast_switch_case_t cas = neo_list_node_get(it);
-    size_t *address = neo_map_get(addresses, cas, NULL);
+    size_t *address = neo_map_get(addresses, cas);
     neo_program_set_current(ctx->program, *address);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
     for (neo_list_node_t it = neo_list_get_first(cas->body);

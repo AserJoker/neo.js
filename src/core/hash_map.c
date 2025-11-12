@@ -107,9 +107,8 @@ neo_hash_map_t neo_create_hash_map(neo_allocator_t allocator,
   return hmap;
 }
 
-void neo_hash_map_set(neo_hash_map_t self, void *key, void *value,
-                      void *cmp_arg, void *hash_arg) {
-  neo_hash_map_node_t node = neo_hash_map_find(self, key, cmp_arg, hash_arg);
+void neo_hash_map_set(neo_hash_map_t self, void *key, void *value) {
+  neo_hash_map_node_t node = neo_hash_map_find(self, key);
   if (node) {
     if (self->auto_free_value && node->value) {
       neo_allocator_free(self->allocator, node->value);
@@ -117,7 +116,7 @@ void neo_hash_map_set(neo_hash_map_t self, void *key, void *value,
   } else {
     uint32_t hash = 0;
     if (self->hash) {
-      hash = self->hash(key, self->max_bucket, hash_arg);
+      hash = self->hash(key, self->max_bucket);
     } else {
       hash = ((uintptr_t)key) % self->max_bucket;
     }
@@ -133,9 +132,8 @@ void neo_hash_map_set(neo_hash_map_t self, void *key, void *value,
   node->value = value;
 }
 
-void *neo_hash_map_get(neo_hash_map_t self, const void *key, void *cmp_arg,
-                       void *hash_arg) {
-  neo_hash_map_node_t node = neo_hash_map_find(self, key, cmp_arg, hash_arg);
+void *neo_hash_map_get(neo_hash_map_t self, const void *key) {
+  neo_hash_map_node_t node = neo_hash_map_find(self, key);
   if (node) {
     return node->value;
   } else {
@@ -143,14 +141,12 @@ void *neo_hash_map_get(neo_hash_map_t self, const void *key, void *cmp_arg,
   }
 }
 
-bool neo_hash_map_has(neo_hash_map_t self, const void *key, void *cmp_arg,
-                      void *hash_arg) {
-  return neo_hash_map_get(self, key, cmp_arg, hash_arg) != NULL;
+bool neo_hash_map_has(neo_hash_map_t self, const void *key) {
+  return neo_hash_map_get(self, key) != NULL;
 }
 
-void neo_hash_map_delete(neo_hash_map_t self, const void *key, void *cmp_arg,
-                         void *hash_arg) {
-  neo_hash_map_node_t node = neo_hash_map_find(self, key, cmp_arg, hash_arg);
+void neo_hash_map_delete(neo_hash_map_t self, const void *key) {
+  neo_hash_map_node_t node = neo_hash_map_find(self, key);
   neo_hash_map_erase(self, node);
 }
 
@@ -169,11 +165,10 @@ void neo_hash_map_erase(neo_hash_map_t self, neo_hash_map_node_t position) {
   }
 }
 
-neo_hash_map_node_t neo_hash_map_find(neo_hash_map_t self, const void *key,
-                                      void *cmp_arg, void *hash_arg) {
+neo_hash_map_node_t neo_hash_map_find(neo_hash_map_t self, const void *key) {
   uint32_t hash = 0;
   if (self->hash) {
-    hash = self->hash(key, self->max_bucket, hash_arg);
+    hash = self->hash(key, self->max_bucket);
   } else {
     hash = ((uintptr_t)key) % self->max_bucket;
   }
@@ -181,7 +176,7 @@ neo_hash_map_node_t neo_hash_map_find(neo_hash_map_t self, const void *key,
   neo_hash_map_node_t it = bucket->head.next;
   while (it != &bucket->tail) {
     if (self->compare) {
-      if (self->compare(it->key, key, cmp_arg) == 0) {
+      if (self->compare(it->key, key) == 0) {
         break;
       }
     } else {

@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 struct _neo_js_constant_t {
+  // global
+  neo_js_variable_t global;
   // key
   neo_js_variable_t key_name;
   neo_js_variable_t key_prototype;
@@ -26,6 +28,11 @@ struct _neo_js_constant_t {
   // array
   neo_js_variable_t array_prototype;
   neo_js_variable_t array_class;
+  // iterator
+  neo_js_variable_t iterator_class;
+  neo_js_variable_t iterator_prototype;
+  // array_iterator
+  neo_js_variable_t array_iterator_prototype;
   // symbol
   neo_js_variable_t symbol_prototype;
   neo_js_variable_t symbol_class;

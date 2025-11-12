@@ -5,6 +5,7 @@
 #include "core/allocator.h"
 #include "core/bigint.h"
 #include "core/error.h"
+#include "core/hash_map.h"
 #include "core/list.h"
 #include "core/string.h"
 #include "core/unicode.h"
@@ -270,6 +271,9 @@ neo_js_variable_t neo_js_context_create_cfunction(neo_js_context_t self,
   neo_js_variable_t key = self->constant.key_prototype;
   neo_js_variable_def_field(result, self, key, prototype, true, false, true);
   key = self->constant.key_name;
+  if (!name) {
+    name = "";
+  }
   neo_js_variable_t funcname = neo_js_context_create_cstring(self, name);
   neo_js_variable_def_field(result, self, key, funcname, false, false, false);
   return result;
@@ -299,6 +303,31 @@ neo_js_variable_t neo_js_context_load(neo_js_context_t self, const char *name) {
     scope = neo_js_scope_get_parent(scope);
   }
   if (!variable) {
+    neo_js_object_t object = (neo_js_object_t)(self->constant.global->value);
+    neo_hash_map_node_t it = neo_hash_map_get_first(object->properties);
+    while (it != neo_hash_map_get_tail(object->properties)) {
+      neo_js_value_t key = neo_hash_map_node_get_key(it);
+      if (key->type == NEO_JS_TYPE_STRING) {
+        neo_js_string_t string = (neo_js_string_t)key;
+        if (neo_string16_mix_compare(string->value, name) == 0) {
+          neo_js_object_property_t prop = neo_hash_map_node_get_value(it);
+          if (prop->value) {
+            variable = neo_js_context_create_variable(self, prop->value);
+          } else if (prop->get) {
+            neo_js_variable_t get =
+                neo_js_context_create_variable(self, prop->get);
+            variable =
+                neo_js_variable_call(get, self, self->constant.global, 0, NULL);
+          } else {
+            variable = self->constant.undefined;
+          }
+          break;
+        }
+      }
+      it = neo_hash_map_node_next(it);
+    }
+  }
+  if (!variable) {
     const char *stuffix = " is not defined";
     uint16_t msg[strlen(name) + 16];
     uint16_t *dst = msg;
@@ -311,8 +340,8 @@ neo_js_variable_t neo_js_context_load(neo_js_context_t self, const char *name) {
     }
     *dst = 0;
     neo_js_variable_t message = neo_js_context_create_string(self, msg);
-    // message -> reference error
-    neo_js_variable_t error = message;
+    neo_js_variable_t error = neo_js_variable_construct(
+        self->constant.reference_error_class, self, 1, &message);
     return neo_js_context_create_exception(self, error);
   }
   return variable;
@@ -326,7 +355,7 @@ neo_js_variable_t neo_js_context_store(neo_js_context_t self, const char *name,
   }
   if (current->is_const && current->value->type != NEO_JS_TYPE_UNINITIALIZED) {
     neo_js_variable_t message =
-        neo_js_context_create_cstring(self, "assignment to constant variable");
+        neo_js_context_create_cstring(self, "Assignment to constant variable");
     neo_js_variable_t error = neo_js_variable_construct(
         self->constant.reference_error_class, self, 1, &message);
     return neo_js_context_create_exception(self, error);
@@ -341,6 +370,10 @@ neo_js_variable_t neo_js_context_def(neo_js_context_t self, const char *name,
                                      neo_js_variable_t variable) {
   neo_js_scope_set_variable(self->current_scope, variable, name);
   return variable;
+}
+
+neo_js_variable_t neo_js_context_get_global(neo_js_context_t self) {
+  return self->constant.global;
 }
 
 void neo_js_context_recycle(neo_js_context_t self, neo_js_value_t value) {

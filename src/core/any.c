@@ -4,7 +4,6 @@
 #include "core/map.h"
 #include "core/string.h"
 #include <string.h>
-#include <wchar.h>
 
 struct _neo_any_t {
   neo_any_type_t type;
@@ -160,6 +159,6 @@ neo_any_t neo_any_push(neo_any_t self, neo_any_t item) {
 
 neo_any_t neo_any_set(neo_any_t self, const char *key, neo_any_t item) {
   char *buf = neo_create_string(self->allocator, key);
-  neo_map_set(self->dict, buf, item, NULL);
+  neo_map_set(self->dict, buf, item);
   return self;
 }

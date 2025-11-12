@@ -19,17 +19,17 @@ typedef struct _neo_map_initialize {
 neo_map_t neo_create_map(neo_allocator_t allocator,
                          neo_map_initialize_t *initialize);
 
-void neo_map_set(neo_map_t self, void *key, void *value, void *cmp_arg);
+void neo_map_set(neo_map_t self, void *key, void *value);
 
-void *neo_map_get(neo_map_t self, const void *key, void *cmp_arg);
+void *neo_map_get(neo_map_t self, const void *key);
 
-bool neo_map_has(neo_map_t self, void *key, void *cmp_arg);
+bool neo_map_has(neo_map_t self, void *key);
 
-void neo_map_delete(neo_map_t self, void *key, void *cmp_arg);
+void neo_map_delete(neo_map_t self, void *key);
 
 void neo_map_erase(neo_map_t self, neo_map_node_t position);
 
-neo_map_node_t neo_map_find(neo_map_t self, const void *key, void *cmp_arg);
+neo_map_node_t neo_map_find(neo_map_t self, const void *key);
 
 size_t neo_map_get_size(neo_map_t self);
 

@@ -18,6 +18,7 @@
 #include "engine/scope.h"
 #include "engine/string.h"
 #include "engine/value.h"
+#include "runtime/array.h"
 #include "runtime/constant.h"
 #include "runtime/vm.h"
 #include <math.h>
@@ -299,8 +300,7 @@ neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
       return key;
     }
   }
-  neo_js_object_property_t prop =
-      neo_hash_map_get(obj->properties, key->value, ctx, ctx);
+  neo_js_object_property_t prop = neo_hash_map_get(obj->properties, key->value);
   if (!prop) {
     if (obj->sealed || !obj->extensible) {
       neo_js_variable_t message = neo_js_context_format(
@@ -313,8 +313,7 @@ neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
     if (self->value->type == NEO_JS_TYPE_ARRAY &&
         key->value->type == NEO_JS_TYPE_STRING) {
       neo_js_object_property_t length_prop = neo_hash_map_get(
-          obj->properties, neo_js_context_create_cstring(ctx, "length"), ctx,
-          ctx);
+          obj->properties, neo_js_context_create_cstring(ctx, "length")->value);
       neo_js_number_t current_length = (neo_js_number_t)length_prop->value;
       neo_js_variable_t index = neo_js_variable_to_number(key, ctx);
       double idxf = ((neo_js_number_t)index->value)->value;
@@ -328,7 +327,7 @@ neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
     prop->enumable = enumable;
     prop->writable = writable;
     prop->value = value->value;
-    neo_hash_map_set(obj->properties, key->value, prop, ctx, ctx);
+    neo_hash_map_set(obj->properties, key->value, prop);
     neo_js_value_add_parent(key->value, self->value);
   } else {
     if (!prop->configurable &&
@@ -372,8 +371,8 @@ neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
         return self;
       } else {
         neo_js_object_property_t length_prop = neo_hash_map_get(
-            obj->properties, neo_js_context_create_cstring(ctx, "length"), ctx,
-            ctx);
+            obj->properties,
+            neo_js_context_create_cstring(ctx, "length")->value);
         neo_js_number_t current_length = (neo_js_number_t)length_prop->value;
         neo_js_variable_t index = neo_js_variable_to_number(key, ctx);
         double idxf = ((neo_js_number_t)index->value)->value;
@@ -434,8 +433,7 @@ neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
       return key;
     }
   }
-  neo_js_object_property_t prop =
-      neo_hash_map_get(obj->properties, key->value, ctx, ctx);
+  neo_js_object_property_t prop = neo_hash_map_get(obj->properties, key->value);
   if (!prop) {
     if (obj->sealed || !obj->extensible) {
       neo_js_variable_t message = neo_js_context_format(
@@ -448,8 +446,7 @@ neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
     if (self->value->type == NEO_JS_TYPE_ARRAY &&
         key->value->type == NEO_JS_TYPE_STRING) {
       neo_js_object_property_t length_prop = neo_hash_map_get(
-          obj->properties, neo_js_context_create_cstring(ctx, "length"), ctx,
-          ctx);
+          obj->properties, neo_js_context_create_cstring(ctx, "length")->value);
       neo_js_number_t current_length = (neo_js_number_t)length_prop->value;
       neo_js_variable_t index = neo_js_variable_to_number(key, ctx);
       double idxf = ((neo_js_number_t)index->value)->value;
@@ -467,7 +464,7 @@ neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
     if (set) {
       prop->set = set->value;
     }
-    neo_hash_map_set(obj->properties, key->value, prop, ctx, ctx);
+    neo_hash_map_set(obj->properties, key->value, prop);
     neo_js_value_add_parent(key->value, self->value);
   } else {
     if (!prop->configurable) {
@@ -541,14 +538,13 @@ neo_js_variable_t neo_js_variable_get_field(neo_js_variable_t self,
     }
   }
   neo_js_object_t object = (neo_js_object_t)self->value;
-  neo_hash_map_node_t it =
-      neo_hash_map_find(object->properties, key->value, ctx, ctx);
+  neo_hash_map_node_t it = neo_hash_map_find(object->properties, key->value);
   while (!it) {
     if (object->prototype->type < NEO_JS_TYPE_OBJECT) {
       break;
     }
     object = (neo_js_object_t)object->prototype;
-    it = neo_hash_map_find(object->properties, key->value, ctx, ctx);
+    it = neo_hash_map_find(object->properties, key->value);
   }
   if (it) {
     neo_js_value_t key = neo_hash_map_node_get_key(it);
@@ -561,6 +557,35 @@ neo_js_variable_t neo_js_variable_get_field(neo_js_variable_t self,
     }
   }
   return neo_js_context_get_undefined(ctx);
+}
+
+neo_js_object_property_t neo_js_variable_get_property(neo_js_variable_t self,
+                                                      neo_js_context_t ctx,
+                                                      neo_js_variable_t key) {
+  if (self->value->type < NEO_JS_TYPE_OBJECT) {
+    return NULL;
+  }
+  neo_js_object_property_t prop = NULL;
+  neo_js_object_t object = (neo_js_object_t)self->value;
+  while (object->super.type == NEO_JS_TYPE_OBJECT) {
+    prop = neo_hash_map_get(object->properties, key->value);
+    if (prop) {
+      break;
+    }
+    object = (neo_js_object_t)object->prototype;
+  }
+  return prop;
+}
+neo_js_object_property_t
+neo_js_variable_get_own_property(neo_js_variable_t self, neo_js_context_t ctx,
+                                 neo_js_variable_t key) {
+  if (self->value->type < NEO_JS_TYPE_OBJECT) {
+    return NULL;
+  }
+  neo_js_object_t object = (neo_js_object_t)self->value;
+  neo_js_object_property_t prop =
+      neo_hash_map_get(object->properties, key->value);
+  return prop;
 }
 
 neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
@@ -606,15 +631,15 @@ neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
     return neo_js_context_create_exception(ctx, error);
   }
   neo_js_object_property_t prop =
-      neo_hash_map_get(object->properties, key, ctx, ctx);
+      neo_hash_map_get(object->properties, key->value);
   while (!prop) {
     if (object->prototype->type < NEO_JS_TYPE_OBJECT) {
       break;
     }
     object = (neo_js_object_t)object->prototype;
-    prop = neo_hash_map_get(object->properties, key, ctx, ctx);
+    prop = neo_hash_map_get(object->properties, key->value);
   }
-  if (prop->value && neo_js_object_to_value(object) == self->value) {
+  if (prop && prop->value && neo_js_object_to_value(object) == self->value) {
     if (!prop->writable) {
       neo_js_variable_t message = neo_js_context_format(
           ctx, "Cannot assign to read only property '%v' of object '#<Object>'",
@@ -655,8 +680,8 @@ neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
         return self;
       } else {
         neo_js_object_property_t length_prop = neo_hash_map_get(
-            object->properties, neo_js_context_create_cstring(ctx, "length"),
-            ctx, ctx);
+            object->properties,
+            neo_js_context_create_cstring(ctx, "length")->value);
         neo_js_number_t current_length = (neo_js_number_t)length_prop->value;
         neo_js_variable_t index = neo_js_variable_to_number(key, ctx);
         double idxf = ((neo_js_number_t)index->value)->value;
@@ -704,8 +729,7 @@ neo_js_variable_t neo_js_variable_del_field(neo_js_variable_t self,
     }
   }
   neo_js_object_t obj = (neo_js_object_t)self->value;
-  neo_hash_map_node_t it =
-      neo_hash_map_find(obj->properties, key->value, ctx, ctx);
+  neo_hash_map_node_t it = neo_hash_map_find(obj->properties, key->value);
   if (!it) {
     neo_js_value_t key = neo_hash_map_node_get_key(it);
     neo_js_object_property_t prop = neo_hash_map_node_get_value(it);
@@ -731,9 +755,57 @@ neo_js_variable_t neo_js_variable_del_field(neo_js_variable_t self,
       neo_js_context_create_variable(ctx, prop->get);
       neo_js_value_remove_parent(prop->get, self->value);
     }
-    neo_hash_map_delete(obj->properties, key, ctx, ctx);
+    neo_hash_map_delete(obj->properties, key);
   }
   return self;
+}
+
+neo_js_variable_t neo_js_variable_call_function(neo_js_variable_t self,
+                                                neo_js_context_t ctx,
+                                                neo_js_variable_t bind,
+                                                neo_js_variable_t arguments) {
+  if (self->value->type != NEO_JS_TYPE_FUNCTION) {
+    neo_js_variable_t message =
+        neo_js_context_format(ctx, "%s is not a function", self);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+    neo_js_variable_t error =
+        neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  neo_js_callable_t callable = (neo_js_callable_t)self->value;
+  neo_js_function_t function = (neo_js_function_t)callable;
+  neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
+  neo_js_scope_t root_scope = neo_js_context_get_root_scope(ctx);
+  neo_js_scope_t current_scope = neo_create_js_scope(allocator, root_scope);
+  neo_js_scope_t origin_scope = neo_js_context_set_scope(ctx, current_scope);
+  neo_js_scope_set_variable(current_scope, arguments, "arguments");
+  neo_js_scope_set_variable(current_scope, bind, "arguments");
+  if (callable->generator && callable->async) {
+    // TODO: async generator
+    neo_js_variable_t error =
+        neo_js_context_create_cstring(ctx, "async generator is not implement");
+    return neo_js_context_create_exception(ctx, error);
+  } else if (callable->generator) {
+    // TODO: generator
+    neo_js_variable_t error =
+        neo_js_context_create_cstring(ctx, "generator is not implement");
+    return neo_js_context_create_exception(ctx, error);
+  } else if (callable->async) {
+    // TODO: async function
+    neo_js_variable_t error =
+        neo_js_context_create_cstring(ctx, "async function is not implement");
+    return neo_js_context_create_exception(ctx, error);
+  } else {
+    neo_js_vm_t vm = neo_create_js_vm(ctx, bind);
+    neo_js_variable_t result =
+        neo_js_vm_run(vm, ctx, function->program, function->address);
+    neo_allocator_free(allocator, vm);
+    neo_js_scope_set_variable(origin_scope, result, NULL);
+    neo_js_context_set_scope(ctx, origin_scope);
+    neo_allocator_free(allocator, current_scope);
+    return result;
+  }
 }
 
 neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
@@ -748,9 +820,30 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
   }
+  neo_js_callable_t callable = (neo_js_callable_t)self->value;
+  if (!callable->native) {
+    neo_js_variable_t arguments =
+        neo_js_context_create_object(ctx, neo_js_context_get_null(ctx));
+    for (size_t idx = 0; idx < argc; idx++) {
+      neo_js_variable_t index = neo_js_context_create_number(ctx, idx);
+      neo_js_variable_t res =
+          neo_js_variable_set_field(arguments, ctx, index, argv[idx]);
+      if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
+        return res;
+      }
+    }
+    neo_js_variable_t key = neo_js_context_create_cstring(ctx, "length");
+    neo_js_variable_t length = neo_js_context_create_number(ctx, argc);
+    neo_js_variable_set_field(arguments, ctx, key, length);
+    neo_js_variable_t iterator =
+        neo_js_context_create_cfunction(ctx, neo_js_array_values, "values");
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+    neo_js_variable_set_field(arguments, ctx, constant->symbol_iterator,
+                              iterator);
+    return neo_js_variable_call_function(self, ctx, bind, arguments);
+  }
   neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
-  neo_js_callable_t callable = (neo_js_callable_t)self->value;
   neo_js_scope_t root_scope = neo_js_context_get_root_scope(ctx);
   neo_js_scope_t current_scope = neo_create_js_scope(allocator, root_scope);
   neo_js_scope_t origin_scope = neo_js_context_set_scope(ctx, current_scope);
@@ -764,12 +857,6 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
     const char *name = neo_map_node_get_key(it);
     neo_js_scope_set_variable(current_scope, variable, name);
     it = neo_map_node_next(it);
-  }
-  if (callable->async && callable->generator) {
-  }
-  if (callable->async) {
-  }
-  if (callable->generator) {
   }
   neo_js_variable_t result = NULL;
   if (callable->native) {
@@ -834,7 +921,7 @@ neo_js_variable_t neo_js_variable_get_internel(neo_js_variable_t self,
     return neo_js_context_create_exception(ctx, error);
   }
   neo_js_object_t object = (neo_js_object_t)self->value;
-  neo_js_value_t value = neo_hash_map_get(object->internals, name, NULL, NULL);
+  neo_js_value_t value = neo_hash_map_get(object->internals, name);
   if (value) {
     return neo_js_context_create_variable(ctx, value);
   }
@@ -856,14 +943,13 @@ neo_js_variable_t neo_js_variable_set_internal(neo_js_variable_t self,
   neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
   neo_js_object_t object = (neo_js_object_t)self->value;
-  neo_js_value_t current =
-      neo_hash_map_get(object->internals, name, NULL, NULL);
+  neo_js_value_t current = neo_hash_map_get(object->internals, name);
   if (current) {
     neo_js_value_remove_parent(current, self->value);
     neo_js_context_create_variable(ctx, current);
   }
   neo_hash_map_set(object->internals, neo_create_string(allocator, name),
-                   value->value, NULL, NULL);
+                   value->value);
   neo_js_value_add_parent(value->value, self->value);
   return self;
 }
@@ -873,12 +959,12 @@ void neo_js_variable_set_opaque(neo_js_variable_t self, neo_js_context_t ctx,
   neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
   neo_hash_map_set(self->value->opaque, neo_create_string(allocator, name),
-                   value, NULL, NULL);
+                   value);
 }
 
 void *neo_js_variable_get_opaque(neo_js_variable_t self, neo_js_context_t ctx,
                                  const char *name) {
-  return neo_hash_map_get(self->value->opaque, name, NULL, NULL);
+  return neo_hash_map_get(self->value->opaque, name);
 }
 
 neo_js_variable_t
@@ -963,8 +1049,7 @@ neo_js_variable_t neo_js_variable_set_closure(neo_js_variable_t self,
   neo_js_callable_t function = (neo_js_callable_t)self->value;
   neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
-  neo_map_set(function->closure, neo_create_string(allocator, name), value,
-              ctx);
+  neo_map_set(function->closure, neo_create_string(allocator, name), value);
   neo_js_handle_add_parent(&value->handle, &self->handle);
   return self;
 }

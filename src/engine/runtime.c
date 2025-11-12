@@ -32,9 +32,9 @@ neo_allocator_t neo_js_runtime_get_allocator(neo_js_runtime_t self) {
 
 neo_program_t neo_js_runtime_get_program(neo_js_runtime_t self,
                                          const char *filename) {
-  return neo_hash_map_get(self->programs, filename, NULL, NULL);
+  return neo_hash_map_get(self->programs, filename);
 }
 void neo_js_runtime_set_program(neo_js_runtime_t self, const char *filename,
                                 neo_program_t program) {
-  neo_hash_map_set(self->programs, (void *)filename, program, NULL, NULL);
+  neo_hash_map_set(self->programs, (void *)filename, program);
 }

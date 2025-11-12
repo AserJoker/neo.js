@@ -3,6 +3,7 @@
 #include "core/allocator.h"
 #include "core/list.h"
 #include "engine/handle.h"
+#include "engine/object.h"
 #include "engine/value.h"
 
 #ifdef __cplusplus
@@ -49,6 +50,12 @@ neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
 neo_js_variable_t neo_js_variable_get_field(neo_js_variable_t self,
                                             neo_js_context_t ctx,
                                             neo_js_variable_t key);
+neo_js_object_property_t neo_js_variable_get_property(neo_js_variable_t self,
+                                                      neo_js_context_t ctx,
+                                                      neo_js_variable_t key);
+neo_js_object_property_t
+neo_js_variable_get_own_property(neo_js_variable_t self, neo_js_context_t ctx,
+                                 neo_js_variable_t key);
 neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
                                             neo_js_context_t ctx,
                                             neo_js_variable_t key,
@@ -60,6 +67,11 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
                                        neo_js_context_t ctx,
                                        neo_js_variable_t bind, size_t argc,
                                        neo_js_variable_t *argv);
+
+neo_js_variable_t neo_js_variable_call_function(neo_js_variable_t self,
+                                                neo_js_context_t ctx,
+                                                neo_js_variable_t bind,
+                                                neo_js_variable_t arguments);
 
 neo_js_variable_t neo_js_variable_construct(neo_js_variable_t self,
                                             neo_js_context_t ctx, size_t argc,

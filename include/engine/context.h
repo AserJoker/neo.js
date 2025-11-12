@@ -77,6 +77,7 @@ neo_js_variable_t neo_js_context_store(neo_js_context_t self, const char *name,
                                        neo_js_variable_t variable);
 neo_js_variable_t neo_js_context_def(neo_js_context_t self, const char *name,
                                      neo_js_variable_t variable);
+neo_js_variable_t neo_js_context_get_global(neo_js_context_t self);
 neo_js_variable_t neo_js_context_format(neo_js_context_t self, const char *fmt,
                                         ...);
 neo_js_variable_t neo_js_context_get_argument(neo_js_context_t self,
@@ -87,12 +88,17 @@ neo_js_variable_t neo_js_context_get_argument(neo_js_context_t self,
 neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
                                       const char *filename);
 
-#define NEO_JS_DEF_METHOD(ctx, self, name, callee)                             \
+#define NEO_JS_DEF_FIELD(ctx, self, name, value)                               \
   do {                                                                         \
     neo_js_variable_t key = neo_js_context_create_cstring(ctx, name);          \
+    neo_js_variable_def_field(self, ctx, key, value, true, false, true);       \
+  } while (0)
+
+#define NEO_JS_DEF_METHOD(ctx, self, name, callee)                             \
+  do {                                                                         \
     neo_js_variable_t method =                                                 \
         neo_js_context_create_cfunction(ctx, callee, name);                    \
-    neo_js_variable_def_field(self, ctx, key, method, true, false, true);      \
+    NEO_JS_DEF_FIELD(ctx, self, name, method);                                 \
   } while (0)
 
 #define NEO_DEF_SYMBOL_METHOD(ctx, self, symbol, name, callee)                 \

@@ -21,22 +21,17 @@ typedef struct _neo_hash_map_initialize {
 neo_hash_map_t neo_create_hash_map(neo_allocator_t allocator,
                                    neo_hash_map_initialize_t *initialize);
 
-void neo_hash_map_set(neo_hash_map_t self, void *key, void *value,
-                      void *cmp_arg, void *hash_arg);
+void neo_hash_map_set(neo_hash_map_t self, void *key, void *value);
 
-void *neo_hash_map_get(neo_hash_map_t self, const void *key, void *cmp_arg,
-                       void *hash_arg);
+void *neo_hash_map_get(neo_hash_map_t self, const void *key);
 
-bool neo_hash_map_has(neo_hash_map_t self, const void *key, void *cmp_arg,
-                      void *hash_arg);
+bool neo_hash_map_has(neo_hash_map_t self, const void *key);
 
-void neo_hash_map_delete(neo_hash_map_t self,const void *key, void *cmp_arg,
-                         void *hash_arg);
+void neo_hash_map_delete(neo_hash_map_t self,const void *key);
 
 void neo_hash_map_erase(neo_hash_map_t self, neo_hash_map_node_t position);
 
-neo_hash_map_node_t neo_hash_map_find(neo_hash_map_t self, const void *key,
-                                      void *cmp_arg, void *hash_arg);
+neo_hash_map_node_t neo_hash_map_find(neo_hash_map_t self, const void *key);
 
 size_t neo_hash_map_get_size(neo_hash_map_t self);
 
