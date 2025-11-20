@@ -2,6 +2,7 @@
 #define _H_NEO_CORE_ERROR_
 #include "core/allocator.h"
 #include <stdbool.h>
+#include <stdio.h>
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -7,8 +7,6 @@
 #include "core/error.h"
 #include "core/position.h"
 #include <stddef.h>
-#include <stdio.h>
-#include <string.h>
 
 neo_ast_node_t neo_ast_parse_code(neo_allocator_t allocator, const char *file,
                                   const char *source) {

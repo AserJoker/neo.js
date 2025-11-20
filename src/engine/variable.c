@@ -154,6 +154,40 @@ neo_js_variable_t neo_js_variable_to_number(neo_js_variable_t self,
     return self;
   }
 }
+neo_js_variable_t neo_js_variable_to_boolean(neo_js_variable_t self,
+                                             neo_js_context_t ctx) {
+  neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
+  neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+  switch (self->value->type) {
+  case NEO_JS_TYPE_UNDEFINED:
+  case NEO_JS_TYPE_NULL:
+    return constant->boolean_false;
+  case NEO_JS_TYPE_NUMBER: {
+    double val = ((neo_js_number_t)self->value)->value;
+    return (val == 0 || isnan(val)) ? constant->function_prototype
+                                    : constant->boolean_true;
+  }
+  case NEO_JS_TYPE_BIGINT: {
+    neo_bigint_t bigint = ((neo_js_bigint_t)self->value)->value;
+    double val = neo_bigint_to_number(bigint);
+    return val == 0 ? constant->boolean_false : constant->boolean_true;
+  }
+  case NEO_JS_TYPE_BOOLEAN:
+    return self;
+  case NEO_JS_TYPE_STRING: {
+    const uint16_t *string = ((neo_js_string_t)self->value)->value;
+    return *string ? constant->boolean_true : constant->boolean_false;
+  }
+  case NEO_JS_TYPE_SYMBOL:
+  case NEO_JS_TYPE_OBJECT:
+  case NEO_JS_TYPE_ARRAY:
+  case NEO_JS_TYPE_FUNCTION:
+    return constant->boolean_true;
+  default:
+    return self;
+  }
+}
 
 neo_js_variable_t neo_js_variable_to_primitive(neo_js_variable_t self,
                                                neo_js_context_t ctx,
@@ -567,12 +601,14 @@ neo_js_object_property_t neo_js_variable_get_property(neo_js_variable_t self,
   }
   neo_js_object_property_t prop = NULL;
   neo_js_object_t object = (neo_js_object_t)self->value;
-  while (object->super.type == NEO_JS_TYPE_OBJECT) {
-    prop = neo_hash_map_get(object->properties, key->value);
-    if (prop) {
+  object = (neo_js_object_t)self->value;
+  prop = neo_hash_map_get(object->properties, key->value);
+  while (!prop) {
+    if (object->prototype->type < NEO_JS_TYPE_OBJECT) {
       break;
     }
     object = (neo_js_object_t)object->prototype;
+    prop = neo_hash_map_get(object->properties, key->value);
   }
   return prop;
 }
@@ -766,7 +802,7 @@ neo_js_variable_t neo_js_variable_call_function(neo_js_variable_t self,
                                                 neo_js_variable_t arguments) {
   if (self->value->type != NEO_JS_TYPE_FUNCTION) {
     neo_js_variable_t message =
-        neo_js_context_format(ctx, "%s is not a function", self);
+        neo_js_context_format(ctx, "%v is not a function", self);
     neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
@@ -780,7 +816,7 @@ neo_js_variable_t neo_js_variable_call_function(neo_js_variable_t self,
   neo_js_scope_t current_scope = neo_create_js_scope(allocator, root_scope);
   neo_js_scope_t origin_scope = neo_js_context_set_scope(ctx, current_scope);
   neo_js_scope_set_variable(current_scope, arguments, "arguments");
-  neo_js_scope_set_variable(current_scope, bind, "arguments");
+  neo_js_scope_set_variable(current_scope, bind, NULL);
   if (callable->generator && callable->async) {
     // TODO: async generator
     neo_js_variable_t error =
@@ -814,7 +850,7 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
                                        neo_js_variable_t *argv) {
   if (self->value->type != NEO_JS_TYPE_FUNCTION) {
     neo_js_variable_t message =
-        neo_js_context_format(ctx, "%s is not a function", self);
+        neo_js_context_format(ctx, "%v is not a function", self);
     neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
@@ -858,22 +894,11 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
     neo_js_scope_set_variable(current_scope, variable, name);
     it = neo_map_node_next(it);
   }
-  neo_js_variable_t result = NULL;
-  if (callable->native) {
-    neo_js_cfunction_t cfunction = (neo_js_cfunction_t)callable;
-    neo_js_context_type_t origin_ctx_type =
-        neo_js_context_set_type(ctx, NEO_JS_CONTEXT_FUNCTION);
-    result = cfunction->callee(ctx, bind, argc, argv);
-    neo_js_context_set_type(ctx, origin_ctx_type);
-  } else {
-    neo_js_function_t function = (neo_js_function_t)callable;
-    neo_js_context_type_t origin_ctx_type =
-        neo_js_context_set_type(ctx, NEO_JS_CONTEXT_FUNCTION);
-    neo_js_vm_t vm = neo_create_js_vm(ctx, bind);
-    result = neo_js_vm_run(vm, ctx, function->program, function->address);
-    neo_allocator_free(allocator, vm);
-    neo_js_context_set_type(ctx, origin_ctx_type);
-  }
+  neo_js_cfunction_t cfunction = (neo_js_cfunction_t)callable;
+  neo_js_context_type_t origin_ctx_type =
+      neo_js_context_set_type(ctx, NEO_JS_CONTEXT_FUNCTION);
+  neo_js_variable_t result = cfunction->callee(ctx, bind, argc, argv);
+  neo_js_context_set_type(ctx, origin_ctx_type);
   neo_js_scope_set_variable(origin_scope, result, NULL);
   neo_js_context_set_scope(ctx, origin_scope);
   neo_allocator_free(allocator, current_scope);

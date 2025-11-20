@@ -1,10 +1,60 @@
 #include "runtime/function.h"
+#include "core/string.h"
+#include "engine/callable.h"
 #include "engine/context.h"
+#include "engine/function.h"
+#include "engine/string.h"
+#include "engine/value.h"
 #include "engine/variable.h"
 #include "runtime/constant.h"
+#include "runtime/object.h"
 #include <stdbool.h>
+#include <stdint.h>
 
 NEO_JS_CFUNCTION(neo_js_function_constructor) { return self; }
+NEO_JS_CFUNCTION(neo_js_function_to_string) {
+  if (self->value->type == NEO_JS_TYPE_FUNCTION) {
+    neo_js_callable_t callable = (neo_js_callable_t)self->value;
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+    neo_js_variable_t name =
+        neo_js_variable_get_field(self, ctx, constant->key_name);
+    const uint16_t *funcname = ((neo_js_string_t)name->value)->value;
+    if (callable->native) {
+      if (*funcname) {
+        size_t len = neo_string16_length(funcname);
+        uint16_t str[len + 32];
+        uint16_t *dst = str;
+        {
+          const char *src = "function ";
+          while (*src) {
+            *dst++ = *src++;
+          }
+        }
+        {
+          const uint16_t *src = funcname;
+          while (*src) {
+            *dst++ = *src++;
+          }
+        }
+        {
+          const char *src = "(){[native]}";
+          while (*src) {
+            *dst++ = *src++;
+          }
+        }
+        *dst = 0;
+        return neo_js_context_create_string(ctx, str);
+      } else {
+        return neo_js_context_create_cstring(ctx,
+                                             "function anonymous(){[native]}");
+      }
+    } else {
+      neo_js_function_t func = (neo_js_function_t)callable;
+      return neo_js_context_create_cstring(ctx, func->source);
+    }
+  }
+  return neo_js_object_to_string(ctx, self, argc, argv);
+}
 void neo_initialize_js_function(neo_js_context_t ctx) {
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   constant->function_class = neo_js_context_create_cfunction(
@@ -19,4 +69,6 @@ void neo_initialize_js_function(neo_js_context_t ctx) {
     neo_js_variable_set_prototype_of(constant->object_class, ctx,
                                      constant->function_prototype);
   }
+  NEO_JS_DEF_METHOD(ctx, constant->function_prototype, "toString",
+                    neo_js_function_to_string);
 }

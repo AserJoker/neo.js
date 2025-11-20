@@ -296,7 +296,7 @@ neo_js_variable_t neo_js_context_load(neo_js_context_t self, const char *name) {
   neo_js_variable_t variable = NULL;
   neo_js_scope_t scope = self->current_scope;
   while (scope) {
-    variable = neo_js_scope_get_variable(self->current_scope, name);
+    variable = neo_js_scope_get_variable(scope, name);
     if (variable) {
       break;
     }
@@ -368,7 +368,7 @@ neo_js_variable_t neo_js_context_store(neo_js_context_t self, const char *name,
 }
 neo_js_variable_t neo_js_context_def(neo_js_context_t self, const char *name,
                                      neo_js_variable_t variable) {
-  neo_js_scope_set_variable(self->current_scope, variable, name);
+  neo_js_scope_create_variable(self->current_scope, variable->value, name);
   return variable;
 }
 
@@ -400,6 +400,7 @@ neo_js_variable_t neo_js_context_format(neo_js_context_t self, const char *fmt,
           neo_js_symbol_t symbol = (neo_js_symbol_t)arg->value;
           len += neo_string16_length(symbol->description) + 8;
         } else {
+          arg = neo_js_variable_to_string(arg, self);
           neo_js_string_t string = (neo_js_string_t)arg->value;
           len += neo_string16_length(string->value);
         }
@@ -421,7 +422,7 @@ neo_js_variable_t neo_js_context_format(neo_js_context_t self, const char *fmt,
   while (*psrc) {
     neo_utf8_char chr = neo_utf8_read_char(psrc);
     if (*psrc == '%') {
-      *dst++ = *psrc++;
+      psrc++;
       if (*psrc == 0) {
         break;
       } else if (*psrc == 'v') {
@@ -442,6 +443,7 @@ neo_js_variable_t neo_js_context_format(neo_js_context_t self, const char *fmt,
             *dst++ = *stuffix++;
           }
         } else {
+          arg = neo_js_variable_to_string(arg, self);
           neo_js_string_t string = (neo_js_string_t)arg->value;
           const uint16_t *src = string->value;
           while (*src) {
@@ -456,6 +458,7 @@ neo_js_variable_t neo_js_context_format(neo_js_context_t self, const char *fmt,
     dst += neo_utf32_to_utf16(utf32, dst);
   }
   va_end(args);
+  *dst = 0;
   neo_js_variable_t result = neo_js_context_create_string(self, string);
   neo_allocator_free(allocator, string);
   return result;

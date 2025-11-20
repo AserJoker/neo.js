@@ -3,7 +3,6 @@
 #include "core/error.h"
 #include "core/position.h"
 #include "core/unicode.h"
-#include <stdio.h>
 
 #define IS_HEX(ch)                                                             \
   (((ch) >= '0' && (ch) <= '9') || ((ch) >= 'a' && (ch) <= 'f') ||             \

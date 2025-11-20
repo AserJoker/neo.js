@@ -264,6 +264,9 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       uint32_t column = neo_program_get_integer(self, &offset);
       fprintf(fp, "NEO_ASM_SUPER_CALL %d,%d\n", line, column);
     } break;
+    case NEO_ASM_PUSH_BACK: {
+      fprintf(fp, "NEO_ASM_PUSH_BACK\n");
+    } break;
     case NEO_ASM_SUPER_MEMBER_CALL: {
       uint32_t line = neo_program_get_integer(self, &offset);
       uint32_t column = neo_program_get_integer(self, &offset);

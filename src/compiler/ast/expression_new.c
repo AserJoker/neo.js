@@ -14,7 +14,6 @@
 #include "core/list.h"
 #include "core/location.h"
 #include "core/position.h"
-#include <stdio.h>
 
 static void neo_ast_expression_new_dispose(neo_allocator_t allocator,
                                            neo_ast_expression_new_t node) {
@@ -73,13 +72,8 @@ static void neo_ast_expression_new_write(neo_allocator_t allocator,
        it != neo_list_get_tail(self->arguments); it = neo_list_node_next(it)) {
     neo_ast_node_t argument = neo_list_node_get(it);
     if (argument->type != NEO_NODE_TYPE_EXPRESSION_SPREAD) {
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
-      neo_program_add_integer(allocator, ctx->program, 1);
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-      neo_program_add_string(allocator, ctx->program, "length");
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
       TRY(argument->write(allocator, ctx, argument)) { return; }
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_BACK);
     } else {
       TRY(argument->write(allocator, ctx, argument)) { return; }
     }

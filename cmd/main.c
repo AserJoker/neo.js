@@ -8,6 +8,7 @@
 #include "engine/runtime.h"
 #include "engine/stackframe.h"
 #include "engine/string.h"
+#include "engine/symbol.h"
 #include "engine/value.h"
 #include "engine/variable.h"
 #include <stdbool.h>
@@ -19,6 +20,60 @@
 #else
 #include <locale.h>
 #endif
+
+NEO_JS_CFUNCTION(print) {
+  neo_allocator_t allocator =
+      neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
+  for (uint32_t idx = 0; idx < argc; idx++) {
+    neo_js_variable_t value = argv[idx];
+    if (idx != 0) {
+      printf(", ");
+    }
+    if (value->value->type == NEO_JS_TYPE_SYMBOL) {
+      neo_js_symbol_t symbol = (neo_js_symbol_t)value->value;
+      char *description =
+          neo_string16_to_string(allocator, symbol->description);
+      printf("Symbol(%s)", description);
+      neo_allocator_free(allocator, description);
+    } else {
+      if (value->value->type != NEO_JS_TYPE_EXCEPTION) {
+        value = neo_js_variable_to_string(value, ctx);
+      }
+      if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
+        neo_js_variable_t exception = value;
+        neo_js_variable_t error = neo_js_context_create_variable(
+            ctx, ((neo_js_exception_t)exception->value)->error);
+        value = neo_js_variable_to_string(error, ctx);
+        if (value->value->type != NEO_JS_TYPE_STRING) {
+          printf("Unknown exception");
+        } else {
+          char *str = neo_string16_to_string(
+              allocator, ((neo_js_string_t)value->value)->value);
+          printf("%s\n", str);
+          neo_allocator_free(allocator, str);
+        }
+        neo_list_t trace = ((neo_js_exception_t)exception->value)->trace;
+        neo_list_node_t it = neo_list_get_last(trace);
+        while (it != neo_list_get_head(trace)) {
+          neo_js_stackframe_t frame = neo_list_node_get(it);
+          uint16_t *string = neo_js_stackframe_to_string(allocator, frame);
+          char *utf8 = neo_string16_to_string(allocator, string);
+          printf("    at %s\n", utf8);
+          neo_allocator_free(allocator, utf8);
+          neo_allocator_free(allocator, string);
+          it = neo_list_node_last(it);
+        }
+      } else {
+        char *str = neo_string16_to_string(
+            allocator, ((neo_js_string_t)value->value)->value);
+        printf("%s", str);
+        neo_allocator_free(allocator, str);
+      }
+    }
+  }
+  printf("\n");
+  return neo_js_context_get_undefined(ctx);
+}
 int main(int argc, char *argv[]) {
 #ifdef _WIN32
   SetConsoleOutputCP(CP_UTF8);
@@ -30,39 +85,13 @@ int main(int argc, char *argv[]) {
   char *source = neo_fs_read_file(allocator, "../index.mjs");
   neo_js_runtime_t rt = neo_create_js_runtime(allocator);
   neo_js_context_t ctx = neo_create_js_context(rt);
+  neo_js_variable_t js_print =
+      neo_js_context_create_cfunction(ctx, print, "print");
+  neo_js_variable_t global = neo_js_context_get_global(ctx);
+  neo_js_variable_set_field(
+      global, ctx, neo_js_context_create_cstring(ctx, "print"), js_print);
   neo_js_variable_t res = neo_js_context_eval(ctx, source, "index.mjs");
-  if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
-    neo_js_variable_t error = neo_js_context_create_variable(
-        ctx, ((neo_js_exception_t)res->value)->error);
-    neo_js_variable_t string = neo_js_variable_to_string(error, ctx);
-    char *utf8 = NULL;
-    if (string->value->type != NEO_JS_TYPE_STRING) {
-      utf8 = neo_create_string(allocator, "unknown exception");
-    } else {
-      const uint16_t *str = NULL;
-      str = ((neo_js_string_t)string->value)->value;
-      utf8 = neo_string16_to_string(allocator, str);
-    };
-    printf("%s\n", utf8);
-    neo_allocator_free(allocator, utf8);
-    neo_list_t trace = ((neo_js_exception_t)res->value)->trace;
-    neo_list_node_t it = neo_list_get_last(trace);
-    while (it != neo_list_get_head(trace)) {
-      neo_js_stackframe_t frame = neo_list_node_get(it);
-      uint16_t *string = neo_js_stackframe_to_string(allocator, frame);
-      char *utf8 = neo_string16_to_string(allocator, string);
-      printf("    at %s\n", utf8);
-      neo_allocator_free(allocator, utf8);
-      neo_allocator_free(allocator, string);
-      it = neo_list_node_last(it);
-    }
-  } else {
-    neo_js_variable_t string = neo_js_variable_to_string(res, ctx);
-    const uint16_t *str = ((neo_js_string_t)string->value)->value;
-    char *utf8 = neo_string16_to_string(allocator, str);
-    printf("%s\n", utf8);
-    neo_allocator_free(allocator, utf8);
-  }
+  print(ctx, neo_js_context_get_undefined(ctx), 1, &res);
   neo_allocator_free(allocator, source);
   neo_allocator_free(allocator, ctx);
   neo_allocator_free(allocator, rt);

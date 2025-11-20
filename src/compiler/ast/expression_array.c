@@ -11,7 +11,6 @@
 #include "core/list.h"
 #include "core/position.h"
 #include <stdbool.h>
-#include <stdio.h>
 
 static void neo_ast_expression_array_dispose(neo_allocator_t allocator,
                                              neo_ast_expression_array_t node) {
@@ -59,13 +58,8 @@ static void neo_ast_expression_array_write(neo_allocator_t allocator,
       if (item->type == NEO_NODE_TYPE_EXPRESSION_SPREAD) {
         TRY(item->write(allocator, ctx, item)) { return; }
       } else {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
-        neo_program_add_integer(allocator, ctx->program, 1);
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-        neo_program_add_string(allocator, ctx->program, "length");
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
         TRY(item->write(allocator, ctx, item)) { return; }
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_BACK);
       }
     } else {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);

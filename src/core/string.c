@@ -47,7 +47,7 @@ uint16_t *neo_string16_concat(neo_allocator_t allocator, uint16_t *src,
   psrc = str;
   dst = result + base;
   while (*psrc) {
-    *dst++ = *psrc;
+    *dst++ = *psrc++;
   }
   result[base + len] = 0;
   return result;
@@ -343,7 +343,7 @@ double neo_string16_to_number(const uint16_t *str) {
   if (*str == '-') {
     neg = true;
     str++;
-  } else {
+  } else if (*str == '+') {
     neg = false;
     str++;
   }

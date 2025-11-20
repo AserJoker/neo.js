@@ -14,7 +14,6 @@
 #include "core/error.h"
 #include "core/list.h"
 #include "core/location.h"
-#include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
 
