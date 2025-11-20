@@ -101,6 +101,9 @@ neo_js_variable_t neo_js_variable_set_closure(neo_js_variable_t self,
                                               neo_js_context_t ctx,
                                               const char *name,
                                               neo_js_variable_t value);
+neo_js_variable_t neo_js_variable_set_bind(neo_js_variable_t self,
+                                           neo_js_context_t ctx,
+                                           neo_js_variable_t bind);
 void neo_js_variable_gc(neo_allocator_t allocator, neo_list_t variables);
 
 #ifdef __cplusplus

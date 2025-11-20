@@ -1,3 +1,3 @@
 "use strict";
-const [...arr] = [1, 2, 3]
-print(arr)
+const fn = (a, b) => print(a, b)
+fn(1, 2)

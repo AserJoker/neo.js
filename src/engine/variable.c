@@ -857,6 +857,8 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
     return neo_js_context_create_exception(ctx, error);
   }
   neo_js_callable_t callable = (neo_js_callable_t)self->value;
+  bind = neo_js_context_create_variable(ctx, callable->bind ? callable->bind
+                                                            : bind->value);
   if (!callable->native) {
     neo_js_variable_t arguments =
         neo_js_context_create_object(ctx, neo_js_context_get_null(ctx));
@@ -886,7 +888,6 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
   for (size_t idx = 0; idx < argc; idx++) {
     argv[idx] = neo_js_context_create_variable(ctx, argv[idx]->value);
   }
-  bind = neo_js_context_create_variable(ctx, bind->value);
   neo_map_node_t it = neo_map_get_first(callable->closure);
   while (it != neo_map_get_tail(callable->closure)) {
     neo_js_variable_t variable = neo_map_node_get_value(it);
@@ -1076,6 +1077,22 @@ neo_js_variable_t neo_js_variable_set_closure(neo_js_variable_t self,
   neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
   neo_map_set(function->closure, neo_create_string(allocator, name), value);
   neo_js_handle_add_parent(&value->handle, &self->handle);
+  return self;
+}
+neo_js_variable_t neo_js_variable_set_bind(neo_js_variable_t self,
+                                           neo_js_context_t ctx,
+                                           neo_js_variable_t bind) {
+  if (self->value->type != NEO_JS_TYPE_FUNCTION) {
+    neo_js_variable_t message =
+        neo_js_context_format(ctx, "%v is not function", self);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+    neo_js_variable_t error =
+        neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  neo_js_callable_t function = (neo_js_callable_t)self->value;
+  function->bind = bind->value;
+  neo_js_handle_add_parent(&function->bind->handle, &self->value->handle);
   return self;
 }
 

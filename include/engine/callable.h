@@ -13,6 +13,7 @@ struct _neo_js_callable_t {
   bool async;
   bool generator;
   neo_map_t closure;
+  neo_js_value_t bind;
 };
 typedef struct _neo_js_callable_t *neo_js_callable_t;
 void neo_init_js_callable(neo_js_callable_t self, neo_allocator_t allocaotr,
