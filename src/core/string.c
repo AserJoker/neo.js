@@ -35,11 +35,11 @@ uint16_t *neo_string16_concat(neo_allocator_t allocator, uint16_t *src,
     while (base + len + 1 > *max) {
       *max += NEO_STRING_CHUNK_SIZE;
     }
-    result = neo_allocator_alloc(allocator, *max, NULL);
+    result = neo_allocator_alloc(allocator, *max * sizeof(uint16_t), NULL);
     psrc = src;
     dst = result;
     while (*psrc) {
-      *dst++ = *psrc;
+      *dst++ = *psrc++;
     }
     result[base] = 0;
     neo_allocator_free(allocator, src);

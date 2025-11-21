@@ -1,6 +1,9 @@
 #include "runtime/error.h"
+#include "core/allocator.h"
+#include "core/list.h"
 #include "core/string.h"
 #include "engine/context.h"
+#include "engine/runtime.h"
 #include "engine/stackframe.h"
 #include "engine/string.h"
 #include "engine/value.h"
@@ -35,6 +38,32 @@ NEO_JS_CFUNCTION(neo_js_error_constructor) {
   neo_js_variable_def_field(self, ctx, key, cause, true, false, true);
   key = neo_js_context_create_cstring(ctx, "message");
   neo_js_variable_def_field(self, ctx, key, message, true, false, true);
+  neo_list_t trace = neo_js_context_trace(ctx, NULL, 0, 0);
+  neo_list_pop(trace);
+  size_t length = 16;
+  neo_allocator_t allocator =
+      neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
+  uint16_t *tracestring =
+      neo_allocator_alloc(allocator, length * sizeof(uint16_t), NULL);
+  *tracestring = 0;
+  uint16_t prefix[] = {' ', ' ', 'a', 't', ' ', 0};
+  uint16_t stuffix[] = {'\n', 0};
+  for (neo_list_node_t it = neo_list_get_last(trace);
+       it != neo_list_get_head(trace); it = neo_list_node_last(it)) {
+    if (it != neo_list_get_last(trace)) {
+      tracestring =
+          neo_string16_concat(allocator, tracestring, &length, stuffix);
+    }
+    neo_js_stackframe_t frame = neo_list_node_get(it);
+    uint16_t *s = neo_js_stackframe_to_string(allocator, frame);
+    tracestring = neo_string16_concat(allocator, tracestring, &length, prefix);
+    tracestring = neo_string16_concat(allocator, tracestring, &length, s);
+    neo_allocator_free(allocator, s);
+  }
+  neo_js_variable_t stack = neo_js_context_create_string(ctx, tracestring);
+  neo_allocator_free(allocator, tracestring);
+  neo_allocator_free(allocator, trace);
+  neo_js_variable_set_internal(self, ctx, "stack", stack);
   return self;
 }
 NEO_JS_CFUNCTION(neo_js_error_to_string) {
@@ -42,11 +71,14 @@ NEO_JS_CFUNCTION(neo_js_error_to_string) {
   neo_js_variable_t name = neo_js_variable_get_field(self, ctx, key);
   key = neo_js_context_create_cstring(ctx, "message");
   neo_js_variable_t message = neo_js_variable_get_field(self, ctx, key);
+  neo_js_variable_t stack = neo_js_variable_get_internel(self, ctx, "stack");
   const uint16_t *errname = ((neo_js_string_t)name->value)->value;
   size_t len = 0;
   len += neo_string16_length(errname) + 2;
   const uint16_t *msg = ((neo_js_string_t)message->value)->value;
   len += neo_string16_length(msg) + 1;
+  const uint16_t *stackstr = ((neo_js_string_t)stack->value)->value;
+  len += neo_string16_length(stackstr) + 1;
   uint16_t string[len];
   const uint16_t *src = errname;
   uint16_t *dst = string;
@@ -58,6 +90,13 @@ NEO_JS_CFUNCTION(neo_js_error_to_string) {
   src = msg;
   while (*src) {
     *dst++ = *src++;
+  }
+  if (*stackstr) {
+    *dst++ = '\n';
+    src = stackstr;
+    while (*src) {
+      *dst++ = *src++;
+    }
   }
   *dst++ = 0;
   return neo_js_context_create_string(ctx, string);

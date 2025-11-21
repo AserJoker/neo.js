@@ -61,7 +61,7 @@ neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime) {
   ctx->type = NEO_JS_CONTEXT_MODULE;
   neo_list_initialize_t initialize = {true};
   ctx->callstack = neo_create_list(allocator, &initialize);
-  const char *funcname = "_.compile";
+  const char *funcname = "_.start";
   uint16_t fname[16];
   uint16_t *dst = fname;
   while (*funcname) {
@@ -129,7 +129,10 @@ void neo_js_context_push_callstack(neo_js_context_t self,
   neo_js_stackframe_t frame = neo_list_node_get(last);
   frame->column = column;
   frame->line = line;
-  frame = neo_create_js_stackframe(allocator, filename, funcname, 0, 0);
+  if (filename) {
+    frame->filename = neo_create_string16(allocator, filename);
+  }
+  frame = neo_create_js_stackframe(allocator, NULL, funcname, 0, 0);
   neo_list_push(self->callstack, frame);
 }
 void neo_js_context_pop_callstack(neo_js_context_t self) {
@@ -144,8 +147,8 @@ neo_list_t neo_js_context_set_callstack(neo_js_context_t self,
   self->callstack = callstack;
   return current;
 }
-neo_list_t neo_js_context_trace(neo_js_context_t self, uint32_t line,
-                                uint32_t column) {
+neo_list_t neo_js_context_trace(neo_js_context_t self, const uint16_t *filename,
+                                uint32_t line, uint32_t column) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   neo_list_initialize_t initialize = {true};
   neo_list_t callstack = neo_create_list(allocator, &initialize);
@@ -162,6 +165,9 @@ neo_list_t neo_js_context_trace(neo_js_context_t self, uint32_t line,
   neo_js_stackframe_t frame = neo_list_node_get(it);
   frame->column = column;
   frame->line = line;
+  if (filename) {
+    frame->filename = neo_create_string16(allocator, filename);
+  }
   return callstack;
 }
 
@@ -230,10 +236,9 @@ neo_js_variable_t neo_js_context_create_symbol(neo_js_context_t self,
 }
 neo_js_variable_t neo_js_context_create_exception(neo_js_context_t self,
                                                   neo_js_variable_t error) {
-  neo_list_t trace = neo_js_context_trace(self, 0, 0);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   neo_js_exception_t exception =
-      neo_create_js_exception(allocator, error->value, trace);
+      neo_create_js_exception(allocator, error->value);
   neo_js_value_t value = neo_js_exception_to_value(exception);
   neo_js_variable_t result = neo_js_context_create_variable(self, value);
   return result;
@@ -480,8 +485,8 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
   if (neo_has_error()) {
     neo_error_t err = neo_poll_error(NULL, NULL, 0);
     const char *msg = neo_error_get_message(err);
-    neo_allocator_free(allocator, err);
     neo_js_variable_t message = neo_js_context_create_cstring(self, msg);
+    neo_allocator_free(allocator, err);
     neo_js_variable_t error = neo_js_variable_construct(
         self->constant.syntax_error_class, self, 1, &message);
     return neo_js_context_create_exception(self, error);

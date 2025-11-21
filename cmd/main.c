@@ -1,7 +1,6 @@
 #include "core/allocator.h"
 #include "core/error.h"
 #include "core/fs.h"
-#include "core/list.h"
 #include "core/string.h"
 #include "engine/context.h"
 #include "engine/exception.h"
@@ -49,19 +48,8 @@ NEO_JS_CFUNCTION(print) {
         } else {
           char *str = neo_string16_to_string(
               allocator, ((neo_js_string_t)value->value)->value);
-          printf("%s\n", str);
+          printf("%s", str);
           neo_allocator_free(allocator, str);
-        }
-        neo_list_t trace = ((neo_js_exception_t)exception->value)->trace;
-        neo_list_node_t it = neo_list_get_last(trace);
-        while (it != neo_list_get_head(trace)) {
-          neo_js_stackframe_t frame = neo_list_node_get(it);
-          uint16_t *string = neo_js_stackframe_to_string(allocator, frame);
-          char *utf8 = neo_string16_to_string(allocator, string);
-          printf("    at %s\n", utf8);
-          neo_allocator_free(allocator, utf8);
-          neo_allocator_free(allocator, string);
-          it = neo_list_node_last(it);
         }
       } else {
         char *str = neo_string16_to_string(
