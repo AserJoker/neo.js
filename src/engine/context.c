@@ -18,6 +18,7 @@
 #include "engine/object.h"
 #include "engine/runtime.h"
 #include "engine/scope.h"
+#include "engine/signal.h"
 #include "engine/stackframe.h"
 #include "engine/string.h"
 #include "engine/symbol.h"
@@ -120,8 +121,7 @@ neo_js_scope_t neo_js_context_set_scope(neo_js_context_t self,
   return current;
 }
 
-void neo_js_context_push_callstack(neo_js_context_t self,
-                                   const uint16_t *filename,
+void neo_js_context_push_callstack(neo_js_context_t self, const char *filename,
                                    const uint16_t *funcname, uint32_t line,
                                    uint32_t column) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
@@ -130,7 +130,7 @@ void neo_js_context_push_callstack(neo_js_context_t self,
   frame->column = column;
   frame->line = line;
   if (filename) {
-    frame->filename = neo_create_string16(allocator, filename);
+    frame->filename = filename;
   }
   frame = neo_create_js_stackframe(allocator, NULL, funcname, 0, 0);
   neo_list_push(self->callstack, frame);
@@ -147,7 +147,7 @@ neo_list_t neo_js_context_set_callstack(neo_js_context_t self,
   self->callstack = callstack;
   return current;
 }
-neo_list_t neo_js_context_trace(neo_js_context_t self, const uint16_t *filename,
+neo_list_t neo_js_context_trace(neo_js_context_t self, const char *filename,
                                 uint32_t line, uint32_t column) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   neo_list_initialize_t initialize = {true};
@@ -166,7 +166,7 @@ neo_list_t neo_js_context_trace(neo_js_context_t self, const uint16_t *filename,
   frame->column = column;
   frame->line = line;
   if (filename) {
-    frame->filename = neo_create_string16(allocator, filename);
+    frame->filename = filename;
   }
   return callstack;
 }
@@ -295,6 +295,13 @@ neo_js_variable_t neo_js_context_create_function(neo_js_context_t self,
   neo_js_variable_t key = self->constant.key_prototype;
   neo_js_variable_def_field(result, self, key, prototype, true, false, true);
   return result;
+}
+neo_js_variable_t neo_js_context_create_signal(neo_js_context_t self,
+                                               uint32_t type, void *msg,
+                                               bool free_msg) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  neo_js_signal_t signal = neo_create_js_signal(allocator, type, msg, free_msg);
+  return neo_js_context_create_variable(self, &signal->super);
 }
 
 neo_js_variable_t neo_js_context_load(neo_js_context_t self, const char *name) {

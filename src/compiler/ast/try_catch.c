@@ -12,7 +12,6 @@
 #include "core/allocator.h"
 #include "core/any.h"
 #include "core/location.h"
-#include <stdio.h>
 
 static void neo_ast_try_catch_dispose(neo_allocator_t allocator,
                                       neo_ast_try_catch_t node) {

@@ -37,21 +37,25 @@ static void neo_ast_statement_try_write(neo_allocator_t allocator,
   size_t deferaddr = neo_buffer_get_size(ctx->program->codes);
   neo_program_add_address(allocator, ctx->program, 0);
   TRY(self->body->write(allocator, ctx, self->body)) { return; }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
-  size_t end = neo_buffer_get_size(ctx->program->codes);
-  neo_program_add_address(allocator, ctx->program, 0);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_TRY_END);
   if (self->catch) {
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
+    size_t catchend = neo_buffer_get_size(ctx->program->codes);
+    neo_program_add_address(allocator, ctx->program, 0);
     neo_program_set_current(ctx->program, catchaddr);
     TRY(self->catch->write(allocator, ctx, self->catch)) { return; }
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_TRY_END);
+    neo_program_set_current(ctx->program, catchend);
   }
   if (self->finally) {
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
+    size_t finallyend = neo_buffer_get_size(ctx->program->codes);
+    neo_program_add_address(allocator, ctx->program, 0);
     neo_program_set_current(ctx->program, deferaddr);
-    neo_program_set_current(ctx->program, end);
     TRY(self->finally->write(allocator, ctx, self->finally)) { return; }
-  } else {
-    neo_program_set_current(ctx->program, end);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_TRY_END);
+    neo_program_set_current(ctx->program, finallyend);
   }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_TRY_END);
 }
 static neo_any_t neo_serialize_ast_statement_try(neo_allocator_t allocator,
                                                  neo_ast_statement_try_t node) {

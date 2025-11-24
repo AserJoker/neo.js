@@ -5,14 +5,14 @@
 extern "C" {
 #endif
 struct _neo_js_stackframe_t {
-  uint16_t *filename;
+  const char *filename;
   uint16_t *funcname;
   uint32_t line;
   uint32_t column;
 };
 typedef struct _neo_js_stackframe_t *neo_js_stackframe_t;
 neo_js_stackframe_t neo_create_js_stackframe(neo_allocator_t allocator,
-                                             const uint16_t *filename,
+                                             const char *filename,
                                              const uint16_t *funcname,
                                              uint32_t line, uint32_t column);
 uint16_t *neo_js_stackframe_to_string(neo_allocator_t allocator,

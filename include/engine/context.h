@@ -32,15 +32,14 @@ neo_js_scope_t neo_js_context_get_scope(neo_js_context_t self);
 neo_js_scope_t neo_js_context_get_root_scope(neo_js_context_t self);
 neo_js_scope_t neo_js_context_set_scope(neo_js_context_t self,
                                         neo_js_scope_t scope);
-void neo_js_context_push_callstack(neo_js_context_t self,
-                                   const uint16_t *filename,
+void neo_js_context_push_callstack(neo_js_context_t self, const char *filename,
                                    const uint16_t *funcname, uint32_t line,
                                    uint32_t column);
 void neo_js_context_pop_callstack(neo_js_context_t self);
 neo_list_t neo_js_context_get_callstack(neo_js_context_t self);
 neo_list_t neo_js_context_set_callstack(neo_js_context_t self,
                                         neo_list_t callstack);
-neo_list_t neo_js_context_trace(neo_js_context_t self, const uint16_t *filename,
+neo_list_t neo_js_context_trace(neo_js_context_t self, const char *filename,
                                 uint32_t line, uint32_t column);
 neo_js_variable_t neo_js_context_create_variable(neo_js_context_t self,
                                                  neo_js_value_t value);
@@ -72,6 +71,9 @@ neo_js_variable_t neo_js_context_create_cfunction(neo_js_context_t self,
                                                   const char *name);
 neo_js_variable_t neo_js_context_create_function(neo_js_context_t self,
                                                  neo_program_t program);
+neo_js_variable_t neo_js_context_create_signal(neo_js_context_t self,
+                                               uint32_t type, void *msg,
+                                               bool free_msg);
 neo_js_variable_t neo_js_context_load(neo_js_context_t self, const char *name);
 neo_js_variable_t neo_js_context_store(neo_js_context_t self, const char *name,
                                        neo_js_variable_t variable);

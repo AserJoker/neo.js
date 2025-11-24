@@ -10,6 +10,7 @@ typedef struct _neo_alloc_chunk {
   size_t line;
   struct _neo_alloc_chunk *next;
   struct _neo_alloc_chunk *last;
+  uint64_t idx;
 } *neo_alloc_chunk;
 
 struct _neo_allocator_t {
@@ -66,6 +67,7 @@ void *neo_allocator_alloc_ex(neo_allocator_t self, size_t size,
   if (!chunk) {
     return NULL;
   }
+  static uint64_t idx = 0;
   chunk->size = size;
   chunk->file = file;
   chunk->line = line;
@@ -74,6 +76,7 @@ void *neo_allocator_alloc_ex(neo_allocator_t self, size_t size,
   chunk->next = &self->end;
   self->end.last->next = chunk;
   self->end.last = chunk;
+  chunk->idx = idx++;
   return &chunk[1];
 }
 

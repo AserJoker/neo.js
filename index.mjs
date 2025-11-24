@@ -1,5 +1,10 @@
 "use strict";
-function test() {
-    throw new Error('test')
+try {
+    try {
+        throw 'error'
+    } finally {
+        print('end')
+    }
+} catch (e) {
+    print(e)
 }
-test()
