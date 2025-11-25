@@ -1,10 +1,13 @@
 "use strict";
-try {
+test: {
     try {
-        throw 'error'
+        try {
+            break test;
+        } finally {
+            print(1)
+        }
     } finally {
-        print('end')
+        print(2)
     }
-} catch (e) {
-    print(e)
 }
+print(3)

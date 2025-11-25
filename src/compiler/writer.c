@@ -178,6 +178,7 @@ neo_write_context_t neo_create_write_context(neo_allocator_t allocator,
   ctx->label = NULL;
   ctx->is_async = false;
   ctx->is_generator = true;
+  ctx->is_loop = false;
   return ctx;
 }
 

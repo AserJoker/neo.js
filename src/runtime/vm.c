@@ -20,6 +20,7 @@
 #include "runtime/constant.h"
 #include <math.h>
 #include <stdint.h>
+#include <string.h>
 
 #define NEO_JS_VM_CHECK(vm, expression, program, offset)                       \
   do {                                                                         \
@@ -62,6 +63,13 @@ struct _neo_js_vm_t {
   neo_js_variable_t result;
   neo_js_variable_t self;
 };
+
+struct _neo_js_jmp_signal_t {
+  const char *name;
+  size_t address;
+};
+
+typedef struct _neo_js_jmp_signal_t *neo_js_jmp_signal_t;
 
 static void neo_js_vm_dispose(neo_allocator_t allocator, neo_js_vm_t self) {
   neo_allocator_free(allocator, self->labelstack);
@@ -480,15 +488,13 @@ static void neo_js_vm_jmp(neo_js_vm_t vm, neo_js_context_t ctx,
 static void neo_js_vm_break(neo_js_vm_t vm, neo_js_context_t ctx,
                             neo_program_t program, size_t *offset) {
   const char *label = neo_js_vm_read_string(program, offset);
-  vm->result = neo_js_context_create_signal(ctx, NEO_JS_SIGNAL_BREAK,
-                                            (void *)label, false);
+  vm->result = neo_js_context_create_signal(ctx, NEO_JS_SIGNAL_BREAK, label);
   *offset = neo_buffer_get_size(program->codes);
 }
 static void neo_js_vm_continue(neo_js_vm_t vm, neo_js_context_t ctx,
                                neo_program_t program, size_t *offset) {
   const char *label = neo_js_vm_read_string(program, offset);
-  vm->result = neo_js_context_create_signal(ctx, NEO_JS_SIGNAL_CONTINUE,
-                                            (void *)label, false);
+  vm->result = neo_js_context_create_signal(ctx, NEO_JS_SIGNAL_CONTINUE, label);
   *offset = neo_buffer_get_size(program->codes);
 }
 static void neo_js_vm_throw(neo_js_vm_t vm, neo_js_context_t ctx,
@@ -779,8 +785,56 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     NULL,                          // NEO_ASM_DEL_FIELD
 };
 
-bool neo_js_vm_resolve_result(neo_js_vm_t vm, neo_js_context_t ctx,
-                              neo_program_t program, size_t *offset) {
+static bool neo_js_vm_resolve_signal(neo_js_vm_t vm, neo_js_context_t ctx,
+                                     neo_program_t program, size_t *offset) {
+  neo_js_signal_t signal = (neo_js_signal_t)vm->result->value;
+  if (signal->type != NEO_JS_SIGNAL_BREAK ||
+      signal->type != NEO_JS_SIGNAL_CONTINUE) {
+    return false;
+  }
+  const char *name = (const char *)signal->msg;
+  while (neo_list_get_size(vm->labelstack)) {
+    neo_list_node_t node = neo_list_get_last(vm->labelstack);
+    neo_js_label_frame_t frame = neo_list_node_get(node);
+    while (frame->trystack_top != neo_list_get_size(vm->trystack)) {
+      neo_list_node_t node = neo_list_get_last(vm->trystack);
+      neo_js_try_frame_t tryframe = neo_list_node_get(node);
+      if (tryframe->onfinish) {
+        *offset = tryframe->onfinish;
+        tryframe->onfinish = neo_buffer_get_size(program->codes);
+        tryframe->result = vm->result;
+        return true;
+      }
+      neo_list_pop(vm->trystack);
+    }
+    while (neo_list_get_size(vm->stack) != frame->stacktop) {
+      neo_list_pop(vm->stack);
+    }
+    while (neo_js_context_get_scope(ctx) != frame->scope) {
+      neo_js_vm_pop_scope(vm, ctx, program, offset);
+    }
+    if ((signal->type == NEO_JS_SIGNAL_BREAK &&
+         frame->type == NEO_JS_LABEL_BREAK) ||
+        (signal->type == NEO_JS_SIGNAL_CONTINUE &&
+         frame->type == NEO_JS_LABEL_CONTINUE)) {
+      if (strcmp(frame->name, name) == 0) {
+        *offset = frame->address;
+        vm->result = neo_js_context_get_undefined(ctx);
+        return true;
+      }
+    }
+    neo_list_pop(vm->labelstack);
+  }
+  return false;
+}
+
+static bool neo_js_vm_resolve_result(neo_js_vm_t vm, neo_js_context_t ctx,
+                                     neo_program_t program, size_t *offset) {
+  if (vm->result->value->type == NEO_JS_TYPE_SIGNAL) {
+    if (neo_js_vm_resolve_signal(vm, ctx, program, offset)) {
+      return false;
+    }
+  }
   while (neo_list_get_size(vm->trystack)) {
     neo_list_node_t node = neo_list_get_last(vm->trystack);
     neo_js_try_frame_t frame = neo_list_node_get(node);

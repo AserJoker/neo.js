@@ -297,10 +297,9 @@ neo_js_variable_t neo_js_context_create_function(neo_js_context_t self,
   return result;
 }
 neo_js_variable_t neo_js_context_create_signal(neo_js_context_t self,
-                                               uint32_t type, void *msg,
-                                               bool free_msg) {
+                                               uint32_t type, const void *msg) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
-  neo_js_signal_t signal = neo_create_js_signal(allocator, type, msg, free_msg);
+  neo_js_signal_t signal = neo_create_js_signal(allocator, type, msg);
   return neo_js_context_create_variable(self, &signal->super);
 }
 
@@ -500,8 +499,16 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
   }
   neo_program_t program = neo_ast_write_node(allocator, filename, node);
   neo_allocator_free(allocator, node);
+  if (neo_has_error()) {
+    neo_error_t err = neo_poll_error(NULL, NULL, 0);
+    const char *msg = neo_error_get_message(err);
+    neo_js_variable_t message = neo_js_context_create_cstring(self, msg);
+    neo_allocator_free(allocator, err);
+    neo_js_variable_t error = neo_js_variable_construct(
+        self->constant.syntax_error_class, self, 1, &message);
+    return neo_js_context_create_exception(self, error);
+  }
   neo_js_runtime_set_program(self->runtime, filename, program);
-
   FILE *fp = fopen("../export.asm", "w");
   neo_program_write(allocator, fp, program);
   fclose(fp);

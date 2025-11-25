@@ -72,8 +72,7 @@ neo_js_variable_t neo_js_context_create_cfunction(neo_js_context_t self,
 neo_js_variable_t neo_js_context_create_function(neo_js_context_t self,
                                                  neo_program_t program);
 neo_js_variable_t neo_js_context_create_signal(neo_js_context_t self,
-                                               uint32_t type, void *msg,
-                                               bool free_msg);
+                                               uint32_t type,const void *msg);
 neo_js_variable_t neo_js_context_load(neo_js_context_t self, const char *name);
 neo_js_variable_t neo_js_context_store(neo_js_context_t self, const char *name,
                                        neo_js_variable_t variable);

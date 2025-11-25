@@ -53,13 +53,32 @@ static void neo_ast_statement_labeled_write(neo_allocator_t allocator,
     neo_program_add_string(allocator, ctx->program, label);
     size_t breakaddr = neo_buffer_get_size(ctx->program->codes);
     neo_program_add_address(allocator, ctx->program, 0);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_CONTINUE_LABEL);
-    neo_program_add_string(allocator, ctx->program, label);
-    size_t continueaddr = neo_buffer_get_size(ctx->program->codes);
-    neo_program_add_address(allocator, ctx->program, 0);
-    TRY(self->statement->write(allocator, ctx, self->statement)) { return; }
-    neo_program_set_current(ctx->program, continueaddr);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP_LABEL);
+    size_t continueaddr = 0;
+    if (self->statement->type == NEO_NODE_TYPE_STATEMENT_DO_WHILE ||
+        self->statement->type == NEO_NODE_TYPE_STATEMENT_WHILE ||
+        self->statement->type == NEO_NODE_TYPE_STATEMENT_FOR ||
+        self->statement->type == NEO_NODE_TYPE_STATEMENT_FOR_IN ||
+        self->statement->type == NEO_NODE_TYPE_STATEMENT_FOR_OF ||
+        self->statement->type == NEO_NODE_TYPE_STATEMENT_FOR_AWAIT_OF) {
+      neo_program_add_code(allocator, ctx->program,
+                           NEO_ASM_PUSH_CONTINUE_LABEL);
+      neo_program_add_string(allocator, ctx->program, label);
+      continueaddr = neo_buffer_get_size(ctx->program->codes);
+      neo_program_add_address(allocator, ctx->program, 0);
+    }
+    TRY(self->statement->write(allocator, ctx, self->statement)) {
+      neo_allocator_free_ex(allocator, label);
+      return;
+    }
+    if (self->statement->type == NEO_NODE_TYPE_STATEMENT_DO_WHILE ||
+        self->statement->type == NEO_NODE_TYPE_STATEMENT_WHILE ||
+        self->statement->type == NEO_NODE_TYPE_STATEMENT_FOR ||
+        self->statement->type == NEO_NODE_TYPE_STATEMENT_FOR_IN ||
+        self->statement->type == NEO_NODE_TYPE_STATEMENT_FOR_OF ||
+        self->statement->type == NEO_NODE_TYPE_STATEMENT_FOR_AWAIT_OF) {
+      neo_program_set_current(ctx->program, continueaddr);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_POP_LABEL);
+    }
     neo_program_set_current(ctx->program, breakaddr);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_POP_LABEL);
     neo_allocator_free_ex(allocator, label);

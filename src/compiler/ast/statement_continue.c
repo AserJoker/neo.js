@@ -34,6 +34,14 @@ static void
 neo_ast_statement_continue_write(neo_allocator_t allocator,
                                  neo_write_context_t ctx,
                                  neo_ast_statement_continue_t self) {
+  if (!ctx->is_loop) {
+    THROW("Illegal continue statement: 'test' does not denote an iteration "
+          "statement\n  at _.compile "
+          "(%s:%d:%d)",
+          self->node.location.file, self->node.location.begin.line,
+          self->node.location.begin.column);
+    return;
+  }
   neo_program_add_code(allocator, ctx->program, NEO_ASM_CONTINUE);
   if (self->label) {
     char *label = neo_location_get(allocator, self->label->location);
