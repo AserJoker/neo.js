@@ -294,6 +294,9 @@ neo_js_variable_t neo_js_context_create_function(neo_js_context_t self,
   neo_js_variable_t prototype = neo_js_context_create_object(self, NULL);
   neo_js_variable_t key = self->constant.key_prototype;
   neo_js_variable_def_field(result, self, key, prototype, true, false, true);
+  neo_js_variable_t funcname = neo_js_context_create_cstring(self, "");
+  key = self->constant.key_name;
+  neo_js_variable_def_field(result, self, key, funcname, false, false, false);
   return result;
 }
 neo_js_variable_t neo_js_context_create_signal(neo_js_context_t self,

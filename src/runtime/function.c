@@ -1,5 +1,4 @@
 #include "runtime/function.h"
-#include "core/string.h"
 #include "engine/callable.h"
 #include "engine/context.h"
 #include "engine/function.h"
@@ -21,29 +20,7 @@ NEO_JS_CFUNCTION(neo_js_function_to_string) {
     const uint16_t *funcname = ((neo_js_string_t)name->value)->value;
     if (callable->native) {
       if (*funcname) {
-        size_t len = neo_string16_length(funcname);
-        uint16_t str[len + 32];
-        uint16_t *dst = str;
-        {
-          const char *src = "function ";
-          while (*src) {
-            *dst++ = *src++;
-          }
-        }
-        {
-          const uint16_t *src = funcname;
-          while (*src) {
-            *dst++ = *src++;
-          }
-        }
-        {
-          const char *src = "(){[native]}";
-          while (*src) {
-            *dst++ = *src++;
-          }
-        }
-        *dst = 0;
-        return neo_js_context_create_string(ctx, str);
+        return neo_js_context_format(ctx, "function %v(){[native]}", name);
       } else {
         return neo_js_context_create_cstring(ctx,
                                              "function anonymous(){[native]}");

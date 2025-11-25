@@ -39,7 +39,6 @@ NEO_JS_CFUNCTION(neo_js_error_constructor) {
   key = neo_js_context_create_cstring(ctx, "message");
   neo_js_variable_def_field(self, ctx, key, message, true, false, true);
   neo_list_t trace = neo_js_context_trace(ctx, NULL, 0, 0);
-  neo_list_pop(trace);
   size_t length = 16;
   neo_allocator_t allocator =
       neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
