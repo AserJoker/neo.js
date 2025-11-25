@@ -176,8 +176,8 @@ neo_write_context_t neo_create_write_context(neo_allocator_t allocator,
   ctx->program = program;
   ctx->scope = NULL;
   ctx->label = NULL;
-  ctx->is_async = false;
-  ctx->is_generator = true;
+  ctx->is_async = true;
+  ctx->is_generator = false;
   ctx->is_loop = false;
   return ctx;
 }
@@ -286,9 +286,10 @@ void neo_write_optional_chain(neo_allocator_t allocator,
     } else {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_CALL);
     }
-    neo_program_add_integer(allocator, ctx->program, node->location.begin.line);
     neo_program_add_integer(allocator, ctx->program,
-                            node->location.begin.column);
+                            call->callee->location.end.line);
+    neo_program_add_integer(allocator, ctx->program,
+                            call->callee->location.end.column);
   } else if (node->type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
     neo_ast_expression_member_t member = (neo_ast_expression_member_t)node;
     if (member->host->type != NEO_NODE_TYPE_EXPRESSION_SUPER) {
