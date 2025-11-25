@@ -19,6 +19,7 @@ void neo_init_js_callable(neo_js_callable_t self, neo_allocator_t allocaotr,
   self->native = native;
   self->async = async;
   self->generator = generator;
+  self->lambda = true;
   self->bind = NULL;
   neo_map_initialize_t initialize = {};
   initialize.compare = (neo_compare_fn_t)strcmp;

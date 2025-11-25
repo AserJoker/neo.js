@@ -12,6 +12,7 @@ struct _neo_js_callable_t {
   bool native;
   bool async;
   bool generator;
+  bool lambda;
   neo_map_t closure;
   neo_js_value_t bind;
 };

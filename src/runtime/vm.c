@@ -6,6 +6,7 @@
 #include "core/common.h"
 #include "core/list.h"
 #include "engine/boolean.h"
+#include "engine/callable.h"
 #include "engine/context.h"
 #include "engine/exception.h"
 #include "engine/function.h"
@@ -254,6 +255,8 @@ static void neo_js_vm_push_function(neo_js_vm_t vm, neo_js_context_t ctx,
 static void neo_js_vm_push_lambda(neo_js_vm_t vm, neo_js_context_t ctx,
                                   neo_program_t program, size_t *offset) {
   neo_js_variable_t function = neo_js_context_create_function(ctx, program);
+  neo_js_callable_t callable = (neo_js_callable_t)function->value;
+  callable->lambda = true;
   neo_js_variable_set_bind(function, ctx, vm->self);
   neo_list_push(vm->stack, function);
 }
@@ -630,6 +633,19 @@ static void neo_js_vm_new(neo_js_vm_t vm, neo_js_context_t ctx,
   neo_list_pop(vm->stack);
   neo_js_variable_t callable = neo_js_vm_get_value(vm);
   neo_list_pop(vm->stack);
+  if (callable->value->type != NEO_JS_TYPE_FUNCTION ||
+      ((neo_js_callable_t)callable->value)->lambda ||
+      ((neo_js_callable_t)callable->value)->async ||
+      ((neo_js_callable_t)callable->value)->generator) {
+    neo_js_variable_t message =
+        neo_js_context_format(ctx, "%v is not a constructor", callable);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+    neo_js_variable_t error =
+        neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
+    vm->result = neo_js_context_create_exception(ctx, error);
+    *offset = neo_buffer_get_size(program->codes);
+    return;
+  }
   neo_js_variable_t length = neo_js_variable_get_field(
       argument, ctx, neo_js_context_create_cstring(ctx, "length"));
   uint32_t argc = ((neo_js_number_t)length->value)->value;
