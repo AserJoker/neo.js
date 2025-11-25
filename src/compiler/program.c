@@ -168,9 +168,6 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       fprintf(fp, "NEO_ASM_LOAD \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
-    case NEO_ASM_CLONE: {
-      fprintf(fp, "NEO_ASM_CLONE\n");
-    } break;
     case NEO_ASM_INIT_FIELD:
       fprintf(fp, "NEO_ASM_INIT_FIELD\n");
       break;
@@ -556,6 +553,12 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       break;
     case NEO_ASM_DEC:
       fprintf(fp, "NEO_ASM_DEC\n");
+      break;
+    case NEO_ASM_DEFER_INC:
+      fprintf(fp, "NEO_ASM_DEFER_INC\n");
+      break;
+    case NEO_ASM_DEFER_DEC:
+      fprintf(fp, "NEO_ASM_DEFER_DEC\n");
       break;
     case NEO_ASM_ADD:
       fprintf(fp, "NEO_ASM_ADD\n");

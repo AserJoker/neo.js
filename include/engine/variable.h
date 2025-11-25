@@ -110,6 +110,24 @@ neo_js_variable_t neo_js_variable_eq(neo_js_variable_t self,
 neo_js_variable_t neo_js_variable_seq(neo_js_variable_t self,
                                       neo_js_context_t ctx,
                                       neo_js_variable_t another);
+neo_js_variable_t neo_js_variable_gt(neo_js_variable_t self,
+                                     neo_js_context_t ctx,
+                                     neo_js_variable_t another);
+neo_js_variable_t neo_js_variable_lt(neo_js_variable_t self,
+                                     neo_js_context_t ctx,
+                                     neo_js_variable_t another);
+neo_js_variable_t neo_js_variable_ge(neo_js_variable_t self,
+                                     neo_js_context_t ctx,
+                                     neo_js_variable_t another);
+neo_js_variable_t neo_js_variable_le(neo_js_variable_t self,
+                                     neo_js_context_t ctx,
+                                     neo_js_variable_t another);
+neo_js_variable_t neo_js_variable_typeof(neo_js_variable_t self,
+                                         neo_js_context_t ctx);
+neo_js_variable_t neo_js_variable_inc(neo_js_variable_t self,
+                                      neo_js_context_t ctx);
+neo_js_variable_t neo_js_variable_dec(neo_js_variable_t self,
+                                      neo_js_context_t ctx);
 neo_js_variable_t neo_js_variable_add(neo_js_variable_t self,
                                       neo_js_context_t ctx,
                                       neo_js_variable_t another);

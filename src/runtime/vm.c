@@ -699,6 +699,46 @@ static void neo_js_vm_seq(neo_js_vm_t vm, neo_js_context_t ctx,
   NEO_JS_VM_CHECK(vm, res, program, offset);
   neo_list_push(vm->stack, res);
 }
+static void neo_js_vm_gt(neo_js_vm_t vm, neo_js_context_t ctx,
+                         neo_program_t program, size_t *offset) {
+  neo_js_variable_t right = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t left = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t res = neo_js_variable_gt(left, ctx, right);
+  NEO_JS_VM_CHECK(vm, res, program, offset);
+  neo_list_push(vm->stack, res);
+}
+static void neo_js_vm_lt(neo_js_vm_t vm, neo_js_context_t ctx,
+                         neo_program_t program, size_t *offset) {
+  neo_js_variable_t right = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t left = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t res = neo_js_variable_lt(left, ctx, right);
+  NEO_JS_VM_CHECK(vm, res, program, offset);
+  neo_list_push(vm->stack, res);
+}
+static void neo_js_vm_ge(neo_js_vm_t vm, neo_js_context_t ctx,
+                         neo_program_t program, size_t *offset) {
+  neo_js_variable_t right = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t left = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t res = neo_js_variable_ge(left, ctx, right);
+  NEO_JS_VM_CHECK(vm, res, program, offset);
+  neo_list_push(vm->stack, res);
+}
+static void neo_js_vm_le(neo_js_vm_t vm, neo_js_context_t ctx,
+                         neo_program_t program, size_t *offset) {
+  neo_js_variable_t right = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t left = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t res = neo_js_variable_le(left, ctx, right);
+  NEO_JS_VM_CHECK(vm, res, program, offset);
+  neo_list_push(vm->stack, res);
+}
 static void neo_js_vm_sne(neo_js_vm_t vm, neo_js_context_t ctx,
                           neo_program_t program, size_t *offset) {
   neo_js_variable_t right = neo_js_vm_get_value(vm);
@@ -713,6 +753,56 @@ static void neo_js_vm_sne(neo_js_vm_t vm, neo_js_context_t ctx,
     res = neo_js_context_get_true(ctx);
   }
   neo_list_push(vm->stack, res);
+}
+static void neo_js_vm_del(neo_js_vm_t vm, neo_js_context_t ctx,
+                          neo_program_t program, size_t *offset) {
+  neo_js_variable_t value = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_list_push(vm->stack, neo_js_context_get_true(ctx));
+}
+static void neo_js_vm_typeof(neo_js_vm_t vm, neo_js_context_t ctx,
+                             neo_program_t program, size_t *offset) {
+  neo_js_variable_t value = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t type = neo_js_variable_typeof(value, ctx);
+  neo_list_push(vm->stack, type);
+}
+static void neo_js_vm_void(neo_js_vm_t vm, neo_js_context_t ctx,
+                           neo_program_t program, size_t *offset) {
+  neo_js_variable_t value = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t type = neo_js_context_get_undefined(ctx);
+  neo_list_push(vm->stack, type);
+}
+static void neo_js_vm_inc(neo_js_vm_t vm, neo_js_context_t ctx,
+                          neo_program_t program, size_t *offset) {
+  neo_js_variable_t value = neo_js_vm_get_value(vm);
+  neo_js_variable_t res = neo_js_variable_inc(value, ctx);
+  NEO_JS_VM_CHECK(vm, res, program, offset);
+}
+static void neo_js_vm_dec(neo_js_vm_t vm, neo_js_context_t ctx,
+                          neo_program_t program, size_t *offset) {
+  neo_js_variable_t value = neo_js_vm_get_value(vm);
+  neo_js_variable_t res = neo_js_variable_dec(value, ctx);
+  NEO_JS_VM_CHECK(vm, res, program, offset);
+}
+static void neo_js_vm_defer_inc(neo_js_vm_t vm, neo_js_context_t ctx,
+                                neo_program_t program, size_t *offset) {
+  neo_js_variable_t value = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t another = neo_js_context_create_variable(ctx, value->value);
+  neo_list_push(vm->stack, another);
+  neo_js_variable_t res = neo_js_variable_inc(value, ctx);
+  NEO_JS_VM_CHECK(vm, res, program, offset);
+}
+static void neo_js_vm_defer_dec(neo_js_vm_t vm, neo_js_context_t ctx,
+                                neo_program_t program, size_t *offset) {
+  neo_js_variable_t value = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t another = neo_js_context_create_variable(ctx, value->value);
+  neo_list_push(vm->stack, another);
+  neo_js_variable_t res = neo_js_variable_dec(value, ctx);
+  NEO_JS_VM_CHECK(vm, res, program, offset);
 }
 static void neo_js_vm_add(neo_js_vm_t vm, neo_js_context_t ctx,
                           neo_program_t program, size_t *offset) {
@@ -733,7 +823,6 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     neo_js_vm_save,                // NEO_ASM_SAVE
     neo_js_vm_def,                 // NEO_ASM_DEF
     neo_js_vm_load,                // NEO_ASM_LOAD
-    NULL,                          // NEO_ASM_CLONE
     NULL,                          // NEO_ASM_INIT_ACCESSOR
     NULL,                          // NEO_ASM_INIT_PRIVATE_ACCESSOR
     NULL,                          // NEO_ASM_INIT_FIELD
@@ -825,16 +914,18 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     neo_js_vm_eq,                  // NEO_ASM_EQ
     neo_js_vm_ne,                  // NEO_ASM_NE
     neo_js_vm_seq,                 // NEO_ASM_SEQ
-    neo_js_vm_sne,                 // NEO_ASM_GT
-    NULL,                          // NEO_ASM_LT
-    NULL,                          // NEO_ASM_GE
-    NULL,                          // NEO_ASM_LE
-    NULL,                          // NEO_ASM_SNE
-    NULL,                          // NEO_ASM_DEL
-    NULL,                          // NEO_ASM_TYPEOF
-    NULL,                          // NEO_ASM_VOID
-    NULL,                          // NEO_ASM_INC
-    NULL,                          // NEO_ASM_DEC
+    neo_js_vm_gt,                  // NEO_ASM_GT
+    neo_js_vm_lt,                  // NEO_ASM_LT
+    neo_js_vm_ge,                  // NEO_ASM_GE
+    neo_js_vm_le,                  // NEO_ASM_LE
+    neo_js_vm_sne,                 // NEO_ASM_SNE
+    neo_js_vm_del,                 // NEO_ASM_DEL
+    neo_js_vm_typeof,              // NEO_ASM_TYPEOF
+    neo_js_vm_void,                // NEO_ASM_VOID
+    neo_js_vm_inc,                 // NEO_ASM_INC
+    neo_js_vm_dec,                 // NEO_ASM_DEC
+    neo_js_vm_defer_inc,           // NEO_ASM_DEFER_INC
+    neo_js_vm_defer_dec,           // NEO_ASM_DEFER_DEC
     neo_js_vm_add,                 // NEO_ASM_ADD
     NULL,                          // NEO_ASM_SUB
     NULL,                          // NEO_ASM_MUL
