@@ -16,6 +16,8 @@ neo_bigint_t neo_number_to_bigint(neo_allocator_t allocator, int64_t val);
 
 neo_bigint_t neo_string_to_bigint(neo_allocator_t allocator, const char *val);
 
+neo_bigint_t neo_string16_to_bigint(neo_allocator_t allocator, const uint16_t *val);
+
 neo_bigint_t neo_bigint_clone(neo_bigint_t self);
 
 char *neo_bigint_to_string(neo_bigint_t bigint, uint32_t redix);

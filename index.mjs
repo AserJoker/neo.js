@@ -1,2 +1,2 @@
 "use strict";
-a
+print(1 + '2')

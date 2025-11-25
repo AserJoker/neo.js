@@ -219,10 +219,25 @@ neo_js_variable_t neo_js_context_create_cstring(neo_js_context_t self,
   neo_allocator_free(allocator, str);
   return string;
 }
-neo_js_variable_t neo_js_context_create_bigint(neo_js_context_t self,
-                                               const char *string) {
+neo_js_variable_t neo_js_context_create_cbigint(neo_js_context_t self,
+                                                const char *string) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   neo_bigint_t val = neo_string_to_bigint(allocator, string);
+  if (!val) {
+    char msg[strlen(string) + 64];
+    sprintf(msg, "Cannot convert %s to a Bigint", string);
+    neo_js_variable_t message = neo_js_context_create_cstring(self, msg);
+    neo_js_variable_t error = neo_js_variable_construct(
+        self->constant.syntax_error_class, self, 1, &message);
+    return neo_js_context_create_exception(self, error);
+  }
+  neo_js_bigint_t bigint = neo_create_js_bigint(allocator, val);
+  neo_js_value_t value = neo_js_bigint_to_value(bigint);
+  return neo_js_context_create_variable(self, value);
+}
+neo_js_variable_t neo_js_context_create_bigint(neo_js_context_t self,
+                                               neo_bigint_t val) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   neo_js_bigint_t bigint = neo_create_js_bigint(allocator, val);
   neo_js_value_t value = neo_js_bigint_to_value(bigint);
   return neo_js_context_create_variable(self, value);

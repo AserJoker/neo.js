@@ -58,6 +58,49 @@ neo_bigint_t neo_number_to_bigint(neo_allocator_t allocator, int64_t number) {
   }
   return bigint;
 }
+neo_bigint_t neo_string16_to_bigint(neo_allocator_t allocator,
+                                    const uint16_t *val) {
+  neo_bigint_t bigint = neo_create_bigint(allocator);
+  const uint16_t *chr = val;
+  if (*chr == L'+') {
+    chr++;
+  } else if (*chr == L'-') {
+    bigint->negative = true;
+    chr++;
+  }
+  while (*chr) {
+    if (*chr == 'n' && *(chr + 1) == 0) {
+      break;
+    }
+    if (*chr < '0' || *chr > '9') {
+      neo_allocator_free(allocator, bigint);
+      return NULL;
+    }
+    neo_bigint_t another = neo_number_to_bigint(allocator, 10);
+    neo_bigint_t result = neo_bigint_mul(bigint, another);
+    neo_allocator_free(allocator, another);
+    neo_allocator_free(allocator, bigint);
+    bigint = result;
+    another = neo_number_to_bigint(allocator, *chr - '0');
+    result = neo_bigint_add(bigint, another);
+    neo_allocator_free(allocator, another);
+    neo_allocator_free(allocator, bigint);
+    bigint = result;
+    chr++;
+  }
+  if (neo_list_get_size(bigint->data) > 1) {
+    chunk_t last =
+        *(chunk_t *)neo_list_node_get(neo_list_get_last(bigint->data));
+    while (neo_list_get_size(bigint->data) > 1 && last == 0) {
+      neo_list_pop(bigint->data);
+      last = *(chunk_t *)neo_list_node_get(neo_list_get_last(bigint->data));
+    }
+  }
+  if (!neo_list_get_size(bigint->data)) {
+    neo_bigint_push_data(bigint, 0);
+  }
+  return bigint;
+}
 
 neo_bigint_t neo_string_to_bigint(neo_allocator_t allocator, const char *val) {
   neo_bigint_t bigint = neo_create_bigint(allocator);
@@ -69,6 +112,9 @@ neo_bigint_t neo_string_to_bigint(neo_allocator_t allocator, const char *val) {
     chr++;
   }
   while (*chr) {
+    if (*chr == 'n' && *(chr + 1) == 0) {
+      break;
+    }
     if (*chr < '0' || *chr > '9') {
       neo_allocator_free(allocator, bigint);
       return NULL;

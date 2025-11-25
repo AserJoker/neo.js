@@ -1,6 +1,7 @@
 #ifndef _H_NEO_ENGINE_CONTEXT_
 #define _H_NEO_ENGINE_CONTEXT_
 #include "compiler/program.h"
+#include "core/bigint.h"
 #include "engine/runtime.h"
 #include "engine/scope.h"
 #include "engine/value.h"
@@ -57,8 +58,10 @@ neo_js_variable_t neo_js_context_create_string(neo_js_context_t self,
                                                const uint16_t *val);
 neo_js_variable_t neo_js_context_create_cstring(neo_js_context_t self,
                                                 const char *val);
+neo_js_variable_t neo_js_context_create_cbigint(neo_js_context_t self,
+                                                const char *val);
 neo_js_variable_t neo_js_context_create_bigint(neo_js_context_t self,
-                                               const char *val);
+                                               neo_bigint_t val);
 neo_js_variable_t neo_js_context_create_symbol(neo_js_context_t self,
                                                const uint16_t *description);
 neo_js_variable_t neo_js_context_create_exception(neo_js_context_t self,
@@ -72,7 +75,7 @@ neo_js_variable_t neo_js_context_create_cfunction(neo_js_context_t self,
 neo_js_variable_t neo_js_context_create_function(neo_js_context_t self,
                                                  neo_program_t program);
 neo_js_variable_t neo_js_context_create_signal(neo_js_context_t self,
-                                               uint32_t type,const void *msg);
+                                               uint32_t type, const void *msg);
 neo_js_variable_t neo_js_context_load(neo_js_context_t self, const char *name);
 neo_js_variable_t neo_js_context_store(neo_js_context_t self, const char *name,
                                        neo_js_variable_t variable);
