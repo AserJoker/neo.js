@@ -495,7 +495,7 @@ static void neo_js_set_setter(neo_js_vm_t vm, neo_js_context_t ctx,
     NEO_JS_VM_CHECK(vm, res, program, offset);
   } else {
     prop->set = value->value;
-    neo_js_handle_add_parent(&value->value->handle, &object->handle);
+    neo_js_handle_add_parent(&value->value->handle, &object->value->handle);
   }
 }
 static void neo_js_set_getter(neo_js_vm_t vm, neo_js_context_t ctx,
@@ -513,7 +513,7 @@ static void neo_js_set_getter(neo_js_vm_t vm, neo_js_context_t ctx,
     NEO_JS_VM_CHECK(vm, res, program, offset);
   } else {
     prop->get = value->value;
-    neo_js_handle_add_parent(&value->value->handle, &object->handle);
+    neo_js_handle_add_parent(&value->value->handle, &object->value->handle);
   }
 }
 static void neo_js_set_method(neo_js_vm_t vm, neo_js_context_t ctx,
