@@ -5,6 +5,7 @@
 #include "core/buffer.h"
 #include "core/common.h"
 #include "core/list.h"
+#include "core/string.h"
 #include "engine/boolean.h"
 #include "engine/callable.h"
 #include "engine/context.h"
@@ -552,7 +553,14 @@ static void neo_js_vm_hlt(neo_js_vm_t vm, neo_js_context_t ctx,
                           neo_program_t program, size_t *offset) {
   *offset = neo_buffer_get_size(program->codes);
 }
-
+static void neo_js_vm_keys(neo_js_vm_t vm, neo_js_context_t ctx,
+                           neo_program_t program, size_t *offset) {
+  neo_js_variable_t value = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t keys = neo_js_variable_get_keys(value, ctx);
+  NEO_JS_VM_CHECK(vm, keys, program, offset);
+  neo_list_push(vm->stack, keys);
+}
 static void neo_js_vm_next(neo_js_vm_t vm, neo_js_context_t ctx,
                            neo_program_t program, size_t *offset) {
   neo_js_variable_t iterator = neo_js_vm_get_value(vm);
@@ -952,6 +960,42 @@ static void neo_js_vm_neg(neo_js_vm_t vm, neo_js_context_t ctx,
   NEO_JS_VM_CHECK(vm, res, program, offset);
   neo_list_push(vm->stack, res);
 }
+static void neo_js_vm_logic_not(neo_js_vm_t vm, neo_js_context_t ctx,
+                                neo_program_t program, size_t *offset) {
+  neo_js_variable_t right = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  right = neo_js_variable_to_boolean(right, ctx);
+  NEO_JS_VM_CHECK(vm, right, program, offset);
+  bool value = ((neo_js_boolean_t)right->value)->value;
+  neo_js_variable_t res =
+      value ? neo_js_context_get_false(ctx) : neo_js_context_get_true(ctx);
+  neo_list_push(vm->stack, res);
+}
+static void neo_js_vm_concat(neo_js_vm_t vm, neo_js_context_t ctx,
+                             neo_program_t program, size_t *offset) {
+  neo_js_variable_t left = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t right = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  if (left->value->type != NEO_JS_TYPE_STRING) {
+    left = neo_js_variable_to_string(left, ctx);
+    NEO_JS_VM_CHECK(vm, left, program, offset);
+  }
+  if (right->value->type != NEO_JS_TYPE_STRING) {
+    right = neo_js_variable_to_string(left, ctx);
+    NEO_JS_VM_CHECK(vm, right, program, offset);
+  }
+  const uint16_t *str1 = ((neo_js_string_t)left->value)->value;
+  const uint16_t *str2 = ((neo_js_string_t)right->value)->value;
+  size_t str1len = neo_string16_length(str1);
+  size_t str2len = neo_string16_length(str2);
+  uint16_t str[str1len + str2len + 1];
+  memcpy(str, str1, str1len * sizeof(uint16_t));
+  memcpy(str + str1len, str2, str2len);
+  str[str1len + str2len] = 0;
+  neo_js_variable_t res = neo_js_context_create_string(ctx, str);
+  neo_list_push(vm->stack, res);
+}
 
 static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     neo_js_vm_push_scope,          // NEO_ASM_PUSH_SCOPE
@@ -1033,7 +1077,7 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     neo_js_vm_try_end,             // NEO_ASM_TRY_END
     neo_js_vm_ret,                 // NEO_ASM_RET
     neo_js_vm_hlt,                 // NEO_ASM_HLT
-    NULL,                          // NEO_ASM_KEYS
+    neo_js_vm_keys,                // NEO_ASM_KEYS
     NULL,                          // NEO_ASM_AWAIT
     NULL,                          // NEO_ASM_YIELD
     neo_js_vm_next,                // NEO_ASM_NEXT
@@ -1079,8 +1123,8 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     neo_js_vm_ushr,                // NEO_ASM_USHR
     neo_js_vm_plus,                // NEO_ASM_PLUS
     neo_js_vm_neg,                 // NEO_ASM_NEG
-    NULL,                          // NEO_ASM_LOGICAL_NOT
-    NULL,                          // NEO_ASM_CONCAT
+    neo_js_vm_logic_not,           // NEO_ASM_LOGICAL_NOT
+    neo_js_vm_concat,              // NEO_ASM_CONCAT
     NULL,                          // NEO_ASM_SPREAD
     NULL,                          // NEO_ASM_IN
     NULL,                          // NEO_ASM_INSTANCE_OF

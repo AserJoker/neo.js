@@ -104,6 +104,8 @@ neo_js_variable_t neo_js_variable_set_closure(neo_js_variable_t self,
 neo_js_variable_t neo_js_variable_set_bind(neo_js_variable_t self,
                                            neo_js_context_t ctx,
                                            neo_js_variable_t bind);
+neo_js_variable_t neo_js_variable_get_keys(neo_js_variable_t self,
+                                           neo_js_context_t ctx);
 neo_js_variable_t neo_js_variable_eq(neo_js_variable_t self,
                                      neo_js_context_t ctx,
                                      neo_js_variable_t another);

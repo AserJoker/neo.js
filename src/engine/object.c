@@ -3,6 +3,7 @@
 #include "core/common.h"
 #include "core/hash.h"
 #include "core/hash_map.h"
+#include "core/list.h"
 #include "engine/string.h"
 #include "engine/value.h"
 #include <stdbool.h>
@@ -33,6 +34,7 @@ void neo_init_js_object(neo_js_object_t self, neo_allocator_t allocator,
   self->frozen = false;
   self->extensible = true;
   self->sealed = false;
+  self->keys = neo_create_list(allocator, NULL);
   initialize.compare = (neo_compare_fn_t)strcmp;
   initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
   initialize.auto_free_key = true;
@@ -41,6 +43,7 @@ void neo_init_js_object(neo_js_object_t self, neo_allocator_t allocator,
   neo_js_value_add_parent(prototype, neo_js_object_to_value(self));
 }
 void neo_deinit_js_object(neo_js_object_t self, neo_allocator_t allocator) {
+  neo_allocator_free(allocator, self->keys);
   neo_allocator_free(allocator, self->properties);
   neo_allocator_free(allocator, self->internals);
   neo_deinit_js_value(&self->super, allocator);

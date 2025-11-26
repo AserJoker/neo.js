@@ -13,7 +13,6 @@ struct _neo_js_object_property_t {
   neo_js_value_t set;
   bool configurable;
   bool enumable;
-
   bool writable;
   neo_js_value_t value;
 };
@@ -23,6 +22,7 @@ struct _neo_js_object_t {
   neo_js_value_t prototype;
   neo_hash_map_t properties;
   neo_hash_map_t internals;
+  neo_list_t keys;
   bool frozen;
   bool extensible;
   bool sealed;

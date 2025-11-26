@@ -153,7 +153,7 @@ void neo_list_clear(neo_list_t self) {
     neo_list_erase(self, self->head.next);
   }
 }
-void neo_list_swap(neo_list_t self, neo_list_node_t a, neo_list_node_t b) {
+void neo_list_swap(neo_list_node_t a, neo_list_node_t b) {
   void *dataa = a->data;
   void *datab = b->data;
   b->data = dataa;
@@ -173,4 +173,32 @@ void neo_list_move(neo_list_t self, neo_list_node_t pos,
 
   current->next->last = current;
   current->last->next = current;
+}
+
+void neo_list_sort(neo_list_node_t begin, neo_list_node_t end,
+                   neo_compare_fn_t compare) {
+  if (begin == end) {
+    return;
+  }
+  neo_list_node_t flag = begin;
+  begin = begin->next;
+  neo_list_node_t stop = end->next;
+  neo_list_node_t start = flag->last;
+  for (; begin != stop; begin = begin->next) {
+    if (compare(begin->data, flag->data) < 0) {
+      begin->next->last = begin->last;
+      begin->last->next = begin->next;
+
+      begin->last = flag->last;
+      begin->next = flag;
+      begin->last->next = begin;
+      begin->next->last = begin;
+    }
+  }
+  if (start != flag->last) {
+    neo_list_sort(start->next, flag->last, compare);
+  }
+  if (end != flag->next) {
+    neo_list_sort(flag->next, stop->last, compare);
+  }
 }

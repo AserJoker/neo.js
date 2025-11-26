@@ -1,6 +1,8 @@
 #include "engine/variable.h"
 #include "core/allocator.h"
 #include "core/bigint.h"
+#include "core/common.h"
+#include "core/hash.h"
 #include "core/hash_map.h"
 #include "core/list.h"
 #include "core/map.h"
@@ -369,6 +371,9 @@ neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
     prop->value = value->value;
     neo_hash_map_set(obj->properties, key->value, prop);
     neo_js_value_add_parent(key->value, self->value);
+    if (prop->enumable && key->value->type == NEO_JS_TYPE_STRING) {
+      neo_list_push(obj->keys, key->value);
+    }
   } else {
     if (!prop->configurable &&
         (prop->configurable != configurable || prop->enumable != enumable ||
@@ -506,6 +511,9 @@ neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
     }
     neo_hash_map_set(obj->properties, key->value, prop);
     neo_js_value_add_parent(key->value, self->value);
+    if (prop->enumable && key->value->type == NEO_JS_TYPE_STRING) {
+      neo_list_push(obj->keys, key->value);
+    }
   } else {
     if (!prop->configurable) {
       if (prop->configurable != configurable || prop->enumable != enumable ||
@@ -796,6 +804,9 @@ neo_js_variable_t neo_js_variable_del_field(neo_js_variable_t self,
     if (prop->get) {
       neo_js_context_create_variable(ctx, prop->get);
       neo_js_value_remove_parent(prop->get, self->value);
+    }
+    if (key->type == NEO_JS_TYPE_STRING && prop->enumable) {
+      neo_list_delete(obj->keys, key);
     }
     neo_hash_map_delete(obj->properties, key);
   }
@@ -1100,6 +1111,87 @@ neo_js_variable_t neo_js_variable_set_bind(neo_js_variable_t self,
   function->bind = bind->value;
   neo_js_handle_add_parent(&function->bind->handle, &self->value->handle);
   return self;
+}
+static void neo_js_object_get_keys(neo_list_t keys, neo_hash_map_t cache,
+                                   neo_js_object_t obj) {
+  if (obj->prototype->type >= NEO_JS_TYPE_OBJECT) {
+    neo_js_object_get_keys(keys, cache, (neo_js_object_t)obj->prototype);
+  }
+  for (neo_list_node_t it = neo_list_get_first(obj->keys);
+       it != neo_list_get_tail(obj->keys); it = neo_list_node_next(it)) {
+    neo_js_value_t val = neo_list_node_get(it);
+    neo_hash_map_node_t node = neo_hash_map_find(cache, val);
+    if (!node) {
+      neo_list_push(keys, val);
+      neo_hash_map_set(cache, val, NULL);
+    } else {
+      neo_js_value_t key = neo_hash_map_node_get_key(node);
+      neo_list_delete(keys, key);
+      neo_hash_map_delete(cache, key);
+      neo_hash_map_set(cache, val, NULL);
+    }
+  }
+}
+
+static int neo_js_string_key_compare(neo_js_string_t key1,
+                                     neo_js_string_t key2) {
+  return neo_string16_compare(key1->value, key2->value);
+}
+static uint32_t neo_js_string_key_hash(neo_js_string_t key,
+                                       uint32_t max_bucket) {
+  return neo_hash_sdb_utf16(key->value, max_bucket);
+}
+
+static int neo_js_sort_key_compare(neo_js_string_t key1, neo_js_string_t key2) {
+  double num1 = neo_string16_to_number(key1->value);
+  double num2 = neo_string16_to_number(key2->value);
+  if (num1 == (uint32_t)num1 && num2 == (uint32_t)num2) {
+    return num1 - num2;
+  }
+  if (num1 == (uint32_t)num1) {
+    return -1;
+  }
+  if (num2 == (uint32_t)num2) {
+    return 1;
+  }
+  return 0;
+}
+
+neo_js_variable_t neo_js_variable_get_keys(neo_js_variable_t self,
+                                           neo_js_context_t ctx) {
+  if (self->value->type < NEO_JS_TYPE_OBJECT) {
+    self = neo_js_variable_to_object(self, ctx);
+  }
+  if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return self;
+  }
+  neo_allocator_t allocator =
+      neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
+  neo_list_t keys = neo_create_list(allocator, NULL);
+  neo_hash_map_initialize_t initialize = {0};
+  initialize.compare = (neo_compare_fn_t)&neo_js_string_key_compare;
+  initialize.hash = (neo_hash_fn_t)neo_js_string_key_hash;
+  neo_hash_map_t cache = neo_create_hash_map(allocator, &initialize);
+  neo_js_object_t obj = (neo_js_object_t)self->value;
+  neo_js_object_get_keys(keys, cache, obj);
+  neo_list_sort(neo_list_get_first(keys), neo_list_get_last(keys),
+                (neo_compare_fn_t)neo_js_sort_key_compare);
+  neo_js_variable_t res = neo_js_context_create_array(ctx);
+  size_t idx = 0;
+  for (neo_list_node_t it = neo_list_get_first(keys);
+       it != neo_list_get_tail(keys); it = neo_list_node_next(it)) {
+    neo_js_value_t key = neo_list_node_get(it);
+    neo_js_variable_t err = neo_js_variable_set_field(
+        res, ctx, neo_js_context_create_number(ctx, idx),
+        neo_js_context_create_variable(ctx, key));
+    if (err->value->type == NEO_JS_TYPE_EXCEPTION) {
+      return err;
+    }
+    idx++;
+  }
+  neo_allocator_free(allocator, cache);
+  neo_allocator_free(allocator, keys);
+  return res;
 }
 neo_js_variable_t neo_js_variable_eq(neo_js_variable_t self,
                                      neo_js_context_t ctx,

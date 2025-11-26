@@ -1,5 +1,6 @@
 #ifndef _H_NEO_CORE_LIST_
 #define _H_NEO_CORE_LIST_
+#include "core/common.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -53,10 +54,13 @@ void *neo_list_node_get(neo_list_node_t self);
 
 void neo_list_clear(neo_list_t self);
 
-void neo_list_swap(neo_list_t self, neo_list_node_t a, neo_list_node_t b);
+void neo_list_swap(neo_list_node_t a, neo_list_node_t b);
 
 void neo_list_move(neo_list_t self, neo_list_node_t pos,
                    neo_list_node_t current);
+
+void neo_list_sort(neo_list_node_t begin, neo_list_node_t end,
+                   neo_compare_fn_t compare);
 
 #ifdef __cplusplus
 };
