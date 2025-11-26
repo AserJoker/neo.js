@@ -76,6 +76,9 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   neo_js_scope_set_variable(root_scope, constant->symbol_prototype, NULL);
   neo_js_scope_set_variable(root_scope, constant->symbol_async_dispose, NULL);
   neo_js_scope_set_variable(root_scope, constant->symbol_async_iterator, NULL);
+  neo_js_scope_set_variable(root_scope, constant->symbol_has_instance, NULL);
+  neo_js_scope_set_variable(root_scope, constant->symbol_is_concat_spreadable,
+                            NULL);
   neo_js_scope_set_variable(root_scope, constant->symbol_iterator, NULL);
   neo_js_scope_set_variable(root_scope, constant->symbol_match, NULL);
   neo_js_scope_set_variable(root_scope, constant->symbol_match_all, NULL);

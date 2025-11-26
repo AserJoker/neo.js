@@ -11,7 +11,9 @@
 #include "engine/context.h"
 #include "engine/exception.h"
 #include "engine/function.h"
+#include "engine/handle.h"
 #include "engine/number.h"
+#include "engine/object.h"
 #include "engine/runtime.h"
 #include "engine/scope.h"
 #include "engine/signal.h"
@@ -279,6 +281,39 @@ static void neo_js_vm_push_this(neo_js_vm_t vm, neo_js_context_t ctx,
   neo_list_push(vm->stack, vm->self);
 }
 
+static void neo_js_vm_member_call(neo_js_vm_t vm, neo_js_context_t ctx,
+                                  neo_program_t program, size_t *offset) {
+  int32_t line = neo_js_vm_read_integer(program, offset);
+  int32_t column = neo_js_vm_read_integer(program, offset);
+  neo_js_variable_t argument = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t key = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t host = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t length = neo_js_variable_get_field(
+      argument, ctx, neo_js_context_create_cstring(ctx, "length"));
+  uint32_t argc = ((neo_js_number_t)length->value)->value;
+  neo_js_variable_t argv[argc];
+  for (uint32_t idx = 0; idx < argc; idx++) {
+    argv[idx] = neo_js_variable_get_field(
+        argument, ctx, neo_js_context_create_number(ctx, idx));
+  }
+  neo_js_variable_t callable = neo_js_variable_get_field(host, ctx, key);
+  NEO_JS_VM_CHECK(vm, callable, program, offset);
+  neo_allocator_t allocator =
+      neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
+  neo_js_variable_t name = neo_js_variable_get_field(
+      callable, ctx, neo_js_context_create_cstring(ctx, "name"));
+  const uint16_t *funcname = ((neo_js_string_t)name->value)->value;
+  neo_js_context_push_callstack(ctx, program->filename, funcname, line, column);
+  neo_js_variable_t result =
+      neo_js_variable_call(callable, ctx, host, argc, argv);
+  neo_js_context_pop_callstack(ctx);
+  NEO_JS_VM_CHECK(vm, result, program, offset);
+  neo_list_push(vm->stack, result);
+}
+
 static void neo_js_vm_push_value(neo_js_vm_t vm, neo_js_context_t ctx,
                                  neo_program_t program, size_t *offset) {
   int32_t idx = neo_js_vm_read_integer(program, offset);
@@ -443,6 +478,52 @@ static void neo_js_set_field(neo_js_vm_t vm, neo_js_context_t ctx,
   neo_list_pop(vm->stack);
   neo_js_variable_t object = neo_js_vm_get_value(vm);
   neo_js_variable_t res = neo_js_variable_set_field(object, ctx, key, value);
+  NEO_JS_VM_CHECK(vm, res, program, offset);
+}
+static void neo_js_set_setter(neo_js_vm_t vm, neo_js_context_t ctx,
+                              neo_program_t program, size_t *offset) {
+  neo_js_variable_t value = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t key = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t object = neo_js_vm_get_value(vm);
+  neo_js_object_property_t prop =
+      neo_js_variable_get_own_property(object, ctx, key);
+  if (!prop) {
+    neo_js_variable_t res =
+        neo_js_variable_def_accessor(object, ctx, key, NULL, value, true, true);
+    NEO_JS_VM_CHECK(vm, res, program, offset);
+  } else {
+    prop->set = value->value;
+    neo_js_handle_add_parent(&value->value->handle, &object->handle);
+  }
+}
+static void neo_js_set_getter(neo_js_vm_t vm, neo_js_context_t ctx,
+                              neo_program_t program, size_t *offset) {
+  neo_js_variable_t value = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t key = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t object = neo_js_vm_get_value(vm);
+  neo_js_object_property_t prop =
+      neo_js_variable_get_own_property(object, ctx, key);
+  if (!prop) {
+    neo_js_variable_t res =
+        neo_js_variable_def_accessor(object, ctx, key, value, NULL, true, true);
+    NEO_JS_VM_CHECK(vm, res, program, offset);
+  } else {
+    prop->get = value->value;
+    neo_js_handle_add_parent(&value->value->handle, &object->handle);
+  }
+}
+static void neo_js_set_method(neo_js_vm_t vm, neo_js_context_t ctx,
+                              neo_program_t program, size_t *offset) {
+  neo_js_variable_t method = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t key = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t object = neo_js_vm_get_value(vm);
+  neo_js_variable_t res = neo_js_variable_set_field(object, ctx, key, method);
   NEO_JS_VM_CHECK(vm, res, program, offset);
 }
 static void neo_js_vm_jnull(neo_js_vm_t vm, neo_js_context_t ctx,
@@ -996,6 +1077,33 @@ static void neo_js_vm_concat(neo_js_vm_t vm, neo_js_context_t ctx,
   neo_js_variable_t res = neo_js_context_create_string(ctx, str);
   neo_list_push(vm->stack, res);
 }
+static void neo_js_vm_in(neo_js_vm_t vm, neo_js_context_t ctx,
+                         neo_program_t program, size_t *offset) {
+  neo_js_variable_t obj = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t key = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  if (obj->value->type < NEO_JS_TYPE_OBJECT) {
+    obj = neo_js_variable_to_object(obj, ctx);
+  }
+  NEO_JS_VM_CHECK(vm, obj, program, offset);
+  if (neo_js_variable_get_property(obj, ctx, key)) {
+    neo_list_push(vm->stack, neo_js_context_get_true(ctx));
+  } else {
+    neo_list_push(vm->stack, neo_js_context_get_false(ctx));
+  }
+}
+
+static void neo_js_vm_instance_of(neo_js_vm_t vm, neo_js_context_t ctx,
+                                  neo_program_t program, size_t *offset) {
+  neo_js_variable_t constructor = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t obj = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t res = neo_js_variable_instance_of(obj, ctx, constructor);
+  NEO_JS_VM_CHECK(vm, res, program, offset);
+  neo_list_push(vm->stack, res);
+}
 
 static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     neo_js_vm_push_scope,          // NEO_ASM_PUSH_SCOPE
@@ -1053,15 +1161,15 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     neo_js_vm_call,                // NEO_ASM_CALL
     neo_js_vm_push_back,           // NEO_ASM_PUSH_BACK
     NULL,                          // NEO_ASM_EVAL
-    NULL,                          // NEO_ASM_MEMBER_CALL
+    neo_js_vm_member_call,         // NEO_ASM_MEMBER_CALL
     neo_js_get_field,              // NEO_ASM_GET_FIELD
     neo_js_set_field,              // NEO_ASM_SET_FIELD
     NULL,                          // NEO_ASM_PRIVATE_CALL
     NULL,                          // NEO_ASM_GET_PRIVATE_FIELD
     NULL,                          // NEO_ASM_SET_PRIVATE_FIELD
-    NULL,                          // NEO_ASM_SET_GETTER
-    NULL,                          // NEO_ASM_SET_SETTER
-    NULL,                          // NEO_ASM_SET_METHOD
+    neo_js_set_getter,             // NEO_ASM_SET_GETTER
+    neo_js_set_setter,             // NEO_ASM_SET_SETTER
+    neo_js_set_method,             // NEO_ASM_SET_METHOD
     NULL,                          // NEO_ASM_DEF_PRIVATE_GETTER
     NULL,                          // NEO_ASM_DEF_PRIVATE_SETTER
     NULL,                          // NEO_ASM_DEF_PRIVATE_METHOD
@@ -1126,8 +1234,8 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     neo_js_vm_logic_not,           // NEO_ASM_LOGICAL_NOT
     neo_js_vm_concat,              // NEO_ASM_CONCAT
     NULL,                          // NEO_ASM_SPREAD
-    NULL,                          // NEO_ASM_IN
-    NULL,                          // NEO_ASM_INSTANCE_OF
+    neo_js_vm_in,                  // NEO_ASM_IN
+    neo_js_vm_instance_of,         // NEO_ASM_INSTANCE_OF
     NULL,                          // NEO_ASM_TAG
     NULL,                          // NEO_ASM_MEMBER_TAG
     NULL,                          // NEO_ASM_PRIVATE_TAG

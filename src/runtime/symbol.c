@@ -214,6 +214,8 @@ void neo_initialize_js_symbol(neo_js_context_t ctx) {
   NEO_JS_DEF_METHOD(ctx, prototype, "toString", neo_js_symbol_to_string);
   DEF_SYMBOL(constant->symbol_async_dispose, asyncDispose);
   DEF_SYMBOL(constant->symbol_async_iterator, asyncIterator);
+  DEF_SYMBOL(constant->symbol_has_instance, hasInstance);
+  DEF_SYMBOL(constant->symbol_is_concat_spreadable, isConcatSpreadable);
   DEF_SYMBOL(constant->symbol_iterator, iterator);
   DEF_SYMBOL(constant->symbol_match, match);
   DEF_SYMBOL(constant->symbol_match_all, matchAll);

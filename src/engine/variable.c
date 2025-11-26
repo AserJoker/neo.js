@@ -1966,6 +1966,61 @@ neo_js_variable_t neo_js_variable_neg(neo_js_variable_t self,
   double left = ((neo_js_number_t)self->value)->value;
   return neo_js_context_create_number(ctx, -left);
 }
+neo_js_variable_t neo_js_variable_instance_of(neo_js_variable_t self,
+                                              neo_js_context_t ctx,
+                                              neo_js_variable_t another) {
+  if (another->value->type < NEO_JS_TYPE_OBJECT) {
+    neo_js_variable_t message = neo_js_context_create_cstring(
+        ctx, "Right-hand side of 'instanceof' is not an object");
+    neo_js_variable_t type_error =
+        neo_js_context_get_constant(ctx)->type_error_class;
+    neo_js_variable_t error =
+        neo_js_variable_construct(type_error, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  if (another->value->type < NEO_JS_TYPE_FUNCTION) {
+    neo_js_variable_t has_instance =
+        neo_js_context_get_constant(ctx)->symbol_has_instance;
+    has_instance = neo_js_variable_get_field(another, ctx, has_instance);
+    if (has_instance->value->type == NEO_JS_TYPE_EXCEPTION) {
+      return has_instance;
+    }
+    if (has_instance->value->type != NEO_JS_TYPE_FUNCTION) {
+      neo_js_variable_t message = neo_js_context_create_cstring(
+          ctx, "Right-hand side of 'instanceof' is not an object");
+      neo_js_variable_t type_error =
+          neo_js_context_get_constant(ctx)->type_error_class;
+      neo_js_variable_t error =
+          neo_js_variable_construct(type_error, ctx, 1, &message);
+      return neo_js_context_create_exception(ctx, error);
+    }
+    return neo_js_variable_call(has_instance, ctx, another, 1, &self);
+  }
+  if (self->value->type < NEO_JS_TYPE_OBJECT) {
+    return neo_js_context_get_false(ctx);
+  }
+  neo_js_variable_t prototype = neo_js_variable_get_field(
+      another, ctx, neo_js_context_create_cstring(ctx, "prototype"));
+  if (prototype->value->type < NEO_JS_TYPE_OBJECT) {
+    neo_js_variable_t message = neo_js_context_format(
+        ctx, "Function has non-object prototype '%v' in instanceof check",
+        prototype);
+    neo_js_variable_t type_error =
+        neo_js_context_get_constant(ctx)->type_error_class;
+    neo_js_variable_t error =
+        neo_js_variable_construct(type_error, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  neo_js_object_t object = (neo_js_object_t)self->value;
+  while (object->prototype->type >= NEO_JS_TYPE_OBJECT) {
+    neo_js_value_t proto = object->prototype;
+    if (proto == prototype->value) {
+      return neo_js_context_get_true(ctx);
+    }
+    object = (neo_js_object_t)object->prototype;
+  }
+  return neo_js_context_get_false(ctx);
+}
 
 static void neo_js_variable_on_gc(neo_allocator_t allocator,
                                   neo_js_variable_t self, neo_list_t values) {

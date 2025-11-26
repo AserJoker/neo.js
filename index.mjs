@@ -1,7 +1,15 @@
 'use strict'
-const obj = [1, 2, 3]
-obj['data'] = 123
-obj['aaa'] = 123
-for (const item in obj) {
-    print(item)
+const obj = {
+    get data() {
+        return this._data;
+    },
+    set data(val) {
+        this._data = val;
+    },
+    print() {
+        print(this.data)
+    }
 }
+obj.print()
+obj.data = 234
+obj.print()

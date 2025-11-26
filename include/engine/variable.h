@@ -172,6 +172,9 @@ neo_js_variable_t neo_js_variable_plus(neo_js_variable_t self,
                                        neo_js_context_t ctx);
 neo_js_variable_t neo_js_variable_neg(neo_js_variable_t self,
                                       neo_js_context_t ctx);
+neo_js_variable_t neo_js_variable_instance_of(neo_js_variable_t self,
+                                              neo_js_context_t ctx,
+                                              neo_js_variable_t another);
 void neo_js_variable_gc(neo_allocator_t allocator, neo_list_t variables);
 
 #ifdef __cplusplus

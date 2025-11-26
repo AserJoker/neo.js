@@ -40,6 +40,8 @@ struct _neo_js_constant_t {
   neo_js_variable_t symbol_key_for;
   neo_js_variable_t symbol_async_dispose;
   neo_js_variable_t symbol_async_iterator;
+  neo_js_variable_t symbol_has_instance;
+  neo_js_variable_t symbol_is_concat_spreadable;
   neo_js_variable_t symbol_iterator;
   neo_js_variable_t symbol_match;
   neo_js_variable_t symbol_match_all;
