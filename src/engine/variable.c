@@ -69,7 +69,11 @@ neo_js_variable_t neo_js_variable_to_string(neo_js_variable_t self,
       }
     }
     char s[16];
-    sprintf(s, "%lg", number->value);
+    if (number->value == (int64_t)(number->value)) {
+      sprintf(s, "%lld", (int64_t)number->value);
+    } else {
+      sprintf(s, "%lg", number->value);
+    }
     return neo_js_context_create_cstring(ctx, s);
   }
   case NEO_JS_TYPE_BIGINT: {
@@ -1519,19 +1523,6 @@ neo_js_variable_t neo_js_variable_add(neo_js_variable_t self,
       neo_js_variable_t error =
           neo_js_variable_construct(type_error, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
-    } else {
-      if (self->value->type != NEO_JS_TYPE_NUMBER) {
-        self = neo_js_variable_to_number(self, ctx);
-      }
-      if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
-        return self;
-      }
-      if (another->value->type != NEO_JS_TYPE_NUMBER) {
-        another = neo_js_variable_to_number(another, ctx);
-      }
-      if (another->value->type == NEO_JS_TYPE_EXCEPTION) {
-        return another;
-      }
     }
   }
   if (self->value->type == NEO_JS_TYPE_BIGINT) {
@@ -1552,6 +1543,50 @@ neo_js_variable_t neo_js_variable_add(neo_js_variable_t self,
     return neo_js_context_create_string(ctx, res);
   }
   if (self->value->type != NEO_JS_TYPE_NUMBER) {
+    self = neo_js_variable_to_number(self, ctx);
+  }
+  if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return self;
+  }
+  if (another->value->type != NEO_JS_TYPE_NUMBER) {
+    another = neo_js_variable_to_number(another, ctx);
+  }
+  if (another->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return another;
+  }
+  double left = ((neo_js_number_t)self->value)->value;
+  double right = ((neo_js_number_t)another->value)->value;
+  double res = left + right;
+  return neo_js_context_create_number(ctx, res);
+}
+
+static neo_js_variable_t
+neo_js_variable_resolve_binary(neo_js_variable_t self, neo_js_context_t ctx,
+                               neo_js_variable_t another) {
+  if (self->value->type >= NEO_JS_TYPE_OBJECT) {
+    self = neo_js_variable_to_primitive(self, ctx, "default");
+  }
+  if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return self;
+  }
+  if (another->value->type >= NEO_JS_TYPE_OBJECT) {
+    another = neo_js_variable_to_primitive(another, ctx, "default");
+  }
+  if (another->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return another;
+  }
+  if ((self->value->type == NEO_JS_TYPE_BIGINT ||
+       another->value->type == NEO_JS_TYPE_BIGINT) &&
+      self->value->type != another->value->type) {
+    neo_js_variable_t message = neo_js_context_create_cstring(
+        ctx, "Cannot mix BigInt and other types, use explicit conversions");
+    neo_js_variable_t type_error =
+        neo_js_context_get_constant(ctx)->type_error_class;
+    neo_js_variable_t error =
+        neo_js_variable_construct(type_error, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  if (self->value->type != NEO_JS_TYPE_BIGINT) {
     if (self->value->type != NEO_JS_TYPE_NUMBER) {
       self = neo_js_variable_to_number(self, ctx);
     }
@@ -1565,10 +1600,279 @@ neo_js_variable_t neo_js_variable_add(neo_js_variable_t self,
       return another;
     }
   }
+  return self;
+}
+neo_js_variable_t neo_js_variable_sub(neo_js_variable_t self,
+                                      neo_js_context_t ctx,
+                                      neo_js_variable_t another) {
+  neo_js_variable_t err = neo_js_variable_resolve_binary(self, ctx, another);
+  if (err->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return err;
+  }
+  if (self->value->type == NEO_JS_TYPE_BIGINT) {
+    neo_bigint_t left = ((neo_js_bigint_t)self->value)->value;
+    neo_bigint_t right = ((neo_js_bigint_t)another->value)->value;
+    neo_bigint_t res = neo_bigint_sub(left, right);
+    return neo_js_context_create_bigint(ctx, res);
+  }
   double left = ((neo_js_number_t)self->value)->value;
   double right = ((neo_js_number_t)another->value)->value;
-  double res = left + right;
+  double res = left - right;
   return neo_js_context_create_number(ctx, res);
+}
+neo_js_variable_t neo_js_variable_mul(neo_js_variable_t self,
+                                      neo_js_context_t ctx,
+                                      neo_js_variable_t another) {
+  neo_js_variable_t err = neo_js_variable_resolve_binary(self, ctx, another);
+  if (err->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return err;
+  }
+  if (self->value->type == NEO_JS_TYPE_BIGINT) {
+    neo_bigint_t left = ((neo_js_bigint_t)self->value)->value;
+    neo_bigint_t right = ((neo_js_bigint_t)another->value)->value;
+    neo_bigint_t res = neo_bigint_mul(left, right);
+    return neo_js_context_create_bigint(ctx, res);
+  }
+  double left = ((neo_js_number_t)self->value)->value;
+  double right = ((neo_js_number_t)another->value)->value;
+  double res = left * right;
+  return neo_js_context_create_number(ctx, res);
+}
+neo_js_variable_t neo_js_variable_div(neo_js_variable_t self,
+                                      neo_js_context_t ctx,
+                                      neo_js_variable_t another) {
+  neo_js_variable_t err = neo_js_variable_resolve_binary(self, ctx, another);
+  if (err->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return err;
+  }
+  if (self->value->type == NEO_JS_TYPE_BIGINT) {
+    neo_bigint_t left = ((neo_js_bigint_t)self->value)->value;
+    neo_bigint_t right = ((neo_js_bigint_t)another->value)->value;
+    neo_bigint_t res = neo_bigint_div(left, right);
+    return neo_js_context_create_bigint(ctx, res);
+  }
+  double left = ((neo_js_number_t)self->value)->value;
+  double right = ((neo_js_number_t)another->value)->value;
+  double res = left / right;
+  return neo_js_context_create_number(ctx, res);
+}
+neo_js_variable_t neo_js_variable_mod(neo_js_variable_t self,
+                                      neo_js_context_t ctx,
+                                      neo_js_variable_t another) {
+  neo_js_variable_t err = neo_js_variable_resolve_binary(self, ctx, another);
+  if (err->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return err;
+  }
+  if (self->value->type == NEO_JS_TYPE_BIGINT) {
+    neo_bigint_t left = ((neo_js_bigint_t)self->value)->value;
+    neo_bigint_t right = ((neo_js_bigint_t)another->value)->value;
+    neo_bigint_t res = neo_bigint_mod(left, right);
+    return neo_js_context_create_bigint(ctx, res);
+  }
+  double left = ((neo_js_number_t)self->value)->value;
+  double right = ((neo_js_number_t)another->value)->value;
+  double res = 0;
+  if (left == (int64_t)left && right == (int64_t)right) {
+    res = (int64_t)left % (int64_t)right;
+  } else {
+    int64_t count = (int64_t)(left / right);
+    res = left - right * count;
+  }
+  return neo_js_context_create_number(ctx, res);
+}
+neo_js_variable_t neo_js_variable_pow(neo_js_variable_t self,
+                                      neo_js_context_t ctx,
+                                      neo_js_variable_t another) {
+  neo_js_variable_t err = neo_js_variable_resolve_binary(self, ctx, another);
+  if (err->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return err;
+  }
+  if (self->value->type == NEO_JS_TYPE_BIGINT) {
+    neo_bigint_t left = ((neo_js_bigint_t)self->value)->value;
+    neo_bigint_t right = ((neo_js_bigint_t)another->value)->value;
+    neo_bigint_t res = neo_bigint_pow(left, right);
+    return neo_js_context_create_bigint(ctx, res);
+  }
+  double left = ((neo_js_number_t)self->value)->value;
+  double right = ((neo_js_number_t)another->value)->value;
+  double res = pow(left, right);
+  return neo_js_context_create_number(ctx, res);
+}
+
+neo_js_variable_t neo_js_variable_not(neo_js_variable_t self,
+                                      neo_js_context_t ctx) {
+  if (self->value->type >= NEO_JS_TYPE_OBJECT) {
+    self = neo_js_variable_to_primitive(self, ctx, "default");
+  }
+  if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return self;
+  }
+  if (self->value->type == NEO_JS_TYPE_BIGINT) {
+    neo_bigint_t right = ((neo_js_bigint_t)self->value)->value;
+    neo_bigint_t res = neo_bigint_not(right);
+    return neo_js_context_create_bigint(ctx, res);
+  }
+  if (self->value->type != NEO_JS_TYPE_NUMBER) {
+    self = neo_js_variable_to_number(self, ctx);
+  }
+  if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return self;
+  }
+  int32_t val = ((neo_js_number_t)self->value)->value;
+  val = ~val;
+  return neo_js_context_create_number(ctx, val);
+}
+
+neo_js_variable_t neo_js_variable_and(neo_js_variable_t self,
+                                      neo_js_context_t ctx,
+                                      neo_js_variable_t another) {
+  neo_js_variable_t err = neo_js_variable_resolve_binary(self, ctx, another);
+  if (err->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return err;
+  }
+  if (self->value->type == NEO_JS_TYPE_BIGINT) {
+    neo_bigint_t left = ((neo_js_bigint_t)self->value)->value;
+    neo_bigint_t right = ((neo_js_bigint_t)another->value)->value;
+    neo_bigint_t res = neo_bigint_and(left, right);
+    return neo_js_context_create_bigint(ctx, res);
+  }
+  int32_t left = ((neo_js_number_t)self->value)->value;
+  int32_t right = ((neo_js_number_t)another->value)->value;
+  return neo_js_context_create_number(ctx, left & right);
+}
+
+neo_js_variable_t neo_js_variable_or(neo_js_variable_t self,
+                                     neo_js_context_t ctx,
+                                     neo_js_variable_t another) {
+  neo_js_variable_t err = neo_js_variable_resolve_binary(self, ctx, another);
+  if (err->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return err;
+  }
+  if (self->value->type == NEO_JS_TYPE_BIGINT) {
+    neo_bigint_t left = ((neo_js_bigint_t)self->value)->value;
+    neo_bigint_t right = ((neo_js_bigint_t)another->value)->value;
+    neo_bigint_t res = neo_bigint_or(left, right);
+    return neo_js_context_create_bigint(ctx, res);
+  }
+  int32_t left = ((neo_js_number_t)self->value)->value;
+  int32_t right = ((neo_js_number_t)another->value)->value;
+  return neo_js_context_create_number(ctx, left | right);
+}
+
+neo_js_variable_t neo_js_variable_xor(neo_js_variable_t self,
+                                      neo_js_context_t ctx,
+                                      neo_js_variable_t another) {
+  neo_js_variable_t err = neo_js_variable_resolve_binary(self, ctx, another);
+  if (err->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return err;
+  }
+  if (self->value->type == NEO_JS_TYPE_BIGINT) {
+    neo_bigint_t left = ((neo_js_bigint_t)self->value)->value;
+    neo_bigint_t right = ((neo_js_bigint_t)another->value)->value;
+    neo_bigint_t res = neo_bigint_xor(left, right);
+    return neo_js_context_create_bigint(ctx, res);
+  }
+  int32_t left = ((neo_js_number_t)self->value)->value;
+  int32_t right = ((neo_js_number_t)another->value)->value;
+  return neo_js_context_create_number(ctx, left ^ right);
+}
+
+neo_js_variable_t neo_js_variable_shl(neo_js_variable_t self,
+                                      neo_js_context_t ctx,
+                                      neo_js_variable_t another) {
+  neo_js_variable_t err = neo_js_variable_resolve_binary(self, ctx, another);
+  if (err->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return err;
+  }
+  if (self->value->type == NEO_JS_TYPE_BIGINT) {
+    neo_bigint_t left = ((neo_js_bigint_t)self->value)->value;
+    neo_bigint_t right = ((neo_js_bigint_t)another->value)->value;
+    neo_bigint_t res = neo_bigint_shl(left, right);
+    return neo_js_context_create_bigint(ctx, res);
+  }
+  int32_t left = ((neo_js_number_t)self->value)->value;
+  int32_t right = ((neo_js_number_t)another->value)->value;
+  return neo_js_context_create_number(ctx, left << right);
+}
+
+neo_js_variable_t neo_js_variable_shr(neo_js_variable_t self,
+                                      neo_js_context_t ctx,
+                                      neo_js_variable_t another) {
+  neo_js_variable_t err = neo_js_variable_resolve_binary(self, ctx, another);
+  if (err->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return err;
+  }
+  if (self->value->type == NEO_JS_TYPE_BIGINT) {
+    neo_bigint_t left = ((neo_js_bigint_t)self->value)->value;
+    neo_bigint_t right = ((neo_js_bigint_t)another->value)->value;
+    neo_bigint_t res = neo_bigint_shr(left, right);
+    return neo_js_context_create_bigint(ctx, res);
+  }
+  int32_t left = ((neo_js_number_t)self->value)->value;
+  int32_t right = ((neo_js_number_t)another->value)->value;
+  return neo_js_context_create_number(ctx, left >> right);
+}
+
+neo_js_variable_t neo_js_variable_ushr(neo_js_variable_t self,
+                                       neo_js_context_t ctx,
+                                       neo_js_variable_t another) {
+  neo_js_variable_t err = neo_js_variable_resolve_binary(self, ctx, another);
+  if (err->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return err;
+  }
+  if (self->value->type == NEO_JS_TYPE_BIGINT) {
+    neo_js_variable_t message = neo_js_context_create_cstring(
+        ctx, "BigInts have no unsigned right shift, use >> instead");
+    neo_js_variable_t type_error =
+        neo_js_context_get_constant(ctx)->type_error_class;
+    neo_js_variable_t error =
+        neo_js_variable_construct(type_error, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  int32_t left = ((neo_js_number_t)self->value)->value;
+  int32_t right = ((neo_js_number_t)another->value)->value;
+  return neo_js_context_create_number(
+      ctx, (int32_t)(((int64_t)(*(uint32_t *)&left)) >> right));
+}
+
+neo_js_variable_t neo_js_variable_plus(neo_js_variable_t self,
+                                       neo_js_context_t ctx) {
+  if (self->value->type >= NEO_JS_TYPE_OBJECT) {
+    self = neo_js_variable_to_primitive(self, ctx, "default");
+  }
+  if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return self;
+  }
+  if (self->value->type != NEO_JS_TYPE_NUMBER) {
+    self = neo_js_variable_to_number(self, ctx);
+  }
+  if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return self;
+  }
+  double left = ((neo_js_number_t)self->value)->value;
+  return neo_js_context_create_number(ctx, left);
+}
+neo_js_variable_t neo_js_variable_neg(neo_js_variable_t self,
+                                      neo_js_context_t ctx) {
+  if (self->value->type >= NEO_JS_TYPE_OBJECT) {
+    self = neo_js_variable_to_primitive(self, ctx, "default");
+  }
+  if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return self;
+  }
+  if (self->value->type == NEO_JS_TYPE_BIGINT) {
+    neo_bigint_t val = ((neo_js_bigint_t)self->value)->value;
+    val = neo_bigint_neg(val);
+    return neo_js_context_create_bigint(ctx, val);
+  }
+  if (self->value->type != NEO_JS_TYPE_NUMBER) {
+    self = neo_js_variable_to_number(self, ctx);
+  }
+  if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return self;
+  }
+  double left = ((neo_js_number_t)self->value)->value;
+  return neo_js_context_create_number(ctx, -left);
 }
 
 static void neo_js_variable_on_gc(neo_allocator_t allocator,

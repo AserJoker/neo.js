@@ -131,6 +131,45 @@ neo_js_variable_t neo_js_variable_dec(neo_js_variable_t self,
 neo_js_variable_t neo_js_variable_add(neo_js_variable_t self,
                                       neo_js_context_t ctx,
                                       neo_js_variable_t another);
+neo_js_variable_t neo_js_variable_sub(neo_js_variable_t self,
+                                      neo_js_context_t ctx,
+                                      neo_js_variable_t another);
+neo_js_variable_t neo_js_variable_mul(neo_js_variable_t self,
+                                      neo_js_context_t ctx,
+                                      neo_js_variable_t another);
+neo_js_variable_t neo_js_variable_div(neo_js_variable_t self,
+                                      neo_js_context_t ctx,
+                                      neo_js_variable_t another);
+neo_js_variable_t neo_js_variable_mod(neo_js_variable_t self,
+                                      neo_js_context_t ctx,
+                                      neo_js_variable_t another);
+neo_js_variable_t neo_js_variable_pow(neo_js_variable_t self,
+                                      neo_js_context_t ctx,
+                                      neo_js_variable_t another);
+neo_js_variable_t neo_js_variable_not(neo_js_variable_t self,
+                                      neo_js_context_t ctx);
+neo_js_variable_t neo_js_variable_and(neo_js_variable_t self,
+                                      neo_js_context_t ctx,
+                                      neo_js_variable_t another);
+neo_js_variable_t neo_js_variable_or(neo_js_variable_t self,
+                                     neo_js_context_t ctx,
+                                     neo_js_variable_t another);
+neo_js_variable_t neo_js_variable_xor(neo_js_variable_t self,
+                                      neo_js_context_t ctx,
+                                      neo_js_variable_t another);
+neo_js_variable_t neo_js_variable_shl(neo_js_variable_t self,
+                                      neo_js_context_t ctx,
+                                      neo_js_variable_t another);
+neo_js_variable_t neo_js_variable_shr(neo_js_variable_t self,
+                                      neo_js_context_t ctx,
+                                      neo_js_variable_t another);
+neo_js_variable_t neo_js_variable_ushr(neo_js_variable_t self,
+                                       neo_js_context_t ctx,
+                                       neo_js_variable_t another);
+neo_js_variable_t neo_js_variable_plus(neo_js_variable_t self,
+                                       neo_js_context_t ctx);
+neo_js_variable_t neo_js_variable_neg(neo_js_variable_t self,
+                                      neo_js_context_t ctx);
 void neo_js_variable_gc(neo_allocator_t allocator, neo_list_t variables);
 
 #ifdef __cplusplus

@@ -1,2 +1,2 @@
 'use strict'
-print(delete {})
+print(-9 >>> 2)
