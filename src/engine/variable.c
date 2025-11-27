@@ -388,7 +388,7 @@ neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
     if (self->value->type == NEO_JS_TYPE_ARRAY &&
         key->value->type == NEO_JS_TYPE_STRING) {
       const uint16_t *string = ((neo_js_string_t)key->value)->value;
-      if (neo_string16_mix_compare(string, "length")) {
+      if (neo_string16_mix_compare(string, "length") == 0) {
         neo_js_number_t current_length = ((neo_js_number_t)prop->value);
         value = neo_js_variable_to_number(value, ctx);
         if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
@@ -702,7 +702,7 @@ neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
     if (self->value->type == NEO_JS_TYPE_ARRAY &&
         key->value->type == NEO_JS_TYPE_STRING) {
       const uint16_t *string = ((neo_js_string_t)key->value)->value;
-      if (neo_string16_mix_compare(string, "length")) {
+      if (neo_string16_mix_compare(string, "length") == 0) {
         neo_js_number_t current_length = ((neo_js_number_t)prop->value);
         value = neo_js_variable_to_number(value, ctx);
         if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
@@ -780,7 +780,7 @@ neo_js_variable_t neo_js_variable_del_field(neo_js_variable_t self,
   }
   neo_js_object_t obj = (neo_js_object_t)self->value;
   neo_hash_map_node_t it = neo_hash_map_find(obj->properties, key->value);
-  if (!it) {
+  if (it) {
     neo_js_value_t key = neo_hash_map_node_get_key(it);
     neo_js_object_property_t prop = neo_hash_map_node_get_value(it);
     if (!prop->configurable || obj->frozen || obj->sealed) {

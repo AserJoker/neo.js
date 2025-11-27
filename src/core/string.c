@@ -155,6 +155,9 @@ char *neo_string_decode(neo_allocator_t allocator, const char *src) {
         uint32_t utf32 = 0;
         if (*src == '{') {
           src++;
+          if (*src == '}') {
+            goto onerror;
+          }
           while (*src && *src != '}') {
             utf32 *= 16;
             uint8_t ch = neo_char_to_int(*src);
@@ -448,4 +451,87 @@ double neo_string16_to_number(const uint16_t *str) {
     value = NAN;
   }
   return value;
+}
+uint16_t *neo_string16_decode(neo_allocator_t allocator, const uint16_t *src) {
+  size_t len = neo_string16_length(src) + 1;
+  uint16_t *str = neo_allocator_alloc(allocator, len * sizeof(uint16_t), NULL);
+  uint16_t *dst = str;
+  while (*src) {
+    if (*src == '\\') {
+      char code = 0;
+      src++;
+      if (*src == 'x') {
+        for (int8_t idx = 0; idx < 2; idx++) {
+          code *= 16;
+          uint8_t ch = neo_char_to_int(*src);
+          if (ch == (uint8_t)-1) {
+            goto onerror;
+          }
+          code += ch;
+          src++;
+        }
+        *dst++ = code;
+      } else if (*src == 'u') {
+        src++;
+        uint32_t utf32 = 0;
+        if (*src == '{') {
+          src++;
+          if (*src == '}') {
+            goto onerror;
+          }
+          while (*src && *src != '}') {
+            utf32 *= 16;
+            uint8_t ch = neo_char_to_int(*src);
+            if (ch == (uint8_t)-1) {
+              goto onerror;
+            }
+            utf32 += ch;
+            src++;
+          }
+          if (!*src) {
+            goto onerror;
+          }
+          src++;
+        } else {
+          for (int8_t idx = 0; idx < 4; idx++) {
+            utf32 *= 16;
+            uint8_t ch = neo_char_to_int(*src);
+            if (ch == (uint8_t)-1) {
+              goto onerror;
+            }
+            utf32 += ch;
+            src++;
+          }
+        }
+        dst += neo_utf32_to_utf16(utf32, dst);
+      } else if (*src == 'n') {
+        src++;
+        *dst++ = '\n';
+      } else if (*src == 'r') {
+        src++;
+        *dst++ = '\r';
+      } else if (*src == 't') {
+        src++;
+        *dst++ = '\t';
+      } else if (*src == 'b') {
+        src++;
+        *dst++ = '\b';
+      } else if (*src == 'f') {
+        src++;
+        *dst++ = '\f';
+      } else if (*src == 'v') {
+        src++;
+        *dst++ = '\v';
+      } else {
+        *dst++ = *src++;
+      }
+    } else {
+      *dst++ = *src++;
+    }
+  }
+  *dst = 0;
+  return str;
+onerror:
+  neo_allocator_free(allocator, str);
+  return NULL;
 }

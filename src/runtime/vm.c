@@ -1104,6 +1104,38 @@ static void neo_js_vm_instance_of(neo_js_vm_t vm, neo_js_context_t ctx,
   NEO_JS_VM_CHECK(vm, res, program, offset);
   neo_list_push(vm->stack, res);
 }
+static void neo_js_vm_tag(neo_js_vm_t vm, neo_js_context_t ctx,
+                          neo_program_t program, size_t *offset) {
+  neo_js_variable_t argument = neo_js_vm_get_value(vm);
+  neo_list_node_t it = neo_list_get_last(vm->stack);
+  it = neo_list_node_last(it);
+  neo_js_variable_t callable = neo_list_node_get(it);
+  // TODO: callable == String.raw
+  if (false) {
+    return neo_js_vm_call(vm, ctx, program, offset);
+  }
+  neo_js_variable_t quasis = neo_js_variable_get_field(
+      argument, ctx, neo_js_context_create_number(ctx, 0));
+  neo_js_variable_t length = neo_js_variable_get_field(
+      quasis, ctx, neo_js_context_create_cstring(ctx, "length"));
+  uint32_t len = ((neo_js_number_t)length->value)->value;
+  neo_allocator_t allocator =
+      neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
+  for (uint32_t idx = 0; idx < len; idx++) {
+    neo_js_variable_t index = neo_js_context_create_number(ctx, idx);
+    neo_js_variable_t str = neo_js_variable_get_field(quasis, ctx, index);
+    const uint16_t *s = ((neo_js_string_t)str->value)->value;
+    uint16_t *decode_string = neo_string16_decode(allocator, s);
+    if (decode_string) {
+      str = neo_js_context_create_string(ctx, decode_string);
+    } else {
+      str = neo_js_context_get_undefined(ctx);
+    }
+    neo_allocator_free(allocator, decode_string);
+    neo_js_variable_set_field(quasis, ctx, index, str);
+  }
+  return neo_js_vm_call(vm, ctx, program, offset);
+}
 
 static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     neo_js_vm_push_scope,          // NEO_ASM_PUSH_SCOPE
@@ -1236,7 +1268,7 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     NULL,                          // NEO_ASM_SPREAD
     neo_js_vm_in,                  // NEO_ASM_IN
     neo_js_vm_instance_of,         // NEO_ASM_INSTANCE_OF
-    NULL,                          // NEO_ASM_TAG
+    neo_js_vm_tag,                 // NEO_ASM_TAG
     NULL,                          // NEO_ASM_MEMBER_TAG
     NULL,                          // NEO_ASM_PRIVATE_TAG
     NULL,                          // NEO_ASM_SUPER_MEMBER_TAG

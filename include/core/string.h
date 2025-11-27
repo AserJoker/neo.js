@@ -26,5 +26,6 @@ int neo_string16_compare(const uint16_t *str1, const uint16_t *str2);
 int neo_string16_mix_compare(const uint16_t *str1, const char *str2);
 char *neo_string16_to_string(neo_allocator_t allocator, const uint16_t *src);
 double neo_string16_to_number(const uint16_t *str);
+uint16_t *neo_string16_decode(neo_allocator_t allocator, const uint16_t *src);
 
 #endif

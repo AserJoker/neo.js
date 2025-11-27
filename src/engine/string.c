@@ -21,7 +21,9 @@ void neo_init_js_string(neo_js_string_t self, neo_allocator_t allocator,
   size_t len = neo_string16_length(value);
   self->value =
       neo_allocator_alloc(allocator, sizeof(uint16_t) * (len + 1), NULL);
-  memcpy(self->value, value, sizeof(uint16_t) * len);
+  if (len) {
+    memcpy(self->value, value, sizeof(uint16_t) * len);
+  }
   self->value[len] = 0;
 }
 void neo_deinit_js_string(neo_js_string_t self, neo_allocator_t allocator) {
