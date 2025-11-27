@@ -11,6 +11,8 @@
 #include "runtime/array_iterator.h"
 #include "runtime/error.h"
 #include "runtime/function.h"
+#include "runtime/generator.h"
+#include "runtime/generator_function.h"
 #include "runtime/iterator.h"
 #include "runtime/object.h"
 #include "runtime/range_error.h"
@@ -54,6 +56,8 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   neo_initialize_js_syntax_error(ctx);
   neo_initialize_js_reference_error(ctx);
   neo_initialize_js_range_error(ctx);
+  neo_initialize_js_generator_function(ctx);
+  neo_initialize_js_generator(ctx);
 
   neo_js_scope_set_variable(root_scope, constant->global, NULL);
   neo_js_scope_set_variable(root_scope, constant->uninitialized, NULL);
@@ -97,6 +101,11 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   neo_js_scope_set_variable(root_scope, constant->syntax_error_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->reference_error_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->range_error_class, NULL);
+  neo_js_scope_set_variable(root_scope, constant->generator_function_class,
+                            NULL);
+  neo_js_scope_set_variable(root_scope, constant->generator_function_prototype,
+                            NULL);
+  neo_js_scope_set_variable(root_scope, constant->generator_prototype, NULL);
 
   NEO_JS_DEF_FIELD(ctx, constant->global, "global", constant->global);
   NEO_JS_DEF_FIELD(ctx, constant->global, "undefined", constant->undefined);

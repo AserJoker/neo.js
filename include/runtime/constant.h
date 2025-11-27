@@ -61,6 +61,11 @@ struct _neo_js_constant_t {
   neo_js_variable_t reference_error_class;
   // reference_error
   neo_js_variable_t range_error_class;
+  // generator function
+  neo_js_variable_t generator_function_prototype;
+  neo_js_variable_t generator_function_class;
+  // generator
+  neo_js_variable_t generator_prototype;
 };
 typedef struct _neo_js_constant_t *neo_js_constant_t;
 void neo_initialize_js_constant(neo_js_context_t ctx);

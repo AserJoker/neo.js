@@ -14,6 +14,7 @@
 #include "engine/exception.h"
 #include "engine/function.h"
 #include "engine/handle.h"
+#include "engine/interrupt.h"
 #include "engine/number.h"
 #include "engine/object.h"
 #include "engine/runtime.h"
@@ -39,12 +40,15 @@ struct _neo_js_context_t {
   neo_js_scope_t root_scope;
   neo_js_scope_t current_scope;
   neo_list_t callstack;
+  neo_list_t tasks;
+  neo_js_variable_t taskroot;
   struct _neo_js_constant_t constant;
   neo_js_context_type_t type;
 };
 
 static void neo_js_context_dispose(neo_allocator_t allocator,
                                    neo_js_context_t self) {
+  neo_allocator_free(allocator, self->tasks);
   self->root_scope = NULL;
   while (self->current_scope) {
     neo_js_context_pop_scope(self);
@@ -62,6 +66,7 @@ neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime) {
   ctx->type = NEO_JS_CONTEXT_MODULE;
   neo_list_initialize_t initialize = {true};
   ctx->callstack = neo_create_list(allocator, &initialize);
+  ctx->tasks = neo_create_list(allocator, &initialize);
   const char *funcname = "_.start";
   uint16_t fname[16];
   uint16_t *dst = fname;
@@ -76,6 +81,7 @@ neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime) {
   neo_js_context_push_scope(ctx);
   neo_initialize_js_constant(ctx);
   neo_js_context_pop_scope(ctx);
+  ctx->taskroot = neo_js_context_create_object(ctx, ctx->constant.null);
   return ctx;
 }
 
@@ -314,11 +320,37 @@ neo_js_variable_t neo_js_context_create_function(neo_js_context_t self,
   neo_js_variable_def_field(result, self, key, funcname, false, false, false);
   return result;
 }
+neo_js_variable_t neo_js_context_create_generator(neo_js_context_t self,
+                                                  neo_program_t program) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  neo_js_function_t function = neo_create_js_function(
+      allocator, program, self->constant.generator_function_prototype->value);
+  function->super.generator = true;
+  neo_js_value_t value = neo_js_function_to_value(function);
+  neo_js_variable_t result = neo_js_context_create_variable(self, value);
+  neo_js_variable_t prototype = neo_js_context_create_object(self, NULL);
+  neo_js_variable_t key = self->constant.key_prototype;
+  neo_js_variable_def_field(result, self, key, prototype, true, false, true);
+  neo_js_variable_t funcname = neo_js_context_create_cstring(self, "");
+  key = self->constant.key_name;
+  neo_js_variable_def_field(result, self, key, funcname, false, false, false);
+  return result;
+}
 neo_js_variable_t neo_js_context_create_signal(neo_js_context_t self,
                                                uint32_t type, const void *msg) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   neo_js_signal_t signal = neo_create_js_signal(allocator, type, msg);
   return neo_js_context_create_variable(self, &signal->super);
+}
+neo_js_variable_t neo_js_context_create_interrupt(neo_js_context_t self,
+                                                  neo_js_variable_t value,
+                                                  size_t address,
+                                                  neo_program_t program,
+                                                  neo_js_vm_t vm) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  neo_js_interrupt_t interrupt = neo_create_js_interrupt(
+      allocator, value, address, program, vm, self->current_scope);
+  return neo_js_context_create_variable(self, &interrupt->super);
 }
 
 neo_js_variable_t neo_js_context_load(neo_js_context_t self, const char *name) {
@@ -531,8 +563,13 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
   neo_program_write(allocator, fp, program);
   fclose(fp);
 
+  neo_js_scope_t scope = self->current_scope;
   neo_js_vm_t vm = neo_create_js_vm(self, NULL);
   neo_js_variable_t result = neo_js_vm_run(vm, self, program, 0);
   neo_allocator_free(allocator, vm);
+  neo_js_scope_set_variable(scope, result, NULL);
+  while (self->current_scope != scope) {
+    neo_js_context_pop_scope(self);
+  }
   return result;
 }
