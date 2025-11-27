@@ -1174,8 +1174,10 @@ neo_js_variable_t neo_js_variable_get_keys(neo_js_variable_t self,
   neo_hash_map_t cache = neo_create_hash_map(allocator, &initialize);
   neo_js_object_t obj = (neo_js_object_t)self->value;
   neo_js_object_get_keys(keys, cache, obj);
-  neo_list_sort(neo_list_get_first(keys), neo_list_get_last(keys),
-                (neo_compare_fn_t)neo_js_sort_key_compare);
+  if (neo_list_get_size(keys)) {
+    neo_list_sort(neo_list_get_first(keys), neo_list_get_last(keys),
+                  (neo_compare_fn_t)neo_js_sort_key_compare);
+  }
   neo_js_variable_t res = neo_js_context_create_array(ctx);
   size_t idx = 0;
   for (neo_list_node_t it = neo_list_get_first(keys);
