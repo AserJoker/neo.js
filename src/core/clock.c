@@ -1,7 +1,6 @@
 #include "core/clock.h"
 #include <stdbool.h>
 #include <string.h>
-#include <wchar.h>
 #ifdef _WIN32
 #include <Windows.h>
 #include <winnt.h>

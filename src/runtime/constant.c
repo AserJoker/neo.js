@@ -15,10 +15,12 @@
 #include "runtime/generator_function.h"
 #include "runtime/iterator.h"
 #include "runtime/object.h"
+#include "runtime/promise.h"
 #include "runtime/range_error.h"
 #include "runtime/reference_error.h"
 #include "runtime/symbol.h"
 #include "runtime/syntax_error.h"
+#include "runtime/time.h"
 #include "runtime/type_error.h"
 #include <math.h>
 
@@ -58,6 +60,8 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   neo_initialize_js_range_error(ctx);
   neo_initialize_js_generator_function(ctx);
   neo_initialize_js_generator(ctx);
+  neo_initialize_js_promise(ctx);
+  neo_initialize_js_time(ctx);
 
   neo_js_scope_set_variable(root_scope, constant->global, NULL);
   neo_js_scope_set_variable(root_scope, constant->uninitialized, NULL);
@@ -106,6 +110,11 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   neo_js_scope_set_variable(root_scope, constant->generator_function_prototype,
                             NULL);
   neo_js_scope_set_variable(root_scope, constant->generator_prototype, NULL);
+  neo_js_scope_set_variable(root_scope, constant->promise_class, NULL);
+  neo_js_scope_set_variable(root_scope, constant->set_timeout, NULL);
+  neo_js_scope_set_variable(root_scope, constant->clear_timeout, NULL);
+  neo_js_scope_set_variable(root_scope, constant->set_interval, NULL);
+  neo_js_scope_set_variable(root_scope, constant->clear_interval, NULL);
 
   NEO_JS_DEF_FIELD(ctx, constant->global, "global", constant->global);
   NEO_JS_DEF_FIELD(ctx, constant->global, "undefined", constant->undefined);
@@ -125,4 +134,12 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
                    constant->reference_error_class);
   NEO_JS_DEF_FIELD(ctx, constant->global, "RangeError",
                    constant->range_error_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "Promise", constant->promise_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "setTimeout", constant->set_timeout);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "clearTimeout",
+                   constant->clear_timeout);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "setInterval",
+                   constant->set_interval);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "clearInterval",
+                   constant->clear_interval);
 }

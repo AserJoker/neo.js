@@ -23,7 +23,12 @@ typedef enum _neo_js_context_type_t {
   NEO_JS_CONTEXT_CONSTRUCT,
 } neo_js_context_type_t;
 typedef struct _neo_js_context_t *neo_js_context_t;
+typedef void (*neo_js_error_callback)(neo_js_context_t ctx,
+                                      neo_js_variable_t error);
 neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime);
+void neo_js_context_set_error_callback(neo_js_context_t self,
+                                       neo_js_error_callback callback);
+neo_js_error_callback neo_js_context_get_error_callback(neo_js_context_t self);
 neo_js_constant_t neo_js_context_get_constant(neo_js_context_t self);
 neo_js_runtime_t neo_js_context_get_runtime(neo_js_context_t self);
 neo_js_context_type_t neo_js_context_get_type(neo_js_context_t self);
@@ -97,7 +102,12 @@ neo_js_variable_t neo_js_context_get_argument(neo_js_context_t self,
                                               size_t argc,
                                               neo_js_variable_t *argv,
                                               size_t idx);
-
+int64_t neo_js_context_create_macro_task(neo_js_context_t self,
+                                         neo_js_variable_t callee,
+                                         int64_t timeout, bool keep);
+void neo_js_context_remove_macro_task(neo_js_context_t self, int64_t idx);
+bool neo_js_context_next_task(neo_js_context_t self);
+bool neo_js_context_has_task(neo_js_context_t self);
 neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
                                       const char *filename);
 

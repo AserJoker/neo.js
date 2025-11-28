@@ -1,0 +1,14 @@
+#ifndef _H_NEO_RUNTIME_PROMISE_
+#define _H_NEO_RUNTIME_PROMISE_
+#include "engine/variable.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
+NEO_JS_CFUNCTION(neo_js_promise_resolve);
+NEO_JS_CFUNCTION(neo_js_promise_constructor);
+NEO_JS_CFUNCTION(neo_js_promise_then);
+void neo_initialize_js_promise(neo_js_context_t ctx);
+#ifdef __cplusplus
+}
+#endif
+#endif

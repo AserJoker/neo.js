@@ -79,7 +79,14 @@ int main(int argc, char *argv[]) {
   neo_js_variable_set_field(
       global, ctx, neo_js_context_create_cstring(ctx, "print"), js_print);
   neo_js_variable_t res = neo_js_context_eval(ctx, source, "index.mjs");
-  print(ctx, neo_js_context_get_undefined(ctx), 1, &res);
+  if (res->value->type != NEO_JS_TYPE_EXCEPTION) {
+    while (neo_js_context_has_task(ctx)) {
+      neo_js_context_next_task(ctx);
+    }
+  } else {
+    neo_js_error_callback cb = neo_js_context_get_error_callback(ctx);
+    cb(ctx, res);
+  }
   neo_allocator_free(allocator, source);
   neo_allocator_free(allocator, ctx);
   neo_allocator_free(allocator, rt);

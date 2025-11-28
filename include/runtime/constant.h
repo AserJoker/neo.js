@@ -66,6 +66,13 @@ struct _neo_js_constant_t {
   neo_js_variable_t generator_function_class;
   // generator
   neo_js_variable_t generator_prototype;
+  // promise
+  neo_js_variable_t promise_class;
+  // time
+  neo_js_variable_t set_timeout;
+  neo_js_variable_t clear_timeout;
+  neo_js_variable_t set_interval;
+  neo_js_variable_t clear_interval;
 };
 typedef struct _neo_js_constant_t *neo_js_constant_t;
 void neo_initialize_js_constant(neo_js_context_t ctx);
