@@ -1,10 +1,95 @@
 #include "runtime/promise.h"
+#include "core/allocator.h"
+#include "core/list.h"
 #include "engine/context.h"
+#include "engine/exception.h"
+#include "engine/runtime.h"
+#include "engine/value.h"
 #include "engine/variable.h"
 #include "runtime/constant.h"
 
+struct _neo_js_promise_t {
+  neo_list_t onfulfilled;
+  neo_list_t onrejected;
+  neo_js_value_t value;
+};
+
+typedef struct _neo_js_promise_t *neo_js_promise_t;
+
+static void neo_js_promise_dispose(neo_allocator_t allocator,
+                                   neo_js_promise_t promise) {
+  neo_allocator_free(allocator, promise->onfulfilled);
+  neo_allocator_free(allocator, promise->onrejected);
+}
+
+static neo_js_promise_t neo_create_js_promise(neo_allocator_t allocator) {
+  neo_js_promise_t promise = neo_allocator_alloc(
+      allocator, sizeof(struct _neo_js_promise_t), neo_js_promise_dispose);
+  promise->value = NULL;
+  promise->onfulfilled = neo_create_list(allocator, NULL);
+  promise->onrejected = neo_create_list(allocator, NULL);
+  return promise;
+}
+
 NEO_JS_CFUNCTION(neo_js_promise_resolve) { return self; }
-NEO_JS_CFUNCTION(neo_js_promise_constructor) { return self; }
+
+NEO_JS_CFUNCTION(neo_js_promise_callback_resolve) {
+  neo_js_variable_t value = neo_js_context_get_argument(ctx, argc, argv, 0);
+  neo_js_promise_t promise = neo_js_variable_get_opaque(self, ctx, "promise");
+  if (!promise->value) {
+    promise->value = value->value;
+    neo_js_value_add_parent(promise->value, self->value);
+    for (neo_list_node_t it = neo_list_get_first(promise->onfulfilled);
+         it != neo_list_get_tail(promise->onfulfilled);
+         it = neo_list_node_next(it)) {
+      neo_js_value_t callback = neo_list_node_get(it);
+      neo_js_variable_t fn = neo_js_context_create_variable(ctx, callback);
+      neo_js_variable_call(fn, ctx, neo_js_context_get_undefined(ctx), 1,
+                           &value);
+    }
+  }
+  return neo_js_context_get_undefined(ctx);
+}
+NEO_JS_CFUNCTION(neo_js_promise_callback_reject) {
+  neo_js_variable_t value = neo_js_context_get_argument(ctx, argc, argv, 0);
+  neo_js_promise_t promise = neo_js_variable_get_opaque(self, ctx, "promise");
+  if (!promise->value) {
+    promise->value = neo_js_context_create_exception(ctx, value)->value;
+    neo_js_value_add_parent(promise->value, self->value);
+    for (neo_list_node_t it = neo_list_get_first(promise->onfulfilled);
+         it != neo_list_get_tail(promise->onfulfilled);
+         it = neo_list_node_next(it)) {
+      neo_js_value_t callback = neo_list_node_get(it);
+      neo_js_variable_t fn = neo_js_context_create_variable(ctx, callback);
+      neo_js_variable_call(fn, ctx, neo_js_context_get_undefined(ctx), 1,
+                           &value);
+    }
+  }
+  return neo_js_context_get_undefined(ctx);
+}
+
+NEO_JS_CFUNCTION(neo_js_promise_constructor) {
+  neo_js_variable_t callback = neo_js_context_get_argument(ctx, argc, argv, 0);
+  neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
+  neo_js_promise_t promise = neo_create_js_promise(allocator);
+  neo_js_variable_set_opaque(self, ctx, "promise", promise);
+  neo_js_variable_t resolve = neo_js_context_create_cfunction(
+      ctx, neo_js_promise_callback_resolve, "resolve");
+  neo_js_variable_set_bind(resolve, ctx, self);
+  neo_js_variable_t reject = neo_js_context_create_cfunction(
+      ctx, neo_js_promise_callback_reject, "reject");
+  neo_js_variable_set_bind(reject, ctx, self);
+  neo_js_variable_t args[] = {resolve, reject};
+  neo_js_variable_t res = neo_js_variable_call(
+      callback, ctx, neo_js_context_get_undefined(ctx), 2, args);
+  if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
+    neo_js_variable_t error = neo_js_context_create_variable(
+        ctx, ((neo_js_exception_t)res->value)->error);
+    neo_js_promise_callback_reject(ctx, self, 1, &error);
+  }
+  return self;
+}
 NEO_JS_CFUNCTION(neo_js_promise_then) { return self; }
 void neo_initialize_js_promise(neo_js_context_t ctx) {
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);

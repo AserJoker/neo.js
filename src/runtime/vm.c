@@ -1089,23 +1089,7 @@ static void neo_js_vm_spread(neo_js_vm_t vm, neo_js_context_t ctx,
   neo_js_variable_t current = neo_js_vm_get_value(vm);
   neo_list_pop(vm->stack);
   neo_js_variable_t target = neo_js_vm_get_value(vm);
-  if (target->value->type == NEO_JS_TYPE_OBJECT) {
-    neo_js_variable_t keys = neo_js_variable_get_keys(current, ctx);
-    NEO_JS_VM_CHECK(vm, keys, program, offset);
-    neo_js_variable_t length = neo_js_variable_get_field(
-        keys, ctx, neo_js_context_create_cstring(ctx, "length"));
-    uint32_t len = ((neo_js_number_t)length->value)->value;
-    for (uint32_t idx = 0; idx < len; idx++) {
-      neo_js_variable_t key = neo_js_variable_get_field(
-          keys, ctx, neo_js_context_create_number(ctx, idx));
-      NEO_JS_VM_CHECK(vm, key, program, offset);
-      neo_js_variable_t value = neo_js_variable_get_field(current, ctx, key);
-      NEO_JS_VM_CHECK(vm, value, program, offset);
-      neo_js_variable_t err =
-          neo_js_variable_set_field(target, ctx, key, value);
-      NEO_JS_VM_CHECK(vm, err, program, offset);
-    }
-  } else if (target->value->type == NEO_JS_TYPE_ARRAY) {
+  if (target->value->type == NEO_JS_TYPE_ARRAY) {
     neo_js_variable_t iterator =
         neo_js_context_get_constant(ctx)->symbol_iterator;
     iterator = neo_js_variable_get_field(current, ctx, iterator);
@@ -1164,6 +1148,22 @@ static void neo_js_vm_spread(neo_js_vm_t vm, neo_js_context_t ctx,
           result, ctx, neo_js_context_create_cstring(ctx, "value"));
       NEO_JS_VM_CHECK(vm, value, program, offset);
       neo_js_variable_t err = neo_js_array_push(ctx, target, 1, &value);
+      NEO_JS_VM_CHECK(vm, err, program, offset);
+    }
+  } else if (target->value->type >= NEO_JS_TYPE_OBJECT) {
+    neo_js_variable_t keys = neo_js_variable_get_keys(current, ctx);
+    NEO_JS_VM_CHECK(vm, keys, program, offset);
+    neo_js_variable_t length = neo_js_variable_get_field(
+        keys, ctx, neo_js_context_create_cstring(ctx, "length"));
+    uint32_t len = ((neo_js_number_t)length->value)->value;
+    for (uint32_t idx = 0; idx < len; idx++) {
+      neo_js_variable_t key = neo_js_variable_get_field(
+          keys, ctx, neo_js_context_create_number(ctx, idx));
+      NEO_JS_VM_CHECK(vm, key, program, offset);
+      neo_js_variable_t value = neo_js_variable_get_field(current, ctx, key);
+      NEO_JS_VM_CHECK(vm, value, program, offset);
+      neo_js_variable_t err =
+          neo_js_variable_set_field(target, ctx, key, value);
       NEO_JS_VM_CHECK(vm, err, program, offset);
     }
   }
