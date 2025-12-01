@@ -44,6 +44,7 @@ struct _neo_js_context_t {
   neo_js_scope_t current_scope;
   neo_list_t callstack;
   neo_list_t macro_tasks;
+  neo_list_t micro_tasks;
   neo_js_variable_t taskroot;
   struct _neo_js_constant_t constant;
   neo_js_context_type_t type;
@@ -59,6 +60,13 @@ static void neo_js_context_delete_task(neo_js_context_t self,
 }
 static void neo_js_context_dispose(neo_allocator_t allocator,
                                    neo_js_context_t self) {
+  while (neo_list_get_size(self->micro_tasks)) {
+    neo_list_node_t it = neo_list_get_first(self->micro_tasks);
+    neo_js_task_t task = neo_list_node_get(it);
+    neo_list_erase(self->micro_tasks, it);
+    neo_js_context_delete_task(self, task);
+  }
+  neo_allocator_free(allocator, self->micro_tasks);
   while (neo_list_get_size(self->macro_tasks)) {
     neo_list_node_t it = neo_list_get_first(self->macro_tasks);
     neo_js_task_t task = neo_list_node_get(it);
@@ -107,6 +115,7 @@ neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime) {
   neo_list_initialize_t initialize = {true};
   ctx->callstack = neo_create_list(allocator, &initialize);
   ctx->macro_tasks = neo_create_list(allocator, NULL);
+  ctx->micro_tasks = neo_create_list(allocator, NULL);
   const char *funcname = "_.start";
   uint16_t fname[16];
   uint16_t *dst = fname;
@@ -607,14 +616,42 @@ void neo_js_context_remove_macro_task(neo_js_context_t self, int64_t idx) {
     }
   }
 }
-bool neo_js_context_next_task(neo_js_context_t self) {
-  if (!neo_js_context_has_task(self)) {
+
+int64_t neo_js_context_create_micro_task(neo_js_context_t self,
+                                         neo_js_variable_t callee,
+                                         int64_t timeout, bool keep) {
+  static size_t idx = 0;
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  neo_js_task_t task =
+      neo_create_js_task(allocator, ++idx, callee->value, timeout, keep);
+  neo_js_value_add_parent(callee->value, self->taskroot->value);
+  neo_list_push(self->micro_tasks, task);
+  return idx;
+}
+
+void neo_js_context_remove_micro_task(neo_js_context_t self, int64_t idx) {
+  for (neo_list_node_t it = neo_list_get_last(self->micro_tasks);
+       it != neo_list_get_head(self->micro_tasks);
+       it = neo_list_node_last(it)) {
+    neo_js_task_t task = neo_list_node_get(it);
+    if (task->idx == idx) {
+      neo_list_erase(self->micro_tasks, it);
+      neo_js_context_delete_task(self, task);
+      return;
+    }
+  }
+}
+
+static bool neo_js_context_exec_next_task(neo_js_context_t self,
+                                          neo_list_t tasks) {
+  if (neo_list_get_size(tasks) == 0) {
     return false;
   }
-  neo_list_node_t it = neo_list_get_first(self->macro_tasks);
+  neo_list_node_t it = neo_list_get_first(tasks);
   neo_js_task_t task = neo_list_node_get(it);
-  neo_list_erase(self->macro_tasks, it);
-  if (neo_clock_get_timestamp() - task->start >= task->time) {
+  neo_list_erase(tasks, it);
+  int64_t now = neo_clock_get_timestamp();
+  if (now - task->start >= task->time) {
     neo_js_context_push_scope(self);
     neo_js_variable_t callee =
         neo_js_context_create_variable(self, task->callee);
@@ -624,7 +661,7 @@ bool neo_js_context_next_task(neo_js_context_t self) {
       neo_js_context_delete_task(self, task);
     } else {
       task->start = neo_clock_get_timestamp();
-      neo_list_push(self->macro_tasks, task);
+      neo_list_push(tasks, task);
     }
     if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
       neo_js_exception_t exception = (neo_js_exception_t)res->value;
@@ -635,12 +672,20 @@ bool neo_js_context_next_task(neo_js_context_t self) {
     neo_js_context_pop_scope(self);
     return true;
   } else {
-    neo_list_push(self->macro_tasks, task);
+    neo_list_push(tasks, task);
     return false;
   }
 }
+
+bool neo_js_context_next_task(neo_js_context_t self) {
+  if (neo_js_context_exec_next_task(self, self->micro_tasks)) {
+    return true;
+  }
+  return neo_js_context_exec_next_task(self, self->macro_tasks);
+}
 bool neo_js_context_has_task(neo_js_context_t self) {
-  return neo_list_get_size(self->macro_tasks) != 0;
+  return neo_list_get_size(self->micro_tasks) != 0 ||
+         neo_list_get_size(self->macro_tasks) != 0;
 }
 
 neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
