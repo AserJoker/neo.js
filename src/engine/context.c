@@ -480,9 +480,9 @@ neo_js_variable_t neo_js_context_store(neo_js_context_t self, const char *name,
     return neo_js_context_create_exception(self, error);
   }
   neo_js_context_create_variable(self, current->value);
-  neo_js_handle_dispose(&current->value->handle);
+  neo_js_handle_remove_parent(&current->value->handle, &current->handle);
   current->value = variable->value;
-  neo_js_handle_add_ref(&current->value->handle);
+  neo_js_handle_add_parent(&current->value->handle, &current->handle);
   return current;
 }
 neo_js_variable_t neo_js_context_def(neo_js_context_t self, const char *name,
@@ -618,12 +618,11 @@ void neo_js_context_remove_macro_task(neo_js_context_t self, int64_t idx) {
 }
 
 int64_t neo_js_context_create_micro_task(neo_js_context_t self,
-                                         neo_js_variable_t callee,
-                                         int64_t timeout, bool keep) {
+                                         neo_js_variable_t callee) {
   static size_t idx = 0;
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   neo_js_task_t task =
-      neo_create_js_task(allocator, ++idx, callee->value, timeout, keep);
+      neo_create_js_task(allocator, ++idx, callee->value, 0, false);
   neo_js_value_add_parent(callee->value, self->taskroot->value);
   neo_list_push(self->micro_tasks, task);
   return idx;

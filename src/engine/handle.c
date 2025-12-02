@@ -3,12 +3,12 @@
 #include "core/list.h"
 void neo_init_js_handle(neo_js_handle_t self, neo_allocator_t allocator) {
   self->age = 0;
-  self->ref = 0;
   self->is_alive = true;
   self->is_check = false;
   self->is_disposed = false;
   self->parent = neo_create_list(allocator, NULL);
   self->children = neo_create_list(allocator, NULL);
+  self->is_root = false;
 }
 void neo_deinit_js_handle(neo_js_handle_t self, neo_allocator_t allocator) {
   neo_allocator_free(allocator, self->children);
@@ -29,7 +29,7 @@ static void neo_js_handle_check(neo_js_handle_t self, uint32_t age) {
     return;
   }
   self->age = age;
-  if (self->ref) {
+  if (self->is_root) {
     self->is_alive = true;
     return;
   }
@@ -77,11 +77,4 @@ void neo_js_handle_gc(neo_allocator_t allocator, neo_list_t handles,
       }
     }
   }
-}
-void neo_js_handle_add_ref(neo_js_handle_t self) { self->ref++; }
-bool neo_js_handle_dispose(neo_js_handle_t self) {
-  if (self->ref && !--self->ref) {
-    return true;
-  }
-  return false;
 }

@@ -107,8 +107,7 @@ int64_t neo_js_context_create_macro_task(neo_js_context_t self,
                                          int64_t timeout, bool keep);
 void neo_js_context_remove_macro_task(neo_js_context_t self, int64_t idx);
 int64_t neo_js_context_create_micro_task(neo_js_context_t self,
-                                         neo_js_variable_t callee,
-                                         int64_t timeout, bool keep);
+                                         neo_js_variable_t callee);
 void neo_js_context_remove_micro_task(neo_js_context_t self, int64_t idx);
 bool neo_js_context_next_task(neo_js_context_t self);
 bool neo_js_context_has_task(neo_js_context_t self);

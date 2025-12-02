@@ -1,5 +1,6 @@
 'use strict'
-const idx = setTimeout(() => {
-    print('hello world')
-}, 1000)
-print(idx)
+const pro = new Promise((resolve) => {
+    resolve(123)
+})
+pro.then((val) => print(val))
+print(234)

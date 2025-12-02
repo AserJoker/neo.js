@@ -68,6 +68,7 @@ struct _neo_js_constant_t {
   neo_js_variable_t generator_prototype;
   // promise
   neo_js_variable_t promise_class;
+  neo_js_variable_t promise_prototype;
   // time
   neo_js_variable_t set_timeout;
   neo_js_variable_t clear_timeout;

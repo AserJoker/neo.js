@@ -45,7 +45,7 @@ neo_js_variable_t neo_create_js_variable(neo_allocator_t allocator,
   variable->is_await_using = false;
   variable->is_const = false;
   variable->value = value;
-  neo_js_handle_add_ref(&value->handle);
+  neo_js_handle_add_parent(&value->handle, &variable->handle);
   return variable;
 }
 
@@ -834,6 +834,13 @@ neo_js_variable_t neo_js_variable_call_function(neo_js_variable_t self,
   neo_js_scope_set_variable(scope, arguments, "arguments");
   neo_js_scope_set_variable(scope, bind, NULL);
   neo_js_scope_t origin_scope = neo_js_context_set_scope(ctx, scope);
+  neo_map_node_t it = neo_map_get_first(callable->closure);
+  while (it != neo_map_get_tail(callable->closure)) {
+    neo_js_variable_t variable = neo_map_node_get_value(it);
+    const char *name = neo_map_node_get_key(it);
+    neo_js_scope_set_variable(scope, variable, name);
+    it = neo_map_node_next(it);
+  }
   if (callable->generator && callable->async) {
     // TODO: async generator
     neo_js_variable_t error =
@@ -1110,7 +1117,7 @@ neo_js_variable_t neo_js_variable_set_closure(neo_js_variable_t self,
   neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
   neo_map_set(function->closure, neo_create_string(allocator, name), value);
-  neo_js_handle_add_parent(&value->handle, &self->handle);
+  neo_js_handle_add_parent(&value->handle, &self->value->handle);
   return self;
 }
 neo_js_variable_t neo_js_variable_set_bind(neo_js_variable_t self,
@@ -1569,9 +1576,9 @@ neo_js_variable_t neo_js_variable_inc(neo_js_variable_t self,
       neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
   neo_js_number_t num = neo_create_js_number(allocator, value);
   neo_js_context_create_variable(ctx, self->value);
-  neo_js_handle_dispose(&self->value->handle);
+  neo_js_handle_remove_parent(&self->value->handle, &self->handle);
   self->value = &num->super;
-  neo_js_handle_add_ref(&self->value->handle);
+  neo_js_handle_add_parent(&self->value->handle, &self->handle);
   return self;
 }
 neo_js_variable_t neo_js_variable_dec(neo_js_variable_t self,
@@ -1593,9 +1600,9 @@ neo_js_variable_t neo_js_variable_dec(neo_js_variable_t self,
       neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
   neo_js_number_t num = neo_create_js_number(allocator, value);
   neo_js_context_create_variable(ctx, self->value);
-  neo_js_handle_dispose(&self->value->handle);
+  neo_js_handle_remove_parent(&self->value->handle, &self->handle);
   self->value = &num->super;
-  neo_js_handle_add_ref(&self->value->handle);
+  neo_js_handle_add_parent(&self->value->handle, &self->handle);
   return self;
 }
 
@@ -2041,20 +2048,9 @@ neo_js_variable_t neo_js_variable_instance_of(neo_js_variable_t self,
   return neo_js_context_get_false(ctx);
 }
 
-static void neo_js_variable_on_gc(neo_allocator_t allocator,
-                                  neo_js_variable_t self, neo_list_t values) {
-  if (neo_js_handle_dispose(&self->value->handle)) {
-    neo_list_push(values, self->value);
-  }
-}
-
 void neo_js_variable_gc(neo_allocator_t allocator, neo_list_t variables) {
-  neo_list_initialize_t initalize = {true};
-  neo_list_t destroyed = neo_create_list(allocator, &initalize);
-  neo_list_t values = neo_create_list(allocator, NULL);
-  neo_js_handle_gc(allocator, variables, destroyed,
-                   (neo_js_handle_on_gc_fn_t)neo_js_variable_on_gc, values);
+  neo_list_initialize_t initialize = {true};
+  neo_list_t destroyed = neo_create_list(allocator, &initialize);
+  neo_js_handle_gc(allocator, variables, destroyed, NULL, NULL);
   neo_allocator_free(allocator, destroyed);
-  neo_js_value_gc(allocator, values);
-  neo_allocator_free(allocator, values);
 }

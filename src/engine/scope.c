@@ -8,6 +8,7 @@
 #include <string.h>
 
 struct _neo_js_scope_t {
+  struct _neo_js_handle_t handle;
   neo_js_scope_t parent;
   neo_list_t children;
   neo_list_t variables;
@@ -34,12 +35,12 @@ static void neo_js_scope_dispose(neo_allocator_t allocator,
   while (it != neo_list_get_tail(self->variables)) {
     neo_js_variable_t variable = neo_list_node_get(it);
     it = neo_list_node_next(it);
-    if (neo_js_handle_dispose(&variable->handle)) {
-      neo_list_push(variables, variable);
-    }
+    neo_list_push(variables, variable);
+    neo_js_handle_remove_parent(&variable->handle, &self->handle);
   }
   neo_js_variable_gc(allocator, variables);
   neo_allocator_free(allocator, variables);
+  neo_deinit_js_handle(&self->handle, allocator);
   neo_allocator_free(allocator, self->children);
   neo_allocator_free(allocator, self->variables);
   neo_allocator_free(allocator, self->named_variables);
@@ -67,6 +68,8 @@ neo_js_scope_t neo_create_js_scope(neo_allocator_t allocator,
   neo_list_initialize_t initialize = {true};
   scope->defer_free = neo_create_list(allocator, &initialize);
   scope->allocator = allocator;
+  neo_init_js_handle(&scope->handle, allocator);
+  scope->handle.is_root = true;
   return scope;
 }
 
@@ -86,7 +89,7 @@ neo_js_variable_t neo_js_scope_set_variable(neo_js_scope_t self,
                 variable);
   }
   neo_list_push(self->variables, variable);
-  neo_js_handle_add_ref(&variable->handle);
+  neo_js_handle_add_parent(&variable->handle, &self->handle);
   return variable;
 }
 

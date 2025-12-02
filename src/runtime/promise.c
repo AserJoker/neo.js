@@ -33,38 +33,85 @@ static neo_js_promise_t neo_create_js_promise(neo_allocator_t allocator) {
 
 NEO_JS_CFUNCTION(neo_js_promise_resolve) { return self; }
 
-NEO_JS_CFUNCTION(neo_js_promise_callback_resolve) {
+NEO_JS_CFUNCTION(neo_js_promise_callback) {
   neo_js_variable_t value = neo_js_context_get_argument(ctx, argc, argv, 0);
   neo_js_promise_t promise = neo_js_variable_get_opaque(self, ctx, "promise");
-  if (!promise->value) {
-    promise->value = value->value;
-    neo_js_value_add_parent(promise->value, self->value);
+  if (promise->value) {
+    return neo_js_context_get_undefined(ctx);
+  }
+  promise->value = value->value;
+  neo_js_value_add_parent(promise->value, self->value);
+  if (promise->value->type == NEO_JS_TYPE_EXCEPTION) {
+    neo_js_variable_t error = neo_js_context_create_variable(
+        ctx, ((neo_js_exception_t)value->value)->error);
+    for (neo_list_node_t it = neo_list_get_first(promise->onrejected);
+         it != neo_list_get_tail(promise->onrejected);
+         it = neo_list_node_next(it)) {
+      neo_js_value_t fn = neo_list_node_get(it);
+      neo_js_variable_t callback = neo_js_context_create_variable(ctx, fn);
+      neo_js_variable_call(callback, ctx, neo_js_context_get_undefined(ctx), 1,
+                           &error);
+    }
+  } else {
     for (neo_list_node_t it = neo_list_get_first(promise->onfulfilled);
          it != neo_list_get_tail(promise->onfulfilled);
          it = neo_list_node_next(it)) {
-      neo_js_value_t callback = neo_list_node_get(it);
-      neo_js_variable_t fn = neo_js_context_create_variable(ctx, callback);
-      neo_js_variable_call(fn, ctx, neo_js_context_get_undefined(ctx), 1,
+      neo_js_value_t fn = neo_list_node_get(it);
+      neo_js_variable_t callback = neo_js_context_create_variable(ctx, fn);
+      neo_js_variable_call(callback, ctx, neo_js_context_get_undefined(ctx), 1,
                            &value);
     }
   }
   return neo_js_context_get_undefined(ctx);
 }
-NEO_JS_CFUNCTION(neo_js_promise_callback_reject) {
+
+NEO_JS_CFUNCTION(neo_js_promise_task) {
+  neo_js_variable_t value = neo_js_context_load(ctx, "value");
+  neo_js_variable_t callback = neo_js_context_load(ctx, "callback");
+  neo_js_variable_call(callback, ctx, neo_js_context_get_undefined(ctx), 1,
+                       &value);
+  return neo_js_context_get_undefined(ctx);
+}
+
+NEO_JS_CFUNCTION(neo_js_promise_callback_resolve) {
   neo_js_variable_t value = neo_js_context_get_argument(ctx, argc, argv, 0);
   neo_js_promise_t promise = neo_js_variable_get_opaque(self, ctx, "promise");
-  if (!promise->value) {
-    promise->value = neo_js_context_create_exception(ctx, value)->value;
-    neo_js_value_add_parent(promise->value, self->value);
-    for (neo_list_node_t it = neo_list_get_first(promise->onfulfilled);
-         it != neo_list_get_tail(promise->onfulfilled);
-         it = neo_list_node_next(it)) {
-      neo_js_value_t callback = neo_list_node_get(it);
-      neo_js_variable_t fn = neo_js_context_create_variable(ctx, callback);
-      neo_js_variable_call(fn, ctx, neo_js_context_get_undefined(ctx), 1,
-                           &value);
+  if (promise->value) {
+    return neo_js_context_get_undefined(ctx);
+  }
+  neo_js_variable_t callback =
+      neo_js_context_create_cfunction(ctx, neo_js_promise_callback, NULL);
+  neo_js_variable_set_bind(callback, ctx, self);
+  if (value->value->type >= NEO_JS_TYPE_OBJECT) {
+    neo_js_variable_t then = neo_js_variable_get_field(
+        value, ctx, neo_js_context_create_cstring(ctx, "then"));
+    if (then->value->type >= NEO_JS_TYPE_FUNCTION) {
+      neo_js_variable_call(then, ctx, value, 1, &callback);
+      return neo_js_context_get_undefined(ctx);
     }
   }
+  neo_js_variable_t task =
+      neo_js_context_create_cfunction(ctx, neo_js_promise_task, NULL);
+  neo_js_variable_set_closure(task, ctx, "callback", callback);
+  neo_js_variable_set_closure(task, ctx, "value", value);
+  neo_js_context_create_micro_task(ctx, task);
+  return neo_js_context_get_undefined(ctx);
+}
+NEO_JS_CFUNCTION(neo_js_promise_callback_reject) {
+  neo_js_variable_t error = neo_js_context_get_argument(ctx, argc, argv, 0);
+  neo_js_promise_t promise = neo_js_variable_get_opaque(self, ctx, "promise");
+  if (promise->value) {
+    return neo_js_context_get_undefined(ctx);
+  }
+  neo_js_variable_t callback =
+      neo_js_context_create_cfunction(ctx, neo_js_promise_callback, NULL);
+  neo_js_variable_set_bind(callback, ctx, self);
+  neo_js_variable_t value = neo_js_context_create_exception(ctx, error);
+  neo_js_variable_t task =
+      neo_js_context_create_cfunction(ctx, neo_js_promise_task, NULL);
+  neo_js_variable_set_closure(task, ctx, "callback", callback);
+  neo_js_variable_set_closure(task, ctx, "value", value);
+  neo_js_context_create_micro_task(ctx, task);
   return neo_js_context_get_undefined(ctx);
 }
 
@@ -86,18 +133,109 @@ NEO_JS_CFUNCTION(neo_js_promise_constructor) {
   if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
     neo_js_variable_t error = neo_js_context_create_variable(
         ctx, ((neo_js_exception_t)res->value)->error);
-    neo_js_promise_callback_reject(ctx, self, 1, &error);
+    neo_js_promise_callback_reject(ctx, neo_js_context_get_undefined(ctx), 1,
+                                   &error);
   }
   return self;
 }
-NEO_JS_CFUNCTION(neo_js_promise_then) { return self; }
+
+NEO_JS_CFUNCTION(neo_js_promise_onfulfilled) {
+  neo_js_variable_t value = neo_js_context_get_argument(ctx, argc, argv, 0);
+  neo_js_variable_t resolve = neo_js_context_load(ctx, "resolve");
+  neo_js_variable_t reject = neo_js_context_load(ctx, "reject");
+  neo_js_variable_t onfulfilled = neo_js_context_load(ctx, "onfulfilled");
+  if (onfulfilled->value->type >= NEO_JS_TYPE_FUNCTION) {
+    value = neo_js_variable_call(onfulfilled, ctx,
+                                 neo_js_context_get_undefined(ctx), 1, &value);
+  }
+  if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
+    neo_js_variable_call(reject, ctx, neo_js_context_get_undefined(ctx), 1,
+                         &value);
+  } else {
+    neo_js_variable_call(resolve, ctx, neo_js_context_get_undefined(ctx), 1,
+                         &value);
+  }
+  return neo_js_context_get_undefined(ctx);
+}
+NEO_JS_CFUNCTION(neo_js_promise_onrejected) {
+  neo_js_variable_t value = neo_js_context_get_argument(ctx, argc, argv, 0);
+  neo_js_variable_t resolve = neo_js_context_load(ctx, "resolve");
+  neo_js_variable_t reject = neo_js_context_load(ctx, "reject");
+  neo_js_variable_t onrejected = neo_js_context_load(ctx, "onrejected");
+  if (onrejected->value->type >= NEO_JS_TYPE_FUNCTION) {
+    value = neo_js_variable_call(onrejected, ctx,
+                                 neo_js_context_get_undefined(ctx), 1, &value);
+  }
+  if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
+    neo_js_variable_call(reject, ctx, neo_js_context_get_undefined(ctx), 1,
+                         &value);
+  } else {
+    neo_js_variable_call(resolve, ctx, neo_js_context_get_undefined(ctx), 1,
+                         &value);
+  }
+  return neo_js_context_get_undefined(ctx);
+}
+
+NEO_JS_CFUNCTION(neo_js_promise_transform) {
+  neo_js_variable_t resolve = neo_js_context_get_argument(ctx, argc, argv, 0);
+  neo_js_variable_t reject = neo_js_context_get_argument(ctx, argc, argv, 1);
+  neo_js_variable_t onfulfilled = neo_js_context_load(ctx, "onfulfilled");
+  neo_js_variable_t onrejected = neo_js_context_load(ctx, "onrejected");
+  neo_js_promise_t promise = neo_js_variable_get_opaque(self, ctx, "promise");
+  neo_js_variable_t onfulfilled_callback =
+      neo_js_context_create_cfunction(ctx, neo_js_promise_onfulfilled, NULL);
+  neo_js_variable_set_closure(onfulfilled_callback, ctx, "resolve", resolve);
+  neo_js_variable_set_closure(onfulfilled_callback, ctx, "reject", reject);
+  neo_js_variable_set_closure(onfulfilled_callback, ctx, "onfulfilled",
+                              onfulfilled);
+  neo_js_variable_set_bind(onfulfilled_callback, ctx, self);
+  neo_js_variable_t onrejected_callback =
+      neo_js_context_create_cfunction(ctx, neo_js_promise_onrejected, NULL);
+  neo_js_variable_set_closure(onrejected_callback, ctx, "resolve", resolve);
+  neo_js_variable_set_closure(onrejected_callback, ctx, "reject", reject);
+  neo_js_variable_set_closure(onrejected_callback, ctx, "onrejected",
+                              onrejected);
+  neo_js_variable_set_bind(onrejected_callback, ctx, self);
+  if (promise->value) {
+    if (promise->value->type == NEO_JS_TYPE_EXCEPTION) {
+      neo_js_variable_t value = neo_js_context_create_variable(
+          ctx, ((neo_js_exception_t)promise->value)->error);
+      neo_js_variable_call(onrejected_callback, ctx, self, 1, &value);
+    } else {
+      neo_js_variable_t value =
+          neo_js_context_create_variable(ctx, promise->value);
+      neo_js_variable_call(onfulfilled_callback, ctx, self, 1, &value);
+    }
+  } else {
+    neo_list_push(promise->onfulfilled, onfulfilled_callback->value);
+    neo_js_value_add_parent(onfulfilled_callback->value, self->value);
+    neo_list_push(promise->onrejected, onrejected_callback->value);
+    neo_js_value_add_parent(onrejected_callback->value, self->value);
+  }
+  return neo_js_context_get_undefined(ctx);
+}
+
+NEO_JS_CFUNCTION(neo_js_promise_then) {
+  neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+  neo_js_variable_t onfulfilled =
+      neo_js_context_get_argument(ctx, argc, argv, 0);
+  neo_js_variable_t onrejected =
+      neo_js_context_get_argument(ctx, argc, argv, 1);
+  neo_js_variable_t transform =
+      neo_js_context_create_cfunction(ctx, neo_js_promise_transform, NULL);
+  neo_js_variable_set_closure(transform, ctx, "onfulfilled", onfulfilled);
+  neo_js_variable_set_closure(transform, ctx, "onrejected", onrejected);
+  neo_js_variable_set_bind(transform, ctx, self);
+  return neo_js_variable_construct(constant->promise_class, ctx, 1, &transform);
+}
 void neo_initialize_js_promise(neo_js_context_t ctx) {
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   constant->promise_class = neo_js_context_create_cfunction(
       ctx, neo_js_promise_constructor, "Promise");
-  neo_js_variable_t prototype = neo_js_variable_get_field(
+  constant->promise_prototype = neo_js_variable_get_field(
       constant->promise_class, ctx, constant->key_prototype);
   NEO_JS_DEF_METHOD(ctx, constant->promise_class, "resolve",
                     neo_js_promise_resolve);
-  NEO_JS_DEF_METHOD(ctx, prototype, "then", neo_js_promise_then);
+  NEO_JS_DEF_METHOD(ctx, constant->promise_prototype, "then",
+                    neo_js_promise_then);
 }
