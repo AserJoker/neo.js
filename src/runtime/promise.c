@@ -133,8 +133,7 @@ NEO_JS_CFUNCTION(neo_js_promise_constructor) {
   if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
     neo_js_variable_t error = neo_js_context_create_variable(
         ctx, ((neo_js_exception_t)res->value)->error);
-    neo_js_promise_callback_reject(ctx, neo_js_context_get_undefined(ctx), 1,
-                                   &error);
+    neo_js_promise_callback_reject(ctx, self, 1, &error);
   }
   return self;
 }

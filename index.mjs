@@ -1,6 +1,6 @@
 'use strict'
-const pro = new Promise((resolve) => {
-    resolve(123)
+const pro = new Promise((resolve, reject) => {
+    throw new Error('test')
 })
-pro.then((val) => print(val))
+pro.catch(e => print(e))
 print(234)

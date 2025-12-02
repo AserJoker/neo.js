@@ -24,7 +24,7 @@ neo_js_stackframe_t neo_create_js_stackframe(neo_allocator_t allocator,
   } else {
     frame->filename = NULL;
   }
-  if (funcname && *funcname) {
+  if (funcname) {
     frame->funcname = neo_create_string16(allocator, funcname);
   } else {
     frame->funcname = NULL;

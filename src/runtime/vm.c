@@ -302,6 +302,7 @@ static void neo_js_vm_member_call(neo_js_vm_t vm, neo_js_context_t ctx,
       neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
   neo_js_variable_t name = neo_js_variable_get_field(
       callable, ctx, neo_js_context_create_cstring(ctx, "name"));
+  NEO_JS_VM_CHECK(vm, name, program, offset);
   const uint16_t *funcname = ((neo_js_string_t)name->value)->value;
   neo_js_context_push_callstack(ctx, program->filename, funcname, line, column);
   neo_js_variable_t result =

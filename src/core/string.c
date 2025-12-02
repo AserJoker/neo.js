@@ -226,6 +226,7 @@ uint16_t *neo_create_string16(neo_allocator_t allocator, const uint16_t *src) {
   size_t len = neo_string16_length(src) + 1;
   uint16_t *str = neo_allocator_alloc(allocator, len * sizeof(uint16_t), NULL);
   memcpy(str, src, len * sizeof(uint16_t));
+  str[len - 1] = 0;
   return str;
 }
 char *neo_string_to_lower(neo_allocator_t allocator, const char *src) {
