@@ -111,6 +111,7 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
                             NULL);
   neo_js_scope_set_variable(root_scope, constant->generator_prototype, NULL);
   neo_js_scope_set_variable(root_scope, constant->promise_class, NULL);
+  neo_js_scope_set_variable(root_scope, constant->promise_prototype, NULL);
   neo_js_scope_set_variable(root_scope, constant->set_timeout, NULL);
   neo_js_scope_set_variable(root_scope, constant->clear_timeout, NULL);
   neo_js_scope_set_variable(root_scope, constant->set_interval, NULL);

@@ -1,6 +1,7 @@
 'use strict'
-const pro = new Promise((resolve, reject) => {
-    throw new Error('test')
+const pro = new Promise((resolve) => {
+    setTimeout(() => {
+        resolve(123);
+    }, 1000)
 })
-pro.catch(e => print(e))
-print(234)
+Promise.resolve(pro).then((val) => print(val))

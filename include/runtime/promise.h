@@ -5,8 +5,11 @@
 extern "C" {
 #endif
 NEO_JS_CFUNCTION(neo_js_promise_resolve);
+NEO_JS_CFUNCTION(neo_js_promise_reject);
 NEO_JS_CFUNCTION(neo_js_promise_constructor);
 NEO_JS_CFUNCTION(neo_js_promise_then);
+NEO_JS_CFUNCTION(neo_js_promise_catch);
+NEO_JS_CFUNCTION(neo_js_promise_finally);
 void neo_initialize_js_promise(neo_js_context_t ctx);
 #ifdef __cplusplus
 }

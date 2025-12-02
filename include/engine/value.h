@@ -37,7 +37,6 @@ void neo_init_js_value(neo_js_value_t self, neo_allocator_t allocator,
 void neo_deinit_js_value(neo_js_value_t self, neo_allocator_t allocator);
 void neo_js_value_add_parent(neo_js_value_t self, neo_js_value_t parent);
 void neo_js_value_remove_parent(neo_js_value_t self, neo_js_value_t parent);
-void neo_js_value_gc(neo_allocator_t allocator, neo_list_t values);
 #ifdef __cplusplus
 }
 #endif

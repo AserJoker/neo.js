@@ -3,7 +3,6 @@
 #include "core/common.h"
 #include "core/hash.h"
 #include "core/hash_map.h"
-#include "core/list.h"
 #include "engine/handle.h"
 #include <string.h>
 
@@ -30,10 +29,4 @@ void neo_js_value_add_parent(neo_js_value_t self, neo_js_value_t parent) {
 }
 void neo_js_value_remove_parent(neo_js_value_t self, neo_js_value_t parent) {
   neo_js_handle_remove_parent(&self->handle, &parent->handle);
-}
-void neo_js_value_gc(neo_allocator_t allocator, neo_list_t values) {
-  neo_list_initialize_t initialize = {true};
-  neo_list_t destroyed = neo_create_list(allocator, &initialize);
-  neo_js_handle_gc(allocator, values, destroyed, NULL, NULL);
-  neo_allocator_free(allocator, destroyed);
 }
