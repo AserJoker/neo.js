@@ -1,7 +1,8 @@
 #include "engine/handle.h"
 #include "core/allocator.h"
 #include "core/list.h"
-void neo_init_js_handle(neo_js_handle_t self, neo_allocator_t allocator) {
+void neo_init_js_handle(neo_js_handle_t self, neo_allocator_t allocator,
+                        neo_js_handle_type_t type) {
   self->age = 0;
   self->is_alive = true;
   self->is_check = false;
@@ -9,6 +10,7 @@ void neo_init_js_handle(neo_js_handle_t self, neo_allocator_t allocator) {
   self->parent = neo_create_list(allocator, NULL);
   self->children = neo_create_list(allocator, NULL);
   self->is_root = false;
+  self->type = type;
 }
 void neo_deinit_js_handle(neo_js_handle_t self, neo_allocator_t allocator) {
   neo_allocator_free(allocator, self->children);

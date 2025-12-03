@@ -9,14 +9,6 @@
 #include "engine/variable.h"
 #include "runtime/constant.h"
 
-struct _neo_js_promise_t {
-  neo_list_t onfulfilled;
-  neo_list_t onrejected;
-  neo_js_value_t value;
-};
-
-typedef struct _neo_js_promise_t *neo_js_promise_t;
-
 static void neo_js_promise_dispose(neo_allocator_t allocator,
                                    neo_js_promise_t promise) {
   neo_allocator_free(allocator, promise->onfulfilled);

@@ -8,7 +8,7 @@
 
 void neo_init_js_value(neo_js_value_t self, neo_allocator_t allocator,
                        neo_js_value_type_t type) {
-  neo_init_js_handle(&self->handle, allocator);
+  neo_init_js_handle(&self->handle, allocator, NEO_JS_HANDLE_VALUE);
   self->type = type;
   neo_hash_map_initialize_t initialize = {0};
   initialize.auto_free_key = true;

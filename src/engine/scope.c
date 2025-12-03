@@ -51,7 +51,7 @@ neo_js_scope_t neo_create_js_scope(neo_allocator_t allocator,
   neo_list_initialize_t initialize = {true};
   scope->defer_free = neo_create_list(allocator, &initialize);
   scope->allocator = allocator;
-  neo_init_js_handle(&scope->handle, allocator);
+  neo_init_js_handle(&scope->handle, allocator, NEO_JS_HANDLE_SCOPE);
   scope->handle.is_root = true;
   return scope;
 }

@@ -33,7 +33,6 @@
 #include <string.h>
 #include <sys/types.h>
 
-
 static void neo_js_variable_dispose(neo_allocator_t allocator,
                                     neo_js_variable_t variable) {
   neo_deinit_js_handle(&variable->handle, allocator);
@@ -43,7 +42,7 @@ neo_js_variable_t neo_create_js_variable(neo_allocator_t allocator,
                                          neo_js_value_t value) {
   neo_js_variable_t variable = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_variable_t), neo_js_variable_dispose);
-  neo_init_js_handle(&variable->handle, allocator);
+  neo_init_js_handle(&variable->handle, allocator, NEO_JS_HANDLE_VARIABLE);
   variable->is_using = false;
   variable->is_await_using = false;
   variable->is_const = false;
