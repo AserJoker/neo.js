@@ -176,13 +176,9 @@ void neo_js_context_pop_scope(neo_js_context_t self) {
     it = neo_list_node_next(it);
     neo_js_handle_remove_parent(&variable->handle, (neo_js_handle_t)scope);
   }
-  neo_list_t destroyed = neo_create_list(allocator, NULL);
+  neo_list_initialize_t initialize = {true};
+  neo_list_t destroyed = neo_create_list(allocator, &initialize);
   neo_js_handle_gc(allocator, variables, destroyed, NULL, NULL);
-  for (neo_list_node_t it = neo_list_get_first(destroyed);
-       it != neo_list_get_tail(destroyed); it = neo_list_node_next(it)) {
-    neo_js_handle_t handle = neo_list_node_get(it);
-    neo_allocator_free(allocator, handle);
-  }
   neo_allocator_free(allocator, destroyed);
 
   neo_allocator_free(allocator, scope);
