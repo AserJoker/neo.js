@@ -23,23 +23,6 @@ static void neo_js_scope_dispose(neo_allocator_t allocator,
     neo_list_delete(self->parent->children, self);
     self->parent = NULL;
   }
-  while (neo_list_get_size(self->children)) {
-    neo_list_node_t it = neo_list_get_first(self->children);
-    neo_js_scope_t child = neo_list_node_get(it);
-    neo_list_erase(self->children, it);
-    child->parent = NULL;
-    neo_allocator_free(allocator, child);
-  }
-  neo_list_t variables = neo_create_list(allocator, NULL);
-  neo_list_node_t it = neo_list_get_first(self->variables);
-  while (it != neo_list_get_tail(self->variables)) {
-    neo_js_variable_t variable = neo_list_node_get(it);
-    it = neo_list_node_next(it);
-    neo_list_push(variables, variable);
-    neo_js_handle_remove_parent(&variable->handle, &self->handle);
-  }
-  neo_js_variable_gc(allocator, variables);
-  neo_allocator_free(allocator, variables);
   neo_deinit_js_handle(&self->handle, allocator);
   neo_allocator_free(allocator, self->children);
   neo_allocator_free(allocator, self->variables);

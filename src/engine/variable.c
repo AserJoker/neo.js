@@ -23,6 +23,7 @@
 #include "runtime/array.h"
 #include "runtime/constant.h"
 #include "runtime/vm.h"
+#include <inttypes.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -31,6 +32,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+
 
 static void neo_js_variable_dispose(neo_allocator_t allocator,
                                     neo_js_variable_t variable) {
@@ -73,7 +75,7 @@ neo_js_variable_t neo_js_variable_to_string(neo_js_variable_t self,
     }
     char s[16];
     if (number->value == (int64_t)(number->value)) {
-      sprintf(s, "%lld", (int64_t)number->value);
+      sprintf(s, "%" PRId64, (int64_t)number->value);
     } else {
       sprintf(s, "%lg", number->value);
     }
@@ -870,11 +872,10 @@ neo_js_variable_t neo_js_variable_call_function(neo_js_variable_t self,
         neo_js_vm_run(vm, ctx, function->program, function->address);
     neo_allocator_free(allocator, vm);
     neo_js_scope_set_variable(origin_scope, result, NULL);
-    while (neo_js_context_get_scope(ctx) != scope) {
+    while (neo_js_context_get_scope(ctx) != root_scope) {
       neo_js_context_pop_scope(ctx);
     }
     neo_js_context_set_scope(ctx, origin_scope);
-    neo_allocator_free(allocator, scope);
     return result;
   }
 }
@@ -936,8 +937,10 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
   neo_js_variable_t result = cfunction->callee(ctx, bind, argc, argv);
   neo_js_context_set_type(ctx, origin_ctx_type);
   neo_js_scope_set_variable(origin_scope, result, NULL);
+  while (neo_js_context_get_scope(ctx) != root_scope) {
+    neo_js_context_pop_scope(ctx);
+  }
   neo_js_context_set_scope(ctx, origin_scope);
-  neo_allocator_free(allocator, current_scope);
   return result;
 }
 

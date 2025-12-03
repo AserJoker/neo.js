@@ -25,6 +25,10 @@ NEO_JS_CFUNCTION(neo_js_generator_next) {
     if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
       result = value;
       neo_js_scope_set_variable(current, result, NULL);
+      while (neo_js_context_get_scope(ctx) !=
+             neo_js_context_get_root_scope(ctx)) {
+        neo_js_context_pop_scope(ctx);
+      }
       value = neo_js_context_get_undefined(ctx);
     } else if (value->value->type == NEO_JS_TYPE_INTERRUPT) {
       interrupt->vm = NULL;
@@ -42,6 +46,10 @@ NEO_JS_CFUNCTION(neo_js_generator_next) {
       neo_js_variable_set_field(result, ctx,
                                 neo_js_context_create_cstring(ctx, "done"),
                                 neo_js_context_get_true(ctx));
+      while (neo_js_context_get_scope(ctx) !=
+             neo_js_context_get_root_scope(ctx)) {
+        neo_js_context_pop_scope(ctx);
+      }
     }
     neo_js_variable_set_internal(self, ctx, "value", value);
     neo_js_context_set_scope(ctx, current);
