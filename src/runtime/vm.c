@@ -263,6 +263,15 @@ static void neo_js_vm_push_lambda(neo_js_vm_t vm, neo_js_context_t ctx,
   neo_js_variable_set_bind(function, ctx, vm->self);
   neo_list_push(vm->stack, function);
 }
+static void neo_js_vm_push_async_lambda(neo_js_vm_t vm, neo_js_context_t ctx,
+                                        neo_program_t program, size_t *offset) {
+  neo_js_variable_t function =
+      neo_js_context_create_async_function(ctx, program);
+  neo_js_callable_t callable = (neo_js_callable_t)function->value;
+  callable->lambda = true;
+  neo_js_variable_set_bind(function, ctx, vm->self);
+  neo_list_push(vm->stack, function);
+}
 static void neo_js_vm_push_generator(neo_js_vm_t vm, neo_js_context_t ctx,
                                      neo_program_t program, size_t *offset) {
   neo_js_variable_t function = neo_js_context_create_generator(ctx, program);
@@ -1322,7 +1331,7 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     NULL,                          // NEO_ASM_PUSH_CLASS
     neo_js_vm_push_async_function, // NEO_ASM_PUSH_ASYNC_FUNCTION
     neo_js_vm_push_lambda,         // NEO_ASM_PUSH_LAMBDA
-    NULL,                          // NEO_ASM_PUSH_ASYNC_LAMBDA
+    neo_js_vm_push_async_lambda,   // NEO_ASM_PUSH_ASYNC_LAMBDA
     neo_js_vm_push_generator,      // NEO_ASM_PUSH_GENERATOR
     NULL,                          // NEO_ASM_PUSH_ASYNC_GENERATOR
     neo_js_vm_push_object,         // NEO_ASM_PUSH_OBJECT

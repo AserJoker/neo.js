@@ -1,3 +1,3 @@
 'use strict'
-const a = await Promise.resolve(123)
-print(a)
+const fn = async (pro) => await pro;
+fn(Promise.resolve(123)).then(val => print(val))

@@ -414,7 +414,7 @@ neo_js_variable_t neo_js_context_create_async_function(neo_js_context_t self,
                                                        neo_program_t program) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   neo_js_function_t function = neo_create_js_function(
-      allocator, program, self->constant.function_prototype->value);
+      allocator, program, self->constant.async_function_prototype->value);
   function->super.async = true;
   neo_js_value_t value = neo_js_function_to_value(function);
   neo_js_variable_t result = neo_js_context_create_variable(self, value);
