@@ -12,12 +12,15 @@ struct _neo_js_promise_t {
 };
 
 typedef struct _neo_js_promise_t *neo_js_promise_t;
+neo_js_promise_t neo_create_js_promise(neo_allocator_t allocator);
 NEO_JS_CFUNCTION(neo_js_promise_resolve);
 NEO_JS_CFUNCTION(neo_js_promise_reject);
 NEO_JS_CFUNCTION(neo_js_promise_constructor);
 NEO_JS_CFUNCTION(neo_js_promise_then);
 NEO_JS_CFUNCTION(neo_js_promise_catch);
 NEO_JS_CFUNCTION(neo_js_promise_finally);
+NEO_JS_CFUNCTION(neo_js_promise_callback_resolve);
+NEO_JS_CFUNCTION(neo_js_promise_callback_reject);
 void neo_initialize_js_promise(neo_js_context_t ctx);
 #ifdef __cplusplus
 }

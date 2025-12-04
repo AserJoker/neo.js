@@ -69,7 +69,9 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
                                        neo_js_context_t ctx,
                                        neo_js_variable_t bind, size_t argc,
                                        neo_js_variable_t *argv);
-
+NEO_JS_CFUNCTION(neo_js_async_task);
+NEO_JS_CFUNCTION(neo_js_async_onfulfilled);
+NEO_JS_CFUNCTION(neo_js_async_onrejected);
 neo_js_variable_t neo_js_variable_call_function(neo_js_variable_t self,
                                                 neo_js_context_t ctx,
                                                 neo_js_variable_t bind,

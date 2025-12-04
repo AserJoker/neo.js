@@ -248,6 +248,13 @@ static void neo_js_vm_push_function(neo_js_vm_t vm, neo_js_context_t ctx,
   neo_js_variable_t function = neo_js_context_create_function(ctx, program);
   neo_list_push(vm->stack, function);
 }
+static void neo_js_vm_push_async_function(neo_js_vm_t vm, neo_js_context_t ctx,
+                                          neo_program_t program,
+                                          size_t *offset) {
+  neo_js_variable_t function =
+      neo_js_context_create_async_function(ctx, program);
+  neo_list_push(vm->stack, function);
+}
 static void neo_js_vm_push_lambda(neo_js_vm_t vm, neo_js_context_t ctx,
                                   neo_program_t program, size_t *offset) {
   neo_js_variable_t function = neo_js_context_create_function(ctx, program);
@@ -639,6 +646,15 @@ static void neo_js_vm_keys(neo_js_vm_t vm, neo_js_context_t ctx,
   neo_js_variable_t keys = neo_js_variable_get_keys(value, ctx);
   NEO_JS_VM_CHECK(vm, keys, program, offset);
   neo_list_push(vm->stack, keys);
+}
+static void neo_js_vm_await(neo_js_vm_t vm, neo_js_context_t ctx,
+                            neo_program_t program, size_t *offset) {
+  neo_js_variable_t value = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t interrupt =
+      neo_js_context_create_interrupt(ctx, value, *offset, program, vm);
+  vm->result = interrupt;
+  *offset = neo_buffer_get_size(program->codes);
 }
 static void neo_js_vm_yield(neo_js_vm_t vm, neo_js_context_t ctx,
                             neo_program_t program, size_t *offset) {
@@ -1304,7 +1320,7 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     NULL,                          // NEO_ASM_PUSH_REGEXP
     neo_js_vm_push_function,       // NEO_ASM_PUSH_FUNCTION
     NULL,                          // NEO_ASM_PUSH_CLASS
-    NULL,                          // NEO_ASM_PUSH_ASYNC_FUNCTION
+    neo_js_vm_push_async_function, // NEO_ASM_PUSH_ASYNC_FUNCTION
     neo_js_vm_push_lambda,         // NEO_ASM_PUSH_LAMBDA
     NULL,                          // NEO_ASM_PUSH_ASYNC_LAMBDA
     neo_js_vm_push_generator,      // NEO_ASM_PUSH_GENERATOR
@@ -1360,7 +1376,7 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     neo_js_vm_ret,                 // NEO_ASM_RET
     neo_js_vm_hlt,                 // NEO_ASM_HLT
     neo_js_vm_keys,                // NEO_ASM_KEYS
-    NULL,                          // NEO_ASM_AWAIT
+    neo_js_vm_await,               // NEO_ASM_AWAIT
     neo_js_vm_yield,               // NEO_ASM_YIELD
     neo_js_vm_next,                // NEO_ASM_NEXT
     NULL,                          // NEO_ASM_AWAIT_NEXT

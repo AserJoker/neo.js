@@ -410,6 +410,22 @@ neo_js_variable_t neo_js_context_create_function(neo_js_context_t self,
   neo_js_variable_def_field(result, self, key, funcname, false, false, false);
   return result;
 }
+neo_js_variable_t neo_js_context_create_async_function(neo_js_context_t self,
+                                                       neo_program_t program) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  neo_js_function_t function = neo_create_js_function(
+      allocator, program, self->constant.function_prototype->value);
+  function->super.async = true;
+  neo_js_value_t value = neo_js_function_to_value(function);
+  neo_js_variable_t result = neo_js_context_create_variable(self, value);
+  neo_js_variable_t prototype = neo_js_context_create_object(self, NULL);
+  neo_js_variable_t key = self->constant.key_prototype;
+  neo_js_variable_def_field(result, self, key, prototype, true, false, true);
+  neo_js_variable_t funcname = neo_js_context_create_cstring(self, "");
+  key = self->constant.key_name;
+  neo_js_variable_def_field(result, self, key, funcname, false, false, false);
+  return result;
+}
 neo_js_variable_t neo_js_context_create_generator(neo_js_context_t self,
                                                   neo_program_t program) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
@@ -441,6 +457,14 @@ neo_js_variable_t neo_js_context_create_interrupt(neo_js_context_t self,
   neo_js_interrupt_t interrupt = neo_create_js_interrupt(
       allocator, value, address, program, vm, self->current_scope);
   return neo_js_context_create_variable(self, &interrupt->super);
+}
+neo_js_variable_t neo_js_context_create_promise(neo_js_context_t self) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  neo_js_variable_t object =
+      neo_js_context_create_object(self, self->constant.promise_prototype);
+  neo_js_promise_t promise = neo_create_js_promise(allocator);
+  neo_js_variable_set_opaque(object, self, "promise", promise);
+  return object;
 }
 
 neo_js_variable_t neo_js_context_load(neo_js_context_t self, const char *name) {
@@ -748,13 +772,47 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
   neo_program_write(allocator, fp, program);
   fclose(fp);
 
-  neo_js_scope_t scope = self->current_scope;
+  neo_js_scope_t scope = neo_create_js_scope(allocator, self->root_scope);
+  neo_js_scope_t origin_scope = neo_js_context_set_scope(self, scope);
   neo_js_vm_t vm = neo_create_js_vm(self, NULL);
   neo_js_variable_t result = neo_js_vm_run(vm, self, program, 0);
-  neo_allocator_free(allocator, vm);
-  neo_js_scope_set_variable(scope, result, NULL);
-  while (self->current_scope != scope) {
-    neo_js_context_pop_scope(self);
+  if (result->value->type != NEO_JS_TYPE_INTERRUPT) {
+    neo_allocator_free(allocator, vm);
+    neo_js_scope_set_variable(origin_scope, result, NULL);
+    while (self->current_scope != self->root_scope) {
+      neo_js_context_pop_scope(self);
+    }
+  } else {
+    neo_js_interrupt_t interrupt = (neo_js_interrupt_t)result->value;
+    neo_js_variable_t value =
+        neo_js_context_create_variable(self, interrupt->value);
+    neo_js_variable_t then = NULL;
+    neo_js_variable_t promise = neo_js_context_create_promise(self);
+    if (value->value->type == NEO_JS_TYPE_OBJECT &&
+        ((then = neo_js_variable_get_field(
+              value, self, neo_js_context_create_cstring(self, "then")))
+             ->value->type >= NEO_JS_TYPE_FUNCTION)) {
+      neo_js_variable_t onfulfilled =
+          neo_js_context_create_cfunction(self, neo_js_async_onfulfilled, NULL);
+      neo_js_variable_set_closure(onfulfilled, self, "promise", promise);
+      neo_js_variable_set_closure(onfulfilled, self, "interrupt", result);
+      neo_js_variable_t onrejected =
+          neo_js_context_create_cfunction(self, neo_js_async_onrejected, NULL);
+      neo_js_variable_set_closure(onrejected, self, "promise", promise);
+      neo_js_variable_set_closure(onrejected, self, "interrupt", result);
+      neo_js_variable_t args[] = {onfulfilled, onrejected};
+      neo_js_variable_call(then, self, value, 2, args);
+    } else {
+      neo_js_variable_t task =
+          neo_js_context_create_cfunction(self, neo_js_async_task, NULL);
+      neo_js_variable_set_closure(task, self, "promise", promise);
+      neo_js_variable_set_closure(task, self, "interrupt", result);
+      neo_js_context_create_micro_task(self, task);
+    }
+    neo_js_scope_set_variable(origin_scope, promise, NULL);
+    neo_js_context_set_scope(self, origin_scope);
+    return promise;
   }
+  neo_js_context_set_scope(self, origin_scope);
   return result;
 }

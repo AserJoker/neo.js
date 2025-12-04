@@ -15,7 +15,7 @@ static void neo_js_promise_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, promise->onrejected);
 }
 
-static neo_js_promise_t neo_create_js_promise(neo_allocator_t allocator) {
+neo_js_promise_t neo_create_js_promise(neo_allocator_t allocator) {
   neo_js_promise_t promise = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_promise_t), neo_js_promise_dispose);
   promise->value = NULL;
@@ -49,24 +49,15 @@ NEO_JS_CFUNCTION(neo_js_promise_resolve) {
                                        &on_then);
     }
   }
-  neo_js_variable_t pro =
-      neo_js_context_create_object(ctx, constant->promise_prototype);
-  neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
-  neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
-  neo_js_promise_t promise = neo_create_js_promise(allocator);
-  neo_js_variable_set_opaque(pro, ctx, "promise", promise);
+  neo_js_variable_t pro = neo_js_context_create_promise(ctx);
+  neo_js_promise_t promise = neo_js_variable_get_opaque(pro, ctx, "promise");
   promise->value = value->value;
   neo_js_handle_add_parent(&promise->value->handle, &pro->value->handle);
   return pro;
 }
 NEO_JS_CFUNCTION(neo_js_promise_reject) {
-  neo_js_constant_t constant = neo_js_context_get_constant(ctx);
-  neo_js_variable_t pro =
-      neo_js_context_create_object(ctx, constant->promise_prototype);
-  neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
-  neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
-  neo_js_promise_t promise = neo_create_js_promise(allocator);
-  neo_js_variable_set_opaque(pro, ctx, "promise", promise);
+  neo_js_variable_t pro = neo_js_context_create_promise(ctx);
+  neo_js_promise_t promise = neo_js_variable_get_opaque(pro, ctx, "promise");
   neo_js_variable_t value = neo_js_context_get_argument(ctx, argc, argv, 0);
   value = neo_js_context_create_exception(ctx, value);
   promise->value = value->value;

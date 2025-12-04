@@ -1,6 +1,3 @@
 'use strict'
-new Promise((resolve) => {
-    resolve()
-}).then(() => {
-    throw new Error('test')
-}).catch(e => print(e.message))
+const a = await Promise.resolve(123)
+print(a)
