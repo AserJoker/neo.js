@@ -83,8 +83,7 @@ NEO_JS_CFUNCTION(neo_js_promise_callback) {
   promise->value = value->value;
   neo_js_value_add_parent(promise->value, self->value);
   if (promise->value->type == NEO_JS_TYPE_EXCEPTION) {
-    neo_js_variable_t error = neo_js_context_create_variable(
-        ctx, ((neo_js_exception_t)value->value)->error);
+    neo_js_variable_t error = neo_js_context_create_variable(ctx, value->value);
     for (neo_list_node_t it = neo_list_get_first(promise->onrejected);
          it != neo_list_get_tail(promise->onrejected);
          it = neo_list_node_next(it)) {
@@ -189,8 +188,11 @@ NEO_JS_CFUNCTION(neo_js_promise_onfulfilled) {
                                  neo_js_context_get_undefined(ctx), 1, &value);
   }
   if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
+    neo_js_exception_t exception = (neo_js_exception_t)value->value;
+    neo_js_variable_t error =
+        neo_js_context_create_variable(ctx, exception->error);
     neo_js_variable_call(reject, ctx, neo_js_context_get_undefined(ctx), 1,
-                         &value);
+                         &error);
   } else {
     neo_js_variable_call(resolve, ctx, neo_js_context_get_undefined(ctx), 1,
                          &value);
@@ -203,12 +205,18 @@ NEO_JS_CFUNCTION(neo_js_promise_onrejected) {
   neo_js_variable_t reject = neo_js_context_load(ctx, "reject");
   neo_js_variable_t onrejected = neo_js_context_load(ctx, "onrejected");
   if (onrejected->value->type >= NEO_JS_TYPE_FUNCTION) {
+    neo_js_exception_t exception = (neo_js_exception_t)value->value;
+    neo_js_variable_t error =
+        neo_js_context_create_variable(ctx, exception->error);
     value = neo_js_variable_call(onrejected, ctx,
-                                 neo_js_context_get_undefined(ctx), 1, &value);
+                                 neo_js_context_get_undefined(ctx), 1, &error);
   }
   if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
+    neo_js_exception_t exception = (neo_js_exception_t)value->value;
+    neo_js_variable_t error =
+        neo_js_context_create_variable(ctx, exception->error);
     neo_js_variable_call(reject, ctx, neo_js_context_get_undefined(ctx), 1,
-                         &value);
+                         &error);
   } else {
     neo_js_variable_call(resolve, ctx, neo_js_context_get_undefined(ctx), 1,
                          &value);
@@ -237,10 +245,13 @@ NEO_JS_CFUNCTION(neo_js_promise_transform) {
                               onrejected);
   neo_js_variable_set_bind(onrejected_callback, ctx, self);
   if (promise->value) {
+    neo_list_push(promise->onfulfilled, onfulfilled_callback->value);
+    neo_js_value_add_parent(onfulfilled_callback->value, self->value);
+    neo_list_push(promise->onrejected, onrejected_callback->value);
+    neo_js_value_add_parent(onrejected_callback->value, self->value);
     if (promise->value->type == NEO_JS_TYPE_EXCEPTION) {
-      neo_js_variable_t value = neo_js_context_create_variable(
-          ctx, ((neo_js_exception_t)promise->value)->error);
-
+      neo_js_variable_t value =
+          neo_js_context_create_variable(ctx, promise->value);
       neo_js_variable_t task =
           neo_js_context_create_cfunction(ctx, neo_js_promise_task, NULL);
       neo_js_variable_set_closure(task, ctx, "callback", onrejected_callback);

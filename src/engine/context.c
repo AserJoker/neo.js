@@ -29,6 +29,7 @@
 #include "engine/value.h"
 #include "engine/variable.h"
 #include "runtime/constant.h"
+#include "runtime/promise.h"
 #include "runtime/vm.h"
 #include <stdarg.h>
 #include <stdbool.h>
@@ -60,6 +61,7 @@ static void neo_js_context_delete_task(neo_js_context_t self,
 }
 static void neo_js_context_dispose(neo_allocator_t allocator,
                                    neo_js_context_t self) {
+  neo_js_context_pop_scope(self);
   while (neo_list_get_size(self->micro_tasks)) {
     neo_list_node_t it = neo_list_get_first(self->micro_tasks);
     neo_js_task_t task = neo_list_node_get(it);
@@ -133,6 +135,7 @@ neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime) {
   neo_js_context_pop_scope(ctx);
   ctx->taskroot = neo_js_context_create_variable(
       ctx, &neo_create_js_null(allocator)->super);
+  neo_js_context_push_scope(ctx);
   return ctx;
 }
 void neo_js_context_set_error_callback(neo_js_context_t self,
@@ -165,6 +168,22 @@ void neo_js_context_push_scope(neo_js_context_t self) {
   self->current_scope = neo_create_js_scope(allocator, self->current_scope);
 }
 
+static void neo_js_context_ongc(neo_allocator_t allocator,
+                                neo_js_handle_t handle, neo_js_context_t ctx) {
+  if (handle->type == NEO_JS_HANDLE_VALUE) {
+    neo_js_value_t value = (neo_js_value_t)handle;
+    neo_js_promise_t promise = neo_hash_map_get(value->opaque, "promise");
+    if (promise && promise->value &&
+        promise->value->type == NEO_JS_TYPE_EXCEPTION &&
+        neo_list_get_size(promise->onrejected) == 0) {
+      neo_js_exception_t exception = (neo_js_exception_t)promise->value;
+      neo_js_variable_t error =
+          neo_js_context_create_variable(ctx, exception->error);
+      ctx->onerror(ctx, error);
+    }
+  }
+}
+
 void neo_js_context_pop_scope(neo_js_context_t self) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   neo_js_scope_t scope = self->current_scope;
@@ -178,7 +197,8 @@ void neo_js_context_pop_scope(neo_js_context_t self) {
   }
   neo_list_initialize_t initialize = {true};
   neo_list_t destroyed = neo_create_list(allocator, &initialize);
-  neo_js_handle_gc(allocator, variables, destroyed, NULL, NULL);
+  neo_js_handle_gc(allocator, variables, destroyed,
+                   (neo_js_handle_on_gc_fn_t)neo_js_context_ongc, self);
   neo_allocator_free(allocator, destroyed);
 
   neo_allocator_free(allocator, scope);
