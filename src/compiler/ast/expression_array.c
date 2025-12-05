@@ -59,7 +59,7 @@ static void neo_ast_expression_array_write(neo_allocator_t allocator,
         TRY(item->write(allocator, ctx, item)) { return; }
       } else {
         TRY(item->write(allocator, ctx, item)) { return; }
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_BACK);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_APPEND);
       }
     } else {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);

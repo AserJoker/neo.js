@@ -1358,7 +1358,7 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     NULL,                          // NEO_ASM_DECORATOR
     neo_js_vm_directive,           // NEO_ASM_DIRECTIVE
     neo_js_vm_call,                // NEO_ASM_CALL
-    neo_js_vm_push_back,           // NEO_ASM_PUSH_BACK
+    neo_js_vm_push_back,           // NEO_ASM_APPEND
     NULL,                          // NEO_ASM_EVAL
     neo_js_vm_member_call,         // NEO_ASM_MEMBER_CALL
     neo_js_get_field,              // NEO_ASM_GET_FIELD

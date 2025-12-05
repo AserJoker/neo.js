@@ -73,7 +73,7 @@ static void neo_ast_expression_new_write(neo_allocator_t allocator,
     neo_ast_node_t argument = neo_list_node_get(it);
     if (argument->type != NEO_NODE_TYPE_EXPRESSION_SPREAD) {
       TRY(argument->write(allocator, ctx, argument)) { return; }
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_BACK);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_APPEND);
     } else {
       TRY(argument->write(allocator, ctx, argument)) { return; }
     }
