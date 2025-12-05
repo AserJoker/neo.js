@@ -1,3 +1,13 @@
 'use strict'
-const { a, ...b } = { a: 123, b: 234, c: 345 }
-print(a, b.b, b.c)
+async function* gen() {
+    try {
+        await new Promise((_, reject) => {
+            reject(new Error('test error'))
+        })
+    } catch (e) {
+        print(e.message);
+    }
+}
+const g = gen()
+g.next().then(val => print(val))
+g.next().then(val => print(val))

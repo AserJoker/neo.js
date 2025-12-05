@@ -835,7 +835,8 @@ NEO_JS_CFUNCTION(neo_js_async_onfulfilled) {
   neo_js_variable_t value = neo_js_context_get_argument(ctx, argc, argv, 0);
   neo_js_scope_t scope = neo_js_context_set_scope(ctx, interr->scope);
   neo_js_variable_t interrupt = neo_js_context_create_interrupt(
-      ctx, value, interr->address, interr->program, interr->vm);
+      ctx, value, interr->address, interr->program, interr->vm,
+      NEO_JS_INTERRUPT_AWAIT);
   interr->vm = NULL;
   neo_js_variable_t task =
       neo_js_context_create_cfunction(ctx, neo_js_async_task, NULL);
@@ -854,7 +855,8 @@ NEO_JS_CFUNCTION(neo_js_async_onrejected) {
   value = neo_js_context_create_exception(ctx, value);
   neo_js_scope_t scope = neo_js_context_set_scope(ctx, interr->scope);
   neo_js_variable_t interrupt = neo_js_context_create_interrupt(
-      ctx, value, interr->address, interr->program, interr->vm);
+      ctx, value, interr->address, interr->program, interr->vm,
+      NEO_JS_INTERRUPT_AWAIT);
   interr->vm = NULL;
   neo_js_variable_t task =
       neo_js_context_create_cfunction(ctx, neo_js_async_task, NULL);
@@ -955,10 +957,17 @@ neo_js_variable_t neo_js_variable_call_function(neo_js_variable_t self,
     it = neo_map_node_next(it);
   }
   if (callable->generator && callable->async) {
-    // TODO: async generator
-    neo_js_variable_t error =
-        neo_js_context_create_cstring(ctx, "async generator is not implement");
-    return neo_js_context_create_exception(ctx, error);
+    neo_js_variable_t prototype =
+        neo_js_context_get_constant(ctx)->async_generator_prototype;
+    neo_js_variable_t generator = neo_js_context_create_object(ctx, prototype);
+    neo_js_vm_t vm = neo_create_js_vm(ctx, bind);
+    neo_js_variable_t value = neo_js_context_create_interrupt(
+        ctx, neo_js_context_get_undefined(ctx), function->address,
+        function->program, vm, NEO_JS_INTERRUPT_INIT);
+    neo_js_variable_set_internal(generator, ctx, "value", value);
+    neo_js_scope_set_variable(origin_scope, generator, NULL);
+    neo_js_context_set_scope(ctx, origin_scope);
+    return generator;
   } else if (callable->generator) {
     neo_js_variable_t prototype =
         neo_js_context_get_constant(ctx)->generator_prototype;
@@ -966,7 +975,7 @@ neo_js_variable_t neo_js_variable_call_function(neo_js_variable_t self,
     neo_js_vm_t vm = neo_create_js_vm(ctx, bind);
     neo_js_variable_t value = neo_js_context_create_interrupt(
         ctx, neo_js_context_get_undefined(ctx), function->address,
-        function->program, vm);
+        function->program, vm, NEO_JS_INTERRUPT_INIT);
     neo_js_variable_set_internal(generator, ctx, "value", value);
     neo_js_scope_set_variable(origin_scope, generator, NULL);
     neo_js_context_set_scope(ctx, origin_scope);
@@ -976,7 +985,7 @@ neo_js_variable_t neo_js_variable_call_function(neo_js_variable_t self,
     neo_js_vm_t vm = neo_create_js_vm(ctx, bind);
     neo_js_variable_t interrupt = neo_js_context_create_interrupt(
         ctx, neo_js_context_get_undefined(ctx), function->address,
-        function->program, vm);
+        function->program, vm, NEO_JS_INTERRUPT_INIT);
     neo_js_variable_t task =
         neo_js_context_create_cfunction(ctx, neo_js_async_task, NULL);
     neo_js_variable_set_closure(task, ctx, "promise", promise);
@@ -1040,8 +1049,9 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
   neo_js_scope_t root_scope = neo_js_context_get_root_scope(ctx);
   neo_js_scope_t current_scope = neo_create_js_scope(allocator, root_scope);
   neo_js_scope_t origin_scope = neo_js_context_set_scope(ctx, current_scope);
+  neo_js_variable_t args[argc];
   for (size_t idx = 0; idx < argc; idx++) {
-    argv[idx] = neo_js_context_create_variable(ctx, argv[idx]->value);
+    args[idx] = neo_js_context_create_variable(ctx, argv[idx]->value);
   }
   neo_map_node_t it = neo_map_get_first(callable->closure);
   while (it != neo_map_get_tail(callable->closure)) {
@@ -1053,7 +1063,7 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
   neo_js_cfunction_t cfunction = (neo_js_cfunction_t)callable;
   neo_js_context_type_t origin_ctx_type =
       neo_js_context_set_type(ctx, NEO_JS_CONTEXT_FUNCTION);
-  neo_js_variable_t result = cfunction->callee(ctx, bind, argc, argv);
+  neo_js_variable_t result = cfunction->callee(ctx, bind, argc, args);
   neo_js_context_set_type(ctx, origin_ctx_type);
   neo_js_scope_set_variable(origin_scope, result, NULL);
   while (neo_js_context_get_scope(ctx) != root_scope) {

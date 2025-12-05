@@ -25,6 +25,7 @@ neo_js_variable_t neo_js_scope_create_variable(neo_js_scope_t self,
                                                const char *name);
 
 neo_list_t neo_js_scope_get_variables(neo_js_scope_t self);
+neo_list_t neo_js_scope_get_children(neo_js_scope_t self);
 
 void neo_js_scope_delete_value(neo_js_scope_t self, neo_js_value_t value);
 

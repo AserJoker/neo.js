@@ -39,6 +39,7 @@ static void neo_ast_function_argument_write(neo_allocator_t allocator,
                                             neo_ast_function_argument_t self) {
   if (self->identifier->type != NEO_NODE_TYPE_PATTERN_REST) {
     neo_program_add_code(allocator, ctx->program, NEO_ASM_NEXT);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_RESOLVE_NEXT);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
     if (self->value) {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_JNOT_NULL);

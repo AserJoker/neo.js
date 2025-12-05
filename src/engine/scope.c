@@ -86,6 +86,9 @@ neo_js_variable_t neo_js_scope_create_variable(neo_js_scope_t self,
 neo_list_t neo_js_scope_get_variables(neo_js_scope_t scope) {
   return scope->variables;
 }
+neo_list_t neo_js_scope_get_children(neo_js_scope_t self) {
+  return self->children;
+}
 
 void neo_js_scope_defer_free(neo_js_scope_t scope, void *data) {
   neo_list_push(scope->defer_free, data);

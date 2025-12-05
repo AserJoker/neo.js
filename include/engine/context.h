@@ -6,6 +6,7 @@
 #include "engine/scope.h"
 #include "engine/value.h"
 #include "engine/variable.h"
+#include "interrupt.h"
 #include "runtime/constant.h"
 #include <stdint.h>
 #ifdef __cplusplus
@@ -83,15 +84,18 @@ neo_js_variable_t neo_js_context_create_function(neo_js_context_t self,
                                                  neo_program_t program);
 neo_js_variable_t neo_js_context_create_async_function(neo_js_context_t self,
                                                        neo_program_t program);
-neo_js_variable_t neo_js_context_create_generator(neo_js_context_t self,
-                                                  neo_program_t program);
+neo_js_variable_t
+neo_js_context_create_generator_function(neo_js_context_t self,
+                                         neo_program_t program);
+neo_js_variable_t
+neo_js_context_create_async_generator_function(neo_js_context_t self,
+                                               neo_program_t program);
 neo_js_variable_t neo_js_context_create_signal(neo_js_context_t self,
                                                uint32_t type, const void *msg);
-neo_js_variable_t neo_js_context_create_interrupt(neo_js_context_t self,
-                                                  neo_js_variable_t value,
-                                                  size_t address,
-                                                  neo_program_t program,
-                                                  neo_js_vm_t vm);
+neo_js_variable_t
+neo_js_context_create_interrupt(neo_js_context_t self, neo_js_variable_t value,
+                                size_t address, neo_program_t program,
+                                neo_js_vm_t vm, neo_js_interrupt_type_t type);
 neo_js_variable_t neo_js_context_create_promise(neo_js_context_t self);
 neo_js_variable_t neo_js_context_load(neo_js_context_t self, const char *name);
 neo_js_variable_t neo_js_context_store(neo_js_context_t self, const char *name,

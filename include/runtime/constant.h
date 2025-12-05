@@ -64,11 +64,16 @@ struct _neo_js_constant_t {
   // generator function
   neo_js_variable_t generator_function_prototype;
   neo_js_variable_t generator_function_class;
-  // generator function
-  neo_js_variable_t async_function_prototype;
-  neo_js_variable_t async_function_class;
   // generator
   neo_js_variable_t generator_prototype;
+  // async function
+  neo_js_variable_t async_function_prototype;
+  neo_js_variable_t async_function_class;
+  // async generator function
+  neo_js_variable_t async_generator_function_prototype;
+  neo_js_variable_t async_generator_function_class;
+  // generator
+  neo_js_variable_t async_generator_prototype;
   // promise
   neo_js_variable_t promise_class;
   neo_js_variable_t promise_prototype;

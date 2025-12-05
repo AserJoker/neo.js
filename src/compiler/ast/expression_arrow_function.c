@@ -83,6 +83,7 @@ static void neo_ast_expression_arrow_function_write(
       neo_ast_node_t argument = neo_list_node_get(it);
       if (argument->type == NEO_NODE_TYPE_IDENTIFIER) {
         neo_program_add_code(allocator, ctx->program, NEO_ASM_NEXT);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_RESOLVE_NEXT);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
         neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
         char *name = neo_location_get(allocator, argument->location);

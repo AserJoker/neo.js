@@ -436,9 +436,6 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
     case NEO_ASM_NEXT:
       fprintf(fp, "NEO_ASM_NEXT\n");
       break;
-    case NEO_ASM_AWAIT_NEXT:
-      fprintf(fp, "NEO_ASM_AWAIT_NEXT\n");
-      break;
     case NEO_ASM_RESOLVE_NEXT:
       fprintf(fp, "NEO_ASM_RESOLVE_NEXT\n");
       break;

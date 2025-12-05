@@ -28,6 +28,7 @@ static void neo_ast_pattern_array_write(neo_allocator_t allocator,
       TRY(item->write(allocator, ctx, item)) { return; }
     } else {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_NEXT);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_RESOLVE_NEXT);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
     }

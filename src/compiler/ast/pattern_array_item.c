@@ -36,6 +36,7 @@ neo_ast_pattern_array_item_write(neo_allocator_t allocator,
                                  neo_write_context_t ctx,
                                  neo_ast_pattern_array_item_t self) {
   neo_program_add_code(allocator, ctx->program, NEO_ASM_NEXT);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_RESOLVE_NEXT);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   if (self->value) {
     neo_program_add_code(allocator, ctx->program, NEO_ASM_JNOT_NULL);

@@ -10,6 +10,8 @@
 #include "runtime/array.h"
 #include "runtime/array_iterator.h"
 #include "runtime/async_function.h"
+#include "runtime/async_generator.h"
+#include "runtime/async_generator_function.h"
 #include "runtime/error.h"
 #include "runtime/function.h"
 #include "runtime/generator.h"
@@ -60,8 +62,10 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   neo_initialize_js_reference_error(ctx);
   neo_initialize_js_range_error(ctx);
   neo_initialize_js_generator_function(ctx);
-  neo_initialize_js_async_function(ctx);
   neo_initialize_js_generator(ctx);
+  neo_initialize_js_async_function(ctx);
+  neo_initialize_js_async_generator_function(ctx);
+  neo_initialize_js_async_generator(ctx);
   neo_initialize_js_promise(ctx);
   neo_initialize_js_time(ctx);
 
@@ -111,10 +115,16 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
                             NULL);
   neo_js_scope_set_variable(root_scope, constant->generator_function_prototype,
                             NULL);
+  neo_js_scope_set_variable(root_scope,
+                            constant->async_generator_function_class, NULL);
+  neo_js_scope_set_variable(root_scope,
+                            constant->async_generator_function_prototype, NULL);
   neo_js_scope_set_variable(root_scope, constant->async_function_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->async_function_prototype,
                             NULL);
   neo_js_scope_set_variable(root_scope, constant->generator_prototype, NULL);
+  neo_js_scope_set_variable(root_scope, constant->async_generator_prototype,
+                            NULL);
   neo_js_scope_set_variable(root_scope, constant->promise_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->promise_prototype, NULL);
   neo_js_scope_set_variable(root_scope, constant->set_timeout, NULL);

@@ -46,7 +46,8 @@ neo_ast_statement_for_await_of_write(neo_allocator_t allocator,
   neo_program_add_address(allocator, ctx->program, 0);
   size_t begin = neo_buffer_get_size(ctx->program->codes);
   neo_writer_push_scope(allocator, ctx, self->node.scope);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_AWAIT_NEXT);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_NEXT);
+  neo_program_add_code(allocator, ctx->program, NEO_ASM_AWAIT);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_RESOLVE_NEXT);
   neo_program_add_code(allocator, ctx->program, NEO_ASM_JTRUE);
   size_t address = neo_buffer_get_size(ctx->program->codes);
