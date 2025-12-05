@@ -1,3 +1,3 @@
 'use strict'
-const fn = async (pro) => await pro;
-fn(Promise.resolve(123)).then(val => print(val))
+const { a, ...b } = { a: 123, b: 234, c: 345 }
+print(a, b.b, b.c)

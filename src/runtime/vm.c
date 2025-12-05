@@ -743,6 +743,39 @@ static void neo_js_vm_rest(neo_js_vm_t vm, neo_js_context_t ctx,
   }
   neo_list_push(vm->stack, array);
 }
+static void neo_js_vm_rest_object(neo_js_vm_t vm, neo_js_context_t ctx,
+                                  neo_program_t program, size_t *offset) {
+  neo_js_variable_t used_keys = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t obj = neo_js_vm_get_value(vm);
+  neo_js_variable_t keys = neo_js_variable_get_keys(obj, ctx);
+  neo_js_variable_t res = neo_js_context_create_object(ctx, NULL);
+  neo_js_variable_t len = neo_js_variable_get_field(
+      keys, ctx, neo_js_context_create_cstring(ctx, "length"));
+  uint32_t length = ((neo_js_number_t)len->value)->value;
+  len = neo_js_variable_get_field(used_keys, ctx,
+                                  neo_js_context_create_cstring(ctx, "length"));
+  uint32_t used_length = ((neo_js_number_t)len->value)->value;
+  for (uint32_t idx = 0; idx < length; idx++) {
+    neo_js_variable_t key = neo_js_variable_get_field(
+        keys, ctx, neo_js_context_create_number(ctx, idx));
+    uint32_t idx2 = 0;
+    for (; idx2 < used_length; idx2++) {
+      neo_js_variable_t key2 = neo_js_variable_get_field(
+          used_keys, ctx, neo_js_context_create_number(ctx, idx2));
+      const uint16_t *src = ((neo_js_string_t)key->value)->value;
+      const uint16_t *dst = ((neo_js_string_t)key2->value)->value;
+      if (neo_string16_compare(src, dst) == 0) {
+        break;
+      }
+    }
+    if (idx2 == used_length) {
+      neo_js_variable_set_field(res, ctx, key,
+                                neo_js_variable_get_field(obj, ctx, key));
+    }
+  }
+  neo_list_push(vm->stack, res);
+}
 static void neo_js_vm_new(neo_js_vm_t vm, neo_js_context_t ctx,
                           neo_program_t program, size_t *offset) {
   int32_t line = neo_js_vm_read_integer(program, offset);
@@ -1393,7 +1426,7 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     neo_js_vm_iterator,            // NEO_ASM_ITERATOR
     NULL,                          // NEO_ASM_ASYNC_ITERATOR
     neo_js_vm_rest,                // NEO_ASM_REST
-    NULL,                          // NEO_ASM_REST_OBJECT
+    neo_js_vm_rest_object,         // NEO_ASM_REST_OBJECT
     NULL,                          // NEO_ASM_IMPORT
     NULL,                          // NEO_ASM_ASSERT
     NULL,                          // NEO_ASM_EXPORT

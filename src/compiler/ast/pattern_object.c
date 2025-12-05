@@ -59,11 +59,9 @@ static void neo_ast_pattern_object_write(neo_allocator_t allocator,
       }
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
       neo_program_add_integer(allocator, ctx->program, 2);
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_NUMBER);
-      neo_program_add_number(allocator, ctx->program, idx);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
-      neo_program_add_integer(allocator, ctx->program, 3);
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+      neo_program_add_integer(allocator, ctx->program, 2);
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_APPEND);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
       neo_program_add_integer(allocator, ctx->program, 3);
