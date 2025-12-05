@@ -827,7 +827,7 @@ static bool neo_js_variable_is_thenable(neo_js_variable_t self,
   }
   return false;
 }
-static NEO_JS_CFUNCTION(neo_js_async_task);
+NEO_JS_CFUNCTION(neo_js_async_task);
 NEO_JS_CFUNCTION(neo_js_async_onfulfilled) {
   neo_js_variable_t promise = neo_js_context_load(ctx, "promise");
   neo_js_interrupt_t interr =
