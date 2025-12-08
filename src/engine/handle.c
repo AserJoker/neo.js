@@ -26,31 +26,40 @@ void neo_js_handle_remove_parent(neo_js_handle_t handle,
   neo_list_delete(handle->parent, parent);
   neo_list_delete(parent->children, handle);
 }
-static void neo_js_handle_check(neo_js_handle_t self, uint32_t age) {
-  if (self->age == age) {
-    return;
-  }
-  self->age = age;
-  if (self->is_root) {
-    self->is_alive = true;
-    return;
-  }
-  self->is_check = true;
-  self->is_alive = false;
-  neo_list_node_t it = neo_list_get_first(self->parent);
-  while (it != neo_list_get_tail(self->parent)) {
-    neo_js_handle_t parent = neo_list_node_get(it);
-    it = neo_list_node_next(it);
-    if (parent->is_check) {
+static bool neo_js_handle_check(neo_allocator_t allocator,
+                                neo_js_handle_t self) {
+  neo_list_t workqueue = neo_create_list(allocator, NULL);
+  neo_list_push(workqueue, self);
+  bool result = false;
+  neo_list_node_t it = neo_list_get_first(workqueue);
+  while (it != neo_list_get_tail(workqueue)) {
+    neo_js_handle_t item = neo_list_node_get(it);
+    if (item->is_check) {
+      it = neo_list_node_next(it);
       continue;
     }
-    neo_js_handle_check(parent, age);
-    if (parent->is_alive) {
-      self->is_alive = true;
+    item->is_check = true;
+    if (item->is_root) {
+      result = true;
       break;
     }
+    for (neo_list_node_t node = neo_list_get_first(item->parent);
+         node != neo_list_get_tail(item->parent);
+         node = neo_list_node_next(node)) {
+      neo_js_handle_t parent = neo_list_node_get(node);
+      if (!parent->is_check) {
+        neo_list_push(workqueue, parent);
+      }
+    }
+    it = neo_list_node_next(it);
   }
-  self->is_check = false;
+  for (neo_list_node_t it = neo_list_get_first(workqueue);
+       it != neo_list_get_tail(workqueue); it = neo_list_node_next(it)) {
+    neo_js_handle_t item = neo_list_node_get(it);
+    item->is_check = false;
+  }
+  neo_allocator_free(allocator, workqueue);
+  return result;
 }
 void neo_js_handle_gc(neo_allocator_t allocator, neo_list_t handles,
                       neo_list_t gclist, neo_js_handle_on_gc_fn_t cb,
@@ -61,21 +70,24 @@ void neo_js_handle_gc(neo_allocator_t allocator, neo_list_t handles,
     neo_list_node_t it = neo_list_get_first(handles);
     neo_js_handle_t handle = neo_list_node_get(it);
     neo_list_erase(handles, it);
+    if (handle->age == age) {
+      continue;
+    }
+    handle->age = age;
     if (handle->is_disposed) {
       continue;
     }
-    neo_js_handle_check(handle, age);
-    if (!handle->is_alive) {
+    if (!neo_js_handle_check(allocator, handle)) {
       handle->is_disposed = true;
+      neo_list_push(gclist, handle);
       if (cb) {
         cb(allocator, handle, ctx);
       }
-      neo_list_push(gclist, handle);
-      while (neo_list_get_size(handle->children)) {
-        neo_list_node_t it = neo_list_get_first(handle->children);
-        neo_js_handle_t child = neo_list_node_get(it);
-        neo_list_push(handles, child);
+      while (neo_list_get_size(handle->children) != 0) {
+        neo_list_node_t node = neo_list_get_first(handle->children);
+        neo_js_handle_t child = neo_list_node_get(node);
         neo_js_handle_remove_parent(child, handle);
+        neo_list_push(handles, child);
       }
     }
   }

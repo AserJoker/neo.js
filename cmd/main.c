@@ -4,6 +4,7 @@
 #include "core/string.h"
 #include "engine/context.h"
 #include "engine/exception.h"
+#include "engine/handle.h"
 #include "engine/runtime.h"
 #include "engine/stackframe.h"
 #include "engine/string.h"
@@ -62,6 +63,17 @@ NEO_JS_CFUNCTION(print) {
   printf("\n");
   return neo_js_context_get_undefined(ctx);
 }
+static void neo_js_handle_dispose(neo_allocator_t allocator,
+                                  neo_js_handle_t self) {
+  neo_deinit_js_handle(self, allocator);
+}
+static neo_js_handle_t neo_create_js_handle(neo_allocator_t allocator,
+                                            neo_js_handle_type_t type) {
+  neo_js_handle_t handle = neo_allocator_alloc(
+      allocator, sizeof(struct _neo_js_handle_t), neo_js_handle_dispose);
+  neo_init_js_handle(handle, allocator, type);
+  return handle;
+}
 int main(int argc, char *argv[]) {
 #ifdef _WIN32
   SetConsoleOutputCP(CP_UTF8);
@@ -87,9 +99,9 @@ int main(int argc, char *argv[]) {
     neo_js_error_callback cb = neo_js_context_get_error_callback(ctx);
     cb(ctx, res);
   }
-  neo_allocator_free(allocator, source);
   neo_allocator_free(allocator, ctx);
   neo_allocator_free(allocator, rt);
+  neo_allocator_free(allocator, source);
   neo_delete_allocator(allocator);
   return 0;
 }

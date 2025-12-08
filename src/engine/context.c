@@ -61,7 +61,6 @@ static void neo_js_context_delete_task(neo_js_context_t self,
 }
 static void neo_js_context_dispose(neo_allocator_t allocator,
                                    neo_js_context_t self) {
-  neo_js_context_pop_scope(self);
   while (neo_list_get_size(self->micro_tasks)) {
     neo_list_node_t it = neo_list_get_first(self->micro_tasks);
     neo_js_task_t task = neo_list_node_get(it);
@@ -133,9 +132,9 @@ neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime) {
   neo_js_context_push_scope(ctx);
   neo_initialize_js_constant(ctx);
   neo_js_context_pop_scope(ctx);
+  neo_js_context_push_scope(ctx);
   ctx->taskroot = neo_js_context_create_variable(
       ctx, &neo_create_js_null(allocator)->super);
-  neo_js_context_push_scope(ctx);
   return ctx;
 }
 void neo_js_context_set_error_callback(neo_js_context_t self,
@@ -184,12 +183,8 @@ static void neo_js_context_ongc(neo_allocator_t allocator,
   }
 }
 
-void neo_js_context_dispose_scope(neo_js_context_t self, neo_js_scope_t scope) {
-  neo_list_t children = neo_js_scope_get_children(scope);
-  while (neo_list_get_size(children)) {
-    neo_js_scope_t child = neo_list_node_get(neo_list_get_first(children));
-    neo_js_context_dispose_scope(self, child);
-  }
+static void neo_js_context_scope_gc(neo_js_context_t self,
+                                    neo_js_scope_t scope) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   neo_list_t variables = neo_js_scope_get_variables(scope);
   neo_list_node_t it = neo_list_get_first(variables);
@@ -203,14 +198,22 @@ void neo_js_context_dispose_scope(neo_js_context_t self, neo_js_scope_t scope) {
   neo_js_handle_gc(allocator, variables, destroyed,
                    (neo_js_handle_on_gc_fn_t)neo_js_context_ongc, self);
   neo_allocator_free(allocator, destroyed);
-
   neo_allocator_free(allocator, scope);
 }
 
-void neo_js_context_pop_scope(neo_js_context_t self) {
-  neo_js_scope_t scope = self->current_scope;
+static void neo_js_context_dispose_scope(neo_js_context_t self,
+                                         neo_js_scope_t scope) {
+  neo_list_t children = neo_js_scope_get_children(scope);
+  while (neo_list_get_size(children)) {
+    neo_js_scope_t child = neo_list_node_get(neo_list_get_first(children));
+    neo_js_context_dispose_scope(self, child);
+  }
   self->current_scope = neo_js_scope_get_parent(scope);
-  neo_js_context_dispose_scope(self, scope);
+  neo_js_context_scope_gc(self, scope);
+}
+
+void neo_js_context_pop_scope(neo_js_context_t self) {
+  neo_js_context_dispose_scope(self, self->current_scope);
 }
 
 neo_js_scope_t neo_js_context_get_scope(neo_js_context_t self) {

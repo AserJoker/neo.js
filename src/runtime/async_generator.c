@@ -1,6 +1,5 @@
 #include "runtime/async_generator.h"
 #include "core/buffer.h"
-#include "core/common.h"
 #include "core/list.h"
 #include "engine/context.h"
 #include "engine/exception.h"
@@ -34,6 +33,24 @@ NEO_JS_CFUNCTION(neo_js_async_generator_onrejected) {
   neo_js_async_generator_task(ctx, self, 0, NULL);
   return neo_js_context_get_undefined(ctx);
 }
+NEO_JS_CFUNCTION(neo_js_async_generator_yield_onfulfilled) {
+  neo_js_variable_t value = neo_js_context_get_argument(ctx, argc, argv, 0);
+  neo_js_variable_t promise = neo_js_context_load(ctx, "promise");
+  neo_js_variable_t res = neo_js_context_create_object(ctx, NULL);
+  neo_js_variable_set_field(res, ctx,
+                            neo_js_context_create_cstring(ctx, "value"), value);
+  neo_js_variable_set_field(res, ctx,
+                            neo_js_context_create_cstring(ctx, "done"),
+                            neo_js_context_get_false(ctx));
+  neo_js_promise_callback_resolve(ctx, promise, 1, &res);
+  return neo_js_context_get_undefined(ctx);
+}
+NEO_JS_CFUNCTION(neo_js_async_generator_yield_onrejected) {
+  neo_js_variable_t error = neo_js_context_get_argument(ctx, argc, argv, 0);
+  neo_js_variable_t promise = neo_js_context_load(ctx, "promise");
+  neo_js_promise_callback_reject(ctx, promise, 1, &error);
+  return neo_js_context_get_undefined(ctx);
+}
 void neo_js_async_generator_resolve_next(neo_js_context_t ctx,
                                          neo_js_variable_t self,
                                          neo_js_variable_t promise,
@@ -44,7 +61,30 @@ void neo_js_async_generator_resolve_next(neo_js_context_t ctx,
     neo_js_variable_t value =
         neo_js_context_create_variable(ctx, interrupt->value);
     if (interrupt->type == NEO_JS_INTERRUPT_YIELD) {
-      neo_js_promise_callback_resolve(ctx, promise, 1, &value);
+      neo_js_variable_t then = NULL;
+      if (value->value->type == NEO_JS_TYPE_OBJECT &&
+          ((then = neo_js_variable_get_field(
+                value, ctx, neo_js_context_create_cstring(ctx, "then")))
+               ->value->type >= NEO_JS_TYPE_FUNCTION)) {
+        neo_js_variable_t onfulfilled = neo_js_context_create_cfunction(
+            ctx, neo_js_async_generator_yield_onfulfilled, NULL);
+        neo_js_variable_set_bind(onfulfilled, ctx, self);
+        neo_js_variable_set_closure(onfulfilled, ctx, "promise", promise);
+        neo_js_variable_t onrejected = neo_js_context_create_cfunction(
+            ctx, neo_js_async_generator_yield_onrejected, NULL);
+        neo_js_variable_set_bind(onrejected, ctx, self);
+        neo_js_variable_set_closure(onrejected, ctx, "promise", promise);
+        neo_js_variable_t args[] = {onfulfilled, onrejected};
+        neo_js_variable_call(then, ctx, value, 2, args);
+      } else {
+        neo_js_variable_t res = neo_js_context_create_object(ctx, NULL);
+        neo_js_variable_set_field(
+            res, ctx, neo_js_context_create_cstring(ctx, "value"), value);
+        neo_js_variable_set_field(res, ctx,
+                                  neo_js_context_create_cstring(ctx, "done"),
+                                  neo_js_context_get_false(ctx));
+        neo_js_promise_callback_resolve(ctx, promise, 1, &res);
+      }
     } else {
       neo_js_variable_t then = NULL;
       if (value->value->type == NEO_JS_TYPE_OBJECT &&
@@ -78,7 +118,14 @@ void neo_js_async_generator_resolve_next(neo_js_context_t ctx,
           ctx, ((neo_js_exception_t)next->value)->error);
       neo_js_promise_callback_reject(ctx, promise, 1, &error);
     } else {
-      neo_js_promise_callback_resolve(ctx, promise, 1, &next);
+
+      neo_js_variable_t res = neo_js_context_create_object(ctx, NULL);
+      neo_js_variable_set_field(
+          res, ctx, neo_js_context_create_cstring(ctx, "value"), next);
+      neo_js_variable_set_field(res, ctx,
+                                neo_js_context_create_cstring(ctx, "done"),
+                                neo_js_context_get_true(ctx));
+      neo_js_promise_callback_resolve(ctx, promise, 1, &res);
     }
   }
 }
@@ -117,7 +164,13 @@ NEO_JS_CFUNCTION(neo_js_async_generator_next_task) {
         ctx, ((neo_js_exception_t)value->value)->error);
     neo_js_promise_callback_reject(ctx, promise, 1, &error);
   } else {
-    neo_js_promise_callback_resolve(ctx, promise, 1, &value);
+    neo_js_variable_t res = neo_js_context_create_object(ctx, NULL);
+    neo_js_variable_set_field(
+        res, ctx, neo_js_context_create_cstring(ctx, "value"), value);
+    neo_js_variable_set_field(res, ctx,
+                              neo_js_context_create_cstring(ctx, "done"),
+                              neo_js_context_get_true(ctx));
+    neo_js_promise_callback_resolve(ctx, promise, 1, &res);
   }
   return neo_js_context_get_undefined(ctx);
 }
@@ -133,7 +186,7 @@ NEO_JS_CFUNCTION(neo_js_async_generator_next) {
   neo_js_variable_set_closure(task, ctx, "arg", arg);
   if (chain) {
     neo_js_variable_t then = neo_js_variable_get_field(
-        chain, ctx, neo_js_context_create_cstring(ctx, "then"));
+        chain, ctx, neo_js_context_create_cstring(ctx, "finally"));
     neo_js_variable_call(then, ctx, chain, 1, &task);
   } else {
     neo_js_context_create_micro_task(ctx, task);
