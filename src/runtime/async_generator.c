@@ -194,12 +194,97 @@ NEO_JS_CFUNCTION(neo_js_async_generator_next) {
   neo_js_variable_set_internal(self, ctx, "chain", promise);
   return promise;
 }
+
+NEO_JS_CFUNCTION(neo_js_async_generator_return_task) {
+  neo_js_variable_t value = neo_js_variable_get_internel(self, ctx, "value");
+  neo_js_variable_t promise = neo_js_context_load(ctx, "promise");
+  neo_js_variable_t arg = neo_js_context_load(ctx, "arg");
+  if (value->value->type == NEO_JS_TYPE_INTERRUPT) {
+    neo_js_interrupt_t interrupt = (neo_js_interrupt_t)value->value;
+    neo_js_scope_set_variable(interrupt->scope, arg, NULL);
+    interrupt->vm->result = arg;
+    interrupt->address = neo_buffer_get_size(interrupt->program->codes);
+    neo_js_async_generator_task(ctx, self, 0, NULL);
+  } else if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
+    neo_js_variable_t error = neo_js_context_create_variable(
+        ctx, ((neo_js_exception_t)value->value)->error);
+    neo_js_promise_callback_reject(ctx, promise, 1, &error);
+  } else {
+    neo_js_variable_t res = neo_js_context_create_object(ctx, NULL);
+    neo_js_variable_set_field(
+        res, ctx, neo_js_context_create_cstring(ctx, "value"), value);
+    neo_js_variable_set_field(res, ctx,
+                              neo_js_context_create_cstring(ctx, "done"),
+                              neo_js_context_get_true(ctx));
+    neo_js_promise_callback_resolve(ctx, promise, 1, &res);
+  }
+  return neo_js_context_get_undefined(ctx);
+}
+
 NEO_JS_CFUNCTION(neo_js_async_generator_return) {
+  neo_js_variable_t chain = neo_js_variable_get_internel(self, ctx, "chain");
   neo_js_variable_t promise = neo_js_context_create_promise(ctx);
+  neo_js_variable_t task = neo_js_context_create_cfunction(
+      ctx, neo_js_async_generator_return_task, NULL);
+  neo_js_variable_t arg = neo_js_context_get_argument(ctx, argc, argv, 0);
+  neo_js_variable_set_bind(task, ctx, self);
+  neo_js_variable_set_closure(task, ctx, "promise", promise);
+  neo_js_variable_set_closure(task, ctx, "arg", arg);
+  if (chain) {
+    neo_js_variable_t then = neo_js_variable_get_field(
+        chain, ctx, neo_js_context_create_cstring(ctx, "finally"));
+    neo_js_variable_call(then, ctx, chain, 1, &task);
+  } else {
+    neo_js_context_create_micro_task(ctx, task);
+  }
+  neo_js_variable_set_internal(self, ctx, "chain", promise);
   return promise;
 }
+
+NEO_JS_CFUNCTION(neo_js_async_generator_throw_task) {
+  neo_js_variable_t value = neo_js_variable_get_internel(self, ctx, "value");
+  neo_js_variable_t promise = neo_js_context_load(ctx, "promise");
+  neo_js_variable_t arg = neo_js_context_load(ctx, "arg");
+  if (value->value->type == NEO_JS_TYPE_INTERRUPT) {
+    arg = neo_js_context_create_exception(ctx, arg);
+    neo_js_interrupt_t interrupt = (neo_js_interrupt_t)value->value;
+    neo_js_scope_set_variable(interrupt->scope, arg, NULL);
+    interrupt->vm->result = arg;
+    interrupt->address = neo_buffer_get_size(interrupt->program->codes);
+    neo_js_async_generator_task(ctx, self, 0, NULL);
+  } else if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
+    neo_js_variable_t error = neo_js_context_create_variable(
+        ctx, ((neo_js_exception_t)value->value)->error);
+    neo_js_promise_callback_reject(ctx, promise, 1, &error);
+  } else {
+    neo_js_variable_t res = neo_js_context_create_object(ctx, NULL);
+    neo_js_variable_set_field(
+        res, ctx, neo_js_context_create_cstring(ctx, "value"), value);
+    neo_js_variable_set_field(res, ctx,
+                              neo_js_context_create_cstring(ctx, "done"),
+                              neo_js_context_get_true(ctx));
+    neo_js_promise_callback_resolve(ctx, promise, 1, &res);
+  }
+  return neo_js_context_get_undefined(ctx);
+}
+
 NEO_JS_CFUNCTION(neo_js_async_generator_throw) {
+  neo_js_variable_t chain = neo_js_variable_get_internel(self, ctx, "chain");
   neo_js_variable_t promise = neo_js_context_create_promise(ctx);
+  neo_js_variable_t task = neo_js_context_create_cfunction(
+      ctx, neo_js_async_generator_throw_task, NULL);
+  neo_js_variable_t arg = neo_js_context_get_argument(ctx, argc, argv, 0);
+  neo_js_variable_set_bind(task, ctx, self);
+  neo_js_variable_set_closure(task, ctx, "promise", promise);
+  neo_js_variable_set_closure(task, ctx, "arg", arg);
+  if (chain) {
+    neo_js_variable_t then = neo_js_variable_get_field(
+        chain, ctx, neo_js_context_create_cstring(ctx, "finally"));
+    neo_js_variable_call(then, ctx, chain, 1, &task);
+  } else {
+    neo_js_context_create_micro_task(ctx, task);
+  }
+  neo_js_variable_set_internal(self, ctx, "chain", promise);
   return promise;
 }
 void neo_initialize_js_async_generator(neo_js_context_t ctx) {
