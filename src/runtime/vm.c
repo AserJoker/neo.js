@@ -3,7 +3,9 @@
 #include "compiler/program.h"
 #include "core/allocator.h"
 #include "core/buffer.h"
+#include "core/fs.h"
 #include "core/list.h"
+#include "core/path.h"
 #include "core/string.h"
 #include "engine/boolean.h"
 #include "engine/callable.h"
@@ -815,6 +817,61 @@ static void neo_js_vm_rest_object(neo_js_vm_t vm, neo_js_context_t ctx,
   }
   neo_list_push(vm->stack, res);
 }
+
+static char *neo_js_vm_resolve_import_path(neo_allocator_t allocator,
+                                           const char *dirname,
+                                           const char *filename) {
+  neo_path_t dirpath = neo_create_path(allocator, dirname);
+  neo_path_t filepath = neo_create_path(allocator, filename);
+  neo_path_t realpath = neo_path_concat(dirpath, filepath);
+  neo_allocator_free(allocator, dirpath);
+  neo_allocator_free(allocator, filepath);
+  char *fullpath = neo_path_to_string(realpath);
+  neo_allocator_free(allocator, realpath);
+  if (neo_fs_exist(fullpath) && !neo_fs_is_dir(fullpath)) {
+    return fullpath;
+  }
+  const char *exts[] = {".js",  ".mjs",      ".json",      ".so",
+                        ".dll", "/index.js", "/index.mjs", 0};
+  for (int idx = 0; exts[idx] != 0; idx++) {
+    char *path = neo_create_string(allocator, fullpath);
+    size_t len = strlen(path);
+    path = neo_string_concat(allocator, path, &len, exts[idx]);
+    if (neo_fs_exist(path) && !neo_fs_is_dir(path)) {
+      neo_allocator_free(allocator, fullpath);
+      return path;
+    }
+  }
+  neo_allocator_free(allocator, fullpath);
+  return NULL;
+}
+
+static void neo_js_vm_import(neo_js_vm_t vm, neo_js_context_t ctx,
+                             neo_program_t program, size_t *offset) {
+  const char *file = neo_js_vm_read_string(program, offset);
+  neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
+  char *fullpath =
+      neo_js_vm_resolve_import_path(allocator, program->dirname, file);
+  if (!fullpath) {
+    char s[strlen(fullpath) + 32];
+    sprintf(s, "Cannot find module '%s'", fullpath);
+    neo_js_variable_t message = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t error_class =
+        neo_js_context_get_constant(ctx)->error_class;
+    neo_js_variable_t error =
+        neo_js_variable_construct(error_class, ctx, 1, &message);
+    neo_js_variable_t res = neo_js_context_create_exception(ctx, error);
+    vm->result = res;
+    *offset = neo_buffer_get_size(program->codes);
+    return;
+  }
+  neo_js_variable_t res = neo_js_context_import(ctx, fullpath);
+  neo_allocator_free(allocator, fullpath);
+  NEO_JS_VM_CHECK(vm, res, program, offset);
+  neo_list_push(vm->stack, res);
+  neo_js_vm_await(vm, ctx, program, offset);
+}
 static void neo_js_vm_new(neo_js_vm_t vm, neo_js_context_t ctx,
                           neo_program_t program, size_t *offset) {
   int32_t line = neo_js_vm_read_integer(program, offset);
@@ -1465,7 +1522,7 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     neo_js_vm_async_iterator,       // NEO_ASM_ASYNC_ITERATOR
     neo_js_vm_rest,                 // NEO_ASM_REST
     neo_js_vm_rest_object,          // NEO_ASM_REST_OBJECT
-    NULL,                           // NEO_ASM_IMPORT
+    neo_js_vm_import,               // NEO_ASM_IMPORT
     NULL,                           // NEO_ASM_ASSERT
     NULL,                           // NEO_ASM_EXPORT
     NULL,                           // NEO_ASM_EXPORT_ALL

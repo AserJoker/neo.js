@@ -1,0 +1,5 @@
+print('aaaaa')
+await Promise.resolve()
+print('bbbb')
+await Promise.resolve()
+print('cccc')

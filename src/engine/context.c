@@ -6,8 +6,10 @@
 #include "core/bigint.h"
 #include "core/clock.h"
 #include "core/error.h"
+#include "core/fs.h"
 #include "core/hash_map.h"
 #include "core/list.h"
+#include "core/path.h"
 #include "core/string.h"
 #include "core/unicode.h"
 #include "engine/bigint.h"
@@ -46,6 +48,8 @@ struct _neo_js_context_t {
   neo_list_t callstack;
   neo_list_t macro_tasks;
   neo_list_t micro_tasks;
+  neo_js_scope_t module_scope;
+  neo_js_variable_t module;
   neo_js_variable_t taskroot;
   struct _neo_js_constant_t constant;
   neo_js_context_type_t type;
@@ -133,6 +137,7 @@ neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime) {
   neo_initialize_js_constant(ctx);
   neo_js_context_pop_scope(ctx);
   neo_js_context_push_scope(ctx);
+  ctx->module_scope = neo_create_js_scope(allocator, ctx->root_scope);
   ctx->taskroot = neo_js_context_create_variable(
       ctx, &neo_create_js_null(allocator)->super);
   return ctx;
@@ -773,6 +778,88 @@ bool neo_js_context_has_task(neo_js_context_t self) {
   return neo_list_get_size(self->micro_tasks) != 0 ||
          neo_list_get_size(self->macro_tasks) != 0;
 }
+void neo_js_context_def_module(neo_js_context_t self, const char *name,
+                               neo_js_variable_t module) {
+  neo_js_scope_set_variable(self->module_scope, module, name);
+}
+
+NEO_JS_CFUNCTION(neo_js_context_import_onfulfilled) {
+  neo_js_variable_t promise = neo_js_context_load(ctx, "promise");
+  neo_js_variable_t value = neo_js_context_load(ctx, "value");
+  neo_js_promise_callback_resolve(ctx, promise, 1, &value);
+  return neo_js_context_get_undefined(ctx);
+};
+NEO_JS_CFUNCTION(neo_js_context_import_onrejected) {
+  neo_js_variable_t promise = neo_js_context_load(ctx, "promise");
+  neo_js_variable_t error = neo_js_context_get_argument(ctx, argc, argv, 0);
+  neo_js_promise_callback_reject(ctx, promise, 1, &error);
+  return neo_js_context_get_undefined(ctx);
+};
+
+neo_js_variable_t neo_js_context_import(neo_js_context_t self,
+                                        const char *filename) {
+  neo_js_variable_t module = neo_js_context_load_module(self, filename);
+  if (module) {
+    return module;
+  }
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  char *source = neo_fs_read_file(allocator, filename);
+  if (!source) {
+    char s[strlen(filename) + 32];
+    sprintf(s, "Cannot find module '%s'", filename);
+    neo_js_variable_t message = neo_js_context_create_cstring(self, s);
+    neo_js_variable_t error = neo_js_variable_construct(
+        self->constant.error_class, self, 1, &message);
+    return neo_js_context_create_exception(self, error);
+  }
+  module = neo_js_context_create_object(self, self->constant.null);
+  neo_js_context_def_module(self, filename, module);
+  neo_js_variable_t res = neo_js_context_eval(self, source, filename);
+  neo_allocator_free(allocator, source);
+  if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return res;
+  }
+  if (neo_js_variable_get_opaque(res, self, "promise")) {
+    neo_js_variable_t promise = neo_js_context_create_promise(self);
+    neo_js_variable_t then = neo_js_variable_get_field(
+        res, self, neo_js_context_create_cstring(self, "then"));
+    neo_js_variable_t onfulfilled = neo_js_context_create_cfunction(
+        self, neo_js_context_import_onfulfilled, NULL);
+    neo_js_variable_set_closure(onfulfilled, self, "promise", promise);
+    neo_js_variable_set_closure(onfulfilled, self, "value", module);
+    neo_js_variable_t onrejected = neo_js_context_create_cfunction(
+        self, neo_js_context_import_onrejected, NULL);
+    neo_js_variable_set_closure(onrejected, self, "promise", promise);
+    neo_js_variable_t args[] = {onfulfilled, onrejected};
+    neo_js_variable_call(then, self, res, 2, args);
+    return promise;
+  } else {
+    return neo_js_promise_resolve(self, self->constant.promise_class, 1,
+                                  &module);
+  }
+}
+
+neo_js_variable_t neo_js_context_get_module(neo_js_context_t self) {
+  return self->module;
+}
+neo_js_variable_t neo_js_context_load_module(neo_js_context_t self,
+                                             const char *name) {
+  neo_js_scope_t current = self->current_scope;
+  self->current_scope = self->module_scope;
+  neo_js_variable_t module =
+      neo_js_scope_get_variable(self->module_scope, name);
+  if (module) {
+    neo_js_scope_set_variable(current, module, NULL);
+  }
+  self->current_scope = current;
+  return module;
+}
+neo_js_variable_t neo_js_context_set_module(neo_js_context_t self,
+                                            neo_js_variable_t module) {
+  neo_js_variable_t current = self->module;
+  self->module = module;
+  return current;
+}
 
 neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
                                       const char *filename) {
@@ -798,6 +885,11 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
         self->constant.syntax_error_class, self, 1, &message);
     return neo_js_context_create_exception(self, error);
   }
+  char s[strlen(filename) + 16];
+  sprintf(s, "%s.asm", filename);
+  FILE *fp = fopen(s, "w");
+  neo_program_write(allocator, fp, program);
+  fclose(fp);
   neo_js_runtime_set_program(self->runtime, filename, program);
   neo_js_scope_t scope = neo_create_js_scope(allocator, self->root_scope);
   neo_js_scope_t origin_scope = neo_js_context_set_scope(self, scope);
@@ -841,5 +933,16 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
     return promise;
   }
   neo_js_context_set_scope(self, origin_scope);
+  return result;
+}
+neo_js_variable_t neo_js_context_run(neo_js_context_t self,
+                                     const char *filename) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  neo_path_t path = neo_create_path(allocator, filename);
+  path = neo_path_absolute(path);
+  char *fullpath = neo_path_to_string(path);
+  neo_allocator_free(allocator, path);
+  neo_js_variable_t result = neo_js_context_import(self, fullpath);
+  neo_allocator_free(allocator, fullpath);
   return result;
 }

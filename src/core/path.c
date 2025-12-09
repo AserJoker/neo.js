@@ -22,24 +22,24 @@ struct _neo_path_t {
   neo_allocator_t allocator;
 };
 
-bool neo_path_append(neo_path_t path, char *part) {
+bool neo_path_append(neo_path_t path, const char *part) {
   if (strcmp(part, ".") == 0) {
     return false;
   }
   if (strcmp(part, "..") == 0) {
     if (neo_list_get_size(path->parts) == 0) {
-      neo_list_push(path->parts, part);
+      neo_list_push(path->parts, neo_create_string(path->allocator, part));
       return true;
     }
     char *last = neo_list_node_get(neo_list_get_last(path->parts));
     if (strcmp(last, "..") == 0) {
-      neo_list_push(path->parts, part);
+      neo_list_push(path->parts, neo_create_string(path->allocator, part));
       return true;
     }
     neo_list_pop(path->parts);
     return false;
   }
-  neo_list_push(path->parts, part);
+  neo_list_push(path->parts, neo_create_string(path->allocator, part));
   return true;
 }
 
@@ -66,9 +66,7 @@ neo_path_t neo_create_path(neo_allocator_t allocator, const char *source) {
       while (*source) {
         if (*source == '/' || *source == '\\') {
           part[offset] = 0;
-          if (neo_path_append(path, part)) {
-            part = neo_allocator_alloc(allocator, sizeof(char) * len, NULL);
-          }
+          neo_path_append(path, part);
           offset = 0;
         } else {
           part[offset] = *source;
@@ -102,9 +100,8 @@ neo_path_t neo_path_concat(neo_path_t current, neo_path_t another) {
        it != neo_list_get_tail(another->parts); it = neo_list_node_next(it)) {
     char *part = neo_list_node_get(it);
     part = neo_create_string(current->allocator, part);
-    if (!neo_path_append(current, part)) {
-      neo_allocator_free(current->allocator, part);
-    }
+    neo_path_append(current, part);
+    neo_allocator_free(current->allocator, part);
   }
   return current;
 }

@@ -8,9 +8,9 @@ extern "C" {
 
 char *neo_fs_read_file(neo_allocator_t allocator, const char *filename);
 
-bool neo_fs_is_dir(neo_allocator_t allocator, const char *filename);
+bool neo_fs_is_dir(const char *filename);
 
-bool neo_fs_exist(neo_allocator_t allocator, const char *filename);
+bool neo_fs_exist(const char *filename);
 
 #ifdef __cplusplus
 };

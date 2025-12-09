@@ -1,9 +1,7 @@
 #include "core/allocator.h"
 #include "core/error.h"
-#include "core/fs.h"
 #include "core/string.h"
 #include "engine/context.h"
-#include "engine/exception.h"
 #include "engine/handle.h"
 #include "engine/runtime.h"
 #include "engine/stackframe.h"
@@ -36,28 +34,11 @@ NEO_JS_CFUNCTION(print) {
       printf("Symbol(%s)", description);
       neo_allocator_free(allocator, description);
     } else {
-      if (value->value->type != NEO_JS_TYPE_EXCEPTION) {
-        value = neo_js_variable_to_string(value, ctx);
-      }
-      if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
-        neo_js_variable_t exception = value;
-        neo_js_variable_t error = neo_js_context_create_variable(
-            ctx, ((neo_js_exception_t)exception->value)->error);
-        value = neo_js_variable_to_string(error, ctx);
-        if (value->value->type != NEO_JS_TYPE_STRING) {
-          printf("Unknown exception");
-        } else {
-          char *str = neo_string16_to_string(
-              allocator, ((neo_js_string_t)value->value)->value);
-          printf("%s", str);
-          neo_allocator_free(allocator, str);
-        }
-      } else {
-        char *str = neo_string16_to_string(
-            allocator, ((neo_js_string_t)value->value)->value);
-        printf("%s", str);
-        neo_allocator_free(allocator, str);
-      }
+      value = neo_js_variable_to_string(value, ctx);
+      char *str = neo_string16_to_string(
+          allocator, ((neo_js_string_t)value->value)->value);
+      printf("%s", str);
+      neo_allocator_free(allocator, str);
     }
   }
   printf("\n");
@@ -82,7 +63,6 @@ int main(int argc, char *argv[]) {
 #endif
   neo_allocator_t allocator = neo_create_default_allocator();
   neo_error_initialize(allocator);
-  char *source = neo_fs_read_file(allocator, "../index.mjs");
   neo_js_runtime_t rt = neo_create_js_runtime(allocator);
   neo_js_context_t ctx = neo_create_js_context(rt);
   neo_js_variable_t js_print =
@@ -90,7 +70,7 @@ int main(int argc, char *argv[]) {
   neo_js_variable_t global = neo_js_context_get_global(ctx);
   neo_js_variable_set_field(
       global, ctx, neo_js_context_create_cstring(ctx, "print"), js_print);
-  neo_js_variable_t res = neo_js_context_eval(ctx, source, "index.mjs");
+  neo_js_variable_t res = neo_js_context_run(ctx, "../index.mjs");
   if (res->value->type != NEO_JS_TYPE_EXCEPTION) {
     while (neo_js_context_has_task(ctx)) {
       neo_js_context_next_task(ctx);
@@ -101,7 +81,6 @@ int main(int argc, char *argv[]) {
   }
   neo_allocator_free(allocator, ctx);
   neo_allocator_free(allocator, rt);
-  neo_allocator_free(allocator, source);
   neo_delete_allocator(allocator);
   return 0;
 }

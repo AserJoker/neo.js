@@ -34,7 +34,7 @@ onerror:
   return NULL;
 }
 
-bool neo_fs_is_dir(neo_allocator_t allocator, const char *filename) {
+bool neo_fs_is_dir(const char *filename) {
   struct stat st;
   if (stat(filename, &st) != 0) {
     return false;
@@ -42,7 +42,7 @@ bool neo_fs_is_dir(neo_allocator_t allocator, const char *filename) {
   return S_ISDIR(st.st_mode);
 }
 
-bool neo_fs_exist(neo_allocator_t allocator, const char *filename) {
+bool neo_fs_exist(const char *filename) {
   struct stat st;
   if (stat(filename, &st) == -1) {
     return false;

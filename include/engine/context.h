@@ -118,8 +118,22 @@ int64_t neo_js_context_create_micro_task(neo_js_context_t self,
 void neo_js_context_remove_micro_task(neo_js_context_t self, int64_t idx);
 bool neo_js_context_next_task(neo_js_context_t self);
 bool neo_js_context_has_task(neo_js_context_t self);
+neo_js_variable_t neo_js_context_get_module(neo_js_context_t self);
+neo_js_variable_t neo_js_context_load_module(neo_js_context_t self,
+                                             const char *name);
+neo_js_variable_t neo_js_context_set_module(neo_js_context_t self,
+                                            neo_js_variable_t module);
+void neo_js_context_def_module(neo_js_context_t self, const char *name,
+                               neo_js_variable_t module);
+
+neo_js_variable_t neo_js_context_import(neo_js_context_t self,
+                                        const char *filename);
+                                        
 neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
                                       const char *filename);
+
+neo_js_variable_t neo_js_context_run(neo_js_context_t self,
+                                     const char *filename);
 
 #define NEO_JS_DEF_FIELD(ctx, self, name, value)                               \
   do {                                                                         \
