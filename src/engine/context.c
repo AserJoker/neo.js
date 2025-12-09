@@ -49,7 +49,6 @@ struct _neo_js_context_t {
   neo_list_t macro_tasks;
   neo_list_t micro_tasks;
   neo_js_scope_t module_scope;
-  neo_js_variable_t module;
   neo_js_variable_t taskroot;
   struct _neo_js_constant_t constant;
   neo_js_context_type_t type;
@@ -839,9 +838,6 @@ neo_js_variable_t neo_js_context_import(neo_js_context_t self,
   }
 }
 
-neo_js_variable_t neo_js_context_get_module(neo_js_context_t self) {
-  return self->module;
-}
 neo_js_variable_t neo_js_context_load_module(neo_js_context_t self,
                                              const char *name) {
   neo_js_scope_t current = self->current_scope;
@@ -853,12 +849,6 @@ neo_js_variable_t neo_js_context_load_module(neo_js_context_t self,
   }
   self->current_scope = current;
   return module;
-}
-neo_js_variable_t neo_js_context_set_module(neo_js_context_t self,
-                                            neo_js_variable_t module) {
-  neo_js_variable_t current = self->module;
-  self->module = module;
-  return current;
 }
 
 neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,

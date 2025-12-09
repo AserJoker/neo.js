@@ -872,6 +872,29 @@ static void neo_js_vm_import(neo_js_vm_t vm, neo_js_context_t ctx,
   neo_list_push(vm->stack, res);
   neo_js_vm_await(vm, ctx, program, offset);
 }
+static void neo_js_vm_export(neo_js_vm_t vm, neo_js_context_t ctx,
+                             neo_program_t program, size_t *offset) {
+  neo_js_variable_t value = neo_js_vm_get_value(vm);
+  const char *name = neo_js_vm_read_string(program, offset);
+  neo_js_variable_t module = neo_js_context_load_module(ctx, program->filename);
+  neo_js_variable_set_field(module, ctx,
+                            neo_js_context_create_cstring(ctx, name), value);
+}
+static void neo_js_vm_export_all(neo_js_vm_t vm, neo_js_context_t ctx,
+                                 neo_program_t program, size_t *offset) {
+  neo_js_variable_t value = neo_js_vm_get_value(vm);
+  neo_js_variable_t module = neo_js_context_load_module(ctx, program->filename);
+  neo_js_variable_t keys = neo_js_variable_get_keys(value, ctx);
+  neo_js_variable_t vlen = neo_js_variable_get_field(
+      value, ctx, neo_js_context_create_cstring(ctx, "length"));
+  size_t len = ((neo_js_number_t)vlen->value)->value;
+  for (size_t idx = 0; idx < len; idx++) {
+    neo_js_variable_t key = neo_js_variable_get_field(
+        keys, ctx, neo_js_context_create_number(ctx, idx));
+    neo_js_variable_t val = neo_js_variable_get_field(value, ctx, key);
+    neo_js_variable_set_field(module, ctx, key, val);
+  }
+}
 static void neo_js_vm_new(neo_js_vm_t vm, neo_js_context_t ctx,
                           neo_program_t program, size_t *offset) {
   int32_t line = neo_js_vm_read_integer(program, offset);
@@ -1524,8 +1547,8 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     neo_js_vm_rest_object,          // NEO_ASM_REST_OBJECT
     neo_js_vm_import,               // NEO_ASM_IMPORT
     NULL,                           // NEO_ASM_ASSERT
-    NULL,                           // NEO_ASM_EXPORT
-    NULL,                           // NEO_ASM_EXPORT_ALL
+    neo_js_vm_export,               // NEO_ASM_EXPORT
+    neo_js_vm_export_all,           // NEO_ASM_EXPORT_ALL
     NULL,                           // NEO_ASM_BREAKPOINT
     neo_js_vm_new,                  // NEO_ASM_NEW
     neo_js_vm_eq,                   // NEO_ASM_EQ
