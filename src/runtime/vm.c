@@ -3,7 +3,6 @@
 #include "compiler/program.h"
 #include "core/allocator.h"
 #include "core/buffer.h"
-#include "core/common.h"
 #include "core/list.h"
 #include "core/string.h"
 #include "engine/boolean.h"

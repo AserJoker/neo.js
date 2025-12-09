@@ -799,10 +799,6 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
     return neo_js_context_create_exception(self, error);
   }
   neo_js_runtime_set_program(self->runtime, filename, program);
-  FILE *fp = fopen("../export.asm", "w");
-  neo_program_write(allocator, fp, program);
-  fclose(fp);
-
   neo_js_scope_t scope = neo_create_js_scope(allocator, self->root_scope);
   neo_js_scope_t origin_scope = neo_js_context_set_scope(self, scope);
   neo_js_vm_t vm = neo_create_js_vm(self, NULL);
