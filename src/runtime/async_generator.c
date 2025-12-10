@@ -62,7 +62,7 @@ void neo_js_async_generator_resolve_next(neo_js_context_t ctx,
         neo_js_context_create_variable(ctx, interrupt->value);
     if (interrupt->type == NEO_JS_INTERRUPT_YIELD) {
       neo_js_variable_t then = NULL;
-      if (value->value->type == NEO_JS_TYPE_OBJECT &&
+      if (value->value->type >= NEO_JS_TYPE_OBJECT &&
           ((then = neo_js_variable_get_field(
                 value, ctx, neo_js_context_create_cstring(ctx, "then")))
                ->value->type >= NEO_JS_TYPE_FUNCTION)) {
@@ -87,7 +87,7 @@ void neo_js_async_generator_resolve_next(neo_js_context_t ctx,
       }
     } else {
       neo_js_variable_t then = NULL;
-      if (value->value->type == NEO_JS_TYPE_OBJECT &&
+      if (value->value->type >= NEO_JS_TYPE_OBJECT &&
           ((then = neo_js_variable_get_field(
                 value, ctx, neo_js_context_create_cstring(ctx, "then")))
                ->value->type >= NEO_JS_TYPE_FUNCTION)) {

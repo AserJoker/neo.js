@@ -18,7 +18,7 @@ NEO_JS_CFUNCTION(neo_js_function_to_string) {
     neo_js_variable_t name =
         neo_js_variable_get_field(self, ctx, constant->key_name);
     const uint16_t *funcname = ((neo_js_string_t)name->value)->value;
-    if (callable->native) {
+    if (callable->is_native) {
       if (*funcname) {
         return neo_js_context_format(ctx, "function %v(){[native]}", name);
       } else {

@@ -12,6 +12,7 @@ struct _neo_js_vm_t {
   neo_list_t labelstack;
   neo_js_variable_t result;
   neo_js_variable_t self;
+  neo_js_variable_t clazz;
 };
 typedef struct _neo_js_vm_t *neo_js_vm_t;
 typedef void (*neo_js_vm_handle_fn_t)(neo_js_vm_t vm, neo_js_context_t ctx,

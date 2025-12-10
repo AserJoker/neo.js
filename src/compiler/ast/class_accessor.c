@@ -58,7 +58,11 @@ static void neo_ast_class_accessor_write(neo_allocator_t allocator,
                                          neo_write_context_t ctx,
                                          neo_ast_class_accessor_t self) {
   if (!self->static_) {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_THIS);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+    neo_program_add_integer(allocator, ctx->program, 1);
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+    neo_program_add_string(allocator, ctx->program, "prototype");
+    neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
   }
   if (self->computed) {
     TRY(self->name->write(allocator, ctx, self->name)) { return; }

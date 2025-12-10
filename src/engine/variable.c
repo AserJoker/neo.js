@@ -107,6 +107,7 @@ neo_js_variable_t neo_js_variable_to_string(neo_js_variable_t self,
     return neo_js_context_create_exception(ctx, error);
   }
   case NEO_JS_TYPE_OBJECT:
+  case NEO_JS_TYPE_CLASS:
   case NEO_JS_TYPE_ARRAY:
   case NEO_JS_TYPE_FUNCTION: {
     neo_js_variable_t primitive =
@@ -155,6 +156,7 @@ neo_js_variable_t neo_js_variable_to_number(neo_js_variable_t self,
     return neo_js_context_create_exception(ctx, error);
   }
   case NEO_JS_TYPE_OBJECT:
+  case NEO_JS_TYPE_CLASS:
   case NEO_JS_TYPE_ARRAY:
   case NEO_JS_TYPE_FUNCTION: {
     neo_js_variable_t primitive =
@@ -195,6 +197,7 @@ neo_js_variable_t neo_js_variable_to_boolean(neo_js_variable_t self,
   }
   case NEO_JS_TYPE_SYMBOL:
   case NEO_JS_TYPE_OBJECT:
+  case NEO_JS_TYPE_CLASS:
   case NEO_JS_TYPE_ARRAY:
   case NEO_JS_TYPE_FUNCTION:
     return constant->boolean_true;
@@ -488,7 +491,7 @@ neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
   if (!prop) {
     if (obj->sealed || !obj->extensible) {
       neo_js_variable_t message = neo_js_context_format(
-          ctx, "Cannot define property '%v', object is not extensible", key);
+          ctx, "Cannot define property '%v', #<Object> is not extensible", key);
       neo_js_constant_t constant = neo_js_context_get_constant(ctx);
       neo_js_variable_t error = neo_js_variable_construct(
           constant->type_error_class, ctx, 1, &message);
@@ -558,6 +561,61 @@ neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
     neo_js_value_add_parent(set->value, self->value);
   }
   return self;
+}
+
+neo_js_variable_t neo_js_variable_get_super_field(neo_js_variable_t self,
+                                                  neo_js_context_t ctx,
+                                                  neo_js_variable_t key) {
+  neo_js_variable_t prototype = neo_js_variable_get_prototype_of(self, ctx);
+  if (prototype->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return prototype;
+  }
+  prototype = neo_js_variable_get_prototype_of(self, ctx);
+  if (prototype->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return prototype;
+  }
+  neo_js_object_property_t prop =
+      neo_js_variable_get_property(prototype, ctx, key);
+  if (prop) {
+    if (prop->value) {
+      return neo_js_context_create_variable(ctx, prop->value);
+    }
+    if (prop->get) {
+      neo_js_variable_t get = neo_js_context_create_variable(ctx, prop->get);
+      return neo_js_variable_call(get, ctx, self, 0, NULL);
+    }
+  }
+  return neo_js_context_get_undefined(ctx);
+}
+
+neo_js_variable_t neo_js_variable_set_super_field(neo_js_variable_t self,
+                                                  neo_js_context_t ctx,
+                                                  neo_js_variable_t key,
+                                                  neo_js_variable_t value) {
+  neo_js_variable_t prototype = neo_js_variable_get_prototype_of(self, ctx);
+  if (prototype->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return prototype;
+  }
+  prototype = neo_js_variable_get_prototype_of(self, ctx);
+  if (prototype->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return prototype;
+  }
+  neo_js_object_property_t prop =
+      neo_js_variable_get_property(prototype, ctx, key);
+  if (!prop) {
+    return neo_js_variable_set_field(self, ctx, key, value);
+  }
+  if (prop->set) {
+    neo_js_variable_t set = neo_js_context_create_variable(ctx, prop->set);
+    return neo_js_variable_call(set, ctx, self, 1, &value);
+  }
+  neo_js_variable_t message = neo_js_context_format(
+      ctx, "Cannot set property %v of #<Object>, which has only a getter", key);
+  neo_js_variable_t type_error =
+      neo_js_context_get_constant(ctx)->type_error_class;
+  neo_js_variable_t error =
+      neo_js_variable_construct(type_error, ctx, 1, &message);
+  return neo_js_context_create_exception(ctx, error);
 }
 
 neo_js_variable_t neo_js_variable_get_field(neo_js_variable_t self,
@@ -679,7 +737,7 @@ neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
   neo_js_object_t object = (neo_js_object_t)self->value;
   if (object->frozen) {
     neo_js_variable_t message = neo_js_context_format(
-        ctx, "Cannot assign to read only property '%v' of object '#<Object>'",
+        ctx, "Cannot assign to read only property '%v' of '#<Object>'",
         key);
     neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
@@ -698,7 +756,7 @@ neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
   if (prop && prop->value && neo_js_object_to_value(object) == self->value) {
     if (!prop->writable) {
       neo_js_variable_t message = neo_js_context_format(
-          ctx, "Cannot assign to read only property '%v' of object '#<Object>'",
+          ctx, "Cannot assign to read only property '%v' of '#<Object>'",
           key);
       neo_js_constant_t constant = neo_js_context_get_constant(ctx);
       neo_js_variable_t error = neo_js_variable_construct(
@@ -956,7 +1014,7 @@ neo_js_variable_t neo_js_variable_call_function(neo_js_variable_t self,
     neo_js_scope_set_variable(scope, variable, name);
     it = neo_map_node_next(it);
   }
-  if (callable->generator && callable->async) {
+  if (callable->is_generator && callable->is_async) {
     neo_js_variable_t prototype =
         neo_js_context_get_constant(ctx)->async_generator_prototype;
     neo_js_variable_t generator = neo_js_context_create_object(ctx, prototype);
@@ -968,7 +1026,7 @@ neo_js_variable_t neo_js_variable_call_function(neo_js_variable_t self,
     neo_js_scope_set_variable(origin_scope, generator, NULL);
     neo_js_context_set_scope(ctx, origin_scope);
     return generator;
-  } else if (callable->generator) {
+  } else if (callable->is_generator) {
     neo_js_variable_t prototype =
         neo_js_context_get_constant(ctx)->generator_prototype;
     neo_js_variable_t generator = neo_js_context_create_object(ctx, prototype);
@@ -980,7 +1038,7 @@ neo_js_variable_t neo_js_variable_call_function(neo_js_variable_t self,
     neo_js_scope_set_variable(origin_scope, generator, NULL);
     neo_js_context_set_scope(ctx, origin_scope);
     return generator;
-  } else if (callable->async) {
+  } else if (callable->is_async) {
     neo_js_variable_t promise = neo_js_context_create_promise(ctx);
     neo_js_vm_t vm = neo_create_js_vm(ctx, bind);
     neo_js_variable_t interrupt = neo_js_context_create_interrupt(
@@ -1023,7 +1081,7 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
   neo_js_callable_t callable = (neo_js_callable_t)self->value;
   bind = neo_js_context_create_variable(ctx, callable->bind ? callable->bind
                                                             : bind->value);
-  if (!callable->native) {
+  if (!callable->is_native) {
     neo_js_variable_t arguments =
         neo_js_context_create_object(ctx, neo_js_context_get_null(ctx));
     for (size_t idx = 0; idx < argc; idx++) {
@@ -1076,7 +1134,8 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
 neo_js_variable_t neo_js_variable_construct(neo_js_variable_t self,
                                             neo_js_context_t ctx, size_t argc,
                                             neo_js_variable_t *argv) {
-  if (self->value->type != NEO_JS_TYPE_FUNCTION) {
+  if (self->value->type != NEO_JS_TYPE_FUNCTION &&
+      self->value->type != NEO_JS_TYPE_CLASS) {
     neo_js_variable_t message =
         neo_js_context_format(ctx, "%v is not a constructor", self);
     neo_js_constant_t constant = neo_js_context_get_constant(ctx);
@@ -1097,8 +1156,11 @@ neo_js_variable_t neo_js_variable_construct(neo_js_variable_t self,
     return res;
   }
   if (res->value->type >= NEO_JS_TYPE_OBJECT) {
-    return res;
+    object = res;
   }
+  neo_js_object_t obj = (neo_js_object_t)res->value;
+  obj->clazz = self->value;
+  neo_js_value_add_parent(obj->clazz, object->value);
   return object;
 }
 
@@ -1231,7 +1293,12 @@ neo_js_variable_t neo_js_variable_extends(neo_js_variable_t self,
   if (prototype->value->type == NEO_JS_TYPE_EXCEPTION) {
     return prototype;
   }
-  return neo_js_variable_set_prototype_of(prototype, ctx, parent_prototype);
+  neo_js_variable_t error =
+      neo_js_variable_set_prototype_of(prototype, ctx, parent_prototype);
+  if (error->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return error;
+  }
+  return neo_js_variable_set_prototype_of(self, ctx, parent);
 }
 
 neo_js_variable_t neo_js_variable_set_closure(neo_js_variable_t self,
@@ -1266,6 +1333,22 @@ neo_js_variable_t neo_js_variable_set_bind(neo_js_variable_t self,
   }
   neo_js_callable_t function = (neo_js_callable_t)self->value;
   function->bind = bind->value;
+  neo_js_handle_add_parent(&function->bind->handle, &self->value->handle);
+  return self;
+}
+neo_js_variable_t neo_js_variable_set_class(neo_js_variable_t self,
+                                            neo_js_context_t ctx,
+                                            neo_js_variable_t clazz) {
+  if (self->value->type != NEO_JS_TYPE_FUNCTION) {
+    neo_js_variable_t message =
+        neo_js_context_format(ctx, "%v is not function", self);
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+    neo_js_variable_t error =
+        neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  neo_js_callable_t function = (neo_js_callable_t)self->value;
+  function->clazz = clazz->value;
   neo_js_handle_add_parent(&function->bind->handle, &self->value->handle);
   return self;
 }
@@ -1472,6 +1555,7 @@ neo_js_variable_t neo_js_variable_seq(neo_js_variable_t self,
   }
   case NEO_JS_TYPE_SYMBOL:
   case NEO_JS_TYPE_OBJECT:
+  case NEO_JS_TYPE_CLASS:
   case NEO_JS_TYPE_ARRAY:
   case NEO_JS_TYPE_FUNCTION:
     return self->value == another->value ? neo_js_context_get_true(ctx)
@@ -1684,6 +1768,7 @@ neo_js_variable_t neo_js_variable_typeof(neo_js_variable_t self,
   case NEO_JS_TYPE_OBJECT:
   case NEO_JS_TYPE_ARRAY:
     return neo_js_context_create_cstring(ctx, "object");
+  case NEO_JS_TYPE_CLASS:
   case NEO_JS_TYPE_FUNCTION:
     return neo_js_context_create_cstring(ctx, "function");
   default:

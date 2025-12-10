@@ -79,14 +79,9 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
         TRY(node->write(allocator, ctx, node)) { return; }
       }
     }
-    if (node->type == NEO_NODE_TYPE_CLASS_ACCESSOR) {
-      neo_ast_class_accessor_t accessor = (neo_ast_class_accessor_t)node;
-      if (!accessor->static_) {
-        TRY(node->write(allocator, ctx, node)) { return; }
-      }
-    }
   }
   if (constructor) {
+    neo_writer_push_scope(allocator, ctx, constructor->node.scope);
     if (neo_list_get_size(constructor->arguments)) {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
       neo_program_add_string(allocator, ctx->program, "arguments");
@@ -107,6 +102,7 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
     TRY(constructor->body->write(allocator, ctx, constructor->body)) { return; }
     ctx->is_generator = is_generator;
     ctx->is_async = is_async;
+    neo_writer_pop_scope(allocator, ctx, constructor->node.scope);
   } else if (self->extends) {
     neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
     neo_program_add_string(allocator, ctx->program, "arguments");
@@ -164,7 +160,8 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
       TRY(node->write(allocator, ctx, node)) { return; }
       neo_writer_pop_scope(allocator, ctx, node->scope);
     }
-    if (node->type == NEO_NODE_TYPE_CLASS_METHOD) {
+    if (node->type == NEO_NODE_TYPE_CLASS_METHOD &&
+        node != &constructor->node) {
       TRY(node->write(allocator, ctx, node)) { return; }
     }
     if (node->type == NEO_NODE_TYPE_CLASS_PROPERTY) {
@@ -174,10 +171,7 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
       }
     }
     if (node->type == NEO_NODE_TYPE_CLASS_ACCESSOR) {
-      neo_ast_class_accessor_t accessor = (neo_ast_class_accessor_t)node;
-      if (accessor->static_) {
-        TRY(node->write(allocator, ctx, node)) { return; }
-      }
+      TRY(node->write(allocator, ctx, node)) { return; }
     }
   }
   neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);

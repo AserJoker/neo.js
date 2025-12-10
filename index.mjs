@@ -1,5 +1,17 @@
 'use strict'
-print('start')
-import { add } from './test.mjs'
-print(add(1, 2))
-print('end')
+class Base {
+    get _data() {
+        print('-----------')
+    }
+    write() {
+        print('base')
+    }
+};
+class Test extends Base {
+    _data = 123
+    write() {
+        super.write()
+        print('test')
+    }
+};
+new Test().write()

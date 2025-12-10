@@ -9,12 +9,14 @@ extern "C" {
 #endif
 struct _neo_js_callable_t {
   struct _neo_js_object_t super;
-  bool native;
-  bool async;
-  bool generator;
-  bool lambda;
+  bool is_native;
+  bool is_async;
+  bool is_generator;
+  bool is_lambda;
+  bool is_class;
   neo_map_t closure;
   neo_js_value_t bind;
+  neo_js_value_t clazz;
 };
 typedef struct _neo_js_callable_t *neo_js_callable_t;
 void neo_init_js_callable(neo_js_callable_t self, neo_allocator_t allocaotr,

@@ -38,7 +38,7 @@ NEO_JS_CFUNCTION(neo_js_promise_on_then) {
 NEO_JS_CFUNCTION(neo_js_promise_resolve) {
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   neo_js_variable_t value = neo_js_context_get_argument(ctx, argc, argv, 0);
-  if (value->value->type == NEO_JS_TYPE_OBJECT) {
+  if (value->value->type >= NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t then = neo_js_variable_get_field(
         value, ctx, neo_js_context_create_cstring(ctx, "then"));
     if (then->value->type == NEO_JS_TYPE_FUNCTION) {
