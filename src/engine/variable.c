@@ -737,8 +737,7 @@ neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
   neo_js_object_t object = (neo_js_object_t)self->value;
   if (object->frozen) {
     neo_js_variable_t message = neo_js_context_format(
-        ctx, "Cannot assign to read only property '%v' of '#<Object>'",
-        key);
+        ctx, "Cannot assign to read only property '%v' of '#<Object>'", key);
     neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
@@ -756,8 +755,7 @@ neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
   if (prop && prop->value && neo_js_object_to_value(object) == self->value) {
     if (!prop->writable) {
       neo_js_variable_t message = neo_js_context_format(
-          ctx, "Cannot assign to read only property '%v' of '#<Object>'",
-          key);
+          ctx, "Cannot assign to read only property '%v' of '#<Object>'", key);
       neo_js_constant_t constant = neo_js_context_get_constant(ctx);
       neo_js_variable_t error = neo_js_variable_construct(
           constant->type_error_class, ctx, 1, &message);
@@ -1349,7 +1347,7 @@ neo_js_variable_t neo_js_variable_set_class(neo_js_variable_t self,
   }
   neo_js_callable_t function = (neo_js_callable_t)self->value;
   function->clazz = clazz->value;
-  neo_js_handle_add_parent(&function->bind->handle, &self->value->handle);
+  neo_js_handle_add_parent(&function->clazz->handle, &self->value->handle);
   return self;
 }
 static void neo_js_object_get_keys(neo_list_t keys, neo_hash_map_t cache,

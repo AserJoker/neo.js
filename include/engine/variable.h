@@ -49,6 +49,7 @@ neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
                              neo_js_variable_t key, neo_js_variable_t get,
                              neo_js_variable_t set, bool configurable,
                              bool enumable);
+
 neo_js_variable_t neo_js_variable_get_field(neo_js_variable_t self,
                                             neo_js_context_t ctx,
                                             neo_js_variable_t key);
@@ -57,7 +58,8 @@ neo_js_variable_t neo_js_variable_get_super_field(neo_js_variable_t self,
                                                   neo_js_variable_t key);
 neo_js_variable_t neo_js_variable_set_super_field(neo_js_variable_t self,
                                                   neo_js_context_t ctx,
-                                                  neo_js_variable_t key,neo_js_variable_t value);
+                                                  neo_js_variable_t key,
+                                                  neo_js_variable_t value);
 neo_js_object_property_t neo_js_variable_get_property(neo_js_variable_t self,
                                                       neo_js_context_t ctx,
                                                       neo_js_variable_t key);

@@ -4,6 +4,7 @@
 #include "core/allocator.h"
 #include "core/buffer.h"
 #include "core/fs.h"
+#include "core/hash_map.h"
 #include "core/list.h"
 #include "core/path.h"
 #include "core/string.h"
@@ -196,6 +197,39 @@ static void neo_js_vm_init_field(neo_js_vm_t vm, neo_js_context_t ctx,
       neo_js_variable_def_field(object, ctx, key, value, true, true, true);
   NEO_JS_VM_CHECK(vm, res, program, offset);
 }
+static void neo_js_vm_init_private_field(neo_js_vm_t vm, neo_js_context_t ctx,
+                                         neo_program_t program,
+                                         size_t *offset) {
+  neo_allocator_t allocator =
+      neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
+  neo_js_variable_t value = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t key = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t object = neo_js_vm_get_value(vm);
+  const uint16_t *name = ((neo_js_string_t)key->value)->value;
+  neo_js_object_t obj = (neo_js_object_t)object->value;
+  neo_js_object_private_t pri = neo_hash_map_get(obj->privites, name);
+  if (!pri) {
+    pri = neo_create_js_object_private(allocator);
+    neo_hash_map_set(obj->privites, neo_create_string16(allocator, name), pri);
+  }
+  if (pri->get) {
+    neo_js_value_remove_parent(pri->set, object->value);
+    pri->get = NULL;
+  }
+  if (pri->set) {
+    neo_js_value_remove_parent(pri->value, object->value);
+    pri->set = NULL;
+  }
+  if (pri->value) {
+    neo_js_value_remove_parent(pri->value, object->value);
+    pri->set = NULL;
+  }
+  pri->value = value->value;
+  neo_js_handle_add_parent(&value->value->handle, &object->value->handle);
+}
+
 static void neo_js_vm_push_undefined(neo_js_vm_t vm, neo_js_context_t ctx,
                                      neo_program_t program, size_t *offset) {
   neo_js_variable_t value = neo_js_context_get_undefined(ctx);
@@ -698,6 +732,64 @@ static void neo_js_vm_set_getter(neo_js_vm_t vm, neo_js_context_t ctx,
     neo_js_handle_add_parent(&value->value->handle, &object->value->handle);
   }
 }
+
+static void neo_js_vm_set_private_setter(neo_js_vm_t vm, neo_js_context_t ctx,
+                                         neo_program_t program,
+                                         size_t *offset) {
+  neo_allocator_t allocator =
+      neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
+  neo_js_variable_t value = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t key = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t object = neo_js_vm_get_value(vm);
+  const uint16_t *name = ((neo_js_string_t)key->value)->value;
+  neo_js_object_t obj = (neo_js_object_t)object->value;
+  neo_js_object_private_t pri = neo_hash_map_get(obj->privites, name);
+  if (!pri) {
+    pri = neo_create_js_object_private(allocator);
+    neo_hash_map_set(obj->privites, neo_create_string16(allocator, name), pri);
+  }
+  if (pri->set) {
+    neo_js_value_remove_parent(pri->set, object->value);
+    pri->set = NULL;
+  }
+  if (pri->value) {
+    neo_js_value_remove_parent(pri->value, object->value);
+    pri->value = NULL;
+  }
+  pri->set = value->value;
+  neo_js_handle_add_parent(&value->value->handle, &object->value->handle);
+}
+static void neo_js_vm_set_private_getter(neo_js_vm_t vm, neo_js_context_t ctx,
+                                         neo_program_t program,
+                                         size_t *offset) {
+  neo_allocator_t allocator =
+      neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
+  neo_js_variable_t value = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t key = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t object = neo_js_vm_get_value(vm);
+  const uint16_t *name = ((neo_js_string_t)key->value)->value;
+  neo_js_object_t obj = (neo_js_object_t)object->value;
+  neo_js_object_private_t pri = neo_hash_map_get(obj->privites, name);
+  if (!pri) {
+    pri = neo_create_js_object_private(allocator);
+    neo_hash_map_set(obj->privites, neo_create_string16(allocator, name), pri);
+  }
+  if (pri->get) {
+    neo_js_value_remove_parent(pri->set, object->value);
+    pri->get = NULL;
+  }
+  if (pri->value) {
+    neo_js_value_remove_parent(pri->value, object->value);
+    pri->value = NULL;
+  }
+  pri->get = value->value;
+  neo_js_handle_add_parent(&value->value->handle, &object->value->handle);
+}
+
 static void neo_js_vm_set_method(neo_js_vm_t vm, neo_js_context_t ctx,
                                  neo_program_t program, size_t *offset) {
   neo_js_variable_t method = neo_js_vm_get_value(vm);
@@ -708,6 +800,44 @@ static void neo_js_vm_set_method(neo_js_vm_t vm, neo_js_context_t ctx,
   neo_js_variable_t res =
       neo_js_variable_def_field(object, ctx, key, method, true, true, true);
   NEO_JS_VM_CHECK(vm, res, program, offset);
+  neo_js_variable_t constructor = neo_js_variable_get_field(
+      object, ctx, neo_js_context_create_cstring(ctx, "constructor"));
+  neo_js_variable_set_class(method, ctx, constructor);
+}
+static void neo_js_vm_set_private_method(neo_js_vm_t vm, neo_js_context_t ctx,
+                                         neo_program_t program,
+                                         size_t *offset) {
+  neo_allocator_t allocator =
+      neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
+  neo_js_variable_t value = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t key = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
+  neo_js_variable_t object = neo_js_vm_get_value(vm);
+  const uint16_t *name = ((neo_js_string_t)key->value)->value;
+  neo_js_object_t obj = (neo_js_object_t)object->value;
+  neo_js_object_private_t pri = neo_hash_map_get(obj->privites, name);
+  if (!pri) {
+    pri = neo_create_js_object_private(allocator);
+    neo_hash_map_set(obj->privites, neo_create_string16(allocator, name), pri);
+  }
+  if (pri->get) {
+    neo_js_value_remove_parent(pri->set, object->value);
+    pri->get = NULL;
+  }
+  if (pri->set) {
+    neo_js_value_remove_parent(pri->value, object->value);
+    pri->set = NULL;
+  }
+  if (pri->value) {
+    neo_js_value_remove_parent(pri->value, object->value);
+    pri->set = NULL;
+  }
+  pri->value = value->value;
+  neo_js_handle_add_parent(&value->value->handle, &object->value->handle);
+  neo_js_variable_t constructor = neo_js_variable_get_field(
+      object, ctx, neo_js_context_create_cstring(ctx, "constructor"));
+  neo_js_variable_set_class(value, ctx, constructor);
 }
 static void neo_js_vm_jnull(neo_js_vm_t vm, neo_js_context_t ctx,
                             neo_program_t program, size_t *offset) {
@@ -1667,7 +1797,7 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     NULL,                           // NEO_ASM_INIT_ACCESSOR
     NULL,                           // NEO_ASM_INIT_PRIVATE_ACCESSOR
     neo_js_vm_init_field,           // NEO_ASM_INIT_FIELD
-    NULL,                           // NEO_ASM_INIT_PRIVATE_FIELD
+    neo_js_vm_init_private_field,   // NEO_ASM_INIT_PRIVATE_FIELD
     neo_js_vm_push_undefined,       // NEO_ASM_PUSH_UNDEFINED
     neo_js_vm_push_null,            // NEO_ASM_PUSH_NULL
     neo_js_vm_push_nan,             // NEO_ASM_PUSH_NAN
@@ -1721,9 +1851,9 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     neo_js_vm_set_getter,           // NEO_ASM_SET_GETTER
     neo_js_vm_set_setter,           // NEO_ASM_SET_SETTER
     neo_js_vm_set_method,           // NEO_ASM_SET_METHOD
-    NULL,                           // NEO_ASM_DEF_PRIVATE_GETTER
-    NULL,                           // NEO_ASM_DEF_PRIVATE_SETTER
-    NULL,                           // NEO_ASM_DEF_PRIVATE_METHOD
+    neo_js_vm_set_private_getter,   // NEO_ASM_DEF_PRIVATE_GETTER
+    neo_js_vm_set_private_setter,   // NEO_ASM_DEF_PRIVATE_SETTER
+    neo_js_vm_set_private_method,   // NEO_ASM_DEF_PRIVATE_METHOD
     neo_js_vm_jnull,                // NEO_ASM_JNULL
     neo_js_vm_jnot_null,            // NEO_ASM_JNOT_NULL
     neo_js_vm_jfalse,               // NEO_ASM_JFALSE

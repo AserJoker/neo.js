@@ -4,6 +4,7 @@
 #include "core/hash.h"
 #include "core/hash_map.h"
 #include "core/list.h"
+#include "core/string.h"
 #include "engine/string.h"
 #include "engine/value.h"
 #include <stdbool.h>
@@ -36,12 +37,16 @@ void neo_init_js_object(neo_js_object_t self, neo_allocator_t allocator,
   self->sealed = false;
   self->keys = neo_create_list(allocator, NULL);
   self->clazz = NULL;
-  self->privites = NULL;
   initialize.compare = (neo_compare_fn_t)strcmp;
   initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
   initialize.auto_free_key = true;
   initialize.auto_free_value = false;
   self->internals = neo_create_hash_map(allocator, &initialize);
+  initialize.auto_free_key = true;
+  initialize.auto_free_value = true;
+  initialize.hash = (neo_hash_fn_t)neo_hash_sdb_utf16;
+  initialize.compare = (neo_compare_fn_t)neo_string16_compare;
+  self->privites = neo_create_hash_map(allocator, &initialize);
   neo_js_value_add_parent(prototype, neo_js_object_to_value(self));
 }
 void neo_deinit_js_object(neo_js_object_t self, neo_allocator_t allocator) {
@@ -100,4 +105,13 @@ neo_create_js_object_property(neo_allocator_t allocator) {
   property->value = NULL;
   property->writable = false;
   return property;
+}
+neo_js_object_private_t
+neo_create_js_object_private(neo_allocator_t allocator) {
+  neo_js_object_private_t pri = neo_allocator_alloc(
+      allocator, sizeof(struct _neo_js_object_private_t), NULL);
+  pri->get = NULL;
+  pri->set = NULL;
+  pri->value = NULL;
+  return pri;
 }

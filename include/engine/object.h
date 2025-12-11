@@ -17,6 +17,13 @@ struct _neo_js_object_property_t {
   neo_js_value_t value;
 };
 
+typedef struct _neo_js_object_private_t *neo_js_object_private_t;
+struct _neo_js_object_private_t {
+  neo_js_value_t get;
+  neo_js_value_t set;
+  neo_js_value_t value;
+};
+
 struct _neo_js_object_t {
   struct _neo_js_value_t super;
   neo_js_value_t prototype;
@@ -46,6 +53,8 @@ uint32_t neo_js_object_key_hash(const neo_js_value_t self, uint32_t max);
 
 neo_js_object_property_t
 neo_create_js_object_property(neo_allocator_t allocator);
+
+neo_js_object_private_t neo_create_js_object_private(neo_allocator_t allocator);
 
 #ifdef __cplusplus
 }

@@ -1,17 +1,8 @@
 'use strict'
 class Base {
-    get _data() {
-        print('-----------')
-    }
+    #data = 234
     write() {
-        print('base')
+        print(this.#data)
     }
 };
-class Test extends Base {
-    _data = 123
-    write() {
-        super.write()
-        print('test')
-    }
-};
-new Test().write()
+new Base().write()

@@ -75,7 +75,8 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
     }
     if (node->type == NEO_NODE_TYPE_CLASS_PROPERTY) {
       neo_ast_class_property_t property = (neo_ast_class_property_t)node;
-      if (!property->static_) {
+      if (!property->static_ &&
+          property->identifier->type != NEO_NODE_TYPE_PRIVATE_NAME) {
         TRY(node->write(allocator, ctx, node)) { return; }
       }
     }
@@ -166,7 +167,8 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
     }
     if (node->type == NEO_NODE_TYPE_CLASS_PROPERTY) {
       neo_ast_class_property_t property = (neo_ast_class_property_t)node;
-      if (property->static_) {
+      if (property->static_ ||
+          property->identifier->type == NEO_NODE_TYPE_PRIVATE_NAME) {
         TRY(node->write(allocator, ctx, node)) { return; }
       }
     }
