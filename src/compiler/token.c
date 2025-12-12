@@ -14,8 +14,10 @@
 
 static int32_t neo_read_hex(const char *file, neo_position_t *position) {
   neo_position_t current = *position;
-  if (IS_HEX(*current.offset)) {
-    while (IS_HEX(*current.offset)) {
+  if (IS_HEX(*current.offset) ||
+      (*current.offset == '_' && *(current.offset - 1) != '_')) {
+    while (IS_HEX(*current.offset) ||
+           (*current.offset == '_' && *(current.offset - 1) != '_')) {
       current.offset++;
       current.column++;
     }
@@ -29,8 +31,10 @@ static int32_t neo_read_hex(const char *file, neo_position_t *position) {
 
 static int32_t neo_read_oct(const char *file, neo_position_t *position) {
   neo_position_t current = *position;
-  if (IS_OCT(*current.offset)) {
-    while (IS_OCT(*current.offset)) {
+  if (IS_OCT(*current.offset) ||
+      (*current.offset == '_' && *(current.offset - 1) != '_')) {
+    while (IS_OCT(*current.offset) ||
+           (*current.offset == '_' && *(current.offset - 1) != '_')) {
       current.offset++;
       current.column++;
     }
@@ -214,7 +218,11 @@ neo_token_t neo_read_number_token(neo_allocator_t allocator, const char *file,
       }
     }
   }
-
+  if (*current.offset == '_' || *current.offset == '.') {
+    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+          current.line, current.column);
+    return NULL;
+  }
   neo_token_t token = (neo_token_t)neo_allocator_alloc(
       allocator, sizeof(struct _neo_token_t), NULL);
   token->location.begin = *position;

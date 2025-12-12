@@ -1,2 +1,2 @@
 'use strict'
-print(2_3)
+print(0x2_3)
