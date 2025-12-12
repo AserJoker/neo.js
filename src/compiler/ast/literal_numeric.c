@@ -9,6 +9,7 @@
 #include "core/location.h"
 #include "core/position.h"
 #include <stdlib.h>
+#include <string.h>
 
 static void neo_ast_literal_numeric_dispose(neo_allocator_t allocator,
                                             neo_ast_literal_numeric_t node) {
@@ -42,7 +43,19 @@ static void neo_ast_literal_numeric_write(neo_allocator_t allocator,
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_INFINTY);
   } else {
     char *str = neo_location_get(allocator, self->node.location);
-    double value = atof(str);
+    size_t len = strlen(str);
+    char str2[len + 1];
+    const char *src = str;
+    char *dst = str2;
+    while (*src) {
+      if (*src == '_') {
+        src++;
+      } else {
+        *dst++ = *src++;
+      }
+    }
+    *dst = 0;
+    double value = atof(str2);
     neo_allocator_free(allocator, str);
     neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_NUMBER);
     neo_program_add_number(allocator, ctx->program, value);

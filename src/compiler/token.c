@@ -44,8 +44,10 @@ static int32_t neo_read_oct(const char *file, neo_position_t *position) {
 
 static int32_t neo_read_dec(const char *file, neo_position_t *position) {
   neo_position_t current = *position;
-  if (IS_DEC(*current.offset)) {
-    while (IS_DEC(*current.offset)) {
+  if (IS_DEC(*current.offset) ||
+      (*current.offset == '_' && *(current.offset - 1) != '_')) {
+    while (IS_DEC(*current.offset) ||
+           (*current.offset == '_' && *(current.offset - 1) != '_')) {
       current.offset++;
       current.column++;
     }
@@ -115,8 +117,7 @@ static int32_t neo_read_escape(const char *file, neo_position_t *position) {
   return size;
 }
 
-neo_token_t neo_read_string_token(neo_allocator_t allocator,
-                                  const char *file,
+neo_token_t neo_read_string_token(neo_allocator_t allocator, const char *file,
                                   neo_position_t *position) {
   neo_position_t current = *position;
   if (*current.offset != '\'' && *current.offset != '\"') {
@@ -155,8 +156,7 @@ neo_token_t neo_read_string_token(neo_allocator_t allocator,
   return token;
 }
 
-neo_token_t neo_read_number_token(neo_allocator_t allocator,
-                                  const char *file,
+neo_token_t neo_read_number_token(neo_allocator_t allocator, const char *file,
                                   neo_position_t *position) {
   neo_position_t current = *position;
   if (*current.offset == '0' &&
@@ -225,8 +225,7 @@ neo_token_t neo_read_number_token(neo_allocator_t allocator,
   return token;
 }
 
-neo_token_t neo_read_symbol_token(neo_allocator_t allocator,
-                                  const char *file,
+neo_token_t neo_read_symbol_token(neo_allocator_t allocator, const char *file,
                                   neo_position_t *position) {
   static const char *operators[] = {
       ">>>=", "...", "<<=", ">>>", "===", "!==", "**=", ">>=", "&&=", "(?\?=)",
@@ -268,8 +267,7 @@ neo_token_t neo_read_symbol_token(neo_allocator_t allocator,
   return token;
 }
 
-neo_token_t neo_read_regexp_token(neo_allocator_t allocator,
-                                  const char *file,
+neo_token_t neo_read_regexp_token(neo_allocator_t allocator, const char *file,
                                   neo_position_t *position) {
   neo_position_t current = *position;
   if (*current.offset == '/' && *(current.offset + 1) != '/') {
@@ -327,8 +325,7 @@ neo_token_t neo_read_regexp_token(neo_allocator_t allocator,
   return token;
 }
 
-neo_token_t neo_read_identify_token(neo_allocator_t allocator,
-                                    const char *file,
+neo_token_t neo_read_identify_token(neo_allocator_t allocator, const char *file,
                                     neo_position_t *position) {
 
   neo_position_t current = *position;
@@ -440,8 +437,7 @@ neo_token_t neo_read_identify_token(neo_allocator_t allocator,
   return token;
 }
 
-neo_token_t neo_read_comment_token(neo_allocator_t allocator,
-                                   const char *file,
+neo_token_t neo_read_comment_token(neo_allocator_t allocator, const char *file,
                                    neo_position_t *position) {
   neo_position_t current = *position;
   if (*current.offset == '/' && *(current.offset + 1) == '/') {
