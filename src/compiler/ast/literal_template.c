@@ -132,6 +132,9 @@ static void neo_ast_literal_template_write(neo_allocator_t allocator,
           (neo_ast_expression_member_t)(self->tag);
       if (member->field->type == NEO_NODE_TYPE_PRIVATE_NAME) {
         neo_program_add_code(allocator, ctx->program, NEO_ASM_PRIVATE_TAG);
+        char *name = neo_location_get(allocator, member->field->location);
+        neo_program_add_string(allocator, ctx->program, name);
+        neo_allocator_free(allocator, name);
       } else {
         if (member->host->type == NEO_NODE_TYPE_EXPRESSION_SUPER) {
           neo_program_add_code(allocator, ctx->program,

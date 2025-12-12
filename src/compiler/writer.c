@@ -204,10 +204,12 @@ void neo_write_optional_chain(neo_allocator_t allocator,
         }
       }
       if (member->node.type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
-        char *name = neo_location_get(allocator, member->field->location);
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-        neo_program_add_string(allocator, ctx->program, name);
-        neo_allocator_free(allocator, name);
+        if (member->field->type != NEO_NODE_TYPE_PRIVATE_NAME) {
+          char *name = neo_location_get(allocator, member->field->location);
+          neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+          neo_program_add_string(allocator, ctx->program, name);
+          neo_allocator_free(allocator, name);
+        }
       } else {
         TRY(member->field->write(allocator, ctx, member->field)) { return; };
       }
@@ -275,6 +277,9 @@ void neo_write_optional_chain(neo_allocator_t allocator,
       } else {
         if (member->field->type == NEO_NODE_TYPE_PRIVATE_NAME) {
           neo_program_add_code(allocator, ctx->program, NEO_ASM_PRIVATE_CALL);
+          char *name = neo_location_get(allocator, member->field->location);
+          neo_program_add_string(allocator, ctx->program, name);
+          neo_allocator_free(allocator, name);
         } else {
           neo_program_add_code(allocator, ctx->program, NEO_ASM_MEMBER_CALL);
         }
@@ -297,16 +302,21 @@ void neo_write_optional_chain(neo_allocator_t allocator,
         return;
       }
     }
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-    char *field = neo_location_get(allocator, member->field->location);
-    neo_program_add_string(allocator, ctx->program, field);
-    neo_allocator_free(allocator, field);
+    if (member->field->type != NEO_NODE_TYPE_PRIVATE_NAME) {
+      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+      char *field = neo_location_get(allocator, member->field->location);
+      neo_program_add_string(allocator, ctx->program, field);
+      neo_allocator_free(allocator, field);
+    }
     if (member->host->type == NEO_NODE_TYPE_EXPRESSION_SUPER) {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_SUPER_FIELD);
     } else {
       if (member->field->type == NEO_NODE_TYPE_PRIVATE_NAME) {
         neo_program_add_code(allocator, ctx->program,
                              NEO_ASM_GET_PRIVATE_FIELD);
+        char *name = neo_location_get(allocator, member->field->location);
+        neo_program_add_string(allocator, ctx->program, name);
+        neo_allocator_free(allocator, name);
       } else {
         neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
       }

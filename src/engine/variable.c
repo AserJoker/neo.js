@@ -457,6 +457,257 @@ neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
   return self;
 }
 
+neo_js_variable_t neo_js_variable_def_private_field(neo_js_variable_t self,
+                                                    neo_js_variable_t clazz,
+                                                    neo_js_context_t ctx,
+                                                    const char *name,
+                                                    neo_js_variable_t value) {
+  if (self->value->type < NEO_JS_TYPE_OBJECT || !clazz) {
+    char s[strlen(name) + 64];
+    sprintf(s, "Private field '%s' must be declared in an enclosing class",
+            name);
+    neo_js_variable_t message = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t syntax_error =
+        neo_js_context_get_constant(ctx)->syntax_error_class;
+    neo_js_variable_t error =
+        neo_js_variable_construct(syntax_error, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  neo_allocator_t allocator =
+      neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
+  neo_js_object_t obj = (neo_js_object_t)(self->value);
+  neo_hash_map_t privates = neo_hash_map_get(obj->privites, clazz->value);
+  if (!privates) {
+    neo_hash_map_initialize_t initialize = {0};
+    initialize.compare = (neo_compare_fn_t)strcmp;
+    initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
+    initialize.auto_free_key = true;
+    initialize.auto_free_value = true;
+    privates = neo_create_hash_map(allocator, &initialize);
+    neo_hash_map_set(obj->privites, clazz->value, privates);
+    neo_js_value_add_parent(clazz->value, self->value);
+  }
+  if (neo_hash_map_has(privates, name)) {
+    neo_js_variable_t message = neo_js_context_create_cstring(
+        ctx, "Cannot initialize the same private elements twice on an object");
+    neo_js_variable_t syntax_error =
+        neo_js_context_get_constant(ctx)->syntax_error_class;
+    neo_js_variable_t error =
+        neo_js_variable_construct(syntax_error, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  neo_js_object_private_t pri = neo_create_js_object_private(allocator);
+  pri->value = value->value;
+  neo_hash_map_set(privates, neo_create_string(allocator, name), pri);
+  neo_js_value_add_parent(pri->value, self->value);
+  return self;
+}
+
+neo_js_variable_t neo_js_variable_def_private_method(neo_js_variable_t self,
+                                                     neo_js_variable_t clazz,
+                                                     neo_js_context_t ctx,
+                                                     const char *name,
+                                                     neo_js_variable_t value) {
+  if (self->value->type < NEO_JS_TYPE_OBJECT || !clazz) {
+    char s[strlen(name) + 64];
+    sprintf(s, "Private field '%s' must be declared in an enclosing class",
+            name);
+    neo_js_variable_t message = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t syntax_error =
+        neo_js_context_get_constant(ctx)->syntax_error_class;
+    neo_js_variable_t error =
+        neo_js_variable_construct(syntax_error, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  neo_allocator_t allocator =
+      neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
+  neo_js_object_t obj = (neo_js_object_t)(self->value);
+  neo_hash_map_t privates = neo_hash_map_get(obj->privites, clazz->value);
+  if (!privates) {
+    neo_hash_map_initialize_t initialize = {0};
+    initialize.compare = (neo_compare_fn_t)strcmp;
+    initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
+    initialize.auto_free_key = true;
+    initialize.auto_free_value = true;
+    privates = neo_create_hash_map(allocator, &initialize);
+    neo_hash_map_set(obj->privites, clazz->value, privates);
+    neo_js_value_add_parent(clazz->value, self->value);
+  }
+  if (neo_hash_map_has(privates, name)) {
+    neo_js_variable_t message = neo_js_context_create_cstring(
+        ctx, "Cannot initialize the same private elements twice on an object");
+    neo_js_variable_t syntax_error =
+        neo_js_context_get_constant(ctx)->syntax_error_class;
+    neo_js_variable_t error =
+        neo_js_variable_construct(syntax_error, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  neo_js_object_private_t pri = neo_create_js_object_private(allocator);
+  pri->method = value->value;
+  neo_hash_map_set(privates, neo_create_string(allocator, name), pri);
+  neo_js_value_add_parent(pri->method, self->value);
+  return self;
+}
+
+neo_js_variable_t neo_js_variable_def_private_accessor(
+    neo_js_variable_t self, neo_js_variable_t clazz, neo_js_context_t ctx,
+    const char *name, neo_js_variable_t get, neo_js_variable_t set) {
+  if (self->value->type < NEO_JS_TYPE_OBJECT || !clazz) {
+    char s[strlen(name) + 64];
+    sprintf(s, "Private field '%s' must be declared in an enclosing class",
+            name);
+    neo_js_variable_t message = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t syntax_error =
+        neo_js_context_get_constant(ctx)->syntax_error_class;
+    neo_js_variable_t error =
+        neo_js_variable_construct(syntax_error, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  neo_allocator_t allocator =
+      neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
+  neo_js_object_t obj = (neo_js_object_t)(self->value);
+  neo_hash_map_t privates = neo_hash_map_get(obj->privites, clazz->value);
+  if (!privates) {
+    neo_hash_map_initialize_t initialize = {0};
+    initialize.compare = (neo_compare_fn_t)strcmp;
+    initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
+    initialize.auto_free_key = true;
+    initialize.auto_free_value = true;
+    privates = neo_create_hash_map(allocator, &initialize);
+    neo_hash_map_set(obj->privites, clazz->value, privates);
+    neo_js_value_add_parent(clazz->value, self->value);
+  }
+  neo_js_object_private_t pri = neo_hash_map_get(privates, name);
+  if (!pri) {
+    pri = neo_create_js_object_private(allocator);
+    neo_hash_map_set(privates, neo_create_string(allocator, name), pri);
+  }
+  if (pri->value || (pri->get && get) || (pri->set && set)) {
+    neo_js_variable_t message = neo_js_context_create_cstring(
+        ctx, "Cannot initialize the same private elements twice on an object");
+    neo_js_variable_t syntax_error =
+        neo_js_context_get_constant(ctx)->syntax_error_class;
+    neo_js_variable_t error =
+        neo_js_variable_construct(syntax_error, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  if (get) {
+    pri->get = get->value;
+    neo_js_variable_set_class(get, ctx, clazz);
+    neo_js_value_add_parent(get->value, self->value);
+  }
+  if (set) {
+    pri->set = set->value;
+    neo_js_variable_set_class(set, ctx, clazz);
+    neo_js_value_add_parent(set->value, self->value);
+  }
+  return self;
+}
+neo_js_variable_t neo_js_variable_get_private_field(neo_js_variable_t self,
+                                                    neo_js_variable_t clazz,
+                                                    neo_js_context_t ctx,
+                                                    const char *name) {
+  if (self->value->type < NEO_JS_TYPE_OBJECT || !clazz) {
+    char s[strlen(name) + 64];
+    sprintf(s, "Private field '%s' must be declared in an enclosing class",
+            name);
+    neo_js_variable_t message = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t syntax_error =
+        neo_js_context_get_constant(ctx)->syntax_error_class;
+    neo_js_variable_t error =
+        neo_js_variable_construct(syntax_error, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  neo_js_object_t obj = (neo_js_object_t)(self->value);
+  neo_hash_map_t privates = neo_hash_map_get(obj->privites, clazz->value);
+  if (!privates || !neo_hash_map_has(privates, name)) {
+    char s[strlen(name) + 64];
+    sprintf(s, "Private field '%s' must be declared in an enclosing class",
+            name);
+    neo_js_variable_t message = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t syntax_error =
+        neo_js_context_get_constant(ctx)->syntax_error_class;
+    neo_js_variable_t error =
+        neo_js_variable_construct(syntax_error, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  neo_js_object_private_t pri = neo_hash_map_get(privates, name);
+  if (pri->method) {
+    return neo_js_context_create_variable(ctx, pri->method);
+  }
+  if (pri->value) {
+    return neo_js_context_create_variable(ctx, pri->value);
+  }
+  if (pri->get) {
+    neo_js_variable_t get = neo_js_context_create_variable(ctx, pri->get);
+    return neo_js_variable_call(get, ctx, self, 0, NULL);
+  }
+  return neo_js_context_get_undefined(ctx);
+}
+neo_js_variable_t neo_js_variable_set_private_field(neo_js_variable_t self,
+                                                    neo_js_variable_t clazz,
+                                                    neo_js_context_t ctx,
+                                                    const char *name,
+                                                    neo_js_variable_t value) {
+  if (self->value->type < NEO_JS_TYPE_OBJECT || !clazz) {
+    char s[strlen(name) + 64];
+    sprintf(s, "Private field '%s' must be declared in an enclosing class",
+            name);
+    neo_js_variable_t message = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t syntax_error =
+        neo_js_context_get_constant(ctx)->syntax_error_class;
+    neo_js_variable_t error =
+        neo_js_variable_construct(syntax_error, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  neo_js_object_t obj = (neo_js_object_t)(self->value);
+  neo_hash_map_t privates = neo_hash_map_get(obj->privites, clazz->value);
+  if (!privates || !neo_hash_map_has(privates, name)) {
+    char s[strlen(name) + 64];
+    sprintf(s, "Private field '%s' must be declared in an enclosing class",
+            name);
+    neo_js_variable_t message = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t syntax_error =
+        neo_js_context_get_constant(ctx)->syntax_error_class;
+    neo_js_variable_t error =
+        neo_js_variable_construct(syntax_error, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  neo_js_object_private_t pri = neo_hash_map_get(privates, name);
+  if (pri->method) {
+    char s[strlen(name) + 64];
+    sprintf(s,
+            "Cannot assign to private method '%s'. Private methods are not "
+            "writable.",
+            name);
+    neo_js_variable_t message = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t syntax_error =
+        neo_js_context_get_constant(ctx)->syntax_error_class;
+    neo_js_variable_t error =
+        neo_js_variable_construct(syntax_error, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  if (pri->value) {
+    neo_js_value_remove_parent(pri->value, self->value);
+    neo_js_context_create_variable(ctx, pri->value);
+    pri->value = value->value;
+    neo_js_value_add_parent(pri->value, self->value);
+  } else if (pri->set) {
+    neo_js_variable_t set = neo_js_context_create_variable(ctx, pri->set);
+    return neo_js_variable_call(set, ctx, self, 1, &value);
+  } else {
+    char s[strlen(name) + 64];
+    sprintf(s, "Cannot set private %s of #<Object>, which has only a getter",
+            name);
+    neo_js_variable_t message = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t syntax_error =
+        neo_js_context_get_constant(ctx)->syntax_error_class;
+    neo_js_variable_t error =
+        neo_js_variable_construct(syntax_error, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
+  return self;
+}
 neo_js_variable_t
 neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
                              neo_js_variable_t key, neo_js_variable_t get,
@@ -1017,6 +1268,9 @@ neo_js_variable_t neo_js_variable_call_function(neo_js_variable_t self,
         neo_js_context_get_constant(ctx)->async_generator_prototype;
     neo_js_variable_t generator = neo_js_context_create_object(ctx, prototype);
     neo_js_vm_t vm = neo_create_js_vm(ctx, bind);
+    if (callable->clazz) {
+      vm->clazz = neo_js_context_create_variable(ctx, callable->clazz);
+    }
     neo_js_variable_t value = neo_js_context_create_interrupt(
         ctx, neo_js_context_get_undefined(ctx), function->address,
         function->program, vm, NEO_JS_INTERRUPT_INIT);
@@ -1029,6 +1283,9 @@ neo_js_variable_t neo_js_variable_call_function(neo_js_variable_t self,
         neo_js_context_get_constant(ctx)->generator_prototype;
     neo_js_variable_t generator = neo_js_context_create_object(ctx, prototype);
     neo_js_vm_t vm = neo_create_js_vm(ctx, bind);
+    if (callable->clazz) {
+      vm->clazz = neo_js_context_create_variable(ctx, callable->clazz);
+    }
     neo_js_variable_t value = neo_js_context_create_interrupt(
         ctx, neo_js_context_get_undefined(ctx), function->address,
         function->program, vm, NEO_JS_INTERRUPT_INIT);
@@ -1039,6 +1296,9 @@ neo_js_variable_t neo_js_variable_call_function(neo_js_variable_t self,
   } else if (callable->is_async) {
     neo_js_variable_t promise = neo_js_context_create_promise(ctx);
     neo_js_vm_t vm = neo_create_js_vm(ctx, bind);
+    if (callable->clazz) {
+      vm->clazz = neo_js_context_create_variable(ctx, callable->clazz);
+    }
     neo_js_variable_t interrupt = neo_js_context_create_interrupt(
         ctx, neo_js_context_get_undefined(ctx), function->address,
         function->program, vm, NEO_JS_INTERRUPT_INIT);
@@ -1052,6 +1312,9 @@ neo_js_variable_t neo_js_variable_call_function(neo_js_variable_t self,
     return promise;
   } else {
     neo_js_vm_t vm = neo_create_js_vm(ctx, bind);
+    if (callable->clazz) {
+      vm->clazz = neo_js_context_create_variable(ctx, callable->clazz);
+    }
     neo_js_variable_t result =
         neo_js_vm_run(vm, ctx, function->program, function->address);
     neo_allocator_free(allocator, vm);
@@ -1337,6 +1600,9 @@ neo_js_variable_t neo_js_variable_set_bind(neo_js_variable_t self,
 neo_js_variable_t neo_js_variable_set_class(neo_js_variable_t self,
                                             neo_js_context_t ctx,
                                             neo_js_variable_t clazz) {
+  if (!clazz) {
+    return self;
+  }
   if (self->value->type != NEO_JS_TYPE_FUNCTION) {
     neo_js_variable_t message =
         neo_js_context_format(ctx, "%v is not function", self);

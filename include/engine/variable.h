@@ -44,6 +44,28 @@ neo_js_variable_t
 neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
                           neo_js_variable_t key, neo_js_variable_t value,
                           bool configurable, bool enumable, bool writable);
+neo_js_variable_t neo_js_variable_def_private_field(neo_js_variable_t self,
+                                                    neo_js_variable_t clazz,
+                                                    neo_js_context_t ctx,
+                                                    const char *name,
+                                                    neo_js_variable_t value);
+neo_js_variable_t neo_js_variable_def_private_method(neo_js_variable_t self,
+                                                     neo_js_variable_t clazz,
+                                                     neo_js_context_t ctx,
+                                                     const char *name,
+                                                     neo_js_variable_t value);
+neo_js_variable_t neo_js_variable_def_private_accessor(
+    neo_js_variable_t self, neo_js_variable_t clazz, neo_js_context_t ctx,
+    const char *name, neo_js_variable_t get, neo_js_variable_t set);
+neo_js_variable_t neo_js_variable_get_private_field(neo_js_variable_t self,
+                                                    neo_js_variable_t clazz,
+                                                    neo_js_context_t ctx,
+                                                    const char *name);
+neo_js_variable_t neo_js_variable_set_private_field(neo_js_variable_t self,
+                                                    neo_js_variable_t clazz,
+                                                    neo_js_context_t ctx,
+                                                    const char *name,
+                                                    neo_js_variable_t value);
 neo_js_variable_t
 neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
                              neo_js_variable_t key, neo_js_variable_t get,

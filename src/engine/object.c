@@ -4,7 +4,6 @@
 #include "core/hash.h"
 #include "core/hash_map.h"
 #include "core/list.h"
-#include "core/string.h"
 #include "engine/string.h"
 #include "engine/value.h"
 #include <stdbool.h>
@@ -21,6 +20,7 @@ neo_js_object_t neo_create_js_object(neo_allocator_t allocator,
   neo_init_js_object(object, allocator, prototype);
   return object;
 }
+
 void neo_init_js_object(neo_js_object_t self, neo_allocator_t allocator,
                         neo_js_value_t prototype) {
   neo_init_js_value(&self->super, allocator, NEO_JS_TYPE_OBJECT);
@@ -42,10 +42,10 @@ void neo_init_js_object(neo_js_object_t self, neo_allocator_t allocator,
   initialize.auto_free_key = true;
   initialize.auto_free_value = false;
   self->internals = neo_create_hash_map(allocator, &initialize);
-  initialize.auto_free_key = true;
+  initialize.auto_free_key = false;
   initialize.auto_free_value = true;
-  initialize.hash = (neo_hash_fn_t)neo_hash_sdb_utf16;
-  initialize.compare = (neo_compare_fn_t)neo_string16_compare;
+  initialize.hash = NULL;
+  initialize.compare = NULL;
   self->privites = neo_create_hash_map(allocator, &initialize);
   neo_js_value_add_parent(prototype, neo_js_object_to_value(self));
 }
@@ -113,5 +113,6 @@ neo_create_js_object_private(neo_allocator_t allocator) {
   pri->get = NULL;
   pri->set = NULL;
   pri->value = NULL;
+  pri->method = NULL;
   return pri;
 }

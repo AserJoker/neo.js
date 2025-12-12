@@ -171,15 +171,21 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
     case NEO_ASM_INIT_FIELD:
       fprintf(fp, "NEO_ASM_INIT_FIELD\n");
       break;
-    case NEO_ASM_INIT_PRIVATE_FIELD:
-      fprintf(fp, "NEO_ASM_INIT_PRIVATE_FIELD\n");
-      break;
+    case NEO_ASM_INIT_PRIVATE_FIELD: {
+      char *constant = neo_string_encode_escape(
+          allocator, neo_program_get_string(self, &offset));
+      fprintf(fp, "NEO_ASM_INIT_PRIVATE_FIELD \"%s\"\n", constant);
+      neo_allocator_free(allocator, constant);
+    } break;
     case NEO_ASM_INIT_ACCESSOR:
       fprintf(fp, "NEO_ASM_INIT_ACCESSOR\n");
       break;
-    case NEO_ASM_INIT_PRIVATE_ACCESSOR:
-      fprintf(fp, "NEO_ASM_INIT_PRIVATE_ACCESSOR\n");
-      break;
+    case NEO_ASM_INIT_PRIVATE_ACCESSOR: {
+      char *constant = neo_string_encode_escape(
+          allocator, neo_program_get_string(self, &offset));
+      fprintf(fp, "NEO_ASM_INIT_PRIVATE_ACCESSOR \"%s\"\n", constant);
+      neo_allocator_free(allocator, constant);
+    } break;
     case NEO_ASM_PUSH_UNDEFINED:
       fprintf(fp, "NEO_ASM_PUSH_UNDEFINED\n");
       break;
@@ -350,16 +356,25 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       fprintf(fp, "NEO_ASM_SET_FIELD\n");
       break;
     case NEO_ASM_PRIVATE_CALL: {
+      char *constant = neo_string_encode_escape(
+          allocator, neo_program_get_string(self, &offset));
       uint32_t line = neo_program_get_integer(self, &offset);
       uint32_t column = neo_program_get_integer(self, &offset);
-      fprintf(fp, "NEO_ASM_PRIVATE_CALL %d,%d\n", line, column);
+      fprintf(fp, "NEO_ASM_PRIVATE_CALL %s,%d,%d\n", constant, line, column);
+      neo_allocator_free(allocator, constant);
     } break;
-    case NEO_ASM_GET_PRIVATE_FIELD:
-      fprintf(fp, "NEO_ASM_GET_PRIVATE_FIELD\n");
-      break;
-    case NEO_ASM_SET_PRIVATE_FIELD:
-      fprintf(fp, "NEO_ASM_SET_PRIVATE_FIELD\n");
-      break;
+    case NEO_ASM_GET_PRIVATE_FIELD: {
+      char *constant = neo_string_encode_escape(
+          allocator, neo_program_get_string(self, &offset));
+      fprintf(fp, "NEO_ASM_GET_PRIVATE_FIELD \"%s\"\n", constant);
+      neo_allocator_free(allocator, constant);
+    } break;
+    case NEO_ASM_SET_PRIVATE_FIELD: {
+      char *constant = neo_string_encode_escape(
+          allocator, neo_program_get_string(self, &offset));
+      fprintf(fp, "NEO_ASM_SET_PRIVATE_FIELD \"%s\"\n", constant);
+      neo_allocator_free(allocator, constant);
+    } break;
     case NEO_ASM_SET_GETTER:
       fprintf(fp, "NEO_ASM_SET_GETTER\n");
       break;
@@ -369,15 +384,24 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
     case NEO_ASM_SET_METHOD:
       fprintf(fp, "NEO_ASM_SET_METHOD\n");
       break;
-    case NEO_ASM_DEF_PRIVATE_GETTER:
-      fprintf(fp, "NEO_ASM_DEF_PRIVATE_GETTER\n");
-      break;
-    case NEO_ASM_DEF_PRIVATE_SETTER:
-      fprintf(fp, "NEO_ASM_DEF_PRIVATE_SETTER\n");
-      break;
-    case NEO_ASM_DEF_PRIVATE_METHOD:
-      fprintf(fp, "NEO_ASM_DEF_PRIVATE_METHOD\n");
-      break;
+    case NEO_ASM_DEF_PRIVATE_GETTER: {
+      char *constant = neo_string_encode_escape(
+          allocator, neo_program_get_string(self, &offset));
+      fprintf(fp, "NEO_ASM_DEF_PRIVATE_GETTER \"%s\"\n", constant);
+      neo_allocator_free(allocator, constant);
+    } break;
+    case NEO_ASM_DEF_PRIVATE_SETTER: {
+      char *constant = neo_string_encode_escape(
+          allocator, neo_program_get_string(self, &offset));
+      fprintf(fp, "NEO_ASM_DEF_PRIVATE_SETTER \"%s\"\n", constant);
+      neo_allocator_free(allocator, constant);
+    } break;
+    case NEO_ASM_DEF_PRIVATE_METHOD: {
+      char *constant = neo_string_encode_escape(
+          allocator, neo_program_get_string(self, &offset));
+      fprintf(fp, "NEO_ASM_DEF_PRIVATE_METHOD \"%s\"\n", constant);
+      neo_allocator_free(allocator, constant);
+    } break;
     case NEO_ASM_JNULL:
       fprintf(fp, "NEO_ASM_JNULL %zu\n",
               neo_program_get_address(self, &offset));
@@ -622,9 +646,12 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       fprintf(fp, "NEO_ASM_MEMBER_TAG %d,%d\n", line, column);
     } break;
     case NEO_ASM_PRIVATE_TAG: {
+      char *constant = neo_string_encode_escape(
+          allocator, neo_program_get_string(self, &offset));
       uint32_t line = neo_program_get_integer(self, &offset);
       uint32_t column = neo_program_get_integer(self, &offset);
-      fprintf(fp, "NEO_ASM_PRIVATE_TAG %d,%d\n", line, column);
+      fprintf(fp, "NEO_ASM_PRIVATE_TAG %s,%d,%d\n", constant, line, column);
+      neo_allocator_free(allocator, constant);
     } break;
     case NEO_ASM_SUPER_MEMBER_TAG: {
       uint32_t line = neo_program_get_integer(self, &offset);

@@ -75,8 +75,21 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
     }
     if (node->type == NEO_NODE_TYPE_CLASS_PROPERTY) {
       neo_ast_class_property_t property = (neo_ast_class_property_t)node;
-      if (!property->static_ &&
-          property->identifier->type != NEO_NODE_TYPE_PRIVATE_NAME) {
+      if (!property->static_) {
+        TRY(node->write(allocator, ctx, node)) { return; }
+      }
+    }
+    if (node->type == NEO_NODE_TYPE_CLASS_METHOD) {
+      neo_ast_class_method_t method = (neo_ast_class_method_t)node;
+      if (!method->static_ &&
+          method->name->type == NEO_NODE_TYPE_PRIVATE_NAME) {
+        TRY(node->write(allocator, ctx, node)) { return; }
+      }
+    }
+    if (node->type == NEO_NODE_TYPE_CLASS_ACCESSOR) {
+      neo_ast_class_accessor_t accessor = (neo_ast_class_accessor_t)node;
+      if (!accessor->static_ &&
+          accessor->name->type == NEO_NODE_TYPE_PRIVATE_NAME) {
         TRY(node->write(allocator, ctx, node)) { return; }
       }
     }
@@ -163,17 +176,23 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
     }
     if (node->type == NEO_NODE_TYPE_CLASS_METHOD &&
         node != &constructor->node) {
-      TRY(node->write(allocator, ctx, node)) { return; }
+      neo_ast_class_method_t method = (neo_ast_class_method_t)node;
+      if (method->static_ || method->name->type != NEO_NODE_TYPE_PRIVATE_NAME) {
+        TRY(node->write(allocator, ctx, node)) { return; }
+      }
     }
     if (node->type == NEO_NODE_TYPE_CLASS_PROPERTY) {
       neo_ast_class_property_t property = (neo_ast_class_property_t)node;
-      if (property->static_ ||
-          property->identifier->type == NEO_NODE_TYPE_PRIVATE_NAME) {
+      if (property->static_) {
         TRY(node->write(allocator, ctx, node)) { return; }
       }
     }
     if (node->type == NEO_NODE_TYPE_CLASS_ACCESSOR) {
-      TRY(node->write(allocator, ctx, node)) { return; }
+      neo_ast_class_accessor_t accessor = (neo_ast_class_accessor_t)node;
+      if (accessor->static_ ||
+          accessor->name->type != NEO_NODE_TYPE_PRIVATE_NAME) {
+        TRY(node->write(allocator, ctx, node)) { return; }
+      }
     }
   }
   neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);

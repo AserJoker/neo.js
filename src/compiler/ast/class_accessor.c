@@ -67,13 +67,12 @@ static void neo_ast_class_accessor_write(neo_allocator_t allocator,
   if (self->computed) {
     TRY(self->name->write(allocator, ctx, self->name)) { return; }
   } else {
-    if (self->name->type == NEO_NODE_TYPE_IDENTIFIER ||
-        self->name->type == NEO_NODE_TYPE_PRIVATE_NAME) {
+    if (self->name->type == NEO_NODE_TYPE_IDENTIFIER) {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
       char *name = neo_location_get(allocator, self->name->location);
       neo_program_add_string(allocator, ctx->program, name);
       neo_allocator_free(allocator, name);
-    } else {
+    } else if (self->name->type != NEO_NODE_TYPE_PRIVATE_NAME) {
       TRY(self->name->write(allocator, ctx, self->name)) { return; }
     }
   }
@@ -125,6 +124,9 @@ static void neo_ast_class_accessor_write(neo_allocator_t allocator,
     } else {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_DEF_PRIVATE_SETTER);
     }
+    char *name = neo_location_get(allocator, self->name->location);
+    neo_program_add_string(allocator, ctx->program, name);
+    neo_allocator_free(allocator, name);
   } else {
     if (self->kind == NEO_ACCESSOR_KIND_GET) {
       neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_GETTER);

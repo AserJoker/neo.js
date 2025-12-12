@@ -59,10 +59,12 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
       neo_allocator_free(allocator, addresses);
     }
     if (self->identifier->type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
-      char *field = neo_location_get(allocator, member->field->location);
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-      neo_program_add_string(allocator, ctx->program, field);
-      neo_allocator_free(allocator, field);
+      if (member->field->type != NEO_NODE_TYPE_PRIVATE_NAME) {
+        char *field = neo_location_get(allocator, member->field->location);
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+        neo_program_add_string(allocator, ctx->program, field);
+        neo_allocator_free(allocator, field);
+      }
     } else {
       TRY(member->field->write(allocator, ctx, member->field)) { return; }
     }
@@ -105,6 +107,9 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
       if (member->field->type == NEO_NODE_TYPE_PRIVATE_NAME) {
         neo_program_add_code(allocator, ctx->program,
                              NEO_ASM_SET_PRIVATE_FIELD);
+        char *name = neo_location_get(allocator, member->field->location);
+        neo_program_add_string(allocator, ctx->program, name);
+        neo_allocator_free(allocator, name);
       } else {
         neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
       }

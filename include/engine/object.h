@@ -22,6 +22,7 @@ struct _neo_js_object_private_t {
   neo_js_value_t get;
   neo_js_value_t set;
   neo_js_value_t value;
+  neo_js_value_t method;
 };
 
 struct _neo_js_object_t {

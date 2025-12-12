@@ -1,8 +1,12 @@
 'use strict'
 class Base {
-    #data = 234
-    write() {
+    accessor #data = 234
+    #write() {
         print(this.#data)
     }
+    write() {
+        this.#write()
+    }
 };
-new Base().write()
+class Test extends Base { };
+new Test().write()
