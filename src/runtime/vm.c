@@ -1189,6 +1189,16 @@ static void neo_js_vm_import(neo_js_vm_t vm, neo_js_context_t ctx,
   neo_list_push(vm->stack, res);
   neo_js_vm_await(vm, ctx, program, offset);
 }
+
+static void neo_js_vm_assert(neo_js_vm_t vm, neo_js_context_t ctx,
+                             neo_program_t program, size_t *offset) {
+  const char *type = neo_js_vm_read_string(program, offset);
+  const char *value = neo_js_vm_read_string(program, offset);
+  const char *module = neo_js_vm_read_string(program, offset);
+  neo_js_variable_t res = neo_js_context_assert(ctx, type, value, module);
+  NEO_JS_VM_CHECK(vm, res, program, offset);
+}
+
 static void neo_js_vm_export(neo_js_vm_t vm, neo_js_context_t ctx,
                              neo_program_t program, size_t *offset) {
   neo_js_variable_t value = neo_js_vm_get_value(vm);
@@ -1941,7 +1951,7 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     neo_js_vm_rest,                  // NEO_ASM_REST
     neo_js_vm_rest_object,           // NEO_ASM_REST_OBJECT
     neo_js_vm_import,                // NEO_ASM_IMPORT
-    NULL,                            // NEO_ASM_ASSERT
+    neo_js_vm_assert,                // NEO_ASM_ASSERT
     neo_js_vm_export,                // NEO_ASM_EXPORT
     neo_js_vm_export_all,            // NEO_ASM_EXPORT_ALL
     NULL,                            // NEO_ASM_BREAKPOINT

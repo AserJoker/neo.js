@@ -13,6 +13,9 @@
 extern "C" {
 #endif
 
+typedef neo_js_variable_t (*neo_js_assert_fn_t)(const char *value,
+                                                const char *module);
+
 typedef struct _neo_js_vm_t *neo_js_vm_t;
 
 typedef enum _neo_js_context_type_t {
@@ -122,7 +125,6 @@ neo_js_variable_t neo_js_context_load_module(neo_js_context_t self,
                                              const char *name);
 void neo_js_context_def_module(neo_js_context_t self, const char *name,
                                neo_js_variable_t module);
-
 neo_js_variable_t neo_js_context_import(neo_js_context_t self,
                                         const char *filename);
 
@@ -131,6 +133,12 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
 
 neo_js_variable_t neo_js_context_run(neo_js_context_t self,
                                      const char *filename);
+
+void neo_js_context_set_assert(neo_js_context_t self, const char *type,
+                               neo_js_assert_fn_t fn);
+
+neo_js_variable_t neo_js_context_assert(neo_js_context_t self, const char *type,
+                                        const char *value, const char *module);
 
 #define NEO_JS_DEF_FIELD(ctx, self, name, value)                               \
   do {                                                                         \

@@ -5,8 +5,10 @@
 #include "core/allocator.h"
 #include "core/bigint.h"
 #include "core/clock.h"
+#include "core/common.h"
 #include "core/error.h"
 #include "core/fs.h"
+#include "core/hash.h"
 #include "core/hash_map.h"
 #include "core/list.h"
 #include "core/path.h"
@@ -53,6 +55,7 @@ struct _neo_js_context_t {
   struct _neo_js_constant_t constant;
   neo_js_context_type_t type;
   neo_js_error_callback onerror;
+  neo_hash_map_t asserts;
 };
 
 static void neo_js_context_delete_task(neo_js_context_t self,
@@ -83,6 +86,7 @@ static void neo_js_context_dispose(neo_allocator_t allocator,
     neo_js_context_pop_scope(self);
   }
   neo_allocator_free(allocator, self->callstack);
+  neo_allocator_free(allocator, self->asserts);
 }
 
 static void neo_js_context_onerror(neo_js_context_t self,
@@ -120,6 +124,12 @@ neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime) {
   ctx->callstack = neo_create_list(allocator, &initialize);
   ctx->macro_tasks = neo_create_list(allocator, NULL);
   ctx->micro_tasks = neo_create_list(allocator, NULL);
+  neo_hash_map_initialize_t hash_map_initialize = {0};
+  hash_map_initialize.hash = (neo_hash_fn_t)neo_hash_sdb;
+  hash_map_initialize.compare = (neo_compare_fn_t)strcmp;
+  hash_map_initialize.auto_free_key = true;
+  hash_map_initialize.auto_free_value = false;
+  ctx->asserts = neo_create_hash_map(allocator, &hash_map_initialize);
   const char *funcname = "_.start";
   uint16_t fname[16];
   uint16_t *dst = fname;
@@ -486,7 +496,7 @@ neo_js_context_create_async_generator_function(neo_js_context_t self,
   key = self->constant.key_name;
   neo_js_variable_def_field(result, self, key, funcname, false, false, false);
   key = self->constant.key_constructor;
-  neo_js_variable_def_field(prototype, self, key,result,true,false,true);
+  neo_js_variable_def_field(prototype, self, key, result, true, false, true);
   return result;
 }
 neo_js_variable_t neo_js_context_create_signal(neo_js_context_t self,
@@ -793,6 +803,7 @@ void neo_js_context_def_module(neo_js_context_t self, const char *name,
   neo_js_scope_set_variable(self->module_scope, module, name);
 }
 
+
 NEO_JS_CFUNCTION(neo_js_context_import_onfulfilled) {
   neo_js_variable_t promise = neo_js_context_load(ctx, "promise");
   neo_js_variable_t value = neo_js_context_load(ctx, "value");
@@ -946,4 +957,18 @@ neo_js_variable_t neo_js_context_run(neo_js_context_t self,
   neo_js_variable_t result = neo_js_context_import(self, fullpath);
   neo_allocator_free(allocator, fullpath);
   return result;
+}
+void neo_js_context_set_assert(neo_js_context_t self, const char *type,
+                               neo_js_assert_fn_t fn) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  neo_hash_map_set(self->asserts, neo_create_string(allocator, type), fn);
+}
+
+neo_js_variable_t neo_js_context_assert(neo_js_context_t self, const char *type,
+                                        const char *value, const char *module) {
+  neo_js_assert_fn_t fn = neo_hash_map_get(self->asserts, type);
+  if (fn) {
+    return fn(value, module);
+  }
+  return neo_js_context_get_undefined(self);
 }
