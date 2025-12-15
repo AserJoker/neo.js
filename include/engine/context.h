@@ -159,6 +159,8 @@ neo_js_variable_t neo_js_context_assert(neo_js_context_t self, const char *type,
         neo_js_context_create_cfunction(ctx, callee, name);                    \
     neo_js_variable_def_field(self, ctx, symbol, method, true, false, true);   \
   } while (0)
+#define neo_js_context_get_allocator(ctx)                                      \
+  neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx))
 #ifdef __cplusplus
 }
 #endif

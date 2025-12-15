@@ -12,6 +12,7 @@
 #include "runtime/async_function.h"
 #include "runtime/async_generator.h"
 #include "runtime/async_generator_function.h"
+#include "runtime/console.h"
 #include "runtime/error.h"
 #include "runtime/function.h"
 #include "runtime/generator.h"
@@ -68,6 +69,7 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   neo_initialize_js_async_generator(ctx);
   neo_initialize_js_promise(ctx);
   neo_initialize_js_time(ctx);
+  neo_initialize_js_console(ctx);
 
   neo_js_scope_set_variable(root_scope, constant->global, NULL);
   neo_js_scope_set_variable(root_scope, constant->uninitialized, NULL);
@@ -131,6 +133,7 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   neo_js_scope_set_variable(root_scope, constant->clear_timeout, NULL);
   neo_js_scope_set_variable(root_scope, constant->set_interval, NULL);
   neo_js_scope_set_variable(root_scope, constant->clear_interval, NULL);
+  neo_js_scope_set_variable(root_scope, constant->console, NULL);
 
   NEO_JS_DEF_FIELD(ctx, constant->global, "global", constant->global);
   NEO_JS_DEF_FIELD(ctx, constant->global, "undefined", constant->undefined);
@@ -158,4 +161,5 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
                    constant->set_interval);
   NEO_JS_DEF_FIELD(ctx, constant->global, "clearInterval",
                    constant->clear_interval);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "console", constant->console);
 }

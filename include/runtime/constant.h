@@ -82,6 +82,8 @@ struct _neo_js_constant_t {
   neo_js_variable_t clear_timeout;
   neo_js_variable_t set_interval;
   neo_js_variable_t clear_interval;
+  // console
+  neo_js_variable_t console;
 };
 typedef struct _neo_js_constant_t *neo_js_constant_t;
 void neo_initialize_js_constant(neo_js_context_t ctx);
