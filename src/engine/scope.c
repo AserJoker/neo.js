@@ -1,10 +1,13 @@
 #include "engine/scope.h"
 #include "core/allocator.h"
+#include "core/hash.h"
+#include "core/hash_map.h"
 #include "core/list.h"
 #include "core/map.h"
 #include "core/string.h"
 #include "engine/handle.h"
 #include "engine/variable.h"
+#include <stdbool.h>
 #include <string.h>
 
 struct _neo_js_scope_t {
@@ -15,6 +18,7 @@ struct _neo_js_scope_t {
   neo_map_t named_variables;
   neo_list_t defer_free;
   neo_allocator_t allocator;
+  neo_hash_map_t features;
 };
 
 static void neo_js_scope_dispose(neo_allocator_t allocator,
@@ -28,6 +32,7 @@ static void neo_js_scope_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, self->variables);
   neo_allocator_free(allocator, self->named_variables);
   neo_allocator_free(allocator, self->defer_free);
+  neo_allocator_free(allocator, self->features);
 }
 
 neo_js_scope_t neo_create_js_scope(neo_allocator_t allocator,
@@ -53,6 +58,12 @@ neo_js_scope_t neo_create_js_scope(neo_allocator_t allocator,
   scope->allocator = allocator;
   neo_init_js_handle(&scope->handle, allocator, NEO_JS_HANDLE_SCOPE);
   scope->handle.is_root = true;
+  neo_hash_map_initialize_t hash_map_initialize = {
+      .auto_free_key = true,
+      .auto_free_value = false,
+      .compare = (neo_compare_fn_t)strcmp,
+      .hash = (neo_hash_fn_t)neo_hash_sdb};
+  scope->features = neo_create_hash_map(allocator, &hash_map_initialize);
   return scope;
 }
 
@@ -92,4 +103,12 @@ neo_list_t neo_js_scope_get_children(neo_js_scope_t self) {
 
 void neo_js_scope_defer_free(neo_js_scope_t scope, void *data) {
   neo_list_push(scope->defer_free, data);
+}
+void neo_js_scope_set_feature(neo_js_scope_t self, const char *feature) {
+  neo_allocator_t allocaotr = self->allocator;
+  neo_hash_map_set(self->features, neo_create_string(allocaotr, feature), NULL);
+}
+
+bool neo_js_scope_has_feature(neo_js_scope_t self, const char *feature) {
+  return neo_hash_map_has(self->features, feature);
 }

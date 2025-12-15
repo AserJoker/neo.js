@@ -683,7 +683,8 @@ static void neo_js_vm_extends(neo_js_vm_t vm, neo_js_context_t ctx,
 static void neo_js_vm_directive(neo_js_vm_t vm, neo_js_context_t ctx,
                                 neo_program_t program, size_t *offset) {
   const char *feature = neo_js_vm_read_string(program, offset);
-  // TODO: directive
+  neo_js_scope_t scope = neo_js_context_get_scope(ctx);
+  neo_js_scope_set_feature(scope, feature);
 }
 
 static void neo_js_vm_call(neo_js_vm_t vm, neo_js_context_t ctx,
