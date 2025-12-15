@@ -24,6 +24,7 @@
 #include "engine/variable.h"
 #include "runtime/array.h"
 #include "runtime/constant.h"
+#include "runtime/promise.h"
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
@@ -147,6 +148,40 @@ static void neo_js_vm_pop_scope(neo_js_vm_t vm, neo_js_context_t ctx,
                                 neo_program_t program, size_t *offset) {
   neo_js_scope_t scope = neo_js_context_get_scope(ctx);
   neo_js_scope_t parent = neo_js_scope_get_parent(scope);
+  if (neo_js_context_get_type(ctx) == NEO_JS_CONTEXT_MODULE ||
+      neo_js_context_get_type(ctx) == NEO_JS_CONTEXT_ASYNC_FUNCTION ||
+      neo_js_context_get_type(ctx) == NEO_JS_CONTEXT_ASYNC_GENERATOR_FUNCTION) {
+    neo_list_t await_using_variables = neo_js_scope_get_await_using(scope);
+    while (neo_list_get_size(await_using_variables)) {
+      neo_list_node_t node = neo_list_get_first(await_using_variables);
+      neo_js_variable_t variable = neo_list_node_get(node);
+      neo_list_erase(await_using_variables, node);
+      if (variable->value->type >= NEO_JS_TYPE_OBJECT) {
+        neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+        neo_js_variable_t dispose = neo_js_variable_get_field(
+            variable, ctx, constant->symbol_async_dispose);
+        if (dispose->value->type >= NEO_JS_TYPE_FUNCTION) {
+          neo_js_variable_t promise =
+              neo_js_variable_call(dispose, ctx, variable, 0, NULL);
+          if (promise->value->type == NEO_JS_TYPE_EXCEPTION) {
+            neo_js_variable_t error = neo_js_context_create_variable(
+                ctx, ((neo_js_exception_t)promise->value)->error);
+            promise =
+                neo_js_promise_reject(ctx, constant->promise_class, 1, &error);
+          } else {
+            promise = neo_js_promise_resolve(ctx, constant->promise_class, 1,
+                                             &promise);
+          }
+          neo_js_variable_t interrupt = neo_js_context_create_interrupt(
+              ctx, promise, *offset - sizeof(uint16_t), program, vm,
+              NEO_JS_INTERRUPT_AWAIT);
+          *offset = neo_buffer_get_size(program->codes);
+          vm->result = interrupt;
+          return;
+        }
+      }
+    }
+  }
   if (vm->result) {
     neo_js_scope_set_variable(parent, vm->result, NULL);
   }
