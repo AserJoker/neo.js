@@ -131,6 +131,8 @@ void neo_js_async_generator_resolve_next(neo_js_context_t ctx,
 }
 
 NEO_JS_CFUNCTION(neo_js_async_generator_task) {
+  neo_js_context_type_t origin_ctx_type =
+      neo_js_context_set_type(ctx, NEO_JS_CONTEXT_ASYNC_GENERATOR_FUNCTION);
   neo_js_variable_t promise = neo_js_context_load(ctx, "promise");
   neo_js_variable_t value = neo_js_variable_get_internel(self, ctx, "value");
   neo_js_interrupt_t interrupt = (neo_js_interrupt_t)value->value;
@@ -148,6 +150,7 @@ NEO_JS_CFUNCTION(neo_js_async_generator_task) {
   }
   neo_js_context_set_scope(ctx, scope);
   neo_js_async_generator_resolve_next(ctx, self, promise, next);
+  neo_js_context_set_type(ctx, origin_ctx_type);
   return neo_js_context_get_undefined(ctx);
 }
 NEO_JS_CFUNCTION(neo_js_async_generator_next_task) {

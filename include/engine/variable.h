@@ -13,8 +13,6 @@ typedef struct _neo_js_context_t *neo_js_context_t;
 
 struct _neo_js_variable_t {
   struct _neo_js_handle_t handle;
-  bool is_using;
-  bool is_await_using;
   bool is_const;
   neo_js_value_t value;
 };

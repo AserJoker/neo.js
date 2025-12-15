@@ -212,6 +212,7 @@ void neo_initialize_js_symbol(neo_js_context_t ctx) {
   neo_js_variable_t prototype = constant->symbol_prototype;
   NEO_JS_DEF_METHOD(ctx, prototype, "valueOf", neo_js_symbol_value_of);
   NEO_JS_DEF_METHOD(ctx, prototype, "toString", neo_js_symbol_to_string);
+  DEF_SYMBOL(constant->symbol_dispose, dispose);
   DEF_SYMBOL(constant->symbol_async_dispose, asyncDispose);
   DEF_SYMBOL(constant->symbol_async_iterator, asyncIterator);
   DEF_SYMBOL(constant->symbol_has_instance, hasInstance);

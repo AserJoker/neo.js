@@ -5,6 +5,7 @@
 #include "compiler/ast/expression_member.h"
 #include "compiler/ast/node.h"
 #include "compiler/program.h"
+#include "compiler/scope.h"
 #include "core/allocator.h"
 #include "core/buffer.h"
 #include "core/list.h"
@@ -61,12 +62,10 @@ void neo_writer_push_scope(neo_allocator_t allocator, neo_write_context_t ctx,
       case NEO_COMPILE_VARIABLE_USING:
         neo_program_add_code(allocator, ctx->program,
                              NEO_ASM_PUSH_UNINITIALIZED);
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_USING);
         break;
       case NEO_COMPILE_VARIABLE_AWAIT_USING:
         neo_program_add_code(allocator, ctx->program,
                              NEO_ASM_PUSH_UNINITIALIZED);
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_AWAIT_USING);
         break;
       case NEO_COMPILE_VARIABLE_FUNCTION: {
         neo_ast_expression_function_t func =
@@ -111,6 +110,12 @@ void neo_writer_push_scope(neo_allocator_t allocator, neo_write_context_t ctx,
       neo_program_add_code(allocator, ctx->program, NEO_ASM_DEF);
       neo_program_add_string(allocator, ctx->program, name);
       neo_allocator_free(allocator, name);
+      if (variable->type == NEO_COMPILE_VARIABLE_USING) {
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_USING);
+      }
+      if (variable->type == NEO_COMPILE_VARIABLE_AWAIT_USING) {
+        neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_AWAIT_USING);
+      }
       neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
     }
   }

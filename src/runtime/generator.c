@@ -14,6 +14,8 @@ NEO_JS_CFUNCTION(neo_js_generator_next) {
   neo_js_variable_t result = neo_js_context_create_object(ctx, NULL);
   neo_allocator_t allocator =
       neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
+  neo_js_context_type_t origin_ctx_type =
+      neo_js_context_set_type(ctx, NEO_JS_CONTEXT_GENERATOR_FUNCTION);
   if (value->value->type == NEO_JS_TYPE_INTERRUPT) {
     neo_js_interrupt_t interrupt = (neo_js_interrupt_t)value->value;
     neo_js_scope_t current = neo_js_context_set_scope(ctx, interrupt->scope);
@@ -60,6 +62,7 @@ NEO_JS_CFUNCTION(neo_js_generator_next) {
                               neo_js_context_create_cstring(ctx, "done"),
                               neo_js_context_get_true(ctx));
   }
+  neo_js_context_set_type(ctx, origin_ctx_type);
   return result;
 }
 NEO_JS_CFUNCTION(neo_js_generator_return) {
@@ -67,6 +70,8 @@ NEO_JS_CFUNCTION(neo_js_generator_return) {
   neo_js_variable_t result = neo_js_context_create_object(ctx, NULL);
   neo_allocator_t allocator =
       neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
+  neo_js_context_type_t origin_ctx_type =
+      neo_js_context_set_type(ctx, NEO_JS_CONTEXT_GENERATOR_FUNCTION);
   if (value->value->type == NEO_JS_TYPE_INTERRUPT) {
     neo_js_interrupt_t interrupt = (neo_js_interrupt_t)value->value;
     neo_js_scope_t current = neo_js_context_set_scope(ctx, interrupt->scope);
@@ -105,6 +110,7 @@ NEO_JS_CFUNCTION(neo_js_generator_return) {
                               neo_js_context_create_cstring(ctx, "done"),
                               neo_js_context_get_true(ctx));
   }
+  neo_js_context_set_type(ctx, origin_ctx_type);
   return result;
 }
 NEO_JS_CFUNCTION(neo_js_generator_throw) {

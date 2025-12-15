@@ -36,6 +36,7 @@ struct _neo_js_constant_t {
   // symbol
   neo_js_variable_t symbol_prototype;
   neo_js_variable_t symbol_class;
+  neo_js_variable_t symbol_dispose;
   neo_js_variable_t symbol_for;
   neo_js_variable_t symbol_key_for;
   neo_js_variable_t symbol_async_dispose;
@@ -61,6 +62,8 @@ struct _neo_js_constant_t {
   neo_js_variable_t reference_error_class;
   // reference_error
   neo_js_variable_t range_error_class;
+  // suppressed_error
+  neo_js_variable_t suppressed_error_class;
   // generator function
   neo_js_variable_t generator_function_prototype;
   neo_js_variable_t generator_function_class;

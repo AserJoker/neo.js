@@ -47,8 +47,6 @@ neo_js_variable_t neo_create_js_variable(neo_allocator_t allocator,
   neo_js_variable_t variable = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_variable_t), neo_js_variable_dispose);
   neo_init_js_handle(&variable->handle, allocator, NEO_JS_HANDLE_VARIABLE);
-  variable->is_using = false;
-  variable->is_await_using = false;
   variable->is_const = false;
   variable->value = value;
   neo_js_handle_add_parent(&value->handle, &variable->handle);
@@ -1175,6 +1173,8 @@ NEO_JS_CFUNCTION(neo_js_async_onrejected) {
 }
 
 NEO_JS_CFUNCTION(neo_js_async_task) {
+  neo_js_context_type_t origin_ctx_type =
+      neo_js_context_set_type(ctx, NEO_JS_CONTEXT_ASYNC_FUNCTION);
   neo_js_variable_t promise = neo_js_context_load(ctx, "promise");
   neo_js_interrupt_t interrupt =
       (neo_js_interrupt_t)neo_js_context_load(ctx, "interrupt")->value;
@@ -1232,6 +1232,7 @@ NEO_JS_CFUNCTION(neo_js_async_task) {
     }
   }
   neo_js_context_set_scope(ctx, scope);
+  neo_js_context_set_type(ctx, origin_ctx_type);
   return neo_js_context_get_undefined(ctx);
 }
 
@@ -1319,18 +1320,47 @@ neo_js_variable_t neo_js_variable_call_function(neo_js_variable_t self,
         neo_js_vm_run(vm, ctx, function->program, function->address);
     neo_allocator_free(allocator, vm);
     neo_js_scope_set_variable(origin_scope, result, NULL);
+    neo_js_variable_t err = NULL;
     while (neo_js_context_get_scope(ctx) != root_scope) {
-      neo_js_context_pop_scope(ctx);
+      neo_js_variable_t res = neo_js_context_pop_scope(ctx);
+      if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
+        if (err == NULL) {
+          err = res;
+          neo_js_scope_set_variable(origin_scope, err, NULL);
+        } else {
+          neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+          neo_js_variable_t error = neo_js_variable_construct(
+              constant->suppressed_error_class, ctx, 0, NULL);
+          res = neo_js_context_create_variable(
+              ctx, ((neo_js_exception_t)res->value)->error);
+          neo_js_variable_set_field(
+              error, ctx, neo_js_context_create_cstring(ctx, "error"), res);
+          neo_js_variable_t current = neo_js_context_create_variable(
+              ctx, ((neo_js_exception_t)(err->value))->error);
+          neo_js_variable_set_field(
+              error, ctx, neo_js_context_create_cstring(ctx, "suppressed"),
+              current);
+          err = neo_js_context_create_exception(ctx, error);
+          neo_js_scope_set_variable(origin_scope, err, NULL);
+        }
+      }
+    }
+    if (err) {
+      neo_js_scope_set_variable(origin_scope, err, NULL);
     }
     neo_js_context_set_scope(ctx, origin_scope);
+    if (err) {
+      return err;
+    }
     return result;
   }
 }
 
-neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
-                                       neo_js_context_t ctx,
-                                       neo_js_variable_t bind, size_t argc,
-                                       neo_js_variable_t *argv) {
+neo_js_variable_t neo_js_variable_call_variable(neo_js_variable_t self,
+                                                neo_js_context_t ctx,
+                                                neo_js_variable_t bind,
+                                                size_t argc,
+                                                neo_js_variable_t *argv) {
   if (self->value->type != NEO_JS_TYPE_FUNCTION) {
     neo_js_variable_t message =
         neo_js_context_format(ctx, "%v is not a function", self);
@@ -1380,16 +1410,46 @@ neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
     it = neo_map_node_next(it);
   }
   neo_js_cfunction_t cfunction = (neo_js_cfunction_t)callable;
-  neo_js_context_type_t origin_ctx_type =
-      neo_js_context_set_type(ctx, NEO_JS_CONTEXT_FUNCTION);
   neo_js_variable_t result = cfunction->callee(ctx, bind, argc, args);
-  neo_js_context_set_type(ctx, origin_ctx_type);
   neo_js_scope_set_variable(origin_scope, result, NULL);
   while (neo_js_context_get_scope(ctx) != root_scope) {
-    neo_js_context_pop_scope(ctx);
+    neo_js_variable_t res = neo_js_context_pop_scope(ctx);
+    neo_js_variable_t err;
+    if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
+      if (err == NULL) {
+        err = res;
+        neo_js_scope_set_variable(origin_scope, err, NULL);
+      } else {
+        neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+        neo_js_variable_t error = neo_js_variable_construct(
+            constant->suppressed_error_class, ctx, 0, NULL);
+        res = neo_js_context_create_variable(
+            ctx, ((neo_js_exception_t)res->value)->error);
+        neo_js_variable_set_field(
+            error, ctx, neo_js_context_create_cstring(ctx, "error"), res);
+        neo_js_variable_t current = neo_js_context_create_variable(
+            ctx, ((neo_js_exception_t)(err->value))->error);
+        neo_js_variable_set_field(
+            error, ctx, neo_js_context_create_cstring(ctx, "suppressed"),
+            current);
+        err = neo_js_context_create_exception(ctx, error);
+        neo_js_scope_set_variable(origin_scope, err, NULL);
+      }
+    }
   }
   neo_js_context_set_scope(ctx, origin_scope);
   return result;
+}
+neo_js_variable_t neo_js_variable_call(neo_js_variable_t self,
+                                       neo_js_context_t ctx,
+                                       neo_js_variable_t bind, size_t argc,
+                                       neo_js_variable_t *argv) {
+  neo_js_context_type_t origin_ctx_type =
+      neo_js_context_set_type(ctx, NEO_JS_CONTEXT_FUNCTION);
+  neo_js_variable_t res =
+      neo_js_variable_call_variable(self, ctx, bind, argc, argv);
+  neo_js_context_set_type(ctx, origin_ctx_type);
+  return res;
 }
 
 neo_js_variable_t neo_js_variable_construct(neo_js_variable_t self,
@@ -1412,7 +1472,12 @@ neo_js_variable_t neo_js_variable_construct(neo_js_variable_t self,
   neo_js_variable_t object = neo_js_context_create_object(ctx, prototype);
   neo_js_variable_t key = neo_js_context_create_cstring(ctx, "constructor");
   neo_js_variable_def_field(object, ctx, key, self, true, false, true);
-  neo_js_variable_t res = neo_js_variable_call(self, ctx, object, argc, argv);
+
+  neo_js_context_type_t origin_ctx_type =
+      neo_js_context_set_type(ctx, NEO_JS_CONTEXT_CONSTRUCT);
+  neo_js_variable_t res =
+      neo_js_variable_call_variable(self, ctx, object, argc, argv);
+  neo_js_context_set_type(ctx, origin_ctx_type);
   if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
     return res;
   }

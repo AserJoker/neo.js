@@ -226,8 +226,50 @@ static void neo_js_context_dispose_scope(neo_js_context_t self,
   neo_js_context_scope_gc(self, scope);
 }
 
-void neo_js_context_pop_scope(neo_js_context_t self) {
+neo_js_variable_t neo_js_context_pop_scope(neo_js_context_t self) {
+  neo_js_scope_t scope = self->current_scope;
+  neo_list_t using_variables = neo_js_scope_get_using(scope);
+  neo_list_node_t it = neo_list_get_first(using_variables);
+  neo_js_variable_t err = NULL;
+  while (it != neo_list_get_tail(using_variables)) {
+    neo_js_variable_t item = neo_list_node_get(it);
+    if (item->value->type >= NEO_JS_TYPE_OBJECT) {
+      neo_js_variable_t dispose =
+          neo_js_variable_get_field(item, self, self->constant.symbol_dispose);
+      if (dispose->value->type >= NEO_JS_TYPE_FUNCTION) {
+        neo_js_variable_t res =
+            neo_js_variable_call(dispose, self, item, 0, NULL);
+        if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
+          if (err == NULL) {
+            err = res;
+          } else {
+            neo_js_variable_t error = neo_js_variable_construct(
+                self->constant.suppressed_error_class, self, 0, NULL);
+            res = neo_js_context_create_variable(
+                self, ((neo_js_exception_t)res->value)->error);
+            neo_js_variable_set_field(
+                error, self, neo_js_context_create_cstring(self, "error"), res);
+            neo_js_variable_t current = neo_js_context_create_variable(
+                self, ((neo_js_exception_t)(err->value))->error);
+            neo_js_variable_set_field(
+                error, self, neo_js_context_create_cstring(self, "suppressed"),
+                current);
+            err = neo_js_context_create_exception(self, error);
+          }
+        }
+      }
+    }
+    it = neo_list_node_next(it);
+  }
+  if (err) {
+    neo_js_scope_t parent = neo_js_scope_get_parent(scope);
+    neo_js_scope_set_variable(parent, err, NULL);
+  }
   neo_js_context_dispose_scope(self, self->current_scope);
+  if (err) {
+    return err;
+  }
+  return neo_js_context_get_undefined(self);
 }
 
 neo_js_scope_t neo_js_context_get_scope(neo_js_context_t self) {
@@ -599,7 +641,8 @@ neo_js_variable_t neo_js_context_store(neo_js_context_t self, const char *name,
 }
 neo_js_variable_t neo_js_context_def(neo_js_context_t self, const char *name,
                                      neo_js_variable_t variable) {
-  neo_js_scope_create_variable(self->current_scope, variable->value, name);
+  variable =
+      neo_js_scope_create_variable(self->current_scope, variable->value, name);
   return variable;
 }
 
@@ -802,7 +845,6 @@ void neo_js_context_def_module(neo_js_context_t self, const char *name,
                                neo_js_variable_t module) {
   neo_js_scope_set_variable(self->module_scope, module, name);
 }
-
 
 NEO_JS_CFUNCTION(neo_js_context_import_onfulfilled) {
   neo_js_variable_t promise = neo_js_context_load(ctx, "promise");

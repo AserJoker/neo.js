@@ -145,12 +145,39 @@ static void neo_js_vm_push_scope(neo_js_vm_t vm, neo_js_context_t ctx,
 
 static void neo_js_vm_pop_scope(neo_js_vm_t vm, neo_js_context_t ctx,
                                 neo_program_t program, size_t *offset) {
+  neo_js_scope_t scope = neo_js_context_get_scope(ctx);
+  neo_js_scope_t parent = neo_js_scope_get_parent(scope);
   if (vm->result) {
-    neo_js_scope_t scope = neo_js_context_get_scope(ctx);
-    neo_js_scope_t parent = neo_js_scope_get_parent(scope);
     neo_js_scope_set_variable(parent, vm->result, NULL);
   }
-  neo_js_context_pop_scope(ctx);
+  neo_js_variable_t err = NULL;
+  if (vm->result && vm->result->value->type == NEO_JS_TYPE_EXCEPTION) {
+    err = vm->result;
+  }
+  neo_js_variable_t res = neo_js_context_pop_scope(ctx);
+  if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
+    if (err == NULL) {
+      err = res;
+    } else {
+      neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+      neo_js_variable_t error = neo_js_variable_construct(
+          constant->suppressed_error_class, ctx, 0, NULL);
+      res = neo_js_context_create_variable(
+          ctx, ((neo_js_exception_t)res->value)->error);
+      neo_js_variable_set_field(
+          error, ctx, neo_js_context_create_cstring(ctx, "error"), res);
+      neo_js_variable_t current = neo_js_context_create_variable(
+          ctx, ((neo_js_exception_t)(err->value))->error);
+      neo_js_variable_set_field(
+          error, ctx, neo_js_context_create_cstring(ctx, "suppressed"),
+          current);
+      err = neo_js_context_create_exception(ctx, error);
+    }
+  }
+  if (err) {
+    vm->result = err;
+    *offset = neo_buffer_get_size(program->codes);
+  }
 }
 
 static void neo_js_vm_pop(neo_js_vm_t vm, neo_js_context_t ctx,
@@ -174,8 +201,10 @@ static void neo_js_vm_def(neo_js_vm_t vm, neo_js_context_t ctx,
                           neo_program_t program, size_t *offset) {
   const char *name = neo_js_vm_read_string(program, offset);
   neo_js_variable_t value = neo_js_vm_get_value(vm);
+  neo_list_pop(vm->stack);
   neo_js_variable_t res = neo_js_context_def(ctx, name, value);
   NEO_JS_VM_CHECK(vm, res, program, offset);
+  neo_list_push(vm->stack, res);
 }
 
 static void neo_js_vm_load(neo_js_vm_t vm, neo_js_context_t ctx,
@@ -612,12 +641,12 @@ static void neo_js_vm_set_const(neo_js_vm_t vm, neo_js_context_t ctx,
 static void neo_js_vm_set_using(neo_js_vm_t vm, neo_js_context_t ctx,
                                 neo_program_t program, size_t *offset) {
   neo_js_variable_t value = neo_js_vm_get_value(vm);
-  value->is_using = true;
+  neo_js_scope_set_using(neo_js_context_get_scope(ctx), value);
 }
 static void neo_js_vm_set_await_using(neo_js_vm_t vm, neo_js_context_t ctx,
                                       neo_program_t program, size_t *offset) {
   neo_js_variable_t value = neo_js_vm_get_value(vm);
-  value->is_await_using = true;
+  neo_js_scope_set_await_using(neo_js_context_get_scope(ctx), value);
 }
 static void neo_js_vm_set_source(neo_js_vm_t vm, neo_js_context_t ctx,
                                  neo_program_t program, size_t *offset) {
@@ -2024,8 +2053,37 @@ static bool neo_js_vm_resolve_signal(neo_js_vm_t vm, neo_js_context_t ctx,
     while (neo_list_get_size(vm->stack) != frame->stacktop) {
       neo_list_pop(vm->stack);
     }
+    neo_js_variable_t err = NULL;
     while (neo_js_context_get_scope(ctx) != frame->scope) {
+      vm->result = NULL;
       neo_js_vm_pop_scope(vm, ctx, program, offset);
+      if (vm->result && vm->result->value->type == NEO_JS_TYPE_EXCEPTION) {
+        neo_js_variable_t res = vm->result;
+        if (err == NULL) {
+          err = res;
+          neo_js_scope_set_variable(frame->scope, err, NULL);
+        } else {
+          neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+          neo_js_variable_t error = neo_js_variable_construct(
+              constant->suppressed_error_class, ctx, 0, NULL);
+          res = neo_js_context_create_variable(
+              ctx, ((neo_js_exception_t)res->value)->error);
+          neo_js_variable_set_field(
+              error, ctx, neo_js_context_create_cstring(ctx, "error"), res);
+          neo_js_variable_t current = neo_js_context_create_variable(
+              ctx, ((neo_js_exception_t)(err->value))->error);
+          neo_js_variable_set_field(
+              error, ctx, neo_js_context_create_cstring(ctx, "suppressed"),
+              current);
+          err = neo_js_context_create_exception(ctx, error);
+          neo_js_scope_set_variable(frame->scope, err, NULL);
+        }
+      }
+    }
+    if (err) {
+      vm->result = err;
+      *offset = neo_buffer_get_size(program->codes);
+      return false;
     }
     if ((signal->type == NEO_JS_SIGNAL_BREAK &&
          frame->type == NEO_JS_LABEL_BREAK) ||
@@ -2052,8 +2110,39 @@ static bool neo_js_vm_resolve_result(neo_js_vm_t vm, neo_js_context_t ctx,
   while (neo_list_get_size(vm->trystack)) {
     neo_list_node_t node = neo_list_get_last(vm->trystack);
     neo_js_try_frame_t frame = neo_list_node_get(node);
+    neo_js_variable_t err = NULL;
+    if (vm->result && vm->result->value->type == NEO_JS_TYPE_EXCEPTION) {
+      err = vm->result;
+      neo_js_scope_set_variable(frame->scope, err, NULL);
+    }
     while (neo_js_context_get_scope(ctx) != frame->scope) {
+      vm->result = NULL;
       neo_js_vm_pop_scope(vm, ctx, program, offset);
+      if (vm->result && vm->result->value->type == NEO_JS_TYPE_EXCEPTION) {
+        neo_js_variable_t res = vm->result;
+        if (err == NULL) {
+          err = res;
+          neo_js_scope_set_variable(frame->scope, err, NULL);
+        } else {
+          neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+          neo_js_variable_t error = neo_js_variable_construct(
+              constant->suppressed_error_class, ctx, 0, NULL);
+          res = neo_js_context_create_variable(
+              ctx, ((neo_js_exception_t)res->value)->error);
+          neo_js_variable_set_field(
+              error, ctx, neo_js_context_create_cstring(ctx, "error"), res);
+          neo_js_variable_t current = neo_js_context_create_variable(
+              ctx, ((neo_js_exception_t)(err->value))->error);
+          neo_js_variable_set_field(
+              error, ctx, neo_js_context_create_cstring(ctx, "suppressed"),
+              current);
+          err = neo_js_context_create_exception(ctx, error);
+          neo_js_scope_set_variable(frame->scope, err, NULL);
+        }
+      }
+    }
+    if (err) {
+      vm->result = err;
     }
     while (neo_list_get_size(vm->stack) != frame->stacktop) {
       neo_list_pop(vm->stack);

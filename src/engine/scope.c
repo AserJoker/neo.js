@@ -15,6 +15,8 @@ struct _neo_js_scope_t {
   neo_js_scope_t parent;
   neo_list_t children;
   neo_list_t variables;
+  neo_list_t using_variables;
+  neo_list_t await_using_variables;
   neo_map_t named_variables;
   neo_list_t defer_free;
   neo_allocator_t allocator;
@@ -31,6 +33,8 @@ static void neo_js_scope_dispose(neo_allocator_t allocator,
   neo_allocator_free(allocator, self->children);
   neo_allocator_free(allocator, self->variables);
   neo_allocator_free(allocator, self->named_variables);
+  neo_allocator_free(allocator, self->using_variables);
+  neo_allocator_free(allocator, self->await_using_variables);
   neo_allocator_free(allocator, self->defer_free);
   neo_allocator_free(allocator, self->features);
 }
@@ -64,6 +68,9 @@ neo_js_scope_t neo_create_js_scope(neo_allocator_t allocator,
       .compare = (neo_compare_fn_t)strcmp,
       .hash = (neo_hash_fn_t)neo_hash_sdb};
   scope->features = neo_create_hash_map(allocator, &hash_map_initialize);
+  initialize.auto_free = false;
+  scope->using_variables = neo_create_list(allocator, &initialize);
+  scope->await_using_variables = neo_create_list(allocator, &initialize);
   return scope;
 }
 
@@ -87,6 +94,15 @@ neo_js_variable_t neo_js_scope_set_variable(neo_js_scope_t self,
   return variable;
 }
 
+void neo_js_scope_set_using(neo_js_scope_t self, neo_js_variable_t variable) {
+  neo_list_push(self->using_variables, variable);
+}
+
+void neo_js_scope_set_await_using(neo_js_scope_t self,
+                                  neo_js_variable_t variable) {
+  neo_list_push(self->await_using_variables, variable);
+}
+
 neo_js_variable_t neo_js_scope_create_variable(neo_js_scope_t self,
                                                neo_js_value_t value,
                                                const char *name) {
@@ -99,6 +115,12 @@ neo_list_t neo_js_scope_get_variables(neo_js_scope_t scope) {
 }
 neo_list_t neo_js_scope_get_children(neo_js_scope_t self) {
   return self->children;
+}
+neo_list_t neo_js_scope_get_using(neo_js_scope_t self) {
+  return self->using_variables;
+}
+neo_list_t neo_js_scope_get_await_using(neo_js_scope_t self) {
+  return self->await_using_variables;
 }
 
 void neo_js_scope_defer_free(neo_js_scope_t scope, void *data) {

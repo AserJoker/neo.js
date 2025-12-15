@@ -39,7 +39,7 @@ neo_js_context_type_t neo_js_context_get_type(neo_js_context_t self);
 neo_js_context_type_t neo_js_context_set_type(neo_js_context_t self,
                                               neo_js_context_type_t type);
 void neo_js_context_push_scope(neo_js_context_t self);
-void neo_js_context_pop_scope(neo_js_context_t self);
+neo_js_variable_t neo_js_context_pop_scope(neo_js_context_t self);
 neo_js_scope_t neo_js_context_get_scope(neo_js_context_t self);
 neo_js_scope_t neo_js_context_get_root_scope(neo_js_context_t self);
 neo_js_scope_t neo_js_context_set_scope(neo_js_context_t self,

@@ -22,6 +22,7 @@
 #include "runtime/promise.h"
 #include "runtime/range_error.h"
 #include "runtime/reference_error.h"
+#include "runtime/suppressed_error.h"
 #include "runtime/symbol.h"
 #include "runtime/syntax_error.h"
 #include "runtime/time.h"
@@ -70,6 +71,7 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   neo_initialize_js_promise(ctx);
   neo_initialize_js_time(ctx);
   neo_initialize_js_console(ctx);
+  neo_initialize_js_suppressed_error(ctx);
 
   neo_js_scope_set_variable(root_scope, constant->global, NULL);
   neo_js_scope_set_variable(root_scope, constant->uninitialized, NULL);
@@ -90,6 +92,7 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   neo_js_scope_set_variable(root_scope, constant->function_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->symbol_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->symbol_prototype, NULL);
+  neo_js_scope_set_variable(root_scope, constant->symbol_dispose, NULL);
   neo_js_scope_set_variable(root_scope, constant->symbol_async_dispose, NULL);
   neo_js_scope_set_variable(root_scope, constant->symbol_async_iterator, NULL);
   neo_js_scope_set_variable(root_scope, constant->symbol_has_instance, NULL);
@@ -134,6 +137,7 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   neo_js_scope_set_variable(root_scope, constant->set_interval, NULL);
   neo_js_scope_set_variable(root_scope, constant->clear_interval, NULL);
   neo_js_scope_set_variable(root_scope, constant->console, NULL);
+  neo_js_scope_set_variable(root_scope, constant->suppressed_error_class, NULL);
 
   NEO_JS_DEF_FIELD(ctx, constant->global, "global", constant->global);
   NEO_JS_DEF_FIELD(ctx, constant->global, "undefined", constant->undefined);
@@ -153,6 +157,8 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
                    constant->reference_error_class);
   NEO_JS_DEF_FIELD(ctx, constant->global, "RangeError",
                    constant->range_error_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "SuppressedError",
+                   constant->suppressed_error_class);
   NEO_JS_DEF_FIELD(ctx, constant->global, "Promise", constant->promise_class);
   NEO_JS_DEF_FIELD(ctx, constant->global, "setTimeout", constant->set_timeout);
   NEO_JS_DEF_FIELD(ctx, constant->global, "clearTimeout",
