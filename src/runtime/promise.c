@@ -121,7 +121,7 @@ NEO_JS_CFUNCTION(neo_js_promise_callback_resolve) {
   neo_js_variable_set_bind(callback, ctx, self);
   neo_js_variable_t onrejected = neo_js_context_create_cfunction(
       ctx, neo_js_promise_callback_onrejected, NULL);
-  neo_js_variable_set_bind(callback, ctx, self);
+  neo_js_variable_set_bind(onrejected, ctx, self);
   if (value->value->type >= NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t then = neo_js_variable_get_field(
         value, ctx, neo_js_context_create_cstring(ctx, "then"));
@@ -231,6 +231,15 @@ NEO_JS_CFUNCTION(neo_js_promise_transform) {
   neo_js_variable_t onfulfilled = neo_js_context_load(ctx, "onfulfilled");
   neo_js_variable_t onrejected = neo_js_context_load(ctx, "onrejected");
   neo_js_promise_t promise = neo_js_variable_get_opaque(self, ctx, "promise");
+  if (!promise) {
+    neo_js_variable_t message = neo_js_context_create_cstring(
+        ctx, "Promise.then called on non-promise object");
+    neo_js_variable_t type_error_class =
+        neo_js_context_get_constant(ctx)->type_error_class;
+    neo_js_variable_t error =
+        neo_js_variable_construct(type_error_class, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
   neo_js_variable_t onfulfilled_callback =
       neo_js_context_create_cfunction(ctx, neo_js_promise_onfulfilled, NULL);
   neo_js_variable_set_closure(onfulfilled_callback, ctx, "resolve", resolve);
@@ -277,6 +286,16 @@ NEO_JS_CFUNCTION(neo_js_promise_transform) {
 }
 
 NEO_JS_CFUNCTION(neo_js_promise_then) {
+  neo_js_promise_t promise = neo_js_variable_get_opaque(self, ctx, "promise");
+  if (!promise) {
+    neo_js_variable_t message = neo_js_context_create_cstring(
+        ctx, "Promise.then called on non-promise object");
+    neo_js_variable_t type_error_class =
+        neo_js_context_get_constant(ctx)->type_error_class;
+    neo_js_variable_t error =
+        neo_js_variable_construct(type_error_class, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  }
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   neo_js_variable_t onfulfilled =
       neo_js_context_get_argument(ctx, argc, argv, 0);

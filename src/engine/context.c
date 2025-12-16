@@ -226,11 +226,64 @@ static void neo_js_context_dispose_scope(neo_js_context_t self,
   neo_js_context_scope_gc(self, scope);
 }
 
+NEO_JS_CFUNCTION(neo_js_dispose_onfulfilled) {
+  neo_js_variable_t value = neo_js_context_load(ctx, "value");
+  neo_js_variable_t dispose = neo_js_context_load(ctx, "dispose");
+  return neo_js_variable_call(dispose, ctx, value, 0, NULL);
+}
+
+NEO_JS_CFUNCTION(neo_js_dispose_supressed) {
+  neo_js_variable_t current = neo_js_context_get_argument(ctx, argc, argv, 0);
+  neo_js_variable_t error = neo_js_context_load(ctx, "error");
+  neo_js_variable_t suppressed_error_class =
+      neo_js_context_get_constant(ctx)->suppressed_error_class;
+  neo_js_variable_t res =
+      neo_js_variable_construct(suppressed_error_class, ctx, 0, NULL);
+  neo_js_variable_set_field(
+      res, ctx, neo_js_context_create_cstring(ctx, "error"), current);
+  neo_js_variable_set_field(
+      res, ctx, neo_js_context_create_cstring(ctx, "suppressed"), error);
+  return neo_js_context_create_exception(ctx, res);
+}
+
+NEO_JS_CFUNCTION(neo_js_dispose_onrejected) {
+  neo_js_variable_t error = neo_js_context_get_argument(ctx, argc, argv, 0);
+  neo_js_variable_t value = neo_js_context_load(ctx, "value");
+  neo_js_variable_t dispose = neo_js_context_load(ctx, "dispose");
+  neo_js_variable_t res = neo_js_variable_call(dispose, ctx, value, 0, NULL);
+  if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
+    neo_js_variable_t e = neo_js_context_create_variable(
+        ctx, ((neo_js_exception_t)res->value)->error);
+    neo_js_variable_t err = neo_js_variable_construct(
+        ctx->constant.suppressed_error_class, ctx, 0, NULL);
+    neo_js_variable_set_field(err, ctx,
+                              neo_js_context_create_cstring(ctx, "error"), e);
+    neo_js_variable_set_field(
+        err, ctx, neo_js_context_create_cstring(ctx, "suppressed"), error);
+    return neo_js_context_create_exception(ctx, err);
+  } else if (res->value->type >= NEO_JS_TYPE_OBJECT) {
+    neo_js_variable_t then = neo_js_variable_get_field(
+        res, ctx, neo_js_context_create_cstring(ctx, "then"));
+    if (then->value->type >= NEO_JS_TYPE_FUNCTION) {
+      neo_js_variable_t onfulfilled = neo_js_context_create_cfunction(
+          ctx, neo_js_dispose_onfulfilled, NULL);
+      neo_js_variable_set_closure(onfulfilled, ctx, "value",
+                                  neo_js_context_create_exception(ctx, error));
+      neo_js_variable_t onrejected =
+          neo_js_context_create_cfunction(ctx, neo_js_dispose_supressed, NULL);
+      neo_js_variable_set_closure(onrejected, ctx, "error", error);
+      neo_js_variable_t args[] = {onfulfilled, onrejected};
+      return neo_js_variable_call(then, ctx, res, 2, args);
+    }
+  }
+  return neo_js_context_create_exception(ctx, error);
+}
+
 neo_js_variable_t neo_js_context_pop_scope(neo_js_context_t self) {
   neo_js_scope_t scope = self->current_scope;
+  neo_js_variable_t result = NULL;
   neo_list_t using_variables = neo_js_scope_get_using(scope);
   neo_list_node_t it = neo_list_get_first(using_variables);
-  neo_js_variable_t err = NULL;
   while (it != neo_list_get_tail(using_variables)) {
     neo_js_variable_t item = neo_list_node_get(it);
     if (item->value->type >= NEO_JS_TYPE_OBJECT) {
@@ -240,8 +293,8 @@ neo_js_variable_t neo_js_context_pop_scope(neo_js_context_t self) {
         neo_js_variable_t res =
             neo_js_variable_call(dispose, self, item, 0, NULL);
         if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
-          if (err == NULL) {
-            err = res;
+          if (result == NULL) {
+            result = res;
           } else {
             neo_js_variable_t error = neo_js_variable_construct(
                 self->constant.suppressed_error_class, self, 0, NULL);
@@ -250,24 +303,78 @@ neo_js_variable_t neo_js_context_pop_scope(neo_js_context_t self) {
             neo_js_variable_set_field(
                 error, self, neo_js_context_create_cstring(self, "error"), res);
             neo_js_variable_t current = neo_js_context_create_variable(
-                self, ((neo_js_exception_t)(err->value))->error);
+                self, ((neo_js_exception_t)(result->value))->error);
             neo_js_variable_set_field(
                 error, self, neo_js_context_create_cstring(self, "suppressed"),
                 current);
-            err = neo_js_context_create_exception(self, error);
+            result = neo_js_context_create_exception(self, error);
           }
         }
       }
     }
     it = neo_list_node_next(it);
   }
-  if (err) {
+  if (self->type == NEO_JS_CONTEXT_MODULE ||
+      self->type == NEO_JS_CONTEXT_ASYNC_FUNCTION ||
+      self->type == NEO_JS_CONTEXT_ASYNC_GENERATOR_FUNCTION) {
+    if (result) {
+      if (result->value->type == NEO_JS_TYPE_EXCEPTION) {
+        result = neo_js_promise_reject(self, self->constant.promise_class, 1,
+                                       &result);
+      } else {
+        result = neo_js_promise_resolve(self, self->constant.promise_class, 1,
+                                        &result);
+      }
+    }
+    neo_list_t await_using_variables = neo_js_scope_get_await_using(scope);
+    neo_list_node_t node = neo_list_get_first(await_using_variables);
+    while (node != neo_list_get_tail(await_using_variables)) {
+      neo_js_variable_t item = neo_list_node_get(node);
+      node = neo_list_node_next(node);
+      if (item->value->type >= NEO_JS_TYPE_OBJECT) {
+        neo_js_variable_t dispose = neo_js_variable_get_field(
+            item, self, self->constant.symbol_async_dispose);
+        if (dispose->value->type < NEO_JS_TYPE_FUNCTION) {
+          dispose = neo_js_variable_get_field(item, self,
+                                              self->constant.symbol_dispose);
+        }
+        if (dispose->value->type >= NEO_JS_TYPE_FUNCTION) {
+          if (result == NULL) {
+            result = neo_js_variable_call(dispose, self, item, 0, NULL);
+            if (result->value->type == NEO_JS_TYPE_EXCEPTION) {
+              neo_js_variable_t error = neo_js_context_create_variable(
+                  self, ((neo_js_exception_t)result->value)->error);
+              result = neo_js_promise_reject(self, self->constant.promise_class,
+                                             1, &error);
+            } else {
+              result = neo_js_promise_resolve(
+                  self, self->constant.promise_class, 1, &result);
+            }
+          } else {
+            neo_js_variable_t onfulfilled = neo_js_context_create_cfunction(
+                self, neo_js_dispose_onfulfilled, NULL);
+            neo_js_variable_set_closure(onfulfilled, self, "value", item);
+            neo_js_variable_set_closure(onfulfilled, self, "dispose", dispose);
+            neo_js_variable_t onrejected = neo_js_context_create_cfunction(
+                self, neo_js_dispose_onrejected, NULL);
+            neo_js_variable_set_closure(onrejected, self, "value", item);
+            neo_js_variable_set_closure(onrejected, self, "dispose", dispose);
+            neo_js_variable_t then = neo_js_variable_get_field(
+                result, self, neo_js_context_create_cstring(self, "then"));
+            neo_js_variable_t args[] = {onfulfilled, onrejected};
+            result = neo_js_variable_call(then, self, result, 2, args);
+          }
+        }
+      }
+    }
+  }
+  if (result) {
     neo_js_scope_t parent = neo_js_scope_get_parent(scope);
-    neo_js_scope_set_variable(parent, err, NULL);
+    neo_js_scope_set_variable(parent, result, NULL);
   }
   neo_js_context_dispose_scope(self, self->current_scope);
-  if (err) {
-    return err;
+  if (result) {
+    return result;
   }
   return neo_js_context_get_undefined(self);
 }
@@ -952,9 +1059,7 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
   if (result->value->type != NEO_JS_TYPE_INTERRUPT) {
     neo_allocator_free(allocator, vm);
     neo_js_scope_set_variable(origin_scope, result, NULL);
-    while (self->current_scope != self->root_scope) {
-      neo_js_context_pop_scope(self);
-    }
+    neo_js_context_pop_scope(self);
   } else {
     neo_js_interrupt_t interrupt = (neo_js_interrupt_t)result->value;
     neo_js_variable_t value =

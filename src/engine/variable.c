@@ -1186,7 +1186,11 @@ NEO_JS_CFUNCTION(neo_js_async_task) {
     interrupt->vm->result = value;
     address = neo_buffer_get_size(interrupt->program->codes);
   } else {
-    neo_list_push(interrupt->vm->stack, value);
+    if (address == neo_buffer_get_size(interrupt->program->codes)) {
+      interrupt->vm->result = value;
+    } else {
+      neo_list_push(interrupt->vm->stack, value);
+    }
   }
   neo_js_variable_t next =
       neo_js_vm_run(interrupt->vm, ctx, interrupt->program, address);
@@ -1226,10 +1230,7 @@ NEO_JS_CFUNCTION(neo_js_async_task) {
     } else {
       neo_js_promise_callback_resolve(ctx, promise, 1, &next);
     }
-    while (neo_js_context_get_scope(ctx) !=
-           neo_js_context_get_root_scope(ctx)) {
-      neo_js_context_pop_scope(ctx);
-    }
+    neo_js_context_pop_scope(ctx);
   }
   neo_js_context_set_scope(ctx, scope);
   neo_js_context_set_type(ctx, origin_ctx_type);
@@ -1320,38 +1321,8 @@ neo_js_variable_t neo_js_variable_call_function(neo_js_variable_t self,
         neo_js_vm_run(vm, ctx, function->program, function->address);
     neo_allocator_free(allocator, vm);
     neo_js_scope_set_variable(origin_scope, result, NULL);
-    neo_js_variable_t err = NULL;
-    while (neo_js_context_get_scope(ctx) != root_scope) {
-      neo_js_variable_t res = neo_js_context_pop_scope(ctx);
-      if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
-        if (err == NULL) {
-          err = res;
-          neo_js_scope_set_variable(origin_scope, err, NULL);
-        } else {
-          neo_js_constant_t constant = neo_js_context_get_constant(ctx);
-          neo_js_variable_t error = neo_js_variable_construct(
-              constant->suppressed_error_class, ctx, 0, NULL);
-          res = neo_js_context_create_variable(
-              ctx, ((neo_js_exception_t)res->value)->error);
-          neo_js_variable_set_field(
-              error, ctx, neo_js_context_create_cstring(ctx, "error"), res);
-          neo_js_variable_t current = neo_js_context_create_variable(
-              ctx, ((neo_js_exception_t)(err->value))->error);
-          neo_js_variable_set_field(
-              error, ctx, neo_js_context_create_cstring(ctx, "suppressed"),
-              current);
-          err = neo_js_context_create_exception(ctx, error);
-          neo_js_scope_set_variable(origin_scope, err, NULL);
-        }
-      }
-    }
-    if (err) {
-      neo_js_scope_set_variable(origin_scope, err, NULL);
-    }
+    neo_js_context_pop_scope(ctx);
     neo_js_context_set_scope(ctx, origin_scope);
-    if (err) {
-      return err;
-    }
     return result;
   }
 }
@@ -1413,29 +1384,7 @@ neo_js_variable_t neo_js_variable_call_variable(neo_js_variable_t self,
   neo_js_variable_t result = cfunction->callee(ctx, bind, argc, args);
   neo_js_scope_set_variable(origin_scope, result, NULL);
   while (neo_js_context_get_scope(ctx) != root_scope) {
-    neo_js_variable_t res = neo_js_context_pop_scope(ctx);
-    neo_js_variable_t err;
-    if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
-      if (err == NULL) {
-        err = res;
-        neo_js_scope_set_variable(origin_scope, err, NULL);
-      } else {
-        neo_js_constant_t constant = neo_js_context_get_constant(ctx);
-        neo_js_variable_t error = neo_js_variable_construct(
-            constant->suppressed_error_class, ctx, 0, NULL);
-        res = neo_js_context_create_variable(
-            ctx, ((neo_js_exception_t)res->value)->error);
-        neo_js_variable_set_field(
-            error, ctx, neo_js_context_create_cstring(ctx, "error"), res);
-        neo_js_variable_t current = neo_js_context_create_variable(
-            ctx, ((neo_js_exception_t)(err->value))->error);
-        neo_js_variable_set_field(
-            error, ctx, neo_js_context_create_cstring(ctx, "suppressed"),
-            current);
-        err = neo_js_context_create_exception(ctx, error);
-        neo_js_scope_set_variable(origin_scope, err, NULL);
-      }
-    }
+    neo_js_context_pop_scope(ctx);
   }
   neo_js_context_set_scope(ctx, origin_scope);
   return result;

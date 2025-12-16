@@ -1,17 +1,28 @@
 'use strict'
 const fn = async () => {
-    {
-        await using item = {
-            async [Symbol.asyncDispose]() {
-                console.log('aaa')
+    try {
+        aaaaa: {
+            await using item2 = {
+                async [Symbol.asyncDispose]() {
+                    console.log('item2')
+                }
             }
-        }
-        await using item2 = {
-            async [Symbol.asyncDispose]() {
-                console.log('bbb')
+            await using item3 = {
+                async [Symbol.asyncDispose]() {
+                    console.log('item3')
+                }
+            }
+            {
+                return 123;
             }
         }
     }
-    console.log('ccc')
+    catch (e) {
+        console.log(e);
+        console.log(e.error);
+        console.log(e.suppressed);
+    } finally {
+        console.log('dispose3')
+    }
 }
-fn()
+fn().then(res => console.log(res));
