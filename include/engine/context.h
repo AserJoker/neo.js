@@ -26,6 +26,11 @@ typedef enum _neo_js_context_type_t {
   NEO_JS_CONTEXT_FUNCTION,
   NEO_JS_CONTEXT_CONSTRUCT,
 } neo_js_context_type_t;
+
+typedef enum _neo_js_eval_type_t {
+  NEO_JS_EVAL_MODULE,
+  NEO_JS_EVAL_INLINE,
+} neo_js_eval_type_t;
 typedef struct _neo_js_context_t *neo_js_context_t;
 typedef void (*neo_js_error_callback)(neo_js_context_t ctx,
                                       neo_js_variable_t error);
@@ -125,11 +130,13 @@ neo_js_variable_t neo_js_context_load_module(neo_js_context_t self,
                                              const char *name);
 void neo_js_context_def_module(neo_js_context_t self, const char *name,
                                neo_js_variable_t module);
+
 neo_js_variable_t neo_js_context_import(neo_js_context_t self,
                                         const char *filename);
 
 neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
-                                      const char *filename);
+                                      const char *filename,
+                                      neo_js_eval_type_t type);
 
 neo_js_variable_t neo_js_context_run(neo_js_context_t self,
                                      const char *filename);
