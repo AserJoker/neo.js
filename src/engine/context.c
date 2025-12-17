@@ -1046,6 +1046,8 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
     if (type == NEO_JS_EVAL_MODULE) {
       result =
           neo_js_promise_reject(self, self->constant.promise_class, 1, &error);
+      neo_js_scope_set_variable(origin_scope, result, NULL);
+      neo_js_context_pop_scope(self);
     } else {
       result = neo_js_context_create_exception(self, error);
     }
@@ -1062,6 +1064,8 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
       if (type == NEO_JS_EVAL_MODULE) {
         result = neo_js_promise_reject(self, self->constant.promise_class, 1,
                                        &error);
+        neo_js_scope_set_variable(origin_scope, result, NULL);
+        neo_js_context_pop_scope(self);
       } else {
         result = neo_js_context_create_exception(self, error);
       }
@@ -1117,12 +1121,12 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
           neo_js_scope_set_variable(origin_scope, promise, NULL);
           result = promise;
         }
-      } else {
-        neo_js_context_pop_scope(self);
       }
     }
   }
-  neo_js_context_set_scope(self, origin_scope);
+  if (type == NEO_JS_EVAL_MODULE) {
+    neo_js_context_set_scope(self, origin_scope);
+  }
   return result;
 }
 neo_js_variable_t neo_js_context_run(neo_js_context_t self,

@@ -13,6 +13,11 @@ void neo_init_js_handle(neo_js_handle_t self, neo_allocator_t allocator,
   self->type = type;
 }
 void neo_deinit_js_handle(neo_js_handle_t self, neo_allocator_t allocator) {
+  while (neo_list_get_size(self->parent)) {
+    neo_list_node_t it = neo_list_get_first(self->parent);
+    neo_js_handle_t parent = neo_list_node_get(it);
+    neo_js_handle_remove_parent(self, parent);
+  }
   neo_allocator_free(allocator, self->children);
   neo_allocator_free(allocator, self->parent);
 }
