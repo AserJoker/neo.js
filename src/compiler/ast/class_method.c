@@ -60,46 +60,46 @@ static void neo_ast_class_method_write(neo_allocator_t allocator,
                                        neo_ast_class_method_t self) {
   if (self->name->type == NEO_NODE_TYPE_PRIVATE_NAME) {
     if (!self->static_) {
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_THIS);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_THIS);
     }
   } else {
     if (!self->static_) {
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
-      neo_program_add_integer(allocator, ctx->program, 1);
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-      neo_program_add_string(allocator, ctx->program, "prototype");
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+      neo_js_program_add_integer(allocator, ctx->program, 1);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+      neo_js_program_add_string(allocator, ctx->program, "prototype");
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
     }
   }
   if (self->computed) {
     TRY(self->name->write(allocator, ctx, self->name)) { return; }
   } else {
     if (self->name->type == NEO_NODE_TYPE_IDENTIFIER) {
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
       char *name = neo_location_get(allocator, self->name->location);
-      neo_program_add_string(allocator, ctx->program, name);
+      neo_js_program_add_string(allocator, ctx->program, name);
       neo_allocator_free(allocator, name);
     } else if (self->name->type != NEO_NODE_TYPE_PRIVATE_NAME) {
       TRY(self->name->write(allocator, ctx, self->name)) { return; }
     }
   }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
   size_t endaddr = neo_buffer_get_size(ctx->program->codes);
-  neo_program_add_address(allocator, ctx->program, 0);
+  neo_js_program_add_address(allocator, ctx->program, 0);
   size_t begin = neo_buffer_get_size(ctx->program->codes);
   neo_writer_push_scope(allocator, ctx, self->node.scope);
   if (neo_list_get_size(self->arguments)) {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
-    neo_program_add_string(allocator, ctx->program, "arguments");
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_ITERATOR);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
+    neo_js_program_add_string(allocator, ctx->program, "arguments");
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_ITERATOR);
     for (neo_list_node_t it = neo_list_get_first(self->arguments);
          it != neo_list_get_tail(self->arguments);
          it = neo_list_node_next(it)) {
       neo_ast_node_t argument = neo_list_node_get(it);
       TRY(argument->write(allocator, ctx, argument)) { return; }
     }
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   }
   bool is_async = ctx->is_async;
   ctx->is_async = self->async;
@@ -109,46 +109,47 @@ static void neo_ast_class_method_write(neo_allocator_t allocator,
   ctx->is_async = is_async;
   ctx->is_generator = is_generator;
   neo_writer_pop_scope(allocator, ctx, self->node.scope);
-  neo_program_set_current(ctx->program, endaddr);
+  neo_js_program_set_current(ctx->program, endaddr);
   if (self->generator) {
     if (self->async) {
-      neo_program_add_code(allocator, ctx->program,
-                           NEO_ASM_PUSH_ASYNC_GENERATOR);
+      neo_js_program_add_code(allocator, ctx->program,
+                              NEO_ASM_PUSH_ASYNC_GENERATOR);
     } else {
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_GENERATOR);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_GENERATOR);
     }
   } else {
     if (self->async) {
-      neo_program_add_code(allocator, ctx->program,
-                           NEO_ASM_PUSH_ASYNC_FUNCTION);
+      neo_js_program_add_code(allocator, ctx->program,
+                              NEO_ASM_PUSH_ASYNC_FUNCTION);
     } else {
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_FUNCTION);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_FUNCTION);
     }
   }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_ADDRESS);
-  neo_program_add_address(allocator, ctx->program, begin);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_SET_ADDRESS);
+  neo_js_program_add_address(allocator, ctx->program, begin);
   char *source = neo_location_get(allocator, self->node.location);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_SOURCE);
-  neo_program_add_string(allocator, ctx->program, source);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_SET_SOURCE);
+  neo_js_program_add_string(allocator, ctx->program, source);
   neo_allocator_free(allocator, source);
   for (neo_list_node_t it = neo_list_get_first(self->closure);
        it != neo_list_get_tail(self->closure); it = neo_list_node_next(it)) {
     neo_ast_node_t node = neo_list_node_get(it);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_CLOSURE);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_SET_CLOSURE);
     char *name = neo_location_get(allocator, node->location);
-    neo_program_add_string(allocator, ctx->program, name);
+    neo_js_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   }
   if (self->name->type == NEO_NODE_TYPE_PRIVATE_NAME) {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_DEF_PRIVATE_METHOD);
+    neo_js_program_add_code(allocator, ctx->program,
+                            NEO_ASM_DEF_PRIVATE_METHOD);
     char *name = neo_location_get(allocator, self->name->location);
-    neo_program_add_string(allocator, ctx->program, name);
+    neo_js_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   } else {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_METHOD);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_SET_METHOD);
   }
   if (!self->static_) {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   }
 }
 

@@ -43,7 +43,7 @@ static void neo_ast_expression_member_write(neo_allocator_t allocator,
   for (neo_list_node_t it = neo_list_get_first(addresses);
        it != neo_list_get_tail(addresses); it = neo_list_node_next(it)) {
     size_t *address = neo_list_node_get(it);
-    neo_program_set_current(ctx->program, *address);
+    neo_js_program_set_current(ctx->program, *address);
   }
   neo_allocator_free(allocator, addresses);
 }

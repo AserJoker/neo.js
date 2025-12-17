@@ -47,7 +47,7 @@ static void neo_ast_program_write(neo_allocator_t allocator,
     neo_ast_node_t item = neo_list_node_get(it);
     TRY(item->write(allocator, ctx, item)) { return; }
   }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_HLT);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_HLT);
   neo_writer_pop_scope(allocator, ctx, self->node.scope);
   ctx->is_async = is_async;
 }

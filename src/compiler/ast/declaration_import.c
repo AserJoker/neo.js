@@ -30,13 +30,13 @@ neo_ast_declaration_import_write(neo_allocator_t allocator,
                                  neo_ast_declaration_import_t self) {
   char *name = neo_location_get(allocator, self->source->location);
   name[strlen(name) - 1] = 0;
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_IMPORT);
-  neo_program_add_string(allocator, ctx->program, name + 1);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_IMPORT);
+  neo_js_program_add_string(allocator, ctx->program, name + 1);
   for (neo_list_node_t it = neo_list_get_first(self->attributes);
        it != neo_list_get_tail(self->attributes); it = neo_list_node_next(it)) {
     neo_ast_node_t attr = neo_list_node_get(it);
     TRY(attr->write(allocator, ctx, attr)) { return; }
-    neo_program_add_string(allocator, ctx->program, name + 1);
+    neo_js_program_add_string(allocator, ctx->program, name + 1);
   }
   neo_allocator_free(allocator, name);
   for (neo_list_node_t it = neo_list_get_first(self->specifiers);

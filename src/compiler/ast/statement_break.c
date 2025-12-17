@@ -18,13 +18,13 @@ static void neo_ast_statement_break_dispose(neo_allocator_t allocator,
 static void neo_ast_statement_break_write(neo_allocator_t allocator,
                                           neo_write_context_t ctx,
                                           neo_ast_statement_break_t self) {
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_BREAK);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_BREAK);
   if (self->label) {
     char *label = neo_location_get(allocator, self->label->location);
-    neo_program_add_string(allocator, ctx->program, label);
+    neo_js_program_add_string(allocator, ctx->program, label);
     neo_allocator_free(allocator, label);
   } else {
-    neo_program_add_string(allocator, ctx->program, "");
+    neo_js_program_add_string(allocator, ctx->program, "");
   }
 }
 static neo_any_t

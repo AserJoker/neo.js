@@ -35,21 +35,21 @@ static void neo_ast_statement_if_write(neo_allocator_t allocator,
                                        neo_write_context_t ctx,
                                        neo_ast_statement_if_t self) {
   TRY(self->condition->write(allocator, ctx, self->condition)) { return; }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_JFALSE);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_JFALSE);
   size_t alternate = neo_buffer_get_size(ctx->program->codes);
-  neo_program_add_address(allocator, ctx->program, 0);
+  neo_js_program_add_address(allocator, ctx->program, 0);
   TRY(self->alternate->write(allocator, ctx, self->alternate)) { return; }
   if (self->consequent) {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
     size_t end = neo_buffer_get_size(ctx->program->codes);
-    neo_program_add_address(allocator, ctx->program, 0);
-    neo_program_set_current(ctx->program, alternate);
+    neo_js_program_add_address(allocator, ctx->program, 0);
+    neo_js_program_set_current(ctx->program, alternate);
     TRY(self->consequent->write(allocator, ctx, self->consequent)) { return; }
-    neo_program_set_current(ctx->program, end);
+    neo_js_program_set_current(ctx->program, end);
   } else {
-    neo_program_set_current(ctx->program, alternate);
+    neo_js_program_set_current(ctx->program, alternate);
   }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
 }
 static neo_any_t neo_serialize_ast_statement_if(neo_allocator_t allocator,
                                                 neo_ast_statement_if_t node) {

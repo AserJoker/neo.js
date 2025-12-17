@@ -50,7 +50,7 @@ neo_serialize_ast_expression_array(neo_allocator_t allocator,
 static void neo_ast_expression_array_write(neo_allocator_t allocator,
                                            neo_write_context_t ctx,
                                            neo_ast_expression_array_t self) {
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARRAY);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARRAY);
   for (neo_list_node_t it = neo_list_get_first(self->items);
        it != neo_list_get_tail(self->items); it = neo_list_node_next(it)) {
     neo_ast_node_t item = neo_list_node_get(it);
@@ -59,18 +59,18 @@ static void neo_ast_expression_array_write(neo_allocator_t allocator,
         TRY(item->write(allocator, ctx, item)) { return; }
       } else {
         TRY(item->write(allocator, ctx, item)) { return; }
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_APPEND);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_APPEND);
       }
     } else {
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-      neo_program_add_string(allocator, ctx->program, "length");
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
-      neo_program_add_integer(allocator, ctx->program, 2);
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-      neo_program_add_string(allocator, ctx->program, "length");
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_INC);
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+      neo_js_program_add_string(allocator, ctx->program, "length");
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+      neo_js_program_add_integer(allocator, ctx->program, 2);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+      neo_js_program_add_string(allocator, ctx->program, "length");
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_INC);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
     }
   }
 }

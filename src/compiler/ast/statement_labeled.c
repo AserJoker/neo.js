@@ -49,10 +49,10 @@ static void neo_ast_statement_labeled_write(neo_allocator_t allocator,
     THROW("export declaration cannot be labelled");
   } else {
     char *label = neo_location_get(allocator, self->label->location);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_BREAK_LABEL);
-    neo_program_add_string(allocator, ctx->program, label);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_BREAK_LABEL);
+    neo_js_program_add_string(allocator, ctx->program, label);
     size_t breakaddr = neo_buffer_get_size(ctx->program->codes);
-    neo_program_add_address(allocator, ctx->program, 0);
+    neo_js_program_add_address(allocator, ctx->program, 0);
     size_t continueaddr = 0;
     if (self->statement->type == NEO_NODE_TYPE_STATEMENT_DO_WHILE ||
         self->statement->type == NEO_NODE_TYPE_STATEMENT_WHILE ||
@@ -60,11 +60,11 @@ static void neo_ast_statement_labeled_write(neo_allocator_t allocator,
         self->statement->type == NEO_NODE_TYPE_STATEMENT_FOR_IN ||
         self->statement->type == NEO_NODE_TYPE_STATEMENT_FOR_OF ||
         self->statement->type == NEO_NODE_TYPE_STATEMENT_FOR_AWAIT_OF) {
-      neo_program_add_code(allocator, ctx->program,
-                           NEO_ASM_PUSH_CONTINUE_LABEL);
-      neo_program_add_string(allocator, ctx->program, label);
+      neo_js_program_add_code(allocator, ctx->program,
+                              NEO_ASM_PUSH_CONTINUE_LABEL);
+      neo_js_program_add_string(allocator, ctx->program, label);
       continueaddr = neo_buffer_get_size(ctx->program->codes);
-      neo_program_add_address(allocator, ctx->program, 0);
+      neo_js_program_add_address(allocator, ctx->program, 0);
     }
     TRY(self->statement->write(allocator, ctx, self->statement)) {
       neo_allocator_free_ex(allocator, label);
@@ -76,11 +76,11 @@ static void neo_ast_statement_labeled_write(neo_allocator_t allocator,
         self->statement->type == NEO_NODE_TYPE_STATEMENT_FOR_IN ||
         self->statement->type == NEO_NODE_TYPE_STATEMENT_FOR_OF ||
         self->statement->type == NEO_NODE_TYPE_STATEMENT_FOR_AWAIT_OF) {
-      neo_program_set_current(ctx->program, continueaddr);
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_POP_LABEL);
+      neo_js_program_set_current(ctx->program, continueaddr);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP_LABEL);
     }
-    neo_program_set_current(ctx->program, breakaddr);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP_LABEL);
+    neo_js_program_set_current(ctx->program, breakaddr);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP_LABEL);
     neo_allocator_free_ex(allocator, label);
   }
 }

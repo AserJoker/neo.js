@@ -574,7 +574,7 @@ neo_js_variable_t neo_js_context_create_cfunction(neo_js_context_t self,
 }
 
 neo_js_variable_t neo_js_context_create_function(neo_js_context_t self,
-                                                 neo_program_t program) {
+                                                 neo_js_program_t program) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   neo_js_function_t function = neo_create_js_function(
       allocator, program, self->constant.function_prototype->value);
@@ -590,8 +590,9 @@ neo_js_variable_t neo_js_context_create_function(neo_js_context_t self,
   neo_js_variable_def_field(prototype, self, key, result, true, false, true);
   return result;
 }
-neo_js_variable_t neo_js_context_create_async_function(neo_js_context_t self,
-                                                       neo_program_t program) {
+neo_js_variable_t
+neo_js_context_create_async_function(neo_js_context_t self,
+                                     neo_js_program_t program) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   neo_js_function_t function = neo_create_js_function(
       allocator, program, self->constant.async_function_prototype->value);
@@ -610,7 +611,7 @@ neo_js_variable_t neo_js_context_create_async_function(neo_js_context_t self,
 }
 neo_js_variable_t
 neo_js_context_create_generator_function(neo_js_context_t self,
-                                         neo_program_t program) {
+                                         neo_js_program_t program) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   neo_js_function_t function = neo_create_js_function(
       allocator, program, self->constant.generator_function_prototype->value);
@@ -629,7 +630,7 @@ neo_js_context_create_generator_function(neo_js_context_t self,
 }
 neo_js_variable_t
 neo_js_context_create_async_generator_function(neo_js_context_t self,
-                                               neo_program_t program) {
+                                               neo_js_program_t program) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   neo_js_function_t function = neo_create_js_function(
       allocator, program,
@@ -656,7 +657,7 @@ neo_js_variable_t neo_js_context_create_signal(neo_js_context_t self,
 }
 neo_js_variable_t
 neo_js_context_create_interrupt(neo_js_context_t self, neo_js_variable_t value,
-                                size_t address, neo_program_t program,
+                                size_t address, neo_js_program_t program,
                                 neo_js_vm_t vm, neo_js_interrupt_type_t type) {
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   neo_js_interrupt_t interrupt = neo_create_js_interrupt(
@@ -1049,7 +1050,7 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
       result = neo_js_context_create_exception(self, error);
     }
   } else {
-    neo_program_t program = neo_ast_write_node(allocator, filename, node);
+    neo_js_program_t program = neo_ast_write_node(allocator, filename, node);
     neo_allocator_free(allocator, node);
     if (neo_has_error()) {
       neo_error_t err = neo_poll_error(NULL, NULL, 0);
@@ -1069,7 +1070,7 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
         char s[strlen(filename) + 16];
         sprintf(s, "%s.asm", filename);
         FILE *fp = fopen(s, "w");
-        neo_program_write(allocator, fp, program);
+        neo_js_program_write(allocator, fp, program);
         fclose(fp);
       }
       neo_js_runtime_set_program(self->runtime, filename, program);

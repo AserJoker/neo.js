@@ -18,10 +18,10 @@ static void neo_ast_declaration_class_write(neo_allocator_t allocator,
   neo_ast_expression_class_t clazz =
       (neo_ast_expression_class_t)self->declaration;
   char *name = neo_location_get(allocator, clazz->name->location);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
-  neo_program_add_string(allocator, ctx->program, name);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
+  neo_js_program_add_string(allocator, ctx->program, name);
   neo_allocator_free(allocator, name);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
 }
 
 static void

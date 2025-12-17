@@ -32,9 +32,9 @@ static void neo_ast_literal_boolean_write(neo_allocator_t allocator,
                                           neo_write_context_t ctx,
                                           neo_ast_literal_boolean_t self) {
   if (neo_location_is(self->node.location, "true")) {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_TRUE);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_TRUE);
   } else {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_FALSE);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_FALSE);
   }
 }
 static neo_ast_literal_boolean_t

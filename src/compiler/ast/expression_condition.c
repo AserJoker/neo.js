@@ -27,17 +27,17 @@ neo_ast_expression_condition_write(neo_allocator_t allocator,
                                    neo_write_context_t ctx,
                                    neo_ast_expression_condition_t self) {
   TRY(self->condition->write(allocator, ctx, self->condition)) { return; }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_JFALSE);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_JFALSE);
   size_t address = neo_buffer_get_size(ctx->program->codes);
-  neo_program_add_address(allocator, ctx->program, 0);
+  neo_js_program_add_address(allocator, ctx->program, 0);
   TRY(self->consequent->write(allocator, ctx, self->consequent)) { return; }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
   size_t end = neo_buffer_get_size(ctx->program->codes);
-  neo_program_add_address(allocator, ctx->program, 0);
-  neo_program_set_current(ctx->program, address);
+  neo_js_program_add_address(allocator, ctx->program, 0);
+  neo_js_program_set_current(ctx->program, address);
   TRY(self->alternate->write(allocator, ctx, self->alternate)) { return; }
-  neo_program_set_current(ctx->program, end);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+  neo_js_program_set_current(ctx->program, end);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
 }
 
 static void neo_ast_expression_condition_resolve_closure(

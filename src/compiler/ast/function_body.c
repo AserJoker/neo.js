@@ -43,8 +43,8 @@ static void neo_ast_function_body_write(neo_allocator_t allocator,
     neo_ast_node_t item = neo_list_node_get(it);
     TRY(item->write(allocator, ctx, item)) { return; }
   }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_UNDEFINED);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_RET);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_UNDEFINED);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_RET);
   neo_writer_pop_scope(allocator, ctx, self->node.scope);
 }
 static neo_any_t neo_serialize_ast_function_body(neo_allocator_t allocator,

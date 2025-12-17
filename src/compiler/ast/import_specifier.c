@@ -21,32 +21,32 @@ static void neo_ast_import_specifier_dispose(neo_allocator_t allocator,
 static void neo_ast_import_specifier_write(neo_allocator_t allocator,
                                            neo_write_context_t ctx,
                                            neo_ast_import_specifier_t self) {
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
-  neo_program_add_integer(allocator, ctx->program, 1);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
+  neo_js_program_add_integer(allocator, ctx->program, 1);
   char *name = neo_location_get(allocator, self->identifier->location);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
   if (self->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
-    neo_program_add_string(allocator, ctx->program, name);
+    neo_js_program_add_string(allocator, ctx->program, name);
   } else {
     name[strlen(name) - 1] = 0;
-    neo_program_add_string(allocator, ctx->program, name + 1);
+    neo_js_program_add_string(allocator, ctx->program, name + 1);
   }
   neo_allocator_free(allocator, name);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
   neo_ast_node_t identifier = self->alias;
   if (!identifier) {
     identifier = self->identifier;
   }
   name = neo_location_get(allocator, identifier->location);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
   if (identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
-    neo_program_add_string(allocator, ctx->program, name);
+    neo_js_program_add_string(allocator, ctx->program, name);
   } else {
     name[strlen(name) - 1] = 0;
-    neo_program_add_string(allocator, ctx->program, name + 1);
+    neo_js_program_add_string(allocator, ctx->program, name + 1);
   }
   neo_allocator_free(allocator, name);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
 }
 static neo_any_t
 neo_serialize_ast_import_specifier(neo_allocator_t allocator,

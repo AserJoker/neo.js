@@ -65,8 +65,8 @@ static void neo_ast_identifier_write(neo_allocator_t allocator,
                                      neo_write_context_t ctx,
                                      neo_ast_identifier_t self) {
   char *name = neo_location_get(allocator, self->node.location);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
-  neo_program_add_string(allocator, ctx->program, name);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
+  neo_js_program_add_string(allocator, ctx->program, name);
   neo_allocator_free(allocator, name);
 }
 static neo_any_t neo_serialize_ast_identifier(neo_allocator_t allocator,

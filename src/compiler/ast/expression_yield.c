@@ -35,35 +35,35 @@ static void neo_ast_expression_yield_write(neo_allocator_t allocator,
   if (self->value) {
     TRY(self->value->write(allocator, ctx, self->value)) { return; }
   } else {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_UNDEFINED);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_UNDEFINED);
   }
   if (self->degelate) {
     if (!ctx->is_async) {
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_ITERATOR);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_ITERATOR);
     } else {
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_ASYNC_ITERATOR);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_ASYNC_ITERATOR);
     }
     size_t begin = neo_buffer_get_size(ctx->program->codes);
     if (ctx->is_async) {
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_NEXT);
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_AWAIT);
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_RESOLVE_NEXT);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_NEXT);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_AWAIT);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_RESOLVE_NEXT);
     } else {
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_NEXT);
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_RESOLVE_NEXT);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_NEXT);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_RESOLVE_NEXT);
     }
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_JTRUE);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_JTRUE);
     size_t addr = neo_buffer_get_size(ctx->program->codes);
-    neo_program_add_address(allocator, ctx->program, 0);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_YIELD);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
-    neo_program_add_address(allocator, ctx->program, begin);
-    neo_program_set_current(ctx->program, addr);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+    neo_js_program_add_address(allocator, ctx->program, 0);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_YIELD);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
+    neo_js_program_add_address(allocator, ctx->program, begin);
+    neo_js_program_set_current(ctx->program, addr);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   } else {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_YIELD);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_YIELD);
   }
 }
 

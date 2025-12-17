@@ -31,30 +31,30 @@ static void neo_ast_statement_try_resolve_closure(neo_allocator_t allocator,
 static void neo_ast_statement_try_write(neo_allocator_t allocator,
                                         neo_write_context_t ctx,
                                         neo_ast_statement_try_t self) {
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_TRY_BEGIN);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_TRY_BEGIN);
   size_t catchaddr = neo_buffer_get_size(ctx->program->codes);
-  neo_program_add_address(allocator, ctx->program, 0);
+  neo_js_program_add_address(allocator, ctx->program, 0);
   size_t deferaddr = neo_buffer_get_size(ctx->program->codes);
-  neo_program_add_address(allocator, ctx->program, 0);
+  neo_js_program_add_address(allocator, ctx->program, 0);
   TRY(self->body->write(allocator, ctx, self->body)) { return; }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_TRY_END);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_TRY_END);
   if (self->catch) {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
     size_t catchend = neo_buffer_get_size(ctx->program->codes);
-    neo_program_add_address(allocator, ctx->program, 0);
-    neo_program_set_current(ctx->program, catchaddr);
+    neo_js_program_add_address(allocator, ctx->program, 0);
+    neo_js_program_set_current(ctx->program, catchaddr);
     TRY(self->catch->write(allocator, ctx, self->catch)) { return; }
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_TRY_END);
-    neo_program_set_current(ctx->program, catchend);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_TRY_END);
+    neo_js_program_set_current(ctx->program, catchend);
   }
   if (self->finally) {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
     size_t finallyend = neo_buffer_get_size(ctx->program->codes);
-    neo_program_add_address(allocator, ctx->program, 0);
-    neo_program_set_current(ctx->program, deferaddr);
+    neo_js_program_add_address(allocator, ctx->program, 0);
+    neo_js_program_set_current(ctx->program, deferaddr);
     TRY(self->finally->write(allocator, ctx, self->finally)) { return; }
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_TRY_END);
-    neo_program_set_current(ctx->program, finallyend);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_TRY_END);
+    neo_js_program_set_current(ctx->program, finallyend);
   }
 }
 static neo_any_t neo_serialize_ast_statement_try(neo_allocator_t allocator,

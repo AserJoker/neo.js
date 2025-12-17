@@ -20,13 +20,13 @@ static void neo_ast_import_attribute_dispose(neo_allocator_t allocator,
 static void neo_ast_import_attribute_write(neo_allocator_t allocator,
                                            neo_write_context_t ctx,
                                            neo_ast_import_attribute_t self) {
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_ASSERT);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_ASSERT);
   char *name = neo_location_get(allocator, self->identifier->location);
-  neo_program_add_string(allocator, ctx->program, name);
+  neo_js_program_add_string(allocator, ctx->program, name);
   neo_allocator_free(allocator, name);
   char *value = neo_location_get(allocator, self->value->location);
   value[strlen(value) - 1] = 0;
-  neo_program_add_string(allocator, ctx->program, value + 1);
+  neo_js_program_add_string(allocator, ctx->program, value + 1);
   neo_allocator_free(allocator, value);
 }
 

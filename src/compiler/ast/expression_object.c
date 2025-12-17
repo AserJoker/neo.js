@@ -35,7 +35,7 @@ neo_ast_expression_object_resolve_closure(neo_allocator_t allocator,
 static void neo_ast_expression_object_write(neo_allocator_t allocator,
                                             neo_write_context_t ctx,
                                             neo_ast_expression_object_t self) {
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_OBJECT);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_OBJECT);
   for (neo_list_node_t it = neo_list_get_first(self->items);
        it != neo_list_get_tail(self->items); it = neo_list_node_next(it)) {
     neo_ast_node_t item = neo_list_node_get(it);

@@ -23,19 +23,19 @@ neo_ast_declaration_function_write(neo_allocator_t allocator,
   neo_ast_expression_function_t function =
       (neo_ast_expression_function_t)self->declaration;
   char *name = neo_location_get(allocator, function->name->location);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
-  neo_program_add_string(allocator, ctx->program, name);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_LOAD);
+  neo_js_program_add_string(allocator, ctx->program, name);
   neo_allocator_free(allocator, name);
   for (neo_list_node_t it = neo_list_get_first(function->closure);
        it != neo_list_get_tail(function->closure);
        it = neo_list_node_next(it)) {
     neo_ast_node_t node = neo_list_node_get(it);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_CLOSURE);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_SET_CLOSURE);
     char *name = neo_location_get(allocator, node->location);
-    neo_program_add_string(allocator, ctx->program, name);
+    neo_js_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
 }
 static void neo_ast_declaration_function_resolve_closure(
     neo_allocator_t allocator, neo_ast_declaration_function_t node,

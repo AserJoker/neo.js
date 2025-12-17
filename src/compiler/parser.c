@@ -31,9 +31,9 @@ onerror:
   return NULL;
 }
 
-neo_program_t neo_ast_write_node(neo_allocator_t allocator, const char *file,
-                                 neo_ast_node_t node) {
-  neo_program_t program = neo_create_program(allocator, file);
+neo_js_program_t neo_ast_write_node(neo_allocator_t allocator, const char *file,
+                                    neo_ast_node_t node) {
+  neo_js_program_t program = neo_create_js_program(allocator, file);
   neo_write_context_t ctx = neo_create_write_context(allocator, program);
   TRY(node->write(allocator, ctx, node)) {
     neo_allocator_free(allocator, ctx);

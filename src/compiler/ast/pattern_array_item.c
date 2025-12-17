@@ -35,23 +35,23 @@ static void
 neo_ast_pattern_array_item_write(neo_allocator_t allocator,
                                  neo_write_context_t ctx,
                                  neo_ast_pattern_array_item_t self) {
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_NEXT);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_RESOLVE_NEXT);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_NEXT);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_RESOLVE_NEXT);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   if (self->value) {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_JNOT_NULL);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_JNOT_NULL);
     size_t address = neo_buffer_get_size(ctx->program->codes);
-    neo_program_add_address(allocator, ctx->program, 0);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+    neo_js_program_add_address(allocator, ctx->program, 0);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
     TRY(self->value->write(allocator, ctx, self->value)) { return; }
-    neo_program_set_current(ctx->program, address);
+    neo_js_program_set_current(ctx->program, address);
   }
   if (self->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
     char *name = neo_location_get(allocator, self->identifier->location);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
-    neo_program_add_string(allocator, ctx->program, name);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
+    neo_js_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   } else {
     TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
   }

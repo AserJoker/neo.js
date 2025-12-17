@@ -61,8 +61,8 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
     if (self->identifier->type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
       if (member->field->type != NEO_NODE_TYPE_PRIVATE_NAME) {
         char *field = neo_location_get(allocator, member->field->location);
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-        neo_program_add_string(allocator, ctx->program, field);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+        neo_js_program_add_string(allocator, ctx->program, field);
         neo_allocator_free(allocator, field);
       }
     } else {
@@ -72,46 +72,46 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
       TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
       TRY(self->value->write(allocator, ctx, self->value)) { return; }
       if (neo_location_is(self->opt->location, "+=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_ADD);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_ADD);
       } else if (neo_location_is(self->opt->location, "-=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_SUB);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_SUB);
       } else if (neo_location_is(self->opt->location, "*=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_MUL);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_MUL);
       } else if (neo_location_is(self->opt->location, "/=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_DIV);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_DIV);
       } else if (neo_location_is(self->opt->location, "%=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_MOD);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_MOD);
       } else if (neo_location_is(self->opt->location, "**=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_POW);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POW);
       } else if (neo_location_is(self->opt->location, "&=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_AND);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_AND);
       } else if (neo_location_is(self->opt->location, "|=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_OR);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_OR);
       } else if (neo_location_is(self->opt->location, "^=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_XOR);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_XOR);
       } else if (neo_location_is(self->opt->location, "~=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_NOT);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_NOT);
       } else if (neo_location_is(self->opt->location, ">>=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_SHR);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_SHR);
       } else if (neo_location_is(self->opt->location, "<<=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_SHL);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_SHL);
       } else if (neo_location_is(self->opt->location, ">>>=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_USHR);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_USHR);
       }
     } else {
       TRY(self->value->write(allocator, ctx, self->value)) { return; }
     }
     if (member->host->type == NEO_NODE_TYPE_EXPRESSION_SUPER) {
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_SUPER_FIELD);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_SET_SUPER_FIELD);
     } else {
       if (member->field->type == NEO_NODE_TYPE_PRIVATE_NAME) {
-        neo_program_add_code(allocator, ctx->program,
-                             NEO_ASM_SET_PRIVATE_FIELD);
+        neo_js_program_add_code(allocator, ctx->program,
+                                NEO_ASM_SET_PRIVATE_FIELD);
         char *name = neo_location_get(allocator, member->field->location);
-        neo_program_add_string(allocator, ctx->program, name);
+        neo_js_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);
       } else {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
       }
     }
   } else if (self->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
@@ -119,38 +119,38 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
       TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
       TRY(self->value->write(allocator, ctx, self->value)) { return; }
       if (neo_location_is(self->opt->location, "+=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_ADD);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_ADD);
       } else if (neo_location_is(self->opt->location, "-=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_SUB);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_SUB);
       } else if (neo_location_is(self->opt->location, "*=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_MUL);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_MUL);
       } else if (neo_location_is(self->opt->location, "/=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_DIV);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_DIV);
       } else if (neo_location_is(self->opt->location, "%=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_MOD);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_MOD);
       } else if (neo_location_is(self->opt->location, "**=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_POW);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POW);
       } else if (neo_location_is(self->opt->location, "&=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_AND);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_AND);
       } else if (neo_location_is(self->opt->location, "|=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_OR);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_OR);
       } else if (neo_location_is(self->opt->location, "^=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_XOR);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_XOR);
       } else if (neo_location_is(self->opt->location, "~=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_NOT);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_NOT);
       } else if (neo_location_is(self->opt->location, ">>=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_SHR);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_SHR);
       } else if (neo_location_is(self->opt->location, "<<=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_SHL);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_SHL);
       } else if (neo_location_is(self->opt->location, ">>>=")) {
-        neo_program_add_code(allocator, ctx->program, NEO_ASM_USHR);
+        neo_js_program_add_code(allocator, ctx->program, NEO_ASM_USHR);
       }
     } else {
       TRY(self->value->write(allocator, ctx, self->value)) { return; }
     }
     char *name = neo_location_get(allocator, self->identifier->location);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
-    neo_program_add_string(allocator, ctx->program, name);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
+    neo_js_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   } else {
     THROW("Invalid left-hand side in assignment \n  at _.compile (%s:%d:%d)",

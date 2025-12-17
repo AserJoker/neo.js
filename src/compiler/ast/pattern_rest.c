@@ -25,13 +25,13 @@ static void neo_ast_pattern_rest_resolve_closure(neo_allocator_t allocator,
 static void neo_ast_pattern_rest_write(neo_allocator_t allocator,
                                        neo_write_context_t ctx,
                                        neo_ast_pattern_rest_t self) {
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_REST);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_REST);
   if (self->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
     char *name = neo_location_get(allocator, self->identifier->location);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
-    neo_program_add_string(allocator, ctx->program, name);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
+    neo_js_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   } else {
     TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
   }

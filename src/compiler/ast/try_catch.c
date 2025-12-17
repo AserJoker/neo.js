@@ -50,15 +50,15 @@ static void neo_ast_try_catch_write(neo_allocator_t allocator,
   if (self->error) {
     if (self->error->type == NEO_NODE_TYPE_IDENTIFIER) {
       char *name = neo_location_get(allocator, self->error->location);
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
-      neo_program_add_string(allocator, ctx->program, name);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
+      neo_js_program_add_string(allocator, ctx->program, name);
       neo_allocator_free(allocator, name);
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
     } else {
       TRY(self->error->write(allocator, ctx, self->error)) { return; }
     }
   } else {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   }
   TRY(self->body->write(allocator, ctx, self->body)) { return; }
   neo_writer_pop_scope(allocator, ctx, self->node.scope);

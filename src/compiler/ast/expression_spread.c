@@ -30,7 +30,7 @@ static void neo_ast_expression_spread_write(neo_allocator_t allocator,
                                             neo_write_context_t ctx,
                                             neo_ast_expression_spread_t self) {
   TRY(self->value->write(allocator, ctx, self->value)) { return; }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_SPREAD);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_SPREAD);
 }
 
 static neo_any_t

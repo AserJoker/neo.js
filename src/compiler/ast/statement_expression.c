@@ -21,8 +21,8 @@ neo_ast_statement_expression_write(neo_allocator_t allocator,
                                    neo_write_context_t ctx,
                                    neo_ast_statement_expression_t self) {
   TRY(self->expression->write(allocator, ctx, self->expression)) { return; }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_SAVE);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_POP);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_SAVE);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
 }
 
 static void neo_ast_statement_expression_resolve_closure(

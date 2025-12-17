@@ -27,9 +27,9 @@ static void neo_ast_statement_throw_write(neo_allocator_t allocator,
   if (self->value) {
     TRY(self->value->write(allocator, ctx, self->value)) { return; }
   } else {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_UNDEFINED);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_UNDEFINED);
   }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_THROW);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_THROW);
 }
 static neo_any_t
 neo_serialize_ast_statement_throw(neo_allocator_t allocator,

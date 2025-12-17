@@ -67,22 +67,22 @@ static void neo_ast_expression_new_write(neo_allocator_t allocator,
     return;
   }
   neo_allocator_free(allocator, addresses);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARRAY);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARRAY);
   for (neo_list_node_t it = neo_list_get_first(self->arguments);
        it != neo_list_get_tail(self->arguments); it = neo_list_node_next(it)) {
     neo_ast_node_t argument = neo_list_node_get(it);
     if (argument->type != NEO_NODE_TYPE_EXPRESSION_SPREAD) {
       TRY(argument->write(allocator, ctx, argument)) { return; }
-      neo_program_add_code(allocator, ctx->program, NEO_ASM_APPEND);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_APPEND);
     } else {
       TRY(argument->write(allocator, ctx, argument)) { return; }
     }
   }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_NEW);
-  neo_program_add_integer(allocator, ctx->program,
-                          self->node.location.begin.line);
-  neo_program_add_integer(allocator, ctx->program,
-                          self->node.location.begin.column);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_NEW);
+  neo_js_program_add_integer(allocator, ctx->program,
+                             self->node.location.begin.line);
+  neo_js_program_add_integer(allocator, ctx->program,
+                             self->node.location.begin.column);
 }
 
 static neo_ast_expression_new_t

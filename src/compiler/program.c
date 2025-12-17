@@ -8,17 +8,18 @@
 #include "core/string.h"
 #include <string.h>
 
-static void neo_program_dispose(neo_allocator_t allocator,
-                                neo_program_t program) {
+static void neo_js_program_dispose(neo_allocator_t allocator,
+                                   neo_js_program_t program) {
   neo_allocator_free(allocator, program->constants);
   neo_allocator_free(allocator, program->codes);
   neo_allocator_free(allocator, program->filename);
   neo_allocator_free(allocator, program->dirname);
 }
 
-neo_program_t neo_create_program(neo_allocator_t allocator, const char *file) {
-  neo_program_t program = (neo_program_t)neo_allocator_alloc(
-      allocator, sizeof(struct _neo_program_t), neo_program_dispose);
+neo_js_program_t neo_create_js_program(neo_allocator_t allocator,
+                                       const char *file) {
+  neo_js_program_t program = (neo_js_program_t)neo_allocator_alloc(
+      allocator, sizeof(struct _neo_js_program_t), neo_js_program_dispose);
   program->filename = neo_create_string(allocator, file);
   neo_path_t path = neo_create_path(allocator, program->filename);
   neo_path_t parent = neo_path_parent(path);
@@ -31,8 +32,9 @@ neo_program_t neo_create_program(neo_allocator_t allocator, const char *file) {
   return program;
 }
 
-size_t neo_program_add_constant(neo_allocator_t allocator, neo_program_t self,
-                                const char *constant) {
+size_t neo_js_program_add_constant(neo_allocator_t allocator,
+                                   neo_js_program_t self,
+                                   const char *constant) {
   size_t idx = 0;
   for (neo_list_node_t it = neo_list_get_first(self->constants);
        it != neo_list_get_tail(self->constants); it = neo_list_node_next(it)) {
@@ -45,47 +47,47 @@ size_t neo_program_add_constant(neo_allocator_t allocator, neo_program_t self,
   return neo_list_get_size(self->constants) - 1;
 }
 
-void neo_program_add_code(neo_allocator_t allocator, neo_program_t self,
-                          uint16_t code) {
+void neo_js_program_add_code(neo_allocator_t allocator, neo_js_program_t self,
+                             uint16_t code) {
   neo_buffer_write(self->codes, neo_buffer_get_size(self->codes), &code,
                    sizeof(code));
 }
-void neo_program_add_address(neo_allocator_t allocator, neo_program_t self,
-                             size_t code) {
+void neo_js_program_add_address(neo_allocator_t allocator,
+                                neo_js_program_t self, size_t code) {
   neo_buffer_write(self->codes, neo_buffer_get_size(self->codes), &code,
                    sizeof(code));
 }
 
-void neo_program_add_string(neo_allocator_t allocator, neo_program_t self,
-                            const char *string) {
-  size_t idx = neo_program_add_constant(allocator, self, string);
+void neo_js_program_add_string(neo_allocator_t allocator, neo_js_program_t self,
+                               const char *string) {
+  size_t idx = neo_js_program_add_constant(allocator, self, string);
   neo_buffer_write(self->codes, neo_buffer_get_size(self->codes), &idx,
                    sizeof(idx));
 }
 
-void neo_program_add_number(neo_allocator_t allocator, neo_program_t self,
-                            double number) {
+void neo_js_program_add_number(neo_allocator_t allocator, neo_js_program_t self,
+                               double number) {
   neo_buffer_write(self->codes, neo_buffer_get_size(self->codes), &number,
                    sizeof(number));
 }
-void neo_program_add_integer(neo_allocator_t allocator, neo_program_t self,
-                             int32_t number) {
+void neo_js_program_add_integer(neo_allocator_t allocator,
+                                neo_js_program_t self, int32_t number) {
   neo_buffer_write(self->codes, neo_buffer_get_size(self->codes), &number,
                    sizeof(number));
 }
 
-void neo_program_add_boolean(neo_allocator_t allocator, neo_program_t self,
-                             bool boolean) {
+void neo_js_program_add_boolean(neo_allocator_t allocator,
+                                neo_js_program_t self, bool boolean) {
   neo_buffer_write(self->codes, neo_buffer_get_size(self->codes), &boolean,
                    sizeof(boolean));
 }
-void neo_program_set_current(neo_program_t self, size_t address) {
+void neo_js_program_set_current(neo_js_program_t self, size_t address) {
   *(size_t *)((char *)neo_buffer_get(self->codes) + address) =
       neo_buffer_get_size(self->codes);
 }
 
-static const char *neo_program_get_string(neo_program_t program,
-                                          size_t *offset) {
+static const char *neo_js_program_get_string(neo_js_program_t program,
+                                             size_t *offset) {
   size_t idx = *(size_t *)((char *)neo_buffer_get(program->codes) + *offset);
   *offset += sizeof(size_t);
   neo_list_node_t it = neo_list_get_first(program->constants);
@@ -94,28 +96,28 @@ static const char *neo_program_get_string(neo_program_t program,
   }
   return (const char *)neo_list_node_get(it);
 }
-static const double neo_program_get_number(neo_program_t program,
-                                           size_t *offset) {
+static const double neo_js_program_get_number(neo_js_program_t program,
+                                              size_t *offset) {
   double value = *(double *)((char *)neo_buffer_get(program->codes) + *offset);
   *offset += sizeof(double);
   return value;
 }
-static const size_t neo_program_get_address(neo_program_t program,
-                                            size_t *offset) {
+static const size_t neo_js_program_get_address(neo_js_program_t program,
+                                               size_t *offset) {
   size_t value = *(size_t *)((char *)neo_buffer_get(program->codes) + *offset);
   *offset += sizeof(size_t);
   return value;
 }
-static const int32_t neo_program_get_integer(neo_program_t program,
-                                             size_t *offset) {
+static const int32_t neo_js_program_get_integer(neo_js_program_t program,
+                                                size_t *offset) {
   int32_t value =
       *(int32_t *)((char *)neo_buffer_get(program->codes) + *offset);
   *offset += sizeof(int32_t);
   return value;
 }
 
-void neo_program_write(neo_allocator_t allocator, FILE *fp,
-                       neo_program_t self) {
+void neo_js_program_write(neo_allocator_t allocator, FILE *fp,
+                          neo_js_program_t self) {
   fprintf(fp, "[section .metadata]\n");
   fprintf(fp, ".filename: %s\n", self->filename);
   fprintf(fp, ".dirname: %s\n", self->dirname);
@@ -149,7 +151,7 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       break;
     case NEO_ASM_STORE: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_STORE \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
@@ -158,13 +160,13 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
     } break;
     case NEO_ASM_DEF: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_DEF \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
     case NEO_ASM_LOAD: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_LOAD \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
@@ -173,7 +175,7 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       break;
     case NEO_ASM_INIT_PRIVATE_FIELD: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_INIT_PRIVATE_FIELD \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
@@ -182,7 +184,7 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       break;
     case NEO_ASM_INIT_PRIVATE_ACCESSOR: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_INIT_PRIVATE_ACCESSOR \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
@@ -209,25 +211,25 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       break;
     case NEO_ASM_PUSH_NUMBER: {
       fprintf(fp, "NEO_ASM_PUSH_NUMBER %lg\n",
-              neo_program_get_number(self, &offset));
+              neo_js_program_get_number(self, &offset));
     } break;
     case NEO_ASM_PUSH_STRING: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_PUSH_STRING \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
     case NEO_ASM_PUSH_BIGINT: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_PUSH_BIGINT \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
     case NEO_ASM_PUSH_REGEXP: {
       char *content = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       char *flag = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_PUSH_REGEXP \"%s\",\"%s\"\n", content, flag);
       neo_allocator_free(allocator, flag);
       neo_allocator_free(allocator, content);
@@ -263,16 +265,16 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       fprintf(fp, "NEO_ASM_PUSH_THIS\n");
       break;
     case NEO_ASM_SUPER_CALL: {
-      uint32_t line = neo_program_get_integer(self, &offset);
-      uint32_t column = neo_program_get_integer(self, &offset);
+      uint32_t line = neo_js_program_get_integer(self, &offset);
+      uint32_t column = neo_js_program_get_integer(self, &offset);
       fprintf(fp, "NEO_ASM_SUPER_CALL %d,%d\n", line, column);
     } break;
     case NEO_ASM_APPEND: {
       fprintf(fp, "NEO_ASM_APPEND\n");
     } break;
     case NEO_ASM_SUPER_MEMBER_CALL: {
-      uint32_t line = neo_program_get_integer(self, &offset);
-      uint32_t column = neo_program_get_integer(self, &offset);
+      uint32_t line = neo_js_program_get_integer(self, &offset);
+      uint32_t column = neo_js_program_get_integer(self, &offset);
       fprintf(fp, "NEO_ASM_SUPER_MEMBER_CALL %d,%d\n", line, column);
     } break;
     case NEO_ASM_GET_SUPER_FIELD: {
@@ -283,17 +285,17 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
     } break;
     case NEO_ASM_PUSH_VALUE:
       fprintf(fp, "NEO_ASM_PUSH_VALUE %d\n",
-              neo_program_get_integer(self, &offset));
+              neo_js_program_get_integer(self, &offset));
       break;
     case NEO_ASM_SET_NAME: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_SET_NAME \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
     case NEO_ASM_SET_SOURCE: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_SET_SOURCE \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
@@ -305,11 +307,11 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       break;
     case NEO_ASM_SET_ADDRESS:
       fprintf(fp, "NEO_ASM_SET_ADDRESS %zu\n",
-              neo_program_get_address(self, &offset));
+              neo_js_program_get_address(self, &offset));
       break;
     case NEO_ASM_SET_CLOSURE: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_SET_CLOSURE \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
@@ -330,23 +332,23 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       break;
     case NEO_ASM_DIRECTIVE: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_DIRECTIVE \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
     case NEO_ASM_CALL: {
-      uint32_t line = neo_program_get_integer(self, &offset);
-      uint32_t column = neo_program_get_integer(self, &offset);
+      uint32_t line = neo_js_program_get_integer(self, &offset);
+      uint32_t column = neo_js_program_get_integer(self, &offset);
       fprintf(fp, "NEO_ASM_CALL %d,%d\n", line, column);
     } break;
     case NEO_ASM_EVAL: {
-      uint32_t line = neo_program_get_integer(self, &offset);
-      uint32_t column = neo_program_get_integer(self, &offset);
+      uint32_t line = neo_js_program_get_integer(self, &offset);
+      uint32_t column = neo_js_program_get_integer(self, &offset);
       fprintf(fp, "NEO_ASM_EVAL %d,%d\n", line, column);
     } break;
     case NEO_ASM_MEMBER_CALL: {
-      uint32_t line = neo_program_get_integer(self, &offset);
-      uint32_t column = neo_program_get_integer(self, &offset);
+      uint32_t line = neo_js_program_get_integer(self, &offset);
+      uint32_t column = neo_js_program_get_integer(self, &offset);
       fprintf(fp, "NEO_ASM_MEMBER_CALL %d,%d\n", line, column);
     } break;
     case NEO_ASM_GET_FIELD:
@@ -357,21 +359,21 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       break;
     case NEO_ASM_PRIVATE_CALL: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
-      uint32_t line = neo_program_get_integer(self, &offset);
-      uint32_t column = neo_program_get_integer(self, &offset);
+          allocator, neo_js_program_get_string(self, &offset));
+      uint32_t line = neo_js_program_get_integer(self, &offset);
+      uint32_t column = neo_js_program_get_integer(self, &offset);
       fprintf(fp, "NEO_ASM_PRIVATE_CALL %s,%d,%d\n", constant, line, column);
       neo_allocator_free(allocator, constant);
     } break;
     case NEO_ASM_GET_PRIVATE_FIELD: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_GET_PRIVATE_FIELD \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
     case NEO_ASM_SET_PRIVATE_FIELD: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_SET_PRIVATE_FIELD \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
@@ -386,50 +388,51 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       break;
     case NEO_ASM_DEF_PRIVATE_GETTER: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_DEF_PRIVATE_GETTER \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
     case NEO_ASM_DEF_PRIVATE_SETTER: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_DEF_PRIVATE_SETTER \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
     case NEO_ASM_DEF_PRIVATE_METHOD: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_DEF_PRIVATE_METHOD \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
     case NEO_ASM_JNULL:
       fprintf(fp, "NEO_ASM_JNULL %zu\n",
-              neo_program_get_address(self, &offset));
+              neo_js_program_get_address(self, &offset));
       break;
     case NEO_ASM_JNOT_NULL:
       fprintf(fp, "NEO_ASM_JNOT_NULL %zu\n",
-              neo_program_get_address(self, &offset));
+              neo_js_program_get_address(self, &offset));
       break;
     case NEO_ASM_JFALSE:
       fprintf(fp, "NEO_ASM_JFALSE %zu\n",
-              neo_program_get_address(self, &offset));
+              neo_js_program_get_address(self, &offset));
       break;
     case NEO_ASM_JTRUE:
       fprintf(fp, "NEO_ASM_JTRUE %zu\n",
-              neo_program_get_address(self, &offset));
+              neo_js_program_get_address(self, &offset));
       break;
     case NEO_ASM_JMP:
-      fprintf(fp, "NEO_ASM_JMP %zu\n", neo_program_get_address(self, &offset));
+      fprintf(fp, "NEO_ASM_JMP %zu\n",
+              neo_js_program_get_address(self, &offset));
       break;
     case NEO_ASM_BREAK: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_BREAK \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
     case NEO_ASM_CONTINUE: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_CONTINUE \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
@@ -437,8 +440,8 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       fprintf(fp, "NEO_ASM_THROW\n");
       break;
     case NEO_ASM_TRY_BEGIN: {
-      size_t onerror = neo_program_get_address(self, &offset);
-      size_t onfinish = neo_program_get_address(self, &offset);
+      size_t onerror = neo_js_program_get_address(self, &offset);
+      size_t onfinish = neo_js_program_get_address(self, &offset);
       fprintf(fp, "NEO_ASM_TRY_BEGIN %zu,%zu\n", onerror, onfinish);
       break;
     }
@@ -480,16 +483,16 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       break;
     case NEO_ASM_PUSH_BREAK_LABEL: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_PUSH_BREAK_LABEL \"%s\",%zu\n", constant,
-              neo_program_get_address(self, &offset));
+              neo_js_program_get_address(self, &offset));
       neo_allocator_free(allocator, constant);
     } break;
     case NEO_ASM_PUSH_CONTINUE_LABEL: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_PUSH_CONTINUE_LABEL \"%s\",%zu\n", constant,
-              neo_program_get_address(self, &offset));
+              neo_js_program_get_address(self, &offset));
       neo_allocator_free(allocator, constant);
     } break;
     case NEO_ASM_POP_LABEL:
@@ -497,13 +500,13 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       break;
     case NEO_ASM_IMPORT: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_IMPORT \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
     case NEO_ASM_EXPORT: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_EXPORT \"%s\"\n", constant);
       neo_allocator_free(allocator, constant);
     } break;
@@ -512,11 +515,11 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       break;
     case NEO_ASM_ASSERT: {
       char *type = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       char *value = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       char *module = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
+          allocator, neo_js_program_get_string(self, &offset));
       fprintf(fp, "NEO_ASM_ASSERT \"%s\",\"%s\",\"%s\"\n", type, value, module);
       neo_allocator_free(allocator, value);
       neo_allocator_free(allocator, type);
@@ -538,8 +541,8 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       fprintf(fp, "NEO_ASM_BREAKPOINT\n");
       break;
     case NEO_ASM_NEW: {
-      uint32_t line = neo_program_get_integer(self, &offset);
-      uint32_t column = neo_program_get_integer(self, &offset);
+      uint32_t line = neo_js_program_get_integer(self, &offset);
+      uint32_t column = neo_js_program_get_integer(self, &offset);
       fprintf(fp, "NEO_ASM_NEW %d,%d\n", line, column);
     } break;
     case NEO_ASM_DEL:
@@ -636,26 +639,26 @@ void neo_program_write(neo_allocator_t allocator, FILE *fp,
       fprintf(fp, "NEO_ASM_INSTANCE_OF\n");
       break;
     case NEO_ASM_TAG: {
-      uint32_t line = neo_program_get_integer(self, &offset);
-      uint32_t column = neo_program_get_integer(self, &offset);
+      uint32_t line = neo_js_program_get_integer(self, &offset);
+      uint32_t column = neo_js_program_get_integer(self, &offset);
       fprintf(fp, "NEO_ASM_TAG %d,%d\n", line, column);
     } break;
     case NEO_ASM_MEMBER_TAG: {
-      uint32_t line = neo_program_get_integer(self, &offset);
-      uint32_t column = neo_program_get_integer(self, &offset);
+      uint32_t line = neo_js_program_get_integer(self, &offset);
+      uint32_t column = neo_js_program_get_integer(self, &offset);
       fprintf(fp, "NEO_ASM_MEMBER_TAG %d,%d\n", line, column);
     } break;
     case NEO_ASM_PRIVATE_TAG: {
       char *constant = neo_string_encode_escape(
-          allocator, neo_program_get_string(self, &offset));
-      uint32_t line = neo_program_get_integer(self, &offset);
-      uint32_t column = neo_program_get_integer(self, &offset);
+          allocator, neo_js_program_get_string(self, &offset));
+      uint32_t line = neo_js_program_get_integer(self, &offset);
+      uint32_t column = neo_js_program_get_integer(self, &offset);
       fprintf(fp, "NEO_ASM_PRIVATE_TAG %s,%d,%d\n", constant, line, column);
       neo_allocator_free(allocator, constant);
     } break;
     case NEO_ASM_SUPER_MEMBER_TAG: {
-      uint32_t line = neo_program_get_integer(self, &offset);
-      uint32_t column = neo_program_get_integer(self, &offset);
+      uint32_t line = neo_js_program_get_integer(self, &offset);
+      uint32_t column = neo_js_program_get_integer(self, &offset);
       fprintf(fp, "NEO_ASM_SUPER_MEMBER_TAG %d,%d\n", line, column);
     } break;
     case NEO_ASM_DEL_FIELD: {

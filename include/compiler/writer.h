@@ -11,7 +11,7 @@ typedef struct _neo_write_scope_t *neo_write_scope_t;
 typedef struct _neo_ast_node_t *neo_ast_node_t;
 
 typedef struct _neo_write_context_t {
-  neo_program_t program;
+  neo_js_program_t program;
   neo_write_scope_t scope;
   char *label;
   bool is_async;
@@ -23,7 +23,7 @@ typedef void (*neo_write_fn_t)(neo_allocator_t allocator,
                                neo_write_context_t ctx, neo_ast_node_t node);
 
 neo_write_context_t neo_create_write_context(neo_allocator_t allocator,
-                                             neo_program_t program);
+                                             neo_js_program_t program);
 
 void neo_writer_push_scope(neo_allocator_t allocator, neo_write_context_t ctx,
                            neo_compile_scope_t scope);

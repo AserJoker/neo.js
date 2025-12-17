@@ -19,9 +19,9 @@ static void neo_ast_literal_string_write(neo_allocator_t allocator,
   }
   const char *flag = &str[spliter + 1];
   str[spliter] = '\0';
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_REGEXP);
-  neo_program_add_string(allocator, ctx->program, &str[1]);
-  neo_program_add_string(allocator, ctx->program, flag);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_REGEXP);
+  neo_js_program_add_string(allocator, ctx->program, &str[1]);
+  neo_js_program_add_string(allocator, ctx->program, flag);
   neo_allocator_free(allocator, str);
 }
 

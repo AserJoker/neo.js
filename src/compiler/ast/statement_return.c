@@ -30,9 +30,9 @@ static void neo_ast_statement_return_write(neo_allocator_t allocator,
   if (self->value) {
     TRY(self->value->write(allocator, ctx, self->value)) { return; }
   } else {
-    neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_UNDEFINED);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_UNDEFINED);
   }
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_RET);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_RET);
 }
 static neo_any_t
 neo_serialize_ast_statement_return(neo_allocator_t allocator,

@@ -20,8 +20,8 @@ static void neo_ast_literal_string_write(neo_allocator_t allocator,
   char *str = neo_location_get(allocator, self->node.location);
   str[strlen(str) - 1] = 0;
   char *ss = neo_string_decode_escape(allocator, str + 1);
-  neo_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-  neo_program_add_string(allocator, ctx->program, ss);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
+  neo_js_program_add_string(allocator, ctx->program, ss);
   neo_allocator_free(allocator, ss);
   neo_allocator_free(allocator, str);
 }
