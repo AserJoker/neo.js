@@ -157,11 +157,7 @@ neo_ast_node_t neo_ast_read_expression_arrow_function(
   neo_token_t token = NULL;
   neo_compile_scope_t scope = NULL;
   node = neo_create_ast_expression_arrow_function(allocator);
-
-  token = TRY(neo_read_identify_token(allocator, file, &current)) {
-    goto onerror;
-  };
-
+  token = neo_read_identify_token(allocator, file, &current);
   if (token) {
     if (neo_location_is(token->location, "async")) {
       node->async = true;

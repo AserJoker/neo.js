@@ -110,9 +110,7 @@ neo_ast_node_t neo_ast_read_expression_yield(neo_allocator_t allocator,
   neo_position_t current = *position;
   neo_token_t token = NULL;
   neo_ast_expression_yield_t node = NULL;
-  token = TRY(neo_read_identify_token(allocator, file, &current)) {
-    goto onerror;
-  };
+  token = neo_read_identify_token(allocator, file, &current);
   if (!token) {
     return NULL;
   }

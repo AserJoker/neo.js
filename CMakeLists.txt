@@ -19,6 +19,8 @@ project(neo)
 
 set(CMAKE_CXX_STANDARD 20)
 
+set(CMAKE_C_STANDARD 11)
+
 set(BUILD_STATIC_LIBS on)
 
 set(gtest_force_shared_crt on)

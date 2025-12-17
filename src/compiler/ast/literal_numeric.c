@@ -81,13 +81,14 @@ neo_ast_node_t neo_ast_read_literal_numeric(neo_allocator_t allocator,
                                             neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_literal_numeric_t node = NULL;
-  neo_token_t token = TRY(neo_read_number_token(allocator, file, &current)) {
+  neo_token_t token = neo_read_number_token(allocator, file, &current);
+  if (token && token->type == NEO_TOKEN_TYPE_ERROR) {
+    THROW("%s", token->error);
+    neo_allocator_free(allocator, token);
     goto onerror;
   }
   if (!token) {
-    token = TRY(neo_read_identify_token(allocator, file, &current)) {
-      goto onerror;
-    }
+    token = neo_read_identify_token(allocator, file, &current);
     if (token && !neo_location_is(token->location, "NaN") &&
         !neo_location_is(token->location, "Infinity")) {
       goto onerror;
@@ -99,7 +100,7 @@ neo_ast_node_t neo_ast_read_literal_numeric(neo_allocator_t allocator,
   neo_allocator_free(allocator, token);
   node = neo_create_ast_literal_numeric(allocator);
   neo_position_t cur = current;
-  token = TRY(neo_read_identify_token(allocator, file, &cur)) { goto onerror; }
+  token = neo_read_identify_token(allocator, file, &cur);
   if (token && neo_location_is(token->location, "n")) {
     node->node.type = NEO_NODE_TYPE_LITERAL_BIGINT;
     current = cur;

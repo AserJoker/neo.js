@@ -106,9 +106,7 @@ neo_ast_node_t neo_ast_read_expression_member(neo_allocator_t allocator,
   neo_token_t token = NULL;
   neo_ast_expression_member_t node =
       neo_create_ast_expression_member(allocator);
-  token = TRY(neo_read_symbol_token(allocator, file, &current)) {
-    goto onerror;
-  }
+  token = neo_read_symbol_token(allocator, file, &current);
   if (!token) {
     goto onerror;
   }

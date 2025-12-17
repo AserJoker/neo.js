@@ -107,12 +107,12 @@ bool neo_skip_line_terminator(neo_allocator_t allocator, const char *file,
 
 bool neo_skip_comment(neo_allocator_t allocator, const char *file,
                       neo_position_t *position) {
-  neo_token_t token = TRY(neo_read_comment_token(allocator, file, position)) {
-    return false;
-  };
-
+  neo_token_t token = neo_read_comment_token(allocator, file, position);
   if (!token) {
-    token = TRY(neo_read_multiline_comment_token(allocator, file, position)) {
+    token = neo_read_multiline_comment_token(allocator, file, position);
+    if (token && token->type == NEO_TOKEN_TYPE_ERROR) {
+      THROW("%s", token->error);
+      neo_allocator_free(allocator, token);
       return false;
     };
   }

@@ -34,9 +34,7 @@ neo_ast_node_t neo_ast_read_private_name(neo_allocator_t allocator,
                                          neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_private_name_t node = NULL;
-  neo_token_t token = TRY(neo_read_identify_token(allocator, file, &current)) {
-    goto onerror;
-  };
+  neo_token_t token = neo_read_identify_token(allocator, file, &current);
   if (!token) {
     return NULL;
   }

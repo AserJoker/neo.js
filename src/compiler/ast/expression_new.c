@@ -111,9 +111,7 @@ neo_ast_node_t neo_ast_read_expression_new(neo_allocator_t allocator,
   neo_ast_node_t callee = NULL;
   neo_token_t token = NULL;
   node = neo_create_ast_expression_new(allocator);
-  token = TRY(neo_read_identify_token(allocator, file, &current)) {
-    goto onerror;
-  };
+  token = neo_read_identify_token(allocator, file, &current);
   if (!token || !neo_location_is(token->location, "new")) {
     goto onerror;
   }

@@ -223,9 +223,7 @@ neo_ast_node_t neo_ast_read_expression_assigment(neo_allocator_t allocator,
     goto onerror;
   }
   SKIP_ALL(allocator, file, &current, onerror);
-  token = TRY(neo_read_symbol_token(allocator, file, &current)) {
-    goto onerror;
-  };
+  token = neo_read_symbol_token(allocator, file, &current);
   if (!token) {
     goto onerror;
   }

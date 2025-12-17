@@ -271,7 +271,10 @@ neo_ast_node_t neo_ast_read_literal_template(neo_allocator_t allocator,
     return NULL;
   }
   neo_ast_literal_template_t node = neo_create_ast_literal_template(allocator);
-  token = TRY(neo_read_template_string_token(allocator, file, &current)) {
+  token = neo_read_template_string_token(allocator, file, &current);
+  if (token && token->type == NEO_TOKEN_TYPE_ERROR) {
+    THROW("%s", token->error);
+    neo_allocator_free(allocator, token);
     goto onerror;
   };
   if (!token) {
@@ -294,7 +297,10 @@ neo_ast_node_t neo_ast_read_literal_template(neo_allocator_t allocator,
       }
       neo_list_push(node->expressions, expr);
       SKIP_ALL(allocator, file, &current, onerror);
-      token = TRY(neo_read_template_string_token(allocator, file, &current)) {
+      token = neo_read_template_string_token(allocator, file, &current);
+      if (token && token->type == NEO_TOKEN_TYPE_ERROR) {
+        THROW("%s", token->error);
+        neo_allocator_free(allocator, token);
         goto onerror;
       };
       if (!token) {

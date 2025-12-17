@@ -97,9 +97,7 @@ neo_ast_node_t neo_ast_read_expression_condition(neo_allocator_t allocator,
     goto onerror;
   };
   SKIP_ALL(allocator, file, &current, onerror);
-  token = TRY(neo_read_symbol_token(allocator, file, &current)) {
-    goto onerror;
-  };
+  token = neo_read_symbol_token(allocator, file, &current);
   if (!token || !neo_location_is(token->location, "?")) {
     goto onerror;
   }
@@ -113,9 +111,7 @@ neo_ast_node_t neo_ast_read_expression_condition(neo_allocator_t allocator,
     goto onerror;
   }
   SKIP_ALL(allocator, file, &current, onerror);
-  token = TRY(neo_read_symbol_token(allocator, file, &current)) {
-    goto onerror;
-  };
+  token = neo_read_symbol_token(allocator, file, &current);
   if (!token || !neo_location_is(token->location, ":")) {
     THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
           current.line, current.column);

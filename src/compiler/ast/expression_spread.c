@@ -71,9 +71,7 @@ neo_ast_node_t neo_ast_read_expression_spread(neo_allocator_t allocator,
   neo_position_t current = *position;
   neo_ast_expression_spread_t node = NULL;
   neo_token_t token = NULL;
-  token = TRY(neo_read_symbol_token(allocator, file, &current)) {
-    goto onerror;
-  };
+  token = neo_read_symbol_token(allocator, file, &current);
   if (!token || !neo_location_is(token->location, "...")) {
     goto onerror;
   }

@@ -5,7 +5,6 @@
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/any.h"
-#include "core/error.h"
 #include "core/location.h"
 #include "core/position.h"
 
@@ -49,9 +48,7 @@ neo_ast_node_t neo_ast_read_literal_null(neo_allocator_t allocator,
                                          neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_literal_null_t node = NULL;
-  neo_token_t token = TRY(neo_read_identify_token(allocator, file, &current)) {
-    goto onerror;
-  }
+  neo_token_t token = neo_read_identify_token(allocator, file, &current);
   if (!token || !neo_location_is(token->location, "null")) {
     goto onerror;
   }

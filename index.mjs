@@ -1,1 +1,2 @@
-throw new Error
+class A{
+}
