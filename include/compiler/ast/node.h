@@ -9,11 +9,11 @@
 #include "core/location.h"
 #include <stdbool.h>
 
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 typedef enum _neo_ast_node_type_t {
+  NEO_NODE_TYPE_ERROR,
   NEO_NODE_TYPE_IDENTIFIER,
   NEO_NODE_TYPE_PRIVATE_NAME,
   NEO_NODE_TYPE_LITERAL_REGEXP,
@@ -109,11 +109,16 @@ typedef void (*neo_resolve_closure_fn_t)(neo_allocator_t allocator,
 
 struct _neo_ast_node_t {
   neo_ast_node_type_t type;
-  neo_location_t location;
-  neo_serialize_fn_t serialize;
-  neo_write_fn_t write;
-  neo_resolve_closure_fn_t resolve_closure;
-  neo_compile_scope_t scope;
+  union {
+    struct {
+      neo_location_t location;
+      neo_serialize_fn_t serialize;
+      neo_write_fn_t write;
+      neo_resolve_closure_fn_t resolve_closure;
+      neo_compile_scope_t scope;
+    };
+    char *error;
+  };
 };
 
 neo_any_t neo_ast_node_serialize(neo_allocator_t allocator,
@@ -137,21 +142,26 @@ bool neo_skip_white_space(neo_allocator_t allocator, const char *file,
 bool neo_skip_line_terminator(neo_allocator_t allocator, const char *file,
                               neo_position_t *position);
 
-bool neo_skip_comment(neo_allocator_t allocator, const char *file,
-                      neo_position_t *position);
+neo_ast_node_t neo_skip_comment(neo_allocator_t allocator, const char *file,
+                                neo_position_t *position);
+
+neo_ast_node_t neo_create_error_node(neo_allocator_t allocator,
+                                     const char *message, ...);
 
 #define SKIP_ALL(allocator, file, position, onerror)                           \
   for (;;) {                                                                   \
-    if (neo_skip_white_space(allocator, file, position)) {                     \
-      continue;                                                                \
-    }                                                                          \
-    if (neo_skip_line_terminator(allocator, file, position)) {                 \
-      continue;                                                                \
-    }                                                                          \
-    TRY(if (neo_skip_comment(allocator, file, position)) { continue; }) {      \
+    const char *offset = (position)->offset;                                     \
+    neo_skip_white_space(allocator, file, position);                           \
+    neo_skip_line_terminator(allocator, file, position);                       \
+    neo_ast_node_t error = neo_skip_comment(allocator, file, position);        \
+    if (error) {                                                               \
+      THROW("%s", error->error);                                               \
+      neo_allocator_free(allocator, error);                                    \
       goto onerror;                                                            \
     }                                                                          \
-    break;                                                                     \
+    if (offset == (position)->offset) {                                          \
+      break;                                                                   \
+    }                                                                          \
   }
 
 #ifdef __cplusplus

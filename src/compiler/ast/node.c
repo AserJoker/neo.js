@@ -3,10 +3,10 @@
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/any.h"
-#include "core/error.h"
 #include "core/list.h"
 #include "core/location.h"
 #include "core/unicode.h"
+#include <stdarg.h>
 #include <string.h>
 
 neo_any_t neo_ast_node_serialize(neo_allocator_t allocator,
@@ -105,21 +105,38 @@ bool neo_skip_line_terminator(neo_allocator_t allocator, const char *file,
   return false;
 }
 
-bool neo_skip_comment(neo_allocator_t allocator, const char *file,
-                      neo_position_t *position) {
+neo_ast_node_t neo_skip_comment(neo_allocator_t allocator, const char *file,
+                                neo_position_t *position) {
   neo_token_t token = neo_read_comment_token(allocator, file, position);
   if (!token) {
     token = neo_read_multiline_comment_token(allocator, file, position);
     if (token && token->type == NEO_TOKEN_TYPE_ERROR) {
-      THROW("%s", token->error);
+      neo_ast_node_t error = neo_create_error_node(allocator, NULL);
+      error->error = token->error;
+      token->error = NULL;
       neo_allocator_free(allocator, token);
-      return false;
+      return error;
     };
   }
-  if (!token) {
-    return false;
-  } else {
-    neo_allocator_free(allocator, token);
-    return true;
+  neo_allocator_free(allocator, token);
+  return NULL;
+}
+static void neo_ast_error_node_dispose(neo_allocator_t allocator,
+                                       neo_ast_node_t self) {
+  neo_allocator_free(allocator, self->error);
+}
+
+neo_ast_node_t neo_create_error_node(neo_allocator_t allocator,
+                                     const char *message, ...) {
+  neo_ast_node_t node = neo_allocator_alloc(
+      allocator, sizeof(struct _neo_ast_node_t), neo_ast_error_node_dispose);
+  node->error = NULL;
+  if (message) {
+    node->error = neo_allocator_alloc(allocator, 4096, NULL);
+    va_list args;
+    va_start(args, message);
+    vsnprintf(node->error, 4096, message, args);
+    va_end(args);
   }
+  return node;
 }

@@ -528,10 +528,13 @@ neo_ast_node_t neo_ast_read_expression_14(neo_allocator_t allocator,
         neo_create_ast_expression_binary(allocator);
     SKIP_ALL(allocator, file, &current, onerror);
     bnode->opt = token;
+    token = NULL;
     bnode->right = TRY(neo_ast_read_expression_14(allocator, file, &current)) {
+      node = &bnode->node;
       goto onerror;
     };
     if (!bnode->right) {
+      node = &bnode->node;
       THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
             current.line, current.column);
       goto onerror;
