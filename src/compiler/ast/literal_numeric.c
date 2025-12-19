@@ -5,7 +5,6 @@
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/any.h"
-#include "core/error.h"
 #include "core/location.h"
 #include "core/position.h"
 #include <stdlib.h>
@@ -81,9 +80,10 @@ neo_ast_node_t neo_ast_read_literal_numeric(neo_allocator_t allocator,
                                             neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_literal_numeric_t node = NULL;
+  neo_ast_node_t error = NULL;
   neo_token_t token = neo_read_number_token(allocator, file, &current);
   if (token && token->type == NEO_TOKEN_TYPE_ERROR) {
-    THROW("%s", token->error);
+    error = neo_create_error_node(allocator, "%s", token->error);
     neo_allocator_free(allocator, token);
     goto onerror;
   }
@@ -114,5 +114,5 @@ neo_ast_node_t neo_ast_read_literal_numeric(neo_allocator_t allocator,
 onerror:
   neo_allocator_free(allocator, token);
   neo_allocator_free(allocator, node);
-  return NULL;
+  return error;
 }

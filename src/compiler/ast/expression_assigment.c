@@ -10,7 +10,6 @@
 #include "compiler/writer.h"
 #include "core/allocator.h"
 #include "core/any.h"
-#include "core/error.h"
 #include "core/list.h"
 #include "core/location.h"
 #include "core/position.h"
@@ -37,6 +36,7 @@ static void
 neo_ast_expression_assigment_write(neo_allocator_t allocator,
                                    neo_write_context_t ctx,
                                    neo_ast_expression_assigment_t self) {
+  neo_ast_node_t error = NULL;
   if (self->identifier->type == NEO_NODE_TYPE_EXPRESSION_MEMBER ||
       self->identifier->type == NEO_NODE_TYPE_EXPRESSION_COMPUTED_MEMBER) {
     neo_ast_expression_member_t member =
@@ -44,18 +44,7 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
     if (member->host->type != NEO_NODE_TYPE_EXPRESSION_SUPER) {
       neo_list_initialize_t initialize = {true};
       neo_list_t addresses = neo_create_list(allocator, &initialize);
-      TRY(neo_write_optional_chain(allocator, ctx, member->host, addresses)) {
-        neo_allocator_free(allocator, addresses);
-        return;
-      }
-      if (neo_list_get_size(addresses)) {
-        THROW(
-            "Invalid left-hand side in assignment \n  at _.compile (%s:%d:%d)",
-            ctx->program->filename, self->identifier->location.begin.line,
-            self->identifier->location.begin.column);
-        neo_allocator_free(allocator, addresses);
-        return;
-      }
+      neo_write_optional_chain(allocator, ctx, member->host, addresses);
       neo_allocator_free(allocator, addresses);
     }
     if (self->identifier->type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
@@ -66,11 +55,11 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
         neo_allocator_free(allocator, field);
       }
     } else {
-      TRY(member->field->write(allocator, ctx, member->field)) { return; }
+      member->field->write(allocator, ctx, member->field);
     }
     if (!neo_location_is(self->opt->location, "=")) {
-      TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
-      TRY(self->value->write(allocator, ctx, self->value)) { return; }
+      self->identifier->write(allocator, ctx, self->identifier);
+      self->value->write(allocator, ctx, self->value);
       if (neo_location_is(self->opt->location, "+=")) {
         neo_js_program_add_code(allocator, ctx->program, NEO_ASM_ADD);
       } else if (neo_location_is(self->opt->location, "-=")) {
@@ -99,7 +88,7 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
         neo_js_program_add_code(allocator, ctx->program, NEO_ASM_USHR);
       }
     } else {
-      TRY(self->value->write(allocator, ctx, self->value)) { return; }
+      self->value->write(allocator, ctx, self->value);
     }
     if (member->host->type == NEO_NODE_TYPE_EXPRESSION_SUPER) {
       neo_js_program_add_code(allocator, ctx->program, NEO_ASM_SET_SUPER_FIELD);
@@ -116,8 +105,8 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
     }
   } else if (self->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
     if (!neo_location_is(self->opt->location, "=")) {
-      TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
-      TRY(self->value->write(allocator, ctx, self->value)) { return; }
+      self->identifier->write(allocator, ctx, self->identifier);
+      self->value->write(allocator, ctx, self->value);
       if (neo_location_is(self->opt->location, "+=")) {
         neo_js_program_add_code(allocator, ctx->program, NEO_ASM_ADD);
       } else if (neo_location_is(self->opt->location, "-=")) {
@@ -146,17 +135,12 @@ neo_ast_expression_assigment_write(neo_allocator_t allocator,
         neo_js_program_add_code(allocator, ctx->program, NEO_ASM_USHR);
       }
     } else {
-      TRY(self->value->write(allocator, ctx, self->value)) { return; }
+      self->value->write(allocator, ctx, self->value);
     }
     char *name = neo_location_get(allocator, self->identifier->location);
     neo_js_program_add_code(allocator, ctx->program, NEO_ASM_STORE);
     neo_js_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
-  } else {
-    THROW("Invalid left-hand side in assignment \n  at _.compile (%s:%d:%d)",
-          ctx->program->filename, self->identifier->location.begin.line,
-          self->identifier->location.begin.column);
-    return;
   }
 }
 
@@ -199,30 +183,26 @@ neo_create_ast_expression_assigment(neo_allocator_t allocator) {
 neo_ast_node_t neo_ast_read_expression_assigment(neo_allocator_t allocator,
                                                  const char *file,
                                                  neo_position_t *position) {
+  neo_ast_node_t error = NULL;
   neo_position_t current = *position;
   neo_ast_expression_assigment_t node = NULL;
   neo_token_t token = NULL;
   node = neo_create_ast_expression_assigment(allocator);
-  node->identifier =
-      TRY(neo_ast_read_expression_17(allocator, file, &current)) {
-    goto onerror;
-  };
+  node->identifier = neo_ast_read_expression_17(allocator, file, &current);
   if (!node->identifier) {
-    node->identifier =
-        TRY(neo_ast_read_pattern_object(allocator, file, &current)) {
-      goto onerror;
-    }
+    node->identifier = neo_ast_read_pattern_object(allocator, file, &current);
   }
   if (!node->identifier) {
-    node->identifier =
-        TRY(neo_ast_read_pattern_array(allocator, file, &current)) {
-      goto onerror;
-    }
+    node->identifier = neo_ast_read_pattern_array(allocator, file, &current);
   }
   if (!node->identifier) {
     goto onerror;
   }
-  SKIP_ALL(allocator, file, &current, onerror);
+  NEO_CHECK_NODE(node->identifier, error, onerror);
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   token = neo_read_symbol_token(allocator, file, &current);
   if (!token) {
     goto onerror;
@@ -247,15 +227,19 @@ neo_ast_node_t neo_ast_read_expression_assigment(neo_allocator_t allocator,
     goto onerror;
   }
   node->opt = token;
-  SKIP_ALL(allocator, file, &current, onerror);
-  node->value = TRY(neo_ast_read_expression_2(allocator, file, &current)) {
-    goto onerror;
-  };
-  if (!node->value) {
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-          current.line, current.column);
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
     goto onerror;
   }
+  node->value = neo_ast_read_expression_2(allocator, file, &current);
+  if (!node->value) {
+    error = neo_create_error_node(
+        allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+        file, current.line, current.column);
+    goto onerror;
+  }
+  NEO_CHECK_NODE(node->value, error, onerror);
   node->node.location.begin = *position;
   node->node.location.end = current;
   node->node.location.file = file;
@@ -263,5 +247,5 @@ neo_ast_node_t neo_ast_read_expression_assigment(neo_allocator_t allocator,
   return &node->node;
 onerror:
   neo_allocator_free(allocator, node);
-  return NULL;
+  return error;
 }

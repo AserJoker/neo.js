@@ -1,5 +1,6 @@
 #ifndef _H_NEO_COMPILER_PROGRAM_
 #define _H_NEO_COMPILER_PROGRAM_
+#include "compiler/scope.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -20,30 +21,30 @@ neo_js_program_t neo_create_js_program(neo_allocator_t allocator,
                                        const char *file);
 
 size_t neo_js_program_add_constant(neo_allocator_t allocator,
-                                neo_js_program_t self, const char *constant);
+                                   neo_js_program_t self, const char *constant);
 
 void neo_js_program_add_code(neo_allocator_t allocator, neo_js_program_t self,
-                          uint16_t code);
+                             uint16_t code);
 
-void neo_js_program_add_address(neo_allocator_t allocator, neo_js_program_t self,
-                             size_t code);
+void neo_js_program_add_address(neo_allocator_t allocator,
+                                neo_js_program_t self, size_t code);
 
 void neo_js_program_add_string(neo_allocator_t allocator, neo_js_program_t self,
-                            const char *string);
+                               const char *string);
 
 void neo_js_program_add_number(neo_allocator_t allocator, neo_js_program_t self,
-                            double number);
+                               double number);
 
-void neo_js_program_add_integer(neo_allocator_t allocator, neo_js_program_t self,
-                             int32_t number);
+void neo_js_program_add_integer(neo_allocator_t allocator,
+                                neo_js_program_t self, int32_t number);
 
-void neo_js_program_add_boolean(neo_allocator_t allocator, neo_js_program_t self,
-                             bool boolean);
+void neo_js_program_add_boolean(neo_allocator_t allocator,
+                                neo_js_program_t self, bool boolean);
 
 void neo_js_program_set_current(neo_js_program_t self, size_t address);
 
-void neo_js_program_write(neo_allocator_t allocator, FILE *fp,
-                       neo_js_program_t self);
+neo_ast_node_t neo_js_program_write(neo_allocator_t allocator, FILE *fp,
+                                    neo_js_program_t self);
 
 #ifdef __cplusplus
 }

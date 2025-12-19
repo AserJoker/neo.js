@@ -145,7 +145,7 @@ void neo_writer_pop_scope(neo_allocator_t allocator, neo_write_context_t ctx,
                it != neo_list_get_tail(function->arguments);
                it = neo_list_node_next(it)) {
             neo_ast_node_t argument = neo_list_node_get(it);
-            TRY(argument->write(allocator, ctx, argument)) { return; }
+            argument->write(allocator, ctx, argument);
           }
           neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
           neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
@@ -154,7 +154,7 @@ void neo_writer_pop_scope(neo_allocator_t allocator, neo_write_context_t ctx,
         ctx->is_async = function->async;
         bool is_generator = ctx->is_generator;
         ctx->is_generator = function->generator;
-        TRY(function->body->write(allocator, ctx, function->body)) { return; }
+        function->body->write(allocator, ctx, function->body);
         ctx->is_async = is_async;
         ctx->is_generator = is_generator;
         neo_writer_pop_scope(allocator, ctx, function->node.scope);
@@ -206,9 +206,7 @@ void neo_write_optional_chain(neo_allocator_t allocator,
       neo_ast_expression_member_t member =
           (neo_ast_expression_member_t)call->callee;
       if (member->host->type != NEO_NODE_TYPE_EXPRESSION_SUPER) {
-        TRY(neo_write_optional_chain(allocator, ctx, member->host, addresses)) {
-          return;
-        }
+        neo_write_optional_chain(allocator, ctx, member->host, addresses);
       }
       if (member->node.type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
         if (member->field->type != NEO_NODE_TYPE_PRIVATE_NAME) {
@@ -218,7 +216,7 @@ void neo_write_optional_chain(neo_allocator_t allocator,
           neo_allocator_free(allocator, name);
         }
       } else {
-        TRY(member->field->write(allocator, ctx, member->field)) { return; };
+        member->field->write(allocator, ctx, member->field);
       }
     } else if (call->callee->type == NEO_NODE_TYPE_EXPRESSION_OPTIONAL_MEMBER ||
                call->callee->type ==
@@ -226,9 +224,7 @@ void neo_write_optional_chain(neo_allocator_t allocator,
       neo_ast_expression_member_t member =
           (neo_ast_expression_member_t)call->callee;
       if (member->host->type != NEO_NODE_TYPE_EXPRESSION_SUPER) {
-        TRY(neo_write_optional_chain(allocator, ctx, member->host, addresses)) {
-          return;
-        }
+        neo_write_optional_chain(allocator, ctx, member->host, addresses);
       }
       size_t *address = neo_allocator_alloc(allocator, sizeof(size_t), NULL);
       neo_list_push(addresses, address);
@@ -241,13 +237,11 @@ void neo_write_optional_chain(neo_allocator_t allocator,
         neo_js_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);
       } else {
-        TRY(member->field->write(allocator, ctx, member->field)) { return; };
+        member->field->write(allocator, ctx, member->field);
       }
     } else if (call->callee->type != NEO_NODE_TYPE_EXPRESSION_SUPER) {
       if (!is_eval) {
-        TRY(neo_write_optional_chain(allocator, ctx, call->callee, addresses)) {
-          return;
-        }
+        neo_write_optional_chain(allocator, ctx, call->callee, addresses);
       }
     }
     neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARRAY);
@@ -256,10 +250,10 @@ void neo_write_optional_chain(neo_allocator_t allocator,
          it = neo_list_node_next(it)) {
       neo_ast_node_t argument = neo_list_node_get(it);
       if (argument->type != NEO_NODE_TYPE_EXPRESSION_SPREAD) {
-        TRY(argument->write(allocator, ctx, argument)) { return; }
+        argument->write(allocator, ctx, argument);
         neo_js_program_add_code(allocator, ctx->program, NEO_ASM_APPEND);
       } else {
-        TRY(argument->write(allocator, ctx, argument)) { return; }
+        argument->write(allocator, ctx, argument);
       }
     }
     if (node->type == NEO_NODE_TYPE_EXPRESSION_OPTIONAL_CALL) {
@@ -306,9 +300,7 @@ void neo_write_optional_chain(neo_allocator_t allocator,
   } else if (node->type == NEO_NODE_TYPE_EXPRESSION_MEMBER) {
     neo_ast_expression_member_t member = (neo_ast_expression_member_t)node;
     if (member->host->type != NEO_NODE_TYPE_EXPRESSION_SUPER) {
-      TRY(neo_write_optional_chain(allocator, ctx, member->host, addresses)) {
-        return;
-      }
+      neo_write_optional_chain(allocator, ctx, member->host, addresses);
     }
     if (member->field->type != NEO_NODE_TYPE_PRIVATE_NAME) {
       neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
@@ -333,11 +325,9 @@ void neo_write_optional_chain(neo_allocator_t allocator,
     neo_ast_expression_member_t member = (neo_ast_expression_member_t)node;
 
     if (member->host->type != NEO_NODE_TYPE_EXPRESSION_SUPER) {
-      TRY(neo_write_optional_chain(allocator, ctx, member->host, addresses)) {
-        return;
-      }
+      neo_write_optional_chain(allocator, ctx, member->host, addresses);
     }
-    TRY(member->field->write(allocator, ctx, member->field)) { return; }
+    member->field->write(allocator, ctx, member->field);
     if (member->host->type == NEO_NODE_TYPE_EXPRESSION_SUPER) {
       neo_js_program_add_code(allocator, ctx->program, NEO_ASM_GET_SUPER_FIELD);
     } else {
@@ -346,9 +336,7 @@ void neo_write_optional_chain(neo_allocator_t allocator,
   } else if (node->type == NEO_NODE_TYPE_EXPRESSION_OPTIONAL_MEMBER) {
     neo_ast_expression_member_t member = (neo_ast_expression_member_t)node;
     if (member->host->type != NEO_NODE_TYPE_EXPRESSION_SUPER) {
-      TRY(neo_write_optional_chain(allocator, ctx, member->host, addresses)) {
-        return;
-      }
+      neo_write_optional_chain(allocator, ctx, member->host, addresses);
       neo_js_program_add_code(allocator, ctx->program, NEO_ASM_JNULL);
       size_t *address = neo_allocator_alloc(allocator, sizeof(size_t), NULL);
       *address = neo_buffer_get_size(ctx->program->codes);
@@ -367,28 +355,20 @@ void neo_write_optional_chain(neo_allocator_t allocator,
   } else if (node->type == NEO_NODE_TYPE_EXPRESSION_OPTIONAL_COMPUTED_MEMBER) {
     neo_ast_expression_member_t member = (neo_ast_expression_member_t)node;
     if (member->host->type != NEO_NODE_TYPE_EXPRESSION_SUPER) {
-      TRY(neo_write_optional_chain(allocator, ctx, member->host, addresses)) {
-        return;
-      }
+      neo_write_optional_chain(allocator, ctx, member->host, addresses);
       neo_js_program_add_code(allocator, ctx->program, NEO_ASM_JNULL);
       size_t *address = neo_allocator_alloc(allocator, sizeof(size_t), NULL);
       *address = neo_buffer_get_size(ctx->program->codes);
       neo_js_program_add_address(allocator, ctx->program, 0);
       neo_list_push(addresses, address);
     }
-    TRY(member->field->write(allocator, ctx, member->field)) { return; }
+    member->field->write(allocator, ctx, member->field);
     if (member->host->type == NEO_NODE_TYPE_EXPRESSION_SUPER) {
       neo_js_program_add_code(allocator, ctx->program, NEO_ASM_GET_SUPER_FIELD);
     } else {
       neo_js_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
     }
   } else {
-    if (node->type == NEO_NODE_TYPE_EXPRESSION_SUPER) {
-      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
-            ctx->program->filename, node->location.begin.line,
-            node->location.begin.column);
-      return;
-    }
-    TRY(node->write(allocator, ctx, node)) { return; }
+    node->write(allocator, ctx, node);
   }
 }

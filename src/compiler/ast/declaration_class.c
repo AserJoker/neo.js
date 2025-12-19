@@ -14,7 +14,8 @@ neo_ast_declaration_class_dispose(neo_allocator_t allocator,
 static void neo_ast_declaration_class_write(neo_allocator_t allocator,
                                             neo_write_context_t ctx,
                                             neo_ast_declaration_class_t self) {
-  TRY(self->declaration->write(allocator, ctx, self->declaration)) { return; }
+  neo_ast_node_t error = NULL;
+  self->declaration->write(allocator, ctx, self->declaration);
   neo_ast_expression_class_t clazz =
       (neo_ast_expression_class_t)self->declaration;
   char *name = neo_location_get(allocator, clazz->name->location);
@@ -68,6 +69,7 @@ neo_ast_node_t neo_ast_read_declaration_class(neo_allocator_t allocator,
                                               neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_expression_class_t declaration = NULL;
+  neo_ast_node_t error = NULL;
   neo_ast_declaration_class_t node =
       neo_create_ast_declaration_class(allocator);
   declaration = (neo_ast_expression_class_t)neo_ast_read_expression_class(
@@ -77,20 +79,22 @@ neo_ast_node_t neo_ast_read_declaration_class(neo_allocator_t allocator,
   }
   node->declaration = &declaration->node;
   if (!declaration->name) {
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-          current.line, current.column);
+    error = neo_create_error_node(
+        allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+        file, current.line, current.column);
     goto onerror;
   }
   node->node.location.begin = *position;
   node->node.location.end = current;
   node->node.location.file = file;
   *position = current;
-  TRY(neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
-                               node->declaration, NEO_COMPILE_VARIABLE_LET)) {
+  error = neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
+                                   node->declaration, NEO_COMPILE_VARIABLE_LET);
+  if (error) {
     goto onerror;
-  };
+  }
   return &node->node;
 onerror:
   neo_allocator_free(allocator, node);
-  return NULL;
+  return error;
 }

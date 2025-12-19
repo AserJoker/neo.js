@@ -56,9 +56,10 @@ neo_ast_node_t neo_ast_read_literal_string(neo_allocator_t allocator,
                                            neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_literal_string_t node = NULL;
+  neo_ast_node_t error = NULL;
   neo_token_t token = neo_read_string_token(allocator, file, &current);
   if (token && token->type == NEO_TOKEN_TYPE_ERROR) {
-    THROW("%s", token->error);
+    error = neo_create_error_node(allocator, "%s", token->error);
     neo_allocator_free(allocator, token);
     goto onerror;
   };
@@ -74,5 +75,5 @@ neo_ast_node_t neo_ast_read_literal_string(neo_allocator_t allocator,
   return &node->node;
 onerror:
   neo_allocator_free(allocator, node);
-  return NULL;
+  return error;
 }

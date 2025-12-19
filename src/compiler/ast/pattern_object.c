@@ -8,7 +8,6 @@
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/any.h"
-#include "core/error.h"
 #include "core/list.h"
 #include "core/position.h"
 #include <string.h>
@@ -51,11 +50,6 @@ static void neo_ast_pattern_object_write(neo_allocator_t allocator,
         neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
         neo_js_program_add_string(allocator, ctx->program, name + 1);
         neo_allocator_free(allocator, name);
-      } else {
-        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
-              ctx->program->filename, oitem->identifier->location.begin.line,
-              oitem->identifier->location.begin.column);
-        return;
       }
       neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
       neo_js_program_add_integer(allocator, ctx->program, 2);
@@ -73,7 +67,7 @@ static void neo_ast_pattern_object_write(neo_allocator_t allocator,
         size_t address = neo_buffer_get_size(ctx->program->codes);
         neo_js_program_add_address(allocator, ctx->program, 0);
         neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
-        TRY(oitem->value->write(allocator, ctx, oitem->value)) { return; }
+        oitem->value->write(allocator, ctx, oitem->value);
         neo_js_program_set_current(ctx->program, address);
       }
       if (oitem->alias) {
@@ -84,7 +78,7 @@ static void neo_ast_pattern_object_write(neo_allocator_t allocator,
           neo_allocator_free(allocator, name);
           neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
         } else {
-          TRY(oitem->alias->write(allocator, ctx, oitem->alias)) { return; }
+          oitem->alias->write(allocator, ctx, oitem->alias);
         }
       } else if (oitem->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
         char *name = neo_location_get(allocator, oitem->identifier->location);
@@ -92,11 +86,6 @@ static void neo_ast_pattern_object_write(neo_allocator_t allocator,
         neo_js_program_add_string(allocator, ctx->program, name);
         neo_allocator_free(allocator, name);
         neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
-      } else {
-        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
-              ctx->program->filename, oitem->identifier->location.begin.line,
-              oitem->identifier->location.begin.column);
-        return;
       }
       neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
     } else if (item->type == NEO_NODE_TYPE_PATTERN_REST) {
@@ -109,9 +98,7 @@ static void neo_ast_pattern_object_write(neo_allocator_t allocator,
         neo_allocator_free(allocator, name);
         neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
       } else {
-        TRY(rest->identifier->write(allocator, ctx, rest->identifier)) {
-          return;
-        }
+        rest->identifier->write(allocator, ctx, rest->identifier);
       }
     }
     idx++;
@@ -156,33 +143,43 @@ neo_ast_node_t neo_ast_read_pattern_object(neo_allocator_t allocator,
   neo_ast_pattern_object_t node = NULL;
   neo_token_t token = NULL;
   neo_position_t current = *position;
+  neo_ast_node_t error = NULL;
   if (*current.offset != '{') {
     return NULL;
   }
   current.offset++;
   current.column++;
   node = neo_create_ast_pattern_object(allocator);
-  SKIP_ALL(allocator, file, &current, onerror);
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   if (*current.offset != '}') {
     for (;;) {
       neo_ast_node_t item =
-          TRY(neo_ast_read_pattern_object_item(allocator, file, &current)) {
-        goto onerror;
-      };
+          neo_ast_read_pattern_object_item(allocator, file, &current);
       if (!item) {
-        item = TRY(neo_ast_read_pattern_rest(allocator, file, &current)) {
-          goto onerror;
-        }
+        item = neo_ast_read_pattern_rest(allocator, file, &current);
       }
       if (!item) {
         goto onerror;
       }
+      NEO_CHECK_NODE(item, error, onerror);
       neo_list_push(node->items, item);
-      SKIP_ALL(allocator, file, &current, onerror);
+
+      error = neo_skip_all(allocator, file, &current);
+      if (error) {
+        goto onerror;
+      }
       if (*current.offset == ',') {
         current.offset++;
         current.column++;
-        SKIP_ALL(allocator, file, &current, onerror);
+
+        error = neo_skip_all(allocator, file, &current);
+        if (error) {
+          goto onerror;
+        }
       } else if (*current.offset == '}') {
         break;
       } else {
@@ -203,5 +200,5 @@ neo_ast_node_t neo_ast_read_pattern_object(neo_allocator_t allocator,
 onerror:
   neo_allocator_free(allocator, token);
   neo_allocator_free(allocator, node);
-  return NULL;
+  return error;
 }

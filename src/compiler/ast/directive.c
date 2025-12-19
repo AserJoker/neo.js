@@ -5,7 +5,6 @@
 #include "compiler/program.h"
 #include "core/allocator.h"
 #include "core/any.h"
-#include "core/error.h"
 #include "core/location.h"
 #include "core/position.h"
 #include <string.h>
@@ -54,18 +53,27 @@ neo_ast_node_t neo_ast_read_directive(neo_allocator_t allocator,
                                       neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_directive_t node = NULL;
-  neo_ast_node_t token =
-      TRY(neo_ast_read_literal_string(allocator, file, &current)) {
-    goto onerror;
-  };
+  neo_ast_node_t error = NULL;
+  neo_ast_node_t token = neo_ast_read_literal_string(allocator, file, &current);
   if (!token) {
     neo_allocator_free(allocator, token);
     return NULL;
   }
+  if (token->type == NEO_NODE_TYPE_ERROR) {
+    error = neo_create_error_node(allocator, NULL);
+    error->error = token->error;
+    token->error = NULL;
+    neo_allocator_free(allocator, token);
+    goto onerror;
+  }
   neo_allocator_free(allocator, token);
   neo_position_t backup = current;
   uint32_t line = current.line;
-  SKIP_ALL(allocator, file, &current, onerror);
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   if (current.line == line) {
     if (*current.offset && *current.offset != ';') {
       return NULL;
@@ -79,5 +87,5 @@ neo_ast_node_t neo_ast_read_directive(neo_allocator_t allocator,
   return &node->node;
 onerror:
   neo_allocator_free(allocator, node);
-  return NULL;
+  return error;
 }

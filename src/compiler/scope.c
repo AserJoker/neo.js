@@ -11,7 +11,6 @@
 #include "compiler/ast/variable_declarator.h"
 #include "core/allocator.h"
 #include "core/any.h"
-#include "core/error.h"
 #include "core/list.h"
 #include "core/location.h"
 #include <string.h>
@@ -86,10 +85,11 @@ neo_create_compile_variable(neo_allocator_t allocator) {
   return variable;
 }
 
-void neo_compile_scope_declar_value(neo_allocator_t allocator,
-                                    neo_compile_scope_t self,
-                                    neo_ast_node_t node,
-                                    neo_compile_variable_type_t type) {
+neo_ast_node_t
+neo_compile_scope_declar_value(neo_allocator_t allocator,
+                               neo_compile_scope_t self, neo_ast_node_t node,
+                               neo_compile_variable_type_t type) {
+  neo_ast_node_t error = NULL;
   neo_compile_variable_t variable = neo_create_compile_variable(allocator);
   variable->type = type;
   variable->node = node;
@@ -118,13 +118,15 @@ void neo_compile_scope_declar_value(neo_allocator_t allocator,
           type == NEO_COMPILE_VARIABLE_AWAIT_USING ||
           curr->type == NEO_COMPILE_VARIABLE_LET ||
           curr->type == NEO_COMPILE_VARIABLE_CONST) {
-        THROW("Identifier '%s' has aleady been declared\n    at %s:%d:%d", name,
-              node->location.file, node->location.begin.line,
-              node->location.begin.column);
+        error = neo_create_error_node(
+            allocator,
+            "Identifier '%s' has aleady been declared\n    at %s:%d:%d", name,
+            node->location.file, node->location.begin.line,
+            node->location.begin.column);
         neo_allocator_free(allocator, variable);
         neo_allocator_free(allocator, name);
         neo_allocator_free(allocator, current);
-        return;
+        return error;
       }
     }
     neo_allocator_free(allocator, current);
@@ -137,10 +139,13 @@ void neo_compile_scope_declar_value(neo_allocator_t allocator,
     }
   }
   neo_list_push(self->variables, variable);
+  return NULL;
 }
-void neo_compile_scope_declar(neo_allocator_t allocator,
-                              neo_compile_scope_t self, neo_ast_node_t node,
-                              neo_compile_variable_type_t type) {
+neo_ast_node_t neo_compile_scope_declar(neo_allocator_t allocator,
+                                        neo_compile_scope_t self,
+                                        neo_ast_node_t node,
+                                        neo_compile_variable_type_t type) {
+  neo_ast_node_t error = NULL;
   if (node->type == NEO_NODE_TYPE_IDENTIFIER) {
     neo_compile_scope_declar_value(allocator, self, node, type);
   } else if (node->type == NEO_NODE_TYPE_FUNCTION_ARGUMENT) {
@@ -191,11 +196,14 @@ void neo_compile_scope_declar(neo_allocator_t allocator,
       }
     }
   } else {
-    THROW("Illegal property in declaration context\n  at _.compile (%s:%d:%d)",
-          node->location.file, node->location.begin.line,
-          node->location.begin.column);
-    return;
+    error = neo_create_error_node(
+        allocator,
+        "Illegal property in declaration context\n  at _.compile (%s:%d:%d)",
+        node->location.file, node->location.begin.line,
+        node->location.begin.column);
+    return error;
   }
+  return NULL;
 }
 neo_compile_scope_t neo_compile_scope_get_current() { return g_current_scope; }
 

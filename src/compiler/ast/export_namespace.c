@@ -1,5 +1,6 @@
 #include "compiler/ast/export_namespace.h"
 #include "compiler/ast/identifier.h"
+#include "compiler/scope.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/any.h"
@@ -48,6 +49,7 @@ neo_ast_node_t neo_ast_read_export_namespace(neo_allocator_t allocator,
                                              const char *file,
                                              neo_position_t *position) {
   neo_position_t current = *position;
+  neo_ast_node_t error = NULL;
   neo_ast_export_namespace_t node = neo_create_ast_export_namespace(allocator);
   neo_token_t token = NULL;
   if (*current.offset != '*') {
@@ -55,17 +57,26 @@ neo_ast_node_t neo_ast_read_export_namespace(neo_allocator_t allocator,
   }
   current.offset++;
   current.column++;
-  SKIP_ALL(allocator, file, &current, onerror);
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   token = neo_read_identify_token(allocator, file, &current);
   if (!token || !neo_location_is(token->location, "as")) {
     goto onerror;
   }
   neo_allocator_free(allocator, token);
-  SKIP_ALL(allocator, file, &current, onerror);
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   node->identifier = neo_ast_read_identifier(allocator, file, &current);
   if (!node->identifier) {
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-          current.line, current.column);
+    error = neo_create_error_node(
+        allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+        file, current.line, current.column);
     goto onerror;
   }
   node->node.location.begin = *position;
@@ -76,5 +87,5 @@ neo_ast_node_t neo_ast_read_export_namespace(neo_allocator_t allocator,
 onerror:
   neo_allocator_free(allocator, token);
   neo_allocator_free(allocator, node);
-  return NULL;
+  return error;
 }

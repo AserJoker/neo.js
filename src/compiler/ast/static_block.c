@@ -6,7 +6,6 @@
 #include "compiler/writer.h"
 #include "core/allocator.h"
 #include "core/any.h"
-#include "core/error.h"
 #include "core/list.h"
 #include "core/location.h"
 #include "core/position.h"
@@ -32,7 +31,7 @@ static void neo_ast_static_block_write(neo_allocator_t allocator,
   for (neo_list_node_t it = neo_list_get_first(self->body);
        it != neo_list_get_tail(self->body); it = neo_list_node_next(it)) {
     neo_ast_node_t item = neo_list_node_get(it);
-    TRY(item->write(allocator, ctx, item)) { return; }
+    item->write(allocator, ctx, item);
   }
 }
 static neo_any_t
@@ -71,6 +70,7 @@ neo_ast_node_t neo_ast_read_static_block(neo_allocator_t allocator,
                                          neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_static_block_t node = NULL;
+  neo_ast_node_t error = NULL;
   neo_token_t token = NULL;
   neo_compile_scope_t scope = NULL;
   token = neo_read_identify_token(allocator, file, &current);
@@ -78,7 +78,11 @@ neo_ast_node_t neo_ast_read_static_block(neo_allocator_t allocator,
     goto onerror;
   }
   neo_allocator_free(allocator, token);
-  SKIP_ALL(allocator, file, &current, onerror);
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   node = neo_create_ast_static_block(allocator);
   if (*current.offset != '{') {
     goto onerror;
@@ -87,27 +91,43 @@ neo_ast_node_t neo_ast_read_static_block(neo_allocator_t allocator,
   current.column++;
   scope =
       neo_compile_scope_push(allocator, NEO_COMPILE_SCOPE_BLOCK, false, false);
-  SKIP_ALL(allocator, file, &current, onerror);
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   while (true) {
     neo_ast_node_t statement =
-        TRY(neo_ast_read_statement(allocator, file, &current)) {
-      goto onerror;
-    };
+        neo_ast_read_statement(allocator, file, &current);
     if (!statement) {
       break;
     }
+    NEO_CHECK_NODE(statement, error, onerror);
     neo_list_push(node->body, statement);
-    SKIP_ALL(allocator, file, &current, onerror);
+
+    error = neo_skip_all(allocator, file, &current);
+    if (error) {
+      goto onerror;
+    }
     if (*current.offset == ';') {
       current.offset++;
       current.column++;
-      SKIP_ALL(allocator, file, &current, onerror);
+
+      error = neo_skip_all(allocator, file, &current);
+      if (error) {
+        goto onerror;
+      }
     }
   }
-  SKIP_ALL(allocator, file, &current, onerror);
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   if (*current.offset != '}') {
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-          current.line, current.column);
+    error = neo_create_error_node(
+        allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+        file, current.line, current.column);
     goto onerror;
   }
   current.offset++;
@@ -125,5 +145,5 @@ onerror:
   }
   neo_allocator_free(allocator, token);
   neo_allocator_free(allocator, node);
-  return NULL;
+  return error;
 }

@@ -17,7 +17,6 @@
 #include "core/allocator.h"
 #include "core/any.h"
 #include "core/buffer.h"
-#include "core/error.h"
 #include "core/list.h"
 #include "core/location.h"
 #include "core/position.h"
@@ -59,7 +58,7 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
                                            neo_write_context_t ctx,
                                            neo_ast_expression_class_t self) {
   neo_ast_class_method_t constructor = NULL;
-
+  neo_ast_node_t error = NULL;
   neo_js_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
   size_t endaddr = neo_buffer_get_size(ctx->program->codes);
   neo_js_program_add_address(allocator, ctx->program, 0);
@@ -76,21 +75,21 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
     if (node->type == NEO_NODE_TYPE_CLASS_PROPERTY) {
       neo_ast_class_property_t property = (neo_ast_class_property_t)node;
       if (!property->static_) {
-        TRY(node->write(allocator, ctx, node)) { return; }
+        node->write(allocator, ctx, node);
       }
     }
     if (node->type == NEO_NODE_TYPE_CLASS_METHOD) {
       neo_ast_class_method_t method = (neo_ast_class_method_t)node;
       if (!method->static_ &&
           method->name->type == NEO_NODE_TYPE_PRIVATE_NAME) {
-        TRY(node->write(allocator, ctx, node)) { return; }
+        node->write(allocator, ctx, node);
       }
     }
     if (node->type == NEO_NODE_TYPE_CLASS_ACCESSOR) {
       neo_ast_class_accessor_t accessor = (neo_ast_class_accessor_t)node;
       if (!accessor->static_ &&
           accessor->name->type == NEO_NODE_TYPE_PRIVATE_NAME) {
-        TRY(node->write(allocator, ctx, node)) { return; }
+        node->write(allocator, ctx, node);
       }
     }
   }
@@ -104,7 +103,7 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
            it != neo_list_get_tail(constructor->arguments);
            it = neo_list_node_next(it)) {
         neo_ast_node_t argument = neo_list_node_get(it);
-        TRY(argument->write(allocator, ctx, argument)) { return; }
+        argument->write(allocator, ctx, argument);
       }
       neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
       neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
@@ -113,7 +112,7 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
     bool is_generator = ctx->is_generator;
     ctx->is_async = false;
     ctx->is_generator = false;
-    TRY(constructor->body->write(allocator, ctx, constructor->body)) { return; }
+    constructor->body->write(allocator, ctx, constructor->body);
     ctx->is_generator = is_generator;
     ctx->is_async = is_async;
     neo_writer_pop_scope(allocator, ctx, constructor->node.scope);
@@ -158,7 +157,7 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
     neo_allocator_free(allocator, name);
   }
   if (self->extends) {
-    TRY(self->extends->write(allocator, ctx, self->extends)) { return; }
+    self->extends->write(allocator, ctx, self->extends);
     neo_js_program_add_code(allocator, ctx->program, NEO_ASM_EXTENDS);
   }
   neo_js_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
@@ -171,27 +170,27 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
     neo_ast_node_t node = neo_list_node_get(it);
     if (node->type == NEO_NODE_TYPE_STATIC_BLOCK) {
       neo_writer_push_scope(allocator, ctx, node->scope);
-      TRY(node->write(allocator, ctx, node)) { return; }
+      node->write(allocator, ctx, node);
       neo_writer_pop_scope(allocator, ctx, node->scope);
     }
     if (node->type == NEO_NODE_TYPE_CLASS_METHOD &&
         node != &constructor->node) {
       neo_ast_class_method_t method = (neo_ast_class_method_t)node;
       if (method->static_ || method->name->type != NEO_NODE_TYPE_PRIVATE_NAME) {
-        TRY(node->write(allocator, ctx, node)) { return; }
+        node->write(allocator, ctx, node);
       }
     }
     if (node->type == NEO_NODE_TYPE_CLASS_PROPERTY) {
       neo_ast_class_property_t property = (neo_ast_class_property_t)node;
       if (property->static_) {
-        TRY(node->write(allocator, ctx, node)) { return; }
+        node->write(allocator, ctx, node);
       }
     }
     if (node->type == NEO_NODE_TYPE_CLASS_ACCESSOR) {
       neo_ast_class_accessor_t accessor = (neo_ast_class_accessor_t)node;
       if (accessor->static_ ||
           accessor->name->type != NEO_NODE_TYPE_PRIVATE_NAME) {
-        TRY(node->write(allocator, ctx, node)) { return; }
+        node->write(allocator, ctx, node);
       }
     }
   }
@@ -273,37 +272,44 @@ neo_ast_node_t neo_ast_read_expression_class(neo_allocator_t allocator,
                                              neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_expression_class_t node = NULL;
+  neo_ast_node_t error = NULL;
   neo_token_t token = NULL;
   node = neo_create_ast_expression_class(allocator);
   for (;;) {
     neo_ast_node_t decorator =
-        TRY(neo_ast_read_decorator(allocator, file, &current)) {
-      goto onerror;
-    }
+        neo_ast_read_decorator(allocator, file, &current);
     if (!decorator) {
       break;
     }
+    NEO_CHECK_NODE(decorator, error, onerror);
     neo_list_push(node->decorators, decorator);
-    SKIP_ALL(allocator, file, &current, onerror);
+    error = neo_skip_all(allocator, file, &current);
+    if (error) {
+      goto onerror;
+    }
   }
   token = neo_read_identify_token(allocator, file, &current);
   if (token && neo_location_is(token->location, "export") &&
       neo_list_get_size(node->decorators) != 0) {
     neo_position_t cur = token->location.begin;
     neo_allocator_free(allocator, token);
-    SKIP_ALL(allocator, file, &cur, onerror);
-    neo_ast_declaration_export_t export = (neo_ast_declaration_export_t)TRY(
-        neo_ast_read_declaration_export(allocator, file, &cur)) {
-      goto onerror;
-    };
-    if (!export) {
-      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-            current.line, current.column);
+    error = neo_skip_all(allocator, file, &cur);
+    if (error) {
       goto onerror;
     }
+    neo_ast_node_t exp = neo_ast_read_declaration_export(allocator, file, &cur);
+    neo_ast_declaration_export_t export = (neo_ast_declaration_export_t)exp;
+    if (!export) {
+      error = neo_create_error_node(
+          allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+          file, current.line, current.column);
+      goto onerror;
+    }
+    NEO_CHECK_NODE(exp, error, onerror);
     if (neo_list_get_size(export->specifiers) != 1) {
-      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-            current.line, current.column);
+      error = neo_create_error_node(
+          allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+          file, current.line, current.column);
       neo_allocator_free(allocator, export);
       goto onerror;
     }
@@ -311,8 +317,9 @@ neo_ast_node_t neo_ast_read_expression_class(neo_allocator_t allocator,
         (neo_ast_declaration_class_t)neo_list_node_get(
             neo_list_get_first(export->specifiers));
     if (dclazz->node.type != NEO_NODE_TYPE_DECLARATION_CLASS) {
-      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-            current.line, current.column);
+      error = neo_create_error_node(
+          allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+          file, current.line, current.column);
       neo_allocator_free(allocator, export);
       goto onerror;
     }
@@ -333,78 +340,108 @@ neo_ast_node_t neo_ast_read_expression_class(neo_allocator_t allocator,
     goto onerror;
   }
   neo_allocator_free(allocator, token);
-  SKIP_ALL(allocator, file, &current, onerror);
-  neo_compile_scope_t scope = neo_compile_scope_push(
-      allocator, NEO_COMPILE_SCOPE_FUNCTION, false, false);
-  node->name = TRY(neo_ast_read_identifier(allocator, file, &current)) {
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
     goto onerror;
   }
-  SKIP_ALL(allocator, file, &current, onerror);
+  neo_compile_scope_t scope = neo_compile_scope_push(
+      allocator, NEO_COMPILE_SCOPE_FUNCTION, false, false);
+  node->name = neo_ast_read_identifier(allocator, file, &current);
+  if (node->name) {
+    NEO_CHECK_NODE(node->name, error, onerror);
+  }
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   token = neo_read_identify_token(allocator, file, &current);
-  SKIP_ALL(allocator, file, &current, onerror);
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   if (token && neo_location_is(token->location, "extends")) {
-    SKIP_ALL(allocator, file, &current, onerror);
+
+    error = neo_skip_all(allocator, file, &current);
+    if (error) {
+      goto onerror;
+    }
     if (*current.offset == '{') {
-      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-            current.line, current.column);
+      error = neo_create_error_node(
+          allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+          file, current.line, current.column);
       goto onerror;
     }
     node->extends = neo_ast_read_expression_2(allocator, file, &current);
-    SKIP_ALL(allocator, file, &current, onerror);
+
+    error = neo_skip_all(allocator, file, &current);
+    if (error) {
+      goto onerror;
+    }
   }
   neo_allocator_free(allocator, token);
   if (*current.offset != '{') {
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-          current.line, current.column);
+    error = neo_create_error_node(
+        allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+        file, current.line, current.column);
     goto onerror;
   }
   current.offset++;
   current.column++;
-  SKIP_ALL(allocator, file, &current, onerror);
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   if (*current.offset != '}') {
     for (;;) {
       neo_ast_node_t item = NULL;
       if (!item) {
-        item = TRY(neo_ast_read_static_block(allocator, file, &current)) {
-          goto onerror;
-        }
+        item = neo_ast_read_static_block(allocator, file, &current);
       }
       if (!item) {
-        item = TRY(neo_ast_read_class_accessor(allocator, file, &current)) {
-          goto onerror;
-        }
+        item = neo_ast_read_class_accessor(allocator, file, &current);
       }
       if (!item) {
-        item = TRY(neo_ast_read_class_method(allocator, file, &current)) {
-          goto onerror;
-        }
+        item = neo_ast_read_class_method(allocator, file, &current);
       }
       if (!item) {
-        item = TRY(neo_ast_read_class_property(allocator, file, &current)) {
-          goto onerror;
-        }
+        item = neo_ast_read_class_property(allocator, file, &current);
       }
       if (!item) {
-        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-              current.line, current.column);
+        error = neo_create_error_node(
+            allocator,
+            "Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+            current.line, current.column);
         goto onerror;
       }
+      NEO_CHECK_NODE(item, error, onerror);
       item->resolve_closure(allocator, item, node->closure);
       neo_list_push(node->items, item);
       uint32_t line = current.line;
-      SKIP_ALL(allocator, file, &current, onerror);
+      error = neo_skip_all(allocator, file, &current);
+      if (error) {
+        goto onerror;
+      }
       if (*current.offset == ';') {
         while (*current.offset == ';') {
           current.offset++;
           current.column++;
-          SKIP_ALL(allocator, file, &current, onerror);
+
+          error = neo_skip_all(allocator, file, &current);
+          if (error) {
+            goto onerror;
+          }
         }
       } else if (*current.offset == '}') {
         break;
       } else if (current.line == line &&
                  item->type == NEO_NODE_TYPE_CLASS_PROPERTY) {
-        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-              current.line, current.column);
+        error = neo_create_error_node(
+            allocator,
+            "Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+            current.line, current.column);
         goto onerror;
       }
     }
@@ -420,5 +457,5 @@ neo_ast_node_t neo_ast_read_expression_class(neo_allocator_t allocator,
 onerror:
   neo_allocator_free(allocator, token);
   neo_allocator_free(allocator, node);
-  return NULL;
+  return error;
 }

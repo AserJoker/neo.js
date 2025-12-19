@@ -38,7 +38,7 @@ static void neo_ast_statement_for_write(neo_allocator_t allocator,
   ctx->label = NULL;
   neo_writer_push_scope(allocator, ctx, self->node.scope);
   if (self->initialize) {
-    TRY(self->initialize->write(allocator, ctx, self->initialize)) { return; }
+    self->initialize->write(allocator, ctx, self->initialize);
   }
   neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_BREAK_LABEL);
   neo_js_program_add_string(allocator, ctx->program, label ? label : "");
@@ -46,7 +46,7 @@ static void neo_ast_statement_for_write(neo_allocator_t allocator,
   neo_js_program_add_address(allocator, ctx->program, 0);
   size_t begin = neo_buffer_get_size(ctx->program->codes);
   if (self->condition) {
-    TRY(self->condition->write(allocator, ctx, self->condition)) { return; }
+    self->condition->write(allocator, ctx, self->condition);
   } else {
     neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_TRUE);
   }
@@ -58,11 +58,11 @@ static void neo_ast_statement_for_write(neo_allocator_t allocator,
   neo_js_program_add_string(allocator, ctx->program, label ? label : "");
   size_t continueaddr = neo_buffer_get_size(ctx->program->codes);
   neo_js_program_add_address(allocator, ctx->program, 0);
-  TRY(self->body->write(allocator, ctx, self->body)) { return; }
+  self->body->write(allocator, ctx, self->body);
   neo_js_program_set_current(ctx->program, continueaddr);
   neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP_LABEL);
   if (self->after) {
-    TRY(self->after->write(allocator, ctx, self->after)) { return; }
+    self->after->write(allocator, ctx, self->after);
   }
   neo_js_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
   neo_js_program_add_address(allocator, ctx->program, begin);
@@ -114,6 +114,7 @@ neo_ast_node_t neo_ast_read_statement_for(neo_allocator_t allocator,
                                           neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_statement_for_t node = neo_create_ast_statement_for(allocator);
+  neo_ast_node_t error = NULL;
   neo_token_t token = NULL;
   neo_compile_scope_t scope = NULL;
   token = neo_read_identify_token(allocator, file, &current);
@@ -121,66 +122,97 @@ neo_ast_node_t neo_ast_read_statement_for(neo_allocator_t allocator,
     goto onerror;
   }
   neo_allocator_free(allocator, token);
-  SKIP_ALL(allocator, file, &current, onerror);
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   if (*current.offset != '(') {
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-          current.line, current.column);
+    error = neo_create_error_node(
+        allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+        file, current.line, current.column);
     goto onerror;
   }
   current.offset++;
   current.column++;
   scope =
       neo_compile_scope_push(allocator, NEO_COMPILE_SCOPE_BLOCK, false, false);
-  node->initialize = TRY(neo_ast_read_expression(allocator, file, &current)) {
-    goto onerror;
-  }
+  node->initialize = neo_ast_read_expression(allocator, file, &current);
   if (!node->initialize) {
     node->initialize =
-        TRY(neo_ast_read_declaration_variable(allocator, file, &current)) {
-      goto onerror;
-    }
+        neo_ast_read_declaration_variable(allocator, file, &current);
   }
-  SKIP_ALL(allocator, file, &current, onerror);
+  if (node->initialize) {
+    NEO_CHECK_NODE(node->initialize, error, onerror);
+  }
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   if (*current.offset != ';') {
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-          current.line, current.column);
+    error = neo_create_error_node(
+        allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+        file, current.line, current.column);
     goto onerror;
   }
   current.offset++;
   current.column++;
-  SKIP_ALL(allocator, file, &current, onerror);
-  node->condition = TRY(neo_ast_read_expression(allocator, file, &current)) {
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
     goto onerror;
   }
-  SKIP_ALL(allocator, file, &current, onerror);
+  node->condition = neo_ast_read_expression(allocator, file, &current);
+  if (node->condition) {
+    NEO_CHECK_NODE(node->condition, error, onerror);
+  }
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   if (*current.offset != ';') {
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-          current.line, current.column);
+    error = neo_create_error_node(
+        allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+        file, current.line, current.column);
     goto onerror;
   }
   current.offset++;
   current.column++;
-  SKIP_ALL(allocator, file, &current, onerror);
-  node->after = TRY(neo_ast_read_expression(allocator, file, &current)) {
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
     goto onerror;
   }
-  SKIP_ALL(allocator, file, &current, onerror);
+  node->after = neo_ast_read_expression(allocator, file, &current);
+  if (node->after) {
+    NEO_CHECK_NODE(node->after, error, onerror);
+  }
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   if (*current.offset != ')') {
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-          current.line, current.column);
+    error = neo_create_error_node(
+        allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+        file, current.line, current.column);
     goto onerror;
   }
   current.offset++;
   current.column++;
-  SKIP_ALL(allocator, file, &current, onerror);
-  node->body = TRY(neo_ast_read_statement(allocator, file, &current)) {
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
     goto onerror;
   }
+  node->body = neo_ast_read_statement(allocator, file, &current);
   if (!node->body) {
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-          current.line, current.column);
+    error = neo_create_error_node(
+        allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+        file, current.line, current.column);
     goto onerror;
   }
+  NEO_CHECK_NODE(node->body, error, onerror);
   node->node.location.begin = *position;
   node->node.location.end = current;
   node->node.location.file = file;
@@ -194,5 +226,5 @@ onerror:
   }
   neo_allocator_free(allocator, node);
   neo_allocator_free(allocator, token);
-  return NULL;
+  return error;
 }

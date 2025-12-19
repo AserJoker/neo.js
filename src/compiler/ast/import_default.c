@@ -63,6 +63,7 @@ neo_ast_node_t neo_ast_read_import_default(neo_allocator_t allocator,
                                            const char *file,
                                            neo_position_t *position) {
   neo_position_t current = *position;
+  neo_ast_node_t error = NULL;
   neo_ast_import_default_t node = neo_create_ast_import_default(allocator);
   node->identifier = neo_ast_read_identifier(allocator, file, &current);
   if (!node->identifier) {
@@ -71,13 +72,15 @@ neo_ast_node_t neo_ast_read_import_default(neo_allocator_t allocator,
   node->node.location.begin = *position;
   node->node.location.end = current;
   node->node.location.file = file;
-  TRY(neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
-                               node->identifier, NEO_COMPILE_VARIABLE_CONST)) {
+  error =
+      neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
+                               node->identifier, NEO_COMPILE_VARIABLE_CONST);
+  if (error) {
     goto onerror;
   };
   *position = current;
   return &node->node;
 onerror:
   neo_allocator_free(allocator, node);
-  return NULL;
+  return error;
 }

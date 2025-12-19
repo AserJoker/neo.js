@@ -7,7 +7,6 @@
 #include "compiler/writer.h"
 #include "core/allocator.h"
 #include "core/any.h"
-#include "core/error.h"
 #include "core/list.h"
 #include "core/position.h"
 #include <stdbool.h>
@@ -56,9 +55,9 @@ static void neo_ast_expression_array_write(neo_allocator_t allocator,
     neo_ast_node_t item = neo_list_node_get(it);
     if (item) {
       if (item->type == NEO_NODE_TYPE_EXPRESSION_SPREAD) {
-        TRY(item->write(allocator, ctx, item)) { return; }
+        item->write(allocator, ctx, item);
       } else {
-        TRY(item->write(allocator, ctx, item)) { return; }
+        item->write(allocator, ctx, item);
         neo_js_program_add_code(allocator, ctx->program, NEO_ASM_APPEND);
       }
     } else {
@@ -95,6 +94,7 @@ neo_ast_node_t neo_ast_read_expression_array(neo_allocator_t allocator,
                                              const char *file,
                                              neo_position_t *position) {
   neo_position_t current = *position;
+  neo_ast_node_t error = NULL;
   neo_ast_expression_array_t node = NULL;
   if (*current.offset != '[') {
     return NULL;
@@ -102,32 +102,43 @@ neo_ast_node_t neo_ast_read_expression_array(neo_allocator_t allocator,
   current.offset++;
   current.column++;
   node = neo_create_ast_expression_array(allocator);
-  SKIP_ALL(allocator, file, &current, onerror);
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   if (*current.offset != ']') {
     for (;;) {
       neo_ast_node_t item =
-          TRY(neo_ast_read_expression_2(allocator, file, &current)) {
-        goto onerror;
-      };
+          neo_ast_read_expression_2(allocator, file, &current);
       if (!item) {
-        item = TRY(neo_ast_read_expression_spread(allocator, file, &current)) {
-          goto onerror;
-        }
+        item = neo_ast_read_expression_spread(allocator, file, &current);
+      }
+      if (item) {
+        NEO_CHECK_NODE(item, error, onerror);
       }
       neo_list_push(node->items, item);
-      SKIP_ALL(allocator, file, &current, onerror);
+      error = neo_skip_all(allocator, file, &current);
+      if (error) {
+        goto onerror;
+      }
       if (*current.offset == ',') {
         current.offset++;
         current.column++;
-        SKIP_ALL(allocator, file, &current, onerror);
+        error = neo_skip_all(allocator, file, &current);
+        if (error) {
+          goto onerror;
+        }
         if (*current.offset == ']') {
           break;
         }
       } else if (*current.offset == ']') {
         break;
       } else {
-        THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-              current.line, current.column);
+        error = neo_create_error_node(
+            allocator,
+            "Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+            current.line, current.column);
         goto onerror;
       }
     }
@@ -141,5 +152,5 @@ neo_ast_node_t neo_ast_read_expression_array(neo_allocator_t allocator,
   return &node->node;
 onerror:
   neo_allocator_free(allocator, node);
-  return NULL;
+  return error;
 }

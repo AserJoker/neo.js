@@ -7,7 +7,6 @@
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/any.h"
-#include "core/error.h"
 #include "core/list.h"
 #include "core/position.h"
 
@@ -25,7 +24,7 @@ static void neo_ast_pattern_array_write(neo_allocator_t allocator,
        it != neo_list_get_tail(self->items); it = neo_list_node_next(it)) {
     neo_ast_node_t item = neo_list_node_get(it);
     if (item) {
-      TRY(item->write(allocator, ctx, item)) { return; }
+      item->write(allocator, ctx, item);
     } else {
       neo_js_program_add_code(allocator, ctx->program, NEO_ASM_NEXT);
       neo_js_program_add_code(allocator, ctx->program, NEO_ASM_RESOLVE_NEXT);
@@ -86,30 +85,39 @@ neo_ast_node_t neo_ast_read_pattern_array(neo_allocator_t allocator,
   neo_ast_pattern_array_t node = NULL;
   neo_token_t token = NULL;
   neo_position_t current = *position;
+  neo_ast_node_t error = NULL;
   if (*current.offset != '[') {
     return NULL;
   }
   current.offset++;
   current.column++;
   node = neo_create_ast_pattern_array(allocator);
-  SKIP_ALL(allocator, file, &current, onerror);
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   if (*current.offset != ']') {
     for (;;) {
       neo_ast_node_t item =
-          TRY(neo_ast_read_pattern_array_item(allocator, file, &current)) {
+          neo_ast_read_pattern_array_item(allocator, file, &current);
+      if (!item) {
+        item = neo_ast_read_pattern_rest(allocator, file, &current);
+      }
+      NEO_CHECK_NODE(item, error, onerror);
+      neo_list_push(node->items, item);
+      error = neo_skip_all(allocator, file, &current);
+      if (error) {
         goto onerror;
       }
-      if (!item) {
-        item = TRY(neo_ast_read_pattern_rest(allocator, file, &current)) {
-          goto onerror;
-        }
-      }
-      neo_list_push(node->items, item);
-      SKIP_ALL(allocator, file, &current, onerror);
       if (*current.offset == ',') {
         current.offset++;
         current.column++;
-        SKIP_ALL(allocator, file, &current, onerror);
+
+        error = neo_skip_all(allocator, file, &current);
+        if (error) {
+          goto onerror;
+        }
         if (*current.offset == ']') {
           break;
         }
@@ -120,7 +128,11 @@ neo_ast_node_t neo_ast_read_pattern_array(neo_allocator_t allocator,
       }
     }
   }
-  SKIP_ALL(allocator, file, &current, onerror);
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   if (*current.offset != ']') {
     goto onerror;
   } else {
@@ -135,5 +147,5 @@ neo_ast_node_t neo_ast_read_pattern_array(neo_allocator_t allocator,
 onerror:
   neo_allocator_free(allocator, node);
   neo_allocator_free(allocator, token);
-  return NULL;
+  return error;
 }

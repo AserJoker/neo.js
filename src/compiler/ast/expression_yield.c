@@ -9,7 +9,6 @@
 #include "core/allocator.h"
 #include "core/any.h"
 #include "core/buffer.h"
-#include "core/error.h"
 #include "core/location.h"
 #include "core/position.h"
 #include <stdbool.h>
@@ -33,7 +32,7 @@ static void neo_ast_expression_yield_write(neo_allocator_t allocator,
                                            neo_write_context_t ctx,
                                            neo_ast_expression_yield_t self) {
   if (self->value) {
-    TRY(self->value->write(allocator, ctx, self->value)) { return; }
+    self->value->write(allocator, ctx, self->value);
   } else {
     neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_UNDEFINED);
   }
@@ -106,6 +105,7 @@ neo_create_ast_expression_yield(neo_allocator_t allocator) {
 neo_ast_node_t neo_ast_read_expression_yield(neo_allocator_t allocator,
                                              const char *file,
                                              neo_position_t *position) {
+  neo_ast_node_t error = NULL;
 
   neo_position_t current = *position;
   neo_token_t token = NULL;
@@ -118,21 +118,30 @@ neo_ast_node_t neo_ast_read_expression_yield(neo_allocator_t allocator,
     goto onerror;
   }
   if (!neo_compile_scope_is_generator()) {
-    THROW("yield only used in generator context\n  at _.compile (%s:%d:%d)",
-          file, position->line, position->column);
+    error = neo_create_error_node(
+        allocator,
+        "yield only used in generator context\n  at _.compile (%s:%d:%d)", file,
+        position->line, position->column);
     goto onerror;
   }
   neo_allocator_free(allocator, token);
-  SKIP_ALL(allocator, file, &current, onerror);
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   node = neo_create_ast_expression_yield(allocator);
   if (*current.offset == '*') {
     current.offset++;
     current.column++;
     node->degelate = true;
   }
-  SKIP_ALL(allocator, file, &current, onerror);
-  node->value = TRY(neo_ast_read_expression_2(allocator, file, &current)) {
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
     goto onerror;
+  }
+  node->value = neo_ast_read_expression_2(allocator, file, &current);
+  if (node->value) {
+    NEO_CHECK_NODE(node->value, error, onerror);
   }
   node->node.location.begin = *position;
   node->node.location.end = current;
@@ -142,5 +151,5 @@ neo_ast_node_t neo_ast_read_expression_yield(neo_allocator_t allocator,
 onerror:
   neo_allocator_free(allocator, token);
   neo_allocator_free(allocator, node);
-  return NULL;
+  return error;
 }

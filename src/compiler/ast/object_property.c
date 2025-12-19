@@ -7,7 +7,6 @@
 #include "compiler/writer.h"
 #include "core/allocator.h"
 #include "core/any.h"
-#include "core/error.h"
 #include "core/location.h"
 #include "core/position.h"
 #include <stdio.h>
@@ -37,7 +36,7 @@ static void neo_ast_object_property_write(neo_allocator_t allocator,
                                           neo_write_context_t ctx,
                                           neo_ast_object_property_t self) {
   if (self->computed) {
-    TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
+    self->identifier->write(allocator, ctx, self->identifier);
   } else {
     if (self->identifier->type == NEO_NODE_TYPE_IDENTIFIER) {
       neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
@@ -45,7 +44,7 @@ static void neo_ast_object_property_write(neo_allocator_t allocator,
       neo_js_program_add_string(allocator, ctx->program, name);
       neo_allocator_free(allocator, name);
     } else {
-      TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
+      self->identifier->write(allocator, ctx, self->identifier);
     }
   }
   if (self->value) {
@@ -55,11 +54,6 @@ static void neo_ast_object_property_write(neo_allocator_t allocator,
     char *name = neo_location_get(allocator, self->identifier->location);
     neo_js_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
-  } else {
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
-          ctx->program->filename, self->identifier->location.begin.line,
-          self->identifier->location.begin.column);
-    return;
   }
   neo_js_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
 }
@@ -106,32 +100,39 @@ neo_ast_node_t neo_ast_read_object_property(neo_allocator_t allocator,
                                             const char *file,
                                             neo_position_t *position) {
   neo_position_t current = *position;
+  neo_ast_node_t error = NULL;
   neo_ast_object_property_t node = neo_create_ast_object_property(allocator);
-  node->identifier = TRY(neo_ast_read_object_key(allocator, file, &current)) {
-    goto onerror;
-  }
+  node->identifier = neo_ast_read_object_key(allocator, file, &current);
   if (!node->identifier) {
     node->identifier =
-        TRY(neo_ast_read_object_computed_key(allocator, file, &current)) {
-      goto onerror;
-    }
+        neo_ast_read_object_computed_key(allocator, file, &current);
     node->computed = true;
   }
   if (!node->identifier) {
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-          current.line, current.column);
+    error = neo_create_error_node(
+        allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+        file, current.line, current.column);
     goto onerror;
   }
-  SKIP_ALL(allocator, file, &current, onerror);
+  NEO_CHECK_NODE(node->identifier, error, onerror);
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   if (*current.offset != ':') {
     goto onerror;
   }
   current.offset++;
   current.column++;
-  SKIP_ALL(allocator, file, &current, onerror);
-  node->value = TRY(neo_ast_read_expression_2(allocator, file, &current)) {
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
     goto onerror;
-  };
+  }
+  node->value = neo_ast_read_expression_2(allocator, file, &current);
+  if (node->value) {
+    NEO_CHECK_NODE(node->value, error, onerror);
+  }
   node->node.location.begin = *position;
   node->node.location.end = current;
   node->node.location.file = file;
@@ -139,5 +140,5 @@ neo_ast_node_t neo_ast_read_object_property(neo_allocator_t allocator,
   return &node->node;
 onerror:
   neo_allocator_free(allocator, node);
-  return NULL;
+  return error;
 }

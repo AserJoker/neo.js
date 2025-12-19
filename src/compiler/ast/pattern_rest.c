@@ -8,7 +8,6 @@
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/any.h"
-#include "core/error.h"
 #include "core/location.h"
 #include "core/position.h"
 
@@ -33,7 +32,7 @@ static void neo_ast_pattern_rest_write(neo_allocator_t allocator,
     neo_allocator_free(allocator, name);
     neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   } else {
-    TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
+    self->identifier->write(allocator, ctx, self->identifier);
   }
 }
 static neo_any_t neo_serialize_ast_pattern_rest(neo_allocator_t allocator,
@@ -73,28 +72,29 @@ neo_ast_node_t neo_ast_read_pattern_rest(neo_allocator_t allocator,
   neo_ast_pattern_rest_t node = NULL;
   neo_token_t token = NULL;
   neo_position_t current = *position;
+  neo_ast_node_t error = NULL;
   token = neo_read_symbol_token(allocator, file, &current);
   if (!token || !neo_location_is(token->location, "...")) {
     goto onerror;
   }
   neo_allocator_free(allocator, token);
-  SKIP_ALL(allocator, file, &current, onerror);
-  node = neo_create_ast_pattern_rest(allocator);
-  node->identifier = TRY(neo_ast_read_identifier(allocator, file, &current)) {
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
     goto onerror;
   }
+  node = neo_create_ast_pattern_rest(allocator);
+  node->identifier = neo_ast_read_identifier(allocator, file, &current);
   if (!node->identifier) {
-    node->identifier =
-        TRY(neo_ast_read_pattern_array(allocator, file, &current)) {
-      goto onerror;
-    }
+    node->identifier = neo_ast_read_pattern_array(allocator, file, &current);
   }
   if (!node->identifier) {
-    node->identifier =
-        TRY(neo_ast_read_pattern_object(allocator, file, &current)) {
-      goto onerror;
-    }
+    node->identifier = neo_ast_read_pattern_object(allocator, file, &current);
   }
+  if (!node->identifier) {
+    goto onerror;
+  }
+  NEO_CHECK_NODE(node->identifier, error, onerror);
   node->node.location.begin = *position;
   node->node.location.end = current;
   node->node.location.file = file;

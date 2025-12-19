@@ -60,28 +60,41 @@ neo_ast_node_t neo_ast_read_import_namespace(neo_allocator_t allocator,
   neo_position_t current = *position;
   neo_token_t token = NULL;
   neo_ast_import_namespace_t node = neo_create_ast_import_namespace(allocator);
+  neo_ast_node_t error = NULL;
   if (*current.offset != '*') {
     goto onerror;
   }
   current.offset++;
   current.column++;
-  SKIP_ALL(allocator, file, &current, onerror);
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   token = neo_read_identify_token(allocator, file, &current);
   if (!token || !neo_location_is(token->location, "as")) {
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-          current.line, current.column);
+    error = neo_create_error_node(
+        allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+        file, current.line, current.column);
     goto onerror;
   }
   neo_allocator_free(allocator, token);
-  SKIP_ALL(allocator, file, &current, onerror);
-  node->identifier = neo_ast_read_identifier(allocator, file, &current);
-  if (!node->identifier) {
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-          current.line, current.column);
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
     goto onerror;
   }
-  TRY(neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
-                               node->identifier, NEO_COMPILE_VARIABLE_CONST)) {
+  node->identifier = neo_ast_read_identifier(allocator, file, &current);
+  if (!node->identifier) {
+    error = neo_create_error_node(
+        allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+        file, current.line, current.column);
+    goto onerror;
+  }
+  error =
+      neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
+                               node->identifier, NEO_COMPILE_VARIABLE_CONST);
+  if (error) {
     goto onerror;
   };
   node->node.location.begin = *position;
@@ -92,5 +105,5 @@ neo_ast_node_t neo_ast_read_import_namespace(neo_allocator_t allocator,
 onerror:
   neo_allocator_free(allocator, node);
   neo_allocator_free(allocator, token);
-  return NULL;
+  return error;
 }

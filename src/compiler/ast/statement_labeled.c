@@ -7,7 +7,6 @@
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/any.h"
-#include "core/error.h"
 #include "core/location.h"
 #include "core/position.h"
 #include <stdio.h>
@@ -35,18 +34,8 @@ static void neo_ast_statement_labeled_write(neo_allocator_t allocator,
       self->statement->type == NEO_NODE_TYPE_STATEMENT_WHILE ||
       self->statement->type == NEO_NODE_TYPE_STATEMENT_DO_WHILE) {
     ctx->label = neo_location_get(allocator, self->label->location);
-    TRY(self->statement->write(allocator, ctx, self->statement)) { return; }
+    self->statement->write(allocator, ctx, self->statement);
     neo_allocator_free_ex(allocator, ctx->label);
-  } else if (self->statement->type == NEO_NODE_TYPE_DECLARATION_FUNCTION) {
-    THROW("functions cannot be labelled");
-  } else if (self->statement->type == NEO_NODE_TYPE_DECLARATION_CLASS) {
-    THROW("classes cannot be labelled");
-  } else if (self->statement->type == NEO_NODE_TYPE_DECLARATION_VARIABLE) {
-    THROW("variable declaration cannot be labelled");
-  } else if (self->statement->type == NEO_NODE_TYPE_DECLARATION_IMPORT) {
-    THROW("import declaration cannot be labelled");
-  } else if (self->statement->type == NEO_NODE_TYPE_DECLARATION_EXPORT) {
-    THROW("export declaration cannot be labelled");
   } else {
     char *label = neo_location_get(allocator, self->label->location);
     neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_BREAK_LABEL);
@@ -66,10 +55,7 @@ static void neo_ast_statement_labeled_write(neo_allocator_t allocator,
       continueaddr = neo_buffer_get_size(ctx->program->codes);
       neo_js_program_add_address(allocator, ctx->program, 0);
     }
-    TRY(self->statement->write(allocator, ctx, self->statement)) {
-      neo_allocator_free_ex(allocator, label);
-      return;
-    }
+    self->statement->write(allocator, ctx, self->statement);
     if (self->statement->type == NEO_NODE_TYPE_STATEMENT_DO_WHILE ||
         self->statement->type == NEO_NODE_TYPE_STATEMENT_WHILE ||
         self->statement->type == NEO_NODE_TYPE_STATEMENT_FOR ||
@@ -126,25 +112,34 @@ neo_ast_node_t neo_ast_read_statement_labeled(neo_allocator_t allocator,
   neo_token_t token = NULL;
   neo_ast_statement_labeled_t node =
       neo_create_ast_statement_labeled(allocator);
+  neo_ast_node_t error = NULL;
   node->label = neo_ast_read_identifier(allocator, file, &current);
   if (!node->label) {
     goto onerror;
   }
-  SKIP_ALL(allocator, file, &current, onerror);
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   token = neo_read_symbol_token(allocator, file, &current);
   if (!token || !neo_location_is(token->location, ":")) {
     goto onerror;
   }
   neo_allocator_free(allocator, token);
-  SKIP_ALL(allocator, file, &current, onerror);
-  node->statement = TRY(neo_ast_read_statement(allocator, file, &current)) {
-    goto onerror;
-  };
-  if (!node->statement) {
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-          current.line, current.column);
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
     goto onerror;
   }
+  node->statement = neo_ast_read_statement(allocator, file, &current);
+  if (!node->statement) {
+    error = neo_create_error_node(
+        allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+        file, current.line, current.column);
+    goto onerror;
+  }
+  NEO_CHECK_NODE(node->statement, error, onerror);
   node->node.location.begin = *position;
   node->node.location.end = current;
   node->node.location.file = file;
@@ -153,5 +148,5 @@ neo_ast_node_t neo_ast_read_statement_labeled(neo_allocator_t allocator,
 onerror:
   neo_allocator_free(allocator, token);
   neo_allocator_free(allocator, node);
-  return NULL;
+  return error;
 }

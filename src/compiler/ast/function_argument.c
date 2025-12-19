@@ -13,7 +13,6 @@
 #include "core/allocator.h"
 #include "core/any.h"
 #include "core/buffer.h"
-#include "core/error.h"
 #include "core/location.h"
 #include "core/position.h"
 
@@ -46,7 +45,7 @@ static void neo_ast_function_argument_write(neo_allocator_t allocator,
       size_t address = neo_buffer_get_size(ctx->program->codes);
       neo_js_program_add_address(allocator, ctx->program, 0);
       neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
-      TRY(self->value->write(allocator, ctx, self->value)) { return; }
+      self->value->write(allocator, ctx, self->value);
       neo_js_program_set_current(ctx->program, address);
     }
   }
@@ -57,7 +56,7 @@ static void neo_ast_function_argument_write(neo_allocator_t allocator,
     neo_allocator_free(allocator, name);
     neo_js_program_add_code(allocator, ctx->program, NEO_ASM_POP);
   } else {
-    TRY(self->identifier->write(allocator, ctx, self->identifier)) { return; }
+    self->identifier->write(allocator, ctx, self->identifier);
   }
 }
 static neo_any_t
@@ -101,46 +100,44 @@ neo_ast_node_t neo_ast_read_function_argument(neo_allocator_t allocator,
                                               neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_function_argument_t node = NULL;
+  neo_ast_node_t error = NULL;
   neo_token_t token = NULL;
   node = neo_create_ast_function_argument(allocator);
-  node->identifier = TRY(neo_ast_read_identifier(allocator, file, &current)) {
-    goto onerror;
-  };
+  node->identifier = neo_ast_read_identifier(allocator, file, &current);
   if (!node->identifier) {
-    node->identifier =
-        TRY(neo_ast_read_pattern_array(allocator, file, &current)) {
-      goto onerror;
-    }
+    node->identifier = neo_ast_read_pattern_array(allocator, file, &current);
   }
   if (!node->identifier) {
-    node->identifier =
-        TRY(neo_ast_read_pattern_object(allocator, file, &current)) {
-      goto onerror;
-    }
+    node->identifier = neo_ast_read_pattern_object(allocator, file, &current);
   }
   if (!node->identifier) {
-    node->identifier =
-        TRY(neo_ast_read_pattern_rest(allocator, file, &current)) {
-      goto onerror;
-    }
+    node->identifier = neo_ast_read_pattern_rest(allocator, file, &current);
   }
   if (!node->identifier) {
     goto onerror;
   }
-  SKIP_ALL(allocator, file, &current, onerror);
+  NEO_CHECK_NODE(node->identifier, error, onerror);
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   if (*current.offset == '=') {
     current.offset++;
     current.column++;
-    SKIP_ALL(allocator, file, &current, onerror);
-    node->value = TRY(neo_ast_read_expression_2(allocator, file, &current)) {
+
+    error = neo_skip_all(allocator, file, &current);
+    if (error) {
       goto onerror;
     }
+    node->value = neo_ast_read_expression_2(allocator, file, &current);
     if (!node->value) {
       goto onerror;
     }
+    NEO_CHECK_NODE(node->value, error, onerror);
   }
-  TRY(neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
-                               node->identifier, NEO_COMPILE_VARIABLE_VAR)) {
+  error = neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
+                                   node->identifier, NEO_COMPILE_VARIABLE_VAR);
+  if (error) {
     goto onerror;
   };
   node->node.location.begin = *position;
@@ -151,5 +148,5 @@ neo_ast_node_t neo_ast_read_function_argument(neo_allocator_t allocator,
 onerror:
   neo_allocator_free(allocator, token);
   neo_allocator_free(allocator, node);
-  return NULL;
+  return error;
 }

@@ -7,7 +7,6 @@
 #include "compiler/writer.h"
 #include "core/allocator.h"
 #include "core/any.h"
-#include "core/error.h"
 #include "core/location.h"
 #include "core/position.h"
 #include <stdio.h>
@@ -29,7 +28,7 @@ neo_ast_expression_spread_resolve_closure(neo_allocator_t allocator,
 static void neo_ast_expression_spread_write(neo_allocator_t allocator,
                                             neo_write_context_t ctx,
                                             neo_ast_expression_spread_t self) {
-  TRY(self->value->write(allocator, ctx, self->value)) { return; }
+  self->value->write(allocator, ctx, self->value);
   neo_js_program_add_code(allocator, ctx->program, NEO_ASM_SPREAD);
 }
 
@@ -68,6 +67,7 @@ neo_create_ast_expression_spread(neo_allocator_t allocator) {
 neo_ast_node_t neo_ast_read_expression_spread(neo_allocator_t allocator,
                                               const char *file,
                                               neo_position_t *position) {
+  neo_ast_node_t error = NULL;
   neo_position_t current = *position;
   neo_ast_expression_spread_t node = NULL;
   neo_token_t token = NULL;
@@ -77,14 +77,14 @@ neo_ast_node_t neo_ast_read_expression_spread(neo_allocator_t allocator,
   }
   neo_allocator_free(allocator, token);
   node = neo_create_ast_expression_spread(allocator);
-  node->value = TRY(neo_ast_read_expression_2(allocator, file, &current)) {
-    goto onerror;
-  };
+  node->value = neo_ast_read_expression_2(allocator, file, &current);
   if (!node->value) {
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-          current.line, current.column);
+    error = neo_create_error_node(
+        allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+        file, current.line, current.column);
     goto onerror;
   }
+  NEO_CHECK_NODE(node->value, error, onerror);
   node->node.location.file = file;
   node->node.location.begin = *position;
   node->node.location.end = current;
@@ -93,5 +93,5 @@ neo_ast_node_t neo_ast_read_expression_spread(neo_allocator_t allocator,
 onerror:
   neo_allocator_free(allocator, token);
   neo_allocator_free(allocator, node);
-  return NULL;
+  return error;
 }

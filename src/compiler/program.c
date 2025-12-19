@@ -1,8 +1,9 @@
 #include "compiler/program.h"
 #include "compiler/asm.h"
+#include "compiler/ast/node.h"
+#include "compiler/scope.h"
 #include "core/allocator.h"
 #include "core/buffer.h"
-#include "core/error.h"
 #include "core/list.h"
 #include "core/path.h"
 #include "core/string.h"
@@ -116,8 +117,8 @@ static const int32_t neo_js_program_get_integer(neo_js_program_t program,
   return value;
 }
 
-void neo_js_program_write(neo_allocator_t allocator, FILE *fp,
-                          neo_js_program_t self) {
+neo_ast_node_t neo_js_program_write(neo_allocator_t allocator, FILE *fp,
+                                    neo_js_program_t self) {
   fprintf(fp, "[section .metadata]\n");
   fprintf(fp, ".filename: %s\n", self->filename);
   fprintf(fp, ".dirname: %s\n", self->dirname);
@@ -665,8 +666,8 @@ void neo_js_program_write(neo_allocator_t allocator, FILE *fp,
       fprintf(fp, "NEO_ASM_DEL_FIELD\n");
     } break;
     default:
-      THROW("Invalid operator");
-      return;
+      return neo_create_error_node(allocator, "Invalid operator");
     }
   }
+  return NULL;
 }

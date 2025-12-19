@@ -53,14 +53,15 @@ bool neo_compile_scope_is_generator();
 
 bool neo_compile_scope_is_async();
 
-void neo_compile_scope_declar_value(neo_allocator_t allocator,
-                                    neo_compile_scope_t self,
-                                    neo_ast_node_t node,
-                                    neo_compile_variable_type_t type);
+neo_ast_node_t neo_compile_scope_declar_value(neo_allocator_t allocator,
+                                              neo_compile_scope_t self,
+                                              neo_ast_node_t node,
+                                              neo_compile_variable_type_t type);
 
-void neo_compile_scope_declar(neo_allocator_t allocator,
-                              neo_compile_scope_t self, neo_ast_node_t node,
-                              neo_compile_variable_type_t type);
+neo_ast_node_t neo_compile_scope_declar(neo_allocator_t allocator,
+                                        neo_compile_scope_t self,
+                                        neo_ast_node_t node,
+                                        neo_compile_variable_type_t type);
 
 neo_compile_scope_t neo_compile_scope_get_current();
 

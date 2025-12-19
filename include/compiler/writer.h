@@ -35,9 +35,6 @@ void neo_write_optional_chain(neo_allocator_t allocator,
                               neo_write_context_t ctx, neo_ast_node_t node,
                               neo_list_t addresses);
 
-void neo_write_stack_frame(neo_allocator_t allocator, neo_write_context_t ctx,
-                           neo_ast_node_t callee);
-
 #ifdef __cplusplus
 }
 #endif

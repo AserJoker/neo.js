@@ -20,7 +20,8 @@ static void neo_ast_export_default_dispose(neo_allocator_t allocator,
 static void neo_ast_export_default_write(neo_allocator_t allocator,
                                          neo_write_context_t ctx,
                                          neo_ast_export_default_t self) {
-  TRY(self->value->write(allocator, ctx, self->value)) { return; }
+  neo_ast_node_t error = NULL;
+  self->value->write(allocator, ctx, self->value);
   neo_js_program_add_string(allocator, ctx->program, "default");
   neo_js_program_add_code(allocator, ctx->program, NEO_ASM_EXPORT);
 }
@@ -65,6 +66,7 @@ neo_create_ast_export_default(neo_allocator_t allocator) {
 neo_ast_node_t neo_ast_read_export_default(neo_allocator_t allocator,
                                            const char *file,
                                            neo_position_t *position) {
+  neo_ast_node_t error = NULL;
   neo_position_t current = *position;
   neo_ast_export_default_t node = neo_create_ast_export_default(allocator);
   neo_token_t token = NULL;
@@ -73,15 +75,19 @@ neo_ast_node_t neo_ast_read_export_default(neo_allocator_t allocator,
     goto onerror;
   }
   neo_allocator_free(allocator, token);
-  SKIP_ALL(allocator, file, &current, onerror);
-  node->value = TRY(neo_ast_read_expression_2(allocator, file, &current)) {
+
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
     goto onerror;
   }
+  node->value = neo_ast_read_expression_2(allocator, file, &current);
   if (!node->value) {
-    THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-          current.line, current.column);
+    error = neo_create_error_node(
+        allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+        file, current.line, current.column);
     goto onerror;
   }
+  NEO_CHECK_NODE(node->value, error, onerror);
   node->node.location.begin = *position;
   node->node.location.end = current;
   node->node.location.file = file;
@@ -90,5 +96,5 @@ neo_ast_node_t neo_ast_read_export_default(neo_allocator_t allocator,
 onerror:
   neo_allocator_free(allocator, node);
   neo_allocator_free(allocator, token);
-  return NULL;
+  return error;
 }

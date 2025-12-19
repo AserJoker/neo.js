@@ -5,8 +5,8 @@
 #include "compiler/writer.h"
 #include "core/allocator.h"
 #include "core/any.h"
-#include "core/error.h"
 #include "core/location.h"
+#include "core/position.h"
 #include <stdbool.h>
 
 #ifdef __cplusplus
@@ -148,20 +148,29 @@ neo_ast_node_t neo_skip_comment(neo_allocator_t allocator, const char *file,
 neo_ast_node_t neo_create_error_node(neo_allocator_t allocator,
                                      const char *message, ...);
 
-#define SKIP_ALL(allocator, file, position, onerror)                           \
-  for (;;) {                                                                   \
-    const char *offset = (position)->offset;                                     \
-    neo_skip_white_space(allocator, file, position);                           \
-    neo_skip_line_terminator(allocator, file, position);                       \
-    neo_ast_node_t error = neo_skip_comment(allocator, file, position);        \
-    if (error) {                                                               \
-      THROW("%s", error->error);                                               \
-      neo_allocator_free(allocator, error);                                    \
-      goto onerror;                                                            \
-    }                                                                          \
-    if (offset == (position)->offset) {                                          \
-      break;                                                                   \
-    }                                                                          \
+static inline neo_ast_node_t neo_skip_all(neo_allocator_t allocator,
+                                          const char *file,
+                                          neo_position_t *position) {
+  for (;;) {
+    const char *offset = (position)->offset;
+    neo_skip_white_space(allocator, file, position);
+    neo_skip_line_terminator(allocator, file, position);
+    neo_ast_node_t error = neo_skip_comment(allocator, file, position);
+    if (error) {
+      return error;
+    }
+    if (offset == (position)->offset) {
+      break;
+    }
+  }
+  return NULL;
+}
+
+#define NEO_CHECK_NODE(node, error, onerror)                                   \
+  if ((node)->type == NEO_NODE_TYPE_ERROR) {                                   \
+    error = (node);                                                            \
+    (node) = NULL;                                                             \
+    goto onerror;                                                              \
   }
 
 #ifdef __cplusplus

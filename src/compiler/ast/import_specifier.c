@@ -7,7 +7,6 @@
 #include "compiler/token.h"
 #include "core/allocator.h"
 #include "core/any.h"
-#include "core/error.h"
 #include "core/location.h"
 #include <stdio.h>
 #include <string.h>
@@ -87,41 +86,50 @@ neo_ast_node_t neo_ast_read_import_specifier(neo_allocator_t allocator,
                                              neo_position_t *position) {
   neo_position_t current = *position;
   neo_token_t token = NULL;
+  neo_ast_node_t error = NULL;
   neo_ast_import_specifier_t node = neo_create_ast_import_specifier(allocator);
   node->identifier = neo_ast_read_identifier(allocator, file, &current);
   if (!node->identifier) {
-    node->identifier =
-        TRY(neo_ast_read_literal_string(allocator, file, &current)) {
-      goto onerror;
-    }
+    node->identifier = neo_ast_read_literal_string(allocator, file, &current);
   }
   if (!node->identifier) {
     goto onerror;
   }
+  NEO_CHECK_NODE(node->identifier, error, onerror);
   neo_position_t cur = current;
-  SKIP_ALL(allocator, file, &cur, onerror);
+  error = neo_skip_all(allocator, file, &cur);
+  if (error) {
+    goto onerror;
+  }
   token = neo_read_identify_token(allocator, file, &cur);
   if (token && neo_location_is(token->location, "as")) {
     neo_allocator_free(allocator, token);
     current = cur;
-    SKIP_ALL(allocator, file, &current, onerror);
+
+    error = neo_skip_all(allocator, file, &current);
+    if (error) {
+      goto onerror;
+    }
     node->alias = neo_ast_read_identifier(allocator, file, &current);
     if (!node->alias) {
-      THROW("Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
-            current.line, current.column);
+      error = neo_create_error_node(
+          allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+          file, current.line, current.column);
       goto onerror;
     }
   }
   neo_allocator_free(allocator, token);
   if (node->alias) {
-    TRY(neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
-                                 node->alias, NEO_COMPILE_VARIABLE_CONST)) {
+    error = neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
+                                     node->alias, NEO_COMPILE_VARIABLE_CONST);
+    if (error) {
       goto onerror;
     };
   } else {
-    TRY(neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
-                                 node->identifier,
-                                 NEO_COMPILE_VARIABLE_CONST)) {
+    error =
+        neo_compile_scope_declar(allocator, neo_compile_scope_get_current(),
+                                 node->identifier, NEO_COMPILE_VARIABLE_CONST);
+    if (error) {
       goto onerror;
     };
   }
@@ -133,5 +141,5 @@ neo_ast_node_t neo_ast_read_import_specifier(neo_allocator_t allocator,
 onerror:
   neo_allocator_free(allocator, node);
   neo_allocator_free(allocator, token);
-  return NULL;
+  return error;
 }
