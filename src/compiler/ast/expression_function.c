@@ -161,6 +161,12 @@ neo_ast_node_t neo_ast_read_expression_function(neo_allocator_t allocator,
   neo_compile_scope_t scope = NULL;
   node = neo_create_ast_expression_function(allocator, file, &current);
   token = neo_read_identify_token(allocator, file, &current);
+  if (token && token->type == NEO_TOKEN_TYPE_ERROR) {
+    error = neo_create_error_node(allocator, NULL);
+    error->error = token->error;
+    token->error = NULL;
+    goto onerror;
+  }
   if (!token || (!neo_location_is(token->location, "async") &&
                  !neo_location_is(token->location, "function"))) {
     goto onerror;
@@ -174,6 +180,12 @@ neo_ast_node_t neo_ast_read_expression_function(neo_allocator_t allocator,
       goto onerror;
     }
     token = neo_read_identify_token(allocator, file, &current);
+    if (token && token->type == NEO_TOKEN_TYPE_ERROR) {
+      error = neo_create_error_node(allocator, NULL);
+      error->error = token->error;
+      token->error = NULL;
+      goto onerror;
+    }
     if (!token || !neo_location_is(token->location, "function")) {
       goto onerror;
     }

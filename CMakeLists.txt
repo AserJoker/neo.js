@@ -102,6 +102,10 @@ target_link_libraries(${PROJECT_NAME} PRIVATE PCRE2::8BIT PCRE2::16BIT PCRE2::32
 
 target_link_libraries(${PROJECT_NAME}.test PRIVATE PCRE2::8BIT PCRE2::16BIT PCRE2::32BIT PCRE2::POSIX GTest::gtest GTest::gtest_main GTest::gmock GTest::gmock_main)
 
+target_compile_options(${PROJECT_NAME}.test PRIVATE "--coverage")
+
+target_link_options(${PROJECT_NAME}.test PRIVATE "--coverage")
+
 enable_testing()
 
 gtest_discover_tests(${PROJECT_NAME}.test)

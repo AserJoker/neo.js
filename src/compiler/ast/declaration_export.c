@@ -244,6 +244,12 @@ neo_ast_node_t neo_ast_read_declaration_export(neo_allocator_t allocator,
   neo_token_t token = NULL;
   neo_ast_node_t error = NULL;
   token = neo_read_identify_token(allocator, file, &current);
+  if (token && token->type == NEO_TOKEN_TYPE_ERROR) {
+    error = neo_create_error_node(allocator, NULL);
+    error->error = token->error;
+    token->error = NULL;
+    goto onerror;
+  }
   if (!token || !neo_location_is(token->location, "export")) {
     goto onerror;
   }
@@ -335,6 +341,12 @@ neo_ast_node_t neo_ast_read_declaration_export(neo_allocator_t allocator,
     goto onerror;
   }
   token = neo_read_identify_token(allocator, file, &cur);
+  if (token && token->type == NEO_TOKEN_TYPE_ERROR) {
+    error = neo_create_error_node(allocator, NULL);
+    error->error = token->error;
+    token->error = NULL;
+    goto onerror;
+  }
   if (!token || !neo_location_is(token->location, "from")) {
     if (specifier && (specifier->type == NEO_NODE_TYPE_EXPORT_NAMESPACE ||
                       specifier->type == NEO_NODE_TYPE_EXPORT_ALL)) {
@@ -360,6 +372,12 @@ neo_ast_node_t neo_ast_read_declaration_export(neo_allocator_t allocator,
       goto onerror;
     }
     token = neo_read_identify_token(allocator, file, &cur);
+    if (token && token->type == NEO_TOKEN_TYPE_ERROR) {
+      error = neo_create_error_node(allocator, NULL);
+      error->error = token->error;
+      token->error = NULL;
+      goto onerror;
+    }
     if (token && neo_location_is(token->location, "assert")) {
       current = cur;
       neo_allocator_free(allocator, token);

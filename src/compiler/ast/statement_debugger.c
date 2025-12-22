@@ -55,9 +55,16 @@ neo_ast_node_t neo_ast_read_statement_debugger(neo_allocator_t allocator,
                                                neo_position_t *position) {
   neo_position_t current = *position;
   neo_ast_statement_debugger_t node = NULL;
+  neo_ast_node_t error = NULL;
   neo_token_t token = neo_read_identify_token(allocator, file, &current);
   if (!token) {
     return NULL;
+  }
+  if (token && token->type == NEO_TOKEN_TYPE_ERROR) {
+    error = neo_create_error_node(allocator, NULL);
+    error->error = token->error;
+    token->error = NULL;
+    goto onerror;
   }
   if (!neo_location_is(token->location, "debugger")) {
     neo_allocator_free(allocator, token);
@@ -71,5 +78,5 @@ neo_ast_node_t neo_ast_read_statement_debugger(neo_allocator_t allocator,
   return &node->node;
 onerror:
   neo_allocator_free(allocator, node);
-  return NULL;
+  return error;
 }

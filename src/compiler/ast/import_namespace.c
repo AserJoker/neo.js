@@ -72,6 +72,12 @@ neo_ast_node_t neo_ast_read_import_namespace(neo_allocator_t allocator,
     goto onerror;
   }
   token = neo_read_identify_token(allocator, file, &current);
+  if (token && token->type == NEO_TOKEN_TYPE_ERROR) {
+    error = neo_create_error_node(allocator, NULL);
+    error->error = token->error;
+    token->error = NULL;
+    goto onerror;
+  }
   if (!token || !neo_location_is(token->location, "as")) {
     error = neo_create_error_node(
         allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",

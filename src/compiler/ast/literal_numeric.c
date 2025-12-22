@@ -93,6 +93,12 @@ neo_ast_node_t neo_ast_read_literal_numeric(neo_allocator_t allocator,
         !neo_location_is(token->location, "Infinity")) {
       goto onerror;
     }
+    if (token && token->type == NEO_TOKEN_TYPE_ERROR) {
+      error = neo_create_error_node(allocator, NULL);
+      error->error = token->error;
+      token->error = NULL;
+      goto onerror;
+    }
   }
   if (!token) {
     return NULL;
@@ -101,6 +107,12 @@ neo_ast_node_t neo_ast_read_literal_numeric(neo_allocator_t allocator,
   node = neo_create_ast_literal_numeric(allocator);
   neo_position_t cur = current;
   token = neo_read_identify_token(allocator, file, &cur);
+  if (token && token->type == NEO_TOKEN_TYPE_ERROR) {
+    error = neo_create_error_node(allocator, NULL);
+    error->error = token->error;
+    token->error = NULL;
+    goto onerror;
+  }
   if (token && neo_location_is(token->location, "n")) {
     node->node.type = NEO_NODE_TYPE_LITERAL_BIGINT;
     current = cur;

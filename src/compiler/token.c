@@ -4,6 +4,7 @@
 #include "core/unicode.h"
 #include <stdarg.h>
 #include <stdio.h>
+#include <uchar.h>
 
 #define IS_HEX(ch)                                                             \
   (((ch) >= '0' && (ch) <= '9') || ((ch) >= 'a' && (ch) <= 'f') ||             \
@@ -199,6 +200,14 @@ neo_token_t neo_read_number_token(neo_allocator_t allocator, const char *file,
     current.column += 2;
     if (IS_HEX(*current.offset)) {
       neo_read_hex(file, &current);
+      neo_utf8_char chr = neo_utf8_read_char(current.offset);
+      char32_t utf32 = neo_utf8_char_to_utf32(chr);
+      if (IS_ID_START(utf32)) {
+        return neo_create_error_token(
+            allocator,
+            "Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+            current.line, current.column);
+      }
     } else {
       return neo_create_error_token(
           allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
@@ -210,6 +219,14 @@ neo_token_t neo_read_number_token(neo_allocator_t allocator, const char *file,
     current.column += 2;
     if (IS_OCT(*current.offset)) {
       neo_read_oct(file, &current);
+      neo_utf8_char chr = neo_utf8_read_char(current.offset);
+      char32_t utf32 = neo_utf8_char_to_utf32(chr);
+      if (IS_ID_START(utf32) || utf32 >= '8' && utf32 <= '9') {
+        return neo_create_error_token(
+            allocator,
+            "Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
+            current.line, current.column);
+      }
     } else {
       return neo_create_error_token(
           allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
@@ -249,11 +266,13 @@ neo_token_t neo_read_number_token(neo_allocator_t allocator, const char *file,
             current.line, current.column);
       }
     }
-  }
-  if (*current.offset == '_' || *current.offset == '.') {
-    return neo_create_error_token(
-        allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
-        file, current.line, current.column);
+    neo_utf8_char chr = neo_utf8_read_char(current.offset);
+    char32_t utf32 = neo_utf8_char_to_utf32(chr);
+    if (utf32 != 'n' && IS_ID_START(utf32)) {
+      return neo_create_error_token(
+          allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+          file, current.line, current.column);
+    }
   }
   neo_token_t token = (neo_token_t)neo_allocator_alloc(
       allocator, sizeof(struct _neo_token_t), NULL);
@@ -268,12 +287,12 @@ neo_token_t neo_read_number_token(neo_allocator_t allocator, const char *file,
 neo_token_t neo_read_symbol_token(neo_allocator_t allocator, const char *file,
                                   neo_position_t *position) {
   static const char *operators[] = {
-      ">>>=", "...", "<<=", ">>>", "===", "!==", "**=", ">>=", "&&=", "(?\?=)",
-      "**",   "==",  "!=",  "<<",  ">>",  "<=",  ">=",  "&&",  "||",  "??",
-      "++",   "--",  "+=",  "-=",  "*=",  "/=",  "%=",  "||=", "&=",  "^=",
-      "|=",   "=>",  "?.",  "=",   "*",   "/",   "%",   "+",   "-",   "<",
-      ">",    "&",   "^",   "|",   ",",   "!",   "~",   "(",   ")",   "[",
-      "]",    "{",   "}",   "@",   "#",   ".",   "?",   ":",   ";",   0,
+      ">>>=",   "...", "<<=", ">>>", "===", "!==", "**=", ">>=", "&&=", "||=",
+      "(?\?=)", "**",  "==",  "!=",  "<<",  ">>",  "<=",  ">=",  "&&",  "||",
+      "??",     "++",  "--",  "+=",  "-=",  "*=",  "/=",  "%=",  "&=",  "^=",
+      "|=",     "=>",  "?.",  "=",   "*",   "/",   "%",   "+",   "-",   "<",
+      ">",      "&",   "^",   "|",   ",",   "!",   "~",   "(",   ")",   "[",
+      "]",      "{",   "}",   "@",   "#",   ".",   "?",   ":",   ";",   0,
   };
   neo_position_t current = *position;
   int32_t idx = 0;
@@ -476,6 +495,11 @@ neo_token_t neo_read_identify_token(neo_allocator_t allocator, const char *file,
       break;
     }
     chr = neo_utf8_read_char(current.offset);
+  }
+  if (*current.offset == '#') {
+    return neo_create_error_token(
+        allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+        file, current.line, current.column);
   }
   neo_token_t token = (neo_token_t)neo_allocator_alloc(
       allocator, sizeof(struct _neo_token_t), NULL);

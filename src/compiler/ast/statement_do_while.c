@@ -98,6 +98,12 @@ neo_ast_node_t neo_ast_read_statement_do_while(neo_allocator_t allocator,
   neo_ast_node_t error = NULL;
   neo_token_t token = NULL;
   token = neo_read_identify_token(allocator, file, &current);
+  if (token && token->type == NEO_TOKEN_TYPE_ERROR) {
+    error = neo_create_error_node(allocator, NULL);
+    error->error = token->error;
+    token->error = NULL;
+    goto onerror;
+  }
   if (!token || !neo_location_is(token->location, "do")) {
     goto onerror;
   }
@@ -120,6 +126,12 @@ neo_ast_node_t neo_ast_read_statement_do_while(neo_allocator_t allocator,
     goto onerror;
   }
   token = neo_read_identify_token(allocator, file, &current);
+  if (token && token->type == NEO_TOKEN_TYPE_ERROR) {
+    error = neo_create_error_node(allocator, NULL);
+    error->error = token->error;
+    token->error = NULL;
+    goto onerror;
+  }
   if (!token || !neo_location_is(token->location, "while")) {
     error = neo_create_error_node(
         allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",

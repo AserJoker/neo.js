@@ -289,6 +289,12 @@ neo_ast_node_t neo_ast_read_expression_class(neo_allocator_t allocator,
     }
   }
   token = neo_read_identify_token(allocator, file, &current);
+  if (token && token->type == NEO_TOKEN_TYPE_ERROR) {
+    error = neo_create_error_node(allocator, NULL);
+    error->error = token->error;
+    token->error = NULL;
+    goto onerror;
+  }
   if (token && neo_location_is(token->location, "export") &&
       neo_list_get_size(node->decorators) != 0) {
     neo_position_t cur = token->location.begin;
@@ -356,6 +362,12 @@ neo_ast_node_t neo_ast_read_expression_class(neo_allocator_t allocator,
     goto onerror;
   }
   token = neo_read_identify_token(allocator, file, &current);
+  if (token && token->type == NEO_TOKEN_TYPE_ERROR) {
+    error = neo_create_error_node(allocator, NULL);
+    error->error = token->error;
+    token->error = NULL;
+    goto onerror;
+  }
 
   error = neo_skip_all(allocator, file, &current);
   if (error) {
