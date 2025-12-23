@@ -54,6 +54,7 @@ TEST_F(neo_test_program, directives) {
   neo_ast_node_t node = nullptr;
   neo_ast_program_t program = nullptr;
   loc = create_location("#!/usr/bin/neo\n"
+                        "/* test comment */"
                         "'use client'\n");
   node = neo_ast_read_program(allocator, "", &loc.end);
   ASSERT_NE(node, nullptr);

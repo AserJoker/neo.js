@@ -47,4 +47,5 @@ TEST_F(neo_test_number, error) {
   neo_ast_node_t node = neo_ast_read_literal_numeric(allocator, "", &loc.end);
   ASSERT_NE(node, nullptr);
   ASSERT_EQ(node->type, NEO_NODE_TYPE_ERROR);
+  neo_allocator_free(allocator, node);
 }
