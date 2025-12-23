@@ -380,3 +380,120 @@ TEST_F(neo_test_token, string) {
   neo_allocator_free(allocator, str);
   neo_allocator_free(allocator, token);
 }
+
+TEST_F(neo_test_token, temp) {
+  neo_location_t loc = {};
+  neo_token_t token = NULL;
+  char *str = NULL;
+
+  loc = create_location("`\n`");
+  token = neo_read_template_string_token(allocator, "", &loc.end);
+  ASSERT_NE(token, nullptr);
+  ASSERT_EQ(token->type, NEO_TOKEN_TYPE_TEMPLATE_STRING);
+  str = neo_location_get_raw(allocator, token->location);
+  ASSERT_EQ(std::string(str), "`\n`");
+  neo_allocator_free(allocator, str);
+  neo_allocator_free(allocator, token);
+
+  loc = create_location("`aaa${");
+  token = neo_read_template_string_token(allocator, "", &loc.end);
+  ASSERT_NE(token, nullptr);
+  ASSERT_EQ(token->type, NEO_TOKEN_TYPE_TEMPLATE_STRING_START);
+  str = neo_location_get_raw(allocator, token->location);
+  ASSERT_EQ(std::string(str), "`aaa${");
+  neo_allocator_free(allocator, str);
+  neo_allocator_free(allocator, token);
+
+  loc = create_location("}aaa${");
+  token = neo_read_template_string_token(allocator, "", &loc.end);
+  ASSERT_NE(token, nullptr);
+  ASSERT_EQ(token->type, NEO_TOKEN_TYPE_TEMPLATE_STRING_PART);
+  str = neo_location_get_raw(allocator, token->location);
+  ASSERT_EQ(std::string(str), "}aaa${");
+  neo_allocator_free(allocator, str);
+  neo_allocator_free(allocator, token);
+
+  loc = create_location("}aaa\\${`");
+  token = neo_read_template_string_token(allocator, "", &loc.end);
+  ASSERT_NE(token, nullptr);
+  ASSERT_EQ(token->type, NEO_TOKEN_TYPE_TEMPLATE_STRING_END);
+  str = neo_location_get_raw(allocator, token->location);
+  ASSERT_EQ(std::string(str), "}aaa\\${`");
+  neo_allocator_free(allocator, str);
+  neo_allocator_free(allocator, token);
+
+  loc = create_location("}aaa`");
+  token = neo_read_template_string_token(allocator, "", &loc.end);
+  ASSERT_NE(token, nullptr);
+  ASSERT_EQ(token->type, NEO_TOKEN_TYPE_TEMPLATE_STRING_END);
+  str = neo_location_get_raw(allocator, token->location);
+  ASSERT_EQ(std::string(str), "}aaa`");
+  neo_allocator_free(allocator, str);
+  neo_allocator_free(allocator, token);
+
+  loc = create_location("}aaa");
+  token = neo_read_template_string_token(allocator, "", &loc.end);
+  ASSERT_NE(token, nullptr);
+  ASSERT_EQ(token->type, NEO_TOKEN_TYPE_ERROR);
+  neo_allocator_free(allocator, token);
+
+  loc = create_location("`aaa");
+  token = neo_read_template_string_token(allocator, "", &loc.end);
+  ASSERT_NE(token, nullptr);
+  ASSERT_EQ(token->type, NEO_TOKEN_TYPE_ERROR);
+  neo_allocator_free(allocator, token);
+}
+
+TEST_F(neo_test_token, comment) {
+  neo_location_t loc = {};
+  neo_token_t token = NULL;
+  char *str = NULL;
+
+  loc = create_location("//test");
+  token = neo_read_comment_token(allocator, "", &loc.end);
+  ASSERT_NE(token, nullptr);
+  ASSERT_EQ(token->type, NEO_TOKEN_TYPE_COMMENT);
+  str = neo_location_get_raw(allocator, token->location);
+  ASSERT_EQ(std::string(str), "//test");
+  neo_allocator_free(allocator, str);
+  neo_allocator_free(allocator, token);
+
+  loc = create_location("//test\nabc");
+  token = neo_read_comment_token(allocator, "", &loc.end);
+  ASSERT_NE(token, nullptr);
+  ASSERT_EQ(token->type, NEO_TOKEN_TYPE_COMMENT);
+  str = neo_location_get_raw(allocator, token->location);
+  ASSERT_EQ(std::string(str), "//test");
+  neo_allocator_free(allocator, str);
+  neo_allocator_free(allocator, token);
+}
+
+TEST_F(neo_test_token, multi_comment) {
+  neo_location_t loc = {};
+  neo_token_t token = NULL;
+  char *str = NULL;
+
+  loc = create_location("/*test\nabc*/");
+  token = neo_read_multiline_comment_token(allocator, "", &loc.end);
+  ASSERT_NE(token, nullptr);
+  ASSERT_EQ(token->type, NEO_TOKEN_TYPE_MULTILINE_COMMENT);
+  str = neo_location_get_raw(allocator, token->location);
+  ASSERT_EQ(std::string(str), "/*test\nabc*/");
+  neo_allocator_free(allocator, str);
+  neo_allocator_free(allocator, token);
+
+  loc = create_location("/*test\nabc*\\/*/");
+  token = neo_read_multiline_comment_token(allocator, "", &loc.end);
+  ASSERT_NE(token, nullptr);
+  ASSERT_EQ(token->type, NEO_TOKEN_TYPE_MULTILINE_COMMENT);
+  str = neo_location_get_raw(allocator, token->location);
+  ASSERT_EQ(std::string(str), "/*test\nabc*\\/*/");
+  neo_allocator_free(allocator, str);
+  neo_allocator_free(allocator, token);
+
+  loc = create_location("/*test\nabc*\\/");
+  token = neo_read_multiline_comment_token(allocator, "", &loc.end);
+  ASSERT_NE(token, nullptr);
+  ASSERT_EQ(token->type, NEO_TOKEN_TYPE_ERROR);
+  neo_allocator_free(allocator, token);
+}

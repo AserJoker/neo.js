@@ -1,13 +1,13 @@
 #ifndef _H_NEO_COMPILER_PROGRAM_
 #define _H_NEO_COMPILER_PROGRAM_
 #include "compiler/scope.h"
-#ifdef __cplusplus
-extern "C" {
-#endif
 #include "core/buffer.h"
 #include "core/list.h"
 #include <stdint.h>
 #include <stdio.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef struct _neo_js_program_t *neo_js_program_t;
 
 struct _neo_js_program_t {
