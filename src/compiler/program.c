@@ -1,6 +1,6 @@
 #include "compiler/program.h"
 #include "compiler/asm.h"
-#include "compiler/ast/node.h"
+#include "compiler/ast_node.h"
 #include "compiler/scope.h"
 #include "core/allocator.h"
 #include "core/buffer.h"

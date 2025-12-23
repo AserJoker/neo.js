@@ -1,5 +1,5 @@
 #include "engine/context.h"
-#include "compiler/ast/node.h"
+#include "compiler/ast_node.h"
 #include "compiler/parser.h"
 #include "compiler/program.h"
 #include "compiler/scope.h"
