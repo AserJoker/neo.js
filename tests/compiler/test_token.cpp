@@ -15,12 +15,7 @@ public:
   }
 };
 
-static neo_location_t create_location(const char *src) {
-  neo_location_t loc = {};
-  loc.begin = {1, 1, src};
-  loc.end = loc.begin;
-  return loc;
-}
+neo_location_t create_location(const char *src);
 
 TEST_F(neo_test_token, identifier) {
   neo_position_t pos = {
