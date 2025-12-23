@@ -21,6 +21,8 @@ neo_ast_node_t neo_ast_parse_code(neo_allocator_t allocator, const char *file,
   }
   program = neo_ast_read_program(allocator, file, &current);
   if (program->type == NEO_NODE_TYPE_ERROR) {
+    error = program;
+    program = NULL;
     goto onerror;
   };
   error = neo_skip_all(allocator, file, &current);
@@ -31,6 +33,7 @@ neo_ast_node_t neo_ast_parse_code(neo_allocator_t allocator, const char *file,
     error = neo_create_error_node(
         allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
         file, current.line, current.column);
+    goto onerror;
   }
   return program;
 onerror:

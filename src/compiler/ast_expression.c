@@ -1,5 +1,5 @@
-#include "compiler/asm.h"
 #include "compiler/ast_expression.h"
+#include "compiler/asm.h"
 #include "compiler/ast_expression_array.h"
 #include "compiler/ast_expression_arrow_function.h"
 #include "compiler/ast_expression_assigment.h"
@@ -36,7 +36,6 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
-
 
 static void
 neo_ast_expression_binary_dispose(neo_allocator_t allocator,
@@ -550,7 +549,7 @@ neo_ast_node_t neo_ast_read_expression_13(neo_allocator_t allocator,
       bnode->node.location.begin = *position;
       bnode->node.location.end = curr;
       bnode->node.location.file = file;
-      *position = curr;
+      current = curr;
     } else {
       if (token) {
         neo_allocator_free(allocator, token);
@@ -605,7 +604,7 @@ neo_ast_node_t neo_ast_read_expression_12(neo_allocator_t allocator,
       bnode->node.location.begin = *position;
       bnode->node.location.end = curr;
       bnode->node.location.file = file;
-      *position = curr;
+      current = curr;
     } else {
       if (token) {
         neo_allocator_free(allocator, token);
@@ -658,7 +657,7 @@ neo_ast_node_t neo_ast_read_expression_11(neo_allocator_t allocator,
       bnode->node.location.begin = *position;
       bnode->node.location.end = curr;
       bnode->node.location.file = file;
-      *position = curr;
+      current = curr;
     } else {
       if (token) {
         neo_allocator_free(allocator, token);
@@ -712,7 +711,7 @@ neo_ast_node_t neo_ast_read_expression_10(neo_allocator_t allocator,
       bnode->node.location.begin = *position;
       bnode->node.location.end = curr;
       bnode->node.location.file = file;
-      *position = curr;
+      current = curr;
     } else {
       if (token) {
         neo_allocator_free(allocator, token);
@@ -779,7 +778,7 @@ neo_ast_node_t neo_ast_read_expression_9(neo_allocator_t allocator,
       bnode->node.location.begin = *position;
       bnode->node.location.end = curr;
       bnode->node.location.file = file;
-      *position = curr;
+      current = curr;
     } else {
       if (token) {
         neo_allocator_free(allocator, token);
@@ -834,7 +833,7 @@ neo_ast_node_t neo_ast_read_expression_8(neo_allocator_t allocator,
       bnode->node.location.begin = *position;
       bnode->node.location.end = curr;
       bnode->node.location.file = file;
-      *position = curr;
+      current = curr;
     } else {
       if (token) {
         neo_allocator_free(allocator, token);
@@ -887,7 +886,7 @@ neo_ast_node_t neo_ast_read_expression_7(neo_allocator_t allocator,
       bnode->node.location.begin = *position;
       bnode->node.location.end = curr;
       bnode->node.location.file = file;
-      *position = curr;
+      current = curr;
     } else {
       if (token) {
         neo_allocator_free(allocator, token);
@@ -939,8 +938,7 @@ neo_ast_node_t neo_ast_read_expression_6(neo_allocator_t allocator,
       bnode->node.location.begin = *position;
       bnode->node.location.end = curr;
       bnode->node.location.file = file;
-      *position = curr;
-      return &bnode->node;
+      current = curr;
     } else {
       if (token) {
         neo_allocator_free(allocator, token);
@@ -992,7 +990,7 @@ neo_ast_node_t neo_ast_read_expression_5(neo_allocator_t allocator,
       bnode->node.location.begin = *position;
       bnode->node.location.end = curr;
       bnode->node.location.file = file;
-      *position = curr;
+      current = curr;
     } else {
       if (token) {
         neo_allocator_free(allocator, token);
@@ -1045,7 +1043,7 @@ neo_ast_node_t neo_ast_read_expression_4(neo_allocator_t allocator,
       bnode->node.location.begin = *position;
       bnode->node.location.end = curr;
       bnode->node.location.file = file;
-      *position = curr;
+      current = curr;
     } else {
       if (token) {
         neo_allocator_free(allocator, token);
@@ -1099,7 +1097,7 @@ neo_ast_node_t neo_ast_read_expression_3(neo_allocator_t allocator,
       bnode->node.location.begin = *position;
       bnode->node.location.end = curr;
       bnode->node.location.file = file;
-      *position = curr;
+      current = curr;
     } else {
       if (token) {
         neo_allocator_free(allocator, token);
@@ -1175,7 +1173,7 @@ neo_ast_read_expression_sequence(neo_allocator_t allocator, const char *file,
       bnode->node.location.begin = *position;
       bnode->node.location.end = curr;
       bnode->node.location.file = file;
-      *position = curr;
+      current = curr;
     } else {
       neo_allocator_free(allocator, token);
     }

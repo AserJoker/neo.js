@@ -131,6 +131,7 @@ neo_ast_node_t neo_create_error_node(neo_allocator_t allocator,
   neo_ast_node_t node = neo_allocator_alloc(
       allocator, sizeof(struct _neo_ast_node_t), neo_ast_error_node_dispose);
   node->error = NULL;
+  node->type = NEO_NODE_TYPE_ERROR;
   if (message) {
     node->error = neo_allocator_alloc(allocator, 4096, NULL);
     va_list args;
