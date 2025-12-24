@@ -1,8 +1,8 @@
+#include "compiler/ast_statement_if.h"
 #include "compiler/asm.h"
 #include "compiler/ast_expression.h"
 #include "compiler/ast_node.h"
 #include "compiler/ast_statement.h"
-#include "compiler/ast_statement_if.h"
 #include "compiler/program.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
@@ -11,7 +11,6 @@
 #include "core/location.h"
 #include "core/position.h"
 #include <stdio.h>
-
 
 static void neo_ast_statement_if_dispose(neo_allocator_t allocator,
                                          neo_ast_statement_if_t node) {
@@ -149,6 +148,9 @@ neo_ast_node_t neo_ast_read_statement_if(neo_allocator_t allocator,
   }
   node->alternate = neo_ast_read_statement(allocator, file, &current);
   if (!node->alternate) {
+    error = neo_create_error_node(
+        allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
+        file, current.line, current.column);
     goto onerror;
   }
   NEO_CHECK_NODE(node->alternate, error, onerror);

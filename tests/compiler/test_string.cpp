@@ -3,18 +3,9 @@
 #include "compiler/scope.h"
 #include "core/allocator.h"
 #include "core/location.h"
+#include "test.hpp"
 #include <gtest/gtest.h>
-class neo_test_string : public testing::Test {
-protected:
-  neo_allocator_t allocator = NULL;
-
-public:
-  void SetUp() override { allocator = neo_create_allocator(NULL); }
-  void TearDown() override {
-    neo_delete_allocator(allocator);
-    allocator = NULL;
-  }
-};
+class neo_test_string : public neo_test {};
 neo_location_t create_location(const char *src);
 TEST_F(neo_test_string, normal) {
   neo_location_t loc = create_location("\"abc\"");

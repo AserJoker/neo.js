@@ -1,7 +1,7 @@
+#include "compiler/ast_statement_break.h"
 #include "compiler/asm.h"
 #include "compiler/ast_identifier.h"
 #include "compiler/ast_node.h"
-#include "compiler/ast_statement_break.h"
 #include "compiler/program.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
@@ -9,7 +9,6 @@
 #include "core/location.h"
 #include "core/position.h"
 #include <stdio.h>
-
 
 static void neo_ast_statement_break_dispose(neo_allocator_t allocator,
                                             neo_ast_statement_break_t node) {
@@ -94,7 +93,8 @@ neo_ast_node_t neo_ast_read_statement_break(neo_allocator_t allocator,
       }
     }
   }
-  if (*cur.offset != '}' && *cur.offset != ';' && line == cur.line) {
+  if (*cur.offset != '}' && *cur.offset != ';' && *cur.offset != '\0' &&
+      line == cur.line) {
     error = neo_create_error_node(
         allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
         file, current.line, current.column);

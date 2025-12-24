@@ -2,19 +2,9 @@
 #include "core/allocator.h"
 #include "core/location.h"
 #include "core/position.h"
+#include "test.hpp"
 #include <gtest/gtest.h>
-class neo_test_token : public testing::Test {
-protected:
-  neo_allocator_t allocator = NULL;
-
-public:
-  void SetUp() override { allocator = neo_create_allocator(NULL); }
-  void TearDown() override {
-    neo_delete_allocator(allocator);
-    allocator = NULL;
-  }
-};
-
+class neo_test_token : public neo_test {};
 neo_location_t create_location(const char *src);
 
 TEST_F(neo_test_token, identifier) {
@@ -353,7 +343,7 @@ TEST_F(neo_test_token, string) {
   ASSERT_NE(token, nullptr);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_STRING);
   str = neo_location_get_raw(allocator, token->location);
-  ASSERT_EQ(std::string(str), "'\\x64'");
+  ASSERT_EQ(std::string(str), "'\\x61'");
   neo_allocator_free(allocator, str);
   neo_allocator_free(allocator, token);
 
@@ -362,7 +352,7 @@ TEST_F(neo_test_token, string) {
   ASSERT_NE(token, nullptr);
   ASSERT_EQ(token->type, NEO_TOKEN_TYPE_STRING);
   str = neo_location_get_raw(allocator, token->location);
-  ASSERT_EQ(std::string(str), "'\\u{0064}'");
+  ASSERT_EQ(std::string(str), "'\\u{0061}'");
   neo_allocator_free(allocator, str);
   neo_allocator_free(allocator, token);
 
