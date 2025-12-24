@@ -1,3 +1,4 @@
+#include "compiler/ast_statement_for_in.h"
 #include "compiler/asm.h"
 #include "compiler/ast_expression.h"
 #include "compiler/ast_identifier.h"
@@ -5,7 +6,6 @@
 #include "compiler/ast_pattern_array.h"
 #include "compiler/ast_pattern_object.h"
 #include "compiler/ast_statement.h"
-#include "compiler/ast_statement_for_in.h"
 #include "compiler/scope.h"
 #include "compiler/token.h"
 #include "core/allocator.h"
@@ -189,7 +189,7 @@ neo_ast_node_t neo_ast_read_statement_for_in(neo_allocator_t allocator,
     token->error = NULL;
     goto onerror;
   }
-  if (neo_location_is(token->location, "await")) {
+  if (token && neo_location_is(token->location, "await")) {
 
     error = neo_skip_all(allocator, file, &current);
     if (error) {

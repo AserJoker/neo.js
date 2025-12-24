@@ -1,9 +1,9 @@
+#include "compiler/ast_statement_for.h"
 #include "compiler/asm.h"
 #include "compiler/ast_declaration_variable.h"
 #include "compiler/ast_expression.h"
 #include "compiler/ast_node.h"
 #include "compiler/ast_statement.h"
-#include "compiler/ast_statement_for.h"
 #include "compiler/program.h"
 #include "compiler/scope.h"
 #include "compiler/token.h"
@@ -143,6 +143,10 @@ neo_ast_node_t neo_ast_read_statement_for(neo_allocator_t allocator,
   current.column++;
   scope =
       neo_compile_scope_push(allocator, NEO_COMPILE_SCOPE_BLOCK, false, false);
+  error = neo_skip_all(allocator, file, &current);
+  if (error) {
+    goto onerror;
+  }
   node->initialize = neo_ast_read_expression(allocator, file, &current);
   if (!node->initialize) {
     node->initialize =
