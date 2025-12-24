@@ -62,3 +62,10 @@ TEST_F(neo_test_statement_if, no_alt) {
   ASSERT_EQ(node->type, NEO_NODE_TYPE_ERROR);
   neo_allocator_free(allocator, node);
 }
+TEST_F(neo_test_statement_if, no_con) {
+  neo_location_t loc = create_location("if(a){}else");
+  neo_ast_node_t node = neo_ast_read_statement(allocator, "", &loc.end);
+  ASSERT_NE(node, nullptr);
+  ASSERT_EQ(node->type, NEO_NODE_TYPE_ERROR);
+  neo_allocator_free(allocator, node);
+}

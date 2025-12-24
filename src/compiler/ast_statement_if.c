@@ -174,7 +174,7 @@ neo_ast_node_t neo_ast_read_statement_if(neo_allocator_t allocator,
       goto onerror;
     }
     node->consequent = neo_ast_read_statement(allocator, file, &current);
-    if (!node->condition) {
+    if (!node->consequent) {
       error = neo_create_error_node(
           allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
           file, current.line, current.column);
