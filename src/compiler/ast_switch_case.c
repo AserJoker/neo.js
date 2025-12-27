@@ -8,7 +8,6 @@
 #include "core/list.h"
 #include "core/location.h"
 #include "core/position.h"
-#include <stdio.h>
 
 
 static void neo_ast_switch_case_dispose(neo_allocator_t allocator,
@@ -58,6 +57,7 @@ neo_create_ast_switch_case(neo_allocator_t allocator) {
   neo_list_initialize_t initialize = {true};
   node->body = neo_create_list(allocator, &initialize);
   node->node.write = NULL;
+  node->condition = NULL;
   return node;
 }
 
