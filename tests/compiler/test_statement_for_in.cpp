@@ -1,0 +1,31 @@
+#include "compiler/ast_node.h"
+#include "compiler/ast_statement.h"
+#include "compiler/ast_statement_for_in.h"
+#include "compiler/scope.h"
+#include "core/location.h"
+#include "test.hpp"
+#include <gtest/gtest.h>
+class neo_test_statement_for_in : public neo_test {};
+TEST_F(neo_test_statement_for_in, normal) {
+  neo_location_t loc = create_location("for (const item in list){}");
+  neo_ast_node_t node = neo_ast_read_statement(allocator, "", &loc.end);
+  ASSERT_NE(node, nullptr);
+  ASSERT_EQ(node->type, NEO_NODE_TYPE_STATEMENT_FOR_IN);
+  auto st = reinterpret_cast<neo_ast_statement_for_in_t>(node);
+  ASSERT_NE(st->left, nullptr);
+  ASSERT_NE(st->right, nullptr);
+  ASSERT_NE(st->body, nullptr);
+}
+
+TEST_F(neo_test_statement_for_in, comment) {
+  neo_location_t loc = create_location(
+      "for /*\ntest\n*/ ( /*\ntest\n*/ const /*\ntest\n*/ item /*\ntest\n*/ in "
+      "/*\ntest\n*/  list /*\ntest\n*/ ) /*\ntest\n*/ {}");
+  neo_ast_node_t node = neo_ast_read_statement(allocator, "", &loc.end);
+  ASSERT_NE(node, nullptr);
+  ASSERT_EQ(node->type, NEO_NODE_TYPE_STATEMENT_FOR_IN);
+  auto st = reinterpret_cast<neo_ast_statement_for_in_t>(node);
+  ASSERT_NE(st->left, nullptr);
+  ASSERT_NE(st->right, nullptr);
+  ASSERT_NE(st->body, nullptr);
+}
