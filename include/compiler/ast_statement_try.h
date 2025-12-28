@@ -11,7 +11,7 @@ extern "C" {
 typedef struct _neo_ast_statement_try_t {
   struct _neo_ast_node_t node;
   neo_ast_node_t body;
-  neo_ast_node_t catch;
+  neo_ast_node_t catch_;
   neo_ast_node_t finally;
 } *neo_ast_statement_try_t;
 

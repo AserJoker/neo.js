@@ -1,7 +1,7 @@
+#include "compiler/ast_statement_try.h"
 #include "compiler/asm.h"
 #include "compiler/ast_node.h"
 #include "compiler/ast_statement_block.h"
-#include "compiler/ast_statement_try.h"
 #include "compiler/ast_try_catch.h"
 #include "compiler/program.h"
 #include "compiler/token.h"
@@ -10,10 +10,11 @@
 #include "core/buffer.h"
 #include <stdio.h>
 
+
 static void neo_ast_statement_try_dispose(neo_allocator_t allocator,
                                           neo_ast_statement_try_t node) {
   neo_allocator_free(allocator, node->body);
-  neo_allocator_free(allocator, node->catch);
+  neo_allocator_free(allocator, node->catch_);
   neo_allocator_free(allocator, node->finally);
   neo_allocator_free(allocator, node->node.scope);
 }
@@ -21,8 +22,8 @@ static void neo_ast_statement_try_resolve_closure(neo_allocator_t allocator,
                                                   neo_ast_statement_try_t self,
                                                   neo_list_t closure) {
   self->body->resolve_closure(allocator, self->body, closure);
-  if (self->catch) {
-    self->catch->resolve_closure(allocator, self->catch, closure);
+  if (self->catch_) {
+    self->catch_->resolve_closure(allocator, self->catch_, closure);
   }
   if (self->finally) {
     self->finally->resolve_closure(allocator, self->finally, closure);
@@ -38,12 +39,12 @@ static void neo_ast_statement_try_write(neo_allocator_t allocator,
   neo_js_program_add_address(allocator, ctx->program, 0);
   self->body->write(allocator, ctx, self->body);
   neo_js_program_add_code(allocator, ctx->program, NEO_ASM_TRY_END);
-  if (self->catch) {
+  if (self->catch_) {
     neo_js_program_add_code(allocator, ctx->program, NEO_ASM_JMP);
     size_t catchend = neo_buffer_get_size(ctx->program->codes);
     neo_js_program_add_address(allocator, ctx->program, 0);
     neo_js_program_set_current(ctx->program, catchaddr);
-    self->catch->write(allocator, ctx, self->catch);
+    self->catch_->write(allocator, ctx, self->catch_);
     neo_js_program_add_code(allocator, ctx->program, NEO_ASM_TRY_END);
     neo_js_program_set_current(ctx->program, catchend);
   }
@@ -68,7 +69,7 @@ static neo_any_t neo_serialize_ast_statement_try(neo_allocator_t allocator,
               neo_serialize_scope(allocator, node->node.scope));
   neo_any_set(variable, "body", neo_ast_node_serialize(allocator, node->body));
   neo_any_set(variable, "catch",
-              neo_ast_node_serialize(allocator, node->catch));
+              neo_ast_node_serialize(allocator, node->catch_));
   neo_any_set(variable, "finally",
               neo_ast_node_serialize(allocator, node->finally));
   return variable;
@@ -86,7 +87,7 @@ neo_create_ast_statement_try(neo_allocator_t allocator) {
       (neo_resolve_closure_fn_t)neo_ast_statement_try_resolve_closure;
   node->node.write = (neo_write_fn_t)neo_ast_statement_try_write;
   node->body = NULL;
-  node->catch = NULL;
+  node->catch_ = NULL;
   node->finally = NULL;
   return node;
 }
@@ -127,9 +128,9 @@ neo_ast_node_t neo_ast_read_statement_try(neo_allocator_t allocator,
   if (error) {
     goto onerror;
   }
-  node->catch = neo_ast_read_try_catch(allocator, file, &cur);
-  if (node->catch) {
-    NEO_CHECK_NODE(node->catch, error, onerror);
+  node->catch_ = neo_ast_read_try_catch(allocator, file, &cur);
+  if (node->catch_) {
+    NEO_CHECK_NODE(node->catch_, error, onerror);
     current = cur;
   }
   error = neo_skip_all(allocator, file, &cur);
@@ -159,7 +160,7 @@ neo_ast_node_t neo_ast_read_statement_try(neo_allocator_t allocator,
     current = cur;
   }
   neo_allocator_free(allocator, token);
-  if (!node->catch && !node->finally) {
+  if (!node->catch_ && !node->finally) {
     error = neo_create_error_node(
         allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
         file, current.line, current.column);

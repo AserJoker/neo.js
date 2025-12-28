@@ -5,7 +5,6 @@
 #include "core/any.h"
 #include "core/list.h"
 #include "core/location.h"
-#include <stdio.h>
 
 static void
 neo_ast_declaration_variable_dispose(neo_allocator_t allocator,
