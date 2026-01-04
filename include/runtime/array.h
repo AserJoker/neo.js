@@ -4,6 +4,10 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+NEO_JS_CFUNCTION(neo_js_array_from);
+NEO_JS_CFUNCTION(neo_js_array_from_async);
+NEO_JS_CFUNCTION(neo_js_array_is_array);
+NEO_JS_CFUNCTION(neo_js_array_of);
 NEO_JS_CFUNCTION(neo_js_array_constructor);
 NEO_JS_CFUNCTION(neo_js_array_to_string);
 NEO_JS_CFUNCTION(neo_js_array_values);
