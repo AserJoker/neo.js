@@ -9,6 +9,7 @@ NEO_JS_CFUNCTION(neo_js_array_from_async);
 NEO_JS_CFUNCTION(neo_js_array_is_array);
 NEO_JS_CFUNCTION(neo_js_array_of);
 NEO_JS_CFUNCTION(neo_js_array_constructor);
+NEO_JS_CFUNCTION(neo_js_array_at);
 NEO_JS_CFUNCTION(neo_js_array_to_string);
 NEO_JS_CFUNCTION(neo_js_array_values);
 NEO_JS_CFUNCTION(neo_js_array_push);
