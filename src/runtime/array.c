@@ -352,7 +352,7 @@ NEO_JS_CFUNCTION(neo_js_array_from_async) {
 }
 NEO_JS_CFUNCTION(neo_js_array_is_array) {
   neo_js_variable_t value = neo_js_context_get_argument(ctx, argc, argv, 0);
-  return value->value->type == NEO_JS_TYPE_ARRAY
+  return neo_js_variable_has_opaque(value, "is_array")
              ? neo_js_context_get_true(ctx)
              : neo_js_context_get_false(ctx);
 }
@@ -394,6 +394,7 @@ NEO_JS_CFUNCTION(neo_js_array_constructor) {
       }
     }
   }
+  neo_js_variable_set_opaque(self, ctx, "is_array", NULL);
   return self;
 }
 
@@ -446,6 +447,8 @@ NEO_JS_CFUNCTION(neo_js_array_at) {
   return neo_js_variable_get_field(self, ctx,
                                    neo_js_context_create_number(ctx, idx));
 }
+
+NEO_JS_CFUNCTION(neo_js_array_concat) {}
 NEO_JS_CFUNCTION(neo_js_array_to_string) {
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
     self = neo_js_variable_to_object(self, ctx);
@@ -580,7 +583,7 @@ void neo_initialize_js_array(neo_js_context_t ctx) {
 
   neo_js_variable_t values =
       neo_js_context_create_cfunction(ctx, neo_js_array_values, "values");
-      
+
   NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "at", neo_js_array_at);
   NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "toString",
                     neo_js_array_to_string);

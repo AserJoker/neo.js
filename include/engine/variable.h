@@ -119,6 +119,7 @@ void neo_js_variable_set_opaque(neo_js_variable_t self, neo_js_context_t ctx,
                                 const char *name, void *value);
 void *neo_js_variable_get_opaque(neo_js_variable_t self, neo_js_context_t ctx,
                                  const char *name);
+bool neo_js_variable_has_opaque(neo_js_variable_t self, const char *name);
 neo_js_variable_t neo_js_variable_set_prototype_of(neo_js_variable_t self,
                                                    neo_js_context_t ctx,
                                                    neo_js_variable_t prototype);
