@@ -301,10 +301,16 @@ NEO_JS_CFUNCTION(neo_js_async_generator_throw) {
   neo_js_variable_set_internal(self, ctx, "chain", promise);
   return promise;
 }
+static NEO_JS_CFUNCTION(neo_js_async_generator_iterator) { return self; }
+
 void neo_initialize_js_async_generator(neo_js_context_t ctx) {
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);
-  constant->async_generator_prototype =
-      neo_js_context_create_object(ctx, constant->iterator_prototype);
+  constant->async_generator_prototype = neo_js_context_create_object(ctx, NULL);
+  neo_js_variable_def_field(
+      constant->async_generator_prototype, ctx, constant->symbol_async_iterator,
+      neo_js_context_create_cfunction(ctx, neo_js_async_generator_iterator,
+                                      "[Symbol.asyncIterator]"),
+      true, false, true);
   NEO_JS_DEF_METHOD(ctx, constant->async_generator_prototype, "next",
                     neo_js_async_generator_next);
   NEO_JS_DEF_METHOD(ctx, constant->async_generator_prototype, "return",

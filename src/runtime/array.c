@@ -213,8 +213,7 @@ static NEO_JS_CFUNCTION(neo_js_array_from_async_next_value_onfulfilled) {
   neo_js_variable_set_closure(onfulfilled, ctx, "mapFn", map_fn);
   neo_js_variable_set_closure(onfulfilled, ctx, "thisArg", this_arg);
   neo_js_variable_set_closure(onfulfilled, ctx, "generator", generator);
-  neo_js_variable_set_closure(onfulfilled, ctx, "index",
-                              neo_js_context_create_number(ctx, 0));
+  neo_js_variable_set_closure(onfulfilled, ctx, "index", index);
   neo_js_variable_t onrejected = neo_js_context_create_cfunction(
       ctx, neo_js_array_from_async_next_onrejected, NULL);
   neo_js_variable_set_closure(onrejected, ctx, "promise", promise);
@@ -274,8 +273,7 @@ static NEO_JS_CFUNCTION(neo_js_array_from_async_next_onfulfilled) {
   neo_js_variable_set_closure(onfulfilled, ctx, "mapFn", map_fn);
   neo_js_variable_set_closure(onfulfilled, ctx, "thisArg", this_arg);
   neo_js_variable_set_closure(onfulfilled, ctx, "generator", generator);
-  neo_js_variable_set_closure(onfulfilled, ctx, "index",
-                              neo_js_context_create_number(ctx, 0));
+  neo_js_variable_set_closure(onfulfilled, ctx, "index", index);
   neo_js_variable_t onrejected = neo_js_context_create_cfunction(
       ctx, neo_js_array_from_async_next_onrejected, NULL);
   neo_js_variable_set_closure(onrejected, ctx, "promise", promise);
@@ -521,6 +519,13 @@ void neo_initialize_js_array(neo_js_context_t ctx) {
       neo_js_context_create_cfunction(ctx, neo_js_array_constructor, NULL);
   neo_js_variable_set_prototype_of(constant->array_class, ctx,
                                    constant->array_prototype);
+
+  NEO_JS_DEF_METHOD(ctx, constant->array_class, "from", neo_js_array_from);
+  NEO_JS_DEF_METHOD(ctx, constant->array_class, "fromAsync",
+                    neo_js_array_from_async);
+  NEO_JS_DEF_METHOD(ctx, constant->array_class, "of", neo_js_array_of);
+  NEO_JS_DEF_METHOD(ctx, constant->array_class, "isArray",
+                    neo_js_array_is_array);
   NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "toString",
                     neo_js_array_to_string);
   neo_js_variable_t values =
