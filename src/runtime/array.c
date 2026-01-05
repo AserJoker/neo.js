@@ -508,6 +508,7 @@ NEO_JS_CFUNCTION(neo_js_array_push) {
   }
   return length;
 }
+NEO_JS_CFUNCTION(neo_js_array_get_symbol_species) { return self; }
 void neo_initialize_js_array(neo_js_context_t ctx) {
   neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
@@ -537,4 +538,9 @@ void neo_initialize_js_array(neo_js_context_t ctx) {
                             constant->symbol_iterator, values, true, false,
                             true);
   NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "push", neo_js_array_push);
+  neo_js_variable_def_accessor(constant->array_class, ctx,
+                               constant->symbol_species,
+                               neo_js_context_create_cfunction(
+                                   ctx, neo_js_array_get_symbol_species, NULL),
+                               NULL, true, false);
 }
