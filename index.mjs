@@ -1,1 +1,3 @@
-console.log([1, , 2].concat(234))
+const aaa = 1
+const fn = () => console.log(arguments.length)
+fn()

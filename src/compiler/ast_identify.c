@@ -20,10 +20,6 @@ static void neo_ast_identifier_resolve_closure(neo_allocator_t allocator,
                                                neo_list_t closure) {
   neo_compile_scope_t scope = neo_compile_scope_get_current();
   char *name = neo_location_get(allocator, self->node.location);
-  if (strcmp(name, "arguments") == 0) {
-    neo_allocator_free(allocator, name);
-    return;
-  }
   for (;;) {
     for (neo_list_node_t it = neo_list_get_first(scope->variables);
          it != neo_list_get_tail(scope->variables);
@@ -46,19 +42,37 @@ static void neo_ast_identifier_resolve_closure(neo_allocator_t allocator,
       break;
     }
   }
-  for (neo_list_node_t it = neo_list_get_first(closure);
-       it != neo_list_get_tail(closure); it = neo_list_node_next(it)) {
-    neo_ast_node_t node = neo_list_node_get(it);
-    char *current = neo_location_get(allocator, node->location);
-    if (strcmp(current, name) == 0) {
-      neo_allocator_free(allocator, name);
-      neo_allocator_free(allocator, current);
-      return;
+  if (scope) {
+    scope = scope->parent;
+    while (scope) {
+      for (neo_list_node_t it = neo_list_get_first(scope->variables);
+           it != neo_list_get_tail(scope->variables);
+           it = neo_list_node_next(it)) {
+        neo_compile_variable_t variable = neo_list_node_get(it);
+        char *varname = neo_location_get(allocator, variable->node->location);
+        if (strcmp(varname, name) == 0) {
+          neo_allocator_free(allocator, varname);
+          for (neo_list_node_t it = neo_list_get_first(closure);
+               it != neo_list_get_tail(closure); it = neo_list_node_next(it)) {
+            neo_ast_node_t node = neo_list_node_get(it);
+            char *current = neo_location_get(allocator, node->location);
+            if (strcmp(current, name) == 0) {
+              neo_allocator_free(allocator, name);
+              neo_allocator_free(allocator, current);
+              return;
+            }
+            neo_allocator_free(allocator, current);
+          }
+          neo_allocator_free(allocator, name);
+          neo_list_push(closure, self);
+          return;
+        }
+        neo_allocator_free(allocator, varname);
+      }
+      scope = scope->parent;
     }
-    neo_allocator_free(allocator, current);
   }
   neo_allocator_free(allocator, name);
-  neo_list_push(closure, self);
 }
 static void neo_ast_identifier_write(neo_allocator_t allocator,
                                      neo_write_context_t ctx,
