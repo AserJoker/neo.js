@@ -732,12 +732,12 @@ static void neo_js_vm_call(neo_js_vm_t vm, neo_js_context_t ctx,
   neo_list_push(vm->stack, result);
 }
 
-static void neo_js_vm_push_back(neo_js_vm_t vm, neo_js_context_t ctx,
-                                neo_js_program_t program, size_t *offset) {
+static void neo_js_vm_append(neo_js_vm_t vm, neo_js_context_t ctx,
+                             neo_js_program_t program, size_t *offset) {
   neo_js_variable_t value = neo_js_vm_get_value(vm);
   neo_list_pop(vm->stack);
-  neo_js_variable_t argument = neo_js_vm_get_value(vm);
-  neo_js_variable_t res = neo_js_array_push(ctx, argument, 1, &value);
+  neo_js_variable_t array = neo_js_vm_get_value(vm);
+  neo_js_variable_t res = neo_js_array_push(ctx, array, 1, &value);
   NEO_JS_VM_CHECK(vm, res, program, offset);
 }
 
@@ -1935,7 +1935,7 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     NULL,                            // NEO_ASM_DECORATOR
     neo_js_vm_directive,             // NEO_ASM_DIRECTIVE
     neo_js_vm_call,                  // NEO_ASM_CALL
-    neo_js_vm_push_back,             // NEO_ASM_APPEND
+    neo_js_vm_append,                // NEO_ASM_APPEND
     NULL,                            // NEO_ASM_EVAL
     neo_js_vm_member_call,           // NEO_ASM_MEMBER_CALL
     neo_js_vm_get_field,             // NEO_ASM_GET_FIELD

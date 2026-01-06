@@ -142,7 +142,7 @@ void *neo_hash_map_get(neo_hash_map_t self, const void *key) {
 }
 
 bool neo_hash_map_has(neo_hash_map_t self, const void *key) {
-  return neo_hash_map_get(self, key) != NULL;
+  return neo_hash_map_find(self, key) != NULL;
 }
 
 void neo_hash_map_delete(neo_hash_map_t self, const void *key) {

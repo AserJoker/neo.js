@@ -926,6 +926,10 @@ neo_js_object_property_t neo_js_variable_get_property(neo_js_variable_t self,
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
     return NULL;
   }
+  if (key->value->type != NEO_JS_TYPE_SYMBOL &&
+      key->value->type != NEO_JS_TYPE_STRING) {
+    return NULL;
+  }
   neo_js_object_property_t prop = NULL;
   neo_js_object_t object = (neo_js_object_t)self->value;
   object = (neo_js_object_t)self->value;
@@ -1038,7 +1042,6 @@ neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
           }
           current_length->value--;
         }
-        return self;
       } else {
         neo_js_object_property_t length_prop = neo_hash_map_get(
             object->properties,
@@ -1491,14 +1494,16 @@ void neo_js_variable_set_opaque(neo_js_variable_t self, neo_js_context_t ctx,
                                 const char *name, void *value) {
   neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
-  if (value) {
-    neo_hash_map_set(self->value->opaque, neo_create_string(allocator, name),
-                     value);
-  } else {
-    neo_hash_map_delete(self->value->opaque, name);
-  }
+  neo_hash_map_set(self->value->opaque, neo_create_string(allocator, name),
+                   value);
 }
 
+void neo_js_variable_del_opaque(neo_js_variable_t self, neo_js_context_t ctx,
+                                const char *name) {
+  neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
+  neo_hash_map_delete(self->value->opaque, neo_create_string(allocator, name));
+}
 void *neo_js_variable_get_opaque(neo_js_variable_t self, neo_js_context_t ctx,
                                  const char *name) {
   return neo_hash_map_get(self->value->opaque, name);
