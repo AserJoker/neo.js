@@ -16,6 +16,20 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+static neo_js_variable_t neo_js_array_get_length(neo_js_context_t ctx,
+                                                 neo_js_variable_t array) {
+  neo_js_variable_t length = neo_js_variable_get_field(
+      array, ctx, neo_js_context_create_cstring(ctx, "length"));
+  if (length->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return length;
+  }
+  length = neo_js_variable_to_number(length, ctx);
+  if (length->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return length;
+  }
+  return length;
+}
+
 NEO_JS_CFUNCTION(neo_js_array_from) {
   neo_js_variable_t array_like =
       neo_js_context_get_argument(ctx, argc, argv, 0);
@@ -544,6 +558,108 @@ NEO_JS_CFUNCTION(neo_js_array_concat) {
   }
   return result;
 }
+
+NEO_JS_CFUNCTION(neo_js_array_copy_within) {
+  if (self->value->type < NEO_JS_TYPE_OBJECT) {
+    self = neo_js_variable_to_object(self, ctx);
+  }
+  neo_js_variable_t length = neo_js_variable_get_field(
+      self, ctx, neo_js_context_create_cstring(ctx, "length"));
+  if (length->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return length;
+  }
+  length = neo_js_variable_to_number(length, ctx);
+  if (length->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return length;
+  }
+  double len = ((neo_js_number_t)length->value)->value;
+  if (isnan(len) || len <= 0) {
+    return self;
+  }
+  int64_t index = 0;
+  int64_t start = 0;
+  double end = len;
+  if (argc > 0) {
+    neo_js_variable_t idx = argv[0];
+    idx = neo_js_variable_to_number(idx, ctx);
+    if (idx->value->type == NEO_JS_TYPE_EXCEPTION) {
+      return idx;
+    }
+    double val = ((neo_js_number_t)idx->value)->value;
+    if (isnan(val)) {
+      val = 0;
+    }
+    if (val < 0) {
+      val += len;
+    }
+    if (val >= len || val < 0) {
+      return self;
+    }
+    index = (int64_t)val;
+  }
+  if (argc > 1) {
+    neo_js_variable_t st = argv[1];
+    st = neo_js_variable_to_number(st, ctx);
+    if (st->value->type == NEO_JS_TYPE_EXCEPTION) {
+      return st;
+    }
+    double val = ((neo_js_number_t)st->value)->value;
+    if (isnan(val)) {
+      val = 0;
+    }
+    if (val < 0) {
+      val += len;
+    }
+    if (val >= len || val < 0) {
+      return self;
+    }
+    start = (int64_t)val;
+  }
+  if (argc > 2) {
+    neo_js_variable_t ed = argv[2];
+    ed = neo_js_variable_to_number(ed, ctx);
+    if (ed->value->type == NEO_JS_TYPE_EXCEPTION) {
+      return ed;
+    }
+    double val = ((neo_js_number_t)ed->value)->value;
+    if (isnan(val)) {
+      val = 0;
+    }
+    if (val < 0) {
+      val += len;
+    }
+    if (val >= len || val < 0) {
+      return self;
+    }
+    end = (int64_t)val;
+  }
+  if (start <= end) {
+    return self;
+  }
+  for (int64_t idx = start; idx < end; idx++) {
+    neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
+    key = neo_js_variable_to_string(key, ctx);
+    if (neo_js_variable_get_property(self, ctx, key)) {
+      neo_js_variable_t value = neo_js_variable_get_field(self, ctx, key);
+      if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
+        return value;
+      }
+      neo_js_variable_t error = neo_js_variable_set_field(
+          self, ctx, neo_js_context_create_number(ctx, idx - start + index),
+          value);
+      if (error->value->type == NEO_JS_TYPE_EXCEPTION) {
+        return error;
+      }
+    } else {
+      neo_js_variable_t error = neo_js_variable_del_field(
+          self, ctx, neo_js_context_create_number(ctx, idx - start + index));
+      if (error->value->type == NEO_JS_TYPE_EXCEPTION) {
+        return error;
+      }
+    }
+  }
+  return self;
+}
 NEO_JS_CFUNCTION(neo_js_array_to_string) {
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
     self = neo_js_variable_to_object(self, ctx);
@@ -690,6 +806,8 @@ void neo_initialize_js_array(neo_js_context_t ctx) {
   NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "at", neo_js_array_at);
   NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "concat",
                     neo_js_array_concat);
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "copyWithin",
+                    neo_js_array_copy_within);
   NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "toString",
                     neo_js_array_to_string);
   neo_js_variable_def_field(constant->array_prototype, ctx,
