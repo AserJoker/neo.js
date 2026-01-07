@@ -741,6 +741,14 @@ static void neo_js_vm_append(neo_js_vm_t vm, neo_js_context_t ctx,
   NEO_JS_VM_CHECK(vm, res, program, offset);
 }
 
+static void neo_js_vm_append_empty(neo_js_vm_t vm, neo_js_context_t ctx,
+                                   neo_js_program_t program, size_t *offset) {
+  neo_js_variable_t array = neo_js_vm_get_value(vm);
+  neo_js_variable_t length = neo_js_variable_get_field(
+      array, ctx, neo_js_context_create_cstring(ctx, "length"));
+  ((neo_js_number_t)length->value)->value += 1;
+}
+
 static void neo_js_vm_get_field(neo_js_vm_t vm, neo_js_context_t ctx,
                                 neo_js_program_t program, size_t *offset) {
   neo_js_variable_t key = neo_js_vm_get_value(vm);
@@ -1936,6 +1944,7 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     neo_js_vm_directive,             // NEO_ASM_DIRECTIVE
     neo_js_vm_call,                  // NEO_ASM_CALL
     neo_js_vm_append,                // NEO_ASM_APPEND
+    neo_js_vm_append_empty,          // NEO_ASM_APPEND_EMPTY
     NULL,                            // NEO_ASM_EVAL
     neo_js_vm_member_call,           // NEO_ASM_MEMBER_CALL
     neo_js_vm_get_field,             // NEO_ASM_GET_FIELD

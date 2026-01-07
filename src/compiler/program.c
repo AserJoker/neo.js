@@ -273,6 +273,9 @@ neo_ast_node_t neo_js_program_write(neo_allocator_t allocator, FILE *fp,
     case NEO_ASM_APPEND: {
       fprintf(fp, "NEO_ASM_APPEND\n");
     } break;
+    case NEO_ASM_APPEND_EMPTY: {
+      fprintf(fp, "NEO_ASM_APPEND_EMPTY\n");
+    } break;
     case NEO_ASM_SUPER_MEMBER_CALL: {
       uint32_t line = neo_js_program_get_integer(self, &offset);
       uint32_t column = neo_js_program_get_integer(self, &offset);

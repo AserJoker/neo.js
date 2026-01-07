@@ -1,6 +1,6 @@
+#include "compiler/ast_expression_array.h"
 #include "compiler/asm.h"
 #include "compiler/ast_expression.h"
-#include "compiler/ast_expression_array.h"
 #include "compiler/ast_expression_spread.h"
 #include "compiler/ast_node.h"
 #include "compiler/program.h"
@@ -10,7 +10,6 @@
 #include "core/list.h"
 #include "core/position.h"
 #include <stdbool.h>
-
 
 static void neo_ast_expression_array_dispose(neo_allocator_t allocator,
                                              neo_ast_expression_array_t node) {
@@ -62,15 +61,7 @@ static void neo_ast_expression_array_write(neo_allocator_t allocator,
         neo_js_program_add_code(allocator, ctx->program, NEO_ASM_APPEND);
       }
     } else {
-      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-      neo_js_program_add_string(allocator, ctx->program, "length");
-      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_VALUE);
-      neo_js_program_add_integer(allocator, ctx->program, 2);
-      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_STRING);
-      neo_js_program_add_string(allocator, ctx->program, "length");
-      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_GET_FIELD);
-      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_INC);
-      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_SET_FIELD);
+      neo_js_program_add_code(allocator, ctx->program, NEO_ASM_APPEND_EMPTY);
     }
   }
 }
