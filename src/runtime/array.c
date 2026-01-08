@@ -633,7 +633,10 @@ NEO_JS_CFUNCTION(neo_js_array_copy_within) {
     }
     end = (int64_t)val;
   }
-  if (start <= end) {
+  if (end - start + index >= len) {
+    end = start + len - index;
+  }
+  if (start >= end) {
     return self;
   }
   for (int64_t idx = start; idx < end; idx++) {
