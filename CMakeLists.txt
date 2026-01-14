@@ -72,9 +72,9 @@ get_unicode_attribute(${DerivedCoreProperties} "ID_Continue" ID_CONTINUES)
 
 get_unicode_attribute(${DerivedGeneralCategory} "Zs" SPACE_SEPARATOR)
 
-configure_file(${PROJECT_SOURCE_DIR}/include/core/unicode.gen.h.in ${PROJECT_SOURCE_DIR}/include/core/unicode.gen.h)
+configure_file(${PROJECT_SOURCE_DIR}/include/neo.js/core/unicode.gen.h.in ${PROJECT_SOURCE_DIR}/include/neo.js/core/unicode.gen.h)
 
-include_directories(${PROJECT_SOURCE_DIR}/include)
+include_directories(${PROJECT_SOURCE_DIR}/include/neo.js)
 
 file(GLOB_RECURSE SOURCES ${PROJECT_SOURCE_DIR}/src/*.c)
 
