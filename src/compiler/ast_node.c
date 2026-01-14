@@ -1,11 +1,11 @@
-#include "compiler/ast_node.h"
-#include "compiler/scope.h"
-#include "compiler/token.h"
-#include "core/allocator.h"
-#include "core/any.h"
-#include "core/list.h"
-#include "core/location.h"
-#include "core/unicode.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/compiler/scope.h"
+#include "neo.js/compiler/token.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/any.h"
+#include "neo.js/core/list.h"
+#include "neo.js/core/location.h"
+#include "neo.js/core/unicode.h"
 #include <stdarg.h>
 #include <string.h>
 

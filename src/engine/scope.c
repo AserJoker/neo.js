@@ -1,12 +1,12 @@
-#include "engine/scope.h"
-#include "core/allocator.h"
-#include "core/hash.h"
-#include "core/hash_map.h"
-#include "core/list.h"
-#include "core/map.h"
-#include "core/string.h"
-#include "engine/handle.h"
-#include "engine/variable.h"
+#include "neo.js/engine/scope.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/hash.h"
+#include "neo.js/core/hash_map.h"
+#include "neo.js/core/list.h"
+#include "neo.js/core/map.h"
+#include "neo.js/core/string.h"
+#include "neo.js/engine/handle.h"
+#include "neo.js/engine/variable.h"
 #include <stdbool.h>
 #include <string.h>
 

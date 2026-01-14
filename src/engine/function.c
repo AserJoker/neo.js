@@ -1,7 +1,9 @@
-#include "engine/function.h"
-#include "core/allocator.h"
-#include "engine/callable.h"
+#include "neo.js/engine/function.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/engine/callable.h"
 #include <stdbool.h>
+
+
 static void neo_js_function_dispose(neo_allocator_t allocator,
                                     neo_js_function_t self) {
   neo_deinit_js_function(self, allocator);

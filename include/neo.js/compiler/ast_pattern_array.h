@@ -1,9 +1,9 @@
 #ifndef _H_NEO_COMPILER_PATTERN_ARRAY_
 #define _H_NEO_COMPILER_PATTERN_ARRAY_
-#include "compiler/ast_node.h"
-#include "core/allocator.h"
-#include "core/list.h"
-#include "core/position.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/list.h"
+#include "neo.js/core/position.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

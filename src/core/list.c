@@ -1,5 +1,5 @@
-#include "core/list.h"
-#include "core/allocator.h"
+#include "neo.js/core/list.h"
+#include "neo.js/core/allocator.h"
 #include <stddef.h>
 struct _neo_list_node_t {
   neo_list_node_t next;

@@ -1,17 +1,16 @@
-#include "compiler/asm.h"
-#include "compiler/ast_expression.h"
-#include "compiler/ast_expression_condition.h"
-#include "compiler/ast_node.h"
-#include "compiler/program.h"
-#include "compiler/token.h"
-#include "compiler/writer.h"
-#include "core/allocator.h"
-#include "core/any.h"
-#include "core/buffer.h"
-#include "core/location.h"
-#include "core/position.h"
+#include "neo.js/compiler/ast_expression_condition.h"
+#include "neo.js/compiler/asm.h"
+#include "neo.js/compiler/ast_expression.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/compiler/program.h"
+#include "neo.js/compiler/token.h"
+#include "neo.js/compiler/writer.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/any.h"
+#include "neo.js/core/buffer.h"
+#include "neo.js/core/location.h"
+#include "neo.js/core/position.h"
 #include <stdio.h>
-
 
 static void
 neo_ast_expression_condition_dispose(neo_allocator_t allocator,

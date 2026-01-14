@@ -1,13 +1,13 @@
-#include "compiler/ast_statement_break.h"
-#include "compiler/asm.h"
-#include "compiler/ast_identifier.h"
-#include "compiler/ast_node.h"
-#include "compiler/program.h"
-#include "compiler/token.h"
-#include "core/allocator.h"
-#include "core/any.h"
-#include "core/location.h"
-#include "core/position.h"
+#include "neo.js/compiler/ast_statement_break.h"
+#include "neo.js/compiler/asm.h"
+#include "neo.js/compiler/ast_identifier.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/compiler/program.h"
+#include "neo.js/compiler/token.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/any.h"
+#include "neo.js/core/location.h"
+#include "neo.js/core/position.h"
 #include <stdio.h>
 
 static void neo_ast_statement_break_dispose(neo_allocator_t allocator,

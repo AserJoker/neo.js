@@ -1,6 +1,6 @@
 #ifndef _H_NEO_RUNTIME_CONSTANT_
 #define _H_NEO_RUNTIME_CONSTANT_
-#include "engine/variable.h"
+#include "neo.js/engine/variable.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

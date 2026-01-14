@@ -3,7 +3,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#include "core/allocator.h"
+#include "neo.js/core/allocator.h"
 #include <stdbool.h>
 #include <stdint.h>
 typedef struct _neo_map_t *neo_map_t;

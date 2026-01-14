@@ -1,7 +1,7 @@
-#include "engine/cfunction.h"
-#include "core/allocator.h"
-#include "engine/callable.h"
-#include "engine/variable.h"
+#include "neo.js/engine/cfunction.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/engine/callable.h"
+#include "neo.js/engine/variable.h"
 #include <stdbool.h>
 
 static void neo_js_cfunction_dispose(neo_allocator_t allocator,

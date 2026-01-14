@@ -1,11 +1,11 @@
 
-#include "runtime/array_iterator.h"
-#include "engine/context.h"
-#include "engine/number.h"
-#include "engine/object.h"
-#include "engine/value.h"
-#include "engine/variable.h"
-#include "runtime/constant.h"
+#include "neo.js/runtime/array_iterator.h"
+#include "neo.js/engine/context.h"
+#include "neo.js/engine/number.h"
+#include "neo.js/engine/object.h"
+#include "neo.js/engine/value.h"
+#include "neo.js/engine/variable.h"
+#include "neo.js/runtime/constant.h"
 #include <math.h>
 NEO_JS_CFUNCTION(neo_js_array_iterator_next) {
   if (self->value->type < NEO_JS_TYPE_OBJECT) {

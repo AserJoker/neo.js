@@ -1,7 +1,7 @@
 
-#include "compiler/ast_interpreter.h"
-#include "core/any.h"
-#include "core/unicode.h"
+#include "neo.js/compiler/ast_interpreter.h"
+#include "neo.js/core/any.h"
+#include "neo.js/core/unicode.h"
 
 static void neo_ast_interpreter_dispose(neo_allocator_t allocator,
                                         neo_ast_interpreter_t node) {

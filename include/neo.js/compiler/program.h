@@ -1,8 +1,8 @@
 #ifndef _H_NEO_COMPILER_PROGRAM_
 #define _H_NEO_COMPILER_PROGRAM_
-#include "compiler/scope.h"
-#include "core/buffer.h"
-#include "core/list.h"
+#include "neo.js/compiler/scope.h"
+#include "neo.js/core/buffer.h"
+#include "neo.js/core/list.h"
 #include <stdint.h>
 #include <stdio.h>
 #ifdef __cplusplus

@@ -1,6 +1,6 @@
 #ifndef _H_NEO_COMPILER_STATEMENT_EXPRESSION_
 #define _H_NEO_COMPILER_STATEMENT_EXPRESSION_
-#include "compiler/ast_node.h"
+#include "neo.js/compiler/ast_node.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

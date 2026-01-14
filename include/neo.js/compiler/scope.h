@@ -1,8 +1,8 @@
 #ifndef _H_NEO_COMPILER_SCOPE_
 #define _H_NEO_COMPILER_SCOPE_
-#include "core/allocator.h"
-#include "core/any.h"
-#include "core/list.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/any.h"
+#include "neo.js/core/list.h"
 
 #ifdef __cplusplus
 extern "C" {

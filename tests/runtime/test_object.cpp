@@ -1,9 +1,11 @@
-#include "core/allocator.h"
-#include "engine/context.h"
-#include "engine/runtime.h"
-#include "engine/variable.h"
-#include "runtime/constant.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/engine/context.h"
+#include "neo.js/engine/runtime.h"
+#include "neo.js/engine/variable.h"
+#include "neo.js/runtime/constant.h"
 #include <gtest/gtest.h>
+
+
 class test_object : public testing::Test {};
 
 TEST_F(test_object, constant_check) {

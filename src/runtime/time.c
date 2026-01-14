@@ -1,9 +1,9 @@
-#include "runtime/time.h"
-#include "engine/context.h"
-#include "engine/number.h"
-#include "engine/value.h"
-#include "engine/variable.h"
-#include "runtime/constant.h"
+#include "neo.js/runtime/time.h"
+#include "neo.js/engine/context.h"
+#include "neo.js/engine/number.h"
+#include "neo.js/engine/value.h"
+#include "neo.js/engine/variable.h"
+#include "neo.js/runtime/constant.h"
 #include <math.h>
 
 NEO_JS_CFUNCTION(neo_js_time_set_timeout) {

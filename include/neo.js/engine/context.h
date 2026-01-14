@@ -1,14 +1,15 @@
 #ifndef _H_NEO_ENGINE_CONTEXT_
 #define _H_NEO_ENGINE_CONTEXT_
-#include "compiler/program.h"
-#include "core/bigint.h"
-#include "engine/runtime.h"
-#include "engine/scope.h"
-#include "engine/value.h"
-#include "engine/variable.h"
 #include "interrupt.h"
-#include "runtime/constant.h"
+#include "neo.js/compiler/program.h"
+#include "neo.js/core/bigint.h"
+#include "neo.js/engine/runtime.h"
+#include "neo.js/engine/scope.h"
+#include "neo.js/engine/value.h"
+#include "neo.js/engine/variable.h"
+#include "neo.js/runtime/constant.h"
 #include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif

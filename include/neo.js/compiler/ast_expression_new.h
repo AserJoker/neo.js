@@ -1,7 +1,7 @@
 #ifndef _H_NEO_COMPILER_EXPRESSION_NEW__
 #define _H_NEO_COMPILER_EXPRESSION_NEW__
-#include "compiler/ast_node.h"
-#include "core/list.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/core/list.h"
 #include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {

@@ -1,16 +1,17 @@
-#include "runtime/error.h"
-#include "core/allocator.h"
-#include "core/list.h"
-#include "core/string.h"
-#include "engine/context.h"
-#include "engine/runtime.h"
-#include "engine/stackframe.h"
-#include "engine/string.h"
-#include "engine/value.h"
-#include "engine/variable.h"
-#include "runtime/constant.h"
+#include "neo.js/runtime/error.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/list.h"
+#include "neo.js/core/string.h"
+#include "neo.js/engine/context.h"
+#include "neo.js/engine/runtime.h"
+#include "neo.js/engine/stackframe.h"
+#include "neo.js/engine/string.h"
+#include "neo.js/engine/value.h"
+#include "neo.js/engine/variable.h"
+#include "neo.js/runtime/constant.h"
 #include <stdbool.h>
 #include <stdint.h>
+
 
 NEO_JS_CFUNCTION(neo_js_error_constructor) {
   neo_js_variable_t message = neo_js_context_get_argument(ctx, argc, argv, 0);

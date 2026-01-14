@@ -1,6 +1,6 @@
 #ifndef _H_NEO_COMPILER_EXPRESSION_MEMBER__
 #define _H_NEO_COMPILER_EXPRESSION_MEMBER__
-#include "compiler/ast_node.h"
+#include "neo.js/compiler/ast_node.h"
 #include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {

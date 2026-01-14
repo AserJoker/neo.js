@@ -1,7 +1,7 @@
 #ifndef _H_NEO_ENGINE_RUNTIME_
 #define _H_NEO_ENGINE_RUNTIME_
-#include "compiler/program.h"
-#include "core/allocator.h"
+#include "neo.js/compiler/program.h"
+#include "neo.js/core/allocator.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -1,6 +1,6 @@
 #ifndef _H_NEO_RUNTIME_ASYNC_GENERATOR_FUNCTION_
 #define _H_NEO_RUNTIME_ASYNC_GENERATOR_FUNCTION_
-#include "engine/variable.h"
+#include "neo.js/engine/variable.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

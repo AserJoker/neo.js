@@ -1,12 +1,12 @@
-#include "compiler/asm.h"
-#include "compiler/ast_identifier.h"
-#include "compiler/ast_import_default.h"
-#include "compiler/ast_node.h"
-#include "compiler/program.h"
-#include "compiler/scope.h"
-#include "core/allocator.h"
-#include "core/any.h"
-#include "core/location.h"
+#include "neo.js/compiler/ast_import_default.h"
+#include "neo.js/compiler/asm.h"
+#include "neo.js/compiler/ast_identifier.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/compiler/program.h"
+#include "neo.js/compiler/scope.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/any.h"
+#include "neo.js/core/location.h"
 
 static void neo_ast_import_default_dispose(neo_allocator_t allocator,
                                            neo_ast_import_default_t node) {

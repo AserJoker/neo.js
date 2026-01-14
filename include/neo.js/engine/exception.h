@@ -1,6 +1,6 @@
 #ifndef _H_NEO_ENGINE_EXCEPTION_
 #define _H_NEO_ENGINE_EXCEPTION_
-#include "engine/value.h"
+#include "neo.js/engine/value.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

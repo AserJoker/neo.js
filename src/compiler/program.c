@@ -1,12 +1,12 @@
-#include "compiler/program.h"
-#include "compiler/asm.h"
-#include "compiler/ast_node.h"
-#include "compiler/scope.h"
-#include "core/allocator.h"
-#include "core/buffer.h"
-#include "core/list.h"
-#include "core/path.h"
-#include "core/string.h"
+#include "neo.js/compiler/program.h"
+#include "neo.js/compiler/asm.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/compiler/scope.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/buffer.h"
+#include "neo.js/core/list.h"
+#include "neo.js/core/path.h"
+#include "neo.js/core/string.h"
 #include <string.h>
 
 static void neo_js_program_dispose(neo_allocator_t allocator,

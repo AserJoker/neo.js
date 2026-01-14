@@ -1,16 +1,15 @@
-#include "compiler/ast_node.h"
-#include "compiler/ast_statement.h"
-#include "compiler/ast_static_block.h"
-#include "compiler/scope.h"
-#include "compiler/token.h"
-#include "compiler/writer.h"
-#include "core/allocator.h"
-#include "core/any.h"
-#include "core/list.h"
-#include "core/location.h"
-#include "core/position.h"
+#include "neo.js/compiler/ast_static_block.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/compiler/ast_statement.h"
+#include "neo.js/compiler/scope.h"
+#include "neo.js/compiler/token.h"
+#include "neo.js/compiler/writer.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/any.h"
+#include "neo.js/core/list.h"
+#include "neo.js/core/location.h"
+#include "neo.js/core/position.h"
 #include <stdio.h>
-
 
 static void neo_ast_static_block_dispose(neo_allocator_t allocator,
                                          neo_ast_static_block_t node) {

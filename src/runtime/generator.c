@@ -1,13 +1,14 @@
-#include "runtime/generator.h"
-#include "core/buffer.h"
-#include "core/list.h"
-#include "engine/context.h"
-#include "engine/interrupt.h"
-#include "engine/runtime.h"
-#include "engine/scope.h"
-#include "engine/value.h"
-#include "engine/variable.h"
-#include "runtime/vm.h"
+#include "neo.js/runtime/generator.h"
+#include "neo.js/core/buffer.h"
+#include "neo.js/core/list.h"
+#include "neo.js/engine/context.h"
+#include "neo.js/engine/interrupt.h"
+#include "neo.js/engine/runtime.h"
+#include "neo.js/engine/scope.h"
+#include "neo.js/engine/value.h"
+#include "neo.js/engine/variable.h"
+#include "neo.js/runtime/vm.h"
+
 
 NEO_JS_CFUNCTION(neo_js_generator_next) {
   neo_js_variable_t value = neo_js_variable_get_internel(self, ctx, "value");

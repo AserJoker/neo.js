@@ -1,8 +1,8 @@
 #ifndef _H_NEO_COMPILER_EXPRESSION_GROUP__
 #define _H_NEO_COMPILER_EXPRESSION_GROUP__
-#include "compiler/ast_node.h"
-#include "core/allocator.h"
-#include "core/position.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/position.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

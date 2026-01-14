@@ -1,8 +1,10 @@
 #ifndef _H_NEO_ENGINE_CFUNCTION_
 #define _H_NEO_ENGINE_CFUNCTION_
-#include "core/allocator.h"
-#include "engine/callable.h"
-#include "engine/variable.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/engine/callable.h"
+#include "neo.js/engine/variable.h"
+
+
 #ifdef __cplusplus
 extern "C" {
 #endif

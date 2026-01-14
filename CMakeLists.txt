@@ -74,7 +74,7 @@ get_unicode_attribute(${DerivedGeneralCategory} "Zs" SPACE_SEPARATOR)
 
 configure_file(${PROJECT_SOURCE_DIR}/include/neo.js/core/unicode.gen.h.in ${PROJECT_SOURCE_DIR}/include/neo.js/core/unicode.gen.h)
 
-include_directories(${PROJECT_SOURCE_DIR}/include/neo.js)
+include_directories(${PROJECT_SOURCE_DIR}/include)
 
 file(GLOB_RECURSE SOURCES ${PROJECT_SOURCE_DIR}/src/*.c)
 

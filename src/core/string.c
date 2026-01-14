@@ -1,6 +1,6 @@
-#include "core/string.h"
-#include "core/allocator.h"
-#include "core/unicode.h"
+#include "neo.js/core/string.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/unicode.h"
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>

@@ -1,7 +1,7 @@
-#include "runtime/generator_function.h"
-#include "engine/context.h"
-#include "engine/variable.h"
-#include "runtime/constant.h"
+#include "neo.js/runtime/generator_function.h"
+#include "neo.js/engine/context.h"
+#include "neo.js/engine/variable.h"
+#include "neo.js/runtime/constant.h"
 
 NEO_JS_CFUNCTION(neo_js_generator_function_constructor) { return self; }
 void neo_initialize_js_generator_function(neo_js_context_t ctx) {

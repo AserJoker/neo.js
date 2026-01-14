@@ -1,8 +1,8 @@
 #ifndef _H_NEO_COMPILER_TOKEN_
 #define _H_NEO_COMPILER_TOKEN_
-#include "core/allocator.h"
-#include "core/location.h"
-#include "core/position.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/location.h"
+#include "neo.js/core/position.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

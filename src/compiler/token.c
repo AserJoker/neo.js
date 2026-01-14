@@ -1,7 +1,7 @@
-#include "compiler/token.h"
-#include "core/allocator.h"
-#include "core/position.h"
-#include "core/unicode.h"
+#include "neo.js/compiler/token.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/position.h"
+#include "neo.js/core/unicode.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <uchar.h>

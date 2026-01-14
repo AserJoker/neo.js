@@ -1,6 +1,6 @@
-#include "engine/handle.h"
-#include "core/allocator.h"
-#include "core/list.h"
+#include "neo.js/engine/handle.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/list.h"
 void neo_init_js_handle(neo_js_handle_t self, neo_allocator_t allocator,
                         neo_js_handle_type_t type) {
   self->age = 0;

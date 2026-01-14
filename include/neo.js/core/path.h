@@ -1,7 +1,7 @@
 #ifndef _H_NEO_CORE_PATH_
 #define _H_NEO_CORE_PATH_
 
-#include "core/allocator.h"
+#include "neo.js/core/allocator.h"
 #include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {

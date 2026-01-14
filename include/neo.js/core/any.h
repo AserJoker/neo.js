@@ -3,9 +3,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#include "core/allocator.h"
-#include "core/list.h"
-#include "core/map.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/list.h"
+#include "neo.js/core/map.h"
 #include <stdbool.h>
 #include <stdint.h>
 

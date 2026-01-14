@@ -1,8 +1,8 @@
 #ifndef _H_NEO_ENGINE_OBJECT_
 #define _H_NEO_ENGINE_OBJECT_
-#include "core/allocator.h"
-#include "core/hash_map.h"
-#include "engine/value.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/hash_map.h"
+#include "neo.js/engine/value.h"
 
 #ifdef __cplusplus
 extern "C" {

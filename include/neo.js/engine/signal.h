@@ -1,7 +1,9 @@
 #ifndef _H_NEO_ENGINE_SIGNAL_
 #define _H_NEO_ENGINE_SIGNAL_
-#include "core/allocator.h"
-#include "engine/value.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/engine/value.h"
+
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -16,9 +18,9 @@ struct _neo_js_signal_t {
   const void *msg;
 };
 neo_js_signal_t neo_create_js_signal(neo_allocator_t allocator, uint32_t type,
-                                    const void *msg);
+                                     const void *msg);
 void neo_init_js_signal(neo_js_signal_t self, neo_allocator_t allocaotr,
-                        uint32_t type,const void *msg);
+                        uint32_t type, const void *msg);
 void neo_deinit_js_signal(neo_js_signal_t self, neo_allocator_t allocaotr);
 neo_js_value_t neo_js_signal_to_value(neo_js_signal_t self);
 #ifdef __cplusplus

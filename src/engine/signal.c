@@ -1,6 +1,6 @@
-#include "engine/signal.h"
-#include "core/allocator.h"
-#include "engine/value.h"
+#include "neo.js/engine/signal.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/engine/value.h"
 
 static void neo_js_signal_dispose(neo_allocator_t allocator,
                                   neo_js_signal_t signal) {

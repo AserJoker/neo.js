@@ -1,5 +1,5 @@
-#include "core/map.h"
-#include "core/allocator.h"
+#include "neo.js/core/map.h"
+#include "neo.js/core/allocator.h"
 #include <stdint.h>
 struct _neo_map_node_t {
   void *key;

@@ -1,10 +1,10 @@
 #ifndef _H_NEO_CORE_LIST_
 #define _H_NEO_CORE_LIST_
-#include "core/common.h"
+#include "neo.js/core/common.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
-#include "core/allocator.h"
+#include "neo.js/core/allocator.h"
 #include <stdbool.h>
 typedef struct _neo_list_t *neo_list_t;
 

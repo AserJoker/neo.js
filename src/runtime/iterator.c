@@ -1,8 +1,8 @@
 
-#include "runtime/iterator.h"
-#include "engine/context.h"
-#include "engine/variable.h"
-#include "runtime/constant.h"
+#include "neo.js/runtime/iterator.h"
+#include "neo.js/engine/context.h"
+#include "neo.js/engine/variable.h"
+#include "neo.js/runtime/constant.h"
 NEO_JS_CFUNCTION(neo_js_iterator_constructor) {
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   neo_js_variable_t message = neo_js_context_create_cstring(

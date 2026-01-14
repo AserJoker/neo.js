@@ -1,11 +1,11 @@
 #ifndef _H_NEO_COMPILER_WRITER_
 #define _H_NEO_COMPILER_WRITER_
-#include "core/allocator.h"
+#include "neo.js/core/allocator.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
-#include "compiler/program.h"
-#include "compiler/scope.h"
+#include "neo.js/compiler/program.h"
+#include "neo.js/compiler/scope.h"
 typedef struct _neo_write_scope_t *neo_write_scope_t;
 
 typedef struct _neo_ast_node_t *neo_ast_node_t;

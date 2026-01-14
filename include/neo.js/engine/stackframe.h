@@ -1,4 +1,4 @@
-#include "core/allocator.h"
+#include "neo.js/core/allocator.h"
 #include <stdint.h>
 #ifndef _H_NEO_ENGINE_STACKFRAME_
 #ifdef __cplusplus

@@ -1,7 +1,7 @@
 #ifndef _H_NEO_COMPILER_DECLARATION_IMPORT_
 #define _H_NEO_COMPILER_DECLARATION_IMPORT_
-#include "compiler/ast_node.h"
-#include "core/list.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/core/list.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

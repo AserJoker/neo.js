@@ -3,7 +3,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#include "core/allocator.h"
+#include "neo.js/core/allocator.h"
 typedef struct _neo_buffer_t *neo_buffer_t;
 neo_buffer_t neo_create_buffer(neo_allocator_t allocator, size_t align);
 size_t neo_buffer_get_size(neo_buffer_t self);

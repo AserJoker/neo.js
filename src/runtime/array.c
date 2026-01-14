@@ -1,20 +1,21 @@
-#include "runtime/array.h"
-#include "core/allocator.h"
-#include "core/string.h"
-#include "engine/array.h"
-#include "engine/boolean.h"
-#include "engine/context.h"
-#include "engine/exception.h"
-#include "engine/number.h"
-#include "engine/runtime.h"
-#include "engine/string.h"
-#include "engine/value.h"
-#include "engine/variable.h"
-#include "runtime/constant.h"
-#include "runtime/promise.h"
+#include "neo.js/runtime/array.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/string.h"
+#include "neo.js/engine/array.h"
+#include "neo.js/engine/boolean.h"
+#include "neo.js/engine/context.h"
+#include "neo.js/engine/exception.h"
+#include "neo.js/engine/number.h"
+#include "neo.js/engine/runtime.h"
+#include "neo.js/engine/string.h"
+#include "neo.js/engine/value.h"
+#include "neo.js/engine/variable.h"
+#include "neo.js/runtime/constant.h"
+#include "neo.js/runtime/promise.h"
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
+
 
 static neo_js_variable_t neo_js_array_get_length(neo_js_context_t ctx,
                                                  neo_js_variable_t array) {

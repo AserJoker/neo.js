@@ -1,9 +1,11 @@
 #ifndef _H_NEO_ENGINE_CALLABLE_
 #define _H_NEO_ENGINE_CALLABLE_
-#include "core/allocator.h"
-#include "core/map.h"
-#include "engine/object.h"
-#include "engine/value.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/map.h"
+#include "neo.js/engine/object.h"
+#include "neo.js/engine/value.h"
+
+
 #ifdef __cplusplus
 extern "C" {
 #endif

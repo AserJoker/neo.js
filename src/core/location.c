@@ -1,6 +1,6 @@
-#include "core/location.h"
-#include "core/allocator.h"
-#include "core/unicode.h"
+#include "neo.js/core/location.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/unicode.h"
 #include <wchar.h>
 
 bool neo_location_is(neo_location_t loc, const char *str) {

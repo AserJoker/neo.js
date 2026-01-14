@@ -1,7 +1,7 @@
-#include "runtime/suppressed_error.h"
-#include "engine/context.h"
-#include "engine/variable.h"
-#include "runtime/error.h"
+#include "neo.js/runtime/suppressed_error.h"
+#include "neo.js/engine/context.h"
+#include "neo.js/engine/variable.h"
+#include "neo.js/runtime/error.h"
 NEO_JS_CFUNCTION(neo_js_suppressed_error_constructor) {
   neo_js_variable_t message = neo_js_context_create_cstring(
       ctx, "An error was suppressed during disposal");

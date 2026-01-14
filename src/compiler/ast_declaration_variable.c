@@ -1,10 +1,10 @@
-#include "compiler/ast_declaration_variable.h"
-#include "compiler/ast_node.h"
-#include "compiler/ast_variable_declarator.h"
-#include "compiler/token.h"
-#include "core/any.h"
-#include "core/list.h"
-#include "core/location.h"
+#include "neo.js/compiler/ast_declaration_variable.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/compiler/ast_variable_declarator.h"
+#include "neo.js/compiler/token.h"
+#include "neo.js/core/any.h"
+#include "neo.js/core/list.h"
+#include "neo.js/core/location.h"
 
 static void
 neo_ast_declaration_variable_dispose(neo_allocator_t allocator,

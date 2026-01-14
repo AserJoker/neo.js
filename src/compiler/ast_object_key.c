@@ -1,13 +1,12 @@
-#include "compiler/ast_expression.h"
-#include "compiler/ast_identifier.h"
-#include "compiler/ast_literal_numeric.h"
-#include "compiler/ast_literal_string.h"
-#include "compiler/ast_node.h"
-#include "compiler/ast_object_key.h"
-#include "core/allocator.h"
-#include "core/position.h"
+#include "neo.js/compiler/ast_object_key.h"
+#include "neo.js/compiler/ast_expression.h"
+#include "neo.js/compiler/ast_identifier.h"
+#include "neo.js/compiler/ast_literal_numeric.h"
+#include "neo.js/compiler/ast_literal_string.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/position.h"
 #include <stdio.h>
-
 
 neo_ast_node_t neo_ast_read_object_key(neo_allocator_t allocator,
                                        const char *file,

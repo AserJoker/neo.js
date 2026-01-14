@@ -1,6 +1,6 @@
 #ifndef _H_CORE_STRING_
 #define _H_CORE_STRING_
-#include "core/allocator.h"
+#include "neo.js/core/allocator.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <wchar.h>

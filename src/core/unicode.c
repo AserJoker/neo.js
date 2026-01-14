@@ -1,4 +1,4 @@
-#include "core/unicode.h"
+#include "neo.js/core/unicode.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>

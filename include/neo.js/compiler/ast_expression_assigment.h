@@ -1,9 +1,9 @@
 #ifndef _H_NEO_COMPILER_EXPRESSION_ASSIGMENT__
 #define _H_NEO_COMPILER_EXPRESSION_ASSIGMENT__
-#include "compiler/ast_node.h"
-#include "compiler/token.h"
-#include "core/allocator.h"
-#include "core/position.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/compiler/token.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/position.h"
 #include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {

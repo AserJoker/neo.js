@@ -1,5 +1,5 @@
-#include "core/fs.h"
-#include "core/allocator.h"
+#include "neo.js/core/fs.h"
+#include "neo.js/core/allocator.h"
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>

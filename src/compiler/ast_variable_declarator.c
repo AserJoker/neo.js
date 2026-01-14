@@ -1,15 +1,16 @@
-#include "compiler/asm.h"
-#include "compiler/ast_expression.h"
-#include "compiler/ast_identifier.h"
-#include "compiler/ast_node.h"
-#include "compiler/ast_pattern_array.h"
-#include "compiler/ast_pattern_object.h"
-#include "compiler/ast_variable_declarator.h"
-#include "compiler/program.h"
-#include "core/allocator.h"
-#include "core/any.h"
-#include "core/list.h"
-#include "core/location.h"
+#include "neo.js/compiler/ast_variable_declarator.h"
+#include "neo.js/compiler/asm.h"
+#include "neo.js/compiler/ast_expression.h"
+#include "neo.js/compiler/ast_identifier.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/compiler/ast_pattern_array.h"
+#include "neo.js/compiler/ast_pattern_object.h"
+#include "neo.js/compiler/program.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/any.h"
+#include "neo.js/core/list.h"
+#include "neo.js/core/location.h"
+
 static void
 neo_ast_variable_declarator_dispose(neo_allocator_t allocator,
                                     neo_ast_variable_declarator_t node) {

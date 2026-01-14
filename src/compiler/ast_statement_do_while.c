@@ -1,13 +1,13 @@
-#include "compiler/asm.h"
-#include "compiler/ast_expression.h"
-#include "compiler/ast_node.h"
-#include "compiler/ast_statement.h"
-#include "compiler/ast_statement_do_while.h"
-#include "compiler/program.h"
-#include "compiler/token.h"
-#include "core/allocator.h"
-#include "core/any.h"
-#include "core/buffer.h"
+#include "neo.js/compiler/ast_statement_do_while.h"
+#include "neo.js/compiler/asm.h"
+#include "neo.js/compiler/ast_expression.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/compiler/ast_statement.h"
+#include "neo.js/compiler/program.h"
+#include "neo.js/compiler/token.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/any.h"
+#include "neo.js/core/buffer.h"
 #include <stdio.h>
 
 static void

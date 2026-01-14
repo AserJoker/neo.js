@@ -1,7 +1,9 @@
 #ifndef _H_NEO_RUNTIME_VM_
 #define _H_NEO_RUNTIME_VM_
-#include "compiler/program.h"
-#include "engine/variable.h"
+#include "neo.js/compiler/program.h"
+#include "neo.js/engine/variable.h"
+
+
 #ifdef __cplusplus
 extern "C" {
 #endif

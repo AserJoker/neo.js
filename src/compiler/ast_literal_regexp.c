@@ -1,9 +1,8 @@
-#include "compiler/asm.h"
-#include "compiler/ast_literal_regexp.h"
-#include "compiler/token.h"
-#include "core/allocator.h"
+#include "neo.js/compiler/ast_literal_regexp.h"
+#include "neo.js/compiler/asm.h"
+#include "neo.js/compiler/token.h"
+#include "neo.js/core/allocator.h"
 #include <string.h>
-
 
 static void neo_ast_literal_regexp_dispose(neo_allocator_t allocator,
                                            neo_ast_literal_regexp_t node) {

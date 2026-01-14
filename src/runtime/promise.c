@@ -1,13 +1,14 @@
-#include "runtime/promise.h"
-#include "core/allocator.h"
-#include "core/list.h"
-#include "engine/context.h"
-#include "engine/exception.h"
-#include "engine/handle.h"
-#include "engine/runtime.h"
-#include "engine/value.h"
-#include "engine/variable.h"
-#include "runtime/constant.h"
+#include "neo.js/runtime/promise.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/list.h"
+#include "neo.js/engine/context.h"
+#include "neo.js/engine/exception.h"
+#include "neo.js/engine/handle.h"
+#include "neo.js/engine/runtime.h"
+#include "neo.js/engine/value.h"
+#include "neo.js/engine/variable.h"
+#include "neo.js/runtime/constant.h"
+
 
 static void neo_js_promise_dispose(neo_allocator_t allocator,
                                    neo_js_promise_t promise) {

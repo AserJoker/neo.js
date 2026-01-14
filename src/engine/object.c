@@ -1,14 +1,16 @@
-#include "engine/object.h"
-#include "core/allocator.h"
-#include "core/common.h"
-#include "core/hash.h"
-#include "core/hash_map.h"
-#include "core/list.h"
-#include "engine/string.h"
-#include "engine/value.h"
+#include "neo.js/engine/object.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/common.h"
+#include "neo.js/core/hash.h"
+#include "neo.js/core/hash_map.h"
+#include "neo.js/core/list.h"
+#include "neo.js/engine/string.h"
+#include "neo.js/engine/value.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
+
+
 static void neo_js_object_dispose(neo_allocator_t allocator,
                                   neo_js_object_t self) {
   neo_deinit_js_object(self, allocator);

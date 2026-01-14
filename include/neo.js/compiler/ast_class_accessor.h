@@ -1,10 +1,10 @@
 #ifndef _H_NEO_COMPILER_CLASS_ACCESSOR__
 #define _H_NEO_COMPILER_CLASS_ACCESSOR__
-#include "compiler/ast_node.h"
-#include "compiler/ast_object_accessor.h"
-#include "core/allocator.h"
-#include "core/list.h"
-#include "core/position.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/compiler/ast_object_accessor.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/list.h"
+#include "neo.js/core/position.h"
 #include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {

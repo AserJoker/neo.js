@@ -1,5 +1,5 @@
-#include "core/buffer.h"
-#include "core/allocator.h"
+#include "neo.js/core/buffer.h"
+#include "neo.js/core/allocator.h"
 #include <string.h>
 struct _neo_buffer_t {
   void *data;

@@ -1,9 +1,9 @@
-#include "engine/value.h"
-#include "core/allocator.h"
-#include "core/common.h"
-#include "core/hash.h"
-#include "core/hash_map.h"
-#include "engine/handle.h"
+#include "neo.js/engine/value.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/common.h"
+#include "neo.js/core/hash.h"
+#include "neo.js/core/hash_map.h"
+#include "neo.js/engine/handle.h"
 #include <string.h>
 
 void neo_init_js_value(neo_js_value_t self, neo_allocator_t allocator,

@@ -1,8 +1,8 @@
-#include "compiler/ast_node.h"
-#include "compiler/ast_statement.h"
-#include "compiler/ast_statement_for_in.h"
-#include "compiler/scope.h"
-#include "core/location.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/compiler/ast_statement.h"
+#include "neo.js/compiler/ast_statement_for_in.h"
+#include "neo.js/compiler/scope.h"
+#include "neo.js/core/location.h"
 #include "test.hpp"
 #include <gtest/gtest.h>
 class neo_test_statement_for_in : public neo_test {};

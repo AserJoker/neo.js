@@ -1,8 +1,10 @@
 #ifndef _H_NEO_ENGINE_BOOLEAN_
 #define _H_NEO_ENGINE_BOOLEAN_
-#include "core/allocator.h"
-#include "engine/value.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/engine/value.h"
 #include <stdbool.h>
+
+
 #ifdef __cplusplus
 extern "C" {
 #endif

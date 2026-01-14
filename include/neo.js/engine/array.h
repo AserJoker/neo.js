@@ -1,7 +1,9 @@
 #ifndef _H_NEO_ENGINE_ARRAY_
 #define _H_NEO_ENGINE_ARRAY_
-#include "core/allocator.h"
-#include "engine/object.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/engine/object.h"
+
+
 #ifdef __cplusplus
 extern "C" {
 #endif

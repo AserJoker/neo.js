@@ -1,22 +1,21 @@
-#include "compiler/asm.h"
-#include "compiler/ast_expression.h"
-#include "compiler/ast_node.h"
-#include "compiler/ast_statement_switch.h"
-#include "compiler/ast_switch_case.h"
-#include "compiler/program.h"
-#include "compiler/scope.h"
-#include "compiler/token.h"
-#include "compiler/writer.h"
-#include "core/allocator.h"
-#include "core/any.h"
-#include "core/buffer.h"
-#include "core/list.h"
-#include "core/location.h"
-#include "core/map.h"
-#include "core/position.h"
+#include "neo.js/compiler/ast_statement_switch.h"
+#include "neo.js/compiler/asm.h"
+#include "neo.js/compiler/ast_expression.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/compiler/ast_switch_case.h"
+#include "neo.js/compiler/program.h"
+#include "neo.js/compiler/scope.h"
+#include "neo.js/compiler/token.h"
+#include "neo.js/compiler/writer.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/any.h"
+#include "neo.js/core/buffer.h"
+#include "neo.js/core/list.h"
+#include "neo.js/core/location.h"
+#include "neo.js/core/map.h"
+#include "neo.js/core/position.h"
 #include <stddef.h>
 #include <stdio.h>
-
 
 static void neo_ast_statement_switch_dispose(neo_allocator_t allocator,
                                              neo_ast_statement_switch_t node) {

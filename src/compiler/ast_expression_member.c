@@ -1,16 +1,15 @@
-#include "compiler/ast_expression.h"
-#include "compiler/ast_expression_member.h"
-#include "compiler/ast_identifier.h"
-#include "compiler/ast_node.h"
-#include "compiler/ast_private_name.h"
-#include "compiler/token.h"
-#include "compiler/writer.h"
-#include "core/allocator.h"
-#include "core/any.h"
-#include "core/location.h"
-#include "core/position.h"
+#include "neo.js/compiler/ast_expression_member.h"
+#include "neo.js/compiler/ast_expression.h"
+#include "neo.js/compiler/ast_identifier.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/compiler/ast_private_name.h"
+#include "neo.js/compiler/token.h"
+#include "neo.js/compiler/writer.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/any.h"
+#include "neo.js/core/location.h"
+#include "neo.js/core/position.h"
 #include <stdio.h>
-
 
 static void
 neo_ast_expression_member_dispose(neo_allocator_t allocator,

@@ -1,7 +1,7 @@
 #ifndef _H_NEO_ENGINE_HANDLE_
 #define _H_NEO_ENGINE_HANDLE_
-#include "core/allocator.h"
-#include "core/list.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/list.h"
 #include <stdint.h>
 #ifdef __cplusplus
 extern "C" {

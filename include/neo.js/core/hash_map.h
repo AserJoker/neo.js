@@ -3,7 +3,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#include "core/allocator.h"
+#include "neo.js/core/allocator.h"
 #include <stdbool.h>
 #include <stdint.h>
 typedef struct _neo_hash_map_t *neo_hash_map_t;
@@ -27,7 +27,7 @@ void *neo_hash_map_get(neo_hash_map_t self, const void *key);
 
 bool neo_hash_map_has(neo_hash_map_t self, const void *key);
 
-void neo_hash_map_delete(neo_hash_map_t self,const void *key);
+void neo_hash_map_delete(neo_hash_map_t self, const void *key);
 
 void neo_hash_map_erase(neo_hash_map_t self, neo_hash_map_node_t position);
 

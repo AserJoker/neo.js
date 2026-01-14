@@ -1,8 +1,8 @@
-#include "core/any.h"
-#include "core/allocator.h"
-#include "core/list.h"
-#include "core/map.h"
-#include "core/string.h"
+#include "neo.js/core/any.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/list.h"
+#include "neo.js/core/map.h"
+#include "neo.js/core/string.h"
 #include <string.h>
 
 struct _neo_any_t {

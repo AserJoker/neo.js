@@ -1,14 +1,15 @@
-#include "runtime/async_generator.h"
-#include "core/buffer.h"
-#include "core/list.h"
-#include "engine/context.h"
-#include "engine/exception.h"
-#include "engine/interrupt.h"
-#include "engine/scope.h"
-#include "engine/value.h"
-#include "engine/variable.h"
-#include "runtime/promise.h"
-#include "runtime/vm.h"
+#include "neo.js/runtime/async_generator.h"
+#include "neo.js/core/buffer.h"
+#include "neo.js/core/list.h"
+#include "neo.js/engine/context.h"
+#include "neo.js/engine/exception.h"
+#include "neo.js/engine/interrupt.h"
+#include "neo.js/engine/scope.h"
+#include "neo.js/engine/value.h"
+#include "neo.js/engine/variable.h"
+#include "neo.js/runtime/promise.h"
+#include "neo.js/runtime/vm.h"
+
 
 NEO_JS_CFUNCTION(neo_js_async_generator_task);
 NEO_JS_CFUNCTION(neo_js_async_generator_onfulfilled) {

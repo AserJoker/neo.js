@@ -1,14 +1,13 @@
-#include "compiler/asm.h"
-#include "compiler/ast_directive.h"
-#include "compiler/ast_literal_string.h"
-#include "compiler/ast_node.h"
-#include "compiler/program.h"
-#include "core/allocator.h"
-#include "core/any.h"
-#include "core/location.h"
-#include "core/position.h"
+#include "neo.js/compiler/ast_directive.h"
+#include "neo.js/compiler/asm.h"
+#include "neo.js/compiler/ast_literal_string.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/compiler/program.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/any.h"
+#include "neo.js/core/location.h"
+#include "neo.js/core/position.h"
 #include <string.h>
-
 
 static void neo_ast_directive_dispose(neo_allocator_t allocator,
                                       neo_ast_directive_t node) {

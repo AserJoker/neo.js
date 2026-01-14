@@ -1,8 +1,10 @@
 #ifndef _H_NEO_ENGINE_BIGINT_
 #define _H_NEO_ENGINE_BIGINT_
-#include "core/allocator.h"
-#include "core/bigint.h"
-#include "engine/value.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/bigint.h"
+#include "neo.js/engine/value.h"
+
+
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -1,7 +1,7 @@
-#include "compiler/ast_node.h"
-#include "compiler/ast_statement.h"
-#include "compiler/ast_statement_if.h"
-#include "core/location.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/compiler/ast_statement.h"
+#include "neo.js/compiler/ast_statement_if.h"
+#include "neo.js/core/location.h"
 #include "test.hpp"
 #include <gtest/gtest.h>
 class neo_test_statement_if : public neo_test {};

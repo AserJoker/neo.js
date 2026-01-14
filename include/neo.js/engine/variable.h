@@ -1,10 +1,10 @@
 #ifndef _H_NEO_ENGINE_VARIABLE_
 #define _H_NEO_ENGINE_VARIABLE_
-#include "core/allocator.h"
-#include "core/list.h"
-#include "engine/handle.h"
-#include "engine/object.h"
-#include "engine/value.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/list.h"
+#include "neo.js/engine/handle.h"
+#include "neo.js/engine/object.h"
+#include "neo.js/engine/value.h"
 
 #ifdef __cplusplus
 extern "C" {

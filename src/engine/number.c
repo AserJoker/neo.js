@@ -1,5 +1,5 @@
-#include "engine/number.h"
-#include "core/allocator.h"
+#include "neo.js/engine/number.h"
+#include "neo.js/core/allocator.h"
 static void neo_js_number_dispose(neo_allocator_t allocator,
                                   neo_js_number_t self) {
   neo_deinit_js_number(self, allocator);

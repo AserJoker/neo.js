@@ -1,7 +1,7 @@
 #ifndef _H_NEO_CORE_LOCATION_
 #define _H_NEO_CORE_LOCATION_
 
-#include "core/allocator.h"
+#include "neo.js/core/allocator.h"
 #include "position.h"
 #include <stdbool.h>
 #ifdef __cplusplus

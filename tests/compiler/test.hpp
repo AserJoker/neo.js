@@ -1,7 +1,7 @@
 #pragma once
-#include "compiler/scope.h"
-#include "core/allocator.h"
-#include "core/location.h"
+#include "neo.js/compiler/scope.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/location.h"
 #include <gtest/gtest.h>
 class neo_test : public testing::Test {
 protected:

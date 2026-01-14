@@ -1,6 +1,6 @@
 #ifndef _H_NEO_CORE_FS_
 #define _H_NEO_CORE_FS_
-#include "core/allocator.h"
+#include "neo.js/core/allocator.h"
 #include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {

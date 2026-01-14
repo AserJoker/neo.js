@@ -1,8 +1,8 @@
 #ifndef _H_NEO_COMPILER_PARSER_
 #define _H_NEO_COMPILER_PARSER_
-#include "compiler/ast_node.h"
-#include "compiler/program.h"
-#include "core/allocator.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/compiler/program.h"
+#include "neo.js/core/allocator.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

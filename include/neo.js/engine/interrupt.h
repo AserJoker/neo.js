@@ -1,11 +1,12 @@
 #ifndef _H_NEO_ENGINE_INTERRUPT_
 #define _H_NEO_ENGINE_INTERRUPT_
-#include "compiler/program.h"
-#include "core/allocator.h"
-#include "engine/scope.h"
-#include "engine/value.h"
-#include "engine/variable.h"
-#include "runtime/vm.h"
+#include "neo.js/compiler/program.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/engine/scope.h"
+#include "neo.js/engine/value.h"
+#include "neo.js/engine/variable.h"
+#include "neo.js/runtime/vm.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif

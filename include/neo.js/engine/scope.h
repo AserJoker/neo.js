@@ -1,8 +1,10 @@
 #ifndef _H_NEO_ENGINE_SCOPE_
 #define _H_NEO_ENGINE_SCOPE_
-#include "core/allocator.h"
-#include "engine/value.h"
-#include "engine/variable.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/engine/value.h"
+#include "neo.js/engine/variable.h"
+
+
 #ifdef __cplusplus
 extern "C" {
 #endif

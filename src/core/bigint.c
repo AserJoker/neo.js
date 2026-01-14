@@ -1,7 +1,7 @@
-#include "core/bigint.h"
-#include "core/allocator.h"
-#include "core/list.h"
-#include "core/string.h"
+#include "neo.js/core/bigint.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/list.h"
+#include "neo.js/core/string.h"
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>

@@ -1,15 +1,14 @@
-#include "compiler/asm.h"
-#include "compiler/ast_node.h"
-#include "compiler/ast_pattern_array.h"
-#include "compiler/ast_pattern_array_item.h"
-#include "compiler/ast_pattern_rest.h"
-#include "compiler/program.h"
-#include "compiler/token.h"
-#include "core/allocator.h"
-#include "core/any.h"
-#include "core/list.h"
-#include "core/position.h"
-
+#include "neo.js/compiler/ast_pattern_array.h"
+#include "neo.js/compiler/asm.h"
+#include "neo.js/compiler/ast_node.h"
+#include "neo.js/compiler/ast_pattern_array_item.h"
+#include "neo.js/compiler/ast_pattern_rest.h"
+#include "neo.js/compiler/program.h"
+#include "neo.js/compiler/token.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/core/any.h"
+#include "neo.js/core/list.h"
+#include "neo.js/core/position.h"
 
 static void neo_ast_pattern_array_dispose(neo_allocator_t allocator,
                                           neo_ast_pattern_array_t node) {

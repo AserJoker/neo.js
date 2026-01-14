@@ -1,7 +1,9 @@
 #ifndef _H_NEO_ENGINE_NUMBER_
 #define _H_NEO_ENGINE_NUMBER_
-#include "core/allocator.h"
-#include "engine/value.h"
+#include "neo.js/core/allocator.h"
+#include "neo.js/engine/value.h"
+
+
 #ifdef __cplusplus
 extern "C" {
 #endif

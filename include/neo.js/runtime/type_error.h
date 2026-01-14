@@ -1,6 +1,6 @@
 #ifndef _H_NEO_RUNTIME_TYPE_ERROR_
 #define _H_NEO_RUNTIME_TYPE_ERROR_
-#include "engine/variable.h"
+#include "neo.js/engine/variable.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

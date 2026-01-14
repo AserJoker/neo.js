@@ -1,6 +1,6 @@
 #ifndef _H_NEO_COMPILER_IMPORT_ATTRIBUTE_
 #define _H_NEO_COMPILER_IMPORT_ATTRIBUTE_
-#include "compiler/ast_node.h"
+#include "neo.js/compiler/ast_node.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
