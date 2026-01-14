@@ -78,34 +78,38 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 
 file(GLOB_RECURSE SOURCES ${PROJECT_SOURCE_DIR}/src/*.c)
 
-file(GLOB_RECURSE TEST_SOURCES ${PROJECT_SOURCE_DIR}/tests/*.cpp)
-
-add_executable(${PROJECT_NAME}c ${SOURCES} ${PROJECT_SOURCE_DIR}/cmd/main.c)
-
-add_executable(${PROJECT_NAME}.test ${SOURCES} ${TEST_SOURCES} ${PROJECT_SOURCE_DIR}/tests/main.cpp)
-
-if(UNIX)
-    target_link_libraries(${PROJECT_NAME}c PRIVATE m)
-else()
-    add_definitions(-D_USE_MATH_DEFINES)
-endif()
-
 add_library(${PROJECT_NAME} STATIC ${SOURCES})
 
 find_package(pcre2 CONFIG REQUIRED)
 
-find_package(GTest CONFIG REQUIRED)
-
-target_link_libraries(${PROJECT_NAME}c PRIVATE PCRE2::8BIT PCRE2::16BIT PCRE2::32BIT PCRE2::POSIX)
-
 target_link_libraries(${PROJECT_NAME} PRIVATE PCRE2::8BIT PCRE2::16BIT PCRE2::32BIT PCRE2::POSIX)
 
-target_link_libraries(${PROJECT_NAME}.test PRIVATE PCRE2::8BIT PCRE2::16BIT PCRE2::32BIT PCRE2::POSIX GTest::gtest GTest::gtest_main GTest::gmock GTest::gmock_main)
+if(NEO_ENABLE_TEST)
+    add_executable(${PROJECT_NAME}c ${SOURCES} ${PROJECT_SOURCE_DIR}/cmd/main.c)
 
-target_compile_options(${PROJECT_NAME}.test PRIVATE "--coverage")
+    if(UNIX)
+        target_link_libraries(${PROJECT_NAME}c PRIVATE m)
+    else()
+        add_definitions(-D_USE_MATH_DEFINES)
+    endif()
 
-target_link_options(${PROJECT_NAME}.test PRIVATE "--coverage")
+    target_link_libraries(${PROJECT_NAME}c PRIVATE PCRE2::8BIT PCRE2::16BIT PCRE2::32BIT PCRE2::POSIX)
 
-enable_testing()
+    file(GLOB_RECURSE TEST_SOURCES ${PROJECT_SOURCE_DIR}/tests/*.cpp)
 
-gtest_discover_tests(${PROJECT_NAME}.test)
+    find_package(GTest CONFIG REQUIRED)
+
+    add_executable(${PROJECT_NAME}.test ${SOURCES} ${TEST_SOURCES} ${PROJECT_SOURCE_DIR}/tests/main.cpp)
+
+    if(UNIX)
+        target_link_libraries(${PROJECT_NAME}.test PRIVATE m)
+    else()
+        add_definitions(-D_USE_MATH_DEFINES)
+    endif()
+
+    target_link_libraries(${PROJECT_NAME}.test PRIVATE PCRE2::8BIT PCRE2::16BIT PCRE2::32BIT PCRE2::POSIX GTest::gtest GTest::gtest_main GTest::gmock GTest::gmock_main)
+
+    enable_testing()
+
+    gtest_discover_tests(${PROJECT_NAME}.test)
+endif()
