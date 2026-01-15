@@ -16,7 +16,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-
 static neo_js_variable_t neo_js_array_get_length(neo_js_context_t ctx,
                                                  neo_js_variable_t array) {
   neo_js_variable_t length = neo_js_variable_get_field(
@@ -564,6 +563,9 @@ NEO_JS_CFUNCTION(neo_js_array_copy_within) {
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
     self = neo_js_variable_to_object(self, ctx);
   }
+  if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return self;
+  }
   neo_js_variable_t length = neo_js_variable_get_field(
       self, ctx, neo_js_context_create_cstring(ctx, "length"));
   if (length->value->type == NEO_JS_TYPE_EXCEPTION) {
@@ -664,6 +666,62 @@ NEO_JS_CFUNCTION(neo_js_array_copy_within) {
   }
   return self;
 }
+
+NEO_JS_CFUNCTION(neo_js_array_entries) {
+  neo_js_variable_t iterator = neo_js_array_values(ctx, self, argc, argv);
+  neo_js_variable_set_opaque(iterator, ctx, "is_entries", NULL);
+  return iterator;
+}
+NEO_JS_CFUNCTION(neo_js_array_every) {
+  if (self->value->type < NEO_JS_TYPE_OBJECT) {
+    self = neo_js_variable_to_object(self, ctx);
+  }
+  if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return self;
+  }
+  neo_js_variable_t length = neo_js_variable_get_field(
+      self, ctx,
+      neo_js_variable_get_field(self, ctx,
+                                neo_js_context_create_cstring(ctx, "length")));
+  if (length->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return length;
+  }
+  length = neo_js_variable_to_number(length, ctx);
+  if (length->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return length;
+  }
+  double len = ((neo_js_number_t)length)->value;
+  if (isnan(len) || len < 0) {
+    len = 0;
+  }
+  neo_js_variable_t cb = neo_js_context_get_argument(ctx, argc, argv, 0);
+  neo_js_variable_t this_arg = neo_js_context_get_undefined(ctx);
+  for (int64_t idx = 0; idx < len; idx++) {
+    neo_js_variable_t index = neo_js_context_create_number(ctx, idx);
+    index = neo_js_variable_to_string(index, ctx);
+    if (neo_js_variable_get_property(self, ctx, index)) {
+      neo_js_variable_t value = neo_js_variable_get_field(self, ctx, index);
+      if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
+        return value;
+      }
+      neo_js_variable_t args[] = {value, neo_js_context_create_number(ctx, idx),
+                                  self};
+      neo_js_variable_t res = neo_js_variable_call(cb, ctx, this_arg, 3, args);
+      if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
+        return res;
+      }
+      res = neo_js_variable_to_boolean(res, ctx);
+      if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
+        return res;
+      }
+      if (!((neo_js_boolean_t)res->value)->value) {
+        return res;
+      }
+    }
+  }
+  return neo_js_context_get_true(ctx);
+}
+
 NEO_JS_CFUNCTION(neo_js_array_to_string) {
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
     self = neo_js_variable_to_object(self, ctx);
@@ -812,6 +870,10 @@ void neo_initialize_js_array(neo_js_context_t ctx) {
                     neo_js_array_concat);
   NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "copyWithin",
                     neo_js_array_copy_within);
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "entries",
+                    neo_js_array_entries);
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "every",
+                    neo_js_array_every);
   NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "toString",
                     neo_js_array_to_string);
   neo_js_variable_def_field(constant->array_prototype, ctx,

@@ -12,6 +12,7 @@ NEO_JS_CFUNCTION(neo_js_array_constructor);
 NEO_JS_CFUNCTION(neo_js_array_at);
 NEO_JS_CFUNCTION(neo_js_array_concat);
 NEO_JS_CFUNCTION(neo_js_array_copy_within);
+NEO_JS_CFUNCTION(neo_js_array_entries);
 NEO_JS_CFUNCTION(neo_js_array_to_string);
 NEO_JS_CFUNCTION(neo_js_array_values);
 NEO_JS_CFUNCTION(neo_js_array_push);
