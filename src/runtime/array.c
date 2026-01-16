@@ -1226,6 +1226,49 @@ NEO_JS_CFUNCTION(neo_js_array_flat_map) {
   }
   return neo_js_array_flat(ctx, self, 0, NULL);
 }
+NEO_JS_CFUNCTION(neo_js_array_for_each) {
+  if (self->value->type < NEO_JS_TYPE_OBJECT) {
+    self = neo_js_variable_to_object(self, ctx);
+    if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
+      return self;
+    }
+  }
+  neo_js_variable_t length = neo_js_variable_get_field(
+      self, ctx, neo_js_context_create_cstring(ctx, "length"));
+  if (length->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return length;
+  }
+  length = neo_js_variable_to_number(length, ctx);
+  if (length->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return length;
+  }
+  double len = ((neo_js_number_t)length->value)->value;
+  if (isnan(len) || len < 0) {
+    return self;
+  }
+  if (len == 0) {
+    return self;
+  }
+  if (!isinf(len)) {
+    len = (int64_t)len;
+  }
+  neo_js_variable_t callback = neo_js_context_get_argument(ctx, argc, argv, 0);
+  neo_js_variable_t this_arg = neo_js_context_get_argument(ctx, argc, argv, 1);
+  for (double idx = 0; idx < len; idx += 1) {
+    neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
+    neo_js_variable_t value = neo_js_variable_get_field(self, ctx, key);
+    if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
+      return value;
+    }
+    neo_js_variable_t args[] = {value, key, self};
+    neo_js_variable_t res =
+        neo_js_variable_call(callback, ctx, this_arg, 3, args);
+    if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
+      return res;
+    }
+  }
+  return neo_js_context_get_undefined(ctx);
+}
 
 NEO_JS_CFUNCTION(neo_js_array_to_string) {
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
@@ -1394,6 +1437,8 @@ void neo_initialize_js_array(neo_js_context_t ctx) {
   NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "flat", neo_js_array_flat);
   NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "flatMap",
                     neo_js_array_flat_map);
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "forEach",
+                    neo_js_array_for_each);
   NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "toString",
                     neo_js_array_to_string);
   neo_js_variable_def_field(constant->array_prototype, ctx,
