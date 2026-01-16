@@ -23,6 +23,7 @@ NEO_JS_CFUNCTION(neo_js_array_find_last_index);
 NEO_JS_CFUNCTION(neo_js_array_flat);
 NEO_JS_CFUNCTION(neo_js_array_flat_map);
 NEO_JS_CFUNCTION(neo_js_array_for_each);
+NEO_JS_CFUNCTION(neo_js_array_includes);
 NEO_JS_CFUNCTION(neo_js_array_map);
 NEO_JS_CFUNCTION(neo_js_array_to_string);
 NEO_JS_CFUNCTION(neo_js_array_values);
