@@ -1219,6 +1219,14 @@ NEO_JS_CFUNCTION(neo_js_array_flat) {
   return result;
 }
 
+NEO_JS_CFUNCTION(neo_js_array_flat_map) {
+  neo_js_variable_t res = neo_js_array_map(ctx, self, argc, argv);
+  if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return res;
+  }
+  return neo_js_array_flat(ctx, self, 0, NULL);
+}
+
 NEO_JS_CFUNCTION(neo_js_array_to_string) {
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
     self = neo_js_variable_to_object(self, ctx);
@@ -1384,6 +1392,8 @@ void neo_initialize_js_array(neo_js_context_t ctx) {
   NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "findLastIndex",
                     neo_js_array_find_last_index);
   NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "flat", neo_js_array_flat);
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "flatMap",
+                    neo_js_array_flat_map);
   NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "toString",
                     neo_js_array_to_string);
   neo_js_variable_def_field(constant->array_prototype, ctx,
