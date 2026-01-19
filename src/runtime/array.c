@@ -1998,15 +1998,7 @@ NEO_JS_CFUNCTION(neo_js_array_to_locale_string) {
   if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
     return self;
   }
-  const uint16_t *separator = NULL;
-  if (argc > 0) {
-    neo_js_variable_t sep = neo_js_context_get_argument(ctx, argc, argv, 0);
-    sep = neo_js_variable_to_string(sep, ctx);
-    if (sep->value->type == NEO_JS_TYPE_EXCEPTION) {
-      return sep;
-    }
-    separator = ((neo_js_string_t)sep->value)->value;
-  }
+  uint16_t separator[] = {',', 0};
   neo_js_variable_t length = neo_js_array_get_length(ctx, self);
   if (length->value->type == NEO_JS_TYPE_EXCEPTION) {
     return length;
@@ -2017,7 +2009,7 @@ NEO_JS_CFUNCTION(neo_js_array_to_locale_string) {
   str[0] = 0;
   size_t strlength = 16;
   for (double idx = 0; idx < len; idx += 1) {
-    if (separator && idx != 0) {
+    if (idx != 0) {
       str = neo_string16_concat(allocator, str, &strlength, separator);
     }
     neo_js_variable_t item = neo_js_variable_get_field(
