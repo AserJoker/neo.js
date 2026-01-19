@@ -37,7 +37,6 @@
 #include <string.h>
 #include <sys/types.h>
 
-
 static void neo_js_variable_dispose(neo_allocator_t allocator,
                                     neo_js_variable_t variable) {
   neo_deinit_js_handle(&variable->handle, allocator);
@@ -169,6 +168,21 @@ neo_js_variable_t neo_js_variable_to_number(neo_js_variable_t self,
     return self;
   }
 }
+neo_js_variable_t neo_js_variable_to_integer(neo_js_variable_t self,
+                                             neo_js_context_t ctx) {
+  neo_js_variable_t res = neo_js_variable_to_number(self, ctx);
+  if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return res;
+  }
+  double val = ((neo_js_number_t)res->value)->value;
+  if (isnan(val)) {
+    val = 0;
+  }
+  if (!isinf(val)) {
+    val = (int64_t)val;
+  }
+  return neo_js_context_create_number(ctx, val);
+}
 neo_js_variable_t neo_js_variable_to_boolean(neo_js_variable_t self,
                                              neo_js_context_t ctx) {
   neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
@@ -284,14 +298,38 @@ neo_js_variable_t neo_js_variable_to_object(neo_js_variable_t self,
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
   }
-  case NEO_JS_TYPE_NUMBER:
-    break;
-  case NEO_JS_TYPE_BIGINT:
-    break;
-  case NEO_JS_TYPE_BOOLEAN:
-    break;
-  case NEO_JS_TYPE_STRING:
-    break;
+  case NEO_JS_TYPE_NUMBER: {
+    neo_js_variable_t message =
+        neo_js_context_create_cstring(ctx, "Number is not implement");
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+    neo_js_variable_t error =
+        neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  } break;
+  case NEO_JS_TYPE_BIGINT: {
+    neo_js_variable_t message =
+        neo_js_context_create_cstring(ctx, "Bigint is not implement");
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+    neo_js_variable_t error =
+        neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  } break;
+  case NEO_JS_TYPE_BOOLEAN: {
+    neo_js_variable_t message =
+        neo_js_context_create_cstring(ctx, "Boolean is not implement");
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+    neo_js_variable_t error =
+        neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  } break;
+  case NEO_JS_TYPE_STRING: {
+    neo_js_variable_t message =
+        neo_js_context_create_cstring(ctx, "String is not implement");
+    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+    neo_js_variable_t error =
+        neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
+    return neo_js_context_create_exception(ctx, error);
+  } break;
   case NEO_JS_TYPE_SYMBOL: {
     neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t object =

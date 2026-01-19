@@ -31,6 +31,8 @@ neo_js_variable_t neo_js_variable_to_string(neo_js_variable_t self,
                                             neo_js_context_t ctx);
 neo_js_variable_t neo_js_variable_to_number(neo_js_variable_t self,
                                             neo_js_context_t ctx);
+neo_js_variable_t neo_js_variable_to_integer(neo_js_variable_t self,
+                                             neo_js_context_t ctx);
 neo_js_variable_t neo_js_variable_to_boolean(neo_js_variable_t self,
                                              neo_js_context_t ctx);
 neo_js_variable_t neo_js_variable_to_object(neo_js_variable_t self,

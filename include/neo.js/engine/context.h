@@ -115,10 +115,7 @@ neo_js_variable_t neo_js_context_def(neo_js_context_t self, const char *name,
 neo_js_variable_t neo_js_context_get_global(neo_js_context_t self);
 neo_js_variable_t neo_js_context_format(neo_js_context_t self, const char *fmt,
                                         ...);
-neo_js_variable_t neo_js_context_get_argument(neo_js_context_t self,
-                                              size_t argc,
-                                              neo_js_variable_t *argv,
-                                              size_t idx);
+
 int64_t neo_js_context_create_macro_task(neo_js_context_t self,
                                          neo_js_variable_t callee,
                                          int64_t timeout, bool keep);
@@ -170,6 +167,9 @@ neo_js_variable_t neo_js_context_assert(neo_js_context_t self, const char *type,
   } while (0)
 #define neo_js_context_get_allocator(ctx)                                      \
   neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx))
+
+#define neo_js_context_get_argument(ctx, argc, argv, idx)                      \
+  ((idx) < argc ? argv[idx] : neo_js_context_get_undefined(ctx))
 #ifdef __cplusplus
 }
 #endif
