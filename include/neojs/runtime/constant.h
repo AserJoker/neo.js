@@ -25,12 +25,14 @@ struct _neo_js_constant_t {
   // object
   neo_js_variable_t object_prototype;
   neo_js_variable_t object_class;
-  // array
-  neo_js_variable_t array_prototype;
-  neo_js_variable_t array_class;
   // iterator
   neo_js_variable_t iterator_class;
   neo_js_variable_t iterator_prototype;
+  // array
+  neo_js_variable_t array_prototype;
+  neo_js_variable_t array_class;
+  // array_buffer
+  neo_js_variable_t array_buffer_class;
   // array_iterator
   neo_js_variable_t array_iterator_prototype;
   // symbol

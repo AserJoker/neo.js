@@ -8,6 +8,7 @@
 #include "neojs/engine/undefined.h"
 #include "neojs/engine/uninitialized.h"
 #include "neojs/runtime/array.h"
+#include "neojs/runtime/array_buffer.h"
 #include "neojs/runtime/array_iterator.h"
 #include "neojs/runtime/async_function.h"
 #include "neojs/runtime/async_generator.h"
@@ -55,8 +56,9 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   neo_initialize_js_function(ctx);
   constant->global = neo_js_context_create_object(ctx, NULL);
   neo_initialize_js_symbol(ctx);
-  neo_initialize_js_array(ctx);
   neo_initialize_js_iterator(ctx);
+  neo_initialize_js_array(ctx);
+  neo_initialize_js_array_buffer(ctx);
   neo_initialize_js_array_iterator(ctx);
   neo_initialize_js_error(ctx);
   neo_initialize_js_type_error(ctx);
@@ -87,6 +89,7 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   neo_js_scope_set_variable(root_scope, constant->object_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->object_prototype, NULL);
   neo_js_scope_set_variable(root_scope, constant->array_class, NULL);
+  neo_js_scope_set_variable(root_scope, constant->array_buffer_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->array_prototype, NULL);
   neo_js_scope_set_variable(root_scope, constant->function_prototype, NULL);
   neo_js_scope_set_variable(root_scope, constant->function_class, NULL);
@@ -146,6 +149,8 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   NEO_JS_DEF_FIELD(ctx, constant->global, "Object", constant->object_class);
   NEO_JS_DEF_FIELD(ctx, constant->global, "Function", constant->function_class);
   NEO_JS_DEF_FIELD(ctx, constant->global, "Array", constant->array_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "ArrayBuffer",
+                   constant->array_buffer_class);
   NEO_JS_DEF_FIELD(ctx, constant->global, "Iterator", constant->iterator_class);
   NEO_JS_DEF_FIELD(ctx, constant->global, "Symbol", constant->symbol_class);
   NEO_JS_DEF_FIELD(ctx, constant->global, "Error", constant->error_class);
