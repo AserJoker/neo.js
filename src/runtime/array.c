@@ -2239,7 +2239,8 @@ NEO_JS_CFUNCTION(neo_js_array_to_spliced) {
   return spliced;
 }
 NEO_JS_CFUNCTION(neo_js_array_to_string) {
-  return neo_js_array_join(ctx, self, argc, argv);
+  neo_js_variable_t sp = neo_js_context_create_cstring(ctx, ",");
+  return neo_js_array_join(ctx, self, 1, &sp);
 }
 NEO_JS_CFUNCTION(neo_js_array_unshift) {
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
