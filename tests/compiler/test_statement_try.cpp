@@ -1,9 +1,9 @@
-#include "neo.js/compiler/ast_node.h"
-#include "neo.js/compiler/ast_statement.h"
-#include "neo.js/compiler/ast_statement_try.h"
-#include "neo.js/compiler/scope.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/location.h"
+#include "neojs/compiler/ast_node.h"
+#include "neojs/compiler/ast_statement.h"
+#include "neojs/compiler/ast_statement_try.h"
+#include "neojs/compiler/scope.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/location.h"
 #include "test.hpp"
 class neo_test_statement_try : public neo_test {};
 TEST_F(neo_test_statement_try, catch_only) {

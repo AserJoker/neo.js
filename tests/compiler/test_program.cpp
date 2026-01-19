@@ -1,9 +1,9 @@
-#include "neo.js/compiler/ast_node.h"
-#include "neo.js/compiler/ast_program.h"
-#include "neo.js/compiler/scope.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/list.h"
-#include "neo.js/core/location.h"
+#include "neojs/compiler/ast_node.h"
+#include "neojs/compiler/ast_program.h"
+#include "neojs/compiler/scope.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/list.h"
+#include "neojs/core/location.h"
 #include "test.hpp"
 #include <gtest/gtest.h>
 class neo_test_program : public neo_test {};

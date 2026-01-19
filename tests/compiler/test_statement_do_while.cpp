@@ -1,6 +1,6 @@
-#include "neo.js/compiler/ast_node.h"
-#include "neo.js/compiler/ast_statement.h"
-#include "neo.js/compiler/ast_statement_do_while.h"
+#include "neojs/compiler/ast_node.h"
+#include "neojs/compiler/ast_statement.h"
+#include "neojs/compiler/ast_statement_do_while.h"
 #include "test.hpp"
 class neo_test_statement_do_while : public neo_test {};
 TEST_F(neo_test_statement_do_while, normal) {

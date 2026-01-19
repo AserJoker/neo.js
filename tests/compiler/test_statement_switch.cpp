@@ -1,9 +1,9 @@
-#include "neo.js/compiler/ast_node.h"
-#include "neo.js/compiler/ast_statement.h"
-#include "neo.js/compiler/ast_statement_switch.h"
-#include "neo.js/compiler/ast_switch_case.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/list.h"
+#include "neojs/compiler/ast_node.h"
+#include "neojs/compiler/ast_statement.h"
+#include "neojs/compiler/ast_statement_switch.h"
+#include "neojs/compiler/ast_switch_case.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/list.h"
 #include "test.hpp"
 #include <gtest/gtest.h>
 class neo_test_statement_switch : public neo_test {};

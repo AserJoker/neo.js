@@ -1,8 +1,8 @@
-#include "neo.js/compiler/ast_node.h"
-#include "neo.js/compiler/ast_statement.h"
-#include "neo.js/compiler/ast_statement_throw.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/location.h"
+#include "neojs/compiler/ast_node.h"
+#include "neojs/compiler/ast_statement.h"
+#include "neojs/compiler/ast_statement_throw.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/location.h"
 #include "test.hpp"
 #include <gtest/gtest.h>
 class neo_test_statement_throw : public neo_test {};

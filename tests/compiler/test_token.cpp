@@ -1,7 +1,7 @@
-#include "neo.js/compiler/token.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/location.h"
-#include "neo.js/core/position.h"
+#include "neojs/compiler/token.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/location.h"
+#include "neojs/core/position.h"
 #include "test.hpp"
 #include <gtest/gtest.h>
 class neo_test_token : public neo_test {};

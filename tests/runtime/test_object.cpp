@@ -1,10 +1,9 @@
-#include "neo.js/core/allocator.h"
-#include "neo.js/engine/context.h"
-#include "neo.js/engine/runtime.h"
-#include "neo.js/engine/variable.h"
-#include "neo.js/runtime/constant.h"
+#include "neojs/core/allocator.h"
+#include "neojs/engine/context.h"
+#include "neojs/engine/runtime.h"
+#include "neojs/engine/variable.h"
+#include "neojs/runtime/constant.h"
 #include <gtest/gtest.h>
-
 
 class test_object : public testing::Test {};
 

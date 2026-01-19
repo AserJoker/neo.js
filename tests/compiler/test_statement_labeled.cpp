@@ -1,7 +1,7 @@
-#include "neo.js/compiler/ast_node.h"
-#include "neo.js/compiler/ast_statement.h"
-#include "neo.js/compiler/ast_statement_labeled.h"
-#include "neo.js/core/location.h"
+#include "neojs/compiler/ast_node.h"
+#include "neojs/compiler/ast_statement.h"
+#include "neojs/compiler/ast_statement_labeled.h"
+#include "neojs/core/location.h"
 #include "test.hpp"
 #include <gtest/gtest.h>
 class neo_test_statement_labeled : public neo_test {};
