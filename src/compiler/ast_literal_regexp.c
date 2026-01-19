@@ -1,7 +1,7 @@
-#include "neo.js/compiler/ast_literal_regexp.h"
-#include "neo.js/compiler/asm.h"
-#include "neo.js/compiler/token.h"
-#include "neo.js/core/allocator.h"
+#include "neojs/compiler/ast_literal_regexp.h"
+#include "neojs/compiler/asm.h"
+#include "neojs/compiler/token.h"
+#include "neojs/core/allocator.h"
 #include <string.h>
 
 static void neo_ast_literal_regexp_dispose(neo_allocator_t allocator,

@@ -1,4 +1,4 @@
-#include "neo.js/engine/null.h"
+#include "neojs/engine/null.h"
 
 static void neo_js_null_dispose(neo_allocator_t allocator, neo_js_null_t self) {
   neo_deinit_js_null(self, allocator);

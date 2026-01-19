@@ -1,5 +1,5 @@
-#include "neo.js/engine/bigint.h"
-#include "neo.js/core/allocator.h"
+#include "neojs/engine/bigint.h"
+#include "neojs/core/allocator.h"
 
 static void neo_js_bigint_dispose(neo_allocator_t allocator,
                                   neo_js_bigint_t self) {

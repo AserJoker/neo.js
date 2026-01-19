@@ -1,6 +1,6 @@
-#include "neo.js/compiler/ast_statement_empty.h"
-#include "neo.js/compiler/ast_node.h"
-#include "neo.js/core/any.h"
+#include "neojs/compiler/ast_statement_empty.h"
+#include "neojs/compiler/ast_node.h"
+#include "neojs/core/any.h"
 
 static void neo_ast_statement_empty_dispose(neo_allocator_t allocator,
                                             neo_ast_statement_empty_t node) {

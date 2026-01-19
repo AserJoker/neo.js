@@ -1,9 +1,9 @@
-#include "neo.js/compiler/ast_declaration_class.h"
-#include "neo.js/compiler/asm.h"
-#include "neo.js/compiler/ast_expression_class.h"
-#include "neo.js/compiler/ast_node.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/any.h"
+#include "neojs/compiler/ast_declaration_class.h"
+#include "neojs/compiler/asm.h"
+#include "neojs/compiler/ast_expression_class.h"
+#include "neojs/compiler/ast_node.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/any.h"
 
 static void
 neo_ast_declaration_class_dispose(neo_allocator_t allocator,

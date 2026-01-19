@@ -1,15 +1,14 @@
-#include "neo.js/runtime/console.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/string.h"
-#include "neo.js/engine/context.h"
-#include "neo.js/engine/string.h"
-#include "neo.js/engine/symbol.h"
-#include "neo.js/engine/value.h"
-#include "neo.js/engine/variable.h"
-#include "neo.js/runtime/constant.h"
+#include "neojs/runtime/console.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/string.h"
+#include "neojs/engine/context.h"
+#include "neojs/engine/string.h"
+#include "neojs/engine/symbol.h"
+#include "neojs/engine/value.h"
+#include "neojs/engine/variable.h"
+#include "neojs/runtime/constant.h"
 #include <stdint.h>
 #include <stdio.h>
-
 
 NEO_JS_CFUNCTION(neo_js_console_constructor) { return self; }
 NEO_JS_CFUNCTION(neo_js_console_log) {

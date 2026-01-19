@@ -1,13 +1,13 @@
-#include "neo.js/compiler/ast_decorator.h"
-#include "neo.js/compiler/ast_expression_call.h"
-#include "neo.js/compiler/ast_expression_group.h"
-#include "neo.js/compiler/ast_expression_member.h"
-#include "neo.js/compiler/ast_identifier.h"
-#include "neo.js/compiler/ast_node.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/any.h"
-#include "neo.js/core/list.h"
-#include "neo.js/core/position.h"
+#include "neojs/compiler/ast_decorator.h"
+#include "neojs/compiler/ast_expression_call.h"
+#include "neojs/compiler/ast_expression_group.h"
+#include "neojs/compiler/ast_expression_member.h"
+#include "neojs/compiler/ast_identifier.h"
+#include "neojs/compiler/ast_node.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/any.h"
+#include "neojs/core/list.h"
+#include "neojs/core/position.h"
 #include <stdbool.h>
 #include <stdio.h>
 

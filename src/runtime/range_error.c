@@ -1,8 +1,8 @@
-#include "neo.js/runtime/range_error.h"
-#include "neo.js/engine/context.h"
-#include "neo.js/engine/variable.h"
-#include "neo.js/runtime/constant.h"
-#include "neo.js/runtime/error.h"
+#include "neojs/runtime/range_error.h"
+#include "neojs/engine/context.h"
+#include "neojs/engine/variable.h"
+#include "neojs/runtime/constant.h"
+#include "neojs/runtime/error.h"
 NEO_JS_CFUNCTION(neo_js_range_error_constructor) {
   return neo_js_error_constructor(ctx, self, argc, argv);
 }

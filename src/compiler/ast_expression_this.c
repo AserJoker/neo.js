@@ -1,12 +1,12 @@
-#include "neo.js/compiler/ast_expression_this.h"
-#include "neo.js/compiler/asm.h"
-#include "neo.js/compiler/ast_node.h"
-#include "neo.js/compiler/token.h"
-#include "neo.js/compiler/writer.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/any.h"
-#include "neo.js/core/location.h"
-#include "neo.js/core/position.h"
+#include "neojs/compiler/ast_expression_this.h"
+#include "neojs/compiler/asm.h"
+#include "neojs/compiler/ast_node.h"
+#include "neojs/compiler/token.h"
+#include "neojs/compiler/writer.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/any.h"
+#include "neojs/core/location.h"
+#include "neojs/core/position.h"
 
 static void neo_ast_expression_this_dispose(neo_allocator_t allocator,
                                             neo_ast_expression_this_t node) {

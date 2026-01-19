@@ -1,5 +1,5 @@
-#include "neo.js/runtime/async_generator_function.h"
-#include "neo.js/engine/context.h"
+#include "neojs/runtime/async_generator_function.h"
+#include "neojs/engine/context.h"
 NEO_JS_CFUNCTION(neo_js_async_generator_function_constructor) { return self; }
 void neo_initialize_js_async_generator_function(neo_js_context_t ctx) {
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);

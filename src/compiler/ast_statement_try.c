@@ -1,13 +1,13 @@
-#include "neo.js/compiler/ast_statement_try.h"
-#include "neo.js/compiler/asm.h"
-#include "neo.js/compiler/ast_node.h"
-#include "neo.js/compiler/ast_statement_block.h"
-#include "neo.js/compiler/ast_try_catch.h"
-#include "neo.js/compiler/program.h"
-#include "neo.js/compiler/token.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/any.h"
-#include "neo.js/core/buffer.h"
+#include "neojs/compiler/ast_statement_try.h"
+#include "neojs/compiler/asm.h"
+#include "neojs/compiler/ast_node.h"
+#include "neojs/compiler/ast_statement_block.h"
+#include "neojs/compiler/ast_try_catch.h"
+#include "neojs/compiler/program.h"
+#include "neojs/compiler/token.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/any.h"
+#include "neojs/core/buffer.h"
 #include <stdio.h>
 
 static void neo_ast_statement_try_dispose(neo_allocator_t allocator,

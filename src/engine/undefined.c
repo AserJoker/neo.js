@@ -1,5 +1,5 @@
-#include "neo.js/engine/undefined.h"
-#include "neo.js/core/allocator.h"
+#include "neojs/engine/undefined.h"
+#include "neojs/core/allocator.h"
 
 static void neo_js_undefined_dispose(neo_allocator_t allocator,
                                      neo_js_undefined_t self) {

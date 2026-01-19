@@ -1,12 +1,12 @@
-#include "neo.js/compiler/ast_statement_throw.h"
-#include "neo.js/compiler/asm.h"
-#include "neo.js/compiler/ast_expression.h"
-#include "neo.js/compiler/ast_node.h"
-#include "neo.js/compiler/token.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/any.h"
-#include "neo.js/core/location.h"
-#include "neo.js/core/position.h"
+#include "neojs/compiler/ast_statement_throw.h"
+#include "neojs/compiler/asm.h"
+#include "neojs/compiler/ast_expression.h"
+#include "neojs/compiler/ast_node.h"
+#include "neojs/compiler/token.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/any.h"
+#include "neojs/core/location.h"
+#include "neojs/core/position.h"
 #include <stdio.h>
 
 static void neo_ast_statement_throw_dispose(neo_allocator_t allocator,

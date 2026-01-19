@@ -1,8 +1,8 @@
-#include "neo.js/compiler/ast_expression_group.h"
-#include "neo.js/compiler/ast_expression.h"
-#include "neo.js/compiler/ast_node.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/position.h"
+#include "neojs/compiler/ast_expression_group.h"
+#include "neojs/compiler/ast_expression.h"
+#include "neojs/compiler/ast_node.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/position.h"
 #include <stdio.h>
 
 neo_ast_node_t neo_ast_read_expression_group(neo_allocator_t allocator,

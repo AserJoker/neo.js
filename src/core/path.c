@@ -1,7 +1,7 @@
-#include "neo.js/core/path.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/list.h"
-#include "neo.js/core/string.h"
+#include "neojs/core/path.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/list.h"
+#include "neojs/core/string.h"
 #include <stdlib.h>
 #include <string.h>
 #ifdef _WIN32

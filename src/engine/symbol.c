@@ -1,6 +1,6 @@
-#include "neo.js/engine/symbol.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/string.h"
+#include "neojs/engine/symbol.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/string.h"
 #include <stdint.h>
 #include <string.h>
 static void neo_js_symbol_dispose(neo_allocator_t allocator,

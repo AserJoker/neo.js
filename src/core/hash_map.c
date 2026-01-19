@@ -1,6 +1,6 @@
-#include "neo.js/core/hash_map.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/common.h"
+#include "neojs/core/hash_map.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/common.h"
 #define NEO_HASH_MAP_BUCKET_SIZE 16
 
 struct _neo_hash_map_node_t {

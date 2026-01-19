@@ -1,20 +1,19 @@
-#include "neo.js/runtime/symbol.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/common.h"
-#include "neo.js/core/hash.h"
-#include "neo.js/core/hash_map.h"
-#include "neo.js/core/string.h"
-#include "neo.js/engine/context.h"
-#include "neo.js/engine/runtime.h"
-#include "neo.js/engine/string.h"
-#include "neo.js/engine/symbol.h"
-#include "neo.js/engine/value.h"
-#include "neo.js/engine/variable.h"
-#include "neo.js/runtime/constant.h"
+#include "neojs/runtime/symbol.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/common.h"
+#include "neojs/core/hash.h"
+#include "neojs/core/hash_map.h"
+#include "neojs/core/string.h"
+#include "neojs/engine/context.h"
+#include "neojs/engine/runtime.h"
+#include "neojs/engine/string.h"
+#include "neojs/engine/symbol.h"
+#include "neojs/engine/value.h"
+#include "neojs/engine/variable.h"
+#include "neojs/runtime/constant.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
-
 
 #define DEF_SYMBOL(constant, name)                                             \
   do {                                                                         \

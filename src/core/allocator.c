@@ -1,4 +1,4 @@
-#include "neo.js/core/allocator.h"
+#include "neojs/core/allocator.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

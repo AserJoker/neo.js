@@ -1,7 +1,6 @@
-#include "neo.js/engine/exception.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/engine/value.h"
-
+#include "neojs/engine/exception.h"
+#include "neojs/core/allocator.h"
+#include "neojs/engine/value.h"
 
 static void neo_js_exception_dispose(neo_allocator_t allocator,
                                      neo_js_exception_t self) {

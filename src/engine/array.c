@@ -1,12 +1,11 @@
-#include "neo.js/engine/array.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/hash_map.h"
-#include "neo.js/engine/number.h"
-#include "neo.js/engine/object.h"
-#include "neo.js/engine/string.h"
-#include "neo.js/engine/value.h"
+#include "neojs/engine/array.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/hash_map.h"
+#include "neojs/engine/number.h"
+#include "neojs/engine/object.h"
+#include "neojs/engine/string.h"
+#include "neojs/engine/value.h"
 #include <stdint.h>
-
 
 static void neo_js_array_dispose(neo_allocator_t allocator,
                                  neo_js_array_t self) {

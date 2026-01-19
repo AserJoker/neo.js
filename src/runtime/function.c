@@ -1,12 +1,12 @@
-#include "neo.js/runtime/function.h"
-#include "neo.js/engine/callable.h"
-#include "neo.js/engine/context.h"
-#include "neo.js/engine/function.h"
-#include "neo.js/engine/string.h"
-#include "neo.js/engine/value.h"
-#include "neo.js/engine/variable.h"
-#include "neo.js/runtime/constant.h"
-#include "neo.js/runtime/object.h"
+#include "neojs/runtime/function.h"
+#include "neojs/engine/callable.h"
+#include "neojs/engine/context.h"
+#include "neojs/engine/function.h"
+#include "neojs/engine/string.h"
+#include "neojs/engine/value.h"
+#include "neojs/engine/variable.h"
+#include "neojs/runtime/constant.h"
+#include "neojs/runtime/object.h"
 #include <stdbool.h>
 #include <stdint.h>
 

@@ -1,11 +1,11 @@
-#include "neo.js/compiler/ast_export_namespace.h"
-#include "neo.js/compiler/ast_identifier.h"
-#include "neo.js/compiler/scope.h"
-#include "neo.js/compiler/token.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/any.h"
-#include "neo.js/core/location.h"
-#include "neo.js/core/position.h"
+#include "neojs/compiler/ast_export_namespace.h"
+#include "neojs/compiler/ast_identifier.h"
+#include "neojs/compiler/scope.h"
+#include "neojs/compiler/token.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/any.h"
+#include "neojs/core/location.h"
+#include "neojs/core/position.h"
 #include <stdio.h>
 
 static void neo_ast_export_namespace_dispose(neo_allocator_t allocator,

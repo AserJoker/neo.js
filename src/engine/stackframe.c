@@ -1,7 +1,7 @@
-#include "neo.js/engine/stackframe.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/string.h"
-#include "neo.js/core/unicode.h"
+#include "neojs/engine/stackframe.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/string.h"
+#include "neojs/core/unicode.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

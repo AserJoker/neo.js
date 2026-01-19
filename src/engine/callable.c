@@ -1,9 +1,9 @@
-#include "neo.js/engine/callable.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/common.h"
-#include "neo.js/core/map.h"
-#include "neo.js/engine/object.h"
-#include "neo.js/engine/value.h"
+#include "neojs/engine/callable.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/common.h"
+#include "neojs/core/map.h"
+#include "neojs/engine/object.h"
+#include "neojs/engine/value.h"
 #include <stdbool.h>
 #include <string.h>
 

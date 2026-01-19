@@ -1,13 +1,13 @@
-#include "neo.js/compiler/ast_declaration_function.h"
-#include "neo.js/compiler/asm.h"
-#include "neo.js/compiler/ast_expression_function.h"
-#include "neo.js/compiler/ast_node.h"
-#include "neo.js/compiler/program.h"
-#include "neo.js/compiler/scope.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/any.h"
-#include "neo.js/core/list.h"
-#include "neo.js/core/location.h"
+#include "neojs/compiler/ast_declaration_function.h"
+#include "neojs/compiler/asm.h"
+#include "neojs/compiler/ast_expression_function.h"
+#include "neojs/compiler/ast_node.h"
+#include "neojs/compiler/program.h"
+#include "neojs/compiler/scope.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/any.h"
+#include "neojs/core/list.h"
+#include "neojs/core/location.h"
 #include <stdio.h>
 
 static void

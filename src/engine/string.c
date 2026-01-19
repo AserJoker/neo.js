@@ -1,6 +1,6 @@
-#include "neo.js/engine/string.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/string.h"
+#include "neojs/engine/string.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/string.h"
 #include <stdint.h>
 #include <string.h>
 static void neo_js_string_dispose(neo_allocator_t allocator,

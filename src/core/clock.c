@@ -1,4 +1,4 @@
-#include "neo.js/core/clock.h"
+#include "neojs/core/clock.h"
 #include <stdbool.h>
 #include <string.h>
 #ifdef _WIN32

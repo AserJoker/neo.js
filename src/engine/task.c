@@ -1,6 +1,6 @@
-#include "neo.js/engine/task.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/clock.h"
+#include "neojs/engine/task.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/clock.h"
 static void neo_js_task_dispose(neo_allocator_t allocator, neo_js_task_t task) {
 }
 neo_js_task_t neo_create_js_task(neo_allocator_t allocator, int64_t idx,

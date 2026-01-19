@@ -1,0 +1,12 @@
+#ifndef _H_NEO_RUNTIME_GENERATOR_FUNCTION_
+#define _H_NEO_RUNTIME_GENERATOR_FUNCTION_
+#include "neojs/engine/variable.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
+NEO_JS_CFUNCTION(neo_js_generator_function_constructor);
+void neo_initialize_js_generator_function(neo_js_context_t ctx);
+#ifdef __cplusplus
+}
+#endif
+#endif

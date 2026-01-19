@@ -1,12 +1,12 @@
-#include "neo.js/compiler/ast_literal_string.h"
-#include "neo.js/compiler/asm.h"
-#include "neo.js/compiler/ast_node.h"
-#include "neo.js/compiler/program.h"
-#include "neo.js/compiler/token.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/any.h"
-#include "neo.js/core/location.h"
-#include "neo.js/core/string.h"
+#include "neojs/compiler/ast_literal_string.h"
+#include "neojs/compiler/asm.h"
+#include "neojs/compiler/ast_node.h"
+#include "neojs/compiler/program.h"
+#include "neojs/compiler/token.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/any.h"
+#include "neojs/core/location.h"
+#include "neojs/core/string.h"
 #include <string.h>
 
 static void neo_ast_literal_string_dispose(neo_allocator_t allocator,

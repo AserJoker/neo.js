@@ -1,12 +1,12 @@
-#include "neo.js/compiler/ast_import_attribute.h"
-#include "neo.js/compiler/asm.h"
-#include "neo.js/compiler/ast_identifier.h"
-#include "neo.js/compiler/ast_literal_string.h"
-#include "neo.js/compiler/ast_node.h"
-#include "neo.js/compiler/program.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/any.h"
-#include "neo.js/core/location.h"
+#include "neojs/compiler/ast_import_attribute.h"
+#include "neojs/compiler/asm.h"
+#include "neojs/compiler/ast_identifier.h"
+#include "neojs/compiler/ast_literal_string.h"
+#include "neojs/compiler/ast_node.h"
+#include "neojs/compiler/program.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/any.h"
+#include "neojs/core/location.h"
 #include <stdio.h>
 #include <string.h>
 

@@ -1,7 +1,7 @@
-#include "neo.js/engine/interrupt.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/engine/handle.h"
-#include "neo.js/engine/value.h"
+#include "neojs/engine/interrupt.h"
+#include "neojs/core/allocator.h"
+#include "neojs/engine/handle.h"
+#include "neojs/engine/value.h"
 
 static void neo_js_interrupt_dispose(neo_allocator_t allocator,
                                      neo_js_interrupt_t self) {

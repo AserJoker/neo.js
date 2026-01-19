@@ -1,7 +1,7 @@
-#include "neo.js/engine/runtime.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/hash.h"
-#include "neo.js/core/hash_map.h"
+#include "neojs/engine/runtime.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/hash.h"
+#include "neojs/core/hash_map.h"
 #include <string.h>
 struct _neo_js_runtime_t {
   neo_allocator_t allocator;

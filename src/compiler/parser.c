@@ -1,10 +1,10 @@
-#include "neo.js/compiler/parser.h"
-#include "neo.js/compiler/ast_node.h"
-#include "neo.js/compiler/ast_program.h"
-#include "neo.js/compiler/program.h"
-#include "neo.js/compiler/writer.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/position.h"
+#include "neojs/compiler/parser.h"
+#include "neojs/compiler/ast_node.h"
+#include "neojs/compiler/ast_program.h"
+#include "neojs/compiler/program.h"
+#include "neojs/compiler/writer.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/position.h"
 #include <stddef.h>
 
 neo_ast_node_t neo_ast_parse_code(neo_allocator_t allocator, const char *file,

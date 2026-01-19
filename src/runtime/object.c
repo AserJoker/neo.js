@@ -1,12 +1,11 @@
-#include "neo.js/runtime/object.h"
-#include "neo.js/core/string.h"
-#include "neo.js/engine/context.h"
-#include "neo.js/engine/string.h"
-#include "neo.js/engine/value.h"
-#include "neo.js/engine/variable.h"
-#include "neo.js/runtime/constant.h"
+#include "neojs/runtime/object.h"
+#include "neojs/core/string.h"
+#include "neojs/engine/context.h"
+#include "neojs/engine/string.h"
+#include "neojs/engine/value.h"
+#include "neojs/engine/variable.h"
+#include "neojs/runtime/constant.h"
 #include <stdbool.h>
-
 
 NEO_JS_CFUNCTION(neo_js_object_constructor) { return self; }
 

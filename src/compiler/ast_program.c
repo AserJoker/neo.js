@@ -1,16 +1,16 @@
 
-#include "neo.js/compiler/ast_program.h"
-#include "neo.js/compiler/asm.h"
-#include "neo.js/compiler/ast_directive.h"
-#include "neo.js/compiler/ast_interpreter.h"
-#include "neo.js/compiler/ast_node.h"
-#include "neo.js/compiler/ast_statement.h"
-#include "neo.js/compiler/program.h"
-#include "neo.js/compiler/scope.h"
-#include "neo.js/core/allocator.h"
-#include "neo.js/core/any.h"
-#include "neo.js/core/list.h"
-#include "neo.js/core/location.h"
+#include "neojs/compiler/ast_program.h"
+#include "neojs/compiler/asm.h"
+#include "neojs/compiler/ast_directive.h"
+#include "neojs/compiler/ast_interpreter.h"
+#include "neojs/compiler/ast_node.h"
+#include "neojs/compiler/ast_statement.h"
+#include "neojs/compiler/program.h"
+#include "neojs/compiler/scope.h"
+#include "neojs/core/allocator.h"
+#include "neojs/core/any.h"
+#include "neojs/core/list.h"
+#include "neojs/core/location.h"
 
 static void neo_ast_program_dispose(neo_allocator_t allocator,
                                     neo_ast_program_t node) {

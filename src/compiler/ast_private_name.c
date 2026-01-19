@@ -1,6 +1,6 @@
-#include "neo.js/compiler/ast_private_name.h"
-#include "neo.js/compiler/ast_node.h"
-#include "neo.js/compiler/token.h"
+#include "neojs/compiler/ast_private_name.h"
+#include "neojs/compiler/ast_node.h"
+#include "neojs/compiler/token.h"
 
 static void neo_ast_private_name_dispose(neo_allocator_t allocator,
                                          neo_ast_private_name_t node) {
