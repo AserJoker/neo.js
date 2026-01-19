@@ -28,6 +28,8 @@ struct _neo_js_constant_t {
   // iterator
   neo_js_variable_t iterator_class;
   neo_js_variable_t iterator_prototype;
+  // aggregate_error
+  neo_js_variable_t aggregate_error_class;
   // array
   neo_js_variable_t array_prototype;
   neo_js_variable_t array_class;

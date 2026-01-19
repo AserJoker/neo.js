@@ -7,6 +7,7 @@
 #include "neojs/engine/scope.h"
 #include "neojs/engine/undefined.h"
 #include "neojs/engine/uninitialized.h"
+#include "neojs/runtime/aggregate_error.h"
 #include "neojs/runtime/array.h"
 #include "neojs/runtime/array_buffer.h"
 #include "neojs/runtime/array_iterator.h"
@@ -57,6 +58,7 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   constant->global = neo_js_context_create_object(ctx, NULL);
   neo_initialize_js_symbol(ctx);
   neo_initialize_js_iterator(ctx);
+  neo_initialize_js_aggregate_error(ctx);
   neo_initialize_js_array(ctx);
   neo_initialize_js_array_buffer(ctx);
   neo_initialize_js_array_iterator(ctx);
