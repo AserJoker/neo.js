@@ -1383,6 +1383,10 @@ neo_js_variable_t neo_js_variable_call_variable(neo_js_variable_t self,
   neo_js_callable_t callable = (neo_js_callable_t)self->value;
   bind = neo_js_context_create_variable(ctx, callable->bind ? callable->bind
                                                             : bind->value);
+  bind = neo_js_variable_to_object(bind, ctx);
+  if (bind->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return bind;
+  }
   if (!callable->is_native) {
     neo_js_variable_t arguments =
         neo_js_context_create_object(ctx, neo_js_context_get_null(ctx));
