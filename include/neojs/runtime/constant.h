@@ -46,6 +46,8 @@ struct _neo_js_constant_t {
   // bigint
   neo_js_variable_t bigint_class;
   neo_js_variable_t bigint_prototype;
+  // boolean
+  neo_js_variable_t boolean_class;
   // intl
   neo_js_variable_t intl;
   // symbol

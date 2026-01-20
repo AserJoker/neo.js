@@ -15,6 +15,7 @@
 #include "neojs/runtime/async_generator.h"
 #include "neojs/runtime/async_generator_function.h"
 #include "neojs/runtime/bigint.h"
+#include "neojs/runtime/boolean.h"
 #include "neojs/runtime/console.h"
 #include "neojs/runtime/error.h"
 #include "neojs/runtime/function.h"
@@ -68,6 +69,7 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   neo_initialize_js_async_generator_function(ctx);
   neo_initialize_js_async_generator(ctx);
   neo_initialize_js_bigint(ctx);
+  neo_initialize_js_boolean(ctx);
 
   neo_initialize_js_intl(ctx);
   neo_initialize_js_error(ctx);
@@ -112,6 +114,7 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
                             NULL);
   neo_js_scope_set_variable(root_scope, constant->bigint_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->bigint_prototype, NULL);
+  neo_js_scope_set_variable(root_scope, constant->boolean_class, NULL);
 
   neo_js_scope_set_variable(root_scope, constant->object_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->object_prototype, NULL);
@@ -169,6 +172,7 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   NEO_JS_DEF_FIELD(ctx, constant->global, "ArrayBuffer",
                    constant->array_buffer_class);
   NEO_JS_DEF_FIELD(ctx, constant->global, "BigInt", constant->bigint_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "Boolean", constant->boolean_class);
 
   NEO_JS_DEF_FIELD(ctx, constant->global, "Iterator", constant->iterator_class);
   NEO_JS_DEF_FIELD(ctx, constant->global, "Symbol", constant->symbol_class);

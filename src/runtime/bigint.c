@@ -136,7 +136,7 @@ NEO_JS_CFUNCTION(neo_js_bigint_as_uint_n) {
 }
 NEO_JS_CFUNCTION(neo_js_bigint_to_locale_string) {
   neo_js_variable_t value = neo_js_variable_get_internel(self, ctx, "value");
-  if (value->value->type != NEO_JS_TYPE_BIGINT) {
+  if (!value || value->value->type != NEO_JS_TYPE_BIGINT) {
     neo_js_variable_t message = neo_js_context_create_cstring(
         ctx,
         "BigInt.prototype.toLocaleString requires that 'this' be a BigInt");
@@ -158,7 +158,7 @@ NEO_JS_CFUNCTION(neo_js_bigint_to_locale_string) {
 }
 NEO_JS_CFUNCTION(neo_js_bigint_to_string) {
   neo_js_variable_t value = neo_js_variable_get_internel(self, ctx, "value");
-  if (value->value->type != NEO_JS_TYPE_BIGINT) {
+  if (!value || value->value->type != NEO_JS_TYPE_BIGINT) {
     neo_js_variable_t message = neo_js_context_create_cstring(
         ctx, "BigInt.prototype.toString requires that 'this' be a BigInt");
     neo_js_variable_t error = neo_js_variable_construct(
@@ -169,7 +169,7 @@ NEO_JS_CFUNCTION(neo_js_bigint_to_string) {
 }
 NEO_JS_CFUNCTION(neo_js_bigint_value_of) {
   neo_js_variable_t value = neo_js_variable_get_internel(self, ctx, "value");
-  if (value->value->type != NEO_JS_TYPE_BIGINT) {
+  if (!value || value->value->type != NEO_JS_TYPE_BIGINT) {
     neo_js_variable_t message = neo_js_context_create_cstring(
         ctx, "BigInt.prototype.valueOf requires that 'this' be a BigInt");
     neo_js_variable_t error = neo_js_variable_construct(
