@@ -520,6 +520,8 @@ static void neo_js_vm_member_call(neo_js_vm_t vm, neo_js_context_t ctx,
     argv[idx] = neo_js_variable_get_field(
         argument, ctx, neo_js_context_create_number(ctx, idx));
   }
+  host = neo_js_variable_to_object(host, ctx);
+  NEO_JS_VM_CHECK(vm, host, program, offset);
   neo_js_variable_t callable = neo_js_variable_get_field(host, ctx, key);
   NEO_JS_VM_CHECK(vm, callable, program, offset);
   neo_allocator_t allocator =
@@ -1769,6 +1771,8 @@ static void neo_js_vm_member_tag(neo_js_vm_t vm, neo_js_context_t ctx,
   neo_js_variable_t key = neo_list_node_get(it);
   it = neo_list_node_last(it);
   neo_js_variable_t host = neo_list_node_get(it);
+  host = neo_js_variable_to_object(host, ctx);
+  NEO_JS_VM_CHECK(vm, host, program, offset);
   neo_js_variable_t callable = neo_js_variable_get_field(host, ctx, key);
   NEO_JS_VM_CHECK(vm, callable, program, offset);
   // TODO: callable == String.raw

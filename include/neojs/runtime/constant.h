@@ -37,6 +37,17 @@ struct _neo_js_constant_t {
   neo_js_variable_t array_buffer_class;
   // array_iterator
   neo_js_variable_t array_iterator_prototype;
+  // async function
+  neo_js_variable_t async_function_prototype;
+  neo_js_variable_t async_function_class;
+  // async generator function
+  neo_js_variable_t async_generator_function_prototype;
+  neo_js_variable_t async_generator_function_class;
+  // bigint
+  neo_js_variable_t bigint_class;
+  neo_js_variable_t bigint_prototype;
+  // intl
+  neo_js_variable_t intl;
   // symbol
   neo_js_variable_t symbol_prototype;
   neo_js_variable_t symbol_class;
@@ -73,12 +84,6 @@ struct _neo_js_constant_t {
   neo_js_variable_t generator_function_class;
   // generator
   neo_js_variable_t generator_prototype;
-  // async function
-  neo_js_variable_t async_function_prototype;
-  neo_js_variable_t async_function_class;
-  // async generator function
-  neo_js_variable_t async_generator_function_prototype;
-  neo_js_variable_t async_generator_function_class;
   // generator
   neo_js_variable_t async_generator_prototype;
   // promise

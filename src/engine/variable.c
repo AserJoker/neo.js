@@ -307,13 +307,11 @@ neo_js_variable_t neo_js_variable_to_object(neo_js_variable_t self,
     return neo_js_context_create_exception(ctx, error);
   } break;
   case NEO_JS_TYPE_BIGINT: {
-    neo_js_variable_t message =
-        neo_js_context_create_cstring(ctx, "Bigint is not implement");
-    neo_js_constant_t constant = neo_js_context_get_constant(ctx);
-    neo_js_variable_t error =
-        neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
-    return neo_js_context_create_exception(ctx, error);
-  } break;
+    neo_js_variable_t obj = neo_js_context_create_object(
+        ctx, neo_js_context_get_constant(ctx)->bigint_prototype);
+    neo_js_variable_set_internal(obj, ctx, "value", self);
+    return obj;
+  }
   case NEO_JS_TYPE_BOOLEAN: {
     neo_js_variable_t message =
         neo_js_context_create_cstring(ctx, "Boolean is not implement");

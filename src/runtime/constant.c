@@ -14,11 +14,13 @@
 #include "neojs/runtime/async_function.h"
 #include "neojs/runtime/async_generator.h"
 #include "neojs/runtime/async_generator_function.h"
+#include "neojs/runtime/bigint.h"
 #include "neojs/runtime/console.h"
 #include "neojs/runtime/error.h"
 #include "neojs/runtime/function.h"
 #include "neojs/runtime/generator.h"
 #include "neojs/runtime/generator_function.h"
+#include "neojs/runtime/intl.h"
 #include "neojs/runtime/iterator.h"
 #include "neojs/runtime/object.h"
 #include "neojs/runtime/promise.h"
@@ -58,20 +60,24 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   constant->global = neo_js_context_create_object(ctx, NULL);
   neo_initialize_js_symbol(ctx);
   neo_initialize_js_iterator(ctx);
-  neo_initialize_js_aggregate_error(ctx);
+
   neo_initialize_js_array(ctx);
   neo_initialize_js_array_buffer(ctx);
   neo_initialize_js_array_iterator(ctx);
+  neo_initialize_js_async_function(ctx);
+  neo_initialize_js_async_generator_function(ctx);
+  neo_initialize_js_async_generator(ctx);
+  neo_initialize_js_bigint(ctx);
+
+  neo_initialize_js_intl(ctx);
   neo_initialize_js_error(ctx);
+  neo_initialize_js_aggregate_error(ctx);
   neo_initialize_js_type_error(ctx);
   neo_initialize_js_syntax_error(ctx);
   neo_initialize_js_reference_error(ctx);
   neo_initialize_js_range_error(ctx);
   neo_initialize_js_generator_function(ctx);
   neo_initialize_js_generator(ctx);
-  neo_initialize_js_async_function(ctx);
-  neo_initialize_js_async_generator_function(ctx);
-  neo_initialize_js_async_generator(ctx);
   neo_initialize_js_promise(ctx);
   neo_initialize_js_time(ctx);
   neo_initialize_js_console(ctx);
@@ -88,11 +94,27 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   neo_js_scope_set_variable(root_scope, constant->key_name, NULL);
   neo_js_scope_set_variable(root_scope, constant->key_constructor, NULL);
   neo_js_scope_set_variable(root_scope, constant->key_prototype, NULL);
-  neo_js_scope_set_variable(root_scope, constant->object_class, NULL);
-  neo_js_scope_set_variable(root_scope, constant->object_prototype, NULL);
+
+  neo_js_scope_set_variable(root_scope, constant->aggregate_error_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->array_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->array_buffer_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->array_prototype, NULL);
+  neo_js_scope_set_variable(root_scope, constant->array_iterator_prototype,
+                            NULL);
+  neo_js_scope_set_variable(root_scope,
+                            constant->async_generator_function_class, NULL);
+  neo_js_scope_set_variable(root_scope,
+                            constant->async_generator_function_prototype, NULL);
+  neo_js_scope_set_variable(root_scope, constant->async_function_class, NULL);
+  neo_js_scope_set_variable(root_scope, constant->async_function_prototype,
+                            NULL);
+  neo_js_scope_set_variable(root_scope, constant->async_generator_prototype,
+                            NULL);
+  neo_js_scope_set_variable(root_scope, constant->bigint_class, NULL);
+  neo_js_scope_set_variable(root_scope, constant->bigint_prototype, NULL);
+
+  neo_js_scope_set_variable(root_scope, constant->object_class, NULL);
+  neo_js_scope_set_variable(root_scope, constant->object_prototype, NULL);
   neo_js_scope_set_variable(root_scope, constant->function_prototype, NULL);
   neo_js_scope_set_variable(root_scope, constant->function_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->symbol_class, NULL);
@@ -103,6 +125,7 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   neo_js_scope_set_variable(root_scope, constant->symbol_has_instance, NULL);
   neo_js_scope_set_variable(root_scope, constant->symbol_is_concat_spreadable,
                             NULL);
+  neo_js_scope_set_variable(root_scope, constant->intl, NULL);
   neo_js_scope_set_variable(root_scope, constant->symbol_iterator, NULL);
   neo_js_scope_set_variable(root_scope, constant->symbol_match, NULL);
   neo_js_scope_set_variable(root_scope, constant->symbol_match_all, NULL);
@@ -114,8 +137,6 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   neo_js_scope_set_variable(root_scope, constant->symbol_to_string_tag, NULL);
   neo_js_scope_set_variable(root_scope, constant->iterator_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->iterator_prototype, NULL);
-  neo_js_scope_set_variable(root_scope, constant->array_iterator_prototype,
-                            NULL);
   neo_js_scope_set_variable(root_scope, constant->error_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->type_error_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->syntax_error_class, NULL);
@@ -125,16 +146,7 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
                             NULL);
   neo_js_scope_set_variable(root_scope, constant->generator_function_prototype,
                             NULL);
-  neo_js_scope_set_variable(root_scope,
-                            constant->async_generator_function_class, NULL);
-  neo_js_scope_set_variable(root_scope,
-                            constant->async_generator_function_prototype, NULL);
-  neo_js_scope_set_variable(root_scope, constant->async_function_class, NULL);
-  neo_js_scope_set_variable(root_scope, constant->async_function_prototype,
-                            NULL);
   neo_js_scope_set_variable(root_scope, constant->generator_prototype, NULL);
-  neo_js_scope_set_variable(root_scope, constant->async_generator_prototype,
-                            NULL);
   neo_js_scope_set_variable(root_scope, constant->promise_class, NULL);
   neo_js_scope_set_variable(root_scope, constant->promise_prototype, NULL);
   neo_js_scope_set_variable(root_scope, constant->set_timeout, NULL);
@@ -150,9 +162,14 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   NEO_JS_DEF_FIELD(ctx, constant->global, "Infinity", constant->infinity);
   NEO_JS_DEF_FIELD(ctx, constant->global, "Object", constant->object_class);
   NEO_JS_DEF_FIELD(ctx, constant->global, "Function", constant->function_class);
+
+  NEO_JS_DEF_FIELD(ctx, constant->global, "AggregateError",
+                   constant->aggregate_error_class);
   NEO_JS_DEF_FIELD(ctx, constant->global, "Array", constant->array_class);
   NEO_JS_DEF_FIELD(ctx, constant->global, "ArrayBuffer",
                    constant->array_buffer_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, "BigInt", constant->bigint_class);
+
   NEO_JS_DEF_FIELD(ctx, constant->global, "Iterator", constant->iterator_class);
   NEO_JS_DEF_FIELD(ctx, constant->global, "Symbol", constant->symbol_class);
   NEO_JS_DEF_FIELD(ctx, constant->global, "Error", constant->error_class);
