@@ -215,7 +215,7 @@ static void neo_ast_expression_class_write(neo_allocator_t allocator,
     neo_js_program_add_string(allocator, ctx->program, name);
     neo_allocator_free(allocator, name);
   }
-  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARRAY);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARGUMENTS);
   neo_js_program_add_code(allocator, ctx->program, NEO_ASM_CALL);
   neo_js_program_add_integer(allocator, ctx->program,
                              self->node.location.begin.line);

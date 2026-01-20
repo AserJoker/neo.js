@@ -244,7 +244,7 @@ void neo_write_optional_chain(neo_allocator_t allocator,
         neo_write_optional_chain(allocator, ctx, call->callee, addresses);
       }
     }
-    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARRAY);
+    neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARGUMENTS);
     for (neo_list_node_t it = neo_list_get_first(call->arguments);
          it != neo_list_get_tail(call->arguments);
          it = neo_list_node_next(it)) {

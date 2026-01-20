@@ -56,7 +56,7 @@ static void neo_ast_expression_new_write(neo_allocator_t allocator,
   neo_list_t addresses = neo_create_list(allocator, &initialize);
   neo_write_optional_chain(allocator, ctx, self->callee, addresses);
   neo_allocator_free(allocator, addresses);
-  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARRAY);
+  neo_js_program_add_code(allocator, ctx->program, NEO_ASM_PUSH_ARGUMENTS);
   for (neo_list_node_t it = neo_list_get_first(self->arguments);
        it != neo_list_get_tail(self->arguments); it = neo_list_node_next(it)) {
     neo_ast_node_t argument = neo_list_node_get(it);

@@ -262,6 +262,9 @@ neo_ast_node_t neo_js_program_write(neo_allocator_t allocator, FILE *fp,
     case NEO_ASM_PUSH_ARRAY:
       fprintf(fp, "NEO_ASM_PUSH_ARRAY\n");
       break;
+    case NEO_ASM_PUSH_ARGUMENTS:
+      fprintf(fp, "NEO_ASM_PUSH_ARGUMENTS\n");
+      break;
     case NEO_ASM_PUSH_THIS:
       fprintf(fp, "NEO_ASM_PUSH_THIS\n");
       break;
@@ -667,6 +670,11 @@ neo_ast_node_t neo_js_program_write(neo_allocator_t allocator, FILE *fp,
     } break;
     case NEO_ASM_DEL_FIELD: {
       fprintf(fp, "NEO_ASM_DEL_FIELD\n");
+    } break;
+    case NEO_ASM_LOCATION: {
+      uint32_t line = neo_js_program_get_integer(self, &offset);
+      uint32_t column = neo_js_program_get_integer(self, &offset);
+      fprintf(fp, "NEO_ASM_LOCATION %d,%d\n", line, column);
     } break;
     default:
       return neo_create_error_node(allocator, "Invalid operator");

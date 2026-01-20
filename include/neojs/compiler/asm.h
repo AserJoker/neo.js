@@ -36,6 +36,7 @@ typedef enum _neo_asm_code_t {
   NEO_ASM_PUSH_ASYNC_GENERATOR,
   NEO_ASM_PUSH_OBJECT,
   NEO_ASM_PUSH_ARRAY,
+  NEO_ASM_PUSH_ARGUMENTS,
   NEO_ASM_PUSH_THIS,
   NEO_ASM_SUPER_CALL,
   NEO_ASM_SUPER_MEMBER_CALL,
@@ -140,6 +141,7 @@ typedef enum _neo_asm_code_t {
   NEO_ASM_PRIVATE_TAG,
   NEO_ASM_SUPER_MEMBER_TAG,
   NEO_ASM_DEL_FIELD,
+  NEO_ASM_LOCATION,
 } neo_asm_code_t;
 
 #ifdef __cplusplus

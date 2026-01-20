@@ -393,6 +393,20 @@ static void neo_js_vm_push_array(neo_js_vm_t vm, neo_js_context_t ctx,
   neo_js_variable_t array = neo_js_context_create_array(ctx);
   neo_list_push(vm->stack, array);
 }
+static void neo_js_vm_push_arguments(neo_js_vm_t vm, neo_js_context_t ctx,
+                                     neo_js_program_t program, size_t *offset) {
+  neo_js_variable_t arguments =
+      neo_js_context_create_object(ctx, neo_js_context_get_null(ctx));
+  neo_js_variable_t key = neo_js_context_create_cstring(ctx, "length");
+  neo_js_variable_t length = neo_js_context_create_number(ctx, 0);
+  neo_js_variable_set_field(arguments, ctx, key, length);
+  neo_js_variable_t iterator =
+      neo_js_context_create_cfunction(ctx, neo_js_array_values, "values");
+  neo_js_constant_t constant = neo_js_context_get_constant(ctx);
+  neo_js_variable_set_field(arguments, ctx, constant->symbol_iterator,
+                            iterator);
+  neo_list_push(vm->stack, arguments);
+}
 
 static void neo_js_vm_push_this(neo_js_vm_t vm, neo_js_context_t ctx,
                                 neo_js_program_t program, size_t *offset) {
@@ -1892,6 +1906,12 @@ static void neo_js_vm_del_field(neo_js_vm_t vm, neo_js_context_t ctx,
   NEO_JS_VM_CHECK(vm, res, program, offset);
   neo_list_push(vm->stack, res);
 }
+static void neo_js_vm_location(neo_js_vm_t vm, neo_js_context_t ctx,
+                               neo_js_program_t program, size_t *offset) {
+  int32_t line = neo_js_vm_read_integer(program, offset);
+  int32_t column = neo_js_vm_read_integer(program, offset);
+  // TODO: set source location
+}
 
 static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     neo_js_vm_push_scope,            // NEO_ASM_PUSH_SCOPE
@@ -1925,6 +1945,7 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     neo_js_vm_push_async_generator,  // NEO_ASM_PUSH_ASYNC_GENERATOR
     neo_js_vm_push_object,           // NEO_ASM_PUSH_OBJECT
     neo_js_vm_push_array,            // NEO_ASM_PUSH_ARRAY
+    neo_js_vm_push_arguments,        // NEO_ASM_PUSH_THIS
     neo_js_vm_push_this,             // NEO_ASM_PUSH_THIS
     neo_js_vm_super_call,            // NEO_ASM_SUPER_CALL
     neo_js_vm_super_member_call,     // NEO_ASM_SUPER_MEMBER_CALL
@@ -2029,6 +2050,7 @@ static neo_js_vm_handle_fn_t neo_js_vm_handles[] = {
     neo_js_vm_private_member_tag,    // NEO_ASM_PRIVATE_TAG
     neo_js_vm_super_member_tag,      // NEO_ASM_SUPER_MEMBER_TAG
     neo_js_vm_del_field,             // NEO_ASM_DEL_FIELD
+    neo_js_vm_location,              // NEO_ASM_LOCATION
 };
 
 NEO_JS_CFUNCTION(neo_js_pop_scope_onfulfilled) {
