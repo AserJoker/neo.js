@@ -14,6 +14,9 @@ static void neo_js_runtime_dispose(neo_allocator_t allocator,
 }
 
 neo_js_runtime_t neo_create_js_runtime(neo_allocator_t allocator) {
+  if (!allocator) {
+    allocator = neo_create_allocator(NULL);
+  }
   neo_js_runtime_t rt = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_runtime_t), neo_js_runtime_dispose);
   rt->allocator = allocator;
@@ -37,4 +40,9 @@ neo_js_program_t neo_js_runtime_get_program(neo_js_runtime_t self,
 void neo_js_runtime_set_program(neo_js_runtime_t self, const char *filename,
                                 neo_js_program_t program) {
   neo_hash_map_set(self->programs, (void *)filename, program);
+}
+void neo_delete_js_runtime(neo_js_runtime_t self) {
+  neo_allocator_t allocator = self->allocator;
+  neo_allocator_free(allocator, self);
+  neo_delete_allocator(allocator);
 }

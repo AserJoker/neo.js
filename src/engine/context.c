@@ -113,6 +113,9 @@ static void neo_js_context_onerror(neo_js_context_t self,
 }
 
 neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime) {
+  if (!runtime) {
+    runtime = neo_create_js_runtime(NULL);
+  }
   neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
   neo_js_context_t ctx = neo_allocator_alloc(
       allocator, sizeof(struct _neo_js_context_t), neo_js_context_dispose);
@@ -150,6 +153,12 @@ neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime) {
   ctx->taskroot = neo_js_context_create_variable(
       ctx, &neo_create_js_null(allocator)->super);
   return ctx;
+}
+void neo_delete_js_context(neo_js_context_t self) {
+  neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
+  neo_js_runtime_t runtime = self->runtime;
+  neo_allocator_free(allocator, self);
+  neo_delete_js_runtime(runtime);
 }
 void neo_js_context_set_error_callback(neo_js_context_t self,
                                        neo_js_error_callback callback) {

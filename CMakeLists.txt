@@ -82,7 +82,11 @@ add_library(${PROJECT_NAME} STATIC ${SOURCES})
 
 find_package(pcre2 CONFIG REQUIRED)
 
+find_package(ICU REQUIRED COMPONENTS i18n uc data)
+
 target_link_libraries(${PROJECT_NAME} PRIVATE PCRE2::8BIT PCRE2::16BIT PCRE2::32BIT PCRE2::POSIX)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE ICU::i18n ICU::uc ICU::data)
 
 if(NEO_ENABLE_TEST)
     add_executable(${PROJECT_NAME}c ${SOURCES} ${PROJECT_SOURCE_DIR}/cmd/main.c)
@@ -94,6 +98,8 @@ if(NEO_ENABLE_TEST)
     endif()
 
     target_link_libraries(${PROJECT_NAME}c PRIVATE PCRE2::8BIT PCRE2::16BIT PCRE2::32BIT PCRE2::POSIX)
+
+    target_link_libraries(${PROJECT_NAME}c PRIVATE ICU::i18n ICU::uc ICU::data)
 
     file(GLOB_RECURSE TEST_SOURCES ${PROJECT_SOURCE_DIR}/tests/*.cpp)
 
@@ -108,6 +114,8 @@ if(NEO_ENABLE_TEST)
     endif()
 
     target_link_libraries(${PROJECT_NAME}.test PRIVATE PCRE2::8BIT PCRE2::16BIT PCRE2::32BIT PCRE2::POSIX GTest::gtest GTest::gtest_main GTest::gmock GTest::gmock_main)
+
+    target_link_libraries(${PROJECT_NAME}.test PRIVATE ICU::i18n ICU::uc ICU::data)
 
     enable_testing()
 

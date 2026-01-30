@@ -36,6 +36,7 @@ typedef struct _neo_js_context_t *neo_js_context_t;
 typedef void (*neo_js_error_callback)(neo_js_context_t ctx,
                                       neo_js_variable_t error);
 neo_js_context_t neo_create_js_context(neo_js_runtime_t runtime);
+void neo_delete_js_context(neo_js_context_t self);
 void neo_js_context_set_error_callback(neo_js_context_t self,
                                        neo_js_error_callback callback);
 neo_js_error_callback neo_js_context_get_error_callback(neo_js_context_t self);
