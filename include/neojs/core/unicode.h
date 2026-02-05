@@ -1,12 +1,11 @@
 #ifndef _H_NEO_CORE_UNICODE_
 #define _H_NEO_CORE_UNICODE_
-#include <wchar.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
-#include "unicode.gen.h"
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 typedef struct _neo_utf8_char {
   const char *begin;
@@ -37,22 +36,6 @@ bool neo_utf8_char_is_id_start(neo_utf8_char chr);
 bool neo_utf8_char_is_id_continue(neo_utf8_char chr);
 
 bool neo_utf8_char_is_space_separator(neo_utf8_char chr);
-
-#define NEO_IS_SPACE(ch)                                                       \
-  ((ch) == 0xfeff || (ch) == 0x9 || (ch) == 0xb || (ch) == 0xc)
-#define NEO_DEF_STRING(str, source)                                            \
-  uint16_t str[strlen(source) + 1];                                            \
-  do {                                                                         \
-    const char *src = source;                                                  \
-    uint16_t *dst = str;                                                       \
-    while (*src) {                                                             \
-      neo_utf8_char chr = neo_utf8_read_char(src);                             \
-      src = chr.end;                                                           \
-      uint32_t utf32 = neo_utf8_char_to_utf32(chr);                            \
-      dst += neo_utf32_to_utf16(utf32, dst);                                   \
-    }                                                                          \
-    *dst = 0;                                                                  \
-  } while (0)
 #ifdef __cplusplus
 };
 #endif

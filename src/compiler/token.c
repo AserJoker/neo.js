@@ -5,6 +5,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <uchar.h>
+#include <unicode/urename.h>
 
 #define IS_HEX(ch)                                                             \
   (((ch) >= '0' && (ch) <= '9') || ((ch) >= 'a' && (ch) <= 'f') ||             \
@@ -201,8 +202,7 @@ neo_token_t neo_read_number_token(neo_allocator_t allocator, const char *file,
     if (IS_HEX(*current.offset)) {
       neo_read_hex(file, &current);
       neo_utf8_char chr = neo_utf8_read_char(current.offset);
-      char32_t utf32 = neo_utf8_char_to_utf32(chr);
-      if (IS_ID_START(utf32)) {
+      if (neo_utf8_char_is_id_start(chr)) {
         return neo_create_error_token(
             allocator,
             "Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
@@ -221,7 +221,8 @@ neo_token_t neo_read_number_token(neo_allocator_t allocator, const char *file,
       neo_read_oct(file, &current);
       neo_utf8_char chr = neo_utf8_read_char(current.offset);
       char32_t utf32 = neo_utf8_char_to_utf32(chr);
-      if (IS_ID_START(utf32) || utf32 >= '8' && utf32 <= '9') {
+      if (neo_utf8_char_is_id_start(chr) || chr.end - chr.begin > 1 ||
+          (*chr.begin >= '8' && *chr.end <= '9')) {
         return neo_create_error_token(
             allocator,
             "Invalid or unexpected token \n  at _.compile (%s:%d:%d)", file,
@@ -267,8 +268,7 @@ neo_token_t neo_read_number_token(neo_allocator_t allocator, const char *file,
       }
     }
     neo_utf8_char chr = neo_utf8_read_char(current.offset);
-    char32_t utf32 = neo_utf8_char_to_utf32(chr);
-    if (utf32 != 'n' && IS_ID_START(utf32)) {
+    if (*chr.begin != 'n' && neo_utf8_char_is_id_start(chr)) {
       return neo_create_error_token(
           allocator, "Invalid or unexpected token \n  at _.compile (%s:%d:%d)",
           file, current.line, current.column);
@@ -432,9 +432,6 @@ neo_token_t neo_read_identify_token(neo_allocator_t allocator, const char *file,
         start++;
       }
     }
-    if (utf32 != '$' && utf32 != '_' && !IS_ID_START(utf32)) {
-      return NULL;
-    }
   } else if (!neo_utf8_char_is_id_start(chr) && !neo_utf8_char_is(chr, "$") &&
              !neo_utf8_char_is(chr, "_") && !neo_utf8_char_is(chr, "#")) {
     return NULL;
@@ -442,6 +439,7 @@ neo_token_t neo_read_identify_token(neo_allocator_t allocator, const char *file,
     current.column += chr.end - chr.begin;
     current.offset = chr.end;
   }
+
   chr = neo_utf8_read_char(current.offset);
   while (true) {
     if (*current.offset == '\\' && *(current.offset + 1) == 'u') {
@@ -481,7 +479,7 @@ neo_token_t neo_read_identify_token(neo_allocator_t allocator, const char *file,
           start++;
         }
       }
-      if (utf32 != '$' && utf32 != '_' && !IS_ID_CONTINUE(utf32)) {
+      if (utf32 != '$' && utf32 != '_' && !u_isJavaIDPart(utf32)) {
         break;
       } else {
         current.column += chr.end - chr.begin;

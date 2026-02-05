@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unicode/urename.h>
 #include <wchar.h>
 neo_utf8_char neo_utf8_read_char(const char *str) {
   neo_utf8_char chr = {str, str};
@@ -123,7 +124,7 @@ bool neo_utf8_char_is_id_start(neo_utf8_char chr) {
     return false;
   }
   uint32_t utf32 = neo_utf8_char_to_utf32(chr);
-  return IS_ID_START(utf32);
+  return u_isJavaIDStart(utf32);
 }
 
 bool neo_utf8_char_is_id_continue(neo_utf8_char chr) {
@@ -131,12 +132,12 @@ bool neo_utf8_char_is_id_continue(neo_utf8_char chr) {
     return false;
   }
   uint32_t utf32 = neo_utf8_char_to_utf32(chr);
-  return IS_ID_CONTINUE(utf32);
+  return u_isJavaIDPart(utf32);
 }
 bool neo_utf8_char_is_space_separator(neo_utf8_char chr) {
   if (chr.end - chr.begin == 0) {
     return false;
   }
   uint32_t utf32 = neo_utf8_char_to_utf32(chr);
-  return IS_SPACE_SEPARATOR(utf32);
+  return u_isJavaSpaceChar(utf32);
 }

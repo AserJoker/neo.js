@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <unicode/urename.h>
 
 char *neo_string_concat(neo_allocator_t allocator, char *src, size_t *max,
                         const char *str) {
@@ -340,8 +341,7 @@ char *neo_string16_to_string(neo_allocator_t allocator, const uint16_t *src) {
 double neo_string16_to_number(const uint16_t *str) {
   double value = 0;
   bool neg = false;
-  while (IS_SPACE_SEPARATOR(*str) || *str == L'\u2028' || *str == L'\u2029' ||
-         *str == '\n' || *str == '\r') {
+  while (u_isJavaSpaceChar(*str) || *str == '\n' || *str == '\r') {
     str++;
   }
   if (*str == '-') {
@@ -444,8 +444,7 @@ double neo_string16_to_number(const uint16_t *str) {
   if (neg) {
     value = -value;
   }
-  while (IS_SPACE_SEPARATOR(*str) || *str == L'\u2028' || *str == L'\u2029' ||
-         *str == '\n' || *str == '\r') {
+  while (u_isJavaSpaceChar(*str) || *str == '\n' || *str == '\r') {
     str++;
   }
   if (*str) {
