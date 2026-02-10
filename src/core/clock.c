@@ -1,6 +1,16 @@
 #include "neojs/core/clock.h"
+#include "neojs/core/allocator.h"
 #include <stdbool.h>
-#include <string.h>
+#include <unicode/calendar.h>
+#include <unicode/ucal.h>
+#include <unicode/udat.h>
+#include <unicode/udata.h>
+#include <unicode/uloc.h>
+#include <unicode/ulocale.h>
+#include <unicode/urename.h>
+#include <unicode/utypes.h>
+#include <unistd.h>
+
 #ifdef _WIN32
 #include <Windows.h>
 #include <winnt.h>
@@ -59,42 +69,25 @@ static int32_t zone_value[] = {
 };
 
 int32_t neo_clock_get_timezone() {
-#ifdef _WIN32
-  TIME_ZONE_INFORMATION tzInfo;
-  DWORD result = GetTimeZoneInformation(&tzInfo);
-  switch (result) {
-  case TIME_ZONE_ID_STANDARD:
-    return tzInfo.StandardBias + tzInfo.Bias;
-  case TIME_ZONE_ID_DAYLIGHT:
-    return tzInfo.DaylightBias + tzInfo.Bias;
-  case TIME_ZONE_ID_UNKNOWN:
-    return tzInfo.Bias;
-  default:
+  UErrorCode status = U_ZERO_ERROR;
+  UCalendar *cal = ucal_open(NULL, 0, NULL, UCAL_TRADITIONAL, &status);
+  if (U_FAILURE(status)) {
     return 0;
   }
-#else
-  tzset();
-  return timezone / 60;
-#endif
+  int32_t rawOffsetMillis = 0;
+  int32_t dstOffsetMillis = 0;
+  ucal_getTimeZoneOffsetFromLocal(cal, UCAL_TZ_LOCAL_FORMER, true,
+                                  &rawOffsetMillis, &dstOffsetMillis, &status);
+  if (U_FAILURE(status)) {
+    return 0;
+  }
+  int32_t totalOffsetMillis = rawOffsetMillis + dstOffsetMillis;
+  int32_t offsetMinutes = (totalOffsetMillis / (1000 * 60));
+  return offsetMinutes;
 }
 
-int64_t neo_clock_get_timestamp() {
-#ifdef _WIN32
+int64_t neo_clock_get_timestamp() { return (int64_t)ucal_getNow(); }
 
-  FILETIME ft;
-  ULARGE_INTEGER uli;
-  GetSystemTimeAsFileTime(&ft);
-  uli.LowPart = ft.dwLowDateTime;
-  uli.HighPart = ft.dwHighDateTime;
-  int64_t milliseconds = (uli.QuadPart / 10000) - 11644473600000ULL;
-  return milliseconds;
-#else
-  struct timespec ts;
-  clock_gettime(CLOCK_REALTIME, &ts);
-  int64_t milliseconds = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
-  return milliseconds;
-#endif
-}
 void neo_clock_sleep(uint64_t timeout) {
 #ifdef _WIN32
   Sleep(timeout);
@@ -110,456 +103,73 @@ void neo_clock_sleep(uint64_t timeout) {
   }
 #endif
 }
-neo_time_t neo_clock_resolve(int64_t timestamp, int32_t timezone) {
-  int64_t now = timestamp;
-  now -= timezone * 60000;
-  int64_t year = 1970;
-  while (now < 0) {
-    if (year % 4 == 0) {
-      now += 366 * 24 * 3600 * 1000LL;
-    } else {
-      now += 365 * 24 * 3600 * 1000LL;
-    }
-    year--;
-  }
-  int64_t milliseconds = now % 1000;
-  int64_t seconds = now / 1000;
-  int64_t days = seconds / 86400;
-  seconds %= 86400;
-  int64_t hour = seconds / 3600;
-  seconds %= 3600;
-  int64_t minute = seconds / 60;
-  seconds %= 60;
-  int64_t weakday = (4 + days) % 7;
-  while (days > 366) {
-    if (year % 4 == 0) {
-      days -= 366;
-    } else {
-      days -= 365;
-    }
-    year++;
-  }
-  if (year % 4 != 0 && days >= 365) {
-    days -= 365;
-    year++;
-  }
-  int64_t month = 0;
-  while (days >= months[year % 4 == 0][month]) {
-    days -= months[year % 4 == 0][month];
-    month++;
-  }
-  neo_time_t time = {
-      year,         month,   days,      hour,     minute, seconds,
-      milliseconds, weakday, timestamp, timezone, false,
-  };
-  return time;
-}
 
-void neo_clock_format(neo_time_t *time) {
-  while (time->millisecond < 0) {
-    time->second--;
-    time->millisecond += 1000;
-  }
-  while (time->millisecond >= 1000) {
-    time->millisecond -= 1000;
-    time->second++;
-  }
-  while (time->second < 0) {
-    time->minute--;
-    time->second += 60;
-  }
-  while (time->second >= 60) {
-    time->second -= 60;
-    time->minute++;
-  }
-  while (time->minute < 0) {
-    time->hour--;
-    time->minute += 60;
-  }
-  while (time->minute >= 60) {
-    time->minute -= 60;
-    time->hour++;
-  }
-  while (time->hour < 0) {
-    time->day--;
-    time->hour += 24;
-  }
-  while (time->hour >= 24) {
-    time->hour -= 24;
-    time->day++;
-  }
-  while (time->day < 0) {
-    while (time->month < 0) {
-      time->year--;
-      time->month += 12;
-    }
-    time->month--;
-    time->day += months[time->year % 4 == 0][time->month];
-  }
-  while (time->day >= months[time->year % 4 == 0][time->month]) {
-    time->day -= months[time->year % 4 == 0][time->month];
-    time->month++;
-    while (time->month >= 12) {
-      time->month -= 12;
-      time->year++;
-    }
-  }
-  while (time->month < 0) {
-    time->year--;
-    time->month += 12;
-  }
-  while (time->month >= 12) {
-    time->month -= 12;
-    time->year++;
-  }
-  int64_t timestamp = 0;
-  for (int64_t year = 1970; year > time->year; year--) {
-    if (year % 4 == 0) {
-      timestamp -= 366;
-    } else {
-      timestamp -= 365;
-    }
-  }
-  for (int64_t year = 1970; year < time->year; year++) {
-    if (year % 4 == 0) {
-      timestamp += 366;
-    } else {
-      timestamp += 365;
-    }
-  }
-  for (int8_t month = 0; month < time->month; month++) {
-    timestamp += months[time->year % 4 == 0][month];
-  }
-  timestamp += time->day;
-  timestamp *= 24;
-  timestamp += time->hour;
-  timestamp *= 60;
-  timestamp += time->timezone;
-  timestamp += time->minute;
-  timestamp *= 60;
-  timestamp += time->second;
-  timestamp *= 1000;
-  timestamp += time->millisecond;
-  time->timestamp = timestamp;
-  time->invalid = false;
-}
-
-bool neo_clock_parse_iso(const char *source, int64_t *timestamp) {
-  neo_time_t time = {0};
-  const char *location = source;
-  const char *current = location;
-  while (*current >= '0' && *current <= '9') {
-    time.year *= 10;
-    time.year += *current - '0';
-    current++;
-  }
-  if (time.year < 100) {
-    time.year += 2000;
-  }
-  bool has_timezone = false;
-  if (*current == '-' || *current == '/') {
-    current++;
-    if (*current >= '0' && *current <= '9') {
-      while (*current >= '0' && *current <= '9') {
-        time.month *= 10;
-        time.month += *current - '0';
-        current++;
-      }
-      if (time.month > 12) {
-        return false;
-      }
-      time.month--;
-      if (*current == '-' || *current == '/') {
-        current++;
-        if (*current >= '0' && *current <= '9') {
-          while (*current >= '0' && *current <= '9') {
-            time.day *= 10;
-            time.day += *current - '0';
-            current++;
-          }
-          if (time.day < 1 ||
-              time.day > months[time.year % 4 == 0][time.month]) {
-            return false;
-          }
-          time.day--;
-          if (*current == 'T' || *current == ' ') {
-            current++;
-            while (*current == ' ') {
-              current++;
-            }
-            if (*current < '0' || *current > '9') {
-              return false;
-            }
-            while (*current >= '0' && *current <= '9') {
-              time.hour *= 10;
-              time.hour += *current - '0';
-              current++;
-            }
-            if (time.hour >= 24) {
-              return false;
-            }
-            if (*current != ':') {
-              return false;
-            }
-            current++;
-            if (*current < '0' || *current > '9') {
-              return false;
-            }
-            while (*current >= '0' && *current <= '9') {
-              time.minute *= 10;
-              time.minute += *current - '0';
-              current++;
-            }
-            if (time.minute >= 60) {
-              return false;
-            }
-            if (*current == ':') {
-              current++;
-              if (*current < '0' || *current > '9') {
-                return false;
-              }
-              while (*current >= '0' && *current <= '9') {
-                time.second *= 10;
-                time.second += *current - '0';
-                current++;
-              }
-              if (time.second >= 60) {
-                return false;
-              }
-              if (*current == '.') {
-                current++;
-                if (*current < '0' || *current > '9') {
-                  return false;
-                }
-                while (*current >= '0' && *current <= '9') {
-                  time.millisecond *= 10;
-                  time.millisecond += *current - '0';
-                  current++;
-                }
-                if (time.millisecond >= 1000) {
-                  return false;
-                }
-              }
-            }
-            if (*current == 'Z') {
-              current++;
-              time.timezone = 0;
-              has_timezone = true;
-            } else if (*current == '+' || *current == '-') {
-              char flag = *current;
-              current++;
-              while (*current >= '0' && *current <= '9') {
-                time.timezone *= 10;
-                time.timezone += *current - '0';
-                current++;
-              }
-              if (time.timezone >= 12) {
-                return false;
-              }
-              time.timezone *= 60;
-              if (*current != ':') {
-                return false;
-              }
-              current++;
-              int64_t minute = 0;
-              while (*current >= '0' && *current <= '9') {
-                minute *= 10;
-                minute += *current - '0';
-                current++;
-              }
-              if (minute > 60) {
-                return false;
-              }
-              time.timezone += minute;
-              if (flag == '+') {
-                time.timezone = -time.timezone;
-              } else {
-                time.timezone = time.timezone;
-              }
-              has_timezone = true;
-            }
-          }
-        }
-      }
-    }
-  }
-  if (!has_timezone) {
-    time.timezone = neo_clock_get_timezone();
-  }
-  while (*current == ' ') {
-    current++;
-  }
-  if (*current != 0) {
+bool neo_clock_parse(const UChar *source, const UChar *format,
+                     int64_t *timestamp, const UChar *tz) {
+  UErrorCode status = U_ZERO_ERROR;
+  UDate result;
+  UDateFormat *fmt =
+      udat_open(UDAT_PATTERN, UDAT_PATTERN, "en", tz, -1, format, -1, &status);
+  if (U_FAILURE(status)) {
     return false;
   }
-  neo_clock_format(&time);
-  *timestamp = time.timestamp;
+  result = udat_parse(fmt, source, -1, NULL, &status);
+  if (U_FAILURE(status)) {
+    udat_close(fmt);
+    return false;
+  }
+  udat_close(fmt);
+  *timestamp = result;
   return true;
 }
 
-bool neo_clock_parse_rfc(const char *source, int64_t *timestamp) {
-  neo_time_t time = {0};
-  const char *current = source;
-  while (time.weakday < 7) {
-    if (strncmp(week_names[time.weakday], current, 3) == 0) {
-      break;
-    }
-    time.weakday++;
+char *neo_clock_to_iso(neo_allocator_t allocator, int64_t timestamep) {
+  UErrorCode status = U_ZERO_ERROR;
+  const char cformat[] = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'";
+  UChar uformat[sizeof(cformat)];
+  u_uastrcpy(uformat, cformat);
+  UChar result[256];
+  UDateFormat *fmt = udat_open(UDAT_PATTERN, UDAT_PATTERN, NULL, u"UTC", -1,
+                               uformat, -1, &status);
+  if (U_FAILURE(status)) {
+    return NULL;
   }
-  if (time.weakday != 7) {
-    current += 3;
-    if (*current != ',') {
-      return false;
-    }
-    current++;
-  } else {
-    time.weakday = 0;
+  udat_format(fmt, timestamep, result, 256, NULL, &status);
+  if (U_FAILURE(status)) {
+    return NULL;
   }
-  while (time.month < 12) {
-    if (strncmp(month_names[time.month], current, 3) == 0) {
-      break;
-    }
-    time.month++;
+  udat_close(fmt);
+  char *s = neo_allocator_alloc(allocator, u_strlen(result) + 1, NULL);
+  u_austrcpy(s, result);
+  return s;
+}
+char *neo_clock_to_rfc(neo_allocator_t allocator, int64_t timestamep) {
+  UErrorCode status = U_ZERO_ERROR;
+  const char cformat[] = "EEE MMM dd yyyy HH:mm:ss 'GMP'Z (zzzz)";
+  UChar uformat[sizeof(cformat)];
+  u_uastrcpy(uformat, cformat);
+  UChar result[256];
+  UCalendar *cal = ucal_open(NULL, 0, NULL, UCAL_DEFAULT, &status);
+  if (U_FAILURE(status)) {
+    return NULL;
   }
-  if (time.month == 12) {
-    return false;
+  UChar zone[256];
+  ucal_getTimeZoneID(cal, zone, 256, &status);
+  if (U_FAILURE(status)) {
+    return NULL;
   }
-  current += 3;
-  if (*current != ' ') {
-    return false;
+  ucal_close(cal);
+  UDateFormat *fmt = udat_open(UDAT_PATTERN, UDAT_PATTERN, "en", zone, -1,
+                               uformat, -1, &status);
+  if (U_FAILURE(status)) {
+    return NULL;
   }
-  current++;
-  while (*current == ' ') {
-    current++;
+  udat_format(fmt, timestamep, result, 256, NULL, &status);
+  if (U_FAILURE(status)) {
+    return NULL;
   }
-  while (*current >= '0' && *current <= '9') {
-    time.day *= 10;
-    time.day += *current - '0';
-    current++;
-  }
-  time.day -= 1;
-  if (*current != ' ') {
-    return false;
-  }
-  current++;
-  while (*current == ' ') {
-    current++;
-  }
-  while (*current >= '0' && *current <= '9') {
-    time.year *= 10;
-    time.year += *current - '0';
-    current++;
-  }
-  if (*current == ' ') {
-    current++;
-    while (*current == ' ') {
-      current++;
-    }
-    while (*current >= '0' && *current <= '9') {
-      time.hour *= 10;
-      time.hour += *current - '0';
-      current++;
-    }
-    if (*current != ':') {
-      return false;
-    }
-    current++;
-    while (*current >= '0' && *current <= '9') {
-      time.minute *= 10;
-      time.minute += *current - '0';
-      current++;
-    }
-    if (*current == ':') {
-      current++;
-      while (*current >= '0' && *current <= '9') {
-        time.second *= 10;
-        time.second += *current - '0';
-        current++;
-      }
-    }
-    if (*current == ' ') {
-      current++;
-      while (*current == ' ') {
-        current++;
-      }
-      uint32_t idx = 0;
-      for (; zone_names[idx] != NULL; idx++) {
-        if (strncmp(zone_names[idx], current, 3) == 0) {
-          break;
-        }
-      }
-      if (zone_names[idx] != NULL) {
-        time.timezone = -zone_value[idx];
-        current += 3;
-      }
-    }
-    while (*current == ' ') {
-      current++;
-    }
-    if (*current == '+' || *current == '-') {
-      char flag = *current;
-      current++;
-      int64_t hour = 0;
-      if (*current < '0' || *current > '9') {
-        return false;
-      }
-      while (*current >= '0' && *current <= '9') {
-        hour *= 10;
-        hour += *current - '0';
-        current++;
-      }
-      hour *= 60;
-      int64_t minute = 0;
-      if (*current == ':') {
-        current++;
-        if (*current < '0' || *current > '9') {
-          return false;
-        }
-        while (*current >= '0' && *current <= '9') {
-          minute *= 10;
-          minute += *current - '0';
-          current++;
-        }
-      }
-      hour += minute;
-      if (flag == '+') {
-        time.timezone -= hour;
-      } else {
-        time.timezone += hour;
-      }
-    } else if (*current == 0) {
-      time.timezone = neo_clock_get_timezone();
-    } else {
-      uint32_t idx = 0;
-      for (idx = 0; idx < 10; idx++) {
-        if (strncmp(current, zone_names[idx], 3) == 0) {
-          break;
-        }
-      }
-      if (idx != 10) {
-        time.timezone = -zone_value[idx];
-      }
-    }
-  }
-  while (*current == ' ') {
-    current++;
-  }
-  if (*current != 0) {
-    return false;
-  }
-  if (time.day >= months[time.year % 4 == 0][time.month]) {
-    return false;
-  }
-  if (time.hour >= 24) {
-    return false;
-  }
-  if (time.minute >= 60) {
-    return false;
-  }
-  if (time.second >= 60) {
-    return false;
-  }
-  neo_clock_format(&time);
-  *timestamp = time.timestamp;
-  return true;
+  udat_close(fmt);
+  char *s = neo_allocator_alloc(allocator, u_strlen(result) + 1, NULL);
+  u_austrcpy(s, result);
+  return s;
 }

@@ -1,1 +1,1 @@
-console.log(Date())
+console.log(new Date(Date.parse("Fri Dec 20 2024 19:00:00")).toString());
