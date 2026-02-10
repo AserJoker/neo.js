@@ -228,6 +228,98 @@ NEO_JS_CFUNCTION(neo_js_date_parse) {
   }
   return neo_js_context_create_number(ctx, NAN);
 }
+
+NEO_JS_CFUNCTION(neo_js_date_utc) {
+  double year = 0;
+  double monthIndex = 0;
+  double day = 1;
+  double hours = 0;
+  double minutes = 0;
+  double seconds = 0;
+  double milliseconds = 0;
+  neo_js_variable_t value = neo_js_context_get_argument(ctx, argc, argv, 0);
+  value = neo_js_variable_to_integer(value, ctx);
+  if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return value;
+  }
+  year = ((neo_js_number_t)value->value)->value;
+  value = neo_js_context_get_argument(ctx, argc, argv, 1);
+  if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
+    return value;
+  }
+  monthIndex = ((neo_js_number_t)value->value)->value;
+  if (argc > 2) {
+    value = neo_js_variable_to_integer(argv[2], ctx);
+    if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
+      return value;
+    }
+    day = ((neo_js_number_t)value->value)->value;
+  }
+  if (argc > 3) {
+    value = neo_js_variable_to_integer(argv[3], ctx);
+    if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
+      return value;
+    }
+    hours = ((neo_js_number_t)value->value)->value;
+  }
+  if (argc > 4) {
+    value = neo_js_variable_to_integer(argv[4], ctx);
+    if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
+      return value;
+    }
+    minutes = ((neo_js_number_t)value->value)->value;
+  }
+  if (argc > 5) {
+    value = neo_js_variable_to_integer(argv[5], ctx);
+    if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
+      return value;
+    }
+    seconds = ((neo_js_number_t)value->value)->value;
+  }
+  if (argc > 6) {
+    value = neo_js_variable_to_integer(argv[6], ctx);
+    if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
+      return value;
+    }
+    milliseconds = ((neo_js_number_t)value->value)->value;
+  }
+  if (year < -100000000 || year > 100000000) {
+    return neo_js_context_create_number(ctx, NAN);
+  }
+  if (milliseconds < -100000000 || milliseconds > 100000000) {
+    return self;
+  }
+  if (hours < 0 || hours > 23) {
+    return neo_js_context_create_number(ctx, NAN);
+    return self;
+  }
+  if (minutes < 0 || minutes > 59) {
+    return neo_js_context_create_number(ctx, NAN);
+  }
+  if (seconds < 0 || seconds > 59) {
+    return neo_js_context_create_number(ctx, NAN);
+  }
+  if (milliseconds < 0 || milliseconds > 999) {
+    return neo_js_context_create_number(ctx, NAN);
+  }
+  if (year >= 0 && year <= 99) {
+    year += 1900;
+  }
+  monthIndex += 1;
+  char str[256];
+  sprintf(str, "%04d-%02d-%02dT%02d:%02d:%02d.%04dZ", (int32_t)year,
+          (int32_t)monthIndex, (int32_t)day, (int32_t)hours, (int32_t)minutes,
+          (int32_t)seconds, (int32_t)milliseconds);
+  UChar source[256];
+  u_austrcpy(source, str);
+  int64_t timestamp = 0;
+  if (neo_clock_parse(source, u"yyyy-MM-dd'T'hh:mm:ss.SSSS'Z'", &timestamp,
+                      u"UTC")) {
+    return neo_js_context_create_number(ctx, timestamp);
+  }
+  return neo_js_context_create_number(ctx, NAN);
+}
+
 NEO_JS_CFUNCTION(neo_js_date_to_string) {
   if (!neo_js_variable_has_opaque(self, "timestamp")) {
     neo_js_variable_t message = neo_js_context_create_cstring(
@@ -257,6 +349,7 @@ void neo_initialize_js_date(neo_js_context_t ctx) {
       neo_js_context_create_cfunction(ctx, neo_js_date_constructor, "Date");
   NEO_JS_DEF_METHOD(ctx, constant->date_class, "now", neo_js_date_now);
   NEO_JS_DEF_METHOD(ctx, constant->date_class, "parse", neo_js_date_parse);
+  NEO_JS_DEF_METHOD(ctx, constant->date_class, "UTC", neo_js_date_utc);
   neo_js_variable_t prototype = neo_js_variable_get_field(
       constant->date_class, ctx, constant->key_prototype);
   NEO_JS_DEF_METHOD(ctx, prototype, "toString", neo_js_date_to_string);
