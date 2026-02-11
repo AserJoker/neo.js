@@ -15,7 +15,7 @@ void neo_initialize_js_reference_error(neo_js_context_t ctx) {
   neo_js_variable_t prototype = neo_js_variable_get_field(
       constant->reference_error_class, ctx, constant->key_prototype);
   neo_js_variable_t string =
-      neo_js_context_create_cstring(ctx, "ReferenceError");
-  neo_js_variable_t key = neo_js_context_create_cstring(ctx, "name");
+      neo_js_context_create_string(ctx, u"ReferenceError");
+  neo_js_variable_t key = neo_js_context_create_string(ctx, u"name");
   neo_js_variable_def_field(prototype, ctx, key, string, true, false, true);
 }

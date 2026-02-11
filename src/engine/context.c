@@ -249,9 +249,9 @@ NEO_JS_CFUNCTION(neo_js_dispose_supressed) {
   neo_js_variable_t res =
       neo_js_variable_construct(suppressed_error_class, ctx, 0, NULL);
   neo_js_variable_set_field(
-      res, ctx, neo_js_context_create_cstring(ctx, "error"), current);
+      res, ctx, neo_js_context_create_string(ctx, u"error"), current);
   neo_js_variable_set_field(
-      res, ctx, neo_js_context_create_cstring(ctx, "suppressed"), error);
+      res, ctx, neo_js_context_create_string(ctx, u"suppressed"), error);
   return neo_js_context_create_exception(ctx, res);
 }
 
@@ -266,13 +266,13 @@ NEO_JS_CFUNCTION(neo_js_dispose_onrejected) {
     neo_js_variable_t err = neo_js_variable_construct(
         ctx->constant.suppressed_error_class, ctx, 0, NULL);
     neo_js_variable_set_field(err, ctx,
-                              neo_js_context_create_cstring(ctx, "error"), e);
+                              neo_js_context_create_string(ctx, u"error"), e);
     neo_js_variable_set_field(
-        err, ctx, neo_js_context_create_cstring(ctx, "suppressed"), error);
+        err, ctx, neo_js_context_create_string(ctx, u"suppressed"), error);
     return neo_js_context_create_exception(ctx, err);
   } else if (res->value->type >= NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t then = neo_js_variable_get_field(
-        res, ctx, neo_js_context_create_cstring(ctx, "then"));
+        res, ctx, neo_js_context_create_string(ctx, u"then"));
     if (then->value->type >= NEO_JS_TYPE_FUNCTION) {
       neo_js_variable_t onfulfilled = neo_js_context_create_cfunction(
           ctx, neo_js_dispose_onfulfilled, NULL);
@@ -310,11 +310,11 @@ neo_js_variable_t neo_js_context_pop_scope(neo_js_context_t self) {
             res = neo_js_context_create_variable(
                 self, ((neo_js_exception_t)res->value)->error);
             neo_js_variable_set_field(
-                error, self, neo_js_context_create_cstring(self, "error"), res);
+                error, self, neo_js_context_create_string(self, u"error"), res);
             neo_js_variable_t current = neo_js_context_create_variable(
                 self, ((neo_js_exception_t)(result->value))->error);
             neo_js_variable_set_field(
-                error, self, neo_js_context_create_cstring(self, "suppressed"),
+                error, self, neo_js_context_create_string(self, u"suppressed"),
                 current);
             result = neo_js_context_create_exception(self, error);
           }
@@ -369,7 +369,7 @@ neo_js_variable_t neo_js_context_pop_scope(neo_js_context_t self) {
             neo_js_variable_set_closure(onrejected, self, "value", item);
             neo_js_variable_set_closure(onrejected, self, "dispose", dispose);
             neo_js_variable_t then = neo_js_variable_get_field(
-                result, self, neo_js_context_create_cstring(self, "then"));
+                result, self, neo_js_context_create_string(self, u"then"));
             neo_js_variable_t args[] = {onfulfilled, onrejected};
             result = neo_js_variable_call(then, self, result, 2, args);
           }
@@ -592,7 +592,7 @@ neo_js_variable_t neo_js_context_create_function(neo_js_context_t self,
   neo_js_variable_t prototype = neo_js_context_create_object(self, NULL);
   neo_js_variable_t key = self->constant.key_prototype;
   neo_js_variable_def_field(result, self, key, prototype, true, false, true);
-  neo_js_variable_t funcname = neo_js_context_create_cstring(self, "");
+  neo_js_variable_t funcname = neo_js_context_create_string(self, u"");
   key = self->constant.key_name;
   neo_js_variable_def_field(result, self, key, funcname, false, false, false);
   key = self->constant.key_constructor;
@@ -611,7 +611,7 @@ neo_js_context_create_async_function(neo_js_context_t self,
   neo_js_variable_t prototype = neo_js_context_create_object(self, NULL);
   neo_js_variable_t key = self->constant.key_prototype;
   neo_js_variable_def_field(result, self, key, prototype, true, false, true);
-  neo_js_variable_t funcname = neo_js_context_create_cstring(self, "");
+  neo_js_variable_t funcname = neo_js_context_create_string(self, u"");
   key = self->constant.key_name;
   neo_js_variable_def_field(result, self, key, funcname, false, false, false);
   key = self->constant.key_constructor;
@@ -630,7 +630,7 @@ neo_js_context_create_generator_function(neo_js_context_t self,
   neo_js_variable_t prototype = neo_js_context_create_object(self, NULL);
   neo_js_variable_t key = self->constant.key_prototype;
   neo_js_variable_def_field(result, self, key, prototype, true, false, true);
-  neo_js_variable_t funcname = neo_js_context_create_cstring(self, "");
+  neo_js_variable_t funcname = neo_js_context_create_string(self, u"");
   key = self->constant.key_name;
   neo_js_variable_def_field(result, self, key, funcname, false, false, false);
   key = self->constant.key_constructor;
@@ -651,7 +651,7 @@ neo_js_context_create_async_generator_function(neo_js_context_t self,
   neo_js_variable_t prototype = neo_js_context_create_object(self, NULL);
   neo_js_variable_t key = self->constant.key_prototype;
   neo_js_variable_def_field(result, self, key, prototype, true, false, true);
-  neo_js_variable_t funcname = neo_js_context_create_cstring(self, "");
+  neo_js_variable_t funcname = neo_js_context_create_string(self, u"");
   key = self->constant.key_name;
   neo_js_variable_def_field(result, self, key, funcname, false, false, false);
   key = self->constant.key_constructor;
@@ -745,7 +745,7 @@ neo_js_variable_t neo_js_context_store(neo_js_context_t self, const char *name,
   }
   if (current->is_const && current->value->type != NEO_JS_TYPE_UNINITIALIZED) {
     neo_js_variable_t message =
-        neo_js_context_create_cstring(self, "Assignment to constant variable");
+        neo_js_context_create_string(self, u"Assignment to constant variable");
     neo_js_variable_t error = neo_js_variable_construct(
         self->constant.reference_error_class, self, 1, &message);
     return neo_js_context_create_exception(self, error);
@@ -994,7 +994,7 @@ neo_js_variable_t neo_js_context_import(neo_js_context_t self,
   if (neo_js_variable_get_opaque(res, self, "promise")) {
     neo_js_variable_t promise = neo_js_context_create_promise(self);
     neo_js_variable_t then = neo_js_variable_get_field(
-        res, self, neo_js_context_create_cstring(self, "then"));
+        res, self, neo_js_context_create_string(self, u"then"));
     neo_js_variable_t onfulfilled = neo_js_context_create_cfunction(
         self, neo_js_context_import_onfulfilled, NULL);
     neo_js_variable_set_closure(onfulfilled, self, "promise", promise);
@@ -1082,7 +1082,7 @@ neo_js_variable_t neo_js_context_eval(neo_js_context_t self, const char *source,
         neo_js_variable_t promise = neo_js_context_create_promise(self);
         if (value->value->type >= NEO_JS_TYPE_OBJECT &&
             ((then = neo_js_variable_get_field(
-                  value, self, neo_js_context_create_cstring(self, "then")))
+                  value, self, neo_js_context_create_string(self, u"then")))
                  ->value->type >= NEO_JS_TYPE_FUNCTION)) {
           neo_js_variable_t onfulfilled = neo_js_context_create_cfunction(
               self, neo_js_async_onfulfilled, NULL);

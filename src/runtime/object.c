@@ -12,10 +12,10 @@ NEO_JS_CFUNCTION(neo_js_object_constructor) { return self; }
 NEO_JS_CFUNCTION(neo_js_object_value_of) { return self; }
 NEO_JS_CFUNCTION(neo_js_object_to_string) {
   if (self->value->type == NEO_JS_TYPE_NULL) {
-    return neo_js_context_create_cstring(ctx, "[object Null]");
+    return neo_js_context_create_string(ctx, u"[object Null]");
   }
   if (self->value->type == NEO_JS_TYPE_UNDEFINED) {
-    return neo_js_context_create_cstring(ctx, "[object Undefined]");
+    return neo_js_context_create_string(ctx, u"[object Undefined]");
   }
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
     self = neo_js_variable_to_object(self, ctx);
@@ -44,7 +44,7 @@ NEO_JS_CFUNCTION(neo_js_object_to_string) {
     *dst = 0;
     return neo_js_context_create_string(ctx, str);
   } else {
-    return neo_js_context_create_cstring(ctx, "[object Object]");
+    return neo_js_context_create_string(ctx, u"[object Object]");
   }
 }
 void neo_initialize_js_object(neo_js_context_t ctx) {

@@ -16,7 +16,7 @@ NEO_JS_CFUNCTION(neo_js_error_constructor) {
   neo_js_variable_t message = neo_js_context_get_argument(ctx, argc, argv, 0);
   if (message->value->type != NEO_JS_TYPE_STRING) {
     if (message->value->type == NEO_JS_TYPE_UNDEFINED) {
-      message = neo_js_context_create_cstring(ctx, "");
+      message = neo_js_context_create_string(ctx, u"");
     } else {
       message = neo_js_variable_to_string(message, ctx);
       if (message->value->type == NEO_JS_TYPE_EXCEPTION) {
@@ -26,7 +26,7 @@ NEO_JS_CFUNCTION(neo_js_error_constructor) {
   }
   neo_js_variable_t option = neo_js_context_get_argument(ctx, argc, argv, 1);
   neo_js_variable_t cause = NULL;
-  neo_js_variable_t key = neo_js_context_create_cstring(ctx, "cause");
+  neo_js_variable_t key = neo_js_context_create_string(ctx, u"cause");
   if (option->value->type >= NEO_JS_TYPE_OBJECT) {
     cause = neo_js_variable_get_field(option, ctx, key);
     if (cause->value->type == NEO_JS_TYPE_EXCEPTION) {
@@ -36,7 +36,7 @@ NEO_JS_CFUNCTION(neo_js_error_constructor) {
     cause = neo_js_context_get_undefined(ctx);
   }
   neo_js_variable_def_field(self, ctx, key, cause, true, false, true);
-  key = neo_js_context_create_cstring(ctx, "message");
+  key = neo_js_context_create_string(ctx, u"message");
   neo_js_variable_def_field(self, ctx, key, message, true, false, true);
   neo_list_t trace = neo_js_context_trace(ctx, NULL, 0, 0);
   size_t length = 16;
@@ -66,11 +66,11 @@ NEO_JS_CFUNCTION(neo_js_error_constructor) {
   return self;
 }
 NEO_JS_CFUNCTION(neo_js_error_to_string) {
-  neo_js_variable_t key = neo_js_context_create_cstring(ctx, "name");
+  neo_js_variable_t key = neo_js_context_create_string(ctx, u"name");
   neo_js_variable_t name = neo_js_variable_get_field(self, ctx, key);
-  key = neo_js_context_create_cstring(ctx, "message");
+  key = neo_js_context_create_string(ctx, u"message");
   neo_js_variable_t message = neo_js_variable_get_field(self, ctx, key);
-  neo_js_variable_t stack = neo_js_variable_get_internel(self, ctx, "stack");
+  neo_js_variable_t stack = neo_js_variable_get_internal(self, ctx, "stack");
   const uint16_t *errname = ((neo_js_string_t)name->value)->value;
   size_t len = 0;
   len += neo_string16_length(errname) + 2;
@@ -107,8 +107,8 @@ void neo_initialize_js_error(neo_js_context_t ctx) {
   neo_js_variable_t error_prototype = neo_js_variable_get_field(
       constant->error_class, ctx, constant->key_prototype);
   NEO_JS_DEF_METHOD(ctx, error_prototype, "toString", neo_js_error_to_string);
-  neo_js_variable_t string = neo_js_context_create_cstring(ctx, "Error");
-  neo_js_variable_t key = neo_js_context_create_cstring(ctx, "name");
+  neo_js_variable_t string = neo_js_context_create_string(ctx, u"Error");
+  neo_js_variable_t key = neo_js_context_create_string(ctx, u"name");
   neo_js_variable_def_field(error_prototype, ctx, key, string, true, false,
                             true);
 }

@@ -29,7 +29,7 @@ NEO_JS_CFUNCTION(neo_js_promise_on_then) {
   neo_js_variable_t resolve = neo_js_context_get_argument(ctx, argc, argv, 0);
   neo_js_variable_t reject = neo_js_context_get_argument(ctx, argc, argv, 1);
   neo_js_variable_t then = neo_js_variable_get_field(
-      value, ctx, neo_js_context_create_cstring(ctx, "then"));
+      value, ctx, neo_js_context_create_string(ctx, u"then"));
   neo_js_variable_t args[] = {resolve, reject};
   neo_js_variable_call(then, ctx, value, 2, args);
   return neo_js_context_get_undefined(ctx);
@@ -40,7 +40,7 @@ NEO_JS_CFUNCTION(neo_js_promise_resolve) {
   neo_js_variable_t value = neo_js_context_get_argument(ctx, argc, argv, 0);
   if (value->value->type >= NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t then = neo_js_variable_get_field(
-        value, ctx, neo_js_context_create_cstring(ctx, "then"));
+        value, ctx, neo_js_context_create_string(ctx, u"then"));
     if (then->value->type == NEO_JS_TYPE_FUNCTION) {
       neo_js_variable_t on_then =
           neo_js_context_create_cfunction(ctx, neo_js_promise_on_then, NULL);
@@ -124,7 +124,7 @@ NEO_JS_CFUNCTION(neo_js_promise_callback_resolve) {
   neo_js_variable_set_bind(onrejected, ctx, self);
   if (value->value->type >= NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t then = neo_js_variable_get_field(
-        value, ctx, neo_js_context_create_cstring(ctx, "then"));
+        value, ctx, neo_js_context_create_string(ctx, u"then"));
     if (then->value->type >= NEO_JS_TYPE_FUNCTION) {
       neo_js_variable_t args[] = {callback, onrejected};
       neo_js_variable_call(then, ctx, value, 2, args);

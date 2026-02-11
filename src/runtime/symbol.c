@@ -102,7 +102,7 @@ NEO_JS_CFUNCTION(neo_js_symbol_value_of) {
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
     }
-    self = neo_js_variable_get_internel(self, ctx, "PrimitiveValue");
+    self = neo_js_variable_get_internal(self, ctx, "PrimitiveValue");
     if (!self || self->value->type != NEO_JS_TYPE_SYMBOL) {
       neo_js_variable_t message = neo_js_context_format(
           ctx, "Symbol.prototype.valueOf requires that 'this' be a Symbol");
@@ -124,7 +124,7 @@ NEO_JS_CFUNCTION(neo_js_symbol_to_string) {
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
     }
-    self = neo_js_variable_get_internel(self, ctx, "PrimitiveValue");
+    self = neo_js_variable_get_internal(self, ctx, "PrimitiveValue");
     if (!self || self->value->type != NEO_JS_TYPE_SYMBOL) {
       neo_js_variable_t message = neo_js_context_format(
           ctx, "Symbol.prototype.toString requires that 'this' be a Symbol");
@@ -161,7 +161,7 @@ NEO_JS_CFUNCTION(neo_js_symbol_symbol_to_primitive) {
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
     }
-    self = neo_js_variable_get_internel(self, ctx, "PrimitiveValue");
+    self = neo_js_variable_get_internal(self, ctx, "PrimitiveValue");
     if (!self || self->value->type != NEO_JS_TYPE_SYMBOL) {
       neo_js_variable_t message =
           neo_js_context_format(ctx, "Symbol.prototype[Symbol.toPrimitive] "
@@ -186,7 +186,7 @@ NEO_JS_CFUNCTION(neo_js_symbol_get_description) {
           constant->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
     }
-    self = neo_js_variable_get_internel(self, ctx, "PrimitiveValue");
+    self = neo_js_variable_get_internal(self, ctx, "PrimitiveValue");
     if (!self || self->value->type != NEO_JS_TYPE_SYMBOL) {
       neo_js_variable_t message =
           neo_js_context_format(ctx, "Symbol.prototype.description "
@@ -237,12 +237,12 @@ void neo_initialize_js_symbol(neo_js_context_t ctx) {
   initialize.hash = (neo_hash_fn_t)neo_hash_sdb_utf16;
   neo_hash_map_t symbols = neo_create_hash_map(allocator, &initialize);
   neo_js_variable_set_opaque(clazz, ctx, "symbols", symbols);
-  neo_js_variable_t string_tag = neo_js_context_create_cstring(ctx, "Symbol");
+  neo_js_variable_t string_tag = neo_js_context_create_string(ctx, u"Symbol");
   neo_js_variable_def_field(prototype, ctx, constant->symbol_to_string_tag,
                             string_tag, true, false, true);
   neo_js_variable_t get_description = neo_js_context_create_cfunction(
       ctx, neo_js_symbol_get_description, "get description");
-  neo_js_variable_t key = neo_js_context_create_cstring(ctx, "description");
+  neo_js_variable_t key = neo_js_context_create_string(ctx, u"description");
   neo_js_variable_def_accessor(prototype, ctx, key, get_description, NULL, true,
                                false);
 }

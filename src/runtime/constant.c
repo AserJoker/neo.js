@@ -54,9 +54,9 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
       ctx, &neo_create_js_boolean(allocator, true)->super);
   constant->boolean_false = neo_js_context_create_variable(
       ctx, &neo_create_js_boolean(allocator, false)->super);
-  constant->key_name = neo_js_context_create_cstring(ctx, "name");
-  constant->key_constructor = neo_js_context_create_cstring(ctx, "constructor");
-  constant->key_prototype = neo_js_context_create_cstring(ctx, "prototype");
+  constant->key_name = neo_js_context_create_string(ctx, u"name");
+  constant->key_constructor = neo_js_context_create_string(ctx, u"constructor");
+  constant->key_prototype = neo_js_context_create_string(ctx, u"prototype");
   neo_initialize_js_object(ctx);
   neo_initialize_js_function(ctx);
   constant->global = neo_js_context_create_object(ctx, NULL);

@@ -19,7 +19,7 @@
 static neo_js_variable_t neo_js_array_get_length(neo_js_context_t ctx,
                                                  neo_js_variable_t array) {
   neo_js_variable_t length = neo_js_variable_get_field(
-      array, ctx, neo_js_context_create_cstring(ctx, "length"));
+      array, ctx, neo_js_context_create_string(ctx, u"length"));
   if (length->value->type == NEO_JS_TYPE_EXCEPTION) {
     return length;
   }
@@ -67,7 +67,7 @@ NEO_JS_CFUNCTION(neo_js_array_from) {
       return neo_js_context_create_exception(ctx, error);
     }
     neo_js_variable_t next = neo_js_variable_get_field(
-        generator, ctx, neo_js_context_create_cstring(ctx, "next"));
+        generator, ctx, neo_js_context_create_string(ctx, u"next"));
     if (next->value->type == NEO_JS_TYPE_EXCEPTION) {
       return next;
     }
@@ -97,7 +97,7 @@ NEO_JS_CFUNCTION(neo_js_array_from) {
         return neo_js_context_create_exception(ctx, error);
       }
       neo_js_variable_t done = neo_js_variable_get_field(
-          res, ctx, neo_js_context_create_cstring(ctx, "done"));
+          res, ctx, neo_js_context_create_string(ctx, u"done"));
       if (done->value->type == NEO_JS_TYPE_EXCEPTION) {
         return done;
       }
@@ -109,7 +109,7 @@ NEO_JS_CFUNCTION(neo_js_array_from) {
         break;
       }
       neo_js_variable_t value = neo_js_variable_get_field(
-          res, ctx, neo_js_context_create_cstring(ctx, "value"));
+          res, ctx, neo_js_context_create_string(ctx, u"value"));
       if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
         return value;
       }
@@ -162,7 +162,7 @@ static NEO_JS_CFUNCTION(neo_js_array_from_async_next_map_onfulfilled) {
   uint32_t idx = ((neo_js_number_t)index->value)->value;
   neo_js_variable_set_field(result, ctx, index, value);
   neo_js_variable_t next = neo_js_variable_get_field(
-      generator, ctx, neo_js_context_create_cstring(ctx, "next"));
+      generator, ctx, neo_js_context_create_string(ctx, u"next"));
   if (next->value->type == NEO_JS_TYPE_EXCEPTION) {
     return next;
   }
@@ -189,7 +189,7 @@ static NEO_JS_CFUNCTION(neo_js_array_from_async_next_map_onfulfilled) {
   neo_js_variable_set_closure(onrejected, ctx, "promise", promise);
   neo_js_variable_t args[] = {onfulfilled, onrejected};
   neo_js_variable_t then = neo_js_variable_get_field(
-      res, ctx, neo_js_context_create_cstring(ctx, "then"));
+      res, ctx, neo_js_context_create_string(ctx, u"then"));
   neo_js_variable_call(then, ctx, res, 2, args);
   return neo_js_context_get_undefined(ctx);
 }
@@ -232,7 +232,7 @@ static NEO_JS_CFUNCTION(neo_js_array_from_async_next_value_onfulfilled) {
   neo_js_variable_set_closure(onrejected, ctx, "promise", promise);
   neo_js_variable_t args[] = {onfulfilled, onrejected};
   neo_js_variable_t then = neo_js_variable_get_field(
-      value, ctx, neo_js_context_create_cstring(ctx, "then"));
+      value, ctx, neo_js_context_create_string(ctx, u"then"));
   neo_js_variable_call(then, ctx, value, 2, args);
   return neo_js_context_get_undefined(ctx);
 }
@@ -245,7 +245,7 @@ static NEO_JS_CFUNCTION(neo_js_array_from_async_next_onfulfilled) {
   neo_js_variable_t generator = neo_js_context_load(ctx, "generator");
   neo_js_variable_t res = neo_js_context_get_argument(ctx, argc, argv, 0);
   neo_js_variable_t done = neo_js_variable_get_field(
-      res, ctx, neo_js_context_create_cstring(ctx, "done"));
+      res, ctx, neo_js_context_create_string(ctx, u"done"));
   if (done->value->type == NEO_JS_TYPE_EXCEPTION) {
     neo_js_variable_t error = neo_js_context_create_variable(
         ctx, ((neo_js_exception_t)done->value)->error);
@@ -264,7 +264,7 @@ static NEO_JS_CFUNCTION(neo_js_array_from_async_next_onfulfilled) {
     return neo_js_context_get_undefined(ctx);
   }
   neo_js_variable_t value = neo_js_variable_get_field(
-      res, ctx, neo_js_context_create_cstring(ctx, "value"));
+      res, ctx, neo_js_context_create_string(ctx, u"value"));
   if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
     neo_js_variable_t error = neo_js_context_create_variable(
         ctx, ((neo_js_exception_t)value->value)->error);
@@ -292,7 +292,7 @@ static NEO_JS_CFUNCTION(neo_js_array_from_async_next_onfulfilled) {
   neo_js_variable_set_closure(onrejected, ctx, "promise", promise);
   neo_js_variable_t args[] = {onfulfilled, onrejected};
   neo_js_variable_t then = neo_js_variable_get_field(
-      value, ctx, neo_js_context_create_cstring(ctx, "then"));
+      value, ctx, neo_js_context_create_string(ctx, u"then"));
   neo_js_variable_call(then, ctx, value, 2, args);
   return neo_js_context_get_undefined(ctx);
 }
@@ -331,7 +331,7 @@ NEO_JS_CFUNCTION(neo_js_array_from_async) {
       return generator;
     }
     neo_js_variable_t next = neo_js_variable_get_field(
-        generator, ctx, neo_js_context_create_cstring(ctx, "next"));
+        generator, ctx, neo_js_context_create_string(ctx, u"next"));
     if (next->value->type == NEO_JS_TYPE_EXCEPTION) {
       return next;
     }
@@ -358,7 +358,7 @@ NEO_JS_CFUNCTION(neo_js_array_from_async) {
     neo_js_variable_set_closure(onrejected, ctx, "promise", promise);
     neo_js_variable_t args[] = {onfulfilled, onrejected};
     neo_js_variable_t then = neo_js_variable_get_field(
-        res, ctx, neo_js_context_create_cstring(ctx, "then"));
+        res, ctx, neo_js_context_create_string(ctx, u"then"));
     neo_js_variable_call(then, ctx, res, 2, args);
   }
   return promise;
@@ -392,11 +392,11 @@ NEO_JS_CFUNCTION(neo_js_array_constructor) {
       return neo_js_context_create_exception(ctx, error);
     }
     neo_js_variable_t length = neo_js_context_create_number(ctx, len);
-    neo_js_variable_t key = neo_js_context_create_cstring(ctx, "length");
+    neo_js_variable_t key = neo_js_context_create_string(ctx, u"length");
     neo_js_variable_def_field(self, ctx, key, length, false, false, true);
   } else {
     neo_js_variable_t length = neo_js_context_create_number(ctx, 0);
-    neo_js_variable_t key = neo_js_context_create_cstring(ctx, "length");
+    neo_js_variable_t key = neo_js_context_create_string(ctx, u"length");
     neo_js_variable_def_field(self, ctx, key, length, false, false, true);
     for (size_t idx = 0; idx < argc; idx++) {
       neo_js_variable_t key = neo_js_context_create_number(ctx, idx);
@@ -409,7 +409,7 @@ NEO_JS_CFUNCTION(neo_js_array_constructor) {
   }
   neo_js_variable_set_opaque(self, ctx, "is_array", NULL);
   neo_js_variable_def_field(self, ctx,
-                            neo_js_context_create_cstring(ctx, "constructor"),
+                            neo_js_context_create_string(ctx, u"constructor"),
                             constant->array_class, true, false, true);
   return self;
 }
@@ -460,7 +460,7 @@ NEO_JS_CFUNCTION(neo_js_array_concat) {
   bool is_array = neo_js_variable_has_opaque(self, "is_array");
   if (is_array) {
     neo_js_variable_t constructor = neo_js_variable_get_field(
-        self, ctx, neo_js_context_create_cstring(ctx, "constructor"));
+        self, ctx, neo_js_context_create_string(ctx, u"constructor"));
     if (constructor->value->type == NEO_JS_TYPE_EXCEPTION) {
       return constructor;
     }
@@ -530,7 +530,7 @@ NEO_JS_CFUNCTION(neo_js_array_concat) {
         }
       } else {
         neo_js_variable_t length = neo_js_variable_get_field(
-            result, ctx, neo_js_context_create_cstring(ctx, "length"));
+            result, ctx, neo_js_context_create_string(ctx, u"length"));
         ((neo_js_number_t)length->value)->value += 1;
       }
     }
@@ -735,7 +735,7 @@ NEO_JS_CFUNCTION(neo_js_array_filter) {
   bool is_array = neo_js_variable_has_opaque(self, "is_array");
   if (is_array) {
     neo_js_variable_t constructor = neo_js_variable_get_field(
-        self, ctx, neo_js_context_create_cstring(ctx, "constructor"));
+        self, ctx, neo_js_context_create_string(ctx, u"constructor"));
     if (constructor->value->type == NEO_JS_TYPE_EXCEPTION) {
       return constructor;
     }
@@ -962,7 +962,7 @@ static neo_js_variable_t neo_js_array_flat_item(neo_js_context_t ctx,
           }
           ((neo_js_number_t)length->value)->value += 1;
           neo_js_variable_t err = neo_js_variable_set_field(
-              result, ctx, neo_js_context_create_cstring(ctx, "length"),
+              result, ctx, neo_js_context_create_string(ctx, u"length"),
               length);
           if (err->value->type == NEO_JS_TYPE_EXCEPTION) {
             return err;
@@ -1002,7 +1002,7 @@ NEO_JS_CFUNCTION(neo_js_array_flat) {
   bool is_array = neo_js_variable_has_opaque(self, "is_array");
   if (is_array) {
     neo_js_variable_t constructor = neo_js_variable_get_field(
-        self, ctx, neo_js_context_create_cstring(ctx, "constructor"));
+        self, ctx, neo_js_context_create_string(ctx, u"constructor"));
     if (constructor->value->type == NEO_JS_TYPE_EXCEPTION) {
       return constructor;
     }
@@ -1315,7 +1315,7 @@ NEO_JS_CFUNCTION(neo_js_array_map) {
       }
     } else {
       neo_js_variable_t length = neo_js_variable_get_field(
-          result, ctx, neo_js_context_create_cstring(ctx, "length"));
+          result, ctx, neo_js_context_create_string(ctx, u"length"));
       ((neo_js_number_t)length->value)->value += 1;
     }
   }
@@ -1357,7 +1357,7 @@ NEO_JS_CFUNCTION(neo_js_array_push) {
     }
   }
   neo_js_variable_t error = neo_js_variable_set_field(
-      self, ctx, neo_js_context_create_cstring(ctx, "length"), length);
+      self, ctx, neo_js_context_create_string(ctx, u"length"), length);
   if (error->value->type == NEO_JS_TYPE_EXCEPTION) {
     return error;
   }
@@ -1386,7 +1386,7 @@ NEO_JS_CFUNCTION(neo_js_array_pop) {
       return error;
     }
     error = neo_js_variable_set_field(
-        self, ctx, neo_js_context_create_cstring(ctx, "length"),
+        self, ctx, neo_js_context_create_string(ctx, u"length"),
         neo_js_context_create_number(ctx, len - 1));
     if (error->value->type == NEO_JS_TYPE_EXCEPTION) {
       return error;
@@ -1600,7 +1600,7 @@ NEO_JS_CFUNCTION(neo_js_array_shift) {
       }
     }
     neo_js_variable_t error = neo_js_variable_set_field(
-        self, ctx, neo_js_context_create_cstring(ctx, "length"),
+        self, ctx, neo_js_context_create_string(ctx, u"length"),
         neo_js_context_create_number(ctx, len - 1));
     if (error->value->type == NEO_JS_TYPE_EXCEPTION) {
       return error;
@@ -1621,7 +1621,7 @@ NEO_JS_CFUNCTION(neo_js_array_slice) {
   if (is_array) {
     neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t constructor = neo_js_variable_get_field(
-        self, ctx, neo_js_context_create_cstring(ctx, "constructor"));
+        self, ctx, neo_js_context_create_string(ctx, u"constructor"));
     if (constructor->value->type == NEO_JS_TYPE_EXCEPTION) {
       return constructor;
     }
@@ -1691,7 +1691,7 @@ NEO_JS_CFUNCTION(neo_js_array_slice) {
     }
   }
   neo_js_variable_t error = neo_js_variable_set_field(
-      result, ctx, neo_js_context_create_cstring(ctx, "length"),
+      result, ctx, neo_js_context_create_string(ctx, u"length"),
       neo_js_context_create_number(ctx, end - start));
   if (error->value->type == NEO_JS_TYPE_EXCEPTION) {
     return error;
@@ -1710,7 +1710,7 @@ NEO_JS_CFUNCTION(neo_js_array_some) {
   if (is_array) {
     neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t constructor = neo_js_variable_get_field(
-        self, ctx, neo_js_context_create_cstring(ctx, "constructor"));
+        self, ctx, neo_js_context_create_string(ctx, u"constructor"));
     if (constructor->value->type == NEO_JS_TYPE_EXCEPTION) {
       return constructor;
     }
@@ -1824,7 +1824,7 @@ NEO_JS_CFUNCTION(neo_js_array_sort) {
   int64_t len = (int64_t)lenf;
   if (lenf != len) {
     neo_js_variable_t message =
-        neo_js_context_create_cstring(ctx, "Invalid array length");
+        neo_js_context_create_string(ctx, u"Invalid array length");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->range_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1925,7 +1925,7 @@ NEO_JS_CFUNCTION(neo_js_array_splice) {
       }
     } else {
       neo_js_variable_t len = neo_js_variable_get_field(
-          result, ctx, neo_js_context_create_cstring(ctx, "length"));
+          result, ctx, neo_js_context_create_string(ctx, u"length"));
       ((neo_js_number_t)len->value)->value += 1;
     }
   }
@@ -1984,7 +1984,7 @@ NEO_JS_CFUNCTION(neo_js_array_splice) {
   }
   length = neo_js_context_create_number(ctx, len + delta);
   neo_js_variable_t err = neo_js_variable_set_field(
-      self, ctx, neo_js_context_create_cstring(ctx, "length"), length);
+      self, ctx, neo_js_context_create_string(ctx, u"length"), length);
   if (err->value->type == NEO_JS_TYPE_EXCEPTION) {
     return err;
   }
@@ -2025,7 +2025,7 @@ NEO_JS_CFUNCTION(neo_js_array_to_locale_string) {
           return item;
         }
         neo_js_variable_t to_locale_string = neo_js_variable_get_field(
-            item, ctx, neo_js_context_create_cstring(ctx, "toLocaleString"));
+            item, ctx, neo_js_context_create_string(ctx, u"toLocaleString"));
         if (to_locale_string->value->type == NEO_JS_TYPE_EXCEPTION) {
           return to_locale_string;
         }
@@ -2097,7 +2097,7 @@ NEO_JS_CFUNCTION(neo_js_array_to_reversed) {
     }
   }
   neo_js_variable_set_field(
-      reversed, ctx, neo_js_context_create_cstring(ctx, "length"), length);
+      reversed, ctx, neo_js_context_create_string(ctx, u"length"), length);
   return reversed;
 }
 
@@ -2116,7 +2116,7 @@ NEO_JS_CFUNCTION(neo_js_array_to_sorted) {
   int64_t len = (int64_t)lenf;
   if (lenf != len) {
     neo_js_variable_t message =
-        neo_js_context_create_cstring(ctx, "Invalid array length");
+        neo_js_context_create_string(ctx, u"Invalid array length");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->range_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -2158,7 +2158,7 @@ NEO_JS_CFUNCTION(neo_js_array_to_sorted) {
   }
   neo_allocator_free(allocator, array);
   neo_js_variable_set_field(
-      sorted, ctx, neo_js_context_create_cstring(ctx, "length"), length);
+      sorted, ctx, neo_js_context_create_string(ctx, u"length"), length);
   return sorted;
 }
 
@@ -2231,7 +2231,7 @@ NEO_JS_CFUNCTION(neo_js_array_to_spliced) {
   return spliced;
 }
 NEO_JS_CFUNCTION(neo_js_array_to_string) {
-  neo_js_variable_t sp = neo_js_context_create_cstring(ctx, ",");
+  neo_js_variable_t sp = neo_js_context_create_string(ctx, u",");
   return neo_js_array_join(ctx, self, 1, &sp);
 }
 NEO_JS_CFUNCTION(neo_js_array_unshift) {
@@ -2247,7 +2247,7 @@ NEO_JS_CFUNCTION(neo_js_array_unshift) {
   }
   double len = ((neo_js_number_t)length->value)->value;
   neo_js_variable_t res = neo_js_variable_set_field(
-      self, ctx, neo_js_context_create_cstring(ctx, "length"),
+      self, ctx, neo_js_context_create_string(ctx, u"length"),
       neo_js_context_create_number(ctx, len + 1));
   if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
     return res;
@@ -2304,7 +2304,7 @@ NEO_JS_CFUNCTION(neo_js_array_with) {
   double len = ((neo_js_number_t)length->value)->value;
   neo_js_variable_t result = neo_js_context_create_array(ctx);
   neo_js_variable_t err = neo_js_variable_set_field(
-      result, ctx, neo_js_context_create_cstring(ctx, "length"), length);
+      result, ctx, neo_js_context_create_string(ctx, u"length"), length);
   if (err->value->type == NEO_JS_TYPE_EXCEPTION) {
     return err;
   }
@@ -2424,7 +2424,7 @@ void neo_initialize_js_array(neo_js_context_t ctx) {
   NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "unshift",
                     neo_js_array_unshift);
   neo_js_variable_def_field(constant->array_prototype, ctx,
-                            neo_js_context_create_cstring(ctx, "values"),
+                            neo_js_context_create_string(ctx, u"values"),
                             values, true, false, true);
   NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "with", neo_js_array_with);
   neo_js_variable_def_field(constant->array_prototype, ctx,

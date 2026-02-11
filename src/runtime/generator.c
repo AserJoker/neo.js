@@ -10,7 +10,7 @@
 #include "neojs/runtime/vm.h"
 
 NEO_JS_CFUNCTION(neo_js_generator_next) {
-  neo_js_variable_t value = neo_js_variable_get_internel(self, ctx, "value");
+  neo_js_variable_t value = neo_js_variable_get_internal(self, ctx, "value");
   neo_js_variable_t result = neo_js_context_create_object(ctx, NULL);
   neo_allocator_t allocator =
       neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
@@ -35,15 +35,15 @@ NEO_JS_CFUNCTION(neo_js_generator_next) {
       neo_js_variable_t value =
           neo_js_context_create_variable(ctx, interrupt->value);
       neo_js_variable_set_field(
-          result, ctx, neo_js_context_create_cstring(ctx, "value"), value);
+          result, ctx, neo_js_context_create_string(ctx, u"value"), value);
       neo_js_variable_set_field(result, ctx,
-                                neo_js_context_create_cstring(ctx, "done"),
+                                neo_js_context_create_string(ctx, u"done"),
                                 neo_js_context_get_false(ctx));
     } else {
       neo_js_variable_set_field(
-          result, ctx, neo_js_context_create_cstring(ctx, "value"), value);
+          result, ctx, neo_js_context_create_string(ctx, u"value"), value);
       neo_js_variable_set_field(result, ctx,
-                                neo_js_context_create_cstring(ctx, "done"),
+                                neo_js_context_create_string(ctx, u"done"),
                                 neo_js_context_get_true(ctx));
       neo_js_context_pop_scope(ctx);
     }
@@ -51,16 +51,16 @@ NEO_JS_CFUNCTION(neo_js_generator_next) {
     neo_js_context_set_scope(ctx, current);
   } else {
     neo_js_variable_set_field(
-        result, ctx, neo_js_context_create_cstring(ctx, "value"), value);
+        result, ctx, neo_js_context_create_string(ctx, u"value"), value);
     neo_js_variable_set_field(result, ctx,
-                              neo_js_context_create_cstring(ctx, "done"),
+                              neo_js_context_create_string(ctx, u"done"),
                               neo_js_context_get_true(ctx));
   }
   neo_js_context_set_type(ctx, origin_ctx_type);
   return result;
 }
 NEO_JS_CFUNCTION(neo_js_generator_return) {
-  neo_js_variable_t value = neo_js_variable_get_internel(self, ctx, "value");
+  neo_js_variable_t value = neo_js_variable_get_internal(self, ctx, "value");
   neo_js_variable_t result = neo_js_context_create_object(ctx, NULL);
   neo_allocator_t allocator =
       neo_js_runtime_get_allocator(neo_js_context_get_runtime(ctx));
@@ -85,15 +85,15 @@ NEO_JS_CFUNCTION(neo_js_generator_return) {
       neo_js_variable_t value =
           neo_js_context_create_variable(ctx, interrupt->value);
       neo_js_variable_set_field(
-          result, ctx, neo_js_context_create_cstring(ctx, "value"), value);
+          result, ctx, neo_js_context_create_string(ctx, u"value"), value);
       neo_js_variable_set_field(result, ctx,
-                                neo_js_context_create_cstring(ctx, "done"),
+                                neo_js_context_create_string(ctx, u"done"),
                                 neo_js_context_get_false(ctx));
     } else {
       neo_js_variable_set_field(
-          result, ctx, neo_js_context_create_cstring(ctx, "value"), value);
+          result, ctx, neo_js_context_create_string(ctx, u"value"), value);
       neo_js_variable_set_field(result, ctx,
-                                neo_js_context_create_cstring(ctx, "done"),
+                                neo_js_context_create_string(ctx, u"done"),
                                 neo_js_context_get_true(ctx));
       neo_js_context_pop_scope(ctx);
     }
@@ -101,9 +101,9 @@ NEO_JS_CFUNCTION(neo_js_generator_return) {
     neo_js_context_set_scope(ctx, current);
   } else {
     neo_js_variable_set_field(
-        result, ctx, neo_js_context_create_cstring(ctx, "value"), value);
+        result, ctx, neo_js_context_create_string(ctx, u"value"), value);
     neo_js_variable_set_field(result, ctx,
-                              neo_js_context_create_cstring(ctx, "done"),
+                              neo_js_context_create_string(ctx, u"done"),
                               neo_js_context_get_true(ctx));
   }
   neo_js_context_set_type(ctx, origin_ctx_type);
@@ -126,7 +126,7 @@ void neo_initialize_js_generator(neo_js_context_t ctx) {
   NEO_JS_DEF_METHOD(ctx, constant->generator_prototype, "throw",
                     neo_js_generator_throw);
   neo_js_variable_t string_tag =
-      neo_js_context_create_cstring(ctx, "Generator");
+      neo_js_context_create_string(ctx, u"Generator");
   neo_js_variable_set_field(constant->generator_prototype, ctx,
                             constant->symbol_to_string_tag, string_tag);
 }

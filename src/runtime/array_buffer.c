@@ -53,7 +53,7 @@ NEO_JS_CFUNCTION(neo_js_array_buffer_constructor) {
   double length = ((neo_js_number_t)byte_length->value)->value;
   if (length >= (double)((int64_t)2 << 53) || length < 0) {
     neo_js_variable_t message =
-        neo_js_context_create_cstring(ctx, "Invalid array buffer length");
+        neo_js_context_create_string(ctx, u"Invalid array buffer length");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->range_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -62,11 +62,11 @@ NEO_JS_CFUNCTION(neo_js_array_buffer_constructor) {
   bool resizable = false;
   if (argc > 1 && argv[1]->value->type >= NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t max_byte_length = neo_js_variable_get_field(
-        argv[1], ctx, neo_js_context_create_cstring(ctx, "maxByteLength"));
+        argv[1], ctx, neo_js_context_create_string(ctx, u"maxByteLength"));
     max_length = ((neo_js_number_t)max_byte_length->value)->value;
     if (max_length >= (double)((int64_t)2 << 53) || max_length < length) {
       neo_js_variable_t message =
-          neo_js_context_create_cstring(ctx, "Invalid array buffer max length");
+          neo_js_context_create_string(ctx, u"Invalid array buffer max length");
       neo_js_variable_t error = neo_js_variable_construct(
           neo_js_context_get_constant(ctx)->range_error_class, ctx, 1,
           &message);
@@ -85,7 +85,7 @@ NEO_JS_CFUNCTION(neo_js_array_buffer_is_view) {
   if (view->value->type < NEO_JS_TYPE_OBJECT) {
     return neo_js_context_get_false(ctx);
   }
-  neo_js_variable_t buffer = neo_js_variable_get_internel(view, ctx, "buffer");
+  neo_js_variable_t buffer = neo_js_variable_get_internal(view, ctx, "buffer");
   if (buffer) {
     if (neo_js_variable_get_opaque(buffer, ctx, "bufferData")) {
       return neo_js_context_get_true(ctx);
@@ -108,7 +108,7 @@ NEO_JS_CFUNCTION(neo_js_array_buffer_resize) {
   }
   if (!data->resizable) {
     neo_js_variable_t message =
-        neo_js_context_create_cstring(ctx, "ArrayBuffer is not resizable");
+        neo_js_context_create_string(ctx, u"ArrayBuffer is not resizable");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -122,7 +122,7 @@ NEO_JS_CFUNCTION(neo_js_array_buffer_resize) {
   double len = ((neo_js_number_t)new_byte_length->value)->value;
   if (len > data->max_byte_length || len < 0) {
     neo_js_variable_t message =
-        neo_js_context_create_cstring(ctx, "Invalid length parameter");
+        neo_js_context_create_string(ctx, u"Invalid length parameter");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->range_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -178,7 +178,7 @@ NEO_JS_CFUNCTION(neo_js_array_buffer_slice) {
         neo_js_context_get_constant(ctx)->array_buffer_class, ctx, 0, NULL);
   }
   neo_js_variable_t constructor = neo_js_variable_get_field(
-      self, ctx, neo_js_context_create_cstring(ctx, "constructor"));
+      self, ctx, neo_js_context_create_string(ctx, u"constructor"));
   if (constructor->value->type == NEO_JS_TYPE_EXCEPTION) {
     return constructor;
   }
@@ -255,16 +255,16 @@ void neo_initialize_js_array_buffer(neo_js_context_t ctx) {
   func = neo_js_context_create_cfunction(
       ctx, neo_js_array_buffer_get_byte_length, NULL);
   neo_js_variable_def_accessor(prototype, ctx,
-                               neo_js_context_create_cstring(ctx, "byteLength"),
+                               neo_js_context_create_string(ctx, u"byteLength"),
                                func, NULL, true, false);
   func = neo_js_context_create_cfunction(
       ctx, neo_js_array_buffer_get_max_byte_length, NULL);
   neo_js_variable_def_accessor(
-      prototype, ctx, neo_js_context_create_cstring(ctx, "maxByteLength"), func,
+      prototype, ctx, neo_js_context_create_string(ctx, u"maxByteLength"), func,
       NULL, true, false);
   func = neo_js_context_create_cfunction(ctx, neo_js_array_buffer_get_resizable,
                                          NULL);
   neo_js_variable_def_accessor(prototype, ctx,
-                               neo_js_context_create_cstring(ctx, "resizable"),
+                               neo_js_context_create_string(ctx, u"resizable"),
                                func, NULL, true, false);
 }

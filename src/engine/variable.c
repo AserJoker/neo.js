@@ -59,19 +59,19 @@ neo_js_variable_t neo_js_variable_to_string(neo_js_variable_t self,
   neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
   switch (self->value->type) {
   case NEO_JS_TYPE_UNDEFINED:
-    return neo_js_context_create_cstring(ctx, "undefined");
+    return neo_js_context_create_string(ctx, u"undefined");
   case NEO_JS_TYPE_NULL:
-    return neo_js_context_create_cstring(ctx, "null");
+    return neo_js_context_create_string(ctx, u"null");
   case NEO_JS_TYPE_NUMBER: {
     neo_js_number_t number = (neo_js_number_t)self->value;
     if (isnan(number->value)) {
-      return neo_js_context_create_cstring(ctx, "NaN");
+      return neo_js_context_create_string(ctx, u"NaN");
     }
     if (isinf(number->value)) {
       if (number->value < 0) {
-        return neo_js_context_create_cstring(ctx, "-Infinity");
+        return neo_js_context_create_string(ctx, u"-Infinity");
       } else {
-        return neo_js_context_create_cstring(ctx, "Infinity");
+        return neo_js_context_create_string(ctx, u"Infinity");
       }
     }
     char s[16];
@@ -247,7 +247,7 @@ neo_js_variable_t neo_js_variable_to_primitive(neo_js_variable_t self,
       return neo_js_context_create_exception(ctx, error);
     }
   }
-  key = neo_js_context_create_cstring(ctx, "valueOf");
+  key = neo_js_context_create_string(ctx, u"valueOf");
   neo_js_variable_t value_of = neo_js_variable_get_field(self, ctx, key);
   if (value_of->value->type == NEO_JS_TYPE_EXCEPTION) {
     return value_of;
@@ -261,7 +261,7 @@ neo_js_variable_t neo_js_variable_to_primitive(neo_js_variable_t self,
       return res;
     }
   }
-  key = neo_js_context_create_cstring(ctx, "toString");
+  key = neo_js_context_create_string(ctx, u"toString");
   neo_js_variable_t to_string = neo_js_variable_get_field(self, ctx, key);
   if (to_string->value->type == NEO_JS_TYPE_EXCEPTION) {
     return to_string;
@@ -300,7 +300,7 @@ neo_js_variable_t neo_js_variable_to_object(neo_js_variable_t self,
   }
   case NEO_JS_TYPE_NUMBER: {
     neo_js_variable_t message =
-        neo_js_context_create_cstring(ctx, "Number is not implement");
+        neo_js_context_create_string(ctx, u"Number is not implement");
     neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
@@ -314,7 +314,7 @@ neo_js_variable_t neo_js_variable_to_object(neo_js_variable_t self,
   }
   case NEO_JS_TYPE_BOOLEAN: {
     neo_js_variable_t message =
-        neo_js_context_create_cstring(ctx, "Boolean is not implement");
+        neo_js_context_create_string(ctx, u"Boolean is not implement");
     neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
@@ -322,7 +322,7 @@ neo_js_variable_t neo_js_variable_to_object(neo_js_variable_t self,
   } break;
   case NEO_JS_TYPE_STRING: {
     neo_js_variable_t message =
-        neo_js_context_create_cstring(ctx, "String is not implement");
+        neo_js_context_create_string(ctx, u"String is not implement");
     neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
@@ -399,7 +399,7 @@ neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
     if (self->value->type == NEO_JS_TYPE_ARRAY &&
         key->value->type == NEO_JS_TYPE_STRING) {
       neo_js_object_property_t length_prop = neo_hash_map_get(
-          obj->properties, neo_js_context_create_cstring(ctx, "length")->value);
+          obj->properties, neo_js_context_create_string(ctx, u"length")->value);
       neo_js_number_t current_length = (neo_js_number_t)length_prop->value;
       neo_js_variable_t index = neo_js_variable_to_number(key, ctx);
       double idxf = ((neo_js_number_t)index->value)->value;
@@ -461,7 +461,7 @@ neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
       } else {
         neo_js_object_property_t length_prop = neo_hash_map_get(
             obj->properties,
-            neo_js_context_create_cstring(ctx, "length")->value);
+            neo_js_context_create_string(ctx, u"length")->value);
         neo_js_number_t current_length = (neo_js_number_t)length_prop->value;
         neo_js_variable_t index = neo_js_variable_to_number(key, ctx);
         double idxf = ((neo_js_number_t)index->value)->value;
@@ -786,7 +786,7 @@ neo_js_variable_def_accessor(neo_js_variable_t self, neo_js_context_t ctx,
     if (self->value->type == NEO_JS_TYPE_ARRAY &&
         key->value->type == NEO_JS_TYPE_STRING) {
       neo_js_object_property_t length_prop = neo_hash_map_get(
-          obj->properties, neo_js_context_create_cstring(ctx, "length")->value);
+          obj->properties, neo_js_context_create_string(ctx, u"length")->value);
       neo_js_number_t current_length = (neo_js_number_t)length_prop->value;
       neo_js_variable_t index = neo_js_variable_to_number(key, ctx);
       double idxf = ((neo_js_number_t)index->value)->value;
@@ -1082,7 +1082,7 @@ neo_js_variable_t neo_js_variable_set_field(neo_js_variable_t self,
       } else {
         neo_js_object_property_t length_prop = neo_hash_map_get(
             object->properties,
-            neo_js_context_create_cstring(ctx, "length")->value);
+            neo_js_context_create_string(ctx, u"length")->value);
         neo_js_number_t current_length = (neo_js_number_t)length_prop->value;
         neo_js_variable_t index = neo_js_variable_to_number(key, ctx);
         double idxf = ((neo_js_number_t)index->value)->value;
@@ -1167,7 +1167,7 @@ static bool neo_js_variable_is_thenable(neo_js_variable_t self,
                                         neo_js_context_t ctx) {
   if (self->value->type >= NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t then = neo_js_variable_get_field(
-        self, ctx, neo_js_context_create_cstring(ctx, "then"));
+        self, ctx, neo_js_context_create_string(ctx, u"then"));
     return then->value->type >= NEO_JS_TYPE_FUNCTION;
   }
   return false;
@@ -1242,7 +1242,7 @@ NEO_JS_CFUNCTION(neo_js_async_task) {
     neo_js_variable_t then = NULL;
     if (value->value->type >= NEO_JS_TYPE_OBJECT &&
         ((then = neo_js_variable_get_field(
-              value, ctx, neo_js_context_create_cstring(ctx, "then")))
+              value, ctx, neo_js_context_create_string(ctx, u"then")))
              ->value->type >= NEO_JS_TYPE_FUNCTION)) {
       neo_js_variable_t onfulfilled =
           neo_js_context_create_cfunction(ctx, neo_js_async_onfulfilled, NULL);
@@ -1401,7 +1401,7 @@ neo_js_variable_t neo_js_variable_call_variable(neo_js_variable_t self,
         return res;
       }
     }
-    neo_js_variable_t key = neo_js_context_create_cstring(ctx, "length");
+    neo_js_variable_t key = neo_js_context_create_string(ctx, u"length");
     neo_js_variable_t length = neo_js_context_create_number(ctx, argc);
     neo_js_variable_set_field(arguments, ctx, key, length);
     neo_js_variable_t iterator =
@@ -1460,13 +1460,13 @@ neo_js_variable_t neo_js_variable_construct(neo_js_variable_t self,
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
   }
-  neo_js_variable_t prototype = neo_js_context_create_cstring(ctx, "prototype");
+  neo_js_variable_t prototype = neo_js_context_create_string(ctx, u"prototype");
   prototype = neo_js_variable_get_field(self, ctx, prototype);
   if (prototype->value->type == NEO_JS_TYPE_EXCEPTION) {
     return prototype;
   }
   neo_js_variable_t object = neo_js_context_create_object(ctx, prototype);
-  neo_js_variable_t key = neo_js_context_create_cstring(ctx, "constructor");
+  neo_js_variable_t key = neo_js_context_create_string(ctx, u"constructor");
   neo_js_variable_def_field(object, ctx, key, self, true, false, true);
 
   neo_js_context_type_t origin_ctx_type =
@@ -1486,7 +1486,7 @@ neo_js_variable_t neo_js_variable_construct(neo_js_variable_t self,
   return object;
 }
 
-neo_js_variable_t neo_js_variable_get_internel(neo_js_variable_t self,
+neo_js_variable_t neo_js_variable_get_internal(neo_js_variable_t self,
                                                neo_js_context_t ctx,
                                                const char *name) {
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
@@ -2082,25 +2082,25 @@ neo_js_variable_t neo_js_variable_typeof(neo_js_variable_t self,
                                          neo_js_context_t ctx) {
   switch (self->value->type) {
   case NEO_JS_TYPE_UNDEFINED:
-    return neo_js_context_create_cstring(ctx, "undefined");
+    return neo_js_context_create_string(ctx, u"undefined");
   case NEO_JS_TYPE_NULL:
-    return neo_js_context_create_cstring(ctx, "object");
+    return neo_js_context_create_string(ctx, u"object");
   case NEO_JS_TYPE_NUMBER:
-    return neo_js_context_create_cstring(ctx, "number");
+    return neo_js_context_create_string(ctx, u"number");
   case NEO_JS_TYPE_BIGINT:
-    return neo_js_context_create_cstring(ctx, "bigint");
+    return neo_js_context_create_string(ctx, u"bigint");
   case NEO_JS_TYPE_BOOLEAN:
-    return neo_js_context_create_cstring(ctx, "boolean");
+    return neo_js_context_create_string(ctx, u"boolean");
   case NEO_JS_TYPE_STRING:
-    return neo_js_context_create_cstring(ctx, "string");
+    return neo_js_context_create_string(ctx, u"string");
   case NEO_JS_TYPE_SYMBOL:
-    return neo_js_context_create_cstring(ctx, "symbol");
+    return neo_js_context_create_string(ctx, u"symbol");
   case NEO_JS_TYPE_OBJECT:
   case NEO_JS_TYPE_ARRAY:
-    return neo_js_context_create_cstring(ctx, "object");
+    return neo_js_context_create_string(ctx, u"object");
   case NEO_JS_TYPE_CLASS:
   case NEO_JS_TYPE_FUNCTION:
-    return neo_js_context_create_cstring(ctx, "function");
+    return neo_js_context_create_string(ctx, u"function");
   default:
     return self;
   }
@@ -2574,7 +2574,7 @@ neo_js_variable_t neo_js_variable_instance_of(neo_js_variable_t self,
     return neo_js_context_get_false(ctx);
   }
   neo_js_variable_t prototype = neo_js_variable_get_field(
-      another, ctx, neo_js_context_create_cstring(ctx, "prototype"));
+      another, ctx, neo_js_context_create_string(ctx, u"prototype"));
   if (prototype->value->type < NEO_JS_TYPE_OBJECT) {
     neo_js_variable_t message = neo_js_context_format(
         ctx, "Function has non-object prototype '%v' in instanceof check",

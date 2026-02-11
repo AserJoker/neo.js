@@ -110,7 +110,7 @@ neo_js_variable_t neo_js_variable_call_function(neo_js_variable_t self,
 neo_js_variable_t neo_js_variable_construct(neo_js_variable_t self,
                                             neo_js_context_t ctx, size_t argc,
                                             neo_js_variable_t *argv);
-neo_js_variable_t neo_js_variable_get_internel(neo_js_variable_t self,
+neo_js_variable_t neo_js_variable_get_internal(neo_js_variable_t self,
                                                neo_js_context_t ctx,
                                                const char *name);
 neo_js_variable_t neo_js_variable_set_internal(neo_js_variable_t self,

@@ -7,6 +7,7 @@
 #include <unicode/udata.h>
 #include <unicode/uloc.h>
 #include <unicode/ulocale.h>
+#include <unicode/umachine.h>
 #include <unicode/urename.h>
 #include <unicode/utypes.h>
 #include <unistd.h>
@@ -136,6 +137,7 @@ char *neo_clock_to_iso(neo_allocator_t allocator, int64_t timestamep) {
   }
   udat_format(fmt, timestamep, result, 256, NULL, &status);
   if (U_FAILURE(status)) {
+    udat_close(fmt);
     return NULL;
   }
   udat_close(fmt);
@@ -143,6 +145,7 @@ char *neo_clock_to_iso(neo_allocator_t allocator, int64_t timestamep) {
   u_austrcpy(s, result);
   return s;
 }
+
 char *neo_clock_to_rfc(neo_allocator_t allocator, int64_t timestamep) {
   UErrorCode status = U_ZERO_ERROR;
   const char cformat[] = "EEE MMM dd yyyy HH:mm:ss 'GMP'Z (zzzz)";
@@ -166,10 +169,27 @@ char *neo_clock_to_rfc(neo_allocator_t allocator, int64_t timestamep) {
   }
   udat_format(fmt, timestamep, result, 256, NULL, &status);
   if (U_FAILURE(status)) {
+    udat_close(fmt);
     return NULL;
   }
   udat_close(fmt);
   char *s = neo_allocator_alloc(allocator, u_strlen(result) + 1, NULL);
   u_austrcpy(s, result);
   return s;
+}
+bool neo_clock_to_string(int64_t timestamep, UChar *format, UChar *zone,
+                         UChar *result, size_t len) {
+  UErrorCode status = U_ZERO_ERROR;
+  UDateFormat *fmt = udat_open(UDAT_PATTERN, UDAT_PATTERN, "en", zone, -1,
+                               format, -1, &status);
+  if (U_FAILURE(status)) {
+    return false;
+  }
+  udat_format(fmt, timestamep, result, len, NULL, &status);
+  if (U_FAILURE(status)) {
+    udat_close(fmt);
+    return false;
+  }
+  udat_close(fmt);
+  return true;
 }

@@ -12,7 +12,7 @@ static NEO_JS_CFUNCTION(neo_js_ggregate_error_constructor) {
     errors = neo_js_context_create_array(ctx);
   }
   neo_js_variable_set_field(
-      self, ctx, neo_js_context_create_cstring(ctx, "errors"), errors);
+      self, ctx, neo_js_context_create_string(ctx, u"errors"), errors);
   if (argc <= 1) {
     return neo_js_error_constructor(ctx, self, 0, NULL);
   }
@@ -28,7 +28,7 @@ void neo_initialize_js_aggregate_error(neo_js_context_t ctx) {
   neo_js_variable_t prototype = neo_js_variable_get_field(
       constant->aggregate_error_class, ctx, constant->key_prototype);
   neo_js_variable_t string =
-      neo_js_context_create_cstring(ctx, "AggregateError");
-  neo_js_variable_t key = neo_js_context_create_cstring(ctx, "name");
+      neo_js_context_create_string(ctx, u"AggregateError");
+  neo_js_variable_t key = neo_js_context_create_string(ctx, u"name");
   neo_js_variable_def_field(prototype, ctx, key, string, true, false, true);
 }
