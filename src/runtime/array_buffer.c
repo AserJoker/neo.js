@@ -38,8 +38,8 @@ static neo_buffer_data_t neo_create_buffer_data(neo_allocator_t allocator,
 }
 NEO_JS_CFUNCTION(neo_js_array_buffer_constructor) {
   if (neo_js_context_get_type(ctx) != NEO_JS_CONTEXT_CONSTRUCT) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Constructor ArrayBuffer requires 'new'");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Constructor ArrayBuffer requires 'new'");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);

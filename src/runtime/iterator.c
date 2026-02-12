@@ -5,8 +5,8 @@
 #include "neojs/runtime/constant.h"
 NEO_JS_CFUNCTION(neo_js_iterator_constructor) {
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);
-  neo_js_variable_t message = neo_js_context_create_cstring(
-      ctx, "Abstract class Iterator not directly constructable");
+  neo_js_variable_t message = neo_js_context_create_string(
+      ctx, u"Abstract class Iterator not directly constructable");
   neo_js_variable_t error =
       neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
   return neo_js_context_create_exception(ctx, error);

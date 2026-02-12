@@ -22,8 +22,8 @@ NEO_JS_CFUNCTION(neo_js_function_to_string) {
       if (*funcname) {
         return neo_js_context_format(ctx, "function %v(){ [native] }", name);
       } else {
-        return neo_js_context_create_cstring(
-            ctx, "function anonymous(){ [native] }");
+        return neo_js_context_create_string(
+            ctx, u"function anonymous(){ [native] }");
       }
     } else {
       neo_js_function_t func = (neo_js_function_t)callable;

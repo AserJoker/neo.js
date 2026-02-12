@@ -12,7 +12,10 @@
 #include <stdint.h>
 #include <string.h>
 #include <unicode/ucal.h>
+#include <unicode/umachine.h>
+#include <unicode/ustdio.h>
 #include <unicode/utypes.h>
+
 
 NEO_JS_CFUNCTION(neo_js_date_constructor) {
   if (neo_js_context_get_type(ctx) == NEO_JS_CONTEXT_CONSTRUCT) {
@@ -34,7 +37,7 @@ NEO_JS_CFUNCTION(neo_js_date_constructor) {
         }
       }
       neo_js_variable_t value =
-          neo_js_variable_to_primitive(argv[0], ctx, "default");
+          neo_js_variable_to_primitive(argv[0], ctx, u"default");
       if (value->value->type == NEO_JS_TYPE_EXCEPTION) {
         return value;
       }
@@ -197,8 +200,8 @@ NEO_JS_CFUNCTION(neo_js_date_get_date) {
 
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.getDate requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.getDate requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -228,8 +231,8 @@ NEO_JS_CFUNCTION(neo_js_date_get_date) {
 NEO_JS_CFUNCTION(neo_js_date_get_day) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.getDay requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.getDay requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -259,8 +262,8 @@ NEO_JS_CFUNCTION(neo_js_date_get_day) {
 NEO_JS_CFUNCTION(neo_js_date_get_full_year) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.getFullYear requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.getFullYear requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -290,8 +293,8 @@ NEO_JS_CFUNCTION(neo_js_date_get_full_year) {
 NEO_JS_CFUNCTION(neo_js_date_get_hours) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.getHours requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.getHours requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -321,8 +324,8 @@ NEO_JS_CFUNCTION(neo_js_date_get_hours) {
 NEO_JS_CFUNCTION(neo_js_date_get_milliseconds) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.getMilliseconds requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.getMilliseconds requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -352,8 +355,8 @@ NEO_JS_CFUNCTION(neo_js_date_get_milliseconds) {
 NEO_JS_CFUNCTION(neo_js_date_get_minutes) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.getMinutes requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.getMinutes requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -383,8 +386,8 @@ NEO_JS_CFUNCTION(neo_js_date_get_minutes) {
 NEO_JS_CFUNCTION(neo_js_date_get_month) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.getMonth requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.getMonth requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -414,8 +417,8 @@ NEO_JS_CFUNCTION(neo_js_date_get_month) {
 NEO_JS_CFUNCTION(neo_js_date_get_seconds) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.getSeconds requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.getSeconds requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -445,8 +448,8 @@ NEO_JS_CFUNCTION(neo_js_date_get_seconds) {
 NEO_JS_CFUNCTION(neo_js_date_get_time) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.getTime requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.getTime requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -457,8 +460,8 @@ NEO_JS_CFUNCTION(neo_js_date_get_time) {
 NEO_JS_CFUNCTION(neo_js_date_get_timezone_offset) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.getTimezoneOffset requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.getTimezoneOffset requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -470,8 +473,8 @@ NEO_JS_CFUNCTION(neo_js_date_get_timezone_offset) {
 NEO_JS_CFUNCTION(neo_js_date_get_utc_date) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.getUTCDate requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.getUTCDate requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -501,8 +504,8 @@ NEO_JS_CFUNCTION(neo_js_date_get_utc_date) {
 NEO_JS_CFUNCTION(neo_js_date_get_utc_day) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.getUTCDay requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.getUTCDay requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -532,8 +535,8 @@ NEO_JS_CFUNCTION(neo_js_date_get_utc_day) {
 NEO_JS_CFUNCTION(neo_js_date_get_utc_full_year) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.getUTCFullYear requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.getUTCFullYear requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -563,8 +566,8 @@ NEO_JS_CFUNCTION(neo_js_date_get_utc_full_year) {
 NEO_JS_CFUNCTION(neo_js_date_get_utc_hours) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.getUTCHours requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.getUTCHours requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -594,9 +597,9 @@ NEO_JS_CFUNCTION(neo_js_date_get_utc_hours) {
 NEO_JS_CFUNCTION(neo_js_date_get_utc_milliseconds) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
+    neo_js_variable_t message = neo_js_context_create_string(
         ctx,
-        "Date.prototype.getUTCMilliseconds requires that 'this' be a Date");
+        u"Date.prototype.getUTCMilliseconds requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -626,8 +629,8 @@ NEO_JS_CFUNCTION(neo_js_date_get_utc_milliseconds) {
 NEO_JS_CFUNCTION(neo_js_date_get_utc_minutes) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.getUTCMinutes requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.getUTCMinutes requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -657,8 +660,8 @@ NEO_JS_CFUNCTION(neo_js_date_get_utc_minutes) {
 NEO_JS_CFUNCTION(neo_js_date_get_utc_month) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.getUTCMonth requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.getUTCMonth requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -688,8 +691,8 @@ NEO_JS_CFUNCTION(neo_js_date_get_utc_month) {
 NEO_JS_CFUNCTION(neo_js_date_get_utc_seconds) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.getUTCSeconds requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.getUTCSeconds requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -719,8 +722,8 @@ NEO_JS_CFUNCTION(neo_js_date_get_utc_seconds) {
 NEO_JS_CFUNCTION(neo_js_date_get_year) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.getYear requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.getYear requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -751,8 +754,8 @@ NEO_JS_CFUNCTION(neo_js_date_get_year) {
 NEO_JS_CFUNCTION(neo_js_date_set_date) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.setDate requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.setDate requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -797,8 +800,8 @@ NEO_JS_CFUNCTION(neo_js_date_set_date) {
 NEO_JS_CFUNCTION(neo_js_date_set_full_year) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.setFullYear requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.setFullYear requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -843,8 +846,8 @@ NEO_JS_CFUNCTION(neo_js_date_set_full_year) {
 NEO_JS_CFUNCTION(neo_js_date_set_hours) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.setHours requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.setHours requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -890,8 +893,8 @@ NEO_JS_CFUNCTION(neo_js_date_set_milliseconds) {
 
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.setMilliseconds requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.setMilliseconds requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -936,8 +939,8 @@ NEO_JS_CFUNCTION(neo_js_date_set_milliseconds) {
 NEO_JS_CFUNCTION(neo_js_date_set_minutes) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.setMinutes requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.setMinutes requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -982,8 +985,8 @@ NEO_JS_CFUNCTION(neo_js_date_set_minutes) {
 NEO_JS_CFUNCTION(neo_js_date_set_month) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.setMonth requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.setMonth requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1028,8 +1031,8 @@ NEO_JS_CFUNCTION(neo_js_date_set_month) {
 NEO_JS_CFUNCTION(neo_js_date_set_seconds) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.setSeconds requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.setSeconds requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1074,8 +1077,8 @@ NEO_JS_CFUNCTION(neo_js_date_set_seconds) {
 NEO_JS_CFUNCTION(neo_js_date_set_time) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.setTime requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.setTime requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1097,8 +1100,8 @@ NEO_JS_CFUNCTION(neo_js_date_set_time) {
 NEO_JS_CFUNCTION(neo_js_date_set_utc_date) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.setDate requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.setDate requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1143,8 +1146,8 @@ NEO_JS_CFUNCTION(neo_js_date_set_utc_date) {
 NEO_JS_CFUNCTION(neo_js_date_set_utc_full_year) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.setFullYear requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.setFullYear requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1189,8 +1192,8 @@ NEO_JS_CFUNCTION(neo_js_date_set_utc_full_year) {
 NEO_JS_CFUNCTION(neo_js_date_set_utc_hours) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.setHours requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.setHours requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1236,8 +1239,8 @@ NEO_JS_CFUNCTION(neo_js_date_set_utc_milliseconds) {
 
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.setMilliseconds requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.setMilliseconds requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1282,8 +1285,8 @@ NEO_JS_CFUNCTION(neo_js_date_set_utc_milliseconds) {
 NEO_JS_CFUNCTION(neo_js_date_set_utc_minutes) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.setMinutes requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.setMinutes requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1328,8 +1331,8 @@ NEO_JS_CFUNCTION(neo_js_date_set_utc_minutes) {
 NEO_JS_CFUNCTION(neo_js_date_set_utc_month) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.setMonth requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.setMonth requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1374,8 +1377,8 @@ NEO_JS_CFUNCTION(neo_js_date_set_utc_month) {
 NEO_JS_CFUNCTION(neo_js_date_set_utc_seconds) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.setUTCSeconds requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.setUTCSeconds requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1420,8 +1423,8 @@ NEO_JS_CFUNCTION(neo_js_date_set_utc_seconds) {
 NEO_JS_CFUNCTION(neo_js_date_set_year) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.setYear requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.setYear requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1467,8 +1470,8 @@ NEO_JS_CFUNCTION(neo_js_date_set_year) {
 NEO_JS_CFUNCTION(neo_js_date_to_date_string) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.toDateString requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.toDateString requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1478,9 +1481,9 @@ NEO_JS_CFUNCTION(neo_js_date_to_date_string) {
     return neo_js_context_create_string(ctx, u"Invalid Date");
   }
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
-  char *s = neo_clock_to_rfc(allocator, (int64_t)timestamp);
+  UChar *s = neo_clock_to_rfc(allocator, (int64_t)timestamp);
   if (s) {
-    neo_js_variable_t res = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t res = neo_js_context_create_string(ctx, s);
     neo_allocator_free(allocator, s);
     return res;
   } else {
@@ -1490,8 +1493,8 @@ NEO_JS_CFUNCTION(neo_js_date_to_date_string) {
 NEO_JS_CFUNCTION(neo_js_date_to_iso_string) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.toISOString requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.toISOString requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1501,9 +1504,9 @@ NEO_JS_CFUNCTION(neo_js_date_to_iso_string) {
     return neo_js_context_create_string(ctx, u"Invalid Date");
   }
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
-  char *s = neo_clock_to_iso(allocator, (int64_t)timestamp);
+  UChar *s = neo_clock_to_iso(allocator, (int64_t)timestamp);
   if (s) {
-    neo_js_variable_t res = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t res = neo_js_context_create_string(ctx, s);
     neo_allocator_free(allocator, s);
     return res;
   } else {
@@ -1513,8 +1516,8 @@ NEO_JS_CFUNCTION(neo_js_date_to_iso_string) {
 NEO_JS_CFUNCTION(neo_js_date_to_json) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.toJSON requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.toJSON requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1524,9 +1527,9 @@ NEO_JS_CFUNCTION(neo_js_date_to_json) {
     return neo_js_context_create_string(ctx, u"Invalid Date");
   }
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
-  char *s = neo_clock_to_iso(allocator, (int64_t)timestamp);
+  UChar *s = neo_clock_to_iso(allocator, (int64_t)timestamp);
   if (s) {
-    neo_js_variable_t res = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t res = neo_js_context_create_string(ctx, s);
     neo_allocator_free(allocator, s);
     return res;
   } else {
@@ -1536,8 +1539,8 @@ NEO_JS_CFUNCTION(neo_js_date_to_json) {
 NEO_JS_CFUNCTION(neo_js_date_to_locale_date_string) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.toLocalDateString requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.toLocalDateString requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1564,8 +1567,8 @@ NEO_JS_CFUNCTION(neo_js_date_to_locale_date_string) {
 NEO_JS_CFUNCTION(neo_js_date_to_locale_string) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.toLocalDateString requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.toLocalDateString requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1593,8 +1596,8 @@ NEO_JS_CFUNCTION(neo_js_date_to_locale_time_string) {
 
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.toLocalDateString requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.toLocalDateString requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1622,8 +1625,8 @@ NEO_JS_CFUNCTION(neo_js_date_to_locale_time_string) {
 NEO_JS_CFUNCTION(neo_js_date_to_string) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.toString requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.toString requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1633,9 +1636,9 @@ NEO_JS_CFUNCTION(neo_js_date_to_string) {
     return neo_js_context_create_string(ctx, u"Invalid Date");
   }
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
-  char *s = neo_clock_to_rfc(allocator, (int64_t)timestamp);
+  UChar *s = neo_clock_to_rfc(allocator, (int64_t)timestamp);
   if (s) {
-    neo_js_variable_t res = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t res = neo_js_context_create_string(ctx, s);
     neo_allocator_free(allocator, s);
     return res;
   } else {
@@ -1646,8 +1649,8 @@ NEO_JS_CFUNCTION(neo_js_date_to_string) {
 NEO_JS_CFUNCTION(neo_js_date_value_of) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.valueOf requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.valueOf requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1661,8 +1664,8 @@ NEO_JS_CFUNCTION(neo_js_date_value_of) {
 NEO_JS_CFUNCTION(neo_js_date_to_time_string) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.to requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.to requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1681,8 +1684,8 @@ NEO_JS_CFUNCTION(neo_js_date_to_time_string) {
 NEO_JS_CFUNCTION(neo_js_date_to_utc_string) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Date.prototype.toUTCString requires that 'this' be a Date");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Date.prototype.toUTCString requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);
@@ -1701,9 +1704,9 @@ NEO_JS_CFUNCTION(neo_js_date_to_utc_string) {
 NEO_JS_CFUNCTION(neo_js_date_to_primitive) {
   neo_js_variable_t ts = neo_js_variable_get_internal(self, ctx, "timestamp");
   if (!ts || ts->value->type != NEO_JS_TYPE_NUMBER) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
+    neo_js_variable_t message = neo_js_context_create_string(
         ctx,
-        "Date.prototype[Symbol.toPrimitive] requires that 'this' be a Date");
+        u"Date.prototype[Symbol.toPrimitive] requires that 'this' be a Date");
     neo_js_variable_t error = neo_js_variable_construct(
         neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
     return neo_js_context_create_exception(ctx, error);

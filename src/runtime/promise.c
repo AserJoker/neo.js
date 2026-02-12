@@ -232,8 +232,8 @@ NEO_JS_CFUNCTION(neo_js_promise_transform) {
   neo_js_variable_t onrejected = neo_js_context_load(ctx, "onrejected");
   neo_js_promise_t promise = neo_js_variable_get_opaque(self, ctx, "promise");
   if (!promise) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Promise.then called on non-promise object");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Promise.then called on non-promise object");
     neo_js_variable_t type_error_class =
         neo_js_context_get_constant(ctx)->type_error_class;
     neo_js_variable_t error =
@@ -288,8 +288,8 @@ NEO_JS_CFUNCTION(neo_js_promise_transform) {
 NEO_JS_CFUNCTION(neo_js_promise_then) {
   neo_js_promise_t promise = neo_js_variable_get_opaque(self, ctx, "promise");
   if (!promise) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Promise.then called on non-promise object");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Promise.then called on non-promise object");
     neo_js_variable_t type_error_class =
         neo_js_context_get_constant(ctx)->type_error_class;
     neo_js_variable_t error =

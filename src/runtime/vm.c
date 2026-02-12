@@ -1201,6 +1201,7 @@ static char *neo_js_vm_resolve_import_path(neo_allocator_t allocator,
       neo_allocator_free(allocator, fullpath);
       return path;
     }
+    neo_allocator_free(allocator, path);
   }
   neo_allocator_free(allocator, fullpath);
   return NULL;
@@ -1214,9 +1215,9 @@ static void neo_js_vm_import(neo_js_vm_t vm, neo_js_context_t ctx,
   char *fullpath =
       neo_js_vm_resolve_import_path(allocator, program->dirname, file);
   if (!fullpath) {
-    char s[strlen(fullpath) + 32];
-    sprintf(s, "Cannot find module '%s'", fullpath);
-    neo_js_variable_t message = neo_js_context_create_cstring(ctx, s);
+    UChar s[strlen(file) + 32];
+    u_sprintf(s, "Cannot find module '%s'", file);
+    neo_js_variable_t message = neo_js_context_create_string(ctx, s);
     neo_js_variable_t error_class =
         neo_js_context_get_constant(ctx)->error_class;
     neo_js_variable_t error =

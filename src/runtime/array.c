@@ -60,8 +60,8 @@ NEO_JS_CFUNCTION(neo_js_array_from) {
     if (generator->value->type < NEO_JS_TYPE_OBJECT) {
       neo_js_variable_t type_error =
           neo_js_context_get_constant(ctx)->type_error_class;
-      neo_js_variable_t message = neo_js_context_create_cstring(
-          ctx, "Result of the Symbol.iterator method is not an object");
+      neo_js_variable_t message = neo_js_context_create_string(
+          ctx, u"Result of the Symbol.iterator method is not an object");
       neo_js_variable_t error =
           neo_js_variable_construct(type_error, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
@@ -1416,8 +1416,8 @@ NEO_JS_CFUNCTION(neo_js_array_reduce) {
   double start = 0;
   if (!init) {
     if (len == 0) {
-      neo_js_variable_t message = neo_js_context_create_cstring(
-          ctx, "Reduce of empty array with no initial value");
+      neo_js_variable_t message = neo_js_context_create_string(
+          ctx, u"Reduce of empty array with no initial value");
       neo_js_variable_t error = neo_js_variable_construct(
           neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);
@@ -1468,8 +1468,8 @@ NEO_JS_CFUNCTION(neo_js_array_reduce_right) {
   double start = len - 1;
   if (!init) {
     if (len == 0) {
-      neo_js_variable_t message = neo_js_context_create_cstring(
-          ctx, "Reduce of empty array with no initial value");
+      neo_js_variable_t message = neo_js_context_create_string(
+          ctx, u"Reduce of empty array with no initial value");
       neo_js_variable_t error = neo_js_variable_construct(
           neo_js_context_get_constant(ctx)->type_error_class, ctx, 1, &message);
       return neo_js_context_create_exception(ctx, error);

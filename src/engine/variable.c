@@ -36,6 +36,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include <unicode/ustdio.h>
 
 static void neo_js_variable_dispose(neo_allocator_t allocator,
                                     neo_js_variable_t variable) {
@@ -74,13 +75,13 @@ neo_js_variable_t neo_js_variable_to_string(neo_js_variable_t self,
         return neo_js_context_create_string(ctx, u"Infinity");
       }
     }
-    char s[16];
+    UChar s[16];
     if (number->value == (int64_t)(number->value)) {
-      sprintf(s, "%" PRId64, (int64_t)number->value);
+      u_sprintf(s, "%" PRId64, (int64_t)number->value);
     } else {
-      sprintf(s, "%lg", number->value);
+      u_sprintf(s, "%lg", number->value);
     }
-    return neo_js_context_create_cstring(ctx, s);
+    return neo_js_context_create_string(ctx, s);
   }
   case NEO_JS_TYPE_BIGINT: {
     neo_js_bigint_t bigint = (neo_js_bigint_t)self->value;
@@ -91,8 +92,8 @@ neo_js_variable_t neo_js_variable_to_string(neo_js_variable_t self,
   }
   case NEO_JS_TYPE_BOOLEAN: {
     neo_js_boolean_t boolean = (neo_js_boolean_t)self->value;
-    return neo_js_context_create_cstring(ctx,
-                                         boolean->value ? "true" : "false");
+    return neo_js_context_create_string(ctx,
+                                         boolean->value ? u"true" : u"false");
   }
   case NEO_JS_TYPE_STRING:
     return self;
@@ -109,7 +110,7 @@ neo_js_variable_t neo_js_variable_to_string(neo_js_variable_t self,
   case NEO_JS_TYPE_ARRAY:
   case NEO_JS_TYPE_FUNCTION: {
     neo_js_variable_t primitive =
-        neo_js_variable_to_primitive(self, ctx, "string");
+        neo_js_variable_to_primitive(self, ctx, u"string");
     if (primitive->value->type == NEO_JS_TYPE_EXCEPTION) {
       return primitive;
     }
@@ -158,7 +159,7 @@ neo_js_variable_t neo_js_variable_to_number(neo_js_variable_t self,
   case NEO_JS_TYPE_ARRAY:
   case NEO_JS_TYPE_FUNCTION: {
     neo_js_variable_t primitive =
-        neo_js_variable_to_primitive(self, ctx, "number");
+        neo_js_variable_to_primitive(self, ctx, u"number");
     if (primitive->value->type == NEO_JS_TYPE_EXCEPTION) {
       return primitive;
     }
@@ -221,7 +222,7 @@ neo_js_variable_t neo_js_variable_to_boolean(neo_js_variable_t self,
 
 neo_js_variable_t neo_js_variable_to_primitive(neo_js_variable_t self,
                                                neo_js_context_t ctx,
-                                               const char *hint) {
+                                               UChar *hint) {
   if (self->value->type < NEO_JS_TYPE_OBJECT) {
     return self;
   }
@@ -232,7 +233,7 @@ neo_js_variable_t neo_js_variable_to_primitive(neo_js_variable_t self,
     return to_primitive;
   }
   if (to_primitive->value->type == NEO_JS_TYPE_FUNCTION) {
-    neo_js_variable_t vhint = neo_js_context_create_cstring(ctx, hint);
+    neo_js_variable_t vhint = neo_js_context_create_string(ctx, hint);
     neo_js_variable_t res =
         neo_js_variable_call(to_primitive, ctx, self, 1, &vhint);
     if (res->value->type == NEO_JS_TYPE_EXCEPTION) {
@@ -291,8 +292,8 @@ neo_js_variable_t neo_js_variable_to_object(neo_js_variable_t self,
   switch (self->value->type) {
   case NEO_JS_TYPE_NULL:
   case NEO_JS_TYPE_UNDEFINED: {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Cannot convert undefined or null to object");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Cannot convert undefined or null to object");
     neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_t error =
         neo_js_variable_construct(constant->type_error_class, ctx, 1, &message);
@@ -498,10 +499,10 @@ neo_js_variable_t neo_js_variable_def_private_field(neo_js_variable_t self,
                                                     const char *name,
                                                     neo_js_variable_t value) {
   if (self->value->type < NEO_JS_TYPE_OBJECT || !clazz) {
-    char s[strlen(name) + 64];
-    sprintf(s, "Private field '%s' must be declared in an enclosing class",
+    UChar s[strlen(name) + 64];
+    u_sprintf(s, "Private field '%s' must be declared in an enclosing class",
             name);
-    neo_js_variable_t message = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t message = neo_js_context_create_string(ctx, s);
     neo_js_variable_t syntax_error =
         neo_js_context_get_constant(ctx)->syntax_error_class;
     neo_js_variable_t error =
@@ -523,8 +524,8 @@ neo_js_variable_t neo_js_variable_def_private_field(neo_js_variable_t self,
     neo_js_value_add_parent(clazz->value, self->value);
   }
   if (neo_hash_map_has(privates, name)) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Cannot initialize the same private elements twice on an object");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Cannot initialize the same private elements twice on an object");
     neo_js_variable_t syntax_error =
         neo_js_context_get_constant(ctx)->syntax_error_class;
     neo_js_variable_t error =
@@ -544,10 +545,10 @@ neo_js_variable_t neo_js_variable_def_private_method(neo_js_variable_t self,
                                                      const char *name,
                                                      neo_js_variable_t value) {
   if (self->value->type < NEO_JS_TYPE_OBJECT || !clazz) {
-    char s[strlen(name) + 64];
-    sprintf(s, "Private field '%s' must be declared in an enclosing class",
+    UChar s[strlen(name) + 64];
+    u_sprintf(s, "Private field '%s' must be declared in an enclosing class",
             name);
-    neo_js_variable_t message = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t message = neo_js_context_create_string(ctx, s);
     neo_js_variable_t syntax_error =
         neo_js_context_get_constant(ctx)->syntax_error_class;
     neo_js_variable_t error =
@@ -569,8 +570,8 @@ neo_js_variable_t neo_js_variable_def_private_method(neo_js_variable_t self,
     neo_js_value_add_parent(clazz->value, self->value);
   }
   if (neo_hash_map_has(privates, name)) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Cannot initialize the same private elements twice on an object");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Cannot initialize the same private elements twice on an object");
     neo_js_variable_t syntax_error =
         neo_js_context_get_constant(ctx)->syntax_error_class;
     neo_js_variable_t error =
@@ -588,10 +589,10 @@ neo_js_variable_t neo_js_variable_def_private_accessor(
     neo_js_variable_t self, neo_js_variable_t clazz, neo_js_context_t ctx,
     const char *name, neo_js_variable_t get, neo_js_variable_t set) {
   if (self->value->type < NEO_JS_TYPE_OBJECT || !clazz) {
-    char s[strlen(name) + 64];
-    sprintf(s, "Private field '%s' must be declared in an enclosing class",
+    UChar s[strlen(name) + 64];
+    u_sprintf(s, "Private field '%s' must be declared in an enclosing class",
             name);
-    neo_js_variable_t message = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t message = neo_js_context_create_string(ctx, s);
     neo_js_variable_t syntax_error =
         neo_js_context_get_constant(ctx)->syntax_error_class;
     neo_js_variable_t error =
@@ -618,8 +619,8 @@ neo_js_variable_t neo_js_variable_def_private_accessor(
     neo_hash_map_set(privates, neo_create_string(allocator, name), pri);
   }
   if (pri->value || (pri->get && get) || (pri->set && set)) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Cannot initialize the same private elements twice on an object");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Cannot initialize the same private elements twice on an object");
     neo_js_variable_t syntax_error =
         neo_js_context_get_constant(ctx)->syntax_error_class;
     neo_js_variable_t error =
@@ -643,10 +644,10 @@ neo_js_variable_t neo_js_variable_get_private_field(neo_js_variable_t self,
                                                     neo_js_context_t ctx,
                                                     const char *name) {
   if (self->value->type < NEO_JS_TYPE_OBJECT || !clazz) {
-    char s[strlen(name) + 64];
-    sprintf(s, "Private field '%s' must be declared in an enclosing class",
+    UChar s[strlen(name) + 64];
+    u_sprintf(s, "Private field '%s' must be declared in an enclosing class",
             name);
-    neo_js_variable_t message = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t message = neo_js_context_create_string(ctx, s);
     neo_js_variable_t syntax_error =
         neo_js_context_get_constant(ctx)->syntax_error_class;
     neo_js_variable_t error =
@@ -656,10 +657,10 @@ neo_js_variable_t neo_js_variable_get_private_field(neo_js_variable_t self,
   neo_js_object_t obj = (neo_js_object_t)(self->value);
   neo_hash_map_t privates = neo_hash_map_get(obj->privites, clazz->value);
   if (!privates || !neo_hash_map_has(privates, name)) {
-    char s[strlen(name) + 64];
-    sprintf(s, "Private field '%s' must be declared in an enclosing class",
+    UChar s[strlen(name) + 64];
+    u_sprintf(s, "Private field '%s' must be declared in an enclosing class",
             name);
-    neo_js_variable_t message = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t message = neo_js_context_create_string(ctx, s);
     neo_js_variable_t syntax_error =
         neo_js_context_get_constant(ctx)->syntax_error_class;
     neo_js_variable_t error =
@@ -685,10 +686,10 @@ neo_js_variable_t neo_js_variable_set_private_field(neo_js_variable_t self,
                                                     const char *name,
                                                     neo_js_variable_t value) {
   if (self->value->type < NEO_JS_TYPE_OBJECT || !clazz) {
-    char s[strlen(name) + 64];
-    sprintf(s, "Private field '%s' must be declared in an enclosing class",
+    UChar s[strlen(name) + 64];
+    u_sprintf(s, "Private field '%s' must be declared in an enclosing class",
             name);
-    neo_js_variable_t message = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t message = neo_js_context_create_string(ctx, s);
     neo_js_variable_t syntax_error =
         neo_js_context_get_constant(ctx)->syntax_error_class;
     neo_js_variable_t error =
@@ -698,10 +699,10 @@ neo_js_variable_t neo_js_variable_set_private_field(neo_js_variable_t self,
   neo_js_object_t obj = (neo_js_object_t)(self->value);
   neo_hash_map_t privates = neo_hash_map_get(obj->privites, clazz->value);
   if (!privates || !neo_hash_map_has(privates, name)) {
-    char s[strlen(name) + 64];
-    sprintf(s, "Private field '%s' must be declared in an enclosing class",
+    UChar s[strlen(name) + 64];
+    u_sprintf(s, "Private field '%s' must be declared in an enclosing class",
             name);
-    neo_js_variable_t message = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t message = neo_js_context_create_string(ctx, s);
     neo_js_variable_t syntax_error =
         neo_js_context_get_constant(ctx)->syntax_error_class;
     neo_js_variable_t error =
@@ -710,12 +711,12 @@ neo_js_variable_t neo_js_variable_set_private_field(neo_js_variable_t self,
   }
   neo_js_object_private_t pri = neo_hash_map_get(privates, name);
   if (pri->method) {
-    char s[strlen(name) + 64];
-    sprintf(s,
+    UChar s[strlen(name) + 64];
+    u_sprintf(s,
             "Cannot assign to private method '%s'. Private methods are not "
             "writable.",
             name);
-    neo_js_variable_t message = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t message = neo_js_context_create_string(ctx, s);
     neo_js_variable_t syntax_error =
         neo_js_context_get_constant(ctx)->syntax_error_class;
     neo_js_variable_t error =
@@ -731,10 +732,10 @@ neo_js_variable_t neo_js_variable_set_private_field(neo_js_variable_t self,
     neo_js_variable_t set = neo_js_context_create_variable(ctx, pri->set);
     return neo_js_variable_call(set, ctx, self, 1, &value);
   } else {
-    char s[strlen(name) + 64];
-    sprintf(s, "Cannot set private %s of #<Object>, which has only a getter",
+    UChar s[strlen(name) + 64];
+    u_sprintf(s, "Cannot set private %s of #<Object>, which has only a getter",
             name);
-    neo_js_variable_t message = neo_js_context_create_cstring(ctx, s);
+    neo_js_variable_t message = neo_js_context_create_string(ctx, s);
     neo_js_variable_t syntax_error =
         neo_js_context_get_constant(ctx)->syntax_error_class;
     neo_js_variable_t error =
@@ -1785,7 +1786,7 @@ neo_js_variable_t neo_js_variable_eq(neo_js_variable_t self,
     }
     if (self->value->type >= NEO_JS_TYPE_OBJECT &&
         another->value->type < NEO_JS_TYPE_OBJECT) {
-      self = neo_js_variable_to_primitive(self, ctx, "default");
+      self = neo_js_variable_to_primitive(self, ctx, u"default");
     }
     if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
       return self;
@@ -1899,13 +1900,13 @@ neo_js_variable_t neo_js_variable_gt(neo_js_variable_t self,
                                      neo_js_context_t ctx,
                                      neo_js_variable_t another) {
   if (self->value->type >= NEO_JS_TYPE_OBJECT) {
-    self = neo_js_variable_to_primitive(self, ctx, "default");
+    self = neo_js_variable_to_primitive(self, ctx, u"default");
   }
   if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
     return self;
   }
   if (another->value->type >= NEO_JS_TYPE_OBJECT) {
-    another = neo_js_variable_to_primitive(another, ctx, "default");
+    another = neo_js_variable_to_primitive(another, ctx, u"default");
   }
   if (another->value->type == NEO_JS_TYPE_EXCEPTION) {
     return another;
@@ -1914,8 +1915,8 @@ neo_js_variable_t neo_js_variable_gt(neo_js_variable_t self,
       self->value->type == NEO_JS_TYPE_BIGINT) {
     if (another->value->type != NEO_JS_TYPE_BIGINT ||
         self->value->type != NEO_JS_TYPE_BIGINT) {
-      neo_js_variable_t message = neo_js_context_create_cstring(
-          ctx, "Cannot mix BigInt and other types, use explicit conversions");
+      neo_js_variable_t message = neo_js_context_create_string(
+          ctx, u"Cannot mix BigInt and other types, use explicit conversions");
       neo_js_variable_t type_error =
           neo_js_context_get_constant(ctx)->type_error_class;
       neo_js_variable_t error =
@@ -1944,13 +1945,13 @@ neo_js_variable_t neo_js_variable_lt(neo_js_variable_t self,
                                      neo_js_context_t ctx,
                                      neo_js_variable_t another) {
   if (self->value->type >= NEO_JS_TYPE_OBJECT) {
-    self = neo_js_variable_to_primitive(self, ctx, "default");
+    self = neo_js_variable_to_primitive(self, ctx, u"default");
   }
   if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
     return self;
   }
   if (another->value->type >= NEO_JS_TYPE_OBJECT) {
-    another = neo_js_variable_to_primitive(another, ctx, "default");
+    another = neo_js_variable_to_primitive(another, ctx, u"default");
   }
   if (another->value->type == NEO_JS_TYPE_EXCEPTION) {
     return another;
@@ -1959,8 +1960,8 @@ neo_js_variable_t neo_js_variable_lt(neo_js_variable_t self,
       self->value->type == NEO_JS_TYPE_BIGINT) {
     if (another->value->type != NEO_JS_TYPE_BIGINT ||
         self->value->type != NEO_JS_TYPE_BIGINT) {
-      neo_js_variable_t message = neo_js_context_create_cstring(
-          ctx, "Cannot mix BigInt and other types, use explicit conversions");
+      neo_js_variable_t message = neo_js_context_create_string(
+          ctx, u"Cannot mix BigInt and other types, use explicit conversions");
       neo_js_variable_t type_error =
           neo_js_context_get_constant(ctx)->type_error_class;
       neo_js_variable_t error =
@@ -1989,13 +1990,13 @@ neo_js_variable_t neo_js_variable_ge(neo_js_variable_t self,
                                      neo_js_context_t ctx,
                                      neo_js_variable_t another) {
   if (self->value->type >= NEO_JS_TYPE_OBJECT) {
-    self = neo_js_variable_to_primitive(self, ctx, "default");
+    self = neo_js_variable_to_primitive(self, ctx, u"default");
   }
   if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
     return self;
   }
   if (another->value->type >= NEO_JS_TYPE_OBJECT) {
-    another = neo_js_variable_to_primitive(another, ctx, "default");
+    another = neo_js_variable_to_primitive(another, ctx, u"default");
   }
   if (another->value->type == NEO_JS_TYPE_EXCEPTION) {
     return another;
@@ -2004,8 +2005,8 @@ neo_js_variable_t neo_js_variable_ge(neo_js_variable_t self,
       self->value->type == NEO_JS_TYPE_BIGINT) {
     if (another->value->type != NEO_JS_TYPE_BIGINT ||
         self->value->type != NEO_JS_TYPE_BIGINT) {
-      neo_js_variable_t message = neo_js_context_create_cstring(
-          ctx, "Cannot mix BigInt and other types, use explicit conversions");
+      neo_js_variable_t message = neo_js_context_create_string(
+          ctx, u"Cannot mix BigInt and other types, use explicit conversions");
       neo_js_variable_t type_error =
           neo_js_context_get_constant(ctx)->type_error_class;
       neo_js_variable_t error =
@@ -2035,13 +2036,13 @@ neo_js_variable_t neo_js_variable_le(neo_js_variable_t self,
                                      neo_js_context_t ctx,
                                      neo_js_variable_t another) {
   if (self->value->type >= NEO_JS_TYPE_OBJECT) {
-    self = neo_js_variable_to_primitive(self, ctx, "default");
+    self = neo_js_variable_to_primitive(self, ctx, u"default");
   }
   if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
     return self;
   }
   if (another->value->type >= NEO_JS_TYPE_OBJECT) {
-    another = neo_js_variable_to_primitive(another, ctx, "default");
+    another = neo_js_variable_to_primitive(another, ctx, u"default");
   }
   if (another->value->type == NEO_JS_TYPE_EXCEPTION) {
     return another;
@@ -2050,8 +2051,8 @@ neo_js_variable_t neo_js_variable_le(neo_js_variable_t self,
       self->value->type == NEO_JS_TYPE_BIGINT) {
     if (another->value->type != NEO_JS_TYPE_BIGINT ||
         self->value->type != NEO_JS_TYPE_BIGINT) {
-      neo_js_variable_t message = neo_js_context_create_cstring(
-          ctx, "Cannot mix BigInt and other types, use explicit conversions");
+      neo_js_variable_t message = neo_js_context_create_string(
+          ctx, u"Cannot mix BigInt and other types, use explicit conversions");
       neo_js_variable_t type_error =
           neo_js_context_get_constant(ctx)->type_error_class;
       neo_js_variable_t error =
@@ -2109,7 +2110,7 @@ neo_js_variable_t neo_js_variable_inc(neo_js_variable_t self,
                                       neo_js_context_t ctx) {
   neo_js_variable_t val = self;
   if (val->value->type >= NEO_JS_TYPE_OBJECT) {
-    val = neo_js_variable_to_primitive(val, ctx, "default");
+    val = neo_js_variable_to_primitive(val, ctx, u"default");
   }
   if (val->value->type == NEO_JS_TYPE_EXCEPTION) {
     return val;
@@ -2133,7 +2134,7 @@ neo_js_variable_t neo_js_variable_dec(neo_js_variable_t self,
                                       neo_js_context_t ctx) {
   neo_js_variable_t val = self;
   if (val->value->type >= NEO_JS_TYPE_OBJECT) {
-    val = neo_js_variable_to_primitive(val, ctx, "default");
+    val = neo_js_variable_to_primitive(val, ctx, u"default");
   }
   if (val->value->type == NEO_JS_TYPE_EXCEPTION) {
     return val;
@@ -2158,13 +2159,13 @@ neo_js_variable_t neo_js_variable_add(neo_js_variable_t self,
                                       neo_js_context_t ctx,
                                       neo_js_variable_t another) {
   if (self->value->type >= NEO_JS_TYPE_OBJECT) {
-    self = neo_js_variable_to_primitive(self, ctx, "default");
+    self = neo_js_variable_to_primitive(self, ctx, u"default");
   }
   if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
     return self;
   }
   if (another->value->type >= NEO_JS_TYPE_OBJECT) {
-    another = neo_js_variable_to_primitive(another, ctx, "default");
+    another = neo_js_variable_to_primitive(another, ctx, u"default");
   }
   if (another->value->type == NEO_JS_TYPE_EXCEPTION) {
     return another;
@@ -2182,8 +2183,8 @@ neo_js_variable_t neo_js_variable_add(neo_js_variable_t self,
       }
     } else if (self->value->type == NEO_JS_TYPE_BIGINT ||
                another->value->type == NEO_JS_TYPE_BIGINT) {
-      neo_js_variable_t message = neo_js_context_create_cstring(
-          ctx, "Cannot mix BigInt and other types, use explicit conversions");
+      neo_js_variable_t message = neo_js_context_create_string(
+          ctx, u"Cannot mix BigInt and other types, use explicit conversions");
       neo_js_variable_t type_error =
           neo_js_context_get_constant(ctx)->type_error_class;
       neo_js_variable_t error =
@@ -2230,13 +2231,13 @@ static neo_js_variable_t
 neo_js_variable_resolve_binary(neo_js_variable_t self, neo_js_context_t ctx,
                                neo_js_variable_t another) {
   if (self->value->type >= NEO_JS_TYPE_OBJECT) {
-    self = neo_js_variable_to_primitive(self, ctx, "default");
+    self = neo_js_variable_to_primitive(self, ctx, u"default");
   }
   if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
     return self;
   }
   if (another->value->type >= NEO_JS_TYPE_OBJECT) {
-    another = neo_js_variable_to_primitive(another, ctx, "default");
+    another = neo_js_variable_to_primitive(another, ctx, u"default");
   }
   if (another->value->type == NEO_JS_TYPE_EXCEPTION) {
     return another;
@@ -2244,8 +2245,8 @@ neo_js_variable_resolve_binary(neo_js_variable_t self, neo_js_context_t ctx,
   if ((self->value->type == NEO_JS_TYPE_BIGINT ||
        another->value->type == NEO_JS_TYPE_BIGINT) &&
       self->value->type != another->value->type) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Cannot mix BigInt and other types, use explicit conversions");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Cannot mix BigInt and other types, use explicit conversions");
     neo_js_variable_t type_error =
         neo_js_context_get_constant(ctx)->type_error_class;
     neo_js_variable_t error =
@@ -2368,7 +2369,7 @@ neo_js_variable_t neo_js_variable_pow(neo_js_variable_t self,
 neo_js_variable_t neo_js_variable_not(neo_js_variable_t self,
                                       neo_js_context_t ctx) {
   if (self->value->type >= NEO_JS_TYPE_OBJECT) {
-    self = neo_js_variable_to_primitive(self, ctx, "default");
+    self = neo_js_variable_to_primitive(self, ctx, u"default");
   }
   if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
     return self;
@@ -2487,8 +2488,8 @@ neo_js_variable_t neo_js_variable_ushr(neo_js_variable_t self,
     return err;
   }
   if (self->value->type == NEO_JS_TYPE_BIGINT) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "BigInts have no unsigned right shift, use >> instead");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"BigInts have no unsigned right shift, use >> instead");
     neo_js_variable_t type_error =
         neo_js_context_get_constant(ctx)->type_error_class;
     neo_js_variable_t error =
@@ -2504,7 +2505,7 @@ neo_js_variable_t neo_js_variable_ushr(neo_js_variable_t self,
 neo_js_variable_t neo_js_variable_plus(neo_js_variable_t self,
                                        neo_js_context_t ctx) {
   if (self->value->type >= NEO_JS_TYPE_OBJECT) {
-    self = neo_js_variable_to_primitive(self, ctx, "default");
+    self = neo_js_variable_to_primitive(self, ctx, u"default");
   }
   if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
     return self;
@@ -2521,7 +2522,7 @@ neo_js_variable_t neo_js_variable_plus(neo_js_variable_t self,
 neo_js_variable_t neo_js_variable_neg(neo_js_variable_t self,
                                       neo_js_context_t ctx) {
   if (self->value->type >= NEO_JS_TYPE_OBJECT) {
-    self = neo_js_variable_to_primitive(self, ctx, "default");
+    self = neo_js_variable_to_primitive(self, ctx, u"default");
   }
   if (self->value->type == NEO_JS_TYPE_EXCEPTION) {
     return self;
@@ -2544,8 +2545,8 @@ neo_js_variable_t neo_js_variable_instance_of(neo_js_variable_t self,
                                               neo_js_context_t ctx,
                                               neo_js_variable_t another) {
   if (another->value->type < NEO_JS_TYPE_OBJECT) {
-    neo_js_variable_t message = neo_js_context_create_cstring(
-        ctx, "Right-hand side of 'instanceof' is not an object");
+    neo_js_variable_t message = neo_js_context_create_string(
+        ctx, u"Right-hand side of 'instanceof' is not an object");
     neo_js_variable_t type_error =
         neo_js_context_get_constant(ctx)->type_error_class;
     neo_js_variable_t error =
@@ -2560,8 +2561,8 @@ neo_js_variable_t neo_js_variable_instance_of(neo_js_variable_t self,
       return has_instance;
     }
     if (has_instance->value->type != NEO_JS_TYPE_FUNCTION) {
-      neo_js_variable_t message = neo_js_context_create_cstring(
-          ctx, "Right-hand side of 'instanceof' is not an object");
+      neo_js_variable_t message = neo_js_context_create_string(
+          ctx, u"Right-hand side of 'instanceof' is not an object");
       neo_js_variable_t type_error =
           neo_js_context_get_constant(ctx)->type_error_class;
       neo_js_variable_t error =

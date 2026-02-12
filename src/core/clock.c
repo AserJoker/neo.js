@@ -124,12 +124,12 @@ bool neo_clock_parse(const UChar *source, const UChar *format,
   return true;
 }
 
-char *neo_clock_to_iso(neo_allocator_t allocator, int64_t timestamep) {
+UChar *neo_clock_to_iso(neo_allocator_t allocator, int64_t timestamep) {
   UErrorCode status = U_ZERO_ERROR;
   const char cformat[] = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'";
   UChar uformat[sizeof(cformat)];
   u_uastrcpy(uformat, cformat);
-  UChar result[256];
+  UChar *result = neo_allocator_alloc(allocator, sizeof(UChar) * 256, NULL);
   UDateFormat *fmt = udat_open(UDAT_PATTERN, UDAT_PATTERN, NULL, u"UTC", -1,
                                uformat, -1, &status);
   if (U_FAILURE(status)) {
@@ -141,17 +141,15 @@ char *neo_clock_to_iso(neo_allocator_t allocator, int64_t timestamep) {
     return NULL;
   }
   udat_close(fmt);
-  char *s = neo_allocator_alloc(allocator, u_strlen(result) + 1, NULL);
-  u_austrcpy(s, result);
-  return s;
+  return result;
 }
 
-char *neo_clock_to_rfc(neo_allocator_t allocator, int64_t timestamep) {
+UChar *neo_clock_to_rfc(neo_allocator_t allocator, int64_t timestamep) {
   UErrorCode status = U_ZERO_ERROR;
   const char cformat[] = "EEE MMM dd yyyy HH:mm:ss 'GMP'Z (zzzz)";
   UChar uformat[sizeof(cformat)];
   u_uastrcpy(uformat, cformat);
-  UChar result[256];
+  UChar *result = neo_allocator_alloc(allocator, sizeof(UChar) * 256, NULL);
   UCalendar *cal = ucal_open(NULL, 0, NULL, UCAL_DEFAULT, &status);
   if (U_FAILURE(status)) {
     return NULL;
@@ -173,9 +171,7 @@ char *neo_clock_to_rfc(neo_allocator_t allocator, int64_t timestamep) {
     return NULL;
   }
   udat_close(fmt);
-  char *s = neo_allocator_alloc(allocator, u_strlen(result) + 1, NULL);
-  u_austrcpy(s, result);
-  return s;
+  return result;
 }
 bool neo_clock_to_string(int64_t timestamep, UChar *format, UChar *zone,
                          UChar *result, size_t len) {

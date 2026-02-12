@@ -5,6 +5,7 @@
 #include "neojs/engine/handle.h"
 #include "neojs/engine/object.h"
 #include "neojs/engine/value.h"
+#include <unicode/utypes.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,7 +40,7 @@ neo_js_variable_t neo_js_variable_to_object(neo_js_variable_t self,
                                             neo_js_context_t ctx);
 neo_js_variable_t neo_js_variable_to_primitive(neo_js_variable_t self,
                                                neo_js_context_t ctx,
-                                               const char *hint);
+                                               UChar *hint);
 neo_js_variable_t
 neo_js_variable_def_field(neo_js_variable_t self, neo_js_context_t ctx,
                           neo_js_variable_t key, neo_js_variable_t value,

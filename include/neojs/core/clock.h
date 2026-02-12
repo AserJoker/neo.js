@@ -17,9 +17,9 @@ void neo_clock_sleep(uint64_t timeout);
 bool neo_clock_parse(const UChar *source, const UChar *format,
                      int64_t *timestamp, const UChar *tz);
 
-char *neo_clock_to_iso(neo_allocator_t allocator, int64_t timestamep);
+UChar *neo_clock_to_iso(neo_allocator_t allocator, int64_t timestamep);
 
-char *neo_clock_to_rfc(neo_allocator_t allocator, int64_t timestamep);
+UChar *neo_clock_to_rfc(neo_allocator_t allocator, int64_t timestamep);
 bool neo_clock_to_string(int64_t timestamep, UChar *format, UChar *zone,
                          UChar *result, size_t len);
 

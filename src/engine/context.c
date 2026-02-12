@@ -42,6 +42,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <time.h>
+#include <unicode/ustdio.h>
 
 struct _neo_js_context_t {
   neo_js_runtime_t runtime;
@@ -504,9 +505,9 @@ neo_js_variable_t neo_js_context_create_cbigint(neo_js_context_t self,
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   neo_bigint_t val = neo_string_to_bigint(allocator, string);
   if (!val) {
-    char msg[strlen(string) + 64];
-    sprintf(msg, "Cannot convert %s to a Bigint", string);
-    neo_js_variable_t message = neo_js_context_create_cstring(self, msg);
+    UChar msg[strlen(string) + 64];
+    u_sprintf(msg, "Cannot convert %s to a Bigint", string);
+    neo_js_variable_t message = neo_js_context_create_string(self, msg);
     neo_js_variable_t error = neo_js_variable_construct(
         self->constant.syntax_error_class, self, 1, &message);
     return neo_js_context_create_exception(self, error);
@@ -976,9 +977,9 @@ neo_js_variable_t neo_js_context_import(neo_js_context_t self,
   neo_allocator_t allocator = neo_js_runtime_get_allocator(self->runtime);
   char *source = neo_fs_read_file(allocator, filename);
   if (!source) {
-    char s[strlen(filename) + 32];
-    sprintf(s, "Cannot find module '%s'", filename);
-    neo_js_variable_t message = neo_js_context_create_cstring(self, s);
+    UChar s[strlen(filename) + 32];
+    u_sprintf(s, "Cannot find module '%s'", filename);
+    neo_js_variable_t message = neo_js_context_create_string(self, s);
     neo_js_variable_t error = neo_js_variable_construct(
         self->constant.error_class, self, 1, &message);
     return neo_js_context_create_exception(self, error);
