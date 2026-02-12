@@ -559,7 +559,7 @@ neo_js_variable_t neo_js_context_create_array(neo_js_context_t ctx) {
 }
 neo_js_variable_t neo_js_context_create_cfunction(neo_js_context_t self,
                                                   neo_js_cfunc_t callee,
-                                                  const char *name) {
+                                                  const UChar *name) {
   neo_js_variable_t prototype = self->constant.function_prototype;
   if (!prototype) {
     prototype = neo_js_context_get_null(self);
@@ -574,9 +574,9 @@ neo_js_variable_t neo_js_context_create_cfunction(neo_js_context_t self,
   neo_js_variable_def_field(result, self, key, prototype, true, false, true);
   key = self->constant.key_name;
   if (!name) {
-    name = "";
+    name = u"";
   }
-  neo_js_variable_t funcname = neo_js_context_create_cstring(self, name);
+  neo_js_variable_t funcname = neo_js_context_create_string(self, name);
   neo_js_variable_def_field(result, self, key, funcname, false, false, false);
   key = self->constant.key_constructor;
   neo_js_variable_def_field(prototype, self, key, result, true, false, true);

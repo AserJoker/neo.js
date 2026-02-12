@@ -73,7 +73,7 @@ neo_js_variable_t neo_js_context_get_false(neo_js_context_t self);
 neo_js_variable_t neo_js_context_create_number(neo_js_context_t self,
                                                double val);
 neo_js_variable_t neo_js_context_create_string(neo_js_context_t self,
-                                               const uint16_t *val);
+                                               const uint16_t *uval);
 neo_js_variable_t neo_js_context_create_cstring(neo_js_context_t self,
                                                 const char *val);
 neo_js_variable_t neo_js_context_create_cbigint(neo_js_context_t self,
@@ -89,7 +89,7 @@ neo_js_variable_t neo_js_context_create_object(neo_js_context_t self,
 neo_js_variable_t neo_js_context_create_array(neo_js_context_t ctx);
 neo_js_variable_t neo_js_context_create_cfunction(neo_js_context_t self,
                                                   neo_js_cfunc_t callee,
-                                                  const char *name);
+                                                  const UChar *name);
 neo_js_variable_t neo_js_context_create_function(neo_js_context_t self,
                                                  neo_js_program_t program);
 neo_js_variable_t
@@ -149,7 +149,7 @@ neo_js_variable_t neo_js_context_assert(neo_js_context_t self, const char *type,
 
 #define NEO_JS_DEF_FIELD(ctx, self, name, value)                               \
   do {                                                                         \
-    neo_js_variable_t key = neo_js_context_create_cstring(ctx, name);          \
+    neo_js_variable_t key = neo_js_context_create_string(ctx, name);          \
     neo_js_variable_def_field(self, ctx, key, value, true, false, true);       \
   } while (0)
 

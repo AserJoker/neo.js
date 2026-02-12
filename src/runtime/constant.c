@@ -162,42 +162,42 @@ void neo_initialize_js_constant(neo_js_context_t ctx) {
   neo_js_scope_set_variable(root_scope, constant->console, NULL);
   neo_js_scope_set_variable(root_scope, constant->suppressed_error_class, NULL);
 
-  NEO_JS_DEF_FIELD(ctx, constant->global, "global", constant->global);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "undefined", constant->undefined);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "NaN", constant->nan);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "Infinity", constant->infinity);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "Object", constant->object_class);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "Function", constant->function_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"global", constant->global);
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"undefined", constant->undefined);
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"NaN", constant->nan);
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"Infinity", constant->infinity);
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"Object", constant->object_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"Function", constant->function_class);
 
-  NEO_JS_DEF_FIELD(ctx, constant->global, "AggregateError",
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"AggregateError",
                    constant->aggregate_error_class);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "Array", constant->array_class);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "ArrayBuffer",
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"Array", constant->array_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"ArrayBuffer",
                    constant->array_buffer_class);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "BigInt", constant->bigint_class);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "Boolean", constant->boolean_class);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "Date", constant->date_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"BigInt", constant->bigint_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"Boolean", constant->boolean_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"Date", constant->date_class);
 
-  NEO_JS_DEF_FIELD(ctx, constant->global, "Iterator", constant->iterator_class);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "Symbol", constant->symbol_class);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "Error", constant->error_class);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "TypeError",
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"Iterator", constant->iterator_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"Symbol", constant->symbol_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"Error", constant->error_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"TypeError",
                    constant->type_error_class);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "SyntaxError",
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"SyntaxError",
                    constant->syntax_error_class);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "ReferenceError",
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"ReferenceError",
                    constant->reference_error_class);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "RangeError",
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"RangeError",
                    constant->range_error_class);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "SuppressedError",
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"SuppressedError",
                    constant->suppressed_error_class);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "Promise", constant->promise_class);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "setTimeout", constant->set_timeout);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "clearTimeout",
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"Promise", constant->promise_class);
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"setTimeout", constant->set_timeout);
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"clearTimeout",
                    constant->clear_timeout);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "setInterval",
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"setInterval",
                    constant->set_interval);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "clearInterval",
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"clearInterval",
                    constant->clear_interval);
-  NEO_JS_DEF_FIELD(ctx, constant->global, "console", constant->console);
+  NEO_JS_DEF_FIELD(ctx, constant->global, u"console", constant->console);
 }

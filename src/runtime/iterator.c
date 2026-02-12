@@ -15,11 +15,11 @@ NEO_JS_CFUNCTION(neo_js_iterator_iterator) { return self; }
 void neo_initialize_js_iterator(neo_js_context_t ctx) {
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   constant->iterator_class = neo_js_context_create_cfunction(
-      ctx, neo_js_iterator_constructor, "Iterator");
+      ctx, neo_js_iterator_constructor, u"Iterator");
   constant->iterator_prototype = neo_js_variable_get_field(
       constant->iterator_class, ctx, constant->key_prototype);
   neo_js_variable_t iterator = neo_js_context_create_cfunction(
-      ctx, neo_js_iterator_iterator, "[Symbol.iterator]");
+      ctx, neo_js_iterator_iterator, u"[Symbol.iterator]");
   neo_js_variable_set_field(constant->iterator_prototype, ctx,
                             constant->symbol_iterator, iterator);
 }

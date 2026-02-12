@@ -1721,75 +1721,75 @@ NEO_JS_CFUNCTION(neo_js_date_to_primitive) {
 void neo_initialize_js_date(neo_js_context_t ctx) {
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   constant->date_class =
-      neo_js_context_create_cfunction(ctx, neo_js_date_constructor, "Date");
-  NEO_JS_DEF_METHOD(ctx, constant->date_class, "now", neo_js_date_now);
-  NEO_JS_DEF_METHOD(ctx, constant->date_class, "parse", neo_js_date_parse);
-  NEO_JS_DEF_METHOD(ctx, constant->date_class, "UTC", neo_js_date_utc);
+      neo_js_context_create_cfunction(ctx, neo_js_date_constructor, u"Date");
+  NEO_JS_DEF_METHOD(ctx, constant->date_class, u"now", neo_js_date_now);
+  NEO_JS_DEF_METHOD(ctx, constant->date_class, u"parse", neo_js_date_parse);
+  NEO_JS_DEF_METHOD(ctx, constant->date_class, u"UTC", neo_js_date_utc);
   neo_js_variable_t prototype = neo_js_variable_get_field(
       constant->date_class, ctx, constant->key_prototype);
-  NEO_JS_DEF_METHOD(ctx, prototype, "getDate", neo_js_date_get_date);
-  NEO_JS_DEF_METHOD(ctx, prototype, "getDay", neo_js_date_get_day);
-  NEO_JS_DEF_METHOD(ctx, prototype, "getFullYear", neo_js_date_get_full_year);
-  NEO_JS_DEF_METHOD(ctx, prototype, "getHours", neo_js_date_get_hours);
-  NEO_JS_DEF_METHOD(ctx, prototype, "getMilliseconds",
+  NEO_JS_DEF_METHOD(ctx, prototype, u"getDate", neo_js_date_get_date);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"getDay", neo_js_date_get_day);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"getFullYear", neo_js_date_get_full_year);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"getHours", neo_js_date_get_hours);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"getMilliseconds",
                     neo_js_date_get_milliseconds);
-  NEO_JS_DEF_METHOD(ctx, prototype, "getMinutes", neo_js_date_get_minutes);
-  NEO_JS_DEF_METHOD(ctx, prototype, "getMonth", neo_js_date_get_month);
-  NEO_JS_DEF_METHOD(ctx, prototype, "getSeconds", neo_js_date_get_seconds);
-  NEO_JS_DEF_METHOD(ctx, prototype, "getTime", neo_js_date_get_time);
-  NEO_JS_DEF_METHOD(ctx, prototype, "getTimezoneOffset",
+  NEO_JS_DEF_METHOD(ctx, prototype, u"getMinutes", neo_js_date_get_minutes);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"getMonth", neo_js_date_get_month);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"getSeconds", neo_js_date_get_seconds);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"getTime", neo_js_date_get_time);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"getTimezoneOffset",
                     neo_js_date_get_timezone_offset);
-  NEO_JS_DEF_METHOD(ctx, prototype, "getUTCDate", neo_js_date_get_utc_date);
-  NEO_JS_DEF_METHOD(ctx, prototype, "getUTCDay", neo_js_date_get_utc_day);
-  NEO_JS_DEF_METHOD(ctx, prototype, "getUTCFullYear",
+  NEO_JS_DEF_METHOD(ctx, prototype, u"getUTCDate", neo_js_date_get_utc_date);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"getUTCDay", neo_js_date_get_utc_day);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"getUTCFullYear",
                     neo_js_date_get_utc_full_year);
-  NEO_JS_DEF_METHOD(ctx, prototype, "getUTCHours", neo_js_date_get_utc_hours);
-  NEO_JS_DEF_METHOD(ctx, prototype, "getUTCMilliseconds",
+  NEO_JS_DEF_METHOD(ctx, prototype, u"getUTCHours", neo_js_date_get_utc_hours);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"getUTCMilliseconds",
                     neo_js_date_get_utc_milliseconds);
-  NEO_JS_DEF_METHOD(ctx, prototype, "getUTCMinutes",
+  NEO_JS_DEF_METHOD(ctx, prototype, u"getUTCMinutes",
                     neo_js_date_get_utc_minutes);
-  NEO_JS_DEF_METHOD(ctx, prototype, "getUTCMonth", neo_js_date_get_utc_month);
-  NEO_JS_DEF_METHOD(ctx, prototype, "getUTCSeconds",
+  NEO_JS_DEF_METHOD(ctx, prototype, u"getUTCMonth", neo_js_date_get_utc_month);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"getUTCSeconds",
                     neo_js_date_get_utc_seconds);
-  NEO_JS_DEF_METHOD(ctx, prototype, "getYear", neo_js_date_get_year);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"getYear", neo_js_date_get_year);
 
-  NEO_JS_DEF_METHOD(ctx, prototype, "setDate", neo_js_date_set_date);
-  NEO_JS_DEF_METHOD(ctx, prototype, "setFullYear", neo_js_date_set_full_year);
-  NEO_JS_DEF_METHOD(ctx, prototype, "setHours", neo_js_date_set_hours);
-  NEO_JS_DEF_METHOD(ctx, prototype, "setMilliseconds",
+  NEO_JS_DEF_METHOD(ctx, prototype, u"setDate", neo_js_date_set_date);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"setFullYear", neo_js_date_set_full_year);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"setHours", neo_js_date_set_hours);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"setMilliseconds",
                     neo_js_date_set_milliseconds);
-  NEO_JS_DEF_METHOD(ctx, prototype, "setMinutes", neo_js_date_set_minutes);
-  NEO_JS_DEF_METHOD(ctx, prototype, "setMonth", neo_js_date_set_month);
-  NEO_JS_DEF_METHOD(ctx, prototype, "setSeconds", neo_js_date_set_seconds);
-  NEO_JS_DEF_METHOD(ctx, prototype, "setTime", neo_js_date_set_time);
-  NEO_JS_DEF_METHOD(ctx, prototype, "setUTCDate", neo_js_date_set_utc_date);
-  NEO_JS_DEF_METHOD(ctx, prototype, "setUTCFullYear",
+  NEO_JS_DEF_METHOD(ctx, prototype, u"setMinutes", neo_js_date_set_minutes);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"setMonth", neo_js_date_set_month);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"setSeconds", neo_js_date_set_seconds);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"setTime", neo_js_date_set_time);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"setUTCDate", neo_js_date_set_utc_date);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"setUTCFullYear",
                     neo_js_date_set_utc_full_year);
-  NEO_JS_DEF_METHOD(ctx, prototype, "setUTCHours", neo_js_date_set_utc_hours);
-  NEO_JS_DEF_METHOD(ctx, prototype, "setUTCMilliseconds",
+  NEO_JS_DEF_METHOD(ctx, prototype, u"setUTCHours", neo_js_date_set_utc_hours);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"setUTCMilliseconds",
                     neo_js_date_set_utc_milliseconds);
-  NEO_JS_DEF_METHOD(ctx, prototype, "setUTCMinutes",
+  NEO_JS_DEF_METHOD(ctx, prototype, u"setUTCMinutes",
                     neo_js_date_set_utc_minutes);
-  NEO_JS_DEF_METHOD(ctx, prototype, "setUTCMonth", neo_js_date_set_utc_month);
-  NEO_JS_DEF_METHOD(ctx, prototype, "setUTCSeconds",
+  NEO_JS_DEF_METHOD(ctx, prototype, u"setUTCMonth", neo_js_date_set_utc_month);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"setUTCSeconds",
                     neo_js_date_set_utc_seconds);
-  NEO_JS_DEF_METHOD(ctx, prototype, "setYear", neo_js_date_set_year);
-  NEO_JS_DEF_METHOD(ctx, prototype, "toDateString", neo_js_date_to_date_string);
-  NEO_JS_DEF_METHOD(ctx, prototype, "toISOString", neo_js_date_to_iso_string);
-  NEO_JS_DEF_METHOD(ctx, prototype, "toJSON", neo_js_date_to_json);
-  NEO_JS_DEF_METHOD(ctx, prototype, "toLocaleDateString",
+  NEO_JS_DEF_METHOD(ctx, prototype, u"setYear", neo_js_date_set_year);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"toDateString", neo_js_date_to_date_string);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"toISOString", neo_js_date_to_iso_string);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"toJSON", neo_js_date_to_json);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"toLocaleDateString",
                     neo_js_date_to_locale_date_string);
-  NEO_JS_DEF_METHOD(ctx, prototype, "toLocaleString",
+  NEO_JS_DEF_METHOD(ctx, prototype, u"toLocaleString",
                     neo_js_date_to_locale_string);
-  NEO_JS_DEF_METHOD(ctx, prototype, "toLocaleTimeString",
+  NEO_JS_DEF_METHOD(ctx, prototype, u"toLocaleTimeString",
                     neo_js_date_to_locale_time_string);
-  NEO_JS_DEF_METHOD(ctx, prototype, "toString", neo_js_date_to_string);
-  NEO_JS_DEF_METHOD(ctx, prototype, "toTimeString", neo_js_date_to_time_string);
-  NEO_JS_DEF_METHOD(ctx, prototype, "toUTCString", neo_js_date_to_utc_string);
-  NEO_JS_DEF_METHOD(ctx, prototype, "valueOf", neo_js_date_value_of);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"toString", neo_js_date_to_string);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"toTimeString", neo_js_date_to_time_string);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"toUTCString", neo_js_date_to_utc_string);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"valueOf", neo_js_date_value_of);
   neo_js_variable_def_field(
       prototype, ctx, constant->symbol_to_primitive,
       neo_js_context_create_cfunction(ctx, neo_js_date_to_primitive,
-                                      "[Symbol.toPrimitive]"),
+                                      u"[Symbol.toPrimitive]"),
       true, false, true);
 }

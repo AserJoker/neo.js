@@ -119,11 +119,11 @@ void neo_initialize_js_generator(neo_js_context_t ctx) {
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   constant->generator_prototype =
       neo_js_context_create_object(ctx, constant->iterator_prototype);
-  NEO_JS_DEF_METHOD(ctx, constant->generator_prototype, "next",
+  NEO_JS_DEF_METHOD(ctx, constant->generator_prototype, u"next",
                     neo_js_generator_next);
-  NEO_JS_DEF_METHOD(ctx, constant->generator_prototype, "return",
+  NEO_JS_DEF_METHOD(ctx, constant->generator_prototype, u"return",
                     neo_js_generator_return);
-  NEO_JS_DEF_METHOD(ctx, constant->generator_prototype, "throw",
+  NEO_JS_DEF_METHOD(ctx, constant->generator_prototype, u"throw",
                     neo_js_generator_throw);
   neo_js_variable_t string_tag =
       neo_js_context_create_string(ctx, u"Generator");

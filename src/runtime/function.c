@@ -35,7 +35,7 @@ NEO_JS_CFUNCTION(neo_js_function_to_string) {
 void neo_initialize_js_function(neo_js_context_t ctx) {
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   constant->function_class = neo_js_context_create_cfunction(
-      ctx, neo_js_function_constructor, "Object");
+      ctx, neo_js_function_constructor, u"Object");
   constant->function_prototype = neo_js_variable_get_field(
       constant->function_class, ctx, constant->key_prototype);
   neo_js_variable_def_field(constant->function_prototype, ctx,
@@ -46,6 +46,6 @@ void neo_initialize_js_function(neo_js_context_t ctx) {
     neo_js_variable_set_prototype_of(constant->object_class, ctx,
                                      constant->function_prototype);
   }
-  NEO_JS_DEF_METHOD(ctx, constant->function_prototype, "toString",
+  NEO_JS_DEF_METHOD(ctx, constant->function_prototype, u"toString",
                     neo_js_function_to_string);
 }

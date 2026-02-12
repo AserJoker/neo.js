@@ -203,15 +203,15 @@ NEO_JS_CFUNCTION(neo_js_symbol_get_description) {
 void neo_initialize_js_symbol(neo_js_context_t ctx) {
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   constant->symbol_class =
-      neo_js_context_create_cfunction(ctx, neo_js_symbol_constructor, "Symbol");
+      neo_js_context_create_cfunction(ctx, neo_js_symbol_constructor, u"Symbol");
   constant->symbol_prototype = neo_js_variable_get_field(
       constant->symbol_class, ctx, constant->key_prototype);
   neo_js_variable_t clazz = constant->symbol_class;
-  NEO_JS_DEF_METHOD(ctx, clazz, "for", neo_js_symbol_for);
-  NEO_JS_DEF_METHOD(ctx, clazz, "keyFor", neo_js_symbol_key_for);
+  NEO_JS_DEF_METHOD(ctx, clazz, u"for", neo_js_symbol_for);
+  NEO_JS_DEF_METHOD(ctx, clazz, u"keyFor", neo_js_symbol_key_for);
   neo_js_variable_t prototype = constant->symbol_prototype;
-  NEO_JS_DEF_METHOD(ctx, prototype, "valueOf", neo_js_symbol_value_of);
-  NEO_JS_DEF_METHOD(ctx, prototype, "toString", neo_js_symbol_to_string);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"valueOf", neo_js_symbol_value_of);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"toString", neo_js_symbol_to_string);
   DEF_SYMBOL(constant->symbol_dispose, dispose);
   DEF_SYMBOL(constant->symbol_async_dispose, asyncDispose);
   DEF_SYMBOL(constant->symbol_async_iterator, asyncIterator);
@@ -227,7 +227,7 @@ void neo_initialize_js_symbol(neo_js_context_t ctx) {
   DEF_SYMBOL(constant->symbol_to_primitive, toPrimitive);
   DEF_SYMBOL(constant->symbol_to_string_tag, toStringTag);
   NEO_DEF_SYMBOL_METHOD(ctx, prototype, constant->symbol_to_primitive,
-                        "toPrimitive", neo_js_symbol_symbol_to_primitive);
+                        u"toPrimitive", neo_js_symbol_symbol_to_primitive);
   neo_js_runtime_t runtime = neo_js_context_get_runtime(ctx);
   neo_allocator_t allocator = neo_js_runtime_get_allocator(runtime);
   neo_hash_map_initialize_t initialize = {0};
@@ -241,7 +241,7 @@ void neo_initialize_js_symbol(neo_js_context_t ctx) {
   neo_js_variable_def_field(prototype, ctx, constant->symbol_to_string_tag,
                             string_tag, true, false, true);
   neo_js_variable_t get_description = neo_js_context_create_cfunction(
-      ctx, neo_js_symbol_get_description, "get description");
+      ctx, neo_js_symbol_get_description, u"get description");
   neo_js_variable_t key = neo_js_context_create_string(ctx, u"description");
   neo_js_variable_def_accessor(prototype, ctx, key, get_description, NULL, true,
                                false);

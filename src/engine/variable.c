@@ -1406,7 +1406,7 @@ neo_js_variable_t neo_js_variable_call_variable(neo_js_variable_t self,
     neo_js_variable_t length = neo_js_context_create_number(ctx, argc);
     neo_js_variable_set_field(arguments, ctx, key, length);
     neo_js_variable_t iterator =
-        neo_js_context_create_cfunction(ctx, neo_js_array_values, "values");
+        neo_js_context_create_cfunction(ctx, neo_js_array_values, u"values");
     neo_js_constant_t constant = neo_js_context_get_constant(ctx);
     neo_js_variable_set_field(arguments, ctx, constant->symbol_iterator,
                               iterator);

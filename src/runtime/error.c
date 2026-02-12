@@ -103,10 +103,10 @@ NEO_JS_CFUNCTION(neo_js_error_to_string) {
 void neo_initialize_js_error(neo_js_context_t ctx) {
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   constant->error_class =
-      neo_js_context_create_cfunction(ctx, neo_js_error_constructor, "Error");
+      neo_js_context_create_cfunction(ctx, neo_js_error_constructor, u"Error");
   neo_js_variable_t error_prototype = neo_js_variable_get_field(
       constant->error_class, ctx, constant->key_prototype);
-  NEO_JS_DEF_METHOD(ctx, error_prototype, "toString", neo_js_error_to_string);
+  NEO_JS_DEF_METHOD(ctx, error_prototype, u"toString", neo_js_error_to_string);
   neo_js_variable_t string = neo_js_context_create_string(ctx, u"Error");
   neo_js_variable_t key = neo_js_context_create_string(ctx, u"name");
   neo_js_variable_def_field(error_prototype, ctx, key, string, true, false,

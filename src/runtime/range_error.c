@@ -9,7 +9,7 @@ NEO_JS_CFUNCTION(neo_js_range_error_constructor) {
 void neo_initialize_js_range_error(neo_js_context_t ctx) {
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   constant->range_error_class = neo_js_context_create_cfunction(
-      ctx, neo_js_range_error_constructor, "RangeError");
+      ctx, neo_js_range_error_constructor, u"RangeError");
   neo_js_variable_extends(constant->range_error_class, ctx,
                           constant->error_class);
   neo_js_variable_t prototype = neo_js_variable_get_field(

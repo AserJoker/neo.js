@@ -41,9 +41,9 @@ void neo_initialize_js_console(neo_js_context_t ctx) {
   neo_allocator_t allocator = neo_js_context_get_allocator(ctx);
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   neo_js_variable_t console = neo_js_context_create_cfunction(
-      ctx, neo_js_console_constructor, "Console");
+      ctx, neo_js_console_constructor, u"Console");
   neo_js_variable_t prototype =
       neo_js_variable_get_field(console, ctx, constant->key_prototype);
-  NEO_JS_DEF_METHOD(ctx, prototype, "log", neo_js_console_log);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"log", neo_js_console_log);
   constant->console = neo_js_variable_construct(console, ctx, 0, NULL);
 }

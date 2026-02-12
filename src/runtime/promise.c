@@ -163,10 +163,10 @@ NEO_JS_CFUNCTION(neo_js_promise_constructor) {
   neo_js_promise_t promise = neo_create_js_promise(allocator);
   neo_js_variable_set_opaque(self, ctx, "promise", promise);
   neo_js_variable_t resolve = neo_js_context_create_cfunction(
-      ctx, neo_js_promise_callback_resolve, "resolve");
+      ctx, neo_js_promise_callback_resolve, u"resolve");
   neo_js_variable_set_bind(resolve, ctx, self);
   neo_js_variable_t reject = neo_js_context_create_cfunction(
-      ctx, neo_js_promise_callback_reject, "reject");
+      ctx, neo_js_promise_callback_reject, u"reject");
   neo_js_variable_set_bind(reject, ctx, self);
   neo_js_variable_t args[] = {resolve, reject};
   neo_js_variable_t res = neo_js_variable_call(
@@ -321,17 +321,17 @@ NEO_JS_CFUNCTION(neo_js_promise_finally) {
 void neo_initialize_js_promise(neo_js_context_t ctx) {
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   constant->promise_class = neo_js_context_create_cfunction(
-      ctx, neo_js_promise_constructor, "Promise");
+      ctx, neo_js_promise_constructor, u"Promise");
   constant->promise_prototype = neo_js_variable_get_field(
       constant->promise_class, ctx, constant->key_prototype);
-  NEO_JS_DEF_METHOD(ctx, constant->promise_class, "resolve",
+  NEO_JS_DEF_METHOD(ctx, constant->promise_class, u"resolve",
                     neo_js_promise_resolve);
-  NEO_JS_DEF_METHOD(ctx, constant->promise_class, "reject",
+  NEO_JS_DEF_METHOD(ctx, constant->promise_class, u"reject",
                     neo_js_promise_reject);
-  NEO_JS_DEF_METHOD(ctx, constant->promise_prototype, "then",
+  NEO_JS_DEF_METHOD(ctx, constant->promise_prototype, u"then",
                     neo_js_promise_then);
-  NEO_JS_DEF_METHOD(ctx, constant->promise_prototype, "catch",
+  NEO_JS_DEF_METHOD(ctx, constant->promise_prototype, u"catch",
                     neo_js_promise_catch);
-  NEO_JS_DEF_METHOD(ctx, constant->promise_prototype, "finally",
+  NEO_JS_DEF_METHOD(ctx, constant->promise_prototype, u"finally",
                     neo_js_promise_finally);
 }

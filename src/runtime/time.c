@@ -93,11 +93,11 @@ NEO_JS_CFUNCTION(neo_js_time_clear_interval) {
 void neo_initialize_js_time(neo_js_context_t ctx) {
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   constant->set_timeout = neo_js_context_create_cfunction(
-      ctx, neo_js_time_set_timeout, "setTimeout");
+      ctx, neo_js_time_set_timeout, u"setTimeout");
   constant->clear_timeout = neo_js_context_create_cfunction(
-      ctx, neo_js_time_set_timeout, "clearTimeout");
+      ctx, neo_js_time_set_timeout, u"clearTimeout");
   constant->set_interval = neo_js_context_create_cfunction(
-      ctx, neo_js_time_set_interval, "setInterval");
+      ctx, neo_js_time_set_interval, u"setInterval");
   constant->clear_interval = neo_js_context_create_cfunction(
-      ctx, neo_js_time_set_interval, "clearInterval");
+      ctx, neo_js_time_set_interval, u"clearInterval");
 }

@@ -88,7 +88,7 @@ void neo_initialize_js_array_iterator(neo_js_context_t ctx) {
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   constant->array_iterator_prototype =
       neo_js_context_create_object(ctx, constant->iterator_prototype);
-  NEO_JS_DEF_METHOD(ctx, constant->array_iterator_prototype, "next",
+  NEO_JS_DEF_METHOD(ctx, constant->array_iterator_prototype, u"next",
                     neo_js_array_iterator_next);
   neo_js_variable_t string_tag =
       neo_js_context_create_string(ctx, u"Array Iterator");

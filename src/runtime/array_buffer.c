@@ -240,18 +240,18 @@ NEO_JS_CFUNCTION(neo_js_array_buffer_get_resizable) {
 void neo_initialize_js_array_buffer(neo_js_context_t ctx) {
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   constant->array_buffer_class = neo_js_context_create_cfunction(
-      ctx, neo_js_array_buffer_constructor, "ArrayBuffer");
+      ctx, neo_js_array_buffer_constructor, u"ArrayBuffer");
   neo_js_variable_t prototype = neo_js_variable_get_field(
       constant->array_buffer_class, ctx, constant->key_prototype);
-  NEO_JS_DEF_METHOD(ctx, constant->array_buffer_class, "isView",
+  NEO_JS_DEF_METHOD(ctx, constant->array_buffer_class, u"isView",
                     neo_js_array_buffer_is_view);
   neo_js_variable_t func = neo_js_context_create_cfunction(
-      ctx, neo_js_array_buffer_get_species, "[Symbol.species]");
+      ctx, neo_js_array_buffer_get_species, u"[Symbol.species]");
   neo_js_variable_def_accessor(constant->array_buffer_class, ctx,
                                constant->symbol_species, func, NULL, true,
                                false);
-  NEO_JS_DEF_METHOD(ctx, prototype, "resize", neo_js_array_buffer_resize);
-  NEO_JS_DEF_METHOD(ctx, prototype, "slice", neo_js_array_buffer_slice);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"resize", neo_js_array_buffer_resize);
+  NEO_JS_DEF_METHOD(ctx, prototype, u"slice", neo_js_array_buffer_slice);
   func = neo_js_context_create_cfunction(
       ctx, neo_js_array_buffer_get_byte_length, NULL);
   neo_js_variable_def_accessor(prototype, ctx,

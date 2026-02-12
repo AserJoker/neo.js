@@ -309,13 +309,13 @@ void neo_initialize_js_async_generator(neo_js_context_t ctx) {
   neo_js_variable_def_field(
       constant->async_generator_prototype, ctx, constant->symbol_async_iterator,
       neo_js_context_create_cfunction(ctx, neo_js_async_generator_iterator,
-                                      "[Symbol.asyncIterator]"),
+                                      u"[Symbol.asyncIterator]"),
       true, false, true);
-  NEO_JS_DEF_METHOD(ctx, constant->async_generator_prototype, "next",
+  NEO_JS_DEF_METHOD(ctx, constant->async_generator_prototype, u"next",
                     neo_js_async_generator_next);
-  NEO_JS_DEF_METHOD(ctx, constant->async_generator_prototype, "return",
+  NEO_JS_DEF_METHOD(ctx, constant->async_generator_prototype, u"return",
                     neo_js_async_generator_return);
-  NEO_JS_DEF_METHOD(ctx, constant->async_generator_prototype, "throw",
+  NEO_JS_DEF_METHOD(ctx, constant->async_generator_prototype, u"throw",
                     neo_js_async_generator_throw);
   neo_js_variable_t string_tag =
       neo_js_context_create_string(ctx, u"AsyncGenerator");

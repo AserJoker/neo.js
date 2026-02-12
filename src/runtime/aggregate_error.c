@@ -22,7 +22,7 @@ static NEO_JS_CFUNCTION(neo_js_ggregate_error_constructor) {
 void neo_initialize_js_aggregate_error(neo_js_context_t ctx) {
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   constant->aggregate_error_class = neo_js_context_create_cfunction(
-      ctx, neo_js_ggregate_error_constructor, "AggregateError");
+      ctx, neo_js_ggregate_error_constructor, u"AggregateError");
   neo_js_variable_extends(constant->aggregate_error_class, ctx,
                           constant->error_class);
   neo_js_variable_t prototype = neo_js_variable_get_field(

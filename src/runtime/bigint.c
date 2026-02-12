@@ -181,17 +181,17 @@ NEO_JS_CFUNCTION(neo_js_bigint_value_of) {
 void neo_initialize_js_bigint(neo_js_context_t ctx) {
   neo_js_constant_t constant = neo_js_context_get_constant(ctx);
   constant->bigint_class =
-      neo_js_context_create_cfunction(ctx, neo_js_bigint_constructor, "BigInt");
+      neo_js_context_create_cfunction(ctx, neo_js_bigint_constructor, u"BigInt");
   constant->bigint_prototype = neo_js_variable_get_field(
       constant->bigint_class, ctx, constant->key_prototype);
-  NEO_JS_DEF_METHOD(ctx, constant->bigint_class, "asIntN",
+  NEO_JS_DEF_METHOD(ctx, constant->bigint_class, u"asIntN",
                     neo_js_bigint_as_int_n);
-  NEO_JS_DEF_METHOD(ctx, constant->bigint_class, "asUIntN",
+  NEO_JS_DEF_METHOD(ctx, constant->bigint_class, u"asUIntN",
                     neo_js_bigint_as_uint_n);
-  NEO_JS_DEF_METHOD(ctx, constant->bigint_prototype, "toLocaleString",
+  NEO_JS_DEF_METHOD(ctx, constant->bigint_prototype, u"toLocaleString",
                     neo_js_bigint_to_locale_string);
-  NEO_JS_DEF_METHOD(ctx, constant->bigint_prototype, "toString",
+  NEO_JS_DEF_METHOD(ctx, constant->bigint_prototype, u"toString",
                     neo_js_bigint_to_string);
-  NEO_JS_DEF_METHOD(ctx, constant->bigint_prototype, "valueOf",
+  NEO_JS_DEF_METHOD(ctx, constant->bigint_prototype, u"valueOf",
                     neo_js_bigint_value_of);
 }

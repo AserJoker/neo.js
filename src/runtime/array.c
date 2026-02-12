@@ -2348,85 +2348,85 @@ void neo_initialize_js_array(neo_js_context_t ctx) {
   constant->array_prototype =
       neo_js_context_create_variable(ctx, neo_js_array_to_value(array));
   constant->array_class =
-      neo_js_context_create_cfunction(ctx, neo_js_array_constructor, "Array");
+      neo_js_context_create_cfunction(ctx, neo_js_array_constructor, u"Array");
   neo_js_variable_set_prototype_of(constant->array_class, ctx,
                                    constant->function_prototype);
   neo_js_variable_def_field(constant->array_class, ctx, constant->key_prototype,
                             constant->array_prototype, true, false, true);
 
-  NEO_JS_DEF_METHOD(ctx, constant->array_class, "from", neo_js_array_from);
-  NEO_JS_DEF_METHOD(ctx, constant->array_class, "fromAsync",
+  NEO_JS_DEF_METHOD(ctx, constant->array_class, u"from", neo_js_array_from);
+  NEO_JS_DEF_METHOD(ctx, constant->array_class, u"fromAsync",
                     neo_js_array_from_async);
-  NEO_JS_DEF_METHOD(ctx, constant->array_class, "of", neo_js_array_of);
-  NEO_JS_DEF_METHOD(ctx, constant->array_class, "isArray",
+  NEO_JS_DEF_METHOD(ctx, constant->array_class, u"of", neo_js_array_of);
+  NEO_JS_DEF_METHOD(ctx, constant->array_class, u"isArray",
                     neo_js_array_is_array);
 
   neo_js_variable_t values =
-      neo_js_context_create_cfunction(ctx, neo_js_array_values, "values");
+      neo_js_context_create_cfunction(ctx, neo_js_array_values, u"values");
 
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "at", neo_js_array_at);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "concat",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"at", neo_js_array_at);
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"concat",
                     neo_js_array_concat);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "copyWithin",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"copyWithin",
                     neo_js_array_copy_within);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "entries",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"entries",
                     neo_js_array_entries);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "every",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"every",
                     neo_js_array_every);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "fill", neo_js_array_fill);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "filter",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"fill", neo_js_array_fill);
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"filter",
                     neo_js_array_filter);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "find", neo_js_array_find);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "findIndex",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"find", neo_js_array_find);
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"findIndex",
                     neo_js_array_find_index);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "findLast",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"findLast",
                     neo_js_array_find_last);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "findLastIndex",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"findLastIndex",
                     neo_js_array_find_last_index);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "flat", neo_js_array_flat);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "flatMap",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"flat", neo_js_array_flat);
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"flatMap",
                     neo_js_array_flat_map);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "forEach",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"forEach",
                     neo_js_array_for_each);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "includes",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"includes",
                     neo_js_array_includes);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "indexOf",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"indexOf",
                     neo_js_array_index_of);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "keys", neo_js_array_keys);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "join", neo_js_array_join);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "lastIndexOf",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"keys", neo_js_array_keys);
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"join", neo_js_array_join);
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"lastIndexOf",
                     neo_js_array_last_index_of);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "map", neo_js_array_map);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "pop", neo_js_array_pop);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "push", neo_js_array_push);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "reduce",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"map", neo_js_array_map);
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"pop", neo_js_array_pop);
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"push", neo_js_array_push);
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"reduce",
                     neo_js_array_reduce);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "reduceRight",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"reduceRight",
                     neo_js_array_reduce_right);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "reduceRight",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"reduceRight",
                     neo_js_array_reverse);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "shift",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"shift",
                     neo_js_array_shift);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "slice",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"slice",
                     neo_js_array_slice);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "some", neo_js_array_some);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "sort", neo_js_array_sort);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "splice",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"some", neo_js_array_some);
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"sort", neo_js_array_sort);
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"splice",
                     neo_js_array_splice);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "toLocaleString",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"toLocaleString",
                     neo_js_array_to_locale_string);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "toReversed",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"toReversed",
                     neo_js_array_to_reversed);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "toSorted",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"toSorted",
                     neo_js_array_to_sorted);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "toString",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"toString",
                     neo_js_array_to_string);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "unshift",
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"unshift",
                     neo_js_array_unshift);
   neo_js_variable_def_field(constant->array_prototype, ctx,
                             neo_js_context_create_string(ctx, u"values"),
                             values, true, false, true);
-  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, "with", neo_js_array_with);
+  NEO_JS_DEF_METHOD(ctx, constant->array_prototype, u"with", neo_js_array_with);
   neo_js_variable_def_field(constant->array_prototype, ctx,
                             constant->symbol_iterator, values, true, false,
                             true);
