@@ -15,7 +15,6 @@ typedef struct _neo_hash_map_initialize {
   bool auto_free_value;
   neo_compare_fn_t compare;
   neo_hash_fn_t hash;
-  uint32_t max_bucket;
 } neo_hash_map_initialize_t;
 
 neo_hash_map_t neo_create_hash_map(neo_allocator_t allocator,

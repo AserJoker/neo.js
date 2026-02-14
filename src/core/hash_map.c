@@ -67,18 +67,14 @@ neo_hash_map_t neo_create_hash_map(neo_allocator_t allocator,
     hmap->hash = initialize->hash;
     hmap->auto_free_key = initialize->auto_free_key;
     hmap->auto_free_value = initialize->auto_free_value;
-    hmap->max_bucket = initialize->max_bucket;
     hmap->compare = initialize->compare;
   } else {
-    hmap->max_bucket = NEO_HASH_MAP_BUCKET_SIZE;
     hmap->auto_free_key = false;
     hmap->auto_free_value = false;
     hmap->hash = NULL;
     hmap->compare = NULL;
   }
-  if (hmap->max_bucket == 0) {
-    hmap->max_bucket = NEO_HASH_MAP_BUCKET_SIZE;
-  }
+  hmap->max_bucket = NEO_HASH_MAP_BUCKET_SIZE;
   hmap->buckets = neo_allocator_alloc(
       allocator, hmap->max_bucket * sizeof(neo_hash_map_entry_t), NULL);
   for (size_t index = 0; index < hmap->max_bucket; index++) {
