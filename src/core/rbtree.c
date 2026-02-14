@@ -3,22 +3,23 @@
 #include "neojs/core/common.h"
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 
-typedef struct _neo_rbtree_node_t *neo_rbtree_node_t;
 struct _neo_rbtree_node_t {
   bool color;
   void *key;
-  void *value;
   neo_rbtree_node_t left;
   neo_rbtree_node_t right;
   neo_rbtree_node_t parent;
 };
 struct _neo_rbtree_t {
   neo_rbtree_node_t root;
-  bool autofree_value;
-  bool autofree_key;
+  bool autofree;
   size_t size;
+  size_t keysize;
   neo_compare_fn_t compare;
+  neo_allocator_t allocator;
 };
 
 static void neo_rbtree_dispose_node(neo_rbtree_t self, neo_rbtree_node_t node,
@@ -26,17 +27,14 @@ static void neo_rbtree_dispose_node(neo_rbtree_t self, neo_rbtree_node_t node,
   if (node) {
     neo_rbtree_dispose_node(self, node->left, allocator);
     neo_rbtree_dispose_node(self, node->right, allocator);
-    if (self->autofree_value) {
-      neo_allocator_free(allocator, node->value);
-    }
-    if (self->autofree_key) {
+    if (self->autofree) {
       neo_allocator_free(allocator, node->key);
     }
     neo_allocator_free(allocator, node);
   }
 }
 
-static void neo_rbtree_dispose(neo_rbtree_t self, neo_allocator_t allocator) {
+static void neo_rbtree_dispose(neo_allocator_t allocator, neo_rbtree_t self) {
   neo_rbtree_dispose_node(self, self->root, allocator);
 }
 
@@ -45,15 +43,14 @@ neo_rbtree_t neo_create_rbtree(neo_allocator_t allocator,
   neo_rbtree_t tree = neo_allocator_alloc(
       allocator, sizeof(struct _neo_rbtree_t), neo_rbtree_dispose);
   tree->root = NULL;
-  tree->autofree_key = false;
-  tree->autofree_value = false;
+  tree->autofree = false;
   tree->size = 0;
   tree->compare = NULL;
   if (initialize) {
-    tree->autofree_key = initialize->autofree_key;
-    tree->autofree_value = initialize->autofree_value;
+    tree->autofree = initialize->autofree;
     tree->compare = initialize->compare;
   }
+  tree->allocator = allocator;
   return tree;
 }
 
@@ -166,22 +163,20 @@ static void neo_rbtree_insert_fixup(neo_rbtree_t self, neo_rbtree_node_t node) {
   self->root->color = false;
 }
 
-static void neo_rbtree_node_dispose(neo_rbtree_node_t self,
-                                    neo_allocator_t allocator) {}
+static void neo_rbtree_node_dispose(neo_allocator_t allocator,
+                                    neo_rbtree_node_t self) {}
 static neo_rbtree_node_t neo_create_rbtree_node(neo_allocator_t allocator) {
   neo_rbtree_node_t node = neo_allocator_alloc(
       allocator, sizeof(struct _neo_rbtree_node_t), neo_rbtree_node_dispose);
   node->color = false;
   node->key = 0;
-  node->value = NULL;
   node->left = NULL;
   node->right = NULL;
   node->parent = NULL;
   return node;
 }
 
-void neo_rbtree_set(neo_rbtree_t self, neo_allocator_t allocator, void *key,
-                    void *value) {
+void neo_rbtree_put(neo_rbtree_t self, void *key) {
   neo_rbtree_node_t y = NULL;
   neo_rbtree_node_t x = self->root;
   while (x != NULL) {
@@ -190,25 +185,21 @@ void neo_rbtree_set(neo_rbtree_t self, neo_allocator_t allocator, void *key,
       x = x->left;
     } else if (self->compare ? self->compare(key, x->key) == 0
                              : key == x->key) {
-      if (x->value != value && self->autofree_key) {
-        neo_allocator_free(allocator, x->key);
-      }
-      if (x->value != value && self->autofree_value) {
-        neo_allocator_free(allocator, x->value);
+      if (x->key != key && self->autofree) {
+        neo_allocator_free(self->allocator, x->key);
       }
       x->key = key;
-      x->value = value;
       return;
     } else {
       x = x->right;
     }
   }
-  neo_rbtree_node_t node = neo_create_rbtree_node(allocator);
+  neo_rbtree_node_t node = neo_create_rbtree_node(self->allocator);
   node->key = key;
-  node->value = value;
   node->parent = y;
   if (y != NULL) {
-    if (node->key < y->key) {
+    if (self->compare ? self->compare(node->key, y->key) < 0
+                      : node->key < y->key) {
       y->left = node;
     } else {
       y->right = node;
@@ -219,23 +210,6 @@ void neo_rbtree_set(neo_rbtree_t self, neo_allocator_t allocator, void *key,
   node->color = true;
   neo_rbtree_insert_fixup(self, node);
   self->size++;
-}
-
-void *neo_rbtree_get(neo_rbtree_t self, const void *key) {
-  neo_rbtree_node_t y = NULL;
-  neo_rbtree_node_t x = self->root;
-  while (x != NULL) {
-    y = x;
-    if (self->compare ? self->compare(key, x->key) < 0 : key < x->key) {
-      x = x->left;
-    } else if (self->compare ? self->compare(key, x->key) == 0
-                             : key == x->key) {
-      return x->value;
-    } else {
-      x = x->right;
-    }
-  }
-  return NULL;
 }
 bool neo_rbtree_has(neo_rbtree_t self, const void *key) {
   neo_rbtree_node_t y = NULL;
@@ -289,8 +263,8 @@ static void neo_rbtree_remove_fixup(neo_rbtree_t self, neo_rbtree_node_t node) {
     } else {
       bool color = sibling->color;
       sibling->color = parent->color;
-      parent->color = sibling->color;
-      neo_rbtree_right_rotate(self, parent);
+      parent->color = color;
+      neo_rbtree_left_rotate(self, parent);
       neo_rbtree_remove_fixup(self, node);
     }
   } else {
@@ -318,15 +292,14 @@ static void neo_rbtree_remove_fixup(neo_rbtree_t self, neo_rbtree_node_t node) {
     } else {
       bool color = sibling->color;
       sibling->color = parent->color;
-      parent->color = sibling->color;
-      neo_rbtree_left_rotate(self, parent);
+      parent->color = color;
+      neo_rbtree_right_rotate(self, parent);
       neo_rbtree_remove_fixup(self, node);
     }
   }
 }
 
-void neo_rbtree_remove(neo_rbtree_t self, neo_allocator_t allocator,
-                       const void *key) {
+void neo_rbtree_remove(neo_rbtree_t self, const void *key) {
   neo_rbtree_node_t node = self->root;
   while (node) {
     if (self->compare ? self->compare(key, node->key) == 0 : key == node->key) {
@@ -348,9 +321,7 @@ void neo_rbtree_remove(neo_rbtree_t self, neo_allocator_t allocator,
     }
     neo_rbtree_node_t tmp = node;
     node->key = replace->key;
-    node->value = replace->value;
     replace->key = tmp->key;
-    replace->value = tmp->value;
     node = replace;
   }
   neo_rbtree_node_t parent = node->parent;
@@ -380,24 +351,77 @@ void neo_rbtree_remove(neo_rbtree_t self, neo_allocator_t allocator,
         parent->right = NULL;
       }
     } else {
-      neo_rbtree_node_t sibling = NULL;
-      if (parent->left == node) {
-        sibling = parent->right;
+      neo_rbtree_remove_fixup(self, node);
+      if (node == parent->left) {
         parent->left = NULL;
-      } else {
-        sibling = parent->left;
+      } else if (node == parent->right) {
         parent->right = NULL;
       }
-      neo_rbtree_remove_fixup(self, node);
     }
   }
-  if (self->autofree_value) {
-    neo_allocator_free(allocator, node->value);
+  if (self->autofree) {
+    neo_allocator_free(self->allocator, node->key);
   }
-  if (self->autofree_key) {
-    neo_allocator_free(allocator, node->key);
-  }
-  neo_allocator_free(allocator, node);
+  neo_allocator_free(self->allocator, node);
   self->size--;
 }
 size_t neo_rbtree_size(neo_rbtree_t self) { return self->size; }
+neo_rbtree_node_t neo_rbtree_get_first(neo_rbtree_t self) {
+  if (self->root) {
+    neo_rbtree_node_t node = self->root;
+    while (node->left) {
+      node = node->left;
+    }
+    return node;
+  }
+  return NULL;
+}
+neo_rbtree_node_t neo_rbtree_get_last(neo_rbtree_t self) {
+  if (self->root) {
+    neo_rbtree_node_t node = self->root;
+    while (node->right) {
+      node = node->right;
+    }
+    return node;
+  }
+  return NULL;
+}
+neo_rbtree_node_t neo_rbtree_node_next(neo_rbtree_node_t self) {
+  if (self->right) {
+    neo_rbtree_node_t node = self->right;
+    while (node->left) {
+      node = node->left;
+    }
+    return node;
+  }
+  if (self->parent) {
+    if (self == self->parent->left) {
+      return self->parent;
+    }
+    while (self->parent && self == self->parent->right) {
+      self = self->parent;
+    }
+    return self->parent;
+  }
+  return NULL;
+}
+neo_rbtree_node_t neo_rbtree_node_last(neo_rbtree_node_t self) {
+  if (self->left) {
+    neo_rbtree_node_t node = self->left;
+    while (node->right) {
+      node = node->right;
+    }
+    return node;
+  }
+  if (self->parent) {
+    if (self == self->parent->right) {
+      return self->parent;
+    }
+    while (self->parent && self == self->parent->left) {
+      self = self->parent;
+    }
+    return self->parent;
+  }
+  return NULL;
+}
+void *neo_rbtree_node_get(neo_rbtree_node_t self) { return self->key; }

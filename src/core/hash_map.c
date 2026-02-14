@@ -116,9 +116,9 @@ void neo_hash_map_set(neo_hash_map_t self, void *key, void *value) {
   } else {
     uint32_t hash = 0;
     if (self->hash) {
-      hash = self->hash(key, self->max_bucket);
+      hash = (self->max_bucket - 1) & self->hash(key);
     } else {
-      hash = ((uintptr_t)key) % self->max_bucket;
+      hash = (self->max_bucket - 1) & ((uintptr_t)key);
     }
     neo_hash_map_entry_t *bucket = &self->buckets[hash];
     node = neo_create_hash_map_node(self->allocator);
@@ -168,9 +168,9 @@ void neo_hash_map_erase(neo_hash_map_t self, neo_hash_map_node_t position) {
 neo_hash_map_node_t neo_hash_map_find(neo_hash_map_t self, const void *key) {
   uint32_t hash = 0;
   if (self->hash) {
-    hash = self->hash(key, self->max_bucket);
+    hash = (self->max_bucket - 1) & self->hash(key);
   } else {
-    hash = ((uintptr_t)key) % self->max_bucket;
+    hash = (self->max_bucket - 1) & ((uintptr_t)key);
   }
   neo_hash_map_entry_t *bucket = &self->buckets[hash];
   neo_hash_map_node_t it = bucket->head.next;

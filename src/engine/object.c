@@ -85,12 +85,12 @@ int32_t neo_js_object_key_compare(const neo_js_value_t self,
   }
   return 0;
 }
-uint32_t neo_js_object_key_hash(const neo_js_value_t self, uint32_t max) {
+uint32_t neo_js_object_key_hash(const neo_js_value_t self) {
   if (self->type == NEO_JS_TYPE_SYMBOL) {
-    return ((uint32_t)(ptrdiff_t)self) % max;
+    return ((uint32_t)(ptrdiff_t)self) ;
   }
   neo_js_string_t str = (neo_js_string_t)self;
-  return neo_hash_sdb_utf16(str->value, max);
+  return neo_hash_sdb_utf16(str->value);
 }
 static void neo_js_object_property_dispose(neo_allocator_t allocator,
                                            neo_js_object_property_t self) {}

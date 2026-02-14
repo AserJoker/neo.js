@@ -93,7 +93,7 @@ neo_js_variable_t neo_js_variable_to_string(neo_js_variable_t self,
   case NEO_JS_TYPE_BOOLEAN: {
     neo_js_boolean_t boolean = (neo_js_boolean_t)self->value;
     return neo_js_context_create_string(ctx,
-                                         boolean->value ? u"true" : u"false");
+                                        boolean->value ? u"true" : u"false");
   }
   case NEO_JS_TYPE_STRING:
     return self;
@@ -501,7 +501,7 @@ neo_js_variable_t neo_js_variable_def_private_field(neo_js_variable_t self,
   if (self->value->type < NEO_JS_TYPE_OBJECT || !clazz) {
     UChar s[strlen(name) + 64];
     u_sprintf(s, "Private field '%s' must be declared in an enclosing class",
-            name);
+              name);
     neo_js_variable_t message = neo_js_context_create_string(ctx, s);
     neo_js_variable_t syntax_error =
         neo_js_context_get_constant(ctx)->syntax_error_class;
@@ -547,7 +547,7 @@ neo_js_variable_t neo_js_variable_def_private_method(neo_js_variable_t self,
   if (self->value->type < NEO_JS_TYPE_OBJECT || !clazz) {
     UChar s[strlen(name) + 64];
     u_sprintf(s, "Private field '%s' must be declared in an enclosing class",
-            name);
+              name);
     neo_js_variable_t message = neo_js_context_create_string(ctx, s);
     neo_js_variable_t syntax_error =
         neo_js_context_get_constant(ctx)->syntax_error_class;
@@ -591,7 +591,7 @@ neo_js_variable_t neo_js_variable_def_private_accessor(
   if (self->value->type < NEO_JS_TYPE_OBJECT || !clazz) {
     UChar s[strlen(name) + 64];
     u_sprintf(s, "Private field '%s' must be declared in an enclosing class",
-            name);
+              name);
     neo_js_variable_t message = neo_js_context_create_string(ctx, s);
     neo_js_variable_t syntax_error =
         neo_js_context_get_constant(ctx)->syntax_error_class;
@@ -646,7 +646,7 @@ neo_js_variable_t neo_js_variable_get_private_field(neo_js_variable_t self,
   if (self->value->type < NEO_JS_TYPE_OBJECT || !clazz) {
     UChar s[strlen(name) + 64];
     u_sprintf(s, "Private field '%s' must be declared in an enclosing class",
-            name);
+              name);
     neo_js_variable_t message = neo_js_context_create_string(ctx, s);
     neo_js_variable_t syntax_error =
         neo_js_context_get_constant(ctx)->syntax_error_class;
@@ -659,7 +659,7 @@ neo_js_variable_t neo_js_variable_get_private_field(neo_js_variable_t self,
   if (!privates || !neo_hash_map_has(privates, name)) {
     UChar s[strlen(name) + 64];
     u_sprintf(s, "Private field '%s' must be declared in an enclosing class",
-            name);
+              name);
     neo_js_variable_t message = neo_js_context_create_string(ctx, s);
     neo_js_variable_t syntax_error =
         neo_js_context_get_constant(ctx)->syntax_error_class;
@@ -688,7 +688,7 @@ neo_js_variable_t neo_js_variable_set_private_field(neo_js_variable_t self,
   if (self->value->type < NEO_JS_TYPE_OBJECT || !clazz) {
     UChar s[strlen(name) + 64];
     u_sprintf(s, "Private field '%s' must be declared in an enclosing class",
-            name);
+              name);
     neo_js_variable_t message = neo_js_context_create_string(ctx, s);
     neo_js_variable_t syntax_error =
         neo_js_context_get_constant(ctx)->syntax_error_class;
@@ -701,7 +701,7 @@ neo_js_variable_t neo_js_variable_set_private_field(neo_js_variable_t self,
   if (!privates || !neo_hash_map_has(privates, name)) {
     UChar s[strlen(name) + 64];
     u_sprintf(s, "Private field '%s' must be declared in an enclosing class",
-            name);
+              name);
     neo_js_variable_t message = neo_js_context_create_string(ctx, s);
     neo_js_variable_t syntax_error =
         neo_js_context_get_constant(ctx)->syntax_error_class;
@@ -713,9 +713,9 @@ neo_js_variable_t neo_js_variable_set_private_field(neo_js_variable_t self,
   if (pri->method) {
     UChar s[strlen(name) + 64];
     u_sprintf(s,
-            "Cannot assign to private method '%s'. Private methods are not "
-            "writable.",
-            name);
+              "Cannot assign to private method '%s'. Private methods are not "
+              "writable.",
+              name);
     neo_js_variable_t message = neo_js_context_create_string(ctx, s);
     neo_js_variable_t syntax_error =
         neo_js_context_get_constant(ctx)->syntax_error_class;
@@ -734,7 +734,7 @@ neo_js_variable_t neo_js_variable_set_private_field(neo_js_variable_t self,
   } else {
     UChar s[strlen(name) + 64];
     u_sprintf(s, "Cannot set private %s of #<Object>, which has only a getter",
-            name);
+              name);
     neo_js_variable_t message = neo_js_context_create_string(ctx, s);
     neo_js_variable_t syntax_error =
         neo_js_context_get_constant(ctx)->syntax_error_class;
@@ -1708,9 +1708,8 @@ static int neo_js_string_key_compare(neo_js_string_t key1,
                                      neo_js_string_t key2) {
   return neo_string16_compare(key1->value, key2->value);
 }
-static uint32_t neo_js_string_key_hash(neo_js_string_t key,
-                                       uint32_t max_bucket) {
-  return neo_hash_sdb_utf16(key->value, max_bucket);
+static uint32_t neo_js_string_key_hash(neo_js_string_t key) {
+  return neo_hash_sdb_utf16(key->value);
 }
 
 static int neo_js_sort_key_compare(neo_js_string_t key1, neo_js_string_t key2) {
