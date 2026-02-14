@@ -50,7 +50,7 @@ neo_js_value_t neo_js_object_to_value(neo_js_object_t self);
 int32_t neo_js_object_key_compare(const neo_js_value_t self,
                                   const neo_js_value_t another);
 
-uint32_t neo_js_object_key_hash(const neo_js_value_t self, uint32_t max);
+uint32_t neo_js_object_key_hash(const neo_js_value_t self);
 
 neo_js_object_property_t
 neo_create_js_object_property(neo_allocator_t allocator);

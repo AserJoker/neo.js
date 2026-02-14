@@ -12,7 +12,7 @@ typedef void (*neo_free_fn_t)(void *ptr);
 
 typedef int32_t (*neo_compare_fn_t)(const void *, const void *);
 
-typedef uint32_t (*neo_hash_fn_t)(const void *, uint32_t);
+typedef uint32_t (*neo_hash_fn_t)(const void *);
 
 #ifdef __cplusplus
 };
