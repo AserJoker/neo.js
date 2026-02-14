@@ -8,7 +8,6 @@ struct _neo_hash_map_node_t {
   neo_hash_map_node_t last;
   void *key;
   void *value;
-  bool manager;
 };
 
 static neo_hash_map_node_t neo_create_hash_map_node(neo_allocator_t allocator) {
@@ -16,7 +15,6 @@ static neo_hash_map_node_t neo_create_hash_map_node(neo_allocator_t allocator) {
       neo_allocator_alloc(allocator, sizeof(struct _neo_hash_map_node_t), NULL);
   node->key = NULL;
   node->value = NULL;
-  node->manager = false;
   node->last = NULL;
   node->next = NULL;
   return node;
@@ -89,12 +87,10 @@ neo_hash_map_t neo_create_hash_map(neo_allocator_t allocator,
     entity->head.last = NULL;
     entity->head.value = NULL;
     entity->head.key = NULL;
-    entity->head.manager = true;
     entity->tail.last = &entity->head;
     entity->tail.next = NULL;
     entity->tail.key = NULL;
     entity->tail.value = NULL;
-    entity->tail.manager = true;
     if (index > 0) {
       neo_hash_map_entry_t *last = &hmap->buckets[index - 1];
       last->tail.next = &entity->head;
@@ -108,6 +104,9 @@ neo_hash_map_t neo_create_hash_map(neo_allocator_t allocator,
 }
 
 void neo_hash_map_set(neo_hash_map_t self, void *key, void *value) {
+  if (key == NULL) {
+    return;
+  }
   neo_hash_map_node_t node = neo_hash_map_find(self, key);
   if (node) {
     if (self->auto_free_value && node->value) {
@@ -151,7 +150,7 @@ void neo_hash_map_delete(neo_hash_map_t self, const void *key) {
 }
 
 void neo_hash_map_erase(neo_hash_map_t self, neo_hash_map_node_t position) {
-  if (position && !position->manager) {
+  if (position && !position->key) {
     position->last->next = position->next;
     position->next->last = position->last;
     if (self->auto_free_key) {
@@ -205,7 +204,7 @@ neo_hash_map_node_t neo_hash_map_get_tail(neo_hash_map_t self) {
 
 neo_hash_map_node_t neo_hash_map_get_first(neo_hash_map_t self) {
   neo_hash_map_node_t head = self->head;
-  while (head->manager && head != self->tail) {
+  while (!head->key && head != self->tail) {
     head = head->next;
   }
   return head;
@@ -213,7 +212,7 @@ neo_hash_map_node_t neo_hash_map_get_first(neo_hash_map_t self) {
 
 neo_hash_map_node_t neo_hash_map_get_last(neo_hash_map_t self) {
   neo_hash_map_node_t tail = self->tail;
-  while (tail->manager && tail != self->head) {
+  while (!tail->key && tail != self->head) {
     tail = tail->last;
   }
   return tail;
@@ -227,7 +226,7 @@ void *neo_hash_map_node_get_value(neo_hash_map_node_t self) {
 
 neo_hash_map_node_t neo_hash_map_node_next(neo_hash_map_node_t self) {
   self = self->next;
-  while (self->next && self->manager) {
+  while (self->next && !self->key) {
     self = self->next;
   }
   return self;
@@ -235,7 +234,7 @@ neo_hash_map_node_t neo_hash_map_node_next(neo_hash_map_node_t self) {
 
 neo_hash_map_node_t neo_hash_map_node_last(neo_hash_map_node_t self) {
   self = self->last;
-  while (self->last && self->manager) {
+  while (self->last && !self->key) {
     self = self->last;
   }
   return self;
