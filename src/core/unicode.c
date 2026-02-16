@@ -2,8 +2,12 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unicode/ubidi.h>
 #include <unicode/urename.h>
+#include <unicode/uscript.h>
 #include <wchar.h>
+
+
 neo_utf8_char neo_utf8_read_char(const char *str) {
   neo_utf8_char chr = {str, str};
   if (*str == 0) {

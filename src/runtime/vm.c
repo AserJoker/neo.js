@@ -27,6 +27,7 @@
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
+#include <unicode/ustdio.h>
 
 #define NEO_JS_VM_CHECK(vm, expression, program, offset)                       \
   do {                                                                         \

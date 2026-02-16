@@ -10,7 +10,7 @@
 #include <unicode/umachine.h>
 #include <unicode/urename.h>
 #include <unicode/utypes.h>
-#include <unistd.h>
+#include <unicode/ustring.h>
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <sys/time.h>
 #include <time.h>
+#include <unistd.h>
 #endif
 
 static int64_t months[2][12] = {
@@ -146,9 +147,7 @@ UChar *neo_clock_to_iso(neo_allocator_t allocator, int64_t timestamep) {
 
 UChar *neo_clock_to_rfc(neo_allocator_t allocator, int64_t timestamep) {
   UErrorCode status = U_ZERO_ERROR;
-  const char cformat[] = "EEE MMM dd yyyy HH:mm:ss 'GMP'Z (zzzz)";
-  UChar uformat[sizeof(cformat)];
-  u_uastrcpy(uformat, cformat);
+  UChar uformat[] = u"EEE MMM dd yyyy HH:mm:ss 'GMP'Z (zzzz)";
   UChar *result = neo_allocator_alloc(allocator, sizeof(UChar) * 256, NULL);
   UCalendar *cal = ucal_open(NULL, 0, NULL, UCAL_DEFAULT, &status);
   if (U_FAILURE(status)) {

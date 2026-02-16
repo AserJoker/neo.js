@@ -13,8 +13,10 @@
 #include <string.h>
 #include <unicode/ucal.h>
 #include <unicode/umachine.h>
+#include <unicode/urename.h>
 #include <unicode/ustdio.h>
 #include <unicode/utypes.h>
+#include <unicode/ustring.h>
 
 
 NEO_JS_CFUNCTION(neo_js_date_constructor) {
@@ -188,7 +190,7 @@ NEO_JS_CFUNCTION(neo_js_date_utc) {
           (int32_t)monthIndex, (int32_t)day, (int32_t)hours, (int32_t)minutes,
           (int32_t)seconds, (int32_t)milliseconds);
   UChar source[256];
-  u_austrcpy(source, str);
+  u_uastrcpy(source, str);
   int64_t timestamp = 0;
   if (neo_clock_parse(source, u"yyyy-MM-dd'T'hh:mm:ss.SSSS'Z'", &timestamp,
                       u"UTC")) {

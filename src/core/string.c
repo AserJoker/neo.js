@@ -6,6 +6,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <unicode/urename.h>
+#include <unicode/uscript.h>
+#include <unicode/utypes.h>
+
+#include <unicode/ubidi.h>
 
 char *neo_string_concat(neo_allocator_t allocator, char *src, size_t *max,
                         const char *str) {

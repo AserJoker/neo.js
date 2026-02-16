@@ -5,7 +5,9 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <uchar.h>
+#include <unicode/ubidi.h>
 #include <unicode/urename.h>
+
 
 #define IS_HEX(ch)                                                             \
   (((ch) >= '0' && (ch) <= '9') || ((ch) >= 'a' && (ch) <= 'f') ||             \
