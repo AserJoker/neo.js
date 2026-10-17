@@ -120,11 +120,12 @@ const char *JS_ToString(JSContext *ctx, const JSValue *value); /* 返回内部 U
 JSValue *JS_CreateError(JSContext *ctx, const char *message);
 
 /* -------------------------------------------------------------------------- */
-/* 执行（M0 占位：完整求值引擎在后续里程碑实现）                               */
+/* 执行（M1.1：前端流水线骨架；完整求值引擎在后续里程碑实现）                 */
 /* -------------------------------------------------------------------------- */
 
-/* 在 ctx 中求值一段源码。当前 M0 返回 kind=JS_EXCEPTION 的错误值表示
- * “求值器尚未实现”，以验证错误通道。 */
+/* 在 ctx 中求值一段源码。当前 M1.1 阶段：源码经前端流水线（Lexer+Parser）
+ * 解析，返回 AST dump 文本（kind=JS_STRING）；语法错误返回 kind=JS_EXCEPTION
+ * 的错误值（#4）。完整求值（字节码 VM）在 M2+ 实现。 */
 JSValue *JS_Eval(JSContext *ctx, const char *source, size_t source_len);
 
 /* -------------------------------------------------------------------------- */

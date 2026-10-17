@@ -21,6 +21,8 @@
 #include <string>
 #include <utility>
 
+#include "neojs/frontend/diagnostics.h"
+#include "neojs/frontend/frontend.h"
 #include "neojs/runtime/allocator.h"
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/value.h"
@@ -315,12 +317,30 @@ extern "C" JSValue *JS_CreateError(JSContext *ctx, const char *message) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* 执行（M0 占位）                                                             */
+/* 执行（M1.1：前端流水线骨架；完整求值在 M2）                                 */
 /* -------------------------------------------------------------------------- */
 
 extern "C" JSValue *JS_Eval(JSContext *ctx, const char *source, size_t source_len) {
-  (void)source;
-  (void)source_len;
-  /* M0：求值器未实现，返回“未实现”错误值以验证错误通道（#4）。 */
-  return JS_CreateError(ctx, "JS_Eval: evaluator not implemented (M0)");
+  /* #9：ctx 为空属编程错误 */
+  if (ctx == nullptr) {
+    std::fputs("neo.js: null JSContext passed to JS_Eval\n", stderr);
+    std::abort();
+  }
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::DiagnosticSink sink;
+
+    /* M1.1：源码 → Lexer+Parser → AST dump（求值器 M2 实现）。
+     * 解析成功返回 dump 文本（String 值）；语法错误返回 Exception（#4）。 */
+    neojs::AST *ast = neojs::parseSource(&c->allocator(), source ? source : "",
+                                         source ? source_len : 0, sink);
+    if (ast == nullptr) {
+      std::string msg = "SyntaxError: ";
+      msg += sink.hasErrors() ? sink.diagnostics().front().message : "parse failed";
+      return makeException(ctx, msg.c_str());
+    }
+    std::string dump = neojs::dumpAst(*ast);
+    c->allocator().destroy(ast); /* AST 生命周期独立于 ctx 值登记表 */
+    return makeValue(ctx, std::move(dump));
+  });
 }

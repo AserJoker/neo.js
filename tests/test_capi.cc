@@ -138,12 +138,29 @@ TEST(CApi, CreateString) {
 /* 错误通道（#4：kind = JS_EXCEPTION）                                        */
 /* -------------------------------------------------------------------------- */
 
-TEST(CApi, EvalReturnsExceptionInM0) {
+TEST(CApi, EvalReturnsAstDumpInM11) {
   JSAllocator *a = nullptr;
   JSContext *ctx = makeCtx(&a);
   ASSERT_NE(ctx, nullptr);
 
-  JSValue *r = JS_Eval(ctx, "1 + 1", 5);
+  /* M1.1：解析成功返回 AST dump 文本（String 值） */
+  JSValue *r = JS_Eval(ctx, "1 + 2", 5);
+  ASSERT_NE(r, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, r), JS_STRING);
+  EXPECT_STRNE(JS_ToString(ctx, r), "");
+
+  JS_FreeValue(ctx, r);
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+TEST(CApi, EvalSyntaxErrorReturnsException) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* 语法错误：返回 Exception（#4），非 nullptr */
+  JSValue *r = JS_Eval(ctx, "1 +", 3);
   ASSERT_NE(r, nullptr);
   EXPECT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION);
 
