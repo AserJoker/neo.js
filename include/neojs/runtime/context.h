@@ -4,17 +4,16 @@
 /*
  * 内部 C++ 实现：JSContext。
  *
- * 运行时一切信息都从 ctx 出发（规范 #9）：ctx 持有分配器、值注册表。
+ * 运行时一切信息都从 ctx 出发（规范 #9）：ctx 持有分配器、当前值作用域。
  *
  * 内存管理（规范 #5/#13）：
  *   JSContext 创建**必须**接受外部提供的 JSAllocator（C API 层传入，不支持 nullptr）；
  *   ctx 仅引用分配器、不拥有它（宿主负责在释放 ctx 之后 JS_FreeAllocator）；
- *   内部所有对象（含 JSValue）统一经该分配器路由。
+ *   JSValue 创建在 ctx->current_scope 上（#9），值生命周期由 JSScope 管理。
  */
 
-#include <unordered_map>
-
 #include "neojs/runtime/allocator.h"
+#include "neojs/runtime/scope.h"
 #include "neojs/runtime/value.h"
 
 namespace neojs {
@@ -32,14 +31,12 @@ class JSContext {
   /* 用宿主注入的 free 回调释放 ctx 自身内存（JS_FreeContext 调用） */
   void deallocateSelf();
 
-  /* 值生命周期管理：ctx 持有所有存活值的指针，释放时统一回收（#5 堆内存） */
-  void registerValue(JSValue *value);
-  void unregisterValue(JSValue *value);
-  void freeValue(JSValue *value);
+  /* 当前值作用域（#9：JSValue 创建在 current_scope 上） */
+  JSScope &currentScope() { return *current_scope_; }
 
  private:
-  JSAllocator *allocator_; /* 引用外部分配器（#13）；ctx 不拥有 */
-  std::unordered_map<JSValue *, bool> values_; /* 存活值集合（值为占位） */
+  JSAllocator *allocator_;  /* 引用外部分配器（#13）；ctx 不拥有 */
+  JSScope *current_scope_;  /* 当前值作用域（不透明，不对外暴露） */
 };
 
 }  // namespace neojs

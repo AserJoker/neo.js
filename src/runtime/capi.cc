@@ -40,18 +40,16 @@ void defaultFree(void *ptr, void *) { std::free(ptr); }
 template <typename V>
 JSValue *makeValue(JSContext *ctx, V &&value) {
   neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
-  /* #13：placement new 统一经 JSAllocator::create<T>（oom 由分配器 abort）。 */
-  neojs::JSValue *v = c->allocator().create<neojs::JSValue>(std::forward<V>(value));
-  c->registerValue(v);
+  /* #9 + #13：值创建在 ctx->current_scope 上（placement new 经 JSAllocator::create<T>）。 */
+  neojs::JSValue *v = c->currentScope().createValue(std::forward<V>(value));
   return reinterpret_cast<JSValue *>(v);
 }
 
 /* 创建 Exception 值的内部实现（分配器保证非空，#14）。 */
 JSValue *makeException(JSContext *ctx, const char *message) {
   neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
-  neojs::JSValue *err = c->allocator().create<neojs::JSValue>(neojs::Kind::Exception);
+  neojs::JSValue *err = c->currentScope().createValue(neojs::Kind::Exception);
   err->setErrorInfo(message ? message : "");
-  c->registerValue(err);
   return reinterpret_cast<JSValue *>(err);
 }
 
@@ -188,8 +186,8 @@ extern "C" void JS_FreeValue(JSContext *ctx, JSValue *value) {
   if (ctx == nullptr || value == nullptr) return;
   neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
   try {
-    /* freeValue 内部经 JSAllocator::destroy<T> 析构 + 释放（#13）。 */
-    c->freeValue(reinterpret_cast<neojs::JSValue *>(value));
+    /* #9 + #13：值归属当前作用域，经 JSScope::freeValue 析构 + 释放。 */
+    c->currentScope().freeValue(reinterpret_cast<neojs::JSValue *>(value));
   } catch (...) {
     /* #3 */
   }

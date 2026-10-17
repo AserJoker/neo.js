@@ -3,8 +3,6 @@
 #include <cstdlib>
 #include <new>
 
-#include "neojs/runtime/context.h"
-
 namespace neojs {
 
 namespace {
@@ -39,7 +37,7 @@ JSValue::JSValue(const std::string &s)
 /* -------------------------------------------------------------------------- */
 
 /*
- * 说明：JSValue 由 ctx 统一管理生命周期（registerValue / freeValue），
+ * 说明：JSValue 创建在 ctx->current_scope 上，由 JSScope 管理生命周期（#9）；
  * 这里重写 operator new/delete 仅为提供统一分配入口的范式。
  * 默认使用 ::operator new / ::operator delete（可被全局替换）。
  */
