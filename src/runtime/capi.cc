@@ -162,6 +162,21 @@ extern "C" void JS_PopScope(JSContext *ctx) {
   }
 }
 
+/* 按名加载值：沿作用域链查找；未找到返回 Exception 值（#4/#14）。 */
+extern "C" JSValue *JS_LoadValue(JSContext *ctx, const char *name) {
+  /* ctx 为空属编程错误（#9 一切从 ctx 出发），直接终止。 */
+  if (ctx == nullptr) {
+    std::fputs("neo.js: null JSContext passed to JS_LoadValue\n", stderr);
+    std::abort();
+  }
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSValue *v =
+        reinterpret_cast<neojs::JSContext *>(ctx)->currentScope().getBinding(name ? name : "");
+    if (v != nullptr) return reinterpret_cast<JSValue *>(v);
+    return makeException(ctx, "ReferenceError: name is not defined");
+  });
+}
+
 /* -------------------------------------------------------------------------- */
 /* 值构造与访问                                                                */
 /* -------------------------------------------------------------------------- */

@@ -77,6 +77,10 @@ void JS_FreeContext(JSContext *ctx);
 void JS_PushScope(JSContext *ctx);
 void JS_PopScope(JSContext *ctx);
 
+/* 按名加载值：沿当前作用域链（本作用域向上到根）查找 name 绑定（#9）。
+ * 未找到时返回 kind = JS_EXCEPTION 的错误值（#4）；永不返回 NULL（#14）。 */
+JSValue *JS_LoadValue(JSContext *ctx, const char *name);
+
 /* -------------------------------------------------------------------------- */
 /* 值构造与访问（#2 命名风格：JS_ 前缀 + 动作）                                */
 /* -------------------------------------------------------------------------- */

@@ -46,4 +46,16 @@ void JSScope::removeChild(JSScope *child) {
   if (it != children_.end()) children_.erase(it);
 }
 
+void JSScope::setBinding(const std::string &name, JSValue *value) {
+  bindings_[name] = value;
+}
+
+/* 沿作用域链（本作用域 -> 父）查找绑定；未找到返回 nullptr。 */
+JSValue *JSScope::getBinding(const std::string &name) const {
+  auto it = bindings_.find(name);
+  if (it != bindings_.end()) return it->second;
+  if (parent_ != nullptr) return parent_->getBinding(name);
+  return nullptr;
+}
+
 }  // namespace neojs

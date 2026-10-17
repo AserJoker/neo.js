@@ -258,3 +258,53 @@ TEST(CApi, ScopePushPop) {
   JS_FreeContext(ctx);
   JS_FreeAllocator(a);
 }
+
+/* -------------------------------------------------------------------------- */
+/* name<->value 绑定 + JS_LoadValue 沿作用域链查找（#9）                       */
+/* -------------------------------------------------------------------------- */
+
+TEST(CApi, LoadValueByScopeChain) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+  neojs::JSScope &root = c->currentScope();
+
+  /* 根作用域绑定 x = 1 */
+  neojs::JSValue *vx = root.createValue(neojs::JSValue(1.0));
+  root.setBinding("x", vx);
+
+  /* 压栈：子作用域绑定 y = 2 */
+  JS_PushScope(ctx);
+  neojs::JSScope &child = c->currentScope();
+  neojs::JSValue *vy = child.createValue(neojs::JSValue(2.0));
+  child.setBinding("y", vy);
+
+  /* 子作用域能沿链找到 x（父），也能找到 y（自身） */
+  JSValue *lx = JS_LoadValue(ctx, "x");
+  ASSERT_NE(lx, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, lx), JS_NUMBER);
+  EXPECT_EQ(JS_ToNumber(ctx, lx), 1.0);
+
+  JSValue *ly = JS_LoadValue(ctx, "y");
+  ASSERT_NE(ly, nullptr);
+  EXPECT_EQ(JS_ToNumber(ctx, ly), 2.0);
+
+  /* 未找到：返回 Exception 值（#4/#14，非 nullptr） */
+  JSValue *lz = JS_LoadValue(ctx, "z");
+  ASSERT_NE(lz, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, lz), JS_EXCEPTION);
+
+  /* 弹栈后回到根：y 不再可见，x 仍可见 */
+  JS_PopScope(ctx);
+  JSValue *ly2 = JS_LoadValue(ctx, "y");
+  ASSERT_NE(ly2, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, ly2), JS_EXCEPTION);
+  JSValue *lx2 = JS_LoadValue(ctx, "x");
+  ASSERT_NE(lx2, nullptr);
+  EXPECT_EQ(JS_ToNumber(ctx, lx2), 1.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}

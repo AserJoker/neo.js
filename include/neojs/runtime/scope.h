@@ -19,6 +19,7 @@
  * JSValue / JSContext / JSAllocator）。
  */
 
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -53,6 +54,11 @@ class JSScope {
   void unregisterValue(JSValue *value); /* 值移出作用域（不释放） */
   void freeValue(JSValue *value);       /* 移出并析构 + 释放（#13） */
 
+  /* name<->value 绑定机制：按名绑定/查找值。
+   * setBinding 覆盖式写入本作用域；getBinding 沿作用域链（本作用域向上）查找。 */
+  void setBinding(const std::string &name, JSValue *value);
+  JSValue *getBinding(const std::string &name) const;
+
  private:
   void addChild(JSScope *child);   /* 挂载子作用域（构造时调用） */
   void removeChild(JSScope *child); /* 摘除子作用域（子析构时调用） */
@@ -61,6 +67,7 @@ class JSScope {
   JSScope *parent_;                            /* 父作用域（根为 nullptr） */
   std::vector<JSScope *> children_;            /* 子作用域集合 */
   std::unordered_map<JSValue *, bool> values_; /* 存活值集合（值为占位） */
+  std::unordered_map<std::string, JSValue *> bindings_; /* name->value 绑定表 */
 };
 
 }  // namespace neojs
