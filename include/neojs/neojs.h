@@ -82,8 +82,11 @@ void JS_PopScope(JSContext *ctx);
 JSValue *JS_LoadValue(JSContext *ctx, const char *name);
 
 /* 定义绑定：将 value 以 name 定义到**当前作用域**（对应 let/const/var 声明）。
- * 返回 value；永不返回 NULL（#14）。 */
-JSValue *JS_DefineValue(JSContext *ctx, const char *name, JSValue *value);
+ * kind 指定绑定类型（0=Var, 1=Let, 2=Const, 3=Function, 4=Param, 5=Catch），
+ * M0 只记录不校验（为 M2 的 const/TDZ 打地基）。
+ * value 为 NULL 时定义未初始化绑定（TDZ 起点），此时返回 NULL（#14 语义例外）。
+ * 返回 value；否则永不返回 NULL（#14）。 */
+JSValue *JS_DefineValue(JSContext *ctx, const char *name, JSValue *value, int kind);
 
 /* 存储绑定：沿当前作用域链更新**已存在**的 name 绑定为 value（对应赋值）。
  * 链上无此名时返回 kind = JS_EXCEPTION 的错误值（ReferenceError，#4）。

@@ -271,15 +271,15 @@ TEST(CApi, LoadValueByScopeChain) {
   neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
   neojs::JSScope &root = c->currentScope();
 
-  /* 根作用域绑定 x = 1 */
-  neojs::JSValue *vx = root.createValue(neojs::JSValue(1.0));
-  root.setBinding("x", vx);
+  /* 根作用域绑定 x = 1（值登记在 ctx，绑定定义在根作用域） */
+  neojs::JSValue *vx = c->createValue(neojs::JSValue(1.0));
+  root.defineBinding("x", {vx, neojs::BindingKind::Var, true});
 
   /* 压栈：子作用域绑定 y = 2 */
   JS_PushScope(ctx);
   neojs::JSScope &child = c->currentScope();
-  neojs::JSValue *vy = child.createValue(neojs::JSValue(2.0));
-  child.setBinding("y", vy);
+  neojs::JSValue *vy = c->createValue(neojs::JSValue(2.0));
+  child.defineBinding("y", {vy, neojs::BindingKind::Var, true});
 
   /* 子作用域能沿链找到 x（父），也能找到 y（自身） */
   JSValue *lx = JS_LoadValue(ctx, "x");
@@ -321,15 +321,14 @@ TEST(CApi, DefineAndStoreValue) {
   neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
   neojs::JSScope &root = c->currentScope();
 
-  /* 根作用域定义 counter = 0（对应 var/let 声明） */
+  /* 根作用域定义 counter = 0（kind=Var，对应 var 声明） */
   JSValue *v0 = JS_CreateNumber(ctx, 0.0);
-  JSValue *def = JS_DefineValue(ctx, "counter", v0);
+  JSValue *def = JS_DefineValue(ctx, "counter", v0, 0 /* Var */);
   ASSERT_NE(def, nullptr);
   EXPECT_EQ(JS_GetKind(ctx, def), JS_NUMBER);
   EXPECT_EQ(JS_ToNumber(ctx, JS_LoadValue(ctx, "counter")), 0.0);
 
-  /* 赋值的目标值应在绑定所在作用域（根）创建，再在子作用域 store
-   * （JS 语义：x = 5 的 5 生命周期与绑定同源，不随赋值语句的作用域走）。 */
+  /* 值登记在 ctx（P2），跨作用域 store 安全：子作用域赋值 counter = 5 */
   JSValue *v5 = JS_CreateNumber(ctx, 5.0);
   JS_PushScope(ctx);
   JSValue *st = JS_StoreValue(ctx, "counter", v5);
@@ -340,12 +339,54 @@ TEST(CApi, DefineAndStoreValue) {
   /* 子作用域更新后父作用域读到新值（赋值穿透作用域链） */
   JS_PopScope(ctx);
   EXPECT_EQ(JS_ToNumber(ctx, JS_LoadValue(ctx, "counter")), 5.0);
-  EXPECT_EQ(root.getBinding("counter"), reinterpret_cast<neojs::JSValue *>(v5));
+  EXPECT_EQ(root.findBinding("counter")->value, reinterpret_cast<neojs::JSValue *>(v5));
 
   /* 未声明名 store：返回 Exception（ReferenceError） */
   JSValue *st2 = JS_StoreValue(ctx, "nope", JS_CreateNumber(ctx, 1.0));
   ASSERT_NE(st2, nullptr);
   EXPECT_EQ(JS_GetKind(ctx, st2), JS_EXCEPTION);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* -------------------------------------------------------------------------- */
+/* JSBinding：kind 记录（M0 不校验）+ 未初始化绑定（TDZ 起点）                 */
+/* -------------------------------------------------------------------------- */
+
+TEST(CApi, BindingKindAndUninitialized) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+  neojs::JSScope &root = c->currentScope();
+
+  /* const 定义：kind 被记录（M0 不校验，仍可 store） */
+  JSValue *vc = JS_CreateNumber(ctx, 10.0);
+  JSValue *defc = JS_DefineValue(ctx, "c", vc, 2 /* Const */);
+  ASSERT_NE(defc, nullptr);
+  EXPECT_EQ(root.findBinding("c")->kind, neojs::BindingKind::Const);
+  EXPECT_TRUE(root.findBinding("c")->initialized);
+
+  /* M0 不校验 const：store 仍成功（M2 才拒绝） */
+  JSValue *v2 = JS_CreateNumber(ctx, 20.0);
+  JSValue *st = JS_StoreValue(ctx, "c", v2);
+  ASSERT_NE(st, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, st), JS_NUMBER);
+  EXPECT_EQ(JS_ToNumber(ctx, JS_LoadValue(ctx, "c")), 20.0);
+
+  /* value=nullptr 定义未初始化绑定（TDZ 起点，initialized=false） */
+  JSValue *defu = JS_DefineValue(ctx, "u", nullptr, 1 /* Let */);
+  EXPECT_EQ(defu, nullptr);
+  EXPECT_EQ(root.findBinding("u")->kind, neojs::BindingKind::Let);
+  EXPECT_FALSE(root.findBinding("u")->initialized);
+  EXPECT_EQ(root.findBinding("u")->value, nullptr);
+
+  /* M0 不校验 TDZ：load 未初始化绑定返回 ReferenceError（因为 value 为 nullptr） */
+  JSValue *lu = JS_LoadValue(ctx, "u");
+  ASSERT_NE(lu, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, lu), JS_EXCEPTION);
 
   JS_FreeContext(ctx);
   JS_FreeAllocator(a);

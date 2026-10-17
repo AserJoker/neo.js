@@ -8,8 +8,14 @@ JSContext::JSContext(JSAllocator *allocator)
       current_scope_(allocator_->create<JSScope>(allocator)) {}
 
 JSContext::~JSContext() {
-  /* 根作用域析构时统一回收所有归属值 + 未 pop 的子作用域（#5）。
+  /* 回收 M0 全局登记表里的所有值（P2：#13 经 destroy<T> 析构 + 释放）。
    * 注意：ctx 不拥有分配器，这里只释放值 + 作用域，不释放 allocator。 */
+  for (auto &kv : values_) {
+    allocator_->destroy(kv.first);
+  }
+  values_.clear();
+
+  /* 根作用域析构时递归回收所有未 pop 的子作用域（只清绑定，不 free 值）。 */
   allocator_->destroy(current_scope_);
 }
 
@@ -19,13 +25,20 @@ JSScope &JSContext::pushScope() {
   return *current_scope_;
 }
 
-/* POP_SCOPE：销毁当前作用域（回收其归属值），回到父作用域。 */
+/* POP_SCOPE：销毁当前作用域（只清绑定关系），回到父作用域。
+ * 值生命周期归 ctx 登记表，不随作用域销毁（P2，见 docs/scope-value.md）。 */
 void JSContext::popScope() {
   JSScope *popped = current_scope_;
   JSScope *parent = popped->parent();
   if (parent == nullptr) return; /* 根作用域不可弹栈 */
   allocator_->destroy(popped);   /* 析构会从父的 children 摘除自己 */
   current_scope_ = parent;
+}
+
+void JSContext::freeValue(JSValue *value) {
+  if (value == nullptr) return;
+  values_.erase(value);
+  allocator_->destroy(value); /* #13：析构 + 释放 */
 }
 
 void JSContext::deallocateSelf() { allocator_->deallocate(this); }

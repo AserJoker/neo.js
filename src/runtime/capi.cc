@@ -40,15 +40,15 @@ void defaultFree(void *ptr, void *) { std::free(ptr); }
 template <typename V>
 JSValue *makeValue(JSContext *ctx, V &&value) {
   neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
-  /* #9 + #13：值创建在 ctx->current_scope 上（placement new 经 JSAllocator::create<T>）。 */
-  neojs::JSValue *v = c->currentScope().createValue(std::forward<V>(value));
+  /* #13 + P2：值经 JSAllocator::create<T> 创建，登记在 ctx 全局登记表（不归属 scope）。 */
+  neojs::JSValue *v = c->createValue(std::forward<V>(value));
   return reinterpret_cast<JSValue *>(v);
 }
 
 /* 创建 Exception 值的内部实现（分配器保证非空，#14）。 */
 JSValue *makeException(JSContext *ctx, const char *message) {
   neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
-  neojs::JSValue *err = c->currentScope().createValue(neojs::Kind::Exception);
+  neojs::JSValue *err = c->createValue(neojs::Kind::Exception);
   err->setErrorInfo(message ? message : "");
   return reinterpret_cast<JSValue *>(err);
 }
@@ -162,7 +162,8 @@ extern "C" void JS_PopScope(JSContext *ctx) {
   }
 }
 
-/* 按名加载值：沿作用域链查找；未找到返回 Exception 值（#4/#14）。 */
+/* 按名加载值：沿作用域链查找；未找到返回 Exception 值（#4/#14）。
+ * M0 不校验 TDZ（initialized），M2 启用。 */
 extern "C" JSValue *JS_LoadValue(JSContext *ctx, const char *name) {
   /* ctx 为空属编程错误（#9 一切从 ctx 出发），直接终止。 */
   if (ctx == nullptr) {
@@ -170,28 +171,36 @@ extern "C" JSValue *JS_LoadValue(JSContext *ctx, const char *name) {
     std::abort();
   }
   return guarded_create(ctx, [&]() -> JSValue * {
-    neojs::JSValue *v =
-        reinterpret_cast<neojs::JSContext *>(ctx)->currentScope().getBinding(name ? name : "");
-    if (v != nullptr) return reinterpret_cast<JSValue *>(v);
-    return makeException(ctx, "ReferenceError: name is not defined");
+    neojs::JSBinding *b =
+        reinterpret_cast<neojs::JSContext *>(ctx)->currentScope().findBinding(name ? name : "");
+    if (b == nullptr || b->value == nullptr) {
+      return makeException(ctx, "ReferenceError: name is not defined");
+    }
+    return reinterpret_cast<JSValue *>(b->value);
   });
 }
 
-/* 定义绑定到当前作用域（对应声明）。返回 value（#14）。 */
-extern "C" JSValue *JS_DefineValue(JSContext *ctx, const char *name, JSValue *value) {
+/* 定义绑定到当前作用域（对应声明）。kind 只记录不校验（M0 打地基，M2 启用）。
+ * 返回 value（#14）；value==nullptr 时定义未初始化绑定（TDZ 起点）。 */
+extern "C" JSValue *JS_DefineValue(JSContext *ctx, const char *name, JSValue *value,
+                                    int kind) {
   if (ctx == nullptr) {
     std::fputs("neo.js: null JSContext passed to JS_DefineValue\n", stderr);
     std::abort();
   }
   return guarded_create(ctx, [&]() -> JSValue * {
-    if (value == nullptr) return makeException(ctx, "TypeError: value is null");
-    reinterpret_cast<neojs::JSContext *>(ctx)->currentScope().setBinding(name ? name : "",
-                                                                       reinterpret_cast<neojs::JSValue *>(value));
-    return value;
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSBinding b;
+    b.kind = static_cast<neojs::BindingKind>(kind); /* M0 不校验 kind 合法性 */
+    b.value = reinterpret_cast<neojs::JSValue *>(value);
+    b.initialized = (value != nullptr); /* nullptr → 未初始化绑定（TDZ 起点） */
+    c->currentScope().defineBinding(name ? name : "", b);
+    return value; /* 可能为 nullptr：定义未初始化绑定（#14 对非空值返回非空，此处语义允许） */
   });
 }
 
-/* 存储绑定：沿作用域链更新已存在的绑定（对应赋值）；未找到返回 Exception。 */
+/* 存储绑定：沿作用域链更新已存在的绑定（对应赋值）；未找到返回 Exception。
+ * M0 不校验 const（kind），M2 启用。 */
 extern "C" JSValue *JS_StoreValue(JSContext *ctx, const char *name, JSValue *value) {
   if (ctx == nullptr) {
     std::fputs("neo.js: null JSContext passed to JS_StoreValue\n", stderr);
@@ -199,14 +208,16 @@ extern "C" JSValue *JS_StoreValue(JSContext *ctx, const char *name, JSValue *val
   }
   return guarded_create(ctx, [&]() -> JSValue * {
     if (value == nullptr) return makeException(ctx, "TypeError: value is null");
-    bool ok = reinterpret_cast<neojs::JSContext *>(ctx)->currentScope().storeBinding(
-        name ? name : "", reinterpret_cast<neojs::JSValue *>(value));
-    if (!ok) {
+    neojs::JSBinding *b =
+        reinterpret_cast<neojs::JSContext *>(ctx)->currentScope().findBinding(name ? name : "");
+    if (b == nullptr) {
       std::string msg = "ReferenceError: ";
       msg += (name ? name : "");
       msg += " is not defined";
       return makeException(ctx, msg.c_str());
     }
+    b->value = reinterpret_cast<neojs::JSValue *>(value);
+    b->initialized = true;
     return value;
   });
 }
@@ -254,8 +265,8 @@ extern "C" void JS_FreeValue(JSContext *ctx, JSValue *value) {
   if (ctx == nullptr || value == nullptr) return;
   neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
   try {
-    /* #9 + #13：值归属当前作用域，经 JSScope::freeValue 析构 + 释放。 */
-    c->currentScope().freeValue(reinterpret_cast<neojs::JSValue *>(value));
+    /* #13 + P2：值登记在 ctx 全局登记表，经 JSContext::freeValue 析构 + 释放。 */
+    c->freeValue(reinterpret_cast<neojs::JSValue *>(value));
   } catch (...) {
     /* #3 */
   }
