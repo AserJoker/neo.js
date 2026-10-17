@@ -2,13 +2,14 @@
 
 namespace neojs {
 
-JSContext::JSContext(AllocFn alloc, FreeFn free_fn, void *userdata)
-    : allocator_(alloc, free_fn, userdata) {}
+JSContext::JSContext(JSAllocator *allocator) : allocator_(allocator) {}
 
 JSContext::~JSContext() {
-  /* 统一回收所有存活值（#5：堆内存由 ctx 管理生命周期） */
+  /* 统一回收所有存活值（#5：堆内存由 ctx 管理生命周期；
+   * #13：经 JSAllocator::destroy<T> 析构 + 释放，不泄漏值内资源）。
+   * 注意：ctx 不拥有分配器，这里只释放值，不释放 allocator。 */
   for (auto &kv : values_) {
-    allocator_.deallocate(kv.first);
+    allocator_->destroy(kv.first);
   }
   values_.clear();
 }
@@ -20,9 +21,9 @@ void JSContext::unregisterValue(JSValue *value) { values_.erase(value); }
 void JSContext::freeValue(JSValue *value) {
   if (value == nullptr) return;
   unregisterValue(value);
-  allocator_.deallocate(value);
+  allocator_->destroy(value); /* #13：析构 + 释放 */
 }
 
-void JSContext::deallocateSelf() { allocator_.deallocate(this); }
+void JSContext::deallocateSelf() { allocator_->deallocate(this); }
 
 }  // namespace neojs

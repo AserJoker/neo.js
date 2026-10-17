@@ -1,6 +1,6 @@
 # neo.js 编码规范与代码细节（v1.0）
 
-> 版本：v1.2
+> 版本：v1.3
 > 日期：2026-10-17
 > 状态：**待用户确认**
 > 适用范围：本项目全部代码（含 C API 层、C++ 内部实现、测试）
@@ -77,16 +77,19 @@
 ### 13. JSAllocator：统一分配器管理
 
 - 实现一个 **`JSAllocator`** 统一管理分配器（封装宿主注入的 alloc/free 回调）。
+- **暴露到 C API**：`JSAllocator` 是不透明指针，通过 `JS_NewAllocator` / `JS_FreeAllocator` 创建/释放。
+- **`JSContext` 的创建必须提供 `JSAllocator*`**（不支持 nullptr；宿主先 `JS_NewAllocator` 再 `JS_NewContext(allocator)`）。
+- **所有分配（含 JSValue、对象、内部结构）都经分配器路由**，placement new 用 `JSAllocator::create<T>(args...)` 泛型统一实现。
+- **oomAbort 由 Allocator 自己处理**：allocate 失败时分配器内部直接 abort，调用方无需各自处理。
 - **当前阶段只实现分配和释放**，不做追踪/统计。
 - **预留**：后续在性能调试场景下，扩展支持**运行时监控内存分配**（统计分配次数、分配/释放字节数、峰值等）与**性能探针**。
-- 影响：`JSContext` 内部持有 `JSAllocator`，所有分配（含 JSValue、对象、内部结构）都经它路由。
 
 ### 14. 返回 JSValue 的接口永不返回 nullptr
 
 - **返回 JSValue 的接口永远不应该返回 nullptr**（对调用方保证：返回值非空）。
-- **内存不足（alloc 失败）时直接 abort**（不返回 nullptr）。
+- **内存不足（alloc 失败）时由 Allocator 自己 abort**（分配器内部处理，不返回 nullptr）。
 - **其它错误场景**返回 `kind = EXCEPTION` 的 JSValue（与 #4 统一）。
-- 影响：调用方无需判空，只需检查 kind 是否为 EXCEPTION；分配失败视为不可恢复，直接终止。
+- 影响：调用方无需判空，只需检查 kind 是否为 EXCEPTION；分配失败由分配器统一终止。
 
 ---
 

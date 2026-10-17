@@ -24,8 +24,9 @@ extern "C" {
 /* 类型：不透明指针                                                           */
 /* -------------------------------------------------------------------------- */
 
-typedef struct JSValue JSValue;    /* JS 值（不透明） */
-typedef struct JSContext JSContext; /* JS 运行时上下文（不透明） */
+typedef struct JSValue JSValue;        /* JS 值（不透明） */
+typedef struct JSContext JSContext;    /* JS 运行时上下文（不透明） */
+typedef struct JSAllocator JSAllocator; /* 内存分配器（不透明，#13） */
 
 /* -------------------------------------------------------------------------- */
 /* JS 值 kind                                                                    */
@@ -44,16 +45,28 @@ typedef enum JSKind {
 } JSKind;
 
 /* -------------------------------------------------------------------------- */
+/* 分配器（#13）：不透明 JSAllocator                                          */
+/* -------------------------------------------------------------------------- */
+
+/* 创建分配器。宿主可注入自定义 alloc/free 回调（#5）；传 NULL 则用引擎默认。
+ * oomAbort 由分配器自己处理：allocate 失败时分配器内部直接终止（#14）。 */
+JSAllocator *JS_NewAllocator(void *(*alloc)(size_t size, void *userdata),
+                             void (*free_fn)(void *ptr, void *userdata),
+                             void *userdata);
+
+/* 释放分配器。注意：必须先于所有使用它的 ctx 释放。 */
+void JS_FreeAllocator(JSAllocator *allocator);
+
+/* -------------------------------------------------------------------------- */
 /* 生命周期                                                                    */
 /* -------------------------------------------------------------------------- */
 
-/* 创建一个新运行时上下文。宿主可传入自定义内存分配/释放回调（#5）；
- * 传 NULL 则使用引擎默认分配器。 */
-JSContext *JS_NewContext(void *(*alloc)(size_t size, void *userdata),
-                         void (*free_fn)(void *ptr, void *userdata),
-                         void *userdata);
+/* 创建一个新运行时上下文，**必须**提供宿主创建的 JSAllocator（#13）。
+ * allocator 不支持 NULL（宿主先 JS_NewAllocator 再创建 ctx）。 */
+JSContext *JS_NewContext(JSAllocator *allocator);
 
-/* 释放运行时上下文及其管理的所有资源。 */
+/* 释放运行时上下文及其管理的所有资源。
+ * 注意：ctx 不拥有 allocator，调用方需自行 JS_FreeAllocator（且应在释放 ctx 之后）。 */
 void JS_FreeContext(JSContext *ctx);
 
 /* -------------------------------------------------------------------------- */

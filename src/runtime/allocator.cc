@@ -1,5 +1,6 @@
 #include "neojs/runtime/allocator.h"
 
+#include <cstdio>
 #include <cstdlib>
 
 namespace neojs {
@@ -10,6 +11,12 @@ namespace {
 void *defaultAlloc(size_t size, void *) { return std::malloc(size); }
 void defaultFree(void *ptr, void *) { std::free(ptr); }
 
+/* #14：alloc 失败由分配器自己 abort */
+[[noreturn]] void oomAbort() {
+  std::fputs("neo.js: out of memory\n", stderr);
+  std::abort();
+}
+
 }  // namespace
 
 JSAllocator::JSAllocator(AllocFn alloc, FreeFn free_fn, void *userdata)
@@ -18,7 +25,9 @@ JSAllocator::JSAllocator(AllocFn alloc, FreeFn free_fn, void *userdata)
       userdata_(userdata) {}
 
 void *JSAllocator::allocate(size_t size) {
-  return alloc_fn_(size, userdata_);
+  void *ptr = alloc_fn_(size, userdata_);
+  if (ptr == nullptr) oomAbort();
+  return ptr;
 }
 
 void JSAllocator::deallocate(void *ptr) { free_fn_(ptr, userdata_); }

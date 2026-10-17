@@ -13,13 +13,39 @@
 #include "neojs/neojs.h"
 
 /* -------------------------------------------------------------------------- */
+/* 测试辅助：按 #13 约定，先创建 allocator，再创建 ctx                          */
+/* -------------------------------------------------------------------------- */
+
+namespace {
+
+/* 创建默认分配器 + ctx；调用方负责 JS_FreeContext 后 JS_FreeAllocator。 */
+JSContext *makeCtx(JSAllocator **out_alloc) {
+  JSAllocator *a = JS_NewAllocator(nullptr, nullptr, nullptr);
+  EXPECT_NE(a, nullptr);
+  JSContext *ctx = JS_NewContext(a);
+  EXPECT_NE(ctx, nullptr);
+  if (out_alloc) *out_alloc = a;
+  return ctx;
+}
+
+}  // namespace
+
+/* -------------------------------------------------------------------------- */
 /* 生命周期                                                                    */
 /* -------------------------------------------------------------------------- */
 
 TEST(CApi, NewAndFreeContext) {
-  JSContext *ctx = JS_NewContext(nullptr, nullptr, nullptr);
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
   ASSERT_NE(ctx, nullptr);
   JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+TEST(CApi, AllocatorLifecycle) {
+  JSAllocator *a = JS_NewAllocator(nullptr, nullptr, nullptr);
+  ASSERT_NE(a, nullptr);
+  JS_FreeAllocator(a);
 }
 
 TEST(CApi, CustomAllocatorIsUsed) {
@@ -37,7 +63,11 @@ TEST(CApi, CustomAllocatorIsUsed) {
     std::free(ptr);
   };
 
-  JSContext *ctx = JS_NewContext(my_alloc, my_free, nullptr);
+  JSAllocator *a = JS_NewAllocator(my_alloc, my_free, nullptr);
+  ASSERT_NE(a, nullptr);
+
+  /* ctx 使用自定义分配器；ctx 自身分配走它 */
+  JSContext *ctx = JS_NewContext(a);
   ASSERT_NE(ctx, nullptr);
   ASSERT_GT(alloc_calls, 0);
 
@@ -47,6 +77,7 @@ TEST(CApi, CustomAllocatorIsUsed) {
 
   JS_FreeContext(ctx);
   ASSERT_GT(free_calls, 0);
+  JS_FreeAllocator(a);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -54,7 +85,8 @@ TEST(CApi, CustomAllocatorIsUsed) {
 /* -------------------------------------------------------------------------- */
 
 TEST(CApi, CreateValuesAndKinds) {
-  JSContext *ctx = JS_NewContext(nullptr, nullptr, nullptr);
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
   ASSERT_NE(ctx, nullptr);
 
   JSValue *u = JS_CreateUndefined(ctx);
@@ -81,10 +113,12 @@ TEST(CApi, CreateValuesAndKinds) {
   JS_FreeValue(ctx, n);
   JS_FreeValue(ctx, u);
   JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
 }
 
 TEST(CApi, CreateString) {
-  JSContext *ctx = JS_NewContext(nullptr, nullptr, nullptr);
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
   ASSERT_NE(ctx, nullptr);
 
   JSValue *s = JS_CreateString(ctx, "hello", 5);
@@ -94,6 +128,7 @@ TEST(CApi, CreateString) {
 
   JS_FreeValue(ctx, s);
   JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -101,7 +136,8 @@ TEST(CApi, CreateString) {
 /* -------------------------------------------------------------------------- */
 
 TEST(CApi, EvalReturnsExceptionInM0) {
-  JSContext *ctx = JS_NewContext(nullptr, nullptr, nullptr);
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
   ASSERT_NE(ctx, nullptr);
 
   JSValue *r = JS_Eval(ctx, "1 + 1", 5);
@@ -110,10 +146,12 @@ TEST(CApi, EvalReturnsExceptionInM0) {
 
   JS_FreeValue(ctx, r);
   JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
 }
 
 TEST(CApi, CreateError) {
-  JSContext *ctx = JS_NewContext(nullptr, nullptr, nullptr);
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
   ASSERT_NE(ctx, nullptr);
 
   JSValue *err = JS_CreateError(ctx, "boom");
@@ -122,6 +160,7 @@ TEST(CApi, CreateError) {
 
   JS_FreeValue(ctx, err);
   JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -129,7 +168,8 @@ TEST(CApi, CreateError) {
 /* -------------------------------------------------------------------------- */
 
 TEST(CApi, ValueReturningApiNeverReturnsNull) {
-  JSContext *ctx = JS_NewContext(nullptr, nullptr, nullptr);
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
   ASSERT_NE(ctx, nullptr);
 
   /* 各构造接口均返回非空 */
@@ -143,6 +183,7 @@ TEST(CApi, ValueReturningApiNeverReturnsNull) {
   EXPECT_NE(JS_Eval(ctx, "1", 1), nullptr);
 
   JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -150,7 +191,8 @@ TEST(CApi, ValueReturningApiNeverReturnsNull) {
 /* -------------------------------------------------------------------------- */
 
 TEST(CApi, NullHandling) {
-  JSContext *ctx = JS_NewContext(nullptr, nullptr, nullptr);
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
   ASSERT_NE(ctx, nullptr);
 
   EXPECT_EQ(JS_GetKind(ctx, nullptr), JS_UNDEFINED);
@@ -160,4 +202,5 @@ TEST(CApi, NullHandling) {
   EXPECT_EQ(JS_ToString(ctx, nullptr), nullptr);
 
   JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
 }
