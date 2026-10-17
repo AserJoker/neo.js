@@ -1,7 +1,7 @@
 /*
  * C 对外接口（neojs.h）单元测试。
  * 验证规范 #2（命名/不透明指针）、#4（JSValue 一等公民 + kind）、
- * #5（内存管理/生命周期）、#9（一切从 ctx 出发）。
+ * #5（内存管理/生命周期）、#9（一切从 ctx 出发）、#14（永不返回 nullptr）。
  */
 
 #include <gtest/gtest.h>
@@ -121,6 +121,27 @@ TEST(CApi, CreateError) {
   EXPECT_EQ(JS_GetKind(ctx, err), JS_EXCEPTION);
 
   JS_FreeValue(ctx, err);
+  JS_FreeContext(ctx);
+}
+
+/* -------------------------------------------------------------------------- */
+/* #14：返回 JSValue 的接口永不返回 nullptr                                   */
+/* -------------------------------------------------------------------------- */
+
+TEST(CApi, ValueReturningApiNeverReturnsNull) {
+  JSContext *ctx = JS_NewContext(nullptr, nullptr, nullptr);
+  ASSERT_NE(ctx, nullptr);
+
+  /* 各构造接口均返回非空 */
+  EXPECT_NE(JS_CreateUndefined(ctx), nullptr);
+  EXPECT_NE(JS_CreateNull(ctx), nullptr);
+  EXPECT_NE(JS_CreateBoolean(ctx, 1), nullptr);
+  EXPECT_NE(JS_CreateNumber(ctx, 1.0), nullptr);
+  EXPECT_NE(JS_CreateInteger(ctx, 1), nullptr);
+  EXPECT_NE(JS_CreateString(ctx, "x", 1), nullptr);
+  EXPECT_NE(JS_CreateError(ctx, "x"), nullptr);
+  EXPECT_NE(JS_Eval(ctx, "1", 1), nullptr);
+
   JS_FreeContext(ctx);
 }
 

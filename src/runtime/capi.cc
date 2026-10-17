@@ -7,13 +7,17 @@
  *   #4  JSValue 为一等公民，错误通过 kind = Exception 的值传递。
  *   #5  内存由 ctx 统一管理（alloc/free 回调），JSValue/JSContext 为不透明指针。
  *   #9  所有 API 首参为 ctx，运行时信息从 ctx 获取。
+ *   #14 返回 JSValue 的接口永不返回 nullptr：内存不足（alloc 失败）直接 abort；
+ *       其它错误返回 kind = Exception 的 JSValue。
  */
 
 #include "neojs/neojs.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <new>
 #include <string>
 #include <utility>
 
@@ -28,27 +32,56 @@ static_assert(static_cast<int>(neojs::Kind::InterruptAwait) == JS_INTERRUPT_AWAI
 
 namespace {
 
-/* #3：跨 C 边界不抛异常。捕获 C++ 异常，返回 null（调用方应检查）。 */
-template <typename Fn>
-auto guarded(Fn &&fn) -> decltype(fn()) {
-  try {
-    return fn();
-  } catch (const std::exception &) {
-    return nullptr; /* 仅对指针返回值有意义；其余调用方需自行保证不抛 */
-  } catch (...) {
-    return nullptr;
-  }
+/* #14：内存不足（alloc 失败）不可恢复，直接 abort。 */
+[[noreturn]] void oomAbort() {
+  std::fputs("neo.js: out of memory\n", stderr);
+  std::abort();
+}
+
+/* 分配一块 JSValue 大小的内存并构造值；alloc 失败 abort（#14）。
+ * 返回的内部 JSValue* 由 ctx 注册管理。 */
+/* 返回 JSValue 的接口要求 ctx 有效（#9）。ctx 为空属于编程错误，直接 abort。 */
+[[noreturn]] void nullCtxAbort() {
+  std::fputs("neo.js: null JSContext passed to value-returning API\n", stderr);
+  std::abort();
 }
 
 template <typename V>
 JSValue *makeValue(JSContext *ctx, V &&value) {
-  if (ctx == nullptr) return nullptr;
+  if (ctx == nullptr) nullCtxAbort();
   neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
   void *mem = c->allocate(sizeof(neojs::JSValue));
-  if (mem == nullptr) return nullptr;
+  if (mem == nullptr) oomAbort();
   neojs::JSValue *v = new (mem) neojs::JSValue(std::forward<V>(value));
   c->registerValue(v);
   return reinterpret_cast<JSValue *>(v);
+}
+
+/* 创建 Exception 值的内部实现（alloc 失败 abort）。 */
+JSValue *makeException(JSContext *ctx, const char *message) {
+  if (ctx == nullptr) nullCtxAbort();
+  neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+  void *mem = c->allocate(sizeof(neojs::JSValue));
+  if (mem == nullptr) oomAbort();
+  neojs::JSValue *err = new (mem) neojs::JSValue(neojs::Kind::Exception);
+  err->setErrorInfo(message ? message : "");
+  c->registerValue(err);
+  return reinterpret_cast<JSValue *>(err);
+}
+
+/* #3 + #14：包裹“返回 JSValue 的接口”。捕获 C++ 异常（非内存不足）时
+ * 返回 Exception 值；内存不足由 oomAbort 处理。永不返回 nullptr。 */
+template <typename Fn>
+JSValue *guarded_create(JSContext *ctx, Fn &&fn) {
+  try {
+    return fn();
+  } catch (const std::bad_alloc &) {
+    oomAbort();
+  } catch (const std::exception &e) {
+    return makeException(ctx, e.what());
+  } catch (...) {
+    return makeException(ctx, "unknown C++ exception");
+  }
 }
 
 }  // namespace
@@ -60,19 +93,21 @@ JSValue *makeValue(JSContext *ctx, V &&value) {
 extern "C" JSContext *JS_NewContext(void *(*alloc)(size_t, void *),
                                     void (*free_fn)(void *, void *),
                                     void *userdata) {
-  return guarded([&]() -> JSContext * {
-    /* #5：JSContext 自身的分配也走宿主注入的 alloc/free 回调。 */
+  /* #3：跨 C 边界不抛异常 */
+  try {
+    /* #5：JSContext 自身的分配也走宿主注入的 alloc/free 回调；失败直接 abort（#14 精神） */
     void *(*a)(size_t, void *) = alloc ? alloc : [](size_t size, void *) -> void * {
       return std::malloc(size);
     };
-    void (*f)(void *, void *) = free_fn ? free_fn : [](void *ptr, void *) -> void {
-      std::free(ptr);
-    };
     void *mem = a(sizeof(neojs::JSContext), userdata);
-    if (mem == nullptr) return nullptr;
+    if (mem == nullptr) oomAbort();
     neojs::JSContext *ctx = new (mem) neojs::JSContext(alloc, free_fn, userdata);
     return reinterpret_cast<JSContext *>(ctx);
-  });
+  } catch (const std::exception &) {
+    oomAbort(); /* 构造失败视为不可恢复 */
+  } catch (...) {
+    oomAbort();
+  }
 }
 
 extern "C" void JS_FreeContext(JSContext *ctx) {
@@ -91,35 +126,35 @@ extern "C" void JS_FreeContext(JSContext *ctx) {
 /* -------------------------------------------------------------------------- */
 
 extern "C" JSValue *JS_CreateUndefined(JSContext *ctx) {
-  return guarded([&]() -> JSValue * { return makeValue(ctx, neojs::JSValue()); });
+  return guarded_create(ctx, [&]() -> JSValue * { return makeValue(ctx, neojs::JSValue()); });
 }
 
 extern "C" JSValue *JS_CreateNull(JSContext *ctx) {
-  return guarded([&]() -> JSValue * {
+  return guarded_create(ctx, [&]() -> JSValue * {
     return makeValue(ctx, neojs::JSValue(neojs::Kind::Null));
   });
 }
 
 extern "C" JSValue *JS_CreateBoolean(JSContext *ctx, int value) {
-  return guarded([&]() -> JSValue * {
+  return guarded_create(ctx, [&]() -> JSValue * {
     return makeValue(ctx, neojs::JSValue(value != 0));
   });
 }
 
 extern "C" JSValue *JS_CreateNumber(JSContext *ctx, double value) {
-  return guarded([&]() -> JSValue * {
+  return guarded_create(ctx, [&]() -> JSValue * {
     return makeValue(ctx, neojs::JSValue(value));
   });
 }
 
 extern "C" JSValue *JS_CreateInteger(JSContext *ctx, int64_t value) {
-  return guarded([&]() -> JSValue * {
+  return guarded_create(ctx, [&]() -> JSValue * {
     return makeValue(ctx, neojs::JSValue(value));
   });
 }
 
 extern "C" JSValue *JS_CreateString(JSContext *ctx, const char *str, size_t len) {
-  return guarded([&]() -> JSValue * {
+  return guarded_create(ctx, [&]() -> JSValue * {
     std::string s(str ? str : "", len);
     return makeValue(ctx, std::move(s));
   });
@@ -168,16 +203,14 @@ extern "C" const char *JS_ToString(JSContext *ctx, const JSValue *value) {
   return reinterpret_cast<const neojs::JSValue *>(value)->toString().c_str();
 }
 
+/* -------------------------------------------------------------------------- */
+/* 错误值（#4/#14）                                                             */
+/* -------------------------------------------------------------------------- */
+
+/* 创建错误值（kind = Exception）。alloc 失败 abort（#14），永不返回 nullptr。 */
 extern "C" JSValue *JS_CreateError(JSContext *ctx, const char *message) {
-  return guarded([&]() -> JSValue * {
-    if (ctx == nullptr) return nullptr;
-    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
-    void *mem = c->allocate(sizeof(neojs::JSValue));
-    if (mem == nullptr) return nullptr;
-    neojs::JSValue *err = new (mem) neojs::JSValue(neojs::Kind::Exception);
-    err->setErrorInfo(message ? message : "");
-    c->registerValue(err);
-    return reinterpret_cast<JSValue *>(err);
+  return guarded_create(ctx, [&]() -> JSValue * {
+    return makeException(ctx, message);
   });
 }
 

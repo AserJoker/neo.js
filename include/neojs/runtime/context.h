@@ -6,29 +6,28 @@
  *
  * 运行时一切信息都从 ctx 出发（规范 #9）：ctx 持有分配器、值注册表。
  *
- * 内存管理（规范 #5）：
+ * 内存管理（规范 #5/#13）：
  *   外部通过 JS_NewContext 注入 alloc/free 回调；
- *   内部所有对象（含 JSValue）都通过该分配器分配，统一 new/delete 入口。
+ *   内部所有对象（含 JSValue）统一经 JSAllocator 分配。
  */
 
 #include <cstddef>
 #include <unordered_map>
 
+#include "neojs/runtime/allocator.h"
 #include "neojs/runtime/value.h"
 
 namespace neojs {
-
-using AllocFn = void *(*)(size_t size, void *userdata);
-using FreeFn = void (*)(void *ptr, void *userdata);
 
 class JSContext {
  public:
   JSContext(AllocFn alloc, FreeFn free_fn, void *userdata);
   ~JSContext();
 
-  /* 分配器访问（#5） */
-  void *allocate(size_t size);
-  void deallocate(void *ptr);
+  /* 分配器访问（#5/#13：统一经 JSAllocator 路由） */
+  JSAllocator &allocator() { return allocator_; }
+  void *allocate(size_t size) { return allocator_.allocate(size); }
+  void deallocate(void *ptr) { allocator_.deallocate(ptr); }
   /* 用宿主注入的 free 回调释放 ctx 自身内存（JS_FreeContext 调用） */
   void deallocateSelf();
 
@@ -38,9 +37,7 @@ class JSContext {
   void freeValue(JSValue *value);
 
  private:
-  AllocFn alloc_fn_;
-  FreeFn free_fn_;
-  void *userdata_;
+  JSAllocator allocator_;
   std::unordered_map<JSValue *, bool> values_; /* 存活值集合（值为占位） */
 };
 
