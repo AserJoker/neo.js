@@ -125,6 +125,9 @@
 
 - 输入：UTF-8 源码（CLI 层转换为 UTF-16 供 Lexer 消费，或 Lexer 直接处理 UTF-8——v1 采用 Lexer 输入统一 UTF-16，与标准章节一致）。
 - 输出：`Token{kind, start, end, line, col}`，字符串/数字/正则/模板串等携带语义值。
+- **协同模式（Lexer 与 Parser 一体）**：Parser 按需向 Lexer 拉取 token（`advance()`/`peek()`），
+  Lexer 携带**上下文（读值 vs 读操作）**由 Parser 显式传入，供 `/` 等歧义符号判定。
+  注释是**多字符符号**，词法层贪婪匹配消解（先读 `//`/`/*` 命中即注释，否则回退为单 `/`），不需上下文。
 - 特性：
   - Unicode 转义（`\u{1F600}`）、标识符的 Unicode ID_Start/ID_Continue（v1 可用简单白名单 + ICU，若环境无 ICU 则先 ASCII + 常见 BMP）。
   - 模板字符串（`` ` `` 嵌套、`${}` 表达式）、正则字面量的 lex 模式切换。
@@ -302,7 +305,7 @@ neo.js/
 | 里程碑 | 内容 | 验收标准 |
 |--------|------|----------|
 | **M0 骨架** | 工程结构、JSValue、诊断系统、CLI 空壳 | `neojs --version`；JSValue 单元测试 |
-| **M1 前端** | Lexer + Parser（ES6 核心语法）+ 语法错误/废弃警告 | 能解析测试文件并输出 AST dump |
+| **M1 前端** | Lexer + Parser（ES2023+ 语法）+ 语法错误/废弃警告。**巨大阶段，拆分为 M1.1–M1.6**（流水线骨架 → 分词 → 歧义处理 → 表达式 → 语句体系 → 兼容收尾），详见 `docs/milestones.md` | 各子阶段独立验收，最终 AST dump 稳定 + Test262 语法冒烟 |
 | **M2 解释器核心** | 字节码 + 最小 VM（表达式、赋值、if/while/for、函数、闭包） | 跑通基础脚本：循环、递归、闭包计数器 |
 | **M3 对象模型** | Object/Array/原型链/属性访问、类型转换 | 对象操作脚本通过 |
 | **M4 内置对象 B0/B1** | Object…Set 等核心内置 | 对应 Test262 用例通过 |
