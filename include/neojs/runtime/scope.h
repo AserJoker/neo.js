@@ -54,9 +54,13 @@ class JSScope {
   void unregisterValue(JSValue *value); /* 值移出作用域（不释放） */
   void freeValue(JSValue *value);       /* 移出并析构 + 释放（#13） */
 
-  /* name<->value 绑定机制：按名绑定/查找值。
-   * setBinding 覆盖式写入本作用域；getBinding 沿作用域链（本作用域向上）查找。 */
+  /* name<->value 绑定机制：按名绑定/查找/更新值。
+   * setBinding   覆盖式定义到本作用域（对应 JS_DefineValue）。
+   * storeBinding 沿作用域链更新已存在的绑定（对应 JS_StoreValue），
+   *               成功返回 true，链上无此名返回 false（不创建新绑定）。
+   * getBinding   沿作用域链（本作用域向上）查找值。 */
   void setBinding(const std::string &name, JSValue *value);
+  bool storeBinding(const std::string &name, JSValue *value);
   JSValue *getBinding(const std::string &name) const;
 
  private:

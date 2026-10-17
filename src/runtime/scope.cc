@@ -50,6 +50,17 @@ void JSScope::setBinding(const std::string &name, JSValue *value) {
   bindings_[name] = value;
 }
 
+/* 沿作用域链（本作用域 -> 父）更新已存在的绑定；未找到返回 false。 */
+bool JSScope::storeBinding(const std::string &name, JSValue *value) {
+  auto it = bindings_.find(name);
+  if (it != bindings_.end()) {
+    it->second = value;
+    return true;
+  }
+  if (parent_ != nullptr) return parent_->storeBinding(name, value);
+  return false;
+}
+
 /* 沿作用域链（本作用域 -> 父）查找绑定；未找到返回 nullptr。 */
 JSValue *JSScope::getBinding(const std::string &name) const {
   auto it = bindings_.find(name);

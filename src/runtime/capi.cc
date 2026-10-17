@@ -177,6 +177,40 @@ extern "C" JSValue *JS_LoadValue(JSContext *ctx, const char *name) {
   });
 }
 
+/* 定义绑定到当前作用域（对应声明）。返回 value（#14）。 */
+extern "C" JSValue *JS_DefineValue(JSContext *ctx, const char *name, JSValue *value) {
+  if (ctx == nullptr) {
+    std::fputs("neo.js: null JSContext passed to JS_DefineValue\n", stderr);
+    std::abort();
+  }
+  return guarded_create(ctx, [&]() -> JSValue * {
+    if (value == nullptr) return makeException(ctx, "TypeError: value is null");
+    reinterpret_cast<neojs::JSContext *>(ctx)->currentScope().setBinding(name ? name : "",
+                                                                       reinterpret_cast<neojs::JSValue *>(value));
+    return value;
+  });
+}
+
+/* 存储绑定：沿作用域链更新已存在的绑定（对应赋值）；未找到返回 Exception。 */
+extern "C" JSValue *JS_StoreValue(JSContext *ctx, const char *name, JSValue *value) {
+  if (ctx == nullptr) {
+    std::fputs("neo.js: null JSContext passed to JS_StoreValue\n", stderr);
+    std::abort();
+  }
+  return guarded_create(ctx, [&]() -> JSValue * {
+    if (value == nullptr) return makeException(ctx, "TypeError: value is null");
+    bool ok = reinterpret_cast<neojs::JSContext *>(ctx)->currentScope().storeBinding(
+        name ? name : "", reinterpret_cast<neojs::JSValue *>(value));
+    if (!ok) {
+      std::string msg = "ReferenceError: ";
+      msg += (name ? name : "");
+      msg += " is not defined";
+      return makeException(ctx, msg.c_str());
+    }
+    return value;
+  });
+}
+
 /* -------------------------------------------------------------------------- */
 /* 值构造与访问                                                                */
 /* -------------------------------------------------------------------------- */

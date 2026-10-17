@@ -81,6 +81,15 @@ void JS_PopScope(JSContext *ctx);
  * 未找到时返回 kind = JS_EXCEPTION 的错误值（#4）；永不返回 NULL（#14）。 */
 JSValue *JS_LoadValue(JSContext *ctx, const char *name);
 
+/* 定义绑定：将 value 以 name 定义到**当前作用域**（对应 let/const/var 声明）。
+ * 返回 value；永不返回 NULL（#14）。 */
+JSValue *JS_DefineValue(JSContext *ctx, const char *name, JSValue *value);
+
+/* 存储绑定：沿当前作用域链更新**已存在**的 name 绑定为 value（对应赋值）。
+ * 链上无此名时返回 kind = JS_EXCEPTION 的错误值（ReferenceError，#4）。
+ * 返回更新后的 value 或错误值；永不返回 NULL（#14）。 */
+JSValue *JS_StoreValue(JSContext *ctx, const char *name, JSValue *value);
+
 /* -------------------------------------------------------------------------- */
 /* 值构造与访问（#2 命名风格：JS_ 前缀 + 动作）                                */
 /* -------------------------------------------------------------------------- */

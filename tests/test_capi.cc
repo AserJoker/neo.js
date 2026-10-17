@@ -308,3 +308,45 @@ TEST(CApi, LoadValueByScopeChain) {
   JS_FreeContext(ctx);
   JS_FreeAllocator(a);
 }
+
+/* -------------------------------------------------------------------------- */
+/* JS_DefineValue / JS_StoreValue（#9）                                        */
+/* -------------------------------------------------------------------------- */
+
+TEST(CApi, DefineAndStoreValue) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+  neojs::JSScope &root = c->currentScope();
+
+  /* 根作用域定义 counter = 0（对应 var/let 声明） */
+  JSValue *v0 = JS_CreateNumber(ctx, 0.0);
+  JSValue *def = JS_DefineValue(ctx, "counter", v0);
+  ASSERT_NE(def, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, def), JS_NUMBER);
+  EXPECT_EQ(JS_ToNumber(ctx, JS_LoadValue(ctx, "counter")), 0.0);
+
+  /* 赋值的目标值应在绑定所在作用域（根）创建，再在子作用域 store
+   * （JS 语义：x = 5 的 5 生命周期与绑定同源，不随赋值语句的作用域走）。 */
+  JSValue *v5 = JS_CreateNumber(ctx, 5.0);
+  JS_PushScope(ctx);
+  JSValue *st = JS_StoreValue(ctx, "counter", v5);
+  ASSERT_NE(st, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, st), JS_NUMBER);
+  EXPECT_EQ(JS_ToNumber(ctx, JS_LoadValue(ctx, "counter")), 5.0);
+
+  /* 子作用域更新后父作用域读到新值（赋值穿透作用域链） */
+  JS_PopScope(ctx);
+  EXPECT_EQ(JS_ToNumber(ctx, JS_LoadValue(ctx, "counter")), 5.0);
+  EXPECT_EQ(root.getBinding("counter"), reinterpret_cast<neojs::JSValue *>(v5));
+
+  /* 未声明名 store：返回 Exception（ReferenceError） */
+  JSValue *st2 = JS_StoreValue(ctx, "nope", JS_CreateNumber(ctx, 1.0));
+  ASSERT_NE(st2, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, st2), JS_EXCEPTION);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
