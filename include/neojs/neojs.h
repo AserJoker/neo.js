@@ -69,6 +69,14 @@ JSContext *JS_NewContext(JSAllocator *allocator);
  * 注意：ctx 不拥有 allocator，调用方需自行 JS_FreeAllocator（且应在释放 ctx 之后）。 */
 void JS_FreeContext(JSContext *ctx);
 
+/* 压栈/弹栈作用域（#9 作用域由 ctx 管理）。
+ * JS_PushScope：压入一个子作用域并成为当前作用域；后续创建的值归属它。
+ * JS_PopScope：销毁当前作用域（回收其归属值），回到父作用域。根作用域不可弹栈。
+ * 注意：作用域构成 parent/children 树；协程/异步挂起时**不销毁**当前作用域，
+ * 而是经 parent/children 体系保留子树，resume 时继续使用。 */
+void JS_PushScope(JSContext *ctx);
+void JS_PopScope(JSContext *ctx);
+
 /* -------------------------------------------------------------------------- */
 /* 值构造与访问（#2 命名风格：JS_ 前缀 + 动作）                                */
 /* -------------------------------------------------------------------------- */

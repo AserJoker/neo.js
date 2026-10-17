@@ -209,7 +209,7 @@ TEST(CApi, NullHandling) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* 内部 JSScope：parent/children + PUSH/POP 压栈弹栈（#9）                     */
+/* 作用域压栈/弹栈：JS_PushScope / JS_PopScope（#9）                            */
 /* -------------------------------------------------------------------------- */
 
 TEST(CApi, ScopePushPop) {
@@ -222,25 +222,37 @@ TEST(CApi, ScopePushPop) {
   EXPECT_EQ(root.parent(), nullptr);
   EXPECT_TRUE(root.children().empty());
 
-  /* 压栈：子作用域 parent 指向当前，成为 current_scope */
-  neojs::JSScope &child = c->pushScope();
+  /* JS_PushScope：压入子作用域（parent 指向当前），成为 current_scope */
+  JS_PushScope(ctx);
+  neojs::JSScope &child = c->currentScope();
   EXPECT_EQ(child.parent(), &root);
-  EXPECT_EQ(&c->currentScope(), &child);
   EXPECT_EQ(root.children().size(), 1u);
   EXPECT_EQ(root.children()[0], &child);
 
-  /* 在子作用域上创建值并归属它 */
-  neojs::JSValue *v = child.createValue(42.0);
-  EXPECT_NE(v, nullptr);
-  EXPECT_EQ(v->kind(), neojs::Kind::Number);
+  /* 创建的值归属子作用域 */
+  JSValue *v = JS_CreateNumber(ctx, 42.0);
+  ASSERT_NE(v, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, v), JS_NUMBER);
+  JS_FreeValue(ctx, v);
 
-  /* 弹栈：回到父作用域，子作用域（含其值）被回收 */
-  c->popScope();
+  /* 再压一层：parent/children 树加深 */
+  JS_PushScope(ctx);
+  neojs::JSScope &grand = c->currentScope();
+  EXPECT_EQ(grand.parent(), &child);
+  EXPECT_EQ(child.children().size(), 1u);
+  EXPECT_EQ(child.children()[0], &grand);
+
+  /* JS_PopScope：销毁当前作用域（回收归属值），回到父 */
+  JS_PopScope(ctx);
+  EXPECT_EQ(&c->currentScope(), &child);
+  EXPECT_TRUE(child.children().empty());
+
+  JS_PopScope(ctx);
   EXPECT_EQ(&c->currentScope(), &root);
   EXPECT_TRUE(root.children().empty());
 
   /* 根作用域不可弹栈 */
-  c->popScope();
+  JS_PopScope(ctx);
   EXPECT_EQ(&c->currentScope(), &root);
 
   JS_FreeContext(ctx);

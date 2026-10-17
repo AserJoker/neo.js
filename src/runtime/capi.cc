@@ -143,6 +143,25 @@ extern "C" void JS_FreeContext(JSContext *ctx) {
   }
 }
 
+/* 作用域压栈/弹栈（#9）。根作用域不可弹栈；协程/异步挂起时保留子树不销毁。 */
+extern "C" void JS_PushScope(JSContext *ctx) {
+  if (ctx == nullptr) return;
+  try {
+    reinterpret_cast<neojs::JSContext *>(ctx)->pushScope();
+  } catch (...) {
+    /* #3 */
+  }
+}
+
+extern "C" void JS_PopScope(JSContext *ctx) {
+  if (ctx == nullptr) return;
+  try {
+    reinterpret_cast<neojs::JSContext *>(ctx)->popScope();
+  } catch (...) {
+    /* #3 */
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /* 值构造与访问                                                                */
 /* -------------------------------------------------------------------------- */
