@@ -11,6 +11,9 @@
 #include <cstring>
 
 #include "neojs/neojs.h"
+#include "neojs/runtime/context.h"
+#include "neojs/runtime/scope.h"
+#include "neojs/runtime/value.h"
 
 /* -------------------------------------------------------------------------- */
 /* 测试辅助：按 #13 约定，先创建 allocator，再创建 ctx                          */
@@ -200,6 +203,45 @@ TEST(CApi, NullHandling) {
   EXPECT_EQ(JS_ToNumber(ctx, nullptr), 0.0);
   EXPECT_EQ(JS_ToInteger(ctx, nullptr), 0);
   EXPECT_EQ(JS_ToString(ctx, nullptr), nullptr);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* -------------------------------------------------------------------------- */
+/* 内部 JSScope：parent/children + PUSH/POP 压栈弹栈（#9）                     */
+/* -------------------------------------------------------------------------- */
+
+TEST(CApi, ScopePushPop) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+  neojs::JSScope &root = c->currentScope();
+  EXPECT_EQ(root.parent(), nullptr);
+  EXPECT_TRUE(root.children().empty());
+
+  /* 压栈：子作用域 parent 指向当前，成为 current_scope */
+  neojs::JSScope &child = c->pushScope();
+  EXPECT_EQ(child.parent(), &root);
+  EXPECT_EQ(&c->currentScope(), &child);
+  EXPECT_EQ(root.children().size(), 1u);
+  EXPECT_EQ(root.children()[0], &child);
+
+  /* 在子作用域上创建值并归属它 */
+  neojs::JSValue *v = child.createValue(42.0);
+  EXPECT_NE(v, nullptr);
+  EXPECT_EQ(v->kind(), neojs::Kind::Number);
+
+  /* 弹栈：回到父作用域，子作用域（含其值）被回收 */
+  c->popScope();
+  EXPECT_EQ(&c->currentScope(), &root);
+  EXPECT_TRUE(root.children().empty());
+
+  /* 根作用域不可弹栈 */
+  c->popScope();
+  EXPECT_EQ(&c->currentScope(), &root);
 
   JS_FreeContext(ctx);
   JS_FreeAllocator(a);

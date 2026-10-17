@@ -1,10 +1,15 @@
 #include "neojs/runtime/scope.h"
 
+#include <algorithm>
+
 #include "neojs/runtime/value.h"
 
 namespace neojs {
 
-JSScope::JSScope(JSAllocator *allocator) : allocator_(allocator) {}
+JSScope::JSScope(JSAllocator *allocator, JSScope *parent)
+    : allocator_(allocator), parent_(parent) {
+  if (parent_ != nullptr) parent_->addChild(this);
+}
 
 JSScope::~JSScope() {
   /* 统一回收所有归属值（#5：作用域生命周期管理值；
@@ -13,6 +18,15 @@ JSScope::~JSScope() {
     allocator_->destroy(kv.first);
   }
   values_.clear();
+
+  /* 递归回收未 pop 的子作用域（析构时顺带清理整棵子树，防泄漏）。 */
+  for (JSScope *child : children_) {
+    allocator_->destroy(child);
+  }
+  children_.clear();
+
+  /* 从父作用域摘除自己。 */
+  if (parent_ != nullptr) parent_->removeChild(this);
 }
 
 void JSScope::registerValue(JSValue *value) { values_[value] = true; }
@@ -23,6 +37,13 @@ void JSScope::freeValue(JSValue *value) {
   if (value == nullptr) return;
   unregisterValue(value);
   allocator_->destroy(value); /* #13：析构 + 释放 */
+}
+
+void JSScope::addChild(JSScope *child) { children_.push_back(child); }
+
+void JSScope::removeChild(JSScope *child) {
+  auto it = std::find(children_.begin(), children_.end(), child);
+  if (it != children_.end()) children_.erase(it);
 }
 
 }  // namespace neojs

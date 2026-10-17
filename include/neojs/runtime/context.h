@@ -34,6 +34,12 @@ class JSContext {
   /* 当前值作用域（#9：JSValue 创建在 current_scope 上） */
   JSScope &currentScope() { return *current_scope_; }
 
+  /* 压栈/弹栈（PUSH_SCOPE / POP_SCOPE）：
+   * pushScope 新建子作用域（parent = 当前）并成为 current_scope；
+   * popScope 回到父作用域，并销毁弹栈的作用域（统一回收其归属值）。 */
+  JSScope &pushScope();
+  void popScope();
+
  private:
   JSAllocator *allocator_;  /* 引用外部分配器（#13）；ctx 不拥有 */
   JSScope *current_scope_;  /* 当前值作用域（不透明，不对外暴露） */
