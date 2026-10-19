@@ -44,16 +44,49 @@ enum class NodeType : uint8_t {
   RestElement,       /* 展开/剩余：...rest */
   Property,          /* 对象字面量成员 */
   SpreadElement,     /* 展开元素：...expr（数组/调用/解构） */
+  UnaryOp,     /* 一元运算 */
   BinaryOp,    /* 二元运算 */
 };
 
-/* 二元运算类型（M1.1 先支持算术；M1.4 扩充全部） */
+/* 一元运算类型（M1.4：先支持 ! ~ + - 与关键字型 typeof/void/delete/await） */
+enum class UnaryOpKind : uint8_t {
+  Pos,       /* +x */
+  Neg,       /* -x */
+  Not,       /* !x */
+  BitNot,    /* ~x */
+  Typeof,    /* typeof x */
+  Void,      /* void x */
+  Delete,    /* delete x */
+  Await,     /* await x */
+};
+
+/* 二元运算类型（M1.4 全套，按优先级分组） */
 enum class BinaryOpKind : uint8_t {
-  Add,   /* + */
-  Sub,   /* - */
-  Mul,   /* * */
-  Div,   /* / */
-  Mod,   /* % */
+  Add,        /* + */
+  Sub,        /* - */
+  Mul,        /* * */
+  Div,        /* / */
+  Mod,        /* % */
+  Pow,        /* ** */
+  LShift,     /* << */
+  RShift,     /* >> */
+  URShift,    /* >>> */
+  Lt,         /* < */
+  Le,         /* <= */
+  Gt,         /* > */
+  Ge,         /* >= */
+  In,         /* in */
+  Instanceof, /* instanceof */
+  Eq,         /* == */
+  Ne,         /* != */
+  StrictEq,   /* === */
+  StrictNe,   /* !== */
+  BitAnd,     /* & */
+  BitXor,     /* ^ */
+  BitOr,      /* | */
+  LogicalAnd, /* && */
+  LogicalOr,  /* || */
+  Nullish,    /* ?? */
 };
 
 /* 字面量载荷（M1.4：数字 + 字符串 + 布尔/null） */
@@ -103,6 +136,7 @@ struct ASTNode {
   RegExpPayload regexp;       /* RegExpLiteral */
   PropertyPayload prop;       /* Property */
   std::string name;           /* Identifier：名称 */
+  UnaryOpKind unop = UnaryOpKind::Pos;
   BinaryOpKind binop = BinaryOpKind::Add;
 
   /* 构造：仅由 Parser 经 JSAllocator::create 创建（见 parser.h） */

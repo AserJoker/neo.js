@@ -706,3 +706,167 @@ TEST(Frontend, ObjectStringKey) {
   EXPECT_EQ(obj->children[0]->children[0]->literal.str, "k");
   a.destroy(ast);
 }
+
+/* -------------------------------------------------------------------------- */
+/* 一元运算（M1.4）                                                            */
+/* -------------------------------------------------------------------------- */
+
+TEST(Frontend, UnarySymbolOps) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+
+  /* !x → UnaryOp(!)[x] */
+  neojs::AST *ast = neojs::parseSource(&a, "!x", 2, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *u = ast->root->children[0]->children[0];
+  EXPECT_EQ(u->type, neojs::NodeType::UnaryOp);
+  EXPECT_EQ(u->unop, neojs::UnaryOpKind::Not);
+  EXPECT_EQ(u->children[0]->type, neojs::NodeType::Identifier);
+  a.destroy(ast);
+
+  /* ~x */
+  ast = neojs::parseSource(&a, "~x", 2, sink);
+  ASSERT_NE(ast, nullptr);
+  u = ast->root->children[0]->children[0];
+  EXPECT_EQ(u->unop, neojs::UnaryOpKind::BitNot);
+  a.destroy(ast);
+
+  /* +x / -x */
+  ast = neojs::parseSource(&a, "+x", 2, sink);
+  u = ast->root->children[0]->children[0];
+  EXPECT_EQ(u->unop, neojs::UnaryOpKind::Pos);
+  a.destroy(ast);
+  ast = neojs::parseSource(&a, "-x", 2, sink);
+  u = ast->root->children[0]->children[0];
+  EXPECT_EQ(u->unop, neojs::UnaryOpKind::Neg);
+  a.destroy(ast);
+}
+
+TEST(Frontend, UnaryKeywordOps) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+
+  neojs::AST *ast = neojs::parseSource(&a, "typeof x", 8, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *u = ast->root->children[0]->children[0];
+  EXPECT_EQ(u->type, neojs::NodeType::UnaryOp);
+  EXPECT_EQ(u->unop, neojs::UnaryOpKind::Typeof);
+  a.destroy(ast);
+
+  ast = neojs::parseSource(&a, "void 0", 6, sink);
+  u = ast->root->children[0]->children[0];
+  EXPECT_EQ(u->unop, neojs::UnaryOpKind::Void);
+  a.destroy(ast);
+
+  ast = neojs::parseSource(&a, "delete x", 8, sink);
+  u = ast->root->children[0]->children[0];
+  EXPECT_EQ(u->unop, neojs::UnaryOpKind::Delete);
+  a.destroy(ast);
+
+  ast = neojs::parseSource(&a, "await x", 7, sink);
+  u = ast->root->children[0]->children[0];
+  EXPECT_EQ(u->unop, neojs::UnaryOpKind::Await);
+  a.destroy(ast);
+}
+
+TEST(Frontend, UnaryChainedRightAssoc) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* !!!x → !(!(!x)) 右结合嵌套 */
+  neojs::AST *ast = neojs::parseSource(&a, "!!!x", 4, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *u = ast->root->children[0]->children[0];
+  EXPECT_EQ(u->unop, neojs::UnaryOpKind::Not);
+  EXPECT_EQ(u->children[0]->unop, neojs::UnaryOpKind::Not);
+  EXPECT_EQ(u->children[0]->children[0]->unop, neojs::UnaryOpKind::Not);
+  EXPECT_EQ(u->children[0]->children[0]->children[0]->type,
+            neojs::NodeType::Identifier);
+  a.destroy(ast);
+}
+
+/* -------------------------------------------------------------------------- */
+/* 二元运算全套（M1.4）                                                        */
+/* -------------------------------------------------------------------------- */
+
+TEST(Frontend, BinaryFullOps) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+
+  struct Case {
+    const char *src;
+    neojs::BinaryOpKind expect;
+  } cases[] = {
+      {"a + b", neojs::BinaryOpKind::Add},        {"a - b", neojs::BinaryOpKind::Sub},
+      {"a * b", neojs::BinaryOpKind::Mul},        {"a / b", neojs::BinaryOpKind::Div},
+      {"a % b", neojs::BinaryOpKind::Mod},        {"a ** b", neojs::BinaryOpKind::Pow},
+      {"a << b", neojs::BinaryOpKind::LShift},    {"a >> b", neojs::BinaryOpKind::RShift},
+      {"a >>> b", neojs::BinaryOpKind::URShift},  {"a < b", neojs::BinaryOpKind::Lt},
+      {"a <= b", neojs::BinaryOpKind::Le},        {"a > b", neojs::BinaryOpKind::Gt},
+      {"a >= b", neojs::BinaryOpKind::Ge},        {"a in b", neojs::BinaryOpKind::In},
+      {"a instanceof b", neojs::BinaryOpKind::Instanceof},
+      {"a == b", neojs::BinaryOpKind::Eq},        {"a != b", neojs::BinaryOpKind::Ne},
+      {"a === b", neojs::BinaryOpKind::StrictEq}, {"a !== b", neojs::BinaryOpKind::StrictNe},
+      {"a & b", neojs::BinaryOpKind::BitAnd},     {"a ^ b", neojs::BinaryOpKind::BitXor},
+      {"a | b", neojs::BinaryOpKind::BitOr},      {"a && b", neojs::BinaryOpKind::LogicalAnd},
+      {"a || b", neojs::BinaryOpKind::LogicalOr}, {"a ?? b", neojs::BinaryOpKind::Nullish},
+  };
+  for (const auto &c : cases) {
+    neojs::AST *ast = neojs::parseSource(&a, c.src, std::strlen(c.src), sink);
+    ASSERT_NE(ast, nullptr) << c.src;
+    neojs::ASTNode *bin = ast->root->children[0]->children[0];
+    EXPECT_EQ(bin->type, neojs::NodeType::BinaryOp) << c.src;
+    EXPECT_EQ(bin->binop, c.expect) << c.src;
+    a.destroy(ast);
+  }
+}
+
+TEST(Frontend, BinaryPowerRightAssoc) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* 2 ** 3 ** 2 → 2 ** (3 ** 2)（右结合） */
+  neojs::AST *ast = neojs::parseSource(&a, "2 ** 3 ** 2", 11, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *bin = ast->root->children[0]->children[0];
+  EXPECT_EQ(bin->binop, neojs::BinaryOpKind::Pow);
+  EXPECT_EQ(bin->children[0]->type, neojs::NodeType::Literal);
+  EXPECT_EQ(bin->children[1]->type, neojs::NodeType::BinaryOp);
+  EXPECT_EQ(bin->children[1]->binop, neojs::BinaryOpKind::Pow);
+  a.destroy(ast);
+}
+
+TEST(Frontend, BinaryFullPrecedence) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* !x && y || z → (!x && y) || z：一元 > && > || */
+  neojs::AST *ast = neojs::parseSource(&a, "!x && y || z", 12, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->binop, neojs::BinaryOpKind::LogicalOr);
+  EXPECT_EQ(top->children[0]->binop, neojs::BinaryOpKind::LogicalAnd);
+  EXPECT_EQ(top->children[0]->children[0]->type, neojs::NodeType::UnaryOp);
+  a.destroy(ast);
+
+  /* a | b << c → a | (b << c)：<< > | */
+  ast = neojs::parseSource(&a, "a | b << c", 10, sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->binop, neojs::BinaryOpKind::BitOr);
+  EXPECT_EQ(top->children[1]->binop, neojs::BinaryOpKind::LShift);
+  a.destroy(ast);
+
+  /* 1 < 2 == true → (1 < 2) == true：< > == */
+  ast = neojs::parseSource(&a, "1 < 2 == true", 13, sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->binop, neojs::BinaryOpKind::Eq);
+  EXPECT_EQ(top->children[0]->binop, neojs::BinaryOpKind::Lt);
+  a.destroy(ast);
+
+  /* a + b * c → a + (b * c)：* > + */
+  ast = neojs::parseSource(&a, "a + b * c", 9, sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->binop, neojs::BinaryOpKind::Add);
+  EXPECT_EQ(top->children[1]->binop, neojs::BinaryOpKind::Mul);
+  a.destroy(ast);
+}

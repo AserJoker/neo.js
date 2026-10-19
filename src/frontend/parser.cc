@@ -11,21 +11,61 @@ bool isSymbol(const Token &tok, const char *sym) {
   return tok.kind == TokenKind::Symbol && tok.text == sym;
 }
 
-/* 二元运算符优先级（M1.1 最小集）：* / % > + -（左结合） */
+/* 二元运算符优先级（M1.4 全套，对齐 ECMA-262 §12.11 自高到低）：
+ *   **（右结合）> * / % > + - > << >> >>> > < <= > >= in instanceof
+ *   > == != === !== > & > ^ > | > && > || > ??
+ * 返回 0 表示当前 token 不是二元运算符。 */
 int binopPrecedence(const Token &tok) {
+  if (tok.kind == TokenKind::Identifier) {
+    /* 关键字形式：in / instanceof */
+    if (tok.text == "in") return 7;
+    if (tok.text == "instanceof") return 7;
+    return 0;
+  }
   if (tok.kind != TokenKind::Symbol) return 0;
   const std::string &s = tok.text;
-  if (s == "*" || s == "/" || s == "%") return 2;
-  if (s == "+" || s == "-") return 1;
+  if (s == "**") return 11;
+  if (s == "*" || s == "/" || s == "%") return 10;
+  if (s == "+" || s == "-") return 9;
+  if (s == "<<" || s == ">>" || s == ">>>") return 8;
+  if (s == "<" || s == "<=" || s == ">" || s == ">=") return 7;
+  if (s == "==" || s == "!=" || s == "===" || s == "!==") return 6;
+  if (s == "&") return 5;
+  if (s == "^") return 4;
+  if (s == "|") return 3;
+  if (s == "&&") return 2;
+  if (s == "||") return 1;
+  if (s == "??") return 1;
   return 0;
 }
 
-BinaryOpKind toBinop(const std::string &s) {
+BinaryOpKind toBinop(const Token &tok) {
+  const std::string &s = tok.text;
   if (s == "+") return BinaryOpKind::Add;
   if (s == "-") return BinaryOpKind::Sub;
   if (s == "*") return BinaryOpKind::Mul;
   if (s == "/") return BinaryOpKind::Div;
   if (s == "%") return BinaryOpKind::Mod;
+  if (s == "**") return BinaryOpKind::Pow;
+  if (s == "<<") return BinaryOpKind::LShift;
+  if (s == ">>") return BinaryOpKind::RShift;
+  if (s == ">>>") return BinaryOpKind::URShift;
+  if (s == "<") return BinaryOpKind::Lt;
+  if (s == "<=") return BinaryOpKind::Le;
+  if (s == ">") return BinaryOpKind::Gt;
+  if (s == ">=") return BinaryOpKind::Ge;
+  if (s == "in") return BinaryOpKind::In;
+  if (s == "instanceof") return BinaryOpKind::Instanceof;
+  if (s == "==") return BinaryOpKind::Eq;
+  if (s == "!=") return BinaryOpKind::Ne;
+  if (s == "===") return BinaryOpKind::StrictEq;
+  if (s == "!==") return BinaryOpKind::StrictNe;
+  if (s == "&") return BinaryOpKind::BitAnd;
+  if (s == "^") return BinaryOpKind::BitXor;
+  if (s == "|") return BinaryOpKind::BitOr;
+  if (s == "&&") return BinaryOpKind::LogicalAnd;
+  if (s == "||") return BinaryOpKind::LogicalOr;
+  if (s == "??") return BinaryOpKind::Nullish;
   return BinaryOpKind::Add; /* unreachable */
 }
 
@@ -76,7 +116,7 @@ ASTNode *Parser::parseExpressionStatement() {
   return stmt;
 }
 
-/* 表达式 → 二元运算（Pratt 风格最小版；M1.4 扩充） */
+/* 表达式 → 一元 + 二元运算（Pratt；M1.4 扩充全套） */
 ASTNode *Parser::parseExpression() {
   return parseBinary(1);
 }
@@ -84,7 +124,7 @@ ASTNode *Parser::parseExpression() {
 ASTNode *Parser::parseBinary(int min_prec) {
   /* 读值位置：设置 Lexer 上下文（供 / 判定，M1.3 展开） */
   setValueContext();
-  ASTNode *lhs = parsePrimary();
+  ASTNode *lhs = parseUnary();
   if (lhs == nullptr) return nullptr;
 
   for (;;) {
@@ -93,9 +133,10 @@ ASTNode *Parser::parseBinary(int min_prec) {
     const Token &tok = current();
     int prec = binopPrecedence(tok);
     if (prec == 0 || prec < min_prec) break;
-    BinaryOpKind bop = toBinop(tok.text);
+    BinaryOpKind bop = toBinop(tok);
     advance();
-    ASTNode *rhs = parseBinary(prec + 1); /* 左结合 */
+    /* ** 右结合：同优先级递归；其余左结合：prec+1 */
+    ASTNode *rhs = parseBinary(bop == BinaryOpKind::Pow ? prec : prec + 1);
     if (rhs == nullptr) {
       allocator_->destroy(lhs);
       return nullptr;
@@ -108,6 +149,41 @@ ASTNode *Parser::parseBinary(int min_prec) {
     lhs = node;
   }
   return lhs;
+}
+
+/* 一元运算（M1.4）：! ~ + - 与关键字型 typeof/void/delete/await
+ * 对齐 ECMA-262：一元运算符优先级高于二元、低于成员/调用（后续 M1.4 扩展）。
+ * 注意：`+`/`-` 一元 vs 二元由当前 token 判定（parseBinary 在运算符位置处理二元）。 */
+ASTNode *Parser::parseUnary() {
+  setValueContext();
+  const Token &tok = current();
+  UnaryOpKind op;
+  bool is_unary = true;
+  if (tok.kind == TokenKind::Symbol) {
+    if (tok.text == "!") op = UnaryOpKind::Not;
+    else if (tok.text == "~") op = UnaryOpKind::BitNot;
+    else if (tok.text == "+") op = UnaryOpKind::Pos;
+    else if (tok.text == "-") op = UnaryOpKind::Neg;
+    else is_unary = false;
+  } else if (tok.kind == TokenKind::Identifier) {
+    if (tok.text == "typeof") op = UnaryOpKind::Typeof;
+    else if (tok.text == "void") op = UnaryOpKind::Void;
+    else if (tok.text == "delete") op = UnaryOpKind::Delete;
+    else if (tok.text == "await") op = UnaryOpKind::Await;
+    else is_unary = false;
+  } else {
+    is_unary = false;
+  }
+  if (!is_unary) return parsePrimary();
+
+  advance(); /* 消费一元运算符 */
+  ASTNode *operand = parseUnary(); /* 右结合：一元可嵌套（如 !!!x、- -x） */
+  if (operand == nullptr) return nullptr;
+  ASTNode *node = newNode(NodeType::UnaryOp);
+  node->loc = tok.start;
+  node->unop = op;
+  node->children.push_back(operand);
+  return node;
 }
 
 /* 最小 primary：字面量 / 标识符 / 私有字段 / 对象/数组 / ( 表达式 ) */

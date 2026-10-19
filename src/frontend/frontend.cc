@@ -35,6 +35,28 @@ const char *tokenKindName(TokenKind k) {
   return "?";
 }
 
+const char *unopName(UnaryOpKind k) {
+  switch (k) {
+    case UnaryOpKind::Pos:
+      return "+";
+    case UnaryOpKind::Neg:
+      return "-";
+    case UnaryOpKind::Not:
+      return "!";
+    case UnaryOpKind::BitNot:
+      return "~";
+    case UnaryOpKind::Typeof:
+      return "typeof";
+    case UnaryOpKind::Void:
+      return "void";
+    case UnaryOpKind::Delete:
+      return "delete";
+    case UnaryOpKind::Await:
+      return "await";
+  }
+  return "?";
+}
+
 const char *binopName(BinaryOpKind k) {
   switch (k) {
     case BinaryOpKind::Add:
@@ -47,6 +69,46 @@ const char *binopName(BinaryOpKind k) {
       return "/";
     case BinaryOpKind::Mod:
       return "%";
+    case BinaryOpKind::Pow:
+      return "**";
+    case BinaryOpKind::LShift:
+      return "<<";
+    case BinaryOpKind::RShift:
+      return ">>";
+    case BinaryOpKind::URShift:
+      return ">>>";
+    case BinaryOpKind::Lt:
+      return "<";
+    case BinaryOpKind::Le:
+      return "<=";
+    case BinaryOpKind::Gt:
+      return ">";
+    case BinaryOpKind::Ge:
+      return ">=";
+    case BinaryOpKind::In:
+      return "in";
+    case BinaryOpKind::Instanceof:
+      return "instanceof";
+    case BinaryOpKind::Eq:
+      return "==";
+    case BinaryOpKind::Ne:
+      return "!=";
+    case BinaryOpKind::StrictEq:
+      return "===";
+    case BinaryOpKind::StrictNe:
+      return "!==";
+    case BinaryOpKind::BitAnd:
+      return "&";
+    case BinaryOpKind::BitXor:
+      return "^";
+    case BinaryOpKind::BitOr:
+      return "|";
+    case BinaryOpKind::LogicalAnd:
+      return "&&";
+    case BinaryOpKind::LogicalOr:
+      return "||";
+    case BinaryOpKind::Nullish:
+      return "??";
   }
   return "?";
 }
@@ -115,6 +177,11 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
       break;
     case NodeType::SpreadElement:
       out += "SpreadElement\n";
+      break;
+    case NodeType::UnaryOp:
+      out += "UnaryOp(";
+      out += unopName(node->unop);
+      out += ")\n";
       break;
     case NodeType::BinaryOp:
       out += "BinaryOp(";
