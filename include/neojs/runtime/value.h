@@ -9,6 +9,10 @@
  *   #3 不向 C ABI 边界抛出 C++ 异常；
  *   #4 JSValue 为一等公民，kind 区分普通值与错误/中断；
  *   #5 内部重写 new/delete 走统一分配器。
+ *
+ * 遵循 docs/gc.md（GC 引擎设计）：
+ *   G1  JSValue 由 Heap 统一分配与回收（对象头内嵌 GC 标记位）。
+ *   M2 阶段 JSValue 是叶子值（无引用边）；对象模型（M3）再加 refs_ 供 mark 遍历。
  */
 
 #include <cstdint>
@@ -57,6 +61,10 @@ class JSValue {
   void setErrorInfo(const std::string &info) { string_ = info; }
   const std::string &errorInfo() const { return string_; }
 
+  /* GC（docs/gc.md §3.2）：标记位由 Heap 管理，仅 GC 内部访问 */
+  bool gcMark() const { return gc_mark_; }
+  void setGcMark(bool m) { gc_mark_ = m; }
+
   /* 分配器支持（#5：内部重写 new/delete 走统一分配器） */
   static void *operator new(size_t size);
   static void operator delete(void *ptr) noexcept;
@@ -66,6 +74,7 @@ class JSValue {
 
  private:
   Kind kind_;
+  bool gc_mark_;       /* GC 标记位（mark 阶段置 1，sweep 清除） */
   bool bool_;
   double number_;
   std::string string_;

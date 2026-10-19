@@ -5,19 +5,21 @@
  * 内部 C++ 实现：JSContext。
  *
  * 运行时一切信息都从 ctx 出发（规范 #9）：ctx 持有分配器、当前作用域、
- * M0 全局值登记表（P2：值与作用域解耦）。
+ * GC 堆（heap_）与宿主句柄表（handles_）。
  *
- * 内存管理（规范 #5/#13 + docs/scope-value.md P2）：
+ * 内存管理（规范 #5/#13 + docs/scope-value.md P2 + docs/gc.md）：
  *   JSContext 创建**必须**接受外部提供的 JSAllocator（C API 层传入，不支持 nullptr）；
  *   ctx 仅引用分配器、不拥有它（宿主负责在释放 ctx 之后 JS_FreeAllocator）；
- *   JSValue 由 ctx 全局登记表统一管理生命周期（M2+ 换成 GC 堆/根集）；
- *   作用域（JSScope）只管 name->绑定，不持有值生命周期。
+ *   JSValue 由 GC 堆（Heap）统一管理生命周期（G1，取代 M0 全局登记表 values_）；
+ *   作用域（JSScope）只管 name->绑定，不持有值生命周期；
+ *   宿主经句柄表（HandleTable）访问值（G2）；句柄表与作用域绑定链是 GC 根集。
  */
 
-#include <unordered_map>
 #include <utility>
 
 #include "neojs/runtime/allocator.h"
+#include "neojs/runtime/handles.h"
+#include "neojs/runtime/heap.h"
 #include "neojs/runtime/scope.h"
 #include "neojs/runtime/value.h"
 
@@ -45,21 +47,36 @@ class JSContext {
   JSScope &pushScope();
   void popScope();
 
-  /* 值生命周期（P2）：M0 全局登记表。值登记到 ctx，不归属 scope。
-   * createValue 经 JSAllocator::create<T> 创建并登记；
-   * freeValue 移出登记表并析构 + 释放（#13）。 */
+  /* GC 堆访问（docs/gc.md §3.1） */
+  Heap &heap() { return heap_; }
+
+  /* 宿主句柄表访问（docs/gc.md §3.3） */
+  HandleTable &handles() { return handles_; }
+
+  /* 手动触发一次完整 GC（对应 C API JS_GC） */
+  void gc() { heap_.collect(); }
+
+  /* 值生命周期（P2 + G1）：值经 Heap 统一分配，不归属 scope。
+   * createValue 经 Heap::allocValue 创建并登记到堆；
+   * freeValue 释放宿主句柄槽（对象生死由 GC 判定，G2）。 */
   template <typename V>
   JSValue *createValue(V &&value) {
-    JSValue *v = allocator_->create<JSValue>(std::forward<V>(value));
-    values_[v] = true;
-    return v;
+    return heap_.allocValue(std::forward<V>(value));
   }
   void freeValue(JSValue *value);
 
  private:
-  JSAllocator *allocator_;                     /* 引用外部分配器（#13）；ctx 不拥有 */
-  JSScope *current_scope_;                     /* 当前词法环境（不透明，不对外暴露） */
-  std::unordered_map<JSValue *, bool> values_; /* M0 全局值登记表（M2+ → GC 根集） */
+  /* GC 标记阶段根集遍历（docs/gc.md §3.4）：
+   * 句柄表所有非空槽 + 作用域绑定链（沿 parent/children 遍历）。
+   * 作为 Heap::MarkFn 回调注入（userdata = this）。 */
+  static void markRootsThunk(void *ud); /* Heap 回调入口（转调 markRoots） */
+  void markRoots();
+  void markScope(JSScope *scope); /* 递归标记作用域树中所有绑定值 */
+
+  JSAllocator *allocator_; /* 引用外部分配器（#13）；ctx 不拥有 */
+  JSScope *current_scope_; /* 当前词法环境（不透明，不对外暴露） */
+  Heap heap_;              /* GC 堆（G1：统一分配 + mark-sweep） */
+  HandleTable handles_;    /* 宿主句柄表（G2：根集之一） */
 };
 
 }  // namespace neojs

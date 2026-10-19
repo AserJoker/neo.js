@@ -55,6 +55,11 @@ class JSScope {
   JSScope *parent() const { return parent_; }
   const std::vector<JSScope *> &children() const { return children_; }
 
+  /* 绑定表访问（GC 根集遍历用，docs/gc.md §3.4） */
+  const std::unordered_map<std::string, JSBinding> &bindings() const {
+    return bindings_;
+  }
+
   /* 绑定查找与定义（P3/P4）：
    * findBindingScope 沿链（本环境 -> 父）解析，返回持绑定的环境；未找到返回 nullptr。
    * findBinding      沿链解析，返回绑定条目指针；未找到返回 nullptr。
