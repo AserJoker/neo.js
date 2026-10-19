@@ -48,6 +48,14 @@ ASTNode *Parser::parseStatementList() {
  * 当前已实现：空语句（;）、块语句（{）、标签语句（label:）、条件语句（if）；
  * 后续逐个加分派。 */
 ASTNode *Parser::parseStatement() {
+  ++statement_nesting_; /* 语句嵌套深度：import/export 仅模块顶层（==0） */
+  ASTNode *result = parseStatementInner();
+  --statement_nesting_;
+  return result;
+}
+
+/* 语句分派实现（parseStatement 的嵌套深度包装见上） */
+ASTNode *Parser::parseStatementInner() {
   /* 空语句：单分号 ;（ECMA-262 EmptyStatement） */
   if (isSymbol(current(), ";")) {
     ASTNode *stmt = newNode(NodeType::EmptyStatement);
@@ -143,6 +151,42 @@ ASTNode *Parser::parseStatement() {
   /* debugger 语句（M1.5 ⑦）：空语句，编译开关关闭时丢弃 */
   if (isKeyword(current(), "debugger")) {
     return parseDebuggerStatement();
+  }
+  /* 模块语句（M1.6 ③）：import / export 仅在模块顶层合法
+   * （ModuleItemList，ECMA-262 §16.2；不可嵌套在块/语句体内）。 */
+  if (isKeyword(current(), "import")) {
+    /* import 有歧义：import('m') 是动态导入表达式（读值位置），
+     * import x from 'm' 是声明语句。语句位置若 import 后紧跟 ( 则为
+     * 动态导入表达式语句，否则是 import 声明。动态导入由表达式体系处理
+     * （parsePrimary），此处仅处理声明。 */
+    if (isSymbol(peek(), "(") || isSymbol(peek(), ".")) {
+      /* import('m') 动态导入 / import.meta 表达式语句 */
+      return parseExpressionStatement();
+    }
+    if (!module_) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "import declaration outside module",
+                  current().start});
+      return nullptr;
+    }
+    if (statement_nesting_ != 1) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "import declaration must be at top level of module",
+                  current().start});
+      return nullptr;
+    }
+    return parseImportDeclaration();
+  }
+  if (isKeyword(current(), "export")) {
+    if (!module_) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "export declaration outside module",
+                  current().start});
+      return nullptr;
+    }
+    if (statement_nesting_ != 1) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "export declaration must be at top level of module",
+                  current().start});
+      return nullptr;
+    }
+    return parseExportDeclaration();
   }
 
   /* 兜底：表达式语句 */
@@ -649,22 +693,25 @@ bool Parser::checkStrictParams(ASTNode *fn, bool strict, bool has_name, int body
  * 声明必须有名字（function () {} 是表达式）；这里容错为 name 可空。
  * 参数：Identifier 或解构模式（后续展开）；body 为块语句。
  * function_depth_ 递增：body 内允许 return（顶层 return 报错）。 */
-ASTNode *Parser::parseFunctionDeclaration() {
+ASTNode *Parser::parseFunctionDeclaration(bool allow_anonymous) {
   ASTNode *fn = newNode(NodeType::FunctionDeclaration);
   fn->loc = current().start;
   advance(); /* function */
 
-  /* 函数名（声明必需；缺省报错） */
-  if (!at(TokenKind::Identifier)) {
+  /* 函数名（声明必需；缺省报错。allow_anonymous 供 export default 匿名声明） */
+  bool has_name = false;
+  if (at(TokenKind::Identifier)) {
+    ASTNode *id = newNode(NodeType::Identifier);
+    id->loc = current().start;
+    id->name = current().text;
+    advance();
+    fn->children.push_back(id);
+    has_name = true;
+  } else if (!allow_anonymous) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected function name", current().start});
     allocator_->destroy(fn);
     return nullptr;
   }
-  ASTNode *id = newNode(NodeType::Identifier);
-  id->loc = current().start;
-  id->name = current().text;
-  advance();
-  fn->children.push_back(id);
 
   /* 参数列表：(a, b, ...rest) */
   if (!isSymbol(current(), "(")) {
@@ -747,7 +794,7 @@ ASTNode *Parser::parseFunctionDeclaration() {
   }
   fn->children.push_back(body);
   /* 严格模式参数检查（strict_params 已含 body directive 影响） */
-  if (checkStrictParams(fn, strict_params, /*has_name=*/true,
+  if (checkStrictParams(fn, strict_params, has_name,
                         static_cast<int>(fn->children.size()) - 1)) {
     allocator_->destroy(fn);
     return nullptr;
@@ -1166,6 +1213,300 @@ ASTNode *Parser::parseDebuggerStatement() {
   advance(); /* debugger */
   /* 分号（ASI）：显式 ; 或换行/}/EOF 隐式插入 */
   if (isSymbol(current(), ";")) advance();
+  return stmt;
+}
+
+/* import 声明（M1.6 ③）：ECMA-262 §16.3。
+ * 全形式：
+ *   import d from 'm'                      → [ImportDefaultSpecifier[local], source]
+ *   import {a, b as c} from 'm'            → [ImportSpecifier[imported, local]...]
+ *   import * as ns from 'm'                → [ImportNamespaceSpecifier[local]]
+ *   import 'm'                             → 仅 source（无 specifier）
+ *   import d, {a} from 'm' / import d, * as ns from 'm'（default + 其余）
+ * children 布局：specifiers..., source（Literal 字符串节点）。 */
+ASTNode *Parser::parseImportDeclaration() {
+  ASTNode *stmt = newNode(NodeType::ImportDeclaration);
+  stmt->loc = current().start;
+  advance(); /* import */
+
+  bool seen_default = false;
+  for (;;) {
+    if (isSymbol(current(), ";") || atEof()) break;
+    if (isKeyword(current(), "from")) break;
+    if (at(TokenKind::String)) break; /* 裸 import 'm' 直接到 source */
+    if (isSymbol(current(), "{")) {
+      /* 具名导入：{ a, b as c } */
+      advance(); /* { */
+      while (!isSymbol(current(), "}")) {
+        if (atEof()) {
+          sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated import specifier list",
+                      stmt->loc});
+          allocator_->destroy(stmt);
+          return nullptr;
+        }
+        if (isSymbol(current(), ",")) {
+          advance();
+          continue;
+        }
+        if (!at(TokenKind::Identifier)) {
+          sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected imported binding",
+                      current().start});
+          allocator_->destroy(stmt);
+          return nullptr;
+        }
+        ASTNode *spec = newNode(NodeType::ImportSpecifier);
+        spec->loc = current().start;
+        spec->imported = current().text; /* 导入名 */
+        advance();
+        ASTNode *local = nullptr;
+        if (isKeyword(current(), "as")) {
+          advance();
+          if (!at(TokenKind::Identifier)) {
+            sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected local binding after 'as'",
+                        current().start});
+            allocator_->destroy(spec);
+            allocator_->destroy(stmt);
+            return nullptr;
+          }
+          local = newNode(NodeType::Identifier);
+          local->loc = current().start;
+          local->name = current().text;
+          advance();
+        } else {
+          /* 未重命名：imported == local */
+          local = newNode(NodeType::Identifier);
+          local->loc = spec->loc;
+          local->name = spec->imported;
+        }
+        spec->children.push_back(local);
+        stmt->children.push_back(spec);
+      }
+      advance(); /* } */
+    } else if (isSymbol(current(), "*")) {
+      /* 命名空间导入：* as ns */
+      ASTNode *spec = newNode(NodeType::ImportNamespaceSpecifier);
+      spec->loc = current().start;
+      advance(); /* * */
+      if (!isKeyword(current(), "as")) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected 'as' after '*'", current().start});
+        allocator_->destroy(spec);
+        allocator_->destroy(stmt);
+        return nullptr;
+      }
+      advance(); /* as */
+      if (!at(TokenKind::Identifier)) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected namespace binding after 'as'",
+                    current().start});
+        allocator_->destroy(spec);
+        allocator_->destroy(stmt);
+        return nullptr;
+      }
+      ASTNode *local = newNode(NodeType::Identifier);
+      local->loc = current().start;
+      local->name = current().text;
+      advance();
+      spec->children.push_back(local);
+      stmt->children.push_back(spec);
+    } else if (at(TokenKind::Identifier) && !seen_default) {
+      /* 默认导入：import d from 'm' */
+      ASTNode *spec = newNode(NodeType::ImportDefaultSpecifier);
+      spec->loc = current().start;
+      ASTNode *local = newNode(NodeType::Identifier);
+      local->loc = current().start;
+      local->name = current().text;
+      advance();
+      spec->children.push_back(local);
+      stmt->children.push_back(spec);
+      seen_default = true;
+    } else {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "unexpected token in import declaration",
+                  current().start});
+      allocator_->destroy(stmt);
+      return nullptr;
+    }
+    /* 默认导入后可跟 , { } 或 , * as */
+    if (isSymbol(current(), ",")) {
+      advance();
+      continue;
+    }
+    break;
+  }
+
+  /* 模块名：from 'm' 或裸 import 'm' */
+  if (isKeyword(current(), "from")) {
+    advance(); /* from */
+  }
+  if (!at(TokenKind::String)) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected module specifier string",
+                current().start});
+    allocator_->destroy(stmt);
+    return nullptr;
+  }
+  ASTNode *source = newNode(NodeType::Literal);
+  source->loc = current().start;
+  source->literal.is_string = true;
+  source->literal.str = current().str_value;
+  source->literal.text = current().text;
+  advance();
+  stmt->children.push_back(source);
+
+  /* 分号（ASI） */
+  if (isSymbol(current(), ";")) advance();
+  return stmt;
+}
+
+/* export 声明（M1.6 ③）：ECMA-262 §16.4。
+ * 全形式：
+ *   export {a, b as c}                        → ExportNamedDeclaration[ExportSpecifier...]
+ *   export {a} from 'm'                       → 同上 + source
+ *   export * from 'm'                         → ExportAllDeclaration[source]
+ *   export * as ns from 'm'                   → ExportAllDeclaration[source]（exported=ns）
+ *   export default expr                       → ExportDefaultDeclaration[expr]
+ *   export default function f() {} / class    → 同上（函数/类声明体）
+ *   export const/let/var ... / export function f / export class C
+ *                                            → ExportNamedDeclaration[declaration]
+ *   export async function ...                 → 同上 */
+ASTNode *Parser::parseExportDeclaration() {
+  ASTNode *stmt = newNode(NodeType::ExportNamedDeclaration);
+  stmt->loc = current().start;
+  advance(); /* export */
+
+  /* export default ... */
+  if (isKeyword(current(), "default")) {
+    stmt->type = NodeType::ExportDefaultDeclaration;
+    advance(); /* default */
+    /* export default function f() {} / export default async function ...
+     * 注意：export default 允许匿名函数声明（ECMA-262 §16.4.2）。 */
+    if (isKeyword(current(), "function")) {
+      ASTNode *fn = parseFunctionDeclaration(/*allow_anonymous=*/true);
+      if (fn == nullptr) {
+        allocator_->destroy(stmt);
+        return nullptr;
+      }
+      stmt->children.push_back(fn);
+      return stmt;
+    }
+    ASTNode *expr = parseAssignment();
+    if (expr == nullptr) {
+      allocator_->destroy(stmt);
+      return nullptr;
+    }
+    stmt->children.push_back(expr);
+    if (isSymbol(current(), ";")) advance();
+    return stmt;
+  }
+
+  /* export * ... */
+  if (isSymbol(current(), "*")) {
+    stmt->type = NodeType::ExportAllDeclaration;
+    advance(); /* * */
+    if (isKeyword(current(), "as")) {
+      /* export * as ns from 'm' */
+      advance(); /* as */
+      if (!at(TokenKind::Identifier)) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected namespace export name",
+                    current().start});
+        allocator_->destroy(stmt);
+        return nullptr;
+      }
+      stmt->exported = current().text;
+      advance();
+    }
+    if (!isKeyword(current(), "from")) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected 'from' after '*'", current().start});
+      allocator_->destroy(stmt);
+      return nullptr;
+    }
+    advance(); /* from */
+    if (!at(TokenKind::String)) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected module specifier string",
+                  current().start});
+      allocator_->destroy(stmt);
+      return nullptr;
+    }
+    ASTNode *source = newNode(NodeType::Literal);
+    source->loc = current().start;
+    source->literal.is_string = true;
+    source->literal.str = current().str_value;
+    source->literal.text = current().text;
+    advance();
+    stmt->children.push_back(source);
+    if (isSymbol(current(), ";")) advance();
+    return stmt;
+  }
+
+  /* export { a, b as c } [from 'm'] */
+  if (isSymbol(current(), "{")) {
+    advance(); /* { */
+    while (!isSymbol(current(), "}")) {
+      if (atEof()) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated export specifier list",
+                    stmt->loc});
+        allocator_->destroy(stmt);
+        return nullptr;
+      }
+      if (isSymbol(current(), ",")) {
+        advance();
+        continue;
+      }
+      if (!at(TokenKind::Identifier)) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected exported binding",
+                    current().start});
+        allocator_->destroy(stmt);
+        return nullptr;
+      }
+      ASTNode *spec = newNode(NodeType::ExportSpecifier);
+      spec->loc = current().start;
+      ASTNode *local = newNode(NodeType::Identifier);
+      local->loc = current().start;
+      local->name = current().text;
+      advance();
+      spec->children.push_back(local); /* local */
+      if (isKeyword(current(), "as")) {
+        advance();
+        if (!at(TokenKind::Identifier)) {
+          sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected exported name after 'as'",
+                      current().start});
+          allocator_->destroy(spec);
+          allocator_->destroy(stmt);
+          return nullptr;
+        }
+        spec->exported = current().text;
+        advance();
+      } else {
+        spec->exported = spec->children[0]->name;
+      }
+      stmt->children.push_back(spec);
+    }
+    advance(); /* } */
+    /* 可选 from 'm'（re-export） */
+    if (isKeyword(current(), "from")) {
+      advance();
+      if (!at(TokenKind::String)) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected module specifier string",
+                    current().start});
+        allocator_->destroy(stmt);
+        return nullptr;
+      }
+      ASTNode *source = newNode(NodeType::Literal);
+      source->loc = current().start;
+      source->literal.is_string = true;
+      source->literal.str = current().str_value;
+      source->literal.text = current().text;
+      advance();
+      stmt->children.push_back(source);
+    }
+    if (isSymbol(current(), ";")) advance();
+    return stmt;
+  }
+
+  /* export const/let/var / export function / export class（声明导出） */
+  ASTNode *decl = parseStatement();
+  if (decl == nullptr) {
+    allocator_->destroy(stmt);
+    return nullptr;
+  }
+  stmt->children.push_back(decl);
   return stmt;
 }
 

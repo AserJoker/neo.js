@@ -19,9 +19,10 @@
 namespace neojs {
 
 /* 解析源码：返回 AST*（成功）或 nullptr（语法错误，诊断在 sink）。
+ * module=true 时按 ES Module 解析（Module 根节点 + 自动严格模式 + import/export）。
  * 调用方负责释放返回的 AST。 */
 AST *parseSource(JSAllocator *allocator, const char *source, size_t source_len,
-                 DiagnosticSink &sink);
+                 DiagnosticSink &sink, bool module = false);
 
 /* 全量 token 化并输出文本（--dump-tokens）。不依赖 Parser；
  * 遍历整个 token 流（协同模式下 Lexer 由 Parser 驱动，此处独立驱动）。 */

@@ -235,6 +235,49 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
     case NodeType::DebuggerStatement:
       out += "DebuggerStatement\n";
       break;
+    case NodeType::Module:
+      out += "Module\n";
+      break;
+    case NodeType::ImportDeclaration:
+      out += "ImportDeclaration\n";
+      break;
+    case NodeType::ImportSpecifier:
+      out += "ImportSpecifier(";
+      out += node->imported;
+      out += ")\n";
+      break;
+    case NodeType::ImportDefaultSpecifier:
+      out += "ImportDefaultSpecifier\n";
+      break;
+    case NodeType::ImportNamespaceSpecifier:
+      out += "ImportNamespaceSpecifier\n";
+      break;
+    case NodeType::ExportNamedDeclaration:
+      out += "ExportNamedDeclaration\n";
+      break;
+    case NodeType::ExportDefaultDeclaration:
+      out += "ExportDefaultDeclaration\n";
+      break;
+    case NodeType::ExportAllDeclaration:
+      out += "ExportAllDeclaration";
+      if (!node->exported.empty()) {
+        out += "(as ";
+        out += node->exported;
+        out += ")";
+      }
+      out += "\n";
+      break;
+    case NodeType::ExportSpecifier:
+      out += "ExportSpecifier(";
+      out += node->exported;
+      out += ")\n";
+      break;
+    case NodeType::ImportExpression:
+      out += "ImportExpression\n";
+      break;
+    case NodeType::ImportMeta:
+      out += "ImportMeta\n";
+      break;
     case NodeType::Literal:
       if (node->literal.is_number) {
         out += "Literal(";
@@ -337,8 +380,8 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
 }  // namespace
 
 AST *parseSource(JSAllocator *allocator, const char *source, size_t source_len,
-                 DiagnosticSink &sink) {
-  Parser parser(allocator, source, source_len, sink);
+                 DiagnosticSink &sink, bool module) {
+  Parser parser(allocator, source, source_len, sink, module);
   return parser.parse();
 }
 

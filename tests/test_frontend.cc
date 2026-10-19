@@ -763,7 +763,8 @@ TEST(Frontend, UnaryKeywordOps) {
   EXPECT_EQ(u->unop, neojs::UnaryOpKind::Delete);
   a.destroy(ast);
 
-  ast = neojs::parseSource(&a, "await x", 7, sink);
+  /* 顶层 await 仅模块上下文合法（M1.6 ③），此处按 module 解析 */
+  ast = neojs::parseSource(&a, "await x", std::strlen("await x"), sink, /*module=*/true);
   u = ast->root->children[0]->children[0];
   EXPECT_EQ(u->unop, neojs::UnaryOpKind::Await);
   a.destroy(ast);
@@ -1138,8 +1139,9 @@ TEST(Frontend, PrivateMemberAccess) {
 TEST(Frontend, AwaitCallAndDeleteMember) {
   neojs::DiagnosticSink sink;
   neojs::JSAllocator a = makeAllocator();
-  /* await foo() → UnaryOp(await)[Call(foo)] */
-  neojs::AST *ast = neojs::parseSource(&a, "await foo()", 11, sink);
+  /* await foo() → UnaryOp(await)[Call(foo)]（顶层 await 仅模块上下文合法） */
+  neojs::AST *ast = neojs::parseSource(&a, "await foo()", std::strlen("await foo()"), sink,
+                                       /*module=*/true);
   ASSERT_NE(ast, nullptr);
   neojs::ASTNode *top = ast->root->children[0]->children[0];
   EXPECT_EQ(top->type, neojs::NodeType::UnaryOp);
@@ -2875,4 +2877,308 @@ TEST(Frontend, StrictPropagation) {
                            std::strlen("(a, a) => { \"use strict\"; }"), sink4);
   EXPECT_EQ(ast, nullptr);
   EXPECT_TRUE(sink4.hasErrors());
+}
+
+/* ===== M1.6 ③ 模块语法 ===== */
+
+/* import 全形式：默认 / 具名（含 as 重命名）/ 命名空间 / 裸导入 / 组合 */
+TEST(Frontend, ModuleImportForms) {
+  neojs::JSAllocator a = makeAllocator();
+  /* 默认导入 */
+  neojs::DiagnosticSink sink;
+  neojs::AST *ast =
+      neojs::parseSource(&a, "import d from 'm';", std::strlen("import d from 'm';"),
+                         sink, /*module=*/true);
+  ASSERT_NE(ast, nullptr);
+  ASSERT_NE(ast->root, nullptr);
+  EXPECT_EQ(ast->root->type, neojs::NodeType::Module);
+  ASSERT_GE(ast->root->children.size(), 1u);
+  EXPECT_EQ(ast->root->children[0]->type, neojs::NodeType::ImportDeclaration);
+  ASSERT_GE(ast->root->children[0]->children.size(), 1u);
+  EXPECT_EQ(ast->root->children[0]->children[0]->type,
+            neojs::NodeType::ImportDefaultSpecifier);
+  a.destroy(ast);
+
+  /* 具名导入 + as 重命名 */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "import {a, b as c} from 'm';",
+                           std::strlen("import {a, b as c} from 'm';"), sink2,
+                           /*module=*/true);
+  ASSERT_NE(ast, nullptr);
+  auto *imp = ast->root->children[0];
+  EXPECT_EQ(imp->type, neojs::NodeType::ImportDeclaration);
+  ASSERT_GE(imp->children.size(), 2u);
+  EXPECT_EQ(imp->children[0]->type, neojs::NodeType::ImportSpecifier);
+  EXPECT_EQ(imp->children[0]->imported, "a");
+  EXPECT_EQ(imp->children[1]->type, neojs::NodeType::ImportSpecifier);
+  EXPECT_EQ(imp->children[1]->imported, "b");
+  ASSERT_GE(imp->children[1]->children.size(), 1u);
+  EXPECT_EQ(imp->children[1]->children[0]->name, "c"); /* local 名 */
+  a.destroy(ast);
+
+  /* 命名空间导入 */
+  neojs::DiagnosticSink sink3;
+  ast = neojs::parseSource(&a, "import * as ns from 'm';",
+                           std::strlen("import * as ns from 'm';"), sink3,
+                           /*module=*/true);
+  ASSERT_NE(ast, nullptr);
+  imp = ast->root->children[0];
+  EXPECT_EQ(imp->children[0]->type, neojs::NodeType::ImportNamespaceSpecifier);
+  a.destroy(ast);
+
+  /* 裸导入 */
+  neojs::DiagnosticSink sink4;
+  ast = neojs::parseSource(&a, "import 'm';", std::strlen("import 'm';"), sink4,
+                           /*module=*/true);
+  ASSERT_NE(ast, nullptr);
+  imp = ast->root->children[0];
+  ASSERT_EQ(imp->children.size(), 1u);
+  EXPECT_EQ(imp->children[0]->type, neojs::NodeType::Literal);
+  a.destroy(ast);
+
+  /* 默认 + 具名组合 */
+  neojs::DiagnosticSink sink5;
+  ast = neojs::parseSource(&a, "import d, {a} from 'm';",
+                           std::strlen("import d, {a} from 'm';"), sink5,
+                           /*module=*/true);
+  ASSERT_NE(ast, nullptr);
+  imp = ast->root->children[0];
+  ASSERT_GE(imp->children.size(), 2u);
+  EXPECT_EQ(imp->children[0]->type, neojs::NodeType::ImportDefaultSpecifier);
+  EXPECT_EQ(imp->children[1]->type, neojs::NodeType::ImportSpecifier);
+  a.destroy(ast);
+
+  /* 默认 + 命名空间组合 */
+  neojs::DiagnosticSink sink6;
+  ast = neojs::parseSource(&a, "import d, * as ns from 'm';",
+                           std::strlen("import d, * as ns from 'm';"), sink6,
+                           /*module=*/true);
+  ASSERT_NE(ast, nullptr);
+  imp = ast->root->children[0];
+  ASSERT_GE(imp->children.size(), 2u);
+  EXPECT_EQ(imp->children[0]->type, neojs::NodeType::ImportDefaultSpecifier);
+  EXPECT_EQ(imp->children[1]->type, neojs::NodeType::ImportNamespaceSpecifier);
+  a.destroy(ast);
+
+  /* import 声明缺模块名 → 报错 */
+  neojs::DiagnosticSink sink7;
+  ast = neojs::parseSource(&a, "import x from;", std::strlen("import x from;"), sink7,
+                           /*module=*/true);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink7.hasErrors());
+}
+
+/* export 全形式：具名 / as / re-export / all / all-as / default / 声明导出 */
+TEST(Frontend, ModuleExportForms) {
+  neojs::JSAllocator a = makeAllocator();
+  /* 具名导出 */
+  neojs::DiagnosticSink sink;
+  neojs::AST *ast =
+      neojs::parseSource(&a, "export {a};", std::strlen("export {a};"), sink,
+                         /*module=*/true);
+  ASSERT_NE(ast, nullptr);
+  auto *exp = ast->root->children[0];
+  EXPECT_EQ(exp->type, neojs::NodeType::ExportNamedDeclaration);
+  ASSERT_GE(exp->children.size(), 1u);
+  EXPECT_EQ(exp->children[0]->type, neojs::NodeType::ExportSpecifier);
+  EXPECT_EQ(exp->children[0]->exported, "a");
+  a.destroy(ast);
+
+  /* as 重命名 */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "export {b as c};", std::strlen("export {b as c};"),
+                           sink2, /*module=*/true);
+  ASSERT_NE(ast, nullptr);
+  exp = ast->root->children[0];
+  EXPECT_EQ(exp->children[0]->exported, "c");
+  a.destroy(ast);
+
+  /* re-export：export {a} from 'm' */
+  neojs::DiagnosticSink sink3;
+  ast = neojs::parseSource(&a, "export {a} from 'm';",
+                           std::strlen("export {a} from 'm';"), sink3,
+                           /*module=*/true);
+  ASSERT_NE(ast, nullptr);
+  exp = ast->root->children[0];
+  EXPECT_EQ(exp->type, neojs::NodeType::ExportNamedDeclaration);
+  ASSERT_GE(exp->children.size(), 2u);
+  EXPECT_EQ(exp->children[1]->type, neojs::NodeType::Literal);
+  a.destroy(ast);
+
+  /* export * from 'm' */
+  neojs::DiagnosticSink sink4;
+  ast = neojs::parseSource(&a, "export * from 'm';",
+                           std::strlen("export * from 'm';"), sink4,
+                           /*module=*/true);
+  ASSERT_NE(ast, nullptr);
+  exp = ast->root->children[0];
+  EXPECT_EQ(exp->type, neojs::NodeType::ExportAllDeclaration);
+  a.destroy(ast);
+
+  /* export * as ns from 'm' */
+  neojs::DiagnosticSink sink5;
+  ast = neojs::parseSource(&a, "export * as ns from 'm';",
+                           std::strlen("export * as ns from 'm';"), sink5,
+                           /*module=*/true);
+  ASSERT_NE(ast, nullptr);
+  exp = ast->root->children[0];
+  EXPECT_EQ(exp->type, neojs::NodeType::ExportAllDeclaration);
+  EXPECT_EQ(exp->exported, "ns");
+  a.destroy(ast);
+
+  /* export default 表达式 */
+  neojs::DiagnosticSink sink6;
+  ast = neojs::parseSource(&a, "export default 1;", std::strlen("export default 1;"),
+                           sink6, /*module=*/true);
+  ASSERT_NE(ast, nullptr);
+  exp = ast->root->children[0];
+  EXPECT_EQ(exp->type, neojs::NodeType::ExportDefaultDeclaration);
+  a.destroy(ast);
+
+  /* export default 匿名函数声明 */
+  neojs::DiagnosticSink sink7;
+  ast = neojs::parseSource(&a, "export default function () {};",
+                           std::strlen("export default function () {};"), sink7,
+                           /*module=*/true);
+  ASSERT_NE(ast, nullptr);
+  exp = ast->root->children[0];
+  EXPECT_EQ(exp->type, neojs::NodeType::ExportDefaultDeclaration);
+  ASSERT_GE(exp->children.size(), 1u);
+  EXPECT_EQ(exp->children[0]->type, neojs::NodeType::FunctionDeclaration);
+  a.destroy(ast);
+
+  /* export default 具名函数声明 */
+  neojs::DiagnosticSink sink8;
+  ast = neojs::parseSource(&a, "export default function f() {};",
+                           std::strlen("export default function f() {};"), sink8,
+                           /*module=*/true);
+  ASSERT_NE(ast, nullptr);
+  exp = ast->root->children[0];
+  EXPECT_EQ(exp->type, neojs::NodeType::ExportDefaultDeclaration);
+  a.destroy(ast);
+
+  /* export const/let/var 声明导出 */
+  neojs::DiagnosticSink sink9;
+  ast = neojs::parseSource(&a, "export const x = 1;",
+                           std::strlen("export const x = 1;"), sink9,
+                           /*module=*/true);
+  ASSERT_NE(ast, nullptr);
+  exp = ast->root->children[0];
+  EXPECT_EQ(exp->type, neojs::NodeType::ExportNamedDeclaration);
+  ASSERT_GE(exp->children.size(), 1u);
+  EXPECT_EQ(exp->children[0]->type, neojs::NodeType::VariableDeclaration);
+  a.destroy(ast);
+
+  /* export function 声明导出 */
+  neojs::DiagnosticSink sink10;
+  ast = neojs::parseSource(&a, "export function f() {}",
+                           std::strlen("export function f() {}"), sink10,
+                           /*module=*/true);
+  ASSERT_NE(ast, nullptr);
+  exp = ast->root->children[0];
+  EXPECT_EQ(exp->type, neojs::NodeType::ExportNamedDeclaration);
+  a.destroy(ast);
+
+  /* export {} 空列表合法 */
+  neojs::DiagnosticSink sink11;
+  ast = neojs::parseSource(&a, "export {};", std::strlen("export {};"), sink11,
+                           /*module=*/true);
+  ASSERT_NE(ast, nullptr);
+  a.destroy(ast);
+}
+
+/* 模块上下文语义：import/export 仅模块合法；顶层 await 仅模块合法；
+ * import() 动态导入与 import.meta 行为；模块自动严格模式 */
+TEST(Frontend, ModuleContextSemantics) {
+  neojs::JSAllocator a = makeAllocator();
+  /* script 模式：import 声明报错 */
+  neojs::DiagnosticSink sink;
+  neojs::AST *ast = neojs::parseSource(&a, "import x from 'm';",
+                                       std::strlen("import x from 'm';"), sink);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink.hasErrors());
+
+  /* script 模式：export 声明报错 */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "export {a};", std::strlen("export {a};"), sink2);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink2.hasErrors());
+
+  /* script 模式：顶层 await 报错 */
+  neojs::DiagnosticSink sink3;
+  ast = neojs::parseSource(&a, "await x;", std::strlen("await x;"), sink3);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink3.hasErrors());
+
+  /* 模块模式：顶层 await 合法 */
+  neojs::DiagnosticSink sink4;
+  ast = neojs::parseSource(&a, "await x;", std::strlen("await x;"), sink4,
+                           /*module=*/true);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink4.hasErrors());
+  a.destroy(ast);
+
+  /* script 模式：import.meta 报错 */
+  neojs::DiagnosticSink sink5;
+  ast = neojs::parseSource(&a, "import.meta;", std::strlen("import.meta;"), sink5);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink5.hasErrors());
+
+  /* 模块模式：import.meta 合法 */
+  neojs::DiagnosticSink sink6;
+  ast = neojs::parseSource(&a, "import.meta;", std::strlen("import.meta;"), sink6,
+                           /*module=*/true);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink6.hasErrors());
+  a.destroy(ast);
+
+  /* import() 动态导入在 script 与模块均合法 */
+  neojs::DiagnosticSink sink7;
+  ast = neojs::parseSource(&a, "const p = import('m');",
+                           std::strlen("const p = import('m');"), sink7);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink7.hasErrors());
+  a.destroy(ast);
+
+  /* 模块自动严格模式：with 语句报错 */
+  neojs::DiagnosticSink sink8;
+  ast = neojs::parseSource(&a, "with (o) x;", std::strlen("with (o) x;"), sink8,
+                           /*module=*/true);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink8.hasErrors());
+
+  /* import 多参（import(a, b)）报错：恰好一个参数 */
+  neojs::DiagnosticSink sink9;
+  ast = neojs::parseSource(&a, "import('a', 'b');",
+                           std::strlen("import('a', 'b');"), sink9);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink9.hasErrors());
+
+  /* import/export 仅模块顶层：嵌套在块/控制流体内报错 */
+  neojs::DiagnosticSink sink10;
+  ast = neojs::parseSource(&a, "if (x) import y from 'm';",
+                           std::strlen("if (x) import y from 'm';"), sink10,
+                           /*module=*/true);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink10.hasErrors());
+
+  neojs::DiagnosticSink sink11;
+  ast = neojs::parseSource(&a, "{ export {a}; }", std::strlen("{ export {a}; }"),
+                           sink11, /*module=*/true);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink11.hasErrors());
+
+  neojs::DiagnosticSink sink12;
+  ast = neojs::parseSource(&a, "function f() { import x from 'm'; }",
+                           std::strlen("function f() { import x from 'm'; }"), sink12,
+                           /*module=*/true);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink12.hasErrors());
+
+  neojs::DiagnosticSink sink13;
+  ast = neojs::parseSource(&a, "for (;;) export {a};",
+                           std::strlen("for (;;) export {a};"), sink13,
+                           /*module=*/true);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink13.hasErrors());
 }

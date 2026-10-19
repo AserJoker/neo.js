@@ -98,8 +98,9 @@ AssignmentOpKind toAssignOp(const Token &tok) {
 }  // namespace
 
 Parser::Parser(JSAllocator *allocator, const char *source, size_t source_len,
-               DiagnosticSink &sink)
-    : allocator_(allocator), lexer_(source, source_len, sink), sink_(sink) {}
+               DiagnosticSink &sink, bool module)
+    : allocator_(allocator), lexer_(source, source_len, sink), sink_(sink),
+      module_(module) {}
 
 ASTNode *Parser::newNode(NodeType t) {
   return allocator_->create<ASTNode>(t);
@@ -109,7 +110,16 @@ AST *Parser::parse() {
   lexer_.skipHashbang(); /* M1.5：入口级 hashbang，首个 token 前 */
   AST *ast = allocator_->create<AST>();
   ast->allocator = allocator_;
-  ast->root = parseStatementList();
+  if (module_) {
+    /* 模块模式（M1.6 ③）：Module 根节点 + 自动严格模式。
+     * 顶层 await 合法（module_ 为 true 时 parseStatement 放行）；
+     * import/export 仅在 module 上下文合法。 */
+    strict_ = true;
+    ast->root = parseStatementList();
+    if (ast->root != nullptr) ast->root->type = NodeType::Module;
+  } else {
+    ast->root = parseStatementList();
+  }
   if (ast->root == nullptr || sink_.hasErrors()) {
     allocator_->destroy(ast);
     return nullptr;
@@ -461,6 +471,13 @@ ASTNode *Parser::parseUnary() {
   }
   if (!is_unary) return parseLeftHandSide();
 
+  /* 顶层 await（M1.6 ③）：仅 module 上下文合法（顶层 await 特性）。
+   * script 上下文顶层 await 报错；函数/异步函数内（function_depth_ > 0）不受限。 */
+  if (op == UnaryOpKind::Await && function_depth_ == 0 && !module_) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "await is only valid in async functions and the top level bodies of modules",
+                tok.start});
+    return nullptr;
+  }
   advance(); /* 消费一元运算符 */
   ASTNode *operand = parseUnary(); /* 右结合：一元可嵌套（如 !!!x、- -x） */
   if (operand == nullptr) return nullptr;
@@ -846,6 +863,45 @@ ASTNode *Parser::parsePrimary() {
         return parseLiteral();
       /* 函数表达式：function [name](params) { body }（M1.5 ④） */
       if (tok.text == "function") return parseFunctionExpression();
+      /* 动态导入 import('m')（M1.6 ③）：import 后跟 ( 时为表达式 */
+      if (tok.text == "import" && isSymbol(peek(), "(")) {
+        advance(); /* import */
+        ASTNode *node = newNode(NodeType::ImportExpression);
+        node->loc = tok.start;
+        ASTNode *spec = parseArguments(); /* (a, b) */
+        if (spec == nullptr) return nullptr;
+        if (spec->children.size() != 1) {
+          sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                      "import() requires exactly one argument", tok.start});
+          allocator_->destroy(spec);
+          return nullptr;
+        }
+        node->children.push_back(spec->children[0]);
+        allocator_->destroy(spec); /* 临时容器 */
+        return node;
+      }
+      /* import.meta（M1.6 ③）：import 后跟 .meta。仅模块上下文合法
+       * （ECMA-262 §12.3.12）；Script 中报 SyntaxError。 */
+      if (tok.text == "import" && isSymbol(peek(), ".")) {
+        Lexer::State st = lexer_.save();
+        lexer_.next(); /* import */
+        lexer_.next(); /* . */
+        bool is_meta = isKeyword(lexer_.current(), "meta");
+        lexer_.restore(st);
+        if (is_meta) {
+          if (!module_) {
+            sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                        "import.meta is only valid in modules", tok.start});
+            return nullptr;
+          }
+          advance(); /* import */
+          advance(); /* . */
+          advance(); /* meta */
+          ASTNode *n = newNode(NodeType::ImportMeta);
+          n->loc = tok.start;
+          return n;
+        }
+      }
       ASTNode *n = newNode(NodeType::Identifier);
       n->loc = tok.start;
       n->name = tok.text;

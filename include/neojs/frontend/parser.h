@@ -38,9 +38,9 @@ inline bool isKeyword(const Token &tok, const char *kw) {
 class Parser {
  public:
   Parser(JSAllocator *allocator, const char *source, size_t source_len,
-         DiagnosticSink &sink);
+         DiagnosticSink &sink, bool module = false);
 
-  /* 解析整个 Program；失败（语法错误）返回 nullptr（错误在 sink）。 */
+  /* 解析整个 Program（或 Module）；失败（语法错误）返回 nullptr（错误在 sink）。 */
   AST *parse();
 
  private:
@@ -60,7 +60,8 @@ class Parser {
 
   /* 最小递归下降：语句（parser_stmt.cc） */
   ASTNode *parseStatementList();
-  ASTNode *parseStatement();      /* 语句总入口：按首 token 特征分派 */
+  ASTNode *parseStatement();      /* 语句总入口：按首 token 特征分派（含嵌套深度计数） */
+  ASTNode *parseStatementInner(); /* parseStatement 的分派实现（import/export 仅嵌套深度 1 时合法） */
   ASTNode *parseBlock(bool detect_strict = false); /* 块语句：{ stmt... } */
   ASTNode *parseLabeledStatement(); /* 标签语句：label: stmt */
   ASTNode *parseIfStatement();      /* 条件语句：if (expr) stmt [else stmt] */
@@ -68,7 +69,7 @@ class Parser {
   ASTNode *parseVariableDeclaration(bool consume_semicolon = true,
                                    bool allow_missing_const_init = false); /* 声明（M1.5 ①） */
   ASTNode *parseForStatement();        /* for/for-in/for-of/for await（M1.5 ③） */
-  ASTNode *parseFunctionDeclaration(); /* 函数声明：function name(params) { body }（M1.5 ④） */
+  ASTNode *parseFunctionDeclaration(bool allow_anonymous = false); /* 函数声明：function name(params) { body }（M1.5 ④）；export default 允许匿名 */
   ASTNode *parseFunctionExpression();  /* 函数表达式：function [name](params) { body }（M1.5 ④） */
   ASTNode *parseReturnStatement();     /* 返回语句：return [expr]（M1.5 ④） */
   ASTNode *parseBreakStatement();      /* 跳出：break [label]（M1.5 ⑤） */
@@ -77,6 +78,8 @@ class Parser {
   ASTNode *parseTryStatement();        /* try/catch/finally（M1.5 ⑥） */
   ASTNode *parseWithStatement();       /* with：with (obj) stmt（M1.5 ⑦） */
   ASTNode *parseDebuggerStatement();   /* debugger（M1.5 ⑦） */
+  ASTNode *parseImportDeclaration();   /* import 声明（M1.6 ③，module 上下文） */
+  ASTNode *parseExportDeclaration();   /* export 声明（M1.6 ③，module 上下文） */
   ASTNode *parseExpressionStatement();
 
   /* 最小递归下降：表达式（parser.cc） */
@@ -106,11 +109,13 @@ class Parser {
   JSAllocator *allocator_;
   Lexer lexer_;
   DiagnosticSink &sink_;
+  bool module_ = false; /* 模块模式（sourceType=module）：import/export/顶层 await（M1.6 ③） */
   bool has_peeked_ = false;
   int loop_depth_ = 0; /* 循环嵌套深度（for/while/do-while；break/continue 校验） */
   int function_depth_ = 0; /* 函数嵌套深度（return 顶层校验，M1.5 ④） */
+  int statement_nesting_ = 0; /* 语句嵌套深度（import/export 仅模块顶层，M1.6 ③） */
   std::vector<std::string> label_stack_; /* 活跃标签栈（break/continue 引用校验） */
-  bool strict_ = false; /* 当前作用域严格模式（"use strict" directive） */
+  bool strict_ = false; /* 当前作用域严格模式（"use strict" directive / module 自动严格） */
 };
 
 }  // namespace neojs

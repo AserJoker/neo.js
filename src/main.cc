@@ -32,9 +32,11 @@ void printUsage() {
   std::printf("usage: neojs [--version]\n");
   std::printf("       neojs --dump-tokens '<source>'\n");
   std::printf("       neojs --dump-ast '<source>'\n");
+  std::printf("       neojs --dump-ast-module '<source>'\n");
   std::printf("  --version      print version and exit\n");
   std::printf("  --dump-tokens  tokenize source and print the token stream\n");
-  std::printf("  --dump-ast     parse source and print the AST\n");
+  std::printf("  --dump-ast     parse source as Script and print the AST\n");
+  std::printf("  --dump-ast-module  parse source as Module and print the AST\n");
 }
 
 /* 打印诊断到 stderr（架构 §7：默认输出 stderr）。返回是否无错误。 */
@@ -102,7 +104,9 @@ int main(int argc, char *argv[]) {
     return 0;
   }
 
-  if (argc == 3 && std::strcmp(argv[1], "--dump-ast") == 0) {
+  if ((argc == 3 && std::strcmp(argv[1], "--dump-ast") == 0) ||
+      (argc == 3 && std::strcmp(argv[1], "--dump-ast-module") == 0)) {
+    bool module = std::strcmp(argv[1], "--dump-ast-module") == 0;
     JSAllocator *a = nullptr;
     JSContext *ctx = nullptr;
     makeEngine(&a, &ctx);
@@ -110,7 +114,7 @@ int main(int argc, char *argv[]) {
     neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
     neojs::DiagnosticSink sink;
     neojs::AST *ast = neojs::parseSource(&c->allocator(), argv[2],
-                                         std::strlen(argv[2]), sink);
+                                         std::strlen(argv[2]), sink, module);
     if (ast == nullptr) {
       printDiagnostics(sink);
       JS_FreeContext(ctx);

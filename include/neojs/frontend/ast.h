@@ -75,6 +75,18 @@ enum class NodeType : uint8_t {
   CatchClause,         /* catch 子句：catch [(param)] block（M1.5 ⑥） */
   WithStatement,       /* with：with (obj) stmt（M1.5 ⑦，废弃警告） */
   DebuggerStatement,   /* debugger 语句（M1.5 ⑦） */
+  /* 模块语法（M1.6 ③）：Module 为根节点，children = Import/Export 语句 + 普通语句 */
+  Module,              /* 模块根节点（sourceType=module，自动严格模式） */
+  ImportDeclaration,   /* import 声明：import d from 'm' / import {a} from 'm' 等 */
+  ImportSpecifier,     /* 具名导入：{ a as b }（children[0]=imported，children[1]=local） */
+  ImportDefaultSpecifier, /* 默认导入：import d from 'm'（children[0]=local） */
+  ImportNamespaceSpecifier, /* 命名空间导入：import * as ns（children[0]=local） */
+  ExportNamedDeclaration,  /* 具名导出：export {a as b} / export const x = 1 / export function f */
+  ExportDefaultDeclaration, /* 默认导出：export default expr */
+  ExportAllDeclaration,    /* 全量导出：export * from 'm' / export * as ns from 'm' */
+  ExportSpecifier,     /* 导出项：{ local as exported }（children[0]=local，children[1]=exported） */
+  ImportExpression,    /* 动态导入：import('m')（children[0]=specifier） */
+  ImportMeta,          /* import.meta（无子节点） */
 };
 
 /* 声明关键字类型（M1.5 ①）：var / let / const */
@@ -211,6 +223,10 @@ struct ASTNode {
   UpdateOpKind update_op = UpdateOpKind::Inc; /* UpdateExpression：++/-- */
   VarKind varkind = VarKind::Var; /* VariableDeclaration：var/let/const */
   std::string directive;  /* ExprStmt：指令序言标记（非空 = "use strict" 等） */
+  std::string source;     /* Import/Export 声明：模块名 'm'（ImportDeclaration/ExportAll） */
+  std::string imported;   /* ImportSpecifier：导入的具名（{ a as b } 的 a） */
+  std::string exported;   /* ExportSpecifier/ExportAll：导出的名字（{ a as b } 的 b；* as ns 的 ns） */
+  bool is_type = false;   /* import/export { type T }（ES2022 type 修饰，暂仅占位） */
   bool prefix = false;        /* UpdateExpression：true = 前缀 ++x；false = 后缀 x++ */
   bool optional = false;      /* CallExpression/MemberExpression：可选链 ?. 标记 */
   bool is_await = false;      /* ForOfStatement：for await(...of...)（M1.5 ③） */
