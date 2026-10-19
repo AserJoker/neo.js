@@ -120,6 +120,31 @@ ASTNode *Parser::parsePrimary() {
       n->loc = tok.start;
       n->literal.number = tok.number;
       n->literal.is_number = true;
+      n->literal.is_bigint = tok.is_bigint;
+      n->literal.text = tok.text;
+      advance();
+      return n;
+    }
+    case TokenKind::String: {
+      ASTNode *n = newNode(NodeType::Literal);
+      n->loc = tok.start;
+      n->literal.is_string = true;
+      n->literal.str = tok.str_value;
+      n->literal.text = tok.text;
+      advance();
+      return n;
+    }
+    case TokenKind::Template: {
+      /* M1.2：无插值模板串作 String；含 ${ 的头部暂报错（M1.3 处理） */
+      if (tok.is_template_head) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "template interpolation not yet supported",
+                    tok.start});
+        return nullptr;
+      }
+      ASTNode *n = newNode(NodeType::Literal);
+      n->loc = tok.start;
+      n->literal.is_string = true;
+      n->literal.str = tok.str_value;
       n->literal.text = tok.text;
       advance();
       return n;

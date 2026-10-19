@@ -69,7 +69,7 @@ if(BUILD_TESTS)
 
   add_executable(neojs_test ${TEST_SOURCES})
   target_include_directories(neojs_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
-  target_link_libraries(neojs_test PRIVATE neojs_core icu_data_init ICU::data GTest::gtest GTest::gtest_main)
+  target_link_libraries(neojs_test PRIVATE neojs_core icu_data_init ICU::data GTest::gtest)
   neojs_target_warnings(neojs_test)
 
   include(GoogleTest)

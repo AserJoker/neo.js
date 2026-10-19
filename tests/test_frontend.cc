@@ -328,3 +328,254 @@ TEST(Frontend, DumpAstOutput) {
 
   a.destroy(ast);
 }
+
+/* -------------------------------------------------------------------------- */
+/* M1.2：ICU 接入 + Unicode 换行 + 完整字面量                                  */
+/* -------------------------------------------------------------------------- */
+
+/* Unicode 标识符：中文（ID_Start/ID_Continue 需 ICU 属性表） */
+TEST(Frontend, UnicodeIdentifier) {
+  neojs::DiagnosticSink sink;
+  neojs::Lexer lexer("\xE5\x8F\x98\xE9\x87\x8F", 6, sink); /* UTF-8：变(3B) 量(3B) */
+
+  const neojs::Token &t = lexer.next();
+  EXPECT_EQ(t.kind, neojs::TokenKind::Identifier);
+  EXPECT_EQ(t.text, "\xE5\x8F\x98\xE9\x87\x8F");
+  EXPECT_EQ(lexer.next().kind, neojs::TokenKind::EndOfFile);
+  EXPECT_FALSE(sink.hasErrors());
+}
+
+/* Unicode 标识符：组合后续字符（é 由 e + U+0301 组成） */
+TEST(Frontend, UnicodeIdentifierCombiningMark) {
+  neojs::DiagnosticSink sink;
+  /* "e\u0301"（e + 组合重音号 U+0301）——U+0301 是 ID_Continue */
+  const char *src = "\x65\xCC\x81"; /* e + U+0301 */
+  neojs::Lexer lexer(src, 3, sink);
+
+  const neojs::Token &t = lexer.next();
+  EXPECT_EQ(t.kind, neojs::TokenKind::Identifier);
+  EXPECT_EQ(t.text, std::string("\x65\xCC\x81"));
+  EXPECT_FALSE(sink.hasErrors());
+}
+
+/* Unicode 标识符：ZWNJ/ZWJ 作为继续字符（波斯语/阿拉伯语） */
+TEST(Frontend, IdentifierZwnjZwj) {
+  neojs::DiagnosticSink sink;
+  /* "a\u200Cb"（a + ZWNJ + b） */
+  const char *src = "\x61\xE2\x80\x8C\x62";
+  neojs::Lexer lexer(src, 5, sink);
+
+  const neojs::Token &t = lexer.next();
+  EXPECT_EQ(t.kind, neojs::TokenKind::Identifier);
+  EXPECT_EQ(t.text, std::string("\x61\xE2\x80\x8C\x62"));
+  EXPECT_FALSE(sink.hasErrors());
+}
+
+/* 标识符 \u 转义：\u4E2D（中） */
+TEST(Frontend, IdentifierUnicodeEscape) {
+  neojs::DiagnosticSink sink;
+  neojs::Lexer lexer("\\u4E2D\\u6587", 12, sink);
+
+  const neojs::Token &t = lexer.next();
+  EXPECT_EQ(t.kind, neojs::TokenKind::Identifier);
+  EXPECT_EQ(t.text, "\\u4E2D\\u6587");
+  EXPECT_FALSE(sink.hasErrors());
+}
+
+/* Unicode 换行：U+2028 / U+2029 都是 LineTerminator，使 line 递增 */
+TEST(Frontend, UnicodeLineTerminator) {
+  neojs::DiagnosticSink sink;
+  /* "1\u2028+ 2"：+ 在第二行 */
+  const char *src = "1\xE2\x80\xA8+ 2";
+  neojs::Lexer lexer(src, 7, sink);
+
+  const neojs::Token &t1 = lexer.next();
+  EXPECT_EQ(t1.kind, neojs::TokenKind::Number);
+  const neojs::Token &t2 = lexer.next();
+  EXPECT_EQ(t2.kind, neojs::TokenKind::Symbol);
+  EXPECT_EQ(t2.text, "+");
+  EXPECT_EQ(t2.start.line, 2u);
+  EXPECT_EQ(t2.start.col, 1u);
+  EXPECT_FALSE(sink.hasErrors());
+}
+
+/* \r\n 计单个换行（\n 不再 ++line） */
+TEST(Frontend, CrLfSingleLineTerminator) {
+  neojs::DiagnosticSink sink;
+  neojs::Lexer lexer("1\r\n+ 2", 6, sink);
+
+  const neojs::Token &t1 = lexer.next();
+  EXPECT_EQ(t1.kind, neojs::TokenKind::Number);
+  const neojs::Token &t2 = lexer.next();
+  EXPECT_EQ(t2.kind, neojs::TokenKind::Symbol);
+  EXPECT_EQ(t2.start.line, 2u);
+}
+
+/* Unicode 空白：U+00A0（NBSP）是 White_Space，被跳过 */
+TEST(Frontend, UnicodeWhitespaceSkipped) {
+  neojs::DiagnosticSink sink;
+  /* "1\u00A0+ 2"：NBSP 分隔 */
+  const char *src = "1\xC2\xA0+ 2";
+  neojs::Lexer lexer(src, 6, sink);
+
+  const neojs::Token &t1 = lexer.next();
+  EXPECT_EQ(t1.kind, neojs::TokenKind::Number);
+  EXPECT_EQ(t1.text, "1");
+  const neojs::Token &t2 = lexer.next();
+  EXPECT_EQ(t2.kind, neojs::TokenKind::Symbol);
+  EXPECT_EQ(t2.text, "+");
+  EXPECT_EQ(t2.start.col, 3u);
+}
+
+/* 数字：十六进制 + 二进制 + 八进制 */
+TEST(Frontend, NumberHexBinaryOctal) {
+  neojs::DiagnosticSink sink;
+  neojs::Lexer l1("0x1F", 4, sink);
+  const neojs::Token &t1 = l1.next();
+  EXPECT_EQ(t1.kind, neojs::TokenKind::Number);
+  EXPECT_DOUBLE_EQ(t1.number, 31.0);
+
+  neojs::Lexer l2("0b1010", 6, sink);
+  const neojs::Token &t2 = l2.next();
+  EXPECT_EQ(t2.kind, neojs::TokenKind::Number);
+  EXPECT_DOUBLE_EQ(t2.number, 10.0);
+
+  neojs::Lexer l3("0o17", 4, sink);
+  const neojs::Token &t3 = l3.next();
+  EXPECT_EQ(t3.kind, neojs::TokenKind::Number);
+  EXPECT_DOUBLE_EQ(t3.number, 15.0);
+
+  EXPECT_FALSE(sink.hasErrors());
+}
+
+/* 数字：科学计数 + 小数 */
+TEST(Frontend, NumberExponentAndFraction) {
+  neojs::DiagnosticSink sink;
+  neojs::Lexer l1("1.5e3", 5, sink);
+  const neojs::Token &t1 = l1.next();
+  EXPECT_EQ(t1.kind, neojs::TokenKind::Number);
+  EXPECT_DOUBLE_EQ(t1.number, 1500.0);
+
+  neojs::Lexer l2("2.5", 3, sink);
+  const neojs::Token &t2 = l2.next();
+  EXPECT_EQ(t2.kind, neojs::TokenKind::Number);
+  EXPECT_DOUBLE_EQ(t2.number, 2.5);
+}
+
+/* 数字：_ 分隔符 */
+TEST(Frontend, NumberSeparator) {
+  neojs::DiagnosticSink sink;
+  neojs::Lexer l("1_000_000", 9, sink);
+  const neojs::Token &t = l.next();
+  EXPECT_EQ(t.kind, neojs::TokenKind::Number);
+  EXPECT_DOUBLE_EQ(t.number, 1000000.0);
+
+  /* 非法分隔符：1__000 报错 */
+  neojs::DiagnosticSink sink2;
+  neojs::Lexer l2("1__000", 6, sink2);
+  const neojs::Token &t2 = l2.next();
+  EXPECT_EQ(t2.kind, neojs::TokenKind::Error);
+  EXPECT_TRUE(sink2.hasErrors());
+}
+
+/* 数字：BigInt 后缀 */
+TEST(Frontend, NumberBigInt) {
+  neojs::DiagnosticSink sink;
+  neojs::Lexer l("123n", 4, sink);
+  const neojs::Token &t = l.next();
+  EXPECT_EQ(t.kind, neojs::TokenKind::Number);
+  EXPECT_TRUE(t.is_bigint);
+  EXPECT_DOUBLE_EQ(t.number, 123.0);
+}
+
+/* 数字：成员访问 1.toString() 不应把 . 当小数点 */
+TEST(Frontend, NumberDotNotFraction) {
+  neojs::DiagnosticSink sink;
+  neojs::Lexer l("1.toString", 10, sink);
+  const neojs::Token &t1 = l.next();
+  EXPECT_EQ(t1.kind, neojs::TokenKind::Number);
+  EXPECT_EQ(t1.text, "1");
+  const neojs::Token &t2 = l.next();
+  EXPECT_EQ(t2.kind, neojs::TokenKind::Symbol);
+  EXPECT_EQ(t2.text, ".");
+}
+
+/* 字符串：转义序列解码 */
+TEST(Frontend, StringEscapeDecoded) {
+  neojs::DiagnosticSink sink;
+  neojs::Lexer l("\"a\\nb\\t\\u4E2D\"", 15, sink); /* "a\nb\t\u4E2D" */
+  const neojs::Token &t = l.next();
+  EXPECT_EQ(t.kind, neojs::TokenKind::String);
+  EXPECT_EQ(t.str_value, "a\nb\t中");
+  EXPECT_FALSE(sink.hasErrors());
+}
+
+/* 字符串：废弃八进制转义打警告 */
+TEST(Frontend, StringLegacyOctalEscapeWarns) {
+  neojs::DiagnosticSink sink;
+  neojs::Lexer l("\"\\1\"", 4, sink);
+  const neojs::Token &t = l.next();
+  EXPECT_EQ(t.kind, neojs::TokenKind::String);
+  EXPECT_FALSE(sink.hasErrors());
+  EXPECT_EQ(sink.diagnostics().size(), 1u);
+  EXPECT_EQ(sink.diagnostics()[0].severity, neojs::Severity::Warning);
+  EXPECT_EQ(sink.diagnostics()[0].code, "DEP-0003");
+}
+
+/* 字符串：未闭合报错 */
+TEST(Frontend, StringUnterminatedErrors) {
+  neojs::DiagnosticSink sink;
+  neojs::Lexer l("\"abc", 4, sink);
+  const neojs::Token &t = l.next();
+  EXPECT_EQ(t.kind, neojs::TokenKind::Error);
+  EXPECT_TRUE(sink.hasErrors());
+}
+
+/* 模板串：无插值完整片段 */
+TEST(Frontend, TemplateLiteral) {
+  neojs::DiagnosticSink sink;
+  neojs::Lexer l("`hello`", 7, sink);
+  const neojs::Token &t = l.next();
+  EXPECT_EQ(t.kind, neojs::TokenKind::Template);
+  EXPECT_EQ(t.str_value, "hello");
+  EXPECT_FALSE(t.is_template_head);
+  EXPECT_EQ(l.next().kind, neojs::TokenKind::EndOfFile);
+}
+
+/* 模板串：${ 标记 is_template_head（M1.3 处理插值） */
+TEST(Frontend, TemplateHeadMarked) {
+  neojs::DiagnosticSink sink;
+  neojs::Lexer l("`a${1}`", 7, sink);
+  const neojs::Token &t = l.next();
+  EXPECT_EQ(t.kind, neojs::TokenKind::Template);
+  EXPECT_EQ(t.str_value, "a");
+  EXPECT_TRUE(t.is_template_head);
+}
+
+/* HTML 风格注释：<!-- 注释到行尾（Annex B） */
+TEST(Frontend, HtmlCommentSkipped) {
+  neojs::DiagnosticSink sink;
+  neojs::Lexer l("1 <!-- x\n2", 10, sink);
+  const neojs::Token &t1 = l.next();
+  EXPECT_EQ(t1.kind, neojs::TokenKind::Number);
+  const neojs::Token &t2 = l.next();
+  EXPECT_EQ(t2.kind, neojs::TokenKind::Number);
+  EXPECT_EQ(t2.start.line, 2u);
+  EXPECT_FALSE(sink.hasErrors());
+}
+
+/* Parser：字符串字面量 primary */
+TEST(Frontend, ParseStringLiteral) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  neojs::AST *ast = neojs::parseSource(&a, "\"hi\"", 4, sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink.hasErrors());
+
+  neojs::ASTNode *lit = ast->root->children[0]->children[0];
+  EXPECT_EQ(lit->type, neojs::NodeType::Literal);
+  EXPECT_TRUE(lit->literal.is_string);
+  EXPECT_EQ(lit->literal.str, "hi");
+
+  a.destroy(ast);
+}

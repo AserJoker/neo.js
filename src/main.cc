@@ -5,6 +5,14 @@
 
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <vector>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+#include "icu_data.h"
 
 #include "neojs/frontend/diagnostics.h"
 #include "neojs/frontend/frontend.h"
@@ -44,9 +52,43 @@ void makeEngine(JSAllocator **out_alloc, JSContext **out_ctx) {
   *out_ctx = ctx;
 }
 
+#ifdef _WIN32
+/* Windows 命令行是 UTF-16（wmain）；转成 UTF-8 字节供引擎消费。 */
+std::vector<std::string> argvToUtf8(int argc, wchar_t **wargv) {
+  std::vector<std::string> out;
+  out.reserve(static_cast<size_t>(argc));
+  for (int i = 0; i < argc; ++i) {
+    int n = WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, nullptr, 0, nullptr, nullptr);
+    if (n <= 0) {
+      out.emplace_back();
+      continue;
+    }
+    std::string s(static_cast<size_t>(n - 1), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, s.data(), n, nullptr, nullptr);
+    out.push_back(std::move(s));
+  }
+  return out;
+}
+#endif
+
 }  // namespace
 
+#ifdef _WIN32
+int wmain(int argc, wchar_t **wargv) {
+  /* Windows 命令行是 UTF-16：转成 UTF-8 字节再进引擎（argv 为 ANSI 代码页，
+   * 会破坏非 ASCII 参数——中文标识符、U+2028/U+2029 换行符等）。 */
+  std::vector<std::string> args = argvToUtf8(argc, wargv);
+  std::vector<char *> argv(argc + 1, nullptr);
+  for (int i = 0; i < argc; ++i) argv[i] = args[i].data();
+#else
 int main(int argc, char *argv[]) {
+#endif
+  /* ICU 数据引导：必须在任何 ICU API 使用前调用一次（嵌入式 icudt74l.dat）。 */
+  if (icu_data_init() != 0) {
+    std::fprintf(stderr, "neo.js: failed to initialize ICU data\n");
+    return 1;
+  }
+
   if (argc == 2 && std::strcmp(argv[1], "--version") == 0) {
     printVersion();
     return 0;

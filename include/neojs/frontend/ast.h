@@ -47,10 +47,13 @@ enum class BinaryOpKind : uint8_t {
   Mod,   /* % */
 };
 
-/* 字面量载荷（M1.1：数字为主，其余后续） */
+/* 字面量载荷（M1.2：数字 + 字符串；其余后续） */
 struct LiteralPayload {
   double number = 0.0;  /* 数字字面量值 */
   bool is_number = false;
+  bool is_string = false;
+  std::string str;      /* 字符串字面量值（转义已解码） */
+  bool is_bigint = false; /* BigInt 字面量（M2 用） */
   std::string text;     /* 原始文本（供 dump） */
 };
 

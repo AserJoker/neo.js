@@ -2,9 +2,9 @@
 #define NEOJS_FRONTEND_LEXER_H
 
 /*
- * 前端词法器（M1.1 骨架：最小子集，随 M1.2-M1.6 扩充）。
+ * 前端词法器（M1.2：完整分词器）。
  *
- * 核心设计（docs/milestones.md M1.1）：
+ * 核心设计（docs/milestones.md M1.1/M1.2）：
  *   - 协同模式：Lexer 不独立产完整个 token 流，而是被 Parser 按需拉取
  *     （next() 推进、peek() 前瞻）。
  *   - Lexer 携带上下文：Parser 在解析表达式时显式传入当前是**读值**还是
@@ -12,16 +12,20 @@
  *   - 注释是**多字符符号**：词法层贪婪匹配 `//` 与块注释起始符，命中即注释，
  *     否则回退为单 `/`（不需上下文）。
  *
+ * Unicode（M1.2，ICU）：
+ *   - 源码按 UTF-8 解码为 code point 流（u8_next32），逐字符处理。
+ *   - 换行（LineTerminator）：\n、\r、\r\n、U+2028、U+2029；\r\n 计为单个。
+ *   - 标识符：u_hasBinaryProperty(UCHAR_ID_START / UCHAR_ID_CONTINUE) + _ + $，
+ *     支持 \uXXXX / \u{...} 转义。
+ *   - 数字：u_isdigit（十进制）；0b/0o/0x 全进制；科学计数；_ 分隔符；BigInt n。
+ *   - 空白：u_isUWhiteSpace（除 LineTerminator 外）。
+ *
  * 符号处理（表驱动贪婪匹配）：所有符号集中为一张表，按长度分组
- * （三字符 → 二字符 → 单字符）。读取时从最长组开始逐字符比对，命中即消费，
- * 自然保证**最长匹配**正确性（如 `>>>=` 不会误切成 `> > >=`）。
+ * （四字符 → 三字符 → 二字符 → 单字符）。读取时从最长组开始逐字符比对，
+ * 命中即消费，自然保证**最长匹配**正确性（如 `>>>=` 不会误切成 `> > >=`）。
  *
  * Token 类型收敛：符号统一用 `TokenKind::Symbol`，具体符号由 `Token::text`
- * 携带（如 `text == "=>"`）。随 M1.2 扩充符号表即可，不再为每个符号建枚举，
- * 避免类型数量爆炸。
- *
- * M1.1 只覆盖最小 token 集：数字字面量、标识符、`+ - * / % ( ) ;`、
- * EOF、以及行/块注释；M1.2 再扩充全部符号。
+ * 携带（如 `text == "=>"`）。随 M1.2 扩充符号表即可，不再为每个符号建枚举。
  */
 
 #include <cstdint>
@@ -32,11 +36,13 @@
 
 namespace neojs {
 
-/* token 类型（M1.1 收敛为少量类别；符号细节由 Token::text 携带） */
+/* token 类型（M1.2 收敛为少量类别；符号细节由 Token::text 携带） */
 enum class TokenKind : uint8_t {
   EndOfFile,  /* 源码结束 */
-  Number,     /* 数字字面量（M1.1：十进制 double） */
-  Identifier, /* 标识符 */
+  Number,     /* 数字字面量（含 BigInt，见 Token::is_bigint） */
+  String,     /* 字符串字面量（单/双引号；模板串见下） */
+  Template,   /* 模板串（完整片段或含 ${ 的头部） */
+  Identifier, /* 标识符 / 关键字（关键字由 Parser 按 text 判定） */
   Symbol,     /* 符号/标点/运算符：具体内容见 Token::text */
   Error,      /* 词法错误（sink 已记录） */
 };
@@ -53,8 +59,15 @@ struct Token {
   TokenKind kind = TokenKind::EndOfFile;
   SourceLocation start; /* token 起点（1-based line/col + 0-based offset） */
   SourceLocation end;   /* token 终点（最后一个字符的位置） */
-  std::string text;     /* 原始文本：Symbol 时携带具体符号（如 "+"、"=>"） */
-  double number = 0.0;  /* Number：数值（M1.1） */
+  std::string text;     /* 原始文本（Symbol 时携带具体符号，如 "+"、"=>"） */
+
+  /* 数值载荷（Number） */
+  double number = 0.0;     /* 数值（M1.1：十进制；M1.2 全进制转换后） */
+  bool is_bigint = false;  /* 是否有 n 后缀 */
+
+  /* 字符串载荷（String / Template） */
+  std::string str_value;   /* 解码后的字符串值（转义已处理） */
+  bool is_template_head = false; /* Template：以 ${ 结尾，需 Parser 切表达式模式 */
 };
 
 /* 词法器：被 Parser 按需驱动（next/peek），携带上下文 */
@@ -77,14 +90,18 @@ class Lexer {
   LexContext context() const { return context_; }
 
  private:
-  /* 字符级推进：pos_ 指向下一个未消费字符；维护 line/col/offset */
-  int advance();           /* 返回当前字符并前进；EOF 返回 -1 */
-  int currentChar() const; /* 不推进地查看当前字符；EOF 返回 -1 */
-  void skipTrivia();       /* 跳过空白与注释（贪婪匹配 // 与块注释起始符） */
+  /* 字符级推进：pos_ 指向下一个未消费字节；维护 line/col（按 code point 计） */
+  int peekChar() const;         /* 不推进地查看下一个 code point；EOF 返回 -1 */
+  int nextChar();               /* 返回当前 code point 并前进（解码 UTF-8）；EOF -1 */
+  void advanceAscii();          /* 推进一个 ASCII 字符（col++，不含换行） */
+  bool atEnd() const { return pos_ >= source_len_; }
+  void skipTrivia();            /* 跳过空白与注释（行/块/HTML 风格） */
   void scanNumber();
   void scanIdentifier();
-  void scanSymbol();       /* 表驱动：按长度分组贪婪匹配符号 */
-  void scanNext();         /* 扫描下一个 token 到 current_（推进扫描状态） */
+  void scanString(char quote);
+  void scanTemplate();
+  void scanSymbol();            /* 表驱动：按长度分组贪婪匹配符号 */
+  void scanNext();              /* 扫描下一个 token 到 current_（推进扫描状态） */
 
   const char *source_;
   size_t source_len_;

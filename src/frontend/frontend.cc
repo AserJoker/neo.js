@@ -15,6 +15,10 @@ const char *tokenKindName(TokenKind k) {
       return "eof";
     case TokenKind::Number:
       return "number";
+    case TokenKind::String:
+      return "string";
+    case TokenKind::Template:
+      return "template";
     case TokenKind::Identifier:
       return "identifier";
     case TokenKind::Symbol:
@@ -54,8 +58,12 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
     case NodeType::Literal:
       if (node->literal.is_number) {
         out += "Literal(";
-        out += node->literal.text; /* 保留原始文本（M1.1：十进制） */
+        out += node->literal.text; /* 保留原始文本 */
         out += ")\n";
+      } else if (node->literal.is_string) {
+        out += "Literal(\"";
+        out += node->literal.str;
+        out += "\")\n";
       } else {
         out += "Literal\n";
       }
