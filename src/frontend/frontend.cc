@@ -220,6 +220,15 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
     case NodeType::ContinueStatement:
       out += "ContinueStatement\n";
       break;
+    case NodeType::ThrowStatement:
+      out += "ThrowStatement\n";
+      break;
+    case NodeType::TryStatement:
+      out += "TryStatement\n";
+      break;
+    case NodeType::CatchClause:
+      out += "CatchClause\n";
+      break;
     case NodeType::Literal:
       if (node->literal.is_number) {
         out += "Literal(";

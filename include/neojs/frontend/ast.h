@@ -70,6 +70,9 @@ enum class NodeType : uint8_t {
   ReturnStatement,     /* 返回语句：return [expr]（M1.5 ④，restricted production） */
   BreakStatement,      /* 跳出：break [label]（M1.5 ⑤，restricted production） */
   ContinueStatement,   /* 续环：continue [label]（M1.5 ⑤，restricted production） */
+  ThrowStatement,      /* 抛出：throw expr（M1.5 ⑥，restricted production） */
+  TryStatement,        /* 异常处理：try block [catch] [finally]（M1.5 ⑥） */
+  CatchClause,         /* catch 子句：catch [(param)] block（M1.5 ⑥） */
 };
 
 /* 声明关键字类型（M1.5 ①）：var / let / const */

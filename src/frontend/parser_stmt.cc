@@ -126,6 +126,14 @@ ASTNode *Parser::parseStatement() {
     if (isKeyword(current(), "break")) return parseBreakStatement();
     return parseContinueStatement();
   }
+  /* 抛出（M1.5 ⑥）：throw expr。restricted production：throw 后换行报错。 */
+  if (isKeyword(current(), "throw")) {
+    return parseThrowStatement();
+  }
+  /* 异常处理（M1.5 ⑥）：try block [catch] [finally] */
+  if (isKeyword(current(), "try")) {
+    return parseTryStatement();
+  }
 
   /* 兜底：表达式语句 */
   return parseExpressionStatement();
@@ -829,6 +837,142 @@ ASTNode *Parser::parseContinueStatement() {
     return nullptr;
   }
   if (isSymbol(current(), ";")) advance();
+  return stmt;
+}
+
+/* 抛出语句（M1.5 ⑥）：throw expr。ECMA-262 §14.15。
+ * children[0] 为被抛出的表达式（必须存在）。
+ * restricted production：throw 后换行即语法错误（无表达式）。 */
+ASTNode *Parser::parseThrowStatement() {
+  ASTNode *stmt = newNode(NodeType::ThrowStatement);
+  stmt->loc = current().start;
+  advance(); /* throw */
+
+  /* throw 后换行 → 语法错误（restricted production 不允许空 throw） */
+  if (current().has_newline_before) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "illegal newline after throw", stmt->loc});
+    allocator_->destroy(stmt);
+    return nullptr;
+  }
+  setValueContext();
+  ASTNode *arg = parseExpression();
+  if (arg == nullptr) {
+    allocator_->destroy(stmt);
+    return nullptr;
+  }
+  stmt->children.push_back(arg);
+  /* 分号（ASI）：显式 ; 或换行/}/EOF 隐式插入 */
+  if (isSymbol(current(), ";")) advance();
+  return stmt;
+}
+
+/* 异常处理语句（M1.5 ⑥）：try block [catch] [finally]。ECMA-262 §14.16。
+ * children 布局：[block, catch?, finally?]（catch/finally 可缺省，至少一个）。
+ * catch 子句：CatchClause[ param?, block ]。
+ *   - catch (e) { ... }：param 为绑定（Identifier/模式）
+ *   - catch { ... }（ES2019）：无绑定，param 缺省
+ * finally 子句：块语句。 */
+ASTNode *Parser::parseTryStatement() {
+  ASTNode *stmt = newNode(NodeType::TryStatement);
+  stmt->loc = current().start;
+  advance(); /* try */
+
+  /* try 块 */
+  if (!isSymbol(current(), "{")) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '{' after 'try'", current().start});
+    allocator_->destroy(stmt);
+    return nullptr;
+  }
+  ASTNode *block = parseBlock();
+  if (block == nullptr) {
+    allocator_->destroy(stmt);
+    return nullptr;
+  }
+  stmt->children.push_back(block);
+
+  /* catch 子句（可选） */
+  if (isKeyword(current(), "catch")) {
+    ASTNode *clause = newNode(NodeType::CatchClause);
+    clause->loc = current().start;
+    advance(); /* catch */
+    if (isSymbol(current(), "(")) {
+      advance(); /* ( */
+      /* 绑定参数：Identifier / 解构模式 */
+      ASTNode *param;
+      if (isSymbol(current(), "{") || isSymbol(current(), "[")) {
+        if (isSymbol(current(), "{")) {
+          param = parseObjectPattern();
+        } else {
+          param = parseArrayPattern();
+        }
+        if (param == nullptr) {
+          allocator_->destroy(stmt);
+          allocator_->destroy(clause);
+          return nullptr;
+        }
+      } else if (at(TokenKind::Identifier)) {
+        param = newNode(NodeType::Identifier);
+        param->loc = current().start;
+        param->name = current().text;
+        advance();
+      } else {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected catch binding",
+                    current().start});
+        allocator_->destroy(stmt);
+        allocator_->destroy(clause);
+        return nullptr;
+      }
+      clause->children.push_back(param);
+      if (!isSymbol(current(), ")")) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ')' after catch binding",
+                    current().start});
+        allocator_->destroy(stmt);
+        allocator_->destroy(clause);
+        return nullptr;
+      }
+      advance(); /* ) */
+    }
+    if (!isSymbol(current(), "{")) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '{' after 'catch'",
+                  current().start});
+      allocator_->destroy(stmt);
+      allocator_->destroy(clause);
+      return nullptr;
+    }
+    ASTNode *catch_body = parseBlock();
+    if (catch_body == nullptr) {
+      allocator_->destroy(stmt);
+      allocator_->destroy(clause);
+      return nullptr;
+    }
+    clause->children.push_back(catch_body);
+    stmt->children.push_back(clause);
+  }
+
+  /* finally 子句（可选） */
+  if (isKeyword(current(), "finally")) {
+    advance(); /* finally */
+    if (!isSymbol(current(), "{")) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '{' after 'finally'",
+                  current().start});
+      allocator_->destroy(stmt);
+      return nullptr;
+    }
+    ASTNode *finally_body = parseBlock();
+    if (finally_body == nullptr) {
+      allocator_->destroy(stmt);
+      return nullptr;
+    }
+    stmt->children.push_back(finally_body);
+  }
+
+  /* 至少一个 catch 或 finally */
+  if (stmt->children.size() < 2) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "missing catch or finally after try",
+                stmt->loc});
+    allocator_->destroy(stmt);
+    return nullptr;
+  }
   return stmt;
 }
 

@@ -2466,3 +2466,70 @@ TEST(Frontend, ContinueStatement) {
   EXPECT_EQ(body->children[1]->type, neojs::NodeType::ExprStmt);
   a.destroy(ast);
 }
+
+TEST(Frontend, ThrowStatement) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* throw new Error("boom"); → ThrowStatement[NewExpression] */
+  neojs::AST *ast = neojs::parseSource(
+      &a, "throw new Error(\"boom\");", std::strlen("throw new Error(\"boom\");"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::ThrowStatement);
+  ASSERT_EQ(top->children.size(), 1u);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::NewExpression);
+  a.destroy(ast);
+
+  /* throw 后换行 → 语法错误 */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "throw\nx;", std::strlen("throw\nx;"), sink2);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink2.hasErrors());
+}
+
+TEST(Frontend, TryCatchFinally) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* try { f(); } catch (e) { g(e); } finally { h(); }
+   * → TryStatement[block, CatchClause[e, block], block] */
+  neojs::AST *ast = neojs::parseSource(
+      &a, "try { f(); } catch (e) { g(e); } finally { h(); }",
+      std::strlen("try { f(); } catch (e) { g(e); } finally { h(); }"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::TryStatement);
+  ASSERT_EQ(top->children.size(), 3u);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::BlockStatement);
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::CatchClause);
+  EXPECT_EQ(top->children[1]->children[0]->type, neojs::NodeType::Identifier); /* e */
+  EXPECT_EQ(top->children[1]->children[0]->name, "e");
+  EXPECT_EQ(top->children[1]->children[1]->type, neojs::NodeType::BlockStatement);
+  EXPECT_EQ(top->children[2]->type, neojs::NodeType::BlockStatement); /* finally */
+  a.destroy(ast);
+
+  /* catch 无绑定（ES2019）：try { f(); } catch { g(); } */
+  ast = neojs::parseSource(&a, "try { f(); } catch { g(); }",
+                           std::strlen("try { f(); } catch { g(); }"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0];
+  ASSERT_EQ(top->children.size(), 2u);
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::CatchClause);
+  EXPECT_EQ(top->children[1]->children.size(), 1u); /* 仅 block，无绑定 */
+  a.destroy(ast);
+
+  /* 仅 finally：try { f(); } finally { g(); } */
+  ast = neojs::parseSource(&a, "try { f(); } finally { g(); }",
+                           std::strlen("try { f(); } finally { g(); }"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0];
+  ASSERT_EQ(top->children.size(), 2u);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::BlockStatement);
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::BlockStatement);
+  a.destroy(ast);
+
+  /* try 缺 catch/finally → 报错 */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "try { f(); }", std::strlen("try { f(); }"), sink2);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink2.hasErrors());
+}
