@@ -81,6 +81,22 @@ JSValue *makeValue(JSContext *ctx, V &&value) {
   return makeHandle(c, v);
 }
 
+/* 创建值并可选绑定到当前作用域（无孤立值原则）：
+ *   name == NULL  -> 临时值（仅宿主句柄持有）；
+ *   name != NULL  -> 具名值：自动定义绑定（kind=Var）。返回句柄。 */
+template <typename V>
+JSValue *makeValueNamed(JSContext *ctx, V &&value, const char *name) {
+  JSValue *h = makeValue(ctx, std::forward<V>(value));
+  if (h == nullptr || name == nullptr) return h; /* 临时值 / 分配失败 */
+  neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+  neojs::JSBinding b;
+  b.kind = neojs::BindingKind::Var;
+  b.value = unhandle(c, h); /* 解句柄存内部裸指针（绑定是根集） */
+  b.initialized = true;
+  c->currentScope().defineBinding(name, b);
+  return h;
+}
+
 /* 创建 Exception 值的内部实现（分配器保证非空，#14）。 */
 JSValue *makeException(JSContext *ctx, const char *message) {
   neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
@@ -263,38 +279,41 @@ extern "C" JSValue *JS_StoreValue(JSContext *ctx, const char *name, JSValue *val
 /* 值构造与访问                                                                */
 /* -------------------------------------------------------------------------- */
 
-extern "C" JSValue *JS_CreateUndefined(JSContext *ctx) {
-  return guarded_create(ctx, [&]() -> JSValue * { return makeValue(ctx, neojs::JSValue()); });
-}
-
-extern "C" JSValue *JS_CreateNull(JSContext *ctx) {
+extern "C" JSValue *JS_CreateUndefined(JSContext *ctx, const char *name) {
   return guarded_create(ctx, [&]() -> JSValue * {
-    return makeValue(ctx, neojs::JSValue(neojs::Kind::Null));
+    return makeValueNamed(ctx, neojs::JSValue(), name);
   });
 }
 
-extern "C" JSValue *JS_CreateBoolean(JSContext *ctx, int value) {
+extern "C" JSValue *JS_CreateNull(JSContext *ctx, const char *name) {
   return guarded_create(ctx, [&]() -> JSValue * {
-    return makeValue(ctx, neojs::JSValue(value != 0));
+    return makeValueNamed(ctx, neojs::JSValue(neojs::Kind::Null), name);
   });
 }
 
-extern "C" JSValue *JS_CreateNumber(JSContext *ctx, double value) {
+extern "C" JSValue *JS_CreateBoolean(JSContext *ctx, int value, const char *name) {
   return guarded_create(ctx, [&]() -> JSValue * {
-    return makeValue(ctx, neojs::JSValue(value));
+    return makeValueNamed(ctx, neojs::JSValue(value != 0), name);
   });
 }
 
-extern "C" JSValue *JS_CreateInteger(JSContext *ctx, int64_t value) {
+extern "C" JSValue *JS_CreateNumber(JSContext *ctx, double value, const char *name) {
   return guarded_create(ctx, [&]() -> JSValue * {
-    return makeValue(ctx, neojs::JSValue(value));
+    return makeValueNamed(ctx, neojs::JSValue(value), name);
   });
 }
 
-extern "C" JSValue *JS_CreateString(JSContext *ctx, const char *str, size_t len) {
+extern "C" JSValue *JS_CreateInteger(JSContext *ctx, int64_t value, const char *name) {
+  return guarded_create(ctx, [&]() -> JSValue * {
+    return makeValueNamed(ctx, neojs::JSValue(value), name);
+  });
+}
+
+extern "C" JSValue *JS_CreateString(JSContext *ctx, const char *str, size_t len,
+                                    const char *name) {
   return guarded_create(ctx, [&]() -> JSValue * {
     std::string s(str ? str : "", len);
-    return makeValue(ctx, std::move(s));
+    return makeValueNamed(ctx, std::move(s), name);
   });
 }
 
@@ -358,10 +377,20 @@ extern "C" const char *JS_ToString(JSContext *ctx, const JSValue *value) {
 /* 错误值（#4/#14）                                                             */
 /* -------------------------------------------------------------------------- */
 
-/* 创建错误值（kind = Exception）。永不返回 nullptr（#14）。 */
-extern "C" JSValue *JS_CreateError(JSContext *ctx, const char *message) {
+/* 创建错误值（kind = Exception）。永不返回 nullptr（#14）。
+ * name 语义同其它 CreateX：NULL = 临时值，非空 = 绑定到当前作用域。 */
+extern "C" JSValue *JS_CreateError(JSContext *ctx, const char *message,
+                                    const char *name) {
   return guarded_create(ctx, [&]() -> JSValue * {
-    return makeException(ctx, message);
+    JSValue *h = makeException(ctx, message);
+    if (h == nullptr || name == nullptr) return h;
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSBinding b;
+    b.kind = neojs::BindingKind::Var;
+    b.value = unhandle(c, h);
+    b.initialized = true;
+    c->currentScope().defineBinding(name, b);
+    return h;
   });
 }
 

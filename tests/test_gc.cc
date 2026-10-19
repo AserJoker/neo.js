@@ -143,9 +143,9 @@ TEST(GC, CApiJsGcKeepsHandles) {
   neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
 
   /* 创建值（C API 返回句柄） */
-  JSValue *v = JS_CreateNumber(ctx, 3.14);
+  JSValue *v = JS_CreateNumber(ctx, 3.14, nullptr);
   ASSERT_NE(v, nullptr);
-  JSValue *temp = JS_CreateString(ctx, "tmp", 3);
+  JSValue *temp = JS_CreateString(ctx, "tmp", 3, nullptr);
   ASSERT_NE(temp, nullptr);
 
   /* 释放 temp 句柄：temp 值失去根 -> JS_GC 回收 */
@@ -169,11 +169,11 @@ TEST(GC, CApiSetGcThreshold) {
 
   /* 设置阈值 2：分配第 2 个值触发自动 GC */
   JS_SetGCThreshold(ctx, 2);
-  JSValue *rooted = JS_CreateNumber(ctx, 1.0);
+  JSValue *rooted = JS_CreateNumber(ctx, 1.0, nullptr);
   ASSERT_NE(rooted, nullptr);
 
   /* 第 2 个分配触发自动 GC：rooted 被句柄持有存活，临时值回收 */
-  JSValue *temp = JS_CreateNumber(ctx, 2.0);
+  JSValue *temp = JS_CreateNumber(ctx, 2.0, nullptr);
   ASSERT_NE(temp, nullptr);
   EXPECT_EQ(c->heap().allocCount(), 0u); /* 自动 GC 已重置计数 */
 
@@ -192,7 +192,7 @@ TEST(GC, CApiLoadStoreSurviveGc) {
   ASSERT_NE(ctx, nullptr);
 
   /* 定义绑定 -> 绑定值是根，GC 后仍可 Load */
-  JSValue *v = JS_CreateNumber(ctx, 42.0);
+  JSValue *v = JS_CreateNumber(ctx, 42.0, nullptr);
   JS_DefineValue(ctx, "answer", v, 0 /* Var */);
   JS_GC(ctx);
 
@@ -203,7 +203,7 @@ TEST(GC, CApiLoadStoreSurviveGc) {
   JS_FreeValue(ctx, loaded);
 
   /* Store 更新绑定值后 GC：新值存活 */
-  JSValue *v2 = JS_CreateNumber(ctx, 100.0);
+  JSValue *v2 = JS_CreateNumber(ctx, 100.0, nullptr);
   JSValue *st = JS_StoreValue(ctx, "answer", v2);
   ASSERT_NE(st, nullptr);
   JS_GC(ctx);

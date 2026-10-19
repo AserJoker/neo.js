@@ -74,7 +74,7 @@ TEST(CApi, CustomAllocatorIsUsed) {
   ASSERT_NE(ctx, nullptr);
   ASSERT_GT(alloc_calls, 0);
 
-  JSValue *v = JS_CreateNumber(ctx, 3.14);
+  JSValue *v = JS_CreateNumber(ctx, 3.14, nullptr);
   ASSERT_NE(v, nullptr);
   JS_FreeValue(ctx, v);
 
@@ -92,20 +92,20 @@ TEST(CApi, CreateValuesAndKinds) {
   JSContext *ctx = makeCtx(&a);
   ASSERT_NE(ctx, nullptr);
 
-  JSValue *u = JS_CreateUndefined(ctx);
+  JSValue *u = JS_CreateUndefined(ctx, nullptr);
   ASSERT_NE(u, nullptr);
   EXPECT_EQ(JS_GetKind(ctx, u), JS_UNDEFINED);
 
-  JSValue *n = JS_CreateNull(ctx);
+  JSValue *n = JS_CreateNull(ctx, nullptr);
   ASSERT_NE(n, nullptr);
   EXPECT_EQ(JS_GetKind(ctx, n), JS_NULL);
 
-  JSValue *b = JS_CreateBoolean(ctx, 1);
+  JSValue *b = JS_CreateBoolean(ctx, 1, nullptr);
   ASSERT_NE(b, nullptr);
   EXPECT_EQ(JS_GetKind(ctx, b), JS_BOOLEAN);
   EXPECT_EQ(JS_ToBoolean(ctx, b), 1);
 
-  JSValue *num = JS_CreateNumber(ctx, 42.0);
+  JSValue *num = JS_CreateNumber(ctx, 42.0, nullptr);
   ASSERT_NE(num, nullptr);
   EXPECT_EQ(JS_GetKind(ctx, num), JS_NUMBER);
   EXPECT_EQ(JS_ToNumber(ctx, num), 42.0);
@@ -119,12 +119,66 @@ TEST(CApi, CreateValuesAndKinds) {
   JS_FreeAllocator(a);
 }
 
+/* -------------------------------------------------------------------------- */
+/* CreateX + name：创建作用域具名值 / 临时值（无孤立值原则）                    */
+/* -------------------------------------------------------------------------- */
+
+TEST(CApi, CreateNamedValueBindsToScope) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* name != NULL：创建并自动绑定到当前作用域（kind=Var） */
+  JSValue *v = JS_CreateNumber(ctx, 7.0, "seven");
+  ASSERT_NE(v, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, v), JS_NUMBER);
+  EXPECT_EQ(JS_ToNumber(ctx, v), 7.0);
+
+  /* 绑定生效：可沿作用域链 Load */
+  JSValue *loaded = JS_LoadValue(ctx, "seven");
+  ASSERT_NE(loaded, nullptr);
+  EXPECT_EQ(JS_ToNumber(ctx, loaded), 7.0);
+  JS_FreeValue(ctx, loaded);
+
+  /* name == NULL：临时值，不产生绑定 */
+  JSValue *tmp = JS_CreateString(ctx, "temp", 4, nullptr);
+  ASSERT_NE(tmp, nullptr);
+  JSValue *missing = JS_LoadValue(ctx, "temp");
+  ASSERT_NE(missing, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, missing), JS_EXCEPTION); /* 无此名绑定 */
+  JS_FreeValue(ctx, missing);
+
+  JS_FreeValue(ctx, tmp);
+  JS_FreeValue(ctx, v);
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 具名值经绑定持有：释放句柄后值仍存活（绑定是根集） */
+TEST(CApi, NamedValueSurvivesHandleFree) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+  neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+
+  JSValue *v = JS_CreateNumber(ctx, 9.0, "nine");
+  ASSERT_NE(v, nullptr);
+  JS_FreeValue(ctx, v); /* 释放句柄 */
+
+  JS_GC(ctx); /* 值仍被绑定持有，存活 */
+  EXPECT_EQ(c->heap().size(), 1u);
+  EXPECT_EQ(JS_ToNumber(ctx, JS_LoadValue(ctx, "nine")), 9.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
 TEST(CApi, CreateString) {
   JSAllocator *a = nullptr;
   JSContext *ctx = makeCtx(&a);
   ASSERT_NE(ctx, nullptr);
 
-  JSValue *s = JS_CreateString(ctx, "hello", 5);
+  JSValue *s = JS_CreateString(ctx, "hello", 5, nullptr);
   ASSERT_NE(s, nullptr);
   EXPECT_EQ(JS_GetKind(ctx, s), JS_STRING);
   EXPECT_STREQ(JS_ToString(ctx, s), "hello");
@@ -174,7 +228,7 @@ TEST(CApi, CreateError) {
   JSContext *ctx = makeCtx(&a);
   ASSERT_NE(ctx, nullptr);
 
-  JSValue *err = JS_CreateError(ctx, "boom");
+  JSValue *err = JS_CreateError(ctx, "boom", nullptr);
   ASSERT_NE(err, nullptr);
   EXPECT_EQ(JS_GetKind(ctx, err), JS_EXCEPTION);
 
@@ -193,13 +247,13 @@ TEST(CApi, ValueReturningApiNeverReturnsNull) {
   ASSERT_NE(ctx, nullptr);
 
   /* 各构造接口均返回非空 */
-  EXPECT_NE(JS_CreateUndefined(ctx), nullptr);
-  EXPECT_NE(JS_CreateNull(ctx), nullptr);
-  EXPECT_NE(JS_CreateBoolean(ctx, 1), nullptr);
-  EXPECT_NE(JS_CreateNumber(ctx, 1.0), nullptr);
-  EXPECT_NE(JS_CreateInteger(ctx, 1), nullptr);
-  EXPECT_NE(JS_CreateString(ctx, "x", 1), nullptr);
-  EXPECT_NE(JS_CreateError(ctx, "x"), nullptr);
+  EXPECT_NE(JS_CreateUndefined(ctx, nullptr), nullptr);
+  EXPECT_NE(JS_CreateNull(ctx, nullptr), nullptr);
+  EXPECT_NE(JS_CreateBoolean(ctx, 1, nullptr), nullptr);
+  EXPECT_NE(JS_CreateNumber(ctx, 1.0, nullptr), nullptr);
+  EXPECT_NE(JS_CreateInteger(ctx, 1, nullptr), nullptr);
+  EXPECT_NE(JS_CreateString(ctx, "x", 1, nullptr), nullptr);
+  EXPECT_NE(JS_CreateError(ctx, "x", nullptr), nullptr);
   EXPECT_NE(JS_Eval(ctx, "1", 1), nullptr);
 
   JS_FreeContext(ctx);
@@ -247,7 +301,7 @@ TEST(CApi, ScopePushPop) {
   EXPECT_EQ(root.children()[0], &child);
 
   /* 创建的值归属子作用域 */
-  JSValue *v = JS_CreateNumber(ctx, 42.0);
+  JSValue *v = JS_CreateNumber(ctx, 42.0, nullptr);
   ASSERT_NE(v, nullptr);
   EXPECT_EQ(JS_GetKind(ctx, v), JS_NUMBER);
   JS_FreeValue(ctx, v);
@@ -339,14 +393,14 @@ TEST(CApi, DefineAndStoreValue) {
   neojs::JSScope &root = c->currentScope();
 
   /* 根作用域定义 counter = 0（kind=Var，对应 var 声明） */
-  JSValue *v0 = JS_CreateNumber(ctx, 0.0);
+  JSValue *v0 = JS_CreateNumber(ctx, 0.0, nullptr);
   JSValue *def = JS_DefineValue(ctx, "counter", v0, 0 /* Var */);
   ASSERT_NE(def, nullptr);
   EXPECT_EQ(JS_GetKind(ctx, def), JS_NUMBER);
   EXPECT_EQ(JS_ToNumber(ctx, JS_LoadValue(ctx, "counter")), 0.0);
 
   /* 值登记在 ctx（P2），跨作用域 store 安全：子作用域赋值 counter = 5 */
-  JSValue *v5 = JS_CreateNumber(ctx, 5.0);
+  JSValue *v5 = JS_CreateNumber(ctx, 5.0, nullptr);
   JS_PushScope(ctx);
   JSValue *st = JS_StoreValue(ctx, "counter", v5);
   ASSERT_NE(st, nullptr);
@@ -364,7 +418,7 @@ TEST(CApi, DefineAndStoreValue) {
   EXPECT_EQ(root.findBinding("counter")->value->toNumber(), 5.0);
 
   /* 未声明名 store：返回 Exception（ReferenceError） */
-  JSValue *st2 = JS_StoreValue(ctx, "nope", JS_CreateNumber(ctx, 1.0));
+  JSValue *st2 = JS_StoreValue(ctx, "nope", JS_CreateNumber(ctx, 1.0, nullptr));
   ASSERT_NE(st2, nullptr);
   EXPECT_EQ(JS_GetKind(ctx, st2), JS_EXCEPTION);
 
@@ -385,14 +439,14 @@ TEST(CApi, BindingKindAndUninitialized) {
   neojs::JSScope &root = c->currentScope();
 
   /* const 定义：kind 被记录（M0 不校验，仍可 store） */
-  JSValue *vc = JS_CreateNumber(ctx, 10.0);
+  JSValue *vc = JS_CreateNumber(ctx, 10.0, nullptr);
   JSValue *defc = JS_DefineValue(ctx, "c", vc, 2 /* Const */);
   ASSERT_NE(defc, nullptr);
   EXPECT_EQ(root.findBinding("c")->kind, neojs::BindingKind::Const);
   EXPECT_TRUE(root.findBinding("c")->initialized);
 
   /* M0 不校验 const：store 仍成功（M2 才拒绝） */
-  JSValue *v2 = JS_CreateNumber(ctx, 20.0);
+  JSValue *v2 = JS_CreateNumber(ctx, 20.0, nullptr);
   JSValue *st = JS_StoreValue(ctx, "c", v2);
   ASSERT_NE(st, nullptr);
   EXPECT_EQ(JS_GetKind(ctx, st), JS_NUMBER);

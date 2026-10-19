@@ -167,6 +167,11 @@ void JS_SetGCThreshold(JSContext *ctx, size_t threshold);
 - `JS_FreeValue(ctx, value)`：从**释放对象**改为**释放句柄槽**（对象生死由 GC 判定）。
 - `JS_NewContext` / `JS_FreeContext`：创建/销毁 `Heap` + `HandleTable`。
 - `JS_CreateX` / `JS_LoadValue` / `JS_StoreValue` / `JS_DefineValue` 返回的 `JSValue*`：句柄。
+- `JS_CreateX` 新增可选 `name` 参数（**无孤立值原则**）：
+  - `name == NULL`：创建作用域**临时值**，仅宿主句柄持有（宿主负责 `JS_FreeValue`）；
+  - `name != NULL`：创建作用域**具名值**，自动定义绑定到当前作用域（kind=Var），返回值仍为句柄（宿主可 FreeValue，值由绑定持有仍存活）。
+  - 不存在创建后既无句柄也无绑定的孤立值。
+  - `JS_DefineValue` 保留：覆盖 `value==NULL` 定义未初始化绑定（TDZ 起点）与指定 kind 的场景。
 
 ### 5.3 不变式
 

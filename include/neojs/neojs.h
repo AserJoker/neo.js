@@ -97,12 +97,17 @@ JSValue *JS_StoreValue(JSContext *ctx, const char *name, JSValue *value);
 /* 值构造与访问（#2 命名风格：JS_ 前缀 + 动作）                                */
 /* -------------------------------------------------------------------------- */
 
-JSValue *JS_CreateUndefined(JSContext *ctx);
-JSValue *JS_CreateNull(JSContext *ctx);
-JSValue *JS_CreateBoolean(JSContext *ctx, int value);
-JSValue *JS_CreateNumber(JSContext *ctx, double value);
-JSValue *JS_CreateInteger(JSContext *ctx, int64_t value);
-JSValue *JS_CreateString(JSContext *ctx, const char *str, size_t len);
+/* 值构造。所有 CreateX 的 name 参数二选一（docs/gc.md G2 + 无孤立值原则）：
+ *   name == NULL  创建作用域**临时值**：仅宿主句柄持有（宿主负责 JS_FreeValue）；
+ *   name != NULL  创建作用域**具名值**：自动定义绑定到当前作用域（kind=Var），
+ *                返回值仍为句柄（宿主可 FreeValue，值由绑定持有仍存活）。
+ * 不存在创建后既无句柄也无绑定的孤立值。 */
+JSValue *JS_CreateUndefined(JSContext *ctx, const char *name);
+JSValue *JS_CreateNull(JSContext *ctx, const char *name);
+JSValue *JS_CreateBoolean(JSContext *ctx, int value, const char *name);
+JSValue *JS_CreateNumber(JSContext *ctx, double value, const char *name);
+JSValue *JS_CreateInteger(JSContext *ctx, int64_t value, const char *name);
+JSValue *JS_CreateString(JSContext *ctx, const char *str, size_t len, const char *name);
 
 /* 释放一个值。由调用方负责（与 ctx 的 alloc/free 对应）。 */
 void JS_FreeValue(JSContext *ctx, JSValue *value);
@@ -116,8 +121,9 @@ double JS_ToNumber(JSContext *ctx, const JSValue *value);
 int64_t JS_ToInteger(JSContext *ctx, const JSValue *value);
 const char *JS_ToString(JSContext *ctx, const JSValue *value); /* 返回内部 UTF-8 缓冲，生命周期归 ctx */
 
-/* 构造一个错误值（kind = JS_EXCEPTION）。message 会被复制。 */
-JSValue *JS_CreateError(JSContext *ctx, const char *message);
+/* 构造一个错误值（kind = JS_EXCEPTION）。message 会被复制。
+ * name 语义同其它 CreateX：NULL = 临时值，非空 = 绑定到当前作用域。 */
+JSValue *JS_CreateError(JSContext *ctx, const char *message, const char *name);
 
 /* -------------------------------------------------------------------------- */
 /* GC 引擎（docs/gc.md）                                                      */
