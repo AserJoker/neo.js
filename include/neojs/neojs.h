@@ -129,6 +129,19 @@ const char *JS_ToString(JSContext *ctx, const JSValue *value); /* 返回内部 U
 JSValue *JS_CreateError(JSContext *ctx, const char *message, const char *name);
 
 /* -------------------------------------------------------------------------- */
+/* 全局对象与 well-known symbol（E4）                                          */
+/* -------------------------------------------------------------------------- */
+
+/* 全局对象（globalThis 雏形）。首次调用时创建并注册 E4 内置（Symbol 构造器
+ * 等）。返回句柄，宿主负责 JS_FreeValue。 */
+JSValue *JS_GetGlobalObject(JSContext *ctx);
+
+/* 取 well-known symbol（架构 §5.2）：index 0=iterator, 1=toPrimitive,
+ * 2=toStringTag, 3=hasInstance。返回句柄（同一 symbol 每次调用同一句柄？
+ * 否——每次分配新句柄指向同一内部值；宿主负责 FreeValue）。 */
+JSValue *JS_GetWellKnownSymbol(JSContext *ctx, int index);
+
+/* -------------------------------------------------------------------------- */
 /* 对象模型（E1 对象模型地基；架构 §5.2）                                     */
 /* -------------------------------------------------------------------------- */
 

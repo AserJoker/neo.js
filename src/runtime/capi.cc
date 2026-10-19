@@ -32,6 +32,7 @@
 #include "neojs/frontend/diagnostics.h"
 #include "neojs/frontend/frontend.h"
 #include "neojs/runtime/allocator.h"
+#include "neojs/runtime/builtins.h"
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/conversion.h"
 #include "neojs/runtime/function.h"
@@ -494,6 +495,31 @@ extern "C" JSValue *JS_CreateError(JSContext *ctx, const char *message,
     b.initialized = true;
     c->currentScope().defineBinding(name, b);
     return h;
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/* 全局对象与 well-known symbol（E4）                                          */
+/* -------------------------------------------------------------------------- */
+
+/* 全局对象（globalThis 雏形）。首次调用时创建并注册 E4 内置。 */
+extern "C" JSValue *JS_GetGlobalObject(JSContext *ctx) {
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    return makeHandle(c, c->globalObject());
+  });
+}
+
+/* 取 well-known symbol（index 对应 WellKnown 枚举）。 */
+extern "C" JSValue *JS_GetWellKnownSymbol(JSContext *ctx, int index) {
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    if (index < 0 || index > 3) {
+      return makeException(ctx, "RangeError: well-known symbol index out of range");
+    }
+    neojs::JSValue *sym =
+        neojs::wellKnownSymbol(c, static_cast<neojs::WellKnown>(index));
+    return makeHandle(c, sym);
   });
 }
 

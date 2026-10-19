@@ -41,11 +41,21 @@ class JSContext;
 class JSValue;
 
 /* 函数调用语义（ECMA-262 §10.2.5 预留）：
- *   Host        宿主 C 回调（当前唯一实现）
+ *   Host        宿主 C 回调（句柄语义，E3）
+ *   Builtin     引擎内置函数（内部值指针语义，E4）
  *   Script      JS 源码函数（VM 阶段，E3 不实现）
- *   Builtin     内置函数（E4 起）
  */
-enum class FunctionKind : uint8_t { Host, Script, Builtin };
+enum class FunctionKind : uint8_t { Host, Builtin, Script };
+
+/* 引擎内置函数回调签名（E4）：参数/返回值均为**内部值指针**（非宿主句柄）。
+ * 与 Host 的句柄语义区分：内置函数在引擎内部，无需句柄保护互转，
+ * 错误经 ConversionResult（value=nullptr + error）传递（#3/#4）。
+ *   ctx     —— JSContext（#9 首参）
+ *   thisVal —— this 绑定（内部指针，已按 ThisMode 解析）
+ *   args    —— 参数数组（内部指针；可为 nullptr 当 argc==0）
+ *   argc    —— 参数个数 */
+using JSBuiltinFn = ConversionResult (*)(JSContext *ctx, JSValue *thisVal,
+                                         JSValue *const *args, size_t argc);
 
 /* this 绑定模式（§10.2.5.6 预留）：
  *   Strict     严格模式：this 不装箱
@@ -61,14 +71,22 @@ class JSFunction : public JSObject {
    * func 为回调指针（可为空——空函数调用返回 undefined 占位）。 */
   JSFunction(JSObject *prototype, FunctionKind kind, void *func,
              ThisMode this_mode = ThisMode::NonStrict);
+  /* 创建引擎内置函数（E4）：内置回调用内部值指针语义。 */
+  JSFunction(JSObject *prototype, JSBuiltinFn func,
+             ThisMode this_mode = ThisMode::NonStrict);
   ~JSFunction() override = default;
 
   /* 函数类别 */
   FunctionKind functionKind() const { return kind_; }
   bool isHostFunction() const { return kind_ == FunctionKind::Host; }
+  bool isBuiltinFunction() const { return kind_ == FunctionKind::Builtin; }
 
   /* 回调指针（FunctionKind::Host 时有效） */
   void *functionPtr() const { return func_; }
+  /* 内置回调（FunctionKind::Builtin 时有效） */
+  JSBuiltinFn builtinFn() const {
+    return reinterpret_cast<JSBuiltinFn>(func_);
+  }
 
   /* this 绑定模式（预留：E3 只实现 NonStrict 的 null/undefined->global 装箱） */
   ThisMode thisMode() const { return this_mode_; }

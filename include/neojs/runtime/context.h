@@ -89,6 +89,12 @@ class JSContext {
    * 非严格模式 this 绑定到 global（§10.2.5.6）。 */
   JSValue *globalObject();
 
+  /* well-known symbol 缓存（E4-1，架构 §5.2）：内置协议（迭代/toPrimitive/
+   * instanceof）使用。惰性创建 + 进根集（markRoots）。
+   * 索引对应 builtins.h 的 WellKnown 枚举值。 */
+  JSValue *wellKnown(int index) const { return well_known_[index]; }
+  void setWellKnown(int index, JSValue *v) { well_known_[index] = v; }
+
  private:
   /* GC 标记阶段根集遍历（docs/gc.md §3.4）：
    * 句柄表所有非空槽 + 作用域绑定链（沿 parent/children 遍历）。
@@ -103,6 +109,7 @@ class JSContext {
   HandleTable handles_;    /* 宿主句柄表（G2：根集之一） */
   JSValue *global_ = nullptr; /* 全局对象（globalThis 雏形，惰性创建） */
   std::string tmp_string_; /* 临时字符串缓冲（JS_ToString 稳定返回用） */
+  JSValue *well_known_[4] = {nullptr, nullptr, nullptr, nullptr}; /* well-known 缓存（E4-1） */
 };
 
 }  // namespace neojs

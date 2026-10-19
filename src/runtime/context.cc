@@ -1,5 +1,7 @@
 #include "neojs/runtime/context.h"
 
+#include "neojs/runtime/builtins.h"
+
 namespace neojs {
 
 JSContext::JSContext(JSAllocator *allocator)
@@ -76,6 +78,9 @@ JSValue *JSContext::createArray(size_t capacity) {
 JSValue *JSContext::globalObject() {
   if (global_ == nullptr) {
     global_ = createObject(nullptr);
+    /* E4：首次创建全局对象时注册内置（Symbol 构造器 + well-known 属性）。
+     * 惰性注册——不触及 global 的测试（GC 精确计数等）不受内置对象影响。 */
+    installBuiltins(this);
   }
   return global_;
 }
@@ -95,6 +100,11 @@ void JSContext::markRoots() {
 
   /* 全局对象（globalThis 雏形，E5 完整注册内置）：作为全局根始终可达。 */
   if (global_ != nullptr) heap_.markRoot(global_);
+
+  /* well-known symbol 缓存（E4-1）：内置协议符号是全局根，始终可达。 */
+  for (JSValue *wk : well_known_) {
+    if (wk != nullptr) heap_.markRoot(wk);
+  }
 
   /* 作用域树：从根作用域沿 children 递归覆盖整棵树。所有存活作用域
    * （含挂起子树 P5）的绑定值都是根；被 pop 的作用域已销毁并摘除，

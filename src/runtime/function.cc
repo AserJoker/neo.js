@@ -65,6 +65,13 @@ JSFunction::JSFunction(JSObject *prototype, FunctionKind kind, void *func,
                        ThisMode this_mode)
     : JSObject(prototype), kind_(kind), func_(func), this_mode_(this_mode) {}
 
+JSFunction::JSFunction(JSObject *prototype, JSBuiltinFn func,
+                       ThisMode this_mode)
+    : JSObject(prototype),
+      kind_(FunctionKind::Builtin),
+      func_(reinterpret_cast<void *>(func)),
+      this_mode_(this_mode) {}
+
 /* -------------------------------------------------------------------------- */
 /* IsCallable（§7.2.12）                                                      */
 /* -------------------------------------------------------------------------- */
@@ -104,11 +111,14 @@ ConversionResult call(JSContext *ctx, JSValue *func, JSValue *thisVal,
     }
   }
 
-  /* 3. 参数/this 分配临时句柄保护（回调执行期间防 GC 回收参数）。 */
+  /* 3. 参数/this 分配临时句柄保护（回调执行期间防 GC 回收参数）。
+   *    同时构造内部值指针数组（Builtin 直接用，Host 转句柄）。 */
   std::vector<uint32_t> tmp_handles;
   tmp_handles.reserve(argc + 1);
   std::vector<void *> argv_handles;
   argv_handles.reserve(argc);
+  std::vector<JSValue *> args_internal;
+  args_internal.reserve(argc);
 
   /* 内部值指针数组（this 已解析）。 */
   JSValue *this_internal = thisArg;
@@ -118,15 +128,37 @@ ConversionResult call(JSContext *ctx, JSValue *func, JSValue *thisVal,
     if (args[i] == nullptr) {
       /* 空参数（undefined 占位）：用全局 undefined？当前无；直接分配空句柄。 */
       argv_handles.push_back(nullptr);
+      args_internal.push_back(nullptr);
       continue;
     }
     uint32_t h = makeTmpHandle(ctx, args[i]);
     tmp_handles.push_back(h);
     argv_handles.push_back(reinterpret_cast<void *>(static_cast<uintptr_t>(h)));
+    args_internal.push_back(args[i]);
   }
 
-  /* 4. 调用回调（仅 Host 函数当前可调；Script/Builtin 未实现）。 */
+  /* 4. 调用回调。
+   *    Host：句柄语义（参数/this 转句柄，回调经 C ABI，返回值是句柄）；
+   *    Builtin：内部值指针语义（E4 内置函数，参数/返回值均为内部指针）。 */
   ConversionResult result;
+  if (fn->functionKind() == FunctionKind::Builtin && fn->builtinFn() != nullptr) {
+    /* 内置函数：直接传内部指针数组（无句柄互转）。 */
+    try {
+      result = fn->builtinFn()(ctx, thisArg,
+                               args_internal.empty() ? nullptr
+                                                     : args_internal.data(),
+                               argc);
+    } catch (const std::exception &e) {
+      result = fail(std::string("Error: ") + e.what());
+    } catch (...) {
+      result = fail("Error: unknown C++ exception in builtin function");
+    }
+    /* 释放临时句柄。 */
+    for (uint32_t h : tmp_handles) {
+      freeTmpHandle(ctx, h);
+    }
+    return result;
+  }
   if (fn->functionKind() != FunctionKind::Host || fn->functionPtr() == nullptr) {
     /* 空函数/未实现函数 -> undefined 占位（E3 最小集）。 */
     result = ok(ctx->createValue(Kind::Undefined));
