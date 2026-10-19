@@ -121,6 +121,13 @@ void JSContext::markRoots() {
     if (proto != nullptr) heap_.markRoot(proto);
   }
 
+  /* VM 操作数栈（M2-VM，栈帧入根集）：解释器运行期间栈上值不可回收。 */
+  if (vm_stack_ != nullptr) {
+    for (JSValue *v : *vm_stack_) {
+      if (v != nullptr) heap_.markRoot(v);
+    }
+  }
+
   /* 作用域树：从根作用域沿 children 递归覆盖整棵树。所有存活作用域
    * （含挂起子树 P5）的绑定值都是根；被 pop 的作用域已销毁并摘除，
    * 不会出现在树中，其绑定值自然成为垃圾。 */

@@ -1,0 +1,41 @@
+/*
+ * 内部 C++ 实现：VM（字节码解释器核心）。
+ *
+ * 设计（架构 §5.4 执行模型 + §6 内存管理）：
+ *   - 栈式 VM：操作数栈 + 调用栈帧（Frame）。
+ *   - 主循环：`for (;;) { Opcode op = *pc++; switch (op) { ... } }`。
+ *   - 调用栈帧（Frame）作为 GC 根集：操作数栈槽 + 局部变量槽 + 函数/
+ *     闭包值都进 markRoots（用户已确认“栈帧入 GC 根集”）。
+ *   - 异常：经 ConversionResult（value=nullptr + error）传递（#3/#4），
+ *     不跨 C ABI 抛 C++ 异常。
+ *
+ * 注意：此头文件是引擎内部实现，不对外暴露。
+ */
+
+#ifndef NEOJS_RUNTIME_VM_H
+#define NEOJS_RUNTIME_VM_H
+
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+#include "neojs/compiler/bytecode.h"
+#include "neojs/runtime/conversion.h"
+
+namespace neojs {
+
+class JSContext;
+class JSValue;
+
+/* 执行字节码（顶层入口，架构 §5.4）。
+ *   fn    函数字节码（顶层程序也是一个函数）。
+ *   thisVal this 绑定（可空）。
+ *   args  入口参数（内部值指针数组；可空当 argc==0）。
+ * 返回 ConversionResult：成功 value 为结果值，失败 value=nullptr + error。 */
+ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
+                             JSValue *thisVal, JSValue *const *args,
+                             size_t argc);
+
+}  // namespace neojs
+
+#endif  // NEOJS_RUNTIME_VM_H

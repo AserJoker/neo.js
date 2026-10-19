@@ -17,6 +17,7 @@
 
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "neojs/runtime/allocator.h"
 #include "neojs/runtime/handles.h"
@@ -111,6 +112,12 @@ class JSContext {
     if (idx >= 0 && idx < 4) wrapper_protos_[idx] = v;
   }
 
+  /* VM 操作数栈注册为 GC 根集（M2-VM，用户确认“栈帧入 GC 根集”）。
+   * 解释器运行期间调用 vmStackRoot(&stack) 注册；结束/出错时传 nullptr 解除。
+   * markRoots 遍历注册的栈：栈上值（表达式中间值 + 局部变量槽）不可回收。 */
+  void vmStackRoot(std::vector<JSValue *> *stack) { vm_stack_ = stack; }
+  std::vector<JSValue *> *vmStack() const { return vm_stack_; }
+
  private:
   /* GC 标记阶段根集遍历（docs/gc.md §3.4）：
    * 句柄表所有非空槽 + 作用域绑定链（沿 parent/children 遍历）。
@@ -127,6 +134,7 @@ class JSContext {
   std::string tmp_string_; /* 临时字符串缓冲（JS_ToString 稳定返回用） */
   JSValue *well_known_[4] = {nullptr, nullptr, nullptr, nullptr}; /* well-known 缓存（E4-1） */
   JSValue *wrapper_protos_[4] = {nullptr, nullptr, nullptr, nullptr}; /* 包装原型缓存（E4-2） */
+  std::vector<JSValue *> *vm_stack_ = nullptr; /* VM 操作数栈根集（M2-VM） */
 };
 
 }  // namespace neojs

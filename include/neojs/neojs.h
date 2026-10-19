@@ -217,13 +217,58 @@ JSValue *JS_Instanceof(JSContext *ctx, JSValue *x, JSValue *y);
 JSValue *JS_In(JSContext *ctx, JSValue *x, JSValue *y);
 
 /* -------------------------------------------------------------------------- */
-/* 执行（M1.1：前端流水线骨架；完整求值引擎在后续里程碑实现）                 */
+/* 执行（M1.1：前端流水线骨架；M2-VM 字节码执行入口）                        */
 /* -------------------------------------------------------------------------- */
 
 /* 在 ctx 中求值一段源码。当前 M1.1 阶段：源码经前端流水线（Lexer+Parser）
  * 解析，返回 AST dump 文本（kind=JS_STRING）；语法错误返回 kind=JS_EXCEPTION
  * 的错误值（#4）。完整求值（字节码 VM）在 M2+ 实现。 */
 JSValue *JS_Eval(JSContext *ctx, const char *source, size_t source_len);
+
+/* 指令操作码（与内部 neojs::Opcode 数值一致，M2-VM）。供 JS_RunBytecode
+ * 构造字节码；arg 语义见各指令：PushConst/LoadGlobal 为常量池索引，
+ * LoadVar/StoreVar 为局部槽号，Jump/JumpIfFalse 为绝对指令位置，
+ * Call 为参数个数。 */
+typedef enum JSBCOp {
+  JS_BC_PUSH_CONST = 0,
+  JS_BC_PUSH_UNDEFINED,
+  JS_BC_PUSH_NULL,
+  JS_BC_PUSH_TRUE,
+  JS_BC_PUSH_FALSE,
+  JS_BC_PUSH_INT,
+  JS_BC_LOAD_VAR,
+  JS_BC_STORE_VAR,
+  JS_BC_LOAD_GLOBAL,
+  JS_BC_POP,
+  JS_BC_ADD,
+  JS_BC_SUB,
+  JS_BC_MUL,
+  JS_BC_DIV,
+  JS_BC_NEG,
+  JS_BC_EQ,
+  JS_BC_STRICT_EQ,
+  JS_BC_LT,
+  JS_BC_JUMP,
+  JS_BC_JUMP_IF_FALSE,
+  JS_BC_CALL,
+  JS_BC_RET,
+  JS_BC_PRINT,
+  JS_BC_NOP,
+} JSBCOp;
+
+/* 执行一段字节码（M2-VM，架构 §5.4）：
+ *   ops        指令数组（JSBCOp）；ops_len 为指令条数
+ *   args       每条指令的立即数（uint16_t，与 JSBCOp 一一对应）
+ *   constants  常量池（字符串数组，PushConst/LoadGlobal 经索引引用）
+ *   const_len  常量池条数
+ *   num_locals 局部变量槽数
+ *   argv/argc  入口参数（宿主句柄数组；可 NULL/0）
+ * 返回执行结果值句柄；错误返回 kind=JS_EXCEPTION（#4）。
+ * 注意：ops 指向的数组在调用期间有效即可（内部复制），调用后可释放。 */
+JSValue *JS_RunBytecode(JSContext *ctx, const JSBCOp *ops, size_t ops_len,
+                        const uint16_t *args, const char *const *constants,
+                        size_t const_len, uint16_t num_locals, size_t argc,
+                        JSValue *const *argv);
 
 /* -------------------------------------------------------------------------- */
 /* 宿主注入 C 函数（#6）—— M0 预留签名，实际注册在后续里程碑               */

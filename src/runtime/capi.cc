@@ -29,6 +29,7 @@
 #include <string>
 #include <utility>
 
+#include "neojs/compiler/bytecode.h"
 #include "neojs/frontend/diagnostics.h"
 #include "neojs/frontend/frontend.h"
 #include "neojs/runtime/allocator.h"
@@ -40,6 +41,7 @@
 #include "neojs/runtime/object.h"
 #include "neojs/runtime/operators.h"
 #include "neojs/runtime/value.h"
+#include "neojs/runtime/vm.h"
 
 /* 内部 kind 与 C JSKind 的数值映射保持同步（见 value.h） */
 static_assert(static_cast<int>(neojs::Kind::Undefined) == JS_UNDEFINED, "kind mismatch");
@@ -835,5 +837,60 @@ extern "C" JSValue *JS_Eval(JSContext *ctx, const char *source, size_t source_le
     std::string dump = neojs::dumpAst(*ast);
     c->allocator().destroy(ast); /* AST 生命周期独立于 ctx 值登记表 */
     return makeValue(ctx, std::move(dump));
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/* 字节码执行入口（M2-VM，架构 §5.4）                                         */
+/* -------------------------------------------------------------------------- */
+
+/* 组装并执行一段字节码。JSBCOp 与内部 neojs::Opcode 数值一致（见 neojs.h
+ * 注释）；本函数把扁平数组转成 FunctionBytecode 后交给 runBytecode。
+ * 返回值句柄由宿主负责 JS_FreeValue；错误返回 Exception 值（#4）。 */
+extern "C" JSValue *JS_RunBytecode(JSContext *ctx, const JSBCOp *ops,
+                                    size_t ops_len, const uint16_t *args,
+                                    const char *const *constants,
+                                    size_t const_len, uint16_t num_locals,
+                                    size_t argc, JSValue *const *argv) {
+  if (ctx == nullptr) {
+    std::fputs("neo.js: null JSContext passed to JS_RunBytecode\n", stderr);
+    std::abort();
+  }
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+
+    /* 组装 FunctionBytecode（扁平数组 -> 指令序列 + 常量池）。 */
+    neojs::FunctionBytecode fn;
+    if (ops != nullptr && ops_len > 0) {
+      fn.code.reserve(ops_len);
+      for (size_t i = 0; i < ops_len; ++i) {
+        neojs::Instruction instr;
+        instr.op = static_cast<neojs::Opcode>(ops[i]);
+        instr.arg = args != nullptr ? args[i] : 0;
+        fn.code.push_back(instr);
+      }
+    }
+    if (constants != nullptr && const_len > 0) {
+      fn.constants.reserve(const_len);
+      for (size_t i = 0; i < const_len; ++i) {
+        fn.constants.emplace_back(constants[i] ? constants[i] : "");
+      }
+    }
+    fn.numLocals = num_locals;
+
+    /* 入口参数：宿主句柄数组 -> 内部值指针数组。 */
+    std::vector<neojs::JSValue *> args_internal;
+    args_internal.reserve(argc);
+    for (size_t i = 0; i < argc; ++i) {
+      args_internal.push_back(unhandle(c, argv ? argv[i] : nullptr));
+    }
+
+    neojs::ConversionResult r = neojs::runBytecode(
+        c, fn, nullptr,
+        args_internal.empty() ? nullptr : args_internal.data(), argc);
+    if (!r.ok()) {
+      return makeException(ctx, r.error.c_str());
+    }
+    return makeHandle(c, r.value);
   });
 }
