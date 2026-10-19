@@ -669,18 +669,11 @@ void Lexer::scanString(char quote) {
   current_ = std::move(t);
 }
 
-/* 模板串：反引号开头。拆为三个 token（对齐 ES TemplateHead/Middle/Tail）：
- *   TemplateStart：`...${（has_interpolation=true）或无插值整段 `...`；
- *   TemplatePart/TemplateEnd：插值表达式之后的续段（M1.3 协同模式产出）。
- * 这里 token 化到 ${ 或闭合反引号。 */
-void Lexer::scanTemplate() {
-  Token t;
-  t.start = {line_, col_, pos_};
-  t.kind = TokenKind::TemplateStart;
-  const size_t tpl_start = pos_;
-  nextChar(); /* ` */
+/* 模板段扫描（共享）：从当前位置起扫描到 ${（has_interpolation=true）
+ * 或闭合反引号（false）。不设 kind（由调用方定）；text 起点 tpl_start。
+ * 模板串允许 LineTerminator；` 与 ${ 之外逐字符累积。 */
+void Lexer::scanTemplateBody(const char *tpl_start, Token &t) {
   std::string value;
-
   for (;;) {
     int c = peekChar();
     if (c == -1) {
@@ -694,7 +687,7 @@ void Lexer::scanTemplate() {
     }
     if (c == '$' && pos_ + 1 < source_len_ &&
         static_cast<unsigned char>(source_[pos_ + 1]) == '{') {
-      /* ${ 进入表达式模式（M1.3）；此段为 TemplateStart 头 */
+      /* ${ 进入表达式模式（M1.3）；此段是头/续段 */
       nextChar(); /* $ */
       nextChar(); /* { */
       t.has_interpolation = true;
@@ -727,11 +720,41 @@ void Lexer::scanTemplate() {
       nextChar();
     }
   }
-
-  t.text = std::string(source_ + tpl_start, pos_ - tpl_start);
+  const size_t start_off = static_cast<size_t>(tpl_start - source_);
+  t.text = std::string(tpl_start, pos_ - start_off);
   t.end = {line_, col_ - 1, pos_ - 1};
   t.str_value = std::move(value);
+}
+
+/* 模板串头：反引号开头 → TemplateStart（对齐 ES TemplateHead）。
+ * 拆三 token：TemplateStart（`...${）、TemplatePart/TemplateEnd（续段）。 */
+void Lexer::scanTemplate() {
+  Token t;
+  t.start = {line_, col_, pos_};
+  t.kind = TokenKind::TemplateStart;
+  const size_t tpl_start = pos_;
+  nextChar(); /* ` */
+  scanTemplateBody(source_ + tpl_start, t);
   current_ = std::move(t);
+}
+
+/* 模板续段（M1.4 ③-5）：插值表达式结束后调用。当前 token 是表达式后的 `}`
+ * （Symbol，pos_ 已在它之后），回退到 `}` 起点将其与后续文本重扫为
+ * TemplatePart（}...${，has_interpolation=true）或 TemplateEnd（}...`，false）。
+ * text 自 } 起（`}` 本身不属于 quasi 值，先消费掉再扫 body）。 */
+void Lexer::rescanTemplatePart() {
+  pos_ = current_.start.offset;
+  line_ = current_.start.line;
+  col_ = current_.start.col;
+  Token t;
+  t.start = {line_, col_, pos_};
+  t.kind = TokenKind::TemplatePart;
+  const size_t tpl_start = pos_;
+  nextChar(); /* } */
+  scanTemplateBody(source_ + tpl_start, t);
+  if (!t.has_interpolation) t.kind = TokenKind::TemplateEnd;
+  current_ = std::move(t);
+  has_peeked_ = false; /* 重扫使任何前瞻缓存失效 */
 }
 
 /* 正则字面量：/pattern/flags。仅读值位置调用（M1.3 三义消解）。

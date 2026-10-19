@@ -60,6 +60,7 @@ class Parser {
   ASTNode *parseBinary(int min_prec);
   ASTNode *parsePrimary();         /* 数字 / 标识符 / 括号 / 字面量 */
   ASTNode *parseLiteral();         /* 数字/字符串/布尔/null/BigInt/正则 */
+  ASTNode *parseTemplateLiteral(); /* 模板串（含 ${expr} 插值，M1.4 ③-5） */
   ASTNode *parseObjectPattern();   /* { ... } 模式（对象字面量/解构共用） */
   ASTNode *parseArrayPattern();    /* [ ... ] 模式（数组字面量/解构共用） */
   ASTNode *newNode(NodeType t);

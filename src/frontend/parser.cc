@@ -623,8 +623,9 @@ ASTNode *Parser::parsePrimary() {
     case TokenKind::Number:
     case TokenKind::String:
     case TokenKind::RegExp:
-    case TokenKind::TemplateStart:
       return parseLiteral();
+    case TokenKind::TemplateStart:
+      return parseTemplateLiteral();
     case TokenKind::TemplatePart:
     case TokenKind::TemplateEnd: {
       /* 顶层不应直接出现续段（须由插值表达式驱动，M1.3）；此处防呆 */
@@ -719,11 +720,8 @@ ASTNode *Parser::parseLiteral() {
       return n;
     }
     case TokenKind::TemplateStart: {
-      if (tok.has_interpolation) {
-        sink_.emit({Severity::Error, "SYNTAX_ERROR", "template interpolation not yet supported",
-                    tok.start});
-        return nullptr;
-      }
+      /* 主入口 parsePrimary 已将插值模板分流到 parseTemplateLiteral；
+       * 此处仅兜底无插值整段（直接调用 parseLiteral 时）。 */
       ASTNode *n = newNode(NodeType::Literal);
       n->loc = tok.start;
       n->literal.is_string = true;
@@ -750,6 +748,60 @@ ASTNode *Parser::parseLiteral() {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "unexpected token", tok.start});
       return nullptr;
   }
+}
+
+/* 模板串（M1.4 ③-5）：`...` 或 `a${expr}b${expr}c`。
+ * children 交替布局：[quasi0, expr0, quasi1, expr1, ..., quasiN]（quasi 数 = expr 数 + 1）。
+ * quasi 用 Literal 节点承载（is_string + str 为解码后的准值）。
+ * 流程：
+ *   - 头部 TemplateStart（`...` 或 `...${）：无插值→单 quasi 结束；有插值→准值入列后 parseExpression。
+ *   - 插值表达式结束，current 应为 `}`：调用 lexer_.rescanTemplatePart() 重扫为
+ *     TemplatePart（}...${，续插值）或 TemplateEnd（}...`，收尾）。
+ */
+ASTNode *Parser::parseTemplateLiteral() {
+  ASTNode *tpl = newNode(NodeType::TemplateLiteral);
+  tpl->loc = current().start;
+
+  for (;;) {
+    const Token &head = current();
+    if (head.kind != TokenKind::TemplateStart && head.kind != TokenKind::TemplatePart &&
+        head.kind != TokenKind::TemplateEnd) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected template segment", head.start});
+      allocator_->destroy(tpl);
+      return nullptr;
+    }
+    /* quasi：解码后的准值 */
+    ASTNode *quasi = newNode(NodeType::Literal);
+    quasi->loc = head.start;
+    quasi->literal.is_string = true;
+    quasi->literal.str = head.str_value;
+    quasi->literal.text = head.text;
+    tpl->children.push_back(quasi);
+    bool has_next = head.has_interpolation; /* ${ 后有插值 */
+    advance(); /* 越过本段 */
+
+    if (!has_next) {
+      /* 无插值：模板结束（TemplateEnd / 无插值 TemplateStart） */
+      break;
+    }
+
+    /* 解析插值表达式 ${ expr } */
+    ASTNode *expr = parseExpression();
+    if (expr == nullptr) {
+      allocator_->destroy(tpl);
+      return nullptr;
+    }
+    tpl->children.push_back(expr);
+
+    /* 表达式结束后必须是模板闭合 } */
+    if (!isSymbol(current(), "}")) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '}' in template", current().start});
+      allocator_->destroy(tpl);
+      return nullptr;
+    }
+    lexer_.rescanTemplatePart(); /* 把 }... 重扫为 TemplatePart/TemplateEnd */
+  }
+  return tpl;
 }
 
 /* 对象模式（字面量/解构共用）：{ key: value, ...spread, shorthand } */

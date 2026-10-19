@@ -95,6 +95,11 @@ class Lexer {
   /* 将当前 Symbol '/' 重扫为正则（M1.3 re-scan 规则）：Parser 在读值位置调用 */
   void rescanAsRegex();
 
+  /* 将当前 Symbol '}' 重扫为模板续段（M1.4 ③-5）：
+   * }...${ → TemplatePart（has_interpolation=true）；}...` → TemplateEnd。
+   * 供 Parser 在插值表达式结束后调用。text 自 } 起。 */
+  void rescanTemplatePart();
+
   /* 状态快照（M1.4 ③-4）：供 Parser 做多 token 前瞻后整体回退（箭头函数判定）。
    * save 记录扫描位置与 token 缓存；restore 恢复全部，之后必须重新 next()。 */
   struct State {
@@ -117,6 +122,7 @@ class Lexer {
   void scanNumber();
   void scanIdentifier();
   void scanString(char quote);
+  void scanTemplateBody(const char *tpl_start, Token &t); /* 模板段共享扫描 */
   void scanTemplate();
   void scanRegex();             /* 正则字面量（从当前 pos 起扫描） */
   void scanSymbol();            /* 表驱动：按长度分组贪婪匹配符号 */

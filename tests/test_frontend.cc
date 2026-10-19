@@ -1257,3 +1257,139 @@ TEST(Frontend, ArrowVsParenNotConfused) {
   EXPECT_EQ(top->children[0]->binop, neojs::BinaryOpKind::Add);
   a.destroy(ast);
 }
+
+/* -------------------------------------------------------------------------- */
+/* 模板串插值（M1.4 ③-5）                                                     */
+/* -------------------------------------------------------------------------- */
+
+TEST(Frontend, TemplateLiteralNoInterp) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* `hello` → TemplateLiteral[Literal("hello")] 单 quasi */
+  neojs::AST *ast = neojs::parseSource(&a, "`hello`", std::strlen("`hello`"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::TemplateLiteral);
+  ASSERT_EQ(top->children.size(), 1u);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::Literal);
+  EXPECT_EQ(top->children[0]->literal.str, "hello");
+  a.destroy(ast);
+}
+
+TEST(Frontend, TemplateSingleInterp) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* `a${1}` → TemplateLiteral[Literal("a"), Literal(1), Literal("")] */
+  neojs::AST *ast = neojs::parseSource(&a, "`a${1}`", std::strlen("`a${1}`"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::TemplateLiteral);
+  ASSERT_EQ(top->children.size(), 3u);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::Literal);
+  EXPECT_EQ(top->children[0]->literal.str, "a");
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::Literal);
+  EXPECT_TRUE(top->children[1]->literal.is_number);
+  EXPECT_EQ(top->children[2]->type, neojs::NodeType::Literal);
+  EXPECT_EQ(top->children[2]->literal.str, "");
+  a.destroy(ast);
+}
+
+TEST(Frontend, TemplateMultiInterp) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* `a${x}b${y}c` → [quasi a, Identifier x, quasi b, Identifier y, quasi c] */
+  neojs::AST *ast =
+      neojs::parseSource(&a, "`a${x}b${y}c`", std::strlen("`a${x}b${y}c`"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::TemplateLiteral);
+  ASSERT_EQ(top->children.size(), 5u);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::Literal);
+  EXPECT_EQ(top->children[0]->literal.str, "a");
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::Identifier);
+  EXPECT_EQ(top->children[1]->name, "x");
+  EXPECT_EQ(top->children[2]->type, neojs::NodeType::Literal);
+  EXPECT_EQ(top->children[2]->literal.str, "b");
+  EXPECT_EQ(top->children[3]->type, neojs::NodeType::Identifier);
+  EXPECT_EQ(top->children[3]->name, "y");
+  EXPECT_EQ(top->children[4]->type, neojs::NodeType::Literal);
+  EXPECT_EQ(top->children[4]->literal.str, "c");
+  a.destroy(ast);
+}
+
+TEST(Frontend, TemplateInterpExpression) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* `sum=${a + b}` → [quasi "sum=", BinaryOp(+), quasi ""] */
+  neojs::AST *ast =
+      neojs::parseSource(&a, "`sum=${a + b}`", std::strlen("`sum=${a + b}`"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::TemplateLiteral);
+  ASSERT_EQ(top->children.size(), 3u);
+  EXPECT_EQ(top->children[0]->literal.str, "sum=");
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::BinaryOp);
+  EXPECT_EQ(top->children[1]->binop, neojs::BinaryOpKind::Add);
+  a.destroy(ast);
+}
+
+TEST(Frontend, TemplateNested) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* 嵌套模板：`n=${`in${x}`}` → 插值内又含 TemplateLiteral */
+  neojs::AST *ast =
+      neojs::parseSource(&a, "`n=${`in${x}`}`", std::strlen("`n=${`in${x}`}`"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::TemplateLiteral);
+  ASSERT_EQ(top->children.size(), 3u);
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::TemplateLiteral);
+  a.destroy(ast);
+}
+
+TEST(Frontend, TemplateUnterminated) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* `unterminated → 报错，ast 为 nullptr */
+  neojs::AST *ast =
+      neojs::parseSource(&a, "`unterminated", std::strlen("`unterminated"), sink);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink.hasErrors());
+  a.destroy(ast);
+}
+
+/* Lexer 级：续段重扫产出 TemplatePart / TemplateEnd（M1.4 ③-5） */
+TEST(Frontend, TemplateContinuationTokens) {
+  neojs::DiagnosticSink sink;
+  neojs::Lexer l("`a${x}b${y}c`", std::strlen("`a${x}b${y}c`"), sink);
+
+  /* head：`a${ */
+  const neojs::Token &h = l.next();
+  EXPECT_EQ(h.kind, neojs::TokenKind::TemplateStart);
+  EXPECT_EQ(h.str_value, "a");
+  EXPECT_TRUE(h.has_interpolation);
+
+  /* 模拟 Parser：表达式 x 后的 } 重扫为续段。先推进到 } */
+  EXPECT_EQ(l.next().text, "x");
+  const neojs::Token &close = l.next();
+  EXPECT_EQ(close.kind, neojs::TokenKind::Symbol);
+  EXPECT_EQ(close.text, "}");
+  /* rescanTemplatePart 依赖 current 是 }，且需回退重扫；
+   * 这里直接调用（current 已是 }，pos 在它之后） */
+  l.rescanTemplatePart();
+  const neojs::Token &mid = l.current();
+  EXPECT_EQ(mid.kind, neojs::TokenKind::TemplatePart);
+  EXPECT_EQ(mid.str_value, "b");
+  EXPECT_TRUE(mid.has_interpolation);
+
+  /* 第二个 } 后是尾段 }c` */
+  EXPECT_EQ(l.next().text, "y");
+  EXPECT_EQ(l.next().text, "}");
+  l.rescanTemplatePart();
+  const neojs::Token &tail = l.current();
+  EXPECT_EQ(tail.kind, neojs::TokenKind::TemplateEnd);
+  EXPECT_EQ(tail.str_value, "c");
+  EXPECT_FALSE(tail.has_interpolation);
+
+  EXPECT_EQ(l.next().kind, neojs::TokenKind::EndOfFile);
+}
