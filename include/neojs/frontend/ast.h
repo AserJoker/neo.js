@@ -65,6 +65,9 @@ enum class NodeType : uint8_t {
   ForStatement,       /* 三段式循环：for(init;cond;update) body（M1.5 ③） */
   ForInStatement,     /* for-in：for (left in right) body（M1.5 ③） */
   ForOfStatement,     /* for-of：for (left of right) body（M1.5 ③） */
+  FunctionDeclaration, /* 函数声明：function name(params) { body }（M1.5 ④） */
+  FunctionExpression,  /* 函数表达式：function [name](params) { body }（M1.5 ④） */
+  ReturnStatement,     /* 返回语句：return [expr]（M1.5 ④，restricted production） */
 };
 
 /* 声明关键字类型（M1.5 ①）：var / let / const */

@@ -763,6 +763,8 @@ ASTNode *Parser::parsePrimary() {
       /* 关键字字面量：true / false / null */
       if (tok.text == "true" || tok.text == "false" || tok.text == "null")
         return parseLiteral();
+      /* 函数表达式：function [name](params) { body }（M1.5 ④） */
+      if (tok.text == "function") return parseFunctionExpression();
       ASTNode *n = newNode(NodeType::Identifier);
       n->loc = tok.start;
       n->name = tok.text;

@@ -112,6 +112,15 @@ ASTNode *Parser::parseStatement() {
   if (isKeyword(current(), "for")) {
     return parseForStatement();
   }
+  /* 函数声明（M1.5 ④）：function name(params) { body } */
+  if (isKeyword(current(), "function")) {
+    return parseFunctionDeclaration();
+  }
+  /* 返回语句（M1.5 ④）：return [expr]。restricted production：
+   * return 后换行立即插入分号（return\nx → return; x）。顶层 return 报错。 */
+  if (isKeyword(current(), "return")) {
+    return parseReturnStatement();
+  }
 
   /* 兜底：表达式语句 */
   return parseExpressionStatement();
@@ -510,6 +519,234 @@ ASTNode *Parser::parseLabeledStatement() {
   }
   label->children.push_back(body);
   return label;
+}
+
+/* 函数声明（M1.5 ④）：function name(params) { body }
+ * ECMA-262 §15.4。children 布局：[id, params..., body]。
+ * 声明必须有名字（function () {} 是表达式）；这里容错为 name 可空。
+ * 参数：Identifier 或解构模式（后续展开）；body 为块语句。
+ * function_depth_ 递增：body 内允许 return（顶层 return 报错）。 */
+ASTNode *Parser::parseFunctionDeclaration() {
+  ASTNode *fn = newNode(NodeType::FunctionDeclaration);
+  fn->loc = current().start;
+  advance(); /* function */
+
+  /* 函数名（声明必需；缺省报错） */
+  if (!at(TokenKind::Identifier)) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected function name", current().start});
+    allocator_->destroy(fn);
+    return nullptr;
+  }
+  ASTNode *id = newNode(NodeType::Identifier);
+  id->loc = current().start;
+  id->name = current().text;
+  advance();
+  fn->children.push_back(id);
+
+  /* 参数列表：(a, b, ...rest) */
+  if (!isSymbol(current(), "(")) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '(' after function name",
+                current().start});
+    allocator_->destroy(fn);
+    return nullptr;
+  }
+  advance(); /* ( */
+  while (!isSymbol(current(), ")")) {
+    if (atEof()) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated parameter list", fn->loc});
+      allocator_->destroy(fn);
+      return nullptr;
+    }
+    if (isSymbol(current(), ",")) {
+      /* 尾逗号容错：f(a,) 合法（ES2017+） */
+      advance();
+      if (isSymbol(current(), ")")) break;
+      continue;
+    }
+    /* 参数：标识符 或 解构模式（RestElement 由 ... 触发） */
+    ASTNode *param;
+    if (isSymbol(current(), "...")) {
+      advance();
+      ASTNode *rest = newNode(NodeType::RestElement);
+      rest->loc = current().start;
+      ASTNode *target = newNode(NodeType::Identifier);
+      target->loc = current().start;
+      target->name = current().text;
+      advance();
+      rest->children.push_back(target);
+      param = rest;
+    } else if (isSymbol(current(), "{") || isSymbol(current(), "[")) {
+      if (isSymbol(current(), "{")) {
+        param = parseObjectPattern();
+      } else {
+        param = parseArrayPattern();
+      }
+      if (param == nullptr) {
+        allocator_->destroy(fn);
+        return nullptr;
+      }
+    } else if (at(TokenKind::Identifier)) {
+      param = newNode(NodeType::Identifier);
+      param->loc = current().start;
+      param->name = current().text;
+      advance();
+    } else {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected parameter", current().start});
+      allocator_->destroy(fn);
+      return nullptr;
+    }
+    fn->children.push_back(param);
+    if (!isSymbol(current(), ",") && !isSymbol(current(), ")")) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ',' or ')' in parameter list",
+                  current().start});
+      allocator_->destroy(fn);
+      return nullptr;
+    }
+  }
+  advance(); /* ) */
+
+  /* 函数体：{ 块语句 }；function_depth_ 递增（body 内 return 合法） */
+  if (!isSymbol(current(), "{")) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '{' before function body",
+                current().start});
+    allocator_->destroy(fn);
+    return nullptr;
+  }
+  ++function_depth_;
+  ASTNode *body = parseBlock();
+  --function_depth_;
+  if (body == nullptr) {
+    allocator_->destroy(fn);
+    return nullptr;
+  }
+  fn->children.push_back(body);
+  return fn;
+}
+
+/* 函数表达式（M1.5 ④）：function [name](params) { body }
+ * 与声明结构相同，仅节点类型与 name 可选不同。供 parsePrimary 分派。 */
+ASTNode *Parser::parseFunctionExpression() {
+  ASTNode *fn = newNode(NodeType::FunctionExpression);
+  fn->loc = current().start;
+  advance(); /* function */
+
+  /* 函数名可选（匿名函数表达式合法） */
+  if (at(TokenKind::Identifier)) {
+    ASTNode *id = newNode(NodeType::Identifier);
+    id->loc = current().start;
+    id->name = current().text;
+    advance();
+    fn->children.push_back(id);
+  }
+
+  /* 参数列表：(a, b, ...rest) */
+  if (!isSymbol(current(), "(")) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '(' after 'function'",
+                current().start});
+    allocator_->destroy(fn);
+    return nullptr;
+  }
+  advance(); /* ( */
+  while (!isSymbol(current(), ")")) {
+    if (atEof()) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated parameter list", fn->loc});
+      allocator_->destroy(fn);
+      return nullptr;
+    }
+    if (isSymbol(current(), ",")) {
+      advance();
+      if (isSymbol(current(), ")")) break;
+      continue;
+    }
+    ASTNode *param;
+    if (isSymbol(current(), "...")) {
+      advance();
+      ASTNode *rest = newNode(NodeType::RestElement);
+      rest->loc = current().start;
+      ASTNode *target = newNode(NodeType::Identifier);
+      target->loc = current().start;
+      target->name = current().text;
+      advance();
+      rest->children.push_back(target);
+      param = rest;
+    } else if (isSymbol(current(), "{") || isSymbol(current(), "[")) {
+      if (isSymbol(current(), "{")) {
+        param = parseObjectPattern();
+      } else {
+        param = parseArrayPattern();
+      }
+      if (param == nullptr) {
+        allocator_->destroy(fn);
+        return nullptr;
+      }
+    } else if (at(TokenKind::Identifier)) {
+      param = newNode(NodeType::Identifier);
+      param->loc = current().start;
+      param->name = current().text;
+      advance();
+    } else {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected parameter", current().start});
+      allocator_->destroy(fn);
+      return nullptr;
+    }
+    fn->children.push_back(param);
+    if (!isSymbol(current(), ",") && !isSymbol(current(), ")")) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ',' or ')' in parameter list",
+                  current().start});
+      allocator_->destroy(fn);
+      return nullptr;
+    }
+  }
+  advance(); /* ) */
+
+  /* 函数体：{ 块语句 } */
+  if (!isSymbol(current(), "{")) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '{' before function body",
+                current().start});
+    allocator_->destroy(fn);
+    return nullptr;
+  }
+  ++function_depth_;
+  ASTNode *body = parseBlock();
+  --function_depth_;
+  if (body == nullptr) {
+    allocator_->destroy(fn);
+    return nullptr;
+  }
+  fn->children.push_back(body);
+  return fn;
+}
+
+/* 返回语句（M1.5 ④）：return [expr]。ECMA-262 §14.4.3。
+ * children[0] 为返回值（可缺省：return;）。
+ * restricted production：return 后遇换行立即插入分号（return\nx → return; x）。
+ * 顶层 return（function_depth_ == 0）是语法错误。 */
+ASTNode *Parser::parseReturnStatement() {
+  ASTNode *stmt = newNode(NodeType::ReturnStatement);
+  stmt->loc = current().start;
+  advance(); /* return */
+
+  /* 顶层 return 非法（仅在函数体内合法） */
+  if (function_depth_ == 0) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "return outside function", stmt->loc});
+    allocator_->destroy(stmt);
+    return nullptr;
+  }
+
+  /* 返回值可省：; / 换行（restricted production）/ } / EOF 均视为 return; */
+  if (!isSymbol(current(), ";") && !isSymbol(current(), "}") && !atEof() &&
+      !current().has_newline_before) {
+    setValueContext();
+    ASTNode *arg = parseExpression();
+    if (arg == nullptr) {
+      allocator_->destroy(stmt);
+      return nullptr;
+    }
+    stmt->children.push_back(arg);
+  }
+  /* 分号（ASI）：显式 ; 或换行/}/EOF 隐式插入 */
+  if (isSymbol(current(), ";")) advance();
+  return stmt;
 }
 
 /* 块语句（M1.5 ②）：{ stmt... }。空块合法。

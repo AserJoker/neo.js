@@ -2318,3 +2318,80 @@ TEST(Frontend, ForOfAwait) {
   EXPECT_TRUE(top->is_await);
   a.destroy(ast);
 }
+
+TEST(Frontend, FunctionDeclaration) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* function add(a, b) { return a + b; } → FunctionDeclaration[id, a, b, body] */
+  neojs::AST *ast = neojs::parseSource(
+      &a, "function add(a, b) { return a + b; }",
+      std::strlen("function add(a, b) { return a + b; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::FunctionDeclaration);
+  ASSERT_EQ(top->children.size(), 4u); /* id + 2 params + body */
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::Identifier);
+  EXPECT_EQ(top->children[0]->name, "add");
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::Identifier);
+  EXPECT_EQ(top->children[3]->type, neojs::NodeType::BlockStatement);
+  neojs::ASTNode *ret = top->children[3]->children[0];
+  EXPECT_EQ(ret->type, neojs::NodeType::ReturnStatement);
+  ASSERT_EQ(ret->children.size(), 1u); /* 有返回值 */
+  EXPECT_EQ(ret->children[0]->type, neojs::NodeType::BinaryOp);
+  a.destroy(ast);
+
+  /* 函数表达式：var g = function(x) { return x * 2; }; */
+  ast = neojs::parseSource(
+      &a, "var g = function(x) { return x * 2; };",
+      std::strlen("var g = function(x) { return x * 2; };"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0];
+  ASSERT_EQ(top->children.size(), 1u);
+  neojs::ASTNode *init = top->children[0]->children[1];
+  EXPECT_EQ(init->type, neojs::NodeType::FunctionExpression);
+  a.destroy(ast);
+
+  /* rest 参数：function f(...args) { return args; } */
+  ast = neojs::parseSource(
+      &a, "function f(...args) { return args; }",
+      std::strlen("function f(...args) { return args; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0];
+  ASSERT_EQ(top->children.size(), 3u); /* id + rest + body */
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::RestElement);
+  a.destroy(ast);
+}
+
+TEST(Frontend, ReturnStatement) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* return; 无值 */
+  neojs::AST *ast = neojs::parseSource(
+      &a, "function f() { return; }", std::strlen("function f() { return; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *ret = ast->root->children[0]->children[1]->children[0];
+  EXPECT_EQ(ret->type, neojs::NodeType::ReturnStatement);
+  EXPECT_EQ(ret->children.size(), 0u); /* 无返回值 */
+  a.destroy(ast);
+
+  /* 顶层 return 报错 */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "return 42;", std::strlen("return 42;"), sink2);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink2.hasErrors());
+}
+
+TEST(Frontend, ReturnNewline) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* return 后换行 → restricted production 插入分号：return; x; */
+  neojs::AST *ast = neojs::parseSource(
+      &a, "function f() { return\nx; }", std::strlen("function f() { return\nx; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *body = ast->root->children[0]->children[1];
+  ASSERT_EQ(body->children.size(), 2u); /* return; + x; */
+  EXPECT_EQ(body->children[0]->type, neojs::NodeType::ReturnStatement);
+  EXPECT_EQ(body->children[0]->children.size(), 0u);
+  EXPECT_EQ(body->children[1]->type, neojs::NodeType::ExprStmt);
+  a.destroy(ast);
+}

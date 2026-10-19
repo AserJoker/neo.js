@@ -67,6 +67,9 @@ class Parser {
   ASTNode *parseVariableDeclaration(bool consume_semicolon = true,
                                    bool allow_missing_const_init = false); /* 声明（M1.5 ①） */
   ASTNode *parseForStatement();        /* for/for-in/for-of/for await（M1.5 ③） */
+  ASTNode *parseFunctionDeclaration(); /* 函数声明：function name(params) { body }（M1.5 ④） */
+  ASTNode *parseFunctionExpression();  /* 函数表达式：function [name](params) { body }（M1.5 ④） */
+  ASTNode *parseReturnStatement();     /* 返回语句：return [expr]（M1.5 ④） */
   ASTNode *parseExpressionStatement();
 
   /* 最小递归下降：表达式（parser.cc） */
@@ -91,6 +94,7 @@ class Parser {
   DiagnosticSink &sink_;
   bool has_peeked_ = false;
   int loop_depth_ = 0; /* 循环嵌套深度（for/while/do-while；break/continue 校验） */
+  int function_depth_ = 0; /* 函数嵌套深度（return 顶层校验，M1.5 ④） */
 };
 
 }  // namespace neojs
