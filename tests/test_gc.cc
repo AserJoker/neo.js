@@ -133,6 +133,87 @@ TEST(GC, HandleRootProtection) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* 5. C API 层：JS_GC / JS_SetGCThreshold（docs/gc.md §5/§7）                 */
+/* -------------------------------------------------------------------------- */
+
+TEST(GC, CApiJsGcKeepsHandles) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+  neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+
+  /* 创建值（C API 返回句柄） */
+  JSValue *v = JS_CreateNumber(ctx, 3.14);
+  ASSERT_NE(v, nullptr);
+  JSValue *temp = JS_CreateString(ctx, "tmp", 3);
+  ASSERT_NE(temp, nullptr);
+
+  /* 释放 temp 句柄：temp 值失去根 -> JS_GC 回收 */
+  JS_FreeValue(ctx, temp);
+  JS_GC(ctx);
+  EXPECT_EQ(c->heap().size(), 1u); /* 只剩 v */
+
+  /* v 句柄在 GC 后仍有效，值内容不变（G2/G4） */
+  EXPECT_EQ(JS_GetKind(ctx, v), JS_NUMBER);
+  EXPECT_EQ(JS_ToNumber(ctx, v), 3.14);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+TEST(GC, CApiSetGcThreshold) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+  neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+
+  /* 设置阈值 2：分配第 2 个值触发自动 GC */
+  JS_SetGCThreshold(ctx, 2);
+  JSValue *rooted = JS_CreateNumber(ctx, 1.0);
+  ASSERT_NE(rooted, nullptr);
+
+  /* 第 2 个分配触发自动 GC：rooted 被句柄持有存活，临时值回收 */
+  JSValue *temp = JS_CreateNumber(ctx, 2.0);
+  ASSERT_NE(temp, nullptr);
+  EXPECT_EQ(c->heap().allocCount(), 0u); /* 自动 GC 已重置计数 */
+
+  /* 临时值无根已回收，rooted 存活 */
+  JS_GC(ctx);
+  EXPECT_EQ(c->heap().size(), 1u);
+  EXPECT_EQ(JS_ToNumber(ctx, rooted), 1.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+TEST(GC, CApiLoadStoreSurviveGc) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* 定义绑定 -> 绑定值是根，GC 后仍可 Load */
+  JSValue *v = JS_CreateNumber(ctx, 42.0);
+  JS_DefineValue(ctx, "answer", v, 0 /* Var */);
+  JS_GC(ctx);
+
+  JSValue *loaded = JS_LoadValue(ctx, "answer");
+  ASSERT_NE(loaded, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, loaded), JS_NUMBER);
+  EXPECT_EQ(JS_ToNumber(ctx, loaded), 42.0);
+  JS_FreeValue(ctx, loaded);
+
+  /* Store 更新绑定值后 GC：新值存活 */
+  JSValue *v2 = JS_CreateNumber(ctx, 100.0);
+  JSValue *st = JS_StoreValue(ctx, "answer", v2);
+  ASSERT_NE(st, nullptr);
+  JS_GC(ctx);
+  EXPECT_EQ(JS_ToNumber(ctx, JS_LoadValue(ctx, "answer")), 100.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* -------------------------------------------------------------------------- */
 /* 4. 阈值自动触发：分配超过阈值 -> 自动 GC                                    */
 /* -------------------------------------------------------------------------- */
 

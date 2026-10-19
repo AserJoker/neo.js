@@ -10,10 +10,17 @@
  *   #13 JSAllocator 暴露到 C API（JS_NewAllocator/JS_FreeAllocator）；
  *       JSContext 创建接受 JSAllocator*；oomAbort 由分配器自己处理。
  *   #14 返回 JSValue 的接口永不返回 nullptr；其它错误返回 kind = Exception 值。
+ *
+ * 遵循 docs/gc.md（GC 引擎）：
+ *   G2  C API 返回/接收的是句柄（HandleTable 表索引），非裸指针；
+ *       GC 回收不影响宿主已持有的句柄。
+ *   C ABI 兼容：typedef struct JSValue JSValue 保持不透明指针不变，
+ *   但 C 层 JSValue* 实际是 reinterpret_cast<JSValue*>(handle)（整数索引）。
  */
 
 #include "neojs/neojs.h"
 
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
@@ -25,6 +32,7 @@
 #include "neojs/frontend/frontend.h"
 #include "neojs/runtime/allocator.h"
 #include "neojs/runtime/context.h"
+#include "neojs/runtime/handles.h"
 #include "neojs/runtime/value.h"
 
 /* 内部 kind 与 C JSKind 的数值映射保持同步（见 value.h） */
@@ -39,12 +47,38 @@ namespace {
 void *defaultAlloc(size_t size, void *) { return std::malloc(size); }
 void defaultFree(void *ptr, void *) { std::free(ptr); }
 
+/* -------------------------------------------------------------------------- */
+/* 句柄互转（docs/gc.md §3.3 + §6）                                           */
+/* -------------------------------------------------------------------------- */
+
+/* 句柄 -> C JSValue*：整数索引 reinterpret_cast 为指针（#14：非 0）。 */
+JSValue *fromHandle(uint32_t handle) {
+  return reinterpret_cast<JSValue *>(static_cast<uintptr_t>(handle));
+}
+
+/* C JSValue* -> 句柄：指针低位截断回索引。 */
+uint32_t toHandle(JSValue *value) {
+  return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(value));
+}
+
+/* C 句柄 -> 内部 neojs::JSValue*；无效/空槽返回 nullptr。 */
+neojs::JSValue *unhandle(neojs::JSContext *c, JSValue *value) {
+  if (value == nullptr) return nullptr;
+  return c->handles().get(toHandle(value));
+}
+
+/* 内部 neojs::JSValue* -> 分配新句柄 -> C JSValue*（#14：非 0）。 */
+JSValue *makeHandle(neojs::JSContext *c, neojs::JSValue *v) {
+  if (v == nullptr) return nullptr; /* 未初始化绑定等：语义允许 nullptr */
+  return fromHandle(c->handles().alloc(v));
+}
+
 template <typename V>
 JSValue *makeValue(JSContext *ctx, V &&value) {
   neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
-  /* #13 + P2：值经 JSAllocator::create<T> 创建，登记在 ctx 全局登记表（不归属 scope）。 */
+  /* #13 + G1：值经 Heap::allocValue 创建并登记到堆；分配句柄返回（G2）。 */
   neojs::JSValue *v = c->createValue(std::forward<V>(value));
-  return reinterpret_cast<JSValue *>(v);
+  return makeHandle(c, v);
 }
 
 /* 创建 Exception 值的内部实现（分配器保证非空，#14）。 */
@@ -52,7 +86,7 @@ JSValue *makeException(JSContext *ctx, const char *message) {
   neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
   neojs::JSValue *err = c->createValue(neojs::Kind::Exception);
   err->setErrorInfo(message ? message : "");
-  return reinterpret_cast<JSValue *>(err);
+  return makeHandle(c, err);
 }
 
 /* #3 + #14：包裹“返回 JSValue 的接口”。捕获 C++ 异常时返回 Exception 值；
@@ -165,7 +199,7 @@ extern "C" void JS_PopScope(JSContext *ctx) {
 }
 
 /* 按名加载值：沿作用域链查找；未找到返回 Exception 值（#4/#14）。
- * M0 不校验 TDZ（initialized），M2 启用。 */
+ * 返回新句柄（宿主负责 JS_FreeValue）。M0 不校验 TDZ（initialized），M2 启用。 */
 extern "C" JSValue *JS_LoadValue(JSContext *ctx, const char *name) {
   /* ctx 为空属编程错误（#9 一切从 ctx 出发），直接终止。 */
   if (ctx == nullptr) {
@@ -173,16 +207,17 @@ extern "C" JSValue *JS_LoadValue(JSContext *ctx, const char *name) {
     std::abort();
   }
   return guarded_create(ctx, [&]() -> JSValue * {
-    neojs::JSBinding *b =
-        reinterpret_cast<neojs::JSContext *>(ctx)->currentScope().findBinding(name ? name : "");
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSBinding *b = c->currentScope().findBinding(name ? name : "");
     if (b == nullptr || b->value == nullptr) {
       return makeException(ctx, "ReferenceError: name is not defined");
     }
-    return reinterpret_cast<JSValue *>(b->value);
+    return makeHandle(c, b->value); /* 绑定存内部裸指针，分配新句柄返回（G2） */
   });
 }
 
 /* 定义绑定到当前作用域（对应声明）。kind 只记录不校验（M0 打地基，M2 启用）。
+ * value 是宿主句柄：解句柄存内部裸指针（绑定存内部指针，G2/§6）。
  * 返回 value（#14）；value==nullptr 时定义未初始化绑定（TDZ 起点）。 */
 extern "C" JSValue *JS_DefineValue(JSContext *ctx, const char *name, JSValue *value,
                                     int kind) {
@@ -194,7 +229,7 @@ extern "C" JSValue *JS_DefineValue(JSContext *ctx, const char *name, JSValue *va
     neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
     neojs::JSBinding b;
     b.kind = static_cast<neojs::BindingKind>(kind); /* M0 不校验 kind 合法性 */
-    b.value = reinterpret_cast<neojs::JSValue *>(value);
+    b.value = unhandle(c, value);                  /* 解句柄存内部裸指针 */
     b.initialized = (value != nullptr); /* nullptr → 未初始化绑定（TDZ 起点） */
     c->currentScope().defineBinding(name ? name : "", b);
     return value; /* 可能为 nullptr：定义未初始化绑定（#14 对非空值返回非空，此处语义允许） */
@@ -202,7 +237,7 @@ extern "C" JSValue *JS_DefineValue(JSContext *ctx, const char *name, JSValue *va
 }
 
 /* 存储绑定：沿作用域链更新已存在的绑定（对应赋值）；未找到返回 Exception。
- * M0 不校验 const（kind），M2 启用。 */
+ * value 是宿主句柄：解句柄存内部裸指针。M0 不校验 const（kind），M2 启用。 */
 extern "C" JSValue *JS_StoreValue(JSContext *ctx, const char *name, JSValue *value) {
   if (ctx == nullptr) {
     std::fputs("neo.js: null JSContext passed to JS_StoreValue\n", stderr);
@@ -210,15 +245,15 @@ extern "C" JSValue *JS_StoreValue(JSContext *ctx, const char *name, JSValue *val
   }
   return guarded_create(ctx, [&]() -> JSValue * {
     if (value == nullptr) return makeException(ctx, "TypeError: value is null");
-    neojs::JSBinding *b =
-        reinterpret_cast<neojs::JSContext *>(ctx)->currentScope().findBinding(name ? name : "");
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSBinding *b = c->currentScope().findBinding(name ? name : "");
     if (b == nullptr) {
       std::string msg = "ReferenceError: ";
       msg += (name ? name : "");
       msg += " is not defined";
       return makeException(ctx, msg.c_str());
     }
-    b->value = reinterpret_cast<neojs::JSValue *>(value);
+    b->value = unhandle(c, value); /* 解句柄存内部裸指针 */
     b->initialized = true;
     return value;
   });
@@ -267,42 +302,56 @@ extern "C" void JS_FreeValue(JSContext *ctx, JSValue *value) {
   if (ctx == nullptr || value == nullptr) return;
   neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
   try {
-    /* #13 + P2：值登记在 ctx 全局登记表，经 JSContext::freeValue 析构 + 释放。 */
-    c->freeValue(reinterpret_cast<neojs::JSValue *>(value));
+    /* G2 + §5.2：释放宿主句柄槽（对象生死由 GC 判定，不立即释放）。 */
+    c->freeValue(unhandle(c, value));
   } catch (...) {
     /* #3 */
   }
 }
 
 extern "C" JSKind JS_GetKind(JSContext *ctx, const JSValue *value) {
-  (void)ctx;
-  if (value == nullptr) return JS_UNDEFINED;
-  const neojs::JSValue *v = reinterpret_cast<const neojs::JSValue *>(value);
+  if (ctx == nullptr || value == nullptr) return JS_UNDEFINED;
+  neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+  const neojs::JSValue *v =
+      c->handles().get(toHandle(const_cast<JSValue *>(value))); /* 解句柄 */
+  if (v == nullptr) return JS_UNDEFINED;
   return static_cast<JSKind>(static_cast<int>(v->kind()));
 }
 
 extern "C" int JS_ToBoolean(JSContext *ctx, const JSValue *value) {
-  (void)ctx;
-  if (value == nullptr) return 0;
-  return reinterpret_cast<const neojs::JSValue *>(value)->toBoolean() ? 1 : 0;
+  if (ctx == nullptr || value == nullptr) return 0;
+  neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+  const neojs::JSValue *v =
+      c->handles().get(toHandle(const_cast<JSValue *>(value)));
+  if (v == nullptr) return 0;
+  return v->toBoolean() ? 1 : 0;
 }
 
 extern "C" double JS_ToNumber(JSContext *ctx, const JSValue *value) {
-  (void)ctx;
-  if (value == nullptr) return 0.0;
-  return reinterpret_cast<const neojs::JSValue *>(value)->toNumber();
+  if (ctx == nullptr || value == nullptr) return 0.0;
+  neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+  const neojs::JSValue *v =
+      c->handles().get(toHandle(const_cast<JSValue *>(value)));
+  if (v == nullptr) return 0.0;
+  return v->toNumber();
 }
 
 extern "C" int64_t JS_ToInteger(JSContext *ctx, const JSValue *value) {
-  (void)ctx;
-  if (value == nullptr) return 0;
-  return reinterpret_cast<const neojs::JSValue *>(value)->toInteger();
+  if (ctx == nullptr || value == nullptr) return 0;
+  neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+  const neojs::JSValue *v =
+      c->handles().get(toHandle(const_cast<JSValue *>(value)));
+  if (v == nullptr) return 0;
+  return v->toInteger();
 }
 
 extern "C" const char *JS_ToString(JSContext *ctx, const JSValue *value) {
-  (void)ctx;
-  if (value == nullptr) return nullptr;
-  return reinterpret_cast<const neojs::JSValue *>(value)->toString().c_str();
+  if (ctx == nullptr || value == nullptr) return nullptr;
+  neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+  const neojs::JSValue *v =
+      c->handles().get(toHandle(const_cast<JSValue *>(value)));
+  if (v == nullptr) return nullptr;
+  return v->toString().c_str();
 }
 
 /* -------------------------------------------------------------------------- */
@@ -314,6 +363,28 @@ extern "C" JSValue *JS_CreateError(JSContext *ctx, const char *message) {
   return guarded_create(ctx, [&]() -> JSValue * {
     return makeException(ctx, message);
   });
+}
+
+/* -------------------------------------------------------------------------- */
+/* GC 引擎（docs/gc.md §5）                                                   */
+/* -------------------------------------------------------------------------- */
+
+extern "C" void JS_GC(JSContext *ctx) {
+  if (ctx == nullptr) return;
+  try {
+    reinterpret_cast<neojs::JSContext *>(ctx)->gc();
+  } catch (...) {
+    /* #3：跨 C 边界不抛异常 */
+  }
+}
+
+extern "C" void JS_SetGCThreshold(JSContext *ctx, size_t threshold) {
+  if (ctx == nullptr) return;
+  try {
+    reinterpret_cast<neojs::JSContext *>(ctx)->heap().setGcThreshold(threshold);
+  } catch (...) {
+    /* #3 */
+  }
 }
 
 /* -------------------------------------------------------------------------- */

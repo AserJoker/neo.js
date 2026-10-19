@@ -356,7 +356,12 @@ TEST(CApi, DefineAndStoreValue) {
   /* 子作用域更新后父作用域读到新值（赋值穿透作用域链） */
   JS_PopScope(ctx);
   EXPECT_EQ(JS_ToNumber(ctx, JS_LoadValue(ctx, "counter")), 5.0);
-  EXPECT_EQ(root.findBinding("counter")->value, reinterpret_cast<neojs::JSValue *>(v5));
+  /* 绑定存内部裸指针（G2/§6）：应等于 v5 句柄解出的内部对象 */
+  neojs::JSValue *v5_internal = c->handles().get(
+      static_cast<uint32_t>(reinterpret_cast<uintptr_t>(v5)));
+  ASSERT_NE(v5_internal, nullptr);
+  EXPECT_EQ(root.findBinding("counter")->value, v5_internal);
+  EXPECT_EQ(root.findBinding("counter")->value->toNumber(), 5.0);
 
   /* 未声明名 store：返回 Exception（ReferenceError） */
   JSValue *st2 = JS_StoreValue(ctx, "nope", JS_CreateNumber(ctx, 1.0));
