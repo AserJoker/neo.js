@@ -319,12 +319,13 @@ ASTNode *Parser::parseConditional(bool allow_in) {
   return node;
 }
 
-ASTNode *Parser::parseBinary(int min_prec, bool allow_in) {
+ASTNode *Parser::parseBinary(int min_prec, bool allow_in, bool no_coalesce) {
   /* 读值位置：设置 Lexer 上下文（供 / 判定，M1.3 展开） */
   setValueContext();
   ASTNode *lhs = parseUnary();
   if (lhs == nullptr) return nullptr;
 
+  bool coalesced = no_coalesce; /* 本层已出现 ??（其后禁止 ||/&&） */
   for (;;) {
     /* 读操作位置：设置 Lexer 上下文（供 / 判定，M1.3 展开） */
     setOperatorContext();
@@ -336,10 +337,38 @@ ASTNode *Parser::parseBinary(int min_prec, bool allow_in) {
         (tok.text == "in" || tok.text == "instanceof")) {
       break;
     }
+    /* 私有字段 in 特例（ECMA-262）：`#x in obj` 整体不能再作 in 的左操作数
+     * （`#x in a in b` 非法）。lhs 已是「私有 in 表达式」时禁止继续。 */
+    if (lhs->type == NodeType::BinaryOp && lhs->binop == BinaryOpKind::In &&
+        lhs->children[0]->type == NodeType::PrivateIdentifier) {
+      break;
+    }
+    /* nullish 隔离（ECMA-262 §12.11）：`??` 不能与 `||`/`&&` 无括号混用。
+     *  - 已出现 ??（coalesced）且当前是 ||/&& → 非法
+     *  - 当前是 ?? 且 lhs 顶层是 ||/&& → 非法 */
+    bool tok_or_and = tok.kind == TokenKind::Symbol &&
+                      (tok.text == "||" || tok.text == "&&");
+    bool tok_nullish = tok.kind == TokenKind::Symbol && tok.text == "??";
+    if (coalesced && tok_or_and) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                  "cannot mix '??' with '||' or '&&' without parentheses", tok.start});
+      allocator_->destroy(lhs);
+      return nullptr;
+    }
+    if (tok_nullish && lhs->type == NodeType::BinaryOp &&
+        (lhs->binop == BinaryOpKind::LogicalOr || lhs->binop == BinaryOpKind::LogicalAnd)) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                  "cannot mix '??' with '||' or '&&' without parentheses", tok.start});
+      allocator_->destroy(lhs);
+      return nullptr;
+    }
     BinaryOpKind bop = toBinop(tok);
     advance();
-    /* ** 右结合：同优先级递归；其余左结合：prec+1 */
-    ASTNode *rhs = parseBinary(bop == BinaryOpKind::Pow ? prec : prec + 1, allow_in);
+    /* ** 右结合：同优先级递归；其余左结合：prec+1。
+     * 消费 ?? 后 rhs 递归禁止 ||/&&（no_coalesce=true），本层也置位。 */
+    coalesced = coalesced || bop == BinaryOpKind::Nullish;
+    ASTNode *rhs = parseBinary(bop == BinaryOpKind::Pow ? prec : prec + 1, allow_in,
+                               coalesced);
     if (rhs == nullptr) {
       allocator_->destroy(lhs);
       return nullptr;

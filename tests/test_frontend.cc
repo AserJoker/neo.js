@@ -2568,3 +2568,82 @@ TEST(Frontend, DebuggerStatement) {
   EXPECT_TRUE(top->children.empty());
   a.destroy(ast);
 }
+
+TEST(Frontend, PrivateInExpression) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* #x in obj → BinaryOp(in)[PrivateIdentifier, Identifier] */
+  neojs::AST *ast = neojs::parseSource(&a, "#x in obj", std::strlen("#x in obj"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::BinaryOp);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::PrivateIdentifier);
+  EXPECT_EQ(top->children[0]->name, "x");
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::Identifier);
+  a.destroy(ast);
+
+  /* 链式 #x in a in b → 非法 */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "#x in a in b", std::strlen("#x in a in b"), sink2);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink2.hasErrors());
+}
+
+TEST(Frontend, RegExpFlags) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* /ab/gi → 合法，flags=gi */
+  neojs::AST *ast = neojs::parseSource(&a, "/ab/gi", std::strlen("/ab/gi"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::RegExpLiteral);
+  EXPECT_EQ(top->regexp.flags, "gi");
+  a.destroy(ast);
+
+  /* 重复 flag /ab/gg → 报错 */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "/ab/gg", std::strlen("/ab/gg"), sink2);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink2.hasErrors());
+
+  /* 非法 flag /ab/z → 报错 */
+  neojs::DiagnosticSink sink3;
+  ast = neojs::parseSource(&a, "/ab/z", std::strlen("/ab/z"), sink3);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink3.hasErrors());
+
+  /* u/v 互斥 /ab/uv → 报错 */
+  neojs::DiagnosticSink sink4;
+  ast = neojs::parseSource(&a, "/ab/uv", std::strlen("/ab/uv"), sink4);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink4.hasErrors());
+}
+
+TEST(Frontend, NullishCoalesceIsolation) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* a ?? b ?? c → 合法（?? 链式） */
+  neojs::AST *ast = neojs::parseSource(&a, "a ?? b ?? c", std::strlen("a ?? b ?? c"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::BinaryOp);
+  EXPECT_EQ(top->binop, neojs::BinaryOpKind::Nullish);
+  a.destroy(ast);
+
+  /* (a ?? b) || c → 合法（括号隔离） */
+  ast = neojs::parseSource(&a, "(a ?? b) || c", std::strlen("(a ?? b) || c"), sink);
+  ASSERT_NE(ast, nullptr);
+  a.destroy(ast);
+
+  /* a ?? b || c → 报错（?? 与 || 混用） */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "a ?? b || c", std::strlen("a ?? b || c"), sink2);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink2.hasErrors());
+
+  /* a || b ?? c → 报错 */
+  neojs::DiagnosticSink sink3;
+  ast = neojs::parseSource(&a, "a || b ?? c", std::strlen("a || b ?? c"), sink3);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink3.hasErrors());
+}

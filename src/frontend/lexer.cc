@@ -1,5 +1,6 @@
 #include "neojs/frontend/lexer.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -807,11 +808,42 @@ void Lexer::scanRegex() {
     return;
   }
 
-  /* flags：标识符继续字符（含 _ $） */
+  /* flags：标识符继续字符（含 _ $）。校验（ES2023+）：
+   *   合法集 d g i m s u v y；重复非法；u/v 互斥。 */
+  std::string flags;
   while (true) {
     int f = peekChar();
     if (f == -1 || !isIdContinue(f)) break;
     nextChar();
+    flags += static_cast<char>(f);
+  }
+  {
+    const char *valid = "dgimsuvy";
+    bool has_u = false, has_v = false;
+    for (char f : flags) {
+      if (strchr(valid, f) == nullptr) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                    "invalid regular expression flag '" + std::string(1, f) + "'",
+                    t.start});
+        continue;
+      }
+      if (f == 'u') has_u = true;
+      if (f == 'v') has_v = true;
+    }
+    if (has_u && has_v) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                  "regular expression flags 'u' and 'v' cannot be used together", t.start});
+    }
+    /* 重复检测：排序相邻比较 */
+    std::string dup = flags;
+    std::sort(dup.begin(), dup.end());
+    for (size_t i = 1; i < dup.size(); ++i) {
+      if (dup[i] == dup[i - 1]) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                    "duplicate regular expression flag '" + std::string(1, dup[i]) + "'",
+                    t.start});
+      }
+    }
   }
 
   t.text = std::string(source_ + re_start, pos_ - re_start);

@@ -88,7 +88,8 @@ class Parser {
   ASTNode *parseLeftHandSide();    /* 左手边：成员/调用链（M1.4 ③-3） */
   ASTNode *parseNewExpression();   /* new 构造 */
   ASTNode *parseArguments();       /* 实参列表：(a, b, ...rest) */
-  ASTNode *parseBinary(int min_prec, bool allow_in = true);
+  ASTNode *parseBinary(int min_prec, bool allow_in = true,
+                       bool no_coalesce = false); /* 二元（含 ?? 与 ||/&& 隔离） */
   ASTNode *parsePrimary();         /* 数字 / 标识符 / 括号 / 字面量 */
   ASTNode *parseLiteral();         /* 数字/字符串/布尔/null/BigInt/正则 */
   ASTNode *parseTemplateLiteral(); /* 模板串（含 ${expr} 插值，M1.4 ③-5） */
