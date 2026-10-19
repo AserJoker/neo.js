@@ -38,6 +38,7 @@ typedef enum JSKind {
   JS_BOOLEAN,
   JS_NUMBER,
   JS_STRING,
+  JS_SYMBOL,
   JS_OBJECT,
   JS_EXCEPTION,        /* #4：错误值 */
   JS_INTERRUPT_YIELD,  /* #7：生成器 yield 断点 */
@@ -109,6 +110,7 @@ JSValue *JS_CreateBoolean(JSContext *ctx, int value, const char *name);
 JSValue *JS_CreateNumber(JSContext *ctx, double value, const char *name);
 JSValue *JS_CreateInteger(JSContext *ctx, int64_t value, const char *name);
 JSValue *JS_CreateString(JSContext *ctx, const char *str, size_t len, const char *name);
+JSValue *JS_CreateSymbol(JSContext *ctx, const char *description, const char *name);
 
 /* 释放一个值。由调用方负责（与 ctx 的 alloc/free 对应）。 */
 void JS_FreeValue(JSContext *ctx, JSValue *value);

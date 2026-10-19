@@ -36,6 +36,9 @@ JSValue::JSValue(int64_t i)
 JSValue::JSValue(const std::string &s)
     : kind_(Kind::String), bool_(false), number_(0.0), string_(s) {}
 
+JSValue::JSValue(const char *s, size_t len)
+    : kind_(Kind::String), bool_(false), number_(0.0), string_(s ? s : "", len) {}
+
 /* 对象值：绑定 JSObject 载荷（对象工厂调用，kind_ 同步置 Object）。 */
 void JSValue::setObject(JSObject *obj) {
   object_ = obj;

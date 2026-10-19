@@ -22,13 +22,14 @@
 
 namespace neojs {
 
-/* 与 C 头文件 JSKind 对应的内部 kind。保持数值一致。 */
+/* 与 C 头文件 JSKind 对应的内部 kind。保持数值一致（按规范八种类型顺序）。 */
 enum class Kind : uint8_t {
   Undefined = 0,
   Null,
   Boolean,
   Number,
   String,
+  Symbol,
   Object,
   Exception,       /* #4：错误值 */
   InterruptYield,  /* #7：生成器 yield 断点 */
@@ -48,12 +49,14 @@ class JSValue : public GCHeader {
   JSValue(double d);                          /* number */
   JSValue(int64_t i);                         /* number（整数） */
   JSValue(const std::string &s);              /* string */
+  JSValue(const char *s, size_t len);         /* string（长度限定） */
   ~JSValue() override = default;
 
   /* 访问器 */
   Kind kind() const { return kind_; }
   bool isNumber() const { return kind_ == Kind::Number; }
   bool isString() const { return kind_ == Kind::String; }
+  bool isSymbol() const { return kind_ == Kind::Symbol; }
   bool isObject() const { return kind_ == Kind::Object; }
   bool isException() const { return kind_ == Kind::Exception; }
 
@@ -66,6 +69,10 @@ class JSValue : public GCHeader {
   double toNumber() const { return number_; }
   int64_t toInteger() const { return static_cast<int64_t>(number_); }
   const std::string &toString() const { return string_; }
+
+  /* Symbol 描述符（description）：kind_ == Symbol 时有效；无描述为空串。 */
+  const std::string &symbolDescription() const { return string_; }
+  void setSymbolDescription(const std::string &desc) { string_ = desc; }
 
   /* 错误值：设置/读取错误信息（kind == Exception 时有效） */
   void setErrorInfo(const std::string &info) { string_ = info; }

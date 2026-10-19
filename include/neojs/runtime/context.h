@@ -15,6 +15,7 @@
  *   宿主经句柄表（HandleTable）访问值（G2）；句柄表与作用域绑定链是 GC 根集。
  */
 
+#include <string>
 #include <utility>
 
 #include "neojs/runtime/allocator.h"
@@ -76,6 +77,13 @@ class JSContext {
   void freeValue(JSValue *value);
   void freeHandle(uint32_t handle);
 
+  /* 临时字符串缓冲：C API JS_ToString 等返回 const char* 的稳定存储。
+   * 生命周期归 ctx（下一次调用覆盖）；供转换产生的临时字符串使用。 */
+  const char *storeTmpString(const std::string &s) {
+    tmp_string_ = s;
+    return tmp_string_.c_str();
+  }
+
  private:
   /* GC 标记阶段根集遍历（docs/gc.md §3.4）：
    * 句柄表所有非空槽 + 作用域绑定链（沿 parent/children 遍历）。
@@ -88,6 +96,7 @@ class JSContext {
   JSScope *current_scope_; /* 当前词法环境（不透明，不对外暴露） */
   Heap heap_;              /* GC 堆（G1：统一分配 + mark-sweep） */
   HandleTable handles_;    /* 宿主句柄表（G2：根集之一） */
+  std::string tmp_string_; /* 临时字符串缓冲（JS_ToString 稳定返回用） */
 };
 
 }  // namespace neojs

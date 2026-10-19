@@ -20,6 +20,7 @@
 
 #include "neojs/neojs.h"
 
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -32,12 +33,14 @@
 #include "neojs/frontend/frontend.h"
 #include "neojs/runtime/allocator.h"
 #include "neojs/runtime/context.h"
+#include "neojs/runtime/conversion.h"
 #include "neojs/runtime/handles.h"
 #include "neojs/runtime/object.h"
 #include "neojs/runtime/value.h"
 
 /* 内部 kind 与 C JSKind 的数值映射保持同步（见 value.h） */
 static_assert(static_cast<int>(neojs::Kind::Undefined) == JS_UNDEFINED, "kind mismatch");
+static_assert(static_cast<int>(neojs::Kind::Symbol) == JS_SYMBOL, "kind mismatch");
 static_assert(static_cast<int>(neojs::Kind::Exception) == JS_EXCEPTION, "kind mismatch");
 static_assert(static_cast<int>(neojs::Kind::InterruptYield) == JS_INTERRUPT_YIELD, "kind mismatch");
 static_assert(static_cast<int>(neojs::Kind::InterruptAwait) == JS_INTERRUPT_AWAIT, "kind mismatch");
@@ -333,6 +336,19 @@ extern "C" JSValue *JS_CreateString(JSContext *ctx, const char *str, size_t len,
   });
 }
 
+/* 创建 Symbol 值（kind = JS_SYMBOL）。description 为可选的符号描述符
+ * （无描述时传 NULL/空串）；每个 Symbol 都是唯一值（引用相等）。
+ * name 语义同其它 CreateX。 */
+extern "C" JSValue *JS_CreateSymbol(JSContext *ctx, const char *description,
+                                    const char *name) {
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSValue *sym = c->createValue(neojs::Kind::Symbol);
+    sym->setSymbolDescription(description ? description : "");
+    return makeValueHandleNamed(ctx, sym, name);
+  });
+}
+
 extern "C" void JS_FreeValue(JSContext *ctx, JSValue *value) {
   if (ctx == nullptr || value == nullptr) return;
   neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
@@ -360,34 +376,48 @@ extern "C" int JS_ToBoolean(JSContext *ctx, const JSValue *value) {
   const neojs::JSValue *v =
       c->handles().get(toHandle(const_cast<JSValue *>(value)));
   if (v == nullptr) return 0;
-  return v->toBoolean() ? 1 : 0;
+  return neojs::toBoolean(v) ? 1 : 0;
 }
 
 extern "C" double JS_ToNumber(JSContext *ctx, const JSValue *value) {
   if (ctx == nullptr || value == nullptr) return 0.0;
   neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
-  const neojs::JSValue *v =
+  neojs::JSValue *v =
       c->handles().get(toHandle(const_cast<JSValue *>(value)));
   if (v == nullptr) return 0.0;
-  return v->toNumber();
+  /* E2：完整 ToNumber（§7.1.4）。转换失败（如 Symbol）返回 NaN
+   * （QuickJS 风格：JS_ToNumber 无法传错误，失败统一 NaN）。 */
+  neojs::ConversionResult r = neojs::toNumber(c, v);
+  return r.ok() ? r.value->toNumber() : NAN;
 }
 
 extern "C" int64_t JS_ToInteger(JSContext *ctx, const JSValue *value) {
   if (ctx == nullptr || value == nullptr) return 0;
   neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
-  const neojs::JSValue *v =
+  neojs::JSValue *v =
       c->handles().get(toHandle(const_cast<JSValue *>(value)));
   if (v == nullptr) return 0;
-  return v->toInteger();
+  /* E2：ToNumber 后按 §7.1.5 ToIntegerOrInfinity 截断。 */
+  neojs::ConversionResult r = neojs::toNumber(c, v);
+  if (!r.ok()) return 0; /* 失败（Symbol）-> 0 */
+  double d = r.value->toNumber();
+  if (std::isnan(d)) return 0;
+  if (std::isinf(d)) return d > 0 ? INT64_MAX : INT64_MIN;
+  return static_cast<int64_t>(d);
 }
 
 extern "C" const char *JS_ToString(JSContext *ctx, const JSValue *value) {
   if (ctx == nullptr || value == nullptr) return nullptr;
   neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
-  const neojs::JSValue *v =
+  neojs::JSValue *v =
       c->handles().get(toHandle(const_cast<JSValue *>(value)));
   if (v == nullptr) return nullptr;
-  return v->toString().c_str();
+  /* E2：完整 ToString（§7.1.17）。失败（Symbol）返回 nullptr。
+   * 转换可能产生临时内部值（无宿主句柄）；结果字符串拷贝到 ctx 缓冲
+   * （生命周期归 ctx，下一次调用覆盖），避免悬垂。 */
+  neojs::ConversionResult r = neojs::toString(c, v);
+  if (!r.ok()) return nullptr;
+  return c->storeTmpString(r.value->toString());
 }
 
 /* -------------------------------------------------------------------------- */
