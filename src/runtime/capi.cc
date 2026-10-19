@@ -38,6 +38,7 @@
 #include "neojs/runtime/function.h"
 #include "neojs/runtime/handles.h"
 #include "neojs/runtime/object.h"
+#include "neojs/runtime/operators.h"
 #include "neojs/runtime/value.h"
 
 /* 内部 kind 与 C JSKind 的数值映射保持同步（见 value.h） */
@@ -707,6 +708,105 @@ extern "C" void JS_SetGCThreshold(JSContext *ctx, size_t threshold) {
   } catch (...) {
     /* #3 */
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* 运算符语义（E4-3，ECMA-262 §7.2/§7.3/§13）                                 */
+/* -------------------------------------------------------------------------- */
+
+/* 严格相等比较（§7.2.14）：永不抛异常，返回 1/0。 */
+extern "C" int JS_StrictEqual(JSContext *ctx, JSValue *x, JSValue *y) {
+  if (ctx == nullptr || x == nullptr || y == nullptr) return 0;
+  try {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSValue *a = unhandle(c, x);
+    neojs::JSValue *b = unhandle(c, y);
+    if (a == nullptr || b == nullptr) return 0;
+    neojs::ConversionResult r = neojs::strictEquals(c, a, b);
+    return r.ok() && r.value->toBoolean() ? 1 : 0;
+  } catch (...) {
+    return 0;
+  }
+}
+
+/* 抽象相等比较（§7.2.15）：返回 Boolean 值或 Exception 值。 */
+extern "C" JSValue *JS_Equal(JSContext *ctx, JSValue *x, JSValue *y) {
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSValue *a = unhandle(c, x);
+    neojs::JSValue *b = unhandle(c, y);
+    if (a == nullptr || b == nullptr) {
+      return makeException(ctx, "TypeError: Cannot compare null value");
+    }
+    neojs::ConversionResult r = neojs::abstractEquals(c, a, b);
+    if (!r.ok()) return makeException(ctx, r.error.c_str());
+    return makeHandle(c, r.value);
+  });
+}
+
+/* 抽象关系比较（§7.2.13 IsLessThan）：x < y。 */
+extern "C" JSValue *JS_RelationalCompare(JSContext *ctx, JSValue *x, JSValue *y) {
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSValue *a = unhandle(c, x);
+    neojs::JSValue *b = unhandle(c, y);
+    if (a == nullptr || b == nullptr) {
+      return makeException(ctx, "TypeError: Cannot compare null value");
+    }
+    neojs::ConversionResult r = neojs::isLessThan(c, a, b);
+    if (!r.ok()) return makeException(ctx, r.error.c_str());
+    return makeHandle(c, r.value);
+  });
+}
+
+/* 加法运算符（§13.15.2）：x + y。 */
+extern "C" JSValue *JS_Add(JSContext *ctx, JSValue *x, JSValue *y) {
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSValue *a = unhandle(c, x);
+    neojs::JSValue *b = unhandle(c, y);
+    if (a == nullptr || b == nullptr) {
+      return makeException(ctx, "TypeError: Cannot add null value");
+    }
+    neojs::ConversionResult r = neojs::add(c, a, b);
+    if (!r.ok()) return makeException(ctx, r.error.c_str());
+    return makeHandle(c, r.value);
+  });
+}
+
+/* typeof 运算符（§13.5.3）：返回类型名 String 值。 */
+extern "C" JSValue *JS_Typeof(JSContext *ctx, JSValue *x) {
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSValue *a = unhandle(c, x);
+    neojs::ConversionResult r = neojs::typeOf(c, a);
+    if (!r.ok()) return makeException(ctx, r.error.c_str());
+    return makeHandle(c, r.value);
+  });
+}
+
+/* instanceof 运算符（§7.3.22）：x instanceof y。 */
+extern "C" JSValue *JS_Instanceof(JSContext *ctx, JSValue *x, JSValue *y) {
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSValue *a = unhandle(c, x);
+    neojs::JSValue *b = unhandle(c, y);
+    neojs::ConversionResult r = neojs::instanceOf(c, a, b);
+    if (!r.ok()) return makeException(ctx, r.error.c_str());
+    return makeHandle(c, r.value);
+  });
+}
+
+/* in 运算符（§7.3.20 HasProperty）：x in y。 */
+extern "C" JSValue *JS_In(JSContext *ctx, JSValue *x, JSValue *y) {
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSValue *a = unhandle(c, x);
+    neojs::JSValue *b = unhandle(c, y);
+    neojs::ConversionResult r = neojs::inOperator(c, a, b);
+    if (!r.ok()) return makeException(ctx, r.error.c_str());
+    return makeHandle(c, r.value);
+  });
 }
 
 /* -------------------------------------------------------------------------- */

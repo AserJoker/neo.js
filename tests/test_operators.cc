@@ -332,3 +332,141 @@ TEST(Operators, InOperator) {
   JS_FreeContext(ctx);
   JS_FreeAllocator(a);
 }
+
+/* -------------------------------------------------------------------------- */
+/* E4-4 C API 暴露（JS_StrictEqual / JS_Equal / ... 纯 C 层验证）             */
+/* -------------------------------------------------------------------------- */
+
+TEST(Operators, CAPIStrictEqual) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *n1 = JS_CreateNumber(ctx, 1, nullptr);
+  JSValue *n1b = JS_CreateNumber(ctx, 1, nullptr);
+  JSValue *s1 = JS_CreateString(ctx, "1", 1, nullptr);
+  ASSERT_NE(n1, nullptr);
+  ASSERT_NE(n1b, nullptr);
+  ASSERT_NE(s1, nullptr);
+
+  /* 1 === 1 -> 1；1 === "1" -> 0 */
+  EXPECT_EQ(JS_StrictEqual(ctx, n1, n1b), 1);
+  EXPECT_EQ(JS_StrictEqual(ctx, n1, s1), 0);
+
+  JS_FreeValue(ctx, n1);
+  JS_FreeValue(ctx, n1b);
+  JS_FreeValue(ctx, s1);
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+TEST(Operators, CAPIEqualAndAdd) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *n1 = JS_CreateNumber(ctx, 1, nullptr);
+  JSValue *s1 = JS_CreateString(ctx, "1", 1, nullptr);
+  ASSERT_NE(n1, nullptr);
+  ASSERT_NE(s1, nullptr);
+
+  /* 1 == "1" -> true */
+  JSValue *rv = JS_Equal(ctx, n1, s1);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, rv), JS_BOOLEAN);
+  EXPECT_EQ(JS_ToBoolean(ctx, rv), 1);
+  JS_FreeValue(ctx, rv);
+
+  /* 1 + "px" -> "1px" */
+  JSValue *px = JS_CreateString(ctx, "px", 2, nullptr);
+  rv = JS_Add(ctx, n1, px);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, rv), JS_STRING);
+  EXPECT_STREQ(JS_ToString(ctx, rv), "1px");
+  JS_FreeValue(ctx, rv);
+  JS_FreeValue(ctx, px);
+
+  JS_FreeValue(ctx, n1);
+  JS_FreeValue(ctx, s1);
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+TEST(Operators, CAPIRelationalAndTypeof) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *n2 = JS_CreateNumber(ctx, 2, nullptr);
+  JSValue *n10 = JS_CreateNumber(ctx, 10, nullptr);
+  ASSERT_NE(n2, nullptr);
+  ASSERT_NE(n10, nullptr);
+
+  /* 2 < 10 -> true */
+  JSValue *rv = JS_RelationalCompare(ctx, n2, n10);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, rv), JS_BOOLEAN);
+  EXPECT_EQ(JS_ToBoolean(ctx, rv), 1);
+  JS_FreeValue(ctx, rv);
+
+  /* typeof 2 -> "number" */
+  rv = JS_Typeof(ctx, n2);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, rv), JS_STRING);
+  EXPECT_STREQ(JS_ToString(ctx, rv), "number");
+  JS_FreeValue(ctx, rv);
+
+  JS_FreeValue(ctx, n2);
+  JS_FreeValue(ctx, n10);
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+TEST(Operators, CAPIInstanceofAndIn) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JSValue *numCtor = JS_GetProperty(ctx, global, "Number");
+  ASSERT_NE(numCtor, nullptr);
+
+  /* 普通对象 instanceof Number -> false（非构造产物）。 */
+  JSValue *obj = JS_CreateObject(ctx, nullptr, nullptr);
+  JSValue *rv = JS_Instanceof(ctx, obj, numCtor);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, rv), JS_BOOLEAN);
+  EXPECT_EQ(JS_ToBoolean(ctx, rv), 0);
+  JS_FreeValue(ctx, rv);
+
+  /* RHS 非可调用 -> Exception。 */
+  rv = JS_Instanceof(ctx, obj, obj);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, rv), JS_EXCEPTION);
+  JS_FreeValue(ctx, rv);
+
+  /* obj 加属性后 in 检查。 */
+  JSValue *one = JS_CreateNumber(ctx, 1, nullptr);
+  JS_SetProperty(ctx, obj, "foo", one);
+  JSValue *key = JS_CreateString(ctx, "foo", 3, nullptr);
+  rv = JS_In(ctx, key, obj);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, rv), JS_BOOLEAN);
+  EXPECT_EQ(JS_ToBoolean(ctx, rv), 1);
+  JS_FreeValue(ctx, rv);
+
+  /* RHS 非对象 -> Exception。 */
+  rv = JS_In(ctx, key, one);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, rv), JS_EXCEPTION);
+  JS_FreeValue(ctx, rv);
+
+  JS_FreeValue(ctx, key);
+  JS_FreeValue(ctx, one);
+  JS_FreeValue(ctx, obj);
+  JS_FreeValue(ctx, numCtor);
+  JS_FreeValue(ctx, global);
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}

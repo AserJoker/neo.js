@@ -192,6 +192,31 @@ void JS_GC(JSContext *ctx);
 void JS_SetGCThreshold(JSContext *ctx, size_t threshold);
 
 /* -------------------------------------------------------------------------- */
+/* 运算符语义（E4-3，ECMA-262 §7.2/§7.3/§13）                                 */
+/* -------------------------------------------------------------------------- */
+
+/* 严格相等比较（§7.2.14）：x === y。永不抛异常，返回 1（相等）/0（不等）。 */
+int JS_StrictEqual(JSContext *ctx, JSValue *x, JSValue *y);
+
+/* 抽象相等比较（§7.2.15）：x == y。返回 Boolean 值；异常返回 Exception 值。 */
+JSValue *JS_Equal(JSContext *ctx, JSValue *x, JSValue *y);
+
+/* 抽象关系比较（§7.2.13 IsLessThan）：x < y。返回 Boolean 值；异常返回 Exception。 */
+JSValue *JS_RelationalCompare(JSContext *ctx, JSValue *x, JSValue *y);
+
+/* 加法运算符（§13.15.2）：x + y。返回 Number 或 String 值；异常返回 Exception。 */
+JSValue *JS_Add(JSContext *ctx, JSValue *x, JSValue *y);
+
+/* typeof 运算符（§13.5.3）：返回类型名 String 值（"undefined"/"object"/...）。 */
+JSValue *JS_Typeof(JSContext *ctx, JSValue *x);
+
+/* instanceof 运算符（§7.3.22）：x instanceof y。返回 Boolean 值；异常返回 Exception。 */
+JSValue *JS_Instanceof(JSContext *ctx, JSValue *x, JSValue *y);
+
+/* in 运算符（§7.3.20 HasProperty）：x in y。返回 Boolean 值；异常返回 Exception。 */
+JSValue *JS_In(JSContext *ctx, JSValue *x, JSValue *y);
+
+/* -------------------------------------------------------------------------- */
 /* 执行（M1.1：前端流水线骨架；完整求值引擎在后续里程碑实现）                 */
 /* -------------------------------------------------------------------------- */
 
