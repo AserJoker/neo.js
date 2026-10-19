@@ -1,39 +1,32 @@
 #include "neojs/frontend/parser.h"
 
+#include <string>
+
 namespace neojs {
 
 namespace {
 
-/* 二元运算符优先级（M1.1 最小集）：* / % > + -（左结合） */
-int binopPrecedence(TokenKind k) {
-  switch (k) {
-    case TokenKind::Star:
-    case TokenKind::Slash:
-    case TokenKind::Percent:
-      return 2;
-    case TokenKind::Plus:
-    case TokenKind::Minus:
-      return 1;
-    default:
-      return 0;
-  }
+/* 判断当前 token 是否为给定符号文本（如 "+"、"("） */
+bool isSymbol(const Token &tok, const char *sym) {
+  return tok.kind == TokenKind::Symbol && tok.text == sym;
 }
 
-BinaryOpKind toBinop(TokenKind k) {
-  switch (k) {
-    case TokenKind::Plus:
-      return BinaryOpKind::Add;
-    case TokenKind::Minus:
-      return BinaryOpKind::Sub;
-    case TokenKind::Star:
-      return BinaryOpKind::Mul;
-    case TokenKind::Slash:
-      return BinaryOpKind::Div;
-    case TokenKind::Percent:
-      return BinaryOpKind::Mod;
-    default:
-      return BinaryOpKind::Add; /* unreachable */
-  }
+/* 二元运算符优先级（M1.1 最小集）：* / % > + -（左结合） */
+int binopPrecedence(const Token &tok) {
+  if (tok.kind != TokenKind::Symbol) return 0;
+  const std::string &s = tok.text;
+  if (s == "*" || s == "/" || s == "%") return 2;
+  if (s == "+" || s == "-") return 1;
+  return 0;
+}
+
+BinaryOpKind toBinop(const std::string &s) {
+  if (s == "+") return BinaryOpKind::Add;
+  if (s == "-") return BinaryOpKind::Sub;
+  if (s == "*") return BinaryOpKind::Mul;
+  if (s == "/") return BinaryOpKind::Div;
+  if (s == "%") return BinaryOpKind::Mod;
+  return BinaryOpKind::Add; /* unreachable */
 }
 
 }  // namespace
@@ -79,7 +72,7 @@ ASTNode *Parser::parseExpressionStatement() {
   if (expr == nullptr) return nullptr;
   ASTNode *stmt = newNode(NodeType::ExprStmt);
   stmt->children.push_back(expr);
-  if (at(TokenKind::Semicolon)) advance();
+  if (at(TokenKind::Symbol) && current().text == ";") advance();
   return stmt;
 }
 
@@ -97,10 +90,10 @@ ASTNode *Parser::parseBinary(int min_prec) {
   for (;;) {
     /* 读操作位置：设置 Lexer 上下文（供 / 判定，M1.3 展开） */
     setOperatorContext();
-    TokenKind op = current().kind;
-    int prec = binopPrecedence(op);
+    const Token &tok = current();
+    int prec = binopPrecedence(tok);
     if (prec == 0 || prec < min_prec) break;
-    BinaryOpKind bop = toBinop(op);
+    BinaryOpKind bop = toBinop(tok.text);
     advance();
     ASTNode *rhs = parseBinary(prec + 1); /* 左结合 */
     if (rhs == nullptr) {
@@ -138,22 +131,25 @@ ASTNode *Parser::parsePrimary() {
       advance();
       return n;
     }
-    case TokenKind::LParen: {
-      advance();
-      ASTNode *inner = parseExpression();
-      if (inner == nullptr) return nullptr;
-      if (!at(TokenKind::RParen)) {
-        sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ')'", tok.start});
-        allocator_->destroy(inner);
-        return nullptr;
+    case TokenKind::Symbol:
+      if (isSymbol(tok, "(")) {
+        advance();
+        ASTNode *inner = parseExpression();
+        if (inner == nullptr) return nullptr;
+        if (!isSymbol(current(), ")")) {
+          sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ')'", tok.start});
+          allocator_->destroy(inner);
+          return nullptr;
+        }
+        advance();
+        return inner;
       }
-      advance();
-      return inner;
-    }
+      break;
     default:
-      sink_.emit({Severity::Error, "SYNTAX_ERROR", "unexpected token", tok.start});
-      return nullptr;
+      break;
   }
+  sink_.emit({Severity::Error, "SYNTAX_ERROR", "unexpected token", tok.start});
+  return nullptr;
 }
 
 }  // namespace neojs

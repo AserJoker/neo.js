@@ -12,8 +12,16 @@
  *   - 注释是**多字符符号**：词法层贪婪匹配 `//` 与块注释起始符，命中即注释，
  *     否则回退为单 `/`（不需上下文）。
  *
- * M1.1 只覆盖最小 token 集：数字字面量、标识符、`+ - * / %`、`( )`、
- * `;`、EOF、以及行/块注释；M1.2 再扩充全部。
+ * 符号处理（表驱动贪婪匹配）：所有符号集中为一张表，按长度分组
+ * （三字符 → 二字符 → 单字符）。读取时从最长组开始逐字符比对，命中即消费，
+ * 自然保证**最长匹配**正确性（如 `>>>=` 不会误切成 `> > >=`）。
+ *
+ * Token 类型收敛：符号统一用 `TokenKind::Symbol`，具体符号由 `Token::text`
+ * 携带（如 `text == "=>"`）。随 M1.2 扩充符号表即可，不再为每个符号建枚举，
+ * 避免类型数量爆炸。
+ *
+ * M1.1 只覆盖最小 token 集：数字字面量、标识符、`+ - * / % ( ) ;`、
+ * EOF、以及行/块注释；M1.2 再扩充全部符号。
  */
 
 #include <cstdint>
@@ -24,20 +32,13 @@
 
 namespace neojs {
 
-/* token 类型（M1.1 最小子集；M1.2 扩充） */
+/* token 类型（M1.1 收敛为少量类别；符号细节由 Token::text 携带） */
 enum class TokenKind : uint8_t {
-  EndOfFile,    /* 源码结束 */
-  Number,       /* 数字字面量（M1.1：十进制 double） */
-  Identifier,   /* 标识符 */
-  Plus,         /* + */
-  Minus,        /* - */
-  Star,         /* * */
-  Slash,        /* / */
-  Percent,      /* % */
-  LParen,       /* ( */
-  RParen,       /* ) */
-  Semicolon,    /* ; */
-  Error,        /* 词法错误（sink 已记录） */
+  EndOfFile,  /* 源码结束 */
+  Number,     /* 数字字面量（M1.1：十进制 double） */
+  Identifier, /* 标识符 */
+  Symbol,     /* 符号/标点/运算符：具体内容见 Token::text */
+  Error,      /* 词法错误（sink 已记录） */
 };
 
 /* Parser 传入的上下文：当前解析位置是读值还是读操作。
@@ -52,7 +53,7 @@ struct Token {
   TokenKind kind = TokenKind::EndOfFile;
   SourceLocation start; /* token 起点（1-based line/col + 0-based offset） */
   SourceLocation end;   /* token 终点（最后一个字符的位置） */
-  std::string text;     /* 原始文本（供 dump 与后续解析） */
+  std::string text;     /* 原始文本：Symbol 时携带具体符号（如 "+"、"=>"） */
   double number = 0.0;  /* Number：数值（M1.1） */
 };
 
@@ -82,6 +83,7 @@ class Lexer {
   void skipTrivia();       /* 跳过空白与注释（贪婪匹配 // 与块注释起始符） */
   void scanNumber();
   void scanIdentifier();
+  void scanSymbol();       /* 表驱动：按长度分组贪婪匹配符号 */
   void scanNext();         /* 扫描下一个 token 到 current_（推进扫描状态） */
 
   const char *source_;

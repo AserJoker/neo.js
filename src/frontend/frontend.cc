@@ -17,22 +17,8 @@ const char *tokenKindName(TokenKind k) {
       return "number";
     case TokenKind::Identifier:
       return "identifier";
-    case TokenKind::Plus:
-      return "+";
-    case TokenKind::Minus:
-      return "-";
-    case TokenKind::Star:
-      return "*";
-    case TokenKind::Slash:
-      return "/";
-    case TokenKind::Percent:
-      return "%";
-    case TokenKind::LParen:
-      return "(";
-    case TokenKind::RParen:
-      return ")";
-    case TokenKind::Semicolon:
-      return ";";
+    case TokenKind::Symbol:
+      return "symbol";
     case TokenKind::Error:
       return "error";
   }

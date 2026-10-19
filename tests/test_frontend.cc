@@ -42,7 +42,7 @@ TEST(Frontend, TokenStreamMinimal) {
   EXPECT_EQ(t1.text, "1");
 
   const neojs::Token &t2 = lexer.next();
-  EXPECT_EQ(t2.kind, neojs::TokenKind::Plus);
+  EXPECT_EQ(t2.kind, neojs::TokenKind::Symbol);
   EXPECT_EQ(t2.text, "+");
 
   const neojs::Token &t3 = lexer.next();
@@ -51,6 +51,62 @@ TEST(Frontend, TokenStreamMinimal) {
 
   const neojs::Token &t4 = lexer.next();
   EXPECT_EQ(t4.kind, neojs::TokenKind::EndOfFile);
+}
+
+/* 符号表贪婪匹配：多字符符号优先（最长匹配） */
+TEST(Frontend, SymbolGreedyLongestMatch) {
+  neojs::DiagnosticSink sink;
+
+  /* 三字符 `===` 优先于二字符 `==`、单字符 `=` */
+  neojs::Lexer lexer1("===", 3, sink);
+  const neojs::Token &s1 = lexer1.next();
+  EXPECT_EQ(s1.kind, neojs::TokenKind::Symbol);
+  EXPECT_EQ(s1.text, "===");
+  EXPECT_EQ(lexer1.next().kind, neojs::TokenKind::EndOfFile);
+
+  /* 二字符 `>>` 优先于单字符 `>`；三字符 `>>>` 优先于二字符 `>>` */
+  neojs::Lexer lexer2(">>>=", 4, sink);
+  const neojs::Token &s2 = lexer2.next();
+  EXPECT_EQ(s2.text, ">>>="); /* 四字符 */
+  EXPECT_EQ(lexer2.next().kind, neojs::TokenKind::EndOfFile);
+
+  neojs::Lexer lexer3("a >>> b", 7, sink);
+  EXPECT_EQ(lexer3.next().kind, neojs::TokenKind::Identifier);
+  EXPECT_EQ(lexer3.next().text, ">>>");
+  EXPECT_EQ(lexer3.next().kind, neojs::TokenKind::Identifier);
+
+  /* 单字符仍正常 */
+  neojs::Lexer lexer4("a > b", 5, sink);
+  EXPECT_EQ(lexer4.next().kind, neojs::TokenKind::Identifier);
+  EXPECT_EQ(lexer4.next().text, ">");
+  EXPECT_EQ(lexer4.next().kind, neojs::TokenKind::Identifier);
+
+  EXPECT_FALSE(sink.hasErrors());
+}
+
+/* 符号表支持 M1.4 符号（表驱动，无需新增 Token 类型） */
+TEST(Frontend, SymbolTableExtensible) {
+  neojs::DiagnosticSink sink;
+
+  /* 箭头函数符号 */
+  neojs::Lexer lexer1("=>", 2, sink);
+  const neojs::Token &t1 = lexer1.next();
+  EXPECT_EQ(t1.kind, neojs::TokenKind::Symbol);
+  EXPECT_EQ(t1.text, "=>");
+
+  /* 可选链 */
+  neojs::Lexer lexer2("?.", 2, sink);
+  const neojs::Token &t2 = lexer2.next();
+  EXPECT_EQ(t2.kind, neojs::TokenKind::Symbol);
+  EXPECT_EQ(t2.text, "?.");
+
+  /* 展开运算符 */
+  neojs::Lexer lexer3("...", 3, sink);
+  const neojs::Token &t3 = lexer3.next();
+  EXPECT_EQ(t3.kind, neojs::TokenKind::Symbol);
+  EXPECT_EQ(t3.text, "...");
+
+  EXPECT_FALSE(sink.hasErrors());
 }
 
 TEST(Frontend, LineCommentSkipped) {
@@ -110,11 +166,14 @@ TEST(Frontend, PeekDoesNotAdvanceCurrent) {
 
   EXPECT_EQ(lexer.next().kind, neojs::TokenKind::Number);
   const neojs::Token &p = lexer.peek();
-  EXPECT_EQ(p.kind, neojs::TokenKind::Plus);
+  EXPECT_EQ(p.kind, neojs::TokenKind::Symbol);
+  EXPECT_EQ(p.text, "+");
   /* current 仍是 Number */
   EXPECT_EQ(lexer.current().kind, neojs::TokenKind::Number);
   /* 后续 next 正常推进 */
-  EXPECT_EQ(lexer.next().kind, neojs::TokenKind::Plus);
+  const neojs::Token &n = lexer.next();
+  EXPECT_EQ(n.kind, neojs::TokenKind::Symbol);
+  EXPECT_EQ(n.text, "+");
 }
 
 /* -------------------------------------------------------------------------- */
@@ -250,7 +309,7 @@ TEST(Frontend, DumpTokensOutput) {
   neojs::DiagnosticSink sink;
   std::string out = neojs::dumpTokens("1 + 2", 5, sink);
   EXPECT_NE(out.find("number '1' @1:1"), std::string::npos);
-  EXPECT_NE(out.find("+ '+' @1:3"), std::string::npos);
+  EXPECT_NE(out.find("symbol '+' @1:3"), std::string::npos);
   EXPECT_NE(out.find("number '2' @1:5"), std::string::npos);
   EXPECT_NE(out.find("eof ''"), std::string::npos);
 }
