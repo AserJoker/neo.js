@@ -1721,3 +1721,58 @@ TEST(Frontend, ArrowBlockBody) {
   EXPECT_EQ(top->children[1]->type, neojs::NodeType::Identifier);
   a.destroy(ast);
 }
+
+/* -------------------------------------------------------------------------- */
+/* 标签语句（M1.5 ③）：label: stmt，独立成语句                              */
+/* -------------------------------------------------------------------------- */
+
+TEST(Frontend, LabeledStatement) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* label: { x; } → LabeledStatement(label)[Block] */
+  neojs::AST *ast =
+      neojs::parseSource(&a, "label: { x; }", std::strlen("label: { x; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::LabeledStatement);
+  EXPECT_EQ(top->name, "label");
+  ASSERT_EQ(top->children.size(), 1u);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::BlockStatement);
+  a.destroy(ast);
+}
+
+TEST(Frontend, LabeledNested) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* a: b: c: d; → 嵌套 label 链 */
+  neojs::AST *ast = neojs::parseSource(&a, "a: b: c: d;", std::strlen("a: b: c: d;"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::LabeledStatement);
+  EXPECT_EQ(top->name, "a");
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::LabeledStatement);
+  EXPECT_EQ(top->children[0]->name, "b");
+  EXPECT_EQ(top->children[0]->children[0]->type, neojs::NodeType::LabeledStatement);
+  EXPECT_EQ(top->children[0]->children[0]->name, "c");
+  EXPECT_EQ(top->children[0]->children[0]->children[0]->type, neojs::NodeType::ExprStmt);
+  a.destroy(ast);
+}
+
+TEST(Frontend, LabelVsTernaryNotConfused) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* 协同回归：a ? b : c 是三元，不是 label（? 触发 :，无 ? 则 : 不触发） */
+  neojs::AST *ast = neojs::parseSource(&a, "a ? b : c", std::strlen("a ? b : c"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_EQ(ast->root->children[0]->children[0]->type, neojs::NodeType::Conditional);
+  a.destroy(ast);
+
+  /* x: y ? z : w → label(x) 包裹三元 */
+  ast = neojs::parseSource(&a, "x: y ? z : w", std::strlen("x: y ? z : w"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::LabeledStatement);
+  EXPECT_EQ(top->name, "x");
+  EXPECT_EQ(top->children[0]->children[0]->type, neojs::NodeType::Conditional);
+  a.destroy(ast);
+}

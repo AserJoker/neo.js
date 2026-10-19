@@ -173,6 +173,11 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
     case NodeType::BlockStatement:
       out += "BlockStatement\n";
       break;
+    case NodeType::LabeledStatement:
+      out += "LabeledStatement(";
+      out += node->name;
+      out += ")\n";
+      break;
     case NodeType::Literal:
       if (node->literal.is_number) {
         out += "Literal(";

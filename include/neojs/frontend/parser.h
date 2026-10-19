@@ -50,6 +50,7 @@ class Parser {
   ASTNode *parseStatementList();
   ASTNode *parseStatement();      /* 语句总入口：按首 token 特征分派 */
   ASTNode *parseBlock();          /* 块语句：{ stmt... } */
+  ASTNode *parseLabeledStatement(); /* 标签语句：label: stmt */
   ASTNode *parseExpressionStatement();
   ASTNode *parseExpression();      /* 逗号序列（最低优先级，M1.4） */
   ASTNode *parseAssignment();      /* 赋值：= 与复合赋值（右结合） */

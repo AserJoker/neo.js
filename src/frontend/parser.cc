@@ -163,7 +163,7 @@ ASTNode *Parser::parseStatementList() {
 
 /* 语句总入口（M1.5）：按首 token 特征分派。各语句相对独立，一般可通过
  * 首单词判定（if/for/while/function/return 等）；无特征值时用表达式语句兜底。
- * 当前已实现：空语句（;）、块语句（{）；后续逐个加分派。 */
+ * 当前已实现：空语句（;）、块语句（{）、标签语句（label:）；后续逐个加分派。 */
 ASTNode *Parser::parseStatement() {
   /* 空语句：单分号 ;（ECMA-262 EmptyStatement） */
   if (isSymbol(current(), ";")) {
@@ -176,9 +176,37 @@ ASTNode *Parser::parseStatement() {
   if (isSymbol(current(), "{")) {
     return parseBlock();
   }
+  /* 标签语句（M1.5 ③）：Identifier : stmt。独立成语句，不嵌入 for/while。
+   * 判定特征：语句位置 Identifier + 前瞻 :（三元 ?: 的 : 由 ? 触发，不冲突）。 */
+  if (at(TokenKind::Identifier) && isSymbol(peek(), ":")) {
+    return parseLabeledStatement();
+  }
 
   /* 兜底：表达式语句 */
   return parseExpressionStatement();
+}
+
+/* 标签语句（M1.5 ③）：label: stmt。独立成语句（对齐 ESTree LabeledStatement），
+ * 而非嵌入 for/while。children[0] 为被标记的语句。label 名存 name。
+ * 支持嵌套标签：a: b: stmt。 */
+ASTNode *Parser::parseLabeledStatement() {
+  ASTNode *label = newNode(NodeType::LabeledStatement);
+  label->loc = current().start;
+  label->name = current().text;
+  advance(); /* label 名 */
+  if (!isSymbol(current(), ":")) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ':' after label", current().start});
+    allocator_->destroy(label);
+    return nullptr;
+  }
+  advance(); /* : */
+  ASTNode *body = parseStatement();
+  if (body == nullptr) {
+    allocator_->destroy(label);
+    return nullptr;
+  }
+  label->children.push_back(body);
+  return label;
 }
 
 /* 块语句（M1.5 ②）：{ stmt... }。空块合法。
