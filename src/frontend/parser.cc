@@ -186,6 +186,14 @@ ASTNode *Parser::parseAssignment(bool allow_in) {
     allocator_->destroy(lhs);
     return nullptr;
   }
+  /* 严格模式禁止对 eval / arguments 赋值（ECMA-262 §13.15.1） */
+  if (strict_ && lhs->type == NodeType::Identifier &&
+      (lhs->name == "eval" || lhs->name == "arguments")) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                "assignment to eval or arguments in strict mode", tok.start});
+    allocator_->destroy(lhs);
+    return nullptr;
+  }
   advance(); /* 赋值运算符 */
   ASTNode *rhs = parseAssignment(allow_in); /* 右结合：a = b = c */
   if (rhs == nullptr) {
@@ -271,18 +279,31 @@ ASTNode *Parser::parseArrowFunction(bool parenthesized) {
   }
   advance(); /* => */
 
-  /* 函数体：{ 块语句 } 或表达式体（M1.5 ② 解锁块体） */
+  /* 函数体：{ 块语句 } 或表达式体（M1.5 ② 解锁块体）。
+   * 块体检测 Directive Prologue（"use strict"），参数检查在 body 解析后
+   * （strict_ 已确定）执行；外层 strict_ 状态 body 后恢复。 */
+  ++function_depth_;
   ASTNode *body;
+  bool outer_strict = strict_;
   if (isSymbol(current(), "{")) {
-    body = parseBlock();
+    body = parseBlock(/*detect_strict=*/true);
   } else {
     body = parseAssignment(); /* 表达式体右结合：x => y => z */
   }
+  bool strict_params = strict_; /* 记录恢复前的值（含 body directive） */
+  strict_ = outer_strict;
+  --function_depth_;
   if (body == nullptr) {
     allocator_->destroy(arrow);
     return nullptr;
   }
   arrow->children.push_back(body);
+  /* 严格模式参数检查（箭头函数无 name） */
+  if (checkStrictParams(arrow, strict_params, /*has_name=*/false,
+                        static_cast<int>(arrow->children.size()) - 1)) {
+    allocator_->destroy(arrow);
+    return nullptr;
+  }
   return arrow;
 }
 
@@ -423,6 +444,14 @@ ASTNode *Parser::parseUnary() {
       allocator_->destroy(operand);
       return nullptr;
     }
+    /* 严格模式禁止 ++/-- 于 eval / arguments（ECMA-262 §13.4.4） */
+    if (strict_ && operand->type == NodeType::Identifier &&
+        (operand->name == "eval" || operand->name == "arguments")) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                  "increment/decrement of eval or arguments in strict mode", tok.start});
+      allocator_->destroy(operand);
+      return nullptr;
+    }
     ASTNode *node = newNode(NodeType::UpdateExpression);
     node->loc = tok.start;
     node->update_op = upd;
@@ -435,6 +464,13 @@ ASTNode *Parser::parseUnary() {
   advance(); /* 消费一元运算符 */
   ASTNode *operand = parseUnary(); /* 右结合：一元可嵌套（如 !!!x、- -x） */
   if (operand == nullptr) return nullptr;
+  /* delete 裸标识符严格模式禁止（ECMA-262 §13.5.1.1） */
+  if (op == UnaryOpKind::Delete && strict_ && operand->type == NodeType::Identifier) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                "delete of an unqualified identifier in strict mode", tok.start});
+    allocator_->destroy(operand);
+    return nullptr;
+  }
   ASTNode *node = newNode(NodeType::UnaryOp);
   node->loc = tok.start;
   node->unop = op;
@@ -605,6 +641,14 @@ ASTNode *Parser::parseLeftHandSide() {
         allocator_->destroy(expr);
         return nullptr;
       }
+      /* 严格模式禁止 ++ 于 eval / arguments（ECMA-262 §13.4.4） */
+      if (strict_ && expr->type == NodeType::Identifier &&
+          (expr->name == "eval" || expr->name == "arguments")) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                    "increment/decrement of eval or arguments in strict mode", current().start});
+        allocator_->destroy(expr);
+        return nullptr;
+      }
       ASTNode *node = newNode(NodeType::UpdateExpression);
       node->loc = current().start;
       node->update_op = UpdateOpKind::Inc;
@@ -620,6 +664,14 @@ ASTNode *Parser::parseLeftHandSide() {
       if (expr->type != NodeType::Identifier && expr->type != NodeType::MemberExpression) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid increment/decrement operand",
                     current().start});
+        allocator_->destroy(expr);
+        return nullptr;
+      }
+      /* 严格模式禁止 -- 于 eval / arguments（ECMA-262 §13.4.4） */
+      if (strict_ && expr->type == NodeType::Identifier &&
+          (expr->name == "eval" || expr->name == "arguments")) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                    "increment/decrement of eval or arguments in strict mode", current().start});
         allocator_->destroy(expr);
         return nullptr;
       }
@@ -846,6 +898,12 @@ ASTNode *Parser::parseLiteral() {
   const Token &tok = current();
   switch (tok.kind) {
     case TokenKind::Number: {
+      /* 旧式八进制（0123）严格模式禁止（ECMA-262 §12.9.3 / Annex B） */
+      if (strict_ && tok.legacy_octal) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                    "legacy octal literals are not allowed in strict mode", tok.start});
+        return nullptr;
+      }
       ASTNode *n = newNode(NodeType::Literal);
       n->loc = tok.start;
       n->literal.number = tok.number;
@@ -856,6 +914,12 @@ ASTNode *Parser::parseLiteral() {
       return n;
     }
     case TokenKind::String: {
+      /* 旧式八进制转义（\1-\7）严格模式禁止（ECMA-262 §12.9.4 / Annex B） */
+      if (strict_ && tok.legacy_octal_escape) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                    "legacy octal escape sequences are not allowed in strict mode", tok.start});
+        return nullptr;
+      }
       ASTNode *n = newNode(NodeType::Literal);
       n->loc = tok.start;
       n->literal.is_string = true;

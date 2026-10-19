@@ -26,6 +26,7 @@ ASTNode *Parser::parseStatementList() {
     ASTNode *expr = stmt->children[0];
     if (expr->type == NodeType::Literal && expr->literal.is_string) {
       stmt->directive = expr->literal.str;
+      if (stmt->directive == "use strict") strict_ = true; /* 严格模式 */
     }
     program->children.push_back(stmt);
   }
@@ -221,6 +222,13 @@ ASTNode *Parser::parseForStatement() {
           return nullptr;
         }
       }
+    } else if (strict_ && init != nullptr && init->type == NodeType::Identifier &&
+               (init->name == "eval" || init->name == "arguments")) {
+      /* 严格模式禁止 eval / arguments 作 for-in/of left（ECMA-262 §14.7.4） */
+      sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                  "unexpected eval or arguments in strict mode", init->loc});
+      allocator_->destroy(init);
+      return nullptr;
     }
     advance(); /* in / of */
     setValueContext();
@@ -347,6 +355,13 @@ ASTNode *Parser::parseVariableDeclaration(bool consume_semicolon,
         return nullptr;
       }
     } else if (at(TokenKind::Identifier)) {
+      /* 严格模式禁止 eval / arguments 作绑定名（ECMA-262 §14.3.1） */
+      if (strict_ && (current().text == "eval" || current().text == "arguments")) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                    "unexpected eval or arguments in strict mode", current().start});
+        allocator_->destroy(decl);
+        return nullptr;
+      }
       id = newNode(NodeType::Identifier);
       id->loc = current().start;
       id->name = current().text;
@@ -529,6 +544,13 @@ ASTNode *Parser::parseLabeledStatement() {
   ASTNode *label = newNode(NodeType::LabeledStatement);
   label->loc = current().start;
   label->name = current().text;
+  /* 严格模式禁止 eval / arguments 作标签名（ECMA-262 §14.13.1） */
+  if (strict_ && (label->name == "eval" || label->name == "arguments")) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                "unexpected eval or arguments in strict mode", current().start});
+    allocator_->destroy(label);
+    return nullptr;
+  }
   advance(); /* label 名 */
   if (!isSymbol(current(), ":")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ':' after label", current().start});
@@ -545,6 +567,81 @@ ASTNode *Parser::parseLabeledStatement() {
   }
   label->children.push_back(body);
   return label;
+}
+
+/* 收集绑定名（M1.6 ②）：递归遍历参数节点，收集 Identifier 名。
+ * 支持：Identifier、RestElement（...rest 的 target）、
+ * ObjectPattern/ArrayPattern（解构内绑定）、AssignmentPattern（默认值）。 */
+void Parser::collectBindingNames(const ASTNode *node, std::vector<std::string> &names) {
+  if (node == nullptr) return;
+  switch (node->type) {
+    case NodeType::Identifier:
+      names.push_back(node->name);
+      break;
+    case NodeType::RestElement:
+    case NodeType::AssignmentPattern:
+      /* 单子节点为目标绑定 */
+      if (!node->children.empty()) collectBindingNames(node->children[0], names);
+      break;
+    case NodeType::ObjectPattern:
+    case NodeType::ArrayPattern:
+      for (const ASTNode *child : node->children) collectBindingNames(child, names);
+      break;
+    case NodeType::Property: {
+      /* 对象模式成员：{ key: val } 中 val 是绑定目标；简写 { key } 时 children[0] 即绑定 */
+      if (node->children.size() >= 2) {
+        collectBindingNames(node->children[1], names); /* val */
+      } else if (!node->children.empty()) {
+        collectBindingNames(node->children[0], names); /* 简写 */
+      }
+      break;
+    }
+    case NodeType::SpreadElement:
+      if (!node->children.empty()) collectBindingNames(node->children[0], names);
+      break;
+    default:
+      break;
+  }
+}
+
+/* 严格模式参数检查（M1.6 ②）：函数参数不能重名（ECMA-262 §14.1.2），
+ * 不能是 eval / arguments（§14.1.2 与 §14.2.1 的 BindingIdentifier 限制）。
+ * 该检查须在 body 解析完成后执行——因为 body 内的 "use strict" directive
+ * 会让整函数成为严格模式（参数也受约束）。
+ * fn children 布局：[id?, params..., body]；has_name=true 时 id 为 children[0]，
+ * body_index 是 body 在 children 中的下标。
+ * 返回 true 表示已发错误（调用方须销毁 fn）。 */
+bool Parser::checkStrictParams(ASTNode *fn, bool strict, bool has_name, int body_index) {
+  if (!strict) return false;
+  /* 函数名不能是 eval / arguments（ECMA-262 §14.1.2 BindingIdentifier） */
+  if (has_name && fn->children[0]->type == NodeType::Identifier &&
+      (fn->children[0]->name == "eval" || fn->children[0]->name == "arguments")) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                "unexpected eval or arguments in strict mode", fn->loc});
+    return true;
+  }
+  std::vector<std::string> names;
+  /* 收集所有参数绑定名（id 之前到 body 之前的 children） */
+  int start = has_name ? 1 : 0;
+  for (int i = start; i < body_index; ++i) {
+    collectBindingNames(fn->children[i], names);
+  }
+  /* 重名检测 */
+  for (size_t i = 0; i < names.size(); ++i) {
+    if (names[i] == "eval" || names[i] == "arguments") {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                  "unexpected eval or arguments in strict mode", fn->loc});
+      return true;
+    }
+    for (size_t j = i + 1; j < names.size(); ++j) {
+      if (names[i] == names[j]) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                    "duplicate parameter name not allowed in this context", fn->loc});
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 /* 函数声明（M1.5 ④）：function name(params) { body }
@@ -639,13 +736,22 @@ ASTNode *Parser::parseFunctionDeclaration() {
     return nullptr;
   }
   ++function_depth_;
-  ASTNode *body = parseBlock();
+  bool outer_strict = strict_;
+  ASTNode *body = parseBlock(/*detect_strict=*/true);
+  bool strict_params = strict_; /* body 解析后 strict_ 已含 body directive 影响 */
+  strict_ = outer_strict; /* 恢复外层严格状态（body 内 directive 不泄漏） */
   --function_depth_;
   if (body == nullptr) {
     allocator_->destroy(fn);
     return nullptr;
   }
   fn->children.push_back(body);
+  /* 严格模式参数检查（strict_params 已含 body directive 影响） */
+  if (checkStrictParams(fn, strict_params, /*has_name=*/true,
+                        static_cast<int>(fn->children.size()) - 1)) {
+    allocator_->destroy(fn);
+    return nullptr;
+  }
   return fn;
 }
 
@@ -656,13 +762,16 @@ ASTNode *Parser::parseFunctionExpression() {
   fn->loc = current().start;
   advance(); /* function */
 
-  /* 函数名可选（匿名函数表达式合法） */
+  /* 函数名可选（匿名函数表达式合法）。记录是否有名：children[0] 是否函数名
+   * （匿名时 children[0] 是首个参数，checkStrictParams 需区分）。 */
+  bool has_name = false;
   if (at(TokenKind::Identifier)) {
     ASTNode *id = newNode(NodeType::Identifier);
     id->loc = current().start;
     id->name = current().text;
     advance();
     fn->children.push_back(id);
+    has_name = true;
   }
 
   /* 参数列表：(a, b, ...rest) */
@@ -733,13 +842,22 @@ ASTNode *Parser::parseFunctionExpression() {
     return nullptr;
   }
   ++function_depth_;
-  ASTNode *body = parseBlock();
+  bool outer_strict = strict_;
+  ASTNode *body = parseBlock(/*detect_strict=*/true);
+  bool strict_params = strict_; /* body 解析后 strict_ 已含 body directive 影响 */
+  strict_ = outer_strict; /* 恢复外层严格状态（body 内 directive 不泄漏） */
   --function_depth_;
   if (body == nullptr) {
     allocator_->destroy(fn);
     return nullptr;
   }
   fn->children.push_back(body);
+  /* 严格模式参数检查（strict_params 已含 body directive 影响） */
+  if (checkStrictParams(fn, strict_params, has_name,
+                        static_cast<int>(fn->children.size()) - 1)) {
+    allocator_->destroy(fn);
+    return nullptr;
+  }
   return fn;
 }
 
@@ -920,6 +1038,14 @@ ASTNode *Parser::parseTryStatement() {
           return nullptr;
         }
       } else if (at(TokenKind::Identifier)) {
+        /* 严格模式禁止 eval / arguments 作 catch 绑定（ECMA-262 §14.15.1） */
+        if (strict_ && (current().text == "eval" || current().text == "arguments")) {
+          sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                      "unexpected eval or arguments in strict mode", current().start});
+          allocator_->destroy(stmt);
+          allocator_->destroy(clause);
+          return nullptr;
+        }
         param = newNode(NodeType::Identifier);
         param->loc = current().start;
         param->name = current().text;
@@ -988,10 +1114,16 @@ ASTNode *Parser::parseTryStatement() {
 /* with 语句（M1.5 ⑦）：with (obj) stmt。ECMA-262 §14.18。
  * children 布局：[object, body]。
  * 废弃语法：非严格模式发 Warning（DEP-0001），不中止解析；
- * 严格模式报 SyntaxError（当前严格模式检测留 M1.6，此处恒发 Warning）。 */
+ * 严格模式报 SyntaxError（ECMA-262 §14.1.2）。 */
 ASTNode *Parser::parseWithStatement() {
   ASTNode *stmt = newNode(NodeType::WithStatement);
   stmt->loc = current().start;
+  if (strict_) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "'with' statement is not allowed in strict mode",
+                stmt->loc});
+    allocator_->destroy(stmt);
+    return nullptr;
+  }
   sink_.emit({Severity::Warning, "DEP-0001",
               "'with' statement is deprecated and forbidden in strict mode", stmt->loc});
   advance(); /* with */
@@ -1039,11 +1171,29 @@ ASTNode *Parser::parseDebuggerStatement() {
 
 /* 块语句（M1.5 ②）：{ stmt... }。空块合法。
  * 注意：读值位置的 { 是对象字面量/模式（parsePrimary），由调用方区分；
- * 语句位置的 { 在此进入块。 */
-ASTNode *Parser::parseBlock() {
+ * 语句位置的 { 在此进入块。
+ * detect_strict=true（函数体）：块开头是 Directive Prologue，检测
+ * "use strict" 指令并设置 strict_（函数体严格模式覆盖外层）。 */
+ASTNode *Parser::parseBlock(bool detect_strict) {
   ASTNode *block = newNode(NodeType::BlockStatement);
   block->loc = current().start;
   advance(); /* { */
+  if (detect_strict) {
+    /* 函数体 Directive Prologue：开头连续的字符串字面量语句 */
+    while (!atEof() && at(TokenKind::String)) {
+      ASTNode *stmt = parseExpressionStatement();
+      if (stmt == nullptr) {
+        allocator_->destroy(block);
+        return nullptr;
+      }
+      ASTNode *expr = stmt->children[0];
+      if (expr->type == NodeType::Literal && expr->literal.is_string) {
+        stmt->directive = expr->literal.str;
+        if (stmt->directive == "use strict") strict_ = true;
+      }
+      block->children.push_back(stmt);
+    }
+  }
   while (!isSymbol(current(), "}")) {
     if (atEof()) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated block", block->loc});

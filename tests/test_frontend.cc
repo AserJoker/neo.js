@@ -2647,3 +2647,232 @@ TEST(Frontend, NullishCoalesceIsolation) {
   EXPECT_EQ(ast, nullptr);
   EXPECT_TRUE(sink3.hasErrors());
 }
+
+/* ==================== M1.6 ② 严格模式全量 ==================== */
+
+/* 严格模式 with → SyntaxError（ECMA-262 §14.1.2） */
+TEST(Frontend, StrictWithError) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  neojs::AST *ast =
+      neojs::parseSource(&a, "\"use strict\"; with (o) x;",
+                         std::strlen("\"use strict\"; with (o) x;"), sink);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink.hasErrors());
+
+  /* 函数体 directive 触发严格：function f() { "use strict"; with (o) x; } */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "function f() { \"use strict\"; with (o) x; }",
+                           std::strlen("function f() { \"use strict\"; with (o) x; }"),
+                           sink2);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink2.hasErrors());
+
+  /* 非严格 with 仍是警告（不中止） */
+  neojs::DiagnosticSink sink3;
+  ast = neojs::parseSource(&a, "with (o) x;", std::strlen("with (o) x;"), sink3);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink3.hasErrors());
+  a.destroy(ast);
+}
+
+/* 严格模式旧式八进制字面量 0123 → SyntaxError */
+TEST(Frontend, StrictLegacyOctalLiteralError) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  neojs::AST *ast =
+      neojs::parseSource(&a, "\"use strict\"; 0123;",
+                         std::strlen("\"use strict\"; 0123;"), sink);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink.hasErrors());
+
+  /* 函数体 directive：function f() { "use strict"; return 0123; } */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "function f() { \"use strict\"; return 0123; }",
+                           std::strlen("function f() { \"use strict\"; return 0123; }"),
+                           sink2);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink2.hasErrors());
+
+  /* 非严格 0123 合法 */
+  neojs::DiagnosticSink sink3;
+  ast = neojs::parseSource(&a, "0123;", std::strlen("0123;"), sink3);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink3.hasErrors());
+  a.destroy(ast);
+}
+
+/* 严格模式旧式八进制转义 \1 → SyntaxError */
+TEST(Frontend, StrictLegacyOctalEscapeError) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  neojs::AST *ast =
+      neojs::parseSource(&a, "\"use strict\"; var s = \"\\1\";",
+                         std::strlen("\"use strict\"; var s = \"\\1\";"), sink);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink.hasErrors());
+
+  /* 非严格 \1 合法（DEP-0003 警告，不中止） */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "var s = \"\\1\";", std::strlen("var s = \"\\1\";"), sink2);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink2.hasErrors());
+  a.destroy(ast);
+}
+
+/* 严格模式 delete 裸标识符 → SyntaxError */
+TEST(Frontend, StrictDeleteIdentifierError) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  neojs::AST *ast =
+      neojs::parseSource(&a, "\"use strict\"; delete x;",
+                         std::strlen("\"use strict\"; delete x;"), sink);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink.hasErrors());
+
+  /* delete obj.prop 严格模式合法 */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "\"use strict\"; delete obj.prop;",
+                           std::strlen("\"use strict\"; delete obj.prop;"), sink2);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink2.hasErrors());
+  a.destroy(ast);
+
+  /* 非严格 delete x 合法 */
+  neojs::DiagnosticSink sink3;
+  ast = neojs::parseSource(&a, "delete x;", std::strlen("delete x;"), sink3);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink3.hasErrors());
+  a.destroy(ast);
+}
+
+/* 严格模式重名参数 → SyntaxError（含 body directive 触发） */
+TEST(Frontend, StrictDuplicateParamsError) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  neojs::AST *ast = neojs::parseSource(&a, "\"use strict\"; function f(a, a) {}",
+                                       std::strlen("\"use strict\"; function f(a, a) {}"),
+                                       sink);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink.hasErrors());
+
+  /* body directive：function f(a, a) { "use strict"; } */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "function f(a, a) { \"use strict\"; }",
+                           std::strlen("function f(a, a) { \"use strict\"; }"), sink2);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink2.hasErrors());
+
+  /* 函数表达式严格重名 */
+  neojs::DiagnosticSink sink3;
+  ast = neojs::parseSource(&a, "\"use strict\"; var f = function(a, a) {};",
+                           std::strlen("\"use strict\"; var f = function(a, a) {};"),
+                           sink3);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink3.hasErrors());
+
+  /* 解构参数重名：function f({a}, a) {} */
+  neojs::DiagnosticSink sink4;
+  ast = neojs::parseSource(&a, "\"use strict\"; function f({a}, a) {}",
+                           std::strlen("\"use strict\"; function f({a}, a) {}"), sink4);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink4.hasErrors());
+
+  /* 非严格重名合法 */
+  neojs::DiagnosticSink sink5;
+  ast = neojs::parseSource(&a, "function f(a, a) {}", std::strlen("function f(a, a) {}"), sink5);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink5.hasErrors());
+  a.destroy(ast);
+}
+
+/* 严格模式 eval / arguments 限制 */
+TEST(Frontend, StrictEvalArgumentsError) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* 参数名 */
+  neojs::AST *ast = neojs::parseSource(&a, "\"use strict\"; function f(eval) {}",
+                                       std::strlen("\"use strict\"; function f(eval) {}"),
+                                       sink);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink.hasErrors());
+  /* 绑定名（var） */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "\"use strict\"; var eval;",
+                           std::strlen("\"use strict\"; var eval;"), sink2);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink2.hasErrors());
+  /* 赋值目标 */
+  neojs::DiagnosticSink sink3;
+  ast = neojs::parseSource(&a, "\"use strict\"; eval = 1;",
+                           std::strlen("\"use strict\"; eval = 1;"), sink3);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink3.hasErrors());
+  /* ++/-- 目标 */
+  neojs::DiagnosticSink sink4;
+  ast = neojs::parseSource(&a, "\"use strict\"; arguments++;",
+                           std::strlen("\"use strict\"; arguments++;"), sink4);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink4.hasErrors());
+  /* catch 绑定 */
+  neojs::DiagnosticSink sink5;
+  ast = neojs::parseSource(&a, "\"use strict\"; try {} catch (eval) {}",
+                           std::strlen("\"use strict\"; try {} catch (eval) {}"), sink5);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink5.hasErrors());
+  /* 标签名 */
+  neojs::DiagnosticSink sink6;
+  ast = neojs::parseSource(&a, "\"use strict\"; arguments: ;",
+                           std::strlen("\"use strict\"; arguments: ;"), sink6);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink6.hasErrors());
+  /* for-in/of left */
+  neojs::DiagnosticSink sink6b;
+  ast = neojs::parseSource(&a, "\"use strict\"; for (eval in obj) {}",
+                           std::strlen("\"use strict\"; for (eval in obj) {}"), sink6b);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink6b.hasErrors());
+  /* 非严格全部合法 */
+  neojs::DiagnosticSink sink7;
+  ast = neojs::parseSource(&a, "function f(eval) { return eval; }",
+                           std::strlen("function f(eval) { return eval; }"), sink7);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink7.hasErrors());
+  a.destroy(ast);
+}
+
+/* 严格模式状态传播：嵌套函数继承外层严格、body directive 不泄漏 */
+TEST(Frontend, StrictPropagation) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* 外层严格 → 嵌套函数 g 的重名参数也报错 */
+  neojs::AST *ast = neojs::parseSource(
+      &a, "\"use strict\"; function f() { function g(a, a) {} }",
+      std::strlen("\"use strict\"; function f() { function g(a, a) {} }"), sink);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink.hasErrors());
+
+  /* 外层非严格 + 外层函数 body directive → 嵌套函数继承严格 */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "function outer() { \"use strict\"; function g(a, a) {} }",
+                           std::strlen(
+                               "function outer() { \"use strict\"; function g(a, a) {} }"),
+                           sink2);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink2.hasErrors());
+
+  /* body directive 不泄漏：非严格函数内 strict directive 后 with 仍警告不报错 */
+  neojs::DiagnosticSink sink3;
+  ast = neojs::parseSource(&a, "function f() { \"use strict\"; } with (o) x;",
+                           std::strlen("function f() { \"use strict\"; } with (o) x;"), sink3);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink3.hasErrors());
+  a.destroy(ast);
+
+  /* 箭头函数 body directive 触发参数检查 */
+  neojs::DiagnosticSink sink4;
+  ast = neojs::parseSource(&a, "(a, a) => { \"use strict\"; }",
+                           std::strlen("(a, a) => { \"use strict\"; }"), sink4);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink4.hasErrors());
+}

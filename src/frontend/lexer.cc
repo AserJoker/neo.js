@@ -375,7 +375,14 @@ void Lexer::scanNumber() {
     }
   }
 
-  /* 十进制：整数 + 小数 + 指数 + _ 分隔符 + BigInt */
+  /* 十进制：整数 + 小数 + 指数 + _ 分隔符 + BigInt。
+   * 旧式八进制（Annex B）：0 后紧跟八进制数字（0123），非严格模式容忍。
+   * 判定：数字以 0 开头且第二位是 0-7 → legacy octal（严格模式报错，见 Parser）。 */
+  bool legacy_octal = false;
+  if (c == '0' && pos_ + 1 < source_len_) {
+    int n = static_cast<unsigned char>(source_[pos_ + 1]);
+    if (n >= '0' && n <= '7') legacy_octal = true;
+  }
   bool seen_digit = false;
   bool seen_dot = false;
   for (;;) {
@@ -430,6 +437,7 @@ void Lexer::scanNumber() {
     } else {
       t.number = r.value;
       t.is_bigint = r.is_bigint;
+      t.legacy_octal = legacy_octal; /* 0123 形式：严格模式报错（Parser 检查） */
     }
   }
   current_ = std::move(t);
@@ -652,7 +660,9 @@ void Lexer::scanString(char quote) {
         }
         default:
           if (e >= '1' && e <= '7') {
-            /* 废弃八进制转义（Annex B）：打警告，按八进制解析 */
+            /* 废弃八进制转义（Annex B）：打警告，按八进制解析；
+             * 标记 legacy_octal_escape 供 Parser 严格模式报错 */
+            t.legacy_octal_escape = true;
             sink_.emit({Severity::Warning, "DEP-0003", "legacy octal escape", t.start});
             int oct = 0;
             while (e >= '0' && e <= '7' && oct < 0x1F) {

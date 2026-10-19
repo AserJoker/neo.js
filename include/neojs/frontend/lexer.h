@@ -68,10 +68,12 @@ struct Token {
   /* 数值载荷（Number） */
   double number = 0.0;     /* 数值（M1.1：十进制；M1.2 全进制转换后） */
   bool is_bigint = false;  /* 是否有 n 后缀 */
+  bool legacy_octal = false; /* 旧式八进制字面量（0123，Annex B）；严格模式报错（M1.6 ②） */
 
   /* 字符串载荷（String / TemplateStart/Part/End） */
   std::string str_value;  /* 解码后的字符串值（转义已处理） */
   bool has_interpolation = false; /* TemplateStart：以 ${ 结尾（有插值），需 Parser 切表达式模式 */
+  bool legacy_octal_escape = false; /* 字符串含 \1-\7 旧式八进制转义（Annex B）；严格模式报错（M1.6 ②） */
 };
 
 /* 词法器：被 Parser 按需驱动（next/peek），携带上下文 */

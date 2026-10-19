@@ -61,7 +61,7 @@ class Parser {
   /* 最小递归下降：语句（parser_stmt.cc） */
   ASTNode *parseStatementList();
   ASTNode *parseStatement();      /* 语句总入口：按首 token 特征分派 */
-  ASTNode *parseBlock();          /* 块语句：{ stmt... } */
+  ASTNode *parseBlock(bool detect_strict = false); /* 块语句：{ stmt... } */
   ASTNode *parseLabeledStatement(); /* 标签语句：label: stmt */
   ASTNode *parseIfStatement();      /* 条件语句：if (expr) stmt [else stmt] */
   ASTNode *parseWhileStatement();   /* while (expr) stmt / do stmt while (expr) */
@@ -97,6 +97,12 @@ class Parser {
   ASTNode *parseArrayPattern();    /* [ ... ] 模式（数组字面量/解构共用） */
   ASTNode *newNode(NodeType t);
 
+  /* 严格模式辅助（M1.6 ②） */
+  void collectBindingNames(const ASTNode *node, std::vector<std::string> &names);
+  /* 参数重名 / eval / arguments 检查（strict 显式传入——body 解析后 strict_ 会恢复外层值）；
+   * 返回 true 表示已发错误（调用方须销毁 fn） */
+  bool checkStrictParams(ASTNode *fn, bool strict, bool has_name, int body_index);
+
   JSAllocator *allocator_;
   Lexer lexer_;
   DiagnosticSink &sink_;
@@ -104,6 +110,7 @@ class Parser {
   int loop_depth_ = 0; /* 循环嵌套深度（for/while/do-while；break/continue 校验） */
   int function_depth_ = 0; /* 函数嵌套深度（return 顶层校验，M1.5 ④） */
   std::vector<std::string> label_stack_; /* 活跃标签栈（break/continue 引用校验） */
+  bool strict_ = false; /* 当前作用域严格模式（"use strict" directive） */
 };
 
 }  // namespace neojs
