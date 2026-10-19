@@ -53,6 +53,7 @@ enum class NodeType : uint8_t {
   CallExpression,   /* 函数调用：callee(args) */
   NewExpression,    /* new 构造：new Foo(args) 或 new Foo */
   ArrowFunctionExpression, /* 箭头函数：params => body（M1.4 ③-4 表达式体） */
+  UpdateExpression, /* 自增自减：++x / x++ / --x / x--（M1.4 ③-6） */
 };
 
 /* 一元运算类型（M1.4：先支持 ! ~ + - 与关键字型 typeof/void/delete/await） */
@@ -94,6 +95,12 @@ enum class BinaryOpKind : uint8_t {
   LogicalAnd, /* && */
   LogicalOr,  /* || */
   Nullish,    /* ?? */
+};
+
+/* 自增自减类型（M1.4 ③-6）：++x / x++ / --x / x-- */
+enum class UpdateOpKind : uint8_t {
+  Inc, /* ++ */
+  Dec, /* -- */
 };
 
 /* 赋值运算类型（M1.4：= 与全部复合赋值；右结合） */
@@ -150,9 +157,11 @@ struct PropertyPayload {
   bool is_computed = false; /* [expr] 计算键 */
 };
 
-/* 成员访问载荷：true = 计算成员 obj[expr]；false = 点成员 obj.prop */
+/* 成员访问载荷：true = 计算成员 obj[expr]；false = 点成员 obj.prop。
+ * optional：可选链 ?. / ?.[ / ?.(（M1.4 ③-6）。 */
 struct MemberPayload {
   bool computed = false;
+  bool optional = false;
 };
 
 /* AST 节点：基类 + 子节点（扁平化子节点向量，避免手写析构树） */
@@ -171,7 +180,10 @@ struct ASTNode {
   UnaryOpKind unop = UnaryOpKind::Pos;
   BinaryOpKind binop = BinaryOpKind::Add;
   AssignmentOpKind assign_op = AssignmentOpKind::Assign;
-  MemberPayload member;       /* MemberExpression：computed 标记 */
+  UpdateOpKind update_op = UpdateOpKind::Inc; /* UpdateExpression：++/-- */
+  bool prefix = false;        /* UpdateExpression：true = 前缀 ++x；false = 后缀 x++ */
+  bool optional = false;      /* CallExpression/MemberExpression：可选链 ?. 标记 */
+  MemberPayload member;       /* MemberExpression：computed/optional 标记 */
 
   /* 构造：仅由 Parser 经 JSAllocator::create 创建（见 parser.h） */
   explicit ASTNode(NodeType t) : type(t) {}

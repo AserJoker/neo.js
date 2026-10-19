@@ -238,16 +238,23 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
       out += "Sequence\n";
       break;
     case NodeType::MemberExpression:
-      out += node->member.computed ? "MemberExpression[]\n" : "MemberExpression.\n";
+      out += node->member.computed ? "MemberExpression[]" : "MemberExpression.";
+      if (node->member.optional) out += "?";
+      out += "\n";
       break;
     case NodeType::CallExpression:
-      out += "CallExpression\n";
+      out += node->optional ? "CallExpression?\n" : "CallExpression\n";
       break;
     case NodeType::NewExpression:
       out += "NewExpression\n";
       break;
     case NodeType::ArrowFunctionExpression:
       out += "ArrowFunctionExpression\n";
+      break;
+    case NodeType::UpdateExpression:
+      out += "UpdateExpression(";
+      out += node->update_op == UpdateOpKind::Inc ? "++" : "--";
+      out += node->prefix ? ",prefix)\n" : ",postfix)\n";
       break;
   }
   for (const ASTNode *child : node->children) dumpNode(child, out, depth + 1);

@@ -1393,3 +1393,146 @@ TEST(Frontend, TemplateContinuationTokens) {
 
   EXPECT_EQ(l.next().kind, neojs::TokenKind::EndOfFile);
 }
+
+/* -------------------------------------------------------------------------- */
+/* 自增自减 / 可选链（M1.4 ③-6）                                               */
+/* -------------------------------------------------------------------------- */
+
+TEST(Frontend, UpdatePrefixPostfix) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* ++x → Update(++, prefix)[x] */
+  neojs::AST *ast = neojs::parseSource(&a, "++x", std::strlen("++x"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::UpdateExpression);
+  EXPECT_EQ(top->update_op, neojs::UpdateOpKind::Inc);
+  EXPECT_TRUE(top->prefix);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::Identifier);
+  a.destroy(ast);
+
+  /* x-- → Update(--, postfix)[x] */
+  ast = neojs::parseSource(&a, "x--", std::strlen("x--"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::UpdateExpression);
+  EXPECT_EQ(top->update_op, neojs::UpdateOpKind::Dec);
+  EXPECT_FALSE(top->prefix);
+  a.destroy(ast);
+}
+
+TEST(Frontend, UpdateMemberOperand) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* a.b++ → Update(++, postfix)[Member]：成员是合法操作数 */
+  neojs::AST *ast = neojs::parseSource(&a, "a.b++", std::strlen("a.b++"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::UpdateExpression);
+  EXPECT_FALSE(top->prefix);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::MemberExpression);
+  a.destroy(ast);
+
+  /* --a[0] → Update(--, prefix)[Member[]] */
+  ast = neojs::parseSource(&a, "--a[0]", std::strlen("--a[0]"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::UpdateExpression);
+  EXPECT_EQ(top->update_op, neojs::UpdateOpKind::Dec);
+  EXPECT_TRUE(top->prefix);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::MemberExpression);
+  EXPECT_TRUE(top->children[0]->member.computed);
+  a.destroy(ast);
+}
+
+TEST(Frontend, UpdateInvalidOperand) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* 1++ → 非法操作数 */
+  neojs::AST *ast = neojs::parseSource(&a, "1++", std::strlen("1++"), sink);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink.hasErrors());
+  a.destroy(ast);
+}
+
+TEST(Frontend, OptionalChainMember) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* a?.b → MemberExpression.?（optional=true，computed=false） */
+  neojs::AST *ast = neojs::parseSource(&a, "a?.b", std::strlen("a?.b"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::MemberExpression);
+  EXPECT_TRUE(top->member.optional);
+  EXPECT_FALSE(top->member.computed);
+  a.destroy(ast);
+
+  /* a?.[x] → MemberExpression[]?（optional=true，computed=true） */
+  ast = neojs::parseSource(&a, "a?.[x]", std::strlen("a?.[x]"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::MemberExpression);
+  EXPECT_TRUE(top->member.optional);
+  EXPECT_TRUE(top->member.computed);
+  a.destroy(ast);
+
+  /* a?.(1) → CallExpression? */
+  ast = neojs::parseSource(&a, "a?.(1)", std::strlen("a?.(1)"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::CallExpression);
+  EXPECT_TRUE(top->optional);
+  a.destroy(ast);
+}
+
+TEST(Frontend, OptionalChainShortCircuit) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* a?.b.c → 一旦可选，后续 .c 也 optional（短路语义） */
+  neojs::AST *ast = neojs::parseSource(&a, "a?.b.c", std::strlen("a?.b.c"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::MemberExpression);
+  EXPECT_TRUE(top->member.optional); /* .c 也 optional */
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::MemberExpression);
+  EXPECT_TRUE(top->children[0]->member.optional); /* a?.b */
+  a.destroy(ast);
+
+  /* a?.b?.c → 多级可选链 */
+  ast = neojs::parseSource(&a, "a?.b?.c", std::strlen("a?.b?.c"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::MemberExpression);
+  EXPECT_TRUE(top->member.optional);
+  a.destroy(ast);
+
+  /* a.b?.c → 普通成员后才可选 */
+  ast = neojs::parseSource(&a, "a.b?.c", std::strlen("a.b?.c"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::MemberExpression);
+  EXPECT_TRUE(top->member.optional);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::MemberExpression);
+  EXPECT_FALSE(top->children[0]->member.optional); /* a.b 非可选 */
+  a.destroy(ast);
+}
+
+TEST(Frontend, OptionalChainNotInNewCallee) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* new a?.b → 语法错误（可选链不能作 new 的 callee） */
+  neojs::AST *ast = neojs::parseSource(&a, "new a?.b", std::strlen("new a?.b"), sink);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink.hasErrors());
+  a.destroy(ast);
+
+  /* new Foo()?.b → 合法：new 结果上可选链 */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "new Foo()?.b", std::strlen("new Foo()?.b"), sink2);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::MemberExpression);
+  EXPECT_TRUE(top->member.optional);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::NewExpression);
+  a.destroy(ast);
+}

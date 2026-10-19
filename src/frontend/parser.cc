@@ -374,18 +374,23 @@ ASTNode *Parser::parseBinary(int min_prec) {
 }
 
 /* 一元运算（M1.4）：! ~ + - 与关键字型 typeof/void/delete/await
- * 对齐 ECMA-262：一元运算符优先级高于二元、低于成员/调用（后续 M1.4 扩展）。
+ * 前缀自增自减（M1.4 ③-6）：++x / --x（优先级同前缀一元）。
+ * 对齐 ECMA-262：一元运算符优先级高于二元、低于成员/调用。
  * 注意：`+`/`-` 一元 vs 二元由当前 token 判定（parseBinary 在运算符位置处理二元）。 */
 ASTNode *Parser::parseUnary() {
   setValueContext();
   const Token &tok = current();
   UnaryOpKind op;
   bool is_unary = true;
+  UpdateOpKind upd;
+  bool is_update = false;
   if (tok.kind == TokenKind::Symbol) {
     if (tok.text == "!") op = UnaryOpKind::Not;
     else if (tok.text == "~") op = UnaryOpKind::BitNot;
     else if (tok.text == "+") op = UnaryOpKind::Pos;
     else if (tok.text == "-") op = UnaryOpKind::Neg;
+    else if (tok.text == "++") { upd = UpdateOpKind::Inc; is_update = true; }
+    else if (tok.text == "--") { upd = UpdateOpKind::Dec; is_update = true; }
     else is_unary = false;
   } else if (tok.kind == TokenKind::Identifier) {
     if (tok.text == "typeof") op = UnaryOpKind::Typeof;
@@ -395,6 +400,25 @@ ASTNode *Parser::parseUnary() {
     else is_unary = false;
   } else {
     is_unary = false;
+  }
+  if (is_update) {
+    /* 前缀自增自减：++x / --x */
+    advance(); /* ++ / -- */
+    ASTNode *operand = parseUnary(); /* 右结合 */
+    if (operand == nullptr) return nullptr;
+    /* 前缀操作数须为合法左值（标识符/成员访问） */
+    if (operand->type != NodeType::Identifier && operand->type != NodeType::MemberExpression) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid increment/decrement operand",
+                  tok.start});
+      allocator_->destroy(operand);
+      return nullptr;
+    }
+    ASTNode *node = newNode(NodeType::UpdateExpression);
+    node->loc = tok.start;
+    node->update_op = upd;
+    node->prefix = true;
+    node->children.push_back(operand);
+    return node;
   }
   if (!is_unary) return parseLeftHandSide();
 
@@ -415,6 +439,7 @@ ASTNode *Parser::parseUnary() {
 ASTNode *Parser::parseLeftHandSide() {
   ASTNode *expr = parseNewExpression();
   if (expr == nullptr) return nullptr;
+  bool chain_optional = false; /* 一旦进入可选链，后续整链均 optional（短路语义） */
   for (;;) {
     if (isSymbol(current(), ".")) {
       advance(); /* . */
@@ -446,14 +471,91 @@ ASTNode *Parser::parseLeftHandSide() {
       ASTNode *member = newNode(NodeType::MemberExpression);
       member->loc = expr->loc;
       member->member.computed = false;
+      member->member.optional = chain_optional;
       member->children.push_back(expr);
       member->children.push_back(prop);
       expr = member;
+    } else if (isSymbol(current(), "?.")) {
+      /* 可选链（M1.4 ③-6）：?.prop / ?.#priv / ?.[expr] / ?.(args) */
+      chain_optional = true;
+      advance(); /* ?. */
+      if (at(TokenKind::Identifier)) {
+        ASTNode *prop = newNode(NodeType::Identifier);
+        prop->loc = current().start;
+        prop->name = current().text;
+        advance();
+        ASTNode *member = newNode(NodeType::MemberExpression);
+        member->loc = expr->loc;
+        member->member.computed = false;
+        member->member.optional = true;
+        member->children.push_back(expr);
+        member->children.push_back(prop);
+        expr = member;
+      } else if (isSymbol(current(), "#")) {
+        advance(); /* # */
+        if (!at(TokenKind::Identifier)) {
+          sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                      "expected private identifier after '?.#'", current().start});
+          allocator_->destroy(expr);
+          return nullptr;
+        }
+        ASTNode *prop = newNode(NodeType::PrivateIdentifier);
+        prop->loc = current().start;
+        prop->name = current().text;
+        advance();
+        ASTNode *member = newNode(NodeType::MemberExpression);
+        member->loc = expr->loc;
+        member->member.computed = false;
+        member->member.optional = true;
+        member->children.push_back(expr);
+        member->children.push_back(prop);
+        expr = member;
+      } else if (isSymbol(current(), "[")) {
+        advance(); /* [ */
+        ASTNode *member = newNode(NodeType::MemberExpression);
+        member->loc = expr->loc;
+        member->member.computed = true;
+        member->member.optional = true;
+        member->children.push_back(expr);
+        ASTNode *index = parseExpression();
+        if (index == nullptr) {
+          allocator_->destroy(member);
+          return nullptr;
+        }
+        if (!isSymbol(current(), "]")) {
+          sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ']'", current().start});
+          allocator_->destroy(member);
+          return nullptr;
+        }
+        advance(); /* ] */
+        member->children.push_back(index);
+        expr = member;
+      } else if (isSymbol(current(), "(")) {
+        ASTNode *call = newNode(NodeType::CallExpression);
+        call->loc = expr->loc;
+        call->optional = true;
+        call->children.push_back(expr); /* callee */
+        ASTNode *args = parseArguments();
+        if (args == nullptr) {
+          allocator_->destroy(call);
+          return nullptr;
+        }
+        call->children.insert(call->children.end(), args->children.begin(),
+                              args->children.end());
+        allocator_->destroy(args); /* 参数列表是临时容器，仅取子节点 */
+        expr = call;
+      } else {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected property name after '?.'",
+                    current().start});
+        allocator_->destroy(expr);
+        return nullptr;
+      }
     } else if (isSymbol(current(), "[")) {
       advance(); /* [ */
       ASTNode *member = newNode(NodeType::MemberExpression);
       member->loc = expr->loc;
       member->member.computed = true;
+      member->member.optional = chain_optional;
       member->children.push_back(expr);
       ASTNode *index = parseExpression();
       if (index == nullptr) {
@@ -471,6 +573,7 @@ ASTNode *Parser::parseLeftHandSide() {
     } else if (isSymbol(current(), "(")) {
       ASTNode *call = newNode(NodeType::CallExpression);
       call->loc = expr->loc;
+      call->optional = chain_optional;
       call->children.push_back(expr); /* callee */
       ASTNode *args = parseArguments();
       if (args == nullptr) {
@@ -481,6 +584,36 @@ ASTNode *Parser::parseLeftHandSide() {
                             args->children.end());
       allocator_->destroy(args); /* 参数列表是临时容器，仅取子节点 */
       expr = call;
+    } else if (isSymbol(current(), "++")) {
+      /* 后缀自增（M1.4 ③-6）：x++ */
+      if (expr->type != NodeType::Identifier && expr->type != NodeType::MemberExpression) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid increment/decrement operand",
+                    current().start});
+        allocator_->destroy(expr);
+        return nullptr;
+      }
+      ASTNode *node = newNode(NodeType::UpdateExpression);
+      node->loc = current().start;
+      node->update_op = UpdateOpKind::Inc;
+      node->prefix = false;
+      node->children.push_back(expr);
+      advance(); /* ++ */
+      expr = node;
+    } else if (isSymbol(current(), "--")) {
+      /* 后缀自减（M1.4 ③-6）：x-- */
+      if (expr->type != NodeType::Identifier && expr->type != NodeType::MemberExpression) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid increment/decrement operand",
+                    current().start});
+        allocator_->destroy(expr);
+        return nullptr;
+      }
+      ASTNode *node = newNode(NodeType::UpdateExpression);
+      node->loc = current().start;
+      node->update_op = UpdateOpKind::Dec;
+      node->prefix = false;
+      node->children.push_back(expr);
+      advance(); /* -- */
+      expr = node;
     } else {
       break;
     }
@@ -549,6 +682,13 @@ ASTNode *Parser::parseNewExpression() {
       advance();
       member->children.push_back(index);
       callee = member;
+    } else if (isSymbol(current(), "?.")) {
+      /* ECMA-262：可选链不能作为 new 的 callee（new a?.b 语法错误，
+       * 须写成 new (a?.b)。此处直接报错。 */
+      sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                  "optional chaining not allowed in new callee", current().start});
+      allocator_->destroy(callee);
+      return nullptr;
     } else {
       break;
     }
