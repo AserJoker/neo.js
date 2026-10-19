@@ -121,17 +121,19 @@ AST *Parser::parse() {
  * parseBlock / parseLabeledStatement / parseIfStatement /
  * parseExpressionStatement。共享判定 isSymbol / isKeyword 在 parser.h。 */
 
-/* 表达式 → 逗号序列（最低优先级，M1.4）：a, b, c → Sequence[a, b, c] */
-ASTNode *Parser::parseExpression() {
+/* 表达式 → 逗号序列（最低优先级，M1.4）：a, b, c → Sequence[a, b, c]
+ * allow_in=false 时禁用 in/instanceof 二元运算（ECMA-262 Expression[~In]，
+ * 用于 for 的 init 段：for (k in obj) 中 in 是 for-in 的关键字而非运算符）。 */
+ASTNode *Parser::parseExpression(bool allow_in) {
   setValueContext();
-  ASTNode *expr = parseAssignment();
+  ASTNode *expr = parseAssignment(allow_in);
   if (expr == nullptr) return nullptr;
   while (isSymbol(current(), ",")) {
     ASTNode *seq = newNode(NodeType::Sequence);
     seq->loc = expr->loc;
     seq->children.push_back(expr);
     advance(); /* , */
-    ASTNode *next = parseAssignment();
+    ASTNode *next = parseAssignment(allow_in);
     if (next == nullptr) {
       allocator_->destroy(seq);
       return nullptr;
@@ -144,7 +146,7 @@ ASTNode *Parser::parseExpression() {
 
 /* 赋值（M1.4）：= 与全部复合赋值；右结合。左侧须为简单赋值目标。
  * 箭头函数（M1.4 ③-4）同层：params => body（右结合）。 */
-ASTNode *Parser::parseAssignment() {
+ASTNode *Parser::parseAssignment(bool allow_in) {
   /* 箭头判定（中缀歧义）：
    *   1. 单参：Identifier 前瞻 =>
    *   2. 括号参数：配对扫描后看 ) 后是否 =>（save/restore 回退） */
@@ -172,7 +174,7 @@ ASTNode *Parser::parseAssignment() {
     if (arrow) return parseArrowFunction(/*parenthesized=*/true);
   }
 
-  ASTNode *lhs = parseConditional();
+  ASTNode *lhs = parseConditional(allow_in);
   if (lhs == nullptr) return nullptr;
   if (!isSymbol(current(), "=") && !isAssignOp(current())) return lhs;
 
@@ -185,7 +187,7 @@ ASTNode *Parser::parseAssignment() {
     return nullptr;
   }
   advance(); /* 赋值运算符 */
-  ASTNode *rhs = parseAssignment(); /* 右结合：a = b = c */
+  ASTNode *rhs = parseAssignment(allow_in); /* 右结合：a = b = c */
   if (rhs == nullptr) {
     allocator_->destroy(lhs);
     return nullptr;
@@ -285,13 +287,13 @@ ASTNode *Parser::parseArrowFunction(bool parenthesized) {
 }
 
 /* 条件表达式（M1.4）：cond ? then : else；右结合。 */
-ASTNode *Parser::parseConditional() {
+ASTNode *Parser::parseConditional(bool allow_in) {
   setValueContext();
-  ASTNode *cond = parseBinary(1);
+  ASTNode *cond = parseBinary(1, allow_in);
   if (cond == nullptr) return nullptr;
   if (!isSymbol(current(), "?")) return cond;
   advance(); /* ? */
-  ASTNode *then_expr = parseExpression(); /* then 分支允许序列（ECMA-262） */
+  ASTNode *then_expr = parseExpression(allow_in); /* then 分支允许序列（ECMA-262） */
   if (then_expr == nullptr) {
     allocator_->destroy(cond);
     return nullptr;
@@ -303,7 +305,7 @@ ASTNode *Parser::parseConditional() {
     return nullptr;
   }
   advance(); /* : */
-  ASTNode *else_expr = parseAssignment(); /* 右结合：a ? b : c ? d : e */
+  ASTNode *else_expr = parseAssignment(allow_in); /* 右结合：a ? b : c ? d : e */
   if (else_expr == nullptr) {
     allocator_->destroy(cond);
     allocator_->destroy(then_expr);
@@ -317,7 +319,7 @@ ASTNode *Parser::parseConditional() {
   return node;
 }
 
-ASTNode *Parser::parseBinary(int min_prec) {
+ASTNode *Parser::parseBinary(int min_prec, bool allow_in) {
   /* 读值位置：设置 Lexer 上下文（供 / 判定，M1.3 展开） */
   setValueContext();
   ASTNode *lhs = parseUnary();
@@ -329,10 +331,15 @@ ASTNode *Parser::parseBinary(int min_prec) {
     const Token &tok = current();
     int prec = binopPrecedence(tok);
     if (prec == 0 || prec < min_prec) break;
+    /* Expression[~In]（for init 段）：in / instanceof 禁用 */
+    if (!allow_in && tok.kind == TokenKind::Identifier &&
+        (tok.text == "in" || tok.text == "instanceof")) {
+      break;
+    }
     BinaryOpKind bop = toBinop(tok);
     advance();
     /* ** 右结合：同优先级递归；其余左结合：prec+1 */
-    ASTNode *rhs = parseBinary(bop == BinaryOpKind::Pow ? prec : prec + 1);
+    ASTNode *rhs = parseBinary(bop == BinaryOpKind::Pow ? prec : prec + 1, allow_in);
     if (rhs == nullptr) {
       allocator_->destroy(lhs);
       return nullptr;

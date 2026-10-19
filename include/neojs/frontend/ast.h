@@ -62,6 +62,9 @@ enum class NodeType : uint8_t {
   DoWhileStatement, /* 循环：do stmt while (expr)（M1.5 ⑥） */
   VariableDeclaration, /* 声明：var/let/const 语句（M1.5 ①） */
   VariableDeclarator,  /* 单个声明器：id = init（M1.5 ①） */
+  ForStatement,       /* 三段式循环：for(init;cond;update) body（M1.5 ③） */
+  ForInStatement,     /* for-in：for (left in right) body（M1.5 ③） */
+  ForOfStatement,     /* for-of：for (left of right) body（M1.5 ③） */
 };
 
 /* 声明关键字类型（M1.5 ①）：var / let / const */
@@ -200,6 +203,7 @@ struct ASTNode {
   std::string directive;  /* ExprStmt：指令序言标记（非空 = "use strict" 等） */
   bool prefix = false;        /* UpdateExpression：true = 前缀 ++x；false = 后缀 x++ */
   bool optional = false;      /* CallExpression/MemberExpression：可选链 ?. 标记 */
+  bool is_await = false;      /* ForOfStatement：for await(...of...)（M1.5 ③） */
   MemberPayload member;       /* MemberExpression：computed/optional 标记 */
 
   /* 构造：仅由 Parser 经 JSAllocator::create 创建（见 parser.h） */

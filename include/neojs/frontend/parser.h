@@ -64,19 +64,21 @@ class Parser {
   ASTNode *parseLabeledStatement(); /* 标签语句：label: stmt */
   ASTNode *parseIfStatement();      /* 条件语句：if (expr) stmt [else stmt] */
   ASTNode *parseWhileStatement();   /* while (expr) stmt / do stmt while (expr) */
-  ASTNode *parseVariableDeclaration(); /* var/let/const 声明（M1.5 ①） */
+  ASTNode *parseVariableDeclaration(bool consume_semicolon = true,
+                                   bool allow_missing_const_init = false); /* 声明（M1.5 ①） */
+  ASTNode *parseForStatement();        /* for/for-in/for-of/for await（M1.5 ③） */
   ASTNode *parseExpressionStatement();
 
   /* 最小递归下降：表达式（parser.cc） */
-  ASTNode *parseExpression();      /* 逗号序列（最低优先级，M1.4） */
-  ASTNode *parseAssignment();      /* 赋值：= 与复合赋值（右结合） */
+  ASTNode *parseExpression(bool allow_in = true); /* 逗号序列（最低优先级，M1.4） */
+  ASTNode *parseAssignment(bool allow_in = true); /* 赋值：= 与复合赋值（右结合） */
   ASTNode *parseArrowFunction(bool parenthesized); /* 箭头函数（表达式体） */
-  ASTNode *parseConditional();     /* 条件表达式：?:（右结合） */
+  ASTNode *parseConditional(bool allow_in = true); /* 条件表达式：?:（右结合） */
   ASTNode *parseUnary();           /* 一元运算：! ~ + - typeof/void/delete/await */
   ASTNode *parseLeftHandSide();    /* 左手边：成员/调用链（M1.4 ③-3） */
   ASTNode *parseNewExpression();   /* new 构造 */
   ASTNode *parseArguments();       /* 实参列表：(a, b, ...rest) */
-  ASTNode *parseBinary(int min_prec);
+  ASTNode *parseBinary(int min_prec, bool allow_in = true);
   ASTNode *parsePrimary();         /* 数字 / 标识符 / 括号 / 字面量 */
   ASTNode *parseLiteral();         /* 数字/字符串/布尔/null/BigInt/正则 */
   ASTNode *parseTemplateLiteral(); /* 模板串（含 ${expr} 插值，M1.4 ③-5） */
@@ -88,6 +90,7 @@ class Parser {
   Lexer lexer_;
   DiagnosticSink &sink_;
   bool has_peeked_ = false;
+  int loop_depth_ = 0; /* 循环嵌套深度（for/while/do-while；break/continue 校验） */
 };
 
 }  // namespace neojs

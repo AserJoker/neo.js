@@ -196,6 +196,15 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
     case NodeType::VariableDeclarator:
       out += "VariableDeclarator\n";
       break;
+    case NodeType::ForStatement:
+      out += "ForStatement\n";
+      break;
+    case NodeType::ForInStatement:
+      out += "ForInStatement\n";
+      break;
+    case NodeType::ForOfStatement:
+      out += node->is_await ? "ForOfStatement(await)\n" : "ForOfStatement\n";
+      break;
     case NodeType::Literal:
       if (node->literal.is_number) {
         out += "Literal(";

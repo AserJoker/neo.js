@@ -2228,3 +2228,93 @@ TEST(Frontend, DestructuringDeclaration) {
   ASSERT_EQ(pat->children.size(), 3u);
   a.destroy(ast);
 }
+
+/* -------------------------------------------------------------------------- */
+/* for / for-in / for-of 循环（M1.5 ③）                                        */
+/* -------------------------------------------------------------------------- */
+
+TEST(Frontend, ForStatement) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* for (i = 0; i < 10; i++) { x; } → ForStatement[init, cond, update, body] */
+  neojs::AST *ast = neojs::parseSource(
+      &a, "for (i = 0; i < 10; i++) { x; }",
+      std::strlen("for (i = 0; i < 10; i++) { x; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::ForStatement);
+  ASSERT_EQ(top->children.size(), 4u);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::Assignment); /* init */
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::BinaryOp);   /* cond */
+  EXPECT_EQ(top->children[2]->type, neojs::NodeType::UpdateExpression); /* update */
+  EXPECT_EQ(top->children[3]->type, neojs::NodeType::BlockStatement);   /* body */
+  a.destroy(ast);
+
+  /* 空段：for (;;) {} */
+  ast = neojs::parseSource(&a, "for (;;) {}", std::strlen("for (;;) {}"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::ForStatement);
+  ASSERT_EQ(top->children.size(), 4u);
+  EXPECT_EQ(top->children[0], nullptr); /* init 空 */
+  EXPECT_EQ(top->children[1], nullptr); /* cond 空 */
+  EXPECT_EQ(top->children[2], nullptr); /* update 空 */
+  a.destroy(ast);
+
+  /* 声明 init：for (var i = 0; i < n; i++) f(i); */
+  ast = neojs::parseSource(
+      &a, "for (var i = 0; i < n; i++) f(i);",
+      std::strlen("for (var i = 0; i < n; i++) f(i);"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::ForStatement);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::VariableDeclaration);
+  a.destroy(ast);
+}
+
+TEST(Frontend, ForInOfStatement) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* for (var k in obj) {} → ForInStatement[decl, right, body] */
+  neojs::AST *ast = neojs::parseSource(
+      &a, "for (var k in obj) {}", std::strlen("for (var k in obj) {}"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::ForInStatement);
+  ASSERT_EQ(top->children.size(), 3u);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::VariableDeclaration);
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::Identifier); /* right */
+  a.destroy(ast);
+
+  /* for (let x of arr) g(x); → ForOfStatement */
+  ast = neojs::parseSource(
+      &a, "for (let x of arr) g(x);", std::strlen("for (let x of arr) g(x);"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::ForOfStatement);
+  ASSERT_EQ(top->children.size(), 3u);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::VariableDeclaration);
+  a.destroy(ast);
+
+  /* 表达式 left：for (k in obj) {} */
+  ast = neojs::parseSource(&a, "for (k in obj) {}", std::strlen("for (k in obj) {}"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::ForInStatement);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::Identifier);
+  a.destroy(ast);
+}
+
+TEST(Frontend, ForOfAwait) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* for await (const x of stream) h(x); → ForOfStatement(await) */
+  neojs::AST *ast = neojs::parseSource(
+      &a, "for await (const x of stream) h(x);",
+      std::strlen("for await (const x of stream) h(x);"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::ForOfStatement);
+  EXPECT_TRUE(top->is_await);
+  a.destroy(ast);
+}
