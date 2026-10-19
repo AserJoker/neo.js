@@ -734,6 +734,62 @@ void Lexer::scanTemplate() {
   current_ = std::move(t);
 }
 
+/* 正则字面量：/pattern/flags。仅读值位置调用（M1.3 三义消解）。
+ * pattern 内 \\ 转义下一字符；[ ... ] 内 / 不结束；未闭合报错。 */
+void Lexer::scanRegex() {
+  Token t;
+  t.start = {line_, col_, pos_};
+  t.kind = TokenKind::RegExp;
+  const size_t re_start = pos_;
+  nextChar(); /* / */
+  bool in_class = false; /* [ ... ] 内的 / 不结束 pattern */
+  bool closed = false;
+
+  for (;;) {
+    int c = peekChar();
+    if (c == -1 || isLineTerminator(c)) break; /* 正则不能跨行 */
+    if (c == '\\') {
+      nextChar();
+      if (peekChar() == -1 || isLineTerminator(peekChar())) break;
+      nextChar();
+      continue;
+    }
+    if (c == '[') { in_class = true; nextChar(); continue; }
+    if (c == ']') { in_class = false; nextChar(); continue; }
+    if (c == '/' && !in_class) { nextChar(); closed = true; break; }
+    nextChar();
+  }
+
+  if (!closed) {
+    t.kind = TokenKind::Error;
+    t.end = {line_, col_ - 1, pos_ - 1};
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated regular expression", t.start});
+    t.text = std::string(source_ + re_start, pos_ - re_start);
+    current_ = std::move(t);
+    return;
+  }
+
+  /* flags：标识符继续字符（含 _ $） */
+  while (true) {
+    int f = peekChar();
+    if (f == -1 || !isIdContinue(f)) break;
+    nextChar();
+  }
+
+  t.text = std::string(source_ + re_start, pos_ - re_start);
+  t.end = {line_, col_ - 1, pos_ - 1};
+  current_ = std::move(t);
+}
+
+/* 将当前 Symbol '/' 重扫为正则（M1.3 re-scan 规则）：
+ * Lexer 默认把 / 扫成除法 Symbol；Parser 在读值位置调用此方法。 */
+void Lexer::rescanAsRegex() {
+  pos_ = current_.start.offset;
+  line_ = current_.start.line;
+  col_ = current_.start.col;
+  scanRegex();
+}
+
 /* 表驱动贪婪匹配符号：四字符 → 三字符 → 二字符 → 单字符。命中即消费。 */
 void Lexer::scanSymbol() {
   Token t;
@@ -816,7 +872,8 @@ void Lexer::scanNext() {
     return;
   }
 
-  /* 其余一律走符号表（贪婪最长匹配） */
+  /* 其余一律走符号表（贪婪最长匹配）。/ 一律先扫成除法 Symbol，
+   * 由 Parser 在读值位置（parsePrimary）显式请求 rescanAsRegex 重扫为正则。 */
   scanSymbol();
 }
 

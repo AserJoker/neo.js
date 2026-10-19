@@ -110,9 +110,79 @@ ASTNode *Parser::parseBinary(int min_prec) {
   return lhs;
 }
 
-/* 最小 primary：数字 / 标识符 / ( 表达式 ) */
+/* 最小 primary：字面量 / 标识符 / 私有字段 / 对象/数组 / ( 表达式 ) */
 ASTNode *Parser::parsePrimary() {
   setValueContext();
+  /* 读值位置的 / 是正则（re-scan 规则）：请求 Lexer 重扫当前 Symbol '/' */
+  if (current().kind == TokenKind::Symbol && current().text == "/") {
+    lexer_.rescanAsRegex();
+  }
+  const Token &tok = current();
+  switch (tok.kind) {
+    case TokenKind::Number:
+    case TokenKind::String:
+    case TokenKind::RegExp:
+    case TokenKind::TemplateStart:
+      return parseLiteral();
+    case TokenKind::TemplatePart:
+    case TokenKind::TemplateEnd: {
+      /* 顶层不应直接出现续段（须由插值表达式驱动，M1.3）；此处防呆 */
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "unexpected template continuation", tok.start});
+      return nullptr;
+    }
+    case TokenKind::Identifier: {
+      /* 关键字字面量：true / false / null */
+      if (tok.text == "true" || tok.text == "false" || tok.text == "null")
+        return parseLiteral();
+      ASTNode *n = newNode(NodeType::Identifier);
+      n->loc = tok.start;
+      n->name = tok.text;
+      advance();
+      return n;
+    }
+    case TokenKind::Symbol:
+      if (isSymbol(tok, "#")) {
+        /* 私有字段：#name */
+        advance();
+        if (!at(TokenKind::Identifier)) {
+          sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected private identifier", tok.start});
+          return nullptr;
+        }
+        ASTNode *n = newNode(NodeType::PrivateIdentifier);
+        n->loc = tok.start;
+        n->name = current().text;
+        advance();
+        return n;
+      }
+      if (isSymbol(tok, "{")) {
+        /* 读值位置 { → 对象字面量 / 解构模式（ESTree 中结构一致） */
+        return parseObjectPattern();
+      }
+      if (isSymbol(tok, "[")) {
+        return parseArrayPattern();
+      }
+      if (isSymbol(tok, "(")) {
+        advance();
+        ASTNode *inner = parseExpression();
+        if (inner == nullptr) return nullptr;
+        if (!isSymbol(current(), ")")) {
+          sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ')'", tok.start});
+          allocator_->destroy(inner);
+          return nullptr;
+        }
+        advance();
+        return inner;
+      }
+      break;
+    default:
+      break;
+  }
+  sink_.emit({Severity::Error, "SYNTAX_ERROR", "unexpected token", tok.start});
+  return nullptr;
+}
+
+/* 字面量：数字 / 字符串 / 布尔 / null / 正则 / 无插值模板串 */
+ASTNode *Parser::parseLiteral() {
   const Token &tok = current();
   switch (tok.kind) {
     case TokenKind::Number: {
@@ -134,8 +204,20 @@ ASTNode *Parser::parsePrimary() {
       advance();
       return n;
     }
+    case TokenKind::RegExp: {
+      ASTNode *n = newNode(NodeType::RegExpLiteral);
+      n->loc = tok.start;
+      /* text 形如 /pattern/flags：去首尾斜杠，flags 取最后一段 */
+      const std::string &s = tok.text;
+      size_t last_slash = s.rfind('/');
+      if (last_slash != std::string::npos && last_slash > 0) {
+        n->regexp.pattern = s.substr(1, last_slash - 1);
+        n->regexp.flags = s.substr(last_slash + 1);
+      }
+      advance();
+      return n;
+    }
     case TokenKind::TemplateStart: {
-      /* M1.2：无插值模板串作 String；含 ${ 的头部暂报错（M1.3 处理） */
       if (tok.has_interpolation) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "template interpolation not yet supported",
                     tok.start});
@@ -149,38 +231,151 @@ ASTNode *Parser::parsePrimary() {
       advance();
       return n;
     }
-    case TokenKind::TemplatePart:
-    case TokenKind::TemplateEnd: {
-      /* 顶层不应直接出现续段（须由插值表达式驱动，M1.3）；此处防呆 */
-      sink_.emit({Severity::Error, "SYNTAX_ERROR", "unexpected template continuation", tok.start});
-      return nullptr;
-    }
     case TokenKind::Identifier: {
-      ASTNode *n = newNode(NodeType::Identifier);
+      /* true / false / null */
+      ASTNode *n = newNode(NodeType::Literal);
       n->loc = tok.start;
-      n->name = tok.text;
+      if (tok.text == "true" || tok.text == "false") {
+        n->literal.is_boolean = true;
+        n->literal.bool_value = (tok.text == "true");
+      } else { /* null */
+        n->literal.is_null = true;
+      }
+      n->literal.text = tok.text;
       advance();
       return n;
     }
-    case TokenKind::Symbol:
-      if (isSymbol(tok, "(")) {
+    default:
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "unexpected token", tok.start});
+      return nullptr;
+  }
+}
+
+/* 对象模式（字面量/解构共用）：{ key: value, ...spread, shorthand } */
+ASTNode *Parser::parseObjectPattern() {
+  ASTNode *obj = newNode(NodeType::ObjectPattern);
+  obj->loc = current().start;
+  advance(); /* { */
+  while (!isSymbol(current(), "}")) {
+    if (atEof()) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated object literal", obj->loc});
+      allocator_->destroy(obj);
+      return nullptr;
+    }
+    if (isSymbol(current(), ",")) {
+      advance();
+      continue;
+    }
+    if (isSymbol(current(), "...")) {
+      /* SpreadElement：...expr */
+      ASTNode *spread = newNode(NodeType::SpreadElement);
+      spread->loc = current().start;
+      advance();
+      ASTNode *arg = parseExpression();
+      if (arg == nullptr) {
+        allocator_->destroy(obj);
+        return nullptr;
+      }
+      spread->children.push_back(arg);
+      obj->children.push_back(spread);
+      continue;
+    }
+    /* 成员：key: value（或 get/set/method——M1.5 再扩展） */
+    ASTNode *prop = newNode(NodeType::Property);
+    prop->loc = current().start;
+    /* key */
+    if (at(TokenKind::Identifier)) {
+      ASTNode *key = newNode(NodeType::Identifier);
+      key->loc = current().start;
+      key->name = current().text;
+      advance();
+      /* 简写 { key }：无冒号 */
+      if (isSymbol(current(), ":")) {
+        prop->prop.kind = PropertyKind::Init;
         advance();
-        ASTNode *inner = parseExpression();
-        if (inner == nullptr) return nullptr;
-        if (!isSymbol(current(), ")")) {
-          sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ')'", tok.start});
-          allocator_->destroy(inner);
+        ASTNode *val = parseExpression();
+        if (val == nullptr) {
+          allocator_->destroy(prop);
+          allocator_->destroy(obj);
           return nullptr;
         }
-        advance();
-        return inner;
+        prop->children.push_back(key);
+        prop->children.push_back(val);
+      } else {
+        prop->prop.kind = PropertyKind::Shorthand;
+        prop->children.push_back(key);
       }
-      break;
-    default:
-      break;
+    } else if (at(TokenKind::String) || at(TokenKind::Number)) {
+      ASTNode *key = newNode(NodeType::Literal);
+      key->loc = current().start;
+      key->literal.is_string = true;
+      key->literal.str = current().str_value;
+      key->literal.text = current().text;
+      advance();
+      if (!isSymbol(current(), ":")) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ':' after property key", prop->loc});
+        allocator_->destroy(prop);
+        allocator_->destroy(obj);
+        return nullptr;
+      }
+      advance();
+      ASTNode *val = parseExpression();
+      if (val == nullptr) {
+        allocator_->destroy(prop);
+        allocator_->destroy(obj);
+        return nullptr;
+      }
+      prop->children.push_back(key);
+      prop->children.push_back(val);
+    } else {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid property key", current().start});
+      allocator_->destroy(obj);
+      return nullptr;
+    }
+    obj->children.push_back(prop);
   }
-  sink_.emit({Severity::Error, "SYNTAX_ERROR", "unexpected token", tok.start});
-  return nullptr;
+  advance(); /* } */
+  return obj;
+}
+
+/* 数组模式（字面量/解构共用）：[ elem, ...rest ] */
+ASTNode *Parser::parseArrayPattern() {
+  ASTNode *arr = newNode(NodeType::ArrayPattern);
+  arr->loc = current().start;
+  advance(); /* [ */
+  while (!isSymbol(current(), "]")) {
+    if (atEof()) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated array literal", arr->loc});
+      allocator_->destroy(arr);
+      return nullptr;
+    }
+    if (isSymbol(current(), ",")) {
+      /* 空位（稀疏数组） */
+      advance();
+      continue;
+    }
+    if (isSymbol(current(), "...")) {
+      ASTNode *spread = newNode(NodeType::SpreadElement);
+      spread->loc = current().start;
+      advance();
+      ASTNode *arg = parseExpression();
+      if (arg == nullptr) {
+        allocator_->destroy(arr);
+        return nullptr;
+      }
+      spread->children.push_back(arg);
+      arr->children.push_back(spread);
+      continue;
+    }
+    ASTNode *elem = parseExpression();
+    if (elem == nullptr) {
+      allocator_->destroy(arr);
+      return nullptr;
+    }
+    arr->children.push_back(elem);
+  }
+  advance(); /* ] */
+  return arr;
 }
 
 }  // namespace neojs

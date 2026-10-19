@@ -17,6 +17,8 @@ const char *tokenKindName(TokenKind k) {
       return "number";
     case TokenKind::String:
       return "string";
+    case TokenKind::RegExp:
+      return "regexp";
     case TokenKind::TemplateStart:
       return "templatestart";
     case TokenKind::TemplatePart:
@@ -68,6 +70,10 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
         out += "Literal(\"";
         out += node->literal.str;
         out += "\")\n";
+      } else if (node->literal.is_boolean) {
+        out += node->literal.bool_value ? "Literal(true)\n" : "Literal(false)\n";
+      } else if (node->literal.is_null) {
+        out += "Literal(null)\n";
       } else {
         out += "Literal\n";
       }
@@ -76,6 +82,39 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
       out += "Identifier(";
       out += node->name;
       out += ")\n";
+      break;
+    case NodeType::PrivateIdentifier:
+      out += "PrivateIdentifier(";
+      out += node->name;
+      out += ")\n";
+      break;
+    case NodeType::RegExpLiteral:
+      out += "RegExpLiteral(/";
+      out += node->regexp.pattern;
+      out += "/";
+      out += node->regexp.flags;
+      out += ")\n";
+      break;
+    case NodeType::TemplateLiteral:
+      out += "TemplateLiteral\n";
+      break;
+    case NodeType::ObjectPattern:
+      out += "ObjectPattern\n";
+      break;
+    case NodeType::ArrayPattern:
+      out += "ArrayPattern\n";
+      break;
+    case NodeType::AssignmentPattern:
+      out += "AssignmentPattern\n";
+      break;
+    case NodeType::RestElement:
+      out += "RestElement\n";
+      break;
+    case NodeType::Property:
+      out += "Property\n";
+      break;
+    case NodeType::SpreadElement:
+      out += "SpreadElement\n";
       break;
     case NodeType::BinaryOp:
       out += "BinaryOp(";

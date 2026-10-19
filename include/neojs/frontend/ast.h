@@ -29,13 +29,22 @@ struct SourceLocation {
   size_t offset = 0; /* 0-based 字节偏移 */
 };
 
-/* AST 节点类型（M1.1 最小子集；后续阶段扩充） */
+/* AST 节点类型（M1.4 表达式体系：Literal/Identifier/模式先行） */
 enum class NodeType : uint8_t {
   Program,     /* 根：语句列表 */
+  ExprStmt,    /* 表达式语句 */
   Literal,     /* 字面量：数字/字符串/布尔/null */
   Identifier,  /* 标识符引用 */
+  PrivateIdentifier, /* 私有字段引用：#x */
+  RegExpLiteral,     /* 正则字面量 */
+  TemplateLiteral,   /* 模板串（M1.3 插值后） */
+  ObjectPattern,     /* 对象解构模式（声明/赋值左侧） */
+  ArrayPattern,      /* 数组解构模式 */
+  AssignmentPattern, /* 解构默认值：p = 1 */
+  RestElement,       /* 展开/剩余：...rest */
+  Property,          /* 对象字面量成员 */
+  SpreadElement,     /* 展开元素：...expr（数组/调用/解构） */
   BinaryOp,    /* 二元运算 */
-  ExprStmt,    /* 表达式语句（M1.1 最小语句节点；M1.5 扩充语句体系） */
 };
 
 /* 二元运算类型（M1.1 先支持算术；M1.4 扩充全部） */
@@ -47,14 +56,38 @@ enum class BinaryOpKind : uint8_t {
   Mod,   /* % */
 };
 
-/* 字面量载荷（M1.2：数字 + 字符串；其余后续） */
+/* 字面量载荷（M1.4：数字 + 字符串 + 布尔/null） */
 struct LiteralPayload {
   double number = 0.0;  /* 数字字面量值 */
   bool is_number = false;
   bool is_string = false;
   std::string str;      /* 字符串字面量值（转义已解码） */
+  bool is_boolean = false;
+  bool bool_value = false;  /* is_boolean 时的值 */
+  bool is_null = false;  /* null 字面量 */
   bool is_bigint = false; /* BigInt 字面量（M2 用） */
   std::string text;     /* 原始文本（供 dump） */
+};
+
+/* 正则字面量载荷（pattern 不含斜杠；flags 如 "gi"） */
+struct RegExpPayload {
+  std::string pattern;
+  std::string flags;
+};
+
+/* 对象成员类型：普通键值 / getter / setter / 简写 / 方法 */
+enum class PropertyKind : uint8_t {
+  Init,     /* key: value */
+  Get,      /* get key() {} */
+  Set,      /* set key(v) {} */
+  Shorthand, /* { key } */
+  Method,   /* key() {} */
+};
+
+/* 对象成员载荷 */
+struct PropertyPayload {
+  PropertyKind kind = PropertyKind::Init;
+  bool is_computed = false; /* [expr] 计算键 */
 };
 
 /* AST 节点：基类 + 子节点（扁平化子节点向量，避免手写析构树） */
@@ -67,6 +100,8 @@ struct ASTNode {
 
   /* 语义载荷（按 type 使用） */
   LiteralPayload literal;
+  RegExpPayload regexp;       /* RegExpLiteral */
+  PropertyPayload prop;       /* Property */
   std::string name;           /* Identifier：名称 */
   BinaryOpKind binop = BinaryOpKind::Add;
 

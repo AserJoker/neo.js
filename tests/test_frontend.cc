@@ -579,3 +579,130 @@ TEST(Frontend, ParseStringLiteral) {
 
   a.destroy(ast);
 }
+
+/* -------------------------------------------------------------------------- */
+/* M1.4 表达式体系：① Literal + ② Identifier/模式                           */
+/* -------------------------------------------------------------------------- */
+
+/* 布尔字面量：true / false */
+TEST(Frontend, LiteralBoolean) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  neojs::AST *ast = neojs::parseSource(&a, "true + false", 12, sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink.hasErrors());
+
+  neojs::ASTNode *bin = ast->root->children[0]->children[0];
+  EXPECT_EQ(bin->type, neojs::NodeType::BinaryOp);
+  neojs::ASTNode *l = bin->children[0];
+  EXPECT_EQ(l->type, neojs::NodeType::Literal);
+  EXPECT_TRUE(l->literal.is_boolean);
+  EXPECT_TRUE(l->literal.bool_value);
+  neojs::ASTNode *r = bin->children[1];
+  EXPECT_TRUE(r->literal.is_boolean);
+  EXPECT_FALSE(r->literal.bool_value);
+
+  a.destroy(ast);
+}
+
+/* null 字面量 */
+TEST(Frontend, LiteralNull) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  neojs::AST *ast = neojs::parseSource(&a, "null", 4, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *lit = ast->root->children[0]->children[0];
+  EXPECT_EQ(lit->type, neojs::NodeType::Literal);
+  EXPECT_TRUE(lit->literal.is_null);
+  a.destroy(ast);
+}
+
+/* 正则字面量：pattern + flags */
+TEST(Frontend, LiteralRegExp) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  neojs::AST *ast = neojs::parseSource(&a, "/ab+c/gi", 8, sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink.hasErrors());
+  neojs::ASTNode *re = ast->root->children[0]->children[0];
+  EXPECT_EQ(re->type, neojs::NodeType::RegExpLiteral);
+  EXPECT_EQ(re->regexp.pattern, "ab+c");
+  EXPECT_EQ(re->regexp.flags, "gi");
+  a.destroy(ast);
+}
+
+/* 除法 vs 正则（re-scan）：a / b 是除法，/re/ 是正则 */
+TEST(Frontend, SlashDivisionVsRegex) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  neojs::AST *div = neojs::parseSource(&a, "a / b", 5, sink);
+  ASSERT_NE(div, nullptr);
+  neojs::ASTNode *bin = div->root->children[0]->children[0];
+  EXPECT_EQ(bin->type, neojs::NodeType::BinaryOp);
+  EXPECT_EQ(bin->binop, neojs::BinaryOpKind::Div);
+  a.destroy(div);
+
+  neojs::DiagnosticSink sink2;
+  neojs::AST *re = neojs::parseSource(&a, "/re/", 4, sink2);
+  ASSERT_NE(re, nullptr);
+  neojs::ASTNode *lit = re->root->children[0]->children[0];
+  EXPECT_EQ(lit->type, neojs::NodeType::RegExpLiteral);
+  a.destroy(re);
+}
+
+/* 私有字段：#x */
+TEST(Frontend, PrivateIdentifier) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  neojs::AST *ast = neojs::parseSource(&a, "#x", 2, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *id = ast->root->children[0]->children[0];
+  EXPECT_EQ(id->type, neojs::NodeType::PrivateIdentifier);
+  EXPECT_EQ(id->name, "x");
+  a.destroy(ast);
+}
+
+/* 对象字面量：{ a: 1, b } */
+TEST(Frontend, ObjectLiteral) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  neojs::AST *ast = neojs::parseSource(&a, "({a: 1, b})", 11, sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink.hasErrors());
+  neojs::ASTNode *obj = ast->root->children[0]->children[0];
+  EXPECT_EQ(obj->type, neojs::NodeType::ObjectPattern);
+  ASSERT_EQ(obj->children.size(), 2u);
+  EXPECT_EQ(obj->children[0]->type, neojs::NodeType::Property);
+  EXPECT_EQ(obj->children[0]->children[0]->type, neojs::NodeType::Identifier);
+  EXPECT_EQ(obj->children[0]->children[1]->type, neojs::NodeType::Literal);
+  /* 简写属性 */
+  EXPECT_EQ(obj->children[1]->type, neojs::NodeType::Property);
+  EXPECT_EQ(obj->children[1]->prop.kind, neojs::PropertyKind::Shorthand);
+  a.destroy(ast);
+}
+
+/* 数组字面量：[1, 2, ...rest] */
+TEST(Frontend, ArrayLiteral) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  neojs::AST *ast = neojs::parseSource(&a, "[1, 2, ...r]", 12, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *arr = ast->root->children[0]->children[0];
+  EXPECT_EQ(arr->type, neojs::NodeType::ArrayPattern);
+  ASSERT_EQ(arr->children.size(), 3u);
+  EXPECT_EQ(arr->children[0]->type, neojs::NodeType::Literal);
+  EXPECT_EQ(arr->children[2]->type, neojs::NodeType::SpreadElement);
+  a.destroy(ast);
+}
+
+/* 字符串键属性：{ "k" : 1 } */
+TEST(Frontend, ObjectStringKey) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  neojs::AST *ast = neojs::parseSource(&a, "({\"k\" : 1})", 11, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *obj = ast->root->children[0]->children[0];
+  EXPECT_EQ(obj->type, neojs::NodeType::ObjectPattern);
+  EXPECT_EQ(obj->children[0]->children[0]->literal.str, "k");
+  a.destroy(ast);
+}

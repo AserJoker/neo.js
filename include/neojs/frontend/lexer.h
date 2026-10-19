@@ -44,6 +44,7 @@ enum class TokenKind : uint8_t {
   TemplateStart, /* 模板串头：`...${（has_interpolation=true）或无插值整段 `...` */
   TemplatePart,  /* 模板串中段：}...${（插值表达式之间，M1.3 产出） */
   TemplateEnd,   /* 模板串尾段：}...`（M1.3 产出） */
+  RegExp,        /* 正则字面量：/pattern/flags（读值位置 / 进入） */
   Identifier,   /* 标识符 / 关键字（关键字由 Parser 按 text 判定） */
   Symbol,       /* 符号/标点/运算符：具体内容见 Token::text */
   Error,        /* 词法错误（sink 已记录） */
@@ -91,6 +92,9 @@ class Lexer {
   void setContext(LexContext c) { context_ = c; }
   LexContext context() const { return context_; }
 
+  /* 将当前 Symbol '/' 重扫为正则（M1.3 re-scan 规则）：Parser 在读值位置调用 */
+  void rescanAsRegex();
+
  private:
   /* 字符级推进：pos_ 指向下一个未消费字节；维护 line/col（按 code point 计） */
   int peekChar() const;         /* 不推进地查看下一个 code point；EOF 返回 -1 */
@@ -102,6 +106,7 @@ class Lexer {
   void scanIdentifier();
   void scanString(char quote);
   void scanTemplate();
+  void scanRegex();             /* 正则字面量（从当前 pos 起扫描） */
   void scanSymbol();            /* 表驱动：按长度分组贪婪匹配符号 */
   void scanNext();              /* 扫描下一个 token 到 current_（推进扫描状态） */
 
