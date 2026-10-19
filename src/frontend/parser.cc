@@ -116,6 +116,7 @@ ASTNode *Parser::newNode(NodeType t) {
 }
 
 AST *Parser::parse() {
+  lexer_.skipHashbang(); /* M1.5：入口级 hashbang，首个 token 前 */
   AST *ast = allocator_->create<AST>();
   ast->allocator = allocator_;
   ast->root = parseStatementList();
@@ -126,12 +127,30 @@ AST *Parser::parse() {
   return ast;
 }
 
-/* Program → 表达式语句列表（M1.1：语句仅表达式语句 + 分号） */
+/* Program（M1.5）：先处理 hashbang（已在 parse() 入口跳过），再 Directive
+ * Prologue（字符串字面量表达式语句 → 标记 directive，遇非字符串字面量即退出
+ * 序言），然后循环读取 Statement 直到 EOF。 */
 ASTNode *Parser::parseStatementList() {
   ASTNode *program = newNode(NodeType::Program);
   advance(); /* 初始化当前 token */
-  while (!atEof()) {
+
+  /* Directive Prologue：仅开头的字符串字面量表达式语句 */
+  while (!atEof() && at(TokenKind::String)) {
     ASTNode *stmt = parseExpressionStatement();
+    if (stmt == nullptr) {
+      allocator_->destroy(program);
+      return nullptr;
+    }
+    /* 字符串字面量表达式语句 = 指令（directive）；此处记录原始值 */
+    ASTNode *expr = stmt->children[0];
+    if (expr->type == NodeType::Literal && expr->literal.is_string) {
+      stmt->directive = expr->literal.str;
+    }
+    program->children.push_back(stmt);
+  }
+
+  while (!atEof()) {
+    ASTNode *stmt = parseStatement();
     if (stmt == nullptr) {
       /* 语法错误：sink 已记录；丢弃整个 Program */
       allocator_->destroy(program);
@@ -140,6 +159,22 @@ ASTNode *Parser::parseStatementList() {
     program->children.push_back(stmt);
   }
   return program;
+}
+
+/* 语句总入口（M1.5）：按首 token 特征分派。各语句相对独立，一般可通过
+ * 首单词判定（if/for/while/function/return 等）；无特征值时用表达式语句兜底。
+ * 当前已实现：空语句（;）；后续逐个加分派。 */
+ASTNode *Parser::parseStatement() {
+  /* 空语句：单分号 ;（ECMA-262 EmptyStatement） */
+  if (isSymbol(current(), ";")) {
+    ASTNode *stmt = newNode(NodeType::EmptyStatement);
+    stmt->loc = current().start;
+    advance(); /* ; */
+    return stmt;
+  }
+
+  /* 兜底：表达式语句 */
+  return parseExpressionStatement();
 }
 
 /* 表达式语句：表达式 + 可选分号 */

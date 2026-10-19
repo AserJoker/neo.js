@@ -1536,3 +1536,98 @@ TEST(Frontend, OptionalChainNotInNewCallee) {
   EXPECT_EQ(top->children[0]->type, neojs::NodeType::NewExpression);
   a.destroy(ast);
 }
+
+/* -------------------------------------------------------------------------- */
+/* 语句体系地基（M1.5）：hashbang + directives + 空语句 + 表达式兜底          */
+/* -------------------------------------------------------------------------- */
+
+TEST(Frontend, EmptyStatement) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* ; → EmptyStatement；;;; → 3 个 */
+  neojs::AST *ast = neojs::parseSource(&a, ";", std::strlen(";"), sink);
+  ASSERT_NE(ast, nullptr);
+  ASSERT_EQ(ast->root->children.size(), 1u);
+  EXPECT_EQ(ast->root->children[0]->type, neojs::NodeType::EmptyStatement);
+  a.destroy(ast);
+
+  ast = neojs::parseSource(&a, ";;;", std::strlen(";;;"), sink);
+  ASSERT_NE(ast, nullptr);
+  ASSERT_EQ(ast->root->children.size(), 3u);
+  EXPECT_EQ(ast->root->children[0]->type, neojs::NodeType::EmptyStatement);
+  EXPECT_EQ(ast->root->children[1]->type, neojs::NodeType::EmptyStatement);
+  EXPECT_EQ(ast->root->children[2]->type, neojs::NodeType::EmptyStatement);
+  a.destroy(ast);
+}
+
+TEST(Frontend, StatementFallbackExpression) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* 兜底：非特征值首 token → 表达式语句 */
+  neojs::AST *ast = neojs::parseSource(&a, "a = 1;", std::strlen("a = 1;"), sink);
+  ASSERT_NE(ast, nullptr);
+  ASSERT_EQ(ast->root->children.size(), 1u);
+  EXPECT_EQ(ast->root->children[0]->type, neojs::NodeType::ExprStmt);
+  EXPECT_EQ(ast->root->children[0]->children[0]->type, neojs::NodeType::Assignment);
+  a.destroy(ast);
+
+  /* 空语句与表达式混合 */
+  ast = neojs::parseSource(&a, ";a;b;", std::strlen(";a;b;"), sink);
+  ASSERT_NE(ast, nullptr);
+  ASSERT_EQ(ast->root->children.size(), 3u);
+  EXPECT_EQ(ast->root->children[0]->type, neojs::NodeType::EmptyStatement);
+  EXPECT_EQ(ast->root->children[1]->type, neojs::NodeType::ExprStmt);
+  EXPECT_EQ(ast->root->children[2]->type, neojs::NodeType::ExprStmt);
+  a.destroy(ast);
+}
+
+TEST(Frontend, DirectivePrologue) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* 序言：开头字符串字面量表达式语句标记 directive */
+  neojs::AST *ast =
+      neojs::parseSource(&a, "\"use strict\";", std::strlen("\"use strict\";"), sink);
+  ASSERT_NE(ast, nullptr);
+  ASSERT_EQ(ast->root->children.size(), 1u);
+  neojs::ASTNode *stmt = ast->root->children[0];
+  EXPECT_EQ(stmt->type, neojs::NodeType::ExprStmt);
+  EXPECT_EQ(stmt->directive, "use strict");
+  a.destroy(ast);
+
+  /* 序言后遇到非字符串字面量即退出：后续字符串不再标记 */
+  ast = neojs::parseSource(&a, "1 + 2; \"later\";",
+                           std::strlen("1 + 2; \"later\";"), sink);
+  ASSERT_NE(ast, nullptr);
+  ASSERT_EQ(ast->root->children.size(), 2u);
+  EXPECT_TRUE(ast->root->children[0]->directive.empty());
+  EXPECT_TRUE(ast->root->children[1]->directive.empty());
+  a.destroy(ast);
+}
+
+TEST(Frontend, HashbangSkip) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* 入口级 hashbang：整行跳过，后续正常解析 */
+  neojs::AST *ast = neojs::parseSource(
+      &a, "#!/usr/bin/env node\na = 1;", std::strlen("#!/usr/bin/env node\na = 1;"), sink);
+  ASSERT_NE(ast, nullptr);
+  ASSERT_EQ(ast->root->children.size(), 1u);
+  EXPECT_EQ(ast->root->children[0]->type, neojs::NodeType::ExprStmt);
+  a.destroy(ast);
+
+  /* hashbang + directive 序言 + 空语句混合 */
+  ast = neojs::parseSource(&a, "#!x\n\"use strict\";\n;f();",
+                           std::strlen("#!x\n\"use strict\";\n;f();"), sink);
+  ASSERT_NE(ast, nullptr);
+  ASSERT_EQ(ast->root->children.size(), 3u);
+  EXPECT_EQ(ast->root->children[0]->directive, "use strict");
+  EXPECT_EQ(ast->root->children[1]->type, neojs::NodeType::EmptyStatement);
+  EXPECT_EQ(ast->root->children[2]->type, neojs::NodeType::ExprStmt);
+  a.destroy(ast);
+
+  /* 非 #! 开头：无操作 */
+  ast = neojs::parseSource(&a, "a;", std::strlen("a;"), sink);
+  ASSERT_NE(ast, nullptr);
+  ASSERT_EQ(ast->root->children.size(), 1u);
+  a.destroy(ast);
+}

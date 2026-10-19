@@ -48,6 +48,7 @@ class Parser {
 
   /* 最小递归下降 */
   ASTNode *parseStatementList();
+  ASTNode *parseStatement();      /* 语句总入口：按首 token 特征分派 */
   ASTNode *parseExpressionStatement();
   ASTNode *parseExpression();      /* 逗号序列（最低优先级，M1.4） */
   ASTNode *parseAssignment();      /* 赋值：= 与复合赋值（右结合） */

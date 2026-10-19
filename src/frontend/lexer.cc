@@ -315,6 +315,17 @@ void Lexer::skipTrivia() {
   }
 }
 
+/* 入口级 hashbang（M1.5）：固定位置（源码开头 #!），明确结尾（首个
+ * LineTerminator）。跳过整行（含换行符），之后首个 token 从下一行起。
+ * 仅 #! 开头才做；不产 token、不做词法分析（Parser 入口调用一次）。 */
+void Lexer::skipHashbang() {
+  if (source_len_ < 2 || source_[0] != '#' || source_[1] != '!') return;
+  while (pos_ < source_len_) {
+    int c = nextChar();
+    if (isLineTerminator(c)) return; /* 已消费换行，跳到下一行 */
+  }
+}
+
 void Lexer::scanNumber() {
   Token t;
   t.start = {line_, col_, pos_};

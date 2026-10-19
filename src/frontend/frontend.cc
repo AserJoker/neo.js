@@ -159,7 +159,16 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
       out += "Program\n";
       break;
     case NodeType::ExprStmt:
-      out += "ExprStmt\n";
+      if (node->directive.empty()) {
+        out += "ExprStmt\n";
+      } else {
+        out += "ExprStmt(directive \"";
+        out += node->directive;
+        out += "\")\n";
+      }
+      break;
+    case NodeType::EmptyStatement:
+      out += "EmptyStatement\n";
       break;
     case NodeType::Literal:
       if (node->literal.is_number) {

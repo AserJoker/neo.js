@@ -54,6 +54,7 @@ enum class NodeType : uint8_t {
   NewExpression,    /* new 构造：new Foo(args) 或 new Foo */
   ArrowFunctionExpression, /* 箭头函数：params => body（M1.4 ③-4 表达式体） */
   UpdateExpression, /* 自增自减：++x / x++ / --x / x--（M1.4 ③-6） */
+  EmptyStatement,   /* 空语句：单分号 ;（M1.5 语句体系） */
 };
 
 /* 一元运算类型（M1.4：先支持 ! ~ + - 与关键字型 typeof/void/delete/await） */
@@ -181,6 +182,7 @@ struct ASTNode {
   BinaryOpKind binop = BinaryOpKind::Add;
   AssignmentOpKind assign_op = AssignmentOpKind::Assign;
   UpdateOpKind update_op = UpdateOpKind::Inc; /* UpdateExpression：++/-- */
+  std::string directive;  /* ExprStmt：指令序言标记（非空 = "use strict" 等） */
   bool prefix = false;        /* UpdateExpression：true = 前缀 ++x；false = 后缀 x++ */
   bool optional = false;      /* CallExpression/MemberExpression：可选链 ?. 标记 */
   MemberPayload member;       /* MemberExpression：computed/optional 标记 */

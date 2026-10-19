@@ -100,6 +100,11 @@ class Lexer {
    * 供 Parser 在插值表达式结束后调用。text 自 } 起。 */
   void rescanTemplatePart();
 
+  /* 入口级跳过 hashbang（M1.5）：仅当源码以 #! 开头（固定位置）时，
+   * 跳过首行到首个 LineTerminator 之后。不做词法分析、不产 token。
+   * 非 #! 开头则无操作。由 Parser::parse() 在首个 token 前调用。 */
+  void skipHashbang();
+
   /* 状态快照（M1.4 ③-4）：供 Parser 做多 token 前瞻后整体回退（箭头函数判定）。
    * save 记录扫描位置与 token 缓存；restore 恢复全部，之后必须重新 next()。 */
   struct State {
