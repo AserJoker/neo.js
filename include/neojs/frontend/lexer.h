@@ -38,13 +38,15 @@ namespace neojs {
 
 /* token 类型（M1.2 收敛为少量类别；符号细节由 Token::text 携带） */
 enum class TokenKind : uint8_t {
-  EndOfFile,  /* 源码结束 */
-  Number,     /* 数字字面量（含 BigInt，见 Token::is_bigint） */
-  String,     /* 字符串字面量（单/双引号；模板串见下） */
-  Template,   /* 模板串（完整片段或含 ${ 的头部） */
-  Identifier, /* 标识符 / 关键字（关键字由 Parser 按 text 判定） */
-  Symbol,     /* 符号/标点/运算符：具体内容见 Token::text */
-  Error,      /* 词法错误（sink 已记录） */
+  EndOfFile,    /* 源码结束 */
+  Number,       /* 数字字面量（含 BigInt，见 Token::is_bigint） */
+  String,       /* 字符串字面量（单/双引号） */
+  TemplateStart, /* 模板串头：`...${（has_interpolation=true）或无插值整段 `...` */
+  TemplatePart,  /* 模板串中段：}...${（插值表达式之间，M1.3 产出） */
+  TemplateEnd,   /* 模板串尾段：}...`（M1.3 产出） */
+  Identifier,   /* 标识符 / 关键字（关键字由 Parser 按 text 判定） */
+  Symbol,       /* 符号/标点/运算符：具体内容见 Token::text */
+  Error,        /* 词法错误（sink 已记录） */
 };
 
 /* Parser 传入的上下文：当前解析位置是读值还是读操作。
@@ -65,9 +67,9 @@ struct Token {
   double number = 0.0;     /* 数值（M1.1：十进制；M1.2 全进制转换后） */
   bool is_bigint = false;  /* 是否有 n 后缀 */
 
-  /* 字符串载荷（String / Template） */
-  std::string str_value;   /* 解码后的字符串值（转义已处理） */
-  bool is_template_head = false; /* Template：以 ${ 结尾，需 Parser 切表达式模式 */
+  /* 字符串载荷（String / TemplateStart/Part/End） */
+  std::string str_value;  /* 解码后的字符串值（转义已处理） */
+  bool has_interpolation = false; /* TemplateStart：以 ${ 结尾（有插值），需 Parser 切表达式模式 */
 };
 
 /* 词法器：被 Parser 按需驱动（next/peek），携带上下文 */

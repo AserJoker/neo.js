@@ -17,8 +17,12 @@ const char *tokenKindName(TokenKind k) {
       return "number";
     case TokenKind::String:
       return "string";
-    case TokenKind::Template:
-      return "template";
+    case TokenKind::TemplateStart:
+      return "templatestart";
+    case TokenKind::TemplatePart:
+      return "templatepart";
+    case TokenKind::TemplateEnd:
+      return "templateend";
     case TokenKind::Identifier:
       return "identifier";
     case TokenKind::Symbol:

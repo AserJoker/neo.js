@@ -669,12 +669,14 @@ void Lexer::scanString(char quote) {
   current_ = std::move(t);
 }
 
-/* 模板串：反引号开头。M1.2 处理无插值的完整片段；${ 交给 M1.3 协同模式。
- * 这里 token 化到 ${ 或闭合反引号；is_template_head 标记 ${ 结尾。 */
+/* 模板串：反引号开头。拆为三个 token（对齐 ES TemplateHead/Middle/Tail）：
+ *   TemplateStart：`...${（has_interpolation=true）或无插值整段 `...`；
+ *   TemplatePart/TemplateEnd：插值表达式之后的续段（M1.3 协同模式产出）。
+ * 这里 token 化到 ${ 或闭合反引号。 */
 void Lexer::scanTemplate() {
   Token t;
   t.start = {line_, col_, pos_};
-  t.kind = TokenKind::Template;
+  t.kind = TokenKind::TemplateStart;
   const size_t tpl_start = pos_;
   nextChar(); /* ` */
   std::string value;
@@ -692,10 +694,10 @@ void Lexer::scanTemplate() {
     }
     if (c == '$' && pos_ + 1 < source_len_ &&
         static_cast<unsigned char>(source_[pos_ + 1]) == '{') {
-      /* ${ 进入表达式模式（M1.3）；此处 token 化头部 */
+      /* ${ 进入表达式模式（M1.3）；此段为 TemplateStart 头 */
       nextChar(); /* $ */
       nextChar(); /* { */
-      t.is_template_head = true;
+      t.has_interpolation = true;
       break;
     }
     if (c == '\\') {

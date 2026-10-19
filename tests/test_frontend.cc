@@ -531,25 +531,25 @@ TEST(Frontend, StringUnterminatedErrors) {
   EXPECT_TRUE(sink.hasErrors());
 }
 
-/* 模板串：无插值完整片段 */
+/* 模板串：无插值完整片段 → TemplateStart（has_interpolation=false） */
 TEST(Frontend, TemplateLiteral) {
   neojs::DiagnosticSink sink;
   neojs::Lexer l("`hello`", 7, sink);
   const neojs::Token &t = l.next();
-  EXPECT_EQ(t.kind, neojs::TokenKind::Template);
+  EXPECT_EQ(t.kind, neojs::TokenKind::TemplateStart);
   EXPECT_EQ(t.str_value, "hello");
-  EXPECT_FALSE(t.is_template_head);
+  EXPECT_FALSE(t.has_interpolation);
   EXPECT_EQ(l.next().kind, neojs::TokenKind::EndOfFile);
 }
 
-/* 模板串：${ 标记 is_template_head（M1.3 处理插值） */
+/* 模板串头：${ 标记 has_interpolation=true（M1.3 处理插值） */
 TEST(Frontend, TemplateHeadMarked) {
   neojs::DiagnosticSink sink;
   neojs::Lexer l("`a${1}`", 7, sink);
   const neojs::Token &t = l.next();
-  EXPECT_EQ(t.kind, neojs::TokenKind::Template);
+  EXPECT_EQ(t.kind, neojs::TokenKind::TemplateStart);
   EXPECT_EQ(t.str_value, "a");
-  EXPECT_TRUE(t.is_template_head);
+  EXPECT_TRUE(t.has_interpolation);
 }
 
 /* HTML 风格注释：<!-- 注释到行尾（Annex B） */

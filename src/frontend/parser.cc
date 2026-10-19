@@ -134,9 +134,9 @@ ASTNode *Parser::parsePrimary() {
       advance();
       return n;
     }
-    case TokenKind::Template: {
+    case TokenKind::TemplateStart: {
       /* M1.2：无插值模板串作 String；含 ${ 的头部暂报错（M1.3 处理） */
-      if (tok.is_template_head) {
+      if (tok.has_interpolation) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "template interpolation not yet supported",
                     tok.start});
         return nullptr;
@@ -148,6 +148,12 @@ ASTNode *Parser::parsePrimary() {
       n->literal.text = tok.text;
       advance();
       return n;
+    }
+    case TokenKind::TemplatePart:
+    case TokenKind::TemplateEnd: {
+      /* 顶层不应直接出现续段（须由插值表达式驱动，M1.3）；此处防呆 */
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "unexpected template continuation", tok.start});
+      return nullptr;
     }
     case TokenKind::Identifier: {
       ASTNode *n = newNode(NodeType::Identifier);
