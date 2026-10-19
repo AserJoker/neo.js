@@ -71,6 +71,15 @@ JSValue *JSContext::createArray(size_t capacity) {
   return v;
 }
 
+/* 全局对象（globalThis 雏形，E5 完整注册内置）：惰性创建，首次访问时
+ * 生成普通全局对象，后续复用；经根集标记保护（global_ 进 markRoots）。 */
+JSValue *JSContext::globalObject() {
+  if (global_ == nullptr) {
+    global_ = createObject(nullptr);
+  }
+  return global_;
+}
+
 void JSContext::markRootsThunk(void *ud) {
   static_cast<JSContext *>(ud)->markRoots();
 }
@@ -83,6 +92,9 @@ void JSContext::markRoots() {
   for (JSValue *v : handles_.roots()) {
     heap_.markRoot(v);
   }
+
+  /* 全局对象（globalThis 雏形，E5 完整注册内置）：作为全局根始终可达。 */
+  if (global_ != nullptr) heap_.markRoot(global_);
 
   /* 作用域树：从根作用域沿 children 递归覆盖整棵树。所有存活作用域
    * （含挂起子树 P5）的绑定值都是根；被 pop 的作用域已销毁并摘除，

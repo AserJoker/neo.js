@@ -34,6 +34,7 @@
 #include "neojs/runtime/allocator.h"
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/conversion.h"
+#include "neojs/runtime/function.h"
 #include "neojs/runtime/handles.h"
 #include "neojs/runtime/object.h"
 #include "neojs/runtime/value.h"
@@ -346,6 +347,61 @@ extern "C" JSValue *JS_CreateSymbol(JSContext *ctx, const char *description,
     neojs::JSValue *sym = c->createValue(neojs::Kind::Symbol);
     sym->setSymbolDescription(description ? description : "");
     return makeValueHandleNamed(ctx, sym, name);
+  });
+}
+
+/* 创建宿主 C 函数值（E3）。func 为回调；name 为函数名（可空）。
+ * 函数对象是 JSFunction（继承 JSObject，可调用对象）。 */
+extern "C" JSValue *JS_NewCFunction(JSContext *ctx, JSCFunction func,
+                                    const char *name) {
+  if (ctx == nullptr) {
+    std::fputs("neo.js: null JSContext passed to JS_NewCFunction\n", stderr);
+    std::abort();
+  }
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    /* JSFunction 继承 JSObject：经 Heap 创建并登记。 */
+    neojs::JSFunction *fn =
+        c->heap().allocGCObject<neojs::JSFunction>(
+            nullptr /* prototype */,
+            neojs::FunctionKind::Host,
+            reinterpret_cast<void *>(func));
+    neojs::JSValue *v = c->heap().allocGCObject<neojs::JSValue>();
+    v->setObject(fn);
+    fn->setHolder(v); /* 反向包装指针（与 createObject 一致） */
+    return makeValueHandleNamed(ctx, v, name);
+  });
+}
+
+/* 调用函数（§7.3.12 Call）。func 为函数值；this_val 为 this 绑定（可空）；
+ * argv 为参数数组（宿主句柄指针）；argc 为参数个数。
+ * 返回结果句柄；func 不可调用返回 Exception 值（#4）。 */
+extern "C" JSValue *JS_Call(JSContext *ctx, JSValue *func, JSValue *this_val,
+                            size_t argc, JSValue *const *argv) {
+  if (ctx == nullptr) {
+    std::fputs("neo.js: null JSContext passed to JS_Call\n", stderr);
+    std::abort();
+  }
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSValue *fn = unhandle(c, func);
+    neojs::JSValue *tv = unhandle(c, this_val);
+    if (fn == nullptr) {
+      return makeException(ctx, "TypeError: not a function");
+    }
+    /* argv：宿主句柄数组 -> 内部值指针数组。 */
+    std::vector<neojs::JSValue *> args_internal;
+    args_internal.reserve(argc);
+    for (size_t i = 0; i < argc; ++i) {
+      args_internal.push_back(unhandle(c, argv ? argv[i] : nullptr));
+    }
+    neojs::ConversionResult r =
+        neojs::call(c, fn, tv, args_internal.data(), argc);
+    if (!r.ok()) {
+      return makeException(ctx, r.error.c_str());
+    }
+    /* 结果为内部值：分配句柄返回（宿主负责 FreeValue）。 */
+    return makeHandle(c, r.value);
   });
 }
 

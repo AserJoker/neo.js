@@ -1,0 +1,117 @@
+#ifndef NEOJS_RUNTIME_FUNCTION_H
+#define NEOJS_RUNTIME_FUNCTION_H
+
+/*
+ * 内部 C++ 实现：JSFunction（函数对象）+ Call 统一入口。
+ *
+ * 遵循 docs/architecture.md §5.3 函数模型与 docs/coding-standards.md #6：
+ *   - 函数是可调用对象（callable exotic object）：继承 JSObject（拥有属性表/
+ *     原型链），并携带调用语义（回调指针 + this 模式 + 预留扩展字段）。
+ *   - 宿主注入 C 函数（#6）：JSCFunction 签名统一，经 JS_NewCFunction 创建。
+ *   - Call（§7.3.12）：统一调用入口，所有内置/宿主函数复用。IsCallable
+ *     检查（§7.2.12）+ this 绑定（非严格模式 this 装箱）。
+ *
+ * E3 范围（用户确认）：只做可创建/可调用的最小集——Callable + C++ 回调可
+ * 创建/可调用 + 统一 Call 入口 + this 绑定（非严格装箱，null/undefined ->
+ * globalThis）。不做 call/apply/bind、闭包、类对象行为；预留扩展字段
+ * （[[Construct]]/[[Environment]]/[[ThisMode]]）。
+ *
+ * GC（docs/gc.md §4.1）：JSFunction 继承 JSObject 的 gcMarkRefs（扩展字段
+ * 当前均为裸值/回调，无引用边；E3 后若加 [[Environment]] 引用需补充标记）。
+ *
+ * 注意：此头文件是引擎内部实现，不对外暴露。
+ */
+
+#include <cstddef>
+
+#include "neojs/runtime/conversion.h"
+#include "neojs/runtime/object.h"
+
+namespace neojs {
+
+/* C 宿主函数签名（#6，与 neojs.h 的 JSCFunction 对应）：
+ *   ctx   —— JSContext（#9 首参）
+ *   self  —— this 绑定（已按调用语义解析）
+ *   argc  —— 参数个数
+ *   argv  —— 参数数组（宿主句柄指针）
+ * 返回 JSValue *（宿主句柄；错误返回 kind=Exception 值，#4/#14）。
+ * 为保持 C++ 内部层不依赖 C 头文件，用前向声明的 JSContext 与 JSValue。
+ */
+class JSContext;
+class JSValue;
+
+/* 函数调用语义（ECMA-262 §10.2.5 预留）：
+ *   Host        宿主 C 回调（当前唯一实现）
+ *   Script      JS 源码函数（VM 阶段，E3 不实现）
+ *   Builtin     内置函数（E4 起）
+ */
+enum class FunctionKind : uint8_t { Host, Script, Builtin };
+
+/* this 绑定模式（§10.2.5.6 预留）：
+ *   Strict     严格模式：this 不装箱
+ *   NonStrict  非严格模式：null/undefined -> globalThis；原始值装箱（E4）
+ *   Lexical    箭头函数：继承外层 this（E3 不实现）
+ */
+enum class ThisMode : uint8_t { Strict, NonStrict, Lexical };
+
+/* 函数对象：继承 JSObject（获得属性/原型链），携带调用语义。 */
+class JSFunction : public JSObject {
+ public:
+  /* 创建宿主 C 回调函数。name 为函数名（用于 toString 等，可空）。
+   * func 为回调指针（可为空——空函数调用返回 undefined 占位）。 */
+  JSFunction(JSObject *prototype, FunctionKind kind, void *func,
+             ThisMode this_mode = ThisMode::NonStrict);
+  ~JSFunction() override = default;
+
+  /* 函数类别 */
+  FunctionKind functionKind() const { return kind_; }
+  bool isHostFunction() const { return kind_ == FunctionKind::Host; }
+
+  /* 回调指针（FunctionKind::Host 时有效） */
+  void *functionPtr() const { return func_; }
+
+  /* this 绑定模式（预留：E3 只实现 NonStrict 的 null/undefined->global 装箱） */
+  ThisMode thisMode() const { return this_mode_; }
+
+  /* 函数名（可空） */
+  const char *name() const { return name_; }
+
+  /* 预留扩展字段（E3 不实现，占位防后续破坏布局）：
+   *   construct_ —— [[Construct]]（new 语义）
+   *   environment_ —— [[Environment]]（闭包环境）
+   * 均为裸值/指针，当前无 GC 引用边。 */
+  bool isConstructor() const { return construct_; }
+  void setConstructor(bool c) { construct_ = c; }
+
+  /* GC：继承 JSObject::gcMarkRefs（函数自身无新增引用边）。 */
+  void gcMarkRefs(Heap *heap) override { JSObject::gcMarkRefs(heap); }
+
+ private:
+  FunctionKind kind_ = FunctionKind::Host;
+  void *func_ = nullptr;                /* 回调指针 */
+  ThisMode this_mode_ = ThisMode::NonStrict;
+  const char *name_ = nullptr;          /* 函数名（静态/堆字符串） */
+  bool construct_ = false;              /* [[Construct]] 预留 */
+  /* [[Environment]]（闭包环境）E3 后 VM 阶段添加 */
+};
+
+/* -------------------------------------------------------------------------- */
+/* Call 统一入口（§7.3.12）                                                   */
+/* -------------------------------------------------------------------------- */
+
+/* Call(ctx, func, thisVal, args, argc)：调用函数。
+ *   func    函数值（内部指针，kind=Object 且为 JSFunction）
+ *   thisVal this 绑定（原始值按 ThisMode 装箱；null/undefined -> globalThis）
+ *   args    参数数组（内部值指针数组；可为 nullptr 当 argc==0）
+ * 返回 ConversionResult：成功 value 为结果（宿主句柄），失败 value=nullptr。
+ * 规范语义：IsCallable 检查 -> PrepareForOrdinaryCall -> this 解析 ->
+ * 回调调用。 */
+ConversionResult call(JSContext *ctx, JSValue *func, JSValue *thisVal,
+                      JSValue *const *args, size_t argc);
+
+/* IsCallable（§7.2.12）：v 是否为可调用对象（当前仅 JSFunction）。 */
+bool isCallable(const JSValue *v);
+
+}  // namespace neojs
+
+#endif  // NEOJS_RUNTIME_FUNCTION_H

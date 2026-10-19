@@ -195,6 +195,18 @@ JSValue *JS_Eval(JSContext *ctx, const char *source, size_t source_len);
 typedef JSValue *(*JSCFunction)(JSContext *ctx, JSValue *self, size_t argc,
                                 JSValue *argv);
 
+/* 创建宿主 C 函数值（kind = JS_OBJECT，可调用对象）。
+ * func 为 JSCFunction 回调；name 为函数名（可空）。
+ * name 语义同其它 CreateX：NULL = 临时值，非空 = 绑定到当前作用域。 */
+JSValue *JS_NewCFunction(JSContext *ctx, JSCFunction func, const char *name);
+
+/* 调用函数（§7.3.12 Call）：func 为函数值（宿主句柄），this_val 为 this 绑定
+ * （可为 NULL，非严格模式绑到全局对象），argv 为参数数组（宿主句柄指针），
+ * argc 为参数个数。
+ * 返回结果值句柄；func 不可调用时返回 kind = JS_EXCEPTION 的错误值（#4）。 */
+JSValue *JS_Call(JSContext *ctx, JSValue *func, JSValue *this_val, size_t argc,
+                 JSValue *const *argv);
+
 #ifdef __cplusplus
 }
 #endif

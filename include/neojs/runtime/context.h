@@ -84,6 +84,11 @@ class JSContext {
     return tmp_string_.c_str();
   }
 
+  /* 全局对象（globalThis 雏形，E5 完整注册内置）。
+   * 惰性创建：首次访问时创建全局对象（普通 JSObject），后续复用。
+   * 非严格模式 this 绑定到 global（§10.2.5.6）。 */
+  JSValue *globalObject();
+
  private:
   /* GC 标记阶段根集遍历（docs/gc.md §3.4）：
    * 句柄表所有非空槽 + 作用域绑定链（沿 parent/children 遍历）。
@@ -96,6 +101,7 @@ class JSContext {
   JSScope *current_scope_; /* 当前词法环境（不透明，不对外暴露） */
   Heap heap_;              /* GC 堆（G1：统一分配 + mark-sweep） */
   HandleTable handles_;    /* 宿主句柄表（G2：根集之一） */
+  JSValue *global_ = nullptr; /* 全局对象（globalThis 雏形，惰性创建） */
   std::string tmp_string_; /* 临时字符串缓冲（JS_ToString 稳定返回用） */
 };
 
