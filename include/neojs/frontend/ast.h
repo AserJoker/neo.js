@@ -57,6 +57,7 @@ enum class NodeType : uint8_t {
   EmptyStatement,   /* 空语句：单分号 ;（M1.5 语句体系） */
   BlockStatement,   /* 块语句：{ stmt... }（M1.5 语句体系） */
   LabeledStatement, /* 标签语句：label: stmt（M1.5，独立成语句） */
+  IfStatement,      /* 条件语句：if (expr) stmt [else stmt]（M1.5 ⑤） */
 };
 
 /* 一元运算类型（M1.4：先支持 ! ~ + - 与关键字型 typeof/void/delete/await） */

@@ -181,9 +181,59 @@ ASTNode *Parser::parseStatement() {
   if (at(TokenKind::Identifier) && isSymbol(peek(), ":")) {
     return parseLabeledStatement();
   }
+  /* 条件语句（M1.5 ⑤）：if (expr) stmt [else stmt] */
+  if (isKeyword(current(), "if")) {
+    return parseIfStatement();
+  }
 
   /* 兜底：表达式语句 */
   return parseExpressionStatement();
+}
+
+/* 条件语句（M1.5 ⑤）：if (expr) stmt [else stmt]。ECMA-262 §14.6。
+ * children[0] = 条件表达式；children[1] = then 分支；children[2] = else 分支（无 else 时缺省）。
+ * 悬挂 else（dangling else）：else 与最近的未匹配 if 结合（递归下降天然满足）。 */
+ASTNode *Parser::parseIfStatement() {
+  ASTNode *stmt = newNode(NodeType::IfStatement);
+  stmt->loc = current().start;
+  advance(); /* if */
+  if (!isSymbol(current(), "(")) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '(' after 'if'", current().start});
+    allocator_->destroy(stmt);
+    return nullptr;
+  }
+  advance(); /* ( */
+  setValueContext();
+  ASTNode *cond = parseExpression();
+  if (cond == nullptr) {
+    allocator_->destroy(stmt);
+    return nullptr;
+  }
+  if (!isSymbol(current(), ")")) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ')' after if condition",
+                current().start});
+    allocator_->destroy(stmt);
+    allocator_->destroy(cond);
+    return nullptr;
+  }
+  advance(); /* ) */
+  stmt->children.push_back(cond);
+  ASTNode *then_branch = parseStatement();
+  if (then_branch == nullptr) {
+    allocator_->destroy(stmt);
+    return nullptr;
+  }
+  stmt->children.push_back(then_branch);
+  if (isKeyword(current(), "else")) {
+    advance(); /* else */
+    ASTNode *else_branch = parseStatement();
+    if (else_branch == nullptr) {
+      allocator_->destroy(stmt);
+      return nullptr;
+    }
+    stmt->children.push_back(else_branch);
+  }
+  return stmt;
 }
 
 /* 标签语句（M1.5 ③）：label: stmt。独立成语句（对齐 ESTree LabeledStatement），

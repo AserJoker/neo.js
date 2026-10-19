@@ -1901,3 +1901,117 @@ TEST(Frontend, AsiNewlineCallNotSplit) {
   EXPECT_EQ(expr->children[1]->type, neojs::NodeType::Identifier);
   a.destroy(ast);
 }
+
+/* -------------------------------------------------------------------------- */
+/* if/else 条件语句（M1.5 ⑤）                                                 */
+/* -------------------------------------------------------------------------- */
+
+TEST(Frontend, IfStatement) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* if (a) b; → IfStatement[cond, then]（无 else） */
+  neojs::AST *ast = neojs::parseSource(&a, "if (a) b;", std::strlen("if (a) b;"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::IfStatement);
+  ASSERT_EQ(top->children.size(), 2u);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::Identifier); /* cond */
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::ExprStmt);    /* then */
+  a.destroy(ast);
+
+  /* if (a) b; else c; → IfStatement[cond, then, else] */
+  ast = neojs::parseSource(&a, "if (a) b; else c;", std::strlen("if (a) b; else c;"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::IfStatement);
+  ASSERT_EQ(top->children.size(), 3u);
+  EXPECT_EQ(top->children[2]->type, neojs::NodeType::ExprStmt); /* else */
+  a.destroy(ast);
+
+  /* 条件为二元表达式：if (a / b) c;（读值位置 / 是除法） */
+  ast = neojs::parseSource(&a, "if (a / b) c;", std::strlen("if (a / b) c;"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::IfStatement);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::BinaryOp);
+  EXPECT_EQ(top->children[0]->binop, neojs::BinaryOpKind::Div);
+  a.destroy(ast);
+}
+
+TEST(Frontend, IfDanglingElse) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* 悬挂 else：else 与最近未匹配 if 结合 → 内层 if 有 else */
+  neojs::AST *ast =
+      neojs::parseSource(&a, "if (a) if (b) c; else d;", std::strlen("if (a) if (b) c; else d;"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *outer = ast->root->children[0];
+  EXPECT_EQ(outer->type, neojs::NodeType::IfStatement);
+  ASSERT_EQ(outer->children.size(), 2u); /* 外层无 else */
+  neojs::ASTNode *inner = outer->children[1];
+  EXPECT_EQ(inner->type, neojs::NodeType::IfStatement);
+  ASSERT_EQ(inner->children.size(), 3u); /* 内层有 else */
+  a.destroy(ast);
+}
+
+TEST(Frontend, IfElseIfChain) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* else if 链：if (a) b; else if (c) d; else e; → else 分支嵌套 IfStatement */
+  neojs::AST *ast = neojs::parseSource(
+      &a, "if (a) b; else if (c) d; else e;",
+      std::strlen("if (a) b; else if (c) d; else e;"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::IfStatement);
+  ASSERT_EQ(top->children.size(), 3u);
+  EXPECT_EQ(top->children[2]->type, neojs::NodeType::IfStatement); /* else → if */
+  neojs::ASTNode *second = top->children[2];
+  ASSERT_EQ(second->children.size(), 3u);
+  EXPECT_EQ(second->children[2]->type, neojs::NodeType::ExprStmt);
+  a.destroy(ast);
+}
+
+TEST(Frontend, IfBlockBranches) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* if (a) { b; } else { c; } → 块分支 */
+  neojs::AST *ast = neojs::parseSource(
+      &a, "if (a) { b; } else { c; }", std::strlen("if (a) { b; } else { c; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::IfStatement);
+  ASSERT_EQ(top->children.size(), 3u);
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::BlockStatement);
+  EXPECT_EQ(top->children[2]->type, neojs::NodeType::BlockStatement);
+  a.destroy(ast);
+}
+
+TEST(Frontend, IfEmptyThen) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* if (a); → 空 then 分支（EmptyStatement） */
+  neojs::AST *ast = neojs::parseSource(&a, "if (a);", std::strlen("if (a);"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::IfStatement);
+  ASSERT_EQ(top->children.size(), 2u);
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::EmptyStatement);
+  a.destroy(ast);
+}
+
+TEST(Frontend, IfMissingParenError) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* if 缺左括号 / 缺右括号 / 缺条件 → 语法错误 */
+  neojs::AST *ast = neojs::parseSource(&a, "if a) b;", std::strlen("if a) b;"), sink);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink.hasErrors());
+  a.destroy(ast);
+
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "if (a b;", std::strlen("if (a b;"), sink2);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink2.hasErrors());
+  a.destroy(ast);
+}
