@@ -63,6 +63,7 @@ struct Token {
   SourceLocation start; /* token 起点（1-based line/col + 0-based offset） */
   SourceLocation end;   /* token 终点（最后一个字符的位置） */
   std::string text;     /* 原始文本（Symbol 时携带具体符号，如 "+"、"=>"） */
+  bool has_newline_before = false; /* 与前一个 token 之间有 LineTerminator（ASI 用） */
 
   /* 数值载荷（Number） */
   double number = 0.0;     /* 数值（M1.1：十进制；M1.2 全进制转换后） */
@@ -113,6 +114,8 @@ class Lexer {
     Token current;
     Token peeked;
     bool has_peeked = false;
+    bool pending_newline = false;
+    bool peeked_newline = false;
   };
   State save() const;
   void restore(const State &s);
@@ -123,7 +126,7 @@ class Lexer {
   int nextChar();               /* 返回当前 code point 并前进（解码 UTF-8）；EOF -1 */
   void advanceAscii();          /* 推进一个 ASCII 字符（col++，不含换行） */
   bool atEnd() const { return pos_ >= source_len_; }
-  void skipTrivia();            /* 跳过空白与注释（行/块/HTML 风格） */
+  bool skipTrivia();            /* 跳过空白与注释（行/块/HTML 风格）；返回是否遇过 LineTerminator */
   void scanNumber();
   void scanIdentifier();
   void scanString(char quote);
@@ -142,6 +145,8 @@ class Lexer {
   DiagnosticSink &sink_;
   Token current_;
   Token peeked_;        /* 前瞻缓存（peek 结果） */
+  bool pending_newline_ = false; /* 最近一次扫描前是否遇过换行（ASI 标记） */
+  bool peeked_newline_ = false;  /* peek 结果前的换行标记（与 peeked_ 成对） */
   size_t peeked_pos_ = 0;   /* peek 完成后扫描位置（消费缓存 token 时推进用） */
   size_t peeked_line_ = 1;
   size_t peeked_col_ = 1;

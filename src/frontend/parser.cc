@@ -233,13 +233,29 @@ ASTNode *Parser::parseBlock() {
   return block;
 }
 
-/* 表达式语句：表达式 + 可选分号 */
+/* 表达式语句（M1.5 ④）：表达式 + 分号。分号由 ASI（自动分号插入）补全，
+ * ECMA-262 §12.10：
+ *   - 显式分号：直接消费。
+ *   - 隐式插入（不报错），满足任一：
+ *       ① 当前 token 前有 LineTerminator（表达式已完整，无法继续）；
+ *       ② 当前 token 是 }（块语句/语句列表结束）；
+ *       ③ 当前是 EOF（源码结束）。
+ *   - 否则（同一行仍有无法继续的 token，如 a b）→ 语法错误（缺分号）。 */
 ASTNode *Parser::parseExpressionStatement() {
   ASTNode *expr = parseExpression();
   if (expr == nullptr) return nullptr;
   ASTNode *stmt = newNode(NodeType::ExprStmt);
   stmt->children.push_back(expr);
-  if (at(TokenKind::Symbol) && current().text == ";") advance();
+  if (isSymbol(current(), ";")) {
+    advance(); /* 显式分号 */
+  } else if (!atEof() && !isSymbol(current(), "}") && !current().has_newline_before) {
+    /* 同一行出现无法继续表达式的 token：缺分号（a b 是语法错误） */
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ';' before statement",
+                current().start});
+    allocator_->destroy(stmt);
+    return nullptr;
+  }
+  /* 其余（换行后 token / } / EOF）由 ASI 隐式插入分号 */
   return stmt;
 }
 
@@ -681,7 +697,10 @@ ASTNode *Parser::parseLeftHandSide() {
       allocator_->destroy(args); /* 参数列表是临时容器，仅取子节点 */
       expr = call;
     } else if (isSymbol(current(), "++")) {
-      /* 后缀自增（M1.4 ③-6）：x++ */
+      /* 后缀自增（M1.4 ③-6）：x++。
+       * Restricted production（ASI）：++ 前有换行则不能作后缀，
+       * 视为下一语句的前缀 ++（a\n++b → a; ++b）。 */
+      if (current().has_newline_before) break;
       if (expr->type != NodeType::Identifier && expr->type != NodeType::MemberExpression) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid increment/decrement operand",
                     current().start});
@@ -696,7 +715,10 @@ ASTNode *Parser::parseLeftHandSide() {
       advance(); /* ++ */
       expr = node;
     } else if (isSymbol(current(), "--")) {
-      /* 后缀自减（M1.4 ③-6）：x-- */
+      /* 后缀自减（M1.4 ③-6）：x--。
+       * Restricted production（ASI）：-- 前有换行则不能作后缀，
+       * 视为下一语句的前缀 --（a\n--b → a; --b）。 */
+      if (current().has_newline_before) break;
       if (expr->type != NodeType::Identifier && expr->type != NodeType::MemberExpression) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid increment/decrement operand",
                     current().start});

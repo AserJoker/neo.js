@@ -1776,3 +1776,128 @@ TEST(Frontend, LabelVsTernaryNotConfused) {
   EXPECT_EQ(top->children[0]->children[0]->type, neojs::NodeType::Conditional);
   a.destroy(ast);
 }
+
+/* -------------------------------------------------------------------------- */
+/* 表达式语句 ASI（M1.5 ④）：自动分号插入                                      */
+/* -------------------------------------------------------------------------- */
+
+TEST(Frontend, AsiExplicitSemicolon) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* 显式分号：a = 1; b = 2; → 两条 ExprStmt */
+  neojs::AST *ast =
+      neojs::parseSource(&a, "a = 1; b = 2;", std::strlen("a = 1; b = 2;"), sink);
+  ASSERT_NE(ast, nullptr);
+  ASSERT_EQ(ast->root->children.size(), 2u);
+  EXPECT_EQ(ast->root->children[0]->type, neojs::NodeType::ExprStmt);
+  EXPECT_EQ(ast->root->children[1]->type, neojs::NodeType::ExprStmt);
+  a.destroy(ast);
+}
+
+TEST(Frontend, AsiInsertOnNewline) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* 规则①：换行后遇到非法 token → 插入分号（a = 1\nb = 2） */
+  neojs::AST *ast = neojs::parseSource(
+      &a, "a = 1\nb = 2", std::strlen("a = 1\nb = 2"), sink);
+  ASSERT_NE(ast, nullptr);
+  ASSERT_EQ(ast->root->children.size(), 2u);
+  EXPECT_EQ(ast->root->children[0]->type, neojs::NodeType::ExprStmt);
+  EXPECT_EQ(ast->root->children[1]->type, neojs::NodeType::ExprStmt);
+  a.destroy(ast);
+
+  /* 块内换行同样插入：{ a = 1\nb = 2 } */
+  ast = neojs::parseSource(
+      &a, "{ a = 1\nb = 2 }", std::strlen("{ a = 1\nb = 2 }"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *block = ast->root->children[0];
+  ASSERT_EQ(block->type, neojs::NodeType::BlockStatement);
+  ASSERT_EQ(block->children.size(), 2u);
+  EXPECT_EQ(block->children[0]->type, neojs::NodeType::ExprStmt);
+  EXPECT_EQ(block->children[1]->type, neojs::NodeType::ExprStmt);
+  a.destroy(ast);
+
+  /* 换行后标识符同样插入：a = 1\nb */
+  ast = neojs::parseSource(&a, "a = 1\nb", std::strlen("a = 1\nb"), sink);
+  ASSERT_NE(ast, nullptr);
+  ASSERT_EQ(ast->root->children.size(), 2u);
+  a.destroy(ast);
+}
+
+TEST(Frontend, AsiInsertOnBraceAndEof) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* 规则②：遇到 } → 插入分号（块内语句无分号） */
+  neojs::AST *ast = neojs::parseSource(&a, "{ a }", std::strlen("{ a }"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *block = ast->root->children[0];
+  ASSERT_EQ(block->type, neojs::NodeType::BlockStatement);
+  ASSERT_EQ(block->children.size(), 1u);
+  EXPECT_EQ(block->children[0]->type, neojs::NodeType::ExprStmt);
+  a.destroy(ast);
+
+  /* 规则③：EOF → 插入分号（a 无分号） */
+  ast = neojs::parseSource(&a, "a", std::strlen("a"), sink);
+  ASSERT_NE(ast, nullptr);
+  ASSERT_EQ(ast->root->children.size(), 1u);
+  a.destroy(ast);
+}
+
+TEST(Frontend, AsiMissingSemicolonError) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* 同一行无法继续的 token：a b → 缺分号语法错误 */
+  neojs::AST *ast = neojs::parseSource(&a, "a b", std::strlen("a b"), sink);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink.hasErrors());
+  a.destroy(ast);
+}
+
+TEST(Frontend, AsiPostfixUpdateNewline) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* Restricted production：a\n++b → a; ++b（后置换行转前缀） */
+  neojs::AST *ast = neojs::parseSource(&a, "a\n++b", std::strlen("a\n++b"), sink);
+  ASSERT_NE(ast, nullptr);
+  ASSERT_EQ(ast->root->children.size(), 2u);
+  neojs::ASTNode *first = ast->root->children[0];
+  neojs::ASTNode *second = ast->root->children[1];
+  EXPECT_EQ(first->type, neojs::NodeType::ExprStmt);
+  EXPECT_EQ(first->children[0]->type, neojs::NodeType::Identifier);
+  EXPECT_EQ(second->children[0]->type, neojs::NodeType::UpdateExpression);
+  EXPECT_TRUE(second->children[0]->prefix);
+  EXPECT_EQ(second->children[0]->update_op, neojs::UpdateOpKind::Inc);
+  a.destroy(ast);
+
+  /* 同行仍作后缀：a++ */
+  ast = neojs::parseSource(&a, "a++", std::strlen("a++"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *node = ast->root->children[0]->children[0];
+  EXPECT_EQ(node->type, neojs::NodeType::UpdateExpression);
+  EXPECT_FALSE(node->prefix);
+  a.destroy(ast);
+
+  /* a\n--b → a; --b */
+  ast = neojs::parseSource(&a, "a\n--b", std::strlen("a\n--b"), sink);
+  ASSERT_NE(ast, nullptr);
+  ASSERT_EQ(ast->root->children.size(), 2u);
+  second = ast->root->children[1];
+  EXPECT_EQ(second->children[0]->type, neojs::NodeType::UpdateExpression);
+  EXPECT_TRUE(second->children[0]->prefix);
+  EXPECT_EQ(second->children[0]->update_op, neojs::UpdateOpKind::Dec);
+  a.destroy(ast);
+}
+
+TEST(Frontend, AsiNewlineCallNotSplit) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* 换行后 ( 能继续表达式（调用），不触发 ASI：a\n(b) → Call(a, b) */
+  neojs::AST *ast = neojs::parseSource(&a, "a\n(b)", std::strlen("a\n(b)"), sink);
+  ASSERT_NE(ast, nullptr);
+  ASSERT_EQ(ast->root->children.size(), 1u);
+  neojs::ASTNode *expr = ast->root->children[0]->children[0];
+  EXPECT_EQ(expr->type, neojs::NodeType::CallExpression);
+  EXPECT_EQ(expr->children[0]->type, neojs::NodeType::Identifier);
+  EXPECT_EQ(expr->children[1]->type, neojs::NodeType::Identifier);
+  a.destroy(ast);
+}

@@ -245,11 +245,13 @@ int Lexer::nextChar() {
   return static_cast<int>(c);
 }
 
-/* 跳过空白与注释（行注释 / 块注释 / HTML 风格）。HTML 风格注释是**多字符符号**。 */
-void Lexer::skipTrivia() {
+/* 跳过空白与注释（行注释 / 块注释 / HTML 风格）。HTML 风格注释是**多字符符号**。
+ * 返回是否遇到过 LineTerminator（供 ASI 判定 token 间换行）。 */
+bool Lexer::skipTrivia() {
+  bool newline = false;
   for (;;) {
     int c = peekChar();
-    if (c == -1) return;
+    if (c == -1) return newline;
     if (isUnicodeWhitespace(c)) {
       nextChar();
       continue;
@@ -257,6 +259,7 @@ void Lexer::skipTrivia() {
     /* LineTerminator（不含 \r\n 组合的特殊处理——由 nextChar 统一） */
     if (isLineTerminator(c)) {
       nextChar();
+      newline = true;
       continue;
     }
     if (c == '/' && pos_ + 1 < source_len_) {
@@ -313,6 +316,7 @@ void Lexer::skipTrivia() {
     /* 单个 / 或 <：不是注释，停止跳过 */
     break;
   }
+  return newline;
 }
 
 /* 入口级 hashbang（M1.5）：固定位置（源码开头 #!），明确结尾（首个
@@ -876,7 +880,7 @@ void Lexer::scanSymbol() {
 
 /* 扫描下一个 token 到 current_（推进扫描状态；next/peek 复用） */
 void Lexer::scanNext() {
-  skipTrivia();
+  pending_newline_ = skipTrivia();
   Token t;
   t.start = {line_, col_, pos_};
 
@@ -921,9 +925,11 @@ const Token &Lexer::next() {
     line_ = peeked_line_;
     col_ = peeked_col_;
     has_peeked_ = false;
+    current_.has_newline_before = peeked_newline_;
     return current_;
   }
   scanNext();
+  current_.has_newline_before = pending_newline_;
   return current_;
 }
 
@@ -937,6 +943,7 @@ const Token &Lexer::peek() {
     const size_t saved_col = col_;
     scanNext();
     peeked_ = current_;
+    peeked_newline_ = pending_newline_;
     peeked_pos_ = pos_;
     peeked_line_ = line_;
     peeked_col_ = col_;
@@ -961,6 +968,8 @@ Lexer::State Lexer::save() const {
   s.current = current_;
   s.peeked = peeked_;
   s.has_peeked = has_peeked_;
+  s.pending_newline = pending_newline_;
+  s.peeked_newline = peeked_newline_;
   return s;
 }
 
@@ -974,6 +983,8 @@ void Lexer::restore(const State &s) {
   current_ = s.current;
   peeked_ = s.peeked;
   has_peeked_ = s.has_peeked;
+  pending_newline_ = s.pending_newline;
+  peeked_newline_ = s.peeked_newline;
 }
 
 }  // namespace neojs
