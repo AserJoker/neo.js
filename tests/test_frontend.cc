@@ -2109,3 +2109,122 @@ TEST(Frontend, LoopNestedAndError) {
   EXPECT_TRUE(sink3.hasErrors());
   a.destroy(ast);
 }
+
+/* -------------------------------------------------------------------------- */
+/* 声明语句（M1.5 ①）：var / let / const（含解构）                             */
+/* -------------------------------------------------------------------------- */
+
+TEST(Frontend, VarDeclaration) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* var a = 1; → VariableDeclaration(var)[VariableDeclarator[a, init]] */
+  neojs::AST *ast = neojs::parseSource(&a, "var a = 1;", std::strlen("var a = 1;"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *decl = ast->root->children[0];
+  EXPECT_EQ(decl->type, neojs::NodeType::VariableDeclaration);
+  EXPECT_EQ(decl->varkind, neojs::VarKind::Var);
+  ASSERT_EQ(decl->children.size(), 1u);
+  neojs::ASTNode *d = decl->children[0];
+  EXPECT_EQ(d->type, neojs::NodeType::VariableDeclarator);
+  EXPECT_EQ(d->children[0]->type, neojs::NodeType::Identifier);
+  EXPECT_EQ(d->children[0]->name, "a");
+  ASSERT_EQ(d->children.size(), 2u); /* id + init */
+  EXPECT_EQ(d->children[1]->type, neojs::NodeType::Literal);
+  a.destroy(ast);
+
+  /* 多声明器 + 无初始化：var a, b = 2; */
+  ast = neojs::parseSource(&a, "var a, b = 2;", std::strlen("var a, b = 2;"), sink);
+  ASSERT_NE(ast, nullptr);
+  decl = ast->root->children[0];
+  ASSERT_EQ(decl->children.size(), 2u);
+  EXPECT_EQ(decl->children[0]->children.size(), 1u); /* a 无 init */
+  EXPECT_EQ(decl->children[1]->children.size(), 2u); /* b 有 init */
+  a.destroy(ast);
+}
+
+TEST(Frontend, LetConstDeclaration) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* let a = 1, b; */
+  neojs::AST *ast = neojs::parseSource(&a, "let a = 1, b;", std::strlen("let a = 1, b;"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *decl = ast->root->children[0];
+  EXPECT_EQ(decl->type, neojs::NodeType::VariableDeclaration);
+  EXPECT_EQ(decl->varkind, neojs::VarKind::Let);
+  ASSERT_EQ(decl->children.size(), 2u);
+  a.destroy(ast);
+
+  /* const c = 2; */
+  ast = neojs::parseSource(&a, "const c = 2;", std::strlen("const c = 2;"), sink);
+  ASSERT_NE(ast, nullptr);
+  decl = ast->root->children[0];
+  EXPECT_EQ(decl->varkind, neojs::VarKind::Const);
+  a.destroy(ast);
+
+  /* const 缺初始化报错 */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "const c;", std::strlen("const c;"), sink2);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink2.hasErrors());
+  a.destroy(ast);
+}
+
+TEST(Frontend, LetAmbiguity) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* let 后跟 Identifier → 声明 */
+  neojs::AST *ast = neojs::parseSource(&a, "let a = 1;", std::strlen("let a = 1;"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_EQ(ast->root->children[0]->type, neojs::NodeType::VariableDeclaration);
+  a.destroy(ast);
+
+  /* let = 5 → 表达式赋值（let 作标识符） */
+  ast = neojs::parseSource(&a, "let = 5;", std::strlen("let = 5;"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_EQ(ast->root->children[0]->type, neojs::NodeType::ExprStmt);
+  EXPECT_EQ(ast->root->children[0]->children[0]->type, neojs::NodeType::Assignment);
+  a.destroy(ast);
+
+  /* let[0] = 1 → 表达式（成员赋值） */
+  ast = neojs::parseSource(&a, "let[0] = 1;", std::strlen("let[0] = 1;"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_EQ(ast->root->children[0]->type, neojs::NodeType::ExprStmt);
+  a.destroy(ast);
+}
+
+TEST(Frontend, DestructuringDeclaration) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* var {x, y} = o, [p, q] = arr; */
+  neojs::AST *ast = neojs::parseSource(
+      &a, "var {x, y} = o, [p, q] = arr;", std::strlen("var {x, y} = o, [p, q] = arr;"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *decl = ast->root->children[0];
+  ASSERT_EQ(decl->type, neojs::NodeType::VariableDeclaration);
+  ASSERT_EQ(decl->children.size(), 2u);
+  EXPECT_EQ(decl->children[0]->children[0]->type, neojs::NodeType::ObjectPattern);
+  EXPECT_EQ(decl->children[1]->children[0]->type, neojs::NodeType::ArrayPattern);
+  a.destroy(ast);
+
+  /* 对象解构重命名：let {p: q} = obj; */
+  ast = neojs::parseSource(&a, "let {p: q} = obj;", std::strlen("let {p: q} = obj;"), sink);
+  ASSERT_NE(ast, nullptr);
+  decl = ast->root->children[0];
+  neojs::ASTNode *pat = decl->children[0]->children[0];
+  EXPECT_EQ(pat->type, neojs::NodeType::ObjectPattern);
+  ASSERT_EQ(pat->children.size(), 1u);
+  EXPECT_EQ(pat->children[0]->type, neojs::NodeType::Property);
+  EXPECT_EQ(pat->children[0]->children[0]->name, "p");
+  EXPECT_EQ(pat->children[0]->children[1]->name, "q");
+  a.destroy(ast);
+
+  /* 数组默认值 + rest：let [a, b = 2, ...rest] = arr; */
+  ast = neojs::parseSource(
+      &a, "let [a, b = 2, ...rest] = arr;", std::strlen("let [a, b = 2, ...rest] = arr;"), sink);
+  ASSERT_NE(ast, nullptr);
+  decl = ast->root->children[0];
+  pat = decl->children[0]->children[0];
+  EXPECT_EQ(pat->type, neojs::NodeType::ArrayPattern);
+  ASSERT_EQ(pat->children.size(), 3u);
+  a.destroy(ast);
+}

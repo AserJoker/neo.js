@@ -60,6 +60,15 @@ enum class NodeType : uint8_t {
   IfStatement,      /* 条件语句：if (expr) stmt [else stmt]（M1.5 ⑤） */
   WhileStatement,   /* 循环：while (expr) stmt（M1.5 ⑥） */
   DoWhileStatement, /* 循环：do stmt while (expr)（M1.5 ⑥） */
+  VariableDeclaration, /* 声明：var/let/const 语句（M1.5 ①） */
+  VariableDeclarator,  /* 单个声明器：id = init（M1.5 ①） */
+};
+
+/* 声明关键字类型（M1.5 ①）：var / let / const */
+enum class VarKind : uint8_t {
+  Var,   /* var：函数作用域 */
+  Let,   /* let：块作用域 */
+  Const, /* const：块作用域，须初始化 */
 };
 
 /* 一元运算类型（M1.4：先支持 ! ~ + - 与关键字型 typeof/void/delete/await） */
@@ -187,6 +196,7 @@ struct ASTNode {
   BinaryOpKind binop = BinaryOpKind::Add;
   AssignmentOpKind assign_op = AssignmentOpKind::Assign;
   UpdateOpKind update_op = UpdateOpKind::Inc; /* UpdateExpression：++/-- */
+  VarKind varkind = VarKind::Var; /* VariableDeclaration：var/let/const */
   std::string directive;  /* ExprStmt：指令序言标记（非空 = "use strict" 等） */
   bool prefix = false;        /* UpdateExpression：true = 前缀 ++x；false = 后缀 x++ */
   bool optional = false;      /* CallExpression/MemberExpression：可选链 ?. 标记 */

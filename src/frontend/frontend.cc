@@ -187,6 +187,15 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
     case NodeType::DoWhileStatement:
       out += "DoWhileStatement\n";
       break;
+    case NodeType::VariableDeclaration:
+      out += "VariableDeclaration(";
+      out += node->varkind == VarKind::Var ? "var"
+             : node->varkind == VarKind::Let ? "let" : "const";
+      out += ")\n";
+      break;
+    case NodeType::VariableDeclarator:
+      out += "VariableDeclarator\n";
+      break;
     case NodeType::Literal:
       if (node->literal.is_number) {
         out += "Literal(";

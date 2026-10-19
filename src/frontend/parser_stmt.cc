@@ -71,9 +71,124 @@ ASTNode *Parser::parseStatement() {
   if (isKeyword(current(), "while") || isKeyword(current(), "do")) {
     return parseWhileStatement();
   }
+  /* 声明语句（M1.5 ①）：var / let / const。
+   * let 有歧义：let a = 1 是声明；但 let = 5 / let[0] = 1 中 let 是标识符
+   * （表达式）。判定：let 后跟 Identifier / { / [ → 声明；否则表达式兜底。 */
+  if (isKeyword(current(), "var") || isKeyword(current(), "const")) {
+    return parseVariableDeclaration();
+  }
+  if (isKeyword(current(), "let")) {
+    /* 当前是 let，看下一 token：
+     *   let a = 1 → 声明（后跟 Identifier）
+     *   let {a} = o → 声明（后跟 {）
+     *   let [a] = arr / let [] = arr → 声明（后跟 [ 且是数组模式）
+     *   let = 5 / let[0] = 1 / let.x → 表达式（let 作标识符）
+     * `let [` 需排除下标访问：let[0] 中 [0] 是成员访问。
+     * 判定 [ 后是否 ]（空模式）或标识符/模式元素，是则声明。 */
+    const Token &t = peek();
+    if (t.kind == TokenKind::Identifier) {
+      return parseVariableDeclaration();
+    }
+    if (t.kind == TokenKind::Symbol && t.text == "{") {
+      return parseVariableDeclaration();
+    }
+    if (t.kind == TokenKind::Symbol && t.text == "[") {
+      /* 前瞻 [ 之后的 token 判定：空模式 []（peek 为 ]）或
+       * 模式元素（peek 为 Identifier/嵌套 [ 或 {）→ 声明；
+       * let[0] = 1 中 [0] 是下标访问（peek 为 Number）→ 表达式。 */
+      Lexer::State st = lexer_.save();
+      lexer_.next(); /* 越过 [，current 现在是 [ */
+      bool is_decl = false;
+      const Token &after = lexer_.peek(); /* [ 之后的 token */
+      if (after.kind == TokenKind::Identifier || isSymbol(after, "]") ||
+          isSymbol(after, "[") || isSymbol(after, "{")) {
+        is_decl = true;
+      }
+      lexer_.restore(st);
+      if (is_decl) return parseVariableDeclaration();
+    }
+  }
 
   /* 兜底：表达式语句 */
   return parseExpressionStatement();
+}
+
+/* 声明语句（M1.5 ①）：var a = 1, b; / let [x, y] = arr; / const {p} = obj;
+ * ECMA-262 §14.3（var）、§14.4（let/const）。
+ * 结构：VariableDeclaration(varkind)[VariableDeclarator...]
+ *   VariableDeclarator[ id, init? ]；id 可为 Identifier 或模式（解构）。
+ * const 必须初始化；let/var 可省。声明以分号结束（ASI）。 */
+ASTNode *Parser::parseVariableDeclaration() {
+  ASTNode *decl = newNode(NodeType::VariableDeclaration);
+  decl->loc = current().start;
+  const std::string &kw = current().text;
+  decl->varkind = kw == "var" ? VarKind::Var : (kw == "let" ? VarKind::Let : VarKind::Const);
+  advance(); /* var / let / const */
+
+  for (;;) {
+    ASTNode *id;
+    if (isSymbol(current(), "{") || isSymbol(current(), "[")) {
+      /* 解构声明：{a} / [a]（模式） */
+      if (isSymbol(current(), "{")) {
+        id = parseObjectPattern();
+      } else {
+        id = parseArrayPattern();
+      }
+      if (id == nullptr) {
+        allocator_->destroy(decl);
+        return nullptr;
+      }
+    } else if (at(TokenKind::Identifier)) {
+      id = newNode(NodeType::Identifier);
+      id->loc = current().start;
+      id->name = current().text;
+      advance();
+    } else {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected variable name",
+                  current().start});
+      allocator_->destroy(decl);
+      return nullptr;
+    }
+
+    ASTNode *declarator = newNode(NodeType::VariableDeclarator);
+    declarator->loc = id->loc;
+    declarator->children.push_back(id);
+
+    /* 初始化：= expr */
+    if (isSymbol(current(), "=")) {
+      advance();
+      setValueContext();
+      ASTNode *init = parseAssignment();
+      if (init == nullptr) {
+        allocator_->destroy(declarator);
+        allocator_->destroy(decl);
+        return nullptr;
+      }
+      declarator->children.push_back(init);
+    } else if (decl->varkind == VarKind::Const) {
+      /* const 必须初始化 */
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "missing initializer in const declaration",
+                  current().start});
+      allocator_->destroy(declarator);
+      allocator_->destroy(decl);
+      return nullptr;
+    }
+
+    decl->children.push_back(declarator);
+    if (!isSymbol(current(), ",")) break;
+    advance(); /* , */
+  }
+
+  /* 分号结束（ASI 补全） */
+  if (isSymbol(current(), ";")) {
+    advance();
+  } else if (!atEof() && !isSymbol(current(), "}") && !current().has_newline_before) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ';' after variable declaration",
+                current().start});
+    allocator_->destroy(decl);
+    return nullptr;
+  }
+  return decl;
 }
 
 /* 循环语句（M1.5 ⑥）：while (expr) stmt 与 do stmt while (expr);

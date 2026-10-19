@@ -64,6 +64,7 @@ class Parser {
   ASTNode *parseLabeledStatement(); /* 标签语句：label: stmt */
   ASTNode *parseIfStatement();      /* 条件语句：if (expr) stmt [else stmt] */
   ASTNode *parseWhileStatement();   /* while (expr) stmt / do stmt while (expr) */
+  ASTNode *parseVariableDeclaration(); /* var/let/const 声明（M1.5 ①） */
   ASTNode *parseExpressionStatement();
 
   /* 最小递归下降：表达式（parser.cc） */
