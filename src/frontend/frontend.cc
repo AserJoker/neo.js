@@ -246,6 +246,9 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
     case NodeType::NewExpression:
       out += "NewExpression\n";
       break;
+    case NodeType::ArrowFunctionExpression:
+      out += "ArrowFunctionExpression\n";
+      break;
   }
   for (const ASTNode *child : node->children) dumpNode(child, out, depth + 1);
 }

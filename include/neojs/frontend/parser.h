@@ -51,6 +51,7 @@ class Parser {
   ASTNode *parseExpressionStatement();
   ASTNode *parseExpression();      /* 逗号序列（最低优先级，M1.4） */
   ASTNode *parseAssignment();      /* 赋值：= 与复合赋值（右结合） */
+  ASTNode *parseArrowFunction(bool parenthesized); /* 箭头函数（表达式体） */
   ASTNode *parseConditional();     /* 条件表达式：?:（右结合） */
   ASTNode *parseUnary();           /* 一元运算：! ~ + - typeof/void/delete/await */
   ASTNode *parseLeftHandSide();    /* 左手边：成员/调用链（M1.4 ③-3） */

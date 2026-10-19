@@ -880,8 +880,12 @@ void Lexer::scanNext() {
 /* 拉取下一个 token（推进扫描状态），成为当前 token */
 const Token &Lexer::next() {
   if (has_peeked_) {
-    /* 有缓存的前瞻结果：直接提升为当前（扫描位置本就已越过它） */
+    /* 有缓存的前瞻结果：提升为当前，并把扫描位置推进到该 token 之后
+     * （peek 恢复过 pos，此处必须同步推进，否则重复扫描同一 token） */
     current_ = std::move(peeked_);
+    pos_ = peeked_pos_;
+    line_ = peeked_line_;
+    col_ = peeked_col_;
     has_peeked_ = false;
     return current_;
   }
@@ -891,13 +895,17 @@ const Token &Lexer::next() {
 
 const Token &Lexer::peek() {
   if (!has_peeked_) {
-    /* 保存当前，扫描下一个，再恢复 current 与扫描状态：peek 不改状态 */
+    /* 保存当前，扫描下一个，再恢复 current 与扫描状态：peek 不改状态。
+     * 同时记录扫描完成后的 pos/line/col，供 next() 消费缓存时推进。 */
     Token saved = current_;
     const size_t saved_pos = pos_;
     const size_t saved_line = line_;
     const size_t saved_col = col_;
     scanNext();
     peeked_ = current_;
+    peeked_pos_ = pos_;
+    peeked_line_ = line_;
+    peeked_col_ = col_;
     current_ = std::move(saved);
     pos_ = saved_pos;
     line_ = saved_line;
@@ -905,6 +913,33 @@ const Token &Lexer::peek() {
     has_peeked_ = true;
   }
   return peeked_;
+}
+
+/* 状态快照（M1.4 ③-4）：完整记录扫描位置与 token 缓存 */
+Lexer::State Lexer::save() const {
+  State s;
+  s.pos = pos_;
+  s.line = line_;
+  s.col = col_;
+  s.peeked_pos = peeked_pos_;
+  s.peeked_line = peeked_line_;
+  s.peeked_col = peeked_col_;
+  s.current = current_;
+  s.peeked = peeked_;
+  s.has_peeked = has_peeked_;
+  return s;
+}
+
+void Lexer::restore(const State &s) {
+  pos_ = s.pos;
+  line_ = s.line;
+  col_ = s.col;
+  peeked_pos_ = s.peeked_pos;
+  peeked_line_ = s.peeked_line;
+  peeked_col_ = s.peeked_col;
+  current_ = s.current;
+  peeked_ = s.peeked;
+  has_peeked_ = s.has_peeked;
 }
 
 }  // namespace neojs

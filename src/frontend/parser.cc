@@ -173,8 +173,36 @@ ASTNode *Parser::parseExpression() {
   return expr;
 }
 
-/* 赋值（M1.4）：= 与全部复合赋值；右结合。左侧须为简单赋值目标。 */
+/* 赋值（M1.4）：= 与全部复合赋值；右结合。左侧须为简单赋值目标。
+ * 箭头函数（M1.4 ③-4）同层：params => body（右结合）。 */
 ASTNode *Parser::parseAssignment() {
+  /* 箭头判定（中缀歧义）：
+   *   1. 单参：Identifier 前瞻 =>
+   *   2. 括号参数：配对扫描后看 ) 后是否 =>（save/restore 回退） */
+  if (at(TokenKind::Identifier) && isSymbol(peek(), "=>")) {
+    return parseArrowFunction(/*parenthesized=*/false);
+  }
+  if (isSymbol(current(), "(")) {
+    Lexer::State st = lexer_.save();
+    int depth = 1; /* 当前 ( 已消费但未计入，从 1 起计 */
+    bool arrow = false;
+    for (;;) {
+      const Token &t = lexer_.next();
+      if (t.kind == TokenKind::EndOfFile) break;
+      if (isSymbol(t, "(")) depth++;
+      else if (isSymbol(t, ")")) {
+        depth--;
+        if (depth == 0) {
+          /* 匹配到外层 )：下一 token 是否 => */
+          if (isSymbol(lexer_.next(), "=>")) arrow = true;
+          break;
+        }
+      }
+    }
+    lexer_.restore(st);
+    if (arrow) return parseArrowFunction(/*parenthesized=*/true);
+  }
+
   ASTNode *lhs = parseConditional();
   if (lhs == nullptr) return nullptr;
   if (!isSymbol(current(), "=") && !isAssignOp(current())) return lhs;
@@ -199,6 +227,87 @@ ASTNode *Parser::parseAssignment() {
   node->children.push_back(lhs);
   node->children.push_back(rhs);
   return node;
+}
+
+/* 箭头函数（M1.4 ③-4）：params => body。
+ * parenthesized=false：单参 x => body（current 已消费 x，指向 =>）。
+ * parenthesized=true：括号参数 (a, b) / ()，current 指向 (。
+ * 本次仅表达式体（=> expr）；块体 { } 需语句体系，留 M1.5。
+ * 右结合：x => y => z 嵌套。 */
+ASTNode *Parser::parseArrowFunction(bool parenthesized) {
+  ASTNode *arrow = newNode(NodeType::ArrowFunctionExpression);
+  arrow->loc = current().start;
+
+  if (parenthesized) {
+    advance(); /* ( */
+    while (!isSymbol(current(), ")")) {
+      if (atEof()) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated arrow parameters",
+                    arrow->loc});
+        allocator_->destroy(arrow);
+        return nullptr;
+      }
+      if (isSymbol(current(), ",")) {
+        advance();
+        continue;
+      }
+      ASTNode *param;
+      if (isSymbol(current(), "...")) {
+        ASTNode *rest = newNode(NodeType::RestElement);
+        rest->loc = current().start;
+        advance();
+        if (!at(TokenKind::Identifier)) {
+          sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected parameter name",
+                      current().start});
+          allocator_->destroy(rest);
+          allocator_->destroy(arrow);
+          return nullptr;
+        }
+        ASTNode *id = newNode(NodeType::Identifier);
+        id->loc = current().start;
+        id->name = current().text;
+        advance();
+        rest->children.push_back(id);
+        param = rest;
+      } else if (at(TokenKind::Identifier)) {
+        param = newNode(NodeType::Identifier);
+        param->loc = current().start;
+        param->name = current().text;
+        advance();
+      } else {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected parameter name",
+                    current().start});
+        allocator_->destroy(arrow);
+        return nullptr;
+      }
+      arrow->children.push_back(param);
+    }
+    advance(); /* ) */
+  } else {
+    /* 单参：current 已是参数名（Identifier），解析后指向 => */
+    ASTNode *param = newNode(NodeType::Identifier);
+    param->loc = current().start;
+    param->name = current().text;
+    advance();
+    arrow->children.push_back(param);
+  }
+
+  /* 消费 => */
+  if (!isSymbol(current(), "=>")) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '=>'", current().start});
+    allocator_->destroy(arrow);
+    return nullptr;
+  }
+  advance(); /* => */
+
+  /* 表达式体（右结合：x => y => z） */
+  ASTNode *body = parseAssignment();
+  if (body == nullptr) {
+    allocator_->destroy(arrow);
+    return nullptr;
+  }
+  arrow->children.push_back(body);
+  return arrow;
 }
 
 /* 条件表达式（M1.4）：cond ? then : else；右结合。 */

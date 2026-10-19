@@ -95,6 +95,18 @@ class Lexer {
   /* 将当前 Symbol '/' 重扫为正则（M1.3 re-scan 规则）：Parser 在读值位置调用 */
   void rescanAsRegex();
 
+  /* 状态快照（M1.4 ③-4）：供 Parser 做多 token 前瞻后整体回退（箭头函数判定）。
+   * save 记录扫描位置与 token 缓存；restore 恢复全部，之后必须重新 next()。 */
+  struct State {
+    size_t pos = 0, line = 1, col = 1;
+    size_t peeked_pos = 0, peeked_line = 1, peeked_col = 1;
+    Token current;
+    Token peeked;
+    bool has_peeked = false;
+  };
+  State save() const;
+  void restore(const State &s);
+
  private:
   /* 字符级推进：pos_ 指向下一个未消费字节；维护 line/col（按 code point 计） */
   int peekChar() const;         /* 不推进地查看下一个 code point；EOF 返回 -1 */
@@ -119,6 +131,9 @@ class Lexer {
   DiagnosticSink &sink_;
   Token current_;
   Token peeked_;        /* 前瞻缓存（peek 结果） */
+  size_t peeked_pos_ = 0;   /* peek 完成后扫描位置（消费缓存 token 时推进用） */
+  size_t peeked_line_ = 1;
+  size_t peeked_col_ = 1;
   bool has_peeked_ = false;
 };
 

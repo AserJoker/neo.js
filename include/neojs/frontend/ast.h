@@ -52,6 +52,7 @@ enum class NodeType : uint8_t {
   MemberExpression, /* 成员访问：obj.prop（.）或 obj[expr]（[]） */
   CallExpression,   /* 函数调用：callee(args) */
   NewExpression,    /* new 构造：new Foo(args) 或 new Foo */
+  ArrowFunctionExpression, /* 箭头函数：params => body（M1.4 ③-4 表达式体） */
 };
 
 /* 一元运算类型（M1.4：先支持 ! ~ + - 与关键字型 typeof/void/delete/await） */

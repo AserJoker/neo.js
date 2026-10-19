@@ -1156,3 +1156,104 @@ TEST(Frontend, AwaitCallAndDeleteMember) {
   EXPECT_EQ(top->children[0]->type, neojs::NodeType::MemberExpression);
   a.destroy(ast);
 }
+
+/* -------------------------------------------------------------------------- */
+/* 箭头函数（M1.4 ③-4，仅表达式体）                                            */
+/* -------------------------------------------------------------------------- */
+
+TEST(Frontend, ArrowSingleParam) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* x => x + 1 → Arrow[Identifier(x), BinaryOp(+)] */
+  neojs::AST *ast = neojs::parseSource(&a, "x => x + 1", std::strlen("x => x + 1"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::ArrowFunctionExpression);
+  ASSERT_EQ(top->children.size(), 2u);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::Identifier);
+  EXPECT_EQ(top->children[0]->name, "x");
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::BinaryOp);
+  EXPECT_EQ(top->children[1]->binop, neojs::BinaryOpKind::Add);
+  a.destroy(ast);
+}
+
+TEST(Frontend, ArrowMultiParam) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* (a, b) => a + b → Arrow[Identifier(a), Identifier(b), BinaryOp(+)] */
+  neojs::AST *ast = neojs::parseSource(&a, "(a, b) => a + b", std::strlen("(a, b) => a + b"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::ArrowFunctionExpression);
+  ASSERT_EQ(top->children.size(), 3u);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::Identifier);
+  EXPECT_EQ(top->children[0]->name, "a");
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::Identifier);
+  EXPECT_EQ(top->children[1]->name, "b");
+  EXPECT_EQ(top->children[2]->type, neojs::NodeType::BinaryOp);
+  a.destroy(ast);
+}
+
+TEST(Frontend, ArrowNoParam) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* () => 42 → Arrow[Literal(42)] */
+  neojs::AST *ast = neojs::parseSource(&a, "() => 42", std::strlen("() => 42"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::ArrowFunctionExpression);
+  ASSERT_EQ(top->children.size(), 1u);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::Literal);
+  a.destroy(ast);
+}
+
+TEST(Frontend, ArrowRightAssocNested) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* x => y => x + y → Arrow[x, Arrow[y, BinaryOp(+)]（右结合嵌套） */
+  neojs::AST *ast =
+      neojs::parseSource(&a, "x => y => x + y", std::strlen("x => y => x + y"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::ArrowFunctionExpression);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::Identifier);
+  EXPECT_EQ(top->children[0]->name, "x");
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::ArrowFunctionExpression);
+  neojs::ASTNode *inner = top->children[1];
+  EXPECT_EQ(inner->children[0]->type, neojs::NodeType::Identifier);
+  EXPECT_EQ(inner->children[0]->name, "y");
+  EXPECT_EQ(inner->children[1]->type, neojs::NodeType::BinaryOp);
+  EXPECT_EQ(inner->children[1]->binop, neojs::BinaryOpKind::Add);
+  a.destroy(ast);
+}
+
+TEST(Frontend, ArrowRestParam) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* (...xs) => xs → Arrow[RestElement[Identifier(xs)], Identifier(xs)] */
+  neojs::AST *ast = neojs::parseSource(&a, "(...xs) => xs", std::strlen("(...xs) => xs"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::ArrowFunctionExpression);
+  ASSERT_EQ(top->children.size(), 2u);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::RestElement);
+  EXPECT_EQ(top->children[0]->children[0]->type, neojs::NodeType::Identifier);
+  EXPECT_EQ(top->children[0]->children[0]->name, "xs");
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::Identifier);
+  a.destroy(ast);
+}
+
+TEST(Frontend, ArrowVsParenNotConfused) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* 协同回归：(a + b) * c 是括号表达式，不得误判为箭头 */
+  neojs::AST *ast =
+      neojs::parseSource(&a, "(a + b) * c", std::strlen("(a + b) * c"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::BinaryOp);
+  EXPECT_EQ(top->binop, neojs::BinaryOpKind::Mul);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::BinaryOp);
+  EXPECT_EQ(top->children[0]->binop, neojs::BinaryOpKind::Add);
+  a.destroy(ast);
+}
