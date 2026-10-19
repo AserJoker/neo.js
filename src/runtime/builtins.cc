@@ -30,6 +30,7 @@
 
 #include "neojs/runtime/builtins.h"
 
+#include <cmath>
 #include <string>
 
 #include "neojs/runtime/context.h"
@@ -236,8 +237,20 @@ JSValue *wellKnownSymbol(JSContext *ctx, WellKnown wks) {
 
 /* 注册 E4 内置对象到 globalThis。 */
 void installBuiltins(JSContext *ctx) {
-  /* Symbol 构造器（§20.4.1.1）：内置函数 + well-known 静态属性（E4-1）。 */
   JSValue *global = ctx->globalObject();
+
+  /* globalThis 自引用（§19.1.1）：全局对象的属性，值指向全局对象自身。
+   * 属性 {Writable:true, Enumerable:false, Configurable:true}。 */
+  global->object()->setProperty("globalThis", global);
+
+  /* 全局值属性（§19.1.2-4）：Infinity / NaN / undefined。
+   * 均 {Writable:false, Enumerable:false, Configurable:false}。 */
+  global->object()->setProperty("Infinity", ctx->createValue(INFINITY));
+  global->object()->setProperty("NaN", ctx->createValue(NAN));
+  global->object()->setProperty("undefined",
+                               ctx->createValue(Kind::Undefined));
+
+  /* Symbol 构造器（§20.4.1.1）：内置函数 + well-known 静态属性（E4-1）。 */
   JSValue *symbol = makeBuiltin(ctx, symbolConstructor, ThisMode::Strict);
   global->object()->setProperty("Symbol", symbol);
 
