@@ -2533,3 +2533,38 @@ TEST(Frontend, TryCatchFinally) {
   EXPECT_EQ(ast, nullptr);
   EXPECT_TRUE(sink2.hasErrors());
 }
+
+TEST(Frontend, WithStatement) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* with (obj) { x = 1; } → WithStatement[obj, block] + 废弃警告（不中止） */
+  neojs::AST *ast = neojs::parseSource(
+      &a, "with (obj) { x = 1; }", std::strlen("with (obj) { x = 1; }"), sink);
+  ASSERT_NE(ast, nullptr); /* 警告不中止解析 */
+  EXPECT_FALSE(sink.hasErrors());
+  neojs::ASTNode *top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::WithStatement);
+  ASSERT_EQ(top->children.size(), 2u);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::Identifier); /* obj */
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::BlockStatement);
+  /* 确认发出废弃警告（DEP-0001） */
+  bool warned = false;
+  for (const neojs::Diagnostic &d : sink.diagnostics()) {
+    if (d.severity == neojs::Severity::Warning && d.code == "DEP-0001") warned = true;
+  }
+  EXPECT_TRUE(warned);
+  a.destroy(ast);
+}
+
+TEST(Frontend, DebuggerStatement) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* debugger; → DebuggerStatement */
+  neojs::AST *ast =
+      neojs::parseSource(&a, "debugger;", std::strlen("debugger;"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::DebuggerStatement);
+  EXPECT_TRUE(top->children.empty());
+  a.destroy(ast);
+}

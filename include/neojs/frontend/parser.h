@@ -75,6 +75,8 @@ class Parser {
   ASTNode *parseContinueStatement();   /* 续环：continue [label]（M1.5 ⑤） */
   ASTNode *parseThrowStatement();      /* 抛出：throw expr（M1.5 ⑥） */
   ASTNode *parseTryStatement();        /* try/catch/finally（M1.5 ⑥） */
+  ASTNode *parseWithStatement();       /* with：with (obj) stmt（M1.5 ⑦） */
+  ASTNode *parseDebuggerStatement();   /* debugger（M1.5 ⑦） */
   ASTNode *parseExpressionStatement();
 
   /* 最小递归下降：表达式（parser.cc） */

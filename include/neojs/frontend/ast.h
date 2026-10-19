@@ -73,6 +73,8 @@ enum class NodeType : uint8_t {
   ThrowStatement,      /* 抛出：throw expr（M1.5 ⑥，restricted production） */
   TryStatement,        /* 异常处理：try block [catch] [finally]（M1.5 ⑥） */
   CatchClause,         /* catch 子句：catch [(param)] block（M1.5 ⑥） */
+  WithStatement,       /* with：with (obj) stmt（M1.5 ⑦，废弃警告） */
+  DebuggerStatement,   /* debugger 语句（M1.5 ⑦） */
 };
 
 /* 声明关键字类型（M1.5 ①）：var / let / const */

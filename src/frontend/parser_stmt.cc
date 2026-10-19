@@ -134,6 +134,15 @@ ASTNode *Parser::parseStatement() {
   if (isKeyword(current(), "try")) {
     return parseTryStatement();
   }
+  /* with 语句（M1.5 ⑦）：with (obj) stmt。废弃语法 → Warning（不中止）。
+   * 严格模式报 SyntaxError（当前尚无严格模式检测，留 M1.6）。 */
+  if (isKeyword(current(), "with")) {
+    return parseWithStatement();
+  }
+  /* debugger 语句（M1.5 ⑦）：空语句，编译开关关闭时丢弃 */
+  if (isKeyword(current(), "debugger")) {
+    return parseDebuggerStatement();
+  }
 
   /* 兜底：表达式语句 */
   return parseExpressionStatement();
@@ -973,6 +982,58 @@ ASTNode *Parser::parseTryStatement() {
     allocator_->destroy(stmt);
     return nullptr;
   }
+  return stmt;
+}
+
+/* with 语句（M1.5 ⑦）：with (obj) stmt。ECMA-262 §14.18。
+ * children 布局：[object, body]。
+ * 废弃语法：非严格模式发 Warning（DEP-0001），不中止解析；
+ * 严格模式报 SyntaxError（当前严格模式检测留 M1.6，此处恒发 Warning）。 */
+ASTNode *Parser::parseWithStatement() {
+  ASTNode *stmt = newNode(NodeType::WithStatement);
+  stmt->loc = current().start;
+  sink_.emit({Severity::Warning, "DEP-0001",
+              "'with' statement is deprecated and forbidden in strict mode", stmt->loc});
+  advance(); /* with */
+
+  if (!isSymbol(current(), "(")) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '(' after 'with'", current().start});
+    allocator_->destroy(stmt);
+    return nullptr;
+  }
+  advance(); /* ( */
+  setValueContext();
+  ASTNode *object = parseExpression();
+  if (object == nullptr) {
+    allocator_->destroy(stmt);
+    return nullptr;
+  }
+  if (!isSymbol(current(), ")")) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ')' after with object",
+                current().start});
+    allocator_->destroy(stmt);
+    allocator_->destroy(object);
+    return nullptr;
+  }
+  advance(); /* ) */
+  stmt->children.push_back(object);
+  ASTNode *body = parseStatement();
+  if (body == nullptr) {
+    allocator_->destroy(stmt);
+    return nullptr;
+  }
+  stmt->children.push_back(body);
+  return stmt;
+}
+
+/* debugger 语句（M1.5 ⑦）：debugger;。无子节点。
+ * 编译开关关闭时（调试器不可用）由 Compiler 丢弃，Parser 恒产出 AST 节点。 */
+ASTNode *Parser::parseDebuggerStatement() {
+  ASTNode *stmt = newNode(NodeType::DebuggerStatement);
+  stmt->loc = current().start;
+  advance(); /* debugger */
+  /* 分号（ASI）：显式 ; 或换行/}/EOF 隐式插入 */
+  if (isSymbol(current(), ";")) advance();
   return stmt;
 }
 
