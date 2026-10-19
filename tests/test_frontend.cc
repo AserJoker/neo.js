@@ -2015,3 +2015,97 @@ TEST(Frontend, IfMissingParenError) {
   EXPECT_TRUE(sink2.hasErrors());
   a.destroy(ast);
 }
+
+/* -------------------------------------------------------------------------- */
+/* while/do-while 循环语句（M1.5 ⑥）                                          */
+/* -------------------------------------------------------------------------- */
+
+TEST(Frontend, WhileStatement) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* while (a) b; → WhileStatement[cond, body] */
+  neojs::AST *ast =
+      neojs::parseSource(&a, "while (a) b;", std::strlen("while (a) b;"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::WhileStatement);
+  ASSERT_EQ(top->children.size(), 2u);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::Identifier); /* cond */
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::ExprStmt);    /* body */
+  a.destroy(ast);
+
+  /* 块体：while (a) { b; } */
+  ast = neojs::parseSource(&a, "while (a) { b; }", std::strlen("while (a) { b; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::WhileStatement);
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::BlockStatement);
+  a.destroy(ast);
+
+  /* 条件为除法：while (a / b) c; */
+  ast = neojs::parseSource(&a, "while (a / b) c;", std::strlen("while (a / b) c;"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::WhileStatement);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::BinaryOp);
+  EXPECT_EQ(top->children[0]->binop, neojs::BinaryOpKind::Div);
+  a.destroy(ast);
+}
+
+TEST(Frontend, DoWhileStatement) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* do b; while (a); → DoWhileStatement[body, cond]（显式分号） */
+  neojs::AST *ast =
+      neojs::parseSource(&a, "do b; while (a);", std::strlen("do b; while (a);"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::DoWhileStatement);
+  ASSERT_EQ(top->children.size(), 2u);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::ExprStmt); /* body */
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::Identifier); /* cond */
+  a.destroy(ast);
+
+  /* 块体 + 无分号（ASI 补全）：do { b; } while (a) */
+  ast = neojs::parseSource(&a, "do { b; } while (a)", std::strlen("do { b; } while (a)"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::DoWhileStatement);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::BlockStatement);
+  a.destroy(ast);
+
+  /* 尾分号 ASI：do b; while (a)\nc; → do-while + 独立 c; */
+  ast = neojs::parseSource(&a, "do b; while (a)\nc;", std::strlen("do b; while (a)\nc;"), sink);
+  ASSERT_NE(ast, nullptr);
+  ASSERT_EQ(ast->root->children.size(), 2u);
+  EXPECT_EQ(ast->root->children[0]->type, neojs::NodeType::DoWhileStatement);
+  EXPECT_EQ(ast->root->children[1]->type, neojs::NodeType::ExprStmt);
+  a.destroy(ast);
+}
+
+TEST(Frontend, LoopNestedAndError) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* 嵌套 while */
+  neojs::AST *ast =
+      neojs::parseSource(&a, "while (a) while (b) c;", std::strlen("while (a) while (b) c;"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *outer = ast->root->children[0];
+  EXPECT_EQ(outer->type, neojs::NodeType::WhileStatement);
+  EXPECT_EQ(outer->children[1]->type, neojs::NodeType::WhileStatement);
+  a.destroy(ast);
+
+  /* do 缺 while 报错 */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "do b;", std::strlen("do b;"), sink2);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink2.hasErrors());
+  a.destroy(ast);
+
+  /* while 缺 ) 报错 */
+  neojs::DiagnosticSink sink3;
+  ast = neojs::parseSource(&a, "while (a b;", std::strlen("while (a b;"), sink3);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink3.hasErrors());
+  a.destroy(ast);
+}

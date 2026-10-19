@@ -67,9 +67,83 @@ ASTNode *Parser::parseStatement() {
   if (isKeyword(current(), "if")) {
     return parseIfStatement();
   }
+  /* 循环语句（M1.5 ⑥）：while (expr) stmt / do stmt while (expr) */
+  if (isKeyword(current(), "while") || isKeyword(current(), "do")) {
+    return parseWhileStatement();
+  }
 
   /* 兜底：表达式语句 */
   return parseExpressionStatement();
+}
+
+/* 循环语句（M1.5 ⑥）：while (expr) stmt 与 do stmt while (expr);
+ * ECMA-262 §14.4（while）、§14.6.1（do-while）。
+ * children 布局：
+ *   - WhileStatement：[条件, 循环体]
+ *   - DoWhileStatement：[循环体, 条件]
+ * do-while 尾随分号由 ASI 补全（换行/EOF 均可，分号非必须）。 */
+ASTNode *Parser::parseWhileStatement() {
+  bool is_do = isKeyword(current(), "do");
+  ASTNode *stmt = newNode(is_do ? NodeType::DoWhileStatement : NodeType::WhileStatement);
+  stmt->loc = current().start;
+  advance(); /* while / do */
+
+  if (is_do) {
+    /* do stmt while (expr) */
+    ASTNode *body = parseStatement();
+    if (body == nullptr) {
+      allocator_->destroy(stmt);
+      return nullptr;
+    }
+    if (!isKeyword(current(), "while")) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected 'while' after do body",
+                  current().start});
+      allocator_->destroy(stmt);
+      allocator_->destroy(body);
+      return nullptr;
+    }
+    stmt->children.push_back(body);
+    advance(); /* while */
+  }
+
+  if (!isSymbol(current(), "(")) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '(' after loop keyword",
+                current().start});
+    allocator_->destroy(stmt);
+    return nullptr;
+  }
+  advance(); /* ( */
+  setValueContext();
+  ASTNode *cond = parseExpression();
+  if (cond == nullptr) {
+    allocator_->destroy(stmt);
+    return nullptr;
+  }
+  if (!isSymbol(current(), ")")) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ')' after loop condition",
+                current().start});
+    allocator_->destroy(stmt);
+    allocator_->destroy(cond);
+    return nullptr;
+  }
+  advance(); /* ) */
+
+  if (is_do) {
+    /* do-while：children[body, cond]（body 已在前段入列） */
+    stmt->children.push_back(cond);
+    /* do-while 尾分号可选（ASI 补全）：; / 换行 / EOF 均合法 */
+    if (isSymbol(current(), ";")) advance();
+  } else {
+    /* while：children[cond, body] */
+    stmt->children.push_back(cond);
+    ASTNode *body = parseStatement();
+    if (body == nullptr) {
+      allocator_->destroy(stmt);
+      return nullptr;
+    }
+    stmt->children.push_back(body);
+  }
+  return stmt;
 }
 
 /* 条件语句（M1.5 ⑤）：if (expr) stmt [else stmt]。ECMA-262 §14.6。

@@ -181,6 +181,12 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
     case NodeType::IfStatement:
       out += "IfStatement\n";
       break;
+    case NodeType::WhileStatement:
+      out += "WhileStatement\n";
+      break;
+    case NodeType::DoWhileStatement:
+      out += "DoWhileStatement\n";
+      break;
     case NodeType::Literal:
       if (node->literal.is_number) {
         out += "Literal(";
