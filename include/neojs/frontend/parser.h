@@ -15,6 +15,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "neojs/frontend/ast.h"
 #include "neojs/frontend/diagnostics.h"
@@ -70,6 +71,8 @@ class Parser {
   ASTNode *parseFunctionDeclaration(); /* 函数声明：function name(params) { body }（M1.5 ④） */
   ASTNode *parseFunctionExpression();  /* 函数表达式：function [name](params) { body }（M1.5 ④） */
   ASTNode *parseReturnStatement();     /* 返回语句：return [expr]（M1.5 ④） */
+  ASTNode *parseBreakStatement();      /* 跳出：break [label]（M1.5 ⑤） */
+  ASTNode *parseContinueStatement();   /* 续环：continue [label]（M1.5 ⑤） */
   ASTNode *parseExpressionStatement();
 
   /* 最小递归下降：表达式（parser.cc） */
@@ -95,6 +98,7 @@ class Parser {
   bool has_peeked_ = false;
   int loop_depth_ = 0; /* 循环嵌套深度（for/while/do-while；break/continue 校验） */
   int function_depth_ = 0; /* 函数嵌套深度（return 顶层校验，M1.5 ④） */
+  std::vector<std::string> label_stack_; /* 活跃标签栈（break/continue 引用校验） */
 };
 
 }  // namespace neojs

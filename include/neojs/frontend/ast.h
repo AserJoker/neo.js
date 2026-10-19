@@ -68,6 +68,8 @@ enum class NodeType : uint8_t {
   FunctionDeclaration, /* 函数声明：function name(params) { body }（M1.5 ④） */
   FunctionExpression,  /* 函数表达式：function [name](params) { body }（M1.5 ④） */
   ReturnStatement,     /* 返回语句：return [expr]（M1.5 ④，restricted production） */
+  BreakStatement,      /* 跳出：break [label]（M1.5 ⑤，restricted production） */
+  ContinueStatement,   /* 续环：continue [label]（M1.5 ⑤，restricted production） */
 };
 
 /* 声明关键字类型（M1.5 ①）：var / let / const */

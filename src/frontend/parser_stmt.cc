@@ -121,6 +121,11 @@ ASTNode *Parser::parseStatement() {
   if (isKeyword(current(), "return")) {
     return parseReturnStatement();
   }
+  /* 跳出/续环（M1.5 ⑤）：break [label] / continue [label]。restricted production。 */
+  if (isKeyword(current(), "break") || isKeyword(current(), "continue")) {
+    if (isKeyword(current(), "break")) return parseBreakStatement();
+    return parseContinueStatement();
+  }
 
   /* 兜底：表达式语句 */
   return parseExpressionStatement();
@@ -500,7 +505,9 @@ ASTNode *Parser::parseIfStatement() {
 
 /* 标签语句（M1.5 ③）：label: stmt。独立成语句（对齐 ESTree LabeledStatement），
  * 而非嵌入 for/while。children[0] 为被标记的语句。label 名存 name。
- * 支持嵌套标签：a: b: stmt。 */
+ * 支持嵌套标签：a: b: stmt。
+ * 标签登记（M1.5 ⑤）：解析 body 期间标签名入 label_stack_，
+ * 供 break/continue 引用校验；body 结束后弹出。 */
 ASTNode *Parser::parseLabeledStatement() {
   ASTNode *label = newNode(NodeType::LabeledStatement);
   label->loc = current().start;
@@ -512,7 +519,9 @@ ASTNode *Parser::parseLabeledStatement() {
     return nullptr;
   }
   advance(); /* : */
+  label_stack_.push_back(label->name);
   ASTNode *body = parseStatement();
+  label_stack_.pop_back();
   if (body == nullptr) {
     allocator_->destroy(label);
     return nullptr;
@@ -745,6 +754,80 @@ ASTNode *Parser::parseReturnStatement() {
     stmt->children.push_back(arg);
   }
   /* 分号（ASI）：显式 ; 或换行/}/EOF 隐式插入 */
+  if (isSymbol(current(), ";")) advance();
+  return stmt;
+}
+
+/* 跳出语句（M1.5 ⑤）：break [label]。ECMA-262 §14.8.1。
+ * children[0] 为标签引用（可缺省）；label 名存 name。
+ * restricted production：break 后换行立即插入分号（break\nx → break; x）。
+ * 校验：无标签时须在循环/switch 内（loop_depth_）；有标签时须存在（label_stack_）。
+ * 标签名不能是函数边界外的（break 标签不能跨函数，但本实现按语句解析）。 */
+ASTNode *Parser::parseBreakStatement() {
+  ASTNode *stmt = newNode(NodeType::BreakStatement);
+  stmt->loc = current().start;
+  advance(); /* break */
+
+  /* 可选标签：同一行紧跟 Identifier 才是标签引用 */
+  if (at(TokenKind::Identifier) && !current().has_newline_before) {
+    /* 校验标签存在性（label_stack_ 内的活跃标签） */
+    bool found = false;
+    for (const std::string &l : label_stack_) {
+      if (l == current().text) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "undefined label '" + current().text + "'",
+                  current().start});
+      allocator_->destroy(stmt);
+      return nullptr;
+    }
+    stmt->name = current().text;
+    advance();
+  } else if (loop_depth_ == 0) {
+    /* 无标签 break 须在循环/switch 内 */
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "illegal break statement", stmt->loc});
+    allocator_->destroy(stmt);
+    return nullptr;
+  }
+  /* 分号（ASI）：显式 ; 或换行/}/EOF 隐式插入 */
+  if (isSymbol(current(), ";")) advance();
+  return stmt;
+}
+
+/* 续环语句（M1.5 ⑤）：continue [label]。ECMA-262 §14.8.2。
+ * 校验比 break 严格：无标签时必须直接处于循环内（loop_depth_ > 0）；
+ * 有标签时标签必须指向一个循环（label 指向非循环语句是非法的）。
+ * 此处简化：有标签时仅校验标签存在；循环指向校验留待后续（需记录标签目标类型）。
+ * restricted production：continue 后换行立即插入分号。 */
+ASTNode *Parser::parseContinueStatement() {
+  ASTNode *stmt = newNode(NodeType::ContinueStatement);
+  stmt->loc = current().start;
+  advance(); /* continue */
+
+  if (at(TokenKind::Identifier) && !current().has_newline_before) {
+    bool found = false;
+    for (const std::string &l : label_stack_) {
+      if (l == current().text) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "undefined label '" + current().text + "'",
+                  current().start});
+      allocator_->destroy(stmt);
+      return nullptr;
+    }
+    stmt->name = current().text;
+    advance();
+  } else if (loop_depth_ == 0) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "illegal continue statement", stmt->loc});
+    allocator_->destroy(stmt);
+    return nullptr;
+  }
   if (isSymbol(current(), ";")) advance();
   return stmt;
 }

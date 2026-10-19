@@ -2395,3 +2395,74 @@ TEST(Frontend, ReturnNewline) {
   EXPECT_EQ(body->children[1]->type, neojs::NodeType::ExprStmt);
   a.destroy(ast);
 }
+
+TEST(Frontend, BreakStatement) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* while (true) { break; } → BreakStatement 无标签 */
+  neojs::AST *ast = neojs::parseSource(
+      &a, "while (true) { break; }", std::strlen("while (true) { break; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *body = ast->root->children[0]->children[1];
+  ASSERT_EQ(body->children.size(), 1u);
+  EXPECT_EQ(body->children[0]->type, neojs::NodeType::BreakStatement);
+  EXPECT_TRUE(body->children[0]->name.empty()); /* 无标签 */
+  a.destroy(ast);
+
+  /* 带标签 break：outer: for(...) { break outer; } */
+  ast = neojs::parseSource(
+      &a, "outer: for (var i = 0; i < 10; i++) { break outer; }",
+      std::strlen("outer: for (var i = 0; i < 10; i++) { break outer; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *outer = ast->root->children[0];
+  EXPECT_EQ(outer->type, neojs::NodeType::LabeledStatement);
+  EXPECT_EQ(outer->name, "outer");
+  neojs::ASTNode *brk = outer->children[0]->children[3]->children[0];
+  EXPECT_EQ(brk->type, neojs::NodeType::BreakStatement);
+  EXPECT_EQ(brk->name, "outer");
+  a.destroy(ast);
+
+  /* 顶层 break 报错 */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "break;", std::strlen("break;"), sink2);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink2.hasErrors());
+
+  /* 未定义标签报错 */
+  neojs::DiagnosticSink sink3;
+  ast = neojs::parseSource(&a, "while (true) { break nope; }",
+                           std::strlen("while (true) { break nope; }"), sink3);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink3.hasErrors());
+}
+
+TEST(Frontend, ContinueStatement) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* for (var i = 0; i < 10; i++) { continue; } */
+  neojs::AST *ast = neojs::parseSource(
+      &a, "for (var i = 0; i < 10; i++) { continue; }",
+      std::strlen("for (var i = 0; i < 10; i++) { continue; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *body = ast->root->children[0]->children[3];
+  ASSERT_EQ(body->children.size(), 1u);
+  EXPECT_EQ(body->children[0]->type, neojs::NodeType::ContinueStatement);
+  a.destroy(ast);
+
+  /* 顶层 continue 报错 */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "continue;", std::strlen("continue;"), sink2);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink2.hasErrors());
+
+  /* continue 后换行 → restricted production：continue; + x; */
+  neojs::DiagnosticSink sink3;
+  ast = neojs::parseSource(&a, "for (var i = 0; i < 10; i++) { continue\nx; }",
+                           std::strlen("for (var i = 0; i < 10; i++) { continue\nx; }"), sink3);
+  ASSERT_NE(ast, nullptr);
+  body = ast->root->children[0]->children[3];
+  ASSERT_EQ(body->children.size(), 2u);
+  EXPECT_EQ(body->children[0]->type, neojs::NodeType::ContinueStatement);
+  EXPECT_EQ(body->children[1]->type, neojs::NodeType::ExprStmt);
+  a.destroy(ast);
+}
