@@ -128,7 +128,7 @@ TEST(CApi, CreateNamedValueBindsToScope) {
   JSContext *ctx = makeCtx(&a);
   ASSERT_NE(ctx, nullptr);
 
-  /* name != NULL：创建并自动绑定到当前作用域（kind=Var） */
+  /* name != NULL：创建并自动绑定到当前作用域（kind=Let） */
   JSValue *v = JS_CreateNumber(ctx, 7.0, "seven");
   ASSERT_NE(v, nullptr);
   EXPECT_EQ(JS_GetKind(ctx, v), JS_NUMBER);

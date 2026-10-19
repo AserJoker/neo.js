@@ -83,16 +83,17 @@ JSValue *makeValue(JSContext *ctx, V &&value) {
 
 /* 创建值并可选绑定到当前作用域（无孤立值原则）：
  *   name == NULL  -> 临时值（仅宿主句柄持有）；
- *   name != NULL  -> 具名值：自动定义绑定（kind=Var）。返回句柄。 */
+ *   name != NULL  -> 具名值：自动定义绑定（kind=Let，块级绑定到当前作用域，
+ *                    非 var 的函数级提升语义）。返回句柄。 */
 template <typename V>
 JSValue *makeValueNamed(JSContext *ctx, V &&value, const char *name) {
   JSValue *h = makeValue(ctx, std::forward<V>(value));
   if (h == nullptr || name == nullptr) return h; /* 临时值 / 分配失败 */
   neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
   neojs::JSBinding b;
-  b.kind = neojs::BindingKind::Var;
-  b.value = unhandle(c, h); /* 解句柄存内部裸指针（绑定是根集） */
-  b.initialized = true;
+  b.kind = neojs::BindingKind::Let; /* 块级绑定，绑定到 current_scope 本身 */
+  b.value = unhandle(c, h);         /* 解句柄存内部裸指针（绑定是根集） */
+  b.initialized = true;             /* CreateX 立即初始化，无 TDZ */
   c->currentScope().defineBinding(name, b);
   return h;
 }
@@ -386,7 +387,7 @@ extern "C" JSValue *JS_CreateError(JSContext *ctx, const char *message,
     if (h == nullptr || name == nullptr) return h;
     neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
     neojs::JSBinding b;
-    b.kind = neojs::BindingKind::Var;
+    b.kind = neojs::BindingKind::Let; /* 块级绑定，同 makeValueNamed */
     b.value = unhandle(c, h);
     b.initialized = true;
     c->currentScope().defineBinding(name, b);
