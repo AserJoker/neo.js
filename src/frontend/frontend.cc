@@ -57,6 +57,44 @@ const char *unopName(UnaryOpKind k) {
   return "?";
 }
 
+const char *assignOpName(AssignmentOpKind k) {
+  switch (k) {
+    case AssignmentOpKind::Assign:
+      return "=";
+    case AssignmentOpKind::AddAssign:
+      return "+=";
+    case AssignmentOpKind::SubAssign:
+      return "-=";
+    case AssignmentOpKind::MulAssign:
+      return "*=";
+    case AssignmentOpKind::DivAssign:
+      return "/=";
+    case AssignmentOpKind::ModAssign:
+      return "%=";
+    case AssignmentOpKind::PowAssign:
+      return "**=";
+    case AssignmentOpKind::LShiftAssign:
+      return "<<=";
+    case AssignmentOpKind::RShiftAssign:
+      return ">>=";
+    case AssignmentOpKind::URShiftAssign:
+      return ">>>=";
+    case AssignmentOpKind::BitAndAssign:
+      return "&=";
+    case AssignmentOpKind::BitXorAssign:
+      return "^=";
+    case AssignmentOpKind::BitOrAssign:
+      return "|=";
+    case AssignmentOpKind::LogicalAndAssign:
+      return "&&=";
+    case AssignmentOpKind::LogicalOrAssign:
+      return "||=";
+    case AssignmentOpKind::NullishAssign:
+      return "??" "=";  /* 拼接避免 trigraph */
+  }
+  return "?";
+}
+
 const char *binopName(BinaryOpKind k) {
   switch (k) {
     case BinaryOpKind::Add:
@@ -187,6 +225,17 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
       out += "BinaryOp(";
       out += binopName(node->binop);
       out += ")\n";
+      break;
+    case NodeType::Conditional:
+      out += "Conditional\n";
+      break;
+    case NodeType::Assignment:
+      out += "Assignment(";
+      out += assignOpName(node->assign_op);
+      out += ")\n";
+      break;
+    case NodeType::Sequence:
+      out += "Sequence\n";
       break;
   }
   for (const ASTNode *child : node->children) dumpNode(child, out, depth + 1);

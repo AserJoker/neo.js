@@ -49,7 +49,9 @@ class Parser {
   /* 最小递归下降 */
   ASTNode *parseStatementList();
   ASTNode *parseExpressionStatement();
-  ASTNode *parseExpression();      /* 表达式（一元+二元，M1.4） */
+  ASTNode *parseExpression();      /* 逗号序列（最低优先级，M1.4） */
+  ASTNode *parseAssignment();      /* 赋值：= 与复合赋值（右结合） */
+  ASTNode *parseConditional();     /* 条件表达式：?:（右结合） */
   ASTNode *parseUnary();           /* 一元运算：! ~ + - typeof/void/delete/await */
   ASTNode *parseBinary(int min_prec);
   ASTNode *parsePrimary();         /* 数字 / 标识符 / 括号 / 字面量 */

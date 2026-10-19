@@ -870,3 +870,137 @@ TEST(Frontend, BinaryFullPrecedence) {
   EXPECT_EQ(top->children[1]->binop, neojs::BinaryOpKind::Mul);
   a.destroy(ast);
 }
+
+/* -------------------------------------------------------------------------- */
+/* 三元 / 赋值 / 序列（M1.4 ③-2）                                              */
+/* -------------------------------------------------------------------------- */
+
+TEST(Frontend, AssignmentRightAssoc) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* a = b = c → Assignment[=][a, Assignment[=][b, c]] 右结合 */
+  neojs::AST *ast = neojs::parseSource(&a, "a = b = c", 9, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::Assignment);
+  EXPECT_EQ(top->assign_op, neojs::AssignmentOpKind::Assign);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::Identifier);
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::Assignment);
+  EXPECT_EQ(top->children[1]->assign_op, neojs::AssignmentOpKind::Assign);
+  a.destroy(ast);
+}
+
+TEST(Frontend, CompoundAssignments) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+
+  struct Case {
+    const char *src;
+    neojs::AssignmentOpKind expect;
+  } cases[] = {
+      {"a = b", neojs::AssignmentOpKind::Assign},
+      {"a += b", neojs::AssignmentOpKind::AddAssign},
+      {"a -= b", neojs::AssignmentOpKind::SubAssign},
+      {"a *= b", neojs::AssignmentOpKind::MulAssign},
+      {"a /= b", neojs::AssignmentOpKind::DivAssign},
+      {"a %= b", neojs::AssignmentOpKind::ModAssign},
+      {"a **= b", neojs::AssignmentOpKind::PowAssign},
+      {"a <<= b", neojs::AssignmentOpKind::LShiftAssign},
+      {"a >>= b", neojs::AssignmentOpKind::RShiftAssign},
+      {"a >>>= b", neojs::AssignmentOpKind::URShiftAssign},
+      {"a &= b", neojs::AssignmentOpKind::BitAndAssign},
+      {"a ^= b", neojs::AssignmentOpKind::BitXorAssign},
+      {"a |= b", neojs::AssignmentOpKind::BitOrAssign},
+      {"a &&= b", neojs::AssignmentOpKind::LogicalAndAssign},
+      {"a ||= b", neojs::AssignmentOpKind::LogicalOrAssign},
+      {"a ?" "?= b", neojs::AssignmentOpKind::NullishAssign}, /* 拼接避免 trigraph */
+  };
+  for (const auto &c : cases) {
+    neojs::AST *ast = neojs::parseSource(&a, c.src, std::strlen(c.src), sink);
+    ASSERT_NE(ast, nullptr) << c.src;
+    neojs::ASTNode *top = ast->root->children[0]->children[0];
+    EXPECT_EQ(top->type, neojs::NodeType::Assignment) << c.src;
+    EXPECT_EQ(top->assign_op, c.expect) << c.src;
+    a.destroy(ast);
+  }
+}
+
+TEST(Frontend, InvalidAssignmentTarget) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* 1 = x → 非法左值 */
+  neojs::AST *ast = neojs::parseSource(&a, "1 = x", 5, sink);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink.hasErrors());
+  a.destroy(ast);
+}
+
+TEST(Frontend, ConditionalExpression) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* x ? y : z → Conditional[x, y, z] */
+  neojs::AST *ast = neojs::parseSource(&a, "x ? y : z", 9, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::Conditional);
+  ASSERT_EQ(top->children.size(), 3u);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::Identifier);
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::Identifier);
+  EXPECT_EQ(top->children[2]->type, neojs::NodeType::Identifier);
+  a.destroy(ast);
+
+  /* 右结合：a ? b : c ? d : e → Conditional[a, b, Conditional[c, d, e]] */
+  ast = neojs::parseSource(&a, "a ? b : c ? d : e", 17, sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::Conditional);
+  EXPECT_EQ(top->children[2]->type, neojs::NodeType::Conditional);
+  a.destroy(ast);
+}
+
+TEST(Frontend, SequenceExpression) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* a, b, c → Sequence[Sequence[a, b], c] 左结合 */
+  neojs::AST *ast = neojs::parseSource(&a, "a, b, c", 7, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::Sequence);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::Sequence);
+  EXPECT_EQ(top->children[0]->children[0]->type, neojs::NodeType::Identifier);
+  EXPECT_EQ(top->children[0]->children[1]->type, neojs::NodeType::Identifier);
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::Identifier);
+  a.destroy(ast);
+}
+
+TEST(Frontend, SequenceInsideParens) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* (x = 1, y = 2) → 括号内序列，元素为赋值 */
+  neojs::AST *ast = neojs::parseSource(&a, "(x = 1, y = 2)", 14, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::Sequence);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::Assignment);
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::Assignment);
+  a.destroy(ast);
+}
+
+TEST(Frontend, LiteralCommaNotSequence) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* 协同回归：数组/对象字面量内部逗号是分隔符，不被序列吞掉 */
+  neojs::AST *ast = neojs::parseSource(&a, "[1, 2, 3]", 9, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *arr = ast->root->children[0]->children[0];
+  EXPECT_EQ(arr->type, neojs::NodeType::ArrayPattern);
+  EXPECT_EQ(arr->children.size(), 3u);
+  a.destroy(ast);
+
+  ast = neojs::parseSource(&a, "({a: 1, b: 2})", 14, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *obj = ast->root->children[0]->children[0];
+  EXPECT_EQ(obj->type, neojs::NodeType::ObjectPattern);
+  EXPECT_EQ(obj->children.size(), 2u);
+  a.destroy(ast);
+}

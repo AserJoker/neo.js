@@ -46,6 +46,9 @@ enum class NodeType : uint8_t {
   SpreadElement,     /* 展开元素：...expr（数组/调用/解构） */
   UnaryOp,     /* 一元运算 */
   BinaryOp,    /* 二元运算 */
+  Conditional, /* 条件表达式：cond ? a : b（右结合） */
+  Assignment,  /* 赋值：lhs = rhs（含复合赋值） */
+  Sequence,    /* 逗号序列：a, b, c（最低优先级） */
 };
 
 /* 一元运算类型（M1.4：先支持 ! ~ + - 与关键字型 typeof/void/delete/await） */
@@ -87,6 +90,26 @@ enum class BinaryOpKind : uint8_t {
   LogicalAnd, /* && */
   LogicalOr,  /* || */
   Nullish,    /* ?? */
+};
+
+/* 赋值运算类型（M1.4：= 与全部复合赋值；右结合） */
+enum class AssignmentOpKind : uint8_t {
+  Assign,      /* = */
+  AddAssign,   /* += */
+  SubAssign,   /* -= */
+  MulAssign,   /* *= */
+  DivAssign,   /* /= */
+  ModAssign,   /* %= */
+  PowAssign,   /* **= */
+  LShiftAssign, /* <<= */
+  RShiftAssign, /* >>= */
+  URShiftAssign, /* >>>= */
+  BitAndAssign, /* &= */
+  BitXorAssign, /* ^= */
+  BitOrAssign,  /* |= */
+  LogicalAndAssign, /* &&= */
+  LogicalOrAssign,  /* ||= */
+  NullishAssign,    /* ??= */
 };
 
 /* 字面量载荷（M1.4：数字 + 字符串 + 布尔/null） */
@@ -138,6 +161,7 @@ struct ASTNode {
   std::string name;           /* Identifier：名称 */
   UnaryOpKind unop = UnaryOpKind::Pos;
   BinaryOpKind binop = BinaryOpKind::Add;
+  AssignmentOpKind assign_op = AssignmentOpKind::Assign;
 
   /* 构造：仅由 Parser 经 JSAllocator::create 创建（见 parser.h） */
   explicit ASTNode(NodeType t) : type(t) {}

@@ -69,6 +69,37 @@ BinaryOpKind toBinop(const Token &tok) {
   return BinaryOpKind::Add; /* unreachable */
 }
 
+/* 判断当前 token 是否为赋值运算符（含 = 与全部复合赋值） */
+bool isAssignOp(const Token &tok) {
+  if (tok.kind != TokenKind::Symbol) return false;
+  const std::string &s = tok.text;
+  return s == "=" || s == "+=" || s == "-=" || s == "*=" || s == "/=" ||
+         s == "%=" || s == "**=" || s == "<<=" || s == ">>=" ||
+         s == ">>>=" || s == "&=" || s == "^=" || s == "|=" ||
+         s == "&&=" || s == "||=" || s == "??" "=";  /* 拼接避免 trigraph */
+}
+
+AssignmentOpKind toAssignOp(const Token &tok) {
+  const std::string &s = tok.text;
+  if (s == "=") return AssignmentOpKind::Assign;
+  if (s == "+=") return AssignmentOpKind::AddAssign;
+  if (s == "-=") return AssignmentOpKind::SubAssign;
+  if (s == "*=") return AssignmentOpKind::MulAssign;
+  if (s == "/=") return AssignmentOpKind::DivAssign;
+  if (s == "%=") return AssignmentOpKind::ModAssign;
+  if (s == "**=") return AssignmentOpKind::PowAssign;
+  if (s == "<<=") return AssignmentOpKind::LShiftAssign;
+  if (s == ">>=") return AssignmentOpKind::RShiftAssign;
+  if (s == ">>>=") return AssignmentOpKind::URShiftAssign;
+  if (s == "&=") return AssignmentOpKind::BitAndAssign;
+  if (s == "^=") return AssignmentOpKind::BitXorAssign;
+  if (s == "|=") return AssignmentOpKind::BitOrAssign;
+  if (s == "&&=") return AssignmentOpKind::LogicalAndAssign;
+  if (s == "||=") return AssignmentOpKind::LogicalOrAssign;
+  if (s == "??" "=") return AssignmentOpKind::NullishAssign;  /* 拼接避免 trigraph */
+  return AssignmentOpKind::Assign; /* unreachable */
+}
+
 }  // namespace
 
 Parser::Parser(JSAllocator *allocator, const char *source, size_t source_len,
@@ -116,9 +147,86 @@ ASTNode *Parser::parseExpressionStatement() {
   return stmt;
 }
 
-/* 表达式 → 一元 + 二元运算（Pratt；M1.4 扩充全套） */
+/* 表达式 → 逗号序列（最低优先级，M1.4）：a, b, c → Sequence[a, b, c] */
 ASTNode *Parser::parseExpression() {
-  return parseBinary(1);
+  setValueContext();
+  ASTNode *expr = parseAssignment();
+  if (expr == nullptr) return nullptr;
+  while (isSymbol(current(), ",")) {
+    ASTNode *seq = newNode(NodeType::Sequence);
+    seq->loc = expr->loc;
+    seq->children.push_back(expr);
+    advance(); /* , */
+    ASTNode *next = parseAssignment();
+    if (next == nullptr) {
+      allocator_->destroy(seq);
+      return nullptr;
+    }
+    seq->children.push_back(next);
+    expr = seq;
+  }
+  return expr;
+}
+
+/* 赋值（M1.4）：= 与全部复合赋值；右结合。左侧须为简单赋值目标。 */
+ASTNode *Parser::parseAssignment() {
+  ASTNode *lhs = parseConditional();
+  if (lhs == nullptr) return nullptr;
+  if (!isSymbol(current(), "=") && !isAssignOp(current())) return lhs;
+
+  const Token &tok = current();
+  AssignmentOpKind op = toAssignOp(tok);
+  /* 简单赋值目标校验（M1.4 最小集：标识符；成员/解构后续扩展） */
+  if (lhs->type != NodeType::Identifier) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid assignment target", tok.start});
+    allocator_->destroy(lhs);
+    return nullptr;
+  }
+  advance(); /* 赋值运算符 */
+  ASTNode *rhs = parseAssignment(); /* 右结合：a = b = c */
+  if (rhs == nullptr) {
+    allocator_->destroy(lhs);
+    return nullptr;
+  }
+  ASTNode *node = newNode(NodeType::Assignment);
+  node->loc = tok.start;
+  node->assign_op = op;
+  node->children.push_back(lhs);
+  node->children.push_back(rhs);
+  return node;
+}
+
+/* 条件表达式（M1.4）：cond ? then : else；右结合。 */
+ASTNode *Parser::parseConditional() {
+  setValueContext();
+  ASTNode *cond = parseBinary(1);
+  if (cond == nullptr) return nullptr;
+  if (!isSymbol(current(), "?")) return cond;
+  advance(); /* ? */
+  ASTNode *then_expr = parseExpression(); /* then 分支允许序列（ECMA-262） */
+  if (then_expr == nullptr) {
+    allocator_->destroy(cond);
+    return nullptr;
+  }
+  if (!isSymbol(current(), ":")) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ':' in conditional", current().start});
+    allocator_->destroy(cond);
+    allocator_->destroy(then_expr);
+    return nullptr;
+  }
+  advance(); /* : */
+  ASTNode *else_expr = parseAssignment(); /* 右结合：a ? b : c ? d : e */
+  if (else_expr == nullptr) {
+    allocator_->destroy(cond);
+    allocator_->destroy(then_expr);
+    return nullptr;
+  }
+  ASTNode *node = newNode(NodeType::Conditional);
+  node->loc = cond->loc;
+  node->children.push_back(cond);
+  node->children.push_back(then_expr);
+  node->children.push_back(else_expr);
+  return node;
 }
 
 ASTNode *Parser::parseBinary(int min_prec) {
@@ -347,7 +455,7 @@ ASTNode *Parser::parseObjectPattern() {
       ASTNode *spread = newNode(NodeType::SpreadElement);
       spread->loc = current().start;
       advance();
-      ASTNode *arg = parseExpression();
+      ASTNode *arg = parseAssignment();
       if (arg == nullptr) {
         allocator_->destroy(obj);
         return nullptr;
@@ -369,7 +477,7 @@ ASTNode *Parser::parseObjectPattern() {
       if (isSymbol(current(), ":")) {
         prop->prop.kind = PropertyKind::Init;
         advance();
-        ASTNode *val = parseExpression();
+        ASTNode *val = parseAssignment();
         if (val == nullptr) {
           allocator_->destroy(prop);
           allocator_->destroy(obj);
@@ -395,7 +503,7 @@ ASTNode *Parser::parseObjectPattern() {
         return nullptr;
       }
       advance();
-      ASTNode *val = parseExpression();
+      ASTNode *val = parseAssignment();
       if (val == nullptr) {
         allocator_->destroy(prop);
         allocator_->destroy(obj);
@@ -434,7 +542,7 @@ ASTNode *Parser::parseArrayPattern() {
       ASTNode *spread = newNode(NodeType::SpreadElement);
       spread->loc = current().start;
       advance();
-      ASTNode *arg = parseExpression();
+      ASTNode *arg = parseAssignment();
       if (arg == nullptr) {
         allocator_->destroy(arr);
         return nullptr;
@@ -443,7 +551,7 @@ ASTNode *Parser::parseArrayPattern() {
       arr->children.push_back(spread);
       continue;
     }
-    ASTNode *elem = parseExpression();
+    ASTNode *elem = parseAssignment();
     if (elem == nullptr) {
       allocator_->destroy(arr);
       return nullptr;
