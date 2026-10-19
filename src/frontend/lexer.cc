@@ -438,6 +438,10 @@ void Lexer::scanNumber() {
       t.number = r.value;
       t.is_bigint = r.is_bigint;
       t.legacy_octal = legacy_octal; /* 0123 形式：严格模式报错（Parser 检查） */
+      /* 非严格模式发废弃警告（DEP-0002）；严格模式由 Parser 报错 */
+      if (legacy_octal) {
+        sink_.emit({Severity::Warning, "DEP-0002", "legacy octal literal", t.start});
+      }
     }
   }
   current_ = std::move(t);

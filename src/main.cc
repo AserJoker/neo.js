@@ -37,13 +37,41 @@ void printUsage() {
   std::printf("  --dump-tokens  tokenize source and print the token stream\n");
   std::printf("  --dump-ast     parse source as Script and print the AST\n");
   std::printf("  --dump-ast-module  parse source as Module and print the AST\n");
+  std::printf("  --no-deprecation-warnings  suppress deprecation warnings\n");
+  std::printf("  --throw-deprecation        treat deprecation warnings as errors\n");
 }
 
-/* 打印诊断到 stderr（架构 §7：默认输出 stderr）。返回是否无错误。 */
-bool printDiagnostics(neojs::DiagnosticSink &sink) {
+/* 诊断模式（架构 §7.1 CLI 开关） */
+struct DiagMode {
+  bool no_deprecation = false;   /* --no-deprecation-warnings：不打印废弃警告 */
+  bool throw_deprecation = false; /* --throw-deprecation：废弃警告升级为错误 */
+};
+
+/* 打印诊断到 stderr（架构 §7：默认输出 stderr）。返回是否无错误。
+ * no_deprecation：过滤 Warning（不打印）；throw_deprecation：Warning
+ * 升级为 Error（按 error 打印并返回失败）。 */
+bool printDiagnostics(neojs::DiagnosticSink &sink, const DiagMode &mode) {
   if (sink.diagnostics().empty()) return true;
-  sink.print(stderr);
-  return !sink.hasErrors();
+  bool ok = true;
+  for (const neojs::Diagnostic &d : sink.diagnostics()) {
+    if (d.severity == neojs::Severity::Warning) {
+      if (mode.no_deprecation) continue; /* 静默 */
+      if (mode.throw_deprecation) {
+        std::fprintf(stderr, "%zu:%zu: error: [%s] %s\n", d.loc.line, d.loc.col,
+                     d.code.c_str(), d.message.c_str());
+        ok = false;
+        continue;
+      }
+    }
+    const char *sev =
+        d.severity == neojs::Severity::Error   ? "error"
+        : d.severity == neojs::Severity::Warning ? "warning"
+                                                 : "info";
+    std::fprintf(stderr, "%zu:%zu: %s: [%s] %s\n", d.loc.line, d.loc.col, sev,
+                 d.code.c_str(), d.message.c_str());
+    if (d.severity == neojs::Severity::Error) ok = false;
+  }
+  return ok;
 }
 
 /* 创建默认分配器 + ctx；调用方负责 JS_FreeContext 后 JS_FreeAllocator。 */
@@ -96,27 +124,42 @@ int main(int argc, char *argv[]) {
     return 0;
   }
 
-  if (argc == 3 && std::strcmp(argv[1], "--dump-tokens") == 0) {
+  /* 诊断模式开关（架构 §7.1）：--no-deprecation-warnings / --throw-deprecation */
+  DiagMode diag;
+  std::vector<std::string> pos; /* 非开关参数 */
+  for (int i = 1; i < argc; ++i) {
+    if (std::strcmp(argv[i], "--no-deprecation-warnings") == 0) {
+      diag.no_deprecation = true;
+    } else if (std::strcmp(argv[i], "--throw-deprecation") == 0) {
+      diag.throw_deprecation = true;
+    } else {
+      pos.push_back(argv[i]);
+    }
+  }
+  std::vector<const char *> pa;
+  for (const auto &s : pos) pa.push_back(s.c_str());
+
+  if (pa.size() == 2 && std::strcmp(pa[0], "--dump-tokens") == 0) {
     neojs::DiagnosticSink sink;
-    std::string out = neojs::dumpTokens(argv[2], std::strlen(argv[2]), sink);
-    if (!printDiagnostics(sink)) return 1;
+    std::string out = neojs::dumpTokens(pa[1], std::strlen(pa[1]), sink);
+    if (!printDiagnostics(sink, diag)) return 1;
     std::printf("%s", out.c_str());
     return 0;
   }
 
-  if ((argc == 3 && std::strcmp(argv[1], "--dump-ast") == 0) ||
-      (argc == 3 && std::strcmp(argv[1], "--dump-ast-module") == 0)) {
-    bool module = std::strcmp(argv[1], "--dump-ast-module") == 0;
+  if ((pa.size() == 2 && std::strcmp(pa[0], "--dump-ast") == 0) ||
+      (pa.size() == 2 && std::strcmp(pa[0], "--dump-ast-module") == 0)) {
+    bool module = std::strcmp(pa[0], "--dump-ast-module") == 0;
     JSAllocator *a = nullptr;
     JSContext *ctx = nullptr;
     makeEngine(&a, &ctx);
     /* CLI 是引擎内部工具：经 ctx 内部实现取 JSAllocator（#13）。 */
     neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
     neojs::DiagnosticSink sink;
-    neojs::AST *ast = neojs::parseSource(&c->allocator(), argv[2],
-                                         std::strlen(argv[2]), sink, module);
+    neojs::AST *ast = neojs::parseSource(&c->allocator(), pa[1],
+                                         std::strlen(pa[1]), sink, module);
     if (ast == nullptr) {
-      printDiagnostics(sink);
+      printDiagnostics(sink, diag);
       JS_FreeContext(ctx);
       JS_FreeAllocator(a);
       return 1;
@@ -125,7 +168,7 @@ int main(int argc, char *argv[]) {
     c->allocator().destroy(ast);
     JS_FreeContext(ctx);
     JS_FreeAllocator(a);
-    if (!printDiagnostics(sink)) return 1;
+    if (!printDiagnostics(sink, diag)) return 1;
     std::printf("%s", dump.c_str());
     return 0;
   }

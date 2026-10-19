@@ -448,6 +448,18 @@ TEST(Frontend, NumberHexBinaryOctal) {
   EXPECT_FALSE(sink.hasErrors());
 }
 
+/* 数字：旧式八进制 0123 打废弃警告（DEP-0002，非严格模式；严格模式 Parser 报错） */
+TEST(Frontend, NumberLegacyOctalLiteralWarns) {
+  neojs::DiagnosticSink sink;
+  neojs::Lexer l("0123", 4, sink);
+  const neojs::Token &t = l.next();
+  EXPECT_EQ(t.kind, neojs::TokenKind::Number);
+  EXPECT_FALSE(sink.hasErrors());
+  EXPECT_EQ(sink.diagnostics().size(), 1u);
+  EXPECT_EQ(sink.diagnostics()[0].severity, neojs::Severity::Warning);
+  EXPECT_EQ(sink.diagnostics()[0].code, "DEP-0002");
+}
+
 /* 数字：科学计数 + 小数 */
 TEST(Frontend, NumberExponentAndFraction) {
   neojs::DiagnosticSink sink;
