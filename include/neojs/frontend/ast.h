@@ -55,6 +55,7 @@ enum class NodeType : uint8_t {
   ArrowFunctionExpression, /* 箭头函数：params => body（M1.4 ③-4 表达式体） */
   UpdateExpression, /* 自增自减：++x / x++ / --x / x--（M1.4 ③-6） */
   EmptyStatement,   /* 空语句：单分号 ;（M1.5 语句体系） */
+  BlockStatement,   /* 块语句：{ stmt... }（M1.5 语句体系） */
 };
 
 /* 一元运算类型（M1.4：先支持 ! ~ + - 与关键字型 typeof/void/delete/await） */

@@ -163,7 +163,7 @@ ASTNode *Parser::parseStatementList() {
 
 /* 语句总入口（M1.5）：按首 token 特征分派。各语句相对独立，一般可通过
  * 首单词判定（if/for/while/function/return 等）；无特征值时用表达式语句兜底。
- * 当前已实现：空语句（;）；后续逐个加分派。 */
+ * 当前已实现：空语句（;）、块语句（{）；后续逐个加分派。 */
 ASTNode *Parser::parseStatement() {
   /* 空语句：单分号 ;（ECMA-262 EmptyStatement） */
   if (isSymbol(current(), ";")) {
@@ -172,9 +172,37 @@ ASTNode *Parser::parseStatement() {
     advance(); /* ; */
     return stmt;
   }
+  /* 块语句：{ stmt... }（M1.5 ②） */
+  if (isSymbol(current(), "{")) {
+    return parseBlock();
+  }
 
   /* 兜底：表达式语句 */
   return parseExpressionStatement();
+}
+
+/* 块语句（M1.5 ②）：{ stmt... }。空块合法。
+ * 注意：读值位置的 { 是对象字面量/模式（parsePrimary），由调用方区分；
+ * 语句位置的 { 在此进入块。 */
+ASTNode *Parser::parseBlock() {
+  ASTNode *block = newNode(NodeType::BlockStatement);
+  block->loc = current().start;
+  advance(); /* { */
+  while (!isSymbol(current(), "}")) {
+    if (atEof()) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated block", block->loc});
+      allocator_->destroy(block);
+      return nullptr;
+    }
+    ASTNode *stmt = parseStatement();
+    if (stmt == nullptr) {
+      allocator_->destroy(block);
+      return nullptr;
+    }
+    block->children.push_back(stmt);
+  }
+  advance(); /* } */
+  return block;
 }
 
 /* 表达式语句：表达式 + 可选分号 */
@@ -335,8 +363,13 @@ ASTNode *Parser::parseArrowFunction(bool parenthesized) {
   }
   advance(); /* => */
 
-  /* 表达式体（右结合：x => y => z） */
-  ASTNode *body = parseAssignment();
+  /* 函数体：{ 块语句 } 或表达式体（M1.5 ② 解锁块体） */
+  ASTNode *body;
+  if (isSymbol(current(), "{")) {
+    body = parseBlock();
+  } else {
+    body = parseAssignment(); /* 表达式体右结合：x => y => z */
+  }
   if (body == nullptr) {
     allocator_->destroy(arrow);
     return nullptr;

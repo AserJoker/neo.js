@@ -1631,3 +1631,93 @@ TEST(Frontend, HashbangSkip) {
   ASSERT_EQ(ast->root->children.size(), 1u);
   a.destroy(ast);
 }
+
+/* -------------------------------------------------------------------------- */
+/* 块语句（M1.5 ②）：{ stmt... } + 箭头函数块体                              */
+/* -------------------------------------------------------------------------- */
+
+TEST(Frontend, BlockStatement) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* {} → 空块 */
+  neojs::AST *ast = neojs::parseSource(&a, "{}", std::strlen("{}"), sink);
+  ASSERT_NE(ast, nullptr);
+  ASSERT_EQ(ast->root->children.size(), 1u);
+  EXPECT_EQ(ast->root->children[0]->type, neojs::NodeType::BlockStatement);
+  EXPECT_TRUE(ast->root->children[0]->children.empty());
+  a.destroy(ast);
+
+  /* { a; b; } → 块内两条语句 */
+  ast = neojs::parseSource(&a, "{ a; b; }", std::strlen("{ a; b; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *block = ast->root->children[0];
+  EXPECT_EQ(block->type, neojs::NodeType::BlockStatement);
+  ASSERT_EQ(block->children.size(), 2u);
+  EXPECT_EQ(block->children[0]->type, neojs::NodeType::ExprStmt);
+  EXPECT_EQ(block->children[1]->type, neojs::NodeType::ExprStmt);
+  a.destroy(ast);
+
+  /* 嵌套块：{ { {} } } */
+  ast = neojs::parseSource(&a, "{ { {} } }", std::strlen("{ { {} } }"), sink);
+  ASSERT_NE(ast, nullptr);
+  block = ast->root->children[0];
+  EXPECT_EQ(block->type, neojs::NodeType::BlockStatement);
+  EXPECT_EQ(block->children[0]->type, neojs::NodeType::BlockStatement);
+  EXPECT_EQ(block->children[0]->children[0]->type, neojs::NodeType::BlockStatement);
+  a.destroy(ast);
+
+  /* 未闭合块报错 */
+  neojs::DiagnosticSink sink2;
+  ast = neojs::parseSource(&a, "{ a;", std::strlen("{ a;"), sink2);
+  EXPECT_EQ(ast, nullptr);
+  EXPECT_TRUE(sink2.hasErrors());
+  a.destroy(ast);
+}
+
+TEST(Frontend, BlockVsObjectLiteral) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* 协同回归：语句位置 {a} 是块；读值位置 ({a: 1}) 是对象字面量 */
+  neojs::AST *ast = neojs::parseSource(&a, "{a}", std::strlen("{a}"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_EQ(ast->root->children[0]->type, neojs::NodeType::BlockStatement);
+  a.destroy(ast);
+
+  ast = neojs::parseSource(&a, "({a: 1})", std::strlen("({a: 1})"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_EQ(ast->root->children[0]->children[0]->type, neojs::NodeType::ObjectPattern);
+  a.destroy(ast);
+}
+
+TEST(Frontend, ArrowBlockBody) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* x => { ... } → 箭头函数块体（M1.5 ② 解锁，③-4 预留） */
+  neojs::AST *ast =
+      neojs::parseSource(&a, "x => { x; }", std::strlen("x => { x; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::ArrowFunctionExpression);
+  ASSERT_EQ(top->children.size(), 2u);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::Identifier);
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::BlockStatement);
+  a.destroy(ast);
+
+  /* 多参 + 块体：(a, b) => { s = a + b; } */
+  ast = neojs::parseSource(
+      &a, "(a, b) => { s = a + b; }", std::strlen("(a, b) => { s = a + b; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::ArrowFunctionExpression);
+  ASSERT_EQ(top->children.size(), 3u);
+  EXPECT_EQ(top->children[2]->type, neojs::NodeType::BlockStatement);
+  a.destroy(ast);
+
+  /* 表达式体仍可用：x => x */
+  ast = neojs::parseSource(&a, "x => x", std::strlen("x => x"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::ArrowFunctionExpression);
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::Identifier);
+  a.destroy(ast);
+}
