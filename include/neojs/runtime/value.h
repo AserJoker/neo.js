@@ -18,6 +18,8 @@
 #include <cstdint>
 #include <string>
 
+#include "neojs/runtime/gc_header.h"
+
 namespace neojs {
 
 /* 与 C 头文件 JSKind 对应的内部 kind。保持数值一致。 */
@@ -33,9 +35,11 @@ enum class Kind : uint8_t {
   InterruptAwait,  /* #7：async await 断点 */
 };
 
+class JSObject;
 class JSContext;
+class Heap;
 
-class JSValue {
+class JSValue : public GCHeader {
  public:
   /* 构造：普通值 */
   JSValue();                                  /* undefined */
@@ -44,12 +48,18 @@ class JSValue {
   JSValue(double d);                          /* number */
   JSValue(int64_t i);                         /* number（整数） */
   JSValue(const std::string &s);              /* string */
+  ~JSValue() override = default;
 
   /* 访问器 */
   Kind kind() const { return kind_; }
   bool isNumber() const { return kind_ == Kind::Number; }
   bool isString() const { return kind_ == Kind::String; }
+  bool isObject() const { return kind_ == Kind::Object; }
   bool isException() const { return kind_ == Kind::Exception; }
+
+  /* 对象值：仅当 isObject() 时有效。setObject 由对象工厂调用（kind_ 同步置 Object）。 */
+  JSObject *object() const { return object_; }
+  void setObject(JSObject *obj);
 
   /* 值转换（仅当 kind 匹配时语义正确） */
   bool toBoolean() const { return bool_; }
@@ -61,9 +71,8 @@ class JSValue {
   void setErrorInfo(const std::string &info) { string_ = info; }
   const std::string &errorInfo() const { return string_; }
 
-  /* GC（docs/gc.md §3.2）：标记位由 Heap 管理，仅 GC 内部访问 */
-  bool gcMark() const { return gc_mark_; }
-  void setGcMark(bool m) { gc_mark_ = m; }
+  /* GC（docs/gc.md §3.2/§4.1）：引用边交给 Heap 递归标记（对象载荷）。 */
+  void gcMarkRefs(Heap *heap) override;
 
   /* 分配器支持（#5：内部重写 new/delete 走统一分配器） */
   static void *operator new(size_t size);
@@ -74,10 +83,10 @@ class JSValue {
 
  private:
   Kind kind_;
-  bool gc_mark_;       /* GC 标记位（mark 阶段置 1，sweep 清除） */
   bool bool_;
   double number_;
   std::string string_;
+  JSObject *object_ = nullptr; /* Object 载荷（kind_ == Object 时有效） */
 };
 
 }  // namespace neojs

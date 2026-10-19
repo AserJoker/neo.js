@@ -20,6 +20,7 @@
 #include "neojs/runtime/allocator.h"
 #include "neojs/runtime/handles.h"
 #include "neojs/runtime/heap.h"
+#include "neojs/runtime/object.h"
 #include "neojs/runtime/scope.h"
 #include "neojs/runtime/value.h"
 
@@ -61,9 +62,19 @@ class JSContext {
    * freeValue 释放宿主句柄槽（对象生死由 GC 判定，G2）。 */
   template <typename V>
   JSValue *createValue(V &&value) {
-    return heap_.allocValue(std::forward<V>(value));
+    return heap_.allocGCObject<JSValue>(std::forward<V>(value));
   }
+
+  /* 对象工厂：创建 JSObject（普通/数组）并登记到堆；再包一层 JSValue（kind=Object）。
+   * 返回内部值指针（对象值）；经宿主句柄或作用域绑定持有。 */
+  JSValue *createObject(JSObject *proto);
+  JSValue *createArray(size_t capacity = 0);
+
+  /* 释放宿主句柄槽（对象生死由 GC 判定，G2）。freeValue 用于内部值
+   * （无句柄时直接交还堆）；freeHandle 用于宿主经句柄释放（直接释放该槽，
+   * 不反查——同一内部值可被多个句柄指向，find 会释放错槽）。 */
   void freeValue(JSValue *value);
+  void freeHandle(uint32_t handle);
 
  private:
   /* GC 标记阶段根集遍历（docs/gc.md §3.4）：

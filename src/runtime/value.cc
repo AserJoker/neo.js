@@ -3,6 +3,9 @@
 #include <cstdlib>
 #include <new>
 
+#include "neojs/runtime/heap.h"
+#include "neojs/runtime/object.h"
+
 namespace neojs {
 
 namespace {
@@ -19,21 +22,30 @@ struct DefaultAllocator {
 /* JSValue 构造                                                                */
 /* -------------------------------------------------------------------------- */
 
-JSValue::JSValue() : kind_(Kind::Undefined), gc_mark_(false), bool_(false), number_(0.0) {}
+JSValue::JSValue() : kind_(Kind::Undefined), bool_(false), number_(0.0) {}
 
-JSValue::JSValue(Kind kind) : kind_(kind), gc_mark_(false), bool_(false), number_(0.0) {}
+JSValue::JSValue(Kind kind) : kind_(kind), bool_(false), number_(0.0) {}
 
-JSValue::JSValue(bool b) : kind_(Kind::Boolean), gc_mark_(false), bool_(b), number_(0.0) {}
+JSValue::JSValue(bool b) : kind_(Kind::Boolean), bool_(b), number_(0.0) {}
 
-JSValue::JSValue(double d)
-    : kind_(Kind::Number), gc_mark_(false), bool_(false), number_(d) {}
+JSValue::JSValue(double d) : kind_(Kind::Number), bool_(false), number_(d) {}
 
 JSValue::JSValue(int64_t i)
-    : kind_(Kind::Number), gc_mark_(false), bool_(false),
-      number_(static_cast<double>(i)) {}
+    : kind_(Kind::Number), bool_(false), number_(static_cast<double>(i)) {}
 
 JSValue::JSValue(const std::string &s)
-    : kind_(Kind::String), gc_mark_(false), bool_(false), number_(0.0), string_(s) {}
+    : kind_(Kind::String), bool_(false), number_(0.0), string_(s) {}
+
+/* 对象值：绑定 JSObject 载荷（对象工厂调用，kind_ 同步置 Object）。 */
+void JSValue::setObject(JSObject *obj) {
+  object_ = obj;
+  kind_ = Kind::Object;
+}
+
+/* GC（docs/gc.md §4.1）：对象值持有的引用边（JSObject）交给 Heap 递归标记。 */
+void JSValue::gcMarkRefs(Heap *heap) {
+  heap->markRoot(object_);
+}
 
 /* -------------------------------------------------------------------------- */
 /* 分配器（#5：内部重写 new/delete 走统一分配器）                               */

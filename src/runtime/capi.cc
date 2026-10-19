@@ -33,6 +33,7 @@
 #include "neojs/runtime/allocator.h"
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/handles.h"
+#include "neojs/runtime/object.h"
 #include "neojs/runtime/value.h"
 
 /* 内部 kind 与 C JSKind 的数值映射保持同步（见 value.h） */
@@ -94,6 +95,20 @@ JSValue *makeValueNamed(JSContext *ctx, V &&value, const char *name) {
   b.kind = neojs::BindingKind::Let; /* 块级绑定，绑定到 current_scope 本身 */
   b.value = unhandle(c, h);         /* 解句柄存内部裸指针（绑定是根集） */
   b.initialized = true;             /* CreateX 立即初始化，无 TDZ */
+  c->currentScope().defineBinding(name, b);
+  return h;
+}
+
+/* 已创建的内部值 -> 分配句柄，可选绑定到当前作用域（无孤立值原则）。
+ * 用于对象工厂等**已创建内部值**的场景；makeValueNamed 是构造+创建二合一。 */
+JSValue *makeValueHandleNamed(JSContext *ctx, neojs::JSValue *v, const char *name) {
+  neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+  JSValue *h = makeHandle(c, v);
+  if (h == nullptr || name == nullptr) return h;
+  neojs::JSBinding b;
+  b.kind = neojs::BindingKind::Let; /* 块级绑定，同 makeValueNamed */
+  b.value = v; /* 绑定存内部裸指针（绑定是根集） */
+  b.initialized = true;
   c->currentScope().defineBinding(name, b);
   return h;
 }
@@ -322,8 +337,9 @@ extern "C" void JS_FreeValue(JSContext *ctx, JSValue *value) {
   if (ctx == nullptr || value == nullptr) return;
   neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
   try {
-    /* G2 + §5.2：释放宿主句柄槽（对象生死由 GC 判定，不立即释放）。 */
-    c->freeValue(unhandle(c, value));
+    /* G2 + §5.2：释放宿主句柄槽（对象生死由 GC 判定，不立即释放）。
+     * 直接释放传入句柄对应的槽，不反查内部值（同一值可被多句柄指向）。 */
+    c->freeHandle(toHandle(value));
   } catch (...) {
     /* #3 */
   }
@@ -393,6 +409,170 @@ extern "C" JSValue *JS_CreateError(JSContext *ctx, const char *message,
     c->currentScope().defineBinding(name, b);
     return h;
   });
+}
+
+/* -------------------------------------------------------------------------- */
+/* 对象模型（E1；架构 §5.2）                                                   */
+/* -------------------------------------------------------------------------- */
+
+/* 创建普通对象。prototype 为 NULL 时无原型（M4 内置注册后接默认 Object.prototype）。 */
+extern "C" JSValue *JS_CreateObject(JSContext *ctx, JSValue *prototype,
+                                    const char *name) {
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSObject *proto =
+        (prototype != nullptr) ? unhandle(c, prototype)->object() : nullptr;
+    neojs::JSValue *obj = c->createObject(proto);
+    return makeValueHandleNamed(ctx, obj, name); /* obj 已是内部值，仅分配句柄 */
+  });
+}
+
+/* 创建数组对象（elements 分离存储）。 */
+extern "C" JSValue *JS_CreateArray(JSContext *ctx, const char *name) {
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSValue *arr = c->createArray();
+    return makeValueHandleNamed(ctx, arr, name); /* arr 已是内部值，仅分配句柄 */
+  });
+}
+
+/* 属性访问（架构 §5.2 ordinary [[Get]]/[[Set]]，沿原型链）。 */
+extern "C" JSValue *JS_GetProperty(JSContext *ctx, JSValue *obj, const char *key) {
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSValue *v = unhandle(c, obj);
+    if (v == nullptr || !v->isObject()) {
+      return makeException(ctx, "TypeError: not an object");
+    }
+    neojs::JSValue *found = v->object()->getProperty(key ? key : "");
+    return found != nullptr ? makeHandle(c, found)
+                            : makeValue(ctx, neojs::JSValue()); /* undefined */
+  });
+}
+
+extern "C" JSValue *JS_SetProperty(JSContext *ctx, JSValue *obj, const char *key,
+                                   JSValue *value) {
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSValue *v = unhandle(c, obj);
+    neojs::JSValue *val = unhandle(c, value);
+    if (v == nullptr || !v->isObject()) {
+      return makeException(ctx, "TypeError: not an object");
+    }
+    if (val == nullptr) return makeException(ctx, "TypeError: value is null");
+    v->object()->setProperty(key ? key : "", val);
+    return value;
+  });
+}
+
+extern "C" int JS_HasProperty(JSContext *ctx, JSValue *obj, const char *key) {
+  if (ctx == nullptr || obj == nullptr) return 0;
+  try {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSValue *v = unhandle(c, obj);
+    if (v == nullptr || !v->isObject()) return 0;
+    return v->object()->hasProperty(key ? key : "") ? 1 : 0;
+  } catch (...) {
+    return 0;
+  }
+}
+
+extern "C" int JS_DeleteProperty(JSContext *ctx, JSValue *obj, const char *key) {
+  if (ctx == nullptr || obj == nullptr) return 0;
+  try {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSValue *v = unhandle(c, obj);
+    if (v == nullptr || !v->isObject()) return 0;
+    return v->object()->deleteProperty(key ? key : "") ? 1 : 0;
+  } catch (...) {
+    return 0;
+  }
+}
+
+/* 原型链访问。 */
+extern "C" JSValue *JS_GetPrototype(JSContext *ctx, JSValue *obj) {
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSValue *v = unhandle(c, obj);
+    if (v == nullptr || !v->isObject()) {
+      return makeException(ctx, "TypeError: not an object");
+    }
+    neojs::JSObject *proto = v->object()->prototype();
+    if (proto == nullptr) return makeValue(ctx, neojs::JSValue()); /* undefined */
+    /* 经 holder 返回原型对象的值（JSObject -> JSValue）；holder 为空返回 undefined。 */
+    neojs::JSValue *pv = proto->holder();
+    return pv != nullptr ? makeHandle(c, pv)
+                         : makeValue(ctx, neojs::JSValue());
+  });
+}
+
+extern "C" int JS_SetPrototype(JSContext *ctx, JSValue *obj, JSValue *proto) {
+  if (ctx == nullptr || obj == nullptr) return 0;
+  try {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSValue *v = unhandle(c, obj);
+    if (v == nullptr || !v->isObject()) return 0;
+    neojs::JSValue *p = unhandle(c, proto);
+    v->object()->setPrototype(p != nullptr ? p->object() : nullptr);
+    return 1;
+  } catch (...) {
+    return 0;
+  }
+}
+
+/* 数组元素访问。 */
+extern "C" JSValue *JS_GetElement(JSContext *ctx, JSValue *arr, size_t index) {
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSValue *v = unhandle(c, arr);
+    if (v == nullptr || !v->isObject() || !v->object()->isArray()) {
+      return makeException(ctx, "TypeError: not an array");
+    }
+    neojs::JSValue *elem = v->object()->getElement(index);
+    return elem != nullptr ? makeHandle(c, elem)
+                           : makeValue(ctx, neojs::JSValue()); /* undefined */
+  });
+}
+
+extern "C" JSValue *JS_SetElement(JSContext *ctx, JSValue *arr, size_t index,
+                                  JSValue *value) {
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSValue *v = unhandle(c, arr);
+    neojs::JSValue *val = unhandle(c, value);
+    if (v == nullptr || !v->isObject() || !v->object()->isArray()) {
+      return makeException(ctx, "TypeError: not an array");
+    }
+    if (val == nullptr) return makeException(ctx, "TypeError: value is null");
+    v->object()->setElement(index, val);
+    return value;
+  });
+}
+
+extern "C" size_t JS_GetLength(JSContext *ctx, JSValue *arr) {
+  if (ctx == nullptr || arr == nullptr) return 0;
+  try {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSValue *v = unhandle(c, arr);
+    if (v == nullptr || !v->isObject() || !v->object()->isArray()) return 0;
+    return v->object()->length();
+  } catch (...) {
+    return 0;
+  }
+}
+
+extern "C" int JS_SetLength(JSContext *ctx, JSValue *arr, size_t length) {
+  if (ctx == nullptr || arr == nullptr) return 0;
+  try {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::JSValue *v = unhandle(c, arr);
+    if (v == nullptr || !v->isObject() || !v->object()->isArray()) return 0;
+    neojs::JSObject *obj = v->object();
+    obj->resizeElements(length); /* 直接设置元素存储大小（缩短截断/加长空洞） */
+    return 1;
+  } catch (...) {
+    return 0;
+  }
 }
 
 /* -------------------------------------------------------------------------- */

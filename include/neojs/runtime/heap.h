@@ -5,21 +5,26 @@
  * 内部 C++ 实现：Heap（GC 堆）。
  *
  * 遵循 docs/gc.md（GC 引擎设计）：
- *   G1  所有 JSValue 由 Heap 统一分配与回收（取代 ctx 全局登记表）。
+ *   G1  所有可 GC 对象（JSValue、对象模型 JSObject 等）由 Heap 统一分配与
+ *       回收（取代 ctx 全局登记表）。
  *   G5  触发双模式：分配计数达到阈值自动触发 + 宿主 JS_GC() 手动触发。
  *   G6  正确性优先：v1 用 std::unordered_set 存堆对象、线性扫描标记。
+ *
+ * M3 对象模型（docs/gc.md §3.2/§4.1）：GCHeader 基类提供标记位 + 引用边
+ * 遍历接口；mark 阶段从根出发沿对象图递归（循环引用安全）。
  *
  * 注意：此头文件是引擎内部实现，不对外暴露（对外只暴露 neojs.h 的 C 接口）。
  */
 
 #include <cstddef>
+#include <type_traits>
 #include <unordered_set>
+#include <utility>
 
 #include "neojs/runtime/allocator.h"
+#include "neojs/runtime/gc_header.h"
 
 namespace neojs {
-
-class JSValue;
 
 class Heap {
  public:
@@ -38,20 +43,21 @@ class Heap {
     mark_ud_ = userdata;
   }
 
-  /* 分配一个值（经分配器 create<T>）并登记到堆。返回内部指针；
+  /* 分配一个可 GC 对象（经分配器 create<T>）并登记到堆。返回内部指针；
    * 若分配计数达到阈值则先触发一次 GC（G5 自动触发）。 */
-  template <typename V>
-  JSValue *allocValue(V &&value) {
-    JSValue *v = allocator_->create<JSValue>(std::forward<V>(value));
-    objects_.insert(v);
+  template <class T, class... Args>
+  T *allocGCObject(Args &&...args) {
+    static_assert(std::is_base_of_v<GCHeader, T>, "T must derive GCHeader");
+    T *obj = allocator_->create<T>(std::forward<Args>(args)...);
+    objects_.insert(static_cast<GCHeader *>(obj));
     if (++alloc_count_ >= gc_threshold_) {
       collect(); /* 自动触发（G5） */
     }
-    return v;
+    return obj;
   }
 
   /* 回收对象（析构 + 释放），从堆中移除。GC 内部与显式释放共用。 */
-  void destroyValue(JSValue *value);
+  void destroyValue(GCHeader *object);
 
   /* 堆中存活对象数（调试/测试观测） */
   size_t size() const { return objects_.size(); }
@@ -66,15 +72,16 @@ class Heap {
   /* 触发一次完整 GC（mark-sweep）：先标记根集，再清除未标记对象。 */
   void collect();
 
-  /* 标记一个根对象（标记阶段由 MarkFn 回调收集根集后逐个调用） */
-  void markRoot(JSValue *value);
+  /* 标记一个可 GC 对象；沿对象图递归标记其引用边（docs/gc.md §4.1）。
+   * 标记阶段由 MarkFn 回调收集根集后逐个调用；gcMarkRefs 内部回调用。 */
+  void markRoot(GCHeader *object);
 
  private:
   /* 清除阶段：回收未标记对象，清除标记位 */
   void sweep();
 
   JSAllocator *allocator_;                       /* 引用分配器（#13，不拥有） */
-  std::unordered_set<JSValue *> objects_;        /* 所有堆对象（G6） */
+  std::unordered_set<GCHeader *> objects_;       /* 所有堆对象（G6） */
   size_t alloc_count_ = 0;                       /* 自上次 GC 的累计分配数 */
   size_t gc_threshold_ = 1000;                   /* 分配阈值（默认 1000） */
   MarkFn mark_fn_ = nullptr;                     /* 根集标记回调（G3） */

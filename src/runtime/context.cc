@@ -40,15 +40,35 @@ void JSContext::popScope() {
 }
 
 void JSContext::freeValue(JSValue *value) {
-  /* G2：释放宿主句柄槽（对象生死由 GC 判定，不立即释放）。
-   * 内部值（非宿主句柄持有）调用 freeValue 时，直接交还堆。 */
+  /* G2：内部值释放。非宿主句柄持有的内部值直接交还堆。 */
   if (value == nullptr) return;
-  uint32_t h = handles_.find(value);
-  if (h != 0) {
-    handles_.free(h);
-  } else {
-    heap_.destroyValue(value); /* 非句柄持有的内部值：直接销毁 */
-  }
+  heap_.destroyValue(value); /* 内部值（非经句柄）直接销毁 */
+}
+
+void JSContext::freeHandle(uint32_t handle) {
+  /* 宿主经句柄释放：直接释放该句柄槽（对象生死由 GC 判定，G2）。
+   * 不反查持有值——同一内部值可被多个句柄指向（如属性返回的临时句柄），
+   * find 会释放第一个匹配槽（错误）。 */
+  handles_.free(handle);
+}
+
+/* 对象工厂（架构 §5.2 + docs/gc.md G1）：
+ * JSObject 与包装 JSValue 都经 Heap 登记（引用边：JSValue -> JSObject）。
+ * 返回内部值指针（kind = Object），由宿主句柄或作用域绑定持有。 */
+JSValue *JSContext::createObject(JSObject *proto) {
+  JSObject *obj = heap_.allocGCObject<JSObject>(proto);
+  JSValue *v = heap_.allocGCObject<JSValue>(); /* kind=Undefined，随后置 Object */
+  v->setObject(obj);
+  obj->setHolder(v); /* 反向包装指针：JSObject -> JSValue */
+  return v;
+}
+
+JSValue *JSContext::createArray(size_t capacity) {
+  JSObject *arr = heap_.allocGCObject<JSObject>(ObjectKind::Array, capacity);
+  JSValue *v = heap_.allocGCObject<JSValue>();
+  v->setObject(arr);
+  arr->setHolder(v);
+  return v;
 }
 
 void JSContext::markRootsThunk(void *ud) {

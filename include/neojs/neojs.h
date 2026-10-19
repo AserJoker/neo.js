@@ -127,6 +127,43 @@ const char *JS_ToString(JSContext *ctx, const JSValue *value); /* 返回内部 U
 JSValue *JS_CreateError(JSContext *ctx, const char *message, const char *name);
 
 /* -------------------------------------------------------------------------- */
+/* 对象模型（E1 对象模型地基；架构 §5.2）                                     */
+/* -------------------------------------------------------------------------- */
+
+/* 创建普通对象（kind = JS_OBJECT）。name 语义同其它 CreateX。
+ * prototype 为 NULL 时使用默认 Object.prototype（M4 内置注册后生效；
+ * 当前阶段默认原型为 NULL，原型链仅经 JS_SetPrototype 显式建立）。 */
+JSValue *JS_CreateObject(JSContext *ctx, JSValue *prototype, const char *name);
+
+/* 创建数组对象（kind = JS_OBJECT，数组 elements 分离存储，架构 §5.2）。 */
+JSValue *JS_CreateArray(JSContext *ctx, const char *name);
+
+/* 属性访问（架构 §5.2 ordinary [[Get]]/[[Set]]，沿原型链）。
+ * key 为属性名（string）。value 为宿主句柄。
+ * JS_GetProperty：未找到返回 JS_UNDEFINED 值（#14 非 NULL）；
+ * JS_SetProperty：返回被赋的 value；key 不存在时新增属性。
+ * JS_HasProperty：返回 1/0（沿原型链）。
+ * JS_DeleteProperty：返回 1（删除成功）/0（属性不存在）。 */
+JSValue *JS_GetProperty(JSContext *ctx, JSValue *obj, const char *key);
+JSValue *JS_SetProperty(JSContext *ctx, JSValue *obj, const char *key, JSValue *value);
+int JS_HasProperty(JSContext *ctx, JSValue *obj, const char *key);
+int JS_DeleteProperty(JSContext *ctx, JSValue *obj, const char *key);
+
+/* 原型链访问（架构 §5.2）。JS_GetPrototype 返回原型对象值；
+ * JS_SetPrototype 设置 [[Prototype]]（返回 1 成功 / 0 失败）。 */
+JSValue *JS_GetPrototype(JSContext *ctx, JSValue *obj);
+int JS_SetPrototype(JSContext *ctx, JSValue *obj, JSValue *proto);
+
+/* 数组元素访问（架构 §5.2 elements 分离存储 + length 推导）。
+ * JS_GetElement：越界/空洞返回 JS_UNDEFINED 值。
+ * JS_SetElement：越界自动扩容。
+ * JS_GetLength / JS_SetLength：数组长度（元素存储大小）。 */
+JSValue *JS_GetElement(JSContext *ctx, JSValue *arr, size_t index);
+JSValue *JS_SetElement(JSContext *ctx, JSValue *arr, size_t index, JSValue *value);
+size_t JS_GetLength(JSContext *ctx, JSValue *arr);
+int JS_SetLength(JSContext *ctx, JSValue *arr, size_t length);
+
+/* -------------------------------------------------------------------------- */
 /* GC 引擎（docs/gc.md）                                                      */
 /* -------------------------------------------------------------------------- */
 
