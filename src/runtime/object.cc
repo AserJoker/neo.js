@@ -16,6 +16,9 @@ JSObject::JSObject(ObjectKind kind, size_t capacity) : kind_(kind) {
   if (capacity > 0) elements_.reserve(capacity);
 }
 
+/* 包装对象（E4-2）：kind 为 Number/String/Boolean/Symbol，data 为原始值。 */
+JSObject::JSObject(ObjectKind kind, JSValue *data) : kind_(kind), data_(data) {}
+
 /* -------------------------------------------------------------------------- */
 /* 命名属性（properties 表）                                                   */
 /* -------------------------------------------------------------------------- */
@@ -123,6 +126,8 @@ void JSObject::gcMarkRefs(Heap *heap) {
   }
   /* 原型链 */
   heap->markRoot(prototype_);
+  /* 包装对象内部槽（E4-2：被包装的原始值） */
+  heap->markRoot(data_);
 }
 
 /* -------------------------------------------------------------------------- */

@@ -17,6 +17,8 @@
 #include "neojs/neojs.h"
 #include "neojs/runtime/builtins.h"
 #include "neojs/runtime/context.h"
+#include "neojs/runtime/conversion.h"
+#include "neojs/runtime/object.h"
 #include "neojs/runtime/value.h"
 
 namespace {
@@ -233,6 +235,293 @@ TEST(Builtins, WellKnownSurviveGc) {
             neojs::wellKnownSymbol(c, neojs::WellKnown::Iterator)); /* 仍缓存 */
 
   JS_FreeValue(ctx, sym);
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* -------------------------------------------------------------------------- */
+/* E4-2 ToObject 装箱 + 包装对象最小方法                                       */
+/* -------------------------------------------------------------------------- */
+
+/* ToObject 装箱（§7.1.13）：Number/String/Boolean/Symbol 原始值 -> 包装对象。 */
+TEST(Builtins, ToObjectBoxesPrimitives) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+  neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+
+  /* 触发内置注册（惰性：globalObject 首次创建）。 */
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+
+  struct { neojs::JSValue *prim; neojs::ObjectKind kind; } cases[] = {
+      {c->createValue(42.0), neojs::ObjectKind::Number},
+      {c->createValue(std::string("hi")), neojs::ObjectKind::String},
+      {c->createValue(true), neojs::ObjectKind::Boolean},
+  };
+  for (auto &tc : cases) {
+    neojs::ConversionResult r = neojs::toObject(c, tc.prim);
+    ASSERT_TRUE(r.ok());
+    ASSERT_TRUE(r.value->isObject());
+    EXPECT_TRUE(r.value->object()->isWrapper());
+    EXPECT_EQ(r.value->object()->kind(), tc.kind);
+  }
+
+  /* Object 原样返回（不新建）。 */
+  neojs::JSValue *obj = c->createObject(nullptr);
+  neojs::ConversionResult r = neojs::toObject(c, obj);
+  ASSERT_TRUE(r.ok());
+  EXPECT_EQ(r.value, obj); /* 同一指针 */
+
+  JS_FreeValue(ctx, global);
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 包装对象原型链指向内置 prototype（构造器的 prototype 属性）。 */
+TEST(Builtins, WrapperPrototypeChained) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+  neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+
+  /* 装箱 -> 包装对象 -> 原型链指向 wrapper_protos_ 缓存。 */
+  neojs::JSValue *num = c->createValue(3.5);
+  neojs::ConversionResult r = neojs::toObject(c, num);
+  ASSERT_TRUE(r.ok());
+  EXPECT_EQ(r.value->object()->prototype(), c->wrapperProto(neojs::ObjectKind::Number)->object());
+
+  neojs::JSValue *str = c->createValue(std::string("x"));
+  r = neojs::toObject(c, str);
+  ASSERT_TRUE(r.ok());
+  EXPECT_EQ(r.value->object()->prototype(), c->wrapperProto(neojs::ObjectKind::String)->object());
+
+  /* wrapperProto 缓存非空（installBuiltins 已填）。 */
+  EXPECT_NE(c->wrapperProto(neojs::ObjectKind::Number), nullptr);
+  EXPECT_NE(c->wrapperProto(neojs::ObjectKind::String), nullptr);
+  EXPECT_NE(c->wrapperProto(neojs::ObjectKind::Boolean), nullptr);
+  EXPECT_NE(c->wrapperProto(neojs::ObjectKind::Symbol), nullptr);
+
+  JS_FreeValue(ctx, global);
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 包装构造器：Number()/String()/Boolean() 经 JS_Call 调用。 */
+TEST(Builtins, WrapperConstructorsCallable) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+
+  /* Number("42") -> 42 */
+  JSValue *numCtor = JS_GetProperty(ctx, global, "Number");
+  ASSERT_NE(numCtor, nullptr);
+  JSValue *s42 = JS_CreateString(ctx, "42", 2, nullptr);
+  JSValue *args1[] = {s42};
+  JSValue *rv = JS_Call(ctx, numCtor, nullptr, 1, args1);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, rv), JS_NUMBER);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, rv), 42.0);
+  JS_FreeValue(ctx, rv);
+  JS_FreeValue(ctx, s42);
+  JS_FreeValue(ctx, numCtor);
+
+  /* String(123) -> "123" */
+  JSValue *strCtor = JS_GetProperty(ctx, global, "String");
+  ASSERT_NE(strCtor, nullptr);
+  JSValue *n123 = JS_CreateNumber(ctx, 123, nullptr);
+  JSValue *args2[] = {n123};
+  rv = JS_Call(ctx, strCtor, nullptr, 1, args2);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, rv), JS_STRING);
+  EXPECT_STREQ(JS_ToString(ctx, rv), "123");
+  JS_FreeValue(ctx, rv);
+  JS_FreeValue(ctx, n123);
+  JS_FreeValue(ctx, strCtor);
+
+  /* Boolean("") -> false（ToBoolean） */
+  JSValue *boolCtor = JS_GetProperty(ctx, global, "Boolean");
+  ASSERT_NE(boolCtor, nullptr);
+  JSValue *empty = JS_CreateString(ctx, "", 0, nullptr);
+  JSValue *args3[] = {empty};
+  rv = JS_Call(ctx, boolCtor, nullptr, 1, args3);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, rv), JS_BOOLEAN);
+  EXPECT_EQ(JS_ToBoolean(ctx, rv), 0);
+  JS_FreeValue(ctx, rv);
+  JS_FreeValue(ctx, empty);
+  JS_FreeValue(ctx, boolCtor);
+
+  /* 无参：Number() -> 0、String() -> ""、Boolean() -> false（重新取构造器）。 */
+  JSValue *numC2 = JS_GetProperty(ctx, global, "Number");
+  JSValue *strC2 = JS_GetProperty(ctx, global, "String");
+  JSValue *boolC2 = JS_GetProperty(ctx, global, "Boolean");
+  rv = JS_Call(ctx, numC2, nullptr, 0, nullptr);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, rv), 0.0);
+  JS_FreeValue(ctx, rv);
+  rv = JS_Call(ctx, strC2, nullptr, 0, nullptr);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_STREQ(JS_ToString(ctx, rv), "");
+  JS_FreeValue(ctx, rv);
+  rv = JS_Call(ctx, boolC2, nullptr, 0, nullptr);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(JS_ToBoolean(ctx, rv), 0);
+  JS_FreeValue(ctx, rv);
+  JS_FreeValue(ctx, numC2);
+  JS_FreeValue(ctx, strC2);
+  JS_FreeValue(ctx, boolC2);
+
+  JS_FreeValue(ctx, global);
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 包装 prototype 最小方法集：valueOf / toString 可从原型链读取并可调用。 */
+TEST(Builtins, WrapperProtoMethodsCallable) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+
+  /* Number.prototype.valueOf 存在且可调用（this=Number 原始值 -> 数值）。 */
+  JSValue *numCtor = JS_GetProperty(ctx, global, "Number");
+  JSValue *numProto = JS_GetProperty(ctx, numCtor, "prototype");
+  ASSERT_NE(numProto, nullptr);
+  JSValue *valueOf = JS_GetProperty(ctx, numProto, "valueOf");
+  ASSERT_NE(valueOf, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, valueOf), JS_OBJECT); /* 函数是可调用对象 */
+  JSValue *thisNum = JS_CreateNumber(ctx, 7.25, nullptr);
+  JSValue *rv = JS_Call(ctx, valueOf, thisNum, 0, nullptr);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, rv), JS_NUMBER);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, rv), 7.25);
+  JS_FreeValue(ctx, rv);
+
+  /* Number.prototype.toString：this=Number -> 字符串。 */
+  JSValue *numToString = JS_GetProperty(ctx, numProto, "toString");
+  ASSERT_NE(numToString, nullptr);
+  JSValue *thisNum2 = JS_CreateNumber(ctx, 123.0, nullptr);
+  rv = JS_Call(ctx, numToString, thisNum2, 0, nullptr);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, rv), JS_STRING);
+  EXPECT_STREQ(JS_ToString(ctx, rv), "123");
+  JS_FreeValue(ctx, rv);
+
+  /* String.prototype.toString：this=String -> 原串。 */
+  JSValue *strCtor = JS_GetProperty(ctx, global, "String");
+  JSValue *strProto = JS_GetProperty(ctx, strCtor, "prototype");
+  JSValue *strToString = JS_GetProperty(ctx, strProto, "toString");
+  ASSERT_NE(strToString, nullptr);
+  JSValue *thisStr = JS_CreateString(ctx, "abc", 3, nullptr);
+  rv = JS_Call(ctx, strToString, thisStr, 0, nullptr);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, rv), JS_STRING);
+  EXPECT_STREQ(JS_ToString(ctx, rv), "abc");
+  JS_FreeValue(ctx, rv);
+
+  /* Boolean.prototype.toString：this=true -> "true"。 */
+  JSValue *boolCtor = JS_GetProperty(ctx, global, "Boolean");
+  JSValue *boolProto = JS_GetProperty(ctx, boolCtor, "prototype");
+  JSValue *boolToString = JS_GetProperty(ctx, boolProto, "toString");
+  ASSERT_NE(boolToString, nullptr);
+  JSValue *thisTrue = JS_CreateBoolean(ctx, 1, nullptr);
+  rv = JS_Call(ctx, boolToString, thisTrue, 0, nullptr);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, rv), JS_STRING);
+  EXPECT_STREQ(JS_ToString(ctx, rv), "true");
+  JS_FreeValue(ctx, rv);
+
+  /* Symbol.prototype.valueOf / toString：this=Symbol。 */
+  JSValue *symCtor = JS_GetProperty(ctx, global, "Symbol");
+  JSValue *symProto = JS_GetProperty(ctx, symCtor, "prototype");
+  JSValue *symValueOf = JS_GetProperty(ctx, symProto, "valueOf");
+  ASSERT_NE(symValueOf, nullptr);
+  JSValue *thisSym = JS_CreateSymbol(ctx, "foo", nullptr);
+  rv = JS_Call(ctx, symValueOf, thisSym, 0, nullptr);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, rv), JS_SYMBOL);
+  JS_FreeValue(ctx, rv);
+  JSValue *symToString = JS_GetProperty(ctx, symProto, "toString");
+  ASSERT_NE(symToString, nullptr);
+  rv = JS_Call(ctx, symToString, thisSym, 0, nullptr);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, rv), JS_STRING);
+  EXPECT_STREQ(JS_ToString(ctx, rv), "Symbol(foo)");
+  JS_FreeValue(ctx, rv);
+
+  JS_FreeValue(ctx, thisSym);
+  JS_FreeValue(ctx, thisTrue);
+  JS_FreeValue(ctx, boolToString);
+  JS_FreeValue(ctx, boolProto);
+  JS_FreeValue(ctx, boolCtor);
+  JS_FreeValue(ctx, thisStr);
+  JS_FreeValue(ctx, strToString);
+  JS_FreeValue(ctx, strProto);
+  JS_FreeValue(ctx, strCtor);
+  JS_FreeValue(ctx, thisNum2);
+  JS_FreeValue(ctx, numToString);
+  JS_FreeValue(ctx, thisNum);
+  JS_FreeValue(ctx, valueOf);
+  JS_FreeValue(ctx, numProto);
+  JS_FreeValue(ctx, numCtor);
+  JS_FreeValue(ctx, global);
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 包装对象（经 toObject 装箱）的 prototype 方法可调用（this=包装对象）。 */
+TEST(Builtins, WrapperObjectMethodsCallable) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+  neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+
+  /* 装箱 Number -> 包装对象 -> 经原型链取 valueOf -> 调用（this=包装对象）。 */
+  neojs::JSValue *num = c->createValue(9.5);
+  neojs::ConversionResult wr = neojs::toObject(c, num);
+  ASSERT_TRUE(wr.ok());
+  JSValue *boxed = nullptr; /* 包装对象经内部指针 -> 临时句柄 */
+  {
+    neojs::JSValue *wv = wr.value;
+    uint32_t h = c->handles().alloc(wv);
+    boxed = reinterpret_cast<JSValue *>(static_cast<uintptr_t>(h));
+  }
+
+  JSValue *numCtor = JS_GetProperty(ctx, global, "Number");
+  JSValue *numProto = JS_GetProperty(ctx, numCtor, "prototype");
+  JSValue *valueOf = JS_GetProperty(ctx, numProto, "valueOf");
+  ASSERT_NE(valueOf, nullptr);
+  JSValue *rv = JS_Call(ctx, valueOf, boxed, 0, nullptr);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, rv), JS_NUMBER);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, rv), 9.5);
+  JS_FreeValue(ctx, rv);
+
+  /* prototype 方法对不兼容 this（普通对象）-> TypeError。 */
+  JSValue *plain = JS_CreateObject(ctx, nullptr, nullptr);
+  rv = JS_Call(ctx, valueOf, plain, 0, nullptr);
+  ASSERT_NE(rv, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, rv), JS_EXCEPTION);
+  JS_FreeValue(ctx, rv);
+  JS_FreeValue(ctx, plain);
+
+  JS_FreeValue(ctx, valueOf);
+  JS_FreeValue(ctx, numProto);
+  JS_FreeValue(ctx, numCtor);
+  JS_FreeValue(ctx, boxed);
+  JS_FreeValue(ctx, global);
   JS_FreeContext(ctx);
   JS_FreeAllocator(a);
 }

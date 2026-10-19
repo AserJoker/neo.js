@@ -64,6 +64,16 @@ JSValue *getProp(JSContext *ctx, JSValue *obj, const char *key) {
   return obj->object()->getProperty(key);
 }
 
+/* 创建装箱对象（E4-2）：包装对象原型链指向内置 prototype（若已注册）。 */
+JSValue *makeWrapper(JSContext *ctx, ObjectKind kind, JSValue *data) {
+  JSValue *w = ctx->createWrapper(kind, data);
+  JSValue *proto = ctx->wrapperProto(kind);
+  if (proto != nullptr && proto->isObject()) {
+    w->object()->setPrototype(proto->object());
+  }
+  return w;
+}
+
 /* 失败结果（错误信息，value=nullptr）。 */
 ConversionResult fail(const std::string &error) {
   ConversionResult r;
@@ -362,7 +372,6 @@ ConversionResult toPropertyKey(JSContext *ctx, JSValue *v) {
 }
 
 ConversionResult toObject(JSContext *ctx, JSValue *v) {
-  (void)ctx; /* 装箱（E4）前不使用 */
   if (v == nullptr) return fail("TypeError: Cannot convert undefined or null");
   switch (v->kind()) {
     case Kind::Undefined:
@@ -370,11 +379,19 @@ ConversionResult toObject(JSContext *ctx, JSValue *v) {
       return fail("TypeError: Cannot convert undefined or null to object");
     case Kind::Object:
       return ok(v); /* 已是对象，原样返回 */
+    case Kind::Boolean:
+      return ok(makeWrapper(ctx, ObjectKind::Boolean, v));
+    case Kind::Number:
+      return ok(makeWrapper(ctx, ObjectKind::Number, v));
+    case Kind::String:
+      return ok(makeWrapper(ctx, ObjectKind::String, v));
+    case Kind::Symbol:
+      return ok(makeWrapper(ctx, ObjectKind::Symbol, v));
     default:
-      break; /* Boolean/Number/String/Symbol 装箱（E4 内置包装对象后完整） */
+      break;
   }
-  /* 当前阶段无内置包装对象（E4）；返回占位错误。 */
-  return fail("TypeError: boxing not yet implemented (E4)");
+  /* Exception / Interrupt 不可达（转换入口只收合法值）。 */
+  return fail("TypeError: Cannot convert to object");
 }
 
 /* -------------------------------------------------------------------------- */

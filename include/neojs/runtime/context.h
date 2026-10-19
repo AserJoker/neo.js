@@ -66,10 +66,12 @@ class JSContext {
     return heap_.allocGCObject<JSValue>(std::forward<V>(value));
   }
 
-  /* 对象工厂：创建 JSObject（普通/数组）并登记到堆；再包一层 JSValue（kind=Object）。
-   * 返回内部值指针（对象值）；经宿主句柄或作用域绑定持有。 */
+  /* 对象工厂：创建 JSObject（普通/数组/包装对象）并登记到堆；再包一层
+   * JSValue（kind=Object）。返回内部值指针（对象值）；经宿主句柄或
+   * 作用域绑定持有。createWrapper 创建装箱对象（E4-2，§7.1.13）。 */
   JSValue *createObject(JSObject *proto);
   JSValue *createArray(size_t capacity = 0);
+  JSValue *createWrapper(ObjectKind kind, JSValue *data);
 
   /* 释放宿主句柄槽（对象生死由 GC 判定，G2）。freeValue 用于内部值
    * （无句柄时直接交还堆）；freeHandle 用于宿主经句柄释放（直接释放该槽，
@@ -95,6 +97,20 @@ class JSContext {
   JSValue *wellKnown(int index) const { return well_known_[index]; }
   void setWellKnown(int index, JSValue *v) { well_known_[index] = v; }
 
+  /* 包装对象原型缓存（E4-2）：Number/String/Boolean/Symbol 的 prototype 对象。
+   * 装箱（toObject）时包装对象原型链指向对应 prototype（§7.1.13 + §20.1.3 等）。
+   * 索引按 ObjectKind（Number/String/Boolean/Symbol）映射，进根集（markRoots），
+   * installBuiltins 注册。 */
+  JSValue *wrapperProto(ObjectKind kind) const {
+    int idx = static_cast<int>(kind) - static_cast<int>(ObjectKind::Number);
+    if (idx < 0 || idx >= 4) return nullptr;
+    return wrapper_protos_[idx];
+  }
+  void setWrapperProto(ObjectKind kind, JSValue *v) {
+    int idx = static_cast<int>(kind) - static_cast<int>(ObjectKind::Number);
+    if (idx >= 0 && idx < 4) wrapper_protos_[idx] = v;
+  }
+
  private:
   /* GC 标记阶段根集遍历（docs/gc.md §3.4）：
    * 句柄表所有非空槽 + 作用域绑定链（沿 parent/children 遍历）。
@@ -110,6 +126,7 @@ class JSContext {
   JSValue *global_ = nullptr; /* 全局对象（globalThis 雏形，惰性创建） */
   std::string tmp_string_; /* 临时字符串缓冲（JS_ToString 稳定返回用） */
   JSValue *well_known_[4] = {nullptr, nullptr, nullptr, nullptr}; /* well-known 缓存（E4-1） */
+  JSValue *wrapper_protos_[4] = {nullptr, nullptr, nullptr, nullptr}; /* 包装原型缓存（E4-2） */
 };
 
 }  // namespace neojs

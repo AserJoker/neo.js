@@ -49,8 +49,17 @@ struct PropertyDescriptor {
   JSValue *setter = nullptr;
 };
 
-/* 对象类别（架构 §5.2：数组 elements 分离存储）。 */
-enum class ObjectKind : uint8_t { Ordinary, Array };
+/* 对象类别（架构 §5.2：数组 elements 分离存储；E4-2 加包装对象）。
+ * Number/String/Boolean/Symbol 为原始值装箱（ToObject，§7.1.13），
+ * 内部槽 data_ 持有被包装的原始值（GC 引用边）。 */
+enum class ObjectKind : uint8_t {
+  Ordinary,
+  Array,
+  Number,   /* 包装 Number（[[NumberData]]） */
+  String,   /* 包装 String（[[StringData]]） */
+  Boolean,  /* 包装 Boolean（[[BooleanData]]） */
+  Symbol,   /* 包装 Symbol（[[SymbolData]]） */
+};
 
 class JSObject : public GCHeader {
  public:
@@ -58,10 +67,22 @@ class JSObject : public GCHeader {
   JSObject(JSObject *prototype = nullptr);
   /* 创建数组对象。capacity 为元素存储初始容量。 */
   JSObject(ObjectKind kind, size_t capacity = 0);
+  /* 创建包装对象（E4-2，§7.1.13 ToObject）：kind 为 Number/String/
+   * Boolean/Symbol 之一，data 为被包装的原始值（内部指针）。 */
+  JSObject(ObjectKind kind, JSValue *data);
   ~JSObject() override = default;
 
   ObjectKind kind() const { return kind_; }
   bool isArray() const { return kind_ == ObjectKind::Array; }
+  bool isWrapper() const { /* E4-2 装箱对象：内部持有原始值 */
+    return kind_ == ObjectKind::Number || kind_ == ObjectKind::String ||
+           kind_ == ObjectKind::Boolean || kind_ == ObjectKind::Symbol;
+  }
+
+  /* 包装对象内部槽（E4-2）：[[NumberData]]/[[StringData]]/[[BooleanData]]/
+   * [[SymbolData]]。仅 isWrapper() 时有效；GC 引用边。 */
+  JSValue *wrapperData() const { return data_; }
+  void setWrapperData(JSValue *v) { data_ = v; }
 
   /* 原型链（架构 §5.2） */
   JSObject *prototype() const { return prototype_; }
@@ -115,6 +136,7 @@ class JSObject : public GCHeader {
   std::unordered_map<std::string, PropertyDescriptor> properties_; /* 命名属性表 */
   std::vector<JSValue *> elements_;                          /* 数组元素（连续索引） */
   JSValue *holder_ = nullptr;                                /* 反向包装指针 */
+  JSValue *data_ = nullptr;                                  /* 包装对象内部槽（E4-2） */
 };
 
 }  // namespace neojs

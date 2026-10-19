@@ -73,6 +73,16 @@ JSValue *JSContext::createArray(size_t capacity) {
   return v;
 }
 
+/* 包装对象（E4-2，§7.1.13 ToObject）：kind 为 Number/String/Boolean/Symbol，
+ * data 为被包装的原始值（内部指针，GC 引用边）。 */
+JSValue *JSContext::createWrapper(ObjectKind kind, JSValue *data) {
+  JSObject *obj = heap_.allocGCObject<JSObject>(kind, data);
+  JSValue *v = heap_.allocGCObject<JSValue>();
+  v->setObject(obj);
+  obj->setHolder(v);
+  return v;
+}
+
 /* 全局对象（globalThis 雏形，E5 完整注册内置）：惰性创建，首次访问时
  * 生成普通全局对象，后续复用；经根集标记保护（global_ 进 markRoots）。 */
 JSValue *JSContext::globalObject() {
@@ -104,6 +114,11 @@ void JSContext::markRoots() {
   /* well-known symbol 缓存（E4-1）：内置协议符号是全局根，始终可达。 */
   for (JSValue *wk : well_known_) {
     if (wk != nullptr) heap_.markRoot(wk);
+  }
+
+  /* 包装对象原型缓存（E4-2）：装箱对象的原型，始终可达。 */
+  for (JSValue *proto : wrapper_protos_) {
+    if (proto != nullptr) heap_.markRoot(proto);
   }
 
   /* 作用域树：从根作用域沿 children 递归覆盖整棵树。所有存活作用域
