@@ -23,6 +23,17 @@
 
 namespace neojs {
 
+/* 判断 token 是否为指定符号文本（如 "+"、"("）。内联定义，供
+ * parser.cc（表达式）与 parser_stmt.cc（语句）共享。 */
+inline bool isSymbol(const Token &tok, const char *sym) {
+  return tok.kind == TokenKind::Symbol && tok.text == sym;
+}
+
+/* 判断 token 是否为指定关键字文本（关键字也是 Identifier kind） */
+inline bool isKeyword(const Token &tok, const char *kw) {
+  return tok.kind == TokenKind::Identifier && tok.text == kw;
+}
+
 class Parser {
  public:
   Parser(JSAllocator *allocator, const char *source, size_t source_len,
@@ -46,13 +57,15 @@ class Parser {
   void setValueContext() { lexer_.setContext(LexContext::Value); }
   void setOperatorContext() { lexer_.setContext(LexContext::Operator); }
 
-  /* 最小递归下降 */
+  /* 最小递归下降：语句（parser_stmt.cc） */
   ASTNode *parseStatementList();
   ASTNode *parseStatement();      /* 语句总入口：按首 token 特征分派 */
   ASTNode *parseBlock();          /* 块语句：{ stmt... } */
   ASTNode *parseLabeledStatement(); /* 标签语句：label: stmt */
   ASTNode *parseIfStatement();      /* 条件语句：if (expr) stmt [else stmt] */
   ASTNode *parseExpressionStatement();
+
+  /* 最小递归下降：表达式（parser.cc） */
   ASTNode *parseExpression();      /* 逗号序列（最低优先级，M1.4） */
   ASTNode *parseAssignment();      /* 赋值：= 与复合赋值（右结合） */
   ASTNode *parseArrowFunction(bool parenthesized); /* 箭头函数（表达式体） */
