@@ -49,6 +49,9 @@ enum class NodeType : uint8_t {
   Conditional, /* 条件表达式：cond ? a : b（右结合） */
   Assignment,  /* 赋值：lhs = rhs（含复合赋值） */
   Sequence,    /* 逗号序列：a, b, c（最低优先级） */
+  MemberExpression, /* 成员访问：obj.prop（.）或 obj[expr]（[]） */
+  CallExpression,   /* 函数调用：callee(args) */
+  NewExpression,    /* new 构造：new Foo(args) 或 new Foo */
 };
 
 /* 一元运算类型（M1.4：先支持 ! ~ + - 与关键字型 typeof/void/delete/await） */
@@ -146,6 +149,11 @@ struct PropertyPayload {
   bool is_computed = false; /* [expr] 计算键 */
 };
 
+/* 成员访问载荷：true = 计算成员 obj[expr]；false = 点成员 obj.prop */
+struct MemberPayload {
+  bool computed = false;
+};
+
 /* AST 节点：基类 + 子节点（扁平化子节点向量，避免手写析构树） */
 struct ASTNode {
   NodeType type = NodeType::Program;
@@ -162,6 +170,7 @@ struct ASTNode {
   UnaryOpKind unop = UnaryOpKind::Pos;
   BinaryOpKind binop = BinaryOpKind::Add;
   AssignmentOpKind assign_op = AssignmentOpKind::Assign;
+  MemberPayload member;       /* MemberExpression：computed 标记 */
 
   /* 构造：仅由 Parser 经 JSAllocator::create 创建（见 parser.h） */
   explicit ASTNode(NodeType t) : type(t) {}

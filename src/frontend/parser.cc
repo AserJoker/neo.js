@@ -11,6 +11,11 @@ bool isSymbol(const Token &tok, const char *sym) {
   return tok.kind == TokenKind::Symbol && tok.text == sym;
 }
 
+/* 判断当前 token 是否为给定关键字文本（关键字也是 Identifier kind） */
+bool isKeyword(const Token &tok, const char *kw) {
+  return tok.kind == TokenKind::Identifier && tok.text == kw;
+}
+
 /* 二元运算符优先级（M1.4 全套，对齐 ECMA-262 §12.11 自高到低）：
  *   **（右结合）> * / % > + - > << >> >>> > < <= > >= in instanceof
  *   > == != === !== > & > ^ > | > && > || > ??
@@ -176,8 +181,8 @@ ASTNode *Parser::parseAssignment() {
 
   const Token &tok = current();
   AssignmentOpKind op = toAssignOp(tok);
-  /* 简单赋值目标校验（M1.4 最小集：标识符；成员/解构后续扩展） */
-  if (lhs->type != NodeType::Identifier) {
+  /* 赋值目标校验（M1.4：标识符 / 成员访问；解构后续扩展） */
+  if (lhs->type != NodeType::Identifier && lhs->type != NodeType::MemberExpression) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid assignment target", tok.start});
     allocator_->destroy(lhs);
     return nullptr;
@@ -282,7 +287,7 @@ ASTNode *Parser::parseUnary() {
   } else {
     is_unary = false;
   }
-  if (!is_unary) return parsePrimary();
+  if (!is_unary) return parseLeftHandSide();
 
   advance(); /* 消费一元运算符 */
   ASTNode *operand = parseUnary(); /* 右结合：一元可嵌套（如 !!!x、- -x） */
@@ -292,6 +297,209 @@ ASTNode *Parser::parseUnary() {
   node->unop = op;
   node->children.push_back(operand);
   return node;
+}
+
+/* 左手边表达式（M1.4 ③-3）：primary 加成员/调用后缀链。
+ *   a.b.c → Member(Member(a, b), c)
+ *   a[i](x) → Call(Member(a, i), [x])
+ * 对齐 ECMA-262：MemberExpression 是合法赋值目标（左值）。 */
+ASTNode *Parser::parseLeftHandSide() {
+  ASTNode *expr = parseNewExpression();
+  if (expr == nullptr) return nullptr;
+  for (;;) {
+    if (isSymbol(current(), ".")) {
+      advance(); /* . */
+      /* 属性名：普通标识符 或 私有字段 #name */
+      ASTNode *prop = nullptr;
+      if (at(TokenKind::Identifier)) {
+        prop = newNode(NodeType::Identifier);
+        prop->loc = current().start;
+        prop->name = current().text;
+        advance();
+      } else if (isSymbol(current(), "#")) {
+        advance(); /* # */
+        if (!at(TokenKind::Identifier)) {
+          sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected private identifier after '#'",
+                      current().start});
+          allocator_->destroy(expr);
+          return nullptr;
+        }
+        prop = newNode(NodeType::PrivateIdentifier);
+        prop->loc = current().start;
+        prop->name = current().text;
+        advance();
+      } else {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected property name after '.'",
+                    current().start});
+        allocator_->destroy(expr);
+        return nullptr;
+      }
+      ASTNode *member = newNode(NodeType::MemberExpression);
+      member->loc = expr->loc;
+      member->member.computed = false;
+      member->children.push_back(expr);
+      member->children.push_back(prop);
+      expr = member;
+    } else if (isSymbol(current(), "[")) {
+      advance(); /* [ */
+      ASTNode *member = newNode(NodeType::MemberExpression);
+      member->loc = expr->loc;
+      member->member.computed = true;
+      member->children.push_back(expr);
+      ASTNode *index = parseExpression();
+      if (index == nullptr) {
+        allocator_->destroy(member);
+        return nullptr;
+      }
+      if (!isSymbol(current(), "]")) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ']'", current().start});
+        allocator_->destroy(member);
+        return nullptr;
+      }
+      advance(); /* ] */
+      member->children.push_back(index);
+      expr = member;
+    } else if (isSymbol(current(), "(")) {
+      ASTNode *call = newNode(NodeType::CallExpression);
+      call->loc = expr->loc;
+      call->children.push_back(expr); /* callee */
+      ASTNode *args = parseArguments();
+      if (args == nullptr) {
+        allocator_->destroy(call);
+        return nullptr;
+      }
+      call->children.insert(call->children.end(), args->children.begin(),
+                            args->children.end());
+      allocator_->destroy(args); /* 参数列表是临时容器，仅取子节点 */
+      expr = call;
+    } else {
+      break;
+    }
+  }
+  return expr;
+}
+
+/* new 构造（M1.4 ③-3）：new Foo(args) / new Foo / new a.b.C()。
+ * 对齐 ECMA-262：new 的 callee 是 MemberExpression（不含调用后缀），
+ * 但 new Foo().bar 的 .bar 归属外层（new 优先级低于成员/调用后缀）。 */
+ASTNode *Parser::parseNewExpression() {
+  if (!isKeyword(current(), "new")) return parsePrimary();
+  advance(); /* new */
+  ASTNode *callee = parseNewExpression(); /* 支持 new new Foo() 嵌套 */
+  if (callee == nullptr) return nullptr;
+  /* new 的 callee 吃成员链，但不吃调用：new Foo() 中 () 是 new 的参数 */
+  for (;;) {
+    if (isSymbol(current(), ".")) {
+      advance();
+      ASTNode *prop = nullptr;
+      if (at(TokenKind::Identifier)) {
+        prop = newNode(NodeType::Identifier);
+        prop->loc = current().start;
+        prop->name = current().text;
+        advance();
+      } else if (isSymbol(current(), "#")) {
+        advance();
+        if (!at(TokenKind::Identifier)) {
+          sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected private identifier after '#'",
+                      current().start});
+          allocator_->destroy(callee);
+          return nullptr;
+        }
+        prop = newNode(NodeType::PrivateIdentifier);
+        prop->loc = current().start;
+        prop->name = current().text;
+        advance();
+      } else {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected property name after '.'",
+                    current().start});
+        allocator_->destroy(callee);
+        return nullptr;
+      }
+      ASTNode *member = newNode(NodeType::MemberExpression);
+      member->loc = callee->loc;
+      member->member.computed = false;
+      member->children.push_back(callee);
+      member->children.push_back(prop);
+      callee = member;
+    } else if (isSymbol(current(), "[")) {
+      advance();
+      ASTNode *member = newNode(NodeType::MemberExpression);
+      member->loc = callee->loc;
+      member->member.computed = true;
+      member->children.push_back(callee);
+      ASTNode *index = parseExpression();
+      if (index == nullptr) {
+        allocator_->destroy(member);
+        return nullptr;
+      }
+      if (!isSymbol(current(), "]")) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ']'", current().start});
+        allocator_->destroy(member);
+        return nullptr;
+      }
+      advance();
+      member->children.push_back(index);
+      callee = member;
+    } else {
+      break;
+    }
+  }
+  ASTNode *node = newNode(NodeType::NewExpression);
+  node->loc = callee->loc;
+  node->children.push_back(callee);
+  /* new Foo(...) 显式参数；无括号则 new Foo 无参数 */
+  if (isSymbol(current(), "(")) {
+    ASTNode *args = parseArguments();
+    if (args == nullptr) {
+      allocator_->destroy(node);
+      return nullptr;
+    }
+    node->children.insert(node->children.end(), args->children.begin(),
+                          args->children.end());
+    allocator_->destroy(args);
+  }
+  return node;
+}
+
+/* 实参列表：f(a, b, ...rest)。返回临时容器节点（调用方取子节点后释放）。 */
+ASTNode *Parser::parseArguments() {
+  ASTNode *args = newNode(NodeType::Sequence); /* 复用：仅作子节点容器 */
+  args->loc = current().start;
+  advance(); /* ( */
+  while (!isSymbol(current(), ")")) {
+    if (atEof()) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated argument list", args->loc});
+      allocator_->destroy(args);
+      return nullptr;
+    }
+    if (isSymbol(current(), ",")) {
+      advance();
+      continue;
+    }
+    ASTNode *arg;
+    if (isSymbol(current(), "...")) {
+      ASTNode *spread = newNode(NodeType::SpreadElement);
+      spread->loc = current().start;
+      advance();
+      ASTNode *inner = parseAssignment();
+      if (inner == nullptr) {
+        allocator_->destroy(spread);
+        allocator_->destroy(args);
+        return nullptr;
+      }
+      spread->children.push_back(inner);
+      arg = spread;
+    } else {
+      arg = parseAssignment();
+      if (arg == nullptr) {
+        allocator_->destroy(args);
+        return nullptr;
+      }
+    }
+    args->children.push_back(arg);
+  }
+  advance(); /* ) */
+  return args;
 }
 
 /* 最小 primary：字面量 / 标识符 / 私有字段 / 对象/数组 / ( 表达式 ) */

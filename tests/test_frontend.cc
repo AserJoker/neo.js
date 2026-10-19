@@ -1004,3 +1004,155 @@ TEST(Frontend, LiteralCommaNotSequence) {
   EXPECT_EQ(obj->children.size(), 2u);
   a.destroy(ast);
 }
+
+/* -------------------------------------------------------------------------- */
+/* 成员访问 / 调用 / new（M1.4 ③-3）                                           */
+/* -------------------------------------------------------------------------- */
+
+TEST(Frontend, MemberAccess) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* a.b.c → Member(Member(a, b), c) */
+  neojs::AST *ast = neojs::parseSource(&a, "a.b.c", 5, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::MemberExpression);
+  EXPECT_FALSE(top->member.computed);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::MemberExpression);
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::Identifier);
+  a.destroy(ast);
+}
+
+TEST(Frontend, ComputedMember) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* arr[i + 1] → Member[] [arr, BinaryOp(+)] */
+  neojs::AST *ast = neojs::parseSource(&a, "arr[i + 1]", std::strlen("arr[i + 1]"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::MemberExpression);
+  EXPECT_TRUE(top->member.computed);
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::BinaryOp);
+  a.destroy(ast);
+}
+
+TEST(Frontend, CallExpression) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* f(x, y) → Call[f, x, y] */
+  neojs::AST *ast = neojs::parseSource(&a, "f(x, y)", 7, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::CallExpression);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::Identifier);
+  ASSERT_EQ(top->children.size(), 3u);
+  a.destroy(ast);
+
+  /* 链式：a.b.c(d).e[0] */
+  ast = neojs::parseSource(&a, "a.b.c(d).e[0]", std::strlen("a.b.c(d).e[0]"), sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::MemberExpression);
+  EXPECT_TRUE(top->member.computed);
+  a.destroy(ast);
+}
+
+TEST(Frontend, NewExpression) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* new Foo() → New[Foo] */
+  neojs::AST *ast = neojs::parseSource(&a, "new Foo()", std::strlen("new Foo()"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::NewExpression);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::Identifier);
+  a.destroy(ast);
+
+  /* new Foo 无括号 */
+  ast = neojs::parseSource(&a, "new Foo", 7, sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::NewExpression);
+  EXPECT_EQ(top->children.size(), 1u);
+  a.destroy(ast);
+
+  /* new a.b(1, 2).c：callee 吃成员 a.b，参数 (1,2)，.c 在外层 */
+  ast = neojs::parseSource(&a, "new a.b(1, 2).c", 15, sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::MemberExpression);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::NewExpression);
+  a.destroy(ast);
+}
+
+TEST(Frontend, CallSpreadArgs) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* f(...xs, 1) → Call[f, Spread[xs], 1] */
+  neojs::AST *ast = neojs::parseSource(&a, "f(...xs, 1)", std::strlen("f(...xs, 1)"), sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::CallExpression);
+  ASSERT_EQ(top->children.size(), 3u);
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::SpreadElement);
+  EXPECT_EQ(top->children[2]->type, neojs::NodeType::Literal);
+  a.destroy(ast);
+}
+
+TEST(Frontend, UnaryBelowMember) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* -a.b → UnaryOp(-)[Member(a, b)]：成员优先级高于一元 */
+  neojs::AST *ast = neojs::parseSource(&a, "-a.b", 4, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::UnaryOp);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::MemberExpression);
+  a.destroy(ast);
+}
+
+TEST(Frontend, MemberAssignmentTarget) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* a.b = 1 → Assignment[=][Member(a, b), 1]：成员是合法左值 */
+  neojs::AST *ast = neojs::parseSource(&a, "a.b = 1", 7, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::Assignment);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::MemberExpression);
+  a.destroy(ast);
+}
+
+TEST(Frontend, PrivateMemberAccess) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* obj.#x → Member(obj, PrivateIdentifier(x)) */
+  neojs::AST *ast = neojs::parseSource(&a, "obj.#x", 6, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::MemberExpression);
+  EXPECT_EQ(top->children[1]->type, neojs::NodeType::PrivateIdentifier);
+  a.destroy(ast);
+}
+
+TEST(Frontend, AwaitCallAndDeleteMember) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* await foo() → UnaryOp(await)[Call(foo)] */
+  neojs::AST *ast = neojs::parseSource(&a, "await foo()", 11, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::ASTNode *top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::UnaryOp);
+  EXPECT_EQ(top->unop, neojs::UnaryOpKind::Await);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::CallExpression);
+  a.destroy(ast);
+
+  /* delete obj.x → UnaryOp(delete)[Member(obj, x)] */
+  ast = neojs::parseSource(&a, "delete obj.x", 12, sink);
+  ASSERT_NE(ast, nullptr);
+  top = ast->root->children[0]->children[0];
+  EXPECT_EQ(top->type, neojs::NodeType::UnaryOp);
+  EXPECT_EQ(top->unop, neojs::UnaryOpKind::Delete);
+  EXPECT_EQ(top->children[0]->type, neojs::NodeType::MemberExpression);
+  a.destroy(ast);
+}

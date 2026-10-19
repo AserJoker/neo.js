@@ -53,6 +53,9 @@ class Parser {
   ASTNode *parseAssignment();      /* 赋值：= 与复合赋值（右结合） */
   ASTNode *parseConditional();     /* 条件表达式：?:（右结合） */
   ASTNode *parseUnary();           /* 一元运算：! ~ + - typeof/void/delete/await */
+  ASTNode *parseLeftHandSide();    /* 左手边：成员/调用链（M1.4 ③-3） */
+  ASTNode *parseNewExpression();   /* new 构造 */
+  ASTNode *parseArguments();       /* 实参列表：(a, b, ...rest) */
   ASTNode *parseBinary(int min_prec);
   ASTNode *parsePrimary();         /* 数字 / 标识符 / 括号 / 字面量 */
   ASTNode *parseLiteral();         /* 数字/字符串/布尔/null/BigInt/正则 */

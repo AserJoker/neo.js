@@ -237,6 +237,15 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
     case NodeType::Sequence:
       out += "Sequence\n";
       break;
+    case NodeType::MemberExpression:
+      out += node->member.computed ? "MemberExpression[]\n" : "MemberExpression.\n";
+      break;
+    case NodeType::CallExpression:
+      out += "CallExpression\n";
+      break;
+    case NodeType::NewExpression:
+      out += "NewExpression\n";
+      break;
   }
   for (const ASTNode *child : node->children) dumpNode(child, out, depth + 1);
 }
