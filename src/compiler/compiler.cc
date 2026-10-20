@@ -693,6 +693,132 @@ bool Compiler::compileMemberLoad(const ASTNode &node) {
   return true;
 }
 
+/* 成员赋值（M3.2）：obj.prop = rhs / obj[expr] = rhs（含复合 op=）。
+ * lhs = node.children[0]（对象表达式），rhs = node.children[1]。
+ *
+ * 简单赋值：obj.prop = rhs
+ *   [obj] [rhs] StoreProp "prop"   -> 栈顶 val
+ *   obj[expr] = rhs：
+ *   [obj] [expr] [rhs] StoreElem   -> 栈顶 val
+ *
+ * 复合赋值：obj.prop += rhs（对象表达式只求值一次，暂存临时槽）
+ *   [obj] StoreVar t_obj
+ *   LoadVar t_obj LoadProp "prop"  -> 旧值
+ *   [rhs] Add                       -> 新值
+ *   LoadVar t_obj [新值] StoreProp "prop" -> 栈顶 val
+ *   obj[expr] += rhs：额外暂存 key：
+ *   [obj] StoreVar t_obj [expr] StoreVar t_key
+ *   LoadVar t_obj LoadVar t_key LoadElem -> 旧值
+ *   [rhs] Add
+ *   LoadVar t_obj LoadVar t_key [新值] StoreElem
+ *
+ * 逻辑复合赋值（&&= / ||= / ??=）需短路 + 重复读引用，本阶段不支持。 */
+bool Compiler::compileMemberAssign(const ASTNode &node) {
+  if (node.children.size() < 2) {
+    fail("member assignment without operands");
+    return false;
+  }
+  const ASTNode *lhs = node.children[0];
+  const ASTNode *rhs = node.children[1];
+  if (lhs->type != NodeType::MemberExpression) {
+    fail("invalid member assignment target");
+    return false;
+  }
+  if (lhs->member.optional) {
+    fail("not implemented: optional chaining assignment");
+    return false;
+  }
+  /* 逻辑复合赋值：短路语义留后续（与标识符目标一致）。 */
+  if (node.assign_op == AssignmentOpKind::LogicalAndAssign ||
+      node.assign_op == AssignmentOpKind::LogicalOrAssign ||
+      node.assign_op == AssignmentOpKind::NullishAssign) {
+    fail("not implemented: logical compound assignment");
+    return false;
+  }
+
+  const bool computed = lhs->member.computed;
+  const ASTNode *obj_expr = lhs->children[0];
+  const ASTNode *key_expr = computed ? lhs->children[1] : nullptr;
+
+  /* 非计算成员：属性名（Identifier；PrivateIdentifier 不支持）。 */
+  std::string prop_name;
+  if (!computed) {
+    const ASTNode *prop = lhs->children[1];
+    if (prop->type == NodeType::PrivateIdentifier) {
+      fail("not implemented: private member assignment");
+      return false;
+    }
+    if (prop->type != NodeType::Identifier) {
+      fail("invalid member property name");
+      return false;
+    }
+    prop_name = prop->name;
+  }
+
+  const bool compound = (node.assign_op != AssignmentOpKind::Assign);
+  if (!compound) {
+    /* 简单赋值：对象表达式求值一次，留栈顶供 StoreProp/StoreElem 消费。 */
+    if (!compileExpr(*obj_expr)) return false;
+    if (computed && !compileExpr(*key_expr)) return false;
+    if (!compileExpr(*rhs)) return false;
+    if (computed) {
+      builder_.store_elem();
+    } else {
+      builder_.store_prop(prop_name);
+    }
+    return true;
+  }
+
+  /* 复合赋值：映射到二元运算。 */
+  BinaryOpKind bop = BinaryOpKind::Add;
+  if (!compoundAssignToBinary(node.assign_op, &bop)) {
+    fail("not implemented: compound assignment operator");
+    return false;
+  }
+  Opcode op = Opcode::Nop;
+  if (!binaryOpcode(bop, &op)) {
+    fail("not implemented: compound assignment operator");
+    return false;
+  }
+
+  /* 暂存对象（和计算键）到临时槽，保证对象表达式只求值一次。 */
+  if (!compileExpr(*obj_expr)) return false;
+  uint16_t t_obj = scope_->next_slot++;
+  builder_.store_var(t_obj);
+  uint16_t t_key = 0;
+  if (computed) {
+    if (!compileExpr(*key_expr)) return false;
+    t_key = scope_->next_slot++;
+    builder_.store_var(t_key);
+  }
+
+  /* 读旧值。 */
+  builder_.load_var(t_obj);
+  if (computed) {
+    builder_.load_var(t_key);
+    builder_.load_elem();
+  } else {
+    builder_.load_prop(prop_name);
+  }
+  /* 运算：新值 = 旧值 op rhs。 */
+  if (!compileExpr(*rhs)) return false;
+  builder_.push_op(op);
+
+  /* 写回：StoreProp/StoreElem 期望 obj 在下、新值在栈顶。
+   * 新值已在栈顶，先暂存到临时槽，再压 obj（和 key）+ 新值。 */
+  uint16_t t_val = scope_->next_slot++;
+  builder_.store_var(t_val);
+  builder_.load_var(t_obj);
+  if (computed) builder_.load_var(t_key);
+  builder_.load_var(t_val);
+  if (computed) {
+    builder_.store_elem();
+  } else {
+    builder_.store_prop(prop_name);
+  }
+  return true;
+}
+
 bool Compiler::compileUnary(const ASTNode &node) {
   if (node.children.empty()) {
     fail("unary op without operand");
@@ -818,9 +944,13 @@ bool Compiler::compileAssignment(const ASTNode &node) {
   const ASTNode *lhs = node.children[0];
   const ASTNode *rhs = node.children[1];
 
-  /* 赋值目标：局部标识符 / 捕获的外层变量（成员/解构在后续实现）。 */
+  /* 赋值目标：局部标识符 / 捕获的外层变量 / 成员（obj.prop / obj[expr]）。 */
+  if (lhs->type == NodeType::MemberExpression) {
+    /* 逻辑复合赋值（&&= / ||= / ??=）在成员分支统一处理（M3.2）。 */
+    return compileMemberAssign(node);
+  }
   if (lhs->type != NodeType::Identifier) {
-    fail("not implemented: assignment to member/destructuring");
+    fail("not implemented: assignment to destructuring");
     return false;
   }
   uint16_t slot = 0;
@@ -831,7 +961,7 @@ bool Compiler::compileAssignment(const ASTNode &node) {
     return false;
   }
 
-  /* 逻辑复合赋值（&&= / ||= / ??=）：需短路语义，本阶段暂不支持。 */
+  /* 逻辑复合赋值（&&= / ||= / ??=）：需短路语义，本阶段暂不支持（标识符目标）。 */
   if (node.assign_op == AssignmentOpKind::LogicalAndAssign ||
       node.assign_op == AssignmentOpKind::LogicalOrAssign ||
       node.assign_op == AssignmentOpKind::NullishAssign) {

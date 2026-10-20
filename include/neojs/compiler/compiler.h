@@ -95,6 +95,9 @@ class Compiler {
 
   /* 成员访问读取（M3.1）：obj.prop（LoadProp）/ obj[expr]（LoadElem）。 */
   bool compileMemberLoad(const ASTNode &node);
+  /* 成员赋值（M3.2）：obj.prop = rhs / obj[expr] = rhs（含复合 op=）。
+   * 返回 false 时已设置错误。 */
+  bool compileMemberAssign(const ASTNode &node);
   bool compileUnary(const ASTNode &node);
   bool compileBinary(const ASTNode &node);
   bool compileConditional(const ASTNode &node);
@@ -102,7 +105,7 @@ class Compiler {
   bool compileCall(const ASTNode &node);
   bool compileSequence(const ASTNode &node);
 
-  /* 赋值目标（Identifier -> StoreVar/StoreUpvalue；MemberExpression 暂不支持）。 */
+  /* 赋值目标（Identifier -> StoreVar/StoreUpvalue；MemberExpression -> compileMemberAssign）。 */
   bool isSimpleAssignTarget(const ASTNode &node) const;
 
   /* 局部变量槽分配：声明/参数登记；引用解析（未找到 -> LoadGlobal）。 */

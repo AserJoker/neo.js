@@ -1603,3 +1603,127 @@ TEST(Compiler, EvalObjectUnderGC) {
   JS_FreeAllocator(a);
 }
 
+/* -------------------------------------------------------------------------- */
+/* 16. M3.2 成员赋值编译（obj.prop = rhs / obj[expr] = rhs / 复合 op=）       */
+/* -------------------------------------------------------------------------- */
+
+/* 对象属性赋值：var o = {a: 1}; o.a = 5; o.a -> 5 */
+TEST(Compiler, EvalMemberAssign) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var o = {a: 1}; o.a = 5; o.a",
+                       std::strlen("var o = {a: 1}; o.a = 5; o.a"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 5.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 计算键赋值：var o = {x: 1}; o['x'] = 7; o.x -> 7 */
+TEST(Compiler, EvalElemAssign) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var o = {x: 1}; o['x'] = 7; o.x",
+                       std::strlen("var o = {x: 1}; o['x'] = 7; o.x"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 7.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 数组元素赋值：var a = [1, 2, 3]; a[1] = 9; a[1] -> 9 */
+TEST(Compiler, EvalArrayElemAssign) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var a = [1, 2, 3]; a[1] = 9; a[1]",
+                       std::strlen("var a = [1, 2, 3]; a[1] = 9; a[1]"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 9.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 属性复合赋值：var o = {a: 1}; o.a += 4; o.a -> 5 */
+TEST(Compiler, EvalMemberCompoundAssign) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var o = {a: 1}; o.a += 4; o.a",
+                       std::strlen("var o = {a: 1}; o.a += 4; o.a"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 5.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 数组元素复合赋值：var a = [1, 2]; a[0] *= 5; a[0] -> 5 */
+TEST(Compiler, EvalElemCompoundAssign) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var a = [1, 2]; a[0] *= 5; a[0]",
+                       std::strlen("var a = [1, 2]; a[0] *= 5; a[0]"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 5.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 计算键复合赋值：var o = {k: 2}; var kk = 'k'; o[kk] += 3; o.k -> 5 */
+TEST(Compiler, EvalComputedKeyCompoundAssign) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "var o = {k: 2}; var kk = 'k'; o[kk] += 3; o.k",
+      std::strlen("var o = {k: 2}; var kk = 'k'; o[kk] += 3; o.k"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 5.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 赋值表达式值 = 新值（链式成员赋值）：var o = {a: {b: 1}}; o.a.b = 3 -> 3 */
+TEST(Compiler, EvalMemberAssignValue) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var o = {a: {b: 1}}; o.a.b = 3",
+                       std::strlen("var o = {a: {b: 1}}; o.a.b = 3"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 3.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
