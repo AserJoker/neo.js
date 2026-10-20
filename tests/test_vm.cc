@@ -1211,6 +1211,133 @@ TEST(Compiler, EvalStackOverflow) {
   JS_FreeAllocator(a);
 }
 
+/* -------------------------------------------------------------------------- */
+/* 13. M2 总验收（M2.6）：复杂复合语法用例                                      */
+/* -------------------------------------------------------------------------- */
+
+/* 闭包 + while 循环：闭包内循环累加捕获变量，多次调用间状态持久。 */
+TEST(Compiler, EvalClosureLoopCounter) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "function makeCounter() { var count = 0; return function(n) { while (n > 0) { count = count + 1; n = n - 1; } return count; }; }"
+      " var c = makeCounter(); c(3); c(4); c(2)",
+      std::strlen("function makeCounter() { var count = 0; return function(n) { while (n > 0) { count = count + 1; n = n - 1; } return count; }; }"
+                  " var c = makeCounter(); c(3); c(4); c(2)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 9.0); /* 3+4+2 次累加 */
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 递归 + 复合赋值 + 三元：尾递归累加求和 1+2+...+10。 */
+TEST(Compiler, EvalRecursiveTernarySum) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "function sum(n, acc) { if (n == 0) { return acc; } return sum(n - 1, acc + n); } sum(10, 0)",
+      std::strlen("function sum(n, acc) { if (n == 0) { return acc; } return sum(n - 1, acc + n); } sum(10, 0)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 55.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 嵌套循环 + 复合赋值：for × while 求三角数（1 + (1+2) + ... + (1+..+10)）。 */
+TEST(Compiler, EvalNestedLoopAccumulate) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "var total = 0; for (var i = 1; i <= 10; i = i + 1) { var inner = 0; var j = 1; while (j <= i) { inner = inner + j; j = j + 1; } total = total + inner; } total",
+      std::strlen("var total = 0; for (var i = 1; i <= 10; i = i + 1) { var inner = 0; var j = 1; while (j <= i) { inner = inner + j; j = j + 1; } total = total + inner; } total"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 220.0); /* 三角数前 10 项和 */
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 多闭包 + 参数捕获 + 函数组合：makeAdd/makeMul 组合 f(x) = (x+5)*2。 */
+TEST(Compiler, EvalClosureCompose) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "function makeAdd(a) { return function(x) { return x + a; }; }"
+      " function makeMul(m) { return function(x) { return x * m; }; }"
+      " var add5 = makeAdd(5); var mul2 = makeMul(2); mul2(add5(10))",
+      std::strlen("function makeAdd(a) { return function(x) { return x + a; }; }"
+                  " function makeMul(m) { return function(x) { return x * m; }; }"
+                  " var add5 = makeAdd(5); var mul2 = makeMul(2); mul2(add5(10))"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 30.0); /* (10+5)*2 */
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 闭包状态机 + 三元 + 逻辑短路：累加器在正负间切换。 */
+TEST(Compiler, EvalClosureStateMachine) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "function makeAcc() { var total = 0; var positive = true; return function(x) { if (positive && x > 0) { total = total + x; } else if (x < 0) { total = total - x; } return total; }; }"
+      " var acc = makeAcc(); acc(3); acc(5); acc(-2); acc(4)",
+      std::strlen("function makeAcc() { var total = 0; var positive = true; return function(x) { if (positive && x > 0) { total = total + x; } else if (x < 0) { total = total - x; } return total; }; }"
+                  " var acc = makeAcc(); acc(3); acc(5); acc(-2); acc(4)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 14.0); /* 3+5+(-2)减->+2 +4 */
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 复杂表达式：算术/比较/逻辑/位/复合赋值/序列大杂烩。 */
+TEST(Compiler, EvalComplexExpression) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "var x = 2; x += 3; var y = x * 4; var z = (x > 4) ? (y - 1) : (y + 1); (z << 1) + (y & 7) + (z % 5)",
+      std::strlen("var x = 2; x += 3; var y = x * 4; var z = (x > 4) ? (y - 1) : (y + 1); (z << 1) + (y & 7) + (z % 5)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  /* x=5, y=20, z=19；z<<1=38, y&7=4, z%5=4 -> 46 */
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 46.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
 /* 闭包在 GC 压力下存活（M2.5：环境引用边进 GC 标记）。
  * 低阈值频繁 GC，闭包计数器仍正确。 */
 TEST(Compiler, EvalClosureUnderGC) {

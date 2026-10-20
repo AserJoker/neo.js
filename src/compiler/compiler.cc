@@ -214,7 +214,10 @@ bool Compiler::compileChildFunction(const ASTNode &fn, FunctionBytecode *out) {
 
   bool ok = compileFunctionBody(fn);
 
-  /* 恢复外层 builder_；子函数字节码交给调用方。 */
+  /* 恢复外层 builder_；子函数字节码交给调用方。
+   * 注意：子函数局部槽数（参数 + var）必须写入字节码，否则 VM 栈底
+   * 大小（numLocals）为 0，参数 LoadVar/StoreVar 越界报错或错位。 */
+  builder_.set_num_locals(scope_->next_slot);
   FunctionBytecode child_fn = builder_.build();
   builder_ = std::move(saved_builder);
   scope_ = child->parent;
