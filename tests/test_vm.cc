@@ -570,3 +570,296 @@ TEST(VM, CapiRunBytecodeArgs) {
   JS_FreeContext(ctx);
   JS_FreeAllocator(a);
 }
+
+/* -------------------------------------------------------------------------- */
+/* 9. Compiler：AST → 字节码 → VM 端到端（M2.4 ① 表达式编译）                */
+/* -------------------------------------------------------------------------- */
+
+#include "neojs/compiler/compiler.h"
+#include "neojs/frontend/diagnostics.h"
+#include "neojs/frontend/frontend.h"
+
+namespace {
+
+/* 解析 + 编译 + 运行源码，返回执行结果。失败时返回空 ConversionResult。 */
+neojs::ConversionResult compileAndRun(neojs::JSContext *c, const char *src) {
+  neojs::DiagnosticSink sink;
+  neojs::AST *ast = neojs::parseSource(&c->allocator(), src, std::strlen(src), sink);
+  if (ast == nullptr) {
+    return {}; /* 语法错误 */
+  }
+  neojs::Compiler compiler;
+  neojs::CompileResult cr = compiler.compile(*ast);
+  c->allocator().destroy(ast);
+  if (!cr.ok) {
+    return {}; /* 编译错误 */
+  }
+  return neojs::runBytecode(c, cr.fn, nullptr, nullptr, 0);
+}
+
+}  // namespace
+
+/* 1 + 2 -> 3 */
+TEST(Compiler, AddExpr) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::ConversionResult r = compileAndRun(ic(ctx), "1 + 2");
+  ASSERT_TRUE(r.ok());
+  EXPECT_EQ(r.value->kind(), neojs::Kind::Number);
+  EXPECT_DOUBLE_EQ(r.value->toNumber(), 3.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* (1 + 2) * 3 - 4 / 2 -> 7 */
+TEST(Compiler, ArithPrecedence) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::ConversionResult r = compileAndRun(ic(ctx), "(1 + 2) * 3 - 4 / 2");
+  ASSERT_TRUE(r.ok());
+  EXPECT_DOUBLE_EQ(r.value->toNumber(), 7.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 5 % 2 + 2 ** 3 -> 1 + 8 = 9 */
+TEST(Compiler, ModPow) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::ConversionResult r = compileAndRun(ic(ctx), "5 % 2 + 2 ** 3");
+  ASSERT_TRUE(r.ok());
+  EXPECT_DOUBLE_EQ(r.value->toNumber(), 9.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 字符串拼接："foo" + "bar" -> "foobar" */
+TEST(Compiler, StringConcatExpr) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::ConversionResult r = compileAndRun(ic(ctx), "'foo' + 'bar'");
+  ASSERT_TRUE(r.ok());
+  EXPECT_EQ(r.value->kind(), neojs::Kind::String);
+  EXPECT_EQ(r.value->toString(), "foobar");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 比较：1 < 2 -> true；5 > 6 -> false；3 <= 3 -> true；4 >= 4 -> true */
+TEST(Compiler, RelationalExpr) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::ConversionResult r1 = compileAndRun(ic(ctx), "1 < 2");
+  ASSERT_TRUE(r1.ok());
+  EXPECT_EQ(r1.value->toBoolean(), true);
+
+  neojs::ConversionResult r2 = compileAndRun(ic(ctx), "5 > 6");
+  ASSERT_TRUE(r2.ok());
+  EXPECT_EQ(r2.value->toBoolean(), false);
+
+  neojs::ConversionResult r3 = compileAndRun(ic(ctx), "3 <= 3");
+  ASSERT_TRUE(r3.ok());
+  EXPECT_EQ(r3.value->toBoolean(), true);
+
+  neojs::ConversionResult r4 = compileAndRun(ic(ctx), "4 >= 4");
+  ASSERT_TRUE(r4.ok());
+  EXPECT_EQ(r4.value->toBoolean(), true);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 相等：1 == 1 -> true；1 === '1' -> false；1 != 2 -> true；1 !== '1' -> true */
+TEST(Compiler, EqualityExpr) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::ConversionResult r1 = compileAndRun(ic(ctx), "1 == 1");
+  ASSERT_TRUE(r1.ok());
+  EXPECT_EQ(r1.value->toBoolean(), true);
+
+  neojs::ConversionResult r2 = compileAndRun(ic(ctx), "1 === '1'");
+  ASSERT_TRUE(r2.ok());
+  EXPECT_EQ(r2.value->toBoolean(), false);
+
+  neojs::ConversionResult r3 = compileAndRun(ic(ctx), "1 != 2");
+  ASSERT_TRUE(r3.ok());
+  EXPECT_EQ(r3.value->toBoolean(), true);
+
+  neojs::ConversionResult r4 = compileAndRun(ic(ctx), "1 !== '1'");
+  ASSERT_TRUE(r4.ok());
+  EXPECT_EQ(r4.value->toBoolean(), true);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 位运算：5 & 3 -> 1；5 | 3 -> 7；5 ^ 3 -> 6；1 << 4 -> 16 */
+TEST(Compiler, BitwiseExpr) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::ConversionResult r1 = compileAndRun(ic(ctx), "5 & 3");
+  ASSERT_TRUE(r1.ok());
+  EXPECT_DOUBLE_EQ(r1.value->toNumber(), 1.0);
+
+  neojs::ConversionResult r2 = compileAndRun(ic(ctx), "5 | 3");
+  ASSERT_TRUE(r2.ok());
+  EXPECT_DOUBLE_EQ(r2.value->toNumber(), 7.0);
+
+  neojs::ConversionResult r3 = compileAndRun(ic(ctx), "5 ^ 3");
+  ASSERT_TRUE(r3.ok());
+  EXPECT_DOUBLE_EQ(r3.value->toNumber(), 6.0);
+
+  neojs::ConversionResult r4 = compileAndRun(ic(ctx), "1 << 4");
+  ASSERT_TRUE(r4.ok());
+  EXPECT_DOUBLE_EQ(r4.value->toNumber(), 16.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 一元：-5 -> -5；!0 -> true；typeof 'x' -> "string" */
+TEST(Compiler, UnaryExpr) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::ConversionResult r1 = compileAndRun(ic(ctx), "-5");
+  ASSERT_TRUE(r1.ok());
+  EXPECT_DOUBLE_EQ(r1.value->toNumber(), -5.0);
+
+  neojs::ConversionResult r2 = compileAndRun(ic(ctx), "!0");
+  ASSERT_TRUE(r2.ok());
+  EXPECT_EQ(r2.value->toBoolean(), true);
+
+  neojs::ConversionResult r3 = compileAndRun(ic(ctx), "typeof 'x'");
+  ASSERT_TRUE(r3.ok());
+  EXPECT_EQ(r3.value->toString(), "string");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 逻辑短路：0 && 5 -> 0；3 && 4 -> 4；0 || 5 -> 5；3 || 4 -> 3 */
+TEST(Compiler, LogicalShortCircuit) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::ConversionResult r1 = compileAndRun(ic(ctx), "0 && 5");
+  ASSERT_TRUE(r1.ok());
+  EXPECT_DOUBLE_EQ(r1.value->toNumber(), 0.0);
+
+  neojs::ConversionResult r2 = compileAndRun(ic(ctx), "3 && 4");
+  ASSERT_TRUE(r2.ok());
+  EXPECT_DOUBLE_EQ(r2.value->toNumber(), 4.0);
+
+  neojs::ConversionResult r3 = compileAndRun(ic(ctx), "0 || 5");
+  ASSERT_TRUE(r3.ok());
+  EXPECT_DOUBLE_EQ(r3.value->toNumber(), 5.0);
+
+  neojs::ConversionResult r4 = compileAndRun(ic(ctx), "3 || 4");
+  ASSERT_TRUE(r4.ok());
+  EXPECT_DOUBLE_EQ(r4.value->toNumber(), 3.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 三元：1 ? 10 : 20 -> 10；0 ? 10 : 20 -> 20 */
+TEST(Compiler, ConditionalExpr) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::ConversionResult r1 = compileAndRun(ic(ctx), "1 ? 10 : 20");
+  ASSERT_TRUE(r1.ok());
+  EXPECT_DOUBLE_EQ(r1.value->toNumber(), 10.0);
+
+  neojs::ConversionResult r2 = compileAndRun(ic(ctx), "0 ? 10 : 20");
+  ASSERT_TRUE(r2.ok());
+  EXPECT_DOUBLE_EQ(r2.value->toNumber(), 20.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 变量声明 + 赋值：var a = 1; a = a + 2; a -> 3 */
+TEST(Compiler, VarAssign) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::ConversionResult r = compileAndRun(ic(ctx), "var a = 1; a = a + 2; a");
+  ASSERT_TRUE(r.ok());
+  EXPECT_DOUBLE_EQ(r.value->toNumber(), 3.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 复合赋值：var a = 10; a += 5; a -> 15 */
+TEST(Compiler, CompoundAssign) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::ConversionResult r = compileAndRun(ic(ctx), "var a = 10; a += 5; a");
+  ASSERT_TRUE(r.ok());
+  EXPECT_DOUBLE_EQ(r.value->toNumber(), 15.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 逗号序列：1, 2, 3 -> 3 */
+TEST(Compiler, SequenceExpr) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::ConversionResult r = compileAndRun(ic(ctx), "1, 2, 3");
+  ASSERT_TRUE(r.ok());
+  EXPECT_DOUBLE_EQ(r.value->toNumber(), 3.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 编译错误：解构声明 -> not implemented */
+TEST(Compiler, UnsupportedDestructuring) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::DiagnosticSink sink;
+  neojs::AST *ast =
+      neojs::parseSource(&ic(ctx)->allocator(), "var [a] = [1]", 13, sink);
+  ASSERT_NE(ast, nullptr);
+  neojs::Compiler compiler;
+  neojs::CompileResult cr = compiler.compile(*ast);
+  ic(ctx)->allocator().destroy(ast);
+  EXPECT_FALSE(cr.ok);
+  EXPECT_NE(cr.error.find("destructuring"), std::string::npos);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
