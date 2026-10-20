@@ -208,5 +208,6 @@ void JS_SetGCThreshold(JSContext *ctx, size_t threshold);
 
 - **M2-VM ①~④**：本设计落地（叶子值 + 句柄表 + 简单 mark-sweep）。
 - **M3 对象模型**：JSValue 加 `refs_`（对象属性/数组元素/闭包 upvalue），mark 遍历引用边；对象循环引用可回收。
+- **M3.3 分配保护**：两段式创建（先分配 `JSObject`/`JSFunction` 再包 `JSValue`）的中间窗口里，第一段对象无根引用，第二段分配前自动 GC 会误回收 → `Heap::pin/unpin` 临时根保护；交付完成后 unpin。
 - **M2+ 性能**：分代（新生代/老年代）、增量标记、分配缓冲（bump allocation）。
 - **弱引用**：`WeakMap/WeakSet/WeakRef`（架构 §6）在标记阶段特殊处理。

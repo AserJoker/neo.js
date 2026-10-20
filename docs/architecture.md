@@ -183,7 +183,7 @@
 
 - **Shape / Hidden Class**：v1 阶段对象属性直接放 `std::unordered_map`（正确性优先）；预留 `Shape` 抽象（§8 演进路线），后续切换不影响语义。
 - **数组**：`elements` 分离存储（连续索引）+ `properties`（命名属性），`length` 由元素存储推导；快速路径：`arr[i]` 整数索引 → 直接索引 elements。
-- **原型链**：`[[Prototype]]` 指针 + `__proto__` 访问器；属性查找遵循普通/特殊属性顺序。
+- **原型链**：`[[Prototype]]` 内部槽（`JSObject::prototype_`，GC 引用边）；`__proto__` 访问器留待 M4（经 `Object.getPrototypeOf/setPrototypeOf` 读写内部槽）；属性查找遵循普通/特殊属性顺序。
 - **访问器属性**：getter/setter（`Object.defineProperty`）与数据属性统一在 `PropertyDescriptor` 中建模。
 - **属性访问顺序**（§10.1.3 语义）：ordinary `[[Get]]` 沿原型链；`Proxy` 走 trap（v1 先实现 `Proxy` 基础，`Reflect` 同步）。
 - **Well-known symbols**：`Symbol.iterator`、`Symbol.toPrimitive` 等预置表，供内置协议（迭代、toPrimitive）使用。
