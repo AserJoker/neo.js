@@ -167,17 +167,19 @@ TEST(GC, CApiSetGcThreshold) {
   ASSERT_NE(ctx, nullptr);
   neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
 
-  /* 设置阈值 2：分配第 2 个值触发自动 GC */
+  /* 设置阈值 2：第 2 个分配触发自动 GC（分配前触发） */
   JS_SetGCThreshold(ctx, 2);
   JSValue *rooted = JS_CreateNumber(ctx, 1.0, nullptr);
   ASSERT_NE(rooted, nullptr);
 
-  /* 第 2 个分配触发自动 GC：rooted 被句柄持有存活，临时值回收 */
+  /* 第 2 个分配前触发自动 GC：此刻只有 rooted（句柄持有）存活；
+   * temp 创建于 GC 之后，本次不被回收（分配前触发语义）。 */
   JSValue *temp = JS_CreateNumber(ctx, 2.0, nullptr);
   ASSERT_NE(temp, nullptr);
   EXPECT_EQ(c->heap().allocCount(), 0u); /* 自动 GC 已重置计数 */
 
-  /* 临时值无根已回收，rooted 存活 */
+  /* 释放 temp 句柄后手动 GC：无根的 temp 回收，rooted 存活 */
+  JS_FreeValue(ctx, temp);
   JS_GC(ctx);
   EXPECT_EQ(c->heap().size(), 1u);
   EXPECT_EQ(JS_ToNumber(ctx, rooted), 1.0);
@@ -226,21 +228,19 @@ TEST(GC, ThresholdAutoTrigger) {
   /* 调低阈值便于测试（默认 1000） */
   c->heap().setGcThreshold(8);
 
-  /* 创建 8 个值：第 8 个触发自动 GC（此时前 7 个无根，被回收）。
-   * 第 8 个分配后 alloc_count_ 达到 8 -> collect() -> 前 7 个被回收。 */
+  /* 创建 7 个无根值：未达阈值，全部存活 */
   for (int i = 0; i < 7; ++i) {
     c->createValue(neojs::JSValue(static_cast<double>(i)));
   }
   EXPECT_EQ(c->heap().size(), 7u);
   EXPECT_EQ(c->heap().allocCount(), 7u);
 
-  /* 第 8 个分配触发自动 GC：前 7 个无根被回收，只剩第 8 个（无根也活不到下次） */
+  /* 第 8 个分配前触发自动 GC：前 7 个无根被回收；第 8 个创建于 GC 后存活 */
   neojs::JSValue *v = c->createValue(neojs::JSValue(100.0));
   (void)v;
   /* 自动 GC 已发生：alloc_count_ 归零 */
   EXPECT_EQ(c->heap().allocCount(), 0u);
-  /* 第 8 个也立即无根；但 heap 里可能仍有它（本次 GC 标记发生在分配时，
-   * 该对象尚未登记或刚登记即被清除）。为确定性，手动 GC 确认归零。 */
+  /* 手动 GC 确认无根的第 8 个也归零 */
   c->gc();
   EXPECT_EQ(c->heap().size(), 0u);
 
@@ -249,9 +249,10 @@ TEST(GC, ThresholdAutoTrigger) {
   neojs::JSValue *rooted = c->createValue(neojs::JSValue(1.0));
   uint32_t h = c->handles().alloc(rooted);
   c->createValue(neojs::JSValue(2.0));
+  /* 第 3 个分配前触发自动 GC：句柄持有的 rooted 存活，2.0 无根回收；
+   * 3.0 创建于 GC 后存活 */
   c->createValue(neojs::JSValue(3.0));
-  /* 第 3 个分配触发自动 GC：句柄持有的 rooted 存活，无根的回收 */
-  EXPECT_EQ(c->heap().size(), 1u);
+  EXPECT_EQ(c->heap().size(), 2u);
   EXPECT_EQ(c->handles().get(h)->toNumber(), 1.0);
 
   JS_FreeContext(ctx);

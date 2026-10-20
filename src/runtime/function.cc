@@ -25,6 +25,7 @@
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/conversion.h"
 #include "neojs/runtime/value.h"
+#include "neojs/runtime/vm.h"
 
 namespace neojs {
 
@@ -138,9 +139,28 @@ ConversionResult call(JSContext *ctx, JSValue *func, JSValue *thisVal,
   }
 
   /* 4. 调用回调。
+   *    Script：JS 源码函数（M2.4 ③）——解释执行字节码，递归调用本入口。
    *    Host：句柄语义（参数/this 转句柄，回调经 C ABI，返回值是句柄）；
    *    Builtin：内部值指针语义（E4 内置函数，参数/返回值均为内部指针）。 */
   ConversionResult result;
+  if (fn->functionKind() == FunctionKind::Script) {
+    /* JS 函数：runBytecode 递归解释执行（栈式 VM 单帧模型，嵌套经递归）。
+     * 参数/this 已在上面分配临时句柄保护（GC 根集），
+     * runBytecode 内部把参数复制到本帧局部槽。 */
+    result = runBytecode(ctx, fn->bytecode(), thisArg,
+                         args_internal.empty() ? nullptr : args_internal.data(),
+                         argc);
+    /* 释放本帧 this/参数临时句柄。 */
+    for (uint32_t h : tmp_handles) {
+      freeTmpHandle(ctx, h);
+    }
+    if (result.ok()) {
+      /* 返回值保护：内层 runBytecode 已弹栈，返回值此时无根集保护；
+       * 分配临时句柄（句柄表是 GC 根集），由外层 Call 指令取走时释放。 */
+      result.tmp_handle = makeTmpHandle(ctx, result.value);
+    }
+    return result;
+  }
   if (fn->functionKind() == FunctionKind::Builtin && fn->builtinFn() != nullptr) {
     /* 内置函数：直接传内部指针数组（无句柄互转）。 */
     try {

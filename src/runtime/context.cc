@@ -121,9 +121,11 @@ void JSContext::markRoots() {
     if (proto != nullptr) heap_.markRoot(proto);
   }
 
-  /* VM 操作数栈（M2-VM，栈帧入根集）：解释器运行期间栈上值不可回收。 */
-  if (vm_stack_ != nullptr) {
-    for (JSValue *v : *vm_stack_) {
+  /* VM 操作数栈（M2-VM，栈帧入根集）：解释器运行期间栈上值不可回收。
+   * 嵌套 runBytecode（函数递归）时多个栈帧并存，全部标记。 */
+  for (std::vector<JSValue *> *stack : vm_stacks_) {
+    if (stack == nullptr) continue;
+    for (JSValue *v : *stack) {
       if (v != nullptr) heap_.markRoot(v);
     }
   }

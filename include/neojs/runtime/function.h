@@ -24,6 +24,7 @@
 
 #include <cstddef>
 
+#include "neojs/compiler/bytecode.h"
 #include "neojs/runtime/conversion.h"
 #include "neojs/runtime/object.h"
 
@@ -40,10 +41,10 @@ namespace neojs {
 class JSContext;
 class JSValue;
 
-/* 函数调用语义（ECMA-262 §10.2.5 预留）：
+/* 函数调用语义（ECMA-262 §10.2.5）：
  *   Host        宿主 C 回调（句柄语义，E3）
  *   Builtin     引擎内置函数（内部值指针语义，E4）
- *   Script      JS 源码函数（VM 阶段，E3 不实现）
+ *   Script      JS 源码函数（M2.4 ③：携带 FunctionBytecode，VM 解释执行）
  */
 enum class FunctionKind : uint8_t { Host, Builtin, Script };
 
@@ -94,6 +95,12 @@ class JSFunction : public JSObject {
   /* 函数名（可空） */
   const char *name() const { return name_; }
 
+  /* JS 源码函数（FunctionKind::Script）：字节码（M2.4 ③）。
+   * 注意：FunctionBytecode 只含指令/常量池（无 JSValue 引用边），
+   * 不作为 GC 引用边标记（常量池是字符串/数字，无对象引用）。 */
+  const FunctionBytecode &bytecode() const { return bc_; }
+  void setBytecode(FunctionBytecode bc) { bc_ = std::move(bc); }
+
   /* 预留扩展字段（E3 不实现，占位防后续破坏布局）：
    *   construct_ —— [[Construct]]（new 语义）
    *   environment_ —— [[Environment]]（闭包环境）
@@ -110,7 +117,8 @@ class JSFunction : public JSObject {
   ThisMode this_mode_ = ThisMode::NonStrict;
   const char *name_ = nullptr;          /* 函数名（静态/堆字符串） */
   bool construct_ = false;              /* [[Construct]] 预留 */
-  /* [[Environment]]（闭包环境）E3 后 VM 阶段添加 */
+  FunctionBytecode bc_;                 /* Script 函数字节码（M2.4 ③） */
+  /* [[Environment]]（闭包环境）M2.5 闭包阶段添加 */
 };
 
 /* -------------------------------------------------------------------------- */

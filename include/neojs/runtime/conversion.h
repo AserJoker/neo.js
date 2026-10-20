@@ -35,6 +35,7 @@ class JSContext;
 struct ConversionResult {
   JSValue *value = nullptr;  /* 转换结果值（内部指针）；失败时 nullptr */
   std::string error;         /* 失败信息（如 "TypeError: ..."）；成功时空 */
+  uint32_t tmp_handle = 0;   /* 返回值保护句柄（call() Script 分支用）；0 = 无 */
 
   bool ok() const { return value != nullptr; }
 };

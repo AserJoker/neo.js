@@ -81,12 +81,15 @@ CompileResult Compiler::compile(const AST &ast) {
   if (ast.root != nullptr) {
     const auto &stmts = ast.root->children;
     if (!stmts.empty()) {
-      /* 除最后一条外：逐条编译（语句自身管理栈平衡，值 Pop）。 */
+      /* 除最后一条外：逐条编译（语句自身管理栈平衡，值 Pop）。
+       * FunctionDeclaration 已在顶层收集阶段实例化挂到 global，此处跳过。 */
       for (size_t i = 0; i + 1 < stmts.size(); ++i) {
         if (stmts[i] == nullptr) continue;
+        if (stmts[i]->type == NodeType::FunctionDeclaration) continue;
         if (!compileStmt(*stmts[i])) return failResult();
       }
       /* 最后一条：若是表达式语句，其值作为 completion value（不 Pop）；
+       * FunctionDeclaration 已单独实例化（completion value = undefined）；
        * 否则编译后补 undefined。 */
       const ASTNode *last = stmts.back();
       if (last != nullptr && last->type == NodeType::ExprStmt &&
@@ -94,7 +97,9 @@ CompileResult Compiler::compile(const AST &ast) {
         if (!compileExpr(*last->children[0])) return failResult();
         builder_.ret(); /* 栈顶即 completion value */
       } else {
-        if (last != nullptr && !compileStmt(*last)) return failResult();
+        if (last != nullptr && last->type != NodeType::FunctionDeclaration &&
+            !compileStmt(*last))
+          return failResult();
         builder_.push_op(Opcode::PushUndefined);
         builder_.ret();
       }
@@ -117,15 +122,78 @@ CompileResult Compiler::compile(const AST &ast) {
 }
 
 CompileResult Compiler::compileFunction(const ASTNode &fn) {
-  (void)fn;
   CompileResult result;
   failed_ = false;
   error_.clear();
   locals_.clear();
   next_slot_ = 0;
-  builder_ = BytecodeBuilder();
-  fail("not implemented: function compilation (M2.4 ③)");
-  return failResult();
+
+  /* 函数名（可空）：FunctionDeclaration 恒有名；
+   * FunctionExpression 可匿名（children[0] 为名字或参数）。
+   * 布局：children[0] = 名字（有名时），之后参数，最后 body（BlockStatement）。 */
+  size_t start = 0;
+  std::string fn_name;
+  if (fn.type == NodeType::FunctionDeclaration && !fn.children.empty() &&
+      fn.children[0]->type == NodeType::Identifier) {
+    fn_name = fn.children[0]->name;
+    start = 1;
+  } else if (fn.type == NodeType::FunctionExpression &&
+             fn.children.size() >= 2 &&
+             fn.children.back()->type == NodeType::BlockStatement &&
+             fn.children[0]->type == NodeType::Identifier) {
+    /* 有名函数表达式：children[0] 是名字（后面至少还有参数+body）。 */
+    fn_name = fn.children[0]->name;
+    start = 1;
+  }
+  builder_ = BytecodeBuilder(fn_name);
+
+  /* 参数入局部槽 0..n-1（按声明顺序）。body 是最后那个 BlockStatement。 */
+  size_t body_index = fn.children.size();
+  for (size_t i = start; i < fn.children.size(); ++i) {
+    const ASTNode *p = fn.children[i];
+    if (p->type == NodeType::BlockStatement) {
+      body_index = i;
+      break;
+    }
+    if (p->type != NodeType::Identifier) {
+      fail("not implemented: destructuring/default/rest parameter");
+      return failResult();
+    }
+    declareLocal(p->name);
+  }
+
+  /* 函数体：块语句逐条编译。 */
+  if (body_index < fn.children.size()) {
+    const ASTNode *body = fn.children[body_index];
+    for (const ASTNode *stmt : body->children) {
+      if (stmt == nullptr) continue;
+      if (stmt->type == NodeType::FunctionDeclaration) {
+        fail("not implemented: nested function declaration (M2.5 闭包)");
+        return failResult();
+      }
+      if (!compileStmt(*stmt)) return failResult();
+    }
+  }
+
+  /* 函数默认返回 undefined。 */
+  builder_.push_op(Opcode::PushUndefined);
+  builder_.ret();
+
+  builder_.set_num_locals(next_slot_);
+  result.ok = true;
+  result.fn = builder_.build();
+  return result;
+}
+
+std::vector<const ASTNode *> Compiler::collectTopLevelFunctions(const AST &ast) {
+  std::vector<const ASTNode *> out;
+  if (ast.root == nullptr) return out;
+  for (const ASTNode *stmt : ast.root->children) {
+    if (stmt != nullptr && stmt->type == NodeType::FunctionDeclaration) {
+      out.push_back(stmt);
+    }
+  }
+  return out;
 }
 
 CompileResult Compiler::failResult() {

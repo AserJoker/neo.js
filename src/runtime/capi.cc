@@ -30,6 +30,7 @@
 #include <utility>
 
 #include "neojs/compiler/bytecode.h"
+#include "neojs/compiler/compiler.h"
 #include "neojs/frontend/diagnostics.h"
 #include "neojs/frontend/frontend.h"
 #include "neojs/runtime/allocator.h"
@@ -812,7 +813,7 @@ extern "C" JSValue *JS_In(JSContext *ctx, JSValue *x, JSValue *y) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* 执行（M1.1：前端流水线骨架；完整求值在 M2）                                 */
+/* 执行（M2.4 ③：源码 → AST → 字节码 → VM 解释执行）                      */
 /* -------------------------------------------------------------------------- */
 
 extern "C" JSValue *JS_Eval(JSContext *ctx, const char *source, size_t source_len) {
@@ -825,8 +826,7 @@ extern "C" JSValue *JS_Eval(JSContext *ctx, const char *source, size_t source_le
     neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
     neojs::DiagnosticSink sink;
 
-    /* M1.1：源码 → Lexer+Parser → AST dump（求值器 M2 实现）。
-     * 解析成功返回 dump 文本（String 值）；语法错误返回 Exception（#4）。 */
+    /* 源码 → Lexer+Parser → AST。语法错误返回 Exception（#4）。 */
     neojs::AST *ast = neojs::parseSource(&c->allocator(), source ? source : "",
                                          source ? source_len : 0, sink);
     if (ast == nullptr) {
@@ -834,9 +834,47 @@ extern "C" JSValue *JS_Eval(JSContext *ctx, const char *source, size_t source_le
       msg += sink.hasErrors() ? sink.diagnostics().front().message : "parse failed";
       return makeException(ctx, msg.c_str());
     }
-    std::string dump = neojs::dumpAst(*ast);
-    c->allocator().destroy(ast); /* AST 生命周期独立于 ctx 值登记表 */
-    return makeValue(ctx, std::move(dump));
+
+    neojs::Compiler compiler;
+
+    /* 顶层函数声明：逐个编译为 Script 函数，实例化并挂到全局对象。
+     * 使函数声明提升（声明在调用前可见）与递归（自引用）生效。 */
+    for (const neojs::ASTNode *fndecl : compiler.collectTopLevelFunctions(*ast)) {
+      neojs::CompileResult fr = compiler.compileFunction(*fndecl);
+      if (!fr.ok) {
+        c->allocator().destroy(ast);
+        return makeException(ctx, ("CompileError: " + fr.error).c_str());
+      }
+      /* 创建 Script 函数对象（JSFunction + FunctionBytecode），挂 global。 */
+      neojs::JSFunction *fn =
+          c->heap().allocGCObject<neojs::JSFunction>(
+              nullptr /* prototype */, neojs::FunctionKind::Script,
+              nullptr /* func */);
+      const std::string fn_name = fr.fn.name; /* move 前取名字 */
+      fn->setBytecode(std::move(fr.fn));
+      neojs::JSValue *v = c->heap().allocGCObject<neojs::JSValue>();
+      v->setObject(fn);
+      fn->setHolder(v);
+      /* 挂到全局对象（函数名属性）。 */
+      if (!fn_name.empty()) {
+        c->globalObject()->object()->setProperty(fn_name, v);
+      }
+    }
+
+    /* 编译顶层程序。 */
+    neojs::CompileResult cr = compiler.compile(*ast);
+    c->allocator().destroy(ast); /* AST 生命周期独立于 ctx */
+    if (!cr.ok) {
+      return makeException(ctx, ("CompileError: " + cr.error).c_str());
+    }
+
+    /* 执行顶层字节码。 */
+    neojs::ConversionResult r =
+        neojs::runBytecode(c, cr.fn, nullptr, nullptr, 0);
+    if (!r.ok()) {
+      return makeException(ctx, r.error.c_str());
+    }
+    return makeHandle(c, r.value);
   });
 }
 

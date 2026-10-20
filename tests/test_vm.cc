@@ -990,3 +990,130 @@ TEST(Compiler, BlockScope) {
   JS_FreeAllocator(a);
 }
 
+/* -------------------------------------------------------------------------- */
+/* 11. JS_Eval 端到端（M2.4 ③：源码 → 字节码 → VM）                          */
+/* -------------------------------------------------------------------------- */
+
+/* JS_Eval 求值：1 + 2 -> 3 */
+TEST(Compiler, EvalAdd) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "1 + 2", std::strlen("1 + 2"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 3.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* JS_Eval 循环：while 累加 1..10 -> 55 */
+TEST(Compiler, EvalWhileSum) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "var i = 1; var sum = 0; while (i <= 10) { sum = sum + i; i = i + 1; } sum",
+      std::strlen("var i = 1; var sum = 0; while (i <= 10) { sum = sum + i; i = i + 1; } sum"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 55.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* JS_Eval 函数声明 + 调用：function add(a, b) { return a + b; } add(2, 3) -> 5 */
+TEST(Compiler, EvalFunctionCall) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "function add(a, b) { return a + b; } add(2, 3)",
+      std::strlen("function add(a, b) { return a + b; } add(2, 3)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 5.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* JS_Eval 递归：阶乘 fact(5) -> 120 */
+TEST(Compiler, EvalRecursion) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "function fact(n) { if (n <= 1) { return 1; } return n * fact(n - 1); } fact(5)",
+      std::strlen("function fact(n) { if (n <= 1) { return 1; } return n * fact(n - 1); } fact(5)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 120.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* JS_Eval 递归：斐波那契 fib(10) -> 55 */
+TEST(Compiler, EvalFibonacci) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "function fib(n) { if (n < 2) { return n; } return fib(n - 1) + fib(n - 2); } fib(10)",
+      std::strlen("function fib(n) { if (n < 2) { return n; } return fib(n - 1) + fib(n - 2); } fib(10)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 55.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* JS_Eval 字符串拼接 + 比较混合 */
+TEST(Compiler, EvalMixed) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var s = 'a'; if (1 < 2) { s = s + 'b'; } s",
+                       std::strlen("var s = 'a'; if (1 < 2) { s = s + 'b'; } s"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "ab");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* JS_Eval 语法错误 -> Exception */
+TEST(Compiler, EvalSyntaxError) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var = 3", std::strlen("var = 3"));
+  ASSERT_NE(r, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+

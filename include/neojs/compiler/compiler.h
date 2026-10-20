@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "neojs/compiler/bytecode.h"
 #include "neojs/frontend/ast.h"
@@ -45,9 +46,14 @@ class Compiler {
    * 失败时返回 ok=false + error。 */
   CompileResult compile(const AST &ast);
 
-  /* 编译单个函数体（FunctionDeclaration/FunctionExpression，供函数编译）。
-   * 参数 params 为参数名列表（按序入局部槽 0..n-1）。 */
+  /* 编译单个函数（FunctionDeclaration/FunctionExpression）：
+   * 产出该函数的 FunctionBytecode（参数入局部槽 0..n-1，body 编译）。
+   * 失败时返回 ok=false + error。 */
   CompileResult compileFunction(const ASTNode &fn);
+
+  /* 收集顶层函数声明：返回 Program 中 FunctionDeclaration 节点列表。
+   * 供 JS_Eval 在程序执行前实例化函数对象并挂到 global。 */
+  std::vector<const ASTNode *> collectTopLevelFunctions(const AST &ast);
 
  private:
   /* 编译表达式：求值后栈顶为结果。 */

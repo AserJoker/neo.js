@@ -43,16 +43,18 @@ class Heap {
     mark_ud_ = userdata;
   }
 
-  /* 分配一个可 GC 对象（经分配器 create<T>）并登记到堆。返回内部指针；
-   * 若分配计数达到阈值则先触发一次 GC（G5 自动触发）。 */
+  /* 分配一个可 GC 对象（经分配器 create<T>）并登记到堆。返回内部指针。
+   * 自动 GC（G5）在分配前触发：触发点总在"上次分配完成后、本次分配
+   * 开始前"，此时堆上不存在"刚创建未交付"的对象——若在创建后触发，
+   * 当前对象已 insert 但尚无根引用，sweep 会把它当垃圾误回收（悬垂）。 */
   template <class T, class... Args>
   T *allocGCObject(Args &&...args) {
     static_assert(std::is_base_of_v<GCHeader, T>, "T must derive GCHeader");
+    if (++alloc_count_ >= gc_threshold_) {
+      collect(); /* 分配前自动触发（G5） */
+    }
     T *obj = allocator_->create<T>(std::forward<Args>(args)...);
     objects_.insert(static_cast<GCHeader *>(obj));
-    if (++alloc_count_ >= gc_threshold_) {
-      collect(); /* 自动触发（G5） */
-    }
     return obj;
   }
 

@@ -29,6 +29,22 @@ namespace neojs {
 
 namespace {
 
+/* runBytecode 栈根集 RAII 守卫：构造时入栈，析构时弹出。
+ * 确保任何返回路径（含错误/Ret）都不残留指向局部栈的悬垂指针。 */
+class VmStackRootGuard {
+ public:
+  VmStackRootGuard(JSContext *ctx, std::vector<JSValue *> *stack)
+      : ctx_(ctx) {
+    ctx_->vmStackPush(stack);
+  }
+  ~VmStackRootGuard() { ctx_->vmStackPop(); }
+  VmStackRootGuard(const VmStackRootGuard &) = delete;
+  VmStackRootGuard &operator=(const VmStackRootGuard &) = delete;
+
+ private:
+  JSContext *ctx_;
+};
+
 ConversionResult ok(JSValue *v) {
   ConversionResult r;
   r.value = v;
@@ -155,8 +171,10 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
   std::vector<JSValue *> stack;
   stack.reserve(static_cast<size_t>(fn.numLocals) + 64);
 
-  /* 先注册根集，再写入入口参数（裸内部指针依赖根集保护）与局部占位。 */
-  ctx->vmStackRoot(&stack);
+  /* 栈根集 RAII 守卫：构造入栈，析构（任意返回路径）弹出。
+   * 嵌套 runBytecode（函数递归）会 push 多个栈帧，互不覆盖。
+   * 之后写入入口参数（裸内部指针依赖根集保护）与局部占位。 */
+  VmStackRootGuard stack_guard(ctx, &stack);
   size_t args_to_copy = argc < fn.numLocals ? argc : fn.numLocals;
   for (size_t i = 0; i < fn.numLocals; ++i) {
     if (i < args_to_copy && args[i] != nullptr) {
@@ -341,13 +359,15 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         JSValue *this_undef = ctx->createValue(Kind::Undefined);
         ConversionResult r = call(ctx, func, this_undef, call_args, argc);
         if (!r.ok()) return r;
-        /* 收缩：弹出函数 + argc 个参数，压入结果。 */
+        /* 收缩：弹出函数 + argc 个参数，压入结果。
+         * 返回值保护句柄（call Script 分支分配，防 GC 回收窗口期）：
+         * 先 push 入栈（受根集保护）再释放句柄，顺序安全。 */
         stack.resize(stack.size() - 1 - static_cast<size_t>(argc));
         stack.push_back(r.value);
+        if (r.tmp_handle != 0) ctx->handles().free(r.tmp_handle);
         break;
       }
       case Opcode::Ret: {
-        ctx->vmStackRoot(nullptr); /* 解除栈根集保护 */
         if (stack.empty()) return ok(ctx->createValue(Kind::Undefined));
         JSValue *result = stack.back();
         return ok(result);
@@ -373,7 +393,6 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
   }
 
   /* 程序自然结束（无 Ret）：栈顶为结果；空栈 -> undefined。 */
-  ctx->vmStackRoot(nullptr);
   if (stack.empty()) return ok(ctx->createValue(Kind::Undefined));
   return ok(stack.back());
 }

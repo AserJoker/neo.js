@@ -113,10 +113,16 @@ class JSContext {
   }
 
   /* VM 操作数栈注册为 GC 根集（M2-VM，用户确认“栈帧入 GC 根集”）。
-   * 解释器运行期间调用 vmStackRoot(&stack) 注册；结束/出错时传 nullptr 解除。
+   * 解释器运行期间调用 vmStackPush(&stack) 入栈；结束/出错时 vmStackPop 弹出。
+   * 嵌套 runBytecode（函数递归）会 push 多个栈帧，markRoots 遍历全部。
    * markRoots 遍历注册的栈：栈上值（表达式中间值 + 局部变量槽）不可回收。 */
-  void vmStackRoot(std::vector<JSValue *> *stack) { vm_stack_ = stack; }
-  std::vector<JSValue *> *vmStack() const { return vm_stack_; }
+  void vmStackPush(std::vector<JSValue *> *stack) { vm_stacks_.push_back(stack); }
+  void vmStackPop() {
+    if (!vm_stacks_.empty()) vm_stacks_.pop_back();
+  }
+  const std::vector<std::vector<JSValue *> *> &vmStacks() const {
+    return vm_stacks_;
+  }
 
  private:
   /* GC 标记阶段根集遍历（docs/gc.md §3.4）：
@@ -134,7 +140,7 @@ class JSContext {
   std::string tmp_string_; /* 临时字符串缓冲（JS_ToString 稳定返回用） */
   JSValue *well_known_[4] = {nullptr, nullptr, nullptr, nullptr}; /* well-known 缓存（E4-1） */
   JSValue *wrapper_protos_[4] = {nullptr, nullptr, nullptr, nullptr}; /* 包装原型缓存（E4-2） */
-  std::vector<JSValue *> *vm_stack_ = nullptr; /* VM 操作数栈根集（M2-VM） */
+  std::vector<std::vector<JSValue *> *> vm_stacks_; /* VM 操作数栈根集栈（M2-VM） */
 };
 
 }  // namespace neojs
