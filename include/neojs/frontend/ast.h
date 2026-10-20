@@ -38,6 +38,8 @@ enum class NodeType : uint8_t {
   PrivateIdentifier, /* 私有字段引用：#x */
   RegExpLiteral,     /* 正则字面量 */
   TemplateLiteral,   /* 模板串（M1.3 插值后） */
+  ObjectLiteral,     /* 对象字面量：{ key: value, ...spread }（M3 读值位置） */
+  ArrayLiteral,      /* 数组字面量：[ elem, ...spread ]（M3 读值位置） */
   ObjectPattern,     /* 对象解构模式（声明/赋值左侧） */
   ArrayPattern,      /* 数组解构模式 */
   AssignmentPattern, /* 解构默认值：p = 1 */

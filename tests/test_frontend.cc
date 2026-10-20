@@ -682,7 +682,7 @@ TEST(Frontend, ObjectLiteral) {
   ASSERT_NE(ast, nullptr);
   EXPECT_FALSE(sink.hasErrors());
   neojs::ASTNode *obj = ast->root->children[0]->children[0];
-  EXPECT_EQ(obj->type, neojs::NodeType::ObjectPattern);
+  EXPECT_EQ(obj->type, neojs::NodeType::ObjectLiteral);
   ASSERT_EQ(obj->children.size(), 2u);
   EXPECT_EQ(obj->children[0]->type, neojs::NodeType::Property);
   EXPECT_EQ(obj->children[0]->children[0]->type, neojs::NodeType::Identifier);
@@ -700,7 +700,7 @@ TEST(Frontend, ArrayLiteral) {
   neojs::AST *ast = neojs::parseSource(&a, "[1, 2, ...r]", 12, sink);
   ASSERT_NE(ast, nullptr);
   neojs::ASTNode *arr = ast->root->children[0]->children[0];
-  EXPECT_EQ(arr->type, neojs::NodeType::ArrayPattern);
+  EXPECT_EQ(arr->type, neojs::NodeType::ArrayLiteral);
   ASSERT_EQ(arr->children.size(), 3u);
   EXPECT_EQ(arr->children[0]->type, neojs::NodeType::Literal);
   EXPECT_EQ(arr->children[2]->type, neojs::NodeType::SpreadElement);
@@ -714,7 +714,7 @@ TEST(Frontend, ObjectStringKey) {
   neojs::AST *ast = neojs::parseSource(&a, "({\"k\" : 1})", 11, sink);
   ASSERT_NE(ast, nullptr);
   neojs::ASTNode *obj = ast->root->children[0]->children[0];
-  EXPECT_EQ(obj->type, neojs::NodeType::ObjectPattern);
+  EXPECT_EQ(obj->type, neojs::NodeType::ObjectLiteral);
   EXPECT_EQ(obj->children[0]->children[0]->literal.str, "k");
   a.destroy(ast);
 }
@@ -1006,14 +1006,14 @@ TEST(Frontend, LiteralCommaNotSequence) {
   neojs::AST *ast = neojs::parseSource(&a, "[1, 2, 3]", 9, sink);
   ASSERT_NE(ast, nullptr);
   neojs::ASTNode *arr = ast->root->children[0]->children[0];
-  EXPECT_EQ(arr->type, neojs::NodeType::ArrayPattern);
+  EXPECT_EQ(arr->type, neojs::NodeType::ArrayLiteral);
   EXPECT_EQ(arr->children.size(), 3u);
   a.destroy(ast);
 
   ast = neojs::parseSource(&a, "({a: 1, b: 2})", 14, sink);
   ASSERT_NE(ast, nullptr);
   neojs::ASTNode *obj = ast->root->children[0]->children[0];
-  EXPECT_EQ(obj->type, neojs::NodeType::ObjectPattern);
+  EXPECT_EQ(obj->type, neojs::NodeType::ObjectLiteral);
   EXPECT_EQ(obj->children.size(), 2u);
   a.destroy(ast);
 }
@@ -1699,7 +1699,7 @@ TEST(Frontend, BlockVsObjectLiteral) {
 
   ast = neojs::parseSource(&a, "({a: 1})", std::strlen("({a: 1})"), sink);
   ASSERT_NE(ast, nullptr);
-  EXPECT_EQ(ast->root->children[0]->children[0]->type, neojs::NodeType::ObjectPattern);
+  EXPECT_EQ(ast->root->children[0]->children[0]->type, neojs::NodeType::ObjectLiteral);
   a.destroy(ast);
 }
 

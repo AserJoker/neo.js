@@ -1364,3 +1364,110 @@ TEST(Compiler, EvalClosureUnderGC) {
   JS_FreeAllocator(a);
 }
 
+/* -------------------------------------------------------------------------- */
+/* 14. M3.0 VM 对象指令（NewObject/NewArray/LoadProp/StoreProp/LoadElem/      */
+/*     StoreElem）                                                            */
+/* -------------------------------------------------------------------------- */
+
+/* NewObject + StoreProp + LoadProp：{a: 1} 读写往返（对象暂存局部槽） */
+TEST(VM, ObjectPropRoundtrip) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::BytecodeBuilder b;
+  b.new_object();
+  b.store_var(0);       /* obj 暂存槽 0 */
+  b.load_var(0);        /* obj */
+  b.push_int(1);        /* obj, 1 */
+  b.store_prop("a");    /* obj.a = 1 -> 1 */
+  b.pop();              /* 丢弃赋值结果 */
+  b.load_var(0);        /* obj */
+  b.load_prop("a");     /* obj.a -> 1 */
+  b.ret();
+  b.set_num_locals(1);
+  neojs::FunctionBytecode fn = b.build();
+
+  neojs::ConversionResult r = neojs::runBytecode(ic(ctx), fn, nullptr, nullptr, 0);
+  ASSERT_TRUE(r.ok()) << r.error;
+  EXPECT_EQ(r.value->kind(), neojs::Kind::Number);
+  EXPECT_DOUBLE_EQ(r.value->toNumber(), 1.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* NewArray + StoreElem + LoadElem：arr[2] = 7 读写往返（对象暂存局部槽） */
+TEST(VM, ArrayElemRoundtrip) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::BytecodeBuilder b;
+  b.new_array();
+  b.store_var(0);       /* arr 暂存槽 0 */
+  b.load_var(0);        /* arr */
+  b.push_int(2);        /* arr, 2 */
+  b.push_int(7);        /* arr, 2, 7 */
+  b.store_elem();       /* arr[2] = 7 -> 7 */
+  b.pop();              /* 丢弃赋值结果 */
+  b.load_var(0);        /* arr */
+  b.push_int(2);        /* arr, 2 */
+  b.load_elem();        /* arr[2] -> 7 */
+  b.ret();
+  b.set_num_locals(1);
+  neojs::FunctionBytecode fn = b.build();
+
+  neojs::ConversionResult r = neojs::runBytecode(ic(ctx), fn, nullptr, nullptr, 0);
+  ASSERT_TRUE(r.ok()) << r.error;
+  EXPECT_EQ(r.value->kind(), neojs::Kind::Number);
+  EXPECT_DOUBLE_EQ(r.value->toNumber(), 7.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* LoadProp 未定义属性 -> undefined（对象无该键） */
+TEST(VM, ObjectMissingPropUndefined) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::BytecodeBuilder b;
+  b.new_object();
+  b.load_prop("missing");
+  b.ret();
+  neojs::FunctionBytecode fn = b.build();
+
+  neojs::ConversionResult r = neojs::runBytecode(ic(ctx), fn, nullptr, nullptr, 0);
+  ASSERT_TRUE(r.ok());
+  EXPECT_EQ(r.value->kind(), neojs::Kind::Undefined);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* StoreProp 赋值表达式值 = 新值（链式 obj.a = obj.b = 5） */
+TEST(VM, StorePropValueIsRhs) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::BytecodeBuilder b;
+  b.new_object();
+  b.new_object();
+  b.push_int(5);
+  b.store_prop("b");   /* o2.b = 5 -> 5 */
+  b.store_prop("a");   /* o1.a = (o2.b=5 的值) -> 5 */
+  b.ret();
+  neojs::FunctionBytecode fn = b.build();
+
+  neojs::ConversionResult r = neojs::runBytecode(ic(ctx), fn, nullptr, nullptr, 0);
+  ASSERT_TRUE(r.ok());
+  EXPECT_EQ(r.value->kind(), neojs::Kind::Number);
+  EXPECT_DOUBLE_EQ(r.value->toNumber(), 5.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+

@@ -51,6 +51,16 @@ static_assert(static_cast<int>(neojs::Kind::Exception) == JS_EXCEPTION, "kind mi
 static_assert(static_cast<int>(neojs::Kind::InterruptYield) == JS_INTERRUPT_YIELD, "kind mismatch");
 static_assert(static_cast<int>(neojs::Kind::InterruptAwait) == JS_INTERRUPT_AWAIT, "kind mismatch");
 
+/* 内部 Opcode 与 C JSBCOp 数值映射保持同步（JS_RunBytecode 直接 cast） */
+static_assert(static_cast<int>(neojs::Opcode::PushConst) == JS_BC_PUSH_CONST, "opcode mismatch");
+static_assert(static_cast<int>(neojs::Opcode::StoreVar) == JS_BC_STORE_VAR, "opcode mismatch");
+static_assert(static_cast<int>(neojs::Opcode::Call) == JS_BC_CALL, "opcode mismatch");
+static_assert(static_cast<int>(neojs::Opcode::MakeFunction) == JS_BC_MAKE_FUNCTION, "opcode mismatch");
+static_assert(static_cast<int>(neojs::Opcode::NewObject) == JS_BC_NEW_OBJECT, "opcode mismatch");
+static_assert(static_cast<int>(neojs::Opcode::StoreElem) == JS_BC_STORE_ELEM, "opcode mismatch");
+static_assert(static_cast<int>(neojs::Opcode::Print) == JS_BC_PRINT, "opcode mismatch");
+static_assert(static_cast<int>(neojs::Opcode::Nop) == JS_BC_NOP, "opcode mismatch");
+
 namespace {
 
 /* 默认分配器（宿主未注入时使用，#5） */

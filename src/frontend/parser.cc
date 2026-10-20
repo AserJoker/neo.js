@@ -923,11 +923,11 @@ ASTNode *Parser::parsePrimary() {
         return n;
       }
       if (isSymbol(tok, "{")) {
-        /* 读值位置 { → 对象字面量 / 解构模式（ESTree 中结构一致） */
-        return parseObjectPattern();
+        /* 读值位置 { → 对象字面量（M3；解构模式仅在声明/参数等绑定位置） */
+        return parseObjectPattern(/*as_literal=*/true);
       }
       if (isSymbol(tok, "[")) {
-        return parseArrayPattern();
+        return parseArrayPattern(/*as_literal=*/true);
       }
       if (isSymbol(tok, "(")) {
         advance();
@@ -1082,9 +1082,10 @@ ASTNode *Parser::parseTemplateLiteral() {
   return tpl;
 }
 
-/* 对象模式（字面量/解构共用）：{ key: value, ...spread, shorthand } */
-ASTNode *Parser::parseObjectPattern() {
-  ASTNode *obj = newNode(NodeType::ObjectPattern);
+/* 对象模式（解构/字面量共用）：{ key: value, ...spread, shorthand }
+ * as_literal=true 时产出 ObjectLiteral（读值位置）；否则 ObjectPattern（绑定位置）。 */
+ASTNode *Parser::parseObjectPattern(bool as_literal) {
+  ASTNode *obj = newNode(as_literal ? NodeType::ObjectLiteral : NodeType::ObjectPattern);
   obj->loc = current().start;
   advance(); /* { */
   while (!isSymbol(current(), "}")) {
@@ -1169,9 +1170,10 @@ ASTNode *Parser::parseObjectPattern() {
   return obj;
 }
 
-/* 数组模式（字面量/解构共用）：[ elem, ...rest ] */
-ASTNode *Parser::parseArrayPattern() {
-  ASTNode *arr = newNode(NodeType::ArrayPattern);
+/* 数组模式（解构/字面量共用）：[ elem, ...rest ]
+ * as_literal=true 时产出 ArrayLiteral（读值位置）；否则 ArrayPattern（绑定位置）。 */
+ASTNode *Parser::parseArrayPattern(bool as_literal) {
+  ASTNode *arr = newNode(as_literal ? NodeType::ArrayLiteral : NodeType::ArrayPattern);
   arr->loc = current().start;
   advance(); /* [ */
   while (!isSymbol(current(), "]")) {

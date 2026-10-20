@@ -86,6 +86,14 @@ enum class Opcode : uint8_t {
   LoadUpvalue,     /* 捕获的外层变量 -> 栈顶：LoadUpvalue {capture_index} */
   StoreUpvalue,    /* 栈顶 -> 捕获的外层变量：StoreUpvalue {capture_index} */
 
+  /* 对象/数组（M3） */
+  NewObject,       /* 压入新空对象：NewObject（arg 保留，原型 Object.prototype） */
+  NewArray,        /* 压入新数组：NewArray（arg 保留，空 elements） */
+  LoadProp,        /* obj.key -> 栈顶（替换 obj）：LoadProp {key_index} */
+  StoreProp,       /* obj, val -> 栈顶 val（obj.key = val）：StoreProp {key_index} */
+  LoadElem,        /* obj, key -> 栈顶（替换 obj）：LoadElem（运行期 ToPropertyKey） */
+  StoreElem,       /* obj, key, val -> 栈顶 val（obj[key] = val）：StoreElem */
+
   /* 调试/输出 */
   Print,           /* 弹出栈顶并输出（--print 观测） */
   Nop,             /* 空操作（label 占位） */
@@ -172,6 +180,18 @@ class BytecodeBuilder {
   void make_function(uint16_t idx) { push_op(Opcode::MakeFunction, idx); }
   void load_upvalue(uint16_t idx) { push_op(Opcode::LoadUpvalue, idx); }
   void store_upvalue(uint16_t idx) { push_op(Opcode::StoreUpvalue, idx); }
+
+  /* 对象/数组（M3）：字面量构造 + 属性读写。 */
+  void new_object() { push_op(Opcode::NewObject); }
+  void new_array() { push_op(Opcode::NewArray); }
+  void load_prop(const std::string &key) {
+    push_op(Opcode::LoadProp, add_constant(key));
+  }
+  void store_prop(const std::string &key) {
+    push_op(Opcode::StoreProp, add_constant(key));
+  }
+  void load_elem() { push_op(Opcode::LoadElem); }
+  void store_elem() { push_op(Opcode::StoreElem); }
 
   /* 注册捕获变量（去重），返回捕获下标。 */
   uint16_t add_capture(uint16_t depth, const std::string &name) {

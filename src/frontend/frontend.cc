@@ -315,6 +315,12 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
     case NodeType::TemplateLiteral:
       out += "TemplateLiteral\n";
       break;
+    case NodeType::ObjectLiteral:
+      out += "ObjectLiteral\n";
+      break;
+    case NodeType::ArrayLiteral:
+      out += "ArrayLiteral\n";
+      break;
     case NodeType::ObjectPattern:
       out += "ObjectPattern\n";
       break;

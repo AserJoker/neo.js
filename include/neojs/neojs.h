@@ -267,6 +267,15 @@ typedef enum JSBCOp {
   JS_BC_JUMP_IF_FALSE,
   JS_BC_CALL,
   JS_BC_RET,
+  JS_BC_MAKE_FUNCTION,  /* M2.5 闭包：MakeFunction {index} */
+  JS_BC_LOAD_UPVALUE,    /* 捕获的外层变量读取（M2.5） */
+  JS_BC_STORE_UPVALUE,   /* 捕获的外层变量写入（M2.5） */
+  JS_BC_NEW_OBJECT,      /* 新建空对象（M3） */
+  JS_BC_NEW_ARRAY,       /* 新建数组（M3） */
+  JS_BC_LOAD_PROP,       /* obj.key -> 栈顶（M3） */
+  JS_BC_STORE_PROP,      /* obj, val -> val（M3） */
+  JS_BC_LOAD_ELEM,       /* obj, key -> 栈顶（M3） */
+  JS_BC_STORE_ELEM,      /* obj, key, val -> val（M3） */
   JS_BC_PRINT,
   JS_BC_NOP,
 } JSBCOp;

@@ -442,6 +442,111 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         stack.push_back(v);
         break;
       }
+      case Opcode::NewObject: {
+        /* 新建普通对象（原型 Object.prototype；E4 尚未注册时原型为 null）。 */
+        JSValue *obj = ctx->createObject(nullptr);
+        stack.push_back(obj);
+        break;
+      }
+      case Opcode::NewArray: {
+        /* 新建数组（空 elements，length = 0）。 */
+        JSValue *arr = ctx->createArray(0);
+        stack.push_back(arr);
+        break;
+      }
+      case Opcode::LoadProp: {
+        /* obj.key -> 栈顶（替换 obj）。key 为常量池字符串。 */
+        if (stack.empty()) return fail("Error: stack underflow on LoadProp");
+        JSValue *obj = stack.back();
+        if (instr.arg >= fn.constants.size() ||
+            fn.constants[instr.arg].is_number) {
+          return fail("Error: LoadProp requires a string constant");
+        }
+        const std::string &key = fn.constants[instr.arg].str;
+        if (!obj->isObject()) {
+          return fail("TypeError: Cannot read properties of non-object");
+        }
+        JSValue *val = obj->object()->getProperty(key);
+        stack.pop_back();
+        stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
+        break;
+      }
+      case Opcode::StoreProp: {
+        /* obj, val -> 栈顶 val（obj.key = val）。key 为常量池字符串。
+         * 消费 obj（编译器成员赋值后不再需要对象引用）。 */
+        if (stack.size() < 2) return fail("Error: stack underflow on StoreProp");
+        JSValue *val = stack.back();
+        JSValue *obj = stack[stack.size() - 2];
+        if (instr.arg >= fn.constants.size() ||
+            fn.constants[instr.arg].is_number) {
+          return fail("Error: StoreProp requires a string constant");
+        }
+        const std::string &key = fn.constants[instr.arg].str;
+        if (!obj->isObject()) {
+          return fail("TypeError: Cannot set properties of non-object");
+        }
+        obj->object()->setProperty(key, val);
+        stack.resize(stack.size() - 2);
+        stack.push_back(val); /* 赋值表达式值 = 新值 */
+        break;
+      }
+      case Opcode::LoadElem: {
+        /* obj, key -> 栈顶（替换 obj）。key 运行期 ToPropertyKey。 */
+        if (stack.size() < 2) return fail("Error: stack underflow on LoadElem");
+        JSValue *key = stack.back();
+        JSValue *obj = stack[stack.size() - 2];
+        if (!obj->isObject()) {
+          return fail("TypeError: Cannot read properties of non-object");
+        }
+        /* 数组整数索引快速路径（架构 §5.2：arr[i] -> elements）。 */
+        if (obj->object()->isArray() && key->isNumber()) {
+          double d = key->toNumber();
+          if (d >= 0.0 && d == std::trunc(d) && d < 4294967296.0) {
+            JSValue *val = obj->object()->getElement(static_cast<size_t>(d));
+            stack.resize(stack.size() - 2);
+            stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
+            break;
+          }
+        }
+        ConversionResult pk = toPropertyKey(ctx, key);
+        if (!pk.ok()) return pk;
+        /* v1 只支持字符串属性名（Symbol 键留 M4）。 */
+        if (pk.value->kind() == Kind::Symbol) {
+          return fail("TypeError: symbol property keys not supported");
+        }
+        JSValue *val = obj->object()->getProperty(pk.value->toString());
+        stack.resize(stack.size() - 2);
+        stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
+        break;
+      }
+      case Opcode::StoreElem: {
+        /* obj, key, val -> 栈顶 val（obj[key] = val）。 */
+        if (stack.size() < 3) return fail("Error: stack underflow on StoreElem");
+        JSValue *val = stack.back();
+        JSValue *key = stack[stack.size() - 2];
+        JSValue *obj = stack[stack.size() - 3];
+        if (!obj->isObject()) {
+          return fail("TypeError: Cannot set properties of non-object");
+        }
+        if (obj->object()->isArray() && key->isNumber()) {
+          double d = key->toNumber();
+          if (d >= 0.0 && d == std::trunc(d) && d < 4294967296.0) {
+            obj->object()->setElement(static_cast<size_t>(d), val);
+            stack.resize(stack.size() - 3);
+            stack.push_back(val);
+            break;
+          }
+        }
+        ConversionResult pk = toPropertyKey(ctx, key);
+        if (!pk.ok()) return pk;
+        if (pk.value->kind() == Kind::Symbol) {
+          return fail("TypeError: symbol property keys not supported");
+        }
+        obj->object()->setProperty(pk.value->toString(), val);
+        stack.resize(stack.size() - 3);
+        stack.push_back(val); /* 赋值表达式值 = 新值 */
+        break;
+      }
       case Opcode::LoadUpvalue: {
         /* 捕获的外层变量读取（M2.5）：沿环境链 depth 跳转后查 name。 */
         JSEnvironment *e = captureEnv(env, fn, instr.arg);
