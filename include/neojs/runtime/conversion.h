@@ -84,6 +84,23 @@ ConversionResult toObject(JSContext *ctx, JSValue *v);
  * 纯工具函数（无 ctx 依赖），供转换/编译期数字键转字符串复用。 */
 std::string numberToString(double x);
 
+/* Number::toString(radix)（§6.1.6.1.1）：按指定进制输出整数表示（2-36）。
+ * 只支持整数；小数/NaN/±Infinity/±0 返回空串（调用方按十进制走 numberToString）。
+ * 纯工具函数（无 ctx 依赖），供 Number.prototype.toString 复用。 */
+std::string numberToStringRadix(double x, int radix);
+
+/* Number.prototype.toFixed（§21.1.3.5）：定点记数法，fractionDigits 0-100。
+ * 负数带 "-"；绝对值 < 1e-6 时按 0 处理（规范步骤 5）。 */
+std::string numberToFixed(double x, int digits);
+
+/* Number.prototype.toExponential（§21.1.3.2）：指数记数法。
+ * digits < 0 表示缺参（不限制小数位）；NaN/±Infinity 返回自身表示。 */
+std::string numberToExponential(double x, int digits);
+
+/* Number.prototype.toPrecision（§21.1.3.3）：按精度舍入。
+ * precision < 0 表示缺参（走 numberToString）；NaN/±Infinity 返回自身表示。 */
+std::string numberToPrecision(double x, int precision);
+
 /* -------------------------------------------------------------------------- */
 /* 值比较（§7.2）                                                              */
 /* -------------------------------------------------------------------------- */

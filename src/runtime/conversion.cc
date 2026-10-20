@@ -573,6 +573,223 @@ std::string numberToString(double x) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Number.prototype 格式化工具（M4.3g，§21.1.3）                               */
+/* -------------------------------------------------------------------------- */
+
+/* 解析 numberToString(x) 的最短表示为数字串（供定点/精度格式化）。
+ * 返回 (digits, exp, neg)：x = 0.digits × 10^exp（digits 为纯数字串，
+ * 不含小数点/符号；exp 为规范指数 n；neg 为符号位）。仅有限非零值。 */
+static void parseDigits(double x, std::string &digits, int &exp, bool &neg) {
+  neg = x < 0;
+  double mag = std::fabs(x);
+  if (mag == 0.0) {
+    digits = "0";
+    exp = 0;
+    return;
+  }
+  std::string s = numberToString(mag);
+  size_t epos = s.find_first_of("eE");
+  int sci = 0;
+  if (epos != std::string::npos) {
+    sci = std::strtol(s.c_str() + epos + 1, nullptr, 10);
+    s = s.substr(0, epos);
+  }
+  size_t dot = s.find('.');
+  std::string intpart = (dot == std::string::npos) ? s : s.substr(0, dot);
+  std::string frac = (dot == std::string::npos) ? "" : s.substr(dot + 1);
+  digits = intpart + frac;
+  size_t p = digits.find_first_not_of('0');
+  if (p == std::string::npos) {
+    digits = "0";
+    exp = 0;
+    return;
+  }
+  digits = digits.substr(p);
+  exp = sci + static_cast<int>(intpart.size()) - static_cast<int>(p);
+}
+
+/* 十进制数字串按保留位数四舍五入。
+ * s 为纯数字串（无前导 0）；keep 为保留的有效位数。
+ * 返回舍入后数字串；carry=true 表示产生了新位（如 999 -> 1000，返回 "1"）。 */
+static std::string roundDigits(const std::string &s, int keep, bool &carry) {
+  carry = false;
+  if (keep >= static_cast<int>(s.size())) return s;
+  if (keep <= 0) {
+    if (s[0] >= '5') {
+      carry = true;
+      return "1";
+    }
+    return "";
+  }
+  std::string r = s.substr(0, static_cast<size_t>(keep));
+  if (s[static_cast<size_t>(keep)] >= '5') {
+    int i = keep - 1;
+    while (i >= 0 && r[static_cast<size_t>(i)] == '9') {
+      r[static_cast<size_t>(i)] = '0';
+      --i;
+    }
+    if (i < 0) {
+      /* 全 9 进位：9.99 -> 10.0，保留 keep 位（"1" + keep-1 个零）。 */
+      r = "1" + std::string(static_cast<size_t>(keep - 1), '0');
+      carry = true;
+    } else {
+      r[static_cast<size_t>(i)] = static_cast<char>(r[static_cast<size_t>(i)] + 1);
+    }
+  }
+  return r;
+}
+
+/* 十进制数字串（无符号，最短往返）-> 按 radix（2-36）重排为任意进制数字串。
+ * 用十进制大数工具逐位除 radix（bigintDiv 就地修改十进制串返回余数）。
+ * 只支持非负整数；0 -> "0"。 */
+static std::string decimalToRadix(std::string digits, int radix) {
+  if (digits.empty() || digits == "0") return "0";
+  const char *alphabet = "0123456789abcdefghijklmnopqrstuvwxyz";
+  std::string out;
+  while (digits != "0") {
+    unsigned rem = bigintDiv(digits, static_cast<unsigned>(radix));
+    out.insert(out.begin(), alphabet[rem]);
+  }
+  return out;
+}
+
+std::string numberToStringRadix(double x, int radix) {
+  /* 只支持整数：小数/非有限/±0 由调用方走十进制。 */
+  if (std::isnan(x) || std::isinf(x) || x == 0.0) return "";
+  if (x != std::trunc(x)) return "";
+  bool neg = x < 0;
+  double mag = std::fabs(x);
+  char buf[32];
+  auto res = std::to_chars(buf, buf + sizeof(buf), mag);
+  std::string dec(buf, res.ptr);
+  std::string r = decimalToRadix(dec, radix);
+  return neg ? "-" + r : r;
+}
+
+std::string numberToFixed(double x, int digits) {
+  if (std::isnan(x)) return "NaN";
+  if (std::isinf(x)) return (x > 0) ? "Infinity" : "-Infinity";
+  bool neg = x < 0;
+  double mag = std::fabs(x);
+  /* 绝对值 >= 1e21：规范步骤 7 回退 Number::toString。 */
+  if (mag >= 1e21) return numberToString(x);
+  /* 绝对值 < 1e-6：按 0 处理（保留符号，§21.1.3.5 步骤 5）。 */
+  if (mag != 0.0 && mag < 1e-6) mag = 0.0;
+  double factor = std::pow(10.0, digits);
+  double scaled = std::round(mag * factor);
+  std::string s;
+  if (digits == 0) {
+    if (std::fabs(scaled) < 1e15) {
+      s = std::to_string(static_cast<long long>(scaled));
+    } else {
+      return numberToString(neg ? -scaled : scaled);
+    }
+  } else {
+    long long whole = static_cast<long long>(scaled / factor);
+    long long frac = static_cast<long long>(std::fmod(scaled, factor));
+    s = std::to_string(whole) + ".";
+    std::string f = std::to_string(frac);
+    s += std::string(static_cast<size_t>(digits) - f.size(), '0') + f;
+  }
+  return neg ? "-" + s : s;
+}
+
+std::string numberToExponential(double x, int digits) {
+  if (std::isnan(x)) return "NaN";
+  if (std::isinf(x)) return (x > 0) ? "Infinity" : "-Infinity";
+  bool neg = x < 0;
+  double mag = std::fabs(x);
+  if (mag == 0.0) {
+    std::string s = (digits < 0) ? "0" : ("0." + std::string(static_cast<size_t>(digits), '0'));
+    return (neg ? "-" : "") + s + "e+0";
+  }
+  std::string d;
+  int e = 0;
+  bool dneg = false;
+  parseDigits(mag, d, e, dneg); /* mag>=0，dneg 恒 false；neg 由调用方维护 */
+  --e; /* parseDigits 返回规范指数 n（0.d×10^n）；科学指数 e = n - 1 */
+  int keep = (digits < 0) ? -1 : digits + 1; /* 有效位数 = 小数位 + 1 */
+  std::string mant;
+  if (keep < 0 || keep >= static_cast<int>(d.size())) {
+    mant = d;
+  } else {
+    bool carry = false;
+    mant = roundDigits(d, keep, carry);
+    if (carry) ++e; /* roundDigits 进位已返回 keep 位（"1"+keep-1 个零） */
+  }
+  std::string mant_str = mant.substr(0, 1);
+  std::string rest = mant.substr(1);
+  if (digits >= 0) {
+    if (rest.size() > static_cast<size_t>(digits)) rest = rest.substr(0, static_cast<size_t>(digits));
+    rest += std::string(static_cast<size_t>(digits) - rest.size(), '0');
+  }
+  if (!rest.empty()) mant_str += "." + rest;
+  std::string s = (neg ? "-" : "") + mant_str + "e";
+  if (e >= 0) s += "+";
+  s += std::to_string(e);
+  return s;
+}
+
+std::string numberToPrecision(double x, int precision) {
+  if (std::isnan(x)) return "NaN";
+  if (std::isinf(x)) return (x > 0) ? "Infinity" : "-Infinity";
+  bool neg = x < 0;
+  double mag = std::fabs(x);
+  if (mag == 0.0) {
+    std::string s = "0." + std::string(static_cast<size_t>(precision - 1), '0');
+    return (neg ? "-" : "") + s;
+  }
+  std::string d;
+  int e = 0;
+  bool dneg = false;
+  parseDigits(mag, d, e, dneg); /* mag>=0，dneg 恒 false；neg 由调用方维护 */
+  --e; /* parseDigits 返回规范指数 n（0.d×10^n）；科学指数 e = n - 1 */
+  std::string sig;
+  if (precision >= static_cast<int>(d.size())) {
+    sig = d;
+  } else {
+    bool carry = false;
+    sig = roundDigits(d, precision, carry);
+    if (carry) ++e; /* roundDigits 进位已返回 precision 位 */
+  }
+  /* 记数法选择（§21.1.3.3 步骤 11-13）：
+   *   e < -6 或 e >= 21 或 e >= precision 时用科学记数法；否则定点。 */
+  if (e < -6 || e >= 21 || e >= precision) {
+    std::string s = (neg ? "-" : "") + sig.substr(0, 1);
+    if (sig.size() > 1) s += "." + sig.substr(1);
+    s += "e";
+    if (e >= 0) s += "+";
+    s += std::to_string(e);
+    return s;
+  }
+  /* 定点（§21.1.3.3 步骤 12-14）：m 为所需小数位数。 */
+  int m = precision - e - 1;
+  if (m < 0) m = 0;
+  std::string s = (neg ? "-" : "");
+  if (e >= 0) {
+    /* 整数部分 e+1 位。 */
+    s += sig.substr(0, static_cast<size_t>(e + 1));
+    if (m > 0) {
+      s += ".";
+      /* 小数部分：sig 剩余字符，不足 m 位补零。 */
+      size_t avail = (sig.size() > static_cast<size_t>(e + 1))
+                         ? sig.size() - static_cast<size_t>(e + 1)
+                         : 0;
+      s += sig.substr(static_cast<size_t>(e + 1), avail);
+      s += std::string(static_cast<size_t>(m) - avail, '0');
+    }
+  } else {
+    /* e < 0：0.00...sig，小数总位数补到 m。 */
+    s += "0.";
+    s += std::string(static_cast<size_t>(-e - 1), '0');
+    s += sig;
+    int cur = (-e - 1) + static_cast<int>(sig.size());
+    if (cur < m) s += std::string(static_cast<size_t>(m - cur), '0');
+  }
+  return s;
+}
+
+/* -------------------------------------------------------------------------- */
 /* 抽象运算入口（公开接口，见 conversion.h）                                   */
 /* -------------------------------------------------------------------------- */
 

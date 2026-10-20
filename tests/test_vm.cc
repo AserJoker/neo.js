@@ -2906,6 +2906,174 @@ TEST(Compiler, EvalBigIntBuiltins) {
   JS_FreeAllocator(a);
 }
 
+/* M4.3g：Number.prototype 方法补齐 + Number 静态方法（§21.1.2/§21.1.3）。
+ * expect 前缀：#num: 数字；#str: 字符串；#bool: 布尔；#err: 异常子串。 */
+TEST(Compiler, EvalNumberProtoMethods) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  struct { const char *src; const char *expect; } cases[] = {
+      /* Number.prototype.toString：radix 支持（§21.1.3.6）。 */
+      {"(255).toString(16)", "#str:ff"},
+      {"(255).toString(2)", "#str:11111111"},
+      {"(255).toString(8)", "#str:377"},
+      {"(255).toString()", "#str:255"},
+      {"(255).toString(10)", "#str:255"},
+      {"(-255).toString(16)", "#str:-ff"},
+      {"(0).toString(2)", "#str:0"},
+      {"(3.14).toString(2)", "#str:3.14"},        /* 小数回退十进制 */
+      {"(255).toString(1)", "#err:RangeError"},
+      {"(255).toString(37)", "#err:RangeError"},
+      {"(NaN).toString()", "#str:NaN"},
+      {"(Infinity).toString()", "#str:Infinity"},
+      {"(1e21).toString()", "#str:1e+21"},
+      /* toFixed（§21.1.3.5）。 */
+      {"(123.456).toFixed(2)", "#str:123.46"},
+      {"(123.456).toFixed(0)", "#str:123"},
+      {"(0.1).toFixed(2)", "#str:0.10"},
+      {"(123.456).toFixed()", "#str:123"},
+      {"(-123.456).toFixed(1)", "#str:-123.5"},
+      {"(1e21).toFixed(2)", "#str:1e+21"},          /* 大数回退 */
+      {"(123).toFixed(-1)", "#err:RangeError"},
+      {"(123).toFixed(101)", "#err:RangeError"},
+      /* toExponential（§21.1.3.2）。 */
+      {"(123.456).toExponential(2)", "#str:1.23e+2"},
+      {"(123.456).toExponential()", "#str:1.23456e+2"},
+      {"(0).toExponential(2)", "#str:0.00e+0"},
+      {"(100).toExponential(1)", "#str:1.0e+2"},
+      {"(9.99).toExponential(1)", "#str:1.0e+1"},        /* 进位 */
+      {"(999).toExponential(2)", "#str:9.99e+2"},
+      {"(999).toExponential(1)", "#str:1.0e+3"},        /* 进位提升指数 */
+      {"(-123.456).toExponential(2)", "#str:-1.23e+2"},
+      {"(1e-7).toExponential()", "#str:1e-7"},           /* 小指数 */
+      {"(123.456).toExponential(0)", "#str:1e+2"},
+      {"(123.456).toExponential(6)", "#str:1.234560e+2"}, /* 补零 */
+      {"(0.000001).toExponential(2)", "#str:1.00e-6"},    /* 负指数 */
+      {"(1e100).toExponential(2)", "#str:1.00e+100"},     /* 大指数 */
+      /* toPrecision（§21.1.3.3）。 */
+      {"(123.456).toPrecision(4)", "#str:123.5"},
+      {"(123.456).toPrecision(2)", "#str:1.2e+2"},
+      {"(123.456).toPrecision()", "#str:123.456"},
+      {"(0.000123).toPrecision(2)", "#str:0.00012"},
+      {"(9.99).toPrecision(2)", "#str:10"},              /* 进位+定点 */
+      {"(1234).toPrecision(2)", "#str:1.2e+3"},
+      {"(-123.456).toPrecision(4)", "#str:-123.5"},
+      {"(1).toPrecision(21)", "#str:1.00000000000000000000"},
+      {"(1).toPrecision(2)", "#str:1.0"},                /* 整数补零 */
+      {"(1.5).toPrecision(2)", "#str:1.5"},
+      {"(100).toPrecision(2)", "#str:1.0e+2"},
+      {"(0.5).toPrecision(4)", "#str:0.5000"},           /* 小数补零 */
+      {"(1e-5).toPrecision(3)", "#str:0.0000100"},
+      {"(0).toPrecision(3)", "#str:0.00"},
+      {"(1234).toPrecision(5)", "#str:1234.0"},
+      {"(123.456).toPrecision(6)", "#str:123.456"},
+      {"(123456789).toPrecision(2)", "#str:1.2e+8"},
+      {"(123).toPrecision(1)", "#str:1e+2"},
+      {"(123).toPrecision(0)", "#err:RangeError"},
+      {"(123).toPrecision(101)", "#err:RangeError"},
+      /* toLocaleString（§21.1.3.4）：等价 toString。 */
+      {"(1234567).toLocaleString()", "#str:1234567"},
+      {"(0.5).toLocaleString()", "#str:0.5"},
+      /* 静态方法（§21.1.2）。 */
+      {"Number.isFinite(42)", "#bool:1"},
+      {"Number.isFinite('42')", "#bool:0"},          /* 不做类型转换 */
+      {"Number.isFinite(Infinity)", "#bool:0"},
+      {"Number.isFinite(NaN)", "#bool:0"},
+      {"Number.isInteger(42)", "#bool:1"},
+      {"Number.isInteger(3.14)", "#bool:0"},
+      {"Number.isInteger('42')", "#bool:0"},
+      {"Number.isInteger(-0)", "#bool:1"},
+      {"Number.isNaN(NaN)", "#bool:1"},
+      {"Number.isNaN('NaN')", "#bool:0"},
+      {"Number.isNaN(42)", "#bool:0"},
+      {"Number.isSafeInteger(42)", "#bool:1"},
+      {"Number.isSafeInteger(9007199254740991)", "#bool:1"},
+      {"Number.isSafeInteger(9007199254740992)", "#bool:0"},
+      {"Number.isSafeInteger(3.5)", "#bool:0"},
+      {"Number.isSafeInteger('42')", "#bool:0"},
+      /* parseFloat（§21.1.2.12）。 */
+      {"Number.parseFloat('3.14')", "#num:3.14"},
+      {"Number.parseFloat('  3.14xyz')", "#num:3.14"},
+      {"Number.parseFloat('abc')", "#num:NaN"},
+      {"Number.parseFloat('Infinity')", "#num:Infinity"},
+      {"Number.parseFloat('')", "#num:NaN"},
+      /* parseInt（§21.1.2.13）。 */
+      {"Number.parseInt('42')", "#num:42"},
+      {"Number.parseInt('42px')", "#num:42"},
+      {"Number.parseInt('  42  ')", "#num:42"},
+      {"Number.parseInt('0x1F')", "#num:31"},
+      {"Number.parseInt('0b101')", "#num:0"},        /* 二进制前缀不识别 */
+      {"Number.parseInt('ff', 16)", "#num:255"},
+      {"Number.parseInt('11', 2)", "#num:3"},
+      {"Number.parseInt('abc')", "#num:NaN"},
+      {"Number.parseInt('-42')", "#num:-42"},
+      {"Number.parseInt('42', 1)", "#num:NaN"},
+      {"Number.parseInt('42', 37)", "#num:NaN"},
+      /* 常量属性（§21.1.2.1/§21.1.2.6-15）。 */
+      {"Number.EPSILON > 0", "#bool:1"},
+      {"Number.MAX_SAFE_INTEGER", "#num:9007199254740991"},
+      {"Number.MIN_SAFE_INTEGER", "#num:-9007199254740991"},
+      {"Number.MAX_VALUE > 0", "#bool:1"},
+      {"Number.MIN_VALUE > 0", "#bool:1"},
+      {"Number.NaN !== NaN", "#bool:1"},
+      {"Number.POSITIVE_INFINITY === Infinity", "#bool:1"},
+      {"Number.NEGATIVE_INFINITY === -Infinity", "#bool:1"},
+      /* 原型链：装箱对象继承 Number.prototype 方法。 */
+      {"Object(123).toFixed(1)", "#str:123.0"},
+      {"Object(255).toString(16)", "#str:ff"},
+  };
+
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    JSValue *r = JS_Eval(ctx, cases[i].src, std::strlen(cases[i].src));
+    ASSERT_NE(r, nullptr) << "case " << i << " src=" << cases[i].src;
+    const char *e = cases[i].expect;
+    if (e[0] == '#') {
+      if (e[1] == 'e') {
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION)
+            << "case " << i << " src=" << cases[i].src << " got: "
+            << JS_ToString(ctx, r);
+        if (JS_GetKind(ctx, r) == JS_EXCEPTION) {
+          std::string msg = JS_ToString(ctx, r);
+          EXPECT_NE(msg.find(e + 5), std::string::npos)
+              << "case " << i << " msg=" << msg;
+        }
+      } else if (e[1] == 'n') {
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_NUMBER)
+            << "case " << i << " src=" << cases[i].src;
+        if (JS_GetKind(ctx, r) == JS_NUMBER) {
+          double want = std::atof(e + 5);
+          double got = JS_ToNumber(ctx, r);
+          if (std::isnan(want)) {
+            EXPECT_TRUE(std::isnan(got))
+                << "case " << i << " src=" << cases[i].src << " got=" << got;
+          } else {
+            EXPECT_DOUBLE_EQ(got, want) << "case " << i << " src=" << cases[i].src;
+          }
+        }
+      } else if (e[1] == 's') {
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_STRING)
+            << "case " << i << " src=" << cases[i].src;
+        if (JS_GetKind(ctx, r) == JS_STRING) {
+          EXPECT_EQ(std::string(JS_ToString(ctx, r)), std::string(e + 5))
+              << "case " << i << " src=" << cases[i].src;
+        }
+      } else if (e[1] == 'b') {
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN)
+            << "case " << i << " src=" << cases[i].src;
+        if (JS_GetKind(ctx, r) == JS_BOOLEAN) {
+          EXPECT_EQ(JS_ToBoolean(ctx, r), std::atoi(e + 6))
+              << "case " << i << " src=" << cases[i].src;
+        }
+      }
+    }
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
 
 /* M4.3f：String.prototype 方法补齐（§22.1.3）。
  * expect 前缀：#num: 数字；#str: 字符串；#bool: 布尔；#err: 异常子串；

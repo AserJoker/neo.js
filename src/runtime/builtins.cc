@@ -59,6 +59,9 @@ ConversionResult fail(const std::string &error) {
   return r;
 }
 
+/* 前置声明：toIntegerOrInfinity 定义于 String 方法工具区（下方）。 */
+double toIntegerOrInfinity(JSContext *ctx, JSValue *arg);
+
 /* 创建内置函数（Builtin 类别）：JSFunction + 包装 JSValue + 反向指针。
  * 内部值指针语义（区别于 Host 句柄语义，见 function.h）。
  * 原型链 -> Function.prototype（惰性创建缓存）：内置函数同样可调
@@ -217,14 +220,267 @@ ConversionResult numberValueOf(JSContext *ctx, JSValue *thisVal,
       "Number.prototype.valueOf called on incompatible receiver");
 }
 
-/* Number.prototype.toString（§21.1.3.6）：thisNumberValue -> ToString。 */
+/* Number.prototype.toString（§21.1.3.6）：thisNumberValue -> ToString。
+ * radix 参数（§6.1.6.1.1）：2-36 输出对应进制；缺省/10 走十进制最短表示；
+ * 小数/非有限值/±0 一律十进制。radix 非法（<2 或 >36）-> RangeError。 */
 ConversionResult numberToStringBuiltin(JSContext *ctx, JSValue *thisVal,
-                                       JSValue *const *, size_t) {
+                                       JSValue *const *args, size_t argc) {
   ConversionResult x = thisWrapperValue(
       ctx, thisVal, Kind::Number, ObjectKind::Number,
       "Number.prototype.toString called on incompatible receiver");
   if (!x.ok()) return x;
+  double d = x.value->toNumber();
+  /* radix 缺参（argc==0 或 undefined）-> 十进制。 */
+  if (argc > 0 && args[0] != nullptr && args[0]->kind() != Kind::Undefined) {
+    double radix = toIntegerOrInfinity(ctx, args[0]);
+    if (radix < 2.0 || radix > 36.0) {
+      return fail("RangeError: toString() radix must be between 2 and 36");
+    }
+    if (radix != 10.0) {
+      /* 非十进制：仅整数支持（§6.1.6.1.1 步骤 6：非有限值/±0/小数回退十进制）。 */
+      if (!std::isnan(d) && !std::isinf(d) && d != 0.0 &&
+          d == std::trunc(d)) {
+        return ok(ctx->createValue(
+            numberToStringRadix(d, static_cast<int>(radix))));
+      }
+    }
+  }
   return toString(ctx, x.value);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Number.prototype 格式化方法（M4.3g，§21.1.3）                               */
+/* -------------------------------------------------------------------------- */
+
+/* Number.prototype.toFixed（§21.1.3.5）：thisNumberValue -> 定点记数法。
+ * fractionDigits 缺参 -> 0；非整数 -> ToIntegerOrInfinity（截断）；
+ * 越界（<0 或 >100）-> RangeError。 */
+ConversionResult numberToFixedBuiltin(JSContext *ctx, JSValue *thisVal,
+                                      JSValue *const *args, size_t argc) {
+  ConversionResult x = thisWrapperValue(
+      ctx, thisVal, Kind::Number, ObjectKind::Number,
+      "Number.prototype.toFixed called on incompatible receiver");
+  if (!x.ok()) return x;
+  double d = x.value->toNumber();
+  double f = toIntegerOrInfinity(ctx, (argc > 0) ? args[0] : nullptr);
+  if (f < 0.0 || f > 100.0) {
+    return fail("RangeError: toFixed() digits argument must be between 0 and 100");
+  }
+  return ok(ctx->createValue(numberToFixed(d, static_cast<int>(f))));
+}
+
+/* Number.prototype.toExponential（§21.1.3.2）：thisNumberValue -> 指数记数法。
+ * fractionDigits 缺参 -> 不限制小数位（最短）；越界（<0 或 >100）-> RangeError。 */
+ConversionResult numberToExponentialBuiltin(JSContext *ctx, JSValue *thisVal,
+                                            JSValue *const *args, size_t argc) {
+  ConversionResult x = thisWrapperValue(
+      ctx, thisVal, Kind::Number, ObjectKind::Number,
+      "Number.prototype.toExponential called on incompatible receiver");
+  if (!x.ok()) return x;
+  double d = x.value->toNumber();
+  int digits = -1; /* 缺参标记 */
+  if (argc > 0 && args[0] != nullptr && args[0]->kind() != Kind::Undefined) {
+    double f = toIntegerOrInfinity(ctx, args[0]);
+    if (f < 0.0 || f > 100.0) {
+      return fail("RangeError: toExponential() argument must be between 0 and 100");
+    }
+    digits = static_cast<int>(f);
+  }
+  return ok(ctx->createValue(numberToExponential(d, digits)));
+}
+
+/* Number.prototype.toPrecision（§21.1.3.3）：thisNumberValue -> 按精度舍入。
+ * precision 缺参 -> 最短十进制（toString）；越界（<1 或 >100）-> RangeError。 */
+ConversionResult numberToPrecisionBuiltin(JSContext *ctx, JSValue *thisVal,
+                                          JSValue *const *args, size_t argc) {
+  ConversionResult x = thisWrapperValue(
+      ctx, thisVal, Kind::Number, ObjectKind::Number,
+      "Number.prototype.toPrecision called on incompatible receiver");
+  if (!x.ok()) return x;
+  double d = x.value->toNumber();
+  if (argc == 0 || args[0] == nullptr || args[0]->kind() == Kind::Undefined) {
+    return toString(ctx, x.value); /* 缺参 -> 最短十进制 */
+  }
+  double p = toIntegerOrInfinity(ctx, args[0]);
+  if (p < 1.0 || p > 100.0) {
+    return fail("RangeError: toPrecision() argument must be between 1 and 100");
+  }
+  return ok(ctx->createValue(numberToPrecision(d, static_cast<int>(p))));
+}
+
+/* Number.prototype.toLocaleString（§21.1.3.4）：本阶段无 locale，等价 toString。 */
+ConversionResult numberToLocaleString(JSContext *ctx, JSValue *thisVal,
+                                      JSValue *const *, size_t) {
+  ConversionResult x = thisWrapperValue(
+      ctx, thisVal, Kind::Number, ObjectKind::Number,
+      "Number.prototype.toLocaleString called on incompatible receiver");
+  if (!x.ok()) return x;
+  return toString(ctx, x.value);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Number 静态方法（M4.3g，§21.1.2）                                           */
+/* -------------------------------------------------------------------------- */
+
+/* 本地空白判断（parseInt/parseFloat 前导剥离）：ASCII WhiteSpace ∪ LineTerminator。
+ * 多字节 Unicode 空白 v1 简化不展开（与 conversion.cc 同级的已知差距）。 */
+bool isJsSpace(int c) {
+  switch (c) {
+    case 0x09: /* TAB */
+    case 0x0B: /* VT */
+    case 0x0C: /* FF */
+    case 0x20: /* SP */
+    case 0xA0: /* NBSP */
+    case 0xFEFF:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool isJsLineTerm(int c) {
+  return c == 0x0A || c == 0x0D || c == 0x2028 || c == 0x2029;
+}
+
+/* Number.isFinite（§21.1.2.2）：仅 Number 且有限 -> true。 */
+ConversionResult numberIsFinite(JSContext *ctx, JSValue *,
+                                JSValue *const *args, size_t argc) {
+  if (argc == 0 || args[0] == nullptr || args[0]->kind() != Kind::Number) {
+    return ok(ctx->createValue(false));
+  }
+  double d = args[0]->toNumber();
+  return ok(ctx->createValue(!std::isnan(d) && !std::isinf(d)));
+}
+
+/* Number.isInteger（§21.1.2.3）：仅 Number 且为整数（含 ±0）-> true。 */
+ConversionResult numberIsInteger(JSContext *ctx, JSValue *,
+                                 JSValue *const *args, size_t argc) {
+  if (argc == 0 || args[0] == nullptr || args[0]->kind() != Kind::Number) {
+    return ok(ctx->createValue(false));
+  }
+  double d = args[0]->toNumber();
+  return ok(ctx->createValue(!std::isnan(d) && !std::isinf(d) &&
+                             d == std::trunc(d)));
+}
+
+/* Number.isNaN（§21.1.2.4）：仅 Number 且 NaN -> true（不做类型转换）。 */
+ConversionResult numberIsNaN(JSContext *ctx, JSValue *,
+                             JSValue *const *args, size_t argc) {
+  if (argc == 0 || args[0] == nullptr || args[0]->kind() != Kind::Number) {
+    return ok(ctx->createValue(false));
+  }
+  return ok(ctx->createValue(std::isnan(args[0]->toNumber())));
+}
+
+/* Number.isSafeInteger（§21.1.2.5）：整数且在 [-2^53+1, 2^53-1] 内。 */
+ConversionResult numberIsSafeInteger(JSContext *ctx, JSValue *,
+                                     JSValue *const *args, size_t argc) {
+  if (argc == 0 || args[0] == nullptr || args[0]->kind() != Kind::Number) {
+    return ok(ctx->createValue(false));
+  }
+  double d = args[0]->toNumber();
+  if (std::isnan(d) || std::isinf(d) || d != std::trunc(d)) {
+    return ok(ctx->createValue(false));
+  }
+  const double maxSafe = 9007199254740991.0; /* 2^53 - 1 */
+  return ok(ctx->createValue(std::fabs(d) <= maxSafe));
+}
+
+/* Number.parseFloat（§21.1.2.12 = §19.2.4 parseFloat）：
+ * ToString 后解析前缀浮点数；空白剥离；首字符非法 -> NaN。 */
+ConversionResult numberParseFloat(JSContext *ctx, JSValue *,
+                                  JSValue *const *args, size_t argc) {
+  if (argc == 0 || args[0] == nullptr) {
+    return ok(ctx->createValue(NAN));
+  }
+  ConversionResult s = toString(ctx, args[0]);
+  if (!s.ok()) return s;
+  const std::string &str = s.value->toString();
+  /* 跳过前导空白（§19.2.4 步骤 3）。 */
+  size_t i = 0;
+  const size_t n = str.size();
+  while (i < n) {
+    int c = static_cast<unsigned char>(str[i]);
+    if (isJsSpace(c) || isJsLineTerm(c)) {
+      ++i;
+    } else {
+      break;
+    }
+  }
+  if (i == n) return ok(ctx->createValue(NAN));
+  /* 用 strtod 解析前缀（含 ±Infinity/0x 十六进制）。 */
+  errno = 0;
+  char *endp = nullptr;
+  double d = std::strtod(str.c_str() + i, &endp);
+  if (endp == str.c_str() + i) return ok(ctx->createValue(NAN));
+  return ok(ctx->createValue(d));
+}
+
+/* Number.parseInt（§21.1.2.13 = §19.2.5 parseInt）：
+ * ToString 后解析前缀整数；radix 2-36；空/首字符非法 -> NaN。 */
+ConversionResult numberParseInt(JSContext *ctx, JSValue *,
+                                JSValue *const *args, size_t argc) {
+  if (argc == 0 || args[0] == nullptr) {
+    return ok(ctx->createValue(NAN));
+  }
+  ConversionResult s = toString(ctx, args[0]);
+  if (!s.ok()) return s;
+  const std::string &str = s.value->toString();
+  size_t i = 0;
+  const size_t n = str.size();
+  while (i < n) {
+    int c = static_cast<unsigned char>(str[i]);
+    if (isJsSpace(c) || isJsLineTerm(c)) {
+      ++i;
+    } else {
+      break;
+    }
+  }
+  if (i == n) return ok(ctx->createValue(NAN));
+  /* 符号。 */
+  int sign = 1;
+  if (str[i] == '+' || str[i] == '-') {
+    if (str[i] == '-') sign = -1;
+    ++i;
+  }
+  /* radix 解析（§19.2.5 步骤 5-9）：缺省/0/undefined -> 推断（0x -> 16，否则 10）。 */
+  int radix = 10;
+  if (argc > 1 && args[1] != nullptr && args[1]->kind() != Kind::Undefined) {
+    double r = toIntegerOrInfinity(ctx, args[1]);
+    if (r < 2.0 || r > 36.0) return ok(ctx->createValue(NAN));
+    radix = static_cast<int>(r);
+  }
+  /* 0x 前缀推断（radix 缺省或 16 时）。 */
+  if (i + 1 < n && str[i] == '0' && (str[i + 1] == 'x' || str[i + 1] == 'X')) {
+    if (radix == 10) {
+      radix = 16;
+      i += 2;
+    } else if (radix == 16) {
+      i += 2;
+    }
+  }
+  /* 解析前缀数字（radix 进制）。 */
+  double value = 0.0;
+  bool any = false;
+  while (i < n) {
+    int c = static_cast<unsigned char>(str[i]);
+    int digit;
+    if (c >= '0' && c <= '9') {
+      digit = c - '0';
+    } else if (c >= 'a' && c <= 'z') {
+      digit = c - 'a' + 10;
+    } else if (c >= 'A' && c <= 'Z') {
+      digit = c - 'A' + 10;
+    } else {
+      break;
+    }
+    if (digit >= radix) break;
+    value = value * radix + digit;
+    any = true;
+    ++i;
+  }
+  if (!any) return ok(ctx->createValue(NAN));
+  return ok(ctx->createValue(sign * value));
 }
 
 /* String.prototype.valueOf / toString（§22.1.3.5 / §22.1.3.27）：thisStringValue。 */
@@ -1491,6 +1747,47 @@ void installBuiltins(JSContext *ctx) {
                         numberValueOf, numberToStringBuiltin);
   installWrapperBuiltin(ctx, "String", ObjectKind::String, stringConstructor,
                         stringValueOf, stringToStringBuiltin);
+
+  /* Number.prototype 方法补齐（M4.3g，§21.1.3）：toFixed/toExponential/
+   * toPrecision/toLocaleString。toString 已支持 radix（numberToStringBuiltin）。 */
+  JSValue *number_proto = ctx->wrapperProto(ObjectKind::Number);
+  if (number_proto != nullptr && number_proto->isObject()) {
+    JSObject *np = number_proto->object();
+    np->setProperty("toFixed",
+                    makeBuiltin(ctx, numberToFixedBuiltin, ThisMode::Strict));
+    np->setProperty("toExponential",
+                    makeBuiltin(ctx, numberToExponentialBuiltin, ThisMode::Strict));
+    np->setProperty("toPrecision",
+                    makeBuiltin(ctx, numberToPrecisionBuiltin, ThisMode::Strict));
+    np->setProperty("toLocaleString",
+                    makeBuiltin(ctx, numberToLocaleString, ThisMode::Strict));
+  }
+
+  /* Number 静态方法（M4.3g，§21.1.2）：isFinite/isInteger/isNaN/isSafeInteger/
+   * parseFloat/parseInt + 常量属性。 */
+  JSValue *number_ctor = ctx->globalObject()->object()->getProperty("Number");
+  if (number_ctor != nullptr && number_ctor->isObject()) {
+    JSObject *nf = number_ctor->object();
+    nf->setProperty("isFinite", makeBuiltin(ctx, numberIsFinite, ThisMode::Strict));
+    nf->setProperty("isInteger",
+                    makeBuiltin(ctx, numberIsInteger, ThisMode::Strict));
+    nf->setProperty("isNaN", makeBuiltin(ctx, numberIsNaN, ThisMode::Strict));
+    nf->setProperty("isSafeInteger",
+                    makeBuiltin(ctx, numberIsSafeInteger, ThisMode::Strict));
+    nf->setProperty("parseFloat",
+                    makeBuiltin(ctx, numberParseFloat, ThisMode::Strict));
+    nf->setProperty("parseInt",
+                    makeBuiltin(ctx, numberParseInt, ThisMode::Strict));
+    /* 常量属性（§21.1.2.1/§21.1.2.6-15）。 */
+    nf->setProperty("EPSILON", ctx->createValue(2.220446049250313e-16));
+    nf->setProperty("MAX_SAFE_INTEGER", ctx->createValue(9007199254740991.0));
+    nf->setProperty("MAX_VALUE", ctx->createValue(1.7976931348623157e+308));
+    nf->setProperty("MIN_SAFE_INTEGER", ctx->createValue(-9007199254740991.0));
+    nf->setProperty("MIN_VALUE", ctx->createValue(5e-324));
+    nf->setProperty("NaN", ctx->createValue(NAN));
+    nf->setProperty("NEGATIVE_INFINITY", ctx->createValue(-INFINITY));
+    nf->setProperty("POSITIVE_INFINITY", ctx->createValue(INFINITY));
+  }
 
   /* String.prototype 方法补齐（M4.3f，§22.1.3）：在 installWrapperBuiltin
    * 创建的 String.prototype 上注册全部字符串方法。原型经 wrapper_protos_
