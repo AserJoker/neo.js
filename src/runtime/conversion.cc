@@ -316,7 +316,8 @@ ConversionResult toNumber(JSContext *ctx, JSValue *v) {
     case Kind::Boolean:
       return ok(ctx->createValue(v->toBoolean() ? 1.0 : 0.0));
     case Kind::Number:
-      return ok(ctx->createValue(v->toNumber()));
+      return ok(v); /* ToNumber(Number) = 自身：返回原值不复制，
+                    * 避免跨调用持有无根副本（低阈值 GC 下被回收） */
     case Kind::String:
       return ok(ctx->createValue(stringToNumber(v->toString())));
     case Kind::Object: {
@@ -353,6 +354,9 @@ ConversionResult toString(JSContext *ctx, JSValue *v) {
     }
     case Kind::Symbol:
       return fail("TypeError: Cannot convert a Symbol value to a string");
+    case Kind::Exception:
+      /* 错误值：返回错误信息（供 JS_ToString 读取诊断消息）。 */
+      return ok(ctx->createValue(v->errorInfo()));
     default:
       return ok(ctx->createValue(std::string("")));
   }

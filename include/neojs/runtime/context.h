@@ -28,6 +28,8 @@
 
 namespace neojs {
 
+class JSEnvironment;
+
 class JSContext {
  public:
   /* allocator 必须非空（#13：ctx 不拥有分配器，仅引用；宿主保证存活期）。 */
@@ -124,6 +126,27 @@ class JSContext {
     return vm_stacks_;
   }
 
+  /* VM 帧环境注册为 GC 根集（M2.5 闭包）：与操作数栈同生命周期，
+   * runBytecode 帧进入时注册 env，析构/返回时弹出。
+   * 帧环境链（[[Environment]] + parent）是闭包捕获变量的承载，
+   * 不注册则在低阈值 GC 下被误回收（访问悬垂崩溃）。 */
+  void vmEnvPush(JSEnvironment *env) { vm_envs_.push_back(env); }
+  void vmEnvPop() {
+    if (!vm_envs_.empty()) vm_envs_.pop_back();
+  }
+  const std::vector<JSEnvironment *> &vmEnvs() const { return vm_envs_; }
+
+  /* 调用栈深度（M2.5，架构 §5.4 栈深度上限防爆栈）。
+   * call() Script 分支进入时递增、返回时递减；超上限返回 RangeError。
+   * 默认上限 10000（C++ 递归解释器物理栈安全范围内的保守值）。 */
+  size_t callDepth() const { return call_depth_; }
+  void incCallDepth() { ++call_depth_; }
+  void decCallDepth() {
+    if (call_depth_ > 0) --call_depth_;
+  }
+  size_t maxCallDepth() const { return max_call_depth_; }
+  void setMaxCallDepth(size_t n) { max_call_depth_ = n; }
+
  private:
   /* GC 标记阶段根集遍历（docs/gc.md §3.4）：
    * 句柄表所有非空槽 + 作用域绑定链（沿 parent/children 遍历）。
@@ -141,6 +164,9 @@ class JSContext {
   JSValue *well_known_[4] = {nullptr, nullptr, nullptr, nullptr}; /* well-known 缓存（E4-1） */
   JSValue *wrapper_protos_[4] = {nullptr, nullptr, nullptr, nullptr}; /* 包装原型缓存（E4-2） */
   std::vector<std::vector<JSValue *> *> vm_stacks_; /* VM 操作数栈根集栈（M2-VM） */
+  std::vector<JSEnvironment *> vm_envs_; /* VM 帧环境根集栈（M2.5 闭包） */
+  size_t call_depth_ = 0;   /* 当前调用栈深度（M2.5 防爆栈） */
+  size_t max_call_depth_ = 10000; /* 调用深度上限（默认 10000） */
 };
 
 }  // namespace neojs

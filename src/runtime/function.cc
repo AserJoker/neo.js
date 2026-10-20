@@ -24,6 +24,7 @@
 
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/conversion.h"
+#include "neojs/runtime/environment.h"
 #include "neojs/runtime/value.h"
 #include "neojs/runtime/vm.h"
 
@@ -72,6 +73,12 @@ JSFunction::JSFunction(JSObject *prototype, JSBuiltinFn func,
       kind_(FunctionKind::Builtin),
       func_(reinterpret_cast<void *>(func)),
       this_mode_(this_mode) {}
+
+/* GC（M2.5）：JSObject 引用边 + [[Environment]] 闭包环境引用边。 */
+void JSFunction::gcMarkRefs(Heap *heap) {
+  JSObject::gcMarkRefs(heap);
+  if (environment_ != nullptr) heap->markRoot(environment_);
+}
 
 /* -------------------------------------------------------------------------- */
 /* IsCallable（§7.2.12）                                                      */
@@ -144,12 +151,32 @@ ConversionResult call(JSContext *ctx, JSValue *func, JSValue *thisVal,
    *    Builtin：内部值指针语义（E4 内置函数，参数/返回值均为内部指针）。 */
   ConversionResult result;
   if (fn->functionKind() == FunctionKind::Script) {
+    /* 调用栈深度上限（M2.5，架构 §5.4）：递归过深报 RangeError 防爆栈。
+     * 用 RAII 保证返回路径（含错误）都递减深度。 */
+    if (ctx->callDepth() >= ctx->maxCallDepth()) {
+      return fail("RangeError: Maximum call stack size exceeded");
+    }
+    ctx->incCallDepth();
     /* JS 函数：runBytecode 递归解释执行（栈式 VM 单帧模型，嵌套经递归）。
      * 参数/this 已在上面分配临时句柄保护（GC 根集），
-     * runBytecode 内部把参数复制到本帧局部槽。 */
-    result = runBytecode(ctx, fn->bytecode(), thisArg,
+     * runBytecode 内部把参数复制到本帧局部槽。
+     * M2.5 闭包：创建新环境（parent = 函数 [[Environment]]），传给
+     * runBytecode 作为本帧的闭包环境。 */
+    JSEnvironment *call_env = ctx->heap().allocGCObject<JSEnvironment>(
+        fn->environment());
+    /* M2.5：参数按名写入本帧环境（内层闭包 LoadUpvalue 沿链查找参数）。
+     * 参数名在字节码 locals[0..argc-1]（编译器按声明顺序分配槽）。 */
+    const FunctionBytecode &bc = fn->bytecode();
+    size_t nparams = argc < bc.locals.size() ? argc : bc.locals.size();
+    for (size_t i = 0; i < nparams; ++i) {
+      if (i < argc && args_internal[i] != nullptr &&
+          !bc.locals[i].empty()) {
+        call_env->setBinding(bc.locals[i], args_internal[i]);
+      }
+    }
+    result = runBytecode(ctx, bc, thisArg,
                          args_internal.empty() ? nullptr : args_internal.data(),
-                         argc);
+                         argc, call_env);
     /* 释放本帧 this/参数临时句柄。 */
     for (uint32_t h : tmp_handles) {
       freeTmpHandle(ctx, h);
@@ -159,6 +186,7 @@ ConversionResult call(JSContext *ctx, JSValue *func, JSValue *thisVal,
        * 分配临时句柄（句柄表是 GC 根集），由外层 Call 指令取走时释放。 */
       result.tmp_handle = makeTmpHandle(ctx, result.value);
     }
+    ctx->decCallDepth(); /* 本帧返回：递减调用深度 */
     return result;
   }
   if (fn->functionKind() == FunctionKind::Builtin && fn->builtinFn() != nullptr) {

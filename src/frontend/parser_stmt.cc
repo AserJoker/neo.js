@@ -700,6 +700,7 @@ ASTNode *Parser::parseFunctionDeclaration(bool allow_anonymous) {
 
   /* 函数名（声明必需；缺省报错。allow_anonymous 供 export default 匿名声明） */
   bool has_name = false;
+  fn->fn_has_name = false;
   if (at(TokenKind::Identifier)) {
     ASTNode *id = newNode(NodeType::Identifier);
     id->loc = current().start;
@@ -707,6 +708,7 @@ ASTNode *Parser::parseFunctionDeclaration(bool allow_anonymous) {
     advance();
     fn->children.push_back(id);
     has_name = true;
+    fn->fn_has_name = true;
   } else if (!allow_anonymous) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected function name", current().start});
     allocator_->destroy(fn);
@@ -812,6 +814,7 @@ ASTNode *Parser::parseFunctionExpression() {
   /* 函数名可选（匿名函数表达式合法）。记录是否有名：children[0] 是否函数名
    * （匿名时 children[0] 是首个参数，checkStrictParams 需区分）。 */
   bool has_name = false;
+  fn->fn_has_name = false;
   if (at(TokenKind::Identifier)) {
     ASTNode *id = newNode(NodeType::Identifier);
     id->loc = current().start;
@@ -819,6 +822,7 @@ ASTNode *Parser::parseFunctionExpression() {
     advance();
     fn->children.push_back(id);
     has_name = true;
+    fn->fn_has_name = true;
   }
 
   /* 参数列表：(a, b, ...rest) */

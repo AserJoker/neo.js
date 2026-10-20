@@ -46,7 +46,10 @@ class Heap {
   /* 分配一个可 GC 对象（经分配器 create<T>）并登记到堆。返回内部指针。
    * 自动 GC（G5）在分配前触发：触发点总在"上次分配完成后、本次分配
    * 开始前"，此时堆上不存在"刚创建未交付"的对象——若在创建后触发，
-   * 当前对象已 insert 但尚无根引用，sweep 会把它当垃圾误回收（悬垂）。 */
+   * 当前对象已 insert 但尚无根引用，sweep 会把它当垃圾误回收（悬垂）。
+   * 两段式创建（先分配 JSFunction/JSObject 再分配包装 JSValue）的中间
+   * 窗口由调用方保证：第二段分配触发 GC 时，第一段对象须已入根或由
+   * 调用方持有（M2.5：见 capi.cc JS_Eval 提前初始化 global 的注释）。 */
   template <class T, class... Args>
   T *allocGCObject(Args &&...args) {
     static_assert(std::is_base_of_v<GCHeader, T>, "T must derive GCHeader");

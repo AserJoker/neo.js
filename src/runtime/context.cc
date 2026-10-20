@@ -1,6 +1,7 @@
 #include "neojs/runtime/context.h"
 
 #include "neojs/runtime/builtins.h"
+#include "neojs/runtime/environment.h"
 
 namespace neojs {
 
@@ -128,6 +129,12 @@ void JSContext::markRoots() {
     for (JSValue *v : *stack) {
       if (v != nullptr) heap_.markRoot(v);
     }
+  }
+
+  /* VM 帧环境（M2.5 闭包）：当前帧 env 链是捕获变量承载，
+   * 不标记则低阈值 GC 下被误回收（闭包计数器悬垂崩溃）。 */
+  for (JSEnvironment *env : vm_envs_) {
+    if (env != nullptr) heap_.markRoot(env);
   }
 
   /* 作用域树：从根作用域沿 children 递归覆盖整棵树。所有存活作用域

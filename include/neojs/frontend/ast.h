@@ -230,6 +230,7 @@ struct ASTNode {
   bool prefix = false;        /* UpdateExpression：true = 前缀 ++x；false = 后缀 x++ */
   bool optional = false;      /* CallExpression/MemberExpression：可选链 ?. 标记 */
   bool is_await = false;      /* ForOfStatement：for await(...of...)（M1.5 ③） */
+  bool fn_has_name = false;   /* FunctionDeclaration/Expression：children[0] 是否函数名（匿名时为首参数） */
   MemberPayload member;       /* MemberExpression：computed/optional 标记 */
 
   /* 构造：仅由 Parser 经 JSAllocator::create 创建（见 parser.h） */

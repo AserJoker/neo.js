@@ -26,15 +26,17 @@ namespace neojs {
 
 class JSContext;
 class JSValue;
+class JSEnvironment;
 
 /* 执行字节码（顶层入口，架构 §5.4）。
  *   fn    函数字节码（顶层程序也是一个函数）。
  *   thisVal this 绑定（可空）。
  *   args  入口参数（内部值指针数组；可空当 argc==0）。
+ *   env   当前函数的环境（闭包词法环境，M2.5；顶层程序为 null）。
  * 返回 ConversionResult：成功 value 为结果值，失败 value=nullptr + error。 */
 ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
                              JSValue *thisVal, JSValue *const *args,
-                             size_t argc);
+                             size_t argc, JSEnvironment *env = nullptr);
 
 }  // namespace neojs
 

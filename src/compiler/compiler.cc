@@ -74,9 +74,15 @@ CompileResult Compiler::compile(const AST &ast) {
   CompileResult result;
   failed_ = false;
   error_.clear();
-  locals_.clear();
-  next_slot_ = 0;
+  for (CompilerScope *s : scopes_) delete s;
+  scopes_.clear();
+  scope_ = nullptr;
   builder_ = BytecodeBuilder();
+
+  /* 顶层作用域帧。 */
+  CompilerScope *top = new CompilerScope;
+  scopes_.push_back(top);
+  scope_ = top;
 
   if (ast.root != nullptr) {
     const auto &stmts = ast.root->children;
@@ -115,7 +121,7 @@ CompileResult Compiler::compile(const AST &ast) {
   }
 
   /* 局部变量槽数（含临时槽）写入字节码。 */
-  builder_.set_num_locals(next_slot_);
+  builder_.set_num_locals(scope_->next_slot);
   result.ok = true;
   result.fn = builder_.build();
   return result;
@@ -125,64 +131,119 @@ CompileResult Compiler::compileFunction(const ASTNode &fn) {
   CompileResult result;
   failed_ = false;
   error_.clear();
-  locals_.clear();
-  next_slot_ = 0;
+  for (CompilerScope *s : scopes_) delete s;
+  scopes_.clear();
+  scope_ = nullptr;
 
-  /* 函数名（可空）：FunctionDeclaration 恒有名；
-   * FunctionExpression 可匿名（children[0] 为名字或参数）。
-   * 布局：children[0] = 名字（有名时），之后参数，最后 body（BlockStatement）。 */
-  size_t start = 0;
+  /* 函数名（可空）：fn_has_name 标记 children[0] 是否为函数名。 */
   std::string fn_name;
-  if (fn.type == NodeType::FunctionDeclaration && !fn.children.empty() &&
-      fn.children[0]->type == NodeType::Identifier) {
+  if (fn.fn_has_name && !fn.children.empty()) {
     fn_name = fn.children[0]->name;
-    start = 1;
-  } else if (fn.type == NodeType::FunctionExpression &&
-             fn.children.size() >= 2 &&
-             fn.children.back()->type == NodeType::BlockStatement &&
-             fn.children[0]->type == NodeType::Identifier) {
-    /* 有名函数表达式：children[0] 是名字（后面至少还有参数+body）。 */
-    fn_name = fn.children[0]->name;
-    start = 1;
   }
   builder_ = BytecodeBuilder(fn_name);
 
-  /* 参数入局部槽 0..n-1（按声明顺序）。body 是最后那个 BlockStatement。 */
-  size_t body_index = fn.children.size();
-  for (size_t i = start; i < fn.children.size(); ++i) {
+  /* 顶层作用域帧（单函数编译：无外层，捕获解析到全局）。 */
+  CompilerScope *top = new CompilerScope;
+  scopes_.push_back(top);
+  scope_ = top;
+
+  if (!compileFunctionBody(fn)) return failResult();
+
+  builder_.set_num_locals(scope_->next_slot);
+  result.ok = true;
+  result.fn = builder_.build();
+  return result;
+}
+
+/* 函数体编译共享实现：解析参数（入本函数作用域帧）+ 编译 body。
+ * 调用方已建立本函数作用域帧（scope_ 指向本函数）。 */
+bool Compiler::compileFunctionBody(const ASTNode &fn) {
+  /* 布局：children[start..n-2] = 参数，children[n-1] = body。
+   * fn_has_name = true 时 children[0] 是函数名，start = 1；否则 start = 0。 */
+  size_t start = fn.fn_has_name ? 1 : 0;
+  size_t body_index = fn.children.size() - 1;
+
+  /* 参数入局部槽 0..n-1（按声明顺序）。 */
+  for (size_t i = start; i < body_index; ++i) {
     const ASTNode *p = fn.children[i];
-    if (p->type == NodeType::BlockStatement) {
-      body_index = i;
-      break;
-    }
     if (p->type != NodeType::Identifier) {
       fail("not implemented: destructuring/default/rest parameter");
-      return failResult();
+      return false;
     }
     declareLocal(p->name);
   }
 
-  /* 函数体：块语句逐条编译。 */
-  if (body_index < fn.children.size()) {
-    const ASTNode *body = fn.children[body_index];
+  /* 函数体：块语句逐条编译，或箭头函数表达式体（求值后 Ret）。 */
+  const ASTNode *body = fn.children[body_index];
+  if (body->type == NodeType::BlockStatement) {
     for (const ASTNode *stmt : body->children) {
       if (stmt == nullptr) continue;
-      if (stmt->type == NodeType::FunctionDeclaration) {
-        fail("not implemented: nested function declaration (M2.5 闭包)");
-        return failResult();
-      }
-      if (!compileStmt(*stmt)) return failResult();
+      if (!compileStmt(*stmt)) return false;
     }
+  } else {
+    /* 箭头函数表达式体：求值后作为返回值。 */
+    if (!compileExpr(*body)) return false;
+    builder_.ret();
   }
 
-  /* 函数默认返回 undefined。 */
+  /* 函数默认返回 undefined（块体自然结束）。 */
   builder_.push_op(Opcode::PushUndefined);
   builder_.ret();
+  return true;
+}
 
-  builder_.set_num_locals(next_slot_);
-  result.ok = true;
-  result.fn = builder_.build();
-  return result;
+/* 编译子函数到独立 builder（共享参数/body 解析）。
+ * 调用方负责保存/恢复外层 builder_ 与作用域帧。 */
+bool Compiler::compileChildFunction(const ASTNode &fn, FunctionBytecode *out) {
+  /* 函数名（可空）：fn_has_name 标记 children[0] 是否为函数名。 */
+  std::string fn_name;
+  if (fn.fn_has_name && !fn.children.empty()) {
+    fn_name = fn.children[0]->name;
+  }
+
+  /* 建立子函数作用域帧：parent = 当前（捕获解析到外层）。 */
+  CompilerScope *child = new CompilerScope;
+  child->parent = scope_;
+  scopes_.push_back(child);
+  scope_ = child;
+
+  /* 子函数自己的 builder（与当前 builder_ 分离）。 */
+  BytecodeBuilder saved_builder;
+  saved_builder = std::move(builder_); /* 保存外层 builder */
+  builder_ = BytecodeBuilder(fn_name);
+
+  bool ok = compileFunctionBody(fn);
+
+  /* 恢复外层 builder_；子函数字节码交给调用方。 */
+  FunctionBytecode child_fn = builder_.build();
+  builder_ = std::move(saved_builder);
+  scope_ = child->parent;
+  /* 释放子作用域帧（scopes_ 中最后一个） */
+  scopes_.pop_back();
+  delete child;
+
+  if (!ok) return false;
+  *out = std::move(child_fn);
+  return true;
+}
+
+/* 嵌套函数编译（M2.5）：编译子函数字节码加入当前 builder 的 nested 表，
+ * 发射 MakeFunction 指令。声明时挂到函数名局部变量；表达式时留栈顶。 */
+bool Compiler::compileNestedFunction(const ASTNode &fn, bool is_declaration) {
+  FunctionBytecode child;
+  if (!compileChildFunction(fn, &child)) return false;
+
+  uint16_t index = static_cast<uint16_t>(builder_.add_nested(std::move(child)));
+  builder_.make_function(index);
+
+  if (is_declaration) {
+    /* 函数声明：按函数名声明局部槽并存储。 */
+    if (fn.fn_has_name && !fn.children.empty()) {
+      uint16_t slot = declareLocal(fn.children[0]->name);
+      builder_.store_var(slot);
+    }
+  }
+  return true;
 }
 
 std::vector<const ASTNode *> Compiler::collectTopLevelFunctions(const AST &ast) {
@@ -255,8 +316,9 @@ bool Compiler::compileStmt(const ASTNode &node) {
     case NodeType::ReturnStatement:
       return compileReturn(node);
     case NodeType::FunctionDeclaration:
-      fail("not implemented: function declaration (M2.4 ③)");
-      return false;
+      /* 嵌套函数声明（M2.5 闭包）：编译子函数字节码，发射 MakeFunction
+       * 实例化闭包并挂到当前函数局部变量。 */
+      return compileNestedFunction(node);
     case NodeType::BreakStatement:
     case NodeType::ContinueStatement:
       fail("not implemented: break/continue (M2.4 ③ 循环控制)");
@@ -441,8 +503,8 @@ bool Compiler::compileExpr(const ASTNode &node) {
       return false;
     case NodeType::FunctionExpression:
     case NodeType::ArrowFunctionExpression:
-      fail("not implemented: function expression (M2.4 ③)");
-      return false;
+      /* 函数表达式/箭头函数（M2.5 闭包）：编译子函数，MakeFunction 留栈顶。 */
+      return compileNestedFunction(node, /*is_declaration=*/false);
     case NodeType::UpdateExpression:
       fail("not implemented: update expression");
       return false;
@@ -480,13 +542,7 @@ bool Compiler::compileLiteral(const ASTNode &node) {
 }
 
 bool Compiler::compileIdentifier(const ASTNode &node) {
-  uint16_t slot = 0;
-  if (resolveLocal(node.name, &slot)) {
-    builder_.load_var(slot);
-  } else {
-    builder_.load_global(node.name); /* 未声明标识符 -> 全局对象属性读取 */
-  }
-  return true;
+  return emitLoadIdentifier(node.name);
 }
 
 bool Compiler::compileUnary(const ASTNode &node) {
@@ -542,7 +598,7 @@ bool Compiler::compileBinary(const ASTNode &node) {
   if (node.binop == BinaryOpKind::LogicalAnd ||
       node.binop == BinaryOpKind::LogicalOr) {
     if (!compileExpr(*lhs)) return false;
-    uint16_t tmp = next_slot_++; /* 临时槽（不入 locals_） */
+    uint16_t tmp = scope_->next_slot++; /* 临时槽（不入 locals） */
     builder_.store_var(tmp);
     BcLabel short_circuit = builder_.new_label();
     BcLabel end = builder_.new_label();
@@ -614,13 +670,15 @@ bool Compiler::compileAssignment(const ASTNode &node) {
   const ASTNode *lhs = node.children[0];
   const ASTNode *rhs = node.children[1];
 
-  /* 赋值目标：本阶段仅支持局部标识符（成员/解构在后续实现）。 */
+  /* 赋值目标：局部标识符 / 捕获的外层变量（成员/解构在后续实现）。 */
   if (lhs->type != NodeType::Identifier) {
     fail("not implemented: assignment to member/destructuring");
     return false;
   }
   uint16_t slot = 0;
-  if (!resolveLocal(lhs->name, &slot)) {
+  uint16_t capture = 0;
+  bool is_upvalue = false;
+  if (!resolveAssignTarget(lhs->name, &slot, &capture, &is_upvalue)) {
     fail("not implemented: assignment to undeclared global '" + lhs->name + "'");
     return false;
   }
@@ -645,18 +703,32 @@ bool Compiler::compileAssignment(const ASTNode &node) {
       fail("not implemented: compound assignment operator");
       return false;
     }
-    builder_.load_var(slot); /* 旧值 */
+    if (is_upvalue) {
+      builder_.load_upvalue(capture); /* 旧值 */
+    } else {
+      builder_.load_var(slot);
+    }
     if (!compileExpr(*rhs)) return false;
     builder_.push_op(op);
-    builder_.store_var(slot); /* 存回（弹栈） */
-    builder_.load_var(slot);  /* 赋值表达式值 = 新值 */
+    if (is_upvalue) {
+      builder_.store_upvalue(capture); /* 存回（弹栈） */
+      builder_.load_upvalue(capture);  /* 赋值表达式值 = 新值 */
+    } else {
+      builder_.store_var(slot);
+      builder_.load_var(slot);
+    }
     return true;
   }
 
   /* 简单赋值：a = expr。赋值表达式值 = rhs。 */
   if (!compileExpr(*rhs)) return false;
-  builder_.store_var(slot); /* 弹栈 */
-  builder_.load_var(slot);  /* 保留赋值结果在栈顶 */
+  if (is_upvalue) {
+    builder_.store_upvalue(capture); /* 弹栈 */
+    builder_.load_upvalue(capture);  /* 保留赋值结果在栈顶 */
+  } else {
+    builder_.store_var(slot);
+    builder_.load_var(slot);
+  }
   return true;
 }
 
@@ -693,18 +765,65 @@ bool Compiler::compileSequence(const ASTNode &node) {
 /* -------------------------------------------------------------------------- */
 
 uint16_t Compiler::declareLocal(const std::string &name) {
-  auto it = locals_.find(name);
-  if (it != locals_.end()) return it->second; /* 已声明：复用槽 */
-  uint16_t slot = next_slot_++;
-  locals_[name] = slot;
+  if (scope_ == nullptr) return 0;
+  auto it = scope_->locals.find(name);
+  if (it != scope_->locals.end()) return it->second; /* 已声明：复用槽 */
+  uint16_t slot = scope_->next_slot++;
+  scope_->locals[name] = slot;
+  builder_.set_local_name(slot, name); /* M2.5：记录槽名（环境同步） */
   return slot;
 }
 
 bool Compiler::resolveLocal(const std::string &name, uint16_t *slot) {
-  auto it = locals_.find(name);
-  if (it == locals_.end()) return false;
+  if (scope_ == nullptr) return false;
+  auto it = scope_->locals.find(name);
+  if (it == scope_->locals.end()) return false;
   *slot = it->second;
   return true;
+}
+
+/* 标识符读取（M2.5）：本函数局部 -> LoadVar；外层局部 -> 捕获 LoadUpvalue；
+ * 否则 LoadGlobal。返回 true 表示已发射 load 指令。 */
+bool Compiler::emitLoadIdentifier(const std::string &name) {
+  uint16_t slot = 0;
+  if (resolveLocal(name, &slot)) {
+    builder_.load_var(slot);
+    return true;
+  }
+
+  /* 沿作用域链查找外层函数是否声明该变量。找到则捕获为 upvalue。
+   * depth = 外层函数作用域帧层数（0 = 直接外层）。 */
+  int depth = 0;
+  for (CompilerScope *s = scope_->parent; s != nullptr; s = s->parent, ++depth) {
+    auto it = s->locals.find(name);
+    if (it != s->locals.end()) {
+      uint16_t idx = builder_.add_capture(static_cast<uint16_t>(depth), name);
+      builder_.load_upvalue(idx);
+      return true;
+    }
+  }
+
+  builder_.load_global(name);
+  return true;
+}
+
+/* 赋值目标解析（M2.5）：本函数局部 -> slot；外层局部 -> capture upvalue；
+ * 否则返回 false（全局赋值本阶段不支持，见 compileAssignment）。 */
+bool Compiler::resolveAssignTarget(const std::string &name, uint16_t *slot,
+                                   uint16_t *capture, bool *is_upvalue) {
+  *is_upvalue = false;
+  if (resolveLocal(name, slot)) return true;
+
+  int depth = 0;
+  for (CompilerScope *s = scope_->parent; s != nullptr; s = s->parent, ++depth) {
+    auto it = s->locals.find(name);
+    if (it != s->locals.end()) {
+      *capture = builder_.add_capture(static_cast<uint16_t>(depth), name);
+      *is_upvalue = true;
+      return true;
+    }
+  }
+  return false; /* 全局 */
 }
 
 bool Compiler::isSimpleAssignTarget(const ASTNode &node) const {

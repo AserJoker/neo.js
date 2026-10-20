@@ -81,6 +81,11 @@ enum class Opcode : uint8_t {
   Call,            /* 调用栈顶函数：Call {argc}（弹出函数+argc 参数） */
   Ret,             /* 返回栈顶值，弹出本帧 */
 
+  /* 闭包（M2.5） */
+  MakeFunction,    /* 从嵌套函数表实例化函数并绑定当前环境：MakeFunction {index} */
+  LoadUpvalue,     /* 捕获的外层变量 -> 栈顶：LoadUpvalue {capture_index} */
+  StoreUpvalue,    /* 栈顶 -> 捕获的外层变量：StoreUpvalue {capture_index} */
+
   /* 调试/输出 */
   Print,           /* 弹出栈顶并输出（--print 观测） */
   Nop,             /* 空操作（label 占位） */
@@ -103,12 +108,24 @@ struct Constant {
   std::string str;
 };
 
+/* 捕获的外层变量（M2.5 闭包）：编译期静态解析。
+ * depth  = 沿环境链上跳层数（0 = 当前函数的外层一层）；
+ * name   = 变量名（运行时在目标环境的绑定表中查找）。
+ * LoadUpvalue/StoreUpvalue 以 captures 下标引用。 */
+struct UpvalueCapture {
+  uint16_t depth = 0;
+  std::string name;
+};
+
 /* 函数级字节码（架构 §4.3：每个函数一个 FunctionBytecode）。 */
 struct FunctionBytecode {
   std::vector<Instruction> code;      /* 指令序列 */
   std::vector<Constant> constants;    /* 常量池（数字/字符串） */
   std::string name;                   /* 函数名（可空） */
   uint16_t numLocals = 0;             /* 局部变量槽数 */
+  std::vector<std::string> locals;    /* 槽号 -> 变量名（M2.5 环境同步用，空串=无名） */
+  std::vector<UpvalueCapture> captures; /* 捕获的外层变量列表（M2.5） */
+  std::vector<FunctionBytecode> nested; /* 嵌套函数字节码表（M2.5，MakeFunction 索引） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -151,6 +168,31 @@ class BytecodeBuilder {
   void ret() { push_op(Opcode::Ret); }
   void print() { push_op(Opcode::Print); }
 
+  /* 闭包（M2.5）：从嵌套函数表实例化 / 读写捕获变量。 */
+  void make_function(uint16_t idx) { push_op(Opcode::MakeFunction, idx); }
+  void load_upvalue(uint16_t idx) { push_op(Opcode::LoadUpvalue, idx); }
+  void store_upvalue(uint16_t idx) { push_op(Opcode::StoreUpvalue, idx); }
+
+  /* 注册捕获变量（去重），返回捕获下标。 */
+  uint16_t add_capture(uint16_t depth, const std::string &name) {
+    for (size_t i = 0; i < fn_.captures.size(); ++i) {
+      if (fn_.captures[i].depth == depth && fn_.captures[i].name == name) {
+        return static_cast<uint16_t>(i);
+      }
+    }
+    UpvalueCapture c;
+    c.depth = depth;
+    c.name = name;
+    fn_.captures.push_back(c);
+    return static_cast<uint16_t>(fn_.captures.size() - 1);
+  }
+
+  /* 注册嵌套函数字节码（M2.5），返回函数表下标（MakeFunction 索引）。 */
+  uint16_t add_nested(FunctionBytecode fn) {
+    fn_.nested.push_back(std::move(fn));
+    return static_cast<uint16_t>(fn_.nested.size() - 1);
+  }
+
   /* label：创建 + 绑定（回填所有引用该 label 的跳转指令）。 */
   BcLabel new_label() {
     BcLabel l;
@@ -166,6 +208,12 @@ class BytecodeBuilder {
 
   /* 局部变量槽数（Compiler 设置）。 */
   void set_num_locals(uint16_t n) { fn_.numLocals = n; }
+
+  /* 记录槽号对应的变量名（M2.5 环境同步：参数/局部变量入环境用）。 */
+  void set_local_name(uint16_t slot, const std::string &name) {
+    if (slot >= fn_.locals.size()) fn_.locals.resize(slot + 1);
+    fn_.locals[slot] = name;
+  }
 
   /* 产出函数字节码（移动语义）。 */
   FunctionBytecode build() { return std::move(fn_); }

@@ -21,6 +21,7 @@
 
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/conversion.h"
+#include "neojs/runtime/environment.h"
 #include "neojs/runtime/function.h"
 #include "neojs/runtime/operators.h"
 #include "neojs/runtime/value.h"
@@ -146,6 +147,7 @@ ConversionResult compareOp(JSContext *ctx, JSValue *a, JSValue *b, Opcode op) {
   }
 }
 
+
 /* 常量池值：按 Constant 载荷创建 Number 或 String 值。 */
 JSValue *constValue(JSContext *ctx, const FunctionBytecode &fn, uint16_t index) {
   if (index >= fn.constants.size()) {
@@ -158,6 +160,21 @@ JSValue *constValue(JSContext *ctx, const FunctionBytecode &fn, uint16_t index) 
   return ctx->createValue(c.str);
 }
 
+/* 按捕获解析目标环境（M2.5 闭包）：沿 env 链上跳 capture.depth + 1 层。
+ * 编译器 depth 从当前函数的外层函数帧起计（0 = 直接外层），而 env 是
+ * 当前函数自己的环境，故需先跳 1 层到创建本函数的环境，再跳 depth 层。
+ * 返回目标环境；链不足/无环境返回 nullptr。 */
+JSEnvironment *captureEnv(JSEnvironment *env, const FunctionBytecode &fn,
+                          uint16_t idx) {
+  if (idx >= fn.captures.size() || env == nullptr) return nullptr;
+  JSEnvironment *e = env;
+  size_t hops = static_cast<size_t>(fn.captures[idx].depth) + 1;
+  for (size_t i = 0; i < hops && e != nullptr; ++i) {
+    e = e->parent();
+  }
+  return e;
+}
+
 }  // namespace
 
 /* -------------------------------------------------------------------------- */
@@ -166,7 +183,7 @@ JSValue *constValue(JSContext *ctx, const FunctionBytecode &fn, uint16_t index) 
 
 ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
                              JSValue *thisVal, JSValue *const *args,
-                             size_t argc) {
+                             size_t argc, JSEnvironment *env) {
   /* 操作数栈：栈底为局部变量槽（numLocals 个），之上为表达式求值栈。 */
   std::vector<JSValue *> stack;
   stack.reserve(static_cast<size_t>(fn.numLocals) + 64);
@@ -175,6 +192,23 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
    * 嵌套 runBytecode（函数递归）会 push 多个栈帧，互不覆盖。
    * 之后写入入口参数（裸内部指针依赖根集保护）与局部占位。 */
   VmStackRootGuard stack_guard(ctx, &stack);
+
+  /* 帧环境根集（M2.5 闭包）：env 链是捕获变量承载，与操作数栈同生命周期，
+   * 帧进入注册、退出（任意返回路径）由 RAII 弹出。低阈值 GC 下 env
+   * 若无根可达会被误回收（StoreVar/StoreUpvalue/captureEnv 悬垂崩溃）。 */
+  class EnvRootGuard {
+   public:
+    EnvRootGuard(JSContext *ctx, JSEnvironment *env) : ctx_(ctx) {
+      if (env != nullptr) ctx_->vmEnvPush(env);
+    }
+    ~EnvRootGuard() { ctx_->vmEnvPop(); }
+    EnvRootGuard(const EnvRootGuard &) = delete;
+    EnvRootGuard &operator=(const EnvRootGuard &) = delete;
+
+   private:
+    JSContext *ctx_;
+  } env_guard(ctx, env);
+
   size_t args_to_copy = argc < fn.numLocals ? argc : fn.numLocals;
   for (size_t i = 0; i < fn.numLocals; ++i) {
     if (i < args_to_copy && args[i] != nullptr) {
@@ -228,6 +262,11 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         }
         JSValue *val = stack.back();
         stack[instr.arg] = val; /* 栈顶 -> 局部槽 */
+        /* M2.5：局部变量同步写入当前环境（内层闭包 LoadUpvalue 沿链查找）。 */
+        if (env != nullptr && instr.arg < fn.locals.size() &&
+            !fn.locals[instr.arg].empty()) {
+          env->setBinding(fn.locals[instr.arg], val);
+        }
         stack.pop_back();       /* 弹出：赋值表达式不保留值在栈（链式赋值经 LoadVar） */
         break;
       }
@@ -385,6 +424,48 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         }
         std::fputs("\n", stdout);
         stack.pop_back();
+        break;
+      }
+      case Opcode::MakeFunction: {
+        /* 从嵌套函数表实例化 JSFunction，[[Environment]] 绑定当前环境（M2.5）。
+         * 嵌套函数字节码（fn.nested[arg]）复制给新函数。 */
+        if (instr.arg >= fn.nested.size()) {
+          return fail("Error: MakeFunction index out of range");
+        }
+        JSFunction *f = ctx->heap().allocGCObject<JSFunction>(
+            nullptr /* prototype */, FunctionKind::Script, nullptr /* func */);
+        f->setBytecode(fn.nested[instr.arg]); /* 复制（FunctionBytecode 值语义） */
+        f->setEnvironment(env);
+        JSValue *v = ctx->heap().allocGCObject<JSValue>();
+        v->setObject(f);
+        f->setHolder(v);
+        stack.push_back(v);
+        break;
+      }
+      case Opcode::LoadUpvalue: {
+        /* 捕获的外层变量读取（M2.5）：沿环境链 depth 跳转后查 name。 */
+        JSEnvironment *e = captureEnv(env, fn, instr.arg);
+        if (e == nullptr || instr.arg >= fn.captures.size()) {
+          return fail("ReferenceError: captured variable not found");
+        }
+        const std::string &name = fn.captures[instr.arg].name;
+        JSValue *val = e->getBinding(name);
+        stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
+        break;
+      }
+      case Opcode::StoreUpvalue: {
+        /* 捕获的外层变量写入（M2.5）：沿环境链 depth 跳转后写回。 */
+        if (stack.empty()) {
+          return fail("Error: stack underflow on StoreUpvalue");
+        }
+        JSEnvironment *e = captureEnv(env, fn, instr.arg);
+        if (e == nullptr || instr.arg >= fn.captures.size()) {
+          return fail("ReferenceError: captured variable not found");
+        }
+        const std::string &name = fn.captures[instr.arg].name;
+        JSValue *val = stack.back();
+        stack.pop_back();
+        e->setBinding(name, val); /* 值写回目标环境 */
         break;
       }
       case Opcode::Nop:

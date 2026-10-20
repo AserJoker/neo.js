@@ -37,7 +37,17 @@ struct CompileResult {
   std::string error;
 };
 
-/* AST → 字节码编译器（M2.4 ① 骨架 + 表达式编译）。 */
+/* 作用域帧（M2.5 闭包）：编译期函数嵌套栈。
+ * 每个函数编译期间一个帧，记录该函数声明的局部变量（用于判断
+ * 标识符是局部还是捕获外层）；父帧 = 外层函数。 */
+struct CompilerScope {
+  CompilerScope *parent = nullptr;       /* 外层函数作用域帧 */
+  std::unordered_map<std::string, uint16_t> locals; /* 本函数局部变量 -> 槽号 */
+  uint16_t next_slot = 0;                /* 本函数下一个可用槽 */
+  std::vector<UpvalueCapture> captures;  /* 本函数捕获列表 */
+};
+
+/* AST → 字节码编译器（M2.4 ① 骨架 + 表达式编译；M2.5 闭包作用域分析）。 */
 class Compiler {
  public:
   Compiler() = default;
@@ -46,7 +56,7 @@ class Compiler {
    * 失败时返回 ok=false + error。 */
   CompileResult compile(const AST &ast);
 
-  /* 编译单个函数（FunctionDeclaration/FunctionExpression）：
+  /* 编译单个函数（FunctionDeclaration/FunctionExpression/ArrowFunctionExpression）：
    * 产出该函数的 FunctionBytecode（参数入局部槽 0..n-1，body 编译）。
    * 失败时返回 ok=false + error。 */
   CompileResult compileFunction(const ASTNode &fn);
@@ -84,18 +94,38 @@ class Compiler {
   bool compileCall(const ASTNode &node);
   bool compileSequence(const ASTNode &node);
 
-  /* 赋值目标（Identifier -> StoreVar；MemberExpression 暂不支持）。 */
+  /* 赋值目标（Identifier -> StoreVar/StoreUpvalue；MemberExpression 暂不支持）。 */
   bool isSimpleAssignTarget(const ASTNode &node) const;
 
   /* 局部变量槽分配：声明/参数登记；引用解析（未找到 -> LoadGlobal）。 */
   uint16_t declareLocal(const std::string &name);
   bool resolveLocal(const std::string &name, uint16_t *slot);
 
+  /* 标识符解析（M2.5）：本函数局部 / 外层局部（捕获 upvalue）/ 全局。
+   * 返回 true 表示已发射 load 指令。 */
+  bool emitLoadIdentifier(const std::string &name);
+  /* 赋值目标解析（M2.5）：局部 / 捕获 upvalue / 全局。
+   * 返回 true 表示目标是局部或捕获（slot/capture 已填），false 表示全局。 */
+  bool resolveAssignTarget(const std::string &name, uint16_t *slot,
+                           uint16_t *capture, bool *is_upvalue);
+
+  /* 函数编译内部：解析参数 + 编译 body（共享于 compile/compileFunction）。 */
+  bool compileFunctionBody(const ASTNode &fn);
+
+  /* 嵌套函数编译（M2.5）：编译子函数字节码加入当前 builder 的 nested 表，
+   * 发射 MakeFunction 指令（声明时挂局部变量，表达式时留栈顶）。
+   * is_declaration = true 时按函数名声明局部槽。 */
+  bool compileNestedFunction(const ASTNode &fn, bool is_declaration = true);
+
+  /* 编译子函数到独立 builder（共享参数/body 解析）。调用方负责
+   * 保存/恢复外层 builder_ 与作用域帧。返回子函数字节码。 */
+  bool compileChildFunction(const ASTNode &fn, FunctionBytecode *out);
+
   void fail(const std::string &msg) { error_ = msg; }
 
   BytecodeBuilder builder_;              /* 字节码发射器 */
-  std::unordered_map<std::string, uint16_t> locals_; /* 局部变量名 -> 槽号 */
-  uint16_t next_slot_ = 0;               /* 下一个可用局部槽 */
+  CompilerScope *scope_ = nullptr;       /* 当前函数作用域帧（M2.5） */
+  std::vector<CompilerScope *> scopes_;  /* 作用域帧池（栈，owned） */
   bool failed_ = false;                  /* 编译失败标记 */
   std::string error_;                    /* 失败信息 */
 };

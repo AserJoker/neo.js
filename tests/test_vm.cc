@@ -12,7 +12,9 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdio>
 #include <cstring>
+#include <string>
 
 #include "neojs/compiler/bytecode.h"
 #include "neojs/runtime/context.h"
@@ -1111,6 +1113,124 @@ TEST(Compiler, EvalSyntaxError) {
   JSValue *r = JS_Eval(ctx, "var = 3", std::strlen("var = 3"));
   ASSERT_NE(r, nullptr);
   EXPECT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* -------------------------------------------------------------------------- */
+/* 12. 闭包（M2.5）：捕获外层变量 + 环境链                                      */
+/* -------------------------------------------------------------------------- */
+
+/* 闭包计数器：每次调用捕获的 count 递增 -> 1, 2, 3 */
+TEST(Compiler, EvalClosureCounter) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "function counter() { var count = 0; return function() { count = count + 1; return count; }; }"
+      " var c = counter(); var a1 = c(); var a2 = c(); var a3 = c(); a1 * 100 + a2 * 10 + a3",
+      std::strlen("function counter() { var count = 0; return function() { count = count + 1; return count; }; }"
+                  " var c = counter(); var a1 = c(); var a2 = c(); var a3 = c(); a1 * 100 + a2 * 10 + a3"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 123.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 闭包捕获参数：makeAdder(x) 返回加 x 的函数 */
+TEST(Compiler, EvalClosureCaptureParam) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "function makeAdder(x) { return function(y) { return x + y; }; }"
+      " var add5 = makeAdder(5); add5(3) + add5(7)",
+      std::strlen("function makeAdder(x) { return function(y) { return x + y; }; }"
+                  " var add5 = makeAdder(5); add5(3) + add5(7)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 20.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 多层闭包（两跳环境链）：counter() 内再包一层 */
+TEST(Compiler, EvalClosureNested) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "function outer() { var x = 10; return function() { var y = 2; return function() { x = x + y; return x; }; }; }"
+      " var f = outer()(); var a1 = f(); var a2 = f(); a1 * 10 + a2",
+      std::strlen("function outer() { var x = 10; return function() { var y = 2; return function() { x = x + y; return x; }; }; }"
+                  " var f = outer()(); var a1 = f(); var a2 = f(); a1 * 10 + a2"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 134.0); /* a1=12, a2=14 -> 12*10+14 */
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 递归过深 -> RangeError（M2.5 栈深度上限防爆栈）。
+ * 用小上限（64）验证机制：loop 自递归 64 层即触发，远低于 C++ 物理栈风险。 */
+TEST(Compiler, EvalStackOverflow) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::JSContext *c = ic(ctx);
+  c->setMaxCallDepth(64);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "function loop() { return loop(); } loop()",
+      std::strlen("function loop() { return loop(); } loop()"));
+  ASSERT_NE(r, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION);
+  EXPECT_NE(std::string(JS_ToString(ctx, r)).find("RangeError"),
+            std::string::npos)
+      << "error: " << JS_ToString(ctx, r);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 闭包在 GC 压力下存活（M2.5：环境引用边进 GC 标记）。
+ * 低阈值频繁 GC，闭包计数器仍正确。 */
+TEST(Compiler, EvalClosureUnderGC) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* 调低 GC 阈值：每次少量分配即触发 GC。 */
+  neojs::JSContext *c = ic(ctx);
+  c->heap().setGcThreshold(4);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "function counter() { var count = 0; return function() { count = count + 1; return count; }; }"
+      " var c = counter(); var s = 0; s = s + c(); s = s + c(); s = s + c(); s",
+      std::strlen("function counter() { var count = 0; return function() { count = count + 1; return count; }; }"
+                  " var c = counter(); var s = 0; s = s + c(); s = s + c(); s = s + c(); s"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 6.0); /* 1+2+3 */
   JS_FreeValue(ctx, r);
 
   JS_FreeContext(ctx);

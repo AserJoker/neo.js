@@ -838,7 +838,13 @@ extern "C" JSValue *JS_Eval(JSContext *ctx, const char *source, size_t source_le
     neojs::Compiler compiler;
 
     /* 顶层函数声明：逐个编译为 Script 函数，实例化并挂到全局对象。
-     * 使函数声明提升（声明在调用前可见）与递归（自引用）生效。 */
+     * 使函数声明提升（声明在调用前可见）与递归（自引用）生效。
+     *
+     * 先确保全局对象就绪（首次调用触发 installBuiltins，期间可能多次 GC）：
+     * 若在创建函数值后才首次触发 installBuiltins，新建的 JSValue 在跨多轮
+     * GC 的"延迟交付"窗口内无根引用，会被误回收（悬垂崩溃）。提前初始化
+     * 使 v 创建后立即 setProperty 入根，消除该窗口。 */
+    neojs::JSObject *global_obj = c->globalObject()->object();
     for (const neojs::ASTNode *fndecl : compiler.collectTopLevelFunctions(*ast)) {
       neojs::CompileResult fr = compiler.compileFunction(*fndecl);
       if (!fr.ok) {
@@ -857,7 +863,7 @@ extern "C" JSValue *JS_Eval(JSContext *ctx, const char *source, size_t source_le
       fn->setHolder(v);
       /* 挂到全局对象（函数名属性）。 */
       if (!fn_name.empty()) {
-        c->globalObject()->object()->setProperty(fn_name, v);
+        global_obj->setProperty(fn_name, v);
       }
     }
 

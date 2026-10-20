@@ -40,6 +40,7 @@ namespace neojs {
  */
 class JSContext;
 class JSValue;
+class JSEnvironment;
 
 /* 函数调用语义（ECMA-262 §10.2.5）：
  *   Host        宿主 C 回调（句柄语义，E3）
@@ -103,13 +104,18 @@ class JSFunction : public JSObject {
 
   /* 预留扩展字段（E3 不实现，占位防后续破坏布局）：
    *   construct_ —— [[Construct]]（new 语义）
-   *   environment_ —— [[Environment]]（闭包环境）
-   * 均为裸值/指针，当前无 GC 引用边。 */
+   *   environment_ —— [[Environment]]（闭包环境，M2.5） */
   bool isConstructor() const { return construct_; }
   void setConstructor(bool c) { construct_ = c; }
 
-  /* GC：继承 JSObject::gcMarkRefs（函数自身无新增引用边）。 */
-  void gcMarkRefs(Heap *heap) override { JSObject::gcMarkRefs(heap); }
+  /* [[Environment]]（M2.5 闭包）：创建该函数时的词法环境。
+   * 函数被调用时新建环境的 parent 指向它（环境链）。GC 引用边。 */
+  JSEnvironment *environment() const { return environment_; }
+  void setEnvironment(JSEnvironment *env) { environment_ = env; }
+
+  /* GC：JSObject 的引用边 + [[Environment]]（闭包环境，M2.5）。
+   * 实现在 function.cc（需完整 Heap/JSEnvironment 类型）。 */
+  void gcMarkRefs(Heap *heap) override;
 
  private:
   FunctionKind kind_ = FunctionKind::Host;
@@ -118,7 +124,7 @@ class JSFunction : public JSObject {
   const char *name_ = nullptr;          /* 函数名（静态/堆字符串） */
   bool construct_ = false;              /* [[Construct]] 预留 */
   FunctionBytecode bc_;                 /* Script 函数字节码（M2.4 ③） */
-  /* [[Environment]]（闭包环境）M2.5 闭包阶段添加 */
+  JSEnvironment *environment_ = nullptr; /* [[Environment]]（M2.5 闭包） */
 };
 
 /* -------------------------------------------------------------------------- */
