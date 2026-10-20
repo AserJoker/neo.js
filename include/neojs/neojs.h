@@ -39,6 +39,7 @@ typedef enum JSKind {
   JS_NUMBER,
   JS_STRING,
   JS_SYMBOL,
+  JS_BIGINT,           /* M4.3：任意精度整数 */
   JS_OBJECT,
   JS_EXCEPTION,        /* #4：错误值 */
   JS_INTERRUPT_YIELD,  /* #7：生成器 yield 断点 */
@@ -111,6 +112,9 @@ JSValue *JS_CreateNumber(JSContext *ctx, double value, const char *name);
 JSValue *JS_CreateInteger(JSContext *ctx, int64_t value, const char *name);
 JSValue *JS_CreateString(JSContext *ctx, const char *str, size_t len, const char *name);
 JSValue *JS_CreateSymbol(JSContext *ctx, const char *description, const char *name);
+/* 创建 BigInt（M4.3）：digits 为十进制数字串（无符号，如 "12345"），
+ * neg 为符号位（true = 负数）。digits 可为 NULL（表示 0n）。 */
+JSValue *JS_CreateBigInt(JSContext *ctx, int neg, const char *digits, const char *name);
 
 /* 释放一个值。由调用方负责（与 ctx 的 alloc/free 对应）。 */
 void JS_FreeValue(JSContext *ctx, JSValue *value);
@@ -231,6 +235,7 @@ JSValue *JS_Eval(JSContext *ctx, const char *source, size_t source_len);
  * Call 为参数个数。 */
 typedef enum JSBCOp {
   JS_BC_PUSH_CONST = 0,
+  JS_BC_PUSH_BIGINT,      /* 压入 BigInt 常量（M4.3）：PushBigInt {pool_index} */
   JS_BC_PUSH_UNDEFINED,
   JS_BC_PUSH_NULL,
   JS_BC_PUSH_TRUE,

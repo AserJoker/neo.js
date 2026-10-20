@@ -47,12 +47,14 @@
 /* 内部 kind 与 C JSKind 的数值映射保持同步（见 value.h） */
 static_assert(static_cast<int>(neojs::Kind::Undefined) == JS_UNDEFINED, "kind mismatch");
 static_assert(static_cast<int>(neojs::Kind::Symbol) == JS_SYMBOL, "kind mismatch");
+static_assert(static_cast<int>(neojs::Kind::BigInt) == JS_BIGINT, "kind mismatch");
 static_assert(static_cast<int>(neojs::Kind::Exception) == JS_EXCEPTION, "kind mismatch");
 static_assert(static_cast<int>(neojs::Kind::InterruptYield) == JS_INTERRUPT_YIELD, "kind mismatch");
 static_assert(static_cast<int>(neojs::Kind::InterruptAwait) == JS_INTERRUPT_AWAIT, "kind mismatch");
 
 /* 内部 Opcode 与 C JSBCOp 数值映射保持同步（JS_RunBytecode 直接 cast） */
 static_assert(static_cast<int>(neojs::Opcode::PushConst) == JS_BC_PUSH_CONST, "opcode mismatch");
+static_assert(static_cast<int>(neojs::Opcode::PushBigInt) == JS_BC_PUSH_BIGINT, "opcode mismatch");
 static_assert(static_cast<int>(neojs::Opcode::StoreVar) == JS_BC_STORE_VAR, "opcode mismatch");
 static_assert(static_cast<int>(neojs::Opcode::Call) == JS_BC_CALL, "opcode mismatch");
 static_assert(static_cast<int>(neojs::Opcode::MakeFunction) == JS_BC_MAKE_FUNCTION, "opcode mismatch");
@@ -341,6 +343,18 @@ extern "C" JSValue *JS_CreateNumber(JSContext *ctx, double value, const char *na
 extern "C" JSValue *JS_CreateInteger(JSContext *ctx, int64_t value, const char *name) {
   return guarded_create(ctx, [&]() -> JSValue * {
     return makeValueNamed(ctx, neojs::JSValue(value), name);
+  });
+}
+
+extern "C" JSValue *JS_CreateBigInt(JSContext *ctx, int neg, const char *digits,
+                                    const char *name) {
+  return guarded_create(ctx, [&]() -> JSValue * {
+    /* 规范化：去前导 0；全 0 时符号位清零（-0n 不合法，0n 唯一表示）。 */
+    std::string d = digits ? digits : "";
+    size_t first = d.find_first_not_of('0');
+    std::string norm = (first == std::string::npos) ? "0" : d.substr(first);
+    bool negative = (neg != 0) && (norm != "0");
+    return makeValueNamed(ctx, neojs::JSValue(negative, norm), name);
   });
 }
 

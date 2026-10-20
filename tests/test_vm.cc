@@ -12,6 +12,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -2343,3 +2344,732 @@ TEST(Compiler, EvalM42UnderGC) {
   JS_FreeAllocator(a);
 }
 
+/* -------------------------------------------------------------------------- */
+/* M4.3c：BigInt 转换抽象运算（直接验证 ToString/ToNumber/ToBoolean +        */
+/* 相等/关系比较的 BigInt 分支）。                                             */
+/* -------------------------------------------------------------------------- */
+
+/* JS_CreateBigInt + JS_ToString：BigInt -> 十进制字符串（§6.1.6.2.21）。 */
+TEST(Conversion, BigIntToString) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *b1 = JS_CreateBigInt(ctx, 0, "12345", nullptr);
+  ASSERT_NE(b1, nullptr);
+  EXPECT_STREQ(JS_ToString(ctx, b1), "12345");
+
+  JSValue *b2 = JS_CreateBigInt(ctx, 1, "12345", nullptr);
+  ASSERT_NE(b2, nullptr);
+  EXPECT_STREQ(JS_ToString(ctx, b2), "-12345");
+
+  JSValue *b3 = JS_CreateBigInt(ctx, 0, "0", nullptr);
+  ASSERT_NE(b3, nullptr);
+  EXPECT_STREQ(JS_ToString(ctx, b3), "0");
+
+  /* 前导 0 归一化（JS_CreateBigInt 内部去前导 0）。 */
+  JSValue *b4 = JS_CreateBigInt(ctx, 0, "00042", nullptr);
+  ASSERT_NE(b4, nullptr);
+  EXPECT_STREQ(JS_ToString(ctx, b4), "42");
+
+  JS_FreeValue(ctx, b1);
+  JS_FreeValue(ctx, b2);
+  JS_FreeValue(ctx, b3);
+  JS_FreeValue(ctx, b4);
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* JS_ToNumber(BigInt)：§7.1.4 规定 BigInt ToNumber 抛 TypeError；
+ * JS_ToNumber 无法传错误，QuickJS 风格统一 NaN。 */
+TEST(Conversion, BigIntToNumberFails) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *b = JS_CreateBigInt(ctx, 0, "42", nullptr);
+  ASSERT_NE(b, nullptr);
+  EXPECT_TRUE(std::isnan(JS_ToNumber(ctx, b)));
+
+  JS_FreeValue(ctx, b);
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* JS_ToBoolean(BigInt)：0n falsey，其余 truthy。 */
+TEST(Conversion, BigIntToBoolean) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *z = JS_CreateBigInt(ctx, 0, "0", nullptr);
+  JSValue *nz = JS_CreateBigInt(ctx, 0, "1", nullptr);
+  JSValue *neg = JS_CreateBigInt(ctx, 1, "1", nullptr);
+  ASSERT_NE(z, nullptr);
+  ASSERT_NE(nz, nullptr);
+  ASSERT_NE(neg, nullptr);
+  EXPECT_EQ(JS_ToBoolean(ctx, z), 0);
+  EXPECT_EQ(JS_ToBoolean(ctx, nz), 1);
+  EXPECT_EQ(JS_ToBoolean(ctx, neg), 1); /* -1n truthy */
+
+  JS_FreeValue(ctx, z);
+  JS_FreeValue(ctx, nz);
+  JS_FreeValue(ctx, neg);
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 严格相等（§7.2.14）：同类型 BigInt 按值比较。 */
+TEST(Conversion, BigIntStrictEqual) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *b1 = JS_CreateBigInt(ctx, 0, "123", nullptr);
+  JSValue *b2 = JS_CreateBigInt(ctx, 0, "123", nullptr);
+  JSValue *b3 = JS_CreateBigInt(ctx, 0, "124", nullptr);
+  JSValue *b4 = JS_CreateBigInt(ctx, 1, "123", nullptr);
+  JSValue *n123 = JS_CreateNumber(ctx, 123, nullptr);
+  ASSERT_NE(b1, nullptr);
+  ASSERT_NE(b2, nullptr);
+  ASSERT_NE(b3, nullptr);
+  ASSERT_NE(b4, nullptr);
+  ASSERT_NE(n123, nullptr);
+
+  EXPECT_EQ(JS_StrictEqual(ctx, b1, b2), 1);   /* 123n === 123n */
+  EXPECT_EQ(JS_StrictEqual(ctx, b1, b3), 0);   /* 123n === 124n */
+  EXPECT_EQ(JS_StrictEqual(ctx, b1, b4), 0);   /* 123n === -123n */
+  EXPECT_EQ(JS_StrictEqual(ctx, b1, n123), 0); /* 123n === 123（类型不同） */
+
+  JS_FreeValue(ctx, b1);
+  JS_FreeValue(ctx, b2);
+  JS_FreeValue(ctx, b3);
+  JS_FreeValue(ctx, b4);
+  JS_FreeValue(ctx, n123);
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 抽象相等（§7.2.13 IsLooselyEqual）BigInt 分支。 */
+TEST(Conversion, BigIntAbstractEqual) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *b1 = JS_CreateBigInt(ctx, 0, "123", nullptr);
+  JSValue *n123 = JS_CreateNumber(ctx, 123, nullptr);
+  JSValue *n1235 = JS_CreateNumber(ctx, 123.5, nullptr);
+  JSValue *nBig = JS_CreateNumber(ctx, 1e30, nullptr);
+  JSValue *nInf = JS_CreateNumber(ctx, INFINITY, nullptr);
+  JSValue *nNaN = JS_CreateNumber(ctx, NAN, nullptr);
+  JSValue *s123 = JS_CreateString(ctx, "123", std::strlen("123"), nullptr);
+  JSValue *sBad = JS_CreateString(ctx, "1.5", std::strlen("1.5"), nullptr);
+  JSValue *sBad2 = JS_CreateString(ctx, "abc", std::strlen("abc"), nullptr);
+  JSValue *t = JS_CreateBoolean(ctx, 1, nullptr);
+  ASSERT_NE(b1, nullptr);
+  ASSERT_NE(n123, nullptr);
+  ASSERT_NE(n1235, nullptr);
+  ASSERT_NE(nBig, nullptr);
+  ASSERT_NE(nInf, nullptr);
+  ASSERT_NE(nNaN, nullptr);
+  ASSERT_NE(s123, nullptr);
+  ASSERT_NE(sBad, nullptr);
+  ASSERT_NE(sBad2, nullptr);
+  ASSERT_NE(t, nullptr);
+
+  /* BigInt == Number：精确比较。 */
+  JSValue *r = JS_Equal(ctx, b1, n123);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 1);   /* 123n == 123 */
+  JS_FreeValue(ctx, r);
+  r = JS_Equal(ctx, b1, n1235);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 0);   /* 123n == 123.5 */
+  JS_FreeValue(ctx, r);
+
+  /* 大整数 == 精确 Number（2^60 = 1152921504606846976）。 */
+  JSValue *b60 = JS_CreateBigInt(ctx, 0, "1152921504606846976", nullptr);
+  ASSERT_NE(b60, nullptr);
+  JSValue *n2p60 = JS_CreateNumber(ctx, 1152921504606846976.0, nullptr);
+  ASSERT_NE(n2p60, nullptr);
+  r = JS_Equal(ctx, b60, n2p60);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 1);
+  JS_FreeValue(ctx, r);
+  r = JS_Equal(ctx, b60, nBig); /* 1e30 != 2^60 */
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 0);
+  JS_FreeValue(ctx, r);
+
+  /* Infinity / NaN 与 BigInt 不等。 */
+  r = JS_Equal(ctx, b1, nInf);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 0);
+  JS_FreeValue(ctx, r);
+  r = JS_Equal(ctx, b1, nNaN);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 0);
+  JS_FreeValue(ctx, r);
+
+  /* BigInt == String：String 转 BigInt。 */
+  r = JS_Equal(ctx, b1, s123);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 1);  /* 123n == "123" */
+  JS_FreeValue(ctx, r);
+  r = JS_Equal(ctx, b1, sBad);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 0);  /* "1.5" StringToBigInt 失败 -> false */
+  JS_FreeValue(ctx, r);
+  r = JS_Equal(ctx, b1, sBad2);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 0);  /* "abc" -> false */
+  JS_FreeValue(ctx, r);
+
+  /* BigInt == Boolean：Boolean 先 ToNumber。 */
+  r = JS_Equal(ctx, b1, t);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 0);  /* 123n == true (1) */
+  JS_FreeValue(ctx, r);
+  JSValue *b1n = JS_CreateBigInt(ctx, 0, "1", nullptr);
+  ASSERT_NE(b1n, nullptr);
+  r = JS_Equal(ctx, b1n, t);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 1);  /* 1n == true */
+  JS_FreeValue(ctx, r);
+
+  JS_FreeValue(ctx, b1);
+  JS_FreeValue(ctx, b60);
+  JS_FreeValue(ctx, b1n);
+  JS_FreeValue(ctx, n123);
+  JS_FreeValue(ctx, n1235);
+  JS_FreeValue(ctx, nBig);
+  JS_FreeValue(ctx, nInf);
+  JS_FreeValue(ctx, nNaN);
+  JS_FreeValue(ctx, s123);
+  JS_FreeValue(ctx, sBad);
+  JS_FreeValue(ctx, sBad2);
+  JS_FreeValue(ctx, t);
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 抽象关系比较（§7.2.12 IsLessThan）BigInt 分支。 */
+TEST(Conversion, BigIntRelationalCompare) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *b1 = JS_CreateBigInt(ctx, 0, "10", nullptr);
+  JSValue *b2 = JS_CreateBigInt(ctx, 0, "20", nullptr);
+  JSValue *n15 = JS_CreateNumber(ctx, 15, nullptr);
+  JSValue *n155 = JS_CreateNumber(ctx, 15.5, nullptr);
+  JSValue *nNeg = JS_CreateNumber(ctx, -5, nullptr);
+  JSValue *nInf = JS_CreateNumber(ctx, INFINITY, nullptr);
+  JSValue *nNegInf = JS_CreateNumber(ctx, -INFINITY, nullptr);
+  JSValue *s15 = JS_CreateString(ctx, "15", std::strlen("15"), nullptr);
+  JSValue *sBad = JS_CreateString(ctx, "x", std::strlen("x"), nullptr);
+  ASSERT_NE(b1, nullptr);
+  ASSERT_NE(b2, nullptr);
+  ASSERT_NE(n15, nullptr);
+  ASSERT_NE(n155, nullptr);
+  ASSERT_NE(nNeg, nullptr);
+  ASSERT_NE(nInf, nullptr);
+  ASSERT_NE(nNegInf, nullptr);
+  ASSERT_NE(s15, nullptr);
+  ASSERT_NE(sBad, nullptr);
+
+  /* BigInt < BigInt。 */
+  JSValue *r = JS_RelationalCompare(ctx, b1, b2);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 1);  /* 10n < 20n */
+  JS_FreeValue(ctx, r);
+  r = JS_RelationalCompare(ctx, b2, b1);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 0);  /* 20n < 10n */
+  JS_FreeValue(ctx, r);
+
+  /* BigInt < Number（整数 / 小数 / 负 / ±Infinity）。 */
+  r = JS_RelationalCompare(ctx, b1, n15);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 1);  /* 10n < 15 */
+  JS_FreeValue(ctx, r);
+  r = JS_RelationalCompare(ctx, b1, n155);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 1);  /* 10n < 15.5 */
+  JS_FreeValue(ctx, r);
+  r = JS_RelationalCompare(ctx, b1, nNeg);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 0);  /* 10n < -5 */
+  JS_FreeValue(ctx, r);
+  r = JS_RelationalCompare(ctx, nNeg, b1);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 1);  /* -5 < 10n */
+  JS_FreeValue(ctx, r);
+  r = JS_RelationalCompare(ctx, b1, nInf);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 1);  /* 10n < +Infinity */
+  JS_FreeValue(ctx, r);
+  r = JS_RelationalCompare(ctx, b1, nNegInf);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 0);  /* 10n < -Infinity */
+  JS_FreeValue(ctx, r);
+
+  /* 相等值（不同型）< 为 false。 */
+  r = JS_RelationalCompare(ctx, b2, n15);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 0);  /* 20n < 15 */
+  JS_FreeValue(ctx, r);
+  JSValue *b15 = JS_CreateBigInt(ctx, 0, "15", nullptr);
+  ASSERT_NE(b15, nullptr);
+  r = JS_RelationalCompare(ctx, b15, n15);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 0);  /* 15n < 15 */
+  JS_FreeValue(ctx, r);
+
+  /* BigInt < String：String 转 BigInt；失败 -> false（undefined 语义）。 */
+  r = JS_RelationalCompare(ctx, b1, s15);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 1);  /* 10n < "15" */
+  JS_FreeValue(ctx, r);
+  r = JS_RelationalCompare(ctx, b1, sBad);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 0);  /* "x" 非整数 -> false */
+  JS_FreeValue(ctx, r);
+
+  JS_FreeValue(ctx, b1);
+  JS_FreeValue(ctx, b2);
+  JS_FreeValue(ctx, b15);
+  JS_FreeValue(ctx, n15);
+  JS_FreeValue(ctx, n155);
+  JS_FreeValue(ctx, nNeg);
+  JS_FreeValue(ctx, nInf);
+  JS_FreeValue(ctx, nNegInf);
+  JS_FreeValue(ctx, s15);
+  JS_FreeValue(ctx, sBad);
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 端到端：BigInt 字面量 + 比较（经 JS_Eval 验证 VM PushBigInt + 比较指令）。 */
+TEST(Compiler, EvalBigIntLiteralCompare) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* 0x10n = 16n > 10n；12345678901234567890n 超 64 位。 */
+  struct { const char *src; double expect; } cases[] = {
+      {"0x10n > 10n ? 1 : 0", 1.0},
+      {"12345678901234567890n === 12345678901234567890n ? 1 : 0", 1.0},
+      {"0n ? 1 : 0", 0.0},
+      {"10n < 20n ? 1 : 0", 1.0},
+      {"var a = 0x10n > 10n ? 1 : 0;"
+       "var b = 12345678901234567890n === 12345678901234567890n ? 1 : 0;"
+       "var c = (0n ? 1 : 0);"
+       "var d = 10n < 20n ? 1 : 0;"
+       "a + b + c + d", 3.0},  /* c=0（0n falsy）：1+1+0+1=3 */
+      {"var b = 12345678901234567890n === 12345678901234567890n ? 1 : 0; b",
+       1.0},
+      {"var c = (0n ? 1 : 0); c", 0.0},
+      {"var d = 10n < 20n ? 1 : 0; d", 1.0},
+      {"var a = 0x10n > 10n ? 1 : 0; a", 1.0},
+      {"0x10n > 10n ? 1 : 0 + (0n ? 1 : 0) + (10n < 20n ? 1 : 0)", 1.0},
+      /* 上式因 + 优先级高于 ?:，解析为 (0x10n>10n) ? 1 : (0+0+1)，条件真 -> 1。 */
+      {"(0x10n > 10n ? 1 : 0) + (0n ? 1 : 0) + (10n < 20n ? 1 : 0)", 2.0},
+      {"var b = 12345678901234567890n === 12345678901234567890n ? 1 : 0;"
+       "var c = (0n ? 1 : 0);"
+       "b + c", 1.0},
+      {"var b = 12345678901234567890n === 12345678901234567890n ? 1 : 0;"
+       "var d = 10n < 20n ? 1 : 0;"
+       "b + d", 2.0},
+      {"var b = 12345678901234567890n === 12345678901234567890n ? 1 : 0;"
+       "var c = (0n ? 1 : 0);"
+       "var d = 10n < 20n ? 1 : 0;"
+       "b + c + d", 2.0},
+      {"var b = 12345678901234567890n === 12345678901234567890n ? 1 : 0;"
+       "var a = 0x10n > 10n ? 1 : 0;"
+       "a + b", 2.0},
+  };
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    JSValue *r = JS_Eval(ctx, cases[i].src, std::strlen(cases[i].src));
+    ASSERT_NE(r, nullptr);
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER)
+        << "case " << i << " error: " << JS_ToString(ctx, r);
+    EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), cases[i].expect) << "case " << i;
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 端到端：BigInt 运算符语义（M4.3d）——算术/位运算/一元取负/typeOf/拼接/错误。
+ * 每个 case 期望返回 BigInt 的十进制串（"n" 结尾）或 Number/字符串/错误标记。 */
+TEST(Compiler, EvalBigIntOperators) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* {src, expect}: expect "N" = BigInt 十进制串；"#num" = Number 值；
+   * "#str:..." = 字符串；"#err:..." = 异常（含子串匹配）。 */
+  struct { const char *src; const char *expect; } cases[] = {
+      /* 算术：BigInt + BigInt -> BigInt。 */
+      {"12345678901234567890n + 1n", "12345678901234567891"},
+      {"12345678901234567890n - 10n", "12345678901234567880"},
+      {"12345678901234567890n * 2n", "24691357802469135780"},
+      {"10n / 3n", "3"},
+      {"10n % 3n", "1"},
+      {"-10n % 3n", "-1"},
+      {"10n % -3n", "1"},      /* 余数符号同被除数 */
+      {"2n ** 10n", "1024"},
+      {"(-2n) ** 3n", "-8"},
+      {"(-2n) ** 2n", "4"},
+      {"0n ** 0n", "1"},
+      /* 负数算术。 */
+      {"-10n + 3n", "-7"},
+      {"-10n - 3n", "-13"},
+      {"-10n * -3n", "30"},
+      {"-10n / -3n", "3"},
+      /* 除零 / 负指数。 */
+      {"1n / 0n", "#err:RangeError"},
+      {"1n % 0n", "#err:RangeError"},
+      {"2n ** -1n", "#err:RangeError"},
+      /* 混 Number -> TypeError。 */
+      {"1n + 1", "#err:TypeError"},
+      {"1 + 1n", "#err:TypeError"},
+      {"1n * 2", "#err:TypeError"},
+      {"1n - 0.5", "#err:TypeError"},
+      /* 位运算。 */
+      {"5n & 3n", "1"},
+      {"5n | 3n", "7"},
+      {"5n ^ 3n", "6"},
+      {"5n << 2n", "20"},
+      {"20n >> 2n", "5"},
+      {"-1n & 3n", "3"},   /* 补码：...111 & 011 = 011 */
+      {"-1n | 3n", "-1"},
+      {"-5n >> 1n", "-3"}, /* 算术右移向负无穷 */
+      {"-8n >> 1n", "-4"},
+      {"-1n >> 100n", "-1"},
+      {"1n << 3n", "8"},
+      {"1n << -1n", "0"},  /* 右移 1：1 >> 1 = 0 */
+      {"4n >> -1n", "8"},  /* 左移 1 */
+      /* >>> 对 BigInt 抛 TypeError。 */
+      {"1n >>> 1n", "#err:TypeError"},
+      {"5n & 3", "#err:TypeError"},
+      {"1n | 0.5", "#err:TypeError"},
+      /* 一元取负。 */
+      {"-12345678901234567890n", "-12345678901234567890"},
+      {"-0n", "0"},
+      {"-(-5n)", "5"},
+      /* typeof。 */
+      {"typeof 1n", "#str:bigint"},
+      /* 字符串拼接：BigInt + String / String + BigInt。 */
+      {"12345678901234567890n + ''", "#str:12345678901234567890"},
+      {"'x' + 10n", "#str:x10"},
+      {"-10n + 'abc'", "#str:-10abc"},
+      /* Number 路径回归。 */
+      {"1 + 2", "#num:3"},
+      {"7 & 3", "#num:3"},
+      {"-5 >> 1", "#num:-3"},
+      {"8 << 2", "#num:32"},
+      {"-8 >>> 1", "#num:2147483644"},
+      {"typeof 123", "#str:number"},
+  };
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    JSValue *r = JS_Eval(ctx, cases[i].src, std::strlen(cases[i].src));
+    ASSERT_NE(r, nullptr) << "case " << i << " returned null for: " << cases[i].src;
+    const char *e = cases[i].expect;
+    if (e[0] == '#') {
+      if (e[1] == 'e') { /* #err */
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION)
+            << "case " << i << " expected exception for: " << cases[i].src
+            << " got: " << JS_ToString(ctx, r);
+        if (JS_GetKind(ctx, r) == JS_EXCEPTION) {
+          std::string msg = JS_ToString(ctx, r);
+          EXPECT_NE(msg.find(e + 5), std::string::npos) << "case " << i;
+        }
+      } else if (e[1] == 'n') { /* #num */
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "case " << i << " src=" << cases[i].src;
+        if (JS_GetKind(ctx, r) == JS_NUMBER) {
+          EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), std::atof(e + 5)) << "case " << i;
+        }
+      } else { /* #str */
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_STRING) << "case " << i << " src=" << cases[i].src;
+        if (JS_GetKind(ctx, r) == JS_STRING) {
+          EXPECT_EQ(std::string(JS_ToString(ctx, r)), std::string(e + 5)) << "case " << i;
+        }
+      }
+    } else {
+      /* BigInt：kind 应为 JS_BIGINT，十进制串匹配。 */
+      EXPECT_EQ(JS_GetKind(ctx, r), JS_BIGINT)
+          << "case " << i << " expected BigInt for: " << cases[i].src
+          << " got kind " << JS_GetKind(ctx, r) << ": " << JS_ToString(ctx, r);
+      if (JS_GetKind(ctx, r) == JS_BIGINT) {
+        EXPECT_EQ(std::string(JS_ToString(ctx, r)), std::string(e)) << "case " << i;
+      }
+    }
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+TEST(Compiler, EvalBigIntBuiltins) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* expect 格式同 EvalBigIntOperators：
+   * "N" = BigInt 十进制串；"#num:x" = Number；"#str:x" = 字符串；
+   * "#obj:x" = 对象（装箱，x 为 typeof）；"#err:x" = 异常（子串匹配）。 */
+  struct { const char *src; const char *expect; } cases[] = {
+      /* BigInt 构造器（§21.2.1.1）：BigInt(x) 类型转换。 */
+      {"BigInt(42)", "42"},
+      {"BigInt(-123)", "-123"},
+      {"BigInt(0)", "0"},
+      {"BigInt('123')", "123"},
+      {"BigInt('0x1f')", "31"},
+      {"BigInt('0o17')", "15"},
+      {"BigInt('0b101')", "5"},
+      {"BigInt('  42  ')", "42"},       /* 首尾空白 */
+      {"BigInt('1_000')", "1000"},      /* 数字分隔符 */
+      {"BigInt(true)", "1"},
+      {"BigInt(false)", "0"},
+      {"BigInt(10n)", "10"},
+      /* new BigInt() 禁止（§21.2.1 步骤 1：BigInt 不是构造器）。 */
+      {"new BigInt(1)", "#err:TypeError"},
+      {"new BigInt()", "#err:TypeError"},
+      /* 构造器转换错误。 */
+      {"BigInt(1.5)", "#err:RangeError"},        /* Number 非整数 -> RangeError */
+      {"BigInt(Infinity)", "#err:RangeError"},
+      {"BigInt('1.5')", "#err:SyntaxError"},     /* 小数串 -> SyntaxError */
+      {"BigInt('abc')", "#err:SyntaxError"},
+      {"BigInt()", "#err:TypeError"},            /* 无参 -> ToBigInt(undefined) TypeError */
+      {"BigInt(undefined)", "#err:TypeError"},
+      {"BigInt(null)", "#err:TypeError"},
+      /* BigInt.prototype.valueOf（§21.2.3.4）。 */
+      {"BigInt.prototype.valueOf.call(10n)", "10"},
+      {"BigInt.prototype.valueOf.call(BigInt('123'))", "123"},
+      {"BigInt.prototype.valueOf.call(1)", "#err:TypeError"},
+      /* BigInt.prototype.toString（§21.2.3.3）：十进制默认。 */
+      {"BigInt.prototype.toString.call(123n)", "#str:123"},
+      {"BigInt.prototype.toString.call(-123n)", "#str:-123"},
+      {"(123n).toString()", "#str:123"},
+      {"(-123n).toString()", "#str:-123"},
+      {"(123n).toString(10)", "#str:123"},
+      {"(123n).toString(2)", "#err:not implemented"},   /* 非十进制本阶段未实现 */
+      {"(123n).toString(1)", "#err:RangeError"},
+      {"(123n).toString(37)", "#err:RangeError"},
+      {"(123n).toString(2.5)", "#err:RangeError"},
+      {"BigInt.prototype.toString.call(1)", "#err:TypeError"},
+      /* BigInt 装箱（ToObject，§7.1.13）：原始值转包装对象。 */
+      {"typeof Object(10n)", "#str:object"},
+      {"typeof Object(10n).valueOf()", "#str:bigint"},
+      {"Object(10n).valueOf()", "10"},
+      {"typeof 10n.valueOf()", "#str:bigint"},
+      {"10n.valueOf()", "10"},
+      /* 原型链：装箱对象继承 BigInt.prototype 方法。 */
+      {"Object(10n).toString()", "#str:10"},
+      {"Object(10n).valueOf() + 1n", "11"},
+      /* typeof 保持 bigint。 */
+      {"typeof BigInt('9')", "#str:bigint"},
+      /* 全局 BigInt 是函数（typeof function）。 */
+      {"typeof BigInt", "#str:function"},
+      /* BigInt.prototype.constructor === BigInt。 */
+      {"BigInt.prototype.constructor === BigInt", "#bool:1"},
+      {"BigInt.prototype.constructor === Number", "#bool:0"},
+  };
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    JSValue *r = JS_Eval(ctx, cases[i].src, std::strlen(cases[i].src));
+    ASSERT_NE(r, nullptr) << "case " << i << " returned null for: " << cases[i].src;
+    const char *e = cases[i].expect;
+    if (e[0] == '#') {
+      if (e[1] == 'e') { /* #err */
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION)
+            << "case " << i << " expected exception for: " << cases[i].src
+            << " got: " << JS_ToString(ctx, r);
+        if (JS_GetKind(ctx, r) == JS_EXCEPTION) {
+          std::string msg = JS_ToString(ctx, r);
+          EXPECT_NE(msg.find(e + 5), std::string::npos) << "case " << i << " msg=" << msg;
+        }
+      } else if (e[1] == 'n') { /* #num */
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "case " << i << " src=" << cases[i].src;
+        if (JS_GetKind(ctx, r) == JS_NUMBER) {
+          EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), std::atof(e + 5)) << "case " << i;
+        }
+      } else if (e[1] == 's') { /* #str */
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_STRING) << "case " << i << " src=" << cases[i].src;
+        if (JS_GetKind(ctx, r) == JS_STRING) {
+          EXPECT_EQ(std::string(JS_ToString(ctx, r)), std::string(e + 5)) << "case " << i;
+        }
+      } else if (e[1] == 'b') { /* #bool */
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN) << "case " << i << " src=" << cases[i].src;
+        if (JS_GetKind(ctx, r) == JS_BOOLEAN) {
+          /* #bool:x 前缀是 "#bool:"（6 字符），值从 e+6 开始。 */
+          EXPECT_EQ(JS_ToBoolean(ctx, r), std::atoi(e + 6)) << "case " << i << " src=" << cases[i].src;
+        }
+      } else { /* #obj */
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_OBJECT) << "case " << i << " src=" << cases[i].src;
+      }
+    } else {
+      /* BigInt：kind 应为 JS_BIGINT，十进制串匹配。 */
+      EXPECT_EQ(JS_GetKind(ctx, r), JS_BIGINT)
+          << "case " << i << " expected BigInt for: " << cases[i].src
+          << " got kind " << JS_GetKind(ctx, r) << ": " << JS_ToString(ctx, r);
+      if (JS_GetKind(ctx, r) == JS_BIGINT) {
+        EXPECT_EQ(std::string(JS_ToString(ctx, r)), std::string(e)) << "case " << i;
+      }
+    }
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+
+/* M4.3f：String.prototype 方法补齐（§22.1.3）。
+ * expect 前缀：#num: 数字；#str: 字符串；#bool: 布尔；#err: 异常子串；
+ * #obj: 对象（split 返回数组）。 */
+TEST(Compiler, EvalStringProtoMethods) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  struct { const char *src; const char *expect; } cases[] = {
+      /* length 与索引访问（§10.4.3.3/.4）。 */
+      {"'abc'.length", "#num:3"},
+      {"'abc'[0]", "#str:a"},
+      {"'abc'[2]", "#str:c"},
+      {"'abc'[3]", "#undef"},
+      {"'abc'[1.5]", "#undef"},  /* 非整数索引 -> 属性查找 */
+      {"var s = new String('xy'); s.length", "#num:2"},
+      {"var s = new String('xy'); s[1]", "#str:y"},
+      /* at（§22.1.3.1）。 */
+      {"'hello'.at(1)", "#str:e"},
+      {"'hello'.at(-1)", "#str:o"},
+      {"'hello'.at(99)", "#undef"},
+      /* charAt（§22.1.3.2）。 */
+      {"'hello'.charAt(1)", "#str:e"},
+      {"'hello'.charAt(99)", "#str:"},
+      {"'hello'.charAt(-1)", "#str:"},
+      /* charCodeAt（§22.1.3.3）。 */
+      {"'hello'.charCodeAt(0)", "#num:104"},
+      {"'hello'.charCodeAt(99)", "#num:NaN"},
+      /* codePointAt（§22.1.3.4）：增补平面字符。 */
+      {"'\\u{1F600}'.codePointAt(0)", "#num:128512"},
+      {"'\\u{1F600}'.codePointAt(1)", "#num:56832"},  /* 低代理 0xDE00 */
+      {"'a'.codePointAt(99)", "#undef"},
+      /* concat（§22.1.3.5）。 */
+      {"'a'.concat('b', 'c')", "#str:abc"},
+      {"'a'.concat()", "#str:a"},
+      {"'a'.concat(1, true)", "#str:a1true"},
+      /* includes（§22.1.3.8）。 */
+      {"'abcdef'.includes('cde')", "#bool:1"},
+      {"'abcdef'.includes('xyz')", "#bool:0"},
+      {"'abcdef'.includes('cde', 3)", "#bool:0"},
+      {"'abcdef'.includes()", "#bool:0"},
+      /* indexOf（§22.1.3.9）。 */
+      {"'hello'.indexOf('l')", "#num:2"},
+      {"'hello'.indexOf('l', 3)", "#num:3"},
+      {"'hello'.indexOf('x')", "#num:-1"},
+      {"'hello'.indexOf()", "#num:-1"},
+      /* lastIndexOf（§22.1.3.11）。 */
+      {"'hello'.lastIndexOf('l')", "#num:3"},
+      {"'hello'.lastIndexOf('l', 2)", "#num:2"},
+      {"'hello'.lastIndexOf('x')", "#num:-1"},
+      /* padStart/padEnd（§22.1.3.17/.16）。 */
+      {"'5'.padStart(3, '0')", "#str:005"},
+      {"'5'.padEnd(3, '0')", "#str:500"},
+      {"'hello'.padStart(3)", "#str:hello"},
+      {"'5'.padStart(5, 'ab')", "#str:abab5"},
+      /* repeat（§22.1.3.18）。 */
+      {"'ab'.repeat(3)", "#str:ababab"},
+      {"'ab'.repeat(0)", "#str:"},
+      {"'ab'.repeat(-1)", "#err:RangeError"},
+      {"'ab'.repeat(Infinity)", "#err:RangeError"},
+      /* replace（§22.1.3.19）：字符串替换 + $ 模式。 */
+      {"'hello'.replace('l', 'L')", "#str:heLlo"},
+      {"'hello'.replace('x', 'y')", "#str:hello"},
+      {"'abc'.replace('b', '$&-$&')", "#str:ab-bc"},  /* $& = 匹配 'b' */
+      {"'abc'.replace('b', '$$')", "#str:a$c"},
+      /* slice（§22.1.3.22）。 */
+      {"'hello'.slice(1, 3)", "#str:el"},
+      {"'hello'.slice(-3)", "#str:llo"},
+      {"'hello'.slice(-3, -1)", "#str:ll"},
+      /* split（§22.1.3.23）。 */
+      {"'a,b,c'.split(',')[1]", "#str:b"},
+      {"'a,b,c'.split(',')[3]", "#undef"},
+      {"'abc'.split('') [1]", "#str:b"},
+      {"'abc'.split() [0]", "#str:abc"},
+      {"'a,b,c'.split(',', 2).length", "#num:2"},
+      /* startsWith / endsWith（§22.1.3.24/.7）。 */
+      {"'hello'.startsWith('he')", "#bool:1"},
+      {"'hello'.startsWith('lo')", "#bool:0"},
+      {"'hello'.startsWith('lo', 3)", "#bool:1"},
+      {"'hello'.endsWith('lo')", "#bool:1"},
+      {"'hello'.endsWith('he')", "#bool:0"},
+      {"'hello'.endsWith('he', 2)", "#bool:1"},
+      /* substring（§22.1.3.25）：交换 + 夹取。 */
+      {"'hello'.substring(1, 3)", "#str:el"},
+      {"'hello'.substring(3, 1)", "#str:el"},
+      {"'hello'.substring(-1, 3)", "#str:hel"},
+      /* trim / trimStart / trimEnd（§22.1.3.32/.33/.34）。 */
+      {"'  hi  '.trim()", "#str:hi"},
+      {"'  hi  '.trimStart()", "#str:hi  "},
+      {"'  hi  '.trimEnd()", "#str:  hi"},
+      {"'\\t\\n hi \\t'.trim()", "#str:hi"},
+      /* toLowerCase / toUpperCase（§22.1.3.28/.30）。 */
+      {"'HeLLo'.toLowerCase()", "#str:hello"},
+      {"'HeLLo'.toUpperCase()", "#str:HELLO"},
+      {"'straße'.toUpperCase()", "#str:STRASSE"},
+      /* 通用性：this 可转移（§22.1.3 前置）。 */
+      {"String.prototype.indexOf.call('hello', 'l')", "#num:2"},
+      {"String.prototype.toUpperCase.call(42)", "#str:42"},
+      /* 无参调用缺参语义（undefined 串）。 */
+      {"'abc'.concat(undefined)", "#str:abcundefined"},
+      {"'abc'.indexOf(undefined)", "#num:-1"},
+      {"'abc'.replace('a', undefined)", "#str:undefinedbc"},
+  };
+
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    JSValue *r = JS_Eval(ctx, cases[i].src, std::strlen(cases[i].src));
+    ASSERT_NE(r, nullptr) << "case " << i << " src=" << cases[i].src;
+    const char *e = cases[i].expect;
+    if (e[0] == '#') {
+      if (e[1] == 'e') {
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION)
+            << "case " << i << " src=" << cases[i].src << " got: "
+            << JS_ToString(ctx, r);
+        if (JS_GetKind(ctx, r) == JS_EXCEPTION) {
+          std::string msg = JS_ToString(ctx, r);
+          EXPECT_NE(msg.find(e + 5), std::string::npos)
+              << "case " << i << " msg=" << msg;
+        }
+      } else if (e[1] == 'n') {
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_NUMBER)
+            << "case " << i << " src=" << cases[i].src;
+        if (JS_GetKind(ctx, r) == JS_NUMBER) {
+          double want = std::atof(e + 5);
+          double got = JS_ToNumber(ctx, r);
+          if (std::isnan(want)) {
+            EXPECT_TRUE(std::isnan(got))
+                << "case " << i << " src=" << cases[i].src << " got=" << got;
+          } else {
+            EXPECT_DOUBLE_EQ(got, want) << "case " << i << " src=" << cases[i].src;
+          }
+        }
+      } else if (e[1] == 'u') { /* #undef */
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_UNDEFINED)
+            << "case " << i << " src=" << cases[i].src << " got: "
+            << JS_ToString(ctx, r);
+      } else if (e[1] == 's') {
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_STRING)
+            << "case " << i << " src=" << cases[i].src;
+        if (JS_GetKind(ctx, r) == JS_STRING) {
+          EXPECT_EQ(std::string(JS_ToString(ctx, r)), std::string(e + 5))
+              << "case " << i << " src=" << cases[i].src;
+        }
+      } else if (e[1] == 'b') {
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN)
+            << "case " << i << " src=" << cases[i].src;
+        if (JS_GetKind(ctx, r) == JS_BOOLEAN) {
+          EXPECT_EQ(JS_ToBoolean(ctx, r), std::atoi(e + 6))
+              << "case " << i << " src=" << cases[i].src;
+        }
+      } else {
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_OBJECT)
+            << "case " << i << " src=" << cases[i].src;
+      }
+    } else {
+      EXPECT_EQ(JS_GetKind(ctx, r), JS_STRING) << "case " << i;
+    }
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}

@@ -13,8 +13,10 @@
 
 #include "neojs/runtime/vm.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -25,6 +27,7 @@
 #include "neojs/runtime/environment.h"
 #include "neojs/runtime/function.h"
 #include "neojs/runtime/operators.h"
+#include "neojs/runtime/utf16.h"
 #include "neojs/runtime/value.h"
 
 namespace neojs {
@@ -59,15 +62,80 @@ ConversionResult fail(const std::string &error) {
   return r;
 }
 
-/* 二元算术（除字符串拼接外的数值运算）：ToNumeric 后运算。 */
+/* 有符号十进制大数除法（BigInt / 与 %）：商向零截断，余数符号同被除数。
+ * §6.1.6.2.7/§6.1.6.2.8。除零由调用方抛 RangeError（§6.1.6.2.4 步骤 4）。 */
+ConversionResult bigintDivModSigned(JSContext *ctx, bool xNeg,
+                                    const std::string &xDigits,
+                                    bool yNeg, const std::string &yDigits,
+                                    bool wantQuot) {
+  std::string rem;
+  std::string quot = bigintDivMod(xDigits, yDigits, rem);
+  if (wantQuot) {
+    bool outNeg = (xNeg != yNeg) && quot != "0";
+    return ok(ctx->createValue(JSValue(outNeg, quot)));
+  }
+  /* 余数符号同被除数 x（§6.1.6.2.8）：-7n % 2n == -1n。 */
+  bool outNeg = xNeg && rem != "0";
+  return ok(ctx->createValue(JSValue(outNeg, rem)));
+}
+
+/* 二元算术（除字符串拼接外的数值运算）：ToNumeric 后运算。
+ * BigInt 参与：两操作数必须同为 BigInt（混 Number -> TypeError，§6.1.6.2.4
+ * 步骤 5）；结果 BigInt。Number 走 IEEE 浮点。 */
 ConversionResult binaryArith(JSContext *ctx, JSValue *a, JSValue *b,
                              Opcode op) {
   ConversionResult na = toNumeric(ctx, a);
   if (!na.ok()) return na;
   ConversionResult nb = toNumeric(ctx, b);
   if (!nb.ok()) return nb;
-  double x = na.value->toNumber();
-  double y = nb.value->toNumber();
+  JSValue *va = na.value;
+  JSValue *vb = nb.value;
+
+  if (va->kind() == Kind::BigInt || vb->kind() == Kind::BigInt) {
+    /* §6.1.6.2.4 步骤 5：混用报 TypeError。 */
+    if (va->kind() != vb->kind()) {
+      return fail("TypeError: Cannot mix BigInt and other types, use explicit conversions");
+    }
+    bool xNeg = va->bigIntNegative();
+    bool yNeg = vb->bigIntNegative();
+    std::string xDigits = va->bigIntDigits();
+    const std::string &yDigits = vb->bigIntDigits();
+    switch (op) {
+      case Opcode::Sub: {
+        bool outNeg = false;
+        bigintSubSigned(xNeg, xDigits, yNeg, yDigits, outNeg);
+        return ok(ctx->createValue(JSValue(outNeg, xDigits)));
+      }
+      case Opcode::Mul: {
+        bool outNeg = false;
+        bigintMulSigned(xNeg, xDigits, yNeg, yDigits, outNeg);
+        return ok(ctx->createValue(JSValue(outNeg, xDigits)));
+      }
+      case Opcode::Div: {
+        if (yDigits == "0") return fail("RangeError: Division by zero");
+        return bigintDivModSigned(ctx, xNeg, xDigits, yNeg, yDigits, true);
+      }
+      case Opcode::Mod: {
+        if (yDigits == "0") return fail("RangeError: Division by zero");
+        return bigintDivModSigned(ctx, xNeg, xDigits, yNeg, yDigits, false);
+      }
+      case Opcode::Pow: {
+        if (yNeg) {
+          /* 负指数 -> RangeError（§6.1.6.2.13 BigInt::exponentiate 步骤 4）。 */
+          return fail("RangeError: Exponent must be positive");
+        }
+        bool expOdd = !yDigits.empty() && (yDigits.back() - '0') % 2 == 1;
+        bigintPow(xDigits, yDigits);
+        /* 结果符号：底负且指数奇才为负（(-2n)^2n == 4n）。 */
+        return ok(ctx->createValue(JSValue(xNeg && expOdd && xDigits != "0",
+                                           xDigits)));
+      }
+      default: return fail("Error: invalid binary arithmetic opcode");
+    }
+  }
+
+  double x = va->toNumber();
+  double y = vb->toNumber();
   switch (op) {
     case Opcode::Sub: return ok(ctx->createValue(x - y));
     case Opcode::Mul: return ok(ctx->createValue(x * y));
@@ -87,14 +155,186 @@ int32_t toInt32Value(double d) {
   return static_cast<int32_t>(u);
 }
 
-/* 位运算（§13.9/§13.10/§13.11/§13.12）：ToInt32 后按位运算。 */
+/* 十进制绝对值串 -> 二进制位串（最低位在前）。空串表示 0。 */
+std::string bigintToBits(const std::string &digits) {
+  std::string bits;
+  std::string v = digits;
+  while (v != "0") {
+    unsigned rem = bigintDiv(v, 2);
+    bits.push_back(rem ? '1' : '0');
+  }
+  return bits;
+}
+
+/* 位串（最低位在前）-> 十进制绝对值串。逐位累加（O(n·digits)，测试规模足够）。 */
+std::string bitsToDecimal(const std::string &bits) {
+  std::string out = "0";
+  std::string place = "1"; /* 2^i */
+  for (char c : bits) {
+    if (c == '1') bigintAdd(out, place);
+    bigintMul(place, 2);
+  }
+  return out;
+}
+
+/* 十进制绝对值串 + 符号 -> 指定宽度补码位串（最低位在前，宽度位，符号扩展）。 */
+std::string twosComplementBits(const std::string &digits, bool neg, size_t width) {
+  std::string bits = bigintToBits(digits);
+  bits.resize(width, '0');
+  if (neg) {
+    /* 取反 + 1。 */
+    for (auto &c : bits) c = (c == '0') ? '1' : '0';
+    int carry = 1;
+    for (size_t i = 0; i < width && carry; ++i) {
+      if (bits[i] == '0') { bits[i] = '1'; carry = 0; }
+      else { bits[i] = '0'; }
+    }
+  }
+  return bits;
+}
+
+/* 补码位串（最低位在前，宽度位）-> 符号 + 绝对值十进制串。最高位为符号位。 */
+void bitsToBigInt(const std::string &bits, bool &outNeg, std::string &outDigits) {
+  size_t width = bits.size();
+  bool neg = width > 0 && bits[width - 1] == '1';
+  std::string mag = bits;
+  if (neg) {
+    for (auto &c : mag) c = (c == '0') ? '1' : '0';
+    int carry = 1;
+    for (size_t i = 0; i < width && carry; ++i) {
+      if (mag[i] == '0') { mag[i] = '1'; carry = 0; }
+      else { mag[i] = '0'; }
+    }
+  }
+  outDigits = bitsToDecimal(mag);
+  outNeg = neg;
+  if (outDigits == "0") outNeg = false;
+}
+
+/* 十进制绝对值串左移 k 位（k >= 0）：abs * 2^k。 */
+void bigintShiftLeftDecimal(std::string &digits, size_t k) {
+  for (size_t i = 0; i < k; ++i) bigintMul(digits, 2);
+}
+
+/* 十进制绝对值串算术右移 k 位（k >= 0）：返回 floor(abs / 2^k)（截断）。 */
+std::string bigintShiftRightDecimal(const std::string &digits, size_t k) {
+  std::string v = digits;
+  for (size_t i = 0; i < k; ++i) bigintDiv(v, 2);
+  return v;
+}
+
+/* BigInt 算术右移 k 位（k >= 0，负数向负无穷）：结果 = x >> k。
+ * 正数 -> floor(|x|/2^k)；负数 -> -(ceil(|x|/2^k))。返回绝对值串。 */
+std::string bigintArithShiftRight(const std::string &digits, bool neg, size_t k) {
+  if (digits == "0") return "0";
+  if (!neg) return bigintShiftRightDecimal(digits, k);
+  std::string divisor = "1";
+  bigintShiftLeftDecimal(divisor, k);
+  std::string rem;
+  std::string quot = bigintDivMod(digits, divisor, rem);
+  if (rem != "0") bigintAdd(quot, "1");
+  return quot; /* ceil(|x|/2^k) */
+}
+
+/* BigInt 移位计数：十进制绝对值串 -> size_t（超界钳制到上限，防资源耗尽）。 */
+size_t bigintShiftCount(const std::string &digits) {
+  const size_t kMaxShift = 1u << 16; /* 65536 位：远超测试规模，防病态内存 */
+  /* 逐位累积十进制 -> size_t，溢出即钳制。 */
+  size_t n = 0;
+  bool overflow = false;
+  for (char c : digits) {
+    unsigned d = static_cast<unsigned>(c - '0');
+    if (n > (std::numeric_limits<size_t>::max() - d) / 10) { overflow = true; break; }
+    n = n * 10 + d;
+  }
+  if (overflow || n > kMaxShift) return kMaxShift;
+  return n;
+}
+
+/* BigInt 位运算（§6.1.6.2.14-19）：补码位串实现 & | ^；十进制快捷实现 << >>。 */
+ConversionResult bigIntBitwise(JSContext *ctx, JSValue *x, JSValue *y,
+                               Opcode op) {
+  bool xNeg = x->bigIntNegative();
+  bool yNeg = y->bigIntNegative();
+  const std::string &xd = x->bigIntDigits();
+  const std::string &yd = y->bigIntDigits();
+
+  switch (op) {
+    case Opcode::LShift: {
+      /* a << b：b 为移位计数（可为负 -> 反向右移）。 */
+      size_t k = bigintShiftCount(yd);
+      std::string mag = xd;
+      if (yNeg) {
+        /* a << -k == a >> k（算术右移，负数向负无穷）。 */
+        std::string shifted = bigintArithShiftRight(xd, xNeg, k);
+        bool outNeg = xNeg && shifted != "0";
+        return ok(ctx->createValue(JSValue(outNeg, shifted)));
+      }
+      bigintShiftLeftDecimal(mag, k);
+      bool outNeg = xNeg && mag != "0";
+      return ok(ctx->createValue(JSValue(outNeg, mag)));
+    }
+    case Opcode::RShift: {
+      /* a >> b：算术右移（负数向负无穷）。b 为负 -> 反向左移。 */
+      size_t k = bigintShiftCount(yd);
+      if (yNeg) {
+        std::string mag = xd;
+        bigintShiftLeftDecimal(mag, k);
+        bool outNeg = xNeg && mag != "0";
+        return ok(ctx->createValue(JSValue(outNeg, mag)));
+      }
+      std::string shifted = bigintArithShiftRight(xd, xNeg, k);
+      bool outNeg = xNeg && shifted != "0";
+      return ok(ctx->createValue(JSValue(outNeg, shifted)));
+    }
+    default: break;
+  }
+
+  /* & | ^：补码位串按位运算。宽度 = 两操作数最大位长 + 2（符号扩展安全）。 */
+  std::string xb = bigintToBits(xd);
+  std::string yb = bigintToBits(yd);
+  size_t width = std::max(xb.size(), yb.size()) + 2;
+  std::string xbits = twosComplementBits(xd, xNeg, width);
+  std::string ybits = twosComplementBits(yd, yNeg, width);
+  std::string result(width, '0');
+  for (size_t i = 0; i < width; ++i) {
+    char xc = xbits[i];
+    char yc = ybits[i];
+    switch (op) {
+      case Opcode::BitAnd: result[i] = (xc == '1' && yc == '1') ? '1' : '0'; break;
+      case Opcode::BitOr: result[i] = (xc == '1' || yc == '1') ? '1' : '0'; break;
+      case Opcode::BitXor: result[i] = (xc != yc) ? '1' : '0'; break;
+      default: break;
+    }
+  }
+  bool outNeg = false;
+  std::string outDigits;
+  bitsToBigInt(result, outNeg, outDigits);
+  return ok(ctx->createValue(JSValue(outNeg, outDigits)));
+}
+
+/* 位运算（§13.9/§13.10/§13.11/§13.12）：ToNumeric 后，BigInt 走任意精度位运算
+ * （混 Number -> TypeError；>>> 对 BigInt 抛 TypeError），否则 ToInt32 后按位运算。 */
 ConversionResult bitwiseOp(JSContext *ctx, JSValue *a, JSValue *b, Opcode op) {
   ConversionResult na = toNumeric(ctx, a);
   if (!na.ok()) return na;
   ConversionResult nb = toNumeric(ctx, b);
   if (!nb.ok()) return nb;
-  int32_t x = toInt32Value(na.value->toNumber());
-  int32_t y = toInt32Value(nb.value->toNumber());
+  JSValue *va = na.value;
+  JSValue *vb = nb.value;
+  if (va->kind() == Kind::BigInt || vb->kind() == Kind::BigInt) {
+    /* §6.1.6.2.4 步骤 5：混用报 TypeError。 */
+    if (va->kind() != vb->kind()) {
+      return fail("TypeError: Cannot mix BigInt and other types, use explicit conversions");
+    }
+    /* §13.12.3 步骤 2：>>> 对 BigInt 抛 TypeError。 */
+    if (op == Opcode::URShift) {
+      return fail("TypeError: BigInts have no unsigned right shift, use >> instead");
+    }
+    return bigIntBitwise(ctx, va, vb, op);
+  }
+  int32_t x = toInt32Value(va->toNumber());
+  int32_t y = toInt32Value(vb->toNumber());
   switch (op) {
     case Opcode::BitAnd: return ok(ctx->createValue(int64_t(x & y)));
     case Opcode::BitOr: return ok(ctx->createValue(int64_t(x | y)));
@@ -149,12 +389,16 @@ ConversionResult compareOp(JSContext *ctx, JSValue *a, JSValue *b, Opcode op) {
 }
 
 
-/* 常量池值：按 Constant 载荷创建 Number 或 String 值。 */
+/* 常量池值：按 Constant 载荷创建 Number / String / BigInt 值。 */
 JSValue *constValue(JSContext *ctx, const FunctionBytecode &fn, uint16_t index) {
   if (index >= fn.constants.size()) {
     return ctx->createValue(Kind::Undefined);
   }
   const Constant &c = fn.constants[index];
+  if (c.is_bigint) {
+    /* BigInt 常量（M4.3）：十进制数字串 + 符号位。 */
+    return ctx->createValue(JSValue(c.bigint_neg, c.bigint_digits));
+  }
   if (c.is_number) {
     return ctx->createValue(c.number);
   }
@@ -232,6 +476,10 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
     const Instruction &instr = code[pc++];
     switch (instr.op) {
       case Opcode::PushConst:
+        stack.push_back(constValue(ctx, fn, instr.arg));
+        break;
+      case Opcode::PushBigInt:
+        /* BigInt 常量（M4.3）：十进制数字串。 */
         stack.push_back(constValue(ctx, fn, instr.arg));
         break;
       case Opcode::PushUndefined:
@@ -344,7 +592,15 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         ConversionResult n = toNumeric(ctx, a);
         if (!n.ok()) return n;
         stack.pop_back();
-        stack.push_back(ctx->createValue(-n.value->toNumber()));
+        if (n.value->kind() == Kind::BigInt) {
+          /* 一元取负（§13.5.4）：BigInt 翻转符号位，0n 仍为 0n。 */
+          bool neg = !n.value->bigIntNegative();
+          const std::string &digits = n.value->bigIntDigits();
+          stack.push_back(ctx->createValue(
+              JSValue(neg && digits != "0", digits)));
+        } else {
+          stack.push_back(ctx->createValue(-n.value->toNumber()));
+        }
         break;
       }
       case Opcode::Not: {
@@ -520,16 +776,37 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
           return fail("Error: LoadProp requires a string constant");
         }
         const std::string &key = fn.constants[instr.arg].str;
-        if (!obj->isObject()) {
-          return fail("TypeError: Cannot read properties of non-object");
+        /* 原始值成员读取（§13.3.3 + §7.1.13）：先 ToObject 装箱查属性，
+         * 方法调用时 this 仍为原始值（getValue 返回原始值）。undefined/null
+         * 装箱失败 -> TypeError。 */
+        JSObject *target = nullptr;
+        if (obj->isObject()) {
+          target = obj->object();
+        } else if (obj->kind() == Kind::Undefined ||
+                   obj->kind() == Kind::Null) {
+          return fail("TypeError: Cannot read properties of " +
+                      (obj->kind() == Kind::Undefined ? std::string("undefined")
+                                                      : std::string("null")));
+        } else {
+          ConversionResult boxed = toObject(ctx, obj);
+          if (!boxed.ok()) return boxed;
+          target = boxed.value->object();
         }
         JSValue *val = nullptr;
-        if (obj->object()->isArray() && key == "length") {
+        if (target->isArray() && key == "length") {
           /* 数组 length 属性（M4.1）：由 elements 存储推导，非存储属性。 */
-          val = ctx->createValue(
-              static_cast<double>(obj->object()->length()));
+          val = ctx->createValue(static_cast<double>(target->length()));
+        } else if (target->isWrapper() &&
+                   target->kind() == ObjectKind::String && key == "length") {
+          /* String 包装对象/原始串的 length（§10.4.3.3）：非存储属性，
+           * 由 [[StringData]] 的 UTF-16 code unit 数推导。 */
+          JSValue *data = target->wrapperData();
+          val = (data != nullptr && data->kind() == Kind::String)
+                    ? ctx->createValue(
+                          static_cast<double>(utf16Length(data->toString())))
+                    : ctx->createValue(Kind::Undefined);
         } else {
-          val = obj->object()->getProperty(key);
+          val = target->getProperty(key);
         }
         stack.pop_back();
         stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
@@ -568,11 +845,8 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         if (stack.size() < 2) return fail("Error: stack underflow on LoadElem");
         JSValue *key = stack.back();
         JSValue *obj = stack[stack.size() - 2];
-        if (!obj->isObject()) {
-          return fail("TypeError: Cannot read properties of non-object");
-        }
         /* 数组整数索引快速路径（架构 §5.2：arr[i] -> elements）。 */
-        if (obj->object()->isArray() && key->isNumber()) {
+        if (obj->isObject() && obj->object()->isArray() && key->isNumber()) {
           double d = key->toNumber();
           if (d >= 0.0 && d == std::trunc(d) && d < 4294967296.0) {
             JSValue *val = obj->object()->getElement(static_cast<size_t>(d));
@@ -587,7 +861,48 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         if (pk.value->kind() == Kind::Symbol) {
           return fail("TypeError: symbol property keys not supported");
         }
-        JSValue *val = obj->object()->getProperty(pk.value->toString());
+        /* 字符串原始值/包装对象整数索引（§10.4.3.4 String exotic object）：
+         * 虚拟索引属性，由 [[StringData]] 的 code unit 推导。 */
+        if (pk.value->kind() == Kind::String &&
+            (obj->kind() == Kind::String ||
+             (obj->isObject() && obj->object()->kind() == ObjectKind::String))) {
+          const std::string &s =
+              obj->kind() == Kind::String
+                  ? obj->toString()
+                  : obj->object()->wrapperData()->toString();
+          const std::string &idx = pk.value->toString();
+          if (!idx.empty() &&
+              idx.find_first_not_of("0123456789") == std::string::npos) {
+            size_t len = utf16Length(s);
+            size_t i = 0;
+            /* 数字串转 size_t（防溢出：超长 -> 越界 undefined）。 */
+            if (idx.size() <= 18) {
+              i = static_cast<size_t>(std::strtoull(idx.c_str(), nullptr, 10));
+            }
+            if (i < len) {
+              JSValue *val = ctx->createValue(
+                  utf16Substring(s, i, i + 1)); /* 单 code unit 串 */
+              stack.resize(stack.size() - 2);
+              stack.push_back(val);
+              break;
+            }
+          }
+        }
+        /* 原始值成员读取（§13.3.3 + §7.1.13）：先 ToObject 装箱查属性。 */
+        JSObject *target = nullptr;
+        if (obj->isObject()) {
+          target = obj->object();
+        } else if (obj->kind() == Kind::Undefined ||
+                   obj->kind() == Kind::Null) {
+          return fail("TypeError: Cannot read properties of " +
+                      (obj->kind() == Kind::Undefined ? std::string("undefined")
+                                                      : std::string("null")));
+        } else {
+          ConversionResult boxed = toObject(ctx, obj);
+          if (!boxed.ok()) return boxed;
+          target = boxed.value->object();
+        }
+        JSValue *val = target->getProperty(pk.value->toString());
         stack.resize(stack.size() - 2);
         stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
         break;

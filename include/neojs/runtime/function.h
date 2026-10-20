@@ -111,6 +111,12 @@ class JSFunction : public JSObject {
   bool isConstructor() const { return construct_; }
   void setConstructor(bool c) { construct_ = c; }
 
+  /* 构造器包装 kind（M4.3f）：new String()/Number()/Boolean()/BigInt() 应
+   * 返回对应包装对象（String exotic object 等，§22.1.1.1 等）。
+   * Ordinary 表示普通对象（无特殊包装语义）。 */
+  ObjectKind constructWrapperKind() const { return construct_wrapper_kind_; }
+  void setConstructWrapperKind(ObjectKind k) { construct_wrapper_kind_ = k; }
+
   /* [[Environment]]（M2.5 闭包）：创建该函数时的词法环境。
    * 函数被调用时新建环境的 parent 指向它（环境链）。GC 引用边。 */
   JSEnvironment *environment() const { return environment_; }
@@ -140,6 +146,7 @@ class JSFunction : public JSObject {
   ThisMode this_mode_ = ThisMode::NonStrict;
   const char *name_ = nullptr;          /* 函数名（静态/堆字符串） */
   bool construct_ = false;              /* [[Construct]] 预留 */
+  ObjectKind construct_wrapper_kind_ = ObjectKind::Ordinary; /* new 返回包装对象 */
   FunctionBytecode bc_;                 /* Script 函数字节码（M2.4 ③） */
   JSEnvironment *environment_ = nullptr; /* [[Environment]]（M2.5 闭包） */
   JSValue *bound_target_ = nullptr;     /* [[BoundTargetFunction]]（M4.2） */

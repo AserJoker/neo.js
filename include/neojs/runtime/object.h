@@ -50,8 +50,8 @@ struct PropertyDescriptor {
 };
 
 /* 对象类别（架构 §5.2：数组 elements 分离存储；E4-2 加包装对象）。
- * Number/String/Boolean/Symbol 为原始值装箱（ToObject，§7.1.13），
- * 内部槽 data_ 持有被包装的原始值（GC 引用边）。 */
+ * Number/String/Boolean/Symbol/BigInt 为原始值装箱（ToObject，§7.1.13），
+ * 内部槽 data_ 持有被包装的原始值（GC 引用边）。M4.3e 加 BigInt 装箱。 */
 enum class ObjectKind : uint8_t {
   Ordinary,
   Array,
@@ -59,6 +59,7 @@ enum class ObjectKind : uint8_t {
   String,   /* 包装 String（[[StringData]]） */
   Boolean,  /* 包装 Boolean（[[BooleanData]]） */
   Symbol,   /* 包装 Symbol（[[SymbolData]]） */
+  BigInt,   /* 包装 BigInt（[[BigIntData]]，M4.3e） */
 };
 
 class JSObject : public GCHeader {
@@ -76,7 +77,8 @@ class JSObject : public GCHeader {
   bool isArray() const { return kind_ == ObjectKind::Array; }
   bool isWrapper() const { /* E4-2 装箱对象：内部持有原始值 */
     return kind_ == ObjectKind::Number || kind_ == ObjectKind::String ||
-           kind_ == ObjectKind::Boolean || kind_ == ObjectKind::Symbol;
+           kind_ == ObjectKind::Boolean || kind_ == ObjectKind::Symbol ||
+           kind_ == ObjectKind::BigInt;
   }
 
   /* 包装对象内部槽（E4-2）：[[NumberData]]/[[StringData]]/[[BooleanData]]/

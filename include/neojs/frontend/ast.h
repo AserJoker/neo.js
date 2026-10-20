@@ -174,7 +174,8 @@ struct LiteralPayload {
   bool is_boolean = false;
   bool bool_value = false;  /* is_boolean 时的值 */
   bool is_null = false;  /* null 字面量 */
-  bool is_bigint = false; /* BigInt 字面量（M2 用） */
+  bool is_bigint = false; /* BigInt 字面量（M4.3 启用） */
+  std::string bigint_str; /* BigInt 十进制数字串（无符号，M4.3） */
   std::string text;     /* 原始文本（供 dump） */
 };
 

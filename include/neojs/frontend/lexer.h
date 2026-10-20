@@ -68,6 +68,7 @@ struct Token {
   /* 数值载荷（Number） */
   double number = 0.0;     /* 数值（M1.1：十进制；M1.2 全进制转换后） */
   bool is_bigint = false;  /* 是否有 n 后缀 */
+  std::string bigint_str;  /* BigInt 十进制数字串（M4.3：去分隔符/进制转换后，无符号） */
   bool legacy_octal = false; /* 旧式八进制字面量（0123，Annex B）；严格模式报错（M1.6 ②） */
 
   /* 字符串载荷（String / TemplateStart/Part/End） */

@@ -32,6 +32,7 @@ namespace neojs {
 enum class Opcode : uint8_t {
   /* 常量/加载 */
   PushConst,       /* 压入常量池值：PushConst {pool_index} */
+  PushBigInt,      /* 压入 BigInt 常量：PushBigInt {pool_index}（M4.3） */
   PushUndefined,   /* 压入 undefined */
   PushNull,        /* 压入 null */
   PushTrue,        /* 压入 true */
@@ -112,11 +113,14 @@ struct Instruction {
   uint16_t arg = 0;
 };
 
-/* 常量池条目：数字或字符串（PushConst/LoadGlobal 经索引引用）。 */
+/* 常量池条目：数字/字符串/BigInt（PushConst/LoadGlobal/PushBigInt 经索引引用）。 */
 struct Constant {
   bool is_number = false; /* true = number 载荷；false = 字符串载荷 */
+  bool is_bigint = false; /* true = BigInt 载荷（M4.3：is_number 与 str 无效） */
   double number = 0.0;
   std::string str;
+  std::string bigint_digits; /* BigInt 十进制数字串（无符号，M4.3） */
+  bool bigint_neg = false;   /* BigInt 符号位（M4.3） */
 };
 
 /* 捕获的外层变量（M2.5 闭包）：编译期静态解析。
@@ -165,6 +169,9 @@ class BytecodeBuilder {
   }
   void push_number(double d) {
     push_op(Opcode::PushConst, add_number(d));
+  }
+  void push_bigint(const std::string &digits, bool neg) {
+    push_op(Opcode::PushBigInt, add_bigint(digits, neg));
   }
   void push_int(int16_t v) { push_op(Opcode::PushInt, static_cast<uint16_t>(v)); }
   void load_var(uint16_t slot) { push_op(Opcode::LoadVar, slot); }
@@ -231,6 +238,7 @@ class BytecodeBuilder {
   /* 常量池：按值去重，返回池索引。 */
   uint16_t add_constant(const std::string &s);
   uint16_t add_number(double d);
+  uint16_t add_bigint(const std::string &digits, bool neg);
 
   /* 局部变量槽数（Compiler 设置）。 */
   void set_num_locals(uint16_t n) { fn_.numLocals = n; }

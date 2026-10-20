@@ -965,6 +965,7 @@ ASTNode *Parser::parseLiteral() {
       n->literal.number = tok.number;
       n->literal.is_number = true;
       n->literal.is_bigint = tok.is_bigint;
+      n->literal.bigint_str = tok.bigint_str; /* M4.3：BigInt 十进制数字串 */
       n->literal.text = tok.text;
       advance();
       return n;

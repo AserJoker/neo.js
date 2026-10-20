@@ -63,7 +63,49 @@ struct ParsedNumber {
   double value = 0.0;
   bool ok = false;
   bool is_bigint = false;
+  std::string bigint_digits; /* BigInt 十进制数字串（无符号；非十进制时进制转换，M4.3） */
 };
+
+/* 十进制大数字符串加法：s += v（v 为 0-9）。任意精度（BigInt 字面量转换用）。 */
+void bigintAddDigit(std::string &s, unsigned v) {
+  if (s == "0" && v == 0) return;
+  int carry = static_cast<int>(v);
+  for (int i = static_cast<int>(s.size()) - 1; i >= 0 && carry > 0; --i) {
+    int d = (s[i] - '0') + carry;
+    s[i] = static_cast<char>('0' + (d % 10));
+    carry = d / 10;
+  }
+  if (carry > 0) s.insert(s.begin(), static_cast<char>('0' + carry));
+}
+
+/* 十进制大数字符串乘：s *= base（base 为 2/8/16 等）。任意精度。 */
+void bigintMul(std::string &s, unsigned base) {
+  int carry = 0;
+  for (int i = static_cast<int>(s.size()) - 1; i >= 0; --i) {
+    int d = (s[i] - '0') * static_cast<int>(base) + carry;
+    s[i] = static_cast<char>('0' + (d % 10));
+    carry = d / 10;
+  }
+  while (carry > 0) {
+    s.insert(s.begin(), static_cast<char>('0' + (carry % 10)));
+    carry /= 10;
+  }
+}
+
+/* 非十进制数字串 -> 十进制大数字符串：逐位 s = s*base + digit（M4.3）。
+ * body 为去前缀后的数字+分隔符串。 */
+std::string bigintFromBase(const std::string &body, size_t start, int base) {
+  std::string s = "0";
+  for (size_t i = start; i < body.size(); ++i) {
+    char ch = body[i];
+    if (ch == '_') continue;
+    int hv = hexValue(static_cast<unsigned char>(ch));
+    if (hv < 0 || hv >= base) break; /* 调用方已校验，防御性 */
+    bigintMul(s, static_cast<unsigned>(base));
+    bigintAddDigit(s, static_cast<unsigned>(hv));
+  }
+  return s;
+}
 
 ParsedNumber parseNumber(const std::string &text) {
   ParsedNumber r;
@@ -103,8 +145,12 @@ ParsedNumber parseNumber(const std::string &text) {
     }
     if (!saw || last_sep) return r;
     r.value = value;
-    r.ok = true;
     r.is_bigint = bigint;
+    if (bigint) {
+      /* 非十进制 BigInt：任意精度十进制转换（double 会丢精度）。 */
+      r.bigint_digits = bigintFromBase(body, start, base);
+    }
+    r.ok = true;
     return r;
   }
 
@@ -134,6 +180,10 @@ ParsedNumber parseNumber(const std::string &text) {
   r.value = std::strtod(clean.c_str(), &end);
   r.ok = (end == clean.c_str() + clean.size());
   r.is_bigint = bigint;
+  if (bigint) {
+    /* 十进制 BigInt：去分隔符后的数字串（scanNumber 保证无小数/指数）。 */
+    r.bigint_digits = clean;
+  }
   return r;
 }
 
@@ -369,6 +419,7 @@ void Lexer::scanNumber() {
       } else {
         t.number = r.value;
         t.is_bigint = r.is_bigint;
+        t.bigint_str = r.bigint_digits;
       }
       current_ = std::move(t);
       return;
@@ -437,6 +488,7 @@ void Lexer::scanNumber() {
     } else {
       t.number = r.value;
       t.is_bigint = r.is_bigint;
+      t.bigint_str = r.bigint_digits;
       t.legacy_octal = legacy_octal; /* 0123 形式：严格模式报错（Parser 检查） */
       /* 非严格模式发废弃警告（DEP-0002）；严格模式由 Parser 报错 */
       if (legacy_octal) {

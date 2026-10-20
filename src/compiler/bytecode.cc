@@ -47,9 +47,11 @@ void BytecodeBuilder::bind_label(BcLabel &label) {
 }
 
 uint16_t BytecodeBuilder::add_constant(const std::string &s) {
-  /* 字符串常量：按值去重（is_number == false 的条目才参与匹配）。 */
+  /* 字符串常量：按值去重（is_number / is_bigint 均不参与匹配——
+   * BigInt 条目复用 str 字段存空串，避免误命中）。 */
   for (size_t i = 0; i < fn_.constants.size(); ++i) {
-    if (!fn_.constants[i].is_number && fn_.constants[i].str == s) {
+    if (!fn_.constants[i].is_number && !fn_.constants[i].is_bigint &&
+        fn_.constants[i].str == s) {
       return static_cast<uint16_t>(i);
     }
   }
@@ -60,15 +62,33 @@ uint16_t BytecodeBuilder::add_constant(const std::string &s) {
 }
 
 uint16_t BytecodeBuilder::add_number(double d) {
-  /* 数字常量：按值去重（is_number 条目且 number 相等）。 */
+  /* 数字常量：按值去重（is_number 条目且 number 相等；排除 is_bigint）。 */
   for (size_t i = 0; i < fn_.constants.size(); ++i) {
-    if (fn_.constants[i].is_number && fn_.constants[i].number == d) {
+    if (fn_.constants[i].is_number && !fn_.constants[i].is_bigint &&
+        fn_.constants[i].number == d) {
       return static_cast<uint16_t>(i);
     }
   }
   Constant c;
   c.is_number = true;
   c.number = d;
+  fn_.constants.push_back(std::move(c));
+  return static_cast<uint16_t>(fn_.constants.size() - 1);
+}
+
+uint16_t BytecodeBuilder::add_bigint(const std::string &digits, bool neg) {
+  /* BigInt 常量：按值去重（is_bigint 条目且 digits+符号相等）。 */
+  for (size_t i = 0; i < fn_.constants.size(); ++i) {
+    if (fn_.constants[i].is_bigint &&
+        fn_.constants[i].bigint_digits == digits &&
+        fn_.constants[i].bigint_neg == neg) {
+      return static_cast<uint16_t>(i);
+    }
+  }
+  Constant c;
+  c.is_bigint = true;
+  c.bigint_digits = digits;
+  c.bigint_neg = neg;
   fn_.constants.push_back(std::move(c));
   return static_cast<uint16_t>(fn_.constants.size() - 1);
 }

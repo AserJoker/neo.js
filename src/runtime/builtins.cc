@@ -30,6 +30,7 @@
 
 #include "neojs/runtime/builtins.h"
 
+#include <charconv>
 #include <cmath>
 #include <string>
 
@@ -38,6 +39,7 @@
 #include "neojs/runtime/function.h"
 #include "neojs/runtime/object.h"
 #include "neojs/runtime/operators.h"
+#include "neojs/runtime/utf16.h"
 #include "neojs/runtime/value.h"
 
 namespace neojs {
@@ -58,9 +60,14 @@ ConversionResult fail(const std::string &error) {
 }
 
 /* 创建内置函数（Builtin 类别）：JSFunction + 包装 JSValue + 反向指针。
- * 内部值指针语义（区别于 Host 句柄语义，见 function.h）。 */
+ * 内部值指针语义（区别于 Host 句柄语义，见 function.h）。
+ * 原型链 -> Function.prototype（惰性创建缓存）：内置函数同样可调
+ * call/apply/bind（与 Script 函数一致，M4.2）。 */
 JSValue *makeBuiltin(JSContext *ctx, JSBuiltinFn fn, ThisMode mode) {
-  JSFunction *f = ctx->heap().allocGCObject<JSFunction>(nullptr, fn, mode);
+  JSObject *fproto = nullptr;
+  JSValue *fp = functionProto(ctx);
+  if (fp != nullptr) fproto = fp->object();
+  JSFunction *f = ctx->heap().allocGCObject<JSFunction>(fproto, fn, mode);
   ctx->heap().pin(f); /* 分配保护（M3.3）：两段式创建中间窗口防误回收 */
   JSValue *v = ctx->heap().allocGCObject<JSValue>();
   v->setObject(f);
@@ -235,6 +242,570 @@ ConversionResult stringToStringBuiltin(JSContext *ctx, JSValue *thisVal,
       "String.prototype.toString called on incompatible receiver");
 }
 
+/* -------------------------------------------------------------------------- */
+/* String.prototype 方法补齐（M4.3f，§22.1.3）                                */
+/* -------------------------------------------------------------------------- */
+
+/* thisStringCoercible：RequireObjectCoercible(O) + ToString(O)。
+ * 所有通用 String 方法的第一步（§22.1.3）：this 不必是 String，可转移
+ * 到任意对象；undefined/null -> TypeError。返回 UTF-8 串副本。 */
+ConversionResult thisStringCoercible(JSContext *ctx, JSValue *thisVal,
+                                     std::string &out) {
+  if (thisVal == nullptr || thisVal->kind() == Kind::Undefined ||
+      thisVal->kind() == Kind::Null) {
+    return fail("TypeError: Cannot convert undefined or null to object");
+  }
+  ConversionResult s = toString(ctx, thisVal);
+  if (!s.ok()) return s;
+  out = s.value->toString();
+  return ok(s.value); /* 返回原始值便于复用（调用方取 out 拷贝） */
+}
+
+/* ToString(arg)，缺参（argc 边界 nullptr）按 undefined 处理（§22.1.3
+ * 的 ToString(searchStr) 等步骤：缺参等价于传入 undefined）。
+ * 内置函数经 function.cc 把缺参位置填充为 nullptr，需在此归一化。 */
+ConversionResult toStringOrUndefined(JSContext *ctx, JSValue *arg) {
+  if (arg == nullptr || arg->kind() == Kind::Undefined) {
+    return ok(ctx->createValue(std::string("undefined")));
+  }
+  return toString(ctx, arg);
+}
+
+/* ToIntegerOrInfinity（§7.1.5）：ToNumber 后 NaN/±0 -> 0、±∞ -> ±∞、
+ * 否则向零截断。供 at/charAt/.../repeat 等的索引/次数参数。 */
+double toIntegerOrInfinity(JSContext *ctx, JSValue *arg) {
+  if (arg == nullptr || arg->kind() == Kind::Undefined) return 0.0;
+  ConversionResult n = toNumber(ctx, arg);
+  if (!n.ok()) return 0.0; /* 转换失败（Symbol）：NaN 语义近似 0 */
+  double d = n.value->toNumber();
+  if (std::isnan(d) || d == 0.0) return 0.0;
+  if (std::isinf(d)) return d;
+  return std::trunc(d);
+}
+
+/* ToLength（§7.1.20）：ToIntegerOrInfinity 后 <=0 -> +0，否则
+ * min(len, 2^53-1)。供 padStart/padEnd 的 maxLength。 */
+double toLength(JSContext *ctx, JSValue *arg) {
+  double d = toIntegerOrInfinity(ctx, arg);
+  if (d <= 0.0) return 0.0;
+  const double maxLen = 9007199254740991.0; /* 2^53 - 1 */
+  return d > maxLen ? maxLen : d;
+}
+
+/* ToUint32（§7.1.7）：ToNumber 后取模 2^32（split 的 limit）。 */
+uint32_t toUint32(JSContext *ctx, JSValue *arg) {
+  double d = toIntegerOrInfinity(ctx, arg);
+  double mod = std::fmod(d, 4294967296.0);
+  if (mod < 0.0) mod += 4294967296.0;
+  return static_cast<uint32_t>(mod);
+}
+
+/* GetSubstitution（§22.1.3.19.1，字符串替换模式）。captures 恒空（无正则）。 */
+std::string substitution(const std::string &tmpl, const std::string &matched,
+                         const std::string &str, std::size_t position) {
+  std::string result;
+  size_t i = 0;
+  const size_t n = tmpl.size();
+  while (i < n) {
+    if (tmpl[i] != '$' || i + 1 >= n) {
+      result += tmpl[i];
+      ++i;
+      continue;
+    }
+    char c = tmpl[i + 1];
+    if (c == '$') {
+      result += '$';
+      i += 2;
+    } else if (c == '&') {
+      result += matched;
+      i += 2;
+    } else if (c == '`') {
+      result += str.substr(0, utf16IndexToByte(str, position));
+      i += 2;
+    } else if (c == '\'') {
+      std::string tail = utf16Substring(str, position + utf16Length(matched),
+                                        utf16Length(str));
+      result += tail;
+      i += 2;
+    } else if (c >= '0' && c <= '9') {
+      /* 无捕获组：$n 原样保留（规范：index > captureLen 时按字面量）。 */
+      result += tmpl[i];
+      result += tmpl[i + 1];
+      i += 2;
+    } else {
+      result += tmpl[i];
+      ++i;
+    }
+  }
+  return result;
+}
+
+/* String.prototype.at（§22.1.3.1）：相对索引（负数从尾数），越界 undefined。 */
+ConversionResult stringAt(JSContext *ctx, JSValue *thisVal,
+                          JSValue *const *args, size_t argc) {
+  std::string s;
+  ConversionResult r = thisStringCoercible(ctx, thisVal, s);
+  if (!r.ok()) return r;
+  double rel = toIntegerOrInfinity(ctx, (argc > 0) ? args[0] : nullptr);
+  size_t len = utf16Length(s);
+  double k = rel >= 0.0 ? rel : static_cast<double>(len) + rel;
+  if (k < 0.0 || k >= static_cast<double>(len)) {
+    return ok(ctx->createValue(Kind::Undefined));
+  }
+  return ok(ctx->createValue(utf16Substring(s, static_cast<size_t>(k),
+                                            static_cast<size_t>(k) + 1)));
+}
+
+/* String.prototype.charAt（§22.1.3.2）：pos 处单 code unit 串；越界空串。 */
+ConversionResult stringCharAt(JSContext *ctx, JSValue *thisVal,
+                              JSValue *const *args, size_t argc) {
+  std::string s;
+  ConversionResult r = thisStringCoercible(ctx, thisVal, s);
+  if (!r.ok()) return r;
+  double pos = toIntegerOrInfinity(ctx, (argc > 0) ? args[0] : nullptr);
+  size_t len = utf16Length(s);
+  if (pos < 0.0 || pos >= static_cast<double>(len)) {
+    return ok(ctx->createValue(std::string("")));
+  }
+  return ok(ctx->createValue(utf16Substring(s, static_cast<size_t>(pos),
+                                            static_cast<size_t>(pos) + 1)));
+}
+
+/* String.prototype.charCodeAt（§22.1.3.3）：pos 处 code unit 数值；越界 NaN。 */
+ConversionResult stringCharCodeAt(JSContext *ctx, JSValue *thisVal,
+                                  JSValue *const *args, size_t argc) {
+  std::string s;
+  ConversionResult r = thisStringCoercible(ctx, thisVal, s);
+  if (!r.ok()) return r;
+  double pos = toIntegerOrInfinity(ctx, (argc > 0) ? args[0] : nullptr);
+  size_t len = utf16Length(s);
+  if (pos < 0.0 || pos >= static_cast<double>(len)) {
+    return ok(ctx->createValue(NAN));
+  }
+  int32_t c = utf16CharCodeAt(s, static_cast<size_t>(pos));
+  return ok(ctx->createValue(static_cast<double>(c)));
+}
+
+/* String.prototype.codePointAt（§22.1.3.4）：pos 处完整码点（代理对合并）；
+ * 越界 undefined；孤立代理返回该 code unit 值。 */
+ConversionResult stringCodePointAt(JSContext *ctx, JSValue *thisVal,
+                                   JSValue *const *args, size_t argc) {
+  std::string s;
+  ConversionResult r = thisStringCoercible(ctx, thisVal, s);
+  if (!r.ok()) return r;
+  double pos = toIntegerOrInfinity(ctx, (argc > 0) ? args[0] : nullptr);
+  size_t len = utf16Length(s);
+  if (pos < 0.0 || pos >= static_cast<double>(len)) {
+    return ok(ctx->createValue(Kind::Undefined));
+  }
+  size_t i = static_cast<size_t>(pos);
+  int32_t hi = utf16CharCodeAt(s, i);
+  if (hi >= 0xD800 && hi <= 0xDBFF && i + 1 < len) {
+    int32_t lo = utf16CharCodeAt(s, i + 1);
+    if (lo >= 0xDC00 && lo <= 0xDFFF) {
+      int32_t cp = 0x10000 + ((hi - 0xD800) << 10) + (lo - 0xDC00);
+      return ok(ctx->createValue(static_cast<double>(cp)));
+    }
+  }
+  return ok(ctx->createValue(static_cast<double>(hi)));
+}
+
+/* String.prototype.concat（§22.1.3.5）：this 串拼接全部参数。 */
+ConversionResult stringConcat(JSContext *ctx, JSValue *thisVal,
+                              JSValue *const *args, size_t argc) {
+  std::string s;
+  ConversionResult r = thisStringCoercible(ctx, thisVal, s);
+  if (!r.ok()) return r;
+  for (size_t i = 0; i < argc; ++i) {
+    ConversionResult t = toStringOrUndefined(ctx, args[i]);
+    if (!t.ok()) return t;
+    s += t.value->toString();
+  }
+  return ok(ctx->createValue(std::move(s)));
+}
+
+/* String.prototype.endsWith（§22.1.3.7）：S 以 searchStr 结尾（endPosition 处截断）。 */
+ConversionResult stringEndsWith(JSContext *ctx, JSValue *thisVal,
+                                JSValue *const *args, size_t argc) {
+  std::string s;
+  ConversionResult r = thisStringCoercible(ctx, thisVal, s);
+  if (!r.ok()) return r;
+  ConversionResult search = toStringOrUndefined(ctx, (argc > 0) ? args[0] : nullptr);
+  if (!search.ok()) return search;
+  const std::string &needle = search.value->toString();
+  size_t len = utf16Length(s);
+  double pos = (argc > 1 && args[1] != nullptr &&
+                args[1]->kind() != Kind::Undefined)
+                   ? toIntegerOrInfinity(ctx, args[1])
+                   : static_cast<double>(len);
+  double end = pos < 0.0 ? 0.0 : (pos > static_cast<double>(len)
+                                      ? static_cast<double>(len)
+                                      : pos);
+  size_t searchLen = utf16Length(needle);
+  if (searchLen == 0) return ok(ctx->createValue(true));
+  if (static_cast<double>(searchLen) > end) {
+    return ok(ctx->createValue(false));
+  }
+  size_t start = static_cast<size_t>(end) - searchLen;
+  std::string sub = utf16Substring(s, start, static_cast<size_t>(end));
+  return ok(ctx->createValue(sub == needle));
+}
+
+/* String.prototype.includes（§22.1.3.8）：S 在 position 起包含 searchStr。 */
+ConversionResult stringIncludes(JSContext *ctx, JSValue *thisVal,
+                                JSValue *const *args, size_t argc) {
+  std::string s;
+  ConversionResult r = thisStringCoercible(ctx, thisVal, s);
+  if (!r.ok()) return r;
+  ConversionResult search = toStringOrUndefined(ctx, (argc > 0) ? args[0] : nullptr);
+  if (!search.ok()) return search;
+  const std::string &needle = search.value->toString();
+  double pos = toIntegerOrInfinity(ctx, (argc > 1) ? args[1] : nullptr);
+  size_t len = utf16Length(s);
+  double start = pos < 0.0 ? 0.0 : (pos > static_cast<double>(len)
+                                        ? static_cast<double>(len)
+                                        : pos);
+  size_t idx = utf16IndexOf(s, needle, static_cast<size_t>(start));
+  return ok(ctx->createValue(idx != std::string::npos));
+}
+
+/* String.prototype.indexOf（§22.1.3.9）：S 中 searchStr 首次出现索引；未找到 -1。 */
+ConversionResult stringIndexOf(JSContext *ctx, JSValue *thisVal,
+                               JSValue *const *args, size_t argc) {
+  std::string s;
+  ConversionResult r = thisStringCoercible(ctx, thisVal, s);
+  if (!r.ok()) return r;
+  ConversionResult search = toStringOrUndefined(ctx, (argc > 0) ? args[0] : nullptr);
+  if (!search.ok()) return search;
+  const std::string &needle = search.value->toString();
+  double pos = toIntegerOrInfinity(ctx, (argc > 1) ? args[1] : nullptr);
+  size_t len = utf16Length(s);
+  double start = pos < 0.0 ? 0.0 : (pos > static_cast<double>(len)
+                                        ? static_cast<double>(len)
+                                        : pos);
+  size_t idx = utf16IndexOf(s, needle, static_cast<size_t>(start));
+  if (idx == std::string::npos) return ok(ctx->createValue(-1.0));
+  return ok(ctx->createValue(static_cast<double>(idx)));
+}
+
+/* String.prototype.lastIndexOf（§22.1.3.11）：searchStr 最后出现位置；
+ * position 默认 +∞（从尾搜）；ToNumber 语义（undefined -> NaN -> +∞）。 */
+ConversionResult stringLastIndexOf(JSContext *ctx, JSValue *thisVal,
+                                   JSValue *const *args, size_t argc) {
+  std::string s;
+  ConversionResult r = thisStringCoercible(ctx, thisVal, s);
+  if (!r.ok()) return r;
+  ConversionResult search = toStringOrUndefined(ctx, (argc > 0) ? args[0] : nullptr);
+  if (!search.ok()) return search;
+  const std::string &needle = search.value->toString();
+  double numPos = NAN;
+  if (argc > 1 && args[1] != nullptr && args[1]->kind() != Kind::Undefined) {
+    ConversionResult n = toNumber(ctx, args[1]);
+    if (!n.ok()) return n;
+    numPos = n.value->toNumber();
+  }
+  double pos = std::isnan(numPos) ? INFINITY : std::trunc(numPos);
+  size_t len = utf16Length(s);
+  size_t searchLen = utf16Length(needle);
+  if (len < searchLen) return ok(ctx->createValue(-1.0));
+  double maxStart = static_cast<double>(len - searchLen);
+  double startD = pos < 0.0 ? 0.0 : (pos > maxStart ? maxStart : pos);
+  size_t idx = utf16LastIndexOf(s, needle, static_cast<size_t>(startD));
+  if (idx == std::string::npos) return ok(ctx->createValue(-1.0));
+  return ok(ctx->createValue(static_cast<double>(idx)));
+}
+
+/* String.prototype.padStart/padEnd（§22.1.3.17/.16）：填充到 maxLength。 */
+ConversionResult stringPad(JSContext *ctx, JSValue *thisVal, bool start,
+                           JSValue *const *args, size_t argc) {
+  std::string s;
+  ConversionResult r = thisStringCoercible(ctx, thisVal, s);
+  if (!r.ok()) return r;
+  double intMax = toLength(ctx, (argc > 0) ? args[0] : nullptr);
+  size_t stringLen = utf16Length(s);
+  if (intMax <= static_cast<double>(stringLen)) return ok(ctx->createValue(s));
+  std::string fill = " ";
+  if (argc > 1 && args[1] != nullptr && args[1]->kind() != Kind::Undefined) {
+    ConversionResult f = toString(ctx, args[1]);
+    if (!f.ok()) return f;
+    fill = f.value->toString();
+  }
+  if (fill.empty()) return ok(ctx->createValue(s));
+  size_t fillLen = static_cast<size_t>(intMax) - stringLen;
+  size_t fillUnits = utf16Length(fill);
+  if (fillUnits == 0) return ok(ctx->createValue(s));
+  /* 截断填充串到 fillLen code units（§22.1.3.17.2 步骤 5）。 */
+  std::string filler;
+  size_t remaining = fillLen;
+  while (remaining > 0) {
+    size_t take = std::min(remaining, fillUnits);
+    filler += utf16Substring(fill, 0, take);
+    remaining -= take;
+  }
+  return ok(ctx->createValue(start ? filler + s : s + filler));
+}
+
+ConversionResult stringPadStart(JSContext *ctx, JSValue *thisVal,
+                                JSValue *const *args, size_t argc) {
+  return stringPad(ctx, thisVal, true, args, argc);
+}
+
+ConversionResult stringPadEnd(JSContext *ctx, JSValue *thisVal,
+                              JSValue *const *args, size_t argc) {
+  return stringPad(ctx, thisVal, false, args, argc);
+}
+
+/* String.prototype.repeat（§22.1.3.18）：count 份 S 拼接；负数/∞ -> RangeError。 */
+ConversionResult stringRepeat(JSContext *ctx, JSValue *thisVal,
+                              JSValue *const *args, size_t argc) {
+  std::string s;
+  ConversionResult r = thisStringCoercible(ctx, thisVal, s);
+  if (!r.ok()) return r;
+  double n = toIntegerOrInfinity(ctx, (argc > 0) ? args[0] : nullptr);
+  if (n < 0.0 || std::isinf(n)) {
+    return fail("RangeError: Invalid count value");
+  }
+  if (n == 0.0) return ok(ctx->createValue(std::string("")));
+  std::string out;
+  out.reserve(s.size() * static_cast<size_t>(n));
+  for (size_t i = 0; i < static_cast<size_t>(n); ++i) out += s;
+  return ok(ctx->createValue(std::move(out)));
+}
+
+/* String.prototype.replace（§22.1.3.19）：首处替换。
+ * v1 简化：不做 Symbol.replace 方法分派（RegExp 未实现）；
+ * replaceValue 支持字符串（含 $ 替换模式）；函数替换本阶段按 ToString
+ * 处理（与 V8 有差异，标注已知差距——函数转源码串）。 */
+ConversionResult stringReplace(JSContext *ctx, JSValue *thisVal,
+                               JSValue *const *args, size_t argc) {
+  std::string s;
+  ConversionResult r = thisStringCoercible(ctx, thisVal, s);
+  if (!r.ok()) return r;
+  /* searchValue：本阶段只处理字符串（RegExp 未实现 -> ToString 简化）。 */
+  ConversionResult search = toStringOrUndefined(ctx, (argc > 0) ? args[0] : nullptr);
+  if (!search.ok()) return search;
+  const std::string &needle = search.value->toString();
+  ConversionResult repl =
+      toStringOrUndefined(ctx, (argc > 1) ? args[1] : nullptr);
+  if (!repl.ok()) return repl;
+  const std::string &templateStr = repl.value->toString();
+  if (needle.empty()) {
+    /* 空 search：匹配 S 开头（position 0），替换后接原串。 */
+    std::string out = substitution(templateStr, needle, s, 0);
+    out += s;
+    return ok(ctx->createValue(std::move(out)));
+  }
+  size_t pos = utf16IndexOf(s, needle, 0);
+  if (pos == std::string::npos) return ok(ctx->createValue(s));
+  size_t b0 = utf16IndexToByte(s, pos);
+  std::string preceding = s.substr(0, b0);
+  std::string following = utf16Substring(s, pos + utf16Length(needle),
+                                         utf16Length(s));
+  std::string replacement =
+      substitution(templateStr, needle, s, static_cast<size_t>(pos));
+  return ok(ctx->createValue(preceding + replacement + following));
+}
+
+/* String.prototype.slice（§22.1.3.22）：负索引从尾数；end 默认串尾。 */
+ConversionResult stringSlice(JSContext *ctx, JSValue *thisVal,
+                             JSValue *const *args, size_t argc) {
+  std::string s;
+  ConversionResult r = thisStringCoercible(ctx, thisVal, s);
+  if (!r.ok()) return r;
+  size_t len = utf16Length(s);
+  double intStart = toIntegerOrInfinity(ctx, (argc > 0) ? args[0] : nullptr);
+  double fromD;
+  if (std::isinf(intStart) && intStart < 0) {
+    fromD = 0.0;
+  } else if (intStart < 0.0) {
+    fromD = std::max(static_cast<double>(len) + intStart, 0.0);
+  } else {
+    fromD = std::min(intStart, static_cast<double>(len));
+  }
+  double intEnd = (argc > 1 && args[1] != nullptr &&
+                   args[1]->kind() != Kind::Undefined)
+                      ? toIntegerOrInfinity(ctx, args[1])
+                      : static_cast<double>(len);
+  double toD;
+  if (std::isinf(intEnd) && intEnd < 0) {
+    toD = 0.0;
+  } else if (intEnd < 0.0) {
+    toD = std::max(static_cast<double>(len) + intEnd, 0.0);
+  } else {
+    toD = std::min(intEnd, static_cast<double>(len));
+  }
+  if (fromD >= toD) return ok(ctx->createValue(std::string("")));
+  return ok(ctx->createValue(utf16Substring(
+      s, static_cast<size_t>(fromD), static_cast<size_t>(toD))));
+}
+
+/* String.prototype.split（§22.1.3.23）：按分隔符切分。
+ * v1：仅字符串分隔符（RegExp 未实现）；空分隔符 -> 单 code unit 元素；
+ * limit 按 ToUint32；separator undefined -> [S]。 */
+ConversionResult stringSplit(JSContext *ctx, JSValue *thisVal,
+                             JSValue *const *args, size_t argc) {
+  std::string s;
+  ConversionResult r = thisStringCoercible(ctx, thisVal, s);
+  if (!r.ok()) return r;
+  /* limit（§22.1.3.23 步骤 5）：undefined -> 2^32-1，否则 ToUint32。 */
+  uint32_t lim = 0xFFFFFFFFu;
+  if (argc > 1 && args[1] != nullptr && args[1]->kind() != Kind::Undefined) {
+    lim = toUint32(ctx, args[1]);
+  }
+  JSValue *arr = ctx->createArray(0);
+  size_t len = utf16Length(s);
+  /* separator undefined -> [S]（步骤 8）。 */
+  bool sepUndef = argc == 0 || args[0] == nullptr ||
+                  args[0]->kind() == Kind::Undefined;
+  if (lim == 0) return ok(arr); /* 空结果 */
+  if (sepUndef) {
+    if (s.empty()) return ok(arr); /* 空串 split undefined -> [ ] */
+    arr->object()->setElement(0, ctx->createValue(s));
+    return ok(arr);
+  }
+  ConversionResult sep = toString(ctx, args[0]);
+  if (!sep.ok()) return sep;
+  const std::string &sepStr = sep.value->toString();
+  size_t sepLen = utf16Length(sepStr);
+  if (s.empty()) {
+    /* 空串：分隔符为空也匹配 -> 空结果；否则 [""]。 */
+    if (sepLen == 0) return ok(arr);
+    arr->object()->setElement(0, ctx->createValue(std::string("")));
+    return ok(arr);
+  }
+  if (sepLen == 0) {
+    /* 空分隔符：拆成单 code unit（步骤 10，head 限 lim 个）。 */
+    size_t outLen = std::min(static_cast<size_t>(lim), len);
+    for (size_t i = 0; i < outLen; ++i) {
+      arr->object()->setElement(
+          i, ctx->createValue(utf16Substring(s, i, i + 1)));
+    }
+    return ok(arr);
+  }
+  size_t i = 0;
+  size_t count = 0;
+  size_t j = utf16IndexOf(s, sepStr, 0);
+  while (j != std::string::npos) {
+    arr->object()->setElement(
+        count++, ctx->createValue(utf16Substring(s, i, j)));
+    if (count == lim) return ok(arr);
+    i = j + sepLen;
+    j = utf16IndexOf(s, sepStr, i);
+  }
+  arr->object()->setElement(
+      count, ctx->createValue(utf16Substring(s, i, len)));
+  return ok(arr);
+}
+
+/* String.prototype.startsWith（§22.1.3.24）：S 从 position 起以 searchStr 开头。 */
+ConversionResult stringStartsWith(JSContext *ctx, JSValue *thisVal,
+                                  JSValue *const *args, size_t argc) {
+  std::string s;
+  ConversionResult r = thisStringCoercible(ctx, thisVal, s);
+  if (!r.ok()) return r;
+  ConversionResult search = toStringOrUndefined(ctx, (argc > 0) ? args[0] : nullptr);
+  if (!search.ok()) return search;
+  const std::string &needle = search.value->toString();
+  double pos = (argc > 1 && args[1] != nullptr &&
+                args[1]->kind() != Kind::Undefined)
+                   ? toIntegerOrInfinity(ctx, args[1])
+                   : 0.0;
+  size_t len = utf16Length(s);
+  double start = pos < 0.0 ? 0.0 : (pos > static_cast<double>(len)
+                                        ? static_cast<double>(len)
+                                        : pos);
+  size_t searchLen = utf16Length(needle);
+  if (searchLen == 0) return ok(ctx->createValue(true));
+  double end = start + static_cast<double>(searchLen);
+  if (end > static_cast<double>(len)) return ok(ctx->createValue(false));
+  std::string sub = utf16Substring(s, static_cast<size_t>(start),
+                                   static_cast<size_t>(end));
+  return ok(ctx->createValue(sub == needle));
+}
+
+/* String.prototype.substring（§22.1.3.25）：夹取 + start>end 交换。 */
+ConversionResult stringSubstring(JSContext *ctx, JSValue *thisVal,
+                                 JSValue *const *args, size_t argc) {
+  std::string s;
+  ConversionResult r = thisStringCoercible(ctx, thisVal, s);
+  if (!r.ok()) return r;
+  size_t len = utf16Length(s);
+  double intStart = toIntegerOrInfinity(ctx, (argc > 0) ? args[0] : nullptr);
+  double intEnd = (argc > 1 && args[1] != nullptr &&
+                   args[1]->kind() != Kind::Undefined)
+                      ? toIntegerOrInfinity(ctx, args[1])
+                      : static_cast<double>(len);
+  auto clamp = [&](double d) {
+    if (d < 0.0) return 0.0;
+    if (d > static_cast<double>(len)) return static_cast<double>(len);
+    return d;
+  };
+  double fs = clamp(intStart);
+  double fe = clamp(intEnd);
+  double from = std::min(fs, fe);
+  double to = std::max(fs, fe);
+  return ok(ctx->createValue(
+      utf16Substring(s, static_cast<size_t>(from), static_cast<size_t>(to))));
+}
+
+/* String.prototype.toLowerCase/toUpperCase（§22.1.3.28/.30）：
+ * Unicode Default Case Conversion（ICU root locale）。 */
+ConversionResult stringToLowerCase(JSContext *ctx, JSValue *thisVal,
+                                   JSValue *const *, size_t) {
+  std::string s;
+  ConversionResult r = thisStringCoercible(ctx, thisVal, s);
+  if (!r.ok()) return r;
+  return ok(ctx->createValue(utf16ToLower(s)));
+}
+
+ConversionResult stringToUpperCase(JSContext *ctx, JSValue *thisVal,
+                                   JSValue *const *, size_t) {
+  std::string s;
+  ConversionResult r = thisStringCoercible(ctx, thisVal, s);
+  if (!r.ok()) return r;
+  return ok(ctx->createValue(utf16ToUpper(s)));
+}
+
+/* TrimString（§22.1.3.32.1）：按 UTF-16 code unit 判断空白。 */
+ConversionResult stringTrim(JSContext *ctx, JSValue *thisVal, bool start,
+                            bool end) {
+  std::string s;
+  ConversionResult r = thisStringCoercible(ctx, thisVal, s);
+  if (!r.ok()) return r;
+  size_t len = utf16Length(s);
+  size_t lo = 0;
+  size_t hi = len;
+  if (start) {
+    while (lo < hi && utf16IsWhiteSpace(
+                          static_cast<uint16_t>(utf16CharCodeAt(s, lo)))) {
+      ++lo;
+    }
+  }
+  if (end) {
+    while (hi > lo &&
+           utf16IsWhiteSpace(
+               static_cast<uint16_t>(utf16CharCodeAt(s, hi - 1)))) {
+      --hi;
+    }
+  }
+  return ok(ctx->createValue(utf16Substring(s, lo, hi)));
+}
+
+ConversionResult stringTrimAll(JSContext *ctx, JSValue *thisVal,
+                               JSValue *const *, size_t) {
+  return stringTrim(ctx, thisVal, true, true);
+}
+
+ConversionResult stringTrimStart(JSContext *ctx, JSValue *thisVal,
+                                 JSValue *const *, size_t) {
+  return stringTrim(ctx, thisVal, true, false);
+}
+
+ConversionResult stringTrimEnd(JSContext *ctx, JSValue *thisVal,
+                               JSValue *const *, size_t) {
+  return stringTrim(ctx, thisVal, false, true);
+}
+
 /* Boolean.prototype.valueOf（§20.1.3.3）：thisBooleanValue。 */
 ConversionResult booleanValueOf(JSContext *ctx, JSValue *thisVal,
                                 JSValue *const *, size_t) {
@@ -271,6 +842,79 @@ ConversionResult symbolToStringBuiltin(JSContext *ctx, JSValue *thisVal,
   if (!s.ok()) return s;
   const std::string &desc = s.value->symbolDescription();
   return ok(ctx->createValue("Symbol(" + desc + ")"));
+}
+
+/* -------------------------------------------------------------------------- */
+/* BigInt 构造器 + BigInt.prototype（M4.3e，§21.2）                            */
+/* -------------------------------------------------------------------------- */
+
+/* BigInt 构造器（§21.2.1.1）：BigInt(value) 按步骤执行：
+ *   1. new 调用（NewTarget 非 undefined）-> TypeError（BigInt 不是构造器）。
+ *   2. ToPrimitive(value, NUMBER)。
+ *   3. 结果是 Number -> NumberToBigInt（非整数 -> RangeError）。
+ *   4. 否则 ToBigInt（Boolean/BigInt/String；Undefined/Null/Symbol/Number -> TypeError）。
+ * 无参/undefined -> TypeError（ToBigInt(undefined)）。 */
+ConversionResult bigIntConstructor(JSContext *ctx, JSValue *thisVal,
+                                   JSValue *const *args, size_t argc) {
+  if (thisVal != nullptr && thisVal->isObject()) {
+    /* construct() 传入新对象 this：new BigInt() 禁止（§21.2.1 步骤 1）。 */
+    return fail("TypeError: BigInt is not a constructor");
+  }
+  JSValue *arg = (argc > 0) ? args[0] : nullptr;
+  /* ToPrimitive(value, NUMBER)。 */
+  ConversionResult prim = toPrimitive(ctx, arg, Hint::Number);
+  if (!prim.ok()) return prim;
+  if (prim.value->kind() == Kind::Number) {
+    /* NumberToBigInt（§21.2.1.1.1）：非整数 -> RangeError。
+     * 整数 Number -> 精确 BigInt（double 整数精确）。 */
+    double d = prim.value->toNumber();
+    if (std::isnan(d) || std::isinf(d) || std::trunc(d) != d) {
+      return fail("RangeError: The number " + std::to_string(d) +
+                  " cannot be converted to a BigInt because it is not an integer");
+    }
+    bool neg = d < 0.0;
+    double mag = neg ? -d : d;
+    /* double -> 十进制整数串（无指数，无小数点）。 */
+    char buf[64];
+    auto res = std::to_chars(buf, buf + sizeof(buf), mag);
+    std::string digits(buf, res.ptr);
+    return ok(ctx->createValue(JSValue(neg, digits)));
+  }
+  return toBigInt(ctx, prim.value);
+}
+
+/* BigInt.prototype.valueOf（§21.2.3.4）：thisBigIntValue。 */
+ConversionResult bigIntValueOf(JSContext *ctx, JSValue *thisVal,
+                               JSValue *const *, size_t) {
+  return thisWrapperValue(
+      ctx, thisVal, Kind::BigInt, ObjectKind::BigInt,
+      "BigInt.prototype.valueOf called on incompatible receiver");
+}
+
+/* BigInt.prototype.toString（§21.2.3.3）：thisBigIntValue -> radix 基数字符串。
+ * radix 缺省 10；2..36 合法，其余 RangeError。本阶段只实现十进制（10）
+ * 与非十进制报错（简化，M4.3e）。 */
+ConversionResult bigIntToStringBuiltin(JSContext *ctx, JSValue *thisVal,
+                                       JSValue *const *args, size_t argc) {
+  ConversionResult x = thisWrapperValue(
+      ctx, thisVal, Kind::BigInt, ObjectKind::BigInt,
+      "BigInt.prototype.toString called on incompatible receiver");
+  if (!x.ok()) return x;
+  int radix = 10;
+  if (argc > 0 && args[0] != nullptr && args[0]->kind() != Kind::Undefined) {
+    ConversionResult n = toNumber(ctx, args[0]);
+    if (!n.ok()) return n;
+    double rd = n.value->toNumber();
+    if (rd < 2.0 || rd > 36.0 || std::trunc(rd) != rd) {
+      return fail("RangeError: toString() radix must be an integer between 2 and 36");
+    }
+    radix = static_cast<int>(rd);
+  }
+  /* 本阶段只实现十进制（10）；非十进制报错（简化，M4.3e）。 */
+  if (radix != 10) {
+    return fail("Error: BigInt.prototype.toString with radix other than 10 not implemented");
+  }
+  return toString(ctx, x.value); /* BigInt::toString(10)，负数带 "-" */
 }
 
 /* Array 构造器（M4.1，§23.1.1）：
@@ -737,6 +1381,9 @@ void installWrapperBuiltin(JSContext *ctx, const char *name, ObjectKind kind,
                            JSBuiltinFn toStringFn) {
   JSValue *global = ctx->globalObject();
   JSValue *ctor_v = makeBuiltin(ctx, ctor, ThisMode::Strict);
+  /* M4.3f：new String()/Number()/Boolean()/BigInt() 应返回对应包装对象
+   * （String exotic object 等）。标记构造器包装 kind，construct() 据此创建。 */
+  static_cast<JSFunction *>(ctor_v->object())->setConstructWrapperKind(kind);
   ctx->heap().pin(ctor_v); /* 分配保护：挂 global 前防误回收 */
   global->object()->setProperty(name, ctor_v);
   ctx->heap().unpin(ctor_v); /* 已入根（global 属性） */
@@ -844,8 +1491,60 @@ void installBuiltins(JSContext *ctx) {
                         numberValueOf, numberToStringBuiltin);
   installWrapperBuiltin(ctx, "String", ObjectKind::String, stringConstructor,
                         stringValueOf, stringToStringBuiltin);
+
+  /* String.prototype 方法补齐（M4.3f，§22.1.3）：在 installWrapperBuiltin
+   * 创建的 String.prototype 上注册全部字符串方法。原型经 wrapper_protos_
+   * 缓存（装箱原型链 + 'str'.method() 方法调用都经此解析）。 */
+  JSValue *string_proto = ctx->wrapperProto(ObjectKind::String);
+  if (string_proto != nullptr && string_proto->isObject()) {
+    JSObject *sp = string_proto->object();
+    sp->setProperty("at", makeBuiltin(ctx, stringAt, ThisMode::Strict));
+    sp->setProperty("charAt", makeBuiltin(ctx, stringCharAt, ThisMode::Strict));
+    sp->setProperty("charCodeAt",
+                    makeBuiltin(ctx, stringCharCodeAt, ThisMode::Strict));
+    sp->setProperty("codePointAt",
+                    makeBuiltin(ctx, stringCodePointAt, ThisMode::Strict));
+    sp->setProperty("concat", makeBuiltin(ctx, stringConcat, ThisMode::Strict));
+    sp->setProperty("endsWith",
+                    makeBuiltin(ctx, stringEndsWith, ThisMode::Strict));
+    sp->setProperty("includes",
+                    makeBuiltin(ctx, stringIncludes, ThisMode::Strict));
+    sp->setProperty("indexOf",
+                    makeBuiltin(ctx, stringIndexOf, ThisMode::Strict));
+    sp->setProperty("lastIndexOf",
+                    makeBuiltin(ctx, stringLastIndexOf, ThisMode::Strict));
+    sp->setProperty("padEnd",
+                    makeBuiltin(ctx, stringPadEnd, ThisMode::Strict));
+    sp->setProperty("padStart",
+                    makeBuiltin(ctx, stringPadStart, ThisMode::Strict));
+    sp->setProperty("repeat", makeBuiltin(ctx, stringRepeat, ThisMode::Strict));
+    sp->setProperty("replace",
+                    makeBuiltin(ctx, stringReplace, ThisMode::Strict));
+    sp->setProperty("slice", makeBuiltin(ctx, stringSlice, ThisMode::Strict));
+    sp->setProperty("split", makeBuiltin(ctx, stringSplit, ThisMode::Strict));
+    sp->setProperty("startsWith",
+                    makeBuiltin(ctx, stringStartsWith, ThisMode::Strict));
+    sp->setProperty("substring",
+                    makeBuiltin(ctx, stringSubstring, ThisMode::Strict));
+    sp->setProperty("toLowerCase",
+                    makeBuiltin(ctx, stringToLowerCase, ThisMode::Strict));
+    sp->setProperty("toUpperCase",
+                    makeBuiltin(ctx, stringToUpperCase, ThisMode::Strict));
+    sp->setProperty("trim", makeBuiltin(ctx, stringTrimAll, ThisMode::Strict));
+    sp->setProperty("trimStart",
+                    makeBuiltin(ctx, stringTrimStart, ThisMode::Strict));
+    sp->setProperty("trimEnd",
+                    makeBuiltin(ctx, stringTrimEnd, ThisMode::Strict));
+  }
   installWrapperBuiltin(ctx, "Boolean", ObjectKind::Boolean, booleanConstructor,
                         booleanValueOf, booleanToStringBuiltin);
+
+  /* BigInt 构造器（M4.3e，§21.2.1）：BigInt(x) -> ToBigInt(x)；
+   * new BigInt() 抛 TypeError（非构造器，仅可调用）。
+   * 复用 installWrapperBuiltin：BigInt.prototype 挂 constructor/valueOf/toString，
+   * 原型链 -> Object.prototype，进 wrapper_protos_ 缓存（装箱原型链）。 */
+  installWrapperBuiltin(ctx, "BigInt", ObjectKind::BigInt, bigIntConstructor,
+                        bigIntValueOf, bigIntToStringBuiltin);
 
   /* Array 构造器（M4.1，§23.1.1）：数组字面量/Array() 的原型链根。
    * 需在 createArray 首次被调用前注册（vm NewArray / 数组字面量）。 */

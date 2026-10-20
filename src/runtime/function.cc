@@ -109,14 +109,33 @@ ConversionResult construct(JSContext *ctx, JSValue *F, JSValue *const *args,
     if (op != nullptr) proto = op->object();
   }
 
-  /* 3. 创建新对象（原型已定）。createObject 内部 pin/unpin 保护（M3.3）。 */
-  JSValue *obj = ctx->createObject(proto);
+  /* 3. 创建新对象（原型已定）。createObject 内部 pin/unpin 保护（M3.3）。
+   *    M4.3f：包装构造器（new String/Number/Boolean/BigInt）应返回对应
+   *    包装对象（String exotic object 等，§22.1.1.1/§21.1.1.1/§20.1.1.1/
+   *    §21.2.1.2）：创建包装对象（原型 = wrapperProto[kind]），构造器
+   *    返回值（原始值）在步骤 4 写回 [[Data]]。 */
+  ObjectKind wk = static_cast<JSFunction *>(F->object())->constructWrapperKind();
+  JSValue *obj = nullptr;
+  if (wk != ObjectKind::Ordinary) {
+    JSValue *wdata = ctx->createValue(Kind::Undefined); /* 占位，步骤 4 写回 */
+    obj = ctx->createWrapper(wk, wdata);
+    JSValue *wproto = ctx->wrapperProto(wk);
+    if (wproto != nullptr && wproto->isObject()) {
+      obj->object()->setPrototype(wproto->object());
+    }
+  } else {
+    obj = ctx->createObject(proto);
+  }
 
   /* 4. 调用构造器（this = 新对象）。返回值是对象则用之，否则返回新对象。
    *    注意：call 内部分配临时句柄保护 obj，obj 作为参数传入安全。 */
   ConversionResult r = call(ctx, F, obj, args, argc);
   if (!r.ok()) return r;
   if (r.value != nullptr && r.value->isObject()) return r;
+  /* M4.3f：包装构造器返回原始值 -> 写回包装对象 [[Data]]（§22.1.1.1 步骤 7）。 */
+  if (wk != ObjectKind::Ordinary && r.value != nullptr) {
+    obj->object()->setWrapperData(r.value);
+  }
   return ok(obj);
 }
 

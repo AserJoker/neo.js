@@ -519,6 +519,14 @@ bool Compiler::compileExpr(const ASTNode &node) {
 
 bool Compiler::compileLiteral(const ASTNode &node) {
   const LiteralPayload &lit = node.literal;
+  if (lit.is_bigint) {
+    /* BigInt 字面量（M4.3）：PushBigInt 常量池条目（十进制数字串）。
+     * 注意必须在 is_number 之前判断——parser 对 BigInt 同时置位
+     * is_number（double 载荷）与 is_bigint（精确数字串）。
+     * 字面量本身恒非负（负号由一元 Neg 处理，如 -1n）。 */
+    builder_.push_bigint(lit.bigint_str, false);
+    return true;
+  }
   if (lit.is_number) {
     builder_.push_number(lit.number);
     return true;
@@ -534,10 +542,6 @@ bool Compiler::compileLiteral(const ASTNode &node) {
   if (lit.is_null) {
     builder_.push_op(Opcode::PushNull);
     return true;
-  }
-  if (lit.is_bigint) {
-    fail("not implemented: BigInt literal");
-    return false;
   }
   builder_.push_op(Opcode::PushUndefined);
   return true;

@@ -100,18 +100,18 @@ class JSContext {
   JSValue *wellKnown(int index) const { return well_known_[index]; }
   void setWellKnown(int index, JSValue *v) { well_known_[index] = v; }
 
-  /* 包装对象原型缓存（E4-2）：Number/String/Boolean/Symbol 的 prototype 对象。
+  /* 包装对象原型缓存（E4-2）：Number/String/Boolean/Symbol/BigInt 的 prototype。
    * 装箱（toObject）时包装对象原型链指向对应 prototype（§7.1.13 + §20.1.3 等）。
-   * 索引按 ObjectKind（Number/String/Boolean/Symbol）映射，进根集（markRoots），
-   * installBuiltins 注册。 */
+   * 索引按 ObjectKind（Number..BigInt）映射，进根集（markRoots），
+   * installBuiltins 注册。M4.3e 扩到 5 项（含 BigInt）。 */
   JSValue *wrapperProto(ObjectKind kind) const {
     int idx = static_cast<int>(kind) - static_cast<int>(ObjectKind::Number);
-    if (idx < 0 || idx >= 4) return nullptr;
+    if (idx < 0 || idx >= 5) return nullptr;
     return wrapper_protos_[idx];
   }
   void setWrapperProto(ObjectKind kind, JSValue *v) {
     int idx = static_cast<int>(kind) - static_cast<int>(ObjectKind::Number);
-    if (idx >= 0 && idx < 4) wrapper_protos_[idx] = v;
+    if (idx >= 0 && idx < 5) wrapper_protos_[idx] = v;
   }
 
   /* Object.prototype 缓存（M3.3，§20.1.3）：对象字面量/包装对象原型的
@@ -177,7 +177,7 @@ class JSContext {
   JSValue *global_ = nullptr; /* 全局对象（globalThis 雏形，惰性创建） */
   std::string tmp_string_; /* 临时字符串缓冲（JS_ToString 稳定返回用） */
   JSValue *well_known_[4] = {nullptr, nullptr, nullptr, nullptr}; /* well-known 缓存（E4-1） */
-  JSValue *wrapper_protos_[4] = {nullptr, nullptr, nullptr, nullptr}; /* 包装原型缓存（E4-2） */
+  JSValue *wrapper_protos_[5] = {nullptr, nullptr, nullptr, nullptr, nullptr}; /* 包装原型缓存（E4-2，M4.3e 含 BigInt） */
   JSValue *object_proto_ = nullptr; /* Object.prototype 缓存（M3.3） */
   JSValue *array_proto_ = nullptr;  /* Array.prototype 缓存（M4.1） */
   JSValue *function_proto_ = nullptr; /* Function.prototype 缓存（M4.2） */

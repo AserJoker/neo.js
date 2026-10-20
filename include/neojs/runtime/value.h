@@ -30,6 +30,7 @@ enum class Kind : uint8_t {
   Number,
   String,
   Symbol,
+  BigInt,           /* M4.3：任意精度整数（§6.1.6.2） */
   Object,
   Exception,       /* #4：错误值 */
   InterruptYield,  /* #7：生成器 yield 断点 */
@@ -50,6 +51,9 @@ class JSValue : public GCHeader {
   JSValue(int64_t i);                         /* number（整数） */
   JSValue(const std::string &s);              /* string */
   JSValue(const char *s, size_t len);         /* string（长度限定） */
+  /* BigInt（M4.3，§6.1.6.2）：digits 为十进制数字串（无符号），neg 为符号位。
+   * 任意精度（正确性优先，v1 全部装箱；性能优化留后续）。 */
+  JSValue(bool neg, const std::string &digits); /* bigint */
   ~JSValue() override = default;
 
   /* 访问器 */
@@ -57,6 +61,7 @@ class JSValue : public GCHeader {
   bool isNumber() const { return kind_ == Kind::Number; }
   bool isString() const { return kind_ == Kind::String; }
   bool isSymbol() const { return kind_ == Kind::Symbol; }
+  bool isBigInt() const { return kind_ == Kind::BigInt; }
   bool isObject() const { return kind_ == Kind::Object; }
   bool isException() const { return kind_ == Kind::Exception; }
 
@@ -73,6 +78,16 @@ class JSValue : public GCHeader {
   /* Symbol 描述符（description）：kind_ == Symbol 时有效；无描述为空串。 */
   const std::string &symbolDescription() const { return string_; }
   void setSymbolDescription(const std::string &desc) { string_ = desc; }
+
+  /* BigInt（M4.3）：符号位 + 十进制数字串（无符号，可能带前导 0 归一化）。
+   * 仅 kind_ == BigInt 时有效。 */
+  bool bigIntNegative() const { return bigint_negative_; }
+  const std::string &bigIntDigits() const { return string_; }
+  void setBigInt(bool neg, const std::string &digits) {
+    kind_ = Kind::BigInt;
+    bigint_negative_ = neg;
+    string_ = digits;
+  }
 
   /* 错误值：设置/读取错误信息（kind == Exception 时有效） */
   void setErrorInfo(const std::string &info) { string_ = info; }
@@ -93,6 +108,7 @@ class JSValue : public GCHeader {
   bool bool_;
   double number_;
   std::string string_;
+  bool bigint_negative_ = false; /* BigInt 符号位（M4.3，digits 存 string_） */
   JSObject *object_ = nullptr; /* Object 载荷（kind_ == Object 时有效） */
 };
 

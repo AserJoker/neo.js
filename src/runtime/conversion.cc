@@ -26,6 +26,7 @@
 
 #include "neojs/runtime/conversion.h"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <cstdlib>
@@ -51,6 +52,8 @@ bool isFalsey(const JSValue &v) {
       return v.toNumber() == 0.0 || std::isnan(v.toNumber()); /* ±0 与 NaN */
     case Kind::String:
       return v.toString().empty();
+    case Kind::BigInt:
+      return v.bigIntDigits() == "0"; /* 0n -> falsey */
     default:
       return false; /* Object / Symbol / Exception / Interrupt 均 truthy */
   }
@@ -183,6 +186,212 @@ double stringToNumber(const std::string &str) {
   return d;
 }
 
+}  // namespace
+
+/* -------------------------------------------------------------------------- */
+/* BigInt 数值工具（M4.3）：十进制大数字符串的任意精度算术。                  */
+/* 声明见 conversion.h（供 operators.cc 与内置复用）。                         */
+/* -------------------------------------------------------------------------- */
+
+void bigintAddDigit(std::string &s, unsigned v) {
+  if (s == "0" && v == 0) return;
+  int carry = static_cast<int>(v);
+  for (int i = static_cast<int>(s.size()) - 1; i >= 0 && carry > 0; --i) {
+    int d = (s[i] - '0') + carry;
+    s[i] = static_cast<char>('0' + (d % 10));
+    carry = d / 10;
+  }
+  if (carry > 0) s.insert(s.begin(), static_cast<char>('0' + carry));
+}
+
+void bigintMul(std::string &s, unsigned base) {
+  int carry = 0;
+  for (int i = static_cast<int>(s.size()) - 1; i >= 0; --i) {
+    int d = (s[i] - '0') * static_cast<int>(base) + carry;
+    s[i] = static_cast<char>('0' + (d % 10));
+    carry = d / 10;
+  }
+  while (carry > 0) {
+    s.insert(s.begin(), static_cast<char>('0' + (carry % 10)));
+    carry /= 10;
+  }
+}
+
+unsigned bigintDiv(std::string &s, unsigned base) {
+  /* 从高位到低位逐位除以 base，余数传递到下一位。 */
+  unsigned rem = 0;
+  for (size_t i = 0; i < s.size(); ++i) {
+    unsigned cur = rem * 10u + static_cast<unsigned>(s[i] - '0');
+    s[i] = static_cast<char>('0' + (cur / base));
+    rem = cur % base;
+  }
+  /* 去掉结果前导 0（保留至少一位）。 */
+  size_t p = s.find_first_not_of('0');
+  if (p == std::string::npos) s = "0";
+  else if (p > 0) s.erase(0, p);
+  return rem;
+}
+
+bool bigintLess(const std::string &a, const std::string &b) {
+  if (a.size() != b.size()) return a.size() < b.size();
+  return a < b; /* 等长时字典序即数值序 */
+}
+
+void bigintSub(std::string &a, const std::string &b) {
+  /* 前提：a >= b（调用方保证）。逐位相减借位。 */
+  int borrow = 0;
+  int i = static_cast<int>(a.size()) - 1;
+  int j = static_cast<int>(b.size()) - 1;
+  for (; j >= 0; --i, --j) {
+    int d = (a[static_cast<size_t>(i)] - '0') - (b[static_cast<size_t>(j)] - '0') - borrow;
+    if (d < 0) { d += 10; borrow = 1; } else { borrow = 0; }
+    a[static_cast<size_t>(i)] = static_cast<char>('0' + d);
+  }
+  for (; borrow && i >= 0; --i) {
+    int d = (a[static_cast<size_t>(i)] - '0') - borrow;
+    if (d < 0) { d += 10; borrow = 1; } else { borrow = 0; }
+    a[static_cast<size_t>(i)] = static_cast<char>('0' + d);
+  }
+  /* 去前导 0。 */
+  size_t p = a.find_first_not_of('0');
+  if (p == std::string::npos) a = "0";
+  else if (p > 0) a.erase(0, p);
+}
+
+void bigintAdd(std::string &a, const std::string &b) {
+  /* 从低位到高位逐位加，进位传递。b 可能比 a 长。 */
+  int carry = 0;
+  int i = static_cast<int>(a.size()) - 1;
+  int j = static_cast<int>(b.size()) - 1;
+  std::string out;
+  out.reserve((a.size() > b.size() ? a.size() : b.size()) + 1);
+  for (; i >= 0 || j >= 0 || carry; --i, --j) {
+    int d = carry;
+    if (i >= 0) d += a[static_cast<size_t>(i)] - '0';
+    if (j >= 0) d += b[static_cast<size_t>(j)] - '0';
+    out.push_back(static_cast<char>('0' + (d % 10)));
+    carry = d / 10;
+  }
+  std::reverse(out.begin(), out.end());
+  a = out;
+}
+
+void bigintMulStr(std::string &a, const std::string &b) {
+  /* Schoolbook 乘法：a × b，逐位乘累加。O(n·m)。 */
+  if (a == "0" || b == "0") { a = "0"; return; }
+  std::string result(a.size() + b.size(), '0');
+  for (int j = static_cast<int>(b.size()) - 1; j >= 0; --j) {
+    int carry = 0;
+    for (int i = static_cast<int>(a.size()) - 1; i >= 0; --i) {
+      int bi = static_cast<int>(b[static_cast<size_t>(j)] - '0');
+      int ai = static_cast<int>(a[static_cast<size_t>(i)] - '0');
+      int pos = i + j + 1;
+      int cur = static_cast<int>(result[static_cast<size_t>(pos)] - '0') +
+                ai * bi + carry;
+      result[static_cast<size_t>(pos)] = static_cast<char>('0' + (cur % 10));
+      carry = cur / 10;
+    }
+    int pos = j; /* 进位写入更高位 */
+    while (carry > 0) {
+      int cur = static_cast<int>(result[static_cast<size_t>(pos)] - '0') + carry;
+      result[static_cast<size_t>(pos)] = static_cast<char>('0' + (cur % 10));
+      carry = cur / 10;
+      --pos;
+    }
+  }
+  size_t p = result.find_first_not_of('0');
+  a = (p == std::string::npos) ? "0" : result.substr(p);
+}
+
+/* 有符号十进制大数加法：a += b。结果绝对值写回 a，符号写 outNeg。
+ * 同号 -> 绝对值相加；异号 -> 绝对值相减（结果符号取绝对值大者）。 */
+void bigintAddSigned(bool aNeg, std::string &a, bool bNeg,
+                     const std::string &b, bool &outNeg) {
+  if (aNeg == bNeg) {
+    /* 同号：绝对值相加，符号不变。 */
+    bigintAdd(a, b);
+    outNeg = aNeg;
+    return;
+  }
+  /* 异号：a + (-b)。
+   * |a| >= |b| -> a - b，符号取 aNeg；否则 b - a，符号取 bNeg。 */
+  if (!bigintLess(a, b)) {
+    bigintSub(a, b);
+    outNeg = aNeg;
+  } else {
+    std::string r = b;
+    bigintSub(r, a);
+    a = r;
+    outNeg = bNeg;
+  }
+  if (a == "0") outNeg = false; /* -0 归一化为 0 */
+}
+
+void bigintSubSigned(bool aNeg, std::string &a, bool bNeg,
+                     const std::string &b, bool &outNeg) {
+  /* a - b = a + (-b)：翻转 b 符号后走加法。 */
+  bigintAddSigned(aNeg, a, !bNeg, b, outNeg);
+}
+
+void bigintMulSigned(bool aNeg, std::string &a, bool bNeg,
+                     const std::string &b, bool &outNeg) {
+  bigintMulStr(a, b);
+  outNeg = aNeg != bNeg && a != "0";
+}
+
+/* 十进制大数除法（绝对值）：a / b 商（向零截断）+ 余数。
+ * 长除法（从高位逐位求商），O(n·m)。调用方保证 b != "0"。 */
+std::string bigintDivMod(const std::string &a, const std::string &b,
+                         std::string &rem) {
+  rem.clear();
+  std::string quot;
+  quot.reserve(a.size());
+  for (char ch : a) {
+    /* 当前余数左移一位并加 digit：rem = rem*10 + digit（长除法）。 */
+    if (rem != "0") bigintMul(rem, 10);
+    bigintAddDigit(rem, static_cast<unsigned>(ch - '0'));
+    /* 求这一位的商：累减 b 直到 rem < b（逐位除法）。 */
+    unsigned q = 0;
+    while (!bigintLess(rem, b)) {
+      bigintSub(rem, b);
+      ++q;
+    }
+    quot.push_back(static_cast<char>('0' + q));
+  }
+  /* 去前导 0（保留至少一位）。 */
+  size_t p = quot.find_first_not_of('0');
+  if (p == std::string::npos) quot = "0";
+  else if (p > 0) quot.erase(0, p);
+  if (rem.empty()) rem = "0";
+  return quot;
+}
+
+void bigintPow(std::string &a, const std::string &b) {
+  /* 二进制快速幂：a^b。0^0 = 1。b 为非负十进制串。 */
+  std::string base = a;
+  std::string exp = b;
+  std::string result = "1";
+  while (exp != "0") {
+    /* 当前位为 1（exp 奇数）则乘入。 */
+    unsigned parity = bigintDiv(exp, 2); /* exp /= 2，返回余数 */
+    if (parity == 1) bigintMulStr(result, base);
+    if (exp != "0") bigintMulStr(base, base);
+  }
+  a = result;
+}
+
+double bigintToNumber(const std::string &digits) {
+  /* BigInt::toNumber（§6.1.6.2.11）：十进制串转 double。strtod 近似
+   * （超精度舍入接受差距，与 Number 字面量同精度）。 */
+  errno = 0;
+  char *endp = nullptr;
+  double d = std::strtod(digits.c_str(), &endp);
+  if (endp == digits.c_str() || *endp != '\0') return NAN; /* 防御性 */
+  return d;
+}
+
+namespace {
+
 /* -------------------------------------------------------------------------- */
 /* OrdinaryToPrimitive（§7.1.1.1）+ Symbol.toPrimitive（§7.1.1 步骤 1-5）     */
 /* -------------------------------------------------------------------------- */
@@ -206,6 +415,90 @@ ConversionResult ordinaryToPrimitive(JSContext *ctx, JSValue *v, Hint hint) {
 }
 
 }  // namespace
+
+/* -------------------------------------------------------------------------- */
+/* StringToBigInt（§7.1.14）：字符串 -> BigInt（失败返回空串）。               */
+/* 接受：首尾空白；十进制整数（含 ±）；0x/0o/0b 非十进制整数。                */
+/* 其余（小数/指数/非法字符/Infinity/NaN）-> 失败（undefined 语义）。         */
+/* 结果串：符号并入（负数带 "-" 前缀）。供 operators.cc 与 ToBigInt 复用。     */
+/* -------------------------------------------------------------------------- */
+
+/* 非十进制数字串（去前缀与分隔符）-> 十进制大数字符串。 */
+std::string bigintFromRadix(const std::string &body, int base) {
+  std::string s = "0";
+  for (size_t i = 0; i < body.size(); ++i) {
+    char ch = body[i];
+    int hv = -1;
+    if (ch >= '0' && ch <= '9') hv = ch - '0';
+    else if (ch >= 'a' && ch <= 'f') hv = ch - 'a' + 10;
+    else if (ch >= 'A' && ch <= 'F') hv = ch - 'A' + 10;
+    if (hv < 0 || hv >= base) return ""; /* 非法数字 -> 失败 */
+    bigintMul(s, static_cast<unsigned>(base));
+    bigintAddDigit(s, static_cast<unsigned>(hv));
+  }
+  return s;
+}
+
+std::string stringToBigInt(const std::string &str) {
+  /* 1. 跳过首尾 WhiteSpace/LineTerminator。 */
+  size_t i = 0;
+  const size_t n = str.size();
+  while (i < n) {
+    int c = static_cast<unsigned char>(str[i]);
+    if (isWhiteSpace(c) || isLineTerminator(c)) ++i;
+    else break;
+  }
+  size_t end = n;
+  while (end > i) {
+    int c = static_cast<unsigned char>(str[end - 1]);
+    if (isWhiteSpace(c) || isLineTerminator(c)) --end;
+    else break;
+  }
+  if (i == end) return "0"; /* 空串（或全空白）-> 0 */
+
+  std::string s = str.substr(i, end - i);
+  const size_t m = s.size();
+  bool neg = false;
+  size_t start = 0;
+  if (s[0] == '+' || s[0] == '-') {
+    neg = (s[0] == '-');
+    start = 1;
+  }
+  if (start >= m) return ""; /* 只有符号 -> 失败 */
+
+  std::string digits;
+  int base = 10;
+  size_t body = start;
+  if (m - start >= 2 && s[start] == '0') {
+    char p = s[start + 1];
+    if (p == 'x' || p == 'X') { base = 16; body = start + 2; }
+    else if (p == 'o' || p == 'O') { base = 8; body = start + 2; }
+    else if (p == 'b' || p == 'B') { base = 2; body = start + 2; }
+  }
+  /* 前缀后无数字 -> 失败（如 "0x"）。 */
+  if (base != 10 && body >= m) return "";
+
+  if (base == 10) {
+    /* 十进制整数：仅 [0-9]，可含分隔符；不得含小数点/指数/其他。 */
+    std::string clean;
+    for (size_t k = body; k < m; ++k) {
+      char ch = s[k];
+      if (ch == '_') continue; /* 数字分隔符（§12.9.3.1） */
+      if (ch < '0' || ch > '9') return ""; /* 小数点/e/Infinity/NaN 等 -> 失败 */
+      clean.push_back(ch);
+    }
+    digits = clean;
+  } else {
+    digits = bigintFromRadix(s.substr(body), base);
+    if (digits.empty()) return "";
+  }
+
+  /* 归一化：去前导 0（全 0 -> "0"）。 */
+  size_t p = digits.find_first_not_of('0');
+  if (p == std::string::npos) return "0";
+  if (p > 0) digits.erase(0, p);
+  return neg ? "-" + digits : digits; /* 符号并入结果串（负号前缀） */
+}
 
 /* -------------------------------------------------------------------------- */
 /* Number::toString（§6.1.6.1.20）：最短十进制表示。                          */
@@ -298,6 +591,7 @@ ConversionResult toPrimitive(JSContext *ctx, JSValue *v, Hint hint) {
     case Kind::Number:
     case Kind::String:
     case Kind::Symbol:
+    case Kind::BigInt:
       return ok(v);
     default:
       break;
@@ -328,6 +622,8 @@ ConversionResult toNumber(JSContext *ctx, JSValue *v) {
     }
     case Kind::Symbol:
       return fail("TypeError: Cannot convert a Symbol value to a number");
+    case Kind::BigInt:
+      return fail("TypeError: Cannot convert a BigInt value to a number");
     default:
       /* Exception / Interrupt 不可达（转换入口只收合法值）。 */
       return ok(ctx->createValue(NAN));
@@ -346,6 +642,11 @@ ConversionResult toString(JSContext *ctx, JSValue *v) {
                                                 : std::string("false")));
     case Kind::Number:
       return ok(ctx->createValue(numberToString(v->toNumber())));
+    case Kind::BigInt:
+      /* BigInt::toString(10)（§6.1.6.2.21）：十进制数字串，负数带 "-"。 */
+      return ok(ctx->createValue(v->bigIntNegative()
+                                    ? "-" + v->bigIntDigits()
+                                    : v->bigIntDigits()));
     case Kind::String:
       return ok(v);
     case Kind::Object: {
@@ -364,8 +665,44 @@ ConversionResult toString(JSContext *ctx, JSValue *v) {
 }
 
 ConversionResult toNumeric(JSContext *ctx, JSValue *v) {
-  /* 当前仅 Number（BigInt 延后；BigInt 引入后此处返回 BigInt 原值）。 */
-  return toNumber(ctx, v);
+  /* §7.1.3：ToPrimitive(number) 后，BigInt 返回自身，否则 ToNumber。 */
+  if (v == nullptr) return fail("TypeError: Cannot convert undefined or null");
+  ConversionResult p = toPrimitive(ctx, v, Hint::Number);
+  if (!p.ok()) return p;
+  if (p.value->kind() == Kind::BigInt) return ok(p.value);
+  return toNumber(ctx, p.value);
+}
+
+ConversionResult toBigInt(JSContext *ctx, JSValue *v) {
+  /* §7.1.13 ToBigInt：表 12。ToPrimitive(number) 后按类型转换。 */
+  if (v == nullptr) return fail("TypeError: Cannot convert undefined or null");
+  ConversionResult prim = toPrimitive(ctx, v, Hint::Number);
+  if (!prim.ok()) return prim;
+  switch (prim.value->kind()) {
+    case Kind::Boolean:
+      return ok(ctx->createValue(
+          JSValue(false, prim.value->toBoolean() ? "1" : "0")));
+    case Kind::BigInt:
+      return ok(prim.value);
+    case Kind::String: {
+      std::string r = stringToBigInt(prim.value->toString());
+      if (r.empty()) return fail("SyntaxError: Cannot convert to a BigInt");
+      bool neg = (r[0] == '-');
+      std::string digits = neg ? r.substr(1) : r;
+      if (digits.empty()) digits = "0"; /* 防御性 */
+      return ok(ctx->createValue(JSValue(neg, digits)));
+    }
+    case Kind::Undefined:
+    case Kind::Null:
+      return fail("TypeError: Cannot convert undefined or null to a BigInt");
+    case Kind::Number:
+      return fail("TypeError: Cannot convert a Number to a BigInt");
+    case Kind::Symbol:
+      return fail("TypeError: Cannot convert a Symbol value to a BigInt");
+    default:
+      /* Object 已 ToPrimitive 化；Exception/Interrupt 不可达。 */
+      return fail("TypeError: Cannot convert to a BigInt");
+  }
 }
 
 ConversionResult toPropertyKey(JSContext *ctx, JSValue *v) {
@@ -392,6 +729,9 @@ ConversionResult toObject(JSContext *ctx, JSValue *v) {
       return ok(makeWrapper(ctx, ObjectKind::String, v));
     case Kind::Symbol:
       return ok(makeWrapper(ctx, ObjectKind::Symbol, v));
+    case Kind::BigInt:
+      /* M4.3e：BigInt 装箱（§7.1.13 表 14）-> 包装对象，原型链 BigInt.prototype。 */
+      return ok(makeWrapper(ctx, ObjectKind::BigInt, v));
     default:
       break;
   }
@@ -420,6 +760,10 @@ bool sameValueImpl(const JSValue *a, const JSValue *b, bool zeroEqual) {
     }
     case Kind::String:
       return a->toString() == b->toString();
+    case Kind::BigInt:
+      /* BigInt::equal（§6.1.6.2.13）：同符号同数字串。 */
+      return a->bigIntNegative() == b->bigIntNegative() &&
+             a->bigIntDigits() == b->bigIntDigits();
     case Kind::Object:
       return a->object() == b->object(); /* 同一引用 */
     case Kind::Symbol:

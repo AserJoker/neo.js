@@ -18,6 +18,9 @@
 
 #include "neojs/runtime/operators.h"
 
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
 #include <string>
 
 #include "neojs/runtime/context.h"
@@ -47,6 +50,9 @@ JSValue *getProp(JSObject *obj, const char *key) {
   return obj->getProperty(key);
 }
 
+/* BigInt 与 Number 精确相等比较（定义见下文 abstractEqualsImpl 之后）。 */
+ConversionResult bigIntNumberEquals(JSContext *ctx, JSValue *big, double x);
+
 /* -------------------------------------------------------------------------- */
 /* 严格相等比较（§7.2.14）                                                    */
 /* -------------------------------------------------------------------------- */
@@ -63,6 +69,10 @@ bool strictEqualsSameType(const JSValue *a, const JSValue *b) {
       return a->toNumber() == b->toNumber(); /* NaN!=NaN；+0==-0 */
     case Kind::String:
       return a->toString() == b->toString();
+    case Kind::BigInt:
+      /* BigInt::equal（§6.1.6.2.13）：同符号同数字串。 */
+      return a->bigIntNegative() == b->bigIntNegative() &&
+             a->bigIntDigits() == b->bigIntDigits();
     case Kind::Symbol:
       return a == b; /* 同一 Symbol 值 */
     case Kind::Object:
@@ -76,15 +86,14 @@ bool strictEqualsSameType(const JSValue *a, const JSValue *b) {
 /* 抽象相等比较（§7.2.15）                                                    */
 /* -------------------------------------------------------------------------- */
 
-/* AbstractEqualityComparison(x, y)：类型不同时按规范表 12 转换比较。
- * 当前无 BigInt：Number/String/Boolean 与 Object 的比较经 ToPrimitive。 */
+/* IsLooselyEqual（§7.2.13）：类型不同时按规范步骤 2-13 转换比较。 */
 ConversionResult abstractEqualsImpl(JSContext *ctx, JSValue *x, JSValue *y) {
   if (x->kind() == y->kind()) {
     /* 同类型：严格相等语义（Number 用 IEEE）。 */
     return ok(ctx->createValue(strictEqualsSameType(x, y)));
   }
 
-  /* 类型不同。规范 §7.2.15 步骤 2-9（表 12）。 */
+  /* 类型不同。规范 §7.2.13 步骤 2-13。 */
   switch (x->kind()) {
     case Kind::Undefined:
     case Kind::Null:
@@ -93,19 +102,52 @@ ConversionResult abstractEqualsImpl(JSContext *ctx, JSValue *x, JSValue *y) {
           y->kind() == Kind::Undefined || y->kind() == Kind::Null));
     case Kind::Number:
       if (y->kind() == Kind::String) {
-        /* x 是 Number，y 是 String：y 转数字后比较 */
+        /* x Number, y String：y ToNumber 后递归 */
         ConversionResult n = toNumber(ctx, y);
         if (!n.ok()) return n;
-        return ok(ctx->createValue(x->toNumber() == n.value->toNumber()));
+        return abstractEqualsImpl(ctx, x, n.value);
+      }
+      if (y->kind() == Kind::BigInt) {
+        /* x Number, y BigInt（§7.2.13 步骤 13）：任一非有限 -> false；
+         * 否则比较 x 与 BigInt 的精确值。 */
+        return bigIntNumberEquals(ctx, y, x->toNumber());
       }
       if (y->kind() == Kind::Boolean) {
-        /* x 是 Number，y 是 Boolean：y 转数字 */
+        /* x Number, y Boolean：y ToNumber 后递归 */
         ConversionResult n = toNumber(ctx, y);
         if (!n.ok()) return n;
-        return ok(ctx->createValue(x->toNumber() == n.value->toNumber()));
+        return abstractEqualsImpl(ctx, x, n.value);
       }
       if (y->kind() == Kind::Object) {
-        /* x 是 Number，y 是 Object：y ToPrimitive(number) 后递归 */
+        /* x Number, y Object：y ToPrimitive 后递归 */
+        ConversionResult p = toPrimitive(ctx, y, Hint::Number);
+        if (!p.ok()) return p;
+        return abstractEqualsImpl(ctx, x, p.value);
+      }
+      break;
+    case Kind::BigInt:
+      if (y->kind() == Kind::String) {
+        /* x BigInt, y String（步骤 7）：y StringToBigInt，失败 -> false */
+        std::string sy = stringToBigInt(y->toString());
+        if (sy.empty()) return ok(ctx->createValue(false));
+        bool neg = (sy[0] == '-');
+        std::string digits = neg ? sy.substr(1) : sy;
+        if (digits.empty()) digits = "0";
+        JSValue bigY(false, digits);
+        if (neg) bigY.setBigInt(true, digits);
+        return ok(ctx->createValue(strictEqualsSameType(x, &bigY)));
+      }
+      if (y->kind() == Kind::Number) {
+        return bigIntNumberEquals(ctx, x, y->toNumber());
+      }
+      if (y->kind() == Kind::Boolean) {
+        /* x BigInt, y Boolean：y ToNumber 后递归（x 变 BigInt vs Number） */
+        ConversionResult n = toNumber(ctx, y);
+        if (!n.ok()) return n;
+        return abstractEqualsImpl(ctx, x, n.value);
+      }
+      if (y->kind() == Kind::Object) {
+        /* x BigInt, y Object：y ToPrimitive 后递归 */
         ConversionResult p = toPrimitive(ctx, y, Hint::Number);
         if (!p.ok()) return p;
         return abstractEqualsImpl(ctx, x, p.value);
@@ -115,7 +157,11 @@ ConversionResult abstractEqualsImpl(JSContext *ctx, JSValue *x, JSValue *y) {
       if (y->kind() == Kind::Number) {
         ConversionResult n = toNumber(ctx, x);
         if (!n.ok()) return n;
-        return ok(ctx->createValue(n.value->toNumber() == y->toNumber()));
+        return abstractEqualsImpl(ctx, n.value, y);
+      }
+      if (y->kind() == Kind::BigInt) {
+        /* x String, y BigInt（步骤 8）：转置到 BigInt vs String */
+        return abstractEqualsImpl(ctx, y, x);
       }
       if (y->kind() == Kind::Boolean) {
         ConversionResult n = toNumber(ctx, y);
@@ -129,18 +175,18 @@ ConversionResult abstractEqualsImpl(JSContext *ctx, JSValue *x, JSValue *y) {
       }
       break;
     case Kind::Boolean:
-      /* x 是 Boolean：x 转数字后递归（此时 x 变 Number）。 */
+      /* x Boolean：x ToNumber 后递归 */
       if (y->kind() == Kind::Number || y->kind() == Kind::String ||
-          y->kind() == Kind::Object) {
+          y->kind() == Kind::BigInt || y->kind() == Kind::Object) {
         ConversionResult n = toNumber(ctx, x);
         if (!n.ok()) return n;
         return abstractEqualsImpl(ctx, n.value, y);
       }
       break;
     case Kind::Object:
-      /* x 是 Object：x ToPrimitive(number) 后递归。 */
+      /* x Object：x ToPrimitive(number) 后递归。 */
       if (y->kind() == Kind::Number || y->kind() == Kind::String ||
-          y->kind() == Kind::Boolean) {
+          y->kind() == Kind::BigInt || y->kind() == Kind::Boolean) {
         ConversionResult p = toPrimitive(ctx, x, Hint::Number);
         if (!p.ok()) return p;
         return abstractEqualsImpl(ctx, p.value, y);
@@ -148,8 +194,7 @@ ConversionResult abstractEqualsImpl(JSContext *ctx, JSValue *x, JSValue *y) {
       break;
     case Kind::Symbol:
       /* Symbol 与对象比较：仅当同引用时相等（上面同类型已处理）；此处
-       * Symbol vs 非对象原始值 -> false（规范步骤 6/8 对 Symbol 的处理：
-       * Symbol 与 String/Number/Boolean 比较均 false）。 */
+       * Symbol vs 非对象原始值 -> false。 */
       if (y->kind() == Kind::Object) {
         return ok(ctx->createValue(x == y));
       }
@@ -158,8 +203,103 @@ ConversionResult abstractEqualsImpl(JSContext *ctx, JSValue *x, JSValue *y) {
       break;
   }
 
-  /* 规范步骤 10：其余情况返回 false。 */
+  /* 规范步骤 14：其余情况返回 false。 */
   return ok(ctx->createValue(false));
+}
+
+/* -------------------------------------------------------------------------- */
+/* BigInt 与 Number 相等比较（§7.2.13 步骤 13）                                */
+/* 任一非有限 -> false；否则比较 Number 与 BigInt 的精确数学值。              */
+/* 方法：把非负整数 double 的精确整数值（IEEE 754：mant53 × 2^(exp-53)）用
+ * 十进制字符串算术精确构造，再与 BigInt 十进制串逐位比较。完全精确，无
+ * 精度损失（正确性优先，性能可接受）。                                      */
+/* -------------------------------------------------------------------------- */
+
+/* 非负整数 double -> 精确十进制串（调用方保证 d 为整数且 >= 0）。
+ * d = frac * 2^exp（frexp，frac in [0.5,1)），frac 的 53 位尾数
+ * mant53 = frac * 2^53（精确，2 的幂缩放），故 d = mant53 * 2^(exp-53)。 */
+std::string exactDecimalOfNonNegInt(double d) {
+  int exp = 0;
+  double frac = std::frexp(d, &exp);
+  uint64_t mant53 =
+      static_cast<uint64_t>(frac * 9007199254740992.0); /* 2^53 */
+  std::string s = std::to_string(mant53);
+  int e = exp - 53;
+  if (e > 0) {
+    while (e-- > 0) bigintMul(s, 2); /* 最多 ~971 次，可接受 */
+  } else if (e < 0) {
+    int k = -e;
+    while (k-- > 0) bigintDiv(s, 2);
+    /* 余数应为 0（d 是整数）；商即精确值 */
+  }
+  return s;
+}
+
+/* 十进制数字串比较：返回 -1（a<b）/0/1。 */
+int compareDecimal(const std::string &a, const std::string &b) {
+  if (a.size() != b.size()) return a.size() < b.size() ? -1 : 1;
+  if (a == b) return 0;
+  return a < b ? -1 : 1;
+}
+
+/* BigInt 与 Number 精确大小比较：返回 big < num（§7.2.12 步骤 14 语义）。
+ * num 可为任意有限 double（含小数）。
+ * 原理：BigInt 是整数，Number 是精确的 m·2^e。
+ *   - e>=0（num 整数，可能超过 2^53）：构造 m·2^e 十进制串与 |big| 比较。
+ *   - e<0（num 有小数或 2^|e| 整除 m）：num 非整数时，整数 b < num 当且仅当
+ *     b <= floor(num)（num>0）或 b <= ceil(num)-1（num<0）；统一为
+ *     b <= 向零截断方向。用 floor 的精确十进制串比较。 */
+bool bigIntNumberLess(const JSValue *big, double num) {
+  if (std::isnan(num)) return false; /* NaN 语义由调用方（返回 false/undefined） */
+  bool bigNeg = big->bigIntNegative();
+  bool numNeg = (num < 0);
+  if (bigNeg != numNeg) return bigNeg; /* 负 < 正 */
+
+  double absNum = std::fabs(num);
+  bool numInt = (absNum == std::floor(absNum));
+  const std::string &bs = big->bigIntDigits();
+
+  if (numInt) {
+    /* num 是整数：直接比较绝对值。 */
+    std::string ns = exactDecimalOfNonNegInt(absNum);
+    int c = compareDecimal(bs, ns);
+    if (bigNeg) return c > 0;  /* 都负：|big|>|num| 则更小 */
+    return c < 0;              /* 都正：|big|<|num| 则更小 */
+  }
+
+  /* num 非整数。 */
+  double fl = std::floor(absNum);
+  std::string fs = exactDecimalOfNonNegInt(fl);
+  int c = compareDecimal(bs, fs);
+  if (!bigNeg) {
+    /* 正：big < num 当 |big| <= floor(num)（big 整数 < 非整 num）。 */
+    return c <= 0;
+  }
+  /* 负：big < num 当 |big| >= ceil(num) = floor(num)+1。
+   * |big| > floor -> true；|big| == floor -> false（如 -1 < -1.5 为 false）。 */
+  return c > 0;
+}
+
+ConversionResult bigIntNumberEquals(JSContext *ctx, JSValue *big, double x) {
+  /* 1. NaN / ±Infinity -> false。 */
+  if (std::isnan(x) || std::isinf(x)) return ok(ctx->createValue(false));
+
+  bool neg = big->bigIntNegative();
+  std::string digits = big->bigIntDigits();
+  /* 2. BigInt 为 0：x 必须为 +0/-0。 */
+  if (digits == "0") return ok(ctx->createValue(x == 0.0));
+
+  /* 3. 符号不同 -> false。 */
+  if (neg != (x < 0)) return ok(ctx->createValue(false));
+
+  /* 4. x 有小数部分 -> 不可能等于整数 BigInt。 */
+  if (std::fabs(x) != std::floor(std::fabs(x))) {
+    return ok(ctx->createValue(false));
+  }
+
+  /* 5. 精确构造 x 的整数绝对值十进制串，与 BigInt 数字串比较。 */
+  std::string xs = exactDecimalOfNonNegInt(std::fabs(x));
+  return ok(ctx->createValue(xs == digits));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -172,6 +312,18 @@ bool numericLessThan(double x, double y) { return x < y; }
 /* 字符串按码点比较（§7.2.13 步骤 4：逐个 UTF-16 code unit；v1 用字节
  * 字典序近似——UTF-8 字节序与 UTF-16 码点序对 BMP 一致，ASCII 正确）。 */
 bool stringLessThan(const std::string &a, const std::string &b) { return a < b; }
+
+/* BigInt 与 BigInt 比较：同符号 -> 按绝对值大小；异符号 -> 负数恒小。 */
+bool bigintLessThan(const JSValue *a, const JSValue *b) {
+  bool an = a->bigIntNegative();
+  bool bn = b->bigIntNegative();
+  if (an != bn) return an; /* 负数 < 正数 */
+  if (an) {
+    /* 都是负数：绝对值大的更小。 */
+    return bigintLess(b->bigIntDigits(), a->bigIntDigits());
+  }
+  return bigintLess(a->bigIntDigits(), b->bigIntDigits());
+}
 
 ConversionResult isLessThanImpl(JSContext *ctx, JSValue *x, JSValue *y) {
   /* 1. ToPrimitive(number)。 */
@@ -187,15 +339,83 @@ ConversionResult isLessThanImpl(JSContext *ctx, JSValue *x, JSValue *y) {
     return ok(ctx->createValue(stringLessThan(a->toString(), b->toString())));
   }
 
-  /* 3. 其余：ToNumeric 后数值比较。 */
+  /* 3. BigInt 与 String（§7.2.12 步骤 4/5）：String 转 BigInt，失败 -> undefined。 */
+  if (a->kind() == Kind::BigInt && b->kind() == Kind::String) {
+    std::string sb = stringToBigInt(b->toString());
+    if (sb.empty()) return ok(ctx->createValue(false)); /* undefined 语义 */
+    bool neg = (sb[0] == '-');
+    std::string digits = neg ? sb.substr(1) : sb;
+    if (digits.empty()) digits = "0";
+    JSValue bigB(false, digits);
+    if (neg) bigB.setBigInt(true, digits);
+    return ok(ctx->createValue(bigintLessThan(a, &bigB)));
+  }
+  if (a->kind() == Kind::String && b->kind() == Kind::BigInt) {
+    std::string sa = stringToBigInt(a->toString());
+    if (sa.empty()) return ok(ctx->createValue(false)); /* undefined 语义 */
+    bool neg = (sa[0] == '-');
+    std::string digits = neg ? sa.substr(1) : sa;
+    if (digits.empty()) digits = "0";
+    JSValue bigA(false, digits);
+    if (neg) bigA.setBigInt(true, digits);
+    return ok(ctx->createValue(bigintLessThan(&bigA, b)));
+  }
+
+  /* 4. 其余：ToNumeric 后比较。 */
   ConversionResult na = toNumeric(ctx, a);
   if (!na.ok()) return na;
   ConversionResult nb = toNumeric(ctx, b);
   if (!nb.ok()) return nb;
-  double da = na.value->toNumber();
-  double db = nb.value->toNumber();
-  /* 4. NaN 参与 -> undefined（运算符结果为 false）。 */
-  return ok(ctx->createValue(numericLessThan(da, db)));
+  JSValue *va = na.value;
+  JSValue *vb = nb.value;
+
+  /* 5. 同类型（Number vs Number，BigInt vs BigInt）。 */
+  if (va->kind() == vb->kind()) {
+    if (va->kind() == Kind::Number) {
+      /* NaN 参与 -> undefined（运算符结果为 false）。 */
+      return ok(ctx->createValue(numericLessThan(va->toNumber(), vb->toNumber())));
+    }
+    /* BigInt vs BigInt：BigInt::lessThan。 */
+    return ok(ctx->createValue(bigintLessThan(va, vb)));
+  }
+
+  /* 6. 类型不同：BigInt vs Number（或反向）。§7.2.12 步骤 11-15。 */
+  JSValue *big = va->kind() == Kind::BigInt ? va : vb;
+  double num = va->kind() == Kind::Number ? va->toNumber() : vb->toNumber();
+  bool bigIsA = (va->kind() == Kind::BigInt);
+
+  /* 11. NaN -> undefined。 */
+  if (std::isnan(num)) return ok(ctx->createValue(false));
+
+  /* 12/13. BigInt 与 ±Infinity。 */
+  if (std::isinf(num)) {
+    if (num > 0) {
+      /* BigInt < +Infinity 恒真；+Infinity < BigInt 恒假。 */
+      return ok(ctx->createValue(bigIsA));
+    }
+    /* BigInt < -Infinity 恒假；-Infinity < BigInt 恒真。 */
+    return ok(ctx->createValue(!bigIsA));
+  }
+
+  /* 14. 精确比较 BigInt 与 num（bigIntNumberLess 处理符号/小数/绝对值）。
+   *     bigIsA=true：x=BigInt, y=num，结果 = big < num；
+   *     bigIsA=false：x=num, y=BigInt，结果 = num < big = !(big < num) 且不相等
+   *     ——用 bigIntNumberLess 求 big<num，再按方向取反。 */
+  bool bigLess = bigIntNumberLess(big, num);
+  if (bigIsA) return ok(ctx->createValue(bigLess));
+  /* num < big：bigLess=false 时可能 num==big（false）或 num<big（true）。
+   * 用相等性区分：num==big -> false；否则 num<big == !(big<num)。 */
+  bool eq = false;
+  /* num==big 当且仅当二者符号相同且绝对值十进制串相等。 */
+  if ((num < 0) == big->bigIntNegative() &&
+      !std::isnan(num) && !std::isinf(num)) {
+    bool numInt = (std::fabs(num) == std::floor(std::fabs(num)));
+    if (numInt) {
+      std::string ns = exactDecimalOfNonNegInt(std::fabs(num));
+      eq = (ns == big->bigIntDigits());
+    }
+  }
+  return ok(ctx->createValue(!bigLess && !eq));
 }
 
 }  // namespace
@@ -252,7 +472,21 @@ ConversionResult add(JSContext *ctx, JSValue *x, JSValue *y) {
   if (!na.ok()) return na;
   ConversionResult nb = toNumeric(ctx, b);
   if (!nb.ok()) return nb;
-  return ok(ctx->createValue(na.value->toNumber() + nb.value->toNumber()));
+  JSValue *va = na.value;
+  JSValue *vb = nb.value;
+  if (va->kind() == Kind::BigInt || vb->kind() == Kind::BigInt) {
+    /* §13.15.2 步骤 7：BigInt + Number 混用 -> TypeError。 */
+    if (va->kind() != vb->kind()) {
+      return fail("TypeError: Cannot mix BigInt and other types, use explicit conversions");
+    }
+    /* BigInt + BigInt：有符号大数加法。 */
+    bool outNeg = false;
+    std::string digits = va->bigIntDigits();
+    bigintAddSigned(va->bigIntNegative(), digits, vb->bigIntNegative(),
+                    vb->bigIntDigits(), outNeg);
+    return ok(ctx->createValue(JSValue(outNeg, digits)));
+  }
+  return ok(ctx->createValue(va->toNumber() + vb->toNumber()));
 }
 
 ConversionResult typeOf(JSContext *ctx, JSValue *v) {
@@ -272,6 +506,8 @@ ConversionResult typeOf(JSContext *ctx, JSValue *v) {
       return ok(ctx->createValue(std::string("string")));
     case Kind::Symbol:
       return ok(ctx->createValue(std::string("symbol")));
+    case Kind::BigInt:
+      return ok(ctx->createValue(std::string("bigint"))); /* §13.5.3 */
     case Kind::Object:
       /* 可调用对象 -> "function"；其余 -> "object"。 */
       return ok(ctx->createValue(std::string(
