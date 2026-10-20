@@ -49,12 +49,29 @@ enum class Opcode : uint8_t {
   Sub,
   Mul,
   Div,
+  Mod,             /* % */
+  Pow,             /* ** */
   Neg,             /* 一元负号：栈顶取负 */
+  Not,             /* 一元逻辑非：!x */
+  Typeof,          /* typeof 栈顶 */
 
   /* 比较 */
   Eq,              /* == */
   StrictEq,        /* === */
   Lt,              /* < */
+  Le,              /* <= */
+  Gt,              /* > */
+  Ge,              /* >= */
+  Ne,              /* != */
+  StrictNe,        /* !== */
+
+  /* 位运算 */
+  BitAnd,          /* & */
+  BitOr,           /* | */
+  BitXor,          /* ^ */
+  LShift,          /* << */
+  RShift,          /* >> */
+  URShift,         /* >>> */
 
   /* 跳转 */
   Jump,            /* 无条件跳转：Jump {target} */
@@ -79,12 +96,19 @@ struct Instruction {
   uint16_t arg = 0;
 };
 
+/* 常量池条目：数字或字符串（PushConst/LoadGlobal 经索引引用）。 */
+struct Constant {
+  bool is_number = false; /* true = number 载荷；false = 字符串载荷 */
+  double number = 0.0;
+  std::string str;
+};
+
 /* 函数级字节码（架构 §4.3：每个函数一个 FunctionBytecode）。 */
 struct FunctionBytecode {
-  std::vector<Instruction> code;       /* 指令序列 */
-  std::vector<std::string> constants;  /* 常量池（字符串） */
-  std::string name;                    /* 函数名（可空） */
-  uint16_t numLocals = 0;              /* 局部变量槽数 */
+  std::vector<Instruction> code;      /* 指令序列 */
+  std::vector<Constant> constants;    /* 常量池（数字/字符串） */
+  std::string name;                   /* 函数名（可空） */
+  uint16_t numLocals = 0;             /* 局部变量槽数 */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -111,6 +135,9 @@ class BytecodeBuilder {
   void push_const(const std::string &s) {
     push_op(Opcode::PushConst, add_constant(s));
   }
+  void push_number(double d) {
+    push_op(Opcode::PushConst, add_number(d));
+  }
   void push_int(int16_t v) { push_op(Opcode::PushInt, static_cast<uint16_t>(v)); }
   void load_var(uint16_t slot) { push_op(Opcode::LoadVar, slot); }
   void store_var(uint16_t slot) { push_op(Opcode::StoreVar, slot); }
@@ -135,6 +162,7 @@ class BytecodeBuilder {
 
   /* 常量池：按值去重，返回池索引。 */
   uint16_t add_constant(const std::string &s);
+  uint16_t add_number(double d);
 
   /* 局部变量槽数（Compiler 设置）。 */
   void set_num_locals(uint16_t n) { fn_.numLocals = n; }

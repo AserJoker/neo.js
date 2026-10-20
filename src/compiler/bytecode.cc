@@ -47,11 +47,29 @@ void BytecodeBuilder::bind_label(BcLabel &label) {
 }
 
 uint16_t BytecodeBuilder::add_constant(const std::string &s) {
-  auto it = std::find(fn_.constants.begin(), fn_.constants.end(), s);
-  if (it != fn_.constants.end()) {
-    return static_cast<uint16_t>(it - fn_.constants.begin());
+  /* 字符串常量：按值去重（is_number == false 的条目才参与匹配）。 */
+  for (size_t i = 0; i < fn_.constants.size(); ++i) {
+    if (!fn_.constants[i].is_number && fn_.constants[i].str == s) {
+      return static_cast<uint16_t>(i);
+    }
   }
-  fn_.constants.push_back(s);
+  Constant c;
+  c.str = s;
+  fn_.constants.push_back(std::move(c));
+  return static_cast<uint16_t>(fn_.constants.size() - 1);
+}
+
+uint16_t BytecodeBuilder::add_number(double d) {
+  /* 数字常量：按值去重（is_number 条目且 number 相等）。 */
+  for (size_t i = 0; i < fn_.constants.size(); ++i) {
+    if (fn_.constants[i].is_number && fn_.constants[i].number == d) {
+      return static_cast<uint16_t>(i);
+    }
+  }
+  Constant c;
+  c.is_number = true;
+  c.number = d;
+  fn_.constants.push_back(std::move(c));
   return static_cast<uint16_t>(fn_.constants.size() - 1);
 }
 

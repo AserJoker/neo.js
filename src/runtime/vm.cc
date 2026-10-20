@@ -54,27 +54,92 @@ ConversionResult binaryArith(JSContext *ctx, JSValue *a, JSValue *b,
     case Opcode::Sub: return ok(ctx->createValue(x - y));
     case Opcode::Mul: return ok(ctx->createValue(x * y));
     case Opcode::Div: return ok(ctx->createValue(x / y));
+    case Opcode::Mod: return ok(ctx->createValue(std::fmod(x, y)));
+    case Opcode::Pow: return ok(ctx->createValue(std::pow(x, y)));
     default: return fail("Error: invalid binary arithmetic opcode");
   }
 }
 
+/* ToInt32（§7.1.6）：取模 2^32 后转有符号 32 位。 */
+int32_t toInt32Value(double d) {
+  if (std::isnan(d) || std::isinf(d) || d == 0.0) return 0;
+  double mod = std::fmod(std::trunc(d), 4294967296.0);
+  if (mod < 0.0) mod += 4294967296.0; /* 模 2^32 得正余数 */
+  uint32_t u = static_cast<uint32_t>(mod);
+  return static_cast<int32_t>(u);
+}
+
+/* 位运算（§13.9/§13.10/§13.11/§13.12）：ToInt32 后按位运算。 */
+ConversionResult bitwiseOp(JSContext *ctx, JSValue *a, JSValue *b, Opcode op) {
+  ConversionResult na = toNumeric(ctx, a);
+  if (!na.ok()) return na;
+  ConversionResult nb = toNumeric(ctx, b);
+  if (!nb.ok()) return nb;
+  int32_t x = toInt32Value(na.value->toNumber());
+  int32_t y = toInt32Value(nb.value->toNumber());
+  switch (op) {
+    case Opcode::BitAnd: return ok(ctx->createValue(int64_t(x & y)));
+    case Opcode::BitOr: return ok(ctx->createValue(int64_t(x | y)));
+    case Opcode::BitXor: return ok(ctx->createValue(int64_t(x ^ y)));
+    case Opcode::LShift: return ok(ctx->createValue(int64_t(static_cast<int32_t>(
+        static_cast<uint32_t>(x) << (y & 31)))));
+    case Opcode::RShift: return ok(ctx->createValue(int64_t(x >> (y & 31))));
+    case Opcode::URShift: return ok(ctx->createValue(int64_t(static_cast<int32_t>(
+        static_cast<uint32_t>(x) >> (y & 31)))));
+    default: return fail("Error: invalid bitwise opcode");
+  }
+}
+
 /* 比较指令分发：Eq -> abstractEquals；StrictEq -> strictEquals；
- * Lt -> isLessThan。返回 Boolean 值。 */
+ * Lt -> isLessThan；Le/Gt/Ge 由 IsLessThan 组合；Ne/StrictNe 取反。
+ * 返回 Boolean 值。 */
 ConversionResult compareOp(JSContext *ctx, JSValue *a, JSValue *b, Opcode op) {
   switch (op) {
     case Opcode::Eq: return abstractEquals(ctx, a, b);
     case Opcode::StrictEq: return strictEquals(ctx, a, b);
     case Opcode::Lt: return isLessThan(ctx, a, b);
+    case Opcode::Le: {
+      /* a <= b == !(b < a)（§7.2.12 步骤：b < a 为 false 则 a <= b）。 */
+      ConversionResult r = isLessThan(ctx, b, a);
+      if (!r.ok()) return r;
+      return ok(ctx->createValue(!r.value->toBoolean()));
+    }
+    case Opcode::Gt: {
+      /* a > b == b < a。 */
+      ConversionResult r = isLessThan(ctx, b, a);
+      if (!r.ok()) return r;
+      return ok(ctx->createValue(r.value->toBoolean()));
+    }
+    case Opcode::Ge: {
+      /* a >= b == !(a < b)。 */
+      ConversionResult r = isLessThan(ctx, a, b);
+      if (!r.ok()) return r;
+      return ok(ctx->createValue(!r.value->toBoolean()));
+    }
+    case Opcode::Ne: {
+      ConversionResult r = abstractEquals(ctx, a, b);
+      if (!r.ok()) return r;
+      return ok(ctx->createValue(!r.value->toBoolean()));
+    }
+    case Opcode::StrictNe: {
+      ConversionResult r = strictEquals(ctx, a, b);
+      if (!r.ok()) return r;
+      return ok(ctx->createValue(!r.value->toBoolean()));
+    }
     default: return fail("Error: invalid compare opcode");
   }
 }
 
-/* 常量池值：字符串 -> JSValue；数字字面量经字符串暂存（v1 简化）。 */
+/* 常量池值：按 Constant 载荷创建 Number 或 String 值。 */
 JSValue *constValue(JSContext *ctx, const FunctionBytecode &fn, uint16_t index) {
   if (index >= fn.constants.size()) {
     return ctx->createValue(Kind::Undefined);
   }
-  return ctx->createValue(fn.constants[index]);
+  const Constant &c = fn.constants[index];
+  if (c.is_number) {
+    return ctx->createValue(c.number);
+  }
+  return ctx->createValue(c.str);
 }
 
 }  // namespace
@@ -150,7 +215,11 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
       }
       case Opcode::LoadGlobal: {
         /* 全局对象属性读取：LoadGlobal {name_index} -> 属性值（未定义属性返回 undefined）。 */
-        const std::string &name = fn.constants[instr.arg];
+        if (instr.arg >= fn.constants.size() ||
+            fn.constants[instr.arg].is_number) {
+          return fail("Error: LoadGlobal requires a string constant");
+        }
+        const std::string &name = fn.constants[instr.arg].str;
         JSValue *global = ctx->globalObject();
         JSValue *val = global->object()->getProperty(name);
         stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
@@ -176,11 +245,28 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
       }
       case Opcode::Sub:
       case Opcode::Mul:
-      case Opcode::Div: {
+      case Opcode::Div:
+      case Opcode::Mod:
+      case Opcode::Pow: {
         if (stack.size() < 2) return fail("Error: stack underflow on arith");
         JSValue *b = stack[stack.size() - 1];
         JSValue *a = stack[stack.size() - 2];
         ConversionResult r = binaryArith(ctx, a, b, instr.op);
+        if (!r.ok()) return r;
+        stack.resize(stack.size() - 2);
+        stack.push_back(r.value);
+        break;
+      }
+      case Opcode::BitAnd:
+      case Opcode::BitOr:
+      case Opcode::BitXor:
+      case Opcode::LShift:
+      case Opcode::RShift:
+      case Opcode::URShift: {
+        if (stack.size() < 2) return fail("Error: stack underflow on bitwise");
+        JSValue *b = stack[stack.size() - 1];
+        JSValue *a = stack[stack.size() - 2];
+        ConversionResult r = bitwiseOp(ctx, a, b, instr.op);
         if (!r.ok()) return r;
         stack.resize(stack.size() - 2);
         stack.push_back(r.value);
@@ -195,9 +281,31 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         stack.push_back(ctx->createValue(-n.value->toNumber()));
         break;
       }
+      case Opcode::Not: {
+        if (stack.empty()) return fail("Error: stack underflow on Not");
+        JSValue *a = stack.back();
+        bool b = toBoolean(a);
+        stack.pop_back();
+        stack.push_back(ctx->createValue(!b));
+        break;
+      }
+      case Opcode::Typeof: {
+        if (stack.empty()) return fail("Error: stack underflow on Typeof");
+        JSValue *a = stack.back();
+        ConversionResult r = typeOf(ctx, a);
+        if (!r.ok()) return r;
+        stack.pop_back();
+        stack.push_back(r.value);
+        break;
+      }
       case Opcode::Eq:
       case Opcode::StrictEq:
-      case Opcode::Lt: {
+      case Opcode::Lt:
+      case Opcode::Le:
+      case Opcode::Gt:
+      case Opcode::Ge:
+      case Opcode::Ne:
+      case Opcode::StrictNe: {
         if (stack.size() < 2) return fail("Error: stack underflow on compare");
         JSValue *b = stack[stack.size() - 1];
         JSValue *a = stack[stack.size() - 2];

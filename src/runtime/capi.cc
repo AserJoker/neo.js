@@ -873,7 +873,9 @@ extern "C" JSValue *JS_RunBytecode(JSContext *ctx, const JSBCOp *ops,
     if (constants != nullptr && const_len > 0) {
       fn.constants.reserve(const_len);
       for (size_t i = 0; i < const_len; ++i) {
-        fn.constants.emplace_back(constants[i] ? constants[i] : "");
+        neojs::Constant c;
+        c.str = constants[i] ? constants[i] : "";
+        fn.constants.push_back(std::move(c));
       }
     }
     fn.numLocals = num_locals;
