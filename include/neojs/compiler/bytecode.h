@@ -43,6 +43,7 @@ enum class Opcode : uint8_t {
 
   /* 栈操作 */
   Pop,             /* 弹出栈顶（临时值清理） */
+  Dup,             /* 复制栈顶（成员调用 this 保留）：Dup */
 
   /* 算术 */
   Add,             /* a + b（含字符串拼接） */
@@ -79,6 +80,7 @@ enum class Opcode : uint8_t {
 
   /* 函数/调用 */
   Call,            /* 调用栈顶函数：Call {argc}（弹出函数+argc 参数） */
+  CallMethod,      /* 成员调用：obj, func, args... -> 结果（M4.1，this=obj） */
   Ret,             /* 返回栈顶值，弹出本帧 */
 
   /* 闭包（M2.5） */
@@ -170,7 +172,9 @@ class BytecodeBuilder {
     push_op(Opcode::LoadGlobal, add_constant(name));
   }
   void pop() { push_op(Opcode::Pop); }
+  void dup() { push_op(Opcode::Dup); }
   void call(uint16_t argc) { push_op(Opcode::Call, argc); }
+  void call_method(uint16_t argc) { push_op(Opcode::CallMethod, argc); }
   void jump(BcLabel *label) { push_op(Opcode::Jump, 0, label); }
   void jump_if_false(BcLabel *label) { push_op(Opcode::JumpIfFalse, 0, label); }
   void ret() { push_op(Opcode::Ret); }

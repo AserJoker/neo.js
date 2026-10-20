@@ -1015,9 +1015,43 @@ bool Compiler::compileCall(const ASTNode &node) {
     fail("call without callee");
     return false;
   }
-  /* callee 先入栈，再压 argc 个参数，Call {argc}。 */
-  if (!compileExpr(*node.children[0])) return false;
+  const ASTNode *callee = node.children[0];
   size_t argc = node.children.size() - 1;
+
+  /* 成员方法调用 obj.method(args)（M4.1）：this 绑定接收者。
+   *   [obj] Dup LoadProp "method" [args...] CallMethod {argc}
+   * 栈布局：obj, func, args...（CallMethod 以 obj 为 this）。 */
+  if (callee->type == NodeType::MemberExpression) {
+    if (callee->member.optional || callee->children.size() < 2) {
+      fail("not implemented: optional chaining in call");
+      return false;
+    }
+    const ASTNode *prop = callee->children[1];
+    if (prop->type == NodeType::PrivateIdentifier) {
+      fail("not implemented: private member call");
+      return false;
+    }
+    if (!compileExpr(*callee->children[0])) return false; /* obj */
+    builder_.dup();                                        /* obj, obj */
+    if (!callee->member.computed) {
+      if (prop->type != NodeType::Identifier) {
+        fail("invalid member property name");
+        return false;
+      }
+      builder_.load_prop(prop->name); /* obj, func */
+    } else {
+      if (!compileExpr(*prop)) return false; /* obj, obj, key */
+      builder_.load_elem();                  /* obj, func */
+    }
+    for (size_t i = 1; i < node.children.size(); ++i) {
+      if (!compileExpr(*node.children[i])) return false;
+    }
+    builder_.call_method(static_cast<uint16_t>(argc));
+    return true;
+  }
+
+  /* 普通调用：callee 先入栈，再压 argc 个参数，Call {argc}。 */
+  if (!compileExpr(*callee)) return false;
   for (size_t i = 1; i < node.children.size(); ++i) {
     if (!compileExpr(*node.children[i])) return false;
   }

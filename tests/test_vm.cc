@@ -1948,3 +1948,153 @@ TEST(Compiler, EvalPrototypeUnderGC) {
   JS_FreeAllocator(a);
 }
 
+/* M4.1：数组字面量的原型链指向 Array.prototype，且方法可调用。 */
+TEST(Compiler, EvalArrayProtoChain) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "Object.getPrototypeOf([1, 2]) === Array.prototype ? 'ok' : 'bad'";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "ok");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* M4.1：Array() 构造器预分配 length，与数组字面量等价。 */
+TEST(Compiler, EvalArrayConstructorLength) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "var a = Array(5); var b = Array(1, 2, 3);"
+      "(a.length === 5 && b.length === 3 && b[2] === 3) ? 'ok' : 'bad'";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "ok");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* M4.1：push/pop 修改 length 并返回正确值。 */
+TEST(Compiler, EvalArrayPushPop) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "var a = []; var n = a.push(1, 2, 3);"
+      "var p = a.pop();"
+      "(n === 3 && p === 3 && a.length === 2) ? 'ok' : 'bad'";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "ok");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* M4.1：join / toString / reverse / indexOf。 */
+TEST(Compiler, EvalArrayMethods) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "var a = [1, 2, 3];"
+      "var j = a.join('-');"
+      "var t = a.toString();"
+      "a.reverse();"
+      "var i = a.indexOf(2);"
+      "(j === '1-2-3' && t === '1,2,3' &&"
+      " a[0] === 3 && a[1] === 2 && i === 1) ? 'ok' : 'bad'";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "ok");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* M4.1：Array.isArray + shift/unshift。 */
+TEST(Compiler, EvalArrayIsArrayShiftUnshift) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "var a = [2, 3];"
+      "var s = a.shift();"
+      "var n = a.unshift(1);"
+      "var ia = Array.isArray(a);"
+      "var io = Array.isArray({});"
+      "(s === 2 && n === 2 && a[0] === 1 && a[1] === 3 &&"
+      " ia === true && io === false) ? 'ok' : 'bad'";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "ok");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* M4.1：GC 压力下数组字面量与 Array.prototype 引用存活。 */
+TEST(Compiler, EvalArrayProtoUnderGC) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::JSContext *c = ic(ctx);
+  c->heap().setGcThreshold(4);
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "var a = [1, 2, 3]; var s = 0; var i = 0;"
+      "while (i < 20) { s = s + a.length + a[0]; i = i + 1; } s";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 80.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+

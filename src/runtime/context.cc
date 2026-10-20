@@ -69,7 +69,13 @@ JSValue *JSContext::createObject(JSObject *proto) {
 }
 
 JSValue *JSContext::createArray(size_t capacity) {
+  /* 原型链 -> Array.prototype（M4.1）：数组字面量/Array() 新建数组
+   * 汇聚于此。arrayProto 惰性创建；未注册内置时返回 nullptr（数组无原型）。 */
+  JSObject *proto = nullptr;
+  JSValue *ap = neojs::arrayProto(this); /* 限定名：成员函数 arrayProto() 为 0 参数 getter */
+  if (ap != nullptr) proto = ap->object();
   JSObject *arr = heap_.allocGCObject<JSObject>(ObjectKind::Array, capacity);
+  if (proto != nullptr) arr->setPrototype(proto);
   heap_.pin(arr);
   JSValue *v = heap_.allocGCObject<JSValue>();
   v->setObject(arr);
@@ -130,6 +136,9 @@ void JSContext::markRoots() {
 
   /* Object.prototype 缓存（M3.3）：对象原型链根，始终可达。 */
   if (object_proto_ != nullptr) heap_.markRoot(object_proto_);
+
+  /* Array.prototype 缓存（M4.1）：数组原型链根，始终可达。 */
+  if (array_proto_ != nullptr) heap_.markRoot(array_proto_);
 
   /* VM 操作数栈（M2-VM，栈帧入根集）：解释器运行期间栈上值不可回收。
    * 嵌套 runBytecode（函数递归）时多个栈帧并存，全部标记。 */

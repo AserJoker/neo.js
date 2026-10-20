@@ -37,6 +37,7 @@
 #include "neojs/runtime/conversion.h"
 #include "neojs/runtime/function.h"
 #include "neojs/runtime/object.h"
+#include "neojs/runtime/operators.h"
 #include "neojs/runtime/value.h"
 
 namespace neojs {
@@ -272,6 +273,224 @@ ConversionResult symbolToStringBuiltin(JSContext *ctx, JSValue *thisVal,
   return ok(ctx->createValue("Symbol(" + desc + ")"));
 }
 
+/* Array 构造器（M4.1，§23.1.1）：
+ *   Array() / Array(len) / Array(...items)。
+ * 无参或单个非数字参数 -> 新建空数组；单个 0..2^32-1 整数 -> 预分配 length；
+ * 多参数 -> 依次填入元素。new 语义与直接调用一致。
+ * 本阶段简化：不校验参数是数组/对象（Array.of/Array.from 留 M4.4）。 */
+ConversionResult arrayConstructor(JSContext *ctx, JSValue *thisVal,
+                                  JSValue *const *args, size_t argc) {
+  JSValue *arr = ctx->createArray(0);
+  JSObject *obj = arr->object();
+  if (argc == 1) {
+    JSValue *a = args[0];
+    if (a != nullptr && a->kind() == Kind::Number) {
+      double d = a->toNumber();
+      if (d >= 0.0 && d == std::trunc(d) && d < 4294967296.0) {
+        obj->resizeElements(static_cast<size_t>(d)); /* 预分配 length */
+        return ok(arr);
+      }
+    }
+  }
+  for (size_t i = 0; i < argc; ++i) {
+    obj->setElement(i, args[i]);
+  }
+  (void)thisVal;
+  return ok(arr);
+}
+
+/* Array.isArray（§23.1.2.1）：arg 是否为 Array 对象。 */
+ConversionResult arrayIsArray(JSContext *ctx, JSValue *,
+                              JSValue *const *args, size_t argc) {
+  bool is_arr = argc > 0 && args[0] != nullptr && args[0]->isObject() &&
+                args[0]->object()->isArray();
+  return ok(ctx->createValue(is_arr));
+}
+
+/* 取 this 为数组的公共校验（§23.1.3）：非数组对象抛 TypeError。 */
+JSObject *arrayThis(JSValue *thisVal) {
+  if (thisVal == nullptr || !thisVal->isObject() ||
+      !thisVal->object()->isArray()) {
+    return nullptr; /* 调用方据此 fail */
+  }
+  return thisVal->object();
+}
+
+/* Array.prototype.push（§23.1.3.25）：末尾追加元素，返回新 length。 */
+ConversionResult arrayPush(JSContext *ctx, JSValue *thisVal,
+                           JSValue *const *args, size_t argc) {
+  JSObject *arr = arrayThis(thisVal);
+  if (arr == nullptr) {
+    return fail("TypeError: Array.prototype.push called on non-array");
+  }
+  size_t len = arr->length();
+  for (size_t i = 0; i < argc; ++i) {
+    arr->setElement(len + i, args[i]);
+  }
+  return ok(ctx->createValue(static_cast<double>(len + argc)));
+}
+
+/* Array.prototype.pop（§23.1.3.19）：删除并返回末尾元素；空数组返回 undefined。 */
+ConversionResult arrayPop(JSContext *ctx, JSValue *thisVal,
+                          JSValue *const *, size_t) {
+  JSObject *arr = arrayThis(thisVal);
+  if (arr == nullptr) {
+    return fail("TypeError: Array.prototype.pop called on non-array");
+  }
+  size_t len = arr->length();
+  if (len == 0) return ok(ctx->createValue(Kind::Undefined));
+  JSValue *v = arr->getElement(len - 1);
+  arr->resizeElements(len - 1);
+  return ok(v != nullptr ? v : ctx->createValue(Kind::Undefined));
+}
+
+/* Array.prototype.indexOf（§23.1.3.15）：返回第一个匹配索引，未找到 -1。 */
+ConversionResult arrayIndexOf(JSContext *ctx, JSValue *thisVal,
+                              JSValue *const *args, size_t argc) {
+  JSObject *arr = arrayThis(thisVal);
+  if (arr == nullptr) {
+    return fail("TypeError: Array.prototype.indexOf called on non-array");
+  }
+  size_t len = arr->length();
+  JSValue *target = (argc > 0) ? args[0] : nullptr;
+  size_t from = 0;
+  if (argc > 1 && args[1] != nullptr) {
+    double d = args[1]->toNumber();
+    if (d < 0.0) {
+      double r = static_cast<double>(len) + d;
+      from = (r > 0.0) ? static_cast<size_t>(r) : 0;
+    } else if (d >= static_cast<double>(len)) {
+      return ok(ctx->createValue(-1.0));
+    } else {
+      from = static_cast<size_t>(d);
+    }
+  }
+  for (size_t i = from; i < len; ++i) {
+    JSValue *v = arr->getElement(i);
+    /* 空洞跳过（严格相等对空洞无定义）。 */
+    if (v == nullptr) continue;
+    ConversionResult eq = strictEquals(ctx, target, v);
+    if (!eq.ok()) return eq;
+    if (eq.value->toBoolean()) {
+      return ok(ctx->createValue(static_cast<double>(i)));
+    }
+  }
+  return ok(ctx->createValue(-1.0));
+}
+
+/* Array.prototype.join（§23.1.3.14）：元素转字符串用分隔符连接；
+ * null/undefined 元素转为空串。 */
+ConversionResult arrayJoin(JSContext *ctx, JSValue *thisVal,
+                           JSValue *const *args, size_t argc) {
+  JSObject *arr = arrayThis(thisVal);
+  if (arr == nullptr) {
+    return fail("TypeError: Array.prototype.join called on non-array");
+  }
+  std::string sep = ",";
+  if (argc > 0 && args[0] != nullptr &&
+      args[0]->kind() != Kind::Undefined) {
+    ConversionResult s = toString(ctx, args[0]);
+    if (!s.ok()) return s;
+    sep = s.value->toString();
+  }
+  size_t len = arr->length();
+  std::string out;
+  for (size_t i = 0; i < len; ++i) {
+    if (i > 0) out += sep;
+    JSValue *v = arr->getElement(i);
+    if (v == nullptr || v->kind() == Kind::Null ||
+        v->kind() == Kind::Undefined) {
+      continue; /* 空串 */
+    }
+    ConversionResult s = toString(ctx, v);
+    if (!s.ok()) return s;
+    out += s.value->toString();
+  }
+  return ok(ctx->createValue(std::move(out)));
+}
+
+/* Array.prototype.toString（§23.1.3.29）：委托 join()（无参）。 */
+ConversionResult arrayToString(JSContext *ctx, JSValue *thisVal,
+                               JSValue *const *, size_t) {
+  return arrayJoin(ctx, thisVal, nullptr, 0);
+}
+
+/* Array.prototype.reverse（§23.1.3.26）：原地反转，返回数组本身。 */
+ConversionResult arrayReverse(JSContext *, JSValue *thisVal,
+                              JSValue *const *, size_t) {
+  JSObject *arr = arrayThis(thisVal);
+  if (arr == nullptr) {
+    return fail("TypeError: Array.prototype.reverse called on non-array");
+  }
+  size_t n = arr->length();
+  for (size_t lo = 0, hi = n; lo < hi;) {
+    --hi;
+    if (lo >= hi) break;
+    JSValue *a = arr->getElement(lo);
+    JSValue *b = arr->getElement(hi);
+    /* 空洞交换（保持空洞位置）。 */
+    if (a == nullptr && b == nullptr) {
+      /* both holes: no-op */
+    } else if (a == nullptr) {
+      arr->setElement(lo, b);
+      arr->deleteElement(hi);
+    } else if (b == nullptr) {
+      arr->deleteElement(lo);
+      arr->setElement(hi, a);
+    } else {
+      arr->setElement(lo, b);
+      arr->setElement(hi, a);
+    }
+    ++lo;
+  }
+  return ok(thisVal);
+}
+
+/* Array.prototype.shift（§23.1.3.24）：删除并返回第一个元素；空数组返回 undefined。 */
+ConversionResult arrayShift(JSContext *ctx, JSValue *thisVal,
+                            JSValue *const *, size_t) {
+  JSObject *arr = arrayThis(thisVal);
+  if (arr == nullptr) {
+    return fail("TypeError: Array.prototype.shift called on non-array");
+  }
+  size_t len = arr->length();
+  if (len == 0) return ok(ctx->createValue(Kind::Undefined));
+  JSValue *first = arr->getElement(0);
+  for (size_t i = 1; i < len; ++i) {
+    JSValue *v = arr->getElement(i);
+    if (v != nullptr) {
+      arr->setElement(i - 1, v);
+    } else {
+      arr->deleteElement(i - 1);
+    }
+  }
+  arr->resizeElements(len - 1);
+  return ok(first != nullptr ? first : ctx->createValue(Kind::Undefined));
+}
+
+/* Array.prototype.unshift（§23.1.3.31）：头部插入元素，返回新 length。 */
+ConversionResult arrayUnshift(JSContext *ctx, JSValue *thisVal,
+                              JSValue *const *args, size_t argc) {
+  JSObject *arr = arrayThis(thisVal);
+  if (arr == nullptr) {
+    return fail("TypeError: Array.prototype.unshift called on non-array");
+  }
+  size_t len = arr->length();
+  /* 先把现有元素后移 argc 位（从后往前避免覆盖）。 */
+  for (size_t i = len; i > 0; --i) {
+    JSValue *v = arr->getElement(i - 1);
+    if (v != nullptr) {
+      arr->setElement(i - 1 + argc, v);
+    } else {
+      arr->deleteElement(i - 1 + argc);
+    }
+  }
+  for (size_t i = 0; i < argc; ++i) {
+    arr->setElement(i, args[i]);
+  }
+  return ok(ctx->createValue(static_cast<double>(len + argc)));
+}
+
 /* 注册一组包装对象内置（Number/String/Boolean 之一）：
  * 构造器挂 global，prototype 挂 constructor + valueOf/toString 最小方法集，
  * prototype 进 wrapper_protos_ 缓存（装箱原型链，§7.1.13）。
@@ -378,6 +597,35 @@ void installBuiltins(JSContext *ctx) {
                         stringValueOf, stringToStringBuiltin);
   installWrapperBuiltin(ctx, "Boolean", ObjectKind::Boolean, booleanConstructor,
                         booleanValueOf, booleanToStringBuiltin);
+
+  /* Array 构造器（M4.1，§23.1.1）：数组字面量/Array() 的原型链根。
+   * 需在 createArray 首次被调用前注册（vm NewArray / 数组字面量）。 */
+  JSValue *array = makeBuiltin(ctx, arrayConstructor, ThisMode::Strict);
+  global->object()->setProperty("Array", array);
+  array->object()->setProperty("isArray",
+                               makeBuiltin(ctx, arrayIsArray, ThisMode::Strict));
+
+  /* Array.prototype（§23.1.3）：进 context 缓存（arrayProto）。
+   * 数组字面量 / Array() 新建数组的原型链汇聚于此。 */
+  JSValue *array_proto = arrayProto(ctx);
+  array->object()->setProperty("prototype", array_proto);
+  array_proto->object()->setProperty("constructor", array);
+  array_proto->object()->setProperty("push",
+                                     makeBuiltin(ctx, arrayPush, ThisMode::Strict));
+  array_proto->object()->setProperty("pop",
+                                     makeBuiltin(ctx, arrayPop, ThisMode::Strict));
+  array_proto->object()->setProperty("shift",
+                                     makeBuiltin(ctx, arrayShift, ThisMode::Strict));
+  array_proto->object()->setProperty("unshift",
+                                     makeBuiltin(ctx, arrayUnshift, ThisMode::Strict));
+  array_proto->object()->setProperty("indexOf",
+                                     makeBuiltin(ctx, arrayIndexOf, ThisMode::Strict));
+  array_proto->object()->setProperty("join",
+                                     makeBuiltin(ctx, arrayJoin, ThisMode::Strict));
+  array_proto->object()->setProperty("toString",
+                                     makeBuiltin(ctx, arrayToString, ThisMode::Strict));
+  array_proto->object()->setProperty("reverse",
+                                     makeBuiltin(ctx, arrayReverse, ThisMode::Strict));
 }
 
 /* 取 Object.prototype（M3.3，惰性创建 + 缓存 + 进根集）。
@@ -388,6 +636,23 @@ JSValue *objectProto(JSContext *ctx) {
   p = ctx->createObject(nullptr); /* Object.prototype 原型为 null（§20.1.3） */
   ctx->setObjectProto(p);
   return p;
+}
+
+/* 取 Array.prototype（M4.1，惰性创建 + 缓存 + 进根集）。
+ * 供 Array 构造器新建数组 / vm NewArray 字面量原型链使用。
+ * 注意：Array.prototype 自身是数组对象（§23.1.3），但创建时不能走
+ * createArray（会回调 arrayProto 造成无限递归）——直接构造空数组。 */
+JSValue *arrayProto(JSContext *ctx) {
+  JSValue *p = ctx->arrayProto();
+  if (p != nullptr) return p;
+  JSObject *arr = ctx->heap().allocGCObject<JSObject>(ObjectKind::Array, 0);
+  ctx->heap().pin(arr); /* 分配保护（M3.3）：两段式创建中间窗口防误回收 */
+  JSValue *v = ctx->heap().allocGCObject<JSValue>();
+  v->setObject(arr);
+  arr->setHolder(v);
+  ctx->heap().unpin(arr);
+  ctx->setArrayProto(v);
+  return v;
 }
 
 }  // namespace neojs

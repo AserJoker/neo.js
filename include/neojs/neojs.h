@@ -240,6 +240,7 @@ typedef enum JSBCOp {
   JS_BC_STORE_VAR,
   JS_BC_LOAD_GLOBAL,
   JS_BC_POP,
+  JS_BC_DUP,         /* 复制栈顶（M4.1 成员调用 this） */
   JS_BC_ADD,
   JS_BC_SUB,
   JS_BC_MUL,
@@ -266,6 +267,7 @@ typedef enum JSBCOp {
   JS_BC_JUMP,
   JS_BC_JUMP_IF_FALSE,
   JS_BC_CALL,
+  JS_BC_CALL_METHOD,  /* 成员调用（M4.1）：obj, func, args... this=obj */
   JS_BC_RET,
   JS_BC_MAKE_FUNCTION,  /* M2.5 闭包：MakeFunction {index} */
   JS_BC_LOAD_UPVALUE,    /* 捕获的外层变量读取（M2.5） */

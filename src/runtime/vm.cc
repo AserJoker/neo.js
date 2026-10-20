@@ -290,6 +290,14 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         stack.pop_back();
         break;
       }
+      case Opcode::Dup: {
+        /* 复制栈顶（M4.1 成员调用保留 this）。 */
+        if (stack.size() <= fn.numLocals) {
+          return fail("Error: stack underflow on Dup");
+        }
+        stack.push_back(stack.back());
+        break;
+      }
       case Opcode::Add: {
         /* 操作数保持栈上（GC 根集保护）：add 内部分配触发 GC 也不会回收操作数。 */
         if (stack.size() < 2) return fail("Error: stack underflow on Add");
@@ -407,6 +415,26 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         if (r.tmp_handle != 0) ctx->handles().free(r.tmp_handle);
         break;
       }
+      case Opcode::CallMethod: {
+        /* 成员方法调用（M4.1）：栈布局 obj, func, args...（argc 个）。
+         * this = obj（func_slot 下方一位）。 */
+        uint16_t argc = instr.arg;
+        size_t func_slot = stack.size() - 1 - static_cast<size_t>(argc);
+        if (func_slot <= fn.numLocals) {
+          return fail("Error: stack underflow on CallMethod");
+        }
+        JSValue *this_obj = stack[func_slot - 1];
+        JSValue *func = stack[func_slot];
+        JSValue *const *call_args =
+            argc > 0 ? &stack[func_slot + 1] : nullptr;
+        ConversionResult r = call(ctx, func, this_obj, call_args, argc);
+        if (!r.ok()) return r;
+        /* 收缩：弹出 this + func + argc 个参数，压入结果。 */
+        stack.resize(stack.size() - 2 - static_cast<size_t>(argc));
+        stack.push_back(r.value);
+        if (r.tmp_handle != 0) ctx->handles().free(r.tmp_handle);
+        break;
+      }
       case Opcode::Ret: {
         if (stack.empty()) return ok(ctx->createValue(Kind::Undefined));
         JSValue *result = stack.back();
@@ -472,7 +500,14 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         if (!obj->isObject()) {
           return fail("TypeError: Cannot read properties of non-object");
         }
-        JSValue *val = obj->object()->getProperty(key);
+        JSValue *val = nullptr;
+        if (obj->object()->isArray() && key == "length") {
+          /* 数组 length 属性（M4.1）：由 elements 存储推导，非存储属性。 */
+          val = ctx->createValue(
+              static_cast<double>(obj->object()->length()));
+        } else {
+          val = obj->object()->getProperty(key);
+        }
         stack.pop_back();
         stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
         break;
@@ -491,7 +526,16 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         if (!obj->isObject()) {
           return fail("TypeError: Cannot set properties of non-object");
         }
-        obj->object()->setProperty(key, val);
+        if (obj->object()->isArray() && key == "length") {
+          /* 数组 length 写入（M4.1）：截断/扩展元素存储。 */
+          double d = val->toNumber();
+          if (d < 0.0 || d != std::trunc(d) || d > 4294967295.0) {
+            return fail("RangeError: Invalid array length");
+          }
+          obj->object()->resizeElements(static_cast<size_t>(d));
+        } else {
+          obj->object()->setProperty(key, val);
+        }
         stack.resize(stack.size() - 2);
         stack.push_back(val); /* 赋值表达式值 = 新值 */
         break;

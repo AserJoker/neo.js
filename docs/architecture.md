@@ -172,7 +172,7 @@
 | 位/逻辑 | `bit_and`, `bit_or`, `bit_xor`, `bit_shl`, `bit_sar`, `bit_shr`, `logical_and`, `logical_or`, `nullish` | `&&`/`||`/`??` 短路用跳转实现 |
 | 跳转 | `jump {target}`, `jump_if_true {target}`, `jump_if_false {target}`, `jump_if_nullish` | 控制流 |
 | 对象 | `new_object`, `new_array`, `get_prop {key}`, `set_prop {key}`, `delete_prop {key}`, `has_prop` | 属性系统入口 |
-| 函数/调用 | `call {argc}`, `call_method {argc}`, `construct {argc}`, `new_function {closure}`, `new_closure {func_index}` | 函数调用/构造 |
+| 函数/调用 | `call {argc}`, `call_method {argc}`, `construct {argc}`, `new_function {closure}`, `new_closure {func_index}` | 函数调用/构造（M4.1 已落地 `call_method`：成员调用 `obj.method(args)` 以 obj 为 this） |
 | 特殊 | `typeof`, `instanceof`, `in`, `new_target`, `import`, `yield`, `await`, `spread`, `destructure` | 语言特性 |
 | 控制 | `ret`, `throw`, `try`, `catch`, `finally`, `pop`, `dup`, `swap`, `check_tdz` | 栈操作/异常处理 |
 
@@ -182,7 +182,7 @@
 ### 5.2 对象模型
 
 - **Shape / Hidden Class**：v1 阶段对象属性直接放 `std::unordered_map`（正确性优先）；预留 `Shape` 抽象（§8 演进路线），后续切换不影响语义。
-- **数组**：`elements` 分离存储（连续索引）+ `properties`（命名属性），`length` 由元素存储推导；快速路径：`arr[i]` 整数索引 → 直接索引 elements。
+- **数组**：`elements` 分离存储（连续索引）+ `properties`（命名属性），`length` 由元素存储推导；快速路径：`arr[i]` 整数索引 → 直接索引 elements。`length` 读写经 VM `LoadProp/StoreProp` 特判（M4.1）：读返回 `elements.size()`，写截断/扩展元素存储（RangeError 校验）。
 - **原型链**：`[[Prototype]]` 内部槽（`JSObject::prototype_`，GC 引用边）；`__proto__` 访问器留待 M4（经 `Object.getPrototypeOf/setPrototypeOf` 读写内部槽）；属性查找遵循普通/特殊属性顺序。
 - **访问器属性**：getter/setter（`Object.defineProperty`）与数据属性统一在 `PropertyDescriptor` 中建模。
 - **属性访问顺序**（§10.1.3 语义）：ordinary `[[Get]]` 沿原型链；`Proxy` 走 trap（v1 先实现 `Proxy` 基础，`Reflect` 同步）。
