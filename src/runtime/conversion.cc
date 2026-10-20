@@ -184,9 +184,34 @@ double stringToNumber(const std::string &str) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* OrdinaryToPrimitive（§7.1.1.1）+ Symbol.toPrimitive（§7.1.1 步骤 1-5）     */
+/* -------------------------------------------------------------------------- */
+
+ConversionResult ordinaryToPrimitive(JSContext *ctx, JSValue *v, Hint hint) {
+  /* v 是 Object（调用方保证）。按 hint 确定方法调用顺序。 */
+  const char *first = (hint == Hint::String) ? "toString" : "valueOf";
+  const char *second = (hint == Hint::String) ? "valueOf" : "toString";
+
+  for (const char *name : {first, second}) {
+    JSValue *m = getProp(ctx, v, name);
+    if (m == nullptr) continue; /* 无此方法，尝试下一个 */
+    /* 当前阶段无 Callable（E3 实现）：无法调用方法。
+     * 此处为占位——E3 引入统一 Call 入口后，应调用 m(this) 并返回结果。
+     * 现在跳过调用（等价于方法不存在），最终走 TypeError。 */
+    (void)m;
+    (void)ctx;
+  }
+  /* 两个方法都不可调用 -> TypeError。 */
+  return fail("TypeError: Cannot convert object to primitive value");
+}
+
+}  // namespace
+
+/* -------------------------------------------------------------------------- */
 /* Number::toString（§6.1.6.1.20）：最短十进制表示。                          */
 /* 用 std::to_chars 求最短往返表示（Ryu 算法，C++17），再按 JS 记数法规则     */
 /* 重排。to_chars 输出形如 "123" / "1.5" / "0.00123" / "1e+21" / "1e-07"。   */
+/* 声明见 conversion.h（供编译器数字键转字符串复用）。                        */
 /* -------------------------------------------------------------------------- */
 
 std::string numberToString(double x) {
@@ -253,30 +278,6 @@ std::string numberToString(double x) {
   out += std::to_string(e);
   return out;
 }
-
-/* -------------------------------------------------------------------------- */
-/* OrdinaryToPrimitive（§7.1.1.1）+ Symbol.toPrimitive（§7.1.1 步骤 1-5）     */
-/* -------------------------------------------------------------------------- */
-
-ConversionResult ordinaryToPrimitive(JSContext *ctx, JSValue *v, Hint hint) {
-  /* v 是 Object（调用方保证）。按 hint 确定方法调用顺序。 */
-  const char *first = (hint == Hint::String) ? "toString" : "valueOf";
-  const char *second = (hint == Hint::String) ? "valueOf" : "toString";
-
-  for (const char *name : {first, second}) {
-    JSValue *m = getProp(ctx, v, name);
-    if (m == nullptr) continue; /* 无此方法，尝试下一个 */
-    /* 当前阶段无 Callable（E3 实现）：无法调用方法。
-     * 此处为占位——E3 引入统一 Call 入口后，应调用 m(this) 并返回结果。
-     * 现在跳过调用（等价于方法不存在），最终走 TypeError。 */
-    (void)m;
-    (void)ctx;
-  }
-  /* 两个方法都不可调用 -> TypeError。 */
-  return fail("TypeError: Cannot convert object to primitive value");
-}
-
-}  // namespace
 
 /* -------------------------------------------------------------------------- */
 /* 抽象运算入口（公开接口，见 conversion.h）                                   */

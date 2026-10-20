@@ -73,6 +73,10 @@ ConversionResult toPropertyKey(JSContext *ctx, JSValue *v);
 /* ToObject（§7.1.13）：原始值装箱；Object 原样返回。 */
 ConversionResult toObject(JSContext *ctx, JSValue *v);
 
+/* Number::toString（§6.1.6.1.20）：最短十进制表示（"NaN"/"Infinity"/"0"）。
+ * 纯工具函数（无 ctx 依赖），供转换/编译期数字键转字符串复用。 */
+std::string numberToString(double x);
+
 /* -------------------------------------------------------------------------- */
 /* 值比较（§7.2）                                                              */
 /* -------------------------------------------------------------------------- */

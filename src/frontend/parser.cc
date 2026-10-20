@@ -1140,8 +1140,15 @@ ASTNode *Parser::parseObjectPattern(bool as_literal) {
     } else if (at(TokenKind::String) || at(TokenKind::Number)) {
       ASTNode *key = newNode(NodeType::Literal);
       key->loc = current().start;
-      key->literal.is_string = true;
-      key->literal.str = current().str_value;
+      if (at(TokenKind::String)) {
+        key->literal.is_string = true;
+        key->literal.str = current().str_value;
+      } else {
+        /* 数字键：number 值（转字符串由编译器 objectKeyToString 用
+         * numberToString 完成，§6.1.6.1.20 最短表示）。 */
+        key->literal.is_number = true;
+        key->literal.number = current().number;
+      }
       key->literal.text = current().text;
       advance();
       if (!isSymbol(current(), ":")) {

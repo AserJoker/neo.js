@@ -87,6 +87,14 @@ class Compiler {
   /* 字面量 / 标识符 / 一元 / 二元 / 条件 / 赋值 / 调用 / 序列。 */
   bool compileLiteral(const ASTNode &node);
   bool compileIdentifier(const ASTNode &node);
+  /* 对象 / 数组字面量（M3.1）：NewObject/NewArray + 逐属性/元素 StoreProp/StoreElem。
+   * objectKeyToString 把对象属性键（Identifier/String/Number）转常量池字符串。 */
+  bool compileObjectLiteral(const ASTNode &node);
+  bool compileArrayLiteral(const ASTNode &node);
+  bool objectKeyToString(const ASTNode *key, std::string *out);
+
+  /* 成员访问读取（M3.1）：obj.prop（LoadProp）/ obj[expr]（LoadElem）。 */
+  bool compileMemberLoad(const ASTNode &node);
   bool compileUnary(const ASTNode &node);
   bool compileBinary(const ASTNode &node);
   bool compileConditional(const ASTNode &node);

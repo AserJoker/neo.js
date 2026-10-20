@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "neojs/frontend/ast.h"
+#include "neojs/runtime/conversion.h"
 
 namespace neojs {
 
@@ -491,6 +492,8 @@ bool Compiler::compileReturn(const ASTNode &node) {
 bool Compiler::compileExpr(const ASTNode &node) {
   switch (node.type) {
     case NodeType::Literal: return compileLiteral(node);
+    case NodeType::ObjectLiteral: return compileObjectLiteral(node);
+    case NodeType::ArrayLiteral: return compileArrayLiteral(node);
     case NodeType::Identifier: return compileIdentifier(node);
     case NodeType::UnaryOp: return compileUnary(node);
     case NodeType::BinaryOp: return compileBinary(node);
@@ -498,9 +501,7 @@ bool Compiler::compileExpr(const ASTNode &node) {
     case NodeType::Assignment: return compileAssignment(node);
     case NodeType::CallExpression: return compileCall(node);
     case NodeType::Sequence: return compileSequence(node);
-    case NodeType::MemberExpression:
-      fail("not implemented: member expression");
-      return false;
+    case NodeType::MemberExpression: return compileMemberLoad(node);
     case NodeType::NewExpression:
       fail("not implemented: new expression");
       return false;
@@ -546,6 +547,150 @@ bool Compiler::compileLiteral(const ASTNode &node) {
 
 bool Compiler::compileIdentifier(const ASTNode &node) {
   return emitLoadIdentifier(node.name);
+}
+
+/* 对象字面量键 -> 字符串（M3.1）：
+ *   Identifier 键 {a: 1}      -> 名字
+ *   String 字面量键 {"k": 1}  -> 解码串
+ *   Number 字面量键 {1: 1}    -> 数值最短表示（§6.1.6.1.20）
+ * 计算键 [expr] / Symbol 键 / getter/setter/method 留后续阶段。 */
+bool Compiler::objectKeyToString(const ASTNode *key, std::string *out) {
+  if (key->type == NodeType::Identifier) {
+    *out = key->name;
+    return true;
+  }
+  if (key->type == NodeType::Literal) {
+    const LiteralPayload &lit = key->literal;
+    if (lit.is_string) {
+      *out = lit.str;
+      return true;
+    }
+    if (lit.is_number) {
+      *out = numberToString(lit.number);
+      return true;
+    }
+  }
+  return false; /* 计算键/其他：本阶段不支持 */
+}
+
+/* 对象字面量（M3.1）：{ key: value, shorthand, ...spread }
+ *   NewObject; StoreVar tmp
+ *   对每属性：LoadVar tmp; [value]; StoreProp "key"; Pop
+ *   最后 LoadVar tmp（结果 = 对象）
+ * 简写 {b}：值 = 读 b（emitLoadIdentifier）。 */
+bool Compiler::compileObjectLiteral(const ASTNode &node) {
+  builder_.new_object();
+  uint16_t tmp = scope_->next_slot++;
+  builder_.store_var(tmp);
+
+  for (const ASTNode *prop : node.children) {
+    if (prop == nullptr) continue;
+    if (prop->type == NodeType::SpreadElement) {
+      fail("not implemented: spread in object literal");
+      return false;
+    }
+    if (prop->type != NodeType::Property) {
+      fail("invalid object literal member");
+      return false;
+    }
+    /* 计算键 [expr]：本阶段不支持。 */
+    if (prop->prop.is_computed) {
+      fail("not implemented: computed property key");
+      return false;
+    }
+    if (prop->prop.kind != PropertyKind::Init &&
+        prop->prop.kind != PropertyKind::Shorthand) {
+      fail("not implemented: getter/setter/method in object literal");
+      return false;
+    }
+    if (prop->children.empty()) {
+      fail("invalid property");
+      return false;
+    }
+    std::string key;
+    if (!objectKeyToString(prop->children[0], &key)) {
+      fail("not implemented: computed property key");
+      return false;
+    }
+    builder_.load_var(tmp); /* obj */
+    if (prop->prop.kind == PropertyKind::Shorthand) {
+      /* {b}：值 = 读 b（简写属性值取自同名绑定）。 */
+      if (prop->children[0]->type != NodeType::Identifier) {
+        fail("invalid shorthand property");
+        return false;
+      }
+      if (!emitLoadIdentifier(prop->children[0]->name)) return false;
+    } else {
+      if (prop->children.size() < 2 || !compileExpr(*prop->children[1])) {
+        return false;
+      }
+    }
+    builder_.store_prop(key);
+    builder_.pop(); /* 丢弃赋值结果 */
+  }
+  builder_.load_var(tmp); /* 结果 = 对象 */
+  return true;
+}
+
+/* 数组字面量（M3.1）：[ elem, ...spread ]
+ *   NewArray; StoreVar tmp
+ *   对每元素（索引 i）：LoadVar tmp; PushInt i; [elem]; StoreElem; Pop
+ *   最后 LoadVar tmp（结果 = 数组）
+ * 稀疏空洞（[1,,3]）本阶段按紧凑存储（元素个数 = 声明元素数）。 */
+bool Compiler::compileArrayLiteral(const ASTNode &node) {
+  builder_.new_array();
+  uint16_t tmp = scope_->next_slot++;
+  builder_.store_var(tmp);
+
+  uint16_t index = 0;
+  for (const ASTNode *elem : node.children) {
+    if (elem == nullptr) continue;
+    if (elem->type == NodeType::SpreadElement) {
+      fail("not implemented: spread in array literal");
+      return false;
+    }
+    builder_.load_var(tmp);   /* arr */
+    builder_.push_int(index); /* arr, i */
+    if (!compileExpr(*elem)) return false;
+    builder_.store_elem();
+    builder_.pop(); /* 丢弃赋值结果 */
+    ++index;
+  }
+  builder_.load_var(tmp); /* 结果 = 数组 */
+  return true;
+}
+
+/* 成员访问读取（M3.1）：obj.prop -> LoadProp；obj[expr] -> LoadElem。
+ * 先编译对象表达式（留栈顶），再编译属性名/计算键，发射读取指令。
+ * 可选链 ?. / ?.[ 本阶段不支持（M5 语义）。 */
+bool Compiler::compileMemberLoad(const ASTNode &node) {
+  if (node.children.size() < 2) {
+    fail("member expression without property");
+    return false;
+  }
+  if (node.member.optional) {
+    fail("not implemented: optional chaining");
+    return false;
+  }
+  if (!compileExpr(*node.children[0])) return false;
+  if (!node.member.computed) {
+    /* obj.prop：属性名为 Identifier 或 PrivateIdentifier。 */
+    const ASTNode *prop = node.children[1];
+    if (prop->type == NodeType::PrivateIdentifier) {
+      fail("not implemented: private member access");
+      return false;
+    }
+    if (prop->type != NodeType::Identifier) {
+      fail("invalid member property name");
+      return false;
+    }
+    builder_.load_prop(prop->name);
+    return true;
+  }
+  /* obj[expr]：编译计算键表达式，LoadElem。 */
+  if (!compileExpr(*node.children[1])) return false;
+  builder_.load_elem();
+  return true;
 }
 
 bool Compiler::compileUnary(const ASTNode &node) {

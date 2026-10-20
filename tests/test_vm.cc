@@ -1471,3 +1471,135 @@ TEST(VM, StorePropValueIsRhs) {
   JS_FreeAllocator(a);
 }
 
+/* -------------------------------------------------------------------------- */
+/* 15. M3.1 对象/数组字面量编译与执行（JS_Eval 端到端）                        */
+/* -------------------------------------------------------------------------- */
+
+/* 对象字面量：var o = {a: 1, b: 2}; o.a + o.b -> 3（含 StoreVar/StoreProp 往返） */
+TEST(Compiler, EvalObjectLiteral) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var o = {a: 1, b: 2}; o.a + o.b",
+                       std::strlen("var o = {a: 1, b: 2}; o.a + o.b"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 3.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 对象字面量嵌套 + 字符串键 + 数字键：{s: 'x', 1: 10} 与 {a: {b: 5}} -> 15 */
+TEST(Compiler, EvalObjectNestedKeys) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "var o = {s: 'x', 1: 10}; var n = {a: {b: 5}}; var t = o.s; n.a.b + o[1]",
+      std::strlen("var o = {s: 'x', 1: 10}; var n = {a: {b: 5}}; var t = o.s; n.a.b + o[1]"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 15.0); /* 5 + 10 */
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 数组字面量：var a = [1, 2, 3]; a[0] + a[1] + a[2] -> 6 */
+TEST(Compiler, EvalArrayLiteral) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var a = [1, 2, 3]; a[0] + a[1] + a[2]",
+                       std::strlen("var a = [1, 2, 3]; a[0] + a[1] + a[2]"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 6.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 数组字面量稀疏空洞 + 嵌套数组：[[1, 2], [3]][1][0] -> 3 */
+TEST(Compiler, EvalArrayNestedSparse) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var a = [[1, 2], [3]]; a[1][0]",
+                       std::strlen("var a = [[1, 2], [3]]; a[1][0]"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 3.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 对象简写属性：var a = 3; {a}.a -> 3 */
+TEST(Compiler, EvalObjectShorthand) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var a = 3; var o = {a}; o.a",
+                       std::strlen("var a = 3; var o = {a}; o.a"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 3.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 对象字面量作为函数返回值 + 数组元素访问混合 */
+TEST(Compiler, EvalObjectInFunction) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "function make(x) { return {v: x, arr: [x, x + 1]}; }"
+      " var m = make(4); m.v + m.arr[1]",
+      std::strlen("function make(x) { return {v: x, arr: [x, x + 1]}; }"
+                  " var m = make(4); m.v + m.arr[1]"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 9.0); /* 4 + 5 */
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 对象/数组字面量在 GC 压力下存活（对象引用边进 GC 标记） */
+TEST(Compiler, EvalObjectUnderGC) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::JSContext *c = ic(ctx);
+  c->heap().setGcThreshold(4);
+
+  JSValue *r = JS_Eval(
+      ctx, "var o = {a: 1, b: [2, 3]}; var s = 0; s = s + o.a; s = s + o.b[1]; s",
+      std::strlen("var o = {a: 1, b: [2, 3]}; var s = 0; s = s + o.a; s = s + o.b[1]; s"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 4.0); /* 1 + 3 */
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
