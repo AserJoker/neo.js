@@ -381,9 +381,11 @@ extern "C" JSValue *JS_NewCFunction(JSContext *ctx, JSCFunction func,
             nullptr /* prototype */,
             neojs::FunctionKind::Host,
             reinterpret_cast<void *>(func));
+    c->heap().pin(fn); /* 分配保护（M3.3）：两段式创建中间窗口防误回收 */
     neojs::JSValue *v = c->heap().allocGCObject<neojs::JSValue>();
     v->setObject(fn);
     fn->setHolder(v); /* 反向包装指针（与 createObject 一致） */
+    c->heap().unpin(fn);
     return makeValueHandleNamed(ctx, v, name);
   });
 }
@@ -868,9 +870,11 @@ extern "C" JSValue *JS_Eval(JSContext *ctx, const char *source, size_t source_le
               nullptr /* func */);
       const std::string fn_name = fr.fn.name; /* move 前取名字 */
       fn->setBytecode(std::move(fr.fn));
+      c->heap().pin(fn); /* 分配保护（M3.3）：两段式创建中间窗口防误回收 */
       neojs::JSValue *v = c->heap().allocGCObject<neojs::JSValue>();
       v->setObject(fn);
       fn->setHolder(v);
+      c->heap().unpin(fn);
       /* 挂到全局对象（函数名属性）。 */
       if (!fn_name.empty()) {
         global_obj->setProperty(fn_name, v);

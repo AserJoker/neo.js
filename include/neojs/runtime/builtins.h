@@ -41,6 +41,10 @@ void installBuiltins(JSContext *ctx);
 /* 取 well-known symbol 值（惰性创建 + 缓存；根集保护）。 */
 JSValue *wellKnownSymbol(JSContext *ctx, WellKnown wks);
 
+/* 取 Object.prototype（M3.3 惰性创建 + 缓存 + 进根集）。
+ * 普通对象字面量（vm NewObject）与包装对象原型的原型链都指向它。 */
+JSValue *objectProto(JSContext *ctx);
+
 }  // namespace neojs
 
 #endif  // NEOJS_RUNTIME_BUILTINS_H

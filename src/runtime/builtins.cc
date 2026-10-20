@@ -60,9 +60,11 @@ ConversionResult fail(const std::string &error) {
  * 内部值指针语义（区别于 Host 句柄语义，见 function.h）。 */
 JSValue *makeBuiltin(JSContext *ctx, JSBuiltinFn fn, ThisMode mode) {
   JSFunction *f = ctx->heap().allocGCObject<JSFunction>(nullptr, fn, mode);
+  ctx->heap().pin(f); /* 分配保护（M3.3）：两段式创建中间窗口防误回收 */
   JSValue *v = ctx->heap().allocGCObject<JSValue>();
   v->setObject(f);
   f->setHolder(v);
+  ctx->heap().unpin(f);
   return v;
 }
 
@@ -121,6 +123,82 @@ ConversionResult booleanConstructor(JSContext *ctx, JSValue *,
     return ok(ctx->createValue(false));
   }
   return ok(ctx->createValue(toBoolean(args[0])));
+}
+
+/* Object 构造器（§20.1.1）：Object(value) -> ToObject(value)（§20.1.1.1 步骤 1）。
+ * 无参/undefined/null -> 新建普通对象（原型 Object.prototype）。
+ * 参数已是对象 -> 原样返回；原始值 -> 装箱（ToObject）。 */
+ConversionResult objectConstructor(JSContext *ctx, JSValue *,
+                                   JSValue *const *args, size_t argc) {
+  if (argc == 0 || args[0] == nullptr || args[0]->kind() == Kind::Undefined ||
+      args[0]->kind() == Kind::Null) {
+    /* 新建普通对象，原型链指向 Object.prototype（§20.1.1.1 步骤 2）。 */
+    return ok(ctx->createObject(objectProto(ctx)->object()));
+  }
+  return toObject(ctx, args[0]);
+}
+
+/* Object.getPrototypeOf（§20.1.2.9）：O 必须为对象；返回 [[Prototype]]。
+ * 无原型 -> null。 */
+ConversionResult objectGetPrototypeOf(JSContext *ctx, JSValue *,
+                                      JSValue *const *args, size_t argc) {
+  if (argc == 0 || args[0] == nullptr || !args[0]->isObject()) {
+    return fail("TypeError: Object.getPrototypeOf called on non-object");
+  }
+  JSObject *proto = args[0]->object()->prototype();
+  if (proto == nullptr) return ok(ctx->createValue(Kind::Null));
+  if (proto->holder() == nullptr) return ok(ctx->createValue(Kind::Null));
+  return ok(proto->holder());
+}
+
+/* Object.setPrototypeOf（§20.1.2.18）：O 必须为对象；proto 必须为 Object 或 null。
+ * 返回 O。 */
+ConversionResult objectSetPrototypeOf(JSContext *, JSValue *,
+                                      JSValue *const *args, size_t argc) {
+  if (argc < 2 || args[0] == nullptr || !args[0]->isObject()) {
+    return fail("TypeError: Object.setPrototypeOf called on non-object");
+  }
+  JSValue *proto = args[1];
+  if (proto != nullptr && proto->kind() != Kind::Null &&
+      !proto->isObject()) {
+    return fail("TypeError: Object.setPrototypeOf: prototype must be an object or null");
+  }
+  JSObject *target = args[0]->object();
+  if (proto == nullptr || proto->kind() == Kind::Null) {
+    target->setPrototype(nullptr);
+  } else {
+    /* 循环原型链防护：proto 自身（或链上）不得指向 target（§20.1.2.18 步骤 5）。
+     * 若 proto 沿原型链可达 target 则拒绝，保持 target 原型不变。 */
+    JSObject *cursor = proto->object();
+    while (cursor != nullptr) {
+      if (cursor == target) {
+        return fail("TypeError: Cyclic __proto__ value");
+      }
+      cursor = cursor->prototype();
+    }
+    target->setPrototype(proto->object());
+  }
+  return ok(args[0]);
+}
+
+/* Object.create（§20.1.2.2）：新建对象，原型为 O（null 或 Object）。
+ * 可选 properties 本阶段忽略（M4 Object.defineProperties 启用）。 */
+ConversionResult objectCreate(JSContext *ctx, JSValue *,
+                              JSValue *const *args, size_t argc) {
+  if (argc == 0 || args[0] == nullptr) {
+    return fail("TypeError: Object.create requires an argument");
+  }
+  JSValue *proto = args[0];
+  if (proto->kind() != Kind::Null && !proto->isObject()) {
+    return fail("TypeError: Object prototype may only be an Object or null");
+  }
+  JSObject *p = (proto->kind() == Kind::Null) ? nullptr : proto->object();
+  JSValue *obj = ctx->createObject(p);
+  /* properties 参数（M4 Object.defineProperties 启用）。 */
+  if (argc > 1 && args[1] != nullptr && args[1]->kind() != Kind::Undefined) {
+    /* 本阶段忽略：未实现 defineProperties。 */
+  }
+  return ok(obj);
 }
 
 /* Number.prototype.valueOf（§21.1.3.7）：thisNumberValue。 */
@@ -196,7 +274,8 @@ ConversionResult symbolToStringBuiltin(JSContext *ctx, JSValue *thisVal,
 
 /* 注册一组包装对象内置（Number/String/Boolean 之一）：
  * 构造器挂 global，prototype 挂 constructor + valueOf/toString 最小方法集，
- * prototype 进 wrapper_protos_ 缓存（装箱原型链，§7.1.13）。 */
+ * prototype 进 wrapper_protos_ 缓存（装箱原型链，§7.1.13）。
+ * 包装原型链指向 Object.prototype（§20.1.3：包装对象也是对象）。 */
 void installWrapperBuiltin(JSContext *ctx, const char *name, ObjectKind kind,
                            JSBuiltinFn ctor, JSBuiltinFn valueOf,
                            JSBuiltinFn toStringFn) {
@@ -204,7 +283,7 @@ void installWrapperBuiltin(JSContext *ctx, const char *name, ObjectKind kind,
   JSValue *ctor_v = makeBuiltin(ctx, ctor, ThisMode::Strict);
   global->object()->setProperty(name, ctor_v);
 
-  JSValue *proto = ctx->createObject(nullptr); /* 原型链 E4-4 接 Object.prototype */
+  JSValue *proto = ctx->createObject(objectProto(ctx)->object()); /* 原型链 -> Object.prototype */
   ctor_v->object()->setProperty("prototype", proto);
   proto->object()->setProperty("constructor", ctor_v);
   proto->object()->setProperty("valueOf",
@@ -250,6 +329,25 @@ void installBuiltins(JSContext *ctx) {
   global->object()->setProperty("undefined",
                                ctx->createValue(Kind::Undefined));
 
+  /* Object 构造器（M3.3，§20.1.1）：先于包装对象建立 Object.prototype
+   * 原型链根（包装对象/字面量/装箱都指向它）。 */
+  JSValue *object = makeBuiltin(ctx, objectConstructor, ThisMode::Strict);
+  global->object()->setProperty("Object", object);
+
+  JSObject *object_fn = object->object(); /* JSFunction 是 JSObject */
+  object_fn->setProperty("getPrototypeOf",
+                         makeBuiltin(ctx, objectGetPrototypeOf, ThisMode::Strict));
+  object_fn->setProperty("setPrototypeOf",
+                         makeBuiltin(ctx, objectSetPrototypeOf, ThisMode::Strict));
+  object_fn->setProperty("create",
+                         makeBuiltin(ctx, objectCreate, ThisMode::Strict));
+
+  /* Object.prototype（§20.1.3）：原型为 null；进 context 缓存（objectProto）。
+   * 普通对象字面量 / 装箱对象 / 包装对象原型的原型链都汇聚于此。 */
+  JSValue *object_proto = objectProto(ctx);
+  object_fn->setProperty("prototype", object_proto);
+  object_proto->object()->setProperty("constructor", object);
+
   /* Symbol 构造器（§20.4.1.1）：内置函数 + well-known 静态属性（E4-1）。 */
   JSValue *symbol = makeBuiltin(ctx, symbolConstructor, ThisMode::Strict);
   global->object()->setProperty("Symbol", symbol);
@@ -264,7 +362,7 @@ void installBuiltins(JSContext *ctx) {
                        wellKnownSymbol(ctx, WellKnown::HasInstance));
 
   /* Symbol.prototype（§20.4.3）：valueOf/toString 最小方法集。 */
-  JSValue *symbol_proto = ctx->createObject(nullptr);
+  JSValue *symbol_proto = ctx->createObject(objectProto(ctx)->object());
   sym_obj->setProperty("prototype", symbol_proto);
   symbol_proto->object()->setProperty("constructor", symbol);
   symbol_proto->object()->setProperty(
@@ -280,6 +378,16 @@ void installBuiltins(JSContext *ctx) {
                         stringValueOf, stringToStringBuiltin);
   installWrapperBuiltin(ctx, "Boolean", ObjectKind::Boolean, booleanConstructor,
                         booleanValueOf, booleanToStringBuiltin);
+}
+
+/* 取 Object.prototype（M3.3，惰性创建 + 缓存 + 进根集）。
+ * 供 Object 构造器新建对象 / vm NewObject 字面量原型链使用。 */
+JSValue *objectProto(JSContext *ctx) {
+  JSValue *p = ctx->objectProto();
+  if (p != nullptr) return p;
+  p = ctx->createObject(nullptr); /* Object.prototype 原型为 null（§20.1.3） */
+  ctx->setObjectProto(p);
+  return p;
 }
 
 }  // namespace neojs

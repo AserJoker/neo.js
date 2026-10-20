@@ -19,6 +19,7 @@
 #include <utility>
 #include <vector>
 
+#include "neojs/runtime/builtins.h"
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/conversion.h"
 #include "neojs/runtime/environment.h"
@@ -436,15 +437,20 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
             nullptr /* prototype */, FunctionKind::Script, nullptr /* func */);
         f->setBytecode(fn.nested[instr.arg]); /* 复制（FunctionBytecode 值语义） */
         f->setEnvironment(env);
+        ctx->heap().pin(f); /* 分配保护（M3.3）：两段式创建中间窗口防误回收 */
         JSValue *v = ctx->heap().allocGCObject<JSValue>();
         v->setObject(f);
         f->setHolder(v);
+        ctx->heap().unpin(f);
         stack.push_back(v);
         break;
       }
       case Opcode::NewObject: {
-        /* 新建普通对象（原型 Object.prototype；E4 尚未注册时原型为 null）。 */
-        JSValue *obj = ctx->createObject(nullptr);
+        /* 新建普通对象，原型链指向 Object.prototype（M3.3；
+         * 惰性创建缓存，未注册内置时原型为 null）。 */
+        JSValue *obj =
+            ctx->createObject(objectProto(ctx) ? objectProto(ctx)->object()
+                                               : nullptr);
         stack.push_back(obj);
         break;
       }

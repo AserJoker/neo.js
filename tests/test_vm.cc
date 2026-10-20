@@ -1727,3 +1727,224 @@ TEST(Compiler, EvalMemberAssignValue) {
   JS_FreeAllocator(a);
 }
 
+/* -------------------------------------------------------------------------- */
+/* 10. M3.3 原型链：Object.getPrototypeOf / setPrototypeOf / create           */
+/* -------------------------------------------------------------------------- */
+
+/* 对象字面量原型 = Object.prototype：Object.getPrototypeOf({}) === Object.prototype。
+ * 需先触发 installBuiltins（JS_GetGlobalObject）再 JS_Eval。 */
+TEST(Compiler, EvalObjectGetPrototypeOf) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *global = JS_GetGlobalObject(ctx); /* 触发 installBuiltins */
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "var o = {}; var p = Object.getPrototypeOf(o);"
+      "p === Object.prototype";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN) << "error: " << JS_ToString(ctx, r);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 1);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 无原型对象：Object.create(null) 的 getPrototypeOf -> null。 */
+TEST(Compiler, EvalCreateNullProto) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "var o = Object.create(null);"
+      "var p = Object.getPrototypeOf(o);"
+      "p === null";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN) << "error: " << JS_ToString(ctx, r);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 1);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 原型继承读取：Object.create({x: 1}).x -> 1（属性沿原型链解析）。 */
+TEST(Compiler, EvalCreateInheritProp) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src = "var o = Object.create({x: 1}); o.x";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 1.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 原型链多级继承：var p1 = {x: 1}; var p2 = Object.create(p1);
+ * var o = Object.create(p2); o.x -> 1（沿链上溯）。 */
+TEST(Compiler, EvalCreateMultiLevel) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "var p1 = {x: 1}; var p2 = Object.create(p1);"
+      "var o = Object.create(p2); o.x";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 1.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 对象构造器：Object({x: 5}) 返回原对象；Object() 新建普通对象。 */
+TEST(Compiler, EvalObjectConstructor) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src = "var o = {x: 5}; var w = Object(o); w === o";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN) << "error: " << JS_ToString(ctx, r);
+  EXPECT_EQ(JS_ToBoolean(ctx, r), 1);
+  JS_FreeValue(ctx, r);
+
+  const char *src2 = "var n = Object(); var p = Object.getPrototypeOf(n);"
+                     "p === Object.prototype";
+  JSValue *r2 = JS_Eval(ctx, src2, std::strlen(src2));
+  ASSERT_NE(r2, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r2), JS_BOOLEAN)
+      << "error: " << JS_ToString(ctx, r2);
+  EXPECT_EQ(JS_ToBoolean(ctx, r2), 1);
+  JS_FreeValue(ctx, r2);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* Object.setPrototypeOf：var o = {a: 1}; var p = {b: 2};
+ * Object.setPrototypeOf(o, p); o.b -> 2（原型链切换生效）。 */
+TEST(Compiler, EvalSetPrototypeOfInherit) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "var o = {a: 1}; var p = {b: 2}; Object.setPrototypeOf(o, p); o.b";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 2.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 循环原型链防护：var a = {}; var b = {};
+ * Object.setPrototypeOf(a, b); Object.setPrototypeOf(b, a) -> TypeError。 */
+TEST(Compiler, EvalSetPrototypeOfCycle) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "var a = {}; var b = {}; Object.setPrototypeOf(a, b);"
+      "Object.setPrototypeOf(b, a); 'bad'";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION)
+      << "cycle not detected: " << JS_ToString(ctx, r);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* Object.getPrototypeOf 对原始值抛 TypeError：getPrototypeOf(5) -> 异常。 */
+TEST(Compiler, EvalGetPrototypeOfPrimitive) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src = "Object.getPrototypeOf(5); 'bad'";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION)
+      << "primitive not rejected: " << JS_ToString(ctx, r);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* GC 压力下原型链存活：Object.create({x: 1}) + 原型引用进 GC 标记。
+ * 原型对象仅被子对象引用，GC 后仍需可读。 */
+TEST(Compiler, EvalPrototypeUnderGC) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::JSContext *c = ic(ctx);
+  c->heap().setGcThreshold(4);
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "var p = {x: 1}; var o = Object.create(p);"
+      "var s = 0; var i = 0; while (i < 20) { s = s + o.x; i = i + 1; } s";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 20.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+

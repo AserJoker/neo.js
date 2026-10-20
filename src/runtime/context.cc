@@ -60,17 +60,21 @@ void JSContext::freeHandle(uint32_t handle) {
  * 返回内部值指针（kind = Object），由宿主句柄或作用域绑定持有。 */
 JSValue *JSContext::createObject(JSObject *proto) {
   JSObject *obj = heap_.allocGCObject<JSObject>(proto);
+  heap_.pin(obj); /* 分配保护（M3.3）：两段式创建中间窗口防误回收 */
   JSValue *v = heap_.allocGCObject<JSValue>(); /* kind=Undefined，随后置 Object */
   v->setObject(obj);
   obj->setHolder(v); /* 反向包装指针：JSObject -> JSValue */
+  heap_.unpin(obj);
   return v;
 }
 
 JSValue *JSContext::createArray(size_t capacity) {
   JSObject *arr = heap_.allocGCObject<JSObject>(ObjectKind::Array, capacity);
+  heap_.pin(arr);
   JSValue *v = heap_.allocGCObject<JSValue>();
   v->setObject(arr);
   arr->setHolder(v);
+  heap_.unpin(arr);
   return v;
 }
 
@@ -78,9 +82,11 @@ JSValue *JSContext::createArray(size_t capacity) {
  * data 为被包装的原始值（内部指针，GC 引用边）。 */
 JSValue *JSContext::createWrapper(ObjectKind kind, JSValue *data) {
   JSObject *obj = heap_.allocGCObject<JSObject>(kind, data);
+  heap_.pin(obj);
   JSValue *v = heap_.allocGCObject<JSValue>();
   v->setObject(obj);
   obj->setHolder(v);
+  heap_.unpin(obj);
   return v;
 }
 
@@ -121,6 +127,9 @@ void JSContext::markRoots() {
   for (JSValue *proto : wrapper_protos_) {
     if (proto != nullptr) heap_.markRoot(proto);
   }
+
+  /* Object.prototype 缓存（M3.3）：对象原型链根，始终可达。 */
+  if (object_proto_ != nullptr) heap_.markRoot(object_proto_);
 
   /* VM 操作数栈（M2-VM，栈帧入根集）：解释器运行期间栈上值不可回收。
    * 嵌套 runBytecode（函数递归）时多个栈帧并存，全部标记。 */

@@ -20,6 +20,7 @@
 #include <type_traits>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 #include "neojs/runtime/allocator.h"
 #include "neojs/runtime/gc_header.h"
@@ -81,12 +82,29 @@ class Heap {
    * 标记阶段由 MarkFn 回调收集根集后逐个调用；gcMarkRefs 内部回调用。 */
   void markRoot(GCHeader *object);
 
+  /* 分配保护（M3.3）：pin/unpin 临时根。两段式创建（先分配 JSObject/
+   * JSFunction 再包 JSValue）的中间窗口里，第一段对象无任何根引用，
+   * 第二段 allocGCObject 分配前触发 GC 会把它误回收（悬垂）。
+   * 第一段分配后 pin、包装完成后 unpin；pin 期间每轮 GC 都标记存活。 */
+  void pin(GCHeader *object) { pin_roots_.push_back(object); }
+  void unpin(GCHeader *object) {
+    for (size_t i = 0; i < pin_roots_.size();) {
+      if (pin_roots_[i] == object) {
+        pin_roots_[i] = pin_roots_.back();
+        pin_roots_.pop_back();
+      } else {
+        ++i;
+      }
+    }
+  }
+
  private:
   /* 清除阶段：回收未标记对象，清除标记位 */
   void sweep();
 
   JSAllocator *allocator_;                       /* 引用分配器（#13，不拥有） */
   std::unordered_set<GCHeader *> objects_;       /* 所有堆对象（G6） */
+  std::vector<GCHeader *> pin_roots_;            /* 分配保护临时根（M3.3） */
   size_t alloc_count_ = 0;                       /* 自上次 GC 的累计分配数 */
   size_t gc_threshold_ = 1000;                   /* 分配阈值（默认 1000） */
   MarkFn mark_fn_ = nullptr;                     /* 根集标记回调（G3） */

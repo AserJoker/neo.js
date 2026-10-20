@@ -114,6 +114,11 @@ class JSContext {
     if (idx >= 0 && idx < 4) wrapper_protos_[idx] = v;
   }
 
+  /* Object.prototype 缓存（M3.3，§20.1.3）：对象字面量/包装对象原型的
+   * 原型链根。惰性创建 + 进根集（markRoots）。 */
+  JSValue *objectProto() const { return object_proto_; }
+  void setObjectProto(JSValue *v) { object_proto_ = v; }
+
   /* VM 操作数栈注册为 GC 根集（M2-VM，用户确认“栈帧入 GC 根集”）。
    * 解释器运行期间调用 vmStackPush(&stack) 入栈；结束/出错时 vmStackPop 弹出。
    * 嵌套 runBytecode（函数递归）会 push 多个栈帧，markRoots 遍历全部。
@@ -163,6 +168,7 @@ class JSContext {
   std::string tmp_string_; /* 临时字符串缓冲（JS_ToString 稳定返回用） */
   JSValue *well_known_[4] = {nullptr, nullptr, nullptr, nullptr}; /* well-known 缓存（E4-1） */
   JSValue *wrapper_protos_[4] = {nullptr, nullptr, nullptr, nullptr}; /* 包装原型缓存（E4-2） */
+  JSValue *object_proto_ = nullptr; /* Object.prototype 缓存（M3.3） */
   std::vector<std::vector<JSValue *> *> vm_stacks_; /* VM 操作数栈根集栈（M2-VM） */
   std::vector<JSEnvironment *> vm_envs_; /* VM 帧环境根集栈（M2.5 闭包） */
   size_t call_depth_ = 0;   /* 当前调用栈深度（M2.5 防爆栈） */
