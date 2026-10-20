@@ -2098,3 +2098,248 @@ TEST(Compiler, EvalArrayProtoUnderGC) {
   JS_FreeAllocator(a);
 }
 
+/* -------------------------------------------------------------------------- */
+/* M4.2 Function/Error 家族                                                   */
+/* -------------------------------------------------------------------------- */
+
+/* new 语义（M4.2）：new 内置构造器，新对象原型 = 构造器.prototype。 */
+TEST(Compiler, EvalNew) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+  JSValue *global = JS_GetGlobalObject(ctx); /* 触发 installBuiltins */
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "var o = new Object();"
+      "var isObj = (typeof o === 'object' && o !== null);"
+      "var p = Object.getPrototypeOf(o);"
+      "var protoOk = (p === Object.prototype);"
+      "isObj && protoOk ? 'ok' : 'bad'";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "ok");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* new Array(3)：预分配 length 的数组构造。 */
+TEST(Compiler, EvalNewArray) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "var b = new Array(3);"
+      "(b.length === 3 && b[0] === undefined) ? 'ok' : 'bad'";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "ok");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* Function 构造器（M4.2）：Function() 产生可调用空函数，调用返回 undefined。 */
+TEST(Compiler, EvalFunctionConstructor) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "var f = new Function();"
+      "var r = f();"
+      "(r === undefined && typeof f === 'function') ? 'ok' : 'bad'";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "ok");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* Function.prototype.call（M4.2）：func.call(thisArg, ...args) 转发参数。 */
+TEST(Compiler, EvalFunctionPrototypeCall) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "var f = function(a, b) { return a * 10 + b; };"
+      "var r = f.call(null, 3, 4);"
+      "(r === 34) ? 'ok' : 'bad'";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "ok");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* Function.prototype.apply（M4.2）：func.apply(thisArg, arr) 展开数组参数。 */
+TEST(Compiler, EvalFunctionApply) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "var f = function(a, b) { return a * 10 + b; };"
+      "var r = f.apply(null, [7, 8]);"
+      "(r === 78) ? 'ok' : 'bad'";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "ok");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* Function.prototype.bind（M4.2）：绑定参数 + 调用参数拼接（§20.2.3.5）。 */
+TEST(Compiler, EvalFunctionBind) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "var f = function(a, b, c) { return a * 100 + b * 10 + c; };"
+      "var g = f.bind(null, 1, 2);"
+      "var r = g(3);"
+      "(r === 123) ? 'ok' : 'bad'";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "ok");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* Error 家族（M4.2）：Error 构造 + message/name 属性 + 原型链。 */
+TEST(Compiler, EvalErrorFamily) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "var e = new Error('boom');"
+      "e.message";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "boom");
+  JS_FreeValue(ctx, r);
+
+  const char *src2 =
+      "var e = new TypeError('bad');"
+      "e.name";
+  JSValue *r2 = JS_Eval(ctx, src2, std::strlen(src2));
+  ASSERT_NE(r2, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r2), JS_STRING) << "error: " << JS_ToString(ctx, r2);
+  EXPECT_STREQ(JS_ToString(ctx, r2), "TypeError");
+  JS_FreeValue(ctx, r2);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* Error 家族原型链（M4.2）：TypeError.prototype -> Error.prototype。 */
+TEST(Compiler, EvalErrorProtoChain) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "var tp = Object.getPrototypeOf(TypeError.prototype);"
+      "(tp === Error.prototype) ? 'ok' : 'bad'";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "ok");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* Error.prototype.toString（M4.2）："name: message"。 */
+TEST(Compiler, EvalErrorToString) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "var e = new RangeError('oops');"
+      "e.toString()";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "RangeError: oops");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* GC 压力下 M4.2 对象（new Error / bind 函数）引用存活。 */
+TEST(Compiler, EvalM42UnderGC) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+  neojs::JSContext *c = ic(ctx);
+  c->heap().setGcThreshold(4);
+  JSValue *global = JS_GetGlobalObject(ctx);
+  ASSERT_NE(global, nullptr);
+  JS_FreeValue(ctx, global);
+
+  const char *src =
+      "var e = new Error('x');"
+      "var f = function(a){return a+1}; var g = f.bind(null, 1);"
+      "var s = 0; var i = 0;"
+      "while (i < 20) { s = s + (e.message === 'x' ? 1 : 0) + g(); i = i + 1; } s";
+  JSValue *r = JS_Eval(ctx, src, std::strlen(src));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 60.0); /* (1 + 2) * 20 */
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+

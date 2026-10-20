@@ -491,6 +491,243 @@ ConversionResult arrayUnshift(JSContext *ctx, JSValue *thisVal,
   return ok(ctx->createValue(static_cast<double>(len + argc)));
 }
 
+/* -------------------------------------------------------------------------- */
+/* Function 构造器 + Function.prototype（M4.2，§20.2）                        */
+/* -------------------------------------------------------------------------- */
+
+/* Function 构造器（§20.2.1）：Function(...args) -> 新函数。
+ * 本阶段简化：忽略参数与函数体（Function() -> 空函数，调用返回 undefined）。
+ * 完整实现（参数名 + 函数体解析编译）留 M4.3。 */
+ConversionResult functionConstructor(JSContext *ctx, JSValue *thisVal,
+                                     JSValue *const *, size_t) {
+  (void)thisVal;
+  /* 原型链 -> Function.prototype（M4.2）：动态创建的函数同样可调
+   * call/apply/bind。 */
+  JSObject *fproto = nullptr;
+  JSValue *fp = functionProto(ctx);
+  if (fp != nullptr) fproto = fp->object();
+  JSFunction *f = ctx->heap().allocGCObject<JSFunction>(
+      fproto, FunctionKind::Script, nullptr /* func */);
+  f->setConstructor(true);
+  ctx->heap().pin(f); /* 分配保护（M3.3） */
+  JSValue *v = ctx->heap().allocGCObject<JSValue>();
+  v->setObject(f);
+  f->setHolder(v);
+  ctx->heap().unpin(f);
+  return ok(v);
+}
+
+/* Function.prototype.call（§20.2.3.4）：func.call(thisArg, ...args)。
+ * thisArg 原样绑定；参数逐个传给 func。 */
+ConversionResult functionCall(JSContext *ctx, JSValue *thisVal,
+                              JSValue *const *args, size_t argc) {
+  if (!isCallable(thisVal)) {
+    return fail("TypeError: Function.prototype.call called on non-function");
+  }
+  JSValue *thisArg = (argc > 0) ? args[0] : ctx->createValue(Kind::Undefined);
+  JSValue *const *call_args = (argc > 1) ? &args[1] : nullptr;
+  return call(ctx, thisVal, thisArg, call_args, argc > 0 ? argc - 1 : 0);
+}
+
+/* Function.prototype.apply（§20.2.3.2）：func.apply(thisArg, argArray)。
+ * argArray 为数组（或类数组）时展开；本阶段只支持真数组。 */
+ConversionResult functionApply(JSContext *ctx, JSValue *thisVal,
+                               JSValue *const *args, size_t argc) {
+  if (!isCallable(thisVal)) {
+    return fail("TypeError: Function.prototype.apply called on non-function");
+  }
+  JSValue *thisArg = (argc > 0) ? args[0] : ctx->createValue(Kind::Undefined);
+  JSValue *argArray = (argc > 1) ? args[1] : ctx->createValue(Kind::Undefined);
+  if (argArray == nullptr || argArray->kind() == Kind::Undefined ||
+      argArray->kind() == Kind::Null) {
+    return call(ctx, thisVal, thisArg, nullptr, 0);
+  }
+  if (!argArray->isObject() || !argArray->object()->isArray()) {
+    return fail("TypeError: CreateListFromArrayLike called on non-array");
+  }
+  JSObject *arr = argArray->object();
+  size_t n = arr->length();
+  std::vector<JSValue *> elems;
+  elems.reserve(n);
+  for (size_t i = 0; i < n; ++i) {
+    JSValue *e = arr->getElement(i);
+    elems.push_back(e != nullptr ? e : ctx->createValue(Kind::Undefined));
+  }
+  return call(ctx, thisVal, thisArg, elems.empty() ? nullptr : elems.data(), n);
+}
+
+/* Function.prototype.bind（§20.2.3.5）：func.bind(thisArg, ...args)。
+ * 返回新函数：调用时 this 固定为 thisArg，参数 = 绑定参数 + 调用参数。
+ * 绑定函数为 FunctionKind::Bound（§20.2.3.5 BoundFunctionCreate）：
+ * [[BoundTargetFunction]]/[[BoundThis]]/[[BoundArguments]] 存 JSFunction
+ * 专用字段（GC 引用边），call() 统一转发（无需回调）。 */
+ConversionResult functionBind(JSContext *ctx, JSValue *thisVal,
+                              JSValue *const *args, size_t argc) {
+  if (!isCallable(thisVal)) {
+    return fail("TypeError: Function.prototype.bind called on non-function");
+  }
+  JSValue *thisArg = (argc > 0) ? args[0] : ctx->createValue(Kind::Undefined);
+  size_t bound_argc = argc > 0 ? argc - 1 : 0;
+  JSValue *const *bound_args = bound_argc > 0 ? &args[1] : nullptr;
+
+  /* 创建 Bound 函数：JSFunction + 包装 JSValue + 绑定元数据。
+   * 两段式创建窗口 pin 保护（M3.3）；setBoundData 前元数据无引用。 */
+  JSFunction *f = ctx->heap().allocGCObject<JSFunction>(
+      nullptr /* prototype */, FunctionKind::Bound, nullptr /* func */,
+      ThisMode::Strict);
+  ctx->heap().pin(f);
+  JSValue *v = ctx->heap().allocGCObject<JSValue>();
+  v->setObject(f);
+  f->setHolder(v);
+  ctx->heap().unpin(f);
+  ctx->heap().pin(v); /* 分配保护：setBoundData 前防误回收 */
+  std::vector<JSValue *> bargs;
+  bargs.reserve(bound_argc);
+  for (size_t i = 0; i < bound_argc; ++i) {
+    bargs.push_back(bound_args[i]);
+  }
+  f->setBoundData(thisVal, thisArg, std::move(bargs));
+  ctx->heap().unpin(v);
+  return ok(v);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Error 家族（M4.2，§20.5）                                                  */
+/* -------------------------------------------------------------------------- */
+
+/* Error 构造器（§20.5.1.1）：Error(message) -> 新错误对象。
+ * 简化：只存 message 属性；stack/Error.captureStackTrace 留 M4.3。
+ * 与 call 语义一致（new 或直接调用都产生错误对象，标准要求 new 才有）。 */
+ConversionResult errorConstructor(JSContext *ctx, JSValue *thisVal,
+                                  JSValue *const *args, size_t argc) {
+  /* new 语义：construct() 已创建 this（原型 = 构造器.prototype，含
+   * toString/constructor/name/message），此处只需初始化 message + name。
+   * 直接调用 Error(msg)（无 new）也产生错误对象（本阶段简化，标准要求
+   * new 才有）：此时 thisVal 可能非对象，回退创建新对象（原型 Object.
+   * prototype，拿不到 toString——M4.3 补全普通调用语义）。 */
+  JSValue *v = thisVal;
+  if (v == nullptr || !v->isObject()) {
+    v = ctx->createObject(objectProto(ctx)->object());
+  }
+  ctx->heap().pin(v); /* 分配保护：setProperty/createValue 分配窗口防误回收 */
+  if (argc > 0 && args[0] != nullptr && args[0]->kind() != Kind::Undefined) {
+    ConversionResult s = toString(ctx, args[0]);
+    if (!s.ok()) {
+      ctx->heap().unpin(v);
+      return s;
+    }
+    v->object()->setProperty("message", s.value);
+  } else {
+    v->object()->setProperty("message", ctx->createValue(std::string("")));
+  }
+  v->object()->setProperty("name", ctx->createValue(std::string("Error")));
+  ctx->heap().unpin(v);
+  return ok(v);
+}
+
+/* 子类构造器（TypeError/RangeError/ReferenceError/SyntaxError，§20.5.6-9）。
+ * 与 Error 构造器一致，仅 name 不同。返回对象在覆盖 name 前 pin 保护
+ * （createValue 分配窗口防误回收，M3.3 模式）。 */
+ConversionResult errorSubclass(JSContext *ctx, JSValue *thisVal,
+                               JSValue *const *args, size_t argc,
+                               const char *name) {
+  ConversionResult r = errorConstructor(ctx, thisVal, args, argc);
+  if (r.ok() && r.value != nullptr) {
+    ctx->heap().pin(r.value);
+    r.value->object()->setProperty("name", ctx->createValue(std::string(name)));
+    ctx->heap().unpin(r.value);
+  }
+  return r;
+}
+
+ConversionResult errorTypeError(JSContext *ctx, JSValue *thisVal,
+                                JSValue *const *args, size_t argc) {
+  return errorSubclass(ctx, thisVal, args, argc, "TypeError");
+}
+
+ConversionResult errorRangeError(JSContext *ctx, JSValue *thisVal,
+                                 JSValue *const *args, size_t argc) {
+  return errorSubclass(ctx, thisVal, args, argc, "RangeError");
+}
+
+ConversionResult errorReferenceError(JSContext *ctx, JSValue *thisVal,
+                                     JSValue *const *args, size_t argc) {
+  return errorSubclass(ctx, thisVal, args, argc, "ReferenceError");
+}
+
+ConversionResult errorSyntaxError(JSContext *ctx, JSValue *thisVal,
+                                  JSValue *const *args, size_t argc) {
+  return errorSubclass(ctx, thisVal, args, argc, "SyntaxError");
+}
+
+/* Error.prototype.toString（§20.5.3.4）："name: message"。 */
+ConversionResult errorToString(JSContext *ctx, JSValue *thisVal,
+                               JSValue *const *, size_t) {
+  if (thisVal == nullptr || !thisVal->isObject()) {
+    return fail("TypeError: Error.prototype.toString called on non-object");
+  }
+  JSObject *o = thisVal->object();
+  JSValue *name_v = o->getProperty("name");
+  JSValue *msg_v = o->getProperty("message");
+  std::string name = "Error";
+  std::string msg;
+  if (name_v != nullptr && name_v->kind() != Kind::Undefined) {
+    ConversionResult s = toString(ctx, name_v);
+    if (!s.ok()) return s;
+    name = s.value->toString();
+  }
+  if (msg_v != nullptr && msg_v->kind() != Kind::Undefined) {
+    ConversionResult s = toString(ctx, msg_v);
+    if (!s.ok()) return s;
+    msg = s.value->toString();
+  }
+  if (name.empty()) return ok(ctx->createValue(msg));
+  if (msg.empty()) return ok(ctx->createValue(name));
+  return ok(ctx->createValue(name + ": " + msg));
+}
+
+/* 注册 Error 构造器（§20.5）：
+ *   name        全局名（Error/TypeError/...）
+ *   ctor        构造器回调
+ *   parentName  原型链父名（nullptr = Error，其余指向 Error.prototype）
+ * 每个构造器：global[name] = ctor；ctor.prototype = 新错误原型
+ *   {constructor: ctor, name, message: "", toString}；
+ * 原型链：Error.prototype -> Object.prototype；子类 -> Error.prototype。 */
+void installErrorBuiltin(JSContext *ctx, const char *name, JSBuiltinFn ctor,
+                         const char *parentName) {
+  JSValue *global = ctx->globalObject();
+  JSValue *ctor_v = makeBuiltin(ctx, ctor, ThisMode::Strict);
+  ctx->heap().pin(ctor_v); /* 分配保护：挂 global 前防误回收 */
+  global->object()->setProperty(name, ctor_v);
+  ctx->heap().unpin(ctor_v); /* 已入根（global 属性） */
+
+  /* 原型对象（普通对象，非函数）。createObject 后未入根前，后续
+   * setProperty / createValue / makeBuiltin 的分配可能触发 GC 误回收
+   * （两段式窗口，M3.3 模式）：pin 包装器 JSValue（其 gcMarkRefs 传递
+   * 标记内部 JSObject），挂到 ctor_v->prototype 后 unpin。 */
+  JSValue *proto = ctx->createObject(objectProto(ctx)->object());
+  ctx->heap().pin(proto);
+  proto->object()->setProperty("constructor", ctor_v);
+  proto->object()->setProperty("name", ctx->createValue(std::string(name)));
+  proto->object()->setProperty("message", ctx->createValue(std::string("")));
+  proto->object()->setProperty(
+      "toString", makeBuiltin(ctx, errorToString, ThisMode::Strict));
+  ctor_v->object()->setProperty("prototype", proto);
+  ctx->heap().unpin(proto);
+
+  /* 子类原型链：proto -> 父原型（Error.prototype 或 Object.prototype）。
+   * 父原型在 installErrorBuiltin 中已建立（Error 先注册）。 */
+  if (parentName != nullptr) {
+    JSValue *parent_ctor = global->object()->getProperty(parentName);
+    if (parent_ctor != nullptr && parent_ctor->isObject()) {
+      JSValue *parent_proto = parent_ctor->object()->getProperty("prototype");
+      if (parent_proto != nullptr && parent_proto->isObject()) {
+        proto->object()->setPrototype(parent_proto->object());
+      }
+    }
+  }
+}
+
 /* 注册一组包装对象内置（Number/String/Boolean 之一）：
  * 构造器挂 global，prototype 挂 constructor + valueOf/toString 最小方法集，
  * prototype 进 wrapper_protos_ 缓存（装箱原型链，§7.1.13）。
@@ -500,9 +737,12 @@ void installWrapperBuiltin(JSContext *ctx, const char *name, ObjectKind kind,
                            JSBuiltinFn toStringFn) {
   JSValue *global = ctx->globalObject();
   JSValue *ctor_v = makeBuiltin(ctx, ctor, ThisMode::Strict);
+  ctx->heap().pin(ctor_v); /* 分配保护：挂 global 前防误回收 */
   global->object()->setProperty(name, ctor_v);
+  ctx->heap().unpin(ctor_v); /* 已入根（global 属性） */
 
   JSValue *proto = ctx->createObject(objectProto(ctx)->object()); /* 原型链 -> Object.prototype */
+  ctx->heap().pin(proto); /* 分配保护（M3.3）：入根前防误回收 */
   ctor_v->object()->setProperty("prototype", proto);
   proto->object()->setProperty("constructor", ctor_v);
   proto->object()->setProperty("valueOf",
@@ -510,6 +750,7 @@ void installWrapperBuiltin(JSContext *ctx, const char *name, ObjectKind kind,
   proto->object()->setProperty("toString",
                                makeBuiltin(ctx, toStringFn, ThisMode::Strict));
   ctx->setWrapperProto(kind, proto);
+  ctx->heap().unpin(proto);
 }
 
 }  // namespace
@@ -529,7 +770,9 @@ JSValue *wellKnownSymbol(JSContext *ctx, WellKnown wks) {
 
   JSValue *sym = ctx->createValue(Kind::Symbol);
   sym->setSymbolDescription(desc);
+  ctx->heap().pin(sym); /* 分配保护：进根集前防误回收 */
   ctx->setWellKnown(index, sym); /* 进根集（markRoots 遍历 well_known_） */
+  ctx->heap().unpin(sym);
   return sym;
 }
 
@@ -551,7 +794,9 @@ void installBuiltins(JSContext *ctx) {
   /* Object 构造器（M3.3，§20.1.1）：先于包装对象建立 Object.prototype
    * 原型链根（包装对象/字面量/装箱都指向它）。 */
   JSValue *object = makeBuiltin(ctx, objectConstructor, ThisMode::Strict);
+  ctx->heap().pin(object); /* 分配保护：挂 global 前防误回收 */
   global->object()->setProperty("Object", object);
+  ctx->heap().unpin(object);
 
   JSObject *object_fn = object->object(); /* JSFunction 是 JSObject */
   object_fn->setProperty("getPrototypeOf",
@@ -569,7 +814,9 @@ void installBuiltins(JSContext *ctx) {
 
   /* Symbol 构造器（§20.4.1.1）：内置函数 + well-known 静态属性（E4-1）。 */
   JSValue *symbol = makeBuiltin(ctx, symbolConstructor, ThisMode::Strict);
+  ctx->heap().pin(symbol); /* 分配保护：挂 global 前防误回收 */
   global->object()->setProperty("Symbol", symbol);
+  ctx->heap().unpin(symbol);
 
   JSObject *sym_obj = symbol->object(); /* JSFunction 是 JSObject */
   sym_obj->setProperty("iterator", wellKnownSymbol(ctx, WellKnown::Iterator));
@@ -582,6 +829,7 @@ void installBuiltins(JSContext *ctx) {
 
   /* Symbol.prototype（§20.4.3）：valueOf/toString 最小方法集。 */
   JSValue *symbol_proto = ctx->createObject(objectProto(ctx)->object());
+  ctx->heap().pin(symbol_proto); /* 分配保护（M3.3）：入根前防误回收 */
   sym_obj->setProperty("prototype", symbol_proto);
   symbol_proto->object()->setProperty("constructor", symbol);
   symbol_proto->object()->setProperty(
@@ -589,6 +837,7 @@ void installBuiltins(JSContext *ctx) {
   symbol_proto->object()->setProperty(
       "toString", makeBuiltin(ctx, symbolToStringBuiltin, ThisMode::Strict));
   ctx->setWrapperProto(ObjectKind::Symbol, symbol_proto);
+  ctx->heap().unpin(symbol_proto);
 
   /* 包装对象构造器 + prototype 最小方法集（E4-2）。 */
   installWrapperBuiltin(ctx, "Number", ObjectKind::Number, numberConstructor,
@@ -601,13 +850,16 @@ void installBuiltins(JSContext *ctx) {
   /* Array 构造器（M4.1，§23.1.1）：数组字面量/Array() 的原型链根。
    * 需在 createArray 首次被调用前注册（vm NewArray / 数组字面量）。 */
   JSValue *array = makeBuiltin(ctx, arrayConstructor, ThisMode::Strict);
+  ctx->heap().pin(array); /* 分配保护：挂 global 前防误回收 */
   global->object()->setProperty("Array", array);
+  ctx->heap().unpin(array);
   array->object()->setProperty("isArray",
                                makeBuiltin(ctx, arrayIsArray, ThisMode::Strict));
 
   /* Array.prototype（§23.1.3）：进 context 缓存（arrayProto）。
    * 数组字面量 / Array() 新建数组的原型链汇聚于此。 */
   JSValue *array_proto = arrayProto(ctx);
+  ctx->heap().pin(array_proto); /* 分配保护（M3.3）：入根前防误回收 */
   array->object()->setProperty("prototype", array_proto);
   array_proto->object()->setProperty("constructor", array);
   array_proto->object()->setProperty("push",
@@ -626,6 +878,42 @@ void installBuiltins(JSContext *ctx) {
                                      makeBuiltin(ctx, arrayToString, ThisMode::Strict));
   array_proto->object()->setProperty("reverse",
                                      makeBuiltin(ctx, arrayReverse, ThisMode::Strict));
+  ctx->heap().unpin(array_proto); /* 已挂 ctor->prototype 入根（M3.3） */
+
+  /* Function 构造器（M4.2，§20.2.1）：new Function(...) 动态创建函数。
+   * 本阶段简化：支持无参/空函数体（Function() -> 空函数返回 undefined）。
+   * Function.prototype 是 Object.prototype 的下级（§20.2.3）。 */
+  JSValue *function = makeBuiltin(ctx, functionConstructor, ThisMode::Strict);
+  ctx->heap().pin(function); /* 分配保护：挂 global 前防误回收 */
+  global->object()->setProperty("Function", function);
+  ctx->heap().unpin(function);
+  JSObject *function_fn = function->object();
+
+  /* Function.prototype（§20.2.3）：原型链 -> Object.prototype。
+   * 经 functionProto 惰性创建 + 进 context 缓存（函数原型链根，供 Script/
+   * Builtin 函数挂原型）。此处复用缓存，避免重复创建。 */
+  JSValue *function_proto = functionProto(ctx);
+  ctx->heap().pin(function_proto); /* 分配保护（M3.3）：入根前防误回收 */
+  function_fn->setProperty("prototype", function_proto);
+  function_proto->object()->setProperty("constructor", function);
+
+  /* Function.prototype.call/apply/bind（M4.2，§20.2.3）。 */
+  function_proto->object()->setProperty(
+      "apply", makeBuiltin(ctx, functionApply, ThisMode::Strict));
+  function_proto->object()->setProperty(
+      "call", makeBuiltin(ctx, functionCall, ThisMode::Strict));
+  function_proto->object()->setProperty(
+      "bind", makeBuiltin(ctx, functionBind, ThisMode::Strict));
+  ctx->heap().unpin(function_proto); /* 已挂 ctor->prototype 入根（M3.3） */
+
+  /* Error 家族（M4.2，§20.5）：Error + TypeError/RangeError/ReferenceError/
+   * SyntaxError。原型链 Error.prototype -> Object.prototype；
+   * 子类 TypeError.prototype -> Error.prototype。 */
+  installErrorBuiltin(ctx, "Error", errorConstructor, nullptr);
+  installErrorBuiltin(ctx, "TypeError", errorTypeError, "Error");
+  installErrorBuiltin(ctx, "RangeError", errorRangeError, "Error");
+  installErrorBuiltin(ctx, "ReferenceError", errorReferenceError, "Error");
+  installErrorBuiltin(ctx, "SyntaxError", errorSyntaxError, "Error");
 }
 
 /* 取 Object.prototype（M3.3，惰性创建 + 缓存 + 进根集）。
@@ -634,7 +922,22 @@ JSValue *objectProto(JSContext *ctx) {
   JSValue *p = ctx->objectProto();
   if (p != nullptr) return p;
   p = ctx->createObject(nullptr); /* Object.prototype 原型为 null（§20.1.3） */
-  ctx->setObjectProto(p);
+  ctx->heap().pin(p); /* 分配保护：进根集前防误回收 */
+  ctx->setObjectProto(p); /* 进根集（markRoots 遍历 object_proto_） */
+  ctx->heap().unpin(p);
+  return p;
+}
+
+/* 取 Function.prototype（M4.2，惰性创建 + 缓存 + 进根集）。
+ * 供 Script/Builtin 函数创建时挂原型（函数方法 call/apply/bind 所在）。
+ * 原型链 -> Object.prototype（§20.2.3）。 */
+JSValue *functionProto(JSContext *ctx) {
+  JSValue *p = ctx->functionProto();
+  if (p != nullptr) return p;
+  p = ctx->createObject(objectProto(ctx)->object());
+  ctx->heap().pin(p); /* 分配保护：进根集前防误回收 */
+  ctx->setFunctionProto(p); /* 进根集（markRoots 遍历 function_proto_） */
+  ctx->heap().unpin(p);
   return p;
 }
 
@@ -651,7 +954,9 @@ JSValue *arrayProto(JSContext *ctx) {
   v->setObject(arr);
   arr->setHolder(v);
   ctx->heap().unpin(arr);
+  ctx->heap().pin(v); /* 分配保护：进根集（array_proto_）前防误回收 */
   ctx->setArrayProto(v);
+  ctx->heap().unpin(v);
   return v;
 }
 

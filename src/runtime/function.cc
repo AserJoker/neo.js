@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "neojs/runtime/builtins.h"
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/conversion.h"
 #include "neojs/runtime/environment.h"
@@ -74,10 +75,49 @@ JSFunction::JSFunction(JSObject *prototype, JSBuiltinFn func,
       func_(reinterpret_cast<void *>(func)),
       this_mode_(this_mode) {}
 
-/* GC（M2.5）：JSObject 引用边 + [[Environment]] 闭包环境引用边。 */
+/* GC（M2.5）：JSObject 引用边 + [[Environment]] 闭包环境引用边。
+ * M4.2：+ [[BoundTargetFunction]]/[[BoundThis]]/[[BoundArguments]] 引用边。 */
 void JSFunction::gcMarkRefs(Heap *heap) {
   JSObject::gcMarkRefs(heap);
   if (environment_ != nullptr) heap->markRoot(environment_);
+  if (bound_target_ != nullptr) heap->markRoot(bound_target_);
+  if (bound_this_ != nullptr) heap->markRoot(bound_this_);
+  for (JSValue *a : bound_args_) {
+    heap->markRoot(a);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Construct（§7.3.13，M4.2）                                                 */
+/* -------------------------------------------------------------------------- */
+
+ConversionResult construct(JSContext *ctx, JSValue *F, JSValue *const *args,
+                            size_t argc) {
+  /* 1. IsConstructor 检查：当前所有可调用对象均可构造（简化，M5 class 细化）。 */
+  if (!isCallable(F)) {
+    return fail("TypeError: F is not a constructor");
+  }
+
+  /* 2. 新对象原型 = F.prototype（须对象，否则回退 Object.prototype）。
+   *    注意：F.prototype 访问不触发 GC 分配（getProperty 无分配），安全。 */
+  JSObject *proto = nullptr;
+  JSValue *fproto = F->object()->getProperty("prototype");
+  if (fproto != nullptr && fproto->isObject()) {
+    proto = fproto->object();
+  } else {
+    JSValue *op = objectProto(ctx); /* 惰性创建，可能触发 GC */
+    if (op != nullptr) proto = op->object();
+  }
+
+  /* 3. 创建新对象（原型已定）。createObject 内部 pin/unpin 保护（M3.3）。 */
+  JSValue *obj = ctx->createObject(proto);
+
+  /* 4. 调用构造器（this = 新对象）。返回值是对象则用之，否则返回新对象。
+   *    注意：call 内部分配临时句柄保护 obj，obj 作为参数传入安全。 */
+  ConversionResult r = call(ctx, F, obj, args, argc);
+  if (!r.ok()) return r;
+  if (r.value != nullptr && r.value->isObject()) return r;
+  return ok(obj);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -147,9 +187,27 @@ ConversionResult call(JSContext *ctx, JSValue *func, JSValue *thisVal,
 
   /* 4. 调用回调。
    *    Script：JS 源码函数（M2.4 ③）——解释执行字节码，递归调用本入口。
+   *    Bound（M4.2）：bind 生成函数——拼接 [[BoundArguments]] + 调用参数，
+   *      以 [[BoundThis]] 转发给 [[BoundTargetFunction]]（§20.2.3.5）。
    *    Host：句柄语义（参数/this 转句柄，回调经 C ABI，返回值是句柄）；
    *    Builtin：内部值指针语义（E4 内置函数，参数/返回值均为内部指针）。 */
   ConversionResult result;
+  if (fn->functionKind() == FunctionKind::Bound) {
+    /* 拼接绑定参数 + 调用参数（绑定参数在前，§20.2.3.5 步骤 5-6）。
+     * 转发期间 target/bound_this/bound_args 由函数对象持有（GC 引用边），
+     * 拼接产生的临时 vector 只含既有指针，无新分配，安全。 */
+    const std::vector<JSValue *> &bargs = fn->boundArgs();
+    std::vector<JSValue *> all;
+    all.reserve(bargs.size() + argc);
+    for (JSValue *a : bargs) all.push_back(a);
+    for (size_t i = 0; i < argc; ++i) all.push_back(args[i]);
+    JSValue *target = fn->boundTarget();
+    if (target == nullptr || !isCallable(target)) {
+      return fail("TypeError: invalid bound function");
+    }
+    return call(ctx, target, fn->boundThis(),
+                all.empty() ? nullptr : all.data(), all.size());
+  }
   if (fn->functionKind() == FunctionKind::Script) {
     /* 调用栈深度上限（M2.5，架构 §5.4）：递归过深报 RangeError 防爆栈。
      * 用 RAII 保证返回路径（含错误）都递减深度。 */

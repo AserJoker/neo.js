@@ -863,10 +863,14 @@ extern "C" JSValue *JS_Eval(JSContext *ctx, const char *source, size_t source_le
         c->allocator().destroy(ast);
         return makeException(ctx, ("CompileError: " + fr.error).c_str());
       }
-      /* 创建 Script 函数对象（JSFunction + FunctionBytecode），挂 global。 */
+      /* 创建 Script 函数对象（JSFunction + FunctionBytecode），挂 global。
+       * 原型链 -> Function.prototype（M4.2：call/apply/bind 方法所在）。 */
+      neojs::JSObject *fproto = nullptr;
+      neojs::JSValue *fp = neojs::functionProto(c);
+      if (fp != nullptr) fproto = fp->object();
       neojs::JSFunction *fn =
           c->heap().allocGCObject<neojs::JSFunction>(
-              nullptr /* prototype */, neojs::FunctionKind::Script,
+              fproto, neojs::FunctionKind::Script,
               nullptr /* func */);
       const std::string fn_name = fr.fn.name; /* move 前取名字 */
       fn->setBytecode(std::move(fr.fn));

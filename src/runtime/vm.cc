@@ -435,6 +435,24 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         if (r.tmp_handle != 0) ctx->handles().free(r.tmp_handle);
         break;
       }
+      case Opcode::Construct: {
+        /* new 构造（M4.2）：栈布局 ctor, args...（argc 个）。
+         * this = 新对象（construct 内部创建）。 */
+        uint16_t argc = instr.arg;
+        size_t ctor_slot = stack.size() - 1 - static_cast<size_t>(argc);
+        if (ctor_slot < fn.numLocals) {
+          return fail("Error: stack underflow on Construct");
+        }
+        JSValue *ctor = stack[ctor_slot];
+        JSValue *const *call_args =
+            argc > 0 ? &stack[ctor_slot + 1] : nullptr;
+        ConversionResult r = construct(ctx, ctor, call_args, argc);
+        if (!r.ok()) return r;
+        stack.resize(stack.size() - 1 - static_cast<size_t>(argc));
+        stack.push_back(r.value);
+        if (r.tmp_handle != 0) ctx->handles().free(r.tmp_handle);
+        break;
+      }
       case Opcode::Ret: {
         if (stack.empty()) return ok(ctx->createValue(Kind::Undefined));
         JSValue *result = stack.back();
@@ -461,8 +479,13 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         if (instr.arg >= fn.nested.size()) {
           return fail("Error: MakeFunction index out of range");
         }
+        /* 函数原型链 -> Function.prototype（M4.2）：Script 函数挂 call/apply/
+         * bind 方法（§20.2.3）。惰性创建缓存，未注册内置时原型为 null。 */
+        JSObject *fproto = nullptr;
+        JSValue *fp = neojs::functionProto(ctx);
+        if (fp != nullptr) fproto = fp->object();
         JSFunction *f = ctx->heap().allocGCObject<JSFunction>(
-            nullptr /* prototype */, FunctionKind::Script, nullptr /* func */);
+            fproto, FunctionKind::Script, nullptr /* func */);
         f->setBytecode(fn.nested[instr.arg]); /* 复制（FunctionBytecode 值语义） */
         f->setEnvironment(env);
         ctx->heap().pin(f); /* 分配保护（M3.3）：两段式创建中间窗口防误回收 */

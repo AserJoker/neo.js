@@ -46,8 +46,11 @@ class JSEnvironment;
  *   Host        宿主 C 回调（句柄语义，E3）
  *   Builtin     引擎内置函数（内部值指针语义，E4）
  *   Script      JS 源码函数（M2.4 ③：携带 FunctionBytecode，VM 解释执行）
+ *   Bound       bind 生成函数（M4.2，§20.2.3.5 BoundFunctionCreate）：
+ *               携带 [[BoundTargetFunction]]/[[BoundThis]]/[[BoundArguments]]，
+ *               调用时拼接参数转发（call() 内统一处理，非回调）。
  */
-enum class FunctionKind : uint8_t { Host, Builtin, Script };
+enum class FunctionKind : uint8_t { Host, Builtin, Script, Bound };
 
 /* 引擎内置函数回调签名（E4）：参数/返回值均为**内部值指针**（非宿主句柄）。
  * 与 Host 的句柄语义区分：内置函数在引擎内部，无需句柄保护互转，
@@ -113,7 +116,21 @@ class JSFunction : public JSObject {
   JSEnvironment *environment() const { return environment_; }
   void setEnvironment(JSEnvironment *env) { environment_ = env; }
 
-  /* GC：JSObject 的引用边 + [[Environment]]（闭包环境，M2.5）。
+  /* [[BoundTargetFunction]]/[[BoundThis]]/[[BoundArguments]]（M4.2）：
+   * bind 生成函数（FunctionKind::Bound）的绑定元数据。GC 引用边。 */
+  bool isBoundFunction() const { return kind_ == FunctionKind::Bound; }
+  JSValue *boundTarget() const { return bound_target_; }
+  JSValue *boundThis() const { return bound_this_; }
+  const std::vector<JSValue *> &boundArgs() const { return bound_args_; }
+  void setBoundData(JSValue *target, JSValue *bthis,
+                    std::vector<JSValue *> args) {
+    bound_target_ = target;
+    bound_this_ = bthis;
+    bound_args_ = std::move(args);
+  }
+
+  /* GC：JSObject 的引用边 + [[Environment]]（闭包环境，M2.5）
+   * + [[BoundTargetFunction]]/[[BoundThis]]/[[BoundArguments]]（M4.2）。
    * 实现在 function.cc（需完整 Heap/JSEnvironment 类型）。 */
   void gcMarkRefs(Heap *heap) override;
 
@@ -125,6 +142,9 @@ class JSFunction : public JSObject {
   bool construct_ = false;              /* [[Construct]] 预留 */
   FunctionBytecode bc_;                 /* Script 函数字节码（M2.4 ③） */
   JSEnvironment *environment_ = nullptr; /* [[Environment]]（M2.5 闭包） */
+  JSValue *bound_target_ = nullptr;     /* [[BoundTargetFunction]]（M4.2） */
+  JSValue *bound_this_ = nullptr;       /* [[BoundThis]]（M4.2） */
+  std::vector<JSValue *> bound_args_;   /* [[BoundArguments]]（M4.2） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -140,6 +160,15 @@ class JSFunction : public JSObject {
  * 回调调用。 */
 ConversionResult call(JSContext *ctx, JSValue *func, JSValue *thisVal,
                       JSValue *const *args, size_t argc);
+
+/* Construct（§7.3.13，M4.2）：new F(args) 语义。
+ *   F     构造器（可调用对象）
+ *   args  参数数组（内部值指针数组；可为 nullptr 当 argc==0）
+ * 流程：IsConstructor 检查 -> 新对象（原型 = F.prototype）-> 调 F（this=新对象）
+ *      -> 返回值是对象则返回之，否则返回新对象。
+ * 当前简化：所有可调用对象都可构造（isConstructor 检查留 M5 class）。 */
+ConversionResult construct(JSContext *ctx, JSValue *F, JSValue *const *args,
+                           size_t argc);
 
 /* IsCallable（§7.2.12）：v 是否为可调用对象（当前仅 JSFunction）。 */
 bool isCallable(const JSValue *v);

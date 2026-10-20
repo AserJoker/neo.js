@@ -124,6 +124,11 @@ class JSContext {
   JSValue *arrayProto() const { return array_proto_; }
   void setArrayProto(JSValue *v) { array_proto_ = v; }
 
+  /* Function.prototype 缓存（M4.2，§20.2.3）：函数（Script/Builtin）的
+   * 原型链根（call/apply/bind 所在）。惰性创建 + 进根集（markRoots）。 */
+  JSValue *functionProto() const { return function_proto_; }
+  void setFunctionProto(JSValue *v) { function_proto_ = v; }
+
   /* VM 操作数栈注册为 GC 根集（M2-VM，用户确认“栈帧入 GC 根集”）。
    * 解释器运行期间调用 vmStackPush(&stack) 入栈；结束/出错时 vmStackPop 弹出。
    * 嵌套 runBytecode（函数递归）会 push 多个栈帧，markRoots 遍历全部。
@@ -175,6 +180,7 @@ class JSContext {
   JSValue *wrapper_protos_[4] = {nullptr, nullptr, nullptr, nullptr}; /* 包装原型缓存（E4-2） */
   JSValue *object_proto_ = nullptr; /* Object.prototype 缓存（M3.3） */
   JSValue *array_proto_ = nullptr;  /* Array.prototype 缓存（M4.1） */
+  JSValue *function_proto_ = nullptr; /* Function.prototype 缓存（M4.2） */
   std::vector<std::vector<JSValue *> *> vm_stacks_; /* VM 操作数栈根集栈（M2-VM） */
   std::vector<JSEnvironment *> vm_envs_; /* VM 帧环境根集栈（M2.5 闭包） */
   size_t call_depth_ = 0;   /* 当前调用栈深度（M2.5 防爆栈） */

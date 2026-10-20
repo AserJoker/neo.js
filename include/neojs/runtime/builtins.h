@@ -49,6 +49,10 @@ JSValue *objectProto(JSContext *ctx);
  * 数组字面量（vm NewArray）与 Array() 新建数组的原型链都指向它。 */
 JSValue *arrayProto(JSContext *ctx);
 
+/* 取 Function.prototype（M4.2 惰性创建 + 缓存 + 进根集）。
+ * 函数（Script/Builtin）的原型链根（call/apply/bind 所在）。 */
+JSValue *functionProto(JSContext *ctx);
+
 }  // namespace neojs
 
 #endif  // NEOJS_RUNTIME_BUILTINS_H

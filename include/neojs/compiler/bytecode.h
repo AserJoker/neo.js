@@ -81,6 +81,7 @@ enum class Opcode : uint8_t {
   /* 函数/调用 */
   Call,            /* 调用栈顶函数：Call {argc}（弹出函数+argc 参数） */
   CallMethod,      /* 成员调用：obj, func, args... -> 结果（M4.1，this=obj） */
+  Construct,       /* new 构造：ctor, args... -> 实例（M4.2，this=新对象） */
   Ret,             /* 返回栈顶值，弹出本帧 */
 
   /* 闭包（M2.5） */
@@ -175,6 +176,7 @@ class BytecodeBuilder {
   void dup() { push_op(Opcode::Dup); }
   void call(uint16_t argc) { push_op(Opcode::Call, argc); }
   void call_method(uint16_t argc) { push_op(Opcode::CallMethod, argc); }
+  void construct(uint16_t argc) { push_op(Opcode::Construct, argc); }
   void jump(BcLabel *label) { push_op(Opcode::Jump, 0, label); }
   void jump_if_false(BcLabel *label) { push_op(Opcode::JumpIfFalse, 0, label); }
   void ret() { push_op(Opcode::Ret); }

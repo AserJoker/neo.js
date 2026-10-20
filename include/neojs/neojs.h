@@ -268,6 +268,7 @@ typedef enum JSBCOp {
   JS_BC_JUMP_IF_FALSE,
   JS_BC_CALL,
   JS_BC_CALL_METHOD,  /* 成员调用（M4.1）：obj, func, args... this=obj */
+  JS_BC_CONSTRUCT,     /* new 构造（M4.2）：ctor, args... this=新对象 */
   JS_BC_RET,
   JS_BC_MAKE_FUNCTION,  /* M2.5 闭包：MakeFunction {index} */
   JS_BC_LOAD_UPVALUE,    /* 捕获的外层变量读取（M2.5） */

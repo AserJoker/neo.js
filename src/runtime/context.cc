@@ -140,6 +140,10 @@ void JSContext::markRoots() {
   /* Array.prototype 缓存（M4.1）：数组原型链根，始终可达。 */
   if (array_proto_ != nullptr) heap_.markRoot(array_proto_);
 
+  /* Function.prototype 缓存（M4.2）：函数原型链根（call/apply/bind），
+   * 始终可达。 */
+  if (function_proto_ != nullptr) heap_.markRoot(function_proto_);
+
   /* VM 操作数栈（M2-VM，栈帧入根集）：解释器运行期间栈上值不可回收。
    * 嵌套 runBytecode（函数递归）时多个栈帧并存，全部标记。 */
   for (std::vector<JSValue *> *stack : vm_stacks_) {

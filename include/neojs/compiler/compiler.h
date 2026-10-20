@@ -103,6 +103,7 @@ class Compiler {
   bool compileConditional(const ASTNode &node);
   bool compileAssignment(const ASTNode &node);
   bool compileCall(const ASTNode &node);
+  bool compileNew(const ASTNode &node); /* M4.2：new 构造 */
   bool compileSequence(const ASTNode &node);
 
   /* 赋值目标（Identifier -> StoreVar/StoreUpvalue；MemberExpression -> compileMemberAssign）。 */

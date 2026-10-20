@@ -502,9 +502,7 @@ bool Compiler::compileExpr(const ASTNode &node) {
     case NodeType::CallExpression: return compileCall(node);
     case NodeType::Sequence: return compileSequence(node);
     case NodeType::MemberExpression: return compileMemberLoad(node);
-    case NodeType::NewExpression:
-      fail("not implemented: new expression");
-      return false;
+    case NodeType::NewExpression: return compileNew(node);
     case NodeType::FunctionExpression:
     case NodeType::ArrowFunctionExpression:
       /* 函数表达式/箭头函数（M2.5 闭包）：编译子函数，MakeFunction 留栈顶。 */
@@ -1056,6 +1054,49 @@ bool Compiler::compileCall(const ASTNode &node) {
     if (!compileExpr(*node.children[i])) return false;
   }
   builder_.call(static_cast<uint16_t>(argc));
+  return true;
+}
+
+/* new 构造（M4.2）：new Foo(args) / new Foo。
+ *   ctor, args... -> Construct {argc}
+ * new 语义下 this 是新对象，callee 只需求值（成员构造 new a.b() 的
+ * this 与 a 无关，直接 LoadProp 取构造器即可，无需保留接收者）。 */
+bool Compiler::compileNew(const ASTNode &node) {
+  if (node.children.empty()) {
+    fail("new without callee");
+    return false;
+  }
+  const ASTNode *callee = node.children[0];
+  if (callee->type == NodeType::MemberExpression) {
+    /* new a.b(...)：求值 a 并取 b（this 语义不影响 new）。 */
+    if (callee->member.optional || callee->children.size() < 2) {
+      fail("not implemented: optional chaining in new");
+      return false;
+    }
+    if (!compileExpr(*callee->children[0])) return false;
+    const ASTNode *prop = callee->children[1];
+    if (prop->type == NodeType::PrivateIdentifier) {
+      fail("not implemented: private member in new");
+      return false;
+    }
+    if (!callee->member.computed) {
+      if (prop->type != NodeType::Identifier) {
+        fail("invalid member property name");
+        return false;
+      }
+      builder_.load_prop(prop->name);
+    } else {
+      if (!compileExpr(*prop)) return false;
+      builder_.load_elem();
+    }
+  } else {
+    if (!compileExpr(*callee)) return false;
+  }
+  size_t argc = node.children.size() - 1;
+  for (size_t i = 1; i < node.children.size(); ++i) {
+    if (!compileExpr(*node.children[i])) return false;
+  }
+  builder_.construct(static_cast<uint16_t>(argc));
   return true;
 }
 
