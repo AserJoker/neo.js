@@ -863,3 +863,130 @@ TEST(Compiler, UnsupportedDestructuring) {
   JS_FreeAllocator(a);
 }
 
+/* -------------------------------------------------------------------------- */
+/* 10. Compiler 语句编译（M2.4 ②）                                           */
+/* -------------------------------------------------------------------------- */
+
+/* if-else：if (1) 10; else 20; —— 顶层 completion value 为最后表达式值 */
+TEST(Compiler, IfElse) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::ConversionResult r1 = compileAndRun(ic(ctx), "if (1) 10; else 20; 99");
+  ASSERT_TRUE(r1.ok());
+  EXPECT_DOUBLE_EQ(r1.value->toNumber(), 99.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* if 无 else + 变量赋值 */
+TEST(Compiler, IfAssign) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::ConversionResult r =
+      compileAndRun(ic(ctx), "var a = 0; if (1) { a = 5; } a");
+  ASSERT_TRUE(r.ok());
+  EXPECT_DOUBLE_EQ(r.value->toNumber(), 5.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* while 循环：var i = 0; while (i < 3) { i = i + 1; } i -> 3 */
+TEST(Compiler, WhileLoop) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::ConversionResult r =
+      compileAndRun(ic(ctx), "var i = 0; while (i < 3) { i = i + 1; } i");
+  ASSERT_TRUE(r.ok());
+  EXPECT_DOUBLE_EQ(r.value->toNumber(), 3.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* while 累加：sum 1..10 -> 55 */
+TEST(Compiler, WhileSum) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::ConversionResult r = compileAndRun(
+      ic(ctx), "var i = 1; var sum = 0; while (i <= 10) { sum = sum + i; i = i + 1; } sum");
+  ASSERT_TRUE(r.ok());
+  EXPECT_DOUBLE_EQ(r.value->toNumber(), 55.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* do-while：var i = 0; do { i = i + 1; } while (i < 3); i -> 3 */
+TEST(Compiler, DoWhileLoop) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::ConversionResult r =
+      compileAndRun(ic(ctx), "var i = 0; do { i = i + 1; } while (i < 3); i");
+  ASSERT_TRUE(r.ok());
+  EXPECT_DOUBLE_EQ(r.value->toNumber(), 3.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* for 循环：for (var i = 0; i < 3; i = i + 1) {} i -> 3 */
+TEST(Compiler, ForLoop) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::ConversionResult r = compileAndRun(
+      ic(ctx), "var i = 0; for (var j = 0; j < 3; j = j + 1) { i = i + 1; } i");
+  ASSERT_TRUE(r.ok());
+  EXPECT_DOUBLE_EQ(r.value->toNumber(), 3.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 嵌套循环：乘法表内层计数 */
+TEST(Compiler, NestedLoop) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::ConversionResult r = compileAndRun(
+      ic(ctx),
+      "var n = 0; for (var i = 0; i < 3; i = i + 1) { "
+      "for (var j = 0; j < 3; j = j + 1) { n = n + 1; } } n");
+  ASSERT_TRUE(r.ok());
+  EXPECT_DOUBLE_EQ(r.value->toNumber(), 9.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* return 语句（顶层 return 是语法错误，故放块内也报错——
+ * 这里仅验证 return 编译：函数编译在③实现，顶层 return 不出现）。
+ * 用一个无函数 return 的脚本验证正常路径不受影响。 */
+TEST(Compiler, BlockScope) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  neojs::ConversionResult r =
+      compileAndRun(ic(ctx), "var a = 1; { var b = 2; a = a + b; } a");
+  ASSERT_TRUE(r.ok());
+  EXPECT_DOUBLE_EQ(r.value->toNumber(), 3.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+

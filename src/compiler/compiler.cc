@@ -80,60 +80,34 @@ CompileResult Compiler::compile(const AST &ast) {
 
   if (ast.root != nullptr) {
     const auto &stmts = ast.root->children;
-    bool pending_expr = false; /* 上一条语句的值仍在栈上（未 pop） */
-    for (size_t i = 0; i < stmts.size(); ++i) {
-      const ASTNode *stmt = stmts[i];
-      if (stmt == nullptr) continue;
-      switch (stmt->type) {
-        case NodeType::ExprStmt: {
-          /* 新语句开始前丢弃上一条表达式语句的值（其非 completion value）。 */
-          if (pending_expr) {
-            builder_.pop();
-            pending_expr = false;
-          }
-          if (!stmt->children.empty()) {
-            if (!compileExpr(*stmt->children[0])) return failResult();
-            pending_expr = true; /* 保留值作为（可能的）completion value */
-          }
-          break;
-        }
-        case NodeType::VariableDeclaration:
-          if (pending_expr) {
-            builder_.pop();
-            pending_expr = false;
-          }
-          if (!compileVarDecl(*stmt)) return failResult();
-          break;
-        case NodeType::EmptyStatement:
-        case NodeType::FunctionDeclaration: /* 函数声明在③实现 */
-          if (pending_expr) {
-            builder_.pop();
-            pending_expr = false;
-          }
-          break;
-        default:
-          fail("not implemented: statement type " +
-               std::to_string(static_cast<int>(stmt->type)));
-          return failResult();
+    if (!stmts.empty()) {
+      /* 除最后一条外：逐条编译（语句自身管理栈平衡，值 Pop）。 */
+      for (size_t i = 0; i + 1 < stmts.size(); ++i) {
+        if (stmts[i] == nullptr) continue;
+        if (!compileStmt(*stmts[i])) return failResult();
       }
-    }
-    /* 最后一条语句若是表达式语句，其值即 completion value；否则 undefined。 */
-    if (pending_expr) {
-      builder_.ret(); /* 栈顶即最后表达式值 */
+      /* 最后一条：若是表达式语句，其值作为 completion value（不 Pop）；
+       * 否则编译后补 undefined。 */
+      const ASTNode *last = stmts.back();
+      if (last != nullptr && last->type == NodeType::ExprStmt &&
+          !last->children.empty()) {
+        if (!compileExpr(*last->children[0])) return failResult();
+        builder_.ret(); /* 栈顶即 completion value */
+      } else {
+        if (last != nullptr && !compileStmt(*last)) return failResult();
+        builder_.push_op(Opcode::PushUndefined);
+        builder_.ret();
+      }
     } else {
+      /* 空程序：completion value = undefined。 */
       builder_.push_op(Opcode::PushUndefined);
       builder_.ret();
     }
-    /* 局部变量槽数（含临时槽）写入字节码。 */
-    builder_.set_num_locals(next_slot_);
-    result.ok = true;
-    result.fn = builder_.build();
-    return result;
+  } else {
+    /* 空程序：completion value = undefined。 */
+    builder_.push_op(Opcode::PushUndefined);
+    builder_.ret();
   }
-
-  /* 空程序：completion value = undefined。 */
-  builder_.push_op(Opcode::PushUndefined);
-  builder_.ret();
 
   /* 局部变量槽数（含临时槽）写入字节码。 */
   builder_.set_num_locals(next_slot_);
@@ -183,6 +157,197 @@ bool Compiler::compileVarDecl(const ASTNode &decl) {
       builder_.store_var(slot);
     }
   }
+  return true;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 语句编译（M2.4 ②）                                                        */
+/* -------------------------------------------------------------------------- */
+
+bool Compiler::compileStmt(const ASTNode &node) {
+  switch (node.type) {
+    case NodeType::ExprStmt:
+      if (!node.children.empty() && !compileExpr(*node.children[0])) return false;
+      builder_.pop(); /* 表达式语句值丢弃 */
+      return true;
+    case NodeType::VariableDeclaration:
+      return compileVarDecl(node);
+    case NodeType::EmptyStatement:
+      return true;
+    case NodeType::BlockStatement:
+      return compileBlock(node);
+    case NodeType::IfStatement:
+      return compileIf(node);
+    case NodeType::WhileStatement:
+      return compileWhile(node);
+    case NodeType::DoWhileStatement:
+      return compileDoWhile(node);
+    case NodeType::ForStatement:
+      return compileFor(node);
+    case NodeType::ReturnStatement:
+      return compileReturn(node);
+    case NodeType::FunctionDeclaration:
+      fail("not implemented: function declaration (M2.4 ③)");
+      return false;
+    case NodeType::BreakStatement:
+    case NodeType::ContinueStatement:
+      fail("not implemented: break/continue (M2.4 ③ 循环控制)");
+      return false;
+    default:
+      fail("not implemented: statement type " +
+           std::to_string(static_cast<int>(node.type)));
+      return false;
+  }
+}
+
+bool Compiler::compileBlock(const ASTNode &node) {
+  /* 块语句：逐条编译（值均丢弃）。本阶段不引入新作用域。 */
+  for (const ASTNode *stmt : node.children) {
+    if (stmt == nullptr) continue;
+    if (!compileStmt(*stmt)) return false;
+  }
+  return true;
+}
+
+bool Compiler::compileIf(const ASTNode &node) {
+  /* if (cond) then [else]
+   *   [cond]
+   *   JumpIfFalse else_label
+   *   [then]
+   *   Jump end_label
+   * else_label:
+   *   [else]        （无 else 时为空）
+   * end_label: */
+  if (node.children.empty()) {
+    fail("if without condition");
+    return false;
+  }
+  if (!compileExpr(*node.children[0])) return false;
+  BcLabel else_label = builder_.new_label();
+  BcLabel end_label = builder_.new_label();
+  builder_.jump_if_false(&else_label);
+  if (node.children.size() >= 2 && !compileStmt(*node.children[1])) return false;
+  builder_.jump(&end_label);
+  builder_.bind_label(else_label);
+  if (node.children.size() >= 3 && !compileStmt(*node.children[2])) return false;
+  builder_.bind_label(end_label);
+  return true;
+}
+
+bool Compiler::compileWhile(const ASTNode &node) {
+  /* while (cond) body
+   * loop_label:
+   *   [cond]
+   *   JumpIfFalse end_label
+   *   [body]
+   *   Jump loop_label
+   * end_label: */
+  if (node.children.size() < 2) {
+    fail("while without condition/body");
+    return false;
+  }
+  BcLabel loop_label = builder_.new_label();
+  BcLabel end_label = builder_.new_label();
+  builder_.bind_label(loop_label);
+  if (!compileExpr(*node.children[0])) return false;
+  builder_.jump_if_false(&end_label);
+  if (!compileStmt(*node.children[1])) return false;
+  builder_.jump(&loop_label);
+  builder_.bind_label(end_label);
+  return true;
+}
+
+bool Compiler::compileDoWhile(const ASTNode &node) {
+  /* do body while (cond)
+   * loop_label:
+   *   [body]
+   *   [cond]
+   *   JumpIfTrue loop_label
+   * end_label:
+   * 注意：VM 无 JumpIfTrue，用 Not + JumpIfFalse：
+   *   cond falsy -> 结束；cond truthy -> 循环。
+   *   [cond] Not JumpIfFalse loop_label  —— cond falsy(Not=true) 不跳(错误！)
+   * 需重新推导：跳回 loop 当 cond truthy。
+   *   等价：cond falsy 时结束。用 JumpIfFalse 直接跳 end：
+   *   [cond] JumpIfFalse end_label；Jump loop_label。
+   *   loop_label:
+   *   [body]
+   *   [cond]
+   *   JumpIfFalse end_label
+   *   Jump loop_label
+   * end_label: */
+  if (node.children.size() < 2) {
+    fail("do-while without body/condition");
+    return false;
+  }
+  BcLabel loop_label = builder_.new_label();
+  BcLabel end_label = builder_.new_label();
+  builder_.bind_label(loop_label);
+  if (!compileStmt(*node.children[0])) return false;
+  if (!compileExpr(*node.children[1])) return false;
+  builder_.jump_if_false(&end_label);
+  builder_.jump(&loop_label);
+  builder_.bind_label(end_label);
+  return true;
+}
+
+bool Compiler::compileFor(const ASTNode &node) {
+  /* for (init; cond; update) body
+   *   [init]        （可空）
+   * loop_label:
+   *   [cond]        （可空；空 = true）
+   *   JumpIfFalse end_label
+   *   [body]
+   * update_label:
+   *   [update]      （可空）
+   *   Jump loop_label
+   * end_label: */
+  if (node.children.size() < 4) {
+    fail("for without clauses");
+    return false;
+  }
+  /* init */
+  if (node.children[0] != nullptr) {
+    if (node.children[0]->type == NodeType::VariableDeclaration) {
+      if (!compileVarDecl(*node.children[0])) return false;
+    } else {
+      /* init 表达式：求值后丢弃。 */
+      if (!compileExpr(*node.children[0])) return false;
+      builder_.pop();
+    }
+  }
+  BcLabel loop_label = builder_.new_label();
+  BcLabel update_label = builder_.new_label();
+  BcLabel end_label = builder_.new_label();
+  builder_.bind_label(loop_label);
+  /* cond */
+  if (node.children[1] != nullptr) {
+    if (!compileExpr(*node.children[1])) return false;
+    builder_.jump_if_false(&end_label);
+  }
+  /* body */
+  if (node.children[3] != nullptr && !compileStmt(*node.children[3])) return false;
+  /* update */
+  builder_.bind_label(update_label);
+  if (node.children[2] != nullptr) {
+    if (!compileExpr(*node.children[2])) return false;
+    builder_.pop(); /* update 值丢弃 */
+  }
+  builder_.jump(&loop_label);
+  builder_.bind_label(end_label);
+  return true;
+}
+
+bool Compiler::compileReturn(const ASTNode &node) {
+  /* return [expr]
+   *   [expr]        （可空 -> undefined）
+   *   Ret */
+  if (node.children.empty()) {
+    builder_.push_op(Opcode::PushUndefined);
+  } else if (!compileExpr(*node.children[0])) {
+    return false;
+  }
+  builder_.ret();
   return true;
 }
 

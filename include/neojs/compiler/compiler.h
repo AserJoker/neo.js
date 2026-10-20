@@ -56,6 +56,15 @@ class Compiler {
   /* 变量声明语句：为声明器分配局部槽 + 编译初始化。 */
   bool compileVarDecl(const ASTNode &decl);
 
+  /* 语句编译（M2.4 ②）。 */
+  bool compileStmt(const ASTNode &node);
+  bool compileBlock(const ASTNode &node);
+  bool compileIf(const ASTNode &node);
+  bool compileWhile(const ASTNode &node);
+  bool compileFor(const ASTNode &node);
+  bool compileReturn(const ASTNode &node);
+  bool compileDoWhile(const ASTNode &node);
+
   /* 构造失败结果（error_ 已设置）。 */
   CompileResult failResult();
 
