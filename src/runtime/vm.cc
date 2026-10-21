@@ -63,6 +63,78 @@ ConversionResult fail(const std::string &error) {
   return r;
 }
 
+/* M4.4h：沿原型链查找命名属性的描述符（own 或原型链），供
+ * getPropertyValue/setPropertyValue 访问器分发。找到返回描述符指针，
+ * 未找到返回 nullptr。 */
+PropertyDescriptor *findPropertyDescriptor(JSObject *obj,
+                                          const std::string &name) {
+  for (JSObject *o = obj; o != nullptr; o = o->prototype()) {
+    PropertyDescriptor *desc = o->getOwnProperty(name);
+    if (desc != nullptr) return desc;
+  }
+  return nullptr;
+}
+
+/* M4.4h：[[Get]]（§9.1.8 / §7.3.1）：沿原型链查找属性并取值。
+ * 数据属性直接返回值；访问器属性调用 getter（this=目标对象）；
+ * getter 缺省 -> undefined。 */
+ConversionResult getPropertyValue(JSContext *ctx, JSObject *target,
+                                  const std::string &name) {
+  PropertyDescriptor *desc = findPropertyDescriptor(target, name);
+  if (desc == nullptr) return ok(ctx->createValue(Kind::Undefined));
+  if (desc->type == PropertyDescriptor::Type::Accessor) {
+    if (desc->getter == nullptr || !isCallable(desc->getter)) {
+      return ok(ctx->createValue(Kind::Undefined)); /* 无 getter -> undefined */
+    }
+    return call(ctx, desc->getter, target->holder(), nullptr, 0);
+  }
+  return ok(desc->value != nullptr ? desc->value
+                                   : ctx->createValue(Kind::Undefined));
+}
+
+/* M4.4h：[[Set]]（§9.1.9 / §7.3.4）：赋值语义。
+ * - own 数据属性：writable=false -> TypeError；否则更新。
+ * - 访问器属性：调 setter（this=目标对象）；setter 缺省 -> TypeError。
+ * - 无 own 属性：沿原型链找访问器属性（继承的访问器优先）；
+ *   否则新增到本对象。 */
+ConversionResult setPropertyValue(JSContext *ctx, JSObject *target,
+                                  const std::string &name, JSValue *value) {
+  PropertyDescriptor *own = target->getOwnProperty(name);
+  if (own != nullptr) {
+    if (own->type == PropertyDescriptor::Type::Accessor) {
+      if (own->setter == nullptr || !isCallable(own->setter)) {
+        return fail("TypeError: Cannot set property which has only a getter");
+      }
+      JSValue *args[1] = {value};
+      return call(ctx, own->setter, target->holder(), args, 1);
+    }
+    if (!own->writable) {
+      return fail("TypeError: Cannot assign to read only property '" + name +
+                  "'");
+    }
+    own->value = value;
+    return ok(value);
+  }
+  /* 无 own：沿原型链找访问器属性（继承的 setter 优先于新增）。 */
+  for (JSObject *o = target->prototype(); o != nullptr; o = o->prototype()) {
+    PropertyDescriptor *d = o->getOwnProperty(name);
+    if (d == nullptr) continue;
+    if (d->type == PropertyDescriptor::Type::Accessor) {
+      if (d->setter == nullptr || !isCallable(d->setter)) {
+        return fail("TypeError: Cannot set property which has only a getter");
+      }
+      JSValue *args[1] = {value};
+      return call(ctx, d->setter, target->holder(), args, 1);
+    }
+    break; /* 继承数据属性：忽略（新增 own） */
+  }
+  /* 新增到本对象。 */
+  PropertyDescriptor d;
+  d.value = value;
+  target->setOwnProperty(name, d);
+  return ok(value);
+}
+
 /* 有符号十进制大数除法（BigInt / 与 %）：商向零截断，余数符号同被除数。
  * §6.1.6.2.7/§6.1.6.2.8。除零由调用方抛 RangeError（§6.1.6.2.4 步骤 4）。 */
 ConversionResult bigintDivModSigned(JSContext *ctx, bool xNeg,
@@ -832,7 +904,10 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
                           static_cast<double>(utf16Length(data->toString())))
                     : ctx->createValue(Kind::Undefined);
         } else {
-          val = target->getProperty(key);
+          /* M4.4h：访问器感知读取（数据属性直接取值；访问器调 getter）。 */
+          ConversionResult gv = getPropertyValue(ctx, target, key);
+          if (!gv.ok()) return gv;
+          val = gv.value;
         }
         stack.pop_back();
         stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
@@ -853,14 +928,25 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
           return fail("TypeError: Cannot set properties of non-object");
         }
         if (obj->object()->isArray() && key == "length") {
-          /* 数组 length 写入（M4.1）：截断/扩展元素存储。 */
+          /* 数组 length 写入（M4.1）：截断/扩展元素存储。
+           * M4.4h：若 defineProperty 已置 writable=false 则拒绝（§9.4.2.1
+           * ArraySetLength 的 Reject）。 */
+          PropertyDescriptor *len_desc =
+              obj->object()->getOwnProperty("length");
+          if (len_desc != nullptr &&
+              len_desc->type == PropertyDescriptor::Type::Data &&
+              !len_desc->writable) {
+            return fail("TypeError: Cannot assign to read only property 'length'");
+          }
           double d = val->toNumber();
           if (d < 0.0 || d != std::trunc(d) || d > 4294967295.0) {
             return fail("RangeError: Invalid array length");
           }
           obj->object()->resizeElements(static_cast<size_t>(d));
         } else {
-          obj->object()->setProperty(key, val);
+          /* M4.4h：访问器感知写入（writable 校验 + setter 调用）。 */
+          ConversionResult sr = setPropertyValue(ctx, obj->object(), key, val);
+          if (!sr.ok()) return sr;
         }
         stack.resize(stack.size() - 2);
         stack.push_back(val); /* 赋值表达式值 = 新值 */
@@ -945,7 +1031,10 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
           if (!boxed.ok()) return boxed;
           target = boxed.value->object();
         }
-        JSValue *val = target->getProperty(pk.value->toString());
+        /* M4.4h：访问器感知读取（数据属性直接取值；访问器调 getter）。 */
+        ConversionResult gv = getPropertyValue(ctx, target, pk.value->toString());
+        if (!gv.ok()) return gv;
+        JSValue *val = gv.value;
         stack.resize(stack.size() - 2);
         stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
         break;
@@ -977,7 +1066,10 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
           stack.push_back(val); /* 赋值表达式值 = 新值 */
           break;
         }
-        obj->object()->setProperty(pk.value->toString(), val);
+        /* M4.4h：访问器感知写入（writable 校验 + setter 调用）。 */
+        ConversionResult sr =
+            setPropertyValue(ctx, obj->object(), pk.value->toString(), val);
+        if (!sr.ok()) return sr;
         stack.resize(stack.size() - 3);
         stack.push_back(val); /* 赋值表达式值 = 新值 */
         break;

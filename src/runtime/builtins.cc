@@ -246,6 +246,23 @@ void objectOwnEnumerableKeys(JSObject *o, std::vector<std::string> *keys) {
   }
 }
 
+/* own 属性取值（M4.4h）：数据属性返回 value；访问器属性调用 getter
+ * （this=对象自身），getter 缺省/不可调用 -> undefined。供
+ * Object.values/entries/assign 对访问器属性取当前值。 */
+ConversionResult ownPropertyValue(JSContext *ctx, JSObject *o,
+                                  const std::string &name) {
+  PropertyDescriptor *d = o->getOwnProperty(name);
+  if (d == nullptr) return ok(ctx->createValue(Kind::Undefined));
+  if (d->type == PropertyDescriptor::Type::Accessor) {
+    if (d->getter == nullptr || !isCallable(d->getter)) {
+      return ok(ctx->createValue(Kind::Undefined));
+    }
+    return call(ctx, d->getter, o->holder(), nullptr, 0);
+  }
+  return ok(d->value != nullptr ? d->value
+                                : ctx->createValue(Kind::Undefined));
+}
+
 /* Object.keys（§20.1.2.6）：ToObject(O) 后收集 own enumerable string-keyed
  * 键为数组。原始值装箱（§7.1.13）；undefined/null -> TypeError。 */
 ConversionResult objectKeys(JSContext *ctx, JSValue *, JSValue *const *args,
@@ -292,8 +309,9 @@ ConversionResult objectValues(JSContext *ctx, JSValue *, JSValue *const *args,
         v = ctx->createValue(utf16Substring(data->toString(), idx, idx + 1));
       }
     } else {
-      PropertyDescriptor *d = o->getOwnProperty(keys[i]);
-      v = d != nullptr ? d->value : nullptr;
+      ConversionResult r = ownPropertyValue(ctx, o, keys[i]);
+      if (!r.ok()) return r;
+      v = r.value;
     }
     arr->object()->setElement(i, v != nullptr ? v : ctx->createValue(Kind::Undefined));
   }
@@ -326,8 +344,9 @@ ConversionResult objectEntries(JSContext *ctx, JSValue *, JSValue *const *args,
         v = ctx->createValue(utf16Substring(data->toString(), idx, idx + 1));
       }
     } else {
-      PropertyDescriptor *d = o->getOwnProperty(keys[i]);
-      v = d != nullptr ? d->value : nullptr;
+      ConversionResult r = ownPropertyValue(ctx, o, keys[i]);
+      if (!r.ok()) return r;
+      v = r.value;
     }
     /* 每项为 [key, value] 数组。 */
     JSValue *pair = ctx->createArray(2);
@@ -341,7 +360,7 @@ ConversionResult objectEntries(JSContext *ctx, JSValue *, JSValue *const *args,
 /* 从属性描述符对象解析出 PropertyDescriptor（§20.1.2.4 步骤 2-8）：
  * 读 desc 对象的 enumerable/writable/configurable/value/get/set。
  * 缺省字段保持默认（writable/enumerable/configurable=true，v1 简化）。
- * 访问器属性（get/set）本阶段不支持 -> 忽略。 */
+ * get/set 任一存在 -> Accessor 类型（§19.1.2.4 步骤 7），数据字段忽略。 */
 ConversionResult objectToPropertyDescriptor(JSContext *ctx, JSValue *desc,
                                             PropertyDescriptor *out) {
   if (desc == nullptr || !desc->isObject()) {
@@ -360,6 +379,28 @@ ConversionResult objectToPropertyDescriptor(JSContext *ctx, JSValue *desc,
   JSValue *configurable = d->getProperty("configurable");
   if (configurable != nullptr && configurable->kind() != Kind::Undefined) {
     out->configurable = toBoolean(configurable);
+  }
+  JSValue *getter = d->getProperty("get");
+  JSValue *setter = d->getProperty("set");
+  if ((getter != nullptr && getter->kind() != Kind::Undefined) ||
+      (setter != nullptr && setter->kind() != Kind::Undefined)) {
+    /* 访问器描述符（§19.1.2.4 步骤 7）：get/set 必须可调用（或 undefined）。 */
+    if (getter != nullptr && getter->kind() != Kind::Undefined &&
+        !isCallable(getter)) {
+      return fail("TypeError: Getter must be a function");
+    }
+    if (setter != nullptr && setter->kind() != Kind::Undefined &&
+        !isCallable(setter)) {
+      return fail("TypeError: Setter must be a function");
+    }
+    out->type = PropertyDescriptor::Type::Accessor;
+    out->getter = (getter != nullptr && getter->kind() != Kind::Undefined)
+                      ? getter
+                      : nullptr;
+    out->setter = (setter != nullptr && setter->kind() != Kind::Undefined)
+                      ? setter
+                      : nullptr;
+    return ok(ctx->createValue(Kind::Undefined));
   }
   JSValue *value = d->getProperty("value");
   if (value != nullptr && value->kind() != Kind::Undefined) {
@@ -384,14 +425,24 @@ ConversionResult objectDefineProperty(JSContext *ctx, JSValue *,
   ConversionResult r = objectToPropertyDescriptor(ctx, args[2], &desc);
   if (!r.ok()) return r;
   /* 写 own 属性（保留既有描述符的其它字段）。 */
-  PropertyDescriptor *existing = o->getOwnProperty(args[1]->toString());
+  const std::string &name = args[1]->toString();
+  PropertyDescriptor *existing = o->getOwnProperty(name);
   if (existing != nullptr) {
-    existing->value = desc.value;
     existing->enumerable = desc.enumerable;
-    existing->writable = desc.writable;
     existing->configurable = desc.configurable;
+    if (desc.type == PropertyDescriptor::Type::Accessor) {
+      /* 访问器描述符：替换 getter/setter，忽略 value/writable。 */
+      existing->type = PropertyDescriptor::Type::Accessor;
+      existing->getter = desc.getter;
+      existing->setter = desc.setter;
+      existing->writable = false; /* 访问器属性无 writable 语义 */
+    } else {
+      existing->type = PropertyDescriptor::Type::Data;
+      existing->value = desc.value;
+      existing->writable = desc.writable;
+    }
   } else {
-    o->setOwnProperty(args[1]->toString(), desc);
+    o->setOwnProperty(name, desc);
   }
   return ok(args[0]);
 }
@@ -443,8 +494,9 @@ ConversionResult objectAssign(JSContext *ctx, JSValue *, JSValue *const *args,
             static_cast<size_t>(std::strtoull(k.c_str(), nullptr, 10));
         v = src->getElement(idx);
       } else {
-        PropertyDescriptor *pd = src->getOwnProperty(k);
-        v = pd != nullptr ? pd->value : nullptr;
+        ConversionResult r = ownPropertyValue(ctx, src, k);
+        if (!r.ok()) return r;
+        v = r.value;
       }
       /* Set：数字索引键写数组元素，否则命名属性。 */
       bool numeric = !k.empty() &&
@@ -550,7 +602,10 @@ ConversionResult objectFreeze(JSContext *, JSValue *, JSValue *const *args,
   JSObject *o = args[0]->object();
   for (auto &kv : o->properties()) {
     const_cast<PropertyDescriptor &>(kv.second).configurable = false;
-    const_cast<PropertyDescriptor &>(kv.second).writable = false;
+    /* 数据属性才置 writable=false（§19.1.2.6 步骤 6-7）；访问器属性无 writable。 */
+    if (kv.second.type == PropertyDescriptor::Type::Data) {
+      const_cast<PropertyDescriptor &>(kv.second).writable = false;
+    }
   }
   o->setExtensible(false);
   return ok(args[0]);
@@ -566,11 +621,188 @@ ConversionResult objectIsFrozen(JSContext *ctx, JSValue *, JSValue *const *args,
   JSObject *o = args[0]->object();
   if (o->extensible()) return ok(ctx->createValue(false));
   for (const auto &kv : o->properties()) {
-    if (kv.second.configurable || kv.second.writable) {
+    /* 数据属性要求 writable=false；访问器属性只要求 configurable=false。 */
+    if (kv.second.configurable ||
+        (kv.second.type == PropertyDescriptor::Type::Data && kv.second.writable)) {
       return ok(ctx->createValue(false));
     }
   }
   return ok(ctx->createValue(true));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Object.prototype 方法（M4.4h，§20.1.3）                                     */
+/* -------------------------------------------------------------------------- */
+
+/* Object.prototype.hasOwnProperty（§20.1.3.5）：返回 V 是否为 O 的 own
+ * 属性（字符串/Symbol 键；ToPropertyKey(V)）。 */
+ConversionResult objectProtoHasOwnProperty(JSContext *ctx, JSValue *thisVal,
+                                           JSValue *const *args, size_t argc) {
+  if (thisVal == nullptr || thisVal->kind() == Kind::Undefined ||
+      thisVal->kind() == Kind::Null) {
+    return fail("TypeError: Object.prototype.hasOwnProperty called on null or undefined");
+  }
+  ConversionResult boxed = toObject(ctx, thisVal);
+  if (!boxed.ok()) return boxed;
+  JSObject *o = boxed.value->object();
+  if (argc == 0 || args[0] == nullptr || args[0]->kind() == Kind::Undefined) {
+    /* ToPropertyKey(undefined) = "undefined"。 */
+    return ok(ctx->createValue(o->hasOwnProperty("undefined")));
+  }
+  ConversionResult pk = toPropertyKey(ctx, args[0]);
+  if (!pk.ok()) return pk;
+  bool found = false;
+  if (pk.value->kind() == Kind::Symbol) {
+    found = o->hasOwnSymbolProperty(pk.value);
+  } else {
+    found = o->hasOwnProperty(pk.value->toString());
+  }
+  return ok(ctx->createValue(found));
+}
+
+/* Object.prototype.isPrototypeOf（§20.1.3.6）：V 非对象 -> false；
+ * 沿 V 原型链查找 this（ToObject 后比较引用）。 */
+ConversionResult objectProtoIsPrototypeOf(JSContext *ctx, JSValue *thisVal,
+                                          JSValue *const *args, size_t argc) {
+  if (argc == 0 || args[0] == nullptr || !args[0]->isObject()) {
+    return ok(ctx->createValue(false));
+  }
+  /* this 先 ToObject（原始值装箱）；null/undefined -> TypeError（§20.1.3.6 步骤 1）。 */
+  if (thisVal == nullptr || thisVal->kind() == Kind::Undefined ||
+      thisVal->kind() == Kind::Null) {
+    return fail("TypeError: Object.prototype.isPrototypeOf called on null or undefined");
+  }
+  ConversionResult boxed = toObject(ctx, thisVal);
+  if (!boxed.ok()) return boxed;
+  JSObject *me = boxed.value->object();
+  JSObject *cursor = args[0]->object()->prototype();
+  while (cursor != nullptr) {
+    if (cursor == me) return ok(ctx->createValue(true));
+    cursor = cursor->prototype();
+  }
+  return ok(ctx->createValue(false));
+}
+
+/* Object.prototype.propertyIsEnumerable（§20.1.3.7）：V 为 own 且
+ * enumerable 为 true 才返回 true。 */
+ConversionResult objectProtoPropertyIsEnumerable(JSContext *ctx, JSValue *thisVal,
+                                                 JSValue *const *args,
+                                                 size_t argc) {
+  if (thisVal == nullptr || thisVal->kind() == Kind::Undefined ||
+      thisVal->kind() == Kind::Null) {
+    return fail("TypeError: Object.prototype.propertyIsEnumerable called on null or undefined");
+  }
+  ConversionResult boxed = toObject(ctx, thisVal);
+  if (!boxed.ok()) return boxed;
+  JSObject *o = boxed.value->object();
+  if (argc == 0 || args[0] == nullptr || args[0]->kind() == Kind::Undefined) {
+    PropertyDescriptor *d = o->getOwnProperty("undefined");
+    return ok(ctx->createValue(d != nullptr && d->enumerable));
+  }
+  ConversionResult pk = toPropertyKey(ctx, args[0]);
+  if (!pk.ok()) return pk;
+  bool result = false;
+  if (pk.value->kind() == Kind::Symbol) {
+    PropertyDescriptor *d = o->getOwnSymbolProperty(pk.value);
+    result = d != nullptr && d->enumerable;
+  } else {
+    PropertyDescriptor *d = o->getOwnProperty(pk.value->toString());
+    result = d != nullptr && d->enumerable;
+  }
+  return ok(ctx->createValue(result));
+}
+
+/* Object.prototype.valueOf（§20.1.3.8）：ToObject(this) 原样返回。 */
+ConversionResult objectProtoValueOf(JSContext *ctx, JSValue *thisVal,
+                                    JSValue *const *, size_t) {
+  if (thisVal == nullptr || thisVal->kind() == Kind::Undefined ||
+      thisVal->kind() == Kind::Null) {
+    return fail("TypeError: Object.prototype.valueOf called on null or undefined");
+  }
+  return toObject(ctx, thisVal);
+}
+
+/* Object.prototype.toString（§20.1.3.7）：返回 "[object Tag]"。
+ * Tag 由内置对象 [[Class]] 推导；自定义对象读 Symbol.toStringTag。 */
+ConversionResult objectProtoToString(JSContext *ctx, JSValue *thisVal,
+                                     JSValue *const *, size_t) {
+  std::string tag;
+  if (thisVal == nullptr || thisVal->kind() == Kind::Undefined) {
+    tag = "Undefined";
+  } else if (thisVal->kind() == Kind::Null) {
+    tag = "Null";
+  } else if (!thisVal->isObject()) {
+    /* 原始值：直接按类型取标签（§20.1.3.7 步骤 2 后走 ToObject 前的判定）。
+     * 这里用内置类型映射，不查 toStringTag（原始值无该属性）。 */
+    switch (thisVal->kind()) {
+      case Kind::Boolean: tag = "Boolean"; break;
+      case Kind::Number: tag = "Number"; break;
+      case Kind::String: tag = "String"; break;
+      case Kind::Symbol: tag = "Symbol"; break;
+      case Kind::BigInt: tag = "BigInt"; break;
+      default: tag = "Object"; break;
+    }
+  } else {
+    JSObject *o = thisVal->object();
+    switch (o->kind()) {
+      case ObjectKind::Array: tag = "Array"; break;
+      case ObjectKind::ArrayIterator: tag = "Array Iterator"; break;
+      case ObjectKind::StringIterator: tag = "String Iterator"; break;
+      case ObjectKind::MapIterator: tag = "Map Iterator"; break;
+      case ObjectKind::SetIterator: tag = "Set Iterator"; break;
+      case ObjectKind::Map: tag = "Map"; break;
+      case ObjectKind::Set: tag = "Set"; break;
+      case ObjectKind::Number: tag = "Number"; break;
+      case ObjectKind::String: tag = "String"; break;
+      case ObjectKind::Boolean: tag = "Boolean"; break;
+      case ObjectKind::Symbol: tag = "Symbol"; break;
+      case ObjectKind::BigInt: tag = "BigInt"; break;
+      default: {
+        /* 普通对象：读 Symbol.toStringTag（own 或原型链）；无则看函数/异常。 */
+        JSValue *ts_tag =
+            o->getSymbolProperty(wellKnownSymbol(ctx, WellKnown::ToStringTag));
+        if (ts_tag != nullptr && ts_tag->kind() == Kind::String) {
+          tag = ts_tag->toString();
+        } else if (o->kind() == ObjectKind::Ordinary) {
+          /* 函数对象与异常对象：检查 Function 属性 / name。 */
+          JSValue *cls = o->getProperty("constructor");
+          if (cls != nullptr && cls->isObject() &&
+              cls->object()->hasOwnProperty("name")) {
+            JSValue *name = cls->object()->getProperty("name");
+            if (name != nullptr && name->kind() == Kind::String &&
+                name->toString() == "Function") {
+              tag = "Function";
+            } else {
+              tag = "Object";
+            }
+          } else {
+            tag = "Object";
+          }
+        } else {
+          tag = "Object";
+        }
+        break;
+      }
+    }
+  }
+  return ok(ctx->createValue(std::string("[object ") + tag + "]"));
+}
+
+/* Object.prototype.toLocaleString（§20.1.3.6）：返回 this.toString()（v1 简化）。 */
+ConversionResult objectProtoToLocaleString(JSContext *ctx, JSValue *thisVal,
+                                           JSValue *const *, size_t) {
+  if (thisVal == nullptr || thisVal->kind() == Kind::Undefined ||
+      thisVal->kind() == Kind::Null) {
+    return fail("TypeError: Object.prototype.toLocaleString called on null or undefined");
+  }
+  /* this.toString()：取 toString 属性并调用（可被子类覆写）。 */
+  JSValue *fn = thisVal->isObject()
+                    ? thisVal->object()->getProperty("toString")
+                    : nullptr;
+  if (fn == nullptr || !isCallable(fn)) {
+    return ok(ctx->createValue(std::string("")));
+  }
+  return call(ctx, fn, thisVal, nullptr, 0);
 }
 
 /* Number.prototype.valueOf（§21.1.3.7）：thisNumberValue。 */
@@ -2574,7 +2806,20 @@ void installBuiltins(JSContext *ctx) {
    * 普通对象字面量 / 装箱对象 / 包装对象原型的原型链都汇聚于此。 */
   JSValue *object_proto = objectProto(ctx);
   object_fn->setProperty("prototype", object_proto);
-  object_proto->object()->setProperty("constructor", object);
+  JSObject *op_obj = object_proto->object();
+  op_obj->setProperty("constructor", object);
+  op_obj->setProperty("hasOwnProperty",
+                      makeBuiltin(ctx, objectProtoHasOwnProperty, ThisMode::Strict));
+  op_obj->setProperty("isPrototypeOf",
+                      makeBuiltin(ctx, objectProtoIsPrototypeOf, ThisMode::Strict));
+  op_obj->setProperty("propertyIsEnumerable",
+                      makeBuiltin(ctx, objectProtoPropertyIsEnumerable, ThisMode::Strict));
+  op_obj->setProperty("valueOf",
+                      makeBuiltin(ctx, objectProtoValueOf, ThisMode::Strict));
+  op_obj->setProperty("toString",
+                      makeBuiltin(ctx, objectProtoToString, ThisMode::Strict));
+  op_obj->setProperty("toLocaleString",
+                      makeBuiltin(ctx, objectProtoToLocaleString, ThisMode::Strict));
 
   /* Symbol 构造器（§20.4.1.1）：内置函数 + well-known 静态属性（E4-1）。 */
   JSValue *symbol = makeBuiltin(ctx, symbolConstructor, ThisMode::Strict);
@@ -2889,6 +3134,11 @@ JSValue *arrayProto(JSContext *ctx) {
   v->setObject(arr);
   arr->setHolder(v);
   ctx->heap().unpin(arr);
+  /* Array.prototype 的原型链 -> Object.prototype（§23.1.3）。数组 exotic
+   * 的 [[Prototype]] 由这里显式设置；createArray 新建的普通数组则指向
+   * Array.prototype（createArray 内 setPrototype）。 */
+  JSValue *op = objectProto(ctx);
+  if (op != nullptr) arr->setPrototype(op->object());
   ctx->heap().pin(v); /* 分配保护：进根集（array_proto_）前防误回收 */
   ctx->setArrayProto(v);
   ctx->heap().unpin(v);

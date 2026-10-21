@@ -3525,6 +3525,125 @@ TEST(Compiler, EvalObjectStaticMethods) {
   JS_FreeAllocator(a);
 }
 
+/* M4.4h：Object.prototype 方法补齐（§20.1.3）+ 访问器属性（defineProperty
+ * get/set）+ writable 校验。expect 前缀同 EvalObjectStaticMethods。 */
+TEST(Compiler, EvalObjectProtoMethods) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  struct { const char *src; const char *expect; } cases[] = {
+      /* hasOwnProperty（§20.1.3.5）。对象字面量加括号（表达式语句以 { 开头
+       * 会被解析为块语句）。 */
+      {"({a: 1}).hasOwnProperty('a')", "#bool:1"},
+      {"({a: 1}).hasOwnProperty('b')", "#bool:0"},
+      {"({}).hasOwnProperty('toString')", "#bool:0"},
+      {"Object.prototype.hasOwnProperty.call({a: 1}, 'a')", "#bool:1"},
+      /* isPrototypeOf（§20.1.3.6）。 */
+      {"Object.prototype.isPrototypeOf({})", "#bool:1"},
+      {"Array.prototype.isPrototypeOf([])", "#bool:1"},
+      {"Array.prototype.isPrototypeOf({})", "#bool:0"},
+      /* propertyIsEnumerable（§20.1.3.7）。 */
+      {"({a: 1}).propertyIsEnumerable('a')", "#bool:1"},
+      {"Object.keys({a: 1}).length === 1 ? true : false", "#bool:1"},
+      {"var o = {}; Object.defineProperty(o, 'x', {value: 1, enumerable: false}); "
+       "o.propertyIsEnumerable('x')", "#bool:0"},
+      /* toString（§20.1.3.7）。 */
+      {"Object.prototype.toString.call({})", "#str:[object Object]"},
+      {"Object.prototype.toString.call([])", "#str:[object Array]"},
+      {"Object.prototype.toString.call(null)", "#str:[object Null]"},
+      {"Object.prototype.toString.call(undefined)", "#str:[object Undefined]"},
+      {"Object.prototype.toString.call(42)", "#str:[object Number]"},
+      {"Object.prototype.toString.call('ab')", "#str:[object String]"},
+      {"Object.prototype.toString.call(true)", "#str:[object Boolean]"},
+      {"Object.prototype.toString.call(1n)", "#str:[object BigInt]"},
+      {"Object.prototype.toString.call(Symbol('x'))", "#str:[object Symbol]"},
+      /* Symbol.toStringTag 自定义 tag（§19.1.3.6 步骤 7）。 */
+      {"var o = {}; o[Symbol.toStringTag] = 'Custom'; "
+       "Object.prototype.toString.call(o)", "#str:[object Custom]"},
+      {"var m = new Map(); Object.prototype.toString.call(m)", "#str:[object Map]"},
+      /* valueOf / toLocaleString（§20.1.3.8/.6）。 */
+      {"var o = {}; o.valueOf() === o", "#bool:1"},
+      {"({a: 1}).toLocaleString()", "#str:[object Object]"},
+      /* 访问器属性：defineProperty get/set。 */
+      {"var o = {}; var v = 1; "
+       "Object.defineProperty(o, 'x', {get: function() { return v; }, "
+       "set: function(nv) { v = nv * 2; }}); "
+       "o.x + ':' + (o.x = 5) + ':' + v", "#str:1:5:10"},
+      {"var o = {}; Object.defineProperty(o, 'x', {get: function() { return 7; }}); "
+       "o.x", "#num:7"},
+      /* 只读访问器：无 setter 赋值 -> TypeError（§9.1.9 步骤 5）。 */
+      {"var o = {}; Object.defineProperty(o, 'x', {get: function() { return 1; }}); "
+       "o.x = 2;", "#err:TypeError"},
+      /* writable=false 数据属性赋值 -> TypeError。 */
+      {"var o = {}; Object.defineProperty(o, 'x', {value: 1, writable: false}); "
+       "o.x = 2;", "#err:TypeError"},
+      {"var o = {}; Object.defineProperty(o, 'x', {value: 1, writable: false}); "
+       "o.x", "#num:1"},
+      /* 继承访问器：子对象赋值走父 setter（§9.1.9 步骤 4）。 */
+      {"var proto = {}; var v = 1; "
+       "Object.defineProperty(proto, 'x', {get: function() { return v; }, "
+       "set: function(nv) { v = nv; }}); "
+       "var o = Object.create(proto); o.x = 9; o.x + ':' + v + ':' + "
+       "o.hasOwnProperty('x')", "#str:9:9:false"},
+      /* 访问器经 Object.values 取值走 getter（enumerable: true 显式）。
+       * 副作用用 c = c + 1 计数（c++ 自增编译器未实现）。 */
+      {"var o = {}; var c = 0; var inc = function() { c = c + 1; return 3; }; "
+       "Object.defineProperty(o, 'x', {get: inc, enumerable: true}); "
+       "Object.values(o)[0] + ':' + c", "#str:3:1"},
+      /* freeze 对访问器属性：不置 writable（isFrozen 判定需区分）。 */
+      {"var o = {}; var v = 1; "
+       "Object.defineProperty(o, 'x', {get: function() { return v; }, configurable: true}); "
+       "Object.freeze(o); Object.isFrozen(o)", "#bool:1"},
+      /* 数组 writable 校验：length 不可写后赋值报错（回归现有语义）。 */
+      {"var a = [1, 2]; Object.defineProperty(a, 'length', {writable: false}); "
+       "a.length = 5;", "#err:TypeError"},
+  };
+
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    JSValue *r = JS_Eval(ctx, cases[i].src, std::strlen(cases[i].src));
+    ASSERT_NE(r, nullptr) << "case " << i << " src=" << cases[i].src;
+    const char *e = cases[i].expect;
+    if (e[0] == '#') {
+      if (e[1] == 'n') {
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_NUMBER)
+            << "case " << i << " src=" << cases[i].src;
+        if (JS_GetKind(ctx, r) == JS_NUMBER) {
+          EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), std::atof(e + 5))
+              << "case " << i << " src=" << cases[i].src;
+        }
+      } else if (e[1] == 's') {
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_STRING)
+            << "case " << i << " src=" << cases[i].src;
+        if (JS_GetKind(ctx, r) == JS_STRING) {
+          EXPECT_EQ(std::string(JS_ToString(ctx, r)), std::string(e + 5))
+              << "case " << i << " src=" << cases[i].src;
+        }
+      } else if (e[1] == 'b') {
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN)
+            << "case " << i << " src=" << cases[i].src;
+        if (JS_GetKind(ctx, r) == JS_BOOLEAN) {
+          EXPECT_EQ(JS_ToBoolean(ctx, r), std::atoi(e + 6))
+              << "case " << i << " src=" << cases[i].src;
+        }
+      } else if (e[1] == 'e') {
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION)
+            << "case " << i << " src=" << cases[i].src << " got: "
+            << JS_ToString(ctx, r);
+        if (JS_GetKind(ctx, r) == JS_EXCEPTION) {
+          std::string msg = JS_ToString(ctx, r);
+          EXPECT_NE(msg.find(e + 5), std::string::npos)
+              << "case " << i << " msg=" << msg;
+        }
+      }
+    }
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
 /* M4.3f：String.prototype 方法补齐（§22.1.3）。
  * expect 前缀：#num: 数字；#str: 字符串；#bool: 布尔；#err: 异常子串；
  * #obj: 对象（split 返回数组）。 */
