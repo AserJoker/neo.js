@@ -125,6 +125,11 @@ enum class Opcode : uint8_t {
 
   /* M5.1d-a class：原型链设置（追加末尾，保持 opcode 数值稳定） */
   SetPrototype,    /* obj, proto -> 设置 obj.[[Prototype]]=proto，压回 obj：SetPrototype（M5.1d-a extends） */
+
+  /* M5.1d-b class super：HomeObject 设置 + super 属性读取（追加末尾，保持 opcode 数值稳定） */
+  SetHomeObject,   /* obj, fn -> 设置 fn.[[HomeObject]]=obj，压回 fn：SetHomeObject（M5.1d-b super） */
+  SuperLoadProp,   /* super.key -> 栈顶：从 HomeObject.[[Prototype]] 读 key，访问器 this=当前帧 this（M5.1d-b） */
+  SuperLoadElem,   /* super[expr] -> 栈顶：从 HomeObject.[[Prototype]] 读计算键，访问器 this=当前帧 this（M5.1d-b） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -170,6 +175,9 @@ struct FunctionBytecode {
    * （is_method -> Strict；class 体一律严格模式，§15.7.2.1）。 */
   bool is_constructor = false; /* class 构造器（可 new，Strict） */
   bool is_method = false;      /* class 方法（Strict，M5.1d-b super 需用） */
+  /* M5.1d-b 箭头函数：super 上下文继承（箭头函数内 super 指向外层
+   * 方法的 HomeObject）。MakeFunction 据此复制外层 self 的 HomeObject。 */
+  bool is_arrow = false;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -255,6 +263,15 @@ class BytecodeBuilder {
   void load_this() { push_op(Opcode::LoadThis); }
   /* M5.1d-a：设置对象 [[Prototype]]（obj, proto -> obj）。 */
   void set_prototype() { push_op(Opcode::SetPrototype); }
+  /* M5.1d-b：设置函数 [[HomeObject]]（obj, key, fn -> obj, key, fn，super 用）。
+   * 构造器/static 场景用 self 变体（obj, fn -> fn）。 */
+  void set_home_object() { push_op(Opcode::SetHomeObject, 0); }
+  void set_home_object_self() { push_op(Opcode::SetHomeObject, 1); }
+  /* M5.1d-b：super.key / super[expr]（从 HomeObject.[[Prototype]] 读取）。 */
+  void super_load_prop(const std::string &key) {
+    push_op(Opcode::SuperLoadProp, add_constant(key));
+  }
+  void super_load_elem() { push_op(Opcode::SuperLoadElem); }
 
   /* 注册捕获变量（去重），返回捕获下标。 */
   uint16_t add_capture(uint16_t depth, const std::string &name) {

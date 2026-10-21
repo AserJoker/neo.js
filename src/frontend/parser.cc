@@ -929,6 +929,9 @@ ASTNode *Parser::parsePrimary() {
         n->loc = tok.start;
         return n;
       }
+      /* super 关键字（M5.1d-b）：super.x / super[expr]（仅 class 方法内）。
+       * super() 构造调用留 M5.1d-c。super 单独出现（非 . / [ / (）为语法错误。 */
+      if (tok.text == "super") return parseSuperProperty();
       /* 函数表达式：function [name](params) { body }（M1.5 ④） */
       if (tok.text == "function") return parseFunctionExpression();
       /* class 表达式（M5.1d-a）：class [name] { ... } */
@@ -1016,6 +1019,66 @@ ASTNode *Parser::parsePrimary() {
       break;
   }
   sink_.emit({Severity::Error, "SYNTAX_ERROR", "unexpected token", tok.start});
+  return nullptr;
+}
+
+/* super 属性访问（M5.1d-b）：super.x / super[expr]。
+ * 仅 class 方法上下文（super_depth_ > 0）合法；否则语法错误。
+ * 产出 SuperProperty 节点：children[0] = 属性键（Identifier 或计算键表达式），
+ * member.computed 标计算键。super 后必须跟 . 或 [（super() 构造调用留
+ * M5.1d-c）；单独 super / super( 在此报错。 */
+ASTNode *Parser::parseSuperProperty() {
+  const Token &tok = current();
+  if (super_depth_ <= 0) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                "'super' keyword unexpected here", tok.start});
+    return nullptr;
+  }
+  advance(); /* super */
+
+  if (isSymbol(current(), ".")) {
+    advance(); /* . */
+    if (!at(TokenKind::Identifier)) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                  "expected property name after 'super.'", current().start});
+      return nullptr;
+    }
+    ASTNode *n = newNode(NodeType::SuperProperty);
+    n->loc = tok.start;
+    n->member.computed = false;
+    ASTNode *prop = newNode(NodeType::Identifier);
+    prop->loc = current().start;
+    prop->name = current().text;
+    advance();
+    n->children.push_back(prop);
+    return n;
+  }
+  if (isSymbol(current(), "[")) {
+    advance(); /* [ */
+    setValueContext();
+    ASTNode *n = newNode(NodeType::SuperProperty);
+    n->loc = tok.start;
+    n->member.computed = true;
+    ASTNode *index = parseExpression();
+    if (index == nullptr) {
+      allocator_->destroy(n);
+      return nullptr;
+    }
+    if (!isSymbol(current(), "]")) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ']'",
+                  current().start});
+      allocator_->destroy(index);
+      allocator_->destroy(n);
+      return nullptr;
+    }
+    advance(); /* ] */
+    n->children.push_back(index);
+    return n;
+  }
+  /* super 后非 . / [：super() 留 M5.1d-c，此处报语法错误。 */
+  sink_.emit({Severity::Error, "SYNTAX_ERROR",
+              "'super' must be followed by a property access (super() not yet supported)",
+              tok.start});
   return nullptr;
 }
 

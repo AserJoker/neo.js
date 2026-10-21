@@ -93,6 +93,10 @@ enum class NodeType : uint8_t {
   /* class（M5.1d-a）：声明/表达式。children = [name?, extends?, element...] */
   ClassDeclaration,    /* class 声明：class C { ... }（M5.1d-a） */
   ClassExpression,     /* class 表达式：class [name] { ... }（M5.1d-a） */
+  /* super 属性访问（M5.1d-b）：super.x / super[x]。
+   * children[0] = 属性键（Identifier 或计算键表达式）；
+   * member.computed 标计算键。仅 class 方法体内合法。 */
+  SuperProperty,       /* super 属性访问（M5.1d-b） */
 };
 
 /* 声明关键字类型（M1.5 ①）：var / let / const */

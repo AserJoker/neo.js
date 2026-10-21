@@ -123,6 +123,12 @@ class JSFunction : public JSObject {
   JSEnvironment *environment() const { return environment_; }
   void setEnvironment(JSEnvironment *env) { environment_ = env; }
 
+  /* [[HomeObject]]（M5.1d-b class super）：方法定义时所在的对象
+   * （实例方法 = prototype 对象，static 方法/构造器 = 构造器对象）。
+   * super 属性访问从它的 [[Prototype]] 读取。GC 引用边。 */
+  JSObject *homeObject() const { return home_object_; }
+  void setHomeObject(JSObject *obj) { home_object_ = obj; }
+
   /* [[BoundTargetFunction]]/[[BoundThis]]/[[BoundArguments]]（M4.2）：
    * bind 生成函数（FunctionKind::Bound）的绑定元数据。GC 引用边。 */
   bool isBoundFunction() const { return kind_ == FunctionKind::Bound; }
@@ -137,7 +143,8 @@ class JSFunction : public JSObject {
   }
 
   /* GC：JSObject 的引用边 + [[Environment]]（闭包环境，M2.5）
-   * + [[BoundTargetFunction]]/[[BoundThis]]/[[BoundArguments]]（M4.2）。
+   * + [[BoundTargetFunction]]/[[BoundThis]]/[[BoundArguments]]（M4.2）
+   * + [[HomeObject]]（M5.1d-b class super）。
    * 实现在 function.cc（需完整 Heap/JSEnvironment 类型）。 */
   void gcMarkRefs(Heap *heap) override;
 
@@ -150,6 +157,7 @@ class JSFunction : public JSObject {
   ObjectKind construct_wrapper_kind_ = ObjectKind::Ordinary; /* new 返回包装对象 */
   FunctionBytecode bc_;                 /* Script 函数字节码（M2.4 ③） */
   JSEnvironment *environment_ = nullptr; /* [[Environment]]（M2.5 闭包） */
+  JSObject *home_object_ = nullptr;      /* [[HomeObject]]（M5.1d-b class super） */
   JSValue *bound_target_ = nullptr;     /* [[BoundTargetFunction]]（M4.2） */
   JSValue *bound_this_ = nullptr;       /* [[BoundThis]]（M4.2） */
   std::vector<JSValue *> bound_args_;   /* [[BoundArguments]]（M4.2） */

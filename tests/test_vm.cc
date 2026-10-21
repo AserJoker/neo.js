@@ -2277,6 +2277,306 @@ TEST(Compiler, M51dClassGetConstructorAccessor) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* M5.1d-b class super 属性访问：super.x / super[expr] / super.m()            */
+/* -------------------------------------------------------------------------- */
+
+/* super.x 读取基类实例方法（继承链上数据属性） */
+TEST(Compiler, M51dSuperReadBaseMethod) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class A { hi() { return 'A-hi'; } } "
+      "class B extends A { go() { return super.hi(); } } "
+      "new B().go()",
+      std::strlen("class A { hi() { return 'A-hi'; } } "
+                  "class B extends A { go() { return super.hi(); } } "
+                  "new B().go()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "A-hi");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* super.m() 调用：this 绑定为当前实例（子类 this 传给基类方法） */
+TEST(Compiler, M51dSuperCallThisBinding) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class A { setTag(v) { this.tag = v; } who() { return this.tag; } } "
+      "class B extends A { init() { super.setTag('B'); } "
+      "go() { return super.who(); } } "
+      "var b = new B(); b.init(); b.go()",
+      std::strlen("class A { setTag(v) { this.tag = v; } who() { return this.tag; } } "
+                  "class B extends A { init() { super.setTag('B'); } "
+                  "go() { return super.who(); } } "
+                  "var b = new B(); b.init(); b.go()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "B");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* super.x 读取基类实例数据属性（非方法） */
+TEST(Compiler, M51dSuperReadDataProperty) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class A { getVal() { return 100; } } "
+      "class B extends A { v() { return super.getVal(); } } "
+      "var o = new B(); o.v()",
+      std::strlen("class A { getVal() { return 100; } } "
+                  "class B extends A { v() { return super.getVal(); } } "
+                  "var o = new B(); o.v()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 100.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* super[expr] 计算键访问 */
+TEST(Compiler, M51dSuperComputedKey) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class A { foo() { return 'computed'; } } "
+      "class B extends A { go() { return super['fo' + 'o'](); } } "
+      "new B().go()",
+      std::strlen("class A { foo() { return 'computed'; } } "
+                  "class B extends A { go() { return super['fo' + 'o'](); } } "
+                  "new B().go()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "computed");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* super 链式访问：super.x.y（HomeObject 原型链上读到的对象再取属性） */
+TEST(Compiler, M51dSuperChainedAccess) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class A { getObj() { return { val: 7 }; } } "
+      "class B extends A { go() { return super.getObj().val; } } "
+      "new B().go()",
+      std::strlen("class A { getObj() { return { val: 7 }; } } "
+                  "class B extends A { go() { return super.getObj().val; } } "
+                  "new B().go()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 7.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* getter 访问器属性：super 读取 getter，this 绑定当前实例 */
+TEST(Compiler, M51dSuperAccessorThisBinding) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class A { get tag() { return 'getter-' + this.name; } } "
+      "class B extends A { init() { this.name = 'x'; } "
+      "go() { return super.tag; } } "
+      "var b = new B(); b.init(); b.go()",
+      std::strlen("class A { get tag() { return 'getter-' + this.name; } } "
+                  "class B extends A { init() { this.name = 'x'; } "
+                  "go() { return super.tag; } } "
+                  "var b = new B(); b.init(); b.go()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "getter-x");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 箭头函数继承 super 上下文（箭头函数内 super 仍指向外层方法的 HomeObject） */
+TEST(Compiler, M51dSuperInsideArrow) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class A { hi() { return 'arrow-hi'; } } "
+      "class B extends A { go() { var f = () => super.hi(); return f(); } } "
+      "new B().go()",
+      std::strlen("class A { hi() { return 'arrow-hi'; } } "
+                  "class B extends A { go() { var f = () => super.hi(); return f(); } } "
+                  "new B().go()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "arrow-hi");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 多层继承：super.x 从直接基类原型链读取 */
+TEST(Compiler, M51dSuperMultiLevelInherit) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class A { tag() { return 'A'; } } "
+      "class B extends A { tag() { return 'B-' + super.tag(); } } "
+      "class C extends B { tag() { return 'C-' + super.tag(); } } "
+      "new C().tag()",
+      std::strlen("class A { tag() { return 'A'; } } "
+                  "class B extends A { tag() { return 'B-' + super.tag(); } } "
+                  "class C extends B { tag() { return 'C-' + super.tag(); } } "
+                  "new C().tag()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "C-B-A");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* super 在普通函数内为语法错误（super 上下文不继承进普通函数） */
+TEST(Compiler, M51dSuperInPlainFunctionSyntaxError) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "class A { m() { return function() { return super.x; }; } }",
+      std::strlen("class A { m() { return function() { return super.x; }; } }"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION)
+      << "expected syntax error, got: " << JS_ToString(ctx, r);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* super 在顶层为语法错误 */
+TEST(Compiler, M51dSuperAtTopLevelSyntaxError) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var x = super.y;",
+                       std::strlen("var x = super.y;"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION)
+      << "expected syntax error, got: " << JS_ToString(ctx, r);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* static 方法内 super.x：构造器 HomeObject = 构造器自身，extends 后
+ * ctor.[[Prototype]] = base，super.x 从 base 读取（static 语义） */
+TEST(Compiler, M51dSuperInStaticMethod) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class A { static who() { return 'static-A'; } } "
+      "class B extends A { static go() { return super.who(); } } "
+      "B.go()",
+      std::strlen("class A { static who() { return 'static-A'; } } "
+                  "class B extends A { static go() { return super.who(); } } "
+                  "B.go()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "static-A");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* static 方法内 super 读取基类 static 访问器属性 */
+TEST(Compiler, M51dSuperStaticDataProperty) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class A { static get tag() { return 'static-tag'; } } "
+      "class B extends A { static go() { return super.tag; } } "
+      "B.go()",
+      std::strlen("class A { static get tag() { return 'static-tag'; } } "
+                  "class B extends A { static go() { return super.tag; } } "
+                  "B.go()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "static-tag");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 构造器内 super.x（static 语义）：构造器 HomeObject = 构造器自身，
+ * super.x 从 base 读取（base 有 static 方法） */
+TEST(Compiler, M51dSuperInConstructor) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class A { static greet() { return 'ctor-super'; } } "
+      "class B extends A { constructor() { this.v = super.greet(); } } "
+      "new B().v",
+      std::strlen("class A { static greet() { return 'ctor-super'; } } "
+                  "class B extends A { constructor() { this.v = super.greet(); } } "
+                  "new B().v"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "ctor-super");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* -------------------------------------------------------------------------- */
 /* 14. M3.0 VM 对象指令（NewObject/NewArray/LoadProp/StoreProp/LoadElem/      */
 /*     StoreElem）                                                            */
 /* -------------------------------------------------------------------------- */

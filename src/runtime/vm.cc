@@ -501,7 +501,8 @@ JSEnvironment *captureEnv(JSEnvironment *env, const FunctionBytecode &fn,
 
 ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
                              JSValue *thisVal, JSValue *const *args,
-                             size_t argc, JSEnvironment *env) {
+                             size_t argc, JSEnvironment *env,
+                             JSFunction *self) {
   /* 操作数栈：栈底为局部变量槽（numLocals 个），之上为表达式求值栈。 */
   std::vector<JSValue *> stack;
   stack.reserve(static_cast<size_t>(fn.numLocals) + 64);
@@ -861,6 +862,12 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
           f->setThisMode(ThisMode::Strict);
         } else if (nf.is_method) {
           f->setThisMode(ThisMode::Strict);
+        }
+        /* M5.1d-b 箭头函数：super 上下文继承（§15.2.3.7 步骤 6——箭头
+         * 函数没有自己的 [[HomeObject]]，super 解析到外层方法）。
+         * 外层帧 self 是方法（有 HomeObject）时复制给箭头函数。 */
+        if (nf.is_arrow && self != nullptr && self->homeObject() != nullptr) {
+          f->setHomeObject(self->homeObject());
         }
         ctx->heap().pin(f); /* 分配保护（M3.3）：两段式创建中间窗口防误回收 */
         JSValue *v = ctx->heap().allocGCObject<JSValue>();
@@ -1440,6 +1447,120 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         target->setPrototype(new_proto);
         stack.resize(stack.size() - 2);
         stack.push_back(obj);
+        break;
+      }
+      case Opcode::SetHomeObject: {
+        /* M5.1d-b class super：设置 fn.[[HomeObject]] = obj。
+         * arg=0：obj, key, fn -> obj, key, fn（方法定义，原地不改栈）；
+         * arg=1：obj, fn -> fn（构造器/static 方法，obj 在 size-2）。
+         * HomeObject = 方法定义时所在对象：实例方法 = prototype，
+         * static/构造器 = 构造器对象自身。 */
+        const bool self_form = instr.arg != 0;
+        size_t obj_pos = self_form ? stack.size() - 2 : stack.size() - 3;
+        if (stack.size() < (self_form ? 2u : 3u)) {
+          return fail("Error: stack underflow on SetHomeObject");
+        }
+        JSValue *fn = stack.back();
+        JSValue *obj = stack[obj_pos];
+        if (!fn->isObject()) {
+          return fail("TypeError: method is not an object");
+        }
+        JSObject *home = (obj != nullptr && obj->isObject()) ? obj->object()
+                                                             : nullptr;
+        /* 仅 JSFunction 需要 HomeObject；非函数对象（未来字段值）忽略。 */
+        JSFunction *method = dynamic_cast<JSFunction *>(fn->object());
+        if (method != nullptr) method->setHomeObject(home);
+        if (self_form) {
+          /* obj, fn -> fn：obj 槽覆盖为 fn，去重末尾副本。 */
+          stack[stack.size() - 2] = fn;
+          stack.pop_back();
+        }
+        /* arg=0：栈保持 [obj, key, fn] 不变。 */
+        break;
+      }
+      case Opcode::SuperLoadProp: {
+        /* M5.1d-b super.key：从 HomeObject.[[Prototype]] 读取 key。
+         * 访问器属性 this = 当前帧 this（§12.3.5.3 MakeSuperPropertyReference）。
+         * HomeObject 缺失（super 编译期已校验上下文，运行期防御）-> undefined。 */
+        if (instr.arg >= fn.constants.size() ||
+            fn.constants[instr.arg].is_number) {
+          return fail("Error: SuperLoadProp requires a string constant");
+        }
+        const std::string &key = fn.constants[instr.arg].str;
+        JSObject *proto = nullptr;
+        if (self != nullptr && self->homeObject() != nullptr) {
+          proto = self->homeObject()->prototype();
+        }
+        if (proto == nullptr) {
+          return fail("TypeError: Cannot read properties of super");
+        }
+        JSValue *val = nullptr;
+        if (proto->isMap() && key == "size") {
+          val = ctx->createValue(static_cast<double>(proto->collectionSize()));
+        } else {
+          /* M4.4h：访问器感知读取（数据属性直接取值；访问器调 getter
+           * this=frame_this）。getPropertyValue 的 target 为 HomeObject 原型
+           * 链起点，但访问器 this 须是当前方法 this——此处特判：访问器
+           * 属性手动调 getter（this=frame_this）。 */
+          PropertyDescriptor *desc = findPropertyDescriptor(proto, key);
+          if (desc != nullptr && desc->type == PropertyDescriptor::Type::Accessor) {
+            if (desc->getter == nullptr || !isCallable(desc->getter)) {
+              val = ctx->createValue(Kind::Undefined);
+            } else {
+              JSValue *this_obj =
+                  frame_this != nullptr ? frame_this : ctx->globalObject();
+              ConversionResult r = call(ctx, desc->getter, this_obj, nullptr, 0);
+              if (!r.ok()) return r;
+              val = r.value;
+            }
+          } else {
+            ConversionResult gv = getPropertyValue(ctx, proto, key);
+            if (!gv.ok()) return gv;
+            val = gv.value;
+          }
+        }
+        stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
+        break;
+      }
+      case Opcode::SuperLoadElem: {
+        /* M5.1d-b super[expr]：从 HomeObject.[[Prototype]] 读计算键。
+         * 键运行期 ToPropertyKey（§7.1.14）；访问器 this = 当前帧 this。 */
+        if (stack.empty()) return fail("Error: stack underflow on SuperLoadElem");
+        JSValue *key = stack.back();
+        JSObject *proto = nullptr;
+        if (self != nullptr && self->homeObject() != nullptr) {
+          proto = self->homeObject()->prototype();
+        }
+        if (proto == nullptr) {
+          stack.pop_back();
+          return fail("TypeError: Cannot read properties of super");
+        }
+        ConversionResult pk = toPropertyKey(ctx, key);
+        if (!pk.ok()) return pk;
+        JSValue *val = nullptr;
+        if (pk.value->kind() == Kind::Symbol) {
+          val = proto->getSymbolProperty(pk.value);
+        } else {
+          const std::string &name = pk.value->toString();
+          PropertyDescriptor *desc = findPropertyDescriptor(proto, name);
+          if (desc != nullptr && desc->type == PropertyDescriptor::Type::Accessor) {
+            if (desc->getter == nullptr || !isCallable(desc->getter)) {
+              val = ctx->createValue(Kind::Undefined);
+            } else {
+              JSValue *this_obj =
+                  frame_this != nullptr ? frame_this : ctx->globalObject();
+              ConversionResult r = call(ctx, desc->getter, this_obj, nullptr, 0);
+              if (!r.ok()) return r;
+              val = r.value;
+            }
+          } else {
+            ConversionResult gv = getPropertyValue(ctx, proto, name);
+            if (!gv.ok()) return gv;
+            val = gv.value;
+          }
+        }
+        stack.pop_back();
+        stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
         break;
       }
       case Opcode::LoadUpvalue: {

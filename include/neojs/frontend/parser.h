@@ -86,6 +86,9 @@ class Parser {
   ASTNode *parseClassTail(bool is_declaration); /* class 头/体共享解析（M5.1d-a） */
   ASTNode *parseClassElement();        /* 单个类元素（方法/访问器，M5.1d-a） */
   ASTNode *parseExpressionStatement();
+  /* super 属性访问（M5.1d-b）：super.x / super[expr]。仅 class 方法上下文
+   * （super_depth_ > 0）合法；super()（构造调用）留 M5.1d-c。 */
+  ASTNode *parseSuperProperty();
 
   /* 最小递归下降：表达式（parser.cc） */
   ASTNode *parseExpression(bool allow_in = true); /* 逗号序列（最低优先级，M1.4） */
@@ -129,6 +132,7 @@ class Parser {
   int function_depth_ = 0; /* 函数嵌套深度（return 顶层校验，M1.5 ④） */
   int statement_nesting_ = 0; /* 语句嵌套深度（import/export 仅模块顶层，M1.6 ③） */
   std::vector<std::string> label_stack_; /* 活跃标签栈（break/continue 引用校验） */
+  int super_depth_ = 0; /* class 方法上下文深度（M5.1d-b super：>0 时 super 合法） */
   bool strict_ = false; /* 当前作用域严格模式（"use strict" directive / module 自动严格） */
 };
 

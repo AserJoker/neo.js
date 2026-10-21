@@ -832,10 +832,13 @@ ASTNode *Parser::parseFunctionDeclaration(bool allow_anonymous) {
     return nullptr;
   }
   ++function_depth_;
+  int outer_super = super_depth_;
+  super_depth_ = 0; /* 普通函数不继承 super 上下文（M5.1d-b） */
   bool outer_strict = strict_;
   ASTNode *body = parseBlock(/*detect_strict=*/true);
   bool strict_params = strict_; /* body 解析后 strict_ 已含 body directive 影响 */
   strict_ = outer_strict; /* 恢复外层严格状态（body 内 directive 不泄漏） */
+  super_depth_ = outer_super;
   --function_depth_;
   if (body == nullptr) {
     allocator_->destroy(fn);
@@ -965,10 +968,13 @@ ASTNode *Parser::parseFunctionExpression() {
     return nullptr;
   }
   ++function_depth_;
+  int outer_super = super_depth_;
+  super_depth_ = 0; /* 普通函数不继承 super 上下文（M5.1d-b） */
   bool outer_strict = strict_;
   ASTNode *body = parseBlock(/*detect_strict=*/true);
   bool strict_params = strict_; /* body 解析后 strict_ 已含 body directive 影响 */
   strict_ = outer_strict; /* 恢复外层严格状态（body 内 directive 不泄漏） */
+  super_depth_ = outer_super;
   --function_depth_;
   if (body == nullptr) {
     allocator_->destroy(fn);
@@ -1195,10 +1201,10 @@ ASTNode *Parser::parseClassElement() {
     }
   }
 
-  /* get/set 前缀（仅方法形态；static get x(){}）。 */
+  /* get/set 前缀（仅方法形态；static get x(){} / get x(){}）。 */
   bool getset_prefix = false;
   bool is_get = false;
-  if (!is_static && at(TokenKind::Identifier) &&
+  if (at(TokenKind::Identifier) &&
       (current().text == "get" || current().text == "set")) {
     const std::string getset_word = current().text;
     Lexer::State st = lexer_.save();
@@ -1266,10 +1272,14 @@ ASTNode *Parser::parseClassElement() {
   }
   prop->prop.is_computed = is_computed;
 
-  /* 形态分派：get/set 访问器 / method / 字段（M5.1d-d） */
+  /* 形态分派：get/set 访问器 / method / 字段（M5.1d-d）
+   * M5.1d-b super：class 方法体解析期间 super_depth_ 递增（super 合法）。
+   * 对象字面量 method 不经过此路径（parseObjectPattern），不受影响。 */
   if (getset_prefix) {
     prop->prop.kind = is_get ? PropertyKind::Get : PropertyKind::Set;
+    ++super_depth_;
     ASTNode *fn = parseMethodFunction();
+    --super_depth_;
     if (fn == nullptr) {
       allocator_->destroy(key);
       allocator_->destroy(prop);
@@ -1279,7 +1289,9 @@ ASTNode *Parser::parseClassElement() {
     prop->children.push_back(fn);
   } else if (isSymbol(current(), "(")) {
     prop->prop.kind = PropertyKind::Method;
+    ++super_depth_;
     ASTNode *fn = parseMethodFunction();
+    --super_depth_;
     if (fn == nullptr) {
       allocator_->destroy(key);
       allocator_->destroy(prop);

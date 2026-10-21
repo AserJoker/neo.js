@@ -388,6 +388,10 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
       out += node->update_op == UpdateOpKind::Inc ? "++" : "--";
       out += node->prefix ? ",prefix)\n" : ",postfix)\n";
       break;
+    case NodeType::SuperProperty:
+      /* M5.1d-b：super.x / super[expr]（member.computed 标计算键）。 */
+      out += node->member.computed ? "SuperProperty[]\n" : "SuperProperty.\n";
+      break;
   }
   for (const ASTNode *child : node->children) dumpNode(child, out, depth + 1);
 }

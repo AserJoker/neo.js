@@ -85,6 +85,7 @@ void JSFunction::gcMarkRefs(Heap *heap) {
   for (JSValue *a : bound_args_) {
     heap->markRoot(a);
   }
+  if (home_object_ != nullptr) heap->markRoot(home_object_); /* M5.1d-b super */
 }
 
 /* -------------------------------------------------------------------------- */
@@ -253,7 +254,7 @@ ConversionResult call(JSContext *ctx, JSValue *func, JSValue *thisVal,
     }
     result = runBytecode(ctx, bc, thisArg,
                          args_internal.empty() ? nullptr : args_internal.data(),
-                         argc, call_env);
+                         argc, call_env, fn);
     /* 释放本帧 this/参数临时句柄。 */
     for (uint32_t h : tmp_handles) {
       freeTmpHandle(ctx, h);

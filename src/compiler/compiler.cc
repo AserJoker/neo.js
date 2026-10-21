@@ -333,6 +333,9 @@ bool Compiler::compileChildFunction(const ASTNode &fn, FunctionBytecode *out) {
   delete child;
 
   if (!ok) return false;
+  /* M5.1d-b 箭头函数：super 上下文继承标记（MakeFunction 时复制外层
+   * HomeObject，使箭头函数内 super 指向外层方法的 HomeObject）。 */
+  child_fn.is_arrow = (fn.type == NodeType::ArrowFunctionExpression);
   *out = std::move(child_fn);
   return true;
 }
@@ -410,6 +413,9 @@ bool Compiler::compileClassElementDef(const ASTNode &prop, uint16_t proto_slot,
     builder_.push_const(key);
   }
   if (!compileClassMemberFunction(*fn, key, /*is_ctor=*/false)) return false;
+  /* M5.1d-b super：设置方法 [[HomeObject]] = 定义时所在对象
+   * （实例方法 = proto，static = 构造器）。栈 [obj, key, fn] 原地。 */
+  builder_.set_home_object();
   if (kind == PropertyKind::Method) {
     builder_.define_prop();
   } else {
@@ -498,7 +504,13 @@ bool Compiler::compileClass(const ASTNode &node, bool is_declaration) {
     builder_.make_function(ctor_index);
   }
 
-  /* 3. ctor.prototype = proto。栈上 [ctor]。 */
+  /* 3. ctor.prototype = proto。栈上 [ctor]。
+   *    M5.1d-b super：构造器 [[HomeObject]] = 构造器自身（static 语义），
+   *    super.x 从 ctor.[[Prototype]] = base 读取（extends 后）。 */
+  builder_.dup();
+  builder_.set_home_object_self();
+  /* set_home_object_self（arg=1）VM 端已把 obj 槽覆盖为 fn 并去重：
+   * 栈 [ctor] -> [ctor]（self 形式 [obj, fn] -> [fn]），无需再 pop。 */
   builder_.dup();
   builder_.push_const("prototype");
   builder_.load_var(proto_slot);
@@ -1115,6 +1127,30 @@ bool Compiler::compileExpr(const ASTNode &node) {
     case NodeType::CallExpression: return compileCall(node);
     case NodeType::Sequence: return compileSequence(node);
     case NodeType::MemberExpression: return compileMemberLoad(node);
+    case NodeType::SuperProperty: {
+      /* M5.1d-b super 属性访问：super.x / super[expr]。
+       * 从当前方法 HomeObject 的 [[Prototype]] 读取（VM 经 self）。 */
+      if (node.children.empty()) {
+        fail("super property without key");
+        return false;
+      }
+      if (node.member.optional) {
+        fail("not implemented: optional chaining on super");
+        return false;
+      }
+      if (!node.member.computed) {
+        const ASTNode *prop = node.children[0];
+        if (prop->type != NodeType::Identifier) {
+          fail("invalid super property name");
+          return false;
+        }
+        builder_.super_load_prop(prop->name);
+        return true;
+      }
+      if (!compileExpr(*node.children[0])) return false;
+      builder_.super_load_elem();
+      return true;
+    }
     case NodeType::NewExpression: return compileNew(node);
     case NodeType::FunctionExpression:
     case NodeType::ArrowFunctionExpression:
@@ -1812,6 +1848,37 @@ bool Compiler::compileCall(const ASTNode &node) {
       has_spread = true;
       break;
     }
+  }
+
+  if (callee->type == NodeType::SuperProperty) {
+    /* M5.1d-b super.m(args)：this = 当前帧 this（§12.3.5.3）。
+     * 发射：LoadThis; SuperLoadProp; args...; CallMethod。
+     * 栈 [this, func, args] 与 CallMethod 布局一致。 */
+    if (callee->member.optional || callee->children.empty()) {
+      fail("not implemented: optional chaining on super");
+      return false;
+    }
+    builder_.load_this();
+    if (!callee->member.computed) {
+      const ASTNode *prop = callee->children[0];
+      if (prop->type != NodeType::Identifier) {
+        fail("invalid super property name");
+        return false;
+      }
+      builder_.super_load_prop(prop->name);
+    } else {
+      if (!compileExpr(*callee->children[0])) return false;
+      builder_.super_load_elem();
+    }
+    if (has_spread) {
+      fail("not implemented: spread call on super");
+      return false;
+    }
+    for (size_t i = 1; i < node.children.size(); ++i) {
+      if (!compileExpr(*node.children[i])) return false;
+    }
+    builder_.call_method(static_cast<uint16_t>(argc));
+    return true;
   }
 
   if (callee->type == NodeType::MemberExpression) {
