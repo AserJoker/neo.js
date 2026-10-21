@@ -26,6 +26,7 @@
 #include "neojs/runtime/conversion.h"
 #include "neojs/runtime/environment.h"
 #include "neojs/runtime/function.h"
+#include "neojs/runtime/iterator.h"
 #include "neojs/runtime/operators.h"
 #include "neojs/runtime/utf16.h"
 #include "neojs/runtime/value.h"
@@ -502,6 +503,18 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         if (instr.arg >= stack.size()) {
           return fail("ReferenceError: local slot out of range");
         }
+        /* M4.4：优先读环境绑定——内层闭包经 StoreUpvalue 更新外层局部后，
+         * 外层 LoadVar 需读到最新值（顶层 var + forEach 回调场景）。
+         * 环境无该绑定（如参数名未写入环境）时回退栈槽。 */
+        if (env != nullptr && instr.arg < fn.locals.size() &&
+            !fn.locals[instr.arg].empty()) {
+          const std::string &name = fn.locals[instr.arg];
+          JSValue *bv = env->getBinding(name);
+          if (bv != nullptr) {
+            stack.push_back(bv);
+            break;
+          }
+        }
         stack.push_back(stack[instr.arg]);
         break;
       }
@@ -645,6 +658,13 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         if (stack.empty()) return fail("Error: stack underflow on JumpIfFalse");
         JSValue *cond = stack.back(); stack.pop_back();
         if (!toBoolean(cond)) pc = instr.arg;
+        break;
+      }
+      case Opcode::JumpIfTrue: {
+        /* M4.4f：栈顶为 true 则跳转（for-of 的 done 判断）。 */
+        if (stack.empty()) return fail("Error: stack underflow on JumpIfTrue");
+        JSValue *cond = stack.back(); stack.pop_back();
+        if (toBoolean(cond)) pc = instr.arg;
         break;
       }
       case Opcode::Call: {
@@ -796,6 +816,12 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         if (target->isArray() && key == "length") {
           /* 数组 length 属性（M4.1）：由 elements 存储推导，非存储属性。 */
           val = ctx->createValue(static_cast<double>(target->length()));
+        } else if (target->isMap() && key == "size") {
+          /* Map size 属性（M4.4b，§24.1.3.13）：由条目数推导，非存储属性。 */
+          val = ctx->createValue(static_cast<double>(target->collectionSize()));
+        } else if (target->isSet() && key == "size") {
+          /* Set size 属性（M4.4c，§24.2.3.9）：由条目数推导，非存储属性。 */
+          val = ctx->createValue(static_cast<double>(target->collectionSize()));
         } else if (target->isWrapper() &&
                    target->kind() == ObjectKind::String && key == "length") {
           /* String 包装对象/原始串的 length（§10.4.3.3）：非存储属性，
@@ -857,9 +883,26 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         }
         ConversionResult pk = toPropertyKey(ctx, key);
         if (!pk.ok()) return pk;
-        /* v1 只支持字符串属性名（Symbol 键留 M4）。 */
+        /* Symbol 属性键（M4.4d）：查 Symbol 属性表（沿原型链）。
+         * 原始值（如 'ab'[Symbol.iterator]）先 ToObject 装箱（§13.3.3
+         * Property Accessors 的 RequireObjectCoercible + ToObject）。 */
         if (pk.value->kind() == Kind::Symbol) {
-          return fail("TypeError: symbol property keys not supported");
+          JSValue *symbol_target = obj;
+          if (!obj->isObject()) {
+            if (obj->kind() == Kind::Undefined || obj->kind() == Kind::Null) {
+              return fail("TypeError: Cannot read properties of " +
+                          (obj->kind() == Kind::Undefined
+                               ? std::string("undefined")
+                               : std::string("null")));
+            }
+            ConversionResult boxed = toObject(ctx, obj);
+            if (!boxed.ok()) return boxed;
+            symbol_target = boxed.value;
+          }
+          JSValue *val = symbol_target->object()->getSymbolProperty(pk.value);
+          stack.resize(stack.size() - 2);
+          stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
+          break;
         }
         /* 字符串原始值/包装对象整数索引（§10.4.3.4 String exotic object）：
          * 虚拟索引属性，由 [[StringData]] 的 code unit 推导。 */
@@ -927,12 +970,44 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         }
         ConversionResult pk = toPropertyKey(ctx, key);
         if (!pk.ok()) return pk;
+        /* Symbol 属性键（M4.4d）：写 Symbol 属性表。 */
         if (pk.value->kind() == Kind::Symbol) {
-          return fail("TypeError: symbol property keys not supported");
+          obj->object()->setSymbolProperty(pk.value, val);
+          stack.resize(stack.size() - 3);
+          stack.push_back(val); /* 赋值表达式值 = 新值 */
+          break;
         }
         obj->object()->setProperty(pk.value->toString(), val);
         stack.resize(stack.size() - 3);
         stack.push_back(val); /* 赋值表达式值 = 新值 */
+        break;
+      }
+      case Opcode::GetIterator: {
+        /* 栈顶对象 -> 迭代器（M4.4f，§7.4.1）。 */
+        if (stack.empty()) return fail("Error: stack underflow on GetIterator");
+        ConversionResult it = getIterator(ctx, stack.back());
+        if (!it.ok()) return it;
+        stack.back() = it.value; /* 替换栈顶为迭代器 */
+        break;
+      }
+      case Opcode::IteratorStep: {
+        /* 栈顶 iterator -> [value, done]（done 在栈顶，M4.4f，§7.4.5）。
+         * 完成时 value 为 undefined（规范 IteratorValue 未定义值）。
+         * iteratorStep 完成返回 ok(nullptr)（成功但无值，§7.4.5 done=true），
+         * 与失败（value=nullptr + error 非空）区分：仅 error 非空才真失败。 */
+        if (stack.empty()) return fail("Error: stack underflow on IteratorStep");
+        ConversionResult step = iteratorStep(ctx, stack.back());
+        if (step.value == nullptr && !step.error.empty()) return step;
+        if (step.value == nullptr) {
+          /* 迭代完成：压 [undefined, true]。 */
+          stack.back() = ctx->createValue(Kind::Undefined);
+          stack.push_back(ctx->createValue(true));
+        } else {
+          ConversionResult v = iteratorValue(ctx, step.value);
+          if (!v.ok()) return v;
+          stack.back() = v.value; /* value */
+          stack.push_back(ctx->createValue(false)); /* done=false */
+        }
         break;
       }
       case Opcode::LoadUpvalue: {

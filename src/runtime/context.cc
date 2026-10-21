@@ -84,6 +84,37 @@ JSValue *JSContext::createArray(size_t capacity) {
   return v;
 }
 
+/* Map 工厂（M4.4a，[[MapData]]）：新建 Map 对象，原型链 Map.prototype。
+ * mapProto 惰性创建；未注册内置时返回 nullptr（Map 无原型）。 */
+JSValue *JSContext::createMap() {
+  JSObject *proto = nullptr;
+  JSValue *mp = neojs::mapProto(this);
+  if (mp != nullptr) proto = mp->object();
+  JSObject *obj = heap_.allocGCObject<JSObject>(ObjectKind::Map, 0);
+  if (proto != nullptr) obj->setPrototype(proto);
+  heap_.pin(obj);
+  JSValue *v = heap_.allocGCObject<JSValue>();
+  v->setObject(obj);
+  obj->setHolder(v);
+  heap_.unpin(obj);
+  return v;
+}
+
+/* Set 工厂（M4.4a，[[SetData]]）：新建 Set 对象，原型链 Set.prototype。 */
+JSValue *JSContext::createSet() {
+  JSObject *proto = nullptr;
+  JSValue *sp = neojs::setProto(this);
+  if (sp != nullptr) proto = sp->object();
+  JSObject *obj = heap_.allocGCObject<JSObject>(ObjectKind::Set, 0);
+  if (proto != nullptr) obj->setPrototype(proto);
+  heap_.pin(obj);
+  JSValue *v = heap_.allocGCObject<JSValue>();
+  v->setObject(obj);
+  obj->setHolder(v);
+  heap_.unpin(obj);
+  return v;
+}
+
 /* 包装对象（E4-2，§7.1.13 ToObject）：kind 为 Number/String/Boolean/Symbol，
  * data 为被包装的原始值（内部指针，GC 引用边）。 */
 JSValue *JSContext::createWrapper(ObjectKind kind, JSValue *data) {
@@ -143,6 +174,10 @@ void JSContext::markRoots() {
   /* Function.prototype 缓存（M4.2）：函数原型链根（call/apply/bind），
    * 始终可达。 */
   if (function_proto_ != nullptr) heap_.markRoot(function_proto_);
+
+  /* Map/Set.prototype 缓存（M4.4a）：集合原型链根，始终可达。 */
+  if (map_proto_ != nullptr) heap_.markRoot(map_proto_);
+  if (set_proto_ != nullptr) heap_.markRoot(set_proto_);
 
   /* VM 操作数栈（M2-VM，栈帧入根集）：解释器运行期间栈上值不可回收。
    * 嵌套 runBytecode（函数递归）时多个栈帧并存，全部标记。 */

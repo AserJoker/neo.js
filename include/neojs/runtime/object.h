@@ -60,6 +60,19 @@ enum class ObjectKind : uint8_t {
   Boolean,  /* 包装 Boolean（[[BooleanData]]） */
   Symbol,   /* 包装 Symbol（[[SymbolData]]） */
   BigInt,   /* 包装 BigInt（[[BigIntData]]，M4.3e） */
+  Map,      /* Map（[[MapData]]，M4.4a） */
+  Set,      /* Set（[[SetData]]，M4.4a） */
+  ArrayIterator,  /* Array 迭代器（M4.4f，[[IteratedObject]]+[[ArrayIteratorNextIndex]]） */
+  StringIterator, /* String 迭代器（M4.4f，[[IteratedString]]+[[StringIteratorNextIndex]]） */
+  MapIterator,    /* Map 迭代器（M4.4f，[[IteratedMap]]+[[MapIteratorNextIndex]]） */
+  SetIterator,    /* Set 迭代器（M4.4f，[[IteratedSet]]+[[SetIteratorNextIndex]]） */
+};
+
+/* 集合条目（M4.4a）：Map 的键值对 / Set 的键。
+ * key/value 均为 GC 引用边（gcMarkRefs 标记）。 */
+struct MapEntry {
+  JSValue *key = nullptr;
+  JSValue *value = nullptr;
 };
 
 class JSObject : public GCHeader {
@@ -75,11 +88,25 @@ class JSObject : public GCHeader {
 
   ObjectKind kind() const { return kind_; }
   bool isArray() const { return kind_ == ObjectKind::Array; }
+  bool isMap() const { return kind_ == ObjectKind::Map; }
+  bool isSet() const { return kind_ == ObjectKind::Set; }
+  bool isCollection() const { return isMap() || isSet(); }
   bool isWrapper() const { /* E4-2 装箱对象：内部持有原始值 */
     return kind_ == ObjectKind::Number || kind_ == ObjectKind::String ||
            kind_ == ObjectKind::Boolean || kind_ == ObjectKind::Symbol ||
            kind_ == ObjectKind::BigInt;
   }
+  bool isIterator() const { /* M4.4f 内建迭代器（Array/String/Map/Set） */
+    return kind_ == ObjectKind::ArrayIterator || kind_ == ObjectKind::StringIterator ||
+           kind_ == ObjectKind::MapIterator || kind_ == ObjectKind::SetIterator;
+  }
+
+  /* 迭代器内部槽（M4.4f）：iter_target_ 为被迭代对象（GC 引用边），
+   * iter_index_ 为当前推进索引。仅 isIterator() 时有效。 */
+  JSValue *iterTarget() const { return iter_target_; }
+  void setIterTarget(JSValue *v) { iter_target_ = v; }
+  size_t iterIndex() const { return iter_index_; }
+  void setIterIndex(size_t i) { iter_index_ = i; }
 
   /* 包装对象内部槽（E4-2）：[[NumberData]]/[[StringData]]/[[BooleanData]]/
    * [[SymbolData]]。仅 isWrapper() 时有效；GC 引用边。 */
@@ -105,6 +132,21 @@ class JSObject : public GCHeader {
     return properties_;
   }
 
+  /* Symbol 属性（M4.4d，§7.3.22 等）：键为 Symbol 值指针，引用相等
+   * （Symbol 每次创建唯一，SameValue 即引用相等）。独立表存储，
+   * 与字符串属性互不干扰。键/值都是 GC 引用边。 */
+  bool hasOwnSymbolProperty(JSValue *sym) const;
+  PropertyDescriptor *getOwnSymbolProperty(JSValue *sym);
+  void setOwnSymbolProperty(JSValue *sym, const PropertyDescriptor &desc);
+  bool deleteOwnSymbolProperty(JSValue *sym);
+  JSValue *getSymbolProperty(JSValue *sym);
+  void setSymbolProperty(JSValue *sym, JSValue *value);
+  bool hasSymbolProperty(JSValue *sym) const;
+  bool deleteSymbolProperty(JSValue *sym);
+  const std::unordered_map<JSValue *, PropertyDescriptor> &symbolProperties() const {
+    return symbol_properties_;
+  }
+
   /* 数组元素（elements 分离存储，架构 §5.2）。索引按 uint32_t 存储。 */
   size_t length() const { return elements_.size(); }
   bool hasElement(size_t index) const;
@@ -113,6 +155,17 @@ class JSObject : public GCHeader {
   void deleteElement(size_t index);
   void resizeElements(size_t length); /* 直接设置元素存储大小（length 属性） */
   const std::vector<JSValue *> &elements() const { return elements_; }
+
+  /* 集合存储（M4.4a，[[MapData]]/[[SetData]]）。
+   * 平铺条目 vector + SameValueZero 线性扫描（正确性优先，
+   * 性能优化——值哈希分桶——留后续）。Set 的 value 存 key 自身。 */
+  size_t collectionSize() const { return map_entries_.size(); }
+  bool collectionHas(JSValue *key);
+  JSValue *collectionGet(JSValue *key); /* Map：命中返回值，未命中 nullptr */
+  void collectionSet(JSValue *key, JSValue *value); /* 存在则更新，否则追加 */
+  bool collectionDelete(JSValue *key);
+  void collectionClear();
+  const std::vector<MapEntry> &collectionEntries() const { return map_entries_; }
 
   /* GC（docs/gc.md §4.1）：属性值 + 数组元素 + 原型都是引用边。 */
 
@@ -136,9 +189,13 @@ class JSObject : public GCHeader {
   ObjectKind kind_ = ObjectKind::Ordinary;
   JSObject *prototype_ = nullptr;                            /* [[Prototype]] */
   std::unordered_map<std::string, PropertyDescriptor> properties_; /* 命名属性表 */
+  std::unordered_map<JSValue *, PropertyDescriptor> symbol_properties_; /* Symbol 属性表（M4.4d） */
   std::vector<JSValue *> elements_;                          /* 数组元素（连续索引） */
+  std::vector<MapEntry> map_entries_;                        /* 集合条目（M4.4a，[[MapData]]/[[SetData]]） */
   JSValue *holder_ = nullptr;                                /* 反向包装指针 */
   JSValue *data_ = nullptr;                                  /* 包装对象内部槽（E4-2） */
+  JSValue *iter_target_ = nullptr;                           /* 迭代器内部槽（M4.4f） */
+  size_t iter_index_ = 0;                                    /* 迭代器当前索引（M4.4f） */
 };
 
 }  // namespace neojs

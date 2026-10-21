@@ -78,6 +78,7 @@ class Compiler {
   bool compileIf(const ASTNode &node);
   bool compileWhile(const ASTNode &node);
   bool compileFor(const ASTNode &node);
+  bool compileForOf(const ASTNode &node); /* M4.4f for-of（GetIterator/IteratorStep） */
   bool compileReturn(const ASTNode &node);
   bool compileDoWhile(const ASTNode &node);
 
@@ -138,6 +139,7 @@ class Compiler {
   BytecodeBuilder builder_;              /* 字节码发射器 */
   CompilerScope *scope_ = nullptr;       /* 当前函数作用域帧（M2.5） */
   std::vector<CompilerScope *> scopes_;  /* 作用域帧池（栈，owned） */
+  uint32_t iter_slot_seq_ = 0;           /* for-of 迭代器槽唯一名计数（M4.4f 嵌套防复用） */
   bool failed_ = false;                  /* 编译失败标记 */
   std::string error_;                    /* 失败信息 */
 };

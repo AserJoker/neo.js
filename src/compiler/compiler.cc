@@ -317,6 +317,11 @@ bool Compiler::compileStmt(const ASTNode &node) {
       return compileDoWhile(node);
     case NodeType::ForStatement:
       return compileFor(node);
+    case NodeType::ForOfStatement:
+      return compileForOf(node);
+    case NodeType::ForInStatement:
+      fail("not implemented: for-in loop");
+      return false;
     case NodeType::ReturnStatement:
       return compileReturn(node);
     case NodeType::FunctionDeclaration:
@@ -469,6 +474,89 @@ bool Compiler::compileFor(const ASTNode &node) {
   }
   builder_.jump(&loop_label);
   builder_.bind_label(end_label);
+  return true;
+}
+
+bool Compiler::compileForOf(const ASTNode &node) {
+  /* for (left of right) body  （M4.4f，§14.7.5）
+   *   [right]              ; 可迭代对象
+   *   GetIterator          ; -> iterator
+   *   StoreVar iter_tmp    ; 迭代器存临时槽
+   * loop_label:
+   *   LoadVar iter_tmp
+   *   IteratorStep         ; -> [value, done]（done 在栈顶）
+   *   JumpIfTrue end_label ; done true 弹栈跳 end；done false 继续（value 留栈顶）
+   *   [left 赋值]          ; 栈顶 value -> 变量/成员
+   *   [body]
+   *   Jump loop_label
+   * end_label:
+   *   Pop                  ; 清完成路径残留 value（undefined）
+   *
+   * children = [left, right, body]；left 可为 VariableDeclaration 或表达式。 */
+  if (node.children.size() < 3) {
+    fail("for-of without clauses");
+    return false;
+  }
+  const ASTNode *left = node.children[0];
+  const ASTNode *right = node.children[1];
+  const ASTNode *body = node.children[2];
+
+  /* 可迭代对象求值。 */
+  if (!compileExpr(*right)) return false;
+  builder_.get_iterator();
+
+  /* 迭代器存临时槽（跨循环迭代保活，栈根集保护）。
+   * 用内部名 declareLocal：占住 locals 表，避免与循环体内
+   * declareLocal(x) 复用同一槽号（无名 next_slot++ 会被覆盖）。
+   * 名字带唯一计数：嵌套 for-of 的内层不复用外层迭代器槽。 */
+  uint16_t iter_tmp =
+      declareLocal("\x01iter" + std::to_string(iter_slot_seq_++));
+  builder_.store_var(iter_tmp);
+
+  BcLabel loop_label = builder_.new_label();
+  BcLabel end_label = builder_.new_label();
+  builder_.bind_label(loop_label);
+  builder_.load_var(iter_tmp);
+  builder_.iterator_step();
+  builder_.jump_if_true(&end_label); /* done true -> 结束循环 */
+
+  /* left 赋值：栈顶是当前迭代 value。 */
+  if (left->type == NodeType::VariableDeclaration) {
+    /* for (var x of ...)：声明 x 局部槽，栈顶 value 直接 StoreVar。 */
+    for (const ASTNode *declarator : left->children) {
+      if (declarator == nullptr ||
+          declarator->type != NodeType::VariableDeclarator ||
+          declarator->children.empty() ||
+          declarator->children[0]->type != NodeType::Identifier) {
+        fail("not implemented: destructuring in for-of");
+        return false;
+      }
+      uint16_t slot = declareLocal(declarator->children[0]->name);
+      builder_.store_var(slot);
+    }
+  } else if (left->type == NodeType::Identifier) {
+    /* for (x of ...)：赋值到既有变量。 */
+    uint16_t slot = 0;
+    uint16_t capture = 0;
+    bool is_upvalue = false;
+    if (!resolveAssignTarget(left->name, &slot, &capture, &is_upvalue)) {
+      fail("not implemented: assignment to undeclared global in for-of");
+      return false;
+    }
+    if (is_upvalue) {
+      builder_.store_upvalue(capture);
+    } else {
+      builder_.store_var(slot);
+    }
+  } else {
+    fail("not implemented: for-of left target (member/destructuring)");
+    return false;
+  }
+
+  if (body != nullptr && !compileStmt(*body)) return false;
+  builder_.jump(&loop_label);
+  builder_.bind_label(end_label);
+  builder_.pop(); /* 清完成路径残留 value */
   return true;
 }
 

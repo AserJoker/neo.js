@@ -37,6 +37,7 @@
 #include "neojs/runtime/builtins.h"
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/conversion.h"
+#include "neojs/runtime/environment.h"
 #include "neojs/runtime/function.h"
 #include "neojs/runtime/handles.h"
 #include "neojs/runtime/object.h"
@@ -906,9 +907,15 @@ extern "C" JSValue *JS_Eval(JSContext *ctx, const char *source, size_t source_le
       return makeException(ctx, ("CompileError: " + cr.error).c_str());
     }
 
-    /* 执行顶层字节码。 */
+    /* 执行顶层字节码。
+     * 顶层也建一个 JSEnvironment（parent=nullptr）：顶层 var 需写入 env
+     * 绑定，使内层函数（forEach/keys 等回调、顶层函数声明内的嵌套闭包）
+     * StoreUpvalue/LoadUpvalue 能沿链捕获顶层变量。env 由 runBytecode
+     * 的 EnvRootGuard 入根集保护，帧退出自动弹出。 */
+    neojs::JSEnvironment *top_env =
+        c->heap().allocGCObject<neojs::JSEnvironment>(nullptr);
     neojs::ConversionResult r =
-        neojs::runBytecode(c, cr.fn, nullptr, nullptr, 0);
+        neojs::runBytecode(c, cr.fn, nullptr, nullptr, 0, top_env);
     if (!r.ok()) {
       return makeException(ctx, r.error.c_str());
     }

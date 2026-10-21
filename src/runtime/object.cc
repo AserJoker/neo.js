@@ -5,6 +5,7 @@
 #include <new>
 
 #include "neojs/runtime/allocator.h"
+#include "neojs/runtime/conversion.h"
 #include "neojs/runtime/heap.h"
 #include "neojs/runtime/value.h"
 
@@ -46,6 +47,58 @@ bool JSObject::deleteOwnProperty(const std::string &name) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Symbol 属性（M4.4d）：键为 Symbol 值指针，引用相等                           */
+/* -------------------------------------------------------------------------- */
+
+bool JSObject::hasOwnSymbolProperty(JSValue *sym) const {
+  return symbol_properties_.find(sym) != symbol_properties_.end();
+}
+
+PropertyDescriptor *JSObject::getOwnSymbolProperty(JSValue *sym) {
+  auto it = symbol_properties_.find(sym);
+  return it == symbol_properties_.end() ? nullptr : &it->second;
+}
+
+void JSObject::setOwnSymbolProperty(JSValue *sym,
+                                    const PropertyDescriptor &desc) {
+  symbol_properties_[sym] = desc;
+}
+
+bool JSObject::deleteOwnSymbolProperty(JSValue *sym) {
+  return symbol_properties_.erase(sym) > 0;
+}
+
+JSValue *JSObject::getSymbolProperty(JSValue *sym) {
+  for (JSObject *o = this; o != nullptr; o = o->prototype_) {
+    PropertyDescriptor *desc = o->getOwnSymbolProperty(sym);
+    if (desc != nullptr) return desc->value;
+  }
+  return nullptr;
+}
+
+void JSObject::setSymbolProperty(JSValue *sym, JSValue *value) {
+  PropertyDescriptor *desc = getOwnSymbolProperty(sym);
+  if (desc != nullptr) {
+    desc->value = value;
+  } else {
+    PropertyDescriptor d;
+    d.value = value;
+    setOwnSymbolProperty(sym, d);
+  }
+}
+
+bool JSObject::hasSymbolProperty(JSValue *sym) const {
+  for (const JSObject *o = this; o != nullptr; o = o->prototype_) {
+    if (o->hasOwnSymbolProperty(sym)) return true;
+  }
+  return false;
+}
+
+bool JSObject::deleteSymbolProperty(JSValue *sym) {
+  return deleteOwnSymbolProperty(sym);
+}
+
+/* -------------------------------------------------------------------------- */
 /* 数组元素（elements 分离存储）                                               */
 /* -------------------------------------------------------------------------- */
 
@@ -70,6 +123,46 @@ void JSObject::deleteElement(size_t index) {
 void JSObject::resizeElements(size_t length) {
   elements_.resize(length, nullptr); /* 加长空洞为 nullptr；缩短截断 */
 }
+
+/* -------------------------------------------------------------------------- */
+/* 集合存储（M4.4a，[[MapData]]/[[SetData]]）                                   */
+/* -------------------------------------------------------------------------- */
+
+bool JSObject::collectionHas(JSValue *key) {
+  for (const MapEntry &e : map_entries_) {
+    if (sameValueZero(e.key, key)) return true;
+  }
+  return false;
+}
+
+JSValue *JSObject::collectionGet(JSValue *key) {
+  for (const MapEntry &e : map_entries_) {
+    if (sameValueZero(e.key, key)) return e.value;
+  }
+  return nullptr;
+}
+
+void JSObject::collectionSet(JSValue *key, JSValue *value) {
+  for (MapEntry &e : map_entries_) {
+    if (sameValueZero(e.key, key)) {
+      e.value = value; /* 已存在：更新值 */
+      return;
+    }
+  }
+  map_entries_.push_back({key, value}); /* 追加新条目 */
+}
+
+bool JSObject::collectionDelete(JSValue *key) {
+  for (size_t i = 0; i < map_entries_.size(); ++i) {
+    if (sameValueZero(map_entries_[i].key, key)) {
+      map_entries_.erase(map_entries_.begin() + static_cast<ptrdiff_t>(i));
+      return true;
+    }
+  }
+  return false;
+}
+
+void JSObject::collectionClear() { map_entries_.clear(); }
 
 /* -------------------------------------------------------------------------- */
 /* ordinary 属性语义（架构 §5.2，v1 简化：writable/configurable 不校验）        */
@@ -120,14 +213,28 @@ void JSObject::gcMarkRefs(Heap *heap) {
     heap->markRoot(kv.second.getter); /* 访问器预留字段 */
     heap->markRoot(kv.second.setter);
   }
+  /* Symbol 属性（M4.4d）：键与值都是引用边 */
+  for (auto &kv : symbol_properties_) {
+    heap->markRoot(kv.first); /* Symbol 键值本身 */
+    heap->markRoot(kv.second.value);
+    heap->markRoot(kv.second.getter); /* 访问器预留字段 */
+    heap->markRoot(kv.second.setter);
+  }
   /* 数组元素 */
   for (JSValue *v : elements_) {
     heap->markRoot(v);
+  }
+  /* 集合条目（M4.4a：键与值都是引用边） */
+  for (const MapEntry &e : map_entries_) {
+    heap->markRoot(e.key);
+    heap->markRoot(e.value);
   }
   /* 原型链 */
   heap->markRoot(prototype_);
   /* 包装对象内部槽（E4-2：被包装的原始值） */
   heap->markRoot(data_);
+  /* 迭代器内部槽（M4.4f：被迭代对象） */
+  heap->markRoot(iter_target_);
 }
 
 /* -------------------------------------------------------------------------- */

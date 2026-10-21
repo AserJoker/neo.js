@@ -101,6 +101,11 @@ enum class Opcode : uint8_t {
   /* 调试/输出 */
   Print,           /* 弹出栈顶并输出（--print 观测） */
   Nop,             /* 空操作（label 占位） */
+
+  /* 迭代器（M4.4f，§7.4）——追加在末尾，保持既有 C API opcode 数值稳定 */
+  GetIterator,     /* 栈顶对象 -> 迭代器（GetIterator，替换 obj） */
+  IteratorStep,    /* 栈顶 iterator -> [value, done]（done 在栈顶，§7.4.5） */
+  JumpIfTrue,      /* 栈顶为 true 则跳转：JumpIfTrue {target}（弹栈，M4.4f for-of） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -181,11 +186,14 @@ class BytecodeBuilder {
   }
   void pop() { push_op(Opcode::Pop); }
   void dup() { push_op(Opcode::Dup); }
+  void get_iterator() { push_op(Opcode::GetIterator); }
+  void iterator_step() { push_op(Opcode::IteratorStep); }
   void call(uint16_t argc) { push_op(Opcode::Call, argc); }
   void call_method(uint16_t argc) { push_op(Opcode::CallMethod, argc); }
   void construct(uint16_t argc) { push_op(Opcode::Construct, argc); }
   void jump(BcLabel *label) { push_op(Opcode::Jump, 0, label); }
   void jump_if_false(BcLabel *label) { push_op(Opcode::JumpIfFalse, 0, label); }
+  void jump_if_true(BcLabel *label) { push_op(Opcode::JumpIfTrue, 0, label); }
   void ret() { push_op(Opcode::Ret); }
   void print() { push_op(Opcode::Print); }
 

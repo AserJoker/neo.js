@@ -3074,6 +3074,359 @@ TEST(Compiler, EvalNumberProtoMethods) {
   JS_FreeAllocator(a);
 }
 
+/* M4.4b：Map 基本操作（§24.1）。用 JS_Eval 端到端验证
+ * set/get/has/delete/clear/size/forEach 与构造器（数组 iterable）。 */
+TEST(Compiler, EvalMapBasic) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  struct { const char *src; double num; } ncases[] = {
+      /* 基本 set/get/size。 */
+      {"var m = new Map(); m.set('a', 1); m.get('a')", 1.0},
+      {"var m = new Map(); m.set('a', 1); m.size", 1.0},
+      {"var m = new Map(); m.set('a', 1).set('b', 2); m.size", 2.0},
+      /* 键覆盖：同键更新值，size 不变。 */
+      {"var m = new Map(); m.set('a', 1); m.set('a', 9); m.get('a')", 9.0},
+      {"var m = new Map(); m.set('a', 1); m.set('a', 9); m.size", 1.0},
+      /* 对象键：引用相等。 */
+      {"var o = {}; var m = new Map(); m.set(o, 7); m.get(o)", 7.0},
+  };
+  for (auto &c : ncases) {
+    JSValue *r = JS_Eval(ctx, c.src, std::strlen(c.src));
+    ASSERT_NE(r, nullptr) << "case src=" << c.src;
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER)
+        << "case src=" << c.src << " got=" << JS_ToString(ctx, r);
+    EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), c.num) << "case src=" << c.src;
+    JS_FreeValue(ctx, r);
+  }
+
+  struct { const char *src; const char *str; } scases[] = {
+      /* 字符串返回值。 */
+      {"var m = new Map(); m.set('a', 'hello'); m.get('a')", "hello"},
+      {"var m = new Map(); m.set(1, 'x').set('1', 'y'); m.get('1')", "y"},
+      /* 数字键与字符串键独立：get(1) 取数字键 'x'。 */
+      {"var m = new Map(); m.set(1, 'x').set('1', 'y'); m.get(1)", "x"},
+  };
+  for (auto &c : scases) {
+    JSValue *r = JS_Eval(ctx, c.src, std::strlen(c.src));
+    ASSERT_NE(r, nullptr) << "case src=" << c.src;
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING)
+        << "case src=" << c.src << " got=" << JS_ToString(ctx, r);
+    EXPECT_STREQ(JS_ToString(ctx, r), c.str) << "case src=" << c.src;
+    JS_FreeValue(ctx, r);
+  }
+
+  struct { const char *src; int b; } bcases[] = {
+      /* 布尔返回值。 */
+      {"var m = new Map(); m.set('a', 1); m.has('zzz')", 0},
+      {"var m = new Map(); m.set('a', 1); m.has('a')", 1},
+      {"var m = new Map(); m.set(NaN, 42); m.has(NaN)", 1},  /* SameValueZero */
+      {"var m = new Map(); m.set(0, 'z'); m.has(-0)", 1},    /* ±0 归并 */
+      {"var m = new Map(); m.set('a', 1) instanceof Map", 1},
+  };
+  for (auto &c : bcases) {
+    JSValue *r = JS_Eval(ctx, c.src, std::strlen(c.src));
+    ASSERT_NE(r, nullptr) << "case src=" << c.src;
+    EXPECT_EQ(JS_ToBoolean(ctx, r), c.b) << "case src=" << c.src;
+    JS_FreeValue(ctx, r);
+  }
+
+  /* delete/clear/has。 */
+  {
+    JSValue *r = JS_Eval(
+        ctx, "var m = new Map(); m.set('a', 1).set('b', 2); "
+             "var d = m.delete('a'); m.has('a') === false && d && m.size === 1",
+        std::strlen("var m = new Map(); m.set('a', 1).set('b', 2); "
+                     "var d = m.delete('a'); m.has('a') === false && d && m.size === 1"));
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(JS_ToBoolean(ctx, r), 1);
+    JS_FreeValue(ctx, r);
+  }
+  {
+    JSValue *r = JS_Eval(
+        ctx, "var m = new Map(); m.set('a', 1); m.clear(); m.size === 0",
+        std::strlen("var m = new Map(); m.set('a', 1); m.clear(); m.size === 0"));
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(JS_ToBoolean(ctx, r), 1);
+    JS_FreeValue(ctx, r);
+  }
+  /* 构造器数组 iterable：[[k1,v1],[k2,v2]]。 */
+  {
+    JSValue *r = JS_Eval(
+        ctx, "var m = new Map([['a', 1], ['b', 2]]); m.get('a') + m.get('b')",
+        std::strlen("var m = new Map([['a', 1], ['b', 2]]); m.get('a') + m.get('b')"));
+    ASSERT_NE(r, nullptr);
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+    EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 3.0);
+    JS_FreeValue(ctx, r);
+  }
+  /* forEach：value/key/map 三参 + thisArg。 */
+  {
+    JSValue *r = JS_Eval(
+        ctx, "var m = new Map(); m.set('a', 1).set('b', 2); var s = 0; "
+             "m.forEach(function(v, k) { s = s + v; }); s",
+        std::strlen("var m = new Map(); m.set('a', 1).set('b', 2); var s = 0; "
+                     "m.forEach(function(v, k) { s = s + v; }); s"));
+    ASSERT_NE(r, nullptr);
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+    EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 3.0);
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* M4.4c：Set 构造器与 Set.prototype（§24.2）。 */
+TEST(Compiler, EvalSetBasic) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  struct { const char *src; double num; } ncases[] = {
+      /* 基本 add/has/size。 */
+      {"var s = new Set(); s.add('a'); s.size", 1.0},
+      {"var s = new Set(); s.add('a').add('b'); s.size", 2.0},
+      /* 元素覆盖：同值重复 add，size 不变。 */
+      {"var s = new Set(); s.add('a'); s.add('a'); s.size", 1.0},
+      /* 对象元素：引用相等。 */
+      {"var o = {}; var s = new Set(); s.add(o); s.size", 1.0},
+  };
+  for (auto &c : ncases) {
+    JSValue *r = JS_Eval(ctx, c.src, std::strlen(c.src));
+    ASSERT_NE(r, nullptr) << "case src=" << c.src;
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER)
+        << "case src=" << c.src << " got=" << JS_ToString(ctx, r);
+    EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), c.num) << "case src=" << c.src;
+    JS_FreeValue(ctx, r);
+  }
+
+  struct { const char *src; const char *str; } scases[] = {
+      /* 构造器数组 iterable。 */
+      {"var s = new Set([1, 2, 3]); s.size === 3 ? 'ok' : 'bad'", "ok"},
+  };
+  for (auto &c : scases) {
+    JSValue *r = JS_Eval(ctx, c.src, std::strlen(c.src));
+    ASSERT_NE(r, nullptr) << "case src=" << c.src;
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING)
+        << "case src=" << c.src << " got=" << JS_ToString(ctx, r);
+    EXPECT_STREQ(JS_ToString(ctx, r), c.str) << "case src=" << c.src;
+    JS_FreeValue(ctx, r);
+  }
+
+  struct { const char *src; int b; } bcases[] = {
+      /* 布尔返回值。 */
+      {"var s = new Set(); s.add('a'); s.has('zzz')", 0},
+      {"var s = new Set(); s.add('a'); s.has('a')", 1},
+      {"var s = new Set(); s.add(NaN); s.has(NaN)", 1}, /* SameValueZero */
+      {"var s = new Set(); s.add(0); s.has(-0)", 1},     /* ±0 归并 */
+      {"var s = new Set(); s.add('a') instanceof Set", 1},
+      /* 数字与字符串元素独立。 */
+      {"var s = new Set(); s.add(1).add('1'); s.size === 2", 1},
+  };
+  for (auto &c : bcases) {
+    JSValue *r = JS_Eval(ctx, c.src, std::strlen(c.src));
+    ASSERT_NE(r, nullptr) << "case src=" << c.src;
+    EXPECT_EQ(JS_ToBoolean(ctx, r), c.b) << "case src=" << c.src;
+    JS_FreeValue(ctx, r);
+  }
+
+  /* delete/clear。 */
+  {
+    JSValue *r = JS_Eval(
+        ctx, "var s = new Set(); s.add('a').add('b'); "
+             "var d = s.delete('a'); s.has('a') === false && d && s.size === 1",
+        std::strlen("var s = new Set(); s.add('a').add('b'); "
+                     "var d = s.delete('a'); s.has('a') === false && d && s.size === 1"));
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(JS_ToBoolean(ctx, r), 1);
+    JS_FreeValue(ctx, r);
+  }
+  {
+    JSValue *r = JS_Eval(
+        ctx, "var s = new Set(); s.add('a'); s.clear(); s.size === 0",
+        std::strlen("var s = new Set(); s.add('a'); s.clear(); s.size === 0"));
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(JS_ToBoolean(ctx, r), 1);
+    JS_FreeValue(ctx, r);
+  }
+  /* forEach：value/key/set 三参（key 与 value 相同）+ 顶层 var 捕获。 */
+  {
+    JSValue *r = JS_Eval(
+        ctx, "var s = new Set(); s.add(1).add(2).add(3); var sum = 0; "
+             "s.forEach(function(v, k) { sum = sum + v; }); sum",
+        std::strlen("var s = new Set(); s.add(1).add(2).add(3); var sum = 0; "
+                     "s.forEach(function(v, k) { sum = sum + v; }); sum"));
+    ASSERT_NE(r, nullptr);
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+    EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 6.0);
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* M4.4d：Symbol 属性键（§7.3.22）。 */
+TEST(Compiler, EvalSymbolPropertyKeys) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  struct { const char *src; double num; } ncases[] = {
+      /* StoreElem/LoadElem Symbol 键读写。 */
+      {"var s = Symbol('x'); var o = {}; o[s] = 42; o[s]", 42.0},
+      /* 引用相等：同 Symbol 命中，新 Symbol 不命中（undefined->0）。 */
+      {"var s = Symbol(); var o = {}; o[s] = 1; o[s] + (o[Symbol()] ? 10 : 0)", 1.0},
+      /* Symbol 与字符串键独立。 */
+      {"var s = Symbol('k'); var o = {}; o[s] = 1; o['k'] = 2; o[s] + o['k']", 3.0},
+  };
+  for (auto &c : ncases) {
+    JSValue *r = JS_Eval(ctx, c.src, std::strlen(c.src));
+    ASSERT_NE(r, nullptr) << "case src=" << c.src;
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER)
+        << "case src=" << c.src << " got=" << JS_ToString(ctx, r);
+    EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), c.num) << "case src=" << c.src;
+    JS_FreeValue(ctx, r);
+  }
+
+  struct { const char *src; int b; } bcases[] = {
+      /* 引用相等：同 Symbol 命中，新 Symbol 未命中（undefined）。 */
+      {"var s = Symbol(); var o = {}; o[s] = 1; o[s] === 1", 1},
+      {"var s = Symbol(); var o = {}; o[s] === undefined", 1},
+      {"var s = Symbol(); var o = {}; o[s] = 1; o[Symbol()] === undefined", 1},
+      /* Symbol 与字符串键独立。 */
+      {"var s = Symbol('k'); var o = {}; o[s] = 1; o['k'] = 2; "
+       "o[s] === 1 && o['k'] === 2", 1},
+  };
+  for (auto &c : bcases) {
+    JSValue *r = JS_Eval(ctx, c.src, std::strlen(c.src));
+    ASSERT_NE(r, nullptr) << "case src=" << c.src;
+    EXPECT_EQ(JS_ToBoolean(ctx, r), c.b) << "case src=" << c.src;
+    JS_FreeValue(ctx, r);
+  }
+
+  /* Symbol.iterator 是 well-known 全局，可读。 */
+  {
+    JSValue *r = JS_Eval(ctx, "Symbol.iterator",
+                         std::strlen("Symbol.iterator"));
+    ASSERT_NE(r, nullptr);
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_SYMBOL) << "got=" << JS_ToString(ctx, r);
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* M4.4f：for-of 编译执行 + 内建迭代器（§13.7.5.6 + §7.4）。 */
+TEST(Compiler, EvalForOf) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  struct { const char *src; double num; } ncases[] = {
+      /* 数组迭代求和。 */
+      {"var s = 0; for (var x of [1, 2, 3]) { s = s + x; } s", 6.0},
+      /* 空数组不迭代。 */
+      {"var s = 0; for (var x of []) { s = s + 1; } s", 0.0},
+      /* 已有 var 声明（不重声明，直接赋值）。 */
+      {"var x; var s = 0; for (x of [1, 2, 3]) { s = s + x; } s", 6.0},
+      /* 嵌套 for-of（1*10+1*20+2*10+2*20=90）。 */
+      {"var s = 0; for (var x of [1, 2]) for (var y of [10, 20]) s = s + x * y; s",
+       90.0},
+      /* 字符串迭代：code point（含增补平面代理对合并）。 */
+      {"var s = 0; for (var c of 'abc') { s = s + 1; } s", 3.0},
+      {"var s = ''; for (var c of 'ab') { s = s + c; } s === 'ab' ? 1 : 0", 1.0},
+      /* Set 迭代。 */
+      {"var s = new Set([1, 2, 3]); var sum = 0; for (var x of s) sum = sum + x; sum",
+       6.0},
+      /* 自定义可迭代对象：Symbol.iterator 返回手工迭代器。
+       * （this 表达式未实现，用闭包变量 i 替代 this.i）。 */
+      {"var i = 0; var it = { next: function() { i = i + 1; return i <= 3 ? "
+       "{ value: i * 10, done: false } : { value: undefined, done: true }; } }; "
+       "var o = {}; o[Symbol.iterator] = function() { return it; }; "
+       "var s = 0; for (var x of o) s = s + x; s", 60.0},
+  };
+  for (auto &c : ncases) {
+    JSValue *r = JS_Eval(ctx, c.src, std::strlen(c.src));
+    ASSERT_NE(r, nullptr) << "case src=" << c.src;
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER)
+        << "case src=" << c.src << " got=" << JS_ToString(ctx, r);
+    EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), c.num) << "case src=" << c.src;
+    JS_FreeValue(ctx, r);
+  }
+
+  struct { const char *src; const char *str; } scases[] = {
+      /* 字符串迭代拼接。 */
+      {"var s = ''; for (var c of 'xyz') s = s + c; s", "xyz"},
+      /* 增补平面：代理对合并为单个码点（真实输出为 😀）。 */
+      {"var s = ''; for (var c of '\\u{1F600}') s = s + c; s", "\xF0\x9F\x98\x80"},
+  };
+  for (auto &c : scases) {
+    JSValue *r = JS_Eval(ctx, c.src, std::strlen(c.src));
+    ASSERT_NE(r, nullptr) << "case src=" << c.src;
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING)
+        << "case src=" << c.src << " got=" << JS_ToString(ctx, r);
+    EXPECT_STREQ(JS_ToString(ctx, r), c.str) << "case src=" << c.src;
+    JS_FreeValue(ctx, r);
+  }
+
+  /* 未实现 for-in：编译失败返回 Exception（M4.4f 未实现 ForIn）。 */
+  {
+    JSValue *r = JS_Eval(ctx, "for (var k in {a: 1}) {}",
+                         std::strlen("for (var k in {a: 1}) {}"));
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION)
+        << "got=" << JS_ToString(ctx, r);
+    JS_FreeValue(ctx, r);
+  }
+
+  /* 数组字面量内建迭代器可直接调用 next()。 */
+  {
+    JSValue *r = JS_Eval(
+        ctx, "var it = [1, 2][Symbol.iterator](); var a = it.next().value; "
+             "var b = it.next().value; var d = it.next().done; a + b + (d ? 10 : 0)",
+        std::strlen("var it = [1, 2][Symbol.iterator](); var a = it.next().value; "
+                     "var b = it.next().value; var d = it.next().done; a + b + (d ? 10 : 0)"));
+    ASSERT_NE(r, nullptr);
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+    EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 13.0);
+    JS_FreeValue(ctx, r);
+  }
+
+  /* Map for-of（entries 迭代器产出值）。 */
+  {
+    JSValue *r = JS_Eval(
+        ctx, "var m = new Map(); m.set('a', 1).set('b', 2); var s = 0; "
+             "for (var v of m) s = s + v; s",
+        std::strlen("var m = new Map(); m.set('a', 1).set('b', 2); var s = 0; "
+                     "for (var v of m) s = s + v; s"));
+    ASSERT_NE(r, nullptr);
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+    EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 3.0);
+    JS_FreeValue(ctx, r);
+  }
+
+  /* 字符串迭代器手工推进（含 done）。 */
+  {
+    JSValue *r = JS_Eval(
+        ctx, "var it = 'ab'[Symbol.iterator](); var a = it.next().value; "
+             "var b = it.next().value; var d = it.next().done; "
+             "(a === 'a' && b === 'b' && d) ? 1 : 0",
+        std::strlen("var it = 'ab'[Symbol.iterator](); var a = it.next().value; "
+                     "var b = it.next().value; var d = it.next().done; "
+                     "(a === 'a' && b === 'b' && d) ? 1 : 0"));
+    ASSERT_NE(r, nullptr);
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+    EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 1.0);
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
 
 /* M4.3f：String.prototype 方法补齐（§22.1.3）。
  * expect 前缀：#num: 数字；#str: 字符串；#bool: 布尔；#err: 异常子串；

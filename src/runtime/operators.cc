@@ -565,9 +565,7 @@ ConversionResult inOperator(JSContext *ctx, JSValue *x, JSValue *y) {
   /* HasProperty：沿原型链查找。 */
   JSObject *obj = y->object();
   if (key.value->kind() == Kind::Symbol) {
-    /* Symbol 键：当前对象模型仅 string 键，Symbol 属性不存在（E4-4 后
-     * 支持 Symbol 键）。 */
-    return ok(ctx->createValue(false));
+    return ok(ctx->createValue(obj->hasSymbolProperty(key.value)));
   }
   return ok(ctx->createValue(obj->hasProperty(key.value->toString())));
 }

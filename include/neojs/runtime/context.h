@@ -75,6 +75,8 @@ class JSContext {
   JSValue *createObject(JSObject *proto);
   JSValue *createArray(size_t capacity = 0);
   JSValue *createWrapper(ObjectKind kind, JSValue *data);
+  JSValue *createMap(); /* M4.4a：新建 Map（[[MapData]]，原型链 Map.prototype） */
+  JSValue *createSet(); /* M4.4a：新建 Set（[[SetData]]，原型链 Set.prototype） */
 
   /* 释放宿主句柄槽（对象生死由 GC 判定，G2）。freeValue 用于内部值
    * （无句柄时直接交还堆）；freeHandle 用于宿主经句柄释放（直接释放该槽，
@@ -123,6 +125,13 @@ class JSContext {
    * 原型链根。惰性创建 + 进根集（markRoots）。 */
   JSValue *arrayProto() const { return array_proto_; }
   void setArrayProto(JSValue *v) { array_proto_ = v; }
+
+  /* Map.prototype / Set.prototype 缓存（M4.4a，§24.1/§24.2）：
+   * new Map()/new Set() 新建集合的原型链根。惰性创建 + 进根集（markRoots）。 */
+  JSValue *mapProto() const { return map_proto_; }
+  void setMapProto(JSValue *v) { map_proto_ = v; }
+  JSValue *setProto() const { return set_proto_; }
+  void setSetProto(JSValue *v) { set_proto_ = v; }
 
   /* Function.prototype 缓存（M4.2，§20.2.3）：函数（Script/Builtin）的
    * 原型链根（call/apply/bind 所在）。惰性创建 + 进根集（markRoots）。 */
@@ -181,6 +190,8 @@ class JSContext {
   JSValue *object_proto_ = nullptr; /* Object.prototype 缓存（M3.3） */
   JSValue *array_proto_ = nullptr;  /* Array.prototype 缓存（M4.1） */
   JSValue *function_proto_ = nullptr; /* Function.prototype 缓存（M4.2） */
+  JSValue *map_proto_ = nullptr;    /* Map.prototype 缓存（M4.4a） */
+  JSValue *set_proto_ = nullptr;    /* Set.prototype 缓存（M4.4a） */
   std::vector<std::vector<JSValue *> *> vm_stacks_; /* VM 操作数栈根集栈（M2-VM） */
   std::vector<JSEnvironment *> vm_envs_; /* VM 帧环境根集栈（M2.5 闭包） */
   size_t call_depth_ = 0;   /* 当前调用栈深度（M2.5 防爆栈） */

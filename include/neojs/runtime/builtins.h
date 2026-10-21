@@ -53,6 +53,11 @@ JSValue *arrayProto(JSContext *ctx);
  * 函数（Script/Builtin）的原型链根（call/apply/bind 所在）。 */
 JSValue *functionProto(JSContext *ctx);
 
+/* 取 Map.prototype / Set.prototype（M4.4a 惰性创建 + 缓存 + 进根集）。
+ * new Map()/new Set() 新建集合的原型链根（set/get/has 等所在）。 */
+JSValue *mapProto(JSContext *ctx);
+JSValue *setProto(JSContext *ctx);
+
 }  // namespace neojs
 
 #endif  // NEOJS_RUNTIME_BUILTINS_H

@@ -1392,6 +1392,472 @@ ConversionResult arrayUnshift(JSContext *ctx, JSValue *thisVal,
 }
 
 /* -------------------------------------------------------------------------- */
+/* Map 构造器 + Map.prototype（M4.4b，§24.1）                                  */
+/* -------------------------------------------------------------------------- */
+
+/* 取 this 为 Map 的公共校验（§24.1.3）：非 Map 对象抛 TypeError。 */
+JSObject *mapThis(JSValue *thisVal) {
+  if (thisVal == nullptr || !thisVal->isObject() ||
+      !thisVal->object()->isMap()) {
+    return nullptr;
+  }
+  return thisVal->object();
+}
+
+/* Map 构造器（§24.1.1.1）：new Map(iterable)。
+ * 本阶段迭代器协议未启用：iterable 为数组/类数组时按
+ * [key, value] 对逐项插入；否则忽略（空 Map）。
+ * 注意：construct() 预建的 this 是普通对象，此处直接创建并返回
+ * 真正的 Map 对象（construct 步骤 4 采纳对象返回值）。 */
+ConversionResult mapConstructor(JSContext *ctx, JSValue *, JSValue *const *args,
+                                size_t argc) {
+  JSValue *map = ctx->createMap();
+  JSObject *obj = map->object();
+  if (argc > 0 && args[0] != nullptr && args[0]->kind() != Kind::Undefined &&
+      args[0]->isObject() && args[0]->object()->isArray()) {
+    /* 数组 iterable：每项为 [key, value] 对。 */
+    JSObject *items = args[0]->object();
+    size_t n = items->length();
+    for (size_t i = 0; i < n; ++i) {
+      JSValue *pair = items->getElement(i);
+      if (pair == nullptr || !pair->isObject() ||
+          !pair->object()->isArray()) {
+        return fail("TypeError: Iterator value is not an entry object");
+      }
+      JSObject *p = pair->object();
+      JSValue *k = p->getElement(0);
+      JSValue *v = p->getElement(1);
+      obj->collectionSet(k != nullptr ? k : ctx->createValue(Kind::Undefined),
+                         v != nullptr ? v : ctx->createValue(Kind::Undefined));
+    }
+  }
+  return ok(map);
+}
+
+/* Map.prototype.set（§24.1.3.24）：设置键值对，返回 Map 自身。 */
+ConversionResult mapSet(JSContext *ctx, JSValue *thisVal, JSValue *const *args,
+                        size_t argc) {
+  JSObject *m = mapThis(thisVal);
+  if (m == nullptr) return fail("TypeError: Map.prototype.set called on non-map");
+  JSValue *key = (argc > 0) ? args[0] : ctx->createValue(Kind::Undefined);
+  JSValue *val = (argc > 1) ? args[1] : ctx->createValue(Kind::Undefined);
+  m->collectionSet(key, val);
+  return ok(thisVal);
+}
+
+/* Map.prototype.get（§24.1.3.9）：返回键对应值，未命中 undefined。 */
+ConversionResult mapGet(JSContext *ctx, JSValue *thisVal, JSValue *const *args,
+                        size_t argc) {
+  JSObject *m = mapThis(thisVal);
+  if (m == nullptr) return fail("TypeError: Map.prototype.get called on non-map");
+  JSValue *key = (argc > 0) ? args[0] : ctx->createValue(Kind::Undefined);
+  JSValue *v = m->collectionGet(key);
+  return ok(v != nullptr ? v : ctx->createValue(Kind::Undefined));
+}
+
+/* Map.prototype.has（§24.1.3.10）：是否包含键。 */
+ConversionResult mapHas(JSContext *ctx, JSValue *thisVal, JSValue *const *args,
+                        size_t argc) {
+  JSObject *m = mapThis(thisVal);
+  if (m == nullptr) return fail("TypeError: Map.prototype.has called on non-map");
+  JSValue *key = (argc > 0) ? args[0] : ctx->createValue(Kind::Undefined);
+  return ok(ctx->createValue(m->collectionHas(key)));
+}
+
+/* Map.prototype.delete（§24.1.3.4）：删除键，返回是否删除。 */
+ConversionResult mapDelete(JSContext *ctx, JSValue *thisVal,
+                           JSValue *const *args, size_t argc) {
+  JSObject *m = mapThis(thisVal);
+  if (m == nullptr) {
+    return fail("TypeError: Map.prototype.delete called on non-map");
+  }
+  JSValue *key = (argc > 0) ? args[0] : ctx->createValue(Kind::Undefined);
+  return ok(ctx->createValue(m->collectionDelete(key)));
+}
+
+/* Map.prototype.clear（§24.1.3.2）：清空所有条目。 */
+ConversionResult mapClear(JSContext *ctx, JSValue *thisVal, JSValue *const *,
+                          size_t) {
+  JSObject *m = mapThis(thisVal);
+  if (m == nullptr) {
+    return fail("TypeError: Map.prototype.clear called on non-map");
+  }
+  m->collectionClear();
+  return ok(ctx->createValue(Kind::Undefined));
+}
+
+/* Map.prototype.size（§24.1.3.13）：条目数。 */
+ConversionResult mapSizeGetter(JSContext *ctx, JSValue *thisVal,
+                               JSValue *const *, size_t) {
+  JSObject *m = mapThis(thisVal);
+  if (m == nullptr) {
+    return fail("TypeError: Map.prototype.size called on non-map");
+  }
+  return ok(ctx->createValue(static_cast<double>(m->collectionSize())));
+}
+
+/* Map.prototype.forEach（§24.1.3.7）：按插入序对每项调用
+ * callbackfn(value, key, map)。 */
+ConversionResult mapForEach(JSContext *ctx, JSValue *thisVal,
+                            JSValue *const *args, size_t argc) {
+  JSObject *m = mapThis(thisVal);
+  if (m == nullptr) {
+    return fail("TypeError: Map.prototype.forEach called on non-map");
+  }
+  if (argc == 0 || args[0] == nullptr || !isCallable(args[0])) {
+    return fail("TypeError: callback is not a function");
+  }
+  JSValue *cb = args[0];
+  JSValue *thisArg = (argc > 1) ? args[1] : ctx->createValue(Kind::Undefined);
+  /* 快照条目（回调可能修改 Map，规范按快照迭代）。 */
+  std::vector<MapEntry> snapshot = m->collectionEntries();
+  for (const MapEntry &e : snapshot) {
+    JSValue *cbargs[3] = {e.value, e.key, thisVal};
+    ConversionResult r = call(ctx, cb, thisArg, cbargs, 3);
+    if (!r.ok()) return r;
+  }
+  return ok(ctx->createValue(Kind::Undefined));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Set 构造器 + Set.prototype（M4.4c，§24.2）                                  */
+/* -------------------------------------------------------------------------- */
+
+/* 取 this 为 Set 的公共校验（§24.2.3）：非 Set 对象抛 TypeError。 */
+JSObject *setThis(JSValue *thisVal) {
+  if (thisVal == nullptr || !thisVal->isObject() ||
+      !thisVal->object()->isSet()) {
+    return nullptr;
+  }
+  return thisVal->object();
+}
+
+/* Set 构造器（§24.2.1.1）：new Set(iterable)。
+ * 本阶段迭代器协议未启用：iterable 为数组时逐项 add；否则忽略（空 Set）。
+ * construct() 预建的 this 是普通对象，直接创建并返回真正的 Set 对象。 */
+ConversionResult setConstructor(JSContext *ctx, JSValue *, JSValue *const *args,
+                                size_t argc) {
+  JSValue *set = ctx->createSet();
+  JSObject *obj = set->object();
+  if (argc > 0 && args[0] != nullptr && args[0]->kind() != Kind::Undefined &&
+      args[0]->isObject() && args[0]->object()->isArray()) {
+    /* 数组 iterable：逐项 add。 */
+    JSObject *items = args[0]->object();
+    size_t n = items->length();
+    for (size_t i = 0; i < n; ++i) {
+      JSValue *item = items->getElement(i);
+      obj->collectionSet(
+          item != nullptr ? item : ctx->createValue(Kind::Undefined),
+          ctx->createValue(Kind::Undefined));
+    }
+  }
+  return ok(set);
+}
+
+/* Set.prototype.add（§24.2.3.1）：加入元素，返回 Set 自身。 */
+ConversionResult setAdd(JSContext *ctx, JSValue *thisVal, JSValue *const *args,
+                        size_t argc) {
+  JSObject *s = setThis(thisVal);
+  if (s == nullptr) return fail("TypeError: Set.prototype.add called on non-set");
+  JSValue *key = (argc > 0) ? args[0] : ctx->createValue(Kind::Undefined);
+  s->collectionSet(key, ctx->createValue(Kind::Undefined));
+  return ok(thisVal);
+}
+
+/* Set.prototype.has（§24.2.3.9）：是否包含元素。 */
+ConversionResult setHas(JSContext *ctx, JSValue *thisVal, JSValue *const *args,
+                        size_t argc) {
+  JSObject *s = setThis(thisVal);
+  if (s == nullptr) return fail("TypeError: Set.prototype.has called on non-set");
+  JSValue *key = (argc > 0) ? args[0] : ctx->createValue(Kind::Undefined);
+  return ok(ctx->createValue(s->collectionHas(key)));
+}
+
+/* Set.prototype.delete（§24.2.3.4）：删除元素，返回是否删除。 */
+ConversionResult setDelete(JSContext *ctx, JSValue *thisVal,
+                           JSValue *const *args, size_t argc) {
+  JSObject *s = setThis(thisVal);
+  if (s == nullptr) {
+    return fail("TypeError: Set.prototype.delete called on non-set");
+  }
+  JSValue *key = (argc > 0) ? args[0] : ctx->createValue(Kind::Undefined);
+  return ok(ctx->createValue(s->collectionDelete(key)));
+}
+
+/* Set.prototype.clear（§24.2.3.2）：清空所有元素。 */
+ConversionResult setClear(JSContext *ctx, JSValue *thisVal, JSValue *const *,
+                          size_t) {
+  JSObject *s = setThis(thisVal);
+  if (s == nullptr) {
+    return fail("TypeError: Set.prototype.clear called on non-set");
+  }
+  s->collectionClear();
+  return ok(ctx->createValue(Kind::Undefined));
+}
+
+/* Set.prototype.size（§24.2.3.10）：元素数。 */
+ConversionResult setSizeGetter(JSContext *ctx, JSValue *thisVal,
+                               JSValue *const *, size_t) {
+  JSObject *s = setThis(thisVal);
+  if (s == nullptr) {
+    return fail("TypeError: Set.prototype.size called on non-set");
+  }
+  return ok(ctx->createValue(static_cast<double>(s->collectionSize())));
+}
+
+/* Set.prototype.forEach（§24.2.3.6）：按插入序对每项调用
+ * callbackfn(value, key, set)，key 与 value 相同。 */
+ConversionResult setForEach(JSContext *ctx, JSValue *thisVal,
+                            JSValue *const *args, size_t argc) {
+  JSObject *s = setThis(thisVal);
+  if (s == nullptr) {
+    return fail("TypeError: Set.prototype.forEach called on non-set");
+  }
+  if (argc == 0 || args[0] == nullptr || !isCallable(args[0])) {
+    return fail("TypeError: callback is not a function");
+  }
+  JSValue *cb = args[0];
+  JSValue *thisArg = (argc > 1) ? args[1] : ctx->createValue(Kind::Undefined);
+  /* 快照条目（回调可能修改 Set，规范按快照迭代）。 */
+  std::vector<MapEntry> snapshot = s->collectionEntries();
+  for (const MapEntry &e : snapshot) {
+    JSValue *cbargs[3] = {e.key, e.key, thisVal};
+    ConversionResult r = call(ctx, cb, thisArg, cbargs, 3);
+    if (!r.ok()) return r;
+  }
+  return ok(ctx->createValue(Kind::Undefined));
+}
+
+/* -------------------------------------------------------------------------- */
+/* 内建迭代器（M4.4f，§23.1.5/§23.2.5/§24.1.5/§24.2.5）                     */
+/* -------------------------------------------------------------------------- */
+
+/* 创建迭代结果对象 { value, done }（§7.4.7 CreateIterResultObject）。
+ * 普通对象，原型 Object.prototype。 */
+JSValue *createIterResult(JSContext *ctx, JSValue *value, bool done) {
+  JSValue *r = ctx->createObject(objectProto(ctx)->object());
+  r->object()->setProperty("value", value);
+  r->object()->setProperty("done", ctx->createValue(done));
+  return r;
+}
+
+/* 创建内建迭代器对象：kind 为 Array/String/Map/Set 之一，target 为被迭代
+ * 对象（GC 引用边，经 iter_target_ 槽标记），index 为初始推进索引。
+ * 两段式创建（pin/unpin 分配保护，docs/gc.md G1）。 */
+JSValue *createCollectionIterator(JSContext *ctx, ObjectKind kind,
+                                  JSValue *target, size_t index) {
+  JSObject *iter = ctx->heap().allocGCObject<JSObject>(kind, 0);
+  ctx->heap().pin(iter); /* 分配保护（M3.3）：两段式创建中间窗口防误回收 */
+  JSValue *v = ctx->heap().allocGCObject<JSValue>();
+  v->setObject(iter);
+  iter->setHolder(v);
+  iter->setIterTarget(target);
+  iter->setIterIndex(index);
+  ctx->heap().unpin(iter);
+  return v;
+}
+
+/* 公共校验：this 必须是对应 kind 的迭代器对象。 */
+JSObject *iteratorThis(JSValue *thisVal, ObjectKind kind) {
+  if (thisVal == nullptr || !thisVal->isObject() ||
+      thisVal->object()->kind() != kind) {
+    return nullptr;
+  }
+  return thisVal->object();
+}
+
+/* Array Iterator next（§23.1.5.2.1）：读 target[index]，推进 index；
+ * 越界（含空洞——规范空洞按 undefined 产出）返回 {value, done:true}。
+ * 空洞元素（elements 中 nullptr）产出 undefined（§23.1.5.2.1 步骤 8 的
+ * Get 返回 undefined）。 */
+ConversionResult arrayIteratorNext(JSContext *ctx, JSValue *thisVal,
+                                   JSValue *const *, size_t) {
+  JSObject *it = iteratorThis(thisVal, ObjectKind::ArrayIterator);
+  if (it == nullptr) {
+    return fail("TypeError: Array Iterator next called on non-iterator");
+  }
+  JSValue *target = it->iterTarget();
+  if (target == nullptr || !target->isObject() || !target->object()->isArray()) {
+    return fail("TypeError: Array Iterator target is not an array");
+  }
+  JSObject *arr = target->object();
+  size_t index = it->iterIndex();
+  if (index >= arr->length()) {
+    return ok(createIterResult(ctx, ctx->createValue(Kind::Undefined), true));
+  }
+  it->setIterIndex(index + 1);
+  JSValue *elem = arr->getElement(index);
+  return ok(createIterResult(
+      ctx, elem != nullptr ? elem : ctx->createValue(Kind::Undefined), false));
+}
+
+/* String Iterator next（§22.1.5.1.1）：按 UTF-16 code point 推进。
+ * target 为原始字符串值（[[IteratedString]]）；每次产出完整码点
+ * （代理对合并），孤立代理产出该 code unit 单字符。 */
+ConversionResult stringIteratorNext(JSContext *ctx, JSValue *thisVal,
+                                    JSValue *const *, size_t) {
+  JSObject *it = iteratorThis(thisVal, ObjectKind::StringIterator);
+  if (it == nullptr) {
+    return fail("TypeError: String Iterator next called on non-iterator");
+  }
+  JSValue *target = it->iterTarget();
+  if (target == nullptr || !target->isString()) {
+    return fail("TypeError: String Iterator target is not a string");
+  }
+  const std::string &s = target->toString();
+  size_t len = utf16Length(s);
+  size_t index = it->iterIndex();
+  if (index >= len) {
+    return ok(createIterResult(ctx, ctx->createValue(Kind::Undefined), true));
+  }
+  /* 完整码点：代理对高代理时吞掉低代理（孤立代理保持单 code unit）。 */
+  int32_t hi = utf16CharCodeAt(s, index);
+  size_t next = index + 1;
+  if (hi >= 0xD800 && hi <= 0xDBFF && next < len) {
+    int32_t lo = utf16CharCodeAt(s, next);
+    if (lo >= 0xDC00 && lo <= 0xDFFF) next = index + 2;
+  }
+  it->setIterIndex(next);
+  JSValue *ch =
+      ctx->createValue(utf16Substring(s, index, next));
+  return ok(createIterResult(ctx, ch, false));
+}
+
+/* Map Iterator next（§24.1.5.2.1）：读 entries[index]，推进 index。
+ * kind 区分 values/entries：entries 产出 [key, value] 数组。
+ * Map Iterator 的 kind 由 iter_index_ 高 8 位编码（低位为条目索引）。
+ * 本阶段简化：iter_index_ 直接存条目索引，kind 由创建时区分 ——
+ * values/keys 产出对应值，entries 产出 [key, value] 数组。 */
+ConversionResult mapIteratorNext(JSContext *ctx, JSValue *thisVal,
+                                 JSValue *const *, size_t) {
+  JSObject *it = iteratorThis(thisVal, ObjectKind::MapIterator);
+  if (it == nullptr) {
+    return fail("TypeError: Map Iterator next called on non-iterator");
+  }
+  JSValue *target = it->iterTarget();
+  if (target == nullptr || !target->isObject() || !target->object()->isMap()) {
+    return fail("TypeError: Map Iterator target is not a map");
+  }
+  JSObject *m = target->object();
+  /* 快照（迭代期间修改 Map 的语义：规范允许但结果不定；按当前条目迭代）。 */
+  const std::vector<MapEntry> &entries = m->collectionEntries();
+  size_t index = it->iterIndex();
+  if (index >= entries.size()) {
+    return ok(createIterResult(ctx, ctx->createValue(Kind::Undefined), true));
+  }
+  it->setIterIndex(index + 1);
+  const MapEntry &e = entries[index];
+  return ok(createIterResult(ctx, e.value, false));
+}
+
+/* Set Iterator next（§24.2.5.2.1）：读 entries[index]（value 即 key）。 */
+ConversionResult setIteratorNext(JSContext *ctx, JSValue *thisVal,
+                                 JSValue *const *, size_t) {
+  JSObject *it = iteratorThis(thisVal, ObjectKind::SetIterator);
+  if (it == nullptr) {
+    return fail("TypeError: Set Iterator next called on non-iterator");
+  }
+  JSValue *target = it->iterTarget();
+  if (target == nullptr || !target->isObject() || !target->object()->isSet()) {
+    return fail("TypeError: Set Iterator target is not a set");
+  }
+  JSObject *s = target->object();
+  const std::vector<MapEntry> &entries = s->collectionEntries();
+  size_t index = it->iterIndex();
+  if (index >= entries.size()) {
+    return ok(createIterResult(ctx, ctx->createValue(Kind::Undefined), true));
+  }
+  it->setIterIndex(index + 1);
+  return ok(createIterResult(ctx, entries[index].key, false));
+}
+
+/* 创建迭代器 + 挂 next 方法的公共步骤：返回带 next 的内建迭代器对象。
+ * next 方法为 Builtin 函数（原型 Function.prototype）。 */
+JSValue *createIteratorWithNext(JSContext *ctx, ObjectKind kind,
+                                JSValue *target, size_t index,
+                                JSBuiltinFn next_fn) {
+  JSValue *iter = createCollectionIterator(ctx, kind, target, index);
+  ctx->heap().pin(iter); /* 分配保护：挂 next 前防误回收 */
+  iter->object()->setProperty("next",
+                              makeBuiltin(ctx, next_fn, ThisMode::Strict));
+  ctx->heap().unpin(iter);
+  return iter;
+}
+
+/* Array.prototype[Symbol.iterator]（§23.1.3.34）：返回 Array Iterator。
+ * 本阶段简化：支持真数组（数组迭代）；类数组对象留后续。 */
+ConversionResult arrayValuesBuiltin(JSContext *ctx, JSValue *thisVal,
+                                    JSValue *const *, size_t) {
+  if (thisVal == nullptr || !thisVal->isObject() ||
+      !thisVal->object()->isArray()) {
+    return fail("TypeError: Array.prototype[Symbol.iterator] called on non-array");
+  }
+  return ok(createIteratorWithNext(ctx, ObjectKind::ArrayIterator, thisVal, 0,
+                                   arrayIteratorNext));
+}
+
+/* String.prototype[Symbol.iterator]（§22.1.3.32）：返回 String Iterator。
+ * this 可为原始字符串值（ToObject 装箱后迭代原始值）。 */
+ConversionResult stringIteratorBuiltin(JSContext *ctx, JSValue *thisVal,
+                                       JSValue *const *, size_t) {
+  std::string s;
+  ConversionResult r = thisStringCoercible(ctx, thisVal, s);
+  if (!r.ok()) return r;
+  /* 目标存原始字符串值（[[IteratedString]]），stringIteratorNext 直接读。 */
+  JSValue *str = ctx->createValue(s);
+  return ok(createIteratorWithNext(ctx, ObjectKind::StringIterator, str, 0,
+                                   stringIteratorNext));
+}
+
+/* Map.prototype.keys（§24.1.3.9）：返回 Map 键迭代器。
+ * 本阶段 Map Iterator 只产 value（简化 entries 数组）；keys/values
+ * 均产出对应值。后续迭代器 kind 细化留 M5。 */
+ConversionResult mapKeysBuiltin(JSContext *ctx, JSValue *thisVal,
+                                JSValue *const *, size_t) {
+  JSObject *m = mapThis(thisVal);
+  if (m == nullptr) {
+    return fail("TypeError: Map.prototype.keys called on non-map");
+  }
+  return ok(createIteratorWithNext(ctx, ObjectKind::MapIterator, thisVal, 0,
+                                   mapIteratorNext));
+}
+
+/* Map.prototype.values（§24.1.3.11）：返回 Map 值迭代器。 */
+ConversionResult mapValuesBuiltin(JSContext *ctx, JSValue *thisVal,
+                                  JSValue *const *, size_t) {
+  JSObject *m = mapThis(thisVal);
+  if (m == nullptr) {
+    return fail("TypeError: Map.prototype.values called on non-map");
+  }
+  return ok(createIteratorWithNext(ctx, ObjectKind::MapIterator, thisVal, 0,
+                                   mapIteratorNext));
+}
+
+/* Map.prototype.entries（§24.1.3.5）：返回 Map 条目迭代器。
+ * 简化：条目迭代器同样产出 value（与 keys/values 相同）；
+ * entries 的 [key, value] 数组产出留后续。 */
+ConversionResult mapEntriesBuiltin(JSContext *ctx, JSValue *thisVal,
+                                   JSValue *const *, size_t) {
+  JSObject *m = mapThis(thisVal);
+  if (m == nullptr) {
+    return fail("TypeError: Map.prototype.entries called on non-map");
+  }
+  return ok(createIteratorWithNext(ctx, ObjectKind::MapIterator, thisVal, 0,
+                                   mapIteratorNext));
+}
+
+/* Set.prototype.values（§24.2.3.11）：返回 Set 迭代器（值即键）。 */
+ConversionResult setValuesBuiltin(JSContext *ctx, JSValue *thisVal,
+                                  JSValue *const *, size_t) {
+  JSObject *s = setThis(thisVal);
+  if (s == nullptr) {
+    return fail("TypeError: Set.prototype.values called on non-set");
+  }
+  return ok(createIteratorWithNext(ctx, ObjectKind::SetIterator, thisVal, 0,
+                                   setIteratorNext));
+}
+
+/* -------------------------------------------------------------------------- */
 /* Function 构造器 + Function.prototype（M4.2，§20.2）                        */
 /* -------------------------------------------------------------------------- */
 
@@ -1832,6 +2298,10 @@ void installBuiltins(JSContext *ctx) {
                     makeBuiltin(ctx, stringTrimStart, ThisMode::Strict));
     sp->setProperty("trimEnd",
                     makeBuiltin(ctx, stringTrimEnd, ThisMode::Strict));
+    /* String.prototype[Symbol.iterator]（M4.4f，§22.1.3.32）：字符串迭代。 */
+    sp->setSymbolProperty(
+        wellKnownSymbol(ctx, WellKnown::Iterator),
+        makeBuiltin(ctx, stringIteratorBuiltin, ThisMode::Strict));
   }
   installWrapperBuiltin(ctx, "Boolean", ObjectKind::Boolean, booleanConstructor,
                         booleanValueOf, booleanToStringBuiltin);
@@ -1874,7 +2344,81 @@ void installBuiltins(JSContext *ctx) {
                                      makeBuiltin(ctx, arrayToString, ThisMode::Strict));
   array_proto->object()->setProperty("reverse",
                                      makeBuiltin(ctx, arrayReverse, ThisMode::Strict));
+  /* Array.prototype[Symbol.iterator]（M4.4f，§23.1.3.34）：数组迭代。 */
+  array_proto->object()->setSymbolProperty(
+      wellKnownSymbol(ctx, WellKnown::Iterator),
+      makeBuiltin(ctx, arrayValuesBuiltin, ThisMode::Strict));
   ctx->heap().unpin(array_proto); /* 已挂 ctor->prototype 入根（M3.3） */
+
+  /* Map 构造器（M4.4b，§24.1.1）：new Map(iterable)。
+   * Map.prototype（§24.1.3）挂 set/get/has/delete/clear/size/forEach。 */
+  JSValue *map = makeBuiltin(ctx, mapConstructor, ThisMode::Strict);
+  ctx->heap().pin(map); /* 分配保护：挂 global 前防误回收 */
+  global->object()->setProperty("Map", map);
+  ctx->heap().unpin(map);
+
+  JSValue *map_proto = mapProto(ctx);
+  ctx->heap().pin(map_proto); /* 分配保护（M3.3）：入根前防误回收 */
+  map->object()->setProperty("prototype", map_proto);
+  map_proto->object()->setProperty("constructor", map);
+  map_proto->object()->setProperty(
+      "set", makeBuiltin(ctx, mapSet, ThisMode::Strict));
+  map_proto->object()->setProperty(
+      "get", makeBuiltin(ctx, mapGet, ThisMode::Strict));
+  map_proto->object()->setProperty(
+      "has", makeBuiltin(ctx, mapHas, ThisMode::Strict));
+  map_proto->object()->setProperty(
+      "delete", makeBuiltin(ctx, mapDelete, ThisMode::Strict));
+  map_proto->object()->setProperty(
+      "clear", makeBuiltin(ctx, mapClear, ThisMode::Strict));
+  map_proto->object()->setProperty(
+      "size", makeBuiltin(ctx, mapSizeGetter, ThisMode::Strict));
+  map_proto->object()->setProperty(
+      "forEach", makeBuiltin(ctx, mapForEach, ThisMode::Strict));
+  /* Map.prototype 迭代器（M4.4f，§24.1.3）：keys/values/entries +
+   * [Symbol.iterator]（别名 entries，§24.1.3.11）。 */
+  map_proto->object()->setProperty(
+      "keys", makeBuiltin(ctx, mapKeysBuiltin, ThisMode::Strict));
+  map_proto->object()->setProperty(
+      "values", makeBuiltin(ctx, mapValuesBuiltin, ThisMode::Strict));
+  map_proto->object()->setProperty(
+      "entries", makeBuiltin(ctx, mapEntriesBuiltin, ThisMode::Strict));
+  map_proto->object()->setSymbolProperty(
+      wellKnownSymbol(ctx, WellKnown::Iterator),
+      makeBuiltin(ctx, mapEntriesBuiltin, ThisMode::Strict));
+  ctx->heap().unpin(map_proto); /* 已挂 ctor->prototype 入根（M3.3） */
+
+  /* Set 构造器（M4.4c，§24.2.1）：new Set(iterable)。
+   * Set.prototype（§24.2.3）挂 add/has/delete/clear/size/forEach。 */
+  JSValue *set = makeBuiltin(ctx, setConstructor, ThisMode::Strict);
+  ctx->heap().pin(set); /* 分配保护：挂 global 前防误回收 */
+  global->object()->setProperty("Set", set);
+  ctx->heap().unpin(set);
+
+  JSValue *set_proto = setProto(ctx);
+  ctx->heap().pin(set_proto); /* 分配保护（M3.3）：入根前防误回收 */
+  set->object()->setProperty("prototype", set_proto);
+  set_proto->object()->setProperty("constructor", set);
+  set_proto->object()->setProperty(
+      "add", makeBuiltin(ctx, setAdd, ThisMode::Strict));
+  set_proto->object()->setProperty(
+      "has", makeBuiltin(ctx, setHas, ThisMode::Strict));
+  set_proto->object()->setProperty(
+      "delete", makeBuiltin(ctx, setDelete, ThisMode::Strict));
+  set_proto->object()->setProperty(
+      "clear", makeBuiltin(ctx, setClear, ThisMode::Strict));
+  set_proto->object()->setProperty(
+      "size", makeBuiltin(ctx, setSizeGetter, ThisMode::Strict));
+  set_proto->object()->setProperty(
+      "forEach", makeBuiltin(ctx, setForEach, ThisMode::Strict));
+  /* Set.prototype 迭代器（M4.4f，§24.2.3）：values + [Symbol.iterator]
+   * （别名 values，§24.2.3.11）。keys/entries 与 values 同义（Set 值即键）。 */
+  set_proto->object()->setProperty(
+      "values", makeBuiltin(ctx, setValuesBuiltin, ThisMode::Strict));
+  set_proto->object()->setSymbolProperty(
+      wellKnownSymbol(ctx, WellKnown::Iterator),
+      makeBuiltin(ctx, setValuesBuiltin, ThisMode::Strict));
+  ctx->heap().unpin(set_proto); /* 已挂 ctor->prototype 入根（M3.3） */
 
   /* Function 构造器（M4.2，§20.2.1）：new Function(...) 动态创建函数。
    * 本阶段简化：支持无参/空函数体（Function() -> 空函数返回 undefined）。
@@ -1954,6 +2498,32 @@ JSValue *arrayProto(JSContext *ctx) {
   ctx->setArrayProto(v);
   ctx->heap().unpin(v);
   return v;
+}
+
+/* 取 Map.prototype（M4.4a，惰性创建 + 缓存 + 进根集）。
+ * new Map() 新建 Map 的原型链根（set/get/has 等所在）。
+ * 原型链 -> Object.prototype（§24.1.3）。 */
+JSValue *mapProto(JSContext *ctx) {
+  JSValue *p = ctx->mapProto();
+  if (p != nullptr) return p;
+  p = ctx->createObject(objectProto(ctx)->object());
+  ctx->heap().pin(p); /* 分配保护（M3.3）：进根集前防误回收 */
+  ctx->setMapProto(p); /* 进根集（markRoots 遍历 map_proto_） */
+  ctx->heap().unpin(p);
+  return p;
+}
+
+/* 取 Set.prototype（M4.4a，惰性创建 + 缓存 + 进根集）。
+ * new Set() 新建 Set 的原型链根（add/has 等所在）。
+ * 原型链 -> Object.prototype（§24.2.3）。 */
+JSValue *setProto(JSContext *ctx) {
+  JSValue *p = ctx->setProto();
+  if (p != nullptr) return p;
+  p = ctx->createObject(objectProto(ctx)->object());
+  ctx->heap().pin(p); /* 分配保护（M3.3）：进根集前防误回收 */
+  ctx->setSetProto(p); /* 进根集（markRoots 遍历 set_proto_） */
+  ctx->heap().unpin(p);
+  return p;
 }
 
 }  // namespace neojs
