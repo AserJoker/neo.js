@@ -97,6 +97,9 @@ enum class NodeType : uint8_t {
    * children[0] = 属性键（Identifier 或计算键表达式）；
    * member.computed 标计算键。仅 class 方法体内合法。 */
   SuperProperty,       /* super 属性访问（M5.1d-b） */
+  /* super() 构造调用（M5.1d-c1）：children = [arg...]（参数列表）。
+   * 仅派生类（extends）构造器内合法。 */
+  SuperCall,           /* super() 构造调用（M5.1d-c1） */
 };
 
 /* 声明关键字类型（M1.5 ①）：var / let / const */

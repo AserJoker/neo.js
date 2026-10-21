@@ -392,6 +392,10 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
       /* M5.1d-b：super.x / super[expr]（member.computed 标计算键）。 */
       out += node->member.computed ? "SuperProperty[]\n" : "SuperProperty.\n";
       break;
+    case NodeType::SuperCall:
+      /* M5.1d-c1：super() 构造调用（children = 参数列表）。 */
+      out += "SuperCall()\n";
+      break;
   }
   for (const ASTNode *child : node->children) dumpNode(child, out, depth + 1);
 }

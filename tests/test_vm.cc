@@ -2577,6 +2577,165 @@ TEST(Compiler, M51dSuperInConstructor) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* M5.1d-c1 super() 构造调用                                                 */
+/* -------------------------------------------------------------------------- */
+
+/* 派生构造器 super(x)：基类构造器初始化 this */
+TEST(Compiler, M51dSuperCallBasic) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class A { constructor(x) { this.x = x; } } "
+      "class B extends A { constructor() { super(42); } } "
+      "new B().x",
+      std::strlen("class A { constructor(x) { this.x = x; } } "
+                  "class B extends A { constructor() { super(42); } } "
+                  "new B().x"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 42.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* super() 后派生构造器继续用 this（this 就是 super 初始化的实例） */
+TEST(Compiler, M51dSuperCallThenThis) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class A { constructor(x) { this.base = x; } } "
+      "class B extends A { constructor(x) { super(x); this.derived = this.base * 2; } } "
+      "var b = new B(5); b.derived",
+      std::strlen("class A { constructor(x) { this.base = x; } } "
+                  "class B extends A { constructor(x) { super(x); this.derived = this.base * 2; } } "
+                  "var b = new B(5); b.derived"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 10.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* super() 带多参数 + 基类方法在派生类实例上可调用 */
+TEST(Compiler, M51dSuperCallMultiArgs) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class A { constructor(a, b) { this.sum = a + b; } getSum() { return this.sum; } } "
+      "class B extends A { constructor() { super(3, 4); } } "
+      "new B().getSum()",
+      std::strlen("class A { constructor(a, b) { this.sum = a + b; } getSum() { return this.sum; } } "
+                  "class B extends A { constructor() { super(3, 4); } } "
+                  "new B().getSum()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 7.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 多层继承：每层构造器 super() 链式调用 */
+TEST(Compiler, M51dSuperCallChain) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class A { constructor() { this.chain = 'A'; } } "
+      "class B extends A { constructor() { super(); this.chain += 'B'; } } "
+      "class C extends B { constructor() { super(); this.chain += 'C'; } } "
+      "new C().chain",
+      std::strlen("class A { constructor() { this.chain = 'A'; } } "
+                  "class B extends A { constructor() { super(); this.chain += 'B'; } } "
+                  "class C extends B { constructor() { super(); this.chain += 'C'; } } "
+                  "new C().chain"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "ABC");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 基类构造器返回对象：super() 用该对象作为 this */
+TEST(Compiler, M51dSuperCallReturnObject) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "var other = { tag: 'replaced' }; "
+      "class A { constructor() { return other; } } "
+      "class B extends A { constructor() { var self = super(); this.v = self.tag; } } "
+      "new B().v",
+      std::strlen("var other = { tag: 'replaced' }; "
+                  "class A { constructor() { return other; } } "
+                  "class B extends A { constructor() { var self = super(); this.v = self.tag; } } "
+                  "new B().v"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "replaced");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* super() 在基类构造器内为语法错误 */
+TEST(Compiler, M51dSuperCallInBaseCtorSyntaxError) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "class A { constructor() { super(); } }",
+      std::strlen("class A { constructor() { super(); } }"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION)
+      << "expected syntax error, got: " << JS_ToString(ctx, r);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* super() 在普通方法内为语法错误 */
+TEST(Compiler, M51dSuperCallInMethodSyntaxError) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "class B extends A { m() { super(); } }",
+      std::strlen("class B extends A { m() { super(); } }"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION)
+      << "expected syntax error, got: " << JS_ToString(ctx, r);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* -------------------------------------------------------------------------- */
 /* 14. M3.0 VM 对象指令（NewObject/NewArray/LoadProp/StoreProp/LoadElem/      */
 /*     StoreElem）                                                            */
 /* -------------------------------------------------------------------------- */

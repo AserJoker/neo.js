@@ -1140,6 +1140,7 @@ ASTNode *Parser::parseClassTail(bool is_declaration) {
   (void)has_name;
 
   /* extends 子句：class C extends Base { ... } */
+  bool has_extends = false;
   if (isKeyword(current(), "extends")) {
     advance();
     setValueContext();
@@ -1149,6 +1150,7 @@ ASTNode *Parser::parseClassTail(bool is_declaration) {
       return nullptr;
     }
     cls->children.push_back(base);
+    has_extends = true;
   }
 
   /* 类体：{ element... } */
@@ -1159,6 +1161,9 @@ ASTNode *Parser::parseClassTail(bool is_declaration) {
     return nullptr;
   }
   advance(); /* { */
+  /* M5.1d-c1：类体解析期间标记当前类是否有 extends（super() 合法条件）。 */
+  bool outer_has_extends = class_has_extends_;
+  class_has_extends_ = has_extends;
   while (!isSymbol(current(), "}")) {
     if (atEof()) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated class body", cls->loc});
@@ -1172,12 +1177,14 @@ ASTNode *Parser::parseClassTail(bool is_declaration) {
     }
     ASTNode *elem = parseClassElement();
     if (elem == nullptr) {
+      class_has_extends_ = outer_has_extends;
       allocator_->destroy(cls);
       return nullptr;
     }
     cls->children.push_back(elem);
   }
   advance(); /* } */
+  class_has_extends_ = outer_has_extends;
   return cls;
 }
 
@@ -1290,7 +1297,14 @@ ASTNode *Parser::parseClassElement() {
   } else if (isSymbol(current(), "(")) {
     prop->prop.kind = PropertyKind::Method;
     ++super_depth_;
+    /* M5.1d-c1：派生类构造器体解析期间 derived_ctor_depth_ 递增
+     * （super() 仅此上下文合法）。构造器 = 非 static + key 为
+     * "constructor" + 当前类有 extends。 */
+    bool is_ctor = (!is_static && key->type == NodeType::Identifier &&
+                    key->name == "constructor");
+    if (is_ctor && class_has_extends_) ++derived_ctor_depth_;
     ASTNode *fn = parseMethodFunction();
+    if (is_ctor && class_has_extends_) --derived_ctor_depth_;
     --super_depth_;
     if (fn == nullptr) {
       allocator_->destroy(key);

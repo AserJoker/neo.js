@@ -1075,9 +1075,31 @@ ASTNode *Parser::parseSuperProperty() {
     n->children.push_back(index);
     return n;
   }
-  /* super 后非 . / [：super() 留 M5.1d-c，此处报语法错误。 */
+  if (isSymbol(current(), "(")) {
+    /* M5.1d-c1 super() 构造调用：仅派生类（extends）构造器内合法
+     * （§13.3.7.1：super() 仅 derived 构造器；普通方法/基类构造器报错）。
+     * 产出 SuperCall 节点，children = [arg...]（参数列表）。 */
+    if (derived_ctor_depth_ <= 0) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                  "'super' call is only allowed in a derived class constructor",
+                  tok.start});
+      return nullptr;
+    }
+    ASTNode *n = newNode(NodeType::SuperCall);
+    n->loc = tok.start;
+    ASTNode *args = parseArguments();
+    if (args == nullptr) {
+      allocator_->destroy(n);
+      return nullptr;
+    }
+    n->children.insert(n->children.end(), args->children.begin(),
+                       args->children.end());
+    allocator_->destroy(args);
+    return n;
+  }
+  /* super 后非 . / [ / (：单独 super 为语法错误。 */
   sink_.emit({Severity::Error, "SYNTAX_ERROR",
-              "'super' must be followed by a property access (super() not yet supported)",
+              "'super' must be followed by a property access or call",
               tok.start});
   return nullptr;
 }

@@ -820,6 +820,15 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         break;
       }
       case Opcode::Ret: {
+        /* M5.1d-c1 构造器返回语义（§10.2.2 Construct 步骤 12-14）：
+         * return 对象 -> 用之；return 非对象或无 return -> 返回最终 this
+         * （基类 = 构造器创建的实例；派生类 = super() 建立/替换的对象）。
+         * 压栈保护 frame_this（栈是根集），避免替换后的对象无根可达被 GC。 */
+        if (self != nullptr && self->isConstructor()) {
+          if (stack.empty() || !stack.back()->isObject()) {
+            stack.push_back(frame_this);
+          }
+        }
         if (stack.empty()) return ok(ctx->createValue(Kind::Undefined));
         JSValue *result = stack.back();
         return ok(result);
@@ -1561,6 +1570,46 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         }
         stack.pop_back();
         stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
+        break;
+      }
+      case Opcode::SuperCall: {
+        /* M5.1d-c1 super()：调用基类构造器于当前帧 this。
+         * 基类构造器 = HomeObject.[[Prototype]]（构造器 HomeObject 是
+         * 自身，extends 后其 [[Prototype]] 是基类构造器）。
+         * 语义（§9.2.2.4 derived）：在现有 this 上执行基类构造器；
+         * 基类构造器显式返回对象时以该对象作为新 this（覆盖）。 */
+        uint16_t argc = instr.arg;
+        size_t args_pos = stack.size() - static_cast<size_t>(argc);
+        if (stack.size() < static_cast<size_t>(argc)) {
+          return fail("Error: stack underflow on SuperCall");
+        }
+        JSObject *home = (self != nullptr) ? self->homeObject() : nullptr;
+        if (home == nullptr) {
+          return fail("TypeError: super() can only be used in a derived constructor");
+        }
+        JSObject *base = home->prototype(); /* 基类构造器 */
+        if (base == nullptr) {
+          return fail("TypeError: cannot call super() on a base class");
+        }
+        JSValue *base_val = base->holder();
+        if (base_val == nullptr || !isCallable(base_val)) {
+          return fail("TypeError: super is not a constructor");
+        }
+        JSValue *const *call_args =
+            argc > 0 ? &stack[args_pos] : nullptr;
+        JSValue *this_obj =
+            frame_this != nullptr ? frame_this : ctx->globalObject();
+        ConversionResult r = call(ctx, base_val, this_obj, call_args, argc);
+        if (!r.ok()) return r;
+        /* 基类构造器返回对象 -> 新 this（覆盖 frame_this）。
+         * frame_this 更新后，后续 LoadThis 引用新 this。 */
+        if (r.value != nullptr && r.value->isObject()) {
+          frame_this = r.value;
+        }
+        /* 收缩：弹出 argc 个参数，压入 this（super() 求值为 this）。 */
+        stack.resize(args_pos);
+        stack.push_back(frame_this);
+        if (r.tmp_handle != 0) ctx->handles().free(r.tmp_handle);
         break;
       }
       case Opcode::LoadUpvalue: {

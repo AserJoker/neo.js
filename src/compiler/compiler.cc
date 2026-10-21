@@ -1125,6 +1125,9 @@ bool Compiler::compileExpr(const ASTNode &node) {
     case NodeType::Conditional: return compileConditional(node);
     case NodeType::Assignment: return compileAssignment(node);
     case NodeType::CallExpression: return compileCall(node);
+    case NodeType::SuperCall:
+      /* M5.1d-c1 super()：派生类构造器内调用基类构造器（compileCall 特判）。 */
+      return compileCall(node);
     case NodeType::Sequence: return compileSequence(node);
     case NodeType::MemberExpression: return compileMemberLoad(node);
     case NodeType::SuperProperty: {
@@ -1829,6 +1832,33 @@ bool Compiler::compileAssignment(const ASTNode &node) {
 }
 
 bool Compiler::compileCall(const ASTNode &node) {
+  /* M5.1d-c1 super()：派生类构造器调用基类构造器于当前帧 this。
+   * 与 CallExpression 不同，SuperCall 的 children 是纯参数列表
+   * （非 [callee, args...]），故需单独处理：argc = children.size()，
+   * 且无参 super() 时 children 为空属合法（不能走下方 empty 检查）。
+   * 发射：args...; SuperCall {argc}（VM 从 HomeObject.[[Prototype]]
+   * 取基类构造器，this = 当前帧 this）。 */
+  if (node.type == NodeType::SuperCall) {
+    size_t argc = node.children.size();
+    bool has_spread = false;
+    for (size_t i = 0; i < node.children.size(); ++i) {
+      if (node.children[i] != nullptr &&
+          node.children[i]->type == NodeType::SpreadElement) {
+        has_spread = true;
+        break;
+      }
+    }
+    if (has_spread) {
+      fail("not implemented: spread call on super()");
+      return false;
+    }
+    for (size_t i = 0; i < node.children.size(); ++i) {
+      if (!compileExpr(*node.children[i])) return false;
+    }
+    builder_.super_call(static_cast<uint16_t>(argc));
+    return true;
+  }
+
   if (node.children.empty()) {
     fail("call without callee");
     return false;

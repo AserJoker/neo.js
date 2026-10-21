@@ -130,6 +130,9 @@ enum class Opcode : uint8_t {
   SetHomeObject,   /* obj, fn -> 设置 fn.[[HomeObject]]=obj，压回 fn：SetHomeObject（M5.1d-b super） */
   SuperLoadProp,   /* super.key -> 栈顶：从 HomeObject.[[Prototype]] 读 key，访问器 this=当前帧 this（M5.1d-b） */
   SuperLoadElem,   /* super[expr] -> 栈顶：从 HomeObject.[[Prototype]] 读计算键，访问器 this=当前帧 this（M5.1d-b） */
+
+  /* M5.1d-c1 super() 构造调用：args... -> 基类构造器执行（追加末尾，保持 opcode 数值稳定） */
+  SuperCall,       /* 调用 HomeObject.[[Prototype]]（基类构造器）于当前帧 this：SuperCall {argc}（M5.1d-c1） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -272,6 +275,8 @@ class BytecodeBuilder {
     push_op(Opcode::SuperLoadProp, add_constant(key));
   }
   void super_load_elem() { push_op(Opcode::SuperLoadElem); }
+  /* M5.1d-c1：super() 构造调用（argc 个参数，基类构造器于当前帧 this）。 */
+  void super_call(uint16_t argc) { push_op(Opcode::SuperCall, argc); }
 
   /* 注册捕获变量（去重），返回捕获下标。 */
   uint16_t add_capture(uint16_t depth, const std::string &name) {

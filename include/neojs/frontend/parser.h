@@ -133,6 +133,12 @@ class Parser {
   int statement_nesting_ = 0; /* 语句嵌套深度（import/export 仅模块顶层，M1.6 ③） */
   std::vector<std::string> label_stack_; /* 活跃标签栈（break/continue 引用校验） */
   int super_depth_ = 0; /* class 方法上下文深度（M5.1d-b super：>0 时 super 合法） */
+  /* M5.1d-c1 super()：派生类（extends）构造器内合法。
+   * class_has_extends_ = 当前 class 是否有 extends 子句（parseClassTail
+   *   进入类体前设置，退出恢复）；
+   * derived_ctor_depth_ = 派生类构造器方法体解析深度（>0 时 super() 合法）。 */
+  bool class_has_extends_ = false;
+  int derived_ctor_depth_ = 0;
   bool strict_ = false; /* 当前作用域严格模式（"use strict" directive / module 自动严格） */
 };
 
