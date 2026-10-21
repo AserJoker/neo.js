@@ -95,6 +95,7 @@ class JSFunction : public JSObject {
 
   /* this 绑定模式（预留：E3 只实现 NonStrict 的 null/undefined->global 装箱） */
   ThisMode thisMode() const { return this_mode_; }
+  void setThisMode(ThisMode m) { this_mode_ = m; } /* M5.1d-a：class 方法/构造器严格模式 */
 
   /* 函数名（可空） */
   const char *name() const { return name_; }

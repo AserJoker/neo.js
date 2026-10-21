@@ -122,6 +122,9 @@ enum class Opcode : uint8_t {
   DefineProp,      /* obj, key, val -> 栈顶 val（obj[key]=val 定义 own 属性，key 运行期 ToPropertyKey）：DefineProp（M5.1c 计算键） */
   DefineAccessor,  /* obj, key, fn -> 栈顶 fn（定义访问器属性，arg=0 getter/1 setter）：DefineAccessor {getset}（M5.1c） */
   LoadThis,        /* 当前帧 this -> 栈顶：LoadThis（M5.1c 访问器 this 绑定） */
+
+  /* M5.1d-a class：原型链设置（追加末尾，保持 opcode 数值稳定） */
+  SetPrototype,    /* obj, proto -> 设置 obj.[[Prototype]]=proto，压回 obj：SetPrototype（M5.1d-a extends） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -162,6 +165,11 @@ struct FunctionBytecode {
   std::vector<std::string> locals;    /* 槽号 -> 变量名（M2.5 环境同步用，空串=无名） */
   std::vector<UpvalueCapture> captures; /* 捕获的外层变量列表（M2.5） */
   std::vector<FunctionBytecode> nested; /* 嵌套函数字节码表（M2.5，MakeFunction 索引） */
+  /* class（M5.1d-a）：构造器/方法标志。MakeFunction 实例化时据此设置
+   * 构造器（is_constructor -> setConstructor + Strict）与严格模式
+   * （is_method -> Strict；class 体一律严格模式，§15.7.2.1）。 */
+  bool is_constructor = false; /* class 构造器（可 new，Strict） */
+  bool is_method = false;      /* class 方法（Strict，M5.1d-b super 需用） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -245,6 +253,8 @@ class BytecodeBuilder {
   void define_accessor(uint16_t getset) { push_op(Opcode::DefineAccessor, getset); }
   /* M5.1c：读取当前帧 this。 */
   void load_this() { push_op(Opcode::LoadThis); }
+  /* M5.1d-a：设置对象 [[Prototype]]（obj, proto -> obj）。 */
+  void set_prototype() { push_op(Opcode::SetPrototype); }
 
   /* 注册捕获变量（去重），返回捕获下标。 */
   uint16_t add_capture(uint16_t depth, const std::string &name) {

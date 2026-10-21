@@ -143,6 +143,10 @@ ASTNode *Parser::parseStatementInner() {
   if (isKeyword(current(), "function")) {
     return parseFunctionDeclaration();
   }
+  /* class 声明（M5.1d-a）：class C { ... } */
+  if (isKeyword(current(), "class")) {
+    return parseClassDeclaration();
+  }
   /* 返回语句（M1.5 ④）：return [expr]。restricted production：
    * return 后换行立即插入分号（return\nx → return; x）。顶层 return 报错。 */
   if (isKeyword(current(), "return")) {
@@ -1081,6 +1085,220 @@ ASTNode *Parser::parseMethodFunction() {
     return nullptr;
   }
   return fn;
+}
+
+/* class 声明/表达式共享：解析 class 头（名字/extends）与类体元素。
+ * is_declaration=true（声明）时名字必填；false（表达式）时名字可空。
+ *
+ * children 布局：
+ *   [0] = name（Identifier；声明必有，表达式可无）
+ *   [1] = extends 子句表达式（可无，无则省略）
+ *   [2..n] = 类元素（Property 节点：Method/Get/Set；prop.is_static 标 static）
+ *
+ * 类元素解析（M5.1d-a 方法集）：
+ *   static 前缀：static m(){} / static get x(){} / static x
+ *   constructor 方法：key 为 "constructor" 的 Method（构造器，仅一个）
+ *   get/set 前缀探测同对象字面量（get x(){} / set x(v){}）
+ *   [expr] 计算键：方法/访问器
+ *   key(){} 方法：普通/static
+ *   其余（字段 x = v / static x = v）M5.1d-d 支持，本阶段报语法错误 */
+ASTNode *Parser::parseClassDeclaration() {
+  return parseClassTail(true);
+}
+
+ASTNode *Parser::parseClassExpression() {
+  return parseClassTail(false);
+}
+
+ASTNode *Parser::parseClassTail(bool is_declaration) {
+  ASTNode *cls = newNode(is_declaration ? NodeType::ClassDeclaration
+                                        : NodeType::ClassExpression);
+  cls->loc = current().start;
+  advance(); /* class */
+
+  /* 名字：声明必填；表达式可空（匿名 class） */
+  bool has_name = false;
+  if (at(TokenKind::Identifier)) {
+    ASTNode *id = newNode(NodeType::Identifier);
+    id->loc = current().start;
+    id->name = current().text;
+    advance();
+    cls->children.push_back(id);
+    has_name = true;
+  } else if (is_declaration) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "class declaration requires a name",
+                current().start});
+    allocator_->destroy(cls);
+    return nullptr;
+  }
+  (void)has_name;
+
+  /* extends 子句：class C extends Base { ... } */
+  if (isKeyword(current(), "extends")) {
+    advance();
+    setValueContext();
+    ASTNode *base = parseLeftHandSide(); /* extends 必须是 LeftHandSideExpression */
+    if (base == nullptr) {
+      allocator_->destroy(cls);
+      return nullptr;
+    }
+    cls->children.push_back(base);
+  }
+
+  /* 类体：{ element... } */
+  if (!isSymbol(current(), "{")) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '{' before class body",
+                current().start});
+    allocator_->destroy(cls);
+    return nullptr;
+  }
+  advance(); /* { */
+  while (!isSymbol(current(), "}")) {
+    if (atEof()) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated class body", cls->loc});
+      allocator_->destroy(cls);
+      return nullptr;
+    }
+    /* 空元素：分号 } */
+    if (isSymbol(current(), ";")) {
+      advance();
+      continue;
+    }
+    ASTNode *elem = parseClassElement();
+    if (elem == nullptr) {
+      allocator_->destroy(cls);
+      return nullptr;
+    }
+    cls->children.push_back(elem);
+  }
+  advance(); /* } */
+  return cls;
+}
+
+/* 单个类元素（M5.1d-a）：static 前缀探测 + 方法/访问器解析。
+ * 产出 Property 节点（prop.is_static 标 static；kind=Method/Get/Set）。 */
+ASTNode *Parser::parseClassElement() {
+  /* static 前缀：static 后跟方法/字段。static 是普通 Identifier，
+   * 需 save/restore + 前瞻判断（static {} 块 / static x / static m(){}）。 */
+  bool is_static = false;
+  if (at(TokenKind::Identifier) && current().text == "static") {
+    Lexer::State st = lexer_.save();
+    advance(); /* static */
+    /* static 后跟 {（static 块，M5.1d-d）、方法/字段起始才视为 static 修饰。
+     * static 后跟 ( ) = 等则 static 是普通方法名（class { static(){} }）。 */
+    if (isSymbol(current(), "{") || isSymbol(current(), "[") ||
+        isSymbol(current(), "*") || at(TokenKind::Identifier) ||
+        at(TokenKind::String) || at(TokenKind::Number)) {
+      is_static = true;
+    } else {
+      lexer_.restore(st); /* 不是 static 修饰：static 是普通方法名 */
+    }
+  }
+
+  /* get/set 前缀（仅方法形态；static get x(){}）。 */
+  bool getset_prefix = false;
+  bool is_get = false;
+  if (!is_static && at(TokenKind::Identifier) &&
+      (current().text == "get" || current().text == "set")) {
+    const std::string getset_word = current().text;
+    Lexer::State st = lexer_.save();
+    advance(); /* get/set */
+    if (at(TokenKind::Identifier)) {
+      getset_prefix = isSymbol(peek(), "(");
+    } else if (isSymbol(current(), "[")) {
+      getset_prefix = true;
+    } else {
+      getset_prefix = false;
+    }
+    if (getset_prefix) {
+      is_get = getset_word == "get";
+    } else {
+      lexer_.restore(st);
+    }
+  }
+
+  /* 键：Identifier / [expr] 计算键 / String / Number。 */
+  ASTNode *prop = newNode(NodeType::Property);
+  prop->loc = current().start;
+  prop->prop.is_static = is_static;
+  ASTNode *key = nullptr;
+  bool is_computed = false;
+  if (at(TokenKind::Identifier)) {
+    key = newNode(NodeType::Identifier);
+    key->loc = current().start;
+    key->name = current().text;
+    advance();
+  } else if (isSymbol(current(), "[")) {
+    is_computed = true;
+    advance(); /* [ */
+    setValueContext();
+    ASTNode *inner = parseExpression();
+    if (inner == nullptr) {
+      allocator_->destroy(prop);
+      return nullptr;
+    }
+    if (!isSymbol(current(), "]")) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ']' after computed key",
+                  current().start});
+      allocator_->destroy(inner);
+      allocator_->destroy(prop);
+      return nullptr;
+    }
+    advance(); /* ] */
+    key = inner;
+  } else if (at(TokenKind::String) || at(TokenKind::Number)) {
+    key = newNode(NodeType::Literal);
+    key->loc = current().start;
+    if (at(TokenKind::String)) {
+      key->literal.is_string = true;
+      key->literal.str = current().str_value;
+    } else {
+      key->literal.is_number = true;
+      key->literal.number = current().number;
+    }
+    key->literal.text = current().text;
+    advance();
+  } else {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid class element key",
+                current().start});
+    allocator_->destroy(prop);
+    return nullptr;
+  }
+  prop->prop.is_computed = is_computed;
+
+  /* 形态分派：get/set 访问器 / method / 字段（M5.1d-d） */
+  if (getset_prefix) {
+    prop->prop.kind = is_get ? PropertyKind::Get : PropertyKind::Set;
+    ASTNode *fn = parseMethodFunction();
+    if (fn == nullptr) {
+      allocator_->destroy(key);
+      allocator_->destroy(prop);
+      return nullptr;
+    }
+    prop->children.push_back(key);
+    prop->children.push_back(fn);
+  } else if (isSymbol(current(), "(")) {
+    prop->prop.kind = PropertyKind::Method;
+    ASTNode *fn = parseMethodFunction();
+    if (fn == nullptr) {
+      allocator_->destroy(key);
+      allocator_->destroy(prop);
+      return nullptr;
+    }
+    prop->children.push_back(key);
+    prop->children.push_back(fn);
+  } else {
+    /* 类字段：x = v / x; （M5.1d-d）。本阶段（M5.1d-a）仅方法集。 */
+    sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                "class fields are not supported yet (M5.1d-d)", current().start});
+    allocator_->destroy(key);
+    allocator_->destroy(prop);
+    return nullptr;
+  }
+
+  /* 方法后分号（可省）：method(){}; */
+  if (isSymbol(current(), ";")) advance();
+  return prop;
 }
 
 /* 返回语句（M1.5 ④）：return [expr]。ECMA-262 §14.4.3。

@@ -2060,6 +2060,223 @@ TEST(Compiler, M51cComputedKeyGetter) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* 13e. M5.1d-a class 声明/表达式 + 方法编译执行                              */
+/* -------------------------------------------------------------------------- */
+
+/* new C() 无构造器（默认构造器）：实例化 + 实例方法调用 */
+TEST(Compiler, M51dClassBasic) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r =
+      JS_Eval(ctx, "class C { m() { return 42; } } var c = new C(); c.m()",
+              std::strlen("class C { m() { return 42; } } var c = new C(); c.m()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 42.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 构造器：this 字段初始化 + 实例方法读取 */
+TEST(Compiler, M51dClassConstructor) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class C { constructor(x) { this.x = x; } getX() { return this.x; } } "
+      "var c = new C(7); c.getX()",
+      std::strlen("class C { constructor(x) { this.x = x; } getX() { return this.x; } } "
+                  "var c = new C(7); c.getX()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 7.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 实例方法沿原型链查找（定义在 prototype 对象上） */
+TEST(Compiler, M51dClassPrototypeMethod) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class C { m() { return this.v; } } var c = new C(); c.v = 5; c.m()",
+      std::strlen("class C { m() { return this.v; } } var c = new C(); c.v = 5; c.m()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 5.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* static 方法：挂到构造器对象 */
+TEST(Compiler, M51dClassStaticMethod) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "class C { static s() { return 99; } } C.s()",
+      std::strlen("class C { static s() { return 99; } } C.s()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 99.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* getter/setter 访问器方法（挂到 prototype） */
+TEST(Compiler, M51dClassAccessor) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class C { constructor() { this._v = 0; } get v() { return this._v; } "
+      "set v(x) { this._v = x; } } var c = new C(); c.v = 8; c.v",
+      std::strlen("class C { constructor() { this._v = 0; } get v() { return this._v; } "
+                  "set v(x) { this._v = x; } } var c = new C(); c.v = 8; c.v"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 8.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 计算键方法：class { [k]() {} } */
+TEST(Compiler, M51dClassComputedKey) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "var k = 'm'; class C { [k]() { return 3; } } new C().m()",
+      std::strlen("var k = 'm'; class C { [k]() { return 3; } } new C().m()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 3.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* extends 原型链：实例方法继承 + 构造器静态继承 */
+TEST(Compiler, M51dClassExtends) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class A { m() { return 10; } static s() { return 20; } } "
+      "class B extends A { m() { return 30; } } "
+      "var b = new B(); b.m() + B.s()",
+      std::strlen("class A { m() { return 10; } static s() { return 20; } } "
+                  "class B extends A { m() { return 30; } } "
+                  "var b = new B(); b.m() + B.s()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 50.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* extends 未覆写方法：沿原型链调用基类实例方法 */
+TEST(Compiler, M51dClassExtendsInherit) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class A { hi() { return 'base'; } } class B extends A {} "
+      "new B().hi()",
+      std::strlen("class A { hi() { return 'base'; } } class B extends A {} "
+                  "new B().hi()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "base");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* class 表达式：var C = class { ... } */
+TEST(Compiler, M51dClassExpression) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "var C = class { m() { return 'expr'; } }; new C().m()",
+      std::strlen("var C = class { m() { return 'expr'; } }; new C().m()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "expr");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 边界：static 作为普通方法名（非修饰符） */
+TEST(Compiler, M51dClassStaticAsMethodName) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "class A { static() { return 1; } } new A().static()",
+      std::strlen("class A { static() { return 1; } } new A().static()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 1.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 边界：get constructor 是访问器，不是构造器 */
+TEST(Compiler, M51dClassGetConstructorAccessor) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "class B { get constructor() { return 'accessor'; } } new B().constructor",
+      std::strlen("class B { get constructor() { return 'accessor'; } } new B().constructor"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "accessor");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* -------------------------------------------------------------------------- */
 /* 14. M3.0 VM 对象指令（NewObject/NewArray/LoadProp/StoreProp/LoadElem/      */
 /*     StoreElem）                                                            */
 /* -------------------------------------------------------------------------- */

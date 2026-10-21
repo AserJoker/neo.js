@@ -148,6 +148,17 @@ class Compiler {
    * 保存/恢复外层 builder_ 与作用域帧。返回子函数字节码。 */
   bool compileChildFunction(const ASTNode &fn, FunctionBytecode *out);
 
+  /* class 编译（M5.1d-a）：编译构造器函数 + prototype 构建 + 方法挂载 +
+   * extends 原型链。is_declaration=true 时按类名声明局部槽。 */
+  bool compileClass(const ASTNode &node, bool is_declaration);
+  /* 编译单个类方法/构造器函数：compileChildFunction + 标志设置 +
+   * MakeFunction，函数对象留栈顶。 */
+  bool compileClassMemberFunction(const ASTNode &fn, const std::string &fn_name,
+                                  bool is_ctor);
+  /* 编译单个类元素（方法/访问器）挂到目标对象。 */
+  bool compileClassElementDef(const ASTNode &prop, uint16_t proto_slot,
+                              bool is_static);
+
   /* 展开参数列表（M5.1a）：把 args 的元素（含 SpreadElement）追加到槽
    * slot 的数组。非展开元素 AppendElem，展开 AppendSpread。
    * 返回 false 时已设置错误。 */

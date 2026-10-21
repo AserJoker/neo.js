@@ -211,6 +211,12 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
     case NodeType::FunctionExpression:
       out += "FunctionExpression\n";
       break;
+    case NodeType::ClassDeclaration:
+      out += "ClassDeclaration\n";
+      break;
+    case NodeType::ClassExpression:
+      out += "ClassExpression\n";
+      break;
     case NodeType::ReturnStatement:
       out += "ReturnStatement\n";
       break;

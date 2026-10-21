@@ -81,6 +81,10 @@ class Parser {
   ASTNode *parseDebuggerStatement();   /* debugger（M1.5 ⑦） */
   ASTNode *parseImportDeclaration();   /* import 声明（M1.6 ③，module 上下文） */
   ASTNode *parseExportDeclaration();   /* export 声明（M1.6 ③，module 上下文） */
+  ASTNode *parseClassDeclaration();    /* class 声明：class C { ... }（M5.1d-a） */
+  ASTNode *parseClassExpression();     /* class 表达式：class [name] { ... }（M5.1d-a） */
+  ASTNode *parseClassTail(bool is_declaration); /* class 头/体共享解析（M5.1d-a） */
+  ASTNode *parseClassElement();        /* 单个类元素（方法/访问器，M5.1d-a） */
   ASTNode *parseExpressionStatement();
 
   /* 最小递归下降：表达式（parser.cc） */

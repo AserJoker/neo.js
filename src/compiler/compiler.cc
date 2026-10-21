@@ -356,6 +356,187 @@ bool Compiler::compileNestedFunction(const ASTNode &fn, bool is_declaration) {
   return true;
 }
 
+/* 编译单个类方法/构造器函数（M5.1d-a）：
+ *   fn       方法函数表达式（FunctionExpression，fn_has_name=false）
+ *   fn_name  函数名（方法键名；构造器用类名）
+ *   is_ctor  true = 构造器（is_constructor 标志）
+ * 产出子函数字节码加入 nested 表并发射 MakeFunction，函数对象留栈顶。 */
+bool Compiler::compileClassMemberFunction(const ASTNode &fn,
+                                          const std::string &fn_name,
+                                          bool is_ctor) {
+  FunctionBytecode child;
+  if (!compileChildFunction(fn, &child)) return false;
+  child.name = fn_name;
+  if (is_ctor) {
+    child.is_constructor = true;
+  } else {
+    child.is_method = true;
+  }
+  uint16_t index = static_cast<uint16_t>(builder_.add_nested(std::move(child)));
+  builder_.make_function(index);
+  return true;
+}
+
+/* 编译类元素（M5.1d-a）：把方法/访问器挂到目标对象。
+ * 目标：static -> 构造器（栈顶，Dup 保留）；实例 -> proto 槽。 */
+bool Compiler::compileClassElementDef(const ASTNode &prop, uint16_t proto_slot,
+                                      bool is_static) {
+  if (prop.children.empty()) {
+    fail("invalid class element");
+    return false;
+  }
+  /* 键：计算键 [expr] 运行期求值；否则编译为常量串。 */
+  std::string key;
+  bool computed_key = prop.prop.is_computed;
+  if (!computed_key && !objectKeyToString(prop.children[0], &key)) {
+    fail("invalid class element key");
+    return false;
+  }
+  const PropertyKind kind = prop.prop.kind;
+  if (prop.children.size() < 2) {
+    fail("invalid class element (missing function)");
+    return false;
+  }
+  const ASTNode *fn = prop.children[1];
+
+  if (is_static) {
+    builder_.dup(); /* 构造器在栈顶，dup 保留原值 */
+  } else {
+    builder_.load_var(proto_slot);
+  }
+  if (computed_key) {
+    if (!compileExpr(*prop.children[0])) return false;
+  } else {
+    builder_.push_const(key);
+  }
+  if (!compileClassMemberFunction(*fn, key, /*is_ctor=*/false)) return false;
+  if (kind == PropertyKind::Method) {
+    builder_.define_prop();
+  } else {
+    builder_.define_accessor(kind == PropertyKind::Set ? 1 : 0);
+  }
+  builder_.pop(); /* 丢弃定义结果；static 时留下 dup 的构造器 */
+  return true;
+}
+
+/* class 编译（M5.1d-a）：
+ * children 布局：[name?, extends?, element...]（见 parser_stmt.cc parseClassTail）。
+ *
+ * 产物 = 构造器函数（栈顶；声明时挂类名局部变量）。执行序列：
+ *   NewObject; StoreVar proto_tmp          ; prototype 对象
+ *   [extends] 求值基类 -> StoreVar base_tmp
+ *   MakeFunction ctor（构造器方法体或默认空构造器）
+ *   Dup; "prototype"; proto_tmp; DefineProp; Pop  ; ctor.prototype = proto
+ *   实例方法：LoadVar proto_tmp; key; fn; DefineProp/Accessor; Pop
+ *   static 方法：Dup; key; fn; DefineProp/Accessor; Pop
+ *   [extends] proto_tmp.[[Prototype]]=base.prototype; ctor.[[Prototype]]=base
+ *   结果 = 构造器（栈顶） */
+bool Compiler::compileClass(const ASTNode &node, bool is_declaration) {
+  std::string class_name;
+  size_t index = 0;
+  if (!node.children.empty() && node.children[0]->type == NodeType::Identifier) {
+    class_name = node.children[0]->name;
+    index = 1;
+  }
+  const ASTNode *base = nullptr;
+  if (index < node.children.size() &&
+      node.children[index]->type != NodeType::Property) {
+    base = node.children[index];
+    ++index;
+  }
+
+  /* 类名作用域：class 声明时类名绑定。class 体内引用类名（自引用）留
+   * M5.1d 后续阶段（需类名在构造器/方法作用域可见）。 */
+  uint16_t class_slot = 0;
+  if (is_declaration && !class_name.empty()) {
+    class_slot = declareLocal(class_name);
+  }
+
+  /* 求值 extends 基类（若有），暂存槽。 */
+  uint16_t base_slot = 0;
+  if (base != nullptr) {
+    if (!compileExpr(*base)) return false;
+    base_slot = scope_->next_slot++;
+    builder_.store_var(base_slot);
+  }
+
+  /* 1. prototype 对象。 */
+  builder_.new_object();
+  uint16_t proto_slot = scope_->next_slot++;
+  builder_.store_var(proto_slot);
+
+  /* 2. 编译构造器函数。
+   *    找 key == "constructor" 的 Method 元素作为构造器体；否则默认空构造器。 */
+  const ASTNode *ctor_fn = nullptr;
+  std::vector<const ASTNode *> elements;
+  for (size_t i = index; i < node.children.size(); ++i) {
+    const ASTNode *elem = node.children[i];
+    if (elem == nullptr || elem->type != NodeType::Property) continue;
+    elements.push_back(elem);
+    if (elem->prop.kind == PropertyKind::Method && !elem->prop.is_static &&
+        elem->children.size() >= 2 &&
+        elem->children[0]->type == NodeType::Identifier &&
+        elem->children[0]->name == "constructor") {
+      ctor_fn = elem->children[1];
+    }
+  }
+  if (ctor_fn != nullptr) {
+    if (!compileClassMemberFunction(*ctor_fn, class_name, /*is_ctor=*/true)) {
+      return false;
+    }
+  } else {
+    /* 默认构造器：直接返回 this（construct() 以新对象为结果）。
+     * 显式构造字节码（无参数）。 */
+    FunctionBytecode ctor_bc;
+    ctor_bc.name = class_name;
+    ctor_bc.is_constructor = true;
+    ctor_bc.numLocals = 0;
+    ctor_bc.code.push_back({Opcode::LoadThis, 0});
+    ctor_bc.code.push_back({Opcode::Ret, 0});
+    uint16_t ctor_index =
+        static_cast<uint16_t>(builder_.add_nested(std::move(ctor_bc)));
+    builder_.make_function(ctor_index);
+  }
+
+  /* 3. ctor.prototype = proto。栈上 [ctor]。 */
+  builder_.dup();
+  builder_.push_const("prototype");
+  builder_.load_var(proto_slot);
+  builder_.define_prop();
+  builder_.pop();
+
+  /* 4. 实例方法挂到 proto；static 方法挂到构造器（栈顶 dup）。
+   *    构造器元素本身不重复挂载（constructor 是构造器，不是 prototype 方法）。 */
+  for (const ASTNode *elem : elements) {
+    const ASTNode *elem_fn =
+        (elem->children.size() >= 2) ? elem->children[1] : nullptr;
+    if (ctor_fn != nullptr && elem_fn == ctor_fn) continue;
+    if (!compileClassElementDef(*elem, proto_slot, elem->prop.is_static)) {
+      return false;
+    }
+  }
+
+  /* 5. extends：proto_tmp.[[Prototype]] = base.prototype；
+   *          ctor.[[Prototype]] = base。 */
+  if (base != nullptr) {
+    builder_.load_var(proto_slot);
+    builder_.load_var(base_slot);
+    builder_.load_prop("prototype");
+    builder_.set_prototype();
+    builder_.pop(); /* 丢弃 proto（SetPrototype 压回 obj） */
+    builder_.dup();
+    builder_.load_var(base_slot);
+    builder_.set_prototype();
+    builder_.pop(); /* 丢弃 dup 的构造器 */
+  }
+
+  /* 6. 结果：构造器留栈顶。声明时挂类名局部变量。 */
+  if (is_declaration && !class_name.empty()) {
+    builder_.store_var(class_slot);
+  }
+  return true;
+}
+
 std::vector<const ASTNode *> Compiler::collectTopLevelFunctions(const AST &ast) {
   std::vector<const ASTNode *> out;
   if (ast.root == nullptr) return out;
@@ -664,6 +845,9 @@ bool Compiler::compileStmt(const ASTNode &node) {
       /* 嵌套函数声明（M2.5 闭包）：编译子函数字节码，发射 MakeFunction
        * 实例化闭包并挂到当前函数局部变量。 */
       return compileNestedFunction(node);
+    case NodeType::ClassDeclaration:
+      /* class 声明（M5.1d-a）：编译构造器函数并挂到类名局部变量。 */
+      return compileClass(node, /*is_declaration=*/true);
     case NodeType::BreakStatement:
     case NodeType::ContinueStatement:
       fail("not implemented: break/continue (M2.4 ③ 循环控制)");
@@ -936,6 +1120,9 @@ bool Compiler::compileExpr(const ASTNode &node) {
     case NodeType::ArrowFunctionExpression:
       /* 函数表达式/箭头函数（M2.5 闭包）：编译子函数，MakeFunction 留栈顶。 */
       return compileNestedFunction(node, /*is_declaration=*/false);
+    case NodeType::ClassExpression:
+      /* class 表达式（M5.1d-a）：编译构造器函数，留栈顶。 */
+      return compileClass(node, /*is_declaration=*/false);
     case NodeType::UpdateExpression:
       fail("not implemented: update expression");
       return false;

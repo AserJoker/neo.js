@@ -931,6 +931,8 @@ ASTNode *Parser::parsePrimary() {
       }
       /* 函数表达式：function [name](params) { body }（M1.5 ④） */
       if (tok.text == "function") return parseFunctionExpression();
+      /* class 表达式（M5.1d-a）：class [name] { ... } */
+      if (tok.text == "class") return parseClassExpression();
       /* 动态导入 import('m')（M1.6 ③）：import 后跟 ( 时为表达式 */
       if (tok.text == "import" && isSymbol(peek(), "(")) {
         advance(); /* import */

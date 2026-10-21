@@ -851,8 +851,17 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         if (fp != nullptr) fproto = fp->object();
         JSFunction *f = ctx->heap().allocGCObject<JSFunction>(
             fproto, FunctionKind::Script, nullptr /* func */);
-        f->setBytecode(fn.nested[instr.arg]); /* 复制（FunctionBytecode 值语义） */
+        const FunctionBytecode &nf = fn.nested[instr.arg];
+        f->setBytecode(nf); /* 复制（FunctionBytecode 值语义） */
         f->setEnvironment(env);
+        /* M5.1d-a class：构造器/方法标志 -> 构造器可 new + 严格模式。
+         * class 体一律严格模式（§15.7.2.1）；构造器额外 setConstructor。 */
+        if (nf.is_constructor) {
+          f->setConstructor(true);
+          f->setThisMode(ThisMode::Strict);
+        } else if (nf.is_method) {
+          f->setThisMode(ThisMode::Strict);
+        }
         ctx->heap().pin(f); /* 分配保护（M3.3）：两段式创建中间窗口防误回收 */
         JSValue *v = ctx->heap().allocGCObject<JSValue>();
         v->setObject(f);
@@ -1411,6 +1420,26 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
          * （函数调用 = call 传入的 thisArg；顶层 = globalThis）。 */
         stack.push_back(frame_this != nullptr ? frame_this
                                               : ctx->globalObject());
+        break;
+      }
+      case Opcode::SetPrototype: {
+        /* M5.1d-a class extends：obj, proto -> 设置 obj.[[Prototype]]=proto，
+         * 弹 2 压回 obj。class 的 prototype 与构造器均非可扩展限制目标
+         * （普通对象），直接 setPrototype。 */
+        if (stack.size() < 2) return fail("Error: stack underflow on SetPrototype");
+        JSValue *proto = stack.back();
+        JSValue *obj = stack[stack.size() - 2];
+        if (!obj->isObject()) {
+          return fail("TypeError: Cannot set prototype of non-object");
+        }
+        JSObject *target = obj->object();
+        JSObject *new_proto = (proto != nullptr && proto->isObject())
+                                  ? proto->object()
+                                  : nullptr;
+        /* 简易防循环（class extends 场景原型链通常无环）：仅校验直接赋值。 */
+        target->setPrototype(new_proto);
+        stack.resize(stack.size() - 2);
+        stack.push_back(obj);
         break;
       }
       case Opcode::LoadUpvalue: {

@@ -90,6 +90,9 @@ enum class NodeType : uint8_t {
   ExportSpecifier,     /* 导出项：{ local as exported }（children[0]=local，children[1]=exported） */
   ImportExpression,    /* 动态导入：import('m')（children[0]=specifier） */
   ImportMeta,          /* import.meta（无子节点） */
+  /* class（M5.1d-a）：声明/表达式。children = [name?, extends?, element...] */
+  ClassDeclaration,    /* class 声明：class C { ... }（M5.1d-a） */
+  ClassExpression,     /* class 表达式：class [name] { ... }（M5.1d-a） */
 };
 
 /* 声明关键字类型（M1.5 ①）：var / let / const */
@@ -199,6 +202,7 @@ enum class PropertyKind : uint8_t {
 struct PropertyPayload {
   PropertyKind kind = PropertyKind::Init;
   bool is_computed = false; /* [expr] 计算键 */
+  bool is_static = false;   /* class 元素：static 方法/字段（M5.1d-a） */
 };
 
 /* 成员访问载荷：true = 计算成员 obj[expr]；false = 点成员 obj.prop。
