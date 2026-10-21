@@ -190,8 +190,35 @@ ASTNode *Parser::parseAssignment(bool allow_in) {
 
   const Token &tok = current();
   AssignmentOpKind op = toAssignOp(tok);
-  /* 赋值目标校验（M1.4：标识符 / 成员访问；解构后续扩展） */
-  if (lhs->type != NodeType::Identifier && lhs->type != NodeType::MemberExpression) {
+  /* 赋值目标校验（M1.4：标识符 / 成员访问；M5.1a：解构模式 [a] / {a}）。
+   * 解构只允许纯 = 赋值（复合赋值给解构目标非法）。 */
+  bool is_pattern = lhs->type == NodeType::ArrayPattern || lhs->type == NodeType::ObjectPattern;
+  if (is_pattern && op != AssignmentOpKind::Assign) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                "invalid destructuring assignment target", tok.start});
+    allocator_->destroy(lhs);
+    return nullptr;
+  }
+  /* 赋值左侧的数组/对象字面量（[a] / {p}）：转为解构模式（M5.1a）。
+   * 读值位置 parsePrimary 产出 ArrayLiteral/ObjectLiteral，这里按
+   * 解构赋值目标递归转换为 ArrayPattern/ObjectPattern。 */
+  if (!is_pattern &&
+      (lhs->type == NodeType::ArrayLiteral || lhs->type == NodeType::ObjectLiteral)) {
+    if (op != AssignmentOpKind::Assign) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                  "invalid destructuring assignment target", tok.start});
+      allocator_->destroy(lhs);
+      return nullptr;
+    }
+    if (!convertLiteralToPattern(lhs)) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid assignment target",
+                  tok.start});
+      allocator_->destroy(lhs);
+      return nullptr;
+    }
+    is_pattern = true;
+  }
+  if (!is_pattern && lhs->type != NodeType::Identifier && lhs->type != NodeType::MemberExpression) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid assignment target", tok.start});
     allocator_->destroy(lhs);
     return nullptr;
@@ -242,22 +269,46 @@ ASTNode *Parser::parseArrowFunction(bool parenthesized) {
       }
       ASTNode *param;
       if (isSymbol(current(), "...")) {
+        /* rest 参数：...target（target 可为标识符或解构模式） */
         ASTNode *rest = newNode(NodeType::RestElement);
         rest->loc = current().start;
         advance();
-        if (!at(TokenKind::Identifier)) {
+        ASTNode *target;
+        if (isSymbol(current(), "{") || isSymbol(current(), "[")) {
+          if (isSymbol(current(), "{")) {
+            target = parseObjectPattern();
+          } else {
+            target = parseArrayPattern();
+          }
+          if (target == nullptr) {
+            allocator_->destroy(rest);
+            allocator_->destroy(arrow);
+            return nullptr;
+          }
+        } else if (at(TokenKind::Identifier)) {
+          target = newNode(NodeType::Identifier);
+          target->loc = current().start;
+          target->name = current().text;
+          advance();
+        } else {
           sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected parameter name",
                       current().start});
           allocator_->destroy(rest);
           allocator_->destroy(arrow);
           return nullptr;
         }
-        ASTNode *id = newNode(NodeType::Identifier);
-        id->loc = current().start;
-        id->name = current().text;
-        advance();
-        rest->children.push_back(id);
+        rest->children.push_back(target);
         param = rest;
+      } else if (isSymbol(current(), "{") || isSymbol(current(), "[")) {
+        if (isSymbol(current(), "{")) {
+          param = parseObjectPattern();
+        } else {
+          param = parseArrayPattern();
+        }
+        if (param == nullptr) {
+          allocator_->destroy(arrow);
+          return nullptr;
+        }
       } else if (at(TokenKind::Identifier)) {
         param = newNode(NodeType::Identifier);
         param->loc = current().start;
@@ -268,6 +319,15 @@ ASTNode *Parser::parseArrowFunction(bool parenthesized) {
                     current().start});
         allocator_->destroy(arrow);
         return nullptr;
+      }
+      /* 默认值 a = 1（M5.1a）：AssignmentPattern{a, 1} */
+      if (isSymbol(current(), "=")) {
+        ASTNode *def = parseDefaultValue(param);
+        if (def == nullptr) {
+          allocator_->destroy(arrow);
+          return nullptr;
+        }
+        param = def;
       }
       arrow->children.push_back(param);
     }
@@ -1083,6 +1143,101 @@ ASTNode *Parser::parseTemplateLiteral() {
   return tpl;
 }
 
+/* 绑定位置受限目标（M5.1a）：Identifier / 嵌套模式。不消费 '='
+ * （默认值由调用方经 parseDefaultValue 处理）——避免 parseAssignment
+ * 把 [a, b=2] / {p: q=1} 吞成 Assignment 节点。 */
+ASTNode *Parser::parseBindingTarget() {
+  if (at(TokenKind::Identifier)) {
+    ASTNode *id = newNode(NodeType::Identifier);
+    id->loc = current().start;
+    id->name = current().text;
+    advance();
+    return id;
+  }
+  if (isSymbol(current(), "{")) return parseObjectPattern();
+  if (isSymbol(current(), "[")) return parseArrayPattern();
+  sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected binding target",
+              current().start});
+  return nullptr;
+}
+
+/* 字面量 → 解构模式（M5.1a）：赋值左侧 [a] / {p} 递归转模式。
+ * 原地修改 node（ArrayLiteral->ArrayPattern、ObjectLiteral->ObjectPattern）；
+ * 元素/值中的 Assignment 节点 -> AssignmentPattern；其余非绑定目标失败。 */
+bool Parser::convertLiteralToPattern(ASTNode *node) {
+  if (node->type == NodeType::ArrayLiteral) {
+    node->type = NodeType::ArrayPattern;
+    for (ASTNode *elem : node->children) {
+      if (elem == nullptr) continue; /* 空洞 */
+      if (elem->type == NodeType::SpreadElement) {
+        if (elem->children.empty()) return false;
+        if (!convertLiteralToPattern(elem->children[0])) return false;
+      } else if (elem->type == NodeType::Assignment) {
+        /* 读值位置 [a, b = 2] 的 b = 2 已被 parseAssignment 吞成 Assignment。
+         * 转成 AssignmentPattern{b, 2}。 */
+        ASTNode *target = elem->children[0];
+        if (target->type != NodeType::Identifier &&
+            target->type != NodeType::ArrayLiteral &&
+            target->type != NodeType::ObjectLiteral)
+          return false;
+        if (!convertLiteralToPattern(target)) return false;
+        elem->type = NodeType::AssignmentPattern;
+      } else if (!convertLiteralToPattern(elem)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  if (node->type == NodeType::ObjectLiteral) {
+    node->type = NodeType::ObjectPattern;
+    for (ASTNode *member : node->children) {
+      if (member == nullptr) continue;
+      if (member->type == NodeType::SpreadElement) {
+        if (member->children.empty()) return false;
+        if (!convertLiteralToPattern(member->children[0])) return false;
+        continue;
+      }
+      if (member->type != NodeType::Property || member->children.size() < 1) {
+        return false;
+      }
+      /* 简写 { p }：单 child，无需转换。 */
+      if (member->children.size() == 1) continue;
+      ASTNode *val = member->children[1];
+      if (val->type == NodeType::Assignment) {
+        ASTNode *target = val->children[0];
+        if (target->type != NodeType::Identifier &&
+            target->type != NodeType::ArrayLiteral &&
+            target->type != NodeType::ObjectLiteral)
+          return false;
+        if (!convertLiteralToPattern(target)) return false;
+        val->type = NodeType::AssignmentPattern;
+      } else if (!convertLiteralToPattern(val)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  /* 叶子：Identifier 是合法绑定目标；其他（Literal/调用等）非法。 */
+  return node->type == NodeType::Identifier;
+}
+
+/* 默认值（M5.1a）：target = default（current 指向 =）。产出
+ * AssignmentPattern{target, default}。target 所有权转移：失败时销毁。 */
+ASTNode *Parser::parseDefaultValue(ASTNode *target) {
+  advance(); /* 消费 = */
+  setValueContext();
+  ASTNode *def = parseAssignment();
+  if (def == nullptr) {
+    allocator_->destroy(target);
+    return nullptr;
+  }
+  ASTNode *node = newNode(NodeType::AssignmentPattern);
+  node->loc = target->loc;
+  node->children.push_back(target);
+  node->children.push_back(def);
+  return node;
+}
+
 /* 对象模式（解构/字面量共用）：{ key: value, ...spread, shorthand }
  * as_literal=true 时产出 ObjectLiteral（读值位置）；否则 ObjectPattern（绑定位置）。 */
 ASTNode *Parser::parseObjectPattern(bool as_literal) {
@@ -1104,7 +1259,7 @@ ASTNode *Parser::parseObjectPattern(bool as_literal) {
       ASTNode *spread = newNode(NodeType::SpreadElement);
       spread->loc = current().start;
       advance();
-      ASTNode *arg = parseAssignment();
+      ASTNode *arg = as_literal ? parseAssignment() : parseBindingTarget();
       if (arg == nullptr) {
         allocator_->destroy(obj);
         return nullptr;
@@ -1113,7 +1268,7 @@ ASTNode *Parser::parseObjectPattern(bool as_literal) {
       obj->children.push_back(spread);
       continue;
     }
-    /* 成员：key: value（或 get/set/method——M1.5 再扩展） */
+    /* 成员：key: value（或 get/set/method——M5.1c 扩展） */
     ASTNode *prop = newNode(NodeType::Property);
     prop->loc = current().start;
     /* key */
@@ -1122,18 +1277,51 @@ ASTNode *Parser::parseObjectPattern(bool as_literal) {
       key->loc = current().start;
       key->name = current().text;
       advance();
-      /* 简写 { key }：无冒号 */
+      /* 简写 { key }：无冒号无等号 */
       if (isSymbol(current(), ":")) {
         prop->prop.kind = PropertyKind::Init;
         advance();
-        ASTNode *val = parseAssignment();
+        ASTNode *val = as_literal ? parseAssignment() : parseBindingTarget();
         if (val == nullptr) {
           allocator_->destroy(prop);
           allocator_->destroy(obj);
           return nullptr;
         }
+        /* 绑定位置重命名默认值 {p: q = 1}：值后跟 '=' 时包成
+         * AssignmentPattern{q, default}（读值位置非法）。 */
+        if (!as_literal && isSymbol(current(), "=")) {
+          ASTNode *def = parseDefaultValue(val);
+          if (def == nullptr) {
+            allocator_->destroy(prop);
+            allocator_->destroy(obj);
+            return nullptr;
+          }
+          prop->children.push_back(key);
+          prop->children.push_back(def);
+        } else {
+          prop->children.push_back(key);
+          prop->children.push_back(val);
+        }
+      } else if (isSymbol(current(), "=")) {
+        /* 简写默认值 { key = default }（M5.1a）：value 为
+         * AssignmentPattern{key, default}。 */
+        if (as_literal) {
+          /* 读值位置不允许默认值：{ key = 1 } 不是合法对象字面量。 */
+          sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                      "unexpected '=' in object literal", current().start});
+          allocator_->destroy(prop);
+          allocator_->destroy(obj);
+          return nullptr;
+        }
+        prop->prop.kind = PropertyKind::Init;
+        ASTNode *def = parseDefaultValue(key);
+        if (def == nullptr) {
+          allocator_->destroy(prop);
+          allocator_->destroy(obj);
+          return nullptr;
+        }
         prop->children.push_back(key);
-        prop->children.push_back(val);
+        prop->children.push_back(def);
       } else {
         prop->prop.kind = PropertyKind::Shorthand;
         prop->children.push_back(key);
@@ -1191,29 +1379,58 @@ ASTNode *Parser::parseArrayPattern(bool as_literal) {
       return nullptr;
     }
     if (isSymbol(current(), ",")) {
-      /* 空位（稀疏数组） */
+      /* 空位（稀疏数组）。数组字面量：空洞不产生值（编译端紧凑存储）；
+       * 解构模式：压 nullptr 占位保持索引语义（[a,,b] 的 b 索引 2）。 */
       advance();
+      if (!as_literal) arr->children.push_back(nullptr);
       continue;
     }
     if (isSymbol(current(), "...")) {
       ASTNode *spread = newNode(NodeType::SpreadElement);
       spread->loc = current().start;
       advance();
-      ASTNode *arg = parseAssignment();
+      ASTNode *arg = as_literal ? parseAssignment() : parseBindingTarget();
       if (arg == nullptr) {
         allocator_->destroy(arr);
         return nullptr;
       }
       spread->children.push_back(arg);
       arr->children.push_back(spread);
+      /* 消费分隔逗号（否则下一轮循环把 [,] 误当空洞占位）。 */
+      if (isSymbol(current(), ",")) advance();
       continue;
     }
-    ASTNode *elem = parseAssignment();
+    ASTNode *elem = nullptr;
+    if (as_literal) {
+      /* 读值位置：任意表达式元素。 */
+      elem = parseAssignment();
+    } else {
+      /* 绑定位置：受限绑定目标（Identifier/嵌套模式），不吞 '='。 */
+      elem = parseBindingTarget();
+    }
     if (elem == nullptr) {
       allocator_->destroy(arr);
       return nullptr;
     }
+    /* 默认值 [a = 1]（M5.1a）：AssignmentPattern{a, 1}。读值位置（数组字面量）不允许。 */
+    if (isSymbol(current(), "=")) {
+      if (as_literal) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                    "unexpected '=' in array literal", current().start});
+        allocator_->destroy(elem);
+        allocator_->destroy(arr);
+        return nullptr;
+      }
+      ASTNode *def = parseDefaultValue(elem);
+      if (def == nullptr) {
+        allocator_->destroy(arr);
+        return nullptr;
+      }
+      elem = def;
+    }
     arr->children.push_back(elem);
+    /* 消费分隔逗号（非空洞）：进入下一元素。 */
+    if (isSymbol(current(), ",")) advance();
   }
   advance(); /* ] */
   return arr;

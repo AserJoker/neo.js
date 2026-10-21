@@ -63,8 +63,26 @@ ASTNode *Parser::parseStatementInner() {
     advance(); /* ; */
     return stmt;
   }
-  /* 块语句：{ stmt... }（M1.5 ②） */
+  /* 块语句：{ stmt... }（M1.5 ②）。
+   * 例外：{ 后是解构赋值模式（{a} = obj，M5.1a）时不能当块——
+   * 前瞻匹配完整对象模式 { ... } 且其后是 = 时走表达式语句。 */
   if (isSymbol(current(), "{")) {
+    Lexer::State st = lexer_.save();
+    lexer_.next(); /* 越过 { */
+    int depth = 1;
+    bool is_destructure = false;
+    while (depth > 0) {
+      const Token &t = lexer_.next();
+      if (t.kind == TokenKind::EndOfFile) break;
+      if (isSymbol(t, "{")) depth++;
+      else if (isSymbol(t, "}")) depth--;
+      if (depth == 0) {
+        if (isSymbol(lexer_.current(), "=")) is_destructure = true;
+        break;
+      }
+    }
+    lexer_.restore(st);
+    if (is_destructure) return parseExpressionStatement();
     return parseBlock();
   }
   /* 标签语句（M1.5 ③）：Identifier : stmt。独立成语句，不嵌入 for/while。
@@ -735,16 +753,32 @@ ASTNode *Parser::parseFunctionDeclaration(bool allow_anonymous) {
       if (isSymbol(current(), ")")) break;
       continue;
     }
-    /* 参数：标识符 或 解构模式（RestElement 由 ... 触发） */
+    /* 参数：标识符 / 解构模式 / 默认值 / rest（M5.1a 扩展） */
     ASTNode *param;
     if (isSymbol(current(), "...")) {
+      /* rest 参数：...target（target 可为标识符或解构模式） */
       advance();
       ASTNode *rest = newNode(NodeType::RestElement);
       rest->loc = current().start;
-      ASTNode *target = newNode(NodeType::Identifier);
-      target->loc = current().start;
-      target->name = current().text;
-      advance();
+      ASTNode *target;
+      if (isSymbol(current(), "{") || isSymbol(current(), "[")) {
+        if (isSymbol(current(), "{")) {
+          target = parseObjectPattern();
+        } else {
+          target = parseArrayPattern();
+        }
+      } else if (at(TokenKind::Identifier)) {
+        target = newNode(NodeType::Identifier);
+        target->loc = current().start;
+        target->name = current().text;
+        advance();
+      } else {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected parameter name",
+                    current().start});
+        allocator_->destroy(rest);
+        allocator_->destroy(fn);
+        return nullptr;
+      }
       rest->children.push_back(target);
       param = rest;
     } else if (isSymbol(current(), "{") || isSymbol(current(), "[")) {
@@ -766,6 +800,15 @@ ASTNode *Parser::parseFunctionDeclaration(bool allow_anonymous) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected parameter", current().start});
       allocator_->destroy(fn);
       return nullptr;
+    }
+    /* 默认值 a = 1（M5.1a）：AssignmentPattern{a, 1} */
+    if (isSymbol(current(), "=")) {
+      ASTNode *def = parseDefaultValue(param);
+      if (def == nullptr) {
+        allocator_->destroy(fn);
+        return nullptr;
+      }
+      param = def;
     }
     fn->children.push_back(param);
     if (!isSymbol(current(), ",") && !isSymbol(current(), ")")) {
@@ -846,13 +889,29 @@ ASTNode *Parser::parseFunctionExpression() {
     }
     ASTNode *param;
     if (isSymbol(current(), "...")) {
+      /* rest 参数：...target（target 可为标识符或解构模式） */
       advance();
       ASTNode *rest = newNode(NodeType::RestElement);
       rest->loc = current().start;
-      ASTNode *target = newNode(NodeType::Identifier);
-      target->loc = current().start;
-      target->name = current().text;
-      advance();
+      ASTNode *target;
+      if (isSymbol(current(), "{") || isSymbol(current(), "[")) {
+        if (isSymbol(current(), "{")) {
+          target = parseObjectPattern();
+        } else {
+          target = parseArrayPattern();
+        }
+      } else if (at(TokenKind::Identifier)) {
+        target = newNode(NodeType::Identifier);
+        target->loc = current().start;
+        target->name = current().text;
+        advance();
+      } else {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected parameter name",
+                    current().start});
+        allocator_->destroy(rest);
+        allocator_->destroy(fn);
+        return nullptr;
+      }
       rest->children.push_back(target);
       param = rest;
     } else if (isSymbol(current(), "{") || isSymbol(current(), "[")) {
@@ -874,6 +933,15 @@ ASTNode *Parser::parseFunctionExpression() {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected parameter", current().start});
       allocator_->destroy(fn);
       return nullptr;
+    }
+    /* 默认值 a = 1（M5.1a）：AssignmentPattern{a, 1} */
+    if (isSymbol(current(), "=")) {
+      ASTNode *def = parseDefaultValue(param);
+      if (def == nullptr) {
+        allocator_->destroy(fn);
+        return nullptr;
+      }
+      param = def;
     }
     fn->children.push_back(param);
     if (!isSymbol(current(), ",") && !isSymbol(current(), ")")) {

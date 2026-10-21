@@ -164,14 +164,120 @@ bool Compiler::compileFunctionBody(const ASTNode &fn) {
   size_t start = fn.fn_has_name ? 1 : 0;
   size_t body_index = fn.children.size() - 1;
 
-  /* 参数入局部槽 0..n-1（按声明顺序）。 */
+  /* 参数槽分配（M5.1a）：每个参数占用一个源槽（顺序入槽，VM 按位置
+   * 复制实参 args[i] -> 槽 i）。
+   *   Identifier        -> 该槽即绑定
+   *   AssignmentPattern -> 源槽 = 绑定槽（undefined 时求默认值）
+   *   RestElement       -> 源槽 = rest 数组（RestParam 收集）
+   *   解构模式          -> 源槽（无名）+ 内部绑定槽（declarePatternBindings）
+   * 两遍：先声明全部绑定（槽位稳定），再发射入口初始化代码。 */
+  struct ParamInfo {
+    const ASTNode *node = nullptr;
+    uint16_t slot = 0; /* 源槽 */
+  };
+  std::vector<ParamInfo> params;
   for (size_t i = start; i < body_index; ++i) {
     const ASTNode *p = fn.children[i];
-    if (p->type != NodeType::Identifier) {
-      fail("not implemented: destructuring/default/rest parameter");
+    ParamInfo info;
+    info.node = p;
+    if (p->type == NodeType::Identifier) {
+      info.slot = declareLocal(p->name);
+    } else if (p->type == NodeType::AssignmentPattern) {
+      if (p->children.empty()) {
+        fail("invalid default parameter");
+        return false;
+      }
+      const ASTNode *target = p->children[0];
+      if (target->type == NodeType::Identifier) {
+        info.slot = declareLocal(target->name);
+      } else {
+        /* 解构 + 默认值：源槽 = 无名临时槽，内部绑定预声明。 */
+        info.slot = scope_->next_slot++;
+        if (!declarePatternBindings(*target)) {
+          fail("invalid destructuring default parameter");
+          return false;
+        }
+      }
+    } else if (p->type == NodeType::RestElement) {
+      if (p->children.empty()) {
+        fail("invalid rest parameter");
+        return false;
+      }
+      const ASTNode *target = p->children[0];
+      if (target->type == NodeType::Identifier) {
+        info.slot = declareLocal(target->name);
+      } else {
+        info.slot = scope_->next_slot++;
+        if (!declarePatternBindings(*target)) {
+          fail("invalid rest parameter");
+          return false;
+        }
+      }
+    } else if (p->type == NodeType::ObjectPattern ||
+               p->type == NodeType::ArrayPattern) {
+      info.slot = scope_->next_slot++;
+      if (!declarePatternBindings(*p)) {
+        fail("invalid destructuring parameter");
+        return false;
+      }
+    } else {
+      fail("invalid parameter");
       return false;
     }
-    declareLocal(p->name);
+    params.push_back(info);
+  }
+
+  /* 入口初始化（按参数顺序）：默认值 / rest / 解构。 */
+  for (size_t i = 0; i < params.size(); ++i) {
+    const ParamInfo &info = params[i];
+    const ASTNode *p = info.node;
+    if (p->type == NodeType::Identifier) continue;
+    if (p->type == NodeType::AssignmentPattern) {
+      const ASTNode *target = p->children[0];
+      if (target->type == NodeType::Identifier) {
+        /* x = default：x 为 undefined 时求默认值（§9.2.12 步骤 20）。
+         *   [slot] JumpIfUndefined use_default; Jump end;
+         *   use_default: [default]; end: StoreVar slot */
+        BcLabel use_default = builder_.new_label();
+        BcLabel end = builder_.new_label();
+        builder_.load_var(info.slot);
+        builder_.jump_if_undefined(&use_default);
+        builder_.jump(&end);
+        builder_.bind_label(use_default);
+        if (!compileExpr(*p->children[1])) return false;
+        builder_.bind_label(end);
+        builder_.store_var(info.slot);
+      } else {
+        /* 解构 + 默认值：源 undefined 时先求默认值存入源槽，再解构。 */
+        BcLabel use_default = builder_.new_label();
+        BcLabel end = builder_.new_label();
+        builder_.load_var(info.slot);
+        builder_.jump_if_undefined(&use_default);
+        builder_.jump(&end);
+        builder_.bind_label(use_default);
+        if (!compileExpr(*p->children[1])) return false;
+        builder_.bind_label(end);
+        builder_.store_var(info.slot);
+        if (!compilePattern(*target, info.slot, /*is_declaration=*/true)) {
+          return false;
+        }
+      }
+    } else if (p->type == NodeType::RestElement) {
+      /* ...rest：RestParam {i} 收集 args[i..] 为数组，存源槽。 */
+      builder_.rest_param(static_cast<uint16_t>(i));
+      builder_.store_var(info.slot);
+      const ASTNode *target = p->children[0];
+      if (target->type != NodeType::Identifier) {
+        if (!compilePattern(*target, info.slot, /*is_declaration=*/true)) {
+          return false;
+        }
+      }
+    } else {
+      /* 解构参数：从源槽解构绑定（f({a}) / f([x])）。 */
+      if (!compilePattern(*p, info.slot, /*is_declaration=*/true)) {
+        return false;
+      }
+    }
   }
 
   /* 函数体：块语句逐条编译，或箭头函数表达式体（求值后 Ret）。 */
@@ -268,6 +374,221 @@ CompileResult Compiler::failResult() {
   return result;
 }
 
+/* -------------------------------------------------------------------------- */
+/* 解构编译（M5.1a）                                                          */
+/* -------------------------------------------------------------------------- */
+
+/* 预声明解构模式中的全部绑定名（声明语义：槽位分配稳定）。 */
+bool Compiler::declarePatternBindings(const ASTNode &pattern) {
+  if (pattern.type == NodeType::ObjectPattern) {
+    for (const ASTNode *member : pattern.children) {
+      if (member == nullptr) continue;
+      if (member->type == NodeType::SpreadElement) {
+        if (!member->children.empty() &&
+            !declarePatternBindings(*member->children[0]))
+          return false;
+        continue;
+      }
+      if (member->type != NodeType::Property || member->children.empty()) {
+        return false;
+      }
+      /* 简写 { p }：单 child（key 即 value），value = key。 */
+      const ASTNode *value =
+          member->children.size() >= 2 ? member->children[1] : member->children[0];
+      if (!declarePatternBindings(*value)) return false;
+    }
+    return true;
+  }
+  if (pattern.type == NodeType::ArrayPattern) {
+    for (const ASTNode *elem : pattern.children) {
+      if (elem == nullptr) continue;
+      if (elem->type == NodeType::SpreadElement) {
+        if (!elem->children.empty() &&
+            !declarePatternBindings(*elem->children[0]))
+          return false;
+        continue;
+      }
+      if (!declarePatternBindings(*elem)) return false;
+    }
+    return true;
+  }
+  if (pattern.type == NodeType::Identifier) {
+    declareLocal(pattern.name);
+    return true;
+  }
+  if (pattern.type == NodeType::AssignmentPattern) {
+    /* 默认值：绑定左侧目标。 */
+    if (!pattern.children.empty()) return declarePatternBindings(*pattern.children[0]);
+    return false;
+  }
+  if (pattern.type == NodeType::RestElement) {
+    if (!pattern.children.empty()) return declarePatternBindings(*pattern.children[0]);
+    return false;
+  }
+  return false;
+}
+
+/* 绑定单个目标（值已在栈顶）：
+ *   Identifier      -> 声明 declareLocal/store 或赋值 resolveAssignTarget/store
+ *   AssignmentPattern -> 默认值：undefined 时求默认表达式
+ *   嵌套模式        -> 存临时槽后递归 compilePattern
+ * 绑定后值仍留栈顶（调用方 Pop 或复用）。 */
+bool Compiler::compileBindTarget(const ASTNode &target, bool is_declaration) {
+  if (target.type == NodeType::Identifier) {
+    if (is_declaration) {
+      uint16_t slot = declareLocal(target.name);
+      builder_.store_var(slot);
+      builder_.load_var(slot); /* 恢复绑定值到栈顶（外层 Pop 复用） */
+    } else {
+      uint16_t slot = 0, capture = 0;
+      bool is_upvalue = false;
+      if (!resolveAssignTarget(target.name, &slot, &capture, &is_upvalue)) {
+        fail("not implemented: assignment to undeclared global '" +
+             target.name + "'");
+        return false;
+      }
+      if (is_upvalue) {
+        builder_.store_upvalue(capture);
+        builder_.load_upvalue(capture); /* 保留绑定值在栈顶 */
+      } else {
+        builder_.store_var(slot);
+        builder_.load_var(slot);
+      }
+    }
+    return true;
+  }
+
+  if (target.type == NodeType::AssignmentPattern) {
+    /* 默认值：value = (value === undefined) ? default : value
+     *   [value] JumpIfUndefined use_default; Jump end
+     *   use_default: [default]            ; end:
+     * 注意：JumpIfUndefined 弹栈。选定后递归绑定左侧目标（值在栈顶）。 */
+    if (target.children.size() < 2) {
+      fail("invalid default value pattern");
+      return false;
+    }
+    BcLabel use_default = builder_.new_label();
+    BcLabel end = builder_.new_label();
+    builder_.jump_if_undefined(&use_default);
+    builder_.jump(&end);
+    builder_.bind_label(use_default);
+    if (!compileExpr(*target.children[1])) return false;
+    builder_.bind_label(end);
+    /* 递归绑定左侧目标（Identifier / 嵌套模式；绑定后值留栈顶）。 */
+    return compileBindTarget(*target.children[0], is_declaration);
+  }
+
+  if (target.type == NodeType::ObjectPattern ||
+      target.type == NodeType::ArrayPattern) {
+    /* 嵌套模式：值暂存临时槽后递归，恢复源值到栈顶（外层 Pop 复用）。 */
+    uint16_t tmp = scope_->next_slot++;
+    builder_.store_var(tmp);
+    if (!compilePattern(target, tmp, is_declaration)) return false;
+    builder_.load_var(tmp);
+    return true;
+  }
+
+  fail("invalid destructuring target");
+  return false;
+}
+
+/* 解构模式编译：源在临时槽 src_slot，逐元素绑定。
+ * 对象模式：LoadVar src; LoadProp key（值在栈顶）-> 绑定
+ * 数组模式：LoadVar src; PushInt i; LoadElem（值在栈顶）-> 绑定；
+ *           rest（SpreadElement 在数组模式末尾）用 RestToArray。 */
+bool Compiler::compilePattern(const ASTNode &pattern, uint16_t src_slot,
+                              bool is_declaration) {
+  if (pattern.type == NodeType::ObjectPattern) {
+    for (const ASTNode *member : pattern.children) {
+      if (member == nullptr) continue;
+      if (member->type == NodeType::SpreadElement) {
+        /* 对象 rest：{a, ...rest}（ES2018）。rest = 源剩余属性。
+         * 用 RestToArray 不适用（对象非迭代器）；本阶段暂不支持，
+         * M5.1a 先支持数组 rest，对象 rest 留 M5.1e。 */
+        fail("not implemented: object rest in destructuring");
+        return false;
+      }
+      if (member->type != NodeType::Property || member->children.empty()) {
+        fail("invalid object pattern member");
+        return false;
+      }
+      /* 简写 { p }：单 child（key 即 value），value = key。 */
+      const ASTNode *value =
+          member->children.size() >= 2 ? member->children[1] : member->children[0];
+      /* key */
+      std::string key;
+      if (!objectKeyToString(member->children[0], &key)) {
+        fail("not implemented: computed key in destructuring");
+        return false;
+      }
+      builder_.load_var(src_slot);
+      builder_.load_prop(key); /* 值在栈顶 */
+      if (!compileBindTarget(*value, is_declaration)) {
+        return false;
+      }
+      builder_.pop(); /* 丢弃绑定值 */
+    }
+    return true;
+  }
+
+  if (pattern.type == NodeType::ArrayPattern) {
+    uint16_t index = 0;
+    for (const ASTNode *elem : pattern.children) {
+      if (elem == nullptr) {
+        /* 空洞：跳过（无绑定），但索引仍递增。 */
+        ++index;
+        continue;
+      }
+      if (elem->type == NodeType::SpreadElement) {
+        /* rest：...target（必须为数组模式最后一个元素，Parser 已保证）。
+         * LoadVar src; PushInt index; RestToArray -> 剩余数组 */
+        if (elem->children.empty()) {
+          fail("invalid rest element");
+          return false;
+        }
+        builder_.load_var(src_slot);
+        builder_.push_int(index);
+        builder_.rest_to_array();
+        if (!compileBindTarget(*elem->children[0], is_declaration)) {
+          return false;
+        }
+        builder_.pop();
+        return true; /* rest 之后无更多元素 */
+      }
+      builder_.load_var(src_slot);
+      builder_.push_int(index);
+      builder_.load_elem(); /* 值在栈顶 */
+      if (!compileBindTarget(*elem, is_declaration)) {
+        return false;
+      }
+      builder_.pop(); /* 丢弃绑定值 */
+      ++index;
+    }
+    return true;
+  }
+
+  fail("invalid pattern");
+  return false;
+}
+
+/* 展开参数列表（M5.1a）：把 args 元素追加到槽 slot 的数组。
+ * 非展开元素求值后 AppendElem（动态索引追加）；展开元素求值后
+ * AppendSpread（迭代追加）。求值顺序 = 源码顺序（§13.2.3 等）。 */
+bool Compiler::compileSpreadArgs(const std::vector<const ASTNode *> &args,
+                                 uint16_t slot) {
+  for (const ASTNode *arg : args) {
+    if (arg == nullptr) continue;
+    if (arg->type == NodeType::SpreadElement) {
+      if (arg->children.empty() || !compileExpr(*arg->children[0])) return false;
+      builder_.append_spread(slot);
+    } else {
+      if (!compileExpr(*arg)) return false;
+      builder_.append_elem(slot);
+    }
+  }
+  return true;
+}
+
 /* 变量声明：每个声明器分配局部槽 + 编译初始化表达式（声明值 = undefined）。 */
 bool Compiler::compileVarDecl(const ASTNode &decl) {
   for (const ASTNode *declarator : decl.children) {
@@ -275,14 +596,29 @@ bool Compiler::compileVarDecl(const ASTNode &decl) {
       fail("invalid variable declarator");
       return false;
     }
-    /* 仅支持简单标识符绑定（解构在②③扩展）。 */
-    if (declarator->children.empty() ||
-        declarator->children[0]->type != NodeType::Identifier) {
-      fail("not implemented: destructuring declaration");
+    const ASTNode *target = declarator->children[0];
+    if (target->type == NodeType::ObjectPattern ||
+        target->type == NodeType::ArrayPattern) {
+      /* 解构声明（M5.1a）：先声明所有绑定名，再编译 init 并解构。
+       * 无 init 的解构声明非法（Parser 已对 const 校验；var/let 缺省
+       * 语义为解构 undefined，本阶段直接报错）。 */
+      if (declarator->children.size() < 2) {
+        fail("destructuring declaration requires initializer");
+        return false;
+      }
+      /* 预声明绑定名（保证槽位分配稳定）。 */
+      if (!declarePatternBindings(*target)) return false;
+      if (!compileExpr(*declarator->children[1])) return false;
+      uint16_t tmp = scope_->next_slot++;
+      builder_.store_var(tmp);
+      if (!compilePattern(*target, tmp, /*is_declaration=*/true)) return false;
+      continue;
+    }
+    if (target->type != NodeType::Identifier) {
+      fail("invalid variable declarator target");
       return false;
     }
-    const ASTNode *id = declarator->children[0];
-    uint16_t slot = declareLocal(id->name);
+    uint16_t slot = declareLocal(target->name);
 
     /* 初始化：= expr（未初始化时槽位为 undefined，由 runBytecode 填充）。 */
     if (declarator->children.size() >= 2) {
@@ -676,8 +1012,13 @@ bool Compiler::compileObjectLiteral(const ASTNode &node) {
   for (const ASTNode *prop : node.children) {
     if (prop == nullptr) continue;
     if (prop->type == NodeType::SpreadElement) {
-      fail("not implemented: spread in object literal");
-      return false;
+      /* 对象展开（M5.1a，§12.2.6.9 CopyDataProperties）：
+       * 求值源对象，own enumerable 字符串属性复制进 tmp。 */
+      if (prop->children.empty() || !compileExpr(*prop->children[0])) {
+        return false;
+      }
+      builder_.copy_object_props(tmp);
+      continue;
     }
     if (prop->type != NodeType::Property) {
       fail("invalid object literal member");
@@ -733,12 +1074,33 @@ bool Compiler::compileArrayLiteral(const ASTNode &node) {
   builder_.store_var(tmp);
 
   uint16_t index = 0;
+  bool has_spread = false;
+  for (const ASTNode *elem : node.children) {
+    if (elem != nullptr && elem->type == NodeType::SpreadElement) {
+      has_spread = true;
+      break;
+    }
+  }
+  if (has_spread) {
+    /* 含展开：全部元素动态追加（展开前后顺序一致，索引动态）。
+     * 空洞（nullptr）无值，不追加（保持紧凑存储语义）。 */
+    for (const ASTNode *elem : node.children) {
+      if (elem == nullptr) continue;
+      if (elem->type == NodeType::SpreadElement) {
+        if (elem->children.empty() || !compileExpr(*elem->children[0])) {
+          return false;
+        }
+        builder_.append_spread(tmp);
+      } else {
+        if (!compileExpr(*elem)) return false;
+        builder_.append_elem(tmp);
+      }
+    }
+    builder_.load_var(tmp); /* 结果 = 数组 */
+    return true;
+  }
   for (const ASTNode *elem : node.children) {
     if (elem == nullptr) continue;
-    if (elem->type == NodeType::SpreadElement) {
-      fail("not implemented: spread in array literal");
-      return false;
-    }
     builder_.load_var(tmp);   /* arr */
     builder_.push_int(index); /* arr, i */
     if (!compileExpr(*elem)) return false;
@@ -1039,8 +1401,19 @@ bool Compiler::compileAssignment(const ASTNode &node) {
     /* 逻辑复合赋值（&&= / ||= / ??=）在成员分支统一处理（M3.2）。 */
     return compileMemberAssign(node);
   }
+  if (lhs->type == NodeType::ObjectPattern ||
+      lhs->type == NodeType::ArrayPattern) {
+    /* 解构赋值（M5.1a）：[a] = arr / {a} = obj。
+     * Parser 已保证是纯 = 赋值（复合赋值给解构目标非法）。 */
+    if (!compileExpr(*rhs)) return false;
+    uint16_t tmp = scope_->next_slot++;
+    builder_.store_var(tmp);
+    if (!compilePattern(*lhs, tmp, /*is_declaration=*/false)) return false;
+    builder_.load_var(tmp); /* 解构赋值表达式值 = 源值（§13.15.2） */
+    return true;
+  }
   if (lhs->type != NodeType::Identifier) {
-    fail("not implemented: assignment to destructuring");
+    fail("invalid assignment target");
     return false;
   }
   uint16_t slot = 0;
@@ -1108,9 +1481,20 @@ bool Compiler::compileCall(const ASTNode &node) {
   const ASTNode *callee = node.children[0];
   size_t argc = node.children.size() - 1;
 
-  /* 成员方法调用 obj.method(args)（M4.1）：this 绑定接收者。
-   *   [obj] Dup LoadProp "method" [args...] CallMethod {argc}
-   * 栈布局：obj, func, args...（CallMethod 以 obj 为 this）。 */
+  /* 展开调用（含展开参数）：f(...a, b) / obj.m(...a)。
+   * 成员调用保留 this（obj, func），普通调用只需 func。
+   * 参数构建到临时数组，CallArray/展开版 CallMethod 展开。
+   * 本阶段成员展开调用用 CallArray 近似（this 绑定不完整），
+   * 简单 this 场景（obj.m() 无展开）仍走 CallMethod。 */
+  bool has_spread = false;
+  for (size_t i = 1; i < node.children.size(); ++i) {
+    if (node.children[i] != nullptr &&
+        node.children[i]->type == NodeType::SpreadElement) {
+      has_spread = true;
+      break;
+    }
+  }
+
   if (callee->type == NodeType::MemberExpression) {
     if (callee->member.optional || callee->children.size() < 2) {
       fail("not implemented: optional chaining in call");
@@ -1120,6 +1504,21 @@ bool Compiler::compileCall(const ASTNode &node) {
     if (prop->type == NodeType::PrivateIdentifier) {
       fail("not implemented: private member call");
       return false;
+    }
+    if (has_spread) {
+      /* obj.m(...a)：callee 求值（obj.m 值）作普通函数，构建 args
+       * 数组后 CallArray。this 绑定为 undefined（CallArray 无 this 槽），
+       * 成员展开调用的 this 语义 M5.1e 补全。 */
+      if (!compileExpr(*callee)) return false; /* func（obj.m 求值） */
+      uint16_t args_slot = scope_->next_slot++;
+      builder_.new_array();
+      builder_.store_var(args_slot);
+      std::vector<const ASTNode *> args(node.children.begin() + 1,
+                                        node.children.end());
+      if (!compileSpreadArgs(args, args_slot)) return false;
+      builder_.load_var(args_slot);
+      builder_.call_array();
+      return true;
     }
     if (!compileExpr(*callee->children[0])) return false; /* obj */
     builder_.dup();                                        /* obj, obj */
@@ -1142,6 +1541,18 @@ bool Compiler::compileCall(const ASTNode &node) {
 
   /* 普通调用：callee 先入栈，再压 argc 个参数，Call {argc}。 */
   if (!compileExpr(*callee)) return false;
+  if (has_spread) {
+    /* f(...a, b)：参数构建到数组，CallArray 展开调用。 */
+    uint16_t args_slot = scope_->next_slot++;
+    builder_.new_array();
+    builder_.store_var(args_slot);
+    std::vector<const ASTNode *> args(node.children.begin() + 1,
+                                      node.children.end());
+    if (!compileSpreadArgs(args, args_slot)) return false;
+    builder_.load_var(args_slot);
+    builder_.call_array();
+    return true;
+  }
   for (size_t i = 1; i < node.children.size(); ++i) {
     if (!compileExpr(*node.children[i])) return false;
   }
@@ -1185,6 +1596,26 @@ bool Compiler::compileNew(const ASTNode &node) {
     if (!compileExpr(*callee)) return false;
   }
   size_t argc = node.children.size() - 1;
+  /* 展开 new：new Foo(...a, b) —— 参数构建到数组，ConstructArray 展开。 */
+  bool has_spread = false;
+  for (size_t i = 1; i < node.children.size(); ++i) {
+    if (node.children[i] != nullptr &&
+        node.children[i]->type == NodeType::SpreadElement) {
+      has_spread = true;
+      break;
+    }
+  }
+  if (has_spread) {
+    uint16_t args_slot = scope_->next_slot++;
+    builder_.new_array();
+    builder_.store_var(args_slot);
+    std::vector<const ASTNode *> args(node.children.begin() + 1,
+                                      node.children.end());
+    if (!compileSpreadArgs(args, args_slot)) return false;
+    builder_.load_var(args_slot);
+    builder_.construct_array();
+    return true;
+  }
   for (size_t i = 1; i < node.children.size(); ++i) {
     if (!compileExpr(*node.children[i])) return false;
   }

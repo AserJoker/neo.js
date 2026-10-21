@@ -115,6 +115,15 @@ class Compiler {
   /* 赋值目标（Identifier -> StoreVar/StoreUpvalue；MemberExpression -> compileMemberAssign）。 */
   bool isSimpleAssignTarget(const ASTNode &node) const;
 
+  /* 解构编译（M5.1a）：源值已在临时槽 src_slot，编译模式绑定。
+   * is_declaration=true（声明）：目标标识符 declareLocal + store；
+   * false（赋值）：目标标识符 resolveAssignTarget + store。 */
+  bool compilePattern(const ASTNode &pattern, uint16_t src_slot, bool is_declaration);
+  /* 单绑定目标（Identifier / 嵌套模式 / AssignmentPattern 默认值）。 */
+  bool compileBindTarget(const ASTNode &target, bool is_declaration);
+  /* 预声明解构模式中的全部绑定名（保证槽位分配稳定，声明语义）。 */
+  bool declarePatternBindings(const ASTNode &pattern);
+
   /* 局部变量槽分配：声明/参数登记；引用解析（未找到 -> LoadGlobal）。 */
   uint16_t declareLocal(const std::string &name);
   bool resolveLocal(const std::string &name, uint16_t *slot);
@@ -138,6 +147,12 @@ class Compiler {
   /* 编译子函数到独立 builder（共享参数/body 解析）。调用方负责
    * 保存/恢复外层 builder_ 与作用域帧。返回子函数字节码。 */
   bool compileChildFunction(const ASTNode &fn, FunctionBytecode *out);
+
+  /* 展开参数列表（M5.1a）：把 args 的元素（含 SpreadElement）追加到槽
+   * slot 的数组。非展开元素 AppendElem，展开 AppendSpread。
+   * 返回 false 时已设置错误。 */
+  bool compileSpreadArgs(const std::vector<const ASTNode *> &args,
+                         uint16_t slot);
 
   void fail(const std::string &msg) { error_ = msg; }
 

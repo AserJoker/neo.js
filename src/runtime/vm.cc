@@ -739,6 +739,13 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         if (toBoolean(cond)) pc = instr.arg;
         break;
       }
+      case Opcode::JumpIfUndefined: {
+        /* M5.1a：栈顶为 undefined 则跳转（解构默认值判断）。 */
+        if (stack.empty()) return fail("Error: stack underflow on JumpIfUndefined");
+        JSValue *v = stack.back(); stack.pop_back();
+        if (v->kind() == Kind::Undefined) pc = instr.arg;
+        break;
+      }
       case Opcode::Call: {
         uint16_t argc = instr.arg;
         size_t func_slot = stack.size() - 1 - static_cast<size_t>(argc);
@@ -1099,6 +1106,227 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
           if (!v.ok()) return v;
           stack.back() = v.value; /* value */
           stack.push_back(ctx->createValue(false)); /* done=false */
+        }
+        break;
+      }
+      case Opcode::RestToArray: {
+        /* M5.1a rest/展开：栈 [iterable, start] -> 剩余元素数组。
+         * 迭代 iterable，跳过前 start 个元素，其余收集为新数组。
+         * start 必须为非负整数（编译期保证）。 */
+        if (stack.size() < 2) return fail("Error: stack underflow on RestToArray");
+        JSValue *start_v = stack.back();
+        JSValue *iterable = stack[stack.size() - 2];
+        size_t start = start_v->isNumber()
+                           ? static_cast<size_t>(std::max(0.0, start_v->toNumber()))
+                           : 0;
+        ConversionResult it = getIterator(ctx, iterable);
+        if (!it.ok()) return it;
+        JSValue *iterator = it.value;
+        /* 跳过前 start 个。 */
+        size_t skipped = 0;
+        while (skipped < start) {
+          ConversionResult step = iteratorStep(ctx, iterator);
+          if (step.value == nullptr && !step.error.empty()) return step;
+          if (step.value == nullptr) break; /* 迭代提前结束 */
+          ++skipped;
+        }
+        /* 收集剩余元素。 */
+        JSValue *arr = ctx->createArray(0);
+        size_t idx = 0;
+        for (;;) {
+          ConversionResult step = iteratorStep(ctx, iterator);
+          if (step.value == nullptr && !step.error.empty()) return step;
+          if (step.value == nullptr) break; /* 迭代完成 */
+          ConversionResult v = iteratorValue(ctx, step.value);
+          if (!v.ok()) return v;
+          arr->object()->setElement(idx++, v.value);
+        }
+        stack.resize(stack.size() - 2);
+        stack.push_back(arr);
+        break;
+      }
+      case Opcode::RestParam: {
+        /* M5.1a rest 参数：args[k..] 收集为新数组压栈。
+         * runBytecode 入口参数（args/argc）在本帧仍有效（调用栈递归
+         * 每帧独立）。数组经 createArray 创建后立即入栈（根集保护）。 */
+        size_t k = instr.arg;
+        JSValue *arr = ctx->createArray(0);
+        size_t idx = 0;
+        for (size_t i = k; i < argc; ++i) {
+          if (args[i] != nullptr) arr->object()->setElement(idx++, args[i]);
+        }
+        stack.push_back(arr);
+        break;
+      }
+      case Opcode::AppendElem: {
+        /* M5.1a 数组展开：弹栈值追加到槽内数组末尾（动态索引）。 */
+        if (stack.empty() || instr.arg >= fn.numLocals) {
+          return fail("Error: stack underflow on AppendElem");
+        }
+        JSValue *val = stack.back();
+        stack.pop_back();
+        JSValue *arr = stack[instr.arg];
+        if (arr == nullptr || !arr->isObject() || !arr->object()->isArray()) {
+          return fail("TypeError: AppendElem target is not an array");
+        }
+        size_t len = arr->object()->length();
+        arr->object()->setElement(len, val);
+        break;
+      }
+      case Opcode::AppendSpread: {
+        /* M5.1a 数组展开：弹栈可迭代对象，其元素按序追加到槽内数组。
+         * 迭代器入栈保护（循环期间 getIterator/iteratorStep/iteratorValue
+         * 可能分配触发 GC，迭代器不在栈上会悬垂）。 */
+        if (stack.empty() || instr.arg >= fn.numLocals) {
+          return fail("Error: stack underflow on AppendSpread");
+        }
+        JSValue *iterable = stack.back();
+        stack.pop_back();
+        JSValue *arr = stack[instr.arg];
+        if (arr == nullptr || !arr->isObject() || !arr->object()->isArray()) {
+          return fail("TypeError: AppendSpread target is not an array");
+        }
+        ConversionResult it = getIterator(ctx, iterable);
+        if (!it.ok()) return it;
+        JSValue *iterator = it.value;
+        stack.push_back(iterator); /* 迭代器入栈根集保护（循环期间） */
+        for (;;) {
+          ConversionResult step = iteratorStep(ctx, iterator);
+          if (step.value == nullptr && !step.error.empty()) {
+            stack.pop_back();
+            return step;
+          }
+          if (step.value == nullptr) break; /* 迭代完成 */
+          ConversionResult v = iteratorValue(ctx, step.value);
+          if (!v.ok()) {
+            stack.pop_back();
+            return v;
+          }
+          size_t len = arr->object()->length();
+          arr->object()->setElement(len, v.value);
+        }
+        stack.pop_back(); /* 弹出迭代器保护 */
+        break;
+      }
+      case Opcode::CallArray: {
+        /* M5.1a 展开调用：栈 [func, args_array] -> 调用结果。
+         * args_array 元素（可能为 null=空洞）按序为参数。
+         * func 与 args_array 保持在栈（GC 根集），flatten 到临时
+         * vector 后调用（call 内部分配触发 GC，vector 内指针源自栈）。 */
+        if (stack.size() < 2) return fail("Error: stack underflow on CallArray");
+        JSValue *args_arr = stack.back();
+        JSValue *func = stack[stack.size() - 2];
+        if (args_arr == nullptr || !args_arr->isObject() ||
+            !args_arr->object()->isArray()) {
+          return fail("TypeError: spread argument must be iterable");
+        }
+        JSObject *aobj = args_arr->object();
+        std::vector<JSValue *> flat;
+        flat.reserve(aobj->length());
+        for (size_t i = 0; i < aobj->length(); ++i) {
+          JSValue *e = aobj->getElement(i);
+          flat.push_back(e != nullptr ? e : ctx->createValue(Kind::Undefined));
+        }
+        JSValue *this_undef = ctx->createValue(Kind::Undefined);
+        ConversionResult r =
+            call(ctx, func, this_undef,
+                 flat.empty() ? nullptr : flat.data(), flat.size());
+        if (!r.ok()) return r;
+        stack.resize(stack.size() - 2);
+        stack.push_back(r.value);
+        if (r.tmp_handle != 0) ctx->handles().free(r.tmp_handle);
+        break;
+      }
+      case Opcode::ConstructArray: {
+        /* M5.1a 展开 new：栈 [ctor, args_array] -> 构造实例。 */
+        if (stack.size() < 2) return fail("Error: stack underflow on ConstructArray");
+        JSValue *args_arr = stack.back();
+        JSValue *ctor = stack[stack.size() - 2];
+        if (args_arr == nullptr || !args_arr->isObject() ||
+            !args_arr->object()->isArray()) {
+          return fail("TypeError: spread argument must be iterable");
+        }
+        JSObject *aobj = args_arr->object();
+        std::vector<JSValue *> flat;
+        flat.reserve(aobj->length());
+        for (size_t i = 0; i < aobj->length(); ++i) {
+          JSValue *e = aobj->getElement(i);
+          flat.push_back(e != nullptr ? e : ctx->createValue(Kind::Undefined));
+        }
+        ConversionResult r =
+            construct(ctx, ctor, flat.empty() ? nullptr : flat.data(), flat.size());
+        if (!r.ok()) return r;
+        stack.resize(stack.size() - 2);
+        stack.push_back(r.value);
+        if (r.tmp_handle != 0) ctx->handles().free(r.tmp_handle);
+        break;
+      }
+      case Opcode::CopyObjectProps: {
+        /* M5.1a 对象展开 {…src}：弹栈源对象，own enumerable 字符串属性
+         * 复制进槽内目标对象（CopyDataProperties，§10.1.2.1）。
+         * 数组源：整数索引元素为 own enumerable 键。
+         * 原始值源：ToObject 装箱后取属性（null/undefined 跳过）。 */
+        if (stack.empty() || instr.arg >= fn.numLocals) {
+          return fail("Error: stack underflow on CopyObjectProps");
+        }
+        JSValue *src = stack.back();
+        stack.pop_back();
+        JSValue *target = stack[instr.arg];
+        if (target == nullptr || !target->isObject()) {
+          return fail("TypeError: object spread target is not an object");
+        }
+        if (src == nullptr || src->kind() == Kind::Undefined ||
+            src->kind() == Kind::Null) {
+          break; /* null/undefined 源跳过（CopyDataProperties 步骤 2a） */
+        }
+        ConversionResult boxed = toObject(ctx, src);
+        if (!boxed.ok()) return boxed;
+        JSObject *sobj = boxed.value->object();
+        JSObject *tobj = target->object();
+        std::vector<std::string> keys;
+        for (size_t i = 0; i < sobj->length(); ++i) {
+          if (sobj->isArray() && sobj->hasElement(i)) keys.push_back(std::to_string(i));
+        }
+        if (sobj->kind() == ObjectKind::String) {
+          JSValue *data = sobj->wrapperData();
+          if (data != nullptr && data->kind() == Kind::String) {
+            size_t len = utf16Length(data->toString());
+            for (size_t i = 0; i < len; ++i) keys.push_back(std::to_string(i));
+          }
+        }
+        for (const auto &name : sobj->propertyOrder()) {
+          const PropertyDescriptor *d = sobj->getOwnProperty(name);
+          if (d != nullptr && d->enumerable) keys.push_back(name);
+        }
+        for (const std::string &k : keys) {
+          JSValue *v = nullptr;
+          if (sobj->isArray()) {
+            size_t idx = static_cast<size_t>(std::strtoull(k.c_str(), nullptr, 10));
+            v = sobj->getElement(idx);
+          } else {
+            PropertyDescriptor *d = sobj->getOwnProperty(k);
+            if (d != nullptr && d->type == PropertyDescriptor::Type::Accessor) {
+              if (d->getter == nullptr || !isCallable(d->getter)) {
+                v = ctx->createValue(Kind::Undefined);
+              } else {
+                ConversionResult r = call(ctx, d->getter, sobj->holder(), nullptr, 0);
+                if (!r.ok()) return r;
+                v = r.value;
+              }
+            } else {
+              v = d != nullptr && d->value != nullptr ? d->value
+                                                      : ctx->createValue(Kind::Undefined);
+            }
+          }
+          if (v == nullptr) v = ctx->createValue(Kind::Undefined);
+          bool numeric = !k.empty() &&
+                         k.find_first_not_of("0123456789") == std::string::npos;
+          if (tobj->isArray() && numeric && k.size() <= 18) {
+            tobj->setElement(
+                static_cast<size_t>(std::strtoull(k.c_str(), nullptr, 10)), v);
+          } else {
+            tobj->setProperty(k, v);
+          }
         }
         break;
       }

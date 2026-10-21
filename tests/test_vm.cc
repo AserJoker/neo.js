@@ -846,21 +846,15 @@ TEST(Compiler, SequenceExpr) {
   JS_FreeAllocator(a);
 }
 
-/* 编译错误：解构声明 -> not implemented */
-TEST(Compiler, UnsupportedDestructuring) {
+/* 解构声明编译执行（M5.1a）：var [a] = [1]; a */
+TEST(Compiler, DestructuringDeclaration) {
   JSAllocator *a = nullptr;
   JSContext *ctx = makeCtx(&a);
   ASSERT_NE(ctx, nullptr);
 
-  neojs::DiagnosticSink sink;
-  neojs::AST *ast =
-      neojs::parseSource(&ic(ctx)->allocator(), "var [a] = [1]", 13, sink);
-  ASSERT_NE(ast, nullptr);
-  neojs::Compiler compiler;
-  neojs::CompileResult cr = compiler.compile(*ast);
-  ic(ctx)->allocator().destroy(ast);
-  EXPECT_FALSE(cr.ok);
-  EXPECT_NE(cr.error.find("destructuring"), std::string::npos);
+  neojs::ConversionResult r = compileAndRun(ic(ctx), "var [a] = [1]; a");
+  ASSERT_TRUE(r.ok());
+  EXPECT_DOUBLE_EQ(r.value->toNumber(), 1.0);
 
   JS_FreeContext(ctx);
   JS_FreeAllocator(a);
@@ -1359,6 +1353,341 @@ TEST(Compiler, EvalClosureUnderGC) {
   ASSERT_NE(r, nullptr);
   ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
   EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 6.0); /* 1+2+3 */
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* -------------------------------------------------------------------------- */
+/* 13b. M5.1a 解构/默认值/rest/展开编译（端到端）                              */
+/* -------------------------------------------------------------------------- */
+
+/* 解构声明 + 默认值：var [a, b = 2] = [1]; a + b -> 3 */
+TEST(Compiler, M51aDestructuringDefault) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var [a, b = 2] = [1]; a + b",
+                       std::strlen("var [a, b = 2] = [1]; a + b"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 3.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 数组 rest 解构：var [x, ...rest] = [1, 2, 3]; rest[0] + rest[1] -> 5 */
+TEST(Compiler, M51aArrayRest) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx,
+                       "var [x, ...rest] = [1, 2, 3]; rest[0] + rest[1]",
+                       std::strlen("var [x, ...rest] = [1, 2, 3]; rest[0] + rest[1]"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 5.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 对象解构：var {p, q} = {p: 1, q: 2}; p + q -> 3 */
+TEST(Compiler, M51aObjectDestructuring) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var {p, q} = {p: 1, q: 2}; p + q",
+                       std::strlen("var {p, q} = {p: 1, q: 2}; p + q"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 3.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 对象解构重命名：var {p: q} = {p: 7}; q -> 7 */
+TEST(Compiler, M51aObjectDestructuringRename) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var {p: q} = {p: 7}; q",
+                       std::strlen("var {p: q} = {p: 7}; q"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 7.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 解构赋值（非声明）：var a; [a] = [9]; a -> 9 */
+TEST(Compiler, M51aDestructuringAssign) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var a; [a] = [9]; a",
+                       std::strlen("var a; [a] = [9]; a"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 9.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 默认参数：function f(a, b = 2) { return a + b; } f(1) -> 3 */
+TEST(Compiler, M51aDefaultParam) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "function f(a, b = 2) { return a + b; } f(1)",
+      std::strlen("function f(a, b = 2) { return a + b; } f(1)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 3.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 默认参数引用前参：function f(a, b = a * 2) { return b; } f(5) -> 10 */
+TEST(Compiler, M51aDefaultParamRefPrev) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "function f(a, b = a * 2) { return b; } f(5)",
+                       std::strlen("function f(a, b = a * 2) { return b; } f(5)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 10.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 默认参数传显式 undefined：f(1, undefined) -> 3（undefined 也触发默认值） */
+TEST(Compiler, M51aDefaultParamUndefined) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx,
+                       "function f(a, b = 2) { return a + b; } f(1, undefined)",
+                       std::strlen("function f(a, b = 2) { return a + b; } f(1, undefined)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 3.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* rest 参数：function f(a, ...r) { return r[0] + r[1]; } f(1, 2, 3) -> 5 */
+TEST(Compiler, M51aRestParam) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx,
+                       "function f(a, ...r) { return r[0] + r[1]; } f(1, 2, 3)",
+                       std::strlen("function f(a, ...r) { return r[0] + r[1]; } f(1, 2, 3)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 5.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* rest 参数空收集：function f(...r) { return r.length; } f() -> 0 */
+TEST(Compiler, M51aRestParamEmpty) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "function f(...r) { return r.length; } f()",
+                       std::strlen("function f(...r) { return r.length; } f()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 0.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 数组展开字面量：var b = [2, 3]; [1, ...b, 4][3] -> 4 */
+TEST(Compiler, M51aArraySpread) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var b = [2, 3]; var c = [1, ...b, 4]; c[0] + c[1] + c[2] + c[3]",
+                       std::strlen("var b = [2, 3]; var c = [1, ...b, 4]; c[0] + c[1] + c[2] + c[3]"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 10.0); /* 1+2+3+4 */
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 展开调用：function f(a, b, c) { return a + b + c; } var arr = [1, 2, 3]; f(...arr) -> 6 */
+TEST(Compiler, M51aCallSpread) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "function f(a, b, c) { return a + b + c; } var arr = [1, 2, 3]; f(...arr)",
+      std::strlen("function f(a, b, c) { return a + b + c; } var arr = [1, 2, 3]; f(...arr)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 6.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 展开调用 + 混合实参：f(...[1, 2], 3) -> 6 */
+TEST(Compiler, M51aCallSpreadMixed) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "function f(a, b, c) { return a + b + c; } f(...[1, 2], 3)",
+      std::strlen("function f(a, b, c) { return a + b + c; } f(...[1, 2], 3)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 6.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 对象展开：var a = {x: 1, y: 2}; var b = {...a, z: 3}; b.x + b.y + b.z -> 6 */
+TEST(Compiler, M51aObjectSpread) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx,
+                       "var a = {x: 1, y: 2}; var b = {...a, z: 3}; b.x + b.y + b.z",
+                       std::strlen("var a = {x: 1, y: 2}; var b = {...a, z: 3}; b.x + b.y + b.z"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 6.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 解构参数：function f({p}) { return p; } f({p: 42}) -> 42 */
+TEST(Compiler, M51aDestructuredParam) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "function f({p}) { return p; } f({p: 42})",
+                       std::strlen("function f({p}) { return p; } f({p: 42})"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 42.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 解构参数 + 默认值：function f({p} = {p: 5}) { return p; } f() -> 5 */
+TEST(Compiler, M51aDestructuredParamDefault) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "function f({p} = {p: 5}) { return p; } f()",
+                       std::strlen("function f({p} = {p: 5}) { return p; } f()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 5.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 嵌套解构 + 默认值：var {a: [b, c = 3]} = {a: [1]}; b + c -> 4 */
+TEST(Compiler, M51aNestedDestructuringDefault) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var {a: [b, c = 3]} = {a: [1]}; b + c",
+                       std::strlen("var {a: [b, c = 3]} = {a: [1]}; b + c"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 4.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 对象重命名 + 默认值：var {p: q = 1} = {}; q -> 1 */
+TEST(Compiler, M51aObjectRenameDefault) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var {p: q = 1} = {}; q",
+                       std::strlen("var {p: q = 1} = {}; q"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 1.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 解构赋值表达式值 = 源值：var a, b; var r = ({x: a, y: b} = {x: 1, y: 2}); r.x + r.y -> 3 */
+TEST(Compiler, M51aDestructuringAssignValue) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "var a, b; var r = ({x: a, y: b} = {x: 1, y: 2}); r.x + r.y",
+      std::strlen("var a, b; var r = ({x: a, y: b} = {x: 1, y: 2}); r.x + r.y"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 3.0);
   JS_FreeValue(ctx, r);
 
   JS_FreeContext(ctx);

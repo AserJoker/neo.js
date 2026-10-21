@@ -98,6 +98,15 @@ class Parser {
   ASTNode *parseTemplateLiteral(); /* 模板串（含 ${expr} 插值，M1.4 ③-5） */
   ASTNode *parseObjectPattern(bool as_literal = false); /* { ... } 模式（解构/字面量共用） */
   ASTNode *parseArrayPattern(bool as_literal = false);  /* [ ... ] 模式（解构/字面量共用） */
+  ASTNode *parseDefaultValue(ASTNode *target); /* 默认值：target = default（M5.1a） */
+  /* 绑定位置受限目标（M5.1a）：Identifier / 嵌套模式 / ...rest。
+   * 不消费 '='（默认值由调用方经 parseDefaultValue 处理）——
+   * 避免 parseAssignment 把 [a, b=2] / {p: q=1} 吞成 Assignment 节点。 */
+  ASTNode *parseBindingTarget();
+  /* 字面量 → 解构模式（M5.1a）：把赋值左侧的 ArrayLiteral/ObjectLiteral
+   * 递归转换为 ArrayPattern/ObjectPattern；元素/值中的 Assignment 节点转
+   * AssignmentPattern，非绑定目标返回 false。原地修改 node。 */
+  bool convertLiteralToPattern(ASTNode *node);
   ASTNode *newNode(NodeType t);
 
   /* 严格模式辅助（M1.6 ②） */

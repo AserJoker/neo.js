@@ -106,6 +106,16 @@ enum class Opcode : uint8_t {
   GetIterator,     /* 栈顶对象 -> 迭代器（GetIterator，替换 obj） */
   IteratorStep,    /* 栈顶 iterator -> [value, done]（done 在栈顶，§7.4.5） */
   JumpIfTrue,      /* 栈顶为 true 则跳转：JumpIfTrue {target}（弹栈，M4.4f for-of） */
+  JumpIfUndefined, /* 栈顶为 undefined 则跳转：JumpIfUndefined {target}（弹栈，M5.1a 解构默认值） */
+  RestToArray,     /* iterable, start -> 剩余元素数组（M5.1a rest/展开，§7.4） */
+
+  /* M5.1a 默认参数/rest 参数/展开（追加末尾，保持 opcode 数值稳定） */
+  RestParam,       /* 收集剩余调用参数：RestParam {k} -> 压入 args[k..] 新数组（M5.1a rest 参数） */
+  AppendElem,      /* 弹栈值追加到槽内数组末尾：AppendElem {slot}（M5.1a 数组展开） */
+  AppendSpread,    /* 弹栈可迭代对象，其元素追加到槽内数组：AppendSpread {slot}（M5.1a 展开） */
+  CallArray,       /* [func, args_array] -> 以数组元素为参数调用（M5.1a 展开调用） */
+  ConstructArray,  /* [ctor, args_array] -> 以数组元素为参数构造（M5.1a 展开 new） */
+  CopyObjectProps, /* 弹栈源对象，own enumerable 字符串属性复制进槽内对象：CopyObjectProps {slot}（M5.1a 对象展开） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -194,6 +204,15 @@ class BytecodeBuilder {
   void jump(BcLabel *label) { push_op(Opcode::Jump, 0, label); }
   void jump_if_false(BcLabel *label) { push_op(Opcode::JumpIfFalse, 0, label); }
   void jump_if_true(BcLabel *label) { push_op(Opcode::JumpIfTrue, 0, label); }
+  void jump_if_undefined(BcLabel *label) { push_op(Opcode::JumpIfUndefined, 0, label); }
+  void rest_to_array() { push_op(Opcode::RestToArray); }
+  /* M5.1a 默认参数/rest/展开。 */
+  void rest_param(uint16_t k) { push_op(Opcode::RestParam, k); }
+  void append_elem(uint16_t slot) { push_op(Opcode::AppendElem, slot); }
+  void append_spread(uint16_t slot) { push_op(Opcode::AppendSpread, slot); }
+  void call_array() { push_op(Opcode::CallArray); }
+  void construct_array() { push_op(Opcode::ConstructArray); }
+  void copy_object_props(uint16_t slot) { push_op(Opcode::CopyObjectProps, slot); }
   void ret() { push_op(Opcode::Ret); }
   void print() { push_op(Opcode::Print); }
 
