@@ -117,12 +117,19 @@ class JSObject : public GCHeader {
   JSObject *prototype() const { return prototype_; }
   void setPrototype(JSObject *proto) { prototype_ = proto; }
 
+  /* [[Extensible]]（§9.4.1，M4.4g）：preventExtensions/freeze/seal 置 false。
+   * 新属性添加、属性删除（configurable）受此约束；原型链不参与。 */
+  bool extensible() const { return extensible_; }
+  void setExtensible(bool e) { extensible_ = e; }
+
   /* 反向包装指针：持有本对象的 JSValue（对象工厂设置）。
    * 供原型链返回、GC 根集回查等需要 JSObject->JSValue 的场合。 */
   JSValue *holder() const { return holder_; }
   void setHolder(JSValue *v) { holder_ = v; }
 
-  /* 命名属性（properties 表） */
+  /* 命名属性（properties 表）。property_order_ 记录字符串键创建顺序
+   * （§9.1.12 [[OwnPropertyKeys]]：整数索引升序 + 字符串按创建序），
+   * Object.keys/values/entries 据此输出。 */
   bool hasOwnProperty(const std::string &name) const;
   PropertyDescriptor *getOwnProperty(const std::string &name);
   const PropertyDescriptor *getOwnProperty(const std::string &name) const;
@@ -131,6 +138,8 @@ class JSObject : public GCHeader {
   const std::unordered_map<std::string, PropertyDescriptor> &properties() const {
     return properties_;
   }
+  /* 字符串键创建顺序（§9.1.12）：供 Object.keys/values/entries 按序输出。 */
+  const std::vector<std::string> &propertyOrder() const { return property_order_; }
 
   /* Symbol 属性（M4.4d，§7.3.22 等）：键为 Symbol 值指针，引用相等
    * （Symbol 每次创建唯一，SameValue 即引用相等）。独立表存储，
@@ -187,8 +196,10 @@ class JSObject : public GCHeader {
 
  private:
   ObjectKind kind_ = ObjectKind::Ordinary;
+  bool extensible_ = true;                               /* [[Extensible]]（M4.4g） */
   JSObject *prototype_ = nullptr;                            /* [[Prototype]] */
   std::unordered_map<std::string, PropertyDescriptor> properties_; /* 命名属性表 */
+  std::vector<std::string> property_order_; /* 字符串键创建顺序（§9.1.12，M4.4g） */
   std::unordered_map<JSValue *, PropertyDescriptor> symbol_properties_; /* Symbol 属性表（M4.4d） */
   std::vector<JSValue *> elements_;                          /* 数组元素（连续索引） */
   std::vector<MapEntry> map_entries_;                        /* 集合条目（M4.4a，[[MapData]]/[[SetData]]） */

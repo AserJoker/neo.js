@@ -149,6 +149,11 @@ ConversionResult objectConstructor(JSContext *ctx, JSValue *,
   return toObject(ctx, args[0]);
 }
 
+/* Object.defineProperties（§20.1.2.4）——供 objectCreate/objectDefineProperties
+ * 互相引用，前置声明（定义在 Object 静态方法区）。 */
+ConversionResult objectDefineProperties(JSContext *ctx, JSValue *properties,
+                                        JSObject *target);
+
 /* Object.getPrototypeOf（§20.1.2.9）：O 必须为对象；返回 [[Prototype]]。
  * 无原型 -> null。 */
 ConversionResult objectGetPrototypeOf(JSContext *ctx, JSValue *,
@@ -205,11 +210,367 @@ ConversionResult objectCreate(JSContext *ctx, JSValue *,
   }
   JSObject *p = (proto->kind() == Kind::Null) ? nullptr : proto->object();
   JSValue *obj = ctx->createObject(p);
-  /* properties 参数（M4 Object.defineProperties 启用）。 */
+  /* properties 参数（M4.4g：Object.defineProperties 已实现）。 */
   if (argc > 1 && args[1] != nullptr && args[1]->kind() != Kind::Undefined) {
-    /* 本阶段忽略：未实现 defineProperties。 */
+    ConversionResult d = objectDefineProperties(ctx, args[1], obj->object());
+    if (!d.ok()) return d;
   }
   return ok(obj);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Object 静态方法（M4.4g，§20.1.2）                                          */
+/* -------------------------------------------------------------------------- */
+
+/* own enumerable string-keyed 属性键收集（§7.3.21 EnumerableOwnProperties 的
+ * 键部分）：数组 elements 索引（0..len-1 非空洞）+ properties_ 过滤 enumerable。
+ * 供 Object.keys/values/entries 共享。返回字符串键列表（含整数索引键）。 */
+void objectOwnEnumerableKeys(JSObject *o, std::vector<std::string> *keys) {
+  if (o->isArray()) {
+    for (size_t i = 0; i < o->length(); ++i) {
+      if (o->hasElement(i)) keys->push_back(std::to_string(i));
+    }
+  } else if (o->kind() == ObjectKind::String) {
+    /* String exotic object（§10.4.3.4）：整数索引为虚拟 own 属性，
+     * 由 [[StringData]] 的 code unit 数推导。 */
+    JSValue *data = o->wrapperData();
+    if (data != nullptr && data->kind() == Kind::String) {
+      size_t len = utf16Length(data->toString());
+      for (size_t i = 0; i < len; ++i) keys->push_back(std::to_string(i));
+    }
+  }
+  /* 字符串键按创建顺序（§9.1.12），过滤 enumerable。 */
+  for (const auto &name : o->propertyOrder()) {
+    const PropertyDescriptor *d = o->getOwnProperty(name);
+    if (d != nullptr && d->enumerable) keys->push_back(name);
+  }
+}
+
+/* Object.keys（§20.1.2.6）：ToObject(O) 后收集 own enumerable string-keyed
+ * 键为数组。原始值装箱（§7.1.13）；undefined/null -> TypeError。 */
+ConversionResult objectKeys(JSContext *ctx, JSValue *, JSValue *const *args,
+                            size_t argc) {
+  if (argc == 0 || args[0] == nullptr) {
+    return fail("TypeError: Object.keys called on null or undefined");
+  }
+  ConversionResult boxed = toObject(ctx, args[0]);
+  if (!boxed.ok()) return boxed;
+  JSObject *o = boxed.value->object();
+  std::vector<std::string> keys;
+  objectOwnEnumerableKeys(o, &keys);
+  JSValue *arr = ctx->createArray(keys.size());
+  for (size_t i = 0; i < keys.size(); ++i) {
+    arr->object()->setElement(i, ctx->createValue(keys[i]));
+  }
+  return ok(arr);
+}
+
+/* Object.values（§20.1.2.22）：own enumerable string-keyed 属性值数组。 */
+ConversionResult objectValues(JSContext *ctx, JSValue *, JSValue *const *args,
+                              size_t argc) {
+  if (argc == 0 || args[0] == nullptr) {
+    return fail("TypeError: Object.values called on null or undefined");
+  }
+  ConversionResult boxed = toObject(ctx, args[0]);
+  if (!boxed.ok()) return boxed;
+  JSObject *o = boxed.value->object();
+  std::vector<std::string> keys;
+  objectOwnEnumerableKeys(o, &keys);
+  JSValue *arr = ctx->createArray(keys.size());
+  for (size_t i = 0; i < keys.size(); ++i) {
+    JSValue *v = nullptr;
+    if (o->isArray()) {
+      /* 数组整数键：读 elements。 */
+      size_t idx = static_cast<size_t>(std::strtoull(keys[i].c_str(), nullptr, 10));
+      v = o->getElement(idx);
+    } else if (o->kind() == ObjectKind::String) {
+      /* String exotic object：虚拟索引属性，由 [[StringData]] 推导。 */
+      JSValue *data = o->wrapperData();
+      if (data != nullptr && data->kind() == Kind::String) {
+        size_t idx =
+            static_cast<size_t>(std::strtoull(keys[i].c_str(), nullptr, 10));
+        v = ctx->createValue(utf16Substring(data->toString(), idx, idx + 1));
+      }
+    } else {
+      PropertyDescriptor *d = o->getOwnProperty(keys[i]);
+      v = d != nullptr ? d->value : nullptr;
+    }
+    arr->object()->setElement(i, v != nullptr ? v : ctx->createValue(Kind::Undefined));
+  }
+  return ok(arr);
+}
+
+/* Object.entries（§20.1.2.5）：own enumerable string-keyed 属性 [key, value]
+ * 对数组。 */
+ConversionResult objectEntries(JSContext *ctx, JSValue *, JSValue *const *args,
+                               size_t argc) {
+  if (argc == 0 || args[0] == nullptr) {
+    return fail("TypeError: Object.entries called on null or undefined");
+  }
+  ConversionResult boxed = toObject(ctx, args[0]);
+  if (!boxed.ok()) return boxed;
+  JSObject *o = boxed.value->object();
+  std::vector<std::string> keys;
+  objectOwnEnumerableKeys(o, &keys);
+  JSValue *arr = ctx->createArray(keys.size());
+  for (size_t i = 0; i < keys.size(); ++i) {
+    JSValue *v = nullptr;
+    if (o->isArray()) {
+      size_t idx = static_cast<size_t>(std::strtoull(keys[i].c_str(), nullptr, 10));
+      v = o->getElement(idx);
+    } else if (o->kind() == ObjectKind::String) {
+      JSValue *data = o->wrapperData();
+      if (data != nullptr && data->kind() == Kind::String) {
+        size_t idx =
+            static_cast<size_t>(std::strtoull(keys[i].c_str(), nullptr, 10));
+        v = ctx->createValue(utf16Substring(data->toString(), idx, idx + 1));
+      }
+    } else {
+      PropertyDescriptor *d = o->getOwnProperty(keys[i]);
+      v = d != nullptr ? d->value : nullptr;
+    }
+    /* 每项为 [key, value] 数组。 */
+    JSValue *pair = ctx->createArray(2);
+    pair->object()->setElement(0, ctx->createValue(keys[i]));
+    pair->object()->setElement(1, v != nullptr ? v : ctx->createValue(Kind::Undefined));
+    arr->object()->setElement(i, pair);
+  }
+  return ok(arr);
+}
+
+/* 从属性描述符对象解析出 PropertyDescriptor（§20.1.2.4 步骤 2-8）：
+ * 读 desc 对象的 enumerable/writable/configurable/value/get/set。
+ * 缺省字段保持默认（writable/enumerable/configurable=true，v1 简化）。
+ * 访问器属性（get/set）本阶段不支持 -> 忽略。 */
+ConversionResult objectToPropertyDescriptor(JSContext *ctx, JSValue *desc,
+                                            PropertyDescriptor *out) {
+  if (desc == nullptr || !desc->isObject()) {
+    return fail("TypeError: Property description must be an object");
+  }
+  JSObject *d = desc->object();
+  /* 显式 enumerable/writable/configurable：默认 true。 */
+  JSValue *enumerable = d->getProperty("enumerable");
+  if (enumerable != nullptr && enumerable->kind() != Kind::Undefined) {
+    out->enumerable = toBoolean(enumerable);
+  }
+  JSValue *writable = d->getProperty("writable");
+  if (writable != nullptr && writable->kind() != Kind::Undefined) {
+    out->writable = toBoolean(writable);
+  }
+  JSValue *configurable = d->getProperty("configurable");
+  if (configurable != nullptr && configurable->kind() != Kind::Undefined) {
+    out->configurable = toBoolean(configurable);
+  }
+  JSValue *value = d->getProperty("value");
+  if (value != nullptr && value->kind() != Kind::Undefined) {
+    out->value = value;
+  }
+  return ok(ctx->createValue(Kind::Undefined));
+}
+
+/* Object.defineProperty（§20.1.2.4）：定义/修改 O 的 own 属性。
+ * 返回 O。属性写入本对象（不沿原型链），描述符字段落地。 */
+ConversionResult objectDefineProperty(JSContext *ctx, JSValue *,
+                                      JSValue *const *args, size_t argc) {
+  if (argc < 2 || args[0] == nullptr || !args[0]->isObject()) {
+    return fail("TypeError: Object.defineProperty called on non-object");
+  }
+  JSObject *o = args[0]->object();
+  /* 非扩展对象：新增属性拒绝（§9.4.1 [[DefineOwnProperty]]）。 */
+  if (!o->extensible() && !o->hasOwnProperty(args[1]->toString())) {
+    return fail("TypeError: Cannot define property, object is not extensible");
+  }
+  PropertyDescriptor desc;
+  ConversionResult r = objectToPropertyDescriptor(ctx, args[2], &desc);
+  if (!r.ok()) return r;
+  /* 写 own 属性（保留既有描述符的其它字段）。 */
+  PropertyDescriptor *existing = o->getOwnProperty(args[1]->toString());
+  if (existing != nullptr) {
+    existing->value = desc.value;
+    existing->enumerable = desc.enumerable;
+    existing->writable = desc.writable;
+    existing->configurable = desc.configurable;
+  } else {
+    o->setOwnProperty(args[1]->toString(), desc);
+  }
+  return ok(args[0]);
+}
+
+/* Object.defineProperties（§20.1.2.4）：对 properties 对象 own enumerable
+ * string-keyed 属性逐一定义到 target（§19.1.2.3 步骤 4-8）。 */
+ConversionResult objectDefineProperties(JSContext *ctx, JSValue *properties,
+                                        JSObject *target) {
+  ConversionResult boxed = toObject(ctx, properties);
+  if (!boxed.ok()) return boxed;
+  JSObject *src = boxed.value->object();
+  std::vector<std::string> keys;
+  objectOwnEnumerableKeys(src, &keys);
+  for (const std::string &k : keys) {
+    PropertyDescriptor *d = src->getOwnProperty(k);
+    if (d == nullptr) continue;
+    PropertyDescriptor desc;
+    ConversionResult r = objectToPropertyDescriptor(ctx, d->value, &desc);
+    if (!r.ok()) return r;
+    target->setOwnProperty(k, desc);
+  }
+  return ok(ctx->createValue(Kind::Undefined));
+}
+
+/* Object.assign（§20.1.2.1）：把每个源的 own enumerable string-keyed 属性
+ * 复制到 target（ToPropertyKey 后 Set）。返回 target。 */
+ConversionResult objectAssign(JSContext *ctx, JSValue *, JSValue *const *args,
+                              size_t argc) {
+  if (argc == 0 || args[0] == nullptr) {
+    return fail("TypeError: Object.assign called on null or undefined");
+  }
+  ConversionResult t = toObject(ctx, args[0]);
+  if (!t.ok()) return t;
+  JSObject *target = t.value->object();
+  for (size_t i = 1; i < argc; ++i) {
+    if (args[i] == nullptr || args[i]->kind() == Kind::Undefined ||
+        args[i]->kind() == Kind::Null) {
+      continue; /* 跳过 null/undefined 源 */
+    }
+    ConversionResult s = toObject(ctx, args[i]);
+    if (!s.ok()) return s;
+    JSObject *src = s.value->object();
+    std::vector<std::string> keys;
+    objectOwnEnumerableKeys(src, &keys);
+    for (const std::string &k : keys) {
+      JSValue *v = nullptr;
+      if (src->isArray()) {
+        size_t idx =
+            static_cast<size_t>(std::strtoull(k.c_str(), nullptr, 10));
+        v = src->getElement(idx);
+      } else {
+        PropertyDescriptor *pd = src->getOwnProperty(k);
+        v = pd != nullptr ? pd->value : nullptr;
+      }
+      /* Set：数字索引键写数组元素，否则命名属性。 */
+      bool numeric = !k.empty() &&
+                     k.find_first_not_of("0123456789") == std::string::npos;
+      if (target->isArray() && numeric && k.size() <= 18) {
+        target->setElement(static_cast<size_t>(std::strtoull(k.c_str(), nullptr, 10)),
+                           v != nullptr ? v : ctx->createValue(Kind::Undefined));
+      } else {
+        target->setProperty(k, v != nullptr ? v : ctx->createValue(Kind::Undefined));
+      }
+    }
+  }
+  return ok(t.value);
+}
+
+/* Object.fromEntries（§20.1.2.3）：entries 数组（每项为 [key, value] 或
+ * 可迭代对）-> 新对象。key ToPropertyKey，value 原样。 */
+ConversionResult objectFromEntries(JSContext *ctx, JSValue *,
+                                   JSValue *const *args, size_t argc) {
+  if (argc == 0 || args[0] == nullptr) {
+    return fail("TypeError: Object.fromEntries requires an argument");
+  }
+  ConversionResult boxed = toObject(ctx, args[0]);
+  if (!boxed.ok()) return boxed;
+  JSObject *entries = boxed.value->object();
+  if (!entries->isArray()) {
+    return fail("TypeError: Object.fromEntries requires an iterable of entries");
+  }
+  JSValue *obj = ctx->createObject(objectProto(ctx)->object());
+  JSObject *target = obj->object();
+  for (size_t i = 0; i < entries->length(); ++i) {
+    JSValue *item = entries->getElement(i);
+    if (item == nullptr || !item->isObject()) {
+      return fail("TypeError: Object.fromEntries entry must be an object");
+    }
+    JSObject *pair = item->object();
+    JSValue *k = pair->getElement(0);
+    JSValue *v = pair->getElement(1);
+    if (k == nullptr) k = ctx->createValue(Kind::Undefined);
+    if (v == nullptr) v = ctx->createValue(Kind::Undefined);
+    ConversionResult pk = toPropertyKey(ctx, k);
+    if (!pk.ok()) return pk;
+    target->setProperty(pk.value->toString(), v);
+  }
+  return ok(obj);
+}
+
+/* Object.preventExtensions（§20.1.2.15）：O 置不可扩展，返回 O。 */
+ConversionResult objectPreventExtensions(JSContext *, JSValue *,
+                                         JSValue *const *args, size_t argc) {
+  if (argc == 0 || args[0] == nullptr || !args[0]->isObject()) {
+    return fail("TypeError: Object.preventExtensions called on non-object");
+  }
+  args[0]->object()->setExtensible(false);
+  return ok(args[0]);
+}
+
+/* Object.isExtensible（§20.1.2.11）：返回 [[Extensible]]。 */
+ConversionResult objectIsExtensible(JSContext *ctx, JSValue *,
+                                    JSValue *const *args, size_t argc) {
+  if (argc == 0 || args[0] == nullptr || !args[0]->isObject()) {
+    return fail("TypeError: Object.isExtensible called on non-object");
+  }
+  return ok(ctx->createValue(args[0]->object()->extensible()));
+}
+
+/* Object.seal（§20.1.2.17）：置不可扩展 + 所有 own 属性 configurable=false。
+ * 返回 O。 */
+ConversionResult objectSeal(JSContext *, JSValue *, JSValue *const *args,
+                            size_t argc) {
+  if (argc == 0 || args[0] == nullptr || !args[0]->isObject()) {
+    return fail("TypeError: Object.seal called on non-object");
+  }
+  JSObject *o = args[0]->object();
+  for (auto &kv : o->properties()) {
+    const_cast<PropertyDescriptor &>(kv.second).configurable = false;
+  }
+  o->setExtensible(false);
+  return ok(args[0]);
+}
+
+/* Object.isSealed（§20.1.2.12）：不可扩展 + 所有 own 属性 configurable=false。 */
+ConversionResult objectIsSealed(JSContext *ctx, JSValue *, JSValue *const *args,
+                                size_t argc) {
+  if (argc == 0 || args[0] == nullptr || !args[0]->isObject()) {
+    return fail("TypeError: Object.isSealed called on non-object");
+  }
+  JSObject *o = args[0]->object();
+  if (o->extensible()) return ok(ctx->createValue(false));
+  for (const auto &kv : o->properties()) {
+    if (kv.second.configurable) return ok(ctx->createValue(false));
+  }
+  return ok(ctx->createValue(true));
+}
+
+/* Object.freeze（§20.1.2.6）：置不可扩展 + 所有 own 属性
+ * configurable=false + writable=false。返回 O。 */
+ConversionResult objectFreeze(JSContext *, JSValue *, JSValue *const *args,
+                              size_t argc) {
+  if (argc == 0 || args[0] == nullptr || !args[0]->isObject()) {
+    return fail("TypeError: Object.freeze called on non-object");
+  }
+  JSObject *o = args[0]->object();
+  for (auto &kv : o->properties()) {
+    const_cast<PropertyDescriptor &>(kv.second).configurable = false;
+    const_cast<PropertyDescriptor &>(kv.second).writable = false;
+  }
+  o->setExtensible(false);
+  return ok(args[0]);
+}
+
+/* Object.isFrozen（§20.1.2.7）：不可扩展 + 所有 own 数据属性
+ * writable=false + configurable=false。 */
+ConversionResult objectIsFrozen(JSContext *ctx, JSValue *, JSValue *const *args,
+                                size_t argc) {
+  if (argc == 0 || args[0] == nullptr || !args[0]->isObject()) {
+    return fail("TypeError: Object.isFrozen called on non-object");
+  }
+  JSObject *o = args[0]->object();
+  if (o->extensible()) return ok(ctx->createValue(false));
+  for (const auto &kv : o->properties()) {
+    if (kv.second.configurable || kv.second.writable) {
+      return ok(ctx->createValue(false));
+    }
+  }
+  return ok(ctx->createValue(true));
 }
 
 /* Number.prototype.valueOf（§21.1.3.7）：thisNumberValue。 */
@@ -2174,6 +2535,40 @@ void installBuiltins(JSContext *ctx) {
                          makeBuiltin(ctx, objectSetPrototypeOf, ThisMode::Strict));
   object_fn->setProperty("create",
                          makeBuiltin(ctx, objectCreate, ThisMode::Strict));
+
+  /* Object 静态方法（M4.4g，§20.1.2）。 */
+  object_fn->setProperty("keys",
+                         makeBuiltin(ctx, objectKeys, ThisMode::Strict));
+  object_fn->setProperty("values",
+                         makeBuiltin(ctx, objectValues, ThisMode::Strict));
+  object_fn->setProperty("entries",
+                         makeBuiltin(ctx, objectEntries, ThisMode::Strict));
+  object_fn->setProperty("assign",
+                         makeBuiltin(ctx, objectAssign, ThisMode::Strict));
+  object_fn->setProperty("defineProperty",
+                         makeBuiltin(ctx, objectDefineProperty, ThisMode::Strict));
+  object_fn->setProperty("defineProperties",
+                         makeBuiltin(ctx, [](JSContext *c, JSValue *, JSValue *const *a,
+                                            size_t n) {
+                           if (n < 2 || a[0] == nullptr || !a[0]->isObject()) {
+                             return fail("TypeError: Object.defineProperties called on non-object");
+                           }
+                           return objectDefineProperties(c, a[1], a[0]->object());
+                         }, ThisMode::Strict));
+  object_fn->setProperty("fromEntries",
+                         makeBuiltin(ctx, objectFromEntries, ThisMode::Strict));
+  object_fn->setProperty("preventExtensions",
+                         makeBuiltin(ctx, objectPreventExtensions, ThisMode::Strict));
+  object_fn->setProperty("isExtensible",
+                         makeBuiltin(ctx, objectIsExtensible, ThisMode::Strict));
+  object_fn->setProperty("seal",
+                         makeBuiltin(ctx, objectSeal, ThisMode::Strict));
+  object_fn->setProperty("isSealed",
+                         makeBuiltin(ctx, objectIsSealed, ThisMode::Strict));
+  object_fn->setProperty("freeze",
+                         makeBuiltin(ctx, objectFreeze, ThisMode::Strict));
+  object_fn->setProperty("isFrozen",
+                         makeBuiltin(ctx, objectIsFrozen, ThisMode::Strict));
 
   /* Object.prototype（§20.1.3）：原型为 null；进 context 缓存（objectProto）。
    * 普通对象字面量 / 装箱对象 / 包装对象原型的原型链都汇聚于此。 */

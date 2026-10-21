@@ -51,6 +51,11 @@ struct CompilerScope {
 class Compiler {
  public:
   Compiler() = default;
+  /* scopes_ 为 owned 的 CompilerScope* 池：编译期逐函数 new，须在
+   * 编译器销毁时释放（JS_Eval 每次新建 Compiler，否则泄漏整条作用域链）。 */
+  ~Compiler() {
+    for (CompilerScope *s : scopes_) delete s;
+  }
 
   /* 编译顶层程序（Program/Module 根）：产出函数字节码。
    * 失败时返回 ok=false + error。 */

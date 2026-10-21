@@ -39,11 +39,23 @@ const PropertyDescriptor *JSObject::getOwnProperty(const std::string &name) cons
 }
 
 void JSObject::setOwnProperty(const std::string &name, const PropertyDescriptor &desc) {
+  /* 记录字符串键创建顺序（§9.1.12 [[OwnPropertyKeys]]：字符串按创建序）。
+   * 已存在则更新不改变顺序。 */
+  if (properties_.find(name) == properties_.end()) {
+    property_order_.push_back(name);
+  }
   properties_[name] = desc;
 }
 
 bool JSObject::deleteOwnProperty(const std::string &name) {
-  return properties_.erase(name) > 0;
+  if (properties_.erase(name) == 0) return false;
+  for (size_t i = 0; i < property_order_.size(); ++i) {
+    if (property_order_[i] == name) {
+      property_order_.erase(property_order_.begin() + i);
+      break;
+    }
+  }
+  return true;
 }
 
 /* -------------------------------------------------------------------------- */

@@ -3428,6 +3428,103 @@ TEST(Compiler, EvalForOf) {
   JS_FreeAllocator(a);
 }
 
+/* M4.4g：Object 静态方法（§20.1.2）。expect 前缀：#num / #str / #bool /
+ * #arr: 数组转串（逗号拼接）；#err: 异常子串。 */
+TEST(Compiler, EvalObjectStaticMethods) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  struct { const char *src; const char *expect; } cases[] = {
+      /* Object.keys / values / entries。 */
+      {"Object.keys({a: 1, b: 2}).join(',')", "#str:a,b"},
+      {"Object.values({a: 1, b: 2}).join(',')", "#str:1,2"},
+      {"Object.entries({a: 1, b: 2}).length", "#num:2"},
+      {"Object.entries({a: 1, b: 2})[0][0] + ':' + Object.entries({a: 1, b: 2})[0][1]",
+       "#str:a:1"},
+      /* 数组 keys：整数索引。 */
+      {"Object.keys([10, 20, 30]).join(',')", "#str:0,1,2"},
+      {"Object.values([10, 20, 30]).join(',')", "#str:10,20,30"},
+      /* 字符串装箱 keys：索引。 */
+      {"Object.keys('ab').join(',')", "#str:0,1"},
+      {"Object.values('ab').join(',')", "#str:a,b"},
+      /* 空对象。 */
+      {"Object.keys({}).join(',')", "#str:"},
+      /* Object.assign。 */
+      {"var t = {}; Object.assign(t, {a: 1}, {b: 2}); t.a + t.b", "#num:3"},
+      {"var t = {a: 1}; Object.assign(t, {a: 10}); t.a", "#num:10"},
+      /* Object.defineProperty：enumerable 影响 keys。 */
+      {"var o = {}; Object.defineProperty(o, 'x', {value: 42}); "
+       "o.x + ':' + Object.keys(o).join(',')", "#str:42:x"},
+      {"var o = {}; Object.defineProperty(o, 'x', {value: 42, enumerable: false}); "
+       "o.x + ':' + Object.keys(o).length", "#str:42:0"},
+      {"var o = {}; Object.defineProperty(o, 'x', {value: 1}); "
+       "Object.defineProperty(o, 'y', {value: 2, enumerable: false}); "
+       "Object.keys(o).join(',') + ':' + o.x + o.y", "#str:x:12"},
+      /* Object.create + defineProperties。 */
+      {"var o = Object.create(null, {a: {value: 5}, b: {value: 6}}); o.a + o.b", "#num:11"},
+      /* Object.freeze / isFrozen。 */
+      {"var o = {a: 1}; var f = Object.freeze(o); f === o && Object.isFrozen(o)", "#bool:1"},
+      {"Object.isFrozen({a: 1})", "#bool:0"},
+      /* Object.seal / isSealed。 */
+      {"var o = {a: 1}; Object.seal(o); Object.isSealed(o) && !Object.isFrozen(o)",
+       "#bool:1"},
+      /* Object.preventExtensions / isExtensible。 */
+      {"var o = {a: 1}; Object.preventExtensions(o); !Object.isExtensible(o)",
+       "#bool:1"},
+      {"Object.isExtensible({})", "#bool:1"},
+      /* Object.fromEntries。 */
+      {"var o = Object.fromEntries([['a', 1], ['b', 2]]); o.a + o.b", "#num:3"},
+      {"Object.fromEntries([['x', 9]]).x", "#num:9"},
+      /* Object.getPrototypeOf / setPrototypeOf（回归）。 */
+      {"Object.getPrototypeOf({}) === Object.prototype", "#bool:1"},
+      {"var p = {m: 1}; var o = Object.create(p); o.m", "#num:1"},
+  };
+
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    JSValue *r = JS_Eval(ctx, cases[i].src, std::strlen(cases[i].src));
+    ASSERT_NE(r, nullptr) << "case " << i << " src=" << cases[i].src;
+    const char *e = cases[i].expect;
+    if (e[0] == '#') {
+      if (e[1] == 'n') {
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_NUMBER)
+            << "case " << i << " src=" << cases[i].src;
+        if (JS_GetKind(ctx, r) == JS_NUMBER) {
+          EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), std::atof(e + 5))
+              << "case " << i << " src=" << cases[i].src;
+        }
+      } else if (e[1] == 's') {
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_STRING)
+            << "case " << i << " src=" << cases[i].src;
+        if (JS_GetKind(ctx, r) == JS_STRING) {
+          EXPECT_EQ(std::string(JS_ToString(ctx, r)), std::string(e + 5))
+              << "case " << i << " src=" << cases[i].src;
+        }
+      } else if (e[1] == 'b') {
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN)
+            << "case " << i << " src=" << cases[i].src;
+        if (JS_GetKind(ctx, r) == JS_BOOLEAN) {
+          EXPECT_EQ(JS_ToBoolean(ctx, r), std::atoi(e + 6))
+              << "case " << i << " src=" << cases[i].src;
+        }
+      } else if (e[1] == 'e') {
+        EXPECT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION)
+            << "case " << i << " src=" << cases[i].src << " got: "
+            << JS_ToString(ctx, r);
+        if (JS_GetKind(ctx, r) == JS_EXCEPTION) {
+          std::string msg = JS_ToString(ctx, r);
+          EXPECT_NE(msg.find(e + 5), std::string::npos)
+              << "case " << i << " msg=" << msg;
+        }
+      }
+    }
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
 /* M4.3f：String.prototype 方法补齐（§22.1.3）。
  * expect 前缀：#num: 数字；#str: 字符串；#bool: 布尔；#err: 异常子串；
  * #obj: 对象（split 返回数组）。 */
