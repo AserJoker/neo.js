@@ -71,6 +71,7 @@ class Parser {
   ASTNode *parseForStatement();        /* for/for-in/for-of/for await（M1.5 ③） */
   ASTNode *parseFunctionDeclaration(bool allow_anonymous = false); /* 函数声明：function name(params) { body }（M1.5 ④）；export default 允许匿名 */
   ASTNode *parseFunctionExpression();  /* 函数表达式：function [name](params) { body }（M1.5 ④） */
+  ASTNode *parseMethodFunction();      /* 对象方法函数：(params) { body }（M5.1c method/getter/setter） */
   ASTNode *parseReturnStatement();     /* 返回语句：return [expr]（M1.5 ④） */
   ASTNode *parseBreakStatement();      /* 跳出：break [label]（M1.5 ⑤） */
   ASTNode *parseContinueStatement();   /* 续环：continue [label]（M1.5 ⑤） */

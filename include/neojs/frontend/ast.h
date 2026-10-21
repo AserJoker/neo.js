@@ -35,6 +35,7 @@ enum class NodeType : uint8_t {
   ExprStmt,    /* 表达式语句 */
   Literal,     /* 字面量：数字/字符串/布尔/null */
   Identifier,  /* 标识符引用 */
+  ThisExpression, /* this 关键字（M5.1c 访问器 this 绑定） */
   PrivateIdentifier, /* 私有字段引用：#x */
   RegExpLiteral,     /* 正则字面量 */
   TemplateLiteral,   /* 模板串（M1.3 插值后） */

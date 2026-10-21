@@ -921,6 +921,14 @@ ASTNode *Parser::parsePrimary() {
       /* 关键字字面量：true / false / null */
       if (tok.text == "true" || tok.text == "false" || tok.text == "null")
         return parseLiteral();
+      /* this 关键字（M5.1c 访问器 this 绑定）：产出 ThisExpression 节点。
+       * this 是保留字，但 Lexer 归为 Identifier，此处按文本特判。 */
+      if (tok.text == "this") {
+        advance();
+        ASTNode *n = newNode(NodeType::ThisExpression);
+        n->loc = tok.start;
+        return n;
+      }
       /* 函数表达式：function [name](params) { body }（M1.5 ④） */
       if (tok.text == "function") return parseFunctionExpression();
       /* 动态导入 import('m')（M1.6 ③）：import 后跟 ( 时为表达式 */
@@ -1268,53 +1276,120 @@ ASTNode *Parser::parseObjectPattern(bool as_literal) {
       obj->children.push_back(spread);
       continue;
     }
-    /* 成员：key: value（或 get/set/method——M5.1c 扩展） */
+    /* 成员：key: value / method / getter / setter / shorthand / 计算键 [expr]（M5.1c） */
     ASTNode *prop = newNode(NodeType::Property);
     prop->loc = current().start;
+    /* get/set 前缀：仅当后跟 key + '(' 时才是访问器（否则作普通属性名）。 */
+    bool getset_prefix = false;
+    PropertyKind getset_kind = PropertyKind::Init;
+    if (at(TokenKind::Identifier) &&
+        (current().text == "get" || current().text == "set")) {
+      /* 保存 get/set 关键字文本（advance 后 current 变为 key）。 */
+      const std::string getset_word = current().text;
+      Lexer::State st = lexer_.save();
+      advance(); /* get/set */
+      /* 访问器探测（M5.1c）：
+       *   key 为普通 Identifier：后跟 '(' 才是访问器（get x(){}）；
+       *   key 为计算键 [expr]：get/set 后跟 '[' 必然是访问器（get [x](){}），
+       *     因为 `get [x]: v` 是语法错误，不存在普通属性形态。 */
+      bool is_getset;
+      if (at(TokenKind::Identifier)) {
+        is_getset = isSymbol(peek(), "(");
+      } else if (isSymbol(current(), "[")) {
+        is_getset = true;
+      } else {
+        is_getset = false;
+      }
+      if (is_getset) {
+        getset_prefix = true;
+        getset_kind = getset_word == "get" ? PropertyKind::Get
+                                            : PropertyKind::Set;
+        /* 已确认 get/set 前缀：不 advance，让下方统一 key 解析处理当前 token（key）。 */
+      } else {
+        lexer_.restore(st);
+      }
+    }
     /* key */
-    if (at(TokenKind::Identifier)) {
-      ASTNode *key = newNode(NodeType::Identifier);
+    ASTNode *key = nullptr;
+    bool computed = false;
+    if (isSymbol(current(), "[")) {
+      /* 计算键 [expr]：key 为任意表达式。 */
+      computed = true;
+      prop->prop.is_computed = true;
+      advance(); /* [ */
+      key = parseAssignment();
+      if (key == nullptr) {
+        allocator_->destroy(prop);
+        allocator_->destroy(obj);
+        return nullptr;
+      }
+      if (!isSymbol(current(), "]")) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ']' after computed key",
+                    current().start});
+        allocator_->destroy(prop);
+        allocator_->destroy(obj);
+        return nullptr;
+      }
+      advance(); /* ] */
+    } else if (at(TokenKind::Identifier)) {
+      key = newNode(NodeType::Identifier);
       key->loc = current().start;
       key->name = current().text;
       advance();
-      /* 简写 { key }：无冒号无等号 */
-      if (isSymbol(current(), ":")) {
-        prop->prop.kind = PropertyKind::Init;
-        advance();
-        ASTNode *val = as_literal ? parseAssignment() : parseBindingTarget();
-        if (val == nullptr) {
-          allocator_->destroy(prop);
-          allocator_->destroy(obj);
-          return nullptr;
-        }
-        /* 绑定位置重命名默认值 {p: q = 1}：值后跟 '=' 时包成
-         * AssignmentPattern{q, default}（读值位置非法）。 */
-        if (!as_literal && isSymbol(current(), "=")) {
-          ASTNode *def = parseDefaultValue(val);
-          if (def == nullptr) {
-            allocator_->destroy(prop);
-            allocator_->destroy(obj);
-            return nullptr;
-          }
-          prop->children.push_back(key);
-          prop->children.push_back(def);
-        } else {
-          prop->children.push_back(key);
-          prop->children.push_back(val);
-        }
-      } else if (isSymbol(current(), "=")) {
-        /* 简写默认值 { key = default }（M5.1a）：value 为
-         * AssignmentPattern{key, default}。 */
-        if (as_literal) {
-          /* 读值位置不允许默认值：{ key = 1 } 不是合法对象字面量。 */
-          sink_.emit({Severity::Error, "SYNTAX_ERROR",
-                      "unexpected '=' in object literal", current().start});
-          allocator_->destroy(prop);
-          allocator_->destroy(obj);
-          return nullptr;
-        }
-        prop->prop.kind = PropertyKind::Init;
-        ASTNode *def = parseDefaultValue(key);
+    } else if (at(TokenKind::String) || at(TokenKind::Number)) {
+      key = newNode(NodeType::Literal);
+      key->loc = current().start;
+      if (at(TokenKind::String)) {
+        key->literal.is_string = true;
+        key->literal.str = current().str_value;
+      } else {
+        key->literal.is_number = true;
+        key->literal.number = current().number;
+      }
+      key->literal.text = current().text;
+      advance();
+    } else {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid property key", current().start});
+      allocator_->destroy(obj);
+      return nullptr;
+    }
+
+    /* 成员形态分派：method / getter / setter / Init / shorthand */
+    if (getset_prefix) {
+      /* get key(){} / set key(v){}（M5.1c）：后跟参数列表。 */
+      prop->prop.kind = getset_kind;
+      ASTNode *fn = parseMethodFunction();
+      if (fn == nullptr) {
+        allocator_->destroy(prop);
+        allocator_->destroy(obj);
+        return nullptr;
+      }
+      prop->children.push_back(key);
+      prop->children.push_back(fn);
+    } else if (isSymbol(current(), "(")) {
+      /* method key(){}（M5.1c）：函数体紧随。 */
+      prop->prop.kind = PropertyKind::Method;
+      ASTNode *fn = parseMethodFunction();
+      if (fn == nullptr) {
+        allocator_->destroy(prop);
+        allocator_->destroy(obj);
+        return nullptr;
+      }
+      prop->children.push_back(key);
+      prop->children.push_back(fn);
+    } else if (isSymbol(current(), ":")) {
+      /* key: value */
+      prop->prop.kind = PropertyKind::Init;
+      advance();
+      ASTNode *val = as_literal ? parseAssignment() : parseBindingTarget();
+      if (val == nullptr) {
+        allocator_->destroy(prop);
+        allocator_->destroy(obj);
+        return nullptr;
+      }
+      if (!as_literal && isSymbol(current(), "=")) {
+        /* 绑定位置重命名默认值 {p: q = 1}。 */
+        ASTNode *def = parseDefaultValue(val);
         if (def == nullptr) {
           allocator_->destroy(prop);
           allocator_->destroy(obj);
@@ -1323,42 +1398,31 @@ ASTNode *Parser::parseObjectPattern(bool as_literal) {
         prop->children.push_back(key);
         prop->children.push_back(def);
       } else {
-        prop->prop.kind = PropertyKind::Shorthand;
         prop->children.push_back(key);
+        prop->children.push_back(val);
       }
-    } else if (at(TokenKind::String) || at(TokenKind::Number)) {
-      ASTNode *key = newNode(NodeType::Literal);
-      key->loc = current().start;
-      if (at(TokenKind::String)) {
-        key->literal.is_string = true;
-        key->literal.str = current().str_value;
-      } else {
-        /* 数字键：number 值（转字符串由编译器 objectKeyToString 用
-         * numberToString 完成，§6.1.6.1.20 最短表示）。 */
-        key->literal.is_number = true;
-        key->literal.number = current().number;
-      }
-      key->literal.text = current().text;
-      advance();
-      if (!isSymbol(current(), ":")) {
-        sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ':' after property key", prop->loc});
+    } else if (isSymbol(current(), "=")) {
+      /* 简写默认值 { key = default }（M5.1a），仅绑定位置。 */
+      if (as_literal) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                    "unexpected '=' in object literal", current().start});
         allocator_->destroy(prop);
         allocator_->destroy(obj);
         return nullptr;
       }
-      advance();
-      ASTNode *val = parseAssignment();
-      if (val == nullptr) {
+      prop->prop.kind = PropertyKind::Init;
+      ASTNode *def = parseDefaultValue(key);
+      if (def == nullptr) {
         allocator_->destroy(prop);
         allocator_->destroy(obj);
         return nullptr;
       }
       prop->children.push_back(key);
-      prop->children.push_back(val);
+      prop->children.push_back(def);
     } else {
-      sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid property key", current().start});
-      allocator_->destroy(obj);
-      return nullptr;
+      /* 简写 { key } */
+      prop->prop.kind = PropertyKind::Shorthand;
+      prop->children.push_back(key);
     }
     obj->children.push_back(prop);
   }

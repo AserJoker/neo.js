@@ -300,6 +300,9 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
       out += node->name;
       out += ")\n";
       break;
+    case NodeType::ThisExpression:
+      out += "ThisExpression\n";
+      break;
     case NodeType::PrivateIdentifier:
       out += "PrivateIdentifier(";
       out += node->name;

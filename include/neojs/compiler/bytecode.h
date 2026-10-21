@@ -117,6 +117,11 @@ enum class Opcode : uint8_t {
   ConstructArray,  /* [ctor, args_array] -> 以数组元素为参数构造（M5.1a 展开 new） */
   CopyObjectProps, /* 弹栈源对象，own enumerable 字符串属性复制进槽内对象：CopyObjectProps {slot}（M5.1a 对象展开） */
   JumpIfNullish,   /* 栈顶为 null 或 undefined 则跳转：JumpIfNullish {target}（弹栈，M5.1b ??= 短路） */
+
+  /* M5.1c 对象字面量：计算键 + getter/setter（追加末尾，保持 opcode 数值稳定） */
+  DefineProp,      /* obj, key, val -> 栈顶 val（obj[key]=val 定义 own 属性，key 运行期 ToPropertyKey）：DefineProp（M5.1c 计算键） */
+  DefineAccessor,  /* obj, key, fn -> 栈顶 fn（定义访问器属性，arg=0 getter/1 setter）：DefineAccessor {getset}（M5.1c） */
+  LoadThis,        /* 当前帧 this -> 栈顶：LoadThis（M5.1c 访问器 this 绑定） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -234,6 +239,12 @@ class BytecodeBuilder {
   }
   void load_elem() { push_op(Opcode::LoadElem); }
   void store_elem() { push_op(Opcode::StoreElem); }
+
+  /* M5.1c：计算键数据属性定义 + 访问器属性定义。 */
+  void define_prop() { push_op(Opcode::DefineProp); }
+  void define_accessor(uint16_t getset) { push_op(Opcode::DefineAccessor, getset); }
+  /* M5.1c：读取当前帧 this。 */
+  void load_this() { push_op(Opcode::LoadThis); }
 
   /* 注册捕获变量（去重），返回捕获下标。 */
   uint16_t add_capture(uint16_t depth, const std::string &name) {

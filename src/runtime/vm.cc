@@ -540,8 +540,11 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
   size_t pc = 0;
   const std::vector<Instruction> &code = fn.code;
 
-  /* 顶层入口的 this 绑定：v1 单帧模型暂未使用（Call 指令内部处理 this）。 */
-  (void)thisVal;
+  /* 顶层入口的 this 绑定（M5.1c）：函数调用时 thisVal 由 call() 传入
+   * （setter/getter 的 this = 目标对象）；顶层（JS_Eval 直入）为 globalThis。
+   * 由 call() 的临时句柄或全局根保护；LoadThis 压入栈后受根集保护。 */
+  JSValue *frame_this = thisVal;
+  if (frame_this == nullptr) frame_this = ctx->globalObject();
 
   /* 注意：指令执行期间操作数保持栈上（不提前 pop），运算完成后才收缩——
    * 否则操作数弹出后不受根集保护，运算内部分配触发 GC 会被回收（悬垂）。 */
@@ -1335,6 +1338,79 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
             tobj->setProperty(k, v);
           }
         }
+        break;
+      }
+      case Opcode::DefineProp: {
+        /* M5.1c 计算键 { [expr]: value }：obj, key, val -> 栈顶 val。
+         * 定义 own 数据属性（key 运行期 ToPropertyKey，§7.3.14）。 */
+        if (stack.size() < 3) return fail("Error: stack underflow on DefineProp");
+        JSValue *val = stack.back();
+        JSValue *key = stack[stack.size() - 2];
+        JSValue *obj = stack[stack.size() - 3];
+        if (!obj->isObject()) {
+          return fail("TypeError: Cannot define properties on non-object");
+        }
+        ConversionResult pk = toPropertyKey(ctx, key);
+        if (!pk.ok()) return pk;
+        JSObject *target = obj->object();
+        const std::string &name = pk.value->toString();
+        bool numeric = !name.empty() &&
+                       name.find_first_not_of("0123456789") == std::string::npos;
+        if (target->isArray() && numeric && name.size() <= 18) {
+          /* 数组整数索引计算键：写元素存储。 */
+          target->setElement(static_cast<size_t>(std::strtoull(name.c_str(), nullptr, 10)), val);
+        } else {
+          PropertyDescriptor d;
+          d.value = val;
+          target->setOwnProperty(name, d);
+        }
+        stack.resize(stack.size() - 3);
+        stack.push_back(val);
+        break;
+      }
+      case Opcode::DefineAccessor: {
+        /* M5.1c getter/setter { get key(){} } / { set key(v){} }：
+         * obj, key, fn -> 栈顶 fn。arg=0 定义 getter，arg=1 定义 setter。
+         * 访问器属性描述符：getter/setter 槽，Type::Accessor。 */
+        if (stack.size() < 3) return fail("Error: stack underflow on DefineAccessor");
+        JSValue *fn = stack.back();
+        JSValue *key = stack[stack.size() - 2];
+        JSValue *obj = stack[stack.size() - 3];
+        if (!obj->isObject()) {
+          return fail("TypeError: Cannot define properties on non-object");
+        }
+        ConversionResult pk = toPropertyKey(ctx, key);
+        if (!pk.ok()) return pk;
+        JSObject *target = obj->object();
+        const std::string &name = pk.value->toString();
+        bool is_setter = instr.arg != 0;
+        PropertyDescriptor *desc = target->getOwnProperty(name);
+        if (desc == nullptr) {
+          /* 新建访问器描述符。 */
+          PropertyDescriptor d;
+          d.type = PropertyDescriptor::Type::Accessor;
+          d.writable = false; /* 访问器属性无 writable 语义 */
+          target->setOwnProperty(name, d);
+          desc = target->getOwnProperty(name);
+        } else {
+          /* 已存在：升级为访问器类型（覆盖数据属性/互补 getter/setter）。 */
+          desc->type = PropertyDescriptor::Type::Accessor;
+          desc->writable = false;
+        }
+        if (is_setter) {
+          desc->setter = fn;
+        } else {
+          desc->getter = fn;
+        }
+        stack.resize(stack.size() - 3);
+        stack.push_back(fn);
+        break;
+      }
+      case Opcode::LoadThis: {
+        /* M5.1c：当前帧 this -> 栈顶。frame_this 已由 runBytecode 解析
+         * （函数调用 = call 传入的 thisArg；顶层 = globalThis）。 */
+        stack.push_back(frame_this != nullptr ? frame_this
+                                              : ctx->globalObject());
         break;
       }
       case Opcode::LoadUpvalue: {

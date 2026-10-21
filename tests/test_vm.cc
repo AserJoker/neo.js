@@ -1920,6 +1920,146 @@ TEST(Compiler, M51bLogicalAssignChain) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* 13d. M5.1c 对象字面量 method/getter/setter + 计算键                        */
+/* -------------------------------------------------------------------------- */
+
+/* method：{ m() { return 42; } } 调用 */
+TEST(Compiler, M51cMethod) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var o = { m() { return 42; } }; o.m()",
+                       std::strlen("var o = { m() { return 42; } }; o.m()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 42.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* getter：{ get x() { return 7; } } 读取 */
+TEST(Compiler, M51cGetter) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var o = { get x() { return 7; } }; o.x",
+                       std::strlen("var o = { get x() { return 7; } }; o.x"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 7.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* setter：{ set x(v) { this._v = v; } } 写入 */
+TEST(Compiler, M51cSetter) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var o = { _v: 0, set x(v) { this._v = v; } }; o.x = 9; o._v",
+                       std::strlen("var o = { _v: 0, set x(v) { this._v = v; } }; o.x = 9; o._v"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 9.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* getter+setter 组合：{ get x, set x } 读写往返 */
+TEST(Compiler, M51cGetterSetterPair) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var o = { _v: 0, get x() { return this._v; }, set x(v) { this._v = v; } }; o.x = 5; o.x",
+                       std::strlen("var o = { _v: 0, get x() { return this._v; }, set x(v) { this._v = v; } }; o.x = 5; o.x"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 5.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 计算键：{ [k]: 3 } */
+TEST(Compiler, M51cComputedKey) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var k = 'a'; var o = { [k]: 3 }; o.a",
+                       std::strlen("var k = 'a'; var o = { [k]: 3 }; o.a"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 3.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 计算键表达式：{ [1 + 2]: 'x' } */
+TEST(Compiler, M51cComputedKeyExpr) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var o = { [1 + 2]: 'x' }; o[3]",
+                       std::strlen("var o = { [1 + 2]: 'x' }; o[3]"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << "error: " << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "x");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* method 计算键：{ [k]() { return 1; } } */
+TEST(Compiler, M51cComputedKeyMethod) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var k = 'm'; var o = { [k]() { return 1; } }; o.m()",
+                       std::strlen("var k = 'm'; var o = { [k]() { return 1; } }; o.m()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 1.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* getter 计算键：{ get [k]() { return 2; } } */
+TEST(Compiler, M51cComputedKeyGetter) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var k = 'x'; var o = { get [k]() { return 2; } }; o.x",
+                       std::strlen("var k = 'x'; var o = { get [k]() { return 2; } }; o.x"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "error: " << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 2.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* -------------------------------------------------------------------------- */
 /* 14. M3.0 VM 对象指令（NewObject/NewArray/LoadProp/StoreProp/LoadElem/      */
 /*     StoreElem）                                                            */
 /* -------------------------------------------------------------------------- */

@@ -919,6 +919,11 @@ bool Compiler::compileExpr(const ASTNode &node) {
     case NodeType::ObjectLiteral: return compileObjectLiteral(node);
     case NodeType::ArrayLiteral: return compileArrayLiteral(node);
     case NodeType::Identifier: return compileIdentifier(node);
+    case NodeType::ThisExpression: {
+      /* M5.1c：this -> LoadThis（当前帧 this）。 */
+      builder_.load_this();
+      return true;
+    }
     case NodeType::UnaryOp: return compileUnary(node);
     case NodeType::BinaryOp: return compileBinary(node);
     case NodeType::Conditional: return compileConditional(node);
@@ -1024,27 +1029,52 @@ bool Compiler::compileObjectLiteral(const ASTNode &node) {
       fail("invalid object literal member");
       return false;
     }
-    /* 计算键 [expr]：本阶段不支持。 */
-    if (prop->prop.is_computed) {
-      fail("not implemented: computed property key");
-      return false;
-    }
-    if (prop->prop.kind != PropertyKind::Init &&
-        prop->prop.kind != PropertyKind::Shorthand) {
-      fail("not implemented: getter/setter/method in object literal");
-      return false;
-    }
     if (prop->children.empty()) {
       fail("invalid property");
       return false;
     }
+    /* 键：计算键 [expr] 运行期求值；否则编译为常量串。 */
     std::string key;
-    if (!objectKeyToString(prop->children[0], &key)) {
-      fail("not implemented: computed property key");
+    bool computed_key = prop->prop.is_computed;
+    if (!computed_key && !objectKeyToString(prop->children[0], &key)) {
+      fail("invalid property key");
       return false;
     }
+    const PropertyKind kind = prop->prop.kind;
     builder_.load_var(tmp); /* obj */
-    if (prop->prop.kind == PropertyKind::Shorthand) {
+    if (kind == PropertyKind::Method || kind == PropertyKind::Get ||
+        kind == PropertyKind::Set) {
+      /* M5.1c method/getter/setter：children[1] 为方法函数表达式。 */
+      if (prop->children.size() < 2) {
+        fail("invalid method property");
+        return false;
+      }
+      if (computed_key) {
+        if (!compileExpr(*prop->children[0])) return false;
+      } else {
+        builder_.push_const(key);
+      }
+      if (!compileExpr(*prop->children[1])) return false;
+      if (kind == PropertyKind::Method) {
+        /* method 是数据属性（函数值），用 DefineProp 定义。 */
+        builder_.define_prop();
+      } else {
+        builder_.define_accessor(kind == PropertyKind::Set ? 1 : 0);
+      }
+      builder_.pop(); /* 丢弃定义结果 */
+      continue;
+    }
+    if (computed_key) {
+      /* 计算键 { [expr]: value }：obj, key, value -> DefineProp。 */
+      if (!compileExpr(*prop->children[0])) return false;
+      if (prop->children.size() < 2 || !compileExpr(*prop->children[1])) {
+        return false;
+      }
+      builder_.define_prop();
+      builder_.pop();
+      continue;
+    }
+    if (kind == PropertyKind::Shorthand) {
       /* {b}：值 = 读 b（简写属性值取自同名绑定）。 */
       if (prop->children[0]->type != NodeType::Identifier) {
         fail("invalid shorthand property");
