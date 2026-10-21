@@ -172,10 +172,15 @@ class Compiler {
   /* M5.1d-c2 私有字段：#x（独立私有槽表，§6.1.7.5）。
    * resolvePrivateName：字段名（不含 '#'）-> current_private_names_ 下标；
    * 未声明返回 -1（已设置编译错误）。
-   * emitPrivateFieldInits：发射构造器字段初始化指令序列
-   * （LoadThis; [init|undefined]; StorePrivate 逐字段）。 */
+   * emitInstanceFieldInits：发射构造器实例字段初始化指令序列
+   * （LoadThis; [init|undefined]; InitPrivate/StoreProp 逐字段，源码序）。 */
   int resolvePrivateName(const std::string &name);
-  bool emitPrivateFieldInits();
+  bool emitInstanceFieldInits();
+  /* M5.1d-d：编译并执行 static 初始化（static 字段 + static 块，源码序）。
+   * 合成 static_init 函数（this = 构造器）调用，类定义完成后执行。
+   * 调用前外层 builder 栈顶须为 this_obj（构造器），返回后已消费；
+   * 调用前 current_static_elems_ 须指向本 class 的 static 元素表。 */
+  bool emitStaticInit();
 
   void fail(const std::string &msg) { error_ = msg; }
 
@@ -186,10 +191,18 @@ class Compiler {
   bool failed_ = false;                  /* 编译失败标记 */
   std::string error_;                    /* 失败信息 */
 
-  /* M5.1d-c2 私有字段编译状态（compileClass 设置，class 体编译期间有效，
+  /* M5.1d-c2/d 类字段编译状态（compileClass 设置，class 体编译期间有效，
    * 含嵌套函数：class 词法范围内的私有字段名对整个 class 体可见）。 */
-  const std::vector<std::string> *current_private_names_ = nullptr; /* 字段全名表（含 '#'） */
-  const std::vector<const ASTNode *> *current_field_inits_ = nullptr; /* 初始化表达式（与表一一对应） */
+  const std::vector<std::string> *current_private_names_ = nullptr; /* 私有字段全名表（含 '#'） */
+  const std::vector<const ASTNode *> *current_field_inits_ = nullptr; /* 私有字段初始化表达式（与表一一对应） */
+  /* M5.1d-d 实例字段统一表（源码序，private + public 混合）：
+   * 元素 = InstanceFieldEntry（见 compiler.cc）——构造器内按序初始化，
+   * 基类 body 前 / 派生类 super() 后（§9.2.2.4）。 */
+  const void *current_instance_fields_ = nullptr;
+  /* M5.1d-d static 元素表（StaticElement，见 compiler.cc）：static 字段 + static
+   * 块，源码序，类定义完成后由 static_init 函数执行（this = 构造器）。
+   * compileClass 在调用 emitStaticInit 前指向本 class 的表。 */
+  const void *current_static_elems_ = nullptr;
   bool current_is_ctor_ = false;     /* 当前编译函数是 class 构造器 */
   bool current_is_derived_ = false;  /* 当前 class 有 extends（字段在 super() 后初始化） */
   bool field_init_emitted_ = false;  /* 字段初始化已发射（派生类 super 后一次） */

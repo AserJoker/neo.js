@@ -139,6 +139,9 @@ enum class Opcode : uint8_t {
   StorePrivate,    /* 写私有字段：receiver, val -> val：StorePrivate {name_index}（M5.1d-c2） */
   HasPrivate,      /* 私有字段存在性：#x in obj：obj, name -> bool：HasPrivate {name_index}（M5.1d-c2） */
   InitPrivate,     /* 构造器初始化私有字段槽：receiver, val -> val（无槽则创建）：InitPrivate {name_index}（M5.1d-c2） */
+
+  /* M5.1d-d 派生类默认构造器：以数组元素为参数调用基类构造器于当前帧 this */
+  SuperCallArray,  /* [args_array] -> 基类构造器执行（展开 super(...args)，M5.1d-d） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -288,6 +291,8 @@ class BytecodeBuilder {
   void super_load_elem() { push_op(Opcode::SuperLoadElem); }
   /* M5.1d-c1：super() 构造调用（argc 个参数，基类构造器于当前帧 this）。 */
   void super_call(uint16_t argc) { push_op(Opcode::SuperCall, argc); }
+  /* M5.1d-d：super(...args) 展开调用（栈顶 args 数组，基类构造器于当前帧 this）。 */
+  void super_call_array() { push_op(Opcode::SuperCallArray); }
   /* M5.1d-c2：私有字段读写/存在性。private_names 下标 -> 字段全名。 */
   void load_private(uint16_t name_index) { push_op(Opcode::LoadPrivate, name_index); }
   void store_private(uint16_t name_index) { push_op(Opcode::StorePrivate, name_index); }

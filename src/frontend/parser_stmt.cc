@@ -1199,9 +1199,33 @@ ASTNode *Parser::parseClassElement() {
     advance(); /* static */
     /* static 后跟 {（static 块，M5.1d-d）、方法/字段起始才视为 static 修饰。
      * static 后跟 ( ) = 等则 static 是普通方法名（class { static(){} }）。 */
-    if (isSymbol(current(), "{") || isSymbol(current(), "[") ||
-        isSymbol(current(), "*") || at(TokenKind::Identifier) ||
-        at(TokenKind::String) || at(TokenKind::Number)) {
+    if (isSymbol(current(), "{")) {
+      /* M5.1d-d static 块：static { stmts } —— 类定义时按序执行。 */
+      advance(); /* { */
+      ASTNode *sb = newNode(NodeType::StaticBlock);
+      sb->loc = current().start;
+      while (!isSymbol(current(), "}")) {
+        if (atEof()) {
+          sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                      "unterminated static block", sb->loc});
+          allocator_->destroy(sb);
+          return nullptr;
+        }
+        ASTNode *stmt = parseStatement();
+        if (stmt == nullptr) {
+          allocator_->destroy(sb);
+          return nullptr;
+        }
+        sb->children.push_back(stmt);
+      }
+      advance(); /* } */
+      if (isSymbol(current(), ";")) advance();
+      return sb;
+    }
+    if (isSymbol(current(), "[") || isSymbol(current(), "*") ||
+        isSymbol(current(), "#") ||
+        at(TokenKind::Identifier) || at(TokenKind::String) ||
+        at(TokenKind::Number)) {
       is_static = true;
     } else {
       lexer_.restore(st); /* 不是 static 修饰：static 是普通方法名 */
@@ -1327,17 +1351,9 @@ ASTNode *Parser::parseClassElement() {
     prop->children.push_back(key);
     prop->children.push_back(fn);
   } else {
-    /* M5.1d-d 类字段：x = v / x; —— 本阶段（M5.1d-a/c2）仅支持私有字段
-     * 声明（#x = v / #x;，M5.1d-c2 私有字段初始化）；公开字段留 M5.1d-d。 */
-    if (key->type != NodeType::PrivateIdentifier) {
-      sink_.emit({Severity::Error, "SYNTAX_ERROR",
-                  "class fields are not supported yet (M5.1d-d)", current().start});
-      allocator_->destroy(key);
-      allocator_->destroy(prop);
-      return nullptr;
-    }
-    /* 私有字段：#x; / #x = init;（M5.1d-c2）。键为 PrivateIdentifier，
-     * 初始化表达式（可缺省 = undefined）。 */
+    /* 类字段（M5.1d-d）：#x; / #x = init; / x; / x = init;（public/static）。
+     * 键可为 PrivateIdentifier（私有字段，M5.1d-c2）或 Identifier/计算键
+     * （public 字段，M5.1d-d）。初始化表达式可缺省（= undefined）。 */
     prop->prop.kind = PropertyKind::Init;
     prop->children.push_back(key);
     if (isSymbol(current(), "=")) {

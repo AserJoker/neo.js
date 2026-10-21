@@ -3004,6 +3004,259 @@ TEST(Compiler, M51dC2PrivateFieldDerivedCtor) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* M5.1d-d static 块 + 类字段（public/static）                                 */
+/* -------------------------------------------------------------------------- */
+
+/* static 字段 + static 块：类定义完成后按源码序执行，this = 构造器 */
+TEST(Compiler, M51dDStaticBlockAndField) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "class C { static y = 5; static { this.z = 7; this.w = this.y + 1; } } "
+           "C.y + '|' + C.z + '|' + C.w",
+      std::strlen("class C { static y = 5; static { this.z = 7; this.w = this.y + 1; } } "
+                  "C.y + '|' + C.z + '|' + C.w"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "5|7|6");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 实例字段初始化：构造器内按源码序 this.key = init */
+TEST(Compiler, M51dDInstanceField) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "class C { x = 10; y = this.x + 5; m() { return this.x + this.y; } } "
+           "var c = new C(); c.x + '|' + c.y + '|' + c.m()",
+      std::strlen("class C { x = 10; y = this.x + 5; m() { return this.x + this.y; } } "
+                  "var c = new C(); c.x + '|' + c.y + '|' + c.m()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "10|15|25");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 实例字段缺省：无初始化器 = undefined */
+TEST(Compiler, M51dDInstanceFieldDefault) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "class C { x; } var c = new C(); c.x === undefined",
+                       std::strlen("class C { x; } var c = new C(); c.x === undefined"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN) << JS_ToString(ctx, r);
+  EXPECT_TRUE(JS_ToBoolean(ctx, r));
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 派生类实例字段：基类字段 body 前、派生字段 super() 后 */
+TEST(Compiler, M51dDInstanceFieldDerived) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "class A { a = 100; } class B extends A { b = 200; constructor() { super(); this.b += 1; } } "
+           "var b = new B(); b.a + '|' + b.b",
+      std::strlen("class A { a = 100; } class B extends A { b = 200; constructor() { super(); this.b += 1; } } "
+                  "var b = new B(); b.a + '|' + b.b"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "100|201");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* M5.1d 总验收：继承 + super + 私有字段 + static 块 + 类字段 端到端 */
+TEST(Compiler, M51dDTotalAcceptance) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class Animal { "
+      "  #name; "
+      "  sound = '...'; "
+      "  static count = 0; "
+      "  static { this.count = 1; } "
+      "  constructor(n) { this.#name = n; } "
+      "  name() { return this.#name; } "
+      "  speak() { return this.sound; } "
+      "} "
+      "class Dog extends Animal { "
+      "  #loud = true; "
+      "  sound = 'woof'; "
+      "  static { this.count += 10; } "
+      "  speak() { return super.speak() + (this.#loud ? '!' : ''); } "
+      "} "
+      "var d = new Dog('Rex'); "
+      "d.name() + '|' + d.speak() + '|' + Dog.count",
+      std::strlen(
+          "class Animal { "
+          "  #name; "
+          "  sound = '...'; "
+          "  static count = 0; "
+          "  static { this.count = 1; } "
+          "  constructor(n) { this.#name = n; } "
+          "  name() { return this.#name; } "
+          "  speak() { return this.sound; } "
+          "} "
+          "class Dog extends Animal { "
+          "  #loud = true; "
+          "  sound = 'woof'; "
+          "  static { this.count += 10; } "
+          "  speak() { return super.speak() + (this.#loud ? '!' : ''); } "
+          "} "
+          "var d = new Dog('Rex'); "
+          "d.name() + '|' + d.speak() + '|' + Dog.count"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "Rex|woof!|11");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* static 私有字段：static #x = 值，static 方法/块内以 this.#x 访问 */
+TEST(Compiler, M51dDStaticPrivateField) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class C { "
+      "  static #x = 7; "
+      "  static getX() { return this.#x; } "
+      "  static setX(v) { this.#x = v; } "
+      "} "
+      "C.getX() + '|' + (C.setX(9), C.getX())",
+      std::strlen(
+          "class C { "
+          "  static #x = 7; "
+          "  static getX() { return this.#x; } "
+          "  static setX(v) { this.#x = v; } "
+          "} "
+          "C.getX() + '|' + (C.setX(9), C.getX())"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "7|9");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* static 块内引用私有字段：this.#x 读写 */
+TEST(Compiler, M51dDStaticBlockPrivateRef) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class C { "
+      "  static #x = 5; "
+      "  static { this.#x += 10; } "
+      "  static getX() { return this.#x; } "
+      "} "
+      "C.getX()",
+      std::strlen(
+          "class C { "
+          "  static #x = 5; "
+          "  static { this.#x += 10; } "
+          "  static getX() { return this.#x; } "
+          "} "
+          "C.getX()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 15.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 源码序混合：static 块、static 字段、static 方法交替出现，按声明序执行 */
+TEST(Compiler, M51dDOrderMixed) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class C { "
+      "  static order = 'a'; "
+      "  static { this.order += 'b'; } "
+      "  static m1() { this.order += 'c'; } "
+      "  static order2 = 'd'; "
+      "  static { this.order += this.order2; } "
+      "  static m2() { return this.order; } "
+      "} "
+      "C.m1(); C.m2()",
+      std::strlen(
+          "class C { "
+          "  static order = 'a'; "
+          "  static { this.order += 'b'; } "
+          "  static m1() { this.order += 'c'; } "
+          "  static order2 = 'd'; "
+          "  static { this.order += this.order2; } "
+          "  static m2() { return this.order; } "
+          "} "
+          "C.m1(); C.m2()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << JS_ToString(ctx, r);
+  /* 执行序：order='a'；块1 order+='b'(ab)；m1 是方法（类定义后调用）；
+   * order2='d'；块2 order+=order2('ab'+'d'='abd')；C.m1() order+='c'(abdc)。 */
+  EXPECT_STREQ(JS_ToString(ctx, r), "abdc");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* static 字段缺省：无初始化表达式时默认 undefined */
+TEST(Compiler, M51dDStaticFieldDefault) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class C { static x; } "
+      "C.x === undefined",
+      std::strlen(
+          "class C { static x; } "
+          "C.x === undefined"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN) << JS_ToString(ctx, r);
+  EXPECT_TRUE(JS_ToBoolean(ctx, r));
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* -------------------------------------------------------------------------- */
 /* 14. M3.0 VM 对象指令（NewObject/NewArray/LoadProp/StoreProp/LoadElem/      */
 /*     StoreElem）                                                            */
 /* -------------------------------------------------------------------------- */

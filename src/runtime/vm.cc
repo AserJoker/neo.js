@@ -1621,6 +1621,50 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         if (r.tmp_handle != 0) ctx->handles().free(r.tmp_handle);
         break;
       }
+      case Opcode::SuperCallArray: {
+        /* M5.1d-d：super(...args) 展开调用——派生类默认构造器转发全部
+         * 实参给基类构造器（栈顶为 args 数组）。语义同 SuperCall，
+         * 参数从数组扁平化（空洞 -> undefined）。 */
+        if (stack.empty()) return fail("Error: stack underflow on SuperCallArray");
+        JSValue *args_arr = stack.back();
+        if (args_arr == nullptr || !args_arr->isObject() ||
+            !args_arr->object()->isArray()) {
+          return fail("TypeError: super spread argument must be iterable");
+        }
+        JSObject *aobj = args_arr->object();
+        std::vector<JSValue *> flat;
+        flat.reserve(aobj->length());
+        for (size_t i = 0; i < aobj->length(); ++i) {
+          JSValue *e = aobj->getElement(i);
+          flat.push_back(e != nullptr ? e : ctx->createValue(Kind::Undefined));
+        }
+        JSObject *home = (self != nullptr) ? self->homeObject() : nullptr;
+        if (home == nullptr) {
+          return fail("TypeError: super() can only be used in a derived constructor");
+        }
+        JSObject *base = home->prototype(); /* 基类构造器 */
+        if (base == nullptr) {
+          return fail("TypeError: cannot call super() on a base class");
+        }
+        JSValue *base_val = base->holder();
+        if (base_val == nullptr || !isCallable(base_val)) {
+          return fail("TypeError: super is not a constructor");
+        }
+        JSValue *this_obj =
+            frame_this != nullptr ? frame_this : ctx->globalObject();
+        ConversionResult r =
+            call(ctx, base_val, this_obj,
+                 flat.empty() ? nullptr : flat.data(), flat.size());
+        if (!r.ok()) return r;
+        if (r.value != nullptr && r.value->isObject()) {
+          frame_this = r.value;
+        }
+        /* 收缩：弹出 args 数组，压入 this。 */
+        stack.pop_back();
+        stack.push_back(frame_this);
+        if (r.tmp_handle != 0) ctx->handles().free(r.tmp_handle);
+        break;
+      }
       case Opcode::LoadPrivate: {
         /* M5.1d-c2：receiver -> 私有字段值。
          * 字段全名 = fn.private_names[instr.arg]（含 '#' 前缀）。

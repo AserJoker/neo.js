@@ -100,6 +100,9 @@ enum class NodeType : uint8_t {
   /* super() 构造调用（M5.1d-c1）：children = [arg...]（参数列表）。
    * 仅派生类（extends）构造器内合法。 */
   SuperCall,           /* super() 构造调用（M5.1d-c1） */
+  /* static 块（M5.1d-d）：class C { static { stmts } }。
+   * children = 语句列表；类定义完成后按序执行，this = 类构造器。 */
+  StaticBlock,         /* class 静态初始化块（M5.1d-d） */
 };
 
 /* 声明关键字类型（M1.5 ①）：var / let / const */
