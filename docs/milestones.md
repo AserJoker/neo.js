@@ -1,8 +1,8 @@
 # neo.js 里程碑细化（Milestones）
 
-> 版本：v0.1
-> 日期：2026-10-17
-> 状态：**待用户确认**
+> 版本：v0.2
+> 日期：2026-10-21
+> 状态：**已确认，M3 之后各阶段细化并标注进展**
 > 关联文档：`docs/architecture.md`（架构，§10 里程碑总览）、`docs/coding-standards.md`（编码规范）
 > 说明：本文档把架构 §10 的宏观里程碑细化到**可独立验收的子阶段**。
 > 总原则：**每次提交都处于可构建、可测试状态**；一个阶段不完成，不进入下一阶段。
@@ -12,18 +12,21 @@
 ## 零、总体路线
 
 ```
-M0 骨架 ─▶ M1 前端流水线（本文档重点拆分） ─▶ M2 解释器核心 ─▶ M3 对象模型
-        ─▶ M4 内置对象 B0/B1 ─▶ M5 ES6 完整 ─▶ M6 完整化
+M0 骨架 ─▶ M1 前端流水线 ─▶ M2 解释器核心 ─▶ M3 对象模型 ─▶ M4 内置对象 B0/B1
+        ─▶ M5 ES6 完整 ─▶ M6 完整化
 ```
 
-- **M0 已完成**：工程结构、JSValue、诊断系统、CLI 空壳、JSAllocator、Scope-Value 体系。
-- **M1 是巨大的阶段**：JavaScript 语法极其复杂，不能一次完成。
-  本文档将其拆为 **M1.1–M1.6**，遵循"先搭骨架，再从小到大"的顺序：
-  **流水线骨架 → 分词 → 歧义处理 → 表达式 → 语句体系 → 兼容收尾**。
+- **M0 ✅ 已完成**：工程结构、JSValue、诊断系统、CLI 空壳、JSAllocator、Scope-Value 体系。
+- **M1 ✅ 已完成**：前端流水线（拆分为 M1.1–M1.6，见 §一）。
+- **M2 ✅ 已完成**：解释器核心（拆分为 M2.1–M2.5，见 §二）。
+- **M3 ✅ 已完成**：对象模型（拆分为 M3.0–M3.4，见 §三）。
+- **M4 ✅ 已完成**：内置对象 B0/B1（拆分为 M4.1–M4.4，见 §四）。
+- **M5 ⏳ 未启动**：ES6 完整（拆分为 M5.1–M5.8，各含字母子阶段，见 §五）。
+- **M6 ⏳ 未启动**：完整化（子阶段规划见 §六）。
 
 ---
 
-## 一、M1 前端流水线（拆分）
+## 一、M1 前端流水线（✅ 已完成，M1.1–M1.6）
 
 > 目标：完整覆盖 ES2023+ 语法（含严格模式、废弃语法警告），以 **AST dump 稳定 + Test262 语法用例冒烟** 为验收。
 
@@ -156,7 +159,7 @@ M0 骨架 ─▶ M1 前端流水线（本文档重点拆分） ─▶ M2 解释�
 
 ---
 
-## 二、M2 解释器核心（拆分）
+## 二、M2 解释器核心（✅ 已完成，M2.1–M2.5 + 总验收）
 
 > 目标：字节码 + 最小 VM，跑通基础脚本（循环、递归、闭包计数器），并把源码求值端到端接入。
 > 分层：**字节码发射 API（BytecodeBuilder）由编译器与测试共用**——测试可直接用 `push_op` 构造字节码做端到端运行（对应 M2.1 的发射式接口，Compiler 在 M2.4 复用）。
@@ -199,7 +202,7 @@ M0 骨架 ─▶ M1 前端流水线（本文档重点拆分） ─▶ M2 解释�
 
 - C 层可直接构造字节码端到端运行（add/循环/字符串拼接/入口参数用例通过）
 
-### M2.4 编译器：AST → 字节码
+### M2.4 编译器：AST → 字节码（✅ 已完成，d2dd3b7 / 9cdd586 / ef9663a / 2e2c656）
 
 **内容**：
 
@@ -213,7 +216,7 @@ M0 骨架 ─▶ M1 前端流水线（本文档重点拆分） ─▶ M2 解释�
 - `JS_Eval` 端到端求值基础脚本（源码 → AST → 字节码 → VM 执行）
 - 循环、递归脚本跑通
 
-### M2.5 闭包与作用域链
+### M2.5 闭包与作用域链（✅ 已完成，e6322a1）
 
 **内容**：
 
@@ -226,27 +229,400 @@ M0 骨架 ─▶ M1 前端流水线（本文档重点拆分） ─▶ M2 解释�
 - 闭包计数器脚本跑通（M2 总验收）
 - 递归（含尾递归）脚本跑通
 
-### M2 总验收
+### M2 总验收（✅ 已完成，17c9b4e）
 
 - 跑通基础脚本：**循环、递归、闭包计数器**
 - 每次提交可构建、可测试（`cmake --build` 无警告 + 测试全绿）
 
 ---
 
-## 三、M3 之后的里程碑（简述，待 M2 完成后细化）
+## 三、M3 对象模型（✅ 已完成，M3.0–M3.4）
 
-| 里程碑 | 内容 | 验收标准 |
-|--------|------|----------|
-| **M3 对象模型** | Object/Array/原型链/属性访问、类型转换 | 对象操作脚本通过 |
-| **M4 内置对象 B0/B1** | Object…Set 等核心内置 | 对应 Test262 用例通过 |
-| **M5 ES6 完整** | class/module/generator/async/Promise/Proxy 等 + 模块系统 | Test262 ES6 相关子集高通过率 |
-| **M6 完整化** | 剩余标准库、Intl 可选项、WeakRef 等、性能调优 | Test262 全量目标达成率 |
+> 目标：对象/数组字面量、成员读写、原型链、类型转换。对应架构 §10 M3。
+> 前置：E1–E5（对象模型地基/类型转换/函数最小集/语法绑定集，`c5c0a62`–`fca7862`）已在 M2 前完成，M3 在此之上补齐编译与运行链路。
 
-> M3 之后的每个里程碑在启动前，同样会按本文件的粒度**细化成子阶段**。
+### M3.0 前置：对象/数组字面量 AST 节点 + Parser 读值位置 + VM 对象指令（✅ 已完成，aed7d38）
+
+**内容**：
+
+- `ast.h` 新增 `ObjectLiteral`/`ArrayLiteral` 节点（含 `Property`/`SpreadElement` 载荷）
+- Parser 区分**读值位置**（`{`/`[` 进入对象/数组字面量而非块/下标），配合 M1.3 上下文
+- VM 新增对象/数组构造指令（`NewObject`/`NewArray` + 成员装载）
+
+**验收标准**：
+
+- `({a: 1})`、`[1, 2]` 的 AST dump 与字节码执行正确
+- 读值位置歧义（语句块 vs 对象字面量）正确消解
+
+### M3.1 对象/数组字面量编译与执行 + 成员读取（✅ 已完成，d91d45b）
+
+**内容**：
+
+- 编译器：`ObjectLiteral`/`ArrayLiteral` → 构造 + 逐成员装载指令
+- 成员读取编译：`obj.prop` / `obj[expr]` → `LoadProp`/`LoadElem`
+- 嵌套字面量、字符串/数字键、数组元素
+
+**验收标准**：
+
+- 嵌套对象/数组字面量求值正确
+- 成员读取（点号/方括号）端到端跑通
+
+### M3.2 成员赋值编译（✅ 已完成，0ec1694）
+
+**内容**：
+
+- 赋值编译：`obj.prop = rhs` / `obj[expr] = rhs` → `StoreProp`/`StoreElem`
+- 复合赋值 `+=`/`-=`/`*=` 等（读-算-写）
+- 左值校验（不可赋值的表达式报错）
+
+**验收标准**：
+
+- 成员赋值/复合赋值脚本端到端跑通
+- 非法左值编译期报错
+
+### M3.3 原型链与类型转换完善（✅ 已完成，32bc86d）
+
+**内容**：
+
+- `Object` 构造器 + `Object.getPrototypeOf`/`setPrototypeOf`/`create`
+- 原型链属性查找（普通/特殊属性顺序）、`__proto__` 语义
+- 类型转换链路完善（`toObject`/`toString`/`toNumber` 等与属性访问协同）
+- GC 两段式创建 pin/unpin 分配保护
+
+**验收标准**：
+
+- `Object.create(proto)` 原型链脚本跑通
+- 装箱/原始值属性访问正确
+
+### M3.4 收尾与验收（✅ 已完成，2d852dd）
+
+**内容**：
+
+- 架构文档 §5.2 `__proto__` 标注 + gc.md 分配保护说明
+- 全量构建/测试验收，提交
+
+**验收标准**：
+
+- 对象操作脚本全部通过；文档与实现一致
 
 ---
 
-## 三、跨阶段的质量红线
+## 四、M4 内置对象 B0/B1（✅ 已完成，M4.1–M4.4）
+
+> 目标：架构 §8 批次 B0（Object/Function/Boolean/Number/String/Symbol/BigInt/Error/globalThis）+ B1（Array/Map/Set）核心内置。对应架构 §10 M4。
+
+### M4.1 Array 构造器与 Array.prototype（✅ 已完成，576705e）
+
+**内容**：
+
+- `Array()`/`Array(len)`/`Array(...items)` 构造器 + `Array.isArray`
+- `Array.prototype`：push/pop/shift/unshift/indexOf/join/toString/reverse
+- 数组字面量与 `Array()` 原型链统一指向 `Array.prototype`（惰性缓存 + GC 根集）
+- `length` 属性读写经 VM `LoadProp`/`StoreProp` 特判（elements 推导 / 截断扩展 + RangeError）
+- 新指令 `Dup` + `CallMethod`：成员调用 `obj.method()` 的 this 绑定
+
+**验收标准**：
+
+- 数组构造/方法/长度语义端到端测试全绿
+
+### M4.2 Function/Error 家族（✅ 已完成，9ca9a66）
+
+**内容**：
+
+- `Construct` 抽象运算（§7.3.13）：`new F(args)` 语义
+- `Function` 构造器 + `Function.prototype`（惰性创建 + context 缓存 + GC 根集）
+- `Function.prototype.call/apply/bind`（bind 重构为 `FunctionKind::Bound`，GC 引用边）
+- `Error` 家族：Error/TypeError/RangeError/ReferenceError/SyntaxError + `Error.prototype.toString` + 子类原型链
+
+**验收标准**：
+
+- new 构造/原型绑定/call/apply/bind/Error 家族端到端测试全绿
+
+### M4.3 剩余 B0 基础类型：BigInt + String/Number/BigInt.prototype（✅ 已完成）
+
+**M4.3a–f BigInt 全链路 + String.prototype 补齐（✅ 已完成，1066b50）**
+
+- BigInt 值表示（`Kind::BigInt` + JSValue 大整数存储 + C API kind）
+- BigInt 字面量全链路（lexer 字符串 → AST → `PushBigInt` 指令 → VM）
+- 转换抽象运算（ToBigInt/ToNumeric/ToString/比较的 BigInt 分支）
+- 运算符语义（BigInt 算术/位运算/比较/一元）
+- BigInt 构造器 + `BigInt.prototype` + 注册与测试
+- `String.prototype` 约 20 方法（at/charAt/codePointAt/endsWith/includes/indexOf/padStart/padEnd/repeat/replace/slice/split/startsWith/substring/toLowerCase/toUpperCase/trim/trimStart/trimEnd/concat 等）
+- 新增 utf16 工具模块（UTF-16 长度/索引/大小写/空白/子串）
+- new String/Number/Boolean/BigInt 包装对象语义修复（constructWrapperKind）
+- String exotic object length/索引属性推导
+
+**M4.3g Number.prototype 补齐 + Number 静态方法（✅ 已完成，b4be9e5）**
+
+- `Number.prototype.toFixed/toExponential/toPrecision/toLocaleString`
+- Number 静态方法：isFinite/isInteger/isNaN/isSafeInteger/parseFloat/parseInt
+- Number 常量：EPSILON/MAX_SAFE_INTEGER/MAX_VALUE/MIN_SAFE_INTEGER/MIN_VALUE/NaN/NEGATIVE_INFINITY/POSITIVE_INFINITY
+- `toString(radix)` 支持 2–36 进制 + conversion 格式化工具
+
+**M4.3h String/Number 方法测试 + 全量验证（✅ 已完成，并入 1066b50/b4be9e5）**
+
+- 端到端测试覆盖 + ASan/valgrind 泄漏验证
+
+### M4.4 B1 集合与 Object 补齐（✅ 已完成）
+
+**M4.4a–e Map/Set 对象模型 + 构造器 + Symbol 键 + 迭代器协议（✅ 已完成，fbba3a7）**
+
+- Map/Set 对象模型与存储（`createMap`/`createSet`，GC 引用边）
+- Map 构造器 + Map.prototype（get/set/has/delete/size/keys/values/entries/clear/forEach 等）
+- Set 构造器 + Set.prototype（add/has/delete/size/clear/forEach/values/entries 等）
+- Symbol 属性键支持（`getOwnSymbolProperty`/`hasOwnSymbolProperty` 等）
+- 迭代器协议抽象运算（iterator.h/cc：getIterator/iteratorNext/iteratorStep/iteratorValue/getMethod）
+
+**M4.4f for-of 编译执行 + 内建迭代器（✅ 已完成，fbba3a7）**
+
+- 编译器：`ForOfStatement` 编译（GetIterator/IteratorStep/JumpIfTrue），迭代器存唯一名内部槽
+- VM：新增 `GetIterator`/`IteratorStep`/`JumpIfTrue` 指令
+- 内建迭代器：Array/String/Map/Set 的 `Symbol.iterator` + `next()`
+- 测试：EvalForOf（数组/空数组/嵌套/字符串含增补平面/Set/Map/自定义可迭代对象 + 手工 next 推进）
+
+**M4.4g Object 静态方法补齐（✅ 已完成，26eb687）**
+
+- keys/values/entries：own enumerable string-keyed 键收集，String exotic 虚拟索引
+- assign/defineProperty/defineProperties/fromEntries
+- freeze/seal/preventExtensions + isFrozen/isSealed/isExtensible（`[[Extensible]]` 标志）
+- JSObject 新增 `property_order_` 插入顺序跟踪 + 修复既有泄漏（Compiler 作用域帧池）
+
+**M4.4h Object.prototype 方法补齐 + 访问器属性语义（✅ 已完成，407b340）**
+
+- Object.prototype 6 方法：hasOwnProperty/isPrototypeOf/propertyIsEnumerable/valueOf/toString（含 toStringTag）/toLocaleString
+- defineProperty 访问器支持：get/set 解析、可调用校验、读写分发
+- VM `[[Get]]`/`[[Set]]`：访问器调 getter/setter，writable=false 拒绝赋值
+- 数组 length writable 校验 + Array.prototype 原型链修正（→ Object.prototype）
+- Object.values/entries/assign 访问器取值走 getter；freeze/isFrozen 访问器属性正确处理
+
+**验收标准（M4 整体）**：
+
+- 全部 341 个端到端测试全绿；ASan/valgrind 零泄漏
+
+---
+
+## 五、M5 ES6 完整（⏳ 未启动，M5.1–M5.8 + 字母子阶段）
+
+> 目标：class/module/generator/async/Promise/Proxy 等 + 模块系统。对应架构 §10 M5、§8 批次 B2（控制/异步）/B3（工具/反射，Intl 可后置）。
+> 现状基础：M1.6 ③ 已具备模块**语法层**（Module 根节点 + import/export 全形式 + import.meta + import() 解析）；M4 已具备 new/构造、Symbol、迭代器协议、call/apply/bind、Error 家族。
+> 现状缺口（启动前需补）：class/async/generator/super/yield **语法与编译**均未实现；模块**运行时**（加载器）未实现；默认参数/rest/展开/解构编译、逻辑赋值、对象 getter/setter 等编译未实现（当前报 "not implemented"）。
+> 拆分原则：模块、异步、生成器、类均为独立大子系统，各拆为字母子阶段（a→…），一阶段一验收；M5 整体是最大的阶段，不要求一次完成。
+
+### M5.1 语法与编译地基补全（⏳ 未启动）
+
+**内容**：
+
+- `class` 声明/表达式（含 `#x` 私有字段、static 块、`super`）——语法与编译
+- 默认参数/rest 参数编译、展开运算符（对象/数组/调用）编译、解构声明/赋值编译
+- 逻辑赋值 `&&=`/`||=`/`??=`、可选链赋值、对象字面量 getter/setter/method
+- 补编译器未实现项（当前 `not implemented` 清单逐项消解）
+
+**验收标准**：
+
+- class/默认参数/rest/展开/解构/逻辑赋值端到端脚本通过
+- `not implemented` 编译错误清单清零
+
+---
+
+### M5.2 模块系统（⏳ 未启动，M5.2a–M5.2d）
+
+> 模块语法层（M1.6 ③）已就绪，本节补**运行时执行**语义。模块加载/链接/循环依赖/动态导入各自独立可验收。
+
+**M5.2a 模块加载器与执行（⏳ 未启动）**
+
+- 模块加载器：import/export 运行时绑定（语法层已就绪，补执行语义）
+- 模块求值顺序（依赖先求值）、作用域隔离
+
+验收：多模块 import/export 脚本端到端运行
+
+**M5.2b 循环依赖与链接语义（⏳ 未启动）**
+
+- 模块链接（Instantiation）阶段：实例化绑定 + 循环依赖处理（live binding）
+- `export *` / 重导出命名空间合并
+
+验收：循环依赖模块对正确；`export *` 用例通过
+
+**M5.2c 动态导入与 import.meta（⏳ 未启动）**
+
+- 动态 `import()` 执行（Promise 语义，依赖 M5.3 Promise）
+- `import.meta` 运行时对象（语法层已就绪）
+
+验收：动态 import + import.meta 用例通过
+
+**M5.2d 模块系统总验收（⏳ 未启动）**
+
+验收：模块端到端用例集全绿（加载/链接/循环/动态导入）
+
+---
+
+### M5.3 异步：Promise（⏳ 未启动，M5.3a–M5.3c）
+
+> Promise 是异步地基，独立成节：先核心机制，再静态/组合方法，最后总验收。
+
+**M5.3a Promise 核心（⏳ 未启动）**
+
+- `Promise` 构造器 + 状态机（pending/fulfilled/rejected）+ 决议程序（resolve/reject）
+- `Promise.prototype.then/catch/finally` + 微任务队列（job queue）
+
+验收：Promise 链/then 回调端到端脚本通过
+
+**M5.3b Promise 静态与组合方法（⏳ 未启动）**
+
+- `Promise.resolve/reject`、`all`、`allSettled`、`any`、`race`
+
+验收：组合方法用例（含空数组/拒绝分支）通过
+
+**M5.3c Promise 总验收（⏳ 未启动）**
+
+验收：Promise 用例集全绿（链/组合/异常传播/微任务顺序）
+
+---
+
+### M5.4 异步：async/await（⏳ 未启动，M5.4a–M5.4c）
+
+> 依赖 M5.3 Promise 与 M5.1 语法地基；async 函数编译为状态机。
+
+**M5.4a async 函数编译（⏳ 未启动）**
+
+- `async function` / `async` 箭头函数语法与编译（await 表达式）
+- await 状态机保存/恢复（VM 现场保存，参考 M5 现场设计）
+
+验收：async 函数 + await 端到端脚本通过
+
+**M5.4b await 语义深化（⏳ 未启动）**
+
+- await 对 thenable 的接合（PromiseResolveThenableJob）
+- `for await...of`（依赖 M5.5 生成器/异步迭代器）
+
+验收：thenable await 用例通过；for await 用例通过
+
+**M5.4c async 总验收（⏳ 未启动）**
+
+验收：async/await 用例集全绿（含异常/嵌套/并发）
+
+---
+
+### M5.5 生成器与迭代器深化（⏳ 未启动，M5.5a–M5.5d）
+
+> 依赖 M4.4 迭代器协议与 M5.1 语法地基；生成器是独立状态机子系统。
+
+**M5.5a generator 编译与运行时（⏳ 未启动）**
+
+- `function*` / `yield` / `yield*` 语法与编译
+- generator 对象/状态机（next/throw/return 恢复）
+
+验收：generator 脚本（含 yield* 委托）通过
+
+**M5.5b 迭代器协议对齐（⏳ 未启动）**
+
+- 内建迭代器与协议抽象运算进一步对齐（架构 §8 B2）
+- `Iterator` 相关方法（Symbol.iterator 全量）
+
+验收：迭代器协议用例集通过
+
+**M5.5c AsyncGenerator / for await（⏳ 未启动）**
+
+- `AsyncGenerator` 对象/状态机 + `for await...of` 完整执行
+
+验收：async generator 用例通过
+
+**M5.5d 生成器总验收（⏳ 未启动）**
+
+验收：生成器/迭代器用例集全绿
+
+---
+
+### M5.6 RegExp + Date（⏳ 未启动，M5.6a–M5.6b）
+
+**M5.6a RegExp（⏳ 未启动）**
+
+- `RegExp` 对象：字面量/构造器、exec/test、flag 语义
+- String 方法正则分派（Symbol.replace/search/match/split 等）
+
+验收：正则匹配/替换端到端脚本通过
+
+**M5.6b Date（⏳ 未启动）**
+
+- `Date` 对象：构造/解析/格式化方法（toISOString/get/set 等）
+
+验收：Date 用例通过
+
+---
+
+### M5.7 Proxy / Reflect（⏳ 未启动，M5.7a–M5.7b）
+
+**M5.7a Proxy 核心（⏳ 未启动）**
+
+- `Proxy` 构造器 + trap 分派（get/set/has/deleteProperty/apply/construct 等）
+
+验收：Proxy trap 用例（含 revocable）通过
+
+**M5.7b Reflect（⏳ 未启动）**
+
+- `Reflect` 静态方法（与 Object 方法对齐，走 Proxy trap）
+
+验收：Reflect 用例通过
+
+---
+
+### M5.8 M5 总验收（⏳ 未启动）
+
+- Test262 ES6 相关子集高通过率
+- 每阶段可构建、可测试
+
+---
+
+## 六、M6 完整化（⏳ 未启动，子阶段规划）
+
+> 目标：剩余标准库、Intl 可选项、WeakRef 等、性能调优。对应架构 §10 M6、§8 批次 B1 剩余（ArrayBuffer/TypedArray/DataView/WeakMap/WeakSet）/B3 剩余（Math/JSON/WeakRef/FinalizationRegistry）。
+
+### M6.1 剩余标准库（⏳ 未启动）
+
+**内容**：
+
+- `Math`/`JSON` 静态对象
+- `ArrayBuffer`/`TypedArray`（10 种）/`DataView`
+- `WeakMap`/`WeakSet`/`WeakRef`/`FinalizationRegistry`（GC 关联语义）
+
+**验收标准**：
+
+- 各标准库对象方法端到端测试通过
+
+### M6.2 Intl（可选项，⏳ 未启动）
+
+**内容**：
+
+- `Intl` 依赖 ICU（已接入）或自研，作为独立可选项（架构 §11）
+
+**验收标准**：
+
+- Intl 核心对象（NumberFormat/DateTimeFormat/Collator）用例通过（或明确裁剪记录差距）
+
+### M6.3 性能调优与演进扩展点（⏳ 未启动）
+
+**内容**：
+
+- 演进路线（架构 §11）：Shape/Hidden Class + Inline Cache、基线 JIT（模板解释器）、分代/增量 GC、调试器/Inspector
+- VM/GC 基准与调优
+
+**验收标准**：
+
+- 基准脚本性能达标；无回归
+
+### M6.4 Test262 全量达标（⏳ 未启动）
+
+**内容**：
+
+- `test/built-ins/` 与 `test/language/` 核心子集全量跑测
+- 剩余差距记录并裁剪
+
+**验收标准**：
+
+- Test262 全量目标达成率
+
+---
+
+## 七、跨阶段的质量红线
 
 - **每阶段可构建、可测试**：提交前 `cmake --build` 无警告 + `ctest` 全绿。
 - **测试先行**：每个歧义点/语法类别配套独立测试集（`tests/frontend/`）。
@@ -255,4 +631,4 @@ M0 骨架 ─▶ M1 前端流水线（本文档重点拆分） ─▶ M2 解释�
 
 ---
 
-*确认后本文档即为前端流水线的实施依据。如需调整子阶段划分、顺序或验收标准，请指出条目编号。*
+*M5/M6 为规划拆分，启动前按实际需要可再细化；M3/M4 状态标注以 git 提交为准。如需调整子阶段划分、顺序或验收标准，请指出条目编号。*
