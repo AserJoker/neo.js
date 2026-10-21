@@ -176,6 +176,22 @@ class JSObject : public GCHeader {
   void collectionClear();
   const std::vector<MapEntry> &collectionEntries() const { return map_entries_; }
 
+  /* 私有字段槽（M5.1d-c2，§6.1.7.5 [[PrivateFieldValues]]）。
+   * 独立表存储：键为字段全名（含 '#' 前缀，如 "#x"），普通属性读写/
+   * 遍历永远看不到（真正不可见不可枚举）。值为 GC 引用边。
+   * 接收者校验：hasPrivateSlot 为 false 即 TypeError（访问了未声明
+   * 该私有字段的类实例）。 */
+  bool hasPrivateSlot(const std::string &name) const {
+    return private_slots_.find(name) != private_slots_.end();
+  }
+  JSValue *getPrivateSlot(const std::string &name) const {
+    auto it = private_slots_.find(name);
+    return it == private_slots_.end() ? nullptr : it->second;
+  }
+  void setPrivateSlot(const std::string &name, JSValue *value) {
+    private_slots_[name] = value;
+  }
+
   /* GC（docs/gc.md §4.1）：属性值 + 数组元素 + 原型都是引用边。 */
 
   /* ordinary 属性语义（架构 §5.2，v1 简化：writable/configurable 不校验）：
@@ -203,6 +219,7 @@ class JSObject : public GCHeader {
   std::unordered_map<JSValue *, PropertyDescriptor> symbol_properties_; /* Symbol 属性表（M4.4d） */
   std::vector<JSValue *> elements_;                          /* 数组元素（连续索引） */
   std::vector<MapEntry> map_entries_;                        /* 集合条目（M4.4a，[[MapData]]/[[SetData]]） */
+  std::unordered_map<std::string, JSValue *> private_slots_; /* 私有字段槽（M5.1d-c2，§6.1.7.5） */
   JSValue *holder_ = nullptr;                                /* 反向包装指针 */
   JSValue *data_ = nullptr;                                  /* 包装对象内部槽（E4-2） */
   JSValue *iter_target_ = nullptr;                           /* 迭代器内部槽（M4.4f） */

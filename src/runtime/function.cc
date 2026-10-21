@@ -86,6 +86,7 @@ void JSFunction::gcMarkRefs(Heap *heap) {
     heap->markRoot(a);
   }
   if (home_object_ != nullptr) heap->markRoot(home_object_); /* M5.1d-b super */
+  if (lexical_this_ != nullptr) heap->markRoot(lexical_this_); /* M5.1d-c2 箭头函数词法 this */
 }
 
 /* -------------------------------------------------------------------------- */
@@ -165,9 +166,12 @@ ConversionResult call(JSContext *ctx, JSValue *func, JSValue *thisVal,
   /* 2. this 绑定解析（§10.2.5.6）：
    *    - Strict：this 原样
    *    - NonStrict：null/undefined -> globalThis；原始值装箱（E4）
-   *    - Lexical：继承外层（E3 不实现） */
+   *    - Lexical：箭头函数——忽略传入 this，用定义处捕获的词法 this
+   *      （MakeFunction 时 setLexicalThis，M5.1d-c2） */
   JSValue *thisArg = thisVal;
-  if (fn->thisMode() != ThisMode::Strict) {
+  if (fn->thisMode() == ThisMode::Lexical) {
+    thisArg = fn->lexicalThis();
+  } else if (fn->thisMode() != ThisMode::Strict) {
     if (thisArg == nullptr || thisArg->kind() == Kind::Undefined ||
         thisArg->kind() == Kind::Null) {
       /* 非严格模式 null/undefined this -> globalThis（E5 完整内置）。 */

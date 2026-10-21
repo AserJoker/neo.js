@@ -247,6 +247,10 @@ void JSObject::gcMarkRefs(Heap *heap) {
   heap->markRoot(data_);
   /* 迭代器内部槽（M4.4f：被迭代对象） */
   heap->markRoot(iter_target_);
+  /* 私有字段槽（M5.1d-c2：§6.1.7.5 私有字段值，GC 引用边） */
+  for (auto &kv : private_slots_) {
+    heap->markRoot(kv.second);
+  }
 }
 
 /* -------------------------------------------------------------------------- */

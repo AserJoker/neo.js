@@ -878,6 +878,13 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         if (nf.is_arrow && self != nullptr && self->homeObject() != nullptr) {
           f->setHomeObject(self->homeObject());
         }
+        /* M5.1d-c2 箭头函数词法 this（§10.2.5.6 Lexical）：箭头函数
+         * [[ThisMode]] = Lexical，调用时忽略传入 this，用定义处外层代码
+         * 的 this（当前帧 this）。捕获后由 gcMarkRefs 作为引用边保护。 */
+        if (nf.is_arrow) {
+          f->setThisMode(ThisMode::Lexical);
+          f->setLexicalThis(frame_this);
+        }
         ctx->heap().pin(f); /* 分配保护（M3.3）：两段式创建中间窗口防误回收 */
         JSValue *v = ctx->heap().allocGCObject<JSValue>();
         v->setObject(f);
@@ -1606,10 +1613,98 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         if (r.value != nullptr && r.value->isObject()) {
           frame_this = r.value;
         }
-        /* 收缩：弹出 argc 个参数，压入 this（super() 求值为 this）。 */
+        /* 收缩：弹出 argc 个参数，压入 this（super() 求值为 this）。
+         * M5.1d-c2 派生类构造器：私有字段初始化指令已由编译器在 super()
+         * 之后内联发射（compileCall SuperCall 分支），本指令无需运行时钩子。 */
         stack.resize(args_pos);
         stack.push_back(frame_this);
         if (r.tmp_handle != 0) ctx->handles().free(r.tmp_handle);
+        break;
+      }
+      case Opcode::LoadPrivate: {
+        /* M5.1d-c2：receiver -> 私有字段值。
+         * 字段全名 = fn.private_names[instr.arg]（含 '#' 前缀）。
+         * 接收者校验：无该私有槽 -> TypeError（§8.3 PrivateFieldFind）。 */
+        if (stack.empty()) return fail("Error: stack underflow on LoadPrivate");
+        if (instr.arg >= fn.private_names.size()) {
+          return fail("Error: private field index out of range");
+        }
+        const std::string &field = fn.private_names[instr.arg];
+        JSValue *receiver = stack.back();
+        if (!receiver->isObject()) {
+          return fail("TypeError: Cannot read private member " + field +
+                      " from an object whose class did not declare it");
+        }
+        JSObject *obj = receiver->object();
+        if (!obj->hasPrivateSlot(field)) {
+          return fail("TypeError: Cannot read private member " + field +
+                      " from an object whose class did not declare it");
+        }
+        JSValue *val = obj->getPrivateSlot(field);
+        stack.pop_back();
+        stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
+        break;
+      }
+      case Opcode::StorePrivate: {
+        /* M5.1d-c2：receiver, val -> val（obj.#x = val）。接收者校验同 LoadPrivate。 */
+        if (stack.size() < 2) return fail("Error: stack underflow on StorePrivate");
+        if (instr.arg >= fn.private_names.size()) {
+          return fail("Error: private field index out of range");
+        }
+        const std::string &field = fn.private_names[instr.arg];
+        JSValue *val = stack.back();
+        JSValue *receiver = stack[stack.size() - 2];
+        if (!receiver->isObject()) {
+          return fail("TypeError: Cannot write private member " + field +
+                      " to an object whose class did not declare it");
+        }
+        JSObject *obj = receiver->object();
+        if (!obj->hasPrivateSlot(field)) {
+          return fail("TypeError: Cannot write private member " + field +
+                      " to an object whose class did not declare it");
+        }
+        obj->setPrivateSlot(field, val);
+        stack.resize(stack.size() - 2);
+        stack.push_back(val);
+        break;
+      }
+      case Opcode::InitPrivate: {
+        /* M5.1d-c2：构造器字段初始化 receiver, val -> val（InitPrivate {name_index}）。
+         * 与 StorePrivate 的区别：不要求接收者已声明该槽——实例初始化阶段
+         * （§12.2.9 InitializeInstanceElements）首次为对象创建私有槽。
+         * 接收者非对象 -> TypeError（§8.3 PrivateFieldAdd 步骤 2）。 */
+        if (stack.size() < 2) return fail("Error: stack underflow on InitPrivate");
+        if (instr.arg >= fn.private_names.size()) {
+          return fail("Error: private field index out of range");
+        }
+        const std::string &field = fn.private_names[instr.arg];
+        JSValue *val = stack.back();
+        JSValue *receiver = stack[stack.size() - 2];
+        if (!receiver->isObject()) {
+          return fail("TypeError: Cannot initialize private member " + field +
+                      " on a non-object");
+        }
+        receiver->object()->setPrivateSlot(field, val);
+        stack.resize(stack.size() - 2);
+        stack.push_back(val);
+        break;
+      }
+      case Opcode::HasPrivate: {
+        /* M5.1d-c2：#x in obj -> bool（receiver 替换为布尔）。
+         * 接收者不是对象 -> TypeError（§8.3 PrivateFieldFind 步骤 1）。 */
+        if (stack.empty()) return fail("Error: stack underflow on HasPrivate");
+        if (instr.arg >= fn.private_names.size()) {
+          return fail("Error: private field index out of range");
+        }
+        const std::string &field = fn.private_names[instr.arg];
+        JSValue *receiver = stack.back();
+        if (!receiver->isObject()) {
+          return fail("TypeError: Cannot use 'in' operator to search for "
+                      "private field " + field + " in a non-object");
+        }
+        bool found = receiver->object()->hasPrivateSlot(field);
+        stack.pop_back();
+        stack.push_back(ctx->createValue(found));
         break;
       }
       case Opcode::LoadUpvalue: {

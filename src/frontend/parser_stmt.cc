@@ -1271,6 +1271,19 @@ ASTNode *Parser::parseClassElement() {
     }
     key->literal.text = current().text;
     advance();
+  } else if (isSymbol(current(), "#")) {
+    /* M5.1d-c2 私有字段/方法：键 = PrivateIdentifier（#name）。 */
+    advance(); /* # */
+    if (!at(TokenKind::Identifier)) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                  "expected private field name after '#'", current().start});
+      allocator_->destroy(prop);
+      return nullptr;
+    }
+    key = newNode(NodeType::PrivateIdentifier);
+    key->loc = current().start;
+    key->name = current().text;
+    advance();
   } else {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid class element key",
                 current().start});
@@ -1314,12 +1327,30 @@ ASTNode *Parser::parseClassElement() {
     prop->children.push_back(key);
     prop->children.push_back(fn);
   } else {
-    /* 类字段：x = v / x; （M5.1d-d）。本阶段（M5.1d-a）仅方法集。 */
-    sink_.emit({Severity::Error, "SYNTAX_ERROR",
-                "class fields are not supported yet (M5.1d-d)", current().start});
-    allocator_->destroy(key);
-    allocator_->destroy(prop);
-    return nullptr;
+    /* M5.1d-d 类字段：x = v / x; —— 本阶段（M5.1d-a/c2）仅支持私有字段
+     * 声明（#x = v / #x;，M5.1d-c2 私有字段初始化）；公开字段留 M5.1d-d。 */
+    if (key->type != NodeType::PrivateIdentifier) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                  "class fields are not supported yet (M5.1d-d)", current().start});
+      allocator_->destroy(key);
+      allocator_->destroy(prop);
+      return nullptr;
+    }
+    /* 私有字段：#x; / #x = init;（M5.1d-c2）。键为 PrivateIdentifier，
+     * 初始化表达式（可缺省 = undefined）。 */
+    prop->prop.kind = PropertyKind::Init;
+    prop->children.push_back(key);
+    if (isSymbol(current(), "=")) {
+      advance(); /* = */
+      setValueContext();
+      ASTNode *init = parseAssignment();
+      if (init == nullptr) {
+        allocator_->destroy(key);
+        allocator_->destroy(prop);
+        return nullptr;
+      }
+      prop->children.push_back(init);
+    }
   }
 
   /* 方法后分号（可省）：method(){}; */

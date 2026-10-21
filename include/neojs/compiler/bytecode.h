@@ -133,6 +133,12 @@ enum class Opcode : uint8_t {
 
   /* M5.1d-c1 super() 构造调用：args... -> 基类构造器执行（追加末尾，保持 opcode 数值稳定） */
   SuperCall,       /* 调用 HomeObject.[[Prototype]]（基类构造器）于当前帧 this：SuperCall {argc}（M5.1d-c1） */
+
+  /* M5.1d-c2 私有字段：obj -> 值 / obj, val -> val（追加末尾，保持 opcode 数值稳定） */
+  LoadPrivate,     /* 读私有字段：receiver -> 值：LoadPrivate {name_index}（M5.1d-c2） */
+  StorePrivate,    /* 写私有字段：receiver, val -> val：StorePrivate {name_index}（M5.1d-c2） */
+  HasPrivate,      /* 私有字段存在性：#x in obj：obj, name -> bool：HasPrivate {name_index}（M5.1d-c2） */
+  InitPrivate,     /* 构造器初始化私有字段槽：receiver, val -> val（无槽则创建）：InitPrivate {name_index}（M5.1d-c2） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -181,6 +187,11 @@ struct FunctionBytecode {
   /* M5.1d-b 箭头函数：super 上下文继承（箭头函数内 super 指向外层
    * 方法的 HomeObject）。MakeFunction 据此复制外层 self 的 HomeObject。 */
   bool is_arrow = false;
+  /* M5.1d-c2 私有字段：本函数（class 构造器/方法）可访问的私有字段全名
+   * 表（含 '#' 前缀）。MakeFunction 实例化时原样复制。LoadPrivate/
+   * StorePrivate/HasPrivate 以该表下标引用字段名（构造器与方法的表
+   * 顺序一致，编译期由 class 元素收集顺序保证）。 */
+  std::vector<std::string> private_names;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -277,6 +288,11 @@ class BytecodeBuilder {
   void super_load_elem() { push_op(Opcode::SuperLoadElem); }
   /* M5.1d-c1：super() 构造调用（argc 个参数，基类构造器于当前帧 this）。 */
   void super_call(uint16_t argc) { push_op(Opcode::SuperCall, argc); }
+  /* M5.1d-c2：私有字段读写/存在性。private_names 下标 -> 字段全名。 */
+  void load_private(uint16_t name_index) { push_op(Opcode::LoadPrivate, name_index); }
+  void store_private(uint16_t name_index) { push_op(Opcode::StorePrivate, name_index); }
+  void has_private(uint16_t name_index) { push_op(Opcode::HasPrivate, name_index); }
+  void init_private(uint16_t name_index) { push_op(Opcode::InitPrivate, name_index); }
 
   /* 注册捕获变量（去重），返回捕获下标。 */
   uint16_t add_capture(uint16_t depth, const std::string &name) {

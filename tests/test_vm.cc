@@ -2736,6 +2736,274 @@ TEST(Compiler, M51dSuperCallInMethodSyntaxError) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* M5.1d-c2 私有字段 #x（独立私有槽表）                                       */
+/* -------------------------------------------------------------------------- */
+
+/* 私有字段基本读写：#x 初始化 + 读 + 写 */
+TEST(Compiler, M51dC2PrivateFieldBasic) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "class C { #x = 1; get() { return this.#x; } set(v) { this.#x = v; } } "
+           "var c = new C(); c.get() + '|' + (c.set(42), c.get())",
+      std::strlen("class C { #x = 1; get() { return this.#x; } set(v) { this.#x = v; } } "
+                  "var c = new C(); c.get() + '|' + (c.set(42), c.get())"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "1|42");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 私有字段无初始化器：默认 undefined */
+TEST(Compiler, M51dC2PrivateFieldDefaultUndefined) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "class C { #x; get() { return this.#x; } } "
+           "var c = new C(); c.get() === undefined",
+      std::strlen("class C { #x; get() { return this.#x; } } "
+                  "var c = new C(); c.get() === undefined"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN);
+  EXPECT_TRUE(JS_ToBoolean(ctx, r));
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 私有字段方法调用：#m(args) */
+TEST(Compiler, M51dC2PrivateMethodCall) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "class C { #x = 5; #m(n) { return this.#x + n; } get(n) { return this.#m(n); } } "
+           "var c = new C(); c.get(3)",
+      std::strlen("class C { #x = 5; #m(n) { return this.#x + n; } get(n) { return this.#m(n); } } "
+                  "var c = new C(); c.get(3)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 8.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 私有字段 #x in obj：接收者对象有该字段 true，否则 false */
+TEST(Compiler, M51dC2PrivateFieldIn) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "class C { #x = 1; static has(o) { return #x in o; } } "
+           "var c = new C(); C.has(c) + '|' + C.has({})",
+      std::strlen("class C { #x = 1; static has(o) { return #x in o; } } "
+                  "var c = new C(); C.has(c) + '|' + C.has({})"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "true|false");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 私有字段复合赋值：#x += 1 */
+TEST(Compiler, M51dC2PrivateFieldCompoundAssign) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "class C { #x = 1; inc() { this.#x += 10; return this.#x; } } "
+           "var c = new C(); c.inc()",
+      std::strlen("class C { #x = 1; inc() { this.#x += 10; return this.#x; } } "
+                  "var c = new C(); c.inc()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 11.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 私有字段继承：子类 super() 后父类在 this 上建私有槽，子类方法访问 */
+TEST(Compiler, M51dC2PrivateFieldInheritance) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "class A { #a = 10; get() { return this.#a; } } "
+           "class B extends A { #b = 20; get2() { return this.#b; } } "
+           "var b = new B(); b.get() + '|' + b.get2()",
+      std::strlen("class A { #a = 10; get() { return this.#a; } } "
+                  "class B extends A { #b = 20; get2() { return this.#b; } } "
+                  "var b = new B(); b.get() + '|' + b.get2()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "10|20");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 私有字段不可见：obj[\"#x\"] 访问不到（独立槽表） */
+TEST(Compiler, M51dC2PrivateFieldInvisible) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* 私有字段对 class 内 #x in 可见（true），但作为字符串属性访问不可见
+   * （c['#x'] === undefined）：独立槽表不暴露为属性。普通字符串 in
+   * 操作符尚未实现（M5.1e），故用 class 内 #x in 验证存在性。 */
+  JSValue *r = JS_Eval(
+      ctx, "class C { #x = 1; static has(o) { return #x in o; } } "
+           "var c = new C(); C.has(c) + '|' + (c['#x'] === undefined)",
+      std::strlen("class C { #x = 1; static has(o) { return #x in o; } } "
+                  "var c = new C(); C.has(c) + '|' + (c['#x'] === undefined)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "true|true");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 私有字段 TypeError：跨类访问接收者无该私有槽 */
+TEST(Compiler, M51dC2PrivateFieldTypeError) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* C1 的方法访问 C2 实例：接收者无 C1 的私有槽 -> TypeError */
+  JSValue *r = JS_Eval(
+      ctx, "class C1 { #x = 1; get(o) { return o.#x; } } "
+           "class C2 { } var c1 = new C1(); var c2 = new C2(); c1.get(c2)",
+      std::strlen("class C1 { #x = 1; get(o) { return o.#x; } } "
+                  "class C2 { } var c1 = new C1(); var c2 = new C2(); c1.get(c2)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION) << JS_ToString(ctx, r);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 私有字段未声明引用：编译错误 */
+TEST(Compiler, M51dC2PrivateFieldUndeclared) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "class C { m() { return this.#y; } }",
+                       std::strlen("class C { m() { return this.#y; } }"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION)
+      << "expected compile error, got: " << JS_ToString(ctx, r);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 私有字段普通函数嵌套不可见：function 内 #x 未声明编译错误 */
+TEST(Compiler, M51dC2PrivateFieldNotInFunction) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "class C { #x = 1; m() { function f() { return this.#x; } return f.call(this); } } "
+           "var c = new C(); c.m()",
+      std::strlen("class C { #x = 1; m() { function f() { return this.#x; } return f.call(this); } } "
+                  "var c = new C(); c.m()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION)
+      << "expected compile error, got: " << JS_ToString(ctx, r);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 私有字段箭头函数继承：箭头函数可访问外层方法私有字段 */
+TEST(Compiler, M51dC2PrivateFieldInArrow) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "class C { #x = 7; get() { var f = () => this.#x; return f(); } } "
+           "var c = new C(); c.get()",
+      std::strlen("class C { #x = 7; get() { var f = () => this.#x; return f(); } } "
+                  "var c = new C(); c.get()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 7.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 箭头函数词法 this（非 class 场景）：普通对象方法内箭头函数继承 this */
+TEST(Compiler, M51dC2ArrowLexicalThis) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "var o = { n: 42, get() { var f = () => this.n; return f(); } }; "
+           "o.get()",
+      std::strlen("var o = { n: 42, get() { var f = () => this.n; return f(); } }; "
+                  "o.get()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 42.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 派生类构造器：super() 后初始化私有字段 */
+TEST(Compiler, M51dC2PrivateFieldDerivedCtor) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx, "class A { #a = 100; get() { return this.#a; } } "
+           "class B extends A { #b = 200; constructor() { super(); this.#b = 300; } get2() { return this.#b; } } "
+           "var b = new B(); b.get() + '|' + b.get2()",
+      std::strlen("class A { #a = 100; get() { return this.#a; } } "
+                  "class B extends A { #b = 200; constructor() { super(); this.#b = 300; } get2() { return this.#b; } } "
+                  "var b = new B(); b.get() + '|' + b.get2()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "100|300");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* -------------------------------------------------------------------------- */
 /* 14. M3.0 VM 对象指令（NewObject/NewArray/LoadProp/StoreProp/LoadElem/      */
 /*     StoreElem）                                                            */
 /* -------------------------------------------------------------------------- */

@@ -129,6 +129,12 @@ class JSFunction : public JSObject {
   JSObject *homeObject() const { return home_object_; }
   void setHomeObject(JSObject *obj) { home_object_ = obj; }
 
+  /* 词法 this（M5.1d-c2 箭头函数，§10.2.5.6 Lexical）：
+   * 箭头函数 [[ThisMode]] = Lexical，调用时忽略传入 this，用定义处
+   * 外层代码的 this（MakeFunction 时捕获当前帧 this）。GC 引用边。 */
+  JSValue *lexicalThis() const { return lexical_this_; }
+  void setLexicalThis(JSValue *v) { lexical_this_ = v; }
+
   /* [[BoundTargetFunction]]/[[BoundThis]]/[[BoundArguments]]（M4.2）：
    * bind 生成函数（FunctionKind::Bound）的绑定元数据。GC 引用边。 */
   bool isBoundFunction() const { return kind_ == FunctionKind::Bound; }
@@ -158,6 +164,7 @@ class JSFunction : public JSObject {
   FunctionBytecode bc_;                 /* Script 函数字节码（M2.4 ③） */
   JSEnvironment *environment_ = nullptr; /* [[Environment]]（M2.5 闭包） */
   JSObject *home_object_ = nullptr;      /* [[HomeObject]]（M5.1d-b class super） */
+  JSValue *lexical_this_ = nullptr;      /* 词法 this（M5.1d-c2 箭头函数） */
   JSValue *bound_target_ = nullptr;     /* [[BoundTargetFunction]]（M4.2） */
   JSValue *bound_this_ = nullptr;       /* [[BoundThis]]（M4.2） */
   std::vector<JSValue *> bound_args_;   /* [[BoundArguments]]（M4.2） */

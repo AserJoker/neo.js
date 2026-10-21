@@ -300,8 +300,16 @@ bool Compiler::compileFunctionBody(const ASTNode &fn) {
 }
 
 /* 编译子函数到独立 builder（共享参数/body 解析）。
- * 调用方负责保存/恢复外层 builder_ 与作用域帧。 */
-bool Compiler::compileChildFunction(const ASTNode &fn, FunctionBytecode *out) {
+ * 调用方负责保存/恢复外层 builder_ 与作用域帧。
+ * is_ctor = true：该子函数是 class 构造器，body 编译前发射私有字段
+ * 初始化（M5.1d-c2）；派生类构造器不在此发射（super() 后由
+ * compileCall 的 SuperCall 分支发射）。
+ * inherit_private：是否继承外层 class 的私有字段访问权。class 方法/
+ * 构造器/访问器传 true；嵌套函数按规范（§8.1.1.2.3）只有箭头函数
+ * 继承（普通 function 有独立 PrivateEnvironment，不跨边界），
+ * 故 compileNestedFunction 传 fn.type == ArrowFunctionExpression。 */
+bool Compiler::compileChildFunction(const ASTNode &fn, FunctionBytecode *out,
+                                    bool is_ctor, bool inherit_private) {
   /* 函数名（可空）：fn_has_name 标记 children[0] 是否为函数名。 */
   std::string fn_name;
   if (fn.fn_has_name && !fn.children.empty()) {
@@ -319,7 +327,49 @@ bool Compiler::compileChildFunction(const ASTNode &fn, FunctionBytecode *out) {
   saved_builder = std::move(builder_); /* 保存外层 builder */
   builder_ = BytecodeBuilder(fn_name);
 
-  bool ok = compileFunctionBody(fn);
+  /* M5.1d-c2 私有字段编译状态：普通函数（非箭头、非 class 成员）不能
+   * 访问外层 class 的私有字段，置空 current_private_names_（编译期
+   * resolvePrivateName 报 SyntaxError）。箭头函数/class 成员继承。 */
+  const std::vector<std::string> *saved_names = current_private_names_;
+  const std::vector<const ASTNode *> *saved_inits = current_field_inits_;
+  bool saved_ctor = current_is_ctor_;
+  bool saved_derived = current_is_derived_;
+  bool saved_field_emitted = field_init_emitted_;
+  if (!inherit_private) {
+    current_private_names_ = nullptr;
+    current_field_inits_ = nullptr;
+  }
+  current_is_ctor_ = is_ctor;
+  field_init_emitted_ = false;
+  /* M5.1d-c2 构造器私有字段初始化时序（§9.2.2.4 步骤 5/8）：
+   *   - 基类构造器：body 编译前发射字段初始化（this 已就绪，步骤 5）。
+   *   - 派生类构造器：不能 body 前发射（this 未初始化）；显式 super()
+   *     由 compileCall 的 SuperCall 分支在 super() 后触发（步骤 8，
+   *     field_init_emitted_ = true）。
+   *   - 派生类默认构造器（空 body 无 super()）：super() 后字段初始化须在
+   *     body 编译前发射——compileFunctionBody 末尾已发射 Ret，body 后补发
+   *     会成为死代码（字段槽永不创建）。 */
+  const ASTNode *body_node =
+      fn.children.empty() ? nullptr : fn.children[fn.children.size() - 1];
+  bool derived_empty_ctor =
+      is_ctor && current_is_derived_ && !field_init_emitted_ &&
+      body_node != nullptr && body_node->type == NodeType::BlockStatement &&
+      body_node->children.empty();
+  bool ok = true;
+  if (is_ctor && !current_is_derived_ && !field_init_emitted_) {
+    ok = emitPrivateFieldInits();
+  }
+  if (ok && derived_empty_ctor) {
+    builder_.super_call(0);
+    builder_.pop(); /* 丢弃 super() 结果（this 已由 frame_this 维护） */
+    ok = emitPrivateFieldInits();
+  }
+  if (ok) ok = compileFunctionBody(fn);
+  current_private_names_ = saved_names;
+  current_field_inits_ = saved_inits;
+  current_is_ctor_ = saved_ctor;
+  current_is_derived_ = saved_derived;
+  field_init_emitted_ = saved_field_emitted;
 
   /* 恢复外层 builder_；子函数字节码交给调用方。
    * 注意：子函数局部槽数（参数 + var）必须写入字节码，否则 VM 栈底
@@ -336,6 +386,11 @@ bool Compiler::compileChildFunction(const ASTNode &fn, FunctionBytecode *out) {
   /* M5.1d-b 箭头函数：super 上下文继承标记（MakeFunction 时复制外层
    * HomeObject，使箭头函数内 super 指向外层方法的 HomeObject）。 */
   child_fn.is_arrow = (fn.type == NodeType::ArrowFunctionExpression);
+  /* M5.1d-c2 私有字段：class 构造器/方法/访问器携带 class 词法可见的
+   * 字段全名表（含 '#'，LoadPrivate/StorePrivate/HasPrivate 引用其下标）。 */
+  if (inherit_private && current_private_names_ != nullptr) {
+    child_fn.private_names = *current_private_names_;
+  }
   *out = std::move(child_fn);
   return true;
 }
@@ -344,7 +399,13 @@ bool Compiler::compileChildFunction(const ASTNode &fn, FunctionBytecode *out) {
  * 发射 MakeFunction 指令。声明时挂到函数名局部变量；表达式时留栈顶。 */
 bool Compiler::compileNestedFunction(const ASTNode &fn, bool is_declaration) {
   FunctionBytecode child;
-  if (!compileChildFunction(fn, &child)) return false;
+  /* M5.1d-c2：嵌套函数是否继承外层 class 私有字段访问权——仅箭头函数
+   * 继承（普通函数有独立 PrivateEnvironment，§8.1.1.2.3）。 */
+  const bool inherit_private =
+      (fn.type == NodeType::ArrowFunctionExpression);
+  if (!compileChildFunction(fn, &child, /*is_ctor=*/false, inherit_private)) {
+    return false;
+  }
 
   uint16_t index = static_cast<uint16_t>(builder_.add_nested(std::move(child)));
   builder_.make_function(index);
@@ -368,7 +429,10 @@ bool Compiler::compileClassMemberFunction(const ASTNode &fn,
                                           const std::string &fn_name,
                                           bool is_ctor) {
   FunctionBytecode child;
-  if (!compileChildFunction(fn, &child)) return false;
+  /* M5.1d-c2：class 成员（构造器/方法/访问器）继承 class 私有字段访问权。 */
+  if (!compileChildFunction(fn, &child, is_ctor, /*inherit_private=*/true)) {
+    return false;
+  }
   child.name = fn_name;
   if (is_ctor) {
     child.is_constructor = true;
@@ -472,9 +536,14 @@ bool Compiler::compileClass(const ASTNode &node, bool is_declaration) {
   builder_.store_var(proto_slot);
 
   /* 2. 编译构造器函数。
-   *    找 key == "constructor" 的 Method 元素作为构造器体；否则默认空构造器。 */
+   *    找 key == "constructor" 的 Method 元素作为构造器体；否则默认空构造器。
+   *    M5.1d-c2 私有字段：先收集 class 全部私有字段（#x 声明，含 static），
+   *    设置 current_private_names_/current_field_inits_（class 体编译期间
+   *    有效：构造器/方法/访问器/箭头函数内 #x 引用解析到该表）。 */
   const ASTNode *ctor_fn = nullptr;
   std::vector<const ASTNode *> elements;
+  std::vector<std::string> private_names;      /* 字段全名表（含 '#'，按声明序） */
+  std::vector<const ASTNode *> private_inits;  /* 字段初始化表达式（与表一一对应） */
   for (size_t i = index; i < node.children.size(); ++i) {
     const ASTNode *elem = node.children[i];
     if (elem == nullptr || elem->type != NodeType::Property) continue;
@@ -485,24 +554,64 @@ bool Compiler::compileClass(const ASTNode &node, bool is_declaration) {
         elem->children[0]->name == "constructor") {
       ctor_fn = elem->children[1];
     }
+    /* 私有元素声明（M5.1d-c2）：key 为 PrivateIdentifier。
+     *   - 私有字段 #x = v / #x;：kind=Init，children[1]=初始化表达式（或空）。
+     *   - 私有方法 #m(){}：kind=Method，children[1]=方法函数（FunctionExpression）。
+     * 统一收集进 private_names/private_inits（构造器里建槽）。
+     * 键为全名（含 '#'）。重复声明 -> 编译错误。 */
+    if (!elem->children.empty() &&
+        elem->children[0]->type == NodeType::PrivateIdentifier) {
+      const std::string full = "#" + elem->children[0]->name;
+      for (const std::string &pn : private_names) {
+        if (pn == full) {
+          fail("SyntaxError: duplicate private field " + full);
+          return false;
+        }
+      }
+      private_names.push_back(full);
+      private_inits.push_back(elem->children.size() >= 2 ? elem->children[1]
+                                                         : nullptr);
+    }
   }
+  const std::vector<std::string> *saved_names = current_private_names_;
+  const std::vector<const ASTNode *> *saved_inits = current_field_inits_;
+  bool saved_derived = current_is_derived_;
+  current_private_names_ = &private_names;
+  current_field_inits_ = &private_inits;
+  current_is_derived_ = (base != nullptr);
   if (ctor_fn != nullptr) {
     if (!compileClassMemberFunction(*ctor_fn, class_name, /*is_ctor=*/true)) {
+      current_private_names_ = saved_names;
+      current_field_inits_ = saved_inits;
+      current_is_derived_ = saved_derived;
       return false;
     }
   } else {
-    /* 默认构造器：直接返回 this（construct() 以新对象为结果）。
-     * 显式构造字节码（无参数）。 */
-    FunctionBytecode ctor_bc;
-    ctor_bc.name = class_name;
-    ctor_bc.is_constructor = true;
-    ctor_bc.numLocals = 0;
-    ctor_bc.code.push_back({Opcode::LoadThis, 0});
-    ctor_bc.code.push_back({Opcode::Ret, 0});
+    /* 默认构造器：无参 + 空 body。复用 compileChildFunction（is_ctor=true）
+     * 使其统一发射字段初始化（基类 body 前 / 派生类 body 后 super() + 初始化）
+     * 并编译各字段的 init 表达式（§12.2.9）。用栈上临时节点表示空函数
+     *（FunctionExpression，children = [空 BlockStatement]）。 */
+    ASTNode empty_fn(NodeType::FunctionExpression);
+    empty_fn.fn_has_name = false;
+    ASTNode empty_body(NodeType::BlockStatement);
+    empty_fn.children.push_back(&empty_body);
+    FunctionBytecode child;
+    if (!compileChildFunction(empty_fn, &child, /*is_ctor=*/true,
+                              /*inherit_private=*/true)) {
+      current_private_names_ = saved_names;
+      current_field_inits_ = saved_inits;
+      current_is_derived_ = saved_derived;
+      return false;
+    }
+    child.name = class_name;
+    child.is_constructor = true;
     uint16_t ctor_index =
-        static_cast<uint16_t>(builder_.add_nested(std::move(ctor_bc)));
+        static_cast<uint16_t>(builder_.add_nested(std::move(child)));
     builder_.make_function(ctor_index);
   }
+  /* current_private_names_/current_field_inits_/current_is_derived_ 保持指向
+   * 本 class 的私有字段状态，直到全部元素（方法/访问器，M5.1d-c2 需在编译
+   * 方法体时解析 #x 引用）编译完成；恢复推迟到元素循环之后（见步骤 4 尾部）。 */
 
   /* 3. ctor.prototype = proto。栈上 [ctor]。
    *    M5.1d-b super：构造器 [[HomeObject]] = 构造器自身（static 语义），
@@ -518,15 +627,33 @@ bool Compiler::compileClass(const ASTNode &node, bool is_declaration) {
   builder_.pop();
 
   /* 4. 实例方法挂到 proto；static 方法挂到构造器（栈顶 dup）。
-   *    构造器元素本身不重复挂载（constructor 是构造器，不是 prototype 方法）。 */
+   *    构造器元素本身不重复挂载（constructor 是构造器，不是 prototype 方法）。
+   *    M5.1d-c2：私有字段声明（PropertyKind::Init）不在 prototype 上定义——
+   *    初始化在构造器里经 LoadPrivate/StorePrivate 发射（emitPrivateFieldInits），
+   *    存储于对象私有槽表，此处跳过。 */
   for (const ASTNode *elem : elements) {
+    /* M5.1d-c2：私有元素（字段声明 + 私有方法）不挂 prototype——
+     * 私有字段在构造器建槽；私有方法值同样由 emitPrivateFieldInits 编译
+     * 方法函数并存入槽（LoadPrivate 取方法值）。此处跳过。 */
+    if (elem->prop.kind == PropertyKind::Init) continue;
+    if (!elem->children.empty() &&
+        elem->children[0]->type == NodeType::PrivateIdentifier) {
+      continue; /* 私有方法 */
+    }
     const ASTNode *elem_fn =
         (elem->children.size() >= 2) ? elem->children[1] : nullptr;
     if (ctor_fn != nullptr && elem_fn == ctor_fn) continue;
     if (!compileClassElementDef(*elem, proto_slot, elem->prop.is_static)) {
+      current_private_names_ = saved_names;
+      current_field_inits_ = saved_inits;
+      current_is_derived_ = saved_derived;
       return false;
     }
   }
+  /* class 全部元素编译完成，恢复外层私有字段状态。 */
+  current_private_names_ = saved_names;
+  current_field_inits_ = saved_inits;
+  current_is_derived_ = saved_derived;
 
   /* 5. extends：proto_tmp.[[Prototype]] = base.prototype；
    *          ctor.[[Prototype]] = base。 */
@@ -565,6 +692,64 @@ CompileResult Compiler::failResult() {
   result.ok = false;
   result.error = error_;
   return result;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 私有字段（M5.1d-c2）                                                        */
+/* -------------------------------------------------------------------------- */
+
+/* 解析私有字段引用：字段名（不含 '#'）-> current_private_names_ 下标。
+ * 不在表内（未声明或超出 class 词法作用域）-> 编译错误返回 -1。
+ * 注意：本函数在字段名查表前先构造全名（含 '#'）。 */
+int Compiler::resolvePrivateName(const std::string &name) {
+  if (current_private_names_ == nullptr) {
+    fail("SyntaxError: Private field '#" + name +
+         "' must be declared in an enclosing class");
+    return -1;
+  }
+  const std::string full = "#" + name;
+  for (size_t i = 0; i < current_private_names_->size(); ++i) {
+    if ((*current_private_names_)[i] == full) {
+      return static_cast<int>(i);
+    }
+  }
+  fail("SyntaxError: Private field '#" + name +
+       "' must be declared in an enclosing class");
+  return -1;
+}
+
+/* 发射构造器私有字段初始化：逐字段 LoadThis; init|undefined; StorePrivate {i}。
+ * 仅构造器调用（current_is_ctor_ 保证；非构造器函数无此序列）。
+ * 字段初始化表达式在类构造时求值（this 已就绪，基类已建好私有槽）。 */
+bool Compiler::emitPrivateFieldInits() {
+  if (current_private_names_ == nullptr || current_field_inits_ == nullptr ||
+      current_field_inits_->size() != current_private_names_->size()) {
+    /* 无私有字段（或状态未就绪）：无事可做。 */
+    field_init_emitted_ = true;
+    return true;
+  }
+  for (size_t i = 0; i < current_private_names_->size(); ++i) {
+    builder_.load_this();
+    const ASTNode *init = (*current_field_inits_)[i];
+    if (init != nullptr && init->type == NodeType::FunctionExpression) {
+      /* 私有方法 #m(){}：编译方法函数（MakeFunction 留栈顶）存入槽。
+       * 方法名为字段名（不含 '#'）；HomeObject 暂不设置（私有方法内
+       * super 访问属 M5.1d-b 组合场景，本阶段不测试）。 */
+      std::string mname = (*current_private_names_)[i];
+      if (!mname.empty() && mname[0] == '#') mname = mname.substr(1);
+      if (!compileClassMemberFunction(*init, mname, /*is_ctor=*/false)) {
+        return false;
+      }
+    } else if (init != nullptr) {
+      if (!compileExpr(*init)) return false;
+    } else {
+      builder_.push_op(Opcode::PushUndefined);
+    }
+    /* InitPrivate：首次创建槽（与 StorePrivate 的「必须已声明」区分）。 */
+    builder_.init_private(static_cast<uint16_t>(i));
+  }
+  field_init_emitted_ = true;
+  return true;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1385,8 +1570,11 @@ bool Compiler::compileMemberLoad(const ASTNode &node) {
     /* obj.prop：属性名为 Identifier 或 PrivateIdentifier。 */
     const ASTNode *prop = node.children[1];
     if (prop->type == NodeType::PrivateIdentifier) {
-      fail("not implemented: private member access");
-      return false;
+      /* M5.1d-c2：obj.#x -> receiver; LoadPrivate {name_index}（receiver 替换为值）。 */
+      int idx = resolvePrivateName(prop->name);
+      if (idx < 0) return false;
+      builder_.load_private(static_cast<uint16_t>(idx));
+      return true;
     }
     if (prop->type != NodeType::Identifier) {
       fail("invalid member property name");
@@ -1440,19 +1628,21 @@ bool Compiler::compileMemberAssign(const ASTNode &node) {
   const ASTNode *obj_expr = lhs->children[0];
   const ASTNode *key_expr = computed ? lhs->children[1] : nullptr;
 
-  /* 非计算成员：属性名（Identifier；PrivateIdentifier 不支持）。 */
+  /* 非计算成员：属性名（Identifier / PrivateIdentifier）。 */
   std::string prop_name;
+  int priv_idx = -1;
   if (!computed) {
     const ASTNode *prop = lhs->children[1];
     if (prop->type == NodeType::PrivateIdentifier) {
-      fail("not implemented: private member assignment");
-      return false;
-    }
-    if (prop->type != NodeType::Identifier) {
+      /* M5.1d-c2 私有字段赋值：#x 须在 class 词法作用域内声明。 */
+      priv_idx = resolvePrivateName(prop->name);
+      if (priv_idx < 0) return false;
+    } else if (prop->type != NodeType::Identifier) {
       fail("invalid member property name");
       return false;
+    } else {
+      prop_name = prop->name;
     }
-    prop_name = prop->name;
   }
 
   /* 逻辑复合赋值（&&= / ||= / ??=）：短路语义（M5.1b）。
@@ -1475,6 +1665,8 @@ bool Compiler::compileMemberAssign(const ASTNode &node) {
     if (computed) {
       builder_.load_var(t_key);
       builder_.load_elem();
+    } else if (priv_idx >= 0) {
+      builder_.load_private(static_cast<uint16_t>(priv_idx));
     } else {
       builder_.load_prop(prop_name);
     }
@@ -1499,6 +1691,8 @@ bool Compiler::compileMemberAssign(const ASTNode &node) {
     if (computed) {
       builder_.load_var(t_key);
       builder_.load_elem();
+    } else if (priv_idx >= 0) {
+      builder_.load_private(static_cast<uint16_t>(priv_idx));
     } else {
       builder_.load_prop(prop_name);
     }
@@ -1513,6 +1707,8 @@ bool Compiler::compileMemberAssign(const ASTNode &node) {
     builder_.load_var(t_val);
     if (computed) {
       builder_.store_elem();
+    } else if (priv_idx >= 0) {
+      builder_.store_private(static_cast<uint16_t>(priv_idx));
     } else {
       builder_.store_prop(prop_name);
     }
@@ -1522,12 +1718,15 @@ bool Compiler::compileMemberAssign(const ASTNode &node) {
 
   const bool compound = (node.assign_op != AssignmentOpKind::Assign);
   if (!compound) {
-    /* 简单赋值：对象表达式求值一次，留栈顶供 StoreProp/StoreElem 消费。 */
+    /* 简单赋值：对象表达式求值一次，留栈顶供 StoreProp/StoreElem 消费。
+     * 私有字段：obj.#x = rhs -> obj; rhs; StorePrivate {idx}（receiver, val -> val）。 */
     if (!compileExpr(*obj_expr)) return false;
     if (computed && !compileExpr(*key_expr)) return false;
     if (!compileExpr(*rhs)) return false;
     if (computed) {
       builder_.store_elem();
+    } else if (priv_idx >= 0) {
+      builder_.store_private(static_cast<uint16_t>(priv_idx));
     } else {
       builder_.store_prop(prop_name);
     }
@@ -1562,6 +1761,8 @@ bool Compiler::compileMemberAssign(const ASTNode &node) {
   if (computed) {
     builder_.load_var(t_key);
     builder_.load_elem();
+  } else if (priv_idx >= 0) {
+    builder_.load_private(static_cast<uint16_t>(priv_idx));
   } else {
     builder_.load_prop(prop_name);
   }
@@ -1578,6 +1779,8 @@ bool Compiler::compileMemberAssign(const ASTNode &node) {
   builder_.load_var(t_val);
   if (computed) {
     builder_.store_elem();
+  } else if (priv_idx >= 0) {
+    builder_.store_private(static_cast<uint16_t>(priv_idx));
   } else {
     builder_.store_prop(prop_name);
   }
@@ -1656,6 +1859,21 @@ bool Compiler::compileBinary(const ASTNode &node) {
     builder_.bind_label(short_circuit);
     builder_.load_var(tmp); /* 短路路径：结果 = lhs */
     builder_.bind_label(end);
+    return true;
+  }
+
+  /* #x in obj：私有字段存在性（M5.1d-c2，§8.3 PrivateFieldFind）。
+   * lhs 为 PrivateIdentifier（引用 class 私有字段），rhs 为接收者对象。
+   * 发射：receiver; HasPrivate {name_index}（receiver 替换为布尔）。 */
+  if (node.binop == BinaryOpKind::In && lhs->type == NodeType::PrivateIdentifier) {
+    if (node.children.size() < 2) {
+      fail("private 'in' without right operand");
+      return false;
+    }
+    int idx = resolvePrivateName(lhs->name);
+    if (idx < 0) return false;
+    if (!compileExpr(*rhs)) return false;
+    builder_.has_private(static_cast<uint16_t>(idx));
     return true;
   }
 
@@ -1856,6 +2074,12 @@ bool Compiler::compileCall(const ASTNode &node) {
       if (!compileExpr(*node.children[i])) return false;
     }
     builder_.super_call(static_cast<uint16_t>(argc));
+    /* M5.1d-c2 派生类构造器：super() 返回后私有字段初始化（§9.2.2.4
+     * 步骤 8——字段初始化器在 super() 之后求值）。仅构造器且本 class
+     * 有私有字段时发射一次。 */
+    if (current_is_ctor_ && current_is_derived_ && !field_init_emitted_) {
+      if (!emitPrivateFieldInits()) return false;
+    }
     return true;
   }
 
@@ -1917,11 +2141,19 @@ bool Compiler::compileCall(const ASTNode &node) {
       return false;
     }
     const ASTNode *prop = callee->children[1];
+    /* M5.1d-c2 私有方法调用 obj.#m(args)：LoadPrivate 把 obj 替换为值。 */
+    int priv_idx = -1;
     if (prop->type == NodeType::PrivateIdentifier) {
-      fail("not implemented: private member call");
-      return false;
+      priv_idx = resolvePrivateName(prop->name);
+      if (priv_idx < 0) return false;
     }
     if (has_spread) {
+      if (priv_idx >= 0) {
+        /* obj.#m(...a)：私有字段展开调用——obj.#m 求值作普通函数，
+         * this 绑定丢失（CallArray 无 this 槽）。本阶段不支持。 */
+        fail("not implemented: spread call on private member");
+        return false;
+      }
       /* obj.m(...a)：callee 求值（obj.m 值）作普通函数，构建 args
        * 数组后 CallArray。this 绑定为 undefined（CallArray 无 this 槽），
        * 成员展开调用的 this 语义 M5.1e 补全。 */
@@ -1939,11 +2171,17 @@ bool Compiler::compileCall(const ASTNode &node) {
     if (!compileExpr(*callee->children[0])) return false; /* obj */
     builder_.dup();                                        /* obj, obj */
     if (!callee->member.computed) {
-      if (prop->type != NodeType::Identifier) {
-        fail("invalid member property name");
-        return false;
+      /* M5.1d-c2：私有方法调用 prop 为 PrivateIdentifier（priv_idx 分支
+       * 已 load_private），放行；普通成员要求 Identifier。 */
+      if (priv_idx >= 0) {
+        builder_.load_private(static_cast<uint16_t>(priv_idx)); /* obj, func */
+      } else {
+        if (prop->type != NodeType::Identifier) {
+          fail("invalid member property name");
+          return false;
+        }
+        builder_.load_prop(prop->name); /* obj, func */
       }
-      builder_.load_prop(prop->name); /* obj, func */
     } else {
       if (!compileExpr(*prop)) return false; /* obj, obj, key */
       builder_.load_elem();                  /* obj, func */
