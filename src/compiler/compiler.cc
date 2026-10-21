@@ -1180,14 +1180,6 @@ bool Compiler::compileMemberAssign(const ASTNode &node) {
     fail("not implemented: optional chaining assignment");
     return false;
   }
-  /* 逻辑复合赋值：短路语义留后续（与标识符目标一致）。 */
-  if (node.assign_op == AssignmentOpKind::LogicalAndAssign ||
-      node.assign_op == AssignmentOpKind::LogicalOrAssign ||
-      node.assign_op == AssignmentOpKind::NullishAssign) {
-    fail("not implemented: logical compound assignment");
-    return false;
-  }
-
   const bool computed = lhs->member.computed;
   const ASTNode *obj_expr = lhs->children[0];
   const ASTNode *key_expr = computed ? lhs->children[1] : nullptr;
@@ -1205,6 +1197,71 @@ bool Compiler::compileMemberAssign(const ASTNode &node) {
       return false;
     }
     prop_name = prop->name;
+  }
+
+  /* 逻辑复合赋值（&&= / ||= / ??=）：短路语义（M5.1b）。
+   * 对象表达式求值一次（暂存），短路返回旧值（重新读 obj.p），
+   * 非短路求 rhs 写回。 */
+  if (node.assign_op == AssignmentOpKind::LogicalAndAssign ||
+      node.assign_op == AssignmentOpKind::LogicalOrAssign ||
+      node.assign_op == AssignmentOpKind::NullishAssign) {
+    if (!compileExpr(*obj_expr)) return false;
+    uint16_t t_obj = scope_->next_slot++;
+    builder_.store_var(t_obj);
+    uint16_t t_key = 0;
+    if (computed) {
+      if (!compileExpr(*key_expr)) return false;
+      t_key = scope_->next_slot++;
+      builder_.store_var(t_key);
+    }
+    /* 读旧值。 */
+    builder_.load_var(t_obj);
+    if (computed) {
+      builder_.load_var(t_key);
+      builder_.load_elem();
+    } else {
+      builder_.load_prop(prop_name);
+    }
+    /* 赋值条件判断：成立跳转赋值路径，否则落短路路径。 */
+    BcLabel assign_path = builder_.new_label();
+    BcLabel done = builder_.new_label();
+    switch (node.assign_op) {
+      case AssignmentOpKind::LogicalAndAssign:
+        builder_.jump_if_true(&assign_path);
+        break;
+      case AssignmentOpKind::LogicalOrAssign:
+        builder_.jump_if_false(&assign_path);
+        break;
+      case AssignmentOpKind::NullishAssign:
+        builder_.jump_if_nullish(&assign_path);
+        break;
+      default:
+        break;
+    }
+    /* 短路：返回旧值（重新读 obj.p）。 */
+    builder_.load_var(t_obj);
+    if (computed) {
+      builder_.load_var(t_key);
+      builder_.load_elem();
+    } else {
+      builder_.load_prop(prop_name);
+    }
+    builder_.jump(&done);
+    /* 赋值路径：求 rhs，暂存，压 obj(+key)+rhs 写回（StoreProp 留 rhs 栈顶）。 */
+    builder_.bind_label(assign_path);
+    if (!compileExpr(*rhs)) return false;
+    uint16_t t_val = scope_->next_slot++;
+    builder_.store_var(t_val);
+    builder_.load_var(t_obj);
+    if (computed) builder_.load_var(t_key);
+    builder_.load_var(t_val);
+    if (computed) {
+      builder_.store_elem();
+    } else {
+      builder_.store_prop(prop_name);
+    }
+    builder_.bind_label(done);
+    return true;
   }
 
   const bool compound = (node.assign_op != AssignmentOpKind::Assign);
@@ -1424,12 +1481,57 @@ bool Compiler::compileAssignment(const ASTNode &node) {
     return false;
   }
 
-  /* 逻辑复合赋值（&&= / ||= / ??=）：需短路语义，本阶段暂不支持（标识符目标）。 */
+  /* 逻辑复合赋值（&&= / ||= / ??=）：短路语义（M5.1b）。
+   *   a &&= b：old truthy 求 b 写回；falsy 短路返回 old
+   *   a ||= b：old falsy 求 b 写回；truthy 短路返回 old
+   *   a ??= b：old nullish 求 b 写回；非 nullish 短路返回 old
+   * 发射（统一布局，赋值条件跳转到赋值路径，否则落短路路径）：
+   *   LoadVar slot; JumpIfX assign_path; [old] Jump done;
+   *   assign_path: [rhs]; StoreVar slot; LoadVar slot; done:
+   * 短路路径重新读 slot（JumpIfX 弹栈，且短路时未写回）。 */
   if (node.assign_op == AssignmentOpKind::LogicalAndAssign ||
       node.assign_op == AssignmentOpKind::LogicalOrAssign ||
       node.assign_op == AssignmentOpKind::NullishAssign) {
-    fail("not implemented: logical compound assignment");
-    return false;
+    BcLabel assign_path = builder_.new_label();
+    BcLabel done = builder_.new_label();
+    /* 读旧值并按赋值条件跳转。 */
+    if (is_upvalue) {
+      builder_.load_upvalue(capture);
+    } else {
+      builder_.load_var(slot);
+    }
+    switch (node.assign_op) {
+      case AssignmentOpKind::LogicalAndAssign:
+        builder_.jump_if_true(&assign_path); /* truthy 赋值 */
+        break;
+      case AssignmentOpKind::LogicalOrAssign:
+        builder_.jump_if_false(&assign_path); /* falsy 赋值 */
+        break;
+      case AssignmentOpKind::NullishAssign:
+        builder_.jump_if_nullish(&assign_path); /* nullish 赋值 */
+        break;
+      default:
+        break;
+    }
+    /* 短路路径：返回旧值（重新读 slot，未写回）。 */
+    if (is_upvalue) {
+      builder_.load_upvalue(capture);
+    } else {
+      builder_.load_var(slot);
+    }
+    builder_.jump(&done);
+    /* 赋值路径：求 rhs 写回，值 = rhs。 */
+    builder_.bind_label(assign_path);
+    if (!compileExpr(*rhs)) return false;
+    if (is_upvalue) {
+      builder_.store_upvalue(capture);
+      builder_.load_upvalue(capture);
+    } else {
+      builder_.store_var(slot);
+      builder_.load_var(slot);
+    }
+    builder_.bind_label(done);
+    return true;
   }
 
   /* 复合赋值：a op= b -> a = a op b（先读旧值，运算后存回）。 */

@@ -746,6 +746,13 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         if (v->kind() == Kind::Undefined) pc = instr.arg;
         break;
       }
+      case Opcode::JumpIfNullish: {
+        /* M5.1b：栈顶为 null 或 undefined 则跳转（??= 短路判断）。 */
+        if (stack.empty()) return fail("Error: stack underflow on JumpIfNullish");
+        JSValue *v = stack.back(); stack.pop_back();
+        if (v->kind() == Kind::Null || v->kind() == Kind::Undefined) pc = instr.arg;
+        break;
+      }
       case Opcode::Call: {
         uint16_t argc = instr.arg;
         size_t func_slot = stack.size() - 1 - static_cast<size_t>(argc);

@@ -116,6 +116,7 @@ enum class Opcode : uint8_t {
   CallArray,       /* [func, args_array] -> 以数组元素为参数调用（M5.1a 展开调用） */
   ConstructArray,  /* [ctor, args_array] -> 以数组元素为参数构造（M5.1a 展开 new） */
   CopyObjectProps, /* 弹栈源对象，own enumerable 字符串属性复制进槽内对象：CopyObjectProps {slot}（M5.1a 对象展开） */
+  JumpIfNullish,   /* 栈顶为 null 或 undefined 则跳转：JumpIfNullish {target}（弹栈，M5.1b ??= 短路） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -205,6 +206,7 @@ class BytecodeBuilder {
   void jump_if_false(BcLabel *label) { push_op(Opcode::JumpIfFalse, 0, label); }
   void jump_if_true(BcLabel *label) { push_op(Opcode::JumpIfTrue, 0, label); }
   void jump_if_undefined(BcLabel *label) { push_op(Opcode::JumpIfUndefined, 0, label); }
+  void jump_if_nullish(BcLabel *label) { push_op(Opcode::JumpIfNullish, 0, label); }
   void rest_to_array() { push_op(Opcode::RestToArray); }
   /* M5.1a 默认参数/rest/展开。 */
   void rest_param(uint16_t k) { push_op(Opcode::RestParam, k); }
