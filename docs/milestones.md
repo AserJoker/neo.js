@@ -410,12 +410,16 @@ M0 骨架 ─▶ M1 前端流水线 ─▶ M2 解释器核心 ─▶ M3 对象�
 
 ### M5.1 语法与编译地基补全（🔄 进行中）
 
-**已落地（M5.1a–M5.1d）**：
+**已落地（M5.1a–M5.1e-d）**：
 
 - M5.1a 解构/默认值/rest/展开编译
 - M5.1b 逻辑赋值与运算符补全
 - M5.1c 对象字面量 getter/setter/method + 计算键
 - M5.1d class 声明/表达式 + super（a–d 子阶段，含 `#x` 私有字段、static 块、类字段、派生类默认构造器参数转发）
+- M5.1e-a 运算符补全：in/instanceof/?? + 一元 +~/delete/await + 模板串编译
+- M5.1e-b 更新表达式 ++/-- 编译（标识符/成员/私有字段）
+- M5.1e-c for-in 编译 + label/break/continue 标签跳转
+- M5.1e-d 解构/循环 left 补齐（对象 rest、解构计算键、for-in/of 解构 left、class 计算字段键；修复 `{key = default}` 双 free 崩溃与默认值非 undefined 值丢失）
 
 **剩余**：
 
