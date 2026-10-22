@@ -2041,12 +2041,22 @@ bool Compiler::compileExpr(const ASTNode &node) {
     case NodeType::BinaryOp: return compileBinary(node);
     case NodeType::Conditional: return compileConditional(node);
     case NodeType::Assignment: return compileAssignment(node);
-    case NodeType::CallExpression: return compileCall(node);
+    case NodeType::CallExpression:
+      /* 可选链调用（M5.1e-e）：callee 为可选链（?. 链）或 ?.() 独立短路点。
+       * 普通调用 compileCall 处理；链调用 compileOptionalChain 整链短路。 */
+      if (node.optional || (node.children.size() >= 1 &&
+                            isOptionalChainNode(*node.children[0]))) {
+        return compileOptionalChain(node);
+      }
+      return compileCall(node);
     case NodeType::SuperCall:
       /* M5.1d-c1 super()：派生类构造器内调用基类构造器（compileCall 特判）。 */
       return compileCall(node);
     case NodeType::Sequence: return compileSequence(node);
-    case NodeType::MemberExpression: return compileMemberLoad(node);
+    case NodeType::MemberExpression:
+      /* 可选链成员访问（M5.1e-e）：?.prop / ?.[expr] 短路。 */
+      if (node.member.optional) return compileOptionalChain(node);
+      return compileMemberLoad(node);
     case NodeType::SuperProperty: {
       /* M5.1d-b super 属性访问：super.x / super[expr]。
        * 从当前方法 HomeObject 的 [[Prototype]] 读取（VM 经 self）。 */
@@ -2055,7 +2065,8 @@ bool Compiler::compileExpr(const ASTNode &node) {
         return false;
       }
       if (node.member.optional) {
-        fail("not implemented: optional chaining on super");
+        /* parser 已拦截 super?.x（'super' keyword unexpected here），防御。 */
+        fail("SyntaxError: optional chaining on super");
         return false;
       }
       if (!node.member.computed) {
@@ -2330,7 +2341,8 @@ bool Compiler::compileMemberLoad(const ASTNode &node) {
     return false;
   }
   if (node.member.optional) {
-    fail("not implemented: optional chaining");
+    /* compileExpr 已前置调度 optional 成员到 compileOptionalChain，防御。 */
+    fail("internal: optional chaining should be compiled by compileOptionalChain");
     return false;
   }
   if (!compileExpr(*node.children[0])) return false;
@@ -2355,6 +2367,309 @@ bool Compiler::compileMemberLoad(const ASTNode &node) {
   if (!compileExpr(*node.children[1])) return false;
   builder_.load_elem();
   return true;
+}
+
+/* 可选链编译（M5.1e-e，§13.5.1.1/§13.5.1.2）。
+ *
+ * AST 形态（parser 已标 optional）：链是沿 children[0] 嵌套的 Member/Call。
+ *   a?.b.c     -> Member(Member(a,b)opt, c)
+ *   a?.b?.c    -> Member(Member(a,b)opt, c)opt
+ *   a?.b()     -> Call(Member(a,b)opt, args) [call_short_circuit=false]
+ *   a?.b?.()   -> Call(Member(a,b)opt, args) [call_short_circuit=true]
+ *
+ * 语义：
+ *   1. 链头 = 最内层短路点之前的部分（a?.b.c 的 a；a.b?.c 的 a.b）。
+ *   2. 短路点（?.prop / ?.[expr] / ?.(args)）判断「前一步结果」是否 nullish，
+ *      是则短路：整链剩余全部跳过，结果为 undefined。
+ *   3. 链延续（?. 之后的 .c / [k] / ()）不判断，短路时被跳过、
+ *      非短路时正常访问（a?.b.c 中 a 非 nullish 但 a.b 为 undefined 时
+ *      .c 访问 undefined 抛 TypeError——规范行为）。
+ *
+ * 发射（统一 chain_end 汇聚短路）：
+ *   [链头求值 -> 栈顶]
+ *   对链上每个短路点（从内到外）：
+ *     Dup; JumpIfNullish short_i      // 判断前一步结果（弹副本）
+ *     [正常访问本节点 -> 结果留栈顶]
+ *     Jump chain_end
+ *     short_i: Pop; PushUndefined     // 清前一步，压 undefined
+ *     Jump chain_end
+ *   对链延续节点：直接访问（不判断）
+ *   chain_end:
+ *
+ * 嵌套链（a?.b?.c）：内层短路得 undefined 后，外层短路点再判断
+ * undefined 恒 nullish -> 再次短路，结果仍 undefined，语义等价。 */
+bool Compiler::compileOptionalChain(const ASTNode &node) {
+  /* 1. 识别链头：沿 children[0] 下探到最内层链节点（短路点或链延续）。
+   *    链头 = 最内层链节点的 children[0]（非链节点表达式）。 */
+  const ASTNode *first_opt = &node;
+  while (true) {
+    const ASTNode *obj =
+        first_opt->children.empty() ? nullptr : first_opt->children[0];
+    if (obj == nullptr || !isOptionalChainNode(*obj)) break;
+    first_opt = obj;
+  }
+  if (first_opt->children.empty()) {
+    fail("invalid optional chain node");
+    return false;
+  }
+  const ASTNode *head = first_opt->children[0];
+
+  /* 2. 收集链节点：从 node 沿 children[0] 下探到 first_opt（从外到内），
+   *    再反转得从内到外。 */
+  std::vector<const ASTNode *> path;
+  for (const ASTNode *cur = &node;; cur = cur->children[0]) {
+    path.push_back(cur);
+    if (cur == first_opt) break;
+  }
+  std::vector<const ASTNode *> chain(path.rbegin(), path.rend());
+
+  /* 3. 编译链头（正常表达式求值，结果留栈顶）。 */
+  if (!compileExpr(*head)) return false;
+
+  /* 4. 逐个编译链节点（从内到外）。 */
+  BcLabel chain_end = builder_.new_label();
+  for (const ASTNode *cn : chain) {
+    if (!compileOptionalChainNode(*cn, &chain_end)) return false;
+  }
+  builder_.bind_label(chain_end);
+  return true;
+}
+
+/* 判断节点是否为可选链节点（Member/Call 且属于链：自身 optional）。
+ * optional 由 parser 的 chain_optional 传播：?. 后的链延续（a?.b.c 的 .c）
+ * 也标 optional，故可选链节点与短路点不同（短路点用 short_circuit 判）。 */
+bool Compiler::isOptionalChainNode(const ASTNode &node) const {
+  if (node.type == NodeType::MemberExpression) return node.member.optional;
+  if (node.type == NodeType::CallExpression) return node.optional;
+  return false;
+}
+
+/* 判断节点是否为短路点（?./?.[/?.(，需要判断前一步结果 nullish）。
+ * 链延续（a?.b() 的 () / a?.b.c 的 .c）不是短路点。
+ * Member：short_circuit 区分 ?.prop（短路）与 .prop（链延续）；
+ * Call：call_short_circuit 区分 ?.()（短路）与 ()（链延续）。 */
+bool Compiler::isOptionalShortCircuit(const ASTNode &node) const {
+  if (node.type == NodeType::MemberExpression) {
+    return node.member.short_circuit;
+  }
+  if (node.type == NodeType::CallExpression) {
+    return node.call_short_circuit; /* ?.() 独立短路点 */
+  }
+  return false;
+}
+
+/* 编译单个链节点：短路点判断前一步结果，链延续直接访问。
+ * 调用前：操作对象（前一步结果）已在栈顶。
+ * 返回后：本节点结果留栈顶（非短路路径）。
+ *
+ * 短路点发射：
+ *   Dup; JumpIfNullish short_i      // 前一步 nullish -> 短路
+ *   [正常访问本节点]                 // 非短路：结果留栈顶
+ *   Jump skip_i                     // 跳过短路块
+ *   short_i: Pop; PushUndefined; Jump chain_end
+ *   skip_i:
+ * 注意：正常路径不得跳 chain_end（会跳过后续链节点），用 skip_i 仅跳过
+ * 本短路块，后续链节点自然顺序继续。 */
+bool Compiler::compileOptionalChainNode(const ASTNode &node, BcLabel *chain_end) {
+  if (node.type == NodeType::MemberExpression) {
+    if (node.children.size() < 2) {
+      fail("member expression without property");
+      return false;
+    }
+    const bool is_short = isOptionalShortCircuit(node);
+    BcLabel short_circuit;
+    BcLabel skip;
+    if (is_short) {
+      short_circuit = builder_.new_label();
+      skip = builder_.new_label();
+      builder_.dup();
+      builder_.jump_if_nullish(&short_circuit);
+    }
+    /* 访问：obj 已在栈顶。 */
+    if (!node.member.computed) {
+      const ASTNode *prop = node.children[1];
+      if (prop->type == NodeType::PrivateIdentifier) {
+        int idx = resolvePrivateName(prop->name);
+        if (idx < 0) return false;
+        builder_.load_private(static_cast<uint16_t>(idx));
+      } else if (prop->type != NodeType::Identifier) {
+        fail("invalid member property name");
+        return false;
+      } else {
+        builder_.load_prop(prop->name);
+      }
+    } else {
+      if (!compileExpr(*node.children[1])) return false;
+      builder_.load_elem();
+    }
+    if (is_short) {
+      builder_.jump(&skip);
+      builder_.bind_label(short_circuit);
+      builder_.pop(); /* 清操作对象（null/undefined） */
+      builder_.push_op(Opcode::PushUndefined);
+      builder_.jump(chain_end);
+      builder_.bind_label(skip);
+    }
+    return true;
+  }
+
+  if (node.type == NodeType::CallExpression) {
+    const bool is_short = isOptionalShortCircuit(node);
+    BcLabel short_circuit;
+    BcLabel skip;
+    if (is_short) {
+      /* ?.() 独立短路点：判断前一步结果（callee 值）nullish。 */
+      short_circuit = builder_.new_label();
+      skip = builder_.new_label();
+      builder_.dup();
+      builder_.jump_if_nullish(&short_circuit);
+    }
+    /* 调用：栈顶是 callee（已求值）。非短路点（链延续 a?.b()）直接调用。 */
+    size_t argc = node.children.size() - 1;
+    bool has_spread = false;
+    for (size_t i = 1; i < node.children.size(); ++i) {
+      if (node.children[i] != nullptr &&
+          node.children[i]->type == NodeType::SpreadElement) {
+        has_spread = true;
+        break;
+      }
+    }
+    if (has_spread) {
+      /* 展开调用：callee 已在栈顶，参数构建到数组，CallArray。 */
+      uint16_t args_slot = scope_->next_slot++;
+      builder_.new_array();
+      builder_.store_var(args_slot);
+      std::vector<const ASTNode *> args(node.children.begin() + 1,
+                                        node.children.end());
+      if (!compileSpreadArgs(args, args_slot)) return false;
+      builder_.load_var(args_slot);
+      builder_.call_array();
+    } else {
+      for (size_t i = 1; i < node.children.size(); ++i) {
+        if (!compileExpr(*node.children[i])) return false;
+      }
+      builder_.call(static_cast<uint16_t>(argc));
+    }
+    if (is_short) {
+      builder_.jump(&skip);
+      builder_.bind_label(short_circuit);
+      builder_.pop(); /* 清 callee（null/undefined） */
+      builder_.push_op(Opcode::PushUndefined);
+      builder_.jump(chain_end);
+      builder_.bind_label(skip);
+    }
+    return true;
+  }
+
+  fail("invalid optional chain node type");
+  return false;
+}
+
+/* delete 可选链（M5.1e-e，§13.5.1.2）：delete a?.b / delete a?.b.c。
+ * 语义：链头 nullish -> 短路，delete 结果为 true（不删除任何东西）；
+ * 链头非 nullish -> 求值整条引用链并删除最后属性。
+ * 与普通可选链不同：短路路径结果压 true 而非 undefined。
+ *
+ * 发射：
+ *   [链头]  （同 compileOptionalChain：先收集链，逐节点处理）
+ *   短路点：Dup; JumpIfNullish short_i
+ *           [访问本节点]（非最后）或 [删除本节点]（最后）-> 结果留栈顶
+ *           Jump skip_i
+ *           short_i: Pop; PushTrue; Jump chain_end
+ *           skip_i:
+ *   链延续：直接访问/删除（不判断）
+ *   chain_end: */
+bool Compiler::compileDeleteOptionalChain(const ASTNode &node) {
+  /* 1. 识别链头（同 compileOptionalChain）。 */
+  const ASTNode *first_opt = &node;
+  while (true) {
+    const ASTNode *obj =
+        first_opt->children.empty() ? nullptr : first_opt->children[0];
+    if (obj == nullptr || !isOptionalChainNode(*obj)) break;
+    first_opt = obj;
+  }
+  if (first_opt->children.empty()) {
+    fail("invalid optional chain node");
+    return false;
+  }
+  const ASTNode *head = first_opt->children[0];
+
+  /* 2. 收集链节点（从内到外）。 */
+  std::vector<const ASTNode *> path;
+  for (const ASTNode *cur = &node;; cur = cur->children[0]) {
+    path.push_back(cur);
+    if (cur == first_opt) break;
+  }
+  std::vector<const ASTNode *> chain(path.rbegin(), path.rend());
+
+  /* 3. 编译链头。 */
+  if (!compileExpr(*head)) return false;
+
+  /* 4. 逐节点：非最后节点访问（引用求值），最后节点删除。 */
+  BcLabel chain_end = builder_.new_label();
+  for (size_t i = 0; i < chain.size(); ++i) {
+    if (!compileDeleteChainNode(*chain[i], /*is_last=*/(i + 1 == chain.size()),
+                                &chain_end))
+      return false;
+  }
+  builder_.bind_label(chain_end);
+  return true;
+}
+
+/* delete 可选链单节点（M5.1e-e）：非最后节点做访问（引用链求值，结果
+ * 留栈顶供下节点）；最后节点做删除（obj -> bool）。短路点语义同
+ * compileOptionalChainNode，但短路路径压 true（delete 结果）。
+ * chain_end：整链短路汇聚标签（短路路径跳转）。 */
+bool Compiler::compileDeleteChainNode(const ASTNode &node, bool is_last,
+                                      BcLabel *chain_end) {
+  if (node.type == NodeType::MemberExpression) {
+    if (node.children.size() < 2) {
+      fail("member expression without property");
+      return false;
+    }
+    if (node.children[1]->type == NodeType::PrivateIdentifier) {
+      fail("SyntaxError: Private fields can not be deleted");
+      return false;
+    }
+    const bool is_short = isOptionalShortCircuit(node);
+    BcLabel short_circuit;
+    BcLabel skip;
+    if (is_short) {
+      short_circuit = builder_.new_label();
+      skip = builder_.new_label();
+      builder_.dup();
+      builder_.jump_if_nullish(&short_circuit);
+    }
+    if (!node.member.computed) {
+      if (node.children[1]->type != NodeType::Identifier) {
+        fail("invalid member property name");
+        return false;
+      }
+      if (is_last) {
+        builder_.delete_prop(node.children[1]->name); /* obj -> bool */
+      } else {
+        builder_.load_prop(node.children[1]->name);
+      }
+    } else {
+      if (!compileExpr(*node.children[1])) return false; /* key */
+      if (is_last) {
+        builder_.delete_elem(); /* obj, key -> bool */
+      } else {
+        builder_.load_elem();
+      }
+    }
+    if (is_short) {
+      builder_.jump(&skip);
+      builder_.bind_label(short_circuit);
+      builder_.pop(); /* 清操作对象（null/undefined） */
+      builder_.push_op(Opcode::PushTrue);
+      builder_.jump(chain_end);
+      builder_.bind_label(skip);
+    }
+    return true;
+  }
+  fail("invalid optional chain delete node type");
+  return false;
 }
 
 /* 成员赋值（M3.2）：obj.prop = rhs / obj[expr] = rhs（含复合 op=）。
@@ -2389,7 +2704,8 @@ bool Compiler::compileMemberAssign(const ASTNode &node) {
     return false;
   }
   if (lhs->member.optional) {
-    fail("not implemented: optional chaining assignment");
+    /* parser 已拦截 a?.b = x（invalid assignment target），防御。 */
+    fail("SyntaxError: assignment to optional chaining");
     return false;
   }
   const bool computed = lhs->member.computed;
@@ -2613,7 +2929,8 @@ bool Compiler::compileUpdate(const ASTNode &node) {
 
   if (target->type == NodeType::MemberExpression) {
     if (target->member.optional) {
-      fail("not implemented: optional chaining in update");
+      /* parser 已拦截 a?.b++（invalid increment/decrement operand），防御。 */
+      fail("SyntaxError: increment/decrement of optional chaining");
       return false;
     }
     const bool computed = target->member.computed;
@@ -2700,8 +3017,8 @@ bool Compiler::compileUnary(const ASTNode &node) {
   if (node.unop == UnaryOpKind::Delete) {
     if (operand->type == NodeType::MemberExpression) {
       if (operand->member.optional) {
-        fail("not implemented: optional chaining in delete");
-        return false;
+        /* delete a?.b / delete a?.b.c（M5.1e-e）：可选链删除，短路返回 true。 */
+        return compileDeleteOptionalChain(*operand);
       }
       if (operand->children.size() < 2) {
         fail("delete member without object");
@@ -3083,7 +3400,8 @@ bool Compiler::compileCall(const ASTNode &node) {
      * 发射：LoadThis; SuperLoadProp; args...; CallMethod。
      * 栈 [this, func, args] 与 CallMethod 布局一致。 */
     if (callee->member.optional || callee->children.empty()) {
-      fail("not implemented: optional chaining on super");
+      /* parser 已拦截 super?.m()（'super' keyword unexpected here），防御。 */
+      fail("SyntaxError: optional chaining on super");
       return false;
     }
     builder_.load_this();
@@ -3111,7 +3429,8 @@ bool Compiler::compileCall(const ASTNode &node) {
 
   if (callee->type == NodeType::MemberExpression) {
     if (callee->member.optional || callee->children.size() < 2) {
-      fail("not implemented: optional chaining in call");
+      /* compileExpr 已前置调度可选链调用到 compileOptionalChain，防御。 */
+      fail("internal: optional chaining call should be compiled by compileOptionalChain");
       return false;
     }
     const ASTNode *prop = callee->children[1];
@@ -3201,7 +3520,8 @@ bool Compiler::compileNew(const ASTNode &node) {
   if (callee->type == NodeType::MemberExpression) {
     /* new a.b(...)：求值 a 并取 b（this 语义不影响 new）。 */
     if (callee->member.optional || callee->children.size() < 2) {
-      fail("not implemented: optional chaining in new");
+      /* parser 已拦截 `new a?.b()` 为语法错误，此处不可达。 */
+      fail("SyntaxError: optional chaining in new callee");
       return false;
     }
     if (!compileExpr(*callee->children[0])) return false;

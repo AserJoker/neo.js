@@ -216,10 +216,13 @@ struct PropertyPayload {
 };
 
 /* 成员访问载荷：true = 计算成员 obj[expr]；false = 点成员 obj.prop。
- * optional：可选链 ?. / ?.[ / ?.(（M1.4 ③-6）。 */
+ * optional：可选链 ?. / ?.[ / ?.(（M1.4 ③-6）。
+ * short_circuit：?.prop / ?.[expr] 独立短路点（M5.1e-e）。区分链延续
+ * （a?.b.c 的 .c 由 chain_optional 传播标 optional=true 但非短路点）。 */
 struct MemberPayload {
   bool computed = false;
   bool optional = false;
+  bool short_circuit = false;
 };
 
 /* AST 节点：基类 + 子节点（扁平化子节点向量，避免手写析构树） */
@@ -247,6 +250,7 @@ struct ASTNode {
   bool is_type = false;   /* import/export { type T }（ES2022 type 修饰，暂仅占位） */
   bool prefix = false;        /* UpdateExpression：true = 前缀 ++x；false = 后缀 x++ */
   bool optional = false;      /* CallExpression/MemberExpression：可选链 ?. 标记 */
+  bool call_short_circuit = false; /* CallExpression：?.() 独立短路点（区别于链延续 a?.b() 的 ()）M5.1e-e */
   bool is_await = false;      /* ForOfStatement：for await(...of...)（M1.5 ③） */
   bool fn_has_name = false;   /* FunctionDeclaration/Expression：children[0] 是否函数名（匿名时为首参数） */
   MemberPayload member;       /* MemberExpression：computed/optional 标记 */

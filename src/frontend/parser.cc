@@ -223,6 +223,14 @@ ASTNode *Parser::parseAssignment(bool allow_in) {
     allocator_->destroy(lhs);
     return nullptr;
   }
+  /* 可选链不能作为赋值目标（ECMA-262 §13.15.5：AssignmentTarget 不含
+   * OptionalExpression；a?.b = 1 是语法错误）。 */
+  if (lhs->type == NodeType::MemberExpression && lhs->member.optional) {
+    sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                "invalid assignment target: optional chaining", tok.start});
+    allocator_->destroy(lhs);
+    return nullptr;
+  }
   /* 严格模式禁止对 eval / arguments 赋值（ECMA-262 §13.15.1） */
   if (strict_ && lhs->type == NodeType::Identifier &&
       (lhs->name == "eval" || lhs->name == "arguments")) {
@@ -514,6 +522,14 @@ ASTNode *Parser::parseUnary() {
       allocator_->destroy(operand);
       return nullptr;
     }
+    /* 可选链不能自增自减（ECMA-262 §13.4.4：UpdateExpression 的 target
+     * 须为 LeftHandSideExpression，不含 OptionalExpression）。 */
+    if (operand->type == NodeType::MemberExpression && operand->member.optional) {
+      sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                  "invalid increment/decrement operand: optional chaining", tok.start});
+      allocator_->destroy(operand);
+      return nullptr;
+    }
     /* 严格模式禁止 ++/-- 于 eval / arguments（ECMA-262 §13.4.4） */
     if (strict_ && operand->type == NodeType::Identifier &&
         (operand->name == "eval" || operand->name == "arguments")) {
@@ -595,6 +611,7 @@ ASTNode *Parser::parseLeftHandSide() {
       member->loc = expr->loc;
       member->member.computed = false;
       member->member.optional = chain_optional;
+      member->member.short_circuit = false; /* 链延续：非短路点 */
       member->children.push_back(expr);
       member->children.push_back(prop);
       expr = member;
@@ -611,6 +628,7 @@ ASTNode *Parser::parseLeftHandSide() {
         member->loc = expr->loc;
         member->member.computed = false;
         member->member.optional = true;
+        member->member.short_circuit = true; /* ?.prop 短路点 */
         member->children.push_back(expr);
         member->children.push_back(prop);
         expr = member;
@@ -630,6 +648,7 @@ ASTNode *Parser::parseLeftHandSide() {
         member->loc = expr->loc;
         member->member.computed = false;
         member->member.optional = true;
+        member->member.short_circuit = true; /* ?.#priv 短路点 */
         member->children.push_back(expr);
         member->children.push_back(prop);
         expr = member;
@@ -639,6 +658,7 @@ ASTNode *Parser::parseLeftHandSide() {
         member->loc = expr->loc;
         member->member.computed = true;
         member->member.optional = true;
+        member->member.short_circuit = true; /* ?.[expr] 短路点 */
         member->children.push_back(expr);
         ASTNode *index = parseExpression();
         if (index == nullptr) {
@@ -654,9 +674,12 @@ ASTNode *Parser::parseLeftHandSide() {
         member->children.push_back(index);
         expr = member;
       } else if (isSymbol(current(), "(")) {
+        /* ?.(args)：独立短路点——判断 ?.( 左侧表达式（链前一步）是否为
+         * nullish，短路则整链 undefined（区别于链延续 a?.b() 的 ()，M5.1e-e）。 */
         ASTNode *call = newNode(NodeType::CallExpression);
         call->loc = expr->loc;
         call->optional = true;
+        call->call_short_circuit = true;
         call->children.push_back(expr); /* callee */
         ASTNode *args = parseArguments();
         if (args == nullptr) {
@@ -679,6 +702,7 @@ ASTNode *Parser::parseLeftHandSide() {
       member->loc = expr->loc;
       member->member.computed = true;
       member->member.optional = chain_optional;
+      member->member.short_circuit = false; /* 链延续：非短路点 */
       member->children.push_back(expr);
       ASTNode *index = parseExpression();
       if (index == nullptr) {
@@ -694,9 +718,12 @@ ASTNode *Parser::parseLeftHandSide() {
       member->children.push_back(index);
       expr = member;
     } else if (isSymbol(current(), "(")) {
+      /* 普通调用：链延续（a?.b() 的 ()，非独立短路点）。callee 链短路时
+       * 此调用被跳过；callee 非 nullish 时正常调用（M5.1e-e）。 */
       ASTNode *call = newNode(NodeType::CallExpression);
       call->loc = expr->loc;
       call->optional = chain_optional;
+      call->call_short_circuit = false;
       call->children.push_back(expr); /* callee */
       ASTNode *args = parseArguments();
       if (args == nullptr) {
@@ -715,6 +742,13 @@ ASTNode *Parser::parseLeftHandSide() {
       if (expr->type != NodeType::Identifier && expr->type != NodeType::MemberExpression) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid increment/decrement operand",
                     current().start});
+        allocator_->destroy(expr);
+        return nullptr;
+      }
+      /* 可选链不能自增自减（ECMA-262 §13.4.4）。 */
+      if (expr->type == NodeType::MemberExpression && expr->member.optional) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                    "invalid increment/decrement operand: optional chaining", current().start});
         allocator_->destroy(expr);
         return nullptr;
       }
@@ -741,6 +775,13 @@ ASTNode *Parser::parseLeftHandSide() {
       if (expr->type != NodeType::Identifier && expr->type != NodeType::MemberExpression) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid increment/decrement operand",
                     current().start});
+        allocator_->destroy(expr);
+        return nullptr;
+      }
+      /* 可选链不能自增自减（ECMA-262 §13.4.4）。 */
+      if (expr->type == NodeType::MemberExpression && expr->member.optional) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                    "invalid increment/decrement operand: optional chaining", current().start});
         allocator_->destroy(expr);
         return nullptr;
       }

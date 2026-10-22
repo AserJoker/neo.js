@@ -602,6 +602,319 @@ neojs::ConversionResult compileAndRun(neojs::JSContext *c, const char *src) {
 
 }  // namespace
 
+/* M5.1e-e 可选链：?. / ?.[ / ?.() 短路（§13.5.1.1/§13.5.1.2）。 */
+TEST(Compiler, M51eEOptionalChainBasic) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* 链头 nullish -> 整链 undefined。 */
+  neojs::ConversionResult r1 = compileAndRun(ic(ctx), "var a = null; a?.b");
+  ASSERT_TRUE(r1.ok());
+  EXPECT_TRUE(r1.value->kind() == neojs::Kind::Undefined);
+
+  neojs::ConversionResult r2 = compileAndRun(ic(ctx), "var a; a?.b"); /* undefined */
+  ASSERT_TRUE(r2.ok());
+  EXPECT_TRUE(r2.value->kind() == neojs::Kind::Undefined);
+
+  /* 链头非 nullish -> 正常访问。 */
+  neojs::ConversionResult r3 = compileAndRun(ic(ctx), "var a = {b: 42}; a?.b");
+  ASSERT_TRUE(r3.ok());
+  EXPECT_DOUBLE_EQ(r3.value->toNumber(), 42.0);
+
+  /* 链延续：a?.b.c，链头 nullish 短路跳过 .c。 */
+  neojs::ConversionResult r4 = compileAndRun(ic(ctx), "var a = null; a?.b.c");
+  ASSERT_TRUE(r4.ok());
+  EXPECT_TRUE(r4.value->kind() == neojs::Kind::Undefined);
+
+  /* 链延续：链头非 nullish，.b 存在 -> 正常访问 .c。 */
+  neojs::ConversionResult r5 =
+      compileAndRun(ic(ctx), "var a = {b: {c: 99}}; a?.b.c");
+  ASSERT_TRUE(r5.ok());
+  EXPECT_DOUBLE_EQ(r5.value->toNumber(), 99.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 嵌套短路：a?.b?.c（内层 ?.b 短路后外层 ?.c 再判 undefined -> 短路）。 */
+TEST(Compiler, M51eEOptionalChainNested) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* 链头 nullish：两个短路点都短路 -> undefined。 */
+  neojs::ConversionResult r1 = compileAndRun(ic(ctx), "var a = null; a?.b?.c");
+  ASSERT_TRUE(r1.ok());
+  EXPECT_TRUE(r1.value->kind() == neojs::Kind::Undefined);
+
+  /* a 非 nullish 但 a.b undefined：?.b 正常得 undefined，?.c 短路。 */
+  neojs::ConversionResult r2 = compileAndRun(ic(ctx), "var a = {}; a?.b?.c");
+  ASSERT_TRUE(r2.ok());
+  EXPECT_TRUE(r2.value->kind() == neojs::Kind::Undefined);
+
+  /* 全链路存在。 */
+  neojs::ConversionResult r3 =
+      compileAndRun(ic(ctx), "var a = {b: {c: 7}}; a?.b?.c");
+  ASSERT_TRUE(r3.ok());
+  EXPECT_DOUBLE_EQ(r3.value->toNumber(), 7.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 计算成员 ?.[expr] 短路。 */
+TEST(Compiler, M51eEOptionalChainComputed) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* 链头 nullish：?.[k] 短路（键不求值）。 */
+  neojs::ConversionResult r1 =
+      compileAndRun(ic(ctx), "var a = null; var k = 'x'; a?.[k]");
+  ASSERT_TRUE(r1.ok());
+  EXPECT_TRUE(r1.value->kind() == neojs::Kind::Undefined);
+
+  /* 链头非 nullish：正常取值。 */
+  neojs::ConversionResult r2 =
+      compileAndRun(ic(ctx), "var a = {x: 5}; var k = 'x'; a?.[k]");
+  ASSERT_TRUE(r2.ok());
+  EXPECT_DOUBLE_EQ(r2.value->toNumber(), 5.0);
+
+  /* 链延续：a?.[k].m，链头 nullish 短路跳过 .m。 */
+  neojs::ConversionResult r3 = compileAndRun(
+      ic(ctx), "var a = null; var k = 'x'; a?.[k].m");
+  ASSERT_TRUE(r3.ok());
+  EXPECT_TRUE(r3.value->kind() == neojs::Kind::Undefined);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 可选调用：a?.b()（链延续调用）与 a?.b?.()（独立短路点）。 */
+TEST(Compiler, M51eEOptionalChainCall) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* a?.b()：a nullish -> undefined，不调用。 */
+  neojs::ConversionResult r1 =
+      compileAndRun(ic(ctx), "var a = null; a?.b()");
+  ASSERT_TRUE(r1.ok());
+  EXPECT_TRUE(r1.value->kind() == neojs::Kind::Undefined);
+
+  /* a?.b()：a 非 nullish -> 调用 a.b()。 */
+  neojs::ConversionResult r2 = compileAndRun(
+      ic(ctx), "var a = {b: function() { return 11; }}; a?.b()");
+  ASSERT_TRUE(r2.ok());
+  EXPECT_DOUBLE_EQ(r2.value->toNumber(), 11.0);
+
+  /* a?.b?.()：a.b undefined（a={}）-> ?.() 短路 undefined。 */
+  neojs::ConversionResult r3 =
+      compileAndRun(ic(ctx), "var a = {}; a?.b?.()");
+  ASSERT_TRUE(r3.ok());
+  EXPECT_TRUE(r3.value->kind() == neojs::Kind::Undefined);
+
+  /* a?.b?.()：a nullish -> 短路 undefined。 */
+  neojs::ConversionResult r4 =
+      compileAndRun(ic(ctx), "var a = null; a?.b?.()");
+  ASSERT_TRUE(r4.ok());
+  EXPECT_TRUE(r4.value->kind() == neojs::Kind::Undefined);
+
+  /* a?.b?.()：全存在 -> 调用。 */
+  neojs::ConversionResult r5 = compileAndRun(
+      ic(ctx), "var a = {b: function() { return 23; }}; a?.b?.()");
+  ASSERT_TRUE(r5.ok());
+  EXPECT_DOUBLE_EQ(r5.value->toNumber(), 23.0);
+
+  /* a?.b() 带参数。 */
+  neojs::ConversionResult r6 = compileAndRun(ic(ctx),
+      "var a = {b: function(x) { return x + 1; }}; a?.b(5)");
+  ASSERT_TRUE(r6.ok());
+  EXPECT_DOUBLE_EQ(r6.value->toNumber(), 6.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 短路副作用：链头 nullish 时后续节点（调用/计算键）不求值。 */
+TEST(Compiler, M51eEOptionalChainShortCircuitNoSideEffect) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* ?.[expr] 键不求值：sideEffect 不触发。 */
+  neojs::ConversionResult r1 = compileAndRun(ic(ctx),
+      "var hits = 0; var a = null; "
+      "var r = a?.[(hits++, 'x')]; hits");
+  ASSERT_TRUE(r1.ok());
+  EXPECT_DOUBLE_EQ(r1.value->toNumber(), 0.0);
+
+  /* ?.b() 调用不求值：fn 不触发。 */
+  neojs::ConversionResult r2 = compileAndRun(ic(ctx),
+      "var calls = 0; var a = null; "
+      "var r = a?.b(calls++); calls");
+  ASSERT_TRUE(r2.ok());
+  EXPECT_DOUBLE_EQ(r2.value->toNumber(), 0.0);
+
+  /* 链延续 .m 不求值：a?.b.c 中链头短路时 .b 的访问也不发生。 */
+  neojs::ConversionResult r3 = compileAndRun(ic(ctx),
+      "var got = false; var a = null; "
+      "var r = a?.b; r === undefined ? (got = true) : 0; got");
+  ASSERT_TRUE(r3.ok());
+  EXPECT_TRUE(r3.value->kind() == neojs::Kind::Boolean && r3.value->toBoolean());
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* delete 可选链：delete a?.b / delete a?.b.c。 */
+TEST(Compiler, M51eEOptionalChainDelete) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* delete a?.b：a nullish -> true（不删除）。 */
+  JSValue *r = JS_Eval(ctx, "var a = null; delete a?.b",
+                       std::strlen("var a = null; delete a?.b"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN) << JS_ToString(ctx, r);
+  EXPECT_TRUE(JS_ToBoolean(ctx, r));
+  JS_FreeValue(ctx, r);
+
+  /* delete a?.b：a 非 nullish -> 删除 b 返回 true。 */
+  r = JS_Eval(ctx,
+              "var a = {b: 1}; var d = delete a?.b; d && !('b' in a)",
+              std::strlen("var a = {b: 1}; var d = delete a?.b; d && !('b' in a)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN) << JS_ToString(ctx, r);
+  EXPECT_TRUE(JS_ToBoolean(ctx, r));
+  JS_FreeValue(ctx, r);
+
+  /* delete a?.b.c：链头 nullish -> true。 */
+  r = JS_Eval(ctx, "var a = null; delete a?.b.c",
+              std::strlen("var a = null; delete a?.b.c"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN) << JS_ToString(ctx, r);
+  EXPECT_TRUE(JS_ToBoolean(ctx, r));
+  JS_FreeValue(ctx, r);
+
+  /* delete a?.b.c：非 nullish -> 删除 c。 */
+  r = JS_Eval(ctx,
+              "var a = {b: {c: 1}}; var d = delete a?.b.c; d && !('c' in a.b)",
+              std::strlen("var a = {b: {c: 1}}; var d = delete a?.b.c; d && !('c' in a.b)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN) << JS_ToString(ctx, r);
+  EXPECT_TRUE(JS_ToBoolean(ctx, r));
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 可选链 + 私有字段：this?.#x 正常读（this 恒非 nullish 不短路）。 */
+TEST(Compiler, M51eEOptionalChainPrivateField) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* a 非 nullish -> ?.#x 正常读私有字段。 */
+  JSValue *r = JS_Eval(ctx,
+      "class C { #x = 7; get() { return this?.#x; } } var c = new C(); c.get()",
+      std::strlen("class C { #x = 7; get() { return this?.#x; } } var c = new C(); c.get()"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 7.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 可选链规范语义边界：链延续在链头非 nullish 但中间为 undefined 时不短路。 */
+TEST(Compiler, M51eEOptionalChainContinuationThrows) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* a?.b.c：a 非 nullish 但 a.b undefined -> .c 访问 undefined 抛 TypeError。 */
+  neojs::ConversionResult r1 = compileAndRun(ic(ctx), "var a = {}; a?.b.c");
+  ASSERT_FALSE(r1.ok());
+  EXPECT_NE(r1.error.find("TypeError"), std::string::npos) << r1.error;
+
+  /* a?.b()：a 非 nullish 但 a.b undefined -> 调用 undefined 抛 TypeError。
+   * （区别于 a?.b?.()：后者 a.b nullish 时短路 undefined。） */
+  neojs::ConversionResult r2 = compileAndRun(ic(ctx), "var a = {}; a?.b()");
+  ASSERT_FALSE(r2.ok());
+  EXPECT_NE(r2.error.find("TypeError"), std::string::npos) << r2.error;
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 可选链复杂组合：链头非可选、深链、混合调用、展开调用。 */
+TEST(Compiler, M51eEOptionalChainComplex) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* 链头非可选：a.b?.c，a.b undefined -> 短路。 */
+  neojs::ConversionResult r1 = compileAndRun(ic(ctx), "var a = {}; a.b?.c");
+  ASSERT_TRUE(r1.ok());
+  EXPECT_TRUE(r1.value->kind() == neojs::Kind::Undefined);
+
+  neojs::ConversionResult r2 =
+      compileAndRun(ic(ctx), "var a = {b: {c: 3}}; a.b?.c");
+  ASSERT_TRUE(r2.ok());
+  EXPECT_DOUBLE_EQ(r2.value->toNumber(), 3.0);
+
+  /* 深链：a?.b.c.d.e，链头短路 -> undefined。 */
+  neojs::ConversionResult r3 =
+      compileAndRun(ic(ctx), "var a = null; a?.b.c.d.e");
+  ASSERT_TRUE(r3.ok());
+  EXPECT_TRUE(r3.value->kind() == neojs::Kind::Undefined);
+
+  neojs::ConversionResult r4 = compileAndRun(
+      ic(ctx), "var a = {b: {c: {d: {e: 123}}}}; a?.b.c.d.e");
+  ASSERT_TRUE(r4.ok());
+  EXPECT_DOUBLE_EQ(r4.value->toNumber(), 123.0);
+
+  /* 混合链 + 调用：a?.b.c()。 */
+  neojs::ConversionResult r5 =
+      compileAndRun(ic(ctx), "var a = null; a?.b.c()");
+  ASSERT_TRUE(r5.ok());
+  EXPECT_TRUE(r5.value->kind() == neojs::Kind::Undefined);
+
+  neojs::ConversionResult r6 = compileAndRun(ic(ctx),
+      "var a = {b: {c: function() { return 8; }}}; a?.b.c()");
+  ASSERT_TRUE(r6.ok());
+  EXPECT_DOUBLE_EQ(r6.value->toNumber(), 8.0);
+
+  /* 链头非可选 + 可选调用：o.m?.()。 */
+  neojs::ConversionResult r7 = compileAndRun(ic(ctx), "var o = {}; o.m?.()");
+  ASSERT_TRUE(r7.ok());
+  EXPECT_TRUE(r7.value->kind() == neojs::Kind::Undefined);
+
+  neojs::ConversionResult r8 =
+      compileAndRun(ic(ctx), "var o = {m: function() { return 5; }}; o.m?.()");
+  ASSERT_TRUE(r8.ok());
+  EXPECT_DOUBLE_EQ(r8.value->toNumber(), 5.0);
+
+  /* 可选调用带展开：a?.b(...args) 短路不求值。 */
+  neojs::ConversionResult r9 =
+      compileAndRun(ic(ctx), "var a = null; a?.b(...[1, 2])");
+  ASSERT_TRUE(r9.ok());
+  EXPECT_TRUE(r9.value->kind() == neojs::Kind::Undefined);
+
+  neojs::ConversionResult r10 = compileAndRun(ic(ctx),
+      "var a = {b: function(x, y) { return x + y; }}; a?.b(...[3, 4])");
+  ASSERT_TRUE(r10.ok());
+  EXPECT_DOUBLE_EQ(r10.value->toNumber(), 7.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
 /* 1 + 2 -> 3 */
 TEST(Compiler, AddExpr) {
   JSAllocator *a = nullptr;

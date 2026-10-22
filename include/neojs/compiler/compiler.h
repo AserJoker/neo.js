@@ -120,6 +120,26 @@ class Compiler {
 
   /* 成员访问读取（M3.1）：obj.prop（LoadProp）/ obj[expr]（LoadElem）。 */
   bool compileMemberLoad(const ASTNode &node);
+  /* 可选链编译（M5.1e-e）：?. / ?.[ / ?.() 短路（§13.5.1.1/§13.5.1.2）。
+   * node 为链顶层节点（Member/Call，含 optional）。
+   * 语义：链头（第一个 ?. 前表达式）nullish → 整链 undefined；
+   * 每个 ?. 短路点判断「前一步结果」nullish，短路跳过链剩余；
+   * 链延续（a?.b().c 的 .c / a?.b() 的 ()）不判断、短路时被跳过。 */
+  bool compileOptionalChain(const ASTNode &node);
+  /* 编译单个可选链节点（链上从内到外）。chain_end 为整链短路汇聚标签。 */
+  bool compileOptionalChainNode(const ASTNode &node, BcLabel *chain_end);
+  /* 判断节点是否为可选链节点（Member/Call 且属于链：自身 optional）。 */
+  bool isOptionalChainNode(const ASTNode &node) const;
+  /* 判断节点是否为可选链短路点（?./?.[/?.(）。 */
+  bool isOptionalShortCircuit(const ASTNode &node) const;
+  /* delete 可选链（M5.1e-e）：delete a?.b / delete a?.b.c（§13.5.1.2）。
+   * 链头 nullish 短路时 delete 返回 true；否则求值引用并删除。
+   * 短路路径压 true（delete 结果）而非 undefined（普通可选链）。 */
+  bool compileDeleteOptionalChain(const ASTNode &node);
+  /* delete 可选链单节点：非最后节点做访问（引用链求值），最后节点做删除。
+   * chain_end：整链短路汇聚标签（短路路径跳转）。 */
+  bool compileDeleteChainNode(const ASTNode &node, bool is_last,
+                              BcLabel *chain_end);
   /* 成员赋值（M3.2）：obj.prop = rhs / obj[expr] = rhs（含复合 op=）。
    * 返回 false 时已设置错误。 */
   bool compileMemberAssign(const ASTNode &node);
