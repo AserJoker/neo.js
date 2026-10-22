@@ -410,7 +410,7 @@ M0 骨架 ─▶ M1 前端流水线 ─▶ M2 解释器核心 ─▶ M3 对象�
 
 ### M5.1 语法与编译地基补全（🔄 进行中）
 
-**已落地（M5.1a–M5.1e-e）**：
+**已落地（M5.1a–M5.1e-g）**：
 
 - M5.1a 解构/默认值/rest/展开编译
 - M5.1b 逻辑赋值与运算符补全
@@ -422,6 +422,7 @@ M0 骨架 ─▶ M1 前端流水线 ─▶ M2 解释器核心 ─▶ M3 对象�
 - M5.1e-d 解构/循环 left 补齐（对象 rest、解构计算键、for-in/of 解构 left、class 计算字段键；修复 `{key = default}` 双 free 崩溃与默认值非 undefined 值丢失）
 - M5.1e-e 可选链编译（`?.`/`?.[`/`?.()` 短路；`delete a?.b` 短路返回 true；拦截 `a?.b = 1`/`a?.b++`/`new a?.b()` 语法错误）
 - M5.1e-f throw/try/catch/finally 编译 + VM 异常传播（§14.15/§14.16）：`Throw`/`RethrowPending` 指令、`TryEntry` 异常保护表、`ConversionResult.thrown` 携带 JS throw 值、`tryDispatch` 最内层区间匹配、嵌套 try/catch 内再抛/finally 异常覆盖/`catch{}` 无参数；同时完成 VM 主循环重构为全局静态分发表 `kHandlers`（90 opcode 各独立 handler，消除 Debug 模式巨型 switch-case 爆栈）
+- M5.1e-g StoreGlobal 与全局赋值/更新补全（§8.1.1.2.2 PutValue）：新增 `StoreGlobal` 指令（追加末尾保持 opcode 数值稳定），未声明标识符赋值（非严格）写入 globalThis 属性；覆盖简单/链式赋值、复合赋值（`+= -= *= /= %= **= <<= >>=`）、逻辑赋值（`??= ||= &&=`）、前缀/后缀 `++`/`--`、函数内全局赋值、解构赋值、for-in/of 全局 left；`EvalStoreGlobal` 26 用例验证读写一致性
 
 **剩余**：
 
