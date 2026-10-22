@@ -156,6 +156,9 @@ enum class Opcode : uint8_t {
   /* M5.1e-c for-in（§14.7.4，追加末尾，保持 opcode 数值稳定） */
   EnumerateKeys,   /* 栈顶对象 -> 键数组（ToObject + 沿原型链可枚举字符串键，§7.3.24） */
   NextKey,         /* 栈顶键数组 -> 弹出数组，压最后一个键（并移除）或 undefined（空） */
+
+  /* M5.1e-d 对象 rest 解构（§13.15.5，追加末尾，保持 opcode 数值稳定） */
+  RestObjectProps, /* [src, exclude_arr] -> 复制 src 中不在 exclude 的 own enumerable 属性到槽内目标：RestObjectProps {target_slot} */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -328,6 +331,10 @@ class BytecodeBuilder {
   /* M5.1e-c for-in：枚举键数组 / 取下一个键。 */
   void enumerate_keys() { push_op(Opcode::EnumerateKeys); }
   void next_key() { push_op(Opcode::NextKey); }
+  /* M5.1e-d 对象 rest：复制源中排除键之外的可枚举属性到槽内对象。 */
+  void rest_object_props(uint16_t target_slot) {
+    push_op(Opcode::RestObjectProps, target_slot);
+  }
 
   /* 注册捕获变量（去重），返回捕获下标。 */
   uint16_t add_capture(uint16_t depth, const std::string &name) {

@@ -3749,6 +3749,184 @@ TEST(Compiler, M51eCLabeledBreakContinue) {
   JS_FreeAllocator(a);
 }
 
+/* M5.1e-d：对象 rest 解构、解构计算键、for-in/for-of 循环 left 绑定、
+ * computed public field key。 */
+TEST(Compiler, M51eDObjectRest) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  struct { const char *src; double num; } ncases[] = {
+      /* 基础：排除已绑定键，rest 收剩余。 */
+      {"var {a, ...rest} = {a: 1, b: 2, c: 3}; rest.b + rest.c", 5.0},
+      /* rest 是独立新对象，不含 a。 */
+      {"var o = {a: 1, b: 2}; var {a, ...rest} = o; rest.a === undefined ? 1 : 0", 1.0},
+      /* 无多余键时 rest 为空对象。 */
+      {"var {a, ...rest} = {a: 1}; rest.a === undefined ? 1 : 0", 1.0},
+      /* rest 不复制原型链属性。 */
+      {"function P() {} P.prototype.z = 9; var o = new P(); o.x = 1; "
+       "var {...rest} = o; rest.x === 1 && rest.z === undefined ? 1 : 0", 1.0},
+      /* rest 与计算键组合：排除计算键。 */
+      {"var k = 'b'; var {[k]: v, ...rest} = {a: 1, b: 2, c: 3}; "
+       "(v === 2 && rest.b === undefined && rest.c === 3) ? 1 : 0", 1.0},
+      /* 数组元素也计入 rest（rest 排除已绑定键后收剩余元素）。 */
+      {"var {...rest} = ['a', 'b', 'c']; (rest['0'] === 'a' && rest['1'] === 'b' && rest['2'] === 'c') ? 1 : 0", 1.0},
+      /* 数字键绑定 + rest 排除。 */
+      {"var {0: x, ...rest} = {0: 10, 1: 20, 2: 30}; (x === 10 && rest['1'] === 20 && rest['2'] === 30) ? 1 : 0", 1.0},
+  };
+  for (auto &c : ncases) {
+    JSValue *r = JS_Eval(ctx, c.src, std::strlen(c.src));
+    ASSERT_NE(r, nullptr) << "case src=" << c.src;
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER)
+        << "case src=" << c.src << " got=" << JS_ToString(ctx, r);
+    EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), c.num) << "case src=" << c.src;
+    JS_FreeValue(ctx, r);
+  }
+
+  struct { const char *src; const char *str; } scases[] = {
+      /* rest 键名收集。 */
+      {"var {a, ...rest} = {a: 1, b: 2, c: 3}; var ks = Object.keys(rest); "
+       "ks.join(',')", "b,c"},
+  };
+  for (auto &c : scases) {
+    JSValue *r = JS_Eval(ctx, c.src, std::strlen(c.src));
+    ASSERT_NE(r, nullptr) << "case src=" << c.src;
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING)
+        << "case src=" << c.src << " got=" << JS_ToString(ctx, r);
+    EXPECT_STREQ(JS_ToString(ctx, r), c.str) << "case src=" << c.src;
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+TEST(Compiler, M51eDComputedDestructureKey) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  struct { const char *src; double num; } ncases[] = {
+      /* 计算键解构赋值。 */
+      {"var k = 'x'; var {[k]: v} = {x: 42}; v", 42.0},
+      /* 计算键表达式运行期求值。 */
+      {"var p = 'n' + 'um'; var {[p]: v} = {num: 7}; v", 7.0},
+      /* 计算键 + 默认值。 */
+      {"var k = 'missing'; var {[k]: v = 5} = {}; v", 5.0},
+      /* 计算键赋值给既有变量。 */
+      {"var k = 'y'; var v = 0; ({[k]: v} = {y: 99}); v", 99.0},
+      /* 计算键 rest 组合：排除计算键。 */
+      {"var k = 'b'; var {[k]: v, ...rest} = {a: 1, b: 2, c: 3}; "
+       "(v === 2 && rest.a === 1 && rest.c === 3 && rest.b === undefined) ? 1 : 0", 1.0},
+  };
+  for (auto &c : ncases) {
+    JSValue *r = JS_Eval(ctx, c.src, std::strlen(c.src));
+    ASSERT_NE(r, nullptr) << "case src=" << c.src;
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER)
+        << "case src=" << c.src << " got=" << JS_ToString(ctx, r);
+    EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), c.num) << "case src=" << c.src;
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+TEST(Compiler, M51eDForOfDestructureLeft) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  struct { const char *src; double num; } ncases[] = {
+      /* for-of 声明解构 left。 */
+      {"var s = 0; for (const {a} of [{a: 1}, {a: 2}]) s = s + a; s", 3.0},
+      /* for-of 数组解构 left。 */
+      {"var s = 0; for (const [x, y] of [[1, 2], [3, 4]]) s = s + x + y; s", 10.0},
+      /* for-of 赋值解构 left（既有变量）。 */
+      {"var a, s = 0; for ({a} of [{a: 5}, {a: 6}]) s = s + a; s", 11.0},
+      /* for-of 成员 left：赋值到对象属性。 */
+      {"var o = {}; for (o.k of [5, 6]) { } o.k", 6.0},
+      /* for-of 成员 left 数组元素。 */
+      {"var o = []; for (o[0] of ['x']) { } o[0] === 'x' ? 1 : 0", 1.0},
+      /* for-of 声明解构含默认值。 */
+      {"var s = 0; for (const {a = 1} of [{}, {a: 2}]) s = s + a; s", 3.0},
+  };
+  for (auto &c : ncases) {
+    std::fprintf(stderr, "[ncases] src=%s\n", c.src);
+    JSValue *r = JS_Eval(ctx, c.src, std::strlen(c.src));
+    ASSERT_NE(r, nullptr) << "case src=" << c.src;
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER)
+        << "case src=" << c.src << " got=" << JS_ToString(ctx, r);
+    EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), c.num) << "case src=" << c.src;
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+TEST(Compiler, M51eDForInDestructureLeft) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  struct { const char *src; double num; } ncases[] = {
+      /* for-in 声明解构 left：对象键为字符串赋给解构目标。 */
+      {"var o = {a: 1, b: 2}; var s = ''; "
+       "for (var [k] in o) { s = s + k; } s === 'ab' ? 1 : 0", 1.0},
+      /* for-in 赋值解构 left。 */
+      {"var o = {x: 1, y: 2}; var k = ''; var s = ''; "
+       "for ([k] in o) { s = s + k; } s === 'xy' ? 1 : 0", 1.0},
+      /* for-in 成员 left。 */
+      {"var o = {a: 1, b: 2}; var dst = {}; "
+       "for (dst.k in o) { } dst.k === 'b' ? 1 : 0", 1.0},
+      /* for-in 对象解构 left：键字符串按索引解构进对象属性。 */
+      {"var o = {a: 1, b: 2}; var dst = {}; "
+       "for ({0: dst.k} in o) { } dst.k === 'b' ? 1 : 0", 1.0},
+  };
+  for (auto &c : ncases) {
+    JSValue *r = JS_Eval(ctx, c.src, std::strlen(c.src));
+    ASSERT_NE(r, nullptr) << "case src=" << c.src;
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER)
+        << "case src=" << c.src << " got=" << JS_ToString(ctx, r);
+    EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), c.num) << "case src=" << c.src;
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+TEST(Compiler, M51eDComputedFieldKey) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  struct { const char *src; double num; } ncases[] = {
+      /* 实例 computed public field。 */
+      {"var k = 'x'; class C { [k] = 42; } var c = new C(); c.x", 42.0},
+      /* static computed field。 */
+      {"var k = 'y'; class C { static [k] = 7; } C.y", 7.0},
+      /* 计算键运行期求值表达式。 */
+      {"var p = 'n' + 'um'; class C { [p] = 5; } new C().num", 5.0},
+      /* 混合：普通键 + 计算键。 */
+      {"class C { a = 1; [('b')] = 2; } var c = new C(); c.a + c.b", 3.0},
+      /* 计算键默认值 undefined 不覆盖。 */
+      {"class C { [('q')] = undefined; } new C().q === undefined ? 1 : 0", 1.0},
+  };
+  for (auto &c : ncases) {
+    JSValue *r = JS_Eval(ctx, c.src, std::strlen(c.src));
+    ASSERT_NE(r, nullptr) << "case src=" << c.src;
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER)
+        << "case src=" << c.src << " got=" << JS_ToString(ctx, r);
+    EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), c.num) << "case src=" << c.src;
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
 /* -------------------------------------------------------------------------- */
 /* 14. M3.0 VM 对象指令（NewObject/NewArray/LoadProp/StoreProp/LoadElem/      */
 /*     StoreElem）                                                            */
@@ -6194,3 +6372,4 @@ TEST(Compiler, EvalStringProtoMethods) {
   JS_FreeContext(ctx);
   JS_FreeAllocator(a);
 }
+

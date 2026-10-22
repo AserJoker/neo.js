@@ -142,6 +142,9 @@ class Compiler {
   bool compilePattern(const ASTNode &pattern, uint16_t src_slot, bool is_declaration);
   /* 单绑定目标（Identifier / 嵌套模式 / AssignmentPattern 默认值）。 */
   bool compileBindTarget(const ASTNode &target, bool is_declaration);
+  /* for-in/for-of 循环 left 绑定（M5.1e-d）：栈顶为当前迭代值/键。
+   * 支持声明标识符 / 声明解构 / 赋值标识符 / 赋值解构 / 成员 left。 */
+  bool compileLoopLeft(const ASTNode *left);
   /* 预声明解构模式中的全部绑定名（保证槽位分配稳定，声明语义）。 */
   bool declarePatternBindings(const ASTNode &pattern);
 

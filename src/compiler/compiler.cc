@@ -238,12 +238,16 @@ bool Compiler::compileFunctionBody(const ASTNode &fn) {
       const ASTNode *target = p->children[0];
       if (target->type == NodeType::Identifier) {
         /* x = default：x 为 undefined 时求默认值（§9.2.12 步骤 20）。
-         *   [slot] JumpIfUndefined use_default; Jump end;
-         *   use_default: [default]; end: StoreVar slot */
+         *   [slot] Dup; JumpIfUndefined use_default; Pop; Jump end;
+         *   use_default: [default]; end: StoreVar slot
+         * JumpIfUndefined 弹栈判断（弹 Dup 副本），原值保留：非 undefined
+         * 路径栈顶仍是原值；undefined 路径 Pop 掉原值后求默认值。 */
         BcLabel use_default = builder_.new_label();
         BcLabel end = builder_.new_label();
         builder_.load_var(info.slot);
+        builder_.dup();
         builder_.jump_if_undefined(&use_default);
+        builder_.pop();
         builder_.jump(&end);
         builder_.bind_label(use_default);
         if (!compileExpr(*p->children[1])) return false;
@@ -254,7 +258,9 @@ bool Compiler::compileFunctionBody(const ASTNode &fn) {
         BcLabel use_default = builder_.new_label();
         BcLabel end = builder_.new_label();
         builder_.load_var(info.slot);
+        builder_.dup();
         builder_.jump_if_undefined(&use_default);
+        builder_.pop();
         builder_.jump(&end);
         builder_.bind_label(use_default);
         if (!compileExpr(*p->children[1])) return false;
@@ -513,7 +519,8 @@ bool Compiler::compileClassElementDef(const ASTNode &prop, uint16_t proto_slot,
 struct InstanceFieldEntry {
   bool is_private = false;
   size_t priv_idx = 0;      /* 私有字段：private_names 下标 */
-  std::string pub_key;      /* public 字段：属性名 */
+  std::string pub_key;      /* public 字段：属性名（静态键） */
+  const ASTNode *computed_key = nullptr; /* 计算键字段 [expr]（M5.1e-d）；非空时运行期求键 */
   const ASTNode *init = nullptr; /* 初始化表达式（nullptr -> undefined） */
 };
 
@@ -525,6 +532,7 @@ struct StaticElement {
   bool is_private = false;
   size_t priv_idx = 0;
   std::string pub_key;
+  const ASTNode *computed_key = nullptr; /* 计算键字段 [expr]（M5.1e-d） */
 };
 
 /* class 编译（M5.1d-a）：
@@ -666,14 +674,14 @@ bool Compiler::compileClass(const ASTNode &node, bool is_declaration) {
           instance_fields.push_back(fe);
         }
       } else {
-        /* public 字段：键为 Identifier/Literal（字符串键）。计算键 [expr] 的
-         * 字段（运行期求值键）本阶段不支持 -> 编译错误。 */
+        /* public 字段：键为 Identifier/Literal（静态键）或 [expr]（计算键，
+         * 运行期求键，M5.1e-d）。计算键存表达式，初始化时 DefineProp。 */
         std::string pkey;
+        const ASTNode *computed_key = nullptr;
         if (elem->prop.is_computed) {
-          fail("not implemented: computed public field key");
-          return false;
-        }
-        if (!objectKeyToString(key, &pkey)) {
+          /* 计算键 [expr]：key 即表达式节点（运行期求键）。 */
+          computed_key = key;
+        } else if (!objectKeyToString(key, &pkey)) {
           fail("invalid public field key");
           return false;
         }
@@ -681,11 +689,13 @@ bool Compiler::compileClass(const ASTNode &node, bool is_declaration) {
           StaticElement se;
           se.node = elem;
           se.pub_key = pkey;
+          se.computed_key = computed_key;
           static_elems.push_back(se);
         } else {
           InstanceFieldEntry fe;
           fe.is_private = false;
           fe.pub_key = pkey;
+          fe.computed_key = computed_key;
           fe.init = init;
           instance_fields.push_back(fe);
         }
@@ -886,27 +896,46 @@ bool Compiler::emitInstanceFieldInits() {
             current_instance_fields_);
     for (const InstanceFieldEntry &fe : fields) {
       builder_.load_this();
-      if (fe.init != nullptr &&
-          fe.init->type == NodeType::FunctionExpression && fe.is_private) {
-        /* 私有方法 #m(){}：编译方法函数（MakeFunction 留栈顶）存入槽。
-         * 方法名为字段名（不含 '#'）；HomeObject 暂不设置（私有方法内
-         * super 访问属 M5.1d-b 组合场景，本阶段不测试）。 */
-        std::string mname = (*current_private_names_)[fe.priv_idx];
-        if (!mname.empty() && mname[0] == '#') mname = mname.substr(1);
-        if (!compileClassMemberFunction(*fe.init, mname, /*is_ctor=*/false)) {
-          return false;
-        }
-      } else if (fe.init != nullptr) {
-        if (!compileExpr(*fe.init)) return false;
-      } else {
-        builder_.push_op(Opcode::PushUndefined);
-      }
       if (fe.is_private) {
+        /* 私有字段/私有方法。 */
+        if (fe.init != nullptr &&
+            fe.init->type == NodeType::FunctionExpression) {
+          /* 私有方法 #m(){}：编译方法函数（MakeFunction 留栈顶）存入槽。
+           * 方法名为字段名（不含 '#'）；HomeObject 暂不设置（私有方法内
+           * super 访问属 M5.1d-b 组合场景，本阶段不测试）。 */
+          std::string mname = (*current_private_names_)[fe.priv_idx];
+          if (!mname.empty() && mname[0] == '#') mname = mname.substr(1);
+          if (!compileClassMemberFunction(*fe.init, mname, /*is_ctor=*/false)) {
+            return false;
+          }
+        } else if (fe.init != nullptr) {
+          if (!compileExpr(*fe.init)) return false;
+        } else {
+          builder_.push_op(Opcode::PushUndefined);
+        }
         /* InitPrivate：首次创建槽（与 StorePrivate 的「必须已声明」区分）。 */
         builder_.init_private(static_cast<uint16_t>(fe.priv_idx));
+        builder_.pop(); /* 丢弃字段值 */
+        continue;
+      }
+      /* public 字段：this.key = init 或 this[key] = init（计算键）。
+       * StoreProp 约定 [obj, val]（key 内嵌）；DefineProp 约定 [obj, key, val]。 */
+      builder_.load_this();
+      if (fe.computed_key != nullptr) {
+        if (!compileExpr(*fe.computed_key)) return false; /* this, key */
+        if (fe.init != nullptr) {
+          if (!compileExpr(*fe.init)) return false;
+        } else {
+          builder_.push_op(Opcode::PushUndefined);
+        }
+        builder_.define_prop(); /* this, key, val -> val（运行期 ToPropertyKey） */
       } else {
-        /* public 字段：this.key = init（StoreProp 消费 this 与值）。 */
-        builder_.store_prop(fe.pub_key);
+        if (fe.init != nullptr) {
+          if (!compileExpr(*fe.init)) return false;
+        } else {
+          builder_.push_op(Opcode::PushUndefined);
+        }
+        builder_.store_prop(fe.pub_key); /* this, val -> val */
       }
       builder_.pop(); /* 丢弃字段值（字段初始化是语句） */
     }
@@ -969,30 +998,59 @@ bool Compiler::emitStaticInit() {
     } else {
       /* static 字段：this = 构造器。
        *   public：this.key = init（缺省 undefined），StoreProp 消费 this 与值。
-       *   private：this.#x = init（InitPrivate 建槽）。 */
+       *   private：this.#x = init（InitPrivate 建槽）。
+       *   计算键 public：this[key] = init（DefineProp，运行期求键，M5.1e-d）。 */
       builder_.load_this();
       const ASTNode *init =
           se.node->children.size() >= 2 ? se.node->children[1] : nullptr;
-      if (init != nullptr) {
-        if (init->type == NodeType::FunctionExpression && se.is_private) {
-          /* static 私有方法：编译方法函数入槽。 */
-          std::string mname = (*current_private_names_)[se.priv_idx];
-          if (!mname.empty() && mname[0] == '#') mname = mname.substr(1);
-          if (!compileClassMemberFunction(*init, mname, /*is_ctor=*/false)) {
+      if (se.is_private) {
+        if (init != nullptr) {
+          if (init->type == NodeType::FunctionExpression) {
+            /* static 私有方法：编译方法函数入槽。 */
+            std::string mname = (*current_private_names_)[se.priv_idx];
+            if (!mname.empty() && mname[0] == '#') mname = mname.substr(1);
+            if (!compileClassMemberFunction(*init, mname, /*is_ctor=*/false)) {
+              ok = false;
+              break;
+            }
+          } else if (!compileExpr(*init)) {
             ok = false;
             break;
           }
-        } else if (!compileExpr(*init)) {
+        } else {
+          builder_.push_op(Opcode::PushUndefined);
+        }
+        builder_.init_private(static_cast<uint16_t>(se.priv_idx));
+        builder_.pop(); /* 丢弃字段值 */
+        continue;
+      }
+      /* public 字段：this.key = init 或 this[key] = init（计算键）。
+       * StoreProp 约定 [obj, val]（key 内嵌）；DefineProp 约定 [obj, key, val]。 */
+      builder_.load_this();
+      if (se.computed_key != nullptr) {
+        if (!compileExpr(*se.computed_key)) {
           ok = false;
           break;
         }
+        if (init != nullptr) {
+          if (!compileExpr(*init)) {
+            ok = false;
+            break;
+          }
+        } else {
+          builder_.push_op(Opcode::PushUndefined);
+        }
+        builder_.define_prop(); /* this, key, val -> val（运行期 ToPropertyKey） */
       } else {
-        builder_.push_op(Opcode::PushUndefined);
-      }
-      if (se.is_private) {
-        builder_.init_private(static_cast<uint16_t>(se.priv_idx));
-      } else {
-        builder_.store_prop(se.pub_key);
+        if (init != nullptr) {
+          if (!compileExpr(*init)) {
+            ok = false;
+            break;
+          }
+        } else {
+          builder_.push_op(Opcode::PushUndefined);
+        }
+        builder_.store_prop(se.pub_key); /* this, val -> val */
       }
       builder_.pop(); /* 丢弃字段值 */
     }
@@ -1117,18 +1175,22 @@ bool Compiler::compileBindTarget(const ASTNode &target, bool is_declaration) {
 
   if (target.type == NodeType::AssignmentPattern) {
     /* 默认值：value = (value === undefined) ? default : value
-     *   [value] JumpIfUndefined use_default; Jump end
-     *   use_default: [default]            ; end:
-     * 注意：JumpIfUndefined 弹栈。选定后递归绑定左侧目标（值在栈顶）。 */
+     *   [value] Dup; JumpIfUndefined use_default; Jump end
+     *   use_default: Pop; [default]     ; end:
+     * JumpIfUndefined 弹栈判断（弹的是 Dup 副本），原值保留在栈顶：
+     * 非 undefined 路径栈顶仍是原值；undefined 路径 Pop 掉原值后
+     * 求默认值。选定后递归绑定左侧目标（值在栈顶）。 */
     if (target.children.size() < 2) {
       fail("invalid default value pattern");
       return false;
     }
     BcLabel use_default = builder_.new_label();
     BcLabel end = builder_.new_label();
+    builder_.dup();
     builder_.jump_if_undefined(&use_default);
     builder_.jump(&end);
     builder_.bind_label(use_default);
+    builder_.pop(); /* 清掉保留的原值 */
     if (!compileExpr(*target.children[1])) return false;
     builder_.bind_label(end);
     /* 递归绑定左侧目标（Identifier / 嵌套模式；绑定后值留栈顶）。 */
@@ -1145,6 +1207,49 @@ bool Compiler::compileBindTarget(const ASTNode &target, bool is_declaration) {
     return true;
   }
 
+  if (target.type == NodeType::MemberExpression) {
+    /* 成员绑定目标：{k: dst.k} / [dst[0]]（M5.1e-d）。值已在栈顶。
+     * 暂存值 -> 编译 obj(+key) -> 恢复值 -> StoreProp/StoreElem/StorePrivate。 */
+    if (target.member.optional) {
+      fail("optional chaining cannot be used as a destructuring target");
+      return false;
+    }
+    if (target.children.empty()) {
+      fail("invalid destructuring member target");
+      return false;
+    }
+    const ASTNode *obj_expr = target.children[0];
+    const bool computed = target.member.computed;
+    const ASTNode *key_expr = computed ? target.children[1] : nullptr;
+    uint16_t t_val = scope_->next_slot++;
+    builder_.store_var(t_val);
+    int priv_idx = -1;
+    std::string prop_name;
+    if (!computed) {
+      const ASTNode *prop = target.children[1];
+      if (prop->type == NodeType::PrivateIdentifier) {
+        priv_idx = resolvePrivateName(prop->name);
+        if (priv_idx < 0) return false;
+      } else if (prop->type != NodeType::Identifier) {
+        fail("invalid destructuring member property name");
+        return false;
+      } else {
+        prop_name = prop->name;
+      }
+    }
+    if (!compileExpr(*obj_expr)) return false;
+    if (computed && !compileExpr(*key_expr)) return false;
+    builder_.load_var(t_val);
+    if (computed) {
+      builder_.store_elem();
+    } else if (priv_idx >= 0) {
+      builder_.store_private(static_cast<uint16_t>(priv_idx));
+    } else {
+      builder_.store_prop(prop_name);
+    }
+    return true;
+  }
+
   fail("invalid destructuring target");
   return false;
 }
@@ -1156,30 +1261,97 @@ bool Compiler::compileBindTarget(const ASTNode &target, bool is_declaration) {
 bool Compiler::compilePattern(const ASTNode &pattern, uint16_t src_slot,
                               bool is_declaration) {
   if (pattern.type == NodeType::ObjectPattern) {
+    /* 已绑定键跟踪（对象 rest 用）：静态键名 + 计算键暂存槽。
+     * 计算键绑定后键值暂存槽内，rest 时构建排除数组引用。 */
+    std::vector<std::string> bound_keys;
+    std::vector<uint16_t> bound_key_slots;
     for (const ASTNode *member : pattern.children) {
       if (member == nullptr) continue;
       if (member->type == NodeType::SpreadElement) {
-        /* 对象 rest：{a, ...rest}（ES2018）。rest = 源剩余属性。
-         * 用 RestToArray 不适用（对象非迭代器）；本阶段暂不支持，
-         * M5.1a 先支持数组 rest，对象 rest 留 M5.1e。 */
-        fail("not implemented: object rest in destructuring");
-        return false;
+        /* 对象 rest：{a, ...rest} = src（ES2018 §13.15.5）。
+         * rest = 源中排除已绑定键后的剩余属性新对象。
+         * 构建排除键数组（静态键 + 计算键值），RestObjectProps 复制。
+         *   NewArray; StoreVar t_excl
+         *   [静态键] PushConst k; AppendElem t_excl
+         *   [计算键] LoadVar t_key; AppendElem t_excl
+         *   LoadVar src; LoadVar t_excl; RestObjectProps {t_rest}
+         * rest 目标绑定（值在栈顶）。 */
+        if (member->children.empty()) {
+          fail("invalid rest element");
+          return false;
+        }
+        uint16_t t_excl = scope_->next_slot++;
+        builder_.new_array();
+        builder_.store_var(t_excl);
+        for (const std::string &k : bound_keys) {
+          builder_.push_const(k);
+          builder_.append_elem(t_excl);
+        }
+        for (uint16_t ks : bound_key_slots) {
+          builder_.load_var(ks);
+          builder_.append_elem(t_excl);
+        }
+        uint16_t t_rest = scope_->next_slot++;
+        builder_.new_object();
+        builder_.store_var(t_rest);
+        builder_.load_var(src_slot);
+        builder_.load_var(t_excl);
+        builder_.rest_object_props(t_rest);
+        builder_.load_var(t_rest); /* rest 对象到栈顶供绑定 */
+        if (!compileBindTarget(*member->children[0], is_declaration)) {
+          return false;
+        }
+        builder_.pop(); /* 丢弃绑定值 */
+        return true;    /* rest 之后无更多元素（Parser 已保证） */
       }
       if (member->type != NodeType::Property || member->children.empty()) {
         fail("invalid object pattern member");
         return false;
       }
-      /* 简写 { p }：单 child（key 即 value），value = key。 */
+      /* 键：计算 [expr]（M5.1e-d）或静态（Identifier/Literal）。
+       * 简写默认值 { key = default }：单 child（AssignmentPattern，M5.1e-d
+       * 修复双 free 后 key 由 AssignmentPattern 持有）。 */
+      const bool computed = member->prop.is_computed;
+      uint16_t t_key = 0;
+      std::string key;
+      if (computed) {
+        /* 计算键 { [k]: v }：children[0] 为键表达式，children[1] 为值。
+         * LoadVar src; [key]; StoreVar t_key; LoadVar t_key; LoadElem。
+         * 键值暂存 t_key（rest 的排除集合与后续绑定共用）。 */
+        if (member->children.size() < 2) {
+          fail("invalid computed key pattern member");
+          return false;
+        }
+        t_key = scope_->next_slot++;
+        builder_.load_var(src_slot);
+        if (!compileExpr(*member->children[0])) return false;
+        builder_.store_var(t_key);
+        builder_.load_var(t_key);
+        builder_.load_elem(); /* 值在栈顶 */
+        bound_key_slots.push_back(t_key);
+      } else {
+        /* 静态键：普通 { key: v } 取 children[0]；简写默认值 { key = d }
+         * 单 child，键名取自 AssignmentPattern 的 target（children[0]）。 */
+        const ASTNode *key_node = member->children[0];
+        if (key_node->type == NodeType::AssignmentPattern) {
+          if (key_node->children.empty()) {
+            fail("invalid default value pattern");
+            return false;
+          }
+          key_node = key_node->children[0];
+        }
+        if (!objectKeyToString(key_node, &key)) {
+          fail("invalid property key in destructuring");
+          return false;
+        }
+        builder_.load_var(src_slot);
+        builder_.load_prop(key); /* 值在栈顶 */
+        bound_keys.push_back(key);
+      }
+      /* 值：普通 { key: v } 取 children[1]；简写默认值 { key = d }
+       * 单 child（AssignmentPattern，compileBindTarget 处理默认值）。 */
       const ASTNode *value =
           member->children.size() >= 2 ? member->children[1] : member->children[0];
-      /* key */
-      std::string key;
-      if (!objectKeyToString(member->children[0], &key)) {
-        fail("not implemented: computed key in destructuring");
-        return false;
-      }
-      builder_.load_var(src_slot);
-      builder_.load_prop(key); /* 值在栈顶 */
       if (!compileBindTarget(*value, is_declaration)) {
         return false;
       }
@@ -1225,6 +1397,122 @@ bool Compiler::compilePattern(const ASTNode &pattern, uint16_t src_slot,
   }
 
   fail("invalid pattern");
+  return false;
+}
+
+/* for-in/for-of 循环 left 绑定（M5.1e-d，§14.7.4/§14.7.5）：栈顶为当前
+ * 迭代值/键，按 left 形态绑定：
+ *   - VariableDeclaration[Identifier]  -> declareLocal + StoreVar
+ *   - VariableDeclaration[模式]        -> 预声明绑定名 + compilePattern(true)
+ *   - Identifier（赋值既有变量）        -> StoreVar/StoreUpvalue
+ *   - 模式（赋值解构 ({a} of ...)）     -> compilePattern(false)
+ *   - MemberExpression（obj.x of ...）  -> 栈顶值暂存后 StoreProp/StoreElem
+ *   - SuperProperty 非法（for-in/of left 不能是 super）。 */
+bool Compiler::compileLoopLeft(const ASTNode *left) {
+  if (left == nullptr) {
+    fail("for-in/of without left target");
+    return false;
+  }
+  if (left->type == NodeType::VariableDeclaration) {
+    for (const ASTNode *declarator : left->children) {
+      if (declarator == nullptr ||
+          declarator->type != NodeType::VariableDeclarator ||
+          declarator->children.empty()) {
+        fail("invalid for-in/of loop variable declaration");
+        return false;
+      }
+      const ASTNode *target = declarator->children[0];
+      if (target->type == NodeType::ObjectPattern ||
+          target->type == NodeType::ArrayPattern) {
+        /* 声明解构：for (const {a} of arr)。预声明绑定名后解构。 */
+        if (!declarePatternBindings(*target)) return false;
+        uint16_t tmp = scope_->next_slot++;
+        builder_.store_var(tmp); /* 栈顶迭代值 -> 临时槽 */
+        if (!compilePattern(*target, tmp, /*is_declaration=*/true)) {
+          return false;
+        }
+        /* compilePattern 内部已按元素 Pop 清栈，无需再 Pop。 */
+        continue;
+      }
+      if (target->type != NodeType::Identifier) {
+        fail("invalid for-in/of loop variable declaration target");
+        return false;
+      }
+      uint16_t slot = declareLocal(target->name);
+      builder_.store_var(slot);
+    }
+    return true;
+  }
+  if (left->type == NodeType::Identifier) {
+    /* 赋值到既有变量（局部/捕获；全局暂不支持 -> 错误）。 */
+    uint16_t slot = 0;
+    uint16_t capture = 0;
+    bool is_upvalue = false;
+    if (!resolveAssignTarget(left->name, &slot, &capture, &is_upvalue)) {
+      fail("assignment to undeclared global in for-in/of is not supported");
+      return false;
+    }
+    if (is_upvalue) {
+      builder_.store_upvalue(capture);
+    } else {
+      builder_.store_var(slot);
+    }
+    return true;
+  }
+  if (left->type == NodeType::ObjectPattern ||
+      left->type == NodeType::ArrayPattern) {
+    /* 赋值解构：for ({a} of arr) / for ({a} in obj)。 */
+    uint16_t tmp = scope_->next_slot++;
+    builder_.store_var(tmp);
+    if (!compilePattern(*left, tmp, /*is_declaration=*/false)) return false;
+    /* compilePattern 内部已按元素 Pop 清栈，无需再 Pop。 */
+    return true;
+  }
+  if (left->type == NodeType::MemberExpression) {
+    /* 成员 left：for (obj.x of arr) / for (obj[x] in obj2)。
+     * 栈顶迭代值暂存，编译 obj(+key) 后 Store。 */
+    if (left->member.optional) {
+      fail("optional chaining cannot be used as for-in/of left target");
+      return false;
+    }
+    if (left->children.empty()) {
+      fail("invalid for-in/of member left target");
+      return false;
+    }
+    const ASTNode *obj_expr = left->children[0];
+    const bool computed = left->member.computed;
+    const ASTNode *key_expr = computed ? left->children[1] : nullptr;
+    /* 栈顶迭代值暂存。 */
+    uint16_t t_val = scope_->next_slot++;
+    builder_.store_var(t_val);
+    /* 私有字段 left：obj.#x（合法：for (o.#x of arr)）。 */
+    int priv_idx = -1;
+    std::string prop_name;
+    if (!computed) {
+      const ASTNode *prop = left->children[1];
+      if (prop->type == NodeType::PrivateIdentifier) {
+        priv_idx = resolvePrivateName(prop->name);
+        if (priv_idx < 0) return false;
+      } else if (prop->type != NodeType::Identifier) {
+        fail("invalid for-in/of member left property name");
+        return false;
+      } else {
+        prop_name = prop->name;
+      }
+    }
+    if (!compileExpr(*obj_expr)) return false;
+    if (computed && !compileExpr(*key_expr)) return false;
+    builder_.load_var(t_val);
+    if (computed) {
+      builder_.store_elem();
+    } else if (priv_idx >= 0) {
+      builder_.store_private(static_cast<uint16_t>(priv_idx));
+    } else {
+      builder_.store_prop(prop_name);
+    }
+    return true;
+  }
+  fail("invalid for-in/of left target");
   return false;
 }
 
@@ -1543,38 +1831,8 @@ bool Compiler::compileForOf(const ASTNode &node, const std::string &label) {
   builder_.iterator_step();
   builder_.jump_if_true(&end_label); /* done true -> 结束循环 */
 
-  /* left 赋值：栈顶是当前迭代 value。 */
-  if (left->type == NodeType::VariableDeclaration) {
-    /* for (var x of ...)：声明 x 局部槽，栈顶 value 直接 StoreVar。 */
-    for (const ASTNode *declarator : left->children) {
-      if (declarator == nullptr ||
-          declarator->type != NodeType::VariableDeclarator ||
-          declarator->children.empty() ||
-          declarator->children[0]->type != NodeType::Identifier) {
-        fail("not implemented: destructuring in for-of");
-        return false;
-      }
-      uint16_t slot = declareLocal(declarator->children[0]->name);
-      builder_.store_var(slot);
-    }
-  } else if (left->type == NodeType::Identifier) {
-    /* for (x of ...)：赋值到既有变量。 */
-    uint16_t slot = 0;
-    uint16_t capture = 0;
-    bool is_upvalue = false;
-    if (!resolveAssignTarget(left->name, &slot, &capture, &is_upvalue)) {
-      fail("not implemented: assignment to undeclared global in for-of");
-      return false;
-    }
-    if (is_upvalue) {
-      builder_.store_upvalue(capture);
-    } else {
-      builder_.store_var(slot);
-    }
-  } else {
-    fail("not implemented: for-of left target (member/destructuring)");
-    return false;
-  }
+  /* left 赋值：栈顶是当前迭代 value（M5.1e-d 支持解构/成员 left）。 */
+  if (!compileLoopLeft(left)) return false;
 
   /* body（break -> break_label，continue -> loop）。break_label 独立于
    * end_label：结束路径栈顶残留 undefined 需 Pop，break 时栈已平衡。 */
@@ -1639,38 +1897,8 @@ bool Compiler::compileForIn(const ASTNode &node, const std::string &label) {
   builder_.dup();
   builder_.jump_if_undefined(&end_label); /* 键 undefined -> 结束 */
 
-  /* left 赋值：栈顶是当前枚举键。 */
-  if (left->type == NodeType::VariableDeclaration) {
-    /* for (var k in ...)：声明 k 局部槽，栈顶键直接 StoreVar。 */
-    for (const ASTNode *declarator : left->children) {
-      if (declarator == nullptr ||
-          declarator->type != NodeType::VariableDeclarator ||
-          declarator->children.empty() ||
-          declarator->children[0]->type != NodeType::Identifier) {
-        fail("not implemented: destructuring in for-in");
-        return false;
-      }
-      uint16_t slot = declareLocal(declarator->children[0]->name);
-      builder_.store_var(slot);
-    }
-  } else if (left->type == NodeType::Identifier) {
-    /* for (k in ...)：赋值到既有变量。 */
-    uint16_t slot = 0;
-    uint16_t capture = 0;
-    bool is_upvalue = false;
-    if (!resolveAssignTarget(left->name, &slot, &capture, &is_upvalue)) {
-      fail("not implemented: assignment to undeclared global in for-in");
-      return false;
-    }
-    if (is_upvalue) {
-      builder_.store_upvalue(capture);
-    } else {
-      builder_.store_var(slot);
-    }
-  } else {
-    fail("not implemented: for-in left target (member/destructuring)");
-    return false;
-  }
+  /* left 赋值：栈顶是当前枚举键（M5.1e-d 支持解构/成员 left）。 */
+  if (!compileLoopLeft(left)) return false;
 
   /* 循环体（label/continue 上下文：break -> break_label，continue -> loop）。
    * break_label 独立于 end_label：正常结束路径（键用尽）栈顶残留 undefined

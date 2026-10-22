@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <limits>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -61,6 +62,18 @@ ConversionResult fail(const std::string &error) {
   ConversionResult r;
   r.error = error;
   return r;
+}
+
+/* 判断字符串是否为规范数组索引（canonical numeric string，§7.1.33）：
+ * 非负整数十进制、无前导零（"0" 合法，"00" 不合法）。
+ * 用于 String 包装对象虚拟索引属性（'abc'[0]）判定。 */
+bool isCanonicalArrayIndex(const std::string &key) {
+  if (key.empty()) return false;
+  if (key.size() > 1 && key[0] == '0') return false; /* 前导零 */
+  for (char c : key) {
+    if (c < '0' || c > '9') return false;
+  }
+  return true;
 }
 
 /* M4.4h：沿原型链查找命名属性的描述符（own 或原型链），供
@@ -1044,14 +1057,28 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
           /* Set size 属性（M4.4c，§24.2.3.9）：由条目数推导，非存储属性。 */
           val = ctx->createValue(static_cast<double>(target->collectionSize()));
         } else if (target->isWrapper() &&
-                   target->kind() == ObjectKind::String && key == "length") {
-          /* String 包装对象/原始串的 length（§10.4.3.3）：非存储属性，
-           * 由 [[StringData]] 的 UTF-16 code unit 数推导。 */
+                   target->kind() == ObjectKind::String &&
+                   (key == "length" || isCanonicalArrayIndex(key))) {
+          /* String 包装对象/原始串的虚拟索引属性（§10.4.3.3）：
+           * length 由 [[StringData]] 的 UTF-16 code unit 数推导；
+           * 整数索引 key（如 "0"）返回对应 code unit 字符（'abc'[1] == 'b'）。 */
           JSValue *data = target->wrapperData();
-          val = (data != nullptr && data->kind() == Kind::String)
-                    ? ctx->createValue(
-                          static_cast<double>(utf16Length(data->toString())))
-                    : ctx->createValue(Kind::Undefined);
+          if (data != nullptr && data->kind() == Kind::String) {
+            const std::string &s = data->toString();
+            if (key == "length") {
+              val = ctx->createValue(static_cast<double>(utf16Length(s)));
+            } else {
+              size_t idx = static_cast<size_t>(std::stoul(key));
+              size_t len = utf16Length(s);
+              if (idx < len) {
+                val = ctx->createValue(s.substr(idx, 1));
+              } else {
+                val = ctx->createValue(Kind::Undefined);
+              }
+            }
+          } else {
+            val = ctx->createValue(Kind::Undefined);
+          }
         } else {
           /* M4.4h：访问器感知读取（数据属性直接取值；访问器调 getter）。 */
           ConversionResult gv = getPropertyValue(ctx, target, key);
@@ -1974,6 +2001,95 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         stack.pop_back();
         stack.push_back(arr);
         ctx->heap().unpin(arr); /* 已入 VM 栈（根集保护） */
+        break;
+      }
+      case Opcode::RestObjectProps: {
+        /* M5.1e-d 对象 rest 解构：{a, ...rest} = src。
+         * 栈 [src, exclude_arr]（exclude_arr = 已绑定键的字符串数组）。
+         * 弹两值：复制 src 的 own enumerable 字符串属性到槽内目标对象，
+         * 跳过 exclude_arr 中的键（CopyDataProperties 步骤 4b 的排除集合）。
+         * 语义（§13.15.5）：先收集源 own enumerable 键，再移除已被模式
+         * 绑定的键，剩余复制。null/undefined 源 -> TypeError（rest 必须
+         * 可解构对象，与对象展开的跳过不同）。 */
+        if (stack.size() < 2 || instr.arg >= fn.numLocals) {
+          return fail("Error: stack underflow on RestObjectProps");
+        }
+        JSValue *exclude = stack.back();
+        JSValue *src = stack[stack.size() - 2];
+        stack.resize(stack.size() - 2);
+        JSValue *target = stack[instr.arg];
+        if (target == nullptr || !target->isObject()) {
+          return fail("TypeError: object rest target is not an object");
+        }
+        if (src == nullptr || src->kind() == Kind::Undefined ||
+            src->kind() == Kind::Null) {
+          std::string tn = (src == nullptr || src->kind() == Kind::Undefined)
+                               ? "undefined"
+                               : "null";
+          return fail("TypeError: Cannot destructure " + tn + " as it is null");
+        }
+        ConversionResult boxed = toObject(ctx, src);
+        if (!boxed.ok()) return boxed;
+        JSObject *sobj = boxed.value->object();
+        JSObject *tobj = target->object();
+        /* 排除键集合：exclude_arr 元素（字符串）收集为集合。 */
+        std::unordered_set<std::string> excluded;
+        if (exclude != nullptr && exclude->isObject() &&
+            exclude->object()->isArray()) {
+          JSObject *ea = exclude->object();
+          for (size_t i = 0; i < ea->length(); ++i) {
+            JSValue *k = ea->getElement(i);
+            if (k != nullptr && k->kind() == Kind::String) {
+              excluded.insert(k->toString());
+            }
+          }
+        }
+        /* 收集源 own enumerable 键（同 CopyObjectProps：数组整数索引 +
+         * String 包装虚拟索引 + propertyOrder 过滤 enumerable）。 */
+        std::vector<std::string> keys;
+        for (size_t i = 0; i < sobj->length(); ++i) {
+          if (sobj->isArray() && sobj->hasElement(i)) keys.push_back(std::to_string(i));
+        }
+        if (sobj->kind() == ObjectKind::String) {
+          JSValue *data = sobj->wrapperData();
+          if (data != nullptr && data->kind() == Kind::String) {
+            size_t len = utf16Length(data->toString());
+            for (size_t i = 0; i < len; ++i) keys.push_back(std::to_string(i));
+          }
+        }
+        for (const auto &name : sobj->propertyOrder()) {
+          const PropertyDescriptor *d = sobj->getOwnProperty(name);
+          if (d != nullptr && d->enumerable) keys.push_back(name);
+        }
+        for (const std::string &k : keys) {
+          if (excluded.count(k) > 0) continue; /* 已绑定键跳过 */
+          JSValue *v = nullptr;
+          if (sobj->isArray()) {
+            size_t idx = static_cast<size_t>(std::strtoull(k.c_str(), nullptr, 10));
+            v = sobj->getElement(idx);
+          } else {
+            PropertyDescriptor *d = sobj->getOwnProperty(k);
+            if (d != nullptr && d->type == PropertyDescriptor::Type::Accessor) {
+              if (d->getter == nullptr || !isCallable(d->getter)) {
+                v = ctx->createValue(Kind::Undefined);
+              } else {
+                ConversionResult r = call(ctx, d->getter, sobj->holder(), nullptr, 0);
+                if (!r.ok()) return r;
+                v = r.value;
+              }
+            } else {
+              v = d != nullptr && d->value != nullptr ? d->value
+                                                      : ctx->createValue(Kind::Undefined);
+            }
+          }
+          bool numeric = !k.empty() &&
+                         k.find_first_not_of("0123456789") == std::string::npos;
+          if (tobj->isArray() && numeric && k.size() <= 18) {
+            tobj->setElement(static_cast<size_t>(std::strtoull(k.c_str(), nullptr, 10)), v);
+          } else {
+            tobj->setProperty(k, v);
+          }
+        }
         break;
       }
       case Opcode::NextKey: {

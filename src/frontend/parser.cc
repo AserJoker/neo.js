@@ -1312,8 +1312,10 @@ bool Parser::convertLiteralToPattern(ASTNode *node) {
     }
     return true;
   }
-  /* 叶子：Identifier 是合法绑定目标；其他（Literal/调用等）非法。 */
-  return node->type == NodeType::Identifier;
+  /* 叶子：Identifier/MemberExpression 是合法绑定目标（成员如 {k: dst.k}，
+   * 含私有字段 dst.#x，M5.1e-d）；其他（Literal/调用等）非法。 */
+  return node->type == NodeType::Identifier ||
+         node->type == NodeType::MemberExpression;
 }
 
 /* 默认值（M5.1a）：target = default（current 指向 =）。产出
@@ -1504,7 +1506,9 @@ ASTNode *Parser::parseObjectPattern(bool as_literal) {
         allocator_->destroy(obj);
         return nullptr;
       }
-      prop->children.push_back(key);
+      /* 简写默认值 { key = default }：key 归 AssignmentPattern 持有
+       * （def->children[0]），prop 只持有 def，避免同一 key 指针被
+       * prop 与 AssignmentPattern 双重释放（M5.1e-d 修复双 free）。 */
       prop->children.push_back(def);
     } else {
       /* 简写 { key } */

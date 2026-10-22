@@ -249,21 +249,44 @@ ASTNode *Parser::parseForStatement() {
   bool in_of_decl = false;
   if (is_decl) {
     /* 探测是否为 for-in/of 的 left 声明：声明关键字后是标识符/模式且
-     * 之后紧跟 in/of（无 = 初始化器）。const 在 for-in/of 中允许无初始化。 */
+     * 之后紧跟 in/of（无 = 初始化器）。const 在 for-in/of 中允许无初始化。
+     * 标识符 left：peek 看 in/of。模式 left（{a}/[k]）：需跳过整个模式
+     * （跟踪 { } / [ ] 嵌套深度）再查 in/of，模式内部可有多层嵌套（M5.1e-d）。 */
     Lexer::State st = lexer_.save();
     lexer_.next(); /* 越过 var/let/const */
-    /* 跳过 left 标识符或模式（简化：标识符或 {/[ 模式） */
-    bool looks_pattern = lexer_.current().kind == TokenKind::Identifier;
-    if (isSymbol(lexer_.current(), "{") || isSymbol(lexer_.current(), "[")) {
-      looks_pattern = true;
-    }
-    if (looks_pattern) {
+    bool in_of_after = false;
+    if (lexer_.current().kind == TokenKind::Identifier) {
       /* left 后紧跟 in/of → for-in/of 的 left 声明（const 允许无初始化）。
        * 注：let x = 1 in obj 中 peek 是 =，此处不命中，走三段式（正确）。 */
       const Token &after = lexer_.peek();
-      in_of_decl = isKeyword(after, "in") || isKeyword(after, "of");
+      in_of_after = isKeyword(after, "in") || isKeyword(after, "of");
+    } else if (isSymbol(lexer_.current(), "{") || isSymbol(lexer_.current(), "[")) {
+      /* 跳过完整模式：跟踪括号嵌套深度到闭合，再查 in/of。
+       * depth 初始 1：开头 { / [ 已计入。 */
+      const char open_c = lexer_.current().text[0];
+      const char close_c = (open_c == '{') ? '}' : ']';
+      int depth = 1;
+      bool closed = false;
+      for (;;) {
+        const Token &t = lexer_.next();
+        if (t.kind == TokenKind::EndOfFile) break;
+        if (isSymbol(t, open_c == '{' ? "{" : "[")) {
+          ++depth;
+        } else if (isSymbol(t, close_c == '}' ? "}" : "]")) {
+          --depth;
+          if (depth == 0) {
+            closed = true;
+            break;
+          }
+        }
+      }
+      if (closed) {
+        const Token &after = lexer_.peek();
+        in_of_after = isKeyword(after, "in") || isKeyword(after, "of");
+      }
     }
     lexer_.restore(st);
+    in_of_decl = in_of_after;
     init = parseVariableDeclaration(/*consume_semicolon=*/false, in_of_decl);
     if (init == nullptr) return nullptr;
   } else if (!isSymbol(current(), ";") && !isKeyword(current(), "in") &&
@@ -277,6 +300,19 @@ ASTNode *Parser::parseForStatement() {
   /* for-in / for-of：left 后跟 in / of */
   if (isKeyword(current(), "in") || isKeyword(current(), "of")) {
     bool is_in = isKeyword(current(), "in");
+    /* 非声明 left 为数组/对象字面量时转为解构模式（M5.1e-d）：
+     * for ({a} of arr) / for ([k] in obj)——字面量由 parseExpression
+     * 产出 ArrayLiteral/ObjectLiteral，需递归转为对应模式。 */
+    if (!is_decl && init != nullptr &&
+        (init->type == NodeType::ArrayLiteral ||
+         init->type == NodeType::ObjectLiteral)) {
+      if (!convertLiteralToPattern(init)) {
+        sink_.emit({Severity::Error, "SYNTAX_ERROR",
+                    "invalid for-in/of left target", init->loc});
+        allocator_->destroy(init);
+        return nullptr;
+      }
+    }
     /* for-in/of 的 left 为声明时不能有初始化器 */
     if (is_decl) {
       for (ASTNode *d : init->children) {
