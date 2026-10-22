@@ -107,6 +107,8 @@ class Compiler {
    * 返回 false 时已设置错误。 */
   bool compileMemberAssign(const ASTNode &node);
   bool compileUnary(const ASTNode &node);
+  /* 更新表达式（M5.1e-b）：++x/x++/--x/x--（§13.4.4，标识符/成员/私有字段）。 */
+  bool compileUpdate(const ASTNode &node);
   bool compileBinary(const ASTNode &node);
   bool compileConditional(const ASTNode &node);
   bool compileAssignment(const ASTNode &node);

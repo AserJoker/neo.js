@@ -1622,9 +1622,7 @@ bool Compiler::compileExpr(const ASTNode &node) {
     case NodeType::ClassExpression:
       /* class 表达式（M5.1d-a）：编译构造器函数，留栈顶。 */
       return compileClass(node, /*is_declaration=*/false);
-    case NodeType::UpdateExpression:
-      fail("not implemented: update expression");
-      return false;
+    case NodeType::UpdateExpression: return compileUpdate(node);
     default:
       fail("not implemented: expression type " +
            std::to_string(static_cast<int>(node.type)));
@@ -2098,6 +2096,139 @@ bool Compiler::compileMemberAssign(const ASTNode &node) {
     builder_.store_prop(prop_name);
   }
   return true;
+}
+
+/* 更新表达式（M5.1e-b）：++x / x++ / --x / x--（§13.4.4）。
+ * 语义：读旧值，ToNumeric 后 ±1（Increment 指令），写回。
+ *   前缀：表达式值 = 新值；
+ *   后缀：表达式值 = 旧值（§13.4.4.2 步骤 6.b：oldValue 先保存）。
+ * 目标：Identifier（局部/捕获/全局——全局暂不支持，见下）、
+ *   MemberExpression（含私有字段 obj.#x++、计算键 obj[k]++）。 */
+bool Compiler::compileUpdate(const ASTNode &node) {
+  if (node.children.empty()) {
+    fail("update expression without operand");
+    return false;
+  }
+  const ASTNode *target = node.children[0];
+  const bool prefix = node.prefix;
+  const uint16_t dec = (node.update_op == UpdateOpKind::Dec) ? 1 : 0;
+
+  if (target->type == NodeType::Identifier) {
+    uint16_t slot = 0, capture = 0;
+    bool is_upvalue = false;
+    if (!resolveAssignTarget(target->name, &slot, &capture, &is_upvalue)) {
+      /* 全局标识符 ++x / x++：需 StoreGlobal（M5.1e 后续）。 */
+      fail("not implemented: update of undeclared global '" + target->name + "'");
+      return false;
+    }
+    /* 读旧值 -> 栈顶。 */
+    if (is_upvalue) {
+      builder_.load_upvalue(capture);
+    } else {
+      builder_.load_var(slot);
+    }
+    uint16_t t_old = 0;
+    if (!prefix) {
+      /* 后缀：旧值暂存到临时槽（表达式结果）。 */
+      t_old = scope_->next_slot++;
+      builder_.store_var(t_old);
+      builder_.load_var(t_old);
+    }
+    builder_.increment(dec); /* 新值 -> 栈顶 */
+    /* 写回（Increment 后新值在栈顶，Store* 弹栈）。 */
+    if (is_upvalue) {
+      builder_.store_upvalue(capture);
+    } else {
+      builder_.store_var(slot);
+    }
+    /* 结果：前缀 = 新值（重新读），后缀 = 旧值（已在临时槽）。 */
+    if (prefix) {
+      if (is_upvalue) {
+        builder_.load_upvalue(capture);
+      } else {
+        builder_.load_var(slot);
+      }
+    } else {
+      builder_.load_var(t_old);
+    }
+    return true;
+  }
+
+  if (target->type == NodeType::MemberExpression) {
+    if (target->member.optional) {
+      fail("not implemented: optional chaining in update");
+      return false;
+    }
+    const bool computed = target->member.computed;
+    const ASTNode *obj_expr = target->children[0];
+    const ASTNode *key_expr = computed ? target->children[1] : nullptr;
+    std::string prop_name;
+    int priv_idx = -1;
+    if (!computed) {
+      const ASTNode *prop = target->children[1];
+      if (prop->type == NodeType::PrivateIdentifier) {
+        priv_idx = resolvePrivateName(prop->name);
+        if (priv_idx < 0) return false;
+      } else if (prop->type != NodeType::Identifier) {
+        fail("invalid member property name");
+        return false;
+      } else {
+        prop_name = prop->name;
+      }
+    }
+
+    /* 对象（和计算键）求值一次，暂存。 */
+    if (!compileExpr(*obj_expr)) return false;
+    uint16_t t_obj = scope_->next_slot++;
+    builder_.store_var(t_obj);
+    uint16_t t_key = 0;
+    if (computed) {
+      if (!compileExpr(*key_expr)) return false;
+      t_key = scope_->next_slot++;
+      builder_.store_var(t_key);
+    }
+    /* 读旧值。 */
+    builder_.load_var(t_obj);
+    if (computed) {
+      builder_.load_var(t_key);
+      builder_.load_elem();
+    } else if (priv_idx >= 0) {
+      builder_.load_private(static_cast<uint16_t>(priv_idx));
+    } else {
+      builder_.load_prop(prop_name);
+    }
+    uint16_t t_old = 0;
+    if (!prefix) {
+      /* 后缀：旧值暂存。 */
+      t_old = scope_->next_slot++;
+      builder_.store_var(t_old);
+      builder_.load_var(t_old);
+    }
+    builder_.increment(dec); /* 新值 -> 栈顶 */
+    /* 写回：压 obj(+key) + 新值。新值先在栈顶，暂存后重排。 */
+    uint16_t t_new = scope_->next_slot++;
+    builder_.store_var(t_new);
+    builder_.load_var(t_obj);
+    if (computed) builder_.load_var(t_key);
+    builder_.load_var(t_new);
+    if (computed) {
+      builder_.store_elem();
+    } else if (priv_idx >= 0) {
+      builder_.store_private(static_cast<uint16_t>(priv_idx));
+    } else {
+      builder_.store_prop(prop_name);
+    }
+    /* 结果：前缀 = 新值；后缀 = 旧值。 */
+    if (prefix) {
+      builder_.load_var(t_new);
+    } else {
+      builder_.load_var(t_old);
+    }
+    return true;
+  }
+
+  fail("invalid update expression operand");
+  return false;
 }
 
 bool Compiler::compileUnary(const ASTNode &node) {

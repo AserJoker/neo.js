@@ -3501,6 +3501,120 @@ TEST(Compiler, M51eATemplateLiteral) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* M5.1e-b 更新表达式 ++/--（§13.4.4）                                         */
+/* -------------------------------------------------------------------------- */
+
+TEST(Compiler, M51eBUpdatePrefix) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* 前缀 ++：表达式值 = 新值 */
+  JSValue *r = JS_Eval(ctx, "var x = 5; var y = ++x; x * 100 + y",
+                       std::strlen("var x = 5; var y = ++x; x * 100 + y"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 606.0); /* x=6, y=6 */
+  JS_FreeValue(ctx, r);
+
+  /* 前缀 -- */
+  r = JS_Eval(ctx, "var x = 5; var y = --x; x * 100 + y",
+              std::strlen("var x = 5; var y = --x; x * 100 + y"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 404.0); /* x=4, y=4 */
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+TEST(Compiler, M51eBUpdatePostfix) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* 后缀 ++：表达式值 = 旧值 */
+  JSValue *r = JS_Eval(ctx, "var x = 5; var y = x++; x * 100 + y",
+                       std::strlen("var x = 5; var y = x++; x * 100 + y"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 605.0); /* x=6, y=5 */
+  JS_FreeValue(ctx, r);
+
+  /* 后缀 -- */
+  r = JS_Eval(ctx, "var x = 5; var y = x--; x * 100 + y",
+              std::strlen("var x = 5; var y = x--; x * 100 + y"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 405.0); /* x=4, y=5 */
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+TEST(Compiler, M51eBUpdateMember) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* 成员属性 ++（前缀） */
+  JSValue *r = JS_Eval(ctx, "var o = {n: 5}; var y = ++o.n; o.n * 100 + y",
+                       std::strlen("var o = {n: 5}; var y = ++o.n; o.n * 100 + y"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 606.0); /* o.n=6, y=6 */
+  JS_FreeValue(ctx, r);
+
+  /* 成员属性 ++（后缀） */
+  r = JS_Eval(ctx, "var o = {n: 5}; var y = o.n++; o.n * 100 + y",
+              std::strlen("var o = {n: 5}; var y = o.n++; o.n * 100 + y"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 605.0); /* o.n=6, y=5 */
+  JS_FreeValue(ctx, r);
+
+  /* 计算键成员 -- */
+  r = JS_Eval(ctx, "var k = 'n'; var o = {n: 5}; var y = o[k]--; o.n * 100 + y",
+              std::strlen("var k = 'n'; var o = {n: 5}; var y = o[k]--; o.n * 100 + y"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 405.0); /* o.n=4, y=5 */
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+TEST(Compiler, M51eBUpdatePrivate) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* 私有字段 ++/-- */
+  JSValue *r = JS_Eval(
+      ctx,
+      "class C { #n = 5; inc() { return ++this.#n; } dec() { return this.#n--; } "
+      "get() { return this.#n; } } "
+      "var c = new C(); var a = c.inc(); var b = c.dec(); "
+      "(a * 10000 + b * 100 + c.get())",
+      std::strlen(
+          "class C { #n = 5; inc() { return ++this.#n; } dec() { return this.#n--; } "
+          "get() { return this.#n; } } "
+          "var c = new C(); var a = c.inc(); var b = c.dec(); "
+          "(a * 10000 + b * 100 + c.get())"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  /* inc: ++#n -> 6 (a=6, #n=6)；dec: #n-- -> 6 (b=6, #n=5)；get: 5 */
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 60605.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* -------------------------------------------------------------------------- */
 /* 14. M3.0 VM 对象指令（NewObject/NewArray/LoadProp/StoreProp/LoadElem/      */
 /*     StoreElem）                                                            */
 /* -------------------------------------------------------------------------- */

@@ -151,6 +151,7 @@ enum class Opcode : uint8_t {
   BitNot,          /* 一元 ~：x -> ~x（§13.5.5，ToNumeric 后按位非） */
   DeleteProp,      /* delete obj.prop：obj -> bool：DeleteProp {key_index}（M5.1e delete） */
   DeleteElem,      /* delete obj[expr]：obj, key -> bool（M5.1e delete 计算键） */
+  Increment,       /* 一元 ++/--：x -> x±1（§13.4.4，ToNumeric 后 ±1n/±1，arg=0 ++ / arg=1 --） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -318,6 +319,8 @@ class BytecodeBuilder {
     push_op(Opcode::DeleteProp, add_constant(key));
   }
   void delete_elem() { push_op(Opcode::DeleteElem); }
+  /* M5.1e-b：++/--（arg=0 增 1，arg=1 减 1）。 */
+  void increment(uint16_t dec = 0) { push_op(Opcode::Increment, dec); }
 
   /* 注册捕获变量（去重），返回捕获下标。 */
   uint16_t add_capture(uint16_t depth, const std::string &name) {

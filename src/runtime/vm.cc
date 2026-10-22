@@ -441,6 +441,24 @@ ConversionResult unaryBitNot(JSContext *ctx, JSValue *a) {
   return ok(ctx->createValue(int64_t(~x)));
 }
 
+/* 一元 ++/--（§13.4.4）：ToNumeric 后 ±1。
+ * BigInt -> ±1n（任意精度）；Number -> IEEE +1/-1。 */
+ConversionResult unaryIncrement(JSContext *ctx, JSValue *a, bool dec) {
+  ConversionResult na = toNumeric(ctx, a);
+  if (!na.ok()) return na;
+  JSValue *va = na.value;
+  if (va->kind() == Kind::BigInt) {
+    bool neg = va->bigIntNegative();
+    std::string digits = va->bigIntDigits();
+    bool outNeg = false;
+    bigintAddSigned(neg, digits, dec, "1", outNeg);
+    if (digits == "0") outNeg = false;
+    return ok(ctx->createValue(JSValue(outNeg, digits)));
+  }
+  double d = va->toNumber();
+  return ok(ctx->createValue(dec ? d - 1.0 : d + 1.0));
+}
+
 /* 比较指令分发：Eq -> abstractEquals；StrictEq -> strictEquals；
  * Lt -> isLessThan；Le/Gt/Ge 由 IsLessThan 组合；Ne/StrictNe 取反。
  * 返回 Boolean 值。 */
@@ -1872,6 +1890,17 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         }
         stack.resize(stack.size() - 2);
         stack.push_back(ctx->createValue(deleted));
+        break;
+      }
+      case Opcode::Increment: {
+        /* M5.1e-b：一元 ++/--（§13.4.4）。arg=0 增 1，arg=1 减 1。
+         * ToNumeric 后 ±1（BigInt ±1n，Number ±1）。 */
+        if (stack.empty()) return fail("Error: stack underflow on Increment");
+        JSValue *a = stack.back();
+        ConversionResult r = unaryIncrement(ctx, a, instr.arg != 0);
+        if (!r.ok()) return r;
+        stack.pop_back();
+        stack.push_back(r.value);
         break;
       }
       case Opcode::LoadUpvalue: {
