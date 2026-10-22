@@ -421,6 +421,7 @@ M0 骨架 ─▶ M1 前端流水线 ─▶ M2 解释器核心 ─▶ M3 对象�
 - M5.1e-c for-in 编译 + label/break/continue 标签跳转
 - M5.1e-d 解构/循环 left 补齐（对象 rest、解构计算键、for-in/of 解构 left、class 计算字段键；修复 `{key = default}` 双 free 崩溃与默认值非 undefined 值丢失）
 - M5.1e-e 可选链编译（`?.`/`?.[`/`?.()` 短路；`delete a?.b` 短路返回 true；拦截 `a?.b = 1`/`a?.b++`/`new a?.b()` 语法错误）
+- M5.1e-f throw/try/catch/finally 编译 + VM 异常传播（§14.15/§14.16）：`Throw`/`RethrowPending` 指令、`TryEntry` 异常保护表、`ConversionResult.thrown` 携带 JS throw 值、`tryDispatch` 最内层区间匹配、嵌套 try/catch 内再抛/finally 异常覆盖/`catch{}` 无参数；同时完成 VM 主循环重构为全局静态分发表 `kHandlers`（90 opcode 各独立 handler，消除 Debug 模式巨型 switch-case 爆栈）
 
 **剩余**：
 
