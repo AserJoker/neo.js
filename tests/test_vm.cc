@@ -6776,3 +6776,89 @@ TEST(Compiler, EvalThrowTryCatchFinally) {
   JS_FreeContext(ctx);
   JS_FreeAllocator(a);
 }
+
+TEST(Compiler, EvalStoreGlobal) {
+  /* M5.1e-g：未声明标识符赋值（非严格）-> 隐式全局（globalThis 属性）。
+   * 覆盖：简单赋值/读取、复合赋值、逻辑赋值、++/--、解构赋值、
+   * for-of/for-in 全局 left、函数内全局赋值、链式赋值。 */
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  struct Case {
+    const char *src;
+    double num;   /* 期望数值结果 */
+    bool expect_num;
+    const char *expect_str; /* 期望字符串（kind=JS_STRING） */
+  };
+
+  Case cases[] = {
+      /* 简单全局赋值 + 读取（此前报 not implemented） */
+      {"r = 5; r", 5, true, nullptr},
+      {"r = 5; r + 1", 6, true, nullptr},
+      /* 赋值表达式值 = rhs（链式） */
+      {"a = b = 3; b", 3, true, nullptr},
+      /* 复合赋值 */
+      {"x = 1; x += 2; x", 3, true, nullptr},
+      {"x = 10; x -= 3; x", 7, true, nullptr},
+      {"x = 6; x *= 2; x", 12, true, nullptr},
+      {"x = 6; x /= 2; x", 3, true, nullptr},
+      {"x = 7; x %= 4; x", 3, true, nullptr},
+      {"x = 5; x **= 2; x", 25, true, nullptr},
+      {"x = 1; x <<= 2; x", 4, true, nullptr},
+      {"x = 8; x >>= 1; x", 4, true, nullptr},
+      /* 逻辑赋值 */
+      {"g = null; g ??= 20; g", 20, true, nullptr},
+      {"g = 10; g ??= 20; g", 10, true, nullptr},
+      {"g = 0; g ||= 5; g", 5, true, nullptr},
+      {"g = 3; g ||= 5; g", 3, true, nullptr},
+      {"g = 1; g &&= 7; g", 7, true, nullptr},
+      {"g = 0; g &&= 7; g", 0, true, nullptr},
+      /* 更新表达式 */
+      {"y = 1; y++; y", 2, true, nullptr},
+      {"y = 1; ++y; y", 2, true, nullptr},
+      {"y = 5; y--; y", 4, true, nullptr},
+      {"y = 5; --y; y", 4, true, nullptr},
+      /* 前缀/后缀表达式值 */
+      {"y = 1; z = ++y; z", 2, true, nullptr},
+      {"y = 1; z = y++; z", 1, true, nullptr},
+      /* 函数内全局赋值（非严格隐式全局） */
+      {"function f() { gv = 42; } f(); gv", 42, true, nullptr},
+      /* 解构赋值到未声明标识符 */
+      {"[p, q] = [1, 2]; p + q", 3, true, nullptr},
+      /* for-of 全局 left */
+      {"sum = 0; for (k of [1, 2, 3]) sum += k; sum", 6, true, nullptr},
+      /* for-in 全局 left */
+      {"cnt = 0; for (key in {a: 1, b: 2}) cnt++; cnt", 2, true, nullptr},
+      /* 读取未赋值全局 -> undefined（不抛） */
+      {"typeof nope_global === 'undefined' ? 1 : 0", 1, true, nullptr},
+  };
+
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    JSValue *r = JS_Eval(ctx, cases[i].src, std::strlen(cases[i].src));
+    ASSERT_NE(r, nullptr) << "case " << i << " src=" << cases[i].src;
+    if (cases[i].expect_num) {
+      ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER)
+          << "case " << i << " src=" << cases[i].src << " got: "
+          << JS_ToString(ctx, r);
+      EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), cases[i].num)
+          << "case " << i << " src=" << cases[i].src;
+    } else if (cases[i].expect_str != nullptr && cases[i].expect_str[0] != '#') {
+      EXPECT_EQ(JS_GetKind(ctx, r), JS_STRING)
+          << "case " << i << " src=" << cases[i].src << " got: "
+          << JS_ToString(ctx, r);
+      if (JS_GetKind(ctx, r) == JS_STRING) {
+        EXPECT_EQ(std::string(JS_ToString(ctx, r)), std::string(cases[i].expect_str))
+            << "case " << i << " src=" << cases[i].src;
+      }
+    } else { /* #e：期望未捕获异常 */
+      EXPECT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION)
+          << "case " << i << " src=" << cases[i].src << " got: "
+          << JS_ToString(ctx, r);
+    }
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}

@@ -1157,12 +1157,14 @@ bool Compiler::compileBindTarget(const ASTNode &target, bool is_declaration) {
     } else {
       uint16_t slot = 0, capture = 0;
       bool is_upvalue = false;
+      bool is_global = false;
       if (!resolveAssignTarget(target.name, &slot, &capture, &is_upvalue)) {
-        fail("not implemented: assignment to undeclared global '" +
-             target.name + "'");
-        return false;
+        /* 解构赋值到未声明标识符（M5.1e-g）：非严格隐式全局。 */
+        is_global = true;
       }
-      if (is_upvalue) {
+      if (is_global) {
+        builder_.store_global(target.name); /* 保留绑定值在栈顶 */
+      } else if (is_upvalue) {
         builder_.store_upvalue(capture);
         builder_.load_upvalue(capture); /* 保留绑定值在栈顶 */
       } else {
@@ -1444,15 +1446,18 @@ bool Compiler::compileLoopLeft(const ASTNode *left) {
     return true;
   }
   if (left->type == NodeType::Identifier) {
-    /* 赋值到既有变量（局部/捕获；全局暂不支持 -> 错误）。 */
+    /* 赋值到既有变量（局部/捕获）或隐式全局（M5.1e-g，非严格）。 */
     uint16_t slot = 0;
     uint16_t capture = 0;
     bool is_upvalue = false;
+    bool is_global = false;
     if (!resolveAssignTarget(left->name, &slot, &capture, &is_upvalue)) {
-      fail("assignment to undeclared global in for-in/of is not supported");
-      return false;
+      is_global = true;
     }
-    if (is_upvalue) {
+    if (is_global) {
+      builder_.store_global(left->name); /* 保留新值在栈顶 */
+      builder_.pop();                    /* 循环 left：消费迭代值 */
+    } else if (is_upvalue) {
       builder_.store_upvalue(capture);
     } else {
       builder_.store_var(slot);
@@ -3028,13 +3033,16 @@ bool Compiler::compileUpdate(const ASTNode &node) {
   if (target->type == NodeType::Identifier) {
     uint16_t slot = 0, capture = 0;
     bool is_upvalue = false;
+    bool is_global = false;
     if (!resolveAssignTarget(target->name, &slot, &capture, &is_upvalue)) {
-      /* 全局标识符 ++x / x++：需 StoreGlobal（M5.1e 后续）。 */
-      fail("not implemented: update of undeclared global '" + target->name + "'");
-      return false;
+      /* 全局标识符 ++x / x++：LoadGlobal 读旧值，Increment，StoreGlobal 写回
+      * （§13.4.4，M5.1e-g 隐式全局，非严格）。 */
+      is_global = true;
     }
     /* 读旧值 -> 栈顶。 */
-    if (is_upvalue) {
+    if (is_global) {
+      builder_.load_global(target->name);
+    } else if (is_upvalue) {
       builder_.load_upvalue(capture);
     } else {
       builder_.load_var(slot);
@@ -3048,14 +3056,19 @@ bool Compiler::compileUpdate(const ASTNode &node) {
     }
     builder_.increment(dec); /* 新值 -> 栈顶 */
     /* 写回（Increment 后新值在栈顶，Store* 弹栈）。 */
-    if (is_upvalue) {
+    if (is_global) {
+      builder_.store_global(target->name); /* 保留新值在栈顶（赋值结果） */
+      builder_.pop(); /* 清保留值：结果统一在下方重新装载 */
+    } else if (is_upvalue) {
       builder_.store_upvalue(capture);
     } else {
       builder_.store_var(slot);
     }
     /* 结果：前缀 = 新值（重新读），后缀 = 旧值（已在临时槽）。 */
     if (prefix) {
-      if (is_upvalue) {
+      if (is_global) {
+        builder_.load_global(target->name);
+      } else if (is_upvalue) {
         builder_.load_upvalue(capture);
       } else {
         builder_.load_var(slot);
@@ -3380,9 +3393,11 @@ bool Compiler::compileAssignment(const ASTNode &node) {
   uint16_t slot = 0;
   uint16_t capture = 0;
   bool is_upvalue = false;
+  bool is_global = false;
   if (!resolveAssignTarget(lhs->name, &slot, &capture, &is_upvalue)) {
-    fail("not implemented: assignment to undeclared global '" + lhs->name + "'");
-    return false;
+    /* 未声明标识符赋值（M5.1e-g）：非严格隐式全局 -> 写入 globalThis
+     * 属性（§8.1.1.2.2 PutValue -> SetMutableBinding 隐式全局创建）。 */
+    is_global = true;
   }
 
   /* 逻辑复合赋值（&&= / ||= / ??=）：短路语义（M5.1b）。
@@ -3399,7 +3414,9 @@ bool Compiler::compileAssignment(const ASTNode &node) {
     BcLabel assign_path = builder_.new_label();
     BcLabel done = builder_.new_label();
     /* 读旧值并按赋值条件跳转。 */
-    if (is_upvalue) {
+    if (is_global) {
+      builder_.load_global(lhs->name);
+    } else if (is_upvalue) {
       builder_.load_upvalue(capture);
     } else {
       builder_.load_var(slot);
@@ -3418,7 +3435,9 @@ bool Compiler::compileAssignment(const ASTNode &node) {
         break;
     }
     /* 短路路径：返回旧值（重新读 slot，未写回）。 */
-    if (is_upvalue) {
+    if (is_global) {
+      builder_.load_global(lhs->name);
+    } else if (is_upvalue) {
       builder_.load_upvalue(capture);
     } else {
       builder_.load_var(slot);
@@ -3427,7 +3446,9 @@ bool Compiler::compileAssignment(const ASTNode &node) {
     /* 赋值路径：求 rhs 写回，值 = rhs。 */
     builder_.bind_label(assign_path);
     if (!compileExpr(*rhs)) return false;
-    if (is_upvalue) {
+    if (is_global) {
+      builder_.store_global(lhs->name); /* 保留新值在栈顶（赋值结果） */
+    } else if (is_upvalue) {
       builder_.store_upvalue(capture);
       builder_.load_upvalue(capture);
     } else {
@@ -3450,14 +3471,18 @@ bool Compiler::compileAssignment(const ASTNode &node) {
       fail("not implemented: compound assignment operator");
       return false;
     }
-    if (is_upvalue) {
+    if (is_global) {
+      builder_.load_global(lhs->name); /* 旧值 */
+    } else if (is_upvalue) {
       builder_.load_upvalue(capture); /* 旧值 */
     } else {
       builder_.load_var(slot);
     }
     if (!compileExpr(*rhs)) return false;
     builder_.push_op(op);
-    if (is_upvalue) {
+    if (is_global) {
+      builder_.store_global(lhs->name); /* 保留新值在栈顶（赋值结果） */
+    } else if (is_upvalue) {
       builder_.store_upvalue(capture); /* 存回（弹栈） */
       builder_.load_upvalue(capture);  /* 赋值表达式值 = 新值 */
     } else {
@@ -3469,7 +3494,9 @@ bool Compiler::compileAssignment(const ASTNode &node) {
 
   /* 简单赋值：a = expr。赋值表达式值 = rhs。 */
   if (!compileExpr(*rhs)) return false;
-  if (is_upvalue) {
+  if (is_global) {
+    builder_.store_global(lhs->name); /* 保留新值在栈顶（赋值结果） */
+  } else if (is_upvalue) {
     builder_.store_upvalue(capture); /* 弹栈 */
     builder_.load_upvalue(capture);  /* 保留赋值结果在栈顶 */
   } else {

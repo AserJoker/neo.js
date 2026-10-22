@@ -891,6 +891,34 @@ static ConversionResult op_LoadGlobal(VmFrame &frame) {
   return ok(nullptr);
 }
 
+static ConversionResult op_StoreGlobal(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* 隐式全局赋值（M5.1e-g）：栈顶值 -> 全局对象属性（创建/更新）。
+      * 赋值表达式值 = 新值（保留栈顶）。非严格语义（§8.1.1.2.2 PutValue
+      * 未声明标识符 -> globalThis 属性）。 */
+      if (stack.empty()) {
+        error = fail("Error: stack underflow on StoreGlobal"); break;
+      }
+      if (frame.arg >= fn.constants.size() ||
+          fn.constants[frame.arg].is_number) {
+        error = fail("Error: StoreGlobal requires a string constant"); break;
+      }
+      const std::string &name = fn.constants[frame.arg].str;
+      JSValue *val = stack.back();
+      JSValue *global = frame.ctx->globalObject();
+      ConversionResult sr = setPropertyValue(frame.ctx, global->object(), name, val);
+      if (!sr.ok()) return sr;
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
 static ConversionResult op_Pop(VmFrame &frame) {
   const FunctionBytecode &fn = *frame.fn;
   auto &stack = *frame.stack;
@@ -3353,6 +3381,7 @@ const OpHandler kHandlers[] = {
     op_RestObjectProps,  /* RestObjectProps */
     op_Throw,  /* Throw */
     op_RethrowPending,  /* RethrowPending */
+    op_StoreGlobal,  /* StoreGlobal */
 };
 
 }  // namespace

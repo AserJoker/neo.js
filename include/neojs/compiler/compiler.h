@@ -181,7 +181,8 @@ class Compiler {
    * 返回 true 表示已发射 load 指令。 */
   bool emitLoadIdentifier(const std::string &name);
   /* 赋值目标解析（M2.5）：局部 / 捕获 upvalue / 全局。
-   * 返回 true 表示目标是局部或捕获（slot/capture 已填），false 表示全局。 */
+   * 返回 true 表示目标是局部或捕获（slot/capture 已填），false 表示全局
+   * （M5.1e-g：调用方发射 StoreGlobal，非严格隐式全局赋值）。 */
   bool resolveAssignTarget(const std::string &name, uint16_t *slot,
                            uint16_t *capture, bool *is_upvalue);
 

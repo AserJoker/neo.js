@@ -163,6 +163,9 @@ enum class Opcode : uint8_t {
   /* M5.1e-f 异常处理：throw + finally 重抛（追加末尾，保持 opcode 数值稳定） */
   Throw,           /* 栈顶值作为 JS 异常抛出（§14.15）：Throw（弹栈，异常传播） */
   RethrowPending,  /* finally 末尾：若当前有挂起异常则重新抛出（§14.16.4） */
+
+  /* M5.1e-g 隐式全局赋值（追加末尾，保持 opcode 数值稳定） */
+  StoreGlobal,     /* 栈顶 -> 全局对象属性：StoreGlobal {name_index}（非严格隐式全局） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -279,6 +282,10 @@ class BytecodeBuilder {
   void store_var(uint16_t slot) { push_op(Opcode::StoreVar, slot); }
   void load_global(const std::string &name) {
     push_op(Opcode::LoadGlobal, add_constant(name));
+  }
+  /* M5.1e-g 隐式全局赋值：栈顶值 -> 全局对象属性（未声明标识符，非严格）。 */
+  void store_global(const std::string &name) {
+    push_op(Opcode::StoreGlobal, add_constant(name));
   }
   void pop() { push_op(Opcode::Pop); }
   void dup() { push_op(Opcode::Dup); }
