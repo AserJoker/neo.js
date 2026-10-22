@@ -3257,6 +3257,250 @@ TEST(Compiler, M51dDStaticFieldDefault) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* M5.1e-a 运算符补全：in/instanceof/?? + 一元 +/~/delete + 模板串             */
+/* -------------------------------------------------------------------------- */
+
+/* in 运算符：成员存在性（§7.3.20 HasProperty，含原型链） */
+TEST(Compiler, M51eAInOperator) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "var o = {a: 1}; 'a' in o && !('b' in o)",
+      std::strlen("var o = {a: 1}; 'a' in o && !('b' in o)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN) << JS_ToString(ctx, r);
+  EXPECT_TRUE(JS_ToBoolean(ctx, r));
+  JS_FreeValue(ctx, r);
+
+  /* 原始值 RHS -> TypeError */
+  r = JS_Eval(ctx, "'a' in 5", std::strlen("'a' in 5"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION) << JS_ToString(ctx, r);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* instanceof 运算符：原型链匹配（§7.3.22） */
+TEST(Compiler, M51eAInstanceofOperator) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "class A {} class B extends A {} "
+      "var a = new A(); var b = new B(); "
+      "(a instanceof A) && (b instanceof B) && (b instanceof A) && "
+      "!(a instanceof B)",
+      std::strlen(
+          "class A {} class B extends A {} "
+          "var a = new A(); var b = new B(); "
+          "(a instanceof A) && (b instanceof B) && (b instanceof A) && "
+          "!(a instanceof B)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN) << JS_ToString(ctx, r);
+  EXPECT_TRUE(JS_ToBoolean(ctx, r));
+  JS_FreeValue(ctx, r);
+
+  /* RHS 非可调用 -> TypeError */
+  r = JS_Eval(ctx, "5 instanceof {}", std::strlen("5 instanceof {}"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION) << JS_ToString(ctx, r);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* ?? 空值合并：短路 + 保留 lhs（非 nullish 不求值 rhs） */
+TEST(Compiler, M51eANullishCoalesce) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var x = null; x ?? 5",
+                       std::strlen("var x = null; x ?? 5"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 5.0);
+  JS_FreeValue(ctx, r);
+
+  r = JS_Eval(ctx, "var x = 3; x ?? 5",
+              std::strlen("var x = 3; x ?? 5"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 3.0);
+  JS_FreeValue(ctx, r);
+
+  r = JS_Eval(ctx, "var x = undefined; x ?? 7",
+              std::strlen("var x = undefined; x ?? 7"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 7.0);
+  JS_FreeValue(ctx, r);
+
+  /* 短路：rhs 不求值（0 被 ?? 视为非 nullish） */
+  r = JS_Eval(ctx, "var n = 0; var hit = 0; (n ?? (hit = 1)); hit",
+              std::strlen("var n = 0; var hit = 0; (n ?? (hit = 1)); hit"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 0.0);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 一元 +：ToNumber（§13.5.2） */
+TEST(Compiler, M51eAUnaryPlus) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "+'123'", std::strlen("+'123'"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 123.0);
+  JS_FreeValue(ctx, r);
+
+  r = JS_Eval(ctx, "+true", std::strlen("+true"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 1.0);
+  JS_FreeValue(ctx, r);
+
+  /* +BigInt -> TypeError */
+  r = JS_Eval(ctx, "+1n", std::strlen("+1n"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION) << JS_ToString(ctx, r);
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 一元 ~：按位非（§13.5.5，含 BigInt 任意精度） */
+TEST(Compiler, M51eABitNot) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "~5", std::strlen("~5"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), -6.0);
+  JS_FreeValue(ctx, r);
+
+  r = JS_Eval(ctx, "~0", std::strlen("~0"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << JS_ToString(ctx, r);
+  EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), -1.0);
+  JS_FreeValue(ctx, r);
+
+  /* BigInt：~5n = -6n */
+  r = JS_Eval(ctx, "~5n === -6n", std::strlen("~5n === -6n"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN) << JS_ToString(ctx, r);
+  EXPECT_TRUE(JS_ToBoolean(ctx, r));
+  JS_FreeValue(ctx, r);
+
+  r = JS_Eval(ctx, "~0n === -1n", std::strlen("~0n === -1n"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN) << JS_ToString(ctx, r);
+  EXPECT_TRUE(JS_ToBoolean(ctx, r));
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* delete：属性/计算键删除（非严格：无属性返回 true） */
+TEST(Compiler, M51eADelete) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(
+      ctx,
+      "var o = {a: 1, b: 2}; var r1 = delete o.a; "
+      "var r2 = !('a' in o) && 'b' in o; "
+      "var r3 = delete o['b']; "
+      "r1 && r2 && r3 && !('b' in o)",
+      std::strlen(
+          "var o = {a: 1, b: 2}; var r1 = delete o.a; "
+          "var r2 = !('a' in o) && 'b' in o; "
+          "var r3 = delete o['b']; "
+          "r1 && r2 && r3 && !('b' in o)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN) << JS_ToString(ctx, r);
+  EXPECT_TRUE(JS_ToBoolean(ctx, r));
+  JS_FreeValue(ctx, r);
+
+  /* delete 无属性 -> true（非严格） */
+  r = JS_Eval(ctx, "var o = {}; delete o.nope",
+              std::strlen("var o = {}; delete o.nope"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN) << JS_ToString(ctx, r);
+  EXPECT_TRUE(JS_ToBoolean(ctx, r));
+  JS_FreeValue(ctx, r);
+
+  /* delete 非引用表达式 -> true（不求值） */
+  r = JS_Eval(ctx, "delete (1 + 2)", std::strlen("delete (1 + 2)"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_BOOLEAN) << JS_ToString(ctx, r);
+  EXPECT_TRUE(JS_ToBoolean(ctx, r));
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 模板串：quasi 原样 + 插值 ToString 拼接 */
+TEST(Compiler, M51eATemplateLiteral) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  JSValue *r = JS_Eval(ctx, "var x = 'w'; `a${x}b`",
+                       std::strlen("var x = 'w'; `a${x}b`"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "awb");
+  JS_FreeValue(ctx, r);
+
+  /* 数字插值 ToString */
+  r = JS_Eval(ctx, "var n = 42; `n=${n}`",
+              std::strlen("var n = 42; `n=${n}`"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "n=42");
+  JS_FreeValue(ctx, r);
+
+  /* 无插值 */
+  r = JS_Eval(ctx, "`hello`", std::strlen("`hello`"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "hello");
+  JS_FreeValue(ctx, r);
+
+  /* 多插值 + 表达式 */
+  r = JS_Eval(ctx, "var a = 1; var b = 2; `${a}+${b}=${a+b}`",
+              std::strlen("var a = 1; var b = 2; `${a}+${b}=${a+b}`"));
+  ASSERT_NE(r, nullptr);
+  ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING) << JS_ToString(ctx, r);
+  EXPECT_STREQ(JS_ToString(ctx, r), "1+2=3");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* -------------------------------------------------------------------------- */
 /* 14. M3.0 VM 对象指令（NewObject/NewArray/LoadProp/StoreProp/LoadElem/      */
 /*     StoreElem）                                                            */
 /* -------------------------------------------------------------------------- */

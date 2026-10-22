@@ -142,6 +142,15 @@ enum class Opcode : uint8_t {
 
   /* M5.1d-d 派生类默认构造器：以数组元素为参数调用基类构造器于当前帧 this */
   SuperCallArray,  /* [args_array] -> 基类构造器执行（展开 super(...args)，M5.1d-d） */
+
+  /* M5.1e 运算符补全（追加末尾，保持 opcode 数值稳定） */
+  In,              /* x in y -> bool（in 运算符，§7.3.20 HasProperty） */
+  Instanceof,      /* x instanceof y -> bool（instanceof 运算符，§7.3.22） */
+  ToString,        /* 一元：x -> ToString(x)（§7.1.17，模板串插值） */
+  ToNumber,        /* 一元 +：x -> ToNumber(x)（§7.1.4，BigInt/Symbol -> TypeError） */
+  BitNot,          /* 一元 ~：x -> ~x（§13.5.5，ToNumeric 后按位非） */
+  DeleteProp,      /* delete obj.prop：obj -> bool：DeleteProp {key_index}（M5.1e delete） */
+  DeleteElem,      /* delete obj[expr]：obj, key -> bool（M5.1e delete 计算键） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -298,6 +307,17 @@ class BytecodeBuilder {
   void store_private(uint16_t name_index) { push_op(Opcode::StorePrivate, name_index); }
   void has_private(uint16_t name_index) { push_op(Opcode::HasPrivate, name_index); }
   void init_private(uint16_t name_index) { push_op(Opcode::InitPrivate, name_index); }
+
+  /* M5.1e 运算符补全：in/instanceof/一元转换/delete。 */
+  void in() { push_op(Opcode::In); }
+  void instance_of() { push_op(Opcode::Instanceof); }
+  void to_string() { push_op(Opcode::ToString); }
+  void to_number() { push_op(Opcode::ToNumber); }
+  void bit_not() { push_op(Opcode::BitNot); }
+  void delete_prop(const std::string &key) {
+    push_op(Opcode::DeleteProp, add_constant(key));
+  }
+  void delete_elem() { push_op(Opcode::DeleteElem); }
 
   /* 注册捕获变量（去重），返回捕获下标。 */
   uint16_t add_capture(uint16_t depth, const std::string &name) {

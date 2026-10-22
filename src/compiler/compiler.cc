@@ -1573,6 +1573,7 @@ bool Compiler::compileExpr(const ASTNode &node) {
     case NodeType::Literal: return compileLiteral(node);
     case NodeType::ObjectLiteral: return compileObjectLiteral(node);
     case NodeType::ArrayLiteral: return compileArrayLiteral(node);
+    case NodeType::TemplateLiteral: return compileTemplateLiteral(node);
     case NodeType::Identifier: return compileIdentifier(node);
     case NodeType::ThisExpression: {
       /* M5.1c：this -> LoadThis（当前帧 this）。 */
@@ -1827,6 +1828,44 @@ bool Compiler::compileArrayLiteral(const ASTNode &node) {
   return true;
 }
 
+/* 模板串（M5.1e）：`a${x}b${y}c`——children 为 quasi 与插值交替
+ * （[quasi, expr, quasi, expr, quasi]，首尾必为 quasi）。
+ * 语义（§13.2.8.5 String.raw 的求值 / §12.3.7）：quasi 原样（已解码），
+ * 插值 ToString 后拼接。
+ * 发射：
+ *   [quasi0]
+ *   对每个 (expr, quasi)：[expr] ToString; Add 拼接;
+ *   （首 quasi 为字符串字面量，Add 直接做字符串拼接）
+ * 空 quasi 时压空串（Add 需两个操作数）。 */
+bool Compiler::compileTemplateLiteral(const ASTNode &node) {
+  if (node.children.empty()) {
+    builder_.push_const("");
+    return true;
+  }
+  size_t i = 0;
+  const ASTNode *first = node.children[0];
+  if (first->type == NodeType::Literal && first->literal.is_string) {
+    builder_.push_const(first->literal.str);
+    i = 1;
+  } else {
+    /* 无准值起始（理论上不发生）：压空串占位。 */
+    builder_.push_const("");
+  }
+  /* 每对 (插值 expr, 后续 quasi)：expr ToString 后 Add 拼入累积串，
+   * 再把 quasi 拼入（累积始终在栈顶）。 */
+  for (; i < node.children.size(); i += 2) {
+    if (!compileExpr(*node.children[i])) return false;
+    builder_.to_string();
+    builder_.push_op(Opcode::Add); /* 累积 + 插值串 */
+    const ASTNode *q = (i + 1 < node.children.size()) ? node.children[i + 1] : nullptr;
+    if (q != nullptr && q->type == NodeType::Literal && q->literal.is_string) {
+      builder_.push_const(q->literal.str);
+      builder_.push_op(Opcode::Add); /* 累积 + quasi */
+    }
+  }
+  return true;
+}
+
 /* 成员访问读取（M3.1）：obj.prop -> LoadProp；obj[expr] -> LoadElem。
  * 先编译对象表达式（留栈顶），再编译属性名/计算键，发射读取指令。
  * 可选链 ?. / ?.[ 本阶段不支持（M5 语义）。 */
@@ -2066,7 +2105,46 @@ bool Compiler::compileUnary(const ASTNode &node) {
     fail("unary op without operand");
     return false;
   }
-  if (!compileExpr(*node.children[0])) return false;
+  const ASTNode *operand = node.children[0];
+
+  /* delete 特殊处理（§13.5.1）：只删除属性不读取值；非引用操作数
+   * 不求值直接返回 true（§13.5.1.2 步骤 1）。 */
+  if (node.unop == UnaryOpKind::Delete) {
+    if (operand->type == NodeType::MemberExpression) {
+      if (operand->member.optional) {
+        fail("not implemented: optional chaining in delete");
+        return false;
+      }
+      if (operand->children.size() < 2) {
+        fail("delete member without object");
+        return false;
+      }
+      if (!compileExpr(*operand->children[0])) return false; /* obj */
+      if (!operand->member.computed) {
+        const ASTNode *prop = operand->children[1];
+        if (prop->type == NodeType::PrivateIdentifier) {
+          /* delete obj.#x：SyntaxError（§13.5.1.1 步骤 1；parser 应已拦截）。 */
+          fail("SyntaxError: Private fields can not be deleted");
+          return false;
+        }
+        if (prop->type != NodeType::Identifier) {
+          fail("invalid member property name");
+          return false;
+        }
+        builder_.delete_prop(prop->name); /* obj -> bool */
+        return true;
+      }
+      /* delete obj[expr]：obj; expr -> bool。 */
+      if (!compileExpr(*operand->children[1])) return false;
+      builder_.delete_elem();
+      return true;
+    }
+    /* 非引用（标识符/字面量/调用等）：直接返回 true，不求值。 */
+    builder_.push_op(Opcode::PushTrue);
+    return true;
+  }
+
+  if (!compileExpr(*operand)) return false;
   switch (node.unop) {
     case UnaryOpKind::Neg: builder_.push_op(Opcode::Neg); return true;
     case UnaryOpKind::Not: builder_.push_op(Opcode::Not); return true;
@@ -2077,14 +2155,17 @@ bool Compiler::compileUnary(const ASTNode &node) {
       builder_.push_op(Opcode::PushUndefined);
       return true;
     case UnaryOpKind::Pos:
-      fail("not implemented: unary + (need ToNumber instruction)");
-      return false;
+      /* 一元 +（§13.5.2）：ToNumber。 */
+      builder_.to_number();
+      return true;
     case UnaryOpKind::BitNot:
-      fail("not implemented: unary ~ (need bitwise-not instruction)");
-      return false;
+      /* 一元 ~（§13.5.5）：ToNumeric 后按位非。 */
+      builder_.bit_not();
+      return true;
     case UnaryOpKind::Delete:
+      return true; /* 已在上方处理（不可达） */
     case UnaryOpKind::Await:
-      fail("not implemented: unary delete/await");
+      fail("await is not supported yet (M5.4 async/await)");
       return false;
   }
   return true;
@@ -2151,10 +2232,41 @@ bool Compiler::compileBinary(const ASTNode &node) {
     return true;
   }
 
-  if (node.binop == BinaryOpKind::In || node.binop == BinaryOpKind::Instanceof ||
-      node.binop == BinaryOpKind::Nullish) {
-    fail("not implemented: in/instanceof/?? operator");
-    return false;
+  /* in / instanceof（M5.1e）：编译两操作数，VM 经 inOperator/instanceOf。 */
+  if (node.binop == BinaryOpKind::In) {
+    if (!compileExpr(*lhs)) return false;
+    if (!compileExpr(*rhs)) return false;
+    builder_.in();
+    return true;
+  }
+  if (node.binop == BinaryOpKind::Instanceof) {
+    if (!compileExpr(*lhs)) return false;
+    if (!compileExpr(*rhs)) return false;
+    builder_.instance_of();
+    return true;
+  }
+
+  /* ??（Nullish coalescing，M5.1e）：lhs 非 null/undefined 则取 lhs，
+   * 否则求 rhs（§13.12.3）。发射（同 &&/|| 短路模式）：
+   *   [lhs] store tmp
+   *   load tmp; JumpIfNullish rhs_path   (nullish -> 求 rhs)
+   *   load tmp; Jump done                (非 nullish -> 结果 = lhs)
+   *   rhs_path: [rhs]
+   *   done: */
+  if (node.binop == BinaryOpKind::Nullish) {
+    if (!compileExpr(*lhs)) return false;
+    uint16_t tmp = scope_->next_slot++; /* 临时槽 */
+    builder_.store_var(tmp);
+    BcLabel rhs_path = builder_.new_label();
+    BcLabel done = builder_.new_label();
+    builder_.load_var(tmp);
+    builder_.jump_if_nullish(&rhs_path);
+    builder_.load_var(tmp); /* 非 nullish：结果 = lhs */
+    builder_.jump(&done);
+    builder_.bind_label(rhs_path);
+    if (!compileExpr(*rhs)) return false;
+    builder_.bind_label(done);
+    return true;
   }
 
   Opcode op = Opcode::Nop;

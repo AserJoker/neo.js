@@ -97,6 +97,8 @@ class Compiler {
    * objectKeyToString 把对象属性键（Identifier/String/Number）转常量池字符串。 */
   bool compileObjectLiteral(const ASTNode &node);
   bool compileArrayLiteral(const ASTNode &node);
+  /* 模板串（M5.1e）：quasi 与插值交替，ToString + Add 拼接。 */
+  bool compileTemplateLiteral(const ASTNode &node);
   bool objectKeyToString(const ASTNode *key, std::string *out);
 
   /* 成员访问读取（M3.1）：obj.prop（LoadProp）/ obj[expr]（LoadElem）。 */

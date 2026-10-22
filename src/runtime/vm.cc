@@ -421,6 +421,26 @@ ConversionResult bitwiseOp(JSContext *ctx, JSValue *a, JSValue *b, Opcode op) {
   }
 }
 
+/* 一元按位非（§13.5.5）：~x。ToNumeric 后：
+ * BigInt -> -x - 1n（§6.1.6.2.12 BigInt::bitwiseNOT）；
+ * Number -> ToInt32 后按位取反。 */
+ConversionResult unaryBitNot(JSContext *ctx, JSValue *a) {
+  ConversionResult na = toNumeric(ctx, a);
+  if (!na.ok()) return na;
+  JSValue *va = na.value;
+  if (va->kind() == Kind::BigInt) {
+    /* ~x = -x - 1n：先取 -x（翻转符号），再减 1（加 -1n）。 */
+    bool neg = !va->bigIntNegative();
+    std::string digits = va->bigIntDigits();
+    bool outNeg = false;
+    bigintAddSigned(neg, digits, true, "1", outNeg);
+    if (digits == "0") outNeg = false;
+    return ok(ctx->createValue(JSValue(outNeg, digits)));
+  }
+  int32_t x = toInt32Value(va->toNumber());
+  return ok(ctx->createValue(int64_t(~x)));
+}
+
 /* 比较指令分发：Eq -> abstractEquals；StrictEq -> strictEquals；
  * Lt -> isLessThan；Le/Gt/Ge 由 IsLessThan 组合；Ne/StrictNe 取反。
  * 返回 Boolean 值。 */
@@ -1749,6 +1769,109 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         bool found = receiver->object()->hasPrivateSlot(field);
         stack.pop_back();
         stack.push_back(ctx->createValue(found));
+        break;
+      }
+      case Opcode::In: {
+        /* M5.1e：x in y（§7.3.20 HasProperty）。栈 [x, y] -> bool。 */
+        if (stack.size() < 2) return fail("Error: stack underflow on In");
+        JSValue *y = stack.back();
+        JSValue *x = stack[stack.size() - 2];
+        ConversionResult r = inOperator(ctx, x, y);
+        if (!r.ok()) return r;
+        stack.resize(stack.size() - 2);
+        stack.push_back(r.value);
+        break;
+      }
+      case Opcode::Instanceof: {
+        /* M5.1e：x instanceof y（§7.3.22 InstanceofOperator）。栈 [x, y] -> bool。 */
+        if (stack.size() < 2) return fail("Error: stack underflow on Instanceof");
+        JSValue *y = stack.back();
+        JSValue *x = stack[stack.size() - 2];
+        ConversionResult r = instanceOf(ctx, x, y);
+        if (!r.ok()) return r;
+        stack.resize(stack.size() - 2);
+        stack.push_back(r.value);
+        break;
+      }
+      case Opcode::ToString: {
+        /* M5.1e：一元转换 ToString(x)（模板串插值）。Symbol -> TypeError。 */
+        if (stack.empty()) return fail("Error: stack underflow on ToString");
+        JSValue *a = stack.back();
+        ConversionResult r = toString(ctx, a);
+        if (!r.ok()) return r;
+        stack.pop_back();
+        stack.push_back(r.value);
+        break;
+      }
+      case Opcode::ToNumber: {
+        /* M5.1e：一元 +x（§7.1.4 ToNumber）。BigInt/Symbol -> TypeError。 */
+        if (stack.empty()) return fail("Error: stack underflow on ToNumber");
+        JSValue *a = stack.back();
+        ConversionResult r = toNumber(ctx, a);
+        if (!r.ok()) return r;
+        stack.pop_back();
+        stack.push_back(r.value);
+        break;
+      }
+      case Opcode::BitNot: {
+        /* M5.1e：一元 ~x（§13.5.5）。ToNumeric 后按位非（BigInt 走任意精度）。 */
+        if (stack.empty()) return fail("Error: stack underflow on BitNot");
+        JSValue *a = stack.back();
+        ConversionResult r = unaryBitNot(ctx, a);
+        if (!r.ok()) return r;
+        stack.pop_back();
+        stack.push_back(r.value);
+        break;
+      }
+      case Opcode::DeleteProp: {
+        /* M5.1e：delete obj.prop（§13.5.1.2，v1 非严格简化：own 属性删除成功
+         * 返回 true；非 own / 无该属性返回 true——§13.5.1.4 步骤 3：无属性
+         * 也返回 true；沿原型链的属性返回 true（仅删除 own）。
+         * 栈 [obj] -> bool。 */
+        if (stack.empty()) return fail("Error: stack underflow on DeleteProp");
+        if (instr.arg >= fn.constants.size() ||
+            fn.constants[instr.arg].is_number) {
+          return fail("Error: DeleteProp requires a string constant");
+        }
+        JSValue *obj = stack.back();
+        bool deleted = true;
+        if (obj->isObject()) {
+          const std::string &name = fn.constants[instr.arg].str;
+          JSObject *o = obj->object();
+          if (o->hasOwnProperty(name)) {
+            deleted = o->deleteProperty(name);
+          }
+        }
+        stack.pop_back();
+        stack.push_back(ctx->createValue(deleted));
+        break;
+      }
+      case Opcode::DeleteElem: {
+        /* M5.1e：delete obj[expr]（§13.5.1.3）。栈 [obj, key] -> bool。
+         * key ToPropertyKey 后同上（非 own/无属性返回 true）。 */
+        if (stack.size() < 2) return fail("Error: stack underflow on DeleteElem");
+        JSValue *key = stack.back();
+        JSValue *obj = stack[stack.size() - 2];
+        bool deleted = true;
+        if (obj->isObject()) {
+          ConversionResult pk = toPropertyKey(ctx, key);
+          if (!pk.ok()) return pk;
+          JSObject *o = obj->object();
+          const std::string &name = pk.value->toString();
+          /* 数组整数索引：删元素（长度不变）。 */
+          bool numeric = !name.empty() &&
+                         name.find_first_not_of("0123456789") == std::string::npos;
+          if (o->isArray() && numeric && name.size() <= 18) {
+            size_t idx = static_cast<size_t>(std::strtoull(name.c_str(), nullptr, 10));
+            if (o->hasElement(idx)) {
+              o->deleteElement(idx);
+            }
+          } else if (o->hasOwnProperty(name)) {
+            deleted = o->deleteProperty(name);
+          }
+        }
+        stack.resize(stack.size() - 2);
+        stack.push_back(ctx->createValue(deleted));
         break;
       }
       case Opcode::LoadUpvalue: {
