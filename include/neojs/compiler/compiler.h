@@ -47,6 +47,17 @@ struct CompilerScope {
   std::vector<UpvalueCapture> captures;  /* 本函数捕获列表 */
 };
 
+/* M5.1e-c 跳转上下文（break/continue 目标）：循环/标签语句编译期间压栈。
+ * 循环 push is_loop=true（continue 合法）；标签语句 push is_loop=false
+ * （continue 到非循环标签非法）。无标签 break 找最近循环；有标签
+ * break/continue 沿栈找匹配 label。 */
+struct LoopContext {
+  std::string label;        /* 关联标签名（可空） */
+  BcLabel break_label;      /* break 目标 */
+  BcLabel continue_label;   /* continue 目标（非循环时无效） */
+  bool is_loop = false;     /* 是否循环（continue 合法） */
+};
+
 /* AST → 字节码编译器（M2.4 ① 骨架 + 表达式编译；M2.5 闭包作用域分析）。 */
 class Compiler {
  public:
@@ -77,15 +88,21 @@ class Compiler {
   /* 变量声明语句：为声明器分配局部槽 + 编译初始化。 */
   bool compileVarDecl(const ASTNode &decl);
 
-  /* 语句编译（M2.4 ②）。 */
+  /* 语句编译（M2.4 ②）。循环函数 label 参数（M5.1e-c）：标签语句
+   * 直接下传标签名给循环编译（label: for/while 时 continue label 合法），
+   * 无标签时默认空。 */
   bool compileStmt(const ASTNode &node);
   bool compileBlock(const ASTNode &node);
   bool compileIf(const ASTNode &node);
-  bool compileWhile(const ASTNode &node);
-  bool compileFor(const ASTNode &node);
-  bool compileForOf(const ASTNode &node); /* M4.4f for-of（GetIterator/IteratorStep） */
+  bool compileWhile(const ASTNode &node, const std::string &label = "");
+  bool compileFor(const ASTNode &node, const std::string &label = "");
+  bool compileForOf(const ASTNode &node, const std::string &label = ""); /* M4.4f for-of */
+  bool compileForIn(const ASTNode &node, const std::string &label = ""); /* M5.1e-c for-in */
+  bool compileLabeled(const ASTNode &node); /* M5.1e-c label: stmt（跳转上下文） */
+  bool compileBreak(const ASTNode &node);   /* M5.1e-c break [label] */
+  bool compileContinue(const ASTNode &node); /* M5.1e-c continue [label] */
   bool compileReturn(const ASTNode &node);
-  bool compileDoWhile(const ASTNode &node);
+  bool compileDoWhile(const ASTNode &node, const std::string &label = "");
 
   /* 构造失败结果（error_ 已设置）。 */
   CompileResult failResult();
@@ -192,6 +209,8 @@ class Compiler {
   CompilerScope *scope_ = nullptr;       /* 当前函数作用域帧（M2.5） */
   std::vector<CompilerScope *> scopes_;  /* 作用域帧池（栈，owned） */
   uint32_t iter_slot_seq_ = 0;           /* for-of 迭代器槽唯一名计数（M4.4f 嵌套防复用） */
+  uint32_t forin_slot_seq_ = 0;          /* for-in 键数组槽唯一名计数（M5.1e-c 嵌套防复用） */
+  std::vector<LoopContext> loops_;       /* 跳转上下文栈（M5.1e-c） */
   bool failed_ = false;                  /* 编译失败标记 */
   std::string error_;                    /* 失败信息 */
 

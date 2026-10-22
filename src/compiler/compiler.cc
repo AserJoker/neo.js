@@ -78,6 +78,7 @@ CompileResult Compiler::compile(const AST &ast) {
   for (CompilerScope *s : scopes_) delete s;
   scopes_.clear();
   scope_ = nullptr;
+  loops_.clear(); /* M5.1e-c：顶层程序不在循环/标签内 */
   builder_ = BytecodeBuilder();
 
   /* 顶层作用域帧。 */
@@ -135,6 +136,7 @@ CompileResult Compiler::compileFunction(const ASTNode &fn) {
   for (CompilerScope *s : scopes_) delete s;
   scopes_.clear();
   scope_ = nullptr;
+  loops_.clear(); /* M5.1e-c：单函数编译无外层循环上下文 */
 
   /* 函数名（可空）：fn_has_name 标记 children[0] 是否为函数名。 */
   std::string fn_name;
@@ -333,6 +335,8 @@ bool Compiler::compileChildFunction(const ASTNode &fn, FunctionBytecode *out,
   const std::vector<std::string> *saved_names = current_private_names_;
   const std::vector<const ASTNode *> *saved_inits = current_field_inits_;
   const void *saved_instance = current_instance_fields_;
+  std::vector<LoopContext> saved_loops = std::move(loops_);
+  loops_.clear(); /* M5.1e-c：break/continue 不能跨函数边界 */
   bool saved_ctor = current_is_ctor_;
   bool saved_derived = current_is_derived_;
   bool saved_field_emitted = field_init_emitted_;
@@ -381,6 +385,7 @@ bool Compiler::compileChildFunction(const ASTNode &fn, FunctionBytecode *out,
   current_is_ctor_ = saved_ctor;
   current_is_derived_ = saved_derived;
   field_init_emitted_ = saved_field_emitted;
+  loops_ = std::move(saved_loops);
 
   /* 恢复外层 builder_；子函数字节码交给调用方。
    * 注意：子函数局部槽数（参数 + var）必须写入字节码，否则 VM 栈底
@@ -1308,8 +1313,13 @@ bool Compiler::compileStmt(const ASTNode &node) {
     case NodeType::ForOfStatement:
       return compileForOf(node);
     case NodeType::ForInStatement:
-      fail("not implemented: for-in loop");
-      return false;
+      return compileForIn(node);
+    case NodeType::LabeledStatement:
+      return compileLabeled(node);
+    case NodeType::BreakStatement:
+      return compileBreak(node);
+    case NodeType::ContinueStatement:
+      return compileContinue(node);
     case NodeType::ReturnStatement:
       return compileReturn(node);
     case NodeType::FunctionDeclaration:
@@ -1319,10 +1329,6 @@ bool Compiler::compileStmt(const ASTNode &node) {
     case NodeType::ClassDeclaration:
       /* class 声明（M5.1d-a）：编译构造器函数并挂到类名局部变量。 */
       return compileClass(node, /*is_declaration=*/true);
-    case NodeType::BreakStatement:
-    case NodeType::ContinueStatement:
-      fail("not implemented: break/continue (M2.4 ③ 循环控制)");
-      return false;
     default:
       fail("not implemented: statement type " +
            std::to_string(static_cast<int>(node.type)));
@@ -1364,7 +1370,7 @@ bool Compiler::compileIf(const ASTNode &node) {
   return true;
 }
 
-bool Compiler::compileWhile(const ASTNode &node) {
+bool Compiler::compileWhile(const ASTNode &node, const std::string &label) {
   /* while (cond) body
    * loop_label:
    *   [cond]
@@ -1381,13 +1387,21 @@ bool Compiler::compileWhile(const ASTNode &node) {
   builder_.bind_label(loop_label);
   if (!compileExpr(*node.children[0])) return false;
   builder_.jump_if_false(&end_label);
-  if (!compileStmt(*node.children[1])) return false;
+  LoopContext ctx;
+  ctx.label = label;
+  ctx.break_label = end_label;
+  ctx.continue_label = loop_label;
+  ctx.is_loop = true;
+  loops_.push_back(ctx);
+  bool ok = compileStmt(*node.children[1]);
+  loops_.pop_back();
+  if (!ok) return false;
   builder_.jump(&loop_label);
   builder_.bind_label(end_label);
   return true;
 }
 
-bool Compiler::compileDoWhile(const ASTNode &node) {
+bool Compiler::compileDoWhile(const ASTNode &node, const std::string &label) {
   /* do body while (cond)
    * loop_label:
    *   [body]
@@ -1413,7 +1427,15 @@ bool Compiler::compileDoWhile(const ASTNode &node) {
   BcLabel loop_label = builder_.new_label();
   BcLabel end_label = builder_.new_label();
   builder_.bind_label(loop_label);
-  if (!compileStmt(*node.children[0])) return false;
+  LoopContext ctx;
+  ctx.label = label;
+  ctx.break_label = end_label;
+  ctx.continue_label = loop_label;
+  ctx.is_loop = true;
+  loops_.push_back(ctx);
+  bool ok = compileStmt(*node.children[0]);
+  loops_.pop_back();
+  if (!ok) return false;
   if (!compileExpr(*node.children[1])) return false;
   builder_.jump_if_false(&end_label);
   builder_.jump(&loop_label);
@@ -1421,7 +1443,7 @@ bool Compiler::compileDoWhile(const ASTNode &node) {
   return true;
 }
 
-bool Compiler::compileFor(const ASTNode &node) {
+bool Compiler::compileFor(const ASTNode &node, const std::string &label) {
   /* for (init; cond; update) body
    *   [init]        （可空）
    * loop_label:
@@ -1455,8 +1477,17 @@ bool Compiler::compileFor(const ASTNode &node) {
     if (!compileExpr(*node.children[1])) return false;
     builder_.jump_if_false(&end_label);
   }
-  /* body */
-  if (node.children[3] != nullptr && !compileStmt(*node.children[3])) return false;
+  /* body（continue 跳 update_label） */
+  LoopContext ctx;
+  ctx.label = label;
+  ctx.break_label = end_label;
+  ctx.continue_label = update_label;
+  ctx.is_loop = true;
+  loops_.push_back(ctx);
+  bool body_ok =
+      (node.children[3] == nullptr) || compileStmt(*node.children[3]);
+  loops_.pop_back();
+  if (!body_ok) return false;
   /* update */
   builder_.bind_label(update_label);
   if (node.children[2] != nullptr) {
@@ -1468,7 +1499,7 @@ bool Compiler::compileFor(const ASTNode &node) {
   return true;
 }
 
-bool Compiler::compileForOf(const ASTNode &node) {
+bool Compiler::compileForOf(const ASTNode &node, const std::string &label) {
   /* for (left of right) body  （M4.4f，§14.7.5）
    *   [right]              ; 可迭代对象
    *   GetIterator          ; -> iterator
@@ -1506,6 +1537,7 @@ bool Compiler::compileForOf(const ASTNode &node) {
 
   BcLabel loop_label = builder_.new_label();
   BcLabel end_label = builder_.new_label();
+  BcLabel break_label = builder_.new_label();
   builder_.bind_label(loop_label);
   builder_.load_var(iter_tmp);
   builder_.iterator_step();
@@ -1544,11 +1576,208 @@ bool Compiler::compileForOf(const ASTNode &node) {
     return false;
   }
 
-  if (body != nullptr && !compileStmt(*body)) return false;
+  /* body（break -> break_label，continue -> loop）。break_label 独立于
+   * end_label：结束路径栈顶残留 undefined 需 Pop，break 时栈已平衡。 */
+  LoopContext ctx;
+  ctx.label = label;
+  ctx.break_label = break_label;
+  ctx.continue_label = loop_label;
+  ctx.is_loop = true;
+  loops_.push_back(ctx);
+  bool body_ok = (body == nullptr) || compileStmt(*body);
+  loops_.pop_back();
+  if (!body_ok) return false;
   builder_.jump(&loop_label);
   builder_.bind_label(end_label);
   builder_.pop(); /* 清完成路径残留 value */
+  builder_.bind_label(break_label);
   return true;
+}
+
+bool Compiler::compileForIn(const ASTNode &node, const std::string &label) {
+  /* for (left in right) body  （M5.1e-c，§14.7.4 + §7.3.24）
+   *   [right]
+   *   EnumerateKeys        ; -> 键数组（ToObject + 原型链可枚举字符串键）
+   *   StoreVar keys_tmp    ; 键数组存临时槽
+   * loop_label:
+   *   LoadVar keys_tmp
+   *   NextKey              ; -> 最后一个键（并移除）或 undefined（空）
+   *   Dup
+   *   JumpIfUndefined end  ; 键 undefined -> 结束（undefined 仍留栈顶）
+   *   [left 赋值]          ; 栈顶键 -> 变量/成员（store 消费键）
+   *   [body]
+   *   Jump loop_label
+   * end_label:
+   *   Pop                  ; 清结束路径残留 undefined
+   *
+   * children = [left, right, body]。left 为 VariableDeclaration（Identifier）
+   * 或 Identifier。v1 简化：键按 [[OwnPropertyKeys]] 序 + 原型链逐层，
+   * 不做规范要求的新增/删除即时响应（枚举键在循环开始前快照）。 */
+  if (node.children.size() < 3) {
+    fail("for-in without clauses");
+    return false;
+  }
+  const ASTNode *left = node.children[0];
+  const ASTNode *right = node.children[1];
+  const ASTNode *body = node.children[2];
+
+  /* 枚举对象求值。 */
+  if (!compileExpr(*right)) return false;
+  builder_.enumerate_keys();
+
+  /* 键数组存临时槽（跨循环迭代保活）。名字带唯一计数（嵌套防复用）。 */
+  uint16_t keys_tmp =
+      declareLocal("\x01forin" + std::to_string(forin_slot_seq_++));
+  builder_.store_var(keys_tmp);
+
+  BcLabel loop_label = builder_.new_label();
+  BcLabel end_label = builder_.new_label();
+  BcLabel break_label = builder_.new_label();
+  builder_.bind_label(loop_label);
+  builder_.load_var(keys_tmp);
+  builder_.next_key();
+  builder_.dup();
+  builder_.jump_if_undefined(&end_label); /* 键 undefined -> 结束 */
+
+  /* left 赋值：栈顶是当前枚举键。 */
+  if (left->type == NodeType::VariableDeclaration) {
+    /* for (var k in ...)：声明 k 局部槽，栈顶键直接 StoreVar。 */
+    for (const ASTNode *declarator : left->children) {
+      if (declarator == nullptr ||
+          declarator->type != NodeType::VariableDeclarator ||
+          declarator->children.empty() ||
+          declarator->children[0]->type != NodeType::Identifier) {
+        fail("not implemented: destructuring in for-in");
+        return false;
+      }
+      uint16_t slot = declareLocal(declarator->children[0]->name);
+      builder_.store_var(slot);
+    }
+  } else if (left->type == NodeType::Identifier) {
+    /* for (k in ...)：赋值到既有变量。 */
+    uint16_t slot = 0;
+    uint16_t capture = 0;
+    bool is_upvalue = false;
+    if (!resolveAssignTarget(left->name, &slot, &capture, &is_upvalue)) {
+      fail("not implemented: assignment to undeclared global in for-in");
+      return false;
+    }
+    if (is_upvalue) {
+      builder_.store_upvalue(capture);
+    } else {
+      builder_.store_var(slot);
+    }
+  } else {
+    fail("not implemented: for-in left target (member/destructuring)");
+    return false;
+  }
+
+  /* 循环体（label/continue 上下文：break -> break_label，continue -> loop）。
+   * break_label 独立于 end_label：正常结束路径（键用尽）栈顶残留 undefined
+   * 需 Pop 清栈；break 时栈已平衡，若跳 end_label 会在 Pop 处下溢。 */
+  LoopContext ctx;
+  ctx.label = label;
+  ctx.break_label = break_label;
+  ctx.continue_label = loop_label;
+  ctx.is_loop = true;
+  loops_.push_back(ctx);
+  bool ok = (body == nullptr) || compileStmt(*body);
+  loops_.pop_back();
+  if (!ok) return false;
+
+  builder_.jump(&loop_label);
+  builder_.bind_label(end_label);
+  builder_.pop(); /* 清结束路径残留 undefined */
+  builder_.bind_label(break_label);
+  return true;
+}
+
+bool Compiler::compileLabeled(const ASTNode &node) {
+  /* label: stmt（M5.1e-c，§14.13）。
+   * children[0] = 被标记语句；label 名存 node.name。
+   *
+   * body 是循环语句：标签名下传给循环编译（循环 ctx 记录 label，
+   * is_loop=true），continue label 指向循环的 continue 目标。
+   * body 非循环（块/if 等）：push 标签 ctx（is_loop=false，仅 break
+   * 合法），break label 指向标签语句结尾。 */
+  if (node.children.empty()) {
+    fail("label without statement");
+    return false;
+  }
+  const ASTNode *body = node.children[0];
+  switch (body->type) {
+    case NodeType::WhileStatement: return compileWhile(*body, node.name);
+    case NodeType::DoWhileStatement: return compileDoWhile(*body, node.name);
+    case NodeType::ForStatement: return compileFor(*body, node.name);
+    case NodeType::ForInStatement: return compileForIn(*body, node.name);
+    case NodeType::ForOfStatement: return compileForOf(*body, node.name);
+    default: break;
+  }
+  BcLabel end_label = builder_.new_label();
+
+  LoopContext ctx;
+  ctx.label = node.name;
+  ctx.break_label = end_label;
+  ctx.is_loop = false; /* continue label 无效 */
+  loops_.push_back(ctx);
+  bool ok = compileStmt(*body);
+  loops_.pop_back();
+  if (!ok) return false;
+  builder_.bind_label(end_label);
+  return true;
+}
+
+bool Compiler::compileBreak(const ASTNode &node) {
+  /* break [label]（M5.1e-c，§14.8.1）。
+   * 无标签：跳最近循环/标签的 break_label。
+   * 有标签：沿 loops_ 找匹配 label，跳其 break_label。
+   * 找不到 -> 编译错误（parser 已校验存在性，此处防御）。 */
+  if (loops_.empty()) {
+    fail("illegal break statement");
+    return false;
+  }
+  if (node.name.empty()) {
+    /* 无标签：跳最近上下文（循环或标签）的 break_label。 */
+    builder_.jump(&loops_.back().break_label);
+    return true;
+  }
+  for (auto it = loops_.rbegin(); it != loops_.rend(); ++it) {
+    if (it->label == node.name) {
+      builder_.jump(&it->break_label);
+      return true;
+    }
+  }
+  fail("undefined label '" + node.name + "'");
+  return false;
+}
+
+bool Compiler::compileContinue(const ASTNode &node) {
+  /* continue [label]（M5.1e-c，§14.8.2）。
+   * 无标签：跳最近循环的 continue_label。
+   * 有标签：沿 loops_ 找匹配的循环标签，跳其 continue_label。
+   * 无标签且无循环 -> 非法；有标签但指向非循环 -> 非法（§14.8.2 步骤 2）。 */
+  if (node.name.empty()) {
+    for (auto it = loops_.rbegin(); it != loops_.rend(); ++it) {
+      if (it->is_loop) {
+        builder_.jump(&it->continue_label);
+        return true;
+      }
+    }
+    fail("illegal continue statement");
+    return false;
+  }
+  for (auto it = loops_.rbegin(); it != loops_.rend(); ++it) {
+    if (it->label == node.name) {
+      if (!it->is_loop) {
+        fail("continue to non-loop label '" + node.name + "'");
+        return false;
+      }
+      builder_.jump(&it->continue_label);
+      return true;
+    }
+  }
+  fail("undefined label '" + node.name + "'");
+  return false;
 }
 
 bool Compiler::compileReturn(const ASTNode &node) {

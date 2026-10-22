@@ -3615,6 +3615,141 @@ TEST(Compiler, M51eBUpdatePrivate) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* M5.1e-c for-in 编译 + label/break/continue 标签跳转（§14.7.4 / §14.13）    */
+/* -------------------------------------------------------------------------- */
+
+/* for-in 基础：枚举对象可枚举字符串键（求和 / 拼接 / 计数）。 */
+TEST(Compiler, M51eCForIn) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  struct { const char *src; double num; } ncases[] = {
+      /* 对象键求和：值相加。 */
+      {"var o = {a: 1, b: 2, c: 3}; var s = 0; "
+       "for (var k in o) { s = s + o[k]; } s", 6.0},
+      /* 空对象不迭代。 */
+      {"var s = 0; for (var k in {}) { s = s + 1; } s", 0.0},
+      /* 既有变量赋值（不重声明）。 */
+      {"var o = {x: 10, y: 20}; var k = ''; var s = 0; "
+       "for (k in o) { s = s + o[k]; } s", 30.0},
+      /* 数组索引枚举。 */
+      {"var s = 0; for (var i in [10, 20, 30]) { s = s + 1; } s", 3.0},
+      /* 原型链：子类对象枚举含继承可枚举键。 */
+      {"function P() {} P.prototype.z = 30; "
+       "var o = new P(); o.x = 10; o.y = 20; var s = 0; "
+       "for (var k in o) { s = s + o[k]; } s", 60.0},
+      /* 数组 for-in 键为字符串索引。 */
+      {"var arr = ['a', 'b']; var s = ''; "
+       "for (var k in arr) { s = s + k; } s === '01' ? 1 : 0", 1.0},
+  };
+  for (auto &c : ncases) {
+    JSValue *r = JS_Eval(ctx, c.src, std::strlen(c.src));
+    ASSERT_NE(r, nullptr) << "case src=" << c.src;
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER)
+        << "case src=" << c.src << " got=" << JS_ToString(ctx, r);
+    EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), c.num) << "case src=" << c.src;
+    JS_FreeValue(ctx, r);
+  }
+
+  struct { const char *src; const char *str; } scases[] = {
+      /* 拼接键名。 */
+      {"var o = {a: 1, b: 2}; var s = ''; for (var k in o) s = s + k; s", "ab"},
+  };
+  for (auto &c : scases) {
+    JSValue *r = JS_Eval(ctx, c.src, std::strlen(c.src));
+    ASSERT_NE(r, nullptr) << "case src=" << c.src;
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_STRING)
+        << "case src=" << c.src << " got=" << JS_ToString(ctx, r);
+    EXPECT_STREQ(JS_ToString(ctx, r), c.str) << "case src=" << c.src;
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* break/continue：无标签（while/for/for-in）。 */
+TEST(Compiler, M51eCBreakContinue) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  struct { const char *src; double num; } ncases[] = {
+      /* while break：i<10 但 i==5 提前跳出。 */
+      {"var i = 0; while (i < 10) { i = i + 1; if (i == 5) break; } i", 5.0},
+      /* while continue：跳过偶数。 */
+      {"var i = 0; var s = 0; while (i < 10) { i = i + 1; "
+       "if (i % 2 == 0) continue; s = s + i; } s", 25.0},
+      /* for continue：跳到 update。 */
+      {"var s = 0; for (var i = 0; i < 10; i = i + 1) { "
+       "if (i % 2 == 0) continue; s = s + i; } s", 25.0},
+      /* for break。 */
+      {"var s = 0; for (var i = 0; i < 10; i = i + 1) { "
+       "if (i == 4) break; s = s + i; } s", 6.0},
+      /* for-in break。 */
+      {"var o = {a: 1, b: 2, c: 3}; var s = 0; "
+       "for (var k in o) { if (k == 'b') break; s = s + 1; } s", 1.0},
+      /* for-in continue。 */
+      {"var o = {a: 1, b: 2, c: 3}; var s = 0; "
+       "for (var k in o) { if (k == 'b') continue; s = s + o[k]; } s", 4.0},
+      /* do-while break。 */
+      {"var i = 0; do { i = i + 1; if (i == 3) break; } while (i < 10); i", 3.0},
+      /* 嵌套循环 break 只跳出内层。 */
+      {"var s = 0; for (var i = 0; i < 3; i = i + 1) { "
+       "for (var j = 0; j < 3; j = j + 1) { if (j == 1) break; s = s + 1; } } s", 3.0},
+  };
+  for (auto &c : ncases) {
+    JSValue *r = JS_Eval(ctx, c.src, std::strlen(c.src));
+    ASSERT_NE(r, nullptr) << "case src=" << c.src;
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER)
+        << "case src=" << c.src << " got=" << JS_ToString(ctx, r);
+    EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), c.num) << "case src=" << c.src;
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 标签 break/continue：break label 跳出标签块 / 循环；continue label 继续外层循环。 */
+TEST(Compiler, M51eCLabeledBreakContinue) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  struct { const char *src; double num; } ncases[] = {
+      /* break 标签循环。 */
+      {"var s = 0; outer: for (var i = 0; i < 10; i = i + 1) { "
+       "for (var j = 0; j < 10; j = j + 1) { if (j == 2) break outer; "
+       "s = s + 1; } } s", 2.0},
+      /* continue 标签外层循环。 */
+      {"var s = 0; outer: for (var i = 0; i < 3; i = i + 1) { "
+       "for (var j = 0; j < 3; j = j + 1) { if (j == 1) continue outer; "
+       "s = s + 1; } } s", 3.0},
+      /* break 标签块（非循环标签）。 */
+      {"var x = 0; block: { x = 1; if (x) break block; x = 2; } x", 1.0},
+      /* continue 标签 while 循环。 */
+      {"var i = 0; var s = 0; loop: while (i < 10) { i = i + 1; "
+       "if (i % 2 == 0) continue loop; s = s + i; } s", 25.0},
+      /* break 标签 do-while。 */
+      {"var i = 0; outer: do { i = i + 1; if (i == 4) break outer; } "
+       "while (i < 10); i", 4.0},
+  };
+  for (auto &c : ncases) {
+    JSValue *r = JS_Eval(ctx, c.src, std::strlen(c.src));
+    ASSERT_NE(r, nullptr) << "case src=" << c.src;
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER)
+        << "case src=" << c.src << " got=" << JS_ToString(ctx, r);
+    EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), c.num) << "case src=" << c.src;
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* -------------------------------------------------------------------------- */
 /* 14. M3.0 VM 对象指令（NewObject/NewArray/LoadProp/StoreProp/LoadElem/      */
 /*     StoreElem）                                                            */
 /* -------------------------------------------------------------------------- */
@@ -5622,13 +5757,13 @@ TEST(Compiler, EvalForOf) {
     JS_FreeValue(ctx, r);
   }
 
-  /* 未实现 for-in：编译失败返回 Exception（M4.4f 未实现 ForIn）。 */
+  /* for-in（M5.1e-c）：枚举对象可枚举字符串键。 */
   {
-    JSValue *r = JS_Eval(ctx, "for (var k in {a: 1}) {}",
-                         std::strlen("for (var k in {a: 1}) {}"));
+    JSValue *r = JS_Eval(ctx, "var n = 0; for (var k in {a: 1, b: 2}) { n++; } n",
+                         std::strlen("var n = 0; for (var k in {a: 1, b: 2}) { n++; } n"));
     ASSERT_NE(r, nullptr);
-    EXPECT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION)
-        << "got=" << JS_ToString(ctx, r);
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER) << "got=" << JS_ToString(ctx, r);
+    EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), 2.0);
     JS_FreeValue(ctx, r);
   }
 

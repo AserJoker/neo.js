@@ -135,6 +135,44 @@ ConversionResult setPropertyValue(JSContext *ctx, JSObject *target,
   return ok(value);
 }
 
+/* M5.1e-c for-in 键枚举（§7.3.24 EnumerateObjectProperties v1 简化）：
+ * 收集对象自身 + 沿原型链各层的 own enumerable string-keyed 键。
+ * 去重：子类覆盖原型同名属性时只枚举一次（先访问到的 own 属性胜出，
+ * 键集合去重，后续原型层同名键跳过）。
+ * 顺序：own 整数索引升序 + own 字符串创建序（§9.1.12 [[OwnPropertyKeys]]），
+ * 再沿原型链逐层追加。数组：elements 索引（含整数键）+ 额外字符串键。
+ * 返回字符串键列表。 */
+void enumerateObjectKeys(JSObject *obj, std::vector<std::string> *keys) {
+  std::vector<std::string> seen; /* 已收集键（去重） */
+  auto add_key = [&](const std::string &k) {
+    for (const std::string &s : seen) {
+      if (s == k) return; /* 已存在：跳过 */
+    }
+    seen.push_back(k);
+    keys->push_back(k);
+  };
+  for (JSObject *o = obj; o != nullptr; o = o->prototype()) {
+    if (o->isArray()) {
+      /* 数组元素：整数索引（§10.4.2.4，非空洞）。 */
+      for (size_t i = 0; i < o->length(); ++i) {
+        if (o->hasElement(i)) add_key(std::to_string(i));
+      }
+    } else if (o->kind() == ObjectKind::String) {
+      /* String exotic object（§10.4.3.4）：整数索引为虚拟 own 属性。 */
+      JSValue *data = o->wrapperData();
+      if (data != nullptr && data->kind() == Kind::String) {
+        size_t len = utf16Length(data->toString());
+        for (size_t i = 0; i < len; ++i) add_key(std::to_string(i));
+      }
+    }
+    /* own 字符串键按创建序，过滤 enumerable。 */
+    for (const std::string &name : o->propertyOrder()) {
+      const PropertyDescriptor *d = o->getOwnProperty(name);
+      if (d != nullptr && d->enumerable) add_key(name);
+    }
+  }
+}
+
 /* 有符号十进制大数除法（BigInt / 与 %）：商向零截断，余数符号同被除数。
  * §6.1.6.2.7/§6.1.6.2.8。除零由调用方抛 RangeError（§6.1.6.2.4 步骤 4）。 */
 ConversionResult bigintDivModSigned(JSContext *ctx, bool xNeg,
@@ -927,6 +965,30 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         JSValue *v = ctx->heap().allocGCObject<JSValue>();
         v->setObject(f);
         f->setHolder(v);
+        ctx->heap().pin(v); /* v 未入栈前防误回收（GC 窗口，含 prototype 创建） */
+        /* §20.2.3 步骤 8-10：普通函数创建 prototype 属性（箭头函数除外）。
+         * prototype = 新对象（原型链 Object.prototype），含 constructor
+         * 反向指针。class 构造器 prototype 由编译器 define_prop 显式覆盖
+         * （compiler.cc compileClass 步骤 3），此处不设。 */
+        if (!nf.is_arrow && !nf.is_constructor && !nf.is_method) {
+          JSObject *op = objectProto(ctx) ? objectProto(ctx)->object() : nullptr;
+          JSValue *proto = ctx->createObject(op);
+          ctx->heap().pin(proto);
+          {
+            /* constructor 反向指针：non-enumerable（§20.2.3 步骤 8 的
+             * CreateDataProperty 实为 non-enumerable，规范步骤 9）。 */
+            PropertyDescriptor cd;
+            cd.value = v;
+            cd.enumerable = false;
+            proto->object()->setOwnProperty("constructor", cd);
+          }
+          PropertyDescriptor pd;
+          pd.value = proto;
+          pd.enumerable = false; /* 规范：prototype 属性 non-enumerable */
+          f->setOwnProperty("prototype", pd);
+          ctx->heap().unpin(proto);
+        }
+        ctx->heap().unpin(v);
         ctx->heap().unpin(f);
         stack.push_back(v);
         break;
@@ -1890,6 +1952,53 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         }
         stack.resize(stack.size() - 2);
         stack.push_back(ctx->createValue(deleted));
+        break;
+      }
+      case Opcode::EnumerateKeys: {
+        /* M5.1e-c for-in：栈顶对象 -> 键数组（§7.3.24）。
+         * ToObject 装箱（undefined/null -> TypeError）；收集自身 + 原型链
+         * 可枚举字符串键为新数组（键为字符串值）。 */
+        if (stack.empty()) return fail("Error: stack underflow on EnumerateKeys");
+        ConversionResult boxed = toObject(ctx, stack.back());
+        if (!boxed.ok()) return boxed;
+        JSObject *o = boxed.value->object();
+        std::vector<std::string> keys;
+        enumerateObjectKeys(o, &keys);
+        JSValue *arr = ctx->createArray(keys.size());
+        /* 分配保护（M3.3）：fill 期间 createValue 分配窗口触发 GC 会
+         * 误回收尚未入栈的 arr（悬垂）。pin 到压栈后解除。 */
+        ctx->heap().pin(arr);
+        for (size_t i = 0; i < keys.size(); ++i) {
+          arr->object()->setElement(i, ctx->createValue(keys[i]));
+        }
+        stack.pop_back();
+        stack.push_back(arr);
+        ctx->heap().unpin(arr); /* 已入 VM 栈（根集保护） */
+        break;
+      }
+      case Opcode::NextKey: {
+        /* M5.1e-c for-in：栈顶键数组 -> 弹首键（并移除）或 undefined（空）。
+         * 键数组按 [[OwnPropertyKeys]] 序填充（升序/创建序），故从头部弹。
+         * 键数组为普通 JS 数组：读首元素，前移移除。 */
+        if (stack.empty()) return fail("Error: stack underflow on NextKey");
+        JSValue *arr = stack.back();
+        if (arr->isObject() && arr->object()->isArray()) {
+          JSObject *a = arr->object();
+          size_t n = a->length();
+          JSValue *key = nullptr;
+          if (n > 0) {
+            key = a->getElement(0);
+            for (size_t i = 1; i < n; ++i) {
+              a->setElement(i - 1, a->getElement(i));
+            }
+            a->resizeElements(n - 1);
+          }
+          stack.pop_back();
+          stack.push_back(key != nullptr ? key : ctx->createValue(Kind::Undefined));
+        } else {
+          stack.pop_back();
+          stack.push_back(ctx->createValue(Kind::Undefined));
+        }
         break;
       }
       case Opcode::Increment: {

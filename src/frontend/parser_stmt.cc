@@ -496,8 +496,10 @@ ASTNode *Parser::parseWhileStatement() {
   advance(); /* while / do */
 
   if (is_do) {
-    /* do stmt while (expr) */
+    /* do stmt while (expr)：body 在循环上下文内（break/continue 可指向） */
+    ++loop_depth_;
     ASTNode *body = parseStatement();
+    --loop_depth_;
     if (body == nullptr) {
       allocator_->destroy(stmt);
       return nullptr;

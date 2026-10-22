@@ -152,6 +152,10 @@ enum class Opcode : uint8_t {
   DeleteProp,      /* delete obj.prop：obj -> bool：DeleteProp {key_index}（M5.1e delete） */
   DeleteElem,      /* delete obj[expr]：obj, key -> bool（M5.1e delete 计算键） */
   Increment,       /* 一元 ++/--：x -> x±1（§13.4.4，ToNumeric 后 ±1n/±1，arg=0 ++ / arg=1 --） */
+
+  /* M5.1e-c for-in（§14.7.4，追加末尾，保持 opcode 数值稳定） */
+  EnumerateKeys,   /* 栈顶对象 -> 键数组（ToObject + 沿原型链可枚举字符串键，§7.3.24） */
+  NextKey,         /* 栈顶键数组 -> 弹出数组，压最后一个键（并移除）或 undefined（空） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -321,6 +325,9 @@ class BytecodeBuilder {
   void delete_elem() { push_op(Opcode::DeleteElem); }
   /* M5.1e-b：++/--（arg=0 增 1，arg=1 减 1）。 */
   void increment(uint16_t dec = 0) { push_op(Opcode::Increment, dec); }
+  /* M5.1e-c for-in：枚举键数组 / 取下一个键。 */
+  void enumerate_keys() { push_op(Opcode::EnumerateKeys); }
+  void next_key() { push_op(Opcode::NextKey); }
 
   /* 注册捕获变量（去重），返回捕获下标。 */
   uint16_t add_capture(uint16_t depth, const std::string &name) {

@@ -893,6 +893,30 @@ extern "C" JSValue *JS_Eval(JSContext *ctx, const char *source, size_t source_le
       neojs::JSValue *v = c->heap().allocGCObject<neojs::JSValue>();
       v->setObject(fn);
       fn->setHolder(v);
+      c->heap().pin(v); /* v 未入 global 前防误回收（GC 窗口，含 prototype 创建） */
+      /* §20.2.3 步骤 8-10：顶层函数声明也是普通函数，需 prototype 属性
+       * （箭头函数在函数声明中不存在，此处无需判断）。prototype = 新对象
+       * （原型链 Object.prototype），含 constructor 反向指针。 */
+      {
+        neojs::JSObject *op = neojs::objectProto(c)
+                                  ? neojs::objectProto(c)->object()
+                                  : nullptr;
+        neojs::JSValue *proto = c->createObject(op);
+        c->heap().pin(proto);
+        {
+          /* constructor 反向指针：non-enumerable（§20.2.3 步骤 9）。 */
+          neojs::PropertyDescriptor cd;
+          cd.value = v;
+          cd.enumerable = false;
+          proto->object()->setOwnProperty("constructor", cd);
+        }
+        neojs::PropertyDescriptor pd;
+        pd.value = proto;
+        pd.enumerable = false; /* 规范：prototype 属性 non-enumerable */
+        fn->setOwnProperty("prototype", pd);
+        c->heap().unpin(proto);
+      }
+      c->heap().unpin(v);
       c->heap().unpin(fn);
       /* 挂到全局对象（函数名属性）。 */
       if (!fn_name.empty()) {

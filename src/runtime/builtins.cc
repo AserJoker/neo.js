@@ -79,6 +79,16 @@ JSValue *makeBuiltin(JSContext *ctx, JSBuiltinFn fn, ThisMode mode) {
   return v;
 }
 
+/* 内置方法/属性注册（规范语义）：方法挂到 prototype/构造器时 enumerable=false
+ * （§19.1.2 等：内置方法属性 [[Enumerable]] 一律为 false）。普通 setProperty
+ * 默认 enumerable=true（对象字面量/赋值语义），此处显式置 false。 */
+void defineMethod(JSObject *obj, const std::string &name, JSValue *value) {
+  PropertyDescriptor d;
+  d.value = value;
+  d.enumerable = false;
+  obj->setOwnProperty(name, d);
+}
+
 /* thisNumberValue / thisStringValue / thisBooleanValue / thisSymbolValue
  * （§20.1.3.3 / §21.1.3.7 / §22.1.3.5 / §20.4.3.4 的抽象运算）：
  *   原始值（primKind）原样返回；目标包装对象（wrapKind）返回内部槽；
@@ -2666,11 +2676,11 @@ void installErrorBuiltin(JSContext *ctx, const char *name, JSBuiltinFn ctor,
    * 标记内部 JSObject），挂到 ctor_v->prototype 后 unpin。 */
   JSValue *proto = ctx->createObject(objectProto(ctx)->object());
   ctx->heap().pin(proto);
-  proto->object()->setProperty("constructor", ctor_v);
+  defineMethod(proto->object(), "constructor", ctor_v);
   proto->object()->setProperty("name", ctx->createValue(std::string(name)));
   proto->object()->setProperty("message", ctx->createValue(std::string("")));
-  proto->object()->setProperty(
-      "toString", makeBuiltin(ctx, errorToString, ThisMode::Strict));
+  defineMethod(proto->object(), "toString",
+               makeBuiltin(ctx, errorToString, ThisMode::Strict));
   ctor_v->object()->setProperty("prototype", proto);
   ctx->heap().unpin(proto);
 
@@ -2706,11 +2716,11 @@ void installWrapperBuiltin(JSContext *ctx, const char *name, ObjectKind kind,
   JSValue *proto = ctx->createObject(objectProto(ctx)->object()); /* 原型链 -> Object.prototype */
   ctx->heap().pin(proto); /* 分配保护（M3.3）：入根前防误回收 */
   ctor_v->object()->setProperty("prototype", proto);
-  proto->object()->setProperty("constructor", ctor_v);
-  proto->object()->setProperty("valueOf",
-                               makeBuiltin(ctx, valueOf, ThisMode::Strict));
-  proto->object()->setProperty("toString",
-                               makeBuiltin(ctx, toStringFn, ThisMode::Strict));
+  defineMethod(proto->object(), "constructor", ctor_v);
+  defineMethod(proto->object(), "valueOf",
+               makeBuiltin(ctx, valueOf, ThisMode::Strict));
+  defineMethod(proto->object(), "toString",
+               makeBuiltin(ctx, toStringFn, ThisMode::Strict));
   ctx->setWrapperProto(kind, proto);
   ctx->heap().unpin(proto);
 }
@@ -2807,19 +2817,19 @@ void installBuiltins(JSContext *ctx) {
   JSValue *object_proto = objectProto(ctx);
   object_fn->setProperty("prototype", object_proto);
   JSObject *op_obj = object_proto->object();
-  op_obj->setProperty("constructor", object);
-  op_obj->setProperty("hasOwnProperty",
-                      makeBuiltin(ctx, objectProtoHasOwnProperty, ThisMode::Strict));
-  op_obj->setProperty("isPrototypeOf",
-                      makeBuiltin(ctx, objectProtoIsPrototypeOf, ThisMode::Strict));
-  op_obj->setProperty("propertyIsEnumerable",
-                      makeBuiltin(ctx, objectProtoPropertyIsEnumerable, ThisMode::Strict));
-  op_obj->setProperty("valueOf",
-                      makeBuiltin(ctx, objectProtoValueOf, ThisMode::Strict));
-  op_obj->setProperty("toString",
-                      makeBuiltin(ctx, objectProtoToString, ThisMode::Strict));
-  op_obj->setProperty("toLocaleString",
-                      makeBuiltin(ctx, objectProtoToLocaleString, ThisMode::Strict));
+  defineMethod(op_obj, "constructor", object);
+  defineMethod(op_obj, "hasOwnProperty",
+               makeBuiltin(ctx, objectProtoHasOwnProperty, ThisMode::Strict));
+  defineMethod(op_obj, "isPrototypeOf",
+               makeBuiltin(ctx, objectProtoIsPrototypeOf, ThisMode::Strict));
+  defineMethod(op_obj, "propertyIsEnumerable",
+               makeBuiltin(ctx, objectProtoPropertyIsEnumerable, ThisMode::Strict));
+  defineMethod(op_obj, "valueOf",
+               makeBuiltin(ctx, objectProtoValueOf, ThisMode::Strict));
+  defineMethod(op_obj, "toString",
+               makeBuiltin(ctx, objectProtoToString, ThisMode::Strict));
+  defineMethod(op_obj, "toLocaleString",
+               makeBuiltin(ctx, objectProtoToLocaleString, ThisMode::Strict));
 
   /* Symbol 构造器（§20.4.1.1）：内置函数 + well-known 静态属性（E4-1）。 */
   JSValue *symbol = makeBuiltin(ctx, symbolConstructor, ThisMode::Strict);
@@ -2840,11 +2850,11 @@ void installBuiltins(JSContext *ctx) {
   JSValue *symbol_proto = ctx->createObject(objectProto(ctx)->object());
   ctx->heap().pin(symbol_proto); /* 分配保护（M3.3）：入根前防误回收 */
   sym_obj->setProperty("prototype", symbol_proto);
-  symbol_proto->object()->setProperty("constructor", symbol);
-  symbol_proto->object()->setProperty(
-      "valueOf", makeBuiltin(ctx, symbolValueOf, ThisMode::Strict));
-  symbol_proto->object()->setProperty(
-      "toString", makeBuiltin(ctx, symbolToStringBuiltin, ThisMode::Strict));
+  defineMethod(symbol_proto->object(), "constructor", symbol);
+  defineMethod(symbol_proto->object(), "valueOf",
+               makeBuiltin(ctx, symbolValueOf, ThisMode::Strict));
+  defineMethod(symbol_proto->object(), "toString",
+               makeBuiltin(ctx, symbolToStringBuiltin, ThisMode::Strict));
   ctx->setWrapperProto(ObjectKind::Symbol, symbol_proto);
   ctx->heap().unpin(symbol_proto);
 
@@ -2859,14 +2869,14 @@ void installBuiltins(JSContext *ctx) {
   JSValue *number_proto = ctx->wrapperProto(ObjectKind::Number);
   if (number_proto != nullptr && number_proto->isObject()) {
     JSObject *np = number_proto->object();
-    np->setProperty("toFixed",
-                    makeBuiltin(ctx, numberToFixedBuiltin, ThisMode::Strict));
-    np->setProperty("toExponential",
-                    makeBuiltin(ctx, numberToExponentialBuiltin, ThisMode::Strict));
-    np->setProperty("toPrecision",
-                    makeBuiltin(ctx, numberToPrecisionBuiltin, ThisMode::Strict));
-    np->setProperty("toLocaleString",
-                    makeBuiltin(ctx, numberToLocaleString, ThisMode::Strict));
+    defineMethod(np, "toFixed",
+                 makeBuiltin(ctx, numberToFixedBuiltin, ThisMode::Strict));
+    defineMethod(np, "toExponential",
+                 makeBuiltin(ctx, numberToExponentialBuiltin, ThisMode::Strict));
+    defineMethod(np, "toPrecision",
+                 makeBuiltin(ctx, numberToPrecisionBuiltin, ThisMode::Strict));
+    defineMethod(np, "toLocaleString",
+                 makeBuiltin(ctx, numberToLocaleString, ThisMode::Strict));
   }
 
   /* Number 静态方法（M4.3g，§21.1.2）：isFinite/isInteger/isNaN/isSafeInteger/
@@ -2874,16 +2884,18 @@ void installBuiltins(JSContext *ctx) {
   JSValue *number_ctor = ctx->globalObject()->object()->getProperty("Number");
   if (number_ctor != nullptr && number_ctor->isObject()) {
     JSObject *nf = number_ctor->object();
-    nf->setProperty("isFinite", makeBuiltin(ctx, numberIsFinite, ThisMode::Strict));
-    nf->setProperty("isInteger",
-                    makeBuiltin(ctx, numberIsInteger, ThisMode::Strict));
-    nf->setProperty("isNaN", makeBuiltin(ctx, numberIsNaN, ThisMode::Strict));
-    nf->setProperty("isSafeInteger",
-                    makeBuiltin(ctx, numberIsSafeInteger, ThisMode::Strict));
-    nf->setProperty("parseFloat",
-                    makeBuiltin(ctx, numberParseFloat, ThisMode::Strict));
-    nf->setProperty("parseInt",
-                    makeBuiltin(ctx, numberParseInt, ThisMode::Strict));
+    defineMethod(nf, "isFinite",
+                 makeBuiltin(ctx, numberIsFinite, ThisMode::Strict));
+    defineMethod(nf, "isInteger",
+                 makeBuiltin(ctx, numberIsInteger, ThisMode::Strict));
+    defineMethod(nf, "isNaN",
+                 makeBuiltin(ctx, numberIsNaN, ThisMode::Strict));
+    defineMethod(nf, "isSafeInteger",
+                 makeBuiltin(ctx, numberIsSafeInteger, ThisMode::Strict));
+    defineMethod(nf, "parseFloat",
+                 makeBuiltin(ctx, numberParseFloat, ThisMode::Strict));
+    defineMethod(nf, "parseInt",
+                 makeBuiltin(ctx, numberParseInt, ThisMode::Strict));
     /* 常量属性（§21.1.2.1/§21.1.2.6-15）。 */
     nf->setProperty("EPSILON", ctx->createValue(2.220446049250313e-16));
     nf->setProperty("MAX_SAFE_INTEGER", ctx->createValue(9007199254740991.0));
@@ -2901,43 +2913,49 @@ void installBuiltins(JSContext *ctx) {
   JSValue *string_proto = ctx->wrapperProto(ObjectKind::String);
   if (string_proto != nullptr && string_proto->isObject()) {
     JSObject *sp = string_proto->object();
-    sp->setProperty("at", makeBuiltin(ctx, stringAt, ThisMode::Strict));
-    sp->setProperty("charAt", makeBuiltin(ctx, stringCharAt, ThisMode::Strict));
-    sp->setProperty("charCodeAt",
-                    makeBuiltin(ctx, stringCharCodeAt, ThisMode::Strict));
-    sp->setProperty("codePointAt",
-                    makeBuiltin(ctx, stringCodePointAt, ThisMode::Strict));
-    sp->setProperty("concat", makeBuiltin(ctx, stringConcat, ThisMode::Strict));
-    sp->setProperty("endsWith",
-                    makeBuiltin(ctx, stringEndsWith, ThisMode::Strict));
-    sp->setProperty("includes",
-                    makeBuiltin(ctx, stringIncludes, ThisMode::Strict));
-    sp->setProperty("indexOf",
-                    makeBuiltin(ctx, stringIndexOf, ThisMode::Strict));
-    sp->setProperty("lastIndexOf",
-                    makeBuiltin(ctx, stringLastIndexOf, ThisMode::Strict));
-    sp->setProperty("padEnd",
-                    makeBuiltin(ctx, stringPadEnd, ThisMode::Strict));
-    sp->setProperty("padStart",
-                    makeBuiltin(ctx, stringPadStart, ThisMode::Strict));
-    sp->setProperty("repeat", makeBuiltin(ctx, stringRepeat, ThisMode::Strict));
-    sp->setProperty("replace",
-                    makeBuiltin(ctx, stringReplace, ThisMode::Strict));
-    sp->setProperty("slice", makeBuiltin(ctx, stringSlice, ThisMode::Strict));
-    sp->setProperty("split", makeBuiltin(ctx, stringSplit, ThisMode::Strict));
-    sp->setProperty("startsWith",
-                    makeBuiltin(ctx, stringStartsWith, ThisMode::Strict));
-    sp->setProperty("substring",
-                    makeBuiltin(ctx, stringSubstring, ThisMode::Strict));
-    sp->setProperty("toLowerCase",
-                    makeBuiltin(ctx, stringToLowerCase, ThisMode::Strict));
-    sp->setProperty("toUpperCase",
-                    makeBuiltin(ctx, stringToUpperCase, ThisMode::Strict));
-    sp->setProperty("trim", makeBuiltin(ctx, stringTrimAll, ThisMode::Strict));
-    sp->setProperty("trimStart",
-                    makeBuiltin(ctx, stringTrimStart, ThisMode::Strict));
-    sp->setProperty("trimEnd",
-                    makeBuiltin(ctx, stringTrimEnd, ThisMode::Strict));
+    defineMethod(sp, "at", makeBuiltin(ctx, stringAt, ThisMode::Strict));
+    defineMethod(sp, "charAt",
+                 makeBuiltin(ctx, stringCharAt, ThisMode::Strict));
+    defineMethod(sp, "charCodeAt",
+                 makeBuiltin(ctx, stringCharCodeAt, ThisMode::Strict));
+    defineMethod(sp, "codePointAt",
+                 makeBuiltin(ctx, stringCodePointAt, ThisMode::Strict));
+    defineMethod(sp, "concat",
+                 makeBuiltin(ctx, stringConcat, ThisMode::Strict));
+    defineMethod(sp, "endsWith",
+                 makeBuiltin(ctx, stringEndsWith, ThisMode::Strict));
+    defineMethod(sp, "includes",
+                 makeBuiltin(ctx, stringIncludes, ThisMode::Strict));
+    defineMethod(sp, "indexOf",
+                 makeBuiltin(ctx, stringIndexOf, ThisMode::Strict));
+    defineMethod(sp, "lastIndexOf",
+                 makeBuiltin(ctx, stringLastIndexOf, ThisMode::Strict));
+    defineMethod(sp, "padEnd",
+                 makeBuiltin(ctx, stringPadEnd, ThisMode::Strict));
+    defineMethod(sp, "padStart",
+                 makeBuiltin(ctx, stringPadStart, ThisMode::Strict));
+    defineMethod(sp, "repeat",
+                 makeBuiltin(ctx, stringRepeat, ThisMode::Strict));
+    defineMethod(sp, "replace",
+                 makeBuiltin(ctx, stringReplace, ThisMode::Strict));
+    defineMethod(sp, "slice",
+                 makeBuiltin(ctx, stringSlice, ThisMode::Strict));
+    defineMethod(sp, "split",
+                 makeBuiltin(ctx, stringSplit, ThisMode::Strict));
+    defineMethod(sp, "startsWith",
+                 makeBuiltin(ctx, stringStartsWith, ThisMode::Strict));
+    defineMethod(sp, "substring",
+                 makeBuiltin(ctx, stringSubstring, ThisMode::Strict));
+    defineMethod(sp, "toLowerCase",
+                 makeBuiltin(ctx, stringToLowerCase, ThisMode::Strict));
+    defineMethod(sp, "toUpperCase",
+                 makeBuiltin(ctx, stringToUpperCase, ThisMode::Strict));
+    defineMethod(sp, "trim",
+                 makeBuiltin(ctx, stringTrimAll, ThisMode::Strict));
+    defineMethod(sp, "trimStart",
+                 makeBuiltin(ctx, stringTrimStart, ThisMode::Strict));
+    defineMethod(sp, "trimEnd",
+                 makeBuiltin(ctx, stringTrimEnd, ThisMode::Strict));
     /* String.prototype[Symbol.iterator]（M4.4f，§22.1.3.32）：字符串迭代。 */
     sp->setSymbolProperty(
         wellKnownSymbol(ctx, WellKnown::Iterator),
@@ -2967,23 +2985,23 @@ void installBuiltins(JSContext *ctx) {
   JSValue *array_proto = arrayProto(ctx);
   ctx->heap().pin(array_proto); /* 分配保护（M3.3）：入根前防误回收 */
   array->object()->setProperty("prototype", array_proto);
-  array_proto->object()->setProperty("constructor", array);
-  array_proto->object()->setProperty("push",
-                                     makeBuiltin(ctx, arrayPush, ThisMode::Strict));
-  array_proto->object()->setProperty("pop",
-                                     makeBuiltin(ctx, arrayPop, ThisMode::Strict));
-  array_proto->object()->setProperty("shift",
-                                     makeBuiltin(ctx, arrayShift, ThisMode::Strict));
-  array_proto->object()->setProperty("unshift",
-                                     makeBuiltin(ctx, arrayUnshift, ThisMode::Strict));
-  array_proto->object()->setProperty("indexOf",
-                                     makeBuiltin(ctx, arrayIndexOf, ThisMode::Strict));
-  array_proto->object()->setProperty("join",
-                                     makeBuiltin(ctx, arrayJoin, ThisMode::Strict));
-  array_proto->object()->setProperty("toString",
-                                     makeBuiltin(ctx, arrayToString, ThisMode::Strict));
-  array_proto->object()->setProperty("reverse",
-                                     makeBuiltin(ctx, arrayReverse, ThisMode::Strict));
+  defineMethod(array_proto->object(), "constructor", array);
+  defineMethod(array_proto->object(), "push",
+               makeBuiltin(ctx, arrayPush, ThisMode::Strict));
+  defineMethod(array_proto->object(), "pop",
+               makeBuiltin(ctx, arrayPop, ThisMode::Strict));
+  defineMethod(array_proto->object(), "shift",
+               makeBuiltin(ctx, arrayShift, ThisMode::Strict));
+  defineMethod(array_proto->object(), "unshift",
+               makeBuiltin(ctx, arrayUnshift, ThisMode::Strict));
+  defineMethod(array_proto->object(), "indexOf",
+               makeBuiltin(ctx, arrayIndexOf, ThisMode::Strict));
+  defineMethod(array_proto->object(), "join",
+               makeBuiltin(ctx, arrayJoin, ThisMode::Strict));
+  defineMethod(array_proto->object(), "toString",
+               makeBuiltin(ctx, arrayToString, ThisMode::Strict));
+  defineMethod(array_proto->object(), "reverse",
+               makeBuiltin(ctx, arrayReverse, ThisMode::Strict));
   /* Array.prototype[Symbol.iterator]（M4.4f，§23.1.3.34）：数组迭代。 */
   array_proto->object()->setSymbolProperty(
       wellKnownSymbol(ctx, WellKnown::Iterator),
@@ -3000,29 +3018,29 @@ void installBuiltins(JSContext *ctx) {
   JSValue *map_proto = mapProto(ctx);
   ctx->heap().pin(map_proto); /* 分配保护（M3.3）：入根前防误回收 */
   map->object()->setProperty("prototype", map_proto);
-  map_proto->object()->setProperty("constructor", map);
-  map_proto->object()->setProperty(
-      "set", makeBuiltin(ctx, mapSet, ThisMode::Strict));
-  map_proto->object()->setProperty(
-      "get", makeBuiltin(ctx, mapGet, ThisMode::Strict));
-  map_proto->object()->setProperty(
-      "has", makeBuiltin(ctx, mapHas, ThisMode::Strict));
-  map_proto->object()->setProperty(
-      "delete", makeBuiltin(ctx, mapDelete, ThisMode::Strict));
-  map_proto->object()->setProperty(
-      "clear", makeBuiltin(ctx, mapClear, ThisMode::Strict));
-  map_proto->object()->setProperty(
-      "size", makeBuiltin(ctx, mapSizeGetter, ThisMode::Strict));
-  map_proto->object()->setProperty(
-      "forEach", makeBuiltin(ctx, mapForEach, ThisMode::Strict));
+  defineMethod(map_proto->object(), "constructor", map);
+  defineMethod(map_proto->object(), "set",
+               makeBuiltin(ctx, mapSet, ThisMode::Strict));
+  defineMethod(map_proto->object(), "get",
+               makeBuiltin(ctx, mapGet, ThisMode::Strict));
+  defineMethod(map_proto->object(), "has",
+               makeBuiltin(ctx, mapHas, ThisMode::Strict));
+  defineMethod(map_proto->object(), "delete",
+               makeBuiltin(ctx, mapDelete, ThisMode::Strict));
+  defineMethod(map_proto->object(), "clear",
+               makeBuiltin(ctx, mapClear, ThisMode::Strict));
+  defineMethod(map_proto->object(), "size",
+               makeBuiltin(ctx, mapSizeGetter, ThisMode::Strict));
+  defineMethod(map_proto->object(), "forEach",
+               makeBuiltin(ctx, mapForEach, ThisMode::Strict));
   /* Map.prototype 迭代器（M4.4f，§24.1.3）：keys/values/entries +
    * [Symbol.iterator]（别名 entries，§24.1.3.11）。 */
-  map_proto->object()->setProperty(
-      "keys", makeBuiltin(ctx, mapKeysBuiltin, ThisMode::Strict));
-  map_proto->object()->setProperty(
-      "values", makeBuiltin(ctx, mapValuesBuiltin, ThisMode::Strict));
-  map_proto->object()->setProperty(
-      "entries", makeBuiltin(ctx, mapEntriesBuiltin, ThisMode::Strict));
+  defineMethod(map_proto->object(), "keys",
+               makeBuiltin(ctx, mapKeysBuiltin, ThisMode::Strict));
+  defineMethod(map_proto->object(), "values",
+               makeBuiltin(ctx, mapValuesBuiltin, ThisMode::Strict));
+  defineMethod(map_proto->object(), "entries",
+               makeBuiltin(ctx, mapEntriesBuiltin, ThisMode::Strict));
   map_proto->object()->setSymbolProperty(
       wellKnownSymbol(ctx, WellKnown::Iterator),
       makeBuiltin(ctx, mapEntriesBuiltin, ThisMode::Strict));
@@ -3038,23 +3056,23 @@ void installBuiltins(JSContext *ctx) {
   JSValue *set_proto = setProto(ctx);
   ctx->heap().pin(set_proto); /* 分配保护（M3.3）：入根前防误回收 */
   set->object()->setProperty("prototype", set_proto);
-  set_proto->object()->setProperty("constructor", set);
-  set_proto->object()->setProperty(
-      "add", makeBuiltin(ctx, setAdd, ThisMode::Strict));
-  set_proto->object()->setProperty(
-      "has", makeBuiltin(ctx, setHas, ThisMode::Strict));
-  set_proto->object()->setProperty(
-      "delete", makeBuiltin(ctx, setDelete, ThisMode::Strict));
-  set_proto->object()->setProperty(
-      "clear", makeBuiltin(ctx, setClear, ThisMode::Strict));
-  set_proto->object()->setProperty(
-      "size", makeBuiltin(ctx, setSizeGetter, ThisMode::Strict));
-  set_proto->object()->setProperty(
-      "forEach", makeBuiltin(ctx, setForEach, ThisMode::Strict));
+  defineMethod(set_proto->object(), "constructor", set);
+  defineMethod(set_proto->object(), "add",
+               makeBuiltin(ctx, setAdd, ThisMode::Strict));
+  defineMethod(set_proto->object(), "has",
+               makeBuiltin(ctx, setHas, ThisMode::Strict));
+  defineMethod(set_proto->object(), "delete",
+               makeBuiltin(ctx, setDelete, ThisMode::Strict));
+  defineMethod(set_proto->object(), "clear",
+               makeBuiltin(ctx, setClear, ThisMode::Strict));
+  defineMethod(set_proto->object(), "size",
+               makeBuiltin(ctx, setSizeGetter, ThisMode::Strict));
+  defineMethod(set_proto->object(), "forEach",
+               makeBuiltin(ctx, setForEach, ThisMode::Strict));
   /* Set.prototype 迭代器（M4.4f，§24.2.3）：values + [Symbol.iterator]
    * （别名 values，§24.2.3.11）。keys/entries 与 values 同义（Set 值即键）。 */
-  set_proto->object()->setProperty(
-      "values", makeBuiltin(ctx, setValuesBuiltin, ThisMode::Strict));
+  defineMethod(set_proto->object(), "values",
+               makeBuiltin(ctx, setValuesBuiltin, ThisMode::Strict));
   set_proto->object()->setSymbolProperty(
       wellKnownSymbol(ctx, WellKnown::Iterator),
       makeBuiltin(ctx, setValuesBuiltin, ThisMode::Strict));
@@ -3075,15 +3093,15 @@ void installBuiltins(JSContext *ctx) {
   JSValue *function_proto = functionProto(ctx);
   ctx->heap().pin(function_proto); /* 分配保护（M3.3）：入根前防误回收 */
   function_fn->setProperty("prototype", function_proto);
-  function_proto->object()->setProperty("constructor", function);
+  defineMethod(function_proto->object(), "constructor", function);
 
   /* Function.prototype.call/apply/bind（M4.2，§20.2.3）。 */
-  function_proto->object()->setProperty(
-      "apply", makeBuiltin(ctx, functionApply, ThisMode::Strict));
-  function_proto->object()->setProperty(
-      "call", makeBuiltin(ctx, functionCall, ThisMode::Strict));
-  function_proto->object()->setProperty(
-      "bind", makeBuiltin(ctx, functionBind, ThisMode::Strict));
+  defineMethod(function_proto->object(), "apply",
+               makeBuiltin(ctx, functionApply, ThisMode::Strict));
+  defineMethod(function_proto->object(), "call",
+               makeBuiltin(ctx, functionCall, ThisMode::Strict));
+  defineMethod(function_proto->object(), "bind",
+               makeBuiltin(ctx, functionBind, ThisMode::Strict));
   ctx->heap().unpin(function_proto); /* 已挂 ctor->prototype 入根（M3.3） */
 
   /* Error 家族（M4.2，§20.5）：Error + TypeError/RangeError/ReferenceError/
