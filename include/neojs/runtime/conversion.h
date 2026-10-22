@@ -36,8 +36,12 @@ struct ConversionResult {
   JSValue *value = nullptr;  /* 转换结果值（内部指针）；失败时 nullptr */
   std::string error;         /* 失败信息（如 "TypeError: ..."）；成功时空 */
   uint32_t tmp_handle = 0;   /* 返回值保护句柄（call() Script 分支用）；0 = 无 */
+  /* M5.1e-f：JS 层 throw 抛出的值（非空 = JS `throw` 语句；内部错误为
+   * nullptr）。catch 需区分：JS throw 绑定原值，内部错误转 Exception 值。 */
+  JSValue *thrown = nullptr;
 
   bool ok() const { return value != nullptr; }
+  bool is_throw() const { return thrown != nullptr; }
 };
 
 /* ToPrimitive hint（ECMA-262 §7.1.1）：

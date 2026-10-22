@@ -103,6 +103,11 @@ class Compiler {
   bool compileContinue(const ASTNode &node); /* M5.1e-c continue [label] */
   bool compileReturn(const ASTNode &node);
   bool compileDoWhile(const ASTNode &node, const std::string &label = "");
+  /* M5.1e-f 异常处理语句（§14.15/§14.16）。
+   * compileThrow：throw expr -> [expr] Throw。
+   * compileTry：编译 try/catch/finally，生成 try 异常保护表条目。 */
+  bool compileThrow(const ASTNode &node);
+  bool compileTry(const ASTNode &node);
 
   /* 构造失败结果（error_ 已设置）。 */
   CompileResult failResult();
@@ -233,6 +238,7 @@ class Compiler {
   std::vector<CompilerScope *> scopes_;  /* 作用域帧池（栈，owned） */
   uint32_t iter_slot_seq_ = 0;           /* for-of 迭代器槽唯一名计数（M4.4f 嵌套防复用） */
   uint32_t forin_slot_seq_ = 0;          /* for-in 键数组槽唯一名计数（M5.1e-c 嵌套防复用） */
+  uint32_t catch_seq_ = 0;               /* catch 解构参数临时槽唯一名计数（M5.1e-f 嵌套防复用） */
   std::vector<LoopContext> loops_;       /* 跳转上下文栈（M5.1e-c） */
   bool failed_ = false;                  /* 编译失败标记 */
   std::string error_;                    /* 失败信息 */

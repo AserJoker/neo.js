@@ -1610,6 +1610,10 @@ bool Compiler::compileStmt(const ASTNode &node) {
       return compileContinue(node);
     case NodeType::ReturnStatement:
       return compileReturn(node);
+    case NodeType::ThrowStatement:
+      return compileThrow(node); /* M5.1e-f */
+    case NodeType::TryStatement:
+      return compileTry(node);   /* M5.1e-f */
     case NodeType::FunctionDeclaration:
       /* 嵌套函数声明（M2.5 闭包）：编译子函数字节码，发射 MakeFunction
        * 实例化闭包并挂到当前函数局部变量。 */
@@ -2018,6 +2022,141 @@ bool Compiler::compileReturn(const ASTNode &node) {
     return false;
   }
   builder_.ret();
+  return true;
+}
+
+/* M5.1e-f：throw expr（§14.15）。
+ *   [expr]
+ *   Throw          -> 抛出（异常传播，经异常表/跨帧） */
+bool Compiler::compileThrow(const ASTNode &node) {
+  if (node.children.empty()) {
+    fail("throw without argument");
+    return false;
+  }
+  if (!compileExpr(*node.children[0])) return false;
+  builder_.throw_value();
+  return true;
+}
+
+/* M5.1e-f：try/catch/finally（§14.16）。
+ * AST 布局：TryStatement children = [block, catch?, finally?]（至少一个 catch/finally）。
+ * CatchClause children = [param?, block]（param 可缺省，ES2019 catch{}）。
+ *
+ * 编译布局（配合 VM 异常表 try_entries）：
+ *   try_start:
+ *     [try block]
+ *     Jump finally_entry      （正常完成：进 finally）
+ *     Jump try_end            （无 finally：跳过 handler）
+ *   catch_start:              （VM 已把异常值绑定 catch_slot）
+ *     [catch block]
+ *     Jump finally_entry
+ *   finally_entry:
+ *     [finally block]
+ *     RethrowPending          （有挂起异常则重新抛出）
+ *   try_end:
+ * 异常表：try [try_start, try_end) -> catch_start / finally_entry / finally_end=try_end。
+ * catch_slot 由 VM 捕获时绑定（catch 参数）。
+ *
+ * 语义：
+ *   - try 内异常：有 catch -> 绑定 catch_slot + 跳 catch_start（异常被消费）；
+ *     无 catch 有 finally -> 挂起异常，跳 finally_entry，finally 后 RethrowPending 重抛。
+ *   - catch 块内异常：继续传播（不在本 try 保护范围内，异常表按当前 pc 查）。
+ *   - finally 正常执行（无 pending）：RethrowPending 直接继续到 try_end。 */
+bool Compiler::compileTry(const ASTNode &node) {
+  if (node.children.size() < 2) {
+    fail("try without catch or finally");
+    return false;
+  }
+  const ASTNode *try_block = node.children[0];
+  const ASTNode *catch_clause = nullptr;
+  const ASTNode *finally_block = nullptr;
+  for (size_t i = 1; i < node.children.size(); ++i) {
+    if (node.children[i]->type == NodeType::CatchClause) {
+      catch_clause = node.children[i];
+    } else {
+      finally_block = node.children[i];
+    }
+  }
+
+  const bool has_catch = catch_clause != nullptr;
+  const bool has_finally = finally_block != nullptr;
+
+  /* 异常表条目（区间在编译后回填位置）。 */
+  TryEntry entry;
+  uint16_t catch_slot = TryEntry::kNoCatchSlot;
+
+  BcLabel finally_entry = builder_.new_label();
+  BcLabel try_end = builder_.new_label();
+  BcLabel catch_start = builder_.new_label();
+
+  /* try 块起点。 */
+  entry.try_start = static_cast<uint32_t>(builder_.position());
+
+  /* try 块。 */
+  if (!compileBlock(*try_block)) return false;
+
+  /* try 块终点（异常检测区间结束）。 */
+  entry.try_end = static_cast<uint32_t>(builder_.position());
+
+  if (has_finally) {
+    builder_.jump(&finally_entry); /* 正常完成 -> finally */
+  } else {
+    builder_.jump(&try_end);       /* 无 finally：跳过 handler */
+  }
+
+  /* catch handler（有 catch 时）。 */
+  if (has_catch) {
+    builder_.bind_label(catch_start);
+    entry.catch_start = static_cast<uint32_t>(builder_.position());
+
+    /* catch 参数绑定：VM 捕获时已把异常值写入 catch_slot。
+     * 标识符参数：槽即绑定（VM 直接写栈底局部槽）。
+     * 解构参数：分配临时槽存异常值，再编译模式绑定。
+     * ES2019 catch{}（无参数）：children 只有块体，不绑定参数。 */
+    if (catch_clause->children.size() >= 2) {
+      const ASTNode *param = catch_clause->children[0];
+      if (param->type == NodeType::Identifier) {
+        catch_slot = declareLocal(param->name);
+        builder_.set_local_name(catch_slot, param->name);
+      } else {
+        catch_slot = declareLocal("\x01" "catch" + std::to_string(catch_seq_++));
+        if (!compilePattern(*param, catch_slot, /*is_declaration=*/true)) {
+          return false;
+        }
+      }
+    }
+    entry.catch_slot = catch_slot;
+
+    /* catch 块（children.back() 为块；有参数时 children=[param, block]）。 */
+    const ASTNode *catch_body = catch_clause->children.back();
+    if (!compileBlock(*catch_body)) return false;
+    entry.catch_end = static_cast<uint32_t>(builder_.position());
+
+    if (has_finally) {
+      builder_.jump(&finally_entry);
+    } else {
+      builder_.jump(&try_end);
+    }
+  }
+
+  /* finally handler。 */
+  if (has_finally) {
+    builder_.bind_label(finally_entry);
+    entry.finally_start = static_cast<uint32_t>(builder_.position());
+
+    if (!compileBlock(*finally_block)) return false;
+
+    /* finally 末尾：若有挂起异常（try 抛且无 catch / catch 再抛）则重抛。 */
+    builder_.rethrow_pending();
+    entry.finally_end = static_cast<uint32_t>(builder_.position());
+  }
+
+  /* 汇聚点。 */
+  builder_.bind_label(try_end);
+  if (has_finally) builder_.bind_label(finally_entry);
+
+  /* 注册异常表。 */
+  builder_.add_try_entry(std::move(entry));
   return true;
 }
 

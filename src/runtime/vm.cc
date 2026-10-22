@@ -36,6 +36,140 @@ namespace neojs {
 
 namespace {
 
+/* fail 定义于本匿名命名空间稍后（构造失败 ConversionResult）；前向声明。 */
+ConversionResult fail(const std::string &error);
+
+/* -------------------------------------------------------------------------- */
+/* 分发表执行模型（M5.1e-f 栈帧瘦身）                                         */
+/*                                                                             */
+/* 背景：原巨型 switch-case 中 100+ 个 case 的局部变量在 Debug 模式下各占     */
+/* 独立栈槽（编译器不复用），导致 runBytecode 单帧 19KB，递归 48 层即物理     */
+/* 爆栈（远低于 maxCallDepth 默认 64）。                                      */
+/*                                                                             */
+/* 方案：每个 opcode 一个独立 handler 函数（独立小栈帧），主循环经全局静态    */
+/* 分发表 kHandlers 按下标（Opcode 枚举值）查表调用。runBytecode 帧只剩       */
+/* 循环控制变量，递归深度恢复到基线水平。                                     */
+/*                                                                             */
+/* handler 语义（统一签名 OpHandler = ConversionResult (*)(VmFrame&)）：      */
+/*   - 成功：return ok(nullptr)。ok(nullptr) 的 value==nullptr 但 error 空、  */
+/*     thrown==nullptr，主循环据此判定非失败（与 switch 尾部的错误检查一致）。*/
+/*   - 错误：return fail(msg)（内部错误字符串）或 return 携带 thrown 的       */
+/*     ConversionResult（JS throw 值）；主循环统一 tryDispatch 拦截/传播。    */
+/*   - Ret：设 f.pc = f.fn.code.size() 使主循环退出（等价原 return ok）。     */
+/*   - Jump/JumpIf*：改 f.pc 后 return ok(nullptr)。                          */
+/*                                                                             */
+/* 注意：handler 内不抛 C++ 异常，不分配根集外的裸指针；操作数保持栈上        */
+/* （GC 根集保护），与 switch 版本语义一致。                                  */
+/* -------------------------------------------------------------------------- */
+
+/* 帧级执行状态：handler 共享的帧上下文（引用语义，直接改调用方状态）。 */
+struct VmFrame {
+  JSContext *ctx = nullptr;
+  const FunctionBytecode *fn = nullptr;
+  JSValue *thisVal = nullptr;
+  JSValue *const *args = nullptr;
+  size_t argc = 0;
+  JSEnvironment *env = nullptr;
+  JSFunction *self = nullptr;
+  std::vector<JSValue *> *stack = nullptr; /* 操作数栈（含局部槽） */
+  size_t *pc = nullptr;                    /* 指令指针 */
+  JSValue **frame_this = nullptr;          /* 当前帧 this（SuperCall 可更新） */
+  uint16_t arg = 0;                        /* 当前指令立即数 */
+  Opcode op = Opcode::Nop;                 /* 当前指令 opcode（共享 handler 区分用） */
+  /* M5.1e-f：finally 挂起异常（帧级状态，§14.16.4）。 */
+  ConversionResult pending;
+  bool has_pending = false;
+  uint32_t pending_handle = 0;
+  bool done = false; /* Ret 执行后置位：主循环应立即结束本帧 */
+
+  /* 便捷访问。 */
+  const std::vector<Instruction> &code() const { return fn->code; }
+  JSValue *&stack_at(size_t i) { return (*stack)[i]; }
+};
+
+/* handler 函数类型。 */
+using OpHandler = ConversionResult (*)(VmFrame &f);
+
+/* M5.1e-f：异常表拦截（§14.16）。
+ * 异常点 fault=pc-1 命中 try/catch 区间时：恢复栈 + 绑定 catch 槽 +
+ * 跳 handler，返回 true；未命中返回 false（传播）。
+ *   stack        操作数栈（恢复栈深度用 + catch 槽写入）
+ *   err          挂起/传播的异常（JS throw 值或内部错误字符串）
+ *   new_pc       输出：handler 位置
+ *   pending/has_pending/pending_handle  finally 挂起异常状态（帧级）
+ *   env          当前函数环境（catch 槽同步写环境，与 StoreVar 一致） */
+bool tryDispatch(JSContext *ctx, const FunctionBytecode &fn, size_t pc,
+                 std::vector<JSValue *> &stack, const ConversionResult &err,
+                 size_t *new_pc, ConversionResult *pending,
+                 bool *has_pending, uint32_t *pending_handle,
+                 JSEnvironment *env) {
+  if (fn.try_entries.empty()) return false;
+  const size_t fault = pc - 1; /* 异常点 = 当前指令 */
+
+  /* 选择覆盖 fault 的最内层 try/catch 区间（最窄区间优先）。
+   * 嵌套 try 编译顺序：外层先添加 entry、内层后添加（vector 后部），
+   * 但外层 try 的 try_end 覆盖整个内层区间；此处遍历选出区间最窄者，
+   * 即最内层的保护。catch 区间内再抛 -> 跳过本 entry（传播给外层）。 */
+  const TryEntry *best = nullptr;
+  uint32_t best_span = 0xFFFFFFFFu;
+  for (const TryEntry &e : fn.try_entries) {
+    const bool in_try = fault >= e.try_start && fault < e.try_end;
+    const bool in_catch =
+        e.catch_start != TryEntry::kNoHandler &&
+        fault >= e.catch_start && fault < e.catch_end;
+    if (!in_try && !in_catch) continue;
+    /* catch 块内抛出的异常：本 entry 不拦截（其 catch 已消费过），继续传播。 */
+    if (in_catch) continue;
+    const uint32_t span = e.try_end - e.try_start;
+    if (span < best_span) {
+      best_span = span;
+      best = &e;
+    }
+  }
+  if (best == nullptr) return false;
+  const TryEntry &e = *best;
+
+  /* 恢复栈到局部槽区（丢弃表达式求值栈）。 */
+    stack.resize(fn.numLocals);
+
+    if (e.catch_start != TryEntry::kNoHandler) {
+      /* try 区间 + 有 catch：绑定 catch 槽，消费异常。 */
+      JSValue *exval = err.thrown;
+      if (exval == nullptr) {
+        /* 内部错误 -> Exception 值（含错误信息，§14.16.3 步骤 5-7）。 */
+        exval = ctx->createValue(Kind::Exception);
+        exval->setErrorInfo(err.error);
+      }
+      if (e.catch_slot != TryEntry::kNoCatchSlot &&
+          e.catch_slot < fn.numLocals) {
+        stack[e.catch_slot] = exval;
+        if (env != nullptr && e.catch_slot < fn.locals.size() &&
+            !fn.locals[e.catch_slot].empty()) {
+          env->setBinding(fn.locals[e.catch_slot], exval);
+        }
+      }
+      *new_pc = e.catch_start;
+      return true;
+    }
+
+    /* 有 finally：挂起异常（try 无 catch 或 catch 再抛），跳 finally。
+     * finally 执行后由 RethrowPending 重抛。 */
+    if (e.finally_start != TryEntry::kNoHandler) {
+      *pending = err;
+      *has_pending = true;
+      /* 挂起异常值（JS throw）用临时句柄保护（根集），RethrowPending 释放。
+       * 内部错误（thrown==nullptr）是字符串，无需句柄。 */
+      if (err.thrown != nullptr && *pending_handle == 0) {
+        *pending_handle = ctx->handles().alloc(err.thrown);
+      }
+      *new_pc = e.finally_start;
+      return true;
+    }
+
+  /* try 区间无 catch 无 finally：不可能（parser 保证至少一个）。 */
+  return false;
+}
+
 /* runBytecode 栈根集 RAII 守卫：构造时入栈，析构时弹出。
  * 确保任何返回路径（含错误/Ret）都不残留指向局部栈的悬垂指针。 */
 class VmStackRootGuard {
@@ -582,6 +716,2645 @@ JSEnvironment *captureEnv(JSEnvironment *env, const FunctionBytecode &fn,
   return e;
 }
 
+/* -------------------------------------------------------------------------- */
+/* 分发表执行模型（M5.1e-f 栈帧瘦身）：handler 函数 + 全局静态分发表。        */
+/* -------------------------------------------------------------------------- */
+
+
+static ConversionResult op_PushConst(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      stack.push_back(constValue(frame.ctx, fn, frame.arg));
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_PushBigInt(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* BigInt 常量（M4.3）：十进制数字串。 */
+      stack.push_back(constValue(frame.ctx, fn, frame.arg));
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_PushUndefined(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      stack.push_back(frame.ctx->createValue(Kind::Undefined));
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_PushNull(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      stack.push_back(frame.ctx->createValue(Kind::Null));
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_PushTrue(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      stack.push_back(frame.ctx->createValue(true));
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_PushFalse(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      stack.push_back(frame.ctx->createValue(false));
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_PushInt(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      stack.push_back(frame.ctx->createValue(static_cast<int64_t>(
+          static_cast<int16_t>(frame.arg))));
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_LoadVar(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (frame.arg >= stack.size()) {
+        error = fail("ReferenceError: local slot out of range"); break;
+      }
+      /* M4.4：优先读环境绑定——内层闭包经 StoreUpvalue 更新外层局部后，
+      * 外层 LoadVar 需读到最新值（顶层 var + forEach 回调场景）。
+      * 环境无该绑定（如参数名未写入环境）时回退栈槽。 */
+      if (frame.env != nullptr && frame.arg < fn.locals.size() &&
+          !fn.locals[frame.arg].empty()) {
+        const std::string &name = fn.locals[frame.arg];
+        JSValue *bv = frame.env->getBinding(name);
+        if (bv != nullptr) {
+          stack.push_back(bv);
+          break;
+        }
+      }
+      stack.push_back(stack[frame.arg]);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_StoreVar(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.empty() || frame.arg >= stack.size()) {
+        error = fail("ReferenceError: local slot out of range"); break;
+      }
+      JSValue *val = stack.back();
+      stack[frame.arg] = val; /* 栈顶 -> 局部槽 */
+      /* M2.5：局部变量同步写入当前环境（内层闭包 LoadUpvalue 沿链查找）。 */
+      if (frame.env != nullptr && frame.arg < fn.locals.size() &&
+          !fn.locals[frame.arg].empty()) {
+        frame.env->setBinding(fn.locals[frame.arg], val);
+      }
+      stack.pop_back();       /* 弹出：赋值表达式不保留值在栈（链式赋值经 LoadVar） */
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_LoadGlobal(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* 全局对象属性读取：LoadGlobal {name_index} -> 属性值（未定义属性返回 undefined）。 */
+      if (frame.arg >= fn.constants.size() ||
+          fn.constants[frame.arg].is_number) {
+        error = fail("Error: LoadGlobal requires a string constant"); break;
+      }
+      const std::string &name = fn.constants[frame.arg].str;
+      JSValue *global = frame.ctx->globalObject();
+      JSValue *val = global->object()->getProperty(name);
+      stack.push_back(val != nullptr ? val : frame.ctx->createValue(Kind::Undefined));
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Pop(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.size() <= fn.numLocals) {
+        error = fail("Error: stack underflow on Pop"); break;
+      }
+      stack.pop_back();
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Dup(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* 复制栈顶（M4.1 成员调用保留 this）。 */
+      if (stack.size() <= fn.numLocals) {
+        error = fail("Error: stack underflow on Dup"); break;
+      }
+      stack.push_back(stack.back());
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Add(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* 操作数保持栈上（GC 根集保护）：add 内部分配触发 GC 也不会回收操作数。 */
+      if (stack.size() < 2) { error = fail("Error: stack underflow on Add"); break; }
+      JSValue *b = stack[stack.size() - 1];
+      JSValue *a = stack[stack.size() - 2];
+      ConversionResult r = add(frame.ctx, a, b);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Sub(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.size() < 2) { error = fail("Error: stack underflow on arith"); break; }
+      JSValue *b = stack[stack.size() - 1];
+      JSValue *a = stack[stack.size() - 2];
+      ConversionResult r = binaryArith(frame.ctx, a, b, frame.op);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Mul(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.size() < 2) { error = fail("Error: stack underflow on arith"); break; }
+      JSValue *b = stack[stack.size() - 1];
+      JSValue *a = stack[stack.size() - 2];
+      ConversionResult r = binaryArith(frame.ctx, a, b, frame.op);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Div(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.size() < 2) { error = fail("Error: stack underflow on arith"); break; }
+      JSValue *b = stack[stack.size() - 1];
+      JSValue *a = stack[stack.size() - 2];
+      ConversionResult r = binaryArith(frame.ctx, a, b, frame.op);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Mod(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.size() < 2) { error = fail("Error: stack underflow on arith"); break; }
+      JSValue *b = stack[stack.size() - 1];
+      JSValue *a = stack[stack.size() - 2];
+      ConversionResult r = binaryArith(frame.ctx, a, b, frame.op);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Pow(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.size() < 2) { error = fail("Error: stack underflow on arith"); break; }
+      JSValue *b = stack[stack.size() - 1];
+      JSValue *a = stack[stack.size() - 2];
+      ConversionResult r = binaryArith(frame.ctx, a, b, frame.op);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_BitAnd(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.size() < 2) { error = fail("Error: stack underflow on bitwise"); break; }
+      JSValue *b = stack[stack.size() - 1];
+      JSValue *a = stack[stack.size() - 2];
+      ConversionResult r = bitwiseOp(frame.ctx, a, b, frame.op);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_BitOr(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.size() < 2) { error = fail("Error: stack underflow on bitwise"); break; }
+      JSValue *b = stack[stack.size() - 1];
+      JSValue *a = stack[stack.size() - 2];
+      ConversionResult r = bitwiseOp(frame.ctx, a, b, frame.op);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_BitXor(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.size() < 2) { error = fail("Error: stack underflow on bitwise"); break; }
+      JSValue *b = stack[stack.size() - 1];
+      JSValue *a = stack[stack.size() - 2];
+      ConversionResult r = bitwiseOp(frame.ctx, a, b, frame.op);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_LShift(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.size() < 2) { error = fail("Error: stack underflow on bitwise"); break; }
+      JSValue *b = stack[stack.size() - 1];
+      JSValue *a = stack[stack.size() - 2];
+      ConversionResult r = bitwiseOp(frame.ctx, a, b, frame.op);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_RShift(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.size() < 2) { error = fail("Error: stack underflow on bitwise"); break; }
+      JSValue *b = stack[stack.size() - 1];
+      JSValue *a = stack[stack.size() - 2];
+      ConversionResult r = bitwiseOp(frame.ctx, a, b, frame.op);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_URShift(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.size() < 2) { error = fail("Error: stack underflow on bitwise"); break; }
+      JSValue *b = stack[stack.size() - 1];
+      JSValue *a = stack[stack.size() - 2];
+      ConversionResult r = bitwiseOp(frame.ctx, a, b, frame.op);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Neg(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.empty()) { error = fail("Error: stack underflow on Neg"); break; }
+      JSValue *a = stack.back(); /* 保持栈上，toNumeric 完成后再收缩 */
+      ConversionResult n = toNumeric(frame.ctx, a);
+      if (!n.ok()) return n;
+      stack.pop_back();
+      if (n.value->kind() == Kind::BigInt) {
+      /* 一元取负（§13.5.4）：BigInt 翻转符号位，0n 仍为 0n。 */
+        bool neg = !n.value->bigIntNegative();
+        const std::string &digits = n.value->bigIntDigits();
+        stack.push_back(frame.ctx->createValue(
+            JSValue(neg && digits != "0", digits)));
+      } else {
+        stack.push_back(frame.ctx->createValue(-n.value->toNumber()));
+      }
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Not(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.empty()) { error = fail("Error: stack underflow on Not"); break; }
+      JSValue *a = stack.back();
+      bool b = toBoolean(a);
+      stack.pop_back();
+      stack.push_back(frame.ctx->createValue(!b));
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Typeof(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.empty()) { error = fail("Error: stack underflow on Typeof"); break; }
+      JSValue *a = stack.back();
+      ConversionResult r = typeOf(frame.ctx, a);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.pop_back();
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Eq(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.size() < 2) { error = fail("Error: stack underflow on compare"); break; }
+      JSValue *b = stack[stack.size() - 1];
+      JSValue *a = stack[stack.size() - 2];
+      ConversionResult r = compareOp(frame.ctx, a, b, frame.op);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_StrictEq(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.size() < 2) { error = fail("Error: stack underflow on compare"); break; }
+      JSValue *b = stack[stack.size() - 1];
+      JSValue *a = stack[stack.size() - 2];
+      ConversionResult r = compareOp(frame.ctx, a, b, frame.op);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Lt(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.size() < 2) { error = fail("Error: stack underflow on compare"); break; }
+      JSValue *b = stack[stack.size() - 1];
+      JSValue *a = stack[stack.size() - 2];
+      ConversionResult r = compareOp(frame.ctx, a, b, frame.op);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Le(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.size() < 2) { error = fail("Error: stack underflow on compare"); break; }
+      JSValue *b = stack[stack.size() - 1];
+      JSValue *a = stack[stack.size() - 2];
+      ConversionResult r = compareOp(frame.ctx, a, b, frame.op);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Gt(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.size() < 2) { error = fail("Error: stack underflow on compare"); break; }
+      JSValue *b = stack[stack.size() - 1];
+      JSValue *a = stack[stack.size() - 2];
+      ConversionResult r = compareOp(frame.ctx, a, b, frame.op);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Ge(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.size() < 2) { error = fail("Error: stack underflow on compare"); break; }
+      JSValue *b = stack[stack.size() - 1];
+      JSValue *a = stack[stack.size() - 2];
+      ConversionResult r = compareOp(frame.ctx, a, b, frame.op);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Ne(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.size() < 2) { error = fail("Error: stack underflow on compare"); break; }
+      JSValue *b = stack[stack.size() - 1];
+      JSValue *a = stack[stack.size() - 2];
+      ConversionResult r = compareOp(frame.ctx, a, b, frame.op);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_StrictNe(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.size() < 2) { error = fail("Error: stack underflow on compare"); break; }
+      JSValue *b = stack[stack.size() - 1];
+      JSValue *a = stack[stack.size() - 2];
+      ConversionResult r = compareOp(frame.ctx, a, b, frame.op);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Jump(VmFrame &frame) {
+  size_t &pc = *frame.pc;
+  ConversionResult error;
+  do {
+      pc = frame.arg;
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_JumpIfFalse(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  size_t &pc = *frame.pc;
+  ConversionResult error;
+  do {
+      if (stack.empty()) { error = fail("Error: stack underflow on JumpIfFalse"); break; }
+      JSValue *cond = stack.back(); stack.pop_back();
+      if (!toBoolean(cond)) pc = frame.arg;
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_JumpIfTrue(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  size_t &pc = *frame.pc;
+  ConversionResult error;
+  do {
+      /* M4.4f：栈顶为 true 则跳转（for-of 的 done 判断）。 */
+      if (stack.empty()) { error = fail("Error: stack underflow on JumpIfTrue"); break; }
+      JSValue *cond = stack.back(); stack.pop_back();
+      if (toBoolean(cond)) pc = frame.arg;
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_JumpIfUndefined(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  size_t &pc = *frame.pc;
+  ConversionResult error;
+  do {
+      /* M5.1a：栈顶为 undefined 则跳转（解构默认值判断）。 */
+      if (stack.empty()) { error = fail("Error: stack underflow on JumpIfUndefined"); break; }
+      JSValue *v = stack.back(); stack.pop_back();
+      if (v->kind() == Kind::Undefined) pc = frame.arg;
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_JumpIfNullish(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  size_t &pc = *frame.pc;
+  ConversionResult error;
+  do {
+      /* M5.1b：栈顶为 null 或 undefined 则跳转（??= 短路判断）。 */
+      if (stack.empty()) { error = fail("Error: stack underflow on JumpIfNullish"); break; }
+      JSValue *v = stack.back(); stack.pop_back();
+      if (v->kind() == Kind::Null || v->kind() == Kind::Undefined) pc = frame.arg;
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Call(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      uint16_t argc = frame.arg;
+      size_t func_slot = stack.size() - 1 - static_cast<size_t>(argc);
+      if (func_slot >= stack.size()) {
+        error = fail("Error: stack underflow on Call"); break;
+      }
+      /* 函数与参数保持在栈上（GC 根集保护），仅以索引引用：
+      * call() 内部分配临时句柄可能触发 GC，提前弹出会被回收（悬垂）。 */
+      JSValue *func = stack[func_slot];
+      JSValue *const *call_args =
+          argc > 0 ? &stack[func_slot + 1] : nullptr;
+
+      /* 调用（E3 统一入口；this 用 undefined，非严格函数绑到 global）。 */
+      JSValue *this_undef = frame.ctx->createValue(Kind::Undefined);
+      ConversionResult r = call(frame.ctx, func, this_undef, call_args, argc);
+      if (!r.ok()) { error = std::move(r); break; }
+      /* 收缩：弹出函数 + argc 个参数，压入结果。
+      * 返回值保护句柄（call Script 分支分配，防 GC 回收窗口期）：
+      * 先 push 入栈（受根集保护）再释放句柄，顺序安全。 */
+      stack.resize(stack.size() - 1 - static_cast<size_t>(argc));
+      stack.push_back(r.value);
+      if (r.tmp_handle != 0) frame.ctx->handles().free(r.tmp_handle);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_CallMethod(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* 成员方法调用（M4.1）：栈布局 obj, func, args...（argc 个）。
+      * this = obj（func_slot 下方一位）。 */
+      uint16_t argc = frame.arg;
+      size_t func_slot = stack.size() - 1 - static_cast<size_t>(argc);
+      if (func_slot <= fn.numLocals) {
+        error = fail("Error: stack underflow on CallMethod"); break;
+      }
+      JSValue *this_obj = stack[func_slot - 1];
+      JSValue *func = stack[func_slot];
+      JSValue *const *call_args =
+          argc > 0 ? &stack[func_slot + 1] : nullptr;
+      ConversionResult r = call(frame.ctx, func, this_obj, call_args, argc);
+      if (!r.ok()) { error = std::move(r); break; }
+      /* 收缩：弹出 this + func + argc 个参数，压入结果。 */
+      stack.resize(stack.size() - 2 - static_cast<size_t>(argc));
+      stack.push_back(r.value);
+      if (r.tmp_handle != 0) frame.ctx->handles().free(r.tmp_handle);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Construct(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* new 构造（M4.2）：栈布局 ctor, args...（argc 个）。
+      * this = 新对象（construct 内部创建）。 */
+      uint16_t argc = frame.arg;
+      size_t ctor_slot = stack.size() - 1 - static_cast<size_t>(argc);
+      if (ctor_slot < fn.numLocals) {
+        error = fail("Error: stack underflow on Construct"); break;
+      }
+      JSValue *ctor = stack[ctor_slot];
+      JSValue *const *call_args =
+          argc > 0 ? &stack[ctor_slot + 1] : nullptr;
+      ConversionResult r = construct(frame.ctx, ctor, call_args, argc);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 1 - static_cast<size_t>(argc));
+      stack.push_back(r.value);
+      if (r.tmp_handle != 0) frame.ctx->handles().free(r.tmp_handle);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Ret(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  JSValue *&frame_this = *frame.frame_this;
+  ConversionResult error;
+  do {
+      /* M5.1d-c1 构造器返回语义（§10.2.2 Construct 步骤 12-14）：
+      * return 对象 -> 用之；return 非对象或无 return -> 返回最终 this
+      * （基类 = 构造器创建的实例；派生类 = super() 建立/替换的对象）。
+      * 压栈保护 frame_this（栈是根集），避免替换后的对象无根可达被 GC。 */
+      if (frame.self != nullptr && frame.self->isConstructor()) {
+        if (stack.empty() || !stack.back()->isObject()) {
+          stack.push_back(frame_this);
+        }
+      }
+      if (stack.empty()) { frame.done = true; return ok(frame.ctx->createValue(Kind::Undefined)); }
+      JSValue *result = stack.back();
+      frame.done = true; /* M5.1e-f：分发表主循环据此结束本帧 */
+      return ok(result);
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Print(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.empty()) { error = fail("Error: stack underflow on Print"); break; }
+      JSValue *v = stack.back();
+      /* toString 内部分配可能触发 GC：v 保持栈上受根集保护。 */
+      if (v->kind() == Kind::String) {
+        std::fputs(v->toString().c_str(), stdout);
+      } else {
+        ConversionResult s = toString(frame.ctx, v);
+        if (!s.ok()) return s;
+        std::fputs(s.value->toString().c_str(), stdout);
+      }
+      std::fputs("\n", stdout);
+      stack.pop_back();
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_MakeFunction(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  JSValue *&frame_this = *frame.frame_this;
+  ConversionResult error;
+  do {
+      /* 从嵌套函数表实例化 JSFunction，[[Environment]] 绑定当前环境（M2.5）。
+      * 嵌套函数字节码（fn.nested[arg]）复制给新函数。 */
+      if (frame.arg >= fn.nested.size()) {
+        error = fail("Error: MakeFunction index out of range"); break;
+      }
+      /* 函数原型链 -> Function.prototype（M4.2）：Script 函数挂 call/apply/
+      * bind 方法（§20.2.3）。惰性创建缓存，未注册内置时原型为 null。 */
+      JSObject *fproto = nullptr;
+      JSValue *fp = neojs::functionProto(frame.ctx);
+      if (fp != nullptr) fproto = fp->object();
+      JSFunction *f = frame.ctx->heap().allocGCObject<JSFunction>(
+          fproto, FunctionKind::Script, nullptr /* func */);
+      const FunctionBytecode &nf = fn.nested[frame.arg];
+      f->setBytecode(nf); /* 复制（FunctionBytecode 值语义） */
+      f->setEnvironment(frame.env);
+      /* M5.1d-a class：构造器/方法标志 -> 构造器可 new + 严格模式。
+      * class 体一律严格模式（§15.7.2.1）；构造器额外 setConstructor。 */
+      if (nf.is_constructor) {
+        f->setConstructor(true);
+        f->setThisMode(ThisMode::Strict);
+      } else if (nf.is_method) {
+        f->setThisMode(ThisMode::Strict);
+      }
+      /* M5.1d-b 箭头函数：super 上下文继承（§15.2.3.7 步骤 6——箭头
+      * 函数没有自己的 [[HomeObject]]，super 解析到外层方法）。
+      * 外层帧 self 是方法（有 HomeObject）时复制给箭头函数。 */
+      if (nf.is_arrow && frame.self != nullptr && frame.self->homeObject() != nullptr) {
+        f->setHomeObject(frame.self->homeObject());
+      }
+      /* M5.1d-c2 箭头函数词法 this（§10.2.5.6 Lexical）：箭头函数
+      * [[ThisMode]] = Lexical，调用时忽略传入 this，用定义处外层代码
+      * 的 this（当前帧 this）。捕获后由 gcMarkRefs 作为引用边保护。 */
+      if (nf.is_arrow) {
+        f->setThisMode(ThisMode::Lexical);
+        f->setLexicalThis(frame_this);
+      }
+      frame.ctx->heap().pin(f); /* 分配保护（M3.3）：两段式创建中间窗口防误回收 */
+      JSValue *v = frame.ctx->heap().allocGCObject<JSValue>();
+      v->setObject(f);
+      f->setHolder(v);
+      frame.ctx->heap().pin(v); /* v 未入栈前防误回收（GC 窗口，含 prototype 创建） */
+      /* §20.2.3 步骤 8-10：普通函数创建 prototype 属性（箭头函数除外）。
+      * prototype = 新对象（原型链 Object.prototype），含 constructor
+      * 反向指针。class 构造器 prototype 由编译器 define_prop 显式覆盖
+      * （compiler.cc compileClass 步骤 3），此处不设。 */
+      if (!nf.is_arrow && !nf.is_constructor && !nf.is_method) {
+        JSObject *op = objectProto(frame.ctx) ? objectProto(frame.ctx)->object() : nullptr;
+        JSValue *proto = frame.ctx->createObject(op);
+        frame.ctx->heap().pin(proto);
+        {
+      /* constructor 反向指针：non-enumerable（§20.2.3 步骤 8 的
+      * CreateDataProperty 实为 non-enumerable，规范步骤 9）。 */
+          PropertyDescriptor cd;
+          cd.value = v;
+          cd.enumerable = false;
+          proto->object()->setOwnProperty("constructor", cd);
+        }
+        PropertyDescriptor pd;
+        pd.value = proto;
+        pd.enumerable = false; /* 规范：prototype 属性 non-enumerable */
+        f->setOwnProperty("prototype", pd);
+        frame.ctx->heap().unpin(proto);
+      }
+      frame.ctx->heap().unpin(v);
+      frame.ctx->heap().unpin(f);
+      stack.push_back(v);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_NewObject(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* 新建普通对象，原型链指向 Object.prototype（M3.3；
+      * 惰性创建缓存，未注册内置时原型为 null）。 */
+      JSValue *obj =
+          frame.ctx->createObject(objectProto(frame.ctx) ? objectProto(frame.ctx)->object()
+                                             : nullptr);
+      stack.push_back(obj);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_NewArray(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* 新建数组（空 elements，length = 0）。 */
+      JSValue *arr = frame.ctx->createArray(0);
+      stack.push_back(arr);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_LoadProp(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* obj.key -> 栈顶（替换 obj）。key 为常量池字符串。 */
+      if (stack.empty()) { error = fail("Error: stack underflow on LoadProp"); break; }
+      JSValue *obj = stack.back();
+      if (frame.arg >= fn.constants.size() ||
+          fn.constants[frame.arg].is_number) {
+        error = fail("Error: LoadProp requires a string constant"); break;
+      }
+      const std::string &key = fn.constants[frame.arg].str;
+      /* 原始值成员读取（§13.3.3 + §7.1.13）：先 ToObject 装箱查属性，
+      * 方法调用时 this 仍为原始值（getValue 返回原始值）。undefined/null
+      * 装箱失败 -> TypeError。 */
+      JSObject *target = nullptr;
+      if (obj->isObject()) {
+        target = obj->object();
+      } else if (obj->kind() == Kind::Undefined ||
+                 obj->kind() == Kind::Null) {
+        error = fail("TypeError: Cannot read properties of " +
+                    (obj->kind() == Kind::Undefined ? std::string("undefined")
+                                                    : std::string("null"))); break;
+      } else {
+        ConversionResult boxed = toObject(frame.ctx, obj);
+        if (!boxed.ok()) return boxed;
+        target = boxed.value->object();
+      }
+      JSValue *val = nullptr;
+      if (target->isArray() && key == "length") {
+      /* 数组 length 属性（M4.1）：由 elements 存储推导，非存储属性。 */
+        val = frame.ctx->createValue(static_cast<double>(target->length()));
+      } else if (target->isMap() && key == "size") {
+      /* Map size 属性（M4.4b，§24.1.3.13）：由条目数推导，非存储属性。 */
+        val = frame.ctx->createValue(static_cast<double>(target->collectionSize()));
+      } else if (target->isSet() && key == "size") {
+      /* Set size 属性（M4.4c，§24.2.3.9）：由条目数推导，非存储属性。 */
+        val = frame.ctx->createValue(static_cast<double>(target->collectionSize()));
+      } else if (target->isWrapper() &&
+                 target->kind() == ObjectKind::String &&
+                 (key == "length" || isCanonicalArrayIndex(key))) {
+      /* String 包装对象/原始串的虚拟索引属性（§10.4.3.3）：
+      * length 由 [[StringData]] 的 UTF-16 code unit 数推导；
+      * 整数索引 key（如 "0"）返回对应 code unit 字符（'abc'[1] == 'b'）。 */
+        JSValue *data = target->wrapperData();
+        if (data != nullptr && data->kind() == Kind::String) {
+          const std::string &s = data->toString();
+          if (key == "length") {
+            val = frame.ctx->createValue(static_cast<double>(utf16Length(s)));
+          } else {
+            size_t idx = static_cast<size_t>(std::stoul(key));
+            size_t len = utf16Length(s);
+            if (idx < len) {
+              val = frame.ctx->createValue(s.substr(idx, 1));
+            } else {
+              val = frame.ctx->createValue(Kind::Undefined);
+            }
+          }
+        } else {
+          val = frame.ctx->createValue(Kind::Undefined);
+        }
+      } else {
+      /* M4.4h：访问器感知读取（数据属性直接取值；访问器调 getter）。 */
+        ConversionResult gv = getPropertyValue(frame.ctx, target, key);
+        if (!gv.ok()) return gv;
+        val = gv.value;
+      }
+      stack.pop_back();
+      stack.push_back(val != nullptr ? val : frame.ctx->createValue(Kind::Undefined));
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_StoreProp(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* obj, val -> 栈顶 val（obj.key = val）。key 为常量池字符串。
+      * 消费 obj（编译器成员赋值后不再需要对象引用）。 */
+      if (stack.size() < 2) { error = fail("Error: stack underflow on StoreProp"); break; }
+      JSValue *val = stack.back();
+      JSValue *obj = stack[stack.size() - 2];
+      if (frame.arg >= fn.constants.size() ||
+          fn.constants[frame.arg].is_number) {
+        error = fail("Error: StoreProp requires a string constant"); break;
+      }
+      const std::string &key = fn.constants[frame.arg].str;
+      if (!obj->isObject()) {
+        error = fail("TypeError: Cannot set properties of non-object"); break;
+      }
+      if (obj->object()->isArray() && key == "length") {
+      /* 数组 length 写入（M4.1）：截断/扩展元素存储。
+      * M4.4h：若 defineProperty 已置 writable=false 则拒绝（§9.4.2.1
+      * ArraySetLength 的 Reject）。 */
+        PropertyDescriptor *len_desc =
+            obj->object()->getOwnProperty("length");
+        if (len_desc != nullptr &&
+            len_desc->type == PropertyDescriptor::Type::Data &&
+            !len_desc->writable) {
+          error = fail("TypeError: Cannot assign to read only property 'length'"); break;
+        }
+        double d = val->toNumber();
+        if (d < 0.0 || d != std::trunc(d) || d > 4294967295.0) {
+          error = fail("RangeError: Invalid array length"); break;
+        }
+        obj->object()->resizeElements(static_cast<size_t>(d));
+      } else {
+      /* M4.4h：访问器感知写入（writable 校验 + setter 调用）。 */
+        ConversionResult sr = setPropertyValue(frame.ctx, obj->object(), key, val);
+        if (!sr.ok()) return sr;
+      }
+      stack.resize(stack.size() - 2);
+      stack.push_back(val); /* 赋值表达式值 = 新值 */
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_LoadElem(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* obj, key -> 栈顶（替换 obj）。key 运行期 ToPropertyKey。 */
+      if (stack.size() < 2) { error = fail("Error: stack underflow on LoadElem"); break; }
+      JSValue *key = stack.back();
+      JSValue *obj = stack[stack.size() - 2];
+      /* 数组整数索引快速路径（架构 §5.2：arr[i] -> elements）。 */
+      if (obj->isObject() && obj->object()->isArray() && key->isNumber()) {
+        double d = key->toNumber();
+        if (d >= 0.0 && d == std::trunc(d) && d < 4294967296.0) {
+          JSValue *val = obj->object()->getElement(static_cast<size_t>(d));
+          stack.resize(stack.size() - 2);
+          stack.push_back(val != nullptr ? val : frame.ctx->createValue(Kind::Undefined));
+          break;
+        }
+      }
+      ConversionResult pk = toPropertyKey(frame.ctx, key);
+      if (!pk.ok()) return pk;
+      /* Symbol 属性键（M4.4d）：查 Symbol 属性表（沿原型链）。
+      * 原始值（如 'ab'[Symbol.iterator]）先 ToObject 装箱（§13.3.3
+      * Property Accessors 的 RequireObjectCoercible + ToObject）。 */
+      if (pk.value->kind() == Kind::Symbol) {
+        JSValue *symbol_target = obj;
+        if (!obj->isObject()) {
+          if (obj->kind() == Kind::Undefined || obj->kind() == Kind::Null) {
+            error = fail("TypeError: Cannot read properties of " +
+                        (obj->kind() == Kind::Undefined
+                             ? std::string("undefined")
+                             : std::string("null"))); break;
+          }
+          ConversionResult boxed = toObject(frame.ctx, obj);
+          if (!boxed.ok()) return boxed;
+          symbol_target = boxed.value;
+        }
+        JSValue *val = symbol_target->object()->getSymbolProperty(pk.value);
+        stack.resize(stack.size() - 2);
+        stack.push_back(val != nullptr ? val : frame.ctx->createValue(Kind::Undefined));
+        break;
+      }
+      /* 字符串原始值/包装对象整数索引（§10.4.3.4 String exotic object）：
+      * 虚拟索引属性，由 [[StringData]] 的 code unit 推导。 */
+      if (pk.value->kind() == Kind::String &&
+          (obj->kind() == Kind::String ||
+           (obj->isObject() && obj->object()->kind() == ObjectKind::String))) {
+        const std::string &s =
+            obj->kind() == Kind::String
+                ? obj->toString()
+                : obj->object()->wrapperData()->toString();
+        const std::string &idx = pk.value->toString();
+        if (!idx.empty() &&
+            idx.find_first_not_of("0123456789") == std::string::npos) {
+          size_t len = utf16Length(s);
+          size_t i = 0;
+      /* 数字串转 size_t（防溢出：超长 -> 越界 undefined）。 */
+          if (idx.size() <= 18) {
+            i = static_cast<size_t>(std::strtoull(idx.c_str(), nullptr, 10));
+          }
+          if (i < len) {
+            JSValue *val = frame.ctx->createValue(
+                utf16Substring(s, i, i + 1)); /* 单 code unit 串 */
+            stack.resize(stack.size() - 2);
+            stack.push_back(val);
+            break;
+          }
+        }
+      }
+      /* 原始值成员读取（§13.3.3 + §7.1.13）：先 ToObject 装箱查属性。 */
+      JSObject *target = nullptr;
+      if (obj->isObject()) {
+        target = obj->object();
+      } else if (obj->kind() == Kind::Undefined ||
+                 obj->kind() == Kind::Null) {
+        error = fail("TypeError: Cannot read properties of " +
+                    (obj->kind() == Kind::Undefined ? std::string("undefined")
+                                                    : std::string("null"))); break;
+      } else {
+        ConversionResult boxed = toObject(frame.ctx, obj);
+        if (!boxed.ok()) return boxed;
+        target = boxed.value->object();
+      }
+      /* M4.4h：访问器感知读取（数据属性直接取值；访问器调 getter）。 */
+      ConversionResult gv = getPropertyValue(frame.ctx, target, pk.value->toString());
+      if (!gv.ok()) return gv;
+      JSValue *val = gv.value;
+      stack.resize(stack.size() - 2);
+      stack.push_back(val != nullptr ? val : frame.ctx->createValue(Kind::Undefined));
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_StoreElem(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* obj, key, val -> 栈顶 val（obj[key] = val）。 */
+      if (stack.size() < 3) { error = fail("Error: stack underflow on StoreElem"); break; }
+      JSValue *val = stack.back();
+      JSValue *key = stack[stack.size() - 2];
+      JSValue *obj = stack[stack.size() - 3];
+      if (!obj->isObject()) {
+        error = fail("TypeError: Cannot set properties of non-object"); break;
+      }
+      if (obj->object()->isArray() && key->isNumber()) {
+        double d = key->toNumber();
+        if (d >= 0.0 && d == std::trunc(d) && d < 4294967296.0) {
+          obj->object()->setElement(static_cast<size_t>(d), val);
+          stack.resize(stack.size() - 3);
+          stack.push_back(val);
+          break;
+        }
+      }
+      ConversionResult pk = toPropertyKey(frame.ctx, key);
+      if (!pk.ok()) return pk;
+      /* Symbol 属性键（M4.4d）：写 Symbol 属性表。 */
+      if (pk.value->kind() == Kind::Symbol) {
+        obj->object()->setSymbolProperty(pk.value, val);
+        stack.resize(stack.size() - 3);
+        stack.push_back(val); /* 赋值表达式值 = 新值 */
+        break;
+      }
+      /* M4.4h：访问器感知写入（writable 校验 + setter 调用）。 */
+      ConversionResult sr =
+          setPropertyValue(frame.ctx, obj->object(), pk.value->toString(), val);
+      if (!sr.ok()) return sr;
+      stack.resize(stack.size() - 3);
+      stack.push_back(val); /* 赋值表达式值 = 新值 */
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_GetIterator(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* 栈顶对象 -> 迭代器（M4.4f，§7.4.1）。 */
+      if (stack.empty()) { error = fail("Error: stack underflow on GetIterator"); break; }
+      ConversionResult it = getIterator(frame.ctx, stack.back());
+      if (!it.ok()) return it;
+      stack.back() = it.value; /* 替换栈顶为迭代器 */
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_IteratorStep(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* 栈顶 iterator -> [value, done]（done 在栈顶，M4.4f，§7.4.5）。
+      * 完成时 value 为 undefined（规范 IteratorValue 未定义值）。
+      * iteratorStep 完成返回 ok(nullptr)（成功但无值，§7.4.5 done=true），
+      * 与失败（value=nullptr + error 非空）区分：仅 error 非空才真失败。 */
+      if (stack.empty()) { error = fail("Error: stack underflow on IteratorStep"); break; }
+      ConversionResult step = iteratorStep(frame.ctx, stack.back());
+      if (step.value == nullptr && !step.error.empty()) return step;
+      if (step.value == nullptr) {
+      /* 迭代完成：压 [undefined, true]。 */
+        stack.back() = frame.ctx->createValue(Kind::Undefined);
+        stack.push_back(frame.ctx->createValue(true));
+      } else {
+        ConversionResult v = iteratorValue(frame.ctx, step.value);
+        if (!v.ok()) return v;
+        stack.back() = v.value; /* value */
+        stack.push_back(frame.ctx->createValue(false)); /* done=false */
+      }
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_RestToArray(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1a rest/展开：栈 [iterable, start] -> 剩余元素数组。
+      * 迭代 iterable，跳过前 start 个元素，其余收集为新数组。
+      * start 必须为非负整数（编译期保证）。 */
+      if (stack.size() < 2) { error = fail("Error: stack underflow on RestToArray"); break; }
+      JSValue *start_v = stack.back();
+      JSValue *iterable = stack[stack.size() - 2];
+      size_t start = start_v->isNumber()
+                         ? static_cast<size_t>(std::max(0.0, start_v->toNumber()))
+                         : 0;
+      ConversionResult it = getIterator(frame.ctx, iterable);
+      if (!it.ok()) return it;
+      JSValue *iterator = it.value;
+      /* 跳过前 start 个。 */
+      size_t skipped = 0;
+      while (skipped < start) {
+        ConversionResult step = iteratorStep(frame.ctx, iterator);
+        if (step.value == nullptr && !step.error.empty()) return step;
+        if (step.value == nullptr) break; /* 迭代提前结束 */
+        ++skipped;
+      }
+      /* 收集剩余元素。 */
+      JSValue *arr = frame.ctx->createArray(0);
+      size_t idx = 0;
+      for (;;) {
+        ConversionResult step = iteratorStep(frame.ctx, iterator);
+        if (step.value == nullptr && !step.error.empty()) return step;
+        if (step.value == nullptr) break; /* 迭代完成 */
+        ConversionResult v = iteratorValue(frame.ctx, step.value);
+        if (!v.ok()) return v;
+        arr->object()->setElement(idx++, v.value);
+      }
+      stack.resize(stack.size() - 2);
+      stack.push_back(arr);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_RestParam(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1a rest 参数：args[k..] 收集为新数组压栈。
+      * runBytecode 入口参数（args/argc）在本帧仍有效（调用栈递归
+      * 每帧独立）。数组经 createArray 创建后立即入栈（根集保护）。 */
+      size_t k = frame.arg;
+      JSValue *arr = frame.ctx->createArray(0);
+      size_t idx = 0;
+      for (size_t i = k; i < frame.argc; ++i) {
+        if (frame.args[i] != nullptr) arr->object()->setElement(idx++, frame.args[i]);
+      }
+      stack.push_back(arr);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_AppendElem(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1a 数组展开：弹栈值追加到槽内数组末尾（动态索引）。 */
+      if (stack.empty() || frame.arg >= fn.numLocals) {
+        error = fail("Error: stack underflow on AppendElem"); break;
+      }
+      JSValue *val = stack.back();
+      stack.pop_back();
+      JSValue *arr = stack[frame.arg];
+      if (arr == nullptr || !arr->isObject() || !arr->object()->isArray()) {
+        error = fail("TypeError: AppendElem target is not an array"); break;
+      }
+      size_t len = arr->object()->length();
+      arr->object()->setElement(len, val);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_AppendSpread(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1a 数组展开：弹栈可迭代对象，其元素按序追加到槽内数组。
+      * 迭代器入栈保护（循环期间 getIterator/iteratorStep/iteratorValue
+      * 可能分配触发 GC，迭代器不在栈上会悬垂）。 */
+      if (stack.empty() || frame.arg >= fn.numLocals) {
+        error = fail("Error: stack underflow on AppendSpread"); break;
+      }
+      JSValue *iterable = stack.back();
+      stack.pop_back();
+      JSValue *arr = stack[frame.arg];
+      if (arr == nullptr || !arr->isObject() || !arr->object()->isArray()) {
+        error = fail("TypeError: AppendSpread target is not an array"); break;
+      }
+      ConversionResult it = getIterator(frame.ctx, iterable);
+      if (!it.ok()) return it;
+      JSValue *iterator = it.value;
+      stack.push_back(iterator); /* 迭代器入栈根集保护（循环期间） */
+      for (;;) {
+        ConversionResult step = iteratorStep(frame.ctx, iterator);
+        if (step.value == nullptr && !step.error.empty()) {
+          stack.pop_back();
+          return step;
+        }
+        if (step.value == nullptr) break; /* 迭代完成 */
+        ConversionResult v = iteratorValue(frame.ctx, step.value);
+        if (!v.ok()) {
+          stack.pop_back();
+          return v;
+        }
+        size_t len = arr->object()->length();
+        arr->object()->setElement(len, v.value);
+      }
+      stack.pop_back(); /* 弹出迭代器保护 */
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_CallArray(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1a 展开调用：栈 [func, args_array] -> 调用结果。
+      * args_array 元素（可能为 null=空洞）按序为参数。
+      * func 与 args_array 保持在栈（GC 根集），flatten 到临时
+      * vector 后调用（call 内部分配触发 GC，vector 内指针源自栈）。 */
+      if (stack.size() < 2) { error = fail("Error: stack underflow on CallArray"); break; }
+      JSValue *args_arr = stack.back();
+      JSValue *func = stack[stack.size() - 2];
+      if (args_arr == nullptr || !args_arr->isObject() ||
+          !args_arr->object()->isArray()) {
+        error = fail("TypeError: spread argument must be iterable"); break;
+      }
+      JSObject *aobj = args_arr->object();
+      std::vector<JSValue *> flat;
+      flat.reserve(aobj->length());
+      for (size_t i = 0; i < aobj->length(); ++i) {
+        JSValue *e = aobj->getElement(i);
+        flat.push_back(e != nullptr ? e : frame.ctx->createValue(Kind::Undefined));
+      }
+      JSValue *this_undef = frame.ctx->createValue(Kind::Undefined);
+      ConversionResult r =
+          call(frame.ctx, func, this_undef,
+               flat.empty() ? nullptr : flat.data(), flat.size());
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      if (r.tmp_handle != 0) frame.ctx->handles().free(r.tmp_handle);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_ConstructArray(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1a 展开 new：栈 [ctor, args_array] -> 构造实例。 */
+      if (stack.size() < 2) { error = fail("Error: stack underflow on ConstructArray"); break; }
+      JSValue *args_arr = stack.back();
+      JSValue *ctor = stack[stack.size() - 2];
+      if (args_arr == nullptr || !args_arr->isObject() ||
+          !args_arr->object()->isArray()) {
+        error = fail("TypeError: spread argument must be iterable"); break;
+      }
+      JSObject *aobj = args_arr->object();
+      std::vector<JSValue *> flat;
+      flat.reserve(aobj->length());
+      for (size_t i = 0; i < aobj->length(); ++i) {
+        JSValue *e = aobj->getElement(i);
+        flat.push_back(e != nullptr ? e : frame.ctx->createValue(Kind::Undefined));
+      }
+      ConversionResult r =
+          construct(frame.ctx, ctor, flat.empty() ? nullptr : flat.data(), flat.size());
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      if (r.tmp_handle != 0) frame.ctx->handles().free(r.tmp_handle);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_CopyObjectProps(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1a 对象展开 {…src}：弹栈源对象，own enumerable 字符串属性
+      * 复制进槽内目标对象（CopyDataProperties，§10.1.2.1）。
+      * 数组源：整数索引元素为 own enumerable 键。
+      * 原始值源：ToObject 装箱后取属性（null/undefined 跳过）。 */
+      if (stack.empty() || frame.arg >= fn.numLocals) {
+        error = fail("Error: stack underflow on CopyObjectProps"); break;
+      }
+      JSValue *src = stack.back();
+      stack.pop_back();
+      JSValue *target = stack[frame.arg];
+      if (target == nullptr || !target->isObject()) {
+        error = fail("TypeError: object spread target is not an object"); break;
+      }
+      if (src == nullptr || src->kind() == Kind::Undefined ||
+          src->kind() == Kind::Null) {
+        break; /* null/undefined 源跳过（CopyDataProperties 步骤 2a） */
+      }
+      ConversionResult boxed = toObject(frame.ctx, src);
+      if (!boxed.ok()) return boxed;
+      JSObject *sobj = boxed.value->object();
+      JSObject *tobj = target->object();
+      std::vector<std::string> keys;
+      for (size_t i = 0; i < sobj->length(); ++i) {
+        if (sobj->isArray() && sobj->hasElement(i)) keys.push_back(std::to_string(i));
+      }
+      if (sobj->kind() == ObjectKind::String) {
+        JSValue *data = sobj->wrapperData();
+        if (data != nullptr && data->kind() == Kind::String) {
+          size_t len = utf16Length(data->toString());
+          for (size_t i = 0; i < len; ++i) keys.push_back(std::to_string(i));
+        }
+      }
+      for (const auto &name : sobj->propertyOrder()) {
+        const PropertyDescriptor *d = sobj->getOwnProperty(name);
+        if (d != nullptr && d->enumerable) keys.push_back(name);
+      }
+      for (const std::string &k : keys) {
+        JSValue *v = nullptr;
+        if (sobj->isArray()) {
+          size_t idx = static_cast<size_t>(std::strtoull(k.c_str(), nullptr, 10));
+          v = sobj->getElement(idx);
+        } else {
+          PropertyDescriptor *d = sobj->getOwnProperty(k);
+          if (d != nullptr && d->type == PropertyDescriptor::Type::Accessor) {
+            if (d->getter == nullptr || !isCallable(d->getter)) {
+              v = frame.ctx->createValue(Kind::Undefined);
+            } else {
+              ConversionResult r = call(frame.ctx, d->getter, sobj->holder(), nullptr, 0);
+              if (!r.ok()) { error = std::move(r); break; }
+              v = r.value;
+            }
+          } else {
+            v = d != nullptr && d->value != nullptr ? d->value
+                                                    : frame.ctx->createValue(Kind::Undefined);
+          }
+        }
+        if (v == nullptr) v = frame.ctx->createValue(Kind::Undefined);
+        bool numeric = !k.empty() &&
+                       k.find_first_not_of("0123456789") == std::string::npos;
+        if (tobj->isArray() && numeric && k.size() <= 18) {
+          tobj->setElement(
+              static_cast<size_t>(std::strtoull(k.c_str(), nullptr, 10)), v);
+        } else {
+          tobj->setProperty(k, v);
+        }
+      }
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_DefineProp(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1c 计算键 { [expr]: value }：obj, key, val -> 栈顶 val。
+      * 定义 own 数据属性（key 运行期 ToPropertyKey，§7.3.14）。 */
+      if (stack.size() < 3) { error = fail("Error: stack underflow on DefineProp"); break; }
+      JSValue *val = stack.back();
+      JSValue *key = stack[stack.size() - 2];
+      JSValue *obj = stack[stack.size() - 3];
+      if (!obj->isObject()) {
+        error = fail("TypeError: Cannot define properties on non-object"); break;
+      }
+      ConversionResult pk = toPropertyKey(frame.ctx, key);
+      if (!pk.ok()) return pk;
+      JSObject *target = obj->object();
+      const std::string &name = pk.value->toString();
+      bool numeric = !name.empty() &&
+                     name.find_first_not_of("0123456789") == std::string::npos;
+      if (target->isArray() && numeric && name.size() <= 18) {
+      /* 数组整数索引计算键：写元素存储。 */
+        target->setElement(static_cast<size_t>(std::strtoull(name.c_str(), nullptr, 10)), val);
+      } else {
+        PropertyDescriptor d;
+        d.value = val;
+        target->setOwnProperty(name, d);
+      }
+      stack.resize(stack.size() - 3);
+      stack.push_back(val);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_DefineAccessor(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1c getter/setter { get key(){} } / { set key(v){} }：
+      * obj, key, fn -> 栈顶 fn。arg=0 定义 getter，arg=1 定义 setter。
+      * 访问器属性描述符：getter/setter 槽，Type::Accessor。 */
+      if (stack.size() < 3) { error = fail("Error: stack underflow on DefineAccessor"); break; }
+      JSValue *fn = stack.back();
+      JSValue *key = stack[stack.size() - 2];
+      JSValue *obj = stack[stack.size() - 3];
+      if (!obj->isObject()) {
+        error = fail("TypeError: Cannot define properties on non-object"); break;
+      }
+      ConversionResult pk = toPropertyKey(frame.ctx, key);
+      if (!pk.ok()) return pk;
+      JSObject *target = obj->object();
+      const std::string &name = pk.value->toString();
+      bool is_setter = frame.arg != 0;
+      PropertyDescriptor *desc = target->getOwnProperty(name);
+      if (desc == nullptr) {
+      /* 新建访问器描述符。 */
+        PropertyDescriptor d;
+        d.type = PropertyDescriptor::Type::Accessor;
+        d.writable = false; /* 访问器属性无 writable 语义 */
+        target->setOwnProperty(name, d);
+        desc = target->getOwnProperty(name);
+      } else {
+      /* 已存在：升级为访问器类型（覆盖数据属性/互补 getter/setter）。 */
+        desc->type = PropertyDescriptor::Type::Accessor;
+        desc->writable = false;
+      }
+      if (is_setter) {
+        desc->setter = fn;
+      } else {
+        desc->getter = fn;
+      }
+      stack.resize(stack.size() - 3);
+      stack.push_back(fn);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_LoadThis(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  JSValue *&frame_this = *frame.frame_this;
+  ConversionResult error;
+  do {
+      /* M5.1c：当前帧 this -> 栈顶。frame_this 已由 runBytecode 解析
+      * （函数调用 = call 传入的 thisArg；顶层 = globalThis）。 */
+      stack.push_back(frame_this != nullptr ? frame_this
+                                            : frame.ctx->globalObject());
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_SetPrototype(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1d-a class extends：obj, proto -> 设置 obj.[[Prototype]]=proto，
+      * 弹 2 压回 obj。class 的 prototype 与构造器均非可扩展限制目标
+      * （普通对象），直接 setPrototype。 */
+      if (stack.size() < 2) { error = fail("Error: stack underflow on SetPrototype"); break; }
+      JSValue *proto = stack.back();
+      JSValue *obj = stack[stack.size() - 2];
+      if (!obj->isObject()) {
+        error = fail("TypeError: Cannot set prototype of non-object"); break;
+      }
+      JSObject *target = obj->object();
+      JSObject *new_proto = (proto != nullptr && proto->isObject())
+                                ? proto->object()
+                                : nullptr;
+      /* 简易防循环（class extends 场景原型链通常无环）：仅校验直接赋值。 */
+      target->setPrototype(new_proto);
+      stack.resize(stack.size() - 2);
+      stack.push_back(obj);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_SetHomeObject(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1d-b class super：设置 fn.[[HomeObject]] = obj。
+      * arg=0：obj, key, fn -> obj, key, fn（方法定义，原地不改栈）；
+      * arg=1：obj, fn -> fn（构造器/static 方法，obj 在 size-2）。
+      * HomeObject = 方法定义时所在对象：实例方法 = prototype，
+      * static/构造器 = 构造器对象自身。 */
+      const bool self_form = frame.arg != 0;
+      size_t obj_pos = self_form ? stack.size() - 2 : stack.size() - 3;
+      if (stack.size() < (self_form ? 2u : 3u)) {
+        error = fail("Error: stack underflow on SetHomeObject"); break;
+      }
+      JSValue *fn = stack.back();
+      JSValue *obj = stack[obj_pos];
+      if (!fn->isObject()) {
+        error = fail("TypeError: method is not an object"); break;
+      }
+      JSObject *home = (obj != nullptr && obj->isObject()) ? obj->object()
+                                                           : nullptr;
+      /* 仅 JSFunction 需要 HomeObject；非函数对象（未来字段值）忽略。 */
+      JSFunction *method = dynamic_cast<JSFunction *>(fn->object());
+      if (method != nullptr) method->setHomeObject(home);
+      if (self_form) {
+      /* obj, fn -> fn：obj 槽覆盖为 fn，去重末尾副本。 */
+        stack[stack.size() - 2] = fn;
+        stack.pop_back();
+      }
+      /* arg=0：栈保持 [obj, key, fn] 不变。 */
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_SuperLoadProp(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  JSValue *&frame_this = *frame.frame_this;
+  ConversionResult error;
+  do {
+      /* M5.1d-b super.key：从 HomeObject.[[Prototype]] 读取 key。
+      * 访问器属性 this = 当前帧 this（§12.3.5.3 MakeSuperPropertyReference）。
+      * HomeObject 缺失（super 编译期已校验上下文，运行期防御）-> undefined。 */
+      if (frame.arg >= fn.constants.size() ||
+          fn.constants[frame.arg].is_number) {
+        error = fail("Error: SuperLoadProp requires a string constant"); break;
+      }
+      const std::string &key = fn.constants[frame.arg].str;
+      JSObject *proto = nullptr;
+      if (frame.self != nullptr && frame.self->homeObject() != nullptr) {
+        proto = frame.self->homeObject()->prototype();
+      }
+      if (proto == nullptr) {
+        error = fail("TypeError: Cannot read properties of super"); break;
+      }
+      JSValue *val = nullptr;
+      if (proto->isMap() && key == "size") {
+        val = frame.ctx->createValue(static_cast<double>(proto->collectionSize()));
+      } else {
+      /* M4.4h：访问器感知读取（数据属性直接取值；访问器调 getter
+      * this=frame_this）。getPropertyValue 的 target 为 HomeObject 原型
+      * 链起点，但访问器 this 须是当前方法 this——此处特判：访问器
+      * 属性手动调 getter（this=frame_this）。 */
+        PropertyDescriptor *desc = findPropertyDescriptor(proto, key);
+        if (desc != nullptr && desc->type == PropertyDescriptor::Type::Accessor) {
+          if (desc->getter == nullptr || !isCallable(desc->getter)) {
+            val = frame.ctx->createValue(Kind::Undefined);
+          } else {
+            JSValue *this_obj =
+                frame_this != nullptr ? frame_this : frame.ctx->globalObject();
+            ConversionResult r = call(frame.ctx, desc->getter, this_obj, nullptr, 0);
+            if (!r.ok()) { error = std::move(r); break; }
+            val = r.value;
+          }
+        } else {
+          ConversionResult gv = getPropertyValue(frame.ctx, proto, key);
+          if (!gv.ok()) return gv;
+          val = gv.value;
+        }
+      }
+      stack.push_back(val != nullptr ? val : frame.ctx->createValue(Kind::Undefined));
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_SuperLoadElem(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  JSValue *&frame_this = *frame.frame_this;
+  ConversionResult error;
+  do {
+      /* M5.1d-b super[expr]：从 HomeObject.[[Prototype]] 读计算键。
+      * 键运行期 ToPropertyKey（§7.1.14）；访问器 this = 当前帧 this。 */
+      if (stack.empty()) { error = fail("Error: stack underflow on SuperLoadElem"); break; }
+      JSValue *key = stack.back();
+      JSObject *proto = nullptr;
+      if (frame.self != nullptr && frame.self->homeObject() != nullptr) {
+        proto = frame.self->homeObject()->prototype();
+      }
+      if (proto == nullptr) {
+        stack.pop_back();
+        error = fail("TypeError: Cannot read properties of super"); break;
+      }
+      ConversionResult pk = toPropertyKey(frame.ctx, key);
+      if (!pk.ok()) return pk;
+      JSValue *val = nullptr;
+      if (pk.value->kind() == Kind::Symbol) {
+        val = proto->getSymbolProperty(pk.value);
+      } else {
+        const std::string &name = pk.value->toString();
+        PropertyDescriptor *desc = findPropertyDescriptor(proto, name);
+        if (desc != nullptr && desc->type == PropertyDescriptor::Type::Accessor) {
+          if (desc->getter == nullptr || !isCallable(desc->getter)) {
+            val = frame.ctx->createValue(Kind::Undefined);
+          } else {
+            JSValue *this_obj =
+                frame_this != nullptr ? frame_this : frame.ctx->globalObject();
+            ConversionResult r = call(frame.ctx, desc->getter, this_obj, nullptr, 0);
+            if (!r.ok()) { error = std::move(r); break; }
+            val = r.value;
+          }
+        } else {
+          ConversionResult gv = getPropertyValue(frame.ctx, proto, name);
+          if (!gv.ok()) return gv;
+          val = gv.value;
+        }
+      }
+      stack.pop_back();
+      stack.push_back(val != nullptr ? val : frame.ctx->createValue(Kind::Undefined));
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_SuperCall(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  JSValue *&frame_this = *frame.frame_this;
+  ConversionResult error;
+  do {
+      /* M5.1d-c1 super()：调用基类构造器于当前帧 this。
+      * 基类构造器 = HomeObject.[[Prototype]]（构造器 HomeObject 是
+      * 自身，extends 后其 [[Prototype]] 是基类构造器）。
+      * 语义（§9.2.2.4 derived）：在现有 this 上执行基类构造器；
+      * 基类构造器显式返回对象时以该对象作为新 this（覆盖）。 */
+      uint16_t argc = frame.arg;
+      size_t args_pos = stack.size() - static_cast<size_t>(argc);
+      if (stack.size() < static_cast<size_t>(argc)) {
+        error = fail("Error: stack underflow on SuperCall"); break;
+      }
+      JSObject *home = (frame.self != nullptr) ? frame.self->homeObject() : nullptr;
+      if (home == nullptr) {
+        error = fail("TypeError: super() can only be used in a derived constructor"); break;
+      }
+      JSObject *base = home->prototype(); /* 基类构造器 */
+      if (base == nullptr) {
+        error = fail("TypeError: cannot call super() on a base class"); break;
+      }
+      JSValue *base_val = base->holder();
+      if (base_val == nullptr || !isCallable(base_val)) {
+        error = fail("TypeError: super is not a constructor"); break;
+      }
+      JSValue *const *call_args =
+          argc > 0 ? &stack[args_pos] : nullptr;
+      JSValue *this_obj =
+          frame_this != nullptr ? frame_this : frame.ctx->globalObject();
+      ConversionResult r = call(frame.ctx, base_val, this_obj, call_args, argc);
+      if (!r.ok()) { error = std::move(r); break; }
+      /* 基类构造器返回对象 -> 新 this（覆盖 frame_this）。
+      * frame_this 更新后，后续 LoadThis 引用新 this。 */
+      if (r.value != nullptr && r.value->isObject()) {
+        frame_this = r.value;
+      }
+      /* 收缩：弹出 argc 个参数，压入 this（super() 求值为 this）。
+      * M5.1d-c2 派生类构造器：私有字段初始化指令已由编译器在 super()
+      * 之后内联发射（compileCall SuperCall 分支），本指令无需运行时钩子。 */
+      stack.resize(args_pos);
+      stack.push_back(frame_this);
+      if (r.tmp_handle != 0) frame.ctx->handles().free(r.tmp_handle);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_SuperCallArray(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  JSValue *&frame_this = *frame.frame_this;
+  ConversionResult error;
+  do {
+      /* M5.1d-d：super(...args) 展开调用——派生类默认构造器转发全部
+      * 实参给基类构造器（栈顶为 args 数组）。语义同 SuperCall，
+      * 参数从数组扁平化（空洞 -> undefined）。 */
+      if (stack.empty()) { error = fail("Error: stack underflow on SuperCallArray"); break; }
+      JSValue *args_arr = stack.back();
+      if (args_arr == nullptr || !args_arr->isObject() ||
+          !args_arr->object()->isArray()) {
+        error = fail("TypeError: super spread argument must be iterable"); break;
+      }
+      JSObject *aobj = args_arr->object();
+      std::vector<JSValue *> flat;
+      flat.reserve(aobj->length());
+      for (size_t i = 0; i < aobj->length(); ++i) {
+        JSValue *e = aobj->getElement(i);
+        flat.push_back(e != nullptr ? e : frame.ctx->createValue(Kind::Undefined));
+      }
+      JSObject *home = (frame.self != nullptr) ? frame.self->homeObject() : nullptr;
+      if (home == nullptr) {
+        error = fail("TypeError: super() can only be used in a derived constructor"); break;
+      }
+      JSObject *base = home->prototype(); /* 基类构造器 */
+      if (base == nullptr) {
+        error = fail("TypeError: cannot call super() on a base class"); break;
+      }
+      JSValue *base_val = base->holder();
+      if (base_val == nullptr || !isCallable(base_val)) {
+        error = fail("TypeError: super is not a constructor"); break;
+      }
+      JSValue *this_obj =
+          frame_this != nullptr ? frame_this : frame.ctx->globalObject();
+      ConversionResult r =
+          call(frame.ctx, base_val, this_obj,
+               flat.empty() ? nullptr : flat.data(), flat.size());
+      if (!r.ok()) { error = std::move(r); break; }
+      if (r.value != nullptr && r.value->isObject()) {
+        frame_this = r.value;
+      }
+      /* 收缩：弹出 args 数组，压入 this。 */
+      stack.pop_back();
+      stack.push_back(frame_this);
+      if (r.tmp_handle != 0) frame.ctx->handles().free(r.tmp_handle);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_LoadPrivate(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1d-c2：receiver -> 私有字段值。
+      * 字段全名 = fn.private_names[instr.arg]（含 '#' 前缀）。
+      * 接收者校验：无该私有槽 -> TypeError（§8.3 PrivateFieldFind）。 */
+      if (stack.empty()) { error = fail("Error: stack underflow on LoadPrivate"); break; }
+      if (frame.arg >= fn.private_names.size()) {
+        error = fail("Error: private field index out of range"); break;
+      }
+      const std::string &field = fn.private_names[frame.arg];
+      JSValue *receiver = stack.back();
+      if (!receiver->isObject()) {
+        error = fail("TypeError: Cannot read private member " + field +
+                    " from an object whose class did not declare it"); break;
+      }
+      JSObject *obj = receiver->object();
+      if (!obj->hasPrivateSlot(field)) {
+        error = fail("TypeError: Cannot read private member " + field +
+                    " from an object whose class did not declare it"); break;
+      }
+      JSValue *val = obj->getPrivateSlot(field);
+      stack.pop_back();
+      stack.push_back(val != nullptr ? val : frame.ctx->createValue(Kind::Undefined));
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_StorePrivate(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1d-c2：receiver, val -> val（obj.#x = val）。接收者校验同 LoadPrivate。 */
+      if (stack.size() < 2) { error = fail("Error: stack underflow on StorePrivate"); break; }
+      if (frame.arg >= fn.private_names.size()) {
+        error = fail("Error: private field index out of range"); break;
+      }
+      const std::string &field = fn.private_names[frame.arg];
+      JSValue *val = stack.back();
+      JSValue *receiver = stack[stack.size() - 2];
+      if (!receiver->isObject()) {
+        error = fail("TypeError: Cannot write private member " + field +
+                    " to an object whose class did not declare it"); break;
+      }
+      JSObject *obj = receiver->object();
+      if (!obj->hasPrivateSlot(field)) {
+        error = fail("TypeError: Cannot write private member " + field +
+                    " to an object whose class did not declare it"); break;
+      }
+      obj->setPrivateSlot(field, val);
+      stack.resize(stack.size() - 2);
+      stack.push_back(val);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_InitPrivate(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1d-c2：构造器字段初始化 receiver, val -> val（InitPrivate {name_index}）。
+      * 与 StorePrivate 的区别：不要求接收者已声明该槽——实例初始化阶段
+      * （§12.2.9 InitializeInstanceElements）首次为对象创建私有槽。
+      * 接收者非对象 -> TypeError（§8.3 PrivateFieldAdd 步骤 2）。 */
+      if (stack.size() < 2) { error = fail("Error: stack underflow on InitPrivate"); break; }
+      if (frame.arg >= fn.private_names.size()) {
+        error = fail("Error: private field index out of range"); break;
+      }
+      const std::string &field = fn.private_names[frame.arg];
+      JSValue *val = stack.back();
+      JSValue *receiver = stack[stack.size() - 2];
+      if (!receiver->isObject()) {
+        error = fail("TypeError: Cannot initialize private member " + field +
+                    " on a non-object"); break;
+      }
+      receiver->object()->setPrivateSlot(field, val);
+      stack.resize(stack.size() - 2);
+      stack.push_back(val);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_HasPrivate(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1d-c2：#x in obj -> bool（receiver 替换为布尔）。
+      * 接收者不是对象 -> TypeError（§8.3 PrivateFieldFind 步骤 1）。 */
+      if (stack.empty()) { error = fail("Error: stack underflow on HasPrivate"); break; }
+      if (frame.arg >= fn.private_names.size()) {
+        error = fail("Error: private field index out of range"); break;
+      }
+      const std::string &field = fn.private_names[frame.arg];
+      JSValue *receiver = stack.back();
+      if (!receiver->isObject()) {
+        error = fail("TypeError: Cannot use 'in' operator to search for "
+                    "private field " + field + " in a non-object"); break;
+      }
+      bool found = receiver->object()->hasPrivateSlot(field);
+      stack.pop_back();
+      stack.push_back(frame.ctx->createValue(found));
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_In(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1e：x in y（§7.3.20 HasProperty）。栈 [x, y] -> bool。 */
+      if (stack.size() < 2) { error = fail("Error: stack underflow on In"); break; }
+      JSValue *y = stack.back();
+      JSValue *x = stack[stack.size() - 2];
+      ConversionResult r = inOperator(frame.ctx, x, y);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Instanceof(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1e：x instanceof y（§7.3.22 InstanceofOperator）。栈 [x, y] -> bool。 */
+      if (stack.size() < 2) { error = fail("Error: stack underflow on Instanceof"); break; }
+      JSValue *y = stack.back();
+      JSValue *x = stack[stack.size() - 2];
+      ConversionResult r = instanceOf(frame.ctx, x, y);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 2);
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_ToString(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1e：一元转换 ToString(x)（模板串插值）。Symbol -> TypeError。 */
+      if (stack.empty()) { error = fail("Error: stack underflow on ToString"); break; }
+      JSValue *a = stack.back();
+      ConversionResult r = toString(frame.ctx, a);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.pop_back();
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_ToNumber(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1e：一元 +x（§7.1.4 ToNumber）。BigInt/Symbol -> TypeError。 */
+      if (stack.empty()) { error = fail("Error: stack underflow on ToNumber"); break; }
+      JSValue *a = stack.back();
+      ConversionResult r = toNumber(frame.ctx, a);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.pop_back();
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_BitNot(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1e：一元 ~x（§13.5.5）。ToNumeric 后按位非（BigInt 走任意精度）。 */
+      if (stack.empty()) { error = fail("Error: stack underflow on BitNot"); break; }
+      JSValue *a = stack.back();
+      ConversionResult r = unaryBitNot(frame.ctx, a);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.pop_back();
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_DeleteProp(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1e：delete obj.prop（§13.5.1.2，v1 非严格简化：own 属性删除成功
+      * 返回 true；非 own / 无该属性返回 true——§13.5.1.4 步骤 3：无属性
+      * 也返回 true；沿原型链的属性返回 true（仅删除 own）。
+      * 栈 [obj] -> bool。 */
+      if (stack.empty()) { error = fail("Error: stack underflow on DeleteProp"); break; }
+      if (frame.arg >= fn.constants.size() ||
+          fn.constants[frame.arg].is_number) {
+        error = fail("Error: DeleteProp requires a string constant"); break;
+      }
+      JSValue *obj = stack.back();
+      bool deleted = true;
+      if (obj->isObject()) {
+        const std::string &name = fn.constants[frame.arg].str;
+        JSObject *o = obj->object();
+        if (o->hasOwnProperty(name)) {
+          deleted = o->deleteProperty(name);
+        }
+      }
+      stack.pop_back();
+      stack.push_back(frame.ctx->createValue(deleted));
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_DeleteElem(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1e：delete obj[expr]（§13.5.1.3）。栈 [obj, key] -> bool。
+      * key ToPropertyKey 后同上（非 own/无属性返回 true）。 */
+      if (stack.size() < 2) { error = fail("Error: stack underflow on DeleteElem"); break; }
+      JSValue *key = stack.back();
+      JSValue *obj = stack[stack.size() - 2];
+      bool deleted = true;
+      if (obj->isObject()) {
+        ConversionResult pk = toPropertyKey(frame.ctx, key);
+        if (!pk.ok()) return pk;
+        JSObject *o = obj->object();
+        const std::string &name = pk.value->toString();
+      /* 数组整数索引：删元素（长度不变）。 */
+        bool numeric = !name.empty() &&
+                       name.find_first_not_of("0123456789") == std::string::npos;
+        if (o->isArray() && numeric && name.size() <= 18) {
+          size_t idx = static_cast<size_t>(std::strtoull(name.c_str(), nullptr, 10));
+          if (o->hasElement(idx)) {
+            o->deleteElement(idx);
+          }
+        } else if (o->hasOwnProperty(name)) {
+          deleted = o->deleteProperty(name);
+        }
+      }
+      stack.resize(stack.size() - 2);
+      stack.push_back(frame.ctx->createValue(deleted));
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_EnumerateKeys(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1e-c for-in：栈顶对象 -> 键数组（§7.3.24）。
+      * ToObject 装箱（undefined/null -> TypeError）；收集自身 + 原型链
+      * 可枚举字符串键为新数组（键为字符串值）。 */
+      if (stack.empty()) { error = fail("Error: stack underflow on EnumerateKeys"); break; }
+      ConversionResult boxed = toObject(frame.ctx, stack.back());
+      if (!boxed.ok()) return boxed;
+      JSObject *o = boxed.value->object();
+      std::vector<std::string> keys;
+      enumerateObjectKeys(o, &keys);
+      JSValue *arr = frame.ctx->createArray(keys.size());
+      /* 分配保护（M3.3）：fill 期间 createValue 分配窗口触发 GC 会
+      * 误回收尚未入栈的 arr（悬垂）。pin 到压栈后解除。 */
+      frame.ctx->heap().pin(arr);
+      for (size_t i = 0; i < keys.size(); ++i) {
+        arr->object()->setElement(i, frame.ctx->createValue(keys[i]));
+      }
+      stack.pop_back();
+      stack.push_back(arr);
+      frame.ctx->heap().unpin(arr); /* 已入 VM 栈（根集保护） */
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_RestObjectProps(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1e-d 对象 rest 解构：{a, ...rest} = src。
+      * 栈 [src, exclude_arr]（exclude_arr = 已绑定键的字符串数组）。
+      * 弹两值：复制 src 的 own enumerable 字符串属性到槽内目标对象，
+      * 跳过 exclude_arr 中的键（CopyDataProperties 步骤 4b 的排除集合）。
+      * 语义（§13.15.5）：先收集源 own enumerable 键，再移除已被模式
+      * 绑定的键，剩余复制。null/undefined 源 -> TypeError（rest 必须
+      * 可解构对象，与对象展开的跳过不同）。 */
+      if (stack.size() < 2 || frame.arg >= fn.numLocals) {
+        error = fail("Error: stack underflow on RestObjectProps"); break;
+      }
+      JSValue *exclude = stack.back();
+      JSValue *src = stack[stack.size() - 2];
+      stack.resize(stack.size() - 2);
+      JSValue *target = stack[frame.arg];
+      if (target == nullptr || !target->isObject()) {
+        error = fail("TypeError: object rest target is not an object"); break;
+      }
+      if (src == nullptr || src->kind() == Kind::Undefined ||
+          src->kind() == Kind::Null) {
+        std::string tn = (src == nullptr || src->kind() == Kind::Undefined)
+                             ? "undefined"
+                             : "null";
+        error = fail("TypeError: Cannot destructure " + tn + " as it is null"); break;
+      }
+      ConversionResult boxed = toObject(frame.ctx, src);
+      if (!boxed.ok()) return boxed;
+      JSObject *sobj = boxed.value->object();
+      JSObject *tobj = target->object();
+      /* 排除键集合：exclude_arr 元素（字符串）收集为集合。 */
+      std::unordered_set<std::string> excluded;
+      if (exclude != nullptr && exclude->isObject() &&
+          exclude->object()->isArray()) {
+        JSObject *ea = exclude->object();
+        for (size_t i = 0; i < ea->length(); ++i) {
+          JSValue *k = ea->getElement(i);
+          if (k != nullptr && k->kind() == Kind::String) {
+            excluded.insert(k->toString());
+          }
+        }
+      }
+      /* 收集源 own enumerable 键（同 CopyObjectProps：数组整数索引 +
+      * String 包装虚拟索引 + propertyOrder 过滤 enumerable）。 */
+      std::vector<std::string> keys;
+      for (size_t i = 0; i < sobj->length(); ++i) {
+        if (sobj->isArray() && sobj->hasElement(i)) keys.push_back(std::to_string(i));
+      }
+      if (sobj->kind() == ObjectKind::String) {
+        JSValue *data = sobj->wrapperData();
+        if (data != nullptr && data->kind() == Kind::String) {
+          size_t len = utf16Length(data->toString());
+          for (size_t i = 0; i < len; ++i) keys.push_back(std::to_string(i));
+        }
+      }
+      for (const auto &name : sobj->propertyOrder()) {
+        const PropertyDescriptor *d = sobj->getOwnProperty(name);
+        if (d != nullptr && d->enumerable) keys.push_back(name);
+      }
+      for (const std::string &k : keys) {
+        if (excluded.count(k) > 0) continue; /* 已绑定键跳过 */
+        JSValue *v = nullptr;
+        if (sobj->isArray()) {
+          size_t idx = static_cast<size_t>(std::strtoull(k.c_str(), nullptr, 10));
+          v = sobj->getElement(idx);
+        } else {
+          PropertyDescriptor *d = sobj->getOwnProperty(k);
+          if (d != nullptr && d->type == PropertyDescriptor::Type::Accessor) {
+            if (d->getter == nullptr || !isCallable(d->getter)) {
+              v = frame.ctx->createValue(Kind::Undefined);
+            } else {
+              ConversionResult r = call(frame.ctx, d->getter, sobj->holder(), nullptr, 0);
+              if (!r.ok()) { error = std::move(r); break; }
+              v = r.value;
+            }
+          } else {
+            v = d != nullptr && d->value != nullptr ? d->value
+                                                    : frame.ctx->createValue(Kind::Undefined);
+          }
+        }
+        bool numeric = !k.empty() &&
+                       k.find_first_not_of("0123456789") == std::string::npos;
+        if (tobj->isArray() && numeric && k.size() <= 18) {
+          tobj->setElement(static_cast<size_t>(std::strtoull(k.c_str(), nullptr, 10)), v);
+        } else {
+          tobj->setProperty(k, v);
+        }
+      }
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_NextKey(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1e-c for-in：栈顶键数组 -> 弹首键（并移除）或 undefined（空）。
+      * 键数组按 [[OwnPropertyKeys]] 序填充（升序/创建序），故从头部弹。
+      * 键数组为普通 JS 数组：读首元素，前移移除。 */
+      if (stack.empty()) { error = fail("Error: stack underflow on NextKey"); break; }
+      JSValue *arr = stack.back();
+      if (arr->isObject() && arr->object()->isArray()) {
+        JSObject *a = arr->object();
+        size_t n = a->length();
+        JSValue *key = nullptr;
+        if (n > 0) {
+          key = a->getElement(0);
+          for (size_t i = 1; i < n; ++i) {
+            a->setElement(i - 1, a->getElement(i));
+          }
+          a->resizeElements(n - 1);
+        }
+        stack.pop_back();
+        stack.push_back(key != nullptr ? key : frame.ctx->createValue(Kind::Undefined));
+      } else {
+        stack.pop_back();
+        stack.push_back(frame.ctx->createValue(Kind::Undefined));
+      }
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Increment(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1e-b：一元 ++/--（§13.4.4）。arg=0 增 1，arg=1 减 1。
+      * ToNumeric 后 ±1（BigInt ±1n，Number ±1）。 */
+      if (stack.empty()) { error = fail("Error: stack underflow on Increment"); break; }
+      JSValue *a = stack.back();
+      ConversionResult r = unaryIncrement(frame.ctx, a, frame.arg != 0);
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.pop_back();
+      stack.push_back(r.value);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_LoadUpvalue(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* 捕获的外层变量读取（M2.5）：沿环境链 depth 跳转后查 name。 */
+      JSEnvironment *e = captureEnv(frame.env, fn, frame.arg);
+      if (e == nullptr || frame.arg >= fn.captures.size()) {
+        error = fail("ReferenceError: captured variable not found"); break;
+      }
+      const std::string &name = fn.captures[frame.arg].name;
+      JSValue *val = e->getBinding(name);
+      stack.push_back(val != nullptr ? val : frame.ctx->createValue(Kind::Undefined));
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_StoreUpvalue(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* 捕获的外层变量写入（M2.5）：沿环境链 depth 跳转后写回。 */
+      if (stack.empty()) {
+        error = fail("Error: stack underflow on StoreUpvalue"); break;
+      }
+      JSEnvironment *e = captureEnv(frame.env, fn, frame.arg);
+      if (e == nullptr || frame.arg >= fn.captures.size()) {
+        error = fail("ReferenceError: captured variable not found"); break;
+      }
+      const std::string &name = fn.captures[frame.arg].name;
+      JSValue *val = stack.back();
+      stack.pop_back();
+      e->setBinding(name, val); /* 值写回目标环境 */
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Throw(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* JS throw（§14.15）：栈顶值作为异常抛出（弹栈，异常传播）。
+      * 值经 error.thrown 携带（JS throw 值），异常表/跨帧拦截。 */
+      if (stack.empty()) {
+        error = fail("Error: stack underflow on Throw");
+        break;
+      }
+      JSValue *v = stack.back();
+      stack.pop_back();
+      error.value = nullptr;
+      error.error.clear();
+      error.thrown = v;
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_RethrowPending(VmFrame &frame) {
+  ConversionResult error;
+  do {
+      /* finally 末尾（§14.16.4）：有挂起异常则重抛，否则正常继续。 */
+      if (frame.has_pending) {
+        frame.has_pending = false;
+        error = std::move(frame.pending);
+        if (frame.pending_handle != 0) {
+          frame.ctx->handles().free(frame.pending_handle);
+          frame.pending_handle = 0;
+        }
+        break;
+      }
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_Nop(VmFrame &frame) {
+  ConversionResult error;
+  do {
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+/* 分发表：按 Opcode 枚举值下标访问（M5.1e-f 栈帧瘦身）。 */
+const OpHandler kHandlers[] = {
+    op_PushConst,  /* PushConst */
+    op_PushBigInt,  /* PushBigInt */
+    op_PushUndefined,  /* PushUndefined */
+    op_PushNull,  /* PushNull */
+    op_PushTrue,  /* PushTrue */
+    op_PushFalse,  /* PushFalse */
+    op_PushInt,  /* PushInt */
+    op_LoadVar,  /* LoadVar */
+    op_StoreVar,  /* StoreVar */
+    op_LoadGlobal,  /* LoadGlobal */
+    op_Pop,  /* Pop */
+    op_Dup,  /* Dup */
+    op_Add,  /* Add */
+    op_Sub,  /* Sub */
+    op_Mul,  /* Mul */
+    op_Div,  /* Div */
+    op_Mod,  /* Mod */
+    op_Pow,  /* Pow */
+    op_Neg,  /* Neg */
+    op_Not,  /* Not */
+    op_Typeof,  /* Typeof */
+    op_Eq,  /* Eq */
+    op_StrictEq,  /* StrictEq */
+    op_Lt,  /* Lt */
+    op_Le,  /* Le */
+    op_Gt,  /* Gt */
+    op_Ge,  /* Ge */
+    op_Ne,  /* Ne */
+    op_StrictNe,  /* StrictNe */
+    op_BitAnd,  /* BitAnd */
+    op_BitOr,  /* BitOr */
+    op_BitXor,  /* BitXor */
+    op_LShift,  /* LShift */
+    op_RShift,  /* RShift */
+    op_URShift,  /* URShift */
+    op_Jump,  /* Jump */
+    op_JumpIfFalse,  /* JumpIfFalse */
+    op_Call,  /* Call */
+    op_CallMethod,  /* CallMethod */
+    op_Construct,  /* Construct */
+    op_Ret,  /* Ret */
+    op_MakeFunction,  /* MakeFunction */
+    op_LoadUpvalue,  /* LoadUpvalue */
+    op_StoreUpvalue,  /* StoreUpvalue */
+    op_NewObject,  /* NewObject */
+    op_NewArray,  /* NewArray */
+    op_LoadProp,  /* LoadProp */
+    op_StoreProp,  /* StoreProp */
+    op_LoadElem,  /* LoadElem */
+    op_StoreElem,  /* StoreElem */
+    op_Print,  /* Print */
+    op_Nop,  /* Nop */
+    op_GetIterator,  /* GetIterator */
+    op_IteratorStep,  /* IteratorStep */
+    op_JumpIfTrue,  /* JumpIfTrue */
+    op_JumpIfUndefined,  /* JumpIfUndefined */
+    op_RestToArray,  /* RestToArray */
+    op_RestParam,  /* RestParam */
+    op_AppendElem,  /* AppendElem */
+    op_AppendSpread,  /* AppendSpread */
+    op_CallArray,  /* CallArray */
+    op_ConstructArray,  /* ConstructArray */
+    op_CopyObjectProps,  /* CopyObjectProps */
+    op_JumpIfNullish,  /* JumpIfNullish */
+    op_DefineProp,  /* DefineProp */
+    op_DefineAccessor,  /* DefineAccessor */
+    op_LoadThis,  /* LoadThis */
+    op_SetPrototype,  /* SetPrototype */
+    op_SetHomeObject,  /* SetHomeObject */
+    op_SuperLoadProp,  /* SuperLoadProp */
+    op_SuperLoadElem,  /* SuperLoadElem */
+    op_SuperCall,  /* SuperCall */
+    op_LoadPrivate,  /* LoadPrivate */
+    op_StorePrivate,  /* StorePrivate */
+    op_HasPrivate,  /* HasPrivate */
+    op_InitPrivate,  /* InitPrivate */
+    op_SuperCallArray,  /* SuperCallArray */
+    op_In,  /* In */
+    op_Instanceof,  /* Instanceof */
+    op_ToString,  /* ToString */
+    op_ToNumber,  /* ToNumber */
+    op_BitNot,  /* BitNot */
+    op_DeleteProp,  /* DeleteProp */
+    op_DeleteElem,  /* DeleteElem */
+    op_Increment,  /* Increment */
+    op_EnumerateKeys,  /* EnumerateKeys */
+    op_NextKey,  /* NextKey */
+    op_RestObjectProps,  /* RestObjectProps */
+    op_Throw,  /* Throw */
+    op_RethrowPending,  /* RethrowPending */
+};
+
 }  // namespace
 
 /* -------------------------------------------------------------------------- */
@@ -638,1527 +3411,50 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
 
   /* 注意：指令执行期间操作数保持栈上（不提前 pop），运算完成后才收缩——
    * 否则操作数弹出后不受根集保护，运算内部分配触发 GC 会被回收（悬垂）。 */
-  while (pc < code.size()) {
-    const Instruction &instr = code[pc++];
-    switch (instr.op) {
-      case Opcode::PushConst:
-        stack.push_back(constValue(ctx, fn, instr.arg));
-        break;
-      case Opcode::PushBigInt:
-        /* BigInt 常量（M4.3）：十进制数字串。 */
-        stack.push_back(constValue(ctx, fn, instr.arg));
-        break;
-      case Opcode::PushUndefined:
-        stack.push_back(ctx->createValue(Kind::Undefined));
-        break;
-      case Opcode::PushNull:
-        stack.push_back(ctx->createValue(Kind::Null));
-        break;
-      case Opcode::PushTrue:
-        stack.push_back(ctx->createValue(true));
-        break;
-      case Opcode::PushFalse:
-        stack.push_back(ctx->createValue(false));
-        break;
-      case Opcode::PushInt:
-        stack.push_back(ctx->createValue(static_cast<int64_t>(
-            static_cast<int16_t>(instr.arg))));
-        break;
-      case Opcode::LoadVar: {
-        if (instr.arg >= stack.size()) {
-          return fail("ReferenceError: local slot out of range");
-        }
-        /* M4.4：优先读环境绑定——内层闭包经 StoreUpvalue 更新外层局部后，
-         * 外层 LoadVar 需读到最新值（顶层 var + forEach 回调场景）。
-         * 环境无该绑定（如参数名未写入环境）时回退栈槽。 */
-        if (env != nullptr && instr.arg < fn.locals.size() &&
-            !fn.locals[instr.arg].empty()) {
-          const std::string &name = fn.locals[instr.arg];
-          JSValue *bv = env->getBinding(name);
-          if (bv != nullptr) {
-            stack.push_back(bv);
-            break;
-          }
-        }
-        stack.push_back(stack[instr.arg]);
-        break;
-      }
-      case Opcode::StoreVar: {
-        if (stack.empty() || instr.arg >= stack.size()) {
-          return fail("ReferenceError: local slot out of range");
-        }
-        JSValue *val = stack.back();
-        stack[instr.arg] = val; /* 栈顶 -> 局部槽 */
-        /* M2.5：局部变量同步写入当前环境（内层闭包 LoadUpvalue 沿链查找）。 */
-        if (env != nullptr && instr.arg < fn.locals.size() &&
-            !fn.locals[instr.arg].empty()) {
-          env->setBinding(fn.locals[instr.arg], val);
-        }
-        stack.pop_back();       /* 弹出：赋值表达式不保留值在栈（链式赋值经 LoadVar） */
-        break;
-      }
-      case Opcode::LoadGlobal: {
-        /* 全局对象属性读取：LoadGlobal {name_index} -> 属性值（未定义属性返回 undefined）。 */
-        if (instr.arg >= fn.constants.size() ||
-            fn.constants[instr.arg].is_number) {
-          return fail("Error: LoadGlobal requires a string constant");
-        }
-        const std::string &name = fn.constants[instr.arg].str;
-        JSValue *global = ctx->globalObject();
-        JSValue *val = global->object()->getProperty(name);
-        stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
-        break;
-      }
-      case Opcode::Pop: {
-        if (stack.size() <= fn.numLocals) {
-          return fail("Error: stack underflow on Pop");
-        }
-        stack.pop_back();
-        break;
-      }
-      case Opcode::Dup: {
-        /* 复制栈顶（M4.1 成员调用保留 this）。 */
-        if (stack.size() <= fn.numLocals) {
-          return fail("Error: stack underflow on Dup");
-        }
-        stack.push_back(stack.back());
-        break;
-      }
-      case Opcode::Add: {
-        /* 操作数保持栈上（GC 根集保护）：add 内部分配触发 GC 也不会回收操作数。 */
-        if (stack.size() < 2) return fail("Error: stack underflow on Add");
-        JSValue *b = stack[stack.size() - 1];
-        JSValue *a = stack[stack.size() - 2];
-        ConversionResult r = add(ctx, a, b);
-        if (!r.ok()) return r;
-        stack.resize(stack.size() - 2);
-        stack.push_back(r.value);
-        break;
-      }
-      case Opcode::Sub:
-      case Opcode::Mul:
-      case Opcode::Div:
-      case Opcode::Mod:
-      case Opcode::Pow: {
-        if (stack.size() < 2) return fail("Error: stack underflow on arith");
-        JSValue *b = stack[stack.size() - 1];
-        JSValue *a = stack[stack.size() - 2];
-        ConversionResult r = binaryArith(ctx, a, b, instr.op);
-        if (!r.ok()) return r;
-        stack.resize(stack.size() - 2);
-        stack.push_back(r.value);
-        break;
-      }
-      case Opcode::BitAnd:
-      case Opcode::BitOr:
-      case Opcode::BitXor:
-      case Opcode::LShift:
-      case Opcode::RShift:
-      case Opcode::URShift: {
-        if (stack.size() < 2) return fail("Error: stack underflow on bitwise");
-        JSValue *b = stack[stack.size() - 1];
-        JSValue *a = stack[stack.size() - 2];
-        ConversionResult r = bitwiseOp(ctx, a, b, instr.op);
-        if (!r.ok()) return r;
-        stack.resize(stack.size() - 2);
-        stack.push_back(r.value);
-        break;
-      }
-      case Opcode::Neg: {
-        if (stack.empty()) return fail("Error: stack underflow on Neg");
-        JSValue *a = stack.back(); /* 保持栈上，toNumeric 完成后再收缩 */
-        ConversionResult n = toNumeric(ctx, a);
-        if (!n.ok()) return n;
-        stack.pop_back();
-        if (n.value->kind() == Kind::BigInt) {
-          /* 一元取负（§13.5.4）：BigInt 翻转符号位，0n 仍为 0n。 */
-          bool neg = !n.value->bigIntNegative();
-          const std::string &digits = n.value->bigIntDigits();
-          stack.push_back(ctx->createValue(
-              JSValue(neg && digits != "0", digits)));
-        } else {
-          stack.push_back(ctx->createValue(-n.value->toNumber()));
-        }
-        break;
-      }
-      case Opcode::Not: {
-        if (stack.empty()) return fail("Error: stack underflow on Not");
-        JSValue *a = stack.back();
-        bool b = toBoolean(a);
-        stack.pop_back();
-        stack.push_back(ctx->createValue(!b));
-        break;
-      }
-      case Opcode::Typeof: {
-        if (stack.empty()) return fail("Error: stack underflow on Typeof");
-        JSValue *a = stack.back();
-        ConversionResult r = typeOf(ctx, a);
-        if (!r.ok()) return r;
-        stack.pop_back();
-        stack.push_back(r.value);
-        break;
-      }
-      case Opcode::Eq:
-      case Opcode::StrictEq:
-      case Opcode::Lt:
-      case Opcode::Le:
-      case Opcode::Gt:
-      case Opcode::Ge:
-      case Opcode::Ne:
-      case Opcode::StrictNe: {
-        if (stack.size() < 2) return fail("Error: stack underflow on compare");
-        JSValue *b = stack[stack.size() - 1];
-        JSValue *a = stack[stack.size() - 2];
-        ConversionResult r = compareOp(ctx, a, b, instr.op);
-        if (!r.ok()) return r;
-        stack.resize(stack.size() - 2);
-        stack.push_back(r.value);
-        break;
-      }
-      case Opcode::Jump: {
-        pc = instr.arg;
-        break;
-      }
-      case Opcode::JumpIfFalse: {
-        if (stack.empty()) return fail("Error: stack underflow on JumpIfFalse");
-        JSValue *cond = stack.back(); stack.pop_back();
-        if (!toBoolean(cond)) pc = instr.arg;
-        break;
-      }
-      case Opcode::JumpIfTrue: {
-        /* M4.4f：栈顶为 true 则跳转（for-of 的 done 判断）。 */
-        if (stack.empty()) return fail("Error: stack underflow on JumpIfTrue");
-        JSValue *cond = stack.back(); stack.pop_back();
-        if (toBoolean(cond)) pc = instr.arg;
-        break;
-      }
-      case Opcode::JumpIfUndefined: {
-        /* M5.1a：栈顶为 undefined 则跳转（解构默认值判断）。 */
-        if (stack.empty()) return fail("Error: stack underflow on JumpIfUndefined");
-        JSValue *v = stack.back(); stack.pop_back();
-        if (v->kind() == Kind::Undefined) pc = instr.arg;
-        break;
-      }
-      case Opcode::JumpIfNullish: {
-        /* M5.1b：栈顶为 null 或 undefined 则跳转（??= 短路判断）。 */
-        if (stack.empty()) return fail("Error: stack underflow on JumpIfNullish");
-        JSValue *v = stack.back(); stack.pop_back();
-        if (v->kind() == Kind::Null || v->kind() == Kind::Undefined) pc = instr.arg;
-        break;
-      }
-      case Opcode::Call: {
-        uint16_t argc = instr.arg;
-        size_t func_slot = stack.size() - 1 - static_cast<size_t>(argc);
-        if (func_slot >= stack.size()) {
-          return fail("Error: stack underflow on Call");
-        }
-        /* 函数与参数保持在栈上（GC 根集保护），仅以索引引用：
-         * call() 内部分配临时句柄可能触发 GC，提前弹出会被回收（悬垂）。 */
-        JSValue *func = stack[func_slot];
-        JSValue *const *call_args =
-            argc > 0 ? &stack[func_slot + 1] : nullptr;
 
-        /* 调用（E3 统一入口；this 用 undefined，非严格函数绑到 global）。 */
-        JSValue *this_undef = ctx->createValue(Kind::Undefined);
-        ConversionResult r = call(ctx, func, this_undef, call_args, argc);
-        if (!r.ok()) return r;
-        /* 收缩：弹出函数 + argc 个参数，压入结果。
-         * 返回值保护句柄（call Script 分支分配，防 GC 回收窗口期）：
-         * 先 push 入栈（受根集保护）再释放句柄，顺序安全。 */
-        stack.resize(stack.size() - 1 - static_cast<size_t>(argc));
-        stack.push_back(r.value);
-        if (r.tmp_handle != 0) ctx->handles().free(r.tmp_handle);
-        break;
+  /* M5.1e-f：异常传播（return 路径，不用 C++ 异常）。
+   * 帧级 finally 挂起状态（pending/has_pending/pending_handle）由 VmFrame
+   * 持有（见 VmFrame 定义）。主循环经全局分发表 kHandlers 按下标调用 handler，
+   * 异常经 handler 返回值（ConversionResult）逐帧传播：tryDispatch 查异常表
+   * （命中 -> 恢复栈+跳 handler，继续主循环）；未命中 -> return error 逐帧
+   * 返回，跨帧由上层 Call 指令检查传播。不占 C++ 异常展开栈空间，深层递归
+   * 安全。
+   * 注意：error 每轮由 handler 返回（成功为 ok(nullptr)，value=nullptr 但
+   * error 空、thrown=nullptr 不代表失败）；只有显式设置 error.error 或
+   * error.thrown 才触发异常分支。 */
+
+  VmFrame f;
+  f.ctx = ctx;
+  f.fn = &fn;
+  f.thisVal = thisVal;
+  f.args = args;
+  f.argc = argc;
+  f.env = env;
+  f.self = self;
+  f.stack = &stack;
+  f.pc = &pc;
+  f.frame_this = &frame_this;
+  while (*f.pc < f.code().size()) {
+    const Instruction &instr = f.code()[*f.pc];
+    f.arg = instr.arg;
+    f.op = instr.op;
+    ++(*f.pc);
+    ConversionResult error = kHandlers[static_cast<size_t>(instr.op)](f);
+    if (f.done) break; /* Ret 执行：立即结束本帧（返回栈顶结果） */
+    if (error.value == nullptr &&
+        (!error.error.empty() || error.thrown != nullptr)) {
+      if (tryDispatch(f.ctx, *f.fn, *f.pc, *f.stack, error, f.pc,
+                      &f.pending, &f.has_pending, &f.pending_handle,
+                      f.env)) {
+        continue;
       }
-      case Opcode::CallMethod: {
-        /* 成员方法调用（M4.1）：栈布局 obj, func, args...（argc 个）。
-         * this = obj（func_slot 下方一位）。 */
-        uint16_t argc = instr.arg;
-        size_t func_slot = stack.size() - 1 - static_cast<size_t>(argc);
-        if (func_slot <= fn.numLocals) {
-          return fail("Error: stack underflow on CallMethod");
-        }
-        JSValue *this_obj = stack[func_slot - 1];
-        JSValue *func = stack[func_slot];
-        JSValue *const *call_args =
-            argc > 0 ? &stack[func_slot + 1] : nullptr;
-        ConversionResult r = call(ctx, func, this_obj, call_args, argc);
-        if (!r.ok()) return r;
-        /* 收缩：弹出 this + func + argc 个参数，压入结果。 */
-        stack.resize(stack.size() - 2 - static_cast<size_t>(argc));
-        stack.push_back(r.value);
-        if (r.tmp_handle != 0) ctx->handles().free(r.tmp_handle);
-        break;
+      if (f.pending_handle != 0) {
+        f.ctx->handles().free(f.pending_handle);
+        f.pending_handle = 0;
       }
-      case Opcode::Construct: {
-        /* new 构造（M4.2）：栈布局 ctor, args...（argc 个）。
-         * this = 新对象（construct 内部创建）。 */
-        uint16_t argc = instr.arg;
-        size_t ctor_slot = stack.size() - 1 - static_cast<size_t>(argc);
-        if (ctor_slot < fn.numLocals) {
-          return fail("Error: stack underflow on Construct");
-        }
-        JSValue *ctor = stack[ctor_slot];
-        JSValue *const *call_args =
-            argc > 0 ? &stack[ctor_slot + 1] : nullptr;
-        ConversionResult r = construct(ctx, ctor, call_args, argc);
-        if (!r.ok()) return r;
-        stack.resize(stack.size() - 1 - static_cast<size_t>(argc));
-        stack.push_back(r.value);
-        if (r.tmp_handle != 0) ctx->handles().free(r.tmp_handle);
-        break;
-      }
-      case Opcode::Ret: {
-        /* M5.1d-c1 构造器返回语义（§10.2.2 Construct 步骤 12-14）：
-         * return 对象 -> 用之；return 非对象或无 return -> 返回最终 this
-         * （基类 = 构造器创建的实例；派生类 = super() 建立/替换的对象）。
-         * 压栈保护 frame_this（栈是根集），避免替换后的对象无根可达被 GC。 */
-        if (self != nullptr && self->isConstructor()) {
-          if (stack.empty() || !stack.back()->isObject()) {
-            stack.push_back(frame_this);
-          }
-        }
-        if (stack.empty()) return ok(ctx->createValue(Kind::Undefined));
-        JSValue *result = stack.back();
-        return ok(result);
-      }
-      case Opcode::Print: {
-        if (stack.empty()) return fail("Error: stack underflow on Print");
-        JSValue *v = stack.back();
-        /* toString 内部分配可能触发 GC：v 保持栈上受根集保护。 */
-        if (v->kind() == Kind::String) {
-          std::fputs(v->toString().c_str(), stdout);
-        } else {
-          ConversionResult s = toString(ctx, v);
-          if (!s.ok()) return s;
-          std::fputs(s.value->toString().c_str(), stdout);
-        }
-        std::fputs("\n", stdout);
-        stack.pop_back();
-        break;
-      }
-      case Opcode::MakeFunction: {
-        /* 从嵌套函数表实例化 JSFunction，[[Environment]] 绑定当前环境（M2.5）。
-         * 嵌套函数字节码（fn.nested[arg]）复制给新函数。 */
-        if (instr.arg >= fn.nested.size()) {
-          return fail("Error: MakeFunction index out of range");
-        }
-        /* 函数原型链 -> Function.prototype（M4.2）：Script 函数挂 call/apply/
-         * bind 方法（§20.2.3）。惰性创建缓存，未注册内置时原型为 null。 */
-        JSObject *fproto = nullptr;
-        JSValue *fp = neojs::functionProto(ctx);
-        if (fp != nullptr) fproto = fp->object();
-        JSFunction *f = ctx->heap().allocGCObject<JSFunction>(
-            fproto, FunctionKind::Script, nullptr /* func */);
-        const FunctionBytecode &nf = fn.nested[instr.arg];
-        f->setBytecode(nf); /* 复制（FunctionBytecode 值语义） */
-        f->setEnvironment(env);
-        /* M5.1d-a class：构造器/方法标志 -> 构造器可 new + 严格模式。
-         * class 体一律严格模式（§15.7.2.1）；构造器额外 setConstructor。 */
-        if (nf.is_constructor) {
-          f->setConstructor(true);
-          f->setThisMode(ThisMode::Strict);
-        } else if (nf.is_method) {
-          f->setThisMode(ThisMode::Strict);
-        }
-        /* M5.1d-b 箭头函数：super 上下文继承（§15.2.3.7 步骤 6——箭头
-         * 函数没有自己的 [[HomeObject]]，super 解析到外层方法）。
-         * 外层帧 self 是方法（有 HomeObject）时复制给箭头函数。 */
-        if (nf.is_arrow && self != nullptr && self->homeObject() != nullptr) {
-          f->setHomeObject(self->homeObject());
-        }
-        /* M5.1d-c2 箭头函数词法 this（§10.2.5.6 Lexical）：箭头函数
-         * [[ThisMode]] = Lexical，调用时忽略传入 this，用定义处外层代码
-         * 的 this（当前帧 this）。捕获后由 gcMarkRefs 作为引用边保护。 */
-        if (nf.is_arrow) {
-          f->setThisMode(ThisMode::Lexical);
-          f->setLexicalThis(frame_this);
-        }
-        ctx->heap().pin(f); /* 分配保护（M3.3）：两段式创建中间窗口防误回收 */
-        JSValue *v = ctx->heap().allocGCObject<JSValue>();
-        v->setObject(f);
-        f->setHolder(v);
-        ctx->heap().pin(v); /* v 未入栈前防误回收（GC 窗口，含 prototype 创建） */
-        /* §20.2.3 步骤 8-10：普通函数创建 prototype 属性（箭头函数除外）。
-         * prototype = 新对象（原型链 Object.prototype），含 constructor
-         * 反向指针。class 构造器 prototype 由编译器 define_prop 显式覆盖
-         * （compiler.cc compileClass 步骤 3），此处不设。 */
-        if (!nf.is_arrow && !nf.is_constructor && !nf.is_method) {
-          JSObject *op = objectProto(ctx) ? objectProto(ctx)->object() : nullptr;
-          JSValue *proto = ctx->createObject(op);
-          ctx->heap().pin(proto);
-          {
-            /* constructor 反向指针：non-enumerable（§20.2.3 步骤 8 的
-             * CreateDataProperty 实为 non-enumerable，规范步骤 9）。 */
-            PropertyDescriptor cd;
-            cd.value = v;
-            cd.enumerable = false;
-            proto->object()->setOwnProperty("constructor", cd);
-          }
-          PropertyDescriptor pd;
-          pd.value = proto;
-          pd.enumerable = false; /* 规范：prototype 属性 non-enumerable */
-          f->setOwnProperty("prototype", pd);
-          ctx->heap().unpin(proto);
-        }
-        ctx->heap().unpin(v);
-        ctx->heap().unpin(f);
-        stack.push_back(v);
-        break;
-      }
-      case Opcode::NewObject: {
-        /* 新建普通对象，原型链指向 Object.prototype（M3.3；
-         * 惰性创建缓存，未注册内置时原型为 null）。 */
-        JSValue *obj =
-            ctx->createObject(objectProto(ctx) ? objectProto(ctx)->object()
-                                               : nullptr);
-        stack.push_back(obj);
-        break;
-      }
-      case Opcode::NewArray: {
-        /* 新建数组（空 elements，length = 0）。 */
-        JSValue *arr = ctx->createArray(0);
-        stack.push_back(arr);
-        break;
-      }
-      case Opcode::LoadProp: {
-        /* obj.key -> 栈顶（替换 obj）。key 为常量池字符串。 */
-        if (stack.empty()) return fail("Error: stack underflow on LoadProp");
-        JSValue *obj = stack.back();
-        if (instr.arg >= fn.constants.size() ||
-            fn.constants[instr.arg].is_number) {
-          return fail("Error: LoadProp requires a string constant");
-        }
-        const std::string &key = fn.constants[instr.arg].str;
-        /* 原始值成员读取（§13.3.3 + §7.1.13）：先 ToObject 装箱查属性，
-         * 方法调用时 this 仍为原始值（getValue 返回原始值）。undefined/null
-         * 装箱失败 -> TypeError。 */
-        JSObject *target = nullptr;
-        if (obj->isObject()) {
-          target = obj->object();
-        } else if (obj->kind() == Kind::Undefined ||
-                   obj->kind() == Kind::Null) {
-          return fail("TypeError: Cannot read properties of " +
-                      (obj->kind() == Kind::Undefined ? std::string("undefined")
-                                                      : std::string("null")));
-        } else {
-          ConversionResult boxed = toObject(ctx, obj);
-          if (!boxed.ok()) return boxed;
-          target = boxed.value->object();
-        }
-        JSValue *val = nullptr;
-        if (target->isArray() && key == "length") {
-          /* 数组 length 属性（M4.1）：由 elements 存储推导，非存储属性。 */
-          val = ctx->createValue(static_cast<double>(target->length()));
-        } else if (target->isMap() && key == "size") {
-          /* Map size 属性（M4.4b，§24.1.3.13）：由条目数推导，非存储属性。 */
-          val = ctx->createValue(static_cast<double>(target->collectionSize()));
-        } else if (target->isSet() && key == "size") {
-          /* Set size 属性（M4.4c，§24.2.3.9）：由条目数推导，非存储属性。 */
-          val = ctx->createValue(static_cast<double>(target->collectionSize()));
-        } else if (target->isWrapper() &&
-                   target->kind() == ObjectKind::String &&
-                   (key == "length" || isCanonicalArrayIndex(key))) {
-          /* String 包装对象/原始串的虚拟索引属性（§10.4.3.3）：
-           * length 由 [[StringData]] 的 UTF-16 code unit 数推导；
-           * 整数索引 key（如 "0"）返回对应 code unit 字符（'abc'[1] == 'b'）。 */
-          JSValue *data = target->wrapperData();
-          if (data != nullptr && data->kind() == Kind::String) {
-            const std::string &s = data->toString();
-            if (key == "length") {
-              val = ctx->createValue(static_cast<double>(utf16Length(s)));
-            } else {
-              size_t idx = static_cast<size_t>(std::stoul(key));
-              size_t len = utf16Length(s);
-              if (idx < len) {
-                val = ctx->createValue(s.substr(idx, 1));
-              } else {
-                val = ctx->createValue(Kind::Undefined);
-              }
-            }
-          } else {
-            val = ctx->createValue(Kind::Undefined);
-          }
-        } else {
-          /* M4.4h：访问器感知读取（数据属性直接取值；访问器调 getter）。 */
-          ConversionResult gv = getPropertyValue(ctx, target, key);
-          if (!gv.ok()) return gv;
-          val = gv.value;
-        }
-        stack.pop_back();
-        stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
-        break;
-      }
-      case Opcode::StoreProp: {
-        /* obj, val -> 栈顶 val（obj.key = val）。key 为常量池字符串。
-         * 消费 obj（编译器成员赋值后不再需要对象引用）。 */
-        if (stack.size() < 2) return fail("Error: stack underflow on StoreProp");
-        JSValue *val = stack.back();
-        JSValue *obj = stack[stack.size() - 2];
-        if (instr.arg >= fn.constants.size() ||
-            fn.constants[instr.arg].is_number) {
-          return fail("Error: StoreProp requires a string constant");
-        }
-        const std::string &key = fn.constants[instr.arg].str;
-        if (!obj->isObject()) {
-          return fail("TypeError: Cannot set properties of non-object");
-        }
-        if (obj->object()->isArray() && key == "length") {
-          /* 数组 length 写入（M4.1）：截断/扩展元素存储。
-           * M4.4h：若 defineProperty 已置 writable=false 则拒绝（§9.4.2.1
-           * ArraySetLength 的 Reject）。 */
-          PropertyDescriptor *len_desc =
-              obj->object()->getOwnProperty("length");
-          if (len_desc != nullptr &&
-              len_desc->type == PropertyDescriptor::Type::Data &&
-              !len_desc->writable) {
-            return fail("TypeError: Cannot assign to read only property 'length'");
-          }
-          double d = val->toNumber();
-          if (d < 0.0 || d != std::trunc(d) || d > 4294967295.0) {
-            return fail("RangeError: Invalid array length");
-          }
-          obj->object()->resizeElements(static_cast<size_t>(d));
-        } else {
-          /* M4.4h：访问器感知写入（writable 校验 + setter 调用）。 */
-          ConversionResult sr = setPropertyValue(ctx, obj->object(), key, val);
-          if (!sr.ok()) return sr;
-        }
-        stack.resize(stack.size() - 2);
-        stack.push_back(val); /* 赋值表达式值 = 新值 */
-        break;
-      }
-      case Opcode::LoadElem: {
-        /* obj, key -> 栈顶（替换 obj）。key 运行期 ToPropertyKey。 */
-        if (stack.size() < 2) return fail("Error: stack underflow on LoadElem");
-        JSValue *key = stack.back();
-        JSValue *obj = stack[stack.size() - 2];
-        /* 数组整数索引快速路径（架构 §5.2：arr[i] -> elements）。 */
-        if (obj->isObject() && obj->object()->isArray() && key->isNumber()) {
-          double d = key->toNumber();
-          if (d >= 0.0 && d == std::trunc(d) && d < 4294967296.0) {
-            JSValue *val = obj->object()->getElement(static_cast<size_t>(d));
-            stack.resize(stack.size() - 2);
-            stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
-            break;
-          }
-        }
-        ConversionResult pk = toPropertyKey(ctx, key);
-        if (!pk.ok()) return pk;
-        /* Symbol 属性键（M4.4d）：查 Symbol 属性表（沿原型链）。
-         * 原始值（如 'ab'[Symbol.iterator]）先 ToObject 装箱（§13.3.3
-         * Property Accessors 的 RequireObjectCoercible + ToObject）。 */
-        if (pk.value->kind() == Kind::Symbol) {
-          JSValue *symbol_target = obj;
-          if (!obj->isObject()) {
-            if (obj->kind() == Kind::Undefined || obj->kind() == Kind::Null) {
-              return fail("TypeError: Cannot read properties of " +
-                          (obj->kind() == Kind::Undefined
-                               ? std::string("undefined")
-                               : std::string("null")));
-            }
-            ConversionResult boxed = toObject(ctx, obj);
-            if (!boxed.ok()) return boxed;
-            symbol_target = boxed.value;
-          }
-          JSValue *val = symbol_target->object()->getSymbolProperty(pk.value);
-          stack.resize(stack.size() - 2);
-          stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
-          break;
-        }
-        /* 字符串原始值/包装对象整数索引（§10.4.3.4 String exotic object）：
-         * 虚拟索引属性，由 [[StringData]] 的 code unit 推导。 */
-        if (pk.value->kind() == Kind::String &&
-            (obj->kind() == Kind::String ||
-             (obj->isObject() && obj->object()->kind() == ObjectKind::String))) {
-          const std::string &s =
-              obj->kind() == Kind::String
-                  ? obj->toString()
-                  : obj->object()->wrapperData()->toString();
-          const std::string &idx = pk.value->toString();
-          if (!idx.empty() &&
-              idx.find_first_not_of("0123456789") == std::string::npos) {
-            size_t len = utf16Length(s);
-            size_t i = 0;
-            /* 数字串转 size_t（防溢出：超长 -> 越界 undefined）。 */
-            if (idx.size() <= 18) {
-              i = static_cast<size_t>(std::strtoull(idx.c_str(), nullptr, 10));
-            }
-            if (i < len) {
-              JSValue *val = ctx->createValue(
-                  utf16Substring(s, i, i + 1)); /* 单 code unit 串 */
-              stack.resize(stack.size() - 2);
-              stack.push_back(val);
-              break;
-            }
-          }
-        }
-        /* 原始值成员读取（§13.3.3 + §7.1.13）：先 ToObject 装箱查属性。 */
-        JSObject *target = nullptr;
-        if (obj->isObject()) {
-          target = obj->object();
-        } else if (obj->kind() == Kind::Undefined ||
-                   obj->kind() == Kind::Null) {
-          return fail("TypeError: Cannot read properties of " +
-                      (obj->kind() == Kind::Undefined ? std::string("undefined")
-                                                      : std::string("null")));
-        } else {
-          ConversionResult boxed = toObject(ctx, obj);
-          if (!boxed.ok()) return boxed;
-          target = boxed.value->object();
-        }
-        /* M4.4h：访问器感知读取（数据属性直接取值；访问器调 getter）。 */
-        ConversionResult gv = getPropertyValue(ctx, target, pk.value->toString());
-        if (!gv.ok()) return gv;
-        JSValue *val = gv.value;
-        stack.resize(stack.size() - 2);
-        stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
-        break;
-      }
-      case Opcode::StoreElem: {
-        /* obj, key, val -> 栈顶 val（obj[key] = val）。 */
-        if (stack.size() < 3) return fail("Error: stack underflow on StoreElem");
-        JSValue *val = stack.back();
-        JSValue *key = stack[stack.size() - 2];
-        JSValue *obj = stack[stack.size() - 3];
-        if (!obj->isObject()) {
-          return fail("TypeError: Cannot set properties of non-object");
-        }
-        if (obj->object()->isArray() && key->isNumber()) {
-          double d = key->toNumber();
-          if (d >= 0.0 && d == std::trunc(d) && d < 4294967296.0) {
-            obj->object()->setElement(static_cast<size_t>(d), val);
-            stack.resize(stack.size() - 3);
-            stack.push_back(val);
-            break;
-          }
-        }
-        ConversionResult pk = toPropertyKey(ctx, key);
-        if (!pk.ok()) return pk;
-        /* Symbol 属性键（M4.4d）：写 Symbol 属性表。 */
-        if (pk.value->kind() == Kind::Symbol) {
-          obj->object()->setSymbolProperty(pk.value, val);
-          stack.resize(stack.size() - 3);
-          stack.push_back(val); /* 赋值表达式值 = 新值 */
-          break;
-        }
-        /* M4.4h：访问器感知写入（writable 校验 + setter 调用）。 */
-        ConversionResult sr =
-            setPropertyValue(ctx, obj->object(), pk.value->toString(), val);
-        if (!sr.ok()) return sr;
-        stack.resize(stack.size() - 3);
-        stack.push_back(val); /* 赋值表达式值 = 新值 */
-        break;
-      }
-      case Opcode::GetIterator: {
-        /* 栈顶对象 -> 迭代器（M4.4f，§7.4.1）。 */
-        if (stack.empty()) return fail("Error: stack underflow on GetIterator");
-        ConversionResult it = getIterator(ctx, stack.back());
-        if (!it.ok()) return it;
-        stack.back() = it.value; /* 替换栈顶为迭代器 */
-        break;
-      }
-      case Opcode::IteratorStep: {
-        /* 栈顶 iterator -> [value, done]（done 在栈顶，M4.4f，§7.4.5）。
-         * 完成时 value 为 undefined（规范 IteratorValue 未定义值）。
-         * iteratorStep 完成返回 ok(nullptr)（成功但无值，§7.4.5 done=true），
-         * 与失败（value=nullptr + error 非空）区分：仅 error 非空才真失败。 */
-        if (stack.empty()) return fail("Error: stack underflow on IteratorStep");
-        ConversionResult step = iteratorStep(ctx, stack.back());
-        if (step.value == nullptr && !step.error.empty()) return step;
-        if (step.value == nullptr) {
-          /* 迭代完成：压 [undefined, true]。 */
-          stack.back() = ctx->createValue(Kind::Undefined);
-          stack.push_back(ctx->createValue(true));
-        } else {
-          ConversionResult v = iteratorValue(ctx, step.value);
-          if (!v.ok()) return v;
-          stack.back() = v.value; /* value */
-          stack.push_back(ctx->createValue(false)); /* done=false */
-        }
-        break;
-      }
-      case Opcode::RestToArray: {
-        /* M5.1a rest/展开：栈 [iterable, start] -> 剩余元素数组。
-         * 迭代 iterable，跳过前 start 个元素，其余收集为新数组。
-         * start 必须为非负整数（编译期保证）。 */
-        if (stack.size() < 2) return fail("Error: stack underflow on RestToArray");
-        JSValue *start_v = stack.back();
-        JSValue *iterable = stack[stack.size() - 2];
-        size_t start = start_v->isNumber()
-                           ? static_cast<size_t>(std::max(0.0, start_v->toNumber()))
-                           : 0;
-        ConversionResult it = getIterator(ctx, iterable);
-        if (!it.ok()) return it;
-        JSValue *iterator = it.value;
-        /* 跳过前 start 个。 */
-        size_t skipped = 0;
-        while (skipped < start) {
-          ConversionResult step = iteratorStep(ctx, iterator);
-          if (step.value == nullptr && !step.error.empty()) return step;
-          if (step.value == nullptr) break; /* 迭代提前结束 */
-          ++skipped;
-        }
-        /* 收集剩余元素。 */
-        JSValue *arr = ctx->createArray(0);
-        size_t idx = 0;
-        for (;;) {
-          ConversionResult step = iteratorStep(ctx, iterator);
-          if (step.value == nullptr && !step.error.empty()) return step;
-          if (step.value == nullptr) break; /* 迭代完成 */
-          ConversionResult v = iteratorValue(ctx, step.value);
-          if (!v.ok()) return v;
-          arr->object()->setElement(idx++, v.value);
-        }
-        stack.resize(stack.size() - 2);
-        stack.push_back(arr);
-        break;
-      }
-      case Opcode::RestParam: {
-        /* M5.1a rest 参数：args[k..] 收集为新数组压栈。
-         * runBytecode 入口参数（args/argc）在本帧仍有效（调用栈递归
-         * 每帧独立）。数组经 createArray 创建后立即入栈（根集保护）。 */
-        size_t k = instr.arg;
-        JSValue *arr = ctx->createArray(0);
-        size_t idx = 0;
-        for (size_t i = k; i < argc; ++i) {
-          if (args[i] != nullptr) arr->object()->setElement(idx++, args[i]);
-        }
-        stack.push_back(arr);
-        break;
-      }
-      case Opcode::AppendElem: {
-        /* M5.1a 数组展开：弹栈值追加到槽内数组末尾（动态索引）。 */
-        if (stack.empty() || instr.arg >= fn.numLocals) {
-          return fail("Error: stack underflow on AppendElem");
-        }
-        JSValue *val = stack.back();
-        stack.pop_back();
-        JSValue *arr = stack[instr.arg];
-        if (arr == nullptr || !arr->isObject() || !arr->object()->isArray()) {
-          return fail("TypeError: AppendElem target is not an array");
-        }
-        size_t len = arr->object()->length();
-        arr->object()->setElement(len, val);
-        break;
-      }
-      case Opcode::AppendSpread: {
-        /* M5.1a 数组展开：弹栈可迭代对象，其元素按序追加到槽内数组。
-         * 迭代器入栈保护（循环期间 getIterator/iteratorStep/iteratorValue
-         * 可能分配触发 GC，迭代器不在栈上会悬垂）。 */
-        if (stack.empty() || instr.arg >= fn.numLocals) {
-          return fail("Error: stack underflow on AppendSpread");
-        }
-        JSValue *iterable = stack.back();
-        stack.pop_back();
-        JSValue *arr = stack[instr.arg];
-        if (arr == nullptr || !arr->isObject() || !arr->object()->isArray()) {
-          return fail("TypeError: AppendSpread target is not an array");
-        }
-        ConversionResult it = getIterator(ctx, iterable);
-        if (!it.ok()) return it;
-        JSValue *iterator = it.value;
-        stack.push_back(iterator); /* 迭代器入栈根集保护（循环期间） */
-        for (;;) {
-          ConversionResult step = iteratorStep(ctx, iterator);
-          if (step.value == nullptr && !step.error.empty()) {
-            stack.pop_back();
-            return step;
-          }
-          if (step.value == nullptr) break; /* 迭代完成 */
-          ConversionResult v = iteratorValue(ctx, step.value);
-          if (!v.ok()) {
-            stack.pop_back();
-            return v;
-          }
-          size_t len = arr->object()->length();
-          arr->object()->setElement(len, v.value);
-        }
-        stack.pop_back(); /* 弹出迭代器保护 */
-        break;
-      }
-      case Opcode::CallArray: {
-        /* M5.1a 展开调用：栈 [func, args_array] -> 调用结果。
-         * args_array 元素（可能为 null=空洞）按序为参数。
-         * func 与 args_array 保持在栈（GC 根集），flatten 到临时
-         * vector 后调用（call 内部分配触发 GC，vector 内指针源自栈）。 */
-        if (stack.size() < 2) return fail("Error: stack underflow on CallArray");
-        JSValue *args_arr = stack.back();
-        JSValue *func = stack[stack.size() - 2];
-        if (args_arr == nullptr || !args_arr->isObject() ||
-            !args_arr->object()->isArray()) {
-          return fail("TypeError: spread argument must be iterable");
-        }
-        JSObject *aobj = args_arr->object();
-        std::vector<JSValue *> flat;
-        flat.reserve(aobj->length());
-        for (size_t i = 0; i < aobj->length(); ++i) {
-          JSValue *e = aobj->getElement(i);
-          flat.push_back(e != nullptr ? e : ctx->createValue(Kind::Undefined));
-        }
-        JSValue *this_undef = ctx->createValue(Kind::Undefined);
-        ConversionResult r =
-            call(ctx, func, this_undef,
-                 flat.empty() ? nullptr : flat.data(), flat.size());
-        if (!r.ok()) return r;
-        stack.resize(stack.size() - 2);
-        stack.push_back(r.value);
-        if (r.tmp_handle != 0) ctx->handles().free(r.tmp_handle);
-        break;
-      }
-      case Opcode::ConstructArray: {
-        /* M5.1a 展开 new：栈 [ctor, args_array] -> 构造实例。 */
-        if (stack.size() < 2) return fail("Error: stack underflow on ConstructArray");
-        JSValue *args_arr = stack.back();
-        JSValue *ctor = stack[stack.size() - 2];
-        if (args_arr == nullptr || !args_arr->isObject() ||
-            !args_arr->object()->isArray()) {
-          return fail("TypeError: spread argument must be iterable");
-        }
-        JSObject *aobj = args_arr->object();
-        std::vector<JSValue *> flat;
-        flat.reserve(aobj->length());
-        for (size_t i = 0; i < aobj->length(); ++i) {
-          JSValue *e = aobj->getElement(i);
-          flat.push_back(e != nullptr ? e : ctx->createValue(Kind::Undefined));
-        }
-        ConversionResult r =
-            construct(ctx, ctor, flat.empty() ? nullptr : flat.data(), flat.size());
-        if (!r.ok()) return r;
-        stack.resize(stack.size() - 2);
-        stack.push_back(r.value);
-        if (r.tmp_handle != 0) ctx->handles().free(r.tmp_handle);
-        break;
-      }
-      case Opcode::CopyObjectProps: {
-        /* M5.1a 对象展开 {…src}：弹栈源对象，own enumerable 字符串属性
-         * 复制进槽内目标对象（CopyDataProperties，§10.1.2.1）。
-         * 数组源：整数索引元素为 own enumerable 键。
-         * 原始值源：ToObject 装箱后取属性（null/undefined 跳过）。 */
-        if (stack.empty() || instr.arg >= fn.numLocals) {
-          return fail("Error: stack underflow on CopyObjectProps");
-        }
-        JSValue *src = stack.back();
-        stack.pop_back();
-        JSValue *target = stack[instr.arg];
-        if (target == nullptr || !target->isObject()) {
-          return fail("TypeError: object spread target is not an object");
-        }
-        if (src == nullptr || src->kind() == Kind::Undefined ||
-            src->kind() == Kind::Null) {
-          break; /* null/undefined 源跳过（CopyDataProperties 步骤 2a） */
-        }
-        ConversionResult boxed = toObject(ctx, src);
-        if (!boxed.ok()) return boxed;
-        JSObject *sobj = boxed.value->object();
-        JSObject *tobj = target->object();
-        std::vector<std::string> keys;
-        for (size_t i = 0; i < sobj->length(); ++i) {
-          if (sobj->isArray() && sobj->hasElement(i)) keys.push_back(std::to_string(i));
-        }
-        if (sobj->kind() == ObjectKind::String) {
-          JSValue *data = sobj->wrapperData();
-          if (data != nullptr && data->kind() == Kind::String) {
-            size_t len = utf16Length(data->toString());
-            for (size_t i = 0; i < len; ++i) keys.push_back(std::to_string(i));
-          }
-        }
-        for (const auto &name : sobj->propertyOrder()) {
-          const PropertyDescriptor *d = sobj->getOwnProperty(name);
-          if (d != nullptr && d->enumerable) keys.push_back(name);
-        }
-        for (const std::string &k : keys) {
-          JSValue *v = nullptr;
-          if (sobj->isArray()) {
-            size_t idx = static_cast<size_t>(std::strtoull(k.c_str(), nullptr, 10));
-            v = sobj->getElement(idx);
-          } else {
-            PropertyDescriptor *d = sobj->getOwnProperty(k);
-            if (d != nullptr && d->type == PropertyDescriptor::Type::Accessor) {
-              if (d->getter == nullptr || !isCallable(d->getter)) {
-                v = ctx->createValue(Kind::Undefined);
-              } else {
-                ConversionResult r = call(ctx, d->getter, sobj->holder(), nullptr, 0);
-                if (!r.ok()) return r;
-                v = r.value;
-              }
-            } else {
-              v = d != nullptr && d->value != nullptr ? d->value
-                                                      : ctx->createValue(Kind::Undefined);
-            }
-          }
-          if (v == nullptr) v = ctx->createValue(Kind::Undefined);
-          bool numeric = !k.empty() &&
-                         k.find_first_not_of("0123456789") == std::string::npos;
-          if (tobj->isArray() && numeric && k.size() <= 18) {
-            tobj->setElement(
-                static_cast<size_t>(std::strtoull(k.c_str(), nullptr, 10)), v);
-          } else {
-            tobj->setProperty(k, v);
-          }
-        }
-        break;
-      }
-      case Opcode::DefineProp: {
-        /* M5.1c 计算键 { [expr]: value }：obj, key, val -> 栈顶 val。
-         * 定义 own 数据属性（key 运行期 ToPropertyKey，§7.3.14）。 */
-        if (stack.size() < 3) return fail("Error: stack underflow on DefineProp");
-        JSValue *val = stack.back();
-        JSValue *key = stack[stack.size() - 2];
-        JSValue *obj = stack[stack.size() - 3];
-        if (!obj->isObject()) {
-          return fail("TypeError: Cannot define properties on non-object");
-        }
-        ConversionResult pk = toPropertyKey(ctx, key);
-        if (!pk.ok()) return pk;
-        JSObject *target = obj->object();
-        const std::string &name = pk.value->toString();
-        bool numeric = !name.empty() &&
-                       name.find_first_not_of("0123456789") == std::string::npos;
-        if (target->isArray() && numeric && name.size() <= 18) {
-          /* 数组整数索引计算键：写元素存储。 */
-          target->setElement(static_cast<size_t>(std::strtoull(name.c_str(), nullptr, 10)), val);
-        } else {
-          PropertyDescriptor d;
-          d.value = val;
-          target->setOwnProperty(name, d);
-        }
-        stack.resize(stack.size() - 3);
-        stack.push_back(val);
-        break;
-      }
-      case Opcode::DefineAccessor: {
-        /* M5.1c getter/setter { get key(){} } / { set key(v){} }：
-         * obj, key, fn -> 栈顶 fn。arg=0 定义 getter，arg=1 定义 setter。
-         * 访问器属性描述符：getter/setter 槽，Type::Accessor。 */
-        if (stack.size() < 3) return fail("Error: stack underflow on DefineAccessor");
-        JSValue *fn = stack.back();
-        JSValue *key = stack[stack.size() - 2];
-        JSValue *obj = stack[stack.size() - 3];
-        if (!obj->isObject()) {
-          return fail("TypeError: Cannot define properties on non-object");
-        }
-        ConversionResult pk = toPropertyKey(ctx, key);
-        if (!pk.ok()) return pk;
-        JSObject *target = obj->object();
-        const std::string &name = pk.value->toString();
-        bool is_setter = instr.arg != 0;
-        PropertyDescriptor *desc = target->getOwnProperty(name);
-        if (desc == nullptr) {
-          /* 新建访问器描述符。 */
-          PropertyDescriptor d;
-          d.type = PropertyDescriptor::Type::Accessor;
-          d.writable = false; /* 访问器属性无 writable 语义 */
-          target->setOwnProperty(name, d);
-          desc = target->getOwnProperty(name);
-        } else {
-          /* 已存在：升级为访问器类型（覆盖数据属性/互补 getter/setter）。 */
-          desc->type = PropertyDescriptor::Type::Accessor;
-          desc->writable = false;
-        }
-        if (is_setter) {
-          desc->setter = fn;
-        } else {
-          desc->getter = fn;
-        }
-        stack.resize(stack.size() - 3);
-        stack.push_back(fn);
-        break;
-      }
-      case Opcode::LoadThis: {
-        /* M5.1c：当前帧 this -> 栈顶。frame_this 已由 runBytecode 解析
-         * （函数调用 = call 传入的 thisArg；顶层 = globalThis）。 */
-        stack.push_back(frame_this != nullptr ? frame_this
-                                              : ctx->globalObject());
-        break;
-      }
-      case Opcode::SetPrototype: {
-        /* M5.1d-a class extends：obj, proto -> 设置 obj.[[Prototype]]=proto，
-         * 弹 2 压回 obj。class 的 prototype 与构造器均非可扩展限制目标
-         * （普通对象），直接 setPrototype。 */
-        if (stack.size() < 2) return fail("Error: stack underflow on SetPrototype");
-        JSValue *proto = stack.back();
-        JSValue *obj = stack[stack.size() - 2];
-        if (!obj->isObject()) {
-          return fail("TypeError: Cannot set prototype of non-object");
-        }
-        JSObject *target = obj->object();
-        JSObject *new_proto = (proto != nullptr && proto->isObject())
-                                  ? proto->object()
-                                  : nullptr;
-        /* 简易防循环（class extends 场景原型链通常无环）：仅校验直接赋值。 */
-        target->setPrototype(new_proto);
-        stack.resize(stack.size() - 2);
-        stack.push_back(obj);
-        break;
-      }
-      case Opcode::SetHomeObject: {
-        /* M5.1d-b class super：设置 fn.[[HomeObject]] = obj。
-         * arg=0：obj, key, fn -> obj, key, fn（方法定义，原地不改栈）；
-         * arg=1：obj, fn -> fn（构造器/static 方法，obj 在 size-2）。
-         * HomeObject = 方法定义时所在对象：实例方法 = prototype，
-         * static/构造器 = 构造器对象自身。 */
-        const bool self_form = instr.arg != 0;
-        size_t obj_pos = self_form ? stack.size() - 2 : stack.size() - 3;
-        if (stack.size() < (self_form ? 2u : 3u)) {
-          return fail("Error: stack underflow on SetHomeObject");
-        }
-        JSValue *fn = stack.back();
-        JSValue *obj = stack[obj_pos];
-        if (!fn->isObject()) {
-          return fail("TypeError: method is not an object");
-        }
-        JSObject *home = (obj != nullptr && obj->isObject()) ? obj->object()
-                                                             : nullptr;
-        /* 仅 JSFunction 需要 HomeObject；非函数对象（未来字段值）忽略。 */
-        JSFunction *method = dynamic_cast<JSFunction *>(fn->object());
-        if (method != nullptr) method->setHomeObject(home);
-        if (self_form) {
-          /* obj, fn -> fn：obj 槽覆盖为 fn，去重末尾副本。 */
-          stack[stack.size() - 2] = fn;
-          stack.pop_back();
-        }
-        /* arg=0：栈保持 [obj, key, fn] 不变。 */
-        break;
-      }
-      case Opcode::SuperLoadProp: {
-        /* M5.1d-b super.key：从 HomeObject.[[Prototype]] 读取 key。
-         * 访问器属性 this = 当前帧 this（§12.3.5.3 MakeSuperPropertyReference）。
-         * HomeObject 缺失（super 编译期已校验上下文，运行期防御）-> undefined。 */
-        if (instr.arg >= fn.constants.size() ||
-            fn.constants[instr.arg].is_number) {
-          return fail("Error: SuperLoadProp requires a string constant");
-        }
-        const std::string &key = fn.constants[instr.arg].str;
-        JSObject *proto = nullptr;
-        if (self != nullptr && self->homeObject() != nullptr) {
-          proto = self->homeObject()->prototype();
-        }
-        if (proto == nullptr) {
-          return fail("TypeError: Cannot read properties of super");
-        }
-        JSValue *val = nullptr;
-        if (proto->isMap() && key == "size") {
-          val = ctx->createValue(static_cast<double>(proto->collectionSize()));
-        } else {
-          /* M4.4h：访问器感知读取（数据属性直接取值；访问器调 getter
-           * this=frame_this）。getPropertyValue 的 target 为 HomeObject 原型
-           * 链起点，但访问器 this 须是当前方法 this——此处特判：访问器
-           * 属性手动调 getter（this=frame_this）。 */
-          PropertyDescriptor *desc = findPropertyDescriptor(proto, key);
-          if (desc != nullptr && desc->type == PropertyDescriptor::Type::Accessor) {
-            if (desc->getter == nullptr || !isCallable(desc->getter)) {
-              val = ctx->createValue(Kind::Undefined);
-            } else {
-              JSValue *this_obj =
-                  frame_this != nullptr ? frame_this : ctx->globalObject();
-              ConversionResult r = call(ctx, desc->getter, this_obj, nullptr, 0);
-              if (!r.ok()) return r;
-              val = r.value;
-            }
-          } else {
-            ConversionResult gv = getPropertyValue(ctx, proto, key);
-            if (!gv.ok()) return gv;
-            val = gv.value;
-          }
-        }
-        stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
-        break;
-      }
-      case Opcode::SuperLoadElem: {
-        /* M5.1d-b super[expr]：从 HomeObject.[[Prototype]] 读计算键。
-         * 键运行期 ToPropertyKey（§7.1.14）；访问器 this = 当前帧 this。 */
-        if (stack.empty()) return fail("Error: stack underflow on SuperLoadElem");
-        JSValue *key = stack.back();
-        JSObject *proto = nullptr;
-        if (self != nullptr && self->homeObject() != nullptr) {
-          proto = self->homeObject()->prototype();
-        }
-        if (proto == nullptr) {
-          stack.pop_back();
-          return fail("TypeError: Cannot read properties of super");
-        }
-        ConversionResult pk = toPropertyKey(ctx, key);
-        if (!pk.ok()) return pk;
-        JSValue *val = nullptr;
-        if (pk.value->kind() == Kind::Symbol) {
-          val = proto->getSymbolProperty(pk.value);
-        } else {
-          const std::string &name = pk.value->toString();
-          PropertyDescriptor *desc = findPropertyDescriptor(proto, name);
-          if (desc != nullptr && desc->type == PropertyDescriptor::Type::Accessor) {
-            if (desc->getter == nullptr || !isCallable(desc->getter)) {
-              val = ctx->createValue(Kind::Undefined);
-            } else {
-              JSValue *this_obj =
-                  frame_this != nullptr ? frame_this : ctx->globalObject();
-              ConversionResult r = call(ctx, desc->getter, this_obj, nullptr, 0);
-              if (!r.ok()) return r;
-              val = r.value;
-            }
-          } else {
-            ConversionResult gv = getPropertyValue(ctx, proto, name);
-            if (!gv.ok()) return gv;
-            val = gv.value;
-          }
-        }
-        stack.pop_back();
-        stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
-        break;
-      }
-      case Opcode::SuperCall: {
-        /* M5.1d-c1 super()：调用基类构造器于当前帧 this。
-         * 基类构造器 = HomeObject.[[Prototype]]（构造器 HomeObject 是
-         * 自身，extends 后其 [[Prototype]] 是基类构造器）。
-         * 语义（§9.2.2.4 derived）：在现有 this 上执行基类构造器；
-         * 基类构造器显式返回对象时以该对象作为新 this（覆盖）。 */
-        uint16_t argc = instr.arg;
-        size_t args_pos = stack.size() - static_cast<size_t>(argc);
-        if (stack.size() < static_cast<size_t>(argc)) {
-          return fail("Error: stack underflow on SuperCall");
-        }
-        JSObject *home = (self != nullptr) ? self->homeObject() : nullptr;
-        if (home == nullptr) {
-          return fail("TypeError: super() can only be used in a derived constructor");
-        }
-        JSObject *base = home->prototype(); /* 基类构造器 */
-        if (base == nullptr) {
-          return fail("TypeError: cannot call super() on a base class");
-        }
-        JSValue *base_val = base->holder();
-        if (base_val == nullptr || !isCallable(base_val)) {
-          return fail("TypeError: super is not a constructor");
-        }
-        JSValue *const *call_args =
-            argc > 0 ? &stack[args_pos] : nullptr;
-        JSValue *this_obj =
-            frame_this != nullptr ? frame_this : ctx->globalObject();
-        ConversionResult r = call(ctx, base_val, this_obj, call_args, argc);
-        if (!r.ok()) return r;
-        /* 基类构造器返回对象 -> 新 this（覆盖 frame_this）。
-         * frame_this 更新后，后续 LoadThis 引用新 this。 */
-        if (r.value != nullptr && r.value->isObject()) {
-          frame_this = r.value;
-        }
-        /* 收缩：弹出 argc 个参数，压入 this（super() 求值为 this）。
-         * M5.1d-c2 派生类构造器：私有字段初始化指令已由编译器在 super()
-         * 之后内联发射（compileCall SuperCall 分支），本指令无需运行时钩子。 */
-        stack.resize(args_pos);
-        stack.push_back(frame_this);
-        if (r.tmp_handle != 0) ctx->handles().free(r.tmp_handle);
-        break;
-      }
-      case Opcode::SuperCallArray: {
-        /* M5.1d-d：super(...args) 展开调用——派生类默认构造器转发全部
-         * 实参给基类构造器（栈顶为 args 数组）。语义同 SuperCall，
-         * 参数从数组扁平化（空洞 -> undefined）。 */
-        if (stack.empty()) return fail("Error: stack underflow on SuperCallArray");
-        JSValue *args_arr = stack.back();
-        if (args_arr == nullptr || !args_arr->isObject() ||
-            !args_arr->object()->isArray()) {
-          return fail("TypeError: super spread argument must be iterable");
-        }
-        JSObject *aobj = args_arr->object();
-        std::vector<JSValue *> flat;
-        flat.reserve(aobj->length());
-        for (size_t i = 0; i < aobj->length(); ++i) {
-          JSValue *e = aobj->getElement(i);
-          flat.push_back(e != nullptr ? e : ctx->createValue(Kind::Undefined));
-        }
-        JSObject *home = (self != nullptr) ? self->homeObject() : nullptr;
-        if (home == nullptr) {
-          return fail("TypeError: super() can only be used in a derived constructor");
-        }
-        JSObject *base = home->prototype(); /* 基类构造器 */
-        if (base == nullptr) {
-          return fail("TypeError: cannot call super() on a base class");
-        }
-        JSValue *base_val = base->holder();
-        if (base_val == nullptr || !isCallable(base_val)) {
-          return fail("TypeError: super is not a constructor");
-        }
-        JSValue *this_obj =
-            frame_this != nullptr ? frame_this : ctx->globalObject();
-        ConversionResult r =
-            call(ctx, base_val, this_obj,
-                 flat.empty() ? nullptr : flat.data(), flat.size());
-        if (!r.ok()) return r;
-        if (r.value != nullptr && r.value->isObject()) {
-          frame_this = r.value;
-        }
-        /* 收缩：弹出 args 数组，压入 this。 */
-        stack.pop_back();
-        stack.push_back(frame_this);
-        if (r.tmp_handle != 0) ctx->handles().free(r.tmp_handle);
-        break;
-      }
-      case Opcode::LoadPrivate: {
-        /* M5.1d-c2：receiver -> 私有字段值。
-         * 字段全名 = fn.private_names[instr.arg]（含 '#' 前缀）。
-         * 接收者校验：无该私有槽 -> TypeError（§8.3 PrivateFieldFind）。 */
-        if (stack.empty()) return fail("Error: stack underflow on LoadPrivate");
-        if (instr.arg >= fn.private_names.size()) {
-          return fail("Error: private field index out of range");
-        }
-        const std::string &field = fn.private_names[instr.arg];
-        JSValue *receiver = stack.back();
-        if (!receiver->isObject()) {
-          return fail("TypeError: Cannot read private member " + field +
-                      " from an object whose class did not declare it");
-        }
-        JSObject *obj = receiver->object();
-        if (!obj->hasPrivateSlot(field)) {
-          return fail("TypeError: Cannot read private member " + field +
-                      " from an object whose class did not declare it");
-        }
-        JSValue *val = obj->getPrivateSlot(field);
-        stack.pop_back();
-        stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
-        break;
-      }
-      case Opcode::StorePrivate: {
-        /* M5.1d-c2：receiver, val -> val（obj.#x = val）。接收者校验同 LoadPrivate。 */
-        if (stack.size() < 2) return fail("Error: stack underflow on StorePrivate");
-        if (instr.arg >= fn.private_names.size()) {
-          return fail("Error: private field index out of range");
-        }
-        const std::string &field = fn.private_names[instr.arg];
-        JSValue *val = stack.back();
-        JSValue *receiver = stack[stack.size() - 2];
-        if (!receiver->isObject()) {
-          return fail("TypeError: Cannot write private member " + field +
-                      " to an object whose class did not declare it");
-        }
-        JSObject *obj = receiver->object();
-        if (!obj->hasPrivateSlot(field)) {
-          return fail("TypeError: Cannot write private member " + field +
-                      " to an object whose class did not declare it");
-        }
-        obj->setPrivateSlot(field, val);
-        stack.resize(stack.size() - 2);
-        stack.push_back(val);
-        break;
-      }
-      case Opcode::InitPrivate: {
-        /* M5.1d-c2：构造器字段初始化 receiver, val -> val（InitPrivate {name_index}）。
-         * 与 StorePrivate 的区别：不要求接收者已声明该槽——实例初始化阶段
-         * （§12.2.9 InitializeInstanceElements）首次为对象创建私有槽。
-         * 接收者非对象 -> TypeError（§8.3 PrivateFieldAdd 步骤 2）。 */
-        if (stack.size() < 2) return fail("Error: stack underflow on InitPrivate");
-        if (instr.arg >= fn.private_names.size()) {
-          return fail("Error: private field index out of range");
-        }
-        const std::string &field = fn.private_names[instr.arg];
-        JSValue *val = stack.back();
-        JSValue *receiver = stack[stack.size() - 2];
-        if (!receiver->isObject()) {
-          return fail("TypeError: Cannot initialize private member " + field +
-                      " on a non-object");
-        }
-        receiver->object()->setPrivateSlot(field, val);
-        stack.resize(stack.size() - 2);
-        stack.push_back(val);
-        break;
-      }
-      case Opcode::HasPrivate: {
-        /* M5.1d-c2：#x in obj -> bool（receiver 替换为布尔）。
-         * 接收者不是对象 -> TypeError（§8.3 PrivateFieldFind 步骤 1）。 */
-        if (stack.empty()) return fail("Error: stack underflow on HasPrivate");
-        if (instr.arg >= fn.private_names.size()) {
-          return fail("Error: private field index out of range");
-        }
-        const std::string &field = fn.private_names[instr.arg];
-        JSValue *receiver = stack.back();
-        if (!receiver->isObject()) {
-          return fail("TypeError: Cannot use 'in' operator to search for "
-                      "private field " + field + " in a non-object");
-        }
-        bool found = receiver->object()->hasPrivateSlot(field);
-        stack.pop_back();
-        stack.push_back(ctx->createValue(found));
-        break;
-      }
-      case Opcode::In: {
-        /* M5.1e：x in y（§7.3.20 HasProperty）。栈 [x, y] -> bool。 */
-        if (stack.size() < 2) return fail("Error: stack underflow on In");
-        JSValue *y = stack.back();
-        JSValue *x = stack[stack.size() - 2];
-        ConversionResult r = inOperator(ctx, x, y);
-        if (!r.ok()) return r;
-        stack.resize(stack.size() - 2);
-        stack.push_back(r.value);
-        break;
-      }
-      case Opcode::Instanceof: {
-        /* M5.1e：x instanceof y（§7.3.22 InstanceofOperator）。栈 [x, y] -> bool。 */
-        if (stack.size() < 2) return fail("Error: stack underflow on Instanceof");
-        JSValue *y = stack.back();
-        JSValue *x = stack[stack.size() - 2];
-        ConversionResult r = instanceOf(ctx, x, y);
-        if (!r.ok()) return r;
-        stack.resize(stack.size() - 2);
-        stack.push_back(r.value);
-        break;
-      }
-      case Opcode::ToString: {
-        /* M5.1e：一元转换 ToString(x)（模板串插值）。Symbol -> TypeError。 */
-        if (stack.empty()) return fail("Error: stack underflow on ToString");
-        JSValue *a = stack.back();
-        ConversionResult r = toString(ctx, a);
-        if (!r.ok()) return r;
-        stack.pop_back();
-        stack.push_back(r.value);
-        break;
-      }
-      case Opcode::ToNumber: {
-        /* M5.1e：一元 +x（§7.1.4 ToNumber）。BigInt/Symbol -> TypeError。 */
-        if (stack.empty()) return fail("Error: stack underflow on ToNumber");
-        JSValue *a = stack.back();
-        ConversionResult r = toNumber(ctx, a);
-        if (!r.ok()) return r;
-        stack.pop_back();
-        stack.push_back(r.value);
-        break;
-      }
-      case Opcode::BitNot: {
-        /* M5.1e：一元 ~x（§13.5.5）。ToNumeric 后按位非（BigInt 走任意精度）。 */
-        if (stack.empty()) return fail("Error: stack underflow on BitNot");
-        JSValue *a = stack.back();
-        ConversionResult r = unaryBitNot(ctx, a);
-        if (!r.ok()) return r;
-        stack.pop_back();
-        stack.push_back(r.value);
-        break;
-      }
-      case Opcode::DeleteProp: {
-        /* M5.1e：delete obj.prop（§13.5.1.2，v1 非严格简化：own 属性删除成功
-         * 返回 true；非 own / 无该属性返回 true——§13.5.1.4 步骤 3：无属性
-         * 也返回 true；沿原型链的属性返回 true（仅删除 own）。
-         * 栈 [obj] -> bool。 */
-        if (stack.empty()) return fail("Error: stack underflow on DeleteProp");
-        if (instr.arg >= fn.constants.size() ||
-            fn.constants[instr.arg].is_number) {
-          return fail("Error: DeleteProp requires a string constant");
-        }
-        JSValue *obj = stack.back();
-        bool deleted = true;
-        if (obj->isObject()) {
-          const std::string &name = fn.constants[instr.arg].str;
-          JSObject *o = obj->object();
-          if (o->hasOwnProperty(name)) {
-            deleted = o->deleteProperty(name);
-          }
-        }
-        stack.pop_back();
-        stack.push_back(ctx->createValue(deleted));
-        break;
-      }
-      case Opcode::DeleteElem: {
-        /* M5.1e：delete obj[expr]（§13.5.1.3）。栈 [obj, key] -> bool。
-         * key ToPropertyKey 后同上（非 own/无属性返回 true）。 */
-        if (stack.size() < 2) return fail("Error: stack underflow on DeleteElem");
-        JSValue *key = stack.back();
-        JSValue *obj = stack[stack.size() - 2];
-        bool deleted = true;
-        if (obj->isObject()) {
-          ConversionResult pk = toPropertyKey(ctx, key);
-          if (!pk.ok()) return pk;
-          JSObject *o = obj->object();
-          const std::string &name = pk.value->toString();
-          /* 数组整数索引：删元素（长度不变）。 */
-          bool numeric = !name.empty() &&
-                         name.find_first_not_of("0123456789") == std::string::npos;
-          if (o->isArray() && numeric && name.size() <= 18) {
-            size_t idx = static_cast<size_t>(std::strtoull(name.c_str(), nullptr, 10));
-            if (o->hasElement(idx)) {
-              o->deleteElement(idx);
-            }
-          } else if (o->hasOwnProperty(name)) {
-            deleted = o->deleteProperty(name);
-          }
-        }
-        stack.resize(stack.size() - 2);
-        stack.push_back(ctx->createValue(deleted));
-        break;
-      }
-      case Opcode::EnumerateKeys: {
-        /* M5.1e-c for-in：栈顶对象 -> 键数组（§7.3.24）。
-         * ToObject 装箱（undefined/null -> TypeError）；收集自身 + 原型链
-         * 可枚举字符串键为新数组（键为字符串值）。 */
-        if (stack.empty()) return fail("Error: stack underflow on EnumerateKeys");
-        ConversionResult boxed = toObject(ctx, stack.back());
-        if (!boxed.ok()) return boxed;
-        JSObject *o = boxed.value->object();
-        std::vector<std::string> keys;
-        enumerateObjectKeys(o, &keys);
-        JSValue *arr = ctx->createArray(keys.size());
-        /* 分配保护（M3.3）：fill 期间 createValue 分配窗口触发 GC 会
-         * 误回收尚未入栈的 arr（悬垂）。pin 到压栈后解除。 */
-        ctx->heap().pin(arr);
-        for (size_t i = 0; i < keys.size(); ++i) {
-          arr->object()->setElement(i, ctx->createValue(keys[i]));
-        }
-        stack.pop_back();
-        stack.push_back(arr);
-        ctx->heap().unpin(arr); /* 已入 VM 栈（根集保护） */
-        break;
-      }
-      case Opcode::RestObjectProps: {
-        /* M5.1e-d 对象 rest 解构：{a, ...rest} = src。
-         * 栈 [src, exclude_arr]（exclude_arr = 已绑定键的字符串数组）。
-         * 弹两值：复制 src 的 own enumerable 字符串属性到槽内目标对象，
-         * 跳过 exclude_arr 中的键（CopyDataProperties 步骤 4b 的排除集合）。
-         * 语义（§13.15.5）：先收集源 own enumerable 键，再移除已被模式
-         * 绑定的键，剩余复制。null/undefined 源 -> TypeError（rest 必须
-         * 可解构对象，与对象展开的跳过不同）。 */
-        if (stack.size() < 2 || instr.arg >= fn.numLocals) {
-          return fail("Error: stack underflow on RestObjectProps");
-        }
-        JSValue *exclude = stack.back();
-        JSValue *src = stack[stack.size() - 2];
-        stack.resize(stack.size() - 2);
-        JSValue *target = stack[instr.arg];
-        if (target == nullptr || !target->isObject()) {
-          return fail("TypeError: object rest target is not an object");
-        }
-        if (src == nullptr || src->kind() == Kind::Undefined ||
-            src->kind() == Kind::Null) {
-          std::string tn = (src == nullptr || src->kind() == Kind::Undefined)
-                               ? "undefined"
-                               : "null";
-          return fail("TypeError: Cannot destructure " + tn + " as it is null");
-        }
-        ConversionResult boxed = toObject(ctx, src);
-        if (!boxed.ok()) return boxed;
-        JSObject *sobj = boxed.value->object();
-        JSObject *tobj = target->object();
-        /* 排除键集合：exclude_arr 元素（字符串）收集为集合。 */
-        std::unordered_set<std::string> excluded;
-        if (exclude != nullptr && exclude->isObject() &&
-            exclude->object()->isArray()) {
-          JSObject *ea = exclude->object();
-          for (size_t i = 0; i < ea->length(); ++i) {
-            JSValue *k = ea->getElement(i);
-            if (k != nullptr && k->kind() == Kind::String) {
-              excluded.insert(k->toString());
-            }
-          }
-        }
-        /* 收集源 own enumerable 键（同 CopyObjectProps：数组整数索引 +
-         * String 包装虚拟索引 + propertyOrder 过滤 enumerable）。 */
-        std::vector<std::string> keys;
-        for (size_t i = 0; i < sobj->length(); ++i) {
-          if (sobj->isArray() && sobj->hasElement(i)) keys.push_back(std::to_string(i));
-        }
-        if (sobj->kind() == ObjectKind::String) {
-          JSValue *data = sobj->wrapperData();
-          if (data != nullptr && data->kind() == Kind::String) {
-            size_t len = utf16Length(data->toString());
-            for (size_t i = 0; i < len; ++i) keys.push_back(std::to_string(i));
-          }
-        }
-        for (const auto &name : sobj->propertyOrder()) {
-          const PropertyDescriptor *d = sobj->getOwnProperty(name);
-          if (d != nullptr && d->enumerable) keys.push_back(name);
-        }
-        for (const std::string &k : keys) {
-          if (excluded.count(k) > 0) continue; /* 已绑定键跳过 */
-          JSValue *v = nullptr;
-          if (sobj->isArray()) {
-            size_t idx = static_cast<size_t>(std::strtoull(k.c_str(), nullptr, 10));
-            v = sobj->getElement(idx);
-          } else {
-            PropertyDescriptor *d = sobj->getOwnProperty(k);
-            if (d != nullptr && d->type == PropertyDescriptor::Type::Accessor) {
-              if (d->getter == nullptr || !isCallable(d->getter)) {
-                v = ctx->createValue(Kind::Undefined);
-              } else {
-                ConversionResult r = call(ctx, d->getter, sobj->holder(), nullptr, 0);
-                if (!r.ok()) return r;
-                v = r.value;
-              }
-            } else {
-              v = d != nullptr && d->value != nullptr ? d->value
-                                                      : ctx->createValue(Kind::Undefined);
-            }
-          }
-          bool numeric = !k.empty() &&
-                         k.find_first_not_of("0123456789") == std::string::npos;
-          if (tobj->isArray() && numeric && k.size() <= 18) {
-            tobj->setElement(static_cast<size_t>(std::strtoull(k.c_str(), nullptr, 10)), v);
-          } else {
-            tobj->setProperty(k, v);
-          }
-        }
-        break;
-      }
-      case Opcode::NextKey: {
-        /* M5.1e-c for-in：栈顶键数组 -> 弹首键（并移除）或 undefined（空）。
-         * 键数组按 [[OwnPropertyKeys]] 序填充（升序/创建序），故从头部弹。
-         * 键数组为普通 JS 数组：读首元素，前移移除。 */
-        if (stack.empty()) return fail("Error: stack underflow on NextKey");
-        JSValue *arr = stack.back();
-        if (arr->isObject() && arr->object()->isArray()) {
-          JSObject *a = arr->object();
-          size_t n = a->length();
-          JSValue *key = nullptr;
-          if (n > 0) {
-            key = a->getElement(0);
-            for (size_t i = 1; i < n; ++i) {
-              a->setElement(i - 1, a->getElement(i));
-            }
-            a->resizeElements(n - 1);
-          }
-          stack.pop_back();
-          stack.push_back(key != nullptr ? key : ctx->createValue(Kind::Undefined));
-        } else {
-          stack.pop_back();
-          stack.push_back(ctx->createValue(Kind::Undefined));
-        }
-        break;
-      }
-      case Opcode::Increment: {
-        /* M5.1e-b：一元 ++/--（§13.4.4）。arg=0 增 1，arg=1 减 1。
-         * ToNumeric 后 ±1（BigInt ±1n，Number ±1）。 */
-        if (stack.empty()) return fail("Error: stack underflow on Increment");
-        JSValue *a = stack.back();
-        ConversionResult r = unaryIncrement(ctx, a, instr.arg != 0);
-        if (!r.ok()) return r;
-        stack.pop_back();
-        stack.push_back(r.value);
-        break;
-      }
-      case Opcode::LoadUpvalue: {
-        /* 捕获的外层变量读取（M2.5）：沿环境链 depth 跳转后查 name。 */
-        JSEnvironment *e = captureEnv(env, fn, instr.arg);
-        if (e == nullptr || instr.arg >= fn.captures.size()) {
-          return fail("ReferenceError: captured variable not found");
-        }
-        const std::string &name = fn.captures[instr.arg].name;
-        JSValue *val = e->getBinding(name);
-        stack.push_back(val != nullptr ? val : ctx->createValue(Kind::Undefined));
-        break;
-      }
-      case Opcode::StoreUpvalue: {
-        /* 捕获的外层变量写入（M2.5）：沿环境链 depth 跳转后写回。 */
-        if (stack.empty()) {
-          return fail("Error: stack underflow on StoreUpvalue");
-        }
-        JSEnvironment *e = captureEnv(env, fn, instr.arg);
-        if (e == nullptr || instr.arg >= fn.captures.size()) {
-          return fail("ReferenceError: captured variable not found");
-        }
-        const std::string &name = fn.captures[instr.arg].name;
-        JSValue *val = stack.back();
-        stack.pop_back();
-        e->setBinding(name, val); /* 值写回目标环境 */
-        break;
-      }
-      case Opcode::Nop:
-        break;
+      return error;
     }
   }
-
   /* 程序自然结束（无 Ret）：栈顶为结果；空栈 -> undefined。 */
   if (stack.empty()) return ok(ctx->createValue(Kind::Undefined));
   return ok(stack.back());

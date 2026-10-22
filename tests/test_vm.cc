@@ -6686,3 +6686,93 @@ TEST(Compiler, EvalStringProtoMethods) {
   JS_FreeAllocator(a);
 }
 
+
+/* M5.1e-f：throw / try / catch / finally 编译 + VM 异常传播（§14.15/§14.16）。 */
+TEST(Compiler, EvalThrowTryCatchFinally) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  struct Case {
+    const char *src;
+    double num;   /* 期望数值结果 */
+    bool expect_num;
+    const char *expect_str; /* 期望字符串（kind=JS_STRING） */
+  };
+
+  Case cases[] = {
+      /* try 内 throw -> catch 捕获 */
+      {"var r; try { throw 42; } catch (e) { r = e; } r", 42, true, nullptr},
+      {"var r; try { throw 'abc'; } catch (e) { r = e + 'd'; } r", 0, false, "abcd"},
+      /* catch 参数只在 catch 块内可见 */
+      {"var r; try { throw 7; } catch (e) { r = e * 2; } r", 14, true, nullptr},
+      /* 无异常：catch 不执行 */
+      {"var r = 0; try { r = 1; } catch (e) { r = 99; } r", 1, true, nullptr},
+      /* finally 正常执行 */
+      {"var r = 0; try { r = 1; } finally { r = r + 10; } r", 11, true, nullptr},
+      /* try 抛 + finally：无 catch -> finally 执行后异常继续传播（JS 语义） */
+      {"var r = 0; try { throw 1; } finally { r = 5; } ", 0, false, "#e"},
+      /* try 抛 + catch + finally 顺序 */
+      {"var r = 0; try { throw 1; } catch (e) { r = e + 1; } finally { r = r * 10; } r", 20, true, nullptr},
+      /* 嵌套 try */
+      {"var r; try { try { throw 1; } catch (e) { r = e + 100; } } finally { r = r + 1; } r", 102, true, nullptr},
+      /* 未捕获异常 -> JS_EXCEPTION */
+      {"throw 5;", 0, false, "#e"},
+      /* 函数内抛异常向外传播到 catch */
+      {"var r; function f() { throw 99; } try { f(); } catch (e) { r = e + 1; } r", 100, true, nullptr},
+      /* 函数内抛异常未捕获 -> 传播到 JS_Eval 返回 JS_EXCEPTION */
+      {"function f() { throw 99; } f();", 0, false, "#e"},
+      /* catch{} 无参数（ES2019） */
+      {"var r = 0; try { throw 1; } catch { r = 7; } r", 7, true, nullptr},
+      /* catch 内再抛 -> 传播给外层 try 捕获 */
+      {"var r; try { try { throw 1; } catch (e) { throw e + 10; } } catch (e2) { r = e2; } r", 11, true, nullptr},
+      /* catch 内再抛无外层捕获 -> JS_EXCEPTION */
+      {"try { throw 1; } catch (e) { throw e + 1; }", 0, false, "#e"},
+      /* finally 内抛异常覆盖原异常 */
+      {"var r; try { throw 1; } finally { throw 2; }", 0, false, "#e"},
+      /* throw 对象 */
+      {"var r; try { throw {msg: 'oops'}; } catch (e) { r = e.msg; } r", 0, false, "oops"},
+      /* throw 表达式（非字面量） */
+      {"var r; try { var x = 3; throw x * 4; } catch (e) { r = e; } r", 12, true, nullptr},
+      /* return 与 finally 交互：finally 在 return 值确定后执行（参数局部化避免全局赋值） */
+      {"function f(r) { try { return 1; } finally { r = 5; } } f(0)", 1, true, nullptr},
+      /* return 结果不受 finally 修改影响 */
+      {"function f() { try { return 1; } finally { var q = 2; } } f()", 1, true, nullptr},
+      /* finally 正常路径：return 值仍为 try 的返回值 */
+      {"function f() { try { return 7; } finally { var q = 2; } } f()", 7, true, nullptr},
+      /* throw 与函数返回：函数内 throw 由调用处 try 捕获 */
+      {"var r; function f() { throw 'err'; } try { f(); } catch (e) { r = e; } r", 0, false, "err"},
+      /* 循环内 throw 被外层 catch 捕获 */
+      {"var r; try { var i = 0; while (i < 3) { if (i === 1) throw i; i++; } } catch (e) { r = e; } r", 1, true, nullptr},
+      /* 读不存在的属性返回 undefined，不抛异常（catch 不触发） */
+      {"var r = 1; try { var o = {}; r = o.nope; } catch (e) { r = -1; } r === undefined ? 0 : 1", 0, true, nullptr},
+  };
+
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    JSValue *r = JS_Eval(ctx, cases[i].src, std::strlen(cases[i].src));
+    ASSERT_NE(r, nullptr) << "case " << i << " src=" << cases[i].src;
+    if (cases[i].expect_num) {
+      ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER)
+          << "case " << i << " src=" << cases[i].src << " got: "
+          << JS_ToString(ctx, r);
+      EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), cases[i].num)
+          << "case " << i << " src=" << cases[i].src;
+    } else if (cases[i].expect_str != nullptr && cases[i].expect_str[0] != '#') {
+      EXPECT_EQ(JS_GetKind(ctx, r), JS_STRING)
+          << "case " << i << " src=" << cases[i].src << " got: "
+          << JS_ToString(ctx, r);
+      if (JS_GetKind(ctx, r) == JS_STRING) {
+        EXPECT_EQ(std::string(JS_ToString(ctx, r)), std::string(cases[i].expect_str))
+            << "case " << i << " src=" << cases[i].src;
+      }
+    } else { /* #e：期望未捕获异常 */
+      EXPECT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION)
+          << "case " << i << " src=" << cases[i].src << " got: "
+          << JS_ToString(ctx, r);
+    }
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}

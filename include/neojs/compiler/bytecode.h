@@ -159,6 +159,10 @@ enum class Opcode : uint8_t {
 
   /* M5.1e-d 对象 rest 解构（§13.15.5，追加末尾，保持 opcode 数值稳定） */
   RestObjectProps, /* [src, exclude_arr] -> 复制 src 中不在 exclude 的 own enumerable 属性到槽内目标：RestObjectProps {target_slot} */
+
+  /* M5.1e-f 异常处理：throw + finally 重抛（追加末尾，保持 opcode 数值稳定） */
+  Throw,           /* 栈顶值作为 JS 异常抛出（§14.15）：Throw（弹栈，异常传播） */
+  RethrowPending,  /* finally 末尾：若当前有挂起异常则重新抛出（§14.16.4） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -179,6 +183,30 @@ struct Constant {
   std::string str;
   std::string bigint_digits; /* BigInt 十进制数字串（无符号，M4.3） */
   bool bigint_neg = false;   /* BigInt 符号位（M4.3） */
+};
+
+/* M5.1e-f try 异常保护表条目（§14.16）：
+ * try_start/try_end  保护区间（try 块指令范围，异常在 [start, end) 内命中）。
+ * catch_start/catch_end  catch 块区间：catch 内再抛的异常须执行 finally
+ *                      （挂起后跳 finally），异常在 [catch_start, catch_end) 内命中。
+ * finally_start      无论正常/异常都执行的 finally 入口（无 finally 为 kNoHandler）。
+ * catch_slot         catch 参数绑定槽（catch{} 无参数为 kNoCatchSlot）。
+ * finally_end        finally 块结束后继续执行点（正常路径汇聚）。
+ * 语义：
+ *   - 异常在 try 区间：有 catch -> 绑定 catch_slot + 跳 catch_start（消费）；
+ *     无 catch 有 finally -> 挂起 + 跳 finally_start，finally 后 RethrowPending 重抛。
+ *   - 异常在 catch 区间（catch 再抛）：有 finally -> 挂起 + 跳 finally_start。
+ *   - 异常在 finally 区间：不命中（finally 内新异常直接传播，覆盖原异常）。 */
+struct TryEntry {
+  static constexpr uint32_t kNoHandler = 0xFFFFFFFFu;
+  static constexpr uint16_t kNoCatchSlot = 0xFFFFu;
+  uint32_t try_start = 0;
+  uint32_t try_end = 0;
+  uint32_t catch_start = kNoHandler;
+  uint32_t catch_end = kNoHandler;
+  uint32_t finally_start = kNoHandler;
+  uint32_t finally_end = kNoHandler;
+  uint16_t catch_slot = kNoCatchSlot;
 };
 
 /* 捕获的外层变量（M2.5 闭包）：编译期静态解析。
@@ -212,6 +240,8 @@ struct FunctionBytecode {
    * StorePrivate/HasPrivate 以该表下标引用字段名（构造器与方法的表
    * 顺序一致，编译期由 class 元素收集顺序保证）。 */
   std::vector<std::string> private_names;
+  /* M5.1e-f try 异常保护表（§14.16）：编译期由 try/catch/finally 生成。 */
+  std::vector<TryEntry> try_entries;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -335,6 +365,9 @@ class BytecodeBuilder {
   void rest_object_props(uint16_t target_slot) {
     push_op(Opcode::RestObjectProps, target_slot);
   }
+  /* M5.1e-f 异常：抛栈顶值 / finally 末尾重抛挂起异常。 */
+  void throw_value() { push_op(Opcode::Throw); }
+  void rethrow_pending() { push_op(Opcode::RethrowPending); }
 
   /* 注册捕获变量（去重），返回捕获下标。 */
   uint16_t add_capture(uint16_t depth, const std::string &name) {
@@ -385,6 +418,11 @@ class BytecodeBuilder {
   /* 调试：当前指令数 / 指令序列只读访问。 */
   size_t size() const { return fn_.code.size(); }
   const std::vector<Instruction> &code() const { return fn_.code; }
+  /* M5.1e-f：当前指令位置（下一条待发射指令的下标）。try 异常表区间用。 */
+  size_t position() const { return fn_.code.size(); }
+
+  /* M5.1e-f：注册 try 异常保护表条目（编译期由 try/catch/finally 生成）。 */
+  void add_try_entry(TryEntry e) { fn_.try_entries.push_back(std::move(e)); }
 
  private:
   struct LabelEntry {

@@ -941,6 +941,16 @@ extern "C" JSValue *JS_Eval(JSContext *ctx, const char *source, size_t source_le
     neojs::ConversionResult r =
         neojs::runBytecode(c, cr.fn, nullptr, nullptr, 0, top_env);
     if (!r.ok()) {
+      /* 未捕获异常转 Exception 值（#4）。JS throw 值（thrown 非空）优先
+       * 用其字符串表示（ToPrimitive/String 后）；内部错误用 error 串。 */
+      if (r.thrown != nullptr) {
+        neojs::ConversionResult ts =
+            neojs::toString(c, r.thrown); /* toString：Symbol 会失败 */
+        if (ts.ok()) {
+          return makeException(ctx, ts.value->toString().c_str());
+        }
+        return makeException(ctx, ts.error.c_str());
+      }
       return makeException(ctx, r.error.c_str());
     }
     return makeHandle(c, r.value);
