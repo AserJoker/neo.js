@@ -165,6 +165,34 @@ class JSContext {
     module_loader_opaque_ = opaque;
   }
 
+  /* 微任务队列（M5.3，§8.4）：JSContext 持有，每个 Job 是一个可调用
+   * JSFunction（Bound 闭包）。宿主经 JS_RunJobs 驱动执行。
+   * Job 队列是 GC 根集（markRoots 标记每个 job，防止 pending job 的
+   * 捕获数据——promise/决议闭包——被误回收）。 */
+  size_t jobQueueSize() const { return job_queue_.size(); }
+  void enqueueJob(JSValue *job) { job_queue_.push_back(job); }
+  JSValue *dequeueJob() {
+    if (job_queue_.empty()) return nullptr;
+    JSValue *job = job_queue_.front();
+    job_queue_.erase(job_queue_.begin());
+    return job;
+  }
+
+  /* Promise 共享内部函数缓存（M5.3a，§27.2）：Bound 闭包的 target。
+   * 惰性创建 + 进根集（markRoots 遍历）。索引对应 promise.h 的
+   * PromiseInternal 枚举值（8 项）。 */
+  JSValue *promiseInternal(int idx) const {
+    return (idx >= 0 && idx < 8) ? promise_internal_[idx] : nullptr;
+  }
+  void setPromiseInternal(int idx, JSValue *v) {
+    if (idx >= 0 && idx < 8) promise_internal_[idx] = v;
+  }
+
+  /* Promise.prototype 缓存（M5.3a，§27.2.4）：new Promise() 新建
+   * Promise 的原型链根（then/catch/finally 所在）。惰性创建 + 进根集。 */
+  JSValue *promiseProtoValue() const { return promise_proto_; }
+  void setPromiseProtoValue(JSValue *v) { promise_proto_ = v; }
+
   /* VM 操作数栈注册为 GC 根集（M2-VM，用户确认“栈帧入 GC 根集”）。
    * 解释器运行期间调用 vmStackPush(&stack) 入栈；结束/出错时 vmStackPop 弹出。
    * 嵌套 runBytecode（函数递归）会 push 多个栈帧，markRoots 遍历全部。
@@ -219,6 +247,10 @@ class JSContext {
   JSValue *function_proto_ = nullptr; /* Function.prototype 缓存（M4.2） */
   JSValue *map_proto_ = nullptr;    /* Map.prototype 缓存（M4.4a） */
   JSValue *set_proto_ = nullptr;    /* Set.prototype 缓存（M4.4a） */
+  JSValue *promise_proto_ = nullptr; /* Promise.prototype 缓存（M5.3a） */
+  JSValue *promise_internal_[8] = {nullptr, nullptr, nullptr, nullptr,
+                                   nullptr, nullptr, nullptr, nullptr}; /* Promise 内部函数缓存（M5.3a） */
+  std::vector<JSValue *> job_queue_;  /* 微任务队列（M5.3，§8.4） */
   std::vector<std::vector<JSValue *> *> vm_stacks_; /* VM 操作数栈根集栈（M2-VM） */
   std::vector<JSEnvironment *> vm_envs_; /* VM 帧环境根集栈（M2.5 闭包） */
   std::unordered_map<std::string, JSModuleRecord *> modules_; /* 模块表（M5.2a） */

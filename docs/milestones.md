@@ -486,16 +486,17 @@ M0 骨架 ─▶ M1 前端流水线 ─▶ M2 解释器核心 ─▶ M3 对象�
 
 ---
 
-### M5.3 异步：Promise（⏳ 未启动，M5.3a–M5.3c）
+### M5.3 异步：Promise（🔄 进行中，M5.3a 完成，M5.3b-c 待做）
 
 > Promise 是异步地基，独立成节：先核心机制，再静态/组合方法，最后总验收。
 
-**M5.3a Promise 核心（⏳ 未启动）**
+**M5.3a Promise 核心（✅ 完成）**
 
-- `Promise` 构造器 + 状态机（pending/fulfilled/rejected）+ 决议程序（resolve/reject）
-- `Promise.prototype.then/catch/finally` + 微任务队列（job queue）
+- `Promise` 构造器 + 状态机（pending/fulfilled/rejected）+ 决议程序（resolve/reject）（✅）：object.h ObjectKind::Promise + promise_state_/promise_result_ 内部槽；promise.cc 构造器/executor、resolve/reject 决议（§27.2.1.4/§27.2.1.2）、thenable 接合（§27.2.2.3 经微任务）、恒等/抛错传播
+- `Promise.prototype.then/catch/finally` + 微任务队列（job queue）（✅）：reaction 存 `__reactions__` 属性（fulfill/reject handler 双存），settle 统一派发；job queue 由 JSContext 持有，宿主经 `JS_RunJobs` 驱动；then 链式返回/多 then 顺序/微任务在同步代码后执行
+- 共享内部函数缓存（✅）：PromiseInternal 枚举 8 项（Resolve/Reject/ReactionRunner/ThenableRunner/Identity/Throw/FinallyThen/FinallyCatch）惰性创建 + 进根集；Bound 闭包承载捕获数据（决议闭包/reaction job/thenable job/finally 包装）
 
-验收：Promise 链/then 回调端到端脚本通过
+验收：Promise 链/then 回调端到端脚本通过（✅ tests/test_promise.cc 17 用例全绿，全量 512 绿）
 
 **M5.3b Promise 静态与组合方法（⏳ 未启动）**
 

@@ -190,6 +190,20 @@ void JSContext::markRoots() {
   if (map_proto_ != nullptr) heap_.markRoot(map_proto_);
   if (set_proto_ != nullptr) heap_.markRoot(set_proto_);
 
+  /* Promise.prototype 缓存（M5.3a）：Promise 原型链根，始终可达。 */
+  if (promise_proto_ != nullptr) heap_.markRoot(promise_proto_);
+
+  /* Promise 共享内部函数缓存（M5.3a）：Bound 闭包 target，始终可达。 */
+  for (JSValue *pi : promise_internal_) {
+    if (pi != nullptr) heap_.markRoot(pi);
+  }
+
+  /* 微任务队列（M5.3，§8.4）：pending job 的捕获数据（promise/决议
+   * 闭包）不可回收。 */
+  for (JSValue *job : job_queue_) {
+    if (job != nullptr) heap_.markRoot(job);
+  }
+
   /* VM 操作数栈（M2-VM，栈帧入根集）：解释器运行期间栈上值不可回收。
    * 嵌套 runBytecode（函数递归）时多个栈帧并存，全部标记。 */
   for (std::vector<JSValue *> *stack : vm_stacks_) {

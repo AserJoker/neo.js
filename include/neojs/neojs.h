@@ -250,6 +250,14 @@ void JS_AddModuleLoader(JSContext *ctx, JSModuleLoader loader, void *opaque);
  * 的错误值（#4）。重复调用同 specifier 幂等（单例，Evaluated 短路）。 */
 JSValue *JS_EvalModule(JSContext *ctx, const char *specifier);
 
+/* 驱动微任务队列（M5.3a，§8.4 Job Queue）：
+ * 逐条取出队列头部 Job 并调用，直到队列空。Job 执行中入队的
+ * 新 Job（thenable 接合/派生 promise 决议）一并处理。
+ * Job 抛错视为未捕获异常：返回 kind=JS_EXCEPTION 的错误值（#4），
+ * 队列剩余 job 不再执行（宿主可再次调用 JS_RunJobs）。
+ * 队列空返回 NULL（无 completion value）。 */
+JSValue *JS_RunJobs(JSContext *ctx);
+
 /* 指令操作码（与内部 neojs::Opcode 数值一致，M2-VM）。供 JS_RunBytecode
  * 构造字节码；arg 语义见各指令：PushConst/LoadGlobal 为常量池索引，
  * LoadVar/StoreVar 为局部槽号，Jump/JumpIfFalse 为绝对指令位置，

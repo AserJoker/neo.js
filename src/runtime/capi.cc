@@ -43,6 +43,7 @@
 #include "neojs/runtime/module_loader.h"
 #include "neojs/runtime/object.h"
 #include "neojs/runtime/operators.h"
+#include "neojs/runtime/promise.h"
 #include "neojs/runtime/value.h"
 #include "neojs/runtime/vm.h"
 
@@ -1063,5 +1064,44 @@ extern "C" JSValue *JS_RunBytecode(JSContext *ctx, const JSBCOp *ops,
       return makeException(ctx, r.error.c_str());
     }
     return makeHandle(c, r.value);
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/* 微任务队列（M5.3，§8.4 Job Queue）                                         */
+/* -------------------------------------------------------------------------- */
+
+/* 驱动微任务队列执行（M5.3a）：
+ * 逐条取出队列头部 Job（Bound 闭包）并调用，直到队列空。
+ * Job 执行中可能入队新 Job（thenable 接合/派生 promise 决议），
+ * 一并处理。Job 抛错视为未捕获异常：返回该错误（Exception 值），
+ * 队列剩余 job 不再执行（宿主可调用 JS_RunJobs 再次驱动）。
+ * 队列空返回 NULL。 */
+extern "C" JSValue *JS_RunJobs(JSContext *ctx) {
+  if (ctx == nullptr) {
+    std::fputs("neo.js: null JSContext passed to JS_RunJobs\n", stderr);
+    std::abort();
+  }
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    while (c->jobQueueSize() > 0) {
+      neojs::JSValue *job = c->dequeueJob();
+      if (job == nullptr || !neojs::isCallable(job)) continue;
+      neojs::ConversionResult r =
+          neojs::call(c, job, c->createValue(neojs::Kind::Undefined), nullptr, 0);
+      if (!r.ok()) {
+        /* Job 抛错：未捕获异常。JS throw 值优先用其字符串表示。 */
+        if (r.thrown != nullptr) {
+          neojs::ConversionResult ts = neojs::toString(c, r.thrown);
+          if (ts.ok()) {
+            return makeException(ctx, ts.value->toString().c_str());
+          }
+          return makeException(ctx, ts.error.c_str());
+        }
+        return makeException(ctx, r.error.c_str());
+      }
+    }
+    /* 队列空：无 completion value，返回 NULL。 */
+    return nullptr;
   });
 }

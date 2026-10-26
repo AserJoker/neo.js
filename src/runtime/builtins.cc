@@ -39,6 +39,7 @@
 #include "neojs/runtime/function.h"
 #include "neojs/runtime/object.h"
 #include "neojs/runtime/operators.h"
+#include "neojs/runtime/promise.h"
 #include "neojs/runtime/utf16.h"
 #include "neojs/runtime/value.h"
 
@@ -3112,6 +3113,10 @@ void installBuiltins(JSContext *ctx) {
   installErrorBuiltin(ctx, "RangeError", errorRangeError, "Error");
   installErrorBuiltin(ctx, "ReferenceError", errorReferenceError, "Error");
   installErrorBuiltin(ctx, "SyntaxError", errorSyntaxError, "Error");
+
+  /* Promise（M5.3a，§27.2）：构造器 + prototype 方法（then/catch/finally）
+   * + 静态方法（resolve/reject）+ 共享内部函数。 */
+  installPromiseBuiltins(ctx);
 }
 
 /* 取 Object.prototype（M3.3，惰性创建 + 缓存 + 进根集）。
