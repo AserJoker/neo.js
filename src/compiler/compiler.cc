@@ -3524,13 +3524,22 @@ bool Compiler::compileCall(const ASTNode &node) {
       }
     }
     if (has_spread) {
-      fail("not implemented: spread call on super()");
-      return false;
+      /* M5.1e-h super(...args)：参数构建到数组，SuperCallArray 展开调用
+       * （语义同 SuperCall，基类构造器于当前帧 this，栈顶为 args 数组）。 */
+      uint16_t args_slot = scope_->next_slot++;
+      builder_.new_array();
+      builder_.store_var(args_slot);
+      std::vector<const ASTNode *> args(node.children.begin(),
+                                        node.children.end());
+      if (!compileSpreadArgs(args, args_slot)) return false;
+      builder_.load_var(args_slot);
+      builder_.super_call_array();
+    } else {
+      for (size_t i = 0; i < node.children.size(); ++i) {
+        if (!compileExpr(*node.children[i])) return false;
+      }
+      builder_.super_call(static_cast<uint16_t>(argc));
     }
-    for (size_t i = 0; i < node.children.size(); ++i) {
-      if (!compileExpr(*node.children[i])) return false;
-    }
-    builder_.super_call(static_cast<uint16_t>(argc));
     /* M5.1d-c2/d 派生类构造器：super() 返回后实例字段初始化（§9.2.2.4
      * 步骤 8——字段初始化器在 super() 之后求值）。仅构造器且字段初始化
      * 未发射时发射一次。 */
@@ -3549,9 +3558,8 @@ bool Compiler::compileCall(const ASTNode &node) {
 
   /* 展开调用（含展开参数）：f(...a, b) / obj.m(...a)。
    * 成员调用保留 this（obj, func），普通调用只需 func。
-   * 参数构建到临时数组，CallArray/展开版 CallMethod 展开。
-   * 本阶段成员展开调用用 CallArray 近似（this 绑定不完整），
-   * 简单 this 场景（obj.m() 无展开）仍走 CallMethod。 */
+   * 参数构建到临时数组，CallArray（普通）/ CallMethodArray（成员 this=obj）
+   * 展开；无展开场景走 Call/CallMethod（M5.1e-h 成员展开 this 补全）。 */
   bool has_spread = false;
   for (size_t i = 1; i < node.children.size(); ++i) {
     if (node.children[i] != nullptr &&
@@ -3583,8 +3591,17 @@ bool Compiler::compileCall(const ASTNode &node) {
       builder_.super_load_elem();
     }
     if (has_spread) {
-      fail("not implemented: spread call on super");
-      return false;
+      /* M5.1e-h super.m(...a)：this=当前帧 this，构建 args 数组后
+       * CallMethodArray（栈 [this, func, args_array]，this 保留）。 */
+      uint16_t args_slot = scope_->next_slot++;
+      builder_.new_array();
+      builder_.store_var(args_slot);
+      std::vector<const ASTNode *> args(node.children.begin() + 1,
+                                        node.children.end());
+      if (!compileSpreadArgs(args, args_slot)) return false;
+      builder_.load_var(args_slot);
+      builder_.call_method_array();
+      return true;
     }
     for (size_t i = 1; i < node.children.size(); ++i) {
       if (!compileExpr(*node.children[i])) return false;
@@ -3607,16 +3624,25 @@ bool Compiler::compileCall(const ASTNode &node) {
       if (priv_idx < 0) return false;
     }
     if (has_spread) {
+      /* M5.1e-h 成员展开调用 obj.m(...a) / obj.#m(...a)：求值 obj 得
+       * this，dup 保留 obj（栈 [obj, obj]），读方法值（LoadProp/
+       * LoadPrivate/LoadElem 替换栈顶为 func -> 栈 [obj, func]），
+       * 构建 args 数组后 CallMethodArray（栈 [obj, func, args_array]，
+       * this=obj 保留）。 */
+      if (!compileExpr(*callee->children[0])) return false; /* obj */
+      builder_.dup();                                        /* obj, obj */
       if (priv_idx >= 0) {
-        /* obj.#m(...a)：私有字段展开调用——obj.#m 求值作普通函数，
-         * this 绑定丢失（CallArray 无 this 槽）。本阶段不支持。 */
-        fail("not implemented: spread call on private member");
-        return false;
+        builder_.load_private(static_cast<uint16_t>(priv_idx));
+      } else if (!callee->member.computed) {
+        if (prop->type != NodeType::Identifier) {
+          fail("invalid member property name");
+          return false;
+        }
+        builder_.load_prop(prop->name);
+      } else {
+        if (!compileExpr(*prop)) return false;
+        builder_.load_elem();
       }
-      /* obj.m(...a)：callee 求值（obj.m 值）作普通函数，构建 args
-       * 数组后 CallArray。this 绑定为 undefined（CallArray 无 this 槽），
-       * 成员展开调用的 this 语义 M5.1e 补全。 */
-      if (!compileExpr(*callee)) return false; /* func（obj.m 求值） */
       uint16_t args_slot = scope_->next_slot++;
       builder_.new_array();
       builder_.store_var(args_slot);
@@ -3624,7 +3650,7 @@ bool Compiler::compileCall(const ASTNode &node) {
                                         node.children.end());
       if (!compileSpreadArgs(args, args_slot)) return false;
       builder_.load_var(args_slot);
-      builder_.call_array();
+      builder_.call_method_array();
       return true;
     }
     if (!compileExpr(*callee->children[0])) return false; /* obj */
@@ -3693,10 +3719,13 @@ bool Compiler::compileNew(const ASTNode &node) {
     if (!compileExpr(*callee->children[0])) return false;
     const ASTNode *prop = callee->children[1];
     if (prop->type == NodeType::PrivateIdentifier) {
-      fail("not implemented: private member in new");
-      return false;
-    }
-    if (!callee->member.computed) {
+      /* M5.1e-h new a.#x(...)：LoadPrivate 把 a 替换为构造器值，
+       * 布局变 [ctor, args...] 与普通 new 一致（new 不保留接收者）。 */
+      int priv_idx = resolvePrivateName(prop->name);
+      if (priv_idx < 0) return false;
+      if (!compileExpr(*callee->children[0])) return false;
+      builder_.load_private(static_cast<uint16_t>(priv_idx));
+    } else if (!callee->member.computed) {
       if (prop->type != NodeType::Identifier) {
         fail("invalid member property name");
         return false;

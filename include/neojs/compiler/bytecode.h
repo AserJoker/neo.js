@@ -166,6 +166,9 @@ enum class Opcode : uint8_t {
 
   /* M5.1e-g 隐式全局赋值（追加末尾，保持 opcode 数值稳定） */
   StoreGlobal,     /* 栈顶 -> 全局对象属性：StoreGlobal {name_index}（非严格隐式全局） */
+
+  /* M5.1e-h 成员展开调用（追加末尾，保持 opcode 数值稳定） */
+  CallMethodArray, /* [obj, func, args_array] -> 以数组元素为参数调用，this=obj（M5.1e-h 展开成员调用） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -306,6 +309,8 @@ class BytecodeBuilder {
   void append_spread(uint16_t slot) { push_op(Opcode::AppendSpread, slot); }
   void call_array() { push_op(Opcode::CallArray); }
   void construct_array() { push_op(Opcode::ConstructArray); }
+  /* M5.1e-h 成员展开调用：obj, func, args_array -> 结果（this=obj）。 */
+  void call_method_array() { push_op(Opcode::CallMethodArray); }
   void copy_object_props(uint16_t slot) { push_op(Opcode::CopyObjectProps, slot); }
   void ret() { push_op(Opcode::Ret); }
   void print() { push_op(Opcode::Print); }

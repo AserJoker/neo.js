@@ -6862,3 +6862,63 @@ TEST(Compiler, EvalStoreGlobal) {
   JS_FreeContext(ctx);
   JS_FreeAllocator(a);
 }
+
+TEST(Compiler, EvalSpreadCall) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  struct Case {
+    const char *src;
+    double num;   /* 期望数值结果 */
+    bool expect_num;
+    const char *expect_str; /* 期望字符串（kind=JS_STRING） */
+  };
+
+  Case cases[] = {
+      /* 普通成员展开调用：this=obj（此前 CallArray this=undefined） */
+      {"var o = {v: 3, m: function(a, b) { return this.v + a + b; }}; o.m(...[1, 2])", 6, true, nullptr},
+      /* 混合展开 + 普通参数 */
+      {"var o = {v: 1, m: function(a, b, c) { return this.v + a + b + c; }}; o.m(...[2, 3], 4)", 10, true, nullptr},
+      /* 计算键成员展开调用 */
+      {"var k = 'm'; var o = {v: 2, m: function(a) { return this.v * a; }}; o[k](...[3])", 6, true, nullptr},
+      /* 私有方法展开调用（class 内 this 保留） */
+      {"class A { #m(a, b) { return this.v + a + b; } call() { return this.#m(...[1, 2]); } } var o = new A(); o.v = 10; o.call()", 13, true, nullptr},
+      /* 私有方法展开 + 普通参数 */
+      {"class A { #m(a, b) { return this.v + a + b; } call() { return this.#m(...[2], 3); } } var o = new A(); o.v = 1; o.call()", 6, true, nullptr},
+      /* super.m(...args)：this=当前帧 this */
+      {"class B { m(a, b) { return this.v + a + b; } } class D extends B { v = 5; call() { return super.m(...[1, 2]); } } new D().call()", 8, true, nullptr},
+      /* super(...args) 展开构造调用 */
+      {"class B { constructor(a, b) { this.s = a + b; } } class D extends B { constructor() { super(...[3, 4]); } } new D().s", 7, true, nullptr},
+      /* new obj.#ctor(...args)：私有构造器展开 new */
+      {"class A { #c; constructor() { this.#c = function(a, b) { this.x = a * b; }; } build() { return new this.#c(...[3, 4]); } } var o = new A(); o.build().x", 12, true, nullptr},
+  };
+
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    JSValue *r = JS_Eval(ctx, cases[i].src, std::strlen(cases[i].src));
+    ASSERT_NE(r, nullptr) << "case " << i << " src=" << cases[i].src;
+    if (cases[i].expect_num) {
+      ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER)
+          << "case " << i << " src=" << cases[i].src << " got: "
+          << JS_ToString(ctx, r);
+      EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), cases[i].num)
+          << "case " << i << " src=" << cases[i].src;
+    } else if (cases[i].expect_str != nullptr && cases[i].expect_str[0] != '#') {
+      EXPECT_EQ(JS_GetKind(ctx, r), JS_STRING)
+          << "case " << i << " src=" << cases[i].src << " got: "
+          << JS_ToString(ctx, r);
+      if (JS_GetKind(ctx, r) == JS_STRING) {
+        EXPECT_EQ(std::string(JS_ToString(ctx, r)), std::string(cases[i].expect_str))
+            << "case " << i << " src=" << cases[i].src;
+      }
+    } else { /* #e：期望未捕获异常 */
+      EXPECT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION)
+          << "case " << i << " src=" << cases[i].src << " got: "
+          << JS_ToString(ctx, r);
+    }
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}

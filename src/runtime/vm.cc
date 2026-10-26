@@ -2217,6 +2217,42 @@ static ConversionResult op_CallArray(VmFrame &frame) {
   return ok(nullptr);
 }
 
+static ConversionResult op_CallMethodArray(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.1e-h 成员展开调用：栈 [obj, func, args_array] -> 调用结果。
+      * this = obj（args_array 下方两位）。args_array 元素按序为参数。 */
+      if (stack.size() < 3) { error = fail("Error: stack underflow on CallMethodArray"); break; }
+      JSValue *args_arr = stack.back();
+      JSValue *func = stack[stack.size() - 2];
+      JSValue *this_obj = stack[stack.size() - 3];
+      if (args_arr == nullptr || !args_arr->isObject() ||
+          !args_arr->object()->isArray()) {
+        error = fail("TypeError: spread argument must be iterable"); break;
+      }
+      JSObject *aobj = args_arr->object();
+      std::vector<JSValue *> flat;
+      flat.reserve(aobj->length());
+      for (size_t i = 0; i < aobj->length(); ++i) {
+        JSValue *e = aobj->getElement(i);
+        flat.push_back(e != nullptr ? e : frame.ctx->createValue(Kind::Undefined));
+      }
+      ConversionResult r =
+          call(frame.ctx, func, this_obj,
+               flat.empty() ? nullptr : flat.data(), flat.size());
+      if (!r.ok()) { error = std::move(r); break; }
+      stack.resize(stack.size() - 3);
+      stack.push_back(r.value);
+      if (r.tmp_handle != 0) frame.ctx->handles().free(r.tmp_handle);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
 static ConversionResult op_ConstructArray(VmFrame &frame) {
   auto &stack = *frame.stack;
   ConversionResult error;
@@ -3382,6 +3418,7 @@ const OpHandler kHandlers[] = {
     op_Throw,  /* Throw */
     op_RethrowPending,  /* RethrowPending */
     op_StoreGlobal,  /* StoreGlobal */
+    op_CallMethodArray,  /* CallMethodArray */
 };
 
 }  // namespace
