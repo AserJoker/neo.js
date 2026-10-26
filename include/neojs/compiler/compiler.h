@@ -280,8 +280,11 @@ class Compiler {
   bool compileModuleImport(const ASTNode &node);
   /* M5.2a 模块编译内部：处理单条 export 声明（ExportNamedDeclaration /
    * ExportDefaultDeclaration / ExportAllDeclaration），登记 module_exports_。
-   * is_decl = true 时返回被包装的声明节点（调用方继续编译其体）。 */
-  bool compileModuleExport(const ASTNode &node, const ASTNode **decl);
+   * is_decl = true 时返回被包装的声明节点（调用方继续编译其体）。
+   * register_exports = true 时才登记 module_exports_（两遍编译：第 1 遍
+   * 收集元数据时登记，第 3 遍编译体时只取 decl、不重复登记，M5.2d）。 */
+  bool compileModuleExport(const ASTNode &node, const ASTNode **decl,
+                           bool register_exports = true);
 
   void fail(const std::string &msg) { error_ = msg; }
 

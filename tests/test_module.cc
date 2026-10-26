@@ -990,3 +990,144 @@ TEST(Module, DynamicImportSingleton) {
   JS_FreeContext(ctx);
   JS_FreeAllocator(a);
 }
+
+/* -------------------------------------------------------------------------- */
+/* M5.2d：模块系统总验收                                                      */
+/* -------------------------------------------------------------------------- */
+
+/* 命名空间导入 import * as ns：ns 是模块导出镜像对象（§10.4.6），属性 =
+ * 导出名 -> 值，含具名导出 + default。 */
+TEST(Module, NamespaceImportBasic) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  world.sources["nsA"] =
+      "export const x = 1; export const y = 2; export default 99;";
+  world.sources["main"] =
+      "import * as ns from 'nsA'; globalThis.v = ns.x + ns.y; "
+      "globalThis.d = ns.default; globalThis.hasX = ('x' in ns) ? 1 : 0;";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "main");
+  EXPECT_EQ(r, nullptr);
+
+  expectGlobalNumber(ctx, "v", 3.0);
+  expectGlobalNumber(ctx, "d", 99.0);
+  expectGlobalNumber(ctx, "hasX", 1.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 命名空间导入与 re-export / export *：ns 镜像含转发链解析后的导出。 */
+TEST(Module, NamespaceImportReExportStar) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  world.sources["base"] = "export const p = 10;";
+  world.sources["mid"] =
+      "export { p as q } from 'base'; export * from 'base';";
+  world.sources["main"] =
+      "import * as ns from 'mid'; globalThis.r = ns.q + ns.p;";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "main");
+  EXPECT_EQ(r, nullptr);
+
+  expectGlobalNumber(ctx, "r", 20.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 静态 import * as ns 与动态 import() 的 namespace 一致性：动态 import 返回
+ * 的 ns 与静态命名空间导入指向同一模块导出镜像（属性值一致）。 */
+TEST(Module, NamespaceStaticVsDynamicConsistent) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  world.sources["mN"] = "export const k = 7;";
+  world.sources["main"] =
+      "import * as ns from 'mN'; "
+      "import('mN').then(d => { globalThis.sameK = (d.k === ns.k) ? 1 : 0; });";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "main");
+  EXPECT_EQ(r, nullptr);
+
+  JSValue *jr = JS_RunJobs(ctx);
+  EXPECT_EQ(jr, nullptr);
+  if (jr != nullptr) JS_FreeValue(ctx, jr);
+
+  expectGlobalNumber(ctx, "sameK", 1.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 动态 import 的模块内访问 import.meta：异步加载的模块同样有独立 import.meta。 */
+TEST(Module, DynamicImportWithImportMeta) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  world.sources["dm"] =
+      "globalThis.dynMetaUrl = import.meta.url; export const z = 5;";
+  world.sources["main"] =
+      "import('dm').then(ns => { globalThis.z = ns.z; });";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "main");
+  EXPECT_EQ(r, nullptr);
+
+  JSValue *jr = JS_RunJobs(ctx);
+  EXPECT_EQ(jr, nullptr);
+  if (jr != nullptr) JS_FreeValue(ctx, jr);
+
+  expectGlobalString(ctx, "dynMetaUrl", "dm");
+  expectGlobalNumber(ctx, "z", 5.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 动态 import 与循环依赖：动态加载的模块处于静态循环中，依赖先求值且不
+ * 重复执行（Evaluated 短路）。 */
+TEST(Module, DynamicImportWithCircularDep) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  world.sources["circA"] =
+      "globalThis.circARuns = (globalThis.circARuns || 0) + 1; "
+      "import { b } from 'circB'; export const a = b + 1;";
+  world.sources["circB"] =
+      "globalThis.circBRuns = (globalThis.circBRuns || 0) + 1; "
+      "import { a } from 'circA'; export const b = a + 1;";
+  world.sources["main"] =
+      "import('circA').then(ns => { globalThis.ca = ns.a; });";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "main");
+  EXPECT_EQ(r, nullptr);
+
+  JSValue *jr = JS_RunJobs(ctx);
+  EXPECT_EQ(jr, nullptr);
+  if (jr != nullptr) JS_FreeValue(ctx, jr);
+
+  /* 两模块各执行一次。a/b 为循环中 undefined + 1 = NaN 的活绑定，但顶层
+   * 副作用计数验证单例求值。 */
+  expectGlobalNumber(ctx, "circARuns", 1.0);
+  expectGlobalNumber(ctx, "circBRuns", 1.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}

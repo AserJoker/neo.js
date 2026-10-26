@@ -448,7 +448,7 @@ M0 骨架 ─▶ M1 前端流水线 ─▶ M2 解释器核心 ─▶ M3 对象�
 
 ---
 
-### M5.2 模块系统（✅ 进行中：M5.2a–M5.2c 部分完成）
+### M5.2 模块系统（✅ 完成：M5.2a–M5.2d）
 
 > 模块语法层（M1.6 ③）已就绪，本节补**运行时执行**语义。模块加载/链接/循环依赖/动态导入各自独立可验收。
 
@@ -473,16 +473,20 @@ M0 骨架 ─▶ M1 前端流水线 ─▶ M2 解释器核心 ─▶ M3 对象�
 
 验收：循环依赖（基本/顺序/函数/let live binding）+ `export *`（多源合并/冲突/环）用例全绿（tests/test_module.cc 26 用例）
 
-**M5.2c 动态导入与 import.meta（🔄 进行中：import.meta 完成，动态 import() 待 M5.3 Promise）**
+**M5.2c 动态导入与 import.meta（✅ 完成）**
 
 - `import.meta` 运行时对象（✅）：每模块惰性创建（url = specifier），预置到模块 env 隐藏绑定，LoadImportMeta 沿 env 链定位；闭包内可访问、可扩展、每模块独立
-- 动态 `import()` 执行（⏳ 待 M5.3 Promise 就绪后接入）
+- 动态 `import()` 执行（✅，M5.2c-2）：`import(specifier)` 编译为对全局内置 `import` 的调用（Builtin），运行时 loadAndEvaluateModule（依赖先求值）+ 成功 resolve 模块 namespace 对象 / 失败 reject 错误值；求值同步完成，决议经 Promise 微任务异步投递
+- 命名空间导入 `import * as ns`（✅，M5.2d）：新指令 LoadImportNamespace，运行期 createModuleNamespace 生成导出镜像（§10.4.6）；镜像经 findExport 解析 re-export/export * 转发链读 live binding
 
-验收：import.meta 用例全绿（tests/test_module.cc 30 用例）；动态 import 待 Promise
+验收：import.meta + 动态 import（基本/默认导出/依赖链/reject/链式 then/单例）+ 命名空间导入（基本/re-export+export * 合并/静态动态一致性）用例全绿（tests/test_module.cc 41 用例）
 
-**M5.2d 模块系统总验收（⏳ 未启动）**
+**M5.2d 模块系统总验收（✅ 完成）**
 
-验收：模块端到端用例集全绿（加载/链接/循环/动态导入）
+- 修复 `findExportRec` re-export 递归：用 ExportEntry.[[LocalName]]（`p as q` 时源模块内查 `p`，§16.4.7）而非外部导出名，支持 as 改名与链式转发
+- 修复导出表重复登记：compileModuleExport 两遍编译去重（第 1 遍登记、第 3 遍仅取声明体，register_exports 开关）
+
+验收：模块端到端用例集全绿（加载/链接/循环/动态导入/命名空间，tests/test_module.cc 41 用例，全量 538 用例绿）
 
 ---
 

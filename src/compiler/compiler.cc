@@ -211,6 +211,7 @@ CompileResult Compiler::compileModule(const AST &ast) {
                stmt->type == NodeType::ExportDefaultDeclaration ||
                stmt->type == NodeType::ExportAllDeclaration) {
       const ASTNode *decl = nullptr;
+      /* 第 1 遍：登记 module_exports_（默认）。 */
       if (!compileModuleExport(*stmt, &decl)) return failResult();
       if (decl != nullptr) {
         if (decl->type == NodeType::FunctionDeclaration ||
@@ -254,7 +255,9 @@ CompileResult Compiler::compileModule(const AST &ast) {
     if (stmt->type == NodeType::ExportNamedDeclaration ||
         stmt->type == NodeType::ExportDefaultDeclaration) {
       const ASTNode *decl = nullptr;
-      if (!compileModuleExport(*stmt, &decl)) return failResult();
+      /* 第 3 遍：不重复登记（register_exports=false），只取被包装声明体。 */
+      if (!compileModuleExport(*stmt, &decl, /*register_exports=*/false))
+        return failResult();
       if (decl == nullptr) continue; /* export {a}：无体，纯登记 */
       if (decl->type == NodeType::FunctionDeclaration ||
           decl->type == NodeType::ClassDeclaration) {
@@ -369,12 +372,14 @@ bool Compiler::compileModuleImport(const ASTNode &node) {
       }
       entry.local_name = spec->children[0]->name;
     } else if (spec->type == NodeType::ImportNamespaceSpecifier) {
-      /* import * as ns：命名空间对象（M5.2c 细化），本阶段按具名导出映射。 */
-      entry.export_name.clear(); /* 运行期 LoadImport 对空导出名返回 undefined */
+      /* import * as ns：命名空间对象（M5.2d，§10.4.6 模块 namespace 镜像）。
+       * 标记 is_namespace，编译/运行期走 LoadImportNamespace 生成导出镜像。 */
       if (spec->children.empty()) {
         fail("SyntaxError: invalid namespace import");
         return false;
       }
+      entry.export_name.clear();
+      entry.is_namespace = true;
       entry.local_name = spec->children[0]->name;
     } else {
       fail("SyntaxError: invalid import specifier");
@@ -405,7 +410,8 @@ bool Compiler::compileModuleImport(const ASTNode &node) {
  * 本地导出：export_name -> local_name（绑定名 = 模块 env 中的名字）。
  * re-export：export {a} from 'm' / export * from 'm' —— export_name 转发自
  * 源模块（from_specifier 记录，运行期 LoadImport 沿转发链找）。 */
-bool Compiler::compileModuleExport(const ASTNode &node, const ASTNode **decl) {
+bool Compiler::compileModuleExport(const ASTNode &node, const ASTNode **decl,
+                                   bool register_exports) {
   if (decl != nullptr) *decl = nullptr;
 
   if (node.type == NodeType::ExportDefaultDeclaration) {
@@ -426,20 +432,20 @@ bool Compiler::compileModuleExport(const ASTNode &node, const ASTNode **decl) {
           expr->children[0]->type == NodeType::Identifier) {
         /* 具名默认导出：export default function f(){}。绑定名 = f（提升）。 */
         e.local_name = expr->children[0]->name;
-        module_exports_.push_back(std::move(e));
+        if (register_exports) module_exports_.push_back(std::move(e));
         if (decl != nullptr) *decl = expr;
         return true;
       }
       /* 匿名默认导出：export default function(){}。无模块绑定名，按
        * 表达式求值存入隐藏绑定 __default__（源码位置编译，不提升）。 */
       e.local_name = "__default__";
-      module_exports_.push_back(std::move(e));
+      if (register_exports) module_exports_.push_back(std::move(e));
       if (decl != nullptr) *decl = expr;
       return true;
     }
     /* 表达式默认导出：合成隐藏绑定名（不与用户标识符冲突）。 */
     e.local_name = "__default__";
-    module_exports_.push_back(std::move(e));
+    if (register_exports) module_exports_.push_back(std::move(e));
     if (decl != nullptr) *decl = expr;
     return true;
   }
@@ -479,7 +485,7 @@ bool Compiler::compileModuleExport(const ASTNode &node, const ASTNode **decl) {
       }
     }
     if (!seen) module_deps_.push_back(e.from_specifier);
-    module_exports_.push_back(std::move(e));
+    if (register_exports) module_exports_.push_back(std::move(e));
     return true;
   }
 
@@ -517,7 +523,7 @@ bool Compiler::compileModuleExport(const ASTNode &node, const ASTNode **decl) {
         e.export_name = spec->exported;
         e.local_name = spec->children[0]->name;
         e.from_specifier = from_spec;
-        module_exports_.push_back(std::move(e));
+        if (register_exports) module_exports_.push_back(std::move(e));
       }
       return true;
     }
@@ -540,7 +546,7 @@ bool Compiler::compileModuleExport(const ASTNode &node, const ASTNode **decl) {
         ModuleExportEntry e;
         e.export_name = target->name;
         e.local_name = target->name;
-        module_exports_.push_back(std::move(e));
+        if (register_exports) module_exports_.push_back(std::move(e));
       }
     } else if (first->type == NodeType::FunctionDeclaration ||
                first->type == NodeType::ClassDeclaration) {
@@ -556,7 +562,7 @@ bool Compiler::compileModuleExport(const ASTNode &node, const ASTNode **decl) {
       ModuleExportEntry e;
       e.export_name = bind_name;
       e.local_name = bind_name;
-      module_exports_.push_back(std::move(e));
+      if (register_exports) module_exports_.push_back(std::move(e));
     } else {
       fail("SyntaxError: invalid exported declaration");
       return false;
@@ -4301,10 +4307,16 @@ bool Compiler::emitLoadIdentifier(const std::string &name) {
     return true;
   }
 
-  /* M5.2a：import 绑定读取（本函数作用域内最先命中，遮蔽外层局部/全局）。 */
+  /* M5.2a：import 绑定读取（本函数作用域内最先命中，遮蔽外层局部/全局）。
+   * M5.2d：namespace 导入（import * as ns）走 LoadImportNamespace 生成导出
+   * 镜像对象；具名/默认导入走 LoadImport 读 live binding。 */
   auto import_it = module_import_map_.find(name);
   if (import_it != module_import_map_.end()) {
-    builder_.load_import(import_it->second);
+    if (module_imports_[import_it->second].is_namespace) {
+      builder_.load_import_namespace(import_it->second);
+    } else {
+      builder_.load_import(import_it->second);
+    }
     return true;
   }
 

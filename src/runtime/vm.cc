@@ -28,6 +28,7 @@
 #include "neojs/runtime/environment.h"
 #include "neojs/runtime/function.h"
 #include "neojs/runtime/iterator.h"
+#include "neojs/runtime/module_namespace.h"
 #include "neojs/runtime/operators.h"
 #include "neojs/runtime/utf16.h"
 #include "neojs/runtime/value.h"
@@ -973,6 +974,35 @@ static ConversionResult op_StoreImport(VmFrame &frame) {
         error = fail("Error: stack underflow on StoreImport"); break;
       }
       error = fail("TypeError: Assignment to constant variable"); break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_LoadImportNamespace(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.2d 命名空间导入：import * as ns from 'm'（§10.4.6 模块 namespace
+       * 镜像对象）。fn.imports[arg] 的 specifier 定位源模块 record，调用
+       * createModuleNamespace 生成导出镜像（export_name -> live binding 值，
+       * 含 default 与 re-export/export * 转发）。源模块未加载/无 env ->
+       * undefined（与 LoadImport 缺省一致）。 */
+      if (frame.arg >= fn.imports.size()) {
+        error = fail("Error: LoadImportNamespace index out of range"); break;
+      }
+      const ModuleImportEntry &entry = fn.imports[frame.arg];
+      JSModuleRecord *from = frame.ctx->findModule(entry.specifier);
+      if (from == nullptr || from->env() == nullptr) {
+        stack.push_back(frame.ctx->createValue(Kind::Undefined));
+        break;
+      }
+      JSValue *ns = createModuleNamespace(frame.ctx, from);
+      stack.push_back(ns != nullptr ? ns : frame.ctx->createValue(Kind::Undefined));
+      break;
   } while (false);
   if (error.value == nullptr &&
       (!error.error.empty() || error.thrown != nullptr))
@@ -3506,6 +3536,7 @@ const OpHandler kHandlers[] = {
     op_LoadImport,  /* LoadImport */
     op_StoreImport,  /* StoreImport */
     op_LoadImportMeta,  /* LoadImportMeta */
+    op_LoadImportNamespace,  /* LoadImportNamespace */
 };
 
 }  // namespace

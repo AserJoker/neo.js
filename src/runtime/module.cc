@@ -54,8 +54,13 @@ bool JSModuleRecord::findExportRec(
         if (local_name != nullptr) *local_name = eb.local_name;
         if (resolved != nullptr) *resolved = const_cast<JSModuleRecord *>(this);
       } else {
-        /* 具名 re-export：绑定在源模块，递归到源模块解析。 */
-        if (!eb.from->findExportRec(export_name, local_name, resolved, visit)) {
+        /* 具名 re-export：绑定在源模块，递归到源模块解析。
+         * 注意用 eb.local_name 作为源模块内的导出名——export { p as q }
+         * from 'm' 时源模块导出的是 p 而非 q（§16.4.7：ReExport 用
+         * ExportEntry.[[LocalName]] 在源模块继续解析），也支持链式转发
+         * 与 as 改名。 */
+        if (!eb.from->findExportRec(eb.local_name, local_name, resolved,
+                                    visit)) {
           return false; /* 源模块无此导出：解析失败 */
         }
       }
