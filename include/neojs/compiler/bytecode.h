@@ -189,6 +189,13 @@ enum class Opcode : uint8_t {
    * 把值返回给 next() 调用方（包装为 {value, done:false}）；恢复时栈顶替换
    * 为 next()/throw() 传入的值（throw 路径走异常派发）。 */
   Yield,
+  /* M5.5a-4 yield* 委托（§14.4 / §27.5.3.3 GeneratorYield + IteratorStep）。
+   * 栈顶 = inner iterable（数组/generator/迭代器对象）。VM 内部驱动 inner
+   * iterator.next()，逐个把 value 经本 generator 挂起/恢复转发给外层 next()；
+   * inner done 后压 inner 返回值到栈继续外层。挂起期间委托状态存
+   * AsyncFrame.delegate_iterator（GC 引用边）。throw/return 恢复时转发给
+   * inner iterator.throw/return（§27.5.3.3 step 6-7）。 */
+  YieldDelegate,
 };
 
 /* -------------------------------------------------------------------------- */
@@ -358,6 +365,10 @@ class BytecodeBuilder {
   /* M5.5a：yield <expr>（栈顶 = yield 值；挂起当前 generator 帧，
    * 把值返回给 next() 调用方；恢复时栈顶替换为 next/throw 传入值）。 */
   void yield() { push_op(Opcode::Yield); }
+  /* M5.5a-4：yield* <expr>（栈顶 = inner iterable；VM 驱动 inner 迭代器，
+   * 逐个把 value 经本 generator 转发给外层 next()；inner done 后压 inner
+   * 返回值继续外层）。 */
+  void yield_delegate() { push_op(Opcode::YieldDelegate); }
 
   /* 闭包（M2.5）：从嵌套函数表实例化 / 读写捕获变量。 */
   void make_function(uint16_t idx) { push_op(Opcode::MakeFunction, idx); }

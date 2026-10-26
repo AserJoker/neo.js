@@ -58,7 +58,9 @@ ConversionResult generatorCall(JSContext *ctx, JSFunction *fn, JSValue *thisVal,
  *   gen_v     Generator JSValue
  *   value     恢复值（next：压栈；throw：异常注入；return：强制完成返回值）
  *   mode      0 next / 1 throw / 2 return
- * 返回 {value, done} 包装对象的 JSValue，或失败 ConversionResult。 */
+ * 返回 {value, done} 包装对象的 JSValue，或失败 ConversionResult。
+ * M5.5a-4：若 generator 处于 yield* 委托挂起（frame.delegate_iterator 非空），
+ * next/throw/return 转发给 inner iterator 而非压栈/注入。 */
 ConversionResult resumeGenerator(JSContext *ctx, JSValue *gen_v,
                                  JSValue *value, int mode);
 
@@ -69,6 +71,35 @@ ConversionResult resumeGenerator(JSContext *ctx, JSValue *gen_v,
  * 返回给 call()，经 op_Call 异常传播到 try/catch。 */
 ConversionResult generatorProtoNext(JSContext *ctx, JSValue *self,
                                     JSValue *const *args, size_t argc, int mode);
+
+/* M5.5a-4 yield* 委托启动（op_YieldDelegate 调用）：
+ *   gen_v     当前 generator（沿 env 隐藏绑定查找）
+ *   iterable  yield* 的操作数（已求值，栈顶弹出）
+ * 流程：getIterator(iterable) 存 frame.delegate_iterator；调 inner.next()；
+ *   inner done -> 压 inner.value 到 frame.stack，清 delegate，返回 ok（不挂起，
+ *     op_YieldDelegate 把栈顶值作为 yield* 表达式结果继续外层执行）；
+ *   inner yield -> frame.yield_value = inner.value，置 frame.suspended，
+ *     返回 suspended=true（op_YieldDelegate 据此结束本帧 runBytecode）。
+ *   inner throw -> 透传错误（外层 try/catch 可捕，或向上传播）。
+ * 返回 ConversionResult：suspended=true 表示挂起；ok()=true 且非 suspended 表示
+ * inner 已 done（栈顶已压 inner value）；!ok() inner 抛错透传。 */
+ConversionResult yieldDelegateStart(JSContext *ctx, JSValue *gen_v,
+                                    JSValue *iterable);
+
+/* M5.5a-4 yield* 委托恢复（resumeGenerator 检测 frame.delegate_iterator 非空时
+ * 调用，替代普通压栈/异常注入路径）：
+ *   gen_v     当前 generator
+ *   value     外层 next/throw/return 传入值
+ *   mode      0 next / 1 throw / 2 return
+ * 流程：把 value/mode 转发给 inner iterator.next/throw/return（§27.5.3.3 step 6-7）；
+ *   inner done -> 清 delegate_iterator，压 inner.value 到 frame.stack，恢复执行
+ *     外层字节码（runBytecode 续延）——可能再次挂起或完成；
+ *   inner yield -> frame.yield_value = inner.value，置 suspended 返回
+ *     {value:inner.value, done:false}；
+ *   inner throw -> 透传错误。
+ * 返回 ConversionResult：成功 value={value,done} 对象；失败 thrown/error 透传。 */
+ConversionResult yieldDelegateResume(JSContext *ctx, JSValue *gen_v,
+                                     JSValue *value, int mode);
 
 }  // namespace neojs
 

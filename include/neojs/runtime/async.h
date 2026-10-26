@@ -65,6 +65,11 @@ class AsyncFrame : public JSObject {
   /* M5.5a-3 generator：yield 值（op_Yield 弹栈顶后存此，供 resumeGenerator
    * 取出包装 {value, done:false}）。仅 generator 用，async 不用。GC 引用边。 */
   JSValue *yield_value = nullptr;
+  /* M5.5a-4 generator yield* 委托：当前委托的 inner 迭代器对象。op_YieldDelegate
+   * 经 getIterator 取得后存此；挂起期间持有防 GC 回收；恢复时 next/throw/return
+   * 转发给 inner（§27.5.3.3 step 6-7）。委托完成后置 nullptr 退出委托模式。
+   * 仅 generator 用，async 不用。GC 引用边。 */
+  JSValue *delegate_iterator = nullptr;
 
   /* 引用边标记：fn/env/frame_this/promise + 操作数栈每个元素。 */
   void gcMarkRefs(Heap *heap) override;

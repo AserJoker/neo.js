@@ -27,6 +27,7 @@
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/conversion.h"
 #include "neojs/runtime/environment.h"
+#include "neojs/runtime/generator.h"
 #include "neojs/runtime/function.h"
 #include "neojs/runtime/iterator.h"
 #include "neojs/runtime/module_namespace.h"
@@ -3576,6 +3577,90 @@ static ConversionResult op_Yield(VmFrame &frame) {
   return ok(nullptr);
 }
 
+/* M5.5a-4 YieldDelegate 指令：yield* <expr> 委托（§14.4 / §27.5.3.3）。
+ *   - 弹栈顶 iterable（yield* 的操作数，已求值）
+ *   - 沿 env 链查找隐藏绑定 __generator__（同 op_Yield），定位当前 generator
+ *   - 调 yieldDelegateStart：getIterator(iterable) + inner.next() 首步
+ *     * inner done -> inner.value 压回栈顶（yield* 表达式结果），非挂起，
+ *       外层字节码继续执行（不结束本帧 runBytecode）；
+ *     * inner yield -> frame.yield_value = inner.value，返回 suspended=true，
+ *       置 frame.suspended + frame.done 结束本帧；resumeGenerator 检测后
+ *       包装 {value,done:false} 返回给 next() 调用方，置 state=suspended-yield；
+ *     * inner 抛错 -> 透传 thrown/error（外层 try/catch 可捕）。 */
+static ConversionResult op_YieldDelegate(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+    /* 1. 弹栈顶 iterable。空栈视为 undefined（yield* undefined 由 getIterator
+     *    报 TypeError "undefined is not iterable"）。 */
+    JSValue *iterable = nullptr;
+    if (stack.empty()) {
+      iterable = frame.ctx->createValue(Kind::Undefined);
+    } else {
+      iterable = stack.back();
+      stack.pop_back();
+    }
+
+    /* 2. 沿 env 链查找隐藏绑定 __generator__，定位当前 generator。 */
+    JSValue *gen_v = nullptr;
+    for (JSEnvironment *e = frame.env; e != nullptr; e = e->parent()) {
+      if (e->hasBinding(kGeneratorBinding)) {
+        gen_v = e->getBinding(kGeneratorBinding);
+        break;
+      }
+    }
+    if (gen_v == nullptr || !gen_v->isObject() ||
+        !gen_v->object()->isGenerator()) {
+      error = fail("SyntaxError: yield* outside of generator function");
+      break;
+    }
+
+    /* 3. 调 yieldDelegateStart（getIterator + inner.next 首步）。
+     * 注意：suspended 路径下 yieldDelegateStart 返回 value=nullptr
+     * （ConversionResult::ok() 据 value!=nullptr 判定，故 suspended 时
+     * ok()=false——不能用 !ok() 判失败，需先排除 suspended）。 */
+    ConversionResult r = yieldDelegateStart(frame.ctx, gen_v, iterable);
+    if (r.suspended) {
+      /* inner yield：挂起外层 generator。yieldDelegateStart 已写入
+       * frame->yield_value（inner yield 值）和 frame->delegate_iterator。
+       * 必须调 suspendYield 保存 VM 现场到 AsyncFrame（pc/stack/env/this/
+       * pending）——否则恢复时从过时 pc 续延导致执行错乱。delegate_iterator
+       * 被 suspendYield 保留（其不触及该字段）。 */
+      AsyncFrame *af = asAsyncFrame(gen_v->object()->generatorContext());
+      JSValue *yv = (af != nullptr) ? af->yield_value
+                                    : frame.ctx->createValue(Kind::Undefined);
+      if (!suspendYield(frame.ctx, gen_v, frame.self, *frame.pc, stack,
+                        frame.env, *frame.frame_this, frame.pending,
+                        frame.has_pending, frame.pending_handle, yv)) {
+        error = fail("Error: failed to suspend generator frame on yield*");
+        break;
+      }
+      frame.suspended = true;
+      frame.done = true;
+    } else if (!r.ok()) {
+      /* inner 抛错（非挂起）：透传 thrown/error。 */
+      error = std::move(r);
+      break;
+    } else {
+      /* inner done：yieldDelegateStart 已把 inner.value 压入 AsyncFrame.stack。
+       * 非挂起路径需把 inner.value 同步到 *frame.stack（当前操作数栈），
+       * 外层字节码续延从栈顶取 yield* 表达式结果。AsyncFrame.stack 是
+       * frame.stack 的副本（仅 suspendYield 时拷贝），此处非挂起路径直接
+       * 同步末尾元素。 */
+      AsyncFrame *af = asAsyncFrame(gen_v->object()->generatorContext());
+      if (af != nullptr && !af->stack.empty()) {
+        stack.push_back(af->stack.back());
+        af->stack.pop_back();
+      }
+    }
+    break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
 /* 分发表：按 Opcode 枚举值下标访问（M5.1e-f 栈帧瘦身）。 */
 const OpHandler kHandlers[] = {
     op_PushConst,  /* PushConst */
@@ -3676,6 +3761,7 @@ const OpHandler kHandlers[] = {
     op_LoadImportNamespace,  /* LoadImportNamespace */
     op_Await,  /* Await */
     op_Yield,  /* Yield */
+    op_YieldDelegate,  /* YieldDelegate */
 };
 
 }  // namespace

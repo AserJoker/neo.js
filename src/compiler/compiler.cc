@@ -2696,11 +2696,22 @@ bool Compiler::compileExpr(const ASTNode &node) {
     case NodeType::YieldExpression:
       /* M5.5a yield / yield* / 裸 yield（§14.4 / §27.5.3.2 GeneratorYield）。
        * children[0] = yield 值表达式（nullptr 表示裸 yield → undefined）。
-       * yield_delegate（yield*）委托由 M5.5a-4 处理，此处按普通 yield 编译
-       * （yield* 的迭代器驱动在 VM 运行时展开，编译期发射同一 Yield 指令）。
-       * 语义：求值 yield 值 -> Yield 指令（挂起，把值返回给 next() 调用方）；
-       * 恢复时栈顶替换为 next()/throw() 传入的值（throw 路径走异常派发）。
+       * yield_delegate（yield*）发射 YieldDelegate 指令——VM 运行时驱动
+       * inner 迭代器逐个转发（§27.5.3.3 GeneratorYield + IteratorStep）。
+       * 普通 yield 语义：求值 yield 值 -> Yield 指令（挂起，把值返回给 next()
+       * 调用方）；恢复时栈顶替换为 next()/throw() 传入的值（throw 路径走异常派发）。
        * 仅 generator 函数体内可达（parser 已校验 generator_depth_ > 0）。 */
+      if (node.yield_delegate) {
+        /* yield* expr：求值 expr（inner iterable）-> YieldDelegate 指令。 */
+        if (node.children.empty() || node.children[0] == nullptr) {
+          /* yield* 无操作数：规范不允许，parser 已保证有操作数；防御性 undefined。 */
+          builder_.push_op(Opcode::PushUndefined);
+        } else {
+          if (!compileExpr(*node.children[0])) return false;
+        }
+        builder_.yield_delegate();
+        return true;
+      }
       if (node.children.empty() || node.children[0] == nullptr) {
         /* 裸 yield：等价于 yield undefined。 */
         builder_.push_op(Opcode::PushUndefined);

@@ -3230,6 +3230,18 @@ ConversionResult generatorReturnBuiltin(JSContext *ctx, JSValue *thisVal,
   return generatorProtoNext(ctx, thisVal, args, argc, /*mode=*/2);
 }
 
+/* Generator.prototype[Symbol.iterator]（§27.5.2.1 %GeneratorPrototype%
+ * @@iterator 方法）：返回 this，使 generator 对象自身可迭代。
+ * yield* generator 委托依赖此方法（getIterator 调 obj[Symbol.iterator]()
+ * 得到 iterator——generator 自身即迭代器，故返回 this）。 */
+ConversionResult generatorSelfIterator(JSContext *ctx, JSValue *thisVal,
+                                       JSValue *const *args, size_t argc) {
+  (void)args;
+  (void)argc;
+  if (thisVal == nullptr) return ok(ctx->createValue(Kind::Undefined));
+  return ok(thisVal);
+}
+
 /* 取 Generator.prototype（M5.5a-3，惰性创建 + 缓存 + 进根集）。
  * generatorCall 新建 Generator 对象的原型链根（next/throw/return 所在）。
  * 原型链 -> Object.prototype（§27.5.2.3）。 */
@@ -3256,8 +3268,12 @@ void installGeneratorBuiltins(JSContext *ctx) {
   defineMethod(gen_proto->object(), "return",
                makeBuiltin(ctx, generatorReturnBuiltin, ThisMode::Strict));
   /* Generator.prototype[Symbol.iterator]（§27.5.2.1 %GeneratorPrototype%
-   * 的 @@iterator 方法返回 this，使 generator 对象自身可迭代）留 M5.5b
-   * for-of 消费 generator 时补——本阶段 next/throw/return 已够核心用例。 */
+   * @@iterator）：返回 this，使 generator 对象自身可迭代——yield* generator
+   * 委托依赖此方法（getIterator 调 obj[Symbol.iterator]() 取迭代器，
+   * generator 自身即迭代器故返回 this）。M5.5a-4 提前补装以支持 yield* 委托。 */
+  gen_proto->object()->setSymbolProperty(
+      wellKnownSymbol(ctx, WellKnown::Iterator),
+      makeBuiltin(ctx, generatorSelfIterator, ThisMode::Strict));
   ctx->heap().unpin(gen_proto);
 }
 

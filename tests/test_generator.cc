@@ -345,3 +345,158 @@ TEST(Generator, IndependentInstances) {
   JS_FreeContext(ctx);
   JS_FreeAllocator(a);
 }
+
+/* -------------------------------------------------------------------------- */
+/* M5.5a-4：yield* 委托（§14.4 / §27.5.3.3）                                    */
+/* -------------------------------------------------------------------------- */
+
+/* yield* 数组委托：外层 next() 依次转发给 inner 数组迭代器，inner 迭代完成后
+ * 外层继续执行后续 yield。 */
+TEST(Generator, YieldDelegateArray) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "function* g() {"
+      "  yield 'before';"
+      "  yield* [10, 20, 30];"
+      "  yield 'after';"
+      "}"
+      "var gen = g();"
+      "var r1 = gen.next();"
+      "var r2 = gen.next();"
+      "var r3 = gen.next();"
+      "var r4 = gen.next();"
+      "var r5 = gen.next();"
+      "var r6 = gen.next();"
+      "globalThis.seq = '' + r1.value + ',' + r2.value + ',' + r3.value + ','"
+      "  + r4.value + ',' + r5.value + ',' + r6.value;"
+      "globalThis.d6 = r6.done;");
+
+  expectGlobalString(ctx, "seq", "before,10,20,30,after,undefined");
+  expectGlobalBoolean(ctx, "d6", true);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* yield* generator 委托：inner 是另一个 generator 函数，外层 next() 转发给
+ * inner.next()，inner 完成后外层续延。 */
+TEST(Generator, YieldDelegateGenerator) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "function* inner() { yield 1; yield 2; return 99; }"
+      "function* outer() {"
+      "  var r = yield* inner();"
+      "  yield r + 100;"
+      "}"
+      "var gen = outer();"
+      "var r1 = gen.next();"
+      "var r2 = gen.next();"
+      "var r3 = gen.next();"
+      "var r4 = gen.next();"
+      "globalThis.seq = '' + r1.value + ',' + r2.value + ',' + r3.value + ','"
+      "  + r4.value;"
+      "globalThis.d4 = r4.done;");
+
+  /* inner yield 1, 2；inner return 99 -> yield* 表达式值 99；外层 yield 199；
+   * 再 next -> done:true undefined。 */
+  expectGlobalString(ctx, "seq", "1,2,199,undefined");
+  expectGlobalBoolean(ctx, "d4", true);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* yield* 委托 throw 转发：外层 gen.throw(err) 转发给 inner.throw(err)，inner
+ * 无 throw 方法时透传 err 给外层（外层 try/catch 可捕）。 */
+TEST(Generator, YieldDelegateThrowForwarded) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "function* inner() {"
+      "  try { yield 1; yield 2; }"
+      "  catch (e) { globalThis.innerCaught = e; }"
+      "}"
+      "function* outer() {"
+      "  try { yield* inner(); }"
+      "  catch (e) { globalThis.outerCaught = e; }"
+      "}"
+      "var gen = outer();"
+      "var r1 = gen.next();"
+      "gen.throw('injected');"
+      "globalThis.r1v = r1.value;");
+
+  /* inner 有 throw 方法（generator 默认）-> throw 注入 inner，inner try/catch
+   * 捕获 'injected'。外层 outerCaught 不应被设置。 */
+  expectGlobalNumber(ctx, "r1v", 1.0);
+  expectGlobalString(ctx, "innerCaught", "injected");
+  expectGlobalUndefined(ctx, "outerCaught");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* yield* 委托 return 转发：外层 gen.return(v) 转发给 inner.return(v)，inner
+ * 完成 -> 外层完成，返回 {value:v, done:true}。 */
+TEST(Generator, YieldDelegateReturnForwarded) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "function* inner() { yield 1; yield 2; }"
+      "function* outer() { yield* inner(); yield 3; }"
+      "var gen = outer();"
+      "gen.next();"
+      "var r = gen.return('done');"
+      "globalThis.rv = r.value;"
+      "globalThis.rd = r.done;"
+      "var r2 = gen.next();"
+      "globalThis.r2d = r2.done;");
+
+  /* return 转发 inner.return -> inner 完成 -> 外层完成，{value:'done',done:true}。
+   * 后续 next 仍 done:true。 */
+  expectGlobalString(ctx, "rv", "done");
+  expectGlobalBoolean(ctx, "rd", true);
+  expectGlobalBoolean(ctx, "r2d", true);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 嵌套 yield*：三层 generator 委托链，next 逐层穿透。 */
+TEST(Generator, YieldDelegateNested) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "function* a() { yield 1; yield 2; }"
+      "function* b() { yield* a(); yield 3; }"
+      "function* c() { yield* b(); yield 4; }"
+      "var gen = c();"
+      "var s = '';"
+      "for (var i = 0; i < 5; i++) {"
+      "  var r = gen.next();"
+      "  s += r.value + (r.done ? '|' : ',');"
+      "}"
+      "globalThis.seq = s;");
+
+  /* 1,2,3,4,undefined| */
+  expectGlobalString(ctx, "seq", "1,2,3,4,undefined|");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
