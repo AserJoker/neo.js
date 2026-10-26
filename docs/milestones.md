@@ -519,27 +519,38 @@ M0 骨架 ─▶ M1 前端流水线 ─▶ M2 解释器核心 ─▶ M3 对象�
 
 ---
 
-### M5.4 异步：async/await（⏳ 未启动，M5.4a–M5.4c）
+### M5.4 异步：async/await（✅ 完成，M5.4a–M5.4c）
 
 > 依赖 M5.3 Promise 与 M5.1 语法地基；async 函数编译为状态机。
 
-**M5.4a async 函数编译（⏳ 未启动）**
+**M5.4a async 函数编译（✅ 完成）**
 
-- `async function` / `async` 箭头函数语法与编译（await 表达式）
-- await 状态机保存/恢复（VM 现场保存，参考 M5 现场设计）
+- `async function` / `async` 箭头函数 / async 方法语法与编译（await 表达式）
+- await 状态机保存/恢复：AsyncFrame（GC 对象）持 fn/pc/栈/env/this/pending，
+  挂起时 VM 现场从 C++ 栈转移到堆，AwaitResolve/AwaitReject 续延以微任务
+  job 形式入队（Bound 闭包捕获 AsyncFrame）；resumeAsyncFrame 重建现场
+  从挂起点继续
+- 脚本顶层 var 双写全局对象（§13.3.2.4 CreateGlobalVarBinding）：
+  顶层函数声明独立编译走 LoadGlobal 读全局对象，普通闭包 LoadUpvalue
+  读 top_env，op_StoreVar 汇聚点双写保证两路径一致
 
-验收：async 函数 + await 端到端脚本通过
+验收：async 函数 + await 端到端脚本通过（20 用例）
 
-**M5.4b await 语义深化（⏳ 未启动）**
+**M5.4b await 语义深化（✅ 完成）**
 
-- await 对 thenable 的接合（PromiseResolveThenableJob）
-- `for await...of`（依赖 M5.5 生成器/异步迭代器）
+- await 对 thenable 的接合（PromiseResolveThenableJob 复用 M5.3 机制）
+- await thenable reject 路径修复：runBytecode 新增 initial_thrown 参数，
+  resumeAsyncFrame 的 is_reject 分支传 rejection 值作为启动异常，从挂起点
+  后第一条指令经 tryDispatch 派发（命中 try/catch 恢复，否则向上传播
+  reject 外层 promise）
+- `for await...of` 依赖 M5.5 异步迭代器，本阶段延后
 
-验收：thenable await 用例通过；for await 用例通过
+验收：thenable await fulfill/reject/异步 thenable 用例通过
 
-**M5.4c async 总验收（⏳ 未启动）**
+**M5.4c async 总验收（✅ 完成）**
 
-验收：async/await 用例集全绿（含异常/嵌套/并发）
+验收：async/await 用例集 27 用例全绿（含异常/嵌套/并发/Promise.all/
+async 方法 this/多次挂起恢复现场完整性）；全量 566 测试全绿
 
 ---
 

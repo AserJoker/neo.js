@@ -559,3 +559,113 @@ TEST(Async, AwaitAsyncThenable) {
   JS_FreeContext(ctx);
   JS_FreeAllocator(a);
 }
+
+/* M5.4c 总验收：async/await 端到端复合用例（并发/嵌套异常/async 方法 this）。 */
+
+/* 并发 await：多个 async 函数同时挂起，微任务驱动各自恢复。 */
+TEST(Async, ConcurrentAwait) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "async function delay(v) { return v * 10; }"
+      "async function f() {"
+      "  var a = await delay(1);"
+      "  var b = await delay(2);"
+      "  var c = await delay(3);"
+      "  globalThis.result = a + b + c;"
+      "}"
+      "f();");
+
+  expectGlobalNumber(ctx, "result", 60.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* await Promise.all：组合 await 与 Promise.all。 */
+TEST(Async, AwaitPromiseAll) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "async function f() {"
+      "  var vals = await Promise.all([Promise.resolve(1), Promise.resolve(2), 3]);"
+      "  globalThis.sum = vals[0] + vals[1] + vals[2];"
+      "}"
+      "f();");
+
+  expectGlobalNumber(ctx, "sum", 6.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 嵌套 async + 异常跨层传播：内层 async reject，外层 await 捕获。 */
+TEST(Async, NestedAsyncRejectPropagates) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "async function inner() { throw 'inner-err'; }"
+      "async function outer() {"
+      "  try { await inner(); }"
+      "  catch (e) { globalThis.err = e; }"
+      "}"
+      "outer();");
+
+  expectGlobalString(ctx, "err", "inner-err");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* async 方法 this 绑定：class 内 async 方法访问实例字段。 */
+TEST(Async, AsyncMethodThisBinding) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "class Counter {"
+      "  constructor() { this.n = 0; }"
+      "  async add(x) { this.n += await x; return this.n; }"
+      "}"
+      "var c = new Counter();"
+      "c.add(5).then(function(v) { globalThis.result = v; });");
+
+  expectGlobalNumber(ctx, "result", 5.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* await 后继续 await（多次挂起恢复，验证现场完整性）。 */
+TEST(Async, MultipleAwaitStateIntegrity) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "async function f() {"
+      "  var sum = 0;"
+      "  for (var i = 1; i <= 3; i++) {"
+      "    sum += await Promise.resolve(i);"
+      "  }"
+      "  return sum;"
+      "}"
+      "f().then(function(v) { globalThis.result = v; });");
+
+  expectGlobalNumber(ctx, "result", 6.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
