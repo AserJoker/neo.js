@@ -86,6 +86,12 @@ enum class PromiseInternal : uint8_t {
  * 初始状态 pending，result 未定。GC 引用边由 JSObject 管理。 */
 JSValue *createPromise(JSContext *ctx);
 
+/* 创建派生 promise + resolve/reject 决议闭包（M5.2c-2 动态 import 复用，
+ * §27.2.1.3.2）：先建 pending promise，再创建决议闭包（Bound 函数捕获
+ * promise）。out_resolve/out_reject 可空。 */
+JSValue *createDerivedPromise(JSContext *ctx, JSValue **out_resolve,
+                              JSValue **out_reject);
+
 /* Promise.prototype（M5.3a，§27.2.4）：惰性创建 + 缓存 + 进根集。 */
 JSValue *promiseProto(JSContext *ctx);
 

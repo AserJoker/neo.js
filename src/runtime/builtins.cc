@@ -37,6 +37,7 @@
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/conversion.h"
 #include "neojs/runtime/function.h"
+#include "neojs/runtime/module_namespace.h"
 #include "neojs/runtime/object.h"
 #include "neojs/runtime/operators.h"
 #include "neojs/runtime/promise.h"
@@ -3117,6 +3118,10 @@ void installBuiltins(JSContext *ctx) {
   /* Promise（M5.3a，§27.2）：构造器 + prototype 方法（then/catch/finally）
    * + 静态方法（resolve/reject）+ 共享内部函数。 */
   installPromiseBuiltins(ctx);
+
+  /* M5.2c-2 动态 import()（§16.2.1.8）：全局内置 `import`。
+   * 依赖 Promise 基础设施（返回 Promise），故须在 Promise 之后注册。 */
+  installModuleNamespaceBuiltins(ctx);
 }
 
 /* 取 Object.prototype（M3.3，惰性创建 + 缓存 + 进根集）。

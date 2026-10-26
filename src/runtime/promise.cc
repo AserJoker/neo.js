@@ -268,16 +268,7 @@ void resolvePromise(JSContext *ctx, JSValue *promise, JSValue *resolution) {
 
 /* 创建派生 promise（then/catch 的返回）：Promise(executor) 语义——先建
  * pending promise，再创建 resolve/reject 闭包。派生 promise 经闭包在
- * reaction job 中 settle。 */
-JSValue *createDerivedPromise(JSContext *ctx, JSValue **out_resolve,
-                              JSValue **out_reject) {
-  JSValue *p = newPromiseObject(ctx);
-  ctx->heap().pin(p); /* 分配保护：创建闭包前防误回收 */
-  *out_resolve = makeResolutionClosure(ctx, PromiseInternal::Resolve, p);
-  *out_reject = makeResolutionClosure(ctx, PromiseInternal::Reject, p);
-  ctx->heap().unpin(p);
-  return p;
-}
+ * reaction job 中 settle。定义于公开区（M5.2c-2 动态 import 复用）。 */
 
 /* Promise.prototype.then（§27.2.4.1）：
  * 1. this 须为 Promise 对象；2. onFulfilled/onRejected 非函数按 undefined
@@ -1203,6 +1194,23 @@ JSValue *getPromiseInternal(JSContext *ctx, PromiseInternal idx) {
  * 初始状态 pending，result 未定。reactions 以 Job 闭包形式存微任务队列，
  * 队列由 JSContext::markRoots 标记；promise_result_ 经 gcMarkRefs 标记。 */
 JSValue *createPromise(JSContext *ctx) { return newPromiseObject(ctx); }
+
+/* 创建派生 promise + 决议闭包（M5.2c-2 动态 import 复用，§27.2.1.3.2）：
+ * 先建 pending promise，再创建 resolve/reject 闭包（Bound 函数捕获
+ * promise）。派生 promise 经闭包在 reaction job 中 settle。 */
+JSValue *createDerivedPromise(JSContext *ctx, JSValue **out_resolve,
+                              JSValue **out_reject) {
+  JSValue *p = newPromiseObject(ctx);
+  ctx->heap().pin(p); /* 分配保护：创建闭包前防误回收 */
+  if (out_resolve != nullptr) {
+    *out_resolve = makeResolutionClosure(ctx, PromiseInternal::Resolve, p);
+  }
+  if (out_reject != nullptr) {
+    *out_reject = makeResolutionClosure(ctx, PromiseInternal::Reject, p);
+  }
+  ctx->heap().unpin(p);
+  return p;
+}
 
 /* Promise.prototype（M5.3a，§27.2.4）：惰性创建 + 缓存 + 进根集。
  * 原型链 -> Object.prototype。 */

@@ -819,3 +819,174 @@ TEST(Module, ImportMetaPerModule) {
   JS_FreeContext(ctx);
   JS_FreeAllocator(a);
 }
+
+/* -------------------------------------------------------------------------- */
+/* M5.2c-2：动态 import()                                                     */
+/* -------------------------------------------------------------------------- */
+
+/* 动态 import 基本链路：import('mod') 返回 Promise，模块求值成功 resolve
+ * 为 namespace 对象（导出镜像）。宿主经 JS_RunJobs 驱动微任务后读全局。 */
+TEST(Module, DynamicImportBasic) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  world.sources["dynA"] = "export const a = 10; export const b = 20;";
+  world.sources["main"] =
+      "import('dynA').then(ns => { globalThis.sum = ns.a + ns.b; });";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "main");
+  EXPECT_EQ(r, nullptr);
+
+  /* 动态 import 的 Promise 回调经微任务队列调度，须宿主驱动。 */
+  JSValue *jr = JS_RunJobs(ctx);
+  EXPECT_EQ(jr, nullptr) << "JS_RunJobs returned error: "
+                         << (jr != nullptr ? JS_ToString(ctx, jr) : "");
+  if (jr != nullptr) JS_FreeValue(ctx, jr);
+
+  expectGlobalNumber(ctx, "sum", 30.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 动态 import 的 namespace 对象含 default 导出。 */
+TEST(Module, DynamicImportDefaultExport) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  world.sources["dynD"] = "export default 42; export const x = 7;";
+  world.sources["main"] =
+      "import('dynD').then(ns => { globalThis.d = ns.default; "
+      "globalThis.x = ns.x; });";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "main");
+  EXPECT_EQ(r, nullptr);
+
+  JSValue *jr = JS_RunJobs(ctx);
+  EXPECT_EQ(jr, nullptr) << "JS_RunJobs returned error: "
+                         << (jr != nullptr ? JS_ToString(ctx, jr) : "");
+  if (jr != nullptr) JS_FreeValue(ctx, jr);
+
+  expectGlobalNumber(ctx, "d", 42.0);
+  expectGlobalNumber(ctx, "x", 7.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 动态 import 依赖链：目标模块 import 的依赖先求值，namespace 含 re-export。 */
+TEST(Module, DynamicImportDependencyChain) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  world.sources["dep"] = "export const base = 5;";
+  world.sources["dynC"] =
+      "import { base } from 'dep'; export const doubled = base * 2;";
+  world.sources["main"] =
+      "import('dynC').then(ns => { globalThis.v = ns.doubled; });";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "main");
+  EXPECT_EQ(r, nullptr);
+
+  JSValue *jr = JS_RunJobs(ctx);
+  EXPECT_EQ(jr, nullptr) << "JS_RunJobs returned error: "
+                         << (jr != nullptr ? JS_ToString(ctx, jr) : "");
+  if (jr != nullptr) JS_FreeValue(ctx, jr);
+
+  expectGlobalNumber(ctx, "v", 10.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 动态 import 失败（模块不存在）：Promise reject，catch 捕获错误。 */
+TEST(Module, DynamicImportReject) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  world.sources["main"] =
+      "import('missingMod').catch(e => { globalThis.err = 'rejected'; });";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "main");
+  EXPECT_EQ(r, nullptr);
+
+  JSValue *jr = JS_RunJobs(ctx);
+  EXPECT_EQ(jr, nullptr) << "JS_RunJobs returned error: "
+                         << (jr != nullptr ? JS_ToString(ctx, jr) : "");
+  if (jr != nullptr) JS_FreeValue(ctx, jr);
+
+  expectGlobalString(ctx, "err", "rejected");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 动态 import 与 Promise 组合：import 结果再经 then 链式接合。 */
+TEST(Module, DynamicImportWithPromiseChain) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  world.sources["dynE"] = "export const v = 3;";
+  world.sources["main"] =
+      "import('dynE').then(ns => ns.v).then(v => v * 10).then(r => { "
+      "globalThis.final = r; });";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "main");
+  EXPECT_EQ(r, nullptr);
+
+  JSValue *jr = JS_RunJobs(ctx);
+  EXPECT_EQ(jr, nullptr) << "JS_RunJobs returned error: "
+                         << (jr != nullptr ? JS_ToString(ctx, jr) : "");
+  if (jr != nullptr) JS_FreeValue(ctx, jr);
+
+  expectGlobalNumber(ctx, "final", 30.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 动态 import 重复加载同 specifier：模块单例（不重复求值）。
+ * 依赖模块顶层副作用（globalThis 计数）只执行一次。 */
+TEST(Module, DynamicImportSingleton) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  world.sources["dynF"] =
+      "globalThis.loadCount = (globalThis.loadCount || 0) + 1; "
+      "export const tag = 'once';";
+  world.sources["main"] =
+      "import('dynF').then(() => import('dynF')).then(ns => { "
+      "globalThis.tag = ns.tag; });";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "main");
+  EXPECT_EQ(r, nullptr);
+
+  JSValue *jr = JS_RunJobs(ctx);
+  EXPECT_EQ(jr, nullptr) << "JS_RunJobs returned error: "
+                         << (jr != nullptr ? JS_ToString(ctx, jr) : "");
+  if (jr != nullptr) JS_FreeValue(ctx, jr);
+
+  expectGlobalNumber(ctx, "loadCount", 1.0);
+  expectGlobalString(ctx, "tag", "once");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}

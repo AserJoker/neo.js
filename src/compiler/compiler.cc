@@ -2602,6 +2602,22 @@ bool Compiler::compileExpr(const ASTNode &node) {
        * 语法层已保证仅模块上下文合法（parser.cc），普通脚本不可达。 */
       builder_.load_import_meta();
       return true;
+    case NodeType::ImportExpression: {
+      /* M5.2c-2 动态 import(spec)（§16.2.1.8）：编译为对全局内置函数
+       * `import` 的调用——先 LoadGlobal "import" 压入内置函数，再求值
+       * specifier 压入参数，Call {1}（栈布局 [func, arg]，与普通调用
+       * 一致——callee 先入栈，arg 后入栈）。运行时 dynamicImport 返回
+       * Promise（模块加载成功 resolve 为 namespace 对象，失败 reject），
+       * 微任务调度保证异步。 */
+      if (node.children.empty()) {
+        fail("SyntaxError: import() requires an argument");
+        return false;
+      }
+      builder_.load_global("import");                    /* 内置函数 */
+      if (!compileExpr(*node.children[0])) return false; /* specifier */
+      builder_.call(1);
+      return true;
+    }
     case NodeType::Identifier: return compileIdentifier(node);
     case NodeType::ThisExpression: {
       /* M5.1c：this -> LoadThis（当前帧 this）。 */
