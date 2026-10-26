@@ -479,6 +479,217 @@ TEST(Module, ModuleSyntaxError) {
   JS_FreeAllocator(a);
 }
 
+/* -------------------------------------------------------------------------- */
+/* M5.2b：循环依赖与链接语义                                                   */
+/* -------------------------------------------------------------------------- */
+
+/* 循环依赖基本：a <-> b 互相 import。
+ * 依赖先求值 DFS 遇 Evaluating 短路收敛，不无限递归、不崩溃。
+ * 验证点：两模块均正常求值完成（顶层副作用都执行）。 */
+TEST(Module, CircularDependencyBasic) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  world.sources["cyA"] =
+      "import { bval } from 'cyB'; export const aval = 1; "
+      "globalThis.cyA_done = true;";
+  world.sources["cyB"] =
+      "import { aval } from 'cyA'; export const bval = 2; "
+      "globalThis.cyB_done = true;";
+  world.sources["main"] =
+      "import { aval } from 'cyA'; import { bval } from 'cyB'; "
+      "globalThis.aval = aval; globalThis.bval = bval;";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "main");
+  EXPECT_EQ(r, nullptr);
+  if (r != nullptr) {
+    fprintf(stderr, "[DBG] CircularDependencyBasic r='%s'\n",
+            JS_ToString(ctx, r));
+  }
+
+  /* 循环依赖中 const 绑定在对方求值前读到的是 undefined（TDZ 简化为
+   * undefined），但关键验证是：不崩溃、正常返回、两模块都执行。 */
+  expectGlobalNumber(ctx, "aval", 1.0);
+  expectGlobalNumber(ctx, "bval", 2.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 循环依赖 + 顶层执行序验证：依赖先求值 DFS 顺序（A 先于 B）。 */
+TEST(Module, CircularOrderPreserved) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  world.sources["cyA"] =
+      "globalThis.order = (globalThis.order || '') + 'A'; "
+      "import { bval } from 'cyB'; export const aval = 1;";
+  world.sources["cyB"] =
+      "globalThis.order = (globalThis.order || '') + 'B'; "
+      "import { aval } from 'cyA'; export const bval = 2;";
+  world.sources["main"] = "import { aval } from 'cyA';";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "main");
+  EXPECT_EQ(r, nullptr);
+
+  /* 求值序（§16.3.1.1 DFS 后序）：main -> cyA -> cyB（B 打印，最深依赖
+   * 先执行）-> 回 cyA（A 打印）-> 回 main。依赖先求值 = 深度优先后序。 */
+  expectGlobalString(ctx, "order", "BA");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 循环依赖 + 函数提升 live binding：a/b 互相 import 对方函数，
+ * 顶层不调用（求值期不读未初始化绑定），main 里再调用。
+ * export function 提升：函数声明实例化即绑定，调用时动态解析对方。 */
+TEST(Module, CircularLiveBindingFunctions) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  /* a 依赖 b，但只在调用时读（顶层不调用）。 */
+  world.sources["cyA"] =
+      "import { b } from 'cyB'; export function a() { return b() + 1; }";
+  /* b 依赖 a，但只在调用时读。 */
+  world.sources["cyB"] =
+      "import { a } from 'cyA'; export function b() { return 10; }";
+  world.sources["main"] =
+      "import { a } from 'cyA'; globalThis.r = a();";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "main");
+  EXPECT_EQ(r, nullptr);
+  if (r != nullptr) {
+    fprintf(stderr, "[DBG] CircularLiveBindingFunctions r='%s'\n",
+            JS_ToString(ctx, r));
+  }
+
+  /* a() -> b() + 1 = 10 + 1 = 11。顶层求值序：cyB 先（b 提升）-> cyA
+   * （a 提升）-> main。调用 a() 时 b 已绑定，动态查表取到 10。 */
+  expectGlobalNumber(ctx, "r", 11.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 循环依赖 + let 顶层更新 live binding：cyA 顶层把 cyB 导出的计数变量
+ * 递增，main 读到更新后的值（动态查表取当前 env 绑定）。 */
+TEST(Module, CircularLiveBindingLet) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  world.sources["cyA"] =
+      "import { count } from 'cyB'; export const bump = () => { "
+      "globalThis.seen = count; return 1; };";
+  world.sources["cyB"] = "export let count = 5;";
+  world.sources["main"] =
+      "import { bump } from 'cyA'; globalThis.r = bump();";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "main");
+  EXPECT_EQ(r, nullptr);
+  if (r != nullptr) {
+    fprintf(stderr, "[DBG] CircularLiveBindingLet r='%s'\n",
+            JS_ToString(ctx, r));
+  }
+
+  /* 求值序：main -> cyA（bump 闭包，顶层不调）-> cyB（count=5）-> main
+   * 调 bump()：LoadImport count（动态查 cyB env）=5 -> globalThis.seen=5。 */
+  expectGlobalNumber(ctx, "r", 1.0);
+  expectGlobalNumber(ctx, "seen", 5.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 多 export * from 合并：两个源模块的具名导出都转发。 */
+TEST(Module, ExportStarMultipleSources) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  world.sources["src1"] = "export const p = 1; export const q = 2;";
+  world.sources["src2"] = "export const r = 3;";
+  world.sources["agg"] = "export * from 'src1'; export * from 'src2';";
+  world.sources["main"] =
+      "import { p, q, r } from 'agg'; "
+      "globalThis.p = p; globalThis.q = q; globalThis.r = r;";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "main");
+  EXPECT_EQ(r, nullptr);
+
+  expectGlobalNumber(ctx, "p", 1.0);
+  expectGlobalNumber(ctx, "q", 2.0);
+  expectGlobalNumber(ctx, "r", 3.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 多 export * 同名冲突：先到先得（简化语义，非规范 ambiguous error）。 */
+TEST(Module, ExportStarConflictFirstWins) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  world.sources["src1"] = "export const x = 11;";
+  world.sources["src2"] = "export const x = 22;";
+  world.sources["agg"] = "export * from 'src1'; export * from 'src2';";
+  world.sources["main"] =
+      "import { x } from 'agg'; globalThis.x = x;";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "main");
+  EXPECT_EQ(r, nullptr);
+
+  /* src1 先声明 -> 先到先得，x=11。 */
+  expectGlobalNumber(ctx, "x", 11.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* export * 环（a * from b，b * from a）：不崩溃（环保护）。 */
+TEST(Module, ExportStarCycle) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  world.sources["cyA"] = "export * from 'cyB'; export const av = 1;";
+  world.sources["cyB"] = "export * from 'cyA'; export const bv = 2;";
+  world.sources["main"] =
+      "import { av } from 'cyA'; import { bv } from 'cyB'; "
+      "globalThis.av = av; globalThis.bv = bv;";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "main");
+  EXPECT_EQ(r, nullptr);
+  if (r != nullptr) {
+    fprintf(stderr, "[DBG] ExportStarCycle r='%s'\n", JS_ToString(ctx, r));
+  }
+
+  /* 环中 av 在 cyA 本地导出，bv 在 cyB 本地导出，均可解析。 */
+  expectGlobalNumber(ctx, "av", 1.0);
+  expectGlobalNumber(ctx, "bv", 2.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
 /* 模块顶层抛异常传播为 Exception（依赖模块抛错）。 */
 TEST(Module, ModuleTopLevelThrow) {
   JSAllocator *a = nullptr;

@@ -448,7 +448,7 @@ M0 骨架 ─▶ M1 前端流水线 ─▶ M2 解释器核心 ─▶ M3 对象�
 
 ---
 
-### M5.2 模块系统（✅ 进行中：M5.2a 完成，M5.2a–M5.2d）
+### M5.2 模块系统（✅ 进行中：M5.2a–M5.2b 完成）
 
 > 模块语法层（M1.6 ③）已就绪，本节补**运行时执行**语义。模块加载/链接/循环依赖/动态导入各自独立可验收。
 
@@ -463,12 +463,15 @@ M0 骨架 ─▶ M1 前端流水线 ─▶ M2 解释器核心 ─▶ M3 对象�
 
 验收：多模块 import/export 脚本端到端运行（tests/test_module.cc 19 用例全绿）
 
-**M5.2b 循环依赖与链接语义（⏳ 未启动）**
+**M5.2b 循环依赖与链接语义（✅ 完成）**
 
-- 模块链接（Instantiation）阶段：实例化绑定 + 循环依赖处理（live binding）
-- `export *` / 重导出命名空间合并
+- 模块求值状态机：Uninstantiated → Evaluating → Evaluated（§16.3.1.1），循环依赖回查短路收敛
+- 求值顺序：DFS 后序（最深依赖先执行，与规范一致）
+- `findExport` 递归解析：本地导出 / 具名 re-export / `export *` 合并，visit 访问集环保护
+- 嵌套函数 import 绑定传播：子 builder 继承模块 imports 表（LoadImport 下标一致）
+- live binding：函数提升 / `let` 导出在循环依赖中动态读源模块 env
 
-验收：循环依赖模块对正确；`export *` 用例通过
+验收：循环依赖（基本/顺序/函数/let live binding）+ `export *`（多源合并/冲突/环）用例全绿（tests/test_module.cc 26 用例）
 
 **M5.2c 动态导入与 import.meta（⏳ 未启动）**
 

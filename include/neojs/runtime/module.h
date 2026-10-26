@@ -25,6 +25,7 @@
 #define NEOJS_RUNTIME_MODULE_H
 
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "neojs/compiler/bytecode.h"
@@ -103,7 +104,8 @@ class JSModuleRecord : public GCHeader {
   /* 导出表：导出名 -> 值（live binding，与 env 绑定表同步更新）。
    * 运行期 SetExport 写入；LoadImport/ReExport 读取。 */
   const std::string *findLocalExport(const std::string &export_name) const;
-  /* 查找导出绑定：本地导出返回 local_name；re-export 返回 from 模块。 */
+  /* 解析导出名到最终本地绑定名（M5.2b）：本地导出 / 具名 re-export /
+   * export * 合并，含环保护。返回 false = 导出不存在。 */
   bool findExport(const std::string &export_name, std::string *local_name,
                   JSModuleRecord **from) const;
 
@@ -115,6 +117,11 @@ class JSModuleRecord : public GCHeader {
   void gcMarkRefs(Heap *heap) override;
 
  private:
+  /* findExport 的递归实现（带访问集环保护）。visit 跨调用共享。 */
+  bool findExportRec(const std::string &export_name, std::string *local_name,
+                     JSModuleRecord **from,
+                     std::unordered_set<const JSModuleRecord *> &visit) const;
+
   std::string specifier_;          /* 模块标识 */
   JSEnvironment *env_ = nullptr;   /* 模块环境（顶层词法环境） */
   JSFunction *function_ = nullptr; /* 模块求值函数 */

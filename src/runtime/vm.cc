@@ -939,24 +939,16 @@ static ConversionResult op_LoadImport(VmFrame &frame) {
         stack.push_back(frame.ctx->createValue(Kind::Undefined));
         break;
       }
+      /* 解析导出到最终模块 + 绑定名（M5.2b：findExport 内部完成 re-export /
+       * export * 转发链解析，含环保护）。读最终模块 env 的 live binding。 */
       std::string local_name;
-      JSModuleRecord *from2 = nullptr;
-      if (!from->findExport(entry.export_name, &local_name, &from2)) {
+      JSModuleRecord *resolved = nullptr;
+      if (!from->findExport(entry.export_name, &local_name, &resolved) ||
+          resolved == nullptr || resolved->env() == nullptr) {
         stack.push_back(frame.ctx->createValue(Kind::Undefined));
         break;
       }
-      /* re-export 转发（export {a} from 'm' 再被 import）：沿 from 链找。 */
-      JSModuleRecord *target = from;
-      std::string bind_name = local_name;
-      while (from2 != nullptr) {
-        target = from2;
-        if (!target->findExport(bind_name, &local_name, &from2)) {
-          from2 = nullptr;
-        } else {
-          bind_name = local_name;
-        }
-      }
-      JSValue *val = target->env()->getBinding(bind_name);
+      JSValue *val = resolved->env()->getBinding(local_name);
       stack.push_back(val != nullptr ? val : frame.ctx->createValue(Kind::Undefined));
       break;
   } while (false);

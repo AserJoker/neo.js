@@ -746,6 +746,17 @@ bool Compiler::compileChildFunction(const ASTNode &fn, FunctionBytecode *out,
   saved_builder = std::move(builder_); /* 保存外层 builder */
   builder_ = BytecodeBuilder(fn_name);
 
+  /* M5.2b：模块顶层 import 绑定传播到子函数。
+   * 嵌套函数（如 export function a(){ return b()+1; }）内部引用 import
+   * 绑定 b 时，emitLoadIdentifier 命中 module_import_map_ 发射 LoadImport，
+   * 但 LoadImport 下标指向子 builder 的 imports 表——子 builder 未注册则
+   * 运行期报 "LoadImport index out of range"。这里按 module_imports_
+   * 顺序注册（add_import 按 local_name 去重，下标与模块求值函数一致），
+   * 子函数 LoadImport 因此可正常查源模块 env（选项 A 动态查表）。 */
+  for (const ModuleImportEntry &imp : module_imports_) {
+    builder_.add_import(imp);
+  }
+
   /* M5.1d-c2 私有字段编译状态：普通函数（非箭头、非 class 成员）不能
    * 访问外层 class 的私有字段，置空 current_private_names_（编译期
    * resolvePrivateName 报 SyntaxError）。箭头函数/class 成员继承。 */

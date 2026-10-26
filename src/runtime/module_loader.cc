@@ -127,27 +127,44 @@ JSModuleRecord *loadModule(JSContext *ctx, const std::string &specifier,
   return record;
 }
 
-/* 执行模块求值函数（顶层代码在模块 env 中运行）。 */
+/* 执行模块求值函数（顶层代码在模块 env 中运行）。
+ * 状态机（§16.3.1.1，M5.2b）：Uninstantiated -> Evaluating -> Evaluated。
+ *   - 进入即置 Evaluating：循环依赖（a -> b -> a）中，b 求值递归回 a 时
+ *     看到 a 已是 Evaluating，直接短路返回（不重复执行）——依赖先求值
+ *     的 DFS 在环上因此安全收敛。
+ *   - 依赖先求值（§16.3.1.1 步骤 4-6）：链式依赖逐层展开；同一依赖被
+ *     多个模块引用时 Evaluated 短路保证只求值一次。
+ *   - 求值失败（依赖或本模块抛错）：置 Evaluated 表示已尝试过，避免后续
+ *     JS_EvalModule 重入时卡在 Evaluating 短路返回（吞掉错误）。 */
 ConversionResult evaluateModule(JSContext *ctx, JSModuleRecord *record) {
   if (record == nullptr) return fail("Error: null module record");
 
-  /* 已求值（含循环依赖路径）短路。 */
-  if (record->status() == ModuleStatus::Evaluated) return ok(nullptr);
+  /* 已求值 / 正在求值（循环依赖回查）短路。 */
+  if (record->status() == ModuleStatus::Evaluated ||
+      record->status() == ModuleStatus::Evaluating) {
+    return ok(nullptr);
+  }
 
-  /* 状态置 Evaluating（M5.2b 循环依赖）：依赖先求值 + 本模块执行。
-   * 先递归求值依赖（依赖先求值，§16.3.1.1 步骤 4-6），链式依赖逐层展开。
-   * 同一依赖被多个模块引用时，Evaluated 短路保证只求值一次。 */
+  /* 进入求值：置 Evaluating，循环依赖回查时短路。 */
+  record->setStatus(ModuleStatus::Evaluating);
+
+  /* 先递归求值依赖（依赖先求值，§16.3.1.1 步骤 4-6）。 */
   for (JSModuleRecord *dep : record->deps()) {
     if (dep == nullptr) continue;
     ConversionResult dr = evaluateModule(ctx, dep);
-    if (isFailure(dr)) return dr;
+    if (isFailure(dr)) {
+      record->setStatus(ModuleStatus::Evaluated); /* 失败：标记已尝试 */
+      return dr;
+    }
   }
   record->setStatus(ModuleStatus::Evaluated);
 
   const FunctionBytecode &fn = record->bytecode();
   /* 模块顶层代码在模块 env 中运行（与 JS_Eval 顶层同机制）：
    * LoadVar/StoreVar 读写模块 env 绑定，闭包沿 env 链捕获模块顶层变量。 */
-  return runBytecode(ctx, fn, nullptr, nullptr, 0, record->env());
+  ConversionResult r = runBytecode(ctx, fn, nullptr, nullptr, 0, record->env());
+  if (isFailure(r)) record->setStatus(ModuleStatus::Evaluated); /* 失败标记 */
+  return r;
 }
 
 /* 加载并求值模块（M5.2a）：依赖先求值 + 本模块执行。
