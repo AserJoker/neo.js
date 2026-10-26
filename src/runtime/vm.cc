@@ -3515,6 +3515,17 @@ static ConversionResult op_Nop(VmFrame &frame) {
   return ok(nullptr);
 }
 
+/* M5.5a-2 Yield 指令存根：编译器已发射，VM 运行时实现属 M5.5a-3。
+ * generator 函数调用入口（generatorCall）尚未接入，故此路径对现有测试
+ * 不可达；M5.5a-3 将替换为真正的挂起恢复逻辑（§27.5.3.2 GeneratorYield）：
+ *   - 弹栈顶 yield 值，包装为 {value, done:false} 返回给 next() 调用方；
+ *   - 保存 VM 现场到 GeneratorFrame（复用 AsyncFrame 结构），挂起本帧；
+ *   - 恢复时（next/throw/return）栈顶替换为传入值，从挂起点继续。 */
+static ConversionResult op_Yield(VmFrame &frame) {
+  (void)frame;
+  return fail("Error: yield not implemented (M5.5a-3 pending)");
+}
+
 /* 分发表：按 Opcode 枚举值下标访问（M5.1e-f 栈帧瘦身）。 */
 const OpHandler kHandlers[] = {
     op_PushConst,  /* PushConst */
@@ -3614,6 +3625,7 @@ const OpHandler kHandlers[] = {
     op_LoadImportMeta,  /* LoadImportMeta */
     op_LoadImportNamespace,  /* LoadImportNamespace */
     op_Await,  /* Await */
+    op_Yield,  /* Yield */
 };
 
 }  // namespace

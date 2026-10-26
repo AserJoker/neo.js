@@ -157,6 +157,8 @@ CompileResult Compiler::compileFunction(const ASTNode &fn) {
   result.fn = builder_.build();
   /* M5.4 async 函数标记（JS_NewFunction 单函数编译路径）。 */
   result.fn.is_async = fn.fn_is_async;
+  /* M5.5a generator 函数标记（VM 调用时创建 Generator 对象 + yield 挂起恢复）。 */
+  result.fn.is_generator = fn.fn_is_generator;
   return result;
 }
 
@@ -840,6 +842,9 @@ bool Compiler::compileChildFunction(const ASTNode &fn, FunctionBytecode *out,
   child_fn.is_arrow = (fn.type == NodeType::ArrowFunctionExpression);
   /* M5.4 async 函数：async 标记（VM 调用时创建 Promise + await 挂起恢复）。 */
   child_fn.is_async = fn.fn_is_async;
+  /* M5.5a generator 函数：generator 标记（VM 调用时创建 Generator 对象 +
+   * yield 挂起恢复 + next/throw/return 三种恢复路径）。 */
+  child_fn.is_generator = fn.fn_is_generator;
   /* M5.1d-c2 私有字段：class 构造器/方法/访问器携带 class 词法可见的
    * 字段全名表（含 '#'，LoadPrivate/StorePrivate/HasPrivate 引用其下标）。 */
   if (inherit_private && current_private_names_ != nullptr) {
@@ -2688,6 +2693,22 @@ bool Compiler::compileExpr(const ASTNode &node) {
       /* class 表达式（M5.1d-a）：编译构造器函数，留栈顶。 */
       return compileClass(node, /*is_declaration=*/false);
     case NodeType::UpdateExpression: return compileUpdate(node);
+    case NodeType::YieldExpression:
+      /* M5.5a yield / yield* / 裸 yield（§14.4 / §27.5.3.2 GeneratorYield）。
+       * children[0] = yield 值表达式（nullptr 表示裸 yield → undefined）。
+       * yield_delegate（yield*）委托由 M5.5a-4 处理，此处按普通 yield 编译
+       * （yield* 的迭代器驱动在 VM 运行时展开，编译期发射同一 Yield 指令）。
+       * 语义：求值 yield 值 -> Yield 指令（挂起，把值返回给 next() 调用方）；
+       * 恢复时栈顶替换为 next()/throw() 传入的值（throw 路径走异常派发）。
+       * 仅 generator 函数体内可达（parser 已校验 generator_depth_ > 0）。 */
+      if (node.children.empty() || node.children[0] == nullptr) {
+        /* 裸 yield：等价于 yield undefined。 */
+        builder_.push_op(Opcode::PushUndefined);
+      } else {
+        if (!compileExpr(*node.children[0])) return false;
+      }
+      builder_.yield();
+      return true;
     default:
       fail("not implemented: expression type " +
            std::to_string(static_cast<int>(node.type)));

@@ -602,6 +602,100 @@ neojs::ConversionResult compileAndRun(neojs::JSContext *c, const char *src) {
 
 }  // namespace
 
+/* M5.5a-2 generator 编译：function-star / yield / yield-star 编译为字节码
+ * (is_generator 标记 + Yield 指令)。VM 运行时实现属 M5.5a-3，此处仅验证编译阶段。
+ * 验证：function-star 编译后 is_generator=true，YieldExpression 发射 Yield 指令，
+ * 裸 yield 先 PushUndefined 再 Yield。 */
+TEST(Compiler, M55a2GeneratorBytecode) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+  neojs::JSContext *icx = ic(ctx);
+
+  /* function* g() { yield 1; } -> compileFunction 直接编译 g 节点，is_generator=true + Yield。 */
+  {
+    neojs::DiagnosticSink sink;
+    const char *src = "function* g() { yield 1; }";
+    neojs::AST *ast = neojs::parseSource(&icx->allocator(), src, std::strlen(src), sink);
+    ASSERT_NE(ast, nullptr);
+    EXPECT_FALSE(sink.hasErrors());
+    ASSERT_FALSE(ast->root->children.empty());
+    neojs::Compiler compiler;
+    neojs::CompileResult cr = compiler.compileFunction(*ast->root->children[0]);
+    icx->allocator().destroy(ast);
+    ASSERT_TRUE(cr.ok);
+    const neojs::FunctionBytecode &gen = cr.fn;
+    EXPECT_TRUE(gen.is_generator);
+    EXPECT_FALSE(gen.is_async);
+    /* body 指令序列应含 PushConst(1) + Yield。 */
+    bool has_yield = false;
+    for (const auto &instr : gen.code) {
+      if (instr.op == neojs::Opcode::Yield) { has_yield = true; break; }
+    }
+    EXPECT_TRUE(has_yield);
+  }
+
+  /* 裸 yield：function* g() { yield; } -> PushUndefined + Yield。 */
+  {
+    neojs::DiagnosticSink sink;
+    const char *src = "function* g() { yield; }";
+    neojs::AST *ast = neojs::parseSource(&icx->allocator(), src, std::strlen(src), sink);
+    ASSERT_NE(ast, nullptr);
+    EXPECT_FALSE(sink.hasErrors());
+    ASSERT_FALSE(ast->root->children.empty());
+    neojs::Compiler compiler;
+    neojs::CompileResult cr = compiler.compileFunction(*ast->root->children[0]);
+    icx->allocator().destroy(ast);
+    ASSERT_TRUE(cr.ok);
+    const neojs::FunctionBytecode &gen = cr.fn;
+    EXPECT_TRUE(gen.is_generator);
+    /* 找到 Yield 指令，其前一条应为 PushUndefined。 */
+    bool found_bare_yield = false;
+    for (size_t i = 1; i < gen.code.size(); ++i) {
+      if (gen.code[i].op == neojs::Opcode::Yield &&
+          gen.code[i - 1].op == neojs::Opcode::PushUndefined) {
+        found_bare_yield = true;
+        break;
+      }
+    }
+    EXPECT_TRUE(found_bare_yield);
+  }
+
+  /* async function* ag() { yield 1; } -> is_async=true 且 is_generator=true。 */
+  {
+    neojs::DiagnosticSink sink;
+    const char *src = "async function* ag() { yield 1; }";
+    neojs::AST *ast = neojs::parseSource(&icx->allocator(), src, std::strlen(src), sink);
+    ASSERT_NE(ast, nullptr);
+    EXPECT_FALSE(sink.hasErrors());
+    ASSERT_FALSE(ast->root->children.empty());
+    neojs::Compiler compiler;
+    neojs::CompileResult cr = compiler.compileFunction(*ast->root->children[0]);
+    icx->allocator().destroy(ast);
+    ASSERT_TRUE(cr.ok);
+    const neojs::FunctionBytecode &gen = cr.fn;
+    EXPECT_TRUE(gen.is_async);
+    EXPECT_TRUE(gen.is_generator);
+  }
+
+  /* 非生成器函数 is_generator=false。 */
+  {
+    neojs::DiagnosticSink sink;
+    const char *src = "function f() { return 1; }";
+    neojs::AST *ast = neojs::parseSource(&icx->allocator(), src, std::strlen(src), sink);
+    ASSERT_NE(ast, nullptr);
+    ASSERT_FALSE(ast->root->children.empty());
+    neojs::Compiler compiler;
+    neojs::CompileResult cr = compiler.compileFunction(*ast->root->children[0]);
+    icx->allocator().destroy(ast);
+    ASSERT_TRUE(cr.ok);
+    EXPECT_FALSE(cr.fn.is_generator);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
 /* M5.1e-e 可选链：?. / ?.[ / ?.() 短路（§13.5.1.1/§13.5.1.2）。 */
 TEST(Compiler, M51eEOptionalChainBasic) {
   JSAllocator *a = nullptr;

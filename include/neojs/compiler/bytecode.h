@@ -182,6 +182,13 @@ enum class Opcode : uint8_t {
 
   /* M5.4 async/await（追加末尾，保持 opcode 数值稳定） */
   Await,           /* await x：栈顶值 PromiseResolve 接合，未决则挂起当前 async 帧（M5.4） */
+
+  /* M5.5a generator/yield（追加末尾，保持 opcode 数值稳定）
+   * §14.4 / §27.5.3.2 GeneratorYield。
+   * 栈顶 = yield 值（裸 yield 时为 undefined）。挂起当前 generator 帧，
+   * 把值返回给 next() 调用方（包装为 {value, done:false}）；恢复时栈顶替换
+   * 为 next()/throw() 传入的值（throw 路径走异常派发）。 */
+  Yield,
 };
 
 /* -------------------------------------------------------------------------- */
@@ -277,6 +284,9 @@ struct FunctionBytecode {
   std::vector<TryEntry> try_entries;
   /* M5.4 async 函数：async 标记（VM 调用时创建 Promise + await 挂起恢复）。 */
   bool is_async = false;
+  /* M5.5a generator 函数：generator 标记（VM 调用时创建 Generator 对象 +
+   * yield 挂起恢复 + next/throw/return 三种恢复路径）。 */
+  bool is_generator = false;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -345,6 +355,9 @@ class BytecodeBuilder {
   void print() { push_op(Opcode::Print); }
   /* M5.4：await x（栈顶值 PromiseResolve 接合，未决则挂起）。 */
   void await() { push_op(Opcode::Await); }
+  /* M5.5a：yield <expr>（栈顶 = yield 值；挂起当前 generator 帧，
+   * 把值返回给 next() 调用方；恢复时栈顶替换为 next/throw 传入值）。 */
+  void yield() { push_op(Opcode::Yield); }
 
   /* 闭包（M2.5）：从嵌套函数表实例化 / 读写捕获变量。 */
   void make_function(uint16_t idx) { push_op(Opcode::MakeFunction, idx); }

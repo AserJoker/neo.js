@@ -571,7 +571,17 @@ async 方法 this/多次挂起恢复现场完整性）；全量 566 测试全绿
   - Parser：`generator_depth_` 追踪 generator 函数上下文（类比 `async_depth_`），
     `>0` 时 `yield` 在 `parseAssignment` 入口转 `parseYieldExpression`。
   - 前端测试：6 用例（声明/表达式/async/对象+class 方法/restricted/外层标识符）全绿。
-- M5.5a-2 编译器：`function*` 编译 + Yield 指令（⏳ 未启动）
+- M5.5a-2 编译器：`function*` 编译 + Yield 指令（✅ 完成）
+  - bytecode：`FunctionBytecode.is_generator` 标记（类比 `is_async`）；`Opcode::Yield` +
+    `BytecodeBuilder::yield()` 发射器。
+  - compiler：`compileSingleFunction` / `compileChildFunction` 两处从 `fn.fn_is_generator`
+    同步标记；`compileExpr` 加 `YieldExpression` 情况——裸 yield 发射 `PushUndefined + Yield`，
+    带值 yield 发射 `compileExpr(value) + Yield`。
+  - VM：`op_Yield` 存根（返回 "not implemented"，M5.5a-3 替换为真实挂起恢复）+ 分发表
+    注册条目（防下标越界 UB）。
+  - 测试：`Compiler.M55a2GeneratorBytecode`（4 子用例：`function*` is_generator + Yield、
+    裸 yield PushUndefined+Yield、`async function*` 双标志、非生成器 is_generator=false）。
+    全量 573 测试绿。
 - M5.5a-3 VM/运行时：generator 对象 + Yield 挂起恢复 + next/throw/return（⏳ 未启动）
 - M5.5a-4 `yield*` 委托（⏳ 未启动）
 
