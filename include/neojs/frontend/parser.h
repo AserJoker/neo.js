@@ -69,9 +69,9 @@ class Parser {
   ASTNode *parseVariableDeclaration(bool consume_semicolon = true,
                                    bool allow_missing_const_init = false); /* 声明（M1.5 ①） */
   ASTNode *parseForStatement();        /* for/for-in/for-of/for await（M1.5 ③） */
-  ASTNode *parseFunctionDeclaration(bool allow_anonymous = false); /* 函数声明：function name(params) { body }（M1.5 ④）；export default 允许匿名 */
-  ASTNode *parseFunctionExpression();  /* 函数表达式：function [name](params) { body }（M1.5 ④） */
-  ASTNode *parseMethodFunction();      /* 对象方法函数：(params) { body }（M5.1c method/getter/setter） */
+  ASTNode *parseFunctionDeclaration(bool allow_anonymous = false, bool is_async = false); /* 函数声明：function name(params) { body }（M1.5 ④）；is_async=async function（M5.4）；export default 允许匿名 */
+  ASTNode *parseFunctionExpression(bool is_async = false);  /* 函数表达式：function [name](params) { body }（M1.5 ④）；is_async=async function（M5.4） */
+  ASTNode *parseMethodFunction(bool is_async = false);      /* 对象方法函数：(params) { body }（M5.1c method/getter/setter）；is_async=async 方法（M5.4） */
   ASTNode *parseReturnStatement();     /* 返回语句：return [expr]（M1.5 ④） */
   ASTNode *parseBreakStatement();      /* 跳出：break [label]（M1.5 ⑤） */
   ASTNode *parseContinueStatement();   /* 续环：continue [label]（M1.5 ⑤） */
@@ -93,7 +93,7 @@ class Parser {
   /* 最小递归下降：表达式（parser.cc） */
   ASTNode *parseExpression(bool allow_in = true); /* 逗号序列（最低优先级，M1.4） */
   ASTNode *parseAssignment(bool allow_in = true); /* 赋值：= 与复合赋值（右结合） */
-  ASTNode *parseArrowFunction(bool parenthesized); /* 箭头函数（表达式体） */
+  ASTNode *parseArrowFunction(bool parenthesized, bool is_async = false); /* 箭头函数（表达式体）；is_async=async 箭头（M5.4） */
   ASTNode *parseConditional(bool allow_in = true); /* 条件表达式：?:（右结合） */
   ASTNode *parseUnary();           /* 一元运算：! ~ + - typeof/void/delete/await */
   ASTNode *parseLeftHandSide();    /* 左手边：成员/调用链（M1.4 ③-3） */
@@ -130,6 +130,7 @@ class Parser {
   bool has_peeked_ = false;
   int loop_depth_ = 0; /* 循环嵌套深度（for/while/do-while；break/continue 校验） */
   int function_depth_ = 0; /* 函数嵌套深度（return 顶层校验，M1.5 ④） */
+  int async_depth_ = 0; /* async 函数嵌套深度（M5.4 await 合法性：>0 时 await 可用） */
   int statement_nesting_ = 0; /* 语句嵌套深度（import/export 仅模块顶层，M1.6 ③） */
   std::vector<std::string> label_stack_; /* 活跃标签栈（break/continue 引用校验） */
   int super_depth_ = 0; /* class 方法上下文深度（M5.1d-b super：>0 时 super 合法） */

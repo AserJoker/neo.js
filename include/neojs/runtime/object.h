@@ -67,6 +67,7 @@ enum class ObjectKind : uint8_t {
   MapIterator,    /* Map 迭代器（M4.4f，[[IteratedMap]]+[[MapIteratorNextIndex]]） */
   SetIterator,    /* Set 迭代器（M4.4f，[[IteratedSet]]+[[SetIteratorNextIndex]]） */
   Promise,        /* Promise（M5.3a，§27.2：[[PromiseState]]+[[PromiseResult]]+reactions） */
+  AsyncFrame,     /* async 挂起帧（M5.4，§27.7：VM 现场转移） */
 };
 
 /* 集合条目（M4.4a）：Map 的键值对 / Set 的键。

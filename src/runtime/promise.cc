@@ -29,6 +29,7 @@
 #include <utility>
 #include <vector>
 
+#include "neojs/runtime/async.h"
 #include "neojs/runtime/builtins.h"
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/function.h"
@@ -1151,6 +1152,34 @@ ConversionResult promiseRaceElement(JSContext *ctx, JSValue *,
   return call(ctx, fn, ctx->createValue(Kind::Undefined), argv, 1);
 }
 
+/* 内部函数：await 续延 resolve（§27.7.4.1 Await 步骤 9）。
+ * Bound 捕获 [async_frame]，调用时参数为 (value)（await 的 fulfillment
+ * value）。恢复挂起的 async 帧：value 压栈继续执行。 */
+ConversionResult promiseAwaitResolve(JSContext *ctx, JSValue *,
+                                     JSValue *const *args, size_t argc) {
+  JSValue *frame_v = argc > 0 ? args[0] : nullptr;
+  JSValue *value = argc > 1 ? args[1] : ctx->createValue(Kind::Undefined);
+  AsyncFrame *frame = asAsyncFrame(frame_v);
+  if (frame == nullptr) {
+    return fail("TypeError: invalid async frame in await resolve");
+  }
+  return resumeAsyncFrame(ctx, frame, value, false);
+}
+
+/* 内部函数：await 续延 reject（§27.7.4.1 Await 步骤 9）。
+ * Bound 捕获 [async_frame]，调用时参数为 (reason)（await 抛出的 rejection
+ * 值）。恢复挂起的 async 帧：异常进入（try/catch 可捕获）。 */
+ConversionResult promiseAwaitReject(JSContext *ctx, JSValue *,
+                                    JSValue *const *args, size_t argc) {
+  JSValue *frame_v = argc > 0 ? args[0] : nullptr;
+  JSValue *reason = argc > 1 ? args[1] : ctx->createValue(Kind::Undefined);
+  AsyncFrame *frame = asAsyncFrame(frame_v);
+  if (frame == nullptr) {
+    return fail("TypeError: invalid async frame in await reject");
+  }
+  return resumeAsyncFrame(ctx, frame, reason, true);
+}
+
 /* 内部函数分发表（下标 = PromiseInternal 枚举值，须严格对应）。 */
 JSBuiltinFn kPromiseInternalFns[] = {
     promiseResolveInternal,   /* Resolve */
@@ -1165,6 +1194,8 @@ JSBuiltinFn kPromiseInternalFns[] = {
     promiseAllSettledElement, /* AllSettledElement */
     promiseAnyElement,        /* AnyElement */
     promiseRaceElement,       /* RaceElement */
+    promiseAwaitResolve,      /* AwaitResolve */
+    promiseAwaitReject,       /* AwaitReject */
 };
 static_assert(sizeof(kPromiseInternalFns) / sizeof(kPromiseInternalFns[0]) ==
                   static_cast<size_t>(PromiseInternal::Count),
@@ -1184,6 +1215,29 @@ JSValue *getPromiseInternal(JSContext *ctx, PromiseInternal idx) {
   ctx->setPromiseInternal(static_cast<int>(idx), v); /* 进根集（markRoots 遍历） */
   ctx->heap().unpin(v);
   return v;
+}
+
+/* 创建 Bound 函数（M5.4 async 续延 job 复用，跨 TU 公开）：
+ * 转调匿名命名空间的 makeBound（target/args 捕获数据）。 */
+JSValue *makeBoundFunction(JSContext *ctx, JSValue *target,
+                           std::vector<JSValue *> args) {
+  return makeBound(ctx, target, std::move(args));
+}
+
+/* 把 await 续延 reaction 挂到 awaitable promise 上（§27.7.4.1 Await 步骤 9）：
+ * awaitable.then(awaitResolveBound, awaitRejectBound)。settle 时经
+ * PromiseReactionJob 调用对应 handler 并传 value/reason（Bound 转发：
+ * target 收到 [async_frame, value]）。awaitable 须为 Promise；非 Promise
+ * 属内部错误（op_Await 已保证 PromiseResolve 接合）。 */
+ConversionResult attachAwaitReactions(JSContext *ctx, JSValue *awaitable,
+                                      JSValue *await_resolve,
+                                      JSValue *await_reject) {
+  if (awaitable == nullptr || !awaitable->isObject() ||
+      !awaitable->object()->isPromise()) {
+    return fail("TypeError: await continuation on non-promise");
+  }
+  JSValue *argv[2] = {await_resolve, await_reject};
+  return promiseThen(ctx, awaitable, argv, 2);
 }
 
 /* -------------------------------------------------------------------------- */

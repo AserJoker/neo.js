@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "neojs/runtime/async.h"
 #include "neojs/runtime/builtins.h"
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/conversion.h"
@@ -239,6 +240,23 @@ ConversionResult call(JSContext *ctx, JSValue *func, JSValue *thisVal,
       return fail("RangeError: Maximum call stack size exceeded");
     }
     ctx->incCallDepth();
+    /* M5.4 async：async 函数走 asyncCall（创建外层 promise + await 挂起/
+     * 恢复 + 微任务续延），不阻塞调用方——立即返回 promise。 */
+    const FunctionBytecode &bc = fn->bytecode();
+    if (bc.is_async) {
+      result = asyncCall(ctx, fn, thisArg,
+                         args_internal.empty() ? nullptr : args_internal.data(),
+                         argc);
+      /* 释放本帧 this/参数临时句柄。 */
+      for (uint32_t h : tmp_handles) {
+        freeTmpHandle(ctx, h);
+      }
+      if (result.ok()) {
+        result.tmp_handle = makeTmpHandle(ctx, result.value);
+      }
+      ctx->decCallDepth();
+      return result;
+    }
     /* JS 函数：runBytecode 递归解释执行（栈式 VM 单帧模型，嵌套经递归）。
      * 参数/this 已在上面分配临时句柄保护（GC 根集），
      * runBytecode 内部把参数复制到本帧局部槽。
@@ -248,7 +266,6 @@ ConversionResult call(JSContext *ctx, JSValue *func, JSValue *thisVal,
         fn->environment());
     /* M2.5：参数按名写入本帧环境（内层闭包 LoadUpvalue 沿链查找参数）。
      * 参数名在字节码 locals[0..argc-1]（编译器按声明顺序分配槽）。 */
-    const FunctionBytecode &bc = fn->bytecode();
     size_t nparams = argc < bc.locals.size() ? argc : bc.locals.size();
     for (size_t i = 0; i < nparams; ++i) {
       if (i < argc && args_internal[i] != nullptr &&

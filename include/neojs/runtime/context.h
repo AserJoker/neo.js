@@ -180,12 +180,13 @@ class JSContext {
 
   /* Promise 共享内部函数缓存（M5.3a，§27.2）：Bound 闭包的 target。
    * 惰性创建 + 进根集（markRoots 遍历）。索引对应 promise.h 的
-   * PromiseInternal 枚举值（12 项：M5.3a 8 项 + M5.3b 组合方法 4 项）。 */
+   * PromiseInternal 枚举值（14 项：M5.3a 8 项 + M5.3b 组合方法 4 项
+   * + M5.4 await 续延 2 项）。 */
   JSValue *promiseInternal(int idx) const {
-    return (idx >= 0 && idx < 12) ? promise_internal_[idx] : nullptr;
+    return (idx >= 0 && idx < 14) ? promise_internal_[idx] : nullptr;
   }
   void setPromiseInternal(int idx, JSValue *v) {
-    if (idx >= 0 && idx < 12) promise_internal_[idx] = v;
+    if (idx >= 0 && idx < 14) promise_internal_[idx] = v;
   }
 
   /* Promise.prototype 缓存（M5.3a，§27.2.4）：new Promise() 新建
@@ -214,6 +215,15 @@ class JSContext {
     if (!vm_envs_.empty()) vm_envs_.pop_back();
   }
   const std::vector<JSEnvironment *> &vmEnvs() const { return vm_envs_; }
+
+  /* 脚本顶层环境（M5.4，§13.3.2.4 GlobalDeclarationInstantiation）：
+   * JS_Eval 顶层程序执行期间指向脚本顶层 env，结束后清空（防悬垂）。
+   * op_StoreVar 写脚本顶层 var 时同步写全局对象属性——顶层函数声明
+   * （含 async）独立编译走 LoadGlobal 读全局对象，普通闭包 LoadUpvalue
+   * 读 top_env，双写保证两条路径一致。执行期间 env 由 vm_envs_ 根集
+   * 保护（EnvRootGuard），无需额外 GC 标记。 */
+  void setScriptTopEnv(JSEnvironment *env) { script_top_env_ = env; }
+  JSEnvironment *scriptTopEnv() const { return script_top_env_; }
 
   /* 调用栈深度（M2.5，架构 §5.4 栈深度上限防爆栈）。
    * call() Script 分支进入时递增、返回时递减；超上限返回 RangeError。
@@ -248,12 +258,13 @@ class JSContext {
   JSValue *map_proto_ = nullptr;    /* Map.prototype 缓存（M4.4a） */
   JSValue *set_proto_ = nullptr;    /* Set.prototype 缓存（M4.4a） */
   JSValue *promise_proto_ = nullptr; /* Promise.prototype 缓存（M5.3a） */
-  JSValue *promise_internal_[12] = {nullptr, nullptr, nullptr, nullptr, nullptr,
-                                    nullptr, nullptr, nullptr, nullptr, nullptr,
-                                    nullptr, nullptr}; /* Promise 内部函数缓存（M5.3a/b） */
+  JSValue *promise_internal_[14] = {
+      nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+      nullptr, nullptr, nullptr, nullptr, nullptr, nullptr}; /* Promise 内部函数缓存（M5.3a/b + M5.4 await） */
   std::vector<JSValue *> job_queue_;  /* 微任务队列（M5.3，§8.4） */
   std::vector<std::vector<JSValue *> *> vm_stacks_; /* VM 操作数栈根集栈（M2-VM） */
   std::vector<JSEnvironment *> vm_envs_; /* VM 帧环境根集栈（M2.5 闭包） */
+  JSEnvironment *script_top_env_ = nullptr; /* 脚本顶层 env（JS_Eval 执行期间有效） */
   std::unordered_map<std::string, JSModuleRecord *> modules_; /* 模块表（M5.2a） */
   JSModuleLoadFunc module_loader_ = nullptr; /* 模块源码供给回调（M5.2a） */
   void *module_loader_opaque_ = nullptr;      /* 回调 opaque 数据 */

@@ -179,6 +179,9 @@ enum class Opcode : uint8_t {
 
   /* M5.2d 命名空间导入（追加末尾，保持 opcode 数值稳定） */
   LoadImportNamespace, /* import * as ns：压入源模块 namespace 镜像对象（M5.2d） */
+
+  /* M5.4 async/await（追加末尾，保持 opcode 数值稳定） */
+  Await,           /* await x：栈顶值 PromiseResolve 接合，未决则挂起当前 async 帧（M5.4） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -272,6 +275,8 @@ struct FunctionBytecode {
   std::vector<std::string> private_names;
   /* M5.1e-f try 异常保护表（§14.16）：编译期由 try/catch/finally 生成。 */
   std::vector<TryEntry> try_entries;
+  /* M5.4 async 函数：async 标记（VM 调用时创建 Promise + await 挂起恢复）。 */
+  bool is_async = false;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -338,6 +343,8 @@ class BytecodeBuilder {
   void copy_object_props(uint16_t slot) { push_op(Opcode::CopyObjectProps, slot); }
   void ret() { push_op(Opcode::Ret); }
   void print() { push_op(Opcode::Print); }
+  /* M5.4：await x（栈顶值 PromiseResolve 接合，未决则挂起）。 */
+  void await() { push_op(Opcode::Await); }
 
   /* 闭包（M2.5）：从嵌套函数表实例化 / 读写捕获变量。 */
   void make_function(uint16_t idx) { push_op(Opcode::MakeFunction, idx); }

@@ -6922,3 +6922,49 @@ TEST(Compiler, EvalSpreadCall) {
   JS_FreeContext(ctx);
   JS_FreeAllocator(a);
 }
+
+TEST(Compiler, EvalScriptTopVarGlobal) {
+  /* M5.4：脚本顶层 var 双写全局对象（§13.3.2.4 GlobalDeclarationInstantiation
+   * CreateGlobalVarBinding）——顶层函数声明（含 async）独立编译走 LoadGlobal
+   * 读全局对象，普通闭包 LoadUpvalue 读 top_env，双写保证两条路径值一致。 */
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  struct Case {
+    const char *src;
+    double num; /* 期望数值结果 */
+  };
+
+  Case cases[] = {
+      /* 顶层 var + 顶层函数声明读：函数独立编译走 LoadGlobal 读全局对象 */
+      {"var x = 5; function f() { return x; } f()", 5},
+      /* 赋值后读 */
+      {"var y = 1; y = 2; function g() { return y; } g()", 2},
+      /* 复合赋值 ++ */
+      {"var z = 1; z++; z += 10; function h() { return z; } h()", 12},
+      /* var 声明（带初值）读 */
+      {"var w = 9; function k() { return w; } k()", 9},
+      /* 块内 var 提升到脚本顶层 */
+      {"if (true) { var v = 7; } function m() { return v; } m()", 7},
+      /* 双写全局对象：globalThis 可读 */
+      {"var gx = 42; globalThis.gx", 42},
+      /* 普通嵌套闭包（LoadUpvalue 读 top_env）与顶层函数（LoadGlobal）一致 */
+      {"var t = 3; function outer() { return t; } function top() { return t; } "
+       "outer() + top()", 6},
+  };
+
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    JSValue *r = JS_Eval(ctx, cases[i].src, std::strlen(cases[i].src));
+    ASSERT_NE(r, nullptr) << "case " << i << " src=" << cases[i].src;
+    ASSERT_EQ(JS_GetKind(ctx, r), JS_NUMBER)
+        << "case " << i << " src=" << cases[i].src << " got: "
+        << JS_ToString(ctx, r);
+    EXPECT_DOUBLE_EQ(JS_ToNumber(ctx, r), cases[i].num)
+        << "case " << i << " src=" << cases[i].src;
+    JS_FreeValue(ctx, r);
+  }
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}

@@ -39,6 +39,9 @@ struct ConversionResult {
   /* M5.1e-f：JS 层 throw 抛出的值（非空 = JS `throw` 语句；内部错误为
    * nullptr）。catch 需区分：JS throw 绑定原值，内部错误转 Exception 值。 */
   JSValue *thrown = nullptr;
+  /* M5.4 async：runBytecode 挂起信号（op_Await 遇未决 promise 时置位）。
+   * 非 async 路径恒 false；suspended=true 时 value/error/thrown 均无效。 */
+  bool suspended = false;
 
   bool ok() const { return value != nullptr; }
   bool is_throw() const { return thrown != nullptr; }

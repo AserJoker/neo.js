@@ -159,7 +159,37 @@ ASTNode *Parser::parseExpression(bool allow_in) {
 ASTNode *Parser::parseAssignment(bool allow_in) {
   /* 箭头判定（中缀歧义）：
    *   1. 单参：Identifier 前瞻 =>
-   *   2. 括号参数：配对扫描后看 ) 后是否 =>（save/restore 回退） */
+   *   2. 括号参数：配对扫描后看 ) 后是否 =>（save/restore 回退）
+   * async 箭头（M5.4）：async [x] => / async (x) =>。
+   *   async(...) 可能是普通调用（async(1)），须配对扫描 ( 确认 ) 后是 =>
+   *   才判为箭头；async function / async 作为普通标识符均不在此。 */
+  if (at(TokenKind::Identifier) && current().text == "async") {
+    Lexer::State st = lexer_.save();
+    advance(); /* async */
+    bool single_arrow = false;
+    bool paren_arrow = false;
+    if (at(TokenKind::Identifier) && !isKeyword(current(), "function") &&
+        isSymbol(peek(), "=>")) {
+      single_arrow = true;
+    } else if (isSymbol(current(), "(")) {
+      int depth = 1; /* 当前 ( 未消费，从 1 起计（下一 token 开始） */
+      for (;;) {
+        const Token &t = lexer_.next();
+        if (t.kind == TokenKind::EndOfFile) break;
+        if (isSymbol(t, "(")) depth++;
+        else if (isSymbol(t, ")")) {
+          depth--;
+          if (depth == 0) {
+            if (isSymbol(lexer_.next(), "=>")) paren_arrow = true;
+            break;
+          }
+        }
+      }
+    }
+    lexer_.restore(st);
+    if (single_arrow) return parseArrowFunction(/*parenthesized=*/false, /*is_async=*/true);
+    if (paren_arrow) return parseArrowFunction(/*parenthesized=*/true, /*is_async=*/true);
+  }
   if (at(TokenKind::Identifier) && isSymbol(peek(), "=>")) {
     return parseArrowFunction(/*parenthesized=*/false);
   }
@@ -258,9 +288,11 @@ ASTNode *Parser::parseAssignment(bool allow_in) {
  * parenthesized=true：括号参数 (a, b) / ()，current 指向 (。
  * 本次仅表达式体（=> expr）；块体 { } 需语句体系，留 M1.5。
  * 右结合：x => y => z 嵌套。 */
-ASTNode *Parser::parseArrowFunction(bool parenthesized) {
+ASTNode *Parser::parseArrowFunction(bool parenthesized, bool is_async) {
   ASTNode *arrow = newNode(NodeType::ArrowFunctionExpression);
   arrow->loc = current().start;
+  arrow->fn_is_async = is_async;
+  if (is_async) advance(); /* async（current 现指向参数/括号） */
 
   if (parenthesized) {
     advance(); /* ( */
@@ -359,8 +391,10 @@ ASTNode *Parser::parseArrowFunction(bool parenthesized) {
 
   /* 函数体：{ 块语句 } 或表达式体（M1.5 ② 解锁块体）。
    * 块体检测 Directive Prologue（"use strict"），参数检查在 body 解析后
-   * （strict_ 已确定）执行；外层 strict_ 状态 body 后恢复。 */
+   * （strict_ 已确定）执行；外层 strict_ 状态 body 后恢复。
+   * async 箭头（M5.4）：async_depth_ 递增，body 内 await 合法。 */
   ++function_depth_;
+  if (is_async) ++async_depth_;
   ASTNode *body;
   bool outer_strict = strict_;
   if (isSymbol(current(), "{")) {
@@ -370,6 +404,7 @@ ASTNode *Parser::parseArrowFunction(bool parenthesized) {
   }
   bool strict_params = strict_; /* 记录恢复前的值（含 body directive） */
   strict_ = outer_strict;
+  if (is_async) --async_depth_;
   --function_depth_;
   if (body == nullptr) {
     allocator_->destroy(arrow);
@@ -547,9 +582,9 @@ ASTNode *Parser::parseUnary() {
   }
   if (!is_unary) return parseLeftHandSide();
 
-  /* 顶层 await（M1.6 ③）：仅 module 上下文合法（顶层 await 特性）。
-   * script 上下文顶层 await 报错；函数/异步函数内（function_depth_ > 0）不受限。 */
-  if (op == UnaryOpKind::Await && function_depth_ == 0 && !module_) {
+  /* await 合法性（M1.6 ③ + M5.4）：仅 async 函数内（async_depth_ > 0）或
+   * module 顶层合法（顶层 await 特性）；普通函数/script 顶层报错。 */
+  if (op == UnaryOpKind::Await && async_depth_ == 0 && !module_) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "await is only valid in async functions and the top level bodies of modules",
                 tok.start});
     return nullptr;
@@ -975,6 +1010,18 @@ ASTNode *Parser::parsePrimary() {
       if (tok.text == "super") return parseSuperProperty();
       /* 函数表达式：function [name](params) { body }（M1.5 ④） */
       if (tok.text == "function") return parseFunctionExpression();
+      /* async 函数表达式（M5.4）：async [name](params) { body }。
+       * 前瞻确认 async 后跟 function（否则 async 是普通标识符）。 */
+      if (tok.text == "async") {
+        Lexer::State st = lexer_.save();
+        lexer_.next(); /* async */
+        bool is_async_fn = isKeyword(lexer_.current(), "function");
+        lexer_.restore(st);
+        if (is_async_fn) {
+          advance(); /* async */
+          return parseFunctionExpression(/*is_async=*/true);
+        }
+      }
       /* class 表达式（M5.1d-a）：class [name] { ... } */
       if (tok.text == "class") return parseClassExpression();
       /* 动态导入 import('m')（M1.6 ③）：import 后跟 ( 时为表达式 */
@@ -1439,6 +1486,21 @@ ASTNode *Parser::parseObjectPattern(bool as_literal) {
         lexer_.restore(st);
       }
     }
+    /* async 方法前缀（M5.4）：{ async m() {} }。
+     * async 后跟方法名起始（Identifier/String/Number/[）且后跟 ( 才是
+     * async 方法；{ async: 1 } / { async(){} } 的 async 是普通键。 */
+    bool async_prefix = false;
+    if (at(TokenKind::Identifier) && current().text == "async") {
+      Lexer::State st = lexer_.save();
+      advance(); /* async */
+      bool is_method_start = at(TokenKind::Identifier) || at(TokenKind::String) ||
+                             at(TokenKind::Number) || isSymbol(current(), "[");
+      if (is_method_start && isSymbol(peek(), "(")) {
+        async_prefix = true;
+      } else {
+        lexer_.restore(st);
+      }
+    }
     /* key */
     ASTNode *key = nullptr;
     bool computed = false;
@@ -1497,9 +1559,9 @@ ASTNode *Parser::parseObjectPattern(bool as_literal) {
       prop->children.push_back(key);
       prop->children.push_back(fn);
     } else if (isSymbol(current(), "(")) {
-      /* method key(){}（M5.1c）：函数体紧随。 */
+      /* method key(){}（M5.1c）：函数体紧随；async 方法（M5.4）。 */
       prop->prop.kind = PropertyKind::Method;
-      ASTNode *fn = parseMethodFunction();
+      ASTNode *fn = parseMethodFunction(/*is_async=*/async_prefix);
       if (fn == nullptr) {
         allocator_->destroy(prop);
         allocator_->destroy(obj);

@@ -253,6 +253,8 @@ struct ASTNode {
   bool call_short_circuit = false; /* CallExpression：?.() 独立短路点（区别于链延续 a?.b() 的 ()）M5.1e-e */
   bool is_await = false;      /* ForOfStatement：for await(...of...)（M1.5 ③） */
   bool fn_has_name = false;   /* FunctionDeclaration/Expression：children[0] 是否函数名（匿名时为首参数） */
+  bool fn_is_async = false;   /* 函数：async 函数（async function / async 箭头 / async 方法，M5.4） */
+  bool fn_is_generator = false; /* 函数：generator 函数（function*，M5.5 预留） */
   MemberPayload member;       /* MemberExpression：computed/optional 标记 */
 
   /* 构造：仅由 Parser 经 JSAllocator::create 创建（见 parser.h） */

@@ -41,6 +41,8 @@
 #ifndef NEOJS_RUNTIME_PROMISE_H
 #define NEOJS_RUNTIME_PROMISE_H
 
+#include <vector>
+
 #include "neojs/runtime/conversion.h"
 
 namespace neojs {
@@ -79,6 +81,11 @@ enum class PromiseInternal : uint8_t {
   AllSettledElement, /* Promise.allSettled 元素决议（§27.2.5.2） */
   AnyElement,     /* Promise.any 元素决议（§27.2.5.1） */
   RaceElement,    /* Promise.race 元素决议（§27.2.5.6） */
+  /* M5.4 await 续延：恢复挂起的 async 帧（§27.7.4.1 Await 步骤 9）。
+   * AwaitResolve 把 fulfillment value 压回操作数栈继续；AwaitReject
+   * 把 rejection 值作为异常进入 async 帧（try/catch 可捕获）。 */
+  AwaitResolve,   /* await 续延 resolve：恢复挂起的 async 帧（M5.4） */
+  AwaitReject,    /* await 续延 reject：异常进入挂起的 async 帧（M5.4） */
   Count,
 };
 
@@ -101,6 +108,21 @@ void installPromiseBuiltins(JSContext *ctx);
 
 /* 共享内部函数（惰性创建 + 缓存 + 进根集）：Bound 闭包 target。 */
 JSValue *getPromiseInternal(JSContext *ctx, PromiseInternal idx);
+
+/* 创建 Bound 函数（M5.4 async 续延 job 复用；promise.cc 定义）：
+ * target 为被调用函数，args 为捕获的 [[BoundArguments]]，this 绑定
+ * undefined。捕获数据（args 元素）经 JSFunction::gcMarkRefs 标记。 */
+JSValue *makeBoundFunction(JSContext *ctx, JSValue *target,
+                           std::vector<JSValue *> args);
+
+/* 把 await 续延 reaction 挂到 awaitable promise 上（§27.7.4.1 Await 步骤 9，
+ * promise.cc 定义）：对 awaitable 调用 .then(awaitResolveBound, awaitRejectBound)。
+ * awaitResolveBound/awaitRejectBound 为 Bound 闭包（捕获 AsyncFrame），
+ * awaitable settle 时经 PromiseReactionJob 调用并传 value（fulfill）或
+ * reason（reject）。awaitable 须为 Promise 对象。失败返回错误 ConversionResult。 */
+ConversionResult attachAwaitReactions(JSContext *ctx, JSValue *awaitable,
+                                      JSValue *await_resolve,
+                                      JSValue *await_reject);
 
 }  // namespace neojs
 

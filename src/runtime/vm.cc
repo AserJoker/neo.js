@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "neojs/runtime/async.h"
 #include "neojs/runtime/builtins.h"
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/conversion.h"
@@ -30,6 +31,7 @@
 #include "neojs/runtime/iterator.h"
 #include "neojs/runtime/module_namespace.h"
 #include "neojs/runtime/operators.h"
+#include "neojs/runtime/promise.h"
 #include "neojs/runtime/utf16.h"
 #include "neojs/runtime/value.h"
 
@@ -82,6 +84,9 @@ struct VmFrame {
   bool has_pending = false;
   uint32_t pending_handle = 0;
   bool done = false; /* Ret 执行后置位：主循环应立即结束本帧 */
+  /* M5.4 async：await 挂起（op_Await 遇未决 promise 置位）。
+   * 置位后主循环结束，runBytecode 返回 suspended=true。 */
+  bool suspended = false;
 
   /* 便捷访问。 */
   const std::vector<Instruction> &code() const { return fn->code; }
@@ -860,6 +865,18 @@ static ConversionResult op_StoreVar(VmFrame &frame) {
       if (frame.env != nullptr && frame.arg < fn.locals.size() &&
           !fn.locals[frame.arg].empty()) {
         frame.env->setBinding(fn.locals[frame.arg], val);
+        /* M5.4 脚本顶层 var 双写全局对象（§13.3.2.4 GlobalDeclarationInstantiation
+         * CreateGlobalVarBinding）：顶层函数声明（含 async）独立编译，体内读
+         * 脚本顶层 var 走 LoadGlobal（读全局对象）；普通闭包 LoadUpvalue 读
+         * top_env。在 op_StoreVar 汇聚点同步写全局对象，两条路径值一致。
+         * 仅当当前帧 env 恰为脚本顶层 env（JS_Eval 顶层执行期间）时触发。 */
+        if (frame.ctx->scriptTopEnv() != nullptr &&
+            frame.env == frame.ctx->scriptTopEnv()) {
+          JSValue *global = frame.ctx->globalObject();
+          ConversionResult sr = setPropertyValue(
+              frame.ctx, global->object(), fn.locals[frame.arg], val);
+          if (!sr.ok()) return sr;
+        }
       }
       stack.pop_back();       /* 弹出：赋值表达式不保留值在栈（链式赋值经 LoadVar） */
       break;
@@ -3428,6 +3445,65 @@ static ConversionResult op_RethrowPending(VmFrame &frame) {
   return ok(nullptr);
 }
 
+static ConversionResult op_Await(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+    if (stack.empty()) { error = fail("Error: stack underflow on Await"); break; }
+    JSValue *x = stack.back();
+    /* §27.7.4.1 Await 步骤 2-3：PromiseResolve(%Promise%, x)。
+     * x 是 Promise 直接用；否则包一层（Promise.resolve(x)）接合。 */
+    JSValue *awaitable = x;
+    if (!(x->isObject() && x->object()->isPromise())) {
+      JSValue *resolve = nullptr, *reject = nullptr;
+      JSValue *p = createDerivedPromise(frame.ctx, &resolve, &reject);
+      frame.ctx->heap().pin(p); /* 分配保护：决议前防误回收 */
+      JSValue *argv[1] = {x};
+      ConversionResult rr =
+          call(frame.ctx, resolve, frame.ctx->createValue(Kind::Undefined),
+               argv, 1);
+      frame.ctx->heap().unpin(p);
+      if (!rr.ok()) { error = std::move(rr); break; }
+      awaitable = p;
+    }
+    JSObject *po = awaitable->object();
+    const int st = po->promiseState();
+    if (st == static_cast<int>(PromiseState::Fulfilled)) {
+      /* 已 fulfilled：栈顶替换为 result，继续执行。 */
+      stack.back() = po->promiseResult();
+      break;
+    }
+    if (st == static_cast<int>(PromiseState::Rejected)) {
+      /* 已 rejected：await 抛 rejection 值（异常传播）。 */
+      JSValue *reason = po->promiseResult();
+      stack.pop_back();
+      error.value = nullptr;
+      error.error.clear();
+      error.thrown = reason;
+      break;
+    }
+    /* pending：挂起（M5.4）。保存现场到 AsyncFrame + 入队续延 job。 */
+    JSFunction *self = frame.self;
+    if (self == nullptr) {
+      error = fail("Error: await outside async function");
+      break;
+    }
+    if (!suspendAwait(frame.ctx, self, *frame.pc, stack, frame.env,
+                      *frame.frame_this, frame.pending, frame.has_pending,
+                      frame.pending_handle, awaitable)) {
+      error = fail("Error: failed to suspend async frame");
+      break;
+    }
+    frame.suspended = true;
+    frame.done = true;
+    break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
 static ConversionResult op_Nop(VmFrame &frame) {
   ConversionResult error;
   do {
@@ -3537,6 +3613,7 @@ const OpHandler kHandlers[] = {
     op_StoreImport,  /* StoreImport */
     op_LoadImportMeta,  /* LoadImportMeta */
     op_LoadImportNamespace,  /* LoadImportNamespace */
+    op_Await,  /* Await */
 };
 
 }  // namespace
@@ -3548,8 +3625,11 @@ const OpHandler kHandlers[] = {
 ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
                              JSValue *thisVal, JSValue *const *args,
                              size_t argc, JSEnvironment *env,
-                             JSFunction *self) {
-  /* 操作数栈：栈底为局部变量槽（numLocals 个），之上为表达式求值栈。 */
+                             JSFunction *self, size_t start_pc,
+                             std::vector<JSValue *> *restore_stack) {
+  /* 操作数栈：栈底为局部变量槽（numLocals 个），之上为表达式求值栈。
+   * M5.4 async 恢复：restore_stack 非空时直接采用挂起帧的栈副本
+   * （含局部槽 + 表达式中间值），跳过局部槽初始化。 */
   std::vector<JSValue *> stack;
   stack.reserve(static_cast<size_t>(fn.numLocals) + 64);
 
@@ -3574,17 +3654,21 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
     JSContext *ctx_;
   } env_guard(ctx, env);
 
-  size_t args_to_copy = argc < fn.numLocals ? argc : fn.numLocals;
-  for (size_t i = 0; i < fn.numLocals; ++i) {
-    if (i < args_to_copy && args[i] != nullptr) {
-      stack.push_back(args[i]);
-    } else {
-      stack.push_back(ctx->createValue(Kind::Undefined)); /* 局部槽占位 */
+  if (restore_stack != nullptr) {
+    stack = std::move(*restore_stack); /* 采用挂起帧的栈副本 */
+  } else {
+    size_t args_to_copy = argc < fn.numLocals ? argc : fn.numLocals;
+    for (size_t i = 0; i < fn.numLocals; ++i) {
+      if (i < args_to_copy && args[i] != nullptr) {
+        stack.push_back(args[i]);
+      } else {
+        stack.push_back(ctx->createValue(Kind::Undefined)); /* 局部槽占位 */
+      }
     }
   }
 
   /* 当前帧：pc + 栈引用。v1 单帧（顶层程序），函数调用经 E3 Call 递归。 */
-  size_t pc = 0;
+  size_t pc = start_pc;
   const std::vector<Instruction> &code = fn.code;
 
   /* 顶层入口的 this 绑定（M5.1c）：函数调用时 thisVal 由 call() 传入
@@ -3638,6 +3722,13 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
       }
       return error;
     }
+  }
+  /* M5.4 async：await 挂起——op_Await 置 f.suspended 后主循环结束，
+   * 返回 suspended=true（现场已转移到堆上 AsyncFrame，非错误）。 */
+  if (f.suspended) {
+    ConversionResult susp;
+    susp.suspended = true;
+    return susp;
   }
   /* 程序自然结束（无 Ret）：栈顶为结果；空栈 -> undefined。 */
   if (stack.empty()) return ok(ctx->createValue(Kind::Undefined));

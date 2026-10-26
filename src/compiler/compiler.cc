@@ -155,6 +155,8 @@ CompileResult Compiler::compileFunction(const ASTNode &fn) {
   builder_.set_num_locals(scope_->next_slot);
   result.ok = true;
   result.fn = builder_.build();
+  /* M5.4 async 函数标记（JS_NewFunction 单函数编译路径）。 */
+  result.fn.is_async = fn.fn_is_async;
   return result;
 }
 
@@ -836,6 +838,8 @@ bool Compiler::compileChildFunction(const ASTNode &fn, FunctionBytecode *out,
   /* M5.1d-b 箭头函数：super 上下文继承标记（MakeFunction 时复制外层
    * HomeObject，使箭头函数内 super 指向外层方法的 HomeObject）。 */
   child_fn.is_arrow = (fn.type == NodeType::ArrowFunctionExpression);
+  /* M5.4 async 函数：async 标记（VM 调用时创建 Promise + await 挂起恢复）。 */
+  child_fn.is_async = fn.fn_is_async;
   /* M5.1d-c2 私有字段：class 构造器/方法/访问器携带 class 词法可见的
    * 字段全名表（含 '#'，LoadPrivate/StorePrivate/HasPrivate 引用其下标）。 */
   if (inherit_private && current_private_names_ != nullptr) {
@@ -3690,8 +3694,11 @@ bool Compiler::compileUnary(const ASTNode &node) {
     case UnaryOpKind::Delete:
       return true; /* 已在上方处理（不可达） */
     case UnaryOpKind::Await:
-      fail("await is not supported yet (M5.4 async/await)");
-      return false;
+      /* await x（M5.4）：求值 x -> Await 指令（PromiseResolve 接合，
+       * 未决则挂起当前 async 帧；VM 续延时把值压栈或抛异常）。
+       * 仅 async 函数/模块顶层可达（parseUnary 已校验）。 */
+      builder_.await();
+      return true;
   }
   return true;
 }

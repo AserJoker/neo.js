@@ -36,11 +36,17 @@ class JSFunction;
  *   env   当前函数的环境（闭包词法环境，M2.5；顶层程序为 null）。
  *   self  当前函数对象（M5.1d-b super 用：SuperLoadProp/Elem 从
  *         self->homeObject() 的 [[Prototype]] 读取；无 super 上下文为 null）。
- * 返回 ConversionResult：成功 value 为结果值，失败 value=nullptr + error。 */
+ *   start_pc   起始指令位置（默认 0；M5.4 async 恢复用：从挂起点继续）。
+ *   restore_stack 恢复用操作数栈（默认空；M5.4 async 恢复时传入挂起帧的
+ *               栈副本，替代局部槽初始化）。
+ * 返回 ConversionResult：成功 value 为结果值，失败 value=nullptr + error；
+ * 挂起（M5.4 await）时 suspended=true（value/error 无效）。 */
 ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
                              JSValue *thisVal, JSValue *const *args,
                              size_t argc, JSEnvironment *env = nullptr,
-                             JSFunction *self = nullptr);
+                             JSFunction *self = nullptr,
+                             size_t start_pc = 0,
+                             std::vector<JSValue *> *restore_stack = nullptr);
 
 }  // namespace neojs
 

@@ -940,8 +940,14 @@ extern "C" JSValue *JS_Eval(JSContext *ctx, const char *source, size_t source_le
      * 的 EnvRootGuard 入根集保护，帧退出自动弹出。 */
     neojs::JSEnvironment *top_env =
         c->heap().allocGCObject<neojs::JSEnvironment>(nullptr);
+    /* M5.4：标记脚本顶层 env——顶层 var 经 op_StoreVar 双写全局对象
+     * （§13.3.2.4 CreateGlobalVarBinding），使独立编译的顶层函数声明
+     * （含 async，LoadGlobal 读全局对象）能读到。runBytecode 返回后
+     * 清空（执行期 env 由 EnvRootGuard 保护，防悬垂指针）。 */
+    c->setScriptTopEnv(top_env);
     neojs::ConversionResult r =
         neojs::runBytecode(c, cr.fn, nullptr, nullptr, 0, top_env);
+    c->setScriptTopEnv(nullptr);
     if (!r.ok()) {
       /* 未捕获异常转 Exception 值（#4）。JS throw 值（thrown 非空）优先
        * 用其字符串表示（ToPrimitive/String 后）；内部错误用 error 串。 */
