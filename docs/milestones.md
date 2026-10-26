@@ -582,7 +582,30 @@ async 方法 this/多次挂起恢复现场完整性）；全量 566 测试全绿
   - 测试：`Compiler.M55a2GeneratorBytecode`（4 子用例：`function*` is_generator + Yield、
     裸 yield PushUndefined+Yield、`async function*` 双标志、非生成器 is_generator=false）。
     全量 573 测试绿。
-- M5.5a-3 VM/运行时：generator 对象 + Yield 挂起恢复 + next/throw/return（⏳ 未启动）
+- M5.5a-3 VM/运行时：generator 对象 + Yield 挂起恢复 + next/throw/return（✅ 完成）
+  - 对象模型：`ObjectKind::Generator` + `JSObject::gen_state_`（0 suspended-start /
+    1 suspended-yield / 2 running / 3 completed）+ `gen_frame_`（AsyncFrame* 内嵌，
+    复用 async 现场保存/GC 标记机制）；`gcMarkRefs` 标记 `gen_frame_`。
+  - 运行时入口 `generatorCall`（function.cc `is_generator` 分发）：创建 Generator
+    对象（state=SuspendedStart）+ AsyncFrame（pc=0，空栈，fn/this/env/args）+ 写
+    隐藏绑定 `__generator__`，返回 Generator——不立即执行（§27.5.5.1 GeneratorStart
+    近似，首次 next() 才执行函数体到首个 yield）。
+  - `op_Yield` 实现：弹栈顶 yield 值 → 沿 env 链查 `__generator__` 定位 generator →
+    `suspendYield` 保存现场到 Generator 内嵌 AsyncFrame（pc=yield 下一条、stack、
+    env、this、pending、yield_value）→ 置 `frame.suspended` 结束本帧 runBytecode。
+  - `resumeGenerator`（next/throw/return 三路径）：从 AsyncFrame 重建现场续延；
+    next 压栈 value（首次 next 忽略 value 压 undefined）、throw 注入异常
+    （runBytecode `initial_thrown` 经 tryDispatch 派发到 try/catch）、return 强制
+    完成（简化：未做 try/finally 穿透）；suspended 包装 {value:yield_value,done:false}，
+    完成包装 {value:retval,done:true}；completed 状态 next/return 返回 {value,done:true}，
+    throw 直接抛 value（§27.5.3.3 step 8.b）；running 状态拒绝重入。
+  - Generator.prototype 注册：`generatorProto` 惰性创建（原型链 Object.prototype）+
+    `next`/`throw`/`return` 内置（`generatorProtoNext` 返回 ConversionResult，throw
+    路径透传 `thrown`/`error`，经 op_Call 异常传播到 try/catch）。
+  - 测试：`Generator.*` 10 子用例（BasicNextYieldDone、NoNextBodyNotExecuted、
+    MultipleYields、YieldReceivesNextValue、ReturnValue、NextAfterCompletion、
+    ThrowInjectsException、ThrowOnCompletedThrows、ReturnForcesCompletion、
+    IndependentInstances）。全量 583 测试绿。
 - M5.5a-4 `yield*` 委托（⏳ 未启动）
 
 验收：generator 脚本（含 yield* 委托）通过

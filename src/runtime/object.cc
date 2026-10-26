@@ -249,6 +249,9 @@ void JSObject::gcMarkRefs(Heap *heap) {
   heap->markRoot(iter_target_);
   /* Promise 决议值（M5.3a：[[PromiseResult]]，GC 引用边） */
   heap->markRoot(promise_result_);
+  /* Generator 挂起现场（M5.5a-3：[[GeneratorContext]] AsyncFrame*，GC 引用边）。
+   * AsyncFrame 自身 gcMarkRefs 标记其 fn/env/this/stack，此处只标记包装 JSValue。 */
+  heap->markRoot(gen_frame_);
   /* 私有字段槽（M5.1d-c2：§6.1.7.5 私有字段值，GC 引用边） */
   for (auto &kv : private_slots_) {
     heap->markRoot(kv.second);

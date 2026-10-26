@@ -37,6 +37,7 @@
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/conversion.h"
 #include "neojs/runtime/function.h"
+#include "neojs/runtime/generator.h"
 #include "neojs/runtime/module_namespace.h"
 #include "neojs/runtime/object.h"
 #include "neojs/runtime/operators.h"
@@ -45,6 +46,10 @@
 #include "neojs/runtime/value.h"
 
 namespace neojs {
+
+/* 前向声明：installGeneratorBuiltins 定义于本文件后段（M5.5a-3），
+ * installBuiltins 调用先于定义出现。 */
+void installGeneratorBuiltins(JSContext *ctx);
 
 namespace {
 
@@ -3122,6 +3127,10 @@ void installBuiltins(JSContext *ctx) {
   /* M5.2c-2 动态 import()（§16.2.1.8）：全局内置 `import`。
    * 依赖 Promise 基础设施（返回 Promise），故须在 Promise 之后注册。 */
   installModuleNamespaceBuiltins(ctx);
+
+  /* Generator（M5.5a-3，§27.5）：Generator.prototype + next/throw/return。
+   * generatorCall 创建的 Generator 对象原型链根，供 next/throw/return 恢复。 */
+  installGeneratorBuiltins(ctx);
 }
 
 /* 取 Object.prototype（M3.3，惰性创建 + 缓存 + 进根集）。
@@ -3197,6 +3206,59 @@ JSValue *setProto(JSContext *ctx) {
   ctx->setSetProto(p); /* 进根集（markRoots 遍历 set_proto_） */
   ctx->heap().unpin(p);
   return p;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Generator（M5.5a-3，§27.5）                                                */
+/* -------------------------------------------------------------------------- */
+
+/* Generator.prototype.next(value)（§27.5.3.1 GeneratorResume 近似）。 */
+ConversionResult generatorNextBuiltin(JSContext *ctx, JSValue *thisVal,
+                                      JSValue *const *args, size_t argc) {
+  return generatorProtoNext(ctx, thisVal, args, argc, /*mode=*/0);
+}
+
+/* Generator.prototype.throw(exception)（§27.5.3.3 GeneratorResumeAbrupt）。 */
+ConversionResult generatorThrowBuiltin(JSContext *ctx, JSValue *thisVal,
+                                       JSValue *const *args, size_t argc) {
+  return generatorProtoNext(ctx, thisVal, args, argc, /*mode=*/1);
+}
+
+/* Generator.prototype.return(value)（§27.5.3.4 GeneratorResumeAbrupt return）。 */
+ConversionResult generatorReturnBuiltin(JSContext *ctx, JSValue *thisVal,
+                                        JSValue *const *args, size_t argc) {
+  return generatorProtoNext(ctx, thisVal, args, argc, /*mode=*/2);
+}
+
+/* 取 Generator.prototype（M5.5a-3，惰性创建 + 缓存 + 进根集）。
+ * generatorCall 新建 Generator 对象的原型链根（next/throw/return 所在）。
+ * 原型链 -> Object.prototype（§27.5.2.3）。 */
+JSValue *generatorProto(JSContext *ctx) {
+  JSValue *p = ctx->generatorProto();
+  if (p != nullptr) return p;
+  p = ctx->createObject(objectProto(ctx)->object());
+  ctx->heap().pin(p); /* 分配保护（M3.3）：进根集前防误回收 */
+  ctx->setGeneratorProto(p); /* 进根集（markRoots 遍历 generator_proto_） */
+  ctx->heap().unpin(p);
+  return p;
+}
+
+/* 安装 Generator.prototype + 全局 Generator 构造器占位（M5.5a-3）。
+ * Generator 构造器本阶段不可 new（无 [[Construct]]），仅注册 prototype
+ * 供 generatorCall 创建的对象原型链使用。完整构造器留 M5.5b。 */
+void installGeneratorBuiltins(JSContext *ctx) {
+  JSValue *gen_proto = generatorProto(ctx);
+  ctx->heap().pin(gen_proto);
+  defineMethod(gen_proto->object(), "next",
+               makeBuiltin(ctx, generatorNextBuiltin, ThisMode::Strict));
+  defineMethod(gen_proto->object(), "throw",
+               makeBuiltin(ctx, generatorThrowBuiltin, ThisMode::Strict));
+  defineMethod(gen_proto->object(), "return",
+               makeBuiltin(ctx, generatorReturnBuiltin, ThisMode::Strict));
+  /* Generator.prototype[Symbol.iterator]（§27.5.2.1 %GeneratorPrototype%
+   * 的 @@iterator 方法返回 this，使 generator 对象自身可迭代）留 M5.5b
+   * for-of 消费 generator 时补——本阶段 next/throw/return 已够核心用例。 */
+  ctx->heap().unpin(gen_proto);
 }
 
 }  // namespace neojs

@@ -62,6 +62,9 @@ class AsyncFrame : public JSObject {
   /* 外层 promise（async 调用入口创建，完成/异常时 settle；GC 引用边）。
    * suspendAwait 时沿 env 链查找 "__async_promise__" 绑定写入。 */
   JSValue *promise = nullptr;
+  /* M5.5a-3 generator：yield 值（op_Yield 弹栈顶后存此，供 resumeGenerator
+   * 取出包装 {value, done:false}）。仅 generator 用，async 不用。GC 引用边。 */
+  JSValue *yield_value = nullptr;
 
   /* 引用边标记：fn/env/frame_this/promise + 操作数栈每个元素。 */
   void gcMarkRefs(Heap *heap) override;
@@ -114,6 +117,29 @@ bool suspendAwait(JSContext *ctx, JSFunction *fn, size_t next_pc,
                   JSValue *frame_this, const ConversionResult &pending,
                   bool has_pending, uint32_t pending_handle,
                   JSValue *awaitable);
+
+/* M5.5a-3 generator yield 挂起（op_Yield 调用）：保存 VM 现场到 Generator
+ * 对象内嵌的 AsyncFrame（pc=下一条，stack/env/this/pending），弹栈顶 yield 值
+ * 存 frame->yield_value，置 frame.suspended 结束本帧 runBytecode。调用方
+ * （resumeGenerator）检测 suspended 后包装 {value, done:false} 返回给 next()。
+ *   gen        当前 generator 对象（沿 env 隐藏绑定查找，见下）
+ *   fn         当前 generator 函数对象
+ *   next_pc    yield 之后下一条指令
+ *   stack      当前操作数栈（拷贝进 AsyncFrame，yield 值已弹栈）
+ *   env        当前帧环境
+ *   frame_this 当前帧 this
+ *   pending/has_pending/pending_handle  finally 挂起异常状态（帧级）
+ *   yield_val  yield 值（栈顶已弹出，存入 frame->yield_value）
+ * 返回 true 挂起成功（调用方置 frame.suspended）；false 内部错误。 */
+bool suspendYield(JSContext *ctx, JSValue *gen, JSFunction *fn, size_t next_pc,
+                  std::vector<JSValue *> &stack, JSEnvironment *env,
+                  JSValue *frame_this, const ConversionResult &pending,
+                  bool has_pending, uint32_t pending_handle,
+                  JSValue *yield_val);
+
+/* generator 帧环境隐藏绑定名（generator 对象传递，op_Yield 沿链读取）。
+ * generatorCall 在 env 链首段写入，op_Yield 沿链查找当前 generator。 */
+constexpr const char *kGeneratorBinding = "__generator__";
 
 }  // namespace neojs
 

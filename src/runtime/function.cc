@@ -27,6 +27,7 @@
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/conversion.h"
 #include "neojs/runtime/environment.h"
+#include "neojs/runtime/generator.h"
 #include "neojs/runtime/value.h"
 #include "neojs/runtime/vm.h"
 
@@ -248,6 +249,23 @@ ConversionResult call(JSContext *ctx, JSValue *func, JSValue *thisVal,
                          args_internal.empty() ? nullptr : args_internal.data(),
                          argc);
       /* 释放本帧 this/参数临时句柄。 */
+      for (uint32_t h : tmp_handles) {
+        freeTmpHandle(ctx, h);
+      }
+      if (result.ok()) {
+        result.tmp_handle = makeTmpHandle(ctx, result.value);
+      }
+      ctx->decCallDepth();
+      return result;
+    }
+    /* M5.5a-3 generator：generator 函数走 generatorCall（创建 Generator 对象
+     * + 挂起恢复 + next/throw/return 同步恢复），立即返回 Generator——
+     * 首次 next() 才执行函数体到首个 yield（§27.5.5.1 GeneratorStart）。 */
+    if (bc.is_generator) {
+      result = generatorCall(ctx, fn, thisArg,
+                             args_internal.empty() ? nullptr
+                                                   : args_internal.data(),
+                             argc);
       for (uint32_t h : tmp_handles) {
         freeTmpHandle(ctx, h);
       }

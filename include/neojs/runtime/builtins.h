@@ -58,6 +58,10 @@ JSValue *functionProto(JSContext *ctx);
 JSValue *mapProto(JSContext *ctx);
 JSValue *setProto(JSContext *ctx);
 
+/* 取 Generator.prototype（M5.5a-3 惰性创建 + 缓存 + 进根集）。
+ * generatorCall 创建的 Generator 对象原型链根（next/throw/return 所在）。 */
+JSValue *generatorProto(JSContext *ctx);
+
 }  // namespace neojs
 
 #endif  // NEOJS_RUNTIME_BUILTINS_H

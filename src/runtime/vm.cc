@@ -3515,15 +3515,65 @@ static ConversionResult op_Nop(VmFrame &frame) {
   return ok(nullptr);
 }
 
-/* M5.5a-2 Yield 指令存根：编译器已发射，VM 运行时实现属 M5.5a-3。
- * generator 函数调用入口（generatorCall）尚未接入，故此路径对现有测试
- * 不可达；M5.5a-3 将替换为真正的挂起恢复逻辑（§27.5.3.2 GeneratorYield）：
- *   - 弹栈顶 yield 值，包装为 {value, done:false} 返回给 next() 调用方；
- *   - 保存 VM 现场到 GeneratorFrame（复用 AsyncFrame 结构），挂起本帧；
- *   - 恢复时（next/throw/return）栈顶替换为传入值，从挂起点继续。 */
+/* M5.5a-3 Yield 指令：generator 函数挂起（§27.5.3.2 GeneratorYield）。
+ *   - 弹栈顶 yield 值（yield <expr> 的求值结果；裸 yield 则 undefined）
+ *   - 沿 env 链查找隐藏绑定 __generator__（generatorCall 写入），定位
+ *     当前 generator 对象
+ *   - 调 suspendYield 把 VM 现场保存到 Generator 内嵌的 AsyncFrame
+ *     （pc=yield 下一条、stack/env/this/pending 拷贝、yield_value=弹栈值）
+ *   - 置 frame.suspended + frame.done，结束本帧 runBytecode；
+ *     resumeGenerator 检测 suspended 后包装 {value:yield_value, done:false}
+ *     返回给 next() 调用方，并置 Generator.state=suspended-yield
+ * 恢复时（next/throw/return）从 AsyncFrame 重建现场续延，next 把传入值
+ * 压栈作为 yield 表达式的值（§27.5.3.1 GeneratorResume step 9）。 */
 static ConversionResult op_Yield(VmFrame &frame) {
-  (void)frame;
-  return fail("Error: yield not implemented (M5.5a-3 pending)");
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+    /* 1. 弹栈顶 yield 值。空栈视为裸 yield（undefined）。 */
+    JSValue *yield_val = nullptr;
+    if (stack.empty()) {
+      yield_val = frame.ctx->createValue(Kind::Undefined);
+    } else {
+      yield_val = stack.back();
+      stack.pop_back();
+    }
+
+    /* 2. 沿 env 链查找隐藏绑定 __generator__，定位当前 generator。 */
+    JSValue *gen_v = nullptr;
+    for (JSEnvironment *e = frame.env; e != nullptr; e = e->parent()) {
+      if (e->hasBinding(kGeneratorBinding)) {
+        gen_v = e->getBinding(kGeneratorBinding);
+        break;
+      }
+    }
+    if (gen_v == nullptr || !gen_v->isObject() ||
+        !gen_v->object()->isGenerator()) {
+      error = fail("SyntaxError: yield outside of generator function");
+      break;
+    }
+
+    /* 3. 保存现场到 Generator 内嵌的 AsyncFrame，置帧挂起。
+     *    next_pc = 当前 pc（已指向 yield 下一条指令，主循环自增前）。 */
+    JSFunction *self = frame.self;
+    if (self == nullptr) {
+      error = fail("Error: yield with no function context");
+      break;
+    }
+    if (!suspendYield(frame.ctx, gen_v, self, *frame.pc, stack, frame.env,
+                      *frame.frame_this, frame.pending, frame.has_pending,
+                      frame.pending_handle, yield_val)) {
+      error = fail("Error: failed to suspend generator frame");
+      break;
+    }
+    frame.suspended = true;
+    frame.done = true;
+    break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
 }
 
 /* 分发表：按 Opcode 枚举值下标访问（M5.1e-f 栈帧瘦身）。 */

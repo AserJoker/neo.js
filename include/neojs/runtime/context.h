@@ -141,6 +141,9 @@ class JSContext {
   void setMapProto(JSValue *v) { map_proto_ = v; }
   JSValue *setProto() const { return set_proto_; }
   void setSetProto(JSValue *v) { set_proto_ = v; }
+  /* Generator.prototype 缓存（M5.5a-3）：generator 对象原型链根。 */
+  JSValue *generatorProto() const { return generator_proto_; }
+  void setGeneratorProto(JSValue *v) { generator_proto_ = v; }
 
   /* Function.prototype 缓存（M4.2，§20.2.3）：函数（Script/Builtin）的
    * 原型链根（call/apply/bind 所在）。惰性创建 + 进根集（markRoots）。 */
@@ -258,6 +261,7 @@ class JSContext {
   JSValue *map_proto_ = nullptr;    /* Map.prototype 缓存（M4.4a） */
   JSValue *set_proto_ = nullptr;    /* Set.prototype 缓存（M4.4a） */
   JSValue *promise_proto_ = nullptr; /* Promise.prototype 缓存（M5.3a） */
+  JSValue *generator_proto_ = nullptr; /* Generator.prototype 缓存（M5.5a-3） */
   JSValue *promise_internal_[14] = {
       nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
       nullptr, nullptr, nullptr, nullptr, nullptr, nullptr}; /* Promise 内部函数缓存（M5.3a/b + M5.4 await） */

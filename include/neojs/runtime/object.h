@@ -68,6 +68,7 @@ enum class ObjectKind : uint8_t {
   SetIterator,    /* Set 迭代器（M4.4f，[[IteratedSet]]+[[SetIteratorNextIndex]]） */
   Promise,        /* Promise（M5.3a，§27.2：[[PromiseState]]+[[PromiseResult]]+reactions） */
   AsyncFrame,     /* async 挂起帧（M5.4，§27.7：VM 现场转移） */
+  Generator,      /* Generator 对象（M5.5a-3，§27.5：[[GeneratorState]]+[[GeneratorContext]]） */
 };
 
 /* 集合条目（M4.4a）：Map 的键值对 / Set 的键。
@@ -120,6 +121,16 @@ class JSObject : public GCHeader {
   void setPromiseState(int s) { promise_state_ = s; }
   JSValue *promiseResult() const { return promise_result_; }
   void setPromiseResult(JSValue *v) { promise_result_ = v; }
+
+  /* Generator 内部槽（M5.5a-3，§27.5）：[[GeneratorState]] 用整型
+   * （0 suspended-start / 1 suspended-yield / 2 running / 3 completed），
+   * [[GeneratorContext]] 为挂起现场（AsyncFrame*，GC 引用边）。
+   * 仅 isGenerator() 时有效。 */
+  bool isGenerator() const { return kind_ == ObjectKind::Generator; }
+  int generatorState() const { return gen_state_; }
+  void setGeneratorState(int s) { gen_state_ = s; }
+  JSValue *generatorContext() const { return gen_frame_; }
+  void setGeneratorContext(JSValue *v) { gen_frame_ = v; }
 
   /* 包装对象内部槽（E4-2）：[[NumberData]]/[[StringData]]/[[BooleanData]]/
    * [[SymbolData]]。仅 isWrapper() 时有效；GC 引用边。 */
@@ -239,6 +250,8 @@ class JSObject : public GCHeader {
   size_t iter_index_ = 0;                                    /* 迭代器当前索引（M4.4f） */
   int promise_state_ = 0;                                    /* Promise 状态（M5.3a，0 pending/1 fulfilled/2 rejected） */
   JSValue *promise_result_ = nullptr;                        /* Promise 决议值（M5.3a，[[PromiseResult]]，GC 引用边） */
+  int gen_state_ = 0;                                        /* Generator 状态（M5.5a-3，0 start/1 yield/2 running/3 completed） */
+  JSValue *gen_frame_ = nullptr;                             /* Generator 挂起现场（M5.5a-3，AsyncFrame*，GC 引用边） */
 };
 
 }  // namespace neojs

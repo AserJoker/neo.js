@@ -193,6 +193,9 @@ void JSContext::markRoots() {
   /* Promise.prototype 缓存（M5.3a）：Promise 原型链根，始终可达。 */
   if (promise_proto_ != nullptr) heap_.markRoot(promise_proto_);
 
+  /* Generator.prototype 缓存（M5.5a-3）：Generator 原型链根，始终可达。 */
+  if (generator_proto_ != nullptr) heap_.markRoot(generator_proto_);
+
   /* Promise 共享内部函数缓存（M5.3a）：Bound 闭包 target，始终可达。 */
   for (JSValue *pi : promise_internal_) {
     if (pi != nullptr) heap_.markRoot(pi);
