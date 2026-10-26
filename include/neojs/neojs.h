@@ -229,6 +229,27 @@ JSValue *JS_In(JSContext *ctx, JSValue *x, JSValue *y);
  * 的错误值（#4）。完整求值（字节码 VM）在 M2+ 实现。 */
 JSValue *JS_Eval(JSContext *ctx, const char *source, size_t source_len);
 
+/* -------------------------------------------------------------------------- */
+/* 模块系统（M5.2a）                                                          */
+/* -------------------------------------------------------------------------- */
+
+/* 模块源码供给回调（M5.2a，选项「加载器文件读取回调」）：宿主提供
+ * specifier -> 源码。返回的 C 串须在本次调用期间有效（引擎内部立即消费，
+ * 经 strlen 测长后 parse）；加载失败返回 NULL（引擎报 "cannot load module"）。
+ * opaque 为 JS_AddModuleLoader 注册时透传的宿主指针。 */
+typedef const char *(*JSModuleLoader)(JSContext *ctx, const char *specifier,
+                                      void *opaque);
+
+/* 注册模块源码供给回调（M5.2a）。同一 ctx 重复注册覆盖旧回调。
+ * opaque 透传给回调（可 NULL）。 */
+void JS_AddModuleLoader(JSContext *ctx, JSModuleLoader loader, void *opaque);
+
+/* 加载并求值模块（M5.2a）：specifier 经加载器取源码，parse(module=true) +
+ * compileModule，依赖先求值，模块顶层代码在模块 env 运行。
+ * 成功返回 NULL（模块无 completion value）；失败返回 kind=JS_EXCEPTION
+ * 的错误值（#4）。重复调用同 specifier 幂等（单例，Evaluated 短路）。 */
+JSValue *JS_EvalModule(JSContext *ctx, const char *specifier);
+
 /* 指令操作码（与内部 neojs::Opcode 数值一致，M2-VM）。供 JS_RunBytecode
  * 构造字节码；arg 语义见各指令：PushConst/LoadGlobal 为常量池索引，
  * LoadVar/StoreVar 为局部槽号，Jump/JumpIfFalse 为绝对指令位置，

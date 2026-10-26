@@ -22,13 +22,22 @@
 #include "neojs/runtime/allocator.h"
 #include "neojs/runtime/handles.h"
 #include "neojs/runtime/heap.h"
+#include "neojs/runtime/module.h"
 #include "neojs/runtime/object.h"
 #include "neojs/runtime/scope.h"
 #include "neojs/runtime/value.h"
+#include <unordered_map>
 
 namespace neojs {
 
 class JSEnvironment;
+class JSModuleRecord;
+
+/* 模块源码供给回调（M5.2a，宿主经 JS_AddModuleLoader 注册）：
+ * specifier -> 源码。裸 specifier（非 ./  ../ 开头）原样交给宿主解析；
+ * 源码字符串归宿主所有（引擎编译后释放内部副本）。失败返回 nullptr。 */
+using JSModuleLoadFunc = const char *(*)(JSContext *ctx, const char *specifier,
+                                         void *opaque);
 
 class JSContext {
  public:
@@ -138,6 +147,24 @@ class JSContext {
   JSValue *functionProto() const { return function_proto_; }
   void setFunctionProto(JSValue *v) { function_proto_ = v; }
 
+  /* 模块表（M5.2a）：specifier -> 模块记录。加载过的模块都在表中，
+   * 保证单例（同一 specifier 只求值一次）与循环依赖回查。
+   * 模块表是 GC 根集（markRoots 标记每个 record）。 */
+  JSModuleRecord *findModule(const std::string &specifier) const;
+  void addModule(JSModuleRecord *record);
+  const std::unordered_map<std::string, JSModuleRecord *> &modules() const {
+    return modules_;
+  }
+
+  /* 模块源码供给回调（M5.2a）：宿主注册 specifier -> 源码。
+   * 未注册回调时模块求值报错。 */
+  JSModuleLoadFunc moduleLoader() const { return module_loader_; }
+  void *moduleLoaderOpaque() const { return module_loader_opaque_; }
+  void setModuleLoader(JSModuleLoadFunc func, void *opaque) {
+    module_loader_ = func;
+    module_loader_opaque_ = opaque;
+  }
+
   /* VM 操作数栈注册为 GC 根集（M2-VM，用户确认“栈帧入 GC 根集”）。
    * 解释器运行期间调用 vmStackPush(&stack) 入栈；结束/出错时 vmStackPop 弹出。
    * 嵌套 runBytecode（函数递归）会 push 多个栈帧，markRoots 遍历全部。
@@ -194,6 +221,9 @@ class JSContext {
   JSValue *set_proto_ = nullptr;    /* Set.prototype 缓存（M4.4a） */
   std::vector<std::vector<JSValue *> *> vm_stacks_; /* VM 操作数栈根集栈（M2-VM） */
   std::vector<JSEnvironment *> vm_envs_; /* VM 帧环境根集栈（M2.5 闭包） */
+  std::unordered_map<std::string, JSModuleRecord *> modules_; /* 模块表（M5.2a） */
+  JSModuleLoadFunc module_loader_ = nullptr; /* 模块源码供给回调（M5.2a） */
+  void *module_loader_opaque_ = nullptr;      /* 回调 opaque 数据 */
   size_t call_depth_ = 0;   /* 当前调用栈深度（M2.5 防爆栈） */
   size_t max_call_depth_ = 10000; /* 调用深度上限（默认 10000） */
 };

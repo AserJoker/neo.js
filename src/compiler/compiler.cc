@@ -158,6 +158,417 @@ CompileResult Compiler::compileFunction(const ASTNode &fn) {
   return result;
 }
 
+/* -------------------------------------------------------------------------- */
+/* 模块编译（M5.2a）                                                          */
+/* -------------------------------------------------------------------------- */
+
+CompileResult Compiler::compileModule(const AST &ast) {
+  CompileResult result;
+  failed_ = false;
+  error_.clear();
+  for (CompilerScope *s : scopes_) delete s;
+  scopes_.clear();
+  scope_ = nullptr;
+  loops_.clear();
+  module_import_map_.clear();
+  module_imports_.clear();
+  module_exports_.clear();
+  module_deps_.clear();
+  builder_ = BytecodeBuilder();
+
+  /* 顶层作用域帧（模块顶层：捕获解析到此，再外层为全局）。 */
+  CompilerScope *top = new CompilerScope;
+  scopes_.push_back(top);
+  scope_ = top;
+
+  if (ast.root == nullptr) {
+    builder_.push_op(Opcode::PushUndefined);
+    builder_.ret();
+    builder_.set_num_locals(scope_->next_slot);
+    result.ok = true;
+    result.fn = builder_.build();
+    result.module_exports = std::move(module_exports_);
+    result.module_deps = std::move(module_deps_);
+    return result;
+  }
+
+  const auto &stmts = ast.root->children;
+
+  /* 第 1 遍：收集 import/export 元数据（不发射代码）。
+   *   - import 声明：注册 module_imports_/module_deps_，绑定名不入局部槽。
+   *   - export 声明：登记 module_exports_；声明导出（export const/function/
+   *     class）返回被包装声明，第 2 遍编译其体。
+   *   - 顶层 FunctionDeclaration/ClassDeclaration（含 export default 的）：
+   *     提升收集，第 2 遍体开头发射 MakeFunction+StoreVar。
+   * 两遍分离保证：import 绑定在编译任意语句前已入表（emitLoadIdentifier
+   * 检查），提升函数在引用前已实例化。 */
+  std::vector<const ASTNode *> hoisted_decls;
+  for (const ASTNode *stmt : stmts) {
+    if (stmt == nullptr) continue;
+    if (stmt->type == NodeType::ImportDeclaration) {
+      if (!compileModuleImport(*stmt)) return failResult();
+    } else if (stmt->type == NodeType::ExportNamedDeclaration ||
+               stmt->type == NodeType::ExportDefaultDeclaration ||
+               stmt->type == NodeType::ExportAllDeclaration) {
+      const ASTNode *decl = nullptr;
+      if (!compileModuleExport(*stmt, &decl)) return failResult();
+      if (decl != nullptr) {
+        if (decl->type == NodeType::FunctionDeclaration ||
+            decl->type == NodeType::ClassDeclaration) {
+          /* 具名函数/类提升；匿名 default 导出（无模块绑定名）不提升，
+           * 源码位置按表达式编译存入 __default__（pass 3 处理）。 */
+          bool has_name = decl->fn_has_name && !decl->children.empty() &&
+                          decl->children[0]->type == NodeType::Identifier;
+          if (has_name) hoisted_decls.push_back(decl);
+        }
+      }
+    } else if (stmt->type == NodeType::FunctionDeclaration ||
+               stmt->type == NodeType::ClassDeclaration) {
+      hoisted_decls.push_back(stmt);
+    }
+  }
+
+  /* 第 2 遍：体开头发射提升的顶层函数/类声明（源码位置跳过，不挂 global）。
+   *   FunctionDeclaration 提升（§16.2.5）：MakeFunction + 声明槽 + StoreVar。
+   *   ClassDeclaration 提升：TDZ 语义（M5.2b 细化），本阶段按声明即实例化。 */
+  for (const ASTNode *decl : hoisted_decls) {
+    if (decl->type == NodeType::FunctionDeclaration) {
+      if (!compileNestedFunction(*decl, /*is_declaration=*/true)) {
+        return failResult();
+      }
+    } else if (decl->type == NodeType::ClassDeclaration) {
+      if (!compileClass(*decl, /*is_declaration=*/true)) {
+        return failResult();
+      }
+    }
+  }
+
+  /* 第 3 遍：按源码序编译非 import/export 语句与 export 声明的体。
+   * import/export 本身不发射代码（纯编译期登记）。 */
+  for (const ASTNode *stmt : stmts) {
+    if (stmt == nullptr) continue;
+    if (stmt->type == NodeType::ImportDeclaration ||
+        stmt->type == NodeType::ExportAllDeclaration) {
+      continue;
+    }
+    if (stmt->type == NodeType::ExportNamedDeclaration ||
+        stmt->type == NodeType::ExportDefaultDeclaration) {
+      const ASTNode *decl = nullptr;
+      if (!compileModuleExport(*stmt, &decl)) return failResult();
+      if (decl == nullptr) continue; /* export {a}：无体，纯登记 */
+      if (decl->type == NodeType::FunctionDeclaration ||
+          decl->type == NodeType::ClassDeclaration) {
+        /* 提升已处理：仅具名 fn/class（pass 1 收集 hoisted_decls、pass 2 发射）。
+         * 匿名 default 导出（export default function(){}）pass 1 未提升，须
+         * 落入下方 __default__ 表达式分支编译（MakeFunction + StoreVar）。 */
+        bool has_name = decl->fn_has_name && !decl->children.empty() &&
+                        decl->children[0]->type == NodeType::Identifier;
+        if (has_name) continue;
+      }
+      if (stmt->type == NodeType::ExportDefaultDeclaration) {
+        /* export default expr / 匿名函数/类：声明 __default__ 槽，求值 expr
+         * 存入（live binding，导出表 "default" -> "__default__"）。
+         * 匿名 fn/class 是 FunctionExpression 语义，compileExpr 走表达式路径
+         * 留栈顶（不 declareLocal）。具名 fn/class 已提升（pass 3 跳过）。 */
+        bool is_decl = decl->type == NodeType::FunctionDeclaration ||
+                       decl->type == NodeType::ClassDeclaration;
+        bool has_name = is_decl && decl->fn_has_name && !decl->children.empty() &&
+                        decl->children[0]->type == NodeType::Identifier;
+        if (is_decl && has_name) continue; /* 已提升 */
+        uint16_t def_slot = declareLocal("__default__");
+        if (decl->type == NodeType::FunctionDeclaration) {
+          /* 匿名默认导出函数：MakeFunction 留栈顶（表达式语义）。 */
+          if (!compileNestedFunction(*decl, /*is_declaration=*/false)) {
+            return failResult();
+          }
+        } else if (decl->type == NodeType::ClassDeclaration) {
+          /* 匿名默认导出类：编译类表达式，构造器留栈顶。 */
+          if (!compileClass(*decl, /*is_declaration=*/false)) {
+            return failResult();
+          }
+        } else if (!compileExpr(*decl)) {
+          return failResult();
+        }
+        builder_.store_var(def_slot);
+        continue;
+      }
+      if (!compileStmt(*decl)) return failResult();
+      continue;
+    }
+    if (stmt->type == NodeType::FunctionDeclaration ||
+        stmt->type == NodeType::ClassDeclaration) {
+      continue; /* 提升已处理 */
+    }
+    if (!compileStmt(*stmt)) return failResult();
+  }
+
+  /* 模块求值函数默认返回 undefined（顶层无 completion value 语义）。 */
+  builder_.push_op(Opcode::PushUndefined);
+  builder_.ret();
+  builder_.set_num_locals(scope_->next_slot);
+
+  result.ok = true;
+  result.fn = builder_.build();
+  result.module_exports = std::move(module_exports_);
+  result.module_deps = std::move(module_deps_);
+  return result;
+}
+
+/* M5.2a：处理单条 import 声明。
+ * AST 布局（parseImportDeclaration）：
+ *   children = specifiers..., source（Literal 字符串 = 模块名 'm'）。
+ *   ImportSpecifier        { imported, local }（children[0]=local，imported 字段）
+ *   ImportDefaultSpecifier { local }（children[0]=local）
+ *   ImportNamespaceSpecifier { local }（children[0]=local）
+ * 裸 import 'm'（副作用导入）：仅 source，无 specifier。
+ * 每个绑定：注册 module_imports_ + module_import_map_（读走 LoadImport，
+ * 写走 StoreImport 报 TypeError）。依赖 specifier 去重入 module_deps_。 */
+bool Compiler::compileModuleImport(const ASTNode &node) {
+  if (node.children.empty()) {
+    fail("SyntaxError: import declaration without source");
+    return false;
+  }
+  const ASTNode *source = node.children.back();
+  if (source->type != NodeType::Literal || !source->literal.is_string) {
+    fail("SyntaxError: invalid module specifier");
+    return false;
+  }
+  const std::string &specifier = source->literal.str;
+
+  /* 依赖（副作用导入也构成依赖，须加载求值）。 */
+  bool seen = false;
+  for (const std::string &d : module_deps_) {
+    if (d == specifier) {
+      seen = true;
+      break;
+    }
+  }
+  if (!seen) module_deps_.push_back(specifier);
+
+  /* specifiers（不含 source）。 */
+  for (size_t i = 0; i + 1 < node.children.size(); ++i) {
+    const ASTNode *spec = node.children[i];
+    if (spec == nullptr) continue;
+    ModuleImportEntry entry;
+    entry.specifier = specifier;
+    if (spec->type == NodeType::ImportSpecifier) {
+      /* { a as b }：export_name = imported（a），local_name = b。
+       * children[0] = local（b），imported 字段 = a。 */
+      entry.export_name = spec->imported;
+      if (spec->children.empty()) {
+        fail("SyntaxError: invalid import specifier");
+        return false;
+      }
+      entry.local_name = spec->children[0]->name;
+    } else if (spec->type == NodeType::ImportDefaultSpecifier) {
+      /* import d from 'm'：export_name = "default"。 */
+      entry.export_name = "default";
+      if (spec->children.empty()) {
+        fail("SyntaxError: invalid default import");
+        return false;
+      }
+      entry.local_name = spec->children[0]->name;
+    } else if (spec->type == NodeType::ImportNamespaceSpecifier) {
+      /* import * as ns：命名空间对象（M5.2c 细化），本阶段按具名导出映射。 */
+      entry.export_name.clear(); /* 运行期 LoadImport 对空导出名返回 undefined */
+      if (spec->children.empty()) {
+        fail("SyntaxError: invalid namespace import");
+        return false;
+      }
+      entry.local_name = spec->children[0]->name;
+    } else {
+      fail("SyntaxError: invalid import specifier");
+      return false;
+    }
+    /* 去重注册（同 local 名唯一，builder 按 local_name 去重并返回下标）。 */
+    uint16_t idx = builder_.add_import(entry);
+    module_imports_.push_back(entry);
+    module_import_map_[entry.local_name] = idx;
+  }
+  return true;
+}
+
+/* M5.2a：处理单条 export 声明，登记 module_exports_。
+ * 返回的 decl（若非空）为被包装的声明节点（export const/function/class /
+ * export default expr），调用方继续编译其体；纯导出（export {a}）decl=nullptr。
+ *
+ * AST 布局（parseExportDeclaration）：
+ *   ExportNamedDeclaration：
+ *     - export {a, b as c} [from 'm']：children = ExportSpecifier..., [source]
+ *       ExportSpecifier { children[0]=local, exported 字段 = 导出名 }。
+ *     - export const/let/var / function / class：children[0] = 声明节点。
+ *   ExportDefaultDeclaration：children[0] = expr / FunctionDeclaration /
+ *     ClassDeclaration（默认导出，导出名 "default"）。
+ *   ExportAllDeclaration：children = [source]（export * from 'm'）；
+ *     exported 字段非空 = export * as ns from 'm'（M5.2b 细化，本阶段登记转发）。
+ *
+ * 本地导出：export_name -> local_name（绑定名 = 模块 env 中的名字）。
+ * re-export：export {a} from 'm' / export * from 'm' —— export_name 转发自
+ * 源模块（from_specifier 记录，运行期 LoadImport 沿转发链找）。 */
+bool Compiler::compileModuleExport(const ASTNode &node, const ASTNode **decl) {
+  if (decl != nullptr) *decl = nullptr;
+
+  if (node.type == NodeType::ExportDefaultDeclaration) {
+    /* export default <expr|fn|class>：导出名 "default"。
+     * 声明体（fn/class）由调用方编译（提升或 compileStmt）；表达式默认
+     * 导出需要绑定名：合成隐藏名 "default" 的本地槽承载（export default
+     * expr 语义 = 求值 expr 存到模块级 default 绑定，live binding）。 */
+    if (node.children.empty()) {
+      fail("SyntaxError: export default without expression");
+      return false;
+    }
+    const ASTNode *expr = node.children[0];
+    ModuleExportEntry e;
+    e.export_name = "default";
+    if (expr->type == NodeType::FunctionDeclaration ||
+        expr->type == NodeType::ClassDeclaration) {
+      if (expr->fn_has_name && !expr->children.empty() &&
+          expr->children[0]->type == NodeType::Identifier) {
+        /* 具名默认导出：export default function f(){}。绑定名 = f（提升）。 */
+        e.local_name = expr->children[0]->name;
+        module_exports_.push_back(std::move(e));
+        if (decl != nullptr) *decl = expr;
+        return true;
+      }
+      /* 匿名默认导出：export default function(){}。无模块绑定名，按
+       * 表达式求值存入隐藏绑定 __default__（源码位置编译，不提升）。 */
+      e.local_name = "__default__";
+      module_exports_.push_back(std::move(e));
+      if (decl != nullptr) *decl = expr;
+      return true;
+    }
+    /* 表达式默认导出：合成隐藏绑定名（不与用户标识符冲突）。 */
+    e.local_name = "__default__";
+    module_exports_.push_back(std::move(e));
+    if (decl != nullptr) *decl = expr;
+    return true;
+  }
+
+  if (node.type == NodeType::ExportAllDeclaration) {
+    /* export * from 'm'：全部具名导出转发（不含 default）。
+     * 运行期 findExport 对 export_all 条目：查源模块 exports 全表。
+     * export * as ns from 'm'：导出名 = ns，转发源模块全部具名。 */
+    if (node.children.empty()) {
+      fail("SyntaxError: export * without source");
+      return false;
+    }
+    const ASTNode *source = node.children[0];
+    if (source->type != NodeType::Literal || !source->literal.is_string) {
+      fail("SyntaxError: invalid module specifier");
+      return false;
+    }
+    ModuleExportEntry e;
+    if (!node.exported.empty()) {
+      /* export * as ns from 'm'：导出名 = ns。 */
+      e.export_name = node.exported;
+      e.local_name = node.exported;
+    } else {
+      e.export_name.clear(); /* export_all 标记（转发全部具名） */
+      e.local_name.clear();
+    }
+    e.from_specifier = source->literal.str;
+    e.export_all = true;
+    /* 依赖：export * from 'm' 同样构成加载依赖。
+     * 注意：须在 push_back(std::move(e)) 之前处理——move 后 e.from_specifier
+     * 为空串，此处会误把空 specifier 登记为依赖。 */
+    bool seen = false;
+    for (const std::string &d : module_deps_) {
+      if (d == e.from_specifier) {
+        seen = true;
+        break;
+      }
+    }
+    if (!seen) module_deps_.push_back(e.from_specifier);
+    module_exports_.push_back(std::move(e));
+    return true;
+  }
+
+  /* ExportNamedDeclaration。 */
+  if (node.type == NodeType::ExportNamedDeclaration) {
+    if (node.children.empty()) {
+      fail("SyntaxError: empty export declaration");
+      return false;
+    }
+    const ASTNode *first = node.children[0];
+    if (first->type == NodeType::ExportSpecifier) {
+      /* export { a, b as c } [from 'm']：纯 re-export 或本地导出。 */
+      std::string from_spec;
+      if (node.children.size() >= 2 &&
+          node.children.back()->type == NodeType::Literal &&
+          node.children.back()->literal.is_string) {
+        from_spec = node.children.back()->literal.str;
+        bool seen = false;
+        for (const std::string &d : module_deps_) {
+          if (d == from_spec) {
+            seen = true;
+            break;
+          }
+        }
+        if (!seen) module_deps_.push_back(from_spec);
+      }
+      for (size_t i = 0; i < node.children.size(); ++i) {
+        const ASTNode *spec = node.children[i];
+        if (spec->type != NodeType::ExportSpecifier) continue;
+        if (spec->children.empty()) {
+          fail("SyntaxError: invalid export specifier");
+          return false;
+        }
+        ModuleExportEntry e;
+        e.export_name = spec->exported;
+        e.local_name = spec->children[0]->name;
+        e.from_specifier = from_spec;
+        module_exports_.push_back(std::move(e));
+      }
+      return true;
+    }
+    /* export const/let/var / function / class：children[0] = 声明。
+     * 声明体内绑定名即导出名（export function f 导出 f；export const x 导出
+     * x）。多声明器（export const a=1,b=2）在 compileStmt 的 declareLocal 时
+     * 无法回查——本阶段导出声明中每个 VariableDeclarator 的标识符登记。 */
+    if (first->type == NodeType::VariableDeclaration) {
+      for (const ASTNode *declarator : first->children) {
+        if (declarator == nullptr ||
+            declarator->type != NodeType::VariableDeclarator) {
+          continue;
+        }
+        if (declarator->children.empty()) continue;
+        const ASTNode *target = declarator->children[0];
+        if (target->type != NodeType::Identifier) {
+          fail("SyntaxError: export of destructuring not supported");
+          return false;
+        }
+        ModuleExportEntry e;
+        e.export_name = target->name;
+        e.local_name = target->name;
+        module_exports_.push_back(std::move(e));
+      }
+    } else if (first->type == NodeType::FunctionDeclaration ||
+               first->type == NodeType::ClassDeclaration) {
+      std::string bind_name;
+      if (first->fn_has_name && !first->children.empty() &&
+          first->children[0]->type == NodeType::Identifier) {
+        bind_name = first->children[0]->name;
+      }
+      if (bind_name.empty()) {
+        fail("SyntaxError: exported declaration requires name");
+        return false;
+      }
+      ModuleExportEntry e;
+      e.export_name = bind_name;
+      e.local_name = bind_name;
+      module_exports_.push_back(std::move(e));
+    } else {
+      fail("SyntaxError: invalid exported declaration");
+      return false;
+    }
+    if (decl != nullptr) *decl = first;
+    return true;
+  }
+
+  fail("SyntaxError: invalid export declaration");
+  return false;
+}
+
 /* 函数体编译共享实现：解析参数（入本函数作用域帧）+ 编译 body。
  * 调用方已建立本函数作用域帧（scope_ 指向本函数）。 */
 bool Compiler::compileFunctionBody(const ASTNode &fn) {
@@ -3034,13 +3445,25 @@ bool Compiler::compileUpdate(const ASTNode &node) {
     uint16_t slot = 0, capture = 0;
     bool is_upvalue = false;
     bool is_global = false;
+    uint16_t import_idx = 0;
+    bool is_import = false;
     if (!resolveAssignTarget(target->name, &slot, &capture, &is_upvalue)) {
-      /* 全局标识符 ++x / x++：LoadGlobal 读旧值，Increment，StoreGlobal 写回
-      * （§13.4.4，M5.1e-g 隐式全局，非严格）。 */
-      is_global = true;
+      /* M5.2a：import 绑定 ++/-- 是写入（immutable binding）-> TypeError。
+       * 读旧值 -> StoreImport（恒抛错）保持栈平衡。 */
+      auto import_it = module_import_map_.find(target->name);
+      if (import_it != module_import_map_.end()) {
+        is_import = true;
+        import_idx = import_it->second;
+      } else {
+        /* 全局标识符 ++x / x++：LoadGlobal 读旧值，Increment，StoreGlobal 写回
+        * （§13.4.4，M5.1e-g 隐式全局，非严格）。 */
+        is_global = true;
+      }
     }
     /* 读旧值 -> 栈顶。 */
-    if (is_global) {
+    if (is_import) {
+      builder_.load_import(import_idx);
+    } else if (is_global) {
       builder_.load_global(target->name);
     } else if (is_upvalue) {
       builder_.load_upvalue(capture);
@@ -3056,7 +3479,12 @@ bool Compiler::compileUpdate(const ASTNode &node) {
     }
     builder_.increment(dec); /* 新值 -> 栈顶 */
     /* 写回（Increment 后新值在栈顶，Store* 弹栈）。 */
-    if (is_global) {
+    if (is_import) {
+      /* StoreImport 恒抛 TypeError，结果路径不可达；弹栈后补 LoadImport
+       * 保持栈平衡（前缀结果需栈顶有值）。 */
+      builder_.store_import(import_idx);
+      builder_.load_import(import_idx);
+    } else if (is_global) {
       builder_.store_global(target->name); /* 保留新值在栈顶（赋值结果） */
       builder_.pop(); /* 清保留值：结果统一在下方重新装载 */
     } else if (is_upvalue) {
@@ -3066,7 +3494,9 @@ bool Compiler::compileUpdate(const ASTNode &node) {
     }
     /* 结果：前缀 = 新值（重新读），后缀 = 旧值（已在临时槽）。 */
     if (prefix) {
-      if (is_global) {
+      if (is_import) {
+        builder_.load_import(import_idx);
+      } else if (is_global) {
         builder_.load_global(target->name);
       } else if (is_upvalue) {
         builder_.load_upvalue(capture);
@@ -3394,10 +3824,20 @@ bool Compiler::compileAssignment(const ASTNode &node) {
   uint16_t capture = 0;
   bool is_upvalue = false;
   bool is_global = false;
+  uint16_t import_idx = 0;
+  bool is_import = false;
   if (!resolveAssignTarget(lhs->name, &slot, &capture, &is_upvalue)) {
-    /* 未声明标识符赋值（M5.1e-g）：非严格隐式全局 -> 写入 globalThis
-     * 属性（§8.1.1.2.2 PutValue -> SetMutableBinding 隐式全局创建）。 */
-    is_global = true;
+    /* M5.2a：import 绑定赋值 -> StoreImport（immutable binding，运行期
+     * TypeError，§16.2.3）。import 绑定不入局部槽，resolve 不到。 */
+    auto import_it = module_import_map_.find(lhs->name);
+    if (import_it != module_import_map_.end()) {
+      is_import = true;
+      import_idx = import_it->second;
+    } else {
+      /* 未声明标识符赋值（M5.1e-g）：非严格隐式全局 -> 写入 globalThis
+       * 属性（§8.1.1.2.2 PutValue -> SetMutableBinding 隐式全局创建）。 */
+      is_global = true;
+    }
   }
 
   /* 逻辑复合赋值（&&= / ||= / ??=）：短路语义（M5.1b）。
@@ -3414,7 +3854,9 @@ bool Compiler::compileAssignment(const ASTNode &node) {
     BcLabel assign_path = builder_.new_label();
     BcLabel done = builder_.new_label();
     /* 读旧值并按赋值条件跳转。 */
-    if (is_global) {
+    if (is_import) {
+      builder_.load_import(import_idx);
+    } else if (is_global) {
       builder_.load_global(lhs->name);
     } else if (is_upvalue) {
       builder_.load_upvalue(capture);
@@ -3435,7 +3877,9 @@ bool Compiler::compileAssignment(const ASTNode &node) {
         break;
     }
     /* 短路路径：返回旧值（重新读 slot，未写回）。 */
-    if (is_global) {
+    if (is_import) {
+      builder_.load_import(import_idx);
+    } else if (is_global) {
       builder_.load_global(lhs->name);
     } else if (is_upvalue) {
       builder_.load_upvalue(capture);
@@ -3446,7 +3890,12 @@ bool Compiler::compileAssignment(const ASTNode &node) {
     /* 赋值路径：求 rhs 写回，值 = rhs。 */
     builder_.bind_label(assign_path);
     if (!compileExpr(*rhs)) return false;
-    if (is_global) {
+    if (is_import) {
+      /* StoreImport 弹栈（报 TypeError），赋值结果 = 新值须保留在栈顶。 */
+      builder_.store_import(import_idx);
+      /* 不可达（StoreImport 恒抛错），编译期补 load 保持栈平衡。 */
+      builder_.load_import(import_idx);
+    } else if (is_global) {
       builder_.store_global(lhs->name); /* 保留新值在栈顶（赋值结果） */
     } else if (is_upvalue) {
       builder_.store_upvalue(capture);
@@ -3471,7 +3920,9 @@ bool Compiler::compileAssignment(const ASTNode &node) {
       fail("not implemented: compound assignment operator");
       return false;
     }
-    if (is_global) {
+    if (is_import) {
+      builder_.load_import(import_idx); /* 旧值 */
+    } else if (is_global) {
       builder_.load_global(lhs->name); /* 旧值 */
     } else if (is_upvalue) {
       builder_.load_upvalue(capture); /* 旧值 */
@@ -3480,7 +3931,10 @@ bool Compiler::compileAssignment(const ASTNode &node) {
     }
     if (!compileExpr(*rhs)) return false;
     builder_.push_op(op);
-    if (is_global) {
+    if (is_import) {
+      builder_.store_import(import_idx); /* 恒抛 TypeError */
+      builder_.load_import(import_idx);
+    } else if (is_global) {
       builder_.store_global(lhs->name); /* 保留新值在栈顶（赋值结果） */
     } else if (is_upvalue) {
       builder_.store_upvalue(capture); /* 存回（弹栈） */
@@ -3494,7 +3948,10 @@ bool Compiler::compileAssignment(const ASTNode &node) {
 
   /* 简单赋值：a = expr。赋值表达式值 = rhs。 */
   if (!compileExpr(*rhs)) return false;
-  if (is_global) {
+  if (is_import) {
+    builder_.store_import(import_idx); /* 恒抛 TypeError */
+    builder_.load_import(import_idx);
+  } else if (is_global) {
     builder_.store_global(lhs->name); /* 保留新值在栈顶（赋值结果） */
   } else if (is_upvalue) {
     builder_.store_upvalue(capture); /* 弹栈 */
@@ -3802,11 +4259,20 @@ bool Compiler::resolveLocal(const std::string &name, uint16_t *slot) {
 }
 
 /* 标识符读取（M2.5）：本函数局部 -> LoadVar；外层局部 -> 捕获 LoadUpvalue；
- * 否则 LoadGlobal。返回 true 表示已发射 load 指令。 */
+ * 否则 LoadGlobal。返回 true 表示已发射 load 指令。
+ * M5.2a 模块：模块求值函数内 import 绑定名命中 module_import_map_ 时发射
+ * LoadImport（import 绑定不入局部槽，动态查源模块 env）。 */
 bool Compiler::emitLoadIdentifier(const std::string &name) {
   uint16_t slot = 0;
   if (resolveLocal(name, &slot)) {
     builder_.load_var(slot);
+    return true;
+  }
+
+  /* M5.2a：import 绑定读取（本函数作用域内最先命中，遮蔽外层局部/全局）。 */
+  auto import_it = module_import_map_.find(name);
+  if (import_it != module_import_map_.end()) {
+    builder_.load_import(import_it->second);
     return true;
   }
 

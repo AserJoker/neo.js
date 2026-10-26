@@ -30,11 +30,28 @@
 
 namespace neojs {
 
-/* 编译结果：成功时 fn 为函数字节码；失败时 ok=false + error。 */
+/* 模块导出绑定（编译期登记，M5.2a）：导出名 -> 本地绑定名或 re-export 源。
+ * 与运行时 JSModuleRecord::ExportBinding 同构；编译器不访问 JSContext，
+ * 仅收集信息，由模块加载器回填 record。
+ * from_specifier 非空 = re-export（export {a} from 'm' / export * from 'm'），
+ * 本地导出时为空。 */
+struct ModuleExportEntry {
+  std::string export_name;      /* 导出名（"default" 为默认导出） */
+  std::string local_name;       /* 本地绑定名（本模块 env 中的名字） */
+  std::string from_specifier;   /* re-export 源模块 specifier（空 = 本地导出） */
+  bool export_all = false;      /* export * from 'm'（不含 default） */
+};
+
+/* 编译结果：成功时 fn 为函数字节码；失败时 ok=false + error。
+ * M5.2a 模块编译附加数据（compileModule 产物，供加载器回填模块记录）：
+ *   module_exports —— export 声明编译期收集的导出绑定表；
+ *   module_deps    —— import/export-from 声明的源模块 specifier（去重，源码序）。 */
 struct CompileResult {
   FunctionBytecode fn;
   bool ok = false;
   std::string error;
+  std::vector<ModuleExportEntry> module_exports;
+  std::vector<std::string> module_deps;
 };
 
 /* 作用域帧（M2.5 闭包）：编译期函数嵌套栈。
@@ -80,6 +97,20 @@ class Compiler {
   /* 收集顶层函数声明：返回 Program 中 FunctionDeclaration 节点列表。
    * 供 JS_Eval 在程序执行前实例化函数对象并挂到 global。 */
   std::vector<const ASTNode *> collectTopLevelFunctions(const AST &ast);
+
+  /* 编译模块（M5.2a）：Program 根为 Module 时调用。
+   * 与 compile 差异：
+   *   - import 声明注册进 module_imports_（LoadImport/StoreImport 索引），
+   *     绑定名不入局部槽（读走 LoadImport，写走 StoreImport 报 TypeError）。
+   *   - export 声明编译期登记 module_exports_（运行期无 SetExport 指令，
+   *     导出绑定 = 模块 env 绑定，live binding）。
+   *   - 顶层 FunctionDeclaration/ClassDeclaration 提升：体开头发射
+   *     MakeFunction+StoreVar 序列（源码位置跳过，不挂 global）。
+   *   - 顶层 var/let/const 声明为模块求值函数局部槽，经 StoreVar 的 env
+   *     同步写入模块 env；闭包沿 env 链捕获模块顶层变量。
+   * 模块求值不走 compile 的 completion value 语义：函数末尾统一 undefined。
+   * 失败时返回 ok=false + error。 */
+  CompileResult compileModule(const AST &ast);
 
  private:
   /* 编译表达式：求值后栈顶为结果。 */
@@ -231,6 +262,26 @@ class Compiler {
    * 调用前外层 builder 栈顶须为 this_obj（构造器），返回后已消费；
    * 调用前 current_static_elems_ 须指向本 class 的 static 元素表。 */
   bool emitStaticInit();
+
+  /* M5.2a 模块编译状态（compileModule 期间有效）：
+   *   module_import_map_ —— import 绑定本地名 -> imports 表下标
+   *     （emitLoadIdentifier/compileAssignment 检查：命中 = 导入绑定）。
+   *   module_imports_    —— 导入绑定收集（builder_.add_import 同步去重）。
+   *   module_exports_    —— 导出绑定收集（本地导出 + re-export，源码序）。
+   *   module_deps_       —— 依赖 specifier 收集（去重，源码序）。
+   * 编译完成由 compileModule 写入 CompileResult（加载器回填模块记录）。 */
+  std::unordered_map<std::string, uint16_t> module_import_map_;
+  std::vector<ModuleImportEntry> module_imports_;
+  std::vector<ModuleExportEntry> module_exports_;
+  std::vector<std::string> module_deps_;
+
+  /* M5.2a 模块编译内部：处理单条 import 声明（ImportDeclaration）。
+   * 解析 specifier/各 specifier，注册 module_imports_ + module_deps_。 */
+  bool compileModuleImport(const ASTNode &node);
+  /* M5.2a 模块编译内部：处理单条 export 声明（ExportNamedDeclaration /
+   * ExportDefaultDeclaration / ExportAllDeclaration），登记 module_exports_。
+   * is_decl = true 时返回被包装的声明节点（调用方继续编译其体）。 */
+  bool compileModuleExport(const ASTNode &node, const ASTNode **decl);
 
   void fail(const std::string &msg) { error_ = msg; }
 

@@ -42,6 +42,17 @@ void JSContext::popScope() {
   current_scope_ = parent;
 }
 
+/* 模块表（M5.2a）：specifier -> 模块记录。加载过的模块单例存在。 */
+JSModuleRecord *JSContext::findModule(const std::string &specifier) const {
+  auto it = modules_.find(specifier);
+  return it == modules_.end() ? nullptr : it->second;
+}
+
+void JSContext::addModule(JSModuleRecord *record) {
+  if (record == nullptr) return;
+  modules_[record->specifier()] = record;
+}
+
 void JSContext::freeValue(JSValue *value) {
   /* G2：内部值释放。非宿主句柄持有的内部值直接交还堆。 */
   if (value == nullptr) return;
@@ -192,6 +203,12 @@ void JSContext::markRoots() {
    * 不标记则低阈值 GC 下被误回收（闭包计数器悬垂崩溃）。 */
   for (JSEnvironment *env : vm_envs_) {
     if (env != nullptr) heap_.markRoot(env);
+  }
+
+  /* 模块表（M5.2a，架构 §7 根集「模块表」）：已加载模块的 env（模块
+   * 作用域绑定）+ 求值函数对象经 gcMarkRefs 递归标记，不可回收。 */
+  for (const auto &kv : modules_) {
+    if (kv.second != nullptr) heap_.markRoot(kv.second);
   }
 
   /* 作用域树：从根作用域沿 children 递归覆盖整棵树。所有存活作用域

@@ -448,16 +448,20 @@ M0 骨架 ─▶ M1 前端流水线 ─▶ M2 解释器核心 ─▶ M3 对象�
 
 ---
 
-### M5.2 模块系统（⏳ 未启动，M5.2a–M5.2d）
+### M5.2 模块系统（✅ 进行中：M5.2a 完成，M5.2a–M5.2d）
 
 > 模块语法层（M1.6 ③）已就绪，本节补**运行时执行**语义。模块加载/链接/循环依赖/动态导入各自独立可验收。
 
-**M5.2a 模块加载器与执行（⏳ 未启动）**
+**M5.2a 模块加载器与执行（✅ 完成）**
 
-- 模块加载器：import/export 运行时绑定（语法层已就绪，补执行语义）
-- 模块求值顺序（依赖先求值）、作用域隔离
+- 模块加载器：JS_AddModuleLoader 宿主源码供给回调 + JS_EvalModule 入口
+- 模块记录（JSModuleRecord）：specifier + 模块 env + 导入/导出绑定表 + 状态机
+- import/export 运行时绑定：LoadImport 动态查源模块 env（选项 A，live binding）
+- 模块求值顺序（依赖先求值）、作用域隔离（顶层 var 不污染全局）
+- 默认导出（具名/匿名/表达式 → `__default__` 隐藏绑定）、re-export、`export *`
+- 错误路径：import 绑定赋值 TypeError、无 loader、模块不存在、语法错误、顶层 throw
 
-验收：多模块 import/export 脚本端到端运行
+验收：多模块 import/export 脚本端到端运行（tests/test_module.cc 19 用例全绿）
 
 **M5.2b 循环依赖与链接语义（⏳ 未启动）**
 

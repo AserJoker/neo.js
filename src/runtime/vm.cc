@@ -919,6 +919,75 @@ static ConversionResult op_StoreGlobal(VmFrame &frame) {
   return ok(nullptr);
 }
 
+static ConversionResult op_LoadImport(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* 模块导入绑定读取（M5.2a 选项 A 动态查表）：
+       * LoadImport {import_index} -> 压入源模块导出绑定值。
+       * fn.imports[arg] = {local_name, specifier, export_name}。
+       * 运行期：ctx->findModule(specifier) 查源模块记录 -> findExport
+       * 解出本地绑定名 -> 源模块 env getBinding 取当前值（live binding）。
+       * 源模块未加载（循环依赖尚未完成）或导出不存在 -> undefined。 */
+      if (frame.arg >= fn.imports.size()) {
+        error = fail("Error: LoadImport index out of range"); break;
+      }
+      const ModuleImportEntry &entry = fn.imports[frame.arg];
+      JSModuleRecord *from = frame.ctx->findModule(entry.specifier);
+      if (from == nullptr || from->env() == nullptr) {
+        stack.push_back(frame.ctx->createValue(Kind::Undefined));
+        break;
+      }
+      std::string local_name;
+      JSModuleRecord *from2 = nullptr;
+      if (!from->findExport(entry.export_name, &local_name, &from2)) {
+        stack.push_back(frame.ctx->createValue(Kind::Undefined));
+        break;
+      }
+      /* re-export 转发（export {a} from 'm' 再被 import）：沿 from 链找。 */
+      JSModuleRecord *target = from;
+      std::string bind_name = local_name;
+      while (from2 != nullptr) {
+        target = from2;
+        if (!target->findExport(bind_name, &local_name, &from2)) {
+          from2 = nullptr;
+        } else {
+          bind_name = local_name;
+        }
+      }
+      JSValue *val = target->env()->getBinding(bind_name);
+      stack.push_back(val != nullptr ? val : frame.ctx->createValue(Kind::Undefined));
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_StoreImport(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* 导入绑定赋值（M5.2a）：import 绑定是 immutable binding
+       * （§16.2.3 SetMutableBinding 对 import 绑定抛 TypeError）。
+       * 赋值表达式值 = 新值（保留栈顶，赋值语义）。 */
+      if (frame.arg >= fn.imports.size()) {
+        error = fail("Error: StoreImport index out of range"); break;
+      }
+      if (stack.empty()) {
+        error = fail("Error: stack underflow on StoreImport"); break;
+      }
+      error = fail("TypeError: Assignment to constant variable"); break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
 static ConversionResult op_Pop(VmFrame &frame) {
   const FunctionBytecode &fn = *frame.fn;
   auto &stack = *frame.stack;
@@ -3419,6 +3488,8 @@ const OpHandler kHandlers[] = {
     op_RethrowPending,  /* RethrowPending */
     op_StoreGlobal,  /* StoreGlobal */
     op_CallMethodArray,  /* CallMethodArray */
+    op_LoadImport,  /* LoadImport */
+    op_StoreImport,  /* StoreImport */
 };
 
 }  // namespace

@@ -169,6 +169,10 @@ enum class Opcode : uint8_t {
 
   /* M5.1e-h 成员展开调用（追加末尾，保持 opcode 数值稳定） */
   CallMethodArray, /* [obj, func, args_array] -> 以数组元素为参数调用，this=obj（M5.1e-h 展开成员调用） */
+
+  /* M5.2 模块系统（追加末尾，保持 opcode 数值稳定） */
+  LoadImport,      /* 导入绑定读取：压入源模块导出绑定值（M5.2a 选项 A 动态查表） */
+  StoreImport,     /* 导入绑定赋值：immutable binding -> TypeError（M5.2a） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -224,6 +228,18 @@ struct UpvalueCapture {
   std::string name;
 };
 
+/* 模块导入绑定（M5.2a，选项 A 动态查表）：
+ * local_name  本模块内的绑定名（import {a as b} 的 b）；
+ * specifier   源模块标识（运行期经 ctx->findModule 查记录）；
+ * export_name 源模块导出名（import {a as b} 的 a）。
+ * LoadImport/StoreImport 以本表下标引用。
+ * 运行期：findModule(specifier)->findExport(export_name)->env getBinding。 */
+struct ModuleImportEntry {
+  std::string local_name;
+  std::string specifier;
+  std::string export_name;
+};
+
 /* 函数级字节码（架构 §4.3：每个函数一个 FunctionBytecode）。 */
 struct FunctionBytecode {
   std::vector<Instruction> code;      /* 指令序列 */
@@ -232,6 +248,7 @@ struct FunctionBytecode {
   uint16_t numLocals = 0;             /* 局部变量槽数 */
   std::vector<std::string> locals;    /* 槽号 -> 变量名（M2.5 环境同步用，空串=无名） */
   std::vector<UpvalueCapture> captures; /* 捕获的外层变量列表（M2.5） */
+  std::vector<ModuleImportEntry> imports; /* 模块导入绑定表（M5.2a，LoadImport 索引） */
   std::vector<FunctionBytecode> nested; /* 嵌套函数字节码表（M2.5，MakeFunction 索引） */
   /* class（M5.1d-a）：构造器/方法标志。MakeFunction 实例化时据此设置
    * 构造器（is_constructor -> setConstructor + Strict）与严格模式
@@ -394,6 +411,19 @@ class BytecodeBuilder {
     fn_.captures.push_back(c);
     return static_cast<uint16_t>(fn_.captures.size() - 1);
   }
+
+  /* 模块导入（M5.2a）：注册导入绑定（去重，同 local 名唯一），返回下标。 */
+  uint16_t add_import(ModuleImportEntry entry) {
+    for (size_t i = 0; i < fn_.imports.size(); ++i) {
+      if (fn_.imports[i].local_name == entry.local_name) {
+        return static_cast<uint16_t>(i);
+      }
+    }
+    fn_.imports.push_back(std::move(entry));
+    return static_cast<uint16_t>(fn_.imports.size() - 1);
+  }
+  void load_import(uint16_t idx) { push_op(Opcode::LoadImport, idx); }
+  void store_import(uint16_t idx) { push_op(Opcode::StoreImport, idx); }
 
   /* 注册嵌套函数字节码（M2.5），返回函数表下标（MakeFunction 索引）。 */
   uint16_t add_nested(FunctionBytecode fn) {

@@ -40,6 +40,7 @@
 #include "neojs/runtime/environment.h"
 #include "neojs/runtime/function.h"
 #include "neojs/runtime/handles.h"
+#include "neojs/runtime/module_loader.h"
 #include "neojs/runtime/object.h"
 #include "neojs/runtime/operators.h"
 #include "neojs/runtime/value.h"
@@ -954,6 +955,57 @@ extern "C" JSValue *JS_Eval(JSContext *ctx, const char *source, size_t source_le
       return makeException(ctx, r.error.c_str());
     }
     return makeHandle(c, r.value);
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/* 模块系统（M5.2a）                                                          */
+/* -------------------------------------------------------------------------- */
+
+/* 注册模块源码供给回调（M5.2a）：宿主提供 specifier -> 源码。
+ * opaque 透传给回调（可 NULL）。重复注册覆盖旧回调。 */
+extern "C" void JS_AddModuleLoader(JSContext *ctx, JSModuleLoader loader,
+                                    void *opaque) {
+  if (ctx == nullptr) {
+    std::fputs("neo.js: null JSContext passed to JS_AddModuleLoader\n", stderr);
+    std::abort();
+  }
+  neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+  /* 模块加载器回调签名（neojs::JSModuleLoadFunc）与 C 层 JSModuleLoader
+   * 函数指针类型一致，直接转发。 */
+  c->setModuleLoader(reinterpret_cast<neojs::JSModuleLoadFunc>(loader), opaque);
+}
+
+/* 加载并求值模块（M5.2a）：specifier 经加载器回调取源码，parse(module=true)
+ * + compileModule，依赖先求值，模块顶层代码在模块 env 运行。
+ * 成功返回 NULL（模块无 completion value）；失败返回 kind=JS_EXCEPTION
+ * 的错误值（#4）。重复调用同 specifier 幂等（单例，Evaluated 短路）。 */
+extern "C" JSValue *JS_EvalModule(JSContext *ctx, const char *specifier) {
+  if (ctx == nullptr) {
+    std::fputs("neo.js: null JSContext passed to JS_EvalModule\n", stderr);
+    std::abort();
+  }
+  return guarded_create(ctx, [&]() -> JSValue * {
+    neojs::JSContext *c = reinterpret_cast<neojs::JSContext *>(ctx);
+    neojs::ConversionResult r =
+        neojs::loadAndEvaluateModule(c, specifier ? specifier : "");
+    /* 注意：模块求值成功无 completion value（r.value == nullptr），故不能
+     * 用 ok()（value != nullptr）判断失败；改用 error/thrown 非空判断。 */
+    if (!r.error.empty() || r.thrown != nullptr) {
+      /* 未捕获异常转 Exception 值（#4）。JS throw 值（thrown 非空）优先
+       * 用其字符串表示（ToPrimitive/String 后）；内部错误用 error 串。 */
+      if (r.thrown != nullptr) {
+        neojs::ConversionResult ts =
+            neojs::toString(c, r.thrown); /* toString：Symbol 会失败 */
+        if (ts.ok()) {
+          return makeException(ctx, ts.value->toString().c_str());
+        }
+        return makeException(ctx, ts.error.c_str());
+      }
+      return makeException(ctx, r.error.c_str());
+    }
+    /* 模块求值成功：返回 NULL（模块无 completion value）。 */
+    return nullptr;
   });
 }
 
