@@ -423,6 +423,7 @@ M0 骨架 ─▶ M1 前端流水线 ─▶ M2 解释器核心 ─▶ M3 对象�
 - M5.1e-e 可选链编译（`?.`/`?.[`/`?.()` 短路；`delete a?.b` 短路返回 true；拦截 `a?.b = 1`/`a?.b++`/`new a?.b()` 语法错误）
 - M5.1e-f throw/try/catch/finally 编译 + VM 异常传播（§14.15/§14.16）：`Throw`/`RethrowPending` 指令、`TryEntry` 异常保护表、`ConversionResult.thrown` 携带 JS throw 值、`tryDispatch` 最内层区间匹配、嵌套 try/catch 内再抛/finally 异常覆盖/`catch{}` 无参数；同时完成 VM 主循环重构为全局静态分发表 `kHandlers`（90 opcode 各独立 handler，消除 Debug 模式巨型 switch-case 爆栈）
 - M5.1e-g StoreGlobal 与全局赋值/更新补全（§8.1.1.2.2 PutValue）：新增 `StoreGlobal` 指令（追加末尾保持 opcode 数值稳定），未声明标识符赋值（非严格）写入 globalThis 属性；覆盖简单/链式赋值、复合赋值（`+= -= *= /= %= **= <<= >>=`）、逻辑赋值（`??= ||= &&=`）、前缀/后缀 `++`/`--`、函数内全局赋值、解构赋值、for-in/of 全局 left；`EvalStoreGlobal` 26 用例验证读写一致性
+- M5.1e-h spread 展开调用补全（§13.3.6/§15.7）：新增 `CallMethodArray` 指令（`[obj, func, args_array]` -> 调用结果，this=obj，追加末尾保持 opcode 数值稳定），接通 4 处此前 not implemented——成员展开调用 `obj.m(...a)`（含计算键，此前 CallArray this=undefined 缺陷修复）、私有方法展开 `obj.#m(...a)`（class 内 this 保留）、`super.m(...a)`（this=当前帧 this）、`super(...a)` 展开构造（复用 SuperCallArray）、`new obj.#c(...a)` 私有构造器展开（LoadPrivate + ConstructArray）；`EvalSpreadCall` 8 用例验证 this 绑定与展开求值
 
 **剩余**：
 
