@@ -513,3 +513,49 @@ TEST(Async, AwaitThenable) {
   JS_FreeContext(ctx);
   JS_FreeAllocator(a);
 }
+
+/* await thenable reject：rej 调用 -> 接合 promise reject -> 异常进入 async 帧。 */
+TEST(Async, AwaitThenableReject) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "var thenable = {"
+      "  then(res, rej) { rej('t-reject'); }"
+      "};"
+      "async function f() {"
+      "  try { await thenable; }"
+      "  catch (e) { globalThis.err = e; }"
+      "}"
+      "f();");
+
+  expectGlobalString(ctx, "err", "t-reject");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* await 异步 thenable：then 在微任务里才 settle（先挂起再续延）。 */
+TEST(Async, AwaitAsyncThenable) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "var thenable = {"
+      "  then(res, rej) { Promise.resolve().then(function() { res('async-thenable'); }); }"
+      "};"
+      "async function f() {"
+      "  var v = await thenable;"
+      "  globalThis.result = v;"
+      "}"
+      "f();");
+
+  expectGlobalString(ctx, "result", "async-thenable");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}

@@ -3626,7 +3626,8 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
                              JSValue *thisVal, JSValue *const *args,
                              size_t argc, JSEnvironment *env,
                              JSFunction *self, size_t start_pc,
-                             std::vector<JSValue *> *restore_stack) {
+                             std::vector<JSValue *> *restore_stack,
+                             JSValue *initial_thrown) {
   /* 操作数栈：栈底为局部变量槽（numLocals 个），之上为表达式求值栈。
    * M5.4 async 恢复：restore_stack 非空时直接采用挂起帧的栈副本
    * （含局部槽 + 表达式中间值），跳过局部槽初始化。 */
@@ -3702,6 +3703,24 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
   f.stack = &stack;
   f.pc = &pc;
   f.frame_this = &frame_this;
+  /* M5.4 await reject 续延：启动即注入 JS 异常（rejection 值作为 thrown），
+   * 从挂起点后第一条指令进入异常派发——tryDispatch 命中 try/catch 则恢复，
+   * 否则向上传播（resumeAsyncFrame 据此 reject 外层 promise）。 */
+  if (initial_thrown != nullptr) {
+    ConversionResult thrown_err;
+    thrown_err.thrown = initial_thrown;
+    if (tryDispatch(f.ctx, *f.fn, *f.pc, *f.stack, thrown_err, f.pc,
+                    &f.pending, &f.has_pending, &f.pending_handle, f.env)) {
+      /* 命中 try/catch：恢复栈+跳 handler，继续主循环执行 catch 体。 */
+    } else {
+      /* 未命中：释放可能的 pending 句柄，向上传播。 */
+      if (f.pending_handle != 0) {
+        f.ctx->handles().free(f.pending_handle);
+        f.pending_handle = 0;
+      }
+      return thrown_err;
+    }
+  }
   while (*f.pc < f.code().size()) {
     const Instruction &instr = f.code()[*f.pc];
     f.arg = instr.arg;

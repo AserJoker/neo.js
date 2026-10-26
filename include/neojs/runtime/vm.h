@@ -39,6 +39,9 @@ class JSFunction;
  *   start_pc   起始指令位置（默认 0；M5.4 async 恢复用：从挂起点继续）。
  *   restore_stack 恢复用操作数栈（默认空；M5.4 async 恢复时传入挂起帧的
  *               栈副本，替代局部槽初始化）。
+ *   initial_thrown 启动即注入的 JS 异常值（默认 nullptr；M5.4 await reject
+ *               续延用：rejection 值作为异常从挂起点后第一条指令进入，经
+ *               tryDispatch 派发到 try/catch 或向上传播）。
  * 返回 ConversionResult：成功 value 为结果值，失败 value=nullptr + error；
  * 挂起（M5.4 await）时 suspended=true（value/error 无效）。 */
 ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
@@ -46,7 +49,8 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
                              size_t argc, JSEnvironment *env = nullptr,
                              JSFunction *self = nullptr,
                              size_t start_pc = 0,
-                             std::vector<JSValue *> *restore_stack = nullptr);
+                             std::vector<JSValue *> *restore_stack = nullptr,
+                             JSValue *initial_thrown = nullptr);
 
 }  // namespace neojs
 

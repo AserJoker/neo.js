@@ -164,10 +164,14 @@ ConversionResult resumeAsyncFrame(JSContext *ctx, AsyncFrame *frame,
   /* 恢复值入现场：
    *   - AwaitResolve：value 压栈（await 表达式的结果）。
    *   - AwaitReject：rejection 值作为异常进入（throw 语义），经异常表/
-   *     跨帧传播（try/catch 可捕获）。 */
+   *     跨帧传播（try/catch 可捕获）——通过 runBytecode 的 initial_thrown
+   *     参数注入，从挂起点后第一条指令起派发异常。 */
   std::vector<JSValue *> restore_stack = std::move(frame->stack);
+  JSValue *thrown = nullptr;
   if (!is_reject) {
     restore_stack.push_back(result);
+  } else {
+    thrown = result;
   }
 
   /* 外层 promise（settle 用）：挂起时已存于帧内。 */
@@ -179,7 +183,7 @@ ConversionResult resumeAsyncFrame(JSContext *ctx, AsyncFrame *frame,
    * 执行期间受 vm_stacks_ 根集保护：LoadThis 压栈后受栈根集保护）。 */
   ConversionResult r = runBytecode(
       ctx, frame->fn->bytecode(), frame->frame_this, nullptr, 0, frame->env,
-      frame->fn, frame->pc, &restore_stack);
+      frame->fn, frame->pc, &restore_stack, thrown);
 
   if (r.suspended) {
     /* 又挂起：新现场已存新 AsyncFrame 并入队新 job，外层 promise 未 settle
