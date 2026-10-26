@@ -32,6 +32,7 @@
 #include "neojs/runtime/builtins.h"
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/function.h"
+#include "neojs/runtime/iterator.h"
 #include "neojs/runtime/object.h"
 #include "neojs/runtime/value.h"
 
@@ -446,6 +447,412 @@ ConversionResult promiseRejectStatic(JSContext *ctx, JSValue *, JSValue *const *
   return ok(p);
 }
 
+/* -------------------------------------------------------------------------- */
+/* M5.3b 组合方法辅助                                                          */
+/* -------------------------------------------------------------------------- */
+
+/* PromiseResolve（§27.2.5.5 抽象运算的简化版）：x 为 Promise 原样返回；
+ * 否则创建派生 promise + 调用 resolve 闭包（Promise.resolve 语义）。
+ * 组合方法（all/race/any）的每个元素都经此转成 promise。 */
+ConversionResult promiseResolveValue(JSContext *ctx, JSValue *x) {
+  if (x != nullptr && x->isObject() && x->object()->isPromise()) {
+    return ok(x);
+  }
+  JSValue *resolve = nullptr, *reject = nullptr;
+  JSValue *p = createDerivedPromise(ctx, &resolve, &reject);
+  ctx->heap().pin(p); /* 分配保护：决议前防误回收 */
+  JSValue *v = x != nullptr ? x : ctx->createValue(Kind::Undefined);
+  JSValue *argv[1] = {v};
+  ConversionResult r = call(ctx, resolve, ctx->createValue(Kind::Undefined), argv, 1);
+  ctx->heap().unpin(p);
+  if (!r.ok()) return r;
+  return ok(p);
+}
+
+/* 创建组合方法的状态对象：属性承载可变共享状态（与 __reactions__ 同模式）。
+ *   resolve/reject  结果 promise 的决议闭包
+ *   remaining       剩余元素计数（Number）
+ *   result          结果数组（all/allSettled 收集）
+ *   errors          错误数组（any 收集 AggregateError）
+ *   settled         是否已 settle（any/race 短路）
+ * 状态对象由元素回调（Bound 闭包）捕获，经属性读写共享。 */
+JSValue *makeCombinatorState(JSContext *ctx, JSValue *resolve, JSValue *reject) {
+  JSValue *state = ctx->createObject(nullptr);
+  ctx->heap().pin(state); /* 分配保护：属性挂载前防误回收 */
+  state->object()->setProperty("__resolve__", resolve);
+  state->object()->setProperty("__reject__", reject);
+  state->object()->setProperty("__remaining__", ctx->createValue(0.0));
+  state->object()->setProperty("__result__", ctx->createArray(0));
+  state->object()->setProperty("__errors__", ctx->createArray(0));
+  state->object()->setProperty("__settled__", ctx->createValue(false));
+  ctx->heap().unpin(state);
+  return state;
+}
+
+/* 创建元素回调闭包：Bound(ElementRunner, [state, index])。
+ * ElementRunner 内部函数按组合类型（PromiseInternal 枚举）分派：
+ *   AllElement / AllSettledElement / AnyElement / RaceElement。 */
+JSValue *makeElementClosure(JSContext *ctx, PromiseInternal kind, JSValue *state,
+                            size_t index) {
+  std::vector<JSValue *> data;
+  data.push_back(state);
+  data.push_back(ctx->createValue(static_cast<double>(index)));
+  return makeBound(ctx, getPromiseInternal(ctx, kind), std::move(data));
+}
+
+/* 状态对象属性读取辅助。 */
+JSValue *stateProp(JSObject *s, const char *name) { return s->getProperty(name); }
+
+/* 状态对象属性写入辅助。 */
+void setStateProp(JSObject *s, const char *name, JSValue *v) {
+  s->setProperty(name, v);
+}
+
+/* 创建 AggregateError（any 全 reject 时 reject 之，§27.2.5.1）：
+ * 用 Error 构造器创建（name=AggregateError），errors 属性指向 errors 数组。
+ * 引擎无独立 AggregateError 构造器（M5.6+ 补齐），此处用 Error 近似。 */
+ConversionResult makeAggregateError(JSContext *ctx, JSValue *errors) {
+  JSValue *global = ctx->globalObject();
+  JSValue *error_ctor = global->object()->getProperty("Error");
+  if (error_ctor == nullptr || !isCallable(error_ctor)) {
+    JSValue *err = ctx->createValue(Kind::Exception);
+    err->setErrorInfo("Error: AggregateError construction failed");
+    return fail(err->errorInfo());
+  }
+  /* message 参数传 undefined（errorConstructor 对 undefined 不调 toString，
+   * 数组会 ToPrimitive 失败），errors 单独设属性（§27.2.5.1 步骤 10-12）。 */
+  JSValue *msg = ctx->createValue(Kind::Undefined);
+  JSValue *argv[1] = {msg};
+  ConversionResult r = construct(ctx, error_ctor, argv, 1);
+  if (!r.ok()) return r;
+  if (r.value != nullptr) {
+    ctx->heap().pin(r.value);
+    r.value->object()->setProperty("name", ctx->createValue(std::string("AggregateError")));
+    r.value->object()->setProperty("errors", errors);
+    ctx->heap().unpin(r.value);
+  }
+  return r;
+}
+
+/* -------------------------------------------------------------------------- */
+/* M5.3b：组合方法静态入口                                                     */
+/* -------------------------------------------------------------------------- */
+
+/* Promise.all（§27.2.5.3）：遍历 iterable，每元素 promiseResolve + then
+ * 收集到 result[index]；全部完成后 resolve(result)。
+ * 元素回调 = AllElement(state, index)：result[index]=value，remaining--，
+ * remaining==0 时 resolve(result)。任一元素 reject -> reject(reason)（短路）。 */
+ConversionResult promiseAllStatic(JSContext *ctx, JSValue *, JSValue *const *args,
+                                  size_t argc) {
+  JSValue *iterable = argc > 0 ? args[0] : ctx->createValue(Kind::Undefined);
+  JSValue *resolve = nullptr, *reject = nullptr;
+  JSValue *p = createDerivedPromise(ctx, &resolve, &reject);
+  ctx->heap().pin(p); /* 分配保护：遍历期间防误回收 */
+
+  ConversionResult it = getIterator(ctx, iterable);
+  if (!it.ok()) {
+    ctx->heap().unpin(p);
+    return fail(it.error);
+  }
+
+  JSValue *state = makeCombinatorState(ctx, resolve, reject);
+  ctx->heap().pin(state); /* 分配保护：遍历期间防误回收 */
+  size_t index = 0;
+  for (;;) {
+    ConversionResult step = iteratorStep(ctx, it.value);
+    if (step.value == nullptr && !step.error.empty()) {
+      ctx->heap().unpin(state);
+      ctx->heap().unpin(p);
+      return fail(step.error);
+    }
+    if (step.value == nullptr) break; /* 迭代结束 */
+    ConversionResult v = iteratorValue(ctx, step.value);
+    if (!v.ok()) {
+      ctx->heap().unpin(state);
+      ctx->heap().unpin(p);
+      return fail(v.error);
+    }
+    ConversionResult pv = promiseResolveValue(ctx, v.value);
+    if (!pv.ok()) {
+      ctx->heap().unpin(state);
+      ctx->heap().unpin(p);
+      return fail(pv.error);
+    }
+    /* 更新 remaining 计数（初始 0，每元素 +1）。 */
+    JSValue *rem = stateProp(state->object(), "__remaining__");
+    double n = (rem != nullptr && rem->isNumber()) ? rem->toNumber() : 0.0;
+    setStateProp(state->object(), "__remaining__",
+                 ctx->createValue(n + 1.0));
+    /* 元素 promise.then(AllElement(state, index), reject)。 */
+    JSValue *on_fulfilled = makeElementClosure(ctx, PromiseInternal::AllElement,
+                                               state, index);
+    JSValue *then = pv.value->object()->getProperty("then");
+    if (then == nullptr || !isCallable(then)) {
+      ctx->heap().unpin(state);
+      ctx->heap().unpin(p);
+      return fail("TypeError: element is not a promise");
+    }
+    JSValue *argv[2] = {on_fulfilled, reject};
+    ConversionResult r = call(ctx, then, pv.value, argv, 2);
+    if (!r.ok()) {
+      ctx->heap().unpin(state);
+      ctx->heap().unpin(p);
+      return r;
+    }
+    ++index;
+  }
+
+  /* 空 iterable：立即 resolve 空数组。 */
+  JSValue *rem = stateProp(state->object(), "__remaining__");
+  double n = (rem != nullptr && rem->isNumber()) ? rem->toNumber() : 0.0;
+  if (n == 0.0) {
+    JSValue *result = stateProp(state->object(), "__result__");
+    JSValue *argv[1] = {result};
+    ConversionResult r =
+        call(ctx, resolve, ctx->createValue(Kind::Undefined), argv, 1);
+    ctx->heap().unpin(state);
+    ctx->heap().unpin(p);
+    if (!r.ok()) return r;
+    return ok(p);
+  }
+
+  ctx->heap().unpin(state);
+  ctx->heap().unpin(p);
+  return ok(p);
+}
+
+/* Promise.race（§27.2.5.6）：任一元素 settle 即 settle（先到先得）。
+ * 元素回调 = RaceElement(state, index)：value 时 resolve(value)，reason 时
+ * reject(reason)，settled 短路防重复。 */
+ConversionResult promiseRaceStatic(JSContext *ctx, JSValue *, JSValue *const *args,
+                                   size_t argc) {
+  JSValue *iterable = argc > 0 ? args[0] : ctx->createValue(Kind::Undefined);
+  JSValue *resolve = nullptr, *reject = nullptr;
+  JSValue *p = createDerivedPromise(ctx, &resolve, &reject);
+  ctx->heap().pin(p); /* 分配保护：遍历期间防误回收 */
+
+  ConversionResult it = getIterator(ctx, iterable);
+  if (!it.ok()) {
+    ctx->heap().unpin(p);
+    return fail(it.error);
+  }
+
+  JSValue *state = makeCombinatorState(ctx, resolve, reject);
+  ctx->heap().pin(state); /* 分配保护：遍历期间防误回收 */
+  for (;;) {
+    ConversionResult step = iteratorStep(ctx, it.value);
+    if (step.value == nullptr && !step.error.empty()) {
+      ctx->heap().unpin(state);
+      ctx->heap().unpin(p);
+      return fail(step.error);
+    }
+    if (step.value == nullptr) break;
+    ConversionResult v = iteratorValue(ctx, step.value);
+    if (!v.ok()) {
+      ctx->heap().unpin(state);
+      ctx->heap().unpin(p);
+      return fail(v.error);
+    }
+    ConversionResult pv = promiseResolveValue(ctx, v.value);
+    if (!pv.ok()) {
+      ctx->heap().unpin(state);
+      ctx->heap().unpin(p);
+      return fail(pv.error);
+    }
+    JSValue *on_fulfilled = makeElementClosure(ctx, PromiseInternal::RaceElement,
+                                               state, 0);
+    JSValue *on_rejected = makeElementClosure(ctx, PromiseInternal::RaceElement,
+                                              state, 0x80000000u);
+    JSValue *then = pv.value->object()->getProperty("then");
+    if (then == nullptr || !isCallable(then)) {
+      ctx->heap().unpin(state);
+      ctx->heap().unpin(p);
+      return fail("TypeError: element is not a promise");
+    }
+    JSValue *argv[2] = {on_fulfilled, on_rejected};
+    ConversionResult r = call(ctx, then, pv.value, argv, 2);
+    if (!r.ok()) {
+      ctx->heap().unpin(state);
+      ctx->heap().unpin(p);
+      return r;
+    }
+  }
+
+  ctx->heap().unpin(state);
+  ctx->heap().unpin(p);
+  return ok(p);
+}
+
+/* Promise.allSettled（§27.2.5.2）：每元素 settle 时记录
+ * {status:'fulfilled', value} 或 {status:'rejected', reason}；全部完成
+ * resolve(记录数组)。不短路（reject 也收集）。
+ * 元素回调 = AllSettledElement(state, index)，参数为 (value) 或 (reason)。 */
+ConversionResult promiseAllSettledStatic(JSContext *ctx, JSValue *,
+                                         JSValue *const *args, size_t argc) {
+  JSValue *iterable = argc > 0 ? args[0] : ctx->createValue(Kind::Undefined);
+  JSValue *resolve = nullptr, *reject = nullptr;
+  JSValue *p = createDerivedPromise(ctx, &resolve, &reject);
+  ctx->heap().pin(p); /* 分配保护：遍历期间防误回收 */
+
+  ConversionResult it = getIterator(ctx, iterable);
+  if (!it.ok()) {
+    ctx->heap().unpin(p);
+    return fail(it.error);
+  }
+
+  JSValue *state = makeCombinatorState(ctx, resolve, reject);
+  ctx->heap().pin(state); /* 分配保护：遍历期间防误回收 */
+  size_t index = 0;
+  for (;;) {
+    ConversionResult step = iteratorStep(ctx, it.value);
+    if (step.value == nullptr && !step.error.empty()) {
+      ctx->heap().unpin(state);
+      ctx->heap().unpin(p);
+      return fail(step.error);
+    }
+    if (step.value == nullptr) break;
+    ConversionResult v = iteratorValue(ctx, step.value);
+    if (!v.ok()) {
+      ctx->heap().unpin(state);
+      ctx->heap().unpin(p);
+      return fail(v.error);
+    }
+    ConversionResult pv = promiseResolveValue(ctx, v.value);
+    if (!pv.ok()) {
+      ctx->heap().unpin(state);
+      ctx->heap().unpin(p);
+      return fail(pv.error);
+    }
+    JSValue *rem = stateProp(state->object(), "__remaining__");
+    double n = (rem != nullptr && rem->isNumber()) ? rem->toNumber() : 0.0;
+    setStateProp(state->object(), "__remaining__", ctx->createValue(n + 1.0));
+    JSValue *on_fulfilled = makeElementClosure(
+        ctx, PromiseInternal::AllSettledElement, state, index);
+    /* reject 闭包：index 高位标记（fulfill=index / reject=index|0x80000000）。 */
+    JSValue *on_rejected = makeElementClosure(
+        ctx, PromiseInternal::AllSettledElement, state,
+        index | 0x80000000u);
+    JSValue *then = pv.value->object()->getProperty("then");
+    if (then == nullptr || !isCallable(then)) {
+      ctx->heap().unpin(state);
+      ctx->heap().unpin(p);
+      return fail("TypeError: element is not a promise");
+    }
+    JSValue *argv[2] = {on_fulfilled, on_rejected};
+    ConversionResult r = call(ctx, then, pv.value, argv, 2);
+    if (!r.ok()) {
+      ctx->heap().unpin(state);
+      ctx->heap().unpin(p);
+      return r;
+    }
+    ++index;
+  }
+
+  JSValue *rem = stateProp(state->object(), "__remaining__");
+  double n = (rem != nullptr && rem->isNumber()) ? rem->toNumber() : 0.0;
+  if (n == 0.0) {
+    JSValue *result = stateProp(state->object(), "__result__");
+    JSValue *argv[1] = {result};
+    ConversionResult r =
+        call(ctx, resolve, ctx->createValue(Kind::Undefined), argv, 1);
+    ctx->heap().unpin(state);
+    ctx->heap().unpin(p);
+    if (!r.ok()) return r;
+    return ok(p);
+  }
+
+  ctx->heap().unpin(state);
+  ctx->heap().unpin(p);
+  return ok(p);
+}
+
+/* Promise.any（§27.2.5.1）：任一元素 fulfill -> resolve(value)；全部
+ * reject -> reject(AggregateError(errors))。
+ * 元素回调 = AnyElement(state, index)：fulfill 时 resolve(value)（短路）；
+ * reject 时 errors.push(reason)，remaining--，全 reject 后 reject AggregateError。 */
+ConversionResult promiseAnyStatic(JSContext *ctx, JSValue *, JSValue *const *args,
+                                  size_t argc) {
+  JSValue *iterable = argc > 0 ? args[0] : ctx->createValue(Kind::Undefined);
+  JSValue *resolve = nullptr, *reject = nullptr;
+  JSValue *p = createDerivedPromise(ctx, &resolve, &reject);
+  ctx->heap().pin(p); /* 分配保护：遍历期间防误回收 */
+
+  ConversionResult it = getIterator(ctx, iterable);
+  if (!it.ok()) {
+    ctx->heap().unpin(p);
+    return fail(it.error);
+  }
+
+  JSValue *state = makeCombinatorState(ctx, resolve, reject);
+  ctx->heap().pin(state); /* 分配保护：遍历期间防误回收 */
+  size_t index = 0;
+  for (;;) {
+    ConversionResult step = iteratorStep(ctx, it.value);
+    if (step.value == nullptr && !step.error.empty()) {
+      ctx->heap().unpin(state);
+      ctx->heap().unpin(p);
+      return fail(step.error);
+    }
+    if (step.value == nullptr) break;
+    ConversionResult v = iteratorValue(ctx, step.value);
+    if (!v.ok()) {
+      ctx->heap().unpin(state);
+      ctx->heap().unpin(p);
+      return fail(v.error);
+    }
+    ConversionResult pv = promiseResolveValue(ctx, v.value);
+    if (!pv.ok()) {
+      ctx->heap().unpin(state);
+      ctx->heap().unpin(p);
+      return fail(pv.error);
+    }
+    JSValue *rem = stateProp(state->object(), "__remaining__");
+    double n = (rem != nullptr && rem->isNumber()) ? rem->toNumber() : 0.0;
+    setStateProp(state->object(), "__remaining__", ctx->createValue(n + 1.0));
+    JSValue *on_fulfilled = makeElementClosure(ctx, PromiseInternal::AnyElement,
+                                               state, index);
+    JSValue *on_rejected = makeElementClosure(ctx, PromiseInternal::AnyElement,
+                                              state, index | 0x80000000u);
+    JSValue *then = pv.value->object()->getProperty("then");
+    if (then == nullptr || !isCallable(then)) {
+      ctx->heap().unpin(state);
+      ctx->heap().unpin(p);
+      return fail("TypeError: element is not a promise");
+    }
+    JSValue *argv[2] = {on_fulfilled, on_rejected};
+    ConversionResult r = call(ctx, then, pv.value, argv, 2);
+    if (!r.ok()) {
+      ctx->heap().unpin(state);
+      ctx->heap().unpin(p);
+      return r;
+    }
+    ++index;
+  }
+
+  /* 空 iterable：reject AggregateError([])。 */
+  JSValue *rem = stateProp(state->object(), "__remaining__");
+  double n = (rem != nullptr && rem->isNumber()) ? rem->toNumber() : 0.0;
+  if (n == 0.0) {
+    ConversionResult agg = makeAggregateError(ctx, ctx->createArray(0));
+    if (!agg.ok()) {
+      ctx->heap().unpin(state);
+      ctx->heap().unpin(p);
+      return agg;
+    }
+    JSValue *argv[1] = {agg.value};
+    ConversionResult r =
+        call(ctx, reject, ctx->createValue(Kind::Undefined), argv, 1);
+    ctx->heap().unpin(state);
+    ctx->heap().unpin(p);
+    if (!r.ok()) return r;
+    return ok(p);
+  }
+
+  ctx->heap().unpin(state);
+  ctx->heap().unpin(p);
+  return ok(p);
+}
+
 /* 内部函数：promiseResolveInternal(promise, resolution)（§27.2.1.4）。
  * Bound 调用时捕获的 promise 作为首参。 */
 ConversionResult promiseResolveInternal(JSContext *ctx, JSValue *,
@@ -597,6 +1004,162 @@ ConversionResult promiseFinallyCatch(JSContext *ctx, JSValue *,
   return ok(ctx->createValue(Kind::Undefined));
 }
 
+/* -------------------------------------------------------------------------- */
+/* M5.3b：组合方法元素回调                                                    */
+/* -------------------------------------------------------------------------- */
+
+/* Promise.all 元素回调（§27.2.5.3 的 resolve element 函数）：
+ * Bound 捕获 [state, index]，调用时参数为 (value)。
+ * 流程：result[index]=value；remaining--；remaining==0 时 resolve(result)。
+ * 返回 undefined。 */
+ConversionResult promiseAllElement(JSContext *ctx, JSValue *,
+                                   JSValue *const *args, size_t argc) {
+  JSValue *state = argc > 0 ? args[0] : nullptr;
+  JSValue *index_v = argc > 1 ? args[1] : nullptr;
+  JSValue *value = argc > 2 ? args[2] : ctx->createValue(Kind::Undefined);
+  if (state == nullptr || !state->isObject() || index_v == nullptr ||
+      !index_v->isNumber()) {
+    return fail("TypeError: invalid Promise.all element state");
+  }
+  JSObject *s = state->object();
+  size_t index = static_cast<size_t>(index_v->toNumber());
+  JSValue *result = stateProp(s, "__result__");
+  if (result != nullptr && result->isObject() && result->object()->isArray()) {
+    result->object()->setElement(index, value); /* 收集到结果数组 */
+  }
+  JSValue *rem = stateProp(s, "__remaining__");
+  double n = (rem != nullptr && rem->isNumber()) ? rem->toNumber() : 0.0;
+  double dec = n - 1.0;
+  setStateProp(s, "__remaining__", ctx->createValue(dec));
+  if (dec == 0.0) {
+    /* 全部完成：resolve(result)。 */
+    JSValue *resolve = stateProp(s, "__resolve__");
+    JSValue *argv[1] = {result};
+    ConversionResult r =
+        call(ctx, resolve, ctx->createValue(Kind::Undefined), argv, 1);
+    return r;
+  }
+  return ok(ctx->createValue(Kind::Undefined));
+}
+
+/* Promise.allSettled 元素回调（§27.2.5.2）：
+ * Bound 捕获 [state, index]，调用时参数为 (value)（fulfilled）或
+ * (reason)（rejected）。**不短路**：reject 也收集。
+ * 流程：按当前状态（rejected？）写 result[index] 记录对象，remaining--，
+ * remaining==0 时 resolve(result)。 */
+ConversionResult promiseAllSettledElement(JSContext *ctx, JSValue *,
+                                          JSValue *const *args, size_t argc) {
+  JSValue *state = argc > 0 ? args[0] : nullptr;
+  JSValue *index_v = argc > 1 ? args[1] : nullptr;
+  JSValue *val = argc > 2 ? args[2] : ctx->createValue(Kind::Undefined);
+  if (state == nullptr || !state->isObject() || index_v == nullptr ||
+      !index_v->isNumber()) {
+    return fail("TypeError: invalid Promise.allSettled element state");
+  }
+  JSObject *s = state->object();
+  size_t index = static_cast<size_t>(index_v->toNumber());
+  /* 区分 fulfill/reject：Bound 的 index 用 0/1 特判？不——用捕获的
+   * [state, index] 不足以区分。规范用两个不同闭包（resolveElement /
+   * rejectElement）。这里用 index 高位标记：allSettled 的 fulfill 闭包
+   * index = index，reject 闭包 index = index | 0x80000000。 */
+  bool is_reject = (index & 0x80000000u) != 0;
+  size_t real_index = index & 0x7FFFFFFFu;
+  /* 记录对象 {status, value/reason}。 */
+  JSValue *rec = ctx->createObject(nullptr);
+  ctx->heap().pin(rec); /* 分配保护：属性挂载前防误回收 */
+  rec->object()->setProperty(
+      "status", ctx->createValue(std::string(is_reject ? "rejected" : "fulfilled")));
+  rec->object()->setProperty(is_reject ? "reason" : "value", val);
+  ctx->heap().unpin(rec);
+  JSValue *result = stateProp(s, "__result__");
+  if (result != nullptr && result->isObject() && result->object()->isArray()) {
+    result->object()->setElement(real_index, rec);
+  }
+  JSValue *rem = stateProp(s, "__remaining__");
+  double n = (rem != nullptr && rem->isNumber()) ? rem->toNumber() : 0.0;
+  double dec = n - 1.0;
+  setStateProp(s, "__remaining__", ctx->createValue(dec));
+  if (dec == 0.0) {
+    JSValue *resolve = stateProp(s, "__resolve__");
+    JSValue *argv[1] = {result};
+    ConversionResult r =
+        call(ctx, resolve, ctx->createValue(Kind::Undefined), argv, 1);
+    return r;
+  }
+  return ok(ctx->createValue(Kind::Undefined));
+}
+
+/* Promise.any 元素回调（§27.2.5.1）：
+ * Bound 捕获 [state, index]，调用时参数为 (value)（fulfilled）或
+ * (reason)（rejected）。
+ * 流程：fulfilled -> resolve(value)（短路）；rejected -> errors.push(reason)，
+ * remaining--，remaining==0 时 reject(AggregateError(errors))。 */
+ConversionResult promiseAnyElement(JSContext *ctx, JSValue *,
+                                   JSValue *const *args, size_t argc) {
+  JSValue *state = argc > 0 ? args[0] : nullptr;
+  JSValue *index_v = argc > 1 ? args[1] : nullptr;
+  JSValue *val = argc > 2 ? args[2] : ctx->createValue(Kind::Undefined);
+  if (state == nullptr || !state->isObject() || index_v == nullptr ||
+      !index_v->isNumber()) {
+    return fail("TypeError: invalid Promise.any element state");
+  }
+  JSObject *s = state->object();
+  /* 区分 fulfill/reject：同 allSettled，用 index 高位标记（fulfill=0 / reject=1）。 */
+  bool is_reject = (static_cast<size_t>(index_v->toNumber()) & 0x80000000u) != 0;
+  if (!is_reject) {
+    /* fulfilled：resolve(value) 短路。 */
+    JSValue *resolve = stateProp(s, "__resolve__");
+    JSValue *argv[1] = {val};
+    ConversionResult r =
+        call(ctx, resolve, ctx->createValue(Kind::Undefined), argv, 1);
+    return r;
+  }
+  /* rejected：收集错误。 */
+  JSValue *errors = stateProp(s, "__errors__");
+  if (errors != nullptr && errors->isObject() && errors->object()->isArray()) {
+    errors->object()->setElement(errors->object()->length(), val);
+  }
+  JSValue *rem = stateProp(s, "__remaining__");
+  double n = (rem != nullptr && rem->isNumber()) ? rem->toNumber() : 0.0;
+  double dec = n - 1.0;
+  setStateProp(s, "__remaining__", ctx->createValue(dec));
+  if (dec == 0.0) {
+    /* 全部 reject：reject(AggregateError(errors))。 */
+    ConversionResult agg = makeAggregateError(ctx, errors);
+    if (!agg.ok()) return agg;
+    JSValue *reject = stateProp(s, "__reject__");
+    JSValue *argv[1] = {agg.value};
+    ConversionResult r =
+        call(ctx, reject, ctx->createValue(Kind::Undefined), argv, 1);
+    return r;
+  }
+  return ok(ctx->createValue(Kind::Undefined));
+}
+
+/* Promise.race 元素回调（§27.2.5.6）：任一 settle 即 settle（先到先得）。
+ * Bound 捕获 [state, index]，调用时参数为 (value)（fulfilled）或
+ * (reason)（rejected）。settled 标志防重复 settle（race 语义）。 */
+ConversionResult promiseRaceElement(JSContext *ctx, JSValue *,
+                                    JSValue *const *args, size_t argc) {
+  JSValue *state = argc > 0 ? args[0] : nullptr;
+  JSValue *index_v = argc > 1 ? args[1] : nullptr;
+  JSValue *val = argc > 2 ? args[2] : ctx->createValue(Kind::Undefined);
+  if (state == nullptr || !state->isObject() || index_v == nullptr ||
+      !index_v->isNumber()) {
+    return fail("TypeError: invalid Promise.race element state");
+  }
+  JSObject *s = state->object();
+  JSValue *settled = stateProp(s, "__settled__");
+  if (settled != nullptr && settled->toBoolean()) {
+    return ok(ctx->createValue(Kind::Undefined)); /* 已 settle，忽略后续 */
+  }
+  setStateProp(s, "__settled__", ctx->createValue(true));
+  bool is_reject = (static_cast<size_t>(index_v->toNumber()) & 0x80000000u) != 0;
+  JSValue *fn = is_reject ? stateProp(s, "__reject__") : stateProp(s, "__resolve__");
+  JSValue *argv[1] = {val};
+  return call(ctx, fn, ctx->createValue(Kind::Undefined), argv, 1);
+}
+
 /* 内部函数分发表（下标 = PromiseInternal 枚举值，须严格对应）。 */
 JSBuiltinFn kPromiseInternalFns[] = {
     promiseResolveInternal,   /* Resolve */
@@ -607,6 +1170,10 @@ JSBuiltinFn kPromiseInternalFns[] = {
     promiseThrow,             /* Throw */
     promiseFinallyThen,       /* FinallyThen */
     promiseFinallyCatch,      /* FinallyCatch */
+    promiseAllElement,        /* AllElement */
+    promiseAllSettledElement, /* AllSettledElement */
+    promiseAnyElement,        /* AnyElement */
+    promiseRaceElement,       /* RaceElement */
 };
 static_assert(sizeof(kPromiseInternalFns) / sizeof(kPromiseInternalFns[0]) ==
                   static_cast<size_t>(PromiseInternal::Count),
@@ -672,12 +1239,20 @@ void installPromiseBuiltins(JSContext *ctx) {
                makeBuiltin(ctx, promiseFinally, ThisMode::Strict));
   ctx->heap().unpin(pp); /* 已挂 ctor->prototype 入根（M3.3） */
 
-  /* 静态方法（§27.2.5）：resolve/reject。 */
+  /* 静态方法（§27.2.5）：resolve/reject/all/race/allSettled/any。 */
   JSObject *pf = promise->object();
   defineMethod(pf, "resolve",
                makeBuiltin(ctx, promiseResolveStatic, ThisMode::Strict));
   defineMethod(pf, "reject",
                makeBuiltin(ctx, promiseRejectStatic, ThisMode::Strict));
+  defineMethod(pf, "all",
+               makeBuiltin(ctx, promiseAllStatic, ThisMode::Strict));
+  defineMethod(pf, "race",
+               makeBuiltin(ctx, promiseRaceStatic, ThisMode::Strict));
+  defineMethod(pf, "allSettled",
+               makeBuiltin(ctx, promiseAllSettledStatic, ThisMode::Strict));
+  defineMethod(pf, "any",
+               makeBuiltin(ctx, promiseAnyStatic, ThisMode::Strict));
 }
 
 }  // namespace neojs

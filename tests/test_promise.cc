@@ -1,8 +1,9 @@
 /*
- * M5.3a Promise 核心端到端测试。
+ * M5.3 Promise 核心 + 静态/组合方法端到端测试。
  *
  * 覆盖：构造器/executor、then/catch/finally 链、resolve/reject 静态方法、
- * 微任务队列（JS_RunJobs 驱动）、then 链式返回、handler 抛错传播。
+ * 微任务队列（JS_RunJobs 驱动）、then 链式返回、handler 抛错传播、
+ * all/race/allSettled/any 组合方法。
  *
  * 宿主模式：JS_Eval 求值（Promise 回调是 JS 函数），随后 JS_RunJobs
  * 驱动微任务执行，再读取全局变量验证结果。
@@ -404,6 +405,177 @@ TEST(Promise, MicrotaskAfterSync) {
       "Promise.resolve().then(() => { globalThis.order = order; });");
 
   expectGlobalString(ctx, "order", "syncmicro");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* -------------------------------------------------------------------------- */
+/* M5.3b：all                                                                */
+/* -------------------------------------------------------------------------- */
+
+/* Promise.all：全部元素 resolve 后 resolve 结果数组。 */
+TEST(Promise, AllResolve) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "Promise.all([Promise.resolve(1), Promise.resolve(2), 3])"
+      "  .then(v => { globalThis.result = v.join(','); });");
+
+  expectGlobalString(ctx, "result", "1,2,3");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* Promise.all 空数组：立即 resolve 空数组。 */
+TEST(Promise, AllEmpty) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "Promise.all([]).then(v => { globalThis.result = v.length; });");
+
+  expectGlobalNumber(ctx, "result", 0.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* Promise.all 任一 reject：reject 整个结果 promise（短路）。 */
+TEST(Promise, AllRejectsShortCircuit) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "Promise.all([Promise.resolve(1), Promise.reject('bad'), 3])"
+      "  .then(() => {}, e => { globalThis.err = e; });");
+
+  expectGlobalString(ctx, "err", "bad");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* -------------------------------------------------------------------------- */
+/* M5.3b：race                                                               */
+/* -------------------------------------------------------------------------- */
+
+/* Promise.race：先 settle 的元素决定结果。 */
+TEST(Promise, RaceFirstResolve) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "var resolveA, resolveB;"
+      "var pa = new Promise(r => { resolveA = r; });"
+      "var pb = new Promise(r => { resolveB = r; });"
+      "Promise.race([pa, pb]).then(v => { globalThis.result = v; });"
+      "resolveA('first');"
+      "resolveB('second');");
+
+  expectGlobalString(ctx, "result", "first");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* Promise.race 首个 reject：reject 结果 promise。 */
+TEST(Promise, RaceFirstReject) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "var rejectA, resolveB;"
+      "var pa = new Promise((r, j) => { rejectA = j; });"
+      "var pb = new Promise(r => { resolveB = r; });"
+      "Promise.race([pa, pb]).then(() => {}, e => { globalThis.err = e; });"
+      "rejectA('rej');"
+      "resolveB('res');");
+
+  expectGlobalString(ctx, "err", "rej");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* -------------------------------------------------------------------------- */
+/* M5.3b：allSettled                                                         */
+/* -------------------------------------------------------------------------- */
+
+/* Promise.allSettled：全部 settle 后 resolve 记录数组（含 rejected）。 */
+TEST(Promise, AllSettledMixed) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "Promise.allSettled([Promise.resolve(1), Promise.reject('x')])"
+      "  .then(v => {"
+      "    globalThis.s0 = v[0].status + ':' + v[0].value;"
+      "    globalThis.s1 = v[1].status + ':' + v[1].reason;"
+      "  });");
+
+  expectGlobalString(ctx, "s0", "fulfilled:1");
+  expectGlobalString(ctx, "s1", "rejected:x");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* -------------------------------------------------------------------------- */
+/* M5.3b：any                                                                */
+/* -------------------------------------------------------------------------- */
+
+/* Promise.any：任一 fulfill 即 resolve。 */
+TEST(Promise, AnyFirstFulfill) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "var rejA, resolveB;"
+      "var pa = new Promise((r, j) => { rejA = j; });"
+      "var pb = new Promise(r => { resolveB = r; });"
+      "Promise.any([pa, pb]).then(v => { globalThis.result = v; });"
+      "rejA('no');"
+      "resolveB('yes');");
+
+  expectGlobalString(ctx, "result", "yes");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* Promise.any 全 reject：reject AggregateError。 */
+TEST(Promise, AnyAllReject) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "Promise.any([Promise.reject('a'), Promise.reject('b')])"
+      "  .then(() => {}, e => {"
+      "    globalThis.name = e.name;"
+      "    globalThis.n = e.errors.length;"
+      "  });");
+
+  expectGlobalString(ctx, "name", "AggregateError");
+  expectGlobalNumber(ctx, "n", 2.0);
 
   JS_FreeContext(ctx);
   JS_FreeAllocator(a);

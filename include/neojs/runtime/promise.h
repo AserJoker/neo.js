@@ -73,6 +73,12 @@ enum class PromiseInternal : uint8_t {
   Throw,          /* 抛出捕获值（finally 的 () => { throw reason }） */
   FinallyThen,    /* promiseFinallyThen(promise, onFinally, value)  §27.2.4.5 */
   FinallyCatch,   /* promiseFinallyCatch(promise, onFinally, reason) §27.2.4.5 */
+  /* M5.3b 组合方法元素回调（§27.2.5.1/.2/.3/.6）：
+   * 捕获 state 对象（属性承载可变状态）+ index。 */
+  AllElement,     /* Promise.all 元素决议（§27.2.5.3） */
+  AllSettledElement, /* Promise.allSettled 元素决议（§27.2.5.2） */
+  AnyElement,     /* Promise.any 元素决议（§27.2.5.1） */
+  RaceElement,    /* Promise.race 元素决议（§27.2.5.6） */
   Count,
 };
 

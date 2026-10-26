@@ -180,12 +180,12 @@ class JSContext {
 
   /* Promise 共享内部函数缓存（M5.3a，§27.2）：Bound 闭包的 target。
    * 惰性创建 + 进根集（markRoots 遍历）。索引对应 promise.h 的
-   * PromiseInternal 枚举值（8 项）。 */
+   * PromiseInternal 枚举值（12 项：M5.3a 8 项 + M5.3b 组合方法 4 项）。 */
   JSValue *promiseInternal(int idx) const {
-    return (idx >= 0 && idx < 8) ? promise_internal_[idx] : nullptr;
+    return (idx >= 0 && idx < 12) ? promise_internal_[idx] : nullptr;
   }
   void setPromiseInternal(int idx, JSValue *v) {
-    if (idx >= 0 && idx < 8) promise_internal_[idx] = v;
+    if (idx >= 0 && idx < 12) promise_internal_[idx] = v;
   }
 
   /* Promise.prototype 缓存（M5.3a，§27.2.4）：new Promise() 新建
@@ -248,8 +248,9 @@ class JSContext {
   JSValue *map_proto_ = nullptr;    /* Map.prototype 缓存（M4.4a） */
   JSValue *set_proto_ = nullptr;    /* Set.prototype 缓存（M4.4a） */
   JSValue *promise_proto_ = nullptr; /* Promise.prototype 缓存（M5.3a） */
-  JSValue *promise_internal_[8] = {nullptr, nullptr, nullptr, nullptr,
-                                   nullptr, nullptr, nullptr, nullptr}; /* Promise 内部函数缓存（M5.3a） */
+  JSValue *promise_internal_[12] = {nullptr, nullptr, nullptr, nullptr, nullptr,
+                                    nullptr, nullptr, nullptr, nullptr, nullptr,
+                                    nullptr, nullptr}; /* Promise 内部函数缓存（M5.3a/b） */
   std::vector<JSValue *> job_queue_;  /* 微任务队列（M5.3，§8.4） */
   std::vector<std::vector<JSValue *> *> vm_stacks_; /* VM 操作数栈根集栈（M2-VM） */
   std::vector<JSEnvironment *> vm_envs_; /* VM 帧环境根集栈（M2.5 闭包） */

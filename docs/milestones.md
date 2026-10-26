@@ -486,7 +486,7 @@ M0 骨架 ─▶ M1 前端流水线 ─▶ M2 解释器核心 ─▶ M3 对象�
 
 ---
 
-### M5.3 异步：Promise（🔄 进行中，M5.3a 完成，M5.3b-c 待做）
+### M5.3 异步：Promise（🔄 进行中，M5.3a-b 完成，M5.3c 待做）
 
 > Promise 是异步地基，独立成节：先核心机制，再静态/组合方法，最后总验收。
 
@@ -498,11 +498,14 @@ M0 骨架 ─▶ M1 前端流水线 ─▶ M2 解释器核心 ─▶ M3 对象�
 
 验收：Promise 链/then 回调端到端脚本通过（✅ tests/test_promise.cc 17 用例全绿，全量 512 绿）
 
-**M5.3b Promise 静态与组合方法（⏳ 未启动）**
+**M5.3b Promise 静态与组合方法（✅ 完成）**
 
-- `Promise.resolve/reject`、`all`、`allSettled`、`any`、`race`
+- `Promise.resolve/reject`（✅）：resolve 遇 Promise 原样返回，否则 new Promise(res => res(x))；reject 直接 reject
+- `Promise.all/allSettled/any/race`（✅）：可迭代对象遍历（getIterator/iteratorStep/iteratorValue）；可变共享状态存状态对象属性（`__remaining__`/`__result__`/`__errors__`/`__settled__`），元素回调 = Bound 闭包（state+index），index 高位标记区分 fulfill/reject；all 全收后 resolve 结果数组、allSettled 收记录数组（{status,value/reason}）、any 任一 fulfill 短路 / 全 reject 抛 AggregateError、race 先到先得（settled 短路）
+- AggregateError 近似实现（✅）：用 Error 构造器 + name/errors 属性（message 传 undefined 避免数组 ToPrimitive 失败）；完整构造器留 M5.6+
+- 共享内部函数缓存扩展（✅）：PromiseInternal 枚举扩至 12 项（+AllElement/AllSettledElement/AnyElement/RaceElement），context.h 缓存数组与索引检查同步扩至 12
 
-验收：组合方法用例（含空数组/拒绝分支）通过
+验收：组合方法用例（含空数组/拒绝分支）通过（✅ tests/test_promise.cc 25 用例全绿，全量 520 绿）
 
 **M5.3c Promise 总验收（⏳ 未启动）**
 
