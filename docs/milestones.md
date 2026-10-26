@@ -486,7 +486,7 @@ M0 骨架 ─▶ M1 前端流水线 ─▶ M2 解释器核心 ─▶ M3 对象�
 
 ---
 
-### M5.3 异步：Promise（🔄 进行中，M5.3a-b 完成，M5.3c 待做）
+### M5.3 异步：Promise（✅ 完成）
 
 > Promise 是异步地基，独立成节：先核心机制，再静态/组合方法，最后总验收。
 
@@ -507,9 +507,11 @@ M0 骨架 ─▶ M1 前端流水线 ─▶ M2 解释器核心 ─▶ M3 对象�
 
 验收：组合方法用例（含空数组/拒绝分支）通过（✅ tests/test_promise.cc 25 用例全绿，全量 520 绿）
 
-**M5.3c Promise 总验收（⏳ 未启动）**
+**M5.3c Promise 总验收（✅ 完成）**
 
-验收：Promise 用例集全绿（链/组合/异常传播/微任务顺序）
+- 补充验收用例（✅）：all 延迟 settle 保序收集、finally 对 reject 透传原 reason、then 返回 rejected promise 接合、then 非函数参数恒等、allSettled 延迟 settle 保序、嵌套组合（all 内嵌 race/any）、thenable 异步 resolve 接合
+
+验收：Promise 用例集全绿（链/组合/异常传播/微任务顺序）（✅ tests/test_promise.cc 32 用例全绿，全量 527 绿）
 
 ---
 

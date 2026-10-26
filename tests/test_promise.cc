@@ -580,3 +580,148 @@ TEST(Promise, AnyAllReject) {
   JS_FreeContext(ctx);
   JS_FreeAllocator(a);
 }
+
+/* -------------------------------------------------------------------------- */
+/* M5.3c：总验收                                                              */
+/* -------------------------------------------------------------------------- */
+
+/* all：元素延迟 settle 时仍按原顺序收集（index 保序），全部完成后 resolve。 */
+TEST(Promise, AllPendingElementsOrder) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "var res1, res2, res3;"
+      "var p1 = new Promise(r => { res1 = r; });"
+      "var p2 = new Promise(r => { res2 = r; });"
+      "var p3 = new Promise(r => { res3 = r; });"
+      "Promise.all([p1, p2, p3]).then(v => { globalThis.result = v.join(','); });"
+      "res2('b');"
+      "res3('c');"
+      "res1('a');");
+
+  expectGlobalString(ctx, "result", "a,b,c");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* finally 对 reject 透传：reject 时 finally 回调执行，原 reason 保留到链尾。 */
+TEST(Promise, FinallyRejectPropagates) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "var p = Promise.reject('boom');"
+      "p.finally(() => { globalThis.fin = true; })"
+      " .catch(e => { globalThis.err = e; });");
+
+  expectGlobalBoolean(ctx, "fin", true);
+  expectGlobalString(ctx, "err", "boom");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* then 的 handler 返回 rejected promise：接合到派生 promise（reject 传播）。 */
+TEST(Promise, ChainReturnRejectedPromise) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "var p = Promise.resolve(1);"
+      "p.then(() => Promise.reject('inner'))"
+      " .catch(e => { globalThis.err = e; });");
+
+  expectGlobalString(ctx, "err", "inner");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* then 非函数参数按恒等处理（value 透传）。 */
+TEST(Promise, ThenNonFunctionIdentity) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "Promise.resolve('x').then(42).then(v => { globalThis.result = v; });");
+
+  expectGlobalString(ctx, "result", "x");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* allSettled：元素延迟 settle，记录按顺序且含 fulfilled/rejected 混合。 */
+TEST(Promise, AllSettledPendingOrder) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "var res, rej;"
+      "var p1 = new Promise(r => { res = r; });"
+      "var p2 = new Promise((r, j) => { rej = j; });"
+      "Promise.allSettled([p1, p2]).then(v => {"
+      "  globalThis.s0 = v[0].status + ':' + v[0].value;"
+      "  globalThis.s1 = v[1].status + ':' + v[1].reason;"
+      "});"
+      "rej('nope');"
+      "res('ok');");
+
+  expectGlobalString(ctx, "s0", "fulfilled:ok");
+  expectGlobalString(ctx, "s1", "rejected:nope");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 嵌套组合：all 内嵌 race/any，结果正确组合。 */
+TEST(Promise, NestedCombinators) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "var resolveSlow;"
+      "var slow = new Promise(r => { resolveSlow = r; });"
+      "var fast = Promise.resolve('f');"
+      "Promise.all([Promise.race([slow, fast]), Promise.any([Promise.reject('x'), 'y'])])"
+      "  .then(v => { globalThis.result = v.join(','); });"
+      "resolveSlow('s');");
+
+  expectGlobalString(ctx, "result", "f,y");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* thenable 的 then 异步调用 resolve：经微任务接合到 promise。 */
+TEST(Promise, ThenableAsyncResolve) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "var cb;"
+      "var thenable = { then: function(res) { cb = res; } };"
+      "Promise.resolve(thenable).then(v => { globalThis.result = v; });"
+      "Promise.resolve().then(() => { cb('async-then'); });");
+
+  expectGlobalString(ctx, "result", "async-then");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
