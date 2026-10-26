@@ -2597,6 +2597,11 @@ bool Compiler::compileExpr(const ASTNode &node) {
     case NodeType::ObjectLiteral: return compileObjectLiteral(node);
     case NodeType::ArrayLiteral: return compileArrayLiteral(node);
     case NodeType::TemplateLiteral: return compileTemplateLiteral(node);
+    case NodeType::ImportMeta:
+      /* M5.2c import.meta：LoadImportMeta（VM 沿 env 链查找模块 import.meta）。
+       * 语法层已保证仅模块上下文合法（parser.cc），普通脚本不可达。 */
+      builder_.load_import_meta();
+      return true;
     case NodeType::Identifier: return compileIdentifier(node);
     case NodeType::ThisExpression: {
       /* M5.1c：this -> LoadThis（当前帧 this）。 */

@@ -34,9 +34,11 @@
 namespace neojs {
 
 class Heap;
+class JSContext;
 class JSEnvironment;
 class JSFunction;
 class JSModuleRecord;
+class JSValue;
 
 /* 模块求值状态（ECMA-262 §16.3.1.1）：M5.2a 使用 Uninstantiated/Evaluated；
  * Evaluating 为 M5.2b 循环依赖预留（进入求值置位，循环 import 据此返回
@@ -113,7 +115,13 @@ class JSModuleRecord : public GCHeader {
   const std::vector<JSModuleRecord *> &deps() const { return deps_; }
   void addDep(JSModuleRecord *m) { deps_.push_back(m); }
 
-  /* GC：模块环境 + 求值函数对象都是引用边。 */
+  /* M5.2c import.meta（§16.2.1.6.3）：每模块一个惰性创建的 import.meta
+   * 对象（含 url 属性 = 模块 specifier）。模块求值时预置到模块 env 的
+   * "__import_meta__" 隐藏绑定；LoadImportMeta 沿 env 链查找。GC 引用边。 */
+  JSValue *importMeta(JSContext *ctx);
+  JSValue *importMetaValue() const { return import_meta_; }
+
+  /* GC：模块环境 + 求值函数对象 + import.meta 对象都是引用边。 */
   void gcMarkRefs(Heap *heap) override;
 
  private:
@@ -127,6 +135,7 @@ class JSModuleRecord : public GCHeader {
   JSFunction *function_ = nullptr; /* 模块求值函数 */
   FunctionBytecode bc_;            /* 模块求值函数字节码（runBytecode 直入用） */
   ModuleStatus status_ = ModuleStatus::Uninstantiated;
+  JSValue *import_meta_ = nullptr; /* import.meta 对象（M5.2c，惰性创建） */
   std::vector<ImportBinding> imports_; /* import 绑定表 */
   std::vector<ExportBinding> exports_; /* export 绑定表 */
   std::vector<JSModuleRecord *> deps_; /* 依赖模块（求值顺序） */

@@ -714,3 +714,108 @@ TEST(Module, ModuleTopLevelThrow) {
   JS_FreeContext(ctx);
   JS_FreeAllocator(a);
 }
+
+/* -------------------------------------------------------------------------- */
+/* M5.2c：import.meta 运行时对象                                               */
+/* -------------------------------------------------------------------------- */
+
+/* import.meta：模块顶层访问，url 属性 = 模块 specifier。 */
+TEST(Module, ImportMetaUrl) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  world.sources["metaA"] =
+      "globalThis.metaUrl = import.meta.url; globalThis.metaObj = import.meta;";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "metaA");
+  EXPECT_EQ(r, nullptr);
+
+  expectGlobalString(ctx, "metaUrl", "metaA");
+
+  /* import.meta 是对象，且两次访问是同一对象（每模块单例）。 */
+  JSValue *meta1 = globalProp(ctx, "metaObj");
+  ASSERT_NE(meta1, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, meta1), JS_OBJECT);
+  JSValue *meta2 = globalProp(ctx, "metaObj");
+  ASSERT_NE(meta2, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, meta2), JS_OBJECT);
+  EXPECT_EQ(JS_StrictEqual(ctx, meta1, meta2), 1);
+  JS_FreeValue(ctx, meta1);
+  JS_FreeValue(ctx, meta2);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* import.meta：嵌套函数（闭包）内访问，沿 env 链定位模块 import.meta。 */
+TEST(Module, ImportMetaInClosure) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  world.sources["metaB"] =
+      "export function getMeta() { return import.meta.url; }";
+  world.sources["main"] =
+      "import { getMeta } from 'metaB'; globalThis.u = getMeta();";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "main");
+  EXPECT_EQ(r, nullptr);
+
+  expectGlobalString(ctx, "u", "metaB");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* import.meta 可扩展：宿主可往 import.meta 注入自定义属性（同对象可见）。 */
+TEST(Module, ImportMetaExtensible) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  world.sources["metaC"] =
+      "import.meta.custom = 123; globalThis.custom = import.meta.custom;";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "metaC");
+  EXPECT_EQ(r, nullptr);
+
+  expectGlobalNumber(ctx, "custom", 123.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* import.meta 每模块独立：不同模块的 import.meta 是不同对象。 */
+TEST(Module, ImportMetaPerModule) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  ModuleWorld world;
+  world.sources["mA"] =
+      "export const mA = import.meta; import.meta.tag = 'A';";
+  world.sources["mB"] =
+      "export const mB = import.meta; import.meta.tag = 'B';";
+  world.sources["main"] =
+      "import { mA } from 'mA'; import { mB } from 'mB'; "
+      "globalThis.same = (mA === mB) ? 1 : 0; globalThis.tagA = mA.tag; "
+      "globalThis.tagB = mB.tag;";
+  JS_AddModuleLoader(ctx, moduleLoader, &world);
+
+  JSValue *r = JS_EvalModule(ctx, "main");
+  EXPECT_EQ(r, nullptr);
+
+  expectGlobalNumber(ctx, "same", 0.0); /* mA !== mB */
+  expectGlobalString(ctx, "tagA", "A");
+  expectGlobalString(ctx, "tagB", "B");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}

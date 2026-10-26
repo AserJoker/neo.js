@@ -448,7 +448,7 @@ M0 骨架 ─▶ M1 前端流水线 ─▶ M2 解释器核心 ─▶ M3 对象�
 
 ---
 
-### M5.2 模块系统（✅ 进行中：M5.2a–M5.2b 完成）
+### M5.2 模块系统（✅ 进行中：M5.2a–M5.2c 部分完成）
 
 > 模块语法层（M1.6 ③）已就绪，本节补**运行时执行**语义。模块加载/链接/循环依赖/动态导入各自独立可验收。
 
@@ -473,12 +473,12 @@ M0 骨架 ─▶ M1 前端流水线 ─▶ M2 解释器核心 ─▶ M3 对象�
 
 验收：循环依赖（基本/顺序/函数/let live binding）+ `export *`（多源合并/冲突/环）用例全绿（tests/test_module.cc 26 用例）
 
-**M5.2c 动态导入与 import.meta（⏳ 未启动）**
+**M5.2c 动态导入与 import.meta（🔄 进行中：import.meta 完成，动态 import() 待 M5.3 Promise）**
 
-- 动态 `import()` 执行（Promise 语义，依赖 M5.3 Promise）
-- `import.meta` 运行时对象（语法层已就绪）
+- `import.meta` 运行时对象（✅）：每模块惰性创建（url = specifier），预置到模块 env 隐藏绑定，LoadImportMeta 沿 env 链定位；闭包内可访问、可扩展、每模块独立
+- 动态 `import()` 执行（⏳ 待 M5.3 Promise 就绪后接入）
 
-验收：动态 import + import.meta 用例通过
+验收：import.meta 用例全绿（tests/test_module.cc 30 用例）；动态 import 待 Promise
 
 **M5.2d 模块系统总验收（⏳ 未启动）**
 

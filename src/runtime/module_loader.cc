@@ -148,6 +148,13 @@ ConversionResult evaluateModule(JSContext *ctx, JSModuleRecord *record) {
   /* 进入求值：置 Evaluating，循环依赖回查时短路。 */
   record->setStatus(ModuleStatus::Evaluating);
 
+  /* M5.2c：预置 import.meta 对象到模块 env 的隐藏绑定（惰性创建，含
+   * url=specifier）。LoadImportMeta 沿 env 链查找（模块内嵌套函数闭包
+   * 的 env 链最终指向本 env）。绑定值同时受 record->import_meta_ 与
+   * env bindings 双引用保护（GC 幂等）。 */
+  JSValue *meta = record->importMeta(ctx);
+  if (meta != nullptr) record->env()->setBinding("__import_meta__", meta);
+
   /* 先递归求值依赖（依赖先求值，§16.3.1.1 步骤 4-6）。 */
   for (JSModuleRecord *dep : record->deps()) {
     if (dep == nullptr) continue;

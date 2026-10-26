@@ -2,6 +2,8 @@
 
 #include <unordered_set>
 
+#include "neojs/runtime/builtins.h"
+#include "neojs/runtime/context.h"
 #include "neojs/runtime/environment.h"
 #include "neojs/runtime/function.h"
 #include "neojs/runtime/heap.h"
@@ -77,9 +79,28 @@ bool JSModuleRecord::findExportRec(
   return false;
 }
 
+/* M5.2c import.meta：惰性创建每模块一个 import.meta 对象（普通对象，
+ * 原型链 Object.prototype），url 属性 = 模块 specifier（宿主提供的模块
+ * 标识即 URL 简化）。返回值受 record 的 gcMarkRefs 保护（GC 引用边），
+ * 并预置到模块 env 的 "__import_meta__" 隐藏绑定（LoadImportMeta 沿 env
+ * 链查找；env bindings 本身也是 GC 引用边，双重保护幂等）。 */
+JSValue *JSModuleRecord::importMeta(JSContext *ctx) {
+  if (import_meta_ == nullptr) {
+    JSObject *proto = nullptr;
+    JSValue *op = neojs::objectProto(ctx);
+    if (op != nullptr) proto = op->object();
+    JSValue *meta = ctx->createObject(proto);
+    JSValue *url = ctx->createValue(std::string(specifier_));
+    meta->object()->setProperty("url", url);
+    import_meta_ = meta;
+  }
+  return import_meta_;
+}
+
 void JSModuleRecord::gcMarkRefs(Heap *heap) {
   if (env_ != nullptr) heap->markRoot(env_);
   if (function_ != nullptr) heap->markRoot(function_);
+  if (import_meta_ != nullptr) heap->markRoot(import_meta_);
 }
 
 }  // namespace neojs

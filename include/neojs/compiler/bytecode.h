@@ -173,6 +173,9 @@ enum class Opcode : uint8_t {
   /* M5.2 模块系统（追加末尾，保持 opcode 数值稳定） */
   LoadImport,      /* 导入绑定读取：压入源模块导出绑定值（M5.2a 选项 A 动态查表） */
   StoreImport,     /* 导入绑定赋值：immutable binding -> TypeError（M5.2a） */
+
+  /* M5.2c import.meta（追加末尾，保持 opcode 数值稳定） */
+  LoadImportMeta,  /* 当前模块 import.meta 对象 -> 栈顶：沿 env 链查找 "__import_meta__" 绑定（M5.2c） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -424,6 +427,7 @@ class BytecodeBuilder {
   }
   void load_import(uint16_t idx) { push_op(Opcode::LoadImport, idx); }
   void store_import(uint16_t idx) { push_op(Opcode::StoreImport, idx); }
+  void load_import_meta() { push_op(Opcode::LoadImportMeta); } /* M5.2c import.meta */
 
   /* 注册嵌套函数字节码（M2.5），返回函数表下标（MakeFunction 索引）。 */
   uint16_t add_nested(FunctionBytecode fn) {

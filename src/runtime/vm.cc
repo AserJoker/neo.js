@@ -980,6 +980,29 @@ static ConversionResult op_StoreImport(VmFrame &frame) {
   return ok(nullptr);
 }
 
+static ConversionResult op_LoadImportMeta(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      /* M5.2c import.meta：沿 env 链查找模块 env 预置的 "__import_meta__"
+       * 绑定（模块求值开始时写入）。模块内嵌套函数（闭包）的 frame.env
+       * parent 链最终指向模块 env，沿链可定位本模块的 import.meta 对象。
+       * 非模块上下文（普通脚本，语法层已拦截）防御返回 undefined。 */
+      JSValue *meta = nullptr;
+      for (JSEnvironment *e = frame.env; e != nullptr; e = e->parent()) {
+        JSValue *v = e->getBinding("__import_meta__");
+        if (v != nullptr) { meta = v; break; }
+      }
+      stack.push_back(meta != nullptr ? meta
+                                      : frame.ctx->createValue(Kind::Undefined));
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
 static ConversionResult op_Pop(VmFrame &frame) {
   const FunctionBytecode &fn = *frame.fn;
   auto &stack = *frame.stack;
@@ -3482,6 +3505,7 @@ const OpHandler kHandlers[] = {
     op_CallMethodArray,  /* CallMethodArray */
     op_LoadImport,  /* LoadImport */
     op_StoreImport,  /* StoreImport */
+    op_LoadImportMeta,  /* LoadImportMeta */
 };
 
 }  // namespace
