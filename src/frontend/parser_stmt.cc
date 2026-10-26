@@ -139,20 +139,27 @@ ASTNode *Parser::parseStatementInner() {
   if (isKeyword(current(), "for")) {
     return parseForStatement();
   }
-  /* 函数声明（M1.5 ④）：function name(params) { body } */
+  /* 函数声明（M1.5 ④）：function name(params) { body }。
+   * M5.5a：function* name 标记 generator 函数。 */
   if (isKeyword(current(), "function")) {
-    return parseFunctionDeclaration();
+    bool is_generator = isSymbol(peek(), "*");
+    return parseFunctionDeclaration(/*allow_anonymous=*/false, /*is_async=*/false,
+                                    is_generator);
   }
   /* async 函数声明（M5.4）：async function name(params) { body }。
-   * save/restore 前瞻确认 async 后跟 function（否则 async 是普通标识符）。 */
+   * save/restore 前瞻确认 async 后跟 function（否则 async 是普通标识符）。
+   * M5.5a：async function* 标记 async generator（generator 标记置位，
+   * async 标记置位；async generator 运行时在 M5.5c）。 */
   if (at(TokenKind::Identifier) && current().text == "async") {
     Lexer::State st = lexer_.save();
     advance(); /* async */
     bool is_async_fn = isKeyword(current(), "function");
+    bool is_async_gen = is_async_fn && isSymbol(peek(), "*");
     lexer_.restore(st);
     if (is_async_fn) {
       advance(); /* async */
-      return parseFunctionDeclaration(/*allow_anonymous=*/false, /*is_async=*/true);
+      return parseFunctionDeclaration(/*allow_anonymous=*/false, /*is_async=*/true,
+                                      is_async_gen);
     }
   }
   /* class 声明（M5.1d-a）：class C { ... } */
@@ -765,11 +772,18 @@ bool Parser::checkStrictParams(ASTNode *fn, bool strict, bool has_name, int body
  * 声明必须有名字（function () {} 是表达式）；这里容错为 name 可空。
  * 参数：Identifier 或解构模式（后续展开）；body 为块语句。
  * function_depth_ 递增：body 内允许 return（顶层 return 报错）。 */
-ASTNode *Parser::parseFunctionDeclaration(bool allow_anonymous, bool is_async) {
+ASTNode *Parser::parseFunctionDeclaration(bool allow_anonymous, bool is_async,
+                                          bool is_generator) {
   ASTNode *fn = newNode(NodeType::FunctionDeclaration);
   fn->loc = current().start;
   fn->fn_is_async = is_async;
+  fn->fn_is_generator = is_generator;
   advance(); /* function */
+  /* M5.5a：function* 消费 *（async function* 由调用方置 is_generator，
+   * 此处统一消费 *）。 */
+  if (is_generator && isSymbol(current(), "*")) {
+    advance(); /* * */
+  }
 
   /* 函数名（声明必需；缺省报错。allow_anonymous 供 export default 匿名声明） */
   bool has_name = false;
@@ -876,7 +890,8 @@ ASTNode *Parser::parseFunctionDeclaration(bool allow_anonymous, bool is_async) {
   advance(); /* ) */
 
   /* 函数体：{ 块语句 }；function_depth_ 递增（body 内 return 合法）。
-   * async 函数（M5.4）：async_depth_ 递增，body 内 await 合法。 */
+   * async 函数（M5.4）：async_depth_ 递增，body 内 await 合法。
+   * generator 函数（M5.5a）：generator_depth_ 递增，body 内 yield 合法。 */
   if (!isSymbol(current(), "{")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '{' before function body",
                 current().start});
@@ -885,6 +900,7 @@ ASTNode *Parser::parseFunctionDeclaration(bool allow_anonymous, bool is_async) {
   }
   ++function_depth_;
   if (is_async) ++async_depth_;
+  if (is_generator) ++generator_depth_;
   int outer_super = super_depth_;
   super_depth_ = 0; /* 普通函数不继承 super 上下文（M5.1d-b） */
   bool outer_strict = strict_;
@@ -892,6 +908,7 @@ ASTNode *Parser::parseFunctionDeclaration(bool allow_anonymous, bool is_async) {
   bool strict_params = strict_; /* body 解析后 strict_ 已含 body directive 影响 */
   strict_ = outer_strict; /* 恢复外层严格状态（body 内 directive 不泄漏） */
   super_depth_ = outer_super;
+  if (is_generator) --generator_depth_;
   if (is_async) --async_depth_;
   --function_depth_;
   if (body == nullptr) {
@@ -910,11 +927,16 @@ ASTNode *Parser::parseFunctionDeclaration(bool allow_anonymous, bool is_async) {
 
 /* 函数表达式（M1.5 ④）：function [name](params) { body }
  * 与声明结构相同，仅节点类型与 name 可选不同。供 parsePrimary 分派。 */
-ASTNode *Parser::parseFunctionExpression(bool is_async) {
+ASTNode *Parser::parseFunctionExpression(bool is_async, bool is_generator) {
   ASTNode *fn = newNode(NodeType::FunctionExpression);
   fn->loc = current().start;
   fn->fn_is_async = is_async;
+  fn->fn_is_generator = is_generator;
   advance(); /* function */
+  /* M5.5a：function* 消费 *。 */
+  if (is_generator && isSymbol(current(), "*")) {
+    advance(); /* * */
+  }
 
   /* 函数名可选（匿名函数表达式合法）。记录是否有名：children[0] 是否函数名
    * （匿名时 children[0] 是首个参数，checkStrictParams 需区分）。 */
@@ -1015,7 +1037,8 @@ ASTNode *Parser::parseFunctionExpression(bool is_async) {
   }
   advance(); /* ) */
 
-  /* 函数体：{ 块语句 }。async 函数（M5.4）：async_depth_ 递增，await 合法。 */
+  /* 函数体：{ 块语句 }。async 函数（M5.4）：async_depth_ 递增，await 合法。
+   * generator 函数（M5.5a）：generator_depth_ 递增，yield 合法。 */
   if (!isSymbol(current(), "{")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '{' before function body",
                 current().start});
@@ -1024,6 +1047,7 @@ ASTNode *Parser::parseFunctionExpression(bool is_async) {
   }
   ++function_depth_;
   if (is_async) ++async_depth_;
+  if (is_generator) ++generator_depth_;
   int outer_super = super_depth_;
   super_depth_ = 0; /* 普通函数不继承 super 上下文（M5.1d-b） */
   bool outer_strict = strict_;
@@ -1031,6 +1055,7 @@ ASTNode *Parser::parseFunctionExpression(bool is_async) {
   bool strict_params = strict_; /* body 解析后 strict_ 已含 body directive 影响 */
   strict_ = outer_strict; /* 恢复外层严格状态（body 内 directive 不泄漏） */
   super_depth_ = outer_super;
+  if (is_generator) --generator_depth_;
   if (is_async) --async_depth_;
   --function_depth_;
   if (body == nullptr) {
@@ -1050,11 +1075,12 @@ ASTNode *Parser::parseFunctionExpression(bool is_async) {
 /* 对象方法函数（M5.1c）：(params) { body }（method / getter / setter）。
  * 与函数表达式同构，仅无 function 关键字；产出 FunctionExpression
  *（fn_has_name=false，children[0] 为首参数）。 */
-ASTNode *Parser::parseMethodFunction(bool is_async) {
+ASTNode *Parser::parseMethodFunction(bool is_async, bool is_generator) {
   ASTNode *fn = newNode(NodeType::FunctionExpression);
   fn->loc = current().start;
   fn->fn_has_name = false;
   fn->fn_is_async = is_async;
+  fn->fn_is_generator = is_generator;
 
   /* 参数列表：(a, b, ...rest)，当前已位于 '('。 */
   advance(); /* ( */
@@ -1125,7 +1151,8 @@ ASTNode *Parser::parseMethodFunction(bool is_async) {
   }
   advance(); /* ) */
 
-  /* 函数体：{ 块语句 }。async 方法（M5.4）：async_depth_ 递增，await 合法。 */
+  /* 函数体：{ 块语句 }。async 方法（M5.4）：async_depth_ 递增，await 合法。
+   * generator 方法（M5.5a）：generator_depth_ 递增，yield 合法。 */
   if (!isSymbol(current(), "{")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '{' before method body",
                 current().start});
@@ -1134,10 +1161,12 @@ ASTNode *Parser::parseMethodFunction(bool is_async) {
   }
   ++function_depth_;
   if (is_async) ++async_depth_;
+  if (is_generator) ++generator_depth_;
   bool outer_strict = strict_;
   ASTNode *body = parseBlock(/*detect_strict=*/true);
   bool strict_params = strict_;
   strict_ = outer_strict;
+  if (is_generator) --generator_depth_;
   if (is_async) --async_depth_;
   --function_depth_;
   if (body == nullptr) {
@@ -1317,17 +1346,55 @@ ASTNode *Parser::parseClassElement() {
   /* async 前缀（M5.4）：async [no LineTerminator here] key(...)。
    * async 后跟方法名起始（Identifier/String/Number/[/#）且后跟 ( 才是
    * async 方法（async m(){}）；async(){} 的 async 是普通方法名（后跟 (）。
+   * M5.5a：async * key(){} 是 async generator 方法——async 后可跟 * 再跟键。
    * 与 get/set 互斥（async get 不合法）；static async m(){} 已由 static
    * 前缀消费，current 现指向 async。 */
   bool async_prefix = false;
+  bool async_gen_after_async = false; /* async 后跟 * （async generator 方法） */
   if (at(TokenKind::Identifier) && current().text == "async") {
     Lexer::State st = lexer_.save();
     advance(); /* async */
+    /* async * key()：async 后是 *，跳过 * 看键起始 + (。 */
+    if (isSymbol(current(), "*")) {
+      Lexer::State st2 = lexer_.save();
+      advance(); /* * */
+      bool is_method_start = at(TokenKind::Identifier) || at(TokenKind::String) ||
+                             at(TokenKind::Number) || isSymbol(current(), "[") ||
+                             isSymbol(current(), "#");
+      if (is_method_start && isSymbol(peek(), "(")) {
+        async_prefix = true;
+        async_gen_after_async = true;
+        /* current 现指向键起始；* 已消费，generator_prefix 检测会跳过。 */
+      } else {
+        lexer_.restore(st2);
+        lexer_.restore(st);
+      }
+    } else {
+      bool is_method_start = at(TokenKind::Identifier) || at(TokenKind::String) ||
+                             at(TokenKind::Number) || isSymbol(current(), "[") ||
+                             isSymbol(current(), "#");
+      if (is_method_start && isSymbol(peek(), "(")) {
+        async_prefix = true;
+      } else {
+        lexer_.restore(st);
+      }
+    }
+  }
+
+  /* generator 前缀（M5.5a）：* m() {} / static * m() {} / async * m() {}。
+   * * 后跟方法键起始（Identifier/String/Number/[/#）才视为 generator 标记。
+   * 与 get/set 互斥（getter/setter 不可为 generator；*get m(){} 是名为 get
+   * 的 generator 方法）。static 前缀已消费 static 但未消费 *，current 现指向 *。
+   * async * m(){} 已由 async 前缀消费 async 与 *，此处直接置 generator_prefix。 */
+  bool generator_prefix = async_gen_after_async;
+  if (!async_gen_after_async && isSymbol(current(), "*")) {
+    Lexer::State st = lexer_.save();
+    advance(); /* * */
     bool is_method_start = at(TokenKind::Identifier) || at(TokenKind::String) ||
                            at(TokenKind::Number) || isSymbol(current(), "[") ||
                            isSymbol(current(), "#");
-    if (is_method_start && isSymbol(peek(), "(")) {
-      async_prefix = true;
+    if (is_method_start) {
+      generator_prefix = true;
     } else {
       lexer_.restore(st);
     }
@@ -1419,7 +1486,8 @@ ASTNode *Parser::parseClassElement() {
     bool is_ctor = (!is_static && key->type == NodeType::Identifier &&
                     key->name == "constructor");
     if (is_ctor && class_has_extends_) ++derived_ctor_depth_;
-    ASTNode *fn = parseMethodFunction(/*is_async=*/async_prefix);
+    ASTNode *fn = parseMethodFunction(/*is_async=*/async_prefix,
+                                      /*is_generator=*/generator_prefix);
     if (is_ctor && class_has_extends_) --derived_ctor_depth_;
     --super_depth_;
     if (fn == nullptr) {

@@ -154,9 +154,73 @@ ASTNode *Parser::parseExpression(bool allow_in) {
   return expr;
 }
 
+/* yield 表达式（M5.5a，§14.4）：yield / yield* expr / 裸 yield。
+ * ECMA-262 §14.4 YieldExpression[In, Await] :
+ *   yield
+ *   yield [no LineTerminator here] AssignmentExpression[?In, +Yield]
+ *   yield [no LineTerminator here] * AssignmentExpression[?In, +Yield]
+ * 仅 generator 函数体内合法（generator_depth_ > 0，由 parseAssignment 检测后转此）。
+ * children[0] = yield 值表达式（nullptr 表示裸 yield）；
+ * yield_delegate 标 yield* 委托。
+ * restricted production：yield 后遇换行 → 裸 yield（无操作数）。
+ * yield* 中 * 与 yield 之间不得有换行（no LineTerminator here）——按 §14.4，
+ * * 紧随 yield，若 yield 后换行则 * 视为乘法运算符，整个表达式为裸 yield。 */
+ASTNode *Parser::parseYieldExpression(bool allow_in) {
+  ASTNode *node = newNode(NodeType::YieldExpression);
+  node->loc = current().start;
+  advance(); /* yield */
+
+  /* 裸 yield 判定：
+   *   1) yield 后紧跟换行（restricted production） → 裸 yield
+   *   2) yield 后是 ; / , / ) / ] / } / : / EOF 等表达式结束符 → 裸 yield
+   *   3) yield 后跟 * 且无换行 → yield* 委托
+   *   4) 否则 → yield <AssignmentExpression> */
+  bool bare_yield = false;
+  if (current().has_newline_before) {
+    bare_yield = true;
+  } else if (isSymbol(current(), ";") || isSymbol(current(), ",") ||
+             isSymbol(current(), ")") || isSymbol(current(), "]") ||
+             isSymbol(current(), "}") || isSymbol(current(), ":") ||
+             atEof()) {
+    bare_yield = true;
+  }
+
+  if (bare_yield) {
+    node->children.push_back(nullptr);
+    return node;
+  }
+
+  /* yield* 委托：* 紧随 yield（无换行，已由 has_newline_before 排除）。 */
+  if (isSymbol(current(), "*")) {
+    node->yield_delegate = true;
+    advance(); /* * */
+  }
+
+  /* yield 值表达式：递归 parseAssignment（含 +Yield，允许嵌套 yield）。
+   * 设值上下文：yield 后读操作数首 token。 */
+  setValueContext();
+  ASTNode *arg = parseAssignment(allow_in);
+  if (arg == nullptr) {
+    allocator_->destroy(node);
+    return nullptr;
+  }
+  node->children.push_back(arg);
+  return node;
+}
+
 /* 赋值（M1.4）：= 与全部复合赋值；右结合。左侧须为简单赋值目标。
- * 箭头函数（M1.4 ③-4）同层：params => body（右结合）。 */
+ * 箭头函数（M1.4 ③-4）同层：params => body（右结合）。
+ * yield 表达式（M5.5a，§14.4）：仅在 generator 函数体内合法，优先级高于赋值，
+ * 在此处最先检测。 */
 ASTNode *Parser::parseAssignment(bool allow_in) {
+  /* yield 表达式（M5.5a）：yield 是 Identifier kind，仅在 generator 函数体内
+   * （generator_depth_ > 0）作为 yield 表达式解析，否则按普通标识符处理。
+   * restricted production（§14.4）：yield 后遇换行即裸 yield（无操作数）。
+   * yield* 委托：yield 后紧跟 *（无换行要求，* 是运算符）。 */
+  if (at(TokenKind::Identifier) && current().text == "yield" &&
+      generator_depth_ > 0) {
+    return parseYieldExpression(allow_in);
+  }
   /* 箭头判定（中缀歧义）：
    *   1. 单参：Identifier 前瞻 =>
    *   2. 括号参数：配对扫描后看 ) 后是否 =>（save/restore 回退）
@@ -1008,18 +1072,24 @@ ASTNode *Parser::parsePrimary() {
       /* super 关键字（M5.1d-b）：super.x / super[expr]（仅 class 方法内）。
        * super() 构造调用留 M5.1d-c。super 单独出现（非 . / [ / (）为语法错误。 */
       if (tok.text == "super") return parseSuperProperty();
-      /* 函数表达式：function [name](params) { body }（M1.5 ④） */
-      if (tok.text == "function") return parseFunctionExpression();
+      /* 函数表达式：function [name](params) { body }（M1.5 ④）。
+       * M5.5a：function* 标记 generator。 */
+      if (tok.text == "function") {
+        bool is_gen = isSymbol(peek(), "*");
+        return parseFunctionExpression(/*is_async=*/false, is_gen);
+      }
       /* async 函数表达式（M5.4）：async [name](params) { body }。
-       * 前瞻确认 async 后跟 function（否则 async 是普通标识符）。 */
+       * 前瞻确认 async 后跟 function（否则 async 是普通标识符）。
+       * M5.5a：async function* 标记 async generator。 */
       if (tok.text == "async") {
         Lexer::State st = lexer_.save();
         lexer_.next(); /* async */
         bool is_async_fn = isKeyword(lexer_.current(), "function");
+        bool is_async_gen = is_async_fn && isSymbol(lexer_.peek(), "*");
         lexer_.restore(st);
         if (is_async_fn) {
           advance(); /* async */
-          return parseFunctionExpression(/*is_async=*/true);
+          return parseFunctionExpression(/*is_async=*/true, is_async_gen);
         }
       }
       /* class 表达式（M5.1d-a）：class [name] { ... } */
@@ -1501,6 +1571,22 @@ ASTNode *Parser::parseObjectPattern(bool as_literal) {
         lexer_.restore(st);
       }
     }
+    /* generator 方法前缀（M5.5a）：{ * m() {} } / { *m() {} }。
+     * * 后跟方法名起始（Identifier/String/Number/[）；与 async 前缀互斥
+     * （async generator 方法 { async * m() {} } 在 async_prefix 置位后
+     * 再检测 *）。*/
+    bool generator_prefix = false;
+    if (isSymbol(current(), "*")) {
+      Lexer::State st = lexer_.save();
+      advance(); /* * */
+      bool is_method_start = at(TokenKind::Identifier) || at(TokenKind::String) ||
+                             at(TokenKind::Number) || isSymbol(current(), "[");
+      if (is_method_start) {
+        generator_prefix = true;
+      } else {
+        lexer_.restore(st);
+      }
+    }
     /* key */
     ASTNode *key = nullptr;
     bool computed = false;
@@ -1559,9 +1645,11 @@ ASTNode *Parser::parseObjectPattern(bool as_literal) {
       prop->children.push_back(key);
       prop->children.push_back(fn);
     } else if (isSymbol(current(), "(")) {
-      /* method key(){}（M5.1c）：函数体紧随；async 方法（M5.4）。 */
+      /* method key(){}（M5.1c）：函数体紧随；async 方法（M5.4）；
+       * generator 方法（M5.5a）。 */
       prop->prop.kind = PropertyKind::Method;
-      ASTNode *fn = parseMethodFunction(/*is_async=*/async_prefix);
+      ASTNode *fn = parseMethodFunction(/*is_async=*/async_prefix,
+                                        /*is_generator=*/generator_prefix);
       if (fn == nullptr) {
         allocator_->destroy(prop);
         allocator_->destroy(obj);

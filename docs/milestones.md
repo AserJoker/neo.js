@@ -554,14 +554,26 @@ async 方法 this/多次挂起恢复现场完整性）；全量 566 测试全绿
 
 ---
 
-### M5.5 生成器与迭代器深化（⏳ 未启动，M5.5a–M5.5d）
+### M5.5 生成器与迭代器深化（⏳ 进行中，M5.5a–M5.5d）
 
 > 依赖 M4.4 迭代器协议与 M5.1 语法地基；生成器是独立状态机子系统。
+> 设计决策（M5.5a）：复用 AsyncFrame 作为通用挂起恢复机制——async 持 promise、
+> generator 持 generator 对象，挂起/恢复路径共享。用户确认：「复用，这种暂停
+> 恢复应该是通用机制」。
 
-**M5.5a generator 编译与运行时（⏳ 未启动）**
+**M5.5a generator 编译与运行时（⏳ 进行中）**
 
-- `function*` / `yield` / `yield*` 语法与编译
-- generator 对象/状态机（next/throw/return 恢复）
+- M5.5a-1 前端语法解析（✅ 完成）：`function*` / `async function*` 声明与表达式、
+  对象/class generator 方法（`*m(){}` / `static *m(){}` / `async *m(){}`）、
+  `yield` / `yield*` / 裸 yield 表达式、restricted production（yield 后换行→裸 yield）。
+  - AST：新增 `YieldExpression` 节点（children[0]=yield 值，nullptr 表示裸 yield；
+    `yield_delegate` 标 `yield*` 委托）。
+  - Parser：`generator_depth_` 追踪 generator 函数上下文（类比 `async_depth_`），
+    `>0` 时 `yield` 在 `parseAssignment` 入口转 `parseYieldExpression`。
+  - 前端测试：6 用例（声明/表达式/async/对象+class 方法/restricted/外层标识符）全绿。
+- M5.5a-2 编译器：`function*` 编译 + Yield 指令（⏳ 未启动）
+- M5.5a-3 VM/运行时：generator 对象 + Yield 挂起恢复 + next/throw/return（⏳ 未启动）
+- M5.5a-4 `yield*` 委托（⏳ 未启动）
 
 验收：generator 脚本（含 yield* 委托）通过
 

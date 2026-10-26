@@ -2333,6 +2333,275 @@ TEST(Frontend, ForOfAwait) {
   a.destroy(ast);
 }
 
+/* M5.5a-1 生成器语法：function-star / yield / yield-star 前端解析。
+ * 验证：generator 标记、yield 表达式（值/裸/yield*）、async generator、
+ * 对象/class generator 方法、restricted production（换行 → 裸 yield）。 */
+TEST(Frontend, GeneratorFunctionDeclaration) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* function* g() { yield 1; } → FunctionDeclaration[generator] */
+  neojs::AST *ast = neojs::parseSource(
+      &a, "function* g() { yield 1; }",
+      std::strlen("function* g() { yield 1; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink.hasErrors());
+  neojs::ASTNode *fn = ast->root->children[0];
+  EXPECT_EQ(fn->type, neojs::NodeType::FunctionDeclaration);
+  EXPECT_TRUE(fn->fn_is_generator);
+  ASSERT_EQ(fn->children.size(), 2u); /* id + body（无参数） */
+  EXPECT_EQ(fn->children[0]->name, "g");
+  /* body[0] = ExprStmt(yield 1) */
+  neojs::ASTNode *stmt = fn->children[1]->children[0];
+  EXPECT_EQ(stmt->type, neojs::NodeType::ExprStmt);
+  neojs::ASTNode *yield = stmt->children[0];
+  EXPECT_EQ(yield->type, neojs::NodeType::YieldExpression);
+  EXPECT_FALSE(yield->yield_delegate);
+  ASSERT_EQ(yield->children.size(), 1u);
+  EXPECT_EQ(yield->children[0]->type, neojs::NodeType::Literal);
+  a.destroy(ast);
+
+  /* function* g() { yield; } → 裸 yield（children[0]=nullptr） */
+  sink = neojs::DiagnosticSink();
+  ast = neojs::parseSource(&a, "function* g() { yield; }",
+                           std::strlen("function* g() { yield; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink.hasErrors());
+  fn = ast->root->children[0];
+  EXPECT_TRUE(fn->fn_is_generator);
+  yield = fn->children[1]->children[0]->children[0];
+  EXPECT_EQ(yield->type, neojs::NodeType::YieldExpression);
+  EXPECT_FALSE(yield->yield_delegate);
+  ASSERT_EQ(yield->children.size(), 1u);
+  EXPECT_EQ(yield->children[0], nullptr);
+  a.destroy(ast);
+
+  /* function* g() { yield * [1,2,3]; } → yield* 委托 */
+  sink = neojs::DiagnosticSink();
+  ast = neojs::parseSource(&a, "function* g() { yield * [1,2,3]; }",
+                           std::strlen("function* g() { yield * [1,2,3]; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink.hasErrors());
+  fn = ast->root->children[0];
+  yield = fn->children[1]->children[0]->children[0];
+  EXPECT_EQ(yield->type, neojs::NodeType::YieldExpression);
+  EXPECT_TRUE(yield->yield_delegate);
+  ASSERT_EQ(yield->children.size(), 1u);
+  EXPECT_EQ(yield->children[0]->type, neojs::NodeType::ArrayLiteral);
+  a.destroy(ast);
+}
+
+TEST(Frontend, GeneratorFunctionExpression) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* var g = function*() { yield 1; }; → FunctionExpression[generator] */
+  neojs::AST *ast = neojs::parseSource(
+      &a, "var g = function*() { yield 1; };",
+      std::strlen("var g = function*() { yield 1; };"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink.hasErrors());
+  neojs::ASTNode *init = ast->root->children[0]->children[0]->children[1];
+  EXPECT_EQ(init->type, neojs::NodeType::FunctionExpression);
+  EXPECT_TRUE(init->fn_is_generator);
+  EXPECT_FALSE(init->fn_has_name);
+  a.destroy(ast);
+
+  /* 命名 generator 函数表达式：var g = function* gen() { yield 1; }; */
+  sink = neojs::DiagnosticSink();
+  ast = neojs::parseSource(&a, "var g = function* gen() { yield 1; };",
+                           std::strlen("var g = function* gen() { yield 1; };"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink.hasErrors());
+  init = ast->root->children[0]->children[0]->children[1];
+  EXPECT_EQ(init->type, neojs::NodeType::FunctionExpression);
+  EXPECT_TRUE(init->fn_is_generator);
+  EXPECT_TRUE(init->fn_has_name);
+  EXPECT_EQ(init->children[0]->name, "gen");
+  a.destroy(ast);
+}
+
+TEST(Frontend, AsyncGeneratorFunction) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* async function* ag() { yield 1; } → FunctionDeclaration[async+generator] */
+  neojs::AST *ast = neojs::parseSource(
+      &a, "async function* ag() { yield 1; }",
+      std::strlen("async function* ag() { yield 1; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink.hasErrors());
+  neojs::ASTNode *fn = ast->root->children[0];
+  EXPECT_EQ(fn->type, neojs::NodeType::FunctionDeclaration);
+  EXPECT_TRUE(fn->fn_is_async);
+  EXPECT_TRUE(fn->fn_is_generator);
+  EXPECT_EQ(fn->children[0]->name, "ag");
+  a.destroy(ast);
+
+  /* async function* 表达式：var ag = async function*() { yield 1; }; */
+  sink = neojs::DiagnosticSink();
+  ast = neojs::parseSource(&a, "var ag = async function*() { yield 1; };",
+                           std::strlen("var ag = async function*() { yield 1; };"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink.hasErrors());
+  neojs::ASTNode *init = ast->root->children[0]->children[0]->children[1];
+  EXPECT_EQ(init->type, neojs::NodeType::FunctionExpression);
+  EXPECT_TRUE(init->fn_is_async);
+  EXPECT_TRUE(init->fn_is_generator);
+  a.destroy(ast);
+}
+
+TEST(Frontend, GeneratorMethodSyntax) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* 对象 generator 方法：let o = { *m() { yield 1; } }; */
+  neojs::AST *ast = neojs::parseSource(
+      &a, "let o = { *m() { yield 1; } };",
+      std::strlen("let o = { *m() { yield 1; } };"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink.hasErrors());
+  neojs::ASTNode *obj = ast->root->children[0]->children[0]->children[1];
+  EXPECT_EQ(obj->type, neojs::NodeType::ObjectLiteral);
+  ASSERT_EQ(obj->children.size(), 1u);
+  neojs::ASTNode *prop = obj->children[0];
+  EXPECT_EQ(prop->type, neojs::NodeType::Property);
+  EXPECT_EQ(prop->prop.kind, neojs::PropertyKind::Method);
+  neojs::ASTNode *fn = prop->children[1];
+  EXPECT_EQ(fn->type, neojs::NodeType::FunctionExpression);
+  EXPECT_TRUE(fn->fn_is_generator);
+  a.destroy(ast);
+
+  /* class generator 方法：class A { *m() { yield 1; } } */
+  sink = neojs::DiagnosticSink();
+  ast = neojs::parseSource(&a, "class A { *m() { yield 1; } }",
+                           std::strlen("class A { *m() { yield 1; } }"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink.hasErrors());
+  neojs::ASTNode *cls = ast->root->children[0];
+  EXPECT_EQ(cls->type, neojs::NodeType::ClassDeclaration);
+  /* children[1] = 第一个元素（Property） */
+  neojs::ASTNode *method = cls->children[1];
+  EXPECT_EQ(method->type, neojs::NodeType::Property);
+  EXPECT_EQ(method->prop.kind, neojs::PropertyKind::Method);
+  EXPECT_FALSE(method->prop.is_static);
+  neojs::ASTNode *mfn = method->children[1];
+  EXPECT_EQ(mfn->type, neojs::NodeType::FunctionExpression);
+  EXPECT_TRUE(mfn->fn_is_generator);
+  a.destroy(ast);
+
+  /* class static generator 方法：class A { static *m() { yield 1; } } */
+  sink = neojs::DiagnosticSink();
+  ast = neojs::parseSource(&a, "class A { static *m() { yield 1; } }",
+                           std::strlen("class A { static *m() { yield 1; } }"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink.hasErrors());
+  cls = ast->root->children[0];
+  method = cls->children[1];
+  EXPECT_EQ(method->type, neojs::NodeType::Property);
+  EXPECT_TRUE(method->prop.is_static);
+  mfn = method->children[1];
+  EXPECT_TRUE(mfn->fn_is_generator);
+  a.destroy(ast);
+
+  /* class async generator 方法：class A { async *m() { yield 1; } } */
+  sink = neojs::DiagnosticSink();
+  ast = neojs::parseSource(&a, "class A { async *m() { yield 1; } }",
+                           std::strlen("class A { async *m() { yield 1; } }"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink.hasErrors());
+  cls = ast->root->children[0];
+  method = cls->children[1];
+  EXPECT_EQ(method->type, neojs::NodeType::Property);
+  EXPECT_FALSE(method->prop.is_static);
+  mfn = method->children[1];
+  EXPECT_EQ(mfn->type, neojs::NodeType::FunctionExpression);
+  EXPECT_TRUE(mfn->fn_is_async);
+  EXPECT_TRUE(mfn->fn_is_generator);
+  a.destroy(ast);
+}
+
+TEST(Frontend, YieldRestrictedProduction) {
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  /* yield 后换行 → 裸 yield（restricted production，§14.4） */
+  neojs::AST *ast = neojs::parseSource(&a, "function* g() { yield\n5; }",
+                                       std::strlen("function* g() { yield\n5; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink.hasErrors());
+  neojs::ASTNode *fn = ast->root->children[0];
+  /* body 两条语句：ExprStmt(yield) / ExprStmt(5) */
+  ASSERT_EQ(fn->children[1]->children.size(), 2u);
+  neojs::ASTNode *yield_stmt = fn->children[1]->children[0];
+  neojs::ASTNode *yield = yield_stmt->children[0];
+  EXPECT_EQ(yield->type, neojs::NodeType::YieldExpression);
+  EXPECT_FALSE(yield->yield_delegate);
+  ASSERT_EQ(yield->children.size(), 1u);
+  EXPECT_EQ(yield->children[0], nullptr); /* 裸 yield */
+  neojs::ASTNode *five_stmt = fn->children[1]->children[1];
+  EXPECT_EQ(five_stmt->children[0]->type, neojs::NodeType::Literal);
+  a.destroy(ast);
+
+  /* yield 作为参数：function* g() { f(yield); } */
+  sink = neojs::DiagnosticSink();
+  ast = neojs::parseSource(&a, "function* g() { f(yield); }",
+                           std::strlen("function* g() { f(yield); }"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink.hasErrors());
+  fn = ast->root->children[0];
+  neojs::ASTNode *call = fn->children[1]->children[0]->children[0];
+  EXPECT_EQ(call->type, neojs::NodeType::CallExpression);
+  ASSERT_EQ(call->children.size(), 2u); /* callee + arg */
+  neojs::ASTNode *arg = call->children[1];
+  EXPECT_EQ(arg->type, neojs::NodeType::YieldExpression);
+  EXPECT_FALSE(arg->yield_delegate);
+  a.destroy(ast);
+
+  /* return yield 1; → return (yield 1) */
+  sink = neojs::DiagnosticSink();
+  ast = neojs::parseSource(&a, "function* g() { return yield 1; }",
+                           std::strlen("function* g() { return yield 1; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink.hasErrors());
+  fn = ast->root->children[0];
+  neojs::ASTNode *ret = fn->children[1]->children[0];
+  EXPECT_EQ(ret->type, neojs::NodeType::ReturnStatement);
+  ASSERT_EQ(ret->children.size(), 1u);
+  EXPECT_EQ(ret->children[0]->type, neojs::NodeType::YieldExpression);
+  a.destroy(ast);
+
+  /* 嵌套 yield：function* g() { var x = yield yield 1; } */
+  sink = neojs::DiagnosticSink();
+  ast = neojs::parseSource(&a, "function* g() { var x = yield yield 1; }",
+                           std::strlen("function* g() { var x = yield yield 1; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink.hasErrors());
+  fn = ast->root->children[0];
+  neojs::ASTNode *decl = fn->children[1]->children[0];
+  neojs::ASTNode *outer_yield = decl->children[0]->children[1];
+  EXPECT_EQ(outer_yield->type, neojs::NodeType::YieldExpression);
+  ASSERT_EQ(outer_yield->children.size(), 1u);
+  neojs::ASTNode *inner_yield = outer_yield->children[0];
+  EXPECT_EQ(inner_yield->type, neojs::NodeType::YieldExpression);
+  a.destroy(ast);
+}
+
+TEST(Frontend, YieldOutsideGeneratorIsIdentifier) {
+  /* 非生成器函数内 yield 是普通标识符（§14.4 仅 generator 体内合法）。
+   * function g() { var x = yield; } —— yield 作为标识符赋值给 x。 */
+  neojs::DiagnosticSink sink;
+  neojs::JSAllocator a = makeAllocator();
+  neojs::AST *ast = neojs::parseSource(
+      &a, "function g() { var x = yield; }",
+      std::strlen("function g() { var x = yield; }"), sink);
+  ASSERT_NE(ast, nullptr);
+  EXPECT_FALSE(sink.hasErrors());
+  neojs::ASTNode *fn = ast->root->children[0];
+  EXPECT_FALSE(fn->fn_is_generator);
+  neojs::ASTNode *decl = fn->children[1]->children[0];
+  neojs::ASTNode *init = decl->children[0]->children[1];
+  /* yield 作为标识符（非 YieldExpression） */
+  EXPECT_EQ(init->type, neojs::NodeType::Identifier);
+  EXPECT_EQ(init->name, "yield");
+  a.destroy(ast);
+}
+
 TEST(Frontend, FunctionDeclaration) {
   neojs::DiagnosticSink sink;
   neojs::JSAllocator a = makeAllocator();

@@ -396,6 +396,12 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
       /* M5.1d-c1：super() 构造调用（children = 参数列表）。 */
       out += "SuperCall()\n";
       break;
+    case NodeType::YieldExpression:
+      /* M5.5a：yield / yield* expr / 裸 yield。
+       * children[0] = yield 值（nullptr 表示裸 yield，不 dump）；
+       * yield_delegate 标 yield* 委托。 */
+      out += node->yield_delegate ? "YieldExpression*\n" : "YieldExpression\n";
+      break;
   }
   for (const ASTNode *child : node->children) dumpNode(child, out, depth + 1);
 }

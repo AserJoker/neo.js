@@ -103,6 +103,9 @@ enum class NodeType : uint8_t {
   /* static 块（M5.1d-d）：class C { static { stmts } }。
    * children = 语句列表；类定义完成后按序执行，this = 类构造器。 */
   StaticBlock,         /* class 静态初始化块（M5.1d-d） */
+  /* yield 表达式（M5.5a，§14.4）：children[0] = yield 值表达式（nullptr 表示
+   * 裸 yield）。yield.delegate 标 yield* 委托。仅 generator 函数体内合法。 */
+  YieldExpression,     /* yield expr / yield* expr / 裸 yield（M5.5a） */
 };
 
 /* 声明关键字类型（M1.5 ①）：var / let / const */
@@ -255,6 +258,7 @@ struct ASTNode {
   bool fn_has_name = false;   /* FunctionDeclaration/Expression：children[0] 是否函数名（匿名时为首参数） */
   bool fn_is_async = false;   /* 函数：async 函数（async function / async 箭头 / async 方法，M5.4） */
   bool fn_is_generator = false; /* 函数：generator 函数（function*，M5.5 预留） */
+  bool yield_delegate = false;  /* YieldExpression：yield* 委托（M5.5a） */
   MemberPayload member;       /* MemberExpression：computed/optional 标记 */
 
   /* 构造：仅由 Parser 经 JSAllocator::create 创建（见 parser.h） */
