@@ -124,4 +124,60 @@ ConversionResult iteratorValue(JSContext *ctx, JSValue *iterResult) {
   return ok(v != nullptr ? v : ctx->createValue(Kind::Undefined));
 }
 
+/* 判断 completion 是否为 abrupt（throw 或内部错误）。
+ * normal completion：value != nullptr（任意占位），error 空，thrown 空。
+ * abrupt (throw)：thrown != nullptr。
+ * abrupt (internal)：error 非空、thrown == nullptr、value == nullptr。 */
+static bool isAbrupt(const ConversionResult &c) {
+  return c.thrown != nullptr || !c.error.empty();
+}
+
+/* IteratorClose（§7.4.6）：见 iterator.h 注释。 */
+ConversionResult iteratorClose(JSContext *ctx, JSValue *iterator,
+                               ConversionResult completion) {
+  if (iterator == nullptr || !iterator->isObject()) {
+    /* 非对象迭代器：无法关闭，直接返回 completion。 */
+    return completion;
+  }
+
+  /* 1. method = GetMethod(iterator, "return")。 */
+  JSValue *return_key = ctx->createValue(std::string("return"));
+  ConversionResult method_r = getMethod(ctx, iterator, return_key);
+  if (!method_r.ok()) {
+    /* GetMethod 自身失败（如属性不可调用）：§7.4.6 step 3-4 规定
+     * 若原 completion 是 abrupt 则维持原 completion，否则返回此错误。 */
+    if (isAbrupt(completion)) return completion;
+    return method_r;
+  }
+  JSValue *method = method_r.value;
+  if (method == nullptr) {
+    /* 无 return 方法（undefined/null）：直接返回 completion。 */
+    return completion;
+  }
+
+  /* 2. innerResult = Call(method, iterator)。 */
+  ConversionResult inner = call(ctx, method, iterator, nullptr, 0);
+  bool inner_abrupt = isAbrupt(inner);
+
+  /* 3. 若原 completion 是 abrupt：维持原 completion（除非 inner 抛错优先）。
+   *   §7.4.6 step 3.c：innerResult abrupt -> 返回 innerResult；否则返回 completion。 */
+  if (isAbrupt(completion)) {
+    if (inner_abrupt) return inner;
+    return completion;
+  }
+
+  /* 4. 原 completion 是 normal：若 inner 是 abrupt，返回 inner。 */
+  if (inner_abrupt) return inner;
+
+  /* 5. 两者都 normal：innerResult.value 必须是 Object（§7.4.6 step 3.e）。
+   * inner.value 可能为 nullptr（call 返回 ok(nullptr) 的特殊语义）——
+   * 视为非对象，抛 TypeError。 */
+  if (inner.value == nullptr || !inner.value->isObject()) {
+    return fail("TypeError: iterator return() did not return an object");
+  }
+
+  /* 6. 返回 normal completion（保持原 completion 的 value 占位）。 */
+  return completion;
+}
+
 }  // namespace neojs

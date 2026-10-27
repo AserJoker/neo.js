@@ -196,6 +196,15 @@ enum class Opcode : uint8_t {
    * AsyncFrame.delegate_iterator（GC 引用边）。throw/return 恢复时转发给
    * inner iterator.throw/return（§27.5.3.3 step 6-7）。 */
   YieldDelegate,
+
+  /* M5.5b 迭代器协议对齐（§7.4.6 IteratorClose）。
+   * 栈顶 iterator -> 弹栈关闭。completion 取自帧 pending 状态：
+   *   has_pending=true -> 用 pending 作 abrupt completion，调 iteratorClose，
+   *     清 pending；iteratorClose 返回的 completion 压栈或抛错。
+   *   has_pending=false -> normal completion（占位 undefined），调 iteratorClose。
+   * iteratorClose 内部调 iterator.return()（若有），返回非对象则 TypeError。
+   * 用于 for-of 提前终止（break/return/throw）+ yield* inner 异常路径。 */
+  IteratorClose,
 };
 
 /* -------------------------------------------------------------------------- */
@@ -340,6 +349,9 @@ class BytecodeBuilder {
   void dup() { push_op(Opcode::Dup); }
   void get_iterator() { push_op(Opcode::GetIterator); }
   void iterator_step() { push_op(Opcode::IteratorStep); }
+  /* M5.5b IteratorClose（§7.4.6）：栈顶 iterator 弹栈关闭，completion 取自
+   * 帧 pending 状态。for-of 提前终止 + yield* inner 异常路径调用。 */
+  void iterator_close() { push_op(Opcode::IteratorClose); }
   void call(uint16_t argc) { push_op(Opcode::Call, argc); }
   void call_method(uint16_t argc) { push_op(Opcode::CallMethod, argc); }
   void construct(uint16_t argc) { push_op(Opcode::Construct, argc); }

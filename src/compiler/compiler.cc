@@ -2234,7 +2234,7 @@ bool Compiler::compileFor(const ASTNode &node, const std::string &label) {
 }
 
 bool Compiler::compileForOf(const ASTNode &node, const std::string &label) {
-  /* for (left of right) body  （M4.4f，§14.7.5）
+  /* for (left of right) body  （M4.4f，§14.7.5；M5.5b 加 IteratorClose）
    *   [right]              ; 可迭代对象
    *   GetIterator          ; -> iterator
    *   StoreVar iter_tmp    ; 迭代器存临时槽
@@ -2243,10 +2243,25 @@ bool Compiler::compileForOf(const ASTNode &node, const std::string &label) {
    *   IteratorStep         ; -> [value, done]（done 在栈顶）
    *   JumpIfTrue end_label ; done true 弹栈跳 end；done false 继续（value 留栈顶）
    *   [left 赋值]          ; 栈顶 value -> 变量/成员
-   *   [body]
-   *   Jump loop_label
+   *   [body]               ; try 区间起点（异常 -> finally -> IteratorClose）
+   *   Jump loop_label      ; try 区间终点
    * end_label:
    *   Pop                  ; 清完成路径残留 value（undefined）
+   *   Jump after_label     ; 正常完成跳过 finally
+   * break_label:           ; break 跳此处（无 pending 异常）
+   * finally_label:         ; finally 块：IteratorClose
+   *   LoadVar iter_tmp
+   *   IteratorClose        ; close（无 pending -> normal completion）
+   *   Pop                  ; close 压回 undefined 占位，弹出
+   *   RethrowPending       ; 有 pending 重抛（body 抛异常时）
+   * after_label:
+   *
+   * 异常表：try [try_start, try_end) -> finally_label（无 catch，挂起 + 跳 finally）。
+   *   body 抛异常 -> VM 挂起 pending + 跳 finally_label -> IteratorClose 读
+   *   pending 作 abrupt completion -> close 后 RethrowPending 重抛。
+   * break -> break_label（无 pending）-> finally -> IteratorClose normal -> 继续。
+   * 正常完成 -> end_label -> Pop -> Jump after（跳过 finally，不 close——
+   *   迭代器已自然 done，无需 return）。
    *
    * children = [left, right, body]；left 可为 VariableDeclaration 或表达式。 */
   if (node.children.size() < 3) {
@@ -2272,6 +2287,13 @@ bool Compiler::compileForOf(const ASTNode &node, const std::string &label) {
   BcLabel loop_label = builder_.new_label();
   BcLabel end_label = builder_.new_label();
   BcLabel break_label = builder_.new_label();
+  BcLabel finally_label = builder_.new_label();
+  BcLabel after_label = builder_.new_label();
+
+  /* try 区间起点。 */
+  TryEntry entry;
+  entry.try_start = static_cast<uint32_t>(builder_.position());
+
   builder_.bind_label(loop_label);
   builder_.load_var(iter_tmp);
   builder_.iterator_step();
@@ -2281,7 +2303,9 @@ bool Compiler::compileForOf(const ASTNode &node, const std::string &label) {
   if (!compileLoopLeft(left)) return false;
 
   /* body（break -> break_label，continue -> loop）。break_label 独立于
-   * end_label：结束路径栈顶残留 undefined 需 Pop，break 时栈已平衡。 */
+   * end_label：结束路径栈顶残留 undefined 需 Pop，break 时栈已平衡。
+   * body 内的 break 跳 break_label（进 finally 调 IteratorClose）；
+   * body 抛异常由异常表拦截 -> finally_label。 */
   LoopContext ctx;
   ctx.label = label;
   ctx.break_label = break_label;
@@ -2292,9 +2316,37 @@ bool Compiler::compileForOf(const ASTNode &node, const std::string &label) {
   loops_.pop_back();
   if (!body_ok) return false;
   builder_.jump(&loop_label);
+
+  /* try 区间终点（异常检测区间 = [try_start, try_end)）。 */
+  entry.try_end = static_cast<uint32_t>(builder_.position());
+
+  /* end_label：迭代器自然 done 的正常完成路径——不 close（迭代器已耗尽）。
+   * Pop 清残留 undefined，跳过 finally 直接到 after。 */
   builder_.bind_label(end_label);
   builder_.pop(); /* 清完成路径残留 value */
+  builder_.jump(&after_label);
+
+  /* break_label：break 跳此处（无 pending），fall through 到 finally。 */
   builder_.bind_label(break_label);
+
+  /* finally_label：IteratorClose。break 与异常路径汇聚于此。
+   * IteratorClose 读帧 pending 状态：break 路径无 pending（normal completion，
+   *   调 iterator.return() 关闭）；异常路径有 pending（abrupt completion，
+   *   close 后 RethrowPending 重抛原异常）。
+   * 注：正常完成路径已 Jump after 跳过此块。 */
+  builder_.bind_label(finally_label);
+  entry.finally_start = static_cast<uint32_t>(builder_.position());
+  builder_.load_var(iter_tmp);
+  builder_.iterator_close();
+  builder_.pop(); /* close 压回 undefined 占位，弹出 */
+  builder_.rethrow_pending(); /* 有 pending 重抛；无则正常继续 */
+  entry.finally_end = static_cast<uint32_t>(builder_.position());
+
+  /* after_label：所有路径汇聚点。 */
+  builder_.bind_label(after_label);
+
+  /* 注册异常表（无 catch，仅 finally）。 */
+  builder_.add_try_entry(std::move(entry));
   return true;
 }
 
@@ -3648,6 +3700,11 @@ bool Compiler::compileUpdate(const ASTNode &node) {
     } else {
       builder_.store_prop(prop_name);
     }
+    /* store_prop/store_elem/store_private 均保留赋值结果值（val）在栈顶，
+     * 但 ++/-- 表达式结果是新值（前缀）或旧值（后缀），由下方 LoadVar 重新
+     * 装载，需弹掉此残留以保持栈平衡（否则嵌套上下文如对象字面量属性值
+     * 会出现栈错位：{ v: o.x++ } 编译时 store_prop "v" 会取到残留而非 objLit）。 */
+    builder_.pop();
     /* 结果：前缀 = 新值；后缀 = 旧值。 */
     if (prefix) {
       builder_.load_var(t_new);

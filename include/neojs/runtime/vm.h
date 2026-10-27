@@ -50,7 +50,8 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
                              JSFunction *self = nullptr,
                              size_t start_pc = 0,
                              std::vector<JSValue *> *restore_stack = nullptr,
-                             JSValue *initial_thrown = nullptr);
+                             JSValue *initial_thrown = nullptr,
+                             JSValue *initial_return = nullptr);
 
 }  // namespace neojs
 

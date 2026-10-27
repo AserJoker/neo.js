@@ -3255,9 +3255,24 @@ JSValue *generatorProto(JSContext *ctx) {
   return p;
 }
 
-/* 安装 Generator.prototype + 全局 Generator 构造器占位（M5.5a-3）。
- * Generator 构造器本阶段不可 new（无 [[Construct]]），仅注册 prototype
- * 供 generatorCall 创建的对象原型链使用。完整构造器留 M5.5b。 */
+/* Generator 构造器（M5.5b，§27.5.2.2 %Generator%）。
+ * Generator 不是普通构造器——不可 new（generator 函数声明/表达式才创建
+ * generator 对象，§14.4 GeneratorExpression）。注册到 global 仅作 prototype
+ * 持有者 + instanceof 检查点。new Generator() 抛 TypeError（§27.5.2.2 step 2）。
+ * prototype 指向 Generator.prototype，prototype.constructor 指回 Generator。 */
+ConversionResult generatorConstructorBuiltin(JSContext *ctx, JSValue *thisVal,
+                                             JSValue *const *args, size_t argc) {
+  (void)thisVal; (void)args; (void)argc;
+  /* Generator 构造器不可作为函数调用也不可 new（§27.5.2.2）。
+   * 抽象运算 IsConstructor(newTarget) 检查——此处统一拒绝。 */
+  return fail("TypeError: Generator is not a constructor");
+}
+
+/* 安装 Generator.prototype + 全局 Generator 构造器 + Symbol.toStringTag（M5.5b）。
+ * Generator 构造器不可 new（generator 函数声明才创建 generator），仅注册
+ * prototype 供 generatorCall 创建的对象原型链使用 + 全局 Generator 标识符
+ * 供 instanceof / typeof 检查。Generator.prototype[Symbol.toStringTag] = "Generator"
+ * （§27.5.2.1）。 */
 void installGeneratorBuiltins(JSContext *ctx) {
   JSValue *gen_proto = generatorProto(ctx);
   ctx->heap().pin(gen_proto);
@@ -3274,7 +3289,21 @@ void installGeneratorBuiltins(JSContext *ctx) {
   gen_proto->object()->setSymbolProperty(
       wellKnownSymbol(ctx, WellKnown::Iterator),
       makeBuiltin(ctx, generatorSelfIterator, ThisMode::Strict));
+  /* Generator.prototype[Symbol.toStringTag] = "Generator"（§27.5.2.1）。
+   * Object.prototype.toString.call(gen) 据此返回 "[object Generator]"。 */
+  gen_proto->object()->setSymbolProperty(
+      wellKnownSymbol(ctx, WellKnown::ToStringTag),
+      ctx->createValue(std::string("Generator")));
   ctx->heap().unpin(gen_proto);
+
+  /* 注册全局 Generator 构造器（不可 new，仅作 prototype 持有者）。
+   * constructor 指回 Generator，Generator.prototype 指向 gen_proto。
+   * 与其他内置构造器一致：prototype 属性挂到构造器对象上（§27.5.2.2）。 */
+  JSValue *gen_ctor = makeBuiltin(ctx, generatorConstructorBuiltin,
+                                  ThisMode::Strict);
+  gen_ctor->object()->setProperty("prototype", gen_proto);
+  gen_proto->object()->setProperty("constructor", gen_ctor);
+  ctx->globalObject()->object()->setProperty("Generator", gen_ctor);
 }
 
 }  // namespace neojs

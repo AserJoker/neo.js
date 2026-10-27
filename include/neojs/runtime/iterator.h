@@ -52,6 +52,27 @@ ConversionResult iteratorValue(JSContext *ctx, JSValue *iterResult);
  *   存在但不可调用 -> TypeError。供 Symbol.iterator / return 等获取。 */
 ConversionResult getMethod(JSContext *ctx, JSValue *obj, JSValue *key);
 
+/* IteratorClose（§7.4.6）：关闭迭代器。
+ *   completion 入参：调用方的 completion（normal 或 abrupt）。
+ *     - normal：value 非 nullptr（任意占位值），error/thrown 空；
+ *     - abrupt（throw）：thrown 非 nullptr（JS 抛出值），value=nullptr；
+ *     - abrupt（内部错误）：error 非空，value=nullptr，thrown=nullptr。
+ *   语义：
+ *     1. method = GetMethod(iterator, "return")
+ *     2. method == undefined/null -> 返回 completion（无 return 方法）
+ *     3. innerResult = Call(method, iterator)
+ *     4. 若 completion 是 abrupt 且 innerResult 是 abrupt -> 返回 innerResult
+ *        （return 抛错优先于原 completion）
+ *     5. 若 completion 是 abrupt 且 innerResult 是 normal -> 返回 completion
+ *        （return 正常时维持原 abrupt）
+ *     6. 若 completion 是 normal 且 innerResult 是 abrupt -> 返回 innerResult
+ *     7. 若 completion 是 normal 且 innerResult 是 normal：
+ *        innerResult.value 必须是 Object，否则 throw TypeError
+ *     8. 返回 normal（value=undefined）
+ *   for-of break/异常、yield* inner 异常、Promise.race 等提前终止场景调用。 */
+ConversionResult iteratorClose(JSContext *ctx, JSValue *iterator,
+                               ConversionResult completion);
+
 }  // namespace neojs
 
 #endif  // NEOJS_RUNTIME_ITERATOR_H

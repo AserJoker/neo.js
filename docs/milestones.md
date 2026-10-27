@@ -610,12 +610,33 @@ async 方法 this/多次挂起恢复现场完整性）；全量 566 测试全绿
 
 验收：generator 脚本（含 yield* 委托）通过
 
-**M5.5b 迭代器协议对齐（⏳ 未启动）**
+**M5.5b 迭代器协议对齐（✅ 完成）**
 
-- 内建迭代器与协议抽象运算进一步对齐（架构 §8 B2）
-- `Iterator` 相关方法（Symbol.iterator 全量）
+- `IteratorClose` 抽象运算（§7.4.6）实现：`iteratorClose()` 调 iterator.return()（若有），
+  返回非对象则 TypeError；abrupt completion 透传，normal 时维持原 completion
+- `IteratorClose` 指令 + handler：for-of 提前终止（break/return/throw）+ yield* inner
+  异常路径调用
+- `compileForOf` try-finally 改造：break/异常路径经 finally 调 IteratorClose 后再继续
+- return completion 穿透 try-finally（§13.10.5 / §27.5.3.3 step 5-7）：
+  - 普通函数 return 在 try-finally 内穿透 finally 后完成（op_Ret 检查异常表，
+    命中 finally 挂起 return completion 跳 finally_start，RethrowPending 用 return
+    value 完成本帧）
+  - generator.return() 注入 return completion 续延（runBytecode initial_return 分支）：
+    命中 finally 跳 finally_start，未命中直接以 return value 完成
+  - tryDispatch is_return 分支：return completion 不进 catch（return 不是异常），
+    只穿透 finally
+- generator 首次 resume 栈底补 numLocals 局部槽占位（修复 yield 挂起后栈错位）：
+  generatorCall 创建帧时 stack 为空，首次 next 走 restore_stack 路径前需补
+  numLocals 个 undefined 局部槽（与 asyncCall runBytecode restore_stack=nullptr
+  分支一致），否则 LoadVar/StoreVar 按栈底 slot 读写出界
+- Generator 构造器注册到 global + Symbol.toStringTag（§27.5.2）：
+  - `Generator` 不可 new（generator 函数声明才创建 generator），new 抛 TypeError
+  - `Generator.prototype[Symbol.toStringTag] = "Generator"`，
+    `Object.prototype.toString.call(gen)` 返回 `[object Generator]`
+  - `Generator.prototype.constructor` 指回 Generator
 
-验收：迭代器协议用例集通过
+验收：迭代器协议用例集通过（IteratorClose 4 测试 + return 穿透 2 测试 +
+Generator 构造器 2 测试，全量 599 测试绿）
 
 **M5.5c AsyncGenerator / for await（⏳ 未启动）**
 

@@ -500,3 +500,291 @@ TEST(Generator, YieldDelegateNested) {
   JS_FreeContext(ctx);
   JS_FreeAllocator(a);
 }
+
+/* -------------------------------------------------------------------------- */
+/* M5.5b 迭代器协议对齐：IteratorClose（§7.4.6）                              */
+/* -------------------------------------------------------------------------- */
+
+/* for-of break 时迭代器关闭——自定义迭代器 return 被调用，标志置位。 */
+TEST(Generator, ForOfBreakClosesIterator) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "var closed = false;"
+      "var iter = {"
+      "  _i: 0,"
+      "  next: function() {"
+      "    return { value: this._i++, done: this._i > 5 };"
+      "  },"
+      "  \"return\": function() {"
+      "    closed = true;"
+      "    return { value: undefined, done: true };"
+      "  }"
+      "};"
+      "iter[Symbol.iterator] = function() { return this; };"
+      "var sum = 0;"
+      "for (var x of iter) {"
+      "  sum += x;"
+      "  if (x === 2) break;"
+      "}"
+      "globalThis.closed = closed;"
+      "globalThis.sum = sum;");
+
+  /* 迭代 0,1,2 时 break -> 调 iter.return() 关闭。 */
+  expectGlobalBoolean(ctx, "closed", true);
+  expectGlobalNumber(ctx, "sum", 3.0); /* 0+1+2 */
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* for-of body 抛异常时迭代器关闭——异常路径走 finally -> IteratorClose
+ * （abrupt completion）-> RethrowPending 重抛原异常，外层 catch 捕获。 */
+TEST(Generator, ForOfThrowClosesIterator) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "var closed = false;"
+      "var caught = null;"
+      "var iter = {"
+      "  _i: 0,"
+      "  next: function() {"
+      "    return { value: this._i++, done: this._i > 5 };"
+      "  },"
+      "  \"return\": function() {"
+      "    closed = true;"
+      "    return { value: undefined, done: true };"
+      "  }"
+      "};"
+      "iter[Symbol.iterator] = function() { return this; };"
+      "try {"
+      "  for (var x of iter) {"
+      "    if (x === 1) throw 'boom';"
+      "  }"
+      "} catch (e) {"
+      "  caught = e;"
+      "}"
+      "globalThis.closed = closed;"
+      "globalThis.caught = caught;");
+
+  expectGlobalBoolean(ctx, "closed", true);
+  expectGlobalString(ctx, "caught", "boom");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* for-of 正常完成（迭代器自然 done）不调 return——IteratorClose 在正常路径
+ * 被跳过（end_label -> Jump after，绕过 finally）。 */
+TEST(Generator, ForOfNormalNoClose) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "var closed = false;"
+      "var iter = {"
+      "  _i: 0,"
+      "  next: function() {"
+      "    return { value: this._i++, done: this._i > 3 };"
+      "  }"
+      "};"
+      "iter[Symbol.iterator] = function() { return this; };"
+      "var sum = 0;"
+      "for (var x of iter) { sum += x; }"
+      "globalThis.closed = closed;"
+      "globalThis.sum = sum;");
+
+  /* 自然迭代 0,1,2 后 done -> 不调 return。 */
+  expectGlobalBoolean(ctx, "closed", false);
+  expectGlobalNumber(ctx, "sum", 3.0); /* 0+1+2 */
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* for-of break 消费 generator：generator 的 return 被调（generator 自身
+ * 经 Generator.prototype[Symbol.iterator] 返回 this，return 即
+ * Generator.prototype.return 强制完成）。验证 generator 委托与
+ * IteratorClose 协同。 */
+TEST(Generator, ForOfBreakGeneratorClose) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "globalThis.seq = '';"
+      "function* g() {"
+      "  try { yield 1; yield 2; yield 3; }"
+      "  finally { globalThis.seq += 'F'; }"
+      "}"
+      "globalThis.sum = 0;"
+      "for (var x of g()) {"
+      "  globalThis.sum += x;"
+      "  if (x === 2) break;"
+      "}");
+
+  /* break 时 generator.return() 被调 -> 触发 finally -> 'F'。 */
+  expectGlobalString(ctx, "seq", "F");
+  expectGlobalNumber(ctx, "sum", 3.0); /* 1+2 */
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 隔离诊断：对象方法内 this._i++ 单独执行（不经 for-of）。 */
+TEST(Generator, DiagThisIncrement) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "var o = { _i: 0, next: function() { return this._i++; } };"
+      "var r1 = o.next();"
+      "var r2 = o.next();"
+      "globalThis.r1 = r1;"
+      "globalThis.r2 = r2;");
+
+  expectGlobalNumber(ctx, "r1", 0.0);
+  expectGlobalNumber(ctx, "r2", 1.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 隔离诊断：对象字面量返回 {value, done} 单独执行（不经 for-of）。 */
+TEST(Generator, DiagObjectLiteralReturn) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "var o = { _i: 0, next: function() {"
+      "  return { value: this._i++, done: this._i > 3 };"
+      "} };"
+      "var r1 = o.next();"
+      "globalThis.v1 = r1.value;"
+      "globalThis.d1 = r1.done;");
+
+  expectGlobalNumber(ctx, "v1", 0.0);
+  expectGlobalBoolean(ctx, "d1", false);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 隔离诊断：对象字面量 {value: 表达式} 单属性。 */
+TEST(Generator, DiagObjectLiteralSingle) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "var o = { _i: 5, next: function() { return { v: this._i }; } };"
+      "var r = o.next();"
+      "globalThis.v = r.v;");
+
+  expectGlobalNumber(ctx, "v", 5.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 隔离诊断：对象字面量 {value: this._i++} 单属性。 */
+TEST(Generator, DiagObjectLiteralInc) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "var o = { _i: 0, next: function() { return { v: this._i++ }; } };"
+      "var r = o.next();"
+      "globalThis.v = r.v;"
+      "globalThis.i = o._i;");
+
+  expectGlobalNumber(ctx, "v", 0.0);
+  expectGlobalNumber(ctx, "i", 1.0);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* 隔离诊断：普通函数 try-finally 内 return，finally 应执行。 */
+TEST(Generator, DiagReturnInTryFinally) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "globalThis.seq = '';"
+      "function f() {"
+      "  try { return 'val'; }"
+      "  finally { globalThis.seq += 'F'; }"
+      "}"
+      "globalThis.r = f();");
+
+  expectGlobalString(ctx, "r", "val");
+  expectGlobalString(ctx, "seq", "F");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* Generator 构造器注册 + Symbol.toStringTag（M5.5b，§27.5.2）。
+ * Generator 不可 new（generator 函数声明/表达式才创建 generator），
+ * 但 globalThis.Generator 存在且 prototype.constructor 指回 Generator。
+ * Generator.prototype[Symbol.toStringTag] = "Generator"，
+ * Object.prototype.toString.call(gen) 返回 "[object Generator]"。 */
+TEST(Generator, GeneratorConstructorAndToStringTag) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  evalAndRunJobs(
+      ctx,
+      "globalThis.hasGen = typeof Generator;"
+      "globalThis.protoCtor = Generator.prototype.constructor === Generator;"
+      "function* g() { yield 1; }"
+      "var gen = g();"
+      "globalThis.tag = Object.prototype.toString.call(gen);"
+      "globalThis.ctorTag = Object.prototype.toString.call(gen).slice(8, -1);");
+
+  expectGlobalString(ctx, "hasGen", "function");
+  expectGlobalBoolean(ctx, "protoCtor", true);
+  expectGlobalString(ctx, "tag", "[object Generator]");
+  expectGlobalString(ctx, "ctorTag", "Generator");
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}
+
+/* new Generator() 抛 TypeError（§27.5.2.2 step 2：Generator 不可作为构造器）。 */
+TEST(Generator, GeneratorConstructorNotNewable) {
+  JSAllocator *a = nullptr;
+  JSContext *ctx = makeCtx(&a);
+  ASSERT_NE(ctx, nullptr);
+
+  /* new Generator() 应抛 TypeError，eval 返回 JS_EXCEPTION。 */
+  JSValue *r = JS_Eval(ctx, "new Generator()", std::strlen("new Generator()"));
+  ASSERT_NE(r, nullptr);
+  EXPECT_EQ(JS_GetKind(ctx, r), JS_EXCEPTION)
+      << "new Generator() should throw TypeError, got: "
+      << (r ? JS_ToString(ctx, r) : "");
+  JS_FreeValue(ctx, r);
+
+  JS_FreeContext(ctx);
+  JS_FreeAllocator(a);
+}

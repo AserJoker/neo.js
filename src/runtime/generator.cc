@@ -172,35 +172,66 @@ ConversionResult resumeGenerator(JSContext *ctx, JSValue *gen_v,
 
   gen->setGeneratorState(static_cast<int>(GeneratorState::Running));
 
-  /* return 模式：强制完成——置 completed，返回 {value, done:true}。
-   * 简化：未实现 try/finally 穿透与 finally 块恢复（§27.5.3.3 step 5-7），
-   * M5.5a-3 阶段直接完成。 */
+  /* return 模式（§27.5.3.3 step 5-7）：注入 return completion 续延执行。
+   * 从 yield 挂起点续延，把 return value 当作 return completion 派发——
+   * 命中 try-finally 则穿透 finally 执行后用 return value 完成；无 finally
+   * 覆盖则直接以 return value 完成。VM 内 op_Ret/RethrowPending 复用同一
+   * return completion 机制（pending_is_return）。 */
   if (mode == 2) {
-    gen->setGeneratorState(static_cast<int>(GeneratorState::Completed));
+    JSValue *ret_val = (value != nullptr) ? value
+                                          : ctx->createValue(Kind::Undefined);
+    std::vector<JSValue *> restore_stack = std::move(frame->stack);
+    /* return completion 不压栈值（与 next 压 yield 值不同）——runBytecode
+     * initial_return 分支自行处理派发或压栈完成。 */
+    ConversionResult r = runBytecode(
+        ctx, frame->fn->bytecode(), frame->frame_this, nullptr, 0, frame->env,
+        frame->fn, frame->pc, &restore_stack, nullptr, ret_val);
+
+    /* 函数完成（return 穿透 finally 后或直接完成）。 */
     gen->setGeneratorContext(nullptr);
-    JSValue *v = (value != nullptr) ? value : ctx->createValue(Kind::Undefined);
-    return ok(createIterResult(ctx, v, true));
+    gen->setGeneratorState(static_cast<int>(GeneratorState::Completed));
+
+    if (!r.ok()) {
+      /* finally 块抛错：向 return() 调用方传播异常（§27.5.3.3 step 7.b）。 */
+      return r;
+    }
+    /* 正常完成：返回 {value: retval, done:true}。
+     * retval 是 return value（finally 穿透后保留）；r.value 为空（done 路径）
+     * 时回退到注入的 return value。 */
+    JSValue *retval = r.value;
+    if (retval == nullptr) retval = ret_val;
+    return ok(createIterResult(ctx, retval, true));
   }
 
   /* next/throw：从 frame 重建现场续延。
    *   next：value 压栈（作为 yield 表达式的值）
    *   throw：value 作异常注入（yield 处抛出，可被 try/catch 捕获）
-   * 首次 next（SuspendedStart）：pc=0，无需压栈（首条指令即函数体开头）；
-   *   value 应为 undefined（规范：首参被忽略，GeneratorStart 不接收值）。 */
+   * 首次 next（SuspendedStart）：pc=0，frame->stack 为空（generatorCall 初始化
+   *   时清空）。此时栈底需补 numLocals 个局部槽占位（与 asyncCall 经
+   *   runBytecode restore_stack=nullptr 分支初始化一致）——否则 LoadVar/StoreVar
+   *   按 stack[slot] 读写出界，yield 后 Pop 弹空栈下溢。参数已在 env（generatorCall
+   *   写入），局部槽填 undefined 占位即可。首条指令即函数体开头，无需压栈 value
+   *   （规范：首参被忽略，GeneratorStart 不接收值）。 */
   std::vector<JSValue *> restore_stack = std::move(frame->stack);
   JSValue *thrown = nullptr;
   const bool is_first_resume =
       (state == static_cast<int>(GeneratorState::SuspendedStart));
-  if (mode == 0) {
-    /* next：非首次压栈 value（首次忽略 value，压 undefined 保持栈平衡） */
-    if (is_first_resume) {
+  if (is_first_resume) {
+    /* 首次 resume：补 numLocals 个 undefined 局部槽占位。 */
+    const FunctionBytecode &bc = frame->fn->bytecode();
+    for (size_t i = 0; i < bc.numLocals; ++i) {
       restore_stack.push_back(ctx->createValue(Kind::Undefined));
-    } else {
+    }
+  }
+  if (mode == 0) {
+    /* next：非首次压栈 value（首次不压——首条指令即函数体开头，无 yield 待填值）。 */
+    if (!is_first_resume) {
       restore_stack.push_back(value != nullptr ? value
                                                : ctx->createValue(Kind::Undefined));
     }
   } else {
-    /* throw：异常注入 */
+    /* throw：异常注入（首次 throw 在 SuspendedStart 视作 completed 抛出，
+     *   上面 completed 分支已处理；此处非首次，注入 thrown）。 */
     thrown = (value != nullptr) ? value : ctx->createValue(Kind::Undefined);
   }
 

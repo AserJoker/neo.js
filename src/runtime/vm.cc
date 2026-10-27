@@ -84,6 +84,11 @@ struct VmFrame {
   ConversionResult pending;
   bool has_pending = false;
   uint32_t pending_handle = 0;
+  /* M5.5b：挂起的是 return completion（vs throw completion）。
+   * try-finally 内 return / generator.return() 注入时置位：finally 末尾
+   * RethrowPending 据此用 return value 完成函数（不抛错），实现 §13.10.5
+   * return 穿透 finally 语义。pending.thrown 装 return value。 */
+  bool pending_is_return = false;
   bool done = false; /* Ret 执行后置位：主循环应立即结束本帧 */
   /* M5.4 async：await 挂起（op_Await 遇未决 promise 置位）。
    * 置位后主循环结束，runBytecode 返回 suspended=true。 */
@@ -104,12 +109,16 @@ using OpHandler = ConversionResult (*)(VmFrame &f);
  *   err          挂起/传播的异常（JS throw 值或内部错误字符串）
  *   new_pc       输出：handler 位置
  *   pending/has_pending/pending_handle  finally 挂起异常状态（帧级）
- *   env          当前函数环境（catch 槽同步写环境，与 StoreVar 一致） */
+ *   env          当前函数环境（catch 槽同步写环境，与 StoreVar 一致）
+ *   is_return    M5.5b：return completion（vs throw completion）。
+ *                return 不进 catch（return 不是异常），只穿透 finally；
+ *                try 只有 catch 无 finally 时 return 直接完成（不拦截）。 */
 bool tryDispatch(JSContext *ctx, const FunctionBytecode &fn, size_t pc,
                  std::vector<JSValue *> &stack, const ConversionResult &err,
                  size_t *new_pc, ConversionResult *pending,
                  bool *has_pending, uint32_t *pending_handle,
-                 JSEnvironment *env) {
+                 JSEnvironment *env, bool is_return = false,
+                 bool *pending_is_return = nullptr) {
   if (fn.try_entries.empty()) return false;
   const size_t fault = pc - 1; /* 异常点 = 当前指令 */
 
@@ -125,7 +134,10 @@ bool tryDispatch(JSContext *ctx, const FunctionBytecode &fn, size_t pc,
         e.catch_start != TryEntry::kNoHandler &&
         fault >= e.catch_start && fault < e.catch_end;
     if (!in_try && !in_catch) continue;
-    /* catch 块内抛出的异常：本 entry 不拦截（其 catch 已消费过），继续传播。 */
+    /* catch 块内抛出的异常：本 entry 不拦截（其 catch 已消费过），继续传播。
+     * return completion 在 catch 块内同样不进本 entry 的 catch（catch 已消费过
+     * 异常），但若 catch 块也在 finally 区间内则继续穿透——由下方 finally
+     * 分支处理（return 命中 catch 区间时跳过 catch，继续找外层 finally）。 */
     if (in_catch) continue;
     const uint32_t span = e.try_end - e.try_start;
     if (span < best_span) {
@@ -135,6 +147,42 @@ bool tryDispatch(JSContext *ctx, const FunctionBytecode &fn, size_t pc,
   }
   if (best == nullptr) return false;
   const TryEntry &e = *best;
+
+  /* return completion 不进 catch（return 不是异常）。
+   * 若该 try 只有 catch 无 finally，return 不拦截——继续传播给外层
+   * （可能命中外层 finally）。遍历找有 finally 的外层。 */
+  if (is_return) {
+    /* 重新查找：从最内层往外，找首个有 finally 且覆盖 fault 的 entry。 */
+    const TryEntry *finally_best = nullptr;
+    uint32_t finally_span = 0xFFFFFFFFu;
+    for (const TryEntry &e2 : fn.try_entries) {
+      const bool in_try = fault >= e2.try_start && fault < e2.try_end;
+      const bool in_catch =
+          e2.catch_start != TryEntry::kNoHandler &&
+          fault >= e2.catch_start && fault < e2.catch_end;
+      if (!in_try && !in_catch) continue;
+      if (in_catch) continue;
+      if (e2.finally_start == TryEntry::kNoHandler) continue;
+      const uint32_t span = e2.try_end - e2.try_start;
+      if (span < finally_span) {
+        finally_span = span;
+        finally_best = &e2;
+      }
+    }
+    if (finally_best == nullptr) return false; /* 无 finally 覆盖：return 直接完成 */
+    const TryEntry &fe = *finally_best;
+    /* 恢复栈到局部槽区（丢弃表达式求值栈）。 */
+    stack.resize(fn.numLocals);
+    *pending = err;
+    *has_pending = true;
+    if (pending_is_return != nullptr) *pending_is_return = true;
+    /* return value 用临时句柄保护（根集），RethrowPending 释放。 */
+    if (err.thrown != nullptr && *pending_handle == 0) {
+      *pending_handle = ctx->handles().alloc(err.thrown);
+    }
+    *new_pc = fe.finally_start;
+    return true;
+  }
 
   /* 恢复栈到局部槽区（丢弃表达式求值栈）。 */
     stack.resize(fn.numLocals);
@@ -1713,8 +1761,40 @@ static ConversionResult op_Ret(VmFrame &frame) {
           stack.push_back(frame_this);
         }
       }
-      if (stack.empty()) { frame.done = true; return ok(frame.ctx->createValue(Kind::Undefined)); }
+      if (stack.empty()) {
+        /* return undefined：构造 return completion（thrown=undefined）。
+         * try-finally 穿透检查后若无 finally 覆盖则直接完成。 */
+        JSValue *undef = frame.ctx->createValue(Kind::Undefined);
+        ConversionResult ret_comp;
+        ret_comp.thrown = undef;
+        size_t new_pc = 0;
+        if (tryDispatch(frame.ctx, *frame.fn, *frame.pc, stack, ret_comp,
+                        &new_pc, &frame.pending, &frame.has_pending,
+                        &frame.pending_handle, frame.env,
+                        /*is_return=*/true, &frame.pending_is_return)) {
+          *frame.pc = new_pc;
+          return ok(nullptr); /* 跳 finally，不置 done */
+        }
+        frame.done = true;
+        return ok(undef);
+      }
       JSValue *result = stack.back();
+      /* M5.5b：return 穿透 try-finally（§13.10.5）。
+       * return 在 try 区间内（有 finally 覆盖）时不直接完成，而是挂起
+       * return completion（pending.thrown=result, pending_is_return=true）
+       * + 跳 finally_start。finally 末尾 RethrowPending 感知 return completion
+       * 时把 return value 压栈并置 done，runBytecode 据栈顶取返回值，实现
+       * return 穿透 finally 语义。try 只有 catch 无 finally 时 return 不拦截。 */
+      ConversionResult ret_comp;
+      ret_comp.thrown = result;
+      size_t new_pc = 0;
+      if (tryDispatch(frame.ctx, *frame.fn, *frame.pc, stack, ret_comp,
+                      &new_pc, &frame.pending, &frame.has_pending,
+                      &frame.pending_handle, frame.env,
+                      /*is_return=*/true, &frame.pending_is_return)) {
+        *frame.pc = new_pc;
+        return ok(nullptr); /* 跳 finally，不置 done */
+      }
       frame.done = true; /* M5.1e-f：分发表主循环据此结束本帧 */
       return ok(result);
   } while (false);
@@ -2167,6 +2247,54 @@ static ConversionResult op_IteratorStep(VmFrame &frame) {
         stack.push_back(frame.ctx->createValue(false)); /* done=false */
       }
       break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+/* M5.5b IteratorClose（§7.4.6）：栈顶 iterator 弹栈，按帧 pending 状态
+ * 构造 completion 调 iteratorClose。
+ *   has_pending -> abrupt completion（pending 作 completion），清 pending；
+ *   否则 -> normal completion（占位 undefined）。
+ * iteratorClose 内部调 iterator.return()（若有），返回非对象则 TypeError。
+ * 结果：正常时压 undefined 到栈（保持栈平衡，调用方约定 close 不产生值）；
+ * iteratorClose 返回 abrupt -> 直接抛出（异常传播，覆盖原 completion）。 */
+static ConversionResult op_IteratorClose(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+    if (stack.empty()) {
+      error = fail("Error: stack underflow on IteratorClose");
+      break;
+    }
+    JSValue *iterator = stack.back();
+    stack.pop_back();
+
+    /* 构造 completion：有挂起异常 -> abrupt；否则 normal（占位 undefined）。 */
+    ConversionResult completion;
+    if (frame.has_pending) {
+      completion = std::move(frame.pending);
+      frame.has_pending = false;
+      if (frame.pending_handle != 0) {
+        frame.ctx->handles().free(frame.pending_handle);
+        frame.pending_handle = 0;
+      }
+    } else {
+      completion.value = frame.ctx->createValue(Kind::Undefined);
+    }
+
+    ConversionResult r = iteratorClose(frame.ctx, iterator, std::move(completion));
+    /* iteratorClose 返回的 completion：若 abrupt 则抛出（异常传播）；
+     * normal 则压 undefined 占位（保持栈平衡）。 */
+    if (r.thrown != nullptr || !r.error.empty()) {
+      /* close 抛错：作为新异常传播（覆盖原 completion，§7.4.6 step 3.c）。 */
+      error = std::move(r);
+      break;
+    }
+    stack.push_back(frame.ctx->createValue(Kind::Undefined));
+    break;
   } while (false);
   if (error.value == nullptr &&
       (!error.error.empty() || error.thrown != nullptr))
@@ -3428,8 +3556,29 @@ static ConversionResult op_Throw(VmFrame &frame) {
 static ConversionResult op_RethrowPending(VmFrame &frame) {
   ConversionResult error;
   do {
-      /* finally 末尾（§14.16.4）：有挂起异常则重抛，否则正常继续。 */
+      /* finally 末尾（§14.16.4）：有挂起异常则重抛，否则正常继续。
+       * M5.5b：return completion（pending_is_return=true）不重抛——
+       * finally 已执行，用 return value 完成函数：retval 压栈 + 置 done，
+       * runBytecode 据栈顶取返回值，实现 return 穿透 finally 语义
+       * （§13.10.5 step 4）。 */
       if (frame.has_pending) {
+        if (frame.pending_is_return) {
+          /* return completion：finally 已执行，用 return value 完成。
+           * retval 压栈（成为栈根集一部分）后再释放临时句柄——顺序关键：
+           * 先释放句柄再压栈，窗口期内 GC 可能回收 retval（悬垂）。
+           * 置 done 让主循环结束本帧；runBytecode 据栈顶取返回值。 */
+          JSValue *retval = frame.pending.thrown;
+          if (retval == nullptr) retval = frame.ctx->createValue(Kind::Undefined);
+          frame.stack->push_back(retval);
+          frame.has_pending = false;
+          frame.pending_is_return = false;
+          if (frame.pending_handle != 0) {
+            frame.ctx->handles().free(frame.pending_handle);
+            frame.pending_handle = 0;
+          }
+          frame.done = true;
+          return ok(nullptr);
+        }
         frame.has_pending = false;
         error = std::move(frame.pending);
         if (frame.pending_handle != 0) {
@@ -3762,6 +3911,7 @@ const OpHandler kHandlers[] = {
     op_Await,  /* Await */
     op_Yield,  /* Yield */
     op_YieldDelegate,  /* YieldDelegate */
+    op_IteratorClose,  /* IteratorClose */
 };
 
 }  // namespace
@@ -3775,7 +3925,8 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
                              size_t argc, JSEnvironment *env,
                              JSFunction *self, size_t start_pc,
                              std::vector<JSValue *> *restore_stack,
-                             JSValue *initial_thrown) {
+                             JSValue *initial_thrown,
+                             JSValue *initial_return) {
   /* 操作数栈：栈底为局部变量槽（numLocals 个），之上为表达式求值栈。
    * M5.4 async 恢复：restore_stack 非空时直接采用挂起帧的栈副本
    * （含局部槽 + 表达式中间值），跳过局部槽初始化。 */
@@ -3867,6 +4018,32 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
         f.pending_handle = 0;
       }
       return thrown_err;
+    }
+  }
+  /* M5.5b：generator.return() 注入 return completion（§27.5.3.3 step 5-7）。
+   * 从 yield 挂起点续延时，把 return value 当作 return completion 派发——
+   * tryDispatch 以 is_return=true 找覆盖的 finally，命中则挂起 return
+   * completion 跳 finally（finally 执行后 RethrowPending 用 return value 完成）；
+   * 未命中 finally 则直接以 return value 完成本帧（压栈 + done）。 */
+  if (initial_return != nullptr) {
+    ConversionResult ret_comp;
+    ret_comp.thrown = initial_return;
+    size_t new_pc = 0;
+    bool dispatched = tryDispatch(f.ctx, *f.fn, *f.pc, *f.stack, ret_comp,
+                                  &new_pc, &f.pending, &f.has_pending,
+                                  &f.pending_handle, f.env,
+                                  /*is_return=*/true, &f.pending_is_return);
+    if (dispatched) {
+      *f.pc = new_pc; /* 命中 finally：跳 finally_start，主循环执行 finally */
+    } else {
+      /* 无 finally 覆盖：直接以 return value 完成本帧。
+       * return value 压栈（runBytecode 据栈顶取返回值），直接返回——
+       * 不进主循环（避免执行 yield 后续指令如下一条 Pop 栈下溢）。
+       * 返回 ok(initial_return) 而非 ok(nullptr)：ConversionResult::ok() 据
+       * value!=nullptr 判定，调用方（generator.cc mode==2）据此区分成功完成
+       * 与 finally 抛错透传。 */
+      stack.push_back(initial_return);
+      return ok(initial_return);
     }
   }
   while (*f.pc < f.code().size()) {
