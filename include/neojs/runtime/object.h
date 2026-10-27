@@ -69,6 +69,8 @@ enum class ObjectKind : uint8_t {
   Promise,        /* Promise（M5.3a，§27.2：[[PromiseState]]+[[PromiseResult]]+reactions） */
   AsyncFrame,     /* async 挂起帧（M5.4，§27.7：VM 现场转移） */
   Generator,      /* Generator 对象（M5.5a-3，§27.5：[[GeneratorState]]+[[GeneratorContext]]） */
+  AsyncGenerator, /* AsyncGenerator 对象（M5.5c-1，§27.6：[[AsyncGeneratorState]]+queue） */
+  AsyncFromSyncIterator, /* AsyncFromSyncIterator 对象（M5.5c-2，§27.1.4：[[SyncIterator]] 包装） */
 };
 
 /* 集合条目（M4.4a）：Map 的键值对 / Set 的键。
@@ -131,6 +133,35 @@ class JSObject : public GCHeader {
   void setGeneratorState(int s) { gen_state_ = s; }
   JSValue *generatorContext() const { return gen_frame_; }
   void setGeneratorContext(JSValue *v) { gen_frame_ = v; }
+
+  /* AsyncGenerator 内部槽（M5.5c-1，§27.6）：复用 gen_state_/gen_frame_
+   * 存 [[AsyncGeneratorState]]（同 Generator 状态枚举）+ [[AsyncGeneratorContext]]
+   * （AsyncFrame* 挂起现场）。额外：async_queue_ 存异步请求队列
+   * （[[AsyncGeneratorQueue]]，元素为 AsyncGeneratorRequest——{completion,
+   * capability} 包装对象，GC 引用边）。仅 isAsyncGenerator() 时有效。 */
+  bool isAsyncGenerator() const {
+    return kind_ == ObjectKind::AsyncGenerator;
+  }
+  /* AsyncFromSyncIterator 内部槽（M5.5c-2，§27.1.4）[[SyncIterator]]：
+   * 被包装的同步迭代器。复用 iter_target_ 槽（gcMarkRefs 已标记），
+   * 仅 isAsyncFromSyncIterator() 时有效。 */
+  bool isAsyncFromSyncIterator() const {
+    return kind_ == ObjectKind::AsyncFromSyncIterator;
+  }
+  JSValue *syncIterator() const { return iter_target_; }
+  void setSyncIterator(JSValue *v) { iter_target_ = v; }
+  /* AsyncGenerator 状态复用 gen_state_：0 suspended-start / 1 suspended-yield
+   * / 2 executing / 3 completed（§27.6.2 AsyncGeneratorState）。 */
+  int asyncGeneratorState() const { return gen_state_; }
+  void setAsyncGeneratorState(int s) { gen_state_ = s; }
+  /* AsyncGeneratorContext 复用 gen_frame_（AsyncFrame*）。 */
+  JSValue *asyncGeneratorContext() const { return gen_frame_; }
+  void setAsyncGeneratorContext(JSValue *v) { gen_frame_ = v; }
+  /* [[AsyncGeneratorQueue]]：异步请求队列（M5.5c-1，§27.6.1.2）。 */
+  const std::vector<JSValue *> &asyncGeneratorQueue() const {
+    return async_queue_;
+  }
+  std::vector<JSValue *> &asyncGeneratorQueue() { return async_queue_; }
 
   /* 包装对象内部槽（E4-2）：[[NumberData]]/[[StringData]]/[[BooleanData]]/
    * [[SymbolData]]。仅 isWrapper() 时有效；GC 引用边。 */
@@ -252,6 +283,7 @@ class JSObject : public GCHeader {
   JSValue *promise_result_ = nullptr;                        /* Promise 决议值（M5.3a，[[PromiseResult]]，GC 引用边） */
   int gen_state_ = 0;                                        /* Generator 状态（M5.5a-3，0 start/1 yield/2 running/3 completed） */
   JSValue *gen_frame_ = nullptr;                             /* Generator 挂起现场（M5.5a-3，AsyncFrame*，GC 引用边） */
+  std::vector<JSValue *> async_queue_;                       /* AsyncGenerator 请求队列（M5.5c-1，§27.6.1.2，GC 引用边） */
 };
 
 }  // namespace neojs

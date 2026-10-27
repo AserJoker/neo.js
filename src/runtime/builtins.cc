@@ -34,6 +34,8 @@
 #include <cmath>
 #include <string>
 
+#include "neojs/runtime/async_generator.h"
+#include "neojs/runtime/async_iterator.h"
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/conversion.h"
 #include "neojs/runtime/function.h"
@@ -47,9 +49,13 @@
 
 namespace neojs {
 
-/* 前向声明：installGeneratorBuiltins 定义于本文件后段（M5.5a-3），
- * installBuiltins 调用先于定义出现。 */
+/* 前向声明：installGeneratorBuiltins / installAsyncGeneratorBuiltins 定义于
+ * 本文件后段（M5.5a-3 / M5.5c-1），installBuiltins 调用先于定义出现。 */
 void installGeneratorBuiltins(JSContext *ctx);
+void installAsyncGeneratorBuiltins(JSContext *ctx);
+/* M5.5c-2 AsyncFromSyncIterator.prototype 方法注册（§27.1.4），定义于本文件
+ * 后段（installAsyncGeneratorBuiltins 之后）。 */
+void installAsyncFromSyncIteratorBuiltins(JSContext *ctx);
 
 namespace {
 
@@ -2745,6 +2751,7 @@ JSValue *wellKnownSymbol(JSContext *ctx, WellKnown wks) {
     case WellKnown::ToPrimitive: desc = "Symbol.toPrimitive"; break;
     case WellKnown::ToStringTag: desc = "Symbol.toStringTag"; break;
     case WellKnown::HasInstance: desc = "Symbol.hasInstance"; break;
+    case WellKnown::AsyncIterator: desc = "Symbol.asyncIterator"; break;
   }
 
   JSValue *sym = ctx->createValue(Kind::Symbol);
@@ -2852,6 +2859,8 @@ void installBuiltins(JSContext *ctx) {
                        wellKnownSymbol(ctx, WellKnown::ToStringTag));
   sym_obj->setProperty("hasInstance",
                        wellKnownSymbol(ctx, WellKnown::HasInstance));
+  sym_obj->setProperty("asyncIterator",
+                       wellKnownSymbol(ctx, WellKnown::AsyncIterator));
 
   /* Symbol.prototype（§20.4.3）：valueOf/toString 最小方法集。 */
   JSValue *symbol_proto = ctx->createObject(objectProto(ctx)->object());
@@ -3131,6 +3140,15 @@ void installBuiltins(JSContext *ctx) {
   /* Generator（M5.5a-3，§27.5）：Generator.prototype + next/throw/return。
    * generatorCall 创建的 Generator 对象原型链根，供 next/throw/return 恢复。 */
   installGeneratorBuiltins(ctx);
+
+  /* AsyncGenerator（M5.5c-1，§27.6）：AsyncGenerator.prototype + 全局
+   * AsyncGenerator 构造器。asyncGeneratorCall 创建的对象原型链根。 */
+  installAsyncGeneratorBuiltins(ctx);
+
+  /* AsyncFromSyncIterator.prototype（M5.5c-2，§27.1.4）：同步迭代器包装
+   * 对象原型链根，注册 next/return/throw 方法（getAsyncIterator 回退路径
+   * 依赖，for await...of 同步可迭代对象时创建）。 */
+  installAsyncFromSyncIteratorBuiltins(ctx);
 }
 
 /* 取 Object.prototype（M3.3，惰性创建 + 缓存 + 进根集）。
@@ -3304,6 +3322,97 @@ void installGeneratorBuiltins(JSContext *ctx) {
   gen_ctor->object()->setProperty("prototype", gen_proto);
   gen_proto->object()->setProperty("constructor", gen_ctor);
   ctx->globalObject()->object()->setProperty("Generator", gen_ctor);
+}
+
+/* -------------------------------------------------------------------------- */
+/* AsyncGenerator（M5.5c-1，§27.6）                                           */
+/* -------------------------------------------------------------------------- */
+
+/* AsyncGenerator.prototype.next(value)（§27.6.3.1 AsyncGeneratorNext 近似）。
+ * 返回 promise：入队请求，队列空且非 executing 时立即驱动执行。 */
+ConversionResult asyncGeneratorNextBuiltin(JSContext *ctx, JSValue *thisVal,
+                                           JSValue *const *args, size_t argc) {
+  return asyncGeneratorProtoNext(ctx, thisVal, args, argc, /*mode=*/0);
+}
+
+/* AsyncGenerator.prototype.throw(exception)（§27.6.3.2 AsyncGeneratorThrow）。 */
+ConversionResult asyncGeneratorThrowBuiltin(JSContext *ctx, JSValue *thisVal,
+                                            JSValue *const *args, size_t argc) {
+  return asyncGeneratorProtoNext(ctx, thisVal, args, argc, /*mode=*/1);
+}
+
+/* AsyncGenerator.prototype.return(value)（§27.6.3.3 AsyncGeneratorReturn）。 */
+ConversionResult asyncGeneratorReturnBuiltin(JSContext *ctx, JSValue *thisVal,
+                                             JSValue *const *args, size_t argc) {
+  return asyncGeneratorProtoNext(ctx, thisVal, args, argc, /*mode=*/2);
+}
+
+/* AsyncGenerator 构造器（§27.6.2.2 %AsyncGenerator%）：不可 new 也不可调用
+ * （async generator 函数声明/表达式才创建对象）。注册到 global 仅作
+ * prototype 持有者 + instanceof 检查点。new AsyncGenerator() 抛 TypeError。 */
+ConversionResult asyncGeneratorConstructorBuiltin(JSContext *ctx,
+                                                  JSValue *thisVal,
+                                                  JSValue *const *args,
+                                                  size_t argc) {
+  (void)thisVal; (void)args; (void)argc;
+  return fail("TypeError: AsyncGenerator is not a constructor");
+}
+
+/* 安装 AsyncGenerator.prototype + 全局 AsyncGenerator 构造器 +
+ * Symbol.toStringTag（M5.5c-1，§27.6.2.1/§27.6.2.2）。
+ * AsyncGenerator.prototype 经 asyncGeneratorProto 惰性创建 + 进根集
+ * （async_generator.cc），此处挂方法。 */
+void installAsyncGeneratorBuiltins(JSContext *ctx) {
+  JSValue *agp = asyncGeneratorProto(ctx);
+  ctx->heap().pin(agp);
+  defineMethod(agp->object(), "next",
+               makeBuiltin(ctx, asyncGeneratorNextBuiltin, ThisMode::Strict));
+  defineMethod(agp->object(), "throw",
+               makeBuiltin(ctx, asyncGeneratorThrowBuiltin, ThisMode::Strict));
+  defineMethod(agp->object(), "return",
+               makeBuiltin(ctx, asyncGeneratorReturnBuiltin, ThisMode::Strict));
+  /* AsyncGenerator.prototype[Symbol.asyncIterator]（§27.6.3.4）：返回 this，
+   * 使 async generator 对象自身是异步迭代器（for await...of 依赖）。 */
+  agp->object()->setSymbolProperty(
+      wellKnownSymbol(ctx, WellKnown::AsyncIterator),
+      makeBuiltin(ctx, asyncGeneratorSelfIterator, ThisMode::Strict));
+  /* AsyncGenerator.prototype[Symbol.toStringTag] = "AsyncGenerator"
+   * （§27.6.2.1）：Object.prototype.toString.call(ag) 返回
+   * "[object AsyncGenerator]"。 */
+  agp->object()->setSymbolProperty(
+      wellKnownSymbol(ctx, WellKnown::ToStringTag),
+      ctx->createValue(std::string("AsyncGenerator")));
+  ctx->heap().unpin(agp);
+
+  /* 注册全局 AsyncGenerator 构造器（不可 new，仅作 prototype 持有者）。
+   * constructor 指回 AsyncGenerator，AsyncGenerator.prototype 指向 agp。 */
+  JSValue *ag_ctor = makeBuiltin(ctx, asyncGeneratorConstructorBuiltin,
+                                 ThisMode::Strict);
+  ag_ctor->object()->setProperty("prototype", agp);
+  agp->object()->setProperty("constructor", ag_ctor);
+  ctx->globalObject()->object()->setProperty("AsyncGenerator", ag_ctor);
+}
+
+/* AsyncFromSyncIterator.prototype 方法注册（M5.5c-2，§27.1.4）：
+ * 同步迭代器包装对象的原型链根，挂 next/return/throw 三个原生方法。
+ * getAsyncIterator 回退路径（for await...of 同步可迭代对象）创建
+ * AsyncFromSyncIterator 时挂此原型，方法经 this 读 [[SyncIterator]]。 */
+void installAsyncFromSyncIteratorBuiltins(JSContext *ctx) {
+  JSValue *afp = asyncFromSyncIteratorProto(ctx);
+  ctx->heap().pin(afp);
+  /* §27.1.4.1 AsyncFromSyncIterator.prototype.next：sync next() 同步调用 +
+   * resolve promise {value, done}。 */
+  defineMethod(afp->object(), "next",
+               makeBuiltin(ctx, asyncFromSyncNext, ThisMode::Strict));
+  /* §27.1.4.2 AsyncFromSyncIterator.prototype.return：sync return 方法存在
+   * 则调用 + resolve；无则 resolve {value, done:true}。 */
+  defineMethod(afp->object(), "return",
+               makeBuiltin(ctx, asyncFromSyncReturn, ThisMode::Strict));
+  /* §27.1.4.3 AsyncFromSyncIterator.prototype.throw：sync throw 方法存在
+   * 则调用 + resolve；无则 reject TypeError。 */
+  defineMethod(afp->object(), "throw",
+               makeBuiltin(ctx, asyncFromSyncThrow, ThisMode::Strict));
+  ctx->heap().unpin(afp);
 }
 
 }  // namespace neojs

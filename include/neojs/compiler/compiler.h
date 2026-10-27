@@ -128,6 +128,9 @@ class Compiler {
   bool compileWhile(const ASTNode &node, const std::string &label = "");
   bool compileFor(const ASTNode &node, const std::string &label = "");
   bool compileForOf(const ASTNode &node, const std::string &label = ""); /* M4.4f for-of */
+  bool compileAsyncForOf(const ASTNode &node, const ASTNode *left,
+                         const ASTNode *right, const ASTNode *body,
+                         const std::string &label); /* M5.5c-2 for await...of */
   bool compileForIn(const ASTNode &node, const std::string &label = ""); /* M5.1e-c for-in */
   bool compileLabeled(const ASTNode &node); /* M5.1e-c label: stmt（跳转上下文） */
   bool compileBreak(const ASTNode &node);   /* M5.1e-c break [label] */
@@ -310,6 +313,11 @@ class Compiler {
    * 块，源码序，类定义完成后由 static_init 函数执行（this = 构造器）。
    * compileClass 在调用 emitStaticInit 前指向本 class 的表。 */
   const void *current_static_elems_ = nullptr;
+  /* M5.5c-1 async generator：当前编译函数是否 async function*（is_async &&
+   * is_generator）。YieldExpression 编译据此在 yield 值后插 Await 指令——
+   * AsyncGeneratorYield 语义（§27.6.3.4：yield 值先 await 再挂起返回
+   * {value,done:false}）。compileChildFunction/compileFunction 设置。 */
+  bool current_is_async_generator_ = false;
   bool current_is_ctor_ = false;     /* 当前编译函数是 class 构造器 */
   bool current_is_derived_ = false;  /* 当前 class 有 extends（字段在 super() 后初始化） */
   bool field_init_emitted_ = false;  /* 字段初始化已发射（派生类 super 后一次） */

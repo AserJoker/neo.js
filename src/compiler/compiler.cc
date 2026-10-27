@@ -150,7 +150,11 @@ CompileResult Compiler::compileFunction(const ASTNode &fn) {
   scopes_.push_back(top);
   scope_ = top;
 
+  /* M5.5c-1 async generator：单函数编译路径也设置（JS_NewFunction 可创建
+   * async function*）。YieldExpression 编译据此插 Await。 */
+  current_is_async_generator_ = fn.fn_is_async && fn.fn_is_generator;
   if (!compileFunctionBody(fn)) return failResult();
+  current_is_async_generator_ = false;
 
   builder_.set_num_locals(scope_->next_slot);
   result.ok = true;
@@ -775,6 +779,10 @@ bool Compiler::compileChildFunction(const ASTNode &fn, FunctionBytecode *out,
   const void *saved_instance = current_instance_fields_;
   std::vector<LoopContext> saved_loops = std::move(loops_);
   loops_.clear(); /* M5.1e-c：break/continue 不能跨函数边界 */
+  /* M5.5c-1 async generator：子函数是否 async function*（is_async &&
+   * is_generator）。YieldExpression 编译据此在 yield 值后插 Await。 */
+  bool saved_async_gen = current_is_async_generator_;
+  current_is_async_generator_ = fn.fn_is_async && fn.fn_is_generator;
   bool saved_ctor = current_is_ctor_;
   bool saved_derived = current_is_derived_;
   bool saved_field_emitted = field_init_emitted_;
@@ -822,6 +830,7 @@ bool Compiler::compileChildFunction(const ASTNode &fn, FunctionBytecode *out,
   current_instance_fields_ = saved_instance;
   current_is_ctor_ = saved_ctor;
   current_is_derived_ = saved_derived;
+  current_is_async_generator_ = saved_async_gen;
   field_init_emitted_ = saved_field_emitted;
   loops_ = std::move(saved_loops);
 
@@ -2271,6 +2280,41 @@ bool Compiler::compileForOf(const ASTNode &node, const std::string &label) {
   const ASTNode *left = node.children[0];
   const ASTNode *right = node.children[1];
   const ASTNode *body = node.children[2];
+  const bool is_await = node.is_await;
+
+  if (is_await) {
+    /* for await...of（M5.5c-2，§14.7.5.4）。
+     *   [right]              ; 可迭代对象
+     *   GetAsyncIterator     ; -> async iterator
+     *   StoreVar iter_tmp
+     * loop_label:
+     *   LoadVar iter_tmp
+     *   AsyncIteratorNext    ; -> 结果 promise（不挂起）
+     *   Await                ; 挂起/恢复，栈顶 -> 结果对象 {value, done}
+     *   IteratorResultToValueDone ; -> [value, done]（done 在栈顶，对齐同步）
+     *   JumpIfTrue end_label
+     *   [left 赋值]
+     *   [body]
+     *   Jump loop_label
+     * end_label:
+     *   Pop
+     *   Jump after_label
+     * break_label:
+     * finally_label:         ; AsyncIteratorClose（break/异常路径）
+     *   LoadVar iter_tmp
+     *   AsyncIteratorClose   ; -> 结果 promise
+     *   Await                ; 挂起/恢复（return() 结果）
+     *   Pop                  ; 弹结果（不校验对象性 v1 简化）
+     *   RethrowPending
+     * after_label:
+     * 异常表：try [try_start, try_end) -> finally_label（同同步 for-of）。
+     * 与同步版差异：next/close 都经 Await 挂起（异步迭代结果 promise），
+     * 恢复后结果对象转 [value, done] 二元组再走 JumpIfTrue/left 赋值。
+     * for await 只能在 async/async generator 函数中（前端已保证），
+     * Await 依赖 frame.self 非空（async 调用入口设置）。 */
+    if (!compileAsyncForOf(node, left, right, body, label)) return false;
+    return true;
+  }
 
   /* 可迭代对象求值。 */
   if (!compileExpr(*right)) return false;
@@ -2346,6 +2390,77 @@ bool Compiler::compileForOf(const ASTNode &node, const std::string &label) {
   builder_.bind_label(after_label);
 
   /* 注册异常表（无 catch，仅 finally）。 */
+  builder_.add_try_entry(std::move(entry));
+  return true;
+}
+
+bool Compiler::compileAsyncForOf(const ASTNode &node, const ASTNode *left,
+                                 const ASTNode *right, const ASTNode *body,
+                                 const std::string &label) {
+  /* for await...of（M5.5c-2，§14.7.5.4）发射异步迭代指令序列。
+   * 结构同 compileForOf 同步版，差异：
+   *   - GetAsyncIterator 代替 GetIterator（回退同步迭代器包装）；
+   *   - 循环头 AsyncIteratorNext + Await（结果 promise 挂起/恢复）+
+   *     IteratorResultToValueDone（结果对象转 [value,done]）代替 IteratorStep；
+   *   - finally 用 AsyncIteratorClose + Await + Pop 代替 IteratorClose + Pop。
+   * Await 依赖 frame.self 非空：for await 只能在 async/async generator
+   * 函数中（前端 parser_stmt.cc 已保证），async 调用入口设置 self。 */
+  if (!compileExpr(*right)) return false;
+  builder_.get_async_iterator();
+
+  uint16_t iter_tmp =
+      declareLocal("\x01iter" + std::to_string(iter_slot_seq_++));
+  builder_.store_var(iter_tmp);
+
+  BcLabel loop_label = builder_.new_label();
+  BcLabel end_label = builder_.new_label();
+  BcLabel break_label = builder_.new_label();
+  BcLabel finally_label = builder_.new_label();
+  BcLabel after_label = builder_.new_label();
+
+  TryEntry entry;
+  entry.try_start = static_cast<uint32_t>(builder_.position());
+
+  builder_.bind_label(loop_label);
+  builder_.load_var(iter_tmp);
+  builder_.async_iterator_next(); /* -> 结果 promise */
+  builder_.await();               /* 挂起/恢复，栈顶 -> 结果对象 */
+  builder_.iterator_result_to_value_done(); /* -> [value, done] */
+  builder_.jump_if_true(&end_label);        /* done true -> 结束循环 */
+
+  if (!compileLoopLeft(left)) return false;
+
+  LoopContext ctx;
+  ctx.label = label;
+  ctx.break_label = break_label;
+  ctx.continue_label = loop_label;
+  ctx.is_loop = true;
+  loops_.push_back(ctx);
+  bool body_ok = (body == nullptr) || compileStmt(*body);
+  loops_.pop_back();
+  if (!body_ok) return false;
+  builder_.jump(&loop_label);
+
+  entry.try_end = static_cast<uint32_t>(builder_.position());
+
+  /* 正常完成路径：迭代器自然 done，不 close。 */
+  builder_.bind_label(end_label);
+  builder_.pop();
+  builder_.jump(&after_label);
+
+  builder_.bind_label(break_label);
+
+  /* finally：AsyncIteratorClose + Await（break/异常路径）。 */
+  builder_.bind_label(finally_label);
+  entry.finally_start = static_cast<uint32_t>(builder_.position());
+  builder_.load_var(iter_tmp);
+  builder_.async_iterator_close(); /* -> 结果 promise */
+  builder_.await();                /* 挂起/恢复（return() 结果） */
+  builder_.pop();                  /* 弹结果对象 */
+  builder_.rethrow_pending();      /* 有 pending 重抛；无则正常继续 */
+  entry.finally_end = static_cast<uint32_t>(builder_.position());
+
+  builder_.bind_label(after_label);
   builder_.add_try_entry(std::move(entry));
   return true;
 }
@@ -2769,6 +2884,14 @@ bool Compiler::compileExpr(const ASTNode &node) {
         builder_.push_op(Opcode::PushUndefined);
       } else {
         if (!compileExpr(*node.children[0])) return false;
+      }
+      /* M5.5c-1 async generator（async function*）：yield 值先 await
+       * （§27.6.3.4 AsyncGeneratorYield step 7-9：PromiseResolve 接合 + 挂起
+       * 恢复续延），await 完成后值压栈，再 Yield 挂起返回
+       * {value,done:false} 的 promise。op_Await 挂起/恢复机制天然复用
+       * （await 挂起时 async_request 传播到新帧，续延后到 op_Yield 挂起）。 */
+      if (current_is_async_generator_) {
+        builder_.await();
       }
       builder_.yield();
       return true;

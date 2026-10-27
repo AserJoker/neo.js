@@ -33,6 +33,7 @@ enum class WellKnown : uint8_t {
   ToPrimitive,   /* Symbol.toPrimitive —— §7.1.1 转换钩子 */
   ToStringTag,   /* Symbol.toStringTag —— Object.prototype.toString */
   HasInstance,   /* Symbol.hasInstance —— instanceof 运算符 */
+  AsyncIterator, /* Symbol.asyncIterator —— 异步迭代协议（M5.5c-1，§27.6） */
 };
 
 /* 注册 E4 内置对象到 globalThis（Symbol 构造器 + well-known 属性）。 */
@@ -61,6 +62,11 @@ JSValue *setProto(JSContext *ctx);
 /* 取 Generator.prototype（M5.5a-3 惰性创建 + 缓存 + 进根集）。
  * generatorCall 创建的 Generator 对象原型链根（next/throw/return 所在）。 */
 JSValue *generatorProto(JSContext *ctx);
+
+/* 取 AsyncGenerator.prototype（M5.5c-1 惰性创建 + 缓存 + 进根集）。
+ * asyncGeneratorCall 创建的 AsyncGenerator 对象原型链根
+ * （next/throw/return + Symbol.asyncIterator 所在）。 */
+JSValue *asyncGeneratorProto(JSContext *ctx);
 
 }  // namespace neojs
 

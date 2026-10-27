@@ -70,6 +70,11 @@ class AsyncFrame : public JSObject {
    * 转发给 inner（§27.5.3.3 step 6-7）。委托完成后置 nullptr 退出委托模式。
    * 仅 generator 用，async 不用。GC 引用边。 */
   JSValue *delegate_iterator = nullptr;
+  /* M5.5c-1 async generator：当前正在执行的请求（AsyncGeneratorRequest 包装
+   * 对象）。asyncGeneratorResume 驱动执行前写入，op_Yield 挂起 async generator
+   * 时 resolve 其 capability {value,done}，resumeAsyncFrame 完成/异常时
+   * resolve/reject 其 capability。仅 async generator 用，async 不用。GC 引用边。 */
+  JSValue *async_request = nullptr;
 
   /* 引用边标记：fn/env/frame_this/promise + 操作数栈每个元素。 */
   void gcMarkRefs(Heap *heap) override;

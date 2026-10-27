@@ -205,6 +205,18 @@ enum class Opcode : uint8_t {
    * iteratorClose 内部调 iterator.return()（若有），返回非对象则 TypeError。
    * 用于 for-of 提前终止（break/return/throw）+ yield* inner 异常路径。 */
   IteratorClose,
+
+  /* M5.5c-2 for await...of（追加末尾，保持 opcode 数值稳定，§14.7.5.4）
+   * 异步迭代：GetAsyncIterator / AsyncIteratorNext / AsyncIteratorClose。
+   * 三者都不挂起——AsyncIteratorNext/Close 只做同步调用 + PromiseResolve
+   * 接合，把结果 promise 压栈，由后续 Await 指令统一挂起/恢复。 */
+  GetAsyncIterator,   /* 栈顶 iterable -> async iterator（§14.7.5.1：Symbol.asyncIterator，回退同步包装） */
+  AsyncIteratorNext,  /* 栈顶 async iterator -> 弹栈，调 next() + PromiseResolve，压结果 promise（由后续 Await 挂起） */
+  AsyncIteratorClose, /* 栈顶 async iterator -> 弹栈，调 return()（若有）+ PromiseResolve，压结果 promise（由后续 Await 挂起） */
+  /* 栈顶 {value, done} 对象 -> 弹栈，压 value + done（done 在栈顶，对齐
+   * 同步 IteratorStep 布局）。AsyncIteratorNext + Await 恢复后栈顶是结果
+   * 对象，转二元组供 JumpIfTrue / left 赋值使用（M5.5c-2）。 */
+  IteratorResultToValueDone,
 };
 
 /* -------------------------------------------------------------------------- */
@@ -352,6 +364,17 @@ class BytecodeBuilder {
   /* M5.5b IteratorClose（§7.4.6）：栈顶 iterator 弹栈关闭，completion 取自
    * 帧 pending 状态。for-of 提前终止 + yield* inner 异常路径调用。 */
   void iterator_close() { push_op(Opcode::IteratorClose); }
+  /* M5.5c-2 for await...of：异步迭代指令（§14.7.5.4）。
+   * GetAsyncIterator：栈顶 iterable -> async iterator（回退同步迭代器包装）。
+   * AsyncIteratorNext：栈顶 async iterator -> 弹栈，调 next() + PromiseResolve，
+   *   压结果 promise（后续 Await 挂起/恢复）。
+   * AsyncIteratorClose：栈顶 async iterator -> 弹栈，调 return()（若有）+
+   *   PromiseResolve，压结果 promise（后续 Await 挂起/恢复）。 */
+  void get_async_iterator() { push_op(Opcode::GetAsyncIterator); }
+  void async_iterator_next() { push_op(Opcode::AsyncIteratorNext); }
+  void async_iterator_close() { push_op(Opcode::AsyncIteratorClose); }
+  /* AsyncIteratorNext + Await 恢复后栈顶结果对象 -> [value, done]。 */
+  void iterator_result_to_value_done() { push_op(Opcode::IteratorResultToValueDone); }
   void call(uint16_t argc) { push_op(Opcode::Call, argc); }
   void call_method(uint16_t argc) { push_op(Opcode::CallMethod, argc); }
   void construct(uint16_t argc) { push_op(Opcode::Construct, argc); }

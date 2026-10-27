@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "neojs/runtime/async_generator.h"
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/environment.h"
 #include "neojs/runtime/function.h"
@@ -83,6 +84,7 @@ void AsyncFrame::gcMarkRefs(Heap *heap) {
   if (promise != nullptr) heap->markRoot(promise);
   if (yield_value != nullptr) heap->markRoot(yield_value);
   if (delegate_iterator != nullptr) heap->markRoot(delegate_iterator);
+  if (async_request != nullptr) heap->markRoot(async_request);
   for (JSValue *v : stack) {
     if (v != nullptr) heap->markRoot(v);
   }
@@ -135,6 +137,27 @@ bool suspendAwait(JSContext *ctx, JSFunction *fn, size_t next_pc,
   /* 定位外层 promise：沿 env 链查找隐藏绑定（asyncCall 写入）。 */
   af->promise = findEnvBinding(env, kAsyncPromiseBinding);
 
+  /* M5.5c-1 async generator：await 挂起时把当前执行的请求（async_request）
+   * 传播到新 AsyncFrame——await 期间 AsyncGeneratorState=executing（请求仍
+   * 由本帧持有），resumeAsyncFrame 续延后完成/异常时经它 settle capability。
+   * 沿 env 链找隐藏绑定 __generator__ 定位 AsyncGenerator 对象（async generator
+   * 调用入口 asyncGeneratorCall 写入）。async generator 无外层 promise
+   * （af->promise 为 null），await 挂起/恢复全部经请求队列驱动。 */
+  for (JSEnvironment *e = env; e != nullptr; e = e->parent()) {
+    if (e->hasBinding(kGeneratorBinding)) {
+      JSValue *gv = e->getBinding(kGeneratorBinding);
+      if (gv != nullptr && gv->isObject() &&
+          gv->object()->isAsyncGenerator()) {
+        af->async_request = gv->object()->asyncGeneratorContext()
+                                ? asAsyncFrame(gv->object()->asyncGeneratorContext())
+                                      ->async_request
+                                : nullptr;
+        break;
+      }
+      break;
+    }
+  }
+
   /* §27.7.4.1 Await 步骤 9：把 AwaitResolve/AwaitReject 续延 reaction 挂到
    * awaitable 上（awaitable.then(awaitResolve, awaitReject)）。settle 时经
    * PromiseReactionJob 调用 handler 并传 value/reason（Bound 转发给 target
@@ -179,6 +202,14 @@ ConversionResult resumeAsyncFrame(JSContext *ctx, AsyncFrame *frame,
   /* 外层 promise（settle 用）：挂起时已存于帧内。 */
   JSValue *promise = frame->promise;
 
+  /* M5.5c-1 async generator 上下文：await 续延发生在 async function*
+   * 的字节码里（frame->fn 为 async generator 函数）。此时 settle 目标
+   * 不是外层 promise（async generator 无外层 promise），而是当前请求的
+   * capability——完成/异常经 asyncGeneratorFrameSettled 结算请求并驱动
+   * 队列；又挂起经 asyncGeneratorAfterSuspend 驱动队列。 */
+  const FunctionBytecode &bfn = frame->fn->bytecode();
+  const bool is_async_gen = bfn.is_async && bfn.is_generator;
+
   /* 重建现场执行：从挂起点（pc）继续，采用挂起时的栈副本。
    * frame_this 经临时句柄保护（call() Script 分支同机制——此处直接由
    * runBytecode 内部压栈前保护，无句柄；runBytecode 的 thisVal 参数在
@@ -189,13 +220,22 @@ ConversionResult resumeAsyncFrame(JSContext *ctx, AsyncFrame *frame,
 
   if (r.suspended) {
     /* 又挂起：新现场已存新 AsyncFrame 并入队新 job，外层 promise 未 settle
-     * （等下一个微任务）。返回 suspended 信号（job 正常完成）。 */
+     * （等下一个微任务）。返回 suspended 信号（job 正常完成）。
+     * async generator：AsyncYield 挂起（suspendAsyncYield 已结算请求 + 置
+     * SuspendedYield）时驱动队列；await 挂起（Executing）则不动。 */
+    if (is_async_gen) {
+      asyncGeneratorAfterSuspend(ctx, frame);
+    }
     return r;
   }
 
   if (!r.ok()) {
     /* 执行中抛错：reject 外层 promise（§27.7.5.3 步骤 6），错误继续向上
-     * 传播（JS_RunJobs 报未捕获）。 */
+     * 传播（JS_RunJobs 报未捕获）。
+     * async generator：错误进请求 promise（reject），不冒泡。 */
+    if (is_async_gen) {
+      return asyncGeneratorFrameSettled(ctx, frame, r);
+    }
     if (promise != nullptr && promise->isObject() &&
         promise->object()->isPromise()) {
       JSValue *reason = r.thrown;
@@ -212,7 +252,12 @@ ConversionResult resumeAsyncFrame(JSContext *ctx, AsyncFrame *frame,
     return r;
   }
 
-  /* 函数完整执行：resolve 外层 promise（r.value 为返回值）。 */
+  /* 函数完整执行：resolve 外层 promise（r.value 为返回值）。
+   * async generator：结算当前请求 capability {value,done:true} + 队列剩余
+   * 请求，错误不冒泡（已进请求 promise）。 */
+  if (is_async_gen) {
+    return asyncGeneratorFrameSettled(ctx, frame, r);
+  }
   if (promise != nullptr && promise->isObject() &&
       promise->object()->isPromise()) {
     JSValue *resolve = makeBoundFunction(

@@ -638,11 +638,40 @@ async 方法 this/多次挂起恢复现场完整性）；全量 566 测试全绿
 验收：迭代器协议用例集通过（IteratorClose 4 测试 + return 穿透 2 测试 +
 Generator 构造器 2 测试，全量 599 测试绿）
 
-**M5.5c AsyncGenerator / for await（⏳ 未启动）**
+**M5.5c AsyncGenerator / for await（✅ 完成）**
 
-- `AsyncGenerator` 对象/状态机 + `for await...of` 完整执行
+- M5.5c-1 async generator 运行时（§27.6）：
+  - `AsyncGenerator` 对象（kind=AsyncGenerator）：[[AsyncGeneratorState]]（复用
+    gen_state_：suspended-start/yield、executing、completed）+ [[AsyncGeneratorQueue]]
+    （async_queue_，请求 capability 列表）+ [[AsyncGeneratorContext]]（复用 gen_frame_
+    内嵌 AsyncFrame）
+  - 调用入口 `asyncGeneratorCall`：创建请求 {capability, queue, resume} + 驱动队列
+    （state 检查 + resumeAsyncFrame 续延执行），next/throw/return 三种请求语义
+  - `suspendAsyncYield`（§27.6.3.4 AsyncGeneratorYield）：resolve 当前请求
+    capability {value,done:false} + 保存 VM 现场 + 置 SuspendedYield
+  - await 挂起/恢复经请求队列驱动：suspendAwait 沿 env 链传播 async_request，
+    resumeAsyncFrame 续延后经 asyncGeneratorFrameSettled（完成/异常 settle capability
+    + 驱动队列）/asyncGeneratorAfterSuspend（挂起驱动队列）结算
+  - `AsyncGenerator` 构造器（不可 new，抛 TypeError）+ prototype[Symbol.toStringTag]
+- M5.5c-2 for await...of（§14.7.5）编译执行：
+  - 异步迭代抽象运算：`getAsyncIterator`（§14.7.5.1，优先 Symbol.asyncIterator，
+    回退同步包装）、`asyncIteratorNext`（§14.7.5.3，call next + PromiseResolve）、
+    `asyncIteratorClose`（§14.7.5.4，call return + PromiseResolve）
+  - `AsyncFromSyncIterator`（§27.1.4，kind=AsyncFromSyncIterator）：[[SyncIterator]]
+    复用 iter_target_，prototype next/return/throw 返回 promise
+  - 指令 GetAsyncIterator / AsyncIteratorNext / AsyncIteratorClose（不挂起——只做
+    同步调用 + PromiseResolve 接合，结果 promise 压栈）+ IteratorResultToValueDone
+    （Await 恢复后 {value,done} 对象转 [value, done] 二元组）
+  - compileAsyncForOf：循环头 GetAsyncIterator + StoreVar + [AsyncIteratorNext +
+    Await + IteratorResultToValueDone + JumpIfTrue] + left 赋值 + body + Jump；
+    finally 块 AsyncIteratorClose + Await + Pop + RethrowPending（break/异常路径）
+  - 修复：op_DefineProp / op_DefineAccessor 支持 Symbol 计算键（`[Symbol.asyncIterator]`
+    存 Symbol 属性表而非字符串表）；getMethod 返回值=nullptr 的「无方法」非错误
+    语义与 ok()（value!=nullptr）判定的误判修正
 
-验收：async generator 用例通过
+验收：AsyncGenerator 21 测试（含 for await 6 测试：async generator 迭代、自定义
+异步迭代器、同步可迭代回退、break 调 return、throw 调 return 并重抛、Promise 值
+auto-resolve）全绿，全量 620 测试绿
 
 **M5.5d 生成器总验收（⏳ 未启动）**
 

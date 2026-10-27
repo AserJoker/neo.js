@@ -23,6 +23,8 @@
 #include <vector>
 
 #include "neojs/runtime/async.h"
+#include "neojs/runtime/async_generator.h"
+#include "neojs/runtime/async_iterator.h"
 #include "neojs/runtime/builtins.h"
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/conversion.h"
@@ -2302,6 +2304,113 @@ static ConversionResult op_IteratorClose(VmFrame &frame) {
   return ok(nullptr);
 }
 
+/* M5.5c-2 GetAsyncIterator（§14.7.5.1）：栈顶 iterable -> async iterator。
+ *   - 优先 iterable[Symbol.asyncIterator]()；无则回退同步
+ *     iterable[Symbol.iterator]() 并包装成 AsyncFromSyncIterator。
+ * 替换栈顶为 async iterator（不挂起）。 */
+static ConversionResult op_GetAsyncIterator(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+    if (stack.empty()) {
+      error = fail("Error: stack underflow on GetAsyncIterator");
+      break;
+    }
+    ConversionResult it = getAsyncIterator(frame.ctx, stack.back());
+    if (!it.ok()) return it;
+    stack.back() = it.value; /* 替换栈顶为 async iterator */
+    break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+/* M5.5c-2 AsyncIteratorNext（§14.7.5.3）：栈顶 async iterator -> 调
+ * next() + PromiseResolve 接合，结果 promise 替换栈顶。
+ * 不挂起——后续 Await 指令统一挂起/恢复（await 挂起机制复用）。
+ * 注：不弹栈——抽象运算内部 createValue/createDerivedPromise 分配可能触发
+ * GC，iterator 需保持在栈上受根集保护（对齐同步 op_IteratorStep 的
+ * stack.back() 替换模式，防悬垂）。 */
+static ConversionResult op_AsyncIteratorNext(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+    if (stack.empty()) {
+      error = fail("Error: stack underflow on AsyncIteratorNext");
+      break;
+    }
+    JSValue *iterator = stack.back();
+    ConversionResult r = asyncIteratorNext(frame.ctx, iterator);
+    if (!r.ok()) return r;
+    stack.back() = r.value; /* 结果 promise 替换栈顶（后续 Await 挂起） */
+    break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+/* M5.5c-2 AsyncIteratorClose（§14.7.5.4）：栈顶 async iterator -> 调
+ * return()（若有）+ PromiseResolve 接合，结果 promise 替换栈顶。
+ * 不挂起——后续 Await 指令统一挂起/恢复。
+ * 注：不弹栈（同上，防 GC 悬垂）。本 v1 实现不额外校验 return 结果对象性
+ * （规范要求对象时抛 TypeError），由调用方经 Await 恢复后按 completion 处理。 */
+static ConversionResult op_AsyncIteratorClose(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+    if (stack.empty()) {
+      error = fail("Error: stack underflow on AsyncIteratorClose");
+      break;
+    }
+    JSValue *iterator = stack.back();
+    ConversionResult r = asyncIteratorClose(frame.ctx, iterator);
+    if (!r.ok()) return r;
+    stack.back() = r.value; /* 结果 promise 替换栈顶（后续 Await 挂起） */
+    break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+/* M5.5c-2 IteratorResultToValueDone：栈顶 {value, done} 对象 -> 弹栈，
+ * 压 value + done（done 在栈顶，对齐同步 IteratorStep 布局）。
+ * AsyncIteratorNext + Await 恢复后栈顶是异步迭代结果对象，转二元组供
+ * JumpIfTrue（done 判断）/ left 赋值（value）使用。
+ * 注：done 读为 ToBoolean（§14.7.5.3 step 5.d IteratorComplete），value
+ * 直接取属性值（§14.7.5.3 step 5.b IteratorValue 简化——v1 不校验对象性）。 */
+static ConversionResult op_IteratorResultToValueDone(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+    if (stack.empty()) {
+      error = fail("Error: stack underflow on IteratorResultToValueDone");
+      break;
+    }
+    JSValue *result = stack.back();
+    stack.pop_back();
+    if (result == nullptr || !result->isObject()) {
+      error = fail("TypeError: Iterator result is not an object");
+      break;
+    }
+    JSObject *ro = result->object();
+    JSValue *val = ro->getProperty("value");
+    JSValue *done = ro->getProperty("done");
+    stack.push_back(val != nullptr ? val : frame.ctx->createValue(Kind::Undefined));
+    stack.push_back(frame.ctx->createValue(done != nullptr && toBoolean(done)));
+    break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
 static ConversionResult op_RestToArray(VmFrame &frame) {
   auto &stack = *frame.stack;
   ConversionResult error;
@@ -2641,16 +2750,23 @@ static ConversionResult op_DefineProp(VmFrame &frame) {
       ConversionResult pk = toPropertyKey(frame.ctx, key);
       if (!pk.ok()) return pk;
       JSObject *target = obj->object();
-      const std::string &name = pk.value->toString();
-      bool numeric = !name.empty() &&
-                     name.find_first_not_of("0123456789") == std::string::npos;
-      if (target->isArray() && numeric && name.size() <= 18) {
-      /* 数组整数索引计算键：写元素存储。 */
-        target->setElement(static_cast<size_t>(std::strtoull(name.c_str(), nullptr, 10)), val);
-      } else {
+      if (pk.value->kind() == Kind::Symbol) {
+        /* Symbol 计算键（M5.5c-2）：存 Symbol 属性表（§7.3.14）。 */
         PropertyDescriptor d;
         d.value = val;
-        target->setOwnProperty(name, d);
+        target->setOwnSymbolProperty(pk.value, d);
+      } else {
+        const std::string &name = pk.value->toString();
+        bool numeric = !name.empty() &&
+                       name.find_first_not_of("0123456789") == std::string::npos;
+        if (target->isArray() && numeric && name.size() <= 18) {
+        /* 数组整数索引计算键：写元素存储。 */
+          target->setElement(static_cast<size_t>(std::strtoull(name.c_str(), nullptr, 10)), val);
+        } else {
+          PropertyDescriptor d;
+          d.value = val;
+          target->setOwnProperty(name, d);
+        }
       }
       stack.resize(stack.size() - 3);
       stack.push_back(val);
@@ -2680,25 +2796,45 @@ static ConversionResult op_DefineAccessor(VmFrame &frame) {
       ConversionResult pk = toPropertyKey(frame.ctx, key);
       if (!pk.ok()) return pk;
       JSObject *target = obj->object();
-      const std::string &name = pk.value->toString();
-      bool is_setter = frame.arg != 0;
-      PropertyDescriptor *desc = target->getOwnProperty(name);
-      if (desc == nullptr) {
-      /* 新建访问器描述符。 */
-        PropertyDescriptor d;
-        d.type = PropertyDescriptor::Type::Accessor;
-        d.writable = false; /* 访问器属性无 writable 语义 */
-        target->setOwnProperty(name, d);
-        desc = target->getOwnProperty(name);
+      const bool is_setter = frame.arg != 0;
+      if (pk.value->kind() == Kind::Symbol) {
+        /* Symbol 计算键访问器：存 Symbol 属性表（§7.3.14）。 */
+        PropertyDescriptor *desc = target->getOwnSymbolProperty(pk.value);
+        if (desc == nullptr) {
+          PropertyDescriptor d;
+          d.type = PropertyDescriptor::Type::Accessor;
+          d.writable = false;
+          target->setOwnSymbolProperty(pk.value, d);
+          desc = target->getOwnSymbolProperty(pk.value);
+        } else {
+          desc->type = PropertyDescriptor::Type::Accessor;
+          desc->writable = false;
+        }
+        if (is_setter) {
+          desc->setter = fn;
+        } else {
+          desc->getter = fn;
+        }
       } else {
-      /* 已存在：升级为访问器类型（覆盖数据属性/互补 getter/setter）。 */
-        desc->type = PropertyDescriptor::Type::Accessor;
-        desc->writable = false;
-      }
-      if (is_setter) {
-        desc->setter = fn;
-      } else {
-        desc->getter = fn;
+        const std::string &name = pk.value->toString();
+        PropertyDescriptor *desc = target->getOwnProperty(name);
+        if (desc == nullptr) {
+        /* 新建访问器描述符。 */
+          PropertyDescriptor d;
+          d.type = PropertyDescriptor::Type::Accessor;
+          d.writable = false; /* 访问器属性无 writable 语义 */
+          target->setOwnProperty(name, d);
+          desc = target->getOwnProperty(name);
+        } else {
+        /* 已存在：升级为访问器类型（覆盖数据属性/互补 getter/setter）。 */
+          desc->type = PropertyDescriptor::Type::Accessor;
+          desc->writable = false;
+        }
+        if (is_setter) {
+          desc->setter = fn;
+        } else {
+          desc->getter = fn;
+        }
       }
       stack.resize(stack.size() - 3);
       stack.push_back(fn);
@@ -3698,21 +3834,34 @@ static ConversionResult op_Yield(VmFrame &frame) {
       }
     }
     if (gen_v == nullptr || !gen_v->isObject() ||
-        !gen_v->object()->isGenerator()) {
+        (!gen_v->object()->isGenerator() &&
+         !gen_v->object()->isAsyncGenerator())) {
       error = fail("SyntaxError: yield outside of generator function");
       break;
     }
 
-    /* 3. 保存现场到 Generator 内嵌的 AsyncFrame，置帧挂起。
+    /* 3. 保存现场到 Generator/AsyncGenerator 内嵌的 AsyncFrame，置帧挂起。
+     *    M5.5c-1 async generator：走 suspendAsyncYield——resolve 当前请求
+     *    capability {value,done:false} + 保存现场 + 置 SuspendedYield（
+     *    AsyncGeneratorYield，§27.6.3.4）；同步 generator 走 suspendYield。
      *    next_pc = 当前 pc（已指向 yield 下一条指令，主循环自增前）。 */
     JSFunction *self = frame.self;
     if (self == nullptr) {
       error = fail("Error: yield with no function context");
       break;
     }
-    if (!suspendYield(frame.ctx, gen_v, self, *frame.pc, stack, frame.env,
-                      *frame.frame_this, frame.pending, frame.has_pending,
-                      frame.pending_handle, yield_val)) {
+    if (gen_v->object()->isAsyncGenerator()) {
+      if (!suspendAsyncYield(frame.ctx, gen_v, self, *frame.pc, stack,
+                             frame.env, *frame.frame_this, frame.pending,
+                             frame.has_pending, frame.pending_handle,
+                             yield_val)) {
+        error = fail("Error: failed to suspend async generator frame");
+        break;
+      }
+    } else if (!suspendYield(frame.ctx, gen_v, self, *frame.pc, stack,
+                             frame.env, *frame.frame_this, frame.pending,
+                             frame.has_pending, frame.pending_handle,
+                             yield_val)) {
       error = fail("Error: failed to suspend generator frame");
       break;
     }
@@ -3912,6 +4061,10 @@ const OpHandler kHandlers[] = {
     op_Yield,  /* Yield */
     op_YieldDelegate,  /* YieldDelegate */
     op_IteratorClose,  /* IteratorClose */
+    op_GetAsyncIterator,  /* GetAsyncIterator */
+    op_AsyncIteratorNext,  /* AsyncIteratorNext */
+    op_AsyncIteratorClose,  /* AsyncIteratorClose */
+    op_IteratorResultToValueDone,  /* IteratorResultToValueDone */
 };
 
 }  // namespace

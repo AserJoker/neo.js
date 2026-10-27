@@ -252,6 +252,11 @@ void JSObject::gcMarkRefs(Heap *heap) {
   /* Generator 挂起现场（M5.5a-3：[[GeneratorContext]] AsyncFrame*，GC 引用边）。
    * AsyncFrame 自身 gcMarkRefs 标记其 fn/env/this/stack，此处只标记包装 JSValue。 */
   heap->markRoot(gen_frame_);
+  /* AsyncGenerator 请求队列（M5.5c-1：[[AsyncGeneratorQueue]] 元素，GC 引用边）。
+   * 元素为 AsyncGeneratorRequest 包装对象（{completion, capability}）。 */
+  for (JSValue *q : async_queue_) {
+    heap->markRoot(q);
+  }
   /* 私有字段槽（M5.1d-c2：§6.1.7.5 私有字段值，GC 引用边） */
   for (auto &kv : private_slots_) {
     heap->markRoot(kv.second);

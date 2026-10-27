@@ -144,6 +144,15 @@ class JSContext {
   /* Generator.prototype 缓存（M5.5a-3）：generator 对象原型链根。 */
   JSValue *generatorProto() const { return generator_proto_; }
   void setGeneratorProto(JSValue *v) { generator_proto_ = v; }
+  /* AsyncGenerator.prototype 缓存（M5.5c-1，§27.6.2）：async generator 对象
+   * 原型链根（next/throw/return + Symbol.asyncIterator 所在）。惰性创建 +
+   * 进根集（markRoots）。 */
+  JSValue *asyncGeneratorProto() const { return async_generator_proto_; }
+  void setAsyncGeneratorProto(JSValue *v) { async_generator_proto_ = v; }
+  /* AsyncFromSyncIterator.prototype 缓存（M5.5c-2，§27.1.4）：同步迭代器
+   * 包装对象的原型链根（next/return/throw 返回 promise）。惰性创建 + 进根集。 */
+  JSValue *asyncFromSyncIteratorProto() const { return async_from_sync_iter_proto_; }
+  void setAsyncFromSyncIteratorProto(JSValue *v) { async_from_sync_iter_proto_ = v; }
 
   /* Function.prototype 缓存（M4.2，§20.2.3）：函数（Script/Builtin）的
    * 原型链根（call/apply/bind 所在）。惰性创建 + 进根集（markRoots）。 */
@@ -253,7 +262,8 @@ class JSContext {
   HandleTable handles_;    /* 宿主句柄表（G2：根集之一） */
   JSValue *global_ = nullptr; /* 全局对象（globalThis 雏形，惰性创建） */
   std::string tmp_string_; /* 临时字符串缓冲（JS_ToString 稳定返回用） */
-  JSValue *well_known_[4] = {nullptr, nullptr, nullptr, nullptr}; /* well-known 缓存（E4-1） */
+  JSValue *well_known_[5] = {
+      nullptr, nullptr, nullptr, nullptr, nullptr}; /* well-known 缓存（E4-1 + M5.5c-1 AsyncIterator） */
   JSValue *wrapper_protos_[5] = {nullptr, nullptr, nullptr, nullptr, nullptr}; /* 包装原型缓存（E4-2，M4.3e 含 BigInt） */
   JSValue *object_proto_ = nullptr; /* Object.prototype 缓存（M3.3） */
   JSValue *array_proto_ = nullptr;  /* Array.prototype 缓存（M4.1） */
@@ -262,6 +272,8 @@ class JSContext {
   JSValue *set_proto_ = nullptr;    /* Set.prototype 缓存（M4.4a） */
   JSValue *promise_proto_ = nullptr; /* Promise.prototype 缓存（M5.3a） */
   JSValue *generator_proto_ = nullptr; /* Generator.prototype 缓存（M5.5a-3） */
+  JSValue *async_generator_proto_ = nullptr; /* AsyncGenerator.prototype 缓存（M5.5c-1） */
+  JSValue *async_from_sync_iter_proto_ = nullptr; /* AsyncFromSyncIterator.prototype 缓存（M5.5c-2） */
   JSValue *promise_internal_[14] = {
       nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
       nullptr, nullptr, nullptr, nullptr, nullptr, nullptr}; /* Promise 内部函数缓存（M5.3a/b + M5.4 await） */

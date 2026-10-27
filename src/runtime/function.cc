@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "neojs/runtime/async.h"
+#include "neojs/runtime/async_generator.h"
 #include "neojs/runtime/builtins.h"
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/conversion.h"
@@ -241,9 +242,28 @@ ConversionResult call(JSContext *ctx, JSValue *func, JSValue *thisVal,
       return fail("RangeError: Maximum call stack size exceeded");
     }
     ctx->incCallDepth();
+    const FunctionBytecode &bc = fn->bytecode();
+    /* M5.5c-1 async generator（async function*）：is_async 与 is_generator
+     * 同时为真。必须在 is_async 之前判断——否则走 asyncCall 把 async
+     * generator 当普通 async 执行（yield 变普通值，丢失挂起语义）。
+     * 返回 AsyncGenerator 对象（state=suspended-start），next/throw/return
+     * 返回 promise 经请求队列驱动（§27.6.1.1 AsyncGeneratorStart 近似）。 */
+    if (bc.is_async && bc.is_generator) {
+      result = asyncGeneratorCall(ctx, fn, thisArg,
+                                  args_internal.empty() ? nullptr
+                                                        : args_internal.data(),
+                                  argc);
+      for (uint32_t h : tmp_handles) {
+        freeTmpHandle(ctx, h);
+      }
+      if (result.ok()) {
+        result.tmp_handle = makeTmpHandle(ctx, result.value);
+      }
+      ctx->decCallDepth();
+      return result;
+    }
     /* M5.4 async：async 函数走 asyncCall（创建外层 promise + await 挂起/
      * 恢复 + 微任务续延），不阻塞调用方——立即返回 promise。 */
-    const FunctionBytecode &bc = fn->bytecode();
     if (bc.is_async) {
       result = asyncCall(ctx, fn, thisArg,
                          args_internal.empty() ? nullptr : args_internal.data(),
