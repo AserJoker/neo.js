@@ -84,7 +84,8 @@ bool suspendAsyncYield(JSContext *ctx, JSValue *gen_v, JSFunction *fn,
                        size_t next_pc, std::vector<JSValue *> &stack,
                        JSEnvironment *env, JSValue *frame_this,
                        const ConversionResult &pending, bool has_pending,
-                       uint32_t pending_handle, JSValue *yield_val);
+                       uint32_t pending_handle, bool pending_is_return,
+                       JSValue *yield_val);
 
 /* resumeAsyncFrame（await 续延）在 async generator 上下文挂起后调用：
  * 若 AsyncGenerator 处于 SuspendedYield（op_Yield 挂起，请求已结算），清

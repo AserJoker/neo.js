@@ -187,6 +187,17 @@ ConversionResult resumeGenerator(JSContext *ctx, JSValue *gen_v,
         ctx, frame->fn->bytecode(), frame->frame_this, nullptr, 0, frame->env,
         frame->fn, frame->pc, &restore_stack, nullptr, ret_val);
 
+    if (r.suspended) {
+      /* return() 在 finally 中命中 yield 挂起：return completion 已暂存到
+       * frame（pending_is_return=true，§27.5.3.3 step 5-7）。返回
+       * {value:yield_value, done:false}，置 SuspendedYield；下次 next() 恢复
+       * 时 resumeGenerator 继续注入 return completion 完成函数。 */
+      JSValue *yv = frame->yield_value;
+      if (yv == nullptr) yv = ctx->createValue(Kind::Undefined);
+      gen->setGeneratorState(static_cast<int>(GeneratorState::SuspendedYield));
+      return ok(createIterResult(ctx, yv, false));
+    }
+
     /* 函数完成（return 穿透 finally 后或直接完成）。 */
     gen->setGeneratorContext(nullptr);
     gen->setGeneratorState(static_cast<int>(GeneratorState::Completed));
@@ -235,7 +246,48 @@ ConversionResult resumeGenerator(JSContext *ctx, JSValue *gen_v,
     thrown = (value != nullptr) ? value : ctx->createValue(Kind::Undefined);
   }
 
-  /* 续延执行：从 frame->pc 继续到下个 yield 或函数完成。 */
+  /* 续延执行：从 frame->pc 继续到下个 yield 或函数完成。
+   * M5.5d：挂起的 return completion（return() 在 finally 中 yield 后再次
+   * next() 恢复）继续注入 initial_return——finally 末尾 RethrowPending 用
+   * return value 完成函数，实现 return 穿透语义跨挂起恢复保留。 */
+  JSValue *initial_return = nullptr;
+  if (frame->pending_is_return && frame->has_pending) {
+    initial_return = frame->pending.thrown;
+    if (initial_return == nullptr) {
+      initial_return = ctx->createValue(Kind::Undefined);
+    }
+    frame->has_pending = false;
+    frame->pending_is_return = false;
+    /* 释放旧 pending 临时句柄（挂起时 alloc 保护 return value，恢复后不再需要）。 */
+    if (frame->pending_handle != 0) {
+      ctx->handles().free(frame->pending_handle);
+      frame->pending_handle = 0;
+    }
+    /* 临时句柄保护（runBytecode initial_return 分支压栈前防 GC 回收）。 */
+    uint32_t h = 0;
+    if (initial_return != nullptr) {
+      h = ctx->handles().alloc(initial_return);
+    }
+    ConversionResult r2 = runBytecode(
+        ctx, frame->fn->bytecode(), frame->frame_this, nullptr, 0, frame->env,
+        frame->fn, frame->pc, &restore_stack, thrown, initial_return);
+    if (h != 0) ctx->handles().free(h);
+    /* 处理结果：挂起/完成/抛错，与下方主路径一致。 */
+    if (r2.suspended) {
+      JSValue *yv = frame->yield_value;
+      if (yv == nullptr) yv = ctx->createValue(Kind::Undefined);
+      gen->setGeneratorState(static_cast<int>(GeneratorState::SuspendedYield));
+      return ok(createIterResult(ctx, yv, false));
+    }
+    gen->setGeneratorContext(nullptr);
+    gen->setGeneratorState(static_cast<int>(GeneratorState::Completed));
+    if (!r2.ok()) {
+      return r2;
+    }
+    JSValue *retval = r2.value;
+    if (retval == nullptr) retval = ctx->createValue(Kind::Undefined);
+    return ok(createIterResult(ctx, retval, true));
+  }
   ConversionResult r = runBytecode(
       ctx, frame->fn->bytecode(), frame->frame_this, nullptr, 0, frame->env,
       frame->fn, frame->pc, &restore_stack, thrown);
@@ -313,11 +365,13 @@ static ConversionResult callInnerNext(JSContext *ctx, JSValue *iterator) {
 }
 
 /* 续延外层字节码（前向声明：yieldDelegateResume 调用，定义在 yieldDelegateResume 之后）。
- * inner done 后压 inner.value 续延外层，或注入 thrown 续延外层异常派发。 */
+ * inner done 后压 inner.value 续延外层；注入 thrown 续延外层异常派发；
+ * 注入 initial_return 续延 return completion 穿透外层 finally。 */
 static ConversionResult resumeOuterBytecode(JSContext *ctx, JSValue *gen_v,
                                             AsyncFrame *frame,
                                             JSValue *inner_value,
-                                            JSValue *thrown);
+                                            JSValue *thrown,
+                                            JSValue *initial_return);
 
 /* 调 inner.throw(exception) 或 inner.return(value)。
  *   method   iterator.throw / iterator.return（已校验可调用）
@@ -413,35 +467,42 @@ ConversionResult yieldDelegateResume(JSContext *ctx, JSValue *gen_v,
   JSValue *iterator = frame->delegate_iterator;
   JSObject *gen = gen_v->object();
 
-  /* mode 2 return + inner 无 return 方法：直接完成外层 generator
-   * （§27.5.3.3 step 7.c：CloseIterator(inner) 后置 completed 返回 {value,done:true}）。
-   * 简化：未调 inner.return（无方法），直接完成。 */
+  /* mode 2 return + inner 无 return 方法：CloseIterator(inner) 后，把
+   * return completion 注入外层 generator 续延（§27.5.3.3 step 7.c）——
+   * 穿透外层 try-finally 后以 return value 完成，而非直接完成外层。 */
   if (mode == 2) {
     JSValue *ret_method = getIteratorMethod(ctx, iterator, "return");
     if (ret_method == nullptr) {
-      /* 无 return 方法：直接完成外层 generator。 */
+      /* 无 return 方法：清 delegate，注入 return completion 给外层字节码
+       * （initial_return，穿透外层 finally）。 */
       frame->delegate_iterator = nullptr;
-      gen->setGeneratorContext(nullptr);
-      gen->setGeneratorState(static_cast<int>(GeneratorState::Completed));
       JSValue *v =
           (value != nullptr) ? value : ctx->createValue(Kind::Undefined);
-      return ok(createIterResult(ctx, v, true));
+      return resumeOuterBytecode(ctx, gen_v, frame, nullptr, nullptr, v);
     }
     /* 有 return 方法：转发，按返回结果 done 分支处理。 */
     ConversionResult r = callInnerMethod(ctx, iterator, ret_method, value);
     if (!r.ok()) {
-      /* inner.return 抛错：清 delegate，透传错误（外层 try/catch 可捕）。 */
+      /* inner.return 抛错：清 delegate，把错误注入外层字节码
+       * （initial_thrown，外层 try/catch 可捕；§27.5.3.3 step 7.b）。 */
       frame->delegate_iterator = nullptr;
-      return r;
+      JSValue *thrown = r.thrown;
+      if (thrown == nullptr) {
+        thrown = ctx->createValue(Kind::Exception);
+        thrown->setErrorInfo(r.error);
+      }
+      return resumeOuterBytecode(ctx, gen_v, frame, nullptr, thrown, nullptr);
     }
     JSValue *iter_result = r.value;
     if (iterResultDone(iter_result)) {
-      /* inner.return 返回 done=true：完成外层 generator，返回 {value,done:true}。 */
-      JSValue *inner_val = iterResultValue(ctx, iter_result);
+      /* inner.return 返回 done=true：inner 已关闭。外层 return() 的 return
+       * completion 仍须穿透外层 finally——把原 return value 注入外层字节码
+       * （initial_return，§27.5.3.3 step 7：return completion 不因 inner
+       * 关闭而丢失）。 */
       frame->delegate_iterator = nullptr;
-      gen->setGeneratorContext(nullptr);
-      gen->setGeneratorState(static_cast<int>(GeneratorState::Completed));
-      return ok(createIterResult(ctx, inner_val, true));
+      JSValue *v =
+          (value != nullptr) ? value : ctx->createValue(Kind::Undefined);
+      return resumeOuterBytecode(ctx, gen_v, frame, nullptr, nullptr, v);
     }
     /* inner.return 返回 done=false：罕见（inner 捕获 return 继续迭代）。
      * 置 yield_value，挂起外层，返回 {value,done:false}。 */
@@ -461,13 +522,19 @@ ConversionResult yieldDelegateResume(JSContext *ctx, JSValue *gen_v,
       frame->delegate_iterator = nullptr;
       JSValue *thrown =
           (value != nullptr) ? value : ctx->createValue(Kind::Undefined);
-      return resumeOuterBytecode(ctx, gen_v, frame, nullptr, thrown);
+      return resumeOuterBytecode(ctx, gen_v, frame, nullptr, thrown, nullptr);
     }
     ConversionResult r = callInnerMethod(ctx, iterator, throw_method, value);
     if (!r.ok()) {
-      /* inner.throw 抛错：清 delegate，透传错误。 */
+      /* inner.throw 抛错：清 delegate，把错误注入外层字节码
+       * （initial_thrown，外层 try/catch 可捕）。 */
       frame->delegate_iterator = nullptr;
-      return r;
+      JSValue *thrown = r.thrown;
+      if (thrown == nullptr) {
+        thrown = ctx->createValue(Kind::Exception);
+        thrown->setErrorInfo(r.error);
+      }
+      return resumeOuterBytecode(ctx, gen_v, frame, nullptr, thrown, nullptr);
     }
     JSValue *iter_result = r.value;
     if (iterResultDone(iter_result)) {
@@ -475,7 +542,7 @@ ConversionResult yieldDelegateResume(JSContext *ctx, JSValue *gen_v,
        * 续延外层字节码（yield* 表达式结果 = inner.value）。 */
       JSValue *inner_val = iterResultValue(ctx, iter_result);
       frame->delegate_iterator = nullptr;
-      return resumeOuterBytecode(ctx, gen_v, frame, inner_val, nullptr);
+      return resumeOuterBytecode(ctx, gen_v, frame, inner_val, nullptr, nullptr);
     }
     /* inner.throw 返回 done=false：置 yield_value，挂起外层。 */
     frame->yield_value = iterResultValue(ctx, iter_result);
@@ -496,15 +563,23 @@ ConversionResult yieldDelegateResume(JSContext *ctx, JSValue *gen_v,
     }
     ConversionResult r = callInnerMethod(ctx, iterator, next_method, value);
     if (!r.ok()) {
+      /* inner.next 抛错：清 delegate，把错误注入外层字节码（initial_thrown）——
+       * 外层 try/catch 可捕获（§27.5.3.3 step 4 的 yield* 异常传播）。 */
       frame->delegate_iterator = nullptr;
-      return r;
+      JSValue *thrown = r.thrown;
+      if (thrown == nullptr) {
+        /* 内部错误：转 Exception 值注入（与 tryDispatch 一致）。 */
+        thrown = ctx->createValue(Kind::Exception);
+        thrown->setErrorInfo(r.error);
+      }
+      return resumeOuterBytecode(ctx, gen_v, frame, nullptr, thrown, nullptr);
     }
     JSValue *iter_result = r.value;
     if (iterResultDone(iter_result)) {
       /* inner done：清 delegate，压 inner.value 到外层栈，续延外层字节码。 */
       JSValue *inner_val = iterResultValue(ctx, iter_result);
       frame->delegate_iterator = nullptr;
-      return resumeOuterBytecode(ctx, gen_v, frame, inner_val, nullptr);
+      return resumeOuterBytecode(ctx, gen_v, frame, inner_val, nullptr, nullptr);
     }
     /* inner yield：置 yield_value，挂起外层。 */
     frame->yield_value = iterResultValue(ctx, iter_result);
@@ -514,21 +589,30 @@ ConversionResult yieldDelegateResume(JSContext *ctx, JSValue *gen_v,
 }
 
 /* 续延外层字节码：从 frame->pc 继续，restore_stack + 压入 inner_value
- * （非 nullptr 时）或注入 thrown（非 nullptr 时）。inner done 后的路径。
+ * （非 nullptr 时）、注入 thrown（非 nullptr 时）或 initial_return
+ * （非 nullptr 时）。inner done / return completion / 异常透传的路径。
  * 结果处理与 resumeGenerator 续延段一致（suspended→{value,done:false}，
  * 完成→{value,done:true}，抛错→透传）。 */
 static ConversionResult resumeOuterBytecode(JSContext *ctx, JSValue *gen_v,
                                             AsyncFrame *frame,
                                             JSValue *inner_value,
-                                            JSValue *thrown) {
+                                            JSValue *thrown,
+                                            JSValue *initial_return) {
   JSObject *gen = gen_v->object();
   std::vector<JSValue *> restore_stack = std::move(frame->stack);
   if (inner_value != nullptr) {
     restore_stack.push_back(inner_value);
   }
+  /* initial_return 用临时句柄保护（runBytecode initial_return 分支压栈前
+   * 防 GC 回收；函数体执行期间也可能触发 GC）。 */
+  uint32_t ret_handle = 0;
+  if (initial_return != nullptr) {
+    ret_handle = ctx->handles().alloc(initial_return);
+  }
   ConversionResult r = runBytecode(
       ctx, frame->fn->bytecode(), frame->frame_this, nullptr, 0, frame->env,
-      frame->fn, frame->pc, &restore_stack, thrown);
+      frame->fn, frame->pc, &restore_stack, thrown, initial_return);
+  if (ret_handle != 0) ctx->handles().free(ret_handle);
 
   if (r.suspended) {
     /* 外层又挂起（op_Yield 或 op_YieldDelegate）。yield_value 已写入 frame。 */
@@ -585,7 +669,8 @@ bool suspendYield(JSContext *ctx, JSValue *gen_v, JSFunction *fn,
                   size_t next_pc, std::vector<JSValue *> &stack,
                   JSEnvironment *env, JSValue *frame_this,
                   const ConversionResult &pending, bool has_pending,
-                  uint32_t pending_handle, JSValue *yield_val) {
+                  uint32_t pending_handle, bool pending_is_return,
+                  JSValue *yield_val) {
   if (gen_v == nullptr || !gen_v->isObject() ||
       !gen_v->object()->isGenerator()) {
     return false;
@@ -607,6 +692,7 @@ bool suspendYield(JSContext *ctx, JSValue *gen_v, JSFunction *fn,
   frame->pending = pending;
   frame->has_pending = has_pending;
   frame->pending_handle = pending_handle;
+  frame->pending_is_return = pending_is_return;
   frame->yield_value = yield_val; /* yield 值，resumeGenerator 取出包装 */
 
   /* generator 挂起是同步的：不入队微任务，直接返回给 next 调用方。

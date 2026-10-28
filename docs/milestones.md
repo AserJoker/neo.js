@@ -554,14 +554,14 @@ async 方法 this/多次挂起恢复现场完整性）；全量 566 测试全绿
 
 ---
 
-### M5.5 生成器与迭代器深化（⏳ 进行中，M5.5a–M5.5d）
+### M5.5 生成器与迭代器深化（✅ 完成，M5.5a–M5.5d）
 
 > 依赖 M4.4 迭代器协议与 M5.1 语法地基；生成器是独立状态机子系统。
 > 设计决策（M5.5a）：复用 AsyncFrame 作为通用挂起恢复机制——async 持 promise、
 > generator 持 generator 对象，挂起/恢复路径共享。用户确认：「复用，这种暂停
 > 恢复应该是通用机制」。
 
-**M5.5a generator 编译与运行时（⏳ 进行中）**
+**M5.5a generator 编译与运行时（✅ 完成）**
 
 - M5.5a-1 前端语法解析（✅ 完成）：`function*` / `async function*` 声明与表达式、
   对象/class generator 方法（`*m(){}` / `static *m(){}` / `async *m(){}`）、
@@ -606,7 +606,14 @@ async 方法 this/多次挂起恢复现场完整性）；全量 566 测试全绿
     MultipleYields、YieldReceivesNextValue、ReturnValue、NextAfterCompletion、
     ThrowInjectsException、ThrowOnCompletedThrows、ReturnForcesCompletion、
     IndependentInstances）。全量 583 测试绿。
-- M5.5a-4 `yield*` 委托（⏳ 未启动）
+- M5.5a-4 `yield*` 委托（✅ 完成，39a2bba）
+  - `YieldDelegate` 指令 + `yieldDelegateStart`（getIterator + inner.next 首步，
+    inner done→压 inner.value 续延外层 / inner yield→挂起 / inner 抛错→透传）
+  - `yieldDelegateResume`（resumeGenerator 检测 delegate_iterator 非空时转发）：
+    mode 0 next→inner.next / mode 1 throw→inner.throw（无方法→透传外层）/ 
+    mode 2 return→inner.return（无方法→直接完成外层，M5.5d 修正为注入外层）
+  - `resumeOuterBytecode`：inner done 后压 inner.value 续延外层字节码（可再次挂起/完成）
+  - 测试：Generator yield* 5 用例（数组/生成器/嵌套委托/throw 转发/return 转发）
 
 验收：generator 脚本（含 yield* 委托）通过
 
@@ -673,9 +680,44 @@ Generator 构造器 2 测试，全量 599 测试绿）
 异步迭代器、同步可迭代回退、break 调 return、throw 调 return 并重抛、Promise 值
 auto-resolve）全绿，全量 620 测试绿
 
-**M5.5d 生成器总验收（⏳ 未启动）**
+**M5.5d 生成器总验收（✅ 完成）**
 
-验收：生成器/迭代器用例集全绿
+- **复合/边界用例集**（新文件 tests/test_m55d.cc，14 用例）：
+  - 同步 generator 复合：嵌套 generator（yield* 委托）+ 多层 finally + return() 触发
+    全链 finally（NestedGeneratorMultiFinallyOnReturn）；异常跨层（内层 throw 经
+    yield* 穿透外层 try/catch + 双层 finally，YieldDelegateExceptionAcrossLayers）
+  - generator + for-of 复合：for-of break 双层关闭（外层 for-of break → outer.return()
+    → yield* 转发 inner.return() → 双层 finally，GeneratorForOfBreakDoubleClose）
+  - yield* + 自定义迭代器：throw 转发（有 throw 方法 inner 捕获 / 无 throw 方法透传
+    外层 catch）、return 转发（无 return 方法注入外层 finally）
+  - generator + async 交叉：async 函数内同步 for-of 消费 generator（正常完成 + break
+    关闭 generator finally）
+  - async generator 复合：for await 消费 async generator + try/catch/finally 嵌套
+    （yield 值 await + throw 注入捕获 + finally 执行）；多实例交错驱动
+  - 边界：Generator.prototype[Symbol.iterator] 返回 this、多实例交错驱动、
+    generator/async generator 的 toStringTag
+- **缺口 A 修复：同步 generator return() 在 finally 中再 yield**（§27.5.3.3 step 5-7）：
+  - AsyncFrame 加 `pending_is_return` 字段（async.h），`suspendYield`/`suspendAsyncYield`
+    加参数保存（op_Yield 两个调用点传 `frame.pending_is_return`）
+  - `resumeGenerator` mode==2：`runBytecode` 返回 `r.suspended`（finally 中 yield）时
+    保留 SuspendedYield + 返回 {value:yield_value,done:false}，不再直接置 Completed
+  - 挂起后再次 next() 恢复：检测 `frame.pending_is_return && has_pending` 时继续注入
+    `initial_return`（return completion 跨挂起恢复保留，finally 末尾以 return value 完成）
+  - 对称补 async 版 `suspendAsyncYield` 的 pending_is_return 保存
+- **yield* 委托 completion 注入修复**（T1/T2/T4，§27.5.3.3）：
+  - `resumeOuterBytecode` 加 `initial_return` 参数：inner done / return completion /
+    异常透传统一经 runBytecode 注入外层字节码（tryDispatch/finally 机制复用）
+  - mode==2 return：无 return 方法 / inner.return done=true → 注入原 return value
+    穿透外层 finally（不再直接完成外层）；inner.return 抛错 → 注入外层 catch
+  - mode==0 next / mode==1 throw：inner 抛错（callInnerMethod 失败）→ 注入外层字节码
+    （initial_thrown），外层 try/catch 可捕获（此前直接 return r 绕过 tryDispatch）
+- **缺口 B 确认（已知限制，留待后续）**：async generator 内 yield* 委托未实现——
+  compiler 的 yield* 无条件发 YieldDelegate，运行时只走同步 getIterator，无
+  getAsyncIterator/异步驱动路径。探针确认 async generator 内 yield* 委托 async
+  generator 产出全丢。本阶段不写 async 内 yield* 用例（test_m55d.cc 头部注释记录），
+  留待后续阶段（需 compiler 区分 async/sync yield* + async 版 delegate 运行时）。
+
+验收：生成器/迭代器用例集 14 用例全绿，全量 634 测试绿
 
 ---
 

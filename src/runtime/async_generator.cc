@@ -388,7 +388,8 @@ bool suspendAsyncYield(JSContext *ctx, JSValue *gen_v, JSFunction *fn,
                        size_t next_pc, std::vector<JSValue *> &stack,
                        JSEnvironment *env, JSValue *frame_this,
                        const ConversionResult &pending, bool has_pending,
-                       uint32_t pending_handle, JSValue *yield_val) {
+                       uint32_t pending_handle, bool pending_is_return,
+                       JSValue *yield_val) {
   if (gen_v == nullptr || !gen_v->isObject() ||
       !gen_v->object()->isAsyncGenerator()) {
     return false;
@@ -424,6 +425,7 @@ bool suspendAsyncYield(JSContext *ctx, JSValue *gen_v, JSFunction *fn,
   frame->pending = pending;
   frame->has_pending = has_pending;
   frame->pending_handle = pending_handle;
+  frame->pending_is_return = pending_is_return;
   frame->yield_value = yield_val;
 
   /* 3. 置 SuspendedYield + 清 async_request（请求已结算）。 */

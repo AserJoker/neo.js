@@ -59,6 +59,12 @@ class AsyncFrame : public JSObject {
   ConversionResult pending;
   bool has_pending = false;
   uint32_t pending_handle = 0;
+  /* M5.5d：挂起的是 return completion（vs throw completion）。op_Yield
+   * 挂起时由 VmFrame.pending_is_return 拷贝；恢复时回填到 runBytecode 的
+   * VmFrame.pending_is_return，实现 generator.return() 在 finally 中 yield
+   * 挂起后，恢复时仍按 return 语义完成（§27.5.3.3 step 5-7）。仅 generator/
+   * async generator 用，async 不用。 */
+  bool pending_is_return = false;
   /* 外层 promise（async 调用入口创建，完成/异常时 settle；GC 引用边）。
    * suspendAwait 时沿 env 链查找 "__async_promise__" 绑定写入。 */
   JSValue *promise = nullptr;
@@ -145,7 +151,7 @@ bool suspendYield(JSContext *ctx, JSValue *gen, JSFunction *fn, size_t next_pc,
                   std::vector<JSValue *> &stack, JSEnvironment *env,
                   JSValue *frame_this, const ConversionResult &pending,
                   bool has_pending, uint32_t pending_handle,
-                  JSValue *yield_val);
+                  bool pending_is_return, JSValue *yield_val);
 
 /* generator 帧环境隐藏绑定名（generator 对象传递，op_Yield 沿链读取）。
  * generatorCall 在 env 链首段写入，op_Yield 沿链查找当前 generator。 */

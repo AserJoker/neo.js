@@ -3854,14 +3854,14 @@ static ConversionResult op_Yield(VmFrame &frame) {
       if (!suspendAsyncYield(frame.ctx, gen_v, self, *frame.pc, stack,
                              frame.env, *frame.frame_this, frame.pending,
                              frame.has_pending, frame.pending_handle,
-                             yield_val)) {
+                             frame.pending_is_return, yield_val)) {
         error = fail("Error: failed to suspend async generator frame");
         break;
       }
     } else if (!suspendYield(frame.ctx, gen_v, self, *frame.pc, stack,
                              frame.env, *frame.frame_this, frame.pending,
                              frame.has_pending, frame.pending_handle,
-                             yield_val)) {
+                             frame.pending_is_return, yield_val)) {
       error = fail("Error: failed to suspend generator frame");
       break;
     }
@@ -3929,7 +3929,8 @@ static ConversionResult op_YieldDelegate(VmFrame &frame) {
                                     : frame.ctx->createValue(Kind::Undefined);
       if (!suspendYield(frame.ctx, gen_v, frame.self, *frame.pc, stack,
                         frame.env, *frame.frame_this, frame.pending,
-                        frame.has_pending, frame.pending_handle, yv)) {
+                        frame.has_pending, frame.pending_handle,
+                        frame.pending_is_return, yv)) {
         error = fail("Error: failed to suspend generator frame on yield*");
         break;
       }
