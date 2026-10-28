@@ -217,6 +217,12 @@ enum class Opcode : uint8_t {
    * 同步 IteratorStep 布局）。AsyncIteratorNext + Await 恢复后栈顶是结果
    * 对象，转二元组供 JumpIfTrue / left 赋值使用（M5.5c-2）。 */
   IteratorResultToValueDone,
+  /* M5.5e async generator 内 yield* 委托 async 迭代器（§14.4.14 + §27.6.3.6）。
+   * 栈顶 = inner async iterable。VM 经 getAsyncIterator（优先 @@asyncIterator，
+   * 回退 @@iterator 包装 AsyncFromSyncIterator）+ inner.next() 得 promise，
+   * 经 AsyncDelegateResolve/Reject 挂起/恢复驱动委托状态机，结果转发给外层
+   * next()（AsyncGeneratorYield）。仅 async generator 函数体内可达。 */
+  AsyncYieldDelegate,
 };
 
 /* -------------------------------------------------------------------------- */
@@ -375,6 +381,8 @@ class BytecodeBuilder {
   void async_iterator_close() { push_op(Opcode::AsyncIteratorClose); }
   /* AsyncIteratorNext + Await 恢复后栈顶结果对象 -> [value, done]。 */
   void iterator_result_to_value_done() { push_op(Opcode::IteratorResultToValueDone); }
+  /* M5.5e async generator 内 yield* 委托：栈顶 iterable -> 异步委托状态机。 */
+  void async_yield_delegate() { push_op(Opcode::AsyncYieldDelegate); }
   void call(uint16_t argc) { push_op(Opcode::Call, argc); }
   void call_method(uint16_t argc) { push_op(Opcode::CallMethod, argc); }
   void construct(uint16_t argc) { push_op(Opcode::Construct, argc); }

@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "neojs/runtime/async.h"
+#include "neojs/runtime/async_generator.h"
 #include "neojs/runtime/builtins.h"
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/function.h"
@@ -1180,6 +1181,36 @@ ConversionResult promiseAwaitReject(JSContext *ctx, JSValue *,
   return resumeAsyncFrame(ctx, frame, reason, true);
 }
 
+/* 内部函数：M5.5e async generator yield* 委托续延 resolve（§14.4.14）。
+ * Bound 捕获 [AsyncFrame]，参数 (value)（inner 方法结果 promise 的
+ * fulfillment value——iter_result 对象）。恢复委托状态机（非字节码
+ * 续延——asyncDelegateResume 按 delegate_phase 分派）。 */
+ConversionResult promiseAsyncDelegateResolve(JSContext *ctx, JSValue *,
+                                             JSValue *const *args, size_t argc) {
+  JSValue *frame_v = argc > 0 ? args[0] : nullptr;
+  JSValue *value = argc > 1 ? args[1] : ctx->createValue(Kind::Undefined);
+  AsyncFrame *frame = asAsyncFrame(frame_v);
+  if (frame == nullptr) {
+    return fail("TypeError: invalid async frame in delegate resolve");
+  }
+  return asyncDelegateResume(ctx, frame, value, false);
+}
+
+/* 内部函数：M5.5e async generator yield* 委托续延 reject（§14.4.14）。
+ * Bound 捕获 [AsyncFrame]，参数 (reason)（inner 方法结果 promise 的
+ * rejection 值）。恢复委托状态机：异常注入外层 async generator 字节码
+ * （外层 try/catch 可捕获）。 */
+ConversionResult promiseAsyncDelegateReject(JSContext *ctx, JSValue *,
+                                            JSValue *const *args, size_t argc) {
+  JSValue *frame_v = argc > 0 ? args[0] : nullptr;
+  JSValue *reason = argc > 1 ? args[1] : ctx->createValue(Kind::Undefined);
+  AsyncFrame *frame = asAsyncFrame(frame_v);
+  if (frame == nullptr) {
+    return fail("TypeError: invalid async frame in delegate reject");
+  }
+  return asyncDelegateResume(ctx, frame, reason, true);
+}
+
 /* 内部函数分发表（下标 = PromiseInternal 枚举值，须严格对应）。 */
 JSBuiltinFn kPromiseInternalFns[] = {
     promiseResolveInternal,   /* Resolve */
@@ -1196,6 +1227,8 @@ JSBuiltinFn kPromiseInternalFns[] = {
     promiseRaceElement,       /* RaceElement */
     promiseAwaitResolve,      /* AwaitResolve */
     promiseAwaitReject,       /* AwaitReject */
+    promiseAsyncDelegateResolve, /* AsyncDelegateResolve */
+    promiseAsyncDelegateReject,  /* AsyncDelegateReject */
 };
 static_assert(sizeof(kPromiseInternalFns) / sizeof(kPromiseInternalFns[0]) ==
                   static_cast<size_t>(PromiseInternal::Count),

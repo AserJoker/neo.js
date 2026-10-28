@@ -2869,14 +2869,22 @@ bool Compiler::compileExpr(const ASTNode &node) {
        * 调用方）；恢复时栈顶替换为 next()/throw() 传入的值（throw 路径走异常派发）。
        * 仅 generator 函数体内可达（parser 已校验 generator_depth_ > 0）。 */
       if (node.yield_delegate) {
-        /* yield* expr：求值 expr（inner iterable）-> YieldDelegate 指令。 */
+        /* yield* expr：求值 expr（inner iterable）-> 委托指令。
+         * M5.5e：async generator 内 yield* 委托 async 迭代器（§14.4.14 +
+         * §27.6.3.6）发 AsyncYieldDelegate——VM 经 getAsyncIterator + 异步
+         * 驱动 inner.next()/throw()/return()（结果 promise 经 AsyncDelegate
+         * 续延挂起/恢复），与同步 YieldDelegate 的同步驱动路径分离。 */
         if (node.children.empty() || node.children[0] == nullptr) {
           /* yield* 无操作数：规范不允许，parser 已保证有操作数；防御性 undefined。 */
           builder_.push_op(Opcode::PushUndefined);
         } else {
           if (!compileExpr(*node.children[0])) return false;
         }
-        builder_.yield_delegate();
+        if (current_is_async_generator_) {
+          builder_.async_yield_delegate();
+        } else {
+          builder_.yield_delegate();
+        }
         return true;
       }
       if (node.children.empty() || node.children[0] == nullptr) {

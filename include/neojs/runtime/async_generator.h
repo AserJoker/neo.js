@@ -30,6 +30,7 @@
 #include <cstddef>
 #include <vector>
 
+#include "neojs/runtime/async.h"
 #include "neojs/runtime/conversion.h"
 
 namespace neojs {
@@ -99,6 +100,40 @@ void asyncGeneratorAfterSuspend(JSContext *ctx, AsyncFrame *frame);
  * 返回原 ConversionResult（调用方丢弃——错误已进请求 promise，不冒泡）。 */
 ConversionResult asyncGeneratorFrameSettled(JSContext *ctx, AsyncFrame *frame,
                                             ConversionResult result);
+
+/* M5.5e async generator yield* 委托续延（AsyncDelegateResolve/Reject 调用）：
+ * inner 方法结果 promise settle 后恢复委托状态机（非字节码续延）。
+ *   result   resolve 时 iter_result（对象）；reject 时 rejection 值
+ *   is_reject 是否 reject 分支
+ * 按 frame->delegate_phase 分派：done→续延外层字节码（mode 0/2）、
+ * done=false→AsyncGeneratorYield（先 await 产出值）、reject→异常注入外层。 */
+ConversionResult asyncDelegateResume(JSContext *ctx, AsyncFrame *frame,
+                                     JSValue *result, bool is_reject);
+
+/* M5.5e op_AsyncYieldDelegate 调用的委托原语（vm.cc 使用）。 */
+/* PromiseResolve 接合（x 是 Promise 直接用；否则包一层）。 */
+JSValue *delegatePromiseResolve(JSContext *ctx, JSValue *x);
+/* 读迭代结果 done（无 done 视作 false）。 */
+bool delegateIterResultDone(JSValue *iter_result);
+/* 读迭代结果 value（缺省 undefined）。 */
+JSValue *delegateIterResultValue(JSContext *ctx, JSValue *iter_result);
+/* 保存 VM 现场到 AsyncFrame（委托挂起基点）。 */
+void saveAsyncFrameForDelegate(JSContext *ctx, AsyncFrame *af, JSFunction *fn,
+                               size_t next_pc, std::vector<JSValue *> &stack,
+                               JSEnvironment *env, JSValue *frame_this,
+                               const ConversionResult &pending,
+                               bool has_pending, uint32_t pending_handle,
+                               bool pending_is_return);
+/* await 一个 promise 并走委托状态机续延（非 Await 指令）。 */
+ConversionResult asyncDelegateAwait(JSContext *ctx, AsyncFrame *af,
+                                    JSValue *gen_v, JSValue *awaitable,
+                                    AsyncDelegatePhase phase);
+/* inner 产出值（done=false）：先 await 值再 AsyncGeneratorYield。 */
+ConversionResult asyncDelegateYieldValue(JSContext *ctx, AsyncFrame *af,
+                                         JSValue *gen_v, JSValue *iter_result);
+/* AsyncGeneratorYield：resolve 当前请求 capability + 挂起（suspendAsyncYield 封装）。 */
+ConversionResult asyncDelegateYield(JSContext *ctx, AsyncFrame *af,
+                                    JSValue *gen_v, JSValue *value);
 
 /* 取 AsyncGenerator.prototype（惰性创建 + 缓存 + 进根集，builtins 注册）。 */
 JSValue *asyncGeneratorProto(JSContext *ctx);

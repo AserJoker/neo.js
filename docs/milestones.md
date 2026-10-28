@@ -554,7 +554,7 @@ async 方法 this/多次挂起恢复现场完整性）；全量 566 测试全绿
 
 ---
 
-### M5.5 生成器与迭代器深化（✅ 完成，M5.5a–M5.5d）
+### M5.5 生成器与迭代器深化（✅ 完成，M5.5a–M5.5e）
 
 > 依赖 M4.4 迭代器协议与 M5.1 语法地基；生成器是独立状态机子系统。
 > 设计决策（M5.5a）：复用 AsyncFrame 作为通用挂起恢复机制——async 持 promise、
@@ -711,13 +711,39 @@ auto-resolve）全绿，全量 620 测试绿
     穿透外层 finally（不再直接完成外层）；inner.return 抛错 → 注入外层 catch
   - mode==0 next / mode==1 throw：inner 抛错（callInnerMethod 失败）→ 注入外层字节码
     （initial_thrown），外层 try/catch 可捕获（此前直接 return r 绕过 tryDispatch）
-- **缺口 B 确认（已知限制，留待后续）**：async generator 内 yield* 委托未实现——
-  compiler 的 yield* 无条件发 YieldDelegate，运行时只走同步 getIterator，无
-  getAsyncIterator/异步驱动路径。探针确认 async generator 内 yield* 委托 async
-  generator 产出全丢。本阶段不写 async 内 yield* 用例（test_m55d.cc 头部注释记录），
-  留待后续阶段（需 compiler 区分 async/sync yield* + async 版 delegate 运行时）。
-
 验收：生成器/迭代器用例集 14 用例全绿，全量 634 测试绿
+
+**M5.5e async generator yield* 委托 async 迭代器（✅ 完成，缺口 B）**
+
+- **背景**：async generator 内 yield* 此前编译发同步 YieldDelegate，运行时只认同步
+  Generator → 报 "SyntaxError: yield* outside of generator function" 静默失败
+- **compiler**：`compiler.cc` YieldExpression 按上下文区分——async generator 发新增
+  `AsyncYieldDelegate` 指令（opcode 末尾追加），同步 generator 仍发 YieldDelegate
+- **运行时**（async_generator.cc / vm.cc / promise.cc / async.cc / async.h）：
+  - 新增 `AsyncDelegatePhase` 状态机（AwaitNext/AwaitThrow/AwaitReturn/AwaitYieldValue），
+    AsyncFrame 加 `delegate_phase` + `delegate_value` 字段（GC 引用边已补）
+  - `op_AsyncYieldDelegate`：沿 env 找 __generator__（isAsyncGenerator 校验）→
+    `getAsyncIterator`（优先 @@asyncIterator、回退 @@iterator 包装 AsyncFromSyncIterator，
+    与 for await 一致）→ saveAsyncFrameForDelegate + 设 delegate_iterator + 首轮 inner.next
+  - 委托状态机：`asyncDelegateForward`（按 mode 调 inner.next/throw/return，mode 2 暂存
+    delegate_value）→ `asyncDelegateAwait`（PromiseResolve 接合 + 挂起）→
+    `asyncDelegateResume`（AsyncDelegateResolve/Reject handler）：值产出经
+    AsyncGeneratorYield；done → 压 inner.value 续延外层（mode 0）或注入 delegate_value
+    return completion 穿透 finally（mode 2）；异常/无方法 → 注入外层字节码 try/catch
+  - **关键修复：asyncDelegateForward 同步 settle 分支**——AsyncFromSyncIterator.next
+    同步返回 Fulfilled promise，asyncDelegateAwait 不走挂起，须预设 `delegate_phase`
+    后统一走 asyncDelegateResume 处理（否则结果丢弃、状态卡 Executing、请求永不 settle）
+  - PromiseInternal 追加 AsyncDelegateResolve/AsyncDelegateReject（Bound 捕获 AsyncFrame）
+- **用例集**（新文件 tests/test_m55e.cc，8 用例，与 Node 基准一致）：
+  - 委托 async generator（seq="o1i1i2i3o2"）+ 手动 next 驱动 + yield* 结果 99
+  - 委托同步可迭代数组（AsyncFromSyncIterator 同步 settle 分支）
+  - throw 转发：inner 捕获后 yield 'recovered'
+  - return 转发：双层 finally + 外层 return value 保留（{value:'bye',done:true}）
+  - @@asyncIterator 优先于 @@iterator（syncCalled=false）
+  - yield* 非迭代器：TypeError reject 请求 promise
+  - 委托自定义 async iterator（asyncDelegateAwait pending 挂起路径）
+
+验收：生成器/迭代器用例集（test_m55d + test_m55e）全绿，全量 642 测试绿
 
 ---
 

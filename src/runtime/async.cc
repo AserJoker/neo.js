@@ -84,6 +84,7 @@ void AsyncFrame::gcMarkRefs(Heap *heap) {
   if (promise != nullptr) heap->markRoot(promise);
   if (yield_value != nullptr) heap->markRoot(yield_value);
   if (delegate_iterator != nullptr) heap->markRoot(delegate_iterator);
+  if (delegate_value != nullptr) heap->markRoot(delegate_value);
   if (async_request != nullptr) heap->markRoot(async_request);
   for (JSValue *v : stack) {
     if (v != nullptr) heap->markRoot(v);

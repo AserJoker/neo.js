@@ -3960,6 +3960,156 @@ static ConversionResult op_YieldDelegate(VmFrame &frame) {
   return ok(nullptr);
 }
 
+/* M5.5e AsyncYieldDelegate 指令：async generator 内 yield* <expr> 委托
+ * async 迭代器（§14.4.14 + §27.6.3.6）。
+ *   - 弹栈顶 iterable（yield* 的操作数，已求值）
+ *   - 沿 env 链查找隐藏绑定 __generator__，定位当前 async generator
+ *     （非 async generator 报 SyntaxError——compiler 保证只在 async
+ *     generator 内发此指令，防御性校验）
+ *   - getAsyncIterator(iterable)（优先 @@asyncIterator，回退 @@iterator
+ *     包装 AsyncFromSyncIterator）-> inner async iterator
+ *   - 保存 VM 现场到 AsyncFrame（委托挂起基点），设 delegate_iterator +
+ *     delegate_phase=AwaitNext
+ *   - 首次 inner.next(undefined) -> promise -> PromiseResolve 接合 ->
+ *     asyncDelegateAwait（挂起或同步 settle）
+ *     * pending   -> 置 frame.suspended 结束本帧（AsyncDelegateResolve/Reject
+ *       恢复时 asyncDelegateResume 驱动委托状态机）
+ *     * resolve   -> iter_result：done=true 压 inner.value 清 delegate 非挂起
+ *       继续外层；done=false asyncDelegateYieldValue（先 await 值再 yield）
+ *     * reject    -> 清 delegate，异常透传（外层 try/catch 可捕） */
+static ConversionResult op_AsyncYieldDelegate(VmFrame &frame) {
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+    /* 1. 弹栈顶 iterable。空栈视为 undefined（yield* undefined 由
+     *    getAsyncIterator 报 TypeError "obj is not async iterable"）。 */
+    JSValue *iterable = nullptr;
+    if (stack.empty()) {
+      iterable = frame.ctx->createValue(Kind::Undefined);
+    } else {
+      iterable = stack.back();
+      stack.pop_back();
+    }
+
+    /* 2. 沿 env 链查找隐藏绑定 __generator__，定位当前 async generator。 */
+    JSValue *gen_v = nullptr;
+    for (JSEnvironment *e = frame.env; e != nullptr; e = e->parent()) {
+      if (e->hasBinding(kGeneratorBinding)) {
+        gen_v = e->getBinding(kGeneratorBinding);
+        break;
+      }
+    }
+    if (gen_v == nullptr || !gen_v->isObject() ||
+        !gen_v->object()->isAsyncGenerator()) {
+      error = fail("SyntaxError: yield* outside of async generator function");
+      break;
+    }
+
+    /* 3. getAsyncIterator（优先 @@asyncIterator，回退 @@iterator 包装
+     *    AsyncFromSyncIterator，§14.7.5.1）。yield* 42 报 TypeError。 */
+    ConversionResult it = getAsyncIterator(frame.ctx, iterable);
+    if (!it.ok()) {
+      error = std::move(it);
+      break;
+    }
+
+    /* 4. 保存 VM 现场到 AsyncFrame + 设 delegate。现场是委托挂起/恢复的
+     *    基点（asyncDelegateAwait 挂起不覆盖现场）。 */
+    AsyncFrame *af = asAsyncFrame(gen_v->object()->asyncGeneratorContext());
+    if (af == nullptr || frame.self == nullptr) {
+      error = fail("Error: invalid async generator context on yield*");
+      break;
+    }
+    saveAsyncFrameForDelegate(frame.ctx, af, frame.self, *frame.pc, stack,
+                              frame.env, *frame.frame_this, frame.pending,
+                              frame.has_pending, frame.pending_handle,
+                              frame.pending_is_return);
+    /* delegate_iterator 写 frame 前防误回收（getAsyncIterator 返回后可能
+     * 触发 GC）。 */
+    frame.ctx->heap().pin(it.value);
+    af->delegate_iterator = it.value;
+    frame.ctx->heap().unpin(it.value);
+    af->delegate_phase = AsyncDelegatePhase::AwaitNext;
+
+    /* 5. 首次 inner.next(undefined)。 */
+    JSValue *next_key = frame.ctx->createValue(std::string("next"));
+    ConversionResult m = getMethod(frame.ctx, it.value, next_key);
+    if (m.value == nullptr &&
+        (!m.error.empty() || m.thrown != nullptr)) {
+      af->delegate_iterator = nullptr;
+      af->delegate_phase = AsyncDelegatePhase::None;
+      error = std::move(m);
+      break;
+    }
+    if (m.value == nullptr) {
+      af->delegate_iterator = nullptr;
+      af->delegate_phase = AsyncDelegatePhase::None;
+      error = fail("TypeError: iterator.next is not a function");
+      break;
+    }
+    JSValue *undef = frame.ctx->createValue(Kind::Undefined);
+    JSValue *argv[1] = {undef};
+    ConversionResult c = call(frame.ctx, m.value, it.value, argv, 1);
+    if (!c.ok()) {
+      /* inner.next 同步抛错：清 delegate，透传异常。 */
+      af->delegate_iterator = nullptr;
+      af->delegate_phase = AsyncDelegatePhase::None;
+      error = std::move(c);
+      break;
+    }
+
+    /* 6. PromiseResolve 接合 + await（挂起或同步 settle）。 */
+    JSValue *p = delegatePromiseResolve(frame.ctx, c.value);
+    ConversionResult r =
+        asyncDelegateAwait(frame.ctx, af, gen_v, p, AsyncDelegatePhase::AwaitNext);
+    if (r.suspended) {
+      /* 挂起：现场已保存，AsyncDelegateResolve/Reject 恢复时驱动委托状态机。 */
+      frame.suspended = true;
+      frame.done = true;
+      break;
+    }
+    if (!r.ok()) {
+      /* inner.next 结果 reject：清 delegate，透传异常。 */
+      af->delegate_iterator = nullptr;
+      af->delegate_phase = AsyncDelegatePhase::None;
+      error = std::move(r);
+      break;
+    }
+
+    /* 7. 同步 settle：iter_result = r.value。 */
+    if (r.value == nullptr || !r.value->isObject()) {
+      af->delegate_iterator = nullptr;
+      af->delegate_phase = AsyncDelegatePhase::None;
+      error = fail("TypeError: iterator result is not an object");
+      break;
+    }
+    if (delegateIterResultDone(r.value)) {
+      /* inner done：压 inner.value 到栈（yield* 表达式结果），清 delegate，
+       * 非挂起继续外层字节码。 */
+      JSValue *inner_val = delegateIterResultValue(frame.ctx, r.value);
+      af->delegate_iterator = nullptr;
+      af->delegate_phase = AsyncDelegatePhase::None;
+      stack.push_back(inner_val);
+    } else {
+      /* inner yield：AsyncGeneratorYield（先 await 产出值再结算请求挂起）。 */
+      ConversionResult r2 =
+          asyncDelegateYieldValue(frame.ctx, af, gen_v, r.value);
+      if (r2.suspended) {
+        frame.suspended = true;
+        frame.done = true;
+        break;
+      }
+      error = std::move(r2);
+      break;
+    }
+    break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
 /* 分发表：按 Opcode 枚举值下标访问（M5.1e-f 栈帧瘦身）。 */
 const OpHandler kHandlers[] = {
     op_PushConst,  /* PushConst */
@@ -4066,6 +4216,7 @@ const OpHandler kHandlers[] = {
     op_AsyncIteratorNext,  /* AsyncIteratorNext */
     op_AsyncIteratorClose,  /* AsyncIteratorClose */
     op_IteratorResultToValueDone,  /* IteratorResultToValueDone */
+    op_AsyncYieldDelegate,  /* AsyncYieldDelegate */
 };
 
 }  // namespace

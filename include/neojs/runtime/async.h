@@ -37,6 +37,21 @@ class JSEnvironment;
 class JSFunction;
 class JSValue;
 
+/* M5.5e async generator yield* 委托相位（§14.4.14 委托循环 + §27.6.3.6
+ * AsyncGeneratorYield 委托）。AsyncFrame::delegate_phase 用，仅 async generator。
+ *   None            非委托
+ *   AwaitNext        inner.next() 结果 promise 挂起（首步 + 常规转发）
+ *   AwaitThrow       inner.throw() 结果 promise 挂起
+ *   AwaitReturn      inner.return() 结果 promise 挂起
+ *   AwaitYieldValue  inner 产出值 await 挂起（AsyncGeneratorYield 前接合） */
+enum class AsyncDelegatePhase : uint8_t {
+  None = 0,
+  AwaitNext = 1,
+  AwaitThrow = 2,
+  AwaitReturn = 3,
+  AwaitYieldValue = 4,
+};
+
 /* async 挂起帧（GC 对象，M5.4）。由微任务队列中的续延 job 持有
  * （Bound 闭包的捕获参数），故挂起期间始终根可达。继承 JSObject：
  * kind=ObjectKind::AsyncFrame，作为 JSValue 的 object 载荷。 */
@@ -81,6 +96,14 @@ class AsyncFrame : public JSObject {
    * 时 resolve 其 capability {value,done}，resumeAsyncFrame 完成/异常时
    * resolve/reject 其 capability。仅 async generator 用，async 不用。GC 引用边。 */
   JSValue *async_request = nullptr;
+  /* M5.5e async generator yield* 委托相位（§14.4.14 + §27.6.3.6）。
+   * 委托挂起（await inner 方法结果 / await yield 值）期间非 None；
+   * AsyncDelegateResolve/Reject 恢复时据此分派。仅 async generator 用。 */
+  AsyncDelegatePhase delegate_phase = AsyncDelegatePhase::None;
+  /* M5.5e 委托转发保留值：return 转发（mode 2）时暂存外层 return() 的 value，
+   * inner.return() 返回 done=true 后经它注入外层 return completion（穿透 finally）。
+   * 仅 async generator 用。GC 引用边。 */
+  JSValue *delegate_value = nullptr;
 
   /* 引用边标记：fn/env/frame_this/promise + 操作数栈每个元素。 */
   void gcMarkRefs(Heap *heap) override;

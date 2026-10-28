@@ -41,10 +41,12 @@
 #include <vector>
 
 #include "neojs/runtime/async.h"
+#include "neojs/runtime/async_iterator.h"
 #include "neojs/runtime/builtins.h"
 #include "neojs/runtime/context.h"
 #include "neojs/runtime/environment.h"
 #include "neojs/runtime/function.h"
+#include "neojs/runtime/iterator.h"
 #include "neojs/runtime/object.h"
 #include "neojs/runtime/promise.h"
 #include "neojs/runtime/value.h"
@@ -172,6 +174,17 @@ ConversionResult asyncGeneratorCall(JSContext *ctx, JSFunction *fn,
  * 的 AsyncYield 挂起分支与 suspendAsyncYield 调用它，循环依赖故前向声明。 */
 static void driveAsyncGeneratorQueue(JSContext *ctx, JSValue *gen_v);
 
+/* 前向声明：M5.5e yield* 委托转发（定义于 resumeAsyncGenerator 之后）。
+ * resumeAsyncGenerator 的委托分支（delegate_iterator 非空）调用它，循环依赖
+ * （asyncDelegateForward 结果处理又调 resumeAsyncGenerator）。 */
+static ConversionResult asyncDelegateForward(JSContext *ctx, JSValue *gen_v,
+                                             AsyncFrame *frame, JSValue *value,
+                                             int mode);
+
+/* 前向声明：沿环境链查找当前 AsyncGenerator 对象（定义于 suspendAsyncYield 附近，
+ * asyncDelegateResume 在其之前使用，故前向声明）。 */
+static JSValue *findAsyncGenerator(JSEnvironment *env);
+
 /* 从挂起帧重建现场，继续执行到下一个 AsyncYield 挂起、await 挂起或函数完成。
  * 结果处理：
  *   - suspended 且 frame->async_request 非空（await 挂起）：请求未结算
@@ -190,6 +203,15 @@ static ConversionResult resumeAsyncGenerator(JSContext *ctx, JSValue *gen_v,
   AsyncFrame *frame = asAsyncFrame(afv);
   if (frame == nullptr || frame->fn == nullptr) {
     return fail("Error: invalid async generator context");
+  }
+
+  /* M5.5e：yield* 委托挂起（frame->delegate_iterator 非空）——请求不压栈/
+   * 注入外层，转发给 inner async iterator（§14.4.14 step 5 委托循环）。
+   * 挂起时 state 是 SuspendedYield（AsyncGeneratorYield 后驱动队列）或
+   * Executing（委托内部 await，此处不会到——Executing 防重入不驱动）。 */
+  if (frame->delegate_iterator != nullptr) {
+    gen->setAsyncGeneratorState(static_cast<int>(AsyncGeneratorState::Executing));
+    return asyncDelegateForward(ctx, gen_v, frame, value, mode);
   }
 
   /* 首次驱动（SuspendedStart）：补 numLocals 个 undefined 局部槽占位
@@ -299,6 +321,320 @@ static void driveAsyncGeneratorQueue(JSContext *ctx, JSValue *gen_v) {
   /* 若还有排队请求（resumeAsyncGenerator 可能完成多个？不会——单步驱动
    * 一个请求；但异常/完成路径已置 Completed，后续请求由 completed 分支
    * 处理，无需在此循环）。 */
+}
+
+/* -------------------------------------------------------------------------- */
+/* M5.5e yield* 委托 async 迭代器（§14.4.14 + §27.6.3.6）                     */
+/* -------------------------------------------------------------------------- */
+
+/* PromiseResolve 接合（§14.7.5.3 step 6 / Await 同构）：x 是 Promise 直接用；
+ * 否则包一层 pending promise 并同步 resolve（resolve 后 reaction 经微任务
+ * 入队——挂起恢复时序与规范一致）。返回 promise。 */
+JSValue *delegatePromiseResolve(JSContext *ctx, JSValue *x) {
+  if (x != nullptr && x->isObject() && x->object()->isPromise()) {
+    return x;
+  }
+  JSValue *resolve = nullptr, *reject = nullptr;
+  JSValue *p = createDerivedPromise(ctx, &resolve, &reject);
+  ctx->heap().pin(p); /* 分配保护：决议前防误回收 */
+  JSValue *argv[1] = {x};
+  ConversionResult rr = call(ctx, resolve, ctx->createValue(Kind::Undefined),
+                             argv, 1);
+  ctx->heap().unpin(p);
+  if (!rr.ok()) return p; /* 接合失败：返回 pending promise（Await 挂起） */
+  return p;
+}
+
+/* 读迭代结果 done（true/false）。无 done 视作 false（继续迭代）。 */
+bool delegateIterResultDone(JSValue *iter_result) {
+  if (iter_result == nullptr || !iter_result->isObject()) return true;
+  JSValue *d = iter_result->object()->getProperty("done");
+  return (d != nullptr) && toBoolean(d);
+}
+
+/* 读迭代结果 value（缺省 undefined）。 */
+JSValue *delegateIterResultValue(JSContext *ctx, JSValue *iter_result) {
+  if (iter_result == nullptr || !iter_result->isObject()) {
+    return ctx->createValue(Kind::Undefined);
+  }
+  JSValue *v = iter_result->object()->getProperty("value");
+  return (v != nullptr) ? v : ctx->createValue(Kind::Undefined);
+}
+
+/* 把内部错误（error 串）转 Exception JSValue（与 asyncGeneratorFrameSettled
+ * 的异常值构造同款）。 */
+static JSValue *delegateExceptionValue(JSContext *ctx,
+                                       const std::string &error) {
+  JSValue *e = ctx->createValue(Kind::Exception);
+  e->setErrorInfo(error);
+  return e;
+}
+
+/* 保存 VM 现场到 AsyncFrame（op_AsyncYieldDelegate 首次委托前调用，与
+ * suspendAsyncYield 的保存段同构——现场是委托挂起/恢复的基点）。 */
+void saveAsyncFrameForDelegate(JSContext *ctx, AsyncFrame *af,
+                                      JSFunction *fn, size_t next_pc,
+                                      std::vector<JSValue *> &stack,
+                                      JSEnvironment *env, JSValue *frame_this,
+                                      const ConversionResult &pending,
+                                      bool has_pending, uint32_t pending_handle,
+                                      bool pending_is_return) {
+  (void)ctx;
+  af->fn = fn;
+  af->pc = next_pc;
+  af->stack = stack; /* 拷贝操作数栈 */
+  af->env = env;
+  af->frame_this = frame_this;
+  af->pending = pending;
+  af->has_pending = has_pending;
+  af->pending_handle = pending_handle;
+  af->pending_is_return = pending_is_return;
+}
+
+/* await 一个 promise 并走委托状态机续延（非 Await 指令）。
+ *   Fulfilled -> 同步返回 resolve 值（r.value）；
+ *   Rejected  -> 同步返回 thrown（r.thrown）；
+ *   pending   -> 挂 AsyncDelegateResolve/Reject（Bound 捕获 AsyncGenerator
+ *                内嵌 frame 的包装值），置 phase，返回 suspended=true。
+ * 现场已在 frame（op_AsyncYieldDelegate 保存 / 委托挂起保留），不覆盖。 */
+ConversionResult asyncDelegateAwait(JSContext *ctx, AsyncFrame *af,
+                                           JSValue *gen_v, JSValue *awaitable,
+                                           AsyncDelegatePhase phase) {
+  if (awaitable == nullptr || !awaitable->isObject() ||
+      !awaitable->object()->isPromise()) {
+    return fail("TypeError: delegate await on non-promise");
+  }
+  JSObject *po = awaitable->object();
+  const int st = po->promiseState();
+  if (st == static_cast<int>(PromiseState::Fulfilled)) {
+    ConversionResult r;
+    r.value = po->promiseResult();
+    return r;
+  }
+  if (st == static_cast<int>(PromiseState::Rejected)) {
+    ConversionResult r;
+    r.thrown = po->promiseResult();
+    return r;
+  }
+
+  /* pending：置 phase + 挂 AsyncDelegateResolve/Reject 续延。 */
+  af->delegate_phase = phase;
+  uint32_t h = ctx->handles().alloc(awaitable); /* 分配 handler 前保护 awaitable */
+  JSValue *afv = gen_v->object()->asyncGeneratorContext();
+  std::vector<JSValue *> data;
+  data.push_back(afv);
+  JSValue *on_f = makeBoundFunction(
+      ctx, getPromiseInternal(ctx, PromiseInternal::AsyncDelegateResolve),
+      std::move(data));
+  std::vector<JSValue *> data2;
+  data2.push_back(afv);
+  JSValue *on_r = makeBoundFunction(
+      ctx, getPromiseInternal(ctx, PromiseInternal::AsyncDelegateReject),
+      std::move(data2));
+  ConversionResult r = attachAwaitReactions(ctx, awaitable, on_f, on_r);
+  ctx->handles().free(h);
+  if (!r.ok()) return r;
+  ConversionResult ret;
+  ret.suspended = true;
+  return ret;
+}
+
+/* AsyncGeneratorYield（§27.6.3.4）——委托产出值已 await 完成：复用
+ * suspendAsyncYield——resolve 当前请求 capability {value, done:false} +
+ * 保存现场 + 置 SuspendedYield + 清 async_request + 驱动队列。返回
+ * suspended 信号（调用方据此结束 runBytecode 或委托状态机）。 */
+ConversionResult asyncDelegateYield(JSContext *ctx, AsyncFrame *af,
+                                           JSValue *gen_v, JSValue *value) {
+  if (!suspendAsyncYield(ctx, gen_v, af->fn, af->pc, af->stack, af->env,
+                         af->frame_this, af->pending, af->has_pending,
+                         af->pending_handle, af->pending_is_return, value)) {
+    return fail("Error: failed to suspend async generator frame on yield*");
+  }
+  ConversionResult r;
+  r.suspended = true;
+  return r;
+}
+
+/* inner 产出值（done=false）：先 await 值（AsyncGeneratorYield 前接合，
+ * §27.6.3.4 step 7-9 同构）再 AsyncGeneratorYield。
+ *   1. delegate_phase = AwaitYieldValue
+ *   2. promiseResolve(inner.value) + asyncDelegateAwait
+ *   3. resolve 后 asyncDelegateYield（suspendAsyncYield 结算请求）；
+ *      reject 后清 delegate + 异常注入外层字节码。 */
+ConversionResult asyncDelegateYieldValue(JSContext *ctx, AsyncFrame *af,
+                                                JSValue *gen_v,
+                                                JSValue *iter_result) {
+  JSValue *inner_val = delegateIterResultValue(ctx, iter_result);
+  af->delegate_phase = AsyncDelegatePhase::AwaitYieldValue;
+  JSValue *p = delegatePromiseResolve(ctx, inner_val);
+  ConversionResult r = asyncDelegateAwait(ctx, af, gen_v, p,
+                                          AsyncDelegatePhase::AwaitYieldValue);
+  if (r.suspended) return r; /* 挂起，等 AsyncDelegateResolve */
+  if (!r.ok()) {
+    /* yield 值 await reject：清 delegate，异常注入外层字节码。 */
+    af->delegate_iterator = nullptr;
+    af->delegate_phase = AsyncDelegatePhase::None;
+    JSValue *thrown = r.thrown != nullptr
+                          ? r.thrown
+                          : delegateExceptionValue(ctx, r.error);
+    return resumeAsyncGenerator(ctx, gen_v, thrown, 1, false);
+  }
+  return asyncDelegateYield(ctx, af, gen_v, r.value);
+}
+
+/* 委托状态机核心恢复（AsyncDelegateResolve/Reject 调用，§14.4.14 委托循环）。
+ * 按 frame->delegate_phase 分派：
+ *   - reject：清 delegate，异常注入外层字节码（外层 try/catch 可捕）
+ *   - AwaitYieldValue：yield 值已 await，AsyncGeneratorYield
+ *   - AwaitReturn + done：用 delegate_value 注入外层 return completion（穿透 finally）
+ *   - AwaitNext/AwaitThrow + done：压 inner.value 续延外层字节码（yield* 表达式结果）
+ *   - done=false：asyncDelegateYieldValue（先 await 产出值再 AsyncGeneratorYield）
+ *   - 结果非对象：TypeError 注入外层 */
+ConversionResult asyncDelegateResume(JSContext *ctx, AsyncFrame *frame,
+                                     JSValue *result, bool is_reject) {
+  JSValue *gen_v = findAsyncGenerator(frame->env);
+  if (gen_v == nullptr) {
+    return fail("Error: async generator not found on delegate resume");
+  }
+  const AsyncDelegatePhase phase = frame->delegate_phase;
+  if (phase == AsyncDelegatePhase::None) {
+    return fail("Error: delegate resume with no phase");
+  }
+
+  if (is_reject) {
+    /* inner 方法抛错 / yield 值 await reject：清 delegate，异常注入外层字节码
+     * （从 frame->pc 续延 + initial_thrown，外层 try/catch 可捕）。 */
+    frame->delegate_iterator = nullptr;
+    frame->delegate_phase = AsyncDelegatePhase::None;
+    JSValue *thrown =
+        (result != nullptr) ? result : ctx->createValue(Kind::Undefined);
+    return resumeAsyncGenerator(ctx, gen_v, thrown, 1, false);
+  }
+
+  if (phase == AsyncDelegatePhase::AwaitYieldValue) {
+    /* yield 值已 await 完成：AsyncGeneratorYield（结算请求 + 挂起）。 */
+    return asyncDelegateYield(ctx, frame, gen_v, result);
+  }
+
+  /* 结果须为对象（§14.4.14：iter_result 必须 Object）。 */
+  if (result == nullptr || !result->isObject()) {
+    frame->delegate_iterator = nullptr;
+    frame->delegate_phase = AsyncDelegatePhase::None;
+    JSValue *thrown = delegateExceptionValue(
+        ctx, "TypeError: iterator result is not an object");
+    return resumeAsyncGenerator(ctx, gen_v, thrown, 1, false);
+  }
+  const bool done = delegateIterResultDone(result);
+
+  if (phase == AsyncDelegatePhase::AwaitReturn) {
+    if (done) {
+      /* inner.return 返回 done=true：inner 已关闭。外层 return() 的 return
+       * completion 不因 inner 关闭而丢失——用 delegate_value 注入外层
+       * （initial_return 穿透外层 finally，§14.4.14 step 6.b）。 */
+      JSValue *retval = (frame->delegate_value != nullptr)
+                            ? frame->delegate_value
+                            : ctx->createValue(Kind::Undefined);
+      frame->delegate_iterator = nullptr;
+      frame->delegate_phase = AsyncDelegatePhase::None;
+      return resumeAsyncGenerator(ctx, gen_v, retval, 2, false);
+    }
+    /* inner.return 返回 done=false（inner 捕获 return 继续迭代）：
+     * AsyncGeneratorYield（产出值）。 */
+    return asyncDelegateYieldValue(ctx, frame, gen_v, result);
+  }
+
+  /* AwaitNext / AwaitThrow：done=true 则 inner 完成，压 inner.value 续延外层
+   * 字节码（yield* 表达式结果 = inner.value）；done=false 则 AsyncGeneratorYield。 */
+  if (done) {
+    JSValue *inner_val = delegateIterResultValue(ctx, result);
+    frame->delegate_iterator = nullptr;
+    frame->delegate_phase = AsyncDelegatePhase::None;
+    return resumeAsyncGenerator(ctx, gen_v, inner_val, 0, false);
+  }
+  return asyncDelegateYieldValue(ctx, frame, gen_v, result);
+}
+
+/* 委托转发：resumeAsyncGenerator 委托分支（delegate_iterator 非空）调用。
+ * 把外层请求（next/throw/return）转发给 inner async iterator（§14.4.14
+ * step 5 循环）：
+ *   mode 0 -> inner.next(value)
+ *   mode 1 -> inner.throw(value)（无 throw 方法 -> 异常注入外层）
+ *   mode 2 -> inner.return(value)（无 return 方法 -> return completion 注入外层）
+ * 调方法得 promise -> PromiseResolve 接合 -> asyncDelegateAwait（挂起或同步 settle）。
+ * 结果由 asyncDelegateResume 处理。 */
+static ConversionResult asyncDelegateForward(JSContext *ctx, JSValue *gen_v,
+                                             AsyncFrame *frame, JSValue *value,
+                                             int mode) {
+  JSValue *iterator = frame->delegate_iterator;
+  const char *name =
+      (mode == 1) ? "throw" : (mode == 2) ? "return" : "next";
+  JSValue *key = ctx->createValue(std::string(name));
+  ConversionResult m = getMethod(ctx, iterator, key);
+  if (m.value == nullptr && (!m.error.empty() || m.thrown != nullptr)) {
+    /* getMethod 内部错误（属性不可调用等）：透传。 */
+    frame->delegate_iterator = nullptr;
+    frame->delegate_phase = AsyncDelegatePhase::None;
+    JSValue *thrown = m.thrown != nullptr
+                          ? m.thrown
+                          : delegateExceptionValue(ctx, m.error);
+    return resumeAsyncGenerator(ctx, gen_v, thrown, 1, false);
+  }
+  if (m.value == nullptr) {
+    /* 无方法：
+     *   mode 1（throw）-> 终止委托，把 value 当异常注入外层（§14.4.14
+     *     step 5.b.iii：CloseIterator + 外层 throw value）。
+     *   mode 2（return）-> 无 return 方法，return completion 注入外层
+     *     （穿透 finally）。
+     *   mode 0（next）-> TypeError（iterator.next 缺失）。 */
+    frame->delegate_iterator = nullptr;
+    frame->delegate_phase = AsyncDelegatePhase::None;
+    JSValue *v = (value != nullptr) ? value : ctx->createValue(Kind::Undefined);
+    if (mode == 1 || mode == 2) {
+      return resumeAsyncGenerator(ctx, gen_v, v, mode, false);
+    }
+    return resumeAsyncGenerator(
+        ctx, gen_v,
+        delegateExceptionValue(ctx, "TypeError: iterator.next is not a function"),
+        1, false);
+  }
+
+  /* 调 inner 方法（带 value 参数）。 */
+  JSValue *argv[1] = {
+      (value != nullptr) ? value : ctx->createValue(Kind::Undefined)};
+  ConversionResult c = call(ctx, m.value, iterator, argv, 1);
+  if (!c.ok()) {
+    /* 方法调用同步抛错：清 delegate，异常注入外层字节码。 */
+    frame->delegate_iterator = nullptr;
+    frame->delegate_phase = AsyncDelegatePhase::None;
+    JSValue *thrown = c.thrown != nullptr
+                          ? c.thrown
+                          : delegateExceptionValue(ctx, c.error);
+    return resumeAsyncGenerator(ctx, gen_v, thrown, 1, false);
+  }
+
+  /* mode 2（return）：暂存外层 return value——inner.return 返回 done=true
+   * 后经它注入外层 return completion（穿透 finally）。 */
+  if (mode == 2) {
+    frame->delegate_value = (value != nullptr)
+                                ? value
+                                : ctx->createValue(Kind::Undefined);
+  }
+
+  /* PromiseResolve 接合 + await。 */
+  const AsyncDelegatePhase ph = (mode == 1)   ? AsyncDelegatePhase::AwaitThrow
+                                : (mode == 2) ? AsyncDelegatePhase::AwaitReturn
+                                              : AsyncDelegatePhase::AwaitNext;
+  /* 先置 phase：同步 settle 分支不走 asyncDelegateAwait 的挂起设值，须在此
+   * 预设（否则 asyncDelegateResume 读到上一轮残留 phase 而误判）。 */
+  frame->delegate_phase = ph;
+  JSValue *p = delegatePromiseResolve(ctx, c.value);
+  ConversionResult r = asyncDelegateAwait(ctx, frame, gen_v, p, ph);
+  if (r.suspended) return r; /* 挂起：等 AsyncDelegateResolve/Reject 恢复 */
+  /* 同步 settle：结果 promise 已 Fulfilled/Rejected（如 AsyncFromSyncIterator
+   * 的 next 同步完成）。统一走 asyncDelegateResume 按 phase 处理（done 判断 /
+   * 压 inner.value 续延外层 / AsyncGeneratorYield / 异常注入外层）。 */
+  const bool rej = !r.ok(); /* 同步 Rejected：value 为 nullptr、thrown 非空 */
+  return asyncDelegateResume(ctx, frame, rej ? r.thrown : r.value, rej);
 }
 
 /* -------------------------------------------------------------------------- */

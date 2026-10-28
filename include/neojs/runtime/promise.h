@@ -86,6 +86,12 @@ enum class PromiseInternal : uint8_t {
    * 把 rejection 值作为异常进入 async 帧（try/catch 可捕获）。 */
   AwaitResolve,   /* await 续延 resolve：恢复挂起的 async 帧（M5.4） */
   AwaitReject,    /* await 续延 reject：异常进入挂起的 async 帧（M5.4） */
+  /* M5.5e async generator yield* 委托续延：恢复委托状态机（非字节码续延——
+   * 委托不是字节码位置）。Bound 捕获 [AsyncFrame]，inner 方法结果 promise
+   * settle 后经此分派 asyncDelegateResume（resolve 处理 iter_result，reject
+   * 把异常注入外层 async generator 字节码）。 */
+  AsyncDelegateResolve, /* 委托续延 resolve（M5.5e） */
+  AsyncDelegateReject,  /* 委托续延 reject（M5.5e） */
   Count,
 };
 
