@@ -126,13 +126,17 @@ clone(data):
 
 ## 4. GC：value 生命周期管理（与内存管理解耦）
 
-### GC 职责收窄
+### GC 职责收窄（修正版，2026-10-30）
 
-- **GC 只管 value 的生命周期**（scope_ref 归零 → delete value），不跟踪底层内存块。
-- 每个 value 带 `scope_ref`（被多少作用域持有）；作用域退出遍历 values 逐个 `scope_ref--`；归零才可回收。
-- GC 时 `scope_ref > 0` 的 value 当根跳过。
-- **严格配对必须**；value 可被多 scope 共享。
-- **函数返回值过渡**：旧 value 归零释放；调用方 `create_value(res)` 重建新 value 引用同 data。
+- **GC 是 value 的唯一 owner**：所有 value 经 `gc.createValue` 创建，加入 GC 全局表；scope 只持引用清单（`scope.values`），不持有所有权。
+- 每个 value 带 `scope_ref`（被多少作用域持有）；作用域退出遍历 values 逐个 `scope_ref--`（**只减计数，不 delete**）。
+- **delete 永远发生在 GC 扫描时**（`Gc::collect()` 遍历全局表，回收 `scope_ref == 0` 的 value）。
+  理由：value 若为对象，data 含引用其它 value 的字段，作用域退出时立即 delete 若仍有其它引用路径（闭包/跨 scope/栈借用）会悬垂；延迟到扫描统一处理对象字段安全。
+- **GC 时 `scope_ref > 0` 的 value 当根跳过**（根集 = 所有 scope 持有的 value）。
+- **严格配对必须**；value 可被多 scope 共享（`attach` 时 `scope_ref++`）。
+- **触发时机**：`pop_scope`/`destroy_scope` 只 `scope_ref--`，不自动 collect；由调用方/engine 在合适的时机（函数返回、模块边界、显式 collect）触发扫描。
+- **data 生命周期归 value 释放**：value 回收时 data `refcount--`，归零 delete。
+- **函数返回值过渡**：调用方 `create_value`（挂调用方 scope）重建新 value 引用同 data（data `refcount++`）；函数 scope 销毁只减引用，data 被调用方持有存活。
 
 ### 内存管理：分配器（与 GC 解耦）
 
@@ -493,6 +497,6 @@ compile（消费 sema 产物）：
 2. ~~**模块**~~：已定稿（§10.7）。
 3. ~~**编译期**~~：已定稿（§10.8 sema 阶段）。
 4. ~~**旧 JSScope / 旧 opcode / 旧测试**~~：**完全重写，除 AST 外不迁就任何旧机制**。旧 scope.h/scope.cc、旧 opcode、旧 env 机制全部废弃重写；测试按新语义重写。
-5. ~~**性能取舍**~~：已定稿（§4）——GC 只管 value 生命周期（scope_ref 归零即 delete）；底层内存块归**分配器**（纯类对象 static 接口，当前 malloc/free）；data 生命周期归 value 析构；无内联小值问题，全部装箱。
-6. ~~**GC 触发时机**~~：已定稿（§4）——scope_ref 归零即 delete value（无 mark-sweep，值间引用靠 data 引用计数）。
+5. ~~**性能取舍**~~：已定稿（§4 修正版）——GC 是 value 唯一 owner（全局表），scope_ref-- 延迟到扫描 delete；底层内存块归**分配器**（纯类对象 static 接口，当前 malloc/free）；data 生命周期归 value 释放；无内联小值问题，全部装箱。
+6. ~~**GC 触发时机**~~：已定稿（§4 修正版）——delete 永远在 `Gc::collect()` 扫描时（引用计数 + 延迟回收，非 mark-sweep；值间引用靠 data 引用计数）；触发由 engine 在函数返回/模块边界/显式 collect 决定。
 7. **实现顺序**：完全重写的里程碑拆分（sema → scope/value 运行时 → vm/interrupt → 闭包 → 模块/with/eval → 异步）。

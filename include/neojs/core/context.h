@@ -1,12 +1,13 @@
 /*
  * core 层：context（运行时根）。
  *
- * 遵循 docs/scope-redesign.md §1.4/§6：
+ * 遵循 docs/scope-redesign.md §1.4/§6/§4：
  *   - context 共享长寿命：rootScope/模块表/内置。
  *   - vm 每次模块执行/函数调用独立，不拥有 scope；scope 树归 context。
  *   - current_scope：当前作用域指针（vm 操作）。
- *   - 一切新 value 创建都加入 current_scope.values（scope_ref=1），
- *     栈中存的全部是借用值。
+ *   - value 唯一 owner 是 Gc（全局表）；scope 只持引用清单（scope.values）。
+ *     创建即挂 current_scope（scope_ref++），栈中存的全部是借用值。
+ *   - scope 退出只 scope_ref--，delete 由 Gc::collect 延迟执行（§4 修正）。
  *
  * M1 提供：value 工厂 + scope 树管理 + load/store/clone 语义。
  */
@@ -18,6 +19,7 @@
 
 #include "neojs/core/allocator.h"
 #include "neojs/core/data.h"
+#include "neojs/core/gc.h"
 #include "neojs/core/scope.h"
 #include "neojs/core/value.h"
 
@@ -34,10 +36,13 @@ struct Context : AllocatedObject {
   /* 当前作用域（vm 操作；进入函数/模块时切换）。 */
   Scope *current_scope = nullptr;
 
-  /* ---------- value 工厂（全部加入 current_scope.values，scope_ref=1） ---------- */
+  /* value 生命周期管理器：唯一 owner（全局表）。 */
+  Gc gc_;
 
-  /* 创建 value（kind 指定），加入 current_scope.values（scope_ref++）。
-   * 返回原始 value*（调用方按借用持有，随作用域退出回收）。 */
+  /* ---------- value 工厂（创建经 gc，挂 current_scope，scope_ref++） ---------- */
+
+  /* 创建 value（kind 指定），挂到 current_scope（scope_ref++）。
+   * 返回原始 value*（调用方按借用持有，随作用域退出 scope_ref--）。 */
   Value *create_value(ValueKind kind);
 
   /* 带 data 的工厂：创建 value + data（data refcount=1）。 */
@@ -59,11 +64,16 @@ struct Context : AllocatedObject {
    * 返回被销毁的 scope（调用方已不可用）。 */
   void pop_scope();
 
-  /* 销毁指定 scope 整棵子树（递归 children + values scope_ref--）。 */
+  /* 销毁指定 scope 整棵子树（递归 children + values 逐个 scope_ref--）。
+   * 注意：只减引用计数，不 delete value（delete 由 Gc::collect 延迟）。 */
   void destroy_scope(Scope *scope);
 
   /* 将 scope 设为 current_scope（进入函数 body / 模块）。 */
   void set_current_scope(Scope *scope) { current_scope = scope; }
+
+  /* 把已有 value 挂到指定 scope（scope_ref++），返回 value*。
+   * 用于闭包捕获/模块 import 共享同一 value（§5/§10.7）。 */
+  Value *attach(Scope *scope, Value *value);
 
   /* ---------- 绑定 ---------- */
 
