@@ -97,19 +97,17 @@ AssignmentOpKind toAssignOp(const Token &tok) {
 
 }  // namespace
 
-Parser::Parser(JSAllocator *allocator, const char *source, size_t source_len,
+Parser::Parser(const char *source, size_t source_len,
                DiagnosticSink &sink, bool module)
-    : allocator_(allocator), lexer_(source, source_len, sink), sink_(sink),
-      module_(module) {}
+    : lexer_(source, source_len, sink), sink_(sink), module_(module) {}
 
 ASTNode *Parser::newNode(NodeType t) {
-  return allocator_->create<ASTNode>(t);
+  return new ASTNode(t);
 }
 
 AST *Parser::parse() {
   lexer_.skipHashbang(); /* M1.5：入口级 hashbang，首个 token 前 */
-  AST *ast = allocator_->create<AST>();
-  ast->allocator = allocator_;
+  AST *ast = new AST();
   if (module_) {
     /* 模块模式（M1.6 ③）：Module 根节点 + 自动严格模式。
      * 顶层 await 合法（module_ 为 true 时 parseStatement 放行）；
@@ -121,7 +119,7 @@ AST *Parser::parse() {
     ast->root = parseStatementList();
   }
   if (ast->root == nullptr || sink_.hasErrors()) {
-    allocator_->destroy(ast);
+    delete ast;
     return nullptr;
   }
   return ast;
@@ -145,7 +143,7 @@ ASTNode *Parser::parseExpression(bool allow_in) {
     advance(); /* , */
     ASTNode *next = parseAssignment(allow_in);
     if (next == nullptr) {
-      allocator_->destroy(seq);
+      delete seq;
       return nullptr;
     }
     seq->children.push_back(next);
@@ -201,7 +199,7 @@ ASTNode *Parser::parseYieldExpression(bool allow_in) {
   setValueContext();
   ASTNode *arg = parseAssignment(allow_in);
   if (arg == nullptr) {
-    allocator_->destroy(node);
+    delete node;
     return nullptr;
   }
   node->children.push_back(arg);
@@ -290,7 +288,7 @@ ASTNode *Parser::parseAssignment(bool allow_in) {
   if (is_pattern && op != AssignmentOpKind::Assign) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR",
                 "invalid destructuring assignment target", tok.start});
-    allocator_->destroy(lhs);
+    delete lhs;
     return nullptr;
   }
   /* 赋值左侧的数组/对象字面量（[a] / {p}）：转为解构模式（M5.1a）。
@@ -301,20 +299,20 @@ ASTNode *Parser::parseAssignment(bool allow_in) {
     if (op != AssignmentOpKind::Assign) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR",
                   "invalid destructuring assignment target", tok.start});
-      allocator_->destroy(lhs);
+      delete lhs;
       return nullptr;
     }
     if (!convertLiteralToPattern(lhs)) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid assignment target",
                   tok.start});
-      allocator_->destroy(lhs);
+      delete lhs;
       return nullptr;
     }
     is_pattern = true;
   }
   if (!is_pattern && lhs->type != NodeType::Identifier && lhs->type != NodeType::MemberExpression) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid assignment target", tok.start});
-    allocator_->destroy(lhs);
+    delete lhs;
     return nullptr;
   }
   /* 可选链不能作为赋值目标（ECMA-262 §13.15.5：AssignmentTarget 不含
@@ -322,7 +320,7 @@ ASTNode *Parser::parseAssignment(bool allow_in) {
   if (lhs->type == NodeType::MemberExpression && lhs->member.optional) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR",
                 "invalid assignment target: optional chaining", tok.start});
-    allocator_->destroy(lhs);
+    delete lhs;
     return nullptr;
   }
   /* 严格模式禁止对 eval / arguments 赋值（ECMA-262 §13.15.1） */
@@ -330,13 +328,13 @@ ASTNode *Parser::parseAssignment(bool allow_in) {
       (lhs->name == "eval" || lhs->name == "arguments")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR",
                 "assignment to eval or arguments in strict mode", tok.start});
-    allocator_->destroy(lhs);
+    delete lhs;
     return nullptr;
   }
   advance(); /* 赋值运算符 */
   ASTNode *rhs = parseAssignment(allow_in); /* 右结合：a = b = c */
   if (rhs == nullptr) {
-    allocator_->destroy(lhs);
+    delete lhs;
     return nullptr;
   }
   ASTNode *node = newNode(NodeType::Assignment);
@@ -364,7 +362,7 @@ ASTNode *Parser::parseArrowFunction(bool parenthesized, bool is_async) {
       if (atEof()) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated arrow parameters",
                     arrow->loc});
-        allocator_->destroy(arrow);
+        delete arrow;
         return nullptr;
       }
       if (isSymbol(current(), ",")) {
@@ -385,8 +383,8 @@ ASTNode *Parser::parseArrowFunction(bool parenthesized, bool is_async) {
             target = parseArrayPattern();
           }
           if (target == nullptr) {
-            allocator_->destroy(rest);
-            allocator_->destroy(arrow);
+            delete rest;
+            delete arrow;
             return nullptr;
           }
         } else if (at(TokenKind::Identifier)) {
@@ -397,8 +395,8 @@ ASTNode *Parser::parseArrowFunction(bool parenthesized, bool is_async) {
         } else {
           sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected parameter name",
                       current().start});
-          allocator_->destroy(rest);
-          allocator_->destroy(arrow);
+          delete rest;
+          delete arrow;
           return nullptr;
         }
         rest->children.push_back(target);
@@ -410,7 +408,7 @@ ASTNode *Parser::parseArrowFunction(bool parenthesized, bool is_async) {
           param = parseArrayPattern();
         }
         if (param == nullptr) {
-          allocator_->destroy(arrow);
+          delete arrow;
           return nullptr;
         }
       } else if (at(TokenKind::Identifier)) {
@@ -421,14 +419,14 @@ ASTNode *Parser::parseArrowFunction(bool parenthesized, bool is_async) {
       } else {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected parameter name",
                     current().start});
-        allocator_->destroy(arrow);
+        delete arrow;
         return nullptr;
       }
       /* 默认值 a = 1（M5.1a）：AssignmentPattern{a, 1} */
       if (isSymbol(current(), "=")) {
         ASTNode *def = parseDefaultValue(param);
         if (def == nullptr) {
-          allocator_->destroy(arrow);
+          delete arrow;
           return nullptr;
         }
         param = def;
@@ -448,7 +446,7 @@ ASTNode *Parser::parseArrowFunction(bool parenthesized, bool is_async) {
   /* 消费 => */
   if (!isSymbol(current(), "=>")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '=>'", current().start});
-    allocator_->destroy(arrow);
+    delete arrow;
     return nullptr;
   }
   advance(); /* => */
@@ -471,14 +469,14 @@ ASTNode *Parser::parseArrowFunction(bool parenthesized, bool is_async) {
   if (is_async) --async_depth_;
   --function_depth_;
   if (body == nullptr) {
-    allocator_->destroy(arrow);
+    delete arrow;
     return nullptr;
   }
   arrow->children.push_back(body);
   /* 严格模式参数检查（箭头函数无 name） */
   if (checkStrictParams(arrow, strict_params, /*has_name=*/false,
                         static_cast<int>(arrow->children.size()) - 1)) {
-    allocator_->destroy(arrow);
+    delete arrow;
     return nullptr;
   }
   return arrow;
@@ -493,20 +491,20 @@ ASTNode *Parser::parseConditional(bool allow_in) {
   advance(); /* ? */
   ASTNode *then_expr = parseExpression(allow_in); /* then 分支允许序列（ECMA-262） */
   if (then_expr == nullptr) {
-    allocator_->destroy(cond);
+    delete cond;
     return nullptr;
   }
   if (!isSymbol(current(), ":")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ':' in conditional", current().start});
-    allocator_->destroy(cond);
-    allocator_->destroy(then_expr);
+    delete cond;
+    delete then_expr;
     return nullptr;
   }
   advance(); /* : */
   ASTNode *else_expr = parseAssignment(allow_in); /* 右结合：a ? b : c ? d : e */
   if (else_expr == nullptr) {
-    allocator_->destroy(cond);
-    allocator_->destroy(then_expr);
+    delete cond;
+    delete then_expr;
     return nullptr;
   }
   ASTNode *node = newNode(NodeType::Conditional);
@@ -550,14 +548,14 @@ ASTNode *Parser::parseBinary(int min_prec, bool allow_in, bool no_coalesce) {
     if (coalesced && tok_or_and) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR",
                   "cannot mix '??' with '||' or '&&' without parentheses", tok.start});
-      allocator_->destroy(lhs);
+      delete lhs;
       return nullptr;
     }
     if (tok_nullish && lhs->type == NodeType::BinaryOp &&
         (lhs->binop == BinaryOpKind::LogicalOr || lhs->binop == BinaryOpKind::LogicalAnd)) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR",
                   "cannot mix '??' with '||' or '&&' without parentheses", tok.start});
-      allocator_->destroy(lhs);
+      delete lhs;
       return nullptr;
     }
     BinaryOpKind bop = toBinop(tok);
@@ -568,7 +566,7 @@ ASTNode *Parser::parseBinary(int min_prec, bool allow_in, bool no_coalesce) {
     ASTNode *rhs = parseBinary(bop == BinaryOpKind::Pow ? prec : prec + 1, allow_in,
                                coalesced);
     if (rhs == nullptr) {
-      allocator_->destroy(lhs);
+      delete lhs;
       return nullptr;
     }
     ASTNode *node = newNode(NodeType::BinaryOp);
@@ -618,7 +616,7 @@ ASTNode *Parser::parseUnary() {
     if (operand->type != NodeType::Identifier && operand->type != NodeType::MemberExpression) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid increment/decrement operand",
                   tok.start});
-      allocator_->destroy(operand);
+      delete operand;
       return nullptr;
     }
     /* 可选链不能自增自减（ECMA-262 §13.4.4：UpdateExpression 的 target
@@ -626,7 +624,7 @@ ASTNode *Parser::parseUnary() {
     if (operand->type == NodeType::MemberExpression && operand->member.optional) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR",
                   "invalid increment/decrement operand: optional chaining", tok.start});
-      allocator_->destroy(operand);
+      delete operand;
       return nullptr;
     }
     /* 严格模式禁止 ++/-- 于 eval / arguments（ECMA-262 §13.4.4） */
@@ -634,7 +632,7 @@ ASTNode *Parser::parseUnary() {
         (operand->name == "eval" || operand->name == "arguments")) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR",
                   "increment/decrement of eval or arguments in strict mode", tok.start});
-      allocator_->destroy(operand);
+      delete operand;
       return nullptr;
     }
     ASTNode *node = newNode(NodeType::UpdateExpression);
@@ -660,7 +658,7 @@ ASTNode *Parser::parseUnary() {
   if (op == UnaryOpKind::Delete && strict_ && operand->type == NodeType::Identifier) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR",
                 "delete of an unqualified identifier in strict mode", tok.start});
-    allocator_->destroy(operand);
+    delete operand;
     return nullptr;
   }
   ASTNode *node = newNode(NodeType::UnaryOp);
@@ -693,7 +691,7 @@ ASTNode *Parser::parseLeftHandSide() {
         if (!at(TokenKind::Identifier)) {
           sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected private identifier after '#'",
                       current().start});
-          allocator_->destroy(expr);
+          delete expr;
           return nullptr;
         }
         prop = newNode(NodeType::PrivateIdentifier);
@@ -703,7 +701,7 @@ ASTNode *Parser::parseLeftHandSide() {
       } else {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected property name after '.'",
                     current().start});
-        allocator_->destroy(expr);
+        delete expr;
         return nullptr;
       }
       ASTNode *member = newNode(NodeType::MemberExpression);
@@ -736,7 +734,7 @@ ASTNode *Parser::parseLeftHandSide() {
         if (!at(TokenKind::Identifier)) {
           sink_.emit({Severity::Error, "SYNTAX_ERROR",
                       "expected private identifier after '?.#'", current().start});
-          allocator_->destroy(expr);
+          delete expr;
           return nullptr;
         }
         ASTNode *prop = newNode(NodeType::PrivateIdentifier);
@@ -761,12 +759,12 @@ ASTNode *Parser::parseLeftHandSide() {
         member->children.push_back(expr);
         ASTNode *index = parseExpression();
         if (index == nullptr) {
-          allocator_->destroy(member);
+          delete member;
           return nullptr;
         }
         if (!isSymbol(current(), "]")) {
           sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ']'", current().start});
-          allocator_->destroy(member);
+          delete member;
           return nullptr;
         }
         advance(); /* ] */
@@ -782,17 +780,17 @@ ASTNode *Parser::parseLeftHandSide() {
         call->children.push_back(expr); /* callee */
         ASTNode *args = parseArguments();
         if (args == nullptr) {
-          allocator_->destroy(call);
+          delete call;
           return nullptr;
         }
         call->children.insert(call->children.end(), args->children.begin(),
                               args->children.end());
-        allocator_->destroy(args); /* 参数列表是临时容器，仅取子节点 */
+        delete args; /* 参数列表是临时容器，仅取子节点 */
         expr = call;
       } else {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected property name after '?.'",
                     current().start});
-        allocator_->destroy(expr);
+        delete expr;
         return nullptr;
       }
     } else if (isSymbol(current(), "[")) {
@@ -805,12 +803,12 @@ ASTNode *Parser::parseLeftHandSide() {
       member->children.push_back(expr);
       ASTNode *index = parseExpression();
       if (index == nullptr) {
-        allocator_->destroy(member);
+        delete member;
         return nullptr;
       }
       if (!isSymbol(current(), "]")) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ']'", current().start});
-        allocator_->destroy(member);
+        delete member;
         return nullptr;
       }
       advance(); /* ] */
@@ -826,12 +824,12 @@ ASTNode *Parser::parseLeftHandSide() {
       call->children.push_back(expr); /* callee */
       ASTNode *args = parseArguments();
       if (args == nullptr) {
-        allocator_->destroy(call);
+        delete call;
         return nullptr;
       }
       call->children.insert(call->children.end(), args->children.begin(),
                             args->children.end());
-      allocator_->destroy(args); /* 参数列表是临时容器，仅取子节点 */
+      delete args; /* 参数列表是临时容器，仅取子节点 */
       expr = call;
     } else if (isSymbol(current(), "++")) {
       /* 后缀自增（M1.4 ③-6）：x++。
@@ -841,14 +839,14 @@ ASTNode *Parser::parseLeftHandSide() {
       if (expr->type != NodeType::Identifier && expr->type != NodeType::MemberExpression) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid increment/decrement operand",
                     current().start});
-        allocator_->destroy(expr);
+        delete expr;
         return nullptr;
       }
       /* 可选链不能自增自减（ECMA-262 §13.4.4）。 */
       if (expr->type == NodeType::MemberExpression && expr->member.optional) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR",
                     "invalid increment/decrement operand: optional chaining", current().start});
-        allocator_->destroy(expr);
+        delete expr;
         return nullptr;
       }
       /* 严格模式禁止 ++ 于 eval / arguments（ECMA-262 §13.4.4） */
@@ -856,7 +854,7 @@ ASTNode *Parser::parseLeftHandSide() {
           (expr->name == "eval" || expr->name == "arguments")) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR",
                     "increment/decrement of eval or arguments in strict mode", current().start});
-        allocator_->destroy(expr);
+        delete expr;
         return nullptr;
       }
       ASTNode *node = newNode(NodeType::UpdateExpression);
@@ -874,14 +872,14 @@ ASTNode *Parser::parseLeftHandSide() {
       if (expr->type != NodeType::Identifier && expr->type != NodeType::MemberExpression) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid increment/decrement operand",
                     current().start});
-        allocator_->destroy(expr);
+        delete expr;
         return nullptr;
       }
       /* 可选链不能自增自减（ECMA-262 §13.4.4）。 */
       if (expr->type == NodeType::MemberExpression && expr->member.optional) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR",
                     "invalid increment/decrement operand: optional chaining", current().start});
-        allocator_->destroy(expr);
+        delete expr;
         return nullptr;
       }
       /* 严格模式禁止 -- 于 eval / arguments（ECMA-262 §13.4.4） */
@@ -889,7 +887,7 @@ ASTNode *Parser::parseLeftHandSide() {
           (expr->name == "eval" || expr->name == "arguments")) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR",
                     "increment/decrement of eval or arguments in strict mode", current().start});
-        allocator_->destroy(expr);
+        delete expr;
         return nullptr;
       }
       ASTNode *node = newNode(NodeType::UpdateExpression);
@@ -929,7 +927,7 @@ ASTNode *Parser::parseNewExpression() {
         if (!at(TokenKind::Identifier)) {
           sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected private identifier after '#'",
                       current().start});
-          allocator_->destroy(callee);
+          delete callee;
           return nullptr;
         }
         prop = newNode(NodeType::PrivateIdentifier);
@@ -939,7 +937,7 @@ ASTNode *Parser::parseNewExpression() {
       } else {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected property name after '.'",
                     current().start});
-        allocator_->destroy(callee);
+        delete callee;
         return nullptr;
       }
       ASTNode *member = newNode(NodeType::MemberExpression);
@@ -956,12 +954,12 @@ ASTNode *Parser::parseNewExpression() {
       member->children.push_back(callee);
       ASTNode *index = parseExpression();
       if (index == nullptr) {
-        allocator_->destroy(member);
+        delete member;
         return nullptr;
       }
       if (!isSymbol(current(), "]")) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ']'", current().start});
-        allocator_->destroy(member);
+        delete member;
         return nullptr;
       }
       advance();
@@ -972,7 +970,7 @@ ASTNode *Parser::parseNewExpression() {
        * 须写成 new (a?.b)。此处直接报错。 */
       sink_.emit({Severity::Error, "SYNTAX_ERROR",
                   "optional chaining not allowed in new callee", current().start});
-      allocator_->destroy(callee);
+      delete callee;
       return nullptr;
     } else {
       break;
@@ -985,12 +983,12 @@ ASTNode *Parser::parseNewExpression() {
   if (isSymbol(current(), "(")) {
     ASTNode *args = parseArguments();
     if (args == nullptr) {
-      allocator_->destroy(node);
+      delete node;
       return nullptr;
     }
     node->children.insert(node->children.end(), args->children.begin(),
                           args->children.end());
-    allocator_->destroy(args);
+    delete args;
   }
   return node;
 }
@@ -1003,7 +1001,7 @@ ASTNode *Parser::parseArguments() {
   while (!isSymbol(current(), ")")) {
     if (atEof()) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated argument list", args->loc});
-      allocator_->destroy(args);
+      delete args;
       return nullptr;
     }
     if (isSymbol(current(), ",")) {
@@ -1017,8 +1015,8 @@ ASTNode *Parser::parseArguments() {
       advance();
       ASTNode *inner = parseAssignment();
       if (inner == nullptr) {
-        allocator_->destroy(spread);
-        allocator_->destroy(args);
+        delete spread;
+        delete args;
         return nullptr;
       }
       spread->children.push_back(inner);
@@ -1026,7 +1024,7 @@ ASTNode *Parser::parseArguments() {
     } else {
       arg = parseAssignment();
       if (arg == nullptr) {
-        allocator_->destroy(args);
+        delete args;
         return nullptr;
       }
     }
@@ -1104,11 +1102,11 @@ ASTNode *Parser::parsePrimary() {
         if (spec->children.size() != 1) {
           sink_.emit({Severity::Error, "SYNTAX_ERROR",
                       "import() requires exactly one argument", tok.start});
-          allocator_->destroy(spec);
+          delete spec;
           return nullptr;
         }
         node->children.push_back(spec->children[0]);
-        allocator_->destroy(spec); /* 临时容器 */
+        delete spec; /* 临时容器 */
         return node;
       }
       /* import.meta（M1.6 ③）：import 后跟 .meta。仅模块上下文合法
@@ -1166,7 +1164,7 @@ ASTNode *Parser::parsePrimary() {
         if (inner == nullptr) return nullptr;
         if (!isSymbol(current(), ")")) {
           sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ')'", tok.start});
-          allocator_->destroy(inner);
+          delete inner;
           return nullptr;
         }
         advance();
@@ -1219,14 +1217,14 @@ ASTNode *Parser::parseSuperProperty() {
     n->member.computed = true;
     ASTNode *index = parseExpression();
     if (index == nullptr) {
-      allocator_->destroy(n);
+      delete n;
       return nullptr;
     }
     if (!isSymbol(current(), "]")) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ']'",
                   current().start});
-      allocator_->destroy(index);
-      allocator_->destroy(n);
+      delete index;
+      delete n;
       return nullptr;
     }
     advance(); /* ] */
@@ -1247,12 +1245,12 @@ ASTNode *Parser::parseSuperProperty() {
     n->loc = tok.start;
     ASTNode *args = parseArguments();
     if (args == nullptr) {
-      allocator_->destroy(n);
+      delete n;
       return nullptr;
     }
     n->children.insert(n->children.end(), args->children.begin(),
                        args->children.end());
-    allocator_->destroy(args);
+    delete args;
     return n;
   }
   /* super 后非 . / [ / (：单独 super 为语法错误。 */
@@ -1359,7 +1357,7 @@ ASTNode *Parser::parseTemplateLiteral() {
     if (head.kind != TokenKind::TemplateStart && head.kind != TokenKind::TemplatePart &&
         head.kind != TokenKind::TemplateEnd) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected template segment", head.start});
-      allocator_->destroy(tpl);
+      delete tpl;
       return nullptr;
     }
     /* quasi：解码后的准值 */
@@ -1380,7 +1378,7 @@ ASTNode *Parser::parseTemplateLiteral() {
     /* 解析插值表达式 ${ expr } */
     ASTNode *expr = parseExpression();
     if (expr == nullptr) {
-      allocator_->destroy(tpl);
+      delete tpl;
       return nullptr;
     }
     tpl->children.push_back(expr);
@@ -1388,7 +1386,7 @@ ASTNode *Parser::parseTemplateLiteral() {
     /* 表达式结束后必须是模板闭合 } */
     if (!isSymbol(current(), "}")) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '}' in template", current().start});
-      allocator_->destroy(tpl);
+      delete tpl;
       return nullptr;
     }
     lexer_.rescanTemplatePart(); /* 把 }... 重扫为 TemplatePart/TemplateEnd */
@@ -1483,7 +1481,7 @@ ASTNode *Parser::parseDefaultValue(ASTNode *target) {
   setValueContext();
   ASTNode *def = parseAssignment();
   if (def == nullptr) {
-    allocator_->destroy(target);
+    delete target;
     return nullptr;
   }
   ASTNode *node = newNode(NodeType::AssignmentPattern);
@@ -1502,7 +1500,7 @@ ASTNode *Parser::parseObjectPattern(bool as_literal) {
   while (!isSymbol(current(), "}")) {
     if (atEof()) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated object literal", obj->loc});
-      allocator_->destroy(obj);
+      delete obj;
       return nullptr;
     }
     if (isSymbol(current(), ",")) {
@@ -1516,7 +1514,7 @@ ASTNode *Parser::parseObjectPattern(bool as_literal) {
       advance();
       ASTNode *arg = as_literal ? parseAssignment() : parseBindingTarget();
       if (arg == nullptr) {
-        allocator_->destroy(obj);
+        delete obj;
         return nullptr;
       }
       spread->children.push_back(arg);
@@ -1597,15 +1595,15 @@ ASTNode *Parser::parseObjectPattern(bool as_literal) {
       advance(); /* [ */
       key = parseAssignment();
       if (key == nullptr) {
-        allocator_->destroy(prop);
-        allocator_->destroy(obj);
+        delete prop;
+        delete obj;
         return nullptr;
       }
       if (!isSymbol(current(), "]")) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ']' after computed key",
                     current().start});
-        allocator_->destroy(prop);
-        allocator_->destroy(obj);
+        delete prop;
+        delete obj;
         return nullptr;
       }
       advance(); /* ] */
@@ -1628,7 +1626,7 @@ ASTNode *Parser::parseObjectPattern(bool as_literal) {
       advance();
     } else {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid property key", current().start});
-      allocator_->destroy(obj);
+      delete obj;
       return nullptr;
     }
 
@@ -1638,8 +1636,8 @@ ASTNode *Parser::parseObjectPattern(bool as_literal) {
       prop->prop.kind = getset_kind;
       ASTNode *fn = parseMethodFunction();
       if (fn == nullptr) {
-        allocator_->destroy(prop);
-        allocator_->destroy(obj);
+        delete prop;
+        delete obj;
         return nullptr;
       }
       prop->children.push_back(key);
@@ -1651,8 +1649,8 @@ ASTNode *Parser::parseObjectPattern(bool as_literal) {
       ASTNode *fn = parseMethodFunction(/*is_async=*/async_prefix,
                                         /*is_generator=*/generator_prefix);
       if (fn == nullptr) {
-        allocator_->destroy(prop);
-        allocator_->destroy(obj);
+        delete prop;
+        delete obj;
         return nullptr;
       }
       prop->children.push_back(key);
@@ -1663,16 +1661,16 @@ ASTNode *Parser::parseObjectPattern(bool as_literal) {
       advance();
       ASTNode *val = as_literal ? parseAssignment() : parseBindingTarget();
       if (val == nullptr) {
-        allocator_->destroy(prop);
-        allocator_->destroy(obj);
+        delete prop;
+        delete obj;
         return nullptr;
       }
       if (!as_literal && isSymbol(current(), "=")) {
         /* 绑定位置重命名默认值 {p: q = 1}。 */
         ASTNode *def = parseDefaultValue(val);
         if (def == nullptr) {
-          allocator_->destroy(prop);
-          allocator_->destroy(obj);
+          delete prop;
+          delete obj;
           return nullptr;
         }
         prop->children.push_back(key);
@@ -1686,15 +1684,15 @@ ASTNode *Parser::parseObjectPattern(bool as_literal) {
       if (as_literal) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR",
                     "unexpected '=' in object literal", current().start});
-        allocator_->destroy(prop);
-        allocator_->destroy(obj);
+        delete prop;
+        delete obj;
         return nullptr;
       }
       prop->prop.kind = PropertyKind::Init;
       ASTNode *def = parseDefaultValue(key);
       if (def == nullptr) {
-        allocator_->destroy(prop);
-        allocator_->destroy(obj);
+        delete prop;
+        delete obj;
         return nullptr;
       }
       /* 简写默认值 { key = default }：key 归 AssignmentPattern 持有
@@ -1721,7 +1719,7 @@ ASTNode *Parser::parseArrayPattern(bool as_literal) {
   while (!isSymbol(current(), "]")) {
     if (atEof()) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated array literal", arr->loc});
-      allocator_->destroy(arr);
+      delete arr;
       return nullptr;
     }
     if (isSymbol(current(), ",")) {
@@ -1737,7 +1735,7 @@ ASTNode *Parser::parseArrayPattern(bool as_literal) {
       advance();
       ASTNode *arg = as_literal ? parseAssignment() : parseBindingTarget();
       if (arg == nullptr) {
-        allocator_->destroy(arr);
+        delete arr;
         return nullptr;
       }
       spread->children.push_back(arg);
@@ -1755,7 +1753,7 @@ ASTNode *Parser::parseArrayPattern(bool as_literal) {
       elem = parseBindingTarget();
     }
     if (elem == nullptr) {
-      allocator_->destroy(arr);
+      delete arr;
       return nullptr;
     }
     /* 默认值 [a = 1]（M5.1a）：AssignmentPattern{a, 1}。读值位置（数组字面量）不允许。 */
@@ -1763,13 +1761,13 @@ ASTNode *Parser::parseArrayPattern(bool as_literal) {
       if (as_literal) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR",
                     "unexpected '=' in array literal", current().start});
-        allocator_->destroy(elem);
-        allocator_->destroy(arr);
+        delete elem;
+        delete arr;
         return nullptr;
       }
       ASTNode *def = parseDefaultValue(elem);
       if (def == nullptr) {
-        allocator_->destroy(arr);
+        delete arr;
         return nullptr;
       }
       elem = def;

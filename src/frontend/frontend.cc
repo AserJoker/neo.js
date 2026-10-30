@@ -408,9 +408,9 @@ void dumpNode(const ASTNode *node, std::string &out, int depth) {
 
 }  // namespace
 
-AST *parseSource(JSAllocator *allocator, const char *source, size_t source_len,
+AST *parseSource(const char *source, size_t source_len,
                  DiagnosticSink &sink, bool module) {
-  Parser parser(allocator, source, source_len, sink, module);
+  Parser parser(source, source_len, sink, module);
   return parser.parse();
 }
 

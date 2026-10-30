@@ -9,8 +9,8 @@
  *   - M1.1 只覆盖最小节点集（Program / ExprStmt / Literal / BinaryOp /
  *     Identifier），用于打通流水线；M1.4 表达式体系、M1.5 语句体系再逐节点扩充。
  *
- * 内存管理（规范 #5/#13）：AST 节点经 JSAllocator 分配，统一由持有者（Parser 产物）
- * 经 JSAllocator::destroy 释放。节点用轻量子节点指针 + 可选语义载荷。
+ * 内存管理：AST 类继承 core::AllocatedObject（operator new/delete 经 core::Allocator
+ * 路由），new/delete 直接创建/释放。节点用轻量子节点指针 + 可选语义载荷。
  */
 
 #include <cstddef>
@@ -18,7 +18,7 @@
 #include <string>
 #include <vector>
 
-#include "neojs/runtime/allocator.h"
+#include "neojs/core/allocator.h"
 
 namespace neojs {
 
@@ -228,8 +228,9 @@ struct MemberPayload {
   bool short_circuit = false;
 };
 
-/* AST 节点：基类 + 子节点（扁平化子节点向量，避免手写析构树） */
-struct ASTNode {
+/* AST 节点：基类 + 子节点（扁平化子节点向量，避免手写析构树）。
+ * 继承 core::AllocatedObject：new/delete 经 core::Allocator 路由。 */
+struct ASTNode : core::AllocatedObject {
   NodeType type = NodeType::Program;
   SourceLocation loc;
 
@@ -261,26 +262,25 @@ struct ASTNode {
   bool yield_delegate = false;  /* YieldExpression：yield* 委托（M5.5a） */
   MemberPayload member;       /* MemberExpression：computed/optional 标记 */
 
-  /* 构造：仅由 Parser 经 JSAllocator::create 创建（见 parser.h） */
+  /* 构造：仅由 Parser 经 new 创建（见 parser.h） */
   explicit ASTNode(NodeType t) : type(t) {}
 };
 
 /* AST 树：持有所有节点，析构时统一释放（P1：AST 生命周期独立于运行时） */
-struct AST {
+struct AST : core::AllocatedObject {
   ASTNode *root = nullptr;    /* Program 根节点 */
-  JSAllocator *allocator = nullptr;
 
   ~AST() {
     /* children 为裸指针，~ASTNode 不递归释放；必须整棵子树深度优先释放 */
-    if (root != nullptr && allocator != nullptr) freeSubtree(root, allocator);
+    if (root != nullptr) freeSubtree(root);
     root = nullptr;
   }
 
   /* 深度优先释放整棵子树（ASTNode::children 为裸指针） */
-  void freeSubtree(ASTNode *node, JSAllocator *a) {
+  void freeSubtree(ASTNode *node) {
     if (node == nullptr) return;
-    for (ASTNode *child : node->children) freeSubtree(child, a);
-    a->destroy(node);
+    for (ASTNode *child : node->children) freeSubtree(child);
+    delete node;
   }
 };
 

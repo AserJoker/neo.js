@@ -9,8 +9,8 @@
  * 供 `/` 等歧义符号判定。
  *
  * M1.1 只覆盖最小解析：Program → 表达式语句列表；表达式 → 二元运算
- * （+ - * / %，左结合，优先级：* / % > + -）。AST 节点经 JSAllocator 分配，
- * 由返回的 AST 统一持有并在析构时释放（见 ast.h）。
+ * （+ - * / %，左结合，优先级：* / % > + -）。AST 节点经 new 分配（继承
+ * core::AllocatedObject），由返回的 AST 统一持有并在析构时释放（见 ast.h）。
  */
 
 #include <memory>
@@ -20,7 +20,6 @@
 #include "neojs/frontend/ast.h"
 #include "neojs/frontend/diagnostics.h"
 #include "neojs/frontend/lexer.h"
-#include "neojs/runtime/allocator.h"
 
 namespace neojs {
 
@@ -37,7 +36,7 @@ inline bool isKeyword(const Token &tok, const char *kw) {
 
 class Parser {
  public:
-  Parser(JSAllocator *allocator, const char *source, size_t source_len,
+  Parser(const char *source, size_t source_len,
          DiagnosticSink &sink, bool module = false);
 
   /* 解析整个 Program（或 Module）；失败（语法错误）返回 nullptr（错误在 sink）。 */
@@ -116,7 +115,7 @@ class Parser {
    * 递归转换为 ArrayPattern/ObjectPattern；元素/值中的 Assignment 节点转
    * AssignmentPattern，非绑定目标返回 false。原地修改 node。 */
   bool convertLiteralToPattern(ASTNode *node);
-  ASTNode *newNode(NodeType t);
+  ASTNode *newNode(NodeType t);  /* new ASTNode(t)，继承 core::AllocatedObject */
 
   /* 严格模式辅助（M1.6 ②） */
   void collectBindingNames(const ASTNode *node, std::vector<std::string> &names);
@@ -124,7 +123,6 @@ class Parser {
    * 返回 true 表示已发错误（调用方须销毁 fn） */
   bool checkStrictParams(ASTNode *fn, bool strict, bool has_name, int body_index);
 
-  JSAllocator *allocator_;
   Lexer lexer_;
   DiagnosticSink &sink_;
   bool module_ = false; /* 模块模式（sourceType=module）：import/export/顶层 await（M1.6 ③） */

@@ -19,7 +19,7 @@ ASTNode *Parser::parseStatementList() {
   while (!atEof() && at(TokenKind::String)) {
     ASTNode *stmt = parseExpressionStatement();
     if (stmt == nullptr) {
-      allocator_->destroy(program);
+      delete program;
       return nullptr;
     }
     /* 字符串字面量表达式语句 = 指令（directive）；此处记录原始值 */
@@ -35,7 +35,7 @@ ASTNode *Parser::parseStatementList() {
     ASTNode *stmt = parseStatement();
     if (stmt == nullptr) {
       /* 语法错误：sink 已记录；丢弃整个 Program */
-      allocator_->destroy(program);
+      delete program;
       return nullptr;
     }
     program->children.push_back(stmt);
@@ -328,7 +328,7 @@ ASTNode *Parser::parseForStatement() {
       if (!convertLiteralToPattern(init)) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR",
                     "invalid for-in/of left target", init->loc});
-        allocator_->destroy(init);
+        delete init;
         return nullptr;
       }
     }
@@ -339,7 +339,7 @@ ASTNode *Parser::parseForStatement() {
           sink_.emit({Severity::Error, "SYNTAX_ERROR",
                       "for-in/of loop variable declaration may not have an initializer",
                       d->loc});
-          allocator_->destroy(init);
+          delete init;
           return nullptr;
         }
       }
@@ -348,21 +348,21 @@ ASTNode *Parser::parseForStatement() {
       /* 严格模式禁止 eval / arguments 作 for-in/of left（ECMA-262 §14.7.4） */
       sink_.emit({Severity::Error, "SYNTAX_ERROR",
                   "unexpected eval or arguments in strict mode", init->loc});
-      allocator_->destroy(init);
+      delete init;
       return nullptr;
     }
     advance(); /* in / of */
     setValueContext();
     ASTNode *right = parseExpression();
     if (right == nullptr) {
-      allocator_->destroy(init);
+      delete init;
       return nullptr;
     }
     if (!isSymbol(current(), ")")) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ')' after for-in/of right",
                   current().start});
-      allocator_->destroy(init);
-      allocator_->destroy(right);
+      delete init;
+      delete right;
       return nullptr;
     }
     advance(); /* ) */
@@ -375,7 +375,7 @@ ASTNode *Parser::parseForStatement() {
     ASTNode *body = parseStatement();
     --loop_depth_;
     if (body == nullptr) {
-      allocator_->destroy(node);
+      delete node;
       return nullptr;
     }
     node->children.push_back(body);
@@ -387,8 +387,8 @@ ASTNode *Parser::parseForStatement() {
   for_stmt->loc = current().start;
   if (!isSymbol(current(), ";")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ';' after for init", current().start});
-    allocator_->destroy(init);
-    allocator_->destroy(for_stmt);
+    delete init;
+    delete for_stmt;
     return nullptr;
   }
   advance(); /* ; */
@@ -399,17 +399,17 @@ ASTNode *Parser::parseForStatement() {
   if (!isSymbol(current(), ";")) {
     cond = parseExpression();
     if (cond == nullptr) {
-      allocator_->destroy(init);
-      allocator_->destroy(for_stmt);
+      delete init;
+      delete for_stmt;
       return nullptr;
     }
   }
   if (!isSymbol(current(), ";")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ';' after for condition",
                 current().start});
-    allocator_->destroy(init);
-    allocator_->destroy(cond);
-    allocator_->destroy(for_stmt);
+    delete init;
+    delete cond;
+    delete for_stmt;
     return nullptr;
   }
   advance(); /* ; */
@@ -420,19 +420,19 @@ ASTNode *Parser::parseForStatement() {
   if (!isSymbol(current(), ")")) {
     update = parseExpression();
     if (update == nullptr) {
-      allocator_->destroy(init);
-      allocator_->destroy(cond);
-      allocator_->destroy(for_stmt);
+      delete init;
+      delete cond;
+      delete for_stmt;
       return nullptr;
     }
   }
   if (!isSymbol(current(), ")")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ')' after for clauses",
                 current().start});
-    allocator_->destroy(init);
-    allocator_->destroy(cond);
-    allocator_->destroy(update);
-    allocator_->destroy(for_stmt);
+    delete init;
+    delete cond;
+    delete update;
+    delete for_stmt;
     return nullptr;
   }
   advance(); /* ) */
@@ -442,7 +442,7 @@ ASTNode *Parser::parseForStatement() {
   ASTNode *body = parseStatement();
   --loop_depth_;
   if (body == nullptr) {
-    allocator_->destroy(for_stmt);
+    delete for_stmt;
     return nullptr;
   }
   for_stmt->children.push_back(body);
@@ -472,7 +472,7 @@ ASTNode *Parser::parseVariableDeclaration(bool consume_semicolon,
         id = parseArrayPattern();
       }
       if (id == nullptr) {
-        allocator_->destroy(decl);
+        delete decl;
         return nullptr;
       }
     } else if (at(TokenKind::Identifier)) {
@@ -480,7 +480,7 @@ ASTNode *Parser::parseVariableDeclaration(bool consume_semicolon,
       if (strict_ && (current().text == "eval" || current().text == "arguments")) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR",
                     "unexpected eval or arguments in strict mode", current().start});
-        allocator_->destroy(decl);
+        delete decl;
         return nullptr;
       }
       id = newNode(NodeType::Identifier);
@@ -490,7 +490,7 @@ ASTNode *Parser::parseVariableDeclaration(bool consume_semicolon,
     } else {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected variable name",
                   current().start});
-      allocator_->destroy(decl);
+      delete decl;
       return nullptr;
     }
 
@@ -504,8 +504,8 @@ ASTNode *Parser::parseVariableDeclaration(bool consume_semicolon,
       setValueContext();
       ASTNode *init = parseAssignment();
       if (init == nullptr) {
-        allocator_->destroy(declarator);
-        allocator_->destroy(decl);
+        delete declarator;
+        delete decl;
         return nullptr;
       }
       declarator->children.push_back(init);
@@ -513,8 +513,8 @@ ASTNode *Parser::parseVariableDeclaration(bool consume_semicolon,
       /* const 必须初始化（for-in/of 的 left 除外，见 allow_missing_const_init） */
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "missing initializer in const declaration",
                   current().start});
-      allocator_->destroy(declarator);
-      allocator_->destroy(decl);
+      delete declarator;
+      delete decl;
       return nullptr;
     }
 
@@ -531,7 +531,7 @@ ASTNode *Parser::parseVariableDeclaration(bool consume_semicolon,
     } else if (!atEof() && !isSymbol(current(), "}") && !current().has_newline_before) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ';' after variable declaration",
                   current().start});
-      allocator_->destroy(decl);
+      delete decl;
       return nullptr;
     }
   }
@@ -556,14 +556,14 @@ ASTNode *Parser::parseWhileStatement() {
     ASTNode *body = parseStatement();
     --loop_depth_;
     if (body == nullptr) {
-      allocator_->destroy(stmt);
+      delete stmt;
       return nullptr;
     }
     if (!isKeyword(current(), "while")) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected 'while' after do body",
                   current().start});
-      allocator_->destroy(stmt);
-      allocator_->destroy(body);
+      delete stmt;
+      delete body;
       return nullptr;
     }
     stmt->children.push_back(body);
@@ -573,21 +573,21 @@ ASTNode *Parser::parseWhileStatement() {
   if (!isSymbol(current(), "(")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '(' after loop keyword",
                 current().start});
-    allocator_->destroy(stmt);
+    delete stmt;
     return nullptr;
   }
   advance(); /* ( */
   setValueContext();
   ASTNode *cond = parseExpression();
   if (cond == nullptr) {
-    allocator_->destroy(stmt);
+    delete stmt;
     return nullptr;
   }
   if (!isSymbol(current(), ")")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ')' after loop condition",
                 current().start});
-    allocator_->destroy(stmt);
-    allocator_->destroy(cond);
+    delete stmt;
+    delete cond;
     return nullptr;
   }
   advance(); /* ) */
@@ -604,7 +604,7 @@ ASTNode *Parser::parseWhileStatement() {
     ASTNode *body = parseStatement();
     --loop_depth_;
     if (body == nullptr) {
-      allocator_->destroy(stmt);
+      delete stmt;
       return nullptr;
     }
     stmt->children.push_back(body);
@@ -621,28 +621,28 @@ ASTNode *Parser::parseIfStatement() {
   advance(); /* if */
   if (!isSymbol(current(), "(")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '(' after 'if'", current().start});
-    allocator_->destroy(stmt);
+    delete stmt;
     return nullptr;
   }
   advance(); /* ( */
   setValueContext();
   ASTNode *cond = parseExpression();
   if (cond == nullptr) {
-    allocator_->destroy(stmt);
+    delete stmt;
     return nullptr;
   }
   if (!isSymbol(current(), ")")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ')' after if condition",
                 current().start});
-    allocator_->destroy(stmt);
-    allocator_->destroy(cond);
+    delete stmt;
+    delete cond;
     return nullptr;
   }
   advance(); /* ) */
   stmt->children.push_back(cond);
   ASTNode *then_branch = parseStatement();
   if (then_branch == nullptr) {
-    allocator_->destroy(stmt);
+    delete stmt;
     return nullptr;
   }
   stmt->children.push_back(then_branch);
@@ -650,7 +650,7 @@ ASTNode *Parser::parseIfStatement() {
     advance(); /* else */
     ASTNode *else_branch = parseStatement();
     if (else_branch == nullptr) {
-      allocator_->destroy(stmt);
+      delete stmt;
       return nullptr;
     }
     stmt->children.push_back(else_branch);
@@ -671,13 +671,13 @@ ASTNode *Parser::parseLabeledStatement() {
   if (strict_ && (label->name == "eval" || label->name == "arguments")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR",
                 "unexpected eval or arguments in strict mode", current().start});
-    allocator_->destroy(label);
+    delete label;
     return nullptr;
   }
   advance(); /* label 名 */
   if (!isSymbol(current(), ":")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ':' after label", current().start});
-    allocator_->destroy(label);
+    delete label;
     return nullptr;
   }
   advance(); /* : */
@@ -685,7 +685,7 @@ ASTNode *Parser::parseLabeledStatement() {
   ASTNode *body = parseStatement();
   label_stack_.pop_back();
   if (body == nullptr) {
-    allocator_->destroy(label);
+    delete label;
     return nullptr;
   }
   label->children.push_back(body);
@@ -798,7 +798,7 @@ ASTNode *Parser::parseFunctionDeclaration(bool allow_anonymous, bool is_async,
     fn->fn_has_name = true;
   } else if (!allow_anonymous) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected function name", current().start});
-    allocator_->destroy(fn);
+    delete fn;
     return nullptr;
   }
 
@@ -806,14 +806,14 @@ ASTNode *Parser::parseFunctionDeclaration(bool allow_anonymous, bool is_async,
   if (!isSymbol(current(), "(")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '(' after function name",
                 current().start});
-    allocator_->destroy(fn);
+    delete fn;
     return nullptr;
   }
   advance(); /* ( */
   while (!isSymbol(current(), ")")) {
     if (atEof()) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated parameter list", fn->loc});
-      allocator_->destroy(fn);
+      delete fn;
       return nullptr;
     }
     if (isSymbol(current(), ",")) {
@@ -844,8 +844,8 @@ ASTNode *Parser::parseFunctionDeclaration(bool allow_anonymous, bool is_async,
       } else {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected parameter name",
                     current().start});
-        allocator_->destroy(rest);
-        allocator_->destroy(fn);
+        delete rest;
+        delete fn;
         return nullptr;
       }
       rest->children.push_back(target);
@@ -857,7 +857,7 @@ ASTNode *Parser::parseFunctionDeclaration(bool allow_anonymous, bool is_async,
         param = parseArrayPattern();
       }
       if (param == nullptr) {
-        allocator_->destroy(fn);
+        delete fn;
         return nullptr;
       }
     } else if (at(TokenKind::Identifier)) {
@@ -867,14 +867,14 @@ ASTNode *Parser::parseFunctionDeclaration(bool allow_anonymous, bool is_async,
       advance();
     } else {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected parameter", current().start});
-      allocator_->destroy(fn);
+      delete fn;
       return nullptr;
     }
     /* 默认值 a = 1（M5.1a）：AssignmentPattern{a, 1} */
     if (isSymbol(current(), "=")) {
       ASTNode *def = parseDefaultValue(param);
       if (def == nullptr) {
-        allocator_->destroy(fn);
+        delete fn;
         return nullptr;
       }
       param = def;
@@ -883,7 +883,7 @@ ASTNode *Parser::parseFunctionDeclaration(bool allow_anonymous, bool is_async,
     if (!isSymbol(current(), ",") && !isSymbol(current(), ")")) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ',' or ')' in parameter list",
                   current().start});
-      allocator_->destroy(fn);
+      delete fn;
       return nullptr;
     }
   }
@@ -895,7 +895,7 @@ ASTNode *Parser::parseFunctionDeclaration(bool allow_anonymous, bool is_async,
   if (!isSymbol(current(), "{")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '{' before function body",
                 current().start});
-    allocator_->destroy(fn);
+    delete fn;
     return nullptr;
   }
   ++function_depth_;
@@ -912,14 +912,14 @@ ASTNode *Parser::parseFunctionDeclaration(bool allow_anonymous, bool is_async,
   if (is_async) --async_depth_;
   --function_depth_;
   if (body == nullptr) {
-    allocator_->destroy(fn);
+    delete fn;
     return nullptr;
   }
   fn->children.push_back(body);
   /* 严格模式参数检查（strict_params 已含 body directive 影响） */
   if (checkStrictParams(fn, strict_params, has_name,
                         static_cast<int>(fn->children.size()) - 1)) {
-    allocator_->destroy(fn);
+    delete fn;
     return nullptr;
   }
   return fn;
@@ -956,14 +956,14 @@ ASTNode *Parser::parseFunctionExpression(bool is_async, bool is_generator) {
   if (!isSymbol(current(), "(")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '(' after 'function'",
                 current().start});
-    allocator_->destroy(fn);
+    delete fn;
     return nullptr;
   }
   advance(); /* ( */
   while (!isSymbol(current(), ")")) {
     if (atEof()) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated parameter list", fn->loc});
-      allocator_->destroy(fn);
+      delete fn;
       return nullptr;
     }
     if (isSymbol(current(), ",")) {
@@ -992,8 +992,8 @@ ASTNode *Parser::parseFunctionExpression(bool is_async, bool is_generator) {
       } else {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected parameter name",
                     current().start});
-        allocator_->destroy(rest);
-        allocator_->destroy(fn);
+        delete rest;
+        delete fn;
         return nullptr;
       }
       rest->children.push_back(target);
@@ -1005,7 +1005,7 @@ ASTNode *Parser::parseFunctionExpression(bool is_async, bool is_generator) {
         param = parseArrayPattern();
       }
       if (param == nullptr) {
-        allocator_->destroy(fn);
+        delete fn;
         return nullptr;
       }
     } else if (at(TokenKind::Identifier)) {
@@ -1015,14 +1015,14 @@ ASTNode *Parser::parseFunctionExpression(bool is_async, bool is_generator) {
       advance();
     } else {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected parameter", current().start});
-      allocator_->destroy(fn);
+      delete fn;
       return nullptr;
     }
     /* 默认值 a = 1（M5.1a）：AssignmentPattern{a, 1} */
     if (isSymbol(current(), "=")) {
       ASTNode *def = parseDefaultValue(param);
       if (def == nullptr) {
-        allocator_->destroy(fn);
+        delete fn;
         return nullptr;
       }
       param = def;
@@ -1031,7 +1031,7 @@ ASTNode *Parser::parseFunctionExpression(bool is_async, bool is_generator) {
     if (!isSymbol(current(), ",") && !isSymbol(current(), ")")) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ',' or ')' in parameter list",
                   current().start});
-      allocator_->destroy(fn);
+      delete fn;
       return nullptr;
     }
   }
@@ -1042,7 +1042,7 @@ ASTNode *Parser::parseFunctionExpression(bool is_async, bool is_generator) {
   if (!isSymbol(current(), "{")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '{' before function body",
                 current().start});
-    allocator_->destroy(fn);
+    delete fn;
     return nullptr;
   }
   ++function_depth_;
@@ -1059,14 +1059,14 @@ ASTNode *Parser::parseFunctionExpression(bool is_async, bool is_generator) {
   if (is_async) --async_depth_;
   --function_depth_;
   if (body == nullptr) {
-    allocator_->destroy(fn);
+    delete fn;
     return nullptr;
   }
   fn->children.push_back(body);
   /* 严格模式参数检查（strict_params 已含 body directive 影响） */
   if (checkStrictParams(fn, strict_params, has_name,
                         static_cast<int>(fn->children.size()) - 1)) {
-    allocator_->destroy(fn);
+    delete fn;
     return nullptr;
   }
   return fn;
@@ -1087,7 +1087,7 @@ ASTNode *Parser::parseMethodFunction(bool is_async, bool is_generator) {
   while (!isSymbol(current(), ")")) {
     if (atEof()) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated parameter list", fn->loc});
-      allocator_->destroy(fn);
+      delete fn;
       return nullptr;
     }
     if (isSymbol(current(), ",")) {
@@ -1111,8 +1111,8 @@ ASTNode *Parser::parseMethodFunction(bool is_async, bool is_generator) {
       } else {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected parameter name",
                     current().start});
-        allocator_->destroy(rest);
-        allocator_->destroy(fn);
+        delete rest;
+        delete fn;
         return nullptr;
       }
       rest->children.push_back(target);
@@ -1120,7 +1120,7 @@ ASTNode *Parser::parseMethodFunction(bool is_async, bool is_generator) {
     } else if (isSymbol(current(), "{") || isSymbol(current(), "[")) {
       param = isSymbol(current(), "{") ? parseObjectPattern() : parseArrayPattern();
       if (param == nullptr) {
-        allocator_->destroy(fn);
+        delete fn;
         return nullptr;
       }
     } else if (at(TokenKind::Identifier)) {
@@ -1130,13 +1130,13 @@ ASTNode *Parser::parseMethodFunction(bool is_async, bool is_generator) {
       advance();
     } else {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected parameter", current().start});
-      allocator_->destroy(fn);
+      delete fn;
       return nullptr;
     }
     if (isSymbol(current(), "=")) {
       ASTNode *def = parseDefaultValue(param);
       if (def == nullptr) {
-        allocator_->destroy(fn);
+        delete fn;
         return nullptr;
       }
       param = def;
@@ -1145,7 +1145,7 @@ ASTNode *Parser::parseMethodFunction(bool is_async, bool is_generator) {
     if (!isSymbol(current(), ",") && !isSymbol(current(), ")")) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ',' or ')' in parameter list",
                   current().start});
-      allocator_->destroy(fn);
+      delete fn;
       return nullptr;
     }
   }
@@ -1156,7 +1156,7 @@ ASTNode *Parser::parseMethodFunction(bool is_async, bool is_generator) {
   if (!isSymbol(current(), "{")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '{' before method body",
                 current().start});
-    allocator_->destroy(fn);
+    delete fn;
     return nullptr;
   }
   ++function_depth_;
@@ -1170,13 +1170,13 @@ ASTNode *Parser::parseMethodFunction(bool is_async, bool is_generator) {
   if (is_async) --async_depth_;
   --function_depth_;
   if (body == nullptr) {
-    allocator_->destroy(fn);
+    delete fn;
     return nullptr;
   }
   fn->children.push_back(body);
   if (checkStrictParams(fn, strict_params, /*has_name=*/false,
                         static_cast<int>(fn->children.size()) - 1)) {
-    allocator_->destroy(fn);
+    delete fn;
     return nullptr;
   }
   return fn;
@@ -1223,7 +1223,7 @@ ASTNode *Parser::parseClassTail(bool is_declaration) {
   } else if (is_declaration) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "class declaration requires a name",
                 current().start});
-    allocator_->destroy(cls);
+    delete cls;
     return nullptr;
   }
   (void)has_name;
@@ -1235,7 +1235,7 @@ ASTNode *Parser::parseClassTail(bool is_declaration) {
     setValueContext();
     ASTNode *base = parseLeftHandSide(); /* extends 必须是 LeftHandSideExpression */
     if (base == nullptr) {
-      allocator_->destroy(cls);
+      delete cls;
       return nullptr;
     }
     cls->children.push_back(base);
@@ -1246,7 +1246,7 @@ ASTNode *Parser::parseClassTail(bool is_declaration) {
   if (!isSymbol(current(), "{")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '{' before class body",
                 current().start});
-    allocator_->destroy(cls);
+    delete cls;
     return nullptr;
   }
   advance(); /* { */
@@ -1256,7 +1256,7 @@ ASTNode *Parser::parseClassTail(bool is_declaration) {
   while (!isSymbol(current(), "}")) {
     if (atEof()) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated class body", cls->loc});
-      allocator_->destroy(cls);
+      delete cls;
       return nullptr;
     }
     /* 空元素：分号 } */
@@ -1267,7 +1267,7 @@ ASTNode *Parser::parseClassTail(bool is_declaration) {
     ASTNode *elem = parseClassElement();
     if (elem == nullptr) {
       class_has_extends_ = outer_has_extends;
-      allocator_->destroy(cls);
+      delete cls;
       return nullptr;
     }
     cls->children.push_back(elem);
@@ -1297,12 +1297,12 @@ ASTNode *Parser::parseClassElement() {
         if (atEof()) {
           sink_.emit({Severity::Error, "SYNTAX_ERROR",
                       "unterminated static block", sb->loc});
-          allocator_->destroy(sb);
+          delete sb;
           return nullptr;
         }
         ASTNode *stmt = parseStatement();
         if (stmt == nullptr) {
-          allocator_->destroy(sb);
+          delete sb;
           return nullptr;
         }
         sb->children.push_back(stmt);
@@ -1417,14 +1417,14 @@ ASTNode *Parser::parseClassElement() {
     setValueContext();
     ASTNode *inner = parseExpression();
     if (inner == nullptr) {
-      allocator_->destroy(prop);
+      delete prop;
       return nullptr;
     }
     if (!isSymbol(current(), "]")) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ']' after computed key",
                   current().start});
-      allocator_->destroy(inner);
-      allocator_->destroy(prop);
+      delete inner;
+      delete prop;
       return nullptr;
     }
     advance(); /* ] */
@@ -1447,7 +1447,7 @@ ASTNode *Parser::parseClassElement() {
     if (!at(TokenKind::Identifier)) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR",
                   "expected private field name after '#'", current().start});
-      allocator_->destroy(prop);
+      delete prop;
       return nullptr;
     }
     key = newNode(NodeType::PrivateIdentifier);
@@ -1457,7 +1457,7 @@ ASTNode *Parser::parseClassElement() {
   } else {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "invalid class element key",
                 current().start});
-    allocator_->destroy(prop);
+    delete prop;
     return nullptr;
   }
   prop->prop.is_computed = is_computed;
@@ -1471,8 +1471,8 @@ ASTNode *Parser::parseClassElement() {
     ASTNode *fn = parseMethodFunction();
     --super_depth_;
     if (fn == nullptr) {
-      allocator_->destroy(key);
-      allocator_->destroy(prop);
+      delete key;
+      delete prop;
       return nullptr;
     }
     prop->children.push_back(key);
@@ -1491,8 +1491,8 @@ ASTNode *Parser::parseClassElement() {
     if (is_ctor && class_has_extends_) --derived_ctor_depth_;
     --super_depth_;
     if (fn == nullptr) {
-      allocator_->destroy(key);
-      allocator_->destroy(prop);
+      delete key;
+      delete prop;
       return nullptr;
     }
     prop->children.push_back(key);
@@ -1508,8 +1508,8 @@ ASTNode *Parser::parseClassElement() {
       setValueContext();
       ASTNode *init = parseAssignment();
       if (init == nullptr) {
-        allocator_->destroy(key);
-        allocator_->destroy(prop);
+        delete key;
+        delete prop;
         return nullptr;
       }
       prop->children.push_back(init);
@@ -1533,7 +1533,7 @@ ASTNode *Parser::parseReturnStatement() {
   /* 顶层 return 非法（仅在函数体内合法） */
   if (function_depth_ == 0) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "return outside function", stmt->loc});
-    allocator_->destroy(stmt);
+    delete stmt;
     return nullptr;
   }
 
@@ -1543,7 +1543,7 @@ ASTNode *Parser::parseReturnStatement() {
     setValueContext();
     ASTNode *arg = parseExpression();
     if (arg == nullptr) {
-      allocator_->destroy(stmt);
+      delete stmt;
       return nullptr;
     }
     stmt->children.push_back(arg);
@@ -1576,7 +1576,7 @@ ASTNode *Parser::parseBreakStatement() {
     if (!found) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "undefined label '" + current().text + "'",
                   current().start});
-      allocator_->destroy(stmt);
+      delete stmt;
       return nullptr;
     }
     stmt->name = current().text;
@@ -1584,7 +1584,7 @@ ASTNode *Parser::parseBreakStatement() {
   } else if (loop_depth_ == 0) {
     /* 无标签 break 须在循环/switch 内 */
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "illegal break statement", stmt->loc});
-    allocator_->destroy(stmt);
+    delete stmt;
     return nullptr;
   }
   /* 分号（ASI）：显式 ; 或换行/}/EOF 隐式插入 */
@@ -1613,14 +1613,14 @@ ASTNode *Parser::parseContinueStatement() {
     if (!found) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "undefined label '" + current().text + "'",
                   current().start});
-      allocator_->destroy(stmt);
+      delete stmt;
       return nullptr;
     }
     stmt->name = current().text;
     advance();
   } else if (loop_depth_ == 0) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "illegal continue statement", stmt->loc});
-    allocator_->destroy(stmt);
+    delete stmt;
     return nullptr;
   }
   if (isSymbol(current(), ";")) advance();
@@ -1638,13 +1638,13 @@ ASTNode *Parser::parseThrowStatement() {
   /* throw 后换行 → 语法错误（restricted production 不允许空 throw） */
   if (current().has_newline_before) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "illegal newline after throw", stmt->loc});
-    allocator_->destroy(stmt);
+    delete stmt;
     return nullptr;
   }
   setValueContext();
   ASTNode *arg = parseExpression();
   if (arg == nullptr) {
-    allocator_->destroy(stmt);
+    delete stmt;
     return nullptr;
   }
   stmt->children.push_back(arg);
@@ -1667,12 +1667,12 @@ ASTNode *Parser::parseTryStatement() {
   /* try 块 */
   if (!isSymbol(current(), "{")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '{' after 'try'", current().start});
-    allocator_->destroy(stmt);
+    delete stmt;
     return nullptr;
   }
   ASTNode *block = parseBlock();
   if (block == nullptr) {
-    allocator_->destroy(stmt);
+    delete stmt;
     return nullptr;
   }
   stmt->children.push_back(block);
@@ -1693,8 +1693,8 @@ ASTNode *Parser::parseTryStatement() {
           param = parseArrayPattern();
         }
         if (param == nullptr) {
-          allocator_->destroy(stmt);
-          allocator_->destroy(clause);
+          delete stmt;
+          delete clause;
           return nullptr;
         }
       } else if (at(TokenKind::Identifier)) {
@@ -1702,8 +1702,8 @@ ASTNode *Parser::parseTryStatement() {
         if (strict_ && (current().text == "eval" || current().text == "arguments")) {
           sink_.emit({Severity::Error, "SYNTAX_ERROR",
                       "unexpected eval or arguments in strict mode", current().start});
-          allocator_->destroy(stmt);
-          allocator_->destroy(clause);
+          delete stmt;
+          delete clause;
           return nullptr;
         }
         param = newNode(NodeType::Identifier);
@@ -1713,16 +1713,16 @@ ASTNode *Parser::parseTryStatement() {
       } else {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected catch binding",
                     current().start});
-        allocator_->destroy(stmt);
-        allocator_->destroy(clause);
+        delete stmt;
+        delete clause;
         return nullptr;
       }
       clause->children.push_back(param);
       if (!isSymbol(current(), ")")) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ')' after catch binding",
                     current().start});
-        allocator_->destroy(stmt);
-        allocator_->destroy(clause);
+        delete stmt;
+        delete clause;
         return nullptr;
       }
       advance(); /* ) */
@@ -1730,14 +1730,14 @@ ASTNode *Parser::parseTryStatement() {
     if (!isSymbol(current(), "{")) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '{' after 'catch'",
                   current().start});
-      allocator_->destroy(stmt);
-      allocator_->destroy(clause);
+      delete stmt;
+      delete clause;
       return nullptr;
     }
     ASTNode *catch_body = parseBlock();
     if (catch_body == nullptr) {
-      allocator_->destroy(stmt);
-      allocator_->destroy(clause);
+      delete stmt;
+      delete clause;
       return nullptr;
     }
     clause->children.push_back(catch_body);
@@ -1750,12 +1750,12 @@ ASTNode *Parser::parseTryStatement() {
     if (!isSymbol(current(), "{")) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '{' after 'finally'",
                   current().start});
-      allocator_->destroy(stmt);
+      delete stmt;
       return nullptr;
     }
     ASTNode *finally_body = parseBlock();
     if (finally_body == nullptr) {
-      allocator_->destroy(stmt);
+      delete stmt;
       return nullptr;
     }
     stmt->children.push_back(finally_body);
@@ -1765,7 +1765,7 @@ ASTNode *Parser::parseTryStatement() {
   if (stmt->children.size() < 2) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "missing catch or finally after try",
                 stmt->loc});
-    allocator_->destroy(stmt);
+    delete stmt;
     return nullptr;
   }
   return stmt;
@@ -1781,7 +1781,7 @@ ASTNode *Parser::parseWithStatement() {
   if (strict_) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "'with' statement is not allowed in strict mode",
                 stmt->loc});
-    allocator_->destroy(stmt);
+    delete stmt;
     return nullptr;
   }
   sink_.emit({Severity::Warning, "DEP-0001",
@@ -1790,28 +1790,28 @@ ASTNode *Parser::parseWithStatement() {
 
   if (!isSymbol(current(), "(")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected '(' after 'with'", current().start});
-    allocator_->destroy(stmt);
+    delete stmt;
     return nullptr;
   }
   advance(); /* ( */
   setValueContext();
   ASTNode *object = parseExpression();
   if (object == nullptr) {
-    allocator_->destroy(stmt);
+    delete stmt;
     return nullptr;
   }
   if (!isSymbol(current(), ")")) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ')' after with object",
                 current().start});
-    allocator_->destroy(stmt);
-    allocator_->destroy(object);
+    delete stmt;
+    delete object;
     return nullptr;
   }
   advance(); /* ) */
   stmt->children.push_back(object);
   ASTNode *body = parseStatement();
   if (body == nullptr) {
-    allocator_->destroy(stmt);
+    delete stmt;
     return nullptr;
   }
   stmt->children.push_back(body);
@@ -1854,7 +1854,7 @@ ASTNode *Parser::parseImportDeclaration() {
         if (atEof()) {
           sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated import specifier list",
                       stmt->loc});
-          allocator_->destroy(stmt);
+          delete stmt;
           return nullptr;
         }
         if (isSymbol(current(), ",")) {
@@ -1864,7 +1864,7 @@ ASTNode *Parser::parseImportDeclaration() {
         if (!at(TokenKind::Identifier)) {
           sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected imported binding",
                       current().start});
-          allocator_->destroy(stmt);
+          delete stmt;
           return nullptr;
         }
         ASTNode *spec = newNode(NodeType::ImportSpecifier);
@@ -1877,8 +1877,8 @@ ASTNode *Parser::parseImportDeclaration() {
           if (!at(TokenKind::Identifier)) {
             sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected local binding after 'as'",
                         current().start});
-            allocator_->destroy(spec);
-            allocator_->destroy(stmt);
+            delete spec;
+            delete stmt;
             return nullptr;
           }
           local = newNode(NodeType::Identifier);
@@ -1902,16 +1902,16 @@ ASTNode *Parser::parseImportDeclaration() {
       advance(); /* * */
       if (!isKeyword(current(), "as")) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected 'as' after '*'", current().start});
-        allocator_->destroy(spec);
-        allocator_->destroy(stmt);
+        delete spec;
+        delete stmt;
         return nullptr;
       }
       advance(); /* as */
       if (!at(TokenKind::Identifier)) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected namespace binding after 'as'",
                     current().start});
-        allocator_->destroy(spec);
-        allocator_->destroy(stmt);
+        delete spec;
+        delete stmt;
         return nullptr;
       }
       ASTNode *local = newNode(NodeType::Identifier);
@@ -1934,7 +1934,7 @@ ASTNode *Parser::parseImportDeclaration() {
     } else {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "unexpected token in import declaration",
                   current().start});
-      allocator_->destroy(stmt);
+      delete stmt;
       return nullptr;
     }
     /* 默认导入后可跟 , { } 或 , * as */
@@ -1952,7 +1952,7 @@ ASTNode *Parser::parseImportDeclaration() {
   if (!at(TokenKind::String)) {
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected module specifier string",
                 current().start});
-    allocator_->destroy(stmt);
+    delete stmt;
     return nullptr;
   }
   ASTNode *source = newNode(NodeType::Literal);
@@ -1993,7 +1993,7 @@ ASTNode *Parser::parseExportDeclaration() {
     if (isKeyword(current(), "function")) {
       ASTNode *fn = parseFunctionDeclaration(/*allow_anonymous=*/true);
       if (fn == nullptr) {
-        allocator_->destroy(stmt);
+        delete stmt;
         return nullptr;
       }
       stmt->children.push_back(fn);
@@ -2010,7 +2010,7 @@ ASTNode *Parser::parseExportDeclaration() {
         ASTNode *fn = parseFunctionDeclaration(/*allow_anonymous=*/true,
                                                /*is_async=*/true);
         if (fn == nullptr) {
-          allocator_->destroy(stmt);
+          delete stmt;
           return nullptr;
         }
         stmt->children.push_back(fn);
@@ -2019,7 +2019,7 @@ ASTNode *Parser::parseExportDeclaration() {
     }
     ASTNode *expr = parseAssignment();
     if (expr == nullptr) {
-      allocator_->destroy(stmt);
+      delete stmt;
       return nullptr;
     }
     stmt->children.push_back(expr);
@@ -2037,7 +2037,7 @@ ASTNode *Parser::parseExportDeclaration() {
       if (!at(TokenKind::Identifier)) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected namespace export name",
                     current().start});
-        allocator_->destroy(stmt);
+        delete stmt;
         return nullptr;
       }
       stmt->exported = current().text;
@@ -2045,14 +2045,14 @@ ASTNode *Parser::parseExportDeclaration() {
     }
     if (!isKeyword(current(), "from")) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected 'from' after '*'", current().start});
-      allocator_->destroy(stmt);
+      delete stmt;
       return nullptr;
     }
     advance(); /* from */
     if (!at(TokenKind::String)) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected module specifier string",
                   current().start});
-      allocator_->destroy(stmt);
+      delete stmt;
       return nullptr;
     }
     ASTNode *source = newNode(NodeType::Literal);
@@ -2073,7 +2073,7 @@ ASTNode *Parser::parseExportDeclaration() {
       if (atEof()) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated export specifier list",
                     stmt->loc});
-        allocator_->destroy(stmt);
+        delete stmt;
         return nullptr;
       }
       if (isSymbol(current(), ",")) {
@@ -2083,7 +2083,7 @@ ASTNode *Parser::parseExportDeclaration() {
       if (!at(TokenKind::Identifier)) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected exported binding",
                     current().start});
-        allocator_->destroy(stmt);
+        delete stmt;
         return nullptr;
       }
       ASTNode *spec = newNode(NodeType::ExportSpecifier);
@@ -2098,8 +2098,8 @@ ASTNode *Parser::parseExportDeclaration() {
         if (!at(TokenKind::Identifier)) {
           sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected exported name after 'as'",
                       current().start});
-          allocator_->destroy(spec);
-          allocator_->destroy(stmt);
+          delete spec;
+          delete stmt;
           return nullptr;
         }
         spec->exported = current().text;
@@ -2116,7 +2116,7 @@ ASTNode *Parser::parseExportDeclaration() {
       if (!at(TokenKind::String)) {
         sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected module specifier string",
                     current().start});
-        allocator_->destroy(stmt);
+        delete stmt;
         return nullptr;
       }
       ASTNode *source = newNode(NodeType::Literal);
@@ -2134,7 +2134,7 @@ ASTNode *Parser::parseExportDeclaration() {
   /* export const/let/var / export function / export class（声明导出） */
   ASTNode *decl = parseStatement();
   if (decl == nullptr) {
-    allocator_->destroy(stmt);
+    delete stmt;
     return nullptr;
   }
   stmt->children.push_back(decl);
@@ -2155,7 +2155,7 @@ ASTNode *Parser::parseBlock(bool detect_strict) {
     while (!atEof() && at(TokenKind::String)) {
       ASTNode *stmt = parseExpressionStatement();
       if (stmt == nullptr) {
-        allocator_->destroy(block);
+        delete block;
         return nullptr;
       }
       ASTNode *expr = stmt->children[0];
@@ -2169,12 +2169,12 @@ ASTNode *Parser::parseBlock(bool detect_strict) {
   while (!isSymbol(current(), "}")) {
     if (atEof()) {
       sink_.emit({Severity::Error, "SYNTAX_ERROR", "unterminated block", block->loc});
-      allocator_->destroy(block);
+      delete block;
       return nullptr;
     }
     ASTNode *stmt = parseStatement();
     if (stmt == nullptr) {
-      allocator_->destroy(block);
+      delete block;
       return nullptr;
     }
     block->children.push_back(stmt);
@@ -2202,7 +2202,7 @@ ASTNode *Parser::parseExpressionStatement() {
     /* 同一行出现无法继续表达式的 token：缺分号（a b 是语法错误） */
     sink_.emit({Severity::Error, "SYNTAX_ERROR", "expected ';' before statement",
                 current().start});
-    allocator_->destroy(stmt);
+    delete stmt;
     return nullptr;
   }
   /* 其余（换行后 token / } / EOF）由 ASI 隐式插入分号 */
