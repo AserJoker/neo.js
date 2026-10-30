@@ -185,7 +185,7 @@ if (res.kind == EXCEPTION) {
 vm.push(res);                              // 压栈（正常返回值或 interrupt）
 ```
 
-特殊值 YIELD_ENV/AWAIT_ENV 时**不销毁 argument scope、不销毁 vm**，只 `ctx->current_scope = current`（见 §9 异步）。
+特殊值 COROUTINE 时**不销毁 argument scope、不销毁 vm**，只 `ctx->current_scope = current`（见 §9 异步）。
 
 ---
 
@@ -245,17 +245,18 @@ label: for (...) {
 
 ---
 
-## 9. 异步挂起/恢复
+## 9. 异步挂起/恢复（协程统一）
 
-- **挂起 = interrupt 变体**：异步点（yield/await）压 interrupt，kind=yield/await；内含 value 是特殊值 YIELD_ENV / AWAIT_ENV（与 EXCEPTION 同为特殊值）。
-- **特殊值里打包整个 vm**（操作数栈/scope 树/try_frame/label 栈/pc）。
-- **挂起边界不销毁现场**：call 遇到 YIELD_ENV/AWAIT_ENV 时**不销毁 argument scope、不销毁 vm**，只 `ctx->current_scope = current`（恢复调用方 scope）。scope 树可持续持有、value scope_ref 保持 >0，无损。
+- **挂起 = interrupt 变体**：异步点（yield/await）压 interrupt，kind=yield/await；内含 value 是特殊值 **COROUTINE**（与 EXCEPTION 同为特殊值）。
+- **generator/async 共用同一协程现场**：挂起原因（yield/await）记录在 InterruptData.kind，调度方式（generator.next vs promise settle）由持有者对象决定——协程 value 本身不区分两者。
+- **COROUTINE 里打包整个 vm**（操作数栈/scope 树/try_frame/label 栈/pc）。
+- **挂起边界不销毁现场**：call 遇到 COROUTINE 时**不销毁 argument scope、不销毁 vm**，只 `ctx->current_scope = current`（恢复调用方 scope）。scope 树可持续持有、value scope_ref 保持 >0，无损。
 - **恢复 = 直接复用 vm**：generator 对象/promise continuation 持有该特殊值，恢复时取出 vm 直接复用，从挂起点继续（不重建栈/scope）。
-- **vm 与 GC 解耦**：stack 中存的全部都是借用值，不需要 GC；value 所有权永远在 scope 中。YIELD_ENV/AWAIT_ENV 也是 value，在 current_scope 中创建（call 遇到时安全：不删 argument scope 且恢复 current_scope）。
-- **generator vs async 差异**：
+- **vm 与 GC 解耦**：stack 中存的全部都是借用值，不需要 GC；value 所有权永远在 scope 中。COROUTINE 也是 value，在 current_scope 中创建（call 遇到时安全：不删 argument scope 且恢复 current_scope）。
+- **generator vs async 差异（外部持有者职责，非 value 属性）**：
   - generator yield 挂起 → 特殊值返回给调用方（next() 拿 {value,done:false}），vm 存 generator 对象。
-  - async await 挂起 → 特殊值不返回给调用方（调用方已拿 promise），由 async 调度层（微任务）持有 AWAIT_ENV，promise settle 后 resume 同一 vm。
-- **挂起 vm 的 GC 可达**：YIELD_ENV/AWAIT_ENV 被 generator/promise 持有 → GC 从它沿 特殊值→vm→scope 树→values 递归标记/保护；挂起时 scope 树从"vm 临时数据"提升为"GC 可达根"，恢复后再降回。
+  - async await 挂起 → 特殊值不返回给调用方（调用方已拿 promise），由 async 调度层（微任务）持有，promise settle 后 resume 同一 vm。
+- **挂起 vm 的 GC 可达**：COROUTINE 被 generator/promise 持有 → GC 从它沿 特殊值→vm→scope 树→values 递归标记/保护；挂起时 scope 树从"vm 临时数据"提升为"GC 可达根"，恢复后再降回。
 
 ---
 

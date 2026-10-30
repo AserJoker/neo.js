@@ -7,7 +7,9 @@
  *   - scope_ref：被多少 scope 持有（归零 delete）。作用域退出遍历 values
  *     逐个 scope_ref--。
  *   - 特殊值：UNDEFINED / NULL / UNINITIALIZED（TDZ 哨兵）/ EXCEPTION /
- *     INTERRUPT（控制流中断载体）/ YIELD_ENV / AWAIT_ENV。
+ *     INTERRUPT（控制流中断载体）/ COROUTINE（挂起的协程现场）。
+ *   - generator/async 共用同一协程现场：挂起原因（yield/await）在
+ *     InterruptData.kind，调度方式（next vs promise）由持有者决定。
  *
  * 注意：此头文件是引擎内部实现，不对外暴露。
  */
@@ -36,8 +38,9 @@ enum class ValueKind : uint8_t {
   Uninitialized, /* TDZ 哨兵：作用域进入时 let/const 初值，读它抛 ReferenceError */
   Exception,     /* 错误值（interrupt 的 data，见 interrupt） */
   Interrupt,     /* 控制流中断载体：data=InterruptData{kind,value,label} */
-  YieldEnv,      /* 异步挂起打包的 vm（§9） */
-  AwaitEnv,      /* 异步挂起打包的 vm（§9） */
+  Coroutine,     /* 挂起的协程现场：data=CoroutineData（打包的 vm）§9。
+                  * generator/async 共用：挂起原因在 InterruptData.kind，
+                  * 调度方式（next vs promise）由持有者决定。 */
 };
 
 /* Value：值语义实体（堆分配，继承 AllocatedObject）。
