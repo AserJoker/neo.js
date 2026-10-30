@@ -37,22 +37,22 @@ class Vm {
    * 遇异常 value 立即返回该异常。 */
   Value *run(const Bytecode &bc);
 
-  /* 操作数栈访问（测试/调试用）。 */
+  /* 操作数栈访问（执行器/测试/调试用）。 */
+  Context &ctx() { return ctx_; }
   size_t stack_size() const { return stack_.size(); }
   Value *top() const {
     return stack_.empty() ? nullptr : stack_.back();
   }
-
- private:
-  Context &ctx_;
-  std::vector<Value *> stack_;
-
   void push(Value *v) { stack_.push_back(v); }
   Value *pop() {
     Value *v = stack_.back();
     stack_.pop_back();
     return v;
   }
+
+ private:
+  Context &ctx_;
+  std::vector<Value *> stack_;
 };
 
 }  // namespace vm

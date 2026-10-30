@@ -80,6 +80,8 @@ enum class Opcode : uint8_t {
 
   /* 终止 */
   Ret, /* 返回栈顶 */
+
+  Count, /* 指令条数（vm 层 handler 表大小用） */
 };
 
 /* 指令：操作码 + 立即数（target/idx/name 索引） */
