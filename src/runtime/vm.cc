@@ -75,7 +75,8 @@ struct VmFrame {
   JSValue *thisVal = nullptr;
   JSValue *const *args = nullptr;
   size_t argc = 0;
-  JSEnvironment *env = nullptr;
+  JSEnvironment *env = nullptr;   /* 当前环境链头（函数 env + 块环境叠加） */
+  JSEnvironment *fn_env = nullptr; /* M5.5f：进入帧时的函数环境（不含块环境） */
   JSFunction *self = nullptr;
   std::vector<JSValue *> *stack = nullptr; /* 操作数栈（含局部槽） */
   size_t *pc = nullptr;                    /* 指令指针 */
@@ -761,7 +762,12 @@ JSValue *constValue(JSContext *ctx, const FunctionBytecode &fn, uint16_t index) 
 /* 按捕获解析目标环境（M2.5 闭包）：沿 env 链上跳 capture.depth + 1 层。
  * 编译器 depth 从当前函数的外层函数帧起计（0 = 直接外层），而 env 是
  * 当前函数自己的环境，故需先跳 1 层到创建本函数的环境，再跳 depth 层。
- * 返回目标环境；链不足/无环境返回 nullptr。 */
+ * 返回目标环境；链不足/无环境返回 nullptr。
+ *
+ * M5.5f 块作用域：env 链可能含块环境（PushBlockEnv 插入）。块环境与函数
+ * 环境同为环境节点，depth 跳层按链节点计数即可——块环境也占一层。
+ * LoadUpvalue/StoreUpvalue 随后按 name 在目标环境中查绑定（块 let 绑定
+ * 在块环境中，函数 var 在函数环境中，均由 capture.name 定位）。 */
 JSEnvironment *captureEnv(JSEnvironment *env, const FunctionBytecode &fn,
                           uint16_t idx) {
   if (idx >= fn.captures.size() || env == nullptr) return nullptr;
@@ -881,13 +887,15 @@ static ConversionResult op_LoadVar(VmFrame &frame) {
       if (frame.arg >= stack.size()) {
         error = fail("ReferenceError: local slot out of range"); break;
       }
-      /* M4.4：优先读环境绑定——内层闭包经 StoreUpvalue 更新外层局部后，
+      /* M4.4：优先读函数环境绑定——内层闭包经 StoreUpvalue 更新外层局部后，
       * 外层 LoadVar 需读到最新值（顶层 var + forEach 回调场景）。
+      * M5.5f：块环境是独立词法层，不参与 var 槽的 env 同步；函数局部 var
+      * 始终读写 frame.fn_env（块环境不可截断），故用 fn_env 而非 env。
       * 环境无该绑定（如参数名未写入环境）时回退栈槽。 */
-      if (frame.env != nullptr && frame.arg < fn.locals.size() &&
+      if (frame.fn_env != nullptr && frame.arg < fn.locals.size() &&
           !fn.locals[frame.arg].empty()) {
         const std::string &name = fn.locals[frame.arg];
-        JSValue *bv = frame.env->getBinding(name);
+        JSValue *bv = frame.fn_env->getBinding(name);
         if (bv != nullptr) {
           stack.push_back(bv);
           break;
@@ -912,17 +920,19 @@ static ConversionResult op_StoreVar(VmFrame &frame) {
       }
       JSValue *val = stack.back();
       stack[frame.arg] = val; /* 栈顶 -> 局部槽 */
-      /* M2.5：局部变量同步写入当前环境（内层闭包 LoadUpvalue 沿链查找）。 */
-      if (frame.env != nullptr && frame.arg < fn.locals.size() &&
+      /* M2.5：局部变量同步写入当前环境（内层闭包 LoadUpvalue 沿链查找）。
+      * M5.5f：var 写入 frame.fn_env（函数环境），不随块环境叠加而截断——
+      * 块内 var 声明语义为函数作用域，闭包捕获须沿链到函数 env。 */
+      if (frame.fn_env != nullptr && frame.arg < fn.locals.size() &&
           !fn.locals[frame.arg].empty()) {
-        frame.env->setBinding(fn.locals[frame.arg], val);
+        frame.fn_env->setBinding(fn.locals[frame.arg], val);
         /* M5.4 脚本顶层 var 双写全局对象（§13.3.2.4 GlobalDeclarationInstantiation
          * CreateGlobalVarBinding）：顶层函数声明（含 async）独立编译，体内读
          * 脚本顶层 var 走 LoadGlobal（读全局对象）；普通闭包 LoadUpvalue 读
          * top_env。在 op_StoreVar 汇聚点同步写全局对象，两条路径值一致。
          * 仅当当前帧 env 恰为脚本顶层 env（JS_Eval 顶层执行期间）时触发。 */
         if (frame.ctx->scriptTopEnv() != nullptr &&
-            frame.env == frame.ctx->scriptTopEnv()) {
+            frame.fn_env == frame.ctx->scriptTopEnv()) {
           JSValue *global = frame.ctx->globalObject();
           ConversionResult sr = setPropertyValue(
               frame.ctx, global->object(), fn.locals[frame.arg], val);
@@ -4110,6 +4120,202 @@ static ConversionResult op_AsyncYieldDelegate(VmFrame &frame) {
   return ok(nullptr);
 }
 
+/* M5.5f 块作用域（§8.1.1，路径 A 规范式块环境）。
+ *   PushBlockEnv：创建块环境（parent=当前 env 链头），置 frame.env 为新
+ *     块环境。块环境入 VM env 根集（GC：沿 parent 可标记整链，与函数 env
+ *     一致；PopBlockEnv 弹出后根集条目随栈式同步弹出）。
+ *   PopBlockEnv {target_depth}：沿 parent 弹回目标深度（target_depth = 弹
+ *     回后剩余块环境层数，0 = 全弹回函数环境）。编译器在块退出/循环跳转/
+ *     break/continue/return 处发射。
+ *   DeclareLexical {name_idx}：当前块环境声明词法绑定（TDZ 占位）。
+ *   InitLexical {name_idx}：栈顶值初始化绑定（清 TDZ）。
+ *   LoadLexical {name_idx}：沿环境链查 name，TDZ 未初始化抛 ReferenceError。
+ *   StoreLexical {name_idx}：栈顶写绑定，const 抛 TypeError。 */
+
+/* 沿环境链按名查找绑定所在环境（词法查找：从链头向下，首个含该名者）。
+ * 块 let 绑定在块环境中，函数 var 在函数环境中，均沿链可寻。 */
+static JSEnvironment *findEnvBindingEnv(JSEnvironment *env,
+                                        const std::string &name) {
+  for (JSEnvironment *e = env; e != nullptr; e = e->parent()) {
+    if (e->hasBinding(name)) return e;
+  }
+  return nullptr;
+}
+
+static ConversionResult op_PushBlockEnv(VmFrame &frame) {
+  ConversionResult error;
+  do {
+      JSEnvironment *block = frame.ctx->heap().allocGCObject<JSEnvironment>(
+          frame.env);
+      block->setBlock(true);
+      frame.env = block;
+      frame.ctx->vmEnvPush(block); /* 入根集：块 env 沿 parent 可标记整链 */
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_PopBlockEnv(VmFrame &frame) {
+  ConversionResult error;
+  do {
+      /* 弹回目标深度：剩余块环境层数 <= target_depth。
+       * 每弹一层块环境，同时弹出其 VM env 根集条目（与 push 顺序对应）。 */
+      size_t target = frame.arg;
+      while (frame.env != nullptr && frame.env->isBlock()) {
+        if (frame.env->parent() == frame.fn_env && target == 0) break;
+        size_t cur_blocks = 0;
+        for (JSEnvironment *e = frame.env; e != frame.fn_env && e != nullptr;
+             e = e->parent()) {
+          if (e->isBlock()) ++cur_blocks;
+        }
+        if (cur_blocks <= target) break;
+        frame.env = frame.env->parent();
+        frame.ctx->vmEnvPop(); /* 弹出对应根集条目 */
+      }
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_DeclareLexical(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  ConversionResult error;
+  do {
+      /* 立即数：低 15 位 = 常量池字符串下标；bit15 = is_const（const 绑定
+       * 赋值抛 TypeError）。常量池 < 32768 时安全（本引擎实际远小于此）。 */
+      uint16_t name_idx = frame.arg & 0x7FFFu;
+      bool is_const = (frame.arg & 0x8000u) != 0;
+      if (name_idx >= fn.constants.size() ||
+          fn.constants[name_idx].is_number) {
+        error = fail("Error: DeclareLexical requires a string constant");
+        break;
+      }
+      /* M5.5f：词法声明可在块环境（块内 let）或函数/模块环境（函数体/模块
+       * 顶层 let，规范函数声明式环境记录同时承载 var 与词法绑定）。
+       * 编译器静态保证发射点有承载环境（块已压 / 函数/模块帧是环境）。 */
+      if (frame.env == nullptr) {
+        error = fail("Error: DeclareLexical outside environment");
+        break;
+      }
+      frame.env->declareLexical(fn.constants[name_idx].str, is_const);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_InitLexical(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.empty()) {
+        error = fail("Error: stack underflow on InitLexical");
+        break;
+      }
+      if (frame.arg >= fn.constants.size() ||
+          fn.constants[frame.arg].is_number) {
+        error = fail("Error: InitLexical requires a string constant");
+        break;
+      }
+      /* M5.5f：同 DeclareLexical，块环境或函数/模块环境均可承载词法绑定。 */
+      if (frame.env == nullptr) {
+        error = fail("Error: InitLexical outside environment");
+        break;
+      }
+      JSValue *val = stack.back();
+      stack.pop_back();
+      frame.env->initBinding(fn.constants[frame.arg].str, val);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_LoadLexical(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (frame.arg >= fn.constants.size() ||
+          fn.constants[frame.arg].is_number) {
+        error = fail("Error: LoadLexical requires a string constant");
+        break;
+      }
+      const std::string &name = fn.constants[frame.arg].str;
+      JSEnvironment *e = findEnvBindingEnv(frame.env, name);
+      if (e == nullptr) {
+        /* 词法绑定未找到：沿链无该名（编译器已静态解析，运行期不应发生）。 */
+        error = fail("ReferenceError: " + name + " is not defined");
+        break;
+      }
+      if (e->isUninitialized(name)) {
+        /* §9.4.3.1 step 4：TDZ 读取抛 ReferenceError。 */
+        error = fail("ReferenceError: Cannot access '" + name +
+                     "' before initialization");
+        break;
+      }
+      stack.push_back(e->getBinding(name));
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
+static ConversionResult op_StoreLexical(VmFrame &frame) {
+  const FunctionBytecode &fn = *frame.fn;
+  auto &stack = *frame.stack;
+  ConversionResult error;
+  do {
+      if (stack.empty()) {
+        error = fail("Error: stack underflow on StoreLexical");
+        break;
+      }
+      if (frame.arg >= fn.constants.size() ||
+          fn.constants[frame.arg].is_number) {
+        error = fail("Error: StoreLexical requires a string constant");
+        break;
+      }
+      const std::string &name = fn.constants[frame.arg].str;
+      JSEnvironment *e = findEnvBindingEnv(frame.env, name);
+      if (e == nullptr) {
+        error = fail("ReferenceError: " + name + " is not defined");
+        break;
+      }
+      JSValue *val = stack.back();
+      stack.pop_back();
+      if (e->isImmutable(name)) {
+        /* §9.4.3.2 step 6：const 绑定赋值抛 TypeError。 */
+        error = fail("TypeError: Assignment to constant variable.");
+        break;
+      }
+      if (e->isUninitialized(name)) {
+        /* TDZ 赋值同样抛 ReferenceError（§8.1.1.1.2 SetMutableBinding）。 */
+        error = fail("ReferenceError: Cannot access '" + name +
+                     "' before initialization");
+        break;
+      }
+      e->setBinding(name, val);
+      break;
+  } while (false);
+  if (error.value == nullptr &&
+      (!error.error.empty() || error.thrown != nullptr))
+    return std::move(error);
+  return ok(nullptr);
+}
+
 /* 分发表：按 Opcode 枚举值下标访问（M5.1e-f 栈帧瘦身）。 */
 const OpHandler kHandlers[] = {
     op_PushConst,  /* PushConst */
@@ -4217,6 +4423,12 @@ const OpHandler kHandlers[] = {
     op_AsyncIteratorClose,  /* AsyncIteratorClose */
     op_IteratorResultToValueDone,  /* IteratorResultToValueDone */
     op_AsyncYieldDelegate,  /* AsyncYieldDelegate */
+    op_PushBlockEnv,  /* PushBlockEnv */
+    op_PopBlockEnv,  /* PopBlockEnv */
+    op_DeclareLexical,  /* DeclareLexical */
+    op_InitLexical,  /* InitLexical */
+    op_LoadLexical,  /* LoadLexical */
+    op_StoreLexical,  /* StoreLexical */
 };
 
 }  // namespace
@@ -4245,18 +4457,25 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
 
   /* 帧环境根集（M2.5 闭包）：env 链是捕获变量承载，与操作数栈同生命周期，
    * 帧进入注册、退出（任意返回路径）由 RAII 弹出。低阈值 GC 下 env
-   * 若无根可达会被误回收（StoreVar/StoreUpvalue/captureEnv 悬垂崩溃）。 */
+   * 若无根可达会被误回收（StoreVar/StoreUpvalue/captureEnv 悬垂崩溃）。
+   * M5.5f 块环境：PushBlockEnv 创建块 env 插入链头并再入根集（沿 parent
+   * 可标记整链），PopBlockEnv 弹出后对应根集条目随之弹出（栈式同步）。
+   * 析构精确回退到帧入口时的 vmEnv 数量（块环境可能残留未弹净的异常路径）。 */
   class EnvRootGuard {
    public:
     EnvRootGuard(JSContext *ctx, JSEnvironment *env) : ctx_(ctx) {
+      base_size_ = ctx_->vmEnvSize();
       if (env != nullptr) ctx_->vmEnvPush(env);
     }
-    ~EnvRootGuard() { ctx_->vmEnvPop(); }
+    ~EnvRootGuard() {
+      while (ctx_->vmEnvSize() > base_size_) ctx_->vmEnvPop();
+    }
     EnvRootGuard(const EnvRootGuard &) = delete;
     EnvRootGuard &operator=(const EnvRootGuard &) = delete;
 
    private:
     JSContext *ctx_;
+    size_t base_size_ = 0;
   } env_guard(ctx, env);
 
   if (restore_stack != nullptr) {
@@ -4303,6 +4522,11 @@ ConversionResult runBytecode(JSContext *ctx, const FunctionBytecode &fn,
   f.args = args;
   f.argc = argc;
   f.env = env;
+  /* M5.5f：函数环境 = 帧入口 env 链中首个非块环境（挂起恢复时 env 可能
+   * 是块环境链头，需沿 parent 找到函数环境——var 同步/脚本顶层判定用）。 */
+  JSEnvironment *fn_env = env;
+  while (fn_env != nullptr && fn_env->isBlock()) fn_env = fn_env->parent();
+  f.fn_env = fn_env;
   f.self = self;
   f.stack = &stack;
   f.pc = &pc;

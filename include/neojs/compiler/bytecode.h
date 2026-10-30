@@ -223,6 +223,14 @@ enum class Opcode : uint8_t {
    * 经 AsyncDelegateResolve/Reject 挂起/恢复驱动委托状态机，结果转发给外层
    * next()（AsyncGeneratorYield）。仅 async generator 函数体内可达。 */
   AsyncYieldDelegate,
+
+  /* M5.5f 块作用域（§8.1.1，路径 A 规范式块环境，追加末尾保持 opcode 数值稳定） */
+  PushBlockEnv,   /* 创建块环境（parent=当前 env）并置为 frame.env：PushBlockEnv（无立即数） */
+  PopBlockEnv,    /* 恢复 frame.env 到目标深度：PopBlockEnv {target_depth} */
+  DeclareLexical, /* 声明词法绑定（TDZ 占位）：DeclareLexical {name_index}（在当前块环境） */
+  InitLexical,    /* 初始化词法绑定（写值清 TDZ）：栈顶 -> InitLexical {name_index}（弹栈） */
+  LoadLexical,    /* 读词法绑定：沿环境链查 name -> 栈顶：LoadLexical {name_index}（TDZ 抛 ReferenceError） */
+  StoreLexical,   /* 写词法绑定：栈顶 -> 沿环境链查 name：StoreLexical {name_index}（const 抛 TypeError，弹栈） */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -412,6 +420,26 @@ class BytecodeBuilder {
    * 逐个把 value 经本 generator 转发给外层 next()；inner done 后压 inner
    * 返回值继续外层）。 */
   void yield_delegate() { push_op(Opcode::YieldDelegate); }
+
+  /* M5.5f 块作用域（§8.1.1，路径 A 规范式块环境）。 */
+  void push_block_env() { push_op(Opcode::PushBlockEnv); }
+  void pop_block_env(uint16_t target_depth) {
+    push_op(Opcode::PopBlockEnv, target_depth);
+  }
+  /* DeclareLexical：低 15 位 = 常量池下标，bit15 = is_const（const 绑定）。 */
+  void declare_lexical(const std::string &name, bool is_const) {
+    uint16_t idx = add_constant(name);
+    push_op(Opcode::DeclareLexical, idx | (is_const ? 0x8000u : 0u));
+  }
+  void init_lexical(const std::string &name) {
+    push_op(Opcode::InitLexical, add_constant(name));
+  }
+  void load_lexical(const std::string &name) {
+    push_op(Opcode::LoadLexical, add_constant(name));
+  }
+  void store_lexical(const std::string &name) {
+    push_op(Opcode::StoreLexical, add_constant(name));
+  }
 
   /* 闭包（M2.5）：从嵌套函数表实例化 / 读写捕获变量。 */
   void make_function(uint16_t idx) { push_op(Opcode::MakeFunction, idx); }

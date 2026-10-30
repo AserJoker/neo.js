@@ -747,6 +747,62 @@ auto-resolve）全绿，全量 620 测试绿
 
 ---
 
+### M5.5f 块作用域 let/const + TDZ + for per-iteration 闭包（✅ 完成）
+
+> **背景**：M5.1f 的 with 实现在「let/const 无块作用域」的错误地基上——with 依赖动态
+> 作用域链，而块内 let 直接进函数槽（遮蔽语义错误、闭包捕获共享同一槽）。回退 M5.1f
+> 全部改动（补丁备份在 `.m51f_backup/`），先在正确的块作用域地基上实现，with 待
+> 此完成后重新基于新地基实现（见任务 #6）。
+
+- **设计决策（路径 A：规范式块环境）**：每个含 let/const 的块创建 JSEnvironment
+  （块环境，`is_block_` 标记），let/const 只存块环境绑定表，闭包捕获按 name+depth
+  沿环境链查找（§8.1.1）。与「块内 let 存函数槽」的方案不同——后者无法表达
+  per-iteration 绑定与块级遮蔽，且与 with 动态作用域不兼容。
+- **JSEnvironment 扩展**（environment.h）：`declareLexical`（TDZ 占位，
+  bindings_[name]=nullptr + uninitialized_ 集合）、`initBinding`（写值清 TDZ）、
+  `isUninitialized`（§9.4.3.1 读取抛 ReferenceError）、`isImmutable`（§9.4.3.2 const
+  赋值抛 TypeError）、块环境标记 `isBlock`。
+- **新 opcode**（bytecode.h + vm.cc）：`PushBlockEnv`（创建块环境插链头 + 入根集）、
+  `PopBlockEnv{target_depth}`（沿链弹回目标深度）、`DeclareLexical`（TDZ 占位）、
+  `InitLexical`（写值清 TDZ）、`LoadLexical`（TDZ 读取抛错）、`StoreLexical`（const
+  赋值抛错）。
+- **编译器作用域帧重构**（compiler.h/compiler.cc）：`CompilerScope` 分函数帧
+  （locals 槽 + captures）与块帧（block_bindings + block_vars）；`blockScopeDepth()`
+  记录运行时块环境层数（PopBlockEnv 目标深度 / LoopContext.block_env_depth）。
+- **frame.env vs frame.fn_env**：`frame.env` = 环境链头（函数 env + 块环境叠加）；
+  `frame.fn_env` = 沿链找首个非块环境（var 读写目标 + 脚本顶层判定，避免被块 env
+  截断）。
+- **compileVarDecl 分派**（M5.5f）：var → 函数帧槽（declareLocal + StoreVar）；
+  let/const → 词法绑定（DeclareLexical TDZ 占位 + InitLexical）。
+- **TDZ 预声明**（compileBlock）：块含 let/const 时先预声明全部绑定名到块帧并发射
+  DeclareLexical（块开头建立全部 TDZ 占位）——声明前读取/赋值解析为 LoadLexical/
+  StoreLexical，运行时 isUninitialized 抛 ReferenceError。预声明名记入
+  `scope_->predeclared`，声明处跳过重复登记（避免误报重名），真重名
+  （`{ let a; let a; }`）仍在预声明阶段报 SyntaxError。
+- **重名检测（§13.3.1.1 双向）**：`hasLexicalInChain`（var 声明查块帧链
+  block_bindings——`{ let x; { var x; } }` 冲突）+ declareLexical 查 block_vars/
+  locals（`{ var x; let x; }` 冲突）；`{ var x; { let x; } }` 合法（不同作用域）。
+- **for 头 let/const per-iteration**（替换式 per-iter，§13.7.4.8）：链上恒 head +
+  最新迭代环境。body 在旧环境（闭包捕获），update 在**下迭代新环境**执行——闭包
+  捕获的旧环境不被修改，读到各自迭代值（fns[0]=0, fns[1]=1, fns[2]=2）。
+  update_label 处 LoadLexical 读链头 → PopBlockEnv(enter_depth+1) 弹回 head（旧迭代
+  环境脱离链但闭包保活）→ PushBlockEnv 新环境 → declare/init 复制 → update 在新
+  环境执行。per-iter 块帧 enterBlockScope 后**立即** declareLexical 全部 head_bindings
+  （编译期登记，否则 body 闭包解析循环头绑定 depth 偏大，运行时跳过头环境）。
+- **for-of/for-in/for await 词法 left**：每次迭代 per-iteration 块环境承载绑定
+  （§14.7.5.3/§14.7.4.4），循环结束/break/异常路径统一 PopBlockEnv 弹回进入深度。
+- **顶层 let/const 不入全局对象**（§13.3.2.4）：顶层帧压块帧 + PushBlockEnv，顶层
+  let/const 进该块环境（闭包沿环境链捕获）；顶层 var 仍走函数槽（op_StoreVar 双写
+  全局对象）。
+- **用例集**（新文件 tests/test_block_scope.cc，14 用例）：块内 let/const 遮蔽、
+  块内 var 提升、TDZ（含 typeof 命中 TDZ、解构 TDZ、声明前赋值）、for let/const
+  per-iteration 闭包、for-of/for-in 词法 left、顶层 let/const 不入全局、重复声明
+  SyntaxError、跨函数捕获、解构声明、复合（块 + 循环 + 闭包 + 异常）。
+
+验收：BlockScope 套件 14 全绿，全量 656 测试绿（此前 620 基线 + BlockScope 扩展）
+
+---
+
 ### M5.6 RegExp + Date（⏳ 未启动，M5.6a–M5.6b）
 
 **M5.6a RegExp（⏳ 未启动）**

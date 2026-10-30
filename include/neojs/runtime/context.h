@@ -226,6 +226,9 @@ class JSContext {
   void vmEnvPop() {
     if (!vm_envs_.empty()) vm_envs_.pop_back();
   }
+  /* M5.5f：当前已注册的 VM env 根集数量（EnvRootGuard 用，支持块环境
+   * 多次 push 后精确回退到帧入口时的数量）。 */
+  size_t vmEnvSize() const { return vm_envs_.size(); }
   const std::vector<JSEnvironment *> &vmEnvs() const { return vm_envs_; }
 
   /* 脚本顶层环境（M5.4，§13.3.2.4 GlobalDeclarationInstantiation）：

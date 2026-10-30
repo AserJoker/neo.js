@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "neojs/compiler/bytecode.h"
@@ -54,25 +55,54 @@ struct CompileResult {
   std::vector<std::string> module_deps;
 };
 
-/* 作用域帧（M2.5 闭包）：编译期函数嵌套栈。
- * 每个函数编译期间一个帧，记录该函数声明的局部变量（用于判断
- * 标识符是局部还是捕获外层）；父帧 = 外层函数。 */
+/* 词法绑定（M5.5f 块作用域，§8.1.1 路径 A）：块内 let/const 声明记录。
+ * 不占局部槽，运行时在块环境绑定表中。 */
+struct LexicalBinding {
+  std::string name;
+  bool is_const = false;
+};
+
+/* 作用域帧（M2.5 闭包 + M5.5f 块作用域）：编译期作用域嵌套栈。
+ * 两类帧：
+ *   - 函数帧（is_function_scope=true）：每函数一个。持有 var/参数局部
+ *     槽（locals -> 槽号，运行时栈底槽）。captures 记录本函数捕获列表。
+ *   - 块帧（is_function_scope=false）：含 let/const 的块（及 for 循环头）
+ *     压入。持有 block_bindings（let/const 词法绑定名 + const 标记）。
+ *     仅「运行时创建块环境」的块压入块帧（无 let/const 的块不压，保证
+ *     捕获 depth 与运行时环境节点数一一对应）。
+ * parent = 外层作用域帧（函数帧或块帧）。 */
 struct CompilerScope {
-  CompilerScope *parent = nullptr;       /* 外层函数作用域帧 */
-  std::unordered_map<std::string, uint16_t> locals; /* 本函数局部变量 -> 槽号 */
-  uint16_t next_slot = 0;                /* 本函数下一个可用槽 */
-  std::vector<UpvalueCapture> captures;  /* 本函数捕获列表 */
+  CompilerScope *parent = nullptr;       /* 外层作用域帧 */
+  bool is_function_scope = false;        /* 函数帧（var/参数槽 + 捕获） */
+  std::unordered_map<std::string, uint16_t> locals; /* 函数帧：局部变量 -> 槽号 */
+  uint16_t next_slot = 0;                /* 函数帧：下一个可用槽 */
+  std::vector<UpvalueCapture> captures;  /* 函数帧：本函数捕获列表 */
+  /* 块帧：词法绑定（let/const 声明顺序）。 */
+  std::vector<LexicalBinding> block_bindings;
+  /* M5.5f：块帧内声明的 var 名（§13.3.1.1 重名检测——块内 var 提升到
+   * 函数作用域，但与块内 let/const 同名单向冲突，双向检测：
+   *   var 声明时查块链 block_bindings（hasLexicalInChain）；
+   *   let 声明时查块链 block_vars（块内 var 已声明）。 */
+  std::vector<std::string> block_vars;
+  /* M5.5f TDZ：compileBlock 预声明阶段登记的 let/const 绑定名（登记 + 发射
+   * DeclareLexical 指令，块开头建立全部 TDZ 占位）。声明处 compileVarDecl
+   * 据此区分「预声明登记」（跳过重复登记）与「真重名」（报 SyntaxError）。 */
+  std::unordered_set<std::string> predeclared;
 };
 
 /* M5.1e-c 跳转上下文（break/continue 目标）：循环/标签语句编译期间压栈。
  * 循环 push is_loop=true（continue 合法）；标签语句 push is_loop=false
  * （continue 到非循环标签非法）。无标签 break 找最近循环；有标签
- * break/continue 沿栈找匹配 label。 */
+ * break/continue 沿栈找匹配 label。
+ * M5.5f 块作用域：block_env_depth 记录进入循环/标签时当前块环境层数
+ * （= 块帧链上运行时已创建的块环境数），break/continue 跳出时须 PopBlockEnv
+ * 弹回该深度（循环体/标签体内的 let 块环境在跳出时清理）。 */
 struct LoopContext {
   std::string label;        /* 关联标签名（可空） */
   BcLabel break_label;      /* break 目标 */
   BcLabel continue_label;   /* continue 目标（非循环时无效） */
   bool is_loop = false;     /* 是否循环（continue 合法） */
+  uint16_t block_env_depth = 0; /* M5.5f：进入时块环境层数（跳出需弹回） */
 };
 
 /* AST → 字节码编译器（M2.4 ① 骨架 + 表达式编译；M2.5 闭包作用域分析）。 */
@@ -206,10 +236,48 @@ class Compiler {
   bool compileLoopLeft(const ASTNode *left);
   /* 预声明解构模式中的全部绑定名（保证槽位分配稳定，声明语义）。 */
   bool declarePatternBindings(const ASTNode &pattern);
+  /* M5.5f：预声明解构模式中的全部绑定名为词法绑定（let/const 解构声明，
+   * TDZ 占位 + DeclareLexical 发射）。 */
+  bool declarePatternLexical(const ASTNode &pattern, bool is_const);
+  /* M5.5f TDZ：解构模式中所有绑定名是否都已在当前块帧预声明（compileBlock
+   * 预声明阶段对解构语句整体调用 declarePatternLexical，声明处据此跳过
+   * 重复登记，避免误报重名）。 */
+  bool patternPredeclared(const ASTNode &pattern) const;
 
   /* 局部变量槽分配：声明/参数登记；引用解析（未找到 -> LoadGlobal）。 */
   uint16_t declareLocal(const std::string &name);
   bool resolveLocal(const std::string &name, uint16_t *slot);
+
+  /* M5.5f 块作用域：
+   *   declareLexical(name, is_const) —— 当前块帧声明词法绑定（let/const）。
+   *   resolveLexical(name) —— 沿块帧链（不含函数帧）查词法绑定（找到返回 true）。
+   *   resolveBinding(name, slot, capture, is_upvalue, is_lexical) —— 统一解析：
+   *     本函数帧局部 var/参数 -> slot；词法绑定（本块或外层块）-> is_lexical=true
+   *     （发射 LoadLexical/StoreLexical）；外层函数绑定 -> capture upvalue。
+   *   emitLoadBinding(name) —— 统一标识符读取发射（var/词法/import/捕获/全局）。
+   *   enterBlockScope()/exitBlockScope() —— 压入/弹出块帧（块含 let/const 时）。
+   *   functionScope() —— 当前函数帧（沿 parent 找 is_function_scope）。 */
+  bool declareLexical(const std::string &name, bool is_const);
+  bool resolveLexical(const std::string &name);
+  /* M5.5f TDZ：预声明 let/const 绑定（compileBlock 块开头）——登记到块帧
+   * 并发射 DeclareLexical 指令（块内任何位置访问抛 TDZ），名记入
+   * scope_->predeclared。已存在（含预声明）返回 false（真重名）。 */
+  bool predeclareLexical(const std::string &name, bool is_const);
+  /* M5.5f TDZ：预声明解构模式全部绑定名（递归，等价 declarePatternLexical
+   * 的登记 + 发射，但经 predeclareLexical 记入 predeclared）。 */
+  bool predeclarePattern(const ASTNode &pattern, bool is_const);
+  /* M5.5f：当前块帧链（含函数帧词法绑定）是否已有同名 let/const
+   * （§13.3.1.1 块内 var 与 let/const 重名检测，var 声明时调用）。 */
+  bool hasLexicalInChain(const std::string &name) const;
+  bool resolveBinding(const std::string &name, uint16_t *slot, uint16_t *capture,
+                      bool *is_upvalue, bool *is_lexical);
+  bool emitLoadBinding(const std::string &name);
+  CompilerScope *enterBlockScope();
+  void exitBlockScope();
+  CompilerScope *functionScope();
+  /* M5.5f：当前块环境层数（运行时 frame.env 链上块节点数，= 块帧链
+   * 块帧数）。PopBlockEnv 目标深度 / LoopContext.block_env_depth 用。 */
+  uint16_t blockScopeDepth();
 
   /* 标识符解析（M2.5）：本函数局部 / 外层局部（捕获 upvalue）/ 全局。
    * 返回 true 表示已发射 load 指令。 */
@@ -218,7 +286,8 @@ class Compiler {
    * 返回 true 表示目标是局部或捕获（slot/capture 已填），false 表示全局
    * （M5.1e-g：调用方发射 StoreGlobal，非严格隐式全局赋值）。 */
   bool resolveAssignTarget(const std::string &name, uint16_t *slot,
-                           uint16_t *capture, bool *is_upvalue);
+                           uint16_t *capture, bool *is_upvalue,
+                           bool *is_lexical = nullptr);
 
   /* 函数编译内部：解析参数 + 编译 body（共享于 compile/compileFunction）。 */
   bool compileFunctionBody(const ASTNode &fn);

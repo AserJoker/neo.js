@@ -81,10 +81,19 @@ CompileResult Compiler::compile(const AST &ast) {
   loops_.clear(); /* M5.1e-c：顶层程序不在循环/标签内 */
   builder_ = BytecodeBuilder();
 
-  /* 顶层作用域帧。 */
+  /* 顶层作用域帧（函数帧：var/参数槽）。
+   * M5.5f：顶层 let/const 承载环境 = 函数入口的块环境（顶层帧的
+   * 词法层）。压入顶层块帧并发射 PushBlockEnv——顶层 let/const 进入
+   * 该块环境（不入全局对象，§13.3.2.4）；顶层 var 仍走函数槽
+   * （fn_env，经 op_StoreVar 双写全局对象）。
+   * 闭包捕获顶层 let：沿环境链（块 env -> 函数 env）捕获。 */
   CompilerScope *top = new CompilerScope;
+  top->is_function_scope = true;
   scopes_.push_back(top);
   scope_ = top;
+  /* 顶层块帧（顶层 let/const 词法层）。 */
+  enterBlockScope();
+  builder_.push_block_env();
 
   if (ast.root != nullptr) {
     const auto &stmts = ast.root->children;
@@ -122,6 +131,12 @@ CompileResult Compiler::compile(const AST &ast) {
     builder_.ret();
   }
 
+  /* 顶层块环境弹出（帧结束，恢复函数环境）。ret 已发射，此处仅
+   * 维持编译期 scope 栈平衡（运行时 Pop 在 ret 后不可达——实际由
+   * 帧退出 + EnvRootGuard 清理根集，此处不发 Pop 避免 ret 后死代码）。
+   * 仅弹出编译期块帧。 */
+  exitBlockScope();
+
   /* 局部变量槽数（含临时槽）写入字节码。 */
   builder_.set_num_locals(scope_->next_slot);
   result.ok = true;
@@ -145,8 +160,9 @@ CompileResult Compiler::compileFunction(const ASTNode &fn) {
   }
   builder_ = BytecodeBuilder(fn_name);
 
-  /* 顶层作用域帧（单函数编译：无外层，捕获解析到全局）。 */
+  /* 顶层作用域帧（单函数编译：无外层，捕获解析到全局；函数帧）。 */
   CompilerScope *top = new CompilerScope;
+  top->is_function_scope = true;
   scopes_.push_back(top);
   scope_ = top;
 
@@ -184,8 +200,9 @@ CompileResult Compiler::compileModule(const AST &ast) {
   module_deps_.clear();
   builder_ = BytecodeBuilder();
 
-  /* 顶层作用域帧（模块顶层：捕获解析到此，再外层为全局）。 */
+  /* 顶层作用域帧（模块顶层：捕获解析到此，再外层为全局；函数帧）。 */
   CompilerScope *top = new CompilerScope;
+  top->is_function_scope = true;
   scopes_.push_back(top);
   scope_ = top;
 
@@ -619,7 +636,7 @@ bool Compiler::compileFunctionBody(const ASTNode &fn) {
         info.slot = declareLocal(target->name);
       } else {
         /* 解构 + 默认值：源槽 = 无名临时槽，内部绑定预声明。 */
-        info.slot = scope_->next_slot++;
+        info.slot = functionScope()->next_slot++;
         if (!declarePatternBindings(*target)) {
           fail("invalid destructuring default parameter");
           return false;
@@ -634,7 +651,7 @@ bool Compiler::compileFunctionBody(const ASTNode &fn) {
       if (target->type == NodeType::Identifier) {
         info.slot = declareLocal(target->name);
       } else {
-        info.slot = scope_->next_slot++;
+        info.slot = functionScope()->next_slot++;
         if (!declarePatternBindings(*target)) {
           fail("invalid rest parameter");
           return false;
@@ -642,7 +659,7 @@ bool Compiler::compileFunctionBody(const ASTNode &fn) {
       }
     } else if (p->type == NodeType::ObjectPattern ||
                p->type == NodeType::ArrayPattern) {
-      info.slot = scope_->next_slot++;
+      info.slot = functionScope()->next_slot++;
       if (!declarePatternBindings(*p)) {
         fail("invalid destructuring parameter");
         return false;
@@ -749,8 +766,9 @@ bool Compiler::compileChildFunction(const ASTNode &fn, FunctionBytecode *out,
     fn_name = fn.children[0]->name;
   }
 
-  /* 建立子函数作用域帧：parent = 当前（捕获解析到外层）。 */
+  /* 建立子函数作用域帧：parent = 当前（捕获解析到外层）。函数帧。 */
   CompilerScope *child = new CompilerScope;
+  child->is_function_scope = true;
   child->parent = scope_;
   scopes_.push_back(child);
   scope_ = child;
@@ -1018,13 +1036,13 @@ bool Compiler::compileClass(const ASTNode &node, bool is_declaration) {
   uint16_t base_slot = 0;
   if (base != nullptr) {
     if (!compileExpr(*base)) return false;
-    base_slot = scope_->next_slot++;
+    base_slot = functionScope()->next_slot++;
     builder_.store_var(base_slot);
   }
 
   /* 1. prototype 对象。 */
   builder_.new_object();
-  uint16_t proto_slot = scope_->next_slot++;
+  uint16_t proto_slot = functionScope()->next_slot++;
   builder_.store_var(proto_slot);
 
   /* 2. 编译构造器函数。
@@ -1410,8 +1428,9 @@ bool Compiler::emitStaticInit() {
   const std::vector<StaticElement> &elems =
       *static_cast<const std::vector<StaticElement> *>(current_static_elems_);
 
-  /* 建立 static_init 子函数作用域帧。 */
+  /* 建立 static_init 子函数作用域帧（函数帧）。 */
   CompilerScope *child = new CompilerScope;
+  child->is_function_scope = true;
   child->parent = scope_;
   scopes_.push_back(child);
   scope_ = child;
@@ -1539,7 +1558,10 @@ bool Compiler::emitStaticInit() {
 /* 解构编译（M5.1a）                                                          */
 /* -------------------------------------------------------------------------- */
 
-/* 预声明解构模式中的全部绑定名（声明语义：槽位分配稳定）。 */
+/* 预声明解构模式中的全部绑定名（声明语义：槽位分配稳定）。
+ * M5.5f：绑定名可能已是词法绑定（let/const 解构，declarePatternLexical
+ * 预先登记），此时 resolveLexical 命中——compileBindTarget 走 StoreLexical。
+ * 纯 var 解构走 declareLocal（函数槽）。 */
 bool Compiler::declarePatternBindings(const ASTNode &pattern) {
   if (pattern.type == NodeType::ObjectPattern) {
     for (const ASTNode *member : pattern.children) {
@@ -1589,6 +1611,61 @@ bool Compiler::declarePatternBindings(const ASTNode &pattern) {
   return false;
 }
 
+/* M5.5f：预声明解构模式中的全部绑定名为词法绑定（let/const 解构声明）。
+ * 递归遍历模式，Identifier 在块帧声明词法绑定（TDZ 占位），并发
+ * DeclareLexical 指令。与 declarePatternBindings 对应，但绑定到块环境。 */
+bool Compiler::declarePatternLexical(const ASTNode &pattern, bool is_const) {
+  if (pattern.type == NodeType::ObjectPattern) {
+    for (const ASTNode *member : pattern.children) {
+      if (member == nullptr) continue;
+      if (member->type == NodeType::SpreadElement) {
+        if (!member->children.empty() &&
+            !declarePatternLexical(*member->children[0], is_const))
+          return false;
+        continue;
+      }
+      if (member->type != NodeType::Property || member->children.empty()) {
+        return false;
+      }
+      const ASTNode *value =
+          member->children.size() >= 2 ? member->children[1] : member->children[0];
+      if (!declarePatternLexical(*value, is_const)) return false;
+    }
+    return true;
+  }
+  if (pattern.type == NodeType::ArrayPattern) {
+    for (const ASTNode *elem : pattern.children) {
+      if (elem == nullptr) continue;
+      if (elem->type == NodeType::SpreadElement) {
+        if (!elem->children.empty() &&
+            !declarePatternLexical(*elem->children[0], is_const))
+          return false;
+        continue;
+      }
+      if (!declarePatternLexical(*elem, is_const)) return false;
+    }
+    return true;
+  }
+  if (pattern.type == NodeType::Identifier) {
+    /* 词法声明（TDZ 占位）。 */
+    if (!declareLexical(pattern.name, is_const)) return false;
+    builder_.declare_lexical(pattern.name, is_const);
+    return true;
+  }
+  if (pattern.type == NodeType::AssignmentPattern) {
+    /* 默认值：绑定左侧目标（词法）。 */
+    if (!pattern.children.empty())
+      return declarePatternLexical(*pattern.children[0], is_const);
+    return false;
+  }
+  if (pattern.type == NodeType::RestElement) {
+    if (!pattern.children.empty())
+      return declarePatternLexical(*pattern.children[0], is_const);
+    return false;
+  }
+  return false;
+}
+
 /* 绑定单个目标（值已在栈顶）：
  *   Identifier      -> 声明 declareLocal/store 或赋值 resolveAssignTarget/store
  *   AssignmentPattern -> 默认值：undefined 时求默认表达式
@@ -1597,19 +1674,35 @@ bool Compiler::declarePatternBindings(const ASTNode &pattern) {
 bool Compiler::compileBindTarget(const ASTNode &target, bool is_declaration) {
   if (target.type == NodeType::Identifier) {
     if (is_declaration) {
-      uint16_t slot = declareLocal(target.name);
-      builder_.store_var(slot);
-      builder_.load_var(slot); /* 恢复绑定值到栈顶（外层 Pop 复用） */
+      /* M5.5f：声明绑定——词法绑定（let/const 已 declareLexical 登记）
+       * 走 InitLexical（解构声明是初始化语义，非赋值——const 绑定允许
+       * 初始写入，§13.15.5 BindingPattern 的 BindingInitialization）；
+       * var 走 declareLocal + StoreVar。
+       * InitLexical 弹栈消费值后 LoadLexical 恢复绑定值到栈顶。 */
+      if (resolveLexical(target.name)) {
+        builder_.init_lexical(target.name);
+        builder_.load_lexical(target.name); /* 恢复绑定值到栈顶 */
+      } else {
+        uint16_t slot = declareLocal(target.name);
+        builder_.store_var(slot);
+        builder_.load_var(slot); /* 恢复绑定值到栈顶（外层 Pop 复用） */
+      }
     } else {
       uint16_t slot = 0, capture = 0;
       bool is_upvalue = false;
       bool is_global = false;
-      if (!resolveAssignTarget(target.name, &slot, &capture, &is_upvalue)) {
+      bool is_lexical = false;
+      if (!resolveAssignTarget(target.name, &slot, &capture, &is_upvalue,
+                               &is_lexical)) {
         /* 解构赋值到未声明标识符（M5.1e-g）：非严格隐式全局。 */
         is_global = true;
       }
       if (is_global) {
         builder_.store_global(target.name); /* 保留绑定值在栈顶 */
+      } else if (is_lexical) {
+        /* M5.5f：解构赋值到词法绑定（let/const）。 */
+        builder_.store_lexical(target.name);
+        builder_.load_lexical(target.name); /* 保留绑定值在栈顶 */
       } else if (is_upvalue) {
         builder_.store_upvalue(capture);
         builder_.load_upvalue(capture); /* 保留绑定值在栈顶 */
@@ -1648,7 +1741,7 @@ bool Compiler::compileBindTarget(const ASTNode &target, bool is_declaration) {
   if (target.type == NodeType::ObjectPattern ||
       target.type == NodeType::ArrayPattern) {
     /* 嵌套模式：值暂存临时槽后递归，恢复源值到栈顶（外层 Pop 复用）。 */
-    uint16_t tmp = scope_->next_slot++;
+    uint16_t tmp = functionScope()->next_slot++;
     builder_.store_var(tmp);
     if (!compilePattern(target, tmp, is_declaration)) return false;
     builder_.load_var(tmp);
@@ -1669,7 +1762,7 @@ bool Compiler::compileBindTarget(const ASTNode &target, bool is_declaration) {
     const ASTNode *obj_expr = target.children[0];
     const bool computed = target.member.computed;
     const ASTNode *key_expr = computed ? target.children[1] : nullptr;
-    uint16_t t_val = scope_->next_slot++;
+    uint16_t t_val = functionScope()->next_slot++;
     builder_.store_var(t_val);
     int priv_idx = -1;
     std::string prop_name;
@@ -1728,7 +1821,7 @@ bool Compiler::compilePattern(const ASTNode &pattern, uint16_t src_slot,
           fail("invalid rest element");
           return false;
         }
-        uint16_t t_excl = scope_->next_slot++;
+        uint16_t t_excl = functionScope()->next_slot++;
         builder_.new_array();
         builder_.store_var(t_excl);
         for (const std::string &k : bound_keys) {
@@ -1739,7 +1832,7 @@ bool Compiler::compilePattern(const ASTNode &pattern, uint16_t src_slot,
           builder_.load_var(ks);
           builder_.append_elem(t_excl);
         }
-        uint16_t t_rest = scope_->next_slot++;
+        uint16_t t_rest = functionScope()->next_slot++;
         builder_.new_object();
         builder_.store_var(t_rest);
         builder_.load_var(src_slot);
@@ -1770,7 +1863,7 @@ bool Compiler::compilePattern(const ASTNode &pattern, uint16_t src_slot,
           fail("invalid computed key pattern member");
           return false;
         }
-        t_key = scope_->next_slot++;
+        t_key = functionScope()->next_slot++;
         builder_.load_var(src_slot);
         if (!compileExpr(*member->children[0])) return false;
         builder_.store_var(t_key);
@@ -1862,6 +1955,46 @@ bool Compiler::compileLoopLeft(const ASTNode *left) {
     return false;
   }
   if (left->type == NodeType::VariableDeclaration) {
+    const bool is_lex = left->varkind != VarKind::Var;
+    if (is_lex) {
+      /* M5.5f：词法 left（let/const 声明，§14.7.5.3/§14.7.4.3）。
+       * per-iteration 块环境已由循环函数（compileForOf/ForIn）压入，
+       * 此处声明 + 初始化（栈顶 = 当前迭代值）。每次迭代新环境，
+       * 闭包捕获各自迭代值（for (let x of arr) fns.push(()=>x) -> 各元素）。 */
+      const bool is_const = left->varkind == VarKind::Const;
+      for (const ASTNode *declarator : left->children) {
+        if (declarator == nullptr ||
+            declarator->type != NodeType::VariableDeclarator ||
+            declarator->children.empty()) {
+          fail("invalid for-in/of loop variable declaration");
+          return false;
+        }
+        const ASTNode *target = declarator->children[0];
+        if (target->type == NodeType::ObjectPattern ||
+            target->type == NodeType::ArrayPattern) {
+          /* 解构词法 left：for (const {a} of arr)。 */
+          if (!declarePatternLexical(*target, is_const)) return false;
+          uint16_t tmp = functionScope()->next_slot++;
+          builder_.store_var(tmp); /* 栈顶迭代值 -> 临时槽 */
+          if (!compilePattern(*target, tmp, /*is_declaration=*/true)) {
+            return false;
+          }
+          continue;
+        }
+        if (target->type != NodeType::Identifier) {
+          fail("invalid for-in/of loop variable declaration target");
+          return false;
+        }
+        if (!declareLexical(target->name, is_const)) {
+          fail("SyntaxError: Identifier '" + target->name +
+               "' has already been declared");
+          return false;
+        }
+        builder_.declare_lexical(target->name, is_const);
+        builder_.init_lexical(target->name); /* 栈顶迭代值 -> 绑定 */
+      }
+      return true;
+    }
     for (const ASTNode *declarator : left->children) {
       if (declarator == nullptr ||
           declarator->type != NodeType::VariableDeclarator ||
@@ -1874,7 +2007,7 @@ bool Compiler::compileLoopLeft(const ASTNode *left) {
           target->type == NodeType::ArrayPattern) {
         /* 声明解构：for (const {a} of arr)。预声明绑定名后解构。 */
         if (!declarePatternBindings(*target)) return false;
-        uint16_t tmp = scope_->next_slot++;
+        uint16_t tmp = functionScope()->next_slot++;
         builder_.store_var(tmp); /* 栈顶迭代值 -> 临时槽 */
         if (!compilePattern(*target, tmp, /*is_declaration=*/true)) {
           return false;
@@ -1897,12 +2030,17 @@ bool Compiler::compileLoopLeft(const ASTNode *left) {
     uint16_t capture = 0;
     bool is_upvalue = false;
     bool is_global = false;
-    if (!resolveAssignTarget(left->name, &slot, &capture, &is_upvalue)) {
+    bool is_lexical = false;
+    if (!resolveAssignTarget(left->name, &slot, &capture, &is_upvalue,
+                             &is_lexical)) {
       is_global = true;
     }
     if (is_global) {
       builder_.store_global(left->name); /* 保留新值在栈顶 */
       builder_.pop();                    /* 循环 left：消费迭代值 */
+    } else if (is_lexical) {
+      /* M5.5f：for-of/in 赋值到词法绑定（let/const）。 */
+      builder_.store_lexical(left->name);
     } else if (is_upvalue) {
       builder_.store_upvalue(capture);
     } else {
@@ -1913,7 +2051,7 @@ bool Compiler::compileLoopLeft(const ASTNode *left) {
   if (left->type == NodeType::ObjectPattern ||
       left->type == NodeType::ArrayPattern) {
     /* 赋值解构：for ({a} of arr) / for ({a} in obj)。 */
-    uint16_t tmp = scope_->next_slot++;
+    uint16_t tmp = functionScope()->next_slot++;
     builder_.store_var(tmp);
     if (!compilePattern(*left, tmp, /*is_declaration=*/false)) return false;
     /* compilePattern 内部已按元素 Pop 清栈，无需再 Pop。 */
@@ -1934,7 +2072,7 @@ bool Compiler::compileLoopLeft(const ASTNode *left) {
     const bool computed = left->member.computed;
     const ASTNode *key_expr = computed ? left->children[1] : nullptr;
     /* 栈顶迭代值暂存。 */
-    uint16_t t_val = scope_->next_slot++;
+    uint16_t t_val = functionScope()->next_slot++;
     builder_.store_var(t_val);
     /* 私有字段 left：obj.#x（合法：for (o.#x of arr)）。 */
     int priv_idx = -1;
@@ -1985,8 +2123,17 @@ bool Compiler::compileSpreadArgs(const std::vector<const ASTNode *> &args,
   return true;
 }
 
-/* 变量声明：每个声明器分配局部槽 + 编译初始化表达式（声明值 = undefined）。 */
+/* 变量声明（M5.5f 分派）：
+ *   var    -> 函数帧槽（declareLocal），初始化 StoreVar（值=undefined 兜底）。
+ *   let/const -> 词法绑定（当前块环境）：
+ *     - 声明前 PushBlockEnv（若所在块尚未 push——compileBlock/for 头负责）
+ *     - DeclareLexical（TDZ 占位）
+ *     - 初始化表达式求值 -> InitLexical（写值清 TDZ）
+ *   let/const 未初始化：TDZ 保持（不填 undefined），访问抛 ReferenceError。
+ * 注意：let/const 的 PushBlockEnv 由外层 compileBlock/循环头发射，此处只
+ * 发射 Declare+Init（块环境已存在）。 */
 bool Compiler::compileVarDecl(const ASTNode &decl) {
+  const bool is_lex = decl.varkind != VarKind::Var;
   for (const ASTNode *declarator : decl.children) {
     if (declarator == nullptr || declarator->type != NodeType::VariableDeclarator) {
       fail("invalid variable declarator");
@@ -1997,21 +2144,73 @@ bool Compiler::compileVarDecl(const ASTNode &decl) {
         target->type == NodeType::ArrayPattern) {
       /* 解构声明（M5.1a）：先声明所有绑定名，再编译 init 并解构。
        * 无 init 的解构声明非法（Parser 已对 const 校验；var/let 缺省
-       * 语义为解构 undefined，本阶段直接报错）。 */
+       * 语义为解构 undefined，本阶段直接报错）。
+       * M5.5f：let/const 解构 —— 词法声明 + Init；var 解构 —— 函数槽。 */
       if (declarator->children.size() < 2) {
         fail("destructuring declaration requires initializer");
         return false;
       }
-      /* 预声明绑定名（保证槽位分配稳定）。 */
-      if (!declarePatternBindings(*target)) return false;
-      if (!compileExpr(*declarator->children[1])) return false;
-      uint16_t tmp = scope_->next_slot++;
-      builder_.store_var(tmp);
-      if (!compilePattern(*target, tmp, /*is_declaration=*/true)) return false;
+      if (is_lex) {
+        /* 词法解构：预声明绑定名（TDZ 占位，DeclareLexical），求值 init，
+         * 解构写入（compilePattern 的 Identifier 命中 resolveLexical 走
+         * StoreLexical）。
+         * M5.5f TDZ：解构语句已在 compileBlock 预声明（predeclarePattern
+         * 建立占位 + 记入 predeclared）时跳过重复登记/发射（避免误报重名）。 */
+        if (scope_ == nullptr || scope_->is_function_scope ||
+            !patternPredeclared(*target)) {
+          if (!declarePatternLexical(*target, decl.varkind == VarKind::Const)) {
+            return false;
+          }
+        }
+        if (!compileExpr(*declarator->children[1])) return false;
+        uint16_t tmp = functionScope()->next_slot++;
+        builder_.store_var(tmp);
+        if (!compilePattern(*target, tmp, /*is_declaration=*/true)) return false;
+      } else {
+        /* 预声明绑定名（保证槽位分配稳定）。 */
+        if (!declarePatternBindings(*target)) return false;
+        if (!compileExpr(*declarator->children[1])) return false;
+        uint16_t tmp = functionScope()->next_slot++;
+        builder_.store_var(tmp);
+        if (!compilePattern(*target, tmp, /*is_declaration=*/true)) return false;
+      }
       continue;
     }
     if (target->type != NodeType::Identifier) {
       fail("invalid variable declarator target");
+      return false;
+    }
+    if (is_lex) {
+      /* let/const 词法绑定：DeclareLexical（TDZ）+ [init] InitLexical。
+       * M5.5f TDZ：绑定可能已在 compileBlock 预声明（块开头 DeclareLexical
+       * 已建立 TDZ 占位 + 记入 predeclared）。此时跳过 declareLexical 登记
+       * （避免误报重名）与 declare_lexical 发射（占位已建），只发射 init。
+       * 真重名（{ let a; let a; }）——声明处 declareLexical 返回 false。 */
+      const bool predeclared =
+          scope_ != nullptr && !scope_->is_function_scope &&
+          scope_->predeclared.count(target->name) != 0;
+      if (!predeclared) {
+        if (!declareLexical(target->name, decl.varkind == VarKind::Const)) {
+          fail("SyntaxError: Identifier '" + target->name +
+               "' has already been declared");
+          return false;
+        }
+        builder_.declare_lexical(target->name, decl.varkind == VarKind::Const);
+      }
+      if (declarator->children.size() >= 2) {
+        if (!compileExpr(*declarator->children[1])) return false;
+        builder_.init_lexical(target->name);
+      }
+      /* const 无 init：Parser 已校验（const 必须初始化）。
+       * let 无 init：保持 TDZ（不 Init）。 */
+      continue;
+    }
+    /* M5.5f：块内 var 与同块 let/const 重名 -> SyntaxError（§13.3.1.1
+     * VarDeclaredNames ∩ LexicallyDeclaredNames）。var 提升到函数作用域，
+     * 但声明处的块内已有词法绑定则冲突。 */
+    if (hasLexicalInChain(target->name)) {
+      fail("SyntaxError: Identifier '" + target->name +
+           "' has already been declared");
       return false;
     }
     uint16_t slot = declareLocal(target->name);
@@ -2080,11 +2279,78 @@ bool Compiler::compileStmt(const ASTNode &node) {
 }
 
 bool Compiler::compileBlock(const ASTNode &node) {
-  /* 块语句：逐条编译（值均丢弃）。本阶段不引入新作用域。 */
+  /* 块语句：逐条编译（值均丢弃）。
+   * M5.5f 块作用域：块含 let/const 时引入块作用域（PushBlockEnv 创建
+   * 块环境承载词法绑定；退出时 PopBlockEnv 弹回）。不含 let/const 的
+   * 块不压块帧（编译期 depth 与运行时环境节点数一一对应）。
+   * 顶层块（无外层块帧）也可含 let/const：由 compile() 发射的顶层
+   * PushBlockEnv 承载（见 compile）。 */
+  bool has_lexical = false;
+  for (const ASTNode *stmt : node.children) {
+    if (stmt == nullptr) continue;
+    if (stmt->type == NodeType::VariableDeclaration &&
+        stmt->varkind != VarKind::Var) {
+      has_lexical = true;
+      break;
+    }
+  }
+  if (!has_lexical) {
+    for (const ASTNode *stmt : node.children) {
+      if (stmt == nullptr) continue;
+      if (!compileStmt(*stmt)) return false;
+    }
+    return true;
+  }
+  /* 含 let/const：引入块作用域帧 + PushBlockEnv。 */
+  const uint16_t enter_depth = blockScopeDepth(); /* 进入本块前块环境层数 */
+  enterBlockScope();
+  builder_.push_block_env();
+  /* M5.5f TDZ：预声明本块直接子语句的全部 let/const 绑定名（含解构展开）
+   * 到块帧 + 发射 DeclareLexical（块开头建立全部 TDZ 占位）——块内任何
+   * 位置的读取/赋值都能解析为词法绑定（LoadLexical/StoreLexical），运行时
+   * isUninitialized 抛 TDZ ReferenceError。
+   * 预声明名记入 scope_->predeclared：声明处 compileVarDecl 见绑定已
+   * 预声明时跳过 declareLexical 登记（避免误报重名），只发射 InitLexical。
+   * 重名检测（{ let a; let a; } SyntaxError）在此阶段完成——后一声明处
+   * declareLexical 见同名已登记（含 predeclared）返回 false。
+   * 注意：嵌套块（子 BlockStatement）的 let 不属本块，其预声明由内层
+   * compileBlock 递归处理，此处不越界登记。 */
+  for (const ASTNode *stmt : node.children) {
+    if (stmt == nullptr || stmt->type != NodeType::VariableDeclaration ||
+        stmt->varkind == VarKind::Var) {
+      continue;
+    }
+    const bool is_const = stmt->varkind == VarKind::Const;
+    for (const ASTNode *declarator : stmt->children) {
+      if (declarator == nullptr ||
+          declarator->type != NodeType::VariableDeclarator ||
+          declarator->children.empty()) {
+        continue;
+      }
+      const ASTNode *target = declarator->children[0];
+      if (target->type == NodeType::ObjectPattern ||
+          target->type == NodeType::ArrayPattern) {
+        if (!predeclarePattern(*target, is_const)) {
+          fail("SyntaxError: Identifier has already been declared");
+          return false;
+        }
+      } else if (target->type == NodeType::Identifier) {
+        if (!predeclareLexical(target->name, is_const)) {
+          fail("SyntaxError: Identifier '" + target->name +
+               "' has already been declared");
+          return false;
+        }
+      }
+    }
+  }
   for (const ASTNode *stmt : node.children) {
     if (stmt == nullptr) continue;
     if (!compileStmt(*stmt)) return false;
   }
+  /* M5.5f：弹回进入本块前的块环境层数（含外层块环境——顶层块在链上
+   * 不可误弹）。pop_block_env(enter_depth) 只弹本块引入的环境。 */
+  builder_.pop_block_env(enter_depth);
+  exitBlockScope();
   return true;
 }
 
@@ -2135,6 +2401,7 @@ bool Compiler::compileWhile(const ASTNode &node, const std::string &label) {
   ctx.break_label = end_label;
   ctx.continue_label = loop_label;
   ctx.is_loop = true;
+  ctx.block_env_depth = blockScopeDepth(); /* M5.5f：进入时块环境层数 */
   loops_.push_back(ctx);
   bool ok = compileStmt(*node.children[1]);
   loops_.pop_back();
@@ -2175,6 +2442,7 @@ bool Compiler::compileDoWhile(const ASTNode &node, const std::string &label) {
   ctx.break_label = end_label;
   ctx.continue_label = loop_label;
   ctx.is_loop = true;
+  ctx.block_env_depth = blockScopeDepth(); /* M5.5f：进入时块环境层数 */
   loops_.push_back(ctx);
   bool ok = compileStmt(*node.children[0]);
   loops_.pop_back();
@@ -2196,19 +2464,68 @@ bool Compiler::compileFor(const ASTNode &node, const std::string &label) {
    * update_label:
    *   [update]      （可空）
    *   Jump loop_label
-   * end_label: */
+   * end_label:
+   *
+   * M5.5f 块作用域（for 头 let/const，§14.7.4.2）：
+   *   for (let i = 0; cond; update) 的 let 声明在循环头块环境中。
+   *   每次迭代创建新块环境（per-iteration bindings）——闭包捕获各迭代
+   *   独立值（fns[0]=0, fns[1]=1, fns[2]=2，§13.7.4.8）。
+   *   布局（替换式 per-iter，链上恒 head + 最新迭代环境，绝对深度有效）：
+   *     PushBlockEnv（循环头块环境 head，承载 let 初始值）
+   *     [init]                          （declare_lexical + init，head 块帧）
+   *     enterBlockScope()               （per-iter 块帧，body 编译期间保持）
+   *   loop_label:
+   *     [cond] JumpIfFalse end          （读链头 = head 或上一迭代环境）
+   *     [body]                          （闭包捕获链头环境，i = 迭代进入值）
+   *   update_label:
+   *     [LoadLexical b1..bN 当前值]     （读链头 = head 或上一迭代环境）
+   *     PopBlockEnv(enter_depth+1)      （弹回 head，丢弃旧迭代环境——脱离
+   *                                      链但被闭包引用保活，GC 沿 parent 标记）
+   *     PushBlockEnv                    （下迭代环境，parent = head）
+   *     declare_lexical b1..; init_lexical bN..b1 （倒序 Init 配对栈顶）
+   *     [update]                        （在下迭代环境上执行，写新环境绑定——
+   *                                      闭包捕获的旧环境不被修改）
+   *     Jump loop_label
+   *   end_label:
+   *     PopBlockEnv(enter_depth)        （弹 head + 最新迭代环境）
+   *     exitBlockScope() x2             （per-iter + head 块帧） */
   if (node.children.size() < 4) {
     fail("for without clauses");
     return false;
   }
+  const ASTNode *init = node.children[0];
+  const bool init_is_lex =
+      init != nullptr && init->type == NodeType::VariableDeclaration &&
+      init->varkind != VarKind::Var;
+  const uint16_t enter_depth = blockScopeDepth();
+  /* 循环头块环境（for 头 let/const 承载）。 */
+  std::vector<LexicalBinding> head_bindings;
+  if (init_is_lex) {
+    enterBlockScope();
+    builder_.push_block_env();
+  }
   /* init */
-  if (node.children[0] != nullptr) {
-    if (node.children[0]->type == NodeType::VariableDeclaration) {
-      if (!compileVarDecl(*node.children[0])) return false;
+  if (init != nullptr) {
+    if (init->type == NodeType::VariableDeclaration) {
+      if (!compileVarDecl(*init)) return false;
     } else {
       /* init 表达式：求值后丢弃。 */
-      if (!compileExpr(*node.children[0])) return false;
+      if (!compileExpr(*init)) return false;
       builder_.pop();
+    }
+  }
+  if (init_is_lex) {
+    /* 收集循环头词法绑定名（head 块帧 block_bindings），供 per-iter 复制。 */
+    head_bindings = scope_->block_bindings;
+    /* per-iter 块帧：body/cond/update 编译期间保持，使编译期 blockScopeDepth
+     * 与运行时链（head + 迭代环境）一致——闭包捕获 depth 命中迭代环境。
+     * 立即声明 head_bindings（编译期登记，不发射指令）：body 内闭包解析
+     * 循环头绑定命中 per-iter 块帧（depth=0），运行时命中闭包捕获的链头
+     * 环境（head 或迭代环境）——若留到 update_label 才声明，body 闭包会
+     * 解析到外层 head 块帧（depth 偏大），运行时跳过头环境读不到绑定。 */
+    enterBlockScope();
+    for (const LexicalBinding &b : head_bindings) {
+      declareLexical(b.name, b.is_const);
     }
   }
   BcLabel loop_label = builder_.new_label();
@@ -2226,19 +2543,54 @@ bool Compiler::compileFor(const ASTNode &node, const std::string &label) {
   ctx.break_label = end_label;
   ctx.continue_label = update_label;
   ctx.is_loop = true;
+  ctx.block_env_depth = enter_depth; /* M5.5f：跳出弹回循环头环境外 */
   loops_.push_back(ctx);
   bool body_ok =
       (node.children[3] == nullptr) || compileStmt(*node.children[3]);
   loops_.pop_back();
   if (!body_ok) return false;
-  /* update */
+  /* update：continue 跳此处。先创建「下迭代环境」（复制链头当前值，弹回
+   * head 丢弃旧迭代环境——闭包捕获保活），然后 update 表达式在**新环境**
+   * 上执行——修改新环境绑定，闭包捕获的旧环境（body 用）不被修改，
+   * 闭包读到各自迭代进入时的值（fns[0]=0, fns[1]=1, fns[2]=2）。
+   * 发射：
+   *   [LoadLexical b1..bN 当前值]     （读链头 = head 或上一迭代环境）
+   *   PopBlockEnv(enter_depth+1)      （弹回 head，旧迭代环境脱离链保活）
+   *   PushBlockEnv                    （下迭代环境，parent = head）
+   *   declare_lexical b1..; init_lexical bN..b1 （倒序 Init 配对栈顶）
+   *   [update]                        （在下迭代环境上执行，写新环境绑定）
+   *   Jump loop_label */
   builder_.bind_label(update_label);
+  if (init_is_lex) {
+    /* 读链头绑定值（head 或上一迭代环境）。 */
+    for (const LexicalBinding &b : head_bindings) {
+      builder_.load_lexical(b.name);
+    }
+    /* 弹回 head（丢弃旧迭代环境，脱离链但闭包保活）。 */
+    builder_.pop_block_env(enter_depth + 1);
+    /* 下迭代块环境（parent = head）。绑定已编译期登记（per-iter 块帧），
+     * 此处只发射运行时声明指令。 */
+    builder_.push_block_env();
+    for (const LexicalBinding &b : head_bindings) {
+      builder_.declare_lexical(b.name, b.is_const);
+    }
+    /* 倒序 Init（栈顶 = 最后 Load 的值）。 */
+    for (auto it = head_bindings.rbegin(); it != head_bindings.rend(); ++it) {
+      builder_.init_lexical(it->name);
+    }
+  }
   if (node.children[2] != nullptr) {
     if (!compileExpr(*node.children[2])) return false;
     builder_.pop(); /* update 值丢弃 */
   }
   builder_.jump(&loop_label);
   builder_.bind_label(end_label);
+  if (init_is_lex) {
+    /* 循环结束：弹 head + 最新迭代环境，弹回循环外。 */
+    builder_.pop_block_env(enter_depth);
+    exitBlockScope(); /* per-iter 块帧 */
+    exitBlockScope(); /* head 块帧 */
+  }
   return true;
 }
 
@@ -2281,6 +2633,14 @@ bool Compiler::compileForOf(const ASTNode &node, const std::string &label) {
   const ASTNode *right = node.children[1];
   const ASTNode *body = node.children[2];
   const bool is_await = node.is_await;
+
+  /* M5.5f：for-of 词法 left（let/const 声明）。right 求值在循环外
+   * （TDZ 外，读外层同名变量）；每次迭代创建 per-iteration 块环境
+   * 承载绑定（§14.7.5.3），循环结束统一弹回进入深度。 */
+  const bool left_is_lex =
+      left != nullptr && left->type == NodeType::VariableDeclaration &&
+      left->varkind != VarKind::Var;
+  const uint16_t enter_depth = blockScopeDepth();
 
   if (is_await) {
     /* for await...of（M5.5c-2，§14.7.5.4）。
@@ -2343,6 +2703,13 @@ bool Compiler::compileForOf(const ASTNode &node, const std::string &label) {
   builder_.iterator_step();
   builder_.jump_if_true(&end_label); /* done true -> 结束循环 */
 
+  /* M5.5f：词法 left 的 per-iteration 块环境（栈顶 = 当前迭代值）。
+   * 每次迭代压新环境（闭包捕获各自迭代值），循环结束统一弹回。 */
+  if (left_is_lex) {
+    enterBlockScope(); /* per-iter 块帧 */
+    builder_.push_block_env();
+  }
+
   /* left 赋值：栈顶是当前迭代 value（M5.1e-d 支持解构/成员 left）。 */
   if (!compileLoopLeft(left)) return false;
 
@@ -2355,6 +2722,7 @@ bool Compiler::compileForOf(const ASTNode &node, const std::string &label) {
   ctx.break_label = break_label;
   ctx.continue_label = loop_label;
   ctx.is_loop = true;
+  ctx.block_env_depth = enter_depth; /* M5.5f：break 弹回循环外 */
   loops_.push_back(ctx);
   bool body_ok = (body == nullptr) || compileStmt(*body);
   loops_.pop_back();
@@ -2368,18 +2736,22 @@ bool Compiler::compileForOf(const ASTNode &node, const std::string &label) {
    * Pop 清残留 undefined，跳过 finally 直接到 after。 */
   builder_.bind_label(end_label);
   builder_.pop(); /* 清完成路径残留 value */
+  if (left_is_lex) builder_.pop_block_env(enter_depth); /* 弹 per-iter + 循环外 */
   builder_.jump(&after_label);
 
-  /* break_label：break 跳此处（无 pending），fall through 到 finally。 */
+  /* break_label：break 跳此处（无 pending），fall through 到 finally。
+   * break 路径 compileBreak 已弹块环境到 enter_depth（ctx.block_env_depth）。 */
   builder_.bind_label(break_label);
 
   /* finally_label：IteratorClose。break 与异常路径汇聚于此。
    * IteratorClose 读帧 pending 状态：break 路径无 pending（normal completion，
    *   调 iterator.return() 关闭）；异常路径有 pending（abrupt completion，
    *   close 后 RethrowPending 重抛原异常）。
-   * 注：正常完成路径已 Jump after 跳过此块。 */
+   * 注：正常完成路径已 Jump after 跳过此块。
+   * M5.5f：异常路径跳 finally 时 per-iter 块环境残留，先弹回循环外。 */
   builder_.bind_label(finally_label);
   entry.finally_start = static_cast<uint32_t>(builder_.position());
+  if (left_is_lex) builder_.pop_block_env(enter_depth);
   builder_.load_var(iter_tmp);
   builder_.iterator_close();
   builder_.pop(); /* close 压回 undefined 占位，弹出 */
@@ -2388,6 +2760,7 @@ bool Compiler::compileForOf(const ASTNode &node, const std::string &label) {
 
   /* after_label：所有路径汇聚点。 */
   builder_.bind_label(after_label);
+  if (left_is_lex) exitBlockScope(); /* per-iter 块帧退出（循环编译结束） */
 
   /* 注册异常表（无 catch，仅 finally）。 */
   builder_.add_try_entry(std::move(entry));
@@ -2404,7 +2777,13 @@ bool Compiler::compileAsyncForOf(const ASTNode &node, const ASTNode *left,
    *     IteratorResultToValueDone（结果对象转 [value,done]）代替 IteratorStep；
    *   - finally 用 AsyncIteratorClose + Await + Pop 代替 IteratorClose + Pop。
    * Await 依赖 frame.self 非空：for await 只能在 async/async generator
-   * 函数中（前端 parser_stmt.cc 已保证），async 调用入口设置 self。 */
+   * 函数中（前端 parser_stmt.cc 已保证），async 调用入口设置 self。
+   * M5.5f：词法 left（let/const）per-iteration 绑定，同同步版。 */
+  const bool left_is_lex =
+      left != nullptr && left->type == NodeType::VariableDeclaration &&
+      left->varkind != VarKind::Var;
+  const uint16_t enter_depth = blockScopeDepth();
+
   if (!compileExpr(*right)) return false;
   builder_.get_async_iterator();
 
@@ -2428,6 +2807,12 @@ bool Compiler::compileAsyncForOf(const ASTNode &node, const ASTNode *left,
   builder_.iterator_result_to_value_done(); /* -> [value, done] */
   builder_.jump_if_true(&end_label);        /* done true -> 结束循环 */
 
+  /* M5.5f：词法 left 的 per-iteration 块环境（栈顶 = 当前迭代值）。 */
+  if (left_is_lex) {
+    enterBlockScope(); /* per-iter 块帧 */
+    builder_.push_block_env();
+  }
+
   if (!compileLoopLeft(left)) return false;
 
   LoopContext ctx;
@@ -2435,6 +2820,7 @@ bool Compiler::compileAsyncForOf(const ASTNode &node, const ASTNode *left,
   ctx.break_label = break_label;
   ctx.continue_label = loop_label;
   ctx.is_loop = true;
+  ctx.block_env_depth = enter_depth; /* M5.5f：break 弹回循环外 */
   loops_.push_back(ctx);
   bool body_ok = (body == nullptr) || compileStmt(*body);
   loops_.pop_back();
@@ -2446,13 +2832,16 @@ bool Compiler::compileAsyncForOf(const ASTNode &node, const ASTNode *left,
   /* 正常完成路径：迭代器自然 done，不 close。 */
   builder_.bind_label(end_label);
   builder_.pop();
+  if (left_is_lex) builder_.pop_block_env(enter_depth); /* 弹 per-iter */
   builder_.jump(&after_label);
 
   builder_.bind_label(break_label);
 
-  /* finally：AsyncIteratorClose + Await（break/异常路径）。 */
+  /* finally：AsyncIteratorClose + Await（break/异常路径）。
+   * M5.5f：异常路径跳 finally 时 per-iter 块环境残留，先弹回循环外。 */
   builder_.bind_label(finally_label);
   entry.finally_start = static_cast<uint32_t>(builder_.position());
+  if (left_is_lex) builder_.pop_block_env(enter_depth);
   builder_.load_var(iter_tmp);
   builder_.async_iterator_close(); /* -> 结果 promise */
   builder_.await();                /* 挂起/恢复（return() 结果） */
@@ -2461,6 +2850,7 @@ bool Compiler::compileAsyncForOf(const ASTNode &node, const ASTNode *left,
   entry.finally_end = static_cast<uint32_t>(builder_.position());
 
   builder_.bind_label(after_label);
+  if (left_is_lex) exitBlockScope(); /* per-iter 块帧退出 */
   builder_.add_try_entry(std::move(entry));
   return true;
 }
@@ -2492,6 +2882,13 @@ bool Compiler::compileForIn(const ASTNode &node, const std::string &label) {
   const ASTNode *right = node.children[1];
   const ASTNode *body = node.children[2];
 
+  /* M5.5f：for-in 词法 left（let/const 声明）。每次迭代 per-iteration
+   * 块环境承载绑定（§14.7.4.4），循环结束统一弹回进入深度。 */
+  const bool left_is_lex =
+      left != nullptr && left->type == NodeType::VariableDeclaration &&
+      left->varkind != VarKind::Var;
+  const uint16_t enter_depth = blockScopeDepth();
+
   /* 枚举对象求值。 */
   if (!compileExpr(*right)) return false;
   builder_.enumerate_keys();
@@ -2510,6 +2907,12 @@ bool Compiler::compileForIn(const ASTNode &node, const std::string &label) {
   builder_.dup();
   builder_.jump_if_undefined(&end_label); /* 键 undefined -> 结束 */
 
+  /* M5.5f：词法 left 的 per-iteration 块环境（栈顶 = 当前枚举键）。 */
+  if (left_is_lex) {
+    enterBlockScope(); /* per-iter 块帧 */
+    builder_.push_block_env();
+  }
+
   /* left 赋值：栈顶是当前枚举键（M5.1e-d 支持解构/成员 left）。 */
   if (!compileLoopLeft(left)) return false;
 
@@ -2521,6 +2924,7 @@ bool Compiler::compileForIn(const ASTNode &node, const std::string &label) {
   ctx.break_label = break_label;
   ctx.continue_label = loop_label;
   ctx.is_loop = true;
+  ctx.block_env_depth = enter_depth; /* M5.5f：break 弹回循环外 */
   loops_.push_back(ctx);
   bool ok = (body == nullptr) || compileStmt(*body);
   loops_.pop_back();
@@ -2529,7 +2933,9 @@ bool Compiler::compileForIn(const ASTNode &node, const std::string &label) {
   builder_.jump(&loop_label);
   builder_.bind_label(end_label);
   builder_.pop(); /* 清结束路径残留 undefined */
+  if (left_is_lex) builder_.pop_block_env(enter_depth); /* 弹 per-iter */
   builder_.bind_label(break_label);
+  if (left_is_lex) exitBlockScope(); /* per-iter 块帧退出（循环编译结束） */
   return true;
 }
 
@@ -2560,6 +2966,7 @@ bool Compiler::compileLabeled(const ASTNode &node) {
   ctx.label = node.name;
   ctx.break_label = end_label;
   ctx.is_loop = false; /* continue label 无效 */
+  ctx.block_env_depth = blockScopeDepth(); /* M5.5f：标签体内块环境跳出清理 */
   loops_.push_back(ctx);
   bool ok = compileStmt(*body);
   loops_.pop_back();
@@ -2577,19 +2984,30 @@ bool Compiler::compileBreak(const ASTNode &node) {
     fail("illegal break statement");
     return false;
   }
+  /* M5.5f：跳出循环/标签须弹回进入时的块环境层数（循环体/标签体内的
+   * let 块环境在跳出时清理）。先弹块环境再跳转（Pop 在跳转前发射，
+   * 目标处 env 链正确）。 */
+  LoopContext *ctx = nullptr;
   if (node.name.empty()) {
     /* 无标签：跳最近上下文（循环或标签）的 break_label。 */
-    builder_.jump(&loops_.back().break_label);
-    return true;
-  }
-  for (auto it = loops_.rbegin(); it != loops_.rend(); ++it) {
-    if (it->label == node.name) {
-      builder_.jump(&it->break_label);
-      return true;
+    ctx = &loops_.back();
+  } else {
+    for (auto it = loops_.rbegin(); it != loops_.rend(); ++it) {
+      if (it->label == node.name) {
+        ctx = &*it;
+        break;
+      }
     }
   }
-  fail("undefined label '" + node.name + "'");
-  return false;
+  if (ctx == nullptr) {
+    fail("undefined label '" + node.name + "'");
+    return false;
+  }
+  if (blockScopeDepth() > ctx->block_env_depth) {
+    builder_.pop_block_env(ctx->block_env_depth);
+  }
+  builder_.jump(&ctx->break_label);
+  return true;
 }
 
 bool Compiler::compileContinue(const ASTNode &node) {
@@ -2597,34 +3015,58 @@ bool Compiler::compileContinue(const ASTNode &node) {
    * 无标签：跳最近循环的 continue_label。
    * 有标签：沿 loops_ 找匹配的循环标签，跳其 continue_label。
    * 无标签且无循环 -> 非法；有标签但指向非循环 -> 非法（§14.8.2 步骤 2）。 */
+  /* M5.5f：continue 跳出循环体块环境（弹回进入时的层数）。 */
+  LoopContext *ctx = nullptr;
   if (node.name.empty()) {
     for (auto it = loops_.rbegin(); it != loops_.rend(); ++it) {
       if (it->is_loop) {
-        builder_.jump(&it->continue_label);
-        return true;
+        ctx = &*it;
+        break;
       }
     }
-    fail("illegal continue statement");
-    return false;
-  }
-  for (auto it = loops_.rbegin(); it != loops_.rend(); ++it) {
-    if (it->label == node.name) {
-      if (!it->is_loop) {
-        fail("continue to non-loop label '" + node.name + "'");
-        return false;
+    if (ctx == nullptr) {
+      fail("illegal continue statement");
+      return false;
+    }
+  } else {
+    for (auto it = loops_.rbegin(); it != loops_.rend(); ++it) {
+      if (it->label == node.name) {
+        if (!it->is_loop) {
+          fail("continue to non-loop label '" + node.name + "'");
+          return false;
+        }
+        ctx = &*it;
+        break;
       }
-      builder_.jump(&it->continue_label);
-      return true;
+    }
+    if (ctx == nullptr) {
+      fail("undefined label '" + node.name + "'");
+      return false;
     }
   }
-  fail("undefined label '" + node.name + "'");
-  return false;
+  if (blockScopeDepth() > ctx->block_env_depth) {
+    builder_.pop_block_env(ctx->block_env_depth);
+  }
+  builder_.jump(&ctx->continue_label);
+  return true;
 }
 
 bool Compiler::compileReturn(const ASTNode &node) {
   /* return [expr]
    *   [expr]        （可空 -> undefined）
-   *   Ret */
+   *   Ret
+   * M5.5f：return 跳出函数，弹回全部块环境（0 层）——块内 let 环境
+   * 在函数返回时清理。注意：return 在 try 内时，finally 需在块环境
+   * 弹出后执行？规范：return completion 先穿透 finally，finally 内
+   * 仍可见块 let（finally 在块作用域内）。故弹回目标 = 当前 try 所在
+   * 块之外？——简化：return 弹回 0 层会在 finally 执行时丢失块环境。
+   * 但本引擎 try 编译中 finally 块也在同一帧，return 直接 Ret 时
+   * tryDispatch 拦截 return completion 跳 finally——块 env 弹出会让
+   * finally 内 let 访问失败。
+   * 处理：return 不主动弹块环境（Ret 后帧结束，EnvRootGuard 清理根集），
+   * finally 内的 let 仍可见；帧退出后块 env 无引用被 GC。
+   * 但 break/continue 需要弹（循环体块 env 在迭代间残留会累积）。
+   * return 走 Ret，帧结束即清理，无需显式 Pop。 */
   if (node.children.empty()) {
     builder_.push_op(Opcode::PushUndefined);
   } else if (!compileExpr(*node.children[0])) {
@@ -2690,6 +3132,11 @@ bool Compiler::compileTry(const ASTNode &node) {
   const bool has_catch = catch_clause != nullptr;
   const bool has_finally = finally_block != nullptr;
 
+  /* M5.5f：进入 try 前的块环境深度。try 区间内（含嵌套块/循环头）创建的
+   * 块环境在异常/return 跳转时残留在 env 链上，catch/finally handler 入口
+   * 须 PopBlockEnv 弹回该深度（try 未创建块环境时是 no-op）。 */
+  const uint16_t enter_depth = blockScopeDepth();
+
   /* 异常表条目（区间在编译后回填位置）。 */
   TryEntry entry;
   uint16_t catch_slot = TryEntry::kNoCatchSlot;
@@ -2718,10 +3165,19 @@ bool Compiler::compileTry(const ASTNode &node) {
     builder_.bind_label(catch_start);
     entry.catch_start = static_cast<uint32_t>(builder_.position());
 
+    /* M5.5f：异常跳转残留块环境清理（try 区间内创建的块环境）。
+     * 在 catch 参数绑定前 Pop——catch 参数/块须在干净的 env 链上。 */
+    builder_.pop_block_env(enter_depth);
+
     /* catch 参数绑定：VM 捕获时已把异常值写入 catch_slot。
      * 标识符参数：槽即绑定（VM 直接写栈底局部槽）。
      * 解构参数：分配临时槽存异常值，再编译模式绑定。
-     * ES2019 catch{}（无参数）：children 只有块体，不绑定参数。 */
+     * ES2019 catch{}（无参数）：children 只有块体，不绑定参数。
+     * M5.5f：catch 参数是块级词法绑定（let 语义，§14.15.3）——catch
+     * 参数遮蔽外层同名绑定，且不入函数局部槽。但 VM 异常捕获把异常值
+     * 写入 catch_slot（栈底局部槽）。v1 简化：参数仍走函数局部槽
+     * （VM 直接写槽最简洁，且 catch 参数与函数 var/参数重名冲突由
+     * parser 校验）。catch 块体编译时该名字按局部 var 解析。 */
     if (catch_clause->children.size() >= 2) {
       const ASTNode *param = catch_clause->children[0];
       if (param->type == NodeType::Identifier) {
@@ -2752,6 +3208,10 @@ bool Compiler::compileTry(const ASTNode &node) {
   if (has_finally) {
     builder_.bind_label(finally_entry);
     entry.finally_start = static_cast<uint32_t>(builder_.position());
+
+    /* M5.5f：同 catch，弹回进入深度（try 区间残留块环境清理）。
+     * 正常完成路径（jump finally_entry）与异常路径在此汇聚，统一清理。 */
+    builder_.pop_block_env(enter_depth);
 
     if (!compileBlock(*finally_block)) return false;
 
@@ -2975,7 +3435,7 @@ bool Compiler::objectKeyToString(const ASTNode *key, std::string *out) {
  * 简写 {b}：值 = 读 b（emitLoadIdentifier）。 */
 bool Compiler::compileObjectLiteral(const ASTNode &node) {
   builder_.new_object();
-  uint16_t tmp = scope_->next_slot++;
+  uint16_t tmp = functionScope()->next_slot++;
   builder_.store_var(tmp);
 
   for (const ASTNode *prop : node.children) {
@@ -3064,7 +3524,7 @@ bool Compiler::compileObjectLiteral(const ASTNode &node) {
  * 稀疏空洞（[1,,3]）本阶段按紧凑存储（元素个数 = 声明元素数）。 */
 bool Compiler::compileArrayLiteral(const ASTNode &node) {
   builder_.new_array();
-  uint16_t tmp = scope_->next_slot++;
+  uint16_t tmp = functionScope()->next_slot++;
   builder_.store_var(tmp);
 
   uint16_t index = 0;
@@ -3348,7 +3808,7 @@ bool Compiler::compileOptionalChainNode(const ASTNode &node, BcLabel *chain_end)
     }
     if (has_spread) {
       /* 展开调用：callee 已在栈顶，参数构建到数组，CallArray。 */
-      uint16_t args_slot = scope_->next_slot++;
+      uint16_t args_slot = functionScope()->next_slot++;
       builder_.new_array();
       builder_.store_var(args_slot);
       std::vector<const ASTNode *> args(node.children.begin() + 1,
@@ -3548,12 +4008,12 @@ bool Compiler::compileMemberAssign(const ASTNode &node) {
       node.assign_op == AssignmentOpKind::LogicalOrAssign ||
       node.assign_op == AssignmentOpKind::NullishAssign) {
     if (!compileExpr(*obj_expr)) return false;
-    uint16_t t_obj = scope_->next_slot++;
+    uint16_t t_obj = functionScope()->next_slot++;
     builder_.store_var(t_obj);
     uint16_t t_key = 0;
     if (computed) {
       if (!compileExpr(*key_expr)) return false;
-      t_key = scope_->next_slot++;
+      t_key = functionScope()->next_slot++;
       builder_.store_var(t_key);
     }
     /* 读旧值。 */
@@ -3596,7 +4056,7 @@ bool Compiler::compileMemberAssign(const ASTNode &node) {
     /* 赋值路径：求 rhs，暂存，压 obj(+key)+rhs 写回（StoreProp 留 rhs 栈顶）。 */
     builder_.bind_label(assign_path);
     if (!compileExpr(*rhs)) return false;
-    uint16_t t_val = scope_->next_slot++;
+    uint16_t t_val = functionScope()->next_slot++;
     builder_.store_var(t_val);
     builder_.load_var(t_obj);
     if (computed) builder_.load_var(t_key);
@@ -3643,12 +4103,12 @@ bool Compiler::compileMemberAssign(const ASTNode &node) {
 
   /* 暂存对象（和计算键）到临时槽，保证对象表达式只求值一次。 */
   if (!compileExpr(*obj_expr)) return false;
-  uint16_t t_obj = scope_->next_slot++;
+  uint16_t t_obj = functionScope()->next_slot++;
   builder_.store_var(t_obj);
   uint16_t t_key = 0;
   if (computed) {
     if (!compileExpr(*key_expr)) return false;
-    t_key = scope_->next_slot++;
+    t_key = functionScope()->next_slot++;
     builder_.store_var(t_key);
   }
 
@@ -3668,7 +4128,7 @@ bool Compiler::compileMemberAssign(const ASTNode &node) {
 
   /* 写回：StoreProp/StoreElem 期望 obj 在下、新值在栈顶。
    * 新值已在栈顶，先暂存到临时槽，再压 obj（和 key）+ 新值。 */
-  uint16_t t_val = scope_->next_slot++;
+  uint16_t t_val = functionScope()->next_slot++;
   builder_.store_var(t_val);
   builder_.load_var(t_obj);
   if (computed) builder_.load_var(t_key);
@@ -3702,9 +4162,11 @@ bool Compiler::compileUpdate(const ASTNode &node) {
     uint16_t slot = 0, capture = 0;
     bool is_upvalue = false;
     bool is_global = false;
+    bool is_lexical = false;
     uint16_t import_idx = 0;
     bool is_import = false;
-    if (!resolveAssignTarget(target->name, &slot, &capture, &is_upvalue)) {
+    if (!resolveAssignTarget(target->name, &slot, &capture, &is_upvalue,
+                             &is_lexical)) {
       /* M5.2a：import 绑定 ++/-- 是写入（immutable binding）-> TypeError。
        * 读旧值 -> StoreImport（恒抛错）保持栈平衡。 */
       auto import_it = module_import_map_.find(target->name);
@@ -3724,13 +4186,15 @@ bool Compiler::compileUpdate(const ASTNode &node) {
       builder_.load_global(target->name);
     } else if (is_upvalue) {
       builder_.load_upvalue(capture);
+    } else if (is_lexical) {
+      builder_.load_lexical(target->name);
     } else {
       builder_.load_var(slot);
     }
     uint16_t t_old = 0;
     if (!prefix) {
       /* 后缀：旧值暂存到临时槽（表达式结果）。 */
-      t_old = scope_->next_slot++;
+      t_old = functionScope()->next_slot++;
       builder_.store_var(t_old);
       builder_.load_var(t_old);
     }
@@ -3746,6 +4210,8 @@ bool Compiler::compileUpdate(const ASTNode &node) {
       builder_.pop(); /* 清保留值：结果统一在下方重新装载 */
     } else if (is_upvalue) {
       builder_.store_upvalue(capture);
+    } else if (is_lexical) {
+      builder_.store_lexical(target->name); /* 弹栈 */
     } else {
       builder_.store_var(slot);
     }
@@ -3757,6 +4223,8 @@ bool Compiler::compileUpdate(const ASTNode &node) {
         builder_.load_global(target->name);
       } else if (is_upvalue) {
         builder_.load_upvalue(capture);
+      } else if (is_lexical) {
+        builder_.load_lexical(target->name);
       } else {
         builder_.load_var(slot);
       }
@@ -3792,12 +4260,12 @@ bool Compiler::compileUpdate(const ASTNode &node) {
 
     /* 对象（和计算键）求值一次，暂存。 */
     if (!compileExpr(*obj_expr)) return false;
-    uint16_t t_obj = scope_->next_slot++;
+    uint16_t t_obj = functionScope()->next_slot++;
     builder_.store_var(t_obj);
     uint16_t t_key = 0;
     if (computed) {
       if (!compileExpr(*key_expr)) return false;
-      t_key = scope_->next_slot++;
+      t_key = functionScope()->next_slot++;
       builder_.store_var(t_key);
     }
     /* 读旧值。 */
@@ -3813,13 +4281,13 @@ bool Compiler::compileUpdate(const ASTNode &node) {
     uint16_t t_old = 0;
     if (!prefix) {
       /* 后缀：旧值暂存。 */
-      t_old = scope_->next_slot++;
+      t_old = functionScope()->next_slot++;
       builder_.store_var(t_old);
       builder_.load_var(t_old);
     }
     builder_.increment(dec); /* 新值 -> 栈顶 */
     /* 写回：压 obj(+key) + 新值。新值先在栈顶，暂存后重排。 */
-    uint16_t t_new = scope_->next_slot++;
+    uint16_t t_new = functionScope()->next_slot++;
     builder_.store_var(t_new);
     builder_.load_var(t_obj);
     if (computed) builder_.load_var(t_key);
@@ -3947,7 +4415,7 @@ bool Compiler::compileBinary(const ASTNode &node) {
   if (node.binop == BinaryOpKind::LogicalAnd ||
       node.binop == BinaryOpKind::LogicalOr) {
     if (!compileExpr(*lhs)) return false;
-    uint16_t tmp = scope_->next_slot++; /* 临时槽（不入 locals） */
+    uint16_t tmp = functionScope()->next_slot++; /* 临时槽（不入 locals） */
     builder_.store_var(tmp);
     BcLabel short_circuit = builder_.new_label();
     BcLabel end = builder_.new_label();
@@ -4007,7 +4475,7 @@ bool Compiler::compileBinary(const ASTNode &node) {
    *   done: */
   if (node.binop == BinaryOpKind::Nullish) {
     if (!compileExpr(*lhs)) return false;
-    uint16_t tmp = scope_->next_slot++; /* 临时槽 */
+    uint16_t tmp = functionScope()->next_slot++; /* 临时槽 */
     builder_.store_var(tmp);
     BcLabel rhs_path = builder_.new_label();
     BcLabel done = builder_.new_label();
@@ -4075,7 +4543,7 @@ bool Compiler::compileAssignment(const ASTNode &node) {
     /* 解构赋值（M5.1a）：[a] = arr / {a} = obj。
      * Parser 已保证是纯 = 赋值（复合赋值给解构目标非法）。 */
     if (!compileExpr(*rhs)) return false;
-    uint16_t tmp = scope_->next_slot++;
+    uint16_t tmp = functionScope()->next_slot++;
     builder_.store_var(tmp);
     if (!compilePattern(*lhs, tmp, /*is_declaration=*/false)) return false;
     builder_.load_var(tmp); /* 解构赋值表达式值 = 源值（§13.15.2） */
@@ -4089,9 +4557,10 @@ bool Compiler::compileAssignment(const ASTNode &node) {
   uint16_t capture = 0;
   bool is_upvalue = false;
   bool is_global = false;
+  bool is_lexical = false;
   uint16_t import_idx = 0;
   bool is_import = false;
-  if (!resolveAssignTarget(lhs->name, &slot, &capture, &is_upvalue)) {
+  if (!resolveAssignTarget(lhs->name, &slot, &capture, &is_upvalue, &is_lexical)) {
     /* M5.2a：import 绑定赋值 -> StoreImport（immutable binding，运行期
      * TypeError，§16.2.3）。import 绑定不入局部槽，resolve 不到。 */
     auto import_it = module_import_map_.find(lhs->name);
@@ -4125,6 +4594,8 @@ bool Compiler::compileAssignment(const ASTNode &node) {
       builder_.load_global(lhs->name);
     } else if (is_upvalue) {
       builder_.load_upvalue(capture);
+    } else if (is_lexical) {
+      builder_.load_lexical(lhs->name);
     } else {
       builder_.load_var(slot);
     }
@@ -4148,6 +4619,8 @@ bool Compiler::compileAssignment(const ASTNode &node) {
       builder_.load_global(lhs->name);
     } else if (is_upvalue) {
       builder_.load_upvalue(capture);
+    } else if (is_lexical) {
+      builder_.load_lexical(lhs->name);
     } else {
       builder_.load_var(slot);
     }
@@ -4165,6 +4638,9 @@ bool Compiler::compileAssignment(const ASTNode &node) {
     } else if (is_upvalue) {
       builder_.store_upvalue(capture);
       builder_.load_upvalue(capture);
+    } else if (is_lexical) {
+      builder_.store_lexical(lhs->name); /* 弹栈 */
+      builder_.load_lexical(lhs->name);  /* 赋值表达式值 = 新值 */
     } else {
       builder_.store_var(slot);
       builder_.load_var(slot);
@@ -4191,6 +4667,8 @@ bool Compiler::compileAssignment(const ASTNode &node) {
       builder_.load_global(lhs->name); /* 旧值 */
     } else if (is_upvalue) {
       builder_.load_upvalue(capture); /* 旧值 */
+    } else if (is_lexical) {
+      builder_.load_lexical(lhs->name); /* 旧值 */
     } else {
       builder_.load_var(slot);
     }
@@ -4204,6 +4682,9 @@ bool Compiler::compileAssignment(const ASTNode &node) {
     } else if (is_upvalue) {
       builder_.store_upvalue(capture); /* 存回（弹栈） */
       builder_.load_upvalue(capture);  /* 赋值表达式值 = 新值 */
+    } else if (is_lexical) {
+      builder_.store_lexical(lhs->name); /* 弹栈 */
+      builder_.load_lexical(lhs->name);  /* 赋值表达式值 = 新值 */
     } else {
       builder_.store_var(slot);
       builder_.load_var(slot);
@@ -4221,6 +4702,9 @@ bool Compiler::compileAssignment(const ASTNode &node) {
   } else if (is_upvalue) {
     builder_.store_upvalue(capture); /* 弹栈 */
     builder_.load_upvalue(capture);  /* 保留赋值结果在栈顶 */
+  } else if (is_lexical) {
+    builder_.store_lexical(lhs->name); /* 弹栈 */
+    builder_.load_lexical(lhs->name);  /* 保留赋值结果在栈顶 */
   } else {
     builder_.store_var(slot);
     builder_.load_var(slot);
@@ -4248,7 +4732,7 @@ bool Compiler::compileCall(const ASTNode &node) {
     if (has_spread) {
       /* M5.1e-h super(...args)：参数构建到数组，SuperCallArray 展开调用
        * （语义同 SuperCall，基类构造器于当前帧 this，栈顶为 args 数组）。 */
-      uint16_t args_slot = scope_->next_slot++;
+      uint16_t args_slot = functionScope()->next_slot++;
       builder_.new_array();
       builder_.store_var(args_slot);
       std::vector<const ASTNode *> args(node.children.begin(),
@@ -4315,7 +4799,7 @@ bool Compiler::compileCall(const ASTNode &node) {
     if (has_spread) {
       /* M5.1e-h super.m(...a)：this=当前帧 this，构建 args 数组后
        * CallMethodArray（栈 [this, func, args_array]，this 保留）。 */
-      uint16_t args_slot = scope_->next_slot++;
+      uint16_t args_slot = functionScope()->next_slot++;
       builder_.new_array();
       builder_.store_var(args_slot);
       std::vector<const ASTNode *> args(node.children.begin() + 1,
@@ -4365,7 +4849,7 @@ bool Compiler::compileCall(const ASTNode &node) {
         if (!compileExpr(*prop)) return false;
         builder_.load_elem();
       }
-      uint16_t args_slot = scope_->next_slot++;
+      uint16_t args_slot = functionScope()->next_slot++;
       builder_.new_array();
       builder_.store_var(args_slot);
       std::vector<const ASTNode *> args(node.children.begin() + 1,
@@ -4404,7 +4888,7 @@ bool Compiler::compileCall(const ASTNode &node) {
   if (!compileExpr(*callee)) return false;
   if (has_spread) {
     /* f(...a, b)：参数构建到数组，CallArray 展开调用。 */
-    uint16_t args_slot = scope_->next_slot++;
+    uint16_t args_slot = functionScope()->next_slot++;
     builder_.new_array();
     builder_.store_var(args_slot);
     std::vector<const ASTNode *> args(node.children.begin() + 1,
@@ -4471,7 +4955,7 @@ bool Compiler::compileNew(const ASTNode &node) {
     }
   }
   if (has_spread) {
-    uint16_t args_slot = scope_->next_slot++;
+    uint16_t args_slot = functionScope()->next_slot++;
     builder_.new_array();
     builder_.store_var(args_slot);
     std::vector<const ASTNode *> args(node.children.begin() + 1,
@@ -4506,31 +4990,321 @@ bool Compiler::compileSequence(const ASTNode &node) {
 /* -------------------------------------------------------------------------- */
 
 uint16_t Compiler::declareLocal(const std::string &name) {
-  if (scope_ == nullptr) return 0;
-  auto it = scope_->locals.find(name);
-  if (it != scope_->locals.end()) return it->second; /* 已声明：复用槽 */
-  uint16_t slot = scope_->next_slot++;
-  scope_->locals[name] = slot;
+  /* M5.5f：var 声明始终进函数帧（块内 var 提升到函数作用域，§13.3.2.4）。
+   * 槽位与名字都登记在函数帧（functionScope），块帧不持有局部槽。 */
+  CompilerScope *fs = functionScope();
+  if (fs == nullptr) return 0;
+  auto it = fs->locals.find(name);
+  if (it != fs->locals.end()) return it->second; /* 已声明：复用槽 */
+  uint16_t slot = fs->next_slot++;
+  fs->locals[name] = slot;
   builder_.set_local_name(slot, name); /* M2.5：记录槽名（环境同步） */
+  /* M5.5f：块内 var 登记到当前块帧 block_vars（§13.3.1.1 双向重名检测：
+   * 后续同块 let/const 声明经 declareLexical 查 block_vars 报 SyntaxError，
+   * 如 { var x; let x; }）。函数帧 var 在 locals（declareLexical 查之）。 */
+  if (scope_ != nullptr && !scope_->is_function_scope) {
+    scope_->block_vars.push_back(name);
+  }
   return slot;
 }
 
 bool Compiler::resolveLocal(const std::string &name, uint16_t *slot) {
-  if (scope_ == nullptr) return false;
-  auto it = scope_->locals.find(name);
-  if (it == scope_->locals.end()) return false;
+  /* M5.5f：局部 var/参数查函数帧（块帧不含局部槽）。 */
+  CompilerScope *fs = functionScope();
+  if (fs == nullptr) return false;
+  auto it = fs->locals.find(name);
+  if (it == fs->locals.end()) return false;
   *slot = it->second;
   return true;
 }
 
-/* 标识符读取（M2.5）：本函数局部 -> LoadVar；外层局部 -> 捕获 LoadUpvalue；
- * 否则 LoadGlobal。返回 true 表示已发射 load 指令。
+/* M5.5f：当前块环境层数（运行时 frame.env 链上块环境节点数）。
+ * = 编译期作用域链上从当前帧到函数帧之间的块帧数（每个块帧对应
+ * 一个已发射 PushBlockEnv 的运行时块环境）。用于 PopBlockEnv 目标
+ * 深度与 LoopContext.block_env_depth 记录。 */
+uint16_t Compiler::blockScopeDepth() {
+  uint16_t depth = 0;
+  for (CompilerScope *s = scope_; s != nullptr && !s->is_function_scope;
+       s = s->parent) {
+    ++depth;
+  }
+  return depth;
+}
+
+/* M5.5f：当前函数帧（沿 parent 链找 is_function_scope 帧）。 */
+CompilerScope *Compiler::functionScope() {
+  for (CompilerScope *s = scope_; s != nullptr; s = s->parent) {
+    if (s->is_function_scope) return s;
+  }
+  return nullptr;
+}
+
+/* M5.5f：压入块作用域帧（含 let/const 的块/循环头）。 */
+CompilerScope *Compiler::enterBlockScope() {
+  CompilerScope *child = new CompilerScope;
+  child->is_function_scope = false;
+  child->parent = scope_;
+  scopes_.push_back(child);
+  scope_ = child;
+  return child;
+}
+
+/* M5.5f：弹出块作用域帧（须为块帧）。 */
+void Compiler::exitBlockScope() {
+  if (scope_ == nullptr || scope_->is_function_scope) return;
+  CompilerScope *child = scope_;
+  scope_ = child->parent;
+  scopes_.pop_back();
+  delete child;
+}
+
+/* M5.5f：当前作用域帧声明词法绑定（let/const）。已存在（同名 let/const
+ * 重复声明）时返回 false（调用方报 SyntaxError）。
+ * 块帧（块内 let）与函数帧（函数/模块顶层 let）都承载 block_bindings：
+ * 运行时函数体顶层 let 在函数入口的块环境（compileFunctionBody 压的
+ * body_block），模块顶层 let 在模块 env（无块包裹）。 */
+bool Compiler::declareLexical(const std::string &name, bool is_const) {
+  if (scope_ == nullptr) return false;
+  for (const LexicalBinding &b : scope_->block_bindings) {
+    if (b.name == name) return false;
+  }
+  /* M5.5f：与同作用域 var/参数重名 -> SyntaxError（§13.3.1.1 双向检测）：
+   *   - 块帧：查本块已声明的 var（block_vars）——{ var x; let x; } 冲突。
+   *   - 函数帧：查本函数 var/参数（locals）——function f(){ var x; let x; }
+   *     顶层冲突（顶层 var 提升到函数帧）。
+   * 外层块/外层函数的 var 不冲突（let 遮蔽合法：{ var x; { let x; } } OK）。 */
+  if (scope_->is_function_scope) {
+    if (scope_->locals.find(name) != scope_->locals.end()) return false;
+  } else {
+    for (const std::string &v : scope_->block_vars) {
+      if (v == name) return false;
+    }
+  }
+  LexicalBinding b;
+  b.name = name;
+  b.is_const = is_const;
+  scope_->block_bindings.push_back(b);
+  return true;
+}
+
+/* M5.5f：沿作用域链查词法绑定。
+ * 从当前帧沿 parent 走：块帧（块内 let）+ 当前函数帧的 block_bindings
+ * （函数/模块顶层 let）；到第一个函数帧为止（外层函数帧的词法是捕获）。 */
+/* M5.5f TDZ：预声明 let/const 绑定（compileBlock 块开头）。登记到块帧并
+ * 发射 DeclareLexical 指令（块内任何位置访问抛 TDZ ReferenceError），名记入
+ * scope_->predeclared。
+ * 已存在（含预声明）返回 false——真重名（{ let a; let a; }）报 SyntaxError。 */
+bool Compiler::predeclareLexical(const std::string &name, bool is_const) {
+  if (scope_ == nullptr) return false;
+  if (scope_->predeclared.count(name) != 0) return false;
+  /* 复用 declareLexical 的登记与重名检测（var/参数冲突也在内）。 */
+  if (!declareLexical(name, is_const)) return false;
+  scope_->predeclared.insert(name);
+  builder_.declare_lexical(name, is_const);
+  return true;
+}
+
+/* M5.5f TDZ：预声明解构模式全部绑定名（递归）。等价 declarePatternLexical
+ * 的登记 + 发射，但经 predeclareLexical 记入 predeclared——声明处
+ * compileVarDecl 见全部已预声明时跳过重复登记（避免误报重名）。 */
+bool Compiler::predeclarePattern(const ASTNode &pattern, bool is_const) {
+  if (pattern.type == NodeType::ObjectPattern) {
+    for (const ASTNode *member : pattern.children) {
+      if (member == nullptr) continue;
+      if (member->type == NodeType::SpreadElement) {
+        if (!member->children.empty() &&
+            !predeclarePattern(*member->children[0], is_const))
+          return false;
+        continue;
+      }
+      if (member->type != NodeType::Property || member->children.empty()) {
+        return false;
+      }
+      const ASTNode *value =
+          member->children.size() >= 2 ? member->children[1] : member->children[0];
+      if (!predeclarePattern(*value, is_const)) return false;
+    }
+    return true;
+  }
+  if (pattern.type == NodeType::ArrayPattern) {
+    for (const ASTNode *elem : pattern.children) {
+      if (elem == nullptr) continue;
+      if (elem->type == NodeType::SpreadElement) {
+        if (!elem->children.empty() &&
+            !predeclarePattern(*elem->children[0], is_const))
+          return false;
+        continue;
+      }
+      if (!predeclarePattern(*elem, is_const)) return false;
+    }
+    return true;
+  }
+  if (pattern.type == NodeType::Identifier) {
+    return predeclareLexical(pattern.name, is_const);
+  }
+  if (pattern.type == NodeType::AssignmentPattern) {
+    if (!pattern.children.empty())
+      return predeclarePattern(*pattern.children[0], is_const);
+    return false;
+  }
+  if (pattern.type == NodeType::RestElement) {
+    if (!pattern.children.empty())
+      return predeclarePattern(*pattern.children[0], is_const);
+    return false;
+  }
+  return false;
+}
+
+/* M5.5f TDZ：解构模式中所有绑定名是否都已在当前块帧预声明（compileBlock
+ * 预声明阶段对解构语句整体调用 predeclarePattern）。声明处 compileVarDecl
+ * 据此跳过重复登记，避免误报重名。 */
+bool Compiler::patternPredeclared(const ASTNode &pattern) const {
+  if (scope_ == nullptr || scope_->is_function_scope) return false;
+  if (pattern.type == NodeType::ObjectPattern) {
+    for (const ASTNode *member : pattern.children) {
+      if (member == nullptr) continue;
+      if (member->type == NodeType::SpreadElement) {
+        if (!member->children.empty() &&
+            !patternPredeclared(*member->children[0]))
+          return false;
+        continue;
+      }
+      if (member->type != NodeType::Property || member->children.empty()) {
+        return false;
+      }
+      const ASTNode *value =
+          member->children.size() >= 2 ? member->children[1] : member->children[0];
+      if (!patternPredeclared(*value)) return false;
+    }
+    return true;
+  }
+  if (pattern.type == NodeType::ArrayPattern) {
+    for (const ASTNode *elem : pattern.children) {
+      if (elem == nullptr) continue;
+      if (elem->type == NodeType::SpreadElement) {
+        if (!elem->children.empty() &&
+            !patternPredeclared(*elem->children[0]))
+          return false;
+        continue;
+      }
+      if (!patternPredeclared(*elem)) return false;
+    }
+    return true;
+  }
+  if (pattern.type == NodeType::Identifier) {
+    return scope_->predeclared.count(pattern.name) != 0;
+  }
+  if (pattern.type == NodeType::AssignmentPattern) {
+    return !pattern.children.empty() && patternPredeclared(*pattern.children[0]);
+  }
+  if (pattern.type == NodeType::RestElement) {
+    return !pattern.children.empty() && patternPredeclared(*pattern.children[0]);
+  }
+  return false;
+}
+
+bool Compiler::resolveLexical(const std::string &name) {
+  for (CompilerScope *s = scope_; s != nullptr; s = s->parent) {
+    for (const LexicalBinding &b : s->block_bindings) {
+      if (b.name == name) return true;
+    }
+    if (s->is_function_scope) break;
+  }
+  return false;
+}
+
+/* M5.5f：块内 var 与同块 let/const 重名检测（§13.3.1.1 VarDeclaredNames ∩
+ * LexicallyDeclaredNames，双向）：
+ *   - 当前块帧链（scope_ 起沿 parent 到函数帧止，含各嵌套块）的
+ *     block_bindings 已有同名 let/const -> var 声明冲突（Node 实测：
+ *     { let x; { var x; } } 与 { let x; var x; } 都报 SyntaxError——
+ *     var 提升到函数作用域，与链上任一嵌套块的 let 重名即冲突）。
+ *   - 函数/模块顶层 let（函数帧 block_bindings）同块 var 也冲突
+ *     （顶层 { var x; } let x 与 var x; let x 均 SyntaxError）。
+ * 注意：只查「词法绑定」，不查外层块/函数帧的 var（var 提升后是同一
+ * 函数作用域，复用槽合法——{ var x; { var x; } } OK）。 */
+bool Compiler::hasLexicalInChain(const std::string &name) const {
+  for (CompilerScope *s = scope_; s != nullptr; s = s->parent) {
+    for (const LexicalBinding &b : s->block_bindings) {
+      if (b.name == name) return true;
+    }
+    if (s->is_function_scope) break;
+  }
+  return false;
+}
+
+/* M5.5f：统一标识符绑定解析。优先级（词法遮蔽，§13.3.2.4）：
+ *   1. 词法绑定（当前块帧链上的 let/const，含嵌套块 + for 头 + per-iter）
+ *      -> is_lexical=true（LoadLexical/StoreLexical）。块内 let 遮蔽外层
+ *      同名 var/参数（resolveLexical 先于 resolveLocal）。
+ *   2. 本函数帧局部 var/参数 -> slot（LoadVar/StoreVar）。
+ *   3. 外层函数帧的 var/词法绑定 -> capture upvalue（LoadUpvalue/StoreUpvalue）。
+ * 返回 true 表示已解析（局部/词法/捕获）；false = 全局/import（调用方处理）。
+ * capture depth：沿作用域链计运行时环境节点数（函数帧 + 块帧各一节点）。
+ * 词法绑定跨函数捕获：外层块的 let 在块环境中，运行时 captureEnv 沿环境
+ * 链跳 depth+1 层后 getBinding(name) 定位——depth 必须等于从本函数帧的
+ * 外层起到目标绑定所在环境的环境节点数。 */
+bool Compiler::resolveBinding(const std::string &name, uint16_t *slot,
+                              uint16_t *capture, bool *is_upvalue,
+                              bool *is_lexical) {
+  *is_upvalue = false;
+  *is_lexical = false;
+  if (resolveLexical(name)) {
+    *is_lexical = true;
+    return true;
+  }
+  if (resolveLocal(name, slot)) return true;
+  /* 外层函数/块：沿作用域链找目标绑定，depth = 环境节点计数。
+   * 当前函数帧的父链第一个节点 = 本函数 [[Environment]]（创建处环境）。
+   * 每跨一个函数帧/块帧（运行时各创建一个环境节点）depth+1。 */
+  int depth = 0;
+  for (CompilerScope *s = scope_->parent; s != nullptr; s = s->parent, ++depth) {
+    if (s->is_function_scope) {
+      /* 函数帧：var/参数在 locals；本函数顶层 let/const 在 block_bindings
+       * （函数体/模块顶层词法绑定，运行时在函数/模块 env，captureEnv 沿链
+       * 跳 depth+1 层命中——嵌套函数 [[Environment]] 即该环境）。 */
+      auto it = s->locals.find(name);
+      if (it != s->locals.end()) {
+        *capture = builder_.add_capture(static_cast<uint16_t>(depth), name);
+        *is_upvalue = true;
+        return true;
+      }
+      for (const LexicalBinding &b : s->block_bindings) {
+        if (b.name == name) {
+          *capture = builder_.add_capture(static_cast<uint16_t>(depth), name);
+          *is_upvalue = true;
+          return true;
+        }
+      }
+    } else {
+      for (const LexicalBinding &b : s->block_bindings) {
+        if (b.name == name) {
+          *capture = builder_.add_capture(static_cast<uint16_t>(depth), name);
+          *is_upvalue = true;
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/* 标识符读取（M2.5）：本函数局部 -> LoadVar；词法绑定 -> LoadLexical；
+ * 外层局部 -> 捕获 LoadUpvalue；否则 LoadGlobal。返回 true 表示已发射
+ * load 指令。
  * M5.2a 模块：模块求值函数内 import 绑定名命中 module_import_map_ 时发射
  * LoadImport（import 绑定不入局部槽，动态查源模块 env）。 */
 bool Compiler::emitLoadIdentifier(const std::string &name) {
-  uint16_t slot = 0;
-  if (resolveLocal(name, &slot)) {
-    builder_.load_var(slot);
+  uint16_t slot = 0, capture = 0;
+  bool is_upvalue = false, is_lexical = false;
+  if (resolveBinding(name, &slot, &capture, &is_upvalue, &is_lexical)) {
+    if (is_lexical) {
+      builder_.load_lexical(name);
+    } else if (is_upvalue) {
+      builder_.load_upvalue(capture);
+    } else {
+      builder_.load_var(slot);
+    }
     return true;
   }
 
@@ -4547,39 +5321,26 @@ bool Compiler::emitLoadIdentifier(const std::string &name) {
     return true;
   }
 
-  /* 沿作用域链查找外层函数是否声明该变量。找到则捕获为 upvalue。
-   * depth = 外层函数作用域帧层数（0 = 直接外层）。 */
-  int depth = 0;
-  for (CompilerScope *s = scope_->parent; s != nullptr; s = s->parent, ++depth) {
-    auto it = s->locals.find(name);
-    if (it != s->locals.end()) {
-      uint16_t idx = builder_.add_capture(static_cast<uint16_t>(depth), name);
-      builder_.load_upvalue(idx);
-      return true;
-    }
-  }
-
   builder_.load_global(name);
   return true;
 }
 
-/* 赋值目标解析（M2.5）：本函数局部 -> slot；外层局部 -> capture upvalue；
- * 否则返回 false（全局赋值本阶段不支持，见 compileAssignment）。 */
-bool Compiler::resolveAssignTarget(const std::string &name, uint16_t *slot,
-                                   uint16_t *capture, bool *is_upvalue) {
-  *is_upvalue = false;
-  if (resolveLocal(name, slot)) return true;
+/* M5.5f：统一标识符读取（emitLoadIdentifier 别名，供赋值/更新等复用）。 */
+bool Compiler::emitLoadBinding(const std::string &name) {
+  return emitLoadIdentifier(name);
+}
 
-  int depth = 0;
-  for (CompilerScope *s = scope_->parent; s != nullptr; s = s->parent, ++depth) {
-    auto it = s->locals.find(name);
-    if (it != s->locals.end()) {
-      *capture = builder_.add_capture(static_cast<uint16_t>(depth), name);
-      *is_upvalue = true;
-      return true;
-    }
+/* 赋值目标解析（M2.5 + M5.5f）：本函数局部 -> slot；词法绑定（本块或
+ * 外层块）-> is_lexical=true（调用方发射 StoreLexical）；外层局部 -> capture
+ * upvalue；否则返回 false（全局赋值，见 compileAssignment）。 */
+bool Compiler::resolveAssignTarget(const std::string &name, uint16_t *slot,
+                                   uint16_t *capture, bool *is_upvalue,
+                                   bool *is_lexical) {
+  if (is_lexical != nullptr) *is_lexical = false;
+  if (!resolveBinding(name, slot, capture, is_upvalue, is_lexical)) {
+    return false; /* 全局 */
   }
-  return false; /* 全局 */
+  return true;
 }
 
 bool Compiler::isSimpleAssignTarget(const ASTNode &node) const {
