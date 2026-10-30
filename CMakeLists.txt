@@ -38,7 +38,8 @@ add_subdirectory(third_party/icu)
 # ---------------------------------------------------------------------------
 file(GLOB NEOJS_CORE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.cc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/frontend/*.cc")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/frontend/*.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/engine/*.cc")
 add_library(neojs_core STATIC ${NEOJS_CORE_SOURCES})
 target_include_directories(neojs_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(neojs_core PUBLIC ICU::uc ICU::i18n)
