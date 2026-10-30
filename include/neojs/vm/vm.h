@@ -74,7 +74,13 @@ class Vm {
   Value *h_push_null();
   Value *h_push_true();
   Value *h_push_false();
+  Value *h_push_uninitialized();
   Value *h_load_var();
+  Value *h_store_var();
+  Value *h_define_var();
+  Value *h_define_var_global();
+  Value *h_push_scope();
+  Value *h_pop_scope();
 
   Value *h_pos();
   Value *h_neg();
@@ -109,6 +115,8 @@ class Vm {
   Value *h_jump_if_false();
   Value *h_jump_if_nullish();
   Value *h_jump_if_not_nullish();
+  Value *h_jump_if_true_pop();
+  Value *h_jump_if_false_pop();
   Value *h_pop_op();
   Value *h_ret();
 
@@ -120,7 +128,13 @@ class Vm {
       /* PushNull */ &Vm::h_push_null,
       /* PushTrue */ &Vm::h_push_true,
       /* PushFalse */ &Vm::h_push_false,
+      /* PushUninitialized */ &Vm::h_push_uninitialized,
       /* LoadVar */ &Vm::h_load_var,
+      /* StoreVar */ &Vm::h_store_var,
+      /* DefineVar */ &Vm::h_define_var,
+      /* DefineVarGlobal */ &Vm::h_define_var_global,
+      /* PushScope */ &Vm::h_push_scope,
+      /* PopScope */ &Vm::h_pop_scope,
       /* Pos */ &Vm::h_pos,
       /* Neg */ &Vm::h_neg,
       /* Not */ &Vm::h_not,
@@ -152,6 +166,8 @@ class Vm {
       /* JumpIfFalse */ &Vm::h_jump_if_false,
       /* JumpIfNullish */ &Vm::h_jump_if_nullish,
       /* JumpIfNotNullish */ &Vm::h_jump_if_not_nullish,
+      /* JumpIfTruePop */ &Vm::h_jump_if_true_pop,
+      /* JumpIfFalsePop */ &Vm::h_jump_if_false_pop,
       /* Pop */ &Vm::h_pop_op,
       /* Ret */ &Vm::h_ret,
   };

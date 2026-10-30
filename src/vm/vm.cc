@@ -88,6 +88,10 @@ Value *Vm::h_push_false() {
   next();
   return engine::create_boolean(ctx_, false);
 }
+Value *Vm::h_push_uninitialized() {
+  next();
+  return ctx_.create_uninitialized();
+}
 
 Value *Vm::h_load_var() {
   const std::string &name = bc_->constants[cur().arg].str;
@@ -111,8 +115,53 @@ Value *Vm::h_load_var() {
     return engine::create_exception(
         c, "ReferenceError: " + name + " is not defined");
   }
+  if (v->kind == core::ValueKind::Uninitialized) {
+    /* TDZ：let/const 声明后未初始化时读取 → ReferenceError */
+    return engine::create_exception(
+        c, "ReferenceError: Cannot access '" + name + "' before initialization");
+  }
   next();
   return v; /* 借用值：变量本身（scope 持有），栈不计数 */
+}
+
+Value *Vm::h_store_var() {
+  const std::string &name = bc_->constants[cur().arg].str;
+  Value *v = top(); /* 待存值（保留栈顶：赋值表达式结果为该值） */
+  if (!ctx_.store(name, v)) {
+    /* 绑定不存在：M5-A 变量均先声明，未声明赋值报 ReferenceError */
+    return engine::create_exception(
+        ctx_, "ReferenceError: " + name + " is not defined");
+  }
+  next();
+  return nullptr; /* 值已留在栈顶（调用方按表达式结果处理） */
+}
+
+Value *Vm::h_define_var() {
+  const std::string &name = bc_->constants[cur().arg].str;
+  Value *v = pop(); /* 声明值（let/const 的 TDZ 哨兵） */
+  ctx_.define(name, v);
+  next();
+  return nullptr;
+}
+
+Value *Vm::h_define_var_global() {
+  const std::string &name = bc_->constants[cur().arg].str;
+  Value *v = pop(); /* var 初始值 */
+  ctx_.define_var(name, v); /* var 提升到 var 目标作用域（M5-A=全局） */
+  next();
+  return nullptr;
+}
+
+Value *Vm::h_push_scope() {
+  ctx_.push_scope();
+  next();
+  return nullptr;
+}
+
+Value *Vm::h_pop_scope() {
+  ctx_.pop_scope();
+  next();
+  return nullptr;
 }
 
 Value *Vm::h_pos() { return unary(unary_plus); }
@@ -163,6 +212,18 @@ Value *Vm::h_jump_if_nullish() {
 }
 Value *Vm::h_jump_if_not_nullish() {
   top_is_nullish() ? next() : jump_to(cur().arg);
+  return nullptr;
+}
+Value *Vm::h_jump_if_true_pop() {
+  bool t = top_boolean();
+  pop(); /* 消费栈顶（条件值） */
+  t ? jump_to(cur().arg) : next();
+  return nullptr;
+}
+Value *Vm::h_jump_if_false_pop() {
+  bool t = top_boolean();
+  pop(); /* 消费栈顶（条件值） */
+  t ? next() : jump_to(cur().arg);
   return nullptr;
 }
 Value *Vm::h_pop_op() {

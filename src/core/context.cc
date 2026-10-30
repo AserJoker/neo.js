@@ -128,6 +128,13 @@ void Context::define(const std::string &name, Value *value) {
   current_scope->named_values[name] = value;
 }
 
+void Context::define_var(const std::string &name, Value *value) {
+  /* var 目标作用域：M5-A 无函数，恒为 root_scope（全局）。
+   * M5-B 引入函数后改为函数级 scope（进入函数时维护）。 */
+  if (root_scope == nullptr) return;
+  root_scope->named_values[name] = value;
+}
+
 Value *Context::load(const std::string &name) {
   return load_from(current_scope, name);
 }

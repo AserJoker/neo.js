@@ -26,7 +26,7 @@
 namespace neojs {
 namespace vm {
 
-/* 操作码（表达式子集，架构文档 §5.1） */
+/* 操作码（架构文档 §5.1 子集；M5-A 扩语句） */
 enum class Opcode : uint8_t {
   /* 常量/加载 */
   PushConst,      /* 压常量池[idx] */
@@ -34,7 +34,13 @@ enum class Opcode : uint8_t {
   PushNull,       /* 压 null */
   PushTrue,       /* 压 true */
   PushFalse,      /* 压 false */
+  PushUninitialized, /* 压 TDZ 哨兵（Uninitialized） */
   LoadVar,        /* 加载变量：常量池[idx]=name，沿 scope 链 load */
+  StoreVar,       /* 存储变量：常量池[idx]=name，store 语义（改 data 不顶替） */
+  DefineVar,      /* 声明变量：常量池[idx]=name，define 到当前 scope（顶替） */
+  DefineVarGlobal, /* 声明 var：define 到 var 目标 scope（M5-A=全局，函数后=函数级） */
+  PushScope,      /* 进入块作用域：ctx.push_scope() */
+  PopScope,       /* 离开块作用域：ctx.pop_scope() */
 
   /* 一元 */
   Pos,    /* +x */
@@ -76,6 +82,8 @@ enum class Opcode : uint8_t {
   JumpIfFalse,    /* 栈顶为假 → target（保留栈顶） */
   JumpIfNullish,  /* 栈顶 null/undefined → target（保留栈顶） */
   JumpIfNotNullish, /* 栈顶非 null/undefined → target（保留栈顶） */
+  JumpIfTruePop,  /* 栈顶为真 → target（消费栈顶） */
+  JumpIfFalsePop, /* 栈顶为假 → target（消费栈顶） */
   Pop,            /* 弹栈 */
 
   /* 终止 */
@@ -104,10 +112,19 @@ struct ConstEntry {
   bool boolean = false;
 };
 
-/* 函数字节码（M4 仅单程序块，无函数） */
+/* 函数体在 module bytecode 中的位置（借用同一 bytecode + 指令偏移）。
+ * 每个函数 = 一段连续指令区间 [offset, end)。顶层（Program）为 offset 0。
+ * M5-A 先建模型；函数体编译/调用在 M5-B 落地。 */
+struct FunctionInfo {
+  size_t offset = 0; /* 起始指令偏移 */
+  size_t end = 0;    /* 结束指令偏移（不含） */
+};
+
+/* 模块字节码：指令 + 常量池 + 函数表（函数借用本 bytecode + offset）。 */
 struct Bytecode : core::AllocatedObject {
   std::vector<Instruction> instructions;
   std::vector<ConstEntry> constants;
+  std::vector<FunctionInfo> functions; /* 函数表（M5-B 填充） */
 
   /* 常量池去重添加：number 返回 idx */
   uint32_t add_number(double n);

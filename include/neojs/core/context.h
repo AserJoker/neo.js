@@ -89,6 +89,10 @@ struct Context : AllocatedObject {
    * 已存在则覆盖（同名遮蔽由调用方保证）。 */
   void define(const std::string &name, Value *value);
 
+  /* define 到 var 目标作用域（M5-A=root_scope；M5-B 函数内=函数级 scope）。
+   * 供 var 声明提升使用（var 是函数作用域，非块作用域）。 */
+  void define_var(const std::string &name, Value *value);
+
   /* load：沿 parent 链查找 named_values，返回原始变量（value*，非拷贝）。
    * 未找到返回 nullptr（全局兜底由调用方处理）。 */
   Value *load(const std::string &name);

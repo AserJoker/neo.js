@@ -24,6 +24,12 @@ namespace vm {
 /* 编译表达式子树到 bc。返回 true 成功，false 未支持节点。 */
 bool compile_expression(ASTNode *node, Bytecode &bc);
 
+/* 编译单条语句到 bc（M5-A：声明/控制流/return 等）。 */
+bool compile_statement(ASTNode *node, Bytecode &bc);
+
+/* 编译 Program（顶层语句列表）到 bc。返回 true 成功。 */
+bool compile_program(ASTNode *node, Bytecode &bc);
+
 }  // namespace vm
 }  // namespace neojs
 
