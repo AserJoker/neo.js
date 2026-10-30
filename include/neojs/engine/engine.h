@@ -142,6 +142,10 @@ Value *create_exception(Context &ctx, const std::string &message);
 /* 判断 value 是否为异常。 */
 bool is_exception(Value *v);
 
+/* 判断 value 是否为控制流中断（§8.1：return/break/continue/yield/await）。
+ * 解包用 ctx.unwrap_interrupt。 */
+bool is_interrupt(Value *v);
+
 }  // namespace engine
 }  // namespace neojs
 

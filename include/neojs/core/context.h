@@ -55,6 +55,14 @@ struct Context : AllocatedObject {
   Value *create_null();
   Value *create_uninitialized();
 
+  /* 控制流中断工厂（§8.1）：创建 kind=Interrupt 的 value，
+   * data=InterruptData{kind, value}（value 为借用指针，所有权在源 scope）。 */
+  Value *create_interrupt(InterruptData::Kind kind, Value *value);
+
+  /* 解包 interrupt：取 data 里的内部 value（借用指针）。
+   * 仅当 v->kind == Interrupt 时调用，否则返回 v。 */
+  Value *unwrap_interrupt(Value *v);
+
   /* ---------- scope 管理 ---------- */
 
   /* 在 current_scope 下新建子 scope 并设为 current_scope，返回新 scope。 */

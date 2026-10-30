@@ -46,6 +46,24 @@ Value *Context::create_uninitialized() {
   return create_value(ValueKind::Uninitialized);
 }
 
+Value *Context::create_interrupt(InterruptData::Kind kind, Value *value) {
+  /* interrupt value：kind=Interrupt，data=InterruptData{kind,value}。
+   * value 为借用指针（所有权在源 scope），不计数（§8.1）。 */
+  Value *v = create_value(ValueKind::Interrupt);
+  InterruptData *d = new InterruptData();
+  d->refcount = 1;
+  d->kind = kind;
+  d->value = value;
+  v->data = d;
+  return v;
+}
+
+Value *Context::unwrap_interrupt(Value *v) {
+  if (v == nullptr || v->kind != ValueKind::Interrupt) return v;
+  InterruptData *d = static_cast<InterruptData *>(v->data);
+  return d->value;
+}
+
 /* ---------- scope 管理 ---------- */
 
 Scope *Context::push_scope() {
@@ -172,6 +190,9 @@ Data *Context::clone(Data *data) {
       d->str = static_cast<StringData *>(data)->str;
       return d;
     }
+    case DataKind::Interrupt:
+      /* 控制流中断载体（借用）不可 clone：store 赋值不应用于它。 */
+      return nullptr;
   }
   return nullptr; /* unreachable */
 }

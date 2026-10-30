@@ -379,5 +379,7 @@ Value *create_exception(Context &ctx, const std::string &message) {
 
 bool is_exception(Value *v) { return v->kind == ValueKind::Exception; }
 
+bool is_interrupt(Value *v) { return v->kind == ValueKind::Interrupt; }
+
 }  // namespace engine
 }  // namespace neojs

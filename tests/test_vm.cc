@@ -262,3 +262,26 @@ TEST(Vm, Composite) {
   EXPECT_TRUE(boolOf(eval_expr(ctx, "x > y && x - y == 2 || x == 0")));
   EXPECT_EQ(numOf(eval_expr(ctx, "(x > y ? x : y) * 2")), 10.0);
 }
+
+/* -------------------------------------------------------------------------- */
+/* Ret 指令（直接构造字节码；compiler 当前不发射 Ret）                          */
+/* -------------------------------------------------------------------------- */
+
+TEST(Vm, RetUnwrap) {
+  Context ctx;
+  neojs::vm::Bytecode bc;
+  bc.emit(neojs::vm::Opcode::PushConst, bc.add_number(42));
+  bc.emit(neojs::vm::Opcode::Ret);
+  neojs::vm::Vm vm(ctx);
+  /* Ret 产生 interrupt(return, 42)，run 解包返回 42 */
+  EXPECT_EQ(numOf(vm.run(bc)), 42.0);
+}
+
+TEST(Vm, RetUnwrapString) {
+  Context ctx;
+  neojs::vm::Bytecode bc;
+  bc.emit(neojs::vm::Opcode::PushConst, bc.add_string("done"));
+  bc.emit(neojs::vm::Opcode::Ret);
+  neojs::vm::Vm vm(ctx);
+  EXPECT_EQ(strOf(vm.run(bc)), "done");
+}

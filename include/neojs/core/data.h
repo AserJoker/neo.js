@@ -25,11 +25,14 @@
 namespace neojs {
 namespace core {
 
+struct Value; /* 前向声明：InterruptData 承载借用 value 指针 */
+
 /* data 类型（M1：值类型数据 + 预留对象/函数等引用类型） */
 enum class DataKind : uint8_t {
-  Number,   /* 数值 */
-  Boolean,  /* 布尔 */
-  String,   /* 字符串 */
+  Number,     /* 数值 */
+  Boolean,    /* 布尔 */
+  String,     /* 字符串 */
+  Interrupt,  /* 控制流中断载体（§8.1） */
   /* M3+ 扩展：Object / Array / Function / RegExp / Symbol / BigInt 等 */
 };
 
@@ -60,6 +63,26 @@ struct BooleanData : Data {
 struct StringData : Data {
   StringData() : Data(DataKind::String) {}
   std::string str;
+};
+
+/* 控制流中断载体：data=InterruptData{kind,value}（§8.1）。
+ * 继承 Data（DataKind::Interrupt），统一走 value 析构时的 data 生命周期
+ * （refcount--，归零 delete），GC 释放安全。
+ * value：内部承载值（return 的返回值 / throw 的异常值），借用指针，
+ *   所有权在源 scope（中断传播期间不销毁，平衡推迟到消费点）。 */
+struct InterruptData : Data {
+  InterruptData() : Data(DataKind::Interrupt) {}
+
+  enum class Kind : uint8_t {
+    Return,   /* return：value 为返回值 */
+    Break,    /* break：value 通常 undefined */
+    Continue, /* continue：value 通常 undefined */
+    Yield,    /* yield：value 为产出值 */
+    Await,    /* await：value 为 awaited 值 */
+  };
+
+  Kind kind = Kind::Return;
+  Value *value = nullptr; /* 借用指针（所有权在源 scope） */
 };
 
 }  // namespace core
