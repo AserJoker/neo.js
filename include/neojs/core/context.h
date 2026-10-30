@@ -1,0 +1,99 @@
+/*
+ * core 层：context（运行时根）。
+ *
+ * 遵循 docs/scope-redesign.md §1.4/§6：
+ *   - context 共享长寿命：rootScope/模块表/内置。
+ *   - vm 每次模块执行/函数调用独立，不拥有 scope；scope 树归 context。
+ *   - current_scope：当前作用域指针（vm 操作）。
+ *   - 一切新 value 创建都加入 current_scope.values（scope_ref=1），
+ *     栈中存的全部是借用值。
+ *
+ * M1 提供：value 工厂 + scope 树管理 + load/store/clone 语义。
+ */
+
+#ifndef NEOJS_CORE_CONTEXT_H
+#define NEOJS_CORE_CONTEXT_H
+
+#include <string>
+
+#include "neojs/core/allocator.h"
+#include "neojs/core/data.h"
+#include "neojs/core/scope.h"
+#include "neojs/core/value.h"
+
+namespace neojs {
+namespace core {
+
+struct Context : AllocatedObject {
+  Context();
+  ~Context();
+
+  /* 全局根作用域：所有模块的 globalScope 挂在 rootScope 下。 */
+  Scope *root_scope = nullptr;
+
+  /* 当前作用域（vm 操作；进入函数/模块时切换）。 */
+  Scope *current_scope = nullptr;
+
+  /* ---------- value 工厂（全部加入 current_scope.values，scope_ref=1） ---------- */
+
+  /* 创建 value（kind 指定），加入 current_scope.values（scope_ref++）。
+   * 返回原始 value*（调用方按借用持有，随作用域退出回收）。 */
+  Value *create_value(ValueKind kind);
+
+  /* 带 data 的工厂：创建 value + data（data refcount=1）。 */
+  Value *create_number(double n);
+  Value *create_boolean(bool b);
+  Value *create_string(const std::string &s);
+
+  /* 特殊值工厂（无 data）。 */
+  Value *create_undefined();
+  Value *create_null();
+  Value *create_uninitialized();
+
+  /* ---------- scope 管理 ---------- */
+
+  /* 在 current_scope 下新建子 scope 并设为 current_scope，返回新 scope。 */
+  Scope *push_scope();
+
+  /* 销毁 current_scope 并恢复 parent 为 current_scope。
+   * 返回被销毁的 scope（调用方已不可用）。 */
+  void pop_scope();
+
+  /* 销毁指定 scope 整棵子树（递归 children + values scope_ref--）。 */
+  void destroy_scope(Scope *scope);
+
+  /* 将 scope 设为 current_scope（进入函数 body / 模块）。 */
+  void set_current_scope(Scope *scope) { current_scope = scope; }
+
+  /* ---------- 绑定 ---------- */
+
+  /* 在 current_scope 定义具名绑定：name → value*（所有权在 values）。
+   * 已存在则覆盖（同名遮蔽由调用方保证）。 */
+  void define(const std::string &name, Value *value);
+
+  /* load：沿 parent 链查找 named_values，返回原始变量（value*，非拷贝）。
+   * 未找到返回 nullptr（全局兜底由调用方处理）。 */
+  Value *load(const std::string &name);
+
+  /* load_from：从指定 scope 沿 parent 链查找（闭包/模块 import 用）。 */
+  Value *load_from(Scope *start, const std::string &name);
+
+  /* store：改 data 内容，不顶替变量（§3.5）。
+   *   绑定已存在：target->data = clone(new_value->data)，target 的 value
+   *   对象本身不变 → 闭包 scope 持有的同一 value 读到新 data。
+   *   绑定不存在：无操作（返回 false，由调用方决定隐式全局/ReferenceError）。
+   * 返回 true 表示绑定存在且已存储。 */
+  bool store(const std::string &name, Value *new_value);
+
+  /* clone：按 data 类型分派（§3.5）。
+   *   - 复杂变量（引用类型，有 refcount）：data->refcount++，返回同一 data。
+   *   - 小对象（内联）：直接拷贝值。
+   *   - 其他（值类型/需深拷贝）：深拷贝，new 新 data。
+   * M1 值类型（Number/Boolean/String）走深拷贝；后续 Object 走 refcount。 */
+  Data *clone(Data *data);
+};
+
+}  // namespace core
+}  // namespace neojs
+
+#endif  // NEOJS_CORE_CONTEXT_H
