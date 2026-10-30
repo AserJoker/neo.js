@@ -363,28 +363,6 @@ Value *strict_ne(Context &ctx, Value *lhs, Value *rhs) {
 }
 
 /* ========================================================================== */
-/* 逻辑运算                                                                   */
-/* ========================================================================== */
-
-Value *logical_and(Context &ctx, Value *lhs, Value *rhs) {
-  (void)ctx;
-  return to_boolean_impl(lhs) ? rhs : lhs;
-}
-
-Value *logical_or(Context &ctx, Value *lhs, Value *rhs) {
-  (void)ctx;
-  return to_boolean_impl(lhs) ? lhs : rhs;
-}
-
-Value *nullish(Context &ctx, Value *lhs, Value *rhs) {
-  (void)ctx;
-  if (lhs->kind == ValueKind::Null || lhs->kind == ValueKind::Undefined) {
-    return rhs;
-  }
-  return lhs;
-}
-
-/* ========================================================================== */
 /* 异常通道                                                                   */
 /* ========================================================================== */
 

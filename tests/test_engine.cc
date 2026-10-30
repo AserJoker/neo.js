@@ -216,29 +216,6 @@ TEST(Engine, Equality) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* 逻辑运算                                                                   */
-/* -------------------------------------------------------------------------- */
-
-TEST(Engine, Logical) {
-  Context ctx;
-  Value *zero = eng::create_number(ctx, 0);
-  Value *one = eng::create_number(ctx, 1);
-  Value *two = eng::create_number(ctx, 2);
-  /* && */
-  EXPECT_EQ(eng::logical_and(ctx, zero, two), zero);
-  EXPECT_EQ(eng::logical_and(ctx, one, two), two);
-  /* || */
-  EXPECT_EQ(eng::logical_or(ctx, zero, two), two);
-  EXPECT_EQ(eng::logical_or(ctx, one, two), one);
-  /* ?? */
-  Value *u = eng::create_undefined(ctx);
-  Value *nul = eng::create_null(ctx);
-  EXPECT_EQ(eng::nullish(ctx, u, two), two);
-  EXPECT_EQ(eng::nullish(ctx, nul, two), two);
-  EXPECT_EQ(eng::nullish(ctx, one, two), one);
-}
-
-/* -------------------------------------------------------------------------- */
 /* 异常通道                                                                   */
 /* -------------------------------------------------------------------------- */
 

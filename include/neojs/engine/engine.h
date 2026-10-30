@@ -133,19 +133,6 @@ Value *strict_eq(Context &ctx, Value *lhs, Value *rhs);
 Value *strict_ne(Context &ctx, Value *lhs, Value *rhs);
 
 /* ========================================================================== */
-/* 逻辑运算（短路语义由 vm 负责；此处提供值级 and/or 求值）                     */
-/* ========================================================================== */
-
-/* && ：lhs 为假则返回 lhs，否则返回 rhs（值级，不含短路）。 */
-Value *logical_and(Context &ctx, Value *lhs, Value *rhs);
-
-/* || ：lhs 为真则返回 lhs，否则返回 rhs。 */
-Value *logical_or(Context &ctx, Value *lhs, Value *rhs);
-
-/* ?? ：lhs 非 null/undefined 则返回 lhs，否则返回 rhs。 */
-Value *nullish(Context &ctx, Value *lhs, Value *rhs);
-
-/* ========================================================================== */
 /* 异常通道                                                                   */
 /* ========================================================================== */
 
