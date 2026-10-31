@@ -19,13 +19,18 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "neojs/core/allocator.h"
 
 namespace neojs {
+namespace vm {
+struct Bytecode; /* 前向声明：FunctionData 持模块字节码引用（core 不依赖 vm 完整定义） */
+}  // namespace vm
 namespace core {
 
-struct Value; /* 前向声明：InterruptData 承载借用 value 指针 */
+struct Value;  /* 前向声明：InterruptData 承载借用 value 指针 */
+struct Scope;  /* 前向声明：FunctionData 持闭包作用域（定义在 scope.h） */
 
 /* data 类型（M1：值类型数据 + 预留对象/函数等引用类型） */
 enum class DataKind : uint8_t {
@@ -33,7 +38,8 @@ enum class DataKind : uint8_t {
   Boolean,    /* 布尔 */
   String,     /* 字符串 */
   Interrupt,  /* 控制流中断载体（§8.1） */
-  /* M3+ 扩展：Object / Array / Function / RegExp / Symbol / BigInt 等 */
+  Function,   /* 函数（M5-B） */
+  /* M3+ 扩展：Object / Array / RegExp / Symbol / BigInt 等 */
 };
 
 /* Data：引用类型实际数据基类（多态，全部装箱）。
@@ -83,6 +89,22 @@ struct InterruptData : Data {
 
   Kind kind = Kind::Return;
   Value *value = nullptr; /* 借用指针（所有权在源 scope） */
+};
+
+/* 函数数据（M5-B）：函数对象 = 字节码偏移 + 闭包作用域（§1.3/§7）。
+ * 调用序：closure scope → argument scope → body scope。
+ * bytecode：所属模块字节码（借用指针，模块生命周期内有效）。
+ * offset：函数体起始指令偏移（compiler 保证末尾 Ret）。
+ * param_count：形参个数（调用时参数绑定）。 */
+struct FunctionData : Data {
+  FunctionData() : Data(DataKind::Function) {}
+
+  const vm::Bytecode *bytecode = nullptr; /* 所属模块字节码（借用） */
+  size_t offset = 0;                      /* 函数体起始指令偏移 */
+  size_t param_count = 0;                 /* 形参个数 */
+  core::Scope *closure_scope = nullptr;   /* 闭包作用域（借用，§7） */
+  /* 形参名（常量池 idx，M5-B：调用时参数绑定到 argument scope） */
+  std::vector<uint32_t> params;
 };
 
 }  // namespace core

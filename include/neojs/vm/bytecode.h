@@ -41,6 +41,9 @@ enum class Opcode : uint8_t {
   DefineVarGlobal, /* 声明 var：define 到 var 目标 scope（M5-A=全局，函数后=函数级） */
   PushScope,      /* 进入块作用域：ctx.push_scope() */
   PopScope,       /* 离开块作用域：ctx.pop_scope() */
+  CreateFunction, /* 创建函数值：常量池[idx]=func_index，压函数值（闭包捕获随后挂载） */
+  SetClosure,     /* 闭包捕获：常量池[idx]=name，load 后 define 到栈顶函数值 closure scope（§10.8） */
+  Call,           /* 调用函数：常量池[idx]=argc，栈顶以下 argc 个是参数，再下面 callee（§7） */
 
   /* 一元 */
   Pos,    /* +x */
@@ -88,6 +91,10 @@ enum class Opcode : uint8_t {
 
   /* 终止 */
   Ret, /* 返回栈顶 */
+  Halt, /* 停止执行（main 区结束；函数体区在主流程后，用 Halt 隔离） */
+
+  /* 运行时选项（directive 序言，compiler 在作用域入口生成，§10.8+） */
+  EnableOption, /* 启用选项：常量池[idx]=name，设到 current_scope（scope 销毁自动恢复） */
 
   Count, /* 指令条数（vm 层 handler 表大小用） */
 };
@@ -112,12 +119,14 @@ struct ConstEntry {
   bool boolean = false;
 };
 
-/* 函数体在 module bytecode 中的位置（借用同一 bytecode + 指令偏移）。
- * 每个函数 = 一段连续指令区间 [offset, end)。顶层（Program）为 offset 0。
- * M5-A 先建模型；函数体编译/调用在 M5-B 落地。 */
+/* 函数体在 module bytecode 中的起始指令偏移（借用同一 bytecode）。
+ * 编译器保证每个函数体末尾生成 Ret（无显式 return 则 PushUndefined+Ret），
+ * 故无需 end——从 offset 执行到 Ret 即函数结束。顶层（Program）为 offset 0。
+ * M5-A 建模型；函数体编译/调用在 M5-B 落地。 */
 struct FunctionInfo {
-  size_t offset = 0; /* 起始指令偏移 */
-  size_t end = 0;    /* 结束指令偏移（不含） */
+  size_t offset = 0;      /* 起始指令偏移 */
+  size_t param_count = 0; /* 形参个数（M5-B：调用时参数绑定） */
+  std::vector<uint32_t> params; /* 形参名（常量池 idx，M5-B：调用时绑定参数） */
 };
 
 /* 模块字节码：指令 + 常量池 + 函数表（函数借用本 bytecode + offset）。 */
@@ -146,6 +155,9 @@ struct Bytecode : core::AllocatedObject {
     instructions[at].arg = static_cast<uint32_t>(target);
   }
 };
+
+/* 调试：输出字节码文本（指令 + 常量池 + 函数表）。CLI --dump-bytecode 用。 */
+std::string dumpBytecode(const Bytecode &bc);
 
 }  // namespace vm
 }  // namespace neojs

@@ -1,6 +1,7 @@
 #include "neojs/frontend/parser.h"
 
 #include <string>
+#include <utility>
 
 namespace neojs {
 
@@ -27,6 +28,8 @@ ASTNode *Parser::parseStatementList() {
     if (expr->type == NodeType::Literal && expr->literal.is_string) {
       stmt->directive = expr->literal.str;
       if (stmt->directive == "use strict") strict_ = true; /* 严格模式 */
+      /* 收集到 Program/Module 节点：compiler 据此生成 EnableOption */
+      program->directives.push_back(stmt->directive);
     }
     program->children.push_back(stmt);
   }
@@ -916,6 +919,9 @@ ASTNode *Parser::parseFunctionDeclaration(bool allow_anonymous, bool is_async,
     return nullptr;
   }
   fn->children.push_back(body);
+  /* 函数体指令序言：从 body 块挪到函数节点（compiler 在函数体入口生成选项开关） */
+  fn->directives = std::move(body->directives);
+  body->directives.clear();
   /* 严格模式参数检查（strict_params 已含 body directive 影响） */
   if (checkStrictParams(fn, strict_params, has_name,
                         static_cast<int>(fn->children.size()) - 1)) {
@@ -1063,6 +1069,9 @@ ASTNode *Parser::parseFunctionExpression(bool is_async, bool is_generator) {
     return nullptr;
   }
   fn->children.push_back(body);
+  /* 函数体指令序言：从 body 块挪到函数节点（compiler 在函数体入口生成选项开关） */
+  fn->directives = std::move(body->directives);
+  body->directives.clear();
   /* 严格模式参数检查（strict_params 已含 body directive 影响） */
   if (checkStrictParams(fn, strict_params, has_name,
                         static_cast<int>(fn->children.size()) - 1)) {
@@ -1174,6 +1183,9 @@ ASTNode *Parser::parseMethodFunction(bool is_async, bool is_generator) {
     return nullptr;
   }
   fn->children.push_back(body);
+  /* 函数体指令序言：从 body 块挪到函数节点（compiler 在函数体入口生成选项开关） */
+  fn->directives = std::move(body->directives);
+  body->directives.clear();
   if (checkStrictParams(fn, strict_params, /*has_name=*/false,
                         static_cast<int>(fn->children.size()) - 1)) {
     delete fn;
@@ -2162,6 +2174,8 @@ ASTNode *Parser::parseBlock(bool detect_strict) {
       if (expr->type == NodeType::Literal && expr->literal.is_string) {
         stmt->directive = expr->literal.str;
         if (stmt->directive == "use strict") strict_ = true;
+        /* 收集到块节点（函数体块）：compiler 据此生成函数体选项开关 */
+        block->directives.push_back(stmt->directive);
       }
       block->children.push_back(stmt);
     }

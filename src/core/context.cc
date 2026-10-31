@@ -58,6 +58,24 @@ Value *Context::create_interrupt(InterruptData::Kind kind, Value *value) {
   return v;
 }
 
+Value *Context::create_function(const vm::Bytecode *bytecode, size_t offset,
+                                size_t param_count, Scope *closure_scope,
+                                const std::vector<uint32_t> &params) {
+  /* 函数值：kind=Function，data=FunctionData{bytecode,offset,param_count,
+   * closure_scope, params}。data refcount=1，closure_scope 为借用指针（§7）。
+   * 函数值本身挂 current_scope（定义点作用域）。 */
+  Value *v = create_value(ValueKind::Function);
+  FunctionData *d = new FunctionData();
+  d->refcount = 1;
+  d->bytecode = bytecode;
+  d->offset = offset;
+  d->param_count = param_count;
+  d->closure_scope = closure_scope;
+  d->params = params;
+  v->data = d;
+  return v;
+}
+
 Value *Context::unwrap_interrupt(Value *v) {
   if (v == nullptr || v->kind != ValueKind::Interrupt) return v;
   InterruptData *d = static_cast<InterruptData *>(v->data);
@@ -135,6 +153,15 @@ void Context::define_var(const std::string &name, Value *value) {
   root_scope->named_values[name] = value;
 }
 
+Value *Context::define_global(const std::string &name, Value *value) {
+  /* 隐式全局：挂 root_scope（scope_ref++），并建立具名绑定。
+   * value 为借用指针（所有权在源 scope），attach 保证 root_scope 退出前存活。 */
+  if (root_scope == nullptr) return value;
+  attach(root_scope, value);
+  root_scope->named_values[name] = value;
+  return value;
+}
+
 Value *Context::load(const std::string &name) {
   return load_from(current_scope, name);
 }
@@ -197,6 +224,10 @@ Data *Context::clone(Data *data) {
       d->str = static_cast<StringData *>(data)->str;
       return d;
     }
+    case DataKind::Function:
+      /* 函数是引用类型（§3.5）：data refcount++，共享同一 data。 */
+      data->refcount++;
+      return data;
     case DataKind::Interrupt:
       /* 控制流中断载体（借用）不可 clone：store 赋值不应用于它。 */
       return nullptr;

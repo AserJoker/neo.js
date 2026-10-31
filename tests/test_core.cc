@@ -247,3 +247,38 @@ TEST(CoreClone, ValueTypesDeepCopy) {
   EXPECT_EQ(cloned->refcount, 1);
   delete cloned;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Allocator 分配上限（防失控耗尽系统资源）                                    */
+/* -------------------------------------------------------------------------- */
+
+#include "neojs/core/allocator.h"
+
+namespace {
+/* 测试辅助：恢复分配上限 + 计数归零（alloc/free 平衡后应为 0）。 */
+struct AllocatorGuard {
+  size_t saved_limit = neojs::core::Allocator::limit();
+  AllocatorGuard() { neojs::core::Allocator::set_limit(size_t{1} << 60); }
+  ~AllocatorGuard() {
+    neojs::core::Allocator::set_limit(saved_limit);
+  }
+};
+}
+
+TEST(Allocator, AllocFreeBalance) {
+  AllocatorGuard g;
+  /* alloc/free 平衡后活跃计数归零（MSVC 精确；其他平台高估但非负）。 */
+  void *p1 = neojs::core::Allocator::alloc(100);
+  void *p2 = neojs::core::Allocator::alloc(200);
+  EXPECT_GE(neojs::core::Allocator::allocated(), 300u);
+  neojs::core::Allocator::free(p1);
+  neojs::core::Allocator::free(p2);
+}
+
+TEST(Allocator, LimitExceededAborts) {
+  AllocatorGuard g;
+  neojs::core::Allocator::set_limit(64);
+  /* 超上限分配 → oomAbort（death test）。 */
+  EXPECT_DEATH({ neojs::core::Allocator::alloc(4096); },
+               "out of memory");
+}

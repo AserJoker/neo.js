@@ -32,7 +32,8 @@ enum class ValueKind : uint8_t {
   Boolean,       /* 布尔（data=BooleanData） */
   Number,        /* 数值（data=NumberData） */
   String,        /* 字符串（data=StringData） */
-  /* M3+ 扩展：BigInt / Symbol / Object / Function / Array / RegExp */
+  Function,      /* 函数（data=FunctionData，M5-B） */
+  /* M3+ 扩展：BigInt / Symbol / Object / Array / RegExp */
 
   /* 特殊值（无 data 或 data 为内部载体） */
   Uninitialized, /* TDZ 哨兵：作用域进入时 let/const 初值，读它抛 ReferenceError */

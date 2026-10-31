@@ -1,6 +1,7 @@
 #include "neojs/frontend/parser.h"
 
 #include <string>
+#include <utility>
 
 namespace neojs {
 
@@ -473,6 +474,9 @@ ASTNode *Parser::parseArrowFunction(bool parenthesized, bool is_async) {
     return nullptr;
   }
   arrow->children.push_back(body);
+  /* 函数体指令序言：从 body 块挪到函数节点（表达式体无 directives） */
+  arrow->directives = std::move(body->directives);
+  body->directives.clear();
   /* 严格模式参数检查（箭头函数无 name） */
   if (checkStrictParams(arrow, strict_params, /*has_name=*/false,
                         static_cast<int>(arrow->children.size()) - 1)) {

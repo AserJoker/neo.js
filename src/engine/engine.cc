@@ -250,6 +250,7 @@ Value *typeof_value(Context &ctx, Value *v) {
     case ValueKind::Boolean: type = "boolean"; break;
     case ValueKind::Undefined: type = "undefined"; break;
     case ValueKind::Uninitialized: type = "undefined"; break;
+    case ValueKind::Function: type = "function"; break;
     default: type = "object"; break; /* null 等 */
   }
   return create_string(ctx, type);

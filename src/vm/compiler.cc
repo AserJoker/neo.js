@@ -1,5 +1,11 @@
 #include "neojs/vm/compiler.h"
 
+#include <cstddef>
+#include <utility>
+#include <vector>
+
+#include "neojs/frontend/sema.h"
+
 namespace neojs {
 namespace vm {
 
@@ -10,6 +16,16 @@ using neojs::BinaryOpKind;
 using neojs::NodeType;
 using neojs::UnaryOpKind;
 using neojs::VarKind;
+
+/* 编译上下文：函数收集器（函数体延迟到主流程编译完再追加到尾部）。
+ * 两阶段编译（§5.1）：
+ *   - 阶段1：主流程编译，函数节点只预留 functions[idx] + 发 CreateFunction。
+ *   - 阶段2：compile_function_bodies 统一把函数体追加到 bc 尾部回填 offset。
+ * 主流程末尾必须发 Halt，防止顺序执行流进函数体区。 */
+struct CompilerCtx {
+  /* 待编译函数体：{函数节点, functions 表 idx}（阶段2 遍历编译）。 */
+  std::vector<std::pair<ASTNode *, size_t>> funcs;
+};
 
 /* 二元运算（非短路）→ Opcode。返回 true 命中。 */
 bool map_binary(BinaryOpKind k, Opcode &op) {
@@ -51,33 +67,147 @@ bool map_unary(UnaryOpKind k, Opcode &op) {
   }
 }
 
-/* 编译短路逻辑：lhs op rhs。op 为短路判定跳转指令。
- * 布局：compile lhs; jump_if_xx END; pop(丢掉 lhs); compile rhs; END:
- *   - 条件命中（jump_op 跳转）：lhs 即结果，保留栈顶跳到 END。
- *   - 条件不命中：pop 掉 lhs，计算 rhs 得结果。
- * 例：
- *   &&（JumpIfFalse）：lhs 假 → 跳 END 返回 lhs；真 → pop 后算 rhs。
- *   ||（JumpIfTrue）：lhs 真 → 跳 END 返回 lhs；假 → pop 后算 rhs。
- *   ??（JumpIfNotNullish）：lhs 非 null/undefined → 跳 END 返回 lhs；
- *       nullish → pop 后算 rhs。 */
-bool compile_short_circuit(ASTNode *node, Bytecode &bc, Opcode jump_op) {
+/* 递归编译表达式。ctx 收集函数体（延迟到主流程后统一编译）。
+ * compile_expression（公开 M4 入口）是它的薄封装。 */
+bool compile_expr_inner(ASTNode *node, Bytecode &bc, CompilerCtx *ctx);
+
+/* 编译短路逻辑：lhs op rhs。op 为短路判定跳转指令。 */
+bool compile_short_circuit(ASTNode *node, Bytecode &bc, CompilerCtx *ctx,
+                           Opcode jump_op) {
   if (node->children.size() < 2) return false;
-  if (!compile_expression(node->children[0], bc)) return false;
+  if (!compile_expr_inner(node->children[0], bc, ctx)) return false;
   size_t jump_at = bc.size();
   bc.emit(jump_op); /* 占位，回填 */
   bc.emit(Opcode::Pop); /* 非跳转路径：丢掉 lhs */
-  if (!compile_expression(node->children[1], bc)) return false;
+  if (!compile_expr_inner(node->children[1], bc, ctx)) return false;
   bc.patch_jump(jump_at, bc.size());
   return true;
 }
 
-}  // namespace
+/* 递归编译语句。ctx 收集函数体。 */
+bool compile_stmt_inner(ASTNode *node, Bytecode &bc, CompilerCtx *ctx);
+bool compile_stmt_list(ASTNode *node, Bytecode &bc, CompilerCtx *ctx);
 
-/* ========================================================================== */
-/* 表达式编译（M4 已有）                                                      */
-/* ========================================================================== */
+/* 阶段1：函数节点占位。
+ * 布局（主流程内）：
+ *   CreateFunction{idx} → 压函数值
+ *   LoadVar{cap} + SetClosure{cap}（每个捕获名，§10.8 op_set_closure）
+ * 函数体字节码延迟到阶段2 追加到尾部。 */
+bool compile_function_placeholder(ASTNode *node, Bytecode &bc,
+                                  CompilerCtx *ctx) {
+  /* 预留函数表项（offset 阶段2 回填；param_count/params 现在填） */
+  size_t idx = bc.functions.size();
+  FunctionInfo info;
+  /* children = [name?, params..., body]（fn_has_name 标记 name 存在） */
+  size_t nparams = node->children.size() - 1 - (node->fn_has_name ? 1 : 0);
+  info.param_count = nparams;
+  for (size_t i = 0; i < nparams; ++i) {
+    size_t pi = node->fn_has_name ? i + 1 : i;
+    ASTNode *param = node->children[pi];
+    ASTNode *id = param;
+    if (param->type == NodeType::AssignmentPattern && !param->children.empty()) {
+      id = param->children[0]; /* 默认值 a = 1 → 取 a */
+    }
+    if (id->type == NodeType::Identifier) {
+      info.params.push_back(bc.add_string(id->name));
+    } else {
+      info.params.push_back(bc.add_string("")); /* 解构 M5-B 不做 */
+    }
+  }
+  bc.functions.push_back(info);
+  if (ctx != nullptr) ctx->funcs.push_back({node, idx});
 
-bool compile_expression(ASTNode *node, Bytecode &bc) {
+  bc.emit(Opcode::CreateFunction, static_cast<uint32_t>(idx));
+  /* 捕获挂载：函数节点 captures 列表。 */
+  for (const std::string &cap : node->captures) {
+    bc.emit(Opcode::LoadVar, bc.add_string(cap));
+    bc.emit(Opcode::SetClosure, bc.add_string(cap));
+  }
+  return true;
+}
+
+/* 作用域入口：按 directives 清单发 EnableOption（指令序言，先于变量定义生效）。
+ * 选项是作用域属性：设到当前 scope，scope 销毁自动恢复，无需 DisableOption。 */
+void compile_option_entry(const std::vector<std::string> &directives,
+                          Bytecode &bc) {
+  for (const std::string &d : directives) {
+    bc.emit(Opcode::EnableOption, bc.add_string(d));
+  }
+}
+
+/* 阶段2：编译函数体（追加到 bc 尾部）。
+ * 布局：body scope 变量定义（var/let/const 提升清单）→ 函数体语句 → Ret。
+ * 函数体块不 PushScope（Call 已建 body scope）；编译器保证末尾 Ret。 */
+bool compile_function_body(ASTNode *node, Bytecode &bc, CompilerCtx *ctx) {
+  ASTNode *body = node->children.empty() ? nullptr : node->children.back();
+  if (body == nullptr) return false;
+
+  /* 函数体指令序言：入口 EnableOption（先于变量定义生效）。
+   * 选项设到 body scope：函数返回 body scope 销毁自动恢复，无需 DisableOption。 */
+  compile_option_entry(node->directives, bc);
+
+  /* 按 sema 挂载的 body_scope（node->scope_info）变量清单生成定义 */
+  sema::ShadowScope *ss = node->scope_info;
+  if (ss != nullptr) {
+    for (sema::ShadowValue *sv : ss->values) {
+      if (sv->kind == VarKind::Var) {
+        bc.emit(Opcode::PushUndefined);
+      } else {
+        bc.emit(Opcode::PushUninitialized);
+      }
+      bc.emit(Opcode::DefineVar, bc.add_string(sv->name));
+    }
+  }
+
+  if (body->type == NodeType::BlockStatement) {
+    for (ASTNode *stmt : body->children) {
+      if (!compile_stmt_inner(stmt, bc, ctx)) return false;
+    }
+  } else {
+    /* 箭头函数表达式体：求值 → Ret */
+    if (!compile_expr_inner(body, bc, ctx)) return false;
+    bc.emit(Opcode::Ret);
+    return true;
+  }
+  /* 无显式 return：PushUndefined + Ret（compiler 保证函数末尾 Ret） */
+  bc.emit(Opcode::PushUndefined);
+  bc.emit(Opcode::Ret);
+  return true;
+}
+
+/* 阶段2：遍历收集的函数，逐个编译函数体到尾部并回填 offset。
+ * 嵌套函数（函数体内收集）会在遍历过程中追加到 ctx->funcs，循环自然处理。 */
+bool compile_function_bodies(CompilerCtx &ctx, Bytecode &bc) {
+  for (size_t i = 0; i < ctx.funcs.size(); ++i) {
+    ASTNode *fn = ctx.funcs[i].first;
+    size_t idx = ctx.funcs[i].second;
+    size_t offset = bc.size();
+    if (!compile_function_body(fn, bc, &ctx)) return false;
+    bc.functions[idx].offset = offset;
+  }
+  return true;
+}
+
+/* 作用域入口：进入挂有 shadow_scope 的节点（Program/Block）时，
+ * 按变量清单生成定义（var=undefined、let/const=UNINITIALIZED 哨兵，§10.8）。
+ * 返回 true 表示该节点产生作用域。 */
+bool compile_scope_entry(ASTNode *node, Bytecode &bc) {
+  sema::ShadowScope *ss = node->scope_info;
+  if (ss == nullptr) return false;
+  for (sema::ShadowValue *sv : ss->values) {
+    if (sv->kind == VarKind::Var) {
+      bc.emit(Opcode::PushUndefined);
+    } else {
+      bc.emit(Opcode::PushUninitialized);
+    }
+    bc.emit(Opcode::DefineVar, bc.add_string(sv->name));
+  }
+  return true;
+}
+
+/* ---------- 表达式编译（内部版本，ctx 贯穿） ---------- */
+
+bool compile_expr_inner(ASTNode *node, Bytecode &bc, CompilerCtx *ctx) {
   if (node == nullptr) return false;
   switch (node->type) {
     case NodeType::Literal: {
@@ -107,13 +237,30 @@ bool compile_expression(ASTNode *node, Bytecode &bc) {
       return true;
     }
 
+    case NodeType::FunctionExpression:
+    case NodeType::ArrowFunctionExpression: {
+      /* 函数表达式：CreateFunction + 捕获挂载 → 栈顶函数值。 */
+      return compile_function_placeholder(node, bc, ctx);
+    }
+
+    case NodeType::CallExpression: {
+      /* 函数调用：compile callee → args → Call{argc}（§7）。 */
+      if (node->children.empty()) return false;
+      if (!compile_expr_inner(node->children[0], bc, ctx)) return false;
+      size_t argc = node->children.size() - 1;
+      for (size_t i = 1; i < node->children.size(); ++i) {
+        if (!compile_expr_inner(node->children[i], bc, ctx)) return false;
+      }
+      bc.emit(Opcode::Call, static_cast<uint32_t>(argc));
+      return true;
+    }
+
     case NodeType::Assignment: {
-      /* 赋值：lhs = rhs。M5-A 仅支持 lhs 为 Identifier。
-       * 布局：compile rhs; StoreVar{name}（保留栈顶 = 赋值表达式结果）。 */
+      /* 赋值：lhs = rhs。M5-B 仅支持 lhs 为 Identifier。 */
       if (node->children.size() < 2) return false;
       ASTNode *lhs = node->children[0];
       if (lhs->type != NodeType::Identifier) return false; /* 成员/解构 M5-B */
-      if (!compile_expression(node->children[1], bc)) return false;
+      if (!compile_expr_inner(node->children[1], bc, ctx)) return false;
       bc.emit(Opcode::StoreVar, bc.add_string(lhs->name));
       return true;
     }
@@ -122,7 +269,7 @@ bool compile_expression(ASTNode *node, Bytecode &bc) {
       if (node->children.size() < 1) return false;
       Opcode op;
       if (!map_unary(node->unop, op)) return false;
-      if (!compile_expression(node->children[0], bc)) return false;
+      if (!compile_expr_inner(node->children[0], bc, ctx)) return false;
       bc.emit(op);
       return true;
     }
@@ -131,169 +278,108 @@ bool compile_expression(ASTNode *node, Bytecode &bc) {
       if (node->children.size() < 2) return false;
       /* 短路逻辑单独处理 */
       if (node->binop == BinaryOpKind::LogicalAnd) {
-        return compile_short_circuit(node, bc, Opcode::JumpIfFalse);
+        return compile_short_circuit(node, bc, ctx, Opcode::JumpIfFalse);
       }
       if (node->binop == BinaryOpKind::LogicalOr) {
-        return compile_short_circuit(node, bc, Opcode::JumpIfTrue);
+        return compile_short_circuit(node, bc, ctx, Opcode::JumpIfTrue);
       }
       if (node->binop == BinaryOpKind::Nullish) {
-        /* ??：lhs 非 nullish 返回 lhs（跳 END），nullish 计算 rhs。
-         * 与 &&(JumpIfFalse)/||(JumpIfTrue) 对称：跳转 = 保留左操作数。 */
-        return compile_short_circuit(node, bc, Opcode::JumpIfNotNullish);
+        return compile_short_circuit(node, bc, ctx, Opcode::JumpIfNotNullish);
       }
       Opcode op;
       if (!map_binary(node->binop, op)) return false;
-      if (!compile_expression(node->children[0], bc)) return false;
-      if (!compile_expression(node->children[1], bc)) return false;
+      if (!compile_expr_inner(node->children[0], bc, ctx)) return false;
+      if (!compile_expr_inner(node->children[1], bc, ctx)) return false;
       bc.emit(op);
       return true;
     }
 
     case NodeType::Conditional: {
-      /* cond ? a : b；M4 表达式支持。
-       * 布局：compile cond; jump_if_false ELSE; compile a; jump END;
-       *       ELSE: pop(丢掉 cond); compile b; END:
-       * 注意：conditional 的 jump_if_false 与短路不同，需要 pop 掉 cond
-       * （短路保留栈顶作为结果，conditional 跳去求值另一分支）。 */
+      /* cond ? a : b */
       if (node->children.size() < 3) return false;
-      if (!compile_expression(node->children[0], bc)) return false;
+      if (!compile_expr_inner(node->children[0], bc, ctx)) return false;
       size_t jump_false_at = bc.size();
       bc.emit(Opcode::JumpIfFalse);
-      if (!compile_expression(node->children[1], bc)) return false;
+      if (!compile_expr_inner(node->children[1], bc, ctx)) return false;
       size_t jump_end_at = bc.size();
       bc.emit(Opcode::Jump);
       bc.patch_jump(jump_false_at, bc.size());
       bc.emit(Opcode::Pop); /* 丢掉 cond */
-      if (!compile_expression(node->children[2], bc)) return false;
+      if (!compile_expr_inner(node->children[2], bc, ctx)) return false;
       bc.patch_jump(jump_end_at, bc.size());
       return true;
     }
 
     default:
-      /* 函数调用/成员/对象字面量等：M4/M5-B 不实现 */
+      /* 成员/对象字面量等：后续 */
       return false;
   }
 }
 
-/* ========================================================================== */
-/* 语句编译（M5-A）                                                           */
-/* ========================================================================== */
+/* ---------- 语句编译（内部版本，ctx 贯穿） ---------- */
 
-namespace {
-
-/* 收集块内直接子语句中的 let/const 声明名（不递归嵌套块）。
- * 用于块级 TDZ：进入块时先为这些名字发哨兵定义。 */
-void collect_tdz_names(ASTNode *block, std::vector<std::string> &names) {
-  for (ASTNode *stmt : block->children) {
-    if (stmt->type != NodeType::VariableDeclaration) continue;
-    if (stmt->varkind == VarKind::Var) continue; /* var 无 TDZ */
-    for (ASTNode *d : stmt->children) {
-      if (d->type != NodeType::VariableDeclarator) continue;
-      if (d->children.empty()) continue;
-      ASTNode *id = d->children[0];
-      if (id->type == NodeType::Identifier) names.push_back(id->name);
-    }
-  }
-}
-
-bool compile_statement_inner(ASTNode *node, Bytecode &bc,
-                             const std::vector<std::string> *declared);
-
-/* 编译语句列表。declared = 本层已预声明的 let/const 名字集合（可能为空）。 */
-bool compile_statement_list(ASTNode *node, Bytecode &bc,
-                            const std::vector<std::string> *declared) {
-  for (ASTNode *child : node->children) {
-    if (!compile_statement_inner(child, bc, declared)) return false;
-  }
-  return true;
-}
-
-bool compile_statement_inner(ASTNode *node, Bytecode &bc,
-                             const std::vector<std::string> *declared) {
+bool compile_stmt_inner(ASTNode *node, Bytecode &bc, CompilerCtx *ctx) {
   if (node == nullptr) return false;
   switch (node->type) {
     case NodeType::ExprStmt: {
       /* 表达式语句：求值后丢弃结果 */
       if (node->children.empty()) return false;
-      if (!compile_expression(node->children[0], bc)) return false;
+      if (!compile_expr_inner(node->children[0], bc, ctx)) return false;
       bc.emit(Opcode::Pop);
       return true;
     }
 
     case NodeType::BlockStatement: {
-      /* 块：进入新作用域，先为直接 let/const 发 TDZ 哨兵定义，编译子语句，离开。 */
-      std::vector<std::string> tdz;
-      collect_tdz_names(node, tdz);
+      /* 块：进入新作用域，按 sema 变量清单发定义（TDZ 哨兵），编译子语句，离开。 */
       bc.emit(Opcode::PushScope);
-      for (const std::string &name : tdz) {
-        bc.emit(Opcode::PushUninitialized);
-        bc.emit(Opcode::DefineVar, bc.add_string(name));
-      }
-      if (!compile_statement_list(node, bc, &tdz)) return false;
+      compile_scope_entry(node, bc);
+      if (!compile_stmt_list(node, bc, ctx)) return false;
       bc.emit(Opcode::PopScope);
       return true;
     }
 
     case NodeType::VariableDeclaration: {
-      /* 声明：var/let/const。
-       * var：函数级作用域（顶层=全局），无 TDZ，直接 define 初始值。
-       * let/const：块作用域。若名字已在块顶预声明（TDZ 哨兵已发），
-       *   只求值 init → StoreVar；否则（for init 等）先发哨兵+DefineVar。 */
+      /* 声明：var/let/const。sema 已把变量提升到作用域入口（作用域进入时
+       * 已创建绑定），此处退化为一条赋值语句（§10.8 变量提升消减）。
+       *   有 init → 求值 init → StoreVar（保留栈顶=赋值结果）
+       *   无 init → PushUndefined → StoreVar（let 无 init = undefined） */
       for (ASTNode *declarator : node->children) {
         if (declarator->type != NodeType::VariableDeclarator) continue;
-        /* children[0] = id（仅支持 Identifier，解构 M5-B） */
         if (declarator->children.empty()) return false;
         ASTNode *id = declarator->children[0];
-        if (id->type != NodeType::Identifier) return false;
+        if (id->type != NodeType::Identifier) return false; /* 解构 M5-B 不做 */
         ASTNode *init = declarator->children.size() > 1
                             ? declarator->children[1]
                             : nullptr;
-        const std::string &name = id->name;
-
-        if (node->varkind == VarKind::Var) {
-          /* var：无 TDZ，直接 define 到 var 目标作用域（函数级/全局，
-           * 非块作用域——块内 var 提升）。无 init 则 undefined。 */
-          if (init != nullptr) {
-            if (!compile_expression(init, bc)) return false;
-          } else {
-            bc.emit(Opcode::PushUndefined);
-          }
-          bc.emit(Opcode::DefineVarGlobal, bc.add_string(name));
-          continue;
-        }
-
-        /* let/const */
-        bool predeclared = false;
-        if (declared != nullptr) {
-          for (const std::string &n : *declared) {
-            if (n == name) { predeclared = true; break; }
-          }
-        }
-        if (!predeclared) {
-          /* 未预声明（for init 等）：先发 TDZ 哨兵 + DefineVar */
-          bc.emit(Opcode::PushUninitialized);
-          bc.emit(Opcode::DefineVar, bc.add_string(name));
-        }
         if (init != nullptr) {
-          if (!compile_expression(init, bc)) return false;
+          if (!compile_expr_inner(init, bc, ctx)) return false;
         } else {
           bc.emit(Opcode::PushUndefined);
         }
-        bc.emit(Opcode::StoreVar, bc.add_string(name));
+        bc.emit(Opcode::StoreVar, bc.add_string(id->name));
       }
       return true;
     }
 
+    case NodeType::FunctionDeclaration: {
+      /* 函数声明：编译函数值 → define 到当前作用域。
+       * 提升绑定已在作用域入口创建（undefined），StoreVar 写入函数值。 */
+      if (node->children.empty()) return false;
+      ASTNode *name_node = node->children[0];
+      if (name_node->type != NodeType::Identifier) return false;
+      if (!compile_function_placeholder(node, bc, ctx)) return false;
+      bc.emit(Opcode::StoreVar, bc.add_string(name_node->name));
+      bc.emit(Opcode::Pop); /* 函数声明语句不保留值 */
+      return true;
+    }
+
     case NodeType::IfStatement: {
-      /* if (cond) then [else]：
-       *   cond; JumpIfFalsePop ELSE; then; Jump END; ELSE: else; END:
-       * JumpIfFalsePop 消费栈顶（cond），两条路径栈均干净。 */
+      /* if (cond) then [else]： */
       if (node->children.size() < 2) return false;
-      if (!compile_expression(node->children[0], bc)) return false;
+      if (!compile_expr_inner(node->children[0], bc, ctx)) return false;
       size_t jump_else_at = bc.size();
       bc.emit(Opcode::JumpIfFalsePop);
-      if (!compile_statement_inner(node->children[1], bc, declared)) return false;
-      /* then 分支结束：跳过 else */
+      if (!compile_stmt_inner(node->children[1], bc, ctx)) return false;
       size_t jump_end_at = 0;
       if (node->children.size() >= 3 && node->children[2] != nullptr) {
         jump_end_at = bc.size();
@@ -301,85 +387,79 @@ bool compile_statement_inner(ASTNode *node, Bytecode &bc,
       }
       bc.patch_jump(jump_else_at, bc.size());
       if (node->children.size() >= 3 && node->children[2] != nullptr) {
-        if (!compile_statement_inner(node->children[2], bc, declared))
-          return false;
+        if (!compile_stmt_inner(node->children[2], bc, ctx)) return false;
         bc.patch_jump(jump_end_at, bc.size());
       }
       return true;
     }
 
     case NodeType::WhileStatement: {
-      /* while (cond) body：
-       *   START: cond; JumpIfFalsePop END; body; Jump START; END:
-       * JumpIfFalsePop 消费 cond，两条路径栈均干净。 */
       if (node->children.size() < 2) return false;
       size_t start = bc.size();
-      if (!compile_expression(node->children[0], bc)) return false;
+      if (!compile_expr_inner(node->children[0], bc, ctx)) return false;
       size_t jump_end_at = bc.size();
       bc.emit(Opcode::JumpIfFalsePop);
-      if (!compile_statement_inner(node->children[1], bc, declared))
-        return false;
+      if (!compile_stmt_inner(node->children[1], bc, ctx)) return false;
       bc.emit(Opcode::Jump, static_cast<uint32_t>(start));
       bc.patch_jump(jump_end_at, bc.size());
       return true;
     }
 
     case NodeType::DoWhileStatement: {
-      /* do body while (cond)：
-       *   START: body; cond; JumpIfTruePop START
-       * JumpIfTruePop 消费 cond：为真消费并跳回 START（栈干净）；为假
-       * 不跳（cond 已消费），自然落到 END。 */
       if (node->children.size() < 2) return false;
       size_t start = bc.size();
-      if (!compile_statement_inner(node->children[0], bc, declared))
-        return false;
-      if (!compile_expression(node->children[1], bc)) return false;
+      if (!compile_stmt_inner(node->children[0], bc, ctx)) return false;
+      if (!compile_expr_inner(node->children[1], bc, ctx)) return false;
       bc.emit(Opcode::JumpIfTruePop, static_cast<uint32_t>(start));
       return true;
     }
 
     case NodeType::ForStatement: {
-      /* for (init; cond; update) body：
-       *   init; START: cond; JumpIfFalsePop END; body; update; Jump START; END:
-       * init/cond/update 可为空（缺省 undefined/恒真/空）。 */
+      /* for(init;cond;update) body：for-init 的 let/const 声明在 for 作用域
+       * （sema 挂 node->scope_info=init_scope）。进入时 PushScope + 发定义，
+       * 循环结束 PopScope。per-iteration 闭包（每次迭代新绑定）留后续。 */
       if (node->children.size() < 4) return false;
       ASTNode *init = node->children[0];
       ASTNode *cond = node->children[1];
       ASTNode *update = node->children[2];
       ASTNode *body = node->children[3];
+      bool has_scope = node->scope_info != nullptr;
+      if (has_scope) bc.emit(Opcode::PushScope);
+      if (has_scope) compile_scope_entry(node, bc);
       if (init != nullptr) {
-        /* init 是声明或表达式 */
         if (init->type == NodeType::VariableDeclaration) {
-          if (!compile_statement_inner(init, bc, declared)) return false;
+          if (!compile_stmt_inner(init, bc, ctx)) return false;
         } else {
-          if (!compile_expression(init, bc)) return false;
+          if (!compile_expr_inner(init, bc, ctx)) return false;
           bc.emit(Opcode::Pop);
         }
       }
       size_t start = bc.size();
       if (cond != nullptr) {
-        if (!compile_expression(cond, bc)) return false;
+        if (!compile_expr_inner(cond, bc, ctx)) return false;
       } else {
         bc.emit(Opcode::PushTrue); /* 恒真 */
       }
       size_t jump_end_at = bc.size();
       bc.emit(Opcode::JumpIfFalsePop);
       if (body != nullptr) {
-        if (!compile_statement_inner(body, bc, declared)) return false;
+        if (!compile_stmt_inner(body, bc, ctx)) return false;
       }
       if (update != nullptr) {
-        if (!compile_expression(update, bc)) return false;
+        if (!compile_expr_inner(update, bc, ctx)) return false;
         bc.emit(Opcode::Pop);
       }
       bc.emit(Opcode::Jump, static_cast<uint32_t>(start));
       bc.patch_jump(jump_end_at, bc.size());
+      if (has_scope) bc.emit(Opcode::PopScope);
       return true;
     }
 
     case NodeType::ReturnStatement: {
-      /* return [expr]：expr/undefined 压栈 → Ret（产生 interrupt） */
+      /* return [expr]：expr/undefined 压栈 → Ret（产生 interrupt）。
+       * 选项是作用域属性：body scope 销毁自动恢复，return 无需显式关闭。 */
       if (!node->children.empty() && node->children[0] != nullptr) {
-        if (!compile_expression(node->children[0], bc)) return false;
+        if (!compile_expr_inner(node->children[0], bc, ctx)) return false;
       } else {
         bc.emit(Opcode::PushUndefined);
       }
@@ -388,29 +468,56 @@ bool compile_statement_inner(ASTNode *node, Bytecode &bc,
     }
 
     default:
-      /* 函数声明/break/continue/throw/try 等：M5-B/后续 */
+      /* break/continue/throw/try 等：后续 */
       return false;
   }
 }
 
-}  // namespace
-
-/* 编译单条语句到 bc（不带预声明：单语句不是块，let/const 自声明自初始化）。 */
-bool compile_statement(ASTNode *node, Bytecode &bc) {
-  return compile_statement_inner(node, bc, nullptr);
+bool compile_stmt_list(ASTNode *node, Bytecode &bc, CompilerCtx *ctx) {
+  for (ASTNode *child : node->children) {
+    if (!compile_stmt_inner(child, bc, ctx)) return false;
+  }
+  return true;
 }
 
-/* 编译 Program（顶层语句列表）。返回 true 成功。
- * 顶层（Program）是隐式块作用域：先为直接 let/const 发 TDZ 哨兵定义。 */
+}  // namespace
+
+/* ========================================================================== */
+/* 公开 API                                                                  */
+/* ========================================================================== */
+
+/* 编译表达式子树到 bc（M4 兼容入口）。返回 true 成功。
+ * 表达式含函数时：主流程发 CreateFunction + Halt，函数体追加到尾部。 */
+bool compile_expression(ASTNode *node, Bytecode &bc) {
+  CompilerCtx ctx;
+  if (!compile_expr_inner(node, bc, &ctx)) return false;
+  bc.emit(Opcode::Halt); /* 隔离函数体区 */
+  return compile_function_bodies(ctx, bc);
+}
+
+/* 编译单条语句到 bc。顶层是隐式块作用域（sema 变量清单发定义），
+ * 末尾发 Halt 隔离函数体区。 */
+bool compile_statement(ASTNode *node, Bytecode &bc) {
+  if (node == nullptr) return false;
+  CompilerCtx ctx;
+  if (!compile_stmt_inner(node, bc, &ctx)) return false;
+  bc.emit(Opcode::Halt);
+  return compile_function_bodies(ctx, bc);
+}
+
+/* 编译 Program（顶层语句列表）到 bc。返回 true 成功。
+ * 顶层（Program）是隐式块作用域：按 sema 变量清单发定义，末尾 Halt。 */
 bool compile_program(ASTNode *node, Bytecode &bc) {
   if (node == nullptr) return false;
-  std::vector<std::string> tdz;
-  collect_tdz_names(node, tdz);
-  for (const std::string &name : tdz) {
-    bc.emit(Opcode::PushUninitialized);
-    bc.emit(Opcode::DefineVar, bc.add_string(name));
-  }
-  return compile_statement_list(node, bc, &tdz);
+  /* 顶层指令序言：Program/Module 的 directives（"use strict" 等）。
+   * 选项设到 current_scope（顶层=root_scope，脚本级严格；后续模块体系再迁
+   * 到模块 globalScope）。选项是作用域属性，无需 DisableOption。 */
+  compile_option_entry(node->directives, bc);
+  compile_scope_entry(node, bc);
+  CompilerCtx ctx;
+  if (!compile_stmt_list(node, bc, &ctx)) return false;
+  bc.emit(Opcode::Halt); /* 阻止 main 区顺序流进函数体区 */
+  return compile_function_bodies(ctx, bc);
 }
 
 }  // namespace vm

@@ -128,9 +128,13 @@ Value *Vm::h_store_var() {
   const std::string &name = bc_->constants[cur().arg].str;
   Value *v = top(); /* 待存值（保留栈顶：赋值表达式结果为该值） */
   if (!ctx_.store(name, v)) {
-    /* 绑定不存在：M5-A 变量均先声明，未声明赋值报 ReferenceError */
-    return engine::create_exception(
-        ctx_, "ReferenceError: " + name + " is not defined");
+    /* 绑定不存在：严格模式（"use strict" 选项启用）→ ReferenceError；
+     * 非严格模式 → 隐式全局赋值（JS 非严格语义，define_global）。 */
+    if (ctx_.get_option("use strict")) {
+      return engine::create_exception(
+          ctx_, "ReferenceError: " + name + " is not defined");
+    }
+    ctx_.define_global(name, v);
   }
   next();
   return nullptr; /* 值已留在栈顶（调用方按表达式结果处理） */
@@ -239,6 +243,125 @@ Value *Vm::h_ret() {
   return ctx_.create_interrupt(core::InterruptData::Kind::Return, v);
 }
 
+Value *Vm::h_halt() {
+  /* main 区结束：跳到指令结尾（阻止顺序流进函数体区）。 */
+  pc_ = bc_->instructions.size();
+  return nullptr;
+}
+
+Value *Vm::h_enable_option() {
+  /* EnableOption{name}：启用选项，设到 current_scope（directive 序言，
+   * 如 "use strict"）。选项是作用域属性：scope 销毁自动消失，
+   * 沿 parent 链查找（嵌套作用域天然隔离，异常路径也安全）。 */
+  const std::string &name = bc_->constants[cur().arg].str;
+  ctx_.set_option(name, true);
+  next();
+  return nullptr;
+}
+
+Value *Vm::h_create_function() {
+  /* CreateFunction{idx}：读函数表项，创建函数值压栈。
+   * 函数值挂 current_scope（定义点作用域）；closure scope 独立创建
+   * （parent=定义点作用域，不注册为 child——生命周期随函数值，
+   * 定义点作用域销毁不连带销毁闭包）。pending_closure_ 供 SetClosure 挂载。 */
+  const FunctionInfo &fi = bc_->functions[cur().arg];
+  core::Scope *closure = new core::Scope();
+  closure->parent = ctx_.current_scope;
+  Value *func =
+      ctx_.create_function(bc_, fi.offset, fi.param_count, closure, fi.params);
+  next();
+  pending_closure_ = static_cast<core::FunctionData *>(func->data);
+  return func;
+}
+
+Value *Vm::h_set_closure() {
+  /* SetClosure{name}：把栈顶捕获值挂到 pending 函数的 closure scope
+   * （§10.8 op_set_closure：load 后 define 到函数 closure scope）。
+   * 捕获共享同一 value（attach scope_ref++），读写穿透。 */
+  const std::string &name = bc_->constants[cur().arg].str;
+  Value *cap = pop(); /* LoadVar 压的捕获值 */
+  if (pending_closure_ != nullptr && cap != nullptr) {
+    core::Scope *cs = pending_closure_->closure_scope;
+    ctx_.attach(cs, cap);
+    cs->named_values[name] = cap;
+  }
+  next();
+  return nullptr;
+}
+
+Value *Vm::h_call() {
+  /* Call{argc}：函数调用（§7 调用序）。
+   * 栈布局：[..., callee, arg1, ..., argN]，argc=N。
+   * 1. 弹参数 + callee；校验 Function。
+   * 2. 切 closure scope → 建 argument scope（参数绑定）→ 建 body scope。
+   * 3. 新 vm 执行函数体（run_from 从 offset 开始）。
+   * 4. 恢复调用方作用域，销毁两 scope，返回值重建挂调用方作用域。 */
+  uint32_t argc = cur().arg;
+  /* 防御：栈深不足（callee+args 不够）时立即终止，避免 size_t 下溢越界。 */
+  if (stack_.size() < static_cast<size_t>(argc) + 1) {
+    std::fprintf(stderr,
+                 "neo.js: call underflow (stack=%zu, argc=%u)\n",
+                 stack_.size(), argc);
+    std::abort();
+  }
+  size_t callee_idx = stack_.size() - 1 - argc;
+  Value *callee = stack_[callee_idx];
+  core::FunctionData *fd = (callee != nullptr &&
+                            callee->kind == core::ValueKind::Function)
+                               ? static_cast<core::FunctionData *>(callee->data)
+                               : nullptr;
+  if (fd == nullptr) {
+    /* 栈上残留 callee+args 需清理 */
+    for (uint32_t i = 0; i <= argc; ++i) pop();
+    next();
+    return engine::create_exception(ctx_, "TypeError: not a function");
+  }
+
+  /* 弹参数（argN..arg1），弹 callee */
+  std::vector<Value *> args;
+  for (uint32_t i = 0; i < argc; ++i) args.push_back(pop());
+  pop(); /* callee */
+
+  /* §7 调用序 */
+  core::Scope *saved = ctx_.current_scope;
+  ctx_.set_current_scope(fd->closure_scope);   /* 1. 切闭包作用域 */
+  core::Scope *arg_scope = ctx_.push_scope();  /* 2. argument scope */
+  /* 参数绑定：形参名 → 实参 value（不足 undefined，多余忽略） */
+  size_t nparams = fd->param_count;
+  for (size_t i = 0; i < nparams; ++i) {
+    Value *arg;
+    if (i < args.size()) {
+      arg = args[args.size() - 1 - i]; /* 反转：args 按 arg1..argN 收集 */
+      ctx_.attach(arg_scope, arg);
+    } else {
+      arg = engine::create_undefined(ctx_); /* 挂 arg_scope（current_scope） */
+    }
+    if (i < fd->params.size()) {
+      const std::string &pname =
+          fd->bytecode->constants[fd->params[i]].str;
+      if (!pname.empty()) arg_scope->named_values[pname] = arg;
+    }
+  }
+  core::Scope *body_scope = ctx_.push_scope(); /* 3. body scope */
+  (void)body_scope;
+
+  /* 4. 新 vm 执行函数体（每调用新 vm，§6） */
+  Vm callee_vm(ctx_);
+  Value *res = callee_vm.run_from(*fd->bytecode, fd->offset);
+
+  /* 5. 恢复调用方作用域，销毁两 scope */
+  ctx_.set_current_scope(saved);
+  ctx_.pop_scope(); /* body scope */
+  ctx_.pop_scope(); /* argument scope */
+
+  /* 6. 返回值重建：拷贝挂调用方作用域（§7），data 复用。
+   * 异常也重建（StringData 深拷贝），避免随作用域销毁悬垂。 */
+  Value *result = ctx_.create_value(res->kind);
+  result->data = ctx_.clone(res->data);
+  next();
+  return result;
+}
+
 /* ---------- 执行辅助 ---------- */
 
 Value *Vm::unary(Value *(*fn)(Context &, Value *)) {
@@ -267,10 +390,11 @@ bool Vm::top_is_nullish() {
 
 /* ---------- run：主循环，统一消费 handler 返回值 ---------- */
 
-Value *Vm::run(const Bytecode &bc) {
+Value *Vm::run_from(const Bytecode &bc, size_t offset) {
   stack_.clear();
   bc_ = &bc;
-  pc_ = 0;
+  pc_ = offset;
+  pending_closure_ = nullptr;
 
   while (pc_ < bc_->instructions.size()) {
     Value *r = (this->*kHandlers[static_cast<size_t>(cur().op)])();
@@ -286,6 +410,8 @@ Value *Vm::run(const Bytecode &bc) {
   if (stack_.empty()) return engine::create_undefined(ctx_);
   return top();
 }
+
+Value *Vm::run(const Bytecode &bc) { return run_from(bc, 0); }
 
 }  // namespace vm
 }  // namespace neojs

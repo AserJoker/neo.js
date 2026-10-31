@@ -16,6 +16,7 @@
 #define NEOJS_CORE_CONTEXT_H
 
 #include <string>
+#include <unordered_map>
 
 #include "neojs/core/allocator.h"
 #include "neojs/core/data.h"
@@ -39,6 +40,26 @@ struct Context : AllocatedObject {
   /* value 生命周期管理器：唯一 owner（全局表）。 */
   Gc gc_;
 
+  /* ---------- 运行时选项 ---------- */
+
+  /* 选项是作用域属性（Scope::options_），沿 parent 链查找：
+   * 进入作用域 EnableOption 设到 current_scope，scope 销毁自动消失
+   * （生命周期 = 作用域生命周期，异常路径也安全）。
+   * 顶层 Program 的选项挂 root_scope（脚本级严格；后续模块体系再迁到模块 globalScope）。
+   * Context 只提供代理，实际存储/查找在 Scope。 */
+  bool get_option(const std::string &name, bool dflt = false) const {
+    return current_scope != nullptr ? current_scope->get_option(name, dflt)
+                                    : dflt;
+  }
+  /* 设置选项到 current_scope（EnableOption 运行时调用）。 */
+  void set_option(const std::string &name, bool value) {
+    if (current_scope != nullptr) current_scope->set_option(name, value);
+  }
+  /* 当前 scope（不含父链）是否设置了某选项。 */
+  bool has_option(const std::string &name) const {
+    return current_scope != nullptr && current_scope->has_option_local(name);
+  }
+
   /* ---------- value 工厂（创建经 gc，挂 current_scope，scope_ref++） ---------- */
 
   /* 创建 value（kind 指定），挂到 current_scope（scope_ref++）。
@@ -54,6 +75,15 @@ struct Context : AllocatedObject {
   Value *create_undefined();
   Value *create_null();
   Value *create_uninitialized();
+
+  /* 函数值工厂（M5-B）：value+FunctionData，挂到指定 closure scope。
+   * bytecode/offset：函数体位置；param_count：形参个数；
+   * params：形参名（常量池 idx，调用时参数绑定）。
+   * 函数值本身挂 current_scope（定义点作用域），closure_scope 是
+   * 函数内部查找外部变量的作用域（§7 调用序第一层）。 */
+  Value *create_function(const vm::Bytecode *bytecode, size_t offset,
+                         size_t param_count, Scope *closure_scope,
+                         const std::vector<uint32_t> &params);
 
   /* 控制流中断工厂（§8.1）：创建 kind=Interrupt 的 value，
    * data=InterruptData{kind, value}（value 为借用指针，所有权在源 scope）。 */
@@ -92,6 +122,11 @@ struct Context : AllocatedObject {
   /* define 到 var 目标作用域（M5-A=root_scope；M5-B 函数内=函数级 scope）。
    * 供 var 声明提升使用（var 是函数作用域，非块作用域）。 */
   void define_var(const std::string &name, Value *value);
+
+  /* 隐式全局：把 value 定义为全局（root_scope）绑定（非严格模式下
+   * 赋值给未声明标识符时创建全局，JS 非严格语义）。
+   * 返回该全局 value*（挂 root_scope，scope_ref++）。 */
+  Value *define_global(const std::string &name, Value *value);
 
   /* load：沿 parent 链查找 named_values，返回原始变量（value*，非拷贝）。
    * 未找到返回 nullptr（全局兜底由调用方处理）。 */

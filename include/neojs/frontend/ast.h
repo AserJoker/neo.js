@@ -22,6 +22,13 @@
 
 namespace neojs {
 
+/* sema 编译期结构前向声明（定义在 neojs/frontend/sema.h）。
+ * AST 节点持有指向 sema 产物的借用指针（不拥有，随 AST 一起释放）。 */
+namespace sema {
+struct ShadowScope;
+struct ShadowValue;
+}  // namespace sema
+
 /* 源码位置（token / AST 节点共用）。line/col 从 1 起。 */
 struct SourceLocation {
   size_t line = 1;  /* 1-based */
@@ -248,6 +255,7 @@ struct ASTNode : core::AllocatedObject {
   UpdateOpKind update_op = UpdateOpKind::Inc; /* UpdateExpression：++/-- */
   VarKind varkind = VarKind::Var; /* VariableDeclaration：var/let/const */
   std::string directive;  /* ExprStmt：指令序言标记（非空 = "use strict" 等） */
+  std::vector<std::string> directives; /* Program/Module/函数节点：指令序言收集（"use strict"/自定义指令） */
   std::string source;     /* Import/Export 声明：模块名 'm'（ImportDeclaration/ExportAll） */
   std::string imported;   /* ImportSpecifier：导入的具名（{ a as b } 的 a） */
   std::string exported;   /* ExportSpecifier/ExportAll：导出的名字（{ a as b } 的 b；* as ns 的 ns） */
@@ -261,6 +269,11 @@ struct ASTNode : core::AllocatedObject {
   bool fn_is_generator = false; /* 函数：generator 函数（function*，M5.5 预留） */
   bool yield_delegate = false;  /* YieldExpression：yield* 委托（M5.5a） */
   MemberPayload member;       /* MemberExpression：computed/optional 标记 */
+
+  /* sema 产物（编译期借用指针，不拥有；随 AST 释放，见 sema.h） */
+  sema::ShadowScope *scope_info = nullptr; /* 产生作用域的节点（块/函数/Program/For）挂 shadow scope */
+  sema::ShadowValue *resolved = nullptr;   /* Identifier：解析到的定义（nullptr=全局） */
+  std::vector<std::string> captures; /* 函数节点：捕获名字列表（闭包，§10.8） */
 
   /* 构造：仅由 Parser 经 new 创建（见 parser.h） */
   explicit ASTNode(NodeType t) : type(t) {}

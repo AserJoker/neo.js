@@ -18,6 +18,7 @@
 #define NEOJS_VM_VM_H
 
 #include <cstddef>
+#include <cstdio>
 #include <vector>
 
 #include "neojs/core/context.h"
@@ -49,14 +50,26 @@ class Vm {
    *   - 自然结束 → 返回栈顶（栈空则 undefined） */
   Value *run(const Bytecode &bc);
 
+  /* 执行字节码：从 offset 开始执行到 Halt/Ret/自然结束（函数调用用）。
+   * 返回栈顶结果（借用值）。 */
+  Value *run_from(const Bytecode &bc, size_t offset);
+
   /* 操作数栈访问（测试/调试用）。 */
   Context &ctx() { return ctx_; }
   size_t stack_size() const { return stack_.size(); }
   Value *top() const {
-    return stack_.empty() ? nullptr : stack_.back();
+    if (stack_.empty()) {
+      /* 防御：空栈取栈顶（栈不平衡 bug 的早期暴露点） */
+      std::abort();
+    }
+    return stack_.back();
   }
   void push(Value *v) { stack_.push_back(v); }
   Value *pop() {
+    if (stack_.empty()) {
+      /* 防御：空栈弹出（栈不平衡 bug 的早期暴露点） */
+      std::abort();
+    }
     Value *v = stack_.back();
     stack_.pop_back();
     return v;
@@ -119,6 +132,11 @@ class Vm {
   Value *h_jump_if_false_pop();
   Value *h_pop_op();
   Value *h_ret();
+  Value *h_halt();
+  Value *h_enable_option();
+  Value *h_create_function();
+  Value *h_set_closure();
+  Value *h_call();
 
   /* 指令分发表：按 Opcode 枚举顺序，与 bytecode.h 一一对应。
    * static_assert 校验覆盖（见 vm.cc）。 */
@@ -135,6 +153,9 @@ class Vm {
       /* DefineVarGlobal */ &Vm::h_define_var_global,
       /* PushScope */ &Vm::h_push_scope,
       /* PopScope */ &Vm::h_pop_scope,
+      /* CreateFunction */ &Vm::h_create_function,
+      /* SetClosure */ &Vm::h_set_closure,
+      /* Call */ &Vm::h_call,
       /* Pos */ &Vm::h_pos,
       /* Neg */ &Vm::h_neg,
       /* Not */ &Vm::h_not,
@@ -170,6 +191,8 @@ class Vm {
       /* JumpIfFalsePop */ &Vm::h_jump_if_false_pop,
       /* Pop */ &Vm::h_pop_op,
       /* Ret */ &Vm::h_ret,
+      /* Halt */ &Vm::h_halt,
+      /* EnableOption */ &Vm::h_enable_option,
   };
   static_assert(sizeof(kHandlers) / sizeof(kHandlers[0]) ==
                     static_cast<size_t>(Opcode::Count),
@@ -177,8 +200,16 @@ class Vm {
 
   /* ---------- 执行辅助 ---------- */
 
-  /* 当前指令（pc_ 指向）。 */
-  const Instruction &cur() const { return bc_->instructions[pc_]; }
+  /* 当前指令（pc_ 指向）。防御：pc 越界立即终止（坏跳转/越界读的暴露点）。 */
+  const Instruction &cur() const {
+    if (bc_ == nullptr || pc_ >= bc_->instructions.size()) {
+      std::fprintf(stderr,
+                   "neo.js: vm pc out of range (pc=%zu, size=%zu)\n", pc_,
+                   bc_ == nullptr ? 0 : bc_->instructions.size());
+      std::abort();
+    }
+    return bc_->instructions[pc_];
+  }
   /* 推进到下一指令（handler 自报操作数消耗后调用）。 */
   void next() { ++pc_; }
   void jump_to(uint32_t target) { pc_ = target; }
@@ -197,6 +228,9 @@ class Vm {
   std::vector<Value *> stack_;
   const Bytecode *bc_ = nullptr; /* 当前执行字节码（run 设置） */
   size_t pc_ = 0;                /* 程序计数器：归 vm 持有（§9 协程保存） */
+  /* CreateFunction 后、SetClosure 前的目标函数（§10.8 op_set_closure 挂载用）。
+   * CreateFunction 设置，SetClosure 消费（捕获挂到其 closure scope）。 */
+  core::FunctionData *pending_closure_ = nullptr;
 };
 
 }  // namespace vm
