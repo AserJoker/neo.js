@@ -4,6 +4,7 @@
 # 单元测试 mock 外部依赖，隔离测试单函数/单类。
 
 add_subdirectory(core)
+add_subdirectory(infra)
 # 以下模块 M1 起填充：
 # add_subdirectory(gc)
 # add_subdirectory(vm)

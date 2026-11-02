@@ -102,12 +102,16 @@ endif()
 # ---------------------------------------------------------------------------
 add_library(neojs STATIC
     src/private/core/hello.cpp
+    src/private/infra/allocator.cpp
+    src/private/infra/console.cpp
+    src/private/infra/command.cpp
+    src/private/infra/file.cpp
 )
 target_include_directories(neojs
     PUBLIC
         ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src/public      # public 头暴露给消费者（接口/类型声明）
     PRIVATE
-        ${CMAKE_SOURCE_DIR}/src/public
         ${CMAKE_SOURCE_DIR}/src/private
 )
 target_link_libraries(neojs PUBLIC neo_warnings)
