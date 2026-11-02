@@ -12,6 +12,7 @@
 #include <format>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace neo::infra {
 
@@ -45,16 +46,18 @@ public:
 
     // std::format 泛型格式化输出
     template <typename... Args>
-    void print(std::format_string<Args...> fmt, Args&&... args);
+    void print(std::format_string<Args...> fmt, Args&&... args) {
+        sink_->write(std::format(fmt, std::forward<Args>(args)...));
+    }
 
     template <typename... Args>
-    void print_line(std::format_string<Args...> fmt, Args&&... args);
+    void print_line(std::format_string<Args...> fmt, Args&&... args) {
+        sink_->write_line(std::format(fmt, std::forward<Args>(args)...));
+    }
 
     OutputSink* sink() const { return sink_; }
 };
 
 }  // namespace neo::infra
-
-#include "infra/console.inl"
 
 #endif  // NEO_INFRA_CONSOLE_H

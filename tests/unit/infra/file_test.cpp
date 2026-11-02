@@ -109,7 +109,7 @@ TEST(MemoryFileSystemTest, ReadPartial) {
 }
 
 // =========================================================================
-// DiskFileSystem 集成测试（用临时文件）
+// DiskFileSystem 集成测试（临时文件存于构建目录下 tmp/，不污染系统 temp）
 // =========================================================================
 
 namespace fs = std::filesystem;
@@ -117,11 +117,18 @@ namespace fs = std::filesystem;
 class DiskFileSystemTest : public ::testing::Test {
 protected:
     std::string tmp_path;
+    static std::string tmp_dir_;
+
+    static void SetUpTestSuite() {
+        // NEO_TEST_TMP_DIR 由 CMake 编译期宏注入（指向 <build-dir>/tmp）
+        tmp_dir_ = NEO_TEST_TMP_DIR;
+        std::error_code ec;
+        fs::create_directories(tmp_dir_, ec);
+    }
 
     void SetUp() override {
-        // 用静态计数确保唯一（避免 getpid 跨平台问题）
         static int counter = 0;
-        tmp_path = (fs::temp_directory_path() /
+        tmp_path = (fs::path(tmp_dir_) /
                     ("neojs_test_" + std::to_string(counter++))).string();
     }
     void TearDown() override {
@@ -129,6 +136,8 @@ protected:
         fs::remove(tmp_path, ec);
     }
 };
+
+std::string DiskFileSystemTest::tmp_dir_;
 
 TEST_F(DiskFileSystemTest, WriteThenRead) {
     DiskFileSystem dfs;
