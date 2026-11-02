@@ -1,10 +1,12 @@
 // file_test.cpp - File 单元测试
 //
-// 验证 MemoryFileSystem（无 I/O，纯内存）和 DiskFileSystem（临时文件集成测试）。
+// 验证 MemoryFileSystem（无 I/O，纯内存）和 DiskFileSystem（构建目录临时文件）。
 //
-// 关联 ADR: 027（FFI 封装/可测试性）、028（infra）
+// 关联 ADR: 010（接口-实现-工厂，测试 mock）、027（FFI 封装/可测试性）、028（infra）
 
 #include "infra/file.h"
+
+#include "memory_filesystem.h"  // 测试用 mock
 
 #include <gtest/gtest.h>
 
@@ -15,13 +17,13 @@
 
 namespace {
 
-using neo::infra::DiskFileSystem;
 using neo::infra::ErrCode;
 using neo::infra::File;
 using neo::infra::FileSystem;
-using neo::infra::MemoryFileSystem;
 using neo::infra::OpenMode;
 using neo::infra::Result;
+using neo::infra::create_disk_filesystem;
+using neo::infra::test::MemoryFileSystem;
 
 // =========================================================================
 // MemoryFileSystem 单元测试（无磁盘 I/O）
@@ -43,11 +45,10 @@ TEST(MemoryFileSystemTest, OpenReadReturnsContent) {
     fs.add_file("data.txt", "abc123");
     auto r = fs.open("data.txt", OpenMode::Read);
     ASSERT_TRUE(r.is_ok());
-    auto& f = r.value();
-    auto content = f.read_all();
+    auto content = r.value().read_all();
     ASSERT_TRUE(content.is_ok());
     EXPECT_EQ(content.value(), "abc123");
-    f.close();
+    r.value().close();
 }
 
 TEST(MemoryFileSystemTest, OpenReadMissingReturnsErr) {
@@ -63,8 +64,25 @@ TEST(MemoryFileSystemTest, WriteCreatesAndPersists) {
     ASSERT_TRUE(r.is_ok());
     auto w = r.value().write_all("written content");
     ASSERT_TRUE(w.is_ok());
-    r.value().close();  // 回写到 fs
+    r.value().close();  // on_close 回写到 fs
     EXPECT_EQ(fs.get_content("out.txt"), "written content");
+}
+
+TEST(MemoryFileSystemTest, ReadWriteSameFileRoundTrip) {
+    // ReadWrite 模式：同一 File 写入后，重置读指针读回（不跨 File 持久化）
+    MemoryFileSystem fs;
+    fs.add_file("rw.txt", "");
+    auto r = fs.open("rw.txt", OpenMode::ReadWrite);
+    ASSERT_TRUE(r.is_ok());
+    auto w = r.value().write_all("rw content");
+    ASSERT_TRUE(w.is_ok());
+    // 读指针重置后读回
+    r.value().close();
+    auto r2 = fs.open("rw.txt", OpenMode::Read);
+    ASSERT_TRUE(r2.is_ok());
+    auto content = r2.value().read_all();
+    ASSERT_TRUE(content.is_ok());
+    EXPECT_EQ(content.value(), "rw content");
 }
 
 TEST(MemoryFileSystemTest, AppendAddsToExisting) {
@@ -76,6 +94,7 @@ TEST(MemoryFileSystemTest, AppendAddsToExisting) {
         r.value().write_all("line2\n");
         r.value().close();
     }
+    // on_close 回写：追加后的内容含 line2
     EXPECT_EQ(fs.get_content("log.txt"), "line1\nline2\n");
 }
 
@@ -140,16 +159,16 @@ protected:
 std::string DiskFileSystemTest::tmp_dir_;
 
 TEST_F(DiskFileSystemTest, WriteThenRead) {
-    DiskFileSystem dfs;
+    auto dfs = create_disk_filesystem();
     {
-        auto r = dfs.open(tmp_path, OpenMode::Write);
+        auto r = dfs->open(tmp_path, OpenMode::Write);
         ASSERT_TRUE(r.is_ok());
         auto w = r.value().write_all("disk content");
         ASSERT_TRUE(w.is_ok());
         r.value().close();
     }
     {
-        auto r = dfs.open(tmp_path, OpenMode::Read);
+        auto r = dfs->open(tmp_path, OpenMode::Read);
         ASSERT_TRUE(r.is_ok());
         auto content = r.value().read_all();
         ASSERT_TRUE(content.is_ok());
@@ -159,39 +178,39 @@ TEST_F(DiskFileSystemTest, WriteThenRead) {
 }
 
 TEST_F(DiskFileSystemTest, OpenReadMissingReturnsErr) {
-    DiskFileSystem dfs;
-    auto r = dfs.open("definitely_nonexistent_file.txt", OpenMode::Read);
+    auto dfs = create_disk_filesystem();
+    auto r = dfs->open("definitely_nonexistent_file.txt", OpenMode::Read);
     ASSERT_TRUE(r.is_err());
     EXPECT_EQ(r.err(), ErrCode::NotFound);
 }
 
 TEST_F(DiskFileSystemTest, ExistsChecksFile) {
-    DiskFileSystem dfs;
+    auto dfs = create_disk_filesystem();
     {
-        auto r = dfs.open(tmp_path, OpenMode::Write);
+        auto r = dfs->open(tmp_path, OpenMode::Write);
         ASSERT_TRUE(r.is_ok());
         r.value().write_all("x");
         r.value().close();
     }
-    auto e = dfs.exists(tmp_path);
+    auto e = dfs->exists(tmp_path);
     ASSERT_TRUE(e.is_ok());
     EXPECT_TRUE(e.value());
 
-    auto e2 = dfs.exists(tmp_path + ".missing");
+    auto e2 = dfs->exists(tmp_path + ".missing");
     ASSERT_TRUE(e2.is_ok());
     EXPECT_FALSE(e2.value());
 }
 
 TEST_F(DiskFileSystemTest, RemoveDeletesFile) {
-    DiskFileSystem dfs;
+    auto dfs = create_disk_filesystem();
     {
-        auto r = dfs.open(tmp_path, OpenMode::Write);
+        auto r = dfs->open(tmp_path, OpenMode::Write);
         ASSERT_TRUE(r.is_ok());
         r.value().write_all("data");
         r.value().close();
     }
-    ASSERT_TRUE(dfs.remove(tmp_path).is_ok());
-    auto e = dfs.exists(tmp_path);
+    ASSERT_TRUE(dfs->remove(tmp_path).is_ok());
+    auto e = dfs->exists(tmp_path);
     ASSERT_TRUE(e.is_ok());
     EXPECT_FALSE(e.value());
 }

@@ -1,34 +1,24 @@
-// file.cpp - File/DiskFileSystem/MemoryFileSystem 实现
+// file.cpp - File 方法 + DiskFileSystem 实现 + 工厂函数（FFI 收口：std::fstream）
 //
 // 本文件是 neo.js 中唯一直接使用 std::fstream 的地方（ADR-027 §5.6）。
 // std::fstream 可能抛异常，所有调用 try-catch 兜底转 Result::err（ADR-007）。
 //
-// 关联 ADR: 006（异常即值）、007（无异常/标准库边界 try-catch）、027（FFI 封装）、028（infra）
+// 关联 ADR: 006（异常即值）、007（无异常/标准库边界 try-catch）、010（接口-实现-工厂）、
+//          027（FFI 封装）、028（infra）
 
-#include "infra/file.h"
+#include "infra/impl_file.h"  // private/infra/impl_file.h
 
 #include <cstdio>
-#include <cstring>
 #include <fstream>
+#include <memory>
 #include <sstream>
-#include <unordered_map>
+#include <system_error>
 
 namespace neo::infra {
 
 // ---------------------------------------------------------------------------
-// File::Impl — 持有底层流，两种实现：磁盘 fstream / 内存 stringstream
+// File 方法（Impl 是 File 的公开嵌套类型，定义在 public/file.h）
 // ---------------------------------------------------------------------------
-struct File::Impl {
-    enum class Kind { Disk, Memory };
-    Kind kind = Kind::Disk;
-    // disk 用 fs；memory 用 ss（fstream 默认构造，不打开）
-    std::fstream      fs;
-    std::stringstream ss;
-    bool              owns_memory_entry = false;  // memory 模式：析构时回写内容
-    MemoryFileSystem* mem_fs            = nullptr;
-    std::string       mem_path;                  // memory 模式：回写路径
-};
-
 File::File() = default;
 File::File(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 
@@ -60,7 +50,6 @@ Result<std::string> File::read_all() {
     try {
         std::string content;
         if (impl_->kind == Impl::Kind::Disk) {
-            // 用 streambuf 迭代器读取全部
             content.assign(std::istreambuf_iterator<char>(impl_->fs),
                            std::istreambuf_iterator<char>());
         } else {
@@ -103,10 +92,10 @@ Result<void> File::close() {
     try {
         if (impl_->kind == Impl::Kind::Disk) {
             if (impl_->fs.is_open()) impl_->fs.close();
-        } else if (impl_->owns_memory_entry && impl_->mem_fs) {
-            // 回写内存文件系统
+        } else if (impl_->on_close) {
+            // memory 模式：调用 FileSystem 实现注入的回写闭包
             impl_->ss.flush();
-            impl_->mem_fs->add_file(impl_->mem_path, impl_->ss.str());
+            impl_->on_close(impl_->ss.str());
         }
         impl_.reset();
         return Result<void>::ok();
@@ -136,7 +125,7 @@ Result<File> DiskFileSystem::open(std::string_view path, OpenMode mode) {
         if (!impl->fs.is_open()) {
             return Result<File>::err(ErrCode::NotFound);
         }
-        return Result<File>::ok(File(std::move(impl)));
+        return Result<File>::ok(File::make(std::move(impl)));
     } catch (const std::exception&) {
         return Result<File>::err(ErrCode::IoError);
     }
@@ -163,63 +152,9 @@ Result<bool> DiskFileSystem::exists(std::string_view path) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// MemoryFileSystem — 内存虚拟文件，无磁盘 I/O
-// ---------------------------------------------------------------------------
-void MemoryFileSystem::add_file(std::string_view path, std::string content) {
-    files_[std::string(path)] = {std::move(content), true};
-}
-
-Result<File> MemoryFileSystem::open(std::string_view path, OpenMode mode) {
-    std::string key(path);
-    auto it = files_.find(key);
-    bool exists = (it != files_.end() && it->second.exists);
-
-    if (mode == OpenMode::Read || mode == OpenMode::ReadWrite) {
-        if (!exists) return Result<File>::err(ErrCode::NotFound);
-    }
-
-    auto impl = std::make_unique<File::Impl>();
-    impl->kind = File::Impl::Kind::Memory;
-    impl->mem_fs = this;
-    impl->mem_path = key;
-    impl->owns_memory_entry = (mode == OpenMode::Write || mode == OpenMode::Append);
-
-    if (exists && (mode == OpenMode::Read || mode == OpenMode::ReadWrite || mode == OpenMode::Append)) {
-        impl->ss.str(it->second.content);
-    }
-    // Write 模式：清空（ss 默认空）
-    // Read 模式：从内容读
-    if (mode == OpenMode::Read) {
-        // 只读：不回写
-        impl->owns_memory_entry = false;
-    } else if (mode == OpenMode::Append) {
-        // 追加：写指针移到末尾
-        impl->ss.clear();
-        impl->ss.seekp(0, std::ios::end);
-    }
-
-    return Result<File>::ok(File(std::move(impl)));
-}
-
-Result<void> MemoryFileSystem::remove(std::string_view path) {
-    auto it = files_.find(std::string(path));
-    if (it == files_.end() || !it->second.exists) {
-        return Result<void>::err(ErrCode::NotFound);
-    }
-    it->second.exists = false;
-    return Result<void>::ok();
-}
-
-Result<bool> MemoryFileSystem::exists(std::string_view path) {
-    auto it = files_.find(std::string(path));
-    return Result<bool>::ok(it != files_.end() && it->second.exists);
-}
-
-std::string MemoryFileSystem::get_content(std::string_view path) const {
-    auto it = files_.find(std::string(path));
-    if (it == files_.end() || !it->second.exists) return "";
-    return it->second.content;
+// 工厂函数：创建 DiskFileSystem，返回接口指针
+std::unique_ptr<FileSystem> create_disk_filesystem() {
+    return std::make_unique<DiskFileSystem>();
 }
 
 }  // namespace neo::infra

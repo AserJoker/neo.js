@@ -6,6 +6,8 @@
 
 #include "infra/allocator.h"
 
+#include "infra/impl_allocator.h"  // private/infra/impl_allocator.h（测试可访问实现类）
+
 #include <gtest/gtest.h>
 
 #include <cstdint>

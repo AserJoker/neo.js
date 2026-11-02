@@ -1,15 +1,16 @@
 // allocator.h - 内存分配器接口（FFI 收口：malloc/free）
 //
 // 业务代码持 Allocator*，不直接调 malloc/free（ADR-027 §5.6 FFI 封装原则）。
-// MallocAllocator 是真实实现，FFI 调用集中在 src/private/infra/allocator.cpp。
+// 具体实现（MallocAllocator）在 private，通过工厂函数 create_malloc_allocator() 获取。
 // 测试可注入 mock Allocator 验证分配/释放行为。
 //
-// 关联 ADR: 008（Allocator 与 GC 分层）、027（FFI 封装）、028（infra）
+// 关联 ADR: 008（Allocator 与 GC 分层）、010（接口-实现-工厂）、027（FFI 封装）、028（infra）
 
 #ifndef NEO_INFRA_ALLOCATOR_H
 #define NEO_INFRA_ALLOCATOR_H
 
 #include <cstddef>
+#include <memory>
 
 namespace neo::infra {
 
@@ -31,14 +32,8 @@ public:
     virtual void free_aligned(void* p) = 0;
 };
 
-// 真实实现：包装 malloc/free（FFI 收口在 .cpp 实现文件内）
-class MallocAllocator : public Allocator {
-public:
-    void* alloc(size_t bytes) override;
-    void* alloc_aligned(size_t bytes, size_t align) override;
-    void  free(void* p) override;
-    void  free_aligned(void* p) override;
-};
+// 工厂：创建默认的 malloc 包装分配器（具体实现 MallocAllocator 在 private）
+std::unique_ptr<Allocator> create_malloc_allocator();
 
 }  // namespace neo::infra
 

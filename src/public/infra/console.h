@@ -1,15 +1,16 @@
 // console.h - 输出工具（FFI 收口：std::cout）
 //
-// OutputSink 抽象输出目标，StdoutSink 默认包 std::cout（FFI 收口在 .cpp）。
-// Console 持 OutputSink* 注入，print/print_line 用 std::format 泛型。
-// 测试注入 StringSink 截获输出验证。
+// OutputSink 抽象输出目标，Console 持 OutputSink* 注入，print/print_line 用 std::format 泛型。
+// 具体实现 StdoutSink 在 private，通过工厂 create_stdout_sink() 获取。
+// 测试注入 StringSink（自定义 mock sink）截获输出验证。
 //
-// 关联 ADR: 027（FFI 封装/可测试性）、028（infra）
+// 关联 ADR: 010（接口-实现-工厂）、027（FFI 封装/可测试性）、028（infra）
 
 #ifndef NEO_INFRA_CONSOLE_H
 #define NEO_INFRA_CONSOLE_H
 
 #include <format>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -25,19 +26,11 @@ public:
     virtual void flush() = 0;
 };
 
-// 真实实现：包 std::cout（FFI 收口在 .cpp 实现文件内）
-class StdoutSink : public OutputSink {
-public:
-    void write(std::string_view text) override;
-    void write_line(std::string_view text) override;
-    void flush() override;
-};
-
 // 输出工具，通过 OutputSink* 注入
 class Console {
     OutputSink* sink_;  // 不持有所有权
 public:
-    // sink=nullptr 时使用默认 StdoutSink（进程级单例）
+    // sink=nullptr 时使用进程级默认 StdoutSink 单例
     explicit Console(OutputSink* sink = nullptr);
 
     // 无格式写
@@ -57,6 +50,9 @@ public:
 
     OutputSink* sink() const { return sink_; }
 };
+
+// 工厂：创建默认 stdout sink（具体实现 StdoutSink 在 private）
+std::unique_ptr<OutputSink> create_stdout_sink();
 
 }  // namespace neo::infra
 

@@ -13,6 +13,8 @@ target_link_libraries(infra_unit_test
         neo_warnings
         gtest_main
 )
+# 测试需访问 infra 的 private 实现头（MockAllocator 委托 MallocAllocator 等）
+target_include_directories(infra_unit_test PRIVATE ${CMAKE_SOURCE_DIR}/src/private)
 
 # 临时文件目录（构建目录下 tmp/，不污染系统 temp），编译期宏注入
 set(NEO_TEST_TMP_DIR "${CMAKE_BINARY_DIR}/tmp")
