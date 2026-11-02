@@ -1,0 +1,147 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 20,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_CXX_STANDARD": "20",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "NEO_ENABLE_TESTS": "ON",
+                "NEO_BUILD_HELLO": "ON",
+                "NEO_ENABLE_ICU": "OFF"
+            }
+        },
+        {
+            "name": "windows",
+            "inherits": "base",
+            "description": "Windows + Clang + Ninja (LLVM/MinGW clang, not clang-cl/MSVC)",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "linux",
+            "inherits": "base",
+            "description": "WSL/Linux + Clang + Ninja",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        },
+        {
+            "name": "windows-debug",
+            "inherits": "windows",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "linux-debug",
+            "inherits": "linux",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "windows-asan",
+            "inherits": "windows",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_CXX_FLAGS": "-fsanitize=address -fno-omit-frame-pointer",
+                "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address"
+            }
+        },
+        {
+            "name": "linux-asan",
+            "inherits": "linux",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_CXX_FLAGS": "-fsanitize=address -fno-omit-frame-pointer",
+                "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address"
+            }
+        },
+        {
+            "name": "windows-coverage",
+            "inherits": "windows",
+            "description": "Coverage instrumentation (llvm-cov source-based, ADR-027)",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "NEO_ENABLE_COVERAGE": "ON"
+            }
+        },
+        {
+            "name": "linux-coverage",
+            "inherits": "linux",
+            "description": "Coverage instrumentation (llvm-cov source-based, ADR-027)",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "NEO_ENABLE_COVERAGE": "ON"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "windows",
+            "configurePreset": "windows"
+        },
+        {
+            "name": "linux",
+            "configurePreset": "linux"
+        },
+        {
+            "name": "windows-debug",
+            "configurePreset": "windows-debug"
+        },
+        {
+            "name": "linux-debug",
+            "configurePreset": "linux-debug"
+        },
+        {
+            "name": "windows-asan",
+            "configurePreset": "windows-asan"
+        },
+        {
+            "name": "linux-asan",
+            "configurePreset": "linux-asan"
+        },
+        {
+            "name": "windows-coverage",
+            "configurePreset": "windows-coverage"
+        },
+        {
+            "name": "linux-coverage",
+            "configurePreset": "linux-coverage"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "windows",
+            "configurePreset": "windows",
+            "output": { "outputOnFailure": true }
+        },
+        {
+            "name": "linux",
+            "configurePreset": "linux",
+            "output": { "outputOnFailure": true }
+        }
+    ]
+}

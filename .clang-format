@@ -1,0 +1,57 @@
+# neo.js 代码格式化配置
+# 基于 LLVM 风格，配合项目 C++20 + 鸟嘴命名空间习惯
+
+BasedOnStyle: LLVM
+
+# 缩进
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+
+# 行宽
+ColumnLimit: 100
+
+# 大括号
+BreakBeforeBraces: Attach
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Empty
+
+# 指针/引用对齐
+DerivePointerAlignment: false
+PointerAlignment: Left
+ReferenceAlignment: Left
+
+# 命名空间
+NamespaceIndentation: None
+CompactNamespaces: false
+FixNamespaceComments: true
+
+# include 排序
+IncludeBlocks: Regroup
+SortIncludes: CaseInsensitive
+
+# 类/结构
+AccessModifierOffset: -4
+AlwaysBreakTemplateDeclarations: Yes
+
+# 对齐
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: Consecutive
+AlignConsecutiveDeclarations: Consecutive
+AlignEscapedNewlines: Left
+AlignOperands: Align
+AlignTrailingComments: true
+
+# 其他
+BinPackArguments: false
+BinPackParameters: false
+AllowAllParametersOfDeclarationOnNextLine: true
+AllowAllArgumentsOnNextLine: true
+
+# 额外
+ReflowComments: false
+SpacesBeforeTrailingComments: 2
+Standard: c++20
