@@ -133,14 +133,18 @@ Function 保存 rootScope（模块作用域，invoke 时切换）
 GTest submodule + ICU port 占位 + HelloWorld + 双平台构建/测试/ASan 验证通过。
 测试分层（unit/integration/regression）+ 覆盖率工具链（llvm-cov source-based）已就绪，
 M2 起强制覆盖率门禁（整体行90/分支80/函数90，核心模块上浮）。
-**仓库尚无首次 commit**。
+**首次 commit 已完成**：`21984ae M0: 项目搭建与基础设施 + 设计文档落盘`。
+
+**里程碑采用滚动式规划**（ADR-未编号/plan.md §四）：完成一个再定下一个，
+不一次性制定全部里程碑。粗粒度规划会失真——如"五阶段跑通"实则词法/语法
+分析各自是巨大工作量，不应塞进一个 M。
 
 设计阶段的**架构层 + 开发规范层**已收敛。待继续：
-1. **M1 最小引擎骨架**：Value 体系形态（ADR-015）、GC 抽象接口（ADR-002 待写）、
-   Allocator 接口（ADR-008）、Scope 实现、五阶段跑通 `console.log`/表达式
+1. **M1 规划**：M0 收尾后，根据当前状态决定 M1 范围（候选焦点：
+   Allocator 接口落地、Value 体系形态、GC 抽象接口等；自底向上，前层被后层依赖）
 2. **其余业务模型**：native 模块作用域（ADR-022 遗留）、对象/数组字面量、
    try/catch（异常即值走 return 通道）、for 循环字节码（ADR-024 待定项）
-3. **首次 commit**：M0 产出可入库（需用户确认提交）
+   ——随相关里程碑推进时细化，不预先全定
 
 ## 十、记忆系统
 
