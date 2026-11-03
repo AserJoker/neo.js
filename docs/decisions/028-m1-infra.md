@@ -78,16 +78,31 @@ public:
     virtual void* alloc_aligned(size_t bytes, size_t align) = 0;
     virtual void  free(void* p) = 0;
     virtual void  free_aligned(void* p) = 0;
+
+    // 内存配额管理（ADR-028 §3 补充）
+    // 限额默认 size_t 最大值（无限制）；可在运行时收紧。
+    // 超限 alloc 返回 nullptr（拦截），不抛异常、不耗尽 OS 资源。
+    // 解释器/VM 出现无限分配 bug 时由限额兜底，配合上层错误处理转为脚本异常。
+    virtual void  set_limit(size_t bytes) = 0;
+    virtual size_t limit() const = 0;
+    virtual size_t used() const = 0;
 };
 
-// 真实实现：包 malloc/free（FFI 收口在实现文件内）
-class MallocAllocator : public Allocator { ... };
+// 工厂：默认无限额；带限额版本用于受控执行环境
+std::unique_ptr<Allocator> create_malloc_allocator();
+std::unique_ptr<Allocator> create_malloc_allocator_with_limit(size_t bytes);
 
 }  // namespace neo::infra
 ```
 
 - **业务代码持 `Allocator*`，不直接调 malloc/free**（ADR-027 §5.6）。
 - `MallocAllocator` 实现在 `src/private/infra/allocator.cpp`，FFI 调用集中在该文件。
+- **内存配额**（2026-11 补充）：`MallocAllocator` 用 `std::atomic<size_t>` 记账已用字节，
+  `alloc` 前原子地 CAS 检查 `used + bytes <= limit`，超限返回 nullptr；`free` 查记账表
+  （`std::unordered_map<void*, size_t>`）递减 used。线程安全，适合 VM/GC 多线程场景。
+  默认 `limit() = SIZE_MAX`（无限制），向后兼容；`create_malloc_allocator_with_limit(n)`
+  创建带限额实例。无限分配 bug 在限额处被拦截，配合 `Result<T>` 错误通道转为脚本异常，
+  避免 OOM 拖垮宿主进程。
 - 测试：注入 mock Allocator 验证分配/释放次数、参数、可模拟分配失败。
 
 ### 4. Console — 输出工具

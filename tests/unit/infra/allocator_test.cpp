@@ -1,8 +1,8 @@
 // allocator_test.cpp - Allocator 单元测试
 //
-// 验证 MallocAllocator 真实分配/释放，以及接口可注入 mock（可测试性）。
+// 验证 MallocAllocator 真实分配/释放、内存配额拦截、以及接口可注入 mock（可测试性）。
 //
-// 关联 ADR: 008（Allocator）、027（FFI 封装/可测试性）、028（infra）
+// 关联 ADR: 008（Allocator）、027（FFI 封装/可测试性）、028（infra §3 配额）
 
 #include "infra/allocator.h"
 
@@ -17,6 +17,8 @@ namespace {
 
 using neo::infra::Allocator;
 using neo::infra::MallocAllocator;
+using neo::infra::create_malloc_allocator;
+using neo::infra::create_malloc_allocator_with_limit;
 
 // 记录调用次数的 mock，验证业务代码通过接口使用分配器
 class MockAllocator : public Allocator {
@@ -45,6 +47,10 @@ public:
         calls.push_back({Call::FreeAligned, 0, 0, p});
         raw_.free_aligned(p);
     }
+    // 配额委托给真实实现（mock 自身不限额，业务通过接口观察 used）
+    void  set_limit(size_t bytes) override { raw_.set_limit(bytes); }
+    size_t limit() const override { return raw_.limit(); }
+    size_t used() const override { return raw_.used(); }
 
 private:
     MallocAllocator raw_;
@@ -135,6 +141,155 @@ TEST(AllocatorUsagePattern, BufferUsesInjectedAllocator) {
     ASSERT_EQ(mock.calls.size(), 2u);
     EXPECT_EQ(mock.calls[0].kind, MockAllocator::Call::Alloc);
     EXPECT_EQ(mock.calls[1].kind, MockAllocator::Call::Free);
+}
+
+// =========================================================================
+// 内存配额测试（ADR-028 §3 补充）
+// =========================================================================
+
+TEST(AllocatorQuotaTest, DefaultLimitIsUnlimited) {
+    MallocAllocator a;
+    EXPECT_EQ(a.limit(), SIZE_MAX);
+    EXPECT_EQ(a.used(), 0u);
+}
+
+TEST(AllocatorQuotaTest, UsedTracksAllocation) {
+    MallocAllocator a;
+    void* p = a.alloc(200);
+    ASSERT_NE(p, nullptr);
+    EXPECT_EQ(a.used(), 200u);
+    a.free(p);
+    EXPECT_EQ(a.used(), 0u);
+}
+
+TEST(AllocatorQuotaTest, UsedTracksAlignedAllocation) {
+    MallocAllocator a;
+    // alloc_aligned(100, 64) 实际分配 128 字节（向上对齐到 64 倍数）
+    void* p = a.alloc_aligned(100, 64);
+    ASSERT_NE(p, nullptr);
+    EXPECT_EQ(a.used(), 128u);
+    a.free_aligned(p);
+    EXPECT_EQ(a.used(), 0u);
+}
+
+TEST(AllocatorQuotaTest, AllocZeroCountsAsOne) {
+    MallocAllocator a;
+    void* p = a.alloc(0);
+    ASSERT_NE(p, nullptr);
+    EXPECT_EQ(a.used(), 1u);  // 按契约统一记 1
+    a.free(p);
+    EXPECT_EQ(a.used(), 0u);
+}
+
+TEST(AllocatorQuotaTest, SetLimitAtRuntime) {
+    MallocAllocator a;
+    a.set_limit(1024);
+    EXPECT_EQ(a.limit(), 1024u);
+    void* p = a.alloc(512);
+    ASSERT_NE(p, nullptr);
+    void* q = a.alloc(512);
+    ASSERT_NE(q, nullptr);
+    // 第三次超过限额
+    void* r = a.alloc(1);
+    EXPECT_EQ(r, nullptr);  // 拦截
+    // 释放一个后有空间
+    a.free(p);
+    void* s = a.alloc(1);
+    ASSERT_NE(s, nullptr);
+    a.free(q);
+    a.free(s);
+}
+
+TEST(AllocatorQuotaTest, AllocExceedingLimitReturnsNull) {
+    MallocAllocator a(100);
+    void* p = a.alloc(101);
+    EXPECT_EQ(p, nullptr);
+    EXPECT_EQ(a.used(), 0u);  // 未记账
+    void* q = a.alloc(100);
+    ASSERT_NE(q, nullptr);
+    EXPECT_EQ(a.used(), 100u);
+    a.free(q);
+    EXPECT_EQ(a.used(), 0u);
+}
+
+TEST(AllocatorQuotaTest, AlignedExceedingLimitReturnsNull) {
+    MallocAllocator a(64);
+    // alloc_aligned(10, 64) 需 64 字节，刚好等于限额
+    void* p = a.alloc_aligned(10, 64);
+    ASSERT_NE(p, nullptr);
+    EXPECT_EQ(a.used(), 64u);
+    // 再分配任何对齐块都超限
+    void* q = a.alloc_aligned(1, 16);
+    EXPECT_EQ(q, nullptr);
+    a.free_aligned(p);
+    EXPECT_EQ(a.used(), 0u);
+}
+
+TEST(AllocatorQuotaTest, InfiniteAllocLoopIntercepted) {
+    // 模拟 VM 中的无限分配 bug：循环分配直到限额拦截
+    // 限额设小（1 MiB），确保测试快速且不耗尽内存
+    MallocAllocator a(1 << 20);
+    std::vector<void*> ptrs;
+    constexpr size_t kChunk = 4096;
+    for (;;) {
+        void* p = a.alloc(kChunk);
+        if (p == nullptr) break;  // 被限额拦截
+        ptrs.push_back(p);
+    }
+    // 应在 ~256 次后被拦截，而非无限增长
+    EXPECT_LT(ptrs.size(), 300u);
+    EXPECT_GT(ptrs.size(), 0u);
+    // used 不超过限额
+    EXPECT_LE(a.used(), a.limit());
+    // 释放全部，used 归零
+    for (void* p : ptrs) a.free(p);
+    EXPECT_EQ(a.used(), 0u);
+}
+
+TEST(AllocatorQuotaTest, FactoryWithLimit) {
+    auto a = create_malloc_allocator_with_limit(256);
+    EXPECT_EQ(a->limit(), 256u);
+    void* p = a->alloc(256);
+    ASSERT_NE(p, nullptr);
+    void* q = a->alloc(1);
+    EXPECT_EQ(q, nullptr);  // 超限
+    a->free(p);
+    void* r = a->alloc(1);
+    ASSERT_NE(r, nullptr);
+    a->free(r);
+}
+
+TEST(AllocatorQuotaTest, FactoryDefaultIsUnlimited) {
+    auto a = create_malloc_allocator();
+    EXPECT_EQ(a->limit(), SIZE_MAX);
+}
+
+TEST(AllocatorQuotaTest, SetLimitBelowUsedBlocksFutureAlloc) {
+    // 已分配量超过新限额时不强制回收，但后续 alloc 被拦截
+    MallocAllocator a;
+    void* p = a.alloc(500);
+    ASSERT_NE(p, nullptr);
+    a.set_limit(100);  // 收紧到 100，但 used=500 不会回滚
+    EXPECT_EQ(a.used(), 500u);
+    void* q = a.alloc(1);
+    EXPECT_EQ(q, nullptr);  // used(500) > limit(100)，拦截
+    a.free(p);
+    EXPECT_EQ(a.used(), 0u);
+    // 释放后限额内可分配
+    void* r = a.alloc(50);
+    ASSERT_NE(r, nullptr);
+    a.free(r);
+}
+
+TEST(AllocatorQuotaTest, FreeReleasesQuotaForReuse) {
+    MallocAllocator a(1000);
+    // 多次分配-释放循环，验证配额可重复使用
+    for (int i = 0; i < 100; ++i) {
+        void* p = a.alloc(500);
+        ASSERT_NE(p, nullptr) << "iter " << i;
+        a.free(p);
+    }
+    EXPECT_EQ(a.used(), 0u);
 }
 
 }  // namespace
