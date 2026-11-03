@@ -37,14 +37,21 @@
 
 - **Fatal 是比 Exception 更严重的错误类型**，表示不可恢复的系统级故障
   （如 OOM、栈溢出等）。
-- **不可捕获**：脚本 `try/catch` 无法捕获，native 函数与 VM 执行循环必须**直接透传**，
-  不做任何处理，一路返回到最外层调用方（CLI 或嵌入宿主）。
-- **透传契约**：
-  - **native 函数**：收到 Fatal Value 时立即 return 透传，不处理不转换不包装。
-  - **VM 执行循环**：检查返回值，Fatal 则跳出执行循环，返回给调用方。
+- **不可捕获**：脚本 `try/catch` 无法捕获，**任何返回 `Value*` 的接口**调用方收到
+  Fatal Value 后必须**直接透传**，不处理不转换不包装，一路返回到最外层调用方
+  （CLI 或嵌入宿主）。
+- **透传契约**（适用范围：所有返回 `Value*` 的业务接口——native 函数、VM 执行循环、
+  Context 的 `create_*`、Sema/Compiler 内部能产生 Value 的路径，无一例外）：
+  - **通用规则**：调用任何返回 `Value*` 的接口后，**必须检查返回值是否为 Fatal**
+    （`v->type() == fatal_type()` 或与 `ctx->oom_value()` 指针比较），是则立即
+    return 透传，不处理不转换不包装。这是一条无例外的纪律——只要接口签名是
+    `Value*`，调用点就必须做 Fatal 检查。
+  - **native 函数**：调用其他函数/接口后检查返回值，Fatal 则立即 return 透传。
+  - **VM 执行循环**：每条指令的执行结果检查，Fatal 则跳出执行循环，返回给调用方。
   - **最外层处理**：CLI/宿主用**额外内存**（宿主自己的内存管理，不经过 Engine 的
     Allocator；CLI 可用预先创建的栈上空间）解析错误——拼接错误消息、打印调用栈等。
     因 Fatal 发生时 Engine 内存可能已耗尽，不能用 Engine 的 Allocator 分配诊断信息。
+    最外层是 Fatal 透传链的**唯一终点**，只有它允许（也必须）处理 Fatal。
 - **也是 Value**（Type=Fatal，Data 携带错误码/消息），符合"Engine 层完全用语言特性
   表达错误，返回值必须为 Value"（ADR-030 阶段 5）。
 - **与 Exception 的关系**：Exception 是可恢复的业务异常（脚本可处理），Fatal 是不可恢复

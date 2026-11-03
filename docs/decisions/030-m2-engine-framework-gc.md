@@ -217,12 +217,20 @@ Value* ContextImpl::create_number(double n) {
 OOM 是 Fatal，不可捕获。一旦 OOM Fatal Value 被产生，所有调用方必须**直接透传，
 不处理不转换不包装**，一路返回到最外层调用方（CLI 或嵌入宿主）。详见 ADR-017 §4。
 
-- **native 函数**：收到 Fatal Value（`v == ctx->oom_value()` 或 `v->type() == fatal_type()`）
-  时立即 return 透传，不处理不转换不包装。
-- **VM 执行循环**：检查每次返回值，Fatal 则跳出执行循环，直接返回给调用方。
+**适用范围：所有返回 `Value*` 的业务接口——无一例外。** 不只是 native 函数和 VM 执行
+循环，理论上任何返回 `Value*` 的接口（Context 的 `create_*`、Sema/Compiler 内部能产生
+Value 的路径、native 函数、VM 指令执行……）都可能返回 Fatal。因此**每个调用点**在调用
+返回 `Value*` 的接口后，都必须检查返回值是否为 Fatal，是则立即 return 透传。这是一条
+无例外的纪律——只要接口签名是 `Value*`，调用点就必须做 Fatal 检查。
+
+- **通用规则**：调用任何返回 `Value*` 的接口后，检查 `v->type() == fatal_type()`
+  （或 `v == ctx->oom_value()` 指针比较），是则立即 return 透传，不处理不转换不包装。
+- **native 函数**：调用其他函数/接口后检查返回值，Fatal 则立即 return 透传。
+- **VM 执行循环**：每条指令的执行结果检查，Fatal 则跳出执行循环，直接返回给调用方。
 - **最外层处理**：CLI/宿主用**额外内存**（宿主自己的内存管理，不经过 Engine 的
   Allocator；CLI 可用预先创建的栈上空间）解析错误——拼接错误消息、打印调用栈等。
   因 Fatal 发生时 Engine 内存可能已耗尽，不能用 Engine 的 Allocator 分配诊断信息。
+  最外层是 Fatal 透传链的**唯一终点**，只有它允许（也必须）处理 Fatal。
 
 **为何 Fatal 不可捕获**：OOM 发生时 Engine 内存已耗尽，脚本 `try/catch` 的 catch
 块本身可能再次分配（构造错误对象、调用 handler）而触发二次 OOM，无法恢复。故 OOM
