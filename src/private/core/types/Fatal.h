@@ -19,6 +19,13 @@ class FatalType : public IType {
 public:
     FatalType() : IType(TypeKind::Fatal) {}
     const char* name() const override { return "fatal"; }
+
+    // 行为方法：全部透传 self（ADR-017 §4 Fatal 透传，实现见 Fatal.cpp）
+    Value* add(IContext* ctx, Value* a, Value* b) override;
+    Value* sub(IContext* ctx, Value* a, Value* b) override;
+    Value* mul(IContext* ctx, Value* a, Value* b) override;
+    Value* div(IContext* ctx, Value* a, Value* b) override;
+    Value* toString(IContext* ctx, Value* self) override;
 };
 
 // 持 const char*（字面量字符串，静态存储期，无须释放）

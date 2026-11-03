@@ -24,6 +24,13 @@ class ExceptionType : public IType {
 public:
     ExceptionType() : IType(TypeKind::Exception) {}
     const char* name() const override { return "exception"; }
+
+    // 行为方法：全部透传 self（ADR-006 异常即值，实现见 Exception.cpp）
+    Value* add(IContext* ctx, Value* a, Value* b) override;
+    Value* sub(IContext* ctx, Value* a, Value* b) override;
+    Value* mul(IContext* ctx, Value* a, Value* b) override;
+    Value* div(IContext* ctx, Value* a, Value* b) override;
+    Value* toString(IContext* ctx, Value* self) override;
 };
 
 // 持 Value*（被抛出的错误对象），本阶段唯一复杂类型

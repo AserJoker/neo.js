@@ -17,4 +17,26 @@ void ExceptionData::enumerateChildren(IGCVisitor* visitor) {
     visitor->visit(child);
 }
 
+// Exception 行为方法：透传 self（ADR-006 异常即值）。
+// Exception 不参与计算——外部已拦截，若内部间接调用发生则立刻透传返回。
+// 但 Fatal 优先于 Exception（ADR-017 §4）：若 b 是 Fatal，透传 b。
+// 分派规则 a->type()->op(ctx,a,b)，故 add/sub/mul/div 的 self 即 a（Exception）。
+Value* ExceptionType::add(IContext* /*ctx*/, Value* a, Value* b) {
+    if (b->type()->kind() == TypeKind::Fatal) return b;
+    return a;
+}
+Value* ExceptionType::sub(IContext* /*ctx*/, Value* a, Value* b) {
+    if (b->type()->kind() == TypeKind::Fatal) return b;
+    return a;
+}
+Value* ExceptionType::mul(IContext* /*ctx*/, Value* a, Value* b) {
+    if (b->type()->kind() == TypeKind::Fatal) return b;
+    return a;
+}
+Value* ExceptionType::div(IContext* /*ctx*/, Value* a, Value* b) {
+    if (b->type()->kind() == TypeKind::Fatal) return b;
+    return a;
+}
+Value* ExceptionType::toString(IContext* /*ctx*/, Value* self) { return self; }
+
 }  // namespace neo::core
