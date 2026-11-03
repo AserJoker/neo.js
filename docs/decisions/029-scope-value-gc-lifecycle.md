@@ -179,6 +179,10 @@ collect():
 - **多 Value 共享 data**：ref>1 时 sweep 单个 Value 不会 free data，仅递减 ref；最后一个引用
   Value 被回收、ref 归 0 时才 free。无需二次扫描，sweep 单次遍历即可。
 - **本阶段遍历 noop**：data 扁平无子 value，标记阶段只标记 `scope_ref != 0` 的根，无递归。
+- **GC 析构契约**：`MarkSweepGC` 析构时调一次 `collect()`，之后若 `values_` 非空（仍有 scope_ref!=0
+  的存活 Value）则 `abort()` 报告内存泄漏。调用方有责任在 GC 析构前销毁所有 scope（on_exit 让
+  scope_ref 归 0），让 final collect 回收全部 Value。残留即泄漏 bug（scope 未销毁或 GC 逻辑错误），
+  panic 比静默泄漏更易定位。
 
 ### 6. GC 触发机制（双重阈值）
 
