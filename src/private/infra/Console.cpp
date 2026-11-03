@@ -1,11 +1,12 @@
-// console.cpp - StdoutSink 实现 + Console 实现 + 工厂函数（FFI 收口：std::cout）
+// Console.cpp - StdoutSink 实现 + Console 实现 + 工厂函数（FFI 收口：std::cout）
 //
 // 本文件是 neo.js 中唯一直接使用 std::cout 的地方（ADR-027 §5.6）。
-// 业务代码通过 OutputSink*/Console 使用，测试注入 mock sink 截获输出。
+// 业务代码通过 IOutputSink*/Console 使用，测试注入 mock sink 截获输出。
 //
 // 关联 ADR: 010（接口-实现-工厂）、027（FFI 封装）、028（infra）
 
-#include "infra/impl_console.h"  // private/infra/impl_console.h
+#include "infra/Console.h"      // public Console 类定义
+#include "infra/StdoutSink.h"   // private StdoutSink 实现
 
 #include <iostream>
 #include <memory>
@@ -37,7 +38,7 @@ void StdoutSink::flush() {
 }
 
 // --- Console ---
-Console::Console(OutputSink* sink)
+Console::Console(IOutputSink* sink)
     : sink_(sink != nullptr ? sink : &default_sink()) {}
 
 void Console::write(std::string_view text) {
@@ -49,7 +50,7 @@ void Console::write_line(std::string_view text) {
 }
 
 // 工厂函数：创建 StdoutSink，返回接口指针
-std::unique_ptr<OutputSink> create_stdout_sink() {
+std::unique_ptr<IOutputSink> create_stdout_sink() {
     return std::make_unique<StdoutSink>();
 }
 

@@ -6,7 +6,7 @@
 // 关联 ADR: 006（异常即值）、007（无异常/标准库边界 try-catch）、010（接口-实现-工厂）、
 //          027（FFI 封装）、028（infra）
 
-#include "infra/impl_file.h"  // private/infra/impl_file.h
+#include "infra/DiskFileSystem.h"  // private/infra/DiskFileSystem.h
 
 #include <cstdio>
 #include <fstream>
@@ -17,7 +17,7 @@
 namespace neo::infra {
 
 // ---------------------------------------------------------------------------
-// File 方法（Impl 是 File 的公开嵌套类型，定义在 public/file.h）
+// File 方法（Impl 是 File 的公开嵌套类型，定义在 public/File.h）
 // ---------------------------------------------------------------------------
 File::File() = default;
 File::File(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
@@ -93,7 +93,7 @@ Result<void> File::close() {
         if (impl_->kind == Impl::Kind::Disk) {
             if (impl_->fs.is_open()) impl_->fs.close();
         } else if (impl_->on_close) {
-            // memory 模式：调用 FileSystem 实现注入的回写闭包
+            // memory 模式：调用 IFileSystem 实现注入的回写闭包
             impl_->ss.flush();
             impl_->on_close(impl_->ss.str());
         }
@@ -153,7 +153,7 @@ Result<bool> DiskFileSystem::exists(std::string_view path) {
 }
 
 // 工厂函数：创建 DiskFileSystem，返回接口指针
-std::unique_ptr<FileSystem> create_disk_filesystem() {
+std::unique_ptr<IFileSystem> create_disk_filesystem() {
     return std::make_unique<DiskFileSystem>();
 }
 

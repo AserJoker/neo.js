@@ -1,15 +1,15 @@
 // allocator.cpp - MallocAllocator 实现 + 工厂函数（FFI 收口：malloc/free/aligned_alloc）
 //
 // 本文件是 neo.js 中唯一直接调用 malloc/free 等内存 FFI 的地方（ADR-027 §5.6）。
-// 业务代码通过 Allocator* 接口注入使用，不直接接触这些 FFI。
+// 业务代码通过 IAllocator* 接口注入使用，不直接接触这些 FFI。
 //
 // 内存配额：alloc 前 try_reserve 原子检查 used+bytes<=limit，超限返回 nullptr 拦截。
 // 记账表 records_ 记录 ptr→真实字节数，free 时查表递减 used。alloc(0) 统一记 1 字节
 // （malloc 返回非空哨兵，free 兼容）。
 //
-// 关联 ADR: 008（Allocator）、010（接口-实现-工厂）、027（FFI 封装）、028（infra §3 配额）
+// 关联 ADR: 008（IAllocator）、010（接口-实现-工厂）、027（FFI 封装）、028（infra §3 配额）
 
-#include "infra/impl_allocator.h"  // private/infra/impl_allocator.h
+#include "infra/MallocAllocator.h"  // private/infra/MallocAllocator.h
 
 #include <cstdlib>
 #include <memory>
@@ -122,12 +122,12 @@ size_t MallocAllocator::used() const {
 }
 
 // 工厂函数：创建无限额 MallocAllocator（默认）
-std::unique_ptr<Allocator> create_malloc_allocator() {
+std::unique_ptr<IAllocator> create_malloc_allocator() {
     return std::make_unique<MallocAllocator>();
 }
 
 // 工厂函数：创建带限额 MallocAllocator
-std::unique_ptr<Allocator> create_malloc_allocator_with_limit(size_t bytes) {
+std::unique_ptr<IAllocator> create_malloc_allocator_with_limit(size_t bytes) {
     return std::make_unique<MallocAllocator>(bytes);
 }
 
