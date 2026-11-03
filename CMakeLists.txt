@@ -111,7 +111,6 @@ add_library(neojs STATIC
     src/private/infra/MallocAllocator.cpp
     src/private/infra/Console.cpp
     src/private/infra/CommandParser.cpp
-    src/private/infra/File.cpp
 )
 target_include_directories(neojs
     PUBLIC

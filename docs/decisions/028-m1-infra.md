@@ -20,7 +20,10 @@ M1 实现业务无关基础设施，为后续 M2+ 语言核心模块提供可测
 - 测试：`tests/unit/infra/`
 - 依赖方向：infra 不依赖任何其他 neo 模块；其他模块可依赖 infra
 
-infra 模块含 5 个组件：`Result<T>` / `Allocator` / `Console` / `Command` / `File`。
+infra 模块含 4 个组件：`Result<T>` / `Allocator` / `Console` / `Command`。
+
+> **注**：原设计含 `File`（文件封装 + FileSystem 接口注入），已于 2026-11-03 移除，
+> 封装方案待重新设计。原 §6 的 File/FileSystem 设计仅作历史记录保留，不再反映当前实现。
 
 ### 2. Result<T> — 统一错误返回
 
@@ -176,7 +179,7 @@ struct ParsedArgs {
 - 支持 `--flag`、`--opt=value`、`-o value`、positional。
 - 返回 `Result<ParsedArgs>`，参数错误返回 `ErrCode::InvalidArg`。
 
-### 6. File — 文件封装（FileSystem 接口注入）
+### 6. File — 文件封装（FileSystem 接口注入）【已移除，待重新设计】
 
 ```cpp
 // src/public/infra/IFileSystem.h
@@ -221,7 +224,7 @@ class MemoryFileSystem : public FileSystem { ... };
 |------|------------|------------|
 | Allocator | `MallocAllocator`（包 malloc/free） | `Allocator*` 接口 |
 | Console | `StdoutSink`（包 std::cout） | `OutputSink*` 接口 |
-| File | `DiskFileSystem`（包 std::fstream） | `FileSystem*` 接口 |
+| File | ~~`DiskFileSystem`（包 std::fstream）~~ 已移除 | ~~`FileSystem*` 接口~~ 待重新设计 |
 | Command | 无 FFI | 直接传 argv |
 | Result | 无 FFI | 纯类型 |
 
@@ -236,10 +239,10 @@ class MemoryFileSystem : public FileSystem { ... };
 2. **Allocator** — 依赖 Result（分配失败返回 err）
 3. **Console** — 依赖 Result（写入失败返回 err？或 void，待定）
 4. **Command** — 依赖 Result
-5. **File** — 依赖 Result
+5. **File** — 依赖 Result（**已移除，待重新设计**）
 
 ## 后果
 
 - 优点：FFI 全部收口，业务代码可测试；统一 Result 错误通道；infra 不依赖语言核心，可独立验证。
 - 缺点：Result 二元 union 增加 API 复杂度（每次调用要判断 is_ok）；mock 实现需维护。
-- 后续：M2+ 语言核心模块基于 infra 构建（GC 用 Allocator，stdlib 用 Console/File）。
+- 后续：M2+ 语言核心模块基于 infra 构建（GC 用 Allocator，stdlib 用 Console）。
