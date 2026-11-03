@@ -154,7 +154,7 @@ std::unique_ptr<Context> create_context(infra::Allocator* alloc);
   按类型分派到对应 Type 单例 + Data 子类。调用方无需直接接触 GC/Type/Data 细节。
   始终返回 `Value*`（不返回 Result，阶段 5 落实 OOM 时返回预分配 OOM Exception 单例）。
 - **预分配 OOM Exception**：Context 初始化时最早分配一个 Exception Value 挂载到
-  GlobalScope（单例，GC 永不回收），create_* 内部 OOM 时返回它（详见阶段 5）。
+  GlobalScope（单例，Context 存活期间被 GlobalScope 跟踪不回收），create_* 内部 OOM 时返回它（详见阶段 5）。
 
 ### 阶段 5：OOM 异常封装
 
@@ -168,7 +168,9 @@ std::unique_ptr<Context> create_context(infra::Allocator* alloc);
 - Context 初始化时（Allocator 配额充足），**最早分配一个 Exception 类型的 Value**
   作为 OOM 哨兵，挂载到 GlobalScope（第一个预分配的错误 Value）。
 - 该 Value **单例**：所有 OOM 都返回同一实例，调用方可指针比较判断是否 OOM。
-- 挂载到 GlobalScope 意味着 `scope_ref >= 1`，GC 永不回收它（全局可达）。
+- 挂载到 GlobalScope 意味着 `scope_ref >= 1`，Context 存活期间被 GlobalScope 跟踪，
+  GC 不会回收它。Context 析构时 GlobalScope on_exit（scope_ref 归 0），GC final
+  collect 时自然回收——与普通 Value 生命周期一致，无特殊处理。
 - **分配失败直接 panic**：若 Context 初始化时连 OOM Exception Value 都分配不出来
   （`gc->create_value` 返回 nullptr），说明系统不可用，`abort()`。
 
@@ -226,7 +228,8 @@ Value* ContextImpl::create_number(double n) {
 
 - 配额耗尽时 create_* 返回 oom_value_（单例），不返回 nullptr、不崩溃。
 - oom_value_ == ctx->oom_value() 指针比较成立。
-- Context 初始化时 oom_value_ 已挂载到 global，GC collect 不回收它。
+- Context 初始化时 oom_value_ 已挂载到 global（scope_ref>=1），Context 存活期间
+  GC collect 不回收它；Context 析构随 global on_exit 自然回收。
 - 连 oom_value_ 都分配不出（极小配额）时 Context 创建 abort。
 
 ## 模块组织（M2 整体）
