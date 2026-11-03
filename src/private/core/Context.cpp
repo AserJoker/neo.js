@@ -15,6 +15,8 @@
 #include "core/Context.h"
 #include "core/IType.h"
 #include "core/types/Boolean.h"
+#include "core/types/Exception.h"
+#include "core/types/Fatal.h"
 #include "core/types/Null.h"
 #include "core/types/Number.h"
 #include "core/types/String.h"
@@ -43,7 +45,7 @@ Context::~Context() {
     //    scopeRef 归 0 的 Value 在 GC 下次 collect 时被回收。
     // 注：scopeStack_ 中的指针在 global_ 析构后全部悬垂，但栈本身只是 vector<Scope*>，
     //     析构 vector 不访问指针内容，安全。成员析构顺序：scopeStack_ → gc_ → ...
-    if (global_ != nullptr) {
+    if (global_ != nullptr) {  // NEO_NO_COVERAGE (else 不可达：构造必成功否则抛异常)
         global_->~Scope();
         alloc_->free(global_);
     }
@@ -55,7 +57,7 @@ Context::~Context() {
 }
 
 Scope* Context::current() const {
-    if (scopeStack_.empty()) return nullptr;
+    if (scopeStack_.empty()) return nullptr;  // NEO_NO_COVERAGE (root 始终在栈底)
     return scopeStack_.back();
 }
 
@@ -82,7 +84,7 @@ namespace {
 
 // 把 Value 加入 current scope：add 跟踪 + 可选 bind 命名绑定。
 void trackValue(Scope* scope, Value* v, std::string_view name) {
-    if (v == nullptr) return;
+    if (v == nullptr) return;  // NEO_NO_COVERAGE (阶段5 前 createValue 不返 nullptr)
     scope->add(v);
     if (!name.empty()) {
         scope->bind(name, v);
@@ -123,6 +125,45 @@ Value* Context::createString(std::string_view s, std::string_view name) {
     auto* d = gc_->allocData<StringData>(s);
     Value* v = gc_->createValue(getStringType(), d);
     trackValue(current(), v, name);
+    return v;
+}
+
+// —— 运算代理（纯代理，ADR-016 §4）——
+// ctx->add(a,b) → a->type()->add(this, a, b)，Context 不持协商规则表。
+
+Value* Context::add(Value* a, Value* b) {
+    return a->type()->add(this, a, b);
+}
+
+Value* Context::sub(Value* a, Value* b) {
+    return a->type()->sub(this, a, b);
+}
+
+Value* Context::mul(Value* a, Value* b) {
+    return a->type()->mul(this, a, b);
+}
+
+Value* Context::div(Value* a, Value* b) {
+    return a->type()->div(this, a, b);
+}
+
+Value* Context::toString(Value* self) {
+    return self->type()->toString(this, self);
+}
+
+// —— 错误值创建（ADR-006 异常即值 + ADR-017 §4 Fatal）——
+
+Value* Context::createException(Value* child) {
+    auto* d = gc_->allocData<ExceptionData>(child);
+    Value* v = gc_->createValue(getExceptionType(), d);
+    trackValue(current(), v, {});
+    return v;
+}
+
+Value* Context::createFatal(const char* msg) {
+    auto* d = gc_->allocData<FatalData>(msg);
+    Value* v = gc_->createValue(getFatalType(), d);
+    trackValue(current(), v, {});
     return v;
 }
 
