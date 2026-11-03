@@ -105,7 +105,7 @@ add_library(neojs STATIC
     src/private/core/value.cpp
     src/private/core/mark_sweep_gc.cpp
     src/private/core/types.cpp
-    src/private/core/data.cpp
+    src/private/core/types/exception.cpp
     src/private/infra/allocator.cpp
     src/private/infra/console.cpp
     src/private/infra/command.cpp

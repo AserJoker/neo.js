@@ -1,0 +1,41 @@
+// types/exception.h - ExceptionType + ExceptionData
+//
+// exception 类型（ADR-017 §3）：可捕获异常，持 Value* child（被抛出的错误对象）。
+// 本阶段唯一复杂类型：data 持 GC 管的子 value，须覆写 enumerate_children 让 GC 沿
+// 引用链标记被引用的错误对象（ADR-015 data 层持子 value 而非子 data，无环）。
+//
+// **child 永远不为 nullptr**：不携带错误对象时用 undefined Value 表示，而非空指针。
+// 行为方法待 Context 引入后补充。
+//
+// 关联 ADR: 015（data 引用计数分层）、016（Type 体系修订）、017（Exception 类型）
+
+#ifndef NEO_CORE_PRIVATE_TYPES_EXCEPTION_H
+#define NEO_CORE_PRIVATE_TYPES_EXCEPTION_H
+
+#include "core/data.h"
+#include "core/type.h"
+
+namespace neo::core {
+
+// 前向声明
+class Value;
+
+class ExceptionType : public Type {
+public:
+    ExceptionType() : Type(TypeKind::Exception) {}
+    const char* name() const override { return "exception"; }
+};
+
+// 持 Value*（被抛出的错误对象），本阶段唯一复杂类型
+class ExceptionData : public Data {
+public:
+    Value* child;  // 被抛出的错误对象（GC 管的 Value*，永远不为 nullptr）
+    explicit ExceptionData(Value* c) : child(c) {}
+
+    // 覆写：向 visitor 报告持有的子 value，让 GC 沿引用链标记
+    void enumerate_children(GCVisitor* visitor) override;
+};
+
+}  // namespace neo::core
+
+#endif  // NEO_CORE_PRIVATE_TYPES_EXCEPTION_H

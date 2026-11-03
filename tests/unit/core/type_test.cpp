@@ -10,11 +10,16 @@
 //
 // 关联 ADR: 016（Type 体系修订）、017（类型清单）、015（data 引用计数分层）
 
-#include "core/impl_data.h"
-#include "core/impl_types.h"
 #include "core/gc.h"
 #include "core/type.h"
 #include "core/value.h"
+#include "core/types/boolean.h"
+#include "core/types/exception.h"
+#include "core/types/fatal.h"
+#include "core/types/null.h"
+#include "core/types/number.h"
+#include "core/types/string.h"
+#include "core/types/undefined.h"
 #include "infra/allocator.h"
 #include "infra/impl_allocator.h"
 
