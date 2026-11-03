@@ -25,7 +25,7 @@ M2 采用滚动式里程碑（ADR-026 后约定）：完成一个阶段再定下
 | 2. Scope 树与三层作用域 | parent 链、global/root/current、on_exit 递归 | 待实现 |
 | 3. 基础扁平类型 Type/Data | undefined/null/boolean/number/string | 待实现 |
 | 4. Context 门面整合 | 持有 Allocator/GC/Scope 树，创建引擎入口 | 待实现 |
-| 5. OOM 异常封装 | create_value nullptr → Context 封装 OOM Exception | 待实现 |
+| 5. OOM Fatal 封装 | create_value nullptr → Context 封装 OOM Fatal，透传契约 | 待实现 |
 
 ### 阶段 1：Value-Data-GC-Scope 生命周期管线（已完成）
 
@@ -152,34 +152,38 @@ std::unique_ptr<Context> create_context(infra::Allocator* alloc);
   在 private/core/，工厂 create_context() 返回接口指针。
 - **create_* 便捷接口**：封装 gc->alloc_data<T> + gc->create_value(type, data)，
   按类型分派到对应 Type 单例 + Data 子类。调用方无需直接接触 GC/Type/Data 细节。
-  始终返回 `Value*`（不返回 Result，阶段 5 落实 OOM 时返回预分配 OOM Exception 单例）。
-- **预分配 OOM Exception**：Context 初始化时最早分配一个 Exception Value 挂载到
+  始终返回 `Value*`（不返回 Result，阶段 5 落实 OOM 时返回预分配 OOM Fatal 单例）。
+- **预分配 OOM Fatal**：Context 初始化时最早分配一个 Fatal Value 挂载到
   GlobalScope（单例，Context 存活期间被 GlobalScope 跟踪不回收），create_* 内部 OOM 时返回它（详见阶段 5）。
 
-### 阶段 5：OOM 异常封装
+### 阶段 5：OOM Fatal 封装
 
-落实 ADR-006（异常即值）+ ADR-029 §6（OOM 哨兵）+ ADR-017（Exception 类型）。
+落实 ADR-006（异常即值）+ ADR-029 §6（OOM 哨兵）+ ADR-017（Fatal 类型）。
 
 **核心原则：Engine 层完全用语言特性表达错误，返回值必须为 `Value*`。**
-不引入 `Result<T>` 到 Engine API——OOM 用预分配的 Exception Value 表达。
+不引入 `Result<T>` 到 Engine API——OOM 用预分配的 Fatal Value 表达。
 
-#### OOM Exception Value 预分配
+OOM 属于 **Fatal**（不可捕获致命错误，见 ADR-017 §4），不是 Exception。
+Exception 可被脚本 `try/catch` 捕获；Fatal 不可捕获，必须透传到最外层调用方
+（CLI 或嵌入宿主）。
 
-- Context 初始化时（Allocator 配额充足），**最早分配一个 Exception 类型的 Value**
+#### OOM Fatal Value 预分配
+
+- Context 初始化时（Allocator 配额充足），**最早分配一个 Fatal 类型的 Value**
   作为 OOM 哨兵，挂载到 GlobalScope（第一个预分配的错误 Value）。
 - 该 Value **单例**：所有 OOM 都返回同一实例，调用方可指针比较判断是否 OOM。
 - 挂载到 GlobalScope 意味着 `scope_ref >= 1`，Context 存活期间被 GlobalScope 跟踪，
   GC 不会回收它。Context 析构时 GlobalScope on_exit（scope_ref 归 0），GC final
   collect 时自然回收——与普通 Value 生命周期一致，无特殊处理。
-- **分配失败直接 panic**：若 Context 初始化时连 OOM Exception Value 都分配不出来
+- **分配失败直接 panic**：若 Context 初始化时连 OOM Fatal Value 都分配不出来
   （`gc->create_value` 返回 nullptr），说明系统不可用，`abort()`。
 
 ```cpp
 // Context 初始化（伪代码）
 ContextImpl::ContextImpl(...) {
     global_scope_ = /* 创建 global scope */;
-    // 最早分配 OOM Exception Value，挂到 global
-    oom_value_ = gc_->create_value(exception_type(), oom_data());
+    // 最早分配 OOM Fatal Value，挂到 global
+    oom_value_ = gc_->create_value(fatal_type(), oom_data());
     if (oom_value_ == nullptr) {
         // 连 OOM 哨兵都分配不出，系统不可用
         std::abort();
@@ -208,14 +212,38 @@ Value* ContextImpl::create_number(double n) {
 }
 ```
 
+#### Fatal 透传契约
+
+OOM 是 Fatal，不可捕获。一旦 OOM Fatal Value 被产生，所有调用方必须**直接透传，
+不处理不转换不包装**，一路返回到最外层调用方（CLI 或嵌入宿主）。详见 ADR-017 §4。
+
+- **native 函数**：收到 Fatal Value（`v == ctx->oom_value()` 或 `v->type() == fatal_type()`）
+  时立即 return 透传，不处理不转换不包装。
+- **VM 执行循环**：检查每次返回值，Fatal 则跳出执行循环，直接返回给调用方。
+- **最外层处理**：CLI/宿主用**额外内存**（宿主自己的内存管理，不经过 Engine 的
+  Allocator；CLI 可用预先创建的栈上空间）解析错误——拼接错误消息、打印调用栈等。
+  因 Fatal 发生时 Engine 内存可能已耗尽，不能用 Engine 的 Allocator 分配诊断信息。
+
+**为何 Fatal 不可捕获**：OOM 发生时 Engine 内存已耗尽，脚本 `try/catch` 的 catch
+块本身可能再次分配（构造错误对象、调用 handler）而触发二次 OOM，无法恢复。故 OOM
+必须直接透传到能用额外内存处理的宿主层。
+
 #### 为何不用 Result<T>
 
-- Engine 层是语言运行时，错误必须用语言自身的值类型（Value/Exception）表达，
-  才能被脚本代码捕获处理。Result<T> 是 C++ 层机制，泄漏到 Engine API 会让
-  native 代码与脚本错误处理割裂。
-- ADR-006 异常即值：异常是带标记的 Value，走统一 return 通道。OOM 作为异常的一种，
+- Engine 层是语言运行时，错误必须用语言自身的值类型（Value/Fatal）表达，
+  才能被宿主层统一处理。Result<T> 是 C++ 层机制，泄漏到 Engine API 会让
+  native 代码与运行时错误处理割裂。
+- ADR-006 异常即值：异常是带标记的 Value，走统一 return 通道。OOM 作为 Fatal 的一种，
   同样是 Value，符合"异常即值"。
-- 后续 VM/解释器执行脚本时，OOM Value 经 ADR-006 通道转为脚本可见的 Exception。
+- 后续 VM/解释器执行脚本时，OOM Fatal Value 经 ADR-006 通道直达最外层（不被
+  `try/catch` 拦截），由宿主兜底处理。
+
+#### 为何 OOM 是 Fatal 而非 Exception
+
+- Exception 是可恢复的业务异常，脚本 `try/catch` 可捕获处理（ADR-017 §3）。
+- OOM 是不可恢复的系统级故障，脚本无法处理，宿主兜底（ADR-017 §4）。
+- 若 OOM 是 Exception，脚本 `try/catch` 可捕获，但 catch 块本身可能再次 OOM，
+  无法保证恢复语义。归为 Fatal 强制透传，避免此问题。
 
 #### data 释放问题
 
@@ -228,6 +256,7 @@ Value* ContextImpl::create_number(double n) {
 
 - 配额耗尽时 create_* 返回 oom_value_（单例），不返回 nullptr、不崩溃。
 - oom_value_ == ctx->oom_value() 指针比较成立。
+- oom_value_->type() == fatal_type()（类型为 Fatal，非 Exception）。
 - Context 初始化时 oom_value_ 已挂载到 global（scope_ref>=1），Context 存活期间
   GC collect 不回收它；Context 析构随 global on_exit 自然回收。
 - 连 oom_value_ 都分配不出（极小配额）时 Context 创建 abort。
