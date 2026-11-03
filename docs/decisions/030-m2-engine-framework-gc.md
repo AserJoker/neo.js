@@ -152,19 +152,82 @@ std::unique_ptr<Context> create_context(infra::Allocator* alloc);
   在 private/core/，工厂 create_context() 返回接口指针。
 - **create_* 便捷接口**：封装 gc->alloc_data<T> + gc->create_value(type, data)，
   按类型分派到对应 Type 单例 + Data 子类。调用方无需直接接触 GC/Type/Data 细节。
-- **OOM 检查**：create_* 返回 nullptr 时，本阶段 Context 内部检查并转为错误
-  （阶段 5 落实 OOM Exception 封装）。
+  始终返回 `Value*`（不返回 Result，阶段 5 落实 OOM 时返回预分配 OOM Exception 单例）。
+- **预分配 OOM Exception**：Context 初始化时最早分配一个 Exception Value 挂载到
+  GlobalScope（单例，GC 永不回收），create_* 内部 OOM 时返回它（详见阶段 5）。
 
 ### 阶段 5：OOM 异常封装
 
-落实 ADR-006（异常即值）+ ADR-029 §6（OOM 哨兵）。
+落实 ADR-006（异常即值）+ ADR-029 §6（OOM 哨兵）+ ADR-017（Exception 类型）。
 
-- `create_value` 返回 nullptr（Allocator 配额耗尽且 GC 后仍不够）时，Context 的
-  create_* 接口检测到 nullptr，封装为 OOM Exception（走 Result<T> 错误通道）。
-- 本阶段 create_* 接口签名调整：返回 `Result<Value*>` 而非 `Value*`，OOM 时返回
-  `Result<Value*>::err(ErrCode::OutOfMemory)`。
-- 后续 VM/解释器执行脚本时，OOM 走 ADR-006 异常即值通道，转为脚本可见的异常。
-- 测试：配额耗尽时 create_* 返回 OOM 错误码，不崩溃。
+**核心原则：Engine 层完全用语言特性表达错误，返回值必须为 `Value*`。**
+不引入 `Result<T>` 到 Engine API——OOM 用预分配的 Exception Value 表达。
+
+#### OOM Exception Value 预分配
+
+- Context 初始化时（Allocator 配额充足），**最早分配一个 Exception 类型的 Value**
+  作为 OOM 哨兵，挂载到 GlobalScope（第一个预分配的错误 Value）。
+- 该 Value **单例**：所有 OOM 都返回同一实例，调用方可指针比较判断是否 OOM。
+- 挂载到 GlobalScope 意味着 `scope_ref >= 1`，GC 永不回收它（全局可达）。
+- **分配失败直接 panic**：若 Context 初始化时连 OOM Exception Value 都分配不出来
+  （`gc->create_value` 返回 nullptr），说明系统不可用，`abort()`。
+
+```cpp
+// Context 初始化（伪代码）
+ContextImpl::ContextImpl(...) {
+    global_scope_ = /* 创建 global scope */;
+    // 最早分配 OOM Exception Value，挂到 global
+    oom_value_ = gc_->create_value(exception_type(), oom_data());
+    if (oom_value_ == nullptr) {
+        // 连 OOM 哨兵都分配不出，系统不可用
+        std::abort();
+    }
+    global_scope_->add(oom_value_);
+    global_scope_->bind("__oom__", oom_value_);  // 命名挂载（可选）
+}
+```
+
+#### create_* 接口返回 Value*
+
+- Context 的 `create_number/create_string/...` 始终返回 `Value*`，**不返回 Result**。
+- 内部 `gc->create_value` 返回 nullptr 时，Context 返回 `oom_value_`（预分配单例）。
+- 调用方检查：`if (v == ctx->oom_value()) { /* OOM 处理 */ }`。
+
+```cpp
+Value* ContextImpl::create_number(double n) {
+    auto* d = gc_->alloc_data<NumberData>(n);
+    if (d == nullptr) return oom_value_;
+    auto* v = gc_->create_value(number_type(), d);
+    if (v == nullptr) {
+        gc_->free_data(d);  // data 已分配但 create_value 失败，需释放
+        return oom_value_;
+    }
+    return v;
+}
+```
+
+#### 为何不用 Result<T>
+
+- Engine 层是语言运行时，错误必须用语言自身的值类型（Value/Exception）表达，
+  才能被脚本代码捕获处理。Result<T> 是 C++ 层机制，泄漏到 Engine API 会让
+  native 代码与脚本错误处理割裂。
+- ADR-006 异常即值：异常是带标记的 Value，走统一 return 通道。OOM 作为异常的一种，
+  同样是 Value，符合"异常即值"。
+- 后续 VM/解释器执行脚本时，OOM Value 经 ADR-006 通道转为脚本可见的 Exception。
+
+#### data 释放问题
+
+- `gc->alloc_data` 成功但 `gc->create_value` 失败时，data 未被 Value 引用，GC 无法
+  回收（GC 只跟踪 Value）。Context 需手动释放 data。
+- 本阶段 GC 补充 `free_data(Data*)` 接口：显式释放未注册的 data（调
+  `data->~Data()` + `allocator->free(data)`）。仅在 create_value 失败时由 Context 调用。
+
+#### 测试
+
+- 配额耗尽时 create_* 返回 oom_value_（单例），不返回 nullptr、不崩溃。
+- oom_value_ == ctx->oom_value() 指针比较成立。
+- Context 初始化时 oom_value_ 已挂载到 global，GC collect 不回收它。
+- 连 oom_value_ 都分配不出（极小配额）时 Context 创建 abort。
 
 ## 模块组织（M2 整体）
 
