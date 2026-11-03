@@ -1,12 +1,12 @@
 # tests/unit/core/CMakeLists.txt - core 模块单测
 
 add_executable(core_unit_test
-    hello_test.cpp
-    value_test.cpp
-    gc_test.cpp
-    scope_test.cpp
-    type_test.cpp
-    context_test.cpp
+    HelloTest.cpp
+    ValueTest.cpp
+    GcTest.cpp
+    ScopeTest.cpp
+    TypeTest.cpp
+    ContextTest.cpp
 )
 target_link_libraries(core_unit_test
     PRIVATE

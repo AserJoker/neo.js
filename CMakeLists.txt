@@ -101,17 +101,17 @@ endif()
 # neojs 库（M0 占位，M1 起充实）
 # ---------------------------------------------------------------------------
 add_library(neojs STATIC
-    src/private/core/hello.cpp
-    src/private/core/value.cpp
-    src/private/core/mark_sweep_gc.cpp
-    src/private/core/scope.cpp
-    src/private/core/context.cpp
-    src/private/core/types.cpp
-    src/private/core/types/exception.cpp
-    src/private/infra/allocator.cpp
-    src/private/infra/console.cpp
-    src/private/infra/command.cpp
-    src/private/infra/file.cpp
+    src/private/core/HelloWorld.cpp
+    src/private/core/Value.cpp
+    src/private/core/MarkSweepGC.cpp
+    src/private/core/Scope.cpp
+    src/private/core/Context.cpp
+    src/private/core/Types.cpp
+    src/private/core/types/Exception.cpp
+    src/private/infra/MallocAllocator.cpp
+    src/private/infra/Console.cpp
+    src/private/infra/CommandParser.cpp
+    src/private/infra/File.cpp
 )
 target_include_directories(neojs
     PUBLIC
@@ -137,7 +137,7 @@ endif()
 # HelloWorld 可执行
 # ---------------------------------------------------------------------------
 if(NEO_BUILD_HELLO)
-    add_executable(neo_hello src/private/core/hello_main.cpp)
+    add_executable(neo_hello src/private/core/HelloMain.cpp)
     target_link_libraries(neo_hello PRIVATE neojs)
     set_target_properties(neo_hello PROPERTIES OUTPUT_NAME neo_hello)
     # neo_hello 通过 neojs 间接获得 neo_warnings（PUBLIC 传播）

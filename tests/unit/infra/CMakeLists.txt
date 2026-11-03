@@ -1,11 +1,11 @@
 # tests/unit/infra/CMakeLists.txt - infra 模块单测
 
 add_executable(infra_unit_test
-    result_test.cpp
-    allocator_test.cpp
-    console_test.cpp
-    command_test.cpp
-    file_test.cpp
+    ResultTest.cpp
+    AllocatorTest.cpp
+    ConsoleTest.cpp
+    CommandTest.cpp
+    FileTest.cpp
 )
 target_link_libraries(infra_unit_test
     PRIVATE
