@@ -228,10 +228,11 @@ public:
 |------|----------------------|----------------|------|
 | Value | `core/value.h` Value 类 | — | — |
 | Data | `core/data.h` Data 抽象基类 | 具体扁平类型（NumberData 等） | — |
-| GCEngine | `core/gc.h` GCEngine 接口 + GCVisitor | private/core/gc_engine.cpp GCEngineImpl | `create_gc_engine(Allocator*)` |
+| GCEngine | `core/gc.h` GCEngine 接口 + GCVisitor | private/core/MarkSweepGC | `create_gc_engine(Allocator*)` |
 
 - Value/Data 是公开类（非接口，本阶段具体类，后续 Data 子类化）。
-- GCEngine 是抽象接口，实现类 GCEngineImpl 在 private，工厂注入 Allocator。
+- GCEngine 是抽象接口，实现类 `MarkSweepGC` 在 private（命名标明算法语义，后续若加
+  分代/增量 GC 可平行新增 `GenerationalGC` 等），工厂注入 Allocator。
 
 ## 模块组织
 
@@ -241,8 +242,8 @@ src/public/core/
   data.h         Data 抽象基类（ref + enumerate_children）
   gc.h           GCEngine 接口 + GCVisitor + 工厂声明
 src/private/core/
-  impl_gc.h      GCEngineImpl 声明
-  gc_engine.cpp  GCEngineImpl 实现（create_value/collect/标记清除）
+  impl_mark_sweep_gc.h  MarkSweepGC 声明（impl_ 前缀避免与 public gc.h 同名歧义，ADR 经验）
+  mark_sweep_gc.cpp     MarkSweepGC 实现（create_value/collect/标记清除）
 tests/unit/core/
   gc_test.cpp    GC 生命周期测试
   value_test.cpp Value/Data 引用计数测试
