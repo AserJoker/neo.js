@@ -7,6 +7,7 @@ add_executable(core_unit_test
     ScopeTest.cpp
     TypeTest.cpp
     ContextTest.cpp
+    TypeBehaviorTest.cpp
 )
 target_link_libraries(core_unit_test
     PRIVATE

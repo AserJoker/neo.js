@@ -107,7 +107,13 @@ add_library(neojs STATIC
     src/private/core/Scope.cpp
     src/private/core/Context.cpp
     src/private/core/Types.cpp
+    src/private/core/types/Undefined.cpp
+    src/private/core/types/Null.cpp
+    src/private/core/types/Boolean.cpp
+    src/private/core/types/Number.cpp
+    src/private/core/types/String.cpp
     src/private/core/types/Exception.cpp
+    src/private/core/types/Fatal.cpp
     src/private/infra/MallocAllocator.cpp
     src/private/infra/Console.cpp
     src/private/infra/CommandParser.cpp
