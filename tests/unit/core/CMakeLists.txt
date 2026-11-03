@@ -6,6 +6,7 @@ add_executable(core_unit_test
     gc_test.cpp
     scope_test.cpp
     type_test.cpp
+    context_test.cpp
 )
 target_link_libraries(core_unit_test
     PRIVATE
