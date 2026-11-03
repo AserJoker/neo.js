@@ -33,7 +33,7 @@ Value（GC 管理的单元）
 
 ### 3. 分层：GC 管 Value，引用计数管 data
 
-- **GC 只管 Value 的销毁**（scope_ref 根 + 图遍历，见 ADR-012）。
+- **GC 只管 Value 的销毁**（scopeRef 根 + 图遍历，见 ADR-012）。
 - **data 的内存销毁不归 GC 管**：由 data.ref 引用计数决定（ref 归 0 即 delete）。
 
 ### 4. 复杂类型的子 value 访问

@@ -75,7 +75,7 @@ Value* Function::invoke(Context* ctx, Value* self, size_t argc, Value* argv[]) {
   argv[0]...argv[argc-1]，然后 **self 在最顶**（最后压入）。
 - **native 也切 scope**：native 走同样流程（切 rootScope/currentScope），
   只是直接调 native 指针，不经 VM。
-- **restoreValue**：把返回值登记/归属到恢复后的 current_scope（scope_ref++），
+- **restoreValue**：把返回值登记/归属到恢复后的 current_scope（scopeRef++），
   使返回值存活，不随被调函数作用域销毁。
 
 ### 5. 字节码序言（函数入口）
@@ -90,7 +90,7 @@ _add_start:
   Store "b"
   RestToArray                        # 栈上剩余全部取出 → array → 压回栈
   Store "c"                          # rest 数组绑定到 c
-  push_scope                         # 创建 local_scope（参数绑定之后）
+  pushScope                         # 创建 local_scope（参数绑定之后）
   load "a"; load "b"; add; ret      # 函数体
 ```
 
@@ -98,7 +98,7 @@ _add_start:
 - **形参建槽**：先 push_uninitialized + define（建槽），再 Store（绑定实参）。
 - **StoreThis**：消费栈顶 self（self 在栈顶，先消费）。
 - **RestToArray**：栈上剩余参数全部取出组装成 array 压回栈，完成 rest 语法。
-- **push_scope**：创建 local_scope（在参数绑定之后），
+- **pushScope**：创建 local_scope（在参数绑定之后），
   参数属于 argument_scope，函数体局部变量属于 local_scope。
 
 ## 后果

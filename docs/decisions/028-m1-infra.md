@@ -53,9 +53,9 @@ class Result {
 public:
     static Result ok(T v);
     static Result err(ErrCode e);
-    bool is_ok() const;
-    bool is_err() const;
-    T&       value();      // is_err() 时 UB（编程错误）
+    bool isOk() const;
+    bool isErr() const;
+    T&       value();      // isErr() 时 UB（编程错误）
     const T& value() const;
     ErrCode  err() const;
 };
@@ -64,7 +64,7 @@ public:
 ```
 
 - 二元 union（值或错误码），无堆分配。
-- `value()` 在 `is_err()` 时是**编程错误**（UB），不抛异常——调用方应先 `is_ok()` 判断。
+- `value()` 在 `isErr()` 时是**编程错误**（UB），不抛异常——调用方应先 `isOk()` 判断。
 - `Result<void>` 特化：只有 ok_/err_，无 value_。
 - 辅助函数 `try_capture()`：包 FFI 调用，catch 标准库异常转 `Result::err`。
 
@@ -78,22 +78,22 @@ class Allocator {
 public:
     virtual ~Allocator() = default;
     virtual void* alloc(size_t bytes) = 0;
-    virtual void* alloc_aligned(size_t bytes, size_t align) = 0;
+    virtual void* allocAligned(size_t bytes, size_t align) = 0;
     virtual void  free(void* p) = 0;
-    virtual void  free_aligned(void* p) = 0;
+    virtual void  freeAligned(void* p) = 0;
 
     // 内存配额管理（ADR-028 §3 补充）
     // 限额默认 size_t 最大值（无限制）；可在运行时收紧。
     // 超限 alloc 返回 nullptr（拦截），不抛异常、不耗尽 OS 资源。
     // 解释器/VM 出现无限分配 bug 时由限额兜底，配合上层错误处理转为脚本异常。
-    virtual void  set_limit(size_t bytes) = 0;
+    virtual void  setLimit(size_t bytes) = 0;
     virtual size_t limit() const = 0;
     virtual size_t used() const = 0;
 };
 
 // 工厂：默认无限额；带限额版本用于受控执行环境
-std::unique_ptr<Allocator> create_malloc_allocator();
-std::unique_ptr<Allocator> create_malloc_allocator_with_limit(size_t bytes);
+std::unique_ptr<Allocator> createMallocAllocator();
+std::unique_ptr<Allocator> createMallocAllocatorWithLimit(size_t bytes);
 
 }  // namespace neo::infra
 ```
@@ -103,7 +103,7 @@ std::unique_ptr<Allocator> create_malloc_allocator_with_limit(size_t bytes);
 - **内存配额**（2026-11 补充）：`MallocAllocator` 用 `std::atomic<size_t>` 记账已用字节，
   `alloc` 前原子地 CAS 检查 `used + bytes <= limit`，超限返回 nullptr；`free` 查记账表
   （`std::unordered_map<void*, size_t>`）递减 used。线程安全，适合 VM/GC 多线程场景。
-  默认 `limit() = SIZE_MAX`（无限制），向后兼容；`create_malloc_allocator_with_limit(n)`
+  默认 `limit() = SIZE_MAX`（无限制），向后兼容；`createMallocAllocatorWithLimit(n)`
   创建带限额实例。无限分配 bug 在限额处被拦截，配合 `Result<T>` 错误通道转为脚本异常，
   避免 OOM 拖垮宿主进程。
 - 测试：注入 mock Allocator 验证分配/释放次数、参数、可模拟分配失败。
@@ -118,7 +118,7 @@ class OutputSink {
 public:
     virtual ~OutputSink() = default;
     virtual void write(std::string_view text) = 0;
-    virtual void write_line(std::string_view text) = 0;
+    virtual void writeLine(std::string_view text) = 0;
     virtual void flush() = 0;
 };
 
@@ -134,7 +134,7 @@ public:
     void print(std::format_string<Args...> fmt, Args&&... args);
 
     template <typename... Args>
-    void print_line(std::format_string<Args...> fmt, Args&&... args);
+    void printLine(std::format_string<Args...> fmt, Args&&... args);
 };
 
 }  // namespace neo::infra
@@ -152,15 +152,15 @@ namespace neo::infra {
 
 struct CommandOption {
     std::string name;        // --name
-    std::string short_name;  // -n（可空）
-    bool        takes_value; // 是否带值（--name=value）
+    std::string shortName;  // -n（可空）
+    bool        takesValue; // 是否带值（--name=value）
     std::string description;
 };
 
 class CommandParser {
     std::vector<CommandOption> options_;
 public:
-    void add_option(CommandOption opt);
+    void addOption(CommandOption opt);
 
     // 解析 argv，返回 ParsedArgs 或 ErrCode
     Result<ParsedArgs> parse(int argc, const char* const argv[]);
@@ -244,5 +244,5 @@ class MemoryFileSystem : public FileSystem { ... };
 ## 后果
 
 - 优点：FFI 全部收口，业务代码可测试；统一 Result 错误通道；infra 不依赖语言核心，可独立验证。
-- 缺点：Result 二元 union 增加 API 复杂度（每次调用要判断 is_ok）；mock 实现需维护。
+- 缺点：Result 二元 union 增加 API 复杂度（每次调用要判断 isOk）；mock 实现需维护。
 - 后续：M2+ 语言核心模块基于 infra 构建（GC 用 Allocator，stdlib 用 Console）。

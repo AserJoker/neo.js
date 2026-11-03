@@ -44,7 +44,7 @@ public:
 
 ### 2. Value 是轻量外壳，行为代理给 Type
 
-- Value = `Type*`（meta）+ `Data*`（数据负载）+ `scope_ref`（GC 跟踪计数）。
+- Value = `Type*`（meta）+ `Data*`（数据负载）+ `scopeRef`（GC 跟踪计数）。
 - Value 不实现语言行为，所有操作转发给 `type()`：
 
 ```

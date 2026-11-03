@@ -44,11 +44,11 @@ Function
 
 ### 4. 闭包变量不需要 GC 主动标记
 
-- 闭包变量被 **closure_scope 持有**（scope_ref）→ 必定存活。
+- 闭包变量被 **closure_scope 持有**（scopeRef）→ 必定存活。
 - **不需要从 Function 出发去标记 Function 的闭包**（GC 不把闭包当 Function 的子变量）。
 - 底层实现：**闭包变量属于 closure_scope，不是 Function 的子变量**。
 - 因此 GC 遍历 Function 时**不需要（也不应该）遍历它的闭包作用域**；
-  闭包变量的存活由 closure_scope 的持有保证（scope_ref 根判定）。
+  闭包变量的存活由 closure_scope 的持有保证（scopeRef 根判定）。
 
 ## 推论
 

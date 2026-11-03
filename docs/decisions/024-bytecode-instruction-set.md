@@ -86,7 +86,7 @@ _func_end:
 | `load_this` | `[] → [this]` | 取当前 this（ctx->self） |
 
 - `set_closure` **运行时**执行：`ctx->load("name")` 沿当前 scope 链向上查找，
-  把查到的 value 绑定到 fn 的 closure_scope（scope_ref++，共享非复制）。
+  把查到的 value 绑定到 fn 的 closure_scope（scopeRef++，共享非复制）。
   **不区分目标是临时变量、外层闭包变量还是全局**——查找链自然处理
   （ADR-013、ADR-025）。
 - Sema 第二遍已生成每个函数的捕获名字列表，编译器据此发射 `set_closure` 指令。
@@ -139,10 +139,10 @@ _func_end:
 
 | 指令 | 说明 |
 |------|------|
-| `push_scope` | 创建 body_scope，parent=argument_scope（ADR-013） |
-| `pop_scope` | 弹出 body_scope（函数退出时） |
+| `pushScope` | 创建 body_scope，parent=argument_scope（ADR-013） |
+| `popScope` | 弹出 body_scope（函数退出时） |
 
-- `push_scope` 在函数序言参数 store **之后**创建 body_scope。
+- `pushScope` 在函数序言参数 store **之后**创建 body_scope。
 - 局部变量（body 内 let/const）属于 body_scope；形参属于 argument_scope。
 
 #### 2.7 this 绑定
@@ -169,7 +169,7 @@ _func_start:
   store "<param0>"                           # 绑定实参（覆盖 UNINITIALIZED）
   store "<param1>"
   [RestToArray; store "<rest_param>"]       # 可选：rest 参数
-  push_scope                                 # 创建 body_scope
+  pushScope                                 # 创建 body_scope
   <函数体>
   push_undefined; ret                        # 编译器统一补隐式 return undefined
 ```
@@ -177,7 +177,7 @@ _func_start:
 - **形参建槽**：`push_uninitialized + define`（建可写槽，初值 UNINITIALIZED），
   再 `store` 绑定实参（覆盖 UNINITIALIZED）。
 - **StoreThis 先于 Store**：self 在栈顶，先消费。
-- **push_scope 在参数绑定后**：参数属 argument_scope，局部变量属 body_scope。
+- **pushScope 在参数绑定后**：参数属 argument_scope，局部变量属 body_scope。
 - **函数末尾统一补 `push_undefined; ret`**：避免 VM 处理"函数体结束"特例。
 
 ### 4. const 不可变的字节码序列
@@ -226,7 +226,7 @@ jmp _main_end
 _main_start:
   // main 序言
   store_this                          # main 无形参，仅 store_this
-  push_scope                          # 创建 main 的 body_scope
+  pushScope                          # 创建 main 的 body_scope
   // main 符号定义区
   push_undefined; define "fn"
   // main 函数定义区
@@ -240,7 +240,7 @@ _main_start:
     push_uninitialized; define "cb"
     store_this
     store "cb"
-    push_scope                        # 创建 fn 的 body_scope
+    pushScope                        # 创建 fn 的 body_scope
     // fn 体
     load "cb"
     push_number 123
@@ -261,7 +261,7 @@ _main_start:
     push_uninitialized; define "arg"
     store_this
     store "arg"
-    push_scope
+    pushScope
     load "arg"
     push_number 1
     add

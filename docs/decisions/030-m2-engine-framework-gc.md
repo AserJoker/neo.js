@@ -3,7 +3,7 @@
 - 状态: 已接受 (2026-11-03)
 - 决策者: aserjoker（项目负责人） + CodeAgent
 - 关联: ADR-008（Allocator/GC 分层）、ADR-010（接口-实现-工厂）、ADR-011（Engine 组织）、
-          ADR-012（Scope 树 + scope_ref）、ADR-013（闭包与三层作用域）、ADR-015（Value meta+data）、
+          ADR-012（Scope 树 + scopeRef）、ADR-013（闭包与三层作用域）、ADR-015（Value meta+data）、
           ADR-016（Type 体系）、ADR-017（类型清单）、ADR-029（Scope-Value-GC 生命周期）
 
 ## 背景
@@ -25,16 +25,16 @@ M2 采用滚动式里程碑（ADR-026 后约定）：完成一个阶段再定下
 | 2. Scope 树与三层作用域 | parent 链、global/root/current、on_exit 递归 | 待实现 |
 | 3. 基础扁平类型 Type/Data | undefined/null/boolean/number/string | 待实现 |
 | 4. Context 门面整合 | 持有 Allocator/GC/Scope 树，创建引擎入口 | 待实现 |
-| 5. OOM Fatal 封装 | create_value nullptr → Context 封装 OOM Fatal，透传契约 | 待实现 |
+| 5. OOM Fatal 封装 | createValue nullptr → Context 封装 OOM Fatal，透传契约 | 待实现 |
 
 ### 阶段 1：Value-Data-GC-Scope 生命周期管线（已完成）
 
 ADR-029 落地。核心组件：
-- `Data`（abstract）：ref_ 引用计数，enumerate_children 预留
-- `Value`：meta(Type*)+data(Data*)+scope_ref，构造 data->ref++，析构 data->ref--
-- `GCEngine`（interface）+ `MarkSweepGC`（impl）：create_value/alloc_data/collect，
+- `Data`（abstract）：ref_ 引用计数，enumerateChildren 预留
+- `Value`：meta(Type*)+data(Data*)+scopeRef，构造 data->ref++，析构 data->ref--
+- `GCEngine`（interface）+ `MarkSweepGC`（impl）：createValue/allocData/collect，
   双重阈值自动 GC，sweep 时 data ref 归 0 则 free
-- `Scope`：values_+named_values_，add 时 scope_ref++，on_exit 逐个 scope_ref--
+- `Scope`：values_+namedValues_，add 时 scopeRef++，on_exit 逐个 scopeRef--
 - GC 析构契约：final collect 后 values_ 非空则 abort 报告泄漏
 
 测试：27 用例（value_test/gc_test/scope_test），双平台 + ASan 干净。
@@ -48,21 +48,21 @@ ADR-029 落地。核心组件：
 class Scope {
     Scope* parent_ = nullptr;              // 父作用域（global 的 parent=nullptr）
     std::vector<Scope*> children_;         // 子作用域（on_exit 时递归释放）
-    // values_/named_values_ 同阶段 1
+    // values_/namedValues_ 同阶段 1
 public:
     Scope* parent() const { return parent_; }
-    void   add_child(Scope* s) { children_.push_back(s); }
+    void   addChild(Scope* s) { children_.push_back(s); }
 
     // 沿 parent 链查找变量（ADR-013 查找路径）
-    virtual Value* lookup_chain(std::string_view name) const;
+    virtual Value* lookupChain(std::string_view name) const;
 
     // 作用域退出：先递归 on_exit 所有子作用域，再释放自己的 values
     void on_exit() {
         for (auto* c : children_) c->on_exit();
         children_.clear();
-        for (auto* v : values_) v->scope_ref_dec();
+        for (auto* v : values_) v->scopeRefDec();
         values_.clear();
-        named_values_.clear();
+        namedValues_.clear();
     }
 };
 ```
@@ -73,7 +73,7 @@ public:
   parent 链连接。本阶段实现 Scope 树骨架，闭包调用流程在后续阶段（函数实现时）补充。
 - **on_exit 递归**：作用域退出时先递归释放子作用域，再释放自己的 values。
   对应 ADR-013「作用域析构时递归释放子作用域」。
-- **lookup_chain**：沿 parent 链向上查找命名 value（本阶段基础查找，闭包路径在函数阶段补充）。
+- **lookupChain**：沿 parent 链向上查找命名 value（本阶段基础查找，闭包路径在函数阶段补充）。
 
 ### 阶段 3：基础扁平类型 Type/Data
 
@@ -116,7 +116,7 @@ class StringType    : public Type { /* name()="string",  按 JS 规则实现 +/c
 - `NumberData`：持 `double`
 - `StringData`：持 `std::string`（本阶段字符串值，Unicode 完整支持在后续 Unicode 阶段）
 
-Type 单例获取：`TypeSystem` 持有所有 Type 单例，或全局函数 `get_number_type()` 等。
+Type 单例获取：`TypeSystem` 持有所有 Type 单例，或全局函数 `getNumberType()` 等。
 
 本阶段 Type 行为实现范围（落实 ADR-016 修订）：
 - **分派规则**：`ctx->add(a,b)` → `a->type()->add(ctx, a, b)`，Context 纯代理不持规则表。
@@ -138,7 +138,7 @@ class Context {
 public:
     virtual ~Context() = default;
 
-    // 创建 Value 的便捷接口（内部调 gc->create_value + 类型分派）
+    // 创建 Value 的便捷接口（内部调 gc->createValue + 类型分派）
     // 本阶段提供基础类型创建：create_undefined/create_null/create_boolean/create_number/create_string
     virtual Value* create_undefined() = 0;
     virtual Value* create_boolean(bool b) = 0;
@@ -150,8 +150,8 @@ public:
     virtual Scope* global() const = 0;
     virtual Scope* root() const = 0;
     virtual Scope* current() const = 0;
-    virtual void   push_scope(Scope* s) = 0;  // current 压栈
-    virtual void   pop_scope() = 0;           // current 弹栈 + on_exit
+    virtual void   pushScope(Scope* s) = 0;  // current 压栈
+    virtual void   popScope() = 0;           // current 弹栈 + on_exit
 
     // GC 访问
     virtual GCEngine* gc() const = 0;
@@ -160,16 +160,16 @@ public:
 };
 
 // 工厂：创建 Context，注入 Allocator（或内部创建默认 Allocator）
-std::unique_ptr<Context> create_context();
-std::unique_ptr<Context> create_context(infra::Allocator* alloc);
+std::unique_ptr<Context> createContext();
+std::unique_ptr<Context> createContext(infra::Allocator* alloc);
 ```
 
 - **Context 持有 Allocator/GC/Scope 树生命周期**（ADR-011 §3）：
   Allocator 外部注入或内部创建默认，GC 由 Context 创建（注入 Allocator），Scope 树
   由 Context 持有 global/root/current。
 - **接口-实现-工厂**（ADR-010）：IContext 抽象接口在 public/core/，实现 Context
-  在 private/core/，工厂 create_context() 返回接口指针。
-- **create_* 便捷接口**：封装 gc->alloc_data<T> + gc->create_value(type, data)，
+  在 private/core/，工厂 createContext() 返回接口指针。
+- **create_* 便捷接口**：封装 gc->allocData<T> + gc->createValue(type, data)，
   按类型分派到对应 Type 单例 + Data 子类。调用方无需直接接触 GC/Type/Data 细节。
   始终返回 `Value*`（不返回 Result，阶段 5 落实 OOM 时返回预分配 OOM Fatal 单例）。
 - **预分配 OOM Fatal**：Context 初始化时最早分配一个 Fatal Value 挂载到
@@ -191,18 +191,18 @@ Exception 可被脚本 `try/catch` 捕获；Fatal 不可捕获，必须透传到
 - Context 初始化时（Allocator 配额充足），**最早分配一个 Fatal 类型的 Value**
   作为 OOM 哨兵，挂载到 GlobalScope（第一个预分配的错误 Value）。
 - 该 Value **单例**：所有 OOM 都返回同一实例，调用方可指针比较判断是否 OOM。
-- 挂载到 GlobalScope 意味着 `scope_ref >= 1`，Context 存活期间被 GlobalScope 跟踪，
-  GC 不会回收它。Context 析构时 GlobalScope on_exit（scope_ref 归 0），GC final
+- 挂载到 GlobalScope 意味着 `scopeRef >= 1`，Context 存活期间被 GlobalScope 跟踪，
+  GC 不会回收它。Context 析构时 GlobalScope on_exit（scopeRef 归 0），GC final
   collect 时自然回收——与普通 Value 生命周期一致，无特殊处理。
 - **分配失败直接 panic**：若 Context 初始化时连 OOM Fatal Value 都分配不出来
-  （`gc->create_value` 返回 nullptr），说明系统不可用，`abort()`。
+  （`gc->createValue` 返回 nullptr），说明系统不可用，`abort()`。
 
 ```cpp
 // Context 初始化（伪代码）
 Context::Context(...) {
     global_scope_ = /* 创建 global scope */;
     // 最早分配 OOM Fatal Value，挂到 global
-    oom_value_ = gc_->create_value(fatal_type(), oom_data());
+    oom_value_ = gc_->createValue(fatal_type(), oom_data());
     if (oom_value_ == nullptr) {
         // 连 OOM 哨兵都分配不出，系统不可用
         std::abort();
@@ -215,16 +215,16 @@ Context::Context(...) {
 #### create_* 接口返回 Value*
 
 - Context 的 `create_number/create_string/...` 始终返回 `Value*`，**不返回 Result**。
-- 内部 `gc->create_value` 返回 nullptr 时，Context 返回 `oom_value_`（预分配单例）。
+- 内部 `gc->createValue` 返回 nullptr 时，Context 返回 `oom_value_`（预分配单例）。
 - 调用方检查：`if (v == ctx->oom_value()) { /* OOM 处理 */ }`。
 
 ```cpp
 Value* Context::create_number(double n) {
-    auto* d = gc_->alloc_data<NumberData>(n);
+    auto* d = gc_->allocData<NumberData>(n);
     if (d == nullptr) return oom_value_;
-    auto* v = gc_->create_value(number_type(), d);
+    auto* v = gc_->createValue(number_type(), d);
     if (v == nullptr) {
-        gc_->free_data(d);  // data 已分配但 create_value 失败，需释放
+        gc_->free_data(d);  // data 已分配但 createValue 失败，需释放
         return oom_value_;
     }
     return v;
@@ -274,17 +274,17 @@ Value 的路径、native 函数、VM 指令执行……）都可能返回 Fatal�
 
 #### data 释放问题
 
-- `gc->alloc_data` 成功但 `gc->create_value` 失败时，data 未被 Value 引用，GC 无法
+- `gc->allocData` 成功但 `gc->createValue` 失败时，data 未被 Value 引用，GC 无法
   回收（GC 只跟踪 Value）。Context 需手动释放 data。
 - 本阶段 GC 补充 `free_data(Data*)` 接口：显式释放未注册的 data（调
-  `data->~Data()` + `allocator->free(data)`）。仅在 create_value 失败时由 Context 调用。
+  `data->~Data()` + `allocator->free(data)`）。仅在 createValue 失败时由 Context 调用。
 
 #### 测试
 
 - 配额耗尽时 create_* 返回 oom_value_（单例），不返回 nullptr、不崩溃。
 - oom_value_ == ctx->oom_value() 指针比较成立。
 - oom_value_->type() == fatal_type()（类型为 Fatal，非 Exception）。
-- Context 初始化时 oom_value_ 已挂载到 global（scope_ref>=1），Context 存活期间
+- Context 初始化时 oom_value_ 已挂载到 global（scopeRef>=1），Context 存活期间
   GC collect 不回收它；Context 析构随 global on_exit 自然回收。
 - 连 oom_value_ 都分配不出（极小配额）时 Context 创建 abort。
 
@@ -311,12 +311,12 @@ tests/unit/core/
 
 ## 测试策略（M2 各阶段）
 
-- **阶段 2**：Scope parent 链、children 递归 on_exit、lookup_chain 沿链查找、
+- **阶段 2**：Scope parent 链、children 递归 on_exit、lookupChain 沿链查找、
   global/root/current 三层切换。
 - **阶段 3**：各 Type 的 name()、各 Data 子类的数据存取、create_number/create_string
   返回正确类型与值、Type 单例唯一性。
 - **阶段 4**：Context 创建后 global/root/current 就绪、create_* 返回有效 Value、
-  push_scope/pop_scope 联动 current、pop_scope 触发 on_exit + GC 回收。
+  pushScope/popScope 联动 current、popScope 触发 on_exit + GC 回收。
 - **阶段 5**：配额耗尽时 create_* 返回 OOM 错误码、GC 后配额恢复可继续创建、
   OOM 不崩溃、Result 通道正确传播。
 
