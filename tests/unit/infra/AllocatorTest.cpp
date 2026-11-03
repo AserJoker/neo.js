@@ -17,8 +17,8 @@ namespace {
 
 using neo::infra::IAllocator;
 using neo::infra::MallocAllocator;
-using neo::infra::create_malloc_allocator;
-using neo::infra::create_malloc_allocator_with_limit;
+using neo::infra::createMallocAllocator;
+using neo::infra::createMallocAllocatorWithLimit;
 
 // 记录调用次数的 mock，验证业务代码通过接口使用分配器
 class MockAllocator : public IAllocator {
@@ -35,20 +35,20 @@ public:
         calls.push_back({Call::Alloc, bytes, 0, nullptr});
         return raw_.alloc(bytes);
     }
-    void* alloc_aligned(size_t bytes, size_t align) override {
+    void* allocAligned(size_t bytes, size_t align) override {
         calls.push_back({Call::AllocAligned, bytes, align, nullptr});
-        return raw_.alloc_aligned(bytes, align);
+        return raw_.allocAligned(bytes, align);
     }
     void free(void* p) override {
         calls.push_back({Call::Free, 0, 0, p});
         raw_.free(p);
     }
-    void free_aligned(void* p) override {
+    void freeAligned(void* p) override {
         calls.push_back({Call::FreeAligned, 0, 0, p});
-        raw_.free_aligned(p);
+        raw_.freeAligned(p);
     }
     // 配额委托给真实实现（mock 自身不限额，业务通过接口观察 used）
-    void  set_limit(size_t bytes) override { raw_.set_limit(bytes); }
+    void  setLimit(size_t bytes) override { raw_.setLimit(bytes); }
     size_t limit() const override { return raw_.limit(); }
     size_t used() const override { return raw_.used(); }
 
@@ -79,19 +79,19 @@ TEST(MallocAllocatorTest, AllocZeroReturnsNonNull) {
 TEST(MallocAllocatorTest, AllocAlignedSatisfiesAlignment) {
     MallocAllocator a;
     constexpr size_t kAlign = 64;
-    void* p = a.alloc_aligned(256, kAlign);
+    void* p = a.allocAligned(256, kAlign);
     ASSERT_NE(p, nullptr);
     EXPECT_EQ(reinterpret_cast<uintptr_t>(p) % kAlign, 0u);
-    a.free_aligned(p);
+    a.freeAligned(p);
 }
 
 TEST(MallocAllocatorTest, AllocAlignedMultiple) {
     MallocAllocator a;
     for (size_t align : {16u, 32u, 64u, 128u}) {
-        void* p = a.alloc_aligned(100, align);
+        void* p = a.allocAligned(100, align);
         ASSERT_NE(p, nullptr);
         EXPECT_EQ(reinterpret_cast<uintptr_t>(p) % align, 0u);
-        a.free_aligned(p);
+        a.freeAligned(p);
     }
 }
 
@@ -110,9 +110,9 @@ TEST(AllocatorInterfaceTest, MockRecordsCalls) {
 
 TEST(AllocatorInterfaceTest, MockRecordsAligned) {
     MockAllocator mock;
-    void* p = mock.alloc_aligned(256, 32);
+    void* p = mock.allocAligned(256, 32);
     ASSERT_NE(p, nullptr);
-    mock.free_aligned(p);
+    mock.freeAligned(p);
 
     ASSERT_EQ(mock.calls.size(), 2u);
     EXPECT_EQ(mock.calls[0].kind, MockAllocator::Call::AllocAligned);
@@ -164,11 +164,11 @@ TEST(AllocatorQuotaTest, UsedTracksAllocation) {
 
 TEST(AllocatorQuotaTest, UsedTracksAlignedAllocation) {
     MallocAllocator a;
-    // alloc_aligned(100, 64) 实际分配 128 字节（向上对齐到 64 倍数）
-    void* p = a.alloc_aligned(100, 64);
+    // allocAligned(100, 64) 实际分配 128 字节（向上对齐到 64 倍数）
+    void* p = a.allocAligned(100, 64);
     ASSERT_NE(p, nullptr);
     EXPECT_EQ(a.used(), 128u);
-    a.free_aligned(p);
+    a.freeAligned(p);
     EXPECT_EQ(a.used(), 0u);
 }
 
@@ -183,7 +183,7 @@ TEST(AllocatorQuotaTest, AllocZeroCountsAsOne) {
 
 TEST(AllocatorQuotaTest, SetLimitAtRuntime) {
     MallocAllocator a;
-    a.set_limit(1024);
+    a.setLimit(1024);
     EXPECT_EQ(a.limit(), 1024u);
     void* p = a.alloc(512);
     ASSERT_NE(p, nullptr);
@@ -214,14 +214,14 @@ TEST(AllocatorQuotaTest, AllocExceedingLimitReturnsNull) {
 
 TEST(AllocatorQuotaTest, AlignedExceedingLimitReturnsNull) {
     MallocAllocator a(64);
-    // alloc_aligned(10, 64) 需 64 字节，刚好等于限额
-    void* p = a.alloc_aligned(10, 64);
+    // allocAligned(10, 64) 需 64 字节，刚好等于限额
+    void* p = a.allocAligned(10, 64);
     ASSERT_NE(p, nullptr);
     EXPECT_EQ(a.used(), 64u);
     // 再分配任何对齐块都超限
-    void* q = a.alloc_aligned(1, 16);
+    void* q = a.allocAligned(1, 16);
     EXPECT_EQ(q, nullptr);
-    a.free_aligned(p);
+    a.freeAligned(p);
     EXPECT_EQ(a.used(), 0u);
 }
 
@@ -247,7 +247,7 @@ TEST(AllocatorQuotaTest, InfiniteAllocLoopIntercepted) {
 }
 
 TEST(AllocatorQuotaTest, FactoryWithLimit) {
-    auto a = create_malloc_allocator_with_limit(256);
+    auto a = createMallocAllocatorWithLimit(256);
     EXPECT_EQ(a->limit(), 256u);
     void* p = a->alloc(256);
     ASSERT_NE(p, nullptr);
@@ -260,7 +260,7 @@ TEST(AllocatorQuotaTest, FactoryWithLimit) {
 }
 
 TEST(AllocatorQuotaTest, FactoryDefaultIsUnlimited) {
-    auto a = create_malloc_allocator();
+    auto a = createMallocAllocator();
     EXPECT_EQ(a->limit(), SIZE_MAX);
 }
 
@@ -269,7 +269,7 @@ TEST(AllocatorQuotaTest, SetLimitBelowUsedBlocksFutureAlloc) {
     MallocAllocator a;
     void* p = a.alloc(500);
     ASSERT_NE(p, nullptr);
-    a.set_limit(100);  // 收紧到 100，但 used=500 不会回滚
+    a.setLimit(100);  // 收紧到 100，但 used=500 不会回滚
     EXPECT_EQ(a.used(), 500u);
     void* q = a.alloc(1);
     EXPECT_EQ(q, nullptr);  // used(500) > limit(100)，拦截

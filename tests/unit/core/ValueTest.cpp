@@ -1,6 +1,6 @@
-// value_test.cpp - Value/Data 引用计数与 scope_ref 单元测试
+// value_test.cpp - Value/Data 引用计数与 scopeRef 单元测试
 //
-// 验证 Value 构造 data->ref++、析构 data->ref--、scope_ref_inc/dec、marked 位。
+// 验证 Value 构造 data->ref++、析构 data->ref--、scopeRefInc/dec、marked 位。
 // Value 内存走 IAllocator + placement new，测试手动构造/析构验证引用计数行为。
 //
 // 关联 ADR: 015（Value meta+data 引用计数分层）、029（生命周期）
@@ -22,7 +22,7 @@ using neo::core::IType;
 using neo::core::Value;
 using neo::core::test::NumberData;
 using neo::core::test::TagData;
-using neo::core::test::dummy_type;
+using neo::core::test::dummyType;
 using neo::infra::MallocAllocator;
 
 // 在 allocator 分配的内存上构造 Value，析构时显式调 ~Value + free
@@ -43,7 +43,7 @@ TEST(ValueDataTest, ConstructIncrementsDataRef) {
     auto* d = new NumberData(42.0);
     EXPECT_EQ(d->ref(), 0);
     {
-        ScopedValue sv(&alloc, dummy_type(), d);
+        ScopedValue sv(&alloc, dummyType(), d);
         EXPECT_EQ(d->ref(), 1);
     }
     // Value 析构后 ref 回 0
@@ -56,9 +56,9 @@ TEST(ValueDataTest, MultipleValuesShareData) {
     auto* d = new TagData(7);
     EXPECT_EQ(d->ref(), 0);
     {
-        ScopedValue sv1(&alloc, dummy_type(), d);
+        ScopedValue sv1(&alloc, dummyType(), d);
         EXPECT_EQ(d->ref(), 1);
-        ScopedValue sv2(&alloc, dummy_type(), d);
+        ScopedValue sv2(&alloc, dummyType(), d);
         EXPECT_EQ(d->ref(), 2);
     }
     // 两个 Value 都析构后 ref 回 0
@@ -69,7 +69,7 @@ TEST(ValueDataTest, MultipleValuesShareData) {
 TEST(ValueDataTest, NullDataIsSafe) {
     MallocAllocator alloc;
     // data=nullptr 应安全（不递增空指针的 ref）
-    ScopedValue sv(&alloc, dummy_type(), nullptr);
+    ScopedValue sv(&alloc, dummyType(), nullptr);
     EXPECT_EQ(sv.v->data(), nullptr);
 }
 
@@ -77,16 +77,16 @@ TEST(ValueDataTest, ScopeRefStartsAtZero) {
     MallocAllocator alloc;
     auto* d = new NumberData(1.0);
     {
-        ScopedValue sv(&alloc, dummy_type(), d);
-        EXPECT_EQ(sv.v->scope_ref(), 0);
-        sv.v->scope_ref_inc();
-        EXPECT_EQ(sv.v->scope_ref(), 1);
-        sv.v->scope_ref_inc();
-        EXPECT_EQ(sv.v->scope_ref(), 2);
-        sv.v->scope_ref_dec();
-        EXPECT_EQ(sv.v->scope_ref(), 1);
-        sv.v->scope_ref_dec();
-        EXPECT_EQ(sv.v->scope_ref(), 0);
+        ScopedValue sv(&alloc, dummyType(), d);
+        EXPECT_EQ(sv.v->scopeRef(), 0);
+        sv.v->scopeRefInc();
+        EXPECT_EQ(sv.v->scopeRef(), 1);
+        sv.v->scopeRefInc();
+        EXPECT_EQ(sv.v->scopeRef(), 2);
+        sv.v->scopeRefDec();
+        EXPECT_EQ(sv.v->scopeRef(), 1);
+        sv.v->scopeRefDec();
+        EXPECT_EQ(sv.v->scopeRef(), 0);
     }
     // sv 析构（~Value 调 data->ref--）后才能 delete d
     EXPECT_EQ(d->ref(), 0);
@@ -97,11 +97,11 @@ TEST(ValueDataTest, MarkedFlag) {
     MallocAllocator alloc;
     auto* d = new NumberData(1.0);
     {
-        ScopedValue sv(&alloc, dummy_type(), d);
+        ScopedValue sv(&alloc, dummyType(), d);
         EXPECT_FALSE(sv.v->marked());
-        sv.v->set_marked(true);
+        sv.v->setMarked(true);
         EXPECT_TRUE(sv.v->marked());
-        sv.v->set_marked(false);
+        sv.v->setMarked(false);
         EXPECT_FALSE(sv.v->marked());
     }
     delete d;
@@ -111,8 +111,8 @@ TEST(ValueDataTest, AccessorsReturnCtorArgs) {
     MallocAllocator alloc;
     auto* d = new NumberData(3.14);
     {
-        ScopedValue sv(&alloc, dummy_type(), d);
-        EXPECT_EQ(sv.v->type(), dummy_type());
+        ScopedValue sv(&alloc, dummyType(), d);
+        EXPECT_EQ(sv.v->type(), dummyType());
         EXPECT_EQ(sv.v->data(), d);
     }
     delete d;

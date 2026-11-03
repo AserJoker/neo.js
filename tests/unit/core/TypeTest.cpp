@@ -5,7 +5,7 @@
 // - Type 单例（同类型多次获取返回同一指针）
 // - Data 子类负载正确（BooleanData/NumberData/StringData/FatalData）
 // - StringData 不可变性（构造后内容确定）
-// - ExceptionData::enumerate_children 向 visitor 报告 child（GC 引用链）
+// - ExceptionData::enumerateChildren 向 visitor 报告 child（GC 引用链）
 // - FatalData 持 const char* 字面量
 //
 // 关联 ADR: 016（Type 体系修订）、017（类型清单）、015（data 引用计数分层）
@@ -42,59 +42,59 @@ using neo::core::IType;
 using neo::core::TypeKind;
 using neo::core::UndefinedData;
 using neo::core::Value;
-using neo::core::get_boolean_type;
-using neo::core::get_exception_type;
-using neo::core::get_fatal_type;
-using neo::core::get_null_type;
-using neo::core::get_number_type;
-using neo::core::get_string_type;
-using neo::core::get_undefined_type;
+using neo::core::getBooleanType;
+using neo::core::getExceptionType;
+using neo::core::getFatalType;
+using neo::core::getNullType;
+using neo::core::getNumberType;
+using neo::core::getStringType;
+using neo::core::getUndefinedType;
 using neo::infra::MallocAllocator;
 
 // ---- TypeKind 与 name ----
 
 TEST(TypeTest, KindAndName) {
-    EXPECT_EQ(get_undefined_type()->kind(), TypeKind::Undefined);
-    EXPECT_STREQ(get_undefined_type()->name(), "undefined");
+    EXPECT_EQ(getUndefinedType()->kind(), TypeKind::Undefined);
+    EXPECT_STREQ(getUndefinedType()->name(), "undefined");
 
-    EXPECT_EQ(get_null_type()->kind(), TypeKind::Null);
-    EXPECT_STREQ(get_null_type()->name(), "null");
+    EXPECT_EQ(getNullType()->kind(), TypeKind::Null);
+    EXPECT_STREQ(getNullType()->name(), "null");
 
-    EXPECT_EQ(get_boolean_type()->kind(), TypeKind::Boolean);
-    EXPECT_STREQ(get_boolean_type()->name(), "boolean");
+    EXPECT_EQ(getBooleanType()->kind(), TypeKind::Boolean);
+    EXPECT_STREQ(getBooleanType()->name(), "boolean");
 
-    EXPECT_EQ(get_number_type()->kind(), TypeKind::Number);
-    EXPECT_STREQ(get_number_type()->name(), "number");
+    EXPECT_EQ(getNumberType()->kind(), TypeKind::Number);
+    EXPECT_STREQ(getNumberType()->name(), "number");
 
-    EXPECT_EQ(get_string_type()->kind(), TypeKind::String);
-    EXPECT_STREQ(get_string_type()->name(), "string");
+    EXPECT_EQ(getStringType()->kind(), TypeKind::String);
+    EXPECT_STREQ(getStringType()->name(), "string");
 
-    EXPECT_EQ(get_exception_type()->kind(), TypeKind::Exception);
-    EXPECT_STREQ(get_exception_type()->name(), "exception");
+    EXPECT_EQ(getExceptionType()->kind(), TypeKind::Exception);
+    EXPECT_STREQ(getExceptionType()->name(), "exception");
 
-    EXPECT_EQ(get_fatal_type()->kind(), TypeKind::Fatal);
-    EXPECT_STREQ(get_fatal_type()->name(), "fatal");
+    EXPECT_EQ(getFatalType()->kind(), TypeKind::Fatal);
+    EXPECT_STREQ(getFatalType()->name(), "fatal");
 }
 
 // ---- 单例：同类型多次获取返回同一指针 ----
 
 TEST(TypeTest, SingletonIdentity) {
-    EXPECT_EQ(get_undefined_type(), get_undefined_type());
-    EXPECT_EQ(get_null_type(), get_null_type());
-    EXPECT_EQ(get_boolean_type(), get_boolean_type());
-    EXPECT_EQ(get_number_type(), get_number_type());
-    EXPECT_EQ(get_string_type(), get_string_type());
-    EXPECT_EQ(get_exception_type(), get_exception_type());
-    EXPECT_EQ(get_fatal_type(), get_fatal_type());
+    EXPECT_EQ(getUndefinedType(), getUndefinedType());
+    EXPECT_EQ(getNullType(), getNullType());
+    EXPECT_EQ(getBooleanType(), getBooleanType());
+    EXPECT_EQ(getNumberType(), getNumberType());
+    EXPECT_EQ(getStringType(), getStringType());
+    EXPECT_EQ(getExceptionType(), getExceptionType());
+    EXPECT_EQ(getFatalType(), getFatalType());
 }
 
 // ---- 不同类型单例互不相同 ----
 
 TEST(TypeTest, DistinctTypes) {
     IType* types[] = {
-        get_undefined_type(), get_null_type(),    get_boolean_type(),
-        get_number_type(),    get_string_type(),  get_exception_type(),
-        get_fatal_type(),
+        getUndefinedType(), getNullType(),    getBooleanType(),
+        getNumberType(),    getStringType(),  getExceptionType(),
+        getFatalType(),
     };
     for (size_t i = 0; i < std::size(types); ++i) {
         for (size_t j = i + 1; j < std::size(types); ++j) {
@@ -158,7 +158,7 @@ TEST(DataTest, FatalDataHoldsAnotherLiteral) {
     EXPECT_STREQ(fd.message, "stack overflow");
 }
 
-// ---- ExceptionData::enumerate_children 报告 child ----
+// ---- ExceptionData::enumerateChildren 报告 child ----
 // 用计数 visitor 验证 child 被报告给 GC
 
 class CountingVisitor : public IGCVisitor {
@@ -175,11 +175,11 @@ TEST(ExceptionDataTest, EnumerateChildrenReportsChild) {
     MallocAllocator alloc;
     // 构造一个 child Value（用 NumberData 作负载，dummy type 单例）
     auto* d = new (alloc.alloc(sizeof(NumberData))) NumberData(42.0);
-    auto* child = new (alloc.alloc(sizeof(Value))) Value(get_number_type(), d);
+    auto* child = new (alloc.alloc(sizeof(Value))) Value(getNumberType(), d);
 
     ExceptionData ed(child);
     CountingVisitor visitor;
-    ed.enumerate_children(&visitor);
+    ed.enumerateChildren(&visitor);
 
     EXPECT_EQ(visitor.count, 1);
     EXPECT_EQ(visitor.visited, child);
@@ -193,12 +193,12 @@ TEST(ExceptionDataTest, EnumerateChildrenReportsChild) {
 TEST(ExceptionDataTest, EnumerateChildrenReportsChildOnce) {
     MallocAllocator alloc;
     auto* d = new (alloc.alloc(sizeof(NumberData))) NumberData(0.0);
-    auto* child = new (alloc.alloc(sizeof(Value))) Value(get_number_type(), d);
+    auto* child = new (alloc.alloc(sizeof(Value))) Value(getNumberType(), d);
 
     ExceptionData ed(child);
     CountingVisitor visitor;
-    ed.enumerate_children(&visitor);
-    ed.enumerate_children(&visitor);  // 调两次，每次都报告
+    ed.enumerateChildren(&visitor);
+    ed.enumerateChildren(&visitor);  // 调两次，每次都报告
 
     EXPECT_EQ(visitor.count, 2);
 
@@ -215,14 +215,14 @@ TEST(ExceptionDataTest, ChildMustNotBeNull) {
     MallocAllocator alloc;
     // 不携带错误对象：用 undefined Value（而非 nullptr）
     auto* ud = new (alloc.alloc(sizeof(UndefinedData))) UndefinedData();
-    auto* undefined_val = new (alloc.alloc(sizeof(Value))) Value(get_undefined_type(), ud);
+    auto* undefined_val = new (alloc.alloc(sizeof(Value))) Value(getUndefinedType(), ud);
 
     ExceptionData ed(undefined_val);
     EXPECT_NE(ed.child, nullptr);
     EXPECT_EQ(ed.child->type()->kind(), TypeKind::Undefined);
 
     CountingVisitor visitor;
-    ed.enumerate_children(&visitor);
+    ed.enumerateChildren(&visitor);
     EXPECT_EQ(visitor.count, 1);
 
     undefined_val->~Value();

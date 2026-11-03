@@ -19,7 +19,7 @@ using neo::infra::IOutputSink;
 class StringSink : public IOutputSink {
 public:
     void write(std::string_view text) override { buffer_ += text; }
-    void write_line(std::string_view text) override { buffer_ += text; buffer_ += '\n'; }
+    void writeLine(std::string_view text) override { buffer_ += text; buffer_ += '\n'; }
     void flush() override {}
     const std::string& buffer() const { return buffer_; }
     std::string take() { return std::move(buffer_); }
@@ -37,7 +37,7 @@ TEST(ConsoleTest, WriteRawText) {
 TEST(ConsoleTest, WriteLineAppendsNewline) {
     StringSink sink;
     Console c(&sink);
-    c.write_line("world");
+    c.writeLine("world");
     EXPECT_EQ(sink.buffer(), "world\n");
 }
 
@@ -51,7 +51,7 @@ TEST(ConsoleTest, PrintFormatsArgs) {
 TEST(ConsoleTest, PrintLineFormatsAndNewline) {
     StringSink sink;
     Console c(&sink);
-    c.print_line("a={} b={}", 1, 2);
+    c.printLine("a={} b={}", 1, 2);
     EXPECT_EQ(sink.buffer(), "a=1 b=2\n");
 }
 
@@ -60,7 +60,7 @@ TEST(ConsoleTest, MultipleWritesAccumulate) {
     Console c(&sink);
     c.print("part1 ");
     c.print("part2 ");
-    c.print_line("part3");
+    c.printLine("part3");
     EXPECT_EQ(sink.buffer(), "part1 part2 part3\n");
 }
 

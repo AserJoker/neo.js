@@ -31,7 +31,7 @@ public:
 // 测试用 Type 占位（本阶段 Type 体系未实现，用空类占位）
 // 返回 neo::core::IType* 所需的占位实例（reinterpret_cast，仅测试用）
 class DummyType {};
-inline IType* dummy_type() {
+inline IType* dummyType() {
     static DummyType inst{};
     return reinterpret_cast<IType*>(&inst);
 }
