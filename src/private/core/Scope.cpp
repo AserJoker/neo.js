@@ -11,7 +11,7 @@
 //
 // 关联 ADR: 012（Scope 树）、013（递归释放子作用域）、030 阶段 2
 
-#include "core/scope.h"
+#include "core/Scope.h"
 
 namespace neo::core {
 

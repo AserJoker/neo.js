@@ -4,11 +4,11 @@
 //
 // 关联 ADR: 015（Value meta+data 引用计数分层）、029（生命周期）
 
-#include "core/value.h"
+#include "core/Value.h"
 
 namespace neo::core {
 
-Value::Value(Type* type, Data* data)
+Value::Value(IType* type, IData* data)
     : type_(type), data_(data) {
     if (data_ != nullptr) {
         ++data_->ref_;
@@ -17,7 +17,7 @@ Value::Value(Type* type, Data* data)
 
 Value::~Value() {
     // 仅递减 data 引用计数，不释放 data（GC sweep 在 ref 归 0 时 allocator->free）
-    // 注：data_ 的最终释放由 GC 负责（GC 持 Allocator*）
+    // 注：data_ 的最终释放由 GC 负责（GC 持 IAllocator*）
     if (data_ != nullptr) {
         --data_->ref_;
     }

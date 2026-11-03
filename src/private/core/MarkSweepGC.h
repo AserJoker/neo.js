@@ -1,8 +1,8 @@
-// impl_mark_sweep_gc.h (private) - MarkSweepGC 实现声明
+// MarkSweepGC.h (private) - MarkSweepGC 实现声明
 //
 // 本头仅在 core 模块内部可见（src/private/），其他模块无法引用 MarkSweepGC，
-// 只能通过 public 的 GCEngine 接口 + create_gc_engine() 工厂使用。
-// 文件名加 impl_ 前缀，避免与 public/core/gc.h 同名产生 include 歧义。
+// 只能通过 public 的 IGCEngine 接口 + create_gc_engine() 工厂使用。
+// 文件名与实现类名一致（MarkSweepGC.h），与 public 接口头 IGCEngine.h 不冲突。
 //
 // MarkSweepGC：标记-清除算法。collect 时 scope_ref!=0 为根 + 沿 data 引用链遍历
 // 标记（本阶段 data 扁平 noop），未标记 Value 析构 + allocator->free，并检查 data
@@ -10,10 +10,10 @@
 //
 // 关联 ADR: 010（接口-实现-工厂）、029（生命周期）
 
-#ifndef NEO_CORE_PRIVATE_IMPL_MARK_SWEEP_GC_H
-#define NEO_CORE_PRIVATE_IMPL_MARK_SWEEP_GC_H
+#ifndef NEO_CORE_PRIVATE_MARK_SWEEP_GC_H
+#define NEO_CORE_PRIVATE_MARK_SWEEP_GC_H
 
-#include "core/gc.h"  // public 接口（impl_ 前缀消除歧义）
+#include "core/IGCEngine.h"  // public 接口
 
 #include <cstddef>
 #include <vector>
@@ -21,17 +21,17 @@
 namespace neo::core {
 
 // 标记-清除 GC 实现
-class MarkSweepGC : public GCEngine {
+class MarkSweepGC : public IGCEngine {
 public:
-    explicit MarkSweepGC(infra::Allocator* alloc);
-    ~MarkSweepGC() override;  // 析构时强制回收所有残留 Value，释放内存给 Allocator
+    explicit MarkSweepGC(infra::IAllocator* alloc);
+    ~MarkSweepGC() override;  // 析构时强制回收所有残留 Value，释放内存给 IAllocator
 
-    Value* create_value(Type* type, Data* data) override;
+    Value* create_value(IType* type, IData* data) override;
     void   collect() override;
 
     size_t value_count() const override;
     size_t collected_count() const override;
-    void   enumerate_values(GCVisitor* v) const override;
+    void   enumerate_values(IGCVisitor* v) const override;
 
     void set_mem_threshold(double ratio) override;
     void set_count_threshold(size_t count) override;
@@ -43,7 +43,7 @@ private:
     // 检查是否需触发 GC（双重阈值），返回 true 表示已触发一次 collect
     bool maybe_collect();
 
-    infra::Allocator* alloc_;  // 注入，不持有所有权
+    infra::IAllocator* alloc_;  // 注入，不持有所有权
     std::vector<Value*> values_;  // GC 持有所有 Value 的跟踪表
     size_t collected_count_ = 0;  // 累计回收数
 
@@ -53,4 +53,4 @@ private:
 
 }  // namespace neo::core
 
-#endif  // NEO_CORE_PRIVATE_IMPL_MARK_SWEEP_GC_H
+#endif  // NEO_CORE_PRIVATE_MARK_SWEEP_GC_H

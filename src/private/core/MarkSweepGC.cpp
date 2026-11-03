@@ -4,12 +4,12 @@
 // collect：标记阶段 scope_ref!=0 为根 + 沿 data 引用链遍历（本阶段 noop），
 //          清除阶段未标记 Value 析构（data->ref--）+ 检查 data ref 归 0 则 free(data) + free(value)。
 //
-// 关联 ADR: 008（GC→Allocator）、010（接口-实现-工厂）、012（scope_ref 根）、
+// 关联 ADR: 008（GC→IAllocator）、010（接口-实现-工厂）、012（scope_ref 根）、
 //          015（data 引用计数）、029（生命周期）
 
-#include "core/impl_mark_sweep_gc.h"
+#include "core/MarkSweepGC.h"
 
-#include "core/value.h"
+#include "core/Value.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -22,7 +22,7 @@ namespace neo::core {
 namespace {
 
 // GC 标记访问器实现：标记 Value 并沿 data 子 value 递归（本阶段 data 扁平 noop）
-class Marker : public GCVisitor {
+class Marker : public IGCVisitor {
 public:
     void visit(Value* v) override {
         if (v == nullptr || v->marked()) return;
@@ -36,7 +36,7 @@ public:
 
 }  // namespace
 
-MarkSweepGC::MarkSweepGC(infra::Allocator* alloc) : alloc_(alloc) {}
+MarkSweepGC::MarkSweepGC(infra::IAllocator* alloc) : alloc_(alloc) {}
 
 MarkSweepGC::~MarkSweepGC() {
     // 析构时调一次 collect 回收所有不可达 Value。
@@ -76,7 +76,7 @@ bool MarkSweepGC::maybe_collect() {
     return false;
 }
 
-Value* MarkSweepGC::create_value(Type* type, Data* data) {
+Value* MarkSweepGC::create_value(IType* type, IData* data) {
     maybe_collect();
 
     void* p = alloc_->alloc(sizeof(Value));
@@ -110,7 +110,7 @@ void MarkSweepGC::collect() {
             values_[write++] = v;  // 存活，保留
         } else {
             // 回收：先记 data 指针，析构 Value（data->ref--），再检查 data ref
-            Data* d = v->data();
+            IData* d = v->data();
             v->~Value();  // 显式析构（placement new 的对象需显式析构）
             alloc_->free(v);
             // data ref 归 0 则释放 data（多 Value 共享 data 时仅最后一次回收才 free）
@@ -131,7 +131,7 @@ size_t MarkSweepGC::collected_count() const {
     return collected_count_;
 }
 
-void MarkSweepGC::enumerate_values(GCVisitor* v) const {
+void MarkSweepGC::enumerate_values(IGCVisitor* v) const {
     for (Value* val : values_) v->visit(val);
 }
 
@@ -144,7 +144,7 @@ void MarkSweepGC::set_count_threshold(size_t count) {
 }
 
 // 工厂函数
-std::unique_ptr<GCEngine> create_gc_engine(infra::Allocator* alloc) {
+std::unique_ptr<IGCEngine> create_gc_engine(infra::IAllocator* alloc) {
     return std::make_unique<MarkSweepGC>(alloc);
 }
 
