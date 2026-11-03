@@ -17,6 +17,13 @@ class NumberType : public IType {
 public:
     NumberType() : IType(TypeKind::Number) {}
     const char* name() const override { return "number"; }
+
+    // 行为方法（ADR-016 §3，实现见 Number.cpp）
+    Value* add(IContext* ctx, Value* a, Value* b) override;
+    Value* sub(IContext* ctx, Value* a, Value* b) override;
+    Value* mul(IContext* ctx, Value* a, Value* b) override;
+    Value* div(IContext* ctx, Value* a, Value* b) override;
+    Value* toString(IContext* ctx, Value* self) override;
 };
 
 // 持 double 的扁平 data

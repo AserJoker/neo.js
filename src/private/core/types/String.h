@@ -21,6 +21,13 @@ class StringType : public IType {
 public:
     StringType() : IType(TypeKind::String) {}
     const char* name() const override { return "string"; }
+
+    // 行为方法（ADR-016 §3，实现见 String.cpp）
+    Value* add(IContext* ctx, Value* a, Value* b) override;
+    Value* sub(IContext* ctx, Value* a, Value* b) override;
+    Value* mul(IContext* ctx, Value* a, Value* b) override;
+    Value* div(IContext* ctx, Value* a, Value* b) override;
+    Value* toString(IContext* ctx, Value* self) override;
 };
 
 // 持 std::string 的 data，不可变（构造后不再修改）

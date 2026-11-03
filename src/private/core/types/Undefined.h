@@ -16,6 +16,13 @@ class UndefinedType : public IType {
 public:
     UndefinedType() : IType(TypeKind::Undefined) {}
     const char* name() const override { return "undefined"; }
+
+    // 行为方法（ADR-016 §3，实现见 Undefined.cpp）
+    Value* add(IContext* ctx, Value* a, Value* b) override;
+    Value* sub(IContext* ctx, Value* a, Value* b) override;
+    Value* mul(IContext* ctx, Value* a, Value* b) override;
+    Value* div(IContext* ctx, Value* a, Value* b) override;
+    Value* toString(IContext* ctx, Value* self) override;
 };
 
 // 空负载 data
