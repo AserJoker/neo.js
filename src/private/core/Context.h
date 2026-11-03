@@ -26,7 +26,7 @@ class Context : public IContext {
 
     Scope* global_ = nullptr;              // Context 创建，析构时销毁（递归销毁整棵树）
     Scope* root_ = nullptr;                // Context 创建，作为 global 的子，global 析构时递归销毁
-    std::vector<Scope*> scope_stack_;      // current 栈（global 不入栈，root 是栈底）
+    std::vector<Scope*> scopeStack_;      // current 栈（global 不入栈，root 是栈底）
 
 public:
     Context(infra::IAllocator* alloc, infra::Console* console);
@@ -40,8 +40,8 @@ public:
     Scope* root() const override { return root_; }
     Scope* current() const override;
 
-    void push_scope(Scope* s) override;
-    void pop_scope() override;
+    void pushScope(Scope* s) override;
+    void popScope() override;
 };
 
 }  // namespace neo::core

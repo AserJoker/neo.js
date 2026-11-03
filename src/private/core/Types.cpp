@@ -17,37 +17,37 @@
 
 namespace neo::core {
 
-IType* get_undefined_type() {
+IType* getUndefinedType() {
     static UndefinedType inst;
     return &inst;
 }
 
-IType* get_null_type() {
+IType* getNullType() {
     static NullType inst;
     return &inst;
 }
 
-IType* get_boolean_type() {
+IType* getBooleanType() {
     static BooleanType inst;
     return &inst;
 }
 
-IType* get_number_type() {
+IType* getNumberType() {
     static NumberType inst;
     return &inst;
 }
 
-IType* get_string_type() {
+IType* getStringType() {
     static StringType inst;
     return &inst;
 }
 
-IType* get_exception_type() {
+IType* getExceptionType() {
     static ExceptionType inst;
     return &inst;
 }
 
-IType* get_fatal_type() {
+IType* getFatalType() {
     static FatalType inst;
     return &inst;
 }

@@ -1,4 +1,4 @@
-// types/exception.cpp - ExceptionData::enumerate_children 实现
+// types/exception.cpp - ExceptionData::enumerateChildren 实现
 //
 // 向 GC 报告持有的子 value（被抛出的错误对象）。child 永远不为 nullptr
 // （不携带错误对象时用 undefined Value 表示），故无条件 visit。
@@ -12,7 +12,7 @@
 
 namespace neo::core {
 
-void ExceptionData::enumerate_children(IGCVisitor* visitor) {
+void ExceptionData::enumerateChildren(IGCVisitor* visitor) {
     // child 永远不为 nullptr（不携带错误对象时用 undefined Value 表示）。
     visitor->visit(child);
 }
