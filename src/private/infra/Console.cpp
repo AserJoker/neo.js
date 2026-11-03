@@ -16,7 +16,7 @@ namespace neo::infra {
 namespace {
 
 // 进程级默认 sink（Console(nullptr) 时使用）
-StdoutSink& default_sink() {
+StdoutSink& defaultSink() {
     static StdoutSink instance;
     return instance;
 }
@@ -29,7 +29,7 @@ void StdoutSink::write(std::string_view text) {
     std::cout << text;
 }
 
-void StdoutSink::write_line(std::string_view text) {
+void StdoutSink::writeLine(std::string_view text) {
     std::cout << text << '\n';
 }
 
@@ -39,18 +39,18 @@ void StdoutSink::flush() {
 
 // --- Console ---
 Console::Console(IOutputSink* sink)
-    : sink_(sink != nullptr ? sink : &default_sink()) {}
+    : sink_(sink != nullptr ? sink : &defaultSink()) {}
 
 void Console::write(std::string_view text) {
     sink_->write(text);
 }
 
-void Console::write_line(std::string_view text) {
-    sink_->write_line(text);
+void Console::writeLine(std::string_view text) {
+    sink_->writeLine(text);
 }
 
 // 工厂函数：创建 StdoutSink，返回接口指针
-std::unique_ptr<IOutputSink> create_stdout_sink() {
+std::unique_ptr<IOutputSink> createStdoutSink() {
     return std::make_unique<StdoutSink>();
 }
 

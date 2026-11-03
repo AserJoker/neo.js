@@ -3,7 +3,7 @@
 // 本文件是 neo.js 中唯一直接调用 malloc/free 等内存 FFI 的地方（ADR-027 §5.6）。
 // 业务代码通过 IAllocator* 接口注入使用，不直接接触这些 FFI。
 //
-// 内存配额：alloc 前 try_reserve 原子检查 used+bytes<=limit，超限返回 nullptr 拦截。
+// 内存配额：alloc 前 tryReserve 原子检查 used+bytes<=limit，超限返回 nullptr 拦截。
 // 记账表 records_ 记录 ptr→真实字节数，free 时查表递减 used。alloc(0) 统一记 1 字节
 // （malloc 返回非空哨兵，free 兼容）。
 //
@@ -22,7 +22,7 @@ MallocAllocator::MallocAllocator(size_t limit) {
     limit_.store(limit, std::memory_order_relaxed);
 }
 
-bool MallocAllocator::try_reserve(size_t bytes) {
+bool MallocAllocator::tryReserve(size_t bytes) {
     // 无锁 CAS 循环：used_ + bytes <= limit_ 才提交，否则拦截
     size_t cur = used_.load(std::memory_order_relaxed);
     for (;;) {
@@ -63,7 +63,7 @@ size_t MallocAllocator::release(void* p) {
 void* MallocAllocator::alloc(size_t bytes) {
     // malloc(0) 行为实现定义，统一返回非空哨兵（与 free 兼容），记账记 1
     size_t real = bytes == 0 ? 1 : bytes;
-    if (!try_reserve(real)) return nullptr;  // 超限拦截
+    if (!tryReserve(real)) return nullptr;  // 超限拦截
     void* p = std::malloc(real);
     if (p == nullptr) {
         // malloc 失败：回滚已预留配额
@@ -74,11 +74,11 @@ void* MallocAllocator::alloc(size_t bytes) {
     return p;
 }
 
-void* MallocAllocator::alloc_aligned(size_t bytes, size_t align) {
+void* MallocAllocator::allocAligned(size_t bytes, size_t align) {
     // align 必须是 2 的幂（调用方契约，不防御性校验：ADR-007 内部信任契约）
     // aligned_alloc 要求 size 是 align 的整数倍（C11），用倍数对齐
     size_t aligned_bytes = bytes == 0 ? align : ((bytes + align - 1) / align) * align;
-    if (!try_reserve(aligned_bytes)) return nullptr;  // 超限拦截
+    if (!tryReserve(aligned_bytes)) return nullptr;  // 超限拦截
     void* p;
 #if defined(_WIN32)
     p = _aligned_malloc(aligned_bytes, align);
@@ -99,7 +99,7 @@ void MallocAllocator::free(void* p) {
     std::free(p);
 }
 
-void MallocAllocator::free_aligned(void* p) {
+void MallocAllocator::freeAligned(void* p) {
     if (p == nullptr) return;
     release(p);
 #if defined(_WIN32)
@@ -109,7 +109,7 @@ void MallocAllocator::free_aligned(void* p) {
 #endif
 }
 
-void MallocAllocator::set_limit(size_t bytes) {
+void MallocAllocator::setLimit(size_t bytes) {
     limit_.store(bytes, std::memory_order_relaxed);
 }
 
@@ -122,12 +122,12 @@ size_t MallocAllocator::used() const {
 }
 
 // 工厂函数：创建无限额 MallocAllocator（默认）
-std::unique_ptr<IAllocator> create_malloc_allocator() {
+std::unique_ptr<IAllocator> createMallocAllocator() {
     return std::make_unique<MallocAllocator>();
 }
 
 // 工厂函数：创建带限额 MallocAllocator
-std::unique_ptr<IAllocator> create_malloc_allocator_with_limit(size_t bytes) {
+std::unique_ptr<IAllocator> createMallocAllocatorWithLimit(size_t bytes) {
     return std::make_unique<MallocAllocator>(bytes);
 }
 

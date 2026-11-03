@@ -21,20 +21,20 @@ std::string_view ParsedArgs::value(const std::string& name) const {
 }
 
 // --- CommandParser ---
-void CommandParser::add_option(CommandOption opt) {
+void CommandParser::addOption(CommandOption opt) {
     options_.push_back(std::move(opt));
 }
 
-const CommandOption* CommandParser::find_long(std::string_view name) const {
+const CommandOption* CommandParser::findLong(std::string_view name) const {
     for (const auto& o : options_) {
         if (o.name == name) return &o;
     }
     return nullptr;
 }
 
-const CommandOption* CommandParser::find_short(std::string_view name) const {
+const CommandOption* CommandParser::findShort(std::string_view name) const {
     for (const auto& o : options_) {
-        if (!o.short_name.empty() && o.short_name == name) return &o;
+        if (!o.shortName.empty() && o.shortName == name) return &o;
     }
     return nullptr;
 }
@@ -66,11 +66,11 @@ Result<ParsedArgs> CommandParser::parse(int argc, const char* const argv[]) cons
             std::string_view rest = arg.substr(2);
             auto eq = rest.find('=');
             std::string_view name = (eq == std::string_view::npos) ? rest : rest.substr(0, eq);
-            const CommandOption* opt = find_long(name);
+            const CommandOption* opt = findLong(name);
             if (opt == nullptr) {
                 return Result<ParsedArgs>::err(ErrCode::InvalidArg);  // 未知选项
             }
-            if (opt->takes_value) {
+            if (opt->takesValue) {
                 if (eq != std::string_view::npos) {
                     result.options_[opt->name] = std::string(rest.substr(eq + 1));
                 } else {
@@ -93,11 +93,11 @@ Result<ParsedArgs> CommandParser::parse(int argc, const char* const argv[]) cons
         // 短选项 -n（不支持合并如 -abc，保持简单）
         if (arg.starts_with("-") && arg.size() > 1) {
             std::string_view name = arg.substr(1);
-            const CommandOption* opt = find_short(name);
+            const CommandOption* opt = findShort(name);
             if (opt == nullptr) {
                 return Result<ParsedArgs>::err(ErrCode::InvalidArg);  // 未知短选项
             }
-            if (opt->takes_value) {
+            if (opt->takesValue) {
                 if (i + 1 >= argc) {
                     return Result<ParsedArgs>::err(ErrCode::InvalidArg);  // 缺值
                 }

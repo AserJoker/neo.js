@@ -1,7 +1,7 @@
 // StdoutSink.h (private) - StdoutSink 实现声明
 //
 // 本头仅在 infra 模块内部可见（src/private/），其他模块无法引用 StdoutSink，
-// 只能通过 public 的 IOutputSink 接口 + create_stdout_sink() 工厂使用。
+// 只能通过 public 的 IOutputSink 接口 + createStdoutSink() 工厂使用。
 // 文件名与实现类名一致（StdoutSink.h），Console.h 是具体类头（含 Console）。
 //
 // 关联 ADR: 010（接口-实现-工厂）、027（FFI 封装）
@@ -17,7 +17,7 @@ namespace neo::infra {
 class StdoutSink : public IOutputSink {
 public:
     void write(std::string_view text) override;
-    void write_line(std::string_view text) override;
+    void writeLine(std::string_view text) override;
     void flush() override;
 };
 
