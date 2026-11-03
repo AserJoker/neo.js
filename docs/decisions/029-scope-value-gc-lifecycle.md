@@ -28,7 +28,7 @@ data **不持有子 value**。因此：
 ### 2. Value 内存模型（落实 ADR-015）
 
 ```cpp
-// src/public/core/value.h
+// src/public/core/Value.h
 namespace neo::core {
 
 class Value {
@@ -60,7 +60,7 @@ public:
 ### 3. Data 抽象（引用计数载体）
 
 ```cpp
-// src/public/core/data.h
+// src/public/core/IData.h
 namespace neo::core {
 
 class Data {
@@ -72,7 +72,7 @@ class Data {
 public:
     virtual ~Data() = default;
     // 复杂对象阶段：枚举子 value 供 GC 标记。本阶段扁平 data 无子 value，返回空。
-    virtual void enumerate_children(class GCVisitor*) {}
+    virtual void enumerate_children(class IGCVisitor*) {}
 };
 
 }  // namespace neo::core
@@ -85,22 +85,22 @@ public:
 - **多 Value 共享 data 的时序**：ref>1 时 GC sweep 一个 Value 不会立即 free data，
   只有最后一个引用该 data 的 Value 被回收、ref 归 0 时才 free。GC sweep 逐个 Value
   析构（ref--），析构后检查该 data 的 ref，归 0 则立即 free（无需二次扫描）。
-- **enumerate_children**：复杂对象阶段由具体 data 覆写，向 GCVisitor 报告子 value；本阶段基类默认空实现。
+- **enumerate_children**：复杂对象阶段由具体 data 覆写，向 IGCVisitor 报告子 value；本阶段基类默认空实现。
 
 ### 4. GCEngine 核心接口
 
 ```cpp
-// src/public/core/gc.h
+// src/public/core/IGCEngine.h
 namespace neo::core {
 
-class GCVisitor {
+class IGCVisitor {
 public:
-    virtual ~GCVisitor() = default;
+    virtual ~IGCVisitor() = default;
     // 标记一个 value 存活，并沿其 data 子 value 递归标记（本阶段 data 扁平，递归 noop）
     virtual void visit(Value* v) = 0;
 };
 
-class GCEngine {
+class IGCEngine {
 public:
     virtual ~GCEngine() = default;
 
@@ -125,7 +125,7 @@ public:
     // —— 装饰性查询接口 ——
     virtual size_t value_count() const = 0;       // 当前存活的 Value 总数
     virtual size_t collected_count() const = 0;   // 累计已回收的 Value 数（统计用）
-    virtual void   enumerate_values(GCVisitor* v) const = 0;  // 遍历所有存活 Value
+    virtual void   enumerate_values(IGCVisitor* v) const = 0;  // 遍历所有存活 Value
 
     // —— GC 触发阈值配置 ——
     virtual void set_mem_threshold(double ratio) = 0;    // 内存阈值（默认 0.8）
@@ -210,7 +210,7 @@ collect():
 ### 8. Scope 与 Value 的跟踪关系（落实 ADR-012）
 
 ```cpp
-// src/public/core/scope.h（本阶段或后续 ADR 详化）
+// src/public/core/Scope.h（本阶段或后续 ADR 详化）
 class Scope {
     std::vector<Value*> values_;        // 跟踪的 value（含匿名临时值）
     std::unordered_map<std::string, Value*> named_values_;  // 命名绑定（借用）
@@ -230,9 +230,9 @@ public:
 
 | 组件 | public（接口/公开类） | private（实现） | 工厂 |
 |------|----------------------|----------------|------|
-| Value | `core/value.h` Value 类 | — | — |
-| Data | `core/data.h` Data 抽象基类 | 具体扁平类型（NumberData 等） | — |
-| GCEngine | `core/gc.h` GCEngine 接口 + GCVisitor | private/core/MarkSweepGC | `create_gc_engine(Allocator*)` |
+| Value | `core/Value.h` Value 类 | — | — |
+| Data | `core/IData.h` Data 抽象基类 | 具体扁平类型（NumberData 等） | — |
+| GCEngine | `core/IGCEngine.h` IGCEngine 接口 + IGCVisitor | private/core/MarkSweepGC | `create_gc_engine(Allocator*)` |
 
 - Value/Data 是公开类（非接口，本阶段具体类，后续 Data 子类化）。
 - GCEngine 是抽象接口，实现类 `MarkSweepGC` 在 private（命名标明算法语义，后续若加
@@ -242,11 +242,11 @@ public:
 
 ```
 src/public/core/
-  value.h        Value 类（meta+data+scope_ref）
-  data.h         Data 抽象基类（ref + enumerate_children）
-  gc.h           GCEngine 接口 + GCVisitor + 工厂声明
+  Value.h        Value 类（meta+data+scope_ref）
+  IData.h         IData 抽象基类（ref + enumerate_children）
+  IGCEngine.h    IGCEngine 接口 + IGCVisitor + 工厂声明
 src/private/core/
-  impl_mark_sweep_gc.h  MarkSweepGC 声明（impl_ 前缀避免与 public gc.h 同名歧义，ADR 经验）
+  MarkSweepGC.h  MarkSweepGC 声明（文件名与实现类一致，public 接口头加 I 前缀避免歧义）
   mark_sweep_gc.cpp     MarkSweepGC 实现（create_value/collect/标记清除）
 tests/unit/core/
   gc_test.cpp    GC 生命周期测试

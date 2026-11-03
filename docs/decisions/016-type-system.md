@@ -83,7 +83,7 @@ Value* Type::to_string(Context* ctx, Value* self);
   每个 Type 在自己的 `add/sub/...` 实现中硬编码它所实现的操作的 JS 转换规则。
 
 ```cpp
-Value* ContextImpl::add(Value* a, Value* b) {
+Value* Context::add(Value* a, Value* b) {
     return a->type()->add(this, a, b);  // 纯代理
 }
 ```

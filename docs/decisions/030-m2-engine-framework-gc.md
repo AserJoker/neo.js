@@ -44,7 +44,7 @@ ADR-029 落地。核心组件：
 落实 ADR-012 §1（global/root/current）+ ADR-013（闭包三层作用域）。
 
 ```cpp
-// src/public/core/scope.h（扩展）
+// src/public/core/Scope.h（扩展）
 class Scope {
     Scope* parent_ = nullptr;              // 父作用域（global 的 parent=nullptr）
     std::vector<Scope*> children_;         // 子作用域（on_exit 时递归释放）
@@ -80,7 +80,7 @@ public:
 落实 ADR-016（Type 体系）+ ADR-017（类型清单）的基础扁平类型部分。
 
 ```cpp
-// src/public/core/type.h
+// src/public/core/IType.h
 enum class TypeKind : uint8_t {
     Undefined, Null, Boolean, Number, String,
     Exception, Fatal, Interrupt,
@@ -133,7 +133,7 @@ Type 单例获取：`TypeSystem` 持有所有 Type 单例，或全局函数 `get
 落实 ADR-011 §2/§3（Context 门面 + 内存归属）。
 
 ```cpp
-// src/public/core/context.h
+// src/public/core/IContext.h
 class Context {
 public:
     virtual ~Context() = default;
@@ -167,7 +167,7 @@ std::unique_ptr<Context> create_context(infra::Allocator* alloc);
 - **Context 持有 Allocator/GC/Scope 树生命周期**（ADR-011 §3）：
   Allocator 外部注入或内部创建默认，GC 由 Context 创建（注入 Allocator），Scope 树
   由 Context 持有 global/root/current。
-- **接口-实现-工厂**（ADR-010）：Context 抽象接口在 public/core/，实现 ContextImpl
+- **接口-实现-工厂**（ADR-010）：IContext 抽象接口在 public/core/，实现 Context
   在 private/core/，工厂 create_context() 返回接口指针。
 - **create_* 便捷接口**：封装 gc->alloc_data<T> + gc->create_value(type, data)，
   按类型分派到对应 Type 单例 + Data 子类。调用方无需直接接触 GC/Type/Data 细节。
@@ -199,7 +199,7 @@ Exception 可被脚本 `try/catch` 捕获；Fatal 不可捕获，必须透传到
 
 ```cpp
 // Context 初始化（伪代码）
-ContextImpl::ContextImpl(...) {
+Context::Context(...) {
     global_scope_ = /* 创建 global scope */;
     // 最早分配 OOM Fatal Value，挂到 global
     oom_value_ = gc_->create_value(fatal_type(), oom_data());
@@ -219,7 +219,7 @@ ContextImpl::ContextImpl(...) {
 - 调用方检查：`if (v == ctx->oom_value()) { /* OOM 处理 */ }`。
 
 ```cpp
-Value* ContextImpl::create_number(double n) {
+Value* Context::create_number(double n) {
     auto* d = gc_->alloc_data<NumberData>(n);
     if (d == nullptr) return oom_value_;
     auto* v = gc_->create_value(number_type(), d);
@@ -292,21 +292,21 @@ Value 的路径、native 函数、VM 指令执行……）都可能返回 Fatal�
 
 ```
 src/public/core/
-  value.h        Value 类（已完成）
-  data.h         Data 抽象基类（已完成）
-  gc.h           GCEngine 接口 + GCVisitor（已完成）
-  scope.h        Scope 类（阶段 2 扩展 parent 链）
-  type.h         Type 抽象接口（阶段 3 新增）
-  context.h      Context 抽象接口 + 工厂（阶段 4 新增）
+  Value.h        Value 类（已完成）
+  IData.h         IData 抽象基类（已完成）
+  gc.h           IGCEngine 接口 + IGCVisitor（已完成）
+  Scope.h        Scope 类（阶段 2 扩展 parent 链）
+  IType.h         IType 抽象接口（阶段 3 新增）
+  IContext.h     IContext 抽象接口 + 工厂（阶段 4 新增）
 src/private/core/
   value.cpp      Value 构造/析构（已完成）
-  impl_mark_sweep_gc.h + mark_sweep_gc.cpp  MarkSweepGC（已完成）
-  impl_context.h + context.cpp              ContextImpl（阶段 4 新增）
+  MarkSweepGC.h + mark_sweep_gc.cpp  MarkSweepGC（已完成）
+  Context.h + context.cpp              Context（阶段 4 新增）
   types.h + types.cpp                       具体 Type + Data 子类（阶段 3 新增）
 tests/unit/core/
   value_test.cpp / gc_test.cpp / scope_test.cpp  （已完成）
   type_test.cpp / context_test.cpp               （阶段 3/4 新增）
-  test_data.h                                    （已完成，阶段 3 后可移除）
+  TestData.h                                    （已完成，阶段 3 后可移除）
 ```
 
 ## 测试策略（M2 各阶段）

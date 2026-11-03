@@ -27,7 +27,7 @@ infra 模块含 5 个组件：`Result<T>` / `Allocator` / `Console` / `Command` 
 C++ 内部不抛异常（ADR-007），FFI 边界 catch C++ 异常转 `Result::err`（ADR-006 异常即值）。
 
 ```cpp
-// src/public/infra/result.h
+// src/public/infra/Result.h
 namespace neo::infra {
 
 enum class ErrCode : int {
@@ -68,7 +68,7 @@ public:
 ### 3. Allocator — 内存分配收口（ADR-008 落地）
 
 ```cpp
-// src/public/infra/allocator.h
+// src/public/infra/IAllocator.h
 namespace neo::infra {
 
 class Allocator {
@@ -108,7 +108,7 @@ std::unique_ptr<Allocator> create_malloc_allocator_with_limit(size_t bytes);
 ### 4. Console — 输出工具
 
 ```cpp
-// src/public/infra/console.h
+// src/public/infra/IOutputSink.h
 namespace neo::infra {
 
 class OutputSink {
@@ -144,7 +144,7 @@ public:
 ### 5. Command — 命令行参数解析
 
 ```cpp
-// src/public/infra/command.h
+// src/public/infra/CommandParser.h
 namespace neo::infra {
 
 struct CommandOption {
@@ -179,7 +179,7 @@ struct ParsedArgs {
 ### 6. File — 文件封装（FileSystem 接口注入）
 
 ```cpp
-// src/public/infra/file.h
+// src/public/infra/IFileSystem.h
 namespace neo::infra {
 
 class File {

@@ -29,7 +29,7 @@ public:
 GC* CreateGC(Allocator* allocator);  // 工厂，返回接口指针
 }
 
-// src/private/gc/mark_sweep_gc.h —— 实现
+// src/private/gc/MarkSweepGC.h —— 实现
 namespace neo::gc {
 class MarkSweepGC : public GC { /* ... */ };
 }
