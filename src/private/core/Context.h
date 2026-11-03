@@ -13,8 +13,10 @@
 #include "core/IContext.h"
 #include "core/IGCEngine.h"
 #include "core/Scope.h"
+#include "core/Value.h"
 
 #include <memory>
+#include <string_view>
 #include <vector>
 
 namespace neo::core {
@@ -42,6 +44,12 @@ public:
 
     void pushScope(Scope* s) override;
     void popScope() override;
+
+    Value* createUndefined(std::string_view name = {}) override;
+    Value* createNull(std::string_view name = {}) override;
+    Value* createBoolean(bool b, std::string_view name = {}) override;
+    Value* createNumber(double n, std::string_view name = {}) override;
+    Value* createString(std::string_view s, std::string_view name = {}) override;
 };
 
 }  // namespace neo::core

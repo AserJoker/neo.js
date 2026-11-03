@@ -13,6 +13,12 @@
 // 关联 ADR: 010（接口-实现-工厂）、011（Context 门面）、012（Scope 树）、030 阶段 4
 
 #include "core/Context.h"
+#include "core/IType.h"
+#include "core/types/Boolean.h"
+#include "core/types/Null.h"
+#include "core/types/Number.h"
+#include "core/types/String.h"
+#include "core/types/Undefined.h"
 
 #include <new>
 
@@ -65,6 +71,59 @@ void Context::popScope() {
     // 销毁弹出的 scope：~Scope 递归释放子树 + 从父摘除自己
     top->~Scope();
     alloc_->free(top);
+}
+
+// —— Value 创建便捷方法 ——
+// 统一模式：allocData<T> → createValue(type, data) → current()->add(v) 跟踪。
+// 可选 name：非空则 current()->bind(name, v) 命名绑定。
+// OOM 处理留待阶段 5（目前 allocData/createValue 返回 nullptr 时直接返回 nullptr）。
+
+namespace {
+
+// 把 Value 加入 current scope：add 跟踪 + 可选 bind 命名绑定。
+void trackValue(Scope* scope, Value* v, std::string_view name) {
+    if (v == nullptr) return;
+    scope->add(v);
+    if (!name.empty()) {
+        scope->bind(name, v);
+    }
+}
+
+}  // namespace
+
+Value* Context::createUndefined(std::string_view name) {
+    auto* d = gc_->allocData<UndefinedData>();
+    Value* v = gc_->createValue(getUndefinedType(), d);
+    trackValue(current(), v, name);
+    return v;
+}
+
+Value* Context::createNull(std::string_view name) {
+    auto* d = gc_->allocData<NullData>();
+    Value* v = gc_->createValue(getNullType(), d);
+    trackValue(current(), v, name);
+    return v;
+}
+
+Value* Context::createBoolean(bool b, std::string_view name) {
+    auto* d = gc_->allocData<BooleanData>(b);
+    Value* v = gc_->createValue(getBooleanType(), d);
+    trackValue(current(), v, name);
+    return v;
+}
+
+Value* Context::createNumber(double n, std::string_view name) {
+    auto* d = gc_->allocData<NumberData>(n);
+    Value* v = gc_->createValue(getNumberType(), d);
+    trackValue(current(), v, name);
+    return v;
+}
+
+Value* Context::createString(std::string_view s, std::string_view name) {
+    auto* d = gc_->allocData<StringData>(s);
+    Value* v = gc_->createValue(getStringType(), d);
+    trackValue(current(), v, name);
+    return v;
 }
 
 }  // namespace neo::core

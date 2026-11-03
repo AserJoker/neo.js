@@ -28,6 +28,7 @@
 #include "infra/Console.h"
 
 #include <memory>
+#include <string_view>
 
 namespace neo::core {
 
@@ -62,6 +63,16 @@ public:
     // popScope: 弹出 current 栈顶 scope 并销毁（~Scope 递归释放子树 + allocator->free）。
     // global/root 不可 pop（栈底保护）。栈中只剩 root 时 pop 无操作（或断言失败）。
     virtual void popScope() = 0;
+
+    // —— Value 创建便捷接口（ADR-030 阶段 4）——
+    // 内部封装 gc->allocData<T> + gc->createValue(type, data)，把 Value 加入 current scope
+    // 跟踪（scopeRef++）。可选 name：指定则同时 bind 到 current scope（命名绑定）。
+    // 返回 Value*（正常结果）。OOM 处理留待阶段 5（OOM Fatal 封装）。
+    virtual Value* createUndefined(std::string_view name = {}) = 0;
+    virtual Value* createNull(std::string_view name = {}) = 0;
+    virtual Value* createBoolean(bool b, std::string_view name = {}) = 0;
+    virtual Value* createNumber(double n, std::string_view name = {}) = 0;
+    virtual Value* createString(std::string_view s, std::string_view name = {}) = 0;
 };
 
 // 工厂：创建 Context，注入 IAllocator/Console（无所有权，外部销毁）。
