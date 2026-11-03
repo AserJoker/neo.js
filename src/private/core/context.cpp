@@ -1,9 +1,11 @@
 // context.cpp - ContextImpl 实现
 //
-// 构造：用 Allocator placement new 创建 global scope（parent=nullptr）和 root scope
-// （parent=global），global->add_child(root)，root 入 current 栈。
-// 析构：销毁 global scope（~Scope 递归销毁整棵树：栈中残留 scope → root → global），
-// 然后 gc/alloc/console 由外部销毁（Context 不持有所有权）。
+// 构造：用 Allocator 创建 GC（create_gc_engine(alloc)，Context 持有所有权），
+// placement new 创建 global scope（parent=nullptr）和 root scope（parent=global），
+// global->add_child(root)，root 入 current 栈。
+// 析构：先销毁 global scope（~Scope 递归销毁整棵树：栈中残留 scope → root → global），
+// 再销毁 GC（unique_ptr 析构，GC 析构时 collect 回收残留 Value，泄漏则 panic），
+// Allocator/Console 不销毁（外部持有）。
 //
 // push_scope: s 压入 current 栈，current=s。
 // pop_scope: 弹出栈顶（非 root），~Scope + alloc->free 销毁。
@@ -12,14 +14,12 @@
 
 #include "core/impl_context.h"
 
-#include "core/gc.h"
-
 #include <new>
 
 namespace neo::core {
 
-ContextImpl::ContextImpl(infra::Allocator* alloc, GCEngine* gc, infra::Console* console)
-    : alloc_(alloc), gc_(gc), console_(console) {
+ContextImpl::ContextImpl(infra::Allocator* alloc, infra::Console* console)
+    : alloc_(alloc), gc_(create_gc_engine(alloc)), console_(console) {
     // 1. 创建 global scope（根，parent=nullptr）
     void* gp = alloc_->alloc(sizeof(Scope));
     global_ = new (gp) Scope(nullptr, alloc_);
@@ -32,15 +32,20 @@ ContextImpl::ContextImpl(infra::Allocator* alloc, GCEngine* gc, infra::Console* 
 }
 
 ContextImpl::~ContextImpl() {
-    // 销毁 global scope：~Scope 递归销毁整棵树
-    //   （栈中残留的 current scope → root → global 逐层析构 + free）
+    // 1. 销毁 global scope：~Scope 递归销毁整棵树
+    //    （栈中残留的 current scope → root → global 逐层析构 + free）
+    //    scope_ref 归 0 的 Value 在 GC 下次 collect 时被回收。
     // 注：scope_stack_ 中的指针在 global_ 析构后全部悬垂，但栈本身只是 vector<Scope*>，
-    //     析构 vector 不访问指针内容，安全。
+    //     析构 vector 不访问指针内容，安全。成员析构顺序：scope_stack_ → gc_ → ...
     if (global_ != nullptr) {
         global_->~Scope();
         alloc_->free(global_);
     }
-    // gc_/alloc_/console_ 由外部销毁，Context 不持有所有权
+    // 2. 销毁 GC（unique_ptr 析构）：GC 析构调 collect 回收残留 Value，
+    //    若有 Value 存活（scope 未正确销毁）则 panic 报告泄漏。
+    //    gc_ 在 global_ 之后销毁——先释放 scope（scope_ref 归 0），再 collect 回收 Value。
+    gc_.reset();
+    // 3. alloc_/console_ 由外部销毁，Context 不持有所有权
 }
 
 Scope* ContextImpl::current() const {
@@ -65,6 +70,6 @@ void ContextImpl::pop_scope() {
 }  // namespace neo::core
 
 std::unique_ptr<neo::core::Context> neo::core::create_context(
-    infra::Allocator* alloc, GCEngine* gc, infra::Console* console) {
-    return std::make_unique<ContextImpl>(alloc, gc, console);
+    infra::Allocator* alloc, infra::Console* console) {
+    return std::make_unique<ContextImpl>(alloc, console);
 }

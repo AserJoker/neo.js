@@ -1,7 +1,11 @@
 // context.h - Context 门面（引擎入口，整合 GC/Allocator/Console + Scope 树）
 //
-// Context 是引擎对外门面（ADR-011 §2/§3）：整合注入的 GC、Allocator、Console 三个资源
-// （无所有权，由外部销毁），持有 global/root/current 三层 scope（ADR-012 §1）。
+// Context 是引擎对外门面（ADR-011 §2/§3）：持有 GC 所有权（内部创建并销毁），
+// 注入 Allocator 和 Console（无所有权，由外部销毁），持有 global/root/current
+// 三层 scope（ADR-012 §1）。
+//
+// GC 由 Context 持有所有权：Context 用注入的 Allocator 创建 GC（create_gc_engine(alloc)），
+// 析构时由 Context 销毁 GC。Allocator 和 Console 是注入资源，Context 不持有所有权。
 //
 // 三层 scope（ADR-012 + ADR-030 阶段 4）：
 //   global —— 根作用域（parent=nullptr，永久，Context 存活期间一直在）
@@ -9,10 +13,11 @@
 //   current —— 动态栈顶（push_scope 压入，pop_scope 弹出并销毁），初始=root
 //
 // 析构顺序：先销毁 global_scope（~Scope 递归销毁整棵 scope 树：current 栈残留 → root → global），
-// 然后 gc/alloc/console 由外部销毁（Context 不持有这三个资源的所有权）。
+// 再销毁 GC（GC 析构时 collect 回收残留 Value，若有泄漏则 panic），
+// Allocator/Console 由外部销毁（Context 不持有所有权）。
 //
 // 接口-实现-工厂（ADR-010）：Context 抽象接口在 public/core/，ContextImpl 在 private/core/，
-// 工厂 create_context(alloc, gc, console) 返回接口指针。
+// 工厂 create_context(alloc, console) 返回接口指针。
 //
 // 关联 ADR: 010（接口-实现-工厂）、011（Context 门面 + 内存归属）、012（Scope 树）、030 阶段 4
 
@@ -31,12 +36,14 @@ class GCEngine;
 class Scope;
 class Value;
 
-// 引擎门面：整合 GC/Allocator/Console + Scope 树
+// 引擎门面：持有 GC 所有权 + 注入 Allocator/Console + Scope 树
 class Context {
 public:
     virtual ~Context() = default;
 
-    // —— 注入的资源访问（无所有权，由外部销毁）——
+    // —— 资源访问 ——
+    // allocator/console: 注入资源（无所有权，由外部销毁）
+    // gc: Context 持有所有权（内部创建并销毁）
     virtual infra::Allocator* allocator() const = 0;
     virtual GCEngine* gc() const = 0;
     virtual infra::Console* console() const = 0;
@@ -57,10 +64,9 @@ public:
     virtual void pop_scope() = 0;
 };
 
-// 工厂：创建 Context，注入 Allocator/GC/Console（均无所有权，外部销毁）。
-// Context 内部用 Allocator 创建 global/root scope。
+// 工厂：创建 Context，注入 Allocator/Console（无所有权，外部销毁）。
+// Context 内部用 Allocator 创建 GC（持有所有权）+ global/root scope。
 std::unique_ptr<Context> create_context(infra::Allocator* alloc,
-                                        GCEngine* gc,
                                         infra::Console* console);
 
 }  // namespace neo::core
