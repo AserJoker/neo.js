@@ -7,6 +7,7 @@
 #include "neojs.h"
 
 #include <cstdio>
+#include <vector>
 
 int main() {
     std::printf("%s\n", NJS_Version());
