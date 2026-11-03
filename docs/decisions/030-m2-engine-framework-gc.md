@@ -81,22 +81,33 @@ public:
 
 ```cpp
 // src/public/core/type.h
+enum class TypeKind : uint8_t {
+    Undefined, Null, Boolean, Number, String,
+    Exception, Fatal, Interrupt,
+    // Object/Function/Array/... 后续阶段
+};
+
 class Type {
+    TypeKind kind_;
 public:
-    virtual ~Type() = default;
-    // 本阶段 Type 是抽象接口，仅提供类型标识，操作方法（add/eq/...）后续阶段补
-    virtual std::string_view name() const = 0;
-    // 复杂对象阶段：枚举 data 的子 value 供 GC 标记（本阶段扁平类型无子 value）
-    // 注：enumerate_children 在 Data 上，Type 提供类型元信息
+    TypeKind kind() const { return kind_; }
+    virtual const char* name() const = 0;
+
+    // 行为接口——统一返回 Value*（正常/Exception/Fatal 同一通道，ADR-006 + ADR-017 §4）
+    // 本阶段仅实现基础运算，复杂操作（get_property 等）后续阶段补
+    virtual Value* add(Context* ctx, Value* a, Value* b) = 0;
+    virtual Value* sub(Context* ctx, Value* a, Value* b) = 0;
+    virtual Value* to_string(Context* ctx, Value* self) = 0;
+    // ... 其余基础运算
 };
 
 // src/private/core/types.h（具体 Type 实现声明）
-class UndefinedType : public Type { /* name() = "undefined" */ };
-class NullType      : public Type { /* name() = "null" */ };
-class BooleanType   : public Type { /* name() = "boolean" */ };
-class NumberType    : public Type { /* name() = "number" */ };
-class StringType    : public Type { /* name() = "string" */ };
-// 单例：Type 体系是共享 meta，全局唯一实例
+class UndefinedType : public Type { /* name()="undefined", 兜底行为 */ };
+class NullType      : public Type { /* name()="null",    兜底行为 */ };
+class BooleanType   : public Type { /* name()="boolean" */ };
+class NumberType    : public Type { /* name()="number",  按 JS 规则实现 add/sub/... */ };
+class StringType    : public Type { /* name()="string",  按 JS 规则实现 +/concat */ };
+// 单例：Type 体系是共享 meta，全局唯一实例，Value 持 Type* 共享无须 ref 计数
 ```
 
 基础 Data 子类（在 private/core/）：
@@ -106,8 +117,16 @@ class StringType    : public Type { /* name() = "string" */ };
 - `StringData`：持 `std::string`（本阶段字符串值，Unicode 完整支持在后续 Unicode 阶段）
 
 Type 单例获取：`TypeSystem` 持有所有 Type 单例，或全局函数 `get_number_type()` 等。
-本阶段 Type 不实现操作方法（add/eq/to_string 等），仅提供类型标识与 name，为后续阶段
-的二元运算/单目操作预留。
+
+本阶段 Type 行为实现范围（落实 ADR-016 修订）：
+- **分派规则**：`ctx->add(a,b)` → `a->type()->add(ctx, a, b)`，Context 纯代理不持规则表。
+- **跨类型转换**：左 type 按所实现操作的 JS 规则主动调换左右（`ctx->add(b,a)`），
+  不是"处理不了"的被动 fallback。例：`1 + ""` → NumberType 按 JS `+` 规则调换为
+  `ctx->add("", 1)` → StringType 落实 concat。
+- **兜底分支**：无法处理的组合返回 NaN 或 Exception（Type 内部 `ctx->create_exception(...)`）。
+- **操作有效性**：Type 自负责，如 `NumberType::call` 返回 "not a function" Exception。
+- **本阶段不实现 ToPrimitive**：基础类型间转换靠调换 + type 自己的简单转换，
+  ToPrimitive 留到对象阶段。
 
 ### 阶段 4：Context 门面整合
 
