@@ -1,18 +1,18 @@
-// scope.h - 作用域（Value 跟踪容器 + 作用域树，堆对象）
+// Scope.h - 作用域（Value 跟踪容器 + 作用域树，堆对象）
 //
 // Scope 维护其跟踪的 Value 列表（ADR-012 §3）：add 时 scope_ref++，析构时逐个
 // scope_ref--。GC 以 scope_ref != 0 为存活根，scope 析构后 scope_ref 归 0 的 Value
 // 在下次 collect 时被回收。
 //
 // 作用域树（ADR-012 §1 + ADR-030 阶段 2）：Scope 持 parent_ 指针与 children_ 集合。
-// **Scope 是堆对象**——内存经 Allocator + placement new 分配，生命周期由父持有
+// **Scope 是堆对象**——内存经 IAllocator + placement new 分配，生命周期由父持有
 // （父的 children_ 持子 Scope 指针）。析构函数负责递归销毁整个子树：
 //   1. 从父作用域摘除自己（避免父持悬垂指针）
 //   2. while(!children_.empty()) 逐个析构子 Scope（子析构会从本作用域摘除自己）
 //      + allocator_->free(child) 释放子 Scope 对象内存
 //   3. 释放自己的 values（scope_ref_dec）
 //
-// Scope 借用 Allocator*（由 Context 传入，Context 持有 Allocator 所有权）。
+// Scope 借用 IAllocator*（由 Context 传入，Context 持有 IAllocator 所有权）。
 // 析构子 Scope 时需 allocator_->free(child) 释放子对象内存——子析构只调 ~Scope()
 // 不释放内存（placement new 对象需显式 free）。
 //
@@ -24,8 +24,8 @@
 #ifndef NEO_CORE_SCOPE_H
 #define NEO_CORE_SCOPE_H
 
-#include "core/value.h"
-#include "infra/allocator.h"
+#include "core/Value.h"
+#include "infra/IAllocator.h"
 
 #include <string>
 #include <string_view>
@@ -37,7 +37,7 @@ namespace neo::core {
 
 class Scope {
     Scope* parent_ = nullptr;                              // 父作用域（global 的 parent=nullptr）
-    infra::Allocator* allocator_ = nullptr;                // 借用，用于释放子 Scope 内存
+    infra::IAllocator* allocator_ = nullptr;                // 借用，用于释放子 Scope 内存
     std::unordered_set<Scope*> children_;                  // 子作用域（无序、去重，析构时递归释放）
     std::vector<Value*> values_;                           // 跟踪的 value（含匿名临时值）
     std::unordered_map<std::string, Value*> named_values_; // 命名绑定（借用）
@@ -46,7 +46,7 @@ public:
     // 构造：parent 可为 nullptr（global scope），allocator 借用（用于析构子时 free 内存）。
     // global scope 的 parent_=nullptr，allocator 由 Context 传入。
     // 子 scope 的 parent 指向父，allocator 从父继承（或 Context 统一传入）。
-    explicit Scope(Scope* parent, infra::Allocator* alloc)
+    explicit Scope(Scope* parent, infra::IAllocator* alloc)
         : parent_(parent), allocator_(alloc) {}
 
     // 析构：递归销毁整个子树（见文件头注释）。
@@ -61,7 +61,7 @@ public:
 
     // —— 作用域树 ——
     Scope* parent() const { return parent_; }
-    infra::Allocator* allocator() const { return allocator_; }
+    infra::IAllocator* allocator() const { return allocator_; }
 
     // 添加子作用域（本作用域成为 child 的 parent）。
     // child 的 parent 应与本作用域一致（由调用方保证，add_child 不改 child->parent_）。
