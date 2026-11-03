@@ -51,13 +51,13 @@ public:
 
 // —— IType 单例获取（具体实现在 private/core/Types.cpp）——
 // 每种类型一个全局单例，Value 持 IType* 共享。返回的指针生命周期与进程一致。
-IType* get_undefined_type();
-IType* get_null_type();
-IType* get_boolean_type();
-IType* get_number_type();
-IType* get_string_type();
-IType* get_exception_type();
-IType* get_fatal_type();
+IType* getUndefinedType();
+IType* getNullType();
+IType* getBooleanType();
+IType* getNumberType();
+IType* getStringType();
+IType* getExceptionType();
+IType* getFatalType();
 
 }  // namespace neo::core
 
