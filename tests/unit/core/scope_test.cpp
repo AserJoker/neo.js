@@ -286,3 +286,111 @@ TEST(ScopeTreeTest, LookupChainThreeLevels) {
     EXPECT_EQ(bv->scope_ref(), 0);
     gc->collect();
 }
+
+// —— 中间节点主动 on_exit：销毁子树、父不悬垂、兄弟不受影响 ——
+
+TEST(ScopeTreeTest, MidNodeOnExitDestroysSubtreeAndKeepsParentValid) {
+    auto alloc = create_malloc_allocator();
+    auto gc = neo::core::create_gc_engine(alloc.get());
+    // 结构：global → root → mid → leaf1, leaf2
+    auto* g_v = gc->create_value(dummy_type(), gc->alloc_data<NumberData>(1.0));
+    auto* r_v = gc->create_value(dummy_type(), gc->alloc_data<NumberData>(2.0));
+    auto* m_v = gc->create_value(dummy_type(), gc->alloc_data<NumberData>(3.0));
+    auto* l1_v = gc->create_value(dummy_type(), gc->alloc_data<NumberData>(4.0));
+    auto* l2_v = gc->create_value(dummy_type(), gc->alloc_data<NumberData>(5.0));
+
+    Scope global;
+    Scope root(&global);
+    Scope mid(&root);
+    Scope leaf1(&mid);
+    Scope leaf2(&mid);
+    global.add_child(&root);
+    root.add_child(&mid);
+    mid.add_child(&leaf1);
+    mid.add_child(&leaf2);
+
+    global.add(g_v);
+    root.add(r_v);
+    mid.add(m_v);
+    leaf1.add(l1_v);
+    leaf2.add(l2_v);
+
+    EXPECT_EQ(root.child_count(), 1u);
+    EXPECT_EQ(mid.child_count(), 2u);
+
+    // 中间节点 mid 主动 on_exit：
+    //   - mid 从 root 的 children_ 摘除（root 不悬垂）
+    //   - mid 的子树 leaf1/leaf2 递归释放
+    //   - mid 自己的 values 释放
+    mid.on_exit();
+
+    EXPECT_EQ(root.child_count(), 0u);     // mid 已摘除，root 不悬垂
+    EXPECT_EQ(m_v->scope_ref(), 0);        // mid 的 value 已释放
+    EXPECT_EQ(l1_v->scope_ref(), 0);       // 子树 leaf1 已释放
+    EXPECT_EQ(l2_v->scope_ref(), 0);       // 子树 leaf2 已释放
+    EXPECT_EQ(r_v->scope_ref(), 1);        // root 自身不受影响
+    EXPECT_EQ(g_v->scope_ref(), 1);        // global 自身不受影响
+
+    // root 仍可用（无悬垂）
+    EXPECT_EQ(root.parent(), &global);
+
+    // 清理剩余链
+    root.on_exit();
+    global.on_exit();
+    gc->collect();
+}
+
+TEST(ScopeTreeTest, MidNodeOnExitSiblingUnaffected) {
+    auto alloc = create_malloc_allocator();
+    auto gc = neo::core::create_gc_engine(alloc.get());
+    // 结构：root → childA(有子), childB(有子)
+    //       childA on_exit 后 childB 及其子树应完全不受影响
+    auto* a_v = gc->create_value(dummy_type(), gc->alloc_data<NumberData>(1.0));
+    auto* a_child_v = gc->create_value(dummy_type(), gc->alloc_data<NumberData>(2.0));
+    auto* b_v = gc->create_value(dummy_type(), gc->alloc_data<NumberData>(3.0));
+    auto* b_child_v = gc->create_value(dummy_type(), gc->alloc_data<NumberData>(4.0));
+
+    Scope root;
+    Scope childA(&root);
+    Scope childB(&root);
+    Scope aLeaf(&childA);
+    Scope bLeaf(&childB);
+    root.add_child(&childA);
+    root.add_child(&childB);
+    childA.add_child(&aLeaf);
+    childB.add_child(&bLeaf);
+
+    childA.add(a_v);
+    aLeaf.add(a_child_v);
+    childB.add(b_v);
+    bLeaf.add(b_child_v);
+
+    // childA 主动 on_exit：销毁自身 + aLeaf，root 和 childB 链不受影响
+    childA.on_exit();
+
+    EXPECT_EQ(root.child_count(), 1u);        // 只剩 childB
+    EXPECT_EQ(a_v->scope_ref(), 0);
+    EXPECT_EQ(a_child_v->scope_ref(), 0);
+    EXPECT_EQ(b_v->scope_ref(), 1);           // childB 不受影响
+    EXPECT_EQ(b_child_v->scope_ref(), 1);     // bLeaf 不受影响
+
+    // childB 仍可正常 on_exit
+    childB.on_exit();
+    EXPECT_EQ(b_v->scope_ref(), 0);
+    EXPECT_EQ(b_child_v->scope_ref(), 0);
+    EXPECT_EQ(root.child_count(), 0u);
+
+    root.on_exit();
+    gc->collect();
+}
+
+TEST(ScopeTreeTest, ChildrenSetDeduplicates) {
+    // unordered_set 去重：同一 child 多次 add_child 只算一个
+    Scope root;
+    Scope child(&root);
+    root.add_child(&child);
+    root.add_child(&child);  // 重复
+    root.add_child(&child);  // 重复
+    EXPECT_EQ(root.child_count(), 1u);
+    root.on_exit();
+}

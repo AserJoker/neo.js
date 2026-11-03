@@ -21,13 +21,14 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace neo::core {
 
 class Scope {
     Scope* parent_ = nullptr;                              // 父作用域（global 的 parent=nullptr）
-    std::vector<Scope*> children_;                         // 子作用域（on_exit 时递归释放）
+    std::unordered_set<Scope*> children_;                  // 子作用域（无序、去重，on_exit 时递归释放）
     std::vector<Value*> values_;                           // 跟踪的 value（含匿名临时值）
     std::unordered_map<std::string, Value*> named_values_; // 命名绑定（借用）
 
@@ -46,20 +47,14 @@ public:
 
     // 添加子作用域（本作用域成为 child 的 parent）。
     // child 的 parent 应与本作用域一致（由调用方保证，add_child 不改 child->parent_）。
-    void add_child(Scope* child) { children_.push_back(child); }
+    // children_ 是 unordered_set，重复 add 同一 child 无副作用（去重）。
+    void add_child(Scope* child) { children_.insert(child); }
 
     // 从本作用域的 children_ 中移除 child（子作用域 on_exit 时调此方法摘除自己）。
-    // 找不到则无操作（幂等）。
-    void remove_child(Scope* child) {
-        for (auto it = children_.begin(); it != children_.end(); ++it) {
-            if (*it == child) {
-                children_.erase(it);
-                return;
-            }
-        }
-    }
+    // 找不到则无操作（幂等）。unordered_set 的 erase O(1)。
+    void remove_child(Scope* child) { children_.erase(child); }
 
-    const std::vector<Scope*>& children() const { return children_; }
+    const std::unordered_set<Scope*>& children() const { return children_; }
     size_t child_count() const { return children_.size(); }
 
     // —— Value 跟踪 ——
@@ -100,7 +95,8 @@ public:
     //
     // 递归释放 children（ADR-013）：不能用 for 循环遍历 children_——子作用域 on_exit
     // 会调本作用域 remove_child 修改 children_，迭代器失效。用 while(!children_.empty())
-    // 每次取 front() 调其 on_exit（子会从本作用域摘除自己），循环到 children_ 清空。
+    // 每次取 *begin() 调其 on_exit（子会从本作用域摘除自己），循环到 children_ 清空。
+    // children_ 是 unordered_set，*begin() 取任意一个元素（无序，但都能被递归释放）。
     //
     // 调用后所有子作用域及本作用域的 Value scope_ref 归 0，下次 GC collect 时被回收。
     void on_exit() {
@@ -110,7 +106,7 @@ public:
         }
         // 2. 递归释放子作用域：while 循环（子 on_exit 会从本作用域摘除自己，children_ 动态收缩）
         while (!children_.empty()) {
-            children_.front()->on_exit();  // 子 on_exit 内会调本作用域 remove_child
+            (*children_.begin())->on_exit();  // 子 on_exit 内会调本作用域 remove_child
         }
         // 3. 释放自己的 values
         for (Value* v : values_) v->scope_ref_dec();
