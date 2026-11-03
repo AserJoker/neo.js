@@ -2,7 +2,7 @@
 //
 // 关联 ADR: 028（infra）
 
-#include "infra/command.h"
+#include "infra/CommandParser.h"
 
 #include <gtest/gtest.h>
 

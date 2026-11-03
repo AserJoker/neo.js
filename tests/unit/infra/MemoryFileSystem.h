@@ -1,6 +1,6 @@
-// memory_filesystem.h - 测试用内存虚拟文件系统（mock FileSystem）
+// memory_filesystem.h - 测试用内存虚拟文件系统（mock IFileSystem）
 //
-// 仅测试用，不入库生产代码。实现 FileSystem 接口，用内存 stringstream 模拟文件，
+// 仅测试用，不入库生产代码。实现 IFileSystem 接口，用内存 stringstream 模拟文件，
 // 无磁盘 I/O，可注入预置文件内容并断言写入结果。
 //
 // 回写机制：open(Write/Append) 时往 File::Impl 注入 on_close 闭包，
@@ -12,7 +12,7 @@
 #ifndef NEO_TEST_INFRA_MEMORY_FILESYSTEM_H
 #define NEO_TEST_INFRA_MEMORY_FILESYSTEM_H
 
-#include "infra/file.h"
+#include "infra/IFileSystem.h"
 
 #include <string>
 #include <string_view>
@@ -20,7 +20,7 @@
 
 namespace neo::infra::test {
 
-class MemoryFileSystem : public FileSystem {
+class MemoryFileSystem : public IFileSystem {
 public:
     // 预置一个文件内容（测试 setup 用）
     void add_file(std::string_view path, std::string content) {

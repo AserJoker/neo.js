@@ -2,7 +2,7 @@
 //
 // 关联 ADR: 006（异常即值）、028（infra）
 
-#include "infra/result.h"
+#include "infra/Result.h"
 
 #include <gtest/gtest.h>
 

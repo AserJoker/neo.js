@@ -4,9 +4,9 @@
 //
 // 关联 ADR: 010（接口-实现-工厂，测试 mock）、027（FFI 封装/可测试性）、028（infra）
 
-#include "infra/file.h"
+#include "infra/IFileSystem.h"
 
-#include "memory_filesystem.h"  // 测试用 mock
+#include "MemoryFileSystem.h"  // 测试用 mock
 
 #include <gtest/gtest.h>
 
@@ -19,7 +19,7 @@ namespace {
 
 using neo::infra::ErrCode;
 using neo::infra::File;
-using neo::infra::FileSystem;
+using neo::infra::IFileSystem;
 using neo::infra::OpenMode;
 using neo::infra::Result;
 using neo::infra::create_disk_filesystem;

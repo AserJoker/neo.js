@@ -1,12 +1,12 @@
-// allocator_test.cpp - Allocator 单元测试
+// allocator_test.cpp - IAllocator 单元测试
 //
 // 验证 MallocAllocator 真实分配/释放、内存配额拦截、以及接口可注入 mock（可测试性）。
 //
-// 关联 ADR: 008（Allocator）、027（FFI 封装/可测试性）、028（infra §3 配额）
+// 关联 ADR: 008（IAllocator）、027（FFI 封装/可测试性）、028（infra §3 配额）
 
-#include "infra/allocator.h"
+#include "infra/IAllocator.h"
 
-#include "infra/impl_allocator.h"  // private/infra/impl_allocator.h（测试可访问实现类）
+#include "infra/MallocAllocator.h"  // private/infra/MallocAllocator.h（测试可访问实现类）
 
 #include <gtest/gtest.h>
 
@@ -15,13 +15,13 @@
 
 namespace {
 
-using neo::infra::Allocator;
+using neo::infra::IAllocator;
 using neo::infra::MallocAllocator;
 using neo::infra::create_malloc_allocator;
 using neo::infra::create_malloc_allocator_with_limit;
 
 // 记录调用次数的 mock，验证业务代码通过接口使用分配器
-class MockAllocator : public Allocator {
+class MockAllocator : public IAllocator {
 public:
     struct Call {
         enum Kind { Alloc, AllocAligned, Free, FreeAligned } kind;
@@ -121,12 +121,12 @@ TEST(AllocatorInterfaceTest, MockRecordsAligned) {
     EXPECT_EQ(mock.calls[1].kind, MockAllocator::Call::FreeAligned);
 }
 
-// 业务代码使用模式示例：通过 Allocator* 接口注入
+// 业务代码使用模式示例：通过 IAllocator* 接口注入
 class Buffer {
-    Allocator* alloc_;
+    IAllocator* alloc_;
     void*      data_;
 public:
-    Buffer(Allocator* a, size_t n) : alloc_(a), data_(a->alloc(n)) {}
+    Buffer(IAllocator* a, size_t n) : alloc_(a), data_(a->alloc(n)) {}
     ~Buffer() { alloc_->free(data_); }
     void* data() { return data_; }
 };

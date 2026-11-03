@@ -4,7 +4,7 @@
 //
 // 关联 ADR: 027（FFI 封装/可测试性）、028（infra）
 
-#include "infra/console.h"
+#include "infra/Console.h"
 
 #include <gtest/gtest.h>
 
@@ -13,10 +13,10 @@
 namespace {
 
 using neo::infra::Console;
-using neo::infra::OutputSink;
+using neo::infra::IOutputSink;
 
 // 测试用 sink：截获输出到字符串
-class StringSink : public OutputSink {
+class StringSink : public IOutputSink {
 public:
     void write(std::string_view text) override { buffer_ += text; }
     void write_line(std::string_view text) override { buffer_ += text; buffer_ += '\n'; }
