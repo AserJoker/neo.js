@@ -1,4 +1,4 @@
-// result.h - Result<T> 统一错误返回类型
+// Result.h - Result<T> 统一错误返回类型
 //
 // neo.js 不抛 C++ 异常（ADR-007），FFI 边界 catch 标准库异常转 Result::err
 // （ADR-006 异常即值）。Result<T> 是值或错误码的二元 union，无堆分配。

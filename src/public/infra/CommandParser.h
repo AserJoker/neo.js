@@ -1,4 +1,4 @@
-// command.h - 命令行参数解析工具
+// CommandParser.h - 命令行参数解析工具
 //
 // 纯逻辑无 FFI，最易测试（直接传 argv）。支持 --flag / --opt=value / -o value / positional。
 // 解析错误返回 Result<ParsedArgs>::err(ErrCode)，符合 ADR-006/007。
@@ -8,7 +8,7 @@
 #ifndef NEO_INFRA_COMMAND_H
 #define NEO_INFRA_COMMAND_H
 
-#include "infra/result.h"
+#include "infra/Result.h"
 
 #include <string>
 #include <string_view>
