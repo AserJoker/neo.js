@@ -11,6 +11,7 @@
 
 #include "core/IContext.h"
 #include "core/IGCEngine.h"
+#include "core/IType.h"
 #include "core/Scope.h"
 #include "core/Value.h"
 #include "infra/IAllocator.h"
@@ -28,6 +29,7 @@ namespace {
 using neo::core::IContext;
 using neo::core::IGCEngine;
 using neo::core::Scope;
+using neo::core::TypeKind;
 using neo::core::Value;
 using neo::core::createContext;
 using neo::core::test::NumberData;
@@ -197,4 +199,131 @@ TEST(ContextTest, LookupChainAcrossScopes) {
     // global 查不到 root 的 r
     EXPECT_EQ(ctx->global()->lookupChain("r"), nullptr);
     // ctx 析构：销毁 global（递归 root）→ 销毁 GC
+}
+
+// —— Context create* 便捷方法测试 ——
+
+TEST(ContextTest, CreateUndefinedHasCorrectType) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    auto* v = ctx->createUndefined();
+    ASSERT_NE(v, nullptr);
+    EXPECT_EQ(v->type()->kind(), TypeKind::Undefined);
+    EXPECT_EQ(ctx->current()->valueCount(), 1u);  // 已加入 current scope 跟踪
+}
+
+TEST(ContextTest, CreateNullHasCorrectType) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    auto* v = ctx->createNull();
+    ASSERT_NE(v, nullptr);
+    EXPECT_EQ(v->type()->kind(), TypeKind::Null);
+}
+
+TEST(ContextTest, CreateBooleanHasCorrectTypeAndValue) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    auto* t = ctx->createBoolean(true);
+    auto* f = ctx->createBoolean(false);
+    ASSERT_NE(t, nullptr);
+    ASSERT_NE(f, nullptr);
+    EXPECT_EQ(t->type()->kind(), TypeKind::Boolean);
+    EXPECT_EQ(f->type()->kind(), TypeKind::Boolean);
+    // 两个 Value 都加入 current scope
+    EXPECT_EQ(ctx->current()->valueCount(), 2u);
+}
+
+TEST(ContextTest, CreateNumberHasCorrectType) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    auto* v = ctx->createNumber(42.0);
+    ASSERT_NE(v, nullptr);
+    EXPECT_EQ(v->type()->kind(), TypeKind::Number);
+}
+
+TEST(ContextTest, CreateStringHasCorrectType) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    auto* v = ctx->createString("hello");
+    ASSERT_NE(v, nullptr);
+    EXPECT_EQ(v->type()->kind(), TypeKind::String);
+}
+
+TEST(ContextTest, CreateWithNameBindsToCurrentScope) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    auto* v = ctx->createNumber(42.0, "answer");
+    ASSERT_NE(v, nullptr);
+    // bind 后可通过 lookup 查到
+    EXPECT_EQ(ctx->current()->lookup("answer"), v);
+    // 沿 parent 链也能查到（current=root）
+    EXPECT_EQ(ctx->root()->lookupChain("answer"), v);
+}
+
+TEST(ContextTest, CreateWithoutNameDoesNotBind) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    auto* v = ctx->createNumber(42.0);
+    ASSERT_NE(v, nullptr);
+    // 无名字，lookup 返回 nullptr
+    EXPECT_EQ(ctx->current()->lookup("x"), nullptr);
+    // 但 Value 仍被 current scope 跟踪（scopeRef++）
+    EXPECT_EQ(ctx->current()->valueCount(), 1u);
+    EXPECT_EQ(v->scopeRef(), 1);
+}
+
+TEST(ContextTest, CreateInPushedScopeTracksCorrectly) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Scope* s = makeScope(alloc.get(), ctx->current());
+    ctx->current()->addChild(s);
+    ctx->pushScope(s);
+
+    auto* v = ctx->createString("inner", "x");
+    ASSERT_NE(v, nullptr);
+    EXPECT_EQ(ctx->current()->lookup("x"), v);
+    EXPECT_EQ(v->scopeRef(), 1);
+
+    // pop 后 s 销毁，v 的 scopeRef 归 0
+    ctx->popScope();
+    EXPECT_EQ(v->scopeRef(), 0);
+}
+
+TEST(ContextTest, CreatedValuesReachableByGcWhileScoped) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    auto* v = ctx->createNumber(1.0);
+    ASSERT_NE(v, nullptr);
+    EXPECT_EQ(v->scopeRef(), 1);
+
+    // GC collect 后 v 仍存活（scopeRef != 0）
+    ctx->gc()->collect();
+    EXPECT_EQ(ctx->gc()->valueCount(), 1u);
 }
