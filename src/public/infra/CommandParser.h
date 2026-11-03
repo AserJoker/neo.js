@@ -20,8 +20,8 @@ namespace neo::infra {
 // 选项声明
 struct CommandOption {
     std::string name;         // 长选项名（不含 --），如 "verbose"
-    std::string short_name;   // 短选项名（不含 -），如 "v"；空表示无短选项
-    bool        takes_value;  // true: 期望值（--opt=val 或 -o val）；false: 布尔标志
+    std::string shortName;   // 短选项名（不含 -），如 "v"；空表示无短选项
+    bool        takesValue;  // true: 期望值（--opt=val 或 -o val）；false: 布尔标志
     std::string description;  // 描述（用于帮助信息）
 };
 
@@ -42,7 +42,7 @@ private:
 class CommandParser {
 public:
     // 添加选项声明
-    void add_option(CommandOption opt);
+    void addOption(CommandOption opt);
 
     // 解析 argv[0..argc-1]（argv[0] 是程序名，跳过）
     Result<ParsedArgs> parse(int argc, const char* const argv[]) const;
@@ -52,8 +52,8 @@ public:
 private:
     std::vector<CommandOption> options_;
 
-    const CommandOption* find_long(std::string_view name) const;
-    const CommandOption* find_short(std::string_view name) const;
+    const CommandOption* findLong(std::string_view name) const;
+    const CommandOption* findShort(std::string_view name) const;
 };
 
 }  // namespace neo::infra

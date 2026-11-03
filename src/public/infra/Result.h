@@ -5,7 +5,7 @@
 //
 // 用法：
 //   Result<int> r = Result<int>::ok(42);
-//   if (r.is_ok()) { use(r.value()); }
+//   if (r.isOk()) { use(r.value()); }
 //   else { handle(r.err()); }
 //
 // 关联 ADR: 006（异常即值）、007（无异常）、028（infra）
@@ -79,10 +79,10 @@ public:
     }
     ~Result() { destroy(); }
 
-    bool is_ok()  const { return ok_; }
-    bool is_err() const { return !ok_; }
+    bool isOk()  const { return ok_; }
+    bool isErr() const { return !ok_; }
 
-    T&       value()       { return value_; }  // is_err() 时 UB（编程错误）
+    T&       value()       { return value_; }  // isErr() 时 UB（编程错误）
     const T& value() const { return value_; }
     ErrCode  err()   const { return err_; }
 
@@ -107,8 +107,8 @@ public:
     static Result ok()              { return Result(OkTag{}); }
     static Result err(ErrCode e)    { return Result(ErrTag{}, e); }
 
-    bool    is_ok()  const { return ok_; }
-    bool    is_err() const { return !ok_; }
+    bool    isOk()  const { return ok_; }
+    bool    isErr() const { return !ok_; }
     ErrCode err()    const { return err_; }
 };
 

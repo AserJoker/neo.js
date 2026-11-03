@@ -1,7 +1,7 @@
-// Console.h - 输出工具（持 IOutputSink* 注入，print/print_line 用 std::format 泛型）
+// Console.h - 输出工具（持 IOutputSink* 注入，print/printLine 用 std::format 泛型）
 //
 // Console 是具体类，持 IOutputSink*（注入，无所有权）。sink=nullptr 时使用进程级
-// 默认 StdoutSink 单例。具体实现（构造/析构/write/write_line）在 private/infra/Console.cpp。
+// 默认 StdoutSink 单例。具体实现（构造/析构/write/writeLine）在 private/infra/Console.cpp。
 //
 // 关联 ADR: 010（接口-实现-工厂）、027（FFI 封装/可测试性）、028（infra）
 
@@ -25,7 +25,7 @@ public:
 
     // 无格式写
     void write(std::string_view text);
-    void write_line(std::string_view text);
+    void writeLine(std::string_view text);
 
     // std::format 泛型格式化输出
     template <typename... Args>
@@ -34,8 +34,8 @@ public:
     }
 
     template <typename... Args>
-    void print_line(std::format_string<Args...> fmt, Args&&... args) {
-        sink_->write_line(std::format(fmt, std::forward<Args>(args)...));
+    void printLine(std::format_string<Args...> fmt, Args&&... args) {
+        sink_->writeLine(std::format(fmt, std::forward<Args>(args)...));
     }
 
     IOutputSink* sink() const { return sink_; }
