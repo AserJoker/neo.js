@@ -1,16 +1,16 @@
 // scope_test.cpp - Scope 跟踪与 scope_ref 联动单元测试
 //
-// Scope 是堆对象（placement new + Allocator），析构函数递归销毁子树。
+// Scope 是堆对象（placement new + IAllocator），析构函数递归销毁子树。
 // 测试用 make_scope helper 分配，destroy_scope 调析构 + free。
 // 根 scope 析构时递归销毁整棵树（无需手动逐个 destroy）。
 //
 // 关联 ADR: 012（Scope 树 + scope_ref）、029（生命周期）、030 阶段 2
 
-#include "core/gc.h"
-#include "core/scope.h"
-#include "infra/allocator.h"
+#include "core/IGCEngine.h"
+#include "core/Scope.h"
+#include "infra/IAllocator.h"
 
-#include "test_data.h"
+#include "TestData.h"
 
 #include <gtest/gtest.h>
 
@@ -18,16 +18,16 @@
 
 namespace {
 
-using neo::core::GCEngine;
+using neo::core::IGCEngine;
 using neo::core::Scope;
 using neo::core::Value;
 using neo::core::test::NumberData;
 using neo::core::test::dummy_type;
-using neo::infra::Allocator;
+using neo::infra::IAllocator;
 using neo::infra::create_malloc_allocator;
 
 // 在 alloc 上 placement new 构造 Scope（parent 可为 nullptr = global）
-Scope* make_scope(Allocator* alloc, Scope* parent) {
+Scope* make_scope(IAllocator* alloc, Scope* parent) {
     void* p = alloc->alloc(sizeof(Scope));
     return new (p) Scope(parent, alloc);
 }
@@ -35,7 +35,7 @@ Scope* make_scope(Allocator* alloc, Scope* parent) {
 // 调析构 + free（placement new 对象的标准释放）
 // 注意：根 scope 析构会递归销毁所有子，故只需 destroy 根即可。
 // 若单独 destroy 中间节点，析构会从父摘除自己 + 递归销毁子树，调用方不需手动摘除。
-void destroy_scope(Allocator* alloc, Scope* s) {
+void destroy_scope(IAllocator* alloc, Scope* s) {
     s->~Scope();
     alloc->free(s);
 }

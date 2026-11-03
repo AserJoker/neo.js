@@ -1,15 +1,15 @@
 // value_test.cpp - Value/Data 引用计数与 scope_ref 单元测试
 //
 // 验证 Value 构造 data->ref++、析构 data->ref--、scope_ref_inc/dec、marked 位。
-// Value 内存走 Allocator + placement new，测试手动构造/析构验证引用计数行为。
+// Value 内存走 IAllocator + placement new，测试手动构造/析构验证引用计数行为。
 //
 // 关联 ADR: 015（Value meta+data 引用计数分层）、029（生命周期）
 
-#include "core/value.h"
-#include "infra/allocator.h"
-#include "infra/impl_allocator.h"
+#include "core/Value.h"
+#include "infra/IAllocator.h"
+#include "infra/MallocAllocator.h"
 
-#include "test_data.h"
+#include "TestData.h"
 
 #include <gtest/gtest.h>
 
@@ -17,8 +17,8 @@
 
 namespace {
 
-using neo::core::Data;
-using neo::core::Type;
+using neo::core::IData;
+using neo::core::IType;
 using neo::core::Value;
 using neo::core::test::NumberData;
 using neo::core::test::TagData;
@@ -29,7 +29,7 @@ using neo::infra::MallocAllocator;
 struct ScopedValue {
     MallocAllocator* alloc;
     Value* v;
-    ScopedValue(MallocAllocator* a, Type* t, Data* d) : alloc(a) {
+    ScopedValue(MallocAllocator* a, IType* t, IData* d) : alloc(a) {
         v = new (alloc->alloc(sizeof(Value))) Value(t, d);
     }
     ~ScopedValue() {

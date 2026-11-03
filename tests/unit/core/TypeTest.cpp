@@ -10,18 +10,18 @@
 //
 // 关联 ADR: 016（Type 体系修订）、017（类型清单）、015（data 引用计数分层）
 
-#include "core/gc.h"
-#include "core/type.h"
-#include "core/value.h"
-#include "core/types/boolean.h"
-#include "core/types/exception.h"
-#include "core/types/fatal.h"
-#include "core/types/null.h"
-#include "core/types/number.h"
-#include "core/types/string.h"
-#include "core/types/undefined.h"
-#include "infra/allocator.h"
-#include "infra/impl_allocator.h"
+#include "core/IGCEngine.h"
+#include "core/IType.h"
+#include "core/Value.h"
+#include "core/types/Boolean.h"
+#include "core/types/Exception.h"
+#include "core/types/Fatal.h"
+#include "core/types/Null.h"
+#include "core/types/Number.h"
+#include "core/types/String.h"
+#include "core/types/Undefined.h"
+#include "infra/IAllocator.h"
+#include "infra/MallocAllocator.h"
 
 #include <gtest/gtest.h>
 
@@ -31,14 +31,14 @@
 namespace {
 
 using neo::core::BooleanData;
-using neo::core::Data;
+using neo::core::IData;
 using neo::core::ExceptionData;
 using neo::core::FatalData;
-using neo::core::GCVisitor;
+using neo::core::IGCVisitor;
 using neo::core::NullData;
 using neo::core::NumberData;
 using neo::core::StringData;
-using neo::core::Type;
+using neo::core::IType;
 using neo::core::TypeKind;
 using neo::core::UndefinedData;
 using neo::core::Value;
@@ -91,7 +91,7 @@ TEST(TypeTest, SingletonIdentity) {
 // ---- 不同类型单例互不相同 ----
 
 TEST(TypeTest, DistinctTypes) {
-    Type* types[] = {
+    IType* types[] = {
         get_undefined_type(), get_null_type(),    get_boolean_type(),
         get_number_type(),    get_string_type(),  get_exception_type(),
         get_fatal_type(),
@@ -161,7 +161,7 @@ TEST(DataTest, FatalDataHoldsAnotherLiteral) {
 // ---- ExceptionData::enumerate_children 报告 child ----
 // 用计数 visitor 验证 child 被报告给 GC
 
-class CountingVisitor : public GCVisitor {
+class CountingVisitor : public IGCVisitor {
 public:
     int count = 0;
     Value* visited = nullptr;

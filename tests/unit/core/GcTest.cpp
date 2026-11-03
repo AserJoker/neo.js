@@ -3,12 +3,12 @@
 // 验证 create_value/alloc_data/collect：scope_ref!=0 存活、scope_ref==0 回收、
 // data ref 归 0 释放、双重阈值自动触发、OOM 返回 nullptr、collected_count 统计。
 //
-// 关联 ADR: 008（GC→Allocator）、012（scope_ref 根）、029（生命周期）
+// 关联 ADR: 008（GC→IAllocator）、012（scope_ref 根）、029（生命周期）
 
-#include "core/gc.h"
-#include "infra/allocator.h"
+#include "core/IGCEngine.h"
+#include "infra/IAllocator.h"
 
-#include "test_data.h"
+#include "TestData.h"
 
 #include <gtest/gtest.h>
 
@@ -16,13 +16,13 @@
 
 namespace {
 
-using neo::core::Data;
-using neo::core::GCEngine;
+using neo::core::IData;
+using neo::core::IGCEngine;
 using neo::core::Value;
 using neo::core::test::NumberData;
 using neo::core::test::TagData;
 using neo::core::test::dummy_type;
-using neo::infra::Allocator;
+using neo::infra::IAllocator;
 using neo::infra::create_malloc_allocator;
 using neo::infra::create_malloc_allocator_with_limit;
 
@@ -186,7 +186,7 @@ TEST(GCEngineTest, EnumerateValues) {
         gc->create_value(dummy_type(), gc->alloc_data<NumberData>(i));
     }
     // 用计数 visitor 遍历
-    struct Counter : public neo::core::GCVisitor {
+    struct Counter : public neo::core::IGCVisitor {
         int n = 0;
         void visit(Value*) override { ++n; }
     } c;

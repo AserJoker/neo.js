@@ -9,15 +9,15 @@
 //
 // 关联 ADR: 010（接口-实现-工厂）、011（Context 门面）、012（Scope 树）、030 阶段 4
 
-#include "core/context.h"
-#include "core/gc.h"
-#include "core/scope.h"
-#include "core/value.h"
-#include "infra/allocator.h"
-#include "infra/console.h"
-#include "infra/impl_allocator.h"
+#include "core/IContext.h"
+#include "core/IGCEngine.h"
+#include "core/Scope.h"
+#include "core/Value.h"
+#include "infra/IAllocator.h"
+#include "infra/Console.h"
+#include "infra/MallocAllocator.h"
 
-#include "test_data.h"
+#include "TestData.h"
 
 #include <gtest/gtest.h>
 
@@ -25,21 +25,21 @@
 
 namespace {
 
-using neo::core::Context;
-using neo::core::GCEngine;
+using neo::core::IContext;
+using neo::core::IGCEngine;
 using neo::core::Scope;
 using neo::core::Value;
 using neo::core::create_context;
 using neo::core::test::NumberData;
 using neo::core::test::dummy_type;
-using neo::infra::Allocator;
+using neo::infra::IAllocator;
 using neo::infra::Console;
 using neo::infra::MallocAllocator;
-using neo::infra::OutputSink;
+using neo::infra::IOutputSink;
 using neo::infra::create_malloc_allocator;
 
-// 测试用 OutputSink（不输出到 stdout，避免测试噪音）
-class NullSink : public OutputSink {
+// 测试用 IOutputSink（不输出到 stdout，避免测试噪音）
+class NullSink : public IOutputSink {
 public:
     void write(std::string_view) override {}
     void write_line(std::string_view) override {}
@@ -47,7 +47,7 @@ public:
 };
 
 // 在 alloc 上 placement new 构造 Scope
-Scope* make_scope(Allocator* alloc, Scope* parent) {
+Scope* make_scope(IAllocator* alloc, Scope* parent) {
     void* p = alloc->alloc(sizeof(Scope));
     return new (p) Scope(parent, alloc);
 }
@@ -134,7 +134,7 @@ TEST(ContextTest, DestroyReleasesScopeTreeThenGC) {
     // GC 析构时 collect 回收所有 Value（不应 panic）
     {
         auto ctx = create_context(alloc.get(), &console);
-        GCEngine* gc = ctx->gc();
+        IGCEngine* gc = ctx->gc();
 
         auto* v1 = gc->create_value(dummy_type(), gc->alloc_data<NumberData>(1.0));
         auto* v2 = gc->create_value(dummy_type(), gc->alloc_data<NumberData>(2.0));
@@ -182,7 +182,7 @@ TEST(ContextTest, LookupChainAcrossScopes) {
     Console console(&sink);
 
     auto ctx = create_context(alloc.get(), &console);
-    GCEngine* gc = ctx->gc();
+    IGCEngine* gc = ctx->gc();
     auto* gv = gc->create_value(dummy_type(), gc->alloc_data<NumberData>(1.0));
     auto* rv = gc->create_value(dummy_type(), gc->alloc_data<NumberData>(2.0));
 
