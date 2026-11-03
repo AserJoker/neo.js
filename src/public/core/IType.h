@@ -16,6 +16,10 @@
 
 namespace neo::core {
 
+// 前向声明
+class IContext;
+class Value;
+
 // 类型枚举：快速判同类型、分派调试、序列化
 enum class TypeKind : uint8_t {
     Undefined,
@@ -41,12 +45,21 @@ public:
     virtual const char* name() const = 0;
 
     // —— 行为接口（ADR-016 修订 §3）——
-    // 统一签名 Value* op(Context* ctx, Value* a, Value* b) / Value* op(Context* ctx, Value* self, ...)。
+    // 统一签名 Value* op(IContext* ctx, Value* a, Value* b) / Value* op(IContext* ctx, Value* self)。
     // 分派规则：永远左操作数的 type 执行（ctx->add(a,b) → a->type()->add(ctx,a,b)）。
     // 跨类型转换：左 type 按所实现操作的 JS 规则主动调换左右（ctx->add(b,a)）。
     // 兜底：返回 NaN 或 Exception（IType 自负责操作有效性）。
     // 全部返回 Value*（正常/Exception/Fatal 同一通道，调用点 Fatal 检查，ADR-006 + ADR-017 §4）。
-    // 本阶段不声明行为方法（待 Context 引入后补充）。
+    // Exception/Fatal 不参与计算——行为方法入口拦截透传（ADR-006 异常即值 + ADR-017 §4）。
+
+    // 二元运算（左操作数 type 执行）
+    virtual Value* add(IContext* ctx, Value* a, Value* b) = 0;
+    virtual Value* sub(IContext* ctx, Value* a, Value* b) = 0;
+    virtual Value* mul(IContext* ctx, Value* a, Value* b) = 0;
+    virtual Value* div(IContext* ctx, Value* a, Value* b) = 0;
+
+    // 单目
+    virtual Value* toString(IContext* ctx, Value* self) = 0;
 };
 
 // —— IType 单例获取（具体实现在 private/core/Types.cpp）——

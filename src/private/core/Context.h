@@ -50,6 +50,17 @@ public:
     Value* createBoolean(bool b, std::string_view name = {}) override;
     Value* createNumber(double n, std::string_view name = {}) override;
     Value* createString(std::string_view s, std::string_view name = {}) override;
+
+    // 运算代理（纯代理，ADR-016 §4）
+    Value* add(Value* a, Value* b) override;
+    Value* sub(Value* a, Value* b) override;
+    Value* mul(Value* a, Value* b) override;
+    Value* div(Value* a, Value* b) override;
+    Value* toString(Value* self) override;
+
+    // 错误值创建
+    Value* createException(Value* child) override;
+    Value* createFatal(const char* msg) override;
 };
 
 }  // namespace neo::core

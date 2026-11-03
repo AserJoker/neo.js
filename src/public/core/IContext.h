@@ -73,6 +73,21 @@ public:
     virtual Value* createBoolean(bool b, std::string_view name = {}) = 0;
     virtual Value* createNumber(double n, std::string_view name = {}) = 0;
     virtual Value* createString(std::string_view s, std::string_view name = {}) = 0;
+
+    // —— 运算代理（ADR-016 §4/§7）——
+    // 纯代理：ctx->add(a,b) → a->type()->add(this, a, b)。
+    // 外部代码不直接调 type->op()，一律走 Context。
+    virtual Value* add(Value* a, Value* b) = 0;
+    virtual Value* sub(Value* a, Value* b) = 0;
+    virtual Value* mul(Value* a, Value* b) = 0;
+    virtual Value* div(Value* a, Value* b) = 0;
+    virtual Value* toString(Value* self) = 0;
+
+    // —— 错误值创建（ADR-006 异常即值 + ADR-017 §4 Fatal）——
+    // createException: 创建可捕获异常 Value（child 永远不为 nullptr，无错误对象时传 undefined Value）。
+    // createFatal: 创建不可捕获致命错误 Value（字面量消息，静态存储期）。
+    virtual Value* createException(Value* child) = 0;
+    virtual Value* createFatal(const char* msg) = 0;
 };
 
 // 工厂：创建 Context，注入 IAllocator/Console（无所有权，外部销毁）。
