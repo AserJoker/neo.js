@@ -8,19 +8,19 @@
 #ifndef NEO_CORE_PRIVATE_TYPES_NUMBER_H
 #define NEO_CORE_PRIVATE_TYPES_NUMBER_H
 
-#include "core/data.h"
-#include "core/type.h"
+#include "core/IData.h"
+#include "core/IType.h"
 
 namespace neo::core {
 
-class NumberType : public Type {
+class NumberType : public IType {
 public:
-    NumberType() : Type(TypeKind::Number) {}
+    NumberType() : IType(TypeKind::Number) {}
     const char* name() const override { return "number"; }
 };
 
 // 持 double 的扁平 data
-class NumberData : public Data {
+class NumberData : public IData {
 public:
     double value;
     explicit NumberData(double v) : value(v) {}

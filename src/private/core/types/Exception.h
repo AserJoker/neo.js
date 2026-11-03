@@ -12,28 +12,28 @@
 #ifndef NEO_CORE_PRIVATE_TYPES_EXCEPTION_H
 #define NEO_CORE_PRIVATE_TYPES_EXCEPTION_H
 
-#include "core/data.h"
-#include "core/type.h"
+#include "core/IData.h"
+#include "core/IType.h"
 
 namespace neo::core {
 
 // 前向声明
 class Value;
 
-class ExceptionType : public Type {
+class ExceptionType : public IType {
 public:
-    ExceptionType() : Type(TypeKind::Exception) {}
+    ExceptionType() : IType(TypeKind::Exception) {}
     const char* name() const override { return "exception"; }
 };
 
 // 持 Value*（被抛出的错误对象），本阶段唯一复杂类型
-class ExceptionData : public Data {
+class ExceptionData : public IData {
 public:
     Value* child;  // 被抛出的错误对象（GC 管的 Value*，永远不为 nullptr）
     explicit ExceptionData(Value* c) : child(c) {}
 
     // 覆写：向 visitor 报告持有的子 value，让 GC 沿引用链标记
-    void enumerate_children(GCVisitor* visitor) override;
+    void enumerate_children(IGCVisitor* visitor) override;
 };
 
 }  // namespace neo::core

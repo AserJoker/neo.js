@@ -7,19 +7,19 @@
 #ifndef NEO_CORE_PRIVATE_TYPES_UNDEFINED_H
 #define NEO_CORE_PRIVATE_TYPES_UNDEFINED_H
 
-#include "core/data.h"
-#include "core/type.h"
+#include "core/IData.h"
+#include "core/IType.h"
 
 namespace neo::core {
 
-class UndefinedType : public Type {
+class UndefinedType : public IType {
 public:
-    UndefinedType() : Type(TypeKind::Undefined) {}
+    UndefinedType() : IType(TypeKind::Undefined) {}
     const char* name() const override { return "undefined"; }
 };
 
 // 空负载 data
-class UndefinedData : public Data {};
+class UndefinedData : public IData {};
 
 }  // namespace neo::core
 

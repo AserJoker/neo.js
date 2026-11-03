@@ -7,19 +7,19 @@
 #ifndef NEO_CORE_PRIVATE_TYPES_BOOLEAN_H
 #define NEO_CORE_PRIVATE_TYPES_BOOLEAN_H
 
-#include "core/data.h"
-#include "core/type.h"
+#include "core/IData.h"
+#include "core/IType.h"
 
 namespace neo::core {
 
-class BooleanType : public Type {
+class BooleanType : public IType {
 public:
-    BooleanType() : Type(TypeKind::Boolean) {}
+    BooleanType() : IType(TypeKind::Boolean) {}
     const char* name() const override { return "boolean"; }
 };
 
 // 持 bool 的扁平 data
-class BooleanData : public Data {
+class BooleanData : public IData {
 public:
     bool value;
     explicit BooleanData(bool v) : value(v) {}

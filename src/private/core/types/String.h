@@ -9,23 +9,23 @@
 #ifndef NEO_CORE_PRIVATE_TYPES_STRING_H
 #define NEO_CORE_PRIVATE_TYPES_STRING_H
 
-#include "core/data.h"
-#include "core/type.h"
+#include "core/IData.h"
+#include "core/IType.h"
 
 #include <string>
 #include <string_view>
 
 namespace neo::core {
 
-class StringType : public Type {
+class StringType : public IType {
 public:
-    StringType() : Type(TypeKind::String) {}
+    StringType() : IType(TypeKind::String) {}
     const char* name() const override { return "string"; }
 };
 
 // 持 std::string 的 data，不可变（构造后不再修改）
 // 任何"修改"操作（concat/replace/...）返回新 StringData。
-class StringData : public Data {
+class StringData : public IData {
 public:
     std::string value;
     explicit StringData(std::string v) : value(std::move(v)) {}

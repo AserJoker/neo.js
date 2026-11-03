@@ -7,19 +7,19 @@
 #ifndef NEO_CORE_PRIVATE_TYPES_NULL_H
 #define NEO_CORE_PRIVATE_TYPES_NULL_H
 
-#include "core/data.h"
-#include "core/type.h"
+#include "core/IData.h"
+#include "core/IType.h"
 
 namespace neo::core {
 
-class NullType : public Type {
+class NullType : public IType {
 public:
-    NullType() : Type(TypeKind::Null) {}
+    NullType() : IType(TypeKind::Null) {}
     const char* name() const override { return "null"; }
 };
 
 // 空负载 data
-class NullData : public Data {};
+class NullData : public IData {};
 
 }  // namespace neo::core
 

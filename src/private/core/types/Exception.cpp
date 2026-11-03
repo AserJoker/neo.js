@@ -5,14 +5,14 @@
 //
 // 关联 ADR: 015（data 持子 value 而非子 data，无环）、017（Exception 类型）
 
-#include "core/types/exception.h"
+#include "core/types/Exception.h"
 
-#include "core/gc.h"     // GCVisitor 完整定义
-#include "core/value.h"  // Value 完整定义
+#include "core/IGCEngine.h"     // IGCVisitor 完整定义
+#include "core/Value.h"  // Value 完整定义
 
 namespace neo::core {
 
-void ExceptionData::enumerate_children(GCVisitor* visitor) {
+void ExceptionData::enumerate_children(IGCVisitor* visitor) {
     // child 永远不为 nullptr（不携带错误对象时用 undefined Value 表示）。
     visitor->visit(child);
 }
