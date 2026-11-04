@@ -325,5 +325,94 @@ TEST(ContextTest, CreatedValuesReachableByGcWhileScoped) {
 
     // GC collect 后 v 仍存活（scopeRef != 0）
     ctx->gc()->collect();
-    EXPECT_EQ(ctx->gc()->valueCount(), 1u);
+    // 2 个存活：v（scopeRef=1）+ OOM 哨兵（挂 global，ADR-031）
+    EXPECT_EQ(ctx->gc()->valueCount(), 2u);
+}
+
+// ===== OOM 哨兵（ADR-031）=====
+
+TEST(OomTest, OomValueExistsAndIsFatal) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* oom = ctx->oomValue();
+    ASSERT_NE(oom, nullptr);
+    EXPECT_EQ(oom->type()->kind(), TypeKind::Fatal);
+}
+
+TEST(OomTest, OomValueMountedOnGlobal) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* oom = ctx->oomValue();
+    // 挂 global：scopeRef >= 1，且可按名查找
+    EXPECT_GE(oom->scopeRef(), 1);
+    EXPECT_EQ(ctx->global()->lookup("__oom__"), oom);
+}
+
+TEST(OomTest, OomValueSurvivesGcCollect) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    ctx->gc()->collect();
+    // 哨兵挂 global，collect 后仍存活
+    EXPECT_EQ(ctx->oomValue()->scopeRef(), 1);
+    EXPECT_EQ(ctx->global()->lookup("__oom__"), ctx->oomValue());
+}
+
+TEST(OomTest, CreateReturnsOomSentinelWhenExhausted) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    // 把配额压到当前已用量，后续 alloc 全部失败
+    alloc->setLimit(alloc->used());
+
+    Value* v = ctx->createNumber(42.0);
+    EXPECT_EQ(v, ctx->oomValue());           // 返回哨兵单例
+    EXPECT_EQ(v->type()->kind(), TypeKind::Fatal);
+}
+
+TEST(OomTest, CreateStringReturnsOomWhenExhausted) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    alloc->setLimit(alloc->used());
+    EXPECT_EQ(ctx->createString("x"), ctx->oomValue());
+    EXPECT_EQ(ctx->createUndefined(), ctx->oomValue());
+    EXPECT_EQ(ctx->createNull(), ctx->oomValue());
+    EXPECT_EQ(ctx->createBoolean(true), ctx->oomValue());
+}
+
+TEST(OomTest, OomSentinelIsSingleton) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    alloc->setLimit(alloc->used());
+    Value* a = ctx->createNumber(1.0);
+    Value* b = ctx->createString("y");
+    EXPECT_EQ(a, b);                 // 同一哨兵实例
+    EXPECT_EQ(a, ctx->oomValue());
+}
+
+TEST(OomTest, NormalCreateNotOom) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* v = ctx->createNumber(1.0);
+    EXPECT_NE(v, ctx->oomValue());
+    EXPECT_EQ(v->type()->kind(), TypeKind::Number);
 }

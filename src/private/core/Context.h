@@ -29,6 +29,7 @@ class Context : public IContext {
     Scope* global_ = nullptr;              // Context 创建，析构时销毁（递归销毁整棵树）
     Scope* root_ = nullptr;                // Context 创建，作为 global 的子，global 析构时递归销毁
     std::vector<Scope*> scopeStack_;      // current 栈（global 不入栈，root 是栈底）
+    Value* oomValue_ = nullptr;            // OOM 哨兵（预分配 Fatal，挂 global，ADR-031）
 
 public:
     Context(infra::IAllocator* alloc, infra::Console* console);
@@ -62,6 +63,9 @@ public:
     Value* createException(Value* child) override;
     Value* createFatal(const char* msg) override;
 
+    // OOM 哨兵
+    Value* oomValue() const override { return oomValue_; }
+
     // 变量定义与赋值
     Value* define(std::string_view name, Value* source) override;
     Value* store(std::string_view name, Value* source) override;
@@ -73,6 +77,12 @@ public:
     // 作用域标注
     void setFlag(std::string_view name) override;
     bool hasFlag(std::string_view name) const override;
+
+private:
+    // 创建 Value 并跟踪（data 已分配）。失败返回 OOM 哨兵，回收游离 data（ADR-031）。
+    Value* createTracked(IType* type, IData* data, std::string_view name);
+    // clone source 的 data 到 scope 定义新槽位。失败返回 OOM 哨兵（ADR-031）。
+    Value* defineCloned(Scope* scope, std::string_view name, Value* source);
 };
 
 }  // namespace neo::core

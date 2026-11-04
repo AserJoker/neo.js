@@ -67,7 +67,7 @@ public:
     // —— Value 创建便捷接口（ADR-030 阶段 4）——
     // 内部封装 gc->allocData<T> + gc->createValue(type, data)，把 Value 加入 current scope
     // 跟踪（scopeRef++）。可选 name：指定则同时 bind 到 current scope（命名绑定）。
-    // 返回 Value*（正常结果）。OOM 处理留待阶段 5（OOM Fatal 封装）。
+    // 返回 Value*：正常结果，或内存耗尽时返回 OOM 哨兵（ADR-031，非 nullptr）。
     virtual Value* createUndefined(std::string_view name = {}) = 0;
     virtual Value* createNull(std::string_view name = {}) = 0;
     virtual Value* createBoolean(bool b, std::string_view name = {}) = 0;
@@ -88,6 +88,12 @@ public:
     // createFatal: 创建不可捕获致命错误 Value（字面量消息，静态存储期）。
     virtual Value* createException(Value* child) = 0;
     virtual Value* createFatal(const char* msg) = 0;
+
+    // —— OOM 哨兵（ADR-031）——
+    // Context 构造时预分配一个 Fatal 类型 Value，挂载到 global（存活于 Context 生命周期）。
+    // create* 内存耗尽时返回此单例，调用方用指针比较判断是否 OOM（v == ctx->oomValue()）。
+    // OOM 属 Fatal（不可捕获），调用点检查到 Fatal 立即透传（ADR-017 §4）。
+    virtual Value* oomValue() const = 0;
 
     // —— 变量定义与赋值（ADR-030 阶段 5）——
     // define: 在 current scope 定义变量名。clone source 的 data 进新槽位。

@@ -22,6 +22,7 @@
 #include "core/types/String.h"
 #include "core/types/Undefined.h"
 
+#include <cstdlib>
 #include <new>
 
 namespace neo::core {
@@ -39,6 +40,15 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console)
     scopeStack_.push_back(root_);
     // 4. global 默认标注 strict（保持默认严格模式，后续由模块/函数体标注覆盖）
     global_->setFlag("strict");
+    // 5. 预分配 OOM 哨兵（ADR-031）：最早分配，挂 global 使其存活于 Context 生命周期。
+    //    连哨兵都分配不出说明系统不可用，直接 abort。
+    auto* oomData = gc_->allocData<FatalData>("out of memory");
+    oomValue_ = oomData != nullptr ? gc_->createValue(getFatalType(), oomData) : nullptr;
+    if (oomValue_ == nullptr) {
+        std::abort();
+    }
+    global_->add(oomValue_);
+    global_->bind("__oom__", oomValue_);
 }
 
 Context::~Context() {
@@ -82,7 +92,7 @@ void Context::popScope() {
 // —— Value 创建便捷方法 ——
 // 统一模式：allocData<T> → createValue(type, data) → current()->add(v) 跟踪。
 // 可选 name：非空则 current()->bind(name, v) 命名绑定。
-// OOM 处理留待阶段 5（目前 allocData/createValue 返回 nullptr 时直接返回 nullptr）。
+// OOM：allocData/createValue 失败时返回预分配 OOM 哨兵（ADR-031），不返回 nullptr。
 
 namespace {
 
@@ -96,39 +106,38 @@ void trackValue(Scope* scope, Value* v, std::string_view name) {
 
 }  // namespace
 
-Value* Context::createUndefined(std::string_view name) {
-    auto* d = gc_->allocData<UndefinedData>();
-    Value* v = gc_->createValue(getUndefinedType(), d);
+// 创建 Value 并跟踪：data 已由调用方 allocData 分配。
+// 失败时回收游离 data 并返回 OOM 哨兵（ADR-031）。
+Value* Context::createTracked(IType* type, IData* data, std::string_view name) {
+    if (data == nullptr) return oomValue_;
+    Value* v = gc_->createValue(type, data);
+    if (v == nullptr) {
+        // data 已分配但 Value 创建失败，回收游离 data
+        gc_->releaseData(data);
+        return oomValue_;
+    }
     trackValue(current(), v, name);
     return v;
+}
+
+Value* Context::createUndefined(std::string_view name) {
+    return createTracked(getUndefinedType(), gc_->allocData<UndefinedData>(), name);
 }
 
 Value* Context::createNull(std::string_view name) {
-    auto* d = gc_->allocData<NullData>();
-    Value* v = gc_->createValue(getNullType(), d);
-    trackValue(current(), v, name);
-    return v;
+    return createTracked(getNullType(), gc_->allocData<NullData>(), name);
 }
 
 Value* Context::createBoolean(bool b, std::string_view name) {
-    auto* d = gc_->allocData<BooleanData>(b);
-    Value* v = gc_->createValue(getBooleanType(), d);
-    trackValue(current(), v, name);
-    return v;
+    return createTracked(getBooleanType(), gc_->allocData<BooleanData>(b), name);
 }
 
 Value* Context::createNumber(double n, std::string_view name) {
-    auto* d = gc_->allocData<NumberData>(n);
-    Value* v = gc_->createValue(getNumberType(), d);
-    trackValue(current(), v, name);
-    return v;
+    return createTracked(getNumberType(), gc_->allocData<NumberData>(n), name);
 }
 
 Value* Context::createString(std::string_view s, std::string_view name) {
-    auto* d = gc_->allocData<StringData>(s);
-    Value* v = gc_->createValue(getStringType(), d);
-    trackValue(current(), v, name);
-    return v;
+    return createTracked(getStringType(), gc_->allocData<StringData>(s), name);
 }
 
 // —— 运算代理（纯代理，ADR-016 §4）——
@@ -157,17 +166,11 @@ Value* Context::toString(Value* self) {
 // —— 错误值创建（ADR-006 异常即值 + ADR-017 §4 Fatal）——
 
 Value* Context::createException(Value* child) {
-    auto* d = gc_->allocData<ExceptionData>(child);
-    Value* v = gc_->createValue(getExceptionType(), d);
-    trackValue(current(), v, {});
-    return v;
+    return createTracked(getExceptionType(), gc_->allocData<ExceptionData>(child), {});
 }
 
 Value* Context::createFatal(const char* msg) {
-    auto* d = gc_->allocData<FatalData>(msg);
-    Value* v = gc_->createValue(getFatalType(), d);
-    trackValue(current(), v, {});
-    return v;
+    return createTracked(getFatalType(), gc_->allocData<FatalData>(msg), {});
 }
 
 // —— 变量定义与赋值（ADR-030 阶段 5）——
@@ -179,6 +182,19 @@ inline bool isErrorValue(Value* v) {
 }
 }  // namespace
 
+// clone source 的 data 到 scope 定义新槽位。失败返回 OOM 哨兵（ADR-031）。
+Value* Context::defineCloned(Scope* scope, std::string_view name, Value* source) {
+    IData* cloned = source->data()->clone(alloc_);
+    if (cloned == nullptr) return oomValue_;
+    Value* slot = gc_->createValue(source->type(), cloned);
+    if (slot == nullptr) {
+        gc_->releaseData(cloned);
+        return oomValue_;
+    }
+    scope->define(name, slot);
+    return slot;
+}
+
 Value* Context::define(std::string_view name, Value* source) {
     // Exception/Fatal 永远不出现在左右值，提前透传
     if (isErrorValue(source)) return source;
@@ -189,12 +205,7 @@ Value* Context::define(std::string_view name, Value* source) {
         std::string msg = "Identifier '" + std::string(name) + "' has already been declared";
         return createException(createString(msg));
     }
-    // clone source 的 data 进新槽位
-    IData* cloned = source->data()->clone(alloc_);
-    Value* slot = gc_->createValue(source->type(), cloned);
-    // Scope::define 做唯一 add(跟踪) + bind
-    current()->define(name, slot);
-    return slot;
+    return defineCloned(current(), name, source);
 }
 
 Value* Context::store(std::string_view name, Value* source) {
@@ -209,6 +220,7 @@ Value* Context::store(std::string_view name, Value* source) {
         }
         // 找到：clone source 的 data，替换 target 的 type+data
         IData* cloned = source->data()->clone(alloc_);
+        if (cloned == nullptr) return oomValue_;  // clone 失败，target 不变
         IData* old = target->replaceMeta(source->type(), cloned);
         // 旧 data 已从 Value 摘除，collect 遍历不到，需显式回收（ref 归 0 才释放）
         gc_->releaseData(old);
@@ -220,10 +232,7 @@ Value* Context::store(std::string_view name, Value* source) {
         return createException(createString(msg));
     }
     // 非严格模式：在 global 定义全局变量
-    IData* cloned = source->data()->clone(alloc_);
-    Value* slot = gc_->createValue(source->type(), cloned);
-    global()->define(name, slot);
-    return slot;
+    return defineCloned(global(), name, source);
 }
 
 // —— 可赋值性（ADR-030 阶段 5）——
