@@ -10,6 +10,8 @@ add_executable(core_unit_test
     TypeBehaviorTest.cpp
     DefineStoreTest.cpp
     FunctionTest.cpp
+    ObjectTest.cpp
+    PropertyOpsTest.cpp
 )
 target_link_libraries(core_unit_test
     PRIVATE

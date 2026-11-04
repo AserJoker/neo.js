@@ -50,6 +50,13 @@ public:
     // 调用：校验 minArgc 后调 native 指针。
     Value* call(IContext* ctx, Value* self, Value* thisArg,
                 size_t argc, Value* argv[]) override;
+    Value* getProperty(IContext* ctx, Value* self, std::string_view key) override;
+    Value* setProperty(IContext* ctx, Value* self, std::string_view key, Value* value) override;
+    bool hasProperty(IContext* ctx, Value* self, std::string_view key) override;
+    Value* deleteProperty(IContext* ctx, Value* self, std::string_view key) override;
+    Value* defineProperty(IContext* ctx, Value* self, std::string_view key,
+                          Value* value, bool writable, bool enumerable,
+                          bool configurable) override;
 };
 
 class FunctionData : public IData {

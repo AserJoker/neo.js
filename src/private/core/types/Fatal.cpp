@@ -22,4 +22,24 @@ Value* FatalType::call(IContext* /*ctx*/, Value* self, Value* /*thisArg*/,
     return self;
 }
 
+
+// 属性操作：透传 self（异常/哨兵不参与属性操作）。
+Value* FatalType::getProperty(IContext* /*ctx*/, Value* self, std::string_view /*key*/) {
+    return self;
+}
+Value* FatalType::setProperty(IContext* /*ctx*/, Value* self, std::string_view /*key*/, Value* /*value*/) {
+    return self;
+}
+bool FatalType::hasProperty(IContext* /*ctx*/, Value* /*self*/, std::string_view /*key*/) {
+    return false;
+}
+Value* FatalType::deleteProperty(IContext* /*ctx*/, Value* self, std::string_view /*key*/) {
+    return self;
+}
+Value* FatalType::defineProperty(IContext* /*ctx*/, Value* self, std::string_view /*key*/,
+                          Value* /*value*/, bool /*writable*/, bool /*enumerable*/,
+                          bool /*configurable*/) {
+    return self;
+}
+
 }  // namespace neo::core

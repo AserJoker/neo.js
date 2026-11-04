@@ -20,6 +20,7 @@
 #include "core/types/Function.h"
 #include "core/types/Null.h"
 #include "core/types/Number.h"
+#include "core/types/Object.h"
 #include "core/types/String.h"
 #include "core/types/Undefined.h"
 
@@ -183,6 +184,33 @@ void Context::setFunctionName(Value* fn, std::string_view name) {
     // 仅对 Function 类型有效（setname 字节码），其他类型忽略
     if (fn->type()->kind() != TypeKind::Function) return;
     static_cast<FunctionData*>(fn->data())->name = name;
+}
+
+// —— 对象与属性（ADR-018）——
+
+Value* Context::createObject(std::string_view bindName) {
+    return createTracked(getObjectType(), gc_->allocData<ObjectData>(), bindName);
+}
+
+Value* Context::getProperty(Value* obj, std::string_view key) {
+    return obj->type()->getProperty(this, obj, key);
+}
+
+Value* Context::setProperty(Value* obj, std::string_view key, Value* value) {
+    return obj->type()->setProperty(this, obj, key, value);
+}
+
+bool Context::hasProperty(Value* obj, std::string_view key) {
+    return obj->type()->hasProperty(this, obj, key);
+}
+
+Value* Context::deleteProperty(Value* obj, std::string_view key) {
+    return obj->type()->deleteProperty(this, obj, key);
+}
+
+Value* Context::defineProperty(Value* obj, std::string_view key, Value* value,
+                               bool writable, bool enumerable, bool configurable) {
+    return obj->type()->defineProperty(this, obj, key, value, writable, enumerable, configurable);
 }
 
 Value* Context::setClosure(Value* fn, std::string_view name) {

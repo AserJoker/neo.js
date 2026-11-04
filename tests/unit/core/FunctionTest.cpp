@@ -674,5 +674,7 @@ TEST(FunctionTest, FunctionDataCloneSharesScopes) {
     EXPECT_EQ(cd->native, d->native);
     EXPECT_EQ(cd->minArgc, 2u);
     EXPECT_EQ(cd->name, "cloned");
+    // placement new 对象需显式析构（FunctionData 含 std::string name）
+    cd->~FunctionData();
     alloc->free(cloned);
 }

@@ -143,6 +143,20 @@ inline Value* notAFunction(IContext* ctx, Value* self) {
     return ctx->createException(ctx->createString(msg));
 }
 
+// —— 非对象类型属性操作（ADR-018）——
+// 基础类型（非 object/function）的属性读取返回 undefined；写入/定义返回 Exception。
+// 注：字符串长度/索引等特殊属性留待后续阶段。
+inline Value* primitiveGetProperty(IContext* ctx, Value* /*self*/, std::string_view /*key*/) {
+    return ctx->createUndefined();
+}
+
+inline Value* primitiveSetProperty(IContext* ctx, Value* self, std::string_view key,
+                                   Value* /*value*/) {
+    std::string msg = "Cannot set property '" + std::string(key) + "' of " +
+                      std::string(self->type()->name());
+    return ctx->createException(ctx->createString(msg));
+}
+
 }  // namespace neo::core::detail
 
 #endif  // NEO_CORE_PRIVATE_TYPES_TYPE_BEHAVIOR_H

@@ -67,6 +67,16 @@ public:
     void setFunctionName(Value* fn, std::string_view name) override;
     Value* setClosure(Value* fn, std::string_view name) override;
 
+    // 对象与属性
+    Value* createObject(std::string_view bindName = {}) override;
+    Value* getProperty(Value* obj, std::string_view key) override;
+    Value* setProperty(Value* obj, std::string_view key, Value* value) override;
+    bool hasProperty(Value* obj, std::string_view key) override;
+    Value* deleteProperty(Value* obj, std::string_view key) override;
+    Value* defineProperty(Value* obj, std::string_view key, Value* value,
+                          bool writable = true, bool enumerable = true,
+                          bool configurable = true) override;
+
     // 错误值创建
     Value* createException(Value* child) override;
     Value* createFatal(const char* msg) override;

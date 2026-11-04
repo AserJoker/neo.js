@@ -333,6 +333,8 @@ TEST(DefineStoreTest, CloneStringData) {
     // 修改 clone 不影响原对象
     s->value = "modified";
     EXPECT_EQ(src.value, "hello world");
+    // placement new 对象需显式析构（StringData 含 std::string）
+    s->~StringData();
     alloc->free(cloned);
 }
 

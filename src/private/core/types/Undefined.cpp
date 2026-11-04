@@ -51,4 +51,24 @@ Value* UndefinedType::call(IContext* ctx, Value* self, Value* /*thisArg*/,
     return notAFunction(ctx, self);
 }
 
+
+// 属性操作（ADR-018）：基础类型无自有属性，读取返回 undefined，写入报错。
+Value* UndefinedType::getProperty(IContext* ctx, Value* self, std::string_view key) {
+    return primitiveGetProperty(ctx, self, key);
+}
+Value* UndefinedType::setProperty(IContext* ctx, Value* self, std::string_view key, Value* value) {
+    return primitiveSetProperty(ctx, self, key, value);
+}
+bool UndefinedType::hasProperty(IContext* /*ctx*/, Value* /*self*/, std::string_view /*key*/) {
+    return false;
+}
+Value* UndefinedType::deleteProperty(IContext* ctx, Value* /*self*/, std::string_view /*key*/) {
+    return ctx->createBoolean(true);
+}
+Value* UndefinedType::defineProperty(IContext* ctx, Value* self, std::string_view key,
+                          Value* /*value*/, bool /*writable*/, bool /*enumerable*/,
+                          bool /*configurable*/) {
+    return primitiveSetProperty(ctx, self, key, nullptr);
+}
+
 }  // namespace neo::core

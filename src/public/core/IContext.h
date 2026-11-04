@@ -116,6 +116,21 @@ public:
     // 其他类型忽略。对应 VM 的 setname 字节码。
     virtual void setFunctionName(Value* fn, std::string_view name) = 0;
 
+    // —— 对象与属性（ADR-018 对象模型）——
+    // createObject: 创建空对象 Value（properties/order/symbols 空，prototype=nullptr）。
+    // 返回 Value*：正常对象，或 OOM 哨兵（ADR-031）。
+    virtual Value* createObject(std::string_view bindName = {}) = 0;
+
+    // 属性操作代理：obj->type()->op(this, obj, ...) 分派。
+    // 非对象类型：get 返回 undefined，set/define 返回 Exception，has 返回 false。
+    virtual Value* getProperty(Value* obj, std::string_view key) = 0;
+    virtual Value* setProperty(Value* obj, std::string_view key, Value* value) = 0;
+    virtual bool hasProperty(Value* obj, std::string_view key) = 0;
+    virtual Value* deleteProperty(Value* obj, std::string_view key) = 0;
+    virtual Value* defineProperty(Value* obj, std::string_view key, Value* value,
+                                  bool writable = true, bool enumerable = true,
+                                  bool configurable = true) = 0;
+
     // setClosure: 把当前作用域链上名为 name 的变量加入函数的闭包作用域（ADR-013 §2）。
     // 绑定 = 共享同一 Value（不复制），closureScope 加入时 scopeRef++。
     // 查找沿 current 的 parent 链（lookupChain）。

@@ -15,6 +15,7 @@
 #include "infra/IAllocator.h"
 
 #include <new>
+#include <string_view>
 
 namespace neo::core {
 
@@ -31,6 +32,13 @@ public:
     Value* toString(IContext* ctx, Value* self) override;
     Value* call(IContext* ctx, Value* self, Value* thisArg,
                 size_t argc, Value* argv[]) override;
+    Value* getProperty(IContext* ctx, Value* self, std::string_view key) override;
+    Value* setProperty(IContext* ctx, Value* self, std::string_view key, Value* value) override;
+    bool hasProperty(IContext* ctx, Value* self, std::string_view key) override;
+    Value* deleteProperty(IContext* ctx, Value* self, std::string_view key) override;
+    Value* defineProperty(IContext* ctx, Value* self, std::string_view key,
+                          Value* value, bool writable, bool enumerable,
+                          bool configurable) override;
 };
 
 // 持 const char*（字面量字符串，静态存储期，无须释放）

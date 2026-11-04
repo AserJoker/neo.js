@@ -12,6 +12,7 @@
 #include "core/types/Fatal.h"
 #include "core/types/Function.h"
 #include "core/types/Null.h"
+#include "core/types/Object.h"
 #include "core/types/Number.h"
 #include "core/types/String.h"
 #include "core/types/Undefined.h"
@@ -61,6 +62,11 @@ IType* getUninitializedType() {
 
 IType* getFunctionType() {
     static FunctionType inst;
+    return &inst;
+}
+
+IType* getObjectType() {
+    static ObjectType inst;
     return &inst;
 }
 

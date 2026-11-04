@@ -100,4 +100,24 @@ Value* FunctionType::call(IContext* ctx, Value* self, Value* thisArg,
     return res;
 }
 
+// 属性操作：Function 本阶段无属性容器（函数也是对象，待对象字段接入后补齐）。
+Value* FunctionType::getProperty(IContext* ctx, Value* /*self*/, std::string_view /*key*/) {
+    return notImplemented(ctx, "getProperty");
+}
+Value* FunctionType::setProperty(IContext* ctx, Value* /*self*/, std::string_view /*key*/,
+                                 Value* /*value*/) {
+    return notImplemented(ctx, "setProperty");
+}
+bool FunctionType::hasProperty(IContext* /*ctx*/, Value* /*self*/, std::string_view /*key*/) {
+    return false;
+}
+Value* FunctionType::deleteProperty(IContext* ctx, Value* /*self*/, std::string_view /*key*/) {
+    return notImplemented(ctx, "deleteProperty");
+}
+Value* FunctionType::defineProperty(IContext* ctx, Value* /*self*/, std::string_view /*key*/,
+                                    Value* /*value*/, bool /*writable*/, bool /*enumerable*/,
+                                    bool /*configurable*/) {
+    return notImplemented(ctx, "defineProperty");
+}
+
 }  // namespace neo::core

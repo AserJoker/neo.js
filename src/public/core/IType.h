@@ -14,6 +14,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 
 namespace neo::core {
 
@@ -32,7 +33,8 @@ enum class TypeKind : uint8_t {
     Fatal,          // 不可捕获致命错误（ADR-017 §4）
     Uninitialized,  // TDZ 哨兵（let/const 初始化前，VM load 时消费）
     Function,       // 函数对象（ADR-021，本阶段仅 native）
-    // 后续阶段：Object/Array/Symbol/BigInt/Interrupt/...
+    Object,         // 普通对象（ADR-018 对象模型）
+    // 后续阶段：Array/Symbol/BigInt/Interrupt/...
 };
 
 // Value 的 meta：抽象接口，每种 JS 类型一个实现类（单例）。
@@ -71,6 +73,18 @@ public:
     // Exception/Fatal 透传 self（不参与调用）。
     virtual Value* call(IContext* ctx, Value* self, Value* thisArg,
                         size_t argc, Value* argv[]) = 0;
+
+    // —— 属性操作（ADR-018 对象模型）——
+    // 分派规则同运算：ctx->getProperty(obj, key) → obj->type()->getProperty(ctx, obj, key)。
+    // 非对象类型的属性操作：get 返回 undefined，set/has/delete 返回 Exception 或 false。
+    // 本阶段不含原型链查找与 getter/setter 调用（阶段 5）。
+    virtual Value* getProperty(IContext* ctx, Value* self, std::string_view key) = 0;
+    virtual Value* setProperty(IContext* ctx, Value* self, std::string_view key, Value* value) = 0;
+    virtual bool hasProperty(IContext* ctx, Value* self, std::string_view key) = 0;
+    virtual Value* deleteProperty(IContext* ctx, Value* self, std::string_view key) = 0;
+    virtual Value* defineProperty(IContext* ctx, Value* self, std::string_view key,
+                                  Value* value, bool writable, bool enumerable,
+                                  bool configurable) = 0;
 };
 
 // —— IType 单例获取（具体实现在 private/core/Types.cpp）——
@@ -84,6 +98,7 @@ IType* getExceptionType();
 IType* getFatalType();
 IType* getUninitializedType();
 IType* getFunctionType();
+IType* getObjectType();
 
 }  // namespace neo::core
 

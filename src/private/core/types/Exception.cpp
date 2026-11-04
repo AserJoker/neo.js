@@ -45,4 +45,24 @@ Value* ExceptionType::call(IContext* /*ctx*/, Value* self, Value* /*thisArg*/,
     return self;
 }
 
+
+// 属性操作：透传 self（异常/哨兵不参与属性操作）。
+Value* ExceptionType::getProperty(IContext* /*ctx*/, Value* self, std::string_view /*key*/) {
+    return self;
+}
+Value* ExceptionType::setProperty(IContext* /*ctx*/, Value* self, std::string_view /*key*/, Value* /*value*/) {
+    return self;
+}
+bool ExceptionType::hasProperty(IContext* /*ctx*/, Value* /*self*/, std::string_view /*key*/) {
+    return false;
+}
+Value* ExceptionType::deleteProperty(IContext* /*ctx*/, Value* self, std::string_view /*key*/) {
+    return self;
+}
+Value* ExceptionType::defineProperty(IContext* /*ctx*/, Value* self, std::string_view /*key*/,
+                          Value* /*value*/, bool /*writable*/, bool /*enumerable*/,
+                          bool /*configurable*/) {
+    return self;
+}
+
 }  // namespace neo::core
