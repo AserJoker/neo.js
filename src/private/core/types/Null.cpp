@@ -21,34 +21,25 @@ Value* NullType::add(IContext* ctx, Value* a, Value* b) {
     if (b->type()->kind() == TypeKind::String) {
         return ctx->createString(valueToString(a) + valueToString(b));
     }
-    Value* num = ctx->createNumber(0.0);
-    if (needPassthrough(num)) return num;  // NEO_NO_COVERAGE (阶段5 前 createNumber 不返 nullptr/Fatal)
-    return ctx->add(num, b);
+    return ctx->add(ctx->createNumber(0.0), b);
 }
 
 Value* NullType::sub(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    Value* num = ctx->createNumber(0.0);
-    if (needPassthrough(num)) return num;  // NEO_NO_COVERAGE
-    return ctx->sub(num, b);
+    return ctx->sub(ctx->createNumber(0.0), b);
 }
 
 Value* NullType::mul(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    Value* num = ctx->createNumber(0.0);
-    if (needPassthrough(num)) return num;  // NEO_NO_COVERAGE
-    return ctx->mul(num, b);
+    return ctx->mul(ctx->createNumber(0.0), b);
 }
 
 Value* NullType::div(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    Value* num = ctx->createNumber(0.0);
-    if (needPassthrough(num)) return num;  // NEO_NO_COVERAGE
-    return ctx->div(num, b);
+    return ctx->div(ctx->createNumber(0.0), b);
 }
 
-Value* NullType::toString(IContext* ctx, Value* self) {
-    if (Value* p = passthrough(self)) return p;  // NEO_NO_COVERAGE (self 是 Null，非 Fatal/Exception)
+Value* NullType::toString(IContext* ctx, Value* /*self*/) {
     return ctx->createString("null");
 }
 

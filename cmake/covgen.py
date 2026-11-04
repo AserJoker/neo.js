@@ -106,68 +106,13 @@ def main():
             check=True, stdout=f, text=True)
 
     # 5. 解析 summary，门禁检查
-    #    优先用 lcov 重算（支持 // NEO_NO_COVERAGE 行标记排除防御性死代码，
-    #    ADR-027 §3 豁免此类代码）。若无标记则回退到 summary.json。
-    def parse_lcov_with_exclusions(lcov_text):
-        """解析 lcov，跳过源码中带 // NEO_NO_COVERAGE 标记的行。
-        返回 (line_hit, line_total, branch_hit, branch_total)。
-        需读取源文件确定哪些行带标记——按 SF 路径定位源文件。
-        """
-        import re
-        line_hit = line_total = 0
-        br_hit = br_total = 0
-        current_src = None
-        excluded_lines = set()
-        records = lcov_text.split('end_of_record\n')
-        for rec in records:
-            current_src = None
-            excluded_lines = set()
-            for ln in rec.splitlines():
-                if ln.startswith('SF:'):
-                    sf = ln[3:]
-                    # 尝试读取源文件，收集带 NEO_NO_COVERAGE 标记的行号
-                    try:
-                        with open(sf, encoding='utf-8') as srcf:
-                            for idx, srcline in enumerate(srcf, 1):
-                                if 'NEO_NO_COVERAGE' in srcline:
-                                    excluded_lines.add(idx)
-                    except (OSError, UnicodeDecodeError):
-                        pass
-                    continue
-                if ln.startswith('DA:'):
-                    parts = ln[3:].split(',')
-                    lno = int(parts[0])
-                    if lno in excluded_lines:
-                        continue
-                    line_total += 1
-                    if int(parts[1]) > 0:
-                        line_hit += 1
-                elif ln.startswith('BRDA:'):
-                    parts = ln[5:].split(',')
-                    lno = int(parts[0])
-                    if lno in excluded_lines:
-                        continue
-                    br_total += 1
-                    if parts[3] != '0' and parts[3] != '-':
-                        br_hit += 1
-        return line_hit, line_total, br_hit, br_total
-
-    # 始终加载 summary.json（用于函数覆盖，且作为 lcov 解析失败时的回退）
     with open(summary_path, encoding="utf-8") as f:
         summary = json.load(f)
     totals = summary.get("data", [{}])[0].get("totals", {})
 
-    lcov_text = lcov_path.read_text(encoding='utf-8')
-    lh, lt, bh, bt = parse_lcov_with_exclusions(lcov_text)
-    if lt > 0 and bt > 0:
-        line_pct = 100.0 * lh / lt
-        branch_pct = 100.0 * bh / bt
-        # 函数覆盖仍用 summary.json（lcov 的 FN/FNDA 解析较繁，且防御函数少）
-        func_pct = totals.get("functions", {}).get("percent", 0)
-    else:
-        line_pct = totals.get("lines", {}).get("percent", 0)
-        branch_pct = totals.get("branches", {}).get("percent", 0)
-        func_pct = totals.get("functions", {}).get("percent", 0)
+    line_pct = totals.get("lines", {}).get("percent", 0)
+    branch_pct = totals.get("branches", {}).get("percent", 0)
+    func_pct = totals.get("functions", {}).get("percent", 0)
 
     print(f"\n=== Coverage Summary ===")
     print(f"Lines:     {line_pct:.2f}% (threshold {args.threshold_line}%)")

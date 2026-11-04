@@ -25,12 +25,10 @@ namespace {
 class Marker : public IGCVisitor {
 public:
     void visit(Value* v) override {
-        if (v == nullptr || v->marked()) return;  // NEO_NO_COVERAGE (v==nullptr 不可达：仅对 values_ 内 Value 调用)
+        if (v->marked()) return;
         v->setMarked(true);
         // 沿 data 引用链递归标记子 value（本阶段 data 扁平，enumerateChildren 默认空）
-        if (v->data() != nullptr) {  // NEO_NO_COVERAGE (else 不可达：Value 必持有 data)
-            v->data()->enumerateChildren(this);
-        }
+        v->data()->enumerateChildren(this);
     }
 };
 
@@ -45,7 +43,7 @@ MarkSweepGC::~MarkSweepGC() {
     collect();
     // collect 后 values_ 应为空：所有 Value 都应该 scopeRef=0 被回收。
     // 残留 Value 即内存泄漏（调用方未正确销毁 scope，或 GC 标记/回收逻辑错误）。
-    if (!values_.empty()) {  // NEO_NO_COVERAGE (leak 即 abort：正确使用下不会残留)
+    if (!values_.empty()) {
         // 内存泄漏：报告残留 Value 数，便于定位。
         // 不直接 abort()，先 fprintf 让错误信息可见，再 abort。
         std::fprintf(stderr,
@@ -80,7 +78,7 @@ Value* MarkSweepGC::createValue(IType* type, IData* data) {
     maybeCollect();
 
     void* p = alloc_->alloc(sizeof(Value));
-    if (p == nullptr) return nullptr;  // NEO_NO_COVERAGE (OOM)
+    if (p == nullptr) return nullptr;  // OOM
     Value* v = new (p) Value(type, data);  // placement new，Value 构造内 data->ref++
     values_.push_back(v);
     return v;
@@ -114,7 +112,7 @@ void MarkSweepGC::collect() {
             v->~Value();  // 显式析构（placement new 的对象需显式析构）
             alloc_->free(v);
             // data ref 归 0 则释放 data（多 Value 共享 data 时仅最后一次回收才 free）
-            if (d != nullptr && d->ref() == 0) {  // NEO_NO_COVERAGE (d==null 不可达：Value 必持有 data)
+            if (d->ref() == 0) {
                 d->~IData();  // 显式析构（data 含 std::string 等需析构的成员，placement new 须显式析构）
                 alloc_->free(d);
             }

@@ -30,7 +30,7 @@ bool MallocAllocator::tryReserve(size_t bytes) {
         if (cur > SIZE_MAX - bytes) return false;
         size_t next = cur + bytes;
         if (next > limit_.load(std::memory_order_relaxed)) return false;
-        if (used_.compare_exchange_weak(cur, next,  // NEO_NO_COVERAGE (CAS 重试分支：单线程测试不可达)
+        if (used_.compare_exchange_weak(cur, next,
                                         std::memory_order_acq_rel,
                                         std::memory_order_relaxed)) {
             return true;
@@ -40,18 +40,15 @@ bool MallocAllocator::tryReserve(size_t bytes) {
 }
 
 void MallocAllocator::record(void* p, size_t bytes) {
-    if (p == nullptr) return;  // NEO_NO_COVERAGE (alloc 内 malloc 失败已提前 return)
     std::lock_guard<std::mutex> lk(guard_);
     records_[p] = bytes;
 }
 
 size_t MallocAllocator::release(void* p) {
-    if (p == nullptr) return 0;  // NEO_NO_COVERAGE (free/freeAligned 入口已拦截 nullptr)
     size_t bytes = 0;
     {
         std::lock_guard<std::mutex> lk(guard_);
         auto it = records_.find(p);
-        if (it == records_.end()) return 0;  // NEO_NO_COVERAGE (未登记：double free 或外部指针)
         bytes = it->second;
         records_.erase(it);
     }
@@ -65,7 +62,7 @@ void* MallocAllocator::alloc(size_t bytes) {
     size_t real = bytes == 0 ? 1 : bytes;
     if (!tryReserve(real)) return nullptr;  // 超限拦截
     void* p = std::malloc(real);
-    if (p == nullptr) {  // NEO_NO_COVERAGE (malloc 失败回滚：真实 OOM 不可达)
+    if (p == nullptr) {
         // malloc 失败：回滚已预留配额
         used_.fetch_sub(real, std::memory_order_acq_rel);
         return nullptr;
@@ -78,14 +75,14 @@ void* MallocAllocator::allocAligned(size_t bytes, size_t align) {
     // align 必须是 2 的幂（调用方契约，不防御性校验：ADR-007 内部信任契约）
     // aligned_alloc 要求 size 是 align 的整数倍（C11），用倍数对齐
     size_t aligned_bytes = bytes == 0 ? align : ((bytes + align - 1) / align) * align;
-    if (!tryReserve(aligned_bytes)) return nullptr;  // 超限拦截  NEO_NO_COVERAGE (aligned_bytes 回绕到 0 时不触发)
+    if (!tryReserve(aligned_bytes)) return nullptr;  // 超限拦截
     void* p;
 #if defined(_WIN32)
     p = _aligned_malloc(aligned_bytes, align);
 #else
     p = std::aligned_alloc(align, aligned_bytes);
 #endif
-    if (p == nullptr) {  // NEO_NO_COVERAGE (aligned_malloc 失败回滚：真实 OOM 不可达)
+    if (p == nullptr) {
         used_.fetch_sub(aligned_bytes, std::memory_order_acq_rel);
         return nullptr;
     }

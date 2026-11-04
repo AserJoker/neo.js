@@ -24,34 +24,25 @@ Value* UndefinedType::add(IContext* ctx, Value* a, Value* b) {
         return ctx->createString(valueToString(a) + valueToString(b));
     }
     // 否则 ToNumber(undefined)=NaN，调换给 NumberType
-    Value* num = ctx->createNumber(std::nan(""));
-    if (needPassthrough(num)) return num;  // NEO_NO_COVERAGE
-    return ctx->add(num, b);
+    return ctx->add(ctx->createNumber(std::nan("")), b);
 }
 
 Value* UndefinedType::sub(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    Value* num = ctx->createNumber(std::nan(""));
-    if (needPassthrough(num)) return num;  // NEO_NO_COVERAGE
-    return ctx->sub(num, b);
+    return ctx->sub(ctx->createNumber(std::nan("")), b);
 }
 
 Value* UndefinedType::mul(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    Value* num = ctx->createNumber(std::nan(""));
-    if (needPassthrough(num)) return num;  // NEO_NO_COVERAGE
-    return ctx->mul(num, b);
+    return ctx->mul(ctx->createNumber(std::nan("")), b);
 }
 
 Value* UndefinedType::div(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    Value* num = ctx->createNumber(std::nan(""));
-    if (needPassthrough(num)) return num;  // NEO_NO_COVERAGE
-    return ctx->div(num, b);
+    return ctx->div(ctx->createNumber(std::nan("")), b);
 }
 
-Value* UndefinedType::toString(IContext* ctx, Value* self) {
-    if (Value* p = passthrough(self)) return p;  // NEO_NO_COVERAGE
+Value* UndefinedType::toString(IContext* ctx, Value* /*self*/) {
     return ctx->createString("undefined");
 }
 

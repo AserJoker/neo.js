@@ -39,7 +39,6 @@ Value* StringType::div(IContext* ctx, Value* a, Value* b) {
 }
 
 Value* StringType::toString(IContext* ctx, Value* self) {
-    if (Value* p = passthrough(self)) return p;  // NEO_NO_COVERAGE
     const auto& s = static_cast<StringData*>(self->data())->value;
     return ctx->createString(s);
 }

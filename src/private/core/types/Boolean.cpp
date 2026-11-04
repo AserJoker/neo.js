@@ -22,34 +22,25 @@ Value* BooleanType::add(IContext* ctx, Value* a, Value* b) {
         return ctx->createString(valueToString(a) + valueToString(b));
     }
     // 否则 ToNumber(a) 调换给 NumberType
-    Value* num = ctx->createNumber(toNumber(a));
-    if (needPassthrough(num)) return num;  // NEO_NO_COVERAGE
-    return ctx->add(num, b);
+    return ctx->add(ctx->createNumber(toNumber(a)), b);
 }
 
 Value* BooleanType::sub(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    Value* num = ctx->createNumber(toNumber(a));
-    if (needPassthrough(num)) return num;  // NEO_NO_COVERAGE
-    return ctx->sub(num, b);
+    return ctx->sub(ctx->createNumber(toNumber(a)), b);
 }
 
 Value* BooleanType::mul(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    Value* num = ctx->createNumber(toNumber(a));
-    if (needPassthrough(num)) return num;  // NEO_NO_COVERAGE
-    return ctx->mul(num, b);
+    return ctx->mul(ctx->createNumber(toNumber(a)), b);
 }
 
 Value* BooleanType::div(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    Value* num = ctx->createNumber(toNumber(a));
-    if (needPassthrough(num)) return num;  // NEO_NO_COVERAGE
-    return ctx->div(num, b);
+    return ctx->div(ctx->createNumber(toNumber(a)), b);
 }
 
 Value* BooleanType::toString(IContext* ctx, Value* self) {
-    if (Value* p = passthrough(self)) return p;  // NEO_NO_COVERAGE
     bool b = static_cast<BooleanData*>(self->data())->value;
     return ctx->createString(b ? "true" : "false");
 }

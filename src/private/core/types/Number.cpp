@@ -53,7 +53,6 @@ Value* NumberType::div(IContext* ctx, Value* a, Value* b) {
 }
 
 Value* NumberType::toString(IContext* ctx, Value* self) {
-    if (Value* p = passthrough(self)) return p;  // NEO_NO_COVERAGE
     double n = static_cast<NumberData*>(self->data())->value;
     return ctx->createString(numberToString(n));
 }

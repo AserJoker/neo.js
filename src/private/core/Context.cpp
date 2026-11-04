@@ -45,10 +45,13 @@ Context::~Context() {
     //    scopeRef 归 0 的 Value 在 GC 下次 collect 时被回收。
     // 注：scopeStack_ 中的指针在 global_ 析构后全部悬垂，但栈本身只是 vector<Scope*>，
     //     析构 vector 不访问指针内容，安全。成员析构顺序：scopeStack_ → gc_ → ...
-    if (global_ != nullptr) {  // NEO_NO_COVERAGE (else 不可达：构造必成功否则抛异常)
-        global_->~Scope();
-        alloc_->free(global_);
-    }
+    // 1. 销毁 global scope：~Scope 递归销毁整棵树
+    //    （栈中残留的 current scope → root → global 逐层析构 + free）
+    //    scopeRef 归 0 的 Value 在 GC 下次 collect 时被回收。
+    // 注：scopeStack_ 中的指针在 global_ 析构后全部悬垂，但栈本身只是 vector<Scope*>，
+    //     析构 vector 不访问指针内容，安全。成员析构顺序：scopeStack_ → gc_ → ...
+    global_->~Scope();
+    alloc_->free(global_);
     // 2. 销毁 GC（unique_ptr 析构）：GC 析构调 collect 回收残留 Value，
     //    若有 Value 存活（scope 未正确销毁）则 panic 报告泄漏。
     //    gc_ 在 global_ 之后销毁——先释放 scope（scopeRef 归 0），再 collect 回收 Value。
@@ -57,7 +60,6 @@ Context::~Context() {
 }
 
 Scope* Context::current() const {
-    if (scopeStack_.empty()) return nullptr;  // NEO_NO_COVERAGE (root 始终在栈底)
     return scopeStack_.back();
 }
 
@@ -84,7 +86,6 @@ namespace {
 
 // 把 Value 加入 current scope：add 跟踪 + 可选 bind 命名绑定。
 void trackValue(Scope* scope, Value* v, std::string_view name) {
-    if (v == nullptr) return;  // NEO_NO_COVERAGE (阶段5 前 createValue 不返 nullptr)
     scope->add(v);
     if (!name.empty()) {
         scope->bind(name, v);

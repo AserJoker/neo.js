@@ -68,13 +68,13 @@ inline double toNumber(Value* v) {
             const char* start = s.c_str() + i;
             char* end = nullptr;
             double result = std::strtod(start, &end);
-            // 跳过尾部空白
-            while (end != nullptr && *end != '\0' &&
+            // 跳过尾部空白（strtod 保证 end 非 nullptr）
+            while (*end != '\0' &&
                    (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')) {
                 ++end;
             }
             // 未完全消费 → NaN
-            if (end == nullptr || *end != '\0') return std::nan("");  // NEO_NO_COVERAGE (end==nullptr 不可达：strtod 不返 nullptr)
+            if (*end != '\0') return std::nan("");
             // strtod 得 inf：若首字符非数字/符号 → 字面量误判（"infinity"/"INF"）→ NaN；
             // 若是数字/符号开头 → 合法溢出（"1e309"）→ 保留 inf。
             if (std::isinf(result)) {
@@ -84,7 +84,7 @@ inline double toNumber(Value* v) {
             }
             return result;
         }
-        default: return std::nan("");  // Exception/Fatal 不应走到这里（入口拦截）  NEO_NO_COVERAGE
+        default: return std::nan("");  // Exception/Fatal 入口拦截，不可达
     }
 }
 
@@ -101,16 +101,13 @@ inline std::string numberToString(double n) {
         return std::to_string(static_cast<long long>(n));
     }
 
-    // 小数：用 std::to_string 后裁剪 trailing zeros
+    // 小数：用 std::to_string 后裁剪 trailing zeros（std::to_string(double) 必含 '.'）
     std::string s = std::to_string(n);
-    // 裁剪 trailing zeros（但至少保留一位小数）
-    if (s.find('.') != std::string::npos) {  // NEO_NO_COVERAGE (else 不可达：std::to_string(double) 必含 '.')
-        size_t last = s.find_last_not_of('0');
-        if (s[last] == '.') {
-            s.erase(last);       // "3.0" → "3"
-        } else {
-            s.erase(last + 1);   // "3.14000" → "3.14"
-        }
+    size_t last = s.find_last_not_of('0');
+    if (s[last] == '.') {
+        s.erase(last);       // "3.0" → "3"
+    } else {
+        s.erase(last + 1);   // "3.14000" → "3.14"
     }
     return s;
 }
@@ -124,34 +121,18 @@ inline std::string valueToString(Value* v) {
         case TypeKind::Boolean:   return static_cast<BooleanData*>(v->data())->value ? "true" : "false";
         case TypeKind::Number:    return numberToString(static_cast<NumberData*>(v->data())->value);
         case TypeKind::String:    return static_cast<StringData*>(v->data())->value;
-        default: return "";  // Exception/Fatal 不应走到这里  NEO_NO_COVERAGE
+        default: return "";  // Exception/Fatal 入口拦截，不可达
     }
 }
 
 // —— 透传拦截（ADR-017 §4 Fatal 透传 + ADR-006 异常即值）——
-// 行为方法入口检查：a/b 是 Fatal 或 Exception 时 return 该 Value，否则 return nullptr。
-// Fatal 优先（比 Exception 更严重）。
+// 行为方法入口检查右操作数 b：Fatal/Exception 时透传返回（左操作数 a 的分派已走对应 Type，
+// 不会进入此函数）。Fatal 优先于 Exception。
 inline Value* passthrough(Value* a, Value* b) {
-    // a 是 Fatal/Exception 时分派走对应 Type::add，不会进入此函数 → a 的 Fatal/Exception 分支不可达
-    if (a->type()->kind() == TypeKind::Fatal)     return a;  // NEO_NO_COVERAGE
+    (void)a;  // a 非 Fatal/Exception（分派保证），仅查 b
     if (b->type()->kind() == TypeKind::Fatal)     return b;
-    if (a->type()->kind() == TypeKind::Exception) return a;  // NEO_NO_COVERAGE
     if (b->type()->kind() == TypeKind::Exception) return b;
     return nullptr;
-}
-
-// 单目透传（toString 用）
-inline Value* passthrough(Value* self) {
-    TypeKind k = self->type()->kind();
-    if (k == TypeKind::Fatal || k == TypeKind::Exception) return self;  // NEO_NO_COVERAGE (self 是该 Type 自己，非 Fatal/Exception)
-    return nullptr;
-}
-
-// —— 内部调用结果检查（阶段5 前的 nullptr 防御 + Fatal 透传）——
-// 行为方法内部调 ctx->createNumber/createString/add 后检查返回值。
-// nullptr（OOM，阶段5 前）或 Fatal → 透传返回；正常 → 继续。
-inline bool needPassthrough(Value* r) {
-    return r == nullptr || r->type()->kind() == TypeKind::Fatal;  // NEO_NO_COVERAGE (阶段5 前 createNumber 不返 nullptr/Fatal)
 }
 
 }  // namespace neo::core::detail
