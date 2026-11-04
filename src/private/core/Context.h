@@ -17,7 +17,6 @@
 
 #include <memory>
 #include <string_view>
-#include <vector>
 
 namespace neo::core {
 
@@ -27,8 +26,8 @@ class Context : public IContext {
     infra::Console* console_;              // 注入，无所有权
 
     Scope* global_ = nullptr;              // Context 创建，析构时销毁（递归销毁整棵树）
-    Scope* root_ = nullptr;                // Context 创建，作为 global 的子，global 析构时递归销毁
-    std::vector<Scope*> scopeStack_;      // current 栈（global 不入栈，root 是栈底）
+    Scope* root_ = nullptr;                // 当前模块根作用域（可被 setRootScope 切换）
+    Scope* current_ = nullptr;             // 当前作用域（Scope 的 parent 链即调用栈，无需额外栈）
     Value* oomValue_ = nullptr;            // OOM 哨兵（预分配 Fatal，挂 global，ADR-031）
 
 public:
@@ -41,9 +40,11 @@ public:
 
     Scope* global() const override { return global_; }
     Scope* root() const override { return root_; }
-    Scope* current() const override;
+    Scope* current() const override { return current_; }
 
-    void pushScope(Scope* s) override;
+    void setRootScope(Scope* s) override { root_ = s; }
+    void setCurrentScope(Scope* s) override { current_ = s; }
+    Scope* pushNewScope(Scope* parent) override;
     void popScope() override;
 
     Value* createUndefined(std::string_view name = {}) override;
@@ -58,6 +59,13 @@ public:
     Value* mul(Value* a, Value* b) override;
     Value* div(Value* a, Value* b) override;
     Value* toString(Value* self) override;
+
+    // 函数调用
+    Value* call(Value* fn, Value* thisArg, size_t argc, Value* argv[]) override;
+    Value* createNativeFunction(NativeFn fn, size_t minArgc,
+                                std::string_view bindName = {}) override;
+    void setFunctionName(Value* fn, std::string_view name) override;
+    Value* setClosure(Value* fn, std::string_view name) override;
 
     // 错误值创建
     Value* createException(Value* child) override;

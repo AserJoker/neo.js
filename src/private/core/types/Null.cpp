@@ -43,4 +43,9 @@ Value* NullType::toString(IContext* ctx, Value* /*self*/) {
     return ctx->createString("null");
 }
 
+Value* NullType::call(IContext* ctx, Value* self, Value* /*thisArg*/,
+                      size_t /*argc*/, Value* /*argv*/[]) {
+    return notAFunction(ctx, self);
+}
+
 }  // namespace neo::core

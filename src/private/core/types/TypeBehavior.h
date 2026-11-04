@@ -135,6 +135,14 @@ inline Value* passthrough(Value* a, Value* b) {
     return nullptr;
 }
 
+// —— 非函数类型调用报错（ADR-022）——
+// 非函数类型被调用时返回 Exception("<TypeName> is not a function")。
+// 各基础类型的 call 统一走此辅助。self 是被调用的非函数 Value。
+inline Value* notAFunction(IContext* ctx, Value* self) {
+    std::string msg = std::string(self->type()->name()) + " is not a function";
+    return ctx->createException(ctx->createString(msg));
+}
+
 }  // namespace neo::core::detail
 
 #endif  // NEO_CORE_PRIVATE_TYPES_TYPE_BEHAVIOR_H

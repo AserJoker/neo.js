@@ -57,4 +57,9 @@ Value* NumberType::toString(IContext* ctx, Value* self) {
     return ctx->createString(numberToString(n));
 }
 
+Value* NumberType::call(IContext* ctx, Value* self, Value* /*thisArg*/,
+                        size_t /*argc*/, Value* /*argv*/[]) {
+    return notAFunction(ctx, self);
+}
+
 }  // namespace neo::core

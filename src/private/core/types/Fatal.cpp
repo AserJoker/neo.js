@@ -16,4 +16,10 @@ Value* FatalType::mul(IContext* /*ctx*/, Value* a, Value* /*b*/) { return a; }
 Value* FatalType::div(IContext* /*ctx*/, Value* a, Value* /*b*/) { return a; }
 Value* FatalType::toString(IContext* /*ctx*/, Value* self) { return self; }
 
+// call 透传 self（Fatal 不可捕获，ADR-017 §4）。
+Value* FatalType::call(IContext* /*ctx*/, Value* self, Value* /*thisArg*/,
+                       size_t /*argc*/, Value* /*argv*/[]) {
+    return self;
+}
+
 }  // namespace neo::core

@@ -29,6 +29,8 @@ public:
     Value* mul(IContext* ctx, Value* a, Value* b) override;
     Value* div(IContext* ctx, Value* a, Value* b) override;
     Value* toString(IContext* ctx, Value* self) override;
+    Value* call(IContext* ctx, Value* self, Value* thisArg,
+                size_t argc, Value* argv[]) override;
 };
 
 // 持 const char*（字面量字符串，静态存储期，无须释放）

@@ -46,4 +46,9 @@ Value* UndefinedType::toString(IContext* ctx, Value* /*self*/) {
     return ctx->createString("undefined");
 }
 
+Value* UndefinedType::call(IContext* ctx, Value* self, Value* /*thisArg*/,
+                           size_t /*argc*/, Value* /*argv*/[]) {
+    return notAFunction(ctx, self);
+}
+
 }  // namespace neo::core

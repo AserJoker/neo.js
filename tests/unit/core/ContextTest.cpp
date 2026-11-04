@@ -3,7 +3,7 @@
 // 验证：
 // - Context 创建后 global/root/current 三层 scope 就绪
 // - global 是根（parent=nullptr），root 的 parent=global，current 初始=root
-// - pushScope/popScope 管理 current 栈，pop 销毁弹出的 scope
+// - setCurrentScope/popScope 管理 current（parent 链即调用栈），pop 销毁并回到 parent
 // - Context 持有 GC 所有权（内部创建），析构先销毁 global_scope 再销毁 GC
 // - 注入资源 allocator/console 不被销毁（外部持有）
 //
@@ -93,12 +93,12 @@ TEST(ContextTest, PushPopScope) {
 
     Scope* s1 = makeScope(alloc.get(), ctx->current());
     ctx->current()->addChild(s1);
-    ctx->pushScope(s1);
+    ctx->setCurrentScope(s1);
     EXPECT_EQ(ctx->current(), s1);
 
     Scope* s2 = makeScope(alloc.get(), ctx->current());
     ctx->current()->addChild(s2);
-    ctx->pushScope(s2);
+    ctx->setCurrentScope(s2);
     EXPECT_EQ(ctx->current(), s2);
 
     // pop s2：s2 被销毁
@@ -147,7 +147,7 @@ TEST(ContextTest, DestroyReleasesScopeTreeThenGC) {
 
         Scope* s = makeScope(alloc.get(), ctx->current());
         ctx->current()->addChild(s);
-        ctx->pushScope(s);
+        ctx->setCurrentScope(s);
         s->add(v3);
 
         EXPECT_EQ(v1->scopeRef(), 1);
@@ -301,7 +301,7 @@ TEST(ContextTest, CreateInPushedScopeTracksCorrectly) {
 
     Scope* s = makeScope(alloc.get(), ctx->current());
     ctx->current()->addChild(s);
-    ctx->pushScope(s);
+    ctx->setCurrentScope(s);
 
     auto* v = ctx->createString("inner", "x");
     ASSERT_NE(v, nullptr);

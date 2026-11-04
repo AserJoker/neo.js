@@ -10,7 +10,7 @@
 // 三层 scope（ADR-012 + ADR-030 阶段 4）：
 //   global —— 根作用域（parent=nullptr，永久，Context 存活期间一直在）
 //   root   —— 模块根作用域（parent=global，Context 存活期间一直在）
-//   current —— 动态栈顶（pushScope 压入，popScope 弹出并销毁），初始=root
+//   current —— 当前作用域（Scope 的 parent 链即调用栈，popScope 回到 parent），初始=root
 //
 // 析构顺序：先销毁 global_scope（~Scope 递归销毁整棵 scope 树：current 栈残留 → root → global），
 // 再销毁 GC（GC 析构时 collect 回收残留 Value，若有泄漏则 panic），
@@ -27,6 +27,7 @@
 #include "infra/IAllocator.h"
 #include "infra/Console.h"
 
+#include <cstddef>
 #include <memory>
 #include <string_view>
 
@@ -36,6 +37,11 @@ namespace neo::core {
 class IGCEngine;
 class Scope;
 class Value;
+
+// native 函数指针签名（ADR-005 §3）：ctx=语言上下文，self=this 绑定，
+// argc/argv=参数，返回 Value*（正常/异常同一通道）。
+class IContext;
+using NativeFn = Value* (*)(IContext* ctx, Value* self, size_t argc, Value* argv[]);
 
 // 引擎门面：持有 GC 所有权 + 注入 IAllocator/Console + Scope 树
 class IContext {
@@ -54,14 +60,21 @@ public:
     virtual Scope* root() const = 0;
     virtual Scope* current() const = 0;
 
-    // —— current 栈管理 ——
-    // pushScope: 将 s 压入 current 栈，current=s。
-    // s 的 parent 应与当前 current 一致（由调用方保证）。
-    // s 的内存由 IAllocator 分配（placement new），popScope 时销毁。
-    virtual void pushScope(Scope* s) = 0;
+    // —— scope 切换（ADR-022 函数调用）——
+    // Scope 的 parent 链本身就是调用栈，Context 只需保存 root/current 两个指针，无须额外栈。
+    // setRootScope: 切换当前模块根作用域（函数调用时切到被调函数的 rootScope）。
+    // setCurrentScope: 切换当前作用域（函数调用时切到被调函数的临时执行作用域）。
+    // 调用方负责保存/恢复。
+    virtual void setRootScope(Scope* s) = 0;
+    virtual void setCurrentScope(Scope* s) = 0;
 
-    // popScope: 弹出 current 栈顶 scope 并销毁（~Scope 递归释放子树 + allocator->free）。
-    // global/root 不可 pop（栈底保护）。栈中只剩 root 时 pop 无操作（或断言失败）。
+    // —— current scope 管理 ——
+    // pushNewScope: 在 allocator 上新建 parent 的子 scope 并设为 current。
+    // 用于函数调用的临时执行作用域（ADR-022）。返回新建的 scope，OOM 返回 nullptr。
+    virtual Scope* pushNewScope(Scope* parent) = 0;
+
+    // popScope: 销毁 current scope 并回到其 parent（~Scope 递归释放子树 + allocator->free）。
+    // global/root 不可 pop（parent 为 global 或为 nullptr 时无操作）。
     virtual void popScope() = 0;
 
     // —— Value 创建便捷接口（ADR-030 阶段 4）——
@@ -82,6 +95,32 @@ public:
     virtual Value* mul(Value* a, Value* b) = 0;
     virtual Value* div(Value* a, Value* b) = 0;
     virtual Value* toString(Value* self) = 0;
+
+    // —— 函数调用（ADR-022）——
+    // call: 纯代理 ctx->call(fn, thisArg, argc, argv) → fn->type()->call(this, fn, thisArg, argc, argv)。
+    //       非函数类型返回 Exception("xxx is not a function")。
+    virtual Value* call(Value* fn, Value* thisArg, size_t argc, Value* argv[]) = 0;
+
+    // createNativeFunction: 创建 native 函数 Value。
+    //   closureScope = 当前 root scope 的子作用域（新建，Sema 收集的穿透闭包变量绑定于此）；
+    //   rootScope = 当前 root scope（借用）；
+    //   minArgc = 最少参数数量（调用时校验）；
+    //   bindName = 变量绑定名（非空则 bind 到 current scope）。
+    // 函数名不在此设置（缺省 "<anonymous>"），由 setFunctionName 单独设置——
+    // 对应 VM 字节码序列 define → store → setname。
+    // 返回 Value*：正常函数值，或 OOM 哨兵（ADR-031）。
+    virtual Value* createNativeFunction(NativeFn fn, size_t minArgc,
+                                        std::string_view bindName = {}) = 0;
+
+    // setFunctionName: 设置函数名（FunctionData.name）。仅对 Function 类型有效，
+    // 其他类型忽略。对应 VM 的 setname 字节码。
+    virtual void setFunctionName(Value* fn, std::string_view name) = 0;
+
+    // setClosure: 把当前作用域链上名为 name 的变量加入函数的闭包作用域（ADR-013 §2）。
+    // 绑定 = 共享同一 Value（不复制），closureScope 加入时 scopeRef++。
+    // 查找沿 current 的 parent 链（lookupChain）。
+    // 返回 fn（成功），或 Exception（找不到变量 / fn 非函数）。
+    virtual Value* setClosure(Value* fn, std::string_view name) = 0;
 
     // —— 错误值创建（ADR-006 异常即值 + ADR-017 §4 Fatal）——
     // createException: 创建可捕获异常 Value（child 永远不为 nullptr，无错误对象时传 undefined Value）。

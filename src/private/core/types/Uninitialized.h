@@ -31,6 +31,8 @@ public:
     Value* mul(IContext* ctx, Value* a, Value* b) override;
     Value* div(IContext* ctx, Value* a, Value* b) override;
     Value* toString(IContext* ctx, Value* self) override;
+    Value* call(IContext* ctx, Value* self, Value* thisArg,
+                size_t argc, Value* argv[]) override;
 };
 
 // 空负载 data（哨兵仅占类型标识）

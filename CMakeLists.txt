@@ -115,6 +115,7 @@ add_library(neojs STATIC
     src/private/core/types/Exception.cpp
     src/private/core/types/Fatal.cpp
     src/private/core/types/Uninitialized.cpp
+    src/private/core/types/Function.cpp
     src/private/infra/MallocAllocator.cpp
     src/private/infra/Console.cpp
     src/private/infra/CommandParser.cpp

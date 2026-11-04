@@ -39,4 +39,10 @@ Value* ExceptionType::div(IContext* /*ctx*/, Value* a, Value* b) {
 }
 Value* ExceptionType::toString(IContext* /*ctx*/, Value* self) { return self; }
 
+// call 透传 self（异常即值，ADR-006）——被调用的 Exception 不执行，直接透传。
+Value* ExceptionType::call(IContext* /*ctx*/, Value* self, Value* /*thisArg*/,
+                           size_t /*argc*/, Value* /*argv*/[]) {
+    return self;
+}
+
 }  // namespace neo::core

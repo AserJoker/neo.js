@@ -45,4 +45,9 @@ Value* BooleanType::toString(IContext* ctx, Value* self) {
     return ctx->createString(b ? "true" : "false");
 }
 
+Value* BooleanType::call(IContext* ctx, Value* self, Value* /*thisArg*/,
+                         size_t /*argc*/, Value* /*argv*/[]) {
+    return notAFunction(ctx, self);
+}
+
 }  // namespace neo::core

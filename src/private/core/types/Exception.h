@@ -34,6 +34,8 @@ public:
     Value* mul(IContext* ctx, Value* a, Value* b) override;
     Value* div(IContext* ctx, Value* a, Value* b) override;
     Value* toString(IContext* ctx, Value* self) override;
+    Value* call(IContext* ctx, Value* self, Value* thisArg,
+                size_t argc, Value* argv[]) override;
 };
 
 // 持 Value*（被抛出的错误对象），本阶段唯一复杂类型

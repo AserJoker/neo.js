@@ -10,6 +10,7 @@
 #include "core/types/Boolean.h"
 #include "core/types/Exception.h"
 #include "core/types/Fatal.h"
+#include "core/types/Function.h"
 #include "core/types/Null.h"
 #include "core/types/Number.h"
 #include "core/types/String.h"
@@ -55,6 +56,11 @@ IType* getFatalType() {
 
 IType* getUninitializedType() {
     static UninitializedType inst;
+    return &inst;
+}
+
+IType* getFunctionType() {
+    static FunctionType inst;
     return &inst;
 }
 

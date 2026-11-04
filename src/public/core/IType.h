@@ -12,6 +12,7 @@
 #ifndef NEO_CORE_ITYPE_H
 #define NEO_CORE_ITYPE_H
 
+#include <cstddef>
 #include <cstdint>
 
 namespace neo::core {
@@ -30,7 +31,8 @@ enum class TypeKind : uint8_t {
     Exception,      // 可捕获异常（ADR-017 §3）
     Fatal,          // 不可捕获致命错误（ADR-017 §4）
     Uninitialized,  // TDZ 哨兵（let/const 初始化前，VM load 时消费）
-    // 后续阶段：Object/Function/Array/Symbol/BigInt/Interrupt/...
+    Function,       // 函数对象（ADR-021，本阶段仅 native）
+    // 后续阶段：Object/Array/Symbol/BigInt/Interrupt/...
 };
 
 // Value 的 meta：抽象接口，每种 JS 类型一个实现类（单例）。
@@ -61,6 +63,14 @@ public:
 
     // 单目
     virtual Value* toString(IContext* ctx, Value* self) = 0;
+
+    // 调用（ADR-005 native 等价 + ADR-022 统一入口）：
+    // ctx->call(fn, self, argc, argv) → fn->type()->call(ctx, fn, self, argc, argv)。
+    // 非函数类型的 call 返回 Exception("xxx is not a function")。
+    // FunctionType 校验 minArgc 后调 native 指针。
+    // Exception/Fatal 透传 self（不参与调用）。
+    virtual Value* call(IContext* ctx, Value* self, Value* thisArg,
+                        size_t argc, Value* argv[]) = 0;
 };
 
 // —— IType 单例获取（具体实现在 private/core/Types.cpp）——
@@ -73,6 +83,7 @@ IType* getStringType();
 IType* getExceptionType();
 IType* getFatalType();
 IType* getUninitializedType();
+IType* getFunctionType();
 
 }  // namespace neo::core
 

@@ -138,7 +138,7 @@ TEST(DefineStoreTest, DefineOnlyAffectsCurrentScope) {
     // push 子 scope
     Scope* s = makeScope(alloc.get(), ctx->current());
     ctx->current()->addChild(s);
-    ctx->pushScope(s);
+    ctx->setCurrentScope(s);
 
     auto* v2 = ctx->createNumber(2.0);
     ctx->define("y", v2);
@@ -235,7 +235,7 @@ TEST(DefineStoreTest, StoreFindsInParentScope) {
     // push 子 scope
     Scope* s = makeScope(alloc.get(), ctx->current());
     ctx->current()->addChild(s);
-    ctx->pushScope(s);
+    ctx->setCurrentScope(s);
 
     // 子 scope store 修改父 scope 的 x
     ctx->store("x", ctx->createNumber(42.0));
@@ -498,7 +498,7 @@ TEST(ScopeFlagTest, FlagInheritedByChildScope) {
 
     Scope* s = makeScope(alloc.get(), ctx->current());
     ctx->current()->addChild(s);
-    ctx->pushScope(s);
+    ctx->setCurrentScope(s);
 
     // 子 scope 未标注，但沿链继承父的标注
     EXPECT_FALSE(ctx->current()->hasFlag("module_flag"));
@@ -516,7 +516,7 @@ TEST(ScopeFlagTest, ChildFlagDoesNotLeakToParent) {
 
     Scope* s = makeScope(alloc.get(), ctx->current());
     ctx->current()->addChild(s);
-    ctx->pushScope(s);
+    ctx->setCurrentScope(s);
 
     ctx->setFlag("inner_only");
     EXPECT_TRUE(ctx->hasFlag("inner_only"));
@@ -568,7 +568,7 @@ TEST(ScopeFlagTest, NonStrictStoreInChildScopeDefinesGlobal) {
 
     Scope* s = makeScope(alloc.get(), ctx->current());
     ctx->current()->addChild(s);
-    ctx->pushScope(s);
+    ctx->setCurrentScope(s);
 
     // 子 scope 中非严格 store → 定义到 global（不是当前 scope）
     auto* result = ctx->store("g", ctx->createNumber(7.0));
@@ -667,7 +667,7 @@ TEST(MutableTest, ImmutableInParentScopeBlocksChildStore) {
 
     Scope* s = makeScope(alloc.get(), ctx->current());
     ctx->current()->addChild(s);
-    ctx->pushScope(s);
+    ctx->setCurrentScope(s);
 
     // 子 scope store 父 scope 的 const → 仍被拦截
     auto* result = ctx->store("c", ctx->createNumber(2.0));

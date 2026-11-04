@@ -16,4 +16,10 @@ Value* UninitializedType::mul(IContext* /*ctx*/, Value* a, Value* /*b*/) { retur
 Value* UninitializedType::div(IContext* /*ctx*/, Value* a, Value* /*b*/) { return a; }
 Value* UninitializedType::toString(IContext* /*ctx*/, Value* self) { return self; }
 
+// call 透传 self（TDZ 哨兵不参与调用，进入前应已失败）。
+Value* UninitializedType::call(IContext* /*ctx*/, Value* self, Value* /*thisArg*/,
+                               size_t /*argc*/, Value* /*argv*/[]) {
+    return self;
+}
+
 }  // namespace neo::core

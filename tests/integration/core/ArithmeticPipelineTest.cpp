@@ -186,7 +186,7 @@ TEST(ArithmeticPipelineTest, ScopeLifecycleAndGcCollection) {
     Scope* scopes[3];
     for (int i = 0; i < 3; ++i) {
         scopes[i] = makeScope(alloc.get(), ctx->current());
-        ctx->pushScope(scopes[i]);
+        ctx->setCurrentScope(scopes[i]);
         // 每层创建 Value（被 current scope 跟踪）
         auto* v = ctx->createNumber(static_cast<double>(i));
         auto* r = ctx->add(v, ctx->createNumber(1.0));

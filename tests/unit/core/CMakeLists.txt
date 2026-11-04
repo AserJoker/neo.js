@@ -9,6 +9,7 @@ add_executable(core_unit_test
     ContextTest.cpp
     TypeBehaviorTest.cpp
     DefineStoreTest.cpp
+    FunctionTest.cpp
 )
 target_link_libraries(core_unit_test
     PRIVATE

@@ -7,8 +7,8 @@
 // 再销毁 GC（unique_ptr 析构，GC 析构时 collect 回收残留 Value，泄漏则 panic），
 // IAllocator/Console 不销毁（外部持有）。
 //
-// pushScope: s 压入 current 栈，current=s。
-// popScope: 弹出栈顶（非 root），~Scope + alloc->free 销毁。
+// pushNewScope: 新建 parent 的子 scope 并设为 current。
+// popScope: 销毁 current 并回到其 parent（parent 链即调用栈）。
 //
 // 关联 ADR: 010（接口-实现-工厂）、011（Context 门面）、012（Scope 树）、030 阶段 4
 
@@ -17,6 +17,7 @@
 #include "core/types/Boolean.h"
 #include "core/types/Exception.h"
 #include "core/types/Fatal.h"
+#include "core/types/Function.h"
 #include "core/types/Null.h"
 #include "core/types/Number.h"
 #include "core/types/String.h"
@@ -36,8 +37,8 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console)
     void* rp = alloc_->alloc(sizeof(Scope));
     root_ = new (rp) Scope(global_, alloc_);
     global_->addChild(root_);
-    // 3. root 入 current 栈（栈底）
-    scopeStack_.push_back(root_);
+    // 3. current 初始 = root
+    current_ = root_;
     // 4. global 默认标注 strict（保持默认严格模式，后续由模块/函数体标注覆盖）
     global_->setFlag("strict");
     // 5. 预分配 OOM 哨兵（ADR-031）：最早分配，挂 global 使其存活于 Context 生命周期。
@@ -52,16 +53,9 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console)
 }
 
 Context::~Context() {
-    // 1. 销毁 global scope：~Scope 递归销毁整棵树
-    //    （栈中残留的 current scope → root → global 逐层析构 + free）
+    // 1. 销毁 global scope：~Scope 递归销毁整棵树（current → ... → root → global 逐层析构 + free）
     //    scopeRef 归 0 的 Value 在 GC 下次 collect 时被回收。
-    // 注：scopeStack_ 中的指针在 global_ 析构后全部悬垂，但栈本身只是 vector<Scope*>，
-    //     析构 vector 不访问指针内容，安全。成员析构顺序：scopeStack_ → gc_ → ...
-    // 1. 销毁 global scope：~Scope 递归销毁整棵树
-    //    （栈中残留的 current scope → root → global 逐层析构 + free）
-    //    scopeRef 归 0 的 Value 在 GC 下次 collect 时被回收。
-    // 注：scopeStack_ 中的指针在 global_ 析构后全部悬垂，但栈本身只是 vector<Scope*>，
-    //     析构 vector 不访问指针内容，安全。成员析构顺序：scopeStack_ → gc_ → ...
+    //    注：current_/root_ 在 global_ 析构后悬垂，但不再被访问（成员只是裸指针）。
     global_->~Scope();
     alloc_->free(global_);
     // 2. 销毁 GC（unique_ptr 析构）：GC 析构调 collect 回收残留 Value，
@@ -71,19 +65,23 @@ Context::~Context() {
     // 3. alloc_/console_ 由外部销毁，Context 不持有所有权
 }
 
-Scope* Context::current() const {
-    return scopeStack_.back();
-}
-
-void Context::pushScope(Scope* s) {
-    scopeStack_.push_back(s);
+Scope* Context::pushNewScope(Scope* parent) {
+    void* p = alloc_->alloc(sizeof(Scope));
+    if (p == nullptr) return nullptr;
+    Scope* s = new (p) Scope(parent, alloc_);
+    parent->addChild(s);
+    current_ = s;
+    return s;
 }
 
 void Context::popScope() {
-    // 栈底 root 不可 pop（global 不在栈中，root 是最低保护层）
-    if (scopeStack_.size() <= 1) return;  // 只剩 root（或空），不 pop
-    Scope* top = scopeStack_.back();
-    scopeStack_.pop_back();
+    // root/global 不可 pop（模块根与全局是持久作用域）
+    if (current_ == root_ || current_ == global_) return;
+    // current 的 parent 即调用栈下一层
+    Scope* parent = current_->parent();
+    if (parent == nullptr) return;
+    Scope* top = current_;
+    current_ = parent;
     // 销毁弹出的 scope：~Scope 递归释放子树 + 从父摘除自己
     top->~Scope();
     alloc_->free(top);
@@ -161,6 +159,48 @@ Value* Context::div(Value* a, Value* b) {
 
 Value* Context::toString(Value* self) {
     return self->type()->toString(this, self);
+}
+
+// —— 函数调用（ADR-022）——
+
+Value* Context::call(Value* fn, Value* thisArg, size_t argc, Value* argv[]) {
+    return fn->type()->call(this, fn, thisArg, argc, argv);
+}
+
+Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_view bindName) {
+    // closureScope 是当前 root scope 的子作用域（Sema 收集的穿透闭包变量绑定于此）
+    void* p = alloc_->alloc(sizeof(Scope));
+    if (p == nullptr) return oomValue_;
+    Scope* closure = new (p) Scope(root_, alloc_);
+    root_->addChild(closure);
+    // rootScope 借用当前 root（不拥有）；函数名缺省 "<anonymous>"，由 setFunctionName 设置
+    auto* d = gc_->allocData<FunctionData>(closure, root_, fn, minArgc, std::string_view{});
+    // bindName 仅用于变量绑定（与函数名无关）
+    return createTracked(getFunctionType(), d, bindName);
+}
+
+void Context::setFunctionName(Value* fn, std::string_view name) {
+    // 仅对 Function 类型有效（setname 字节码），其他类型忽略
+    if (fn->type()->kind() != TypeKind::Function) return;
+    static_cast<FunctionData*>(fn->data())->name = name;
+}
+
+Value* Context::setClosure(Value* fn, std::string_view name) {
+    // 仅对 Function 类型有效
+    if (fn->type()->kind() != TypeKind::Function) {
+        std::string msg = std::string(fn->type()->name()) + " is not a function";
+        return createException(createString(msg));
+    }
+    // 沿当前作用域链查找闭包变量
+    Value* v = current()->lookupChain(name);
+    if (v == nullptr) {
+        std::string msg = "Closure variable '" + std::string(name) + "' is not defined";
+        return createException(createString(msg));
+    }
+    // 绑定 = 共享同一 Value（ADR-013 §2）：closureScope 加入时 scopeRef++
+    auto* d = static_cast<FunctionData*>(fn->data());
+    d->closureScope->define(name, v);
+    return fn;
 }
 
 // —— 错误值创建（ADR-006 异常即值 + ADR-017 §4 Fatal）——
