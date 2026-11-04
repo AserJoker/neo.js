@@ -22,10 +22,10 @@ M2 采用滚动式里程碑（ADR-026 后约定）：完成一个阶段再定下
 | 阶段 | 范围 | 状态 |
 |------|------|------|
 | 1. Value-Data-GC-Scope 生命周期管线 | 扁平 Value 的创建-跟踪-标记-回收 | ✅ 已完成（ADR-029 落地） |
-| 2. Scope 树与三层作用域 | parent 链、global/root/current、on_exit 递归 | 待实现 |
-| 3. 基础扁平类型 Type/Data | undefined/null/boolean/number/string | 待实现 |
-| 4. Context 门面整合 | 持有 Allocator/GC/Scope 树，创建引擎入口 | 待实现 |
-| 5. OOM Fatal 封装 | createValue nullptr → Context 封装 OOM Fatal，透传契约 | 待实现 |
+| 2. Scope 树与三层作用域 | parent 链、global/root/current、on_exit 递归 | ✅ 已完成 |
+| 3. 基础扁平类型 Type/Data | undefined/null/boolean/number/string（+exception/fatal/uninitialized） | ✅ 已完成 |
+| 4. Context 门面整合 | 持有 Allocator/GC/Scope 树，创建引擎入口 + define/store/flags/mutable | ✅ 已完成 |
+| 5. OOM Fatal 封装 | createValue nullptr → Context 封装 OOM Fatal，透传契约 | 待实现（见 ADR-031） |
 
 ### 阶段 1：Value-Data-GC-Scope 生命周期管线（已完成）
 
