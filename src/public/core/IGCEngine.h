@@ -62,6 +62,11 @@ public:
     // 显式触发 GC（测试/手动控制用）
     virtual void collect() = 0;
 
+    // 回收已从 Value 摘除的 data（赋值 replaceMeta 后调用）：
+    // ref 归 0 则析构 + free，否则无操作（仍被其他 Value 共享）。
+    // GC 的 collect 只遍历存活 Value 当前持有的 data，摘除后的游离 data 需显式回收。
+    virtual void releaseData(IData* d) = 0;
+
     // —— 装饰性查询接口 ——
     virtual size_t valueCount() const = 0;       // 当前存活的 Value 总数
     virtual size_t collectedCount() const = 0;   // 累计已回收的 Value 数（统计用）

@@ -28,6 +28,7 @@ public:
 
     Value* createValue(IType* type, IData* data) override;
     void   collect() override;
+    void   releaseData(IData* d) override;
 
     size_t valueCount() const override;
     size_t collectedCount() const override;

@@ -23,4 +23,19 @@ Value::~Value() {
     }
 }
 
+IData* Value::replaceMeta(IType* type, IData* data) {
+    // 旧 data ref--（与析构同理，不释放），返回给调用方决定是否回收
+    IData* old = data_;
+    if (old != nullptr) {
+        --old->ref_;
+    }
+    type_ = type;
+    data_ = data;
+    // 新 data ref++（与构造同理）
+    if (data_ != nullptr) {
+        ++data_->ref_;
+    }
+    return old;
+}
+
 }  // namespace neo::core

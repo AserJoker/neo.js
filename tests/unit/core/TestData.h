@@ -11,6 +11,9 @@
 
 #include "core/IData.h"
 #include "core/Value.h"  // Type 前向声明
+#include "infra/IAllocator.h"
+
+#include <new>
 
 namespace neo::core::test {
 
@@ -19,6 +22,10 @@ class NumberData : public IData {
 public:
     double value;
     explicit NumberData(double v) : value(v) {}
+    IData* clone(neo::infra::IAllocator* alloc) const override {
+        void* p = alloc->alloc(sizeof(NumberData));
+        return new (p) NumberData(value);
+    }
 };
 
 // 持 int 标签的扁平 data（测试中区分不同实例）
@@ -26,6 +33,10 @@ class TagData : public IData {
 public:
     int tag;
     explicit TagData(int t) : tag(t) {}
+    IData* clone(neo::infra::IAllocator* alloc) const override {
+        void* p = alloc->alloc(sizeof(TagData));
+        return new (p) TagData(tag);
+    }
 };
 
 // 测试用 Type 占位（本阶段 Type 体系未实现，用空类占位）

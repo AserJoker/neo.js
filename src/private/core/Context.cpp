@@ -37,6 +37,8 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console)
     global_->addChild(root_);
     // 3. root 入 current 栈（栈底）
     scopeStack_.push_back(root_);
+    // 4. global 默认标注 strict（保持默认严格模式，后续由模块/函数体标注覆盖）
+    global_->setFlag("strict");
 }
 
 Context::~Context() {
@@ -166,6 +168,82 @@ Value* Context::createFatal(const char* msg) {
     Value* v = gc_->createValue(getFatalType(), d);
     trackValue(current(), v, {});
     return v;
+}
+
+// —— 变量定义与赋值（ADR-030 阶段 5）——
+
+namespace {
+inline bool isErrorValue(Value* v) {
+    return v->type()->kind() == TypeKind::Exception ||
+           v->type()->kind() == TypeKind::Fatal;
+}
+}  // namespace
+
+Value* Context::define(std::string_view name, Value* source) {
+    // Exception/Fatal 永远不出现在左右值，提前透传
+    if (isErrorValue(source)) return source;
+    // 同一作用域重复定义无条件报错：var/let/const 的差异在 Sema 阶段已抹平，
+    // 到达 Engine 时定义语义统一（同 scope 不可重复声明，与 strict 无关）。
+    if (current()->lookup(name) != nullptr) {
+        // 临时用 Exception 携带 string 代替错误报告（待 Error 对象体系就绪后替换）
+        std::string msg = "Identifier '" + std::string(name) + "' has already been declared";
+        return createException(createString(msg));
+    }
+    // clone source 的 data 进新槽位
+    IData* cloned = source->data()->clone(alloc_);
+    Value* slot = gc_->createValue(source->type(), cloned);
+    // Scope::define 做唯一 add(跟踪) + bind
+    current()->define(name, slot);
+    return slot;
+}
+
+Value* Context::store(std::string_view name, Value* source) {
+    // Exception/Fatal 永远不出现在左右值，提前透传
+    if (isErrorValue(source)) return source;
+    Value* target = current()->lookupChain(name);
+    if (target != nullptr) {
+        // 不可赋值（const 声明）：拦截并报错
+        if (!target->isMutable()) {
+            std::string msg = "Assignment to constant variable '" + std::string(name) + "'";
+            return createException(createString(msg));
+        }
+        // 找到：clone source 的 data，替换 target 的 type+data
+        IData* cloned = source->data()->clone(alloc_);
+        IData* old = target->replaceMeta(source->type(), cloned);
+        // 旧 data 已从 Value 摘除，collect 遍历不到，需显式回收（ref 归 0 才释放）
+        gc_->releaseData(old);
+        return target;
+    }
+    // 未找到：按当前作用域链的 strict 标注分派
+    if (hasFlag("strict")) {
+        std::string msg = "Assignment to undeclared identifier '" + std::string(name) + "'";
+        return createException(createString(msg));
+    }
+    // 非严格模式：在 global 定义全局变量
+    IData* cloned = source->data()->clone(alloc_);
+    Value* slot = gc_->createValue(source->type(), cloned);
+    global()->define(name, slot);
+    return slot;
+}
+
+// —— 可赋值性（ADR-030 阶段 5）——
+
+void Context::setMutable(Value* v, bool m) {
+    v->setMutable(m);
+}
+
+bool Context::isMutable(Value* v) const {
+    return v->isMutable();
+}
+
+// —— 作用域标注（ADR-030 阶段 5）——
+
+void Context::setFlag(std::string_view name) {
+    current()->setFlag(name);
+}
+
+bool Context::hasFlag(std::string_view name) const {
+    return current()->lookupFlagChain(name);
 }
 
 }  // namespace neo::core

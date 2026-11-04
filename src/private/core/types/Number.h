@@ -10,6 +10,9 @@
 
 #include "core/IData.h"
 #include "core/IType.h"
+#include "infra/IAllocator.h"
+
+#include <new>
 
 namespace neo::core {
 
@@ -31,6 +34,10 @@ class NumberData : public IData {
 public:
     double value;
     explicit NumberData(double v) : value(v) {}
+    IData* clone(neo::infra::IAllocator* alloc) const override {
+        void* p = alloc->alloc(sizeof(NumberData));
+        return new (p) NumberData(value);
+    }
 };
 
 }  // namespace neo::core

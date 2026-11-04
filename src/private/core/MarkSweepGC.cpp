@@ -122,6 +122,15 @@ void MarkSweepGC::collect() {
     values_.resize(write);
 }
 
+void MarkSweepGC::releaseData(IData* d) {
+    // 赋值 replaceMeta 后旧 data 被摘除，collect 遍历不到它。
+    // ref 归 0 则析构 + free；仍被其他 Value 共享则无操作。
+    if (d->ref() == 0) {
+        d->~IData();
+        alloc_->free(d);
+    }
+}
+
 size_t MarkSweepGC::valueCount() const {
     return values_.size();
 }

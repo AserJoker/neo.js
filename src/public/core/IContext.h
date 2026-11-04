@@ -88,6 +88,30 @@ public:
     // createFatal: 创建不可捕获致命错误 Value（字面量消息，静态存储期）。
     virtual Value* createException(Value* child) = 0;
     virtual Value* createFatal(const char* msg) = 0;
+
+    // —— 变量定义与赋值（ADR-030 阶段 5）——
+    // define: 在 current scope 定义变量名。clone source 的 data 进新槽位。
+    //         同 scope 重复定义无条件返回 Exception（var/let/const 差异已在 Sema 抹平）。
+    //         source 若是 Exception/Fatal 直接透传。
+    // store: 从 current scope 开始向上查找 name，找到则 clone source 的 data 替换其 type+data。
+    //        找不到时：按 "strict" 标注分派——严格返回 Exception，非严格在 global 定义。
+    //        source 若是 Exception/Fatal 直接透传。
+    virtual Value* define(std::string_view name, Value* source) = 0;
+    virtual Value* store(std::string_view name, Value* source) = 0;
+
+    // —— 可赋值性（ADR-030 阶段 5）——
+    // setMutable: 设置 Value 是否可赋值（const 声明由 Sema 置 false）。
+    // isMutable: 查询 Value 是否可赋值。
+    // store 对 mutable=false 的 target 返回 Exception（禁止赋值）。
+    virtual void setMutable(Value* v, bool m) = 0;
+    virtual bool isMutable(Value* v) const = 0;
+
+    // —— 作用域标注（ADR-030 阶段 5）——
+    // setFlag: 在当前 scope 标注 name（如 "strict"）。语法上仅模块作用域/函数体可标注。
+    // hasFlag: 从当前 scope 沿 parent 链向上查找标注（内层继承外层）。
+    // 当前 global scope 默认标注 "strict"（保持默认严格模式）。
+    virtual void setFlag(std::string_view name) = 0;
+    virtual bool hasFlag(std::string_view name) const = 0;
 };
 
 // 工厂：创建 Context，注入 IAllocator/Console（无所有权，外部销毁）。

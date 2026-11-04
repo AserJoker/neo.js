@@ -12,6 +12,9 @@
 
 #include "core/IData.h"
 #include "core/IType.h"
+#include "infra/IAllocator.h"
+
+#include <new>
 
 namespace neo::core {
 
@@ -33,6 +36,10 @@ class FatalData : public IData {
 public:
     const char* message;  // 字面量字符串，静态存储期，无须释放
     explicit FatalData(const char* msg) : message(msg) {}
+    IData* clone(neo::infra::IAllocator* alloc) const override {
+        void* p = alloc->alloc(sizeof(FatalData));
+        return new (p) FatalData(message);  // 复制指针，字面量静态存储期
+    }
 };
 
 }  // namespace neo::core

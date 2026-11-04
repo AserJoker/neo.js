@@ -23,6 +23,7 @@ class Value {
     IType* type_;          // meta：类型描述（单例/共享，GC 不管理 Type 生命周期）
     IData* data_;          // data：数据负载（引用计数管理，ADR-015）
     int   scopeRef_ = 0; // 被几个 scope 跟踪（GC 根判定，ADR-012）
+    bool  mutable_ = true;  // 是否可赋值（const 声明由 Sema 置 false，store 时拦截）
 
 public:
     // 构造时 data->ref++（建立"Value 指向 data"引用关系）
@@ -39,9 +40,20 @@ public:
     IData* data() const { return data_; }
     int   scopeRef() const { return scopeRef_; }
 
+    // 可赋值性（ADR-030 阶段 5）：const 声明的变量槽位 mutable=false，
+    // store 时拦截并报错。默认 true（var/let 可赋值）。
+    bool isMutable() const { return mutable_; }
+    void setMutable(bool m) { mutable_ = m; }
+
     // Scope 跟踪时调用（ADR-012 §4）
     void scopeRefInc() { ++scopeRef_; }
     void scopeRefDec() { --scopeRef_; }
+
+    // 替换 meta+data（赋值语义，ADR-030 阶段 5）：
+    // 旧 data ref--，新 data ref++，type_ 和 data_ 同时替换。
+    // Value 本体不变（指针地址不变），仅内部 meta+data 被替换。
+    // 返回旧 data（调用方交给 gc->releaseData 回收；ref 归 0 才真正释放）。
+    IData* replaceMeta(IType* type, IData* data);
 
     // GC 标记内部用（MarkSweepGC 标记阶段置位）
     bool marked() const { return marked_; }

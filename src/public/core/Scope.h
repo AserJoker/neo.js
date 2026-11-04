@@ -41,6 +41,7 @@ class Scope {
     std::unordered_set<Scope*> children_;                  // 子作用域（无序、去重，析构时递归释放）
     std::vector<Value*> values_;                           // 跟踪的 value（含匿名临时值）
     std::unordered_map<std::string, Value*> namedValues_; // 命名绑定（借用）
+    std::unordered_set<std::string> flags_;                // 作用域标注（如 "strict"）
 
 public:
     // 构造：parent 可为 nullptr（global scope），allocator 借用（用于析构子时 free 内存）。
@@ -88,6 +89,17 @@ public:
         namedValues_[std::string(name)] = v;
     }
 
+    // 定义变量（ADR-030 阶段 5）：仅在当前 scope 绑定 name→v + add 跟踪。
+    // 重复定义返回 false（调用方报错），成功返回 true。
+    // 重复检查无条件生效——var/let/const 的差异在 Sema 阶段已抹平，与 strict 无关。
+    // 与 bind 的区别：bind 覆盖重名且不 add 跟踪；define 重复检查 + add 跟踪。
+    bool define(std::string_view name, Value* v) {
+        if (lookup(name) != nullptr) return false;
+        add(v);
+        namedValues_[std::string(name)] = v;
+        return true;
+    }
+
     // 按名字查找 Value（找不到返回 nullptr）
     Value* lookup(std::string_view name) const {
         auto it = namedValues_.find(std::string(name));
@@ -106,9 +118,31 @@ public:
         return nullptr;
     }
 
+    // —— 作用域标注（ADR-030 阶段 5）——
+    // flags 是作用域级标注（如 "strict"），语法上只能标注在模块作用域/函数体上。
+    // 查找沿 parent 链向上继承（内层 scope 自动继承外层标注）。
+    void setFlag(std::string_view name) { flags_.insert(std::string(name)); }
+    void clearFlag(std::string_view name) { flags_.erase(std::string(name)); }
+
+    // 本作用域是否标注了 name（不查 parent）
+    bool hasFlag(std::string_view name) const {
+        return flags_.find(std::string(name)) != flags_.end();
+    }
+
+    // 沿 parent 链向上查找标注（本作用域找不到则查 parent，递归到 global）
+    bool lookupFlagChain(std::string_view name) const {
+        const Scope* s = this;
+        while (s != nullptr) {
+            if (s->hasFlag(name)) return true;
+            s = s->parent_;
+        }
+        return false;
+    }
+
     // —— 装饰性查询 ——
     size_t valueCount() const { return values_.size(); }
     size_t namedCount() const { return namedValues_.size(); }
+    size_t flagCount() const { return flags_.size(); }
 
     // 遍历跟踪的 Value（调试/测试用）
     template <typename Fn>

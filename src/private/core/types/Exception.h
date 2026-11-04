@@ -14,6 +14,9 @@
 
 #include "core/IData.h"
 #include "core/IType.h"
+#include "infra/IAllocator.h"
+
+#include <new>
 
 namespace neo::core {
 
@@ -41,6 +44,12 @@ public:
 
     // 覆写：向 visitor 报告持有的子 value，让 GC 沿引用链标记
     void enumerateChildren(IGCVisitor* visitor) override;
+
+    // clone：共享 child 指针（Value* 由 GC 管理，引用计数保证安全）
+    IData* clone(neo::infra::IAllocator* alloc) const override {
+        void* p = alloc->alloc(sizeof(ExceptionData));
+        return new (p) ExceptionData(child);
+    }
 };
 
 }  // namespace neo::core

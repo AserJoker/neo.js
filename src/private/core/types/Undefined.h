@@ -9,6 +9,9 @@
 
 #include "core/IData.h"
 #include "core/IType.h"
+#include "infra/IAllocator.h"
+
+#include <new>
 
 namespace neo::core {
 
@@ -26,7 +29,13 @@ public:
 };
 
 // 空负载 data
-class UndefinedData : public IData {};
+class UndefinedData : public IData {
+public:
+    IData* clone(neo::infra::IAllocator* alloc) const override {
+        void* p = alloc->alloc(sizeof(UndefinedData));
+        return new (p) UndefinedData();
+    }
+};
 
 }  // namespace neo::core
 

@@ -9,6 +9,9 @@
 
 #include "core/IData.h"
 #include "core/IType.h"
+#include "infra/IAllocator.h"
+
+#include <new>
 
 namespace neo::core {
 
@@ -30,6 +33,10 @@ class BooleanData : public IData {
 public:
     bool value;
     explicit BooleanData(bool v) : value(v) {}
+    IData* clone(neo::infra::IAllocator* alloc) const override {
+        void* p = alloc->alloc(sizeof(BooleanData));
+        return new (p) BooleanData(value);
+    }
 };
 
 }  // namespace neo::core

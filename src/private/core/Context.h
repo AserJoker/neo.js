@@ -61,6 +61,18 @@ public:
     // 错误值创建
     Value* createException(Value* child) override;
     Value* createFatal(const char* msg) override;
+
+    // 变量定义与赋值
+    Value* define(std::string_view name, Value* source) override;
+    Value* store(std::string_view name, Value* source) override;
+
+    // 可赋值性
+    void setMutable(Value* v, bool m) override;
+    bool isMutable(Value* v) const override;
+
+    // 作用域标注
+    void setFlag(std::string_view name) override;
+    bool hasFlag(std::string_view name) const override;
 };
 
 }  // namespace neo::core
