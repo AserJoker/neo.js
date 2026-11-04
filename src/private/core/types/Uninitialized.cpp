@@ -1,0 +1,19 @@
+// Uninitialized.cpp - UninitializedType 行为方法实现（全透传）
+//
+// uninitialized 是 TDZ 哨兵：let/const 初始化前的变量槽位。不参与任何运算——
+// 未来 VM 的 load 指令在读取变量时检测此类型并抛 ReferenceError。
+// 所有行为方法返回 self（透传），仅为满足 IType 纯虚接口。
+//
+// 关联 ADR: 016（Type 体系修订）、030 阶段 5
+
+#include "core/types/Uninitialized.h"
+
+namespace neo::core {
+
+Value* UninitializedType::add(IContext* /*ctx*/, Value* a, Value* /*b*/) { return a; }
+Value* UninitializedType::sub(IContext* /*ctx*/, Value* a, Value* /*b*/) { return a; }
+Value* UninitializedType::mul(IContext* /*ctx*/, Value* a, Value* /*b*/) { return a; }
+Value* UninitializedType::div(IContext* /*ctx*/, Value* a, Value* /*b*/) { return a; }
+Value* UninitializedType::toString(IContext* /*ctx*/, Value* self) { return self; }
+
+}  // namespace neo::core

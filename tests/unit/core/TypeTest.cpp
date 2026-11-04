@@ -20,6 +20,7 @@
 #include "core/types/Number.h"
 #include "core/types/String.h"
 #include "core/types/Undefined.h"
+#include "core/types/Uninitialized.h"
 #include "infra/IAllocator.h"
 #include "infra/MallocAllocator.h"
 
@@ -41,6 +42,7 @@ using neo::core::StringData;
 using neo::core::IType;
 using neo::core::TypeKind;
 using neo::core::UndefinedData;
+using neo::core::UninitializedData;
 using neo::core::Value;
 using neo::core::getBooleanType;
 using neo::core::getExceptionType;
@@ -49,6 +51,7 @@ using neo::core::getNullType;
 using neo::core::getNumberType;
 using neo::core::getStringType;
 using neo::core::getUndefinedType;
+using neo::core::getUninitializedType;
 using neo::infra::MallocAllocator;
 
 // ---- TypeKind 与 name ----
@@ -74,6 +77,9 @@ TEST(TypeTest, KindAndName) {
 
     EXPECT_EQ(getFatalType()->kind(), TypeKind::Fatal);
     EXPECT_STREQ(getFatalType()->name(), "fatal");
+
+    EXPECT_EQ(getUninitializedType()->kind(), TypeKind::Uninitialized);
+    EXPECT_STREQ(getUninitializedType()->name(), "uninitialized");
 }
 
 // ---- 单例：同类型多次获取返回同一指针 ----
@@ -86,6 +92,7 @@ TEST(TypeTest, SingletonIdentity) {
     EXPECT_EQ(getStringType(), getStringType());
     EXPECT_EQ(getExceptionType(), getExceptionType());
     EXPECT_EQ(getFatalType(), getFatalType());
+    EXPECT_EQ(getUninitializedType(), getUninitializedType());
 }
 
 // ---- 不同类型单例互不相同 ----
@@ -94,7 +101,7 @@ TEST(TypeTest, DistinctTypes) {
     IType* types[] = {
         getUndefinedType(), getNullType(),    getBooleanType(),
         getNumberType(),    getStringType(),  getExceptionType(),
-        getFatalType(),
+        getFatalType(),     getUninitializedType(),
     };
     for (size_t i = 0; i < std::size(types); ++i) {
         for (size_t j = i + 1; j < std::size(types); ++j) {
@@ -228,6 +235,45 @@ TEST(ExceptionDataTest, ChildMustNotBeNull) {
     undefined_val->~Value();
     alloc.free(undefined_val);
     alloc.free(ud);
+}
+
+// ---- Uninitialized（TDZ 哨兵）----
+
+TEST(UninitializedTest, DataHasNoPayload) {
+    UninitializedData ud;
+    EXPECT_EQ(ud.ref(), 0);
+}
+
+TEST(UninitializedTest, CloneProducesDistinctObject) {
+    MallocAllocator alloc;
+    UninitializedData src;
+    IData* cloned = src.clone(&alloc);
+    ASSERT_NE(cloned, nullptr);
+    EXPECT_NE(cloned, &src);
+    alloc.free(cloned);
+}
+
+TEST(UninitializedTest, AllBehaviorMethodsPassthroughSelf) {
+    MallocAllocator alloc;
+    auto* d1 = new (alloc.alloc(sizeof(UninitializedData))) UninitializedData();
+    auto* self = new (alloc.alloc(sizeof(Value))) Value(getUninitializedType(), d1);
+    auto* d2 = new (alloc.alloc(sizeof(NumberData))) NumberData(1.0);
+    auto* other = new (alloc.alloc(sizeof(Value))) Value(getNumberType(), d2);
+
+    IType* t = getUninitializedType();
+    // 全透传 self（TDZ 哨兵不参与运算，进入前应已失败）
+    EXPECT_EQ(t->add(nullptr, self, other), self);
+    EXPECT_EQ(t->sub(nullptr, self, other), self);
+    EXPECT_EQ(t->mul(nullptr, self, other), self);
+    EXPECT_EQ(t->div(nullptr, self, other), self);
+    EXPECT_EQ(t->toString(nullptr, self), self);
+
+    other->~Value();
+    alloc.free(other);
+    alloc.free(d2);
+    self->~Value();
+    alloc.free(self);
+    alloc.free(d1);
 }
 
 }  // namespace

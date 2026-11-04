@@ -27,8 +27,9 @@ enum class TypeKind : uint8_t {
     Boolean,
     Number,
     String,
-    Exception,  // 可捕获异常（ADR-017 §3）
-    Fatal,      // 不可捕获致命错误（ADR-017 §4）
+    Exception,      // 可捕获异常（ADR-017 §3）
+    Fatal,          // 不可捕获致命错误（ADR-017 §4）
+    Uninitialized,  // TDZ 哨兵（let/const 初始化前，VM load 时消费）
     // 后续阶段：Object/Function/Array/Symbol/BigInt/Interrupt/...
 };
 
@@ -71,6 +72,7 @@ IType* getNumberType();
 IType* getStringType();
 IType* getExceptionType();
 IType* getFatalType();
+IType* getUninitializedType();
 
 }  // namespace neo::core
 

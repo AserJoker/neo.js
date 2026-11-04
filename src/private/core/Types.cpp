@@ -14,6 +14,7 @@
 #include "core/types/Number.h"
 #include "core/types/String.h"
 #include "core/types/Undefined.h"
+#include "core/types/Uninitialized.h"
 
 namespace neo::core {
 
@@ -49,6 +50,11 @@ IType* getExceptionType() {
 
 IType* getFatalType() {
     static FatalType inst;
+    return &inst;
+}
+
+IType* getUninitializedType() {
+    static UninitializedType inst;
     return &inst;
 }
 
