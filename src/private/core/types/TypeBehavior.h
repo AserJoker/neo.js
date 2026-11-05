@@ -143,6 +143,13 @@ inline Value* notAFunction(IContext* ctx, Value* self) {
     return ctx->createException(ctx->createString(msg));
 }
 
+// —— 非构造函数 new 报错（ADR-034）——
+// 非函数类型被 new 时返回 Exception("<TypeName> is not a constructor")。
+inline Value* notAConstructor(IContext* ctx, Value* self) {
+    std::string msg = std::string(self->type()->name()) + " is not a constructor";
+    return ctx->createException(ctx->createString(msg));
+}
+
 // —— 非对象类型属性操作（ADR-018）——
 // 基础类型（非 object/function）的属性读取返回 undefined；写入/定义返回 Exception。
 // 注：字符串长度/索引等特殊属性留待后续阶段。

@@ -32,6 +32,7 @@ public:
     Value* toString(IContext* ctx, Value* self) override;
     Value* call(IContext* ctx, Value* self, Value* thisArg,
                 size_t argc, Value* argv[]) override;
+    Value* construct(IContext* ctx, Value* self, size_t argc, Value* argv[]) override;
     Value* getProperty(IContext* ctx, Value* self, std::string_view key) override;
     Value* setProperty(IContext* ctx, Value* self, std::string_view key, Value* value) override;
     bool hasProperty(IContext* ctx, Value* self, std::string_view key) override;

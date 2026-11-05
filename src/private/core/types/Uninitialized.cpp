@@ -51,4 +51,10 @@ Value* UninitializedType::setPrototype(IContext* /*ctx*/, Value* self, Value* /*
     return self;
 }
 
+
+// 构造调用：透传 self（异常/哨兵不参与调用）。
+Value* UninitializedType::construct(IContext* /*ctx*/, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
+    return self;
+}
+
 }  // namespace neo::core

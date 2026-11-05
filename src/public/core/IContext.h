@@ -101,6 +101,12 @@ public:
     //       非函数类型返回 Exception("xxx is not a function")。
     virtual Value* call(Value* fn, Value* thisArg, size_t argc, Value* argv[]) = 0;
 
+    // construct: new 操作入口（ADR-034），纯代理
+    //   ctx->construct(fn, argc, argv) → fn->type()->construct(this, fn, argc, argv)。
+    // 新建 this 对象（原型 = fn.prototype）后以它为 thisArg 调函数；
+    // 函数返回 Object/Function 则用它，否则用 this。非函数返回 Exception。
+    virtual Value* construct(Value* fn, size_t argc, Value* argv[]) = 0;
+
     // createNativeFunction: 创建 native 函数 Value。
     //   closureScope = 当前 root scope 的子作用域（新建，Sema 收集的穿透闭包变量绑定于此）；
     //   rootScope = 当前 root scope（借用）；
@@ -108,6 +114,7 @@ public:
     //   bindName = 变量绑定名（非空则 bind 到 current scope）。
     // 函数名不在此设置（缺省 "<anonymous>"），由 setFunctionName 单独设置——
     // 对应 VM 字节码序列 define → store → setname。
+    // 同时自动创建 fn.prototype（普通对象）并定义 proto.constructor 指回函数（ADR-034）。
     // 返回 Value*：正常函数值，或 OOM 哨兵（ADR-031）。
     virtual Value* createNativeFunction(NativeFn fn, size_t minArgc,
                                         std::string_view bindName = {}) = 0;

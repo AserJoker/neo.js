@@ -74,6 +74,14 @@ public:
     virtual Value* call(IContext* ctx, Value* self, Value* thisArg,
                         size_t argc, Value* argv[]) = 0;
 
+    // 构造调用（new 操作，ADR-034）：
+    // ctx->construct(fn, argc, argv) → fn->type()->construct(ctx, fn, argc, argv)。
+    // FunctionType：新建 this 对象（原型 = fn.prototype），以 this 为 thisArg 调 native，
+    //               返回值是 Object/Function 则用它，否则用 this。
+    // 非函数类型返回 Exception("xxx is not a constructor")。
+    // Exception/Fatal 透传 self。
+    virtual Value* construct(IContext* ctx, Value* self, size_t argc, Value* argv[]) = 0;
+
     // —— 属性操作（ADR-018 对象模型）——
     // 分派规则同运算：ctx->getProperty(obj, key) → obj->type()->getProperty(ctx, obj, key)。
     // 非对象类型的属性操作：get 返回 undefined，set/has/delete 返回 Exception 或 false。

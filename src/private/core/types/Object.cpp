@@ -53,6 +53,12 @@ Value* ObjectType::call(IContext* ctx, Value* self, Value* /*thisArg*/,
     return ctx->createException(ctx->createString(msg));
 }
 
+// 构造调用：普通对象不是构造函数。
+Value* ObjectType::construct(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
+    std::string msg = std::string(self->type()->name()) + " is not a constructor";
+    return ctx->createException(ctx->createString(msg));
+}
+
 // —— 属性操作 ——
 
 namespace {

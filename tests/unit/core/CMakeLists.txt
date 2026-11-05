@@ -12,6 +12,7 @@ add_executable(core_unit_test
     FunctionTest.cpp
     ObjectTest.cpp
     PropertyOpsTest.cpp
+    ConstructTest.cpp
 )
 target_link_libraries(core_unit_test
     PRIVATE

@@ -91,4 +91,10 @@ Value* NumberType::setPrototype(IContext* ctx, Value* self, Value* proto) {
     return primitiveSetPrototype(ctx, self, proto);
 }
 
+
+// 构造调用（ADR-034）：基础类型不是构造函数。
+Value* NumberType::construct(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
+    return notAConstructor(ctx, self);
+}
+
 }  // namespace neo::core

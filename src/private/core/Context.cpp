@@ -168,22 +168,59 @@ Value* Context::call(Value* fn, Value* thisArg, size_t argc, Value* argv[]) {
     return fn->type()->call(this, fn, thisArg, argc, argv);
 }
 
+Value* Context::construct(Value* fn, size_t argc, Value* argv[]) {
+    return fn->type()->construct(this, fn, argc, argv);
+}
+
 Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_view bindName) {
     // closureScope 是当前 root scope 的子作用域（Sema 收集的穿透闭包变量绑定于此）
     void* p = alloc_->alloc(sizeof(Scope));
     if (p == nullptr) return oomValue_;
     Scope* closure = new (p) Scope(root_, alloc_);
     root_->addChild(closure);
-    // rootScope 借用当前 root（不拥有）；函数名缺省 "<anonymous>"，由 setFunctionName 设置
-    auto* d = gc_->allocData<FunctionData>(closure, root_, fn, minArgc, std::string_view{});
+    // rootScope 借用当前 root（不拥有）
+    auto* d = gc_->allocData<FunctionData>(closure, root_, fn, minArgc);
     // bindName 仅用于变量绑定（与函数名无关）
-    return createTracked(getFunctionType(), d, bindName);
+    Value* fnValue = createTracked(getFunctionType(), d, bindName);
+    if (fnValue == oomValue_) return fnValue;
+
+    // —— 函数名作为 "name" 属性（ES2024 §20.2.4.2）——
+    // writable=false / enumerable=false / configurable=true；缺省 "<anonymous>"，
+    // 由 setFunctionName 更新（对应 VM 的 setname 字节码）。
+    Value* anonName = createString("<anonymous>");
+    if (anonName == oomValue_) return anonName;
+    if (defineProperty(fnValue, "name", anonName, false, false, true)->type()->kind() ==
+        TypeKind::Exception) {
+        return oomValue_;
+    }
+
+    // —— 自动创建 prototype（ADR-034）——
+    // 每个函数创建时生成一个普通对象作为 fn.prototype，并在其上定义 constructor 指回函数，
+    // 构成 JS 的「构造函数 ↔ 原型」双向引用。两者均不可枚举（与 ES 一致）。
+    // 存活：fn 的属性 value 被 ObjectData::enumerateChildren 遍历 → proto 保活；
+    //       proto 的 constructor 属性同理保活 fn。
+    Value* proto = createObject();
+    if (proto == oomValue_) return proto;
+    // fn.prototype：writable，不可枚举，不可配置
+    if (defineProperty(fnValue, "prototype", proto, true, false, false)->type()->kind() ==
+        TypeKind::Exception) {
+        return oomValue_;
+    }
+    // proto.constructor：writable，不可枚举，可配置
+    if (defineProperty(proto, "constructor", fnValue, true, false, true)->type()->kind() ==
+        TypeKind::Exception) {
+        return oomValue_;
+    }
+    return fnValue;
 }
 
 void Context::setFunctionName(Value* fn, std::string_view name) {
     // 仅对 Function 类型有效（setname 字节码），其他类型忽略
     if (fn->type()->kind() != TypeKind::Function) return;
-    static_cast<FunctionData*>(fn->data())->name = name;
+    // 函数名是 "name" 属性（writable=false），用 defineProperty 直接覆盖描述符值
+    Value* nameValue = createString(name);
+    if (nameValue == oomValue_) return;
+    defineProperty(fn, "name", nameValue, false, false, true);
 }
 
 // —— 对象与属性（ADR-018）——

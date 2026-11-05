@@ -56,6 +56,7 @@ public:
     // 调用：非函数，返回 Exception
     Value* call(IContext* ctx, Value* self, Value* thisArg,
                 size_t argc, Value* argv[]) override;
+    Value* construct(IContext* ctx, Value* self, size_t argc, Value* argv[]) override;
 
     // 属性操作（ADR-018）
     Value* getProperty(IContext* ctx, Value* self, std::string_view key) override;

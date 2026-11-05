@@ -11,7 +11,10 @@
 //   - rootScope：创建时从作用域中获取的模块根作用域（借用，不拥有）
 //   - native：native 函数指针（ADR-005 签名）
 //   - minArgc：最少参数数量（调用时校验，不足返回 Exception）
-//   - name：函数名（创建时可选，缺省 "<anonymous>"）
+//
+// 函数名不是 data 字段，而是函数对象上的 "name" 属性（writable=false /
+// enumerable=false / configurable=true，ES2024 §20.2.4.2），由 createNativeFunction
+// 初始化为 "<anonymous>"、setFunctionName 更新。
 //
 // Function 是孤立的：Sema 收集穿透的闭包变量，绑定到 closureScope，
 // 运行时查找 closureScope → rootScope → global，不依赖定义时的中间词法链（ADR-013 §3）。
@@ -57,6 +60,7 @@ public:
     // 调用：校验 minArgc 后调 native 指针。
     Value* call(IContext* ctx, Value* self, Value* thisArg,
                 size_t argc, Value* argv[]) override;
+    Value* construct(IContext* ctx, Value* self, size_t argc, Value* argv[]) override;
     Value* getProperty(IContext* ctx, Value* self, std::string_view key) override;
     Value* setProperty(IContext* ctx, Value* self, std::string_view key, Value* value) override;
     bool hasProperty(IContext* ctx, Value* self, std::string_view key) override;
@@ -75,12 +79,9 @@ public:
     Scope* rootScope;      // 模块根作用域（借用，不拥有）
     NativeFn native;       // native 函数指针
     size_t minArgc;        // 最少参数数量（调用时校验）
-    std::string name;      // 函数名（缺省 "<anonymous>"）
 
-    FunctionData(Scope* closure, Scope* root, NativeFn fn, size_t minArgs,
-                 std::string_view fnName)
-        : closureScope(closure), rootScope(root), native(fn), minArgc(minArgs),
-          name(fnName.empty() ? "<anonymous>" : std::string(fnName)) {}
+    FunctionData(Scope* closure, Scope* root, NativeFn fn, size_t minArgs)
+        : closureScope(closure), rootScope(root), native(fn), minArgc(minArgs) {}
 
     // clone：引用语义（ADR-019 §2）——ref++ 后返回 this，属性容器随之共享。
     // closureScope/rootScope 由作用域树管理，与 data 共享无关。

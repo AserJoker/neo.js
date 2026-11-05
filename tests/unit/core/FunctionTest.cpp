@@ -110,8 +110,10 @@ TEST(FunctionTest, DefaultNameIsAnonymous) {
     auto ctx = createContext(alloc.get(), &console);
 
     Value* fn = ctx->createNativeFunction(argcFn, 0);
-    auto* d = static_cast<FunctionData*>(fn->data());
-    EXPECT_EQ(d->name, "<anonymous>");
+    // 函数名是 "name" 属性，不是 data 字段
+    Value* name = ctx->getProperty(fn, "name");
+    ASSERT_EQ(name->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(name->data())->value, "<anonymous>");
 }
 
 TEST(FunctionTest, SetFunctionName) {
@@ -121,11 +123,12 @@ TEST(FunctionTest, SetFunctionName) {
     auto ctx = createContext(alloc.get(), &console);
 
     Value* fn = ctx->createNativeFunction(argcFn, 0);
-    auto* d = static_cast<FunctionData*>(fn->data());
-    EXPECT_EQ(d->name, "<anonymous>");
+    EXPECT_EQ(static_cast<StringData*>(ctx->getProperty(fn, "name")->data())->value,
+              "<anonymous>");
 
     ctx->setFunctionName(fn, "myFunc");
-    EXPECT_EQ(d->name, "myFunc");
+    EXPECT_EQ(static_cast<StringData*>(ctx->getProperty(fn, "name")->data())->value,
+              "myFunc");
 }
 
 TEST(FunctionTest, SetFunctionNameIgnoresNonFunction) {
@@ -166,7 +169,8 @@ TEST(FunctionTest, CreateWithBindNameBinds) {
     Value* fn = ctx->createNativeFunction(argcFn, 0, "f");
     EXPECT_EQ(ctx->current()->lookup("f"), fn);
     // 创建时函数名缺省 <anonymous>
-    EXPECT_EQ(static_cast<FunctionData*>(fn->data())->name, "<anonymous>");
+    EXPECT_EQ(static_cast<StringData*>(ctx->getProperty(fn, "name")->data())->value,
+              "<anonymous>");
 }
 
 TEST(FunctionTest, FunctionNameAndBindNameAreSeparate) {
@@ -178,7 +182,7 @@ TEST(FunctionTest, FunctionNameAndBindNameAreSeparate) {
     // method 场景：绑定名 foo，函数名 bar（define → store → setname 序列）
     Value* fn = ctx->createNativeFunction(argcFn, 0, "foo");
     ctx->setFunctionName(fn, "bar");
-    EXPECT_EQ(static_cast<FunctionData*>(fn->data())->name, "bar");
+    EXPECT_EQ(static_cast<StringData*>(ctx->getProperty(fn, "name")->data())->value, "bar");
     EXPECT_EQ(ctx->current()->lookup("foo"), fn);
     EXPECT_EQ(ctx->current()->lookup("bar"), nullptr);  // 函数名不参与绑定
 }
@@ -673,7 +677,8 @@ TEST(FunctionTest, FunctionDataCloneSharesData) {
     EXPECT_EQ(cloned, d);
     EXPECT_EQ(d->ref(), refBefore + 1);
     EXPECT_EQ(d->closureScope, static_cast<FunctionData*>(cloned)->closureScope);
-    EXPECT_EQ(d->name, "cloned");
+    EXPECT_EQ(static_cast<StringData*>(ctx->getProperty(fn, "name")->data())->value,
+              "cloned");
     // 撤销 clone 引入的引用，避免 data 泄漏
     d->refDec();
 }
