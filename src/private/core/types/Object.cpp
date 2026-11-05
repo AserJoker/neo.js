@@ -12,11 +12,16 @@
 #include "core/IContext.h"
 #include "core/IGCEngine.h"
 #include "core/Value.h"
+#include "core/types/Array.h"
 #include "core/types/Object.h"
+#include "core/types/PrimitiveWrapper.h"
+#include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
 
+#include <algorithm>
 #include <string>
 #include <unordered_set>
+#include <vector>
 
 namespace neo::core {
 
@@ -444,6 +449,84 @@ IData* ObjectData::clone(neo::infra::IAllocator* /*alloc*/) const {
     auto* self = const_cast<ObjectData*>(this);
     self->refInc();
     return self;
+}
+
+// —— 自有属性键枚举（ES2024 §10.1.11）——
+
+namespace {
+
+// 收集数组索引键（升序）。仅 Array 与 String 包装有索引元素。
+void collectIndexKeys(Value* obj, std::vector<uint32_t>& indices) {
+    TypeKind k = obj->type()->kind();
+    if (k == TypeKind::Array) {
+        auto* d = static_cast<ArrayData*>(obj->data());
+        for (uint32_t i = 0; i < d->length(); ++i) {
+            if (d->hasElement(i)) indices.push_back(i);
+        }
+        return;
+    }
+    if (k == TypeKind::PrimitiveWrapper) {
+        const std::string* s = wrapperStringValue(obj);
+        if (s != nullptr) {
+            for (size_t i = 0; i < s->size(); ++i) {
+                indices.push_back(static_cast<uint32_t>(i));
+            }
+        }
+    }
+}
+
+}  // namespace
+
+std::vector<Value*> ownPropertyKeys(IContext* ctx, Value* obj, bool enumerableOnly,
+                                    bool includeSymbols) {
+    std::vector<Value*> keys;
+    TypeKind k = obj->type()->kind();
+    if (!detail::isObjectKind(k)) return keys;
+
+    // 1. 数组索引（升序）：Array/String 包装的元素 + 普通对象 properties 中的数字串键
+    std::vector<uint32_t> indices;
+    collectIndexKeys(obj, indices);
+    auto* d = static_cast<ObjectData*>(obj->data());
+    for (const std::string& name : d->order) {
+        uint32_t index = 0;
+        if (parseArrayIndex(name, index)) indices.push_back(index);
+    }
+    std::sort(indices.begin(), indices.end());
+    indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
+    for (uint32_t index : indices) {
+        // 元素型索引（Array/String 包装）恒可枚举；properties 中的数字串键按描述符判断
+        bool enumerable = true;
+        auto it = d->properties.find(std::to_string(index));
+        if (it != d->properties.end()) enumerable = it->second.enumerable;
+        if (enumerableOnly && !enumerable) continue;
+        keys.push_back(ctx->createString(std::to_string(index)));
+    }
+
+    // 2. 字符串键（插入序，跳过已作为索引输出的键）。
+    // Array/String 包装的 "length" 是自有属性且不可枚举。
+    if (k == TypeKind::Array || (k == TypeKind::PrimitiveWrapper &&
+                                 wrapperStringValue(obj) != nullptr)) {
+        if (!enumerableOnly) keys.push_back(ctx->createString("length"));
+    }
+    for (const std::string& name : d->order) {
+        uint32_t index = 0;
+        if (parseArrayIndex(name, index)) continue;  // 已在索引段输出
+        auto it = d->properties.find(name);
+        if (it == d->properties.end()) continue;  // 内部契约：order 与 map 同步
+        if (enumerableOnly && !it->second.enumerable) continue;
+        keys.push_back(ctx->createString(name));
+    }
+
+    // 3. symbol 键（插入序）
+    if (includeSymbols) {
+        for (const void* ident : d->symbolOrder) {
+            auto it = d->symbols.find(ident);
+            if (it == d->symbols.end()) continue;
+            if (enumerableOnly && !it->second.prop.enumerable) continue;
+            keys.push_back(it->second.key);
+        }
+    }
+    return keys;
 }
 
 }  // namespace neo::core

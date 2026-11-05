@@ -280,6 +280,16 @@ Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_vi
         return oomValue_;
     }
 
+    // —— 函数 "length" 属性（ES2024 §20.2.4.1）：形参个数 ——
+    // writable=false / enumerable=false / configurable=true。
+    // native 函数用 minArgc 作为形参个数。
+    Value* lengthValue = createNumber(static_cast<double>(minArgc));
+    if (lengthValue == oomValue_) return lengthValue;
+    if (defineProperty(fnValue, "length", lengthValue, false, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return oomValue_;
+    }
+
     // —— 自动创建 prototype（ADR-034）——
     // 每个函数创建时生成一个普通对象作为 fn.prototype，并在其上定义 constructor 指回函数，
     // 构成 JS 的「构造函数 ↔ 原型」双向引用。两者均不可枚举（与 ES 一致）。
@@ -313,6 +323,49 @@ void Context::setFunctionName(Value* fn, std::string_view name) {
     Value* nameValue = createString(name);
     if (nameValue == oomValue_) return;
     defineProperty(fn, "name", nameValue, false, false, true);
+}
+
+Value* Context::createBoundFunction(Value* target, Value* boundThis, size_t argc,
+                                    Value* argv[]) {
+    // 绑定函数（ES2024 §10.4.1.3）：新建 FunctionData，记录原函数/this/前置实参。
+    // native 用占位（调用时由 FunctionType::call 的 boundTarget 分支接管）。
+    void* p = alloc_->alloc(sizeof(Scope));
+    if (p == nullptr) return oomValue_;
+    Scope* closure = new (p) Scope(root_, alloc_);
+    root_->addChild(closure);
+    auto* d = gc_->allocData<FunctionData>(closure, root_, nullptr, size_t{0});
+    if (d == nullptr) return oomValue_;
+    d->boundTarget = target;
+    d->boundThis = boundThis != nullptr ? boundThis : createUndefined();
+    if (argc > 0) d->boundArgs.assign(argv, argv + argc);
+
+    Value* fnValue = createTracked(getFunctionType(), d, {});
+    if (fnValue == oomValue_) return fnValue;
+    if (functionPrototype_ != nullptr) {
+        static_cast<ObjectData*>(fnValue->data())->prototype = functionPrototype_;
+    }
+    // 绑定函数的 name = "bound " + target.name（ES2024 §10.4.1.3 step 6）
+    Value* targetName = getProperty(target, "name");
+    std::string name = "bound ";
+    if (targetName->type()->kind() == TypeKind::String) {
+        name += static_cast<StringData*>(targetName->data())->value;
+    }
+    Value* nameValue = createString(name);
+    if (nameValue == oomValue_) return nameValue;
+    defineProperty(fnValue, "name", nameValue, false, false, true);
+    // 绑定函数的 length = max(0, target.length - boundArgs.size())（ES2024 §10.4.1.3）
+    Value* targetLength = getProperty(target, "length");
+    double len = 0.0;
+    if (targetLength->type()->kind() == TypeKind::Number) {
+        len = static_cast<NumberData*>(targetLength->data())->value -
+              static_cast<double>(argc);
+        if (len < 0.0) len = 0.0;
+    }
+    Value* lengthValue = createNumber(len);
+    if (lengthValue == oomValue_) return lengthValue;
+    defineProperty(fnValue, "length", lengthValue, false, false, true);
+    // 绑定函数无 prototype 属性（不可 new）
+    return fnValue;
 }
 
 // —— 对象与属性（ADR-018）——
@@ -393,6 +446,22 @@ Value* Context::getPrototype(Value* obj) {
 
 Value* Context::setPrototype(Value* obj, Value* proto) {
     return obj->type()->setPrototype(this, obj, proto);
+}
+
+Value* Context::ownPropertyKeys(Value* obj, bool enumerableOnly, bool includeSymbols) {
+    std::vector<Value*> keys =
+        neo::core::ownPropertyKeys(this, obj, enumerableOnly, includeSymbols);
+    Value* arr = createArray();
+    if (arr == oomValue_) return arr;
+    auto* d = static_cast<ArrayData*>(arr->data());
+    for (size_t i = 0; i < keys.size(); ++i) {
+        d->setElement(static_cast<uint32_t>(i), keys[i]);
+    }
+    return arr;
+}
+
+Value* Context::ownEnumerableStringKeys(Value* obj) {
+    return ownPropertyKeys(obj, true, false);
 }
 
 Value* Context::setClosure(Value* fn, std::string_view name) {

@@ -139,6 +139,12 @@ public:
     virtual Value* createNativeFunction(NativeFn fn, size_t minArgc,
                                         std::string_view bindName = {}) = 0;
 
+    // createBoundFunction: 创建绑定函数（ES2024 §10.4.1.3 BoundFunctionCreate）。
+    // 返回的新函数调用时以 boundThis 为 this、前置 boundArgs 再拼接调用实参。
+    // 新函数无 prototype 属性（绑定函数不可 new）。失败返回 OOM 哨兵。
+    virtual Value* createBoundFunction(Value* target, Value* boundThis,
+                                       size_t argc, Value* argv[]) = 0;
+
     // setFunctionConstructor: 为函数设置构造钩子（ES2024 内建的 call/new 语义差异）。
     // 内建包装类（Boolean/Number/String）需要：call 返回原始值、new 返回包装对象。
     // 设置后 construct 直接调 ctor（thisArg 为 undefined），并用其返回的对象。
@@ -247,6 +253,18 @@ public:
     //               非对象 / proto 类型非法 / 成环 返回 Exception。
     virtual Value* getPrototype(Value* obj) = 0;
     virtual Value* setPrototype(Value* obj, Value* proto) = 0;
+
+    // —— 自有属性枚举（ADR-018 §7，ES2024 §10.1.11）——
+    // ownPropertyKeys: 返回 obj 的自有属性键（Value* 数组，按规范顺序：
+    //   数组索引升序 → 字符串键插入序 → symbol 键插入序）。
+    //   enumerableOnly=true 只含 enumerable 键（Object.keys 语义）；
+    //   includeSymbols=true 包含 symbol 键（Reflect.ownKeys 语义）。
+    //   非对象返回空数组。返回的键 Value 已归属 current scope。
+    virtual Value* ownPropertyKeys(Value* obj, bool enumerableOnly,
+                                   bool includeSymbols) = 0;
+
+    // ownEnumerableStringKeys: 便捷形式——只含 enumerable 的字符串键（Object.keys）。
+    virtual Value* ownEnumerableStringKeys(Value* obj) = 0;
 
     // setClosure: 把当前作用域链上名为 name 的变量加入函数的闭包作用域（ADR-013 §2）。
     // 绑定 = 共享同一 Value（不复制），closureScope 加入时 scopeRef++。

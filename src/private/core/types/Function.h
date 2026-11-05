@@ -42,6 +42,7 @@
 #include <new>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace neo::core {
 
@@ -85,11 +86,20 @@ public:
     NativeFn native;       // native 函数指针
     size_t minArgc;        // 最少参数数量（调用时校验）
     NativeFn constructFn;  // 可选构造钩子（nullptr = native + 默认 this 语义）
+    // bind 产生的绑定函数（ES2024 §10.4.1.3 BoundFunctionCreate）：
+    // boundTarget 非空表示这是绑定函数，调用时以 boundThis 为 this、
+    // 前置 boundArgs 再拼接调用实参。
+    Value* boundTarget = nullptr;   // 被绑定的原函数
+    Value* boundThis = nullptr;     // 绑定的 this
+    std::vector<Value*> boundArgs;  // 前置实参（GC 需遍历）
 
     FunctionData(Scope* closure, Scope* root, NativeFn fn, size_t minArgs,
                  NativeFn ctor = nullptr)
         : closureScope(closure), rootScope(root), native(fn), minArgc(minArgs),
           constructFn(ctor) {}
+
+    // GC 遍历：对象字段 + bind 持有的原函数/this/前置实参
+    void enumerateChildren(IGCVisitor* visitor) override;
 
     // clone：引用语义（ADR-019 §2）——ref++ 后返回 this，属性容器随之共享。
     // closureScope/rootScope 由作用域树管理，与 data 共享无关。

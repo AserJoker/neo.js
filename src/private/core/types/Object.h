@@ -99,6 +99,17 @@ public:
     IData* clone(neo::infra::IAllocator* alloc) const override;
 };
 
+// 枚举自有属性键（ES2024 §10.1.11 OrdinaryOwnPropertyKeys 顺序）：
+//   1. 数组索引（升序，仅 Array 与 String 包装有）
+//   2. 字符串键（插入序；Array/String 包装的 "length" 也在此列）
+//   3. symbol 键（插入序）
+//
+// enumerableOnly：只含 enumerable 的键（Object.keys 语义）；
+// includeSymbols：是否包含 symbol 键（Reflect.ownKeys 语义）。
+// 非对象（原始值）返回空 vector。返回的 Value* 均已归属 current scope。
+std::vector<Value*> ownPropertyKeys(IContext* ctx, Value* obj, bool enumerableOnly,
+                                    bool includeSymbols);
+
 }  // namespace neo::core
 
 #endif  // NEO_CORE_PRIVATE_TYPES_OBJECT_H

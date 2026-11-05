@@ -12,10 +12,12 @@
 #include "core/IContext.h"
 #include "core/Scope.h"
 #include "core/Value.h"
+#include "core/IGCEngine.h"
 #include "core/types/Function.h"
 #include "core/types/TypeBehavior.h"
 
 #include <string>
+#include <vector>
 
 namespace neo::core {
 
@@ -109,8 +111,29 @@ Value* invokeNative(IContext* ctx, const FunctionData* d, Value* thisArg,
 Value* FunctionType::call(IContext* ctx, Value* self, Value* thisArg,
                           size_t argc, Value* argv[]) {
     auto* d = static_cast<FunctionData*>(self->data());
+
+    // 绑定函数（bind 产物）：以 boundThis 为 this，前置 boundArgs 再拼接实参。
+    // ES2024 §10.4.1.3 [[Call]]。
+    if (d->boundTarget != nullptr) {
+        std::vector<Value*> args;
+        args.reserve(d->boundArgs.size() + argc);
+        args.insert(args.end(), d->boundArgs.begin(), d->boundArgs.end());
+        if (argc > 0) args.insert(args.end(), argv, argv + argc);
+        return ctx->call(d->boundTarget, d->boundThis,
+                         static_cast<size_t>(args.size()), args.data());
+    }
+
     if (Value* err = checkMinArgc(ctx, d, argc)) return err;
     return invokeNative(ctx, d, thisArg, argc, argv);
+}
+
+void FunctionData::enumerateChildren(IGCVisitor* visitor) {
+    ObjectData::enumerateChildren(visitor);
+    if (boundTarget != nullptr) visitor->visit(boundTarget);
+    if (boundThis != nullptr) visitor->visit(boundThis);
+    for (Value* v : boundArgs) {
+        if (v != nullptr) visitor->visit(v);
+    }
 }
 
 // 构造调用（new，ADR-034）：
@@ -132,7 +155,8 @@ Value* FunctionType::construct(IContext* ctx, Value* self, size_t argc, Value* a
     TypeKind pk = proto->type()->kind();
     if (pk != TypeKind::Object && pk != TypeKind::Function && pk != TypeKind::Array &&
         pk != TypeKind::PrimitiveWrapper) {
-        proto = nullptr;  // 非对象原型按 null 处理（无 Object.prototype 兜底）
+        // 非对象原型不显式挂链：新对象保留 createObject 的默认原型（Object.prototype）
+        proto = nullptr;
     }
 
     // 新建 this 对象并挂原型

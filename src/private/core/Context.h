@@ -92,6 +92,8 @@ public:
                                 std::string_view bindName = {}) override;
     void setFunctionName(Value* fn, std::string_view name) override;
     void setFunctionConstructor(Value* fn, NativeFn ctor) override;
+    Value* createBoundFunction(Value* target, Value* boundThis, size_t argc,
+                               Value* argv[]) override;
     Value* setClosure(Value* fn, std::string_view name) override;
 
     // 对象与属性
@@ -139,6 +141,9 @@ public:
                           bool enumerable = false, bool configurable = true) override;
     Value* getPrototype(Value* obj) override;
     Value* setPrototype(Value* obj, Value* proto) override;
+    Value* ownPropertyKeys(Value* obj, bool enumerableOnly,
+                           bool includeSymbols) override;
+    Value* ownEnumerableStringKeys(Value* obj) override;
 
     // 错误值创建
     Value* createException(Value* child) override;

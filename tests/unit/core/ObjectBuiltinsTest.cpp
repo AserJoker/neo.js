@@ -29,6 +29,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
+
 namespace {
 
 using neo::core::IContext;
@@ -64,6 +66,11 @@ Value* globalOf(IContext* ctx, const char* name) {
 // 供 Function.prototype.call/apply 测试用
 Value* returnsThis(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
     return self != nullptr ? self : ctx->createUndefined();
+}
+
+// 返回实参个数（apply/bind 展开验证用）
+Value* argcFn(IContext* ctx, Value* /*self*/, size_t argc, Value* /*argv*/[]) {
+    return ctx->createNumber(static_cast<double>(argc));
 }
 
 Value* sumArgs(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
@@ -387,7 +394,36 @@ TEST(ObjectBuiltinsTest, FunctionProtoApplyWithNullArgs) {
     EXPECT_EQ(ctx->call(applyFn, fn, 2, args), thisArg);
 }
 
-TEST(ObjectBuiltinsTest, FunctionProtoApplyWithArrayNotImplemented) {
+TEST(ObjectBuiltinsTest, FunctionProtoApplyWithArrayLike) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* applyFn = ctx->getProperty(ctx->functionPrototype(), "apply");
+    Value* fn = ctx->createNativeFunction(argcFn, 0);
+    // 数组实参展开
+    Value* arr = ctx->createArray();
+    ctx->setProperty(arr, "0", ctx->createNumber(1));
+    ctx->setProperty(arr, "1", ctx->createNumber(2));
+    Value* args[2] = {ctx->createNull(), arr};
+    Value* r = ctx->call(applyFn, fn, 2, args);
+    ASSERT_EQ(r->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(static_cast<neo::core::NumberData*>(r->data())->value, 2.0);
+
+    // 类数组对象（有 length 与索引）同样展开
+    Value* arrayLike = ctx->createObject();
+    ctx->setProperty(arrayLike, "length", ctx->createNumber(3));
+    ctx->setProperty(arrayLike, "0", ctx->createNumber(1));
+    ctx->setProperty(arrayLike, "1", ctx->createNumber(2));
+    ctx->setProperty(arrayLike, "2", ctx->createNumber(3));
+    Value* args2[2] = {ctx->createNull(), arrayLike};
+    Value* r2 = ctx->call(applyFn, fn, 2, args2);
+    ASSERT_EQ(r2->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(static_cast<neo::core::NumberData*>(r2->data())->value, 3.0);
+}
+
+TEST(ObjectBuiltinsTest, FunctionProtoApplyRejectsPrimitiveArgs) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
@@ -395,8 +431,44 @@ TEST(ObjectBuiltinsTest, FunctionProtoApplyWithArrayNotImplemented) {
 
     Value* applyFn = ctx->getProperty(ctx->functionPrototype(), "apply");
     Value* fn = ctx->createNativeFunction(returnsThis, 0);
-    Value* args[2] = {ctx->createNull(), ctx->createObject()};  // 非 null → 需 Array
+    Value* args[2] = {ctx->createNull(), ctx->createNumber(1)};
     EXPECT_EQ(ctx->call(applyFn, fn, 2, args)->type()->kind(), TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, FunctionProtoApplyErrorPaths) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* applyFn = ctx->getProperty(ctx->functionPrototype(), "apply");
+    Value* fn = ctx->createNativeFunction(returnsThis, 0);
+    // length getter 抛异常 → 透传
+    Value* boom = ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t, Value*[]) {
+            return c->createException(c->createString("boom"));
+        }, 0);
+    Value* arrayLike = ctx->createObject();
+    ctx->defineAccessor(arrayLike, "length", boom, nullptr);
+    Value* args[2] = {ctx->createNull(), arrayLike};
+    EXPECT_EQ(ctx->call(applyFn, fn, 2, args)->type()->kind(), TypeKind::Exception);
+
+    // 索引 getter 抛异常 → 透传
+    Value* arrayLike2 = ctx->createObject();
+    ctx->setProperty(arrayLike2, "length", ctx->createNumber(1));
+    ctx->defineAccessor(arrayLike2, "0", boom, nullptr);
+    Value* args2[2] = {ctx->createNull(), arrayLike2};
+    EXPECT_EQ(ctx->call(applyFn, fn, 2, args2)->type()->kind(), TypeKind::Exception);
+
+    // length 非数字/负数 → 按 0 处理
+    Value* arrayLike3 = ctx->createObject();
+    ctx->setProperty(arrayLike3, "length", ctx->createString("abc"));
+    Value* args3[2] = {ctx->createNull(), arrayLike3};
+    EXPECT_EQ(ctx->call(applyFn, fn, 2, args3)->type()->kind(), TypeKind::Null);
+    Value* arrayLike4 = ctx->createObject();
+    ctx->setProperty(arrayLike4, "length", ctx->createNumber(-1));
+    Value* args4[2] = {ctx->createNull(), arrayLike4};
+    EXPECT_EQ(ctx->call(applyFn, fn, 2, args4)->type()->kind(), TypeKind::Null);
 }
 
 TEST(ObjectBuiltinsTest, FunctionProtoApplyRejectsNonFunction) {
@@ -410,7 +482,7 @@ TEST(ObjectBuiltinsTest, FunctionProtoApplyRejectsNonFunction) {
               TypeKind::Exception);
 }
 
-TEST(ObjectBuiltinsTest, FunctionProtoBindNotImplemented) {
+TEST(ObjectBuiltinsTest, FunctionProtoBindReturnsBoundFunction) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
@@ -418,8 +490,41 @@ TEST(ObjectBuiltinsTest, FunctionProtoBindNotImplemented) {
 
     Value* bindFn = ctx->getProperty(ctx->functionPrototype(), "bind");
     Value* fn = ctx->createNativeFunction(returnsThis, 0);
-    Value* args[1] = {ctx->createObject()};
-    EXPECT_EQ(ctx->call(bindFn, fn, 1, args)->type()->kind(), TypeKind::Exception);
+    Value* boundThis = ctx->createObject();
+    Value* args[1] = {boundThis};
+    Value* bound = ctx->call(bindFn, fn, 1, args);
+    ASSERT_EQ(bound->type()->kind(), TypeKind::Function);
+    // 调用绑定函数：this 固定为 boundThis
+    EXPECT_EQ(ctx->call(bound, nullptr, 0, nullptr), boundThis);
+    // name = "bound " + target.name
+    Value* name = ctx->getProperty(bound, "name");
+    ASSERT_EQ(name->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<neo::core::StringData*>(name->data())->value,
+              "bound <anonymous>");
+}
+
+TEST(ObjectBuiltinsTest, FunctionProtoBindPrependsArgs) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* bindFn = ctx->getProperty(ctx->functionPrototype(), "bind");
+    Value* fn = ctx->createNativeFunction(argcFn, 0);
+    Value* args[2] = {ctx->createNull(), ctx->createNumber(1)};
+    Value* bound = ctx->call(bindFn, fn, 2, args);
+    ASSERT_EQ(bound->type()->kind(), TypeKind::Function);
+
+    // 前置 1 个实参 + 调用时 2 个 → argc = 3
+    Value* callArgs[2] = {ctx->createNumber(2), ctx->createNumber(3)};
+    Value* r = ctx->call(bound, nullptr, 2, callArgs);
+    ASSERT_EQ(r->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(static_cast<neo::core::NumberData*>(r->data())->value, 3.0);
+
+    // length = max(0, target.length - boundArgs) = max(0, 0 - 1) = 0
+    Value* len = ctx->getProperty(bound, "length");
+    ASSERT_EQ(len->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(static_cast<neo::core::NumberData*>(len->data())->value, 0.0);
 }
 
 // ===== 原型链上的方法可被实例访问 =====
@@ -636,4 +741,1110 @@ TEST(ObjectBuiltinsTest, FunctionProtoApplyWithNullThis) {
 
     Value* applyFn = ctx->getProperty(ctx->functionPrototype(), "apply");
     EXPECT_EQ(ctx->call(applyFn, nullptr, 0, nullptr)->type()->kind(), TypeKind::Exception);
+}
+
+// ===== Object 静态方法 =====
+
+namespace {
+
+// 取数组元素（越界/空洞按 undefined 处理）
+Value* elemOf(IContext* ctx, Value* arr, size_t i) {
+    return ctx->getProperty(arr, ctx->createString(std::to_string(i)));
+}
+
+bool boolOf(Value* v) {
+    return static_cast<neo::core::BooleanData*>(v->data())->value;
+}
+
+// 调用 Object.<name>(...)
+Value* callObjectStatic(IContext* ctx, const char* name, size_t argc, Value* argv[]) {
+    Value* objFn = globalOf(ctx, "Object");
+    Value* fn = ctx->getProperty(objFn, name);
+    return ctx->call(fn, objFn, argc, argv);
+}
+
+}  // namespace
+
+TEST(ObjectBuiltinsTest, ObjectKeysReturnsEnumerableStringKeys) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    ctx->setProperty(obj, "b", ctx->createNumber(1));
+    ctx->setProperty(obj, "a", ctx->createNumber(2));
+    Value* args[1] = {obj};
+    Value* keys = callObjectStatic(ctx.get(), "keys", 1, args);
+    ASSERT_EQ(keys->type()->kind(), TypeKind::Array);
+    EXPECT_EQ(strOf(elemOf(ctx.get(), keys, 0)), "b");  // 插入序
+    EXPECT_EQ(strOf(elemOf(ctx.get(), keys, 1)), "a");
+    EXPECT_EQ(elemOf(ctx.get(), keys, 2)->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(ObjectBuiltinsTest, ObjectKeysOrdersIndicesAscendingFirst) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    ctx->setProperty(obj, "x", ctx->createNumber(0));
+    ctx->setProperty(obj, "2", ctx->createNumber(1));
+    ctx->setProperty(obj, "0", ctx->createNumber(2));
+    Value* args[1] = {obj};
+    Value* keys = callObjectStatic(ctx.get(), "keys", 1, args);
+    EXPECT_EQ(strOf(elemOf(ctx.get(), keys, 0)), "0");
+    EXPECT_EQ(strOf(elemOf(ctx.get(), keys, 1)), "2");
+    EXPECT_EQ(strOf(elemOf(ctx.get(), keys, 2)), "x");
+}
+
+TEST(ObjectBuiltinsTest, ObjectKeysSkipsNonEnumerable) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    ctx->defineProperty(obj, "hidden", ctx->createNumber(1), true, false, true);
+    ctx->setProperty(obj, "shown", ctx->createNumber(2));
+    Value* args[1] = {obj};
+    Value* keys = callObjectStatic(ctx.get(), "keys", 1, args);
+    EXPECT_EQ(strOf(elemOf(ctx.get(), keys, 0)), "shown");
+    EXPECT_EQ(elemOf(ctx.get(), keys, 1)->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(ObjectBuiltinsTest, ObjectKeysRejectsNullAndUndefined) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* args[1] = {ctx->createNull()};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "keys", 1, args)->type()->kind(), TypeKind::Exception);
+    Value* args2[1] = {ctx->createUndefined()};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "keys", 1, args2)->type()->kind(), TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, ObjectKeysOnStringWrapper) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    // 原始值经 ToObject 包装：索引 0/1 可枚举
+    Value* args[1] = {ctx->createString("ab")};
+    Value* keys = callObjectStatic(ctx.get(), "keys", 1, args);
+    ASSERT_EQ(keys->type()->kind(), TypeKind::Array);
+    EXPECT_EQ(strOf(elemOf(ctx.get(), keys, 0)), "0");
+    EXPECT_EQ(strOf(elemOf(ctx.get(), keys, 1)), "1");
+    EXPECT_EQ(elemOf(ctx.get(), keys, 2)->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(ObjectBuiltinsTest, ObjectValuesAndEntries) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    ctx->setProperty(obj, "a", ctx->createNumber(1));
+    ctx->setProperty(obj, "b", ctx->createNumber(2));
+
+    Value* args[1] = {obj};
+    Value* values = callObjectStatic(ctx.get(), "values", 1, args);
+    ASSERT_EQ(values->type()->kind(), TypeKind::Array);
+    EXPECT_DOUBLE_EQ(numOf(elemOf(ctx.get(), values, 0)), 1.0);
+    EXPECT_DOUBLE_EQ(numOf(elemOf(ctx.get(), values, 1)), 2.0);
+
+    Value* entries = callObjectStatic(ctx.get(), "entries", 1, args);
+    ASSERT_EQ(entries->type()->kind(), TypeKind::Array);
+    Value* first = elemOf(ctx.get(), entries, 0);
+    ASSERT_EQ(first->type()->kind(), TypeKind::Array);
+    EXPECT_EQ(strOf(elemOf(ctx.get(), first, 0)), "a");
+    EXPECT_DOUBLE_EQ(numOf(elemOf(ctx.get(), first, 1)), 1.0);
+    Value* second = elemOf(ctx.get(), entries, 1);
+    EXPECT_EQ(strOf(elemOf(ctx.get(), second, 0)), "b");
+    EXPECT_DOUBLE_EQ(numOf(elemOf(ctx.get(), second, 1)), 2.0);
+}
+
+TEST(ObjectBuiltinsTest, ObjectAssignCopiesOwnEnumerable) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* target = ctx->createObject();
+    Value* src = ctx->createObject();
+    ctx->setProperty(src, "a", ctx->createNumber(1));
+    ctx->defineProperty(src, "hidden", ctx->createNumber(2), true, false, true);
+    Value* args[2] = {target, src};
+    Value* r = callObjectStatic(ctx.get(), "assign", 2, args);
+    EXPECT_EQ(r, target);
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(target, "a")), 1.0);
+    EXPECT_EQ(ctx->hasProperty(target, "hidden"), false);
+
+    // undefined/null 源被跳过
+    Value* args2[3] = {target, ctx->createNull(), ctx->createUndefined()};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "assign", 3, args2), target);
+
+    // 单参（无源）→ 原样返回 target（ES2024 §20.1.2.1）
+    Value* only[1] = {target};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "assign", 1, only), target);
+}
+
+TEST(ObjectBuiltinsTest, ObjectAssignRejectsNullTarget) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* args[1] = {ctx->createNull()};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "assign", 1, args)->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(callObjectStatic(ctx.get(), "assign", 0, nullptr)->type()->kind(),
+              TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, ObjectCreateSetsPrototype) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* proto = ctx->createObject();
+    ctx->setProperty(proto, "inherited", ctx->createNumber(7));
+    Value* args[1] = {proto};
+    Value* obj = callObjectStatic(ctx.get(), "create", 1, args);
+    ASSERT_EQ(obj->type()->kind(), TypeKind::Object);
+    EXPECT_EQ(ctx->getPrototype(obj), proto);
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(obj, "inherited")), 7.0);
+
+    // null 原型
+    Value* args2[1] = {ctx->createNull()};
+    Value* bare = callObjectStatic(ctx.get(), "create", 1, args2);
+    EXPECT_EQ(ctx->getPrototype(bare)->type()->kind(), TypeKind::Null);
+
+    // 非对象原型 → Exception
+    Value* args3[1] = {ctx->createNumber(1)};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "create", 1, args3)->type()->kind(),
+              TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, ObjectGetAndSetPrototypeOf) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    Value* args[1] = {obj};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "getPrototypeOf", 1, args), ctx->objectPrototype());
+
+    Value* proto = ctx->createObject();
+    Value* args2[2] = {obj, proto};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "setPrototypeOf", 2, args2), obj);
+    EXPECT_EQ(ctx->getPrototype(obj), proto);
+
+    // null 原型合法
+    Value* argsNull[2] = {obj, ctx->createNull()};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "setPrototypeOf", 2, argsNull), obj);
+    EXPECT_EQ(ctx->getPrototype(obj)->type()->kind(), TypeKind::Null);
+
+    // 非法原型 → Exception
+    Value* args3[2] = {obj, ctx->createNumber(1)};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "setPrototypeOf", 2, args3)->type()->kind(),
+              TypeKind::Exception);
+    // null/undefined 目标 → Exception
+    Value* args4[1] = {ctx->createNull()};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "getPrototypeOf", 1, args4)->type()->kind(),
+              TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, ObjectDefinePropertyWithDescriptor) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    Value* desc = ctx->createObject();
+    ctx->setProperty(desc, "value", ctx->createNumber(5));
+    ctx->setProperty(desc, "writable", ctx->createBoolean(true));
+    ctx->setProperty(desc, "enumerable", ctx->createBoolean(false));
+    Value* args[3] = {obj, ctx->createString("x"), desc};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "defineProperty", 3, args), obj);
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(obj, "x")), 5.0);
+    Value* isEnum = ctx->getProperty(ctx->objectPrototype(), "propertyIsEnumerable");
+    Value* enumArg[1] = {ctx->createString("x")};
+    EXPECT_FALSE(boolOf(ctx->call(isEnum, obj, 1, enumArg)));
+
+    // 访问器描述符：getter 以 obj 为 this 调用
+    Value* getter = ctx->createNativeFunction(returnsThis, 0);
+    Value* accDesc = ctx->createObject();
+    ctx->setProperty(accDesc, "get", getter);
+    Value* args2[3] = {obj, ctx->createString("y"), accDesc};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "defineProperty", 3, args2), obj);
+    EXPECT_EQ(ctx->getProperty(obj, "y"), obj);
+}
+
+TEST(ObjectBuiltinsTest, ObjectDefinePropertyRejectsBadArgs) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    // 参数不足
+    Value* args[2] = {obj, ctx->createString("x")};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "defineProperty", 2, args)->type()->kind(),
+              TypeKind::Exception);
+    // 描述符非对象
+    Value* args2[3] = {obj, ctx->createString("x"), ctx->createNumber(1)};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "defineProperty", 3, args2)->type()->kind(),
+              TypeKind::Exception);
+    // 目标 null
+    Value* args3[3] = {ctx->createNull(), ctx->createString("x"), ctx->createObject()};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "defineProperty", 3, args3)->type()->kind(),
+              TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, ObjectGetOwnPropertyNamesIncludesNonEnumerable) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    ctx->defineProperty(obj, "hidden", ctx->createNumber(1), true, false, true);
+    ctx->setProperty(obj, "shown", ctx->createNumber(2));
+    Value* args[1] = {obj};
+    Value* names = callObjectStatic(ctx.get(), "getOwnPropertyNames", 1, args);
+    ASSERT_EQ(names->type()->kind(), TypeKind::Array);
+    EXPECT_EQ(strOf(elemOf(ctx.get(), names, 0)), "hidden");
+    EXPECT_EQ(strOf(elemOf(ctx.get(), names, 1)), "shown");
+}
+
+// ===== 枚举接口（ownPropertyKeys）=====
+
+TEST(ObjectBuiltinsTest, OwnPropertyKeysFullOrder) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    ctx->setProperty(obj, "z", ctx->createNumber(0));
+    ctx->setProperty(obj, "3", ctx->createNumber(1));
+    ctx->setProperty(obj, "1", ctx->createNumber(2));
+    Value* sym = ctx->createSymbol("s");
+    ctx->defineProperty(obj, sym, ctx->createNumber(3), true, true, true);
+
+    Value* keys = ctx->ownPropertyKeys(obj, false, true);
+    ASSERT_EQ(keys->type()->kind(), TypeKind::Array);
+    EXPECT_EQ(strOf(elemOf(ctx.get(), keys, 0)), "1");
+    EXPECT_EQ(strOf(elemOf(ctx.get(), keys, 1)), "3");
+    EXPECT_EQ(strOf(elemOf(ctx.get(), keys, 2)), "z");
+    EXPECT_EQ(elemOf(ctx.get(), keys, 3), sym);  // symbol 保持身份
+    EXPECT_EQ(elemOf(ctx.get(), keys, 4)->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(ObjectBuiltinsTest, OwnPropertyKeysFiltersAndSymbols) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    ctx->setProperty(obj, "shown", ctx->createNumber(1));
+    ctx->defineProperty(obj, "hidden", ctx->createNumber(2), true, false, true);
+    Value* sym = ctx->createSymbol("s");
+    ctx->defineProperty(obj, sym, ctx->createNumber(3), true, false, true);
+
+    // 不含 symbol（插入序：shown 先于 hidden）
+    Value* onlyStrings = ctx->ownPropertyKeys(obj, false, false);
+    EXPECT_EQ(strOf(elemOf(ctx.get(), onlyStrings, 0)), "shown");
+    EXPECT_EQ(strOf(elemOf(ctx.get(), onlyStrings, 1)), "hidden");
+    EXPECT_EQ(elemOf(ctx.get(), onlyStrings, 2)->type()->kind(), TypeKind::Undefined);
+
+    // 仅可枚举 + 含 symbol（不可枚举 symbol 被过滤）
+    Value* enumerable = ctx->ownPropertyKeys(obj, true, true);
+    EXPECT_EQ(strOf(elemOf(ctx.get(), enumerable, 0)), "shown");
+    EXPECT_EQ(elemOf(ctx.get(), enumerable, 1)->type()->kind(), TypeKind::Undefined);
+
+    // ownEnumerableStringKeys 便捷形式
+    Value* conv = ctx->ownEnumerableStringKeys(obj);
+    EXPECT_EQ(strOf(elemOf(ctx.get(), conv, 0)), "shown");
+    EXPECT_EQ(elemOf(ctx.get(), conv, 1)->type()->kind(), TypeKind::Undefined);
+
+    // 非对象 → 空数组
+    Value* none = ctx->ownPropertyKeys(ctx->createNumber(1), false, true);
+    ASSERT_EQ(none->type()->kind(), TypeKind::Array);
+    EXPECT_EQ(elemOf(ctx.get(), none, 0)->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(ObjectBuiltinsTest, OwnPropertyKeysArrayIncludesLength) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* arr = ctx->createArray();
+    ctx->setProperty(arr, "0", ctx->createNumber(1));
+    ctx->setProperty(arr, "1", ctx->createNumber(2));
+
+    // 全键：索引升序 + length（不可枚举）
+    Value* all = ctx->ownPropertyKeys(arr, false, false);
+    EXPECT_EQ(strOf(elemOf(ctx.get(), all, 0)), "0");
+    EXPECT_EQ(strOf(elemOf(ctx.get(), all, 1)), "1");
+    EXPECT_EQ(strOf(elemOf(ctx.get(), all, 2)), "length");
+    EXPECT_EQ(elemOf(ctx.get(), all, 3)->type()->kind(), TypeKind::Undefined);
+
+    // 仅可枚举：length 被过滤
+    Value* en = ctx->ownPropertyKeys(arr, true, false);
+    EXPECT_EQ(strOf(elemOf(ctx.get(), en, 0)), "0");
+    EXPECT_EQ(strOf(elemOf(ctx.get(), en, 1)), "1");
+    EXPECT_EQ(elemOf(ctx.get(), en, 2)->type()->kind(), TypeKind::Undefined);
+}
+
+// ===== Object.prototype 其余方法 =====
+
+TEST(ObjectBuiltinsTest, ObjectProtoIsPrototypeOf) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* proto = ctx->createObject();
+    Value* obj = ctx->createObject();
+    ctx->setPrototype(obj, proto);
+    Value* isProto = ctx->getProperty(ctx->objectPrototype(), "isPrototypeOf");
+
+    Value* args[1] = {obj};
+    EXPECT_TRUE(boolOf(ctx->call(isProto, proto, 1, args)));
+    // 自身不是自己的原型
+    Value* args2[1] = {proto};
+    EXPECT_FALSE(boolOf(ctx->call(isProto, proto, 1, args2)));
+    // 非对象实参 → false
+    Value* args3[1] = {ctx->createNumber(1)};
+    EXPECT_FALSE(boolOf(ctx->call(isProto, proto, 1, args3)));
+    // 无实参 → false
+    EXPECT_FALSE(boolOf(ctx->call(isProto, proto, 0, nullptr)));
+    // this 为 null → Exception
+    EXPECT_EQ(ctx->call(isProto, nullptr, 1, args)->type()->kind(), TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, ObjectProtoPropertyIsEnumerable) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    ctx->setProperty(obj, "shown", ctx->createNumber(1));
+    ctx->defineProperty(obj, "hidden", ctx->createNumber(2), true, false, true);
+    Value* fn = ctx->getProperty(ctx->objectPrototype(), "propertyIsEnumerable");
+
+    Value* args1[1] = {ctx->createString("shown")};
+    EXPECT_TRUE(boolOf(ctx->call(fn, obj, 1, args1)));
+    Value* args2[1] = {ctx->createString("hidden")};
+    EXPECT_FALSE(boolOf(ctx->call(fn, obj, 1, args2)));
+    // 原型链上的属性不算自有
+    Value* args3[1] = {ctx->createString("toString")};
+    EXPECT_FALSE(boolOf(ctx->call(fn, obj, 1, args3)));
+    // 非对象 this → Exception
+    EXPECT_EQ(ctx->call(fn, ctx->createNumber(1), 1, args1)->type()->kind(),
+              TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, ObjectProtoToLocaleStringDelegatesToToString) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* fn = ctx->getProperty(ctx->objectPrototype(), "toLocaleString");
+    Value* obj = ctx->createObject();
+    EXPECT_EQ(strOf(ctx->call(fn, obj, 0, nullptr)), "[object Object]");
+}
+
+// ===== @@toStringTag =====
+
+TEST(ObjectBuiltinsTest, ObjectProtoToStringUsesToStringTag) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* toStringFn = ctx->getProperty(ctx->objectPrototype(), "toString");
+    Value* obj = ctx->createObject();
+    Value* tag = ctx->getWellKnownSymbol(neo::core::WellKnownSymbol::ToStringTag);
+    ctx->defineProperty(obj, tag, ctx->createString("Custom"), true, false, true);
+    EXPECT_EQ(strOf(ctx->call(toStringFn, obj, 0, nullptr)), "[object Custom]");
+}
+
+// ===== 函数 length 属性 =====
+
+TEST(ObjectBuiltinsTest, ObjectProtoToStringWrapperTags) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* toStringFn = ctx->getProperty(ctx->objectPrototype(), "toString");
+    EXPECT_EQ(strOf(ctx->call(toStringFn, ctx->createPrimitiveWrapper(ctx->createNumber(1)),
+                              0, nullptr)),
+              "[object Number]");
+    EXPECT_EQ(strOf(ctx->call(toStringFn, ctx->createPrimitiveWrapper(ctx->createString("s")),
+                              0, nullptr)),
+              "[object String]");
+    EXPECT_EQ(strOf(ctx->call(toStringFn, ctx->createPrimitiveWrapper(ctx->createBoolean(true)),
+                              0, nullptr)),
+              "[object Boolean]");
+    EXPECT_EQ(strOf(ctx->call(toStringFn, ctx->createPrimitiveWrapper(ctx->createSymbol("s")),
+                              0, nullptr)),
+              "[object Symbol]");
+    EXPECT_EQ(strOf(ctx->call(toStringFn, nullptr, 0, nullptr)), "[object Undefined]");
+}
+
+TEST(ObjectBuiltinsTest, ObjectProtoToStringTagPropagatesErrors) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* toStringFn = ctx->getProperty(ctx->objectPrototype(), "toString");
+    Value* obj = ctx->createObject();
+    // @@toStringTag 的 getter 抛异常 → 透传
+    Value* boom = ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t, Value*[]) {
+            return c->createException(c->createString("boom"));
+        }, 0);
+    ctx->defineAccessor(obj, ctx->getWellKnownSymbol(neo::core::WellKnownSymbol::ToStringTag),
+                        boom, nullptr);
+    EXPECT_EQ(ctx->call(toStringFn, obj, 0, nullptr)->type()->kind(), TypeKind::Exception);
+
+    // @@toStringTag 为对象 → ToString 抛异常（ToPrimitive 失败）→ 透传
+    Value* obj2 = ctx->createObject();
+    Value* badTag = ctx->createObject();
+    Value* badValueOf = ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t, Value*[]) {
+            return c->createException(c->createString("bad tag"));
+        }, 0);
+    ctx->defineProperty(badTag, "valueOf", badValueOf);
+    ctx->defineProperty(badTag, "toString", badValueOf);
+    ctx->defineProperty(obj2,
+                        ctx->getWellKnownSymbol(neo::core::WellKnownSymbol::ToStringTag),
+                        badTag, true, false, true);
+    EXPECT_EQ(ctx->call(toStringFn, obj2, 0, nullptr)->type()->kind(), TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, PropertyIsEnumerableOnArrayAndStringWrapper) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* fn = ctx->getProperty(ctx->objectPrototype(), "propertyIsEnumerable");
+    Value* arr = ctx->createArray();
+    ctx->setProperty(arr, "0", ctx->createNumber(1));
+    Value* idx[1] = {ctx->createString("0")};
+    EXPECT_TRUE(boolOf(ctx->call(fn, arr, 1, idx)));
+    Value* missing[1] = {ctx->createString("5")};
+    EXPECT_FALSE(boolOf(ctx->call(fn, arr, 1, missing)));
+    Value* len[1] = {ctx->createString("length")};
+    EXPECT_FALSE(boolOf(ctx->call(fn, arr, 1, len)));
+
+    Value* strObj = ctx->createPrimitiveWrapper(ctx->createString("ab"));
+    EXPECT_TRUE(boolOf(ctx->call(fn, strObj, 1, idx)));
+    EXPECT_FALSE(boolOf(ctx->call(fn, strObj, 1, len)));
+    Value* outOfRange[1] = {ctx->createString("9")};
+    EXPECT_FALSE(boolOf(ctx->call(fn, strObj, 1, outOfRange)));
+
+    // 无实参 → false
+    EXPECT_FALSE(boolOf(ctx->call(fn, arr, 0, nullptr)));
+    // symbol 键
+    Value* sym = ctx->createSymbol("s");
+    ctx->defineProperty(arr, sym, ctx->createNumber(1), true, true, true);
+    Value* symArg[1] = {sym};
+    EXPECT_TRUE(boolOf(ctx->call(fn, arr, 1, symArg)));
+    Value* missingSym[1] = {ctx->createSymbol("other")};
+    EXPECT_FALSE(boolOf(ctx->call(fn, arr, 1, missingSym)));
+}
+
+TEST(ObjectBuiltinsTest, ToLocaleStringErrorPaths) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* fn = ctx->getProperty(ctx->objectPrototype(), "toLocaleString");
+    // this 为 null → Exception
+    EXPECT_EQ(ctx->call(fn, nullptr, 0, nullptr)->type()->kind(), TypeKind::Exception);
+    // toString 不是函数 → Exception
+    Value* obj = ctx->createObject();
+    ctx->defineProperty(obj, "toString", ctx->createNumber(1));
+    EXPECT_EQ(ctx->call(fn, obj, 0, nullptr)->type()->kind(), TypeKind::Exception);
+    // toString 抛异常 → 透传
+    Value* obj2 = ctx->createObject();
+    Value* boom = ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t, Value*[]) {
+            return c->createException(c->createString("boom"));
+        }, 0);
+    ctx->defineProperty(obj2, "toString", boom);
+    EXPECT_EQ(ctx->call(fn, obj2, 0, nullptr)->type()->kind(), TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, FunctionProtoBindErrorsAndNoArgs) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* bindFn = ctx->getProperty(ctx->functionPrototype(), "bind");
+    // 非函数 → Exception
+    EXPECT_EQ(ctx->call(bindFn, ctx->createNumber(1), 0, nullptr)->type()->kind(),
+              TypeKind::Exception);
+    // 无参：this = undefined，无前置实参
+    Value* fn = ctx->createNativeFunction(returnsThis, 0);
+    Value* bound = ctx->call(bindFn, fn, 0, nullptr);
+    ASSERT_EQ(bound->type()->kind(), TypeKind::Function);
+    EXPECT_EQ(ctx->call(bound, ctx->createObject(), 0, nullptr)->type()->kind(),
+              TypeKind::Undefined);
+}
+
+// ===== 参数缺省与错误路径 =====
+
+TEST(ObjectBuiltinsTest, ObjectStaticsWithoutArgs) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    // 缺参按 undefined → ToObject 抛 Exception
+    for (const char* name : {"keys", "values", "entries", "getPrototypeOf",
+                             "getOwnPropertyNames"}) {
+        EXPECT_EQ(callObjectStatic(ctx.get(), name, 0, nullptr)->type()->kind(),
+                  TypeKind::Exception)
+            << name;
+    }
+    // Object.create() 无参：proto = undefined → Exception
+    EXPECT_EQ(callObjectStatic(ctx.get(), "create", 0, nullptr)->type()->kind(),
+              TypeKind::Exception);
+    // Object.setPrototypeOf() 无参 → Exception；只有 target 时 proto=undefined → Exception
+    EXPECT_EQ(callObjectStatic(ctx.get(), "setPrototypeOf", 0, nullptr)->type()->kind(),
+              TypeKind::Exception);
+    Value* obj = ctx->createObject();
+    Value* oneArg[1] = {obj};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "setPrototypeOf", 1, oneArg)->type()->kind(),
+              TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, ObjectAssignErrorPaths) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    // target 为 null（argc 满足 minArgc）
+    Value* nullTarget[2] = {ctx->createNull(), ctx->createObject()};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "assign", 2, nullTarget)->type()->kind(),
+              TypeKind::Exception);
+
+    // 源对象属性 getter 抛异常 → 透传
+    Value* target = ctx->createObject();
+    Value* src = ctx->createObject();
+    Value* boom = ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t, Value*[]) {
+            return c->createException(c->createString("boom"));
+        }, 0);
+    ctx->defineAccessor(src, "bad", boom, nullptr, /*enumerable=*/true);
+    Value* args[2] = {target, src};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "assign", 2, args)->type()->kind(),
+              TypeKind::Exception);
+
+    // 目标属性只读 → setProperty 抛异常
+    Value* ro = ctx->createObject();
+    ctx->defineProperty(ro, "x", ctx->createNumber(1), false, true, true);
+    Value* src2 = ctx->createObject();
+    ctx->setProperty(src2, "x", ctx->createNumber(2));
+    Value* args2[2] = {ro, src2};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "assign", 2, args2)->type()->kind(),
+              TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, ObjectValuesAndEntriesPropagateGetterErrors) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* boom = ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t, Value*[]) {
+            return c->createException(c->createString("boom"));
+        }, 0);
+    Value* obj = ctx->createObject();
+    ctx->defineAccessor(obj, "bad", boom, nullptr, /*enumerable=*/true);
+    Value* args[1] = {obj};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "values", 1, args)->type()->kind(),
+              TypeKind::Exception);
+    EXPECT_EQ(callObjectStatic(ctx.get(), "entries", 1, args)->type()->kind(),
+              TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, ObjectDefinePropertyDescriptorErrorPaths) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    Value* boom = ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t, Value*[]) {
+            return c->createException(c->createString("boom"));
+        }, 0);
+
+    // 描述符各字段 getter 抛异常 → 透传
+    for (const char* field : {"get", "set", "enumerable", "configurable", "value",
+                              "writable"}) {
+        Value* desc = ctx->createObject();
+        ctx->defineAccessor(desc, field, boom, nullptr);
+        Value* args[3] = {obj, ctx->createString("k"), desc};
+        EXPECT_EQ(callObjectStatic(ctx.get(), "defineProperty", 3, args)->type()->kind(),
+                  TypeKind::Exception)
+            << field;
+    }
+
+    // 仅 setter 的访问器描述符
+    Value* setter = ctx->createNativeFunction(returnsThis, 0);
+    Value* setterDesc = ctx->createObject();
+    ctx->setProperty(setterDesc, "set", setter);
+    Value* args2[3] = {obj, ctx->createString("s"), setterDesc};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "defineProperty", 3, args2), obj);
+
+    // 仅 getter
+    Value* getter = ctx->createNativeFunction(returnsThis, 0);
+    Value* getterDesc = ctx->createObject();
+    ctx->setProperty(getterDesc, "get", getter);
+    Value* args3[3] = {obj, ctx->createString("g"), getterDesc};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "defineProperty", 3, args3), obj);
+
+    // value 缺省 → undefined；writable 缺省 → false
+    Value* emptyDesc = ctx->createObject();
+    Value* args4[3] = {obj, ctx->createString("e"), emptyDesc};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "defineProperty", 3, args4), obj);
+    EXPECT_EQ(ctx->getProperty(obj, "e")->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(ObjectBuiltinsTest, HasOwnPropertyOnArray) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* hasOwn = ctx->getProperty(ctx->objectPrototype(), "hasOwnProperty");
+    Value* arr = ctx->createArray();
+    ctx->setProperty(arr, "0", ctx->createNumber(1));
+    Value* idx[1] = {ctx->createString("0")};
+    EXPECT_TRUE(boolOf(ctx->call(hasOwn, arr, 1, idx)));
+    Value* missing[1] = {ctx->createString("3")};
+    EXPECT_FALSE(boolOf(ctx->call(hasOwn, arr, 1, missing)));
+    Value* len[1] = {ctx->createString("length")};
+    EXPECT_TRUE(boolOf(ctx->call(hasOwn, arr, 1, len)));
+}
+
+TEST(ObjectBuiltinsTest, PrototypeMethodsRejectNonObjectThis) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* isProto = ctx->getProperty(ctx->objectPrototype(), "isPrototypeOf");
+    Value* isEnum = ctx->getProperty(ctx->objectPrototype(), "propertyIsEnumerable");
+    Value* args[1] = {ctx->createObject()};
+    EXPECT_EQ(ctx->call(isProto, ctx->createNumber(1), 1, args)->type()->kind(),
+              TypeKind::Exception);
+    EXPECT_EQ(ctx->call(isEnum, ctx->createNumber(1), 1, args)->type()->kind(),
+              TypeKind::Exception);
+    // 键 ToPropertyKey 失败（symbol 以外的对象 valueOf 抛异常）
+    Value* obj = ctx->createObject();
+    Value* boom = ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t, Value*[]) {
+            return c->createException(c->createString("boom"));
+        }, 0);
+    Value* badKey = ctx->createObject();
+    ctx->defineProperty(badKey, "valueOf", boom);
+    ctx->defineProperty(badKey, "toString", boom);
+    Value* badArgs[1] = {badKey};
+    EXPECT_EQ(ctx->call(isEnum, obj, 1, badArgs)->type()->kind(), TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, ApplyLengthConversionErrors) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* applyFn = ctx->getProperty(ctx->functionPrototype(), "apply");
+    Value* fn = ctx->createNativeFunction(argcFn, 0);
+    // length 是对象且 ToNumber 抛异常 → 透传
+    Value* badLen = ctx->createObject();
+    Value* boom = ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t, Value*[]) {
+            return c->createException(c->createString("boom"));
+        }, 0);
+    ctx->defineProperty(badLen, "valueOf", boom);
+    ctx->defineProperty(badLen, "toString", boom);
+    Value* arrayLike = ctx->createObject();
+    ctx->setProperty(arrayLike, "length", badLen);
+    Value* args[2] = {ctx->createNull(), arrayLike};
+    EXPECT_EQ(ctx->call(applyFn, fn, 2, args)->type()->kind(), TypeKind::Exception);
+
+    // length = NaN → 0
+    Value* nanLike = ctx->createObject();
+    ctx->setProperty(nanLike, "length", ctx->createNumber(std::nan("")));
+    Value* args2[2] = {ctx->createNull(), nanLike};
+    Value* r = ctx->call(applyFn, fn, 2, args2);
+    ASSERT_EQ(r->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numOf(r), 0.0);
+}
+
+TEST(ObjectBuiltinsTest, BindWithNullThis) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* bindFn = ctx->getProperty(ctx->functionPrototype(), "bind");
+    EXPECT_EQ(ctx->call(bindFn, nullptr, 0, nullptr)->type()->kind(), TypeKind::Exception);
+}
+
+// ===== 覆盖补强：函数运算、symbol 属性写、popScope 守卫 =====
+
+TEST(ObjectBuiltinsTest, FunctionValuesParticipateInArithmetic) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* fn = ctx->createNativeFunction(returnsThis, 0);
+    Value* n = ctx->createNumber(1);
+    // 函数 ToPrimitive 得源码串 → + 拼接，其余算术 NaN
+    EXPECT_EQ(ctx->add(fn, n)->type()->kind(), TypeKind::String);
+    EXPECT_TRUE(std::isnan(numOf(ctx->sub(fn, n))));
+    EXPECT_TRUE(std::isnan(numOf(ctx->mul(fn, n))));
+    EXPECT_TRUE(std::isnan(numOf(ctx->div(fn, n))));
+    // 异常透传
+    Value* exc = ctx->createException(ctx->createString("e"));
+    EXPECT_EQ(ctx->add(exc, n), exc);
+    EXPECT_EQ(ctx->sub(exc, n), exc);
+    EXPECT_EQ(ctx->mul(exc, n), exc);
+    EXPECT_EQ(ctx->div(exc, n), exc);
+}
+
+TEST(ObjectBuiltinsTest, SymbolPropertyAssignmentUpdatesExisting) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    Value* sym = ctx->createSymbol("s");
+    ctx->defineProperty(obj, sym, ctx->createNumber(1), true, true, true);
+    // 已有可写 symbol 属性 → 直接更新
+    EXPECT_EQ(ctx->setProperty(obj, sym, ctx->createNumber(2))->type()->kind(),
+              TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(obj, sym)), 2.0);
+    // 只读 symbol 属性 → Exception
+    Value* ro = ctx->createObject();
+    ctx->defineProperty(ro, sym, ctx->createNumber(1), false, true, true);
+    EXPECT_EQ(ctx->setProperty(ro, sym, ctx->createNumber(2))->type()->kind(),
+              TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, PopScopeGuardsRootAndGlobal) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    // current == root：popScope 无操作
+    neo::core::Scope* root = ctx->root();
+    ctx->popScope();
+    EXPECT_EQ(ctx->current(), root);
+    // 新建子 scope 后 pop 回到 root
+    neo::core::Scope* child = ctx->pushNewScope(root);
+    ASSERT_NE(child, nullptr);
+    EXPECT_EQ(ctx->current(), child);
+    ctx->popScope();
+    EXPECT_EQ(ctx->current(), root);
+}
+
+TEST(ObjectBuiltinsTest, ApplyCapsHugeLength) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* applyFn = ctx->getProperty(ctx->functionPrototype(), "apply");
+    Value* fn = ctx->createNativeFunction(argcFn, 0);
+    // length 超 2^32-1 → 截断；索引 0 的 getter 抛异常使循环立即退出
+    Value* boom = ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t, Value*[]) {
+            return c->createException(c->createString("boom"));
+        }, 0);
+    Value* arrayLike = ctx->createObject();
+    ctx->setProperty(arrayLike, "length", ctx->createNumber(1e10));
+    ctx->defineAccessor(arrayLike, "0", boom, nullptr);
+    Value* args[2] = {ctx->createNull(), arrayLike};
+    EXPECT_EQ(ctx->call(applyFn, fn, 2, args)->type()->kind(), TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, ToLocaleStringPropagatesToStringLookupError) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* fn = ctx->getProperty(ctx->objectPrototype(), "toLocaleString");
+    // toString 是抛异常的 getter → 查找本身透传
+    Value* obj = ctx->createObject();
+    Value* boom = ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t, Value*[]) {
+            return c->createException(c->createString("boom"));
+        }, 0);
+    ctx->defineAccessor(obj, "toString", boom, nullptr);
+    EXPECT_EQ(ctx->call(fn, obj, 0, nullptr)->type()->kind(), TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, SymbolAccessorSetPaths) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* sym = ctx->createSymbol("s");
+    Value* setter = ctx->createNativeFunction(returnsThis, 0);
+
+    // 自有 symbol 访问器：有 setter → 调用；无 setter → Exception
+    Value* obj = ctx->createObject();
+    ctx->defineAccessor(obj, sym, nullptr, setter);
+    EXPECT_EQ(ctx->setProperty(obj, sym, ctx->createNumber(1))->type()->kind(),
+              TypeKind::Number);
+    Value* getterOnly = ctx->createObject();
+    ctx->defineAccessor(getterOnly, sym, ctx->createNativeFunction(returnsThis, 0), nullptr);
+    EXPECT_EQ(ctx->setProperty(getterOnly, sym, ctx->createNumber(1))->type()->kind(),
+              TypeKind::Exception);
+
+    // 继承的 symbol 访问器：有 setter → 调用
+    Value* proto = ctx->createObject();
+    ctx->defineAccessor(proto, sym, nullptr, setter);
+    Value* child = ctx->createObject();
+    ctx->setPrototype(child, proto);
+    EXPECT_EQ(ctx->setProperty(child, sym, ctx->createNumber(2))->type()->kind(),
+              TypeKind::Number);
+
+    // 继承的 symbol 数据属性只读 → Exception
+    Value* roProto = ctx->createObject();
+    ctx->defineProperty(roProto, sym, ctx->createNumber(1), false, true, true);
+    Value* roChild = ctx->createObject();
+    ctx->setPrototype(roChild, roProto);
+    EXPECT_EQ(ctx->setProperty(roChild, sym, ctx->createNumber(2))->type()->kind(),
+              TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, ArrayDefinePropertyRejectsBadAttributes) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* arr = ctx->createArray();
+    // length 不可枚举/不可配置
+    EXPECT_EQ(ctx->defineProperty(arr, "length", ctx->createNumber(1), true, true, false)
+                  ->type()->kind(),
+              TypeKind::Exception);
+    // 索引元素属性不可定制
+    EXPECT_EQ(ctx->defineProperty(arr, "0", ctx->createNumber(1), false, true, true)
+                  ->type()->kind(),
+              TypeKind::Exception);
+    // 合规属性：length 与索引均可正常定义
+    EXPECT_EQ(ctx->defineProperty(arr, "length", ctx->createNumber(3), true, false, false)
+                  ->type()->kind(),
+              TypeKind::Number);
+    EXPECT_EQ(ctx->defineProperty(arr, "0", ctx->createNumber(1), true, true, true)
+                  ->type()->kind(),
+              TypeKind::Number);
+}
+
+TEST(ObjectBuiltinsTest, HasOwnPropertyAndIsEnumerableEdgeKeys) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* hasOwn = ctx->getProperty(ctx->objectPrototype(), "hasOwnProperty");
+    Value* isEnum = ctx->getProperty(ctx->objectPrototype(), "propertyIsEnumerable");
+    Value* arr = ctx->createArray();
+    ctx->setProperty(arr, "0", ctx->createNumber(1));
+    ctx->setProperty(arr, "foo", ctx->createNumber(2));
+
+    // 数组上的非索引字符串键
+    Value* foo[1] = {ctx->createString("foo")};
+    EXPECT_TRUE(boolOf(ctx->call(hasOwn, arr, 1, foo)));
+    EXPECT_TRUE(boolOf(ctx->call(isEnum, arr, 1, foo)));
+
+    // 不可枚举 symbol 键 → propertyIsEnumerable false
+    Value* sym = ctx->createSymbol("s");
+    ctx->defineProperty(arr, sym, ctx->createNumber(1), true, false, true);
+    Value* symArg[1] = {sym};
+    EXPECT_FALSE(boolOf(ctx->call(isEnum, arr, 1, symArg)));
+
+    // 非字符串包装（Number）走 properties 分支
+    Value* numObj = ctx->createPrimitiveWrapper(ctx->createNumber(1));
+    EXPECT_FALSE(boolOf(ctx->call(isEnum, numObj, 1, foo)));
+
+    // this 为 null → Exception
+    EXPECT_EQ(ctx->call(isEnum, nullptr, 1, foo)->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(ctx->call(hasOwn, nullptr, 1, foo)->type()->kind(), TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, IsPrototypeOfNullThis) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* isProto = ctx->getProperty(ctx->objectPrototype(), "isPrototypeOf");
+    Value* arg[1] = {ctx->createObject()};
+    EXPECT_EQ(ctx->call(isProto, nullptr, 1, arg)->type()->kind(), TypeKind::Exception);
+    // 实参为原始值 → false
+    Value* prim[1] = {ctx->createNumber(1)};
+    EXPECT_FALSE(boolOf(ctx->call(isProto, ctx->objectPrototype(), 1, prim)));
+}
+
+TEST(ObjectBuiltinsTest, ConstructWithNonObjectPrototype) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    // fn.prototype 被改成原始值 → 退回默认 Object.prototype（GetPrototypeFromConstructor）
+    Value* fn = ctx->createNativeFunction(returnsThis, 0);
+    ctx->setProperty(fn, "prototype", ctx->createNumber(1));
+    Value* obj = ctx->construct(fn, 0, nullptr);
+    ASSERT_EQ(obj->type()->kind(), TypeKind::Object);
+    EXPECT_EQ(ctx->getPrototype(obj), ctx->objectPrototype());
+
+    // 构造函数显式返回对象 → 用返回值
+    Value* fn3 = ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t, Value*[]) {
+            Value* o = c->createObject();
+            c->setProperty(o, "made", c->createNumber(1));
+            return o;
+        }, 0);
+    Value* made = ctx->construct(fn3, 0, nullptr);
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(made, "made")), 1.0);
+}
+
+TEST(ObjectBuiltinsTest, SymbolPropertyDeleteAndOrder) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    Value* sym = ctx->createSymbol("s");
+    // 删除不存在的 symbol → true
+    EXPECT_TRUE(boolOf(ctx->deleteProperty(obj, sym)));
+    // 定义后删除 → true，且从 symbolOrder 移除
+    ctx->defineProperty(obj, sym, ctx->createNumber(1), true, true, true);
+    EXPECT_TRUE(boolOf(ctx->deleteProperty(obj, sym)));
+    auto* d = static_cast<ObjectData*>(obj->data());
+    EXPECT_TRUE(d->symbolOrder.empty());
+    // 不可配置 symbol → Exception
+    ctx->defineProperty(obj, sym, ctx->createNumber(1), true, true, false);
+    EXPECT_EQ(ctx->deleteProperty(obj, sym)->type()->kind(), TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, InheritedStringAccessorAndReadOnly) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* setter = ctx->createNativeFunction(returnsThis, 0);
+    Value* proto = ctx->createObject();
+    ctx->defineAccessor(proto, "acc", nullptr, setter);
+    Value* child = ctx->createObject();
+    ctx->setPrototype(child, proto);
+    // 继承访问器有 setter → 调用并返回赋值
+    EXPECT_EQ(ctx->setProperty(child, "acc", ctx->createNumber(1))->type()->kind(),
+              TypeKind::Number);
+    // 继承访问器只有 getter → Exception
+    Value* getterProto = ctx->createObject();
+    ctx->defineAccessor(getterProto, "g", ctx->createNativeFunction(returnsThis, 0),
+                        nullptr);
+    Value* child2 = ctx->createObject();
+    ctx->setPrototype(child2, getterProto);
+    EXPECT_EQ(ctx->setProperty(child2, "g", ctx->createNumber(1))->type()->kind(),
+              TypeKind::Exception);
+    // 继承只读数据属性 → Exception
+    Value* roProto = ctx->createObject();
+    ctx->defineProperty(roProto, "ro", ctx->createNumber(1), false, true, true);
+    Value* child3 = ctx->createObject();
+    ctx->setPrototype(child3, roProto);
+    EXPECT_EQ(ctx->setProperty(child3, "ro", ctx->createNumber(2))->type()->kind(),
+              TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, IsPrototypeOfNullPrototypeChain) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* isProto = ctx->getProperty(ctx->objectPrototype(), "isPrototypeOf");
+    // 原型链终点为 null → 循环条件 false 后返回 false
+    Value* bare = ctx->createObject();
+    static_cast<ObjectData*>(bare->data())->prototype = nullptr;
+    Value* args[1] = {bare};
+    EXPECT_FALSE(boolOf(ctx->call(isProto, ctx->objectPrototype(), 1, args)));
+}
+
+TEST(ObjectBuiltinsTest, ObjectStaticsOomPaths) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    ctx->setProperty(obj, "a", ctx->createNumber(1));
+    Value* args[1] = {obj};
+
+    // 配额耗尽：结果数组分配失败 → 返回 OOM 哨兵（ADR-031）
+    alloc->setLimit(alloc->used());
+    EXPECT_EQ(callObjectStatic(ctx.get(), "keys", 1, args), ctx->oomValue());
+    EXPECT_EQ(callObjectStatic(ctx.get(), "values", 1, args), ctx->oomValue());
+    EXPECT_EQ(callObjectStatic(ctx.get(), "entries", 1, args), ctx->oomValue());
+    EXPECT_EQ(callObjectStatic(ctx.get(), "getOwnPropertyNames", 1, args),
+              ctx->oomValue());
+}
+
+TEST(ObjectBuiltinsTest, FunctionHasLengthProperty) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* fn = ctx->createNativeFunction(sumArgs, 2);
+    Value* len = ctx->getProperty(fn, "length");
+    ASSERT_EQ(len->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numOf(len), 2.0);
+    // 不可写、不可枚举、可配置
+    auto* d = static_cast<ObjectData*>(fn->data());
+    auto it = d->properties.find("length");
+    ASSERT_NE(it, d->properties.end());
+    EXPECT_FALSE(it->second.writable);
+    EXPECT_FALSE(it->second.enumerable);
+    EXPECT_TRUE(it->second.configurable);
 }
