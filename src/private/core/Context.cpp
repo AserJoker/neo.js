@@ -22,6 +22,7 @@
 #include "core/types/Number.h"
 #include "core/types/Object.h"
 #include "core/types/String.h"
+#include "core/types/Symbol.h"
 #include "core/types/Undefined.h"
 
 #include <cstdlib>
@@ -137,6 +138,11 @@ Value* Context::createNumber(double n, std::string_view name) {
 
 Value* Context::createString(std::string_view s, std::string_view name) {
     return createTracked(getStringType(), gc_->allocData<StringData>(s), name);
+}
+
+Value* Context::createSymbol(std::string_view description, std::string_view name) {
+    // 每次创建分配独立的 SymbolData：唯一性由 data 身份保证
+    return createTracked(getSymbolType(), gc_->allocData<SymbolData>(description), name);
 }
 
 // —— 运算代理（纯代理，ADR-016 §4）——

@@ -51,9 +51,11 @@ public:
     std::string value;
     explicit StringData(std::string v) : value(std::move(v)) {}
     explicit StringData(std::string_view v) : value(v) {}
-    IData* clone(neo::infra::IAllocator* alloc) const override {
-        void* p = alloc->alloc(sizeof(StringData));
-        return new (p) StringData(value);  // 拷贝 std::string
+    // clone：不可变类型共享 data（ADR-019 §4）——ref++ 后返回 this，不复制字符串。
+    IData* clone(neo::infra::IAllocator* /*alloc*/) const override {
+        auto* self = const_cast<StringData*>(this);
+        self->refInc();
+        return self;
     }
 };
 

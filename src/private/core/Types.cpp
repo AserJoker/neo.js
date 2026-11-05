@@ -15,6 +15,7 @@
 #include "core/types/Object.h"
 #include "core/types/Number.h"
 #include "core/types/String.h"
+#include "core/types/Symbol.h"
 #include "core/types/Undefined.h"
 #include "core/types/Uninitialized.h"
 
@@ -67,6 +68,11 @@ IType* getFunctionType() {
 
 IType* getObjectType() {
     static ObjectType inst;
+    return &inst;
+}
+
+IType* getSymbolType() {
+    static SymbolType inst;
     return &inst;
 }
 

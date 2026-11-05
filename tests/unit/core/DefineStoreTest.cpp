@@ -322,20 +322,18 @@ TEST(DefineStoreTest, CloneNumberData) {
     alloc->free(cloned);
 }
 
-TEST(DefineStoreTest, CloneStringData) {
+TEST(DefineStoreTest, CloneStringSharesData) {
     auto alloc = createMallocAllocator();
     StringData src(std::string("hello world"));
-    IData* cloned = src.clone(alloc.get());
+    int refBefore = src.ref();
 
+    // 不可变类型共享 data（ADR-019 §4）：clone 返回同一 data，ref++
+    IData* cloned = src.clone(alloc.get());
     ASSERT_NE(cloned, nullptr);
-    auto* s = static_cast<StringData*>(cloned);
-    EXPECT_EQ(s->value, "hello world");
-    // 修改 clone 不影响原对象
-    s->value = "modified";
-    EXPECT_EQ(src.value, "hello world");
-    // placement new 对象需显式析构（StringData 含 std::string）
-    s->~StringData();
-    alloc->free(cloned);
+    EXPECT_EQ(cloned, &src);
+    EXPECT_EQ(src.ref(), refBefore + 1);
+    EXPECT_EQ(static_cast<StringData*>(cloned)->value, "hello world");
+    src.refDec();  // 撤销 clone 引入的引用
 }
 
 TEST(DefineStoreTest, CloneBooleanData) {

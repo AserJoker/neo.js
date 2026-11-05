@@ -87,6 +87,13 @@ public:
     virtual Value* createNumber(double n, std::string_view name = {}) = 0;
     virtual Value* createString(std::string_view s, std::string_view name = {}) = 0;
 
+    // createSymbol: 创建 symbol 原始值（ES2024 §20.4.1.1）。
+    // description 可空；每次调用分配独立的 data，故同描述的两个 symbol 不相等
+    // （唯一性 = data 身份，不可变类型按 ADR-019 §4 共享 data）。
+    // 返回 Value*：正常 symbol，或 OOM 哨兵（ADR-031）。
+    virtual Value* createSymbol(std::string_view description = {},
+                                std::string_view name = {}) = 0;
+
     // —— 运算代理（ADR-016 §4/§7）——
     // 纯代理：ctx->add(a,b) → a->type()->add(this, a, b)。
     // 外部代码不直接调 type->op()，一律走 Context。
