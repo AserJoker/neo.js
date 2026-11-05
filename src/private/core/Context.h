@@ -89,6 +89,7 @@ public:
     using IContext::hasProperty;
     using IContext::deleteProperty;
     using IContext::defineProperty;
+    using IContext::defineAccessor;
 
     Value* createObject(std::string_view bindName = {}) override;
     Value* getProperty(Value* obj, Value* key) override;
@@ -98,6 +99,8 @@ public:
     Value* defineProperty(Value* obj, Value* key, Value* value,
                           bool writable = true, bool enumerable = true,
                           bool configurable = true) override;
+    Value* defineAccessor(Value* obj, Value* key, Value* getter, Value* setter,
+                          bool enumerable = false, bool configurable = true) override;
     Value* getPrototype(Value* obj) override;
     Value* setPrototype(Value* obj, Value* proto) override;
 

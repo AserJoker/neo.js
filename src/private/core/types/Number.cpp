@@ -97,4 +97,11 @@ Value* NumberType::construct(IContext* ctx, Value* self, size_t /*argc*/, Value*
     return notAConstructor(ctx, self);
 }
 
+
+// 访问器属性定义（ADR-018）：原始类型无属性容器。
+Value* NumberType::defineAccessor(IContext* ctx, Value* self, Value* key, Value* /*getter*/,
+                               Value* /*setter*/, bool /*enumerable*/, bool /*configurable*/) {
+    return primitiveSetProperty(ctx, self, key, nullptr);
+}
+
 }  // namespace neo::core

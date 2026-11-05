@@ -86,4 +86,11 @@ Value* UndefinedType::construct(IContext* ctx, Value* self, size_t /*argc*/, Val
     return notAConstructor(ctx, self);
 }
 
+
+// 访问器属性定义（ADR-018）：原始类型无属性容器。
+Value* UndefinedType::defineAccessor(IContext* ctx, Value* self, Value* key, Value* /*getter*/,
+                               Value* /*setter*/, bool /*enumerable*/, bool /*configurable*/) {
+    return primitiveSetProperty(ctx, self, key, nullptr);
+}
+
 }  // namespace neo::core

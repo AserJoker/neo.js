@@ -87,4 +87,11 @@ Value* SymbolType::setPrototype(IContext* ctx, Value* self, Value* proto) {
     return primitiveSetPrototype(ctx, self, proto);
 }
 
+
+// 访问器属性定义（ADR-018）：原始类型无属性容器。
+Value* SymbolType::defineAccessor(IContext* ctx, Value* self, Value* key, Value* /*getter*/,
+                               Value* /*setter*/, bool /*enumerable*/, bool /*configurable*/) {
+    return primitiveSetProperty(ctx, self, key, nullptr);
+}
+
 }  // namespace neo::core

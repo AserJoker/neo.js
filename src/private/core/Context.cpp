@@ -308,6 +308,12 @@ Value* Context::defineProperty(Value* obj, Value* key, Value* value,
     return obj->type()->defineProperty(this, obj, key, value, writable, enumerable, configurable);
 }
 
+Value* Context::defineAccessor(Value* obj, Value* key, Value* getter, Value* setter,
+                               bool enumerable, bool configurable) {
+    return obj->type()->defineAccessor(this, obj, key, getter, setter, enumerable,
+                                       configurable);
+}
+
 Value* Context::getPrototype(Value* obj) {
     return obj->type()->getPrototype(this, obj);
 }

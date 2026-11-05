@@ -57,4 +57,12 @@ Value* FatalType::construct(IContext* /*ctx*/, Value* self, size_t /*argc*/, Val
     return self;
 }
 
+
+// 访问器属性定义：透传 self（异常/哨兵不参与属性操作）。
+Value* FatalType::defineAccessor(IContext* /*ctx*/, Value* self, Value* /*key*/,
+                               Value* /*getter*/, Value* /*setter*/,
+                               bool /*enumerable*/, bool /*configurable*/) {
+    return self;
+}
+
 }  // namespace neo::core

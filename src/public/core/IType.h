@@ -88,8 +88,9 @@ public:
     // key 是 Value*：Symbol 保持符号身份（走 symbols 容器），其他类型按 ToPropertyKey
     // 转成字符串（走 properties 容器）。Object/Function 作 key 需 ToPrimitive，暂不支持。
     // 非对象类型的属性操作：get 返回 undefined，set/has/delete 返回 Exception 或 false。
-    // Object 的 get/has 沿原型链查找（JS `in` 语义）；set 按 OrdinarySet 语义处理原型链；
-    // delete/define 只操作自有属性。getter/setter 调用留待后续阶段。
+    // Object 的 get/has 沿原型链查找（JS `in` 语义）；set 按 OrdinarySetWithOwnDescriptor
+    // 语义处理原型链（含访问器 setter 调用）；delete/define 只操作自有属性。
+    // 访问器属性：get 命中 getter 时以 receiver 为 this 调用，set 命中 setter 同理。
     virtual Value* getProperty(IContext* ctx, Value* self, Value* key) = 0;
     virtual Value* setProperty(IContext* ctx, Value* self, Value* key, Value* value) = 0;
     virtual bool hasProperty(IContext* ctx, Value* self, Value* key) = 0;
@@ -97,6 +98,12 @@ public:
     virtual Value* defineProperty(IContext* ctx, Value* self, Value* key,
                                   Value* value, bool writable, bool enumerable,
                                   bool configurable) = 0;
+
+    // 定义访问器属性（getter/setter 至少一个非空，ES2024 §10.1.6.3）。
+    // getter/setter 须为 Function 或 null；成功返回 self，失败返回 Exception。
+    // 非对象类型返回 Exception。
+    virtual Value* defineAccessor(IContext* ctx, Value* self, Value* key, Value* getter,
+                                  Value* setter, bool enumerable, bool configurable) = 0;
 
     // —— 原型链（ADR-018 §1）——
     // getPrototype: 返回对象的原型；无原型返回 null。非对象类型返回 undefined。

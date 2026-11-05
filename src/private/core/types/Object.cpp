@@ -113,44 +113,97 @@ Property* findSymbolInChain(Value* self, const void* ident) {
     return nullptr;
 }
 
-// 属性读取的公共返回：命中则返回 value（空则 undefined），否则 undefined
-Value* valueOrUndefined(IContext* ctx, Property* p) {
-    if (p == nullptr || p->value == nullptr) return ctx->createUndefined();
-    return p->value;
+// 结果是否为错误值（Exception/Fatal），用于访问器调用的透传判断
+inline bool isErrorResult(Value* v) {
+    TypeKind k = v->type()->kind();
+    return k == TypeKind::Exception || k == TypeKind::Fatal;
+}
+
+// 是否访问器属性（getter/setter 任一非空）
+inline bool isAccessor(const Property& p) {
+    return p.getter != nullptr || p.setter != nullptr;
+}
+
+// 调用访问器函数：以 receiver 为 this。
+// getter 无参数；setter 接收一个参数（被赋的值）。
+// 返回函数结果；Exception/Fatal 由调用方透传（异常即值，ADR-006/017）。
+Value* callAccessor(IContext* ctx, Value* fn, Value* receiver, size_t argc = 0,
+                    Value* argv[] = nullptr) {
+    return ctx->call(fn, receiver, argc, argv);
+}
+
+// 按属性描述符读取：数据属性返回值，访问器属性以 receiver 为 this 调 getter。
+// getter 为空 → undefined；getter 抛错 → 透传。
+Value* readProperty(IContext* ctx, Property* p, Value* receiver) {
+    if (p == nullptr) return ctx->createUndefined();
+    if (isAccessor(*p)) {
+        if (p->getter == nullptr) return ctx->createUndefined();
+        return callAccessor(ctx, p->getter, receiver);
+    }
+    return p->value != nullptr ? p->value : ctx->createUndefined();
 }
 
 }  // namespace
 
 Value* ObjectType::getProperty(IContext* ctx, Value* self, Value* key) {
-    // 沿原型链查找（JS 读取语义）；getter 调用留待访问器阶段
-    if (isSymbolKey(key)) {
-        return valueOrUndefined(ctx, findSymbolInChain(self, symbolIdentity(key)));
-    }
-    return valueOrUndefined(ctx, findInChain(self, keyString(key)));
+    // 沿原型链查找（JS 读取语义）；命中访问器则以 self（receiver）为 this 调 getter
+    Property* p = isSymbolKey(key) ? findSymbolInChain(self, symbolIdentity(key))
+                                   : findInChain(self, keyString(key));
+    return readProperty(ctx, p, self);
 }
 
 Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* value) {
     auto* d = static_cast<ObjectData*>(self->data());
+    // OrdinarySetWithOwnDescriptor（ES2024 §10.1.9.2）：
+    //   1. 自有属性存在 → 按其描述符处理（访问器调 setter；数据属性查 writable）
+    //   2. 自有不存在 → 沿原型链找继承描述符：
+    //        - 访问器有 setter → 以 receiver(self) 为 this 调用
+    //        - 访问器无 setter → 严格模式报错
+    //        - 数据属性不可写 → 严格模式报错
+    //        - 其余 → 在自身上新建数据属性
+    // 本阶段 receiver 恒为 self（无 Reflect.set 的显式 receiver 参数）。
 
     // —— symbol 键 ——
     if (isSymbolKey(key)) {
         const void* ident = symbolIdentity(key);
         auto it = d->symbols.find(ident);
         if (it != d->symbols.end()) {
-            if (!it->second.prop.writable) {
+            Property& own = it->second.prop;
+            if (isAccessor(own)) {
+                if (own.setter == nullptr) {
+                    std::string msg = "Cannot set property '" + detail::valueToString(key) +
+                                      "' which has only a getter";
+                    return ctx->createException(ctx->createString(msg));
+                }
+                Value* argv[1] = {value};
+                Value* r = callAccessor(ctx, own.setter, self, 1, argv);
+                return isErrorResult(r) ? r : value;
+            }
+            if (!own.writable) {
                 std::string msg = "Cannot assign to read only property '" +
                                   detail::valueToString(key) + "'";
                 return ctx->createException(ctx->createString(msg));
             }
-            it->second.prop.value = value;
+            own.value = value;
             return value;
         }
-        // OrdinarySet 查原型链：继承的 symbol 属性不可写则报错
         Property* inherited = findSymbolInChain(d->prototype, ident);
-        if (inherited != nullptr && !inherited->writable) {
-            std::string msg = "Cannot assign to read only property '" +
-                              detail::valueToString(key) + "'";
-            return ctx->createException(ctx->createString(msg));
+        if (inherited != nullptr) {
+            if (isAccessor(*inherited)) {
+                if (inherited->setter == nullptr) {
+                    std::string msg = "Cannot set property '" + detail::valueToString(key) +
+                                      "' which has only a getter";
+                    return ctx->createException(ctx->createString(msg));
+                }
+                Value* argv[1] = {value};
+                Value* r = callAccessor(ctx, inherited->setter, self, 1, argv);
+                return isErrorResult(r) ? r : value;
+            }
+            if (!inherited->writable) {
+                std::string msg = "Cannot assign to read only property '" +
+                                  detail::valueToString(key) + "'";
+                return ctx->createException(ctx->createString(msg));
+            }
         }
         d->symbols.emplace(ident, SymbolProperty{key, Property{value, true, true, true, nullptr, nullptr}});
         d->symbolOrder.push_back(ident);
@@ -161,21 +214,38 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
     std::string k = keyString(key);
     auto it = d->properties.find(k);
     if (it != d->properties.end()) {
-        // 自有属性：writable 才可改
-        if (!it->second.writable) {
+        Property& own = it->second;
+        if (isAccessor(own)) {
+            if (own.setter == nullptr) {
+                std::string msg = "Cannot set property '" + k + "' which has only a getter";
+                return ctx->createException(ctx->createString(msg));
+            }
+            Value* argv[1] = {value};
+                Value* r = callAccessor(ctx, own.setter, self, 1, argv);
+            return isErrorResult(r) ? r : value;
+        }
+        if (!own.writable) {
             std::string msg = "Cannot assign to read only property '" + k + "'";
             return ctx->createException(ctx->createString(msg));
         }
-        it->second.value = value;
+        own.value = value;
         return value;
     }
-    // 自有属性不存在：按 OrdinarySet 查原型链（ES2024 §10.1.9.2）
-    // 原型链上的数据属性若不可写 → 严格模式报错；可写或不存在 → 在自身上新建。
-    // 访问器属性（setter）尚未启用，本阶段不会出现。
     Property* inherited = findInChain(d->prototype, k);
-    if (inherited != nullptr && !inherited->writable) {
-        std::string msg = "Cannot assign to read only property '" + k + "'";
-        return ctx->createException(ctx->createString(msg));
+    if (inherited != nullptr) {
+        if (isAccessor(*inherited)) {
+            if (inherited->setter == nullptr) {
+                std::string msg = "Cannot set property '" + k + "' which has only a getter";
+                return ctx->createException(ctx->createString(msg));
+            }
+            Value* argv[1] = {value};
+                Value* r = callAccessor(ctx, inherited->setter, self, 1, argv);
+            return isErrorResult(r) ? r : value;
+        }
+        if (!inherited->writable) {
+            std::string msg = "Cannot assign to read only property '" + k + "'";
+            return ctx->createException(ctx->createString(msg));
+        }
     }
     d->properties.emplace(k, Property{value, true, true, true, nullptr, nullptr});
     d->order.push_back(k);
@@ -255,16 +325,57 @@ Value* ObjectType::defineProperty(IContext* /*ctx*/, Value* self, Value* key,
     std::string k = keyString(key);
     auto it = d->properties.find(k);
     if (it != d->properties.end()) {
-        // 已存在：更新描述符
-        it->second.value = value;
-        it->second.writable = writable;
-        it->second.enumerable = enumerable;
-        it->second.configurable = configurable;
+        // 已存在：整体替换描述符（数据属性覆盖访问器时清空 getter/setter）
+        it->second = Property{value, writable, enumerable, configurable, nullptr, nullptr};
         return value;
     }
     d->properties.emplace(k, Property{value, writable, enumerable, configurable, nullptr, nullptr});
     d->order.push_back(k);
     return value;
+}
+
+Value* ObjectType::defineAccessor(IContext* ctx, Value* self, Value* key, Value* getter,
+                                  Value* setter, bool enumerable, bool configurable) {
+    // getter/setter 须为 Function 或 null（ES2024 §10.1.6.3 ValidateAndApplyPropertyDescriptor）
+    auto validAccessor = [](Value* v) {
+        return v == nullptr || v->type()->kind() == TypeKind::Null ||
+               v->type()->kind() == TypeKind::Function;
+    };
+    if (!validAccessor(getter) || !validAccessor(setter)) {
+        return ctx->createException(
+            ctx->createString("Getter/setter must be a function or null"));
+    }
+    // null 统一存成 nullptr（无访问器）
+    Value* g = (getter != nullptr && getter->type()->kind() == TypeKind::Function) ? getter : nullptr;
+    Value* s = (setter != nullptr && setter->type()->kind() == TypeKind::Function) ? setter : nullptr;
+
+    auto* d = static_cast<ObjectData*>(self->data());
+    // 访问器描述符：value 为空、writable 无意义（数据属性字段置 false）
+    Property acc{nullptr, false, enumerable, configurable, g, s};
+
+    // —— symbol 键 ——
+    if (isSymbolKey(key)) {
+        const void* ident = symbolIdentity(key);
+        auto it = d->symbols.find(ident);
+        if (it != d->symbols.end()) {
+            it->second.prop = acc;
+            return self;
+        }
+        d->symbols.emplace(ident, SymbolProperty{key, acc});
+        d->symbolOrder.push_back(ident);
+        return self;
+    }
+
+    // —— 字符串键 ——
+    std::string k = keyString(key);
+    auto it = d->properties.find(k);
+    if (it != d->properties.end()) {
+        it->second = acc;
+        return self;
+    }
+    d->properties.emplace(k, acc);
+    d->order.push_back(k);
+    return self;
 }
 
 // —— 原型链（ADR-018 §1）——

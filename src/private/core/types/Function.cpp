@@ -165,6 +165,11 @@ Value* FunctionType::defineProperty(IContext* ctx, Value* self, Value* key,
     return getObjectType()->defineProperty(ctx, self, key, value, writable, enumerable,
                                            configurable);
 }
+Value* FunctionType::defineAccessor(IContext* ctx, Value* self, Value* key, Value* getter,
+                                    Value* setter, bool enumerable, bool configurable) {
+    return getObjectType()->defineAccessor(ctx, self, key, getter, setter, enumerable,
+                                           configurable);
+}
 Value* FunctionType::getPrototype(IContext* ctx, Value* self) {
     return getObjectType()->getPrototype(ctx, self);
 }

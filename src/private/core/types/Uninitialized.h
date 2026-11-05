@@ -42,6 +42,8 @@ public:
     Value* defineProperty(IContext* ctx, Value* self, Value* key,
                           Value* value, bool writable, bool enumerable,
                           bool configurable) override;
+    Value* defineAccessor(IContext* ctx, Value* self, Value* key, Value* getter,
+                          Value* setter, bool enumerable, bool configurable) override;
     Value* getPrototype(IContext* ctx, Value* self) override;
     Value* setPrototype(IContext* ctx, Value* self, Value* proto) override;
 };

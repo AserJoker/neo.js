@@ -160,6 +160,11 @@ public:
                                   bool writable = true, bool enumerable = true,
                                   bool configurable = true) = 0;
 
+    // defineAccessor: 定义访问器属性（getter/setter 须为 Function 或 null）。
+    // 成功返回 obj，失败返回 Exception。
+    virtual Value* defineAccessor(Value* obj, Value* key, Value* getter, Value* setter,
+                                  bool enumerable = false, bool configurable = true) = 0;
+
     // 字符串键便捷重载：内部 createString(key) 后走上面的 Value* 版本。
     // 用于 C++ 侧固定键（如 "prototype"/"constructor"/"name"）。
     Value* getProperty(Value* obj, std::string_view key) {
@@ -178,6 +183,11 @@ public:
                           bool writable = true, bool enumerable = true,
                           bool configurable = true) {
         return defineProperty(obj, createString(key), value, writable, enumerable,
+                              configurable);
+    }
+    Value* defineAccessor(Value* obj, std::string_view key, Value* getter, Value* setter,
+                          bool enumerable = false, bool configurable = true) {
+        return defineAccessor(obj, createString(key), getter, setter, enumerable,
                               configurable);
     }
 

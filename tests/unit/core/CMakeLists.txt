@@ -15,6 +15,7 @@ add_executable(core_unit_test
     ConstructTest.cpp
     SymbolTest.cpp
     WellKnownSymbolTest.cpp
+    AccessorTest.cpp
 )
 target_link_libraries(core_unit_test
     PRIVATE
