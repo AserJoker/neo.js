@@ -99,6 +99,14 @@ public:
     // Context 创建时一次性生成全部 15 个，生命周期与 Context 一致，始终返回同一 Value。
     virtual Value* getWellKnownSymbol(WellKnownSymbol which) const = 0;
 
+    // —— Symbol 注册表（ES2024 §20.4.2.1/§20.4.2.6）——
+    // symbolFor: Symbol.for(key) —— 按字符串 key 查全局注册表，命中返回已有 symbol，
+    //            否则创建新 symbol（description=key）并登记。同 key 永远返回同一 symbol。
+    // symbolKeyFor: Symbol.keyFor(sym) —— 返回注册表中该 symbol 的 key；
+    //               sym 不是 symbol 或未登记 → undefined。
+    virtual Value* symbolFor(std::string_view key) = 0;
+    virtual Value* symbolKeyFor(Value* sym) = 0;
+
     // —— 运算代理（ADR-016 §4/§7）——
     // 纯代理：ctx->add(a,b) → a->type()->add(this, a, b)。
     // 外部代码不直接调 type->op()，一律走 Context。

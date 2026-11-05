@@ -9,9 +9,11 @@
 //   - 15 个 well-known symbols 作为构造函数属性（writable=false/enumerable=false/
 //     configurable=false，ES2024 §20.4.2.2）
 // Symbol.prototype[Symbol.toStringTag] = "Symbol"（ES2024 §20.4.3.5）
+// Symbol.for(key) / Symbol.keyFor(sym)：
+//   - for 走 Context 全局注册表（同 key 永远返回同一 symbol）
+//   - keyFor 反查 key，非 symbol 或未登记返回 undefined
 //
-// 本阶段最小实现：不处理 new Symbol() 报错、description getter、valueOf、
-// Symbol.for/keyFor（注册表后续）。
+// 本阶段最小实现：不处理 new Symbol() 报错、description getter、valueOf。
 //
 // 关联 ADR: 020（标准库组织）、016（Type 体系）
 
@@ -45,6 +47,21 @@ Value* symbolToString(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv
         return ctx->createException(ctx->createString("Symbol.prototype.toString requires that 'this' be a Symbol"));
     }
     return ctx->toString(self);
+}
+
+// Symbol.for(key) —— 全局注册表查找/登记（ES2024 §20.4.2.1）
+Value* symbolFor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
+    std::string key;
+    if (argc > 0 && argv[0]->type()->kind() != TypeKind::Undefined) {
+        key = detail::valueToString(argv[0]);
+    }
+    return ctx->symbolFor(key);
+}
+
+// Symbol.keyFor(sym) —— 反查注册表 key（ES2024 §20.4.2.6）
+Value* symbolKeyFor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
+    if (argc == 0) return ctx->createUndefined();
+    return ctx->symbolKeyFor(argv[0]);
 }
 
 // 把值挂到 global scope：add 跟踪 + bind 名字
@@ -92,7 +109,25 @@ bool registerSymbolBuiltins(IContext* ctx) {
         }
     }
 
-    // 4. 注册到 global
+    // 4. Symbol.for / Symbol.keyFor（不可写/不可枚举/可配置，ES2024 §20.4.2.2）
+    // minArgc=0：无参时按 undefined 处理（ES 规范不要求参数个数）
+    Value* forFn = ctx->createNativeFunction(symbolFor, 0);
+    if (forFn == ctx->oomValue()) return false;
+    ctx->setFunctionName(forFn, "for");
+    if (ctx->defineProperty(symbolFn, "for", forFn, true, false, true)->type()->kind() ==
+        TypeKind::Exception) {
+        return false;
+    }
+
+    Value* keyForFn = ctx->createNativeFunction(symbolKeyFor, 0);
+    if (keyForFn == ctx->oomValue()) return false;
+    ctx->setFunctionName(keyForFn, "keyFor");
+    if (ctx->defineProperty(symbolFn, "keyFor", keyForFn, true, false, true)->type()->kind() ==
+        TypeKind::Exception) {
+        return false;
+    }
+
+    // 5. 注册到 global
     bindGlobal(ctx, "Symbol", symbolFn);
     return true;
 }

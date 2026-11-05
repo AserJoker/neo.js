@@ -288,3 +288,184 @@ TEST(WellKnownSymbolTest, SymbolFunctionSurvivesGc) {
     EXPECT_EQ(ctx->global()->lookup("Symbol"), symbolFn);
     EXPECT_EQ(symbolFn->type()->kind(), TypeKind::Function);
 }
+
+// ===== Symbol.for / Symbol.keyFor 注册表（ES2024 §20.4.2.1/§20.4.2.6）=====
+
+namespace {
+
+// 取 global 上的 Symbol 构造函数
+Value* symbolFnOf(IContext* ctx) {
+    return ctx->global()->lookup("Symbol");
+}
+
+}  // namespace
+
+TEST(WellKnownSymbolTest, SymbolForReturnsSameSymbolForKey) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* symbolFn = symbolFnOf(ctx.get());
+    Value* forFn = ctx->getProperty(symbolFn, "for");
+    ASSERT_EQ(forFn->type()->kind(), TypeKind::Function);
+
+    Value* args[1] = {ctx->createString("app.key")};
+    Value* a = ctx->call(forFn, nullptr, 1, args);
+    Value* b = ctx->call(forFn, nullptr, 1, args);
+    ASSERT_EQ(a->type()->kind(), TypeKind::Symbol);
+    EXPECT_EQ(a, b);  // 同 key 返回同一 Value
+}
+
+TEST(WellKnownSymbolTest, SymbolForDifferentKeysAreDistinct) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* symbolFn = symbolFnOf(ctx.get());
+    Value* forFn = ctx->getProperty(symbolFn, "for");
+    Value* args1[1] = {ctx->createString("a")};
+    Value* args2[1] = {ctx->createString("b")};
+    Value* a = ctx->call(forFn, nullptr, 1, args1);
+    Value* b = ctx->call(forFn, nullptr, 1, args2);
+    EXPECT_NE(a, b);
+    EXPECT_FALSE(symOf(a)->equals(symOf(b)));
+}
+
+TEST(WellKnownSymbolTest, SymbolForDescriptionIsKey) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* symbolFn = symbolFnOf(ctx.get());
+    Value* forFn = ctx->getProperty(symbolFn, "for");
+    Value* args[1] = {ctx->createString("my.key")};
+    Value* sym = ctx->call(forFn, nullptr, 1, args);
+    EXPECT_EQ(symOf(sym)->description, "my.key");
+}
+
+TEST(WellKnownSymbolTest, SymbolForDiffersFromPlainSymbol) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* symbolFn = symbolFnOf(ctx.get());
+    Value* forFn = ctx->getProperty(symbolFn, "for");
+    Value* args[1] = {ctx->createString("k")};
+    Value* registered = ctx->call(forFn, nullptr, 1, args);
+    Value* plain = ctx->call(symbolFn, nullptr, 1, args);
+    // Symbol.for("k") 与 Symbol("k") 不是同一个 symbol
+    EXPECT_NE(registered, plain);
+}
+
+TEST(WellKnownSymbolTest, SymbolKeyForReturnsRegisteredKey) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* symbolFn = symbolFnOf(ctx.get());
+    Value* forFn = ctx->getProperty(symbolFn, "for");
+    Value* keyForFn = ctx->getProperty(symbolFn, "keyFor");
+
+    Value* forArgs[1] = {ctx->createString("app.key")};
+    Value* sym = ctx->call(forFn, nullptr, 1, forArgs);
+
+    Value* keyArgs[1] = {sym};
+    Value* key = ctx->call(keyForFn, nullptr, 1, keyArgs);
+    ASSERT_EQ(key->type()->kind(), TypeKind::String);
+    EXPECT_EQ(strOf(key), "app.key");
+}
+
+TEST(WellKnownSymbolTest, SymbolKeyForUnregisteredReturnsUndefined) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* symbolFn = symbolFnOf(ctx.get());
+    Value* keyForFn = ctx->getProperty(symbolFn, "keyFor");
+
+    // 普通 Symbol() 不在注册表
+    Value* plain = ctx->call(symbolFn, nullptr, 0, nullptr);
+    Value* keyArgs[1] = {plain};
+    EXPECT_EQ(ctx->call(keyForFn, nullptr, 1, keyArgs)->type()->kind(),
+              TypeKind::Undefined);
+
+    // well-known symbol 也不在注册表
+    Value* wkArgs[1] = {ctx->getWellKnownSymbol(WellKnownSymbol::Iterator)};
+    EXPECT_EQ(ctx->call(keyForFn, nullptr, 1, wkArgs)->type()->kind(),
+              TypeKind::Undefined);
+}
+
+TEST(WellKnownSymbolTest, SymbolKeyForNonSymbolReturnsUndefined) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* symbolFn = symbolFnOf(ctx.get());
+    Value* keyForFn = ctx->getProperty(symbolFn, "keyFor");
+
+    Value* args[1] = {ctx->createNumber(1)};
+    EXPECT_EQ(ctx->call(keyForFn, nullptr, 1, args)->type()->kind(), TypeKind::Undefined);
+    // 无参数也返回 undefined
+    EXPECT_EQ(ctx->call(keyForFn, nullptr, 0, nullptr)->type()->kind(),
+              TypeKind::Undefined);
+}
+
+TEST(WellKnownSymbolTest, SymbolForCoercesKey) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* symbolFn = symbolFnOf(ctx.get());
+    Value* forFn = ctx->getProperty(symbolFn, "for");
+
+    // 数字 42 与字符串 "42" 是同一个 key
+    Value* numArgs[1] = {ctx->createNumber(42)};
+    Value* strArgs[1] = {ctx->createString("42")};
+    Value* a = ctx->call(forFn, nullptr, 1, numArgs);
+    Value* b = ctx->call(forFn, nullptr, 1, strArgs);
+    EXPECT_EQ(a, b);
+}
+
+TEST(WellKnownSymbolTest, RegisteredSymbolSurvivesGc) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* symbolFn = symbolFnOf(ctx.get());
+    Value* forFn = ctx->getProperty(symbolFn, "for");
+    Value* keyForFn = ctx->getProperty(symbolFn, "keyFor");
+
+    Value* args[1] = {ctx->createString("persist")};
+    Value* sym = ctx->call(forFn, nullptr, 1, args);
+
+    ctx->gc()->collect();
+    // 注册表持有的 symbol 挂 global，GC 后仍可反查
+    Value* keyArgs[1] = {sym};
+    Value* key = ctx->call(keyForFn, nullptr, 1, keyArgs);
+    ASSERT_EQ(key->type()->kind(), TypeKind::String);
+    EXPECT_EQ(strOf(key), "persist");
+}
+
+TEST(WellKnownSymbolTest, SymbolForAndKeyForAreFunctionProperties) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* symbolFn = symbolFnOf(ctx.get());
+    Value* forFn = ctx->getProperty(symbolFn, "for");
+    Value* keyForFn = ctx->getProperty(symbolFn, "keyFor");
+    EXPECT_EQ(forFn->type()->kind(), TypeKind::Function);
+    EXPECT_EQ(keyForFn->type()->kind(), TypeKind::Function);
+    EXPECT_EQ(strOf(ctx->getProperty(forFn, "name")), "for");
+    EXPECT_EQ(strOf(ctx->getProperty(keyForFn, "name")), "keyFor");
+}

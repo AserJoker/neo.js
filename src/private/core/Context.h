@@ -16,7 +16,9 @@
 #include "core/Value.h"
 
 #include <memory>
+#include <string>
 #include <string_view>
+#include <unordered_map>
 
 namespace neo::core {
 
@@ -30,6 +32,10 @@ class Context : public IContext {
     Scope* current_ = nullptr;             // 当前作用域（Scope 的 parent 链即调用栈，无需额外栈）
     Value* oomValue_ = nullptr;            // OOM 哨兵（预分配 Fatal，挂 global，ADR-031）
     Value* wellKnownSymbols_[kWellKnownSymbolCount] = {};  // well-known symbols（挂 global）
+    // Symbol.for 全局注册表（ES2024 §20.4.2.1）：key → symbol Value。
+    // 双向查找（keyFor）用 symbol data 指针反查，故另存反向表。
+    std::unordered_map<std::string, Value*> symbolRegistry_;
+    std::unordered_map<const void*, std::string> symbolRegistryReverse_;
 
 public:
     Context(infra::IAllocator* alloc, infra::Console* console);
@@ -58,6 +64,8 @@ public:
     Value* getWellKnownSymbol(WellKnownSymbol which) const override {
         return wellKnownSymbols_[static_cast<uint8_t>(which)];
     }
+    Value* symbolFor(std::string_view key) override;
+    Value* symbolKeyFor(Value* sym) override;
 
     // 运算代理（纯代理，ADR-016 §4）
     Value* add(Value* a, Value* b) override;

@@ -168,6 +168,35 @@ Value* Context::createSymbol(std::string_view description, std::string_view name
     return createTracked(getSymbolType(), gc_->allocData<SymbolData>(description), name);
 }
 
+// —— Symbol 注册表（ES2024 §20.4.2.1 / §20.4.2.6）——
+//
+// Symbol.for(key)：查全局注册表，命中返回已有 symbol，否则创建并登记。
+// 注册表中的 symbol 必须存活于 Context 生命周期（否则 key 反查会悬垂），
+// 故登记时挂到 global scope（scopeRef++）。
+//
+// Symbol.keyFor(sym)：按 symbol data 指针反查 key；非 symbol 或未登记 → undefined。
+
+Value* Context::symbolFor(std::string_view key) {
+    std::string k(key);
+    auto it = symbolRegistry_.find(k);
+    if (it != symbolRegistry_.end()) return it->second;
+
+    // 未登记：创建新 symbol（description = key）并挂 global 保活
+    Value* sym = createSymbol(k);
+    if (sym == oomValue_) return sym;
+    global_->add(sym);
+    symbolRegistry_.emplace(k, sym);
+    symbolRegistryReverse_.emplace(sym->data(), k);
+    return sym;
+}
+
+Value* Context::symbolKeyFor(Value* sym) {
+    if (sym->type()->kind() != TypeKind::Symbol) return createUndefined();
+    auto it = symbolRegistryReverse_.find(sym->data());
+    if (it == symbolRegistryReverse_.end()) return createUndefined();
+    return createString(it->second);
+}
+
 // —— 运算代理（纯代理，ADR-016 §4）——
 // ctx->add(a,b) → a->type()->add(this, a, b)，Context 不持协商规则表。
 
