@@ -9,6 +9,7 @@
 #include "core/IGCEngine.h"
 #include "core/Value.h"
 #include "core/types/Array.h"
+#include "core/types/PrimitiveWrapper.h"
 #include "core/types/TypeBehavior.h"
 
 #include <cmath>
@@ -174,6 +175,10 @@ std::string arrayToString(const ArrayData* d) {
 
 Value* ArrayType::add(IContext* ctx, Value* a, Value* b) {
     if (Value* p = detail::passthrough(a, b)) return p;
+    // 包装对象先 ToPrimitive 拆出原始值，再重新分派（[1] + new Number(2) === "12"）
+    if (b->type()->kind() == TypeKind::PrimitiveWrapper) {
+        return ctx->add(a, static_cast<PrimitiveWrapperData*>(b->data())->primitiveValue);
+    }
     // ToPrimitive(array) 是字符串，故 + 恒为字符串拼接（[1,2] + 3 === "1,23"）
     std::string lhs = arrayToString(static_cast<ArrayData*>(a->data()));
     return ctx->createString(lhs + detail::valueToString(b));

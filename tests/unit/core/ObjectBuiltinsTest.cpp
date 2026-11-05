@@ -199,7 +199,7 @@ TEST(ObjectBuiltinsTest, ObjectReturnsFunctionAsIs) {
     EXPECT_EQ(ctx->call(globalOf(ctx.get(), "Object"), nullptr, 1, args), fn);
 }
 
-TEST(ObjectBuiltinsTest, ObjectPrimitiveWrappingNotImplemented) {
+TEST(ObjectBuiltinsTest, ObjectPrimitiveWrappingReturnsWrapper) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
@@ -207,7 +207,9 @@ TEST(ObjectBuiltinsTest, ObjectPrimitiveWrappingNotImplemented) {
 
     Value* objectFn = globalOf(ctx.get(), "Object");
     Value* args[1] = {ctx->createNumber(1)};
-    EXPECT_EQ(ctx->call(objectFn, nullptr, 1, args)->type()->kind(), TypeKind::Exception);
+    Value* wrapper = ctx->call(objectFn, nullptr, 1, args);
+    EXPECT_EQ(wrapper->type()->kind(), TypeKind::PrimitiveWrapper);
+    EXPECT_EQ(ctx->getPrototype(wrapper), ctx->numberPrototype());
 }
 
 // ===== Function 构造函数占位 =====

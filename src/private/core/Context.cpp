@@ -16,6 +16,7 @@
 #include "core/ArrayBuiltins.h"
 #include "core/IType.h"
 #include "core/ObjectBuiltins.h"
+#include "core/PrimitiveWrapperBuiltins.h"
 #include "core/SymbolBuiltins.h"
 #include "core/types/Array.h"
 #include "core/types/Boolean.h"
@@ -25,6 +26,7 @@
 #include "core/types/Null.h"
 #include "core/types/Number.h"
 #include "core/types/Object.h"
+#include "core/types/PrimitiveWrapper.h"
 #include "core/types/String.h"
 #include "core/types/Symbol.h"
 #include "core/types/Undefined.h"
@@ -88,6 +90,12 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console)
     // 9. 注册 Array 构造函数与 Array.prototype（ADR-018 §6）。
     //    依赖 Object.prototype / Function.prototype 已就绪。
     if (!registerArrayBuiltins(this)) {
+        std::abort();
+    }
+
+    // 10. 注册 Boolean/Number/String 包装类与四个包装原型（ES2024 §10.4）。
+    //     依赖 Object.prototype / Function.prototype / Symbol.prototype 已就绪。
+    if (!registerPrimitiveWrapperBuiltins(this)) {
         std::abort();
     }
 }
@@ -292,6 +300,12 @@ Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_vi
     return fnValue;
 }
 
+void Context::setFunctionConstructor(Value* fn, NativeFn ctor) {
+    // 仅对 Function 类型有效（内建注册用），其他类型忽略
+    if (fn->type()->kind() != TypeKind::Function) return;
+    static_cast<FunctionData*>(fn->data())->constructFn = ctor;
+}
+
 void Context::setFunctionName(Value* fn, std::string_view name) {
     // 仅对 Function 类型有效（setname 字节码），其他类型忽略
     if (fn->type()->kind() != TypeKind::Function) return;
@@ -320,6 +334,30 @@ Value* Context::createArray(std::string_view bindName) {
         static_cast<ObjectData*>(arr->data())->prototype = arrayPrototype_;
     }
     return arr;
+}
+
+Value* Context::createPrimitiveWrapper(Value* primitive, std::string_view bindName) {
+    // [[PrimitiveValue]] 必须是原始值之一（Boolean/Number/String/Symbol）。
+    // 调用方契约保证，非法类型返回 Exception（对外 API 边界校验）。
+    Value* proto = nullptr;
+    switch (primitive->type()->kind()) {
+        case TypeKind::Boolean: proto = booleanPrototype_; break;
+        case TypeKind::Number:  proto = numberPrototype_; break;
+        case TypeKind::String:  proto = stringPrototype_; break;
+        case TypeKind::Symbol:  proto = symbolPrototype_; break;
+        default:
+            return createException(
+                createString("Primitive wrapper requires a primitive value"));
+    }
+    auto* d = gc_->allocData<PrimitiveWrapperData>();
+    if (d == nullptr) return oomValue_;
+    d->primitiveValue = primitive;
+    Value* wrapper = createTracked(getPrimitiveWrapperType(), d, bindName);
+    // 自动挂对应原型（bootstrap 期间尚未建立，跳过）
+    if (wrapper != oomValue_ && proto != nullptr) {
+        static_cast<ObjectData*>(wrapper->data())->prototype = proto;
+    }
+    return wrapper;
 }
 
 Value* Context::getProperty(Value* obj, Value* key) {

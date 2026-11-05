@@ -108,6 +108,7 @@ add_library(neojs STATIC
     src/private/core/Context.cpp
     src/private/core/ObjectBuiltins.cpp
     src/private/core/ArrayBuiltins.cpp
+    src/private/core/PrimitiveWrapperBuiltins.cpp
     src/private/core/SymbolBuiltins.cpp
     src/private/core/Types.cpp
     src/private/core/types/Undefined.cpp
@@ -121,6 +122,7 @@ add_library(neojs STATIC
     src/private/core/types/Function.cpp
     src/private/core/types/Object.cpp
     src/private/core/types/Array.cpp
+    src/private/core/types/PrimitiveWrapper.cpp
     src/private/core/types/Symbol.cpp
     src/private/infra/MallocAllocator.cpp
     src/private/infra/Console.cpp

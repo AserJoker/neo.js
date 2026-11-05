@@ -15,6 +15,7 @@
 #include "core/types/Null.h"
 #include "core/types/Object.h"
 #include "core/types/Number.h"
+#include "core/types/PrimitiveWrapper.h"
 #include "core/types/String.h"
 #include "core/types/Symbol.h"
 #include "core/types/Undefined.h"
@@ -79,6 +80,11 @@ IType* getArrayType() {
 
 IType* getSymbolType() {
     static SymbolType inst;
+    return &inst;
+}
+
+IType* getPrimitiveWrapperType() {
+    static PrimitiveWrapperType inst;
     return &inst;
 }
 

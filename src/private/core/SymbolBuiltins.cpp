@@ -23,6 +23,7 @@
 #include "core/IType.h"
 #include "core/Scope.h"
 #include "core/Value.h"
+#include "core/types/PrimitiveWrapper.h"
 #include "core/types/Symbol.h"
 #include "core/types/TypeBehavior.h"
 
@@ -41,12 +42,16 @@ Value* symbolCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     return ctx->createSymbol(desc);
 }
 
-// Symbol.prototype.toString() —— this 必须是 symbol
+// Symbol.prototype.toString() —— this 必须是 symbol 或 Symbol 包装对象
 Value* symbolToString(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
-    if (self == nullptr || self->type()->kind() != TypeKind::Symbol) {
+    Value* sym = self;
+    if (sym != nullptr && sym->type()->kind() == TypeKind::PrimitiveWrapper) {
+        sym = wrapperPrimitiveValue(sym);  // 拆 [[PrimitiveValue]]
+    }
+    if (sym == nullptr || sym->type()->kind() != TypeKind::Symbol) {
         return ctx->createException(ctx->createString("Symbol.prototype.toString requires that 'this' be a Symbol"));
     }
-    return ctx->toString(self);
+    return ctx->toString(sym);
 }
 
 // Symbol.for(key) —— 全局注册表查找/登记（ES2024 §20.4.2.1）

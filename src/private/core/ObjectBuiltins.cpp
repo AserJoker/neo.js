@@ -19,6 +19,7 @@
 #include "core/Value.h"
 #include "core/types/Array.h"
 #include "core/types/Object.h"
+#include "core/types/PrimitiveWrapper.h"
 #include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
 
@@ -44,6 +45,18 @@ Value* objectProtoToString(IContext* ctx, Value* self, size_t /*argc*/, Value* /
         case TypeKind::Function:  tag = "Function"; break;
         case TypeKind::Object:    tag = "Object"; break;
         case TypeKind::Array:     tag = "Array"; break;
+        // 包装对象按 [[PrimitiveValue]] 的类型给出 tag（ES2024 §20.1.3.6）
+        case TypeKind::PrimitiveWrapper: {
+            Value* p = wrapperPrimitiveValue(self);
+            switch (p != nullptr ? p->type()->kind() : TypeKind::Undefined) {
+                case TypeKind::Boolean: tag = "Boolean"; break;
+                case TypeKind::Number:  tag = "Number"; break;
+                case TypeKind::String:  tag = "String"; break;
+                case TypeKind::Symbol:  tag = "Symbol"; break;
+                default:                tag = "Object"; break;
+            }
+            break;
+        }
         default:                  tag = "Object"; break;
     }
     return ctx->createString(std::string("[object ") + tag + "]");
@@ -58,7 +71,8 @@ Value* objectProtoValueOf(IContext* ctx, Value* self, size_t /*argc*/, Value* /*
 Value* objectProtoHasOwnProperty(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     TypeKind sk = self != nullptr ? self->type()->kind() : TypeKind::Undefined;
     if (self == nullptr ||
-        (sk != TypeKind::Object && sk != TypeKind::Function && sk != TypeKind::Array)) {
+        (sk != TypeKind::Object && sk != TypeKind::Function && sk != TypeKind::Array &&
+         sk != TypeKind::PrimitiveWrapper)) {
         return ctx->createException(
             ctx->createString("Object.prototype.hasOwnProperty called on non-object"));
     }
@@ -123,17 +137,21 @@ Value* functionProtoBind(IContext* ctx, Value* /*self*/, size_t /*argc*/,
 
 // —— Object / Function 构造函数 ——
 
-// Object(value)：无参/undefined/null → 新建空对象；Object/Function/Array → 原样返回；
-//                其他原始值需包装对象（未实现）→ Exception
+// Object(value)（ES2024 §20.1.1.1）：
+//   无参/undefined/null → 新建空对象；
+//   已是对象（Object/Function/Array/PrimitiveWrapper）→ 原样返回；
+//   原始值（Boolean/Number/String/Symbol）→ 包装对象。
 Value* objectCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     if (argc == 0) return ctx->createObject();
     Value* v = argv[0];
     TypeKind k = v->type()->kind();
-    if (k == TypeKind::Object || k == TypeKind::Function || k == TypeKind::Array) return v;
+    if (k == TypeKind::Object || k == TypeKind::Function || k == TypeKind::Array ||
+        k == TypeKind::PrimitiveWrapper) {
+        return v;
+    }
     if (k == TypeKind::Undefined || k == TypeKind::Null) return ctx->createObject();
-    // 原始值包装对象（Boolean/Number/String/Symbol 包装类）尚未实现
-    return ctx->createException(
-        ctx->createString("Object(value): primitive wrapping is not implemented"));
+    // 原始值 → 包装对象（Boolean/Number/String/Symbol）
+    return ctx->createPrimitiveWrapper(v);
 }
 
 // Function(...)：new Function 暂不支持，调用/构造均返回 Exception

@@ -139,6 +139,12 @@ public:
     virtual Value* createNativeFunction(NativeFn fn, size_t minArgc,
                                         std::string_view bindName = {}) = 0;
 
+    // setFunctionConstructor: 为函数设置构造钩子（ES2024 内建的 call/new 语义差异）。
+    // 内建包装类（Boolean/Number/String）需要：call 返回原始值、new 返回包装对象。
+    // 设置后 construct 直接调 ctor（thisArg 为 undefined），并用其返回的对象。
+    // 仅对 Function 类型有效，其他类型忽略。
+    virtual void setFunctionConstructor(Value* fn, NativeFn ctor) = 0;
+
     // setFunctionName: 设置函数名（FunctionData.name）。仅对 Function 类型有效，
     // 其他类型忽略。对应 VM 的 setname 字节码。
     virtual void setFunctionName(Value* fn, std::string_view name) = 0;
@@ -154,6 +160,14 @@ public:
     // 返回 Value*：正常数组，或 OOM 哨兵（ADR-031）。
     virtual Value* createArray(std::string_view bindName = {}) = 0;
 
+    // createPrimitiveWrapper: 创建原始值包装对象（ES2024 §10.4）。
+    // primitive 必须是 Boolean/Number/String/Symbol 之一，成为 [[PrimitiveValue]]。
+    // 原型按 primitive 的类型自动挂对应的 *Prototype；bootstrap 期间未就绪时跳过。
+    // 其余对象行为（属性/原型/GC）与普通对象一致。
+    // 返回 Value*：正常包装对象，或 OOM 哨兵（ADR-031）。
+    virtual Value* createPrimitiveWrapper(Value* primitive,
+                                          std::string_view bindName = {}) = 0;
+
     // 内建原型访问（ADR-035）：
     // objectPrototype —— 所有普通对象原型链的终点；
     // functionPrototype —— 所有函数对象的原型（其原型为 objectPrototype）；
@@ -163,6 +177,14 @@ public:
     virtual Value* functionPrototype() const = 0;
     virtual Value* arrayPrototype() const = 0;
 
+    // 原始值包装对象的原型（ES2024 §20.3/§21.1.3/§21.1.3/§20.4.3）：
+    // booleanPrototype / numberPrototype / stringPrototype / symbolPrototype。
+    // 由 Context 构造时 bootstrap，生命周期与 Context 一致。
+    virtual Value* booleanPrototype() const = 0;
+    virtual Value* numberPrototype() const = 0;
+    virtual Value* stringPrototype() const = 0;
+    virtual Value* symbolPrototype() const = 0;
+
     // setBuiltinPrototypes: bootstrap 专用——原型对象建立后设置，
     // 此后 createObject/createNativeFunction 自动挂链。宿主不应调用。
     virtual void setBuiltinPrototypes(Value* objectProto, Value* functionProto) = 0;
@@ -170,6 +192,11 @@ public:
     // setArrayPrototype: bootstrap 专用——Array.prototype 建立后设置，
     // 此后 createArray 自动挂链。宿主不应调用。
     virtual void setArrayPrototype(Value* arrayProto) = 0;
+
+    // setWrapperPrototypes: bootstrap 专用——四个包装原型建立后设置，
+    // 此后 createPrimitiveWrapper 按 primitive 类型自动挂链。宿主不应调用。
+    virtual void setWrapperPrototypes(Value* booleanProto, Value* numberProto,
+                                      Value* stringProto, Value* symbolProto) = 0;
 
     // 属性操作代理：obj->type()->op(this, obj, ...) 分派。
     // key 是 Value*：symbol 保持符号身份（symbols 容器），其他类型 ToPropertyKey

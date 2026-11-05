@@ -36,6 +36,9 @@ enum class TypeKind : uint8_t {
     Object,         // 普通对象（ADR-018 对象模型）
     Array,          // 数组（ADR-018 §6 独立 elements 容器）
     Symbol,         // 符号原始类型（ES2024 §6.1.5）
+    // 原始值包装对象（ES2024 §10.4）：Boolean/Number/String/Symbol 的 new 形式。
+    // 持 [[PrimitiveValue]] 内部槽，其余对象行为（属性/原型/GC）与普通对象一致。
+    PrimitiveWrapper,
     // 后续阶段：BigInt/Interrupt/...
 };
 
@@ -128,6 +131,7 @@ IType* getFunctionType();
 IType* getObjectType();
 IType* getArrayType();
 IType* getSymbolType();
+IType* getPrimitiveWrapperType();
 
 }  // namespace neo::core
 

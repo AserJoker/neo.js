@@ -20,6 +20,11 @@ using namespace detail;
 
 Value* NumberType::add(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
+    // 包装对象先 ToPrimitive 拆出原始值，再按原始值的类型重新分派
+    // （1 + new Number(2) === 3，1 + new String("a") === "1a"）。
+    if (b->type()->kind() == TypeKind::PrimitiveWrapper) {
+        return ctx->add(a, static_cast<PrimitiveWrapperData*>(b->data())->primitiveValue);
+    }
     // JS + 规则：任一是 string（或 ToPrimitive 为 string 的 array）→ string concat
     // （保持原左右顺序，a 在前）
     TypeKind bk = b->type()->kind();

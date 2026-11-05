@@ -69,10 +69,11 @@ Value* ObjectType::construct(IContext* ctx, Value* self, size_t /*argc*/, Value*
 
 namespace {
 
-// 链上节点只可能是 Object/Function/Array（FunctionData、ArrayData 派生自 ObjectData），
-// 其他类型终止。
+// 链上节点只可能是 Object/Function/Array/PrimitiveWrapper（FunctionData、ArrayData、
+// PrimitiveWrapperData 均派生自 ObjectData），其他类型终止。
 inline bool hasObjectLayout(TypeKind k) {
-    return k == TypeKind::Object || k == TypeKind::Function || k == TypeKind::Array;
+    return k == TypeKind::Object || k == TypeKind::Function ||
+           k == TypeKind::Array || k == TypeKind::PrimitiveWrapper;
 }
 
 // 键是否 symbol（symbol 走 symbols 容器）

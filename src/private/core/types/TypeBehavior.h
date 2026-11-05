@@ -16,6 +16,7 @@
 #include "core/types/Boolean.h"
 #include "core/types/Null.h"
 #include "core/types/Number.h"
+#include "core/types/PrimitiveWrapper.h"
 #include "core/types/String.h"
 
 #include <cmath>
@@ -77,6 +78,27 @@ inline double stringToNumber(const std::string& s) {
     return result;
 }
 
+// —— ToBoolean 转换（ES2024 §7.1.2）——
+// undefined/null → false；±0/NaN → false，其余 number → true；"" → false，其余 string → true；
+// symbol → true；对象（含包装对象/数组/函数）→ true。
+inline bool toBoolean(Value* v) {
+    switch (v->type()->kind()) {
+        case TypeKind::Undefined:
+        case TypeKind::Null:
+            return false;
+        case TypeKind::Boolean:
+            return static_cast<BooleanData*>(v->data())->value;
+        case TypeKind::Number: {
+            double n = static_cast<NumberData*>(v->data())->value;
+            return n != 0.0 && !std::isnan(n);
+        }
+        case TypeKind::String:
+            return !static_cast<StringData*>(v->data())->value.empty();
+        default:
+            return true;  // symbol / object / function / array / wrapper
+    }
+}
+
 // —— ToNumber 转换（ES2024 §7.1.5）——
 // undefined → NaN, null → +0, true → 1, false → 0, number → 自身, string → 解析,
 // array → ToPrimitive（join(",")）后按字符串解析。
@@ -88,6 +110,9 @@ inline double toNumber(Value* v) {
         case TypeKind::Number:    return static_cast<NumberData*>(v->data())->value;
         case TypeKind::String:    return stringToNumber(static_cast<StringData*>(v->data())->value);
         case TypeKind::Array:     return stringToNumber(arrayToString(static_cast<ArrayData*>(v->data())));
+        // 包装对象 ToPrimitive：拆 [[PrimitiveValue]] 后递归（ES2024 §7.1.1）
+        case TypeKind::PrimitiveWrapper:
+            return toNumber(static_cast<PrimitiveWrapperData*>(v->data())->primitiveValue);
         default: return std::nan("");  // Exception/Fatal 入口拦截，不可达
     }
 }
@@ -126,6 +151,9 @@ inline std::string valueToString(Value* v) {
         case TypeKind::Number:    return numberToString(static_cast<NumberData*>(v->data())->value);
         case TypeKind::String:    return static_cast<StringData*>(v->data())->value;
         case TypeKind::Array:     return arrayToString(static_cast<ArrayData*>(v->data()));
+        // 包装对象 ToPrimitive：拆 [[PrimitiveValue]] 后递归（ES2024 §7.1.1）
+        case TypeKind::PrimitiveWrapper:
+            return valueToString(static_cast<PrimitiveWrapperData*>(v->data())->primitiveValue);
         default: return "";  // Exception/Fatal 入口拦截，不可达
     }
 }
@@ -166,15 +194,29 @@ inline std::string keyToString(Value* key) {
         case TypeKind::Number:    return numberToString(static_cast<NumberData*>(key->data())->value);
         case TypeKind::String:    return static_cast<StringData*>(key->data())->value;
         case TypeKind::Array:     return arrayToString(static_cast<ArrayData*>(key->data()));
+        // 包装对象 ToPropertyKey：拆 [[PrimitiveValue]] 后递归（ES2024 §7.1.19）
+        case TypeKind::PrimitiveWrapper:
+            return keyToString(static_cast<PrimitiveWrapperData*>(key->data())->primitiveValue);
         default: return {};  // Symbol 走 symbols 容器；Exception/Fatal/Object 不可达
     }
 }
 
 // —— 非对象类型属性操作（ADR-018）——
-// 基础类型（非 object/function）的属性读取返回 undefined；写入/定义返回 Exception。
-// 注：字符串长度/索引等特殊属性留待后续阶段。
-inline Value* primitiveGetProperty(IContext* ctx, Value* /*self*/, Value* /*key*/) {
-    return ctx->createUndefined();
+// 原始值的属性读取先 ToObject（ES2024 §7.1.18）——包装成临时对象后走对象查找，
+// 使 "abc".length / (1).toString() 这类写法可用；写入/定义仍返回 Exception
+// （严格模式下给原始值赋属性报错）。
+// 注：Boolean/Number 的包装对象无自有属性，查找会落到各自 prototype。
+inline Value* primitiveGetProperty(IContext* ctx, Value* self, Value* key) {
+    // undefined/null 无法 ToObject（ES2024 §7.1.18 抛 TypeError）。
+    // 属性读取按 JS 语义返回 undefined（`undefined.x` 在非严格求值下不崩，
+    // 严格模式报错由 VM 阶段处理）。
+    TypeKind k = self->type()->kind();
+    if (k == TypeKind::Undefined || k == TypeKind::Null) {
+        return ctx->createUndefined();
+    }
+    Value* wrapper = ctx->createPrimitiveWrapper(self);
+    if (wrapper->type()->kind() == TypeKind::Exception) return wrapper;
+    return ctx->getProperty(wrapper, key);
 }
 
 inline Value* primitiveSetProperty(IContext* ctx, Value* self, Value* key,

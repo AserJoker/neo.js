@@ -38,6 +38,11 @@ class Context : public IContext {
     Value* objectPrototype_ = nullptr;
     Value* functionPrototype_ = nullptr;
     Value* arrayPrototype_ = nullptr;   // Array.prototype（自身是数组，ADR-018 §6）
+    // 原始值包装对象的原型（ES2024 §20.3/§21.1.3/§21.1.3/§20.4.3）
+    Value* booleanPrototype_ = nullptr;
+    Value* numberPrototype_ = nullptr;
+    Value* stringPrototype_ = nullptr;
+    Value* symbolPrototype_ = nullptr;
     // Symbol.for 全局注册表（ES2024 §20.4.2.1）：key → symbol Value。
     // 双向查找（keyFor）用 symbol data 指针反查，故另存反向表。
     std::unordered_map<std::string, Value*> symbolRegistry_;
@@ -86,6 +91,7 @@ public:
     Value* createNativeFunction(NativeFn fn, size_t minArgc,
                                 std::string_view bindName = {}) override;
     void setFunctionName(Value* fn, std::string_view name) override;
+    void setFunctionConstructor(Value* fn, NativeFn ctor) override;
     Value* setClosure(Value* fn, std::string_view name) override;
 
     // 对象与属性
@@ -99,16 +105,29 @@ public:
 
     Value* createObject(std::string_view bindName = {}) override;
     Value* createArray(std::string_view bindName = {}) override;
+    Value* createPrimitiveWrapper(Value* primitive,
+                                  std::string_view bindName = {}) override;
 
-    // 内建原型访问（ADR-035）：createObject/createNativeFunction/createArray 自动挂载。
+    // 内建原型访问（ADR-035）：create* 自动挂载对应原型。
     Value* objectPrototype() const override { return objectPrototype_; }
     Value* functionPrototype() const override { return functionPrototype_; }
     Value* arrayPrototype() const override { return arrayPrototype_; }
+    Value* booleanPrototype() const override { return booleanPrototype_; }
+    Value* numberPrototype() const override { return numberPrototype_; }
+    Value* stringPrototype() const override { return stringPrototype_; }
+    Value* symbolPrototype() const override { return symbolPrototype_; }
     void setBuiltinPrototypes(Value* objectProto, Value* functionProto) override {
         objectPrototype_ = objectProto;
         functionPrototype_ = functionProto;
     }
     void setArrayPrototype(Value* arrayProto) override { arrayPrototype_ = arrayProto; }
+    void setWrapperPrototypes(Value* booleanProto, Value* numberProto,
+                              Value* stringProto, Value* symbolProto) override {
+        booleanPrototype_ = booleanProto;
+        numberPrototype_ = numberProto;
+        stringPrototype_ = stringProto;
+        symbolPrototype_ = symbolProto;
+    }
     Value* getProperty(Value* obj, Value* key) override;
     Value* setProperty(Value* obj, Value* key, Value* value) override;
     bool hasProperty(Value* obj, Value* key) override;

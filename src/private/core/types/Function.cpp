@@ -56,8 +56,9 @@ Value* checkMinArgc(IContext* ctx, const FunctionData* d, size_t argc) {
 
 // 完整 invoke 流程（ADR-022 §3）：作用域切换/恢复 + 返回值归属 + 栈平衡。
 // thisArg 由调用方决定（call 用传入的，construct 用新建对象）。
+// fn 默认取 d->native；construct 的专用钩子传入 d->constructFn。
 Value* invokeNative(IContext* ctx, const FunctionData* d, Value* thisArg,
-                    size_t argc, Value* argv[]) {
+                    size_t argc, Value* argv[], NativeFn fn = nullptr) {
     // 1. 保存调用方的 root/current scope
     Scope* savedRoot = ctx->root();
     Scope* savedCurrent = ctx->current();
@@ -76,8 +77,8 @@ Value* invokeNative(IContext* ctx, const FunctionData* d, Value* thisArg,
         return ctx->oomValue();
     }
 
-    // 4. native 调用
-    Value* res = d->native(ctx, thisArg, argc, argv);
+    // 4. native 调用（构造钩子优先由调用方显式传入）
+    Value* res = (fn != nullptr ? fn : d->native)(ctx, thisArg, argc, argv);
 
     // 5. Fatal 立即透传：不恢复现场、不平衡栈（不可捕获，交给最外层宿主）
     if (res != nullptr && res->type()->kind() == TypeKind::Fatal) {
@@ -120,10 +121,17 @@ Value* FunctionType::construct(IContext* ctx, Value* self, size_t argc, Value* a
     auto* d = static_cast<FunctionData*>(self->data());
     if (Value* err = checkMinArgc(ctx, d, argc)) return err;
 
+    // 构造钩子：call/construct 语义不同的内建（包装类）走专用路径。
+    // 钩子负责建对象、挂原型、设置内部槽，并返回对象（或 Exception/Fatal）。
+    if (d->constructFn != nullptr) {
+        return invokeNative(ctx, d, nullptr, argc, argv, d->constructFn);
+    }
+
     // 取 fn.prototype（沿原型链查找，与 JS 一致）
     Value* proto = ctx->getProperty(self, "prototype");
     TypeKind pk = proto->type()->kind();
-    if (pk != TypeKind::Object && pk != TypeKind::Function && pk != TypeKind::Array) {
+    if (pk != TypeKind::Object && pk != TypeKind::Function && pk != TypeKind::Array &&
+        pk != TypeKind::PrimitiveWrapper) {
         proto = nullptr;  // 非对象原型按 null 处理（无 Object.prototype 兜底）
     }
 
@@ -140,8 +148,10 @@ Value* FunctionType::construct(IContext* ctx, Value* self, size_t argc, Value* a
     // 异常/致命错误直接透传（new 失败）
     TypeKind rk = res->type()->kind();
     if (rk == TypeKind::Exception || rk == TypeKind::Fatal) return res;
-    // 构造函数显式返回对象（Object/Function/Array）则用它，否则用新建的 this
-    if (rk == TypeKind::Object || rk == TypeKind::Function || rk == TypeKind::Array) {
+    // 构造函数显式返回对象（Object/Function/Array/PrimitiveWrapper）则用它，
+    // 否则用新建的 this
+    if (rk == TypeKind::Object || rk == TypeKind::Function || rk == TypeKind::Array ||
+        rk == TypeKind::PrimitiveWrapper) {
         return res;
     }
     return thisObj;

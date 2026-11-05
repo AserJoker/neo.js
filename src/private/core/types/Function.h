@@ -11,6 +11,9 @@
 //   - rootScope：创建时从作用域中获取的模块根作用域（借用，不拥有）
 //   - native：native 函数指针（ADR-005 签名）
 //   - minArgc：最少参数数量（调用时校验，不足返回 Exception）
+//   - constructFn：可选构造钩子。非空时 construct 直接调它并用其对象返回值，
+//     用于 call/construct 语义必须不同的内建（如 Boolean/Number/String 包装类：
+//     call 返回原始值，new 返回包装对象）。
 //
 // 函数名不是 data 字段，而是函数对象上的 "name" 属性（writable=false /
 // enumerable=false / configurable=true，ES2024 §20.2.4.2），由 createNativeFunction
@@ -81,9 +84,12 @@ public:
     Scope* rootScope;      // 模块根作用域（借用，不拥有）
     NativeFn native;       // native 函数指针
     size_t minArgc;        // 最少参数数量（调用时校验）
+    NativeFn constructFn;  // 可选构造钩子（nullptr = native + 默认 this 语义）
 
-    FunctionData(Scope* closure, Scope* root, NativeFn fn, size_t minArgs)
-        : closureScope(closure), rootScope(root), native(fn), minArgc(minArgs) {}
+    FunctionData(Scope* closure, Scope* root, NativeFn fn, size_t minArgs,
+                 NativeFn ctor = nullptr)
+        : closureScope(closure), rootScope(root), native(fn), minArgc(minArgs),
+          constructFn(ctor) {}
 
     // clone：引用语义（ADR-019 §2）——ref++ 后返回 this，属性容器随之共享。
     // closureScope/rootScope 由作用域树管理，与 data 共享无关。
