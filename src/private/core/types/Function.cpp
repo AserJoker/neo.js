@@ -120,4 +120,12 @@ Value* FunctionType::defineProperty(IContext* ctx, Value* /*self*/, std::string_
     return notImplemented(ctx, "defineProperty");
 }
 
+// 原型操作：Function 尚未接入对象字段（函数也是对象，待对象字段接入后补齐）。
+Value* FunctionType::getPrototype(IContext* ctx, Value* /*self*/) {
+    return notImplemented(ctx, "getPrototype");
+}
+Value* FunctionType::setPrototype(IContext* ctx, Value* /*self*/, Value* /*proto*/) {
+    return notImplemented(ctx, "setPrototype");
+}
+
 }  // namespace neo::core

@@ -57,6 +57,8 @@ public:
     Value* defineProperty(IContext* ctx, Value* self, std::string_view key,
                           Value* value, bool writable, bool enumerable,
                           bool configurable) override;
+    Value* getPrototype(IContext* ctx, Value* self) override;
+    Value* setPrototype(IContext* ctx, Value* self, Value* proto) override;
 };
 
 class FunctionData : public IData {

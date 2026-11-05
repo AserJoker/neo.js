@@ -351,7 +351,7 @@ TEST(ObjectTest, PropertyValuesSurviveGcWhileObjectAlive) {
 
 // ===== clone =====
 
-TEST(ObjectTest, CloneCopiesContainers) {
+TEST(ObjectTest, CloneSharesData) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
@@ -360,14 +360,254 @@ TEST(ObjectTest, CloneCopiesContainers) {
     Value* obj = ctx->createObject();
     ctx->setProperty(obj, "x", ctx->createNumber(1));
     auto* d = static_cast<ObjectData*>(obj->data());
+    int refBefore = d->ref();
 
+    // 对象是引用语义（ADR-019 §2）：clone 不复制容器，ref++ 返回同一 data
     IData* cloned = d->clone(alloc.get());
-    ASSERT_NE(cloned, nullptr);
-    auto* cd = static_cast<ObjectData*>(cloned);
-    EXPECT_EQ(cd->properties.size(), 1u);
-    EXPECT_EQ(cd->order.size(), 1u);
-    EXPECT_EQ(cd->properties.at("x").value, d->properties.at("x").value);  // 共享 value
-    // placement new 对象需显式析构（含 std::unordered_map/vector/string 内部缓冲区）
-    cd->~ObjectData();
-    alloc->free(cloned);
+    EXPECT_EQ(cloned, d);
+    EXPECT_EQ(d->ref(), refBefore + 1);
+    // 撤销 clone 引入的引用，避免 data 泄漏
+    d->refDec();
+}
+
+// ===== 原型链（ADR-018 §1）=====
+
+TEST(ObjectTest, NewObjectHasNullPrototype) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    Value* proto = ctx->getPrototype(obj);
+    EXPECT_EQ(proto->type()->kind(), TypeKind::Null);
+}
+
+TEST(ObjectTest, SetAndGetPrototype) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    Value* proto = ctx->createObject();
+    EXPECT_EQ(ctx->setPrototype(obj, proto), obj);
+    EXPECT_EQ(ctx->getPrototype(obj), proto);
+}
+
+TEST(ObjectTest, SetPrototypeNullClears) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    ctx->setPrototype(obj, ctx->createObject());
+    ctx->setPrototype(obj, ctx->createNull());
+    EXPECT_EQ(ctx->getPrototype(obj)->type()->kind(), TypeKind::Null);
+}
+
+TEST(ObjectTest, SetPrototypeRejectsNonObject) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    EXPECT_EQ(ctx->setPrototype(obj, ctx->createNumber(1))->type()->kind(),
+              TypeKind::Exception);
+    EXPECT_EQ(ctx->setPrototype(obj, ctx->createUndefined())->type()->kind(),
+              TypeKind::Exception);
+}
+
+TEST(ObjectTest, SetPrototypeRejectsCycle) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* a = ctx->createObject();
+    Value* b = ctx->createObject();
+    ctx->setPrototype(b, a);  // b → a
+    // a → b 会成环
+    EXPECT_EQ(ctx->setPrototype(a, b)->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(ctx->getPrototype(a)->type()->kind(), TypeKind::Null);
+}
+
+TEST(ObjectTest, SetPrototypeRejectsSelfCycle) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    EXPECT_EQ(ctx->setPrototype(obj, obj)->type()->kind(), TypeKind::Exception);
+}
+
+TEST(ObjectTest, GetPropertyFindsInheritedData) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* proto = ctx->createObject();
+    Value* val = ctx->createNumber(7);
+    ctx->setProperty(proto, "x", val);
+
+    Value* obj = ctx->createObject();
+    ctx->setPrototype(obj, proto);
+    EXPECT_EQ(ctx->getProperty(obj, "x"), val);
+}
+
+TEST(ObjectTest, GetPropertyWalksMultiLevelChain) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* grand = ctx->createObject();
+    Value* val = ctx->createNumber(9);
+    ctx->setProperty(grand, "deep", val);
+    Value* mid = ctx->createObject();
+    ctx->setPrototype(mid, grand);
+    Value* leaf = ctx->createObject();
+    ctx->setPrototype(leaf, mid);
+
+    EXPECT_EQ(ctx->getProperty(leaf, "deep"), val);
+}
+
+TEST(ObjectTest, OwnPropertyShadowsPrototype) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* proto = ctx->createObject();
+    ctx->setProperty(proto, "x", ctx->createNumber(1));
+    Value* obj = ctx->createObject();
+    ctx->setPrototype(obj, proto);
+    Value* own = ctx->createNumber(2);
+    ctx->setProperty(obj, "x", own);
+
+    EXPECT_EQ(ctx->getProperty(obj, "x"), own);
+}
+
+TEST(ObjectTest, HasPropertyIncludesPrototype) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* proto = ctx->createObject();
+    ctx->setProperty(proto, "x", ctx->createNumber(1));
+    Value* obj = ctx->createObject();
+    ctx->setPrototype(obj, proto);
+
+    EXPECT_TRUE(ctx->hasProperty(obj, "x"));       // 原型链上
+    EXPECT_FALSE(ctx->hasProperty(obj, "y"));
+}
+
+TEST(ObjectTest, SetCreatesOwnPropertyWhenInheritedWritable) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* proto = ctx->createObject();
+    ctx->setProperty(proto, "x", ctx->createNumber(1));  // 默认可写
+    Value* obj = ctx->createObject();
+    ctx->setPrototype(obj, proto);
+
+    Value* own = ctx->createNumber(2);
+    EXPECT_EQ(ctx->setProperty(obj, "x", own), own);
+    // 在自身上新建，原型不受影响
+    EXPECT_EQ(ctx->getProperty(obj, "x"), own);
+    EXPECT_DOUBLE_EQ(
+        static_cast<NumberData*>(ctx->getProperty(proto, "x")->data())->value, 1.0);
+    auto* d = static_cast<ObjectData*>(obj->data());
+    EXPECT_EQ(d->properties.count("x"), 1u);
+}
+
+TEST(ObjectTest, SetRejectsReadOnlyInheritedProperty) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* proto = ctx->createObject();
+    ctx->defineProperty(proto, "x", ctx->createNumber(1), /*writable=*/false);
+    Value* obj = ctx->createObject();
+    ctx->setPrototype(obj, proto);
+
+    EXPECT_EQ(ctx->setProperty(obj, "x", ctx->createNumber(2))->type()->kind(),
+              TypeKind::Exception);
+    // 未在自身上创建
+    auto* d = static_cast<ObjectData*>(obj->data());
+    EXPECT_EQ(d->properties.count("x"), 0u);
+}
+
+TEST(ObjectTest, DeleteDoesNotAffectPrototype) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* proto = ctx->createObject();
+    ctx->setProperty(proto, "x", ctx->createNumber(1));
+    Value* obj = ctx->createObject();
+    ctx->setPrototype(obj, proto);
+
+    // delete 只删自有属性，原型上的 x 保留
+    EXPECT_EQ(ctx->deleteProperty(obj, "x")->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(ctx->hasProperty(obj, "x"));
+}
+
+TEST(ObjectTest, DefinePropertyOnlyDefinesOwn) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* proto = ctx->createObject();
+    ctx->setProperty(proto, "x", ctx->createNumber(1));
+    Value* obj = ctx->createObject();
+    ctx->setPrototype(obj, proto);
+
+    ctx->defineProperty(obj, "x", ctx->createNumber(2), false, false, false);
+    auto* d = static_cast<ObjectData*>(obj->data());
+    EXPECT_EQ(d->properties.count("x"), 1u);
+    EXPECT_FALSE(d->properties.at("x").writable);
+    // 原型不受影响
+    auto* pd = static_cast<ObjectData*>(proto->data());
+    EXPECT_TRUE(pd->properties.at("x").writable);
+}
+
+TEST(ObjectTest, PrototypeSurvivesGcWhileObjectAlive) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    Value* proto = ctx->createObject();
+    ctx->setProperty(proto, "x", ctx->createNumber(5));
+    ctx->setPrototype(obj, proto);
+
+    ctx->gc()->collect();
+    // obj 在 scope → 标记 → 遍历 prototype → proto 保活 → 其属性值也保活
+    EXPECT_EQ(ctx->getPrototype(obj), proto);
+    EXPECT_EQ(ctx->getProperty(obj, "x")->type()->kind(), TypeKind::Number);
+}
+
+TEST(ObjectTest, PrimitivePrototypeOps) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    // 非对象：get 返回 undefined，set 返回 Exception
+    Value* num = ctx->createNumber(1);
+    EXPECT_EQ(ctx->getPrototype(num)->type()->kind(), TypeKind::Undefined);
+    EXPECT_EQ(ctx->setPrototype(num, ctx->createObject())->type()->kind(),
+              TypeKind::Exception);
 }

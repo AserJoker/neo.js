@@ -71,4 +71,13 @@ Value* UndefinedType::defineProperty(IContext* ctx, Value* self, std::string_vie
     return primitiveSetProperty(ctx, self, key, nullptr);
 }
 
+
+// 原型操作（ADR-018 §1）：基础类型无原型，读取返回 undefined，设置报错。
+Value* UndefinedType::getPrototype(IContext* ctx, Value* self) {
+    return primitiveGetPrototype(ctx, self);
+}
+Value* UndefinedType::setPrototype(IContext* ctx, Value* self, Value* proto) {
+    return primitiveSetPrototype(ctx, self, proto);
+}
+
 }  // namespace neo::core

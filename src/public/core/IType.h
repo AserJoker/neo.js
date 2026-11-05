@@ -77,7 +77,8 @@ public:
     // —— 属性操作（ADR-018 对象模型）——
     // 分派规则同运算：ctx->getProperty(obj, key) → obj->type()->getProperty(ctx, obj, key)。
     // 非对象类型的属性操作：get 返回 undefined，set/has/delete 返回 Exception 或 false。
-    // 本阶段不含原型链查找与 getter/setter 调用（阶段 5）。
+    // Object 的 get/has 沿原型链查找（JS `in` 语义）；set 按 OrdinarySet 语义处理原型链；
+    // delete/define 只操作自有属性。getter/setter 调用留待后续阶段。
     virtual Value* getProperty(IContext* ctx, Value* self, std::string_view key) = 0;
     virtual Value* setProperty(IContext* ctx, Value* self, std::string_view key, Value* value) = 0;
     virtual bool hasProperty(IContext* ctx, Value* self, std::string_view key) = 0;
@@ -85,6 +86,13 @@ public:
     virtual Value* defineProperty(IContext* ctx, Value* self, std::string_view key,
                                   Value* value, bool writable, bool enumerable,
                                   bool configurable) = 0;
+
+    // —— 原型链（ADR-018 §1）——
+    // getPrototype: 返回对象的原型；无原型返回 null。非对象类型返回 undefined。
+    // setPrototype: 设置原型（proto 必须是 Object 或 null），成功返回 self。
+    //               非对象类型 / proto 类型非法 / 成环 返回 Exception。
+    virtual Value* getPrototype(IContext* ctx, Value* self) = 0;
+    virtual Value* setPrototype(IContext* ctx, Value* self, Value* proto) = 0;
 };
 
 // —— IType 单例获取（具体实现在 private/core/Types.cpp）——

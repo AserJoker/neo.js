@@ -39,6 +39,8 @@ public:
     Value* defineProperty(IContext* ctx, Value* self, std::string_view key,
                           Value* value, bool writable, bool enumerable,
                           bool configurable) override;
+    Value* getPrototype(IContext* ctx, Value* self) override;
+    Value* setPrototype(IContext* ctx, Value* self, Value* proto) override;
 };
 
 // 持 std::string 的 data，不可变（构造后不再修改）

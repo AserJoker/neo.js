@@ -232,7 +232,7 @@ TEST(PropertyOpsTest, EnumerateChildrenVisitsSymbolProperties) {
     EXPECT_EQ(visitor.count, 3);  // value + getter + setter
 }
 
-TEST(PropertyOpsTest, CloneCopiesSymbolsContainer) {
+TEST(PropertyOpsTest, CloneSharesSymbolsContainer) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
@@ -242,14 +242,68 @@ TEST(PropertyOpsTest, CloneCopiesSymbolsContainer) {
     auto* d = static_cast<ObjectData*>(obj->data());
     Value* val = ctx->createNumber(1);
     d->symbols.emplace(nullptr, Property{val, true, true, true, nullptr, nullptr});
+    int refBefore = d->ref();
 
+    // 引用语义：clone 返回同一 data（ref++），symbols 容器天然共享
     IData* cloned = d->clone(alloc.get());
     ASSERT_NE(cloned, nullptr);
-    auto* cd = static_cast<ObjectData*>(cloned);
-    EXPECT_EQ(cd->symbols.size(), 1u);
-    EXPECT_EQ(cd->symbols.at(nullptr).value, val);  // 共享 value
-    cd->~ObjectData();
-    alloc->free(cloned);
+    EXPECT_EQ(cloned, d);
+    EXPECT_EQ(d->ref(), refBefore + 1);
+    EXPECT_EQ(static_cast<ObjectData*>(cloned)->symbols.at(nullptr).value, val);
+    d->refDec();
+}
+
+
+// ===== 原型操作分派（ADR-018 §1）=====
+
+TEST(PropertyOpsTest, PassthroughTypesPrototypeOps) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* exc = ctx->createException(ctx->createString("e"));
+    EXPECT_EQ(ctx->getPrototype(exc), exc);
+    EXPECT_EQ(ctx->setPrototype(exc, ctx->createObject()), exc);
+
+    Value* fatal = ctx->createFatal("crash");
+    EXPECT_EQ(ctx->getPrototype(fatal), fatal);
+    EXPECT_EQ(ctx->setPrototype(fatal, ctx->createObject()), fatal);
+
+    Value* uninit = ctx->gc()->createValue(getUninitializedType(),
+                                           ctx->gc()->allocData<neo::core::UninitializedData>());
+    ASSERT_NE(uninit, nullptr);
+    ctx->current()->add(uninit);
+    EXPECT_EQ(ctx->getPrototype(uninit), uninit);
+    EXPECT_EQ(ctx->setPrototype(uninit, ctx->createObject()), uninit);
+}
+
+TEST(PropertyOpsTest, FunctionPrototypeOpsNotImplemented) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* fn = ctx->createNativeFunction(noopFn, 0);
+    EXPECT_EQ(ctx->getPrototype(fn)->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(ctx->setPrototype(fn, ctx->createObject())->type()->kind(),
+              TypeKind::Exception);
+}
+
+TEST(PropertyOpsTest, PrimitivePrototypeOpsDispatch) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* values[] = {ctx->createUndefined(), ctx->createNull(),
+                       ctx->createBoolean(true), ctx->createNumber(1),
+                       ctx->createString("s")};
+    for (Value* v : values) {
+        EXPECT_EQ(ctx->getPrototype(v)->type()->kind(), TypeKind::Undefined);
+        EXPECT_EQ(ctx->setPrototype(v, ctx->createObject())->type()->kind(),
+                  TypeKind::Exception);
+    }
 }
 
 // ===== ObjectData：getter/setter 参与 GC 遍历（数据属性路径）=====

@@ -157,6 +157,17 @@ inline Value* primitiveSetProperty(IContext* ctx, Value* self, std::string_view 
     return ctx->createException(ctx->createString(msg));
 }
 
+// —— 非对象类型原型操作（ADR-018 §1）——
+// 基础类型无原型：读取返回 undefined（与 getProperty 一致），设置返回 Exception。
+inline Value* primitiveGetPrototype(IContext* ctx, Value* /*self*/) {
+    return ctx->createUndefined();
+}
+
+inline Value* primitiveSetPrototype(IContext* ctx, Value* self, Value* /*proto*/) {
+    std::string msg = "Cannot set prototype of " + std::string(self->type()->name());
+    return ctx->createException(ctx->createString(msg));
+}
+
 }  // namespace neo::core::detail
 
 #endif  // NEO_CORE_PRIVATE_TYPES_TYPE_BEHAVIOR_H

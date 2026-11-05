@@ -131,6 +131,13 @@ public:
                                   bool writable = true, bool enumerable = true,
                                   bool configurable = true) = 0;
 
+    // 原型链代理（ADR-018 §1）：
+    // getPrototype: 返回对象的原型（无原型返回 null；非对象返回 undefined）。
+    // setPrototype: 设置原型（proto 须为 Object 或 null），成功返回 obj；
+    //               非对象 / proto 类型非法 / 成环 返回 Exception。
+    virtual Value* getPrototype(Value* obj) = 0;
+    virtual Value* setPrototype(Value* obj, Value* proto) = 0;
+
     // setClosure: 把当前作用域链上名为 name 的变量加入函数的闭包作用域（ADR-013 §2）。
     // 绑定 = 共享同一 Value（不复制），closureScope 加入时 scopeRef++。
     // 查找沿 current 的 parent 链（lookupChain）。

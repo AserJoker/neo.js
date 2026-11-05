@@ -65,6 +65,8 @@ public:
     Value* defineProperty(IContext* ctx, Value* self, std::string_view key,
                           Value* value, bool writable, bool enumerable,
                           bool configurable) override;
+    Value* getPrototype(IContext* ctx, Value* self) override;
+    Value* setPrototype(IContext* ctx, Value* self, Value* proto) override;
 };
 
 class ObjectData : public IData {
@@ -78,7 +80,7 @@ public:
     // GC 遍历：报告 prototype + 所有 property 的 value/getter/setter
     void enumerateChildren(IGCVisitor* visitor) override;
 
-    // clone：浅拷贝容器（属性 value 指针共享，GC 管理生命周期）
+    // clone：引用语义（ADR-019 §2）——ref++ 后返回 this，不复制容器
     IData* clone(neo::infra::IAllocator* alloc) const override;
 };
 

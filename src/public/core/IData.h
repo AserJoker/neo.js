@@ -4,9 +4,10 @@
 // ref_ 计数由 Value 管理（构造 ++ref_，析构 --ref_），ref 归 0 时由 GC sweep
 // 调 allocator->free 释放（IData 不自销毁、不持 IAllocator*）。
 // enumerateChildren 为复杂对象图遍历预留，本阶段默认空（扁平 data 无子 value）。
-// clone 为赋值语义（ADR-030 阶段 5）：每种 data 知道如何克隆自己，走 IAllocator 分配。
+// clone 为赋值语义（ADR-030 阶段 5）：每种 data 知道如何克隆自己。
+// 简单类型分配新 data 拷贝负载；复杂对象按 ADR-019 §2 引用语义共享 data（ref++ 返回 this）。
 //
-// 关联 ADR: 015（Value meta+data 与引用计数分层）、029（Scope-Value-GC 生命周期）
+// 关联 ADR: 015（Value meta+data 与引用计数分层）、019（赋值语义）、029（Scope-Value-GC 生命周期）
 
 #ifndef NEO_CORE_IDATA_H
 #define NEO_CORE_IDATA_H
@@ -31,14 +32,22 @@ public:
 
     int ref() const { return ref_; }
 
+    // 递减引用计数（撤销 clone 为共享 data 预留的引用；正常增减仍由 Value 负责）
+    void refDec() { --ref_; }
+
     // 复杂对象阶段：枚举子 value 供 GC 标记。本阶段扁平 data 无子 value，默认空。
     // 复杂类型（ObjectData/ArrayData/...）覆写此方法向 visitor 报告持有的子 value。
     virtual void enumerateChildren(IGCVisitor* /*visitor*/) {}
 
-    // 克隆 data（赋值语义，ADR-030 阶段 5）：用 allocator 分配新 data 并拷贝负载。
-    // 每种 data 子类覆写：简单标量直接拷贝值，复杂类型深拷贝/共享子 value。
-    // 返回新分配的 IData*（调用方通过 Value::replaceMeta 接管）。
+    // 克隆 data（赋值语义，ADR-030 阶段 5）：
+    //   简单类型 —— 用 allocator 分配新 data 并拷贝负载（ref 从 0 起，由接管它的 Value 计入）；
+    //   复杂对象 —— 引用语义，不复制容器：ref++ 后返回 this（ADR-019 §2 共享 data）。
+    // 返回的 IData* 由调用方通过 Value 接管。
     virtual IData* clone(neo::infra::IAllocator* alloc) const = 0;
+
+protected:
+    // 子类 clone 共享 data 时显式加一次引用（对应接管该 data 的新 Value）。
+    void refInc() { ++ref_; }
 };
 
 }  // namespace neo::core

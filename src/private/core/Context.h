@@ -76,6 +76,8 @@ public:
     Value* defineProperty(Value* obj, std::string_view key, Value* value,
                           bool writable = true, bool enumerable = true,
                           bool configurable = true) override;
+    Value* getPrototype(Value* obj) override;
+    Value* setPrototype(Value* obj, Value* proto) override;
 
     // 错误值创建
     Value* createException(Value* child) override;
@@ -99,6 +101,12 @@ public:
 private:
     // 创建 Value 并跟踪（data 已分配）。失败返回 OOM 哨兵，回收游离 data（ADR-031）。
     Value* createTracked(IType* type, IData* data, std::string_view name);
+    // 为新 Value 接管而克隆 data。
+    // 简单类型：clone 分配新 data（ref=0），由新 Value 构造计入引用。
+    // 复杂对象：clone 共享 data 并 ref++（ADR-019 §2），与新 Value 构造的引用重复，
+    //           故抵消一次，保证 ref 数 = 指向该 data 的 Value 数。
+    // 失败返回 nullptr（OOM）。
+    IData* cloneForNewValue(Value* source);
     // clone source 的 data 到 scope 定义新槽位。失败返回 OOM 哨兵（ADR-031）。
     Value* defineCloned(Scope* scope, std::string_view name, Value* source);
 };

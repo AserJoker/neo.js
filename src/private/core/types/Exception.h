@@ -44,6 +44,8 @@ public:
     Value* defineProperty(IContext* ctx, Value* self, std::string_view key,
                           Value* value, bool writable, bool enumerable,
                           bool configurable) override;
+    Value* getPrototype(IContext* ctx, Value* self) override;
+    Value* setPrototype(IContext* ctx, Value* self, Value* proto) override;
 };
 
 // 持 Value*（被抛出的错误对象），本阶段唯一复杂类型

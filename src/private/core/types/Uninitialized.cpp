@@ -42,4 +42,13 @@ Value* UninitializedType::defineProperty(IContext* /*ctx*/, Value* self, std::st
     return self;
 }
 
+
+// 原型操作：透传 self（异常/哨兵不参与属性操作）。
+Value* UninitializedType::getPrototype(IContext* /*ctx*/, Value* self) {
+    return self;
+}
+Value* UninitializedType::setPrototype(IContext* /*ctx*/, Value* self, Value* /*proto*/) {
+    return self;
+}
+
 }  // namespace neo::core

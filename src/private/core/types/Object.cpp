@@ -15,6 +15,7 @@
 #include "core/types/Object.h"
 
 #include <string>
+#include <unordered_set>
 
 namespace neo::core {
 
@@ -54,16 +55,28 @@ Value* ObjectType::call(IContext* ctx, Value* self, Value* /*thisArg*/,
 
 // —— 属性操作 ——
 
-Value* ObjectType::getProperty(IContext* ctx, Value* self, std::string_view key) {
-    auto* d = static_cast<ObjectData*>(self->data());
-    auto it = d->properties.find(std::string(key));
-    if (it == d->properties.end()) {
-        // 本阶段不含原型链查找，未找到返回 undefined
-        return ctx->createUndefined();
+namespace {
+
+// 沿原型链查找属性（含 self 自身的自有属性）。返回命中的 Property，未找到返回 nullptr。
+// 原型链只由 Object 构成（setPrototype 保证），遇到非 Object 即终止。
+Property* findInChain(Value* self, const std::string& key) {
+    for (Value* cur = self; cur != nullptr;) {
+        if (cur->type()->kind() != TypeKind::Object) return nullptr;
+        auto* d = static_cast<ObjectData*>(cur->data());
+        auto it = d->properties.find(key);
+        if (it != d->properties.end()) return &it->second;
+        cur = d->prototype;
     }
-    // getter/setter 阶段 5 启用；本阶段只返回数据属性 value
-    Value* v = it->second.value;
-    return v != nullptr ? v : ctx->createUndefined();
+    return nullptr;
+}
+
+}  // namespace
+
+Value* ObjectType::getProperty(IContext* ctx, Value* self, std::string_view key) {
+    // 沿原型链查找（JS 读取语义）；getter 调用留待访问器阶段
+    Property* p = findInChain(self, std::string(key));
+    if (p == nullptr) return ctx->createUndefined();
+    return p->value != nullptr ? p->value : ctx->createUndefined();
 }
 
 Value* ObjectType::setProperty(IContext* ctx, Value* self, std::string_view key, Value* value) {
@@ -71,7 +84,7 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, std::string_view key,
     std::string k(key);
     auto it = d->properties.find(k);
     if (it != d->properties.end()) {
-        // 已存在：writable 才可改
+        // 自有属性：writable 才可改
         if (!it->second.writable) {
             std::string msg = "Cannot assign to read only property '" + k + "'";
             return ctx->createException(ctx->createString(msg));
@@ -79,16 +92,22 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, std::string_view key,
         it->second.value = value;
         return value;
     }
-    // 不存在：新建（默认全 true），追加 order
+    // 自有属性不存在：按 OrdinarySet 查原型链（ES2024 §10.1.9.2）
+    // 原型链上的数据属性若不可写 → 严格模式报错；可写或不存在 → 在自身上新建。
+    // 访问器属性（setter）尚未启用，本阶段不会出现。
+    Property* inherited = findInChain(d->prototype, k);
+    if (inherited != nullptr && !inherited->writable) {
+        std::string msg = "Cannot assign to read only property '" + k + "'";
+        return ctx->createException(ctx->createString(msg));
+    }
     d->properties.emplace(k, Property{value, true, true, true, nullptr, nullptr});
     d->order.push_back(k);
     return value;
 }
 
 bool ObjectType::hasProperty(IContext* /*ctx*/, Value* self, std::string_view key) {
-    // 自有属性存在性（不含原型链，阶段 5）
-    auto* d = static_cast<ObjectData*>(self->data());
-    return d->properties.find(std::string(key)) != d->properties.end();
+    // JS `in` 语义：自有 + 原型链
+    return findInChain(self, std::string(key)) != nullptr;
 }
 
 Value* ObjectType::deleteProperty(IContext* ctx, Value* self, std::string_view key) {
@@ -133,6 +152,34 @@ Value* ObjectType::defineProperty(IContext* /*ctx*/, Value* self, std::string_vi
     return value;
 }
 
+// —— 原型链（ADR-018 §1）——
+
+Value* ObjectType::getPrototype(IContext* ctx, Value* self) {
+    auto* d = static_cast<ObjectData*>(self->data());
+    return d->prototype != nullptr ? d->prototype : ctx->createNull();
+}
+
+Value* ObjectType::setPrototype(IContext* ctx, Value* self, Value* proto) {
+    // proto 只允许 Object 或 null（undefined 等按 TypeError 处理）
+    TypeKind pk = proto->type()->kind();
+    if (pk != TypeKind::Object && pk != TypeKind::Null) {
+        std::string msg = "Object prototype may only be an Object or null";
+        return ctx->createException(ctx->createString(msg));
+    }
+    // 环检测：从 proto 沿原型链走到头，若遇到 self 则成环
+    std::unordered_set<Value*> seen;
+    for (Value* cur = proto; cur != nullptr && cur->type()->kind() == TypeKind::Object;) {
+        if (cur == self) {
+            std::string msg = "Cyclic __proto__ value";
+            return ctx->createException(ctx->createString(msg));
+        }
+        if (!seen.insert(cur).second) break;  // 已有环（内部契约被破坏），终止遍历
+        cur = static_cast<ObjectData*>(cur->data())->prototype;
+    }
+    static_cast<ObjectData*>(self->data())->prototype = (pk == TypeKind::Null) ? nullptr : proto;
+    return self;
+}
+
 // —— ObjectData ——
 
 void ObjectData::enumerateChildren(IGCVisitor* visitor) {
@@ -154,15 +201,12 @@ void ObjectData::enumerateChildren(IGCVisitor* visitor) {
     }
 }
 
-IData* ObjectData::clone(neo::infra::IAllocator* alloc) const {
-    void* p = alloc->alloc(sizeof(ObjectData));
-    auto* copy = new (p) ObjectData();
-    // 浅拷贝容器（属性 value 指针共享，GC 管理生命周期）
-    copy->properties = properties;
-    copy->order = order;
-    copy->symbols = symbols;
-    copy->prototype = prototype;
-    return copy;
+IData* ObjectData::clone(neo::infra::IAllocator* /*alloc*/) const {
+    // 对象是引用语义（ADR-019 §2）：clone 不复制容器，ref++ 后返回 this，
+    // 赋值后两个变量指向同一对象，修改互见。
+    auto* self = const_cast<ObjectData*>(this);
+    self->refInc();
+    return self;
 }
 
 }  // namespace neo::core

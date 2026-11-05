@@ -213,6 +213,14 @@ Value* Context::defineProperty(Value* obj, std::string_view key, Value* value,
     return obj->type()->defineProperty(this, obj, key, value, writable, enumerable, configurable);
 }
 
+Value* Context::getPrototype(Value* obj) {
+    return obj->type()->getPrototype(this, obj);
+}
+
+Value* Context::setPrototype(Value* obj, Value* proto) {
+    return obj->type()->setPrototype(this, obj, proto);
+}
+
 Value* Context::setClosure(Value* fn, std::string_view name) {
     // 仅对 Function 类型有效
     if (fn->type()->kind() != TypeKind::Function) {
@@ -250,9 +258,22 @@ inline bool isErrorValue(Value* v) {
 }
 }  // namespace
 
+// 为新 Value 接管而克隆 data（调用方随后 createValue/replaceMeta，会再计一次引用）。
+// 简单类型 clone 返回新 data（ref=0），直接交给新 Value 计数即可。
+// 复杂对象 clone 按 ADR-019 §2 共享 data 并已 ref++，与新 Value 的计数重复，
+// 故此处抵消一次，保证 ref 数恒等于指向该 data 的 Value 数（否则 data 永不释放）。
+IData* Context::cloneForNewValue(Value* source) {
+    IData* cloned = source->data()->clone(alloc_);
+    if (cloned == nullptr) return nullptr;
+    if (cloned == source->data()) {
+        cloned->refDec();
+    }
+    return cloned;
+}
+
 // clone source 的 data 到 scope 定义新槽位。失败返回 OOM 哨兵（ADR-031）。
 Value* Context::defineCloned(Scope* scope, std::string_view name, Value* source) {
-    IData* cloned = source->data()->clone(alloc_);
+    IData* cloned = cloneForNewValue(source);
     if (cloned == nullptr) return oomValue_;
     Value* slot = gc_->createValue(source->type(), cloned);
     if (slot == nullptr) {
@@ -287,7 +308,7 @@ Value* Context::store(std::string_view name, Value* source) {
             return createException(createString(msg));
         }
         // 找到：clone source 的 data，替换 target 的 type+data
-        IData* cloned = source->data()->clone(alloc_);
+        IData* cloned = cloneForNewValue(source);
         if (cloned == nullptr) return oomValue_;  // clone 失败，target 不变
         IData* old = target->replaceMeta(source->type(), cloned);
         // 旧 data 已从 Value 摘除，collect 遍历不到，需显式回收（ref 归 0 才释放）

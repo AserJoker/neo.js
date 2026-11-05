@@ -42,4 +42,13 @@ Value* FatalType::defineProperty(IContext* /*ctx*/, Value* self, std::string_vie
     return self;
 }
 
+
+// 原型操作：透传 self（异常/哨兵不参与属性操作）。
+Value* FatalType::getPrototype(IContext* /*ctx*/, Value* self) {
+    return self;
+}
+Value* FatalType::setPrototype(IContext* /*ctx*/, Value* self, Value* /*proto*/) {
+    return self;
+}
+
 }  // namespace neo::core
