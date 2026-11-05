@@ -209,10 +209,11 @@ TEST(ContextTest, CreateUndefinedHasCorrectType) {
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
 
+    size_t before = ctx->current()->valueCount();
     auto* v = ctx->createUndefined();
     ASSERT_NE(v, nullptr);
     EXPECT_EQ(v->type()->kind(), TypeKind::Undefined);
-    EXPECT_EQ(ctx->current()->valueCount(), 1u);  // 已加入 current scope 跟踪
+    EXPECT_EQ(ctx->current()->valueCount(), before + 1);  // 已加入 current scope 跟踪
 }
 
 TEST(ContextTest, CreateNullHasCorrectType) {
@@ -232,6 +233,7 @@ TEST(ContextTest, CreateBooleanHasCorrectTypeAndValue) {
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
 
+    size_t before = ctx->current()->valueCount();
     auto* t = ctx->createBoolean(true);
     auto* f = ctx->createBoolean(false);
     ASSERT_NE(t, nullptr);
@@ -239,7 +241,7 @@ TEST(ContextTest, CreateBooleanHasCorrectTypeAndValue) {
     EXPECT_EQ(t->type()->kind(), TypeKind::Boolean);
     EXPECT_EQ(f->type()->kind(), TypeKind::Boolean);
     // 两个 Value 都加入 current scope
-    EXPECT_EQ(ctx->current()->valueCount(), 2u);
+    EXPECT_EQ(ctx->current()->valueCount(), before + 2);
 }
 
 TEST(ContextTest, CreateNumberHasCorrectType) {
@@ -284,12 +286,13 @@ TEST(ContextTest, CreateWithoutNameDoesNotBind) {
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
 
+    size_t before = ctx->current()->valueCount();
     auto* v = ctx->createNumber(42.0);
     ASSERT_NE(v, nullptr);
     // 无名字，lookup 返回 nullptr
     EXPECT_EQ(ctx->current()->lookup("x"), nullptr);
     // 但 Value 仍被 current scope 跟踪（scopeRef++）
-    EXPECT_EQ(ctx->current()->valueCount(), 1u);
+    EXPECT_EQ(ctx->current()->valueCount(), before + 1);
     EXPECT_EQ(v->scopeRef(), 1);
 }
 
@@ -324,9 +327,11 @@ TEST(ContextTest, CreatedValuesReachableByGcWhileScoped) {
     EXPECT_EQ(v->scopeRef(), 1);
 
     // GC collect 后 v 仍存活（scopeRef != 0）
+    size_t before = ctx->gc()->valueCount();
     ctx->gc()->collect();
-    // 2 个存活：v（scopeRef=1）+ OOM 哨兵（挂 global，ADR-031）
-    EXPECT_EQ(ctx->gc()->valueCount(), 2u);
+    // collect 不回收任何存活 Value（v + OOM 哨兵 + well-known symbols + Symbol 包装类）
+    EXPECT_EQ(ctx->gc()->valueCount(), before);
+    EXPECT_EQ(v->type()->kind(), TypeKind::Number);
 }
 
 // ===== OOM 哨兵（ADR-031）=====

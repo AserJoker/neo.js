@@ -24,6 +24,7 @@
 #ifndef NEO_CORE_ICONTEXT_H
 #define NEO_CORE_ICONTEXT_H
 
+#include "core/WellKnownSymbol.h"
 #include "infra/IAllocator.h"
 #include "infra/Console.h"
 
@@ -93,6 +94,10 @@ public:
     // 返回 Value*：正常 symbol，或 OOM 哨兵（ADR-031）。
     virtual Value* createSymbol(std::string_view description = {},
                                 std::string_view name = {}) = 0;
+
+    // getWellKnownSymbol: 获取 well-known symbol（ES2024 §6.1.5.1）。
+    // Context 创建时一次性生成全部 15 个，生命周期与 Context 一致，始终返回同一 Value。
+    virtual Value* getWellKnownSymbol(WellKnownSymbol which) const = 0;
 
     // —— 运算代理（ADR-016 §4/§7）——
     // 纯代理：ctx->add(a,b) → a->type()->add(this, a, b)。

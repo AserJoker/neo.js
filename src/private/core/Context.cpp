@@ -14,6 +14,7 @@
 
 #include "core/Context.h"
 #include "core/IType.h"
+#include "core/SymbolBuiltins.h"
 #include "core/types/Boolean.h"
 #include "core/types/Exception.h"
 #include "core/types/Fatal.h"
@@ -27,6 +28,7 @@
 
 #include <cstdlib>
 #include <new>
+#include <string>
 
 namespace neo::core {
 
@@ -52,6 +54,27 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console)
     }
     global_->add(oomValue_);
     global_->bind("__oom__", oomValue_);
+
+    // 6. 预生成全部 well-known symbols（ES2024 §6.1.5.1），挂 global 使其存活于
+    //    Context 生命周期。description 与属性名一致（如 "Symbol.iterator"）。
+    //    OOM 时同样 abort（系统不可用）。
+    for (size_t i = 0; i < kWellKnownSymbolCount; ++i) {
+        auto which = static_cast<WellKnownSymbol>(i);
+        std::string desc = std::string("Symbol.") + wellKnownSymbolName(which);
+        auto* data = gc_->allocData<SymbolData>(desc);
+        Value* v = data != nullptr ? gc_->createValue(getSymbolType(), data) : nullptr;
+        if (v == nullptr) {
+            std::abort();
+        }
+        global_->add(v);
+        wellKnownSymbols_[i] = v;
+    }
+
+    // 7. 注册 Symbol 包装类（构造函数 + prototype.toString + well-known 属性）。
+    //    依赖 well-known symbols 已就绪；失败说明系统不可用，abort。
+    if (!registerSymbolBuiltins(this)) {
+        std::abort();
+    }
 }
 
 Context::~Context() {

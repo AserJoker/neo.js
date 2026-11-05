@@ -29,6 +29,7 @@ class Context : public IContext {
     Scope* root_ = nullptr;                // 当前模块根作用域（可被 setRootScope 切换）
     Scope* current_ = nullptr;             // 当前作用域（Scope 的 parent 链即调用栈，无需额外栈）
     Value* oomValue_ = nullptr;            // OOM 哨兵（预分配 Fatal，挂 global，ADR-031）
+    Value* wellKnownSymbols_[kWellKnownSymbolCount] = {};  // well-known symbols（挂 global）
 
 public:
     Context(infra::IAllocator* alloc, infra::Console* console);
@@ -54,6 +55,9 @@ public:
     Value* createString(std::string_view s, std::string_view name = {}) override;
     Value* createSymbol(std::string_view description = {},
                         std::string_view name = {}) override;
+    Value* getWellKnownSymbol(WellKnownSymbol which) const override {
+        return wellKnownSymbols_[static_cast<uint8_t>(which)];
+    }
 
     // 运算代理（纯代理，ADR-016 §4）
     Value* add(Value* a, Value* b) override;

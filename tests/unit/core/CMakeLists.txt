@@ -14,6 +14,7 @@ add_executable(core_unit_test
     PropertyOpsTest.cpp
     ConstructTest.cpp
     SymbolTest.cpp
+    WellKnownSymbolTest.cpp
 )
 target_link_libraries(core_unit_test
     PRIVATE
