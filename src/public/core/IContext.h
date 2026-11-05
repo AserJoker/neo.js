@@ -136,14 +136,37 @@ public:
     virtual Value* createObject(std::string_view bindName = {}) = 0;
 
     // 属性操作代理：obj->type()->op(this, obj, ...) 分派。
-    // 非对象类型：get 返回 undefined，set/define 返回 Exception，has 返回 false。
-    virtual Value* getProperty(Value* obj, std::string_view key) = 0;
-    virtual Value* setProperty(Value* obj, std::string_view key, Value* value) = 0;
-    virtual bool hasProperty(Value* obj, std::string_view key) = 0;
-    virtual Value* deleteProperty(Value* obj, std::string_view key) = 0;
-    virtual Value* defineProperty(Value* obj, std::string_view key, Value* value,
+    // key 是 Value*：symbol 保持符号身份（symbols 容器），其他类型 ToPropertyKey
+    // 转字符串（properties 容器）。非对象类型：get 返回 undefined，
+    // set/define 返回 Exception，has 返回 false。
+    virtual Value* getProperty(Value* obj, Value* key) = 0;
+    virtual Value* setProperty(Value* obj, Value* key, Value* value) = 0;
+    virtual bool hasProperty(Value* obj, Value* key) = 0;
+    virtual Value* deleteProperty(Value* obj, Value* key) = 0;
+    virtual Value* defineProperty(Value* obj, Value* key, Value* value,
                                   bool writable = true, bool enumerable = true,
                                   bool configurable = true) = 0;
+
+    // 字符串键便捷重载：内部 createString(key) 后走上面的 Value* 版本。
+    // 用于 C++ 侧固定键（如 "prototype"/"constructor"/"name"）。
+    Value* getProperty(Value* obj, std::string_view key) {
+        return getProperty(obj, createString(key));
+    }
+    Value* setProperty(Value* obj, std::string_view key, Value* value) {
+        return setProperty(obj, createString(key), value);
+    }
+    bool hasProperty(Value* obj, std::string_view key) {
+        return hasProperty(obj, createString(key));
+    }
+    Value* deleteProperty(Value* obj, std::string_view key) {
+        return deleteProperty(obj, createString(key));
+    }
+    Value* defineProperty(Value* obj, std::string_view key, Value* value,
+                          bool writable = true, bool enumerable = true,
+                          bool configurable = true) {
+        return defineProperty(obj, createString(key), value, writable, enumerable,
+                              configurable);
+    }
 
     // 原型链代理（ADR-018 §1）：
     // getPrototype: 返回对象的原型（无原型返回 null；非对象返回 undefined）。

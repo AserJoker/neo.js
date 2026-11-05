@@ -1,11 +1,11 @@
 // Object.cpp - ObjectType 行为方法实现 + ObjectData GC 遍历
 //
-// 属性操作（ADR-018）：
-//   getProperty    —— 自有属性查找（本阶段不含原型链，阶段 5）
-//   setProperty    —— 存在且 writable 则改值；不存在则新建（writable/enumerable/configurable 全 true）
-//   hasProperty    —— 自有属性存在性
-//   deleteProperty —— 从 map 与 order 同步移除（O(n)），返回 true（成功）/ Exception（不可配置）
-//   defineProperty —— 完整描述符定义
+// 属性操作（ADR-018）：key 是 Value*，按 ToPropertyKey 分流到 properties / symbols。
+//   getProperty    —— 沿原型链查找（自有遮蔽原型）
+//   setProperty    —— OrdinarySet：自有存在则 writable 校验；否则查原型链后自建
+//   hasProperty    —— JS `in` 语义（自有 + 原型链）
+//   deleteProperty —— 从 map 与 order 同步移除（O(n)），返回 true / Exception（不可配置）
+//   defineProperty —— 完整描述符定义（只操作自有属性）
 //
 // 关联 ADR: 015（data 持子 value）、018（对象模型）
 
@@ -13,6 +13,7 @@
 #include "core/IGCEngine.h"
 #include "core/Value.h"
 #include "core/types/Object.h"
+#include "core/types/TypeBehavior.h"
 
 #include <string>
 #include <unordered_set>
@@ -60,6 +61,11 @@ Value* ObjectType::construct(IContext* ctx, Value* self, size_t /*argc*/, Value*
 }
 
 // —— 属性操作 ——
+//
+// key 是 Value*，按 ToPropertyKey（ES2024 §7.1.19）分流：
+//   symbol → symbols 容器（按 SymbolData* 身份）
+//   其他   → ToString 后进 properties 容器
+// Object/Function 作 key 需 ToPrimitive（未实现），返回 Exception。
 
 namespace {
 
@@ -68,7 +74,22 @@ inline bool hasObjectLayout(TypeKind k) {
     return k == TypeKind::Object || k == TypeKind::Function;
 }
 
-// 沿原型链查找属性（含 self 自身的自有属性）。返回命中的 Property，未找到返回 nullptr。
+// 键是否 symbol（symbol 走 symbols 容器）
+inline bool isSymbolKey(Value* key) {
+    return key->type()->kind() == TypeKind::Symbol;
+}
+
+// 键转字符串（非 symbol 键）
+inline std::string keyString(Value* key) {
+    return detail::keyToString(key);
+}
+
+// symbol 键 → symbols 容器的哈希键（SymbolData* 身份）
+inline const void* symbolIdentity(Value* key) {
+    return static_cast<const void*>(key->data());
+}
+
+// 沿原型链查找字符串键属性（含 self 自身）。返回命中的 Property，未找到 nullptr。
 Property* findInChain(Value* self, const std::string& key) {
     for (Value* cur = self; cur != nullptr;) {
         if (!hasObjectLayout(cur->type()->kind())) return nullptr;
@@ -80,18 +101,64 @@ Property* findInChain(Value* self, const std::string& key) {
     return nullptr;
 }
 
-}  // namespace
-
-Value* ObjectType::getProperty(IContext* ctx, Value* self, std::string_view key) {
-    // 沿原型链查找（JS 读取语义）；getter 调用留待访问器阶段
-    Property* p = findInChain(self, std::string(key));
-    if (p == nullptr) return ctx->createUndefined();
-    return p->value != nullptr ? p->value : ctx->createUndefined();
+// 沿原型链查找 symbol 键属性（含 self 自身）。返回命中的 Property，未找到 nullptr。
+Property* findSymbolInChain(Value* self, const void* ident) {
+    for (Value* cur = self; cur != nullptr;) {
+        if (!hasObjectLayout(cur->type()->kind())) return nullptr;
+        auto* d = static_cast<ObjectData*>(cur->data());
+        auto it = d->symbols.find(ident);
+        if (it != d->symbols.end()) return &it->second.prop;
+        cur = d->prototype;
+    }
+    return nullptr;
 }
 
-Value* ObjectType::setProperty(IContext* ctx, Value* self, std::string_view key, Value* value) {
+// 属性读取的公共返回：命中则返回 value（空则 undefined），否则 undefined
+Value* valueOrUndefined(IContext* ctx, Property* p) {
+    if (p == nullptr || p->value == nullptr) return ctx->createUndefined();
+    return p->value;
+}
+
+}  // namespace
+
+Value* ObjectType::getProperty(IContext* ctx, Value* self, Value* key) {
+    // 沿原型链查找（JS 读取语义）；getter 调用留待访问器阶段
+    if (isSymbolKey(key)) {
+        return valueOrUndefined(ctx, findSymbolInChain(self, symbolIdentity(key)));
+    }
+    return valueOrUndefined(ctx, findInChain(self, keyString(key)));
+}
+
+Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* value) {
     auto* d = static_cast<ObjectData*>(self->data());
-    std::string k(key);
+
+    // —— symbol 键 ——
+    if (isSymbolKey(key)) {
+        const void* ident = symbolIdentity(key);
+        auto it = d->symbols.find(ident);
+        if (it != d->symbols.end()) {
+            if (!it->second.prop.writable) {
+                std::string msg = "Cannot assign to read only property '" +
+                                  detail::valueToString(key) + "'";
+                return ctx->createException(ctx->createString(msg));
+            }
+            it->second.prop.value = value;
+            return value;
+        }
+        // OrdinarySet 查原型链：继承的 symbol 属性不可写则报错
+        Property* inherited = findSymbolInChain(d->prototype, ident);
+        if (inherited != nullptr && !inherited->writable) {
+            std::string msg = "Cannot assign to read only property '" +
+                              detail::valueToString(key) + "'";
+            return ctx->createException(ctx->createString(msg));
+        }
+        d->symbols.emplace(ident, SymbolProperty{key, Property{value, true, true, true, nullptr, nullptr}});
+        d->symbolOrder.push_back(ident);
+        return value;
+    }
+
+    // —— 字符串键 ——
+    std::string k = keyString(key);
     auto it = d->properties.find(k);
     if (it != d->properties.end()) {
         // 自有属性：writable 才可改
@@ -115,14 +182,36 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, std::string_view key,
     return value;
 }
 
-bool ObjectType::hasProperty(IContext* /*ctx*/, Value* self, std::string_view key) {
+bool ObjectType::hasProperty(IContext* /*ctx*/, Value* self, Value* key) {
     // JS `in` 语义：自有 + 原型链
-    return findInChain(self, std::string(key)) != nullptr;
+    if (isSymbolKey(key)) return findSymbolInChain(self, symbolIdentity(key)) != nullptr;
+    return findInChain(self, keyString(key)) != nullptr;
 }
 
-Value* ObjectType::deleteProperty(IContext* ctx, Value* self, std::string_view key) {
+Value* ObjectType::deleteProperty(IContext* ctx, Value* self, Value* key) {
     auto* d = static_cast<ObjectData*>(self->data());
-    std::string k(key);
+
+    // —— symbol 键 ——
+    if (isSymbolKey(key)) {
+        const void* ident = symbolIdentity(key);
+        auto it = d->symbols.find(ident);
+        if (it == d->symbols.end()) return ctx->createBoolean(true);
+        if (!it->second.prop.configurable) {
+            std::string msg = "Cannot delete property '" + detail::valueToString(key) + "'";
+            return ctx->createException(ctx->createString(msg));
+        }
+        d->symbols.erase(it);
+        for (auto oit = d->symbolOrder.begin(); oit != d->symbolOrder.end(); ++oit) {
+            if (*oit == ident) {
+                d->symbolOrder.erase(oit);
+                break;
+            }
+        }
+        return ctx->createBoolean(true);
+    }
+
+    // —— 字符串键 ——
+    std::string k = keyString(key);
     auto it = d->properties.find(k);
     if (it == d->properties.end()) {
         // 不存在：delete 视为成功（JS 语义）
@@ -143,11 +232,27 @@ Value* ObjectType::deleteProperty(IContext* ctx, Value* self, std::string_view k
     return ctx->createBoolean(true);
 }
 
-Value* ObjectType::defineProperty(IContext* /*ctx*/, Value* self, std::string_view key,
+Value* ObjectType::defineProperty(IContext* /*ctx*/, Value* self, Value* key,
                                   Value* value, bool writable, bool enumerable,
                                   bool configurable) {
     auto* d = static_cast<ObjectData*>(self->data());
-    std::string k(key);
+
+    // —— symbol 键 ——
+    if (isSymbolKey(key)) {
+        const void* ident = symbolIdentity(key);
+        auto it = d->symbols.find(ident);
+        if (it != d->symbols.end()) {
+            it->second.prop = Property{value, writable, enumerable, configurable, nullptr, nullptr};
+            return value;
+        }
+        d->symbols.emplace(ident, SymbolProperty{
+            key, Property{value, writable, enumerable, configurable, nullptr, nullptr}});
+        d->symbolOrder.push_back(ident);
+        return value;
+    }
+
+    // —— 字符串键 ——
+    std::string k = keyString(key);
     auto it = d->properties.find(k);
     if (it != d->properties.end()) {
         // 已存在：更新描述符
@@ -202,12 +307,14 @@ void ObjectData::enumerateChildren(IGCVisitor* visitor) {
         if (prop.getter != nullptr) visitor->visit(prop.getter);
         if (prop.setter != nullptr) visitor->visit(prop.setter);
     }
-    // symbol 属性（本阶段容器为空，保留遍历逻辑）
-    for (auto& [sym, prop] : symbols) {
-        (void)sym;
-        if (prop.value != nullptr) visitor->visit(prop.value);
-        if (prop.getter != nullptr) visitor->visit(prop.getter);
-        if (prop.setter != nullptr) visitor->visit(prop.setter);
+    // symbol 属性：key Value 本身需保活（否则 symbol 被回收后键悬垂），
+    // 以及描述符的 value/getter/setter
+    for (auto& [ident, sp] : symbols) {
+        (void)ident;
+        if (sp.key != nullptr) visitor->visit(sp.key);
+        if (sp.prop.value != nullptr) visitor->visit(sp.prop.value);
+        if (sp.prop.getter != nullptr) visitor->visit(sp.prop.getter);
+        if (sp.prop.setter != nullptr) visitor->visit(sp.prop.setter);
     }
 }
 

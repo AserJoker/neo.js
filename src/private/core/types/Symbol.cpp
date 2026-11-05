@@ -60,20 +60,20 @@ Value* SymbolType::construct(IContext* ctx, Value* self, size_t /*argc*/, Value*
 }
 
 // 属性操作：原始类型无自有属性，读取返回 undefined，写入报错。
-Value* SymbolType::getProperty(IContext* ctx, Value* self, std::string_view key) {
+Value* SymbolType::getProperty(IContext* ctx, Value* self, Value* key) {
     return primitiveGetProperty(ctx, self, key);
 }
-Value* SymbolType::setProperty(IContext* ctx, Value* self, std::string_view key, Value* value) {
+Value* SymbolType::setProperty(IContext* ctx, Value* self, Value* key, Value* value) {
     return primitiveSetProperty(ctx, self, key, value);
 }
-bool SymbolType::hasProperty(IContext* /*ctx*/, Value* /*self*/, std::string_view /*key*/) {
+bool SymbolType::hasProperty(IContext* /*ctx*/, Value* /*self*/, Value* /*key*/) {
     return false;
 }
-Value* SymbolType::deleteProperty(IContext* ctx, Value* /*self*/, std::string_view /*key*/) {
+Value* SymbolType::deleteProperty(IContext* ctx, Value* /*self*/, Value* /*key*/) {
     // 不存在的属性 delete 视为成功（与 Object 一致）
     return ctx->createBoolean(true);
 }
-Value* SymbolType::defineProperty(IContext* ctx, Value* self, std::string_view key,
+Value* SymbolType::defineProperty(IContext* ctx, Value* self, Value* key,
                                   Value* /*value*/, bool /*writable*/, bool /*enumerable*/,
                                   bool /*configurable*/) {
     return primitiveSetProperty(ctx, self, key, nullptr);

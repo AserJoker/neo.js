@@ -147,20 +147,19 @@ Value* FunctionType::construct(IContext* ctx, Value* self, size_t argc, Value* a
 
 // 属性/原型操作：FunctionData 派生自 ObjectData，直接委托 ObjectType 的实现
 // （属性查找沿原型链、OrdinarySet、环检测等逻辑与普通对象完全一致）。
-Value* FunctionType::getProperty(IContext* ctx, Value* self, std::string_view key) {
+Value* FunctionType::getProperty(IContext* ctx, Value* self, Value* key) {
     return getObjectType()->getProperty(ctx, self, key);
 }
-Value* FunctionType::setProperty(IContext* ctx, Value* self, std::string_view key,
-                                 Value* value) {
+Value* FunctionType::setProperty(IContext* ctx, Value* self, Value* key, Value* value) {
     return getObjectType()->setProperty(ctx, self, key, value);
 }
-bool FunctionType::hasProperty(IContext* ctx, Value* self, std::string_view key) {
+bool FunctionType::hasProperty(IContext* ctx, Value* self, Value* key) {
     return getObjectType()->hasProperty(ctx, self, key);
 }
-Value* FunctionType::deleteProperty(IContext* ctx, Value* self, std::string_view key) {
+Value* FunctionType::deleteProperty(IContext* ctx, Value* self, Value* key) {
     return getObjectType()->deleteProperty(ctx, self, key);
 }
-Value* FunctionType::defineProperty(IContext* ctx, Value* self, std::string_view key,
+Value* FunctionType::defineProperty(IContext* ctx, Value* self, Value* key,
                                     Value* value, bool writable, bool enumerable,
                                     bool configurable) {
     return getObjectType()->defineProperty(ctx, self, key, value, writable, enumerable,

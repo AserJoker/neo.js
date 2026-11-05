@@ -24,19 +24,19 @@ Value* FatalType::call(IContext* /*ctx*/, Value* self, Value* /*thisArg*/,
 
 
 // 属性操作：透传 self（异常/哨兵不参与属性操作）。
-Value* FatalType::getProperty(IContext* /*ctx*/, Value* self, std::string_view /*key*/) {
+Value* FatalType::getProperty(IContext* /*ctx*/, Value* self, Value* /*key*/) {
     return self;
 }
-Value* FatalType::setProperty(IContext* /*ctx*/, Value* self, std::string_view /*key*/, Value* /*value*/) {
+Value* FatalType::setProperty(IContext* /*ctx*/, Value* self, Value* /*key*/, Value* /*value*/) {
     return self;
 }
-bool FatalType::hasProperty(IContext* /*ctx*/, Value* /*self*/, std::string_view /*key*/) {
+bool FatalType::hasProperty(IContext* /*ctx*/, Value* /*self*/, Value* /*key*/) {
     return false;
 }
-Value* FatalType::deleteProperty(IContext* /*ctx*/, Value* self, std::string_view /*key*/) {
+Value* FatalType::deleteProperty(IContext* /*ctx*/, Value* self, Value* /*key*/) {
     return self;
 }
-Value* FatalType::defineProperty(IContext* /*ctx*/, Value* self, std::string_view /*key*/,
+Value* FatalType::defineProperty(IContext* /*ctx*/, Value* self, Value* /*key*/,
                           Value* /*value*/, bool /*writable*/, bool /*enumerable*/,
                           bool /*configurable*/) {
     return self;

@@ -611,3 +611,157 @@ TEST(ObjectTest, PrimitivePrototypeOps) {
     EXPECT_EQ(ctx->setPrototype(num, ctx->createObject())->type()->kind(),
               TypeKind::Exception);
 }
+
+// ===== Symbol 作为属性键（ToPropertyKey，ES2024 §7.1.19）=====
+
+TEST(ObjectTest, SymbolKeySetAndGet) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    Value* sym = ctx->createSymbol("k");
+    Value* val = ctx->createNumber(42);
+
+    ctx->setProperty(obj, sym, val);
+    EXPECT_EQ(ctx->getProperty(obj, sym), val);
+    EXPECT_TRUE(ctx->hasProperty(obj, sym));
+
+    // 走 symbols 容器，不进 properties
+    auto* d = static_cast<ObjectData*>(obj->data());
+    EXPECT_TRUE(d->properties.empty());
+    EXPECT_EQ(d->symbols.size(), 1u);
+}
+
+TEST(ObjectTest, SameDescriptionSymbolsAreDistinctKeys) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    Value* a = ctx->createSymbol("k");
+    Value* b = ctx->createSymbol("k");
+    ctx->setProperty(obj, a, ctx->createNumber(1));
+
+    // 同描述但不同 symbol → 不同键
+    EXPECT_TRUE(ctx->hasProperty(obj, a));
+    EXPECT_FALSE(ctx->hasProperty(obj, b));
+    EXPECT_EQ(ctx->getProperty(obj, b)->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(ObjectTest, SymbolKeyDoesNotCollideWithStringKey) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    Value* sym = ctx->createSymbol("k");
+    Value* strVal = ctx->createNumber(1);
+    Value* symVal = ctx->createNumber(2);
+
+    ctx->setProperty(obj, "k", strVal);
+    ctx->setProperty(obj, sym, symVal);
+
+    // 字符串键与 symbol 键互不干扰
+    EXPECT_EQ(ctx->getProperty(obj, "k"), strVal);
+    EXPECT_EQ(ctx->getProperty(obj, sym), symVal);
+    auto* d = static_cast<ObjectData*>(obj->data());
+    EXPECT_EQ(d->properties.size(), 1u);
+    EXPECT_EQ(d->symbols.size(), 1u);
+}
+
+TEST(ObjectTest, NonStringPrimitiveKeysCoerceToString) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    Value* numKey = ctx->createNumber(1);
+    Value* val = ctx->createNumber(7);
+    ctx->setProperty(obj, numKey, val);
+
+    // 1 和 "1" 是同一个键
+    EXPECT_EQ(ctx->getProperty(obj, "1"), val);
+    EXPECT_TRUE(ctx->hasProperty(obj, "1"));
+    auto* d = static_cast<ObjectData*>(obj->data());
+    EXPECT_EQ(d->properties.count("1"), 1u);
+}
+
+TEST(ObjectTest, SymbolKeyDelete) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    Value* sym = ctx->createSymbol("k");
+    ctx->setProperty(obj, sym, ctx->createNumber(1));
+
+    EXPECT_EQ(ctx->deleteProperty(obj, sym)->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(ctx->hasProperty(obj, sym));
+    auto* d = static_cast<ObjectData*>(obj->data());
+    EXPECT_TRUE(d->symbols.empty());
+    EXPECT_TRUE(d->symbolOrder.empty());
+}
+
+TEST(ObjectTest, SymbolKeyDefinePropertyDescriptor) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    Value* sym = ctx->createSymbol("k");
+    Value* val = ctx->createNumber(1);
+    ctx->defineProperty(obj, sym, val, /*writable=*/false, /*enumerable=*/false,
+                        /*configurable=*/false);
+
+    auto* d = static_cast<ObjectData*>(obj->data());
+    const auto& sp = d->symbols.at(sym->data());
+    EXPECT_EQ(sp.key, sym);
+    EXPECT_EQ(sp.prop.value, val);
+    EXPECT_FALSE(sp.prop.writable);
+    // 不可写 → set 报错
+    EXPECT_EQ(ctx->setProperty(obj, sym, ctx->createNumber(2))->type()->kind(),
+              TypeKind::Exception);
+}
+
+TEST(ObjectTest, SymbolKeyInheritedThroughPrototype) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* proto = ctx->createObject();
+    Value* sym = ctx->createSymbol("k");
+    Value* val = ctx->createNumber(9);
+    ctx->setProperty(proto, sym, val);
+
+    Value* obj = ctx->createObject();
+    ctx->setPrototype(obj, proto);
+
+    // symbol 键同样沿原型链查找
+    EXPECT_EQ(ctx->getProperty(obj, sym), val);
+    EXPECT_TRUE(ctx->hasProperty(obj, sym));
+}
+
+TEST(ObjectTest, SymbolKeySurvivesGc) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    Value* sym = ctx->createSymbol("k");
+    Value* val = ctx->createNumber(5);
+    ctx->setProperty(obj, sym, val);
+
+    // symbol 键只被对象持有（未绑定 scope），靠 enumerateChildren 保活
+    ctx->gc()->collect();
+    EXPECT_EQ(ctx->getProperty(obj, sym), val);
+    EXPECT_EQ(static_cast<NumberData*>(val->data())->value, 5.0);
+}

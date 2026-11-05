@@ -150,16 +150,30 @@ inline Value* notAConstructor(IContext* ctx, Value* self) {
     return ctx->createException(ctx->createString(msg));
 }
 
+// —— 属性键转字符串（ToPropertyKey 的字符串部分，ES2024 §7.1.19）——
+// 非 symbol 键转成字符串用于 properties 容器；symbol 由调用方分流到 symbols。
+// Object/Function 作键需 ToPrimitive（暂未实现），返回空串（调用方自行处理）。
+inline std::string keyToString(Value* key) {
+    switch (key->type()->kind()) {
+        case TypeKind::Undefined: return "undefined";
+        case TypeKind::Null:      return "null";
+        case TypeKind::Boolean:   return static_cast<BooleanData*>(key->data())->value ? "true" : "false";
+        case TypeKind::Number:    return numberToString(static_cast<NumberData*>(key->data())->value);
+        case TypeKind::String:    return static_cast<StringData*>(key->data())->value;
+        default: return {};  // Symbol 走 symbols 容器；Exception/Fatal/Object 不可达
+    }
+}
+
 // —— 非对象类型属性操作（ADR-018）——
 // 基础类型（非 object/function）的属性读取返回 undefined；写入/定义返回 Exception。
 // 注：字符串长度/索引等特殊属性留待后续阶段。
-inline Value* primitiveGetProperty(IContext* ctx, Value* /*self*/, std::string_view /*key*/) {
+inline Value* primitiveGetProperty(IContext* ctx, Value* /*self*/, Value* /*key*/) {
     return ctx->createUndefined();
 }
 
-inline Value* primitiveSetProperty(IContext* ctx, Value* self, std::string_view key,
+inline Value* primitiveSetProperty(IContext* ctx, Value* self, Value* key,
                                    Value* /*value*/) {
-    std::string msg = "Cannot set property '" + std::string(key) + "' of " +
+    std::string msg = "Cannot set property '" + keyToString(key) + "' of " +
                       std::string(self->type()->name());
     return ctx->createException(ctx->createString(msg));
 }

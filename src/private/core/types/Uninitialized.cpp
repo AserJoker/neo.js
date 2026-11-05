@@ -24,19 +24,19 @@ Value* UninitializedType::call(IContext* /*ctx*/, Value* self, Value* /*thisArg*
 
 
 // 属性操作：透传 self（异常/哨兵不参与属性操作）。
-Value* UninitializedType::getProperty(IContext* /*ctx*/, Value* self, std::string_view /*key*/) {
+Value* UninitializedType::getProperty(IContext* /*ctx*/, Value* self, Value* /*key*/) {
     return self;
 }
-Value* UninitializedType::setProperty(IContext* /*ctx*/, Value* self, std::string_view /*key*/, Value* /*value*/) {
+Value* UninitializedType::setProperty(IContext* /*ctx*/, Value* self, Value* /*key*/, Value* /*value*/) {
     return self;
 }
-bool UninitializedType::hasProperty(IContext* /*ctx*/, Value* /*self*/, std::string_view /*key*/) {
+bool UninitializedType::hasProperty(IContext* /*ctx*/, Value* /*self*/, Value* /*key*/) {
     return false;
 }
-Value* UninitializedType::deleteProperty(IContext* /*ctx*/, Value* self, std::string_view /*key*/) {
+Value* UninitializedType::deleteProperty(IContext* /*ctx*/, Value* self, Value* /*key*/) {
     return self;
 }
-Value* UninitializedType::defineProperty(IContext* /*ctx*/, Value* self, std::string_view /*key*/,
+Value* UninitializedType::defineProperty(IContext* /*ctx*/, Value* self, Value* /*key*/,
                           Value* /*value*/, bool /*writable*/, bool /*enumerable*/,
                           bool /*configurable*/) {
     return self;

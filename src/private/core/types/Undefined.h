@@ -30,11 +30,11 @@ public:
     Value* call(IContext* ctx, Value* self, Value* thisArg,
                 size_t argc, Value* argv[]) override;
     Value* construct(IContext* ctx, Value* self, size_t argc, Value* argv[]) override;
-    Value* getProperty(IContext* ctx, Value* self, std::string_view key) override;
-    Value* setProperty(IContext* ctx, Value* self, std::string_view key, Value* value) override;
-    bool hasProperty(IContext* ctx, Value* self, std::string_view key) override;
-    Value* deleteProperty(IContext* ctx, Value* self, std::string_view key) override;
-    Value* defineProperty(IContext* ctx, Value* self, std::string_view key,
+    Value* getProperty(IContext* ctx, Value* self, Value* key) override;
+    Value* setProperty(IContext* ctx, Value* self, Value* key, Value* value) override;
+    bool hasProperty(IContext* ctx, Value* self, Value* key) override;
+    Value* deleteProperty(IContext* ctx, Value* self, Value* key) override;
+    Value* defineProperty(IContext* ctx, Value* self, Value* key,
                           Value* value, bool writable, bool enumerable,
                           bool configurable) override;
     Value* getPrototype(IContext* ctx, Value* self) override;

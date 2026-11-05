@@ -235,23 +235,23 @@ Value* Context::createObject(std::string_view bindName) {
     return createTracked(getObjectType(), gc_->allocData<ObjectData>(), bindName);
 }
 
-Value* Context::getProperty(Value* obj, std::string_view key) {
+Value* Context::getProperty(Value* obj, Value* key) {
     return obj->type()->getProperty(this, obj, key);
 }
 
-Value* Context::setProperty(Value* obj, std::string_view key, Value* value) {
+Value* Context::setProperty(Value* obj, Value* key, Value* value) {
     return obj->type()->setProperty(this, obj, key, value);
 }
 
-bool Context::hasProperty(Value* obj, std::string_view key) {
+bool Context::hasProperty(Value* obj, Value* key) {
     return obj->type()->hasProperty(this, obj, key);
 }
 
-Value* Context::deleteProperty(Value* obj, std::string_view key) {
+Value* Context::deleteProperty(Value* obj, Value* key) {
     return obj->type()->deleteProperty(this, obj, key);
 }
 
-Value* Context::defineProperty(Value* obj, std::string_view key, Value* value,
+Value* Context::defineProperty(Value* obj, Value* key, Value* value,
                                bool writable, bool enumerable, bool configurable) {
     return obj->type()->defineProperty(this, obj, key, value, writable, enumerable, configurable);
 }

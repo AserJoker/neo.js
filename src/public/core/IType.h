@@ -85,14 +85,16 @@ public:
 
     // —— 属性操作（ADR-018 对象模型）——
     // 分派规则同运算：ctx->getProperty(obj, key) → obj->type()->getProperty(ctx, obj, key)。
+    // key 是 Value*：Symbol 保持符号身份（走 symbols 容器），其他类型按 ToPropertyKey
+    // 转成字符串（走 properties 容器）。Object/Function 作 key 需 ToPrimitive，暂不支持。
     // 非对象类型的属性操作：get 返回 undefined，set/has/delete 返回 Exception 或 false。
     // Object 的 get/has 沿原型链查找（JS `in` 语义）；set 按 OrdinarySet 语义处理原型链；
     // delete/define 只操作自有属性。getter/setter 调用留待后续阶段。
-    virtual Value* getProperty(IContext* ctx, Value* self, std::string_view key) = 0;
-    virtual Value* setProperty(IContext* ctx, Value* self, std::string_view key, Value* value) = 0;
-    virtual bool hasProperty(IContext* ctx, Value* self, std::string_view key) = 0;
-    virtual Value* deleteProperty(IContext* ctx, Value* self, std::string_view key) = 0;
-    virtual Value* defineProperty(IContext* ctx, Value* self, std::string_view key,
+    virtual Value* getProperty(IContext* ctx, Value* self, Value* key) = 0;
+    virtual Value* setProperty(IContext* ctx, Value* self, Value* key, Value* value) = 0;
+    virtual bool hasProperty(IContext* ctx, Value* self, Value* key) = 0;
+    virtual Value* deleteProperty(IContext* ctx, Value* self, Value* key) = 0;
+    virtual Value* defineProperty(IContext* ctx, Value* self, Value* key,
                                   Value* value, bool writable, bool enumerable,
                                   bool configurable) = 0;
 

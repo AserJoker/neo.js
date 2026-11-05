@@ -32,6 +32,7 @@ using neo::core::IData;
 using neo::core::IGCVisitor;
 using neo::core::ObjectData;
 using neo::core::Property;
+using neo::core::SymbolProperty;
 using neo::core::TypeKind;
 using neo::core::Value;
 using neo::core::createContext;
@@ -233,14 +234,16 @@ TEST(PropertyOpsTest, EnumerateChildrenVisitsSymbolProperties) {
 
     Value* obj = ctx->createObject();
     auto* d = static_cast<ObjectData*>(obj->data());
+    Value* sym = ctx->createSymbol("k");
     Value* val = ctx->createNumber(1);
     Value* getter = ctx->createNumber(2);
     Value* setter = ctx->createNumber(3);
-    d->symbols.emplace(nullptr, Property{val, true, true, true, getter, setter});
+    d->symbols.emplace(sym->data(),
+                       SymbolProperty{sym, Property{val, true, true, true, getter, setter}});
 
     CountingVisitor visitor;
     d->enumerateChildren(&visitor);
-    EXPECT_EQ(visitor.count, 3);  // value + getter + setter
+    EXPECT_EQ(visitor.count, 4);  // key + value + getter + setter
 }
 
 TEST(PropertyOpsTest, CloneSharesSymbolsContainer) {
@@ -251,8 +254,10 @@ TEST(PropertyOpsTest, CloneSharesSymbolsContainer) {
 
     Value* obj = ctx->createObject();
     auto* d = static_cast<ObjectData*>(obj->data());
+    Value* sym = ctx->createSymbol("k");
     Value* val = ctx->createNumber(1);
-    d->symbols.emplace(nullptr, Property{val, true, true, true, nullptr, nullptr});
+    d->symbols.emplace(sym->data(),
+                       SymbolProperty{sym, Property{val, true, true, true, nullptr, nullptr}});
     int refBefore = d->ref();
 
     // 引用语义：clone 返回同一 data（ref++），symbols 容器天然共享
@@ -260,7 +265,7 @@ TEST(PropertyOpsTest, CloneSharesSymbolsContainer) {
     ASSERT_NE(cloned, nullptr);
     EXPECT_EQ(cloned, d);
     EXPECT_EQ(d->ref(), refBefore + 1);
-    EXPECT_EQ(static_cast<ObjectData*>(cloned)->symbols.at(nullptr).value, val);
+    EXPECT_EQ(static_cast<ObjectData*>(cloned)->symbols.at(sym->data()).prop.value, val);
     d->refDec();
 }
 

@@ -50,19 +50,19 @@ Value* NullType::call(IContext* ctx, Value* self, Value* /*thisArg*/,
 
 
 // 属性操作（ADR-018）：基础类型无自有属性，读取返回 undefined，写入报错。
-Value* NullType::getProperty(IContext* ctx, Value* self, std::string_view key) {
+Value* NullType::getProperty(IContext* ctx, Value* self, Value* key) {
     return primitiveGetProperty(ctx, self, key);
 }
-Value* NullType::setProperty(IContext* ctx, Value* self, std::string_view key, Value* value) {
+Value* NullType::setProperty(IContext* ctx, Value* self, Value* key, Value* value) {
     return primitiveSetProperty(ctx, self, key, value);
 }
-bool NullType::hasProperty(IContext* /*ctx*/, Value* /*self*/, std::string_view /*key*/) {
+bool NullType::hasProperty(IContext* /*ctx*/, Value* /*self*/, Value* /*key*/) {
     return false;
 }
-Value* NullType::deleteProperty(IContext* ctx, Value* /*self*/, std::string_view /*key*/) {
+Value* NullType::deleteProperty(IContext* ctx, Value* /*self*/, Value* /*key*/) {
     return ctx->createBoolean(true);
 }
-Value* NullType::defineProperty(IContext* ctx, Value* self, std::string_view key,
+Value* NullType::defineProperty(IContext* ctx, Value* self, Value* key,
                           Value* /*value*/, bool /*writable*/, bool /*enumerable*/,
                           bool /*configurable*/) {
     return primitiveSetProperty(ctx, self, key, nullptr);

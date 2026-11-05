@@ -71,12 +71,19 @@ public:
     Value* setClosure(Value* fn, std::string_view name) override;
 
     // 对象与属性
+    // 引入基类的字符串键便捷重载（override 会隐藏同名基类重载）
+    using IContext::getProperty;
+    using IContext::setProperty;
+    using IContext::hasProperty;
+    using IContext::deleteProperty;
+    using IContext::defineProperty;
+
     Value* createObject(std::string_view bindName = {}) override;
-    Value* getProperty(Value* obj, std::string_view key) override;
-    Value* setProperty(Value* obj, std::string_view key, Value* value) override;
-    bool hasProperty(Value* obj, std::string_view key) override;
-    Value* deleteProperty(Value* obj, std::string_view key) override;
-    Value* defineProperty(Value* obj, std::string_view key, Value* value,
+    Value* getProperty(Value* obj, Value* key) override;
+    Value* setProperty(Value* obj, Value* key, Value* value) override;
+    bool hasProperty(Value* obj, Value* key) override;
+    Value* deleteProperty(Value* obj, Value* key) override;
+    Value* defineProperty(Value* obj, Value* key, Value* value,
                           bool writable = true, bool enumerable = true,
                           bool configurable = true) override;
     Value* getPrototype(Value* obj) override;
