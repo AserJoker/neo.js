@@ -34,8 +34,9 @@ enum class TypeKind : uint8_t {
     Uninitialized,  // TDZ 哨兵（let/const 初始化前，VM load 时消费）
     Function,       // 函数对象（ADR-021，本阶段仅 native）
     Object,         // 普通对象（ADR-018 对象模型）
+    Array,          // 数组（ADR-018 §6 独立 elements 容器）
     Symbol,         // 符号原始类型（ES2024 §6.1.5）
-    // 后续阶段：Array/BigInt/Interrupt/...
+    // 后续阶段：BigInt/Interrupt/...
 };
 
 // Value 的 meta：抽象接口，每种 JS 类型一个实现类（单例）。
@@ -125,6 +126,7 @@ IType* getFatalType();
 IType* getUninitializedType();
 IType* getFunctionType();
 IType* getObjectType();
+IType* getArrayType();
 IType* getSymbolType();
 
 }  // namespace neo::core

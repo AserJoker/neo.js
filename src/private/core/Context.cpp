@@ -13,9 +13,11 @@
 // 关联 ADR: 010（接口-实现-工厂）、011（Context 门面）、012（Scope 树）、030 阶段 4
 
 #include "core/Context.h"
+#include "core/ArrayBuiltins.h"
 #include "core/IType.h"
 #include "core/ObjectBuiltins.h"
 #include "core/SymbolBuiltins.h"
+#include "core/types/Array.h"
 #include "core/types/Boolean.h"
 #include "core/types/Exception.h"
 #include "core/types/Fatal.h"
@@ -80,6 +82,12 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console)
     // 8. 建立内建原型链并注册 Object / Function 构造函数（ADR-035）。
     //    必须在其它内建之后：此前创建的对象/函数不挂链，之后自动挂。
     if (!registerObjectFunctionBuiltins(this)) {
+        std::abort();
+    }
+
+    // 9. 注册 Array 构造函数与 Array.prototype（ADR-018 §6）。
+    //    依赖 Object.prototype / Function.prototype 已就绪。
+    if (!registerArrayBuiltins(this)) {
         std::abort();
     }
 }
@@ -303,6 +311,15 @@ Value* Context::createObject(std::string_view bindName) {
         static_cast<ObjectData*>(obj->data())->prototype = objectPrototype_;
     }
     return obj;
+}
+
+Value* Context::createArray(std::string_view bindName) {
+    Value* arr = createTracked(getArrayType(), gc_->allocData<ArrayData>(), bindName);
+    // 自动挂 Array.prototype（ADR-018 §6）。bootstrap 期间尚未建立，跳过。
+    if (arr != oomValue_ && arrayPrototype_ != nullptr) {
+        static_cast<ObjectData*>(arr->data())->prototype = arrayPrototype_;
+    }
+    return arr;
 }
 
 Value* Context::getProperty(Value* obj, Value* key) {

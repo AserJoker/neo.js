@@ -17,6 +17,7 @@
 #include "core/IType.h"
 #include "core/Scope.h"
 #include "core/Value.h"
+#include "core/types/Array.h"
 #include "core/types/Object.h"
 #include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
@@ -42,6 +43,7 @@ Value* objectProtoToString(IContext* ctx, Value* self, size_t /*argc*/, Value* /
         case TypeKind::Symbol:    tag = "Symbol"; break;
         case TypeKind::Function:  tag = "Function"; break;
         case TypeKind::Object:    tag = "Object"; break;
+        case TypeKind::Array:     tag = "Array"; break;
         default:                  tag = "Object"; break;
     }
     return ctx->createString(std::string("[object ") + tag + "]");
@@ -54,9 +56,9 @@ Value* objectProtoValueOf(IContext* ctx, Value* self, size_t /*argc*/, Value* /*
 
 // Object.prototype.hasOwnProperty(key)：只查自有属性（不含原型链）
 Value* objectProtoHasOwnProperty(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    TypeKind sk = self != nullptr ? self->type()->kind() : TypeKind::Undefined;
     if (self == nullptr ||
-        (self->type()->kind() != TypeKind::Object &&
-         self->type()->kind() != TypeKind::Function)) {
+        (sk != TypeKind::Object && sk != TypeKind::Function && sk != TypeKind::Array)) {
         return ctx->createException(
             ctx->createString("Object.prototype.hasOwnProperty called on non-object"));
     }
@@ -66,7 +68,17 @@ Value* objectProtoHasOwnProperty(IContext* ctx, Value* self, size_t argc, Value*
     if (key->type()->kind() == TypeKind::Symbol) {
         return ctx->createBoolean(d->symbols.count(key->data()) != 0);
     }
-    return ctx->createBoolean(d->properties.count(detail::keyToString(key)) != 0);
+    std::string k = detail::keyToString(key);
+    // 数组：索引元素与 length 也是自有属性
+    if (sk == TypeKind::Array) {
+        auto* ad = static_cast<ArrayData*>(self->data());
+        if (k == "length") return ctx->createBoolean(true);
+        uint32_t index = 0;
+        if (parseArrayIndex(k, index)) {
+            return ctx->createBoolean(ad->hasElement(index));
+        }
+    }
+    return ctx->createBoolean(d->properties.count(k) != 0);
 }
 
 // —— Function.prototype 方法 ——
@@ -111,13 +123,13 @@ Value* functionProtoBind(IContext* ctx, Value* /*self*/, size_t /*argc*/,
 
 // —— Object / Function 构造函数 ——
 
-// Object(value)：无参/undefined/null → 新建空对象；Object/Function → 原样返回；
+// Object(value)：无参/undefined/null → 新建空对象；Object/Function/Array → 原样返回；
 //                其他原始值需包装对象（未实现）→ Exception
 Value* objectCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     if (argc == 0) return ctx->createObject();
     Value* v = argv[0];
     TypeKind k = v->type()->kind();
-    if (k == TypeKind::Object || k == TypeKind::Function) return v;
+    if (k == TypeKind::Object || k == TypeKind::Function || k == TypeKind::Array) return v;
     if (k == TypeKind::Undefined || k == TypeKind::Null) return ctx->createObject();
     // 原始值包装对象（Boolean/Number/String/Symbol 包装类）尚未实现
     return ctx->createException(

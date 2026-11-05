@@ -17,6 +17,8 @@ add_executable(core_unit_test
     WellKnownSymbolTest.cpp
     AccessorTest.cpp
     ObjectBuiltinsTest.cpp
+    ArrayTest.cpp
+    ArrayBuiltinsTest.cpp
 )
 target_link_libraries(core_unit_test
     PRIVATE

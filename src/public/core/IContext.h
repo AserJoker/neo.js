@@ -149,16 +149,27 @@ public:
     // 返回 Value*：正常对象，或 OOM 哨兵（ADR-031）。
     virtual Value* createObject(std::string_view bindName = {}) = 0;
 
+    // createArray: 创建空数组 Value（elements 空，length=0）。
+    // 原型自动挂 Array.prototype（ADR-018 §6）。bootstrap 期间原型未就绪时跳过。
+    // 返回 Value*：正常数组，或 OOM 哨兵（ADR-031）。
+    virtual Value* createArray(std::string_view bindName = {}) = 0;
+
     // 内建原型访问（ADR-035）：
     // objectPrototype —— 所有普通对象原型链的终点；
-    // functionPrototype —— 所有函数对象的原型（其原型为 objectPrototype）。
+    // functionPrototype —— 所有函数对象的原型（其原型为 objectPrototype）；
+    // arrayPrototype —— 所有数组的原型（其原型为 objectPrototype）。
     // 由 Context 构造时 bootstrap，生命周期与 Context 一致。
     virtual Value* objectPrototype() const = 0;
     virtual Value* functionPrototype() const = 0;
+    virtual Value* arrayPrototype() const = 0;
 
     // setBuiltinPrototypes: bootstrap 专用——原型对象建立后设置，
     // 此后 createObject/createNativeFunction 自动挂链。宿主不应调用。
     virtual void setBuiltinPrototypes(Value* objectProto, Value* functionProto) = 0;
+
+    // setArrayPrototype: bootstrap 专用——Array.prototype 建立后设置，
+    // 此后 createArray 自动挂链。宿主不应调用。
+    virtual void setArrayPrototype(Value* arrayProto) = 0;
 
     // 属性操作代理：obj->type()->op(this, obj, ...) 分派。
     // key 是 Value*：symbol 保持符号身份（symbols 容器），其他类型 ToPropertyKey

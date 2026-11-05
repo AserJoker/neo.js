@@ -20,8 +20,10 @@ using namespace detail;
 
 Value* NumberType::add(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    // JS + 规则：任一是 string → string concat（保持原左右顺序，a 在前）
-    if (b->type()->kind() == TypeKind::String) {
+    // JS + 规则：任一是 string（或 ToPrimitive 为 string 的 array）→ string concat
+    // （保持原左右顺序，a 在前）
+    TypeKind bk = b->type()->kind();
+    if (bk == TypeKind::String || bk == TypeKind::Array) {
         return ctx->createString(valueToString(a) + valueToString(b));
     }
     // 否则数值加法

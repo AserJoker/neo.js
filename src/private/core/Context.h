@@ -37,6 +37,7 @@ class Context : public IContext {
     // 由 bootstrapBuiltins 创建，挂 global 存活于 Context 生命周期。
     Value* objectPrototype_ = nullptr;
     Value* functionPrototype_ = nullptr;
+    Value* arrayPrototype_ = nullptr;   // Array.prototype（自身是数组，ADR-018 §6）
     // Symbol.for 全局注册表（ES2024 §20.4.2.1）：key → symbol Value。
     // 双向查找（keyFor）用 symbol data 指针反查，故另存反向表。
     std::unordered_map<std::string, Value*> symbolRegistry_;
@@ -97,14 +98,17 @@ public:
     using IContext::defineAccessor;
 
     Value* createObject(std::string_view bindName = {}) override;
+    Value* createArray(std::string_view bindName = {}) override;
 
-    // 内建原型访问（ADR-035）：createObject/createNativeFunction 自动挂载。
+    // 内建原型访问（ADR-035）：createObject/createNativeFunction/createArray 自动挂载。
     Value* objectPrototype() const override { return objectPrototype_; }
     Value* functionPrototype() const override { return functionPrototype_; }
+    Value* arrayPrototype() const override { return arrayPrototype_; }
     void setBuiltinPrototypes(Value* objectProto, Value* functionProto) override {
         objectPrototype_ = objectProto;
         functionPrototype_ = functionProto;
     }
+    void setArrayPrototype(Value* arrayProto) override { arrayPrototype_ = arrayProto; }
     Value* getProperty(Value* obj, Value* key) override;
     Value* setProperty(Value* obj, Value* key, Value* value) override;
     bool hasProperty(Value* obj, Value* key) override;

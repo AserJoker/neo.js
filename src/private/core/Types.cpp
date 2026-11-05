@@ -7,6 +7,7 @@
 //
 // 关联 ADR: 016（Type 体系修订）
 
+#include "core/types/Array.h"
 #include "core/types/Boolean.h"
 #include "core/types/Exception.h"
 #include "core/types/Fatal.h"
@@ -68,6 +69,11 @@ IType* getFunctionType() {
 
 IType* getObjectType() {
     static ObjectType inst;
+    return &inst;
+}
+
+IType* getArrayType() {
+    static ArrayType inst;
     return &inst;
 }
 
