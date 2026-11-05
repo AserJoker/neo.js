@@ -86,7 +86,8 @@ TEST(ObjectTest, CreateEmptyObject) {
     EXPECT_TRUE(d->properties.empty());
     EXPECT_TRUE(d->order.empty());
     EXPECT_TRUE(d->symbols.empty());
-    EXPECT_EQ(d->prototype, nullptr);
+    // 自动挂 Object.prototype（ADR-035 完整原型链）
+    EXPECT_EQ(d->prototype, ctx->objectPrototype());
 }
 
 TEST(ObjectTest, CreateObjectWithBindName) {
@@ -314,7 +315,7 @@ TEST(ObjectTest, EnumerateChildrenVisitsPropertyValues) {
     auto* d = static_cast<ObjectData*>(obj->data());
     CountingVisitor visitor;
     d->enumerateChildren(&visitor);
-    EXPECT_EQ(visitor.count, 2);  // 两个属性 value（无 prototype）
+    EXPECT_EQ(visitor.count, 3);  // 两个属性 value + prototype（Object.prototype）
 }
 
 TEST(ObjectTest, EnumerateChildrenVisitsPrototype) {
@@ -372,15 +373,15 @@ TEST(ObjectTest, CloneSharesData) {
 
 // ===== 原型链（ADR-018 §1）=====
 
-TEST(ObjectTest, NewObjectHasNullPrototype) {
+TEST(ObjectTest, NewObjectHasObjectPrototype) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
 
+    // 新对象自动挂 Object.prototype（ADR-035）
     Value* obj = ctx->createObject();
-    Value* proto = ctx->getPrototype(obj);
-    EXPECT_EQ(proto->type()->kind(), TypeKind::Null);
+    EXPECT_EQ(ctx->getPrototype(obj), ctx->objectPrototype());
 }
 
 TEST(ObjectTest, SetAndGetPrototype) {
@@ -431,7 +432,8 @@ TEST(ObjectTest, SetPrototypeRejectsCycle) {
     ctx->setPrototype(b, a);  // b → a
     // a → b 会成环
     EXPECT_EQ(ctx->setPrototype(a, b)->type()->kind(), TypeKind::Exception);
-    EXPECT_EQ(ctx->getPrototype(a)->type()->kind(), TypeKind::Null);
+    // 原型未变（仍是 Object.prototype）
+    EXPECT_EQ(ctx->getPrototype(a), ctx->objectPrototype());
 }
 
 TEST(ObjectTest, SetPrototypeRejectsSelfCycle) {

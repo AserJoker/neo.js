@@ -14,6 +14,7 @@
 
 #include "core/Context.h"
 #include "core/IType.h"
+#include "core/ObjectBuiltins.h"
 #include "core/SymbolBuiltins.h"
 #include "core/types/Boolean.h"
 #include "core/types/Exception.h"
@@ -73,6 +74,12 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console)
     // 7. 注册 Symbol 包装类（构造函数 + prototype.toString + well-known 属性）。
     //    依赖 well-known symbols 已就绪；失败说明系统不可用，abort。
     if (!registerSymbolBuiltins(this)) {
+        std::abort();
+    }
+
+    // 8. 建立内建原型链并注册 Object / Function 构造函数（ADR-035）。
+    //    必须在其它内建之后：此前创建的对象/函数不挂链，之后自动挂。
+    if (!registerObjectFunctionBuiltins(this)) {
         std::abort();
     }
 }
@@ -242,6 +249,11 @@ Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_vi
     Value* fnValue = createTracked(getFunctionType(), d, bindName);
     if (fnValue == oomValue_) return fnValue;
 
+    // 函数对象的原型是 Function.prototype（ADR-035）。bootstrap 期间尚未建立，跳过。
+    if (functionPrototype_ != nullptr) {
+        static_cast<ObjectData*>(fnValue->data())->prototype = functionPrototype_;
+    }
+
     // —— 函数名作为 "name" 属性（ES2024 §20.2.4.2）——
     // writable=false / enumerable=false / configurable=true；缺省 "<anonymous>"，
     // 由 setFunctionName 更新（对应 VM 的 setname 字节码）。
@@ -284,7 +296,13 @@ void Context::setFunctionName(Value* fn, std::string_view name) {
 // —— 对象与属性（ADR-018）——
 
 Value* Context::createObject(std::string_view bindName) {
-    return createTracked(getObjectType(), gc_->allocData<ObjectData>(), bindName);
+    Value* obj = createTracked(getObjectType(), gc_->allocData<ObjectData>(), bindName);
+    // 自动挂 Object.prototype（ADR-035 完整原型链）。
+    // bootstrap 期间 objectPrototype_ 尚未建立，此时为 nullptr，跳过。
+    if (obj != oomValue_ && objectPrototype_ != nullptr) {
+        static_cast<ObjectData*>(obj->data())->prototype = objectPrototype_;
+    }
+    return obj;
 }
 
 Value* Context::getProperty(Value* obj, Value* key) {

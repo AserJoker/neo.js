@@ -243,7 +243,7 @@ TEST(PropertyOpsTest, EnumerateChildrenVisitsSymbolProperties) {
 
     CountingVisitor visitor;
     d->enumerateChildren(&visitor);
-    EXPECT_EQ(visitor.count, 4);  // key + value + getter + setter
+    EXPECT_EQ(visitor.count, 5);  // prototype + key + value + getter + setter
 }
 
 TEST(PropertyOpsTest, CloneSharesSymbolsContainer) {
@@ -301,8 +301,8 @@ TEST(PropertyOpsTest, FunctionPrototypeOpsBehaveLikeObject) {
     auto ctx = createContext(alloc.get(), &console);
 
     Value* fn = ctx->createNativeFunction(noopFn, 0);
-    // 新函数无原型（null），与普通对象一致
-    EXPECT_EQ(ctx->getPrototype(fn)->type()->kind(), TypeKind::Null);
+    // 新函数的原型是 Function.prototype（ADR-035）
+    EXPECT_EQ(ctx->getPrototype(fn), ctx->functionPrototype());
 
     Value* proto = ctx->createObject();
     EXPECT_EQ(ctx->setPrototype(fn, proto), fn);
@@ -362,5 +362,5 @@ TEST(PropertyOpsTest, EnumerateChildrenVisitsGetterSetter) {
 
     CountingVisitor visitor;
     d->enumerateChildren(&visitor);
-    EXPECT_EQ(visitor.count, 3);  // value + getter + setter
+    EXPECT_EQ(visitor.count, 4);  // prototype + value + getter + setter
 }

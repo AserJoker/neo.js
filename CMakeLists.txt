@@ -106,6 +106,7 @@ add_library(neojs STATIC
     src/private/core/MarkSweepGC.cpp
     src/private/core/Scope.cpp
     src/private/core/Context.cpp
+    src/private/core/ObjectBuiltins.cpp
     src/private/core/SymbolBuiltins.cpp
     src/private/core/Types.cpp
     src/private/core/types/Undefined.cpp

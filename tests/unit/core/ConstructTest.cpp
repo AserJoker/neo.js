@@ -367,7 +367,8 @@ TEST(ConstructTest, NonObjectPrototypeTreatedAsNull) {
 
     Value* obj = ctx->construct(fn, 0, nullptr);
     EXPECT_EQ(obj->type()->kind(), TypeKind::Object);
-    EXPECT_EQ(ctx->getPrototype(obj)->type()->kind(), TypeKind::Null);
+    // fn.prototype 非对象时退回 Object.prototype（ADR-035 完整原型链）
+    EXPECT_EQ(ctx->getPrototype(obj), ctx->objectPrototype());
 }
 
 // ===== GC：构造函数 ↔ 原型互引用保活 =====

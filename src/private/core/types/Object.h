@@ -11,7 +11,7 @@
 //   - 其他原始类型 ToString 后走 properties 容器（1 和 "1" 是同一个键）。
 //
 // Property 是属性描述符（ADR-018 §2）：value + writable/enumerable/configurable + getter/setter。
-// 本阶段 getter/setter 字段预留但不调用（阶段 5 实现访问器属性）。
+// 访问器属性（getter/setter）已启用，见 ObjectType::getProperty/setProperty。
 //
 // GC 遍历（ADR-018 §5）：enumerateChildren 报告 prototype + 所有 property 的
 // value/getter/setter，以及 symbol 属性持有的 symbol key Value（保活键）。

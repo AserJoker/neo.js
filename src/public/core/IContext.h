@@ -144,9 +144,21 @@ public:
     virtual void setFunctionName(Value* fn, std::string_view name) = 0;
 
     // —— 对象与属性（ADR-018 对象模型）——
-    // createObject: 创建空对象 Value（properties/order/symbols 空，prototype=nullptr）。
+    // createObject: 创建空对象 Value（properties/order/symbols 空）。
+    // 原型自动挂 Object.prototype（ADR-035 完整原型链）。
     // 返回 Value*：正常对象，或 OOM 哨兵（ADR-031）。
     virtual Value* createObject(std::string_view bindName = {}) = 0;
+
+    // 内建原型访问（ADR-035）：
+    // objectPrototype —— 所有普通对象原型链的终点；
+    // functionPrototype —— 所有函数对象的原型（其原型为 objectPrototype）。
+    // 由 Context 构造时 bootstrap，生命周期与 Context 一致。
+    virtual Value* objectPrototype() const = 0;
+    virtual Value* functionPrototype() const = 0;
+
+    // setBuiltinPrototypes: bootstrap 专用——原型对象建立后设置，
+    // 此后 createObject/createNativeFunction 自动挂链。宿主不应调用。
+    virtual void setBuiltinPrototypes(Value* objectProto, Value* functionProto) = 0;
 
     // 属性操作代理：obj->type()->op(this, obj, ...) 分派。
     // key 是 Value*：symbol 保持符号身份（symbols 容器），其他类型 ToPropertyKey

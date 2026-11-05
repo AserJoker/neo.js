@@ -32,6 +32,11 @@ class Context : public IContext {
     Scope* current_ = nullptr;             // 当前作用域（Scope 的 parent 链即调用栈，无需额外栈）
     Value* oomValue_ = nullptr;            // OOM 哨兵（预分配 Fatal，挂 global，ADR-031）
     Value* wellKnownSymbols_[kWellKnownSymbolCount] = {};  // well-known symbols（挂 global）
+    // 内建原型（ADR-035）：Object.prototype 是所有普通对象原型链的终点，
+    // Function.prototype 是所有函数对象的原型（其自身原型是 Object.prototype）。
+    // 由 bootstrapBuiltins 创建，挂 global 存活于 Context 生命周期。
+    Value* objectPrototype_ = nullptr;
+    Value* functionPrototype_ = nullptr;
     // Symbol.for 全局注册表（ES2024 §20.4.2.1）：key → symbol Value。
     // 双向查找（keyFor）用 symbol data 指针反查，故另存反向表。
     std::unordered_map<std::string, Value*> symbolRegistry_;
@@ -92,6 +97,14 @@ public:
     using IContext::defineAccessor;
 
     Value* createObject(std::string_view bindName = {}) override;
+
+    // 内建原型访问（ADR-035）：createObject/createNativeFunction 自动挂载。
+    Value* objectPrototype() const override { return objectPrototype_; }
+    Value* functionPrototype() const override { return functionPrototype_; }
+    void setBuiltinPrototypes(Value* objectProto, Value* functionProto) override {
+        objectPrototype_ = objectProto;
+        functionPrototype_ = functionProto;
+    }
     Value* getProperty(Value* obj, Value* key) override;
     Value* setProperty(Value* obj, Value* key, Value* value) override;
     bool hasProperty(Value* obj, Value* key) override;
