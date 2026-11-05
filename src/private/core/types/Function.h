@@ -2,7 +2,11 @@
 //
 // 函数对象（ADR-021 / ADR-022）。本阶段仅 native 函数（script 路径留 VM 阶段）。
 //
-// FunctionData：
+// FunctionData 继承 ObjectData（ADR-021 §1「类似对象的字段，继承对象模型」）：
+//   函数也是对象——properties/order/symbols/prototype 直接复用对象模型，
+//   属性查找/原型链/GC 遍历/clone 全部走 ObjectData 的实现。
+//
+// FunctionData 自有字段：
 //   - closureScope：闭包作用域（当前 root scope 的子作用域，Sema 收集的穿透闭包变量绑定于此）
 //   - rootScope：创建时从作用域中获取的模块根作用域（借用，不拥有）
 //   - native：native 函数指针（ADR-005 签名）
@@ -11,11 +15,13 @@
 //
 // Function 是孤立的：Sema 收集穿透的闭包变量，绑定到 closureScope，
 // 运行时查找 closureScope → rootScope → global，不依赖定义时的中间词法链（ADR-013 §3）。
+// closureScope 是 Scope*（非 Value*），按 ADR-021 §4 不由 GC 从函数出发标记。
 //
-// 本阶段 FunctionType 只实现 call；其他行为（add/sub/...）返回 Exception("not implement")，
-// 待未来包装类（对象/属性）阶段补齐。
+// 本阶段 FunctionType 只实现 call 与属性/原型操作（委托 ObjectType）；
+// 运算行为（add/sub/...）返回 Exception("not implement")。
 //
-// 关联 ADR: 005（native 等价）、013（闭包三层作用域）、021（Function 结构）、022（调用）
+// 关联 ADR: 005（native 等价）、013（闭包三层作用域）、018（对象模型）、
+//          021（Function 结构）、022（调用）
 
 #ifndef NEO_CORE_PRIVATE_TYPES_FUNCTION_H
 #define NEO_CORE_PRIVATE_TYPES_FUNCTION_H
@@ -23,6 +29,7 @@
 #include "core/IContext.h"  // NativeFn（public 层定义）
 #include "core/IData.h"
 #include "core/IType.h"
+#include "core/types/Object.h"  // FunctionData 继承 ObjectData
 #include "infra/IAllocator.h"
 
 #include <cstddef>
@@ -61,7 +68,8 @@ public:
     Value* setPrototype(IContext* ctx, Value* self, Value* proto) override;
 };
 
-class FunctionData : public IData {
+// 函数对象 data：继承 ObjectData 复用属性容器/原型链/GC 遍历/clone。
+class FunctionData : public ObjectData {
 public:
     Scope* closureScope;   // 闭包作用域（root 的子作用域，Sema 收集的穿透变量）
     Scope* rootScope;      // 模块根作用域（借用，不拥有）
@@ -74,10 +82,10 @@ public:
         : closureScope(closure), rootScope(root), native(fn), minArgc(minArgs),
           name(fnName.empty() ? "<anonymous>" : std::string(fnName)) {}
 
-    // clone：共享 scope 指针（作用域由作用域树管理，非 data 拥有）+ 复制函数指针/参数描述/名字。
+    // clone：引用语义（ADR-019 §2）——ref++ 后返回 this，属性容器随之共享。
+    // closureScope/rootScope 由作用域树管理，与 data 共享无关。
     IData* clone(neo::infra::IAllocator* alloc) const override {
-        void* p = alloc->alloc(sizeof(FunctionData));
-        return new (p) FunctionData(closureScope, rootScope, native, minArgc, name);
+        return ObjectData::clone(alloc);
     }
 };
 

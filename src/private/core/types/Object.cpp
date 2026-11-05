@@ -57,11 +57,15 @@ Value* ObjectType::call(IContext* ctx, Value* self, Value* /*thisArg*/,
 
 namespace {
 
+// 链上节点只可能是 Object 或 Function（FunctionData 派生自 ObjectData），其他类型终止。
+inline bool hasObjectLayout(TypeKind k) {
+    return k == TypeKind::Object || k == TypeKind::Function;
+}
+
 // 沿原型链查找属性（含 self 自身的自有属性）。返回命中的 Property，未找到返回 nullptr。
-// 原型链只由 Object 构成（setPrototype 保证），遇到非 Object 即终止。
 Property* findInChain(Value* self, const std::string& key) {
     for (Value* cur = self; cur != nullptr;) {
-        if (cur->type()->kind() != TypeKind::Object) return nullptr;
+        if (!hasObjectLayout(cur->type()->kind())) return nullptr;
         auto* d = static_cast<ObjectData*>(cur->data());
         auto it = d->properties.find(key);
         if (it != d->properties.end()) return &it->second;
@@ -160,15 +164,15 @@ Value* ObjectType::getPrototype(IContext* ctx, Value* self) {
 }
 
 Value* ObjectType::setPrototype(IContext* ctx, Value* self, Value* proto) {
-    // proto 只允许 Object 或 null（undefined 等按 TypeError 处理）
+    // proto 只允许 Object/Function 或 null（undefined 等按 TypeError 处理）
     TypeKind pk = proto->type()->kind();
-    if (pk != TypeKind::Object && pk != TypeKind::Null) {
+    if (!hasObjectLayout(pk) && pk != TypeKind::Null) {
         std::string msg = "Object prototype may only be an Object or null";
         return ctx->createException(ctx->createString(msg));
     }
     // 环检测：从 proto 沿原型链走到头，若遇到 self 则成环
     std::unordered_set<Value*> seen;
-    for (Value* cur = proto; cur != nullptr && cur->type()->kind() == TypeKind::Object;) {
+    for (Value* cur = proto; cur != nullptr && hasObjectLayout(cur->type()->kind());) {
         if (cur == self) {
             std::string msg = "Cyclic __proto__ value";
             return ctx->createException(ctx->createString(msg));

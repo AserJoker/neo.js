@@ -100,32 +100,32 @@ Value* FunctionType::call(IContext* ctx, Value* self, Value* thisArg,
     return res;
 }
 
-// 属性操作：Function 本阶段无属性容器（函数也是对象，待对象字段接入后补齐）。
-Value* FunctionType::getProperty(IContext* ctx, Value* /*self*/, std::string_view /*key*/) {
-    return notImplemented(ctx, "getProperty");
+// 属性/原型操作：FunctionData 派生自 ObjectData，直接委托 ObjectType 的实现
+// （属性查找沿原型链、OrdinarySet、环检测等逻辑与普通对象完全一致）。
+Value* FunctionType::getProperty(IContext* ctx, Value* self, std::string_view key) {
+    return getObjectType()->getProperty(ctx, self, key);
 }
-Value* FunctionType::setProperty(IContext* ctx, Value* /*self*/, std::string_view /*key*/,
-                                 Value* /*value*/) {
-    return notImplemented(ctx, "setProperty");
+Value* FunctionType::setProperty(IContext* ctx, Value* self, std::string_view key,
+                                 Value* value) {
+    return getObjectType()->setProperty(ctx, self, key, value);
 }
-bool FunctionType::hasProperty(IContext* /*ctx*/, Value* /*self*/, std::string_view /*key*/) {
-    return false;
+bool FunctionType::hasProperty(IContext* ctx, Value* self, std::string_view key) {
+    return getObjectType()->hasProperty(ctx, self, key);
 }
-Value* FunctionType::deleteProperty(IContext* ctx, Value* /*self*/, std::string_view /*key*/) {
-    return notImplemented(ctx, "deleteProperty");
+Value* FunctionType::deleteProperty(IContext* ctx, Value* self, std::string_view key) {
+    return getObjectType()->deleteProperty(ctx, self, key);
 }
-Value* FunctionType::defineProperty(IContext* ctx, Value* /*self*/, std::string_view /*key*/,
-                                    Value* /*value*/, bool /*writable*/, bool /*enumerable*/,
-                                    bool /*configurable*/) {
-    return notImplemented(ctx, "defineProperty");
+Value* FunctionType::defineProperty(IContext* ctx, Value* self, std::string_view key,
+                                    Value* value, bool writable, bool enumerable,
+                                    bool configurable) {
+    return getObjectType()->defineProperty(ctx, self, key, value, writable, enumerable,
+                                           configurable);
 }
-
-// 原型操作：Function 尚未接入对象字段（函数也是对象，待对象字段接入后补齐）。
-Value* FunctionType::getPrototype(IContext* ctx, Value* /*self*/) {
-    return notImplemented(ctx, "getPrototype");
+Value* FunctionType::getPrototype(IContext* ctx, Value* self) {
+    return getObjectType()->getPrototype(ctx, self);
 }
-Value* FunctionType::setPrototype(IContext* ctx, Value* /*self*/, Value* /*proto*/) {
-    return notImplemented(ctx, "setPrototype");
+Value* FunctionType::setPrototype(IContext* ctx, Value* self, Value* proto) {
+    return getObjectType()->setPrototype(ctx, self, proto);
 }
 
 }  // namespace neo::core

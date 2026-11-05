@@ -656,7 +656,7 @@ TEST(FunctionTest, CallResultSurvivesExecScopeDestroy) {
     EXPECT_DOUBLE_EQ(static_cast<NumberData*>(result->data())->value, 99.0);
 }
 
-TEST(FunctionTest, FunctionDataCloneSharesScopes) {
+TEST(FunctionTest, FunctionDataCloneSharesData) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
@@ -665,16 +665,15 @@ TEST(FunctionTest, FunctionDataCloneSharesScopes) {
     Value* fn = ctx->createNativeFunction(argcFn, 2);
     ctx->setFunctionName(fn, "cloned");
     auto* d = static_cast<FunctionData*>(fn->data());
+    int refBefore = d->ref();
 
+    // 函数是对象（FunctionData : ObjectData），clone 走引用语义（ADR-019 §2）
     IData* cloned = d->clone(alloc.get());
     ASSERT_NE(cloned, nullptr);
-    auto* cd = static_cast<FunctionData*>(cloned);
-    EXPECT_EQ(cd->closureScope, d->closureScope);  // 共享 scope 指针
-    EXPECT_EQ(cd->rootScope, d->rootScope);
-    EXPECT_EQ(cd->native, d->native);
-    EXPECT_EQ(cd->minArgc, 2u);
-    EXPECT_EQ(cd->name, "cloned");
-    // placement new 对象需显式析构（FunctionData 含 std::string name）
-    cd->~FunctionData();
-    alloc->free(cloned);
+    EXPECT_EQ(cloned, d);
+    EXPECT_EQ(d->ref(), refBefore + 1);
+    EXPECT_EQ(d->closureScope, static_cast<FunctionData*>(cloned)->closureScope);
+    EXPECT_EQ(d->name, "cloned");
+    // 撤销 clone 引入的引用，避免 data 泄漏
+    d->refDec();
 }

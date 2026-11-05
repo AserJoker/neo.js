@@ -166,22 +166,33 @@ TEST(PropertyOpsTest, UninitializedPropertyOpsPassthrough) {
     expectPassthroughProperty(ctx.get(), uninit);
 }
 
-// ===== Function：属性容器未接入 =====
+// ===== Function：继承 ObjectData，属性操作与普通对象一致 =====
 
-TEST(PropertyOpsTest, FunctionPropertyOpsNotImplemented) {
+TEST(PropertyOpsTest, FunctionPropertyOpsBehaveLikeObject) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
 
     Value* fn = ctx->createNativeFunction(noopFn, 0);
-    EXPECT_EQ(ctx->getProperty(fn, "x")->type()->kind(), TypeKind::Exception);
-    EXPECT_EQ(ctx->setProperty(fn, "x", ctx->createNumber(1))->type()->kind(),
-              TypeKind::Exception);
+    // 空函数对象：无自有属性
+    EXPECT_EQ(ctx->getProperty(fn, "x")->type()->kind(), TypeKind::Undefined);
     EXPECT_FALSE(ctx->hasProperty(fn, "x"));
-    EXPECT_EQ(ctx->deleteProperty(fn, "x")->type()->kind(), TypeKind::Exception);
-    EXPECT_EQ(ctx->defineProperty(fn, "x", ctx->createNumber(2))->type()->kind(),
-              TypeKind::Exception);
+
+    // set 在函数对象上建自有属性（与普通对象一致）
+    Value* v = ctx->createNumber(1);
+    EXPECT_EQ(ctx->setProperty(fn, "x", v), v);
+    EXPECT_TRUE(ctx->hasProperty(fn, "x"));
+    EXPECT_EQ(ctx->getProperty(fn, "x"), v);
+
+    // defineProperty 完整描述符
+    ctx->defineProperty(fn, "y", ctx->createNumber(2), false, false, false);
+    auto* d = static_cast<ObjectData*>(fn->data());
+    EXPECT_FALSE(d->properties.at("y").writable);
+
+    // delete 移除自有属性
+    EXPECT_EQ(ctx->deleteProperty(fn, "x")->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(ctx->hasProperty(fn, "x"));
 }
 
 // ===== Object：运算/调用占位 =====
@@ -278,16 +289,39 @@ TEST(PropertyOpsTest, PassthroughTypesPrototypeOps) {
     EXPECT_EQ(ctx->setPrototype(uninit, ctx->createObject()), uninit);
 }
 
-TEST(PropertyOpsTest, FunctionPrototypeOpsNotImplemented) {
+TEST(PropertyOpsTest, FunctionPrototypeOpsBehaveLikeObject) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
 
     Value* fn = ctx->createNativeFunction(noopFn, 0);
-    EXPECT_EQ(ctx->getPrototype(fn)->type()->kind(), TypeKind::Exception);
-    EXPECT_EQ(ctx->setPrototype(fn, ctx->createObject())->type()->kind(),
-              TypeKind::Exception);
+    // 新函数无原型（null），与普通对象一致
+    EXPECT_EQ(ctx->getPrototype(fn)->type()->kind(), TypeKind::Null);
+
+    Value* proto = ctx->createObject();
+    EXPECT_EQ(ctx->setPrototype(fn, proto), fn);
+    EXPECT_EQ(ctx->getPrototype(fn), proto);
+
+    // 原型链查找对函数生效
+    Value* val = ctx->createNumber(7);
+    ctx->setProperty(proto, "inherited", val);
+    EXPECT_EQ(ctx->getProperty(fn, "inherited"), val);
+    EXPECT_TRUE(ctx->hasProperty(fn, "inherited"));
+}
+
+TEST(PropertyOpsTest, FunctionCanBePrototype) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    // 函数可作为其他对象的原型（FunctionData 派生自 ObjectData）
+    Value* fn = ctx->createNativeFunction(noopFn, 0);
+    ctx->setProperty(fn, "x", ctx->createNumber(3));
+    Value* obj = ctx->createObject();
+    EXPECT_EQ(ctx->setPrototype(obj, fn), obj);
+    EXPECT_EQ(ctx->getProperty(obj, "x")->type()->kind(), TypeKind::Number);
 }
 
 TEST(PropertyOpsTest, PrimitivePrototypeOpsDispatch) {
