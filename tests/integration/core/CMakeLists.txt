@@ -7,6 +7,7 @@ add_executable(core_integration_test
     ArithmeticPipelineTest.cpp
     ArrayPipelineTest.cpp
     PrimitiveWrapperPipelineTest.cpp
+    ToPrimitivePipelineTest.cpp
 )
 target_link_libraries(core_integration_test
     PRIVATE

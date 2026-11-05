@@ -19,10 +19,9 @@ namespace neo::core {
 
 namespace {
 
-// 键是否为字符串 "length"
-inline bool isLengthKey(Value* key) {
-    return key->type()->kind() == TypeKind::String &&
-           static_cast<StringData*>(key->data())->value == "length";
+// 键是否 symbol（symbol 走 symbols 容器，不做 ToPropertyKey）
+inline bool isSymbolKeyValue(Value* key) {
+    return key->type()->kind() == TypeKind::Symbol;
 }
 
 // 创建 "Invalid array length" 异常
@@ -173,37 +172,33 @@ std::string arrayToString(const ArrayData* d) {
 
 // —— ArrayType 行为方法 ——
 
+// 数组运算走 ToPrimitive（ES2024 §13.15.3 / §13.15.4）：
+// 注：属性键统一经 ToPropertyKey（见 resolveKey），对象键可触发用户 valueOf/toString。
+// Array.prototype.toString → join(",")，故 + 为字符串拼接、算术按 join 结果转数字。
+
 Value* ArrayType::add(IContext* ctx, Value* a, Value* b) {
     if (Value* p = detail::passthrough(a, b)) return p;
-    // 包装对象先 ToPrimitive 拆出原始值，再重新分派（[1] + new Number(2) === "12"）
-    if (b->type()->kind() == TypeKind::PrimitiveWrapper) {
-        return ctx->add(a, static_cast<PrimitiveWrapperData*>(b->data())->primitiveValue);
-    }
-    // ToPrimitive(array) 是字符串，故 + 恒为字符串拼接（[1,2] + 3 === "1,23"）
-    std::string lhs = arrayToString(static_cast<ArrayData*>(a->data()));
-    return ctx->createString(lhs + detail::valueToString(b));
+    return detail::addValues(ctx, a, b);
 }
 
 Value* ArrayType::sub(IContext* ctx, Value* a, Value* b) {
     if (Value* p = detail::passthrough(a, b)) return p;
-    double lhs = detail::stringToNumber(arrayToString(static_cast<ArrayData*>(a->data())));
-    return ctx->createNumber(lhs - detail::toNumber(b));
+    return detail::numericOp(ctx, '-', a, b);
 }
 
 Value* ArrayType::mul(IContext* ctx, Value* a, Value* b) {
     if (Value* p = detail::passthrough(a, b)) return p;
-    double lhs = detail::stringToNumber(arrayToString(static_cast<ArrayData*>(a->data())));
-    return ctx->createNumber(lhs * detail::toNumber(b));
+    return detail::numericOp(ctx, '*', a, b);
 }
 
 Value* ArrayType::div(IContext* ctx, Value* a, Value* b) {
     if (Value* p = detail::passthrough(a, b)) return p;
-    double lhs = detail::stringToNumber(arrayToString(static_cast<ArrayData*>(a->data())));
-    return ctx->createNumber(lhs / detail::toNumber(b));
+    return detail::numericOp(ctx, '/', a, b);
 }
 
 Value* ArrayType::toString(IContext* ctx, Value* self) {
-    return ctx->createString(arrayToString(static_cast<ArrayData*>(self->data())));
+    // ToString(array) = ToPrimitive(STRING) → join(",")（ES2024 §7.1.14）
+    return detail::toStringValue(ctx, self);
 }
 
 Value* ArrayType::call(IContext* ctx, Value* self, Value* /*thisArg*/,
@@ -216,12 +211,15 @@ Value* ArrayType::construct(IContext* ctx, Value* self, size_t /*argc*/, Value* 
 }
 
 Value* ArrayType::getProperty(IContext* ctx, Value* self, Value* key) {
-    if (isLengthKey(key)) {
-        return ctx->createNumber(static_cast<double>(static_cast<ArrayData*>(self->data())->length()));
-    }
-    if (key->type()->kind() != TypeKind::Symbol) {
+    std::string k;
+    if (!isSymbolKeyValue(key)) {
+        if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
+        if (k == "length") {
+            return ctx->createNumber(
+                static_cast<double>(static_cast<ArrayData*>(self->data())->length()));
+        }
         uint32_t index = 0;
-        if (parseArrayIndex(detail::keyToString(key), index)) {
+        if (parseArrayIndex(k, index)) {
             // 沿原型链查找索引元素（空洞则继续向上，与普通属性查找一致）
             if (Value* v = findIndexInChain(self, index)) return v;
         }
@@ -231,20 +229,22 @@ Value* ArrayType::getProperty(IContext* ctx, Value* self, Value* key) {
 
 Value* ArrayType::setProperty(IContext* ctx, Value* self, Value* key, Value* value) {
     auto* d = static_cast<ArrayData*>(self->data());
-    if (isLengthKey(key)) {
-        // ArraySetLength：值须为 0..2^32-1 的整数
-        if (value->type()->kind() != TypeKind::Number) return invalidLength(ctx);
-        double n = static_cast<NumberData*>(value->data())->value;
-        if (!std::isfinite(n) || n < 0.0 || n > static_cast<double>(kArrayMaxLength) ||
-            std::floor(n) != n) {
-            return invalidLength(ctx);
+    std::string k;
+    if (!isSymbolKeyValue(key)) {
+        if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
+        if (k == "length") {
+            // ArraySetLength：值须为 0..2^32-1 的整数
+            if (value->type()->kind() != TypeKind::Number) return invalidLength(ctx);
+            double n = static_cast<NumberData*>(value->data())->value;
+            if (!std::isfinite(n) || n < 0.0 || n > static_cast<double>(kArrayMaxLength) ||
+                std::floor(n) != n) {
+                return invalidLength(ctx);
+            }
+            d->setLength(static_cast<uint32_t>(n));
+            return value;
         }
-        d->setLength(static_cast<uint32_t>(n));
-        return value;
-    }
-    if (key->type()->kind() != TypeKind::Symbol) {
         uint32_t index = 0;
-        if (parseArrayIndex(detail::keyToString(key), index)) {
+        if (parseArrayIndex(k, index)) {
             d->setElement(index, value);
             return value;
         }
@@ -253,11 +253,12 @@ Value* ArrayType::setProperty(IContext* ctx, Value* self, Value* key, Value* val
 }
 
 bool ArrayType::hasProperty(IContext* ctx, Value* self, Value* key) {
-    if (isLengthKey(key)) return true;
-    if (key->type()->kind() != TypeKind::Symbol) {
+    std::string k;
+    if (!isSymbolKeyValue(key)) {
+        if (detail::propertyKeyString(ctx, key, k) != nullptr) return false;
+        if (k == "length") return true;
         uint32_t index = 0;
-        if (parseArrayIndex(detail::keyToString(key), index) &&
-            findIndexInChain(self, index) != nullptr) {
+        if (parseArrayIndex(k, index) && findIndexInChain(self, index) != nullptr) {
             return true;
         }
     }
@@ -265,12 +266,14 @@ bool ArrayType::hasProperty(IContext* ctx, Value* self, Value* key) {
 }
 
 Value* ArrayType::deleteProperty(IContext* ctx, Value* self, Value* key) {
-    if (isLengthKey(key)) {
-        return ctx->createException(ctx->createString("Cannot delete property 'length'"));
-    }
-    if (key->type()->kind() != TypeKind::Symbol) {
+    std::string k;
+    if (!isSymbolKeyValue(key)) {
+        if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
+        if (k == "length") {
+            return ctx->createException(ctx->createString("Cannot delete property 'length'"));
+        }
         uint32_t index = 0;
-        if (parseArrayIndex(detail::keyToString(key), index)) {
+        if (parseArrayIndex(k, index)) {
             static_cast<ArrayData*>(self->data())->removeElement(index);
             return ctx->createBoolean(true);
         }
@@ -281,17 +284,19 @@ Value* ArrayType::deleteProperty(IContext* ctx, Value* self, Value* key) {
 Value* ArrayType::defineProperty(IContext* ctx, Value* self, Value* key,
                                  Value* value, bool writable, bool enumerable,
                                  bool configurable) {
-    if (isLengthKey(key)) {
-        // length 不可配置、不可枚举；writable 允许（本阶段忽略其后续约束）
-        if (enumerable || configurable) {
-            return ctx->createException(
-                ctx->createString("Cannot redefine property: length"));
+    std::string k;
+    if (!isSymbolKeyValue(key)) {
+        if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
+        if (k == "length") {
+            // length 不可配置、不可枚举；writable 允许（本阶段忽略其后续约束）
+            if (enumerable || configurable) {
+                return ctx->createException(
+                    ctx->createString("Cannot redefine property: length"));
+            }
+            return setProperty(ctx, self, key, value);
         }
-        return setProperty(ctx, self, key, value);
-    }
-    if (key->type()->kind() != TypeKind::Symbol) {
         uint32_t index = 0;
-        if (parseArrayIndex(detail::keyToString(key), index)) {
+        if (parseArrayIndex(k, index)) {
             // 本阶段索引元素恒为 writable/enumerable/configurable 的数据属性
             if (!writable || !enumerable || !configurable) {
                 return ctx->createException(ctx->createString(
@@ -307,9 +312,11 @@ Value* ArrayType::defineProperty(IContext* ctx, Value* self, Value* key,
 
 Value* ArrayType::defineAccessor(IContext* ctx, Value* self, Value* key, Value* getter,
                                  Value* setter, bool enumerable, bool configurable) {
-    if (key->type()->kind() != TypeKind::Symbol) {
+    std::string k;
+    if (!isSymbolKeyValue(key)) {
+        if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
         uint32_t index = 0;
-        if (parseArrayIndex(detail::keyToString(key), index) || isLengthKey(key)) {
+        if (k == "length" || parseArrayIndex(k, index)) {
             return ctx->createException(ctx->createString(
                 "Cannot define accessor on array index or length"));
         }

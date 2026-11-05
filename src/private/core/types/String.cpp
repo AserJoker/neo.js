@@ -1,8 +1,8 @@
 // String.cpp - StringType 行为方法实现（concat 核心）
 //
-// string 参与运算：
-// add：主导 concat——valueToString(a) + valueToString(b)（JS + 规则：任一是 string → concat）。
-// sub/mul/div：ToNumber(a) op ToNumber(b)（string 不主导算术，-/*/ 无 concat 分支）。
+// string 参与运算（ES2024 §13.15.3 / §13.15.4）：
+// add：两侧 ToPrimitive（缺省 hint）；任一为 string → 拼接（string 主导）。
+// sub/mul/div：两侧 ToPrimitive(NUMBER) 后 ToNumber，再算术。
 // toString：返回等价 string Value（内容 = self.value）。
 //
 // 关联 ADR: 016（Type 体系修订 §4/§5/§6）、017（透传）、006（异常即值）
@@ -17,25 +17,22 @@ using namespace detail;
 
 Value* StringType::add(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    // 主导 concat：ToString(a) + ToString(b)
-    std::string result = valueToString(a) + valueToString(b);
-    return ctx->createString(result);
+    return addValues(ctx, a, b);
 }
 
 Value* StringType::sub(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    // string 不主导算术：ToNumber(a) - ToNumber(b)
-    return ctx->createNumber(toNumber(a) - toNumber(b));
+    return numericOp(ctx, '-', a, b);
 }
 
 Value* StringType::mul(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    return ctx->createNumber(toNumber(a) * toNumber(b));
+    return numericOp(ctx, '*', a, b);
 }
 
 Value* StringType::div(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    return ctx->createNumber(toNumber(a) / toNumber(b));
+    return numericOp(ctx, '/', a, b);
 }
 
 Value* StringType::toString(IContext* ctx, Value* self) {

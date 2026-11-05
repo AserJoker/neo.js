@@ -1,9 +1,8 @@
 // Number.cpp - NumberType 行为方法实现（算术核心）
 //
-// number 参与运算：
-// add：若右是 string → 调换让 string 主导 concat（JS + 规则：任一是 string → concat）；
-//      否则 ToNumber(b) 后 a.value + bnum。
-// sub/mul/div：ToNumber(b) 后算术（string 不主导算术，JS -/*/ 无 concat 分支）。
+// number 参与运算（ES2024 §13.15.3 / §13.15.4）：
+// add：两侧 ToPrimitive（缺省 hint）；任一为 string → 拼接，否则数值相加。
+// sub/mul/div：两侧 ToPrimitive(NUMBER) 后 ToNumber，再算术。
 // toString：numberToString(a.value)。
 //
 // JS 除零规则（C++ double 自然产生）：1/0=Infinity, 0/0=NaN, -1/0=-Infinity。
@@ -20,43 +19,22 @@ using namespace detail;
 
 Value* NumberType::add(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    // 包装对象先 ToPrimitive 拆出原始值，再按原始值的类型重新分派
-    // （1 + new Number(2) === 3，1 + new String("a") === "1a"）。
-    if (b->type()->kind() == TypeKind::PrimitiveWrapper) {
-        return ctx->add(a, static_cast<PrimitiveWrapperData*>(b->data())->primitiveValue);
-    }
-    // JS + 规则：任一是 string（或 ToPrimitive 为 string 的 array）→ string concat
-    // （保持原左右顺序，a 在前）
-    TypeKind bk = b->type()->kind();
-    if (bk == TypeKind::String || bk == TypeKind::Array) {
-        return ctx->createString(valueToString(a) + valueToString(b));
-    }
-    // 否则数值加法
-    double lhs = static_cast<NumberData*>(a->data())->value;
-    double rhs = toNumber(b);
-    return ctx->createNumber(lhs + rhs);
+    return addValues(ctx, a, b);
 }
 
 Value* NumberType::sub(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    double lhs = static_cast<NumberData*>(a->data())->value;
-    double rhs = toNumber(b);
-    return ctx->createNumber(lhs - rhs);
+    return numericOp(ctx, '-', a, b);
 }
 
 Value* NumberType::mul(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    double lhs = static_cast<NumberData*>(a->data())->value;
-    double rhs = toNumber(b);
-    return ctx->createNumber(lhs * rhs);
+    return numericOp(ctx, '*', a, b);
 }
 
 Value* NumberType::div(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    double lhs = static_cast<NumberData*>(a->data())->value;
-    double rhs = toNumber(b);
-    // JS 除零：1/0=Infinity, 0/0=NaN（C++ double 自然产生，无须特殊处理）
-    return ctx->createNumber(lhs / rhs);
+    return numericOp(ctx, '/', a, b);
 }
 
 Value* NumberType::toString(IContext* ctx, Value* self) {

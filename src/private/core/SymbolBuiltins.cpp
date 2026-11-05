@@ -33,11 +33,14 @@ namespace neo::core {
 
 namespace {
 
-// Symbol(description) —— 返回新 symbol
+// Symbol(description) —— 返回新 symbol。
+// description 走 ToString（ES2024 §20.4.1.1），可触发用户 toString。
 Value* symbolCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     std::string desc;
     if (argc > 0 && argv[0]->type()->kind() != TypeKind::Undefined) {
-        desc = detail::valueToString(argv[0]);
+        Value* s = detail::toStringValue(ctx, argv[0]);
+        if (detail::isErrorValue(s)) return s;
+        desc = detail::valueToString(s);
     }
     return ctx->createSymbol(desc);
 }
@@ -54,11 +57,28 @@ Value* symbolToString(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv
     return ctx->toString(sym);
 }
 
-// Symbol.for(key) —— 全局注册表查找/登记（ES2024 §20.4.2.1）
+// Symbol.prototype[@@toPrimitive](hint) —— 返回 [[SymbolData]]（ES2024 §20.4.3.5）。
+// hint 被忽略；this 须为 symbol 或 Symbol 包装对象。
+Value* symbolToPrimitive(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
+    Value* sym = self;
+    if (sym != nullptr && sym->type()->kind() == TypeKind::PrimitiveWrapper) {
+        sym = wrapperPrimitiveValue(sym);
+    }
+    if (sym == nullptr || sym->type()->kind() != TypeKind::Symbol) {
+        return ctx->createException(ctx->createString(
+            "Symbol.prototype[Symbol.toPrimitive] requires that 'this' be a Symbol"));
+    }
+    return sym;
+}
+
+// Symbol.for(key) —— 全局注册表查找/登记（ES2024 §20.4.2.1）。
+// key 走 ToString（§20.4.2.1），可触发用户 toString。
 Value* symbolFor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     std::string key;
     if (argc > 0 && argv[0]->type()->kind() != TypeKind::Undefined) {
-        key = detail::valueToString(argv[0]);
+        Value* s = detail::toStringValue(ctx, argv[0]);
+        if (detail::isErrorValue(s)) return s;
+        key = detail::valueToString(s);
     }
     return ctx->symbolFor(key);
 }
@@ -99,6 +119,16 @@ bool registerSymbolBuiltins(IContext* ctx) {
     // 2b. prototype[Symbol.toStringTag] = "Symbol"
     if (ctx->defineProperty(proto, ctx->getWellKnownSymbol(WellKnownSymbol::ToStringTag),
                             ctx->createString("Symbol"), false, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+
+    // 2c. prototype[Symbol.toPrimitive]（ES2024 §20.4.3.5）
+    Value* toPrimFn = ctx->createNativeFunction(symbolToPrimitive, 0);
+    if (toPrimFn == ctx->oomValue()) return false;
+    ctx->setFunctionName(toPrimFn, "[Symbol.toPrimitive]");
+    if (ctx->defineProperty(proto, ctx->getWellKnownSymbol(WellKnownSymbol::ToPrimitive),
+                            toPrimFn, false, false, true)
             ->type()->kind() == TypeKind::Exception) {
         return false;
     }

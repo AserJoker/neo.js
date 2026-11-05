@@ -20,6 +20,7 @@ add_executable(core_unit_test
     ArrayTest.cpp
     ArrayBuiltinsTest.cpp
     PrimitiveWrapperTest.cpp
+    ToPrimitiveTest.cpp
 )
 target_link_libraries(core_unit_test
     PRIVATE

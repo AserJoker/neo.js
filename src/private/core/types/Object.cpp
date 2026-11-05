@@ -20,32 +20,28 @@
 
 namespace neo::core {
 
-namespace {
+// —— 运算：走 ToPrimitive（ES2024 §13.15.3 / §13.15.4）——
+// 普通对象默认 ToPrimitive 得 "[object Object]"，故 + 为字符串拼接、算术为 NaN。
 
-// 非对象运算占位错误（对象参与运算需 ToPrimitive，后续阶段）
-Value* notImplemented(IContext* ctx, const char* op) {
-    std::string msg = std::string("Object.") + op + " is not implemented";
-    return ctx->createException(ctx->createString(msg));
+Value* ObjectType::add(IContext* ctx, Value* a, Value* b) {
+    if (Value* p = detail::passthrough(a, b)) return p;
+    return detail::addValues(ctx, a, b);
 }
-
-}  // namespace
-
-// —— 运算：本阶段未实现 ——
-
-Value* ObjectType::add(IContext* ctx, Value* /*a*/, Value* /*b*/) {
-    return notImplemented(ctx, "add");
+Value* ObjectType::sub(IContext* ctx, Value* a, Value* b) {
+    if (Value* p = detail::passthrough(a, b)) return p;
+    return detail::numericOp(ctx, '-', a, b);
 }
-Value* ObjectType::sub(IContext* ctx, Value* /*a*/, Value* /*b*/) {
-    return notImplemented(ctx, "sub");
+Value* ObjectType::mul(IContext* ctx, Value* a, Value* b) {
+    if (Value* p = detail::passthrough(a, b)) return p;
+    return detail::numericOp(ctx, '*', a, b);
 }
-Value* ObjectType::mul(IContext* ctx, Value* /*a*/, Value* /*b*/) {
-    return notImplemented(ctx, "mul");
+Value* ObjectType::div(IContext* ctx, Value* a, Value* b) {
+    if (Value* p = detail::passthrough(a, b)) return p;
+    return detail::numericOp(ctx, '/', a, b);
 }
-Value* ObjectType::div(IContext* ctx, Value* /*a*/, Value* /*b*/) {
-    return notImplemented(ctx, "div");
-}
-Value* ObjectType::toString(IContext* ctx, Value* /*self*/) {
-    return notImplemented(ctx, "toString");
+Value* ObjectType::toString(IContext* ctx, Value* self) {
+    // ToString(object) = ToPrimitive(STRING) 后递归（ES2024 §7.1.14）
+    return detail::toStringValue(ctx, self);
 }
 
 Value* ObjectType::call(IContext* ctx, Value* self, Value* /*thisArg*/,
@@ -81,9 +77,11 @@ inline bool isSymbolKey(Value* key) {
     return key->type()->kind() == TypeKind::Symbol;
 }
 
-// 键转字符串（非 symbol 键）
-inline std::string keyString(Value* key) {
-    return detail::keyToString(key);
+// 键转字符串（非 symbol 键）。走 ToPropertyKey（ES2024 §7.1.19）：
+// 对象键先 ToPrimitive(STRING)，故可触发用户 valueOf/toString/@@toPrimitive。
+// 成功返回 nullptr 并写入 out；失败返回 Exception/Fatal。
+inline Value* keyString(IContext* ctx, Value* key, std::string& out) {
+    return detail::propertyKeyString(ctx, key, out);
 }
 
 // symbol 键 → symbols 容器的哈希键（SymbolData* 身份）
@@ -149,9 +147,12 @@ Value* readProperty(IContext* ctx, Property* p, Value* receiver) {
 
 Value* ObjectType::getProperty(IContext* ctx, Value* self, Value* key) {
     // 沿原型链查找（JS 读取语义）；命中访问器则以 self（receiver）为 this 调 getter
-    Property* p = isSymbolKey(key) ? findSymbolInChain(self, symbolIdentity(key))
-                                   : findInChain(self, keyString(key));
-    return readProperty(ctx, p, self);
+    if (isSymbolKey(key)) {
+        return readProperty(ctx, findSymbolInChain(self, symbolIdentity(key)), self);
+    }
+    std::string k;
+    if (Value* err = keyString(ctx, key, k)) return err;
+    return readProperty(ctx, findInChain(self, k), self);
 }
 
 Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* value) {
@@ -213,7 +214,8 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
     }
 
     // —— 字符串键 ——
-    std::string k = keyString(key);
+    std::string k;
+    if (Value* err = keyString(ctx, key, k)) return err;
     auto it = d->properties.find(k);
     if (it != d->properties.end()) {
         Property& own = it->second;
@@ -254,10 +256,12 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
     return value;
 }
 
-bool ObjectType::hasProperty(IContext* /*ctx*/, Value* self, Value* key) {
+bool ObjectType::hasProperty(IContext* ctx, Value* self, Value* key) {
     // JS `in` 语义：自有 + 原型链
     if (isSymbolKey(key)) return findSymbolInChain(self, symbolIdentity(key)) != nullptr;
-    return findInChain(self, keyString(key)) != nullptr;
+    std::string k;
+    if (keyString(ctx, key, k) != nullptr) return false;  // ToPropertyKey 失败 → 不存在
+    return findInChain(self, k) != nullptr;
 }
 
 Value* ObjectType::deleteProperty(IContext* ctx, Value* self, Value* key) {
@@ -283,7 +287,8 @@ Value* ObjectType::deleteProperty(IContext* ctx, Value* self, Value* key) {
     }
 
     // —— 字符串键 ——
-    std::string k = keyString(key);
+    std::string k;
+    if (Value* err = keyString(ctx, key, k)) return err;
     auto it = d->properties.find(k);
     if (it == d->properties.end()) {
         // 不存在：delete 视为成功（JS 语义）
@@ -304,7 +309,7 @@ Value* ObjectType::deleteProperty(IContext* ctx, Value* self, Value* key) {
     return ctx->createBoolean(true);
 }
 
-Value* ObjectType::defineProperty(IContext* /*ctx*/, Value* self, Value* key,
+Value* ObjectType::defineProperty(IContext* ctx, Value* self, Value* key,
                                   Value* value, bool writable, bool enumerable,
                                   bool configurable) {
     auto* d = static_cast<ObjectData*>(self->data());
@@ -324,7 +329,8 @@ Value* ObjectType::defineProperty(IContext* /*ctx*/, Value* self, Value* key,
     }
 
     // —— 字符串键 ——
-    std::string k = keyString(key);
+    std::string k;
+    if (Value* err = keyString(ctx, key, k)) return err;
     auto it = d->properties.find(k);
     if (it != d->properties.end()) {
         // 已存在：整体替换描述符（数据属性覆盖访问器时清空 getter/setter）
@@ -369,7 +375,8 @@ Value* ObjectType::defineAccessor(IContext* ctx, Value* self, Value* key, Value*
     }
 
     // —— 字符串键 ——
-    std::string k = keyString(key);
+    std::string k;
+    if (Value* err = keyString(ctx, key, k)) return err;
     auto it = d->properties.find(k);
     if (it != d->properties.end()) {
         it->second = acc;

@@ -1,7 +1,7 @@
 // Symbol.cpp - SymbolType 行为方法实现
 //
 // symbol 是原始类型，不能隐式转换为 number/string：
-//   add/sub/mul/div —— 全部返回 Exception（ES2024 §7.1.1 ToPrimitive 对 symbol 抛错）
+//   add/sub/mul/div —— ToPrimitive 后 ToString/ToNumber 抛 TypeError（ES2024 §7.1.4/§7.1.14）
 //   toString        —— "Symbol(description)"（等价 sym.toString()）
 //   call/construct  —— 不是函数/构造函数
 //   属性/原型操作   —— 原始类型无自有属性、无原型（与 string/number 一致）
@@ -12,37 +12,28 @@
 #include "core/types/Symbol.h"
 #include "core/types/TypeBehavior.h"
 
-#include <string>
-
 namespace neo::core {
 
 using namespace detail;
 
-namespace {
-
-// symbol 不能隐式转换为原始值（ES2024 §7.1.1）：参与算术/拼接一律抛错。
-Value* cannotConvert(IContext* ctx, const char* op) {
-    std::string msg = std::string("Cannot convert a Symbol value to a ") + op;
-    return ctx->createException(ctx->createString(msg));
-}
-
-}  // namespace
-
+// symbol 走统一转换链（ES2024 §13.15.3）：两侧 ToPrimitive 后，
+// 任一为 string 则拼接——此时 ToString(symbol) 抛 TypeError；
+// 否则 ToNumber(symbol) 抛 TypeError。两条路径都由共享辅助给出正确错误。
 Value* SymbolType::add(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    return cannotConvert(ctx, "string");
+    return addValues(ctx, a, b);
 }
 Value* SymbolType::sub(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    return cannotConvert(ctx, "number");
+    return numericOp(ctx, '-', a, b);
 }
 Value* SymbolType::mul(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    return cannotConvert(ctx, "number");
+    return numericOp(ctx, '*', a, b);
 }
 Value* SymbolType::div(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    return cannotConvert(ctx, "number");
+    return numericOp(ctx, '/', a, b);
 }
 
 Value* SymbolType::toString(IContext* ctx, Value* self) {

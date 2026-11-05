@@ -1,15 +1,21 @@
 // TypeBehavior.h (private) - Type 行为方法共享转换辅助
 //
-// 基础类型间转换的共享辅助函数（toNumber/numberToString/valueToString）+ 透传拦截。
-// 被各 Type 子类的 .cpp include，避免重复实现。
+// 转换链（ES2024 §7.1）：
+//   ToPrimitive / OrdinaryToPrimitive —— §7.1.1 / §7.1.1.1
+//     @@toPrimitive（exotic）优先，否则按 hint 依次尝试 valueOf / toString。
+//   ToNumber / ToString / ToPropertyKey —— §7.1.4 / §7.1.14 / §7.1.19
+//     对象先 ToPrimitive 再递归；错误经 Value* 通道传播（异常即值）。
+//   Add / 数值二元运算 —— §13.15.3（任一侧 ToPrimitive 为 string → 拼接）
 //
-// 本阶段不实现 ToPrimitive（ADR-030 阶段3）——基础类型间转换靠调换 + type 自己的简单转换。
+// 另有纯原始值的快速辅助（toNumber/numberToString/valueToString），不触发用户代码，
+// 供不涉及对象的内部路径使用。
 //
 // 关联 ADR: 016（Type 体系修订 §5/§6）、017（Exception/Fatal 透传）、006（异常即值）
 
 #ifndef NEO_CORE_PRIVATE_TYPES_TYPE_BEHAVIOR_H
 #define NEO_CORE_PRIVATE_TYPES_TYPE_BEHAVIOR_H
 
+#include "core/IContext.h"
 #include "core/IType.h"
 #include "core/Value.h"
 #include "core/types/Array.h"
@@ -99,6 +105,86 @@ inline bool toBoolean(Value* v) {
     }
 }
 
+// —— ToPrimitive（ES2024 §7.1.1 / §7.1.1.1）——
+// preferredType 缺省（Default）在 OrdinaryToPrimitive 中等价于 NUMBER，
+// 仅 @@toPrimitive 的 hint 字符串区分 "default"。
+enum class PreferredType { Default, Number, String };
+
+// 是否为对象（可走 ToPrimitive 的类型：Object/Function/Array/PrimitiveWrapper）
+inline bool isObjectKind(TypeKind k) {
+    return k == TypeKind::Object || k == TypeKind::Function ||
+           k == TypeKind::Array || k == TypeKind::PrimitiveWrapper;
+}
+
+// 结果是否为错误值（Exception/Fatal）
+inline bool isErrorValue(Value* v) {
+    TypeKind k = v->type()->kind();
+    return k == TypeKind::Exception || k == TypeKind::Fatal;
+}
+
+// 是否为可调用值（Function）
+inline bool isCallable(Value* v) {
+    return v != nullptr && v->type()->kind() == TypeKind::Function;
+}
+
+// OrdinaryToPrimitive(O, hint)（ES2024 §7.1.1.1）：
+// hint=String → 依次尝试 toString、valueOf；hint=Number → 依次尝试 valueOf、toString。
+// 方法可调用则调用，结果非对象即返回；全部失败返回 Exception（TypeError）。
+// 方法调用抛出的 Exception/Fatal 直接透传。
+inline Value* ordinaryToPrimitive(IContext* ctx, Value* obj, PreferredType hint) {
+    const char* names[2];
+    if (hint == PreferredType::String) {
+        names[0] = "toString";
+        names[1] = "valueOf";
+    } else {
+        names[0] = "valueOf";
+        names[1] = "toString";
+    }
+    for (const char* name : names) {
+        Value* method = ctx->getProperty(obj, name);
+        if (isErrorValue(method)) return method;
+        if (!isCallable(method)) continue;
+        Value* result = ctx->call(method, obj, 0, nullptr);
+        if (isErrorValue(result)) return result;
+        if (!isObjectKind(result->type()->kind())) return result;
+    }
+    return ctx->createException(
+        ctx->createString("Cannot convert object to primitive value"));
+}
+
+// ToPrimitive(input, preferredType)（ES2024 §7.1.1）：
+//   非对象原样返回；
+//   对象先查 @@toPrimitive（可调用则以其结果为准，结果仍为对象则报错）；
+//   否则 OrdinaryToPrimitive（缺省 hint 按 Number）。
+inline Value* toPrimitive(IContext* ctx, Value* input,
+                          PreferredType preferred = PreferredType::Default) {
+    if (!isObjectKind(input->type()->kind())) return input;
+
+    Value* exotic = ctx->getProperty(input, ctx->getWellKnownSymbol(WellKnownSymbol::ToPrimitive));
+    if (isErrorValue(exotic)) return exotic;
+    if (exotic->type()->kind() != TypeKind::Undefined) {
+        if (!isCallable(exotic)) {
+            return ctx->createException(
+                ctx->createString("Symbol.toPrimitive is not a function"));
+        }
+        const char* hint = preferred == PreferredType::String   ? "string"
+                           : preferred == PreferredType::Number ? "number"
+                                                                : "default";
+        Value* argv[1] = {ctx->createString(hint)};
+        Value* result = ctx->call(exotic, input, 1, argv);
+        if (isErrorValue(result)) return result;
+        if (isObjectKind(result->type()->kind())) {
+            return ctx->createException(
+                ctx->createString("Cannot convert object to primitive value"));
+        }
+        return result;
+    }
+    // 缺省 hint 等价于 NUMBER（ES2024 §7.1.1 step 1.c）
+    return ordinaryToPrimitive(
+        ctx, input, preferred == PreferredType::String ? PreferredType::String
+                                                       : PreferredType::Number);
+}
+
 // —— ToNumber 转换（ES2024 §7.1.5）——
 // undefined → NaN, null → +0, true → 1, false → 0, number → 自身, string → 解析,
 // array → ToPrimitive（join(",")）后按字符串解析。
@@ -158,6 +244,97 @@ inline std::string valueToString(Value* v) {
     }
 }
 
+// —— 完整转换（返回 Value*，可携带 Exception/Fatal，ES2024 §7.1.4/§7.1.14/§7.1.19）——
+
+// ToNumber(argument)（ES2024 §7.1.4）：
+//   对象先 ToPrimitive(NUMBER)，再对原始值递归；Symbol 抛 TypeError。
+inline Value* toNumberValue(IContext* ctx, Value* v) {
+    TypeKind k = v->type()->kind();
+    if (k == TypeKind::Number) return v;
+    if (k == TypeKind::Symbol) {
+        return ctx->createException(
+            ctx->createString("Cannot convert a Symbol value to a number"));
+    }
+    if (isObjectKind(k)) {
+        Value* prim = toPrimitive(ctx, v, PreferredType::Number);
+        if (isErrorValue(prim)) return prim;
+        return toNumberValue(ctx, prim);
+    }
+    return ctx->createNumber(toNumber(v));
+}
+
+// ToString(argument)（ES2024 §7.1.14）：
+//   对象先 ToPrimitive(STRING)，再对原始值递归；Symbol 抛 TypeError。
+inline Value* toStringValue(IContext* ctx, Value* v) {
+    TypeKind k = v->type()->kind();
+    if (k == TypeKind::String) return v;
+    if (k == TypeKind::Symbol) {
+        return ctx->createException(
+            ctx->createString("Cannot convert a Symbol value to a string"));
+    }
+    if (isObjectKind(k)) {
+        Value* prim = toPrimitive(ctx, v, PreferredType::String);
+        if (isErrorValue(prim)) return prim;
+        return toStringValue(ctx, prim);
+    }
+    return ctx->createString(valueToString(v));
+}
+
+// ToPropertyKey(argument)（ES2024 §7.1.19）：
+//   先 ToPrimitive(STRING)；结果为 Symbol 则原样返回，否则 ToString。
+// 返回的 Value* 可能是 Symbol（调用方据此分流到 symbols 容器）。
+inline Value* toPropertyKeyValue(IContext* ctx, Value* v) {
+    Value* key = toPrimitive(ctx, v, PreferredType::String);
+    if (isErrorValue(key)) return key;
+    if (key->type()->kind() == TypeKind::Symbol) return key;
+    return toStringValue(ctx, key);
+}
+
+// Add(lVal, rVal)（ES2024 §13.15.3）：
+//   两侧 ToPrimitive（缺省 hint）；任一为 string → 字符串拼接，否则数值相加。
+inline Value* addValues(IContext* ctx, Value* l, Value* r) {
+    Value* lp = toPrimitive(ctx, l);
+    if (isErrorValue(lp)) return lp;
+    Value* rp = toPrimitive(ctx, r);
+    if (isErrorValue(rp)) return rp;
+    if (lp->type()->kind() == TypeKind::String || rp->type()->kind() == TypeKind::String) {
+        // 拼接前两侧都要 ToString：Symbol 在此抛 TypeError（ES2024 §7.1.14）
+        Value* ls = toStringValue(ctx, lp);
+        if (isErrorValue(ls)) return ls;
+        Value* rs = toStringValue(ctx, rp);
+        if (isErrorValue(rs)) return rs;
+        return ctx->createString(valueToString(ls) + valueToString(rs));
+    }
+    // 数值相加：两侧 ToNumber（Symbol 在此抛 TypeError，ES2024 §7.1.4）
+    Value* ln = toNumberValue(ctx, lp);
+    if (isErrorValue(ln)) return ln;
+    Value* rn = toNumberValue(ctx, rp);
+    if (isErrorValue(rn)) return rn;
+    return ctx->createNumber(static_cast<NumberData*>(ln->data())->value +
+                             static_cast<NumberData*>(rn->data())->value);
+}
+
+// 数值二元运算（- * /，ES2024 §13.15.4 等）：
+//   两侧 ToPrimitive(NUMBER) 后 ToNumber，再按 op 计算。
+// op 为 '-'、'*'、'/' 之一。
+inline Value* numericOp(IContext* ctx, char op, Value* l, Value* r) {
+    Value* lp = toPrimitive(ctx, l, PreferredType::Number);
+    if (isErrorValue(lp)) return lp;
+    Value* rp = toPrimitive(ctx, r, PreferredType::Number);
+    if (isErrorValue(rp)) return rp;
+    Value* ln = toNumberValue(ctx, lp);
+    if (isErrorValue(ln)) return ln;
+    Value* rn = toNumberValue(ctx, rp);
+    if (isErrorValue(rn)) return rn;
+    double a = static_cast<NumberData*>(ln->data())->value;
+    double b = static_cast<NumberData*>(rn->data())->value;
+    switch (op) {
+        case '-': return ctx->createNumber(a - b);
+        case '*': return ctx->createNumber(a * b);
+        default:  return ctx->createNumber(a / b);
+    }
+}
+
 // —— 透传拦截（ADR-017 §4 Fatal 透传 + ADR-006 异常即值）——
 // 行为方法入口检查右操作数 b：Fatal/Exception 时透传返回（左操作数 a 的分派已走对应 Type，
 // 不会进入此函数）。Fatal 优先于 Exception。
@@ -199,6 +376,16 @@ inline std::string keyToString(Value* key) {
             return keyToString(static_cast<PrimitiveWrapperData*>(key->data())->primitiveValue);
         default: return {};  // Symbol 走 symbols 容器；Exception/Fatal/Object 不可达
     }
+}
+
+// 属性键 → 字符串（ToPropertyKey 的字符串部分，ES2024 §7.1.19）。
+// 成功返回 nullptr 并写入 out；失败返回 Exception/Fatal（对象键的 ToPrimitive 抛错等）。
+// 调用方负责先分流 symbol 键（symbol 不进 properties 容器）。
+inline Value* propertyKeyString(IContext* ctx, Value* key, std::string& out) {
+    Value* k = toPropertyKeyValue(ctx, key);
+    if (isErrorValue(k)) return k;
+    out = keyToString(k);
+    return nullptr;
 }
 
 // —— 非对象类型属性操作（ADR-018）——

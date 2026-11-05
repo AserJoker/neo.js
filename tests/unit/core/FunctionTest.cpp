@@ -27,6 +27,9 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
+#include <string>
+
 namespace {
 
 using neo::core::IContext;
@@ -349,9 +352,9 @@ TEST(FunctionTest, CallBooleanReturnsException) {
     EXPECT_EQ(result->type()->kind(), TypeKind::Exception);
 }
 
-// ===== Function 其他行为 not implement =====
+// ===== Function 运算走 ToPrimitive（ES2024 §13.15.3 / §13.15.4）=====
 
-TEST(FunctionTest, OtherBehaviorsNotImplemented) {
+TEST(FunctionTest, ArithmeticUsesToPrimitive) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
@@ -360,11 +363,18 @@ TEST(FunctionTest, OtherBehaviorsNotImplemented) {
     Value* fn = ctx->createNativeFunction(argcFn, 0);
     Value* num = ctx->createNumber(1);
 
-    EXPECT_EQ(ctx->add(fn, num)->type()->kind(), TypeKind::Exception);
-    EXPECT_EQ(ctx->sub(fn, num)->type()->kind(), TypeKind::Exception);
-    EXPECT_EQ(ctx->mul(fn, num)->type()->kind(), TypeKind::Exception);
-    EXPECT_EQ(ctx->div(fn, num)->type()->kind(), TypeKind::Exception);
-    EXPECT_EQ(ctx->toString(fn)->type()->kind(), TypeKind::Exception);
+    // Function.prototype.toString → "function () { [native code] }"，故 + 为拼接
+    Value* sum = ctx->add(fn, num);
+    ASSERT_EQ(sum->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(sum->data())->value,
+              "function () { [native code] }1");
+    // 算术按 ToNumber(源码字符串) = NaN
+    EXPECT_TRUE(std::isnan(static_cast<NumberData*>(ctx->sub(fn, num)->data())->value));
+    EXPECT_TRUE(std::isnan(static_cast<NumberData*>(ctx->mul(fn, num)->data())->value));
+    EXPECT_TRUE(std::isnan(static_cast<NumberData*>(ctx->div(fn, num)->data())->value));
+    // toString 走 ToPrimitive(STRING)
+    EXPECT_EQ(static_cast<StringData*>(ctx->toString(fn)->data())->value,
+              "function () { [native code] }");
 }
 
 // ===== Exception/Fatal/Uninitialized 透传 =====

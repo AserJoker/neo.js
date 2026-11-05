@@ -51,37 +51,34 @@ Value* booleanConstruct(IContext* ctx, Value* /*self*/, size_t argc, Value* argv
     return ctx->createPrimitiveWrapper(ctx->createBoolean(b));
 }
 
-// Number(value)：call → ToNumber（原始值）
+// Number(value)：call → ToNumber（原始值）。
+// 走完整 ToNumber（ES2024 §7.1.4）：对象先 ToPrimitive，Symbol 抛 TypeError。
 Value* numberCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     if (argc == 0) return ctx->createNumber(0.0);
-    // Symbol 不能转数字（ES2024 §7.1.5），抛 TypeError
-    if (argv[0]->type()->kind() == TypeKind::Symbol) {
-        return ctx->createException(
-            ctx->createString("Cannot convert a Symbol value to a number"));
-    }
-    return ctx->createNumber(detail::toNumber(argv[0]));
+    return detail::toNumberValue(ctx, argv[0]);
 }
 
 // new Number(value) → 包装对象
 Value* numberConstruct(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* n = numberCtor(ctx, self, argc, argv);
-    if (n->type()->kind() == TypeKind::Exception || n->type()->kind() == TypeKind::Fatal) {
-        return n;
-    }
+    if (detail::isErrorValue(n)) return n;
     return ctx->createPrimitiveWrapper(n);
 }
 
-// String(value)：call → ToString（原始值）
+// String(value)：call → ToString（原始值）。
+// String(sym) 是 ToString 的特例：返回 "Symbol(description)"（ES2024 §22.1.1.1）；
+// 其余走完整 ToString（§7.1.14，对象先 ToPrimitive）。
 Value* stringCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     if (argc == 0) return ctx->createString("");
-    // String(sym) 是 ToString 的特例：返回 "Symbol(description)"（ES2024 §22.1.1.1）
     if (argv[0]->type()->kind() == TypeKind::Symbol) return ctx->toString(argv[0]);
-    return ctx->createString(detail::valueToString(argv[0]));
+    return detail::toStringValue(ctx, argv[0]);
 }
 
 // new String(value) → 包装对象
 Value* stringConstruct(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    return ctx->createPrimitiveWrapper(stringCtor(ctx, self, argc, argv));
+    Value* s = stringCtor(ctx, self, argc, argv);
+    if (detail::isErrorValue(s)) return s;
+    return ctx->createPrimitiveWrapper(s);
 }
 
 // —— prototype 方法 ——

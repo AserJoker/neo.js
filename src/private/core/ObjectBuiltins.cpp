@@ -82,7 +82,9 @@ Value* objectProtoHasOwnProperty(IContext* ctx, Value* self, size_t argc, Value*
     if (key->type()->kind() == TypeKind::Symbol) {
         return ctx->createBoolean(d->symbols.count(key->data()) != 0);
     }
-    std::string k = detail::keyToString(key);
+    // ToPropertyKey（ES2024 §7.1.19）：对象键先 ToPrimitive(STRING)
+    std::string k;
+    if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
     // 数组：索引元素与 length 也是自有属性
     if (sk == TypeKind::Array) {
         auto* ad = static_cast<ArrayData*>(self->data());

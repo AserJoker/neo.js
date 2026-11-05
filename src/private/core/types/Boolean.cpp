@@ -1,8 +1,8 @@
 // Boolean.cpp - BooleanType 行为方法实现
 //
-// boolean 参与运算：ToNumber(true)=1, ToNumber(false)=0。
-// add：若右是 string → 调换让 string 主导 concat（"true"+...）；否则 ToNumber 调换给 NumberType。
-// sub/mul/div：ToNumber 调换给 NumberType。
+// boolean 参与运算（ES2024 §13.15.3 / §13.15.4）：
+// add：两侧 ToPrimitive；任一为 string → 拼接（"true"+...），否则数值相加。
+// sub/mul/div：两侧 ToPrimitive(NUMBER) 后 ToNumber，再算术。
 // toString：返回 "true" / "false"。
 //
 // 关联 ADR: 016（Type 体系修订 §5/§6）、017（透传）、006（异常即值）
@@ -17,27 +17,22 @@ using namespace detail;
 
 Value* BooleanType::add(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    // + 规则：右是 string → string concat（保持原左右顺序，a 在前）
-    if (b->type()->kind() == TypeKind::String) {
-        return ctx->createString(valueToString(a) + valueToString(b));
-    }
-    // 否则 ToNumber(a) 调换给 NumberType
-    return ctx->add(ctx->createNumber(toNumber(a)), b);
+    return addValues(ctx, a, b);
 }
 
 Value* BooleanType::sub(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    return ctx->sub(ctx->createNumber(toNumber(a)), b);
+    return numericOp(ctx, '-', a, b);
 }
 
 Value* BooleanType::mul(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    return ctx->mul(ctx->createNumber(toNumber(a)), b);
+    return numericOp(ctx, '*', a, b);
 }
 
 Value* BooleanType::div(IContext* ctx, Value* a, Value* b) {
     if (Value* p = passthrough(a, b)) return p;
-    return ctx->div(ctx->createNumber(toNumber(a)), b);
+    return numericOp(ctx, '/', a, b);
 }
 
 Value* BooleanType::toString(IContext* ctx, Value* self) {

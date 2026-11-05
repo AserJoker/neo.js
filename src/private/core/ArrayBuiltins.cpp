@@ -71,9 +71,15 @@ bool strictEquals(Value* a, Value* b) {
     }
 }
 
-// ToIntegerOrInfinity（ES2024 §7.1.5），用于 slice/indexOf 的索引参数
-double toIntegerOrInfinity(Value* v) {
-    double n = detail::toNumber(v);
+// ToIntegerOrInfinity（ES2024 §7.1.5），用于 slice/indexOf 的索引参数。
+// 走完整 ToNumber（对象参数先 ToPrimitive），失败时写入 err 并返回 0。
+double toIntegerOrInfinity(IContext* ctx, Value* v, Value*& err) {
+    Value* nv = detail::toNumberValue(ctx, v);
+    if (detail::isErrorValue(nv)) {
+        err = nv;
+        return 0.0;
+    }
+    double n = static_cast<NumberData*>(nv->data())->value;
     if (std::isnan(n) || n == 0.0) return 0.0;
     if (std::isinf(n)) return n;
     return std::trunc(n);
@@ -146,13 +152,16 @@ Value* arrayPop(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) 
     return last != nullptr ? last : ctx->createUndefined();
 }
 
-// join(separator)：默认 ","；空洞/null/undefined 元素按空串
+// join(separator)：默认 ","；空洞/null/undefined 元素按空串。
+// 分隔符与元素都走 ToString（ES2024 §23.1.3.15），可触发用户 toString。
 Value* arrayJoin(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     ArrayData* d = asArray(self);
     if (d == nullptr) return notArray(ctx, "join");
     std::string sep = ",";
     if (argc > 0 && argv[0]->type()->kind() != TypeKind::Undefined) {
-        sep = detail::valueToString(argv[0]);
+        Value* s = detail::toStringValue(ctx, argv[0]);
+        if (detail::isErrorValue(s)) return s;
+        sep = detail::valueToString(s);
     }
     std::string result;
     uint32_t len = d->length();
@@ -162,7 +171,9 @@ Value* arrayJoin(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
         if (v == nullptr) continue;
         TypeKind k = v->type()->kind();
         if (k == TypeKind::Undefined || k == TypeKind::Null) continue;
-        result += detail::valueToString(v);
+        Value* s = detail::toStringValue(ctx, v);
+        if (detail::isErrorValue(s)) return s;
+        result += detail::valueToString(s);
     }
     return ctx->createString(result);
 }
@@ -179,10 +190,19 @@ Value* arraySlice(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     ArrayData* d = asArray(self);
     if (d == nullptr) return notArray(ctx, "slice");
     uint32_t len = d->length();
-    uint32_t start = argc > 0 ? clampIndex(toIntegerOrInfinity(argv[0]), len) : 0;
-    uint32_t end = (argc > 1 && argv[1]->type()->kind() != TypeKind::Undefined)
-                       ? clampIndex(toIntegerOrInfinity(argv[1]), len)
-                       : len;
+    Value* err = nullptr;
+    uint32_t start = 0;
+    if (argc > 0) {
+        double raw = toIntegerOrInfinity(ctx, argv[0], err);
+        if (err != nullptr) return err;
+        start = clampIndex(raw, len);
+    }
+    uint32_t end = len;
+    if (argc > 1 && argv[1]->type()->kind() != TypeKind::Undefined) {
+        double raw = toIntegerOrInfinity(ctx, argv[1], err);
+        if (err != nullptr) return err;
+        end = clampIndex(raw, len);
+    }
     Value* result = ctx->createArray();
     if (result == ctx->oomValue()) return result;
     auto* rd = static_cast<ArrayData*>(result->data());
@@ -204,7 +224,9 @@ Value* arrayIndexOf(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     if (argc == 0) return ctx->createNumber(-1.0);
     uint32_t from = 0;
     if (argc > 1) {
-        double raw = toIntegerOrInfinity(argv[1]);
+        Value* err = nullptr;
+        double raw = toIntegerOrInfinity(ctx, argv[1], err);
+        if (err != nullptr) return err;
         if (raw >= static_cast<double>(len)) return ctx->createNumber(-1.0);
         from = clampIndex(raw, len);
     }

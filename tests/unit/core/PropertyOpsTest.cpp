@@ -17,7 +17,9 @@
 #include "core/Scope.h"
 #include "core/Value.h"
 #include "core/types/Function.h"
+#include "core/types/Number.h"
 #include "core/types/Object.h"
+#include "core/types/String.h"
 #include "core/types/Uninitialized.h"
 #include "infra/Console.h"
 #include "infra/IAllocator.h"
@@ -25,12 +27,16 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
+
 namespace {
 
 using neo::core::IContext;
 using neo::core::IData;
 using neo::core::IGCVisitor;
+using neo::core::NumberData;
 using neo::core::ObjectData;
+using neo::core::StringData;
 using neo::core::Property;
 using neo::core::SymbolProperty;
 using neo::core::TypeKind;
@@ -196,9 +202,9 @@ TEST(PropertyOpsTest, FunctionPropertyOpsBehaveLikeObject) {
     EXPECT_FALSE(ctx->hasProperty(fn, "x"));
 }
 
-// ===== Object：运算/调用占位 =====
+// ===== Object：运算走 ToPrimitive（ES2024 §13.15.3 / §13.15.4）=====
 
-TEST(PropertyOpsTest, ObjectArithmeticNotImplemented) {
+TEST(PropertyOpsTest, ObjectArithmeticUsesToPrimitive) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
@@ -206,11 +212,17 @@ TEST(PropertyOpsTest, ObjectArithmeticNotImplemented) {
 
     Value* obj = ctx->createObject();
     Value* num = ctx->createNumber(1);
-    EXPECT_EQ(ctx->add(obj, num)->type()->kind(), TypeKind::Exception);
-    EXPECT_EQ(ctx->sub(obj, num)->type()->kind(), TypeKind::Exception);
-    EXPECT_EQ(ctx->mul(obj, num)->type()->kind(), TypeKind::Exception);
-    EXPECT_EQ(ctx->div(obj, num)->type()->kind(), TypeKind::Exception);
-    EXPECT_EQ(ctx->toString(obj)->type()->kind(), TypeKind::Exception);
+    // 普通对象 ToPrimitive → "[object Object]"，故 + 为拼接
+    Value* sum = ctx->add(obj, num);
+    ASSERT_EQ(sum->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(sum->data())->value, "[object Object]1");
+    // 算术按 ToNumber("[object Object]") = NaN
+    EXPECT_TRUE(std::isnan(static_cast<NumberData*>(ctx->sub(obj, num)->data())->value));
+    EXPECT_TRUE(std::isnan(static_cast<NumberData*>(ctx->mul(obj, num)->data())->value));
+    EXPECT_TRUE(std::isnan(static_cast<NumberData*>(ctx->div(obj, num)->data())->value));
+    // toString 走 ToPrimitive(STRING)
+    EXPECT_EQ(static_cast<StringData*>(ctx->toString(obj)->data())->value,
+              "[object Object]");
 }
 
 TEST(PropertyOpsTest, ObjectCallReturnsNotAFunctionException) {

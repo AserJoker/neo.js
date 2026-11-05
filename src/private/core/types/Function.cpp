@@ -13,35 +13,35 @@
 #include "core/Scope.h"
 #include "core/Value.h"
 #include "core/types/Function.h"
+#include "core/types/TypeBehavior.h"
 
 #include <string>
 
 namespace neo::core {
 
-namespace {
+// —— 运算：走 ToPrimitive（ES2024 §13.15.3 / §13.15.4）——
+// 函数对象默认 ToPrimitive 得源码字符串（Function.prototype.toString），
+// 故 + 为字符串拼接、算术为 NaN。
 
-// 非 call 行为的统一占位错误（待包装类阶段补齐）。
-Value* notImplemented(IContext* ctx, const char* op) {
-    std::string msg = std::string("Function.") + op + " is not implemented";
-    return ctx->createException(ctx->createString(msg));
+Value* FunctionType::add(IContext* ctx, Value* a, Value* b) {
+    if (Value* p = detail::passthrough(a, b)) return p;
+    return detail::addValues(ctx, a, b);
 }
-
-}  // namespace
-
-Value* FunctionType::add(IContext* ctx, Value* /*a*/, Value* /*b*/) {
-    return notImplemented(ctx, "add");
+Value* FunctionType::sub(IContext* ctx, Value* a, Value* b) {
+    if (Value* p = detail::passthrough(a, b)) return p;
+    return detail::numericOp(ctx, '-', a, b);
 }
-Value* FunctionType::sub(IContext* ctx, Value* /*a*/, Value* /*b*/) {
-    return notImplemented(ctx, "sub");
+Value* FunctionType::mul(IContext* ctx, Value* a, Value* b) {
+    if (Value* p = detail::passthrough(a, b)) return p;
+    return detail::numericOp(ctx, '*', a, b);
 }
-Value* FunctionType::mul(IContext* ctx, Value* /*a*/, Value* /*b*/) {
-    return notImplemented(ctx, "mul");
+Value* FunctionType::div(IContext* ctx, Value* a, Value* b) {
+    if (Value* p = detail::passthrough(a, b)) return p;
+    return detail::numericOp(ctx, '/', a, b);
 }
-Value* FunctionType::div(IContext* ctx, Value* /*a*/, Value* /*b*/) {
-    return notImplemented(ctx, "div");
-}
-Value* FunctionType::toString(IContext* ctx, Value* /*self*/) {
-    return notImplemented(ctx, "toString");
+Value* FunctionType::toString(IContext* ctx, Value* self) {
+    // ToString(function) = ToPrimitive(STRING) 后递归（ES2024 §7.1.14）
+    return detail::toStringValue(ctx, self);
 }
 
 namespace {
