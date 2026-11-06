@@ -12,6 +12,7 @@
 #include "core/types/Exception.h"
 #include "core/types/Fatal.h"
 #include "core/types/Function.h"
+#include "core/types/Iterator.h"
 #include "core/types/Null.h"
 #include "core/types/Object.h"
 #include "core/types/Number.h"
@@ -86,6 +87,44 @@ IType* getSymbolType() {
 IType* getPrimitiveWrapperType() {
     static PrimitiveWrapperType inst;
     return &inst;
+}
+
+IType* getArrayIteratorType() {
+    static ArrayIteratorType inst;
+    return &inst;
+}
+
+IType* getIteratorWrapperType() {
+    static IteratorWrapperType inst;
+    return &inst;
+}
+
+// TypeKind → Type 单例映射（唯一真相源）。
+// 新增类型：在此加一行 case + 上面的 getXxxType()，对象模型分派点自动覆盖。
+IType* getTypeByKind(TypeKind k) {
+    switch (k) {
+        case TypeKind::Undefined:        return getUndefinedType();
+        case TypeKind::Null:             return getNullType();
+        case TypeKind::Boolean:          return getBooleanType();
+        case TypeKind::Number:           return getNumberType();
+        case TypeKind::String:           return getStringType();
+        case TypeKind::Exception:        return getExceptionType();
+        case TypeKind::Fatal:            return getFatalType();
+        case TypeKind::Uninitialized:    return getUninitializedType();
+        case TypeKind::Function:         return getFunctionType();
+        case TypeKind::Object:           return getObjectType();
+        case TypeKind::Array:            return getArrayType();
+        case TypeKind::Symbol:           return getSymbolType();
+        case TypeKind::PrimitiveWrapper: return getPrimitiveWrapperType();
+        case TypeKind::ArrayIterator:    return getArrayIteratorType();
+        case TypeKind::IteratorWrapper:  return getIteratorWrapperType();
+    }
+    return nullptr;
+}
+
+bool kindHasObjectLayout(TypeKind k) {
+    IType* t = getTypeByKind(k);
+    return t != nullptr && t->hasObjectLayout();
 }
 
 }  // namespace neo::core

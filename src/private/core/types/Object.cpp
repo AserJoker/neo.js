@@ -70,12 +70,9 @@ Value* ObjectType::construct(IContext* ctx, Value* self, size_t /*argc*/, Value*
 
 namespace {
 
-// 链上节点只可能是 Object/Function/Array/PrimitiveWrapper（FunctionData、ArrayData、
-// PrimitiveWrapperData 均派生自 ObjectData），其他类型终止。
-inline bool hasObjectLayout(TypeKind k) {
-    return k == TypeKind::Object || k == TypeKind::Function ||
-           k == TypeKind::Array || k == TypeKind::PrimitiveWrapper;
-}
+// 链上节点只可能是具备对象布局的类型（其 Data 派生自 ObjectData），其他类型终止。
+// 判定来自 kindHasObjectLayout()（IType 构造时声明），新增 exotic 类型无需改这里。
+// 注：不直接用 IType::hasObjectLayout()——成员函数会在 ObjectType 成员里遮蔽同名自由函数。
 
 // 键是否 symbol（symbol 走 symbols 容器）
 inline bool isSymbolKey(Value* key) {
@@ -97,7 +94,7 @@ inline const void* symbolIdentity(Value* key) {
 // 沿原型链查找字符串键属性（含 self 自身）。返回命中的 Property，未找到 nullptr。
 Property* findInChain(Value* self, const std::string& key) {
     for (Value* cur = self; cur != nullptr;) {
-        if (!hasObjectLayout(cur->type()->kind())) return nullptr;
+        if (!kindHasObjectLayout(cur->type()->kind())) return nullptr;
         auto* d = static_cast<ObjectData*>(cur->data());
         auto it = d->properties.find(key);
         if (it != d->properties.end()) return &it->second;
@@ -109,7 +106,7 @@ Property* findInChain(Value* self, const std::string& key) {
 // 沿原型链查找 symbol 键属性（含 self 自身）。返回命中的 Property，未找到 nullptr。
 Property* findSymbolInChain(Value* self, const void* ident) {
     for (Value* cur = self; cur != nullptr;) {
-        if (!hasObjectLayout(cur->type()->kind())) return nullptr;
+        if (!kindHasObjectLayout(cur->type()->kind())) return nullptr;
         auto* d = static_cast<ObjectData*>(cur->data());
         auto it = d->symbols.find(ident);
         if (it != d->symbols.end()) return &it->second.prop;
@@ -402,13 +399,13 @@ Value* ObjectType::getPrototype(IContext* ctx, Value* self) {
 Value* ObjectType::setPrototype(IContext* ctx, Value* self, Value* proto) {
     // proto 只允许 Object/Function 或 null（undefined 等按 TypeError 处理）
     TypeKind pk = proto->type()->kind();
-    if (!hasObjectLayout(pk) && pk != TypeKind::Null) {
+    if (!kindHasObjectLayout(pk) && pk != TypeKind::Null) {
         std::string msg = "Object prototype may only be an Object or null";
         return ctx->createException(ctx->createString(msg));
     }
     // 环检测：从 proto 沿原型链走到头，若遇到 self 则成环
     std::unordered_set<Value*> seen;
-    for (Value* cur = proto; cur != nullptr && hasObjectLayout(cur->type()->kind());) {
+    for (Value* cur = proto; cur != nullptr && kindHasObjectLayout(cur->type()->kind());) {
         if (cur == self) {
             std::string msg = "Cyclic __proto__ value";
             return ctx->createException(ctx->createString(msg));
@@ -455,23 +452,15 @@ IData* ObjectData::clone(neo::infra::IAllocator* /*alloc*/) const {
 
 namespace {
 
-// 收集数组索引键（升序）。仅 Array 与 String 包装有索引元素。
-void collectIndexKeys(Value* obj, std::vector<uint32_t>& indices) {
-    TypeKind k = obj->type()->kind();
-    if (k == TypeKind::Array) {
-        auto* d = static_cast<ArrayData*>(obj->data());
-        for (uint32_t i = 0; i < d->length(); ++i) {
-            if (d->hasElement(i)) indices.push_back(i);
-        }
-        return;
-    }
-    if (k == TypeKind::PrimitiveWrapper) {
-        const std::string* s = wrapperStringValue(obj);
-        if (s != nullptr) {
-            for (size_t i = 0; i < s->size(); ++i) {
-                indices.push_back(static_cast<uint32_t>(i));
-            }
-        }
+// 收集索引型 exotic 对象实际存在的索引键（升序）。
+// 经 IType::hasIndexedElements/indexedLength/indexedElement 访问，
+// 新增 TypedArray / arguments 等类型无需改这里。
+void collectIndexKeys(IContext* ctx, Value* obj, std::vector<uint32_t>& indices) {
+    IType* t = obj->type();
+    if (!t->hasIndexedElements()) return;
+    uint32_t len = t->indexedLength(obj);
+    for (uint32_t i = 0; i < len; ++i) {
+        if (t->indexedElement(ctx, obj, i) != nullptr) indices.push_back(i);
     }
 }
 
@@ -483,9 +472,9 @@ std::vector<Value*> ownPropertyKeys(IContext* ctx, Value* obj, bool enumerableOn
     TypeKind k = obj->type()->kind();
     if (!detail::isObjectKind(k)) return keys;
 
-    // 1. 数组索引（升序）：Array/String 包装的元素 + 普通对象 properties 中的数字串键
+    // 1. 数组索引（升序）：索引型 exotic 的元素 + 普通对象 properties 中的数字串键
     std::vector<uint32_t> indices;
-    collectIndexKeys(obj, indices);
+    collectIndexKeys(ctx, obj, indices);
     auto* d = static_cast<ObjectData*>(obj->data());
     for (const std::string& name : d->order) {
         uint32_t index = 0;
@@ -503,9 +492,8 @@ std::vector<Value*> ownPropertyKeys(IContext* ctx, Value* obj, bool enumerableOn
     }
 
     // 2. 字符串键（插入序，跳过已作为索引输出的键）。
-    // Array/String 包装的 "length" 是自有属性且不可枚举。
-    if (k == TypeKind::Array || (k == TypeKind::PrimitiveWrapper &&
-                                 wrapperStringValue(obj) != nullptr)) {
+    // 索引型 exotic 的 "length" 是自有属性且不可枚举。
+    if (obj->type()->hasIndexedElements()) {
         if (!enumerableOnly) keys.push_back(ctx->createString("length"));
     }
     for (const std::string& name : d->order) {

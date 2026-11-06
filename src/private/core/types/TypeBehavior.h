@@ -110,10 +110,11 @@ inline bool toBoolean(Value* v) {
 // 仅 @@toPrimitive 的 hint 字符串区分 "default"。
 enum class PreferredType { Default, Number, String };
 
-// 是否为对象（可走 ToPrimitive 的类型：Object/Function/Array/PrimitiveWrapper）
+// 是否为对象（可走 ToPrimitive/ToObject 的类型）。
+// 判定下沉到 IType::hasObjectLayout()（各 Type 构造时声明），新增 exotic 对象类型
+// 无需改这里。
 inline bool isObjectKind(TypeKind k) {
-    return k == TypeKind::Object || k == TypeKind::Function ||
-           k == TypeKind::Array || k == TypeKind::PrimitiveWrapper;
+    return kindHasObjectLayout(k);
 }
 
 // 结果是否为错误值（Exception/Fatal）
@@ -186,20 +187,16 @@ inline Value* toPrimitive(IContext* ctx, Value* input,
 }
 
 // —— ToNumber 转换（ES2024 §7.1.5）——
-// undefined → NaN, null → +0, true → 1, false → 0, number → 自身, string → 解析,
-// array → ToPrimitive（join(",")）后按字符串解析。
+// undefined → NaN, null → +0, true → 1, false → 0, string → 解析。
+// 仅处理原始值：Number 由 toNumberValue 直接返回，对象（Array/包装对象等）
+// 已由 toNumberValue 走 ToPrimitive，不会到达这里。
 inline double toNumber(Value* v) {
     switch (v->type()->kind()) {
         case TypeKind::Undefined: return std::nan("");
         case TypeKind::Null:      return 0.0;
         case TypeKind::Boolean:   return static_cast<BooleanData*>(v->data())->value ? 1.0 : 0.0;
-        case TypeKind::Number:    return static_cast<NumberData*>(v->data())->value;
         case TypeKind::String:    return stringToNumber(static_cast<StringData*>(v->data())->value);
-        case TypeKind::Array:     return stringToNumber(arrayToString(static_cast<ArrayData*>(v->data())));
-        // 包装对象 ToPrimitive：拆 [[PrimitiveValue]] 后递归（ES2024 §7.1.1）
-        case TypeKind::PrimitiveWrapper:
-            return toNumber(static_cast<PrimitiveWrapperData*>(v->data())->primitiveValue);
-        default: return std::nan("");  // Exception/Fatal 入口拦截，不可达
+        default: return std::nan("");  // Number 由调用方短路；Exception/Fatal 入口拦截
     }
 }
 
@@ -228,7 +225,9 @@ inline std::string numberToString(double n) {
 }
 
 // —— ToString 转换（ES2024 §7.1.14，无对象 ToPrimitive 退化）——
-// 按 type 分派，返回字符串内容（不创建 Value，由调用方包装）
+// 按 type 分派，返回字符串内容（不创建 Value，由调用方包装）。
+// 注：Array 分支供 arrayToString 处理嵌套数组元素（[1,[2,3]] → "1,2,3"），
+// 其余对象类型由 toStringValue 先走 ToPrimitive，不会到达这里。
 inline std::string valueToString(Value* v) {
     switch (v->type()->kind()) {
         case TypeKind::Undefined: return "undefined";
@@ -237,10 +236,7 @@ inline std::string valueToString(Value* v) {
         case TypeKind::Number:    return numberToString(static_cast<NumberData*>(v->data())->value);
         case TypeKind::String:    return static_cast<StringData*>(v->data())->value;
         case TypeKind::Array:     return arrayToString(static_cast<ArrayData*>(v->data()));
-        // 包装对象 ToPrimitive：拆 [[PrimitiveValue]] 后递归（ES2024 §7.1.1）
-        case TypeKind::PrimitiveWrapper:
-            return valueToString(static_cast<PrimitiveWrapperData*>(v->data())->primitiveValue);
-        default: return "";  // Exception/Fatal 入口拦截，不可达
+        default: return "";  // 包装对象走 ToPrimitive；Exception/Fatal 入口拦截
     }
 }
 
@@ -278,6 +274,28 @@ inline Value* toStringValue(IContext* ctx, Value* v) {
         return toStringValue(ctx, prim);
     }
     return ctx->createString(valueToString(v));
+}
+
+// ToLength(argument)（ES2024 §7.1.20）：
+//   ToIntegerOrInfinity 后截断到 [0, 2^53-1]，再转 uint32（数组/迭代器场景）。
+// 成功返回 nullptr 并写入 out；失败返回 Exception/Fatal。
+// 供 Array.prototype / 迭代器 / Array.from / TypedArray 等所有按 length 展开的路径复用。
+inline Value* toLengthValue(IContext* ctx, Value* v, uint32_t& out) {
+    Value* nv = toNumberValue(ctx, v);
+    if (isErrorValue(nv)) return nv;
+    double n = static_cast<NumberData*>(nv->data())->value;
+    if (n != n || n <= 0.0) n = 0.0;                 // NaN / 负数 → 0
+    if (n > 4294967295.0) n = 4294967295.0;          // 上限 2^32-1（数组长度上限）
+    out = static_cast<uint32_t>(n);
+    return nullptr;
+}
+
+// 读 obj.length 并 ToLength（对象 → length 属性的常见组合，ES2024 §7.1.20）。
+// 成功返回 nullptr 并写入 out；失败返回 Exception/Fatal。
+inline Value* lengthOf(IContext* ctx, Value* obj, uint32_t& out) {
+    Value* lenValue = ctx->getProperty(obj, "length");
+    if (isErrorValue(lenValue)) return lenValue;
+    return toLengthValue(ctx, lenValue, out);
 }
 
 // ToPropertyKey(argument)（ES2024 §7.1.19）：
@@ -333,6 +351,90 @@ inline Value* numericOp(IContext* ctx, char op, Value* l, Value* r) {
         case '*': return ctx->createNumber(a * b);
         default:  return ctx->createNumber(a / b);
     }
+}
+
+// —— 迭代协议（ES2024 §7.4）——
+// for-of / spread / 解构 / Array.from / Map/Set 构造 / yield* 全部走这三个原语。
+// 本阶段只有数组迭代器，但接口按通用协议实现：任何带 @@iterator 的对象都可用。
+
+// GetIterator(obj, sync)（ES2024 §7.4.2）：
+//   取 obj[@@iterator] → 必须是函数 → 调用得到 iterator（须为对象）。
+// 成功返回迭代器 Value；失败返回 Exception/Fatal。
+inline Value* getIterator(IContext* ctx, Value* obj) {
+    Value* method =
+        ctx->getProperty(obj, ctx->getWellKnownSymbol(WellKnownSymbol::Iterator));
+    if (isErrorValue(method)) return method;
+    if (!isCallable(method)) {
+        return ctx->createException(
+            ctx->createString("value is not iterable"));
+    }
+    Value* iter = ctx->call(method, obj, 0, nullptr);
+    if (isErrorValue(iter)) return iter;
+    if (!isObjectKind(iter->type()->kind())) {
+        return ctx->createException(
+            ctx->createString("iterator result is not an object"));
+    }
+    return iter;
+}
+
+// IteratorNext(iterator, value)（ES2024 §7.4.3）：
+//   调 iterator.next()，结果须为对象。成功返回结果对象；失败返回 Exception/Fatal。
+inline Value* iteratorNext(IContext* ctx, Value* iterator) {
+    Value* next = ctx->getProperty(iterator, "next");
+    if (isErrorValue(next)) return next;
+    if (!isCallable(next)) {
+        return ctx->createException(
+            ctx->createString("iterator next is not a function"));
+    }
+    Value* result = ctx->call(next, iterator, 0, nullptr);
+    if (isErrorValue(result)) return result;
+    if (!isObjectKind(result->type()->kind())) {
+        return ctx->createException(
+            ctx->createString("iterator result is not an object"));
+    }
+    return result;
+}
+
+// IteratorComplete(iterResult)（ES2024 §7.4.4）：ToBoolean(result.done)
+inline bool iteratorComplete(IContext* ctx, Value* iterResult, Value*& err) {
+    err = nullptr;
+    Value* done = ctx->getProperty(iterResult, "done");
+    if (isErrorValue(done)) {
+        err = done;
+        return true;
+    }
+    return toBoolean(done);
+}
+
+// IteratorValue(iterResult)（ES2024 §7.4.5）：result.value
+inline Value* iteratorValue(IContext* ctx, Value* iterResult) {
+    return ctx->getProperty(iterResult, "value");
+}
+
+// IteratorClose(iterator, completion)（ES2024 §7.4.6）：
+//   调 iterator.return()（无 return 则忽略）；结果须为对象。
+// completion 为已发生的异常时优先返回它（异常不被 return 覆盖）。
+inline Value* iteratorClose(IContext* ctx, Value* iterator, Value* completion) {
+    Value* ret = ctx->getProperty(iterator, "return");
+    if (isErrorValue(ret)) return completion != nullptr ? completion : ret;
+    if (ret->type()->kind() == TypeKind::Undefined || ret->type()->kind() == TypeKind::Null) {
+        return completion;
+    }
+    if (!isCallable(ret)) {
+        return completion != nullptr
+                   ? completion
+                   : ctx->createException(
+                         ctx->createString("iterator return is not a function"));
+    }
+    Value* r = ctx->call(ret, iterator, 0, nullptr);
+    if (isErrorValue(r)) return completion != nullptr ? completion : r;
+    if (!isObjectKind(r->type()->kind())) {
+        return completion != nullptr
+                   ? completion
+                   : ctx->createException(
+                         ctx->createString("iterator result is not an object"));
+    }
+    return completion;
 }
 
 // —— 透传拦截（ADR-017 §4 Fatal 透传 + ADR-006 异常即值）——

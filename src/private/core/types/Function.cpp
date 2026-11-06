@@ -153,8 +153,7 @@ Value* FunctionType::construct(IContext* ctx, Value* self, size_t argc, Value* a
     // 取 fn.prototype（沿原型链查找，与 JS 一致）
     Value* proto = ctx->getProperty(self, "prototype");
     TypeKind pk = proto->type()->kind();
-    if (pk != TypeKind::Object && pk != TypeKind::Function && pk != TypeKind::Array &&
-        pk != TypeKind::PrimitiveWrapper) {
+    if (!detail::isObjectKind(pk)) {
         // 非对象原型不显式挂链：新对象保留 createObject 的默认原型（Object.prototype）
         proto = nullptr;
     }
@@ -172,12 +171,8 @@ Value* FunctionType::construct(IContext* ctx, Value* self, size_t argc, Value* a
     // 异常/致命错误直接透传（new 失败）
     TypeKind rk = res->type()->kind();
     if (rk == TypeKind::Exception || rk == TypeKind::Fatal) return res;
-    // 构造函数显式返回对象（Object/Function/Array/PrimitiveWrapper）则用它，
-    // 否则用新建的 this
-    if (rk == TypeKind::Object || rk == TypeKind::Function || rk == TypeKind::Array ||
-        rk == TypeKind::PrimitiveWrapper) {
-        return res;
-    }
+    // 构造函数显式返回对象（含迭代器）则用它，否则用新建的 this
+    if (detail::isObjectKind(rk)) return res;
     return thisObj;
 }
 

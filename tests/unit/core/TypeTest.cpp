@@ -237,6 +237,56 @@ TEST(ExceptionDataTest, ChildMustNotBeNull) {
     alloc.free(ud);
 }
 
+// ---- TypeKind → Type 单例映射（getTypeByKind 唯一真相源）----
+
+TEST(TypeTest, GetTypeByKindRoundTrips) {
+    const TypeKind kinds[] = {
+        TypeKind::Undefined, TypeKind::Null,       TypeKind::Boolean,
+        TypeKind::Number,    TypeKind::String,     TypeKind::Exception,
+        TypeKind::Fatal,     TypeKind::Uninitialized,
+    };
+    for (TypeKind k : kinds) {
+        IType* t = neo::core::getTypeByKind(k);
+        ASSERT_NE(t, nullptr);
+        EXPECT_EQ(t->kind(), k);
+    }
+}
+
+// ---- 对象布局自声明（IType::hasObjectLayout / kindHasObjectLayout）----
+
+TEST(TypeTest, KindHasObjectLayoutForPrimitivesIsFalse) {
+    const TypeKind primitives[] = {
+        TypeKind::Undefined, TypeKind::Null,    TypeKind::Boolean,
+        TypeKind::Number,    TypeKind::String,  TypeKind::Exception,
+        TypeKind::Fatal,     TypeKind::Uninitialized, TypeKind::Symbol,
+    };
+    for (TypeKind k : primitives) {
+        EXPECT_FALSE(neo::core::kindHasObjectLayout(k)) << "kind=" << static_cast<int>(k);
+        EXPECT_FALSE(neo::core::getTypeByKind(k)->hasObjectLayout());
+    }
+}
+
+TEST(TypeTest, KindHasObjectLayoutForObjectsIsTrue) {
+    const TypeKind objects[] = {
+        TypeKind::Object,          TypeKind::Function,
+        TypeKind::Array,           TypeKind::PrimitiveWrapper,
+        TypeKind::ArrayIterator,   TypeKind::IteratorWrapper,
+    };
+    for (TypeKind k : objects) {
+        EXPECT_TRUE(neo::core::kindHasObjectLayout(k)) << "kind=" << static_cast<int>(k);
+        EXPECT_TRUE(neo::core::getTypeByKind(k)->hasObjectLayout());
+    }
+}
+
+// ---- 索引型 exotic 能力默认实现（非索引类型返回空）----
+
+TEST(TypeTest, NonIndexedTypesHaveNoIndexedElements) {
+    IType* t = getNumberType();
+    EXPECT_FALSE(t->hasIndexedElements());
+    EXPECT_EQ(t->indexedLength(nullptr), 0u);
+    EXPECT_EQ(t->indexedElement(nullptr, nullptr, 0), nullptr);
+}
+
 // ---- Uninitialized（TDZ 哨兵）----
 
 TEST(UninitializedTest, DataHasNoPayload) {

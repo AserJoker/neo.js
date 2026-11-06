@@ -51,7 +51,7 @@ class Value;
 
 class FunctionType : public IType {
 public:
-    FunctionType() : IType(TypeKind::Function) {}
+    FunctionType() : IType(TypeKind::Function, true) {}
     const char* name() const override { return "function"; }
 
     // 本阶段仅实现 call；其余行为返回 Exception("not implement")。

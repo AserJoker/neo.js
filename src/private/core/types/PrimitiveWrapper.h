@@ -28,8 +28,13 @@ class Value;
 
 class PrimitiveWrapperType : public IType {
 public:
-    PrimitiveWrapperType() : IType(TypeKind::PrimitiveWrapper) {}
+    PrimitiveWrapperType() : IType(TypeKind::PrimitiveWrapper, true) {}
     const char* name() const override { return "object"; }
+
+    // String 包装具备索引元素与 length 自有属性（Boolean/Number/Symbol 包装没有）。
+    bool hasIndexedElements() const override;
+    uint32_t indexedLength(Value* self) const override;
+    Value* indexedElement(IContext* ctx, Value* self, uint32_t index) const override;
 
     // 运算：包装对象需 ToPrimitive（拆 [[PrimitiveValue]] 后按原始值规则）。
     Value* add(IContext* ctx, Value* a, Value* b) override;

@@ -15,6 +15,7 @@
 #include "core/Context.h"
 #include "core/ArrayBuiltins.h"
 #include "core/IType.h"
+#include "core/IteratorBuiltins.h"
 #include "core/ObjectBuiltins.h"
 #include "core/PrimitiveWrapperBuiltins.h"
 #include "core/SymbolBuiltins.h"
@@ -23,6 +24,7 @@
 #include "core/types/Exception.h"
 #include "core/types/Fatal.h"
 #include "core/types/Function.h"
+#include "core/types/Iterator.h"
 #include "core/types/Null.h"
 #include "core/types/Number.h"
 #include "core/types/Object.h"
@@ -96,6 +98,12 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console)
     // 10. 注册 Boolean/Number/String 包装类与四个包装原型（ES2024 §10.4）。
     //     依赖 Object.prototype / Function.prototype / Symbol.prototype 已就绪。
     if (!registerPrimitiveWrapperBuiltins(this)) {
+        std::abort();
+    }
+
+    // 11. 注册 Iterator 抽象类与数组迭代器内建（ES2024 §23.1.5 / ES2025 §27.1）。
+    //     依赖 Object.prototype / Function.prototype / Array.prototype 已就绪。
+    if (!registerIteratorBuiltins(this)) {
         std::abort();
     }
 }
@@ -409,6 +417,35 @@ Value* Context::createPrimitiveWrapper(Value* primitive, std::string_view bindNa
     // 自动挂对应原型（bootstrap 期间尚未建立，跳过）
     if (wrapper != oomValue_ && proto != nullptr) {
         static_cast<ObjectData*>(wrapper->data())->prototype = proto;
+    }
+    return wrapper;
+}
+
+Value* Context::createArrayIterator(Value* iteratedObject, ArrayIterationKind kind,
+                                    std::string_view bindName) {
+    auto* d = gc_->allocData<ArrayIteratorData>();
+    if (d == nullptr) return oomValue_;
+    d->iteratedObject = iteratedObject;
+    d->nextIndex = 0;
+    d->kind = kind;
+    Value* iter = createTracked(getArrayIteratorType(), d, bindName);
+    // 自动挂 %ArrayIteratorPrototype%（bootstrap 期间尚未建立，跳过）
+    if (iter != oomValue_ && arrayIteratorPrototype_ != nullptr) {
+        static_cast<ObjectData*>(iter->data())->prototype = arrayIteratorPrototype_;
+    }
+    return iter;
+}
+
+Value* Context::createIteratorWrapper(Value* iterated, Value* nextMethod,
+                                      std::string_view bindName) {
+    auto* d = gc_->allocData<IteratorWrapperData>();
+    if (d == nullptr) return oomValue_;
+    d->iterated = iterated;
+    d->nextMethod = nextMethod;
+    Value* wrapper = createTracked(getIteratorWrapperType(), d, bindName);
+    // 自动挂 %WrapForValidIteratorPrototype%（bootstrap 期间尚未建立，跳过）
+    if (wrapper != oomValue_ && iteratorWrapperPrototype_ != nullptr) {
+        static_cast<ObjectData*>(wrapper->data())->prototype = iteratorWrapperPrototype_;
     }
     return wrapper;
 }

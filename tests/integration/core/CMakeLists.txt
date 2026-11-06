@@ -6,6 +6,7 @@
 add_executable(core_integration_test
     ArithmeticPipelineTest.cpp
     ArrayPipelineTest.cpp
+    IteratorPipelineTest.cpp
     ObjectBuiltinsPipelineTest.cpp
     PrimitiveWrapperPipelineTest.cpp
     ToPrimitivePipelineTest.cpp

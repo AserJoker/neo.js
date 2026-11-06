@@ -43,6 +43,13 @@ class Context : public IContext {
     Value* numberPrototype_ = nullptr;
     Value* stringPrototype_ = nullptr;
     Value* symbolPrototype_ = nullptr;
+    // 迭代器原型（ES2024 §23.1.5 / ES2025 §27.1.4.2）：
+    // arrayIteratorPrototype_ 是 %ArrayIteratorPrototype%（其原型是 iteratorPrototype_），
+    // iteratorWrapperPrototype_ 是 %WrapForValidIteratorPrototype%（同上）。
+    Value* iteratorPrototype_ = nullptr;
+    Value* iteratorCtor_ = nullptr;
+    Value* arrayIteratorPrototype_ = nullptr;
+    Value* iteratorWrapperPrototype_ = nullptr;
     // Symbol.for 全局注册表（ES2024 §20.4.2.1）：key → symbol Value。
     // 双向查找（keyFor）用 symbol data 指针反查，故另存反向表。
     std::unordered_map<std::string, Value*> symbolRegistry_;
@@ -109,6 +116,10 @@ public:
     Value* createArray(std::string_view bindName = {}) override;
     Value* createPrimitiveWrapper(Value* primitive,
                                   std::string_view bindName = {}) override;
+    Value* createArrayIterator(Value* iteratedObject, ArrayIterationKind kind,
+                               std::string_view bindName = {}) override;
+    Value* createIteratorWrapper(Value* iterated, Value* nextMethod,
+                                 std::string_view bindName = {}) override;
 
     // 内建原型访问（ADR-035）：create* 自动挂载对应原型。
     Value* objectPrototype() const override { return objectPrototype_; }
@@ -130,6 +141,16 @@ public:
         stringPrototype_ = stringProto;
         symbolPrototype_ = symbolProto;
     }
+    void setIteratorBuiltins(Value* iteratorProto, Value* iteratorCtor,
+                             Value* arrayIteratorProto,
+                             Value* iteratorWrapperProto) override {
+        iteratorPrototype_ = iteratorProto;
+        iteratorCtor_ = iteratorCtor;
+        arrayIteratorPrototype_ = arrayIteratorProto;
+        iteratorWrapperPrototype_ = iteratorWrapperProto;
+    }
+    Value* iteratorPrototype() const override { return iteratorPrototype_; }
+    Value* iteratorCtor() const override { return iteratorCtor_; }
     Value* getProperty(Value* obj, Value* key) override;
     Value* setProperty(Value* obj, Value* key, Value* value) override;
     bool hasProperty(Value* obj, Value* key) override;

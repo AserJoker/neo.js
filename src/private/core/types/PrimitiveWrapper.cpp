@@ -132,6 +132,22 @@ bool resolveStringWrapperKey(IContext* ctx, const std::string* s, Value* key,
     return true;
 }
 
+// —— 索引型 exotic 能力（仅 String 包装有；Boolean/Number/Symbol 包装返回空）——
+
+bool PrimitiveWrapperType::hasIndexedElements() const { return true; }
+
+uint32_t PrimitiveWrapperType::indexedLength(Value* self) const {
+    const std::string* s = stringPayload(self);
+    return s != nullptr ? static_cast<uint32_t>(s->size()) : 0;
+}
+
+Value* PrimitiveWrapperType::indexedElement(IContext* ctx, Value* self,
+                                            uint32_t index) const {
+    const std::string* s = stringPayload(self);
+    if (s == nullptr || index >= s->size()) return nullptr;
+    return ctx->createString(std::string(1, (*s)[index]));
+}
+
 Value* PrimitiveWrapperType::getProperty(IContext* ctx, Value* self, Value* key) {
     const std::string* s = stringPayload(self);
     std::string k;

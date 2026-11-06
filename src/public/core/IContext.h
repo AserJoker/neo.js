@@ -24,6 +24,7 @@
 #ifndef NEO_CORE_ICONTEXT_H
 #define NEO_CORE_ICONTEXT_H
 
+#include "core/IteratorKind.h"
 #include "core/WellKnownSymbol.h"
 #include "infra/IAllocator.h"
 #include "infra/Console.h"
@@ -174,6 +175,21 @@ public:
     virtual Value* createPrimitiveWrapper(Value* primitive,
                                           std::string_view bindName = {}) = 0;
 
+    // createArrayIterator: 创建数组迭代器（ES2024 §23.1.5.1 CreateArrayIterator）。
+    // iteratedObject 是被迭代的数组（可为任意对象，next 时按 arrayLike 读取）；
+    // kind 决定产出索引 / 元素值 / [index, value] 对。
+    // 原型自动挂 %ArrayIteratorPrototype%；bootstrap 期间未就绪时跳过。
+    // 返回 Value*：正常迭代器，或 OOM 哨兵（ADR-031）。
+    virtual Value* createArrayIterator(Value* iteratedObject, ArrayIterationKind kind,
+                                       std::string_view bindName = {}) = 0;
+
+    // createIteratorWrapper: 创建迭代器包装对象（ES2025 §27.1.4.2 Iterator.from）。
+    // iterated 是被包装的 iterator-like 对象，nextMethod 是其 next 方法。
+    // 原型自动挂 %WrapForValidIteratorPrototype%；bootstrap 期间未就绪时跳过。
+    // 返回 Value*：正常包装对象，或 OOM 哨兵（ADR-031）。
+    virtual Value* createIteratorWrapper(Value* iterated, Value* nextMethod,
+                                         std::string_view bindName = {}) = 0;
+
     // 内建原型访问（ADR-035）：
     // objectPrototype —— 所有普通对象原型链的终点；
     // functionPrototype —— 所有函数对象的原型（其原型为 objectPrototype）；
@@ -203,6 +219,17 @@ public:
     // 此后 createPrimitiveWrapper 按 primitive 类型自动挂链。宿主不应调用。
     virtual void setWrapperPrototypes(Value* booleanProto, Value* numberProto,
                                       Value* stringProto, Value* symbolProto) = 0;
+
+    // setIteratorBuiltins: bootstrap 专用——迭代器原型与构造函数建立后设置，
+    // 此后 createArrayIterator / createIteratorWrapper 自动挂链。宿主不应调用。
+    virtual void setIteratorBuiltins(Value* iteratorProto, Value* iteratorCtor,
+                                     Value* arrayIteratorProto,
+                                     Value* iteratorWrapperProto) = 0;
+
+    // iteratorPrototype / iteratorCtor: %Iterator.prototype% 与 Iterator 构造函数。
+    // 由 IteratorBuiltins 建立，生命周期与 Context 一致。
+    virtual Value* iteratorPrototype() const = 0;
+    virtual Value* iteratorCtor() const = 0;
 
     // 属性操作代理：obj->type()->op(this, obj, ...) 分派。
     // key 是 Value*：symbol 保持符号身份（symbols 容器），其他类型 ToPropertyKey

@@ -19,6 +19,8 @@ add_executable(core_unit_test
     ObjectBuiltinsTest.cpp
     ArrayTest.cpp
     ArrayBuiltinsTest.cpp
+    IteratorTest.cpp
+    IteratorProtocolTest.cpp
     PrimitiveWrapperTest.cpp
     ToPrimitiveTest.cpp
 )

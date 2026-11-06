@@ -39,6 +39,12 @@ enum class TypeKind : uint8_t {
     // 原始值包装对象（ES2024 §10.4）：Boolean/Number/String/Symbol 的 new 形式。
     // 持 [[PrimitiveValue]] 内部槽，其余对象行为（属性/原型/GC）与普通对象一致。
     PrimitiveWrapper,
+    // 数组迭代器（ES2024 §23.1.5）：Array.prototype.keys/values/entries 的产物。
+    // 持 [[IteratedObject]]/[[ArrayIteratorNextIndex]]/[[ArrayIterationKind]] 内部槽。
+    ArrayIterator,
+    // 迭代器包装对象（ES2025 §27.1.4.2 Iterator.from 的 %WrapForValidIteratorPrototype% 实例）。
+    // 持 [[Iterated]] 内部槽（iterator + nextMethod），把任意 iterator-like 对象提升为 Iterator。
+    IteratorWrapper,
     // 后续阶段：BigInt/Interrupt/...
 };
 
@@ -46,13 +52,42 @@ enum class TypeKind : uint8_t {
 // 无状态——所有行为纯函数（按 ctx + 操作数计算），本阶段仅 kind + name。
 class IType {
     TypeKind kind_;
+    bool objectLayout_;  // 是否具备对象布局（见 hasObjectLayout）
 
 public:
-    explicit IType(TypeKind k) : kind_(k) {}
+    // objectLayout：该类型的 Data 是否派生自 ObjectData（即具备
+    // properties/order/symbols/prototype 布局与完整对象行为）。
+    // 由各 Type 子类在构造时声明，替代按 TypeKind 手写枚举的中心清单——
+    // 新增 exotic 对象类型（Map/Set/Promise/RegExp/Generator/TypedArray...）
+    // 只需在自己的 Type 构造里传 true，所有对象模型分派点自动覆盖。
+    explicit IType(TypeKind k, bool objectLayout = false)
+        : kind_(k), objectLayout_(objectLayout) {}
     virtual ~IType() = default;
 
     TypeKind kind() const { return kind_; }
     virtual const char* name() const = 0;
+
+    // 是否具备对象布局（可走属性/原型链/ToPrimitive/ToObject 等对象路径）。
+    // 原始值类型（Undefined/Null/Boolean/Number/String/Symbol/Exception/Fatal/
+    // Uninitialized）为 false；Object/Function/Array/PrimitiveWrapper 及后续
+    // 所有 exotic 对象类型为 true。
+    bool hasObjectLayout() const { return objectLayout_; }
+
+    // —— 索引型 exotic 对象能力（ES2024 §10.4.2 / §10.4.3）——
+    // 具备「整数索引自有属性 + length 自有属性」的类型覆写下列方法：
+    // Array、String 包装，以及后续 TypedArray、arguments、Module Namespace 等。
+    // 对象模型的枚举/自有属性判定/索引查找全部经此访问，新增此类类型无需改中心代码。
+    //
+    // hasIndexedElements：是否具备索引元素与 length 自有属性（默认 false）。
+    // indexedLength：索引元素个数（即 length 属性值）。
+    // indexedElement：第 index 个元素；不存在（空洞/越界）返回 nullptr。
+    // 索引元素恒为 enumerable 的数据属性（Array/TypedArray/String 均如此）。
+    virtual bool hasIndexedElements() const { return false; }
+    virtual uint32_t indexedLength(Value* /*self*/) const { return 0; }
+    virtual Value* indexedElement(IContext* /*ctx*/, Value* /*self*/,
+                                  uint32_t /*index*/) const {
+        return nullptr;
+    }
 
     // —— 行为接口（ADR-016 修订 §3）——
     // 统一签名 Value* op(IContext* ctx, Value* a, Value* b) / Value* op(IContext* ctx, Value* self)。
@@ -132,6 +167,18 @@ IType* getObjectType();
 IType* getArrayType();
 IType* getSymbolType();
 IType* getPrimitiveWrapperType();
+IType* getArrayIteratorType();
+IType* getIteratorWrapperType();
+
+// —— TypeKind → Type 单例（Types.cpp 中的唯一映射表）——
+// 未注册的 kind 返回 nullptr。新增类型时只需在此加一行映射，
+// 对象模型分派点（isObjectKind/hasObjectLayout）随之自动覆盖。
+IType* getTypeByKind(TypeKind k);
+
+// 该 kind 是否具备对象布局（即其 Type 声明了 objectLayout）。
+// 这是 isObjectKind 的唯一真相源：新增 exotic 对象类型时，
+// 只要其 Type 构造传 objectLayout=true，此处无需改动。
+bool kindHasObjectLayout(TypeKind k);
 
 }  // namespace neo::core
 

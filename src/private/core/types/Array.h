@@ -45,8 +45,13 @@ inline constexpr uint32_t kArrayMaxLength = 0xFFFFFFFFu;
 
 class ArrayType : public IType {
 public:
-    ArrayType() : IType(TypeKind::Array) {}
+    ArrayType() : IType(TypeKind::Array, true) {}
     const char* name() const override { return "array"; }
+
+    // 索引型 exotic：索引元素 + length 自有属性（供对象模型枚举/自有属性判定复用）
+    bool hasIndexedElements() const override { return true; }
+    uint32_t indexedLength(Value* self) const override;
+    Value* indexedElement(IContext* ctx, Value* self, uint32_t index) const override;
 
     // 运算：ToPrimitive → join(",") → 按 JS 规则参与运算
     Value* add(IContext* ctx, Value* a, Value* b) override;

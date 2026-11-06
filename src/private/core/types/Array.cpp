@@ -30,21 +30,16 @@ Value* invalidLength(IContext* ctx) {
 }
 
 // 沿原型链查找索引元素（含 self 自身）。
-// 链上节点可能是 Array（查 elements）或 Object/Function（无 elements，跳过该层）。
-Value* findIndexInChain(Value* self, uint32_t index) {
-    for (Value* cur = self; cur != nullptr;) {
-        TypeKind k = cur->type()->kind();
-        if (k == TypeKind::Array) {
-            auto* d = static_cast<ArrayData*>(cur->data());
-            if (Value* v = d->elementAt(index)) return v;
-            cur = d->prototype;
-            continue;
+// 链上任意具备对象布局的节点都参与：索引型 exotic 查其索引容器，
+// 其余（Object/Function/迭代器...）跳过该层继续沿 prototype 走。
+// 经 IType::hasIndexedElements/indexedElement 访问，新增索引型类型无需改这里。
+Value* findIndexInChain(IContext* ctx, Value* self, uint32_t index) {
+    for (Value* cur = self; cur != nullptr && kindHasObjectLayout(cur->type()->kind());) {
+        IType* t = cur->type();
+        if (t->hasIndexedElements()) {
+            if (Value* v = t->indexedElement(ctx, cur, index)) return v;
         }
-        if (k == TypeKind::Object || k == TypeKind::Function) {
-            cur = static_cast<ObjectData*>(cur->data())->prototype;
-            continue;
-        }
-        return nullptr;
+        cur = static_cast<ObjectData*>(cur->data())->prototype;
     }
     return nullptr;
 }
@@ -210,6 +205,17 @@ Value* ArrayType::construct(IContext* ctx, Value* self, size_t /*argc*/, Value* 
     return detail::notAConstructor(ctx, self);
 }
 
+// —— 索引型 exotic 能力（供对象模型枚举/自有属性判定复用）——
+
+uint32_t ArrayType::indexedLength(Value* self) const {
+    return static_cast<ArrayData*>(self->data())->length();
+}
+
+Value* ArrayType::indexedElement(IContext* /*ctx*/, Value* self,
+                                 uint32_t index) const {
+    return static_cast<ArrayData*>(self->data())->elementAt(index);
+}
+
 Value* ArrayType::getProperty(IContext* ctx, Value* self, Value* key) {
     std::string k;
     if (!isSymbolKeyValue(key)) {
@@ -221,7 +227,7 @@ Value* ArrayType::getProperty(IContext* ctx, Value* self, Value* key) {
         uint32_t index = 0;
         if (parseArrayIndex(k, index)) {
             // 沿原型链查找索引元素（空洞则继续向上，与普通属性查找一致）
-            if (Value* v = findIndexInChain(self, index)) return v;
+            if (Value* v = findIndexInChain(ctx, self, index)) return v;
         }
     }
     return getObjectType()->getProperty(ctx, self, key);
@@ -258,7 +264,7 @@ bool ArrayType::hasProperty(IContext* ctx, Value* self, Value* key) {
         if (detail::propertyKeyString(ctx, key, k) != nullptr) return false;
         if (k == "length") return true;
         uint32_t index = 0;
-        if (parseArrayIndex(k, index) && findIndexInChain(self, index) != nullptr) {
+        if (parseArrayIndex(k, index) && findIndexInChain(ctx, self, index) != nullptr) {
             return true;
         }
     }

@@ -53,7 +53,7 @@ struct SymbolProperty {
 
 class ObjectType : public IType {
 public:
-    ObjectType() : IType(TypeKind::Object) {}
+    ObjectType() : IType(TypeKind::Object, true) {}
     const char* name() const override { return "object"; }
 
     // 运算：本阶段返回 Exception("not implemented")（对象参与运算需 ToPrimitive，阶段 5+）

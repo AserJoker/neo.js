@@ -85,9 +85,7 @@ Value* objectProtoValueOf(IContext* ctx, Value* self, size_t /*argc*/, Value* /*
 // Object.prototype.hasOwnProperty(key)：只查自有属性（不含原型链）
 Value* objectProtoHasOwnProperty(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     TypeKind sk = self != nullptr ? self->type()->kind() : TypeKind::Undefined;
-    if (self == nullptr ||
-        (sk != TypeKind::Object && sk != TypeKind::Function && sk != TypeKind::Array &&
-         sk != TypeKind::PrimitiveWrapper)) {
+    if (self == nullptr || !detail::isObjectKind(sk)) {
         return ctx->createException(
             ctx->createString("Object.prototype.hasOwnProperty called on non-object"));
     }
@@ -100,13 +98,13 @@ Value* objectProtoHasOwnProperty(IContext* ctx, Value* self, size_t argc, Value*
     // ToPropertyKey（ES2024 §7.1.19）：对象键先 ToPrimitive(STRING)
     std::string k;
     if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
-    // 数组：索引元素与 length 也是自有属性
-    if (sk == TypeKind::Array) {
-        auto* ad = static_cast<ArrayData*>(self->data());
+    // 索引型 exotic（Array / String 包装 / 后续 TypedArray）：索引元素与 length 也是自有属性
+    IType* t = self->type();
+    if (t->hasIndexedElements()) {
         if (k == "length") return ctx->createBoolean(true);
         uint32_t index = 0;
         if (parseArrayIndex(k, index)) {
-            return ctx->createBoolean(ad->hasElement(index));
+            return ctx->createBoolean(t->indexedElement(ctx, self, index) != nullptr);
         }
     }
     return ctx->createBoolean(d->properties.count(k) != 0);
@@ -151,23 +149,13 @@ Value* objectProtoPropertyIsEnumerable(IContext* ctx, Value* self, size_t argc,
     }
     std::string k;
     if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
-    // 数组索引与 length、String 包装索引与 length
-    if (sk == TypeKind::Array) {
-        auto* ad = static_cast<ArrayData*>(self->data());
+    // 索引型 exotic：索引元素可枚举，length 不可枚举
+    IType* t = self->type();
+    if (t->hasIndexedElements()) {
         if (k == "length") return ctx->createBoolean(false);
         uint32_t index = 0;
         if (parseArrayIndex(k, index)) {
-            return ctx->createBoolean(ad->hasElement(index));
-        }
-    }
-    if (sk == TypeKind::PrimitiveWrapper) {
-        const std::string* s = wrapperStringValue(self);
-        if (s != nullptr) {
-            if (k == "length") return ctx->createBoolean(false);
-            uint32_t index = 0;
-            if (parseArrayIndex(k, index) && index < s->size()) {
-                return ctx->createBoolean(true);
-            }
+            return ctx->createBoolean(t->indexedElement(ctx, self, index) != nullptr);
         }
     }
     auto it = d->properties.find(k);
@@ -228,14 +216,8 @@ Value* functionProtoApply(IContext* ctx, Value* self, size_t argc, Value* argv[]
     }
 
     // 读 length（ToLength，ES2024 §7.1.20）
-    Value* lenValue = ctx->getProperty(argv[1], "length");
-    if (detail::isErrorValue(lenValue)) return lenValue;
-    Value* lenNum = detail::toNumberValue(ctx, lenValue);
-    if (detail::isErrorValue(lenNum)) return lenNum;
-    double rawLen = static_cast<NumberData*>(lenNum->data())->value;
-    if (std::isnan(rawLen) || rawLen <= 0.0) rawLen = 0.0;
-    if (rawLen > 4294967295.0) rawLen = 4294967295.0;
-    uint32_t len = static_cast<uint32_t>(std::floor(rawLen));
+    uint32_t len = 0;
+    if (Value* err = detail::lengthOf(ctx, argv[1], len)) return err;
 
     // 巨大 length 不做一次性 reserve（避免 bad_alloc），按需增长
     std::vector<Value*> args;
@@ -264,16 +246,13 @@ Value* functionProtoBind(IContext* ctx, Value* self, size_t argc, Value* argv[])
 
 // Object(value)（ES2024 §20.1.1.1）：
 //   无参/undefined/null → 新建空对象；
-//   已是对象（Object/Function/Array/PrimitiveWrapper）→ 原样返回；
+//   已是对象（含迭代器）→ 原样返回；
 //   原始值（Boolean/Number/String/Symbol）→ 包装对象。
 Value* objectCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     if (argc == 0) return ctx->createObject();
     Value* v = argv[0];
     TypeKind k = v->type()->kind();
-    if (k == TypeKind::Object || k == TypeKind::Function || k == TypeKind::Array ||
-        k == TypeKind::PrimitiveWrapper) {
-        return v;
-    }
+    if (detail::isObjectKind(k)) return v;
     if (k == TypeKind::Undefined || k == TypeKind::Null) return ctx->createObject();
     // 原始值 → 包装对象（Boolean/Number/String/Symbol）
     return ctx->createPrimitiveWrapper(v);
