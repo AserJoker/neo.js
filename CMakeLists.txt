@@ -111,6 +111,7 @@ add_library(neojs STATIC
     src/private/core/ArrayBuiltins.cpp
     src/private/core/IteratorBuiltins.cpp
     src/private/core/TimerBuiltins.cpp
+    src/private/core/ErrorBuiltins.cpp
     src/private/core/PrimitiveWrapperBuiltins.cpp
     src/private/core/SymbolBuiltins.cpp
     src/private/core/Types.cpp
@@ -126,6 +127,7 @@ add_library(neojs STATIC
     src/private/core/types/Object.cpp
     src/private/core/types/Array.cpp
     src/private/core/types/Iterator.cpp
+    src/private/core/types/Error.cpp
     src/private/core/types/PrimitiveWrapper.cpp
     src/private/core/types/Symbol.cpp
     src/private/infra/MallocAllocator.cpp

@@ -14,6 +14,7 @@
 
 #include "core/Context.h"
 #include "core/ArrayBuiltins.h"
+#include "core/ErrorBuiltins.h"
 #include "core/IType.h"
 #include "core/IteratorBuiltins.h"
 #include "core/ObjectBuiltins.h"
@@ -22,6 +23,7 @@
 #include "core/TimerBuiltins.h"
 #include "core/types/Array.h"
 #include "core/types/Boolean.h"
+#include "core/types/Error.h"
 #include "core/types/Exception.h"
 #include "core/types/Fatal.h"
 #include "core/types/Function.h"
@@ -114,6 +116,12 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     // 12. 注册定时器（setTimeout/setInterval/clear*），事件循环的宿主侧入口。
     //     依赖 global scope 与事件循环（本类成员）已就绪。
     if (!registerTimerBuiltins(this)) {
+        std::abort();
+    }
+
+    // 13. 注册 Error 基类（%Error.prototype% + 构造函数）。
+    //     依赖 Object.prototype / Function.prototype 已就绪；stack 渲染依赖调用栈。
+    if (!registerErrorBuiltins(this)) {
         std::abort();
     }
 }
@@ -467,6 +475,78 @@ Value* Context::createIteratorWrapper(Value* iterated, Value* nextMethod,
         static_cast<ObjectData*>(wrapper->data())->prototype = iteratorWrapperPrototype_;
     }
     return wrapper;
+}
+
+// —— Error 对象（ADR-038）——
+
+namespace {
+
+// 把 SourcePosition 渲染成 "filename:line:column"；未知位置返回空串。
+std::string renderPosition(const SourcePosition& pos) {
+    if (pos.filename.empty()) return {};
+    if (pos.line == 0) return pos.filename;
+    if (pos.column == 0) return pos.filename + ":" + std::to_string(pos.line);
+    return pos.filename + ":" + std::to_string(pos.line) + ":" +
+           std::to_string(pos.column);
+}
+
+// 渲染 stack：首行 "Name: message"（message 空则只有 Name），
+// 随后每帧一行 "    at name (position)"（position 未知则只有 name）。
+// 帧按最近调用在前（自顶向下）输出，与 V8 一致。
+std::string renderStack(const std::vector<CallFrame>& frames, std::string_view name,
+                        std::string_view message) {
+    std::string out(name);
+    if (!message.empty()) {
+        out += ": ";
+        out += message;
+    }
+    for (auto it = frames.rbegin(); it != frames.rend(); ++it) {
+        out += "\n    at ";
+        out += it->name.empty() ? "<anonymous>" : it->name;
+        std::string pos = renderPosition(it->position);
+        if (!pos.empty()) {
+            out += " (";
+            out += pos;
+            out += ")";
+        }
+    }
+    return out;
+}
+
+}  // namespace
+
+Value* Context::createError(std::string_view message, std::string_view name,
+                            const SourcePosition& position, std::string_view bindName) {
+    auto* d = gc_->allocData<ErrorData>();
+    if (d == nullptr) return oomValue_;
+    Value* err = createTracked(getErrorType(), d, bindName);
+    if (err == oomValue_) return err;
+
+    // 原型：%Error.prototype%（bootstrap 期间尚未建立，跳过）
+    if (errorPrototype_ != nullptr) {
+        static_cast<ObjectData*>(err->data())->prototype = errorPrototype_;
+    }
+
+    // message：非空才定义（ES2024 §20.5.1.1 step 3：undefined 时不建属性）
+    if (!message.empty()) {
+        Value* msg = createString(message);
+        if (msg == oomValue_) return msg;
+        if (defineProperty(err, "message", msg, true, false, true)->type()->kind() ==
+            TypeKind::Exception) {
+            return oomValue_;
+        }
+    }
+
+    // stack：渲染调用栈快照（writable / 不可枚举 / 可配置）。
+    // 用 trace(position) 而非直接读 callStack_：栈顶帧的位置（出错点）只有调用方
+    // 知道，trace 会 clone 并用 position 补全栈顶帧，且不改动 Context 的栈。
+    Value* stack = createString(renderStack(trace(position), name, message));
+    if (stack == oomValue_) return stack;
+    if (defineProperty(err, "stack", stack, true, false, true)->type()->kind() ==
+        TypeKind::Exception) {
+        return oomValue_;
+    }
+    return err;
 }
 
 Value* Context::getProperty(Value* obj, Value* key) {

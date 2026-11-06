@@ -45,6 +45,10 @@ enum class TypeKind : uint8_t {
     // 迭代器包装对象（ES2025 §27.1.4.2 Iterator.from 的 %WrapForValidIteratorPrototype% 实例）。
     // 持 [[Iterated]] 内部槽（iterator + nextMethod），把任意 iterator-like 对象提升为 Iterator。
     IteratorWrapper,
+    // Error 对象（ES2024 §20.5）：普通对象 + [[ErrorData]] 内部槽。
+    // 内部槽是标记性的（无状态），用于类型判定（Object.prototype.toString 的 tag、
+    // 后续 Error.isError）。TypeError/RangeError 等子类共用本 kind，只差原型与 name。
+    Error,
     // 后续阶段：BigInt/Interrupt/...
 };
 
@@ -169,6 +173,7 @@ IType* getSymbolType();
 IType* getPrimitiveWrapperType();
 IType* getArrayIteratorType();
 IType* getIteratorWrapperType();
+IType* getErrorType();
 
 // —— TypeKind → Type 单例（Types.cpp 中的唯一映射表）——
 // 未注册的 kind 返回 nullptr。新增类型时只需在此加一行映射，

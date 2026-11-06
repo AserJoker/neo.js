@@ -222,6 +222,27 @@ public:
     virtual Value* createIteratorWrapper(Value* iterated, Value* nextMethod,
                                          std::string_view bindName = {}) = 0;
 
+    // createError: 创建 Error 对象（ES2024 §20.5.1.1 Error 构造的简化版）。
+    //   message  —— 消息（空则不定义 message 属性）；
+    //   name     —— 渲染 stack 首行的错误名（"Error"/"TypeError"...）；
+    //   position —— 出错点（栈顶帧此刻的位置，只有 VM 知道；{} = 未知）；
+    //   bindName —— 变量绑定名（非空则 bind 到 current scope）。
+    // 原型自动挂 errorPrototype()；定义自有属性 message 与 stack
+    // （均 writable / 不可枚举 / 可配置）。stack 由 trace(position) 渲染
+    // ——clone 当前调用栈并用 position 补全栈顶帧，不改动 Context 的栈（ADR-037）。
+    // 返回 Value*：正常 Error 对象，或 OOM 哨兵（ADR-031）。
+    virtual Value* createError(std::string_view message, std::string_view name = "Error",
+                               const SourcePosition& position = {},
+                               std::string_view bindName = {}) = 0;
+
+    // errorPrototype: %Error.prototype%（Error 实例的原型，也是各子类原型的原型）。
+    // 由 ErrorBuiltins 建立，生命周期与 Context 一致。
+    virtual Value* errorPrototype() const = 0;
+
+    // setErrorPrototype: bootstrap 专用——Error.prototype 建立后设置，
+    // 此后 createError 自动挂链。宿主不应调用。
+    virtual void setErrorPrototype(Value* proto) = 0;
+
     // 内建原型访问（ADR-035）：
     // objectPrototype —— 所有普通对象原型链的终点；
     // functionPrototype —— 所有函数对象的原型（其原型为 objectPrototype）；
