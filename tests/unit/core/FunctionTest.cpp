@@ -146,7 +146,7 @@ TEST(FunctionTest, SetFunctionNameIgnoresNonFunction) {
     EXPECT_EQ(num->type()->kind(), TypeKind::Number);
 }
 
-TEST(FunctionTest, ClosureScopeIsChildOfRoot) {
+TEST(FunctionTest, ClosureScopeIsIsolated) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
@@ -157,9 +157,9 @@ TEST(FunctionTest, ClosureScopeIsChildOfRoot) {
 
     EXPECT_EQ(d->rootScope, ctx->root());          // rootScope 借用 root
     ASSERT_NE(d->closureScope, nullptr);
-    EXPECT_EQ(d->closureScope->parent(), ctx->root());  // closure 是 root 的子
-    // closure 已登记为 root 的子作用域
-    EXPECT_EQ(ctx->root()->children().count(d->closureScope), 1u);
+    // 闭包作用域是孤立的（ADR-036）：不挂在 root 下，不是 GC 根
+    EXPECT_EQ(d->closureScope->parent(), nullptr);
+    EXPECT_EQ(ctx->root()->children().count(d->closureScope), 0u);
 }
 
 TEST(FunctionTest, CreateWithBindNameBinds) {
@@ -501,6 +501,146 @@ TEST(FunctionTest, CallTempValuesDoNotAccumulateInClosure) {
 
     // 临时执行作用域已销毁，closureScope 未累积临时值
     EXPECT_EQ(d->closureScope->valueCount(), closureCountBefore);
+}
+
+// ===== 闭包作用域临时挂载（ADR-036）=====
+
+TEST(FunctionTest, ClosureScopeMountedOnlyDuringCall) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* fn = ctx->createNativeFunction(observeScopeFn, 0);
+    auto* d = static_cast<FunctionData*>(fn->data());
+    EXPECT_EQ(d->closureScope->parent(), nullptr);
+
+    gObservedCurrentParent = nullptr;
+    ctx->call(fn, nullptr, 0, nullptr);
+
+    // 调用期间 execScope 的 parent 是 closureScope，且 closureScope 已挂到 rootScope
+    EXPECT_EQ(gObservedCurrentParent, d->closureScope);
+    // 调用结束后摘回孤立
+    EXPECT_EQ(d->closureScope->parent(), nullptr);
+    EXPECT_EQ(ctx->root()->children().count(d->closureScope), 0u);
+}
+
+namespace {
+
+// 重入：第一次调用里再调自己，观察闭包作用域在内层调用期间仍保持挂载
+int gReentrantDepth = 0;
+bool gInnerSawMounted = false;
+Value* gReentrantFn = nullptr;
+
+Value* reentrantFn(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* /*argv*/[]) {
+    auto* d = static_cast<FunctionData*>(gReentrantFn->data());
+    if (gReentrantDepth == 0) {
+        ++gReentrantDepth;
+        ctx->call(gReentrantFn, nullptr, 0, nullptr);
+        --gReentrantDepth;
+    } else {
+        // 内层调用期间闭包作用域必须仍挂在 rootScope 下
+        gInnerSawMounted = d->closureScope->parent() == d->rootScope;
+    }
+    return ctx->createUndefined();
+}
+
+}  // namespace
+
+TEST(FunctionTest, ReentrantCallKeepsClosureMounted) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    gReentrantDepth = 0;
+    gInnerSawMounted = false;
+    gReentrantFn = ctx->createNativeFunction(reentrantFn, 0);
+    auto* d = static_cast<FunctionData*>(gReentrantFn->data());
+
+    ctx->call(gReentrantFn, nullptr, 0, nullptr);
+
+    EXPECT_TRUE(gInnerSawMounted);
+    // 最外层退出后才摘除
+    EXPECT_EQ(d->closureScope->parent(), nullptr);
+}
+
+TEST(FunctionTest, FatalCallUnmountsClosureScope) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* fn = ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t, Value*[]) { return c->createFatal("boom"); }, 0);
+    auto* d = static_cast<FunctionData*>(fn->data());
+    Value* result = ctx->call(fn, nullptr, 0, nullptr);
+
+    EXPECT_EQ(result->type()->kind(), TypeKind::Fatal);
+    // Fatal 虽不恢复现场，但闭包作用域必须摘除（否则 ~Context 时双重销毁）
+    EXPECT_EQ(d->closureScope->parent(), nullptr);
+}
+
+TEST(FunctionTest, ClosureScopeDestroyedWithFunctionData) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    // 在子作用域里创建函数并捕获值，退出子作用域后函数不可达
+    Scope* s = ctx->pushNewScope(ctx->current());
+    ASSERT_NE(s, nullptr);
+    Value* captured = ctx->createNumber(42, "x");
+    Value* fn = ctx->createNativeFunction(argcFn, 0);
+    ASSERT_EQ(ctx->setClosure(fn, "x"), fn);
+    EXPECT_GE(captured->scopeRef(), 2);  // 子作用域 + closureScope
+    ctx->popScope();                     // fn 的 Value 不再被任何作用域跟踪
+    EXPECT_EQ(captured->scopeRef(), 1);  // 只剩 closureScope 持有
+
+    // 一轮 GC 回收 fn → FunctionData 析构 → closureScope 销毁 → captured scopeRef--
+    // 但 captured 在本轮标记阶段仍是根，要下一轮才回收（GC 收敛判定覆盖此情形）
+    ctx->gc()->collect();
+    EXPECT_EQ(captured->scopeRef(), 0);  // 本轮标记时仍是根，本轮不回收
+    // 下一轮回收 captured（此时指针不可再解引用）
+    ctx->gc()->collect();
+}
+
+TEST(FunctionTest, RepeatedCreateCallDoesNotAccumulate) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    size_t rootChildrenBefore = ctx->root()->childCount();
+    // 每轮在子作用域里创建函数、捕获局部值并调用，然后退出子作用域。
+    // 闭包作用域孤立化前，它们常驻 root 子树 → 运行期内存持续增长（ADR-036 bug）。
+    for (int i = 0; i < 50; ++i) {
+        Scope* s = ctx->pushNewScope(ctx->current());
+        ASSERT_NE(s, nullptr);
+        ctx->createNumber(i, "x");
+        Value* fn = ctx->createNativeFunction(lookupXFn, 0);
+        ASSERT_EQ(ctx->setClosure(fn, "x"), fn);
+        Value* r = ctx->call(fn, nullptr, 0, nullptr);
+        ASSERT_EQ(r->type()->kind(), TypeKind::Number);
+        ctx->popScope();
+        ctx->gc()->collect();
+    }
+    // 循环结束后不应残留大量 Value（root/global 的常驻内建除外）
+    size_t before = ctx->gc()->valueCount();
+    for (int i = 0; i < 50; ++i) {
+        Scope* s = ctx->pushNewScope(ctx->current());
+        ASSERT_NE(s, nullptr);
+        ctx->createNumber(i, "x");
+        Value* fn = ctx->createNativeFunction(lookupXFn, 0);
+        ctx->setClosure(fn, "x");
+        ctx->call(fn, nullptr, 0, nullptr);
+        ctx->popScope();
+        ctx->gc()->collect();
+    }
+    // 第二批不带来净增长：函数对象、闭包作用域、捕获值都被回收
+    EXPECT_EQ(ctx->gc()->valueCount(), before);
+    // root 下没有累积的闭包作用域
+    EXPECT_EQ(ctx->root()->childCount(), rootChildrenBefore);
 }
 
 // ===== 闭包捕获（ADR-013 §2）=====

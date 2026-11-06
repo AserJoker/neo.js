@@ -37,14 +37,20 @@ public:
 MarkSweepGC::MarkSweepGC(infra::IAllocator* alloc) : alloc_(alloc) {}
 
 MarkSweepGC::~MarkSweepGC() {
-    // 析构时调一次 collect 回收所有不可达 Value。
-    // 调用方应在此之前销毁所有 scope（scopeRef 归 0），collect 后不应有存活 Value。
-    // 若仍有 value 存活，说明存在泄漏（scope 未销毁、或 GC 逻辑 bug），assert 失败报告。
-    collect();
-    // collect 后 values_ 应为空：所有 Value 都应该 scopeRef=0 被回收。
-    // 残留 Value 即内存泄漏（调用方未正确销毁 scope，或 GC 标记/回收逻辑错误）。
+    // 析构时反复 collect 直到收敛。
+    //
+    // 关键点（ADR-036）：sweep 阶段销毁 data 可能连带销毁其持有的作用域
+    // （如 FunctionData 析构销毁孤立闭包作用域），从而对 Value 做 scopeRef--。
+    // 这些 Value 在本轮标记阶段仍是根（已被标记存活），要到**下一轮**才被回收。
+    // 因此「collect 后 values_ 非空」不再是泄漏判据，判据是**本轮净销毁量为 0**：
+    // 只要还有进展就继续下一轮，直到某轮一个都没回收——此时残留的才是真泄漏。
+    while (!values_.empty()) {
+        size_t before = collectedCount_;
+        collect();
+        if (collectedCount_ == before) break;  // 本轮零进展：收敛，残留即泄漏
+    }
+    // 收敛后仍有 Value 存活 = 内存泄漏（scope 未销毁，或 GC 标记/回收逻辑错误）。
     if (!values_.empty()) {
-        // 内存泄漏：报告残留 Value 数，便于定位。
         // 不直接 abort()，先 fprintf 让错误信息可见，再 abort。
         std::fprintf(stderr,
                      "MarkSweepGC leak: %zu value(s) still alive after final collect\n",

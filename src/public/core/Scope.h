@@ -19,7 +19,14 @@
 // lookupChain 沿 parent 链向上查找命名 value（ADR-013 查找路径基础版）。
 // namedValues_ 是名字→Value 映射（借用，不拥有，scopeRef 由 add 负责）。
 //
-// 关联 ADR: 012（Scope 树 + scopeRef）、013（闭包三层作用域）、029（生命周期）、030 阶段 2
+// 闭包作用域（ADR-036）是**孤立**的 Scope：parent_ = nullptr，不挂在 root 下，
+// 生命周期随持有它的 FunctionData（data 引用计数归 0 时 destroySelf）。函数调用
+// 期间经 reparent(rootScope) 临时挂载（查找链 closureScope → rootScope → global
+// 成立），调用结束 reparent(nullptr) 摘回孤立。这样运行期闭包作用域及其捕获值
+// 不再是 GC 根，函数对象不可达时随 data 一起销毁。
+//
+// 关联 ADR: 012（Scope 树 + scopeRef）、013（闭包三层作用域）、029（生命周期）、
+//          030 阶段 2、036（闭包作用域孤立化）
 
 #ifndef NEO_CORE_SCOPE_H
 #define NEO_CORE_SCOPE_H
@@ -60,6 +67,14 @@ public:
     Scope(Scope&&) = delete;
     Scope& operator=(Scope&&) = delete;
 
+    // 析构 + 释放自身内存（placement new 对象的完整销毁）。
+    // 供 data 层（如 FunctionData）在引用计数归 0 时销毁自己持有的孤立 Scope。
+    void destroySelf() {
+        infra::IAllocator* alloc = allocator_;
+        this->~Scope();
+        alloc->free(this);
+    }
+
     // —— 作用域树 ——
     Scope* parent() const { return parent_; }
     infra::IAllocator* allocator() const { return allocator_; }
@@ -72,6 +87,17 @@ public:
     // 从本作用域的 children_ 中移除 child（子作用域析构时调此方法摘除自己）。
     // 找不到则无操作（幂等）。unordered_set 的 erase O(1)。
     void removeChild(Scope* child) { children_.erase(child); }
+
+    // 重新挂载父作用域（parent_ 与两侧 children_ 同步维护）。
+    // 用于闭包作用域的临时挂载/摘除：平时孤立（parent=nullptr，生命周期随
+    // FunctionData），函数调用期间挂到模块根下使查找链成立，调用结束摘回孤立。
+    // newParent 可为 nullptr。与当前父相同时无操作。
+    void reparent(Scope* newParent) {
+        if (parent_ == newParent) return;
+        if (parent_ != nullptr) parent_->removeChild(this);
+        parent_ = newParent;
+        if (parent_ != nullptr) parent_->addChild(this);
+    }
 
     const std::unordered_set<Scope*>& children() const { return children_; }
     size_t childCount() const { return children_.size(); }

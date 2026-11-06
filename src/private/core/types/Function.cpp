@@ -59,7 +59,11 @@ Value* checkMinArgc(IContext* ctx, const FunctionData* d, size_t argc) {
 // 完整 invoke 流程（ADR-022 §3）：作用域切换/恢复 + 返回值归属 + 栈平衡。
 // thisArg 由调用方决定（call 用传入的，construct 用新建对象）。
 // fn 默认取 d->native；construct 的专用钩子传入 d->constructFn。
-Value* invokeNative(IContext* ctx, const FunctionData* d, Value* thisArg,
+//
+// 闭包作用域挂载（ADR-036）：closureScope 平时孤立（parent=nullptr），进入最外层
+// 调用时 reparent(rootScope) 临时挂上，使 execScope → closureScope → rootScope →
+// global 的查找链成立；退出时摘回孤立。重入调用只增计数，不重复挂载/摘除。
+Value* invokeNative(IContext* ctx, FunctionData* d, Value* thisArg,
                     size_t argc, Value* argv[], NativeFn fn = nullptr) {
     // 1. 保存调用方的 root/current scope
     Scope* savedRoot = ctx->root();
@@ -68,39 +72,59 @@ Value* invokeNative(IContext* ctx, const FunctionData* d, Value* thisArg,
     // 2. 切换到被调函数的模块根作用域
     ctx->setRootScope(d->rootScope);
 
-    // 3. 新建临时执行作用域（parent=closureScope，设为 current）：
+    // 3. 最外层调用才挂载闭包作用域（重入时已挂好，保持外层查找链）
+    if (d->activeCalls == 0) {
+        d->closureScope->reparent(d->rootScope);
+    }
+    ++d->activeCalls;
+
+    // 4. 新建临时执行作用域（parent=closureScope，设为 current）：
     //    查找链 execScope → closureScope → rootScope → global 自然经过闭包作用域。
     //    native 执行期间的临时值归属 execScope，调用结束销毁回收，
-    //    不污染持久的 closureScope（后者属函数对象，生命周期由作用域树管理）。
+    //    不污染持久的 closureScope（后者属函数对象，生命周期随 FunctionData）。
     Scope* execScope = ctx->pushNewScope(d->closureScope);
     if (execScope == nullptr) {
-        // 临时 scope 分配失败（OOM）：恢复 root 并返回 OOM 哨兵
+        // 临时 scope 分配失败（OOM）：撤销挂载并恢复 root，返回 OOM 哨兵
+        if (--d->activeCalls == 0) {
+            d->closureScope->reparent(nullptr);
+        }
         ctx->setRootScope(savedRoot);
         return ctx->oomValue();
     }
 
-    // 4. native 调用（构造钩子优先由调用方显式传入）
+    // 5. native 调用（构造钩子优先由调用方显式传入）
     Value* res = (fn != nullptr ? fn : d->native)(ctx, thisArg, argc, argv);
 
-    // 5. Fatal 立即透传：不恢复现场、不平衡栈（不可捕获，交给最外层宿主）
+    // 6. Fatal 立即透传：不恢复现场、不平衡栈（不可捕获，交给最外层宿主）。
+    //    仍须摘除闭包作用域——否则它挂在 root 下，会被 ~Context 的 root 递归析构，
+    //    而 FunctionData 析构时再 destroySelf 就是悬垂访问。遗留的 execScope 是
+    //    closureScope 的子，随闭包作用域一起销毁。
     if (res != nullptr && res->type()->kind() == TypeKind::Fatal) {
+        if (--d->activeCalls == 0) {
+            d->closureScope->reparent(nullptr);
+        }
         return res;
     }
 
-    // 6. 返回值立即归属调用方 current（restoreValue，ADR-022 §4）：
+    // 7. 返回值立即归属调用方 current（restoreValue，ADR-022 §4）：
     //    必须在 pop 之前——res 可能被 execScope 跟踪，先 add 到 savedCurrent（scopeRef++）
     //    才能保证 pop 销毁 execScope 后 res 仍存活（否则语义上悬垂，仅靠 GC 侥幸不崩）。
     if (res != nullptr) {
         savedCurrent->add(res);
     }
 
-    // 7. 平衡栈：native 协议允许栈不平衡（如保存现场后不立即返回），
+    // 8. 平衡栈：native 协议允许栈不平衡（如保存现场后不立即返回），
     //    循环 pop 直到 current 回到 closureScope（查找链的持久层）。
     while (ctx->current() != d->closureScope) {
         ctx->popScope();
     }
 
-    // 8. 恢复调用方 root/current（closureScope 不在调用方链上，须显式恢复）
+    // 9. 最外层调用退出时摘除闭包作用域，恢复孤立状态（不再是 GC 根）
+    if (--d->activeCalls == 0) {
+        d->closureScope->reparent(nullptr);
+    }
+
+    // 10. 恢复调用方 root/current（closureScope 不在调用方链上，须显式恢复）
     ctx->setCurrentScope(savedCurrent);
     ctx->setRootScope(savedRoot);
     return res;
@@ -125,6 +149,16 @@ Value* FunctionType::call(IContext* ctx, Value* self, Value* thisArg,
 
     if (Value* err = checkMinArgc(ctx, d, argc)) return err;
     return invokeNative(ctx, d, thisArg, argc, argv);
+}
+
+// 析构：销毁孤立闭包作用域（ADR-036）。closureScope 的 values 逐个 scopeRef--，
+// 这些 Value 若已不可达，由下一轮 GC 回收（本轮标记阶段它们仍是根，不会误回收）。
+// 若 Fatal 路径遗留了挂载状态，~Scope 会先把自己从 rootScope 摘除。
+FunctionData::~FunctionData() {
+    if (closureScope != nullptr) {
+        closureScope->destroySelf();
+        closureScope = nullptr;
+    }
 }
 
 void FunctionData::enumerateChildren(IGCVisitor* visitor) {

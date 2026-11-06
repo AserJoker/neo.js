@@ -131,7 +131,8 @@ public:
     virtual Value* construct(Value* fn, size_t argc, Value* argv[]) = 0;
 
     // createNativeFunction: 创建 native 函数 Value。
-    //   closureScope = 当前 root scope 的子作用域（新建，Sema 收集的穿透闭包变量绑定于此）；
+    //   closureScope = 新建的**孤立**作用域（parent=nullptr，Sema 收集的穿透闭包变量
+    //                  绑定于此；生命周期随函数 data，调用期间临时挂到 rootScope，ADR-036）；
     //   rootScope = 当前 root scope（借用）；
     //   minArgc = 最少参数数量（调用时校验）；
     //   bindName = 变量绑定名（非空则 bind 到 current scope）。

@@ -194,6 +194,53 @@ TEST(GCEngineTest, EnumerateValues) {
     EXPECT_EQ(c.n, 3);
 }
 
+namespace {
+
+// 模拟 FunctionData：析构时释放其持有的作用域，从而对别的 Value 做 scopeRef--。
+// 这类「sweep 期间新产生的死亡 Value」要到下一轮才被回收（ADR-036）。
+class ReleasingData : public IData {
+public:
+    Value* target = nullptr;
+    explicit ReleasingData(Value* t) : target(t) {}
+    ~ReleasingData() override {
+        if (target != nullptr) target->scopeRefDec();
+    }
+    IData* clone(neo::infra::IAllocator*) const override { return nullptr; }
+};
+
+}  // namespace
+
+TEST(GCEngineTest, FinalCollectConvergesOnCascadeRelease) {
+    auto alloc = createMallocAllocator();
+    auto gc = neo::core::createGcEngine(alloc.get());
+    // target 被「作用域」跟踪（scopeRef=1），holder 不可达
+    auto* target = gc->createValue(dummyType(), gc->allocData<NumberData>(1.0));
+    target->scopeRefInc();
+    auto* holderData = gc->allocData<ReleasingData>(target);
+    gc->createValue(dummyType(), holderData);
+
+    // 单轮 collect：holder 被回收，其 data 析构让 target scopeRef 归 0，
+    // 但 target 在本轮标记阶段仍是根 → 本轮存活
+    gc->collect();
+    EXPECT_EQ(gc->valueCount(), 1u);
+    EXPECT_EQ(target->scopeRef(), 0);
+
+    // 第二轮才回收 target
+    gc->collect();
+    EXPECT_EQ(gc->valueCount(), 0u);
+}
+
+TEST(GCEngineTest, DestructorConvergesWithoutFalseLeak) {
+    auto alloc = createMallocAllocator();
+    auto gc = neo::core::createGcEngine(alloc.get());
+    auto* target = gc->createValue(dummyType(), gc->allocData<NumberData>(1.0));
+    target->scopeRefInc();
+    gc->createValue(dummyType(), gc->allocData<ReleasingData>(target));
+
+    // 不手动 collect：~MarkSweepGC 必须循环收敛，而不是因首轮残留 target 误报泄漏
+    gc.reset();
+}
+
 TEST(GCEngineTest, CollectOnEmptyIsNoop) {
     auto alloc = createMallocAllocator();
     auto gc = neo::core::createGcEngine(alloc.get());

@@ -13,6 +13,8 @@
 ### 1. 函数持有一个「闭包作用域」（closure_scope）
 
 - 函数对象持有 closure_scope，其 parent 是**定义词法作用域的 root_scope**。
+  > 修订（ADR-036）：closure_scope 平时**孤立**（parent=nullptr），只在函数调用期间
+  > 临时挂到 root_scope 下，调用结束摘回；生命周期随 FunctionData，不再常驻 root 子树。
 - **函数定义点**：将闭包变量**绑定**到闭包作用域中。
   （Sema 已收集显式捕获列表，见 ADR-001）
 

@@ -7,8 +7,12 @@
 //   属性查找/原型链/GC 遍历/clone 全部走 ObjectData 的实现。
 //
 // FunctionData 自有字段：
-//   - closureScope：闭包作用域（当前 root scope 的子作用域，Sema 收集的穿透闭包变量绑定于此）
+//   - closureScope：闭包作用域（**孤立**，parent=nullptr；Sema 收集的穿透闭包变量绑定于此。
+//     生命周期随本 data：ref 归 0 时析构函数销毁它。调用期间临时挂到 rootScope 下，
+//     调用结束摘回孤立——见 ADR-036）
 //   - rootScope：创建时从作用域中获取的模块根作用域（借用，不拥有）
+//   - activeCalls：当前对该函数的进行中调用数（重入计数）。闭包作用域的临时挂载
+//     只在最外层调用进出时执行，避免内层调用提前摘除破坏外层查找链。
 //   - native：native 函数指针（ADR-005 签名）
 //   - minArgc：最少参数数量（调用时校验，不足返回 Exception）
 //   - constructFn：可选构造钩子。非空时 construct 直接调它并用其对象返回值，
@@ -21,7 +25,8 @@
 //
 // Function 是孤立的：Sema 收集穿透的闭包变量，绑定到 closureScope，
 // 运行时查找 closureScope → rootScope → global，不依赖定义时的中间词法链（ADR-013 §3）。
-// closureScope 是 Scope*（非 Value*），按 ADR-021 §4 不由 GC 从函数出发标记。
+// closureScope 是 Scope*（非 Value*），按 ADR-021 §4 不由 GC 从函数出发标记；
+// 其生命周期由本 data 的引用计数决定（ADR-036），不再挂在 root 作用域树下常驻。
 //
 // 本阶段 FunctionType 只实现 call 与属性/原型操作（委托 ObjectType）；
 // 运算行为（add/sub/...）返回 Exception("not implement")。
@@ -81,11 +86,12 @@ public:
 // 函数对象 data：继承 ObjectData 复用属性容器/原型链/GC 遍历/clone。
 class FunctionData : public ObjectData {
 public:
-    Scope* closureScope;   // 闭包作用域（root 的子作用域，Sema 收集的穿透变量）
+    Scope* closureScope;   // 闭包作用域（孤立，生命周期随本 data，ADR-036）
     Scope* rootScope;      // 模块根作用域（借用，不拥有）
     NativeFn native;       // native 函数指针
     size_t minArgc;        // 最少参数数量（调用时校验）
     NativeFn constructFn;  // 可选构造钩子（nullptr = native + 默认 this 语义）
+    size_t activeCalls = 0;  // 进行中调用数（重入计数，闭包作用域挂载/摘除用）
     // bind 产生的绑定函数（ES2024 §10.4.1.3 BoundFunctionCreate）：
     // boundTarget 非空表示这是绑定函数，调用时以 boundThis 为 this、
     // 前置 boundArgs 再拼接调用实参。
@@ -98,11 +104,15 @@ public:
         : closureScope(closure), rootScope(root), native(fn), minArgc(minArgs),
           constructFn(ctor) {}
 
+    // 析构：销毁持有的孤立闭包作用域（其 values 逐个 scopeRef--）。
+    // 本 data 由 GC sweep 在最后一个引用它的 Value 被回收时销毁（ADR-015/036）。
+    ~FunctionData() override;
+
     // GC 遍历：对象字段 + bind 持有的原函数/this/前置实参
     void enumerateChildren(IGCVisitor* visitor) override;
 
     // clone：引用语义（ADR-019 §2）——ref++ 后返回 this，属性容器随之共享。
-    // closureScope/rootScope 由作用域树管理，与 data 共享无关。
+    // closureScope 随 data 生命周期（共享 data 即共享同一闭包作用域），rootScope 借用。
     IData* clone(neo::infra::IAllocator* alloc) const override {
         return ObjectData::clone(alloc);
     }

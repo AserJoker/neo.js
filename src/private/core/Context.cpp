@@ -272,13 +272,19 @@ Value* Context::construct(Value* fn, size_t argc, Value* argv[]) {
 }
 
 Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_view bindName) {
-    // closureScope 是当前 root scope 的子作用域（Sema 收集的穿透闭包变量绑定于此）
+    // closureScope 是**孤立**作用域（parent=nullptr），Sema 收集的穿透闭包变量绑定于此。
+    // 不挂到 root 下：否则它常驻为 GC 根，函数对象不可达后其捕获值也不释放（ADR-036）。
+    // 生命周期随 FunctionData（data ref 归 0 时析构销毁）；调用期间临时挂到 rootScope。
     void* p = alloc_->alloc(sizeof(Scope));
     if (p == nullptr) return oomValue_;
-    Scope* closure = new (p) Scope(root_, alloc_);
-    root_->addChild(closure);
+    Scope* closure = new (p) Scope(nullptr, alloc_);
     // rootScope 借用当前 root（不拥有）
     auto* d = gc_->allocData<FunctionData>(closure, root_, fn, minArgc);
+    if (d == nullptr) {
+        // data 分配失败：闭包作用域已无所有者，显式销毁（否则泄漏）
+        closure->destroySelf();
+        return oomValue_;
+    }
     // bindName 仅用于变量绑定（与函数名无关）
     Value* fnValue = createTracked(getFunctionType(), d, bindName);
     if (fnValue == oomValue_) return fnValue;
@@ -347,12 +353,15 @@ Value* Context::createBoundFunction(Value* target, Value* boundThis, size_t argc
                                     Value* argv[]) {
     // 绑定函数（ES2024 §10.4.1.3）：新建 FunctionData，记录原函数/this/前置实参。
     // native 用占位（调用时由 FunctionType::call 的 boundTarget 分支接管）。
+    // 闭包作用域同样孤立（ADR-036），生命周期随 FunctionData。
     void* p = alloc_->alloc(sizeof(Scope));
     if (p == nullptr) return oomValue_;
-    Scope* closure = new (p) Scope(root_, alloc_);
-    root_->addChild(closure);
+    Scope* closure = new (p) Scope(nullptr, alloc_);
     auto* d = gc_->allocData<FunctionData>(closure, root_, nullptr, size_t{0});
-    if (d == nullptr) return oomValue_;
+    if (d == nullptr) {
+        closure->destroySelf();
+        return oomValue_;
+    }
     d->boundTarget = target;
     d->boundThis = boundThis != nullptr ? boundThis : createUndefined();
     if (argc > 0) d->boundArgs.assign(argv, argv + argc);
