@@ -75,7 +75,7 @@ Value* nativeErrorCtor(IContext* ctx, const char* ctorName, const char* errorNam
 
     Value* ctor = ctx->global()->lookup(ctorName);
     if (ctor == nullptr) {
-        return ctx->createException(ctx->createString("internal: missing error constructor"));
+        return detail::typeError(ctx, "internal: missing error constructor");
     }
     Value* proto = ctx->getProperty(ctor, "prototype");
     if (detail::isErrorValue(proto)) return proto;

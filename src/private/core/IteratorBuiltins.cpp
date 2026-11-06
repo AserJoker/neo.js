@@ -74,8 +74,7 @@ bool inheritsIteratorPrototype(IContext* ctx, Value* v) {
 // live 语义：每次重新读数组 length 与元素；耗尽后置 iteratedObject=null 并返回 {done:true}。
 Value* arrayIteratorNext(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
     if (self == nullptr || self->type()->kind() != TypeKind::ArrayIterator) {
-        return ctx->createException(
-            ctx->createString("next method called on incompatible receiver"));
+        return detail::typeError(ctx, "next method called on incompatible receiver");
     }
     auto* d = static_cast<ArrayIteratorData*>(self->data());
     Value* target = d->iteratedObject;
@@ -119,14 +118,12 @@ Value* wrapForValidIteratorNext(IContext* ctx, Value* self, size_t /*argc*/,
                                 Value* /*argv*/[]) {
     IteratorWrapperData* d = asIteratorWrapper(self);
     if (d == nullptr || d->iterated == nullptr || d->nextMethod == nullptr) {
-        return ctx->createException(
-            ctx->createString("next method called on incompatible receiver"));
+        return detail::typeError(ctx, "next method called on incompatible receiver");
     }
     Value* result = ctx->call(d->nextMethod, d->iterated, 0, nullptr);
     if (detail::isErrorValue(result)) return result;
     if (!detail::isObjectKind(result->type()->kind())) {
-        return ctx->createException(
-            ctx->createString("Iterator result is not an object"));
+        return detail::typeError(ctx, "Iterator result is not an object");
     }
     return result;
 }
@@ -137,8 +134,7 @@ Value* wrapForValidIteratorReturn(IContext* ctx, Value* self, size_t /*argc*/,
                                   Value* /*argv*/[]) {
     IteratorWrapperData* d = asIteratorWrapper(self);
     if (d == nullptr || d->iterated == nullptr) {
-        return ctx->createException(
-            ctx->createString("return method called on incompatible receiver"));
+        return detail::typeError(ctx, "return method called on incompatible receiver");
     }
     Value* ret = ctx->getProperty(d->iterated, "return");
     if (detail::isErrorValue(ret)) return ret;
@@ -146,14 +142,12 @@ Value* wrapForValidIteratorReturn(IContext* ctx, Value* self, size_t /*argc*/,
         return createIterResult(ctx, ctx->createUndefined(), true);
     }
     if (ret->type()->kind() != TypeKind::Function) {
-        return ctx->createException(
-            ctx->createString("Iterator return is not a function"));
+        return detail::typeError(ctx, "Iterator return is not a function");
     }
     Value* result = ctx->call(ret, d->iterated, 0, nullptr);
     if (detail::isErrorValue(result)) return result;
     if (!detail::isObjectKind(result->type()->kind())) {
-        return ctx->createException(
-            ctx->createString("Iterator result is not an object"));
+        return detail::typeError(ctx, "Iterator result is not an object");
     }
     return result;
 }
@@ -161,14 +155,12 @@ Value* wrapForValidIteratorReturn(IContext* ctx, Value* self, size_t /*argc*/,
 // —— Iterator 构造函数（ES2025 §27.1.2）——
 // 抽象类：call 报 "requires new"，construct 报不可直接构造。
 Value* iteratorCtorFn(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* /*argv*/[]) {
-    return ctx->createException(
-        ctx->createString("Constructor Iterator requires 'new'"));
+    return detail::typeError(ctx, "Constructor Iterator requires 'new'");
 }
 
 Value* iteratorConstructFn(IContext* ctx, Value* /*self*/, size_t /*argc*/,
                            Value* /*argv*/[]) {
-    return ctx->createException(
-        ctx->createString("Abstract class Iterator not directly constructable"));
+    return detail::typeError(ctx, "Abstract class Iterator not directly constructable");
 }
 
 // —— Iterator.from(v)（ES2025 §27.1.4.2）——
@@ -183,8 +175,7 @@ Value* iteratorFrom(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) 
         obj = ctx->createPrimitiveWrapper(v);
         if (detail::isErrorValue(obj)) return obj;
     } else {
-        return ctx->createException(
-            ctx->createString("Iterator.from called on non-object"));
+        return detail::typeError(ctx, "Iterator.from called on non-object");
     }
 
     // 2. 取 @@iterator；可调用则调用（结果须为对象）
@@ -194,14 +185,12 @@ Value* iteratorFrom(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) 
     if (method->type()->kind() != TypeKind::Undefined &&
         method->type()->kind() != TypeKind::Null) {
         if (method->type()->kind() != TypeKind::Function) {
-            return ctx->createException(
-                ctx->createString("Iterator.from: @@iterator is not a function"));
+            return detail::typeError(ctx, "Iterator.from: @@iterator is not a function");
         }
         Value* iter = ctx->call(method, obj, 0, nullptr);
         if (detail::isErrorValue(iter)) return iter;
         if (!detail::isObjectKind(iter->type()->kind())) {
-            return ctx->createException(
-                ctx->createString("Iterator.from: @@iterator did not return an object"));
+            return detail::typeError(ctx, "Iterator.from: @@iterator did not return an object");
         }
         obj = iter;
     }
@@ -226,8 +215,7 @@ Value* iteratorProtoConstructorGet(IContext* ctx, Value* /*self*/, size_t /*argc
 // constructor 访问器 setter：在 this 上建自有数据属性
 Value* iteratorProtoConstructorSet(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     if (!detail::isObjectKind(self->type()->kind())) {
-        return ctx->createException(
-            ctx->createString("set Iterator.prototype.constructor called on non-object"));
+        return detail::typeError(ctx, "set Iterator.prototype.constructor called on non-object");
     }
     // minArgc=1 保证 argc >= 1（缺参由 FunctionType 拦截）
     (void)argc;
@@ -251,8 +239,7 @@ Value* iteratorProtoIterator(IContext* ctx, Value* self, size_t /*argc*/,
 Value* iteratorProtoDispose(IContext* ctx, Value* self, size_t /*argc*/,
                             Value* /*argv*/[]) {
     if (self == nullptr || !detail::isObjectKind(self->type()->kind())) {
-        return ctx->createException(
-            ctx->createString("Iterator.prototype[Symbol.dispose] called on non-object"));
+        return detail::typeError(ctx, "Iterator.prototype[Symbol.dispose] called on non-object");
     }
     // IteratorClose 已封装「取 return → 校验可调用 → 调用 → 结果须为对象」，
     // 且无 return 时返回 nullptr（此处忽略返回值，统一返回 undefined）。
@@ -267,8 +254,7 @@ Value* iteratorProtoDispose(IContext* ctx, Value* self, size_t /*argc*/,
 Value* arrayIteratorMethod(IContext* ctx, Value* self, ArrayIterationKind kind) {
     TypeKind k = self != nullptr ? self->type()->kind() : TypeKind::Undefined;
     if (self == nullptr || k == TypeKind::Undefined || k == TypeKind::Null) {
-        return ctx->createException(
-            ctx->createString("Array.prototype iterator method called on null or undefined"));
+        return detail::typeError(ctx, "Array.prototype iterator method called on null or undefined");
     }
     Value* obj = detail::isObjectKind(k) ? self : ctx->createPrimitiveWrapper(self);
     if (detail::isErrorValue(obj)) return obj;

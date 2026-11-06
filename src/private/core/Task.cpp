@@ -25,11 +25,21 @@ namespace neo::core {
 
 namespace {
 
-// 取异常携带的错误消息。当前阶段无 Error 对象，child 多为 String；
-// 其他原始值走 valueToString，对象返回空串（待 Error 对象体系就绪后替换）。
-std::string exceptionMessage(Value* err) {
+// 取异常携带的错误消息（ADR-039）。
+// child 通常是 Error 对象（引擎内部报错）或 String（用户/测试直接构造）；
+// Error 对象按其 toString 渲染（"Name: message"，ES2024 §20.5.3.4）。
+std::string exceptionMessage(IContext* ctx, Value* err) {
     // ExceptionData::child 契约上永不为 nullptr（无错误对象时是 undefined Value）
     Value* child = static_cast<ExceptionData*>(err->data())->child;
+    if (child->type()->kind() == TypeKind::Error) {
+        Value* toString = ctx->getProperty(child, "toString");
+        if (!detail::isErrorValue(toString) && detail::isCallable(toString)) {
+            Value* s = ctx->call(toString, child, 0, nullptr);
+            if (!detail::isErrorValue(s) && s->type()->kind() == TypeKind::String) {
+                return static_cast<StringData*>(s->data())->value;
+            }
+        }
+    }
     if (child->type()->kind() == TypeKind::String) {
         return static_cast<StringData*>(child->data())->value;
     }
@@ -39,7 +49,7 @@ std::string exceptionMessage(Value* err) {
 // 打印未捕获异常并返回 undefined（任务失败不终止进程）。
 // 只接收 Exception：Fatal 由 defaultTaskRunner 直接透传，不进入此函数。
 Value* reportUncaught(IContext* ctx, Value* err) {
-    ctx->console()->printLine("Uncaught {}", exceptionMessage(err));
+    ctx->console()->printLine("Uncaught {}", exceptionMessage(ctx, err));
     return ctx->createUndefined();
 }
 
@@ -48,8 +58,7 @@ Value* reportUncaught(IContext* ctx, Value* err) {
 Value* defaultTaskRunner(IContext* ctx, Value* task) {
     // 任务实体必须是函数（当前阶段唯一的可执行实体）
     if (task == nullptr || task->type()->kind() != TypeKind::Function) {
-        Value* err = ctx->createException(
-            ctx->createString("Task entity is not a function"));
+        Value* err = detail::typeError(ctx, "Task entity is not a function");
         return reportUncaught(ctx, err);
     }
     // 以 undefined 为 this 无参调用；返回值走统一异常通道（永不为 nullptr）

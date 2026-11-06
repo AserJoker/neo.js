@@ -87,8 +87,8 @@ Value* objectProtoValueOf(IContext* ctx, Value* self, size_t /*argc*/, Value* /*
 Value* objectProtoHasOwnProperty(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     TypeKind sk = self != nullptr ? self->type()->kind() : TypeKind::Undefined;
     if (self == nullptr || !detail::isObjectKind(sk)) {
-        return ctx->createException(
-            ctx->createString("Object.prototype.hasOwnProperty called on non-object"));
+        return detail::typeError(
+            ctx, "Object.prototype.hasOwnProperty called on non-object");
     }
     if (argc == 0) return ctx->createBoolean(false);
     Value* key = argv[0];
@@ -116,8 +116,8 @@ Value* objectProtoHasOwnProperty(IContext* ctx, Value* self, size_t argc, Value*
 Value* objectProtoIsPrototypeOf(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     TypeKind sk = self != nullptr ? self->type()->kind() : TypeKind::Undefined;
     if (self == nullptr || !detail::isObjectKind(sk)) {
-        return ctx->createException(ctx->createString(
-            "Object.prototype.isPrototypeOf called on non-object"));
+        return detail::typeError(
+            ctx, "Object.prototype.isPrototypeOf called on non-object");
     }
     if (argc == 0 || !detail::isObjectKind(argv[0]->type()->kind())) {
         return ctx->createBoolean(false);
@@ -136,8 +136,8 @@ Value* objectProtoPropertyIsEnumerable(IContext* ctx, Value* self, size_t argc,
                                        Value* argv[]) {
     TypeKind sk = self != nullptr ? self->type()->kind() : TypeKind::Undefined;
     if (self == nullptr || !detail::isObjectKind(sk)) {
-        return ctx->createException(ctx->createString(
-            "Object.prototype.propertyIsEnumerable called on non-object"));
+        return detail::typeError(
+            ctx, "Object.prototype.propertyIsEnumerable called on non-object");
     }
     if (argc == 0) return ctx->createBoolean(false);
     Value* key = argv[0];
@@ -168,14 +168,13 @@ Value* objectProtoPropertyIsEnumerable(IContext* ctx, Value* self, size_t argc,
 Value* objectProtoToLocaleString(IContext* ctx, Value* self, size_t /*argc*/,
                                  Value* /*argv*/[]) {
     if (self == nullptr) {
-        return ctx->createException(
-            ctx->createString("Object.prototype.toLocaleString called on null"));
+        return detail::typeError(
+            ctx, "Object.prototype.toLocaleString called on null");
     }
     Value* fn = ctx->getProperty(self, "toString");
     if (detail::isErrorValue(fn)) return fn;
     if (fn->type()->kind() != TypeKind::Function) {
-        return ctx->createException(
-            ctx->createString("toString is not a function"));
+        return detail::typeError(ctx, "toString is not a function");
     }
     return ctx->call(fn, self, 0, nullptr);
 }
@@ -191,7 +190,7 @@ Value* functionProtoToString(IContext* ctx, Value* /*self*/, size_t /*argc*/,
 // Function.prototype.call(thisArg, ...args)
 Value* functionProtoCall(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     if (self == nullptr || self->type()->kind() != TypeKind::Function) {
-        return ctx->createException(ctx->createString("Function.prototype.call called on non-function"));
+        return detail::typeError(ctx, "Function.prototype.call called on non-function");
     }
     Value* thisArg = argc > 0 ? argv[0] : ctx->createUndefined();
     return ctx->call(self, thisArg, argc > 0 ? argc - 1 : 0, argc > 0 ? argv + 1 : nullptr);
@@ -202,7 +201,7 @@ Value* functionProtoCall(IContext* ctx, Value* self, size_t argc, Value* argv[])
 //   否则按 arrayLike 读 length 与各索引展开为实参（CreateListFromArrayLike）。
 Value* functionProtoApply(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     if (self == nullptr || self->type()->kind() != TypeKind::Function) {
-        return ctx->createException(ctx->createString("Function.prototype.apply called on non-function"));
+        return detail::typeError(ctx, "Function.prototype.apply called on non-function");
     }
     Value* thisArg = argc > 0 ? argv[0] : ctx->createUndefined();
     if (argc < 2) return ctx->call(self, thisArg, 0, nullptr);
@@ -212,8 +211,7 @@ Value* functionProtoApply(IContext* ctx, Value* self, size_t argc, Value* argv[]
         return ctx->call(self, thisArg, 0, nullptr);
     }
     if (!detail::isObjectKind(k)) {
-        return ctx->createException(ctx->createString(
-            "CreateListFromArrayLike called on non-object"));
+        return detail::typeError(ctx, "CreateListFromArrayLike called on non-object");
     }
 
     // 读 length（ToLength，ES2024 §7.1.20）
@@ -235,7 +233,7 @@ Value* functionProtoApply(IContext* ctx, Value* self, size_t argc, Value* argv[]
 // 返回绑定函数：调用时以 thisArg 为 this、前置 args 再拼接调用实参。
 Value* functionProtoBind(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     if (self == nullptr || self->type()->kind() != TypeKind::Function) {
-        return ctx->createException(ctx->createString("Function.prototype.bind called on non-function"));
+        return detail::typeError(ctx, "Function.prototype.bind called on non-function");
     }
     Value* thisArg = argc > 0 ? argv[0] : ctx->createUndefined();
     size_t boundCount = argc > 0 ? argc - 1 : 0;
@@ -261,7 +259,7 @@ Value* objectCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
 
 // Function(...)：new Function 暂不支持，调用/构造均返回 Exception
 Value* functionCtor(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* /*argv*/[]) {
-    return ctx->createException(ctx->createString("Function constructor is not implemented"));
+    return detail::typeError(ctx, "Function constructor is not implemented");
 }
 
 // —— Object 静态方法（ES2024 §20.1.2）——
@@ -282,8 +280,7 @@ Value* keysToArray(IContext* ctx, const std::vector<Value*>& keys) {
 Value* toObjectOrThrow(IContext* ctx, Value* v) {
     TypeKind k = v->type()->kind();
     if (k == TypeKind::Undefined || k == TypeKind::Null) {
-        return ctx->createException(
-            ctx->createString("Cannot convert undefined or null to object"));
+        return detail::typeError(ctx, "Cannot convert undefined or null to object");
     }
     if (detail::isObjectKind(k)) return v;
     return ctx->createPrimitiveWrapper(v);
@@ -360,8 +357,7 @@ Value* objectAssign(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) 
 Value* objectCreate(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* argv[]) {
     TypeKind pk = argv[0]->type()->kind();
     if (pk != TypeKind::Null && !detail::isObjectKind(pk)) {
-        return ctx->createException(
-            ctx->createString("Object prototype may only be an Object or null"));
+        return detail::typeError(ctx, "Object prototype may only be an Object or null");
     }
     Value* obj = ctx->createObject();
     if (obj == ctx->oomValue()) return obj;
@@ -388,8 +384,7 @@ Value* objectSetPrototypeOf(IContext* ctx, Value* /*self*/, size_t /*argc*/, Val
     Value* proto = argv[1];
     TypeKind pk = proto->type()->kind();
     if (pk != TypeKind::Null && !detail::isObjectKind(pk)) {
-        return ctx->createException(
-            ctx->createString("Object prototype may only be an Object or null"));
+        return detail::typeError(ctx, "Object prototype may only be an Object or null");
     }
     Value* r = ctx->setPrototype(target, proto);
     return detail::isErrorValue(r) ? r : target;
@@ -403,8 +398,7 @@ Value* objectDefineProperty(IContext* ctx, Value* /*self*/, size_t /*argc*/, Val
     Value* key = argv[1];
     Value* desc = argv[2];
     if (!detail::isObjectKind(desc->type()->kind())) {
-        return ctx->createException(
-            ctx->createString("Property description must be an object"));
+        return detail::typeError(ctx, "Property description must be an object");
     }
     // 读取描述符字段（缺省按规范默认值：全 false）
     auto field = [&](const char* name) -> Value* {

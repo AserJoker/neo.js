@@ -43,7 +43,7 @@ ArrayData* asArray(Value* v) {
 Value* notArray(IContext* ctx, const char* method) {
     std::string msg = std::string("Array.prototype.") + method +
                       " called on non-array";
-    return ctx->createException(ctx->createString(msg));
+    return detail::typeError(ctx, msg);
 }
 
 // 严格相等（ES2024 §7.2.16 IsStrictlyEqual 的简化版）
@@ -104,7 +104,7 @@ Value* arrayCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
         double n = static_cast<NumberData*>(argv[0]->data())->value;
         if (!std::isfinite(n) || n < 0.0 || n > static_cast<double>(kArrayMaxLength) ||
             std::floor(n) != n) {
-            return ctx->createException(ctx->createString("Invalid array length"));
+            return detail::rangeError(ctx, "Invalid array length");
         }
         Value* arr = ctx->createArray();
         if (arr == ctx->oomValue()) return arr;

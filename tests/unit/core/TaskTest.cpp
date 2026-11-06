@@ -454,7 +454,8 @@ TEST(TaskTest, NonFunctionEntityIsReportedAsUncaught) {
     Value* r = f.ctx->runOneTask();
     EXPECT_EQ(r->type()->kind(), TypeKind::Undefined);
     ASSERT_EQ(f.sink.lines.size(), 1u);
-    EXPECT_EQ(f.sink.lines[0], "Uncaught Task entity is not a function");
+    // 引擎报错现在携带规范 Error 对象，按 toString 渲染为 "Name: message"（ADR-039）
+    EXPECT_EQ(f.sink.lines[0], "Uncaught TypeError: Task entity is not a function");
 }
 
 TEST(TaskTest, DefaultRunnerWithNullEntityIsReported) {

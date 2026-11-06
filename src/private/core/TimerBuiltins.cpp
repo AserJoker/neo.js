@@ -54,8 +54,7 @@ Value* delayOf(IContext* ctx, size_t argc, Value* argv[], uint64_t& out) {
 // 失败返回 Exception/Fatal（调用方透传）。
 Value* callbackOf(IContext* ctx, size_t argc, Value* argv[], Value*& out) {
     if (argc < 1 || argv[0]->type()->kind() != TypeKind::Function) {
-        return ctx->createException(
-            ctx->createString("Timer callback must be a function"));
+        return detail::typeError(ctx, "Timer callback must be a function");
     }
     if (argc <= 2) {
         out = argv[0];  // 无额外参数：直接用原函数

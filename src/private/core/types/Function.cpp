@@ -53,7 +53,7 @@ Value* checkMinArgc(IContext* ctx, const FunctionData* d, size_t argc) {
     if (argc >= d->minArgc) return nullptr;
     std::string msg = std::to_string(d->minArgc) + " arguments required, but only " +
                       std::to_string(argc) + " present";
-    return ctx->createException(ctx->createString(msg));
+    return detail::typeError(ctx, msg);
 }
 
 // 完整 invoke 流程（ADR-022 §3）：作用域切换/恢复 + 返回值归属 + 栈平衡。

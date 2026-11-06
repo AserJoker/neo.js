@@ -52,7 +52,8 @@ Value* symbolToString(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv
         sym = wrapperPrimitiveValue(sym);  // 拆 [[PrimitiveValue]]
     }
     if (sym == nullptr || sym->type()->kind() != TypeKind::Symbol) {
-        return ctx->createException(ctx->createString("Symbol.prototype.toString requires that 'this' be a Symbol"));
+        return detail::typeError(
+            ctx, "Symbol.prototype.toString requires that 'this' be a Symbol");
     }
     return ctx->toString(sym);
 }
@@ -65,8 +66,9 @@ Value* symbolToPrimitive(IContext* ctx, Value* self, size_t /*argc*/, Value* /*a
         sym = wrapperPrimitiveValue(sym);
     }
     if (sym == nullptr || sym->type()->kind() != TypeKind::Symbol) {
-        return ctx->createException(ctx->createString(
-            "Symbol.prototype[Symbol.toPrimitive] requires that 'this' be a Symbol"));
+        return detail::typeError(
+            ctx,
+            "Symbol.prototype[Symbol.toPrimitive] requires that 'this' be a Symbol");
     }
     return sym;
 }

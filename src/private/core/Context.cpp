@@ -34,6 +34,7 @@
 #include "core/types/PrimitiveWrapper.h"
 #include "core/types/String.h"
 #include "core/types/Symbol.h"
+#include "core/types/TypeBehavior.h"
 #include "core/types/Undefined.h"
 
 #include <algorithm>
@@ -434,8 +435,7 @@ Value* Context::createPrimitiveWrapper(Value* primitive, std::string_view bindNa
         case TypeKind::String:  proto = stringPrototype_; break;
         case TypeKind::Symbol:  proto = symbolPrototype_; break;
         default:
-            return createException(
-                createString("Primitive wrapper requires a primitive value"));
+            return detail::typeError(this, "Primitive wrapper requires a primitive value");
     }
     auto* d = gc_->allocData<PrimitiveWrapperData>();
     if (d == nullptr) return oomValue_;
@@ -604,13 +604,13 @@ Value* Context::setClosure(Value* fn, std::string_view name) {
     // 仅对 Function 类型有效
     if (fn->type()->kind() != TypeKind::Function) {
         std::string msg = std::string(fn->type()->name()) + " is not a function";
-        return createException(createString(msg));
+        return detail::typeError(this, msg);
     }
     // 沿当前作用域链查找闭包变量
     Value* v = current()->lookupChain(name);
     if (v == nullptr) {
         std::string msg = "Closure variable '" + std::string(name) + "' is not defined";
-        return createException(createString(msg));
+        return detail::referenceError(this, msg);
     }
     // 绑定 = 共享同一 Value（ADR-013 §2）：closureScope 加入时 scopeRef++
     auto* d = static_cast<FunctionData*>(fn->data());
@@ -626,6 +626,28 @@ Value* Context::createException(Value* child) {
 
 Value* Context::createFatal(const char* msg) {
     return createTracked(getFatalType(), gc_->allocData<FatalData>(msg), {});
+}
+
+// 规范错误异常（ADR-039）：创建对应 Error 对象并包进 Exception 通道。
+// 子类实例的原型改挂到 global 上对应构造函数（bootstrap 期间可能尚未就绪，
+// 此时保留 createError 挂的 %Error.prototype%，不影响错误传播）。
+Value* Context::createErrorException(ErrorKind kind, std::string_view message,
+                                     const SourcePosition& position) {
+    const char* name = errorKindName(kind);
+    Value* err = createError(message, name, position);
+    if (err == oomValue_) return err;
+
+    if (kind != ErrorKind::Error) {
+        Value* ctor = global()->lookup(name);
+        if (ctor != nullptr) {
+            Value* proto = getProperty(ctor, "prototype");
+            if (proto->type()->kind() != TypeKind::Exception) {
+                Value* r = setPrototype(err, proto);
+                if (r->type()->kind() == TypeKind::Exception) return r;
+            }
+        }
+    }
+    return createException(err);
 }
 
 // —— 变量定义与赋值（ADR-030 阶段 5）——
@@ -669,9 +691,8 @@ Value* Context::define(std::string_view name, Value* source) {
     // 同一作用域重复定义无条件报错：var/let/const 的差异在 Sema 阶段已抹平，
     // 到达 Engine 时定义语义统一（同 scope 不可重复声明，与 strict 无关）。
     if (current()->lookup(name) != nullptr) {
-        // 临时用 Exception 携带 string 代替错误报告（待 Error 对象体系就绪后替换）
         std::string msg = "Identifier '" + std::string(name) + "' has already been declared";
-        return createException(createString(msg));
+        return detail::errorOf(this, ErrorKind::SyntaxError, msg);
     }
     return defineCloned(current(), name, source);
 }
@@ -684,7 +705,7 @@ Value* Context::store(std::string_view name, Value* source) {
         // 不可赋值（const 声明）：拦截并报错
         if (!target->isMutable()) {
             std::string msg = "Assignment to constant variable '" + std::string(name) + "'";
-            return createException(createString(msg));
+            return detail::typeError(this, msg);
         }
         // 找到：clone source 的 data，替换 target 的 type+data
         IData* cloned = cloneForNewValue(source);
@@ -697,7 +718,7 @@ Value* Context::store(std::string_view name, Value* source) {
     // 未找到：按当前作用域链的 strict 标注分派
     if (hasFlag("strict")) {
         std::string msg = "Assignment to undeclared identifier '" + std::string(name) + "'";
-        return createException(createString(msg));
+        return detail::referenceError(this, msg);
     }
     // 非严格模式：在 global 定义全局变量
     return defineCloned(global(), name, source);

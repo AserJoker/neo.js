@@ -41,7 +41,7 @@ inline bool isSymbolKeyValue(Value* key) {
 Value* readOnlyProperty(IContext* ctx, const char* op) {
     std::string msg = std::string("Cannot ") + op +
                       " property of a String wrapper object";
-    return ctx->createException(ctx->createString(msg));
+    return detail::typeError(ctx, msg);
 }
 
 }  // namespace

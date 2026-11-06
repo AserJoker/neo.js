@@ -28,6 +28,7 @@
 #define NEO_CORE_ICONTEXT_H
 
 #include "core/CallStack.h"
+#include "core/ErrorKind.h"
 #include "core/IteratorKind.h"
 #include "core/Task.h"
 #include "core/WellKnownSymbol.h"
@@ -357,6 +358,15 @@ public:
     // createFatal: 创建不可捕获致命错误 Value（字面量消息，静态存储期）。
     virtual Value* createException(Value* child) = 0;
     virtual Value* createFatal(const char* msg) = 0;
+
+    // createErrorException: 创建「规范错误」异常（ADR-039）——引擎内部报错的标准入口。
+    // 按 kind 创建对应 Error 对象（Error/TypeError/RangeError/ReferenceError/
+    // SyntaxError/URIError），再按 ADR-006 包进 Exception 通道返回。
+    //   message  —— 错误消息（会进 message 属性与 stack 首行）；
+    //   position —— 出错点（栈顶帧位置，只有 VM 知道；{} = 未知）。
+    // 返回 Value*：Exception（携带 Error 对象），或 OOM 哨兵。
+    virtual Value* createErrorException(ErrorKind kind, std::string_view message,
+                                        const SourcePosition& position = {}) = 0;
 
     // —— OOM 哨兵（ADR-031）——
     // Context 构造时预分配一个 Fatal 类型 Value，挂载到 global（存活于 Context 生命周期）。

@@ -211,6 +211,8 @@ public:
     // 错误值创建
     Value* createException(Value* child) override;
     Value* createFatal(const char* msg) override;
+    Value* createErrorException(ErrorKind kind, std::string_view message,
+                                const SourcePosition& position = {}) override;
 
     // OOM 哨兵
     Value* oomValue() const override { return oomValue_; }

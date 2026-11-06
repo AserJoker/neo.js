@@ -97,7 +97,7 @@ Value* unwrapThis(Value* self, TypeKind want) {
 
 Value* typeError(IContext* ctx, const char* method, const char* typeName) {
     std::string msg = std::string(method) + " requires that 'this' be a " + typeName;
-    return ctx->createException(ctx->createString(msg));
+    return detail::typeError(ctx, msg);
 }
 
 // Boolean.prototype.valueOf()

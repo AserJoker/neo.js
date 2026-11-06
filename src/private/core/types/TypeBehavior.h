@@ -123,6 +123,28 @@ inline bool isErrorValue(Value* v) {
     return k == TypeKind::Exception || k == TypeKind::Fatal;
 }
 
+// —— 规范错误异常（ADR-039）——
+// 引擎内部报错统一走这里：按 ES2024 规定的错误类型创建 Error 对象，
+// 再包进 Exception 通道（ADR-006）。避免各处硬编码 ErrorKind。
+inline Value* errorOf(IContext* ctx, ErrorKind kind, const std::string& msg) {
+    return ctx->createErrorException(kind, msg);
+}
+
+// TypeError：类型不符/不可调用/不可构造/不可写等（ES2024 §7.2.7 等）
+inline Value* typeError(IContext* ctx, const std::string& msg) {
+    return errorOf(ctx, ErrorKind::TypeError, msg);
+}
+
+// RangeError：数值越界（如数组长度）
+inline Value* rangeError(IContext* ctx, const std::string& msg) {
+    return errorOf(ctx, ErrorKind::RangeError, msg);
+}
+
+// ReferenceError：引用未定义的标识符
+inline Value* referenceError(IContext* ctx, const std::string& msg) {
+    return errorOf(ctx, ErrorKind::ReferenceError, msg);
+}
+
 // 是否为可调用值（Function）
 inline bool isCallable(Value* v) {
     return v != nullptr && v->type()->kind() == TypeKind::Function;
@@ -149,8 +171,7 @@ inline Value* ordinaryToPrimitive(IContext* ctx, Value* obj, PreferredType hint)
         if (isErrorValue(result)) return result;
         if (!isObjectKind(result->type()->kind())) return result;
     }
-    return ctx->createException(
-        ctx->createString("Cannot convert object to primitive value"));
+    return typeError(ctx, "Cannot convert object to primitive value");
 }
 
 // ToPrimitive(input, preferredType)（ES2024 §7.1.1）：
@@ -165,8 +186,7 @@ inline Value* toPrimitive(IContext* ctx, Value* input,
     if (isErrorValue(exotic)) return exotic;
     if (exotic->type()->kind() != TypeKind::Undefined) {
         if (!isCallable(exotic)) {
-            return ctx->createException(
-                ctx->createString("Symbol.toPrimitive is not a function"));
+            return typeError(ctx, "Symbol.toPrimitive is not a function");
         }
         const char* hint = preferred == PreferredType::String   ? "string"
                            : preferred == PreferredType::Number ? "number"
@@ -175,8 +195,7 @@ inline Value* toPrimitive(IContext* ctx, Value* input,
         Value* result = ctx->call(exotic, input, 1, argv);
         if (isErrorValue(result)) return result;
         if (isObjectKind(result->type()->kind())) {
-            return ctx->createException(
-                ctx->createString("Cannot convert object to primitive value"));
+            return typeError(ctx, "Cannot convert object to primitive value");
         }
         return result;
     }
@@ -248,8 +267,7 @@ inline Value* toNumberValue(IContext* ctx, Value* v) {
     TypeKind k = v->type()->kind();
     if (k == TypeKind::Number) return v;
     if (k == TypeKind::Symbol) {
-        return ctx->createException(
-            ctx->createString("Cannot convert a Symbol value to a number"));
+        return typeError(ctx, "Cannot convert a Symbol value to a number");
     }
     if (isObjectKind(k)) {
         Value* prim = toPrimitive(ctx, v, PreferredType::Number);
@@ -265,8 +283,7 @@ inline Value* toStringValue(IContext* ctx, Value* v) {
     TypeKind k = v->type()->kind();
     if (k == TypeKind::String) return v;
     if (k == TypeKind::Symbol) {
-        return ctx->createException(
-            ctx->createString("Cannot convert a Symbol value to a string"));
+        return typeError(ctx, "Cannot convert a Symbol value to a string");
     }
     if (isObjectKind(k)) {
         Value* prim = toPrimitive(ctx, v, PreferredType::String);
@@ -365,14 +382,12 @@ inline Value* getIterator(IContext* ctx, Value* obj) {
         ctx->getProperty(obj, ctx->getWellKnownSymbol(WellKnownSymbol::Iterator));
     if (isErrorValue(method)) return method;
     if (!isCallable(method)) {
-        return ctx->createException(
-            ctx->createString("value is not iterable"));
+        return typeError(ctx, "value is not iterable");
     }
     Value* iter = ctx->call(method, obj, 0, nullptr);
     if (isErrorValue(iter)) return iter;
     if (!isObjectKind(iter->type()->kind())) {
-        return ctx->createException(
-            ctx->createString("iterator result is not an object"));
+        return typeError(ctx, "iterator result is not an object");
     }
     return iter;
 }
@@ -383,14 +398,12 @@ inline Value* iteratorNext(IContext* ctx, Value* iterator) {
     Value* next = ctx->getProperty(iterator, "next");
     if (isErrorValue(next)) return next;
     if (!isCallable(next)) {
-        return ctx->createException(
-            ctx->createString("iterator next is not a function"));
+        return typeError(ctx, "iterator next is not a function");
     }
     Value* result = ctx->call(next, iterator, 0, nullptr);
     if (isErrorValue(result)) return result;
     if (!isObjectKind(result->type()->kind())) {
-        return ctx->createException(
-            ctx->createString("iterator result is not an object"));
+        return typeError(ctx, "iterator result is not an object");
     }
     return result;
 }
@@ -423,16 +436,14 @@ inline Value* iteratorClose(IContext* ctx, Value* iterator, Value* completion) {
     if (!isCallable(ret)) {
         return completion != nullptr
                    ? completion
-                   : ctx->createException(
-                         ctx->createString("iterator return is not a function"));
+                   : typeError(ctx, "iterator return is not a function");
     }
     Value* r = ctx->call(ret, iterator, 0, nullptr);
     if (isErrorValue(r)) return completion != nullptr ? completion : r;
     if (!isObjectKind(r->type()->kind())) {
         return completion != nullptr
                    ? completion
-                   : ctx->createException(
-                         ctx->createString("iterator result is not an object"));
+                   : typeError(ctx, "iterator result is not an object");
     }
     return completion;
 }
@@ -452,14 +463,14 @@ inline Value* passthrough(Value* a, Value* b) {
 // 各基础类型的 call 统一走此辅助。self 是被调用的非函数 Value。
 inline Value* notAFunction(IContext* ctx, Value* self) {
     std::string msg = std::string(self->type()->name()) + " is not a function";
-    return ctx->createException(ctx->createString(msg));
+    return typeError(ctx, msg);
 }
 
 // —— 非构造函数 new 报错（ADR-034）——
 // 非函数类型被 new 时返回 Exception("<TypeName> is not a constructor")。
 inline Value* notAConstructor(IContext* ctx, Value* self) {
     std::string msg = std::string(self->type()->name()) + " is not a constructor";
-    return ctx->createException(ctx->createString(msg));
+    return typeError(ctx, msg);
 }
 
 // —— 属性键转字符串（ToPropertyKey 的字符串部分，ES2024 §7.1.19）——
@@ -512,7 +523,7 @@ inline Value* primitiveSetProperty(IContext* ctx, Value* self, Value* key,
                                    Value* /*value*/) {
     std::string msg = "Cannot set property '" + keyToString(key) + "' of " +
                       std::string(self->type()->name());
-    return ctx->createException(ctx->createString(msg));
+    return typeError(ctx, msg);
 }
 
 // —— 非对象类型原型操作（ADR-018 §1）——
@@ -523,7 +534,7 @@ inline Value* primitiveGetPrototype(IContext* ctx, Value* /*self*/) {
 
 inline Value* primitiveSetPrototype(IContext* ctx, Value* self, Value* /*proto*/) {
     std::string msg = "Cannot set prototype of " + std::string(self->type()->name());
-    return ctx->createException(ctx->createString(msg));
+    return typeError(ctx, msg);
 }
 
 }  // namespace neo::core::detail

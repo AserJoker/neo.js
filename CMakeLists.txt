@@ -112,6 +112,7 @@ add_library(neojs STATIC
     src/private/core/IteratorBuiltins.cpp
     src/private/core/TimerBuiltins.cpp
     src/private/core/ErrorBuiltins.cpp
+    src/private/core/ErrorKind.cpp
     src/private/core/PrimitiveWrapperBuiltins.cpp
     src/private/core/SymbolBuiltins.cpp
     src/private/core/Types.cpp

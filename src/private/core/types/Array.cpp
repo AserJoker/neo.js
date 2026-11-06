@@ -26,7 +26,7 @@ inline bool isSymbolKeyValue(Value* key) {
 
 // 创建 "Invalid array length" 异常
 Value* invalidLength(IContext* ctx) {
-    return ctx->createException(ctx->createString("Invalid array length"));
+    return detail::rangeError(ctx, "Invalid array length");
 }
 
 // 沿原型链查找索引元素（含 self 自身）。
@@ -276,7 +276,7 @@ Value* ArrayType::deleteProperty(IContext* ctx, Value* self, Value* key) {
     if (!isSymbolKeyValue(key)) {
         if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
         if (k == "length") {
-            return ctx->createException(ctx->createString("Cannot delete property 'length'"));
+            return detail::typeError(ctx, "Cannot delete property 'length'");
         }
         uint32_t index = 0;
         if (parseArrayIndex(k, index)) {
@@ -296,8 +296,7 @@ Value* ArrayType::defineProperty(IContext* ctx, Value* self, Value* key,
         if (k == "length") {
             // length 不可配置、不可枚举；writable 允许（本阶段忽略其后续约束）
             if (enumerable || configurable) {
-                return ctx->createException(
-                    ctx->createString("Cannot redefine property: length"));
+                return detail::typeError(ctx, "Cannot redefine property: length");
             }
             return setProperty(ctx, self, key, value);
         }
@@ -305,8 +304,8 @@ Value* ArrayType::defineProperty(IContext* ctx, Value* self, Value* key,
         if (parseArrayIndex(k, index)) {
             // 本阶段索引元素恒为 writable/enumerable/configurable 的数据属性
             if (!writable || !enumerable || !configurable) {
-                return ctx->createException(ctx->createString(
-                    "Array index property attributes are not supported"));
+                return detail::typeError(
+                    ctx, "Array index property attributes are not supported");
             }
             static_cast<ArrayData*>(self->data())->setElement(index, value);
             return value;
@@ -323,8 +322,8 @@ Value* ArrayType::defineAccessor(IContext* ctx, Value* self, Value* key, Value* 
         if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
         uint32_t index = 0;
         if (k == "length" || parseArrayIndex(k, index)) {
-            return ctx->createException(ctx->createString(
-                "Cannot define accessor on array index or length"));
+            return detail::typeError(
+                ctx, "Cannot define accessor on array index or length");
         }
     }
     return getObjectType()->defineAccessor(ctx, self, key, getter, setter, enumerable,

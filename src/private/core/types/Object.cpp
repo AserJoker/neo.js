@@ -52,13 +52,13 @@ Value* ObjectType::toString(IContext* ctx, Value* self) {
 Value* ObjectType::call(IContext* ctx, Value* self, Value* /*thisArg*/,
                         size_t /*argc*/, Value* /*argv*/[]) {
     std::string msg = std::string(self->type()->name()) + " is not a function";
-    return ctx->createException(ctx->createString(msg));
+    return detail::typeError(ctx, msg);
 }
 
 // 构造调用：普通对象不是构造函数。
 Value* ObjectType::construct(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
     std::string msg = std::string(self->type()->name()) + " is not a constructor";
-    return ctx->createException(ctx->createString(msg));
+    return detail::typeError(ctx, msg);
 }
 
 // —— 属性操作 ——
@@ -178,7 +178,7 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
                 if (own.setter == nullptr) {
                     std::string msg = "Cannot set property '" + detail::valueToString(key) +
                                       "' which has only a getter";
-                    return ctx->createException(ctx->createString(msg));
+                    return detail::typeError(ctx, msg);
                 }
                 Value* argv[1] = {value};
                 Value* r = callAccessor(ctx, own.setter, self, 1, argv);
@@ -187,7 +187,7 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
             if (!own.writable) {
                 std::string msg = "Cannot assign to read only property '" +
                                   detail::valueToString(key) + "'";
-                return ctx->createException(ctx->createString(msg));
+                return detail::typeError(ctx, msg);
             }
             own.value = value;
             return value;
@@ -198,7 +198,7 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
                 if (inherited->setter == nullptr) {
                     std::string msg = "Cannot set property '" + detail::valueToString(key) +
                                       "' which has only a getter";
-                    return ctx->createException(ctx->createString(msg));
+                    return detail::typeError(ctx, msg);
                 }
                 Value* argv[1] = {value};
                 Value* r = callAccessor(ctx, inherited->setter, self, 1, argv);
@@ -207,7 +207,7 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
             if (!inherited->writable) {
                 std::string msg = "Cannot assign to read only property '" +
                                   detail::valueToString(key) + "'";
-                return ctx->createException(ctx->createString(msg));
+                return detail::typeError(ctx, msg);
             }
         }
         d->symbols.emplace(ident, SymbolProperty{key, Property{value, true, true, true, nullptr, nullptr}});
@@ -224,7 +224,7 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
         if (isAccessor(own)) {
             if (own.setter == nullptr) {
                 std::string msg = "Cannot set property '" + k + "' which has only a getter";
-                return ctx->createException(ctx->createString(msg));
+                return detail::typeError(ctx, msg);
             }
             Value* argv[1] = {value};
                 Value* r = callAccessor(ctx, own.setter, self, 1, argv);
@@ -232,7 +232,7 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
         }
         if (!own.writable) {
             std::string msg = "Cannot assign to read only property '" + k + "'";
-            return ctx->createException(ctx->createString(msg));
+            return detail::typeError(ctx, msg);
         }
         own.value = value;
         return value;
@@ -242,7 +242,7 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
         if (isAccessor(*inherited)) {
             if (inherited->setter == nullptr) {
                 std::string msg = "Cannot set property '" + k + "' which has only a getter";
-                return ctx->createException(ctx->createString(msg));
+                return detail::typeError(ctx, msg);
             }
             Value* argv[1] = {value};
                 Value* r = callAccessor(ctx, inherited->setter, self, 1, argv);
@@ -250,7 +250,7 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
         }
         if (!inherited->writable) {
             std::string msg = "Cannot assign to read only property '" + k + "'";
-            return ctx->createException(ctx->createString(msg));
+            return detail::typeError(ctx, msg);
         }
     }
     d->properties.emplace(k, Property{value, true, true, true, nullptr, nullptr});
@@ -276,7 +276,7 @@ Value* ObjectType::deleteProperty(IContext* ctx, Value* self, Value* key) {
         if (it == d->symbols.end()) return ctx->createBoolean(true);
         if (!it->second.prop.configurable) {
             std::string msg = "Cannot delete property '" + detail::valueToString(key) + "'";
-            return ctx->createException(ctx->createString(msg));
+            return detail::typeError(ctx, msg);
         }
         d->symbols.erase(it);
         for (auto oit = d->symbolOrder.begin(); oit != d->symbolOrder.end(); ++oit) {
@@ -298,7 +298,7 @@ Value* ObjectType::deleteProperty(IContext* ctx, Value* self, Value* key) {
     }
     if (!it->second.configurable) {
         std::string msg = "Cannot delete property '" + k + "'";
-        return ctx->createException(ctx->createString(msg));
+        return detail::typeError(ctx, msg);
     }
     // 从 map 与 order 同步移除（O(n)，ADR-018 §4）
     d->properties.erase(it);
@@ -352,8 +352,7 @@ Value* ObjectType::defineAccessor(IContext* ctx, Value* self, Value* key, Value*
                v->type()->kind() == TypeKind::Function;
     };
     if (!validAccessor(getter) || !validAccessor(setter)) {
-        return ctx->createException(
-            ctx->createString("Getter/setter must be a function or null"));
+        return detail::typeError(ctx, "Getter/setter must be a function or null");
     }
     // null 统一存成 nullptr（无访问器）
     Value* g = (getter != nullptr && getter->type()->kind() == TypeKind::Function) ? getter : nullptr;
@@ -401,14 +400,14 @@ Value* ObjectType::setPrototype(IContext* ctx, Value* self, Value* proto) {
     TypeKind pk = proto->type()->kind();
     if (!kindHasObjectLayout(pk) && pk != TypeKind::Null) {
         std::string msg = "Object prototype may only be an Object or null";
-        return ctx->createException(ctx->createString(msg));
+        return detail::typeError(ctx, msg);
     }
     // 环检测：从 proto 沿原型链走到头，若遇到 self 则成环
     std::unordered_set<Value*> seen;
     for (Value* cur = proto; cur != nullptr && kindHasObjectLayout(cur->type()->kind());) {
         if (cur == self) {
             std::string msg = "Cyclic __proto__ value";
-            return ctx->createException(ctx->createString(msg));
+            return detail::typeError(ctx, msg);
         }
         if (!seen.insert(cur).second) break;  // 已有环（内部契约被破坏），终止遍历
         cur = static_cast<ObjectData*>(cur->data())->prototype;
