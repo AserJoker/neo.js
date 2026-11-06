@@ -301,3 +301,123 @@ TEST(ErrorTest, ErrorPrototypeHasNoOwnStack) {
     EXPECT_EQ(f.ctx->getProperty(f.ctx->errorPrototype(), "stack")->type()->kind(),
               TypeKind::Undefined);
 }
+
+TEST(ErrorTest, ErrorPrototypeIsPlainObject) {
+    Fixture f;
+    // %Error.prototype% 是 ordinary object，没有 [[ErrorData]]（ES2024 §20.5.3）
+    EXPECT_EQ(f.ctx->errorPrototype()->type()->kind(), TypeKind::Object);
+}
+
+// ===== NativeError 子类（ES2024 §20.5.6）=====
+
+namespace {
+
+const char* kNativeErrorNames[] = {"TypeError", "RangeError", "ReferenceError",
+                                   "SyntaxError", "URIError"};
+
+}  // namespace
+
+TEST(ErrorTest, NativeErrorConstructorsRegistered) {
+    Fixture f;
+    for (const char* name : kNativeErrorNames) {
+        Value* fn = f.ctx->global()->lookup(name);
+        ASSERT_NE(fn, nullptr) << name;
+        EXPECT_EQ(fn->type()->kind(), TypeKind::Function) << name;
+        EXPECT_EQ(str(f.ctx->getProperty(fn, "name")), name);
+        // 子类原型的原型是 %Error.prototype%
+        Value* proto = f.ctx->getProperty(fn, "prototype");
+        ASSERT_NE(proto, nullptr) << name;
+        EXPECT_EQ(f.ctx->getPrototype(proto), f.ctx->errorPrototype()) << name;
+        // 子类原型是普通对象（无 [[ErrorData]]，§20.5.6.3）
+        EXPECT_EQ(proto->type()->kind(), TypeKind::Object) << name;
+        // 自有 name + 双向 constructor
+        EXPECT_EQ(str(f.ctx->getProperty(proto, "name")), name) << name;
+        EXPECT_EQ(f.ctx->getProperty(proto, "constructor"), fn) << name;
+    }
+}
+
+TEST(ErrorTest, EvalErrorNotImplemented) {
+    Fixture f;
+    // EvalError 已不在 ES2024 规范中
+    EXPECT_EQ(f.ctx->global()->lookup("EvalError"), nullptr);
+    EXPECT_EQ(f.ctx->global()->lookup("AggregateError"), nullptr);
+}
+
+TEST(ErrorTest, NativeErrorConstructWithMessage) {
+    Fixture f;
+    for (const char* name : kNativeErrorNames) {
+        Value* fn = f.ctx->global()->lookup(name);
+        Value* args[] = {f.ctx->createString("bad")};
+        Value* err = f.ctx->construct(fn, 1, args);
+        ASSERT_EQ(err->type()->kind(), TypeKind::Error) << name;
+        EXPECT_EQ(str(f.ctx->getProperty(err, "message")), "bad") << name;
+        // 实例原型是该子类原型，不是 %Error.prototype%
+        EXPECT_EQ(f.ctx->getPrototype(err), f.ctx->getProperty(fn, "prototype")) << name;
+        // name 沿原型链读到自己子类的 name
+        EXPECT_EQ(str(f.ctx->getProperty(err, "name")), name) << name;
+    }
+}
+
+TEST(ErrorTest, NativeErrorCallSameAsConstruct) {
+    Fixture f;
+    Value* fn = f.ctx->global()->lookup("TypeError");
+    Value* args[] = {f.ctx->createString("bad")};
+    Value* err = f.ctx->call(fn, nullptr, 1, args);
+    ASSERT_EQ(err->type()->kind(), TypeKind::Error);
+    EXPECT_EQ(str(f.ctx->getProperty(err, "name")), "TypeError");
+    EXPECT_EQ(str(f.ctx->getProperty(err, "message")), "bad");
+}
+
+TEST(ErrorTest, NativeErrorWithoutMessageOmitsProperty) {
+    Fixture f;
+    Value* fn = f.ctx->global()->lookup("RangeError");
+    Value* err = f.ctx->construct(fn, 0, nullptr);
+    ASSERT_EQ(err->type()->kind(), TypeKind::Error);
+    // 自有 message 不存在，沿原型链读到 Error.prototype.message = ""
+    EXPECT_EQ(str(f.ctx->getProperty(err, "message")), "");
+    EXPECT_FALSE(f.ctx->hasProperty(err, "message") &&
+                 f.ctx->getProperty(err, "message") !=
+                     f.ctx->getProperty(f.ctx->errorPrototype(), "message"));
+}
+
+TEST(ErrorTest, NativeErrorStackUsesSubclassName) {
+    Fixture f;
+    Value* fn = f.ctx->global()->lookup("SyntaxError");
+    Value* args[] = {f.ctx->createString("unexpected token")};
+    Value* err = f.ctx->construct(fn, 1, args);
+    EXPECT_EQ(str(f.ctx->getProperty(err, "stack")), "SyntaxError: unexpected token");
+}
+
+TEST(ErrorTest, NativeErrorToString) {
+    Fixture f;
+    Value* fn = f.ctx->global()->lookup("URIError");
+    Value* args[] = {f.ctx->createString("bad uri")};
+    Value* err = f.ctx->construct(fn, 1, args);
+    // toString 继承自 %Error.prototype%
+    Value* s = f.ctx->call(f.ctx->getProperty(err, "toString"), err, 0, nullptr);
+    EXPECT_EQ(str(s), "URIError: bad uri");
+}
+
+TEST(ErrorTest, NativeErrorObjectProtoToStringTag) {
+    Fixture f;
+    Value* fn = f.ctx->global()->lookup("TypeError");
+    Value* err = f.ctx->construct(fn, 0, nullptr);
+    Value* toString = f.ctx->getProperty(f.ctx->objectPrototype(), "toString");
+    Value* s = f.ctx->call(toString, err, 0, nullptr);
+    EXPECT_EQ(str(s), "[object Error]");
+}
+
+TEST(ErrorTest, NativeErrorInstanceOfViaPrototypeChain) {
+    Fixture f;
+    Value* typeFn = f.ctx->global()->lookup("TypeError");
+    Value* err = f.ctx->construct(typeFn, 0, nullptr);
+    // 原型链：err → TypeError.prototype → Error.prototype → Object.prototype
+    Value* chain[3] = {f.ctx->getProperty(typeFn, "prototype"), f.ctx->errorPrototype(),
+                       f.ctx->objectPrototype()};
+    Value* cur = f.ctx->getPrototype(err);
+    int i = 0;
+    for (; cur != nullptr && i < 3; cur = f.ctx->getPrototype(cur), ++i) {
+        EXPECT_EQ(cur, chain[i]) << "chain depth " << i;
+    }
+    EXPECT_EQ(i, 3);
+}

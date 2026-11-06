@@ -23,7 +23,17 @@
 
 `TypeError`/`RangeError` 等**共用 `TypeKind::Error`**，差异只在各自的 prototype 与
 `name` 属性——与规范一致（§20.5.6 各子类实例都是 `[[ErrorData]]` 对象，靠原型链区分）。
-本阶段只实现基类；子类后续在 `ErrorBuiltins` 里扩展。
+
+实现的一般性错误子类（ES2024 §20.5.6）：
+`TypeError` / `RangeError` / `ReferenceError` / `SyntaxError` / `URIError`。
+
+- **EvalError 已不在 ES2024 规范中，不实现**；
+- `AggregateError`（聚合错误）/ `SuppressedError`（抑制错误）不在本阶段范围。
+
+每个子类：原型是**普通对象**（无 `[[ErrorData]]`，§20.5.6.3），原型链指向
+`%Error.prototype%`，自有 `name`（writable/不可枚举/可配置）与 `constructor`。
+构造函数先 `createError(message, 子类名)` 建实例（stack 首行用子类名），
+再把原型改挂到子类原型。
 
 ### 3. message / stack 是自有属性，不是 data 字段
 
@@ -59,10 +69,11 @@ Error: boom
 - 位置未知的帧只输出函数名；`<internal>` 帧输出 `at fn (<internal>)`。
 - 首行 `name: message`，message 为空时只有 `name`。
 
-### 5. Error.prototype 自身不带 stack
+### 5. 原型是普通对象，不带 [[ErrorData]]
 
-`%Error.prototype%` 用 `createError("")` 创建（它也是 `[[ErrorData]]` 对象，
-ES2024 §20.5.3），随即删除自有 `stack`——原型上只有 `name` / `message` / `toString`。
+`%Error.prototype%` 与各子类原型都是 **ordinary object**（ES2024 §20.5.3 / §20.5.6.3），
+**没有** `[[ErrorData]]` 内部槽——用 `createObject` 而非 `createError` 创建。
+原型上只有 `name` / `message` / `toString`，没有 `stack`。
 
 ## 后果
 
