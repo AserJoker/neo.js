@@ -19,6 +19,7 @@
 #include "core/ObjectBuiltins.h"
 #include "core/PrimitiveWrapperBuiltins.h"
 #include "core/SymbolBuiltins.h"
+#include "core/TimerBuiltins.h"
 #include "core/types/Array.h"
 #include "core/types/Boolean.h"
 #include "core/types/Exception.h"
@@ -107,6 +108,12 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     // 11. 注册 Iterator 抽象类与数组迭代器内建（ES2024 §23.1.5 / ES2025 §27.1）。
     //     依赖 Object.prototype / Function.prototype / Array.prototype 已就绪。
     if (!registerIteratorBuiltins(this)) {
+        std::abort();
+    }
+
+    // 12. 注册定时器（setTimeout/setInterval/clear*），事件循环的宿主侧入口。
+    //     依赖 global scope 与事件循环（本类成员）已就绪。
+    if (!registerTimerBuiltins(this)) {
         std::abort();
     }
 }

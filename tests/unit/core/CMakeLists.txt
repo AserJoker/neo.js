@@ -22,6 +22,7 @@ add_executable(core_unit_test
     IteratorTest.cpp
     IteratorProtocolTest.cpp
     TaskTest.cpp
+    TimerTest.cpp
     PrimitiveWrapperTest.cpp
     ToPrimitiveTest.cpp
 )

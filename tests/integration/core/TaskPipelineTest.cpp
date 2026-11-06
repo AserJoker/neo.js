@@ -284,7 +284,47 @@ TEST(TaskPipelineTest, MicrotaskChainDrainsFullyBeforeMacrotask) {
     EXPECT_EQ(joinOrder(order), "step1,step2,macro");
 }
 
-// ============ 场景 8：Fatal 终止循环并透传给宿主 ============
+// ============ 场景 8：setTimeout / setInterval 端到端 ============
+
+TEST(TaskPipelineTest, TimersDriveEventLoopEndToEnd) {
+    Fixture f;
+    Value* order = f.ctx->createArray();
+    f.ctx->global()->bind("__order", order);
+
+    Value* timeoutCb = orderFn(f.ctx.get(), order, "timeout");
+    Value* intervalCb = orderFn(f.ctx.get(), order, "interval");
+
+    // setTimeout(cb, 20)
+    Value* a1[2] = {timeoutCb, f.ctx->createNumber(20)};
+    Value* timeoutId = f.ctx->call(f.ctx->global()->lookup("setTimeout"),
+                                   f.ctx->createUndefined(), 2, a1);
+    ASSERT_EQ(timeoutId->type()->kind(), TypeKind::Number);
+
+    // setInterval(cb, 10)
+    Value* a2[2] = {intervalCb, f.ctx->createNumber(10)};
+    Value* intervalId = f.ctx->call(f.ctx->global()->lookup("setInterval"),
+                                    f.ctx->createUndefined(), 2, a2);
+
+    // 宿主循环：10ms → interval；20ms → interval, timeout
+    f.clock.advance(10);
+    f.ctx->runOneTask();
+    EXPECT_EQ(joinOrder(order), "interval");
+
+    // t=20：timeout 与 interval 的下一轮同时到期。interval 的下一轮是在 t=10
+    // 重新入队的，入队序号晚于 timeout，故 timeout 先执行（稳定顺序）。
+    f.clock.advance(10);
+    f.ctx->runOneTask();
+    f.ctx->runOneTask();
+    EXPECT_EQ(joinOrder(order), "interval,timeout,interval");
+
+    // 清掉 interval，循环结束
+    Value* a3[1] = {intervalId};
+    f.ctx->call(f.ctx->global()->lookup("clearInterval"), f.ctx->createUndefined(), 1, a3);
+    EXPECT_FALSE(f.ctx->hasTasks());
+    (void)timeoutId;
+}
+
+// ============ 场景 9：Fatal 终止循环并透传给宿主 ============
 
 TEST(TaskPipelineTest, FatalPropagatesAndStopsLoopTask) {
     Fixture f;
