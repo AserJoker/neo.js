@@ -9,6 +9,7 @@ add_executable(core_integration_test
     IteratorPipelineTest.cpp
     ObjectBuiltinsPipelineTest.cpp
     PrimitiveWrapperPipelineTest.cpp
+    TaskPipelineTest.cpp
     ToPrimitivePipelineTest.cpp
 )
 target_link_libraries(core_integration_test

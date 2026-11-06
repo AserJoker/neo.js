@@ -83,6 +83,21 @@ public:
         v->scopeRefInc();
     }
 
+    // 取消跟踪一个 Value（scopeRef--）。用于动态根（如事件循环任务实体）：
+    // 出队时解除根引用，使其可被 GC 回收。
+    // 只移除 values_ 中的一次出现（同一 Value 被 add 多次需对应 remove 多次）。
+    // 找不到返回 false。
+    bool remove(Value* v) {
+        for (auto it = values_.begin(); it != values_.end(); ++it) {
+            if (*it == v) {
+                values_.erase(it);
+                v->scopeRefDec();
+                return true;
+            }
+        }
+        return false;
+    }
+
     // 绑定名字→Value（借用，不影响 scopeRef；Value 需先 add 跟踪）。
     // 重名绑定覆盖旧条目（不递减旧 Value 的 scopeRef，scopeRef 由 add/析构管理）。
     void bind(std::string_view name, Value* v) {

@@ -19,6 +19,8 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 namespace neo::core {
 
@@ -26,6 +28,7 @@ class Context : public IContext {
     infra::IAllocator* alloc_;              // 注入，无所有权
     std::unique_ptr<IGCEngine> gc_;         // Context 持有所有权
     infra::Console* console_;              // 注入，无所有权
+    infra::IClock* clock_;                 // 注入，无所有权（事件循环时间源）
 
     Scope* global_ = nullptr;              // Context 创建，析构时销毁（递归销毁整棵树）
     Scope* root_ = nullptr;                // 当前模块根作用域（可被 setRootScope 切换）
@@ -55,8 +58,23 @@ class Context : public IContext {
     std::unordered_map<std::string, Value*> symbolRegistry_;
     std::unordered_map<const void*, std::string> symbolRegistryReverse_;
 
+    // —— 事件循环任务队列（双队列）——
+    // microtasks_ 是 FIFO（无延迟）；macrotasks_ 按 (due, 入队序号) 升序维护，
+    // 故队首即下一个到期宏任务。微任务永远优先于宏任务。
+    struct QueuedTask {
+        Task task;
+        uint64_t seq = 0;  // 入队序号（稳定排序用）
+    };
+    std::vector<QueuedTask> microtasks_;
+    std::vector<QueuedTask> macrotasks_;
+    uint64_t nextTaskId_ = 1;
+    uint64_t nextSeq_ = 0;
+    // 任务实体作为 GC 根：同一实体被多个任务引用时只 add 一次、最后一个出队时 remove。
+    std::unordered_map<Value*, size_t> taskRootRefs_;
+
 public:
-    Context(infra::IAllocator* alloc, infra::Console* console);
+    Context(infra::IAllocator* alloc, infra::Console* console,
+            infra::IClock* clock = nullptr);
     ~Context() override;
 
     infra::IAllocator* allocator() const override { return alloc_; }
@@ -185,7 +203,30 @@ public:
     void setFlag(std::string_view name) override;
     bool hasFlag(std::string_view name) const override;
 
+    // 事件循环
+    uint64_t postMicrotask(Value* entity, TaskRunner run = defaultTaskRunner) override;
+    uint64_t postTask(Value* entity, uint64_t timeout = 0,
+                      TaskRunner run = defaultTaskRunner) override;
+    uint64_t postLoopTask(Value* entity, uint64_t timeout = 0,
+                          TaskRunner run = defaultTaskRunner) override;
+    bool cancelTask(uint64_t id) override;
+    bool hasTasks() const override { return !microtasks_.empty() || !macrotasks_.empty(); }
+    bool hasRunnableTask() const override;
+    Value* runOneTask() override;
+
 private:
+    // 入队（loop 标记由调用方指定）。返回任务 id，OOM 返回 0。
+    uint64_t enqueue(Value* entity, uint64_t timeout, bool loop, TaskRunner run);
+    // 任务实体根的引用计数管理：首次入队 add，最后一个任务出队/取消时 remove。
+    void retainTaskRoot(Value* entity);
+    void releaseTaskRoot(Value* entity);
+    // 宏任务按 (due, seq) 插入到有序位置（二分查找保持稳定顺序）。
+    void insertOrdered(const Task& task);
+    // 从两个队列中移除指定 id 的任务（含根引用释放）。返回是否找到。
+    bool eraseTask(uint64_t id);
+    // 执行一个已取出的任务（含循环重入队、Fatal 判定、根引用释放）。
+    Value* executeTask(const Task& task);
+
     // 创建 Value 并跟踪（data 已分配）。失败返回 OOM 哨兵，回收游离 data（ADR-031）。
     Value* createTracked(IType* type, IData* data, std::string_view name);
     // 为新 Value 接管而克隆 data。

@@ -33,14 +33,17 @@
 #include "core/types/Symbol.h"
 #include "core/types/Undefined.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <new>
 #include <string>
 
 namespace neo::core {
 
-Context::Context(infra::IAllocator* alloc, infra::Console* console)
-    : alloc_(alloc), gc_(createGcEngine(alloc)), console_(console) {
+Context::Context(infra::IAllocator* alloc, infra::Console* console,
+                 infra::IClock* clock)
+    : alloc_(alloc), gc_(createGcEngine(alloc)), console_(console),
+      clock_(clock != nullptr ? clock : infra::defaultClock()) {
     // 1. 创建 global scope（根，parent=nullptr）
     void* gp = alloc_->alloc(sizeof(Scope));
     global_ = new (gp) Scope(nullptr, alloc_);
@@ -624,9 +627,132 @@ bool Context::hasFlag(std::string_view name) const {
     return current()->lookupFlagChain(name);
 }
 
+// —— 事件循环（非阻塞调度）——
+
+void Context::retainTaskRoot(Value* entity) {
+    size_t& refs = taskRootRefs_[entity];
+    if (refs == 0) global()->add(entity);  // 首个任务：加入 GC 根
+    ++refs;
+}
+
+void Context::releaseTaskRoot(Value* entity) {
+    auto it = taskRootRefs_.find(entity);
+    if (it == taskRootRefs_.end()) return;
+    if (--it->second == 0) {
+        taskRootRefs_.erase(it);
+        global()->remove(entity);  // 最后一个任务已出队/取消：解除 GC 根
+    }
+}
+
+void Context::insertOrdered(const Task& task) {
+    QueuedTask qt{task, nextSeq_++};
+    // 按 (due, seq) 升序：due 相同则保持入队顺序（稳定）
+    auto pos = std::lower_bound(
+        macrotasks_.begin(), macrotasks_.end(), qt,
+        [](const QueuedTask& a, const QueuedTask& b) {
+            if (a.task.due() != b.task.due()) return a.task.due() < b.task.due();
+            return a.seq < b.seq;
+        });
+    macrotasks_.insert(pos, qt);
+}
+
+uint64_t Context::enqueue(Value* entity, uint64_t timeout, bool loop, TaskRunner run) {
+    if (entity == nullptr) return 0;
+    Task task;
+    task.id = nextTaskId_++;
+    task.start = clock_->nowMs();
+    task.timeout = timeout;
+    task.loop = loop;
+    task.entity = entity;
+    task.run = run != nullptr ? run : defaultTaskRunner;
+    retainTaskRoot(entity);
+    insertOrdered(task);
+    return task.id;
+}
+
+uint64_t Context::postMicrotask(Value* entity, TaskRunner run) {
+    if (entity == nullptr) return 0;
+    Task task;
+    task.id = nextTaskId_++;
+    task.start = clock_->nowMs();
+    task.timeout = 0;  // 微任务无延迟
+    task.loop = false; // 微任务不循环
+    task.entity = entity;
+    task.run = run != nullptr ? run : defaultTaskRunner;
+    retainTaskRoot(entity);
+    microtasks_.push_back(QueuedTask{task, nextSeq_++});  // FIFO
+    return task.id;
+}
+
+uint64_t Context::postTask(Value* entity, uint64_t timeout, TaskRunner run) {
+    return enqueue(entity, timeout, false, run);
+}
+
+uint64_t Context::postLoopTask(Value* entity, uint64_t timeout, TaskRunner run) {
+    return enqueue(entity, timeout, true, run);
+}
+
+bool Context::eraseTask(uint64_t id) {
+    for (auto* queue : {&microtasks_, &macrotasks_}) {
+        for (auto it = queue->begin(); it != queue->end(); ++it) {
+            if (it->task.id != id) continue;
+            Value* entity = it->task.entity;
+            queue->erase(it);
+            releaseTaskRoot(entity);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Context::cancelTask(uint64_t id) {
+    return eraseTask(id);
+}
+
+bool Context::hasRunnableTask() const {
+    // 微任务永远优先：只要微任务队列非空即可运行
+    if (!microtasks_.empty()) return true;
+    return !macrotasks_.empty() && macrotasks_.front().task.due() <= clock_->nowMs();
+}
+
+Value* Context::executeTask(const Task& task) {
+    Value* result = task.run(this, task.entity);
+    bool fatal = result != nullptr && result->type()->kind() == TypeKind::Fatal;
+
+    // 循环任务：以当前时刻为起点重新入队（Fatal 时终止循环，不再入队）
+    if (task.loop && !fatal) {
+        Task next = task;
+        next.start = clock_->nowMs();
+        retainTaskRoot(next.entity);
+        insertOrdered(next);
+    }
+
+    // 释放本次任务持有的根引用（循环任务已重新持有，计数不减到 0）
+    releaseTaskRoot(task.entity);
+
+    // Fatal 透传（ADR-017 §4）
+    if (fatal) return result;
+    return result != nullptr ? result : createUndefined();
+}
+
+Value* Context::runOneTask() {
+    // 微任务优先：每次只取一个，排空微任务后才轮到宏任务
+    if (!microtasks_.empty()) {
+        Task task = microtasks_.front().task;
+        microtasks_.erase(microtasks_.begin());
+        return executeTask(task);
+    }
+    if (!macrotasks_.empty() && macrotasks_.front().task.due() <= clock_->nowMs()) {
+        Task task = macrotasks_.front().task;
+        macrotasks_.erase(macrotasks_.begin());
+        return executeTask(task);
+    }
+    return createUndefined();
+}
+
 }  // namespace neo::core
 
 std::unique_ptr<neo::core::IContext> neo::core::createContext(
-    infra::IAllocator* alloc, infra::Console* console) {
-    return std::make_unique<Context>(alloc, console);
+    infra::IAllocator* alloc, infra::Console* console, infra::IClock* clock) {
+    return std::make_unique<Context>(alloc, console, clock);
 }

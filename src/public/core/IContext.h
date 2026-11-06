@@ -25,9 +25,11 @@
 #define NEO_CORE_ICONTEXT_H
 
 #include "core/IteratorKind.h"
+#include "core/Task.h"
 #include "core/WellKnownSymbol.h"
 #include "infra/IAllocator.h"
 #include "infra/Console.h"
+#include "infra/IClock.h"
 
 #include <cstddef>
 #include <memory>
@@ -334,12 +336,44 @@ public:
     // 当前 global scope 默认标注 "strict"（保持默认严格模式）。
     virtual void setFlag(std::string_view name) = 0;
     virtual bool hasFlag(std::string_view name) const = 0;
+
+    // —— 事件循环（非阻塞调度，双队列）——
+    // 微任务队列（microtasks）：FIFO，无延迟，永远优先于宏任务。
+    // 宏任务队列（macrotasks）：按到期时刻（start + timeout）升序；同到期时刻按入队顺序。
+    // runOneTask 每次只取一个任务：微任务队列非空则取微任务，否则取已到期的宏任务。
+    // 宿主循环 `while (hasRunnableTask()) runOneTask();` 自然得到
+    // 「宏任务 → 排空微任务 → 下一个宏任务」的规范顺序。
+    // 任务实体被任务队列作为 GC 根持有（scopeRef++），出队执行后释放。
+    //
+    // postMicrotask: 入队一个微任务（Promise 回调 / queueMicrotask 等）。返回任务 id。
+    // postTask: 入队一个宏任务。timeout 为相对当前时刻的延迟（毫秒，0 = 尽快执行）。
+    //           返回任务 id（> 0），失败（OOM）返回 0。
+    // postLoopTask: 入队一个循环宏任务：每次执行完成后以当前时刻重新入队。
+    //           返回任务 id。取消后不再重新入队。
+    // cancelTask: 按 id 取消任务（两个队列都查）。返回是否找到并取消。
+    // hasTasks: 是否还有任务（含未到期）。
+    // hasRunnableTask: 是否有可立即执行的任务（微任务非空，或宏任务已到期）。
+    // runOneTask: 执行一个可运行任务，返回其执行结果；无任务返回 undefined。
+    //           任务抛出的 Exception 由 run 打印为未捕获异常后返回 undefined；
+    //           Fatal 原样返回（调用方须透传）。
+    virtual uint64_t postMicrotask(Value* entity,
+                                   TaskRunner run = defaultTaskRunner) = 0;
+    virtual uint64_t postTask(Value* entity, uint64_t timeout = 0,
+                              TaskRunner run = defaultTaskRunner) = 0;
+    virtual uint64_t postLoopTask(Value* entity, uint64_t timeout = 0,
+                                  TaskRunner run = defaultTaskRunner) = 0;
+    virtual bool cancelTask(uint64_t id) = 0;
+    virtual bool hasTasks() const = 0;
+    virtual bool hasRunnableTask() const = 0;
+    virtual Value* runOneTask() = 0;
 };
 
-// 工厂：创建 Context，注入 IAllocator/Console（无所有权，外部销毁）。
+// 工厂：创建 Context，注入 IAllocator/Console/IClock（无所有权，外部销毁）。
 // Context 内部用 IAllocator 创建 GC（持有所有权）+ global/root scope。
+// clock 为 nullptr 时使用进程级默认时钟（infra::defaultClock()）。
 std::unique_ptr<IContext> createContext(infra::IAllocator* alloc,
-                                         infra::Console* console);
+                                         infra::Console* console,
+                                         infra::IClock* clock = nullptr);
 
 }  // namespace neo::core
 

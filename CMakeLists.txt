@@ -106,6 +106,7 @@ add_library(neojs STATIC
     src/private/core/MarkSweepGC.cpp
     src/private/core/Scope.cpp
     src/private/core/Context.cpp
+    src/private/core/Task.cpp
     src/private/core/ObjectBuiltins.cpp
     src/private/core/ArrayBuiltins.cpp
     src/private/core/IteratorBuiltins.cpp
@@ -128,6 +129,7 @@ add_library(neojs STATIC
     src/private/core/types/Symbol.cpp
     src/private/infra/MallocAllocator.cpp
     src/private/infra/Console.cpp
+    src/private/infra/SteadyClock.cpp
     src/private/infra/CommandParser.cpp
 )
 target_include_directories(neojs
