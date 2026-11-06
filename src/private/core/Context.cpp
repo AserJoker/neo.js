@@ -643,6 +643,26 @@ bool Context::hasFlag(std::string_view name) const {
     return current()->lookupFlagChain(name);
 }
 
+// —— 调用栈（纯展示信息，ADR-037）——
+
+void Context::pushFrame(const SourcePosition& callSite, std::string_view fnName) {
+    // 一次 push 跨两帧：调用点写进调用者帧，再压入新帧。
+    // 栈空时是最外层调用，没有「调用者」，只压入新帧。
+    if (!callStack_.empty()) {
+        callStack_.back().position = callSite;
+    }
+    callStack_.push_back(CallFrame(std::string(fnName), SourcePosition{}));
+}
+
+std::vector<CallFrame> Context::trace(const SourcePosition& callSite) const {
+    // clone 一份，用出错位置补全栈顶帧（栈顶帧的位置平时是未知的）
+    std::vector<CallFrame> snapshot = callStack_;
+    if (!snapshot.empty()) {
+        snapshot.back().position = callSite;
+    }
+    return snapshot;
+}
+
 // —— 事件循环（非阻塞调度）——
 
 void Context::retainTaskRoot(Value* entity) {

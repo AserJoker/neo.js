@@ -1,7 +1,7 @@
 // Context.h (private) - Context 实现声明
 //
 // Context 持有 GC 所有权（unique_ptr<IGCEngine>），注入 IAllocator/Console（无所有权），
-// 创建并持有 global/root scope，管理 current 栈。
+// 创建并持有 global/root scope，管理 current 栈，另持一个纯展示用的调用栈（ADR-037）。
 // 析构顺序：先销毁 global_scope（递归销毁整棵树），再销毁 GC（unique_ptr 析构），
 // IAllocator/Console 不销毁（外部持有）。
 //
@@ -20,6 +20,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace neo::core {
@@ -32,7 +33,11 @@ class Context : public IContext {
 
     Scope* global_ = nullptr;              // Context 创建，析构时销毁（递归销毁整棵树）
     Scope* root_ = nullptr;                // 当前模块根作用域（可被 setRootScope 切换）
-    Scope* current_ = nullptr;             // 当前作用域（Scope 的 parent 链即调用栈，无需额外栈）
+    Scope* current_ = nullptr;             // 当前作用域（Scope 的 parent 链即作用域栈）
+    // 调用栈（ADR-037）：纯展示信息，与 Scope 链无关。栈顶在末尾。
+    // 用 std::string 存帧，内存走宿主堆而非 IAllocator——调用栈是诊断信息，
+    // 不应在 OOM 时因 Engine 配额耗尽而无法记录。
+    std::vector<CallFrame> callStack_;
     Value* oomValue_ = nullptr;            // OOM 哨兵（预分配 Fatal，挂 global，ADR-031）
     Value* wellKnownSymbols_[kWellKnownSymbolCount] = {};  // well-known symbols（挂 global）
     // 内建原型（ADR-035）：Object.prototype 是所有普通对象原型链的终点，
@@ -89,6 +94,17 @@ public:
     void setCurrentScope(Scope* s) override { current_ = s; }
     Scope* pushNewScope(Scope* parent) override;
     void popScope() override;
+
+    // 调用栈（ADR-037）：纯展示信息，不参与变量解析
+    void pushFrame(const SourcePosition& callSite, std::string_view fnName) override;
+    void popFrame() override {
+        if (!callStack_.empty()) callStack_.pop_back();
+    }
+    std::vector<CallFrame> trace(const SourcePosition& callSite) const override;
+    const std::vector<CallFrame>& callStack() const override { return callStack_; }
+    void setCallStack(std::vector<CallFrame> stack) override {
+        callStack_ = std::move(stack);
+    }
 
     Value* createUndefined(std::string_view name = {}) override;
     Value* createNull(std::string_view name = {}) override;

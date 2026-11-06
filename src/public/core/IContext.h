@@ -10,7 +10,10 @@
 // 三层 scope（ADR-012 + ADR-030 阶段 4）：
 //   global —— 根作用域（parent=nullptr，永久，Context 存活期间一直在）
 //   root   —— 模块根作用域（parent=global，Context 存活期间一直在）
-//   current —— 当前作用域（Scope 的 parent 链即调用栈，popScope 回到 parent），初始=root
+//   current —— 当前作用域（Scope 的 parent 链即作用域栈，popScope 回到 parent），初始=root
+//
+// 调用栈（ADR-037）是**纯展示信息**，与 Scope 链无关：Context 另持一个 CallFrame 数组，
+// 供错误报告/调试读取。变量解析仍只走 Scope 的 parent 链。
 //
 // 析构顺序：先销毁 global_scope（~Scope 递归销毁整棵 scope 树：current 栈残留 → root → global），
 // 再销毁 GC（GC 析构时 collect 回收残留 Value，若有泄漏则 panic），
@@ -24,6 +27,7 @@
 #ifndef NEO_CORE_ICONTEXT_H
 #define NEO_CORE_ICONTEXT_H
 
+#include "core/CallStack.h"
 #include "core/IteratorKind.h"
 #include "core/Task.h"
 #include "core/WellKnownSymbol.h"
@@ -34,6 +38,7 @@
 #include <cstddef>
 #include <memory>
 #include <string_view>
+#include <vector>
 
 namespace neo::core {
 
@@ -65,7 +70,7 @@ public:
     virtual Scope* current() const = 0;
 
     // —— scope 切换（ADR-022 函数调用）——
-    // Scope 的 parent 链本身就是调用栈，Context 只需保存 root/current 两个指针，无须额外栈。
+    // Scope 的 parent 链本身就是作用域栈，Context 只需保存 root/current 两个指针，无须额外栈。
     // setRootScope: 切换当前模块根作用域（函数调用时切到被调函数的 rootScope）。
     // setCurrentScope: 切换当前作用域（函数调用时切到被调函数的临时执行作用域）。
     // 调用方负责保存/恢复。
@@ -80,6 +85,30 @@ public:
     // popScope: 销毁 current scope 并回到其 parent（~Scope 递归释放子树 + allocator->free）。
     // global/root 不可 pop（parent 为 global 或为 nullptr 时无操作）。
     virtual void popScope() = 0;
+
+    // —— 调用栈（纯展示信息，ADR-037）——
+    // 变量解析走 Scope 的 parent 链，调用栈不参与语义，仅用于错误报告/调试。
+    // push/pop 由调用点自行维护（VM 函数入口、native 包装），引擎不自动插入。
+    //
+    // 帧语义是「在某个函数的某处」，而调用点参数是「在某处调用某函数」，
+    // 故 push 跨两帧：
+    //   pushFrame(callSite, fnName)：先把 callSite 写入**当前栈顶帧**（调用者的位置），
+    //   再压入只带 fnName 的新帧（新帧位置待其自身再调用或出错时确定）。
+    //   栈空时（最外层调用）只有压入新帧这一步。
+    // popFrame：弹出栈顶帧；栈空时无操作。
+    // trace(callSite)：返回栈的副本，并用 callSite 补全**栈顶帧**的位置
+    //   （出错点/挂起点），不改动 Context 的栈。
+    // callStack：当前调用栈快照（自底向上，栈顶在末尾）。
+    // setCallStack：整体替换——异常跨栈传播、async 恢复、生成器挂起时，
+    //   由持有者保存/恢复自己的那份栈（ADR-023）。
+    //
+    // 位置用 SourcePosition（filename + line + column）而非预拼接字符串，便于调试器
+    // 做断点匹配/源码跳转。callSite 传 {} 表示位置未知。
+    virtual void pushFrame(const SourcePosition& callSite, std::string_view fnName) = 0;
+    virtual void popFrame() = 0;
+    virtual std::vector<CallFrame> trace(const SourcePosition& callSite) const = 0;
+    virtual const std::vector<CallFrame>& callStack() const = 0;
+    virtual void setCallStack(std::vector<CallFrame> stack) = 0;
 
     // —— Value 创建便捷接口（ADR-030 阶段 4）——
     // 内部封装 gc->allocData<T> + gc->createValue(type, data)，把 Value 加入 current scope
