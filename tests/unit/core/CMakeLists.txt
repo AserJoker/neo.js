@@ -10,6 +10,7 @@ add_executable(core_unit_test
     CallStackTest.cpp
     ErrorTest.cpp
     ErrorKindTest.cpp
+    InstanceOfTest.cpp
     TypeBehaviorTest.cpp
     DefineStoreTest.cpp
     FunctionTest.cpp

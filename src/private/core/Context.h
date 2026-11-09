@@ -130,6 +130,7 @@ public:
     // 函数调用
     Value* call(Value* fn, Value* thisArg, size_t argc, Value* argv[]) override;
     Value* construct(Value* fn, size_t argc, Value* argv[]) override;
+    Value* instanceOf(Value* value, Value* target) override;
     Value* createNativeFunction(NativeFn fn, size_t minArgc,
                                 std::string_view bindName = {}) override;
     void setFunctionName(Value* fn, std::string_view name) override;

@@ -20,6 +20,7 @@
 #include "core/Value.h"
 #include "core/types/Array.h"
 #include "core/types/Boolean.h"
+#include "core/types/Function.h"
 #include "core/types/Null.h"
 #include "core/types/Number.h"
 #include "core/types/PrimitiveWrapper.h"
@@ -467,6 +468,68 @@ inline Value* iterableToList(IContext* ctx, Value* items, std::vector<Value*>& o
         if (isErrorValue(value)) return iteratorClose(ctx, iterator, value);
         out.push_back(value);
     }
+}
+
+// —— instanceof（ES2024 §13.10.2 / §7.3.21）——
+
+// OrdinaryHasInstance(C, O)（ES2024 §7.3.21）：
+//   1. C 不可调用 → false
+//   2. C 是绑定函数 → 以 [[BoundTargetFunction]] 递归
+//   3. O 非对象 → false
+//   4. P = C.prototype，非对象 → TypeError
+//   5. 沿 O 的原型链找 P
+// 成功返回 Boolean；失败返回 Exception/Fatal。
+inline Value* ordinaryHasInstance(IContext* ctx, Value* ctor, Value* obj) {
+    if (!isCallable(ctor)) return ctx->createBoolean(false);
+
+    // 绑定函数：以被绑定目标递归（§7.3.21 step 2）
+    auto* fd = static_cast<FunctionData*>(ctor->data());
+    if (fd->boundTarget != nullptr) {
+        return ordinaryHasInstance(ctx, fd->boundTarget, obj);
+    }
+
+    if (!isObjectKind(obj->type()->kind())) return ctx->createBoolean(false);
+
+    Value* proto = ctx->getProperty(ctor, "prototype");
+    if (isErrorValue(proto)) return proto;
+    if (!isObjectKind(proto->type()->kind())) {
+        return typeError(ctx, "Function has non-object prototype in instanceof check");
+    }
+
+    for (Value* cur = ctx->getPrototype(obj);
+         cur != nullptr && isObjectKind(cur->type()->kind());
+         cur = ctx->getPrototype(cur)) {
+        if (isErrorValue(cur)) return cur;
+        if (cur == proto) return ctx->createBoolean(true);
+    }
+    return ctx->createBoolean(false);
+}
+
+// InstanceofOperator(V, target)（ES2024 §13.10.2）：
+//   1. target 非对象 → TypeError
+//   2. 取 target[@@hasInstance]；存在则以其结果为准（ToBoolean）
+//   3. 否则 target 须可调用 → OrdinaryHasInstance
+// 成功返回 Boolean；失败返回 Exception/Fatal。
+inline Value* instanceOf(IContext* ctx, Value* value, Value* target) {
+    if (!isObjectKind(target->type()->kind())) {
+        return typeError(ctx, "Right-hand side of 'instanceof' is not an object");
+    }
+    Value* handler =
+        ctx->getProperty(target, ctx->getWellKnownSymbol(WellKnownSymbol::HasInstance));
+    if (isErrorValue(handler)) return handler;
+    if (handler->type()->kind() != TypeKind::Undefined &&
+        handler->type()->kind() != TypeKind::Null) {
+        if (!isCallable(handler)) {
+            return typeError(ctx, "Symbol.hasInstance is not a function");
+        }
+        Value* r = ctx->call(handler, target, 1, &value);
+        if (isErrorValue(r)) return r;
+        return ctx->createBoolean(toBoolean(r));
+    }
+    if (!isCallable(target)) {
+        return typeError(ctx, "Right-hand side of 'instanceof' is not callable");
+    }
+    return ordinaryHasInstance(ctx, target, value);
 }
 
 // —— 透传拦截（ADR-017 §4 Fatal 透传 + ADR-006 异常即值）——

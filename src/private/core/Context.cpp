@@ -280,6 +280,10 @@ Value* Context::construct(Value* fn, size_t argc, Value* argv[]) {
     return fn->type()->construct(this, fn, argc, argv);
 }
 
+Value* Context::instanceOf(Value* value, Value* target) {
+    return detail::instanceOf(this, value, target);
+}
+
 Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_view bindName) {
     // closureScope 是**孤立**作用域（parent=nullptr），Sema 收集的穿透闭包变量绑定于此。
     // 不挂到 root 下：否则它常驻为 GC 根，函数对象不可达后其捕获值也不释放（ADR-036）。

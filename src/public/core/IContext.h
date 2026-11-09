@@ -160,6 +160,13 @@ public:
     // 函数返回 Object/Function 则用它，否则用 this。非函数返回 Exception。
     virtual Value* construct(Value* fn, size_t argc, Value* argv[]) = 0;
 
+    // instanceOf: `value instanceof target`（ES2024 §13.10.2）。
+    // 优先走 target[@@hasInstance]（存在且非 null/undefined 时以其 ToBoolean 结果为准），
+    // 否则按 OrdinaryHasInstance（§7.3.21）沿 value 的原型链找 target.prototype。
+    // 返回 Boolean，或 Exception/Fatal（target 非对象、@@hasInstance 非函数、
+    // target 不可调用、prototype 非对象）。
+    virtual Value* instanceOf(Value* value, Value* target) = 0;
+
     // createNativeFunction: 创建 native 函数 Value。
     //   closureScope = 新建的**孤立**作用域（parent=nullptr，Sema 收集的穿透闭包变量
     //                  绑定于此；生命周期随函数 data，调用期间临时挂到 rootScope，ADR-036）；

@@ -229,6 +229,13 @@ Value* functionProtoApply(IContext* ctx, Value* self, size_t argc, Value* argv[]
     return ctx->call(self, thisArg, args.size(), args.data());
 }
 
+// Function.prototype[@@hasInstance](V)（ES2024 §20.2.3.6）：
+//   直接走 OrdinaryHasInstance（不查 @@hasInstance，避免无限递归）。
+Value* functionProtoHasInstance(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    Value* v = argc > 0 ? argv[0] : ctx->createUndefined();
+    return detail::ordinaryHasInstance(ctx, self, v);
+}
+
 // Function.prototype.bind(thisArg, ...args)（ES2024 §20.2.3.2）
 // 返回绑定函数：调用时以 thisArg 为 this、前置 args 再拼接调用实参。
 Value* functionProtoBind(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
@@ -536,6 +543,19 @@ bool registerObjectFunctionBuiltins(IContext* ctx) {
     if (!defineMethod(ctx, functionProto, "call", functionProtoCall, 0)) return false;
     if (!defineMethod(ctx, functionProto, "apply", functionProtoApply, 0)) return false;
     if (!defineMethod(ctx, functionProto, "bind", functionProtoBind, 0)) return false;
+    // Function.prototype[@@hasInstance]（ES2024 §20.2.3.6）：
+    // writable=false / 不可枚举 / configurable=false（规范明确不可配置）
+    {
+        Value* hasInstance = ctx->createNativeFunction(functionProtoHasInstance, 0);
+        if (hasInstance == ctx->oomValue()) return false;
+        ctx->setFunctionName(hasInstance, "[Symbol.hasInstance]");
+        if (ctx->defineProperty(functionProto,
+                                ctx->getWellKnownSymbol(WellKnownSymbol::HasInstance),
+                                hasInstance, false, false, false)
+                ->type()->kind() == TypeKind::Exception) {
+            return false;
+        }
+    }
 
     // —— 7. Object 静态方法（ES2024 §20.1.2）——
     if (!defineStatic(ctx, objectFn, "keys", objectKeys, 1)) return false;
