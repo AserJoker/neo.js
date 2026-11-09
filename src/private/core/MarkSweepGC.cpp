@@ -29,11 +29,15 @@ namespace {
 
 // GC 标记访问器实现：标记 Value 并沿 data 子 value 递归；
 // visitScope 沿作用域树（values + children）递归标记。
+// 用单调递增的 epoch 代替布尔标记：本轮已标记过的 Value 其 markEpoch == epoch，
+// 无需在标记前遍历 values_ 重置标记（STW 下 epoch 唯一）。
 class Marker : public IGCVisitor {
 public:
+    explicit Marker(uint64_t epoch) : epoch_(epoch) {}
+
     void visit(Value* v) override {
-        if (v->marked()) return;
-        v->setMarked(true);
+        if (v->markEpoch() == epoch_) return;
+        v->setMarkEpoch(epoch_);
         // 沿 data 引用链递归标记子 value
         v->data()->enumerateChildren(this);
     }
@@ -47,6 +51,7 @@ public:
     }
 
 private:
+    uint64_t epoch_;
     std::unordered_set<Scope*> visitedScopes_;
 };
 
@@ -118,12 +123,14 @@ void MarkSweepGC::collect() {
     if (values_.empty()) return;
 
     // —— 标记阶段 ——
-    // 1. 重置所有 marked
-    for (Value* v : values_) v->setMarked(false);
-    Marker marker;
-    // 2. 从根作用域树（global）出发标记可达 Value
+    // 每轮用新的单调递增 epoch，无需遍历 values_ 重置标记：
+    // STW 下本轮 epoch 唯一，未活过本轮的 Value 下一轮已不在 values_ 中，
+    // 不存在旧标记被误认为本轮标记的回环问题。
+    const uint64_t epoch = ++markEpoch_;
+    Marker marker(epoch);
+    // 1. 从根作用域树（global）出发标记可达 Value
     marker.visitScope(rootScope_);
-    // 3. pinRef > 0 的 Value 是额外根（调度器手工钉住，ADR-044）
+    // 2. pinRef > 0 的 Value 是额外根（调度器手工钉住，ADR-044）
     for (Value* v : values_) {
         if (v->pinRef() > 0) marker.visit(v);
     }
@@ -134,7 +141,7 @@ void MarkSweepGC::collect() {
     size_t write = 0;
     for (size_t read = 0; read < values_.size(); ++read) {
         Value* v = values_[read];
-        if (v->marked()) {
+        if (v->markEpoch() == epoch) {
             values_[write++] = v;  // 存活，保留
         } else {
             // 回收：先记 data 指针，析构 Value（data->ref--），再检查 data ref

@@ -15,6 +15,8 @@
 
 #include "core/IData.h"
 
+#include <cstdint>
+
 namespace neo::core {
 
 // 前向声明：Type 是 meta（ADR-016，抽象接口，具体实现后续补充）。
@@ -59,12 +61,15 @@ public:
     // 返回旧 data（调用方交给 gc->releaseData 回收；ref 归 0 才真正释放）。
     IData* replaceMeta(IType* type, IData* data);
 
-    // GC 标记内部用（MarkSweepGC 标记阶段置位）
-    bool marked() const { return marked_; }
-    void setMarked(bool m) { marked_ = m; }
+    // GC 标记内部用：markEpoch 是「最近一次标记到本 Value 的 GC 代数」。
+    // 每轮 collect 用新的单调递增代数，故无需在标记前重置所有 Value
+    // （STW 下代数唯一；未活过本轮的 Value 下一轮已不存在，不会出现旧标记
+    // 被误认为本轮标记的回环问题）。
+    uint64_t markEpoch() const { return markEpoch_; }
+    void setMarkEpoch(uint64_t epoch) { markEpoch_ = epoch; }
 
 private:
-    bool marked_ = false;  // GC 标记位（collect 时重置，标记阶段置 true）
+    uint64_t markEpoch_ = 0;  // 最近一次标记的 GC 代数（0 = 从未标记）
 };
 
 }  // namespace neo::core

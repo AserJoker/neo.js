@@ -93,16 +93,16 @@ TEST(ValueDataTest, ScopeRefStartsAtZero) {
     delete d;
 }
 
-TEST(ValueDataTest, MarkedFlag) {
+TEST(ValueDataTest, MarkEpoch) {
     MallocAllocator alloc;
     auto* d = new NumberData(1.0);
     {
         ScopedValue sv(&alloc, dummyType(), d);
-        EXPECT_FALSE(sv.v->marked());
-        sv.v->setMarked(true);
-        EXPECT_TRUE(sv.v->marked());
-        sv.v->setMarked(false);
-        EXPECT_FALSE(sv.v->marked());
+        EXPECT_EQ(sv.v->markEpoch(), 0u);  // 从未标记
+        sv.v->setMarkEpoch(7);
+        EXPECT_EQ(sv.v->markEpoch(), 7u);
+        sv.v->setMarkEpoch(8);
+        EXPECT_EQ(sv.v->markEpoch(), 8u);
     }
     delete d;
 }

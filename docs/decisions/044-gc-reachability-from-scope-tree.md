@@ -27,7 +27,7 @@ ADR-036 把闭包作用域孤立化（不再挂 root 下），解决了「每个
 
 `collect` 的标记阶段改为：
 
-1. 重置所有 Value 的 `marked`；
+1. 取新的单调递增标记代数（`Value::markEpoch`，**无需重置**——见 §1.1）；
 2. 从 **global 作用域树**出发：`visitScope(global)` 递归
    「scope.values_ + scope.children_」，对每个 Value 调 `visit`，
    `visit` 再沿 `data->enumerateChildren` 递归；
@@ -35,6 +35,16 @@ ADR-036 把闭包作用域孤立化（不再挂 root 下），解决了「每个
 4. 清除阶段回收未标记的 Value。
 
 `add` / `remove` 不再改变任何引用计数，scope 只是可达性图上的一个节点。
+
+### 1.1 标记位用单调递增代数，不做重置遍历
+
+`Value` 的标记字段是 `uint64_t markEpoch`（最近一次标记到它的 GC 代数），
+`MarkSweepGC` 每轮 `collect` 取 `++markEpoch_` 作为本轮代数。标记时
+`v->markEpoch() == epoch` 即视为已标记，清除时同样以此判定。
+
+这省掉了旧实现「标记前遍历 `values_` 把所有 Value 置为未标记」的一趟 O(N) 扫描。
+正确性依赖 STW：本轮代数唯一，且**未活过本轮的 Value 已从 `values_` 中移除**，
+下一轮根本不会被看到，因此不存在「旧代数被误认为本轮标记」的回环问题。
 
 ### 2. 闭包作用域由函数对象主动标记
 

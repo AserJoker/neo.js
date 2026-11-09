@@ -250,14 +250,17 @@ TEST(GCEngineTest, CollectOnEmptyIsNoop) {
     EXPECT_EQ(gc->collectedCount(), 0u);
 }
 
-TEST(GCEngineTest, MarkedFlagResetEachCollect) {
+TEST(GCEngineTest, MarkEpochAdvancesEachCollect) {
     auto alloc = createMallocAllocator();
     auto gc = neo::core::createGcEngine(alloc.get());
     auto* v = gc->createValue(dummyType(), gc->allocData<NumberData>(1.0));
     v->pinRefInc();
-    v->setMarked(true);  // 手动置位（模拟上次 collect 残留）
+    EXPECT_EQ(v->markEpoch(), 0u);  // 从未标记
     gc->collect();
-    // collect 应重置 marked 并重新标记：存活 Value marked=true
-    EXPECT_TRUE(v->marked());
+    uint64_t first = v->markEpoch();
+    EXPECT_NE(first, 0u);  // 本轮被标记
+    gc->collect();
+    // 每轮用新代数覆盖，无需重置：存活 Value 的 markEpoch 随本轮递增
+    EXPECT_GT(v->markEpoch(), first);
     v->pinRefDec();
 }
