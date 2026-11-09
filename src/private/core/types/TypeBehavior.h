@@ -30,6 +30,7 @@
 #include <limits>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace neo::core::detail {
 
@@ -446,6 +447,26 @@ inline Value* iteratorClose(IContext* ctx, Value* iterator, Value* completion) {
                    : typeError(ctx, "iterator result is not an object");
     }
     return completion;
+}
+
+// IterableToList(items)（ES2024 §7.4.2.1）：
+//   取 @@iterator 并逐个 next 收集 value，直到 done。
+// 成功返回 nullptr 并把元素写入 out；失败返回 Exception/Fatal。
+// 异常路径按 §7.4.7 调 IteratorClose（completion 优先于 return 的错误）。
+inline Value* iterableToList(IContext* ctx, Value* items, std::vector<Value*>& out) {
+    Value* iterator = getIterator(ctx, items);
+    if (isErrorValue(iterator)) return iterator;
+    for (;;) {
+        Value* result = iteratorNext(ctx, iterator);
+        if (isErrorValue(result)) return iteratorClose(ctx, iterator, result);
+        Value* err = nullptr;
+        bool done = iteratorComplete(ctx, result, err);
+        if (err != nullptr) return iteratorClose(ctx, iterator, err);
+        if (done) return nullptr;
+        Value* value = iteratorValue(ctx, result);
+        if (isErrorValue(value)) return iteratorClose(ctx, iterator, value);
+        out.push_back(value);
+    }
 }
 
 // —— 透传拦截（ADR-017 §4 Fatal 透传 + ADR-006 异常即值）——

@@ -20,10 +20,12 @@
 #include "core/IType.h"
 #include "core/Scope.h"
 #include "core/Value.h"
+#include "core/types/Array.h"
 #include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
 
 #include <string>
+#include <vector>
 
 namespace neo::core {
 
@@ -80,6 +82,53 @@ Value* nativeErrorCtor(IContext* ctx, const char* ctorName, const char* errorNam
     Value* proto = ctx->getProperty(ctor, "prototype");
     if (detail::isErrorValue(proto)) return proto;
     Value* r = ctx->setPrototype(instance, proto);
+    if (detail::isErrorValue(r)) return r;
+    return instance;
+}
+
+// AggregateError(errors, message)（ES2024 §20.5.7.1）：
+//   1. errors 必须是可迭代对象，IterableToList 收集（失败透传）；
+//   2. message 按 NativeError 规则取（undefined 时不定义属性）；
+//   3. 建 Error 实例（stack 首行 "AggregateError: msg"）；
+//   4. 原型改挂 AggregateError.prototype；
+//   5. 定义自有 errors 属性 = 收集到的数组（writable/不可枚举/可配置）。
+// 注意 [[AggregateErrors]] 内部槽在规范中没有读取操作，只体现为 errors 属性，
+// 故不新增 Data 字段（ADR-040）。
+Value* aggregateErrorCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
+    // errors 缺失时 ToList(undefined) 会因不可迭代抛 TypeError（§20.5.7.1 step 2）
+    Value* errorsArg = argc > 0 ? argv[0] : ctx->createUndefined();
+    std::vector<Value*> items;
+    if (Value* err = detail::iterableToList(ctx, errorsArg, items)) return err;
+
+    std::string message;
+    if (argc > 1) {
+        Value* err = nullptr;
+        size_t msgArgc = 1;
+        Value* msgArgv[1] = {argv[1]};
+        messageArgument(ctx, msgArgc, msgArgv, message, err);
+        if (err != nullptr) return err;
+    }
+
+    Value* instance = ctx->createError(message, "AggregateError");
+    if (instance == ctx->oomValue()) return instance;
+
+    Value* ctor = ctx->global()->lookup("AggregateError");
+    if (ctor == nullptr) {
+        return detail::typeError(ctx, "internal: missing error constructor");
+    }
+    Value* proto = ctx->getProperty(ctor, "prototype");
+    if (detail::isErrorValue(proto)) return proto;
+    Value* r = ctx->setPrototype(instance, proto);
+    if (detail::isErrorValue(r)) return r;
+
+    // errors 属性：把收集到的元素装成数组（§20.5.7.1 step 5）
+    Value* errors = ctx->createArray();
+    if (errors == ctx->oomValue()) return errors;
+    auto* d = static_cast<ArrayData*>(errors->data());
+    for (size_t i = 0; i < items.size(); ++i) {
+        d->setElement(static_cast<uint32_t>(i), items[i]);
+    }
+    r = ctx->defineProperty(instance, "errors", errors, true, false, true);
     if (detail::isErrorValue(r)) return r;
     return instance;
 }
@@ -231,6 +280,11 @@ bool registerErrorBuiltins(IContext* ctx) {
         return false;
     if (!registerNativeError(ctx, errorProto, "SyntaxError", syntaxErrorCtor)) return false;
     if (!registerNativeError(ctx, errorProto, "URIError", uriErrorCtor)) return false;
+
+    // —— 6. AggregateError（ES2024 §20.5.7）——
+    // 与一般性错误子类同一注册路径（共用 TypeKind::Error，靠原型链区分）。
+    if (!registerNativeError(ctx, errorProto, "AggregateError", aggregateErrorCtor))
+        return false;
     return true;
 }
 

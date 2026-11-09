@@ -15,6 +15,7 @@
 #include "core/Scope.h"
 #include "core/Value.h"
 #include "core/types/Array.h"
+#include "core/types/Exception.h"
 #include "core/types/Number.h"
 #include "core/types/String.h"
 #include "infra/Console.h"
@@ -336,11 +337,12 @@ TEST(ErrorTest, NativeErrorConstructorsRegistered) {
     }
 }
 
-TEST(ErrorTest, EvalErrorNotImplemented) {
+TEST(ErrorTest, RemovedErrorTypesNotImplemented) {
     Fixture f;
     // EvalError 已不在 ES2024 规范中
     EXPECT_EQ(f.ctx->global()->lookup("EvalError"), nullptr);
-    EXPECT_EQ(f.ctx->global()->lookup("AggregateError"), nullptr);
+    // SuppressedError 不在本阶段范围（AggregateError 已实现，见下方用例）
+    EXPECT_EQ(f.ctx->global()->lookup("SuppressedError"), nullptr);
 }
 
 TEST(ErrorTest, NativeErrorConstructWithMessage) {
@@ -402,6 +404,107 @@ TEST(ErrorTest, NativeErrorObjectProtoToStringTag) {
     Fixture f;
     Value* fn = f.ctx->global()->lookup("TypeError");
     Value* err = f.ctx->construct(fn, 0, nullptr);
+    Value* toString = f.ctx->getProperty(f.ctx->objectPrototype(), "toString");
+    Value* s = f.ctx->call(toString, err, 0, nullptr);
+    EXPECT_EQ(str(s), "[object Error]");
+}
+
+// ===== AggregateError（ES2024 §20.5.7）=====
+
+TEST(ErrorTest, AggregateErrorRegisteredAsErrorSubclass) {
+    Fixture f;
+    Value* fn = f.ctx->global()->lookup("AggregateError");
+    ASSERT_NE(fn, nullptr);
+    EXPECT_EQ(fn->type()->kind(), TypeKind::Function);
+    EXPECT_EQ(str(f.ctx->getProperty(fn, "name")), "AggregateError");
+    Value* proto = f.ctx->getProperty(fn, "prototype");
+    // 原型是普通对象，原型链指向 %Error.prototype%
+    EXPECT_EQ(proto->type()->kind(), TypeKind::Object);
+    EXPECT_EQ(f.ctx->getPrototype(proto), f.ctx->errorPrototype());
+    EXPECT_EQ(str(f.ctx->getProperty(proto, "name")), "AggregateError");
+    EXPECT_EQ(f.ctx->getProperty(proto, "constructor"), fn);
+}
+
+TEST(ErrorTest, AggregateErrorCollectsErrorsFromIterable) {
+    Fixture f;
+    Value* fn = f.ctx->global()->lookup("AggregateError");
+    Value* errors = f.ctx->createArray();
+    auto* ed = static_cast<neo::core::ArrayData*>(errors->data());
+    ed->setElement(0, f.ctx->createString("a"));
+    ed->setElement(1, f.ctx->createNumber(2));
+
+    Value* args[] = {errors, f.ctx->createString("two failed")};
+    Value* err = f.ctx->construct(fn, 2, args);
+    ASSERT_EQ(err->type()->kind(), TypeKind::Error);
+    EXPECT_EQ(str(f.ctx->getProperty(err, "name")), "AggregateError");
+    EXPECT_EQ(str(f.ctx->getProperty(err, "message")), "two failed");
+    EXPECT_EQ(f.ctx->getPrototype(err), f.ctx->getProperty(fn, "prototype"));
+
+    Value* stored = f.ctx->getProperty(err, "errors");
+    ASSERT_EQ(stored->type()->kind(), TypeKind::Array);
+    auto* d = static_cast<neo::core::ArrayData*>(stored->data());
+    ASSERT_EQ(d->length(), 2u);
+    EXPECT_EQ(str(d->elementAt(0)), "a");
+    EXPECT_DOUBLE_EQ(static_cast<neo::core::NumberData*>(d->elementAt(1)->data())->value,
+                     2.0);
+    // errors 是实例自有属性，原型上没有
+    EXPECT_FALSE(f.ctx->hasProperty(f.ctx->getProperty(fn, "prototype"), "errors"));
+}
+
+TEST(ErrorTest, AggregateErrorWithoutMessageOmitsProperty) {
+    Fixture f;
+    Value* fn = f.ctx->global()->lookup("AggregateError");
+    Value* args[] = {f.ctx->createArray()};
+    Value* err = f.ctx->construct(fn, 1, args);
+    ASSERT_EQ(err->type()->kind(), TypeKind::Error);
+    EXPECT_EQ(str(f.ctx->getProperty(err, "message")), "");  // 落到原型
+    EXPECT_EQ(str(f.ctx->getProperty(err, "stack")), "AggregateError");
+}
+
+TEST(ErrorTest, AggregateErrorStackUsesName) {
+    Fixture f;
+    Value* fn = f.ctx->global()->lookup("AggregateError");
+    Value* args[] = {f.ctx->createArray(), f.ctx->createString("boom")};
+    Value* err = f.ctx->construct(fn, 2, args);
+    EXPECT_EQ(str(f.ctx->getProperty(err, "stack")), "AggregateError: boom");
+}
+
+TEST(ErrorTest, AggregateErrorEmptyIterable) {
+    Fixture f;
+    Value* fn = f.ctx->global()->lookup("AggregateError");
+    Value* args[] = {f.ctx->createArray()};
+    Value* err = f.ctx->construct(fn, 1, args);
+    ASSERT_EQ(err->type()->kind(), TypeKind::Error);
+    Value* stored = f.ctx->getProperty(err, "errors");
+    ASSERT_EQ(stored->type()->kind(), TypeKind::Array);
+    EXPECT_EQ(static_cast<neo::core::ArrayData*>(stored->data())->length(), 0u);
+}
+
+TEST(ErrorTest, AggregateErrorNonIterableThrowsTypeError) {
+    Fixture f;
+    Value* fn = f.ctx->global()->lookup("AggregateError");
+    Value* args[] = {f.ctx->createNumber(1)};
+    Value* r = f.ctx->construct(fn, 1, args);
+    ASSERT_EQ(r->type()->kind(), TypeKind::Exception);
+    Value* err = static_cast<neo::core::ExceptionData*>(r->data())->child;
+    ASSERT_EQ(err->type()->kind(), TypeKind::Error);
+    EXPECT_EQ(str(f.ctx->getProperty(err, "name")), "TypeError");
+}
+
+TEST(ErrorTest, AggregateErrorToString) {
+    Fixture f;
+    Value* fn = f.ctx->global()->lookup("AggregateError");
+    Value* args[] = {f.ctx->createArray(), f.ctx->createString("boom")};
+    Value* err = f.ctx->construct(fn, 2, args);
+    Value* s = f.ctx->call(f.ctx->getProperty(err, "toString"), err, 0, nullptr);
+    EXPECT_EQ(str(s), "AggregateError: boom");
+}
+
+TEST(ErrorTest, AggregateErrorObjectProtoToStringTag) {
+    Fixture f;
+    Value* fn = f.ctx->global()->lookup("AggregateError");
+    Value* args[] = {f.ctx->createArray()};
+    Value* err = f.ctx->construct(fn, 1, args);
     Value* toString = f.ctx->getProperty(f.ctx->objectPrototype(), "toString");
     Value* s = f.ctx->call(toString, err, 0, nullptr);
     EXPECT_EQ(str(s), "[object Error]");
