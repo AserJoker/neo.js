@@ -18,6 +18,7 @@
 #include "core/IType.h"
 #include "core/IteratorBuiltins.h"
 #include "core/ObjectBuiltins.h"
+#include "core/PromiseBuiltins.h"
 #include "core/PrimitiveWrapperBuiltins.h"
 #include "core/SymbolBuiltins.h"
 #include "core/TimerBuiltins.h"
@@ -32,6 +33,7 @@
 #include "core/types/Number.h"
 #include "core/types/Object.h"
 #include "core/types/PrimitiveWrapper.h"
+#include "core/types/Promise.h"
 #include "core/types/String.h"
 #include "core/types/Symbol.h"
 #include "core/types/TypeBehavior.h"
@@ -123,6 +125,12 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     // 13. 注册 Error 基类（%Error.prototype% + 构造函数）。
     //     依赖 Object.prototype / Function.prototype 已就绪；stack 渲染依赖调用栈。
     if (!registerErrorBuiltins(this)) {
+        std::abort();
+    }
+
+    // 14. 注册 Promise（%Promise.prototype% + 构造函数，ADR-043）。
+    //     依赖 Object.prototype / Function.prototype 与事件循环（微任务队列）已就绪。
+    if (!registerPromiseBuiltins(this)) {
         std::abort();
     }
 }
@@ -624,6 +632,35 @@ Value* Context::setClosure(Value* fn, std::string_view name) {
     auto* d = static_cast<FunctionData*>(fn->data());
     d->closureScope->define(name, v);
     return fn;
+}
+
+Value* Context::captureValue(Value* fn, std::string_view name, Value* value) {
+    if (fn->type()->kind() != TypeKind::Function) {
+        return detail::typeError(this, "captureValue target is not a function");
+    }
+    auto* d = static_cast<FunctionData*>(fn->data());
+    // 直接注入闭包作用域（不查作用域链）。重复注入同名视为内部错误。
+    if (!d->closureScope->define(name, value)) {
+        return detail::typeError(this, "captureValue: duplicate name '" +
+                                           std::string(name) + "'");
+    }
+    return fn;
+}
+
+// —— Promise（ADR-043）——
+
+Value* Context::createPromise(std::string_view bindName) {
+    auto* d = gc_->allocData<PromiseData>();
+    if (d == nullptr) return oomValue_;
+    // [[PromiseResult]] 在 Pending 期间为 undefined
+    d->result = createUndefined();
+    if (d->result == oomValue_) return d->result;
+    Value* p = createTracked(getPromiseType(), d, bindName);
+    if (p == oomValue_) return p;
+    if (promisePrototype_ != nullptr) {
+        static_cast<ObjectData*>(p->data())->prototype = promisePrototype_;
+    }
+    return p;
 }
 
 // —— 错误值创建（ADR-006 异常即值 + ADR-017 §4 Fatal）——

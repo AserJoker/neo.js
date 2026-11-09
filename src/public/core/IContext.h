@@ -360,6 +360,27 @@ public:
     // 返回 fn（成功），或 Exception（找不到变量 / fn 非函数）。
     virtual Value* setClosure(Value* fn, std::string_view name) = 0;
 
+    // captureValue: 直接把任意 Value 注入函数的闭包作用域（ADR-043）。
+    // NativeFn 是裸函数指针，无法捕获 C++ 状态；内建（Promise 的 resolve/reject、
+    // reaction job 等）需要携带运行时对象，故用闭包注入代替 userdata：
+    // 注入后 native 内可用 fn->closureScope->lookup(name) 取回。
+    // 与 setClosure 的区别：不查作用域链，value 由调用方直接给定。
+    // 返回 fn（成功），或 Exception（fn 非函数 / 重复注入同名）。
+    virtual Value* captureValue(Value* fn, std::string_view name, Value* value) = 0;
+
+    // —— Promise（ES2024 §27.2，ADR-043）——
+    // createPromise: 创建 Pending 状态的 Promise 对象（原型 = promisePrototype()）。
+    // 返回 Value*：正常 Promise，或 OOM 哨兵。
+    virtual Value* createPromise(std::string_view bindName = {}) = 0;
+
+    // promisePrototype: %Promise.prototype%。由 PromiseBuiltins 建立，
+    // 生命周期与 Context 一致。
+    virtual Value* promisePrototype() const = 0;
+
+    // setPromisePrototype: bootstrap 专用——Promise.prototype 建立后设置，
+    // 此后 createPromise 自动挂链。宿主不应调用。
+    virtual void setPromisePrototype(Value* proto) = 0;
+
     // —— 错误值创建（ADR-006 异常即值 + ADR-017 §4 Fatal）——
     // createException: 创建可捕获异常 Value（child 永远不为 nullptr，无错误对象时传 undefined Value）。
     // createFatal: 创建不可捕获致命错误 Value（字面量消息，静态存储期）。

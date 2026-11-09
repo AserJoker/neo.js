@@ -11,6 +11,7 @@ add_executable(core_unit_test
     ErrorTest.cpp
     ErrorKindTest.cpp
     InstanceOfTest.cpp
+    PromiseTest.cpp
     TypeBehaviorTest.cpp
     DefineStoreTest.cpp
     FunctionTest.cpp

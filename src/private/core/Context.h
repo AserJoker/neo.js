@@ -59,6 +59,7 @@ class Context : public IContext {
     Value* arrayIteratorPrototype_ = nullptr;
     Value* iteratorWrapperPrototype_ = nullptr;
     Value* errorPrototype_ = nullptr;   // %Error.prototype%（ADR-038）
+    Value* promisePrototype_ = nullptr; // %Promise.prototype%（ADR-043）
     // Symbol.for 全局注册表（ES2024 §20.4.2.1）：key → symbol Value。
     // 双向查找（keyFor）用 symbol data 指针反查，故另存反向表。
     std::unordered_map<std::string, Value*> symbolRegistry_;
@@ -140,6 +141,7 @@ public:
     Value* createBoundFunction(Value* target, Value* boundThis, size_t argc,
                                Value* argv[]) override;
     Value* setClosure(Value* fn, std::string_view name) override;
+    Value* captureValue(Value* fn, std::string_view name, Value* value) override;
 
     // 对象与属性
     // 引入基类的字符串键便捷重载（override 会隐藏同名基类重载）
@@ -165,6 +167,11 @@ public:
                        std::string_view bindName = {}) override;
     Value* errorPrototype() const override { return errorPrototype_; }
     void setErrorPrototype(Value* proto) override { errorPrototype_ = proto; }
+
+    // Promise（ADR-043）
+    Value* createPromise(std::string_view bindName = {}) override;
+    Value* promisePrototype() const override { return promisePrototype_; }
+    void setPromisePrototype(Value* proto) override { promisePrototype_ = proto; }
 
     // 内建原型访问（ADR-035）：create* 自动挂载对应原型。
     Value* objectPrototype() const override { return objectPrototype_; }
