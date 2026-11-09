@@ -19,7 +19,7 @@
 | M1 | 类型与内部槽基础设施（本文档主体） |
 | M2 | resolving functions、**thenable 兼容**、then/catch/finally、job 投递 |
 | M3 | 静态方法 resolve/reject/all/race/allSettled/any + `@@species`（已完成） |
-| M4 | 未处理拒绝上报（`[[PromiseIsHandled]]`）+ 文档收尾 |
+| M4 | 未处理拒绝上报（`[[PromiseIsHandled]]`）+ 文档收尾（已完成） |
 
 ### 2. Promise 是「普通对象 + Promise 内部槽」
 
@@ -112,6 +112,24 @@ Pending 期间 `then` 会同时登记 fulfill/reject 两条，另一条必须丢
 
 注：规范要求 `IsConstructor(S)`，本实现尚无可构造性判定，用 `isCallable` 近似。
 
+### 5.3 未处理拒绝上报（HostPromiseRejectionTracker）
+
+规范把「未处理拒绝」的处置交给宿主（§27.2.1.9）。本实现的映射：
+
+| 规范 | 实现 |
+|------|------|
+| `HostPromiseRejectionTracker(promise, "reject")` | `settlePromise` 在 Rejected 且 `isHandled == false` 时调用 `ctx->hostPromiseRejectionTracker(promise, false)` |
+| `HostPromiseRejectionTracker(promise, "handle")` | `performPromiseThen` 首次把 `isHandled` 置 true 时调用 `(promise, true)` |
+| 上报时机 | `runOneTask` 在微任务队列排空时调用 `reportUnhandledRejections()`；`~Context` 兜底一次 |
+| 输出 | `Unhandled promise rejection: <reason>`（Error 走 toString，其余走 `describeValue`） |
+
+登记的 promise 作为**动态 GC 根**（`scopeRef++`），移出待上报集合、上报或
+Context 析构时归还——与 ADR-042 的任务实体同一套所有权模型，不寄生在 scope 上。
+
+注意：同步 `reject`（executor 内直接调用）不产生任何任务，`runOneTask` 不会被
+触发；宿主需要在轮次末尾显式调用 `reportUnhandledRejections()`（测试的 `drain`
+即模拟这一检查点）。这是宿主契约的一部分，不是实现缺陷。
+
 ### 6. Promise 构造函数语义
 
 - `Promise(executor)`（无 new）→ TypeError（§27.2.3.1 step 1），用
@@ -126,3 +144,5 @@ Pending 期间 `then` 会同时登记 fulfill/reject 两条，另一条必须丢
 - 缺点：`PromiseData::reactions` 是 C++ 容器，需手动在 `enumerateChildren` 登记
   （漏登记会导致派生 promise 被提前回收）。
 - 范围：不含 `async/await`、`for await`；`Promise.withResolvers`（ES2024 新增）留待后续。
+- 已知遗留：`IsConstructor` 尚无判定（`@@species` 与静态方法用 `isCallable` 近似）；
+  未处理拒绝的检查点是宿主契约，同步 reject 需宿主在轮次末尾显式触发。

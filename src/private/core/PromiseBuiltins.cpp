@@ -130,6 +130,11 @@ void settlePromise(IContext* ctx, Value* promise, Value* value, PromiseState sta
         if (r.type != wanted) continue;
         enqueueReactionJob(ctx, r, value);
     }
+
+    // §27.2.1.7 step 13：拒绝且未被处理 → 通知宿主（ADR-043 M4）
+    if (state == PromiseState::Rejected && !d->isHandled) {
+        ctx->hostPromiseRejectionTracker(promise, false);
+    }
 }
 
 void fulfillPromise(IContext* ctx, Value* promise, Value* value) {
@@ -302,8 +307,12 @@ Value* performPromiseThen(IContext* ctx, Value* promise, Value* onFulfilled,
         return detail::typeError(
             ctx, "Method Promise.prototype.then called on incompatible receiver");
     }
-    // 一旦有 reaction 注册，视为已处理（未处理拒绝上报用，M4）
-    d->isHandled = true;
+    // §27.2.5.4 step 8：注册 reaction 即视为已处理；若此前已因拒绝登记为
+    // 未处理，通知宿主移出待上报集合（ADR-043 M4）。
+    if (!d->isHandled) {
+        d->isHandled = true;
+        ctx->hostPromiseRejectionTracker(promise, true);
+    }
     // §27.2.5.4 step 3/4：非可调用 handler 一律按 undefined 处理（透传）
     if (!detail::isCallable(onFulfilled)) onFulfilled = ctx->createUndefined();
     if (!detail::isCallable(onRejected)) onRejected = ctx->createUndefined();

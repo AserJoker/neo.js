@@ -136,6 +136,9 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
 }
 
 Context::~Context() {
+    // 0a. 兜底上报仍待处理的未处理拒绝（ADR-043 M4），并归还它们持有的动态根。
+    //     宿主可能没有排空事件循环就销毁 Context，此时未处理拒绝仍需可见。
+    reportUnhandledRejections();
     // 0. 归还所有未执行任务持有的动态根（ADR-042）。任务实体不挂任何 scope，
     //    其 scopeRef 由 Context 直接管理；队列里剩下的任务不会再出队，故在此统一
     //    scopeRefDec，否则这些 Value 会被 GC 判为泄漏。
@@ -936,14 +939,53 @@ Value* Context::runOneTask() {
     if (!microtasks_.empty()) {
         Task task = microtasks_.front().task;
         microtasks_.erase(microtasks_.begin());
-        return executeTask(task);
+        Value* r = executeTask(task);
+        // 微任务排空 = 一轮结束：此刻所有已 settle 的拒绝都已被 reaction job
+        // 处理过，仍未被接住的即未处理（§27.2.1.9 宿主职责）。
+        if (microtasks_.empty()) reportUnhandledRejections();
+        return r;
     }
     if (!macrotasks_.empty() && macrotasks_.front().task.due() <= clock_->nowMs()) {
         Task task = macrotasks_.front().task;
         macrotasks_.erase(macrotasks_.begin());
-        return executeTask(task);
+        Value* r = executeTask(task);
+        if (microtasks_.empty()) reportUnhandledRejections();
+        return r;
     }
     return createUndefined();
+}
+
+// —— 未处理拒绝上报（ES2024 §27.2.1.9，ADR-043 M4）——
+
+void Context::hostPromiseRejectionTracker(Value* promise, bool handled) {
+    if (promise == nullptr) return;
+    auto it = pendingRejections_.find(promise);
+    if (!handled) {
+        // 拒绝且尚未被接住 → 登记为动态根，等待上报
+        if (it == pendingRejections_.end()) {
+            pendingRejections_.emplace(promise, true);
+            promise->scopeRefInc();
+        }
+        return;
+    }
+    // 已被接住 → 移出待上报集合并归还根引用
+    if (it != pendingRejections_.end()) {
+        pendingRejections_.erase(it);
+        promise->scopeRefDec();
+    }
+}
+
+void Context::reportUnhandledRejections() {
+    if (pendingRejections_.empty()) return;
+    for (auto& [promise, pending] : pendingRejections_) {
+        (void)pending;
+        PromiseData* d = asPromise(promise);
+        std::string reason = d != nullptr ? detail::describeValue(this, d->result)
+                                          : "undefined";
+        console_->printLine("Unhandled promise rejection: {}", reason);
+        promise->scopeRefDec();
+    }
+    pendingRejections_.clear();
 }
 
 }  // namespace neo::core

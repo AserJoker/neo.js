@@ -80,6 +80,9 @@ class Context : public IContext {
     // 增减 scopeRef。同一实体被多个任务引用时只 scopeRefInc 一次，最后一个出队/
     // 取消时 scopeRefDec。析构时由 releaseAllTaskRoots 统一归还。
     std::unordered_map<Value*, size_t> taskRootRefs_;
+    // 待上报的未处理拒绝（ADR-043 M4）：promise → 是否仍待上报。
+    // 这些 promise 作为动态 GC 根持有（scopeRef++），移出/上报/析构时归还。
+    std::unordered_map<Value*, bool> pendingRejections_;
 
 public:
     Context(infra::IAllocator* alloc, infra::Console* console,
@@ -249,6 +252,10 @@ public:
     bool hasTasks() const override { return !microtasks_.empty() || !macrotasks_.empty(); }
     bool hasRunnableTask() const override;
     Value* runOneTask() override;
+
+    // 未处理拒绝上报（ADR-043 M4）
+    void hostPromiseRejectionTracker(Value* promise, bool handled) override;
+    void reportUnhandledRejections() override;
 
 private:
     // 入队（loop 标记由调用方指定）。返回任务 id，OOM 返回 0。

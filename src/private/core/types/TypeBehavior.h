@@ -261,6 +261,27 @@ inline std::string valueToString(Value* v) {
     }
 }
 
+// 把任意值渲染成人类可读描述（诊断 / 未处理拒绝上报用）。
+// Error 对象走其 toString（"Name: message"），String 取内容，其余走 valueToString；
+// 对象无字符串表示时退化为类型名（避免打印空串）。
+inline std::string describeValue(IContext* ctx, Value* v) {
+    if (v == nullptr) return "undefined";
+    TypeKind k = v->type()->kind();
+    if (k == TypeKind::Error) {
+        Value* toString = ctx->getProperty(v, "toString");
+        if (!isErrorValue(toString) && isCallable(toString)) {
+            Value* s = ctx->call(toString, v, 0, nullptr);
+            if (!isErrorValue(s) && s->type()->kind() == TypeKind::String) {
+                return static_cast<StringData*>(s->data())->value;
+            }
+        }
+    }
+    if (k == TypeKind::String) return static_cast<StringData*>(v->data())->value;
+    std::string s = valueToString(v);
+    if (s.empty() && isObjectKind(k)) return std::string(v->type()->name());
+    return s;
+}
+
 // —— 完整转换（返回 Value*，可携带 Exception/Fatal，ES2024 §7.1.4/§7.1.14/§7.1.19）——
 
 // ToNumber(argument)（ES2024 §7.1.4）：

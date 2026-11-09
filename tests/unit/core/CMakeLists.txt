@@ -14,6 +14,7 @@ add_executable(core_unit_test
     PromiseTest.cpp
     PromiseChainTest.cpp
     PromiseStaticTest.cpp
+    PromiseRejectionTest.cpp
     TypeBehaviorTest.cpp
     DefineStoreTest.cpp
     FunctionTest.cpp

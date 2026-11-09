@@ -381,6 +381,19 @@ public:
     // 此后 createPromise 自动挂链。宿主不应调用。
     virtual void setPromisePrototype(Value* proto) = 0;
 
+    // hostPromiseRejectionTracker（ES2024 §27.2.1.9 HostPromiseRejectionTracker）：
+    //   handled=false —— promise 被 reject 且 [[PromiseIsHandled]] 为 false，
+    //                    登记为「待上报的未处理拒绝」；
+    //   handled=true  —— promise 的拒绝被 then/catch 接住，移出待上报集合。
+    // 登记的 promise 由 Context 作为动态 GC 根持有（scopeRef++），
+    // 上报或 Context 析构时归还。
+    virtual void hostPromiseRejectionTracker(Value* promise, bool handled) = 0;
+
+    // reportUnhandledRejections：把当前所有待上报的未处理拒绝打印到 console
+    // （"Unhandled promise rejection: <reason>"），并清空集合。
+    // 事件循环在微任务队列排空时调用；Context 析构时也兜底调用一次。
+    virtual void reportUnhandledRejections() = 0;
+
     // —— 错误值创建（ADR-006 异常即值 + ADR-017 §4 Fatal）——
     // createException: 创建可捕获异常 Value（child 永远不为 nullptr，无错误对象时传 undefined Value）。
     // createFatal: 创建不可捕获致命错误 Value（字面量消息，静态存储期）。
