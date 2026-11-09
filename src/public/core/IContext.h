@@ -113,7 +113,7 @@ public:
 
     // —— Value 创建便捷接口（ADR-030 阶段 4）——
     // 内部封装 gc->allocData<T> + gc->createValue(type, data)，把 Value 加入 current scope
-    // 跟踪（scopeRef++）。可选 name：指定则同时 bind 到 current scope（命名绑定）。
+    // 登记到 current scope（从 global 树可达）。可选 name：指定则同时 bind（命名绑定）。
     // 返回 Value*：正常结果，或内存耗尽时返回 OOM 哨兵（ADR-031，非 nullptr）。
     virtual Value* createUndefined(std::string_view name = {}) = 0;
     virtual Value* createNull(std::string_view name = {}) = 0;
@@ -355,7 +355,7 @@ public:
     virtual Value* ownEnumerableStringKeys(Value* obj) = 0;
 
     // setClosure: 把当前作用域链上名为 name 的变量加入函数的闭包作用域（ADR-013 §2）。
-    // 绑定 = 共享同一 Value（不复制），closureScope 加入时 scopeRef++。
+    // 绑定 = 共享同一 Value（不复制），closureScope 登记同一 Value。
     // 查找沿 current 的 parent 链（lookupChain）。
     // 返回 fn（成功），或 Exception（找不到变量 / fn 非函数）。
     virtual Value* setClosure(Value* fn, std::string_view name) = 0;
@@ -385,7 +385,7 @@ public:
     //   handled=false —— promise 被 reject 且 [[PromiseIsHandled]] 为 false，
     //                    登记为「待上报的未处理拒绝」；
     //   handled=true  —— promise 的拒绝被 then/catch 接住，移出待上报集合。
-    // 登记的 promise 由 Context 作为动态 GC 根持有（scopeRef++），
+    // 登记的 promise 由 Context 作为动态 GC 根持有（pinRef++），
     // 上报或 Context 析构时归还。
     virtual void hostPromiseRejectionTracker(Value* promise, bool handled) = 0;
 
@@ -445,7 +445,7 @@ public:
     // runOneTask 每次只取一个任务：微任务队列非空则取微任务，否则取已到期的宏任务。
     // 宿主循环 `while (hasRunnableTask()) runOneTask();` 自然得到
     // 「宏任务 → 排空微任务 → 下一个宏任务」的规范顺序。
-    // 任务实体被任务队列作为 GC 根持有（scopeRef++），出队执行后释放。
+    // 任务实体被任务队列作为 GC 根持有（pinRef++），出队执行后释放。
     //
     // postMicrotask: 入队一个微任务（Promise 回调 / queueMicrotask 等）。返回任务 id。
     // postTask: 入队一个宏任务。timeout 为相对当前时刻的延迟（毫秒，0 = 尽快执行）。

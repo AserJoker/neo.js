@@ -11,7 +11,7 @@
 // NativeFn 无 userdata，状态注入有两条路：
 //   - captureValue + captured()：job 函数等一次性内部函数（闭包作用域持有状态）；
 //   - createBoundFunction：resolve/reject 等需要长期存活、且不能反向持有 promise
-//     的函数（bound args 是 data 级引用，不构成 scopeRef 根，避免根环）。
+//     的函数（bound args 是 data 级引用，不构成 GC 根，避免根环）。
 //
 // 关联 ADR: 006（异常即值）、018（对象模型）、034（原型-构造函数）、043（Promise）
 
@@ -148,7 +148,7 @@ void rejectPromise(IContext* ctx, Value* promise, Value* reason) {
 // —— CreateResolvingFunctions（§27.2.1.3）——
 
 // 状态（promise、cell）通过 **bound args** 传给 resolve/reject，而不是 captureValue：
-// bound args 是 data 级引用（FunctionData::boundArgs），不构成 scopeRef 根；
+// bound args 是 data 级引用（FunctionData::boundArgs），不构成 GC 根；
 // 若用闭包捕获，promise → resolveFn → 闭包作用域(根) → promise 会形成不可回收的根环。
 Value* createResolvingFunctions(IContext* ctx, Value* promise, Value*& resolveOut,
                                 Value*& rejectOut) {

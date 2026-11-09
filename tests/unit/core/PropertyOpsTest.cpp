@@ -59,6 +59,7 @@ class CountingVisitor : public IGCVisitor {
 public:
     int count = 0;
     void visit(Value* /*v*/) override { ++count; }
+    void visitScope(neo::core::Scope* /*scope*/) override {}
 };
 
 // native 空函数（用于创建 Function Value）

@@ -1,14 +1,19 @@
-// mark_sweep_gc.cpp - MarkSweepGC 实现（标记-清除，扁平 Value 阶段）
+// mark_sweep_gc.cpp - MarkSweepGC 实现（标记-清除）
 //
 // createValue：双重阈值检查 → alloc + placement new → 登记 values_。
-// collect：标记阶段 scopeRef!=0 为根 + 沿 data 引用链遍历（本阶段 noop），
-//          清除阶段未标记 Value 析构（data->ref--）+ 检查 data ref 归 0 则 free(data) + free(value)。
+// collect：
+//   1. 重置所有 Value 的 marked；
+//   2. 从 rootScope_（Context 的 global）出发，沿「scope.values + scope.children」
+//      递归标记；孤立闭包作用域由 FunctionData 在标记时主动 visitScope 递归进来；
+//   3. pinRef > 0 的 Value 作为额外根（调度器手工钉住，ADR-044）；
+//   4. 未标记的 Value 析构（data->ref--），data ref 归 0 则 free(data) + free(value)。
 //
-// 关联 ADR: 008（GC→IAllocator）、010（接口-实现-工厂）、012（scopeRef 根）、
-//          015（data 引用计数）、029（生命周期）
+// 关联 ADR: 008（GC→IAllocator）、010（接口-实现-工厂）、012（Scope 树）、
+//          015（data 引用计数）、029（生命周期）、044（可达性标记）
 
 #include "core/MarkSweepGC.h"
 
+#include "core/Scope.h"
 #include "core/Value.h"
 
 #include <algorithm>
@@ -16,20 +21,33 @@
 #include <cstdint>
 #include <cstdlib>
 #include <new>
+#include <unordered_set>
 
 namespace neo::core {
 
 namespace {
 
-// GC 标记访问器实现：标记 Value 并沿 data 子 value 递归（本阶段 data 扁平 noop）
+// GC 标记访问器实现：标记 Value 并沿 data 子 value 递归；
+// visitScope 沿作用域树（values + children）递归标记。
 class Marker : public IGCVisitor {
 public:
     void visit(Value* v) override {
         if (v->marked()) return;
         v->setMarked(true);
-        // 沿 data 引用链递归标记子 value（本阶段 data 扁平，enumerateChildren 默认空）
+        // 沿 data 引用链递归标记子 value
         v->data()->enumerateChildren(this);
     }
+
+    void visitScope(Scope* scope) override {
+        if (scope == nullptr) return;
+        // 同一作用域可能被多次请求标记（如闭包作用域被多个函数引用），去重
+        if (!visitedScopes_.insert(scope).second) return;
+        for (Value* v : scope->values()) visit(v);
+        for (Scope* child : scope->children()) visitScope(child);
+    }
+
+private:
+    std::unordered_set<Scope*> visitedScopes_;
 };
 
 }  // namespace
@@ -37,11 +55,17 @@ public:
 MarkSweepGC::MarkSweepGC(infra::IAllocator* alloc) : alloc_(alloc) {}
 
 MarkSweepGC::~MarkSweepGC() {
+    // 0. 销毁根作用域树（ADR-044：所有权在本类）。销毁后 rootScope_ 为空，
+    //    所有 Value 都不可达，下面的 collect 才能把它们全部回收。
+    if (rootScope_ != nullptr) {
+        rootScope_->destroySelf();
+        rootScope_ = nullptr;
+    }
     // 析构时反复 collect 直到收敛。
     //
     // 关键点（ADR-036）：sweep 阶段销毁 data 可能连带销毁其持有的作用域
-    // （如 FunctionData 析构销毁孤立闭包作用域），从而对 Value 做 scopeRef--。
-    // 这些 Value 在本轮标记阶段仍是根（已被标记存活），要到**下一轮**才被回收。
+    // （如 FunctionData 析构销毁孤立闭包作用域），进而使别的 Value 失去可达性。
+    // 这些 Value 在本轮标记阶段仍被标记存活，要到**下一轮**才被回收。
     // 因此「collect 后 values_ 非空」不再是泄漏判据，判据是**本轮净销毁量为 0**：
     // 只要还有进展就继续下一轮，直到某轮一个都没回收——此时残留的才是真泄漏。
     while (!values_.empty()) {
@@ -94,14 +118,14 @@ void MarkSweepGC::collect() {
     if (values_.empty()) return;
 
     // —— 标记阶段 ——
-    // 重置所有 marked
+    // 1. 重置所有 marked
     for (Value* v : values_) v->setMarked(false);
-    // scopeRef != 0 为根，沿 data 引用链标记
     Marker marker;
+    // 2. 从根作用域树（global）出发标记可达 Value
+    marker.visitScope(rootScope_);
+    // 3. pinRef > 0 的 Value 是额外根（调度器手工钉住，ADR-044）
     for (Value* v : values_) {
-        if (v->scopeRef() > 0) {
-            marker.visit(v);
-        }
+        if (v->pinRef() > 0) marker.visit(v);
     }
 
     // —— 清除阶段 ——
@@ -126,6 +150,10 @@ void MarkSweepGC::collect() {
         }
     }
     values_.resize(write);
+}
+
+void MarkSweepGC::setRootScope(Scope* scope) {
+    rootScope_ = scope;
 }
 
 void MarkSweepGC::releaseData(IData* d) {

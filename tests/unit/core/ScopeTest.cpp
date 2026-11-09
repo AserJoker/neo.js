@@ -1,10 +1,10 @@
-// scope_test.cpp - Scope 跟踪与 scopeRef 联动单元测试
+// scope_test.cpp - Scope 跟踪与作用域树单元测试（ADR-044 后 add 不再改引用计数）
 //
 // Scope 是堆对象（placement new + IAllocator），析构函数递归销毁子树。
 // 测试用 makeScope helper 分配，destroyScope 调析构 + free。
 // 根 scope 析构时递归销毁整棵树（无需手动逐个 destroy）。
 //
-// 关联 ADR: 012（Scope 树 + scopeRef）、029（生命周期）、030 阶段 2
+// 关联 ADR: 012（Scope 树）、029（生命周期）、030 阶段 2、044（可达性标记）
 
 #include "core/IGCEngine.h"
 #include "core/Scope.h"
@@ -44,32 +44,31 @@ void destroyScope(IAllocator* alloc, Scope* s) {
 
 // —— 基础 Value 跟踪 ——
 
-TEST(ScopeTest, AddIncrementsScopeRef) {
+// add 只登记，不改变 pinRef（可达性由 GC 从 global 树标记，ADR-044）
+TEST(ScopeTest, AddRegistersWithoutTouchingPinRef) {
     auto alloc = createMallocAllocator();
     auto gc = neo::core::createGcEngine(alloc.get());
     auto* v = gc->createValue(dummyType(), gc->allocData<NumberData>(1.0));
-    EXPECT_EQ(v->scopeRef(), 0);
+    EXPECT_EQ(v->pinRef(), 0);
     Scope* s = makeScope(alloc.get(), nullptr);
     s->add(v);
-    EXPECT_EQ(v->scopeRef(), 1);
+    EXPECT_EQ(v->pinRef(), 0);
     s->add(v);
-    EXPECT_EQ(v->scopeRef(), 2);
+    EXPECT_EQ(v->pinRef(), 0);
     EXPECT_EQ(s->valueCount(), 2u);
-    destroyScope(alloc.get(), s);  // 析构让 scopeRef 归 0
-    EXPECT_EQ(v->scopeRef(), 0);
+    destroyScope(alloc.get(), s);
     gc->collect();
 }
 
-TEST(ScopeTest, DestroyDecrementsScopeRef) {
+// 未设置根作用域的 GC：所有 Value 都不可达（pinRef 也为 0）→ 全部回收
+TEST(ScopeTest, DestroyReleasesValuesWhenNoRootScope) {
     auto alloc = createMallocAllocator();
     auto gc = neo::core::createGcEngine(alloc.get());
     auto* v = gc->createValue(dummyType(), gc->allocData<NumberData>(1.0));
     {
         Scope* s = makeScope(alloc.get(), nullptr);
         s->add(v);
-        EXPECT_EQ(v->scopeRef(), 1);
         destroyScope(alloc.get(), s);
-        EXPECT_EQ(v->scopeRef(), 0);
     }
     EXPECT_EQ(gc->valueCount(), 1u);
     gc->collect();
@@ -118,7 +117,7 @@ TEST(ScopeTest, DestroyClearsContainers) {
     s->add(v);
     s->bind("x", v);
     destroyScope(alloc.get(), s);
-    EXPECT_EQ(v->scopeRef(), 0);
+    EXPECT_EQ(v->pinRef(), 0);
 }
 
 TEST(ScopeTest, MultipleValuesDestroy) {
@@ -131,10 +130,9 @@ TEST(ScopeTest, MultipleValuesDestroy) {
     {
         Scope* s = makeScope(alloc.get(), nullptr);
         for (auto* v : vs) s->add(v);
-        for (auto* v : vs) EXPECT_EQ(v->scopeRef(), 1);
+        for (auto* v : vs) EXPECT_EQ(v->pinRef(), 0);  // add 不改变 pinRef
         destroyScope(alloc.get(), s);
     }
-    for (auto* v : vs) EXPECT_EQ(v->scopeRef(), 0);
     EXPECT_EQ(gc->valueCount(), 5u);
     gc->collect();
     EXPECT_EQ(gc->valueCount(), 0u);
@@ -193,16 +191,12 @@ TEST(ScopeTreeTest, DestroyRecursivelyReleasesChildren) {
     child->add(child_v);
     grandchild->add(grand_v);
 
-    EXPECT_EQ(root_v->scopeRef(), 1);
-    EXPECT_EQ(child_v->scopeRef(), 1);
-    EXPECT_EQ(grand_v->scopeRef(), 1);
+    EXPECT_EQ(root_v->pinRef(), 0);  // add 不改变 pinRef
+    EXPECT_EQ(child_v->pinRef(), 0);
+    EXPECT_EQ(grand_v->pinRef(), 0);
 
-    // 根析构递归：grandchild → child → root，逐层 scopeRef 归 0
+    // 根析构递归：grandchild → child → root（Value 可达性由 GC 判定）
     destroyScope(alloc.get(), root);
-
-    EXPECT_EQ(root_v->scopeRef(), 0);
-    EXPECT_EQ(child_v->scopeRef(), 0);
-    EXPECT_EQ(grand_v->scopeRef(), 0);
 
     EXPECT_EQ(gc->valueCount(), 3u);
     gc->collect();
@@ -288,9 +282,6 @@ TEST(ScopeTreeTest, LookupChainThreeLevels) {
     EXPECT_EQ(body->lookupChain("g"), gv);
 
     destroyScope(alloc.get(), global);  // 递归销毁 root → body
-    EXPECT_EQ(gv->scopeRef(), 0);
-    EXPECT_EQ(rv->scopeRef(), 0);
-    EXPECT_EQ(bv->scopeRef(), 0);
     gc->collect();
 }
 
@@ -332,11 +323,6 @@ TEST(ScopeTreeTest, MidNodeDestroySubtreeAndKeepParentValid) {
     destroyScope(alloc.get(), mid);
 
     EXPECT_EQ(root->childCount(), 0u);
-    EXPECT_EQ(m_v->scopeRef(), 0);
-    EXPECT_EQ(l1_v->scopeRef(), 0);
-    EXPECT_EQ(l2_v->scopeRef(), 0);
-    EXPECT_EQ(r_v->scopeRef(), 1);
-    EXPECT_EQ(g_v->scopeRef(), 1);
 
     EXPECT_EQ(root->parent(), global);
 
@@ -371,15 +357,9 @@ TEST(ScopeTreeTest, MidNodeDestroySiblingUnaffected) {
     destroyScope(alloc.get(), childA);
 
     EXPECT_EQ(root->childCount(), 1u);
-    EXPECT_EQ(a_v->scopeRef(), 0);
-    EXPECT_EQ(a_child_v->scopeRef(), 0);
-    EXPECT_EQ(b_v->scopeRef(), 1);
-    EXPECT_EQ(b_child_v->scopeRef(), 1);
 
     // childB 仍可用
     destroyScope(alloc.get(), root);  // 递归销毁 childB → bLeaf
-    EXPECT_EQ(b_v->scopeRef(), 0);
-    EXPECT_EQ(b_child_v->scopeRef(), 0);
     gc->collect();
 }
 

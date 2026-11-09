@@ -1,8 +1,8 @@
 // Scope.h - 作用域（Value 跟踪容器 + 作用域树，堆对象）
 //
-// Scope 维护其跟踪的 Value 列表（ADR-012 §3）：add 时 scopeRef++，析构时逐个
-// scopeRef--。GC 以 scopeRef != 0 为存活根，scope 析构后 scopeRef 归 0 的 Value
-// 在下次 collect 时被回收。
+// Scope 维护其跟踪的 Value 列表（ADR-012 §3）。**add 不再增减 Value 的引用计数**：
+// GC 从 global 作用域树出发，沿「scope 的 values + children」和「data 子引用」标记
+// 可达性（ADR-044）。scope 只是可达性图上的一个节点，不再是「根」。
 //
 // 作用域树（ADR-012 §1 + ADR-030 阶段 2）：Scope 持 parent_ 指针与 children_ 集合。
 // **Scope 是堆对象**——内存经 IAllocator + placement new 分配，生命周期由父持有
@@ -10,23 +10,27 @@
 //   1. 从父作用域摘除自己（避免父持悬垂指针）
 //   2. while(!children_.empty()) 逐个析构子 Scope（子析构会从本作用域摘除自己）
 //      + allocator_->free(child) 释放子 Scope 对象内存
-//   3. 释放自己的 values（scopeRefDec）
+//   3. 清空自己的 values（不触碰 Value 的引用计数）
 //
 // Scope 借用 IAllocator*（由 Context 传入，Context 持有 IAllocator 所有权）。
 // 析构子 Scope 时需 allocator_->free(child) 释放子对象内存——子析构只调 ~Scope()
 // 不释放内存（placement new 对象需显式 free）。
 //
 // lookupChain 沿 parent 链向上查找命名 value（ADR-013 查找路径基础版）。
-// namedValues_ 是名字→Value 映射（借用，不拥有，scopeRef 由 add 负责）。
+// namedValues_ 是名字→Value 映射（借用，不拥有）。
 //
 // 闭包作用域（ADR-036）是**孤立**的 Scope：parent_ = nullptr，不挂在 root 下，
 // 生命周期随持有它的 FunctionData（data 引用计数归 0 时 destroySelf）。函数调用
 // 期间经 reparent(rootScope) 临时挂载（查找链 closureScope → rootScope → global
-// 成立），调用结束 reparent(nullptr) 摘回孤立。这样运行期闭包作用域及其捕获值
-// 不再是 GC 根，函数对象不可达时随 data 一起销毁。
+// 成立），调用结束 reparent(nullptr) 摘回孤立。
 //
-// 关联 ADR: 012（Scope 树 + scopeRef）、013（闭包三层作用域）、029（生命周期）、
-//          030 阶段 2、036（闭包作用域孤立化）
+// 关键（ADR-044）：孤立闭包作用域**不**是 GC 根。GC 标记到 FunctionData 时，
+// 由 FunctionData::enumerateChildren 主动递归标记自己的 closureScope；因此
+// 「函数 → closureScope → 捕获值 → 函数」的环，只要函数对象从 global 树不可达，
+// 整条环都不会被标记，可被回收——根环问题由此根治。
+//
+// 关联 ADR: 012（Scope 树）、013（闭包三层作用域）、029（生命周期）、
+//          030 阶段 2、036（闭包作用域孤立化）、044（可达性标记）
 
 #ifndef NEO_CORE_SCOPE_H
 #define NEO_CORE_SCOPE_H
@@ -103,29 +107,23 @@ public:
     size_t childCount() const { return children_.size(); }
 
     // —— Value 跟踪 ——
-    // 跟踪一个 Value（scopeRef++）。同一 Value 多次 add 会多次 scopeRefInc。
-    void add(Value* v) {
-        values_.push_back(v);
-        v->scopeRefInc();
-    }
+    // 跟踪一个 Value（仅登记，不改变其引用计数；可达性由 GC 从 global 树标记）。
+    // 同一 Value 多次 add 会多次登记（GC 标记幂等，无副作用）。
+    void add(Value* v) { values_.push_back(v); }
 
-    // 取消跟踪一个 Value（scopeRef--）。用于动态根（如事件循环任务实体）：
-    // 出队时解除根引用，使其可被 GC 回收。
-    // 只移除 values_ 中的一次出现（同一 Value 被 add 多次需对应 remove 多次）。
-    // 找不到返回 false。
+    // 取消跟踪一个 Value（仅移除登记）。只移除一次出现，找不到返回 false。
     bool remove(Value* v) {
         for (auto it = values_.begin(); it != values_.end(); ++it) {
             if (*it == v) {
                 values_.erase(it);
-                v->scopeRefDec();
                 return true;
             }
         }
         return false;
     }
 
-    // 绑定名字→Value（借用，不影响 scopeRef；Value 需先 add 跟踪）。
-    // 重名绑定覆盖旧条目（不递减旧 Value 的 scopeRef，scopeRef 由 add/析构管理）。
+    // 绑定名字→Value（借用，不影响可达性；Value 需先 add 跟踪）。
+    // 重名绑定覆盖旧条目。
     void bind(std::string_view name, Value* v) {
         namedValues_[std::string(name)] = v;
     }
@@ -190,6 +188,9 @@ public:
     void forEachValue(Fn&& fn) const {
         for (Value* v : values_) fn(v);
     }
+
+    // 遍历本作用域直接跟踪的 Value（供 GC 标记访问器使用）
+    const std::vector<Value*>& values() const { return values_; }
 };
 
 }  // namespace neo::core

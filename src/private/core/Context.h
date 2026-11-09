@@ -1,11 +1,12 @@
 // Context.h (private) - Context 实现声明
 //
 // Context 持有 GC 所有权（unique_ptr<IGCEngine>），注入 IAllocator/Console（无所有权），
-// 创建并持有 global/root scope，管理 current 栈，另持一个纯展示用的调用栈（ADR-037）。
-// 析构顺序：先销毁 global_scope（递归销毁整棵树），再销毁 GC（unique_ptr 析构），
-// IAllocator/Console 不销毁（外部持有）。
+// 创建 global/root scope 并管理 current 栈，另持一个纯展示用的调用栈（ADR-037）。
+// global 作用域树的**所有权在 GC**（ADR-044）：Context 创建后交给 GC，析构时由
+// ~MarkSweepGC 先销毁整棵树再 collect。IAllocator/Console 不销毁（外部持有）。
 //
-// 关联 ADR: 010（接口-实现-工厂）、011（Context 门面）、012（Scope 树）、030 阶段 4
+// 关联 ADR: 010（接口-实现-工厂）、011（Context 门面）、012（Scope 树）、030 阶段 4、
+//          044（可达性标记）
 
 #ifndef NEO_CORE_PRIVATE_CONTEXT_H
 #define NEO_CORE_PRIVATE_CONTEXT_H
@@ -77,11 +78,11 @@ class Context : public IContext {
     uint64_t nextTaskId_ = 1;
     uint64_t nextSeq_ = 0;
     // 任务实体作为**动态 GC 根**（ADR-042）：不挂任何 scope，由 Context 直接
-    // 增减 scopeRef。同一实体被多个任务引用时只 scopeRefInc 一次，最后一个出队/
-    // 取消时 scopeRefDec。析构时由 releaseAllTaskRoots 统一归还。
+    // 增减 pinRef。同一实体被多个任务引用时只 pinRefInc 一次，最后一个出队/
+    // 取消时 pinRefDec。析构时由 releaseAllTaskRoots 统一归还。
     std::unordered_map<Value*, size_t> taskRootRefs_;
     // 待上报的未处理拒绝（ADR-043 M4）：promise → 是否仍待上报。
-    // 这些 promise 作为动态 GC 根持有（scopeRef++），移出/上报/析构时归还。
+    // 这些 promise 作为动态 GC 根持有（pinRef++），移出/上报/析构时归还。
     std::unordered_map<Value*, bool> pendingRejections_;
 
 public:
@@ -260,11 +261,11 @@ public:
 private:
     // 入队（loop 标记由调用方指定）。返回任务 id，OOM 返回 0。
     uint64_t enqueue(Value* entity, uint64_t timeout, bool loop, TaskRunner run);
-    // 任务实体根的引用计数管理（ADR-042）：实体不挂 scope，直接增减 scopeRef。
-    // 首次入队 scopeRefInc，最后一个任务出队/取消时 scopeRefDec。
+    // 任务实体根的引用计数管理（ADR-042/044）：实体不挂 scope，直接增减 pinRef。
+    // 首次入队 pinRefInc，最后一个任务出队/取消时 pinRefDec。
     void retainTaskRoot(Value* entity);
     void releaseTaskRoot(Value* entity);
-    // 析构专用：归还队列中所有任务持有的 scopeRef 并清空队列。
+    // 析构专用：归还队列中所有任务持有的 pinRef 并清空队列。
     void releaseAllTaskRoots();
     // 宏任务按 (due, seq) 插入到有序位置（二分查找保持稳定顺序）。
     void insertOrdered(const Task& task);

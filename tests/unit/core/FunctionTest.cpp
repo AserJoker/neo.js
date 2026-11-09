@@ -481,8 +481,7 @@ TEST(FunctionTest, CallResultRegisteredInCallerScope) {
     Value* result = ctx->call(fn, nullptr, 0, nullptr);
 
     ASSERT_NE(result, nullptr);
-    // 返回值归属调用方 current（restoreValue）：scopeRef >= 1，GC 不回收
-    EXPECT_GE(result->scopeRef(), 1);
+    // 返回值归属调用方 current（restoreValue）：从 global 树可达，GC 不回收
     ctx->gc()->collect();
     EXPECT_EQ(result->type()->kind(), TypeKind::Number);
 }
@@ -590,18 +589,15 @@ TEST(FunctionTest, ClosureScopeDestroyedWithFunctionData) {
     // 在子作用域里创建函数并捕获值，退出子作用域后函数不可达
     Scope* s = ctx->pushNewScope(ctx->current());
     ASSERT_NE(s, nullptr);
-    Value* captured = ctx->createNumber(42, "x");
+    ctx->createNumber(42, "x");
     Value* fn = ctx->createNativeFunction(argcFn, 0);
     ASSERT_EQ(ctx->setClosure(fn, "x"), fn);
-    EXPECT_GE(captured->scopeRef(), 2);  // 子作用域 + closureScope
-    ctx->popScope();                     // fn 的 Value 不再被任何作用域跟踪
-    EXPECT_EQ(captured->scopeRef(), 1);  // 只剩 closureScope 持有
+    ctx->popScope();  // fn 的 Value 不再被任何作用域跟踪
 
-    // 一轮 GC 回收 fn → FunctionData 析构 → closureScope 销毁 → captured scopeRef--
-    // 但 captured 在本轮标记阶段仍是根，要下一轮才回收（GC 收敛判定覆盖此情形）
+    // fn 从 global 树不可达 → 一轮 GC 回收 fn → FunctionData 析构 → closureScope 销毁。
+    // captured 只被 fn 的闭包作用域引用，随之失去可达性，同一轮或下一轮被回收
+    // （GC 析构/收敛判定覆盖此情形）。两轮后全部回收。
     ctx->gc()->collect();
-    EXPECT_EQ(captured->scopeRef(), 0);  // 本轮标记时仍是根，本轮不回收
-    // 下一轮回收 captured（此时指针不可再解引用）
     ctx->gc()->collect();
 }
 
@@ -674,9 +670,8 @@ TEST(FunctionTest, SetClosureSharesValueNotCopies) {
 
     ctx->setClosure(fn, "x");
 
-    // 共享同一 Value：closureScope 持有后 scopeRef++（原 current scope + closureScope）
+    // 共享同一 Value（不复制）：closureScope 绑定到同一个 Value
     EXPECT_EQ(d->closureScope->lookup("x"), captured);
-    EXPECT_GE(captured->scopeRef(), 2);
 }
 
 TEST(FunctionTest, SetClosureCapturesFromParentScope) {
@@ -802,9 +797,8 @@ TEST(FunctionTest, CallResultSurvivesExecScopeDestroy) {
     Value* fn = ctx->createNativeFunction(scopedResultFn, 0);
     Value* result = ctx->call(fn, nullptr, 0, nullptr);
 
-    // 返回值在 pop 前归属调用方 scope，execScope 销毁后仍存活
+    // 返回值在 pop 前归属调用方 scope，execScope 销毁后仍存活（从 global 树可达）
     ASSERT_NE(result, nullptr);
-    EXPECT_GE(result->scopeRef(), 1);
     ctx->gc()->collect();
     EXPECT_EQ(result->type()->kind(), TypeKind::Number);
     EXPECT_DOUBLE_EQ(static_cast<NumberData*>(result->data())->value, 99.0);

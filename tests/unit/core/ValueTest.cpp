@@ -1,6 +1,6 @@
-// value_test.cpp - Value/Data 引用计数与 scopeRef 单元测试
+// value_test.cpp - Value/Data 引用计数与 pinRef 单元测试
 //
-// 验证 Value 构造 data->ref++、析构 data->ref--、scopeRefInc/dec、marked 位。
+// 验证 Value 构造 data->ref++、析构 data->ref--、pinRefInc/dec、marked 位。
 // Value 内存走 IAllocator + placement new，测试手动构造/析构验证引用计数行为。
 //
 // 关联 ADR: 015（Value meta+data 引用计数分层）、029（生命周期）
@@ -78,15 +78,15 @@ TEST(ValueDataTest, ScopeRefStartsAtZero) {
     auto* d = new NumberData(1.0);
     {
         ScopedValue sv(&alloc, dummyType(), d);
-        EXPECT_EQ(sv.v->scopeRef(), 0);
-        sv.v->scopeRefInc();
-        EXPECT_EQ(sv.v->scopeRef(), 1);
-        sv.v->scopeRefInc();
-        EXPECT_EQ(sv.v->scopeRef(), 2);
-        sv.v->scopeRefDec();
-        EXPECT_EQ(sv.v->scopeRef(), 1);
-        sv.v->scopeRefDec();
-        EXPECT_EQ(sv.v->scopeRef(), 0);
+        EXPECT_EQ(sv.v->pinRef(), 0);
+        sv.v->pinRefInc();
+        EXPECT_EQ(sv.v->pinRef(), 1);
+        sv.v->pinRefInc();
+        EXPECT_EQ(sv.v->pinRef(), 2);
+        sv.v->pinRefDec();
+        EXPECT_EQ(sv.v->pinRef(), 1);
+        sv.v->pinRefDec();
+        EXPECT_EQ(sv.v->pinRef(), 0);
     }
     // sv 析构（~Value 调 data->ref--）后才能 delete d
     EXPECT_EQ(d->ref(), 0);

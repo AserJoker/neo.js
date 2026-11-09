@@ -4,6 +4,7 @@ add_executable(core_unit_test
     HelloTest.cpp
     ValueTest.cpp
     GcTest.cpp
+    GcRootCycleTest.cpp
     ScopeTest.cpp
     TypeTest.cpp
     ContextTest.cpp

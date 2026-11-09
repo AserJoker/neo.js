@@ -104,7 +104,7 @@ public:
         : closureScope(closure), rootScope(root), native(fn), minArgc(minArgs),
           constructFn(ctor) {}
 
-    // 析构：销毁持有的孤立闭包作用域（其 values 逐个 scopeRef--）。
+    // 析构：销毁持有的孤立闭包作用域（其 values 随作用域一并清空）。
     // 本 data 由 GC sweep 在最后一个引用它的 Value 被回收时销毁（ADR-015/036）。
     ~FunctionData() override;
 

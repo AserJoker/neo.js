@@ -7,8 +7,8 @@
 //
 // 具体实现 MarkSweepGC 在 private，通过工厂 createGcEngine(IAllocator*) 获取。
 //
-// 关联 ADR: 008（IAllocator/GC 分层）、010（接口-实现-工厂）、012（scopeRef 根）、
-//          015（data 引用计数分层）、029（生命周期）
+// 关联 ADR: 008（IAllocator/GC 分层）、010（接口-实现-工厂）、012（Scope 树）、
+//          015（data 引用计数分层）、029（生命周期）、044（从作用域树可达性标记）
 
 #ifndef NEO_CORE_IGCENGINE_H
 #define NEO_CORE_IGCENGINE_H
@@ -24,16 +24,20 @@ namespace neo::core {
 // 前向声明
 class IData;
 class IType;
+class Scope;
 class Value;
 
 // GC 标记访问器：collect 标记阶段由 IGCEngine 实现，对每个存活 Value 调 visit。
-// 复杂对象阶段 data->enumerateChildren(visitor) 沿引用链递归标记子 value；
-// 本阶段 data 扁平，enumerateChildren 默认空，仅 scopeRef!=0 的根被标记。
+// data->enumerateChildren(visitor) 沿 data 引用链递归标记子 value。
+// visitScope 供 FunctionData 主动标记自己的孤立闭包作用域（ADR-044）：
+// 闭包作用域不在 global 作用域树上，只能由持有它的函数对象在标记时递归进来。
 class IGCVisitor {
 public:
     virtual ~IGCVisitor() = default;
-    // 标记 v 存活，并递归标记其 data 持有的子 value（本阶段递归 noop）
+    // 标记 v 存活，并递归标记其 data 持有的子 value
     virtual void visit(Value* v) = 0;
+    // 标记 scope 中的 values 及其 children 子树可达（供函数对象标记闭包作用域）
+    virtual void visitScope(Scope* scope) = 0;
 };
 
 // GC 引擎抽象接口
@@ -61,6 +65,11 @@ public:
 
     // 显式触发 GC（测试/手动控制用）
     virtual void collect() = 0;
+
+    // 设置 GC 的根作用域树（ADR-044）：collect 从该 scope 出发，沿
+    // 「scope.values + scope.children」与「data 子引用」标记可达 Value。
+    // Context 在 bootstrap 后设置 global scope，并保持其生命周期长于 GC。
+    virtual void setRootScope(Scope* scope) = 0;
 
     // 回收已从 Value 摘除的 data（赋值 replaceMeta 后调用）：
     // ref 归 0 则析构 + free，否则无操作（仍被其他 Value 共享）。

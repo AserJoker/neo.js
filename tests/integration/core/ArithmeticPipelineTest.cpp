@@ -172,7 +172,7 @@ TEST(ArithmeticPipelineTest, ExceptionFatalPassthroughEndToEnd) {
 
 TEST(ArithmeticPipelineTest, ScopeLifecycleAndGcCollection) {
     // 端到端：多次 push/pop scope 创建 Value，pop 后 Value 应被 GC 回收。
-    // 配合 ASan 验证无泄漏（析构链路：Scope~ → Value scopeRef 归 0 → GC collect → free）。
+    // 配合 ASan 验证无泄漏（析构链路：GC 销毁作用域树 → collect → free）。
     auto alloc = createMallocAllocator();
     CaptureSink sink;
     Console console(&sink);
@@ -194,7 +194,7 @@ TEST(ArithmeticPipelineTest, ScopeLifecycleAndGcCollection) {
     }
     EXPECT_EQ(ctx->current(), scopes[2]);
 
-    // 逐层 pop：popScope 销毁 scope（~Scope 递归子树），Value scopeRef 归 0
+    // 逐层 pop：popScope 销毁 scope（~Scope 递归子树），Value 不再可达
     ctx->popScope();
     EXPECT_EQ(ctx->current(), scopes[1]);
     ctx->popScope();

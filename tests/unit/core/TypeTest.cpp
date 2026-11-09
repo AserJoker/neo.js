@@ -176,6 +176,7 @@ public:
         ++count;
         visited = v;
     }
+    void visitScope(neo::core::Scope* /*scope*/) override {}
 };
 
 TEST(ExceptionDataTest, EnumerateChildrenReportsChild) {

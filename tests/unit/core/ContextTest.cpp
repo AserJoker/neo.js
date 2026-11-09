@@ -126,13 +126,13 @@ TEST(ContextTest, PopRootIsNoop) {
 }
 
 TEST(ContextTest, DestroyReleasesScopeTreeThenGC) {
-    // Context 析构顺序：先销毁 global_scope（scopeRef 归 0）→ 再销毁 GC（collect 回收 Value）
+    // Context 析构：GC 析构先销毁 global 树（所有权在 GC，ADR-044）→ 再 collect 回收 Value
     // 若顺序反了，GC 先销毁则 Value 泄漏 panic；或 scope 先释放但 GC 已不在则 Value 无法回收。
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
 
-    // 用 GC 创建 Value，挂到 scope 上，ctx 析构时 scope 释放（scopeRef 归 0），
+    // 用 GC 创建 Value，挂到 scope 上，ctx 析构时作用域树销毁、Value 不再可达，
     // GC 析构时 collect 回收所有 Value（不应 panic）
     {
         auto ctx = createContext(alloc.get(), &console);
@@ -150,12 +150,13 @@ TEST(ContextTest, DestroyReleasesScopeTreeThenGC) {
         ctx->setCurrentScope(s);
         s->add(v3);
 
-        EXPECT_EQ(v1->scopeRef(), 1);
-        EXPECT_EQ(v2->scopeRef(), 1);
-        EXPECT_EQ(v3->scopeRef(), 1);
+        // add 只登记，不改变 pinRef（可达性由 GC 从 global 树标记，ADR-044）
+        EXPECT_EQ(v1->pinRef(), 0);
+        EXPECT_EQ(v2->pinRef(), 0);
+        EXPECT_EQ(v3->pinRef(), 0);
 
-        // ctx 析构：global 析构（递归 s → root → global，scopeRef 全归 0）
-        //           → GC 析构（collect 回收 v1/v2/v3，无泄漏不 panic）
+        // ctx 析构：GC 析构先销毁 global 树（s → root → global），
+        //           再 collect 回收 v1/v2/v3（无泄漏不 panic）
     }
     // 到这里 ctx 已析构，GC 已销毁，无泄漏 panic 说明顺序正确
 }
@@ -291,9 +292,9 @@ TEST(ContextTest, CreateWithoutNameDoesNotBind) {
     ASSERT_NE(v, nullptr);
     // 无名字，lookup 返回 nullptr
     EXPECT_EQ(ctx->current()->lookup("x"), nullptr);
-    // 但 Value 仍被 current scope 跟踪（scopeRef++）
+    // 但 Value 仍被 current scope 登记（可达性由 GC 标记）
     EXPECT_EQ(ctx->current()->valueCount(), before + 1);
-    EXPECT_EQ(v->scopeRef(), 1);
+    EXPECT_EQ(v->pinRef(), 0);
 }
 
 TEST(ContextTest, CreateInPushedScopeTracksCorrectly) {
@@ -309,11 +310,10 @@ TEST(ContextTest, CreateInPushedScopeTracksCorrectly) {
     auto* v = ctx->createString("inner", "x");
     ASSERT_NE(v, nullptr);
     EXPECT_EQ(ctx->current()->lookup("x"), v);
-    EXPECT_EQ(v->scopeRef(), 1);
+    EXPECT_EQ(v->pinRef(), 0);
 
-    // pop 后 s 销毁，v 的 scopeRef 归 0
+    // pop 后 s 销毁；v 不再从 global 树可达，下一次 collect 可回收
     ctx->popScope();
-    EXPECT_EQ(v->scopeRef(), 0);
 }
 
 TEST(ContextTest, CreatedValuesReachableByGcWhileScoped) {
@@ -324,9 +324,9 @@ TEST(ContextTest, CreatedValuesReachableByGcWhileScoped) {
 
     auto* v = ctx->createNumber(1.0);
     ASSERT_NE(v, nullptr);
-    EXPECT_EQ(v->scopeRef(), 1);
+    EXPECT_EQ(v->pinRef(), 0);
 
-    // GC collect 后 v 仍存活（scopeRef != 0）
+    // GC collect 后 v 仍存活（current scope 从 global 树可达）
     size_t before = ctx->gc()->valueCount();
     ctx->gc()->collect();
     // collect 不回收任何存活 Value（v + OOM 哨兵 + well-known symbols + Symbol 包装类）
@@ -354,8 +354,8 @@ TEST(OomTest, OomValueMountedOnGlobal) {
     auto ctx = createContext(alloc.get(), &console);
 
     Value* oom = ctx->oomValue();
-    // 挂 global：scopeRef >= 1，且可按名查找
-    EXPECT_GE(oom->scopeRef(), 1);
+    // 挂 global：从 global 树可达（不靠 pinRef），且可按名查找
+    EXPECT_EQ(oom->pinRef(), 0);
     EXPECT_EQ(ctx->global()->lookup("__oom__"), oom);
 }
 
@@ -367,7 +367,6 @@ TEST(OomTest, OomValueSurvivesGcCollect) {
 
     ctx->gc()->collect();
     // 哨兵挂 global，collect 后仍存活
-    EXPECT_EQ(ctx->oomValue()->scopeRef(), 1);
     EXPECT_EQ(ctx->global()->lookup("__oom__"), ctx->oomValue());
 }
 

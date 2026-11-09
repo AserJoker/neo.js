@@ -59,6 +59,7 @@ class CountingVisitor : public IGCVisitor {
 public:
     int count = 0;
     void visit(Value* /*v*/) override { ++count; }
+    void visitScope(neo::core::Scope* /*scope*/) override {}
 };
 
 double numOf(Value* v) { return static_cast<NumberData*>(v->data())->value; }

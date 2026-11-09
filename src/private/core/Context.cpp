@@ -50,9 +50,11 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
                  infra::IClock* clock)
     : alloc_(alloc), gc_(createGcEngine(alloc)), console_(console),
       clock_(clock != nullptr ? clock : infra::defaultClock()) {
-    // 1. 创建 global scope（根，parent=nullptr）
+    // 1. 创建 global scope（根，parent=nullptr）。
+    //    所有权移交 GC（ADR-044）：GC 从它出发标记可达性，并在自身析构时销毁整棵树。
     void* gp = alloc_->alloc(sizeof(Scope));
     global_ = new (gp) Scope(nullptr, alloc_);
+    gc_->setRootScope(global_);
     // 2. 创建 root scope（parent=global），作为 global 的子
     void* rp = alloc_->alloc(sizeof(Scope));
     root_ = new (rp) Scope(global_, alloc_);
@@ -140,19 +142,15 @@ Context::~Context() {
     //     宿主可能没有排空事件循环就销毁 Context，此时未处理拒绝仍需可见。
     reportUnhandledRejections();
     // 0. 归还所有未执行任务持有的动态根（ADR-042）。任务实体不挂任何 scope，
-    //    其 scopeRef 由 Context 直接管理；队列里剩下的任务不会再出队，故在此统一
-    //    scopeRefDec，否则这些 Value 会被 GC 判为泄漏。
+    //    其 pinRef 由 Context 直接管理；队列里剩下的任务不会再出队，故在此统一
+    //    pinRefDec，否则这些 Value 会被 GC 判为泄漏。
     releaseAllTaskRoots();
-    // 1. 销毁 global scope：~Scope 递归销毁整棵树（current → ... → root → global 逐层析构 + free）
-    //    scopeRef 归 0 的 Value 在 GC 下次 collect 时被回收。
-    //    注：current_/root_ 在 global_ 析构后悬垂，但不再被访问（成员只是裸指针）。
-    global_->~Scope();
-    alloc_->free(global_);
-    // 2. 销毁 GC（unique_ptr 析构）：GC 析构调 collect 回收残留 Value，
-    //    若有 Value 存活（scope 未正确销毁）则 panic 报告泄漏。
-    //    gc_ 在 global_ 之后销毁——先释放 scope（scopeRef 归 0），再 collect 回收 Value。
+    // 1. 销毁 GC（unique_ptr 析构）。global 作用域树的所有权已移交 GC（ADR-044）：
+    //    ~MarkSweepGC 先销毁根作用域树，再 collect 回收全部残留 Value
+    //    （此时根树已空，所有 Value 不可达），最后若有残留则 panic 报告泄漏。
+    //    注：global_/root_/current_ 在此之后悬垂，但不再被访问。
     gc_.reset();
-    // 3. alloc_/console_ 由外部销毁，Context 不持有所有权
+    // 2. alloc_/console_ 由外部销毁，Context 不持有所有权
 }
 
 Scope* Context::pushNewScope(Scope* parent) {
@@ -237,7 +235,7 @@ Value* Context::createSymbol(std::string_view description, std::string_view name
 //
 // Symbol.for(key)：查全局注册表，命中返回已有 symbol，否则创建并登记。
 // 注册表中的 symbol 必须存活于 Context 生命周期（否则 key 反查会悬垂），
-// 故登记时挂到 global scope（scopeRef++）。
+// 故登记时挂到 global scope（从 global 树可达）。
 //
 // Symbol.keyFor(sym)：按 symbol data 指针反查 key；非 symbol 或未登记 → undefined。
 
@@ -631,7 +629,7 @@ Value* Context::setClosure(Value* fn, std::string_view name) {
         std::string msg = "Closure variable '" + std::string(name) + "' is not defined";
         return detail::referenceError(this, msg);
     }
-    // 绑定 = 共享同一 Value（ADR-013 §2）：closureScope 加入时 scopeRef++
+    // 绑定 = 共享同一 Value（ADR-013 §2）：closureScope 登记同一 Value
     auto* d = static_cast<FunctionData*>(fn->data());
     d->closureScope->define(name, v);
     return fn;
@@ -814,12 +812,12 @@ std::vector<CallFrame> Context::trace(const SourcePosition& callSite) const {
 
 // —— 事件循环（非阻塞调度）——
 
-// 任务实体作为动态 GC 根（ADR-042）：**不挂任何 scope**，由 Context 直接
-// 增减 scopeRef。这样队列里的任务不会因为挂到 global 而在运行期长期保活，
+// 任务实体作为动态 GC 根（ADR-042/044）：**不挂任何 scope**，由 Context 直接
+// 增减 pinRef。这样队列里的任务不会因为挂到 global 而在运行期长期保活，
 // Context 析构时也能精确地一次性归还全部根（见 ~Context）。
 void Context::retainTaskRoot(Value* entity) {
     size_t& refs = taskRootRefs_[entity];
-    if (refs == 0) entity->scopeRefInc();  // 首个任务：成为 GC 根
+    if (refs == 0) entity->pinRefInc();  // 首个任务：成为 GC 根
     ++refs;
 }
 
@@ -828,15 +826,15 @@ void Context::releaseTaskRoot(Value* entity) {
     if (it == taskRootRefs_.end()) return;
     if (--it->second == 0) {
         taskRootRefs_.erase(it);
-        entity->scopeRefDec();  // 最后一个任务已出队/取消：解除 GC 根
+        entity->pinRefDec();  // 最后一个任务已出队/取消：解除 GC 根
     }
 }
 
 void Context::releaseAllTaskRoots() {
     // Context 析构专用：队列里未执行的任务不再有机会出队，必须在这里统一归还
-    // 它们持有的 scopeRef，否则 GC 最终 collect 会把这些 Value 判为泄漏。
+    // 它们持有的 pinRef，否则 GC 最终 collect 会把这些 Value 判为泄漏。
     for (auto& [entity, refs] : taskRootRefs_) {
-        for (size_t i = 0; i < refs; ++i) entity->scopeRefDec();
+        for (size_t i = 0; i < refs; ++i) entity->pinRefDec();
     }
     taskRootRefs_.clear();
     microtasks_.clear();
@@ -964,14 +962,14 @@ void Context::hostPromiseRejectionTracker(Value* promise, bool handled) {
         // 拒绝且尚未被接住 → 登记为动态根，等待上报
         if (it == pendingRejections_.end()) {
             pendingRejections_.emplace(promise, true);
-            promise->scopeRefInc();
+            promise->pinRefInc();
         }
         return;
     }
     // 已被接住 → 移出待上报集合并归还根引用
     if (it != pendingRejections_.end()) {
         pendingRejections_.erase(it);
-        promise->scopeRefDec();
+        promise->pinRefDec();
     }
 }
 
@@ -983,7 +981,7 @@ void Context::reportUnhandledRejections() {
         std::string reason = d != nullptr ? detail::describeValue(this, d->result)
                                           : "undefined";
         console_->printLine("Unhandled promise rejection: {}", reason);
-        promise->scopeRefDec();
+        promise->pinRefDec();
     }
     pendingRejections_.clear();
 }

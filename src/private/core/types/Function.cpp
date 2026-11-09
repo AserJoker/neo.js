@@ -107,7 +107,7 @@ Value* invokeNative(IContext* ctx, FunctionData* d, Value* thisArg,
     }
 
     // 7. 返回值立即归属调用方 current（restoreValue，ADR-022 §4）：
-    //    必须在 pop 之前——res 可能被 execScope 跟踪，先 add 到 savedCurrent（scopeRef++）
+    //    必须在 pop 之前——res 可能被 execScope 跟踪，先 add 到 savedCurrent（归属调用方）
     //    才能保证 pop 销毁 execScope 后 res 仍存活（否则语义上悬垂，仅靠 GC 侥幸不崩）。
     if (res != nullptr) {
         savedCurrent->add(res);
@@ -151,7 +151,7 @@ Value* FunctionType::call(IContext* ctx, Value* self, Value* thisArg,
     return invokeNative(ctx, d, thisArg, argc, argv);
 }
 
-// 析构：销毁孤立闭包作用域（ADR-036）。closureScope 的 values 逐个 scopeRef--，
+// 析构：销毁孤立闭包作用域（ADR-036）。其 values 随作用域一并清空，
 // 这些 Value 若已不可达，由下一轮 GC 回收（本轮标记阶段它们仍是根，不会误回收）。
 // 若 Fatal 路径遗留了挂载状态，~Scope 会先把自己从 rootScope 摘除。
 FunctionData::~FunctionData() {
@@ -168,6 +168,10 @@ void FunctionData::enumerateChildren(IGCVisitor* visitor) {
     for (Value* v : boundArgs) {
         if (v != nullptr) visitor->visit(v);
     }
+    // 孤立闭包作用域不在 global 作用域树上，只能由持有它的函数对象主动标记
+    // （ADR-044）。函数对象不可达时本方法不会被调用，闭包作用域及其捕获值
+    // 自然不被标记——「函数 → closureScope → 捕获值 → 函数」的环因此可回收。
+    if (closureScope != nullptr) visitor->visitScope(closureScope);
 }
 
 // 构造调用（new，ADR-034）：

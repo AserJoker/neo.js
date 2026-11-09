@@ -4,11 +4,11 @@
 // 只能通过 public 的 IGCEngine 接口 + createGcEngine() 工厂使用。
 // 文件名与实现类名一致（MarkSweepGC.h），与 public 接口头 IGCEngine.h 不冲突。
 //
-// MarkSweepGC：标记-清除算法。collect 时 scopeRef!=0 为根 + 沿 data 引用链遍历
-// 标记（本阶段 data 扁平 noop），未标记 Value 析构 + allocator->free，并检查 data
-// ref 归 0 则 allocator->free(data)。
+// MarkSweepGC：标记-清除算法。collect 从 rootScope（global 作用域树）出发，
+// 沿「scope.values + scope.children」与「data 子引用」标记可达 Value；pinRef>0
+// 的 Value 作为额外根。未标记 Value 析构 + allocator->free，data ref 归 0 则 free。
 //
-// 关联 ADR: 010（接口-实现-工厂）、029（生命周期）
+// 关联 ADR: 010（接口-实现-工厂）、029（生命周期）、044（可达性标记）
 
 #ifndef NEO_CORE_PRIVATE_MARK_SWEEP_GC_H
 #define NEO_CORE_PRIVATE_MARK_SWEEP_GC_H
@@ -28,6 +28,7 @@ public:
 
     Value* createValue(IType* type, IData* data) override;
     void   collect() override;
+    void   setRootScope(Scope* scope) override;
     void   releaseData(IData* d) override;
 
     size_t valueCount() const override;
@@ -45,6 +46,7 @@ private:
     bool maybeCollect();
 
     infra::IAllocator* alloc_;  // 注入，不持有所有权
+    Scope* rootScope_ = nullptr;  // 根作用域树（Context 的 global，借用，不拥有）
     std::vector<Value*> values_;  // GC 持有所有 Value 的跟踪表
     size_t collectedCount_ = 0;  // 累计回收数
 

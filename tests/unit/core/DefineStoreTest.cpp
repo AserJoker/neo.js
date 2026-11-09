@@ -452,12 +452,12 @@ TEST(DefineStoreTest, StoreOldDataReachableByGcWhileScoped) {
     ctx->define("x", ctx->createNumber(1.0));
     Value* slot = ctx->current()->lookup("x");
 
-    // store 替换 data，旧 data ref 归 0，但 Value 仍存活（scopeRef != 0）
+    // store 替换 data，旧 data ref 归 0；slot 仍从 global 树可达
     ctx->store("x", ctx->createNumber(2.0));
     ctx->gc()->collect();
 
     // slot 仍存活且持有新值
-    EXPECT_EQ(slot->scopeRef(), 1);
+    EXPECT_EQ(slot->pinRef(), 0);
     auto* d = static_cast<NumberData*>(slot->data());
     EXPECT_DOUBLE_EQ(d->value, 2.0);
 }
