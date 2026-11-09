@@ -18,7 +18,7 @@
 |--------|------|
 | M1 | 类型与内部槽基础设施（本文档主体） |
 | M2 | resolving functions、**thenable 兼容**、then/catch/finally、job 投递 |
-| M3 | 静态方法 resolve/reject/all/race/allSettled/any + `@@species` |
+| M3 | 静态方法 resolve/reject/all/race/allSettled/any + `@@species`（已完成） |
 | M4 | 未处理拒绝上报（`[[PromiseIsHandled]]`）+ 文档收尾 |
 
 ### 2. Promise 是「普通对象 + Promise 内部槽」
@@ -83,6 +83,34 @@ scopeRef 为根、沿 data 链标记，该环整体不可达时一并回收。
 reaction 的完整逻辑（derived promise、handler、argument）封装在**自定义 TaskRunner**
 里，通过 `postMicrotask(entity, run)` 投递。`TaskRunner` 的 `task` 参数即 entity，
 足以携带全部上下文。不为具体任务泛化通用 userdata 机制——那正是自定义 run 的用途。
+
+### 5.1 组合器共享单元与元素函数
+
+`Promise.all/allSettled/any` 的元素处理需要一个**可变的共享单元**（remaining count、
+values 数组、capability 三元组）。用 1 个数组表达：
+
+| 索引 | 内容 |
+|------|------|
+| 0 | remainingElementsCount（Number） |
+| 1 | values / errors（Array） |
+| 2..4 | capability.promise / resolve / reject |
+
+元素函数用 `createBoundFunction` 前置 `[index, cell, calledCell]`，实际实参为 value。
+`calledCell` 是每个元素独立的 alreadyResolved 单元（§27.2.4.1.1 step 8.b），
+保证同一个元素函数只计一次。bound args 是 data 级引用，不会形成根环（见 §4.1）。
+
+`settlePromise` 只运行与 settle **方向一致**的 reaction（§27.2.1.4/.7）：
+Pending 期间 `then` 会同时登记 fulfill/reject 两条，另一条必须丢弃——
+否则 `Promise.all` 的 reject 元素会在已 fulfill 的 promise 上被误触发。
+
+### 5.2 @@species
+
+`SpeciesConstructor(O, default)`（§7.3.20）：`O.constructor` 未定义 → default；
+否则取 `C[@@species]`，null/undefined → default，非可调用 → TypeError。
+`then` 与 `finally` 的派生 promise 都走它（§27.2.5.4 step 4 / §27.2.5.3 step 4）。
+`Promise[@@species]` 是访问器，getter 返回 `this`（§27.2.4.5）。
+
+注：规范要求 `IsConstructor(S)`，本实现尚无可构造性判定，用 `isCallable` 近似。
 
 ### 6. Promise 构造函数语义
 

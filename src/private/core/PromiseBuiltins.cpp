@@ -77,6 +77,8 @@ Value* reactionJob(IContext* ctx, Value* self, size_t argc, Value* argv[]);
 Value* resolveThenableJob(IContext* ctx, Value* self, size_t argc, Value* argv[]);
 Value* resolveFunction(IContext* ctx, Value* self, size_t argc, Value* argv[]);
 Value* rejectFunction(IContext* ctx, Value* self, size_t argc, Value* argv[]);
+Value* speciesConstructor(IContext* ctx, Value* obj, Value* defaultCtor);
+Value* promiseResolveCtor(IContext* ctx, Value* ctor, Value* x);
 
 // Promise job 执行器：entity 是内部 job 函数，以 undefined 为 this 调用。
 // 不用 defaultTaskRunner——promise job 的异常已在内部转成 reject，不该打印。
@@ -119,7 +121,13 @@ void settlePromise(IContext* ctx, Value* promise, Value* value, PromiseState sta
     std::vector<PromiseReaction> reactions;
     reactions.swap(d->reactions);
 
+    // §27.2.1.4 / §27.2.1.7：只运行与 settle 方向一致的 reaction。
+    // Pending 期间 then 会同时登记 fulfill/reject 两条，另一条须丢弃。
+    const PromiseReactionType wanted = state == PromiseState::Fulfilled
+                                           ? PromiseReactionType::Fulfill
+                                           : PromiseReactionType::Reject;
     for (const PromiseReaction& r : reactions) {
+        if (r.type != wanted) continue;
         enqueueReactionJob(ctx, r, value);
     }
 }
@@ -411,8 +419,10 @@ Value* promiseThen(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* onFulfilled = argc > 0 ? argv[0] : ctx->createUndefined();
     Value* onRejected = argc > 1 ? argv[1] : ctx->createUndefined();
 
-    // M2：派生 promise 用 %Promise%（@@species 在 M3）
-    Value* ctor = ctx->global()->lookup("Promise");
+    // 派生 promise 用 SpeciesConstructor(self, %Promise%)（§27.2.5.4 step 4）
+    Value* defaultCtor = ctx->global()->lookup("Promise");
+    Value* ctor = speciesConstructor(ctx, self, defaultCtor);
+    if (detail::isErrorValue(ctor)) return ctor;
     PromiseCapability cap;
     if (Value* err = newPromiseCapability(ctx, ctor, cap)) return err;
     return performPromiseThen(ctx, self, onFulfilled, onRejected, cap);
@@ -491,7 +501,9 @@ Value* promiseFinally(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
         return ctx->call(thenFn, self, 2, args);
     }
 
-    Value* ctor = ctx->global()->lookup("Promise");  // M2：%Promise%
+    // §27.2.5.3 step 4：C = SpeciesConstructor(promise, %Promise%)
+    Value* ctor = speciesConstructor(ctx, self, ctx->global()->lookup("Promise"));
+    if (detail::isErrorValue(ctor)) return ctor;
 
     Value* thenFinally = ctx->createNativeFunction(finallyThenHandler, 1);
     if (thenFinally == ctx->oomValue()) return thenFinally;
@@ -505,6 +517,400 @@ Value* promiseFinally(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
 
     Value* args[2] = {thenFinally, catchFinally};
     return ctx->call(thenFn, self, 2, args);
+}
+
+// —— SpeciesConstructor（§7.3.20）——
+// 取 O.constructor，未定义则用 defaultCtor；否则取 C[@@species]，
+// null/undefined 回退 defaultCtor，非可调用报 TypeError。
+// 注：规范要求 IsConstructor(S)，本实现尚无可构造性判定，用 isCallable 近似。
+Value* speciesConstructor(IContext* ctx, Value* obj, Value* defaultCtor) {
+    Value* c = ctx->getProperty(obj, "constructor");
+    if (detail::isErrorValue(c)) return c;
+    if (c->type()->kind() == TypeKind::Undefined) return defaultCtor;
+    if (!detail::isObjectKind(c->type()->kind())) {
+        return detail::typeError(ctx, "Promise constructor property is not an object");
+    }
+    Value* s = ctx->getProperty(c, ctx->getWellKnownSymbol(WellKnownSymbol::Species));
+    if (detail::isErrorValue(s)) return s;
+    TypeKind sk = s->type()->kind();
+    if (sk == TypeKind::Null || sk == TypeKind::Undefined) return defaultCtor;
+    if (!detail::isCallable(s)) {
+        return detail::typeError(ctx, "Promise @@species is not a constructor");
+    }
+    return s;
+}
+
+// Promise[@@species] getter：返回 this（§27.2.4.5）
+Value* promiseSpeciesGetter(IContext* /*ctx*/, Value* self, size_t /*argc*/,
+                            Value* /*argv*/[]) {
+    return self;
+}
+
+// —— 组合器共享状态 ——
+// 状态单元（数组）：
+//   [0] remainingElementsCount（Number）
+//   [1] values / errors（Array）
+//   [2] capability.promise
+//   [3] capability.resolve
+//   [4] capability.reject
+Value* makeCombinatorCell(IContext* ctx, const PromiseCapability& cap) {
+    Value* cell = ctx->createArray();
+    if (cell == ctx->oomValue()) return cell;
+    auto* cd = static_cast<ArrayData*>(cell->data());
+    cd->setElement(0, ctx->createNumber(1.0));
+    Value* values = ctx->createArray();
+    if (values == ctx->oomValue()) return values;
+    cd->setElement(1, values);
+    cd->setElement(2, cap.promise);
+    cd->setElement(3, cap.resolve);
+    cd->setElement(4, cap.reject);
+    return cell;
+}
+
+// remainingElementsCount -= 1；返回是否归零
+bool decrementRemaining(IContext* ctx, Value* cell, double& remainingOut) {
+    auto* cd = static_cast<ArrayData*>(cell->data());
+    double n = static_cast<NumberData*>(cd->elementAt(0)->data())->value - 1.0;
+    cd->setElement(0, ctx->createNumber(n));
+    remainingOut = n;
+    return n == 0.0;
+}
+
+// 元素函数：bound args 前置 [index, cell, calledCell]，实际实参为 value。
+Value* makeElementFunction(IContext* ctx, NativeFn fn, uint32_t index, Value* cell,
+                           Value* calledCell) {
+    Value* target = ctx->createNativeFunction(fn, 0);
+    if (target == ctx->oomValue()) return target;
+    Value* bound[3] = {ctx->createNumber(static_cast<double>(index)), cell, calledCell};
+    return ctx->createBoundFunction(target, ctx->createUndefined(), 3, bound);
+}
+
+// 从元素函数的 bound args 取出 index / cell / calledCell；重复调用返回 false。
+bool elementPrologue(IContext* ctx, size_t argc, Value* argv[], uint32_t& index,
+                     Value*& cell, Value*& value) {
+    if (argc < 4) return false;
+    Value* calledCell = argv[2];
+    if (cellTaken(ctx, calledCell)) return false;
+    takeCell(ctx, calledCell);
+    index = static_cast<uint32_t>(
+        static_cast<NumberData*>(argv[0]->data())->value);
+    cell = argv[1];
+    value = argv[3];
+    return true;
+}
+
+// 把结果写进 values[index]，remaining 归零则 resolve(values)。
+Value* storeAndMaybeResolve(IContext* ctx, Value* cell, uint32_t index, Value* value) {
+    auto* cd = static_cast<ArrayData*>(cell->data());
+    static_cast<ArrayData*>(cd->elementAt(1)->data())->setElement(index, value);
+    double remaining = 0;
+    if (!decrementRemaining(ctx, cell, remaining)) {
+        return ctx->createUndefined();
+    }
+    Value* args[1] = {cd->elementAt(1)};
+    Value* r = ctx->call(cd->elementAt(3), ctx->createUndefined(), 1, args);
+    return r;
+}
+
+// Promise.all 的 resolve element（§27.2.4.1.2）
+Value* allResolveElement(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
+    uint32_t index = 0;
+    Value* cell = nullptr;
+    Value* value = nullptr;
+    if (!elementPrologue(ctx, argc, argv, index, cell, value)) {
+        return ctx->createUndefined();
+    }
+    return storeAndMaybeResolve(ctx, cell, index, value);
+}
+
+// allSettled 的结果对象 {status, value|reason}
+Value* makeSettledResult(IContext* ctx, const char* status, const char* key,
+                         Value* payload) {
+    Value* obj = ctx->createObject();
+    if (obj == ctx->oomValue()) return obj;
+    Value* r = ctx->defineProperty(obj, "status", ctx->createString(status), true, true,
+                                   true);
+    if (detail::isErrorValue(r)) return r;
+    r = ctx->defineProperty(obj, key, payload, true, true, true);
+    if (detail::isErrorValue(r)) return r;
+    return obj;  // defineProperty 返回 value，不是 obj
+}
+
+// Promise.allSettled 的 fulfill element（§27.2.4.2.2）
+Value* allSettledFulfillElement(IContext* ctx, Value* /*self*/, size_t argc,
+                                Value* argv[]) {
+    uint32_t index = 0;
+    Value* cell = nullptr;
+    Value* value = nullptr;
+    if (!elementPrologue(ctx, argc, argv, index, cell, value)) {
+        return ctx->createUndefined();
+    }
+    Value* obj = makeSettledResult(ctx, "fulfilled", "value", value);
+    if (detail::isErrorValue(obj)) return obj;
+    return storeAndMaybeResolve(ctx, cell, index, obj);
+}
+
+// Promise.allSettled 的 reject element（§27.2.4.2.3）
+Value* allSettledRejectElement(IContext* ctx, Value* /*self*/, size_t argc,
+                               Value* argv[]) {
+    uint32_t index = 0;
+    Value* cell = nullptr;
+    Value* reason = nullptr;
+    if (!elementPrologue(ctx, argc, argv, index, cell, reason)) {
+        return ctx->createUndefined();
+    }
+    Value* obj = makeSettledResult(ctx, "rejected", "reason", reason);
+    if (detail::isErrorValue(obj)) return obj;
+    return storeAndMaybeResolve(ctx, cell, index, obj);
+}
+
+// 构造 AggregateError(errors, "All promises were rejected")
+Value* makeAggregateError(IContext* ctx, Value* errors) {
+    Value* ctor = ctx->global()->lookup("AggregateError");
+    if (ctor == nullptr) {
+        return detail::typeError(ctx, "internal: missing AggregateError");
+    }
+    Value* args[2] = {errors, ctx->createString("All promises were rejected")};
+    return ctx->construct(ctor, 2, args);
+}
+
+// Promise.any 的 reject element（§27.2.4.3.2）
+Value* anyRejectElement(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
+    uint32_t index = 0;
+    Value* cell = nullptr;
+    Value* error = nullptr;
+    if (!elementPrologue(ctx, argc, argv, index, cell, error)) {
+        return ctx->createUndefined();
+    }
+    auto* cd = static_cast<ArrayData*>(cell->data());
+    static_cast<ArrayData*>(cd->elementAt(1)->data())->setElement(index, error);
+
+    double remaining = 0;
+    if (!decrementRemaining(ctx, cell, remaining)) return ctx->createUndefined();
+    Value* agg = makeAggregateError(ctx, cd->elementAt(1));
+    if (detail::isErrorValue(agg)) return agg;
+    Value* args[1] = {agg};
+    return ctx->call(cd->elementAt(4), ctx->createUndefined(), 1, args);
+}
+
+// —— 组合器主流程（§27.2.4.1.1 / .2.1 / .3.1 / .4.1）——
+enum class PromiseCombinator { All, AllSettled, Any };
+
+// 成功返回 nullptr；失败返回 Exception/Fatal（调用方负责 reject capability）。
+Value* performCombinator(IContext* ctx, Value* iterable, Value* ctor,
+                         const PromiseCapability& cap, PromiseCombinator kind) {
+    Value* cell = makeCombinatorCell(ctx, cap);
+    if (cell == ctx->oomValue()) return cell;
+    auto* cd = static_cast<ArrayData*>(cell->data());
+    Value* values = cd->elementAt(1);
+
+    Value* iterator = detail::getIterator(ctx, iterable);
+    if (detail::isErrorValue(iterator)) return iterator;
+
+    uint32_t index = 0;
+    for (;;) {
+        Value* next = detail::iteratorNext(ctx, iterator);
+        if (detail::isErrorValue(next)) {
+            return detail::iteratorClose(ctx, iterator, next);
+        }
+        Value* err = nullptr;
+        bool done = detail::iteratorComplete(ctx, next, err);
+        if (err != nullptr) return detail::iteratorClose(ctx, iterator, err);
+        if (done) break;
+
+        Value* nextValue = detail::iteratorValue(ctx, next);
+        if (detail::isErrorValue(nextValue)) {
+            return detail::iteratorClose(ctx, iterator, nextValue);
+        }
+        // values.append(undefined)
+        static_cast<ArrayData*>(values->data())->setElement(index, ctx->createUndefined());
+
+        Value* nextPromise = promiseResolveCtor(ctx, ctor, nextValue);
+        if (detail::isErrorValue(nextPromise)) {
+            return detail::iteratorClose(ctx, iterator, nextPromise);
+        }
+
+        Value* calledCell = makeCell(ctx);
+        if (calledCell == ctx->oomValue()) return calledCell;
+
+        Value* onFulfilled = nullptr;
+        Value* onRejected = cap.reject;
+        switch (kind) {
+            case PromiseCombinator::All:
+                onFulfilled = makeElementFunction(ctx, allResolveElement, index, cell,
+                                                  calledCell);
+                break;
+            case PromiseCombinator::AllSettled:
+                onFulfilled = makeElementFunction(ctx, allSettledFulfillElement, index,
+                                                  cell, calledCell);
+                onRejected = makeElementFunction(ctx, allSettledRejectElement, index,
+                                                 cell, calledCell);
+                break;
+            case PromiseCombinator::Any:
+                onFulfilled = cap.resolve;
+                onRejected = makeElementFunction(ctx, anyRejectElement, index, cell,
+                                                 calledCell);
+                break;
+        }
+        if (detail::isErrorValue(onFulfilled)) return onFulfilled;
+        if (detail::isErrorValue(onRejected)) return onRejected;
+
+        Value* thenFn = ctx->getProperty(nextPromise, "then");
+        if (detail::isErrorValue(thenFn)) {
+            return detail::iteratorClose(ctx, iterator, thenFn);
+        }
+        Value* thenArgs[2] = {onFulfilled, onRejected};
+        Value* r = ctx->call(thenFn, nextPromise, 2, thenArgs);
+        if (detail::isErrorValue(r)) return detail::iteratorClose(ctx, iterator, r);
+
+        ++index;
+        double n = static_cast<NumberData*>(cd->elementAt(0)->data())->value + 1.0;
+        cd->setElement(0, ctx->createNumber(n));
+    }
+
+    double remaining = 0;
+    if (decrementRemaining(ctx, cell, remaining)) {
+        if (kind == PromiseCombinator::Any) {
+            // 空 iterable（或全部已 reject）→ AggregateError
+            Value* agg = makeAggregateError(ctx, values);
+            if (detail::isErrorValue(agg)) return agg;
+            Value* args[1] = {agg};
+            Value* r = ctx->call(cap.reject, ctx->createUndefined(), 1, args);
+            if (detail::isErrorValue(r)) return r;
+        } else {
+            Value* args[1] = {values};
+            Value* r = ctx->call(cap.resolve, ctx->createUndefined(), 1, args);
+            if (detail::isErrorValue(r)) return r;
+        }
+    }
+    return nullptr;
+}
+
+// 组合器入口：建 capability，跑主流程；失败则 reject 并返回 promise。
+Value* promiseCombinatorEntry(IContext* ctx, Value* self, size_t argc, Value* argv[],
+                              PromiseCombinator kind) {
+    if (!detail::isCallable(self)) {
+        return detail::typeError(ctx, "Promise combinator called on non-constructor");
+    }
+    PromiseCapability cap;
+    if (Value* err = newPromiseCapability(ctx, self, cap)) return err;
+
+    Value* iterable = argc > 0 ? argv[0] : ctx->createUndefined();
+    if (Value* err = performCombinator(ctx, iterable, self, cap, kind)) {
+        Value* reason = exceptionReason(err);
+        Value* args[1] = {reason};
+        Value* r = ctx->call(cap.reject, ctx->createUndefined(), 1, args);
+        if (detail::isErrorValue(r)) return r;
+    }
+    return cap.promise;
+}
+
+Value* promiseAll(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    return promiseCombinatorEntry(ctx, self, argc, argv, PromiseCombinator::All);
+}
+Value* promiseAllSettled(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    return promiseCombinatorEntry(ctx, self, argc, argv, PromiseCombinator::AllSettled);
+}
+Value* promiseAny(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    return promiseCombinatorEntry(ctx, self, argc, argv, PromiseCombinator::Any);
+}
+
+// Promise.race（§27.2.4.4.1）：不收集结果，首个 settle 直接透传。
+Value* promiseRace(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    if (!detail::isCallable(self)) {
+        return detail::typeError(ctx, "Promise.race called on non-constructor");
+    }
+    PromiseCapability cap;
+    if (Value* err = newPromiseCapability(ctx, self, cap)) return err;
+
+    Value* iterable = argc > 0 ? argv[0] : ctx->createUndefined();
+    Value* iterator = detail::getIterator(ctx, iterable);
+    if (detail::isErrorValue(iterator)) {
+        Value* reason = exceptionReason(iterator);
+        Value* args[1] = {reason};
+        Value* r = ctx->call(cap.reject, ctx->createUndefined(), 1, args);
+        if (detail::isErrorValue(r)) return r;
+        return cap.promise;
+    }
+
+    for (;;) {
+        Value* next = detail::iteratorNext(ctx, iterator);
+        if (detail::isErrorValue(next)) {
+            Value* closed = detail::iteratorClose(ctx, iterator, next);
+            Value* reason = exceptionReason(closed);
+            Value* args[1] = {reason};
+            Value* r = ctx->call(cap.reject, ctx->createUndefined(), 1, args);
+            if (detail::isErrorValue(r)) return r;
+            return cap.promise;
+        }
+        Value* err = nullptr;
+        bool done = detail::iteratorComplete(ctx, next, err);
+        if (err != nullptr) {
+            Value* reason = exceptionReason(err);
+            Value* args[1] = {reason};
+            Value* r = ctx->call(cap.reject, ctx->createUndefined(), 1, args);
+            if (detail::isErrorValue(r)) return r;
+            return cap.promise;
+        }
+        if (done) return cap.promise;
+
+        Value* nextValue = detail::iteratorValue(ctx, next);
+        if (detail::isErrorValue(nextValue)) {
+            Value* reason = exceptionReason(nextValue);
+            Value* args[1] = {reason};
+            Value* r = ctx->call(cap.reject, ctx->createUndefined(), 1, args);
+            if (detail::isErrorValue(r)) return r;
+            return cap.promise;
+        }
+        Value* nextPromise = promiseResolveCtor(ctx, self, nextValue);
+        if (detail::isErrorValue(nextPromise)) {
+            Value* reason = exceptionReason(nextPromise);
+            Value* args[1] = {reason};
+            Value* r = ctx->call(cap.reject, ctx->createUndefined(), 1, args);
+            if (detail::isErrorValue(r)) return r;
+            return cap.promise;
+        }
+        Value* thenFn = ctx->getProperty(nextPromise, "then");
+        if (detail::isErrorValue(thenFn)) {
+            Value* reason = exceptionReason(thenFn);
+            Value* args[1] = {reason};
+            Value* r = ctx->call(cap.reject, ctx->createUndefined(), 1, args);
+            if (detail::isErrorValue(r)) return r;
+            return cap.promise;
+        }
+        Value* thenArgs[2] = {cap.resolve, cap.reject};
+        Value* r = ctx->call(thenFn, nextPromise, 2, thenArgs);
+        if (detail::isErrorValue(r)) {
+            Value* reason = exceptionReason(r);
+            Value* args[1] = {reason};
+            Value* rr = ctx->call(cap.reject, ctx->createUndefined(), 1, args);
+            if (detail::isErrorValue(rr)) return rr;
+            return cap.promise;
+        }
+    }
+}
+
+// —— Promise.resolve / Promise.reject（§27.2.4.7 / §27.2.4.8）——
+
+Value* promiseResolveStatic(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    if (!detail::isCallable(self)) {
+        return detail::typeError(ctx, "Promise.resolve called on non-constructor");
+    }
+    Value* x = argc > 0 ? argv[0] : ctx->createUndefined();
+    return promiseResolveCtor(ctx, self, x);
+}
+
+Value* promiseRejectStatic(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    if (!detail::isCallable(self)) {
+        return detail::typeError(ctx, "Promise.reject called on non-constructor");
+    }
+    PromiseCapability cap;
+    if (Value* err = newPromiseCapability(ctx, self, cap)) return err;
+    Value* r = argc > 0 ? argv[0] : ctx->createUndefined();
+    Value* args[1] = {r};
+    Value* res = ctx->call(cap.reject, ctx->createUndefined(), 1, args);
+    if (detail::isErrorValue(res)) return res;
+    return cap.promise;
 }
 
 // 把值挂到 global scope：add 跟踪 + bind 名字
@@ -565,7 +971,26 @@ bool registerPromiseBuiltins(IContext* ctx) {
         return false;
     }
 
-    // —— 5. 注册到 global ——
+    // —— 5. Promise[@@species]（§27.2.4.5）：getter 返回 this ——
+    Value* speciesGet = ctx->createNativeFunction(promiseSpeciesGetter, 0);
+    if (speciesGet == ctx->oomValue()) return false;
+    ctx->setFunctionName(speciesGet, "get [Symbol.species]");
+    if (ctx->defineAccessor(promiseFn,
+                            ctx->getWellKnownSymbol(WellKnownSymbol::Species),
+                            speciesGet, nullptr, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+
+    // —— 6. 静态方法 ——
+    if (!defineMethod(ctx, promiseFn, "resolve", promiseResolveStatic, 1)) return false;
+    if (!defineMethod(ctx, promiseFn, "reject", promiseRejectStatic, 1)) return false;
+    if (!defineMethod(ctx, promiseFn, "all", promiseAll, 1)) return false;
+    if (!defineMethod(ctx, promiseFn, "race", promiseRace, 1)) return false;
+    if (!defineMethod(ctx, promiseFn, "allSettled", promiseAllSettled, 1)) return false;
+    if (!defineMethod(ctx, promiseFn, "any", promiseAny, 1)) return false;
+
+    // —— 7. 注册到 global ——
     bindGlobal(ctx, "Promise", promiseFn);
     return true;
 }
