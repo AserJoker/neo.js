@@ -97,6 +97,13 @@ public:
     Value* result = nullptr;                     // [[PromiseResult]]（Pending 时 undefined）
     std::vector<PromiseReaction> reactions;      // [[PromiseReactions]]
     bool isHandled = false;                      // [[PromiseIsHandled]]
+    // 本 promise 的 resolving functions（resolve/reject）。
+    // 它们在构造期的临时 execScope 中创建，execScope 销毁后 scopeRef 归 0；
+    // 由本 promise 强持有（enumerateChildren 登记）保证存活到被调用。
+    // 反向引用走 boundArgs（data 级引用，非 scopeRef 根），避免
+    // 「promise → 函数 → 闭包作用域(根) → promise」的不可回收根环。
+    Value* resolveFn = nullptr;
+    Value* rejectFn = nullptr;
 
     // GC 遍历：对象字段 + result + 每个 reaction 的 capability 与 handler
     void enumerateChildren(IGCVisitor* visitor) override;

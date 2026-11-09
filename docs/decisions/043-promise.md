@@ -60,11 +60,23 @@ Value* IContext::captureValue(Value* fn, std::string_view name, Value* value);
 ```
 
 直接把任意 Value 注入 `FunctionData::closureScope`（不查作用域链），native 内用
-`fn->closureScope->lookup(name)` 取回。用于 resolve/reject 函数携带
-「目标 promise + alreadyResolved 单元」、reaction job 携带 capability 等。
+`captured()`（`current()->parent()->lookup(name)`）取回。用于 reaction job 携带
+capability、finally 的 valueThunk/thrower 携带值等**一次性内部函数**。
 
-选择理由：bound args 也能传值，但 `alreadyResolved` 需要可变单元，闭包注入更直接；
-且该能力对后续 Map/Set/Generator 同样有用。
+### 4.1 resolving functions 用 bound args，不用闭包捕获
+
+`resolve`/`reject` 在 `new Promise(executor)` 期间创建于 **executor 的临时 execScope**，
+调用返回后该 scope 销毁、它们的 `scopeRef` 归 0。两条约束同时成立：
+
+1. 必须有人强持有它们，否则 reaction job 调用 `capResolve` 时已悬垂；
+2. 持有关系不能构成 **scopeRef 根环**——`promise → resolveFn → closureScope(根) → promise`
+   会让标记-清除永远标记到彼此，运行期泄漏。
+
+因此状态（promise、alreadyResolved cell）通过 `createBoundFunction` 的 **bound args**
+传递：`FunctionData::boundArgs` 是 data 级引用，由 `enumerateChildren` 遍历，不是 GC 根。
+promise 侧用 `PromiseData::resolveFn/rejectFn` 强持有二者（同样由 `enumerateChildren`
+登记），形成 `promise → resolveFn → boundArgs → promise` 的纯 data 引用环——GC 以
+scopeRef 为根、沿 data 链标记，该环整体不可达时一并回收。
 
 ### 5. 不给 Task 加 userdata
 

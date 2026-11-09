@@ -78,6 +78,8 @@ Value* PromiseType::setPrototype(IContext* ctx, Value* self, Value* proto) {
 void PromiseData::enumerateChildren(IGCVisitor* visitor) {
     ObjectData::enumerateChildren(visitor);
     if (result != nullptr) visitor->visit(result);
+    if (resolveFn != nullptr) visitor->visit(resolveFn);
+    if (rejectFn != nullptr) visitor->visit(rejectFn);
     for (const PromiseReaction& r : reactions) {
         if (r.capability.promise != nullptr) visitor->visit(r.capability.promise);
         if (r.capability.resolve != nullptr) visitor->visit(r.capability.resolve);
