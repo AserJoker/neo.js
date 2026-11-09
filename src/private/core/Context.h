@@ -75,7 +75,9 @@ class Context : public IContext {
     std::vector<QueuedTask> macrotasks_;
     uint64_t nextTaskId_ = 1;
     uint64_t nextSeq_ = 0;
-    // 任务实体作为 GC 根：同一实体被多个任务引用时只 add 一次、最后一个出队时 remove。
+    // 任务实体作为**动态 GC 根**（ADR-042）：不挂任何 scope，由 Context 直接
+    // 增减 scopeRef。同一实体被多个任务引用时只 scopeRefInc 一次，最后一个出队/
+    // 取消时 scopeRefDec。析构时由 releaseAllTaskRoots 统一归还。
     std::unordered_map<Value*, size_t> taskRootRefs_;
 
 public:
@@ -244,9 +246,12 @@ public:
 private:
     // 入队（loop 标记由调用方指定）。返回任务 id，OOM 返回 0。
     uint64_t enqueue(Value* entity, uint64_t timeout, bool loop, TaskRunner run);
-    // 任务实体根的引用计数管理：首次入队 add，最后一个任务出队/取消时 remove。
+    // 任务实体根的引用计数管理（ADR-042）：实体不挂 scope，直接增减 scopeRef。
+    // 首次入队 scopeRefInc，最后一个任务出队/取消时 scopeRefDec。
     void retainTaskRoot(Value* entity);
     void releaseTaskRoot(Value* entity);
+    // 析构专用：归还队列中所有任务持有的 scopeRef 并清空队列。
+    void releaseAllTaskRoots();
     // 宏任务按 (due, seq) 插入到有序位置（二分查找保持稳定顺序）。
     void insertOrdered(const Task& task);
     // 从两个队列中移除指定 id 的任务（含根引用释放）。返回是否找到。

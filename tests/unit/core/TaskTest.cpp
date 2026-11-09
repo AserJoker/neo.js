@@ -546,3 +546,87 @@ TEST(TaskTest, ContextWithoutClockUsesDefaultClock) {
     Value* r = ctx->runOneTask();
     EXPECT_EQ(r->type()->kind(), TypeKind::Number);
 }
+
+// ===== Context 析构时未执行任务不得泄漏 =====
+
+TEST(TaskTest, PendingTasksDoNotLeakOnContextDestroy) {
+    auto alloc = createMallocAllocator();
+    CapturingSink sink;
+    Console console{&sink};
+    // 未执行的任务持有 entity 的动态根；Context 析构必须先归还这些 scopeRef，
+    // 否则 GC 最终 collect 时残留 Value → abort（泄漏误报）。
+    {
+        auto ctx = createContext(alloc.get(), &console);
+        Value* fn = ctx->createNativeFunction(
+            [](IContext* c, Value*, size_t, Value*[]) { return c->createUndefined(); }, 0);
+        ctx->postTask(fn, 10000);
+        ctx->postMicrotask(fn);
+        EXPECT_TRUE(ctx->hasTasks());
+    }
+    // 析构未 abort 即通过
+}
+
+TEST(TaskTest, TaskEntityIsNotTrackedByAnyScope) {
+    auto alloc = createMallocAllocator();
+    CapturingSink sink;
+    Console console{&sink};
+    auto ctx = createContext(alloc.get(), &console);
+
+    // 在子作用域里创建后退出，使 entity 不再被任何 scope 跟踪
+    ctx->pushNewScope(ctx->current());
+    Value* fn = ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t, Value*[]) { return c->createUndefined(); }, 0);
+    ctx->popScope();
+    ASSERT_EQ(fn->scopeRef(), 0);
+
+    // 入队后：Context 直接 scopeRefInc，entity **不**出现在任何 scope 的 values 里
+    ctx->postTask(fn, 10000);
+    EXPECT_EQ(fn->scopeRef(), 1);
+    size_t tracked = 0;
+    ctx->global()->forEachValue([&](Value* v) {
+        if (v == fn) ++tracked;
+    });
+    EXPECT_EQ(tracked, 0u) << "entity must not be tracked by global scope";
+
+    // 同一实体再入队一次：只保留一个根引用
+    ctx->postMicrotask(fn);
+    EXPECT_EQ(fn->scopeRef(), 1);
+}
+
+TEST(TaskTest, CancelReleasesDynamicRoot) {
+    auto alloc = createMallocAllocator();
+    CapturingSink sink;
+    Console console{&sink};
+    auto ctx = createContext(alloc.get(), &console);
+
+    ctx->pushNewScope(ctx->current());
+    Value* fn = ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t, Value*[]) { return c->createUndefined(); }, 0);
+    ctx->popScope();
+
+    uint64_t a = ctx->postTask(fn, 10000);
+    uint64_t b = ctx->postTask(fn, 20000);
+    EXPECT_EQ(fn->scopeRef(), 1);  // 同一实体只持有一个根
+
+    EXPECT_TRUE(ctx->cancelTask(a));
+    EXPECT_EQ(fn->scopeRef(), 1);  // 仍有 b 持有
+    EXPECT_TRUE(ctx->cancelTask(b));
+    EXPECT_EQ(fn->scopeRef(), 0);  // 全部取消：根归还
+}
+
+TEST(TaskTest, ExecutedTaskReleasesDynamicRoot) {
+    auto alloc = createMallocAllocator();
+    CapturingSink sink;
+    Console console{&sink};
+    auto ctx = createContext(alloc.get(), &console);
+
+    ctx->pushNewScope(ctx->current());
+    Value* fn = ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t, Value*[]) { return c->createUndefined(); }, 0);
+    ctx->popScope();
+
+    ctx->postTask(fn, 0);
+    EXPECT_EQ(fn->scopeRef(), 1);
+    ctx->runOneTask();
+    EXPECT_EQ(fn->scopeRef(), 0);  // 出队执行后归还根
+}

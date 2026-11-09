@@ -128,6 +128,10 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
 }
 
 Context::~Context() {
+    // 0. 归还所有未执行任务持有的动态根（ADR-042）。任务实体不挂任何 scope，
+    //    其 scopeRef 由 Context 直接管理；队列里剩下的任务不会再出队，故在此统一
+    //    scopeRefDec，否则这些 Value 会被 GC 判为泄漏。
+    releaseAllTaskRoots();
     // 1. 销毁 global scope：~Scope 递归销毁整棵树（current → ... → root → global 逐层析构 + free）
     //    scopeRef 归 0 的 Value 在 GC 下次 collect 时被回收。
     //    注：current_/root_ 在 global_ 析构后悬垂，但不再被访问（成员只是裸指针）。
@@ -770,9 +774,12 @@ std::vector<CallFrame> Context::trace(const SourcePosition& callSite) const {
 
 // —— 事件循环（非阻塞调度）——
 
+// 任务实体作为动态 GC 根（ADR-042）：**不挂任何 scope**，由 Context 直接
+// 增减 scopeRef。这样队列里的任务不会因为挂到 global 而在运行期长期保活，
+// Context 析构时也能精确地一次性归还全部根（见 ~Context）。
 void Context::retainTaskRoot(Value* entity) {
     size_t& refs = taskRootRefs_[entity];
-    if (refs == 0) global()->add(entity);  // 首个任务：加入 GC 根
+    if (refs == 0) entity->scopeRefInc();  // 首个任务：成为 GC 根
     ++refs;
 }
 
@@ -781,8 +788,19 @@ void Context::releaseTaskRoot(Value* entity) {
     if (it == taskRootRefs_.end()) return;
     if (--it->second == 0) {
         taskRootRefs_.erase(it);
-        global()->remove(entity);  // 最后一个任务已出队/取消：解除 GC 根
+        entity->scopeRefDec();  // 最后一个任务已出队/取消：解除 GC 根
     }
+}
+
+void Context::releaseAllTaskRoots() {
+    // Context 析构专用：队列里未执行的任务不再有机会出队，必须在这里统一归还
+    // 它们持有的 scopeRef，否则 GC 最终 collect 会把这些 Value 判为泄漏。
+    for (auto& [entity, refs] : taskRootRefs_) {
+        for (size_t i = 0; i < refs; ++i) entity->scopeRefDec();
+    }
+    taskRootRefs_.clear();
+    microtasks_.clear();
+    macrotasks_.clear();
 }
 
 void Context::insertOrdered(const Task& task) {
