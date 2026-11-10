@@ -163,6 +163,9 @@ Context::~Context() {
     //    其 pinRef 由 Context 直接管理；队列里剩下的任务不会再出队，故在此统一
     //    pinRefDec，否则这些 Value 会被 GC 判为泄漏。
     releaseAllTaskRoots();
+    // 0b. 清空模块表（Module 只借用作用域/导出对象，不拥有它们）。
+    //     先于 GC 销毁，避免留下悬垂指针。
+    modules_.clear();
     // 1. 销毁 GC（unique_ptr 析构）。global 作用域树的所有权已移交 GC（ADR-044）：
     //    ~MarkSweepGC 先销毁根作用域树，再 collect 回收全部残留 Value
     //    （此时根树已空，所有 Value 不可达），最后若有残留则 panic 报告泄漏。

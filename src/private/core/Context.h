@@ -13,6 +13,7 @@
 
 #include "core/IContext.h"
 #include "core/IGCEngine.h"
+#include "core/ModuleEntry.h"
 #include "core/Scope.h"
 #include "core/Value.h"
 
@@ -85,6 +86,11 @@ class Context : public IContext {
     // 增减 pinRef。同一实体被多个任务引用时只 pinRefInc 一次，最后一个出队/
     // 取消时 pinRefDec。析构时由 releaseAllTaskRoots 统一归还。
     std::unordered_map<Value*, size_t> taskRootRefs_;
+    // ES Module 表（id=绝对路径 → Module）。Module 借用 global 树下的 root scope
+    // 与导出对象，不拥有它们；unique_ptr 只管理 Module 结构本身。
+    std::unordered_map<std::string, std::unique_ptr<Module>> modules_;
+    // 正在加载的模块栈（相对 import 的基准）。loader 执行期间压栈，退出时弹栈。
+    std::vector<Module*> moduleStack_;
     // 待上报的未处理拒绝（ADR-043 M4）：promise → 是否仍待上报。
     // 这些 promise 作为动态 GC 根持有（pinRef++），移出/上报/析构时归还。
     std::unordered_map<Value*, bool> pendingRejections_;
@@ -199,6 +205,12 @@ public:
     void setPromisePrototype(Value* proto) override { promisePrototype_ = proto; }
     void setPromiseCtor(Value* ctor) override { promiseCtor_ = ctor; }
     Value* promiseCtor() const override { return promiseCtor_; }
+
+    // —— ES Module 基础设施 ——
+    bool hasModule(std::string_view id) const override;
+    ModuleInfo getModule(std::string_view id) override;
+    void setModuleLoader(std::string_view id, ModuleLoader loader) override;
+    Value* importModule(std::string_view id) override;
 
     // 内建原型访问（ADR-035）：create* 自动挂载对应原型。
     Value* objectPrototype() const override { return objectPrototype_; }

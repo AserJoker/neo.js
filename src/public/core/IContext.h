@@ -31,6 +31,7 @@
 #include "core/ErrorKind.h"
 #include "core/InterruptKind.h"
 #include "core/IteratorKind.h"
+#include "core/Module.h"
 #include "core/Task.h"
 #include "core/WellKnownSymbol.h"
 #include "infra/IAllocator.h"
@@ -464,6 +465,28 @@ public:
     virtual Value* createAsyncGenerator(Value* target, Value* receiver, size_t argc,
                                         Value* argv[],
                                         std::string_view bindName = {}) = 0;
+
+    // —— ES Module 基础设施 ——
+    // 模块以绝对路径为唯一 id。Context 持有 id → Module 映射；每个 Module 借用
+    // 一棵以 global 为父的 root scope，并持有一个原型为 null 的导出对象。
+    // import 的本质是「惰性加载 + 取 Module + 取导出对象」。
+    virtual bool hasModule(std::string_view id) const = 0;
+
+    // getModule: 取模块；不存在则惰性创建（root scope + 原型为 null 的导出对象）。
+    // 返回的 scope/exports 由 Context 持有，调用方只借用。
+    // OOM 时返回 {nullptr, nullptr}。
+    virtual ModuleInfo getModule(std::string_view id) = 0;
+
+    // setModuleLoader: 为模块登记加载器（模块不存在则先创建）。
+    // loader 在模块 root scope 下执行；已加载的模块不会被重新执行。
+    virtual void setModuleLoader(std::string_view id, ModuleLoader loader) = 0;
+
+    // importModule: 取模块；若尚未加载且已登记 loader，则在模块 root scope 下
+    // 执行 loader 并标记已加载。循环依赖时直接返回当前（部分）导出对象。
+    // specifier 可为绝对路径，或以 ./ ../ 开头的相对路径——后者以当前正在
+    // 加载的模块目录为基准解析（模块记录自己的 dirname）。
+    // 返回导出对象；loader 失败时原样返回其 Exception/Fatal。
+    virtual Value* importModule(std::string_view specifier) = 0;
 
     // —— 错误值创建（ADR-006 异常即值 + ADR-017 §4 Fatal）——
     // createException: 创建可捕获异常 Value（child 永远不为 nullptr，无错误对象时传 undefined Value）。
