@@ -418,3 +418,146 @@ TEST(PromiseStaticTest, SpeciesNullFallsBackToDefaultPromise) {
     EXPECT_EQ(neo::core::asPromise(derived)->state, PromiseState::Fulfilled);
     EXPECT_DOUBLE_EQ(num(neo::core::asPromise(derived)->result), 3.0);
 }
+
+// ===== Promise.withResolvers（ES2024 §27.2.4.9）=====
+
+TEST(PromiseStaticTest, WithResolversReturnsCapabilityObject) {
+    Fixture f;
+    Value* fn = f.ctx->getProperty(promiseCtor(f.ctx.get()), "withResolvers");
+    Value* obj = f.ctx->call(fn, promiseCtor(f.ctx.get()), 0, nullptr);
+    ASSERT_EQ(obj->type()->kind(), TypeKind::Object);
+
+    Value* promise = f.ctx->getProperty(obj, "promise");
+    Value* resolve = f.ctx->getProperty(obj, "resolve");
+    Value* reject = f.ctx->getProperty(obj, "reject");
+    ASSERT_EQ(promise->type()->kind(), TypeKind::Promise);
+    EXPECT_TRUE(neo::core::detail::isCallable(resolve));
+    EXPECT_TRUE(neo::core::detail::isCallable(reject));
+    EXPECT_EQ(neo::core::asPromise(promise)->state, PromiseState::Pending);
+
+    Value* args[1] = {f.ctx->createNumber(5)};
+    f.ctx->call(resolve, f.ctx->createUndefined(), 1, args);
+    EXPECT_EQ(neo::core::asPromise(promise)->state, PromiseState::Fulfilled);
+    EXPECT_DOUBLE_EQ(num(neo::core::asPromise(promise)->result), 5.0);
+}
+
+TEST(PromiseStaticTest, WithResolversRejectWorks) {
+    Fixture f;
+    Value* fn = f.ctx->getProperty(promiseCtor(f.ctx.get()), "withResolvers");
+    Value* obj = f.ctx->call(fn, promiseCtor(f.ctx.get()), 0, nullptr);
+    Value* promise = f.ctx->getProperty(obj, "promise");
+    Value* reject = f.ctx->getProperty(obj, "reject");
+    Value* args[1] = {f.ctx->createString("nope")};
+    f.ctx->call(reject, f.ctx->createUndefined(), 1, args);
+    EXPECT_EQ(neo::core::asPromise(promise)->state, PromiseState::Rejected);
+    EXPECT_EQ(str(neo::core::asPromise(promise)->result), "nope");
+}
+
+TEST(PromiseStaticTest, WithResolversOnNonConstructorIsTypeError) {
+    Fixture f;
+    Value* fn = f.ctx->getProperty(promiseCtor(f.ctx.get()), "withResolvers");
+    Value* r = f.ctx->call(fn, f.ctx->createNumber(1), 0, nullptr);
+    ASSERT_EQ(r->type()->kind(), TypeKind::Exception);
+    Value* err = static_cast<neo::core::ExceptionData*>(r->data())->child;
+    EXPECT_EQ(str(f.ctx->getProperty(err, "name")), "TypeError");
+}
+
+// ===== 方法 length 属性（§27.2.5.1/.3/.4）=====
+
+TEST(PromiseStaticTest, ThenCatchFinallyLengthIsOne) {
+    Fixture f;
+    Value* proto = f.ctx->promisePrototype();
+    for (const char* name : {"then", "catch", "finally"}) {
+        Value* fn = f.ctx->getProperty(proto, name);
+        Value* len = f.ctx->getProperty(fn, "length");
+        ASSERT_EQ(len->type()->kind(), TypeKind::Number) << name;
+        EXPECT_DOUBLE_EQ(num(len), 1.0) << name;
+    }
+}
+
+TEST(PromiseStaticTest, StaticMethodLengths) {
+    Fixture f;
+    Value* ctor = promiseCtor(f.ctx.get());
+    struct Expect { const char* name; double len; };
+    const Expect expects[] = {{"resolve", 1}, {"reject", 1}, {"all", 1}, {"race", 1},
+                              {"allSettled", 1}, {"any", 1}, {"withResolvers", 0}};
+    for (const auto& e : expects) {
+        Value* fn = f.ctx->getProperty(ctor, e.name);
+        Value* len = f.ctx->getProperty(fn, "length");
+        ASSERT_EQ(len->type()->kind(), TypeKind::Number) << e.name;
+        EXPECT_DOUBLE_EQ(num(len), e.len) << e.name;
+    }
+}
+
+// ===== 组合器走 GetPromiseResolve（§27.2.4.1.1 step 2）=====
+
+TEST(PromiseStaticTest, AllUsesOverriddenResolve) {
+    Fixture f;
+    // 覆写 C.resolve：记录调用次数，转调内建
+    f.ctx->global()->bind("__resolveCalls", f.ctx->createNumber(0));
+    Value* custom = f.ctx->createNativeFunction(
+        [](IContext* c, Value* self, size_t argc, Value* argv[]) {
+            Value* n = c->global()->lookup("__resolveCalls");
+            c->global()->bind("__resolveCalls",
+                              c->createNumber(num(n) + 1.0));
+            Value* args[1] = {argc > 0 ? argv[0] : c->createUndefined()};
+            return c->call(c->getProperty(self, "__realResolve"), self, 1, args);
+        }, 1);
+    Value* ctor = promiseCtor(f.ctx.get());
+
+    // 用自定义构造函数：构造时转调 %Promise%
+    Value* speciesCtor = f.ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t argc, Value* argv[]) {
+            Value* args[1] = {argc > 0 ? argv[0] : c->createUndefined()};
+            return c->construct(c->global()->lookup("Promise"), 1, args);
+        }, 1);
+    f.ctx->setProperty(speciesCtor, "resolve", custom);
+    // custom 以 self = speciesCtor 调用，故 __realResolve 挂在 speciesCtor 上
+    f.ctx->setProperty(speciesCtor, "__realResolve",
+                       f.ctx->getProperty(ctor, "resolve"));
+
+    Value* allFn = f.ctx->getProperty(ctor, "all");
+    Value* arr = arrayOf(f.ctx.get(), {f.ctx->createNumber(1), f.ctx->createNumber(2)});
+    Value* args[1] = {arr};
+    Value* result = f.ctx->call(allFn, speciesCtor, 1, args);
+    drain(f.ctx.get());
+
+    EXPECT_DOUBLE_EQ(num(f.ctx->global()->lookup("__resolveCalls")), 2.0);
+    EXPECT_EQ(neo::core::asPromise(result)->state, PromiseState::Fulfilled);
+}
+
+TEST(PromiseStaticTest, AllRejectsWhenResolveIsNotCallable) {
+    Fixture f;
+    Value* ctor = promiseCtor(f.ctx.get());
+    Value* fakeCtor = f.ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t argc, Value* argv[]) {
+            Value* args[1] = {argc > 0 ? argv[0] : c->createUndefined()};
+            return c->construct(c->global()->lookup("Promise"), 1, args);
+        }, 1);
+    f.ctx->setProperty(fakeCtor, "resolve", f.ctx->createNumber(1));  // 不可调用
+
+    Value* allFn = f.ctx->getProperty(ctor, "all");
+    Value* args[1] = {f.ctx->createArray()};
+    Value* result = f.ctx->call(allFn, fakeCtor, 1, args);
+    ASSERT_EQ(result->type()->kind(), TypeKind::Promise);
+    EXPECT_EQ(neo::core::asPromise(result)->state, PromiseState::Rejected);
+}
+
+// ===== catch 走 Invoke(self, "then")（§27.2.5.1）=====
+
+TEST(PromiseStaticTest, CatchUsesOverriddenThen) {
+    Fixture f;
+    f.ctx->global()->bind("__thenCalls", f.ctx->createNumber(0));
+    Value* p = newPromise(f.ctx.get());
+    Value* customThen = f.ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t, Value*[]) {
+            Value* n = c->global()->lookup("__thenCalls");
+            c->global()->bind("__thenCalls", c->createNumber(num(n) + 1.0));
+            return c->createUndefined();
+        }, 2);
+    f.ctx->setProperty(p, "then", customThen);
+
+    Value* args[1] = {f.ctx->createUndefined()};
+    f.ctx->call(f.ctx->getProperty(p, "catch"), p, 1, args);
+    EXPECT_DOUBLE_EQ(num(f.ctx->global()->lookup("__thenCalls")), 1.0);
+}

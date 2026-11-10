@@ -141,6 +141,18 @@ while (ctx->hasTasks()) {
 `reportUnhandledRejections` 上报前会再查一次 `isHandled`，避免登记后又被接住
 的条目被误报。
 
+### 5.4 规范细节补全
+
+- **`Promise.withResolvers`**（§27.2.4.9）：`NewPromiseCapability(this)` 后返回
+  `{ promise, resolve, reject }` 普通对象（三个数据属性均 writable/enumerable/configurable）。
+- **`GetPromiseResolve(C)`**（§27.2.4.1.1 step 2）：组合器先取 `C.resolve` 并要求可调用，
+  元素处理调它而非内建 `PromiseResolve`——用户覆写 `C.resolve` 因此生效。
+- **`catch` 走 `Invoke(self, "then")`**（§27.2.5.1）：属性查找 `then` 再调用，
+  而非直接调内建 `promiseThen`，与规范一致（可被实例上的 `then` 覆写）。
+- **`length` 属性**：`then`/`catch`/`finally` 的 `length` 均为 1（§27.2.5.1/.3/.4），
+  而实参校验下限是 0（handler 可省略）。`defineMethod` 增加 `lengthOverride`
+  参数把两者解耦（`minArgc` 同时用于校验，不能直接设为 1）。
+
 ### 6. Promise 构造函数语义
 
 - `Promise(executor)`（无 new）→ TypeError（§27.2.3.1 step 1），用
@@ -154,7 +166,8 @@ while (ctx->hasTasks()) {
   可与任意 thenable 互操作；分阶段推进降低单次改动风险。
 - 缺点：`PromiseData::reactions` 是 C++ 容器，需手动在 `enumerateChildren` 登记
   （漏登记会导致派生 promise 被提前回收）。
-- 范围：不含 `async/await`、`for await`；`Promise.withResolvers`（ES2024 新增）留待后续。
+- 范围：不含 `async/await`、`for await`（依赖 ADR-023 的 VM 挂起/恢复）。
+  ES2024 §27.2 的成员已全部实现，含 `Promise.withResolvers`（§27.2.4.9）。
 - `IsConstructor`（§7.2.4）已落地：`FunctionData::constructible` 显式标记，
   `IContext::setFunctionConstructible` 设置，`detail::isConstructor` 判定；
   `@@species`、静态方法与 `NewPromiseCapability` 均改用它。绑定函数在创建时

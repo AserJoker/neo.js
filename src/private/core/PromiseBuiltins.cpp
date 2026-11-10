@@ -441,11 +441,17 @@ Value* promiseThen(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     return performPromiseThen(ctx, self, onFulfilled, onRejected, cap);
 }
 
-// catch(onRejected)（§27.2.5.1）：等价 then(undefined, onRejected)
+// catch(onRejected)（§27.2.5.1）：Invoke(promise, "then", «undefined, onRejected»)。
+// 规范要求走属性查找（可被覆写的 then），而非直接调内建 promiseThen。
 Value* promiseCatch(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* onRejected = argc > 0 ? argv[0] : ctx->createUndefined();
+    Value* thenFn = ctx->getProperty(self, "then");
+    if (detail::isErrorValue(thenFn)) return thenFn;
+    if (!detail::isCallable(thenFn)) {
+        return detail::typeError(ctx, "Promise.prototype.then is not a function");
+    }
     Value* args[2] = {ctx->createUndefined(), onRejected};
-    return promiseThen(ctx, self, 2, args);
+    return ctx->call(thenFn, self, 2, args);
 }
 
 // finally 的 thenFinally：调用 onFinally，等待其结果，再透传原值
@@ -706,12 +712,27 @@ Value* anyRejectElement(IContext* ctx, Value* /*self*/, size_t argc, Value* argv
     return ctx->call(cd->elementAt(4), ctx->createUndefined(), 1, args);
 }
 
+// GetPromiseResolve(C)（§27.2.4.1.1 step 2）：取 C.resolve 并要求可调用。
+// 组合器必须走它而不是直接调内建 PromiseResolve——否则用户覆写 C.resolve 不生效。
+Value* getPromiseResolve(IContext* ctx, Value* ctor) {
+    Value* resolve = ctx->getProperty(ctor, "resolve");
+    if (detail::isErrorValue(resolve)) return resolve;
+    if (!detail::isCallable(resolve)) {
+        return detail::typeError(ctx, "Promise resolve is not a function");
+    }
+    return resolve;
+}
+
 // —— 组合器主流程（§27.2.4.1.1 / .2.1 / .3.1 / .4.1）——
 enum class PromiseCombinator { All, AllSettled, Any };
 
 // 成功返回 nullptr；失败返回 Exception/Fatal（调用方负责 reject capability）。
 Value* performCombinator(IContext* ctx, Value* iterable, Value* ctor,
                          const PromiseCapability& cap, PromiseCombinator kind) {
+    // §27.2.4.1.1 step 2：先取 C.resolve（失败则整体失败，且此时尚未取迭代器）
+    Value* promiseResolve = getPromiseResolve(ctx, ctor);
+    if (detail::isErrorValue(promiseResolve)) return promiseResolve;
+
     Value* cell = makeCombinatorCell(ctx, cap);
     if (cell == ctx->oomValue()) return cell;
     auto* cd = static_cast<ArrayData*>(cell->data());
@@ -738,7 +759,9 @@ Value* performCombinator(IContext* ctx, Value* iterable, Value* ctor,
         // values.append(undefined)
         static_cast<ArrayData*>(values->data())->setElement(index, ctx->createUndefined());
 
-        Value* nextPromise = promiseResolveCtor(ctx, ctor, nextValue);
+        // §27.2.4.1.1 step 8.b：调 C.resolve(nextValue)
+        Value* resolveArgs[1] = {nextValue};
+        Value* nextPromise = ctx->call(promiseResolve, ctor, 1, resolveArgs);
         if (detail::isErrorValue(nextPromise)) {
             return detail::iteratorClose(ctx, iterator, nextPromise);
         }
@@ -836,6 +859,16 @@ Value* promiseRace(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     PromiseCapability cap;
     if (Value* err = newPromiseCapability(ctx, self, cap)) return err;
 
+    // §27.2.4.4.1 step 2：先取 C.resolve
+    Value* promiseResolve = getPromiseResolve(ctx, self);
+    if (detail::isErrorValue(promiseResolve)) {
+        Value* reason = exceptionReason(promiseResolve);
+        Value* args[1] = {reason};
+        Value* r = ctx->call(cap.reject, ctx->createUndefined(), 1, args);
+        if (detail::isErrorValue(r)) return r;
+        return cap.promise;
+    }
+
     Value* iterable = argc > 0 ? argv[0] : ctx->createUndefined();
     Value* iterator = detail::getIterator(ctx, iterable);
     if (detail::isErrorValue(iterator)) {
@@ -875,7 +908,9 @@ Value* promiseRace(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
             if (detail::isErrorValue(r)) return r;
             return cap.promise;
         }
-        Value* nextPromise = promiseResolveCtor(ctx, self, nextValue);
+        // §27.2.4.4.1 step 6.a：调 C.resolve(nextValue)
+        Value* resolveArgs[1] = {nextValue};
+        Value* nextPromise = ctx->call(promiseResolve, self, 1, resolveArgs);
         if (detail::isErrorValue(nextPromise)) {
             Value* reason = exceptionReason(nextPromise);
             Value* args[1] = {reason};
@@ -926,18 +961,47 @@ Value* promiseRejectStatic(IContext* ctx, Value* self, size_t argc, Value* argv[
     return cap.promise;
 }
 
+// Promise.withResolvers()（ES2024 §27.2.4.9）：返回 { promise, resolve, reject }。
+Value* promiseWithResolvers(IContext* ctx, Value* self, size_t /*argc*/,
+                            Value* /*argv*/[]) {
+    if (!detail::isConstructor(self)) {
+        return detail::typeError(ctx, "Promise.withResolvers called on non-constructor");
+    }
+    PromiseCapability cap;
+    if (Value* err = newPromiseCapability(ctx, self, cap)) return err;
+
+    Value* obj = ctx->createObject();
+    if (obj == ctx->oomValue()) return obj;
+    Value* r = ctx->defineProperty(obj, "promise", cap.promise, true, true, true);
+    if (detail::isErrorValue(r)) return r;
+    r = ctx->defineProperty(obj, "resolve", cap.resolve, true, true, true);
+    if (detail::isErrorValue(r)) return r;
+    r = ctx->defineProperty(obj, "reject", cap.reject, true, true, true);
+    if (detail::isErrorValue(r)) return r;
+    return obj;
+}
+
 // 把值挂到 global scope：add 跟踪 + bind 名字
 void bindGlobal(IContext* ctx, std::string_view name, Value* v) {
     ctx->global()->add(v);
     ctx->global()->bind(name, v);
 }
 
-// 定义 prototype 方法（writable/不可枚举/可配置，与 ES 一致）
+// 定义 prototype 方法（writable/不可枚举/可配置，与 ES 一致）。
+// lengthOverride 非负时覆盖 "length" 属性（规范 length ≠ 实参校验下限的情形）。
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
-                  size_t minArgc) {
+                  size_t minArgc, int lengthOverride = -1) {
     Value* f = ctx->createNativeFunction(fn, minArgc);
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
+    if (lengthOverride >= 0) {
+        Value* len = ctx->createNumber(static_cast<double>(lengthOverride));
+        if (len == ctx->oomValue()) return false;
+        if (ctx->defineProperty(f, "length", len, false, false, true)->type()->kind() ==
+            TypeKind::Exception) {
+            return false;
+        }
+    }
     return ctx->defineProperty(target, name, f, true, false, true)->type()->kind() !=
            TypeKind::Exception;
 }
@@ -971,10 +1035,11 @@ bool registerPromiseBuiltins(IContext* ctx) {
     }
 
     // —— 3. Promise.prototype 方法 ——
-    // handler 均可省略（§27.2.5.4：undefined 即透传），故 minArgc = 0。
-    if (!defineMethod(ctx, promiseProto, "then", promiseThen, 0)) return false;
-    if (!defineMethod(ctx, promiseProto, "catch", promiseCatch, 0)) return false;
-    if (!defineMethod(ctx, promiseProto, "finally", promiseFinally, 0)) return false;
+    // minArgc = 0：handler 可省略（§27.2.5.4：undefined 即透传）。
+    // 但规范的 length 属性都是 1，故显式覆盖（minArgc 同时用于实参校验，不能直接设为 1）。
+    if (!defineMethod(ctx, promiseProto, "then", promiseThen, 0, 1)) return false;
+    if (!defineMethod(ctx, promiseProto, "catch", promiseCatch, 0, 1)) return false;
+    if (!defineMethod(ctx, promiseProto, "finally", promiseFinally, 0, 1)) return false;
 
     // —— 4. @@toStringTag = "Promise"（§27.2.5.5）——
     if (ctx->defineProperty(promiseProto,
@@ -1002,6 +1067,9 @@ bool registerPromiseBuiltins(IContext* ctx) {
     if (!defineMethod(ctx, promiseFn, "race", promiseRace, 1)) return false;
     if (!defineMethod(ctx, promiseFn, "allSettled", promiseAllSettled, 1)) return false;
     if (!defineMethod(ctx, promiseFn, "any", promiseAny, 1)) return false;
+    if (!defineMethod(ctx, promiseFn, "withResolvers", promiseWithResolvers, 0)) {
+        return false;
+    }
 
     // —— 7. 注册到 global ——
     bindGlobal(ctx, "Promise", promiseFn);
