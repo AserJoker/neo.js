@@ -1,7 +1,7 @@
 # ADR-045: 协程抽象（Coroutine）— 通用挂起/恢复，统一 native 与 VM
 
-- 状态: 已接受（步骤 0-3 已实现：Interrupt、Coroutine 对象与协程栈、挂起分支与 native runner；
-  Generator 封装待做）
+- 状态: 已接受（步骤 0-4 已实现：Interrupt、Coroutine 对象与协程栈、挂起分支与 native runner、
+  Generator 封装；finally 语义 / VM runner / async-await 待做）
 - 决策者: aserjoker（项目负责人） + CodeAgent
 - 关联: ADR-004（执行模型）、ADR-017（Interrupt）、ADR-022（函数调用）、
           ADR-023（协程挂起/恢复）、ADR-036（闭包作用域孤立化）、
@@ -272,7 +272,7 @@ ADR-023 的 VM 实现因此成为本抽象的一个 runner，而非独立机制�
   1. `TypeKind::Coroutine` + `CoroutineData`；✅
   2. `ctx->createInterrupt(Yield, …)` / `getCurrentCoroutine` / 协程栈；✅
   3. `invokeNativeFunction` 挂起分支 + `resumeNativeCoroutine`；✅
-  4. Generator 函数标记 + `%GeneratorPrototype%` + next/throw/return；
+  4. Generator 函数标记 + `%GeneratorPrototype%` + next/throw/return；✅
   5. （后续）finally 语义、VM runner、async/await 组合。
 
 实现落点（步骤 1-3）：
@@ -281,4 +281,7 @@ ADR-023 的 VM 实现因此成为本抽象的一个 runner，而非独立机制�
 - `src/private/core/FunctionInvoke.cpp`：`invokeNativeFunction` 承载调用流程与挂起分支
   （`FunctionType::call/construct` 与协程 runner 共用）；
 - `src/private/core/NativeCoroutine.cpp`：`resumeNativeCoroutine`；
-- `IContext::createCoroutine / getCurrentCoroutine / resumeCoroutine`。
+- `IContext::createCoroutine / getCurrentCoroutine / resumeCoroutine`；
+- `src/private/core/GeneratorBuiltins.cpp`：`%GeneratorPrototype%` 与 next/return/throw；
+- `FunctionData::generator` + `IContext::setFunctionGenerator`：`function*` 标记，
+  `FunctionType::call` 直接创建 Suspended 协程。

@@ -74,6 +74,12 @@ Value* FunctionType::call(IContext* ctx, Value* self, Value* thisArg,
                          static_cast<size_t>(args.size()), args.data());
     }
 
+    // 生成器函数（function*）：不执行函数体，创建 Suspended 协程返回（ADR-045 §8）。
+    // 实参原样交给协程，首次 next 时才真正运行。
+    if (d->generator) {
+        return ctx->createCoroutine(self, thisArg, argc, argv);
+    }
+
     if (Value* err = checkMinArgc(ctx, d, argc)) return err;
     return invokeNativeFunction(ctx, self, thisArg, argc, argv);
 }

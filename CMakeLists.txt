@@ -110,6 +110,7 @@ add_library(neojs STATIC
     src/private/core/ObjectBuiltins.cpp
     src/private/core/ArrayBuiltins.cpp
     src/private/core/IteratorBuiltins.cpp
+    src/private/core/GeneratorBuiltins.cpp
     src/private/core/TimerBuiltins.cpp
     src/private/core/ErrorBuiltins.cpp
     src/private/core/PromiseBuiltins.cpp

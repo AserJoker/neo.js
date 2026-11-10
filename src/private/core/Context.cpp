@@ -15,6 +15,7 @@
 #include "core/Context.h"
 #include "core/ArrayBuiltins.h"
 #include "core/ErrorBuiltins.h"
+#include "core/GeneratorBuiltins.h"
 #include "core/IType.h"
 #include "core/IteratorBuiltins.h"
 #include "core/NativeCoroutine.h"
@@ -118,6 +119,12 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     // 11. 注册 Iterator 抽象类与数组迭代器内建（ES2024 §23.1.5 / ES2025 §27.1）。
     //     依赖 Object.prototype / Function.prototype / Array.prototype 已就绪。
     if (!registerIteratorBuiltins(this)) {
+        std::abort();
+    }
+
+    // 11b. 注册 %GeneratorPrototype%（ADR-045 §8）。
+    //      依赖 %Iterator.prototype% 已就绪。
+    if (!registerGeneratorBuiltins(this)) {
         std::abort();
     }
 
@@ -373,6 +380,24 @@ void Context::setFunctionConstructible(Value* fn, bool constructible) {
     // 仅对 Function 类型有效，其他类型忽略
     if (fn->type()->kind() != TypeKind::Function) return;
     static_cast<FunctionData*>(fn->data())->constructible = constructible;
+}
+
+void Context::setFunctionGenerator(Value* fn, bool generator) {
+    // 仅对 Function 类型有效，其他类型忽略
+    if (fn->type()->kind() != TypeKind::Function) return;
+    auto* d = static_cast<FunctionData*>(fn->data());
+    d->generator = generator;
+    if (!generator) return;
+    // 生成器函数不可构造（ES2024 §27.5.1）
+    d->constructible = false;
+    // fn.prototype 的 [[Prototype]] 改为 %GeneratorPrototype%
+    // （ES2024 §27.5.1.2）。bootstrap 期间尚未建立时跳过。
+    if (generatorPrototype_ != nullptr) {
+        Value* proto = getProperty(fn, "prototype");
+        if (detail::isObjectKind(proto->type()->kind())) {
+            (void)setPrototype(proto, generatorPrototype_);
+        }
+    }
 }
 
 void Context::setFunctionName(Value* fn, std::string_view name) {
@@ -720,7 +745,13 @@ Value* Context::createCoroutine(Value* target, Value* receiver, size_t argc, Val
 
     Value* co = createTracked(getCoroutineType(), d, bindName);
     if (co == oomValue_) return co;
-    if (objectPrototype_ != nullptr) {
+    // 实例原型取 target.prototype（OrdinaryCreateFromConstructor 语义）：
+    // 生成器函数的 fn.prototype 已挂到 %GeneratorPrototype% 下；
+    // 取不到对象原型时回退 Object.prototype。
+    Value* proto = getProperty(target, "prototype");
+    if (detail::isObjectKind(proto->type()->kind())) {
+        static_cast<ObjectData*>(co->data())->prototype = proto;
+    } else if (objectPrototype_ != nullptr) {
         static_cast<ObjectData*>(co->data())->prototype = objectPrototype_;
     }
     return co;

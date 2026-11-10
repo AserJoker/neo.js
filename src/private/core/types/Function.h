@@ -97,6 +97,9 @@ public:
     size_t minArgc;        // 最少参数数量（调用时校验）
     NativeFn constructFn;  // 可选构造钩子（nullptr = native + 默认 this 语义）
     bool constructible = true;  // 是否可作为构造函数（IsConstructor，§7.2.4）
+    // 是否为生成器函数（function*，ADR-045 §8）。为 true 时 call 不执行函数体，
+    // 而是创建 Suspended 协程返回；生成器函数不可构造。
+    bool generator = false;
     size_t activeCalls = 0;  // 进行中调用数（重入计数，闭包作用域挂载/摘除用）
     // bind 产生的绑定函数（ES2024 §10.4.1.3 BoundFunctionCreate）：
     // boundTarget 非空表示这是绑定函数，调用时以 boundThis 为 this、

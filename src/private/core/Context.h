@@ -59,6 +59,7 @@ class Context : public IContext {
     Value* iteratorCtor_ = nullptr;
     Value* arrayIteratorPrototype_ = nullptr;
     Value* iteratorWrapperPrototype_ = nullptr;
+    Value* generatorPrototype_ = nullptr;  // %GeneratorPrototype%（ADR-045 §8）
     Value* errorPrototype_ = nullptr;   // %Error.prototype%（ADR-038）
     Value* promisePrototype_ = nullptr; // %Promise.prototype%（ADR-043）
     // Symbol.for 全局注册表（ES2024 §20.4.2.1）：key → symbol Value。
@@ -146,6 +147,7 @@ public:
     void setFunctionName(Value* fn, std::string_view name) override;
     void setFunctionConstructor(Value* fn, NativeFn ctor) override;
     void setFunctionConstructible(Value* fn, bool constructible) override;
+    void setFunctionGenerator(Value* fn, bool generator) override;
     Value* createBoundFunction(Value* target, Value* boundThis, size_t argc,
                                Value* argv[]) override;
     Value* setClosure(Value* fn, std::string_view name) override;
@@ -220,6 +222,8 @@ public:
     }
     Value* iteratorPrototype() const override { return iteratorPrototype_; }
     Value* iteratorCtor() const override { return iteratorCtor_; }
+    void setGeneratorPrototype(Value* proto) override { generatorPrototype_ = proto; }
+    Value* generatorPrototype() const override { return generatorPrototype_; }
     Value* getProperty(Value* obj, Value* key) override;
     Value* setProperty(Value* obj, Value* key, Value* value) override;
     bool hasProperty(Value* obj, Value* key) override;

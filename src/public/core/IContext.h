@@ -203,6 +203,11 @@ public:
     // 仅对 Function 类型有效，其他类型忽略。
     virtual void setFunctionConstructible(Value* fn, bool constructible) = 0;
 
+    // setFunctionGenerator: 标记函数为生成器函数（function*，ADR-045 §8）。
+    // 标记后 call 不执行函数体，而是创建 Suspended 协程返回；生成器函数不可构造。
+    // 仅对 Function 类型有效，其他类型忽略。
+    virtual void setFunctionGenerator(Value* fn, bool generator) = 0;
+
     // —— 对象与属性（ADR-018 对象模型）——
     // createObject: 创建空对象 Value（properties/order/symbols 空）。
     // 原型自动挂 Object.prototype（ADR-035 完整原型链）。
@@ -298,6 +303,11 @@ public:
     // 由 IteratorBuiltins 建立，生命周期与 Context 一致。
     virtual Value* iteratorPrototype() const = 0;
     virtual Value* iteratorCtor() const = 0;
+
+    // setGeneratorPrototype / generatorPrototype: %GeneratorPrototype%（ADR-045 §8）。
+    // bootstrap 专用；建立后生成器函数标记会把 fn.prototype 挂到它下面。
+    virtual void setGeneratorPrototype(Value* proto) = 0;
+    virtual Value* generatorPrototype() const = 0;
 
     // 属性操作代理：obj->type()->op(this, obj, ...) 分派。
     // key 是 Value*：symbol 保持符号身份（symbols 容器），其他类型 ToPropertyKey

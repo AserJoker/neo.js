@@ -37,6 +37,7 @@ add_executable(core_unit_test
     ToPrimitiveTest.cpp
     InterruptTest.cpp
     CoroutineTest.cpp
+    GeneratorTest.cpp
 )
 target_link_libraries(core_unit_test
     PRIVATE
