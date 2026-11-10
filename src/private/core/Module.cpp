@@ -12,6 +12,7 @@
 
 #include "core/Context.h"
 
+#include "core/types/ModuleNamespace.h"
 #include "core/types/TypeBehavior.h"
 
 #include <new>
@@ -107,7 +108,7 @@ ModuleInfo Context::getModule(std::string_view id) {
     // 惰性创建模块 root scope（global 的子作用域，生命周期随作用域树）。
     void* p = alloc_->alloc(sizeof(Scope));
     if (p == nullptr) return ModuleInfo{};
-    Scope* scope = new (p) Scope(global_, alloc_);
+    Scope* scope = new (p) Scope(global_, alloc_, this);
     global_->addChild(scope);
 
     // 导出对象必须在模块 scope 下创建，才能被作用域树跟踪。
@@ -175,6 +176,14 @@ Value* Context::exportBinding(Value* exports, std::string_view exportName,
     if (exports->type()->kind() != TypeKind::ModuleNamespace) {
         return detail::typeError(this, "export target is not a module namespace");
     }
+    // re-export：localName 本身是导入绑定时，导出也保持间接，源导出晚到仍可解析。
+    Value* sourceNamespace = nullptr;
+    Value* sourceExportKey = nullptr;
+    if (current()->getIndirectBindingChain(localName, sourceNamespace, sourceExportKey)) {
+        Value* key = createString(exportName);
+        if (key == oomValue_) return key;
+        return defineIndirectExport(this, exports, key, sourceNamespace, sourceExportKey);
+    }
     // 活绑定：直接取模块作用域里的槽位 Value*（顶层绑定由模块 scope 持有）。
     Value* binding = current()->lookupChain(localName);
     if (binding == nullptr) {
@@ -183,6 +192,25 @@ Value* Context::exportBinding(Value* exports, std::string_view exportName,
     }
     // ModuleNamespaceType::defineProperty 直接存 Value*，不 clone。
     return defineProperty(exports, exportName, binding, false, true, false);
+}
+
+Value* Context::bindImport(std::string_view localName, Value* namespaceObj,
+                           std::string_view exportName) {
+    if (detail::isErrorValue(namespaceObj)) return namespaceObj;
+    if (namespaceObj->type()->kind() != TypeKind::ModuleNamespace) {
+        return detail::typeError(this, "import target is not a module namespace");
+    }
+    // exportKey 缓存为 Value*：间接绑定每次读取复用，避免重复建键。
+    Value* key = createString(exportName);
+    if (key == oomValue_) return key;
+    if (!current()->defineIndirect(localName, namespaceObj, key)) {
+        return detail::errorOf(this, ErrorKind::SyntaxError,
+                               "Identifier '" + std::string(localName) +
+                                   "' has already been declared");
+    }
+    // 当前解析值（导出尚不存在时为 undefined）；绑定本身已建立。
+    Value* value = current()->lookup(localName);
+    return value != nullptr ? value : createUndefined();
 }
 
 }  // namespace neo::core

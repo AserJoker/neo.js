@@ -516,6 +516,15 @@ public:
     virtual Value* exportBinding(Value* exports, std::string_view exportName,
                                  std::string_view localName) = 0;
 
+    // bindImport: 在当前作用域建立导入绑定 localName -> namespaceObj[exportName]。
+    // **间接绑定**：读取时经命名空间实时解析，故导出方后续更新、循环依赖中晚到的
+    // 导出都能被看到；写入恒返回 TypeError（导入绑定只读）。
+    // 只读在运行时绑定层强制，eval/with 等动态路径同样受约束。
+    // namespaceObj 必须是模块命名空间；重复声明返回 SyntaxError。
+    // 返回 localName 当前解析值（导出尚不存在时为 undefined），或 Exception。
+    virtual Value* bindImport(std::string_view localName, Value* namespaceObj,
+                              std::string_view exportName) = 0;
+
     // —— 错误值创建（ADR-006 异常即值 + ADR-017 §4 Fatal）——
     // createException: 创建可捕获异常 Value（child 永远不为 nullptr，无错误对象时传 undefined Value）。
     // createFatal: 创建不可捕获致命错误 Value（字面量消息，静态存储期）。

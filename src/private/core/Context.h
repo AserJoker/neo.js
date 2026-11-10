@@ -223,6 +223,8 @@ public:
     Value* createModuleNamespace(std::string_view bindName = {}) override;
     Value* exportBinding(Value* exports, std::string_view exportName,
                          std::string_view localName) override;
+    Value* bindImport(std::string_view localName, Value* namespaceObj,
+                      std::string_view exportName) override;
 
     // 内建原型访问（ADR-035）：create* 自动挂载对应原型。
     Value* objectPrototype() const override { return objectPrototype_; }

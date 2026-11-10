@@ -17,6 +17,8 @@
 #include "core/Scope.h"
 #include "core/Value.h"
 #include "core/WellKnownSymbol.h"
+#include "core/types/Array.h"
+#include "core/types/Function.h"
 #include "core/types/Number.h"
 #include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
@@ -30,6 +32,8 @@
 
 namespace {
 
+using neo::core::ArrayData;
+using neo::core::FunctionData;
 using neo::core::IContext;
 using neo::core::ModuleInfo;
 using neo::core::NumberData;
@@ -136,6 +140,9 @@ Value* loaderEmpty(IContext* ctx, Value* exports) {
 // —— 模块命名空间 / 活绑定 ——
 Value* g_exportedSlot = nullptr;
 Value* g_exportResult = nullptr;
+Value* g_importedValue = nullptr;
+Value* g_importResult = nullptr;
+Value* g_storeResult = nullptr;
 
 double numOf(Value* v) { return static_cast<NumberData*>(v->data())->value; }
 std::string strOf(Value* v) { return static_cast<StringData*>(v->data())->value; }
@@ -157,6 +164,100 @@ Value* loaderExportMissing(IContext* ctx, Value* exports) {
 Value* loaderExportToObject(IContext* ctx, Value* /*exports*/) {
     Value* obj = ctx->createObject();
     g_exportResult = ctx->exportBinding(obj, "y", "y");
+    return ctx->createUndefined();
+}
+
+// —— 导入绑定（间接绑定 / 只读）——
+Value* loaderExporterStatic(IContext* ctx, Value* exports) {
+    ctx->define("x", ctx->createNumber(1));
+    ctx->exportBinding(exports, "x", "x");
+    return ctx->createUndefined();
+}
+
+Value* loaderExporterLive(IContext* ctx, Value* exports) {
+    ctx->define("x", ctx->createNumber(1));
+    ctx->exportBinding(exports, "x", "x");
+    // 让 importer 先建立绑定，再更新导出槽位。
+    ctx->importModule("/impLive.js");
+    ctx->store("x", ctx->createNumber(2));
+    return ctx->createUndefined();
+}
+
+Value* loaderImporterLive(IContext* ctx, Value* /*exports*/) {
+    Value* ns = ctx->importModule("/expLive.js");
+    g_importedValue = ctx->bindImport("x", ns, "x");
+    return ctx->createUndefined();
+}
+
+Value* loaderImporterReadOnly(IContext* ctx, Value* /*exports*/) {
+    Value* ns = ctx->importModule("/expStatic.js");
+    g_importResult = ctx->bindImport("x", ns, "x");
+    g_storeResult = ctx->store("x", ctx->createNumber(99));
+    return ctx->createUndefined();
+}
+
+Value* loaderExporterLate(IContext* ctx, Value* exports) {
+    // importer 先绑定，此时 x 尚未导出。
+    ctx->importModule("/impLate.js");
+    ctx->define("x", ctx->createNumber(7));
+    ctx->exportBinding(exports, "x", "x");
+    return ctx->createUndefined();
+}
+
+Value* loaderImporterLate(IContext* ctx, Value* /*exports*/) {
+    Value* ns = ctx->importModule("/expLate.js");
+    g_importResult = ctx->bindImport("x", ns, "x");
+    return ctx->createUndefined();
+}
+
+Value* loaderDuplicateImport(IContext* ctx, Value* /*exports*/) {
+    ctx->define("x", ctx->createNumber(1));
+    Value* ns = ctx->importModule("/expStatic.js");
+    g_importResult = ctx->bindImport("x", ns, "x");
+    return ctx->createUndefined();
+}
+
+Value* loaderBindToObject(IContext* ctx, Value* /*exports*/) {
+    Value* obj = ctx->createObject();
+    g_importResult = ctx->bindImport("x", obj, "x");
+    return ctx->createUndefined();
+}
+
+// —— 闭包捕获导入绑定 / re-export ——
+Value* g_closure = nullptr;
+
+Value* dummyNative(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* /*argv*/[]) {
+    return ctx->createUndefined();
+}
+
+Value* loaderExporterClosureLate(IContext* ctx, Value* exports) {
+    // importer 先捕获导入绑定，此时 x 尚未导出。
+    ctx->importModule("/impClosureLate.js");
+    ctx->define("x", ctx->createNumber(7));
+    ctx->exportBinding(exports, "x", "x");
+    return ctx->createUndefined();
+}
+
+Value* loaderImporterClosureLate(IContext* ctx, Value* /*exports*/) {
+    Value* ns = ctx->importModule("/expClosureLate.js");
+    ctx->bindImport("x", ns, "x");
+    g_closure = ctx->createNativeFunction(dummyNative, 0);
+    ctx->setClosure(g_closure, "x");
+    return ctx->createUndefined();
+}
+
+Value* loaderReexporter(IContext* ctx, Value* exports) {
+    Value* ns = ctx->importModule("/srcLate.js");
+    ctx->bindImport("x", ns, "x");
+    // 源导出尚未出现：re-export 仍应保持间接，晚到后可解析。
+    g_exportResult = ctx->exportBinding(exports, "x", "x");
+    return ctx->createUndefined();
+}
+
+Value* loaderSrcLate(IContext* ctx, Value* exports) {
+    ctx->importModule("/reexporter.js");
+    ctx->define("x", ctx->createNumber(7));
+    ctx->exportBinding(exports, "x", "x");
     return ctx->createUndefined();
 }
 
@@ -431,6 +532,141 @@ TEST(ModuleTest, NamespaceRejectsMutation) {
     EXPECT_TRUE(isErrorValue(
         f.ctx->defineAccessor(info.exports, key, nullptr, nullptr, true, true)));
     EXPECT_TRUE(isErrorValue(f.ctx->setPrototype(info.exports, f.ctx->createObject())));
+}
+
+TEST(ModuleTest, ImportBindingResolvesLiveValue) {
+    Fixture f;
+    g_importedValue = nullptr;
+    f.ctx->setModuleLoader("/expLive.js", loaderExporterLive);
+    f.ctx->setModuleLoader("/impLive.js", loaderImporterLive);
+
+    Value* ns = f.ctx->importModule("/expLive.js");
+    ASSERT_FALSE(isErrorValue(ns));
+    ASSERT_NE(g_importedValue, nullptr);
+    // importer 绑定后 exporter 又 store 了 2：间接绑定读取时解析，能看到最新值。
+    EXPECT_EQ(numOf(g_importedValue), 2.0);
+}
+
+TEST(ModuleTest, ImportBindingIsReadOnly) {
+    Fixture f;
+    g_importResult = nullptr;
+    g_storeResult = nullptr;
+    f.ctx->setModuleLoader("/expStatic.js", loaderExporterStatic);
+    f.ctx->setModuleLoader("/impReadOnly.js", loaderImporterReadOnly);
+
+    f.ctx->importModule("/impReadOnly.js");
+
+    ASSERT_NE(g_importResult, nullptr);
+    EXPECT_FALSE(isErrorValue(g_importResult));
+    ASSERT_NE(g_storeResult, nullptr);
+    EXPECT_TRUE(isErrorValue(g_storeResult));
+}
+
+TEST(ModuleTest, ImportBindingSeesLateExport) {
+    Fixture f;
+    g_importResult = nullptr;
+    f.ctx->setModuleLoader("/expLate.js", loaderExporterLate);
+    f.ctx->setModuleLoader("/impLate.js", loaderImporterLate);
+
+    f.ctx->importModule("/expLate.js");
+
+    // 绑定时导出尚不存在，返回 undefined；导出完成后间接绑定解析到 7。
+    ASSERT_NE(g_importResult, nullptr);
+    EXPECT_EQ(g_importResult->type()->kind(), TypeKind::Undefined);
+    Value* resolved = f.ctx->getModule("/impLate.js").scope->lookup("x");
+    ASSERT_NE(resolved, nullptr);
+    EXPECT_EQ(numOf(resolved), 7.0);
+}
+
+TEST(ModuleTest, ImportBindingSurvivesGc) {
+    Fixture f;
+    g_importedValue = nullptr;
+    f.ctx->setModuleLoader("/expLive.js", loaderExporterLive);
+    f.ctx->setModuleLoader("/impLive.js", loaderImporterLive);
+
+    f.ctx->importModule("/expLive.js");
+    ASSERT_NE(g_importedValue, nullptr);
+
+    f.ctx->gc()->collect();
+
+    EXPECT_EQ(numOf(g_importedValue), 2.0);
+    EXPECT_EQ(f.ctx->getModule("/impLive.js").scope->lookup("x"), g_importedValue);
+}
+
+TEST(ModuleTest, ImportBindingRejectsDuplicateDeclaration) {
+    Fixture f;
+    g_importResult = nullptr;
+    f.ctx->setModuleLoader("/expStatic.js", loaderExporterStatic);
+    f.ctx->setModuleLoader("/impDup.js", loaderDuplicateImport);
+
+    f.ctx->importModule("/impDup.js");
+
+    ASSERT_NE(g_importResult, nullptr);
+    EXPECT_TRUE(isErrorValue(g_importResult));
+}
+
+TEST(ModuleTest, ImportBindingRejectsNonNamespaceTarget) {
+    Fixture f;
+    g_importResult = nullptr;
+    f.ctx->setModuleLoader("/impObj.js", loaderBindToObject);
+
+    f.ctx->importModule("/impObj.js");
+
+    ASSERT_NE(g_importResult, nullptr);
+    EXPECT_TRUE(isErrorValue(g_importResult));
+}
+
+TEST(ModuleTest, ClosureCapturesIndirectBindingForLateExport) {
+    Fixture f;
+    g_closure = nullptr;
+    f.ctx->setModuleLoader("/expClosureLate.js", loaderExporterClosureLate);
+    f.ctx->setModuleLoader("/impClosureLate.js", loaderImporterClosureLate);
+
+    f.ctx->importModule("/expClosureLate.js");
+    f.ctx->gc()->collect();
+
+    ASSERT_NE(g_closure, nullptr);
+    auto* d = static_cast<FunctionData*>(g_closure->data());
+    // 捕获的是间接绑定，而非捕获时的 undefined。
+    EXPECT_EQ(d->closureScope->bindingKind("x"), Scope::BindingKind::Indirect);
+    Value* resolved = d->closureScope->lookup("x");
+    ASSERT_NE(resolved, nullptr);
+    EXPECT_EQ(numOf(resolved), 7.0);
+}
+
+TEST(ModuleTest, ReexportRemainsIndirectForLateExport) {
+    Fixture f;
+    g_exportResult = nullptr;
+    f.ctx->setModuleLoader("/srcLate.js", loaderSrcLate);
+    f.ctx->setModuleLoader("/reexporter.js", loaderReexporter);
+
+    f.ctx->importModule("/srcLate.js");
+    f.ctx->gc()->collect();
+
+    ModuleInfo re = f.ctx->getModule("/reexporter.js");
+    Value* key = f.ctx->createString("x");
+    EXPECT_TRUE(f.ctx->hasProperty(re.exports, key));
+    Value* resolved = f.ctx->getProperty(re.exports, key);
+    ASSERT_NE(resolved, nullptr);
+    EXPECT_EQ(numOf(resolved), 7.0);
+}
+
+TEST(ModuleTest, ReexportNameIsEnumerable) {
+    Fixture f;
+    g_exportResult = nullptr;
+    f.ctx->setModuleLoader("/srcLate.js", loaderSrcLate);
+    f.ctx->setModuleLoader("/reexporter.js", loaderReexporter);
+
+    f.ctx->importModule("/srcLate.js");
+
+    ModuleInfo re = f.ctx->getModule("/reexporter.js");
+    Value* keys = f.ctx->ownEnumerableStringKeys(re.exports);
+    ASSERT_NE(keys, nullptr);
+    auto* d = static_cast<ArrayData*>(keys->data());
+    ASSERT_EQ(d->length(), 1u);
+    Value* k = d->elementAt(0);
+    ASSERT_NE(k, nullptr);
+    EXPECT_EQ(strOf(k), "x");
 }
 
 }  // namespace

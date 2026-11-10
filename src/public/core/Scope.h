@@ -46,20 +46,36 @@
 
 namespace neo::core {
 
+class IContext;
+
 class Scope {
+    // 间接绑定（导入绑定）：名字解析为 namespaceObj[exportKey]，读取时实时求值。
+    // 不持有值槽位，因此导出方后续更新（含循环依赖中晚到的导出）都能被看到。
+    // namespaceObj/exportKey 均为 GC 托管 Value*，登记到 values_ 保活。
+    struct IndirectBinding {
+        Value* namespaceObj = nullptr;
+        Value* exportKey = nullptr;
+    };
+
     Scope* parent_ = nullptr;                              // 父作用域（global 的 parent=nullptr）
     infra::IAllocator* allocator_ = nullptr;                // 借用，用于释放子 Scope 内存
+    IContext* context_ = nullptr;                           // 借用，解析间接绑定用
     std::unordered_set<Scope*> children_;                  // 子作用域（无序、去重，析构时递归释放）
     std::vector<Value*> values_;                           // 跟踪的 value（含匿名临时值）
     std::unordered_map<std::string, Value*> namedValues_; // 命名绑定（借用）
+    std::unordered_map<std::string, IndirectBinding> indirectBindings_;  // 导入绑定
     std::unordered_set<std::string> flags_;                // 作用域标注（如 "strict"）
 
 public:
+    // 绑定种类：store 需据此区分「直接槽位」与「只读导入绑定」。
+    enum class BindingKind { None, Direct, Indirect };
+
     // 构造：parent 可为 nullptr（global scope），allocator 借用（用于析构子时 free 内存）。
     // global scope 的 parent_=nullptr，allocator 由 Context 传入。
     // 子 scope 的 parent 指向父，allocator 从父继承（或 Context 统一传入）。
-    explicit Scope(Scope* parent, infra::IAllocator* alloc)
-        : parent_(parent), allocator_(alloc) {}
+    // context 借用，用于间接绑定解析（可为 nullptr，仅供不建导入绑定的测试作用域）。
+    explicit Scope(Scope* parent, infra::IAllocator* alloc, IContext* context = nullptr)
+        : parent_(parent), allocator_(alloc), context_(context) {}
 
     // 析构：递归销毁整个子树（见文件头注释）。
     // 调用方负责释放本 Scope 对象自身的内存（placement new 对象需显式
@@ -123,8 +139,9 @@ public:
     }
 
     // 绑定名字→Value（借用，不影响可达性；Value 需先 add 跟踪）。
-    // 重名绑定覆盖旧条目。
+    // 重名绑定覆盖旧条目（同时清除同名间接绑定）。
     void bind(std::string_view name, Value* v) {
+        indirectBindings_.erase(std::string(name));
         namedValues_[std::string(name)] = v;
     }
 
@@ -139,23 +156,55 @@ public:
         return true;
     }
 
-    // 按名字查找 Value（找不到返回 nullptr）
-    Value* lookup(std::string_view name) const {
-        auto it = namedValues_.find(std::string(name));
-        return it == namedValues_.end() ? nullptr : it->second;
+    // 定义导入绑定：name → namespaceObj[exportKey]，读取时实时解析，写入恒拒绝。
+    // 与直接绑定共享同一套查找路径，故 eval/with 等动态路径也受只读约束。
+    // 重复定义返回 false。namespaceObj/exportKey 登记到 values_ 保活。
+    bool defineIndirect(std::string_view name, Value* namespaceObj, Value* exportKey) {
+        if (lookup(name) != nullptr) return false;
+        add(namespaceObj);
+        add(exportKey);
+        indirectBindings_[std::string(name)] = IndirectBinding{namespaceObj, exportKey};
+        return true;
     }
+
+    // 按名字查找 Value（找不到返回 nullptr）。
+    // 间接绑定经 context 解析为命名空间属性值（缺失时返回 undefined）。
+    Value* lookup(std::string_view name) const;
 
     // 沿 parent 链向上查找命名 value（ADR-013 查找路径基础版）。
     // 本作用域找不到则查 parent，递归到 global（parent=nullptr 时返回 nullptr）。
-    Value* lookupChain(std::string_view name) const {
+    Value* lookupChain(std::string_view name) const;
+
+    // 本作用域内绑定种类（不解析、不查 parent）。
+    BindingKind bindingKind(std::string_view name) const {
+        if (namedValues_.find(std::string(name)) != namedValues_.end()) {
+            return BindingKind::Direct;
+        }
+        if (indirectBindings_.find(std::string(name)) != indirectBindings_.end()) {
+            return BindingKind::Indirect;
+        }
+        return BindingKind::None;
+    }
+
+    // 沿 parent 链查找绑定种类（store 用于区分只读导入绑定）。
+    BindingKind bindingKindChain(std::string_view name) const {
         const Scope* s = this;
         while (s != nullptr) {
-            Value* v = s->lookup(name);
-            if (v != nullptr) return v;
+            BindingKind k = s->bindingKind(name);
+            if (k != BindingKind::None) return k;
             s = s->parent_;
         }
-        return nullptr;
+        return BindingKind::None;
     }
+
+    // 沿 parent 链取间接绑定的 namespace/key。
+    // 找到返回 true；若最近的是直接绑定（遮蔽）或不存在返回 false。
+    bool getIndirectBindingChain(std::string_view name, Value*& namespaceObj,
+                                 Value*& exportKey) const;
+
+    // 把本作用域链上的间接绑定复制到 dst（闭包捕获用）。
+    // 找到并复制成功返回 true；无间接绑定或 dst 已有同名绑定返回 false。
+    bool copyIndirectBindingTo(Scope* dst, std::string_view name) const;
 
     // —— 作用域标注（ADR-030 阶段 5）——
     // flags 是作用域级标注（如 "strict"），语法上只能标注在模块作用域/函数体上。

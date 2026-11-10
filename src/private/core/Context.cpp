@@ -60,11 +60,11 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     // 1. 创建 global scope（根，parent=nullptr）。
     //    所有权移交 GC（ADR-044）：GC 从它出发标记可达性，并在自身析构时销毁整棵树。
     void* gp = alloc_->alloc(sizeof(Scope));
-    global_ = new (gp) Scope(nullptr, alloc_);
+    global_ = new (gp) Scope(nullptr, alloc_, this);
     gc_->setRootScope(global_);
     // 2. 创建 root scope（parent=global），作为 global 的子
     void* rp = alloc_->alloc(sizeof(Scope));
-    root_ = new (rp) Scope(global_, alloc_);
+    root_ = new (rp) Scope(global_, alloc_, this);
     global_->addChild(root_);
     // 3. current 初始 = root
     current_ = root_;
@@ -178,7 +178,7 @@ Context::~Context() {
 Scope* Context::pushNewScope(Scope* parent) {
     void* p = alloc_->alloc(sizeof(Scope));
     if (p == nullptr) return nullptr;
-    Scope* s = new (p) Scope(parent, alloc_);
+    Scope* s = new (p) Scope(parent, alloc_, this);
     parent->addChild(s);
     current_ = s;
     return s;
@@ -325,7 +325,7 @@ Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_vi
     // 生命周期随 FunctionData（data ref 归 0 时析构销毁）；调用期间临时挂到 rootScope。
     void* p = alloc_->alloc(sizeof(Scope));
     if (p == nullptr) return oomValue_;
-    Scope* closure = new (p) Scope(nullptr, alloc_);
+    Scope* closure = new (p) Scope(nullptr, alloc_, this);
     // rootScope 借用当前 root（不拥有）
     auto* d = gc_->allocData<FunctionData>(closure, root_, fn, minArgc);
     if (d == nullptr) {
@@ -446,7 +446,7 @@ Value* Context::createBoundFunction(Value* target, Value* boundThis, size_t argc
     // 闭包作用域同样孤立（ADR-036），生命周期随 FunctionData。
     void* p = alloc_->alloc(sizeof(Scope));
     if (p == nullptr) return oomValue_;
-    Scope* closure = new (p) Scope(nullptr, alloc_);
+    Scope* closure = new (p) Scope(nullptr, alloc_, this);
     auto* d = gc_->allocData<FunctionData>(closure, root_, nullptr, size_t{0});
     if (d == nullptr) {
         closure->destroySelf();
@@ -505,7 +505,7 @@ Value* Context::createObject(std::string_view bindName) {
 
 Value* Context::createModuleNamespace(std::string_view bindName) {
     // 模块命名空间：对象布局 + 原型为 null（ObjectData::prototype 默认 nullptr）。
-    Value* ns = createTracked(getModuleNamespaceType(), gc_->allocData<ObjectData>(),
+    Value* ns = createTracked(getModuleNamespaceType(), gc_->allocData<ModuleNamespaceData>(),
                               bindName);
     if (ns == oomValue_) return ns;
     // @@toStringTag = "Module"（不可写/不可枚举/可配置）
@@ -706,6 +706,13 @@ Value* Context::setClosure(Value* fn, std::string_view name) {
         std::string msg = std::string(fn->type()->name()) + " is not a function";
         return detail::typeError(this, msg);
     }
+    auto* d = static_cast<FunctionData*>(fn->data());
+    // 导入绑定：复制间接绑定而非当前解析值，闭包在导出晚到时仍能实时解析。
+    if (current()->bindingKindChain(name) == Scope::BindingKind::Indirect) {
+        // 已捕获同名绑定视为幂等（与直接绑定的 define 语义一致）。
+        (void)current()->copyIndirectBindingTo(d->closureScope, name);
+        return fn;
+    }
     // 沿当前作用域链查找闭包变量
     Value* v = current()->lookupChain(name);
     if (v == nullptr) {
@@ -713,7 +720,6 @@ Value* Context::setClosure(Value* fn, std::string_view name) {
         return detail::referenceError(this, msg);
     }
     // 绑定 = 共享同一 Value（ADR-013 §2）：closureScope 登记同一 Value
-    auto* d = static_cast<FunctionData*>(fn->data());
     d->closureScope->define(name, v);
     return fn;
 }
@@ -953,6 +959,12 @@ Value* Context::define(std::string_view name, Value* source) {
 Value* Context::store(std::string_view name, Value* source) {
     // Exception/Fatal 永远不出现在左右值，提前透传
     if (isErrorValue(source)) return source;
+    // 导入绑定是只读的间接绑定：必须在解析前拦截，否则会写穿到导出方槽位。
+    // 放在运行时而非 Sema，是因为 eval/with 等动态路径绕过静态分析。
+    if (current()->bindingKindChain(name) == Scope::BindingKind::Indirect) {
+        std::string msg = "Assignment to import binding '" + std::string(name) + "'";
+        return detail::typeError(this, msg);
+    }
     Value* target = current()->lookupChain(name);
     if (target != nullptr) {
         // 不可赋值（const 声明）：拦截并报错
