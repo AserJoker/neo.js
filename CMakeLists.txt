@@ -134,6 +134,9 @@ add_library(neojs STATIC
     src/private/core/types/Promise.cpp
     src/private/core/types/Symbol.cpp
     src/private/core/types/Interrupt.cpp
+    src/private/core/types/Coroutine.cpp
+    src/private/core/NativeCoroutine.cpp
+    src/private/core/FunctionInvoke.cpp
     src/private/infra/MallocAllocator.cpp
     src/private/infra/Console.cpp
     src/private/infra/SteadyClock.cpp

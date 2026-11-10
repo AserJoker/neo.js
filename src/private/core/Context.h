@@ -84,6 +84,9 @@ class Context : public IContext {
     // 待上报的未处理拒绝（ADR-043 M4）：promise → 是否仍待上报。
     // 这些 promise 作为动态 GC 根持有（pinRef++），移出/上报/析构时归还。
     std::unordered_map<Value*, bool> pendingRejections_;
+    // 当前正在恢复的协程栈（ADR-045 §7）：嵌套生成器要求取最内层。
+    // runner 进入时 push、退出时 pop；getCurrentCoroutine 取栈顶。
+    std::vector<Value*> coroutineStack_;
 
 public:
     Context(infra::IAllocator* alloc, infra::Console* console,
@@ -176,6 +179,14 @@ public:
     // Promise（ADR-043）
     Value* createPromise(std::string_view bindName = {}) override;
     Value* createInterrupt(InterruptKind kind, uint64_t offset, Value* value) override;
+
+    // 协程（ADR-045）
+    Value* createCoroutine(Value* target, Value* receiver, size_t argc, Value* argv[],
+                           std::string_view bindName = {}) override;
+    Value* getCurrentCoroutine() const override {
+        return coroutineStack_.empty() ? nullptr : coroutineStack_.back();
+    }
+    Value* resumeCoroutine(Value* coroutine, Value* sentValue) override;
     Value* promisePrototype() const override { return promisePrototype_; }
     void setPromisePrototype(Value* proto) override { promisePrototype_ = proto; }
 

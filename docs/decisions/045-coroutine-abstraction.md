@@ -1,6 +1,7 @@
 # ADR-045: 协程抽象（Coroutine）— 通用挂起/恢复，统一 native 与 VM
 
-- 状态: 提议中（设计稿，未实现）
+- 状态: 已接受（步骤 0-3 已实现：Interrupt、Coroutine 对象与协程栈、挂起分支与 native runner；
+  Generator 封装待做）
 - 决策者: aserjoker（项目负责人） + CodeAgent
 - 关联: ADR-004（执行模型）、ADR-017（Interrupt）、ADR-022（函数调用）、
           ADR-023（协程挂起/恢复）、ADR-036（闭包作用域孤立化）、
@@ -133,14 +134,14 @@ Generator 内建（`next/return/throw`）只调 `resume`，不关心底层是 na
 
 ### 5. 上下文保存：作用域树 + 调用栈
 
-这是整个设计的核心难点。现有 `invokeNative`（`Function.cpp`）在返回时**必然**
-销毁临时 `execScope`：
+这是整个设计的核心难点。现有 `invokeNativeFunction`（`FunctionInvoke.cpp`，原
+`Function.cpp` 内的 `invokeNative`）在返回时**必然**销毁临时 `execScope`：
 
 ```
 execScope → closureScope → rootScope → global   （查找链）
 ```
 
-挂起时不能销毁它，否则跨 yield 的变量全部丢失。因此 `invokeNative` 需要一个
+挂起时不能销毁它，否则跨 yield 的变量全部丢失。因此 `invokeNativeFunction` 需要一个
 **挂起分支**：
 
 **挂起（返回 Interrupt(Yield)）**
@@ -263,13 +264,21 @@ ADR-023 的 VM 实现因此成为本抽象的一个 runner，而非独立机制�
 - 优点：挂起/恢复与执行后端解耦；native 与 VM 共用同一套 Generator/迭代器协议；
   上下文保存复用既有的「孤立作用域子树 + 主动标记」机制（ADR-036/044），
   根环问题不会复现；多态入口沿用 Task::run 的成熟模式。
-- 代价：`invokeNative` 需要新增挂起分支（不能无条件销毁 execScope）；
+- 代价：`invokeNativeFunction` 需要新增挂起分支（不能无条件销毁 execScope）；
   native 状态机必须把跨 yield 状态放进作用域树；`return(v)` 的 finally 语义
   依赖 Interrupt(Return) 的 offset 定位（§8.1）。
 - 范围：本 ADR 只做设计。实现顺序建议：
-  0. 先落地 `TypeKind::Interrupt`（ADR-046）；
-  1. `TypeKind::Coroutine` + `CoroutineData`；
-  2. `ctx->createInterrupt(Yield, …)` / `getCurrentCoroutine` / 协程栈；
-  3. `invokeNative` 挂起分支 + `resumeNativeCoroutine`；
+  0. 先落地 `TypeKind::Interrupt`（ADR-046）；✅
+  1. `TypeKind::Coroutine` + `CoroutineData`；✅
+  2. `ctx->createInterrupt(Yield, …)` / `getCurrentCoroutine` / 协程栈；✅
+  3. `invokeNativeFunction` 挂起分支 + `resumeNativeCoroutine`；✅
   4. Generator 函数标记 + `%GeneratorPrototype%` + next/throw/return；
   5. （后续）finally 语义、VM runner、async/await 组合。
+
+实现落点（步骤 1-3）：
+- `src/public/core/Coroutine.h`：`CoroutineState` + `CoroutineRunner`；
+- `src/private/core/types/Coroutine.h/.cpp`：`CoroutineType` + `CoroutineData`；
+- `src/private/core/FunctionInvoke.cpp`：`invokeNativeFunction` 承载调用流程与挂起分支
+  （`FunctionType::call/construct` 与协程 runner 共用）；
+- `src/private/core/NativeCoroutine.cpp`：`resumeNativeCoroutine`；
+- `IContext::createCoroutine / getCurrentCoroutine / resumeCoroutine`。

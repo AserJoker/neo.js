@@ -416,6 +416,26 @@ public:
     virtual Value* createInterrupt(InterruptKind kind, uint64_t offset,
                                    Value* value) = 0;
 
+    // —— 协程（ADR-045）——
+    // createCoroutine: 以 target 函数创建 Suspended 协程对象（不执行函数体）。
+    //   receiver 为执行时的 this（nullptr 归一为 undefined）；
+    //   argc/argv 为首次运行的实参（协程持有副本）。
+    //   恢复驱动按 target 种类选择（native 函数 → resumeNativeCoroutine）。
+    //   返回 Value*：正常协程对象，或 Exception（target 非函数/绑定函数），或 OOM 哨兵。
+    virtual Value* createCoroutine(Value* target, Value* receiver, size_t argc,
+                                   Value* argv[], std::string_view bindName = {}) = 0;
+
+    // getCurrentCoroutine: 当前最内层正在恢复的协程（嵌套生成器场景）。
+    // 不在协程内返回 nullptr（调用方用 asCoroutine 判定）。
+    virtual Value* getCurrentCoroutine() const = 0;
+
+    // resumeCoroutine: 恢复协程一次（Generator 的 next/throw/return 共用入口）。
+    //   sentValue 为本次恢复传入的值（可能是 Interrupt 的 throw/return 注入）；
+    //   nullptr 归一为 undefined。
+    // 返回函数体的原始结果：挂起时为 Interrupt(Yield)，完成时为最终值/异常。
+    // 协程已 Completed 时返回 undefined；正在运行（重入）返回 Exception。
+    virtual Value* resumeCoroutine(Value* coroutine, Value* sentValue) = 0;
+
     // —— 错误值创建（ADR-006 异常即值 + ADR-017 §4 Fatal）——
     // createException: 创建可捕获异常 Value（child 永远不为 nullptr，无错误对象时传 undefined Value）。
     // createFatal: 创建不可捕获致命错误 Value（字面量消息，静态存储期）。

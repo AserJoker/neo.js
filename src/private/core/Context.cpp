@@ -17,6 +17,7 @@
 #include "core/ErrorBuiltins.h"
 #include "core/IType.h"
 #include "core/IteratorBuiltins.h"
+#include "core/NativeCoroutine.h"
 #include "core/ObjectBuiltins.h"
 #include "core/PromiseBuiltins.h"
 #include "core/PrimitiveWrapperBuiltins.h"
@@ -24,6 +25,7 @@
 #include "core/TimerBuiltins.h"
 #include "core/types/Array.h"
 #include "core/types/Boolean.h"
+#include "core/types/Coroutine.h"
 #include "core/types/Error.h"
 #include "core/types/Exception.h"
 #include "core/types/Fatal.h"
@@ -686,6 +688,77 @@ Value* Context::createInterrupt(InterruptKind kind, uint64_t offset, Value* valu
     auto* d = gc_->allocData<InterruptData>(kind, offset, payload);
     if (d == nullptr) return oomValue_;
     return createTracked(getInterruptType(), d, {});
+}
+
+// —— 协程（ADR-045）——
+
+Value* Context::createCoroutine(Value* target, Value* receiver, size_t argc, Value* argv[],
+                                std::string_view bindName) {
+    if (target == nullptr || target->type()->kind() != TypeKind::Function) {
+        return detail::typeError(this, "coroutine target is not a function");
+    }
+    auto* fd = static_cast<FunctionData*>(target->data());
+    // 绑定函数没有自己的 native 函数体，不能作为协程 target
+    if (fd->boundTarget != nullptr || fd->native == nullptr) {
+        return detail::typeError(this, "coroutine target is not resumable");
+    }
+
+    auto* d = gc_->allocData<CoroutineData>();
+    if (d == nullptr) return oomValue_;
+    d->state = CoroutineState::Suspended;
+    d->resumePoint = 0;
+    d->target = target;
+    d->receiver = receiver != nullptr ? receiver : createUndefined();
+    if (d->receiver == oomValue_) return d->receiver;
+    d->yielded = createUndefined();
+    if (d->yielded == oomValue_) return d->yielded;
+    d->sentValue = createUndefined();
+    if (d->sentValue == oomValue_) return d->sentValue;
+    if (argc > 0) d->initialArgs.assign(argv, argv + argc);
+    // 恢复驱动按 target 种类选择（未来 VM 函数 → resumeVmCoroutine）
+    d->resume = resumeNativeCoroutine;
+
+    Value* co = createTracked(getCoroutineType(), d, bindName);
+    if (co == oomValue_) return co;
+    if (objectPrototype_ != nullptr) {
+        static_cast<ObjectData*>(co->data())->prototype = objectPrototype_;
+    }
+    return co;
+}
+
+Value* Context::resumeCoroutine(Value* coroutine, Value* sentValue) {
+    auto* co = asCoroutine(coroutine);
+    if (co == nullptr) {
+        return detail::typeError(this, "resume target is not a coroutine");
+    }
+    if (co->state == CoroutineState::Running) {
+        return detail::typeError(this, "coroutine is already running");
+    }
+    if (co->state == CoroutineState::Completed) {
+        return createUndefined();
+    }
+    if (co->resume == nullptr) {
+        return detail::typeError(this, "coroutine has no resume driver");
+    }
+
+    Value* sent = sentValue != nullptr ? sentValue : createUndefined();
+    if (sent == oomValue_) return sent;
+    co->sentValue = sent;
+
+    // 协程对象在恢复期间必须存活：它持有孤立的 execScope，而 execScope 只能
+    // 经协程对象在标记时递归进来（ADR-044）。栈本身不是 GC 根，故显式钉住。
+    coroutine->pinRefInc();
+    coroutineStack_.push_back(coroutine);
+    CoroutineState prev = co->state;
+    co->state = CoroutineState::Running;
+
+    Value* res = co->resume(this, coroutine, sent);
+
+    // runner 正常会写回 Suspended/Completed；若中途异常返回，恢复原状态以便重试。
+    if (co->state == CoroutineState::Running) co->state = prev;
+    coroutineStack_.pop_back();
+    coroutine->pinRefDec();
+    return res;
 }
 
 // —— 错误值创建（ADR-006 异常即值 + ADR-017 §4 Fatal）——

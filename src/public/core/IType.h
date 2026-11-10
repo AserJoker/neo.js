@@ -56,7 +56,10 @@ enum class TypeKind : uint8_t {
     // 不是错误；只由协程函数体 / VM 执行循环产生、由协程 runner 消费。
     // 非对象类型（objectLayout=false），行为方法全部透传 self。
     Interrupt,
-    // 后续阶段：BigInt/Coroutine/...
+    // 协程对象（ADR-045）：可恢复的计算句柄，持上下文（孤立执行作用域 + 调用栈）、
+    // 断点、状态。对象布局复用 ObjectData（属性/原型/GC）。
+    Coroutine,
+    // 后续阶段：BigInt/...
 };
 
 // Value 的 meta：抽象接口，每种 JS 类型一个实现类（单例）。
@@ -183,6 +186,7 @@ IType* getIteratorWrapperType();
 IType* getErrorType();
 IType* getPromiseType();
 IType* getInterruptType();
+IType* getCoroutineType();
 
 // —— TypeKind → Type 单例（Types.cpp 中的唯一映射表）——
 // 未注册的 kind 返回 nullptr。新增类型时只需在此加一行映射，
