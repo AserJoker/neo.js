@@ -3,8 +3,9 @@
 // 语义（ES2024 §27.5.3）：
 //   next(v)   —— GeneratorResume(coroutine, v)；首次 next 的 v 被丢弃。
 //   return(v) —— GeneratorResumeAbrupt(Return)：未启动则直接完成；
-//                已挂起则注入 Interrupt(Return, resumePoint, v)，由函数体决定
-//                finally 语义（native 状态机在每个 case 开头检查 sentValue）。
+//                已挂起则注入 Interrupt(Return, resumePoint, v)。注入值就是恢复后
+//                yield 表达式的计算值，finally 由函数体正常的 try/finally 控制流处理
+//                （native 在每个 case 开头检查 sentValue），生成器层不特判。
 //   throw(e)  —— 同理注入 Interrupt(Throw, resumePoint, createException(e))。
 //
 // 恢复结果解释：

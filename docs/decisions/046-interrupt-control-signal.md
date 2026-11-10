@@ -27,7 +27,7 @@ ADR-045 为协程挂起定义了 `CoroutineYield`（stage + value）。但挂起
 ```cpp
 enum class InterruptKind : uint8_t {
     Yield,   // 挂起并产出 value（函数返回方向）
-    Return,  // 立即以 value 返回（外部注入方向；承载 finally 语义）
+    Return,  // 立即以 value 返回（外部注入方向）
     Await,   // 未来：等待 Promise 结果（VM 方向）
     Throw,   // 未来：VM 内部 throw 信号，解包为 Exception（ADR-017 §6）
 };
@@ -58,11 +58,16 @@ Interrupt 有两个使用方向，offset 在两侧含义不同但都是「断点
 
 对 `Generator.return(v)`：外部构造 `Interrupt(Return, co->resumePoint, v)` 作为
 `sentValue` 注入。offset 记录**当前 stage**——native 函数体恢复后据此定位到
-「正在哪个 case 上被要求返回」，VM 则据此定位 PC 以决定是否执行 finally。
-这正是「offset 就是当前 stage」的含义。
+「正在哪个 case 上被要求返回」，VM 则据此定位 PC 恢复执行。这正是「offset 就是
+当前 stage」的含义。
 
 > 为什么两个方向都带 offset：native 侧它主要用于诊断与对称性；VM 侧它是恢复
-> 定位的必需信息（finally 需要知道从哪块代码开始执行清理）。
+> 定位的必需信息（从哪条指令继续执行）。
+>
+> **finally 不是生成器专门处理的**：注入的 Return/Throw 只是恢复后 `yield`
+> 表达式的**计算值**。native 侧函数体手工判断 `co->sentValue` 后走自己的
+> try/finally 控制流；VM 侧把 interrupt/exception 压栈后恢复，由正常的
+> try/finally 指令逻辑处理。生成器层不感知 finally。
 
 ### 3. 传播：仅协程/VM 边界产生与消费
 
@@ -123,9 +128,11 @@ if (isInterruptValue(sent)) {
 }
 ```
 
-> 若函数体内有 `finally`，Return 注入需要「先执行 finally 再返回」——native 侧
-> 由函数体在每个 case 检查并跳转到清理段；VM 侧由 offset 定位 PC。这是
-> Interrupt 携带 offset 的价值所在。
+> 若函数体内有 `finally`，**不需要生成器专门处理**：注入的 Return/Throw 就是
+> 恢复后 `yield` 表达式的值。native 侧函数体在每个 case 开头判断 `co->sentValue`
+> 后走自己的 try/finally 控制流；VM 侧把 interrupt/exception 压栈后恢复，由正常
+> 的 try/finally 指令逻辑处理（自动的 try-finally，而非生成器特判）。
+> offset 只负责「恢复到哪」，不负责 finally。
 
 ### 7. 新增类型的接入清单
 
@@ -166,4 +173,4 @@ ADR-017 把 Interrupt 描述为「VM 内部信号，子类型 ret/throw/await/yi
   1. `TypeKind::Interrupt` + `InterruptType/Data` + `createInterrupt` + `isInterruptValue`；
   2. 更新 ADR-045：`CoroutineYield` → `Interrupt(Yield)`；
   3. Coroutine + Generator（ADR-045 实现顺序）；
-  4. （后续）VM runner 的 Await/Throw 消费、finally 语义。
+  4. （后续）VM runner 的 Await/Throw 消费（finally 由正常 try/finally 控制流处理）。

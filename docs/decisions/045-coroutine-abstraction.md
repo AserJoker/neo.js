@@ -1,7 +1,7 @@
 # ADR-045: 协程抽象（Coroutine）— 通用挂起/恢复，统一 native 与 VM
 
 - 状态: 已接受（步骤 0-4 与 AsyncGenerator 已实现：Interrupt、Coroutine、挂起分支与
-  native runner、Generator、AsyncGenerator；finally 语义 / VM runner / await lowering 待做）
+  native runner、Generator、AsyncGenerator；VM runner / await lowering 待做）
 - 决策者: aserjoker（项目负责人） + CodeAgent
 - 关联: ADR-004（执行模型）、ADR-017（Interrupt）、ADR-022（函数调用）、
           ADR-023（协程挂起/恢复）、ADR-036（闭包作用域孤立化）、
@@ -218,7 +218,7 @@ Generator 的 `throw(e)` 与 `return(v)` 都是「外部把控制信号注入协
 Value* sent = co->sentValue();
 if (isInterruptValue(sent)) {
     InterruptData* ir = asInterrupt(sent);
-    // Throw / Return 都沿返回通道传出 payload；有 finally 时先跳转清理段
+    // Throw / Return 都沿返回通道传出 payload
     if (ir->kind == InterruptKind::Throw) return ir->value;   // 异常通道
     if (ir->kind == InterruptKind::Return) return ir->value;  // 正常返回
 }
@@ -229,8 +229,12 @@ if (isInterruptValue(sent)) {
 - **throw 注入不需要新机制**：它是 `next(createException(v))` 的等价物，
   协程层只是透传一个值。
 - **return 注入的关键是 offset**：Interrupt 携带 `co->resumePoint`（当前 stage），
-  native 函数体据此知道「在哪个 case 上被要求返回」，从而决定是否先执行 finally；
-  VM 侧据此定位 PC。这是 ADR-046 给 Interrupt 带 offset 的价值。
+  native 函数体据此知道「在哪个 case 上被要求返回」，VM 侧据此定位 PC 恢复执行。
+  offset 只负责「恢复到哪」。
+- **finally 不需要生成器专门处理**：注入的 Return/Throw 就是恢复后 `yield`
+  表达式的计算值。native 侧函数体手工判断 `co->sentValue` 后走自己的
+  try/finally 控制流；VM 侧把 interrupt/exception 压栈后恢复，由正常的
+  try/finally 指令逻辑处理（自动的 try-finally，而非生成器特判）。
 - 协程层不新增 `pendingThrow` / `pendingReturn` 字段——信号就在 `sentValue` 里。
 
 ### 8.2 AsyncGenerator（ES2024 §27.6）
@@ -270,10 +274,12 @@ engine 层不引入 `async` 标记；native 函数体可直接 yield/return Prom
 3. **`sentValue` 的首次语义**：首次 `next(v)` 的 v 按规范被丢弃（ES2024 §27.5.3.2）。
    协程层**始终持有 sentValue、不做主动丢弃**（§8.1 的 throw 注入也依赖这一点）；
    是否忽略由 Generator 层决定。
-4. **`return(v)` 的 finally 语义**：依赖 Interrupt(Return) 的 offset 定位（§8.1 / ADR-046）。
-   函数体尚未实现 finally 时，可先按「直接返回 payload」处理。
-5. **协程与 Promise 的交互**：不在本 ADR 范围。async/await 由「Generator +
-   微任务队列」在上层组合，协程层不感知 Promise。
+4. **`return(v)` 的 finally 语义**：不需要生成器专门处理。注入的 Return/Throw
+   就是恢复后 `yield` 表达式的计算值：native 侧函数体手工判断 `co->sentValue`
+   后走自己的 try/finally；VM 侧把 interrupt/exception 压栈恢复，由正常的
+   try/finally 指令逻辑处理（自动的 try-finally）。
+5. **协程与 Promise 的交互**：协程层本身不感知 Promise；AsyncGenerator 在
+   上层用请求队列 + await 语义组合（§8.2）。
 
 ### 10. 与 ADR-023 的关系
 
@@ -293,15 +299,15 @@ ADR-023 的 VM 实现因此成为本抽象的一个 runner，而非独立机制�
   上下文保存复用既有的「孤立作用域子树 + 主动标记」机制（ADR-036/044），
   根环问题不会复现；多态入口沿用 Task::run 的成熟模式。
 - 代价：`invokeNativeFunction` 需要新增挂起分支（不能无条件销毁 execScope）；
-  native 状态机必须把跨 yield 状态放进作用域树；`return(v)` 的 finally 语义
-  依赖 Interrupt(Return) 的 offset 定位（§8.1）。
+  native 状态机必须把跨 yield 状态放进作用域树。finally 不需要生成器专门处理：
+  注入的 Return/Throw 就是 `yield` 表达式的值，由正常 try/finally 控制流处理。
 - 范围：本 ADR 只做设计。实现顺序建议：
   0. 先落地 `TypeKind::Interrupt`（ADR-046）；✅
   1. `TypeKind::Coroutine` + `CoroutineData`；✅
   2. `ctx->createInterrupt(Yield, …)` / `getCurrentCoroutine` / 协程栈；✅
   3. `invokeNativeFunction` 挂起分支 + `resumeNativeCoroutine`；✅
   4. Generator 函数标记 + `%GeneratorPrototype%` + next/throw/return；✅
-  5. （后续）finally 语义、VM runner、async/await 组合。
+  5. （后续）VM runner、脚本 `await` lowering、`for await...of` / 异步 `yield*`。
 
 实现落点（步骤 1-3）：
 - `src/public/core/Coroutine.h`：`CoroutineState` + `CoroutineRunner`；
