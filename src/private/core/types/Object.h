@@ -56,6 +56,11 @@ public:
     ObjectType() : IType(TypeKind::Object, true) {}
     const char* name() const override { return "object"; }
 
+protected:
+    // 派生 exotic 对象（如 ModuleNamespace）复用对象布局，但使用自己的 TypeKind。
+    explicit ObjectType(TypeKind kind) : IType(kind, true) {}
+
+public:
     // 运算：本阶段返回 Exception("not implemented")（对象参与运算需 ToPrimitive，阶段 5+）
     Value* add(IContext* ctx, Value* a, Value* b) override;
     Value* sub(IContext* ctx, Value* a, Value* b) override;

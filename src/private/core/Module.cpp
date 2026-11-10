@@ -111,18 +111,10 @@ ModuleInfo Context::getModule(std::string_view id) {
     global_->addChild(scope);
 
     // 导出对象必须在模块 scope 下创建，才能被作用域树跟踪。
+    // 它是模块命名空间 exotic 对象（原型 null、导出属性为活绑定）。
     Scope* savedCurrent = current_;
     current_ = scope;
-    Value* exports = createObject();
-    if (exports != oomValue_) {
-        // 导出对象原型为 null（模块命名空间对象不是普通对象）。
-        Value* nullProto = createNull();
-        if (nullProto == oomValue_) {
-            exports = oomValue_;
-        } else {
-            (void)setPrototype(exports, nullProto);
-        }
-    }
+    Value* exports = createModuleNamespace();
     current_ = savedCurrent;
 
     if (exports == oomValue_) {
@@ -176,6 +168,21 @@ Value* Context::importModule(std::string_view specifier) {
     if (result != nullptr && detail::isErrorValue(result)) return result;
     mod->loaded = true;
     return mod->exports;
+}
+
+Value* Context::exportBinding(Value* exports, std::string_view exportName,
+                              std::string_view localName) {
+    if (exports->type()->kind() != TypeKind::ModuleNamespace) {
+        return detail::typeError(this, "export target is not a module namespace");
+    }
+    // 活绑定：直接取模块作用域里的槽位 Value*（顶层绑定由模块 scope 持有）。
+    Value* binding = current()->lookupChain(localName);
+    if (binding == nullptr) {
+        return detail::referenceError(
+            this, "export '" + std::string(localName) + "' is not defined");
+    }
+    // ModuleNamespaceType::defineProperty 直接存 Value*，不 clone。
+    return defineProperty(exports, exportName, binding, false, true, false);
 }
 
 }  // namespace neo::core

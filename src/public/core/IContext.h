@@ -505,6 +505,17 @@ public:
     // 返回导出对象；loader 失败时原样返回其 Exception/Fatal。
     virtual Value* importModule(std::string_view specifier) = 0;
 
+    // createModuleNamespace: 创建模块命名空间 exotic 对象（原型为 null，
+    // @@toStringTag = "Module"）。导出属性是活绑定，见 exportBinding。
+    virtual Value* createModuleNamespace(std::string_view bindName = {}) = 0;
+
+    // exportBinding: 把当前作用域链上的 localName 槽位以 exportName 暴露到
+    // exports（模块命名空间对象）。属性直接持有该槽位 Value*，**不 clone**；
+    // 后续 store 原地替换槽位的 meta+data，导入方读取即可见最新值。
+    // 返回 exportName 对应的 Value（即槽位 Value），或 Exception。
+    virtual Value* exportBinding(Value* exports, std::string_view exportName,
+                                 std::string_view localName) = 0;
+
     // —— 错误值创建（ADR-006 异常即值 + ADR-017 §4 Fatal）——
     // createException: 创建可捕获异常 Value（child 永远不为 nullptr，无错误对象时传 undefined Value）。
     // createFatal: 创建不可捕获致命错误 Value（字面量消息，静态存储期）。

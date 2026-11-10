@@ -62,6 +62,9 @@ enum class TypeKind : uint8_t {
     // 异步生成器对象（ADR-045 §8 / ES2024 §27.6）：Coroutine + Promise 请求队列。
     // 对象布局复用 ObjectData；内部槽在 CoroutineData 基础上增加异步状态与队列。
     AsyncGenerator,
+    // 模块命名空间 exotic 对象（ES2024 §10.4.6）：原型为 null，导出属性为
+    // 不可写/不可配置的活绑定——Property 直接持有模块作用域的 Value*，不 clone。
+    ModuleNamespace,
     // 后续阶段：BigInt/...
 };
 
@@ -191,6 +194,7 @@ IType* getPromiseType();
 IType* getInterruptType();
 IType* getCoroutineType();
 IType* getAsyncGeneratorType();
+IType* getModuleNamespaceType();
 
 // —— TypeKind → Type 单例（Types.cpp 中的唯一映射表）——
 // 未注册的 kind 返回 nullptr。新增类型时只需在此加一行映射，

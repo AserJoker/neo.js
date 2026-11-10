@@ -35,6 +35,7 @@
 #include "core/types/Function.h"
 #include "core/types/Interrupt.h"
 #include "core/types/Iterator.h"
+#include "core/types/ModuleNamespace.h"
 #include "core/types/Null.h"
 #include "core/types/Number.h"
 #include "core/types/Object.h"
@@ -500,6 +501,19 @@ Value* Context::createObject(std::string_view bindName) {
         static_cast<ObjectData*>(obj->data())->prototype = objectPrototype_;
     }
     return obj;
+}
+
+Value* Context::createModuleNamespace(std::string_view bindName) {
+    // 模块命名空间：对象布局 + 原型为 null（ObjectData::prototype 默认 nullptr）。
+    Value* ns = createTracked(getModuleNamespaceType(), gc_->allocData<ObjectData>(),
+                              bindName);
+    if (ns == oomValue_) return ns;
+    // @@toStringTag = "Module"（不可写/不可枚举/可配置）
+    Value* tag = createString("Module");
+    if (tag == oomValue_) return tag;
+    Value* r = defineProperty(ns, getWellKnownSymbol(WellKnownSymbol::ToStringTag),
+                              tag, false, false, true);
+    return r->type()->kind() == TypeKind::Exception ? r : ns;
 }
 
 Value* Context::createArray(std::string_view bindName) {

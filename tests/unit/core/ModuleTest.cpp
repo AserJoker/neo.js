@@ -7,12 +7,18 @@
 // - loader 只执行一次，且在模块 root scope 下执行
 // - 循环依赖返回当前（部分）导出对象
 // - loader 失败原样透传错误值，且模块保持未加载（可重试）
+// - 导出对象是模块命名空间 exotic 对象：原型 null、@@toStringTag="Module"
+// - 导出属性是活绑定：store 原地更新后导入方读到最新值，且不 clone
 
 #include "core/IContext.h"
+#include "core/IGCEngine.h"
 #include "core/IType.h"
 #include "core/Module.h"
 #include "core/Scope.h"
 #include "core/Value.h"
+#include "core/WellKnownSymbol.h"
+#include "core/types/Number.h"
+#include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
 #include "infra/Console.h"
 #include "infra/IAllocator.h"
@@ -26,9 +32,12 @@ namespace {
 
 using neo::core::IContext;
 using neo::core::ModuleInfo;
+using neo::core::NumberData;
 using neo::core::Scope;
+using neo::core::StringData;
 using neo::core::TypeKind;
 using neo::core::Value;
+using neo::core::WellKnownSymbol;
 using neo::core::createContext;
 using neo::core::detail::isErrorValue;
 using neo::infra::Console;
@@ -121,6 +130,33 @@ Value* loaderImportNormalized(IContext* ctx, Value* /*exports*/) {
 
 Value* loaderEmpty(IContext* ctx, Value* exports) {
     ctx->defineProperty(exports, "x", ctx->createNumber(1));
+    return ctx->createUndefined();
+}
+
+// —— 模块命名空间 / 活绑定 ——
+Value* g_exportedSlot = nullptr;
+Value* g_exportResult = nullptr;
+
+double numOf(Value* v) { return static_cast<NumberData*>(v->data())->value; }
+std::string strOf(Value* v) { return static_cast<StringData*>(v->data())->value; }
+
+// 先导出再 store：属性持有槽位 Value*，store 原地替换 meta+data。
+Value* loaderLiveBinding(IContext* ctx, Value* exports) {
+    ctx->define("x", ctx->createNumber(1));
+    g_exportedSlot = ctx->current()->lookup("x");
+    g_exportResult = ctx->exportBinding(exports, "x", "x");
+    ctx->store("x", ctx->createNumber(2));
+    return ctx->createUndefined();
+}
+
+Value* loaderExportMissing(IContext* ctx, Value* exports) {
+    g_exportResult = ctx->exportBinding(exports, "y", "missing");
+    return ctx->createUndefined();
+}
+
+Value* loaderExportToObject(IContext* ctx, Value* /*exports*/) {
+    Value* obj = ctx->createObject();
+    g_exportResult = ctx->exportBinding(obj, "y", "y");
     return ctx->createUndefined();
 }
 
@@ -310,6 +346,91 @@ TEST(ModuleTest, SetLoaderCreatesModule) {
     EXPECT_FALSE(f.ctx->hasModule("/a.js"));
     f.ctx->setModuleLoader("/a.js", loaderAnswer);
     EXPECT_TRUE(f.ctx->hasModule("/a.js"));
+}
+
+TEST(ModuleTest, ExportsAreModuleNamespaceObjects) {
+    Fixture f;
+    ModuleInfo info = f.ctx->getModule("/a.js");
+    EXPECT_EQ(info.exports->type()->kind(), TypeKind::ModuleNamespace);
+    EXPECT_TRUE(info.exports->type()->hasObjectLayout());
+}
+
+TEST(ModuleTest, NamespaceToStringTagIsModule) {
+    Fixture f;
+    ModuleInfo info = f.ctx->getModule("/a.js");
+    Value* tag = f.ctx->getProperty(
+        info.exports, f.ctx->getWellKnownSymbol(WellKnownSymbol::ToStringTag));
+    ASSERT_NE(tag, nullptr);
+    EXPECT_EQ(tag->type()->kind(), TypeKind::String);
+    EXPECT_EQ(strOf(tag), "Module");
+}
+
+TEST(ModuleTest, ExportBindingIsLiveAndNotCloned) {
+    Fixture f;
+    g_exportedSlot = nullptr;
+    g_exportResult = nullptr;
+    f.ctx->setModuleLoader("/live.js", loaderLiveBinding);
+
+    Value* ns = f.ctx->importModule("/live.js");
+    ASSERT_FALSE(isErrorValue(ns));
+    ASSERT_FALSE(isErrorValue(g_exportResult));
+    ASSERT_NE(g_exportedSlot, nullptr);
+
+    Value* key = f.ctx->createString("x");
+    Value* seen = f.ctx->getProperty(ns, key);
+    // 属性直接持有模块作用域槽位，而非 clone 出的副本。
+    EXPECT_EQ(seen, g_exportedSlot);
+    EXPECT_EQ(numOf(seen), 2.0);  // 导出后 store 的最新值
+}
+
+TEST(ModuleTest, LiveBindingSurvivesGc) {
+    Fixture f;
+    g_exportedSlot = nullptr;
+    g_exportResult = nullptr;
+    f.ctx->setModuleLoader("/live.js", loaderLiveBinding);
+
+    Value* ns = f.ctx->importModule("/live.js");
+    ASSERT_FALSE(isErrorValue(ns));
+
+    f.ctx->gc()->collect();
+
+    Value* seen = f.ctx->getProperty(ns, f.ctx->createString("x"));
+    EXPECT_EQ(seen, g_exportedSlot);
+    EXPECT_EQ(numOf(seen), 2.0);
+}
+
+TEST(ModuleTest, ExportBindingRejectsMissingLocal) {
+    Fixture f;
+    g_exportResult = nullptr;
+    f.ctx->setModuleLoader("/missing.js", loaderExportMissing);
+
+    f.ctx->importModule("/missing.js");
+
+    ASSERT_NE(g_exportResult, nullptr);
+    EXPECT_TRUE(isErrorValue(g_exportResult));
+}
+
+TEST(ModuleTest, ExportBindingRejectsNonNamespaceTarget) {
+    Fixture f;
+    g_exportResult = nullptr;
+    f.ctx->setModuleLoader("/obj.js", loaderExportToObject);
+
+    f.ctx->importModule("/obj.js");
+
+    ASSERT_NE(g_exportResult, nullptr);
+    EXPECT_TRUE(isErrorValue(g_exportResult));
+}
+
+TEST(ModuleTest, NamespaceRejectsMutation) {
+    Fixture f;
+    ModuleInfo info = f.ctx->getModule("/a.js");
+    Value* key = f.ctx->createString("x");
+
+    EXPECT_TRUE(isErrorValue(f.ctx->setProperty(info.exports, key, f.ctx->createNumber(1))));
+    EXPECT_TRUE(isErrorValue(f.ctx->deleteProperty(info.exports, key)));
+    EXPECT_TRUE(isErrorValue(
+        f.ctx->defineAccessor(info.exports, key, nullptr, nullptr, true, true)));
+    EXPECT_TRUE(isErrorValue(f.ctx->setPrototype(info.exports, f.ctx->createObject())));
 }
 
 }  // namespace

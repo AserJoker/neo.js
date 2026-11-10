@@ -19,6 +19,7 @@
 #include "core/types/Iterator.h"
 #include "core/types/Null.h"
 #include "core/types/Number.h"
+#include "core/types/ModuleNamespace.h"
 #include "core/types/Object.h"
 #include "core/types/Promise.h"
 #include "core/types/PrimitiveWrapper.h"
@@ -129,6 +130,11 @@ IType* getAsyncGeneratorType() {
     return &inst;
 }
 
+IType* getModuleNamespaceType() {
+    static ModuleNamespaceType inst;
+    return &inst;
+}
+
 // TypeKind → Type 单例映射（唯一真相源）。
 // 新增类型：在此加一行 case + 上面的 getXxxType()，对象模型分派点自动覆盖。
 IType* getTypeByKind(TypeKind k) {
@@ -153,6 +159,7 @@ IType* getTypeByKind(TypeKind k) {
         case TypeKind::Interrupt:        return getInterruptType();
         case TypeKind::Coroutine:        return getCoroutineType();
         case TypeKind::AsyncGenerator:   return getAsyncGeneratorType();
+        case TypeKind::ModuleNamespace:  return getModuleNamespaceType();
     }
     return nullptr;
 }
