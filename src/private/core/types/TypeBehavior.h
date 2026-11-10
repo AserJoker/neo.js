@@ -152,6 +152,14 @@ inline bool isCallable(Value* v) {
     return v != nullptr && v->type()->kind() == TypeKind::Function;
 }
 
+// IsConstructor(argument)（ES2024 §7.2.4）：
+//   仅 Function 类型可能可构造，由 FunctionData::constructible 显式标记；
+//   绑定函数在创建时继承 target 的可构造性（§10.4.1.3）。
+inline bool isConstructor(Value* v) {
+    if (v == nullptr || v->type()->kind() != TypeKind::Function) return false;
+    return static_cast<FunctionData*>(v->data())->constructible;
+}
+
 // OrdinaryToPrimitive(O, hint)（ES2024 §7.1.1.1）：
 // hint=String → 依次尝试 toString、valueOf；hint=Number → 依次尝试 valueOf、toString。
 // 方法可调用则调用，结果非对象即返回；全部失败返回 Exception（TypeError）。

@@ -180,6 +180,23 @@ void FunctionData::enumerateChildren(IGCVisitor* visitor) {
 //   3. native 返回 Object/Function 则用它，否则用 this；Exception/Fatal 直接透传
 Value* FunctionType::construct(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     auto* d = static_cast<FunctionData*>(self->data());
+
+    // 不可构造（IsConstructor == false）→ TypeError（§7.2.4）
+    if (!d->constructible) {
+        return detail::typeError(ctx, "function is not a constructor");
+    }
+
+    // 绑定函数（bind 产物）：转发给 [[BoundTargetFunction]]，忽略 boundThis，
+    // 前置 boundArgs（ES2024 §10.4.1.3 [[Construct]]）。
+    if (d->boundTarget != nullptr) {
+        std::vector<Value*> args;
+        args.reserve(d->boundArgs.size() + argc);
+        args.insert(args.end(), d->boundArgs.begin(), d->boundArgs.end());
+        if (argc > 0) args.insert(args.end(), argv, argv + argc);
+        return ctx->construct(d->boundTarget, static_cast<size_t>(args.size()),
+                              args.data());
+    }
+
     if (Value* err = checkMinArgc(ctx, d, argc)) return err;
 
     // 构造钩子：call/construct 语义不同的内建（包装类）走专用路径。

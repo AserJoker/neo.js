@@ -142,6 +142,7 @@ public:
                                 std::string_view bindName = {}) override;
     void setFunctionName(Value* fn, std::string_view name) override;
     void setFunctionConstructor(Value* fn, NativeFn ctor) override;
+    void setFunctionConstructible(Value* fn, bool constructible) override;
     Value* createBoundFunction(Value* target, Value* boundThis, size_t argc,
                                Value* argv[]) override;
     Value* setClosure(Value* fn, std::string_view name) override;

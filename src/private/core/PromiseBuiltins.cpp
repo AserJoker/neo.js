@@ -274,6 +274,10 @@ Value* capabilityExecutor(IContext* ctx, Value* /*self*/, size_t argc, Value* ar
 
 // 成功返回 nullptr 并填充 out；失败返回 Exception/Fatal。
 Value* newPromiseCapability(IContext* ctx, Value* ctor, PromiseCapability& out) {
+    // §27.2.1.5 step 1：C 必须是构造函数
+    if (!detail::isConstructor(ctor)) {
+        return detail::typeError(ctx, "Promise capability constructor is not a constructor");
+    }
     Value* cell = makeCell(ctx);
     if (cell == ctx->oomValue()) return cell;
     static_cast<ArrayData*>(cell->data())->setElement(1, ctx->createUndefined());
@@ -543,7 +547,7 @@ Value* speciesConstructor(IContext* ctx, Value* obj, Value* defaultCtor) {
     if (detail::isErrorValue(s)) return s;
     TypeKind sk = s->type()->kind();
     if (sk == TypeKind::Null || sk == TypeKind::Undefined) return defaultCtor;
-    if (!detail::isCallable(s)) {
+    if (!detail::isConstructor(s)) {
         return detail::typeError(ctx, "Promise @@species is not a constructor");
     }
     return s;
@@ -798,7 +802,7 @@ Value* performCombinator(IContext* ctx, Value* iterable, Value* ctor,
 // 组合器入口：建 capability，跑主流程；失败则 reject 并返回 promise。
 Value* promiseCombinatorEntry(IContext* ctx, Value* self, size_t argc, Value* argv[],
                               PromiseCombinator kind) {
-    if (!detail::isCallable(self)) {
+    if (!detail::isConstructor(self)) {
         return detail::typeError(ctx, "Promise combinator called on non-constructor");
     }
     PromiseCapability cap;
@@ -826,7 +830,7 @@ Value* promiseAny(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
 
 // Promise.race（§27.2.4.4.1）：不收集结果，首个 settle 直接透传。
 Value* promiseRace(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    if (!detail::isCallable(self)) {
+    if (!detail::isConstructor(self)) {
         return detail::typeError(ctx, "Promise.race called on non-constructor");
     }
     PromiseCapability cap;
@@ -902,7 +906,7 @@ Value* promiseRace(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
 // —— Promise.resolve / Promise.reject（§27.2.4.7 / §27.2.4.8）——
 
 Value* promiseResolveStatic(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    if (!detail::isCallable(self)) {
+    if (!detail::isConstructor(self)) {
         return detail::typeError(ctx, "Promise.resolve called on non-constructor");
     }
     Value* x = argc > 0 ? argv[0] : ctx->createUndefined();
@@ -910,7 +914,7 @@ Value* promiseResolveStatic(IContext* ctx, Value* self, size_t argc, Value* argv
 }
 
 Value* promiseRejectStatic(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    if (!detail::isCallable(self)) {
+    if (!detail::isConstructor(self)) {
         return detail::typeError(ctx, "Promise.reject called on non-constructor");
     }
     PromiseCapability cap;

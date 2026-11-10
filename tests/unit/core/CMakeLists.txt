@@ -22,6 +22,7 @@ add_executable(core_unit_test
     ObjectTest.cpp
     PropertyOpsTest.cpp
     ConstructTest.cpp
+    FunctionConstructibleTest.cpp
     SymbolTest.cpp
     WellKnownSymbolTest.cpp
     AccessorTest.cpp

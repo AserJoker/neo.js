@@ -18,6 +18,11 @@
 //   - constructFn：可选构造钩子。非空时 construct 直接调它并用其对象返回值，
 //     用于 call/construct 语义必须不同的内建（如 Boolean/Number/String 包装类：
 //     call 返回原始值，new 返回包装对象）。
+//   - constructible：是否可作为构造函数（ES2024 §7.2.4 IsConstructor）。
+//     native 函数默认 true；箭头函数/方法等不可构造者由 setFunctionConstructible
+//     显式置 false。绑定函数在创建时按 target 的可构造性继承（§10.4.1.3）。
+//     注：本引擎中 Function 类型恒可调用（native 指针非空，绑定函数转发 target），
+//     故不另设 callable 标志。
 //
 // 函数名不是 data 字段，而是函数对象上的 "name" 属性（writable=false /
 // enumerable=false / configurable=true，ES2024 §20.2.4.2），由 createNativeFunction
@@ -91,6 +96,7 @@ public:
     NativeFn native;       // native 函数指针
     size_t minArgc;        // 最少参数数量（调用时校验）
     NativeFn constructFn;  // 可选构造钩子（nullptr = native + 默认 this 语义）
+    bool constructible = true;  // 是否可作为构造函数（IsConstructor，§7.2.4）
     size_t activeCalls = 0;  // 进行中调用数（重入计数，闭包作用域挂载/摘除用）
     // bind 产生的绑定函数（ES2024 §10.4.1.3 BoundFunctionCreate）：
     // boundTarget 非空表示这是绑定函数，调用时以 boundThis 为 this、

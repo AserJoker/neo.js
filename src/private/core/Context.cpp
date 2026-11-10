@@ -366,6 +366,12 @@ void Context::setFunctionConstructor(Value* fn, NativeFn ctor) {
     static_cast<FunctionData*>(fn->data())->constructFn = ctor;
 }
 
+void Context::setFunctionConstructible(Value* fn, bool constructible) {
+    // 仅对 Function 类型有效，其他类型忽略
+    if (fn->type()->kind() != TypeKind::Function) return;
+    static_cast<FunctionData*>(fn->data())->constructible = constructible;
+}
+
 void Context::setFunctionName(Value* fn, std::string_view name) {
     // 仅对 Function 类型有效（setname 字节码），其他类型忽略
     if (fn->type()->kind() != TypeKind::Function) return;
@@ -391,6 +397,12 @@ Value* Context::createBoundFunction(Value* target, Value* boundThis, size_t argc
     d->boundTarget = target;
     d->boundThis = boundThis != nullptr ? boundThis : createUndefined();
     if (argc > 0) d->boundArgs.assign(argv, argv + argc);
+    // §10.4.1.3 step 2：绑定函数继承 target 的 [[Construct]] 能力
+    if (target->type()->kind() == TypeKind::Function) {
+        d->constructible = static_cast<FunctionData*>(target->data())->constructible;
+    } else {
+        d->constructible = false;
+    }
 
     Value* fnValue = createTracked(getFunctionType(), d, {});
     if (fnValue == oomValue_) return fnValue;

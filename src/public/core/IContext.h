@@ -196,6 +196,12 @@ public:
     // 其他类型忽略。对应 VM 的 setname 字节码。
     virtual void setFunctionName(Value* fn, std::string_view name) = 0;
 
+    // setFunctionConstructible: 显式标记函数是否可构造（ES2024 §7.2.4 IsConstructor）。
+    // native 函数默认可构造；箭头函数、方法、生成器等不可构造者置 false。
+    // 绑定函数在创建时按 target 的可构造性继承，此后仍可显式覆盖。
+    // 仅对 Function 类型有效，其他类型忽略。
+    virtual void setFunctionConstructible(Value* fn, bool constructible) = 0;
+
     // —— 对象与属性（ADR-018 对象模型）——
     // createObject: 创建空对象 Value（properties/order/symbols 空）。
     // 原型自动挂 Object.prototype（ADR-035 完整原型链）。

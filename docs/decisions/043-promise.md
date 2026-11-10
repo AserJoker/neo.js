@@ -144,5 +144,9 @@ Context 析构时归还——与 ADR-042 的任务实体同一套所有权模型
 - 缺点：`PromiseData::reactions` 是 C++ 容器，需手动在 `enumerateChildren` 登记
   （漏登记会导致派生 promise 被提前回收）。
 - 范围：不含 `async/await`、`for await`；`Promise.withResolvers`（ES2024 新增）留待后续。
-- 已知遗留：`IsConstructor` 尚无判定（`@@species` 与静态方法用 `isCallable` 近似）；
-  未处理拒绝的检查点是宿主契约，同步 reject 需宿主在轮次末尾显式触发。
+- `IsConstructor`（§7.2.4）已落地：`FunctionData::constructible` 显式标记，
+  `IContext::setFunctionConstructible` 设置，`detail::isConstructor` 判定；
+  `@@species`、静态方法与 `NewPromiseCapability` 均改用它。绑定函数在创建时
+  继承 target 的可构造性，`FunctionType::construct` 补上绑定函数转发分支
+  （此前 `new boundFn()` 会调用空 native 指针崩溃）。
+- 已知遗留：未处理拒绝的检查点是宿主契约，同步 reject 需宿主在轮次末尾显式触发。
