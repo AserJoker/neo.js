@@ -147,6 +147,15 @@ public:
     Value* div(Value* a, Value* b) override;
     Value* toString(Value* self) override;
 
+    // 转换与运算符原语（ES2024 §7.1 / §7.2 / §13）
+    bool toBoolean(Value* v) override;
+    Value* toNumber(Value* v) override;
+    Value* toPrimitive(Value* v,
+                       ToPrimitiveHint hint = ToPrimitiveHint::Default) override;
+    Value* toPropertyKey(Value* v) override;
+    Value* binaryOp(BinaryOperator op, Value* a, Value* b) override;
+    Value* unaryOp(UnaryOperator op, Value* v) override;
+
     // 函数调用
     Value* call(Value* fn, Value* thisArg, size_t argc, Value* argv[]) override;
     Value* construct(Value* fn, size_t argc, Value* argv[]) override;

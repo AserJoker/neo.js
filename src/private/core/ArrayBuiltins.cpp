@@ -46,31 +46,6 @@ Value* notArray(IContext* ctx, const char* method) {
     return detail::typeError(ctx, msg);
 }
 
-// 严格相等（ES2024 §7.2.16 IsStrictlyEqual 的简化版）
-bool strictEquals(Value* a, Value* b) {
-    TypeKind ak = a->type()->kind();
-    if (ak != b->type()->kind()) return false;
-    switch (ak) {
-        case TypeKind::Undefined:
-        case TypeKind::Null:
-            return true;
-        case TypeKind::Boolean:
-            return static_cast<BooleanData*>(a->data())->value ==
-                   static_cast<BooleanData*>(b->data())->value;
-        case TypeKind::Number: {
-            double x = static_cast<NumberData*>(a->data())->value;
-            double y = static_cast<NumberData*>(b->data())->value;
-            return x == y;  // NaN != NaN，+0 == -0
-        }
-        case TypeKind::String:
-            return static_cast<StringData*>(a->data())->value ==
-                   static_cast<StringData*>(b->data())->value;
-        default:
-            // 对象/函数/数组/symbol：data 身份相同才相等（引用语义）
-            return a->data() == b->data();
-    }
-}
-
 // ToIntegerOrInfinity（ES2024 §7.1.5），用于 slice/indexOf 的索引参数。
 // 走完整 ToNumber（对象参数先 ToPrimitive），失败时写入 err 并返回 0。
 double toIntegerOrInfinity(IContext* ctx, Value* v, Value*& err) {
@@ -232,7 +207,7 @@ Value* arrayIndexOf(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     }
     for (uint32_t i = from; i < len; ++i) {
         Value* v = d->elementAt(i);
-        if (v != nullptr && strictEquals(v, argv[0])) {
+        if (v != nullptr && detail::strictEquals(v, argv[0])) {
             return ctx->createNumber(static_cast<double>(i));
         }
     }

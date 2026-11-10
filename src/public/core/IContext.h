@@ -32,6 +32,7 @@
 #include "core/InterruptKind.h"
 #include "core/IteratorKind.h"
 #include "core/Module.h"
+#include "core/OperatorKind.h"
 #include "core/Task.h"
 #include "core/WellKnownSymbol.h"
 #include "infra/IAllocator.h"
@@ -150,6 +151,22 @@ public:
     virtual Value* mul(Value* a, Value* b) = 0;
     virtual Value* div(Value* a, Value* b) = 0;
     virtual Value* toString(Value* self) = 0;
+
+    // —— 转换原语（ES2024 §7.1）——
+    // VM 的表达式求值/跳转直接调用这些入口，不自行编排转换链。
+    // toBoolean 永不失败；其余返回 Value*（正常值或 Exception/Fatal）。
+    virtual bool toBoolean(Value* v) = 0;
+    virtual Value* toNumber(Value* v) = 0;
+    virtual Value* toPrimitive(Value* v,
+                               ToPrimitiveHint hint = ToPrimitiveHint::Default) = 0;
+    // ToPropertyKey：Symbol 原样返回，其余 ToString。
+    virtual Value* toPropertyKey(Value* v) = 0;
+
+    // —— 运算符原语（ES2024 §7.2 / §13）——
+    // 二元/一元运算符的完整 JS 语义（转换 + 计算 + 错误通道）。
+    // 逻辑短路（&&/||/??）与赋值由 VM 用跳转/既有 store 组合，不在此列。
+    virtual Value* binaryOp(BinaryOperator op, Value* a, Value* b) = 0;
+    virtual Value* unaryOp(UnaryOperator op, Value* v) = 0;
 
     // —— 函数调用（ADR-022）——
     // call: 纯代理 ctx->call(fn, thisArg, argc, argv) → fn->type()->call(this, fn, thisArg, argc, argv)。

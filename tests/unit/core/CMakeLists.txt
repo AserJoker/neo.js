@@ -40,6 +40,7 @@ add_executable(core_unit_test
     GeneratorTest.cpp
     AsyncGeneratorTest.cpp
     ModuleTest.cpp
+    OperatorTest.cpp
 )
 target_link_libraries(core_unit_test
     PRIVATE

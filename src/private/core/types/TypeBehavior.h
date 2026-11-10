@@ -107,6 +107,32 @@ inline bool toBoolean(Value* v) {
     }
 }
 
+// —— IsStrictlyEqual（ES2024 §7.2.16）——
+// 类型必须相同；Number 的 NaN 不等、+0 == -0；对象/符号按 data 身份比较。
+inline bool strictEquals(Value* a, Value* b) {
+    TypeKind ak = a->type()->kind();
+    if (ak != b->type()->kind()) return false;
+    switch (ak) {
+        case TypeKind::Undefined:
+        case TypeKind::Null:
+            return true;
+        case TypeKind::Boolean:
+            return static_cast<BooleanData*>(a->data())->value ==
+                   static_cast<BooleanData*>(b->data())->value;
+        case TypeKind::Number: {
+            double x = static_cast<NumberData*>(a->data())->value;
+            double y = static_cast<NumberData*>(b->data())->value;
+            return x == y;  // NaN != NaN，+0 == -0
+        }
+        case TypeKind::String:
+            return static_cast<StringData*>(a->data())->value ==
+                   static_cast<StringData*>(b->data())->value;
+        default:
+            // 对象/函数/数组/symbol 等引用语义：data 身份相同才相等
+            return a->data() == b->data();
+    }
+}
+
 // —— ToPrimitive（ES2024 §7.1.1 / §7.1.1.1）——
 // preferredType 缺省（Default）在 OrdinaryToPrimitive 中等价于 NUMBER，
 // 仅 @@toPrimitive 的 hint 字符串区分 "default"。
