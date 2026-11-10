@@ -120,15 +120,26 @@ Pending 期间 `then` 会同时登记 fulfill/reject 两条，另一条必须丢
 |------|------|
 | `HostPromiseRejectionTracker(promise, "reject")` | `settlePromise` 在 Rejected 且 `isHandled == false` 时调用 `ctx->hostPromiseRejectionTracker(promise, false)` |
 | `HostPromiseRejectionTracker(promise, "handle")` | `performPromiseThen` 首次把 `isHandled` 置 true 时调用 `(promise, true)` |
-| 上报时机 | `runOneTask` 在微任务队列排空时调用 `reportUnhandledRejections()`；`~Context` 兜底一次 |
+| 上报时机 | 宿主在 microtask checkpoint（宏任务结束 / 脚本结束）调用 `reportUnhandledRejections()`；`~Context` 兜底一次 |
 | 输出 | `Unhandled promise rejection: <reason>`（Error 走 toString，其余走 `describeValue`） |
 
-登记的 promise 作为**动态 GC 根**（`scopeRef++`），移出待上报集合、上报或
+登记的 promise 作为**动态 GC 根**（`pinRef++`），移出待上报集合、上报或
 Context 析构时归还——与 ADR-042 的任务实体同一套所有权模型，不寄生在 scope 上。
 
-注意：同步 `reject`（executor 内直接调用）不产生任何任务，`runOneTask` 不会被
-触发；宿主需要在轮次末尾显式调用 `reportUnhandledRejections()`（测试的 `drain`
-即模拟这一检查点）。这是宿主契约的一部分，不是实现缺陷。
+检查点**不由 `runOneTask` 触发**：规范把时机留给宿主（§27.2.1.9），而「每排空
+一批微任务就上报」会过早上报那些计划在下一个宏任务里 catch 的拒绝。宿主循环的
+典型写法：
+
+```cpp
+while (ctx->hasTasks()) {
+    while (ctx->hasRunnableTask()) ctx->runOneTask();
+    ctx->reportUnhandledRejections();   // microtask checkpoint
+}
+```
+
+同步 `reject`（executor 内直接调用）不产生任务，同样由这个检查点覆盖。
+`reportUnhandledRejections` 上报前会再查一次 `isHandled`，避免登记后又被接住
+的条目被误报。
 
 ### 6. Promise 构造函数语义
 
@@ -149,4 +160,5 @@ Context 析构时归还——与 ADR-042 的任务实体同一套所有权模型
   `@@species`、静态方法与 `NewPromiseCapability` 均改用它。绑定函数在创建时
   继承 target 的可构造性，`FunctionType::construct` 补上绑定函数转发分支
   （此前 `new boundFn()` 会调用空 native 指针崩溃）。
-- 已知遗留：未处理拒绝的检查点是宿主契约，同步 reject 需宿主在轮次末尾显式触发。
+- 未处理拒绝的检查点是宿主契约：`runOneTask` 不自动上报，宿主在轮次末尾调用
+  `reportUnhandledRejections()`（`~Context` 兜底）。

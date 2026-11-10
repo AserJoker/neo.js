@@ -60,12 +60,16 @@ std::string str(Value* v) {
     return static_cast<StringData*>(v->data())->value;
 }
 
-// 跑完当前这一轮：排空任务队列，然后做一次微任务检查点（宿主职责）。
-// runOneTask 在微任务排空时会自动上报；同步 reject（无任务入队）需要宿主
-// 在轮次末尾显式调用 reportUnhandledRejections，这里统一模拟。
+// 跑完当前这一轮：排空任务队列，然后做一次 microtask checkpoint（宿主职责）。
+// runOneTask 不再自动上报，宿主在轮次末尾显式调用 reportUnhandledRejections。
 void drain(IContext* ctx) {
     while (ctx->hasRunnableTask()) ctx->runOneTask();
     ctx->reportUnhandledRejections();
+}
+
+// 只排空任务，不做检查点（用于验证「检查点之前 catch 不误报」）
+void drainWithoutCheckpoint(IContext* ctx) {
+    while (ctx->hasRunnableTask()) ctx->runOneTask();
 }
 
 Value* promiseCtor(IContext* ctx) { return ctx->global()->lookup("Promise"); }
@@ -192,6 +196,62 @@ TEST(PromiseRejectionTest, PendingPromiseIsNotReported) {
     drain(f.ctx.get());
     EXPECT_EQ(countLines(f.sink, "Unhandled promise rejection"), 0u);
     EXPECT_EQ(neo::core::asPromise(p)->state, PromiseState::Pending);
+}
+
+// 同步 reject（executor 内直接调用）不产生任务，宿主在轮次末尾做检查点即可上报
+TEST(PromiseRejectionTest, SynchronousRejectReportedAtCheckpoint) {
+    Fixture f;
+    Value* executor = f.ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t, Value* argv[]) {
+            Value* args[1] = {c->createString("sync boom")};
+            return c->call(argv[1], c->createUndefined(), 1, args);
+        }, 2);
+    Value* args[1] = {executor};
+    f.ctx->construct(promiseCtor(f.ctx.get()), 1, args);
+
+    // 没有任务入队
+    EXPECT_FALSE(f.ctx->hasRunnableTask());
+    // 检查点前不上报
+    EXPECT_EQ(countLines(f.sink, "Unhandled promise rejection"), 0u);
+    f.ctx->reportUnhandledRejections();
+    EXPECT_EQ(countLines(f.sink, "Unhandled promise rejection: sync boom"), 1u);
+}
+
+// 检查点之前 catch 的拒绝不应误报（旧实现会在微任务排空时立即上报）
+TEST(PromiseRejectionTest, CatchBeforeCheckpointIsNotReported) {
+    Fixture f;
+    Value* p = newPromise(f.ctx.get());
+    settle(f.ctx.get(), "__reject", f.ctx->createString("caught later"));
+
+    // 只排空任务（reaction job 可能已投递），不做检查点
+    drainWithoutCheckpoint(f.ctx.get());
+    // 此时尚未上报（检查点未到）
+    EXPECT_EQ(countLines(f.sink, "Unhandled promise rejection"), 0u);
+
+    // 在检查点之前接住
+    Value* onRejected = f.ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t, Value*[]) { return c->createUndefined(); }, 1);
+    Value* args[1] = {onRejected};
+    f.ctx->call(f.ctx->getProperty(p, "catch"), p, 1, args);
+    f.ctx->reportUnhandledRejections();
+    EXPECT_EQ(countLines(f.sink, "Unhandled promise rejection"), 0u);
+}
+
+// 检查点之后才 catch：已经上报，无法撤销
+TEST(PromiseRejectionTest, CatchAfterCheckpointStillReported) {
+    Fixture f;
+    Value* p = newPromise(f.ctx.get());
+    settle(f.ctx.get(), "__reject", f.ctx->createString("too late"));
+    drain(f.ctx.get());
+    EXPECT_EQ(countLines(f.sink, "Unhandled promise rejection: too late"), 1u);
+
+    Value* onRejected = f.ctx->createNativeFunction(
+        [](IContext* c, Value*, size_t, Value*[]) { return c->createUndefined(); }, 1);
+    Value* args[1] = {onRejected};
+    f.ctx->call(f.ctx->getProperty(p, "catch"), p, 1, args);
+    drain(f.ctx.get());
+    // 不重复上报
+    EXPECT_EQ(countLines(f.sink, "Unhandled promise rejection: too late"), 1u);
 }
 
 TEST(PromiseRejectionTest, ChainedRejectionReportsDerivedOnly) {

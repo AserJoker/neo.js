@@ -945,22 +945,20 @@ Value* Context::executeTask(const Task& task) {
 }
 
 Value* Context::runOneTask() {
-    // 微任务优先：每次只取一个，排空微任务后才轮到宏任务
+    // 微任务优先：每次只取一个，排空微任务后才轮到宏任务。
+    // 注意：这里**不**做未处理拒绝检查点。检查点是宿主的 microtask checkpoint
+    // 职责（§27.2.1.9），时机应是「宏任务结束 / 脚本结束」，而不是「每排空
+    // 一批微任务」——后者会过早上报那些计划在下一个宏任务里 catch 的拒绝。
+    // 宿主在事件循环空闲时调用 reportUnhandledRejections()；~Context 兜底一次。
     if (!microtasks_.empty()) {
         Task task = microtasks_.front().task;
         microtasks_.erase(microtasks_.begin());
-        Value* r = executeTask(task);
-        // 微任务排空 = 一轮结束：此刻所有已 settle 的拒绝都已被 reaction job
-        // 处理过，仍未被接住的即未处理（§27.2.1.9 宿主职责）。
-        if (microtasks_.empty()) reportUnhandledRejections();
-        return r;
+        return executeTask(task);
     }
     if (!macrotasks_.empty() && macrotasks_.front().task.due() <= clock_->nowMs()) {
         Task task = macrotasks_.front().task;
         macrotasks_.erase(macrotasks_.begin());
-        Value* r = executeTask(task);
-        if (microtasks_.empty()) reportUnhandledRejections();
-        return r;
+        return executeTask(task);
     }
     return createUndefined();
 }
@@ -989,7 +987,13 @@ void Context::reportUnhandledRejections() {
     if (pendingRejections_.empty()) return;
     for (auto& [promise, pending] : pendingRejections_) {
         (void)pending;
+        // 上报前再确认一次：登记之后可能已有 then/catch 接住（tracker 会移出集合，
+        // 但同一轮内若先登记后接住又被重新登记，这里仍以 isHandled 为准）。
         PromiseData* d = asPromise(promise);
+        if (d != nullptr && d->isHandled) {
+            promise->pinRefDec();
+            continue;
+        }
         std::string reason = d != nullptr ? detail::describeValue(this, d->result)
                                           : "undefined";
         console_->printLine("Unhandled promise rejection: {}", reason);

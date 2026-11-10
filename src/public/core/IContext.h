@@ -397,7 +397,14 @@ public:
 
     // reportUnhandledRejections：把当前所有待上报的未处理拒绝打印到 console
     // （"Unhandled promise rejection: <reason>"），并清空集合。
-    // 事件循环在微任务队列排空时调用；Context 析构时也兜底调用一次。
+    //
+    // 这是宿主的 **microtask checkpoint** 职责（§27.2.1.9）：时机应为
+    // 「宏任务结束 / 脚本执行结束」，而不是「每排空一批微任务」。`runOneTask`
+    // 不再自动调用它——否则会过早上报那些计划在下一个宏任务里 catch 的拒绝。
+    // 宿主循环的典型写法：
+    //   while (ctx->hasTasks()) { while (ctx->hasRunnableTask()) ctx->runOneTask();
+    //                             ctx->reportUnhandledRejections(); }
+    // Context 析构时也兜底调用一次（覆盖宿主未排空事件循环就销毁的情形）。
     virtual void reportUnhandledRejections() = 0;
 
     // —— 错误值创建（ADR-006 异常即值 + ADR-017 §4 Fatal）——
@@ -451,6 +458,7 @@ public:
     // runOneTask 每次只取一个任务：微任务队列非空则取微任务，否则取已到期的宏任务。
     // 宿主循环 `while (hasRunnableTask()) runOneTask();` 自然得到
     // 「宏任务 → 排空微任务 → 下一个宏任务」的规范顺序。
+    // 每个宏任务结束后宿主应调用 reportUnhandledRejections()（microtask checkpoint）。
     // 任务实体被任务队列作为 GC 根持有（pinRef++），出队执行后释放。
     //
     // postMicrotask: 入队一个微任务（Promise 回调 / queueMicrotask 等）。返回任务 id。
