@@ -29,6 +29,7 @@
 
 #include "core/CallStack.h"
 #include "core/ErrorKind.h"
+#include "core/InterruptKind.h"
 #include "core/IteratorKind.h"
 #include "core/Task.h"
 #include "core/WellKnownSymbol.h"
@@ -406,6 +407,14 @@ public:
     //                             ctx->reportUnhandledRejections(); }
     // Context 析构时也兜底调用一次（覆盖宿主未排空事件循环就销毁的情形）。
     virtual void reportUnhandledRejections() = 0;
+
+    // —— 控制流信号（ADR-046）——
+    // createInterrupt: 创建 Interrupt 值（kind + offset + value）。
+    // 只由协程函数体 / VM 执行循环产生；正常业务路径不应调用。
+    // offset 对抽象层是不透明整数（native=stage，VM=PC）。
+    // 返回 Value*：正常 Interrupt，或 OOM 哨兵。
+    virtual Value* createInterrupt(InterruptKind kind, uint64_t offset,
+                                   Value* value) = 0;
 
     // —— 错误值创建（ADR-006 异常即值 + ADR-017 §4 Fatal）——
     // createException: 创建可捕获异常 Value（child 永远不为 nullptr，无错误对象时传 undefined Value）。

@@ -52,7 +52,11 @@ enum class TypeKind : uint8_t {
     // Promise 对象（ES2024 §27.2）：普通对象 + Promise 内部槽
     // （[[PromiseState]]/[[PromiseResult]]/[[PromiseReactions]]/[[PromiseIsHandled]]）。
     Promise,
-    // 后续阶段：BigInt/Interrupt/...
+    // 控制流信号值（ADR-046）：kind + offset + value。与 Exception/Fatal 正交，
+    // 不是错误；只由协程函数体 / VM 执行循环产生、由协程 runner 消费。
+    // 非对象类型（objectLayout=false），行为方法全部透传 self。
+    Interrupt,
+    // 后续阶段：BigInt/Coroutine/...
 };
 
 // Value 的 meta：抽象接口，每种 JS 类型一个实现类（单例）。
@@ -178,6 +182,7 @@ IType* getArrayIteratorType();
 IType* getIteratorWrapperType();
 IType* getErrorType();
 IType* getPromiseType();
+IType* getInterruptType();
 
 // —— TypeKind → Type 单例（Types.cpp 中的唯一映射表）——
 // 未注册的 kind 返回 nullptr。新增类型时只需在此加一行映射，

@@ -133,6 +133,7 @@ add_library(neojs STATIC
     src/private/core/types/PrimitiveWrapper.cpp
     src/private/core/types/Promise.cpp
     src/private/core/types/Symbol.cpp
+    src/private/core/types/Interrupt.cpp
     src/private/infra/MallocAllocator.cpp
     src/private/infra/Console.cpp
     src/private/infra/SteadyClock.cpp

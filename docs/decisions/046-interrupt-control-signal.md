@@ -64,15 +64,18 @@ Interrupt 有两个使用方向，offset 在两侧含义不同但都是「断点
 > 为什么两个方向都带 offset：native 侧它主要用于诊断与对称性；VM 侧它是恢复
 > 定位的必需信息（finally 需要知道从哪块代码开始执行清理）。
 
-### 3. 传播：统一 return 通道 + 透传纪律
+### 3. 传播：仅协程/VM 边界产生与消费
 
-Interrupt 与 Fatal 一样，是「调用方不应处理、必须原样透传」的值：
+Interrupt **只由协程函数体（native 状态机）或 VM 执行循环产生**，也只由
+协程 runner 消费。正常业务路径（普通函数调用、内建、Promise 等）不会创建
+Interrupt，因此**不需要「透传纪律」**——不存在「Interrupt 穿透到普通调用方」
+的场景。
 
-- **任何返回 `Value*` 的接口**，若结果是 Interrupt 且当前不在协程边界，
-  必须立即 `return` 透传，不转换、不包装、不参与运算。
-- **唯一消费点**是协程 runner（`resumeNativeCoroutine` / `resumeVmCoroutine`）。
-- 优先级：**Fatal > Interrupt > Exception**。若 Interrupt 的 `value` 本身是 Fatal，
-  以 Fatal 为准（理论上不应构造这种值，但透传路径须防御）。
+- 产生点：native 协程函数体 `return ctx->createInterrupt(...)`；
+  VM 执行循环产生 Yield/Await/Throw。
+- 消费点：`resumeNativeCoroutine` / `resumeVmCoroutine`。
+- 若 Interrupt 意外出现在普通返回通道，属于内部错误（可用断言暴露），
+  不需要像 Fatal 那样在每个 `Value*` 调用点检查。
 
 判定辅助（与 `isErrorValue` 并列，互不包含）：
 
@@ -135,11 +138,10 @@ if (isInterruptValue(sent)) {
 4. 行为方法全部透传 self（add/sub/mul/div/toString/call/construct/
    getProperty/setProperty/hasProperty/deleteProperty/defineProperty/
    defineAccessor/getPrototype/setPrototype）。
-5. `TypeBehavior.h`：`isInterruptValue` + `asInterrupt`（内部槽访问）。
+5. `TypeBehavior.h`：`isInterruptValue`；`types/Interrupt.h`：`asInterrupt`（内部槽访问）。
 6. `InterruptData::enumerateChildren` 遍历 `value`；`clone` 引用语义（ref++ 返回 this）。
 7. `IContext::createInterrupt(kind, offset, value)`。
-8. 透传检查点：协程 runner、`invokeNative` 的返回值处理、Task 执行器
-   （Interrupt 逃逸到事件循环属于内部错误，应报 Fatal 或断言）。
+8. 消费点：协程 runner（`invokeNative` 的挂起分支）。
 9. 测试：构造/字段访问/透传/协程消费/Generator 三 API。
 
 ### 8. 与 ADR-017 的差异
@@ -158,9 +160,8 @@ ADR-017 把 Interrupt 描述为「VM 内部信号，子类型 ret/throw/await/yi
 - 优点：挂起/恢复、return/throw 注入、未来 await 共用一套信号载体；offset 统一
   native stage 与 VM PC；与 Exception/Fatal 正交，语义清晰；新增类型成本低
   （非对象，透传语义）。
-- 代价：多一个「必须透传」的值类型，所有返回 `Value*` 的调用点理论上都要检查——
-  与 Fatal 透传契约同样的纪律负担。初期可只在协程边界与关键路径检查，
-  随 VM 落地逐步收紧。
+- 代价：Interrupt 是新的运行时值类型，需要在类型映射与行为分派中登记；
+  但它只在协程/VM 边界出现，不引入额外的透传纪律负担。
 - 范围：本 ADR 只做设计。实现顺序：
   1. `TypeKind::Interrupt` + `InterruptType/Data` + `createInterrupt` + `isInterruptValue`；
   2. 更新 ADR-045：`CoroutineYield` → `Interrupt(Yield)`；

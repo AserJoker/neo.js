@@ -125,6 +125,12 @@ inline bool isErrorValue(Value* v) {
     return k == TypeKind::Exception || k == TypeKind::Fatal;
 }
 
+// 是否为控制流信号值（Interrupt，ADR-046）。与 isErrorValue 互不包含：
+// Interrupt 不是错误，不参与 try-catch；只在协程/VM 边界产生与消费。
+inline bool isInterruptValue(Value* v) {
+    return v != nullptr && v->type()->kind() == TypeKind::Interrupt;
+}
+
 // —— 规范错误异常（ADR-039）——
 // 引擎内部报错统一走这里：按 ES2024 规定的错误类型创建 Error 对象，
 // 再包进 Exception 通道（ADR-006）。避免各处硬编码 ErrorKind。

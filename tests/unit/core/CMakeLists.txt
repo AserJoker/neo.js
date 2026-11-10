@@ -35,6 +35,7 @@ add_executable(core_unit_test
     TimerTest.cpp
     PrimitiveWrapperTest.cpp
     ToPrimitiveTest.cpp
+    InterruptTest.cpp
 )
 target_link_libraries(core_unit_test
     PRIVATE

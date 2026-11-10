@@ -175,6 +175,7 @@ public:
 
     // Promise（ADR-043）
     Value* createPromise(std::string_view bindName = {}) override;
+    Value* createInterrupt(InterruptKind kind, uint64_t offset, Value* value) override;
     Value* promisePrototype() const override { return promisePrototype_; }
     void setPromisePrototype(Value* proto) override { promisePrototype_ = proto; }
 

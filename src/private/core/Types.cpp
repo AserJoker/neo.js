@@ -13,6 +13,7 @@
 #include "core/types/Exception.h"
 #include "core/types/Fatal.h"
 #include "core/types/Function.h"
+#include "core/types/Interrupt.h"
 #include "core/types/Iterator.h"
 #include "core/types/Null.h"
 #include "core/types/Number.h"
@@ -111,6 +112,11 @@ IType* getPromiseType() {
     return &inst;
 }
 
+IType* getInterruptType() {
+    static InterruptType inst;
+    return &inst;
+}
+
 // TypeKind → Type 单例映射（唯一真相源）。
 // 新增类型：在此加一行 case + 上面的 getXxxType()，对象模型分派点自动覆盖。
 IType* getTypeByKind(TypeKind k) {
@@ -132,6 +138,7 @@ IType* getTypeByKind(TypeKind k) {
         case TypeKind::IteratorWrapper:  return getIteratorWrapperType();
         case TypeKind::Error:            return getErrorType();
         case TypeKind::Promise:          return getPromiseType();
+        case TypeKind::Interrupt:        return getInterruptType();
     }
     return nullptr;
 }

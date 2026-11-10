@@ -28,6 +28,7 @@
 #include "core/types/Exception.h"
 #include "core/types/Fatal.h"
 #include "core/types/Function.h"
+#include "core/types/Interrupt.h"
 #include "core/types/Iterator.h"
 #include "core/types/Null.h"
 #include "core/types/Number.h"
@@ -674,6 +675,17 @@ Value* Context::createPromise(std::string_view bindName) {
         static_cast<ObjectData*>(p->data())->prototype = promisePrototype_;
     }
     return p;
+}
+
+// —— 控制流信号（ADR-046）——
+
+Value* Context::createInterrupt(InterruptKind kind, uint64_t offset, Value* value) {
+    // 无载荷时用 undefined（value 契约上永不为 nullptr）
+    Value* payload = value != nullptr ? value : createUndefined();
+    if (payload == oomValue_) return payload;
+    auto* d = gc_->allocData<InterruptData>(kind, offset, payload);
+    if (d == nullptr) return oomValue_;
+    return createTracked(getInterruptType(), d, {});
 }
 
 // —— 错误值创建（ADR-006 异常即值 + ADR-017 §4 Fatal）——
