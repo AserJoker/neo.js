@@ -17,6 +17,8 @@
 
 #include "core/PromiseBuiltins.h"
 
+#include "core/PromiseCapability.h"
+
 #include "core/IContext.h"
 #include "core/IType.h"
 #include "core/Scope.h"
@@ -1008,6 +1010,11 @@ bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
 
 }  // namespace
 
+// 导出给异步机制（AsyncGenerator）使用：内部匿名命名空间的 newPromiseCapability。
+Value* createPromiseCapability(IContext* ctx, Value* ctor, PromiseCapability& out) {
+    return newPromiseCapability(ctx, ctor, out);
+}
+
 bool registerPromiseBuiltins(IContext* ctx) {
     // —— 1. Promise.prototype（普通对象，原型 = Object.prototype）——
     Value* promiseProto = ctx->createObject();
@@ -1071,7 +1078,8 @@ bool registerPromiseBuiltins(IContext* ctx) {
         return false;
     }
 
-    // —— 7. 注册到 global ——
+    // —— 7. 记录内建构造函数（异步机制用）并注册到 global ——
+    ctx->setPromiseCtor(promiseFn);
     bindGlobal(ctx, "Promise", promiseFn);
     return true;
 }

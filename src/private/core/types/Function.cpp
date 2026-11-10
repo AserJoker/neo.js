@@ -74,6 +74,10 @@ Value* FunctionType::call(IContext* ctx, Value* self, Value* thisArg,
                          static_cast<size_t>(args.size()), args.data());
     }
 
+    // 异步生成器函数（async function*）：创建 AsyncGenerator（Promise 请求队列）。
+    if (d->asyncGenerator) {
+        return ctx->createAsyncGenerator(self, thisArg, argc, argv);
+    }
     // 生成器函数（function*）：不执行函数体，创建 Suspended 协程返回（ADR-045 §8）。
     // 实参原样交给协程，首次 next 时才真正运行。
     if (d->generator) {

@@ -44,6 +44,8 @@ class CoroutineType : public IType {
 public:
     // 协程具备对象布局（Data 派生自 ObjectData），故 objectLayout=true。
     CoroutineType() : IType(TypeKind::Coroutine, true) {}
+    // 供 AsyncGeneratorType 复用同一套对象行为，仅换 TypeKind。
+    explicit CoroutineType(TypeKind k) : IType(k, true) {}
     const char* name() const override { return "coroutine"; }
 
     // 运算：走 ToPrimitive（与普通对象一致）

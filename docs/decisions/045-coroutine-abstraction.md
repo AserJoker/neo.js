@@ -1,7 +1,7 @@
 # ADR-045: 协程抽象（Coroutine）— 通用挂起/恢复，统一 native 与 VM
 
-- 状态: 已接受（步骤 0-4 已实现：Interrupt、Coroutine 对象与协程栈、挂起分支与 native runner、
-  Generator 封装；finally 语义 / VM runner / async-await 待做）
+- 状态: 已接受（步骤 0-4 与 AsyncGenerator 已实现：Interrupt、Coroutine、挂起分支与
+  native runner、Generator、AsyncGenerator；finally 语义 / VM runner / await lowering 待做）
 - 决策者: aserjoker（项目负责人） + CodeAgent
 - 关联: ADR-004（执行模型）、ADR-017（Interrupt）、ADR-022（函数调用）、
           ADR-023（协程挂起/恢复）、ADR-036（闭包作用域孤立化）、
@@ -233,6 +233,34 @@ if (isInterruptValue(sent)) {
   VM 侧据此定位 PC。这是 ADR-046 给 Interrupt 带 offset 的价值。
 - 协程层不新增 `pendingThrow` / `pendingReturn` 字段——信号就在 `sentValue` 里。
 
+### 8.2 AsyncGenerator（ES2024 §27.6）
+
+AsyncGenerator = Coroutine + Promise 请求队列，不需要新的执行模型：
+
+| 组件 | 职责 |
+|------|------|
+| `AsyncGeneratorData : CoroutineData` | 增加 `asyncState`、请求队列、当前请求的 resolve/reject |
+| `AsyncGeneratorRequest` | `{type: next/return/throw, value, promise, resolve, reject}` |
+| 异步驱动 | 入队 → 串行 resume → await yield 值 → settle 请求 Promise |
+
+关键语义：
+
+- 每次 `next/return/throw` **新建** capability 并入队；并发调用串行处理。
+- `yield v` 先 `Await(v)`（`Promise.resolve(v).then`），成功才 resolve
+  `{value, done:false}`；拒绝则把异常**抛回生成器**（yield 表达式处），
+  由函数体决定 catch/finally。
+- 正常完成 / `return` 的值 await 后 resolve `{value, done:true}`。
+- 未启动时 `return` 直接完成、`throw` 直接 reject，不运行函数体。
+- 已完成时 `next` resolve `{undefined,true}`、`return` resolve `{value,true}`、
+  `throw` reject。
+- `%AsyncGeneratorPrototype%` → `%AsyncIteratorPrototype%` → `%Object.prototype%`，
+  `@@asyncIterator` 返回 this。
+- 异步 resume 是延迟执行的：await 回调通过 `captureValue` 捕获生成器，
+  保证从调度到执行之间 GC 不会回收它（`resumeCoroutine` 的 pin 只覆盖同步调用）。
+
+`await` 语法本身仍由编译器 lowering 成 `Interrupt(Await)` + 同一异步驱动，
+engine 层不引入 `async` 标记；native 函数体可直接 yield/return Promise。
+
 ### 9. 已知限制与待定问题
 
 1. **native 状态存放**：跨 yield 的变量必须显式放进作用域树（`ctx->createXxx(name)`
@@ -283,5 +311,7 @@ ADR-023 的 VM 实现因此成为本抽象的一个 runner，而非独立机制�
 - `src/private/core/NativeCoroutine.cpp`：`resumeNativeCoroutine`；
 - `IContext::createCoroutine / getCurrentCoroutine / resumeCoroutine`；
 - `src/private/core/GeneratorBuiltins.cpp`：`%GeneratorPrototype%` 与 next/return/throw；
+- `src/private/core/AsyncGeneratorBuiltins.cpp`：`%AsyncIteratorPrototype%` /
+  `%AsyncGeneratorPrototype%` 与异步请求队列驱动；
 - `FunctionData::generator` + `IContext::setFunctionGenerator`：`function*` 标记，
   `FunctionType::call` 直接创建 Suspended 协程。

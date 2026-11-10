@@ -59,6 +59,9 @@ enum class TypeKind : uint8_t {
     // 协程对象（ADR-045）：可恢复的计算句柄，持上下文（孤立执行作用域 + 调用栈）、
     // 断点、状态。对象布局复用 ObjectData（属性/原型/GC）。
     Coroutine,
+    // 异步生成器对象（ADR-045 §8 / ES2024 §27.6）：Coroutine + Promise 请求队列。
+    // 对象布局复用 ObjectData；内部槽在 CoroutineData 基础上增加异步状态与队列。
+    AsyncGenerator,
     // 后续阶段：BigInt/...
 };
 
@@ -187,6 +190,7 @@ IType* getErrorType();
 IType* getPromiseType();
 IType* getInterruptType();
 IType* getCoroutineType();
+IType* getAsyncGeneratorType();
 
 // —— TypeKind → Type 单例（Types.cpp 中的唯一映射表）——
 // 未注册的 kind 返回 nullptr。新增类型时只需在此加一行映射，

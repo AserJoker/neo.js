@@ -109,7 +109,10 @@ IData* CoroutineData::clone(neo::infra::IAllocator* /*alloc*/) const {
 }
 
 CoroutineData* asCoroutine(Value* v) {
-    if (v == nullptr || v->type()->kind() != TypeKind::Coroutine) return nullptr;
+    if (v == nullptr) return nullptr;
+    TypeKind k = v->type()->kind();
+    // AsyncGeneratorData 派生自 CoroutineData，协程 runner 可统一处理。
+    if (k != TypeKind::Coroutine && k != TypeKind::AsyncGenerator) return nullptr;
     return static_cast<CoroutineData*>(v->data());
 }
 

@@ -14,6 +14,7 @@
 
 #include "core/Context.h"
 #include "core/ArrayBuiltins.h"
+#include "core/AsyncGeneratorBuiltins.h"
 #include "core/ErrorBuiltins.h"
 #include "core/GeneratorBuiltins.h"
 #include "core/IType.h"
@@ -25,6 +26,7 @@
 #include "core/SymbolBuiltins.h"
 #include "core/TimerBuiltins.h"
 #include "core/types/Array.h"
+#include "core/types/AsyncGenerator.h"
 #include "core/types/Boolean.h"
 #include "core/types/Coroutine.h"
 #include "core/types/Error.h"
@@ -143,6 +145,12 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     // 14. 注册 Promise（%Promise.prototype% + 构造函数，ADR-043）。
     //     依赖 Object.prototype / Function.prototype 与事件循环（微任务队列）已就绪。
     if (!registerPromiseBuiltins(this)) {
+        std::abort();
+    }
+
+    // 15. 注册异步生成器协议（%AsyncIteratorPrototype% / %AsyncGeneratorPrototype%）。
+    //     依赖 Promise 内建（capability）与 Iterator 内建已就绪。
+    if (!registerAsyncGeneratorBuiltins(this)) {
         std::abort();
     }
 }
@@ -396,6 +404,24 @@ void Context::setFunctionGenerator(Value* fn, bool generator) {
         Value* proto = getProperty(fn, "prototype");
         if (detail::isObjectKind(proto->type()->kind())) {
             (void)setPrototype(proto, generatorPrototype_);
+        }
+    }
+}
+
+void Context::setFunctionAsyncGenerator(Value* fn, bool asyncGenerator) {
+    // 仅对 Function 类型有效，其他类型忽略
+    if (fn->type()->kind() != TypeKind::Function) return;
+    auto* d = static_cast<FunctionData*>(fn->data());
+    d->asyncGenerator = asyncGenerator;
+    if (!asyncGenerator) return;
+    // 异步生成器同时是生成器函数，且不可构造（ES2024 §27.6）
+    d->generator = true;
+    d->constructible = false;
+    // fn.prototype 的 [[Prototype]] 改为 %AsyncGeneratorPrototype%
+    if (asyncGeneratorPrototype_ != nullptr) {
+        Value* proto = getProperty(fn, "prototype");
+        if (detail::isObjectKind(proto->type()->kind())) {
+            (void)setPrototype(proto, asyncGeneratorPrototype_);
         }
     }
 }
@@ -755,6 +781,42 @@ Value* Context::createCoroutine(Value* target, Value* receiver, size_t argc, Val
         static_cast<ObjectData*>(co->data())->prototype = objectPrototype_;
     }
     return co;
+}
+
+Value* Context::createAsyncGenerator(Value* target, Value* receiver, size_t argc,
+                                     Value* argv[], std::string_view bindName) {
+    if (target == nullptr || target->type()->kind() != TypeKind::Function) {
+        return detail::typeError(this, "async generator target is not a function");
+    }
+    auto* fd = static_cast<FunctionData*>(target->data());
+    if (fd->boundTarget != nullptr || fd->native == nullptr) {
+        return detail::typeError(this, "async generator target is not resumable");
+    }
+
+    auto* d = gc_->allocData<AsyncGeneratorData>();
+    if (d == nullptr) return oomValue_;
+    d->state = CoroutineState::Suspended;
+    d->asyncState = AsyncGeneratorState::SuspendedStart;
+    d->resumePoint = 0;
+    d->target = target;
+    d->receiver = receiver != nullptr ? receiver : createUndefined();
+    if (d->receiver == oomValue_) return d->receiver;
+    d->yielded = createUndefined();
+    if (d->yielded == oomValue_) return d->yielded;
+    d->sentValue = createUndefined();
+    if (d->sentValue == oomValue_) return d->sentValue;
+    if (argc > 0) d->initialArgs.assign(argv, argv + argc);
+    d->resume = resumeNativeCoroutine;
+
+    Value* gen = createTracked(getAsyncGeneratorType(), d, bindName);
+    if (gen == oomValue_) return gen;
+    Value* proto = getProperty(target, "prototype");
+    if (detail::isObjectKind(proto->type()->kind())) {
+        static_cast<ObjectData*>(gen->data())->prototype = proto;
+    } else if (objectPrototype_ != nullptr) {
+        static_cast<ObjectData*>(gen->data())->prototype = objectPrototype_;
+    }
+    return gen;
 }
 
 Value* Context::resumeCoroutine(Value* coroutine, Value* sentValue) {

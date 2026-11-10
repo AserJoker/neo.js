@@ -111,6 +111,7 @@ add_library(neojs STATIC
     src/private/core/ArrayBuiltins.cpp
     src/private/core/IteratorBuiltins.cpp
     src/private/core/GeneratorBuiltins.cpp
+    src/private/core/AsyncGeneratorBuiltins.cpp
     src/private/core/TimerBuiltins.cpp
     src/private/core/ErrorBuiltins.cpp
     src/private/core/PromiseBuiltins.cpp
@@ -136,6 +137,7 @@ add_library(neojs STATIC
     src/private/core/types/Symbol.cpp
     src/private/core/types/Interrupt.cpp
     src/private/core/types/Coroutine.cpp
+    src/private/core/types/AsyncGenerator.cpp
     src/private/core/NativeCoroutine.cpp
     src/private/core/FunctionInvoke.cpp
     src/private/infra/MallocAllocator.cpp

@@ -60,8 +60,11 @@ class Context : public IContext {
     Value* arrayIteratorPrototype_ = nullptr;
     Value* iteratorWrapperPrototype_ = nullptr;
     Value* generatorPrototype_ = nullptr;  // %GeneratorPrototype%（ADR-045 §8）
+    Value* asyncIteratorPrototype_ = nullptr;   // %AsyncIteratorPrototype%
+    Value* asyncGeneratorPrototype_ = nullptr;  // %AsyncGeneratorPrototype%
     Value* errorPrototype_ = nullptr;   // %Error.prototype%（ADR-038）
     Value* promisePrototype_ = nullptr; // %Promise.prototype%（ADR-043）
+    Value* promiseCtor_ = nullptr;      // %Promise% 内建构造函数（异步机制用）
     // Symbol.for 全局注册表（ES2024 §20.4.2.1）：key → symbol Value。
     // 双向查找（keyFor）用 symbol data 指针反查，故另存反向表。
     std::unordered_map<std::string, Value*> symbolRegistry_;
@@ -148,6 +151,7 @@ public:
     void setFunctionConstructor(Value* fn, NativeFn ctor) override;
     void setFunctionConstructible(Value* fn, bool constructible) override;
     void setFunctionGenerator(Value* fn, bool generator) override;
+    void setFunctionAsyncGenerator(Value* fn, bool asyncGenerator) override;
     Value* createBoundFunction(Value* target, Value* boundThis, size_t argc,
                                Value* argv[]) override;
     Value* setClosure(Value* fn, std::string_view name) override;
@@ -189,8 +193,12 @@ public:
         return coroutineStack_.empty() ? nullptr : coroutineStack_.back();
     }
     Value* resumeCoroutine(Value* coroutine, Value* sentValue) override;
+    Value* createAsyncGenerator(Value* target, Value* receiver, size_t argc,
+                                Value* argv[], std::string_view bindName = {}) override;
     Value* promisePrototype() const override { return promisePrototype_; }
     void setPromisePrototype(Value* proto) override { promisePrototype_ = proto; }
+    void setPromiseCtor(Value* ctor) override { promiseCtor_ = ctor; }
+    Value* promiseCtor() const override { return promiseCtor_; }
 
     // 内建原型访问（ADR-035）：create* 自动挂载对应原型。
     Value* objectPrototype() const override { return objectPrototype_; }
@@ -224,6 +232,14 @@ public:
     Value* iteratorCtor() const override { return iteratorCtor_; }
     void setGeneratorPrototype(Value* proto) override { generatorPrototype_ = proto; }
     Value* generatorPrototype() const override { return generatorPrototype_; }
+    void setAsyncIteratorPrototype(Value* proto) override {
+        asyncIteratorPrototype_ = proto;
+    }
+    Value* asyncIteratorPrototype() const override { return asyncIteratorPrototype_; }
+    void setAsyncGeneratorPrototype(Value* proto) override {
+        asyncGeneratorPrototype_ = proto;
+    }
+    Value* asyncGeneratorPrototype() const override { return asyncGeneratorPrototype_; }
     Value* getProperty(Value* obj, Value* key) override;
     Value* setProperty(Value* obj, Value* key, Value* value) override;
     bool hasProperty(Value* obj, Value* key) override;

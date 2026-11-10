@@ -208,6 +208,10 @@ public:
     // 仅对 Function 类型有效，其他类型忽略。
     virtual void setFunctionGenerator(Value* fn, bool generator) = 0;
 
+    // setFunctionAsyncGenerator: 标记函数为异步生成器函数（async function*）。
+    // 同时置 generator/asyncGenerator；call 创建 AsyncGenerator 对象；不可构造。
+    virtual void setFunctionAsyncGenerator(Value* fn, bool asyncGenerator) = 0;
+
     // —— 对象与属性（ADR-018 对象模型）——
     // createObject: 创建空对象 Value（properties/order/symbols 空）。
     // 原型自动挂 Object.prototype（ADR-035 完整原型链）。
@@ -309,6 +313,12 @@ public:
     virtual void setGeneratorPrototype(Value* proto) = 0;
     virtual Value* generatorPrototype() const = 0;
 
+    // %AsyncIteratorPrototype% / %AsyncGeneratorPrototype%（ES2024 §27.6）。
+    virtual void setAsyncIteratorPrototype(Value* proto) = 0;
+    virtual Value* asyncIteratorPrototype() const = 0;
+    virtual void setAsyncGeneratorPrototype(Value* proto) = 0;
+    virtual Value* asyncGeneratorPrototype() const = 0;
+
     // 属性操作代理：obj->type()->op(this, obj, ...) 分派。
     // key 是 Value*：symbol 保持符号身份（symbols 容器），其他类型 ToPropertyKey
     // 转字符串（properties 容器）。非对象类型：get 返回 undefined，
@@ -397,6 +407,9 @@ public:
     // setPromisePrototype: bootstrap 专用——Promise.prototype 建立后设置，
     // 此后 createPromise 自动挂链。宿主不应调用。
     virtual void setPromisePrototype(Value* proto) = 0;
+    // %Promise% 内建构造函数（AsyncGenerator 等异步机制用它创建 capability）。
+    virtual void setPromiseCtor(Value* ctor) = 0;
+    virtual Value* promiseCtor() const = 0;
 
     // hostPromiseRejectionTracker（ES2024 §27.2.1.9 HostPromiseRejectionTracker）：
     //   handled=false —— promise 被 reject 且 [[PromiseIsHandled]] 为 false，
@@ -445,6 +458,12 @@ public:
     // 返回函数体的原始结果：挂起时为 Interrupt(Yield)，完成时为最终值/异常。
     // 协程已 Completed 时返回 undefined；正在运行（重入）返回 Exception。
     virtual Value* resumeCoroutine(Value* coroutine, Value* sentValue) = 0;
+
+    // createAsyncGenerator: 以 target 创建 SuspendedStart 的异步生成器对象。
+    // 与 createCoroutine 同构，额外持 Promise 请求队列（ES2024 §27.6）。
+    virtual Value* createAsyncGenerator(Value* target, Value* receiver, size_t argc,
+                                        Value* argv[],
+                                        std::string_view bindName = {}) = 0;
 
     // —— 错误值创建（ADR-006 异常即值 + ADR-017 §4 Fatal）——
     // createException: 创建可捕获异常 Value（child 永远不为 nullptr，无错误对象时传 undefined Value）。

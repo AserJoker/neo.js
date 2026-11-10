@@ -38,6 +38,7 @@ add_executable(core_unit_test
     InterruptTest.cpp
     CoroutineTest.cpp
     GeneratorTest.cpp
+    AsyncGeneratorTest.cpp
 )
 target_link_libraries(core_unit_test
     PRIVATE
