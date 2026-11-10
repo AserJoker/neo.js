@@ -24,22 +24,23 @@ ADR-023 把挂起/恢复描述为「VM 保存现场 + 外部压栈 + 恢复 PC�
 
 ## 决策
 
-### 1. 两个概念：Coroutine（可恢复句柄）与 CoroutineYield（挂起信号）
+### 1. 两个概念：Coroutine（可恢复句柄）与挂起信号（Interrupt）
 
 必须区分开，否则「函数返回一个协程对象」与「函数在此处挂起」无法区分：
 
 | 概念 | 类型 | 作用 |
 |------|------|------|
 | **Coroutine** | `TypeKind::Coroutine`（对象） | 可恢复的计算句柄：持上下文、断点、状态 |
-| **CoroutineYield** | `TypeKind::CoroutineYield`（非对象运行时值） | 函数返回它表示「在此挂起」 |
+| **挂起信号** | `Interrupt(kind=Yield, offset, value)`（非对象运行时值，ADR-046） | 函数返回它表示「在此挂起」 |
 
 > 命名说明：用户 demo 中的 `ctx->createCoroutine(stage, value)` 实际语义是
-> 「创建挂起信号」。为避免与协程对象混淆，本文记为 `ctx->createCoroutineYield(stage, value)`。
-> 若坚持沿用 `createCoroutine`，建议至少让它在语义上只用于「函数返回值」这一处。
+> 「创建挂起信号」。该信号统一为 **Interrupt**（ADR-046）：
+> `ctx->createInterrupt(InterruptKind::Yield, stage, value)`。
+> 早期草案的 `CoroutineYield` 专用类型已合并进 Interrupt，不再单独存在。
 
 为什么信号必须是独立类型：若复用 Coroutine 对象类型，函数正常 `return someCoroutine`
-会被误判为挂起。CoroutineYield 与 Exception/Fatal 同属「运行时特殊值」（ADR-017），
-不参与普通对象语义。
+会被误判为挂起。Interrupt 与 Exception/Fatal 同属「运行时特殊值」（ADR-017），
+不参与普通对象语义；但它与错误无关，是控制流信号（ADR-046）。
 
 ### 2. Coroutine 对象（`CoroutineData : ObjectData`）
 
@@ -50,7 +51,7 @@ ADR-023 把挂起/恢复描述为「VM 保存现场 + 外部压栈 + 恢复 PC�
 | `CoroutineState state` | `Suspended` / `Running` / `Completed` |
 | `uint64_t resumePoint` | 断点：native = 阶段号（stage）；VM = PC |
 | `Value* yielded` | 最近一次 yield 的值（Completed 后为最终返回值） |
-| `Value* sentValue` | 本次 `next(v)` 传入的值（首次运行/无参为 undefined）。throw 注入即传入 Exception 值（§8.1），协程层始终持有、不主动丢弃 |
+| `Value* sentValue` | 本次恢复传入的值（首次运行/无参为 undefined）。可能是普通值或 Interrupt（throw/return 注入，§8.1）；协程层始终持有、不主动丢弃 |
 | `Value* target` | 被执行的函数对象（native 函数或未来的 VM 函数） |
 | `Value* receiver` | 执行时的 this |
 | `std::vector<Value*> initialArgs` | 首次运行的实参 |
@@ -85,12 +86,14 @@ Value* co_demo(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* /*argv*/[
     switch (stage) {
         case 0: {
             // ... 首次执行到第一个 yield 之前的逻辑 ...
-            return ctx->createCoroutineYield(1, ctx->createUndefined());  // yield;
+            return ctx->createInterrupt(InterruptKind::Yield, 1,
+                                        ctx->createUndefined());  // yield;
         }
         case 1: {
             Value* sent = co->sentValue();    // demo 中的 getValue()：next(v) 的 v
             // ... 使用 sent ...
-            return ctx->createCoroutineYield(2, ctx->createString("test"));  // yield "test";
+            return ctx->createInterrupt(InterruptKind::Yield, 2,
+                                        ctx->createString("test"));  // yield "test";
         }
         case 2:
             // ... 继续 ...
@@ -102,7 +105,7 @@ Value* co_demo(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* /*argv*/[
 
 协议约定：
 
-- 返回 **CoroutineYield** → 挂起：`resumePoint = signal.nextStage`，
+- 返回 **Interrupt(Yield)** → 挂起：`resumePoint = signal.offset`，
   `yielded = signal.value`，保存上下文，把 `yielded` 交给 `next()`。
 - 返回**其他任何值**（含 Exception/Fatal）→ 完成：`state = Completed`，
   `yielded = 返回值`，销毁保存的作用域，`next()` 返回 `{ value, done: true }`。
@@ -140,7 +143,7 @@ execScope → closureScope → rootScope → global   （查找链）
 挂起时不能销毁它，否则跨 yield 的变量全部丢失。因此 `invokeNative` 需要一个
 **挂起分支**：
 
-**挂起（返回 CoroutineYield）**
+**挂起（返回 Interrupt(Yield)）**
 
 1. 不 pop `execScope`；
 2. `execScope->reparent(nullptr)` 从 `closureScope` 摘下（变成孤立子树）；
@@ -192,55 +195,42 @@ Generator = Coroutine + 迭代器协议：
 - `%GeneratorPrototype%`（原型链：generator 实例 → %GeneratorPrototype% →
   %IteratorPrototype% → Object.prototype）提供：
   - `next(v)`：`resume(coroutine, v)` → `{ value, done }`
-  - `return(v)`：见 §8.2（完整 finally 语义待 Interrupt；当前为强制完成）
-  - `throw(e)`：见 §8.1（= `resume(coroutine, createException(e))`）
+  - `return(v)`：`resume(coroutine, Interrupt(Return, resumePoint, v))`（§8.1）
+  - `throw(e)`：`resume(coroutine, Interrupt(Throw, resumePoint, createException(e)))`（§8.1）
   - `@@iterator` 返回 this；`@@toStringTag` = "Generator"
 - 首次 `next()` 前状态为 Suspended、`resumePoint = 0`、`execScope = nullptr`。
 
-### 8.1 throw 注入 = next(createException(v))，无需额外机制
+### 8.1 throw / return 注入统一走 Interrupt（ADR-046）
 
-`throw(e)` **不是** C++ 层异常，也不是新的协议。它的本质就是
-`next(createException(e))`：把「异常值」作为 `sentValue` 送进协程。
+Generator 的 `throw(e)` 与 `return(v)` 都是「外部把控制信号注入协程」，
+统一用 **Interrupt**（ADR-046）作为 `sentValue`：
 
-- 协程层完全无感知：`sentValue` 只是普通 Value，`resumePoint` 照常推进。
-- 函数体在恢复后检查 `sentValue` 是否为 Exception（`detail::isErrorValue`），
-  是则按异常语义处理（通常是直接 `return sentValue` 让它沿返回通道传播，
-  或就地 catch 后继续）。
-- 因此 §3 的 native 状态机里，每个 `case` 开头加一次检查即可：
+| API | 注入的 sentValue |
+|-----|------------------|
+| `next(v)` | 普通值 `v`（不是 Interrupt） |
+| `throw(e)` | `Interrupt(Throw, co->resumePoint, createException(e))` |
+| `return(v)` | `Interrupt(Return, co->resumePoint, v)` |
+
+函数体在每个 `case` 开头检查（与读取 sentValue 同一处）：
 
 ```cpp
-case 1: {
-    Value* sent = co->sentValue();
-    if (detail::isErrorValue(sent)) return sent;   // throw 注入：沿异常通道返回
-    // ... 正常逻辑 ...
+Value* sent = co->sentValue();
+if (isInterruptValue(sent)) {
+    InterruptData* ir = asInterrupt(sent);
+    // Throw / Return 都沿返回通道传出 payload；有 finally 时先跳转清理段
+    if (ir->kind == InterruptKind::Throw) return ir->value;   // 异常通道
+    if (ir->kind == InterruptKind::Return) return ir->value;  // 正常返回
 }
 ```
 
-> 约定：Generator 层把 `throw(e)` 实现为「置 pendingThrow 后调 `resume(co, exception)`」，
-> 或者直接 `resume(co, ctx->createException(e))`——两者等价，后者更简单。
-> 协程层不新增字段。
+要点：
 
-### 8.2 return 注入需要 Return 标记值（待补）
-
-`return(v)` 比 `throw(e)` 难：它要求**立即终止函数体**并返回 `v`，
-而 native 状态机无法从 C++ 中途跳出（除非用异常，但那是 C++ 异常，与 ADR-006
-的异常即值模型冲突）。
-
-根本原因：目前**没有「return」这种运行时标记值**。`throw` 能复用 Exception，
-`return` 没有对应物。方案：
-
-- 新增 `TypeKind::Interrupt`（ADR-017 已规划但未实现），携带子类型
-  `Return`（未来还可承载 VM 的 `ret/await/yield` 控制信号）。
-- `Generator.prototype.return(v)` 置 `coroutine->pendingReturn = v` 后恢复；
-  函数体在每个 `case` 开头检查 `ctx->coroutineCheckPendingReturn()`，
-  命中则立即 `return v`（与 throw 检查同一位置）。
-- 协程层新增 `Value* pendingReturn`（或复用 `sentValue` + 一个标志位），
-  `enumerateChildren` 登记。
-
-> 在 Interrupt 落地前，`return(v)` 的临时实现：直接销毁 execScope、
-> 置 `state = Completed`、返回 `{ value: v, done: true }`，**不恢复函数体**。
-> 对「尚未开始 / 已挂起」的协程这已足够；只有「函数体内有 finally 需要执行」
-> 的场景需要真正的 Return 注入，留待 Interrupt 实现。
+- **throw 注入不需要新机制**：它是 `next(createException(v))` 的等价物，
+  协程层只是透传一个值。
+- **return 注入的关键是 offset**：Interrupt 携带 `co->resumePoint`（当前 stage），
+  native 函数体据此知道「在哪个 case 上被要求返回」，从而决定是否先执行 finally；
+  VM 侧据此定位 PC。这是 ADR-046 给 Interrupt 带 offset 的价值。
+- 协程层不新增 `pendingThrow` / `pendingReturn` 字段——信号就在 `sentValue` 里。
 
 ### 9. 已知限制与待定问题
 
@@ -251,8 +241,8 @@ case 1: {
 3. **`sentValue` 的首次语义**：首次 `next(v)` 的 v 按规范被丢弃（ES2024 §27.5.3.2）。
    协程层**始终持有 sentValue、不做主动丢弃**（§8.1 的 throw 注入也依赖这一点）；
    是否忽略由 Generator 层决定。
-4. **`return(v)` 的 finally 语义**：依赖 Interrupt/Return 标记值（§8.2），
-   在 Interrupt 落地前只做「不恢复函数体」的简化实现。
+4. **`return(v)` 的 finally 语义**：依赖 Interrupt(Return) 的 offset 定位（§8.1 / ADR-046）。
+   函数体尚未实现 finally 时，可先按「直接返回 payload」处理。
 5. **协程与 Promise 的交互**：不在本 ADR 范围。async/await 由「Generator +
    微任务队列」在上层组合，协程层不感知 Promise。
 
@@ -275,10 +265,11 @@ ADR-023 的 VM 实现因此成为本抽象的一个 runner，而非独立机制�
   根环问题不会复现；多态入口沿用 Task::run 的成熟模式。
 - 代价：`invokeNative` 需要新增挂起分支（不能无条件销毁 execScope）；
   native 状态机必须把跨 yield 状态放进作用域树；`return(v)` 的 finally 语义
-  依赖尚未实现的 Interrupt/Return 标记值（§8.2）。
+  依赖 Interrupt(Return) 的 offset 定位（§8.1）。
 - 范围：本 ADR 只做设计。实现顺序建议：
-  1. `TypeKind::Coroutine` + `CoroutineData` + `CoroutineYield`；
-  2. `ctx->createCoroutineYield` / `getCurrentCoroutine` / 协程栈；
+  0. 先落地 `TypeKind::Interrupt`（ADR-046）；
+  1. `TypeKind::Coroutine` + `CoroutineData`；
+  2. `ctx->createInterrupt(Yield, …)` / `getCurrentCoroutine` / 协程栈；
   3. `invokeNative` 挂起分支 + `resumeNativeCoroutine`；
   4. Generator 函数标记 + `%GeneratorPrototype%` + next/throw/return；
-  5. （后续）Interrupt/Return 标记值（完整 finally 语义）、VM runner、async/await 组合。
+  5. （后续）finally 语义、VM runner、async/await 组合。
