@@ -137,6 +137,116 @@ Value* toPropertyKey(IContext* ctx, Value* key, PropertyKey& out) {
     return nullptr;
 }
 
+// —— 属性描述符转换（ES2024 §6.2.6 / §10.1.6.2）——
+
+Value* propertyDescriptorFromValue(IContext* ctx, Value* descObj, Property& out) {
+    auto field = [&](const char* name) -> Value* {
+        return ctx->getProperty(descObj, ctx->createString(name));
+    };
+
+    Value* enumerableV = field("enumerable");
+    if (isErrorResult(enumerableV)) return enumerableV;
+    Value* configurableV = field("configurable");
+    if (isErrorResult(configurableV)) return configurableV;
+    bool enumerable = detail::toBoolean(enumerableV);
+    bool configurable = detail::toBoolean(configurableV);
+
+    Value* getter = field("get");
+    if (isErrorResult(getter)) return getter;
+    Value* setter = field("set");
+    if (isErrorResult(setter)) return setter;
+    Value* value = field("value");
+    if (isErrorResult(value)) return value;
+    Value* writableV = field("writable");
+    if (isErrorResult(writableV)) return writableV;
+
+    bool hasGet = getter->type()->kind() != TypeKind::Undefined;
+    bool hasSet = setter->type()->kind() != TypeKind::Undefined;
+    bool hasValue = value->type()->kind() != TypeKind::Undefined;
+    bool hasWritable = writableV->type()->kind() != TypeKind::Undefined;
+    bool isAccessor = hasGet || hasSet;
+    bool isData = hasValue || hasWritable;
+
+    if (isAccessor && isData) {
+        return detail::typeError(
+            ctx, "Invalid property descriptor: cannot be both data and accessor");
+    }
+    if (isAccessor) {
+        auto normalize = [&](Value* v) -> Value* {
+            if (v->type()->kind() == TypeKind::Undefined) return nullptr;
+            if (!detail::isCallable(v)) {
+                return detail::typeError(ctx, "Getter/setter must be a function");
+            }
+            return v;
+        };
+        Value* g = normalize(getter);
+        if (g != nullptr && isErrorResult(g)) return g;
+        Value* s = normalize(setter);
+        if (s != nullptr && isErrorResult(s)) return s;
+        out = Property{nullptr, false, enumerable, configurable, g, s};
+        return nullptr;
+    }
+    Value* v = hasValue ? value : ctx->createUndefined();
+    if (v == ctx->oomValue()) return v;
+    out = Property{v, hasWritable ? detail::toBoolean(writableV) : false, enumerable,
+                   configurable, nullptr, nullptr};
+    return nullptr;
+}
+
+Value* propertyDescriptorToValue(IContext* ctx, const Property& p) {
+    Value* obj = ctx->createObject();
+    if (obj == ctx->oomValue()) return obj;
+    auto def = [&](const char* name, Value* v) -> Value* {
+        Value* r = ctx->defineProperty(obj, ctx->createString(name), v, true, true, true);
+        return isErrorResult(r) ? r : nullptr;
+    };
+    if (isAccessorDescriptor(p)) {
+        Value* g = p.getter != nullptr ? p.getter : ctx->createUndefined();
+        Value* s = p.setter != nullptr ? p.setter : ctx->createUndefined();
+        if (Value* e = def("get", g)) return e;
+        if (Value* e = def("set", s)) return e;
+    } else {
+        Value* v = p.value != nullptr ? p.value : ctx->createUndefined();
+        if (Value* e = def("value", v)) return e;
+        if (Value* e = def("writable", ctx->createBoolean(p.writable))) return e;
+    }
+    if (Value* e = def("enumerable", ctx->createBoolean(p.enumerable))) return e;
+    if (Value* e = def("configurable", ctx->createBoolean(p.configurable))) return e;
+    return obj;
+}
+
+namespace {
+
+bool samePropertyValue(Value* a, Value* b) {
+    if (a == b) return true;
+    if (a == nullptr || b == nullptr) return false;
+    return detail::sameValue(a, b);
+}
+
+}  // namespace
+
+bool isCompatiblePropertyDescriptor(const Property& current, const Property& desc) {
+    bool currentAccessor = isAccessorDescriptor(current);
+    bool descAccessor = isAccessorDescriptor(desc);
+    if (currentAccessor != descAccessor) {
+        // 数据 ↔ 访问器切换要求当前属性可配置。
+        return current.configurable;
+    }
+    if (!current.configurable) {
+        if (desc.configurable) return false;
+        if (currentAccessor) {
+            if (desc.getter != current.getter || desc.setter != current.setter) return false;
+        } else {
+            if (desc.writable && !current.writable) return false;
+            if (!current.writable &&
+                !samePropertyValue(desc.value, current.value)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 // —— 普通对象内部方法（ES2024 §10.1）——
 
 Value* ordinaryGet(IContext* ctx, Value* obj, const PropertyKey& key, Value* receiver) {
@@ -212,6 +322,12 @@ Value* ordinarySet(IContext* ctx, Value* obj, const PropertyKey& key, Value* val
         if (isErrorResult(r)) return r;
         return nullptr;
     }
+    Value* ext = receiver->type()->isExtensible(ctx, receiver);
+    if (isErrorResult(ext)) return ext;
+    if (!detail::toBoolean(ext)) {
+        ok = false;
+        return nullptr;
+    }
     Value* r = receiver->type()->defineProperty(ctx, receiver, key.value, value, true, true,
                                                 true);
     if (isErrorResult(r)) return r;
@@ -255,6 +371,19 @@ Value* IType::getWithReceiver(IContext* ctx, Value* self, const PropertyKey& key
 Value* IType::setWithReceiver(IContext* ctx, Value* self, const PropertyKey& key,
                               Value* value, Value* receiver, bool& ok) {
     return ordinarySet(ctx, self, key, value, receiver, ok);
+}
+
+Value* IType::isExtensible(IContext* ctx, Value* self) {
+    if (!kindHasObjectLayout(kind())) return ctx->createBoolean(false);
+    return ctx->createBoolean(static_cast<ObjectData*>(self->data())->extensible);
+}
+
+Value* IType::preventExtensions(IContext* ctx, Value* self) {
+    if (!kindHasObjectLayout(kind())) {
+        return detail::typeError(ctx, "Cannot prevent extensions on non-object");
+    }
+    static_cast<ObjectData*>(self->data())->extensible = false;
+    return ctx->createBoolean(true);
 }
 
 Value* ordinaryGetPrototype(IContext* ctx, Value* obj) {
@@ -459,17 +588,23 @@ Value* ObjectType::defineProperty(IContext* ctx, Value* self, Value* key,
                                   Value* value, bool writable, bool enumerable,
                                   bool configurable) {
     auto* d = static_cast<ObjectData*>(self->data());
+    Property desc{value, writable, enumerable, configurable, nullptr, nullptr};
 
     // —— symbol 键 ——
     if (isSymbolKey(key)) {
         const void* ident = symbolIdentity(key);
         auto it = d->symbols.find(ident);
         if (it != d->symbols.end()) {
-            it->second.prop = Property{value, writable, enumerable, configurable, nullptr, nullptr};
+            if (!isCompatiblePropertyDescriptor(it->second.prop, desc)) {
+                return detail::typeError(ctx, "Cannot redefine property");
+            }
+            it->second.prop = desc;
             return value;
         }
-        d->symbols.emplace(ident, SymbolProperty{
-            key, Property{value, writable, enumerable, configurable, nullptr, nullptr}});
+        if (!d->extensible) {
+            return detail::typeError(ctx, "Cannot define property on non-extensible object");
+        }
+        d->symbols.emplace(ident, SymbolProperty{key, desc});
         d->symbolOrder.push_back(ident);
         return value;
     }
@@ -479,11 +614,17 @@ Value* ObjectType::defineProperty(IContext* ctx, Value* self, Value* key,
     if (Value* err = keyString(ctx, key, k)) return err;
     auto it = d->properties.find(k);
     if (it != d->properties.end()) {
-        // 已存在：整体替换描述符（数据属性覆盖访问器时清空 getter/setter）
-        it->second = Property{value, writable, enumerable, configurable, nullptr, nullptr};
+        if (!isCompatiblePropertyDescriptor(it->second, desc)) {
+            return detail::typeError(ctx, "Cannot redefine property '" + k + "'");
+        }
+        it->second = desc;
         return value;
     }
-    d->properties.emplace(k, Property{value, writable, enumerable, configurable, nullptr, nullptr});
+    if (!d->extensible) {
+        return detail::typeError(ctx, "Cannot define property '" + k +
+                                          "' on non-extensible object");
+    }
+    d->properties.emplace(k, desc);
     d->order.push_back(k);
     return value;
 }
@@ -493,14 +634,14 @@ Value* ObjectType::defineAccessor(IContext* ctx, Value* self, Value* key, Value*
     // getter/setter 须为 Function 或 null（ES2024 §10.1.6.3 ValidateAndApplyPropertyDescriptor）
     auto validAccessor = [](Value* v) {
         return v == nullptr || v->type()->kind() == TypeKind::Null ||
-               v->type()->kind() == TypeKind::Function;
+               detail::isCallable(v);
     };
     if (!validAccessor(getter) || !validAccessor(setter)) {
         return detail::typeError(ctx, "Getter/setter must be a function or null");
     }
     // null 统一存成 nullptr（无访问器）
-    Value* g = (getter != nullptr && getter->type()->kind() == TypeKind::Function) ? getter : nullptr;
-    Value* s = (setter != nullptr && setter->type()->kind() == TypeKind::Function) ? setter : nullptr;
+    Value* g = (getter != nullptr && detail::isCallable(getter)) ? getter : nullptr;
+    Value* s = (setter != nullptr && detail::isCallable(setter)) ? setter : nullptr;
 
     auto* d = static_cast<ObjectData*>(self->data());
     // 访问器描述符：value 为空、writable 无意义（数据属性字段置 false）
@@ -511,8 +652,14 @@ Value* ObjectType::defineAccessor(IContext* ctx, Value* self, Value* key, Value*
         const void* ident = symbolIdentity(key);
         auto it = d->symbols.find(ident);
         if (it != d->symbols.end()) {
+            if (!isCompatiblePropertyDescriptor(it->second.prop, acc)) {
+                return detail::typeError(ctx, "Cannot redefine property");
+            }
             it->second.prop = acc;
             return self;
+        }
+        if (!d->extensible) {
+            return detail::typeError(ctx, "Cannot define property on non-extensible object");
         }
         d->symbols.emplace(ident, SymbolProperty{key, acc});
         d->symbolOrder.push_back(ident);
@@ -524,8 +671,15 @@ Value* ObjectType::defineAccessor(IContext* ctx, Value* self, Value* key, Value*
     if (Value* err = keyString(ctx, key, k)) return err;
     auto it = d->properties.find(k);
     if (it != d->properties.end()) {
+        if (!isCompatiblePropertyDescriptor(it->second, acc)) {
+            return detail::typeError(ctx, "Cannot redefine property '" + k + "'");
+        }
         it->second = acc;
         return self;
+    }
+    if (!d->extensible) {
+        return detail::typeError(ctx, "Cannot define property '" + k +
+                                          "' on non-extensible object");
     }
     d->properties.emplace(k, acc);
     d->order.push_back(k);

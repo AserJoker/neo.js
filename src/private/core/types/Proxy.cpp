@@ -54,74 +54,60 @@ Value* lookupTrap(IContext* ctx, ProxyData* d, const char* name, bool& present,
     return trap;
 }
 
-// 把 getOwnPropertyDescriptor trap 返回的描述符对象转成 Property。
-// 成功返回 nullptr；描述符非法返回 TypeError。
-Value* descriptorToProperty(IContext* ctx, Value* descObj, bool& exists, Property& out) {
-    exists = true;
-
-    Value* enumerableV = ctx->getProperty(descObj, ctx->createString("enumerable"));
-    if (detail::isErrorValue(enumerableV)) return enumerableV;
-    Value* configurableV = ctx->getProperty(descObj, ctx->createString("configurable"));
-    if (detail::isErrorValue(configurableV)) return configurableV;
-    bool enumerable = detail::toBoolean(enumerableV);
-    bool configurable = detail::toBoolean(configurableV);
-
-    Value* hasGetV = ctx->hasProperty(descObj, ctx->createString("get"));
-    if (detail::isErrorValue(hasGetV)) return hasGetV;
-    Value* hasSetV = ctx->hasProperty(descObj, ctx->createString("set"));
-    if (detail::isErrorValue(hasSetV)) return hasSetV;
-    bool hasGet = detail::toBoolean(hasGetV);
-    bool hasSet = detail::toBoolean(hasSetV);
-    if (hasGet || hasSet) {
-        Value* getter = ctx->getProperty(descObj, ctx->createString("get"));
-        if (detail::isErrorValue(getter)) return getter;
-        Value* setter = ctx->getProperty(descObj, ctx->createString("set"));
-        if (detail::isErrorValue(setter)) return setter;
-        auto normalize = [&](Value* v) -> Value* {
-            if (v->type()->kind() == TypeKind::Undefined) return nullptr;
-            if (!detail::isCallable(v)) {
-                return detail::typeError(ctx, "Getter/setter must be a function");
-            }
-            return v;
-        };
-        Value* g = normalize(getter);
-        if (detail::isErrorValue(g)) return g;
-        Value* s = normalize(setter);
-        if (detail::isErrorValue(s)) return s;
-        out = Property{nullptr, false, enumerable, configurable, g, s};
-        return nullptr;
+// 规范属性键相等（String 按内容，Symbol 按身份）。
+bool keyEquals(Value* a, Value* b) {
+    TypeKind ak = a->type()->kind();
+    if (ak != b->type()->kind()) return false;
+    if (ak == TypeKind::Symbol) return a->data() == b->data();
+    if (ak == TypeKind::String) {
+        return static_cast<StringData*>(a->data())->value ==
+               static_cast<StringData*>(b->data())->value;
     }
-
-    Value* value = ctx->getProperty(descObj, ctx->createString("value"));
-    if (detail::isErrorValue(value)) return value;
-    Value* writableV = ctx->getProperty(descObj, ctx->createString("writable"));
-    if (detail::isErrorValue(writableV)) return writableV;
-    out = Property{value, detail::toBoolean(writableV), enumerable, configurable, nullptr,
-                   nullptr};
-    return nullptr;
+    return false;
 }
 
-// 把 Property 转成传给 defineProperty trap 的描述符对象。
-Value* propertyToDescriptor(IContext* ctx, const Property& p) {
-    Value* obj = ctx->createObject();
-    if (obj == ctx->oomValue()) return obj;
-    auto def = [&](const char* name, Value* v) -> Value* {
-        Value* r = ctx->defineProperty(obj, ctx->createString(name), v, true, true, true);
-        return detail::isErrorValue(r) ? r : nullptr;
-    };
-    if (isAccessorDescriptor(p)) {
-        Value* g = p.getter != nullptr ? p.getter : ctx->createUndefined();
-        Value* s = p.setter != nullptr ? p.setter : ctx->createUndefined();
-        if (Value* e = def("get", g)) return e;
-        if (Value* e = def("set", s)) return e;
-    } else {
-        Value* v = p.value != nullptr ? p.value : ctx->createUndefined();
-        if (Value* e = def("value", v)) return e;
-        if (Value* e = def("writable", ctx->createBoolean(p.writable))) return e;
+bool keyListContains(const std::vector<Value*>& keys, Value* key) {
+    for (Value* k : keys) {
+        if (keyEquals(k, key)) return true;
     }
-    if (Value* e = def("enumerable", ctx->createBoolean(p.enumerable))) return e;
-    if (Value* e = def("configurable", ctx->createBoolean(p.configurable))) return e;
-    return obj;
+    return false;
+}
+
+// 取 target 的自有描述符；成功返回 nullptr。
+Value* targetOwnDescriptor(IContext* ctx, Value* target, const PropertyKey& key,
+                           bool& exists, Property& out) {
+    return target->type()->getOwnProperty(ctx, target, key, exists, out);
+}
+
+Value* targetExtensible(IContext* ctx, Value* target) {
+    return target->type()->isExtensible(ctx, target);
+}
+
+// 数据属性值（nullptr 视为 undefined）。
+Value* dataValueOrUndefined(IContext* ctx, const Property& p) {
+    return p.value != nullptr ? p.value : ctx->createUndefined();
+}
+
+// defineProperty trap 成功后的不变量（ES2024 §10.5.6）。
+Value* checkDefineInvariant(IContext* ctx, Value* target, const PropertyKey& key,
+                            const Property& desc) {
+    Property targetDesc;
+    bool targetHas = false;
+    if (Value* e = targetOwnDescriptor(ctx, target, key, targetHas, targetDesc)) return e;
+    if (!targetHas) {
+        Value* ext = targetExtensible(ctx, target);
+        if (detail::isErrorValue(ext)) return ext;
+        if (!detail::toBoolean(ext)) {
+            return detail::typeError(
+                ctx, "proxy defineProperty trap cannot add a property to a non-extensible target");
+        }
+        return nullptr;
+    }
+    if (!isCompatiblePropertyDescriptor(targetDesc, desc)) {
+        return detail::typeError(
+            ctx, "proxy defineProperty trap returned success for an incompatible descriptor");
+    }
+    return nullptr;
 }
 
 // 把实参数组打包成 Array（apply/construct trap 的 argArray）。
@@ -211,14 +197,56 @@ Value* ProxyType::getOwnProperty(IContext* ctx, Value* self, const PropertyKey& 
     Value* argv[2] = {d->target, key.value};
     Value* r = ctx->call(trap, d->handler, 2, argv);
     if (detail::isErrorValue(r)) return r;
-    if (r->type()->kind() == TypeKind::Undefined) {
-        exists = false;
+    exists = r->type()->kind() != TypeKind::Undefined;
+    if (exists) {
+        if (!detail::isObjectKind(r->type()->kind())) {
+            return detail::typeError(
+                ctx, "proxy getOwnPropertyDescriptor trap returned non-object");
+        }
+        if (Value* e = propertyDescriptorFromValue(ctx, r, out)) return e;
+    }
+
+    // —— 不变量（ES2024 §10.5.5）——
+    Property targetDesc;
+    bool targetHas = false;
+    if (Value* e = targetOwnDescriptor(ctx, d->target, key, targetHas, targetDesc)) return e;
+    if (!exists) {
+        if (targetHas) {
+            if (!targetDesc.configurable) {
+                return detail::typeError(
+                    ctx, "proxy getOwnPropertyDescriptor trap cannot hide a non-configurable property");
+            }
+            Value* ext = targetExtensible(ctx, d->target);
+            if (detail::isErrorValue(ext)) return ext;
+            if (!detail::toBoolean(ext)) {
+                return detail::typeError(
+                    ctx, "proxy getOwnPropertyDescriptor trap cannot hide a property of a non-extensible target");
+            }
+        }
         return nullptr;
     }
-    if (!detail::isObjectKind(r->type()->kind())) {
-        return detail::typeError(ctx, "proxy getOwnPropertyDescriptor trap returned non-object");
+    if (!targetHas) {
+        Value* ext = targetExtensible(ctx, d->target);
+        if (detail::isErrorValue(ext)) return ext;
+        if (!detail::toBoolean(ext)) {
+            return detail::typeError(
+                ctx, "proxy getOwnPropertyDescriptor trap cannot report a new property on a non-extensible target");
+        }
+        if (!out.configurable) {
+            return detail::typeError(
+                ctx, "proxy getOwnPropertyDescriptor trap cannot report a non-configurable new property");
+        }
+    } else {
+        if (!out.configurable && targetDesc.configurable) {
+            return detail::typeError(
+                ctx, "proxy getOwnPropertyDescriptor trap cannot report a non-configurable property as configurable");
+        }
+        if (!isCompatiblePropertyDescriptor(targetDesc, out)) {
+            return detail::typeError(
+                ctx, "proxy getOwnPropertyDescriptor trap returned an incompatible descriptor");
+        }
     }
-    return descriptorToProperty(ctx, r, exists, out);
+    return nullptr;
 }
 
 Value* ProxyType::ownKeys(IContext* ctx, Value* self, std::vector<Value*>& out) const {
@@ -257,6 +285,41 @@ Value* ProxyType::ownKeys(IContext* ctx, Value* self, std::vector<Value*>& out) 
         }
         out.push_back(k);
     }
+
+    // —— 不变量（ES2024 §10.5.11）——
+    std::vector<Value*> targetKeys;
+    if (Value* e = d->target->type()->ownKeys(ctx, d->target, targetKeys)) return e;
+    Value* ext = targetExtensible(ctx, d->target);
+    if (detail::isErrorValue(ext)) return ext;
+    bool targetExtensibleFlag = detail::toBoolean(ext);
+
+    if (!targetExtensibleFlag) {
+        // 不可扩展 target：trap 结果必须与 target 自有键完全一致。
+        if (out.size() != targetKeys.size()) {
+            return detail::typeError(
+                ctx, "proxy ownKeys trap must return all keys of a non-extensible target");
+        }
+        for (Value* tk : targetKeys) {
+            if (!keyListContains(out, tk)) {
+                return detail::typeError(
+                    ctx, "proxy ownKeys trap must return all keys of a non-extensible target");
+            }
+        }
+    } else {
+        // 可扩展 target：必须包含所有不可配置自有键。
+        for (Value* tk : targetKeys) {
+            PropertyKey pk;
+            if (Value* e = toPropertyKey(ctx, tk, pk)) return e;
+            Property desc;
+            bool exists = false;
+            if (Value* e = targetOwnDescriptor(ctx, d->target, pk, exists, desc)) return e;
+            if (!exists || desc.configurable) continue;
+            if (!keyListContains(out, tk)) {
+                return detail::typeError(
+                    ctx, "proxy ownKeys trap must include non-configurable keys of target");
+            }
+        }
+    }
     return nullptr;
 }
 
@@ -269,7 +332,23 @@ Value* ProxyType::getWithReceiver(IContext* ctx, Value* self, const PropertyKey&
     if (err != nullptr) return err;
     if (!present) return ordinaryGet(ctx, d->target, key, receiver);
     Value* argv[3] = {d->target, key.value, receiver};
-    return ctx->call(trap, d->handler, 3, argv);
+    Value* r = ctx->call(trap, d->handler, 3, argv);
+    if (detail::isErrorValue(r)) return r;
+
+    // —— 不变量（ES2024 §10.5.8）——
+    // target 有不可配置、不可写的数据属性时，trap 结果必须与 target 值相同。
+    Property targetDesc;
+    bool targetHas = false;
+    if (Value* e = targetOwnDescriptor(ctx, d->target, key, targetHas, targetDesc)) return e;
+    if (targetHas && !isAccessorDescriptor(targetDesc) && !targetDesc.configurable &&
+        !targetDesc.writable) {
+        Value* tv = dataValueOrUndefined(ctx, targetDesc);
+        if (!detail::sameValue(r, tv)) {
+            return detail::typeError(
+                ctx, "proxy get trap returned a different value for a non-writable, non-configurable property");
+        }
+    }
+    return r;
 }
 
 Value* ProxyType::setWithReceiver(IContext* ctx, Value* self, const PropertyKey& key,
@@ -284,6 +363,24 @@ Value* ProxyType::setWithReceiver(IContext* ctx, Value* self, const PropertyKey&
     Value* r = ctx->call(trap, d->handler, 4, argv);
     if (detail::isErrorValue(r)) return r;
     ok = detail::toBoolean(r);
+
+    // —— 不变量（ES2024 §10.5.9）——
+    // target 有不可配置、不可写的数据属性时，不能报告成功写入不同值。
+    if (ok) {
+        Property targetDesc;
+        bool targetHas = false;
+        if (Value* e = targetOwnDescriptor(ctx, d->target, key, targetHas, targetDesc)) {
+            return e;
+        }
+        if (targetHas && !isAccessorDescriptor(targetDesc) && !targetDesc.configurable &&
+            !targetDesc.writable) {
+            Value* tv = dataValueOrUndefined(ctx, targetDesc);
+            if (!detail::sameValue(value, tv)) {
+                return detail::typeError(
+                    ctx, "proxy set trap cannot change a non-writable, non-configurable property");
+            }
+        }
+    }
     return nullptr;
 }
 
@@ -319,7 +416,27 @@ Value* ProxyType::hasProperty(IContext* ctx, Value* self, Value* key) {
     Value* argv[2] = {d->target, pk.value};
     Value* r = ctx->call(trap, d->handler, 2, argv);
     if (detail::isErrorValue(r)) return r;
-    return ctx->createBoolean(detail::toBoolean(r));
+
+    // —— 不变量（ES2024 §10.5.7）——
+    bool result = detail::toBoolean(r);
+    if (!result) {
+        Property targetDesc;
+        bool targetHas = false;
+        if (Value* e = targetOwnDescriptor(ctx, d->target, pk, targetHas, targetDesc)) return e;
+        if (!targetHas) {
+            Value* ext = targetExtensible(ctx, d->target);
+            if (detail::isErrorValue(ext)) return ext;
+            if (!detail::toBoolean(ext)) {
+                return detail::typeError(
+                    ctx,
+                    "proxy has trap cannot report a missing property on a non-extensible target");
+            }
+        } else if (!targetDesc.configurable) {
+            return detail::typeError(
+                ctx, "proxy has trap cannot hide a non-configurable property");
+        }
+    }
+    return ctx->createBoolean(result);
 }
 
 Value* ProxyType::deleteProperty(IContext* ctx, Value* self, Value* key) {
@@ -339,7 +456,18 @@ Value* ProxyType::deleteProperty(IContext* ctx, Value* self, Value* key) {
     Value* argv[2] = {d->target, pk.value};
     Value* r = ctx->call(trap, d->handler, 2, argv);
     if (detail::isErrorValue(r)) return r;
-    return ctx->createBoolean(detail::toBoolean(r));
+    bool deleted = detail::toBoolean(r);
+    if (!deleted) return ctx->createBoolean(false);
+
+    // —— 不变量（ES2024 §10.5.10）——
+    Property targetDesc;
+    bool targetHas = false;
+    if (Value* e = targetOwnDescriptor(ctx, d->target, pk, targetHas, targetDesc)) return e;
+    if (targetHas && !targetDesc.configurable) {
+        return detail::typeError(
+            ctx, "proxy deleteProperty trap cannot delete a non-configurable property");
+    }
+    return ctx->createBoolean(true);
 }
 
 Value* ProxyType::defineProperty(IContext* ctx, Value* self, Value* key, Value* value,
@@ -356,7 +484,7 @@ Value* ProxyType::defineProperty(IContext* ctx, Value* self, Value* key, Value* 
                                                  enumerable, configurable);
     }
     Property desc{value, writable, enumerable, configurable, nullptr, nullptr};
-    Value* descObj = propertyToDescriptor(ctx, desc);
+    Value* descObj = propertyDescriptorToValue(ctx, desc);
     if (detail::isErrorValue(descObj)) return descObj;
     Value* argv[3] = {d->target, pk.value, descObj};
     Value* r = ctx->call(trap, d->handler, 3, argv);
@@ -364,6 +492,7 @@ Value* ProxyType::defineProperty(IContext* ctx, Value* self, Value* key, Value* 
     if (!detail::toBoolean(r)) {
         return detail::typeError(ctx, "proxy defineProperty trap returned false");
     }
+    if (Value* e = checkDefineInvariant(ctx, d->target, pk, desc)) return e;
     return value;
 }
 
@@ -380,14 +509,10 @@ Value* ProxyType::defineAccessor(IContext* ctx, Value* self, Value* key, Value* 
         return d->target->type()->defineAccessor(ctx, d->target, pk.value, getter, setter,
                                                  enumerable, configurable);
     }
-    Value* g = (getter != nullptr && getter->type()->kind() == TypeKind::Function)
-                   ? getter
-                   : nullptr;
-    Value* s = (setter != nullptr && setter->type()->kind() == TypeKind::Function)
-                   ? setter
-                   : nullptr;
+    Value* g = (getter != nullptr && detail::isCallable(getter)) ? getter : nullptr;
+    Value* s = (setter != nullptr && detail::isCallable(setter)) ? setter : nullptr;
     Property desc{nullptr, false, enumerable, configurable, g, s};
-    Value* descObj = propertyToDescriptor(ctx, desc);
+    Value* descObj = propertyDescriptorToValue(ctx, desc);
     if (detail::isErrorValue(descObj)) return descObj;
     Value* argv[3] = {d->target, pk.value, descObj};
     Value* r = ctx->call(trap, d->handler, 3, argv);
@@ -395,6 +520,7 @@ Value* ProxyType::defineAccessor(IContext* ctx, Value* self, Value* key, Value* 
     if (!detail::toBoolean(r)) {
         return detail::typeError(ctx, "proxy defineProperty trap returned false");
     }
+    if (Value* e = checkDefineInvariant(ctx, d->target, pk, desc)) return e;
     return self;
 }
 
@@ -412,6 +538,18 @@ Value* ProxyType::getPrototype(IContext* ctx, Value* self) {
     if (k != TypeKind::Null && !detail::isObjectKind(k)) {
         return detail::typeError(ctx, "proxy getPrototypeOf trap returned non-object");
     }
+
+    // —— 不变量（ES2024 §10.5.2）——
+    Value* ext = targetExtensible(ctx, d->target);
+    if (detail::isErrorValue(ext)) return ext;
+    if (!detail::toBoolean(ext)) {
+        Value* targetProto = d->target->type()->getPrototype(ctx, d->target);
+        if (detail::isErrorValue(targetProto)) return targetProto;
+        if (!detail::sameValue(r, targetProto)) {
+            return detail::typeError(
+                ctx, "proxy getPrototypeOf trap returned a different prototype for a non-extensible target");
+        }
+    }
     return r;
 }
 
@@ -428,7 +566,67 @@ Value* ProxyType::setPrototype(IContext* ctx, Value* self, Value* proto) {
     if (!detail::toBoolean(r)) {
         return detail::typeError(ctx, "proxy setPrototypeOf trap returned false");
     }
+
+    // —— 不变量（ES2024 §10.5.3）——
+    Value* ext = targetExtensible(ctx, d->target);
+    if (detail::isErrorValue(ext)) return ext;
+    if (!detail::toBoolean(ext)) {
+        Value* targetProto = d->target->type()->getPrototype(ctx, d->target);
+        if (detail::isErrorValue(targetProto)) return targetProto;
+        if (!detail::sameValue(proto, targetProto)) {
+            return detail::typeError(
+                ctx, "proxy setPrototypeOf trap cannot change the prototype of a non-extensible target");
+        }
+    }
     return self;
+}
+
+Value* ProxyType::isExtensible(IContext* ctx, Value* self) {
+    auto* d = asProxy(self);
+    bool present = false;
+    Value* err = nullptr;
+    Value* trap = lookupTrap(ctx, d, "isExtensible", present, err);
+    if (err != nullptr) return err;
+    if (!present) return d->target->type()->isExtensible(ctx, d->target);
+
+    Value* argv[1] = {d->target};
+    Value* r = ctx->call(trap, d->handler, 1, argv);
+    if (detail::isErrorValue(r)) return r;
+    bool trapResult = detail::toBoolean(r);
+
+    // —— 不变量（ES2024 §10.5.4）——
+    Value* targetResult = d->target->type()->isExtensible(ctx, d->target);
+    if (detail::isErrorValue(targetResult)) return targetResult;
+    if (trapResult != detail::toBoolean(targetResult)) {
+        return detail::typeError(
+            ctx, "proxy isExtensible trap result does not match target extensibility");
+    }
+    return ctx->createBoolean(trapResult);
+}
+
+Value* ProxyType::preventExtensions(IContext* ctx, Value* self) {
+    auto* d = asProxy(self);
+    bool present = false;
+    Value* err = nullptr;
+    Value* trap = lookupTrap(ctx, d, "preventExtensions", present, err);
+    if (err != nullptr) return err;
+    if (!present) return d->target->type()->preventExtensions(ctx, d->target);
+
+    Value* argv[1] = {d->target};
+    Value* r = ctx->call(trap, d->handler, 1, argv);
+    if (detail::isErrorValue(r)) return r;
+    bool trapResult = detail::toBoolean(r);
+
+    // —— 不变量（ES2024 §10.5.6）——
+    if (trapResult) {
+        Value* targetResult = d->target->type()->isExtensible(ctx, d->target);
+        if (detail::isErrorValue(targetResult)) return targetResult;
+        if (detail::toBoolean(targetResult)) {
+            return detail::typeError(
+                ctx, "proxy preventExtensions trap returned true but target is still extensible");
+        }
+    }
+    return ctx->createBoolean(trapResult);
 }
 
 }  // namespace neo::core

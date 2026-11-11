@@ -63,6 +63,8 @@ public:
                            Value* receiver) override;
     Value* setWithReceiver(IContext* ctx, Value* self, const PropertyKey& key,
                            Value* value, Value* receiver, bool& ok) override;
+    Value* isExtensible(IContext* ctx, Value* self) override;
+    Value* preventExtensions(IContext* ctx, Value* self) override;
 };
 
 // 取 Proxy 的 [[ProxyTarget]]；非 Proxy 返回 nullptr。

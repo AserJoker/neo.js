@@ -407,39 +407,43 @@ Value* objectDefineProperty(IContext* ctx, Value* /*self*/, size_t /*argc*/, Val
     if (!detail::isObjectKind(desc->type()->kind())) {
         return detail::typeError(ctx, "Property description must be an object");
     }
-    // 读取描述符字段（缺省按规范默认值：全 false）
-    auto field = [&](const char* name) -> Value* {
-        return ctx->getProperty(desc, name);
-    };
-    Value* getter = field("get");
-    if (detail::isErrorValue(getter)) return getter;
-    Value* setter = field("set");
-    if (detail::isErrorValue(setter)) return setter;
-    Value* enumerableV = field("enumerable");
-    if (detail::isErrorValue(enumerableV)) return enumerableV;
-    Value* configurableV = field("configurable");
-    if (detail::isErrorValue(configurableV)) return configurableV;
+    Property p;
+    if (Value* err = propertyDescriptorFromValue(ctx, desc, p)) return err;
+    Value* r = isAccessorDescriptor(p)
+                   ? ctx->defineAccessor(target, key, p.getter, p.setter, p.enumerable,
+                                         p.configurable)
+                   : ctx->defineProperty(target, key, p.value, p.writable, p.enumerable,
+                                         p.configurable);
+    return detail::isErrorValue(r) ? r : target;
+}
 
-    bool hasGetter = getter->type()->kind() != TypeKind::Undefined;
-    bool hasSetter = setter->type()->kind() != TypeKind::Undefined;
-    bool enumerable = detail::toBoolean(enumerableV);
-    bool configurable = detail::toBoolean(configurableV);
+// Object.getOwnPropertyDescriptor(obj, key)：ES2024 §20.1.2.6
+Value* objectGetOwnPropertyDescriptor(IContext* ctx, Value* /*self*/, size_t /*argc*/,
+                                      Value* argv[]) {
+    Value* target = toObjectOrThrow(ctx, argv[0]);
+    if (detail::isErrorValue(target)) return target;
+    PropertyKey key;
+    if (Value* err = toPropertyKey(ctx, argv[1], key)) return err;
+    bool exists = false;
+    Property prop;
+    if (Value* err = target->type()->getOwnProperty(ctx, target, key, exists, prop)) return err;
+    if (!exists) return ctx->createUndefined();
+    return propertyDescriptorToValue(ctx, prop);
+}
 
-    if (hasGetter || hasSetter) {
-        // 访问器描述符：get/set 缺省为 undefined → 按 null 处理
-        Value* g = hasGetter ? getter : nullptr;
-        Value* s = hasSetter ? setter : nullptr;
-        Value* r = ctx->defineAccessor(target, key, g, s, enumerable, configurable);
-        return detail::isErrorValue(r) ? r : target;
-    }
+// Object.isExtensible(obj)：ES2024 §20.1.2.14
+Value* objectIsExtensible(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* argv[]) {
+    Value* target = argv[0];
+    if (!detail::isObjectKind(target->type()->kind())) return ctx->createBoolean(false);
+    return target->type()->isExtensible(ctx, target);
+}
 
-    Value* value = field("value");
-    if (detail::isErrorValue(value)) return value;
-    if (value->type()->kind() == TypeKind::Undefined) value = ctx->createUndefined();
-    Value* writableV = field("writable");
-    if (detail::isErrorValue(writableV)) return writableV;
-    bool writable = detail::toBoolean(writableV);
-    Value* r = ctx->defineProperty(target, key, value, writable, enumerable, configurable);
+// Object.preventExtensions(obj)：ES2024 §20.1.2.19
+Value* objectPreventExtensions(IContext* ctx, Value* /*self*/, size_t /*argc*/,
+                               Value* argv[]) {
+    Value* target = argv[0];
+    if (!detail::isObjectKind(target->type()->kind())) return target;
+    Value* r = target->type()->preventExtensions(ctx, target);
     return detail::isErrorValue(r) ? r : target;
 }
 
@@ -574,6 +578,12 @@ bool registerObjectFunctionBuiltins(IContext* ctx) {
     if (!defineStatic(ctx, objectFn, "getPrototypeOf", objectGetPrototypeOf, 1)) return false;
     if (!defineStatic(ctx, objectFn, "setPrototypeOf", objectSetPrototypeOf, 2)) return false;
     if (!defineStatic(ctx, objectFn, "defineProperty", objectDefineProperty, 3)) return false;
+    if (!defineStatic(ctx, objectFn, "getOwnPropertyDescriptor",
+                      objectGetOwnPropertyDescriptor, 2))
+        return false;
+    if (!defineStatic(ctx, objectFn, "isExtensible", objectIsExtensible, 1)) return false;
+    if (!defineStatic(ctx, objectFn, "preventExtensions", objectPreventExtensions, 1))
+        return false;
     if (!defineStatic(ctx, objectFn, "getOwnPropertyNames", objectGetOwnPropertyNames, 1))
         return false;
 

@@ -170,7 +170,8 @@ TEST(InstanceOfTest, NonObjectPrototypeThrows) {
     Fixture f;
     Value* fn = f.ctx->createNativeFunction(
         [](IContext* c, Value*, size_t, Value*[]) { return c->createUndefined(); }, 0);
-    f.ctx->defineProperty(fn, "prototype", f.ctx->createNumber(1), true, false, true);
+    // 函数自带 prototype 不可配置（writable），只允许改值，不能把 configurable 改为 true。
+    f.ctx->defineProperty(fn, "prototype", f.ctx->createNumber(1), true, false, false);
     Value* r = f.ctx->instanceOf(f.ctx->createObject(), fn);
     ASSERT_EQ(r->type()->kind(), TypeKind::Exception);
     Value* err = static_cast<neo::core::ExceptionData*>(r->data())->child;

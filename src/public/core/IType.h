@@ -162,6 +162,11 @@ public:
     virtual Value* setWithReceiver(IContext* ctx, Value* self, const PropertyKey& key,
                                    Value* value, Value* receiver, bool& ok);
 
+    // isExtensible（§10.1.3）/ preventExtensions（§10.1.4）：返回 Boolean 或错误值。
+    // 默认实现读写 ObjectData::extensible；Proxy 转发 trap 并校验不变量。
+    virtual Value* isExtensible(IContext* ctx, Value* self);
+    virtual Value* preventExtensions(IContext* ctx, Value* self);
+
     // —— 行为接口（ADR-016 修订 §3）——
     // 统一签名 Value* op(IContext* ctx, Value* a, Value* b) / Value* op(IContext* ctx, Value* self)。
     // 分派规则：永远左操作数的 type 执行（ctx->add(a,b) → a->type()->add(ctx,a,b)）。

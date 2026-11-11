@@ -100,6 +100,7 @@ public:
     std::unordered_map<const void*, SymbolProperty> symbols;
     std::vector<const void*> symbolOrder;                  // symbol 键保序遍历
     Value* prototype = nullptr;                            // 原型链指针（可空）
+    bool extensible = true;                                // [[Extensible]]（ES2024 §10.1.3）
     // 私有槽（ADR-047 §5）：所有对象都可承载，保证 super() 返回任意对象时
     // 派生类私有字段仍可初始化。空 vector 不分配堆；后续用轻量容器优化。
     PrivateSlots slots;
@@ -133,6 +134,15 @@ Value* ownPropertyKeys(IContext* ctx, Value* obj, bool enumerableOnly,
 // ToPropertyKey（ES2024 §7.1.19）：把任意 Value* 规范化为 PropertyKey。
 // 成功返回 nullptr；失败返回 Exception/Fatal（对象键的 ToPrimitive 抛错等）。
 Value* toPropertyKey(IContext* ctx, Value* key, PropertyKey& out);
+
+// —— 属性描述符转换（ES2024 §6.2.6 / §10.1.6.2）——
+// 描述符对象 → 完整 Property：缺失字段按规范默认值（false / undefined）。
+// 数据与访问器字段混用、get/set 非可调用 → TypeError。
+Value* propertyDescriptorFromValue(IContext* ctx, Value* descObj, Property& out);
+// Property → 描述符对象（Object.getOwnPropertyDescriptor / Proxy trap 参数）。
+Value* propertyDescriptorToValue(IContext* ctx, const Property& p);
+// IsCompatiblePropertyDescriptor(current, desc)：desc 能否应用到 current 上。
+bool isCompatiblePropertyDescriptor(const Property& current, const Property& desc);
 
 // —— 普通对象内部方法（ES2024 §10.1）——
 // ProxyType 在 handler 无对应 trap 时回退到这些实现；ObjectType 的公开

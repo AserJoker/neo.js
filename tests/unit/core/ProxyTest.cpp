@@ -8,6 +8,8 @@
 // - Proxy.revocable 撤销后所有内部方法抛 TypeError
 // - 可调用/可构造代理与 Array.isArray 泛化
 // - 非对象 target/handler 被拒绝
+// - 可扩展性 trap 与描述符/ownKeys/get/set/has/delete/原型不变量
+// - Object.getOwnPropertyDescriptor / isExtensible / preventExtensions
 
 #include "core/IContext.h"
 #include "core/IGCEngine.h"
@@ -126,6 +128,15 @@ Value* descriptorForX(IContext* ctx, Value*, size_t, Value*[]) {
     return desc;
 }
 
+Value* nonConfigurableDescriptorForX(IContext* ctx, Value*, size_t, Value*[]) {
+    Value* desc = ctx->createObject();
+    ctx->defineProperty(desc, "value", ctx->createNumber(7), true, true, true);
+    ctx->defineProperty(desc, "writable", ctx->createBoolean(true), true, true, true);
+    ctx->defineProperty(desc, "enumerable", ctx->createBoolean(true), true, true, true);
+    ctx->defineProperty(desc, "configurable", ctx->createBoolean(false), true, true, true);
+    return desc;
+}
+
 Value* throwError(IContext* ctx, Value*, size_t, Value*[]) {
     return ctx->createException(ctx->createString("boom"));
 }
@@ -144,6 +155,26 @@ Value* makeTargetWithX(IContext* ctx) {
     Value* target = ctx->createObject();
     ctx->defineProperty(target, "x", ctx->createNumber(1), true, true, true);
     return target;
+}
+
+Value* returnUndefined(IContext* ctx, Value*, size_t, Value*[]) {
+    return ctx->createUndefined();
+}
+
+Value* ownKeysEmpty(IContext* ctx, Value*, size_t, Value*[]) {
+    return ctx->createArray();
+}
+
+Value* g_stored = nullptr;
+Value* returnStored(IContext* ctx, Value*, size_t, Value*[]) {
+    (void)ctx;
+    return g_stored;
+}
+
+Value* callObjectStatic(IContext* ctx, const char* name, size_t argc, Value* argv[]) {
+    Value* ctor = ctx->global()->lookup("Object");
+    Value* fn = ctx->getProperty(ctor, name);
+    return ctx->call(fn, ctor, argc, argv);
 }
 
 }  // namespace
@@ -434,6 +465,206 @@ TEST(ProxyTest, ConstructorRejectsNonObject) {
     Value* argv3[2] = {target, handler};
     Value* r3 = ctx->call(proxyCtor, ctx->createUndefined(), 2, argv3);
     EXPECT_EQ(r3->type()->kind(), TypeKind::Exception);
+}
+
+TEST(ProxyTest, ObjectDescriptorAndExtensibilityApi) {
+    Fixture f;
+    IContext* ctx = f.ctx.get();
+
+    Value* obj = makeTargetWithX(ctx);
+    Value* key = ctx->createString("x");
+
+    // getOwnPropertyDescriptor：完整描述符对象。
+    Value* argv[2] = {obj, key};
+    Value* desc = callObjectStatic(ctx, "getOwnPropertyDescriptor", 2, argv);
+    ASSERT_EQ(desc->type()->kind(), TypeKind::Object);
+    EXPECT_EQ(numOf(ctx->getProperty(desc, "value")), 1.0);
+    EXPECT_TRUE(boolOf(ctx->getProperty(desc, "writable")));
+    EXPECT_TRUE(boolOf(ctx->getProperty(desc, "enumerable")));
+    EXPECT_TRUE(boolOf(ctx->getProperty(desc, "configurable")));
+
+    // 不存在的属性 → undefined。
+    Value* missingArg[2] = {obj, ctx->createString("nope")};
+    EXPECT_EQ(callObjectStatic(ctx, "getOwnPropertyDescriptor", 2, missingArg)->type()->kind(),
+              TypeKind::Undefined);
+
+    // isExtensible / preventExtensions。
+    Value* extArg[1] = {obj};
+    EXPECT_TRUE(boolOf(callObjectStatic(ctx, "isExtensible", 1, extArg)));
+    EXPECT_EQ(callObjectStatic(ctx, "preventExtensions", 1, extArg), obj);
+    EXPECT_FALSE(boolOf(callObjectStatic(ctx, "isExtensible", 1, extArg)));
+
+    // 不可扩展对象：新增属性失败，已有可写属性仍可更新。
+    EXPECT_EQ(ctx->defineProperty(obj, "y", ctx->createNumber(2), true, true, true)
+                  ->type()->kind(),
+              TypeKind::Exception);
+    EXPECT_EQ(numOf(ctx->setProperty(obj, "x", ctx->createNumber(9))), 9.0);
+    EXPECT_EQ(numOf(ctx->getProperty(obj, "x")), 9.0);
+}
+
+TEST(ProxyTest, ExtensibilityTrapsAndInvariants) {
+    Fixture f;
+    IContext* ctx = f.ctx.get();
+
+    Value* target = ctx->createObject();
+    Value* handler = ctx->createObject();
+    defineNative(ctx, handler, "isExtensible", returnFalse);
+    defineNative(ctx, handler, "preventExtensions", returnTrue);
+    Value* proxy = ctx->createProxy(target, handler);
+
+    // isExtensible trap 与 target 实际可扩展性不一致 → TypeError。
+    EXPECT_EQ(proxy->type()->isExtensible(ctx, proxy)->type()->kind(), TypeKind::Exception);
+
+    // preventExtensions trap 返回 true 但 target 仍可扩展 → TypeError。
+    EXPECT_EQ(proxy->type()->preventExtensions(ctx, proxy)->type()->kind(),
+              TypeKind::Exception);
+
+    // target 真正不可扩展后，两个 trap 结果一致 → 成功。
+    ASSERT_EQ(target->type()->preventExtensions(ctx, target)->type()->kind(),
+              TypeKind::Boolean);
+    Value* ext = proxy->type()->isExtensible(ctx, proxy);
+    ASSERT_EQ(ext->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(boolOf(ext));
+    Value* prev = proxy->type()->preventExtensions(ctx, proxy);
+    ASSERT_EQ(prev->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(boolOf(prev));
+}
+
+TEST(ProxyTest, DescriptorAndOwnKeysInvariants) {
+    Fixture f;
+    IContext* ctx = f.ctx.get();
+
+    // target 有不可配置属性 x。
+    Value* target = ctx->createObject();
+    ctx->defineProperty(target, "x", ctx->createNumber(1), true, false, false);
+
+    // 1. getOwnPropertyDescriptor 隐藏不可配置属性 → TypeError。
+    {
+        Value* handler = ctx->createObject();
+        defineNative(ctx, handler, "getOwnPropertyDescriptor", returnUndefined);
+        Value* proxy = ctx->createProxy(target, handler);
+        Value* argv[2] = {proxy, ctx->createString("x")};
+        EXPECT_EQ(callObjectStatic(ctx, "getOwnPropertyDescriptor", 2, argv)->type()->kind(),
+                  TypeKind::Exception);
+    }
+
+    // 2. ownKeys 遗漏不可配置属性 → TypeError。
+    {
+        Value* handler = ctx->createObject();
+        defineNative(ctx, handler, "ownKeys", ownKeysEmpty);
+        Value* proxy = ctx->createProxy(target, handler);
+        std::vector<Value*> keys;
+        EXPECT_EQ(neo::core::ownPropertyKeys(ctx, proxy, false, false, keys)->type()->kind(),
+                  TypeKind::Exception);
+    }
+
+    // 3. 可扩展 target 上报告新的不可配置属性 → TypeError。
+    {
+        Value* extTarget = ctx->createObject();
+        Value* handler = ctx->createObject();
+        defineNative(ctx, handler, "getOwnPropertyDescriptor", nonConfigurableDescriptorForX);
+        Value* proxy = ctx->createProxy(extTarget, handler);
+        Value* argv[2] = {proxy, ctx->createString("x")};
+        EXPECT_EQ(callObjectStatic(ctx, "getOwnPropertyDescriptor", 2, argv)->type()->kind(),
+                  TypeKind::Exception);
+    }
+}
+
+TEST(ProxyTest, GetSetHasDeleteInvariants) {
+    Fixture f;
+    IContext* ctx = f.ctx.get();
+
+    // 不可配置、不可写的数据属性 x=1。
+    Value* target = ctx->createObject();
+    ctx->defineProperty(target, "x", ctx->createNumber(1), false, false, false);
+
+    // get trap 返回不同值 → TypeError。
+    {
+        Value* handler = ctx->createObject();
+        defineNative(ctx, handler, "get", returnNinetyNine);
+        Value* proxy = ctx->createProxy(target, handler);
+        EXPECT_EQ(ctx->getProperty(proxy, "x")->type()->kind(), TypeKind::Exception);
+    }
+
+    // set trap 报告成功写入不同值 → TypeError。
+    {
+        Value* handler = ctx->createObject();
+        defineNative(ctx, handler, "set", returnTrue);
+        Value* proxy = ctx->createProxy(target, handler);
+        EXPECT_EQ(ctx->setProperty(proxy, "x", ctx->createNumber(2))->type()->kind(),
+                  TypeKind::Exception);
+    }
+
+    // has trap 隐藏不可配置属性 → TypeError；报告存在则允许。
+    {
+        Value* handler = ctx->createObject();
+        defineNative(ctx, handler, "has", returnFalse);
+        Value* proxy = ctx->createProxy(target, handler);
+        EXPECT_EQ(ctx->hasProperty(proxy, "x")->type()->kind(), TypeKind::Exception);
+    }
+    {
+        Value* handler = ctx->createObject();
+        defineNative(ctx, handler, "has", returnTrue);
+        Value* proxy = ctx->createProxy(target, handler);
+        Value* r = ctx->hasProperty(proxy, "x");
+        ASSERT_EQ(r->type()->kind(), TypeKind::Boolean);
+        EXPECT_TRUE(boolOf(r));
+    }
+
+    // deleteProperty trap 返回 true 删除不可配置属性 → TypeError。
+    {
+        Value* handler = ctx->createObject();
+        defineNative(ctx, handler, "deleteProperty", returnTrue);
+        Value* proxy = ctx->createProxy(target, handler);
+        EXPECT_EQ(ctx->deleteProperty(proxy, "x")->type()->kind(), TypeKind::Exception);
+    }
+}
+
+TEST(ProxyTest, DefineAndPrototypeInvariants) {
+    Fixture f;
+    IContext* ctx = f.ctx.get();
+
+    // defineProperty trap 成功但 target 不可扩展且属性不存在 → TypeError。
+    {
+        Value* target = ctx->createObject();
+        ASSERT_EQ(target->type()->preventExtensions(ctx, target)->type()->kind(),
+                  TypeKind::Boolean);
+        Value* handler = ctx->createObject();
+        defineNative(ctx, handler, "defineProperty", defineTrue);
+        Value* proxy = ctx->createProxy(target, handler);
+        EXPECT_EQ(ctx->defineProperty(proxy, "y", ctx->createNumber(1), true, true, true)
+                      ->type()->kind(),
+                  TypeKind::Exception);
+    }
+
+    // getPrototypeOf trap 在不可扩展 target 上返回不同原型 → TypeError。
+    {
+        Value* target = ctx->createObject();
+        Value* protoA = ctx->createObject();
+        Value* protoB = ctx->createObject();
+        ctx->setPrototype(target, protoA);
+        ASSERT_EQ(target->type()->preventExtensions(ctx, target)->type()->kind(),
+                  TypeKind::Boolean);
+        g_stored = protoB;
+        Value* handler = ctx->createObject();
+        defineNative(ctx, handler, "getPrototypeOf", returnStored);
+        Value* proxy = ctx->createProxy(target, handler);
+        EXPECT_EQ(ctx->getPrototype(proxy)->type()->kind(), TypeKind::Exception);
+    }
+
+    // setPrototypeOf trap 在不可扩展 target 上改原型 → TypeError。
+    {
+        Value* target = ctx->createObject();
+        Value* protoA = ctx->createObject();
+        Value* protoB = ctx->createObject();
+        ctx->setPrototype(target, protoA);
+        ASSERT_EQ(target->type()->preventExtensions(ctx, target)->type()->kind(),
+                  TypeKind::Boolean);
+        Value* handler = ctx->createObject();
+        defineNative(ctx, handler, "setPrototypeOf", returnTrue);
+        Value* proxy = ctx->createProxy(target, handler);
+        EXPECT_EQ(ctx->setPrototype(proxy, protoB)->type()->kind(), TypeKind::Exception);
+    }
 }
 
 TEST(ProxyTest, SurvivesGcAndKeepsTargetAlive) {

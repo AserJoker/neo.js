@@ -134,6 +134,21 @@ inline bool strictEquals(Value* a, Value* b) {
     }
 }
 
+// —— SameValue（ES2024 §7.2.11）——
+// 与 strictEquals 的差异：NaN 等于 NaN，+0 不等于 -0。
+inline bool sameValue(Value* a, Value* b) {
+    TypeKind ak = a->type()->kind();
+    if (ak != b->type()->kind()) return false;
+    if (ak == TypeKind::Number) {
+        double x = static_cast<NumberData*>(a->data())->value;
+        double y = static_cast<NumberData*>(b->data())->value;
+        if (std::isnan(x) && std::isnan(y)) return true;
+        if (x == 0.0 && y == 0.0) return std::signbit(x) == std::signbit(y);
+        return x == y;
+    }
+    return strictEquals(a, b);
+}
+
 // —— ToPrimitive（ES2024 §7.1.1 / §7.1.1.1）——
 // preferredType 缺省（Default）在 OrdinaryToPrimitive 中等价于 NUMBER，
 // 仅 @@toPrimitive 的 hint 字符串区分 "default"。
