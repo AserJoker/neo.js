@@ -149,5 +149,7 @@ trap 缺失（undefined/null）时回退到 target 的对应内部方法。
 - 描述符转换已校验数据/访问器字段互斥与 get/set 可调用性。
 - 不变量已覆盖 §10.5 全部 trap；`isExtensible` / `preventExtensions`
   不变量在 trap 返回后立即校验。
-- 尚未实现：`Object.defineProperties` / `Object.getOwnPropertyDescriptors`；
-  `Reflect` 命名空间；for-in 枚举顺序与 Proxy 的完整交互。
+- `Object.defineProperties` / `Object.getOwnPropertyDescriptors` 已实现；
+  `Object.create` 的第二参数按 `ObjectDefineProperties` 处理。
+- 尚未实现：`Reflect` 命名空间（后续单独接入）；for-in 枚举顺序与 Proxy
+  的完整交互（当前无 VM/字节码层，暂不可达）。

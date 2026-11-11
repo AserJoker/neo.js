@@ -359,9 +359,54 @@ Value* objectAssign(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) 
     return target;
 }
 
+// ObjectDefineProperties(obj, props)（ES2024 §20.1.2.3.1）：
+// 先取 props 的全部自有键并转换描述符，再逐个定义到 obj。
+Value* definePropertiesFromObject(IContext* ctx, Value* target, Value* props) {
+    Value* from = toObjectOrThrow(ctx, props);
+    if (detail::isErrorValue(from)) return from;
+    std::vector<Value*> keys;
+    if (Value* err = neo::core::ownPropertyKeys(ctx, from, false, true, keys)) return err;
+
+    struct Pending {
+        Value* key;
+        Property prop;
+    };
+    std::vector<Pending> pending;
+    pending.reserve(keys.size());
+    for (Value* key : keys) {
+        Value* desc = ctx->getProperty(from, key);
+        if (detail::isErrorValue(desc)) return desc;
+        if (!detail::isObjectKind(desc->type()->kind())) {
+            return detail::typeError(ctx, "Property description must be an object");
+        }
+        Property p;
+        if (Value* err = propertyDescriptorFromValue(ctx, desc, p)) return err;
+        pending.push_back(Pending{key, p});
+    }
+    for (const Pending& item : pending) {
+        Value* r = isAccessorDescriptor(item.prop)
+                       ? ctx->defineAccessor(target, item.key, item.prop.getter,
+                                             item.prop.setter, item.prop.enumerable,
+                                             item.prop.configurable)
+                       : ctx->defineProperty(target, item.key, item.prop.value,
+                                             item.prop.writable, item.prop.enumerable,
+                                             item.prop.configurable);
+        if (detail::isErrorValue(r)) return r;
+    }
+    return nullptr;
+}
+
+// Object.defineProperties(obj, props)：ES2024 §20.1.2.3
+Value* objectDefineProperties(IContext* ctx, Value* /*self*/, size_t /*argc*/,
+                              Value* argv[]) {
+    Value* target = toObjectOrThrow(ctx, argv[0]);
+    if (detail::isErrorValue(target)) return target;
+    if (Value* err = definePropertiesFromObject(ctx, target, argv[1])) return err;
+    return target;
+}
+
 // Object.create(proto, properties)：新建对象并设置原型（ES2024 §20.1.2.2）
-// properties 描述符对象本阶段不支持（第二参数非 undefined 时忽略其内容）。
-Value* objectCreate(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* argv[]) {
+Value* objectCreate(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     TypeKind pk = argv[0]->type()->kind();
     if (pk != TypeKind::Null && !detail::isObjectKind(pk)) {
         return detail::typeError(ctx, "Object prototype may only be an Object or null");
@@ -373,6 +418,9 @@ Value* objectCreate(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* argv
     } else {
         Value* r = ctx->setPrototype(obj, argv[0]);
         if (detail::isErrorValue(r)) return r;
+    }
+    if (argc > 1 && argv[1]->type()->kind() != TypeKind::Undefined) {
+        if (Value* err = definePropertiesFromObject(ctx, obj, argv[1])) return err;
     }
     return obj;
 }
@@ -429,6 +477,33 @@ Value* objectGetOwnPropertyDescriptor(IContext* ctx, Value* /*self*/, size_t /*a
     if (Value* err = target->type()->getOwnProperty(ctx, target, key, exists, prop)) return err;
     if (!exists) return ctx->createUndefined();
     return propertyDescriptorToValue(ctx, prop);
+}
+
+// Object.getOwnPropertyDescriptors(obj)：ES2024 §20.1.2.9
+Value* objectGetOwnPropertyDescriptors(IContext* ctx, Value* /*self*/, size_t /*argc*/,
+                                       Value* argv[]) {
+    Value* target = toObjectOrThrow(ctx, argv[0]);
+    if (detail::isErrorValue(target)) return target;
+    std::vector<Value*> keys;
+    if (Value* err = neo::core::ownPropertyKeys(ctx, target, false, true, keys)) return err;
+
+    Value* result = ctx->createObject();
+    if (result == ctx->oomValue()) return result;
+    for (Value* key : keys) {
+        PropertyKey pk;
+        if (Value* err = toPropertyKey(ctx, key, pk)) return err;
+        bool exists = false;
+        Property prop;
+        if (Value* err = target->type()->getOwnProperty(ctx, target, pk, exists, prop)) {
+            return err;
+        }
+        if (!exists) continue;
+        Value* desc = propertyDescriptorToValue(ctx, prop);
+        if (detail::isErrorValue(desc)) return desc;
+        Value* r = ctx->defineProperty(result, key, desc, true, true, true);
+        if (detail::isErrorValue(r)) return r;
+    }
+    return result;
 }
 
 // Object.isExtensible(obj)：ES2024 §20.1.2.14
@@ -580,6 +655,11 @@ bool registerObjectFunctionBuiltins(IContext* ctx) {
     if (!defineStatic(ctx, objectFn, "defineProperty", objectDefineProperty, 3)) return false;
     if (!defineStatic(ctx, objectFn, "getOwnPropertyDescriptor",
                       objectGetOwnPropertyDescriptor, 2))
+        return false;
+    if (!defineStatic(ctx, objectFn, "getOwnPropertyDescriptors",
+                      objectGetOwnPropertyDescriptors, 1))
+        return false;
+    if (!defineStatic(ctx, objectFn, "defineProperties", objectDefineProperties, 2))
         return false;
     if (!defineStatic(ctx, objectFn, "isExtensible", objectIsExtensible, 1)) return false;
     if (!defineStatic(ctx, objectFn, "preventExtensions", objectPreventExtensions, 1))

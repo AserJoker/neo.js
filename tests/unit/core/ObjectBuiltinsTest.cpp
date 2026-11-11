@@ -1869,3 +1869,67 @@ TEST(ObjectBuiltinsTest, ObjectAssignStaysStrictInSloppyCaller) {
     EXPECT_EQ(r->type()->kind(), TypeKind::Exception);
     EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(target, "x")), 1.0);
 }
+
+TEST(ObjectBuiltinsTest, ObjectDefinePropertiesAndGetOwnPropertyDescriptors) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* target = ctx->createObject();
+
+    // props = { x: { value: 1, writable: false, enumerable: true, configurable: true } }
+    Value* descX = ctx->createObject();
+    ctx->setProperty(descX, "value", ctx->createNumber(1));
+    ctx->setProperty(descX, "writable", ctx->createBoolean(false));
+    ctx->setProperty(descX, "enumerable", ctx->createBoolean(true));
+    ctx->setProperty(descX, "configurable", ctx->createBoolean(true));
+    Value* props = ctx->createObject();
+    ctx->setProperty(props, "x", descX);
+
+    Value* args[2] = {target, props};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "defineProperties", 2, args), target);
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(target, "x")), 1.0);
+    // 不可写属性：写入失败（sloppy 静默）。
+    ctx->setProperty(target, "x", ctx->createNumber(2));
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(target, "x")), 1.0);
+
+    // getOwnPropertyDescriptors 返回 { x: 描述符 }。
+    Value* descsArgs[1] = {target};
+    Value* descs = callObjectStatic(ctx.get(), "getOwnPropertyDescriptors", 1, descsArgs);
+    ASSERT_EQ(descs->type()->kind(), TypeKind::Object);
+    Value* xDesc = ctx->getProperty(descs, "x");
+    ASSERT_EQ(xDesc->type()->kind(), TypeKind::Object);
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(xDesc, "value")), 1.0);
+    EXPECT_FALSE(boolOf(ctx->getProperty(xDesc, "writable")));
+    EXPECT_TRUE(boolOf(ctx->getProperty(xDesc, "enumerable")));
+    EXPECT_TRUE(boolOf(ctx->getProperty(xDesc, "configurable")));
+
+    // 描述符对象非对象 → TypeError。
+    Value* badProps = ctx->createObject();
+    ctx->setProperty(badProps, "y", ctx->createNumber(1));
+    Value* badArgs[2] = {ctx->createObject(), badProps};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "defineProperties", 2, badArgs)->type()->kind(),
+              TypeKind::Exception);
+}
+
+TEST(ObjectBuiltinsTest, ObjectCreateAppliesPropertyDescriptors) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* proto = ctx->createObject();
+    Value* desc = ctx->createObject();
+    ctx->setProperty(desc, "value", ctx->createNumber(7));
+    ctx->setProperty(desc, "enumerable", ctx->createBoolean(true));
+    Value* props = ctx->createObject();
+    ctx->setProperty(props, "x", desc);
+
+    Value* args[2] = {proto, props};
+    Value* obj = callObjectStatic(ctx.get(), "create", 2, args);
+    ASSERT_EQ(obj->type()->kind(), TypeKind::Object);
+    EXPECT_EQ(ctx->getPrototype(obj), proto);
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(obj, "x")), 7.0);
+    EXPECT_TRUE(boolOf(callObjectStatic(ctx.get(), "isExtensible", 1, &obj)));
+}
