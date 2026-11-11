@@ -1848,3 +1848,23 @@ TEST(ObjectBuiltinsTest, FunctionHasLengthProperty) {
     EXPECT_FALSE(it->second.enumerable);
     EXPECT_TRUE(it->second.configurable);
 }
+
+TEST(ObjectBuiltinsTest, ObjectAssignStaysStrictInSloppyCaller) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    // 调用方为 sloppy：普通赋值会静默失败，但 Object.assign 内部 Set 用 Throw=true。
+    ctx->global()->clearFlag("strict");
+
+    Value* target = ctx->createObject();
+    ctx->defineProperty(target, "x", ctx->createNumber(1), false, true, true);
+    Value* src = ctx->createObject();
+    ctx->setProperty(src, "x", ctx->createNumber(2));
+
+    Value* args[2] = {target, src};
+    Value* r = callObjectStatic(ctx.get(), "assign", 2, args);
+    EXPECT_EQ(r->type()->kind(), TypeKind::Exception);
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(target, "x")), 1.0);
+}

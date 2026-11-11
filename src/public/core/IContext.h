@@ -221,6 +221,11 @@ public:
     // 其他类型忽略。对应 VM 的 setname 字节码。
     virtual void setFunctionName(Value* fn, std::string_view name) = 0;
 
+    // setFunctionStrict: 把函数标记为严格模式（在 closureScope 上标注 "strict"）。
+    // 用于内部算法（如 Object.assign）需要 Throw=true 的 Set 语义，
+    // 避免受调用方 sloppy 影响。仅对 Function 类型有效，其他类型忽略。
+    virtual void setFunctionStrict(Value* fn) = 0;
+
     // setFunctionConstructible: 显式标记函数是否可构造（ES2024 §7.2.4 IsConstructor）。
     // native 函数默认可构造；箭头函数、方法、生成器等不可构造者置 false。
     // 绑定函数在创建时按 target 的可构造性继承，此后仍可显式覆盖。

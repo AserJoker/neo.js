@@ -463,6 +463,15 @@ void Context::setFunctionName(Value* fn, std::string_view name) {
     defineProperty(fn, "name", nameValue, false, false, true);
 }
 
+void Context::setFunctionStrict(Value* fn) {
+    // 仅对 Function 类型有效，其他类型忽略。
+    if (fn->type()->kind() != TypeKind::Function) return;
+    // closureScope 在调用期间挂入查找链，标注后函数体内 hasFlag("strict") 为 true，
+    // 且平时孤立，不会泄漏给调用方。
+    auto* d = static_cast<FunctionData*>(fn->data());
+    if (d->closureScope != nullptr) d->closureScope->setFlag("strict");
+}
+
 Value* Context::createBoundFunction(Value* target, Value* boundThis, size_t argc,
                                     Value* argv[]) {
     // 绑定函数（ES2024 §10.4.1.3）：新建 FunctionData，记录原函数/this/前置实参。

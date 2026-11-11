@@ -459,18 +459,21 @@ void bindGlobal(IContext* ctx, std::string_view name, Value* v) {
 
 // 定义 prototype 方法（writable/不可枚举/可配置，与 ES 一致）
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
-                  size_t minArgc) {
+                  size_t minArgc, bool strict = false) {
     Value* f = ctx->createNativeFunction(fn, minArgc);
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
+    // 内部算法需要 Throw=true 的 Set 语义时，标在函数 closureScope 上，
+    // 使其不受调用方 sloppy 影响（见 setFunctionStrict）。
+    if (strict) ctx->setFunctionStrict(f);
     return ctx->defineProperty(target, name, f, true, false, true)->type()->kind() !=
            TypeKind::Exception;
 }
 
 // 定义构造函数静态方法（writable/不可枚举/可配置，与 ES 一致）
 bool defineStatic(IContext* ctx, Value* ctor, const char* name, NativeFn fn,
-                  size_t minArgc) {
-    return defineMethod(ctx, ctor, name, fn, minArgc);
+                  size_t minArgc, bool strict = false) {
+    return defineMethod(ctx, ctor, name, fn, minArgc, strict);
 }
 
 }  // namespace
@@ -561,8 +564,10 @@ bool registerObjectFunctionBuiltins(IContext* ctx) {
     if (!defineStatic(ctx, objectFn, "keys", objectKeys, 1)) return false;
     if (!defineStatic(ctx, objectFn, "values", objectValues, 1)) return false;
     if (!defineStatic(ctx, objectFn, "entries", objectEntries, 1)) return false;
-    // Object.assign(target) 单参合法（无源对象），仅要求 target 存在
-    if (!defineStatic(ctx, objectFn, "assign", objectAssign, 1)) return false;
+    // Object.assign(target) 单参合法（无源对象），仅要求 target 存在。
+    // 内部 Set 使用 Throw=true，故函数局部严格，不受调用方 sloppy 影响。
+    if (!defineStatic(ctx, objectFn, "assign", objectAssign, 1, /*strict=*/true))
+        return false;
     if (!defineStatic(ctx, objectFn, "create", objectCreate, 1)) return false;
     if (!defineStatic(ctx, objectFn, "getPrototypeOf", objectGetPrototypeOf, 1)) return false;
     if (!defineStatic(ctx, objectFn, "setPrototypeOf", objectSetPrototypeOf, 2)) return false;
