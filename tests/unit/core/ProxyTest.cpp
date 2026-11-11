@@ -106,7 +106,8 @@ Value* addOne(IContext* ctx, Value*, size_t argc, Value* argv[]) {
     return ctx->createNumber(numOf(argv[0]) + 1);
 }
 
-Value* makeResult(IContext* ctx, Value*, size_t, Value*[]) {
+Value* makeResult(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    recordArgs(ctx, self, argc, argv);
     Value* obj = ctx->createObject();
     ctx->defineProperty(obj, "constructed", ctx->createBoolean(true), true, true, true);
     return obj;
@@ -169,6 +170,26 @@ Value* g_stored = nullptr;
 Value* returnStored(IContext* ctx, Value*, size_t, Value*[]) {
     (void)ctx;
     return g_stored;
+}
+
+Value* initOne(IContext* ctx, Value*, size_t, Value*[]) {
+    return ctx->createNumber(1);
+}
+
+Value* baseCtorBody(IContext* ctx, Value* self, size_t, Value*[]) {
+    return ctx->initializeInstanceElements(self, ctx->currentFunction());
+}
+
+Value* derivedCtorBody(IContext* ctx, Value*, size_t, Value*[]) {
+    Value* superCtor = ctx->classSuperConstructor(ctx->currentFunction());
+    Value* obj = ctx->constructSuper(superCtor, ctx->newTarget(), 0, nullptr);
+    if (neo::core::detail::isErrorValue(obj)) return obj;
+    return ctx->initializeInstanceElements(obj, ctx->currentFunction());
+}
+
+neo::core::PrivateName* g_private = nullptr;
+Value* readPrivateSelf(IContext* ctx, Value* self, size_t, Value*[]) {
+    return ctx->getPrivate(self, g_private);
 }
 
 Value* callObjectStatic(IContext* ctx, const char* name, size_t argc, Value* argv[]) {
@@ -665,6 +686,151 @@ TEST(ProxyTest, DefineAndPrototypeInvariants) {
         Value* proxy = ctx->createProxy(target, handler);
         EXPECT_EQ(ctx->setPrototype(proxy, protoB)->type()->kind(), TypeKind::Exception);
     }
+}
+
+TEST(ProxyTest, ClassExtendsProxy) {
+    Fixture f;
+    IContext* ctx = f.ctx.get();
+
+    // Proxy 构造函数没有 prototype 属性 → class extends Proxy 抛 TypeError。
+    {
+        neo::core::NativeClassDef def;
+        def.name = "Bad";
+        def.constructor = derivedCtorBody;
+        def.superCtor = ctx->global()->lookup("Proxy");
+        Value* c = ctx->registerClass(def);
+        EXPECT_EQ(c->type()->kind(), TypeKind::Exception);
+    }
+
+    // 包装了合法构造器的 Proxy 可作为 superclass。
+    neo::core::NativeClassDef baseDef;
+    baseDef.name = "Base";
+    baseDef.constructor = baseCtorBody;
+    baseDef.fields = {{"baseField", initOne}};
+    Value* baseCtor = ctx->registerClass(baseDef);
+    ASSERT_EQ(baseCtor->type()->kind(), TypeKind::Function);
+
+    Value* proxy = ctx->createProxy(baseCtor, ctx->createObject());
+
+    neo::core::NativeClassDef derivedDef;
+    derivedDef.name = "Derived";
+    derivedDef.constructor = derivedCtorBody;
+    derivedDef.superCtor = proxy;
+    Value* derivedCtor = ctx->registerClass(derivedDef);
+    ASSERT_EQ(derivedCtor->type()->kind(), TypeKind::Function);
+    EXPECT_EQ(ctx->classSuperConstructor(derivedCtor), proxy);
+    EXPECT_EQ(ctx->getPrototype(derivedCtor), proxy);
+    EXPECT_EQ(ctx->getPrototype(ctx->getProperty(derivedCtor, "prototype")),
+              ctx->getProperty(baseCtor, "prototype"));
+
+    Value* inst = ctx->construct(derivedCtor, 0, nullptr);
+    ASSERT_TRUE(neo::core::detail::isObjectKind(inst->type()->kind()));
+    EXPECT_EQ(numOf(ctx->getProperty(inst, "baseField")), 1.0);
+    EXPECT_TRUE(boolOf(ctx->instanceOf(inst, derivedCtor)));
+}
+
+TEST(ProxyTest, ClassSuperConstructTrapReceivesNewTarget) {
+    Fixture f;
+    IContext* ctx = f.ctx.get();
+
+    neo::core::NativeClassDef baseDef;
+    baseDef.name = "Base";
+    baseDef.constructor = baseCtorBody;
+    Value* baseCtor = ctx->registerClass(baseDef);
+    ASSERT_EQ(baseCtor->type()->kind(), TypeKind::Function);
+
+    Value* handler = ctx->createObject();
+    defineNative(ctx, handler, "construct", makeResult);
+    Value* proxy = ctx->createProxy(baseCtor, handler);
+
+    neo::core::NativeClassDef derivedDef;
+    derivedDef.name = "Derived";
+    derivedDef.constructor = derivedCtorBody;
+    derivedDef.superCtor = proxy;
+    Value* derivedCtor = ctx->registerClass(derivedDef);
+    ASSERT_EQ(derivedCtor->type()->kind(), TypeKind::Function);
+
+    Value* inst = ctx->construct(derivedCtor, 0, nullptr);
+    ASSERT_EQ(inst->type()->kind(), TypeKind::Object);
+    EXPECT_TRUE(boolOf(ctx->getProperty(inst, "constructed")));
+    // construct trap 的 newTarget 是派生类构造器。
+    EXPECT_EQ(g_arg2, derivedCtor);
+}
+
+TEST(ProxyTest, PrivateFieldsDoNotForwardThroughProxy) {
+    Fixture f;
+    IContext* ctx = f.ctx.get();
+
+    g_private = ctx->createPrivateName("x");
+    neo::core::NativeClassDef baseDef;
+    baseDef.name = "Base";
+    baseDef.constructor = baseCtorBody;
+    baseDef.privateFields = {{g_private, initOne}};
+    baseDef.methods = {{"read", readPrivateSelf, 0}};
+    Value* baseCtor = ctx->registerClass(baseDef);
+    ASSERT_EQ(baseCtor->type()->kind(), TypeKind::Function);
+
+    Value* inst = ctx->construct(baseCtor, 0, nullptr);
+    Value* read = ctx->getProperty(ctx->getProperty(baseCtor, "prototype"), "read");
+    ASSERT_EQ(numOf(ctx->call(read, inst, 0, nullptr)), 1.0);
+
+    // Proxy 不转发私有槽：target 已 brand，proxy 自身未 brand → TypeError。
+    Value* proxy = ctx->createProxy(inst, ctx->createObject());
+    EXPECT_EQ(ctx->call(read, proxy, 0, nullptr)->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(ctx->getPrivate(proxy, g_private)->type()->kind(), TypeKind::Exception);
+
+    // class extends Proxy：super() 经 construct trap 返回 proxy 时，该 proxy 成为 this，
+    // 派生类私有字段初始化在 proxy 自身上（不转发 target）。
+    neo::core::PrivateName* derivedPrivate = ctx->createPrivateName("y");
+    g_stored = ctx->createProxy(ctx->createObject(), ctx->createObject());
+    Value* superHandler = ctx->createObject();
+    defineNative(ctx, superHandler, "construct", returnStored);
+    neo::core::NativeClassDef derivedDef;
+    derivedDef.name = "Derived";
+    derivedDef.constructor = derivedCtorBody;
+    derivedDef.superCtor = ctx->createProxy(baseCtor, superHandler);
+    derivedDef.privateFields = {{derivedPrivate, initOne}};
+    Value* derivedCtor = ctx->registerClass(derivedDef);
+    ASSERT_EQ(derivedCtor->type()->kind(), TypeKind::Function);
+    Value* derivedInst = ctx->construct(derivedCtor, 0, nullptr);
+    EXPECT_EQ(derivedInst, g_stored);
+    EXPECT_EQ(derivedInst->type()->kind(), TypeKind::Proxy);
+    EXPECT_EQ(numOf(ctx->getPrivate(derivedInst, derivedPrivate)), 1.0);
+    // Base 的私有字段 brand 在 target 上，proxy 自身不可见。
+    EXPECT_EQ(ctx->getPrivate(derivedInst, g_private)->type()->kind(), TypeKind::Exception);
+}
+
+TEST(ProxyTest, RevokedAndGcStress) {
+    Fixture f;
+    IContext* ctx = f.ctx.get();
+
+    // 撤销后 target 仍被持有：GC 后所有内部方法继续抛 TypeError。
+    Value* target = makeTargetWithX(ctx);
+    Value* handler = ctx->createObject();
+    defineNative(ctx, handler, "get", getTen);
+    Value* proxy = ctx->createProxy(target, handler);
+    revokeProxy(proxy);
+    ctx->gc()->collect();
+    EXPECT_EQ(ctx->getProperty(proxy, "x")->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(ctx->hasProperty(proxy, "x")->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(ctx->getPrototype(proxy)->type()->kind(), TypeKind::Exception);
+
+    // 大量短命 proxy：反复创建/丢弃/回收，不应崩溃或泄漏 target。
+    for (int round = 0; round < 50; ++round) {
+        Value* t = makeTargetWithX(ctx);
+        Value* h = ctx->createObject();
+        defineNative(ctx, h, "get", getTen);
+        Value* p = ctx->createProxy(t, h);
+        EXPECT_EQ(numOf(ctx->getProperty(p, "x")), 10.0);
+    }
+    ctx->gc()->collect();
+
+    // proxy 套 proxy：内层撤销后外层读取透传 TypeError。
+    Value* inner = ctx->createProxy(makeTargetWithX(ctx), ctx->createObject());
+    Value* outer = ctx->createProxy(inner, ctx->createObject());
+    EXPECT_EQ(numOf(ctx->getProperty(outer, "x")), 1.0);
+    revokeProxy(inner);
+    EXPECT_EQ(ctx->getProperty(outer, "x")->type()->kind(), TypeKind::Exception);
 }
 
 TEST(ProxyTest, SurvivesGcAndKeepsTargetAlive) {

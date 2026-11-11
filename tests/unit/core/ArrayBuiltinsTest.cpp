@@ -660,18 +660,47 @@ TEST(ArrayBuiltinsTest, NewArrayWithInfinityRejected) {
 
 // ===== 非数组 receiver =====
 
-TEST(ArrayBuiltinsTest, MethodsRejectNonArrayReceiver) {
+TEST(ArrayBuiltinsTest, MethodsAreGenericOverArrayLike) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
 
     Value* proto = ctx->arrayPrototype();
-    Value* notArr = ctx->createObject();
+    // 普通对象作为 array-like：push 写索引与 length。
+    Value* obj = ctx->createObject();
+    ctx->setProperty(obj, "length", ctx->createNumber(0));
+    Value* push = ctx->getProperty(proto, "push");
+    Value* pushArg = ctx->createNumber(7);
+    Value* pushed = ctx->call(push, obj, 1, &pushArg);
+    ASSERT_EQ(pushed->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numOf(pushed), 1.0);
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(obj, "0")), 7.0);
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(obj, "length")), 1.0);
+
+    // join / toString / indexOf / slice / pop 同样走泛型路径。
+    Value* join = ctx->getProperty(proto, "join");
+    EXPECT_EQ(strOf(ctx->call(join, obj, 0, nullptr)), "7");
+    // 普通对象没有 join → 回退 Object.prototype.toString。
+    Value* toStringFn = ctx->getProperty(proto, "toString");
+    EXPECT_EQ(strOf(ctx->call(toStringFn, obj, 0, nullptr)), "[object Object]");
+    Value* indexOf = ctx->getProperty(proto, "indexOf");
+    Value* needle = ctx->createNumber(7);
+    EXPECT_DOUBLE_EQ(numOf(ctx->call(indexOf, obj, 1, &needle)), 0.0);
+    Value* slice = ctx->getProperty(proto, "slice");
+    Value* sliced = ctx->call(slice, obj, 0, nullptr);
+    ASSERT_EQ(sliced->type()->kind(), TypeKind::Array);
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(sliced, "0")), 7.0);
+    Value* pop = ctx->getProperty(proto, "pop");
+    EXPECT_DOUBLE_EQ(numOf(ctx->call(pop, obj, 0, nullptr)), 7.0);
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(obj, "length")), 0.0);
+
+    // null/undefined 接收者 → TypeError。
     for (const char* name : {"push", "pop", "join", "toString", "slice", "indexOf"}) {
         Value* fn = ctx->getProperty(proto, name);
         ASSERT_EQ(fn->type()->kind(), TypeKind::Function) << name;
-        EXPECT_EQ(ctx->call(fn, notArr, 0, nullptr)->type()->kind(), TypeKind::Exception)
+        EXPECT_EQ(ctx->call(fn, ctx->createNull(), 0, nullptr)->type()->kind(),
+                  TypeKind::Exception)
             << name;
     }
 }

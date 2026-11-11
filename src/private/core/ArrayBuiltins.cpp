@@ -34,17 +34,49 @@ namespace neo::core {
 
 namespace {
 
-ArrayData* asArray(Value* v) {
-    return v != nullptr && v->type()->kind() == TypeKind::Array
-               ? static_cast<ArrayData*>(v->data())
-               : nullptr;
+// ToObject（ES2024 §7.1.18）：null/undefined 抛 TypeError，原始值装箱。
+Value* toObject(IContext* ctx, Value* v, const char* method) {
+    TypeKind k = v->type()->kind();
+    if (k == TypeKind::Undefined || k == TypeKind::Null) {
+        return detail::typeError(
+            ctx, std::string("Array.prototype.") + method + " called on null or undefined");
+    }
+    if (detail::isObjectKind(k)) return v;
+    return ctx->createPrimitiveWrapper(v);
 }
 
-// 非数组 this 的统一报错
-Value* notArray(IContext* ctx, const char* method) {
-    std::string msg = std::string("Array.prototype.") + method +
-                      " called on non-array";
-    return detail::typeError(ctx, msg);
+// LengthOfArrayLike（ES2024 §7.3.20）：ToLength(Get(O, "length"))。
+// 引擎数组长度上限为 2^32-1，超出按上限截断。
+Value* lengthOfArrayLike(IContext* ctx, Value* obj, uint32_t& out) {
+    Value* lenV = ctx->getProperty(obj, "length");
+    if (detail::isErrorValue(lenV)) return lenV;
+    Value* nv = detail::toNumberValue(ctx, lenV);
+    if (detail::isErrorValue(nv)) return nv;
+    double n = static_cast<NumberData*>(nv->data())->value;
+    if (std::isnan(n) || n <= 0.0) {
+        out = 0;
+        return nullptr;
+    }
+    if (n >= static_cast<double>(kArrayMaxLength)) {
+        out = kArrayMaxLength;
+        return nullptr;
+    }
+    out = static_cast<uint32_t>(std::floor(n));
+    return nullptr;
+}
+
+Value* indexKey(IContext* ctx, uint32_t index) {
+    return ctx->createString(std::to_string(index));
+}
+
+// DeletePropertyOrThrow：[[Delete]] 返回 false 时抛 TypeError。
+Value* deletePropertyOrThrow(IContext* ctx, Value* obj, Value* key) {
+    Value* r = ctx->deleteProperty(obj, key);
+    if (detail::isErrorValue(r)) return r;
+    if (!detail::toBoolean(r)) {
+        return detail::typeError(ctx, "Cannot delete property");
+    }
+    return nullptr;
 }
 
 // ToIntegerOrInfinity（ES2024 §7.1.5），用于 slice/indexOf 的索引参数。
@@ -111,33 +143,49 @@ Value* arrayIsArray(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) 
 
 // —— prototype 方法 ——
 
-// push(...items)：追加元素，返回新长度
+// push(...items)：追加元素，返回新长度（ES2024 §23.1.3.23）
 Value* arrayPush(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    ArrayData* d = asArray(self);
-    if (d == nullptr) return notArray(ctx, "push");
-    uint32_t len = d->length();
+    Value* obj = toObject(ctx, self, "push");
+    if (detail::isErrorValue(obj)) return obj;
+    uint32_t len = 0;
+    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
     for (size_t i = 0; i < argc; ++i) {
-        d->setElement(len + static_cast<uint32_t>(i), argv[i]);
+        Value* r = ctx->setProperty(obj, indexKey(ctx, len + static_cast<uint32_t>(i)),
+                                    argv[i]);
+        if (detail::isErrorValue(r)) return r;
     }
-    return ctx->createNumber(static_cast<double>(d->length()));
+    double newLen = static_cast<double>(len) + static_cast<double>(argc);
+    Value* r = ctx->setProperty(obj, "length", ctx->createNumber(newLen));
+    if (detail::isErrorValue(r)) return r;
+    return ctx->createNumber(newLen);
 }
 
-// pop()：移除并返回最后一个元素；空数组返回 undefined
+// pop()：移除并返回最后一个元素；空数组返回 undefined（ES2024 §23.1.3.20）
 Value* arrayPop(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
-    ArrayData* d = asArray(self);
-    if (d == nullptr) return notArray(ctx, "pop");
-    uint32_t len = d->length();
-    if (len == 0) return ctx->createUndefined();
-    Value* last = d->elementAt(len - 1);
-    d->setLength(len - 1);
-    return last != nullptr ? last : ctx->createUndefined();
+    Value* obj = toObject(ctx, self, "pop");
+    if (detail::isErrorValue(obj)) return obj;
+    uint32_t len = 0;
+    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
+    if (len == 0) {
+        Value* r = ctx->setProperty(obj, "length", ctx->createNumber(0));
+        return detail::isErrorValue(r) ? r : ctx->createUndefined();
+    }
+    Value* key = indexKey(ctx, len - 1);
+    Value* value = ctx->getProperty(obj, key);
+    if (detail::isErrorValue(value)) return value;
+    if (Value* err = deletePropertyOrThrow(ctx, obj, key)) return err;
+    Value* r = ctx->setProperty(obj, "length", ctx->createNumber(len - 1));
+    if (detail::isErrorValue(r)) return r;
+    return value;
 }
 
 // join(separator)：默认 ","；空洞/null/undefined 元素按空串。
 // 分隔符与元素都走 ToString（ES2024 §23.1.3.15），可触发用户 toString。
 Value* arrayJoin(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    ArrayData* d = asArray(self);
-    if (d == nullptr) return notArray(ctx, "join");
+    Value* obj = toObject(ctx, self, "join");
+    if (detail::isErrorValue(obj)) return obj;
+    uint32_t len = 0;
+    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
     std::string sep = ",";
     if (argc > 0 && argv[0]->type()->kind() != TypeKind::Undefined) {
         Value* s = detail::toStringValue(ctx, argv[0]);
@@ -145,11 +193,10 @@ Value* arrayJoin(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
         sep = detail::valueToString(s);
     }
     std::string result;
-    uint32_t len = d->length();
     for (uint32_t i = 0; i < len; ++i) {
         if (i > 0) result += sep;
-        Value* v = d->elementAt(i);
-        if (v == nullptr) continue;
+        Value* v = ctx->getProperty(obj, indexKey(ctx, i));
+        if (detail::isErrorValue(v)) return v;
         TypeKind k = v->type()->kind();
         if (k == TypeKind::Undefined || k == TypeKind::Null) continue;
         Value* s = detail::toStringValue(ctx, v);
@@ -159,18 +206,24 @@ Value* arrayJoin(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     return ctx->createString(result);
 }
 
-// toString()：等价 join(",")
+// toString()：Get(O, "join") 可调用则以 O 为 this 调用（ES2024 §23.1.3.36）
 Value* arrayToStringFn(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
-    ArrayData* d = asArray(self);
-    if (d == nullptr) return notArray(ctx, "toString");
-    return ctx->createString(arrayToString(d));
+    Value* obj = toObject(ctx, self, "toString");
+    if (detail::isErrorValue(obj)) return obj;
+    Value* join = ctx->getProperty(obj, "join");
+    if (detail::isErrorValue(join)) return join;
+    if (detail::isCallable(join)) return ctx->call(join, obj, 0, nullptr);
+    Value* objectToString = ctx->getProperty(ctx->objectPrototype(), "toString");
+    if (detail::isErrorValue(objectToString)) return objectToString;
+    return ctx->call(objectToString, obj, 0, nullptr);
 }
 
-// slice(start, end)：浅拷贝区间到新数组（保留空洞）
+// slice(start, end)：浅拷贝区间到新数组（保留空洞，ES2024 §23.1.3.25）
 Value* arraySlice(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    ArrayData* d = asArray(self);
-    if (d == nullptr) return notArray(ctx, "slice");
-    uint32_t len = d->length();
+    Value* obj = toObject(ctx, self, "slice");
+    if (detail::isErrorValue(obj)) return obj;
+    uint32_t len = 0;
+    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
     Value* err = nullptr;
     uint32_t start = 0;
     if (argc > 0) {
@@ -186,22 +239,25 @@ Value* arraySlice(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     }
     Value* result = ctx->createArray();
     if (result == ctx->oomValue()) return result;
-    auto* rd = static_cast<ArrayData*>(result->data());
-    if (end > start) {
-        rd->setLength(end - start);
-        for (uint32_t i = start; i < end; ++i) {
-            Value* v = d->elementAt(i);
-            if (v != nullptr) rd->setElement(i - start, v);
-        }
+    for (uint32_t i = start; i < end; ++i) {
+        Value* key = indexKey(ctx, i);
+        Value* has = ctx->hasProperty(obj, key);
+        if (detail::isErrorValue(has)) return has;
+        if (!detail::toBoolean(has)) continue;
+        Value* v = ctx->getProperty(obj, key);
+        if (detail::isErrorValue(v)) return v;
+        Value* r = ctx->defineProperty(result, indexKey(ctx, i - start), v, true, true, true);
+        if (detail::isErrorValue(r)) return r;
     }
     return result;
 }
 
-// indexOf(searchElement, fromIndex)：严格相等，未找到返回 -1
+// indexOf(searchElement, fromIndex)：严格相等，未找到返回 -1（ES2024 §23.1.3.13）
 Value* arrayIndexOf(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    ArrayData* d = asArray(self);
-    if (d == nullptr) return notArray(ctx, "indexOf");
-    uint32_t len = d->length();
+    Value* obj = toObject(ctx, self, "indexOf");
+    if (detail::isErrorValue(obj)) return obj;
+    uint32_t len = 0;
+    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
     if (argc == 0) return ctx->createNumber(-1.0);
     uint32_t from = 0;
     if (argc > 1) {
@@ -212,8 +268,9 @@ Value* arrayIndexOf(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
         from = clampIndex(raw, len);
     }
     for (uint32_t i = from; i < len; ++i) {
-        Value* v = d->elementAt(i);
-        if (v != nullptr && detail::strictEquals(v, argv[0])) {
+        Value* v = ctx->getProperty(obj, indexKey(ctx, i));
+        if (detail::isErrorValue(v)) return v;
+        if (detail::strictEquals(v, argv[0])) {
             return ctx->createNumber(static_cast<double>(i));
         }
     }
@@ -228,10 +285,12 @@ void bindGlobal(IContext* ctx, std::string_view name, Value* v) {
 
 // 定义 prototype 方法（writable/不可枚举/可配置，与 ES 一致）
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
-                  size_t minArgc) {
+                  size_t minArgc, bool strict = false) {
     Value* f = ctx->createNativeFunction(fn, minArgc);
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
+    // 规范以 Throw=true 调用 [[Set]]/[[Delete]] 的方法需局部严格。
+    if (strict) ctx->setFunctionStrict(f);
     return ctx->defineProperty(target, name, f, true, false, true)->type()->kind() !=
            TypeKind::Exception;
 }
@@ -276,11 +335,11 @@ bool registerArrayBuiltins(IContext* ctx) {
     }
 
     // —— 4. Array.prototype 方法 ——
-    if (!defineMethod(ctx, arrayProto, "push", arrayPush, 0)) return false;
-    if (!defineMethod(ctx, arrayProto, "pop", arrayPop, 0)) return false;
+    if (!defineMethod(ctx, arrayProto, "push", arrayPush, 0, /*strict=*/true)) return false;
+    if (!defineMethod(ctx, arrayProto, "pop", arrayPop, 0, /*strict=*/true)) return false;
     if (!defineMethod(ctx, arrayProto, "join", arrayJoin, 0)) return false;
     if (!defineMethod(ctx, arrayProto, "toString", arrayToStringFn, 0)) return false;
-    if (!defineMethod(ctx, arrayProto, "slice", arraySlice, 0)) return false;
+    if (!defineMethod(ctx, arrayProto, "slice", arraySlice, 0, /*strict=*/true)) return false;
     if (!defineMethod(ctx, arrayProto, "indexOf", arrayIndexOf, 0)) return false;
 
     // —— 5. 注册到 global ——

@@ -140,11 +140,14 @@ TEST(ErrorKindTest, ArrayDeleteLengthIsTypeError) {
     expectError(f.ctx.get(), f.ctx->deleteProperty(arr, "length"), "TypeError");
 }
 
-TEST(ErrorKindTest, ArrayMethodOnNonArrayIsTypeError) {
+TEST(ErrorKindTest, ArrayMethodOnNullOrUndefinedIsTypeError) {
     Fixture f;
+    // 数组方法是泛型的（ToObject(this)）；null/undefined 接收者才是 TypeError。
     Value* push = f.ctx->getProperty(f.ctx->arrayPrototype(), "push");
-    Value* r = f.ctx->call(push, f.ctx->createNumber(1), 0, nullptr);
+    Value* r = f.ctx->call(push, f.ctx->createNull(), 0, nullptr);
     expectError(f.ctx.get(), r, "TypeError");
+    Value* r2 = f.ctx->call(push, f.ctx->createUndefined(), 0, nullptr);
+    expectError(f.ctx.get(), r2, "TypeError");
 }
 
 // ===== 现有实现整改：类型/调用 =====

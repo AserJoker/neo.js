@@ -1,6 +1,7 @@
 # ADR-048: Proxy 与对象内部方法层
 
-- 状态：P2 已实现（核心 traps / 撤销 / 可调用适配 / 完整不变量 / 可扩展性）
+- 状态：P3 部分实现（P1/P2 完成；数组内建泛型化、class extends Proxy、
+  私有槽语义、GC/撤销压力测试已落地）
 - 日期：2026-11-11
 - 关联：ADR-016（Type 体系）、ADR-018（对象模型）、ADR-047（class）
 
@@ -135,14 +136,24 @@ trap 缺失（undefined/null）时回退到 target 的对应内部方法。
 
 - **P1**：内部方法层；Proxy 类型；11 个核心 trap；撤销；
   可调用/可构造适配；非对象 target/handler 校验；trap 结果基本校验。
-- **P2（本 ADR）**：完整不变量（不可配置属性、不可扩展对象、ownKeys 完整性、
+- **P2**：完整不变量（不可配置属性、不可扩展对象、ownKeys 完整性、
   getOwnPropertyDescriptor 一致性）；`ObjectData::extensible`；
   `isExtensible` / `preventExtensions` trap；`Object.getOwnPropertyDescriptor` /
   `Object.isExtensible` / `Object.preventExtensions`。
-- **P3**：数组/字符串内建泛型化（`push` 等不再 `asArray`）；for-in / JSON；
-  `class extends Proxy`、私有字段在 Proxy 上的语义；GC/撤销压力测试。
+- **P3（部分落地）**：
+  - `Array.prototype.push/pop/join/toString/slice/indexOf` 泛型化：
+    `ToObject(this)` + `LengthOfArrayLike` + `Get/Set/HasProperty/DeleteProperty`，
+    不再 `asArray`；Set/Delete 失败按规范抛 TypeError。
+  - `class extends Proxy`：superclass 必须可构造且 `prototype` 为对象或 null；
+    construct trap 的 `newTarget` 为派生类构造器。
+  - 私有槽不随 Proxy 转发：target 的 brand 对 proxy 不可见；派生类字段
+    初始化在 `super()` 返回的 proxy 自身上。
+  - GC/撤销压力测试（撤销后回收、批量短命 proxy、proxy 套 proxy）。
 
-## 8. 已知边界（P2）
+## 8. 已知边界（P3）
+
+- **TODO（后续单独实现）**：`Reflect` 命名空间。
+- **TODO（依赖 VM/字节码层）**：for-in 枚举顺序与 Proxy 的完整交互；JSON。
 
 - `hasProperty` 返回 `Value*`（Boolean 或 Exception/Fatal），has trap
   抛错原样透传。
@@ -151,5 +162,5 @@ trap 缺失（undefined/null）时回退到 target 的对应内部方法。
   不变量在 trap 返回后立即校验。
 - `Object.defineProperties` / `Object.getOwnPropertyDescriptors` 已实现；
   `Object.create` 的第二参数按 `ObjectDefineProperties` 处理。
-- 尚未实现：`Reflect` 命名空间（后续单独接入）；for-in 枚举顺序与 Proxy
-  的完整交互（当前无 VM/字节码层，暂不可达）。
+- `Function.prototype` 不是构造器且无 `prototype` 属性（`class extends Proxy`
+  依赖该事实正确抛 TypeError）。

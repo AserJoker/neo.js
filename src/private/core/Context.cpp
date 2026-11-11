@@ -882,12 +882,19 @@ Value* Context::registerClass(const NativeClassDef& def) {
                 if (detail::isErrorValue(r)) return r;
             }
         } else {
+            // ES2024 §15.7.14：superclass 必须可构造，且其 prototype 须为对象或 null。
+            if (!detail::isConstructor(def.superCtor)) {
+                return detail::typeError(this, "Class extends value is not a constructor");
+            }
             Value* superProto = getProperty(def.superCtor, "prototype");
             if (detail::isErrorValue(superProto)) return superProto;
-            if (detail::isObjectKind(superProto->type()->kind())) {
-                r = setPrototype(proto, superProto);
-                if (detail::isErrorValue(r)) return r;
+            TypeKind spk = superProto->type()->kind();
+            if (spk != TypeKind::Null && !detail::isObjectKind(spk)) {
+                return detail::typeError(
+                    this, "Class extends value does not have valid prototype property");
             }
+            r = setPrototype(proto, superProto);
+            if (detail::isErrorValue(r)) return r;
             r = setPrototype(ctor, def.superCtor);
             if (detail::isErrorValue(r)) return r;
         }

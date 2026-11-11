@@ -566,8 +566,12 @@ bool registerObjectFunctionBuiltins(IContext* ctx) {
     if (objectProto == ctx->oomValue()) return false;
 
     // —— 2. Function.prototype（函数对象，原型 = Object.prototype）——
-    // 用占位 native 创建，稍后其行为由实际调用方决定（通常不会被直接调用）
-    Value* functionProto = ctx->createNativeFunction(functionCtor, 0);
+    // 用占位 native 创建，稍后其行为由实际调用方决定（通常不会被直接调用）。
+    // Function.prototype 不是构造器，也没有 prototype 属性（ES2024 §20.2.3）。
+    FunctionCreateOptions fprotoOpts;
+    fprotoOpts.constructible = false;
+    fprotoOpts.hasPrototypeProperty = false;
+    Value* functionProto = ctx->createNativeFunction(functionCtor, 0, {}, fprotoOpts);
     if (functionProto == ctx->oomValue()) return false;
     ctx->setFunctionName(functionProto, "");
     if (ctx->setPrototype(functionProto, objectProto)->type()->kind() == TypeKind::Exception) {
