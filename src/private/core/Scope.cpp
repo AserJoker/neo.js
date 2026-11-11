@@ -18,6 +18,29 @@
 
 namespace neo::core {
 
+namespace {
+
+// 解析 with 对象是否绑定 key（ES2024 §9.1.1.2 HasBinding）：
+// 先 HasProperty；再检查 @@unscopables 是否把该名字排除。
+// 成功返回 nullptr，bound 表示是否绑定；getter 抛错时返回 Exception/Fatal。
+Value* resolveWithBinding(IContext* ctx, Value* withObject, Value* key, bool& bound) {
+    bound = false;
+    if (!ctx->hasProperty(withObject, key)) return nullptr;
+
+    Value* sym = ctx->getWellKnownSymbol(WellKnownSymbol::Unscopables);
+    Value* unscopables = ctx->getProperty(withObject, sym);
+    if (detail::isErrorValue(unscopables)) return unscopables;
+    if (detail::isObjectKind(unscopables->type()->kind())) {
+        Value* excluded = ctx->getProperty(unscopables, key);
+        if (detail::isErrorValue(excluded)) return excluded;
+        if (detail::toBoolean(excluded)) return nullptr;
+    }
+    bound = true;
+    return nullptr;
+}
+
+}  // namespace
+
 void Scope::destroySelf() {
     infra::IAllocator* alloc = allocator_;
     this->~Scope();
@@ -27,6 +50,13 @@ void Scope::destroySelf() {
 Value* Scope::lookup(std::string_view name) const {
     auto it = namedValues_.find(std::string(name));
     if (it != namedValues_.end()) return it->second;
+
+    auto wit = withBindings_.find(std::string(name));
+    if (wit != withBindings_.end()) {
+        // with 属性绑定：读取时实时解析，属性被重新赋值后仍能看到新值。
+        if (context_ == nullptr) return nullptr;
+        return context_->getProperty(wit->second.withObject, wit->second.key);
+    }
 
     auto iit = indirectBindings_.find(std::string(name));
     if (iit == indirectBindings_.end()) return nullptr;
@@ -39,8 +69,11 @@ bool Scope::getIndirectBindingChain(std::string_view name, Value*& namespaceObj,
                                     Value*& exportKey) const {
     const Scope* s = this;
     while (s != nullptr) {
-        // 直接绑定优先：一旦遇到直接绑定，间接绑定被遮蔽。
+        // 直接/with 绑定优先：一旦遇到，间接绑定被遮蔽。
         if (s->namedValues_.find(std::string(name)) != s->namedValues_.end()) {
+            return false;
+        }
+        if (s->withBindings_.find(std::string(name)) != s->withBindings_.end()) {
             return false;
         }
         auto it = s->indirectBindings_.find(std::string(name));
@@ -61,6 +94,43 @@ bool Scope::copyIndirectBindingTo(Scope* dst, std::string_view name) const {
     return dst->defineIndirect(name, namespaceObj, exportKey);
 }
 
+bool Scope::getWithBindingChain(std::string_view name, Value*& withObject,
+                                Value*& key) const {
+    const Scope* s = this;
+    while (s != nullptr) {
+        // 直接绑定遮蔽 with 对象。
+        if (s->namedValues_.find(std::string(name)) != s->namedValues_.end()) {
+            return false;
+        }
+        // 已捕获的 with 属性绑定。
+        auto it = s->withBindings_.find(std::string(name));
+        if (it != s->withBindings_.end()) {
+            withObject = it->second.withObject;
+            key = it->second.key;
+            return true;
+        }
+        // 间接绑定同样遮蔽 with 对象。
+        if (s->indirectBindings_.find(std::string(name)) != s->indirectBindings_.end()) {
+            return false;
+        }
+        // 动态 WithScope：对象真正绑定该名字（考虑 @@unscopables）时捕获。
+        Value* obj = s->withObject();
+        if (obj != nullptr && context_ != nullptr) {
+            Value* k = context_->createString(name);
+            if (k == context_->oomValue()) return false;
+            bool bound = false;
+            Value* err = resolveWithBinding(context_, obj, k, bound);
+            if (err == nullptr && bound) {
+                withObject = obj;
+                key = k;
+                return true;
+            }
+        }
+        s = s->parent_;
+    }
+    return false;
+}
+
 Value* Scope::lookupChain(std::string_view name) const {
     const Scope* s = this;
     while (s != nullptr) {
@@ -71,8 +141,14 @@ Value* Scope::lookupChain(std::string_view name) const {
     return nullptr;
 }
 
-Scope::StoreOutcome Scope::store(IContext* /*ctx*/, std::string_view /*name*/,
-                                 Value* /*source*/, Value*& /*result*/) {
+Scope::StoreOutcome Scope::store(IContext* ctx, std::string_view name,
+                                 Value* source, Value*& result) {
+    // 闭包捕获的 with 属性：写入实时走 setProperty。
+    auto it = withBindings_.find(std::string(name));
+    if (it != withBindings_.end()) {
+        result = ctx->setProperty(it->second.withObject, it->second.key, source);
+        return detail::isErrorValue(result) ? StoreOutcome::Error : StoreOutcome::Handled;
+    }
     // 普通作用域的直接/间接绑定由 Context::store 统一处理。
     return StoreOutcome::NotFound;
 }
@@ -91,9 +167,10 @@ Value* WithScope::lookup(std::string_view name) const {
     if (ctx != nullptr) {
         Value* key = ctx->createString(name);
         if (key == ctx->oomValue()) return key;
-        if (ctx->hasProperty(withObject_, key)) {
-            return ctx->getProperty(withObject_, key);
-        }
+        bool bound = false;
+        Value* err = resolveWithBinding(ctx, withObject_, key, bound);
+        if (err != nullptr) return err;
+        if (bound) return ctx->getProperty(withObject_, key);
     }
     return Scope::lookup(name);
 }
@@ -105,7 +182,13 @@ Scope::StoreOutcome WithScope::store(IContext* ctx, std::string_view name,
         result = key;
         return StoreOutcome::Error;
     }
-    if (!ctx->hasProperty(withObject_, key)) return StoreOutcome::NotFound;
+    bool bound = false;
+    Value* err = resolveWithBinding(ctx, withObject_, key, bound);
+    if (err != nullptr) {
+        result = err;
+        return StoreOutcome::Error;
+    }
+    if (!bound) return StoreOutcome::NotFound;
     result = ctx->setProperty(withObject_, key, source);
     return detail::isErrorValue(result) ? StoreOutcome::Error : StoreOutcome::Handled;
 }
@@ -131,6 +214,7 @@ Scope::~Scope() {
     values_.clear();
     namedValues_.clear();
     indirectBindings_.clear();
+    withBindings_.clear();
 }
 
 }  // namespace neo::core

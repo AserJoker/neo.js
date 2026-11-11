@@ -11,6 +11,7 @@
 #include "core/IGCEngine.h"
 #include "core/Scope.h"
 #include "core/Value.h"
+#include "core/types/Function.h"
 #include "core/types/Number.h"
 #include "core/types/TypeBehavior.h"
 #include "infra/Console.h"
@@ -23,11 +24,14 @@
 
 namespace {
 
+using neo::core::ErrorKind;
+using neo::core::FunctionData;
 using neo::core::IContext;
 using neo::core::NumberData;
 using neo::core::Scope;
 using neo::core::TypeKind;
 using neo::core::Value;
+using neo::core::WellKnownSymbol;
 using neo::core::createContext;
 using neo::core::detail::isErrorValue;
 using neo::infra::Console;
@@ -63,6 +67,14 @@ Value* accessorGet(IContext* /*ctx*/, Value* /*self*/, size_t /*argc*/,
 Value* accessorSet(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     if (argc > 0) g_accessorValue = argv[0];
     return ctx->createUndefined();
+}
+
+Value* dummyNative(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* /*argv*/[]) {
+    return ctx->createUndefined();
+}
+
+Value* throwingSetter(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* /*argv*/[]) {
+    return ctx->createErrorException(ErrorKind::TypeError, "setter boom");
 }
 
 }  // namespace
@@ -205,4 +217,136 @@ TEST(WithScopeTest, WithObjectSurvivesGc) {
     f.ctx->gc()->collect();
 
     EXPECT_EQ(numOf(f.ctx->current()->lookupChain("x")), 1.0);
+}
+
+TEST(WithScopeTest, UnscopablesExcludesName) {
+    Fixture f;
+    makeSloppy(f.ctx.get());
+    f.ctx->define("x", f.ctx->createNumber(100));
+
+    Value* obj = f.ctx->createObject();
+    f.ctx->defineProperty(obj, "x", f.ctx->createNumber(1));
+    Value* unscopables = f.ctx->createObject();
+    f.ctx->defineProperty(unscopables, "x", f.ctx->createBoolean(true));
+    f.ctx->defineProperty(
+        obj, f.ctx->getWellKnownSymbol(WellKnownSymbol::Unscopables), unscopables);
+
+    Scope* ws = nullptr;
+    ASSERT_EQ(f.ctx->pushWithScope(obj, &ws), nullptr);
+    // @@unscopables 排除 x：读取与写入都应回退外层绑定。
+    EXPECT_EQ(numOf(f.ctx->current()->lookupChain("x")), 100.0);
+    f.ctx->store("x", f.ctx->createNumber(200));
+    EXPECT_EQ(numOf(f.ctx->getProperty(obj, f.ctx->createString("x"))), 1.0);
+
+    f.ctx->popScope();
+    EXPECT_EQ(numOf(f.ctx->current()->lookupChain("x")), 200.0);
+}
+
+TEST(WithScopeTest, FalsyUnscopablesDoesNotExclude) {
+    Fixture f;
+    makeSloppy(f.ctx.get());
+    f.ctx->define("x", f.ctx->createNumber(100));
+
+    Value* obj = f.ctx->createObject();
+    f.ctx->defineProperty(obj, "x", f.ctx->createNumber(1));
+    Value* unscopables = f.ctx->createObject();
+    f.ctx->defineProperty(unscopables, "x", f.ctx->createBoolean(false));
+    f.ctx->defineProperty(
+        obj, f.ctx->getWellKnownSymbol(WellKnownSymbol::Unscopables), unscopables);
+
+    Scope* ws = nullptr;
+    ASSERT_EQ(f.ctx->pushWithScope(obj, &ws), nullptr);
+    EXPECT_EQ(numOf(f.ctx->current()->lookupChain("x")), 1.0);
+}
+
+TEST(WithScopeTest, ClosureCapturesWithBinding) {
+    Fixture f;
+    makeSloppy(f.ctx.get());
+
+    Value* obj = f.ctx->createObject();
+    f.ctx->defineProperty(obj, "x", f.ctx->createNumber(1));
+
+    // 函数在 root 创建，保证 pop with 后仍可达（GC 根）。
+    Value* fn = f.ctx->createNativeFunction(dummyNative, 0);
+    Scope* ws = nullptr;
+    ASSERT_EQ(f.ctx->pushWithScope(obj, &ws), nullptr);
+    ASSERT_EQ(f.ctx->setClosure(fn, "x"), fn);
+    f.ctx->popScope();
+
+    // 属性被 setProperty 替换后，闭包仍应看到新值（捕获的是对象环境记录）。
+    f.ctx->setProperty(obj, f.ctx->createString("x"), f.ctx->createNumber(2));
+    auto* d = static_cast<FunctionData*>(fn->data());
+    EXPECT_EQ(d->closureScope->bindingKind("x"), Scope::BindingKind::With);
+    f.ctx->gc()->collect();
+    EXPECT_EQ(numOf(d->closureScope->lookup("x")), 2.0);
+
+    // 通过闭包绑定写入应走 setProperty。
+    Value* result = nullptr;
+    auto outcome =
+        d->closureScope->store(f.ctx.get(), "x", f.ctx->createNumber(3), result);
+    EXPECT_EQ(outcome, Scope::StoreOutcome::Handled);
+    EXPECT_EQ(numOf(f.ctx->getProperty(obj, f.ctx->createString("x"))), 3.0);
+}
+
+TEST(WithScopeTest, SloppyAssignmentToReadOnlyIsSilent) {
+    Fixture f;
+    makeSloppy(f.ctx.get());
+
+    Value* obj = f.ctx->createObject();
+    f.ctx->defineProperty(obj, "x", f.ctx->createNumber(1), false, true, true);
+
+    Value* r = f.ctx->setProperty(obj, f.ctx->createString("x"), f.ctx->createNumber(2));
+    EXPECT_FALSE(isErrorValue(r));
+    EXPECT_EQ(numOf(f.ctx->getProperty(obj, f.ctx->createString("x"))), 1.0);
+}
+
+TEST(WithScopeTest, StrictAssignmentToReadOnlyThrows) {
+    Fixture f;
+    // Context 默认 global 标注 strict。
+    Value* obj = f.ctx->createObject();
+    f.ctx->defineProperty(obj, "x", f.ctx->createNumber(1), false, true, true);
+
+    Value* r = f.ctx->setProperty(obj, f.ctx->createString("x"), f.ctx->createNumber(2));
+    EXPECT_TRUE(isErrorValue(r));
+}
+
+TEST(WithScopeTest, SloppyGetterOnlyAssignmentIsSilent) {
+    Fixture f;
+    makeSloppy(f.ctx.get());
+    g_accessorValue = f.ctx->createNumber(1);
+
+    Value* obj = f.ctx->createObject();
+    Value* getter = f.ctx->createNativeFunction(accessorGet, 0);
+    f.ctx->defineAccessor(obj, f.ctx->createString("a"), getter, nullptr, true, true);
+
+    Value* r = f.ctx->setProperty(obj, f.ctx->createString("a"), f.ctx->createNumber(2));
+    EXPECT_FALSE(isErrorValue(r));
+    EXPECT_EQ(numOf(f.ctx->getProperty(obj, f.ctx->createString("a"))), 1.0);
+}
+
+TEST(WithScopeTest, SloppySetterErrorStillPropagates) {
+    Fixture f;
+    makeSloppy(f.ctx.get());
+
+    Value* obj = f.ctx->createObject();
+    Value* getter = f.ctx->createNativeFunction(accessorGet, 0);
+    Value* setter = f.ctx->createNativeFunction(throwingSetter, 1);
+    f.ctx->defineAccessor(obj, f.ctx->createString("a"), getter, setter, true, true);
+
+    Value* r = f.ctx->setProperty(obj, f.ctx->createString("a"), f.ctx->createNumber(2));
+    EXPECT_TRUE(isErrorValue(r));
+}
+
+TEST(WithScopeTest, WithSloppyReadOnlyAssignmentIsSilent) {
+    Fixture f;
+    makeSloppy(f.ctx.get());
+
+    Value* obj = f.ctx->createObject();
+    f.ctx->defineProperty(obj, "x", f.ctx->createNumber(1), false, true, true);
+
+    Scope* ws = nullptr;
+    ASSERT_EQ(f.ctx->pushWithScope(obj, &ws), nullptr);
+    Value* r = f.ctx->store("x", f.ctx->createNumber(2));
+    EXPECT_FALSE(isErrorValue(r));
+    EXPECT_EQ(numOf(f.ctx->getProperty(obj, f.ctx->createString("x"))), 1.0);
 }

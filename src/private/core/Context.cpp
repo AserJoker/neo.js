@@ -731,6 +731,14 @@ Value* Context::setClosure(Value* fn, std::string_view name) {
         return detail::typeError(this, msg);
     }
     auto* d = static_cast<FunctionData*>(fn->data());
+    // with 属性：复制对象环境记录（withObject + key），而非当前值。
+    // 属性后续被 setProperty 重新赋值时，闭包仍能读到新值。
+    Value* withObject = nullptr;
+    Value* withKey = nullptr;
+    if (current()->getWithBindingChain(name, withObject, withKey)) {
+        (void)d->closureScope->defineWith(name, withObject, withKey);
+        return fn;
+    }
     // 导入绑定：复制间接绑定而非当前解析值，闭包在导出晚到时仍能实时解析。
     if (current()->bindingKindChain(name) == Scope::BindingKind::Indirect) {
         // 已捕获同名绑定视为幂等（与直接绑定的 define 语义一致）。
@@ -743,6 +751,7 @@ Value* Context::setClosure(Value* fn, std::string_view name) {
         std::string msg = "Closure variable '" + std::string(name) + "' is not defined";
         return detail::referenceError(this, msg);
     }
+    if (detail::isErrorValue(v)) return v;
     // 绑定 = 共享同一 Value（ADR-013 §2）：closureScope 登记同一 Value
     d->closureScope->define(name, v);
     return fn;
@@ -1016,6 +1025,9 @@ Value* Context::store(std::string_view name, Value* source) {
                 gc_->releaseData(old);
                 return target;
             }
+            case Scope::BindingKind::With:
+                // 已在 s->store 中处理（闭包捕获的 with 属性）。
+                break;
             case Scope::BindingKind::None:
                 break;
         }

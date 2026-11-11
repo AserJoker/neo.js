@@ -172,7 +172,11 @@ Value* PrimitiveWrapperType::setProperty(IContext* ctx, Value* self, Value* key,
     bool matches = false;
     Value* err = nullptr;
     if (resolveStringWrapperKey(ctx, stringPayload(self), key, k, matches, err)) {
-        if (matches) return readOnlyProperty(ctx, "assign to read only");
+        if (matches) {
+            // sloppy 模式下给字符串索引赋值静默失败（[[Set]] 返回 false）。
+            if (!ctx->hasFlag("strict")) return value;
+            return readOnlyProperty(ctx, "assign to read only");
+        }
     } else if (err != nullptr) {
         return err;
     }

@@ -167,6 +167,9 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
     //        - 数据属性不可写 → 严格模式报错
     //        - 其余 → 在自身上新建数据属性
     // 本阶段 receiver 恒为 self（无 Reflect.set 的显式 receiver 参数）。
+    // 严格性由当前作用域标注决定（Context::setFlag("strict")）：
+    // sloppy 模式下 [[Set]] 失败应静默（表达式值仍为 RHS），不抛 TypeError。
+    const bool strict = ctx->hasFlag("strict");
 
     // —— symbol 键 ——
     if (isSymbolKey(key)) {
@@ -176,6 +179,7 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
             Property& own = it->second.prop;
             if (isAccessor(own)) {
                 if (own.setter == nullptr) {
+                    if (!strict) return value;
                     std::string msg = "Cannot set property '" + detail::valueToString(key) +
                                       "' which has only a getter";
                     return detail::typeError(ctx, msg);
@@ -185,6 +189,7 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
                 return isErrorResult(r) ? r : value;
             }
             if (!own.writable) {
+                if (!strict) return value;
                 std::string msg = "Cannot assign to read only property '" +
                                   detail::valueToString(key) + "'";
                 return detail::typeError(ctx, msg);
@@ -196,6 +201,7 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
         if (inherited != nullptr) {
             if (isAccessor(*inherited)) {
                 if (inherited->setter == nullptr) {
+                    if (!strict) return value;
                     std::string msg = "Cannot set property '" + detail::valueToString(key) +
                                       "' which has only a getter";
                     return detail::typeError(ctx, msg);
@@ -205,6 +211,7 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
                 return isErrorResult(r) ? r : value;
             }
             if (!inherited->writable) {
+                if (!strict) return value;
                 std::string msg = "Cannot assign to read only property '" +
                                   detail::valueToString(key) + "'";
                 return detail::typeError(ctx, msg);
@@ -223,6 +230,7 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
         Property& own = it->second;
         if (isAccessor(own)) {
             if (own.setter == nullptr) {
+                if (!strict) return value;
                 std::string msg = "Cannot set property '" + k + "' which has only a getter";
                 return detail::typeError(ctx, msg);
             }
@@ -231,6 +239,7 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
             return isErrorResult(r) ? r : value;
         }
         if (!own.writable) {
+            if (!strict) return value;
             std::string msg = "Cannot assign to read only property '" + k + "'";
             return detail::typeError(ctx, msg);
         }
@@ -241,6 +250,7 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
     if (inherited != nullptr) {
         if (isAccessor(*inherited)) {
             if (inherited->setter == nullptr) {
+                if (!strict) return value;
                 std::string msg = "Cannot set property '" + k + "' which has only a getter";
                 return detail::typeError(ctx, msg);
             }
@@ -249,6 +259,7 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
             return isErrorResult(r) ? r : value;
         }
         if (!inherited->writable) {
+            if (!strict) return value;
             std::string msg = "Cannot assign to read only property '" + k + "'";
             return detail::typeError(ctx, msg);
         }

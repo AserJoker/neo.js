@@ -57,6 +57,13 @@ class Scope {
         Value* exportKey = nullptr;
     };
 
+    // with 对象属性绑定（闭包捕获用）：name -> withObject[key]。
+    // 读取走 getProperty、写入走 setProperty，保持对象环境记录的动态语义。
+    struct WithBinding {
+        Value* withObject = nullptr;
+        Value* key = nullptr;
+    };
+
     Scope* parent_ = nullptr;                              // 父作用域（global 的 parent=nullptr）
     infra::IAllocator* allocator_ = nullptr;                // 借用，用于释放子 Scope 内存
     IContext* context_ = nullptr;                           // 借用，解析间接绑定用
@@ -64,6 +71,7 @@ class Scope {
     std::vector<Value*> values_;                           // 跟踪的 value（含匿名临时值）
     std::unordered_map<std::string, Value*> namedValues_; // 命名绑定（借用）
     std::unordered_map<std::string, IndirectBinding> indirectBindings_;  // 导入绑定
+    std::unordered_map<std::string, WithBinding> withBindings_;          // with 属性捕获
     std::unordered_set<std::string> flags_;                // 作用域标注（如 "strict"）
 
 protected:
@@ -71,8 +79,8 @@ protected:
     IContext* context() const { return context_; }
 
 public:
-    // 绑定种类：store 需据此区分「直接槽位」与「只读导入绑定」。
-    enum class BindingKind { None, Direct, Indirect };
+    // 绑定种类：store 需据此区分「直接槽位」「只读导入绑定」「with 属性」。
+    enum class BindingKind { None, Direct, Indirect, With };
 
     // 赋值处理结果：NotFound 表示本作用域不处理，继续沿 parent 链查找。
     enum class StoreOutcome { NotFound, Handled, Error };
@@ -164,10 +172,20 @@ public:
     // 与直接绑定共享同一套查找路径，故 eval/with 等动态路径也受只读约束。
     // 重复定义返回 false。namespaceObj/exportKey 登记到 values_ 保活。
     bool defineIndirect(std::string_view name, Value* namespaceObj, Value* exportKey) {
-        if (lookup(name) != nullptr) return false;
+        if (bindingKind(name) != BindingKind::None) return false;
         add(namespaceObj);
         add(exportKey);
         indirectBindings_[std::string(name)] = IndirectBinding{namespaceObj, exportKey};
+        return true;
+    }
+
+    // 定义 with 属性绑定（闭包捕获）：name -> withObject[key]。
+    // 读取实时 getProperty，写入实时 setProperty，与对象环境记录一致。
+    bool defineWith(std::string_view name, Value* withObject, Value* key) {
+        if (bindingKind(name) != BindingKind::None) return false;
+        add(withObject);
+        add(key);
+        withBindings_[std::string(name)] = WithBinding{withObject, key};
         return true;
     }
 
@@ -194,6 +212,9 @@ public:
         if (namedValues_.find(std::string(name)) != namedValues_.end()) {
             return BindingKind::Direct;
         }
+        if (withBindings_.find(std::string(name)) != withBindings_.end()) {
+            return BindingKind::With;
+        }
         if (indirectBindings_.find(std::string(name)) != indirectBindings_.end()) {
             return BindingKind::Indirect;
         }
@@ -219,6 +240,11 @@ public:
     // 把本作用域链上的间接绑定复制到 dst（闭包捕获用）。
     // 找到并复制成功返回 true；无间接绑定或 dst 已有同名绑定返回 false。
     bool copyIndirectBindingTo(Scope* dst, std::string_view name) const;
+
+    // 沿 parent 链取 with 属性绑定（动态 WithScope 或静态 withBindings_）。
+    // 找到返回 true；直接/间接绑定遮蔽或不存在返回 false。
+    bool getWithBindingChain(std::string_view name, Value*& withObject,
+                             Value*& key) const;
 
     // —— 作用域标注（ADR-030 阶段 5）——
     // flags 是作用域级标注（如 "strict"），语法上只能标注在模块作用域/函数体上。
