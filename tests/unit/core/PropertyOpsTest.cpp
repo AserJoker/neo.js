@@ -26,6 +26,7 @@
 #include "infra/MallocAllocator.h"
 
 #include <gtest/gtest.h>
+#include "TestHelpers.h"
 
 #include <cmath>
 
@@ -72,7 +73,7 @@ void expectPrimitiveNoOwnProperty(IContext* ctx, Value* v) {
     EXPECT_EQ(ctx->getProperty(v, "x")->type()->kind(), TypeKind::Undefined);
     EXPECT_EQ(ctx->setProperty(v, "x", ctx->createNumber(1))->type()->kind(),
               TypeKind::Exception);
-    EXPECT_FALSE(ctx->hasProperty(v, "x"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, v, "x"));
     Value* del = ctx->deleteProperty(v, "x");
     EXPECT_EQ(del->type()->kind(), TypeKind::Boolean);
     EXPECT_EQ(ctx->defineProperty(v, "x", ctx->createNumber(2))->type()->kind(),
@@ -83,7 +84,7 @@ void expectPrimitiveNoOwnProperty(IContext* ctx, Value* v) {
 void expectPassthroughProperty(IContext* ctx, Value* v) {
     EXPECT_EQ(ctx->getProperty(v, "x"), v);
     EXPECT_EQ(ctx->setProperty(v, "x", ctx->createNumber(1)), v);
-    EXPECT_FALSE(ctx->hasProperty(v, "x"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, v, "x"));
     EXPECT_EQ(ctx->deleteProperty(v, "x"), v);
     EXPECT_EQ(ctx->defineProperty(v, "x", ctx->createNumber(2)), v);
 }
@@ -185,12 +186,12 @@ TEST(PropertyOpsTest, FunctionPropertyOpsBehaveLikeObject) {
     Value* fn = ctx->createNativeFunction(noopFn, 0);
     // 空函数对象：无自有属性
     EXPECT_EQ(ctx->getProperty(fn, "x")->type()->kind(), TypeKind::Undefined);
-    EXPECT_FALSE(ctx->hasProperty(fn, "x"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, fn, "x"));
 
     // set 在函数对象上建自有属性（与普通对象一致）
     Value* v = ctx->createNumber(1);
     EXPECT_EQ(ctx->setProperty(fn, "x", v), v);
-    EXPECT_TRUE(ctx->hasProperty(fn, "x"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, fn, "x"));
     EXPECT_EQ(ctx->getProperty(fn, "x"), v);
 
     // defineProperty 完整描述符
@@ -200,7 +201,7 @@ TEST(PropertyOpsTest, FunctionPropertyOpsBehaveLikeObject) {
 
     // delete 移除自有属性
     EXPECT_EQ(ctx->deleteProperty(fn, "x")->type()->kind(), TypeKind::Boolean);
-    EXPECT_FALSE(ctx->hasProperty(fn, "x"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, fn, "x"));
 }
 
 // ===== Object：运算走 ToPrimitive（ES2024 §13.15.3 / §13.15.4）=====
@@ -325,7 +326,7 @@ TEST(PropertyOpsTest, FunctionPrototypeOpsBehaveLikeObject) {
     Value* val = ctx->createNumber(7);
     ctx->setProperty(proto, "inherited", val);
     EXPECT_EQ(ctx->getProperty(fn, "inherited"), val);
-    EXPECT_TRUE(ctx->hasProperty(fn, "inherited"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, fn, "inherited"));
 }
 
 TEST(PropertyOpsTest, FunctionCanBePrototype) {

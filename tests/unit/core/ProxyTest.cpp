@@ -14,6 +14,7 @@
 #include "core/Scope.h"
 #include "core/Value.h"
 #include "core/types/Object.h"
+#include "core/types/Proxy.h"
 #include "core/types/Boolean.h"
 #include "core/types/Function.h"
 #include "core/types/Number.h"
@@ -24,6 +25,7 @@
 #include "infra/MallocAllocator.h"
 
 #include <gtest/gtest.h>
+#include "TestHelpers.h"
 
 #include <memory>
 #include <string>
@@ -124,6 +126,10 @@ Value* descriptorForX(IContext* ctx, Value*, size_t, Value*[]) {
     return desc;
 }
 
+Value* throwError(IContext* ctx, Value*, size_t, Value*[]) {
+    return ctx->createException(ctx->createString("boom"));
+}
+
 Value* defineTrue(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     recordArgs(ctx, self, argc, argv);
     return ctx->createBoolean(true);
@@ -173,13 +179,30 @@ TEST(ProxyTest, GetSetHasDeleteTraps) {
     EXPECT_EQ(g_arg3, proxy);
 
     // has trap
-    EXPECT_TRUE(ctx->hasProperty(proxy, "z"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, proxy, "z"));
     EXPECT_EQ(g_argc, 2u);
 
     // delete trap 返回 false
     Value* del = ctx->deleteProperty(proxy, "x");
     ASSERT_EQ(del->type()->kind(), TypeKind::Boolean);
     EXPECT_FALSE(boolOf(del));
+}
+
+TEST(ProxyTest, HasTrapErrorPropagates) {
+    Fixture f;
+    IContext* ctx = f.ctx.get();
+
+    Value* target = ctx->createObject();
+    Value* handler = ctx->createObject();
+    defineNative(ctx, handler, "has", throwError);
+    Value* proxy = ctx->createProxy(target, handler);
+
+    // has trap 抛错必须经 Value* 通道透传，而不是吞成 false。
+    EXPECT_EQ(ctx->hasProperty(proxy, "x")->type()->kind(), TypeKind::Exception);
+
+    // 撤销后的 hasProperty 同样返回 Exception。
+    revokeProxy(proxy);
+    EXPECT_EQ(ctx->hasProperty(proxy, "x")->type()->kind(), TypeKind::Exception);
 }
 
 TEST(ProxyTest, MissingTrapsFallBackToTarget) {
@@ -191,8 +214,8 @@ TEST(ProxyTest, MissingTrapsFallBackToTarget) {
     Value* proxy = ctx->createProxy(target, handler);
 
     EXPECT_EQ(numOf(ctx->getProperty(proxy, "x")), 1.0);
-    EXPECT_TRUE(ctx->hasProperty(proxy, "x"));
-    EXPECT_FALSE(ctx->hasProperty(proxy, "nope"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, proxy, "x"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, proxy, "nope"));
     EXPECT_EQ(numOf(ctx->setProperty(proxy, "x", ctx->createNumber(5))), 5.0);
     EXPECT_EQ(numOf(ctx->getProperty(target, "x")), 5.0);
 }
@@ -352,7 +375,7 @@ TEST(ProxyTest, PrototypeChainDispatch) {
     EXPECT_EQ(numOf(ctx->setProperty(obj, "q", ctx->createNumber(3))), 3.0);
     EXPECT_EQ(g_arg3, obj);
 
-    EXPECT_TRUE(ctx->hasProperty(obj, "r"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, obj, "r"));
 }
 
 TEST(ProxyTest, Revocable) {

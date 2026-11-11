@@ -20,6 +20,7 @@
 #include "infra/MallocAllocator.h"
 
 #include <gtest/gtest.h>
+#include "TestHelpers.h"
 
 #include <memory>
 
@@ -117,7 +118,7 @@ TEST(InterruptTest, PropertyAndCallPassthrough) {
 
     EXPECT_EQ(f.ctx->getProperty(v, key), v);
     EXPECT_EQ(f.ctx->setProperty(v, key, v), v);
-    EXPECT_FALSE(f.ctx->hasProperty(v, key));
+    EXPECT_FALSE(neo::test::hasProperty(f.ctx, v, key));
     EXPECT_EQ(f.ctx->deleteProperty(v, key), v);
     EXPECT_EQ(f.ctx->call(v, v, 0, nullptr), v);
     EXPECT_EQ(f.ctx->construct(v, 0, nullptr), v);

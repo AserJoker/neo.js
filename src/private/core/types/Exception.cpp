@@ -7,6 +7,7 @@
 
 #include "core/types/Exception.h"
 
+#include "core/IContext.h"
 #include "core/IGCEngine.h"     // IGCVisitor 完整定义
 #include "core/Value.h"  // Value 完整定义
 
@@ -53,8 +54,8 @@ Value* ExceptionType::getProperty(IContext* /*ctx*/, Value* self, Value* /*key*/
 Value* ExceptionType::setProperty(IContext* /*ctx*/, Value* self, Value* /*key*/, Value* /*value*/) {
     return self;
 }
-bool ExceptionType::hasProperty(IContext* /*ctx*/, Value* /*self*/, Value* /*key*/) {
-    return false;
+Value* ExceptionType::hasProperty(IContext* ctx, Value* /*self*/, Value* /*key*/) {
+    return ctx->createBoolean(false);
 }
 Value* ExceptionType::deleteProperty(IContext* /*ctx*/, Value* self, Value* /*key*/) {
     return self;

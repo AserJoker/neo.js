@@ -218,14 +218,16 @@ Value* ordinarySet(IContext* ctx, Value* obj, const PropertyKey& key, Value* val
     return nullptr;
 }
 
-bool ordinaryHas(IContext* ctx, Value* obj, const PropertyKey& key) {
+Value* ordinaryHas(IContext* ctx, Value* obj, const PropertyKey& key) {
     Property desc;
     bool exists = false;
-    if (obj->type()->getOwnProperty(ctx, obj, key, exists, desc) != nullptr) return false;
-    if (exists) return true;
+    if (Value* err = obj->type()->getOwnProperty(ctx, obj, key, exists, desc)) return err;
+    if (exists) return ctx->createBoolean(true);
     Value* parent = obj->type()->getPrototype(ctx, obj);
-    if (isErrorResult(parent)) return false;
-    if (parent == nullptr || !detail::isObjectKind(parent->type()->kind())) return false;
+    if (isErrorResult(parent)) return parent;
+    if (parent == nullptr || !detail::isObjectKind(parent->type()->kind())) {
+        return ctx->createBoolean(false);
+    }
     // 经父对象的 [[HasProperty]] 分派：原型链上的 Proxy 在此触发 has trap。
     return parent->type()->hasProperty(ctx, parent, key.value);
 }
@@ -401,10 +403,10 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
     return value;
 }
 
-bool ObjectType::hasProperty(IContext* ctx, Value* self, Value* key) {
+Value* ObjectType::hasProperty(IContext* ctx, Value* self, Value* key) {
     // JS `in` 语义：自有 + 原型链（逐跳经内部方法分派）。
     PropertyKey pk;
-    if (toPropertyKey(ctx, key, pk) != nullptr) return false;  // ToPropertyKey 失败 → 不存在
+    if (Value* err = toPropertyKey(ctx, key, pk)) return err;
     return ordinaryHas(ctx, self, pk);
 }
 

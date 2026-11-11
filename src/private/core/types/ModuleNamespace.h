@@ -46,7 +46,7 @@ public:
 
     // 读取：间接导出实时解析到源命名空间属性；其余走普通对象读取。
     Value* getProperty(IContext* ctx, Value* self, Value* key) override;
-    bool hasProperty(IContext* ctx, Value* self, Value* key) override;
+    Value* hasProperty(IContext* ctx, Value* self, Value* key) override;
 
     // 导出属性只读：外部赋值/删除/定义访问器/改原型均报 TypeError。
     Value* setProperty(IContext* ctx, Value* self, Value* key, Value* value) override;

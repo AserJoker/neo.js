@@ -27,6 +27,7 @@
 #include "infra/MallocAllocator.h"
 
 #include <gtest/gtest.h>
+#include "TestHelpers.h"
 
 namespace {
 
@@ -231,7 +232,7 @@ TEST(SymbolTest, PropertyOpsBehaveLikePrimitive) {
     EXPECT_EQ(ctx->getProperty(sym, "x")->type()->kind(), TypeKind::Undefined);
     EXPECT_EQ(ctx->setProperty(sym, "x", ctx->createNumber(1))->type()->kind(),
               TypeKind::Exception);
-    EXPECT_FALSE(ctx->hasProperty(sym, "x"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, sym, "x"));
     EXPECT_EQ(ctx->deleteProperty(sym, "x")->type()->kind(), TypeKind::Boolean);
     EXPECT_EQ(ctx->defineProperty(sym, "x", ctx->createNumber(2))->type()->kind(),
               TypeKind::Exception);

@@ -66,8 +66,12 @@ Value* descriptorToProperty(IContext* ctx, Value* descObj, bool& exists, Propert
     bool enumerable = detail::toBoolean(enumerableV);
     bool configurable = detail::toBoolean(configurableV);
 
-    bool hasGet = ctx->hasProperty(descObj, ctx->createString("get"));
-    bool hasSet = ctx->hasProperty(descObj, ctx->createString("set"));
+    Value* hasGetV = ctx->hasProperty(descObj, ctx->createString("get"));
+    if (detail::isErrorValue(hasGetV)) return hasGetV;
+    Value* hasSetV = ctx->hasProperty(descObj, ctx->createString("set"));
+    if (detail::isErrorValue(hasSetV)) return hasSetV;
+    bool hasGet = detail::toBoolean(hasGetV);
+    bool hasSet = detail::toBoolean(hasSetV);
     if (hasGet || hasSet) {
         Value* getter = ctx->getProperty(descObj, ctx->createString("get"));
         if (detail::isErrorValue(getter)) return getter;
@@ -303,19 +307,19 @@ Value* ProxyType::setProperty(IContext* ctx, Value* self, Value* key, Value* val
     return value;
 }
 
-bool ProxyType::hasProperty(IContext* ctx, Value* self, Value* key) {
+Value* ProxyType::hasProperty(IContext* ctx, Value* self, Value* key) {
     auto* d = asProxy(self);
     PropertyKey pk;
-    if (toPropertyKey(ctx, key, pk) != nullptr) return false;
+    if (Value* err = toPropertyKey(ctx, key, pk)) return err;
     bool present = false;
     Value* err = nullptr;
     Value* trap = lookupTrap(ctx, d, "has", present, err);
-    if (err != nullptr) return false;
+    if (err != nullptr) return err;
     if (!present) return ordinaryHas(ctx, d->target, pk);
     Value* argv[2] = {d->target, pk.value};
     Value* r = ctx->call(trap, d->handler, 2, argv);
-    if (detail::isErrorValue(r)) return false;
-    return detail::toBoolean(r);
+    if (detail::isErrorValue(r)) return r;
+    return ctx->createBoolean(detail::toBoolean(r));
 }
 
 Value* ProxyType::deleteProperty(IContext* ctx, Value* self, Value* key) {

@@ -26,6 +26,7 @@
 #include "infra/MallocAllocator.h"
 
 #include <gtest/gtest.h>
+#include "TestHelpers.h"
 
 namespace {
 
@@ -163,8 +164,8 @@ TEST(ArrayTest, SparseWriteExtendsLength) {
     EXPECT_EQ(dataOf(arr)->length(), 4u);
     // 中间为空洞：读取 undefined，hasProperty false
     EXPECT_EQ(ctx->getProperty(arr, "1")->type()->kind(), TypeKind::Undefined);
-    EXPECT_FALSE(ctx->hasProperty(arr, "1"));
-    EXPECT_TRUE(ctx->hasProperty(arr, "3"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, arr, "1"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, arr, "3"));
 }
 
 TEST(ArrayTest, HasPropertyForIndexAndLength) {
@@ -174,10 +175,10 @@ TEST(ArrayTest, HasPropertyForIndexAndLength) {
     auto ctx = createContext(alloc.get(), &console);
 
     Value* arr = ctx->createArray();
-    EXPECT_TRUE(ctx->hasProperty(arr, "length"));
-    EXPECT_FALSE(ctx->hasProperty(arr, "0"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, arr, "length"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, arr, "0"));
     ctx->setProperty(arr, "0", ctx->createNumber(1));
-    EXPECT_TRUE(ctx->hasProperty(arr, "0"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, arr, "0"));
 }
 
 TEST(ArrayTest, DeleteIndexLeavesHole) {
@@ -192,7 +193,7 @@ TEST(ArrayTest, DeleteIndexLeavesHole) {
 
     EXPECT_EQ(ctx->deleteProperty(arr, "0")->type()->kind(), TypeKind::Boolean);
     EXPECT_EQ(dataOf(arr)->length(), 2u);  // length 不变
-    EXPECT_FALSE(ctx->hasProperty(arr, "0"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, arr, "0"));
     EXPECT_EQ(ctx->getProperty(arr, "0")->type()->kind(), TypeKind::Undefined);
 }
 
@@ -233,8 +234,8 @@ TEST(ArrayTest, WriteLengthTruncates) {
     }
     ctx->setProperty(arr, "length", ctx->createNumber(2));
     EXPECT_EQ(dataOf(arr)->length(), 2u);
-    EXPECT_TRUE(ctx->hasProperty(arr, "1"));
-    EXPECT_FALSE(ctx->hasProperty(arr, "2"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, arr, "1"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, arr, "2"));
 }
 
 TEST(ArrayTest, WriteLengthExtendsWithHoles) {
@@ -246,7 +247,7 @@ TEST(ArrayTest, WriteLengthExtendsWithHoles) {
     Value* arr = ctx->createArray();
     ctx->setProperty(arr, "length", ctx->createNumber(3));
     EXPECT_EQ(dataOf(arr)->length(), 3u);
-    EXPECT_FALSE(ctx->hasProperty(arr, "0"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, arr, "0"));
     EXPECT_EQ(ctx->getProperty(arr, "2")->type()->kind(), TypeKind::Undefined);
 }
 
@@ -297,7 +298,7 @@ TEST(ArrayTest, LargeIndexMigratesToSparse) {
     EXPECT_EQ(dataOf(arr)->length(), 101u);
     EXPECT_EQ(numOf(ctx->getProperty(arr, "0")), 1.0);
     EXPECT_EQ(numOf(ctx->getProperty(arr, "100")), 2.0);
-    EXPECT_FALSE(ctx->hasProperty(arr, "50"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, arr, "50"));
 }
 
 TEST(ArrayTest, SparseModeDoesNotRevert) {
@@ -337,8 +338,8 @@ TEST(ArrayTest, SparseTruncateDropsElements) {
     ctx->setProperty(arr, "200", ctx->createNumber(2));
     ctx->setProperty(arr, "length", ctx->createNumber(150));
     EXPECT_EQ(dataOf(arr)->length(), 150u);
-    EXPECT_TRUE(ctx->hasProperty(arr, "100"));
-    EXPECT_FALSE(ctx->hasProperty(arr, "200"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, arr, "100"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, arr, "200"));
 }
 
 // ===== 索引键解析 =====
@@ -425,10 +426,10 @@ TEST(ArrayTest, SymbolKeyGoesThroughObjectPartForAllOps) {
     Value* sym = ctx->createSymbol("k");
 
     // has：未定义 → false（走 ObjectType）
-    EXPECT_FALSE(ctx->hasProperty(arr, sym));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, arr, sym));
     // defineProperty 走 ObjectType
     ctx->defineProperty(arr, sym, ctx->createNumber(1), true, false, true);
-    EXPECT_TRUE(ctx->hasProperty(arr, sym));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, arr, sym));
     EXPECT_EQ(numOf(ctx->getProperty(arr, sym)), 1.0);
     // defineAccessor 走 ObjectType
     Value* getter = ctx->createNativeFunction(
@@ -437,7 +438,7 @@ TEST(ArrayTest, SymbolKeyGoesThroughObjectPartForAllOps) {
     EXPECT_EQ(numOf(ctx->getProperty(arr, sym)), 7.0);
     // delete 走 ObjectType
     EXPECT_EQ(ctx->deleteProperty(arr, sym)->type()->kind(), TypeKind::Boolean);
-    EXPECT_FALSE(ctx->hasProperty(arr, sym));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, arr, sym));
 }
 
 TEST(ArrayTest, DeleteNamedPropertyGoesThroughObjectPart) {
@@ -448,9 +449,9 @@ TEST(ArrayTest, DeleteNamedPropertyGoesThroughObjectPart) {
 
     Value* arr = ctx->createArray();
     ctx->setProperty(arr, "foo", ctx->createNumber(1));
-    EXPECT_TRUE(ctx->hasProperty(arr, "foo"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, arr, "foo"));
     EXPECT_EQ(ctx->deleteProperty(arr, "foo")->type()->kind(), TypeKind::Boolean);
-    EXPECT_FALSE(ctx->hasProperty(arr, "foo"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, arr, "foo"));
 }
 
 TEST(ArrayTest, DeleteMissingIndexReturnsTrue) {
@@ -466,7 +467,7 @@ TEST(ArrayTest, DeleteMissingIndexReturnsTrue) {
     ctx->setProperty(arr, "100", ctx->createNumber(1));
     EXPECT_EQ(ctx->deleteProperty(arr, "50")->type()->kind(), TypeKind::Boolean);
     EXPECT_EQ(ctx->deleteProperty(arr, "100")->type()->kind(), TypeKind::Boolean);
-    EXPECT_FALSE(ctx->hasProperty(arr, "100"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, arr, "100"));
 }
 
 TEST(ArrayTest, ToSparseIsIdempotent) {
@@ -695,7 +696,7 @@ TEST(ArrayTest, IndexChainStopsAtNonObjectPrototype) {
     Value* mid = ctx->createObject();
     ctx->setPrototype(arr, mid);
     EXPECT_EQ(ctx->getProperty(arr, "0")->type()->kind(), TypeKind::Undefined);
-    EXPECT_FALSE(ctx->hasProperty(arr, "0"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, arr, "0"));
 }
 
 TEST(ArrayTest, IndexFoundOnObjectLayerOfChain) {
@@ -710,7 +711,7 @@ TEST(ArrayTest, IndexFoundOnObjectLayerOfChain) {
     Value* arr = ctx->createArray();
     ctx->setPrototype(arr, parent);
     EXPECT_EQ(strOf(ctx->getProperty(arr, "0")), "fromParent");
-    EXPECT_TRUE(ctx->hasProperty(arr, "0"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, arr, "0"));
 }
 
 TEST(ArrayTest, EnumerateChildrenSparseMode) {
@@ -760,7 +761,7 @@ TEST(ArrayTest, GetOnHoleFallsThroughToPrototype) {
     ctx->setProperty(arr, "2", ctx->createNumber(3));
     EXPECT_EQ(strOf(ctx->getProperty(arr, "1")), "inherited");
     // `in` 语义含原型链：原型上有该索引 → true
-    EXPECT_TRUE(ctx->hasProperty(arr, "1"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, arr, "1"));
 }
 
 TEST(ArrayTest, ElementsAliveThroughArrayDuringGc) {

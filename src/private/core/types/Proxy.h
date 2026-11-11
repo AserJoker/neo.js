@@ -44,7 +44,7 @@ public:
 
     Value* getProperty(IContext* ctx, Value* self, Value* key) override;
     Value* setProperty(IContext* ctx, Value* self, Value* key, Value* value) override;
-    bool hasProperty(IContext* ctx, Value* self, Value* key) override;
+    Value* hasProperty(IContext* ctx, Value* self, Value* key) override;
     Value* deleteProperty(IContext* ctx, Value* self, Value* key) override;
     Value* defineProperty(IContext* ctx, Value* self, Value* key,
                           Value* value, bool writable, bool enumerable,

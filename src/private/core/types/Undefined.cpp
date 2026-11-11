@@ -54,8 +54,8 @@ Value* UndefinedType::getProperty(IContext* ctx, Value* self, Value* key) {
 Value* UndefinedType::setProperty(IContext* ctx, Value* self, Value* key, Value* value) {
     return primitiveSetProperty(ctx, self, key, value);
 }
-bool UndefinedType::hasProperty(IContext* /*ctx*/, Value* /*self*/, Value* /*key*/) {
-    return false;
+Value* UndefinedType::hasProperty(IContext* ctx, Value* /*self*/, Value* /*key*/) {
+    return ctx->createBoolean(false);
 }
 Value* UndefinedType::deleteProperty(IContext* ctx, Value* /*self*/, Value* /*key*/) {
     return ctx->createBoolean(true);

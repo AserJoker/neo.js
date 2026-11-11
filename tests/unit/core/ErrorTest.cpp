@@ -23,6 +23,7 @@
 #include "infra/MallocAllocator.h"
 
 #include <gtest/gtest.h>
+#include "TestHelpers.h"
 
 #include <memory>
 #include <string>
@@ -113,7 +114,7 @@ TEST(ErrorTest, EmptyMessageOmitsProperty) {
     Fixture f;
     Value* err = f.ctx->createError("");
     // 空消息不定义自有 message；读取沿原型链得到 Error.prototype.message = ""
-    EXPECT_FALSE(f.ctx->hasProperty(err, "message") &&
+    EXPECT_FALSE(neo::test::hasProperty(f.ctx, err, "message") &&
                  f.ctx->getProperty(err, "message") !=
                      f.ctx->getProperty(f.ctx->errorPrototype(), "message"));
     EXPECT_EQ(str(f.ctx->getProperty(err, "message")), "");
@@ -377,7 +378,7 @@ TEST(ErrorTest, NativeErrorWithoutMessageOmitsProperty) {
     ASSERT_EQ(err->type()->kind(), TypeKind::Error);
     // 自有 message 不存在，沿原型链读到 Error.prototype.message = ""
     EXPECT_EQ(str(f.ctx->getProperty(err, "message")), "");
-    EXPECT_FALSE(f.ctx->hasProperty(err, "message") &&
+    EXPECT_FALSE(neo::test::hasProperty(f.ctx, err, "message") &&
                  f.ctx->getProperty(err, "message") !=
                      f.ctx->getProperty(f.ctx->errorPrototype(), "message"));
 }
@@ -448,7 +449,7 @@ TEST(ErrorTest, AggregateErrorCollectsErrorsFromIterable) {
     EXPECT_DOUBLE_EQ(static_cast<neo::core::NumberData*>(d->elementAt(1)->data())->value,
                      2.0);
     // errors 是实例自有属性，原型上没有
-    EXPECT_FALSE(f.ctx->hasProperty(f.ctx->getProperty(fn, "prototype"), "errors"));
+    EXPECT_FALSE(neo::test::hasProperty(f.ctx, f.ctx->getProperty(fn, "prototype"), "errors"));
 }
 
 TEST(ErrorTest, AggregateErrorWithoutMessageOmitsProperty) {

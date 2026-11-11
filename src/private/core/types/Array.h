@@ -68,7 +68,7 @@ public:
     // 属性操作：length 与索引属性本地处理，其余委托 ObjectType（命名/符号/原型链）
     Value* getProperty(IContext* ctx, Value* self, Value* key) override;
     Value* setProperty(IContext* ctx, Value* self, Value* key, Value* value) override;
-    bool hasProperty(IContext* ctx, Value* self, Value* key) override;
+    Value* hasProperty(IContext* ctx, Value* self, Value* key) override;
     Value* deleteProperty(IContext* ctx, Value* self, Value* key) override;
     Value* defineProperty(IContext* ctx, Value* self, Value* key,
                           Value* value, bool writable, bool enumerable,

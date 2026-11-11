@@ -50,7 +50,7 @@ Value* PromiseType::getProperty(IContext* ctx, Value* self, Value* key) {
 Value* PromiseType::setProperty(IContext* ctx, Value* self, Value* key, Value* value) {
     return getObjectType()->setProperty(ctx, self, key, value);
 }
-bool PromiseType::hasProperty(IContext* ctx, Value* self, Value* key) {
+Value* PromiseType::hasProperty(IContext* ctx, Value* self, Value* key) {
     return getObjectType()->hasProperty(ctx, self, key);
 }
 Value* PromiseType::deleteProperty(IContext* ctx, Value* self, Value* key) {

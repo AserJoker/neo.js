@@ -49,7 +49,7 @@ Value* ErrorType::getProperty(IContext* ctx, Value* self, Value* key) {
 Value* ErrorType::setProperty(IContext* ctx, Value* self, Value* key, Value* value) {
     return getObjectType()->setProperty(ctx, self, key, value);
 }
-bool ErrorType::hasProperty(IContext* ctx, Value* self, Value* key) {
+Value* ErrorType::hasProperty(IContext* ctx, Value* self, Value* key) {
     return getObjectType()->hasProperty(ctx, self, key);
 }
 Value* ErrorType::deleteProperty(IContext* ctx, Value* self, Value* key) {

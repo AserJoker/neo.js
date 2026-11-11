@@ -572,7 +572,8 @@ public:
     // set/define 返回 Exception，has 返回 false。
     virtual Value* getProperty(Value* obj, Value* key) = 0;
     virtual Value* setProperty(Value* obj, Value* key, Value* value) = 0;
-    virtual bool hasProperty(Value* obj, Value* key) = 0;
+    // hasProperty: `in` / [[HasProperty]]，返回 Boolean 或 Exception/Fatal。
+    virtual Value* hasProperty(Value* obj, Value* key) = 0;
     virtual Value* deleteProperty(Value* obj, Value* key) = 0;
     virtual Value* defineProperty(Value* obj, Value* key, Value* value,
                                   bool writable = true, bool enumerable = true,
@@ -591,7 +592,7 @@ public:
     Value* setProperty(Value* obj, std::string_view key, Value* value) {
         return setProperty(obj, createString(key), value);
     }
-    bool hasProperty(Value* obj, std::string_view key) {
+    Value* hasProperty(Value* obj, std::string_view key) {
         return hasProperty(obj, createString(key));
     }
     Value* deleteProperty(Value* obj, std::string_view key) {

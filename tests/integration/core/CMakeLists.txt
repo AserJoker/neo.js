@@ -19,7 +19,10 @@ target_link_libraries(core_integration_test
         gtest_main
 )
 # 集成测试需访问 core 的 private 实现头（Scope 构造等）
-target_include_directories(core_integration_test PRIVATE ${CMAKE_SOURCE_DIR}/src/private)
+target_include_directories(core_integration_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/tests
+    ${CMAKE_SOURCE_DIR}/src/private
+)
 
 include(GoogleTest)
 gtest_discover_tests(core_integration_test)

@@ -35,13 +35,15 @@ Value* ModuleNamespaceType::getProperty(IContext* ctx, Value* self, Value* key) 
     return ObjectType::getProperty(ctx, self, key);
 }
 
-bool ModuleNamespaceType::hasProperty(IContext* ctx, Value* self, Value* key) {
+Value* ModuleNamespaceType::hasProperty(IContext* ctx, Value* self, Value* key) {
     // 间接导出的名字已声明，即使源导出当前不存在也视为存在（[[Exports]] 语义）。
     if (key->type()->kind() != TypeKind::Symbol) {
         auto* d = static_cast<ModuleNamespaceData*>(self->data());
         std::string k;
-        if (detail::propertyKeyString(ctx, key, k) != nullptr) return false;
-        if (d->indirectExports.find(k) != d->indirectExports.end()) return true;
+        if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
+        if (d->indirectExports.find(k) != d->indirectExports.end()) {
+            return ctx->createBoolean(true);
+        }
     }
     return ObjectType::hasProperty(ctx, self, key);
 }

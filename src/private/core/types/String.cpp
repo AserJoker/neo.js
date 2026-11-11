@@ -53,8 +53,8 @@ Value* StringType::getProperty(IContext* ctx, Value* self, Value* key) {
 Value* StringType::setProperty(IContext* ctx, Value* self, Value* key, Value* value) {
     return primitiveSetProperty(ctx, self, key, value);
 }
-bool StringType::hasProperty(IContext* /*ctx*/, Value* /*self*/, Value* /*key*/) {
-    return false;
+Value* StringType::hasProperty(IContext* ctx, Value* /*self*/, Value* /*key*/) {
+    return ctx->createBoolean(false);
 }
 Value* StringType::deleteProperty(IContext* ctx, Value* /*self*/, Value* /*key*/) {
     return ctx->createBoolean(true);

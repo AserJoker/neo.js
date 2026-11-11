@@ -52,8 +52,8 @@ Value* NullType::getProperty(IContext* ctx, Value* self, Value* key) {
 Value* NullType::setProperty(IContext* ctx, Value* self, Value* key, Value* value) {
     return primitiveSetProperty(ctx, self, key, value);
 }
-bool NullType::hasProperty(IContext* /*ctx*/, Value* /*self*/, Value* /*key*/) {
-    return false;
+Value* NullType::hasProperty(IContext* ctx, Value* /*self*/, Value* /*key*/) {
+    return ctx->createBoolean(false);
 }
 Value* NullType::deleteProperty(IContext* ctx, Value* /*self*/, Value* /*key*/) {
     return ctx->createBoolean(true);

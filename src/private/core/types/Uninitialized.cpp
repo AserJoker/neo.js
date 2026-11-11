@@ -6,6 +6,7 @@
 //
 // 关联 ADR: 016（Type 体系修订）、030 阶段 5
 
+#include "core/IContext.h"
 #include "core/types/Uninitialized.h"
 
 namespace neo::core {
@@ -30,8 +31,8 @@ Value* UninitializedType::getProperty(IContext* /*ctx*/, Value* self, Value* /*k
 Value* UninitializedType::setProperty(IContext* /*ctx*/, Value* self, Value* /*key*/, Value* /*value*/) {
     return self;
 }
-bool UninitializedType::hasProperty(IContext* /*ctx*/, Value* /*self*/, Value* /*key*/) {
-    return false;
+Value* UninitializedType::hasProperty(IContext* ctx, Value* /*self*/, Value* /*key*/) {
+    return ctx->createBoolean(false);
 }
 Value* UninitializedType::deleteProperty(IContext* /*ctx*/, Value* self, Value* /*key*/) {
     return self;

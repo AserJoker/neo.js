@@ -25,6 +25,7 @@
 #include "infra/MallocAllocator.h"
 
 #include <gtest/gtest.h>
+#include "TestHelpers.h"
 
 namespace {
 
@@ -134,10 +135,10 @@ TEST(ObjectTest, HasProperty) {
     auto ctx = createContext(alloc.get(), &console);
 
     Value* obj = ctx->createObject();
-    EXPECT_FALSE(ctx->hasProperty(obj, "x"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, obj, "x"));
 
     ctx->setProperty(obj, "x", ctx->createNumber(1));
-    EXPECT_TRUE(ctx->hasProperty(obj, "x"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, obj, "x"));
 }
 
 TEST(ObjectTest, DeleteProperty) {
@@ -151,7 +152,7 @@ TEST(ObjectTest, DeleteProperty) {
 
     Value* result = ctx->deleteProperty(obj, "x");
     EXPECT_EQ(result->type()->kind(), TypeKind::Boolean);
-    EXPECT_FALSE(ctx->hasProperty(obj, "x"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, obj, "x"));
 
     auto* d = static_cast<ObjectData*>(obj->data());
     EXPECT_TRUE(d->order.empty());  // order 同步移除
@@ -250,7 +251,7 @@ TEST(ObjectTest, DeleteNonConfigurableReturnsException) {
 
     Value* result = ctx->deleteProperty(obj, "x");
     EXPECT_EQ(result->type()->kind(), TypeKind::Exception);
-    EXPECT_TRUE(ctx->hasProperty(obj, "x"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, obj, "x"));
 }
 
 TEST(ObjectTest, DefineExistingPropertyUpdatesDescriptor) {
@@ -298,7 +299,7 @@ TEST(ObjectTest, PrimitiveHasPropertyIsFalse) {
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
 
-    EXPECT_FALSE(ctx->hasProperty(ctx->createString("s"), "length"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, ctx->createString("s"), "length"));
 }
 
 // ===== GC 遍历 =====
@@ -506,8 +507,8 @@ TEST(ObjectTest, HasPropertyIncludesPrototype) {
     Value* obj = ctx->createObject();
     ctx->setPrototype(obj, proto);
 
-    EXPECT_TRUE(ctx->hasProperty(obj, "x"));       // 原型链上
-    EXPECT_FALSE(ctx->hasProperty(obj, "y"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, obj, "x"));       // 原型链上
+    EXPECT_FALSE(neo::test::hasProperty(ctx, obj, "y"));
 }
 
 TEST(ObjectTest, SetCreatesOwnPropertyWhenInheritedWritable) {
@@ -562,7 +563,7 @@ TEST(ObjectTest, DeleteDoesNotAffectPrototype) {
 
     // delete 只删自有属性，原型上的 x 保留
     EXPECT_EQ(ctx->deleteProperty(obj, "x")->type()->kind(), TypeKind::Boolean);
-    EXPECT_TRUE(ctx->hasProperty(obj, "x"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, obj, "x"));
 }
 
 TEST(ObjectTest, DefinePropertyOnlyDefinesOwn) {
@@ -629,7 +630,7 @@ TEST(ObjectTest, SymbolKeySetAndGet) {
 
     ctx->setProperty(obj, sym, val);
     EXPECT_EQ(ctx->getProperty(obj, sym), val);
-    EXPECT_TRUE(ctx->hasProperty(obj, sym));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, obj, sym));
 
     // 走 symbols 容器，不进 properties
     auto* d = static_cast<ObjectData*>(obj->data());
@@ -649,8 +650,8 @@ TEST(ObjectTest, SameDescriptionSymbolsAreDistinctKeys) {
     ctx->setProperty(obj, a, ctx->createNumber(1));
 
     // 同描述但不同 symbol → 不同键
-    EXPECT_TRUE(ctx->hasProperty(obj, a));
-    EXPECT_FALSE(ctx->hasProperty(obj, b));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, obj, a));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, obj, b));
     EXPECT_EQ(ctx->getProperty(obj, b)->type()->kind(), TypeKind::Undefined);
 }
 
@@ -689,7 +690,7 @@ TEST(ObjectTest, NonStringPrimitiveKeysCoerceToString) {
 
     // 1 和 "1" 是同一个键
     EXPECT_EQ(ctx->getProperty(obj, "1"), val);
-    EXPECT_TRUE(ctx->hasProperty(obj, "1"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, obj, "1"));
     auto* d = static_cast<ObjectData*>(obj->data());
     EXPECT_EQ(d->properties.count("1"), 1u);
 }
@@ -705,7 +706,7 @@ TEST(ObjectTest, SymbolKeyDelete) {
     ctx->setProperty(obj, sym, ctx->createNumber(1));
 
     EXPECT_EQ(ctx->deleteProperty(obj, sym)->type()->kind(), TypeKind::Boolean);
-    EXPECT_FALSE(ctx->hasProperty(obj, sym));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, obj, sym));
     auto* d = static_cast<ObjectData*>(obj->data());
     EXPECT_TRUE(d->symbols.empty());
     EXPECT_TRUE(d->symbolOrder.empty());
@@ -749,7 +750,7 @@ TEST(ObjectTest, SymbolKeyInheritedThroughPrototype) {
 
     // symbol 键同样沿原型链查找
     EXPECT_EQ(ctx->getProperty(obj, sym), val);
-    EXPECT_TRUE(ctx->hasProperty(obj, sym));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, obj, sym));
 }
 
 TEST(ObjectTest, SymbolKeySurvivesGc) {

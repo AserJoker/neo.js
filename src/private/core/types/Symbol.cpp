@@ -57,8 +57,8 @@ Value* SymbolType::getProperty(IContext* ctx, Value* self, Value* key) {
 Value* SymbolType::setProperty(IContext* ctx, Value* self, Value* key, Value* value) {
     return primitiveSetProperty(ctx, self, key, value);
 }
-bool SymbolType::hasProperty(IContext* /*ctx*/, Value* /*self*/, Value* /*key*/) {
-    return false;
+Value* SymbolType::hasProperty(IContext* ctx, Value* /*self*/, Value* /*key*/) {
+    return ctx->createBoolean(false);
 }
 Value* SymbolType::deleteProperty(IContext* ctx, Value* /*self*/, Value* /*key*/) {
     // 不存在的属性 delete 视为成功（与 Object 一致）

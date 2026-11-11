@@ -29,6 +29,7 @@
 #include "infra/MallocAllocator.h"
 
 #include <gtest/gtest.h>
+#include "TestHelpers.h"
 
 #include <cmath>
 #include <string>
@@ -384,7 +385,7 @@ TEST(ToPrimitiveTest, ObjectKeyUsesToPrimitive) {
     Value* v = ctx->createNumber(42);
     EXPECT_EQ(ctx->setProperty(target, obj, v), v);
     EXPECT_EQ(numOf(ctx->getProperty(target, "k")), 42.0);
-    EXPECT_TRUE(ctx->hasProperty(target, obj));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, target, obj));
 }
 
 TEST(ToPrimitiveTest, SymbolKeyStaysSymbol) {
@@ -399,7 +400,7 @@ TEST(ToPrimitiveTest, SymbolKeyStaysSymbol) {
     ctx->setProperty(target, sym, v);
     // symbol 键保持符号身份（不进 properties 容器）
     EXPECT_EQ(numOf(ctx->getProperty(target, sym)), 1.0);
-    EXPECT_FALSE(ctx->hasProperty(target, "Symbol(s)"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, target, "Symbol(s)"));
 }
 
 TEST(ToPrimitiveTest, WrapperKeyUnwraps) {
@@ -930,7 +931,7 @@ TEST(ToPrimitiveTest, KeyConversionErrorPropagatesOnAllOps) {
               TypeKind::Exception);
     EXPECT_EQ(ctx->defineAccessor(target, bad, nullptr, nullptr)->type()->kind(),
               TypeKind::Exception);
-    EXPECT_FALSE(ctx->hasProperty(target, bad));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, target, bad));
 }
 
 TEST(ToPrimitiveTest, ArrayKeyConversionErrorPropagates) {
@@ -956,7 +957,7 @@ TEST(ToPrimitiveTest, ArrayKeyConversionErrorPropagates) {
               TypeKind::Exception);
     EXPECT_EQ(ctx->defineAccessor(arr, bad, nullptr, nullptr)->type()->kind(),
               TypeKind::Exception);
-    EXPECT_FALSE(ctx->hasProperty(arr, bad));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, arr, bad));
 }
 
 TEST(ToPrimitiveTest, StringWrapperKeyConversionErrorPropagates) {
@@ -982,7 +983,7 @@ TEST(ToPrimitiveTest, StringWrapperKeyConversionErrorPropagates) {
               TypeKind::Exception);
     EXPECT_EQ(ctx->defineAccessor(w, bad, nullptr, nullptr)->type()->kind(),
               TypeKind::Exception);
-    EXPECT_FALSE(ctx->hasProperty(w, bad));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, w, bad));
 }
 
 TEST(ToPrimitiveTest, HasOwnPropertyKeyConversionErrorPropagates) {

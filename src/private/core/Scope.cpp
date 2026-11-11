@@ -25,7 +25,9 @@ namespace {
 // 成功返回 nullptr，bound 表示是否绑定；getter 抛错时返回 Exception/Fatal。
 Value* resolveWithBinding(IContext* ctx, Value* withObject, Value* key, bool& bound) {
     bound = false;
-    if (!ctx->hasProperty(withObject, key)) return nullptr;
+    Value* has = ctx->hasProperty(withObject, key);
+    if (detail::isErrorValue(has)) return has;
+    if (!detail::toBoolean(has)) return nullptr;
 
     Value* sym = ctx->getWellKnownSymbol(WellKnownSymbol::Unscopables);
     Value* unscopables = ctx->getProperty(withObject, sym);

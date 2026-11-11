@@ -7,6 +7,7 @@
 
 #include "core/types/Interrupt.h"
 
+#include "core/IContext.h"
 #include "core/IGCEngine.h"
 #include "core/Value.h"
 
@@ -30,8 +31,8 @@ Value* InterruptType::setProperty(IContext* /*ctx*/, Value* self, Value* /*key*/
                                   Value* /*value*/) {
     return self;
 }
-bool InterruptType::hasProperty(IContext* /*ctx*/, Value* /*self*/, Value* /*key*/) {
-    return false;
+Value* InterruptType::hasProperty(IContext* ctx, Value* /*self*/, Value* /*key*/) {
+    return ctx->createBoolean(false);
 }
 Value* InterruptType::deleteProperty(IContext* /*ctx*/, Value* self, Value* /*key*/) {
     return self;

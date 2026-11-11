@@ -31,6 +31,7 @@
 #include "infra/MallocAllocator.h"
 
 #include <gtest/gtest.h>
+#include "TestHelpers.h"
 
 #include <cmath>
 #include <string>
@@ -662,8 +663,8 @@ TEST(IteratorTest, IteratorArithmeticAndPrototypeOps) {
     EXPECT_EQ(ctx->div(exc, n), exc);
 
     // 属性/原型操作
-    EXPECT_TRUE(ctx->hasProperty(iter, "next"));
-    EXPECT_FALSE(ctx->hasProperty(iter, "nope"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, iter, "next"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, iter, "nope"));
     ctx->defineProperty(iter, "x", ctx->createNumber(1), true, true, true);
     EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(iter, "x")), 1.0);
     EXPECT_TRUE(boolOf(ctx->deleteProperty(iter, "x")));
@@ -706,7 +707,7 @@ TEST(IteratorTest, WrapperArithmeticAndPrototypeOps) {
     EXPECT_EQ(ctx->mul(exc, n), exc);
     EXPECT_EQ(ctx->div(exc, n), exc);
 
-    EXPECT_TRUE(ctx->hasProperty(w, "next"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, w, "next"));
     ctx->defineProperty(w, "x", ctx->createNumber(1), true, true, true);
     EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(w, "x")), 1.0);
     EXPECT_TRUE(boolOf(ctx->deleteProperty(w, "x")));

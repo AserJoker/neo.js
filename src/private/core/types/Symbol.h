@@ -51,7 +51,7 @@ public:
     // 属性/原型操作：原始类型无自有属性、无原型。
     Value* getProperty(IContext* ctx, Value* self, Value* key) override;
     Value* setProperty(IContext* ctx, Value* self, Value* key, Value* value) override;
-    bool hasProperty(IContext* ctx, Value* self, Value* key) override;
+    Value* hasProperty(IContext* ctx, Value* self, Value* key) override;
     Value* deleteProperty(IContext* ctx, Value* self, Value* key) override;
     Value* defineProperty(IContext* ctx, Value* self, Value* key,
                           Value* value, bool writable, bool enumerable,

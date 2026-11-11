@@ -27,6 +27,7 @@
 #include "infra/MallocAllocator.h"
 
 #include <gtest/gtest.h>
+#include "TestHelpers.h"
 
 #include <cmath>
 #include <string>
@@ -550,9 +551,9 @@ TEST(PrimitiveWrapperTest, StringWrapperLengthAndIndex) {
     EXPECT_EQ(strOf(ctx->getProperty(w, "0")), "a");
     EXPECT_EQ(strOf(ctx->getProperty(w, "2")), "c");
     EXPECT_EQ(ctx->getProperty(w, "3")->type()->kind(), TypeKind::Undefined);
-    EXPECT_TRUE(ctx->hasProperty(w, "length"));
-    EXPECT_TRUE(ctx->hasProperty(w, "1"));
-    EXPECT_FALSE(ctx->hasProperty(w, "3"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, w, "length"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, w, "1"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, w, "3"));
 }
 
 TEST(PrimitiveWrapperTest, StringWrapperLengthAndIndexAreReadOnly) {
@@ -586,7 +587,7 @@ TEST(PrimitiveWrapperTest, NonStringWrapperHasNoLength) {
 
     Value* w = ctx->createPrimitiveWrapper(ctx->createNumber(1));
     EXPECT_EQ(ctx->getProperty(w, "length")->type()->kind(), TypeKind::Undefined);
-    EXPECT_FALSE(ctx->hasProperty(w, "length"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, w, "length"));
 }
 
 TEST(PrimitiveWrapperTest, StringWrapperAllowsNamedProperties) {
@@ -599,7 +600,7 @@ TEST(PrimitiveWrapperTest, StringWrapperAllowsNamedProperties) {
     ctx->setProperty(w, "foo", ctx->createNumber(9));
     EXPECT_EQ(numOf(ctx->getProperty(w, "foo")), 9.0);
     EXPECT_EQ(ctx->deleteProperty(w, "foo")->type()->kind(), TypeKind::Boolean);
-    EXPECT_FALSE(ctx->hasProperty(w, "foo"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, w, "foo"));
 }
 
 // ===== 原始值属性访问的 ToObject（ES2024 §7.1.18）=====
@@ -808,7 +809,7 @@ TEST(PrimitiveWrapperTest, SymbolKeySkipsIndexParsing) {
     Value* sym = ctx->createSymbol("k");
     ctx->setProperty(w, sym, ctx->createNumber(5));
     EXPECT_EQ(numOf(ctx->getProperty(w, sym)), 5.0);
-    EXPECT_TRUE(ctx->hasProperty(w, sym));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, w, sym));
     EXPECT_EQ(ctx->deleteProperty(w, sym)->type()->kind(), TypeKind::Boolean);
 }
 
@@ -857,7 +858,7 @@ TEST(PrimitiveWrapperTest, NonStringWrapperPropertyOpsDelegateToObject) {
     EXPECT_EQ(numOf(ctx->getProperty(w, "b")), 3.0);
     // delete 走 ObjectType
     EXPECT_EQ(ctx->deleteProperty(w, "a")->type()->kind(), TypeKind::Boolean);
-    EXPECT_FALSE(ctx->hasProperty(w, "a"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, w, "a"));
 }
 
 TEST(PrimitiveWrapperTest, StringWrapperNonIndexDefineAndDeleteDelegate) {
@@ -875,7 +876,7 @@ TEST(PrimitiveWrapperTest, StringWrapperNonIndexDefineAndDeleteDelegate) {
     EXPECT_EQ(ctx->defineAccessor(w, "g", getter, nullptr), w);
     EXPECT_EQ(numOf(ctx->getProperty(w, "g")), 5.0);
     EXPECT_EQ(ctx->deleteProperty(w, "n")->type()->kind(), TypeKind::Boolean);
-    EXPECT_FALSE(ctx->hasProperty(w, "n"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, w, "n"));
     // 越界索引的 defineProperty 也走 ObjectType
     ctx->defineProperty(w, "9", ctx->createNumber(9));
     EXPECT_EQ(numOf(ctx->getProperty(w, "9")), 9.0);

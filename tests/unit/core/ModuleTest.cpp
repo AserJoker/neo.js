@@ -27,6 +27,7 @@
 #include "infra/MallocAllocator.h"
 
 #include <gtest/gtest.h>
+#include "TestHelpers.h"
 
 #include <memory>
 
@@ -317,7 +318,7 @@ TEST(ModuleTest, ImportRunsLoaderOnceAndDefinesExports) {
 
     EXPECT_EQ(first, second);
     EXPECT_EQ(g_calls, 1);
-    EXPECT_TRUE(f.ctx->hasProperty(first, "answer"));
+    EXPECT_TRUE(neo::test::hasProperty(f.ctx, first, "answer"));
 }
 
 TEST(ModuleTest, LoaderRunsInModuleScope) {
@@ -347,8 +348,8 @@ TEST(ModuleTest, CircularImportReturnsPartialExports) {
     ASSERT_NE(g_bFromA, nullptr);
     ASSERT_NE(g_aFromB, nullptr);
     EXPECT_EQ(g_aFromB, a);  // B 看到的 A 是同一个（部分）导出对象
-    EXPECT_TRUE(f.ctx->hasProperty(a, "a"));
-    EXPECT_TRUE(f.ctx->hasProperty(g_bFromA, "b"));
+    EXPECT_TRUE(neo::test::hasProperty(f.ctx, a, "a"));
+    EXPECT_TRUE(neo::test::hasProperty(f.ctx, g_bFromA, "b"));
 }
 
 TEST(ModuleTest, LoaderErrorPropagatesAndAllowsRetry) {
@@ -363,7 +364,7 @@ TEST(ModuleTest, LoaderErrorPropagatesAndAllowsRetry) {
     Value* retried = f.ctx->importModule("/a.js");
     EXPECT_EQ(g_calls, 2);
     EXPECT_FALSE(isErrorValue(retried));
-    EXPECT_TRUE(f.ctx->hasProperty(retried, "ok"));
+    EXPECT_TRUE(neo::test::hasProperty(f.ctx, retried, "ok"));
 }
 
 TEST(ModuleTest, RelativeImportResolvesAgainstCurrentModule) {
@@ -376,7 +377,7 @@ TEST(ModuleTest, RelativeImportResolvesAgainstCurrentModule) {
 
     EXPECT_TRUE(f.ctx->hasModule("/mods/b.js"));
     EXPECT_EQ(g_importTarget, f.ctx->getModule("/mods/b.js").exports);
-    EXPECT_TRUE(f.ctx->hasProperty(a, "a"));
+    EXPECT_TRUE(neo::test::hasProperty(f.ctx, a, "a"));
 }
 
 TEST(ModuleTest, ParentRelativeImportResolvesAgainstDirname) {
@@ -645,7 +646,7 @@ TEST(ModuleTest, ReexportRemainsIndirectForLateExport) {
 
     ModuleInfo re = f.ctx->getModule("/reexporter.js");
     Value* key = f.ctx->createString("x");
-    EXPECT_TRUE(f.ctx->hasProperty(re.exports, key));
+    EXPECT_TRUE(neo::test::hasProperty(f.ctx, re.exports, key));
     Value* resolved = f.ctx->getProperty(re.exports, key);
     ASSERT_NE(resolved, nullptr);
     EXPECT_EQ(numOf(resolved), 7.0);

@@ -27,6 +27,7 @@
 #include "infra/MallocAllocator.h"
 
 #include <gtest/gtest.h>
+#include "TestHelpers.h"
 
 namespace {
 
@@ -336,8 +337,8 @@ TEST(ConstructTest, InstanceInheritsFromPrototype) {
 
     Value* obj = ctx->construct(fn, 0, nullptr);
     // 实例自身有 x，原型上有 shared
-    EXPECT_TRUE(ctx->hasProperty(obj, "x"));
-    EXPECT_TRUE(ctx->hasProperty(obj, "shared"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, obj, "x"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, obj, "shared"));
     EXPECT_EQ(ctx->getProperty(obj, "shared"), shared);
 }
 

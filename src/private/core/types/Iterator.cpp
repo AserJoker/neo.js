@@ -65,7 +65,7 @@ Value* IteratorObjectType::setProperty(IContext* ctx, Value* self, Value* key,
                                        Value* value) {
     return getObjectType()->setProperty(ctx, self, key, value);
 }
-bool IteratorObjectType::hasProperty(IContext* ctx, Value* self, Value* key) {
+Value* IteratorObjectType::hasProperty(IContext* ctx, Value* self, Value* key) {
     return getObjectType()->hasProperty(ctx, self, key);
 }
 Value* IteratorObjectType::deleteProperty(IContext* ctx, Value* self, Value* key) {

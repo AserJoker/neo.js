@@ -28,6 +28,7 @@
 #include "infra/MallocAllocator.h"
 
 #include <gtest/gtest.h>
+#include "TestHelpers.h"
 
 #include <cmath>
 
@@ -540,7 +541,7 @@ TEST(ObjectBuiltinsTest, InstanceInheritsPrototypeMethods) {
     EXPECT_EQ(ctx->getProperty(obj, "toString")->type()->kind(), TypeKind::Function);
     EXPECT_EQ(ctx->getProperty(obj, "valueOf")->type()->kind(), TypeKind::Function);
     EXPECT_EQ(ctx->getProperty(obj, "hasOwnProperty")->type()->kind(), TypeKind::Function);
-    EXPECT_TRUE(ctx->hasProperty(obj, "toString"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, obj, "toString"));
     // 不是自有属性
     auto* d = static_cast<ObjectData*>(obj->data());
     EXPECT_EQ(d->properties.count("toString"), 0u);
@@ -882,7 +883,7 @@ TEST(ObjectBuiltinsTest, ObjectAssignCopiesOwnEnumerable) {
     Value* r = callObjectStatic(ctx.get(), "assign", 2, args);
     EXPECT_EQ(r, target);
     EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(target, "a")), 1.0);
-    EXPECT_EQ(ctx->hasProperty(target, "hidden"), false);
+    EXPECT_EQ(neo::test::hasProperty(ctx, target, "hidden"), false);
 
     // undefined/null 源被跳过
     Value* args2[3] = {target, ctx->createNull(), ctx->createUndefined()};

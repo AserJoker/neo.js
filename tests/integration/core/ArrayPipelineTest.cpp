@@ -20,6 +20,7 @@
 #include "infra/MallocAllocator.h"
 
 #include <gtest/gtest.h>
+#include "TestHelpers.h"
 
 namespace {
 
@@ -100,8 +101,8 @@ TEST(ArrayPipelineTest, SparseWriteMigrationAndTruncate) {
     // 截断到 500：1000 被丢弃
     ctx->setProperty(arr, "length", ctx->createNumber(500));
     EXPECT_EQ(dataOf(arr)->length(), 500u);
-    EXPECT_TRUE(ctx->hasProperty(arr, "0"));
-    EXPECT_FALSE(ctx->hasProperty(arr, "1000"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, arr, "0"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, arr, "1000"));
     EXPECT_EQ(ctx->getProperty(arr, "1000")->type()->kind(), TypeKind::Undefined);
 }
 

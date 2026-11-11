@@ -24,6 +24,7 @@
 #include "infra/MallocAllocator.h"
 
 #include <gtest/gtest.h>
+#include "TestHelpers.h"
 
 #include <cmath>
 #include <limits>
@@ -127,7 +128,7 @@ TEST(ArrayBuiltinsTest, NewWithSingleNumberSetsLength) {
     Value* arr = ctx->construct(arrayFn, 1, args);
     ASSERT_EQ(arr->type()->kind(), TypeKind::Array);
     EXPECT_EQ(dataOf(arr)->length(), 5u);
-    EXPECT_FALSE(ctx->hasProperty(arr, "0"));  // 空洞
+    EXPECT_FALSE(neo::test::hasProperty(ctx, arr, "0"));  // 空洞
 }
 
 TEST(ArrayBuiltinsTest, NewWithSingleNumberZero) {
@@ -399,8 +400,8 @@ TEST(ArrayBuiltinsTest, SlicePreservesHoles) {
     ctx->setProperty(arr, "2", ctx->createNumber(3));  // 1 是空洞
     Value* copy = callMethod(ctx.get(), arr, "slice", 0, nullptr);
     EXPECT_EQ(dataOf(copy)->length(), 3u);
-    EXPECT_FALSE(ctx->hasProperty(copy, "1"));
-    EXPECT_TRUE(ctx->hasProperty(copy, "2"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, copy, "1"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, copy, "2"));
 }
 
 TEST(ArrayBuiltinsTest, SliceEmptyRange) {

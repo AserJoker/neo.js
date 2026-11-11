@@ -334,7 +334,7 @@ public:
     Value* asyncGeneratorPrototype() const override { return asyncGeneratorPrototype_; }
     Value* getProperty(Value* obj, Value* key) override;
     Value* setProperty(Value* obj, Value* key, Value* value) override;
-    bool hasProperty(Value* obj, Value* key) override;
+    Value* hasProperty(Value* obj, Value* key) override;
     Value* deleteProperty(Value* obj, Value* key) override;
     Value* defineProperty(Value* obj, Value* key, Value* value,
                           bool writable = true, bool enumerable = true,

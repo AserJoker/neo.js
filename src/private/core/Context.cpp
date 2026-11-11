@@ -1446,7 +1446,7 @@ Value* Context::setProperty(Value* obj, Value* key, Value* value) {
     return obj->type()->setProperty(this, obj, key, value);
 }
 
-bool Context::hasProperty(Value* obj, Value* key) {
+Value* Context::hasProperty(Value* obj, Value* key) {
     return obj->type()->hasProperty(this, obj, key);
 }
 

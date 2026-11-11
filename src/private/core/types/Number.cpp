@@ -55,8 +55,8 @@ Value* NumberType::getProperty(IContext* ctx, Value* self, Value* key) {
 Value* NumberType::setProperty(IContext* ctx, Value* self, Value* key, Value* value) {
     return primitiveSetProperty(ctx, self, key, value);
 }
-bool NumberType::hasProperty(IContext* /*ctx*/, Value* /*self*/, Value* /*key*/) {
-    return false;
+Value* NumberType::hasProperty(IContext* ctx, Value* /*self*/, Value* /*key*/) {
+    return ctx->createBoolean(false);
 }
 Value* NumberType::deleteProperty(IContext* ctx, Value* /*self*/, Value* /*key*/) {
     return ctx->createBoolean(true);

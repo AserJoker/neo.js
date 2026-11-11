@@ -6,6 +6,7 @@
 //
 // 关联 ADR: 016（Type 体系修订）、017（Fatal 透传契约 §4）
 
+#include "core/IContext.h"
 #include "core/types/Fatal.h"
 
 namespace neo::core {
@@ -30,8 +31,8 @@ Value* FatalType::getProperty(IContext* /*ctx*/, Value* self, Value* /*key*/) {
 Value* FatalType::setProperty(IContext* /*ctx*/, Value* self, Value* /*key*/, Value* /*value*/) {
     return self;
 }
-bool FatalType::hasProperty(IContext* /*ctx*/, Value* /*self*/, Value* /*key*/) {
-    return false;
+Value* FatalType::hasProperty(IContext* ctx, Value* /*self*/, Value* /*key*/) {
+    return ctx->createBoolean(false);
 }
 Value* FatalType::deleteProperty(IContext* /*ctx*/, Value* self, Value* /*key*/) {
     return self;

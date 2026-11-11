@@ -258,14 +258,14 @@ Value* ArrayType::setProperty(IContext* ctx, Value* self, Value* key, Value* val
     return getObjectType()->setProperty(ctx, self, key, value);
 }
 
-bool ArrayType::hasProperty(IContext* ctx, Value* self, Value* key) {
+Value* ArrayType::hasProperty(IContext* ctx, Value* self, Value* key) {
     std::string k;
     if (!isSymbolKeyValue(key)) {
-        if (detail::propertyKeyString(ctx, key, k) != nullptr) return false;
-        if (k == "length") return true;
+        if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
+        if (k == "length") return ctx->createBoolean(true);
         uint32_t index = 0;
         if (parseArrayIndex(k, index) && findIndexInChain(ctx, self, index) != nullptr) {
-            return true;
+            return ctx->createBoolean(true);
         }
     }
     return getObjectType()->hasProperty(ctx, self, key);

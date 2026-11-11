@@ -219,7 +219,7 @@ inline Value* inOperator(IContext* ctx, Value* key, Value* obj) {
     if (!isObjectKind(obj->type()->kind())) {
         return typeError(ctx, "right-hand side of 'in' is not an object");
     }
-    return ctx->createBoolean(ctx->hasProperty(obj, key));
+    return ctx->hasProperty(obj, key);
 }
 
 // —— typeof（ES2024 §13.5.3）——

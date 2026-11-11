@@ -305,7 +305,7 @@ Value* FunctionType::getProperty(IContext* ctx, Value* self, Value* key) {
 Value* FunctionType::setProperty(IContext* ctx, Value* self, Value* key, Value* value) {
     return getObjectType()->setProperty(ctx, self, key, value);
 }
-bool FunctionType::hasProperty(IContext* ctx, Value* self, Value* key) {
+Value* FunctionType::hasProperty(IContext* ctx, Value* self, Value* key) {
     return getObjectType()->hasProperty(ctx, self, key);
 }
 Value* FunctionType::deleteProperty(IContext* ctx, Value* self, Value* key) {

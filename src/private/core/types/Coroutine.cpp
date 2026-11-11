@@ -51,7 +51,7 @@ Value* CoroutineType::getProperty(IContext* ctx, Value* self, Value* key) {
 Value* CoroutineType::setProperty(IContext* ctx, Value* self, Value* key, Value* value) {
     return getObjectType()->setProperty(ctx, self, key, value);
 }
-bool CoroutineType::hasProperty(IContext* ctx, Value* self, Value* key) {
+Value* CoroutineType::hasProperty(IContext* ctx, Value* self, Value* key) {
     return getObjectType()->hasProperty(ctx, self, key);
 }
 Value* CoroutineType::deleteProperty(IContext* ctx, Value* self, Value* key) {

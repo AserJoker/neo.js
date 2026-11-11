@@ -187,14 +187,14 @@ Value* PrimitiveWrapperType::setProperty(IContext* ctx, Value* self, Value* key,
     return getObjectType()->setProperty(ctx, self, key, value);
 }
 
-bool PrimitiveWrapperType::hasProperty(IContext* ctx, Value* self, Value* key) {
+Value* PrimitiveWrapperType::hasProperty(IContext* ctx, Value* self, Value* key) {
     std::string k;
     bool matches = false;
     Value* err = nullptr;
     if (resolveStringWrapperKey(ctx, stringPayload(self), key, k, matches, err)) {
-        if (matches) return true;
+        if (matches) return ctx->createBoolean(true);
     } else if (err != nullptr) {
-        return false;  // ToPropertyKey 失败 → 不存在
+        return err;
     }
     return getObjectType()->hasProperty(ctx, self, key);
 }

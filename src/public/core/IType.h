@@ -205,7 +205,9 @@ public:
     // 访问器属性：get 命中 getter 时以 receiver 为 this 调用，set 命中 setter 同理。
     virtual Value* getProperty(IContext* ctx, Value* self, Value* key) = 0;
     virtual Value* setProperty(IContext* ctx, Value* self, Value* key, Value* value) = 0;
-    virtual bool hasProperty(IContext* ctx, Value* self, Value* key) = 0;
+    // hasProperty（`in` / [[HasProperty]]）：返回 Boolean，或 Exception/Fatal。
+    // 走错误通道，Proxy 的 has trap 抛错可原样透传。
+    virtual Value* hasProperty(IContext* ctx, Value* self, Value* key) = 0;
     virtual Value* deleteProperty(IContext* ctx, Value* self, Value* key) = 0;
     virtual Value* defineProperty(IContext* ctx, Value* self, Value* key,
                                   Value* value, bool writable, bool enumerable,

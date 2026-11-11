@@ -115,8 +115,8 @@ trap 缺失（undefined/null）时回退到 target 的对应内部方法。
 
 ## 8. 已知边界（P1）
 
-- `hasProperty` 返回 bool，has trap 抛出的异常被吞为 false；P2 引入
-  带错误通道的内部方法后修正。
+- `hasProperty` 已改为返回 `Value*`（Boolean 或 Exception/Fatal），has trap
+  抛错原样透传。
 - `getOwnPropertyDescriptor` 描述符只做基本转换，未校验数据/访问器字段
   互斥。
 - 不变量尚未实现，因此"trap 撒谎"（如对不可配置属性返回 undefined）

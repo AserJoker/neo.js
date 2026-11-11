@@ -72,7 +72,7 @@ public:
     // 属性操作（ADR-018）
     Value* getProperty(IContext* ctx, Value* self, Value* key) override;
     Value* setProperty(IContext* ctx, Value* self, Value* key, Value* value) override;
-    bool hasProperty(IContext* ctx, Value* self, Value* key) override;
+    Value* hasProperty(IContext* ctx, Value* self, Value* key) override;
     Value* deleteProperty(IContext* ctx, Value* self, Value* key) override;
     Value* defineProperty(IContext* ctx, Value* self, Value* key,
                           Value* value, bool writable, bool enumerable,
@@ -145,8 +145,8 @@ Value* ordinaryGet(IContext* ctx, Value* obj, const PropertyKey& key, Value* rec
 // [[Set]] 返回 false（调用方按严格模式决定是否抛 TypeError）。
 Value* ordinarySet(IContext* ctx, Value* obj, const PropertyKey& key, Value* value,
                    Value* receiver, bool& ok);
-// ordinaryHas（§10.1.7.1）：自有 + 原型链。
-bool ordinaryHas(IContext* ctx, Value* obj, const PropertyKey& key);
+// ordinaryHas（§10.1.7.1）：自有 + 原型链。返回 Boolean 或 Exception/Fatal。
+Value* ordinaryHas(IContext* ctx, Value* obj, const PropertyKey& key);
 // ordinaryDelete（§10.1.10）：只操作自有属性；ok=false 表示不可配置。
 Value* ordinaryDelete(IContext* ctx, Value* obj, const PropertyKey& key, bool& ok);
 // ordinaryGetPrototype（§10.1.2）：无原型返回 null。
