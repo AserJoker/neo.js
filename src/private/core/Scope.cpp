@@ -14,8 +14,15 @@
 #include "core/Scope.h"
 
 #include "core/IContext.h"
+#include "core/types/TypeBehavior.h"
 
 namespace neo::core {
+
+void Scope::destroySelf() {
+    infra::IAllocator* alloc = allocator_;
+    this->~Scope();
+    alloc->free(this);
+}
 
 Value* Scope::lookup(std::string_view name) const {
     auto it = namedValues_.find(std::string(name));
@@ -64,6 +71,51 @@ Value* Scope::lookupChain(std::string_view name) const {
     return nullptr;
 }
 
+Scope::StoreOutcome Scope::store(IContext* /*ctx*/, std::string_view /*name*/,
+                                 Value* /*source*/, Value*& /*result*/) {
+    // 普通作用域的直接/间接绑定由 Context::store 统一处理。
+    return StoreOutcome::NotFound;
+}
+
+// —— WithScope ——
+
+WithScope::WithScope(Scope* parent, infra::IAllocator* alloc, IContext* context,
+                     Value* withObject)
+    : Scope(parent, alloc, context), withObject_(withObject) {
+    // with 对象由本作用域保活（GC 从作用域树标记 values_）。
+    add(withObject_);
+}
+
+Value* WithScope::lookup(std::string_view name) const {
+    IContext* ctx = context();
+    if (ctx != nullptr) {
+        Value* key = ctx->createString(name);
+        if (key == ctx->oomValue()) return key;
+        if (ctx->hasProperty(withObject_, key)) {
+            return ctx->getProperty(withObject_, key);
+        }
+    }
+    return Scope::lookup(name);
+}
+
+Scope::StoreOutcome WithScope::store(IContext* ctx, std::string_view name,
+                                     Value* source, Value*& result) {
+    Value* key = ctx->createString(name);
+    if (key == ctx->oomValue()) {
+        result = key;
+        return StoreOutcome::Error;
+    }
+    if (!ctx->hasProperty(withObject_, key)) return StoreOutcome::NotFound;
+    result = ctx->setProperty(withObject_, key, source);
+    return detail::isErrorValue(result) ? StoreOutcome::Error : StoreOutcome::Handled;
+}
+
+void WithScope::destroySelf() {
+    infra::IAllocator* alloc = allocator();
+    this->~WithScope();
+    alloc->free(this);
+}
+
 Scope::~Scope() {
     // 1. 先从父作用域摘除自己（避免父持悬垂指针）
     if (parent_ != nullptr) {
@@ -73,8 +125,7 @@ Scope::~Scope() {
     //    子 Scope 是 placement new 对象，需显式调析构 + allocator_->free 释放内存。
     while (!children_.empty()) {
         Scope* child = *children_.begin();
-        child->~Scope();              // 子析构内会调本作用域 removeChild(child)
-        allocator_->free(child);      // 释放子 Scope 对象内存
+        child->destroySelf();         // 虚析构 + 释放子 Scope 对象内存
     }
     // 3. 清空自己的 values（Value 的回收由 GC 的可达性标记决定）
     values_.clear();

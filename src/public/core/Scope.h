@@ -66,9 +66,16 @@ class Scope {
     std::unordered_map<std::string, IndirectBinding> indirectBindings_;  // 导入绑定
     std::unordered_set<std::string> flags_;                // 作用域标注（如 "strict"）
 
+protected:
+    // 派生作用域（WithScope）解析属性时借用 Context。
+    IContext* context() const { return context_; }
+
 public:
     // 绑定种类：store 需据此区分「直接槽位」与「只读导入绑定」。
     enum class BindingKind { None, Direct, Indirect };
+
+    // 赋值处理结果：NotFound 表示本作用域不处理，继续沿 parent 链查找。
+    enum class StoreOutcome { NotFound, Handled, Error };
 
     // 构造：parent 可为 nullptr（global scope），allocator 借用（用于析构子时 free 内存）。
     // global scope 的 parent_=nullptr，allocator 由 Context 传入。
@@ -78,9 +85,8 @@ public:
         : parent_(parent), allocator_(alloc), context_(context) {}
 
     // 析构：递归销毁整个子树（见文件头注释）。
-    // 调用方负责释放本 Scope 对象自身的内存（placement new 对象需显式
-    // allocator->free(this)——但通常由父析构或 Context 负责）。
-    ~Scope();
+    // 虚析构：WithScope 等派生作用域经 Scope* 销毁时需正确析构。
+    virtual ~Scope();
 
     Scope(const Scope&) = delete;
     Scope& operator=(const Scope&) = delete;
@@ -89,11 +95,8 @@ public:
 
     // 析构 + 释放自身内存（placement new 对象的完整销毁）。
     // 供 data 层（如 FunctionData）在引用计数归 0 时销毁自己持有的孤立 Scope。
-    void destroySelf() {
-        infra::IAllocator* alloc = allocator_;
-        this->~Scope();
-        alloc->free(this);
-    }
+    // 虚函数：派生作用域需释放自己的成员后再归还内存。
+    virtual void destroySelf();
 
     // —— 作用域树 ——
     Scope* parent() const { return parent_; }
@@ -150,7 +153,8 @@ public:
     // 重复检查无条件生效——var/let/const 的差异在 Sema 阶段已抹平，与 strict 无关。
     // 与 bind 的区别：bind 覆盖重名且不 add 跟踪；define 重复检查 + add 跟踪。
     bool define(std::string_view name, Value* v) {
-        if (lookup(name) != nullptr) return false;
+        // 只检查本作用域的直接/间接绑定；with 对象属性不是声明。
+        if (bindingKind(name) != BindingKind::None) return false;
         add(v);
         namedValues_[std::string(name)] = v;
         return true;
@@ -169,11 +173,21 @@ public:
 
     // 按名字查找 Value（找不到返回 nullptr）。
     // 间接绑定经 context 解析为命名空间属性值（缺失时返回 undefined）。
-    Value* lookup(std::string_view name) const;
+    // 虚函数：WithScope 先查 with 对象属性，未命中再回退普通绑定。
+    virtual Value* lookup(std::string_view name) const;
 
     // 沿 parent 链向上查找命名 value（ADR-013 查找路径基础版）。
     // 本作用域找不到则查 parent，递归到 global（parent=nullptr 时返回 nullptr）。
     Value* lookupChain(std::string_view name) const;
+
+    // 本作用域处理赋值（with 对象属性写入）。返回 NotFound 时由调用方继续沿链查找；
+    // Handled/Error 时 result 为赋值结果（Error 时为 Exception/Fatal）。
+    // 基类不处理（直接/间接绑定由 Context::store 统一处理）。
+    virtual StoreOutcome store(IContext* ctx, std::string_view name, Value* source,
+                               Value*& result);
+
+    // with 对象（非 WithScope 返回 nullptr）。Context::store 据此分派对象属性写入。
+    virtual Value* withObject() const { return nullptr; }
 
     // 本作用域内绑定种类（不解析、不查 parent）。
     BindingKind bindingKind(std::string_view name) const {
@@ -240,6 +254,35 @@ public:
 
     // 遍历本作用域直接跟踪的 Value（供 GC 标记访问器使用）
     const std::vector<Value*>& values() const { return values_; }
+};
+
+// with 作用域（ES2024 §9.1.1.2 Object Environment Records）：
+// 在普通作用域链上插入一个对象环境——名字先查 with 对象（含原型链），
+// 命中则读写对象属性；未命中回退到外层作用域。
+//
+// 与普通 Scope 的区别：
+//   - 多一个 withObject_（已 ToObject 的对象），登记到 values_ 保活；
+//   - lookup 先查对象属性（getProperty，含 getter/原型链）；
+//   - store 命中对象属性时走 setProperty，而非原地替换 Value 槽位。
+//
+// 生命周期：由 Context::pushWithScope 创建、popScope 销毁；是 current 的普通子作用域。
+class WithScope : public Scope {
+    Value* withObject_ = nullptr;
+
+public:
+    WithScope(Scope* parent, infra::IAllocator* alloc, IContext* context,
+              Value* withObject);
+
+    Value* withObject() const override { return withObject_; }
+
+    // 读取：with 对象有该属性（含原型链）则返回属性值，否则回退普通绑定。
+    Value* lookup(std::string_view name) const override;
+
+    // 写入：with 对象有该属性则 setProperty；否则 NotFound 交给外层。
+    StoreOutcome store(IContext* ctx, std::string_view name, Value* source,
+                       Value*& result) override;
+
+    void destroySelf() override;
 };
 
 }  // namespace neo::core

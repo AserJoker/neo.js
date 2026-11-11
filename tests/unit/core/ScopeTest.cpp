@@ -35,9 +35,8 @@ Scope* makeScope(IAllocator* alloc, Scope* parent) {
 // 调析构 + free（placement new 对象的标准释放）
 // 注意：根 scope 析构会递归销毁所有子，故只需 destroy 根即可。
 // 若单独 destroy 中间节点，析构会从父摘除自己 + 递归销毁子树，调用方不需手动摘除。
-void destroyScope(IAllocator* alloc, Scope* s) {
-    s->~Scope();
-    alloc->free(s);
+void destroyScope(IAllocator* /*alloc*/, Scope* s) {
+    s->destroySelf();
 }
 
 }  // namespace

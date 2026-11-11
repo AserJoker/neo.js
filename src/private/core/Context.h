@@ -114,6 +114,7 @@ public:
     void setRootScope(Scope* s) override { root_ = s; }
     void setCurrentScope(Scope* s) override { current_ = s; }
     Scope* pushNewScope(Scope* parent) override;
+    Value* pushWithScope(Value* obj, Scope** outScope) override;
     void popScope() override;
 
     // 调用栈（ADR-037）：纯展示信息，不参与变量解析

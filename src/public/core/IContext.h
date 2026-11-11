@@ -86,6 +86,12 @@ public:
     // 用于函数调用的临时执行作用域（ADR-022）。返回新建的 scope，OOM 返回 nullptr。
     virtual Scope* pushNewScope(Scope* parent) = 0;
 
+    // pushWithScope: 以 obj 为 with 对象创建 WithScope 并设为 current。
+    // obj 先 ToObject（null/undefined -> TypeError；原始值 -> 包装对象）。
+    // 严格模式禁止 with（SyntaxError）。成功返回 nullptr 并写 outScope；
+    // 失败返回 Exception/Fatal（outScope 不变）。
+    virtual Value* pushWithScope(Value* obj, Scope** outScope) = 0;
+
     // popScope: 销毁 current scope 并回到其 parent（~Scope 递归释放子树 + allocator->free）。
     // global/root 不可 pop（parent 为 global 或为 nullptr 时无操作）。
     virtual void popScope() = 0;

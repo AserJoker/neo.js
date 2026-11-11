@@ -184,6 +184,31 @@ Scope* Context::pushNewScope(Scope* parent) {
     return s;
 }
 
+Value* Context::pushWithScope(Value* obj, Scope** outScope) {
+    // with 在严格模式是语法错误（ES2024 §14.11.2）。
+    if (hasFlag("strict")) {
+        return detail::errorOf(this, ErrorKind::SyntaxError,
+                               "Strict mode code may not include a with statement");
+    }
+    // ToObject：null/undefined 抛 TypeError，原始值转包装对象，对象原样使用。
+    TypeKind k = obj->type()->kind();
+    if (k == TypeKind::Null || k == TypeKind::Undefined) {
+        return detail::typeError(this, "Cannot convert undefined or null to object");
+    }
+    Value* target = obj;
+    if (!detail::isObjectKind(k)) {
+        target = createPrimitiveWrapper(obj);
+        if (target == oomValue_) return target;
+    }
+    void* p = alloc_->alloc(sizeof(WithScope));
+    if (p == nullptr) return oomValue_;
+    auto* s = new (p) WithScope(current_, alloc_, this, target);
+    current_->addChild(s);
+    current_ = s;
+    *outScope = s;
+    return nullptr;
+}
+
 void Context::popScope() {
     // root/global 不可 pop（模块根与全局是持久作用域）
     if (current_ == root_ || current_ == global_) return;
@@ -192,9 +217,8 @@ void Context::popScope() {
     if (parent == nullptr) return;
     Scope* top = current_;
     current_ = parent;
-    // 销毁弹出的 scope：~Scope 递归释放子树 + 从父摘除自己
-    top->~Scope();
-    alloc_->free(top);
+    // 销毁弹出的 scope：虚析构 + 递归释放子树 + 从父摘除自己
+    top->destroySelf();
 }
 
 // —— Value 创建便捷方法 ——
@@ -949,7 +973,8 @@ Value* Context::define(std::string_view name, Value* source) {
     if (isErrorValue(source)) return source;
     // 同一作用域重复定义无条件报错：var/let/const 的差异在 Sema 阶段已抹平，
     // 到达 Engine 时定义语义统一（同 scope 不可重复声明，与 strict 无关）。
-    if (current()->lookup(name) != nullptr) {
+    // 用 bindingKind 而非 lookup：with 对象属性不是本作用域的声明，不应阻止定义。
+    if (current()->bindingKind(name) != Scope::BindingKind::None) {
         std::string msg = "Identifier '" + std::string(name) + "' has already been declared";
         return detail::errorOf(this, ErrorKind::SyntaxError, msg);
     }
@@ -959,26 +984,41 @@ Value* Context::define(std::string_view name, Value* source) {
 Value* Context::store(std::string_view name, Value* source) {
     // Exception/Fatal 永远不出现在左右值，提前透传
     if (isErrorValue(source)) return source;
-    // 导入绑定是只读的间接绑定：必须在解析前拦截，否则会写穿到导出方槽位。
-    // 放在运行时而非 Sema，是因为 eval/with 等动态路径绕过静态分析。
-    if (current()->bindingKindChain(name) == Scope::BindingKind::Indirect) {
-        std::string msg = "Assignment to import binding '" + std::string(name) + "'";
-        return detail::typeError(this, msg);
-    }
-    Value* target = current()->lookupChain(name);
-    if (target != nullptr) {
-        // 不可赋值（const 声明）：拦截并报错
-        if (!target->isMutable()) {
-            std::string msg = "Assignment to constant variable '" + std::string(name) + "'";
-            return detail::typeError(this, msg);
+
+    // 沿作用域链查找：with 对象优先（对象环境记录），其次直接/间接绑定。
+    for (Scope* s = current(); s != nullptr; s = s->parent()) {
+        // with 对象属性写入：必须走 setProperty（访问器/原型/只读语义），
+        // 不能像普通槽位那样原地 replaceMeta。
+        Value* result = nullptr;
+        Scope::StoreOutcome outcome = s->store(this, name, source, result);
+        if (outcome == Scope::StoreOutcome::Handled) return result;
+        if (outcome == Scope::StoreOutcome::Error) return result;
+
+        switch (s->bindingKind(name)) {
+            case Scope::BindingKind::Indirect:
+                // 导入绑定只读：必须在解析前拦截，否则会写穿到导出方槽位。
+                // 放在运行时而非 Sema，是因为 eval/with 等动态路径绕过静态分析。
+                return detail::typeError(
+                    this, "Assignment to import binding '" + std::string(name) + "'");
+            case Scope::BindingKind::Direct: {
+                Value* target = s->lookup(name);
+                if (target == nullptr) break;  // 内部契约：Direct 必有槽位
+                // 不可赋值（const 声明）：拦截并报错
+                if (!target->isMutable()) {
+                    return detail::typeError(
+                        this, "Assignment to constant variable '" + std::string(name) + "'");
+                }
+                // 找到：clone source 的 data，替换 target 的 type+data
+                IData* cloned = cloneForNewValue(source);
+                if (cloned == nullptr) return oomValue_;  // clone 失败，target 不变
+                IData* old = target->replaceMeta(source->type(), cloned);
+                // 旧 data 已从 Value 摘除，collect 遍历不到，需显式回收（ref 归 0 才释放）
+                gc_->releaseData(old);
+                return target;
+            }
+            case Scope::BindingKind::None:
+                break;
         }
-        // 找到：clone source 的 data，替换 target 的 type+data
-        IData* cloned = cloneForNewValue(source);
-        if (cloned == nullptr) return oomValue_;  // clone 失败，target 不变
-        IData* old = target->replaceMeta(source->type(), cloned);
-        // 旧 data 已从 Value 摘除，collect 遍历不到，需显式回收（ref 归 0 才释放）
-        gc_->releaseData(old);
-        return target;
     }
     // 未找到：按当前作用域链的 strict 标注分派
     if (hasFlag("strict")) {
