@@ -145,11 +145,26 @@ public:
 // class 实例字段定义（ADR-047 §4）。P1 只用 initializer；extraInitializers 供
 // 装饰器 addInitializer 扩展，P3 启用。
 struct FieldDef {
-    Value* key = nullptr;                   // public key（P2 私有字段用 PrivateName）
+    Value* key = nullptr;                   // public key
     Value* initializer = nullptr;           // 初始化函数（nullptr = undefined）
     std::vector<Value*> extraInitializers;  // 装饰器追加的初始化回调
-    bool isPrivate = false;
     bool isStatic = false;
+};
+
+// 私有字段定义（ADR-047 §5）：name 引用计数由 ClassData 持有。
+struct PrivateFieldDef {
+    PrivateName* name = nullptr;
+    Value* initializer = nullptr;  // 以实例/构造器为 this 求值
+};
+
+// 私有方法/访问器定义：只存在于 class 上，实例只持有 brand（PrivateSlot.value=nullptr）。
+struct PrivateElement {
+    enum class Kind { Method, Accessor };
+    PrivateName* name = nullptr;
+    Kind kind = Kind::Method;
+    Value* method = nullptr;   // Kind::Method
+    Value* getter = nullptr;   // Kind::Accessor
+    Value* setter = nullptr;   // Kind::Accessor
 };
 
 // class 构造器专属 data（ADR-047）：派生 FunctionData，复用函数生态。
@@ -157,12 +172,24 @@ class ClassData : public FunctionData {
 public:
     bool isDerived = false;              // [[ConstructorKind]]
     Value* superConstructor = nullptr;   // 父构造器（GC 遍历）
-    std::vector<FieldDef> fields;        // 实例字段，按声明顺序
+    std::vector<FieldDef> fields;        // public 实例字段，按声明顺序
     std::vector<Value*> classInitializers;  // 装饰器 addInitializer（P3）
+
+    // —— 私有元素（ADR-047 §5）——
+    std::vector<PrivateFieldDef> privateFields;        // 实例私有字段
+    std::vector<PrivateFieldDef> staticPrivateFields;  // 静态私有字段
+    std::vector<PrivateElement> privateElements;       // 实例私有方法/访问器
+    std::vector<PrivateElement> staticPrivateElements; // 静态私有方法/访问器
+    PrivateSlots staticSlots;  // 类构造器自身的私有槽（静态私有字段/brand）
 
     ClassData(Scope* closure, Scope* root, NativeFn fn, size_t minArgs,
               NativeFn ctor = nullptr)
         : FunctionData(closure, root, fn, minArgs, ctor) {}
+
+    ~ClassData() override;
+
+    // class 构造器对象的私有槽即静态私有槽。
+    PrivateSlots* privateSlots() override { return &staticSlots; }
 
     void enumerateChildren(IGCVisitor* visitor) override;
 };

@@ -132,8 +132,8 @@ void ArrayData::setLength(uint32_t n) {
 }
 
 void ArrayData::enumerateChildren(IGCVisitor* visitor) {
-    // 继承的对象字段：prototype + 命名属性 + 符号属性
-    ObjectData::enumerateChildren(visitor);
+    // 继承的对象字段：prototype + 命名属性 + 符号属性 + 私有槽
+    InstanceData::enumerateChildren(visitor);
     // 索引元素（空洞为 nullptr，跳过）
     if (sparseMode) {
         for (auto& [index, value] : sparse) {

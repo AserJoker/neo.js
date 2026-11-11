@@ -24,7 +24,7 @@
 
 #include "core/IData.h"
 #include "core/IType.h"
-#include "core/types/Object.h"  // ErrorData 继承 ObjectData
+#include "core/types/Object.h"  // ErrorData 继承 InstanceData
 #include "infra/IAllocator.h"
 
 namespace neo::core {
@@ -63,9 +63,9 @@ public:
     Value* setPrototype(IContext* ctx, Value* self, Value* proto) override;
 };
 
-// Error 负载：继承 ObjectData 复用属性容器/原型链/GC。
+// Error 负载：继承 InstanceData 复用属性容器/原型链/GC 与私有槽。
 // [[ErrorData]] 是标记性内部槽，无自有字段——存在性即标记。
-class ErrorData : public ObjectData {
+class ErrorData : public InstanceData {
 public:
     // clone：引用语义（ADR-019 §2）——ref++ 后返回 this
     IData* clone(neo::infra::IAllocator* alloc) const override;

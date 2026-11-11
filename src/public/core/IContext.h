@@ -33,6 +33,7 @@
 #include "core/IteratorKind.h"
 #include "core/Module.h"
 #include "core/OperatorKind.h"
+#include "core/PrivateName.h"
 #include "core/SourceText.h"
 #include "core/Task.h"
 #include "core/WellKnownSymbol.h"
@@ -234,14 +235,53 @@ public:
 
     // —— class 字段初始化（ADR-047 §4）——
     // addInstanceField: 向 class 构造器注册实例字段（按调用顺序初始化）。
-    // initializer 为初始化函数（nullptr = undefined）；isPrivate 预留给 P2。
-    virtual void addInstanceField(Value* classCtor, Value* key, Value* initializer,
-                                  bool isPrivate = false) = 0;
+    // initializer 为初始化函数（nullptr = undefined）。
+    virtual void addInstanceField(Value* classCtor, Value* key, Value* initializer) = 0;
     // addClassInitializer: 注册类级初始化回调（装饰器 addInitializer，P3）。
     virtual void addClassInitializer(Value* classCtor, Value* initializer) = 0;
     // initializeInstanceFields: 按 ClassData 顺序初始化实例字段并执行类级初始化回调。
     // 由 VM 在正确时机调用（基类构造体开头 / 派生类 super 返回后）。
     virtual Value* initializeInstanceFields(Value* instance, Value* classCtor) = 0;
+
+    // —— 私有字段/方法/访问器（ADR-047 §5）——
+    // createPrivateName: 创建私有名（refCount=1，调用方持有）。description 仅用于
+    // 错误消息；身份是 PrivateName* 指针，不同 class 求值的同名私有名互不相等。
+    virtual PrivateName* createPrivateName(std::string_view description) = 0;
+    // retain/release: 引用计数。add* 会 retain 一次；调用方用完自己的引用后 release。
+    virtual void retainPrivateName(PrivateName* name) = 0;
+    virtual void releasePrivateName(PrivateName* name) = 0;
+
+    // addPrivateField/addStaticPrivateField: 注册私有字段（按调用顺序初始化）。
+    // initializer 以实例（静态字段以构造器）为 this 求值。
+    virtual void addPrivateField(Value* classCtor, PrivateName* name,
+                                 Value* initializer) = 0;
+    virtual void addStaticPrivateField(Value* classCtor, PrivateName* name,
+                                       Value* initializer) = 0;
+    // addPrivateMethod/addPrivateAccessor: 注册私有方法/访问器（实例只持 brand）。
+    virtual void addPrivateMethod(Value* classCtor, PrivateName* name,
+                                  Value* method) = 0;
+    virtual void addPrivateAccessor(Value* classCtor, PrivateName* name, Value* getter,
+                                    Value* setter) = 0;
+    virtual void addStaticPrivateMethod(Value* classCtor, PrivateName* name,
+                                        Value* method) = 0;
+    virtual void addStaticPrivateAccessor(Value* classCtor, PrivateName* name,
+                                          Value* getter, Value* setter) = 0;
+
+    // initializePrivateElements: 给实例加私有方法/访问器 brand，再按声明顺序
+    // 初始化私有字段。由 VM 在正确时机调用（基类构造体开头 / 派生类 super 后）。
+    virtual Value* initializePrivateElements(Value* instance, Value* classCtor) = 0;
+    // initializeStaticPrivateElements: 给 class 构造器加静态 brand 并初始化静态字段。
+    virtual Value* initializeStaticPrivateElements(Value* classCtor) = 0;
+
+    // getPrivate/setPrivate: 私有字段读写。对象缺 brand 或该名不是字段时抛 TypeError。
+    virtual Value* getPrivate(Value* obj, PrivateName* name) = 0;
+    virtual Value* setPrivate(Value* obj, PrivateName* name, Value* value) = 0;
+    // hasPrivate: `#x in obj`（brand 或字段存在即为 true）。
+    virtual bool hasPrivate(Value* obj, PrivateName* name) = 0;
+    // 私有方法/访问器读取：先校验 obj 有 brand，再从 class 定义表取函数。
+    virtual Value* getPrivateMethod(Value* classCtor, Value* obj, PrivateName* name) = 0;
+    virtual Value* getPrivateGetter(Value* classCtor, Value* obj, PrivateName* name) = 0;
+    virtual Value* getPrivateSetter(Value* classCtor, Value* obj, PrivateName* name) = 0;
 
     // setFunctionClassConstructor: 更新已由创建选项标记的 class 构造器的
     // isDerived/superConstructor（创建后再确定父构造器的场景）。
@@ -326,6 +366,10 @@ public:
     // 原型自动挂 Object.prototype（ADR-035 完整原型链）。
     // 返回 Value*：正常对象，或 OOM 哨兵（ADR-031）。
     virtual Value* createObject(std::string_view bindName = {}) = 0;
+
+    // createInstance: 创建可承载私有槽的空对象（InstanceData）。
+    // class 构造的 this 用它；普通对象字面量仍用 createObject，不付槽位开销。
+    virtual Value* createInstance(std::string_view bindName = {}) = 0;
 
     // createArray: 创建空数组 Value（elements 空，length=0）。
     // 原型自动挂 Array.prototype（ADR-018 §6）。bootstrap 期间原型未就绪时跳过。

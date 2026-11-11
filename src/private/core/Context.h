@@ -178,10 +178,33 @@ public:
     Value* setSuperProperty(Value* homeObject, Value* key, Value* value,
                             Value* receiver) override;
     Value* createUninitialized() override;
-    void addInstanceField(Value* classCtor, Value* key, Value* initializer,
-                          bool isPrivate = false) override;
+    void addInstanceField(Value* classCtor, Value* key, Value* initializer) override;
     void addClassInitializer(Value* classCtor, Value* initializer) override;
     Value* initializeInstanceFields(Value* instance, Value* classCtor) override;
+
+    // 私有字段/方法/访问器（ADR-047 §5）
+    PrivateName* createPrivateName(std::string_view description) override;
+    void retainPrivateName(PrivateName* name) override;
+    void releasePrivateName(PrivateName* name) override;
+    void addPrivateField(Value* classCtor, PrivateName* name,
+                         Value* initializer) override;
+    void addStaticPrivateField(Value* classCtor, PrivateName* name,
+                               Value* initializer) override;
+    void addPrivateMethod(Value* classCtor, PrivateName* name, Value* method) override;
+    void addPrivateAccessor(Value* classCtor, PrivateName* name, Value* getter,
+                            Value* setter) override;
+    void addStaticPrivateMethod(Value* classCtor, PrivateName* name,
+                                Value* method) override;
+    void addStaticPrivateAccessor(Value* classCtor, PrivateName* name, Value* getter,
+                                  Value* setter) override;
+    Value* initializePrivateElements(Value* instance, Value* classCtor) override;
+    Value* initializeStaticPrivateElements(Value* classCtor) override;
+    Value* getPrivate(Value* obj, PrivateName* name) override;
+    Value* setPrivate(Value* obj, PrivateName* name, Value* value) override;
+    bool hasPrivate(Value* obj, PrivateName* name) override;
+    Value* getPrivateMethod(Value* classCtor, Value* obj, PrivateName* name) override;
+    Value* getPrivateGetter(Value* classCtor, Value* obj, PrivateName* name) override;
+    Value* getPrivateSetter(Value* classCtor, Value* obj, PrivateName* name) override;
     void setFunctionClassConstructor(Value* fn, bool isDerived,
                                      Value* superCtor) override;
     Value* instanceOf(Value* value, Value* target) override;
@@ -212,6 +235,7 @@ public:
     using IContext::defineAccessor;
 
     Value* createObject(std::string_view bindName = {}) override;
+    Value* createInstance(std::string_view bindName = {}) override;
     Value* createArray(std::string_view bindName = {}) override;
     Value* createPrimitiveWrapper(Value* primitive,
                                   std::string_view bindName = {}) override;

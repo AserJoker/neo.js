@@ -148,14 +148,25 @@ TEST(ClassFieldsTest, ClassInitializersRunAfterFields) {
     EXPECT_EQ(g_order[1], "class");
 }
 
-TEST(ClassFieldsTest, PrivateFieldIsExplicitlyUnimplemented) {
+TEST(ClassFieldsTest, PrivateFieldIsRegisteredSeparately) {
     Fixture f;
     Value* cls = makeClass(f.ctx.get());
-    f.ctx->addInstanceField(cls, f.ctx->createString("#x"), nullptr, true);
+    neo::core::PrivateName* name = f.ctx->createPrivateName("x");
+    f.ctx->addPrivateField(cls, name, f.ctx->createNativeFunction(initOne, 0));
 
-    Value* inst = f.ctx->createObject();
-    Value* r = f.ctx->initializeInstanceFields(inst, cls);
-    EXPECT_EQ(r->type()->kind(), TypeKind::Exception);
+    Value* inst = f.ctx->createInstance();
+    ASSERT_EQ(f.ctx->initializePrivateElements(inst, cls)->type()->kind(),
+              TypeKind::Undefined);
+    EXPECT_TRUE(f.ctx->hasPrivate(inst, name));
+    EXPECT_EQ(numOf(f.ctx->getPrivate(inst, name)), 1.0);
+    // 私有字段不进入普通属性表（反射不可见）。
+    EXPECT_EQ(f.ctx->ownPropertyKeys(inst, false, true)->type()->kind(),
+              TypeKind::Array);
+    auto* keys = static_cast<neo::core::ArrayData*>(
+        f.ctx->ownPropertyKeys(inst, false, true)->data());
+    EXPECT_EQ(keys->length(), 0u);
+
+    f.ctx->releasePrivateName(name);
 }
 
 TEST(ClassFieldsTest, SetFunctionClassConstructorUpdatesMetadata) {

@@ -62,8 +62,9 @@ public:
     Value* setPrototype(IContext* ctx, Value* self, Value* proto) override;
 };
 
-// 包装对象负载：继承 ObjectData 复用属性容器/原型链/GC，增加 [[PrimitiveValue]]。
-class PrimitiveWrapperData : public ObjectData {
+// 包装对象负载：继承 InstanceData 复用属性容器/原型链/GC 与私有槽，
+// 增加 [[PrimitiveValue]]（class extends Boolean/Number/String）。
+class PrimitiveWrapperData : public InstanceData {
 public:
     // [[PrimitiveValue]]：被包装的原始值（Boolean/Number/String/Symbol 之一）。
     // 由构造方保证非空且类型合法。

@@ -61,7 +61,7 @@ const std::string* wrapperStringValue(Value* v) {
 // —— PrimitiveWrapperData ——
 
 void PrimitiveWrapperData::enumerateChildren(IGCVisitor* visitor) {
-    ObjectData::enumerateChildren(visitor);
+    InstanceData::enumerateChildren(visitor);
     if (primitiveValue != nullptr) visitor->visit(primitiveValue);
 }
 

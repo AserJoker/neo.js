@@ -1,6 +1,6 @@
 # ADR-047: class 的引擎模型 — ClassData 派生 FunctionData + 函数环境 this/new.target
 
-- 状态: 已接受 (2026-11-11)；P1（class 核心引擎原语）已实现，P2/P3 待实现
+- 状态: 已接受 (2026-11-11)；P1（class 核心）、P2（私有字段/方法/访问器）已实现，P3 待实现
 - 决策者: aserjoker（项目负责人） + CodeAgent
 - 关联: ADR-013（三层作用域）、ADR-021（Function 结构）、ADR-022（函数调用）、
           ADR-032（对象/函数模型）、ADR-034（原型与 new）、ADR-036（闭包作用域孤立化）、
@@ -201,15 +201,43 @@ for each classInitializer in ClassData.classInitializers:
 
 ### 5. 私有字段（P2）
 
-本阶段不做。设计上定死：
+PrivateName 是引擎内部对象，不是 JS 可见的 string/symbol：
 
-- PrivateName 是引擎内部对象，不是 JS 可见的 string/symbol；
-- 必须由 GC 托管（或引用计数），不能 Context 级 intern 永久累积；
-- 实例通过 `PrivateSlots` 持有 brand 和字段值，GC 从实例标记 PrivateName 和值；
-- `ObjectData` 只加一个可空 `PrivateSlots*`，惰性分配；
+- 身份是 `PrivateName*` 指针，每次 class 求值唯一；`description` 只用于错误消息；
+- 生命周期用**引用计数**（与 SourceText 同一模式）：ClassData 的定义表和实例
+  `PrivateSlots` 各持一份，最后一个引用释放时 delete。PrivateName 不持有任何
+  Value，天然无环，不需要 GC 标记；
+- 实例通过 `PrivateSlots`（`vector<PrivateSlot>`）持有 brand 和字段值：
+  `PrivateSlot{PrivateName* name; Value* value;}`，`value == nullptr` 表示只有
+  brand（私有方法/访问器），非空表示字段值；
 - 反射不可见：`Object.keys`/`getOwnPropertyNames`/`for...in` 都看不到私有字段。
 
-P1 的 ClassData 预留 `privateFields` 容器即可。
+槽位载体采用**单继承链**，避免 `XXXInstanceData` 组合爆炸：
+
+```
+ObjectData（privateSlots() 默认 nullptr）
+├── FunctionData → ClassData（覆盖 privateSlots() → staticSlots）
+└── InstanceData（内联 PrivateSlots）
+    ├── ArrayData
+    ├── ErrorData
+    ├── PrimitiveWrapperData
+    └── PromiseData
+```
+
+- 用户可 `extends` 的内建 Data 继承 `InstanceData`，其实例天然可承载私有槽；
+- 迭代器/协程/模块命名空间等内部类型继续直接继承 `ObjectData`，不付槽位开销；
+- 普通对象字面量仍用 `ObjectData`；class 构造的 this 用 `Context::createInstance()`
+  分配 `InstanceData`；
+- `ClassData` 不继承 `InstanceData`（否则每个函数都多一个槽表），而是内联
+  `staticSlots` 并覆盖 `privateSlots()`，静态私有字段与实例字段走同一套原语；
+- 代价：可被子类化的内建实例每个多一个空 vector（24 字节，空时无堆分配）。
+  后续用自研轻量容器优化，当前以正确性优先。
+
+VM 职责不变：私有名的词法解析、`#x in obj`/私有访问的字节码降级、嵌套 class 的
+PrivateEnvironment 链。引擎只提供 `createPrivateName`、`addPrivate*`、
+`initializePrivateElements`/`initializeStaticPrivateElements`、
+`getPrivate`/`setPrivate`/`hasPrivate`、`getPrivateMethod`/`getPrivateGetter`/
+`getPrivateSetter`。
 
 ### 6. sourceText：全局单例 + 函数切片
 
@@ -309,9 +337,42 @@ struct SourceSlice {
   `Reflect.get(null, ...)` 语义）。
 - `setSuperProperty` 从 base 链找描述符：访问器以 receiver 为 this 调 setter；
   数据属性可写时在 receiver 上定义自有属性。
-- 私有字段在 P1 显式返回 TypeError（"private fields are not implemented"）。
 - `this`/`new.target` 专用槽不进入 `namedValues_`，`load_this/load_new_target`
   由 VM 专用 opcode 访问。
+
+## P2 实现状态
+
+已落地：
+
+- `PrivateName`（`src/public/core/PrivateName.h`）：description + 引用计数，
+  身份按指针比较；`create/retain/release` 为宿主堆操作，不进 GC。
+- `PrivateSlot`/`PrivateSlots` 与 `ObjectData::privateSlots()` 虚访问器；
+  `InstanceData : ObjectData` 内联槽表，析构时归还 PrivateName 引用，
+  `enumerateChildren` 标记字段值。
+- `ArrayData`/`ErrorData`/`PrimitiveWrapperData`/`PromiseData` 改为继承
+  `InstanceData`，其 `enumerateChildren` 链改为 `InstanceData::enumerateChildren`。
+- `ClassData` 增加 `privateFields/staticPrivateFields/privateElements/
+  staticPrivateElements/staticSlots`，析构归还全部 PrivateName 引用，
+  `privateSlots()` 返回 `staticSlots`。
+- `Context::createInstance()` 分配 `InstanceData`；class 基类构造与
+  `newTarget` 为 class 的通用构造路径使用它。
+- 引擎原语：`createPrivateName/retainPrivateName/releasePrivateName`、
+  `addPrivateField/addStaticPrivateField`、`addPrivateMethod/addPrivateAccessor`、
+  `addStaticPrivateMethod/addStaticPrivateAccessor`、
+  `initializePrivateElements/initializeStaticPrivateElements`、
+  `getPrivate/setPrivate/hasPrivate`、`getPrivateMethod/getPrivateGetter/
+  getPrivateSetter`。
+
+实现边界：
+
+- `initializePrivateElements` 先给私有方法/访问器加 brand，再按声明顺序初始化
+  私有字段（ES2024 §10.2.1.2）。
+- `getPrivate`/`setPrivate` 只处理字段；brand-only 槽（方法/访问器）返回 TypeError，
+  方法/访问器必须走 `getPrivateMethod/Getter/Setter`。
+- 静态私有访问以 `obj == classCtor` 区分，从 `staticPrivateElements` 取函数。
+- 普通对象（`ObjectData`）不能承载私有槽，`initializePrivateElements` 返回 TypeError。
+- `class extends Function` 的实例私有字段仍不支持（函数对象不是 `InstanceData`），
+  留待 P3。
 
 ## 后果
 
@@ -322,4 +383,5 @@ struct SourceSlice {
   调用路径保存/恢复；ClassData 与 FunctionData 的 GC 遍历需要同步扩展；sourceText 需要
   引用计数或 GC 托管。
 - 风险：`super()` 在箭头函数中的语义、绑定函数/Reflect.construct 的 newTarget 传播、
-  类装饰器替换构造器后的 ClassData 归属、PrivateName 生命周期，需在对应阶段单独验证。
+  类装饰器替换构造器后的 ClassData 归属、`class extends Function` 的实例私有字段，
+  需在对应阶段单独验证。

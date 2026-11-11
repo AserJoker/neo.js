@@ -438,16 +438,45 @@ Value* Context::setSuperProperty(Value* homeObject, Value* key, Value* value,
     return setPropertyWithReceiver(this, base, key, value, receiver);
 }
 
-void Context::addInstanceField(Value* classCtor, Value* key, Value* initializer,
-                               bool isPrivate) {
-    if (classCtor == nullptr || classCtor->type()->kind() != TypeKind::Function) return;
-    auto* d = static_cast<FunctionData*>(classCtor->data());
-    if (!d->isClassConstructor) return;
-    auto* cd = static_cast<ClassData*>(d);
+namespace {
+
+// class 构造器 → ClassData；非 class 返回 nullptr。
+ClassData* classDataOf(Value* v) {
+    if (v == nullptr || v->type()->kind() != TypeKind::Function) return nullptr;
+    auto* d = static_cast<FunctionData*>(v->data());
+    return d->isClassConstructor ? static_cast<ClassData*>(d) : nullptr;
+}
+
+// 对象的私有槽表；不可承载私有槽（普通 ObjectData/函数）返回 nullptr。
+PrivateSlots* privateSlotsOf(Value* v) {
+    if (v == nullptr || !detail::isObjectKind(v->type()->kind())) return nullptr;
+    return static_cast<ObjectData*>(v->data())->privateSlots();
+}
+
+PrivateSlot* findPrivateSlot(PrivateSlots* slots, PrivateName* name) {
+    if (slots == nullptr || name == nullptr) return nullptr;
+    for (PrivateSlot& s : *slots) {
+        if (s.name == name) return &s;
+    }
+    return nullptr;
+}
+
+Value* privateMemberError(IContext* ctx, PrivateName* name, const char* what) {
+    std::string msg = "Cannot ";
+    msg += what;
+    msg += " private member #";
+    msg += name != nullptr ? name->description : std::string();
+    return detail::typeError(ctx, msg);
+}
+
+}  // namespace
+
+void Context::addInstanceField(Value* classCtor, Value* key, Value* initializer) {
+    ClassData* cd = classDataOf(classCtor);
+    if (cd == nullptr) return;
     FieldDef field;
     field.key = key;
     field.initializer = initializer;
-    field.isPrivate = isPrivate;
     cd->fields.push_back(field);
 }
 
@@ -472,9 +501,6 @@ Value* Context::initializeInstanceFields(Value* instance, Value* classCtor) {
     auto* cd = static_cast<ClassData*>(d);
 
     for (const FieldDef& f : cd->fields) {
-        if (f.isPrivate) {
-            return detail::typeError(this, "private fields are not implemented");
-        }
         Value* value = createUndefined();
         if (f.initializer != nullptr) {
             value = call(f.initializer, instance, 0, nullptr);
@@ -492,6 +518,225 @@ Value* Context::initializeInstanceFields(Value* instance, Value* classCtor) {
         if (detail::isErrorValue(r)) return r;
     }
     return createUndefined();
+}
+
+// —— 私有字段/方法/访问器（ADR-047 §5）——
+
+PrivateName* Context::createPrivateName(std::string_view description) {
+    return ::neo::core::createPrivateName(description);
+}
+
+void Context::retainPrivateName(PrivateName* name) {
+    ::neo::core::retainPrivateName(name);
+}
+
+void Context::releasePrivateName(PrivateName* name) {
+    ::neo::core::releasePrivateName(name);
+}
+
+void Context::addPrivateField(Value* classCtor, PrivateName* name, Value* initializer) {
+    ClassData* cd = classDataOf(classCtor);
+    if (cd == nullptr || name == nullptr) return;
+    ::neo::core::retainPrivateName(name);
+    cd->privateFields.push_back({name, initializer});
+}
+
+void Context::addStaticPrivateField(Value* classCtor, PrivateName* name,
+                                    Value* initializer) {
+    ClassData* cd = classDataOf(classCtor);
+    if (cd == nullptr || name == nullptr) return;
+    ::neo::core::retainPrivateName(name);
+    cd->staticPrivateFields.push_back({name, initializer});
+}
+
+void Context::addPrivateMethod(Value* classCtor, PrivateName* name, Value* method) {
+    ClassData* cd = classDataOf(classCtor);
+    if (cd == nullptr || name == nullptr) return;
+    ::neo::core::retainPrivateName(name);
+    PrivateElement e;
+    e.name = name;
+    e.kind = PrivateElement::Kind::Method;
+    e.method = method;
+    cd->privateElements.push_back(e);
+}
+
+void Context::addPrivateAccessor(Value* classCtor, PrivateName* name, Value* getter,
+                                 Value* setter) {
+    ClassData* cd = classDataOf(classCtor);
+    if (cd == nullptr || name == nullptr) return;
+    ::neo::core::retainPrivateName(name);
+    PrivateElement e;
+    e.name = name;
+    e.kind = PrivateElement::Kind::Accessor;
+    e.getter = getter;
+    e.setter = setter;
+    cd->privateElements.push_back(e);
+}
+
+void Context::addStaticPrivateMethod(Value* classCtor, PrivateName* name, Value* method) {
+    ClassData* cd = classDataOf(classCtor);
+    if (cd == nullptr || name == nullptr) return;
+    ::neo::core::retainPrivateName(name);
+    PrivateElement e;
+    e.name = name;
+    e.kind = PrivateElement::Kind::Method;
+    e.method = method;
+    cd->staticPrivateElements.push_back(e);
+}
+
+void Context::addStaticPrivateAccessor(Value* classCtor, PrivateName* name, Value* getter,
+                                       Value* setter) {
+    ClassData* cd = classDataOf(classCtor);
+    if (cd == nullptr || name == nullptr) return;
+    ::neo::core::retainPrivateName(name);
+    PrivateElement e;
+    e.name = name;
+    e.kind = PrivateElement::Kind::Accessor;
+    e.getter = getter;
+    e.setter = setter;
+    cd->staticPrivateElements.push_back(e);
+}
+
+Value* Context::initializePrivateElements(Value* instance, Value* classCtor) {
+    if (instance == nullptr || !detail::isObjectKind(instance->type()->kind())) {
+        return detail::typeError(this, "private elements initialization on non-object");
+    }
+    ClassData* cd = classDataOf(classCtor);
+    if (cd == nullptr) {
+        return detail::typeError(this, "private elements initialization on non-class");
+    }
+    PrivateSlots* slots = privateSlotsOf(instance);
+    if (slots == nullptr) {
+        return detail::typeError(this, "object cannot hold private elements");
+    }
+
+    // 先加私有方法/访问器的 brand（ES2024 §10.2.1.2 step 2），再按声明顺序初始化字段。
+    for (const PrivateElement& e : cd->privateElements) {
+        if (findPrivateSlot(slots, e.name) != nullptr) continue;
+        ::neo::core::retainPrivateName(e.name);
+        slots->push_back({e.name, nullptr});
+    }
+    for (const PrivateFieldDef& f : cd->privateFields) {
+        Value* value = createUndefined();
+        if (f.initializer != nullptr) {
+            value = call(f.initializer, instance, 0, nullptr);
+            if (detail::isErrorValue(value)) return value;
+        }
+        if (PrivateSlot* existing = findPrivateSlot(slots, f.name)) {
+            existing->value = value;
+            continue;
+        }
+        ::neo::core::retainPrivateName(f.name);
+        slots->push_back({f.name, value});
+    }
+    return createUndefined();
+}
+
+Value* Context::initializeStaticPrivateElements(Value* classCtor) {
+    ClassData* cd = classDataOf(classCtor);
+    if (cd == nullptr) {
+        return detail::typeError(this, "static private elements initialization on non-class");
+    }
+    for (const PrivateElement& e : cd->staticPrivateElements) {
+        if (findPrivateSlot(&cd->staticSlots, e.name) != nullptr) continue;
+        ::neo::core::retainPrivateName(e.name);
+        cd->staticSlots.push_back({e.name, nullptr});
+    }
+    for (const PrivateFieldDef& f : cd->staticPrivateFields) {
+        Value* value = createUndefined();
+        if (f.initializer != nullptr) {
+            value = call(f.initializer, classCtor, 0, nullptr);
+            if (detail::isErrorValue(value)) return value;
+        }
+        if (PrivateSlot* existing = findPrivateSlot(&cd->staticSlots, f.name)) {
+            existing->value = value;
+            continue;
+        }
+        ::neo::core::retainPrivateName(f.name);
+        cd->staticSlots.push_back({f.name, value});
+    }
+    return createUndefined();
+}
+
+Value* Context::getPrivate(Value* obj, PrivateName* name) {
+    PrivateSlot* slot = findPrivateSlot(privateSlotsOf(obj), name);
+    if (slot == nullptr) return privateMemberError(this, name, "read");
+    if (slot->value == nullptr) {
+        return privateMemberError(this, name, "read non-field");
+    }
+    return slot->value;
+}
+
+Value* Context::setPrivate(Value* obj, PrivateName* name, Value* value) {
+    PrivateSlot* slot = findPrivateSlot(privateSlotsOf(obj), name);
+    if (slot == nullptr) return privateMemberError(this, name, "write");
+    if (slot->value == nullptr) {
+        return privateMemberError(this, name, "write non-field");
+    }
+    slot->value = value;
+    return createUndefined();
+}
+
+bool Context::hasPrivate(Value* obj, PrivateName* name) {
+    return findPrivateSlot(privateSlotsOf(obj), name) != nullptr;
+}
+
+namespace {
+
+const PrivateElement* findPrivateElement(const std::vector<PrivateElement>& elements,
+                                         PrivateName* name) {
+    for (const PrivateElement& e : elements) {
+        if (e.name == name) return &e;
+    }
+    return nullptr;
+}
+
+Value* privateElementAccess(IContext* ctx, Value* obj, PrivateName* name,
+                            const PrivateElement* e, int which) {
+    if (e == nullptr) {
+        std::string msg = "Private member #";
+        msg += name != nullptr ? name->description : std::string();
+        msg += " is not defined";
+        return detail::typeError(ctx, msg);
+    }
+    if (!ctx->hasPrivate(obj, name)) {
+        return privateMemberError(ctx, name, "read");
+    }
+    Value* v = which == 0 ? e->method : (which == 1 ? e->getter : e->setter);
+    return v != nullptr ? v : ctx->createUndefined();
+}
+
+}  // namespace
+
+namespace {
+
+// obj == classCtor 表示静态私有访问（this 是类构造器本身）。
+const PrivateElement* lookupPrivateElement(ClassData* cd, Value* classCtor, Value* obj,
+                                           PrivateName* name) {
+    if (cd == nullptr) return nullptr;
+    const auto& elements =
+        obj == classCtor ? cd->staticPrivateElements : cd->privateElements;
+    return findPrivateElement(elements, name);
+}
+
+}  // namespace
+
+Value* Context::getPrivateMethod(Value* classCtor, Value* obj, PrivateName* name) {
+    ClassData* cd = classDataOf(classCtor);
+    return privateElementAccess(this, obj, name,
+                                lookupPrivateElement(cd, classCtor, obj, name), 0);
+}
+
+Value* Context::getPrivateGetter(Value* classCtor, Value* obj, PrivateName* name) {
+    ClassData* cd = classDataOf(classCtor);
+    return privateElementAccess(this, obj, name,
+                                lookupPrivateElement(cd, classCtor, obj, name), 1);
+}
+
+Value* Context::getPrivateSetter(Value* classCtor, Value* obj, PrivateName* name) {
+    ClassData* cd = classDataOf(classCtor);
+    return privateElementAccess(this, obj, name,
+                                lookupPrivateElement(cd, classCtor, obj, name), 2);
 }
 
 void Context::setFunctionClassConstructor(Value* fn, bool isDerived, Value* superCtor) {
@@ -745,6 +990,14 @@ Value* Context::createObject(std::string_view bindName) {
     Value* obj = createTracked(getObjectType(), gc_->allocData<ObjectData>(), bindName);
     // 自动挂 Object.prototype（ADR-035 完整原型链）。
     // bootstrap 期间 objectPrototype_ 尚未建立，此时为 nullptr，跳过。
+    if (obj != oomValue_ && objectPrototype_ != nullptr) {
+        static_cast<ObjectData*>(obj->data())->prototype = objectPrototype_;
+    }
+    return obj;
+}
+
+Value* Context::createInstance(std::string_view bindName) {
+    Value* obj = createTracked(getObjectType(), gc_->allocData<InstanceData>(), bindName);
     if (obj != oomValue_ && objectPrototype_ != nullptr) {
         static_cast<ObjectData*>(obj->data())->prototype = objectPrototype_;
     }

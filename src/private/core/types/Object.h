@@ -23,6 +23,7 @@
 
 #include "core/IData.h"
 #include "core/IType.h"
+#include "core/PrivateName.h"
 #include "infra/IAllocator.h"
 
 #include <new>
@@ -87,6 +88,15 @@ public:
     Value* setPrototype(IContext* ctx, Value* self, Value* proto) override;
 };
 
+// 私有槽（ADR-047 §5）：name 是 class 求值唯一的 PrivateName；
+// value == nullptr 表示只有 brand（私有方法/访问器），非空表示私有字段值。
+struct PrivateSlot {
+    PrivateName* name = nullptr;
+    Value* value = nullptr;
+};
+
+using PrivateSlots = std::vector<PrivateSlot>;
+
 class ObjectData : public IData {
 public:
     std::unordered_map<std::string, Property> properties;  // 字符串键主存储
@@ -102,6 +112,25 @@ public:
 
     // clone：引用语义（ADR-019 §2）——ref++ 后返回 this，不复制容器
     IData* clone(neo::infra::IAllocator* alloc) const override;
+
+    // 私有槽访问（ADR-047 §5）：默认无私有槽；InstanceData/ClassData 覆盖。
+    virtual PrivateSlots* privateSlots() { return nullptr; }
+};
+
+// 可承载私有槽的对象负载。用户可 extends 的内建实例（Array/Error/包装/Promise）
+// 都继承它，避免 XXXInstanceData 组合爆炸；普通对象 {} 仍用 ObjectData，
+// 不付槽位开销（空 vector 不分配堆）。
+class InstanceData : public ObjectData {
+public:
+    PrivateSlots slots;
+
+    ~InstanceData() override;
+    PrivateSlots* privateSlots() override { return &slots; }
+    void enumerateChildren(IGCVisitor* visitor) override;
+    // clone：引用语义（ADR-019 §2）——ref++ 后返回 this，槽位随之共享。
+    IData* clone(neo::infra::IAllocator* alloc) const override {
+        return ObjectData::clone(alloc);
+    }
 };
 
 // 枚举自有属性键（ES2024 §10.1.11 OrdinaryOwnPropertyKeys 顺序）：

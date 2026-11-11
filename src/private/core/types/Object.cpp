@@ -505,6 +505,21 @@ IData* ObjectData::clone(neo::infra::IAllocator* /*alloc*/) const {
     return self;
 }
 
+// —— InstanceData（ADR-047 §5）——
+
+InstanceData::~InstanceData() {
+    // 私有名引用计数：每个槽持一份，随实例 data 销毁归还。
+    for (const PrivateSlot& slot : slots) releasePrivateName(slot.name);
+}
+
+void InstanceData::enumerateChildren(IGCVisitor* visitor) {
+    ObjectData::enumerateChildren(visitor);
+    // 私有名字不是 GC Value（引用计数），只需标记字段值。
+    for (const PrivateSlot& slot : slots) {
+        if (slot.value != nullptr) visitor->visit(slot.value);
+    }
+}
+
 // —— 自有属性键枚举（ES2024 §10.1.11）——
 
 namespace {
