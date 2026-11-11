@@ -1,7 +1,8 @@
 # ADR-047: class 的引擎模型 — ClassData 派生 FunctionData + 函数环境 this/new.target
 
 - 状态: 已接受 (2026-11-11)；P1（class 核心）、P2（私有字段/方法/访问器）、
-  P3 的 native 扩展库与 `extends null` 已实现；static block/装饰器延后
+  P3 的 native 扩展库、`extends null`、static block 引擎原语已实现；
+  static block 的 Sema early error/VM 排序与装饰器延后
 - 决策者: aserjoker（项目负责人） + CodeAgent
 - 关联: ADR-013（三层作用域）、ADR-021（Function 结构）、ADR-022（函数调用）、
           ADR-032（对象/函数模型）、ADR-034（原型与 new）、ADR-036（闭包作用域孤立化）、
@@ -299,6 +300,7 @@ struct SourceSlice {
 | `currentFunction()` | 当前正在执行的函数 Value（native 扩展库） |
 | `registerClass(NativeClassDef)` | 一次性创建 native class |
 | `classSuperConstructor/classPrivateName/functionHomeObject` | native class 元数据查询 |
+| `runStaticBlock(classCtor, body)` | 创建并执行 native static block（this=C） |
 | `newTarget()` | 当前调用的 new.target |
 
 复用现有原语：`defineProperty`、`setPrototype`、`createObject`、`setFunctionName`、
@@ -370,6 +372,35 @@ Value* registerClass(const NativeClassDef&);
 - `setModuleLoader(id, loader)` + `importModule(id)`：loader 在模块 root scope 执行；
 - loader 内 `registerClass` → `define(name, cls)` → `exportBinding(exports, name, name)`；
 - 脚本侧 `import` 取回构造器后即可 `new`（前端/VM 实现后）。
+
+### 10. static block
+
+static block 在规范里就是一个函数对象：`ClassStaticBlockDefinitionEvaluation`
+创建函数，`[[HomeObject]] = F`，再以 `this = F` 调用。引擎按同样方式实现：
+
+```cpp
+Value* runStaticBlock(Value* classCtor, NativeFn body);
+```
+
+- 固定选项：`strict`、`constructible=false`、`hasPrototypeProperty=false`、
+  `homeObject=ownerClass=classCtor`；
+- 以 `call(fn, classCtor, 0, nullptr)` 执行：`this = C`、`new.target = undefined`；
+- `var`/函数声明天然只属于块（函数体作用域）；
+- 嵌套箭头按词法继承 `this`/`super`；
+- 私有名通过 `classPrivateName(currentFunction(), "x")` 解析；
+- 脚本 static block 由 VM 用同一组 `FunctionCreateOptions` 创建脚本函数，
+  在静态元素声明位置调用。
+
+Sema 负责的 early error（函数封装不会自动禁止）：
+
+- 块顶层 `arguments`、`return`、`await`、`yield`、`super()`；
+- `break`/`continue` 跳到块外标签；
+- `this = ...`（strict 下非法）。
+
+顺序：static block 按静态元素声明顺序执行。VM 在每个块的声明位置调用；
+静态私有字段用 `initializeStaticPrivateField` 在该位置初始化，静态私有方法/
+访问器的 brand 在 `add*` 时已挂上。引擎的 `runStaticBlock` 只负责“执行”，
+不负责排序。
 
 ## 分阶段
 
@@ -448,7 +479,7 @@ Value* registerClass(const NativeClassDef&);
 - 任意对象（对象字面量、函数、内建 exotic）都可承载私有槽，覆盖
   `super()` 返回任意对象的规范语义。
 
-## P3 实现状态（native 扩展库 + extends null）
+## P3 实现状态（native 扩展库 + extends null + static block）
 
 已落地：
 
@@ -462,12 +493,15 @@ Value* registerClass(const NativeClassDef&);
   Function.prototype`；派生构造体未调用 `super()` 时须显式返回对象。
 - 模块注入：loader 内 `registerClass` + `define` + `exportBinding`，
   `importModule` 取回构造器后可 `new`。
+- `runStaticBlock`：以 strict/不可构造/无 prototype/homeObject=ownerClass=C
+  创建函数并以 `this=C` 调用；测试覆盖 this/super/私有名/顺序/错误透传。
 - `NativeClassTest` 覆盖 currentFunction、base/derived 注册、私有/静态私有、
-  `extends null`、模块 loader 导出。
+  `extends null`、模块 loader 导出；`StaticBlockTest` 覆盖 static block 契约。
 
 延后：
 
-- static block 执行（引擎已提供 `initializeStaticPrivateField` 按位置初始化）；
+- static block 的 Sema early error（arguments/return/await/yield/super()/
+  越界 break）与 VM 按声明位置调用；
 - 装饰器应用（`extraInitializers`/`classInitializers` 已预留）；
 - 源码文本保真。
 

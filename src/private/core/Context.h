@@ -217,6 +217,7 @@ public:
     PrivateName* classPrivateName(Value* classCtor,
                                   std::string_view description) override;
     Value* functionHomeObject(Value* fn) override;
+    Value* runStaticBlock(Value* classCtor, NativeFn body) override;
     Value* instanceOf(Value* value, Value* target) override;
     Value* createNativeFunction(NativeFn fn, size_t minArgc,
                                 std::string_view bindName = {},

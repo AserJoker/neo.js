@@ -1005,6 +1005,25 @@ Value* Context::functionHomeObject(Value* fn) {
     return static_cast<FunctionData*>(fn->data())->homeObject;
 }
 
+Value* Context::runStaticBlock(Value* classCtor, NativeFn body) {
+    if (classDataOf(classCtor) == nullptr) {
+        return detail::typeError(this, "static block on non-class");
+    }
+    if (body == nullptr) {
+        return detail::typeError(this, "static block has no body");
+    }
+    FunctionCreateOptions o;
+    o.strict = true;
+    o.constructible = false;
+    o.hasPrototypeProperty = false;
+    o.homeObject = classCtor;
+    o.ownerClass = classCtor;
+    Value* fn = createNativeFunction(body, 0, {}, o);
+    if (fn == oomValue_) return fn;
+    // static block 是普通调用：this = class 构造器，new.target = undefined。
+    return call(fn, classCtor, 0, nullptr);
+}
+
 Value* Context::instanceOf(Value* value, Value* target) {
     return detail::instanceOf(this, value, target);
 }

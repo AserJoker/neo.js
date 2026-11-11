@@ -372,6 +372,14 @@ public:
     // functionHomeObject: 取函数的 [[HomeObject]]；无则 nullptr。
     virtual Value* functionHomeObject(Value* fn) = 0;
 
+    // runStaticBlock: 创建并立即执行一个 native static block（this = classCtor）。
+    // 固定选项：strict、不可构造、无 prototype、homeObject/ownerClass = classCtor。
+    // 返回执行结果（通常 undefined）或 Exception/Fatal。
+    // VM 对脚本 static block 用同一组 FunctionCreateOptions 创建脚本函数，并在
+    // 静态元素声明位置调用；Sema 负责 arguments/return/await/yield/super() 等
+    // early error，以及 var/函数声明只属于块作用域。
+    virtual Value* runStaticBlock(Value* classCtor, NativeFn body) = 0;
+
     // instanceOf: `value instanceof target`（ES2024 §13.10.2）。
     // 优先走 target[@@hasInstance]（存在且非 null/undefined 时以其 ToBoolean 结果为准），
     // 否则按 OrdinaryHasInstance（§7.3.21）沿 value 的原型链找 target.prototype。
