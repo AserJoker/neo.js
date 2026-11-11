@@ -128,6 +128,7 @@ void FunctionData::enumerateChildren(IGCVisitor* visitor) {
     if (boundTarget != nullptr) visitor->visit(boundTarget);
     if (boundThis != nullptr) visitor->visit(boundThis);
     if (homeObject != nullptr) visitor->visit(homeObject);
+    if (ownerClass != nullptr) visitor->visit(ownerClass);
     for (Value* v : boundArgs) {
         if (v != nullptr) visitor->visit(v);
     }

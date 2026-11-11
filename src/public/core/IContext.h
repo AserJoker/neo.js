@@ -68,7 +68,61 @@ struct FunctionCreateOptions {
     bool isDerived = false;
     Value* homeObject = nullptr;       // [[HomeObject]]（借用，GC 由函数遍历）
     Value* superConstructor = nullptr; // 派生类父构造器（借用，GC 由 ClassData 遍历）
+    Value* ownerClass = nullptr;       // 所属 class 构造器（方法/字段初始化器，GC 遍历）
     SourceSlice source{};              // 函数源码切片（创建时 retain）
+};
+
+// —— native class 注册（ADR-047 扩展库）——
+// 描述一个由 native 实现的 class。registerClass 负责创建构造器/prototype、
+// 链接原型链、定义方法描述符、注册字段与私有元素。
+//
+// 构造器约定：
+//   - constructor 为 native 构造体，self = this；base 类应在函数体开头调用
+//     initializeInstanceElements(self, ctx->currentFunction())；
+//   - 派生类应在 super() 之后调用 initializeInstanceElements(this, ctx->currentFunction())；
+//   - constructor 为空时仅允许 base 类，registerClass 会生成默认构造体自动初始化字段。
+struct NativeClassMethod {
+    std::string_view name;
+    NativeFn fn = nullptr;
+    size_t length = 0;
+};
+
+struct NativeClassField {
+    std::string_view name;
+    NativeFn initializer = nullptr;  // 以实例/构造器为 this 求值
+};
+
+struct NativeClassPrivateField {
+    PrivateName* name = nullptr;     // 借用；registerClass 内部 retain
+    NativeFn initializer = nullptr;
+};
+
+struct NativeClassPrivateMethod {
+    PrivateName* name = nullptr;
+    NativeFn fn = nullptr;
+};
+
+struct NativeClassPrivateAccessor {
+    PrivateName* name = nullptr;
+    NativeFn getter = nullptr;
+    NativeFn setter = nullptr;
+};
+
+struct NativeClassDef {
+    std::string_view name;
+    NativeFn constructor = nullptr;
+    size_t length = 0;
+    Value* superCtor = nullptr;  // nullptr = base；Null Value = extends null
+    std::vector<NativeClassMethod> methods;
+    std::vector<NativeClassMethod> staticMethods;
+    std::vector<NativeClassField> fields;
+    std::vector<NativeClassField> staticFields;
+    std::vector<NativeClassPrivateField> privateFields;
+    std::vector<NativeClassPrivateField> staticPrivateFields;
+    std::vector<NativeClassPrivateMethod> privateMethods;
+    std::vector<NativeClassPrivateMethod> staticPrivateMethods;
+    std::vector<NativeClassPrivateAccessor> privateAccessors;
+    std::vector<NativeClassPrivateAccessor> staticPrivateAccessors;
 };
 
 // 引擎门面：持有 GC 所有权 + 注入 IAllocator/Console + Scope 树
@@ -101,6 +155,13 @@ public:
     // 设置，返回/Fatal/挂起时恢复调用方的函数环境。顶层为模块/全局环境。
     virtual Scope* currentFunctionEnv() const = 0;
     virtual void setCurrentFunctionEnv(Scope* s) = 0;
+
+    // currentFunction: 当前正在执行的函数 Value（native/脚本统一）；顶层为 nullptr。
+    // invoke 在调用期间设置、返回/Fatal/挂起时恢复。native 构造器/方法用它取回
+    // 自身的 FunctionData（initializeInstanceElements 的 classCtor、homeObject 等）。
+    // 借用引用：函数 Value 的存活仍由调用方作用域/调用点保证。
+    virtual Value* currentFunction() const = 0;
+    virtual void setCurrentFunction(Value* fn) = 0;
 
     // —— current scope 管理 ——
     // pushNewScope: 在 allocator 上新建 parent 的子 scope 并设为 current。
@@ -294,6 +355,22 @@ public:
     // isDerived/superConstructor（创建后再确定父构造器的场景）。
     virtual void setFunctionClassConstructor(Value* fn, bool isDerived,
                                              Value* superCtor) = 0;
+
+    // —— native class 注册与元数据（ADR-047 扩展库）——
+    // registerClass: 用 NativeClassDef 一次性创建 class 构造器并返回。
+    // 返回构造器 Value，或 Exception/Fatal。派生类必须提供 constructor。
+    virtual Value* registerClass(const NativeClassDef& def) = 0;
+    // classSuperConstructor: 取 class 的父构造器；非 class 返回 nullptr。
+    // classCtor 可以是 class 构造器，也可以是该 class 的成员函数。
+    // 供 native 构造体在 super() 时使用。
+    virtual Value* classSuperConstructor(Value* classCtor) = 0;
+    // classPrivateName: 按 description 查找 class 声明的私有名（借用引用）。
+    // classCtor 可以是 class 构造器，也可以是该 class 的成员函数（经 ownerClass
+    // 解析）。供 native 方法体取 this.#x 的 PrivateName*；未找到返回 nullptr。
+    virtual PrivateName* classPrivateName(Value* classCtor,
+                                          std::string_view description) = 0;
+    // functionHomeObject: 取函数的 [[HomeObject]]；无则 nullptr。
+    virtual Value* functionHomeObject(Value* fn) = 0;
 
     // instanceOf: `value instanceof target`（ES2024 §13.10.2）。
     // 优先走 target[@@hasInstance]（存在且非 null/undefined 时以其 ToBoolean 结果为准），

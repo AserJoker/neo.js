@@ -14,6 +14,7 @@ add_executable(core_unit_test
     ClassFieldsTest.cpp
     ClassEndToEndTest.cpp
     PrivateNameTest.cpp
+    NativeClassTest.cpp
     TypeTest.cpp
     ContextTest.cpp
     CallStackTest.cpp

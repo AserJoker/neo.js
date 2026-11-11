@@ -35,6 +35,7 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
     Scope* savedRoot = ctx->root();
     Scope* savedCurrent = ctx->current();
     Scope* savedFunctionEnv = ctx->currentFunctionEnv();
+    Value* savedFunction = ctx->currentFunction();
 
     // 2. 切换到被调函数的模块根作用域
     ctx->setRootScope(d->rootScope);
@@ -64,6 +65,7 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
             ctx->setRootScope(savedRoot);
             ctx->setCurrentScope(savedCurrent);
             ctx->setCurrentFunctionEnv(savedFunctionEnv);
+            ctx->setCurrentFunction(savedFunction);
             return ctx->oomValue();
         }
     }
@@ -79,6 +81,7 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
         execScope->setNewTarget(newTarget != nullptr ? newTarget : ctx->createUndefined());
     }
     ctx->setCurrentFunctionEnv(execScope);
+    ctx->setCurrentFunction(fn);
 
     // 5. native 调用（构造钩子优先由调用方显式传入）
     Value* res = (overrideFn != nullptr ? overrideFn : d->native)(ctx, thisArg, argc, argv);
@@ -97,6 +100,7 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
         ctx->setRootScope(savedRoot);
         ctx->setCurrentScope(savedCurrent);
         ctx->setCurrentFunctionEnv(savedFunctionEnv);
+        ctx->setCurrentFunction(savedFunction);
         return res;
     }
 
@@ -127,6 +131,7 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
             ctx->setRootScope(savedRoot);
             ctx->setCurrentScope(savedCurrent);
             ctx->setCurrentFunctionEnv(savedFunctionEnv);
+            ctx->setCurrentFunction(savedFunction);
             return res;
         }
     }
@@ -135,6 +140,7 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
     //    循环 pop 直到 current 回到 closureScope（查找链的持久层）。
     //    先把函数环境恢复为调用方，避免 execScope 被 pop 后缓存悬垂。
     ctx->setCurrentFunctionEnv(savedFunctionEnv);
+    ctx->setCurrentFunction(savedFunction);
     while (ctx->current() != d->closureScope) {
         ctx->popScope();
     }

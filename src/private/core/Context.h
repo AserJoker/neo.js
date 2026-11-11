@@ -39,6 +39,8 @@ class Context : public IContext {
     // 当前函数环境（ADR-047）：this / new.target 的宿主 ArgumentScope。
     // invoke 保存/恢复；顶层指向模块根作用域。
     Scope* currentFunctionEnv_ = nullptr;
+    // 当前正在执行的函数 Value（ADR-047 native 扩展库）：invoke 保存/恢复。
+    Value* currentFunction_ = nullptr;
     // 当前构造调用的 new.target（ADR-047）：Context::construct 保存/恢复。
     Value* newTarget_ = nullptr;
     // 调用栈（ADR-037）：纯展示信息，与 Scope 链无关。栈顶在末尾。
@@ -120,6 +122,8 @@ public:
     void setCurrentScope(Scope* s) override { current_ = s; }
     Scope* currentFunctionEnv() const override { return currentFunctionEnv_; }
     void setCurrentFunctionEnv(Scope* s) override { currentFunctionEnv_ = s; }
+    Value* currentFunction() const override { return currentFunction_; }
+    void setCurrentFunction(Value* fn) override { currentFunction_ = fn; }
     Scope* pushNewScope(Scope* parent) override;
     Value* pushWithScope(Value* obj, Scope** outScope) override;
     void popScope() override;
@@ -208,6 +212,11 @@ public:
     Value* getPrivateSetter(Value* classCtor, Value* obj, PrivateName* name) override;
     void setFunctionClassConstructor(Value* fn, bool isDerived,
                                      Value* superCtor) override;
+    Value* registerClass(const NativeClassDef& def) override;
+    Value* classSuperConstructor(Value* classCtor) override;
+    PrivateName* classPrivateName(Value* classCtor,
+                                  std::string_view description) override;
+    Value* functionHomeObject(Value* fn) override;
     Value* instanceOf(Value* value, Value* target) override;
     Value* createNativeFunction(NativeFn fn, size_t minArgc,
                                 std::string_view bindName = {},

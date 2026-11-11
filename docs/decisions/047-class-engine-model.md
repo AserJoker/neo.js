@@ -1,6 +1,7 @@
 # ADR-047: class 的引擎模型 — ClassData 派生 FunctionData + 函数环境 this/new.target
 
-- 状态: 已接受 (2026-11-11)；P1（class 核心）、P2（私有字段/方法/访问器）已实现，P3 待实现
+- 状态: 已接受 (2026-11-11)；P1（class 核心）、P2（私有字段/方法/访问器）、
+  P3 的 native 扩展库与 `extends null` 已实现；static block/装饰器延后
 - 决策者: aserjoker（项目负责人） + CodeAgent
 - 关联: ADR-013（三层作用域）、ADR-021（Function 结构）、ADR-022（函数调用）、
           ADR-032（对象/函数模型）、ADR-034（原型与 new）、ADR-036（闭包作用域孤立化）、
@@ -295,6 +296,9 @@ struct SourceSlice {
 | `addPrivateField/addPrivateMethod/addPrivateAccessor` | 注册私有元素（P2） |
 | `initializeStaticPrivateField(classCtor, name)` | 按声明位置初始化静态私有字段 |
 | `privateIn(obj, name)` / `getPrivate/setPrivate` | `#x in obj` 与私有字段读写 |
+| `currentFunction()` | 当前正在执行的函数 Value（native 扩展库） |
+| `registerClass(NativeClassDef)` | 一次性创建 native class |
+| `classSuperConstructor/classPrivateName/functionHomeObject` | native class 元数据查询 |
 | `newTarget()` | 当前调用的 new.target |
 
 复用现有原语：`defineProperty`、`setPrototype`、`createObject`、`setFunctionName`、
@@ -317,6 +321,56 @@ struct SourceSlice {
 - class / method 源码采集与传入；
 - 装饰器应用。
 
+### 9. native 扩展库
+
+native 侧注册 class 需要三件事：取回当前函数、一次性构建 class、查询 class 元数据。
+
+**currentFunction**：
+
+- `Context` 增加 `currentFunction_`，`invokeNativeFunction` 在所有返回路径
+  （正常/Fatal/挂起/OOM）保存/恢复；
+- native 构造体据此取回自身 `FunctionData`：
+  `initializeInstanceElements(self, ctx->currentFunction())`；
+- `FunctionData` 增加 `ownerClass`（GC 遍历），方法/字段初始化器创建时指向所属
+  class 构造器，`classPrivateName/classSuperConstructor` 可接受成员函数入口。
+
+**registerClass**：
+
+```cpp
+struct NativeClassDef {
+    std::string_view name;
+    NativeFn constructor;  // base 可为空（默认构造体只初始化字段）
+    size_t length;
+    Value* superCtor;      // nullptr = base；Null Value = extends null
+    std::vector<NativeClassMethod> methods, staticMethods;
+    std::vector<NativeClassField> fields, staticFields;
+    std::vector<NativeClassPrivateField> privateFields, staticPrivateFields;
+    std::vector<NativeClassPrivateMethod> privateMethods, staticPrivateMethods;
+    std::vector<NativeClassPrivateAccessor> privateAccessors, staticPrivateAccessors;
+};
+Value* registerClass(const NativeClassDef&);
+```
+
+- 创建构造器（`isClassConstructor/isDerived/superConstructor/homeObject`）；
+- 定义 `prototype`（不可写/不可配置）、`constructor`、方法（不可枚举、不可构造、
+  无 `prototype`、带 homeObject/ownerClass）；
+- 注册 public/private 字段与静态字段；静态私有字段按声明顺序立即初始化；
+- 私有方法/访问器注册 brand；
+- `class extends null`：`prototype.__proto__ = null`、`C.__proto__ = Function.prototype`，
+  派生构造体不调用 `super()` 时必须显式返回对象。
+
+**元数据查询**：
+
+- `classSuperConstructor(classCtorOrMember)` → 父构造器；
+- `classPrivateName(classCtorOrMember, description)` → 私有名（借用引用）；
+- `functionHomeObject(fn)` → `[[HomeObject]]`。
+
+**模块注入**：
+
+- `setModuleLoader(id, loader)` + `importModule(id)`：loader 在模块 root scope 执行；
+- loader 内 `registerClass` → `define(name, cls)` → `exportBinding(exports, name, name)`；
+- 脚本侧 `import` 取回构造器后即可 `new`（前端/VM 实现后）。
+
 ## 分阶段
 
 - **P1：class 核心** — ClassData、isClassConstructor、homeObject、source slice、
@@ -324,8 +378,9 @@ struct SourceSlice {
   static 方法/字段、strict、name/length、toString、prototype 描述符。
 - **P2：私有字段** — PrivateName、PrivateSlots、brand、private field/method/accessor、
   `#x in obj`。
-- **P3：边角** — static block、`class extends null`、绑定函数/Reflect.construct 的
-  newTarget 细节、装饰器、源码文本保真。
+- **P3：边角** — native 扩展库（currentFunction/registerClass/元数据查询）、
+  `class extends null`、绑定函数/Reflect.construct 的 newTarget 细节；
+  static block、装饰器、源码文本保真延后。
 - **P4：静态化/JIT** — ClassData 增加字段偏移/vtable/布局元数据，引擎只暴露查询。
 
 ## P1 实现状态
@@ -393,6 +448,29 @@ struct SourceSlice {
 - 任意对象（对象字面量、函数、内建 exotic）都可承载私有槽，覆盖
   `super()` 返回任意对象的规范语义。
 
+## P3 实现状态（native 扩展库 + extends null）
+
+已落地：
+
+- `Context::currentFunction_`：invoke 在所有返回路径保存/恢复；
+  `FunctionData::ownerClass`（GC 遍历）标记方法/字段初始化器所属 class。
+- `NativeClassDef` + `Context::registerClass`：构造器/prototype/方法/字段/
+  私有元素/静态元素一次创建；base 类可省略构造体（默认只初始化字段）。
+- 元数据查询：`classSuperConstructor`、`classPrivateName`、`functionHomeObject`，
+  均支持传 class 构造器或其成员函数。
+- `class extends null`：`prototype.__proto__ = null`、`C.__proto__ =
+  Function.prototype`；派生构造体未调用 `super()` 时须显式返回对象。
+- 模块注入：loader 内 `registerClass` + `define` + `exportBinding`，
+  `importModule` 取回构造器后可 `new`。
+- `NativeClassTest` 覆盖 currentFunction、base/derived 注册、私有/静态私有、
+  `extends null`、模块 loader 导出。
+
+延后：
+
+- static block 执行（引擎已提供 `initializeStaticPrivateField` 按位置初始化）；
+- 装饰器应用（`extraInitializers`/`classInitializers` 已预留）；
+- 源码文本保真。
+
 ## 后果
 
 - 优点：class 语义完整保留；复用 Function 的全部生态，避免新增 TypeKind 的全量分派审计；
@@ -402,5 +480,5 @@ struct SourceSlice {
   调用路径保存/恢复；ClassData 与 FunctionData 的 GC 遍历需要同步扩展；sourceText 需要
   引用计数或 GC 托管。
 - 风险：`super()` 在箭头函数中的语义、绑定函数/Reflect.construct 的 newTarget 传播、
-  类装饰器替换构造器后的 ClassData 归属、`class extends Function` 的实例私有字段，
+  类装饰器替换构造器后的 ClassData 归属、static block 与静态字段的交错执行，
   需在对应阶段单独验证。

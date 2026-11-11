@@ -113,6 +113,8 @@ public:
     bool isClassConstructor = false;
     // [[HomeObject]]（class 方法/构造器/字段初始化器）：super 属性查找基准。
     Value* homeObject = nullptr;  // GC 需遍历
+    // 所属 class 构造器（方法/字段初始化器）：native 扩展库据此取回 class 元数据。
+    Value* ownerClass = nullptr;  // GC 需遍历
     // 函数源码切片（ADR-047 §6）：Function.prototype.toString 按需生成字符串。
     SourceSlice source;
     size_t activeCalls = 0;  // 进行中调用数（重入计数，闭包作用域挂载/摘除用）

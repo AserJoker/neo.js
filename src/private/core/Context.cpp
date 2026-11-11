@@ -447,6 +447,16 @@ ClassData* classDataOf(Value* v) {
     return d->isClassConstructor ? static_cast<ClassData*>(d) : nullptr;
 }
 
+// class 构造器或 class 成员（方法/字段初始化器）→ ClassData。
+ClassData* classDataOfMember(Value* v) {
+    if (ClassData* cd = classDataOf(v)) return cd;
+    if (v != nullptr && v->type()->kind() == TypeKind::Function) {
+        auto* d = static_cast<FunctionData*>(v->data());
+        return classDataOf(d->ownerClass);
+    }
+    return nullptr;
+}
+
 // 对象的私有槽表；非对象返回 nullptr。所有对象负载都继承 ObjectData，
 // 因此普通对象、函数、内建 exotic 都可承载私有槽（ADR-047 §5）。
 PrivateSlots* privateSlotsOf(Value* v) {
@@ -793,6 +803,208 @@ void Context::setFunctionClassConstructor(Value* fn, bool isDerived, Value* supe
     cd->superConstructor = superCtor;
 }
 
+// —— native class 注册（ADR-047 扩展库）——
+
+namespace {
+
+// base 类未提供构造体时的默认实现：只初始化实例字段。
+Value* defaultNativeClassCtor(IContext* ctx, Value* self, size_t, Value*[]) {
+    return ctx->initializeInstanceElements(self, ctx->currentFunction());
+}
+
+// 创建 class 方法：不可构造、无 prototype、带 homeObject/ownerClass。
+Value* createNativeMethod(IContext* ctx, NativeFn fn, size_t length, Value* homeObject,
+                          Value* ownerClass) {
+    FunctionCreateOptions o;
+    o.constructible = false;
+    o.hasPrototypeProperty = false;
+    o.homeObject = homeObject;
+    o.ownerClass = ownerClass;
+    return ctx->createNativeFunction(fn, length, {}, o);
+}
+
+// 创建字段初始化函数（nullptr 表示无初始化器，返回 nullptr）。
+Value* createNativeFieldInitializer(IContext* ctx, NativeFn fn, Value* homeObject,
+                                    Value* ownerClass) {
+    if (fn == nullptr) return nullptr;
+    FunctionCreateOptions o;
+    o.constructible = false;
+    o.hasPrototypeProperty = false;
+    o.homeObject = homeObject;
+    o.ownerClass = ownerClass;
+    return ctx->createNativeFunction(fn, 0, {}, o);
+}
+
+}  // namespace
+
+Value* Context::registerClass(const NativeClassDef& def) {
+    const bool derived = def.superCtor != nullptr;
+    const bool nullSuper =
+        derived && def.superCtor->type()->kind() == TypeKind::Null;
+    if (derived && def.constructor == nullptr) {
+        return detail::typeError(this, "derived native class requires a constructor");
+    }
+
+    Value* proto = createObject();
+    if (proto == oomValue_) return proto;
+
+    FunctionCreateOptions opts;
+    opts.isClassConstructor = true;
+    opts.isDerived = derived;
+    opts.hasPrototypeProperty = false;
+    opts.superConstructor = def.superCtor;
+    opts.homeObject = proto;
+    NativeFn body = def.constructor != nullptr ? def.constructor : defaultNativeClassCtor;
+    Value* ctor = createNativeFunction(body, def.length, {}, opts);
+    if (ctor == oomValue_) return ctor;
+    static_cast<FunctionData*>(ctor->data())->ownerClass = ctor;
+
+    Value* r = defineProperty(ctor, "prototype", proto, false, false, false);
+    if (detail::isErrorValue(r)) return r;
+    r = defineProperty(proto, "constructor", ctor, true, false, true);
+    if (detail::isErrorValue(r)) return r;
+
+    if (derived) {
+        if (nullSuper) {
+            // class extends null：prototype 链终点为 null，构造器继承 Function.prototype。
+            r = setPrototype(proto, def.superCtor);
+            if (detail::isErrorValue(r)) return r;
+            if (functionPrototype_ != nullptr) {
+                r = setPrototype(ctor, functionPrototype_);
+                if (detail::isErrorValue(r)) return r;
+            }
+        } else {
+            Value* superProto = getProperty(def.superCtor, "prototype");
+            if (detail::isErrorValue(superProto)) return superProto;
+            if (detail::isObjectKind(superProto->type()->kind())) {
+                r = setPrototype(proto, superProto);
+                if (detail::isErrorValue(r)) return r;
+            }
+            r = setPrototype(ctor, def.superCtor);
+            if (detail::isErrorValue(r)) return r;
+        }
+    }
+    setFunctionName(ctor, def.name);
+
+    // —— public 实例方法 ——
+    for (const NativeClassMethod& m : def.methods) {
+        if (m.fn == nullptr) return detail::typeError(this, "class method has no function");
+        Value* fn = createNativeMethod(this, m.fn, m.length, proto, ctor);
+        if (fn == oomValue_) return fn;
+        r = defineProperty(proto, m.name, fn, true, false, true);
+        if (detail::isErrorValue(r)) return r;
+    }
+    // —— public 静态方法 ——
+    for (const NativeClassMethod& m : def.staticMethods) {
+        if (m.fn == nullptr) return detail::typeError(this, "class method has no function");
+        Value* fn = createNativeMethod(this, m.fn, m.length, ctor, ctor);
+        if (fn == oomValue_) return fn;
+        r = defineProperty(ctor, m.name, fn, true, false, true);
+        if (detail::isErrorValue(r)) return r;
+    }
+
+    // —— public 实例字段 ——
+    for (const NativeClassField& f : def.fields) {
+        Value* init = createNativeFieldInitializer(this, f.initializer, proto, ctor);
+        if (f.initializer != nullptr && init == oomValue_) return init;
+        addInstanceField(ctor, createString(f.name), init);
+    }
+    // —— public 静态字段：定义时立即求值（this = 构造器）——
+    for (const NativeClassField& f : def.staticFields) {
+        Value* value = createUndefined();
+        if (f.initializer != nullptr) {
+            Value* init = createNativeFieldInitializer(this, f.initializer, ctor, ctor);
+            if (init == oomValue_) return init;
+            value = call(init, ctor, 0, nullptr);
+            if (detail::isErrorValue(value)) return value;
+        }
+        r = defineProperty(ctor, f.name, value, true, true, true);
+        if (detail::isErrorValue(r)) return r;
+    }
+
+    // —— 私有实例字段 ——
+    for (const NativeClassPrivateField& f : def.privateFields) {
+        Value* init = createNativeFieldInitializer(this, f.initializer, proto, ctor);
+        if (f.initializer != nullptr && init == oomValue_) return init;
+        addPrivateField(ctor, f.name, init);
+    }
+    // —— 私有静态字段：按声明顺序立即初始化 ——
+    for (const NativeClassPrivateField& f : def.staticPrivateFields) {
+        Value* init = createNativeFieldInitializer(this, f.initializer, ctor, ctor);
+        if (f.initializer != nullptr && init == oomValue_) return init;
+        addStaticPrivateField(ctor, f.name, init);
+        r = initializeStaticPrivateField(ctor, f.name);
+        if (detail::isErrorValue(r)) return r;
+    }
+
+    // —— 私有实例方法/访问器 ——
+    for (const NativeClassPrivateMethod& m : def.privateMethods) {
+        if (m.fn == nullptr) return detail::typeError(this, "private method has no function");
+        Value* fn = createNativeMethod(this, m.fn, 0, proto, ctor);
+        if (fn == oomValue_) return fn;
+        addPrivateMethod(ctor, m.name, fn);
+    }
+    for (const NativeClassPrivateAccessor& a : def.privateAccessors) {
+        Value* getter =
+            a.getter != nullptr ? createNativeMethod(this, a.getter, 0, proto, ctor) : nullptr;
+        if (a.getter != nullptr && getter == oomValue_) return getter;
+        Value* setter =
+            a.setter != nullptr ? createNativeMethod(this, a.setter, 0, proto, ctor) : nullptr;
+        if (a.setter != nullptr && setter == oomValue_) return setter;
+        addPrivateAccessor(ctor, a.name, getter, setter);
+    }
+
+    // —— 私有静态方法/访问器（add* 时即挂 brand）——
+    for (const NativeClassPrivateMethod& m : def.staticPrivateMethods) {
+        if (m.fn == nullptr) return detail::typeError(this, "private method has no function");
+        Value* fn = createNativeMethod(this, m.fn, 0, ctor, ctor);
+        if (fn == oomValue_) return fn;
+        addStaticPrivateMethod(ctor, m.name, fn);
+    }
+    for (const NativeClassPrivateAccessor& a : def.staticPrivateAccessors) {
+        Value* getter =
+            a.getter != nullptr ? createNativeMethod(this, a.getter, 0, ctor, ctor) : nullptr;
+        if (a.getter != nullptr && getter == oomValue_) return getter;
+        Value* setter =
+            a.setter != nullptr ? createNativeMethod(this, a.setter, 0, ctor, ctor) : nullptr;
+        if (a.setter != nullptr && setter == oomValue_) return setter;
+        addStaticPrivateAccessor(ctor, a.name, getter, setter);
+    }
+
+    return ctor;
+}
+
+Value* Context::classSuperConstructor(Value* classCtor) {
+    ClassData* cd = classDataOfMember(classCtor);
+    return cd != nullptr ? cd->superConstructor : nullptr;
+}
+
+PrivateName* Context::classPrivateName(Value* classCtor, std::string_view description) {
+    ClassData* cd = classDataOfMember(classCtor);
+    if (cd == nullptr) return nullptr;
+    auto matches = [&](PrivateName* n) {
+        return n != nullptr && n->description == description;
+    };
+    for (const InstanceElement& e : cd->instanceElements) {
+        if (e.kind == InstanceElement::Kind::PrivateField && matches(e.name)) return e.name;
+    }
+    for (const PrivateFieldDef& f : cd->staticPrivateFields) {
+        if (matches(f.name)) return f.name;
+    }
+    for (const PrivateElement& e : cd->privateElements) {
+        if (matches(e.name)) return e.name;
+    }
+    for (const PrivateElement& e : cd->staticPrivateElements) {
+        if (matches(e.name)) return e.name;
+    }
+    return nullptr;
+}
+
+Value* Context::functionHomeObject(Value* fn) {
+    if (fn == nullptr || fn->type()->kind() != TypeKind::Function) return nullptr;
+    return static_cast<FunctionData*>(fn->data())->homeObject;
+}
+
 Value* Context::instanceOf(Value* value, Value* target) {
     return detail::instanceOf(this, value, target);
 }
@@ -820,6 +1032,7 @@ Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_vi
     d->constructible = opts.constructible;
     d->isClassConstructor = opts.isClassConstructor;
     d->homeObject = opts.homeObject;
+    d->ownerClass = opts.ownerClass;
     d->source = opts.source;
     retainSourceText(d->source.source);
     if (opts.isClassConstructor) {
