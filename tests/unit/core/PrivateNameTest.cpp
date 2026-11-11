@@ -14,6 +14,7 @@
 #include "core/PrivateName.h"
 #include "core/Value.h"
 #include "core/types/Array.h"
+#include "core/types/Boolean.h"
 #include "core/types/Function.h"
 #include "core/types/Number.h"
 #include "core/types/TypeBehavior.h"
@@ -25,10 +26,12 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace {
 
 using neo::core::ArrayData;
+using neo::core::BooleanData;
 using neo::core::FunctionCreateOptions;
 using neo::core::IContext;
 using neo::core::NumberData;
@@ -56,6 +59,7 @@ struct Fixture {
 };
 
 double numOf(Value* v) { return static_cast<NumberData*>(v->data())->value; }
+bool boolOf(Value* v) { return static_cast<BooleanData*>(v->data())->value; }
 
 Value* noop(IContext* ctx, Value*, size_t, Value*[]) { return ctx->createUndefined(); }
 
@@ -83,6 +87,18 @@ Value* setterStore(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
 
 Value* staticValue(IContext* ctx, Value*, size_t, Value*[]) { return ctx->createNumber(99); }
 
+std::vector<std::string> g_staticOrder;
+
+Value* staticA(IContext* ctx, Value*, size_t, Value*[]) {
+    g_staticOrder.push_back("a");
+    return ctx->createNumber(1);
+}
+
+Value* staticB(IContext* ctx, Value*, size_t, Value*[]) {
+    g_staticOrder.push_back("b");
+    return ctx->createNumber(2);
+}
+
 }  // namespace
 
 TEST(PrivateNameTest, IdentityIsPerEvaluationNotDescription) {
@@ -97,11 +113,11 @@ TEST(PrivateNameTest, IdentityIsPerEvaluationNotDescription) {
     ctx->addPrivateField(classA, a, ctx->createNativeFunction(initTen, 0));
     ctx->addPrivateField(classB, b, ctx->createNativeFunction(initTwenty, 0));
 
-    Value* instA = ctx->createInstance();
-    Value* instB = ctx->createInstance();
-    ASSERT_EQ(ctx->initializePrivateElements(instA, classA)->type()->kind(),
+    Value* instA = ctx->createObject();
+    Value* instB = ctx->createObject();
+    ASSERT_EQ(ctx->initializeInstanceElements(instA, classA)->type()->kind(),
               TypeKind::Undefined);
-    ASSERT_EQ(ctx->initializePrivateElements(instB, classB)->type()->kind(),
+    ASSERT_EQ(ctx->initializeInstanceElements(instB, classB)->type()->kind(),
               TypeKind::Undefined);
 
     EXPECT_TRUE(ctx->hasPrivate(instA, a));
@@ -122,8 +138,8 @@ TEST(PrivateNameTest, FieldReadWriteAndReflectionInvisible) {
     PrivateName* x = ctx->createPrivateName("x");
     ctx->addPrivateField(cls, x, ctx->createNativeFunction(initTen, 0));
 
-    Value* inst = ctx->createInstance();
-    ASSERT_EQ(ctx->initializePrivateElements(inst, cls)->type()->kind(),
+    Value* inst = ctx->createObject();
+    ASSERT_EQ(ctx->initializeInstanceElements(inst, cls)->type()->kind(),
               TypeKind::Undefined);
     EXPECT_EQ(numOf(ctx->getPrivate(inst, x)), 10.0);
 
@@ -148,7 +164,7 @@ TEST(PrivateNameTest, MissingBrandThrowsTypeError) {
     PrivateName* x = ctx->createPrivateName("x");
     ctx->addPrivateField(cls, x, ctx->createNativeFunction(initTen, 0));
 
-    Value* other = ctx->createInstance();
+    Value* other = ctx->createObject();
     EXPECT_FALSE(ctx->hasPrivate(other, x));
     EXPECT_EQ(ctx->getPrivate(other, x)->type()->kind(), TypeKind::Exception);
     EXPECT_EQ(ctx->setPrivate(other, x, ctx->createNumber(1))->type()->kind(),
@@ -167,8 +183,8 @@ TEST(PrivateNameTest, MethodAndAccessorUseBrandOnly) {
     ctx->addPrivateAccessor(cls, acc, ctx->createNativeFunction(getterValue, 0),
                             ctx->createNativeFunction(setterStore, 0));
 
-    Value* inst = ctx->createInstance();
-    ASSERT_EQ(ctx->initializePrivateElements(inst, cls)->type()->kind(),
+    Value* inst = ctx->createObject();
+    ASSERT_EQ(ctx->initializeInstanceElements(inst, cls)->type()->kind(),
               TypeKind::Undefined);
     EXPECT_TRUE(ctx->hasPrivate(inst, m));
     EXPECT_TRUE(ctx->hasPrivate(inst, acc));
@@ -193,7 +209,7 @@ TEST(PrivateNameTest, MethodAndAccessorUseBrandOnly) {
     EXPECT_EQ(numOf(ctx->getProperty(inst, ctx->createString("stored"))), 3.0);
 
     // 无 brand 的对象读私有方法报错。
-    Value* other = ctx->createInstance();
+    Value* other = ctx->createObject();
     EXPECT_EQ(ctx->getPrivateMethod(cls, other, m)->type()->kind(),
               TypeKind::Exception);
 
@@ -226,7 +242,7 @@ TEST(PrivateNameTest, StaticPrivateElementsLiveOnClassConstructor) {
     EXPECT_EQ(numOf(ctx->call(getter, cls, 0, nullptr)), 7.0);
 
     // 静态私有槽不泄漏到实例。
-    Value* inst = ctx->createInstance();
+    Value* inst = ctx->createObject();
     EXPECT_FALSE(ctx->hasPrivate(inst, sf));
 
     ctx->releasePrivateName(sf);
@@ -241,25 +257,33 @@ TEST(PrivateNameTest, BuiltinInstanceCanHoldPrivateSlots) {
     PrivateName* x = ctx->createPrivateName("x");
     ctx->addPrivateField(cls, x, ctx->createNativeFunction(initTen, 0));
 
-    // ArrayData 继承 InstanceData：class extends Array 的实例天然可承载私有槽。
+    // 内建实例（ArrayData）继承 ObjectData，同样可承载私有槽。
     Value* arr = ctx->createArray();
-    ASSERT_EQ(ctx->initializePrivateElements(arr, cls)->type()->kind(),
+    ASSERT_EQ(ctx->initializeInstanceElements(arr, cls)->type()->kind(),
               TypeKind::Undefined);
     EXPECT_EQ(numOf(ctx->getPrivate(arr, x)), 10.0);
 
     ctx->releasePrivateName(x);
 }
 
-TEST(PrivateNameTest, PlainObjectCannotHoldPrivateSlots) {
+TEST(PrivateNameTest, PlainObjectAndFunctionCanHoldPrivateSlots) {
     Fixture f;
     IContext* ctx = f.ctx.get();
     Value* cls = makeClass(ctx);
     PrivateName* x = ctx->createPrivateName("x");
     ctx->addPrivateField(cls, x, ctx->createNativeFunction(initTen, 0));
 
+    // 普通对象：super() 返回对象字面量时，派生类私有字段仍可初始化。
     Value* obj = ctx->createObject();
-    EXPECT_EQ(ctx->initializePrivateElements(obj, cls)->type()->kind(),
-              TypeKind::Exception);
+    ASSERT_EQ(ctx->initializeInstanceElements(obj, cls)->type()->kind(),
+              TypeKind::Undefined);
+    EXPECT_EQ(numOf(ctx->getPrivate(obj, x)), 10.0);
+
+    // 函数对象：class extends Function 的实例私有字段（FunctionData 继承 ObjectData）。
+    Value* fn = ctx->createNativeFunction(noop, 0);
+    ASSERT_EQ(ctx->initializeInstanceElements(fn, cls)->type()->kind(),
+              TypeKind::Undefined);
+    EXPECT_EQ(numOf(ctx->getPrivate(fn, x)), 10.0);
 
     ctx->releasePrivateName(x);
 }
@@ -276,8 +300,8 @@ TEST(PrivateNameTest, NameSurvivesClassCollectionViaInstanceSlot) {
     ctx->popScope();
 
     // pop 后 Value 尚未回收，仍可读取；随后 collect 会销毁 class data。
-    Value* inst = ctx->createInstance();
-    ASSERT_EQ(ctx->initializePrivateElements(inst, cls)->type()->kind(),
+    Value* inst = ctx->createObject();
+    ASSERT_EQ(ctx->initializeInstanceElements(inst, cls)->type()->kind(),
               TypeKind::Undefined);
 
     // 释放调用方引用：此后 PrivateName 只由实例槽持有。
@@ -287,4 +311,104 @@ TEST(PrivateNameTest, NameSurvivesClassCollectionViaInstanceSlot) {
     // class 已不可达，但实例槽仍持有一份引用，私有字段可继续访问。
     EXPECT_TRUE(ctx->hasPrivate(inst, x));
     EXPECT_EQ(numOf(ctx->getPrivate(inst, x)), 10.0);
+}
+
+TEST(PrivateNameTest, PrivateInRequiresObjectAndReturnsBoolean) {
+    Fixture f;
+    IContext* ctx = f.ctx.get();
+    Value* cls = makeClass(ctx);
+    PrivateName* x = ctx->createPrivateName("x");
+    ctx->addPrivateField(cls, x, ctx->createNativeFunction(initTen, 0));
+
+    // RHS 非对象：规范要求 TypeError。
+    Value* bad = ctx->privateIn(ctx->createNumber(1), x);
+    EXPECT_EQ(bad->type()->kind(), TypeKind::Exception);
+
+    Value* obj = ctx->createObject();
+    Value* before = ctx->privateIn(obj, x);
+    ASSERT_EQ(before->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(boolOf(before));
+
+    ASSERT_EQ(ctx->initializeInstanceElements(obj, cls)->type()->kind(),
+              TypeKind::Undefined);
+    Value* after = ctx->privateIn(obj, x);
+    ASSERT_EQ(after->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(boolOf(after));
+
+    ctx->releasePrivateName(x);
+}
+
+TEST(PrivateNameTest, AccessorMissingGetterOrSetterThrows) {
+    Fixture f;
+    IContext* ctx = f.ctx.get();
+    Value* cls = makeClass(ctx);
+    PrivateName* getterOnly = ctx->createPrivateName("g");
+    PrivateName* setterOnly = ctx->createPrivateName("s");
+    ctx->addPrivateAccessor(cls, getterOnly, ctx->createNativeFunction(getterValue, 0),
+                            nullptr);
+    ctx->addPrivateAccessor(cls, setterOnly, nullptr,
+                            ctx->createNativeFunction(setterStore, 0));
+
+    Value* inst = ctx->createObject();
+    ASSERT_EQ(ctx->initializeInstanceElements(inst, cls)->type()->kind(),
+              TypeKind::Undefined);
+
+    EXPECT_EQ(ctx->getPrivateGetter(cls, inst, getterOnly)->type()->kind(),
+              TypeKind::Function);
+    EXPECT_EQ(ctx->getPrivateSetter(cls, inst, getterOnly)->type()->kind(),
+              TypeKind::Exception);
+    EXPECT_EQ(ctx->getPrivateGetter(cls, inst, setterOnly)->type()->kind(),
+              TypeKind::Exception);
+    EXPECT_EQ(ctx->getPrivateSetter(cls, inst, setterOnly)->type()->kind(),
+              TypeKind::Function);
+    // 访问器不是方法。
+    EXPECT_EQ(ctx->getPrivateMethod(cls, inst, getterOnly)->type()->kind(),
+              TypeKind::Exception);
+
+    ctx->releasePrivateName(getterOnly);
+    ctx->releasePrivateName(setterOnly);
+}
+
+TEST(PrivateNameTest, StaticPrivateFieldsInitializeAtDeclarationPosition) {
+    Fixture f;
+    IContext* ctx = f.ctx.get();
+    Value* cls = makeClass(ctx);
+    PrivateName* a = ctx->createPrivateName("a");
+    PrivateName* b = ctx->createPrivateName("b");
+    ctx->addStaticPrivateField(cls, a, ctx->createNativeFunction(staticA, 0));
+    ctx->addStaticPrivateField(cls, b, ctx->createNativeFunction(staticB, 0));
+
+    // 模拟 static block 位于两个静态私有字段之间。
+    g_staticOrder.clear();
+    ASSERT_EQ(ctx->initializeStaticPrivateField(cls, a)->type()->kind(),
+              TypeKind::Undefined);
+    g_staticOrder.push_back("block");
+    ASSERT_EQ(ctx->initializeStaticPrivateField(cls, b)->type()->kind(),
+              TypeKind::Undefined);
+
+    ASSERT_EQ(g_staticOrder.size(), 3u);
+    EXPECT_EQ(g_staticOrder[0], "a");
+    EXPECT_EQ(g_staticOrder[1], "block");
+    EXPECT_EQ(g_staticOrder[2], "b");
+    EXPECT_EQ(numOf(ctx->getPrivate(cls, a)), 1.0);
+    EXPECT_EQ(numOf(ctx->getPrivate(cls, b)), 2.0);
+
+    ctx->releasePrivateName(a);
+    ctx->releasePrivateName(b);
+}
+
+TEST(PrivateNameTest, StaticPrivateMethodBrandInstalledImmediately) {
+    Fixture f;
+    IContext* ctx = f.ctx.get();
+    Value* cls = makeClass(ctx);
+    PrivateName* m = ctx->createPrivateName("m");
+    ctx->addStaticPrivateMethod(cls, m, ctx->createNativeFunction(methodAnswer, 0));
+
+    // 声明位置即挂 brand：后续静态字段初始化器可访问。
+    EXPECT_TRUE(ctx->hasPrivate(cls, m));
+    // 实例没有静态 brand。
+    Value* inst = ctx->createObject();
+    EXPECT_FALSE(ctx->hasPrivate(inst, m));
+
+    ctx->releasePrivateName(m);
 }

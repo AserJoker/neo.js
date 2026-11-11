@@ -476,6 +476,11 @@ Value* ObjectType::setPrototype(IContext* ctx, Value* self, Value* proto) {
 
 // —— ObjectData ——
 
+ObjectData::~ObjectData() {
+    // 私有名引用计数：每个槽持一份，随 data 销毁归还。
+    for (const PrivateSlot& slot : slots) releasePrivateName(slot.name);
+}
+
 void ObjectData::enumerateChildren(IGCVisitor* visitor) {
     // 原型链
     if (prototype != nullptr) visitor->visit(prototype);
@@ -495,6 +500,10 @@ void ObjectData::enumerateChildren(IGCVisitor* visitor) {
         if (sp.prop.getter != nullptr) visitor->visit(sp.prop.getter);
         if (sp.prop.setter != nullptr) visitor->visit(sp.prop.setter);
     }
+    // 私有字段值（PrivateName 引用计数，不参与 GC 标记）
+    for (const PrivateSlot& slot : slots) {
+        if (slot.value != nullptr) visitor->visit(slot.value);
+    }
 }
 
 IData* ObjectData::clone(neo::infra::IAllocator* /*alloc*/) const {
@@ -503,21 +512,6 @@ IData* ObjectData::clone(neo::infra::IAllocator* /*alloc*/) const {
     auto* self = const_cast<ObjectData*>(this);
     self->refInc();
     return self;
-}
-
-// —— InstanceData（ADR-047 §5）——
-
-InstanceData::~InstanceData() {
-    // 私有名引用计数：每个槽持一份，随实例 data 销毁归还。
-    for (const PrivateSlot& slot : slots) releasePrivateName(slot.name);
-}
-
-void InstanceData::enumerateChildren(IGCVisitor* visitor) {
-    ObjectData::enumerateChildren(visitor);
-    // 私有名字不是 GC Value（引用计数），只需标记字段值。
-    for (const PrivateSlot& slot : slots) {
-        if (slot.value != nullptr) visitor->visit(slot.value);
-    }
 }
 
 // —— 自有属性键枚举（ES2024 §10.1.11）——

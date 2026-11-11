@@ -40,7 +40,7 @@ class ClassData : public FunctionData {
 public:
     bool isDerived = false;              // [[ConstructorKind]]
     Value* superConstructor = nullptr;   // GC
-    std::vector<FieldDef> fields;        // 实例字段，按声明顺序
+    std::vector<InstanceElement> instanceElements; // public/private 字段统一有序
     std::vector<Value*> classInitializers; // 装饰器 addInitializer（P3）
 };
 ```
@@ -160,34 +160,39 @@ if (d->isClassConstructor) {
 
 ### 4. 字段初始化与装饰器
 
-`initializeInstanceFields(instance, classCtor)` 按 ClassData 顺序执行：
+`initializeInstanceElements(instance, classCtor)` 按 ClassData 顺序执行：
 
 ```cpp
-struct FieldDef {
-    Value* key = nullptr;                  // public key 或 P2 的 PrivateName
+struct InstanceElement {
+    enum class Kind { PublicField, PrivateField };
+    Kind kind = Kind::PublicField;
+    Value* key = nullptr;                  // PublicField 的属性键
+    PrivateName* name = nullptr;           // PrivateField 的私有名
     Value* initializer = nullptr;          // 基础初始化函数（可被装饰器包装）
     std::vector<Value*> extraInitializers; // 装饰器 addInitializer
-    bool isPrivate = false;
-    bool isStatic = false;
 };
 ```
 
 执行顺序：
 
 ```
-for each field in ClassData.fields（声明顺序）:
-    value = field.initializer ? call(field.initializer, this) : undefined
-    defineProperty(this, field.key, value, writable=true, enumerable=true, configurable=true)
-    for each extra in field.extraInitializers:
-        call(extra, this)
-for each classInitializer in ClassData.classInitializers:
-    call(classInitializer, this)
+1. 给所有私有方法/访问器加 brand（与字段声明顺序无关）
+2. for each elem in ClassData.instanceElements（源码声明顺序）:
+     value = elem.initializer ? call(elem.initializer, this) : undefined
+     if PublicField:
+         defineProperty(this, elem.key, value, writable=true, enumerable=true, configurable=true)
+         for each extra in elem.extraInitializers: call(extra, this)
+     else:
+         this.[[PrivateElements]][elem.name] = value
+3. for each classInitializer in ClassData.classInitializers: call(classInitializer, this)
 ```
+
+public/private 字段共享同一有序列表，因此 `a; #b; c` 严格按 `a、b、c` 初始化。
 
 时机由 VM 控制：
 
-- 基类：构造体开头调用 `initializeInstanceFields(this, C)`；
-- 派生类：`super()` 返回后调用 `initializeInstanceFields(this, C)`。
+- 基类：构造体开头调用 `initializeInstanceElements(this, C)`；
+- 派生类：`super()` 返回后调用 `initializeInstanceElements(this, C)`。
 
 装饰器不下沉到引擎。VM 在类定义时应用装饰器：
 
@@ -196,8 +201,8 @@ for each classInitializer in ClassData.classInitializers:
 - 类装饰器：可以替换构造器，VM 负责把 ClassData 转移到新构造器或包装；
 - 装饰器元数据：VM 侧表或 symbol 属性，引擎不感知。
 
-`FieldDef` 从一开始就用 vector 形式，P1 只放一个 initializer，P3 加装饰器不需要改
-`initializeInstanceFields` 签名。
+`InstanceElement` 从一开始就用 vector 形式，P1 只放 public initializer，P2 合并
+private 字段，P3 加装饰器不需要改 `initializeInstanceElements` 签名。
 
 ### 5. 私有字段（P2）
 
@@ -212,32 +217,41 @@ PrivateName 是引擎内部对象，不是 JS 可见的 string/symbol：
   brand（私有方法/访问器），非空表示字段值；
 - 反射不可见：`Object.keys`/`getOwnPropertyNames`/`for...in` 都看不到私有字段。
 
-槽位载体采用**单继承链**，避免 `XXXInstanceData` 组合爆炸：
+槽位载体：**所有对象负载都直接持有 `PrivateSlots`**。
 
 ```
-ObjectData（privateSlots() 默认 nullptr）
-├── FunctionData → ClassData（覆盖 privateSlots() → staticSlots）
-└── InstanceData（内联 PrivateSlots）
-    ├── ArrayData
-    ├── ErrorData
-    ├── PrimitiveWrapperData
-    └── PromiseData
+ObjectData（内联 PrivateSlots slots）
+├── FunctionData → ClassData（静态私有槽即构造器对象自身的 slots）
+├── ArrayData / ErrorData / PrimitiveWrapperData / PromiseData
+├── CoroutineData / AsyncGeneratorData / ModuleNamespaceData / IteratorData
 ```
 
-- 用户可 `extends` 的内建 Data 继承 `InstanceData`，其实例天然可承载私有槽；
-- 迭代器/协程/模块命名空间等内部类型继续直接继承 `ObjectData`，不付槽位开销；
-- 普通对象字面量仍用 `ObjectData`；class 构造的 this 用 `Context::createInstance()`
-  分配 `InstanceData`；
-- `ClassData` 不继承 `InstanceData`（否则每个函数都多一个槽表），而是内联
-  `staticSlots` 并覆盖 `privateSlots()`，静态私有字段与实例字段走同一套原语；
-- 代价：可被子类化的内建实例每个多一个空 vector（24 字节，空时无堆分配）。
-  后续用自研轻量容器优化，当前以正确性优先。
+- 规范里任何对象都有 `[[PrivateElements]]`；派生类 `super()` 可以返回任意对象
+  （对象字面量、函数、内建 exotic），随后在其上初始化派生类私有字段。
+  因此不能只让部分 Data 携带槽位；
+- `ObjectData` 直接内联 `slots`，析构归还 PrivateName 引用，
+  `enumerateChildren` 标记字段值；子类只需链式调用 `ObjectData::enumerateChildren`；
+- `ClassData` 的静态私有字段/brand 直接存入继承来的 `slots`，不再单独维护
+  `staticSlots`；
+- 代价：每个对象多一个空 vector（24 字节，空时无堆分配）。当前以正确性优先，
+  后续用自研轻量容器（内联小缓冲/紧凑布局）统一优化。
+
+**初始化顺序**：
+
+- public/private 实例字段共享 `ClassData::instanceElements` 有序列表，VM 按源码
+  顺序调用 `addInstanceField`/`addPrivateField`；
+  `initializeInstanceElements` 先加私有方法/访问器 brand，再按该列表逐个初始化，
+  最后执行装饰器 `classInitializers`；
+- 静态私有方法/访问器在 `addStaticPrivateMethod/Accessor` 时即挂 brand；
+  静态私有字段由 VM 在声明位置调用 `initializeStaticPrivateField`，
+  从而与 static block / public static field 保持源码顺序；
+  `initializeStaticPrivateElements` 仅作批量便捷入口。
 
 VM 职责不变：私有名的词法解析、`#x in obj`/私有访问的字节码降级、嵌套 class 的
 PrivateEnvironment 链。引擎只提供 `createPrivateName`、`addPrivate*`、
-`initializePrivateElements`/`initializeStaticPrivateElements`、
-`getPrivate`/`setPrivate`/`hasPrivate`、`getPrivateMethod`/`getPrivateGetter`/
-`getPrivateSetter`。
+`initializeInstanceElements`/`initializeStaticPrivateField`/
+`initializeStaticPrivateElements`、`getPrivate`/`setPrivate`/`privateIn`/
+`hasPrivate`、`getPrivateMethod`/`getPrivateGetter`/`getPrivateSetter`。
 
 ### 6. sourceText：全局单例 + 函数切片
 
@@ -276,8 +290,11 @@ struct SourceSlice {
 | `initializeThis(value)` / `getThis()` / `isThisInitialized()` | 派生类 this 状态 |
 | `getSuperProperty(homeObject, key, receiver)` | `super.prop` 读 |
 | `setSuperProperty(homeObject, key, value, receiver)` | `super.prop` 写 |
-| `initializeInstanceFields(instance, classCtor)` | 按顺序初始化字段 |
-| `addInstanceField(classCtor, key, initializer, isPrivate)` | 注册字段定义 |
+| `initializeInstanceElements(instance, classCtor)` | brand + public/private 字段按声明序初始化 |
+| `addInstanceField(classCtor, key, initializer)` | 注册 public 字段定义 |
+| `addPrivateField/addPrivateMethod/addPrivateAccessor` | 注册私有元素（P2） |
+| `initializeStaticPrivateField(classCtor, name)` | 按声明位置初始化静态私有字段 |
+| `privateIn(obj, name)` / `getPrivate/setPrivate` | `#x in obj` 与私有字段读写 |
 | `newTarget()` | 当前调用的 new.target |
 
 复用现有原语：`defineProperty`、`setPrototype`、`createObject`、`setFunctionName`、
@@ -318,14 +335,14 @@ struct SourceSlice {
 - `Scope` 增加 `thisValue_/hasOwnThis_`、`newTarget_/hasOwnNewTarget_` 专用槽；
   `Context` 增加 `currentFunctionEnv_`，invoke 在所有返回路径保存/恢复。
 - `FunctionData` 增加 `isClassConstructor/homeObject/SourceSlice`；新增
-  `ClassData : FunctionData`（isDerived/superConstructor/fields/classInitializers）。
+  `ClassData : FunctionData`（isDerived/superConstructor/instanceElements/classInitializers）。
 - `FunctionCreateOptions` 支持 `constructible/hasPrototypeProperty/strict/
   isClassConstructor/isDerived/homeObject/superConstructor/source`。
 - `SourceText` 引用计数 + `SourceSlice`；`Function.prototype.toString` 按切片输出。
 - `Context::construct(fn,newTarget,...)`、`constructSuper`、`getThis`、
   `initializeThis`、`isThisInitialized`、`newTarget`、`getSuperProperty`、
   `setSuperProperty`、`createUninitialized`。
-- `addInstanceField`、`addClassInitializer`、`initializeInstanceFields`；
+- `addInstanceField`、`addClassInitializer`、`initializeInstanceElements`；
   `setFunctionClassConstructor` 仅更新已由创建选项分配 ClassData 的构造器。
 - 绑定函数构造：`newTarget == boundFn` 时替换为 target（ES2024 §10.4.1.3）。
 - 构造返回对象归属调用方作用域：派生类 this 由内层 execScope 的 super() 创建，
@@ -346,33 +363,35 @@ struct SourceSlice {
 
 - `PrivateName`（`src/public/core/PrivateName.h`）：description + 引用计数，
   身份按指针比较；`create/retain/release` 为宿主堆操作，不进 GC。
-- `PrivateSlot`/`PrivateSlots` 与 `ObjectData::privateSlots()` 虚访问器；
-  `InstanceData : ObjectData` 内联槽表，析构时归还 PrivateName 引用，
-  `enumerateChildren` 标记字段值。
-- `ArrayData`/`ErrorData`/`PrimitiveWrapperData`/`PromiseData` 改为继承
-  `InstanceData`，其 `enumerateChildren` 链改为 `InstanceData::enumerateChildren`。
-- `ClassData` 增加 `privateFields/staticPrivateFields/privateElements/
-  staticPrivateElements/staticSlots`，析构归还全部 PrivateName 引用，
-  `privateSlots()` 返回 `staticSlots`。
-- `Context::createInstance()` 分配 `InstanceData`；class 基类构造与
-  `newTarget` 为 class 的通用构造路径使用它。
+- `PrivateSlot`/`PrivateSlots` 直接内联在 `ObjectData`；析构时归还 PrivateName
+  引用，`enumerateChildren` 标记字段值。所有对象负载（含函数与内建 exotic）
+  因此天然可承载私有槽。
+- `ClassData` 增加 `instanceElements`（public/private 字段统一有序列表）、
+  `staticPrivateFields/privateElements/staticPrivateElements`；静态私有字段/brand
+  存在构造器对象自身的 `slots` 中。
 - 引擎原语：`createPrivateName/retainPrivateName/releasePrivateName`、
-  `addPrivateField/addStaticPrivateField`、`addPrivateMethod/addPrivateAccessor`、
-  `addStaticPrivateMethod/addStaticPrivateAccessor`、
-  `initializePrivateElements/initializeStaticPrivateElements`、
-  `getPrivate/setPrivate/hasPrivate`、`getPrivateMethod/getPrivateGetter/
-  getPrivateSetter`。
+  `addInstanceField/addPrivateField/addStaticPrivateField`、
+  `addPrivateMethod/addPrivateAccessor`、`addStaticPrivateMethod/
+  addStaticPrivateAccessor`、`initializeInstanceElements`、
+  `initializeStaticPrivateField/initializeStaticPrivateElements`、
+  `getPrivate/setPrivate/privateIn/hasPrivate`、`getPrivateMethod/
+  getPrivateGetter/getPrivateSetter`。
 
 实现边界：
 
-- `initializePrivateElements` 先给私有方法/访问器加 brand，再按声明顺序初始化
-  私有字段（ES2024 §10.2.1.2）。
+- `initializeInstanceElements` 先给私有方法/访问器加 brand，再按
+  `instanceElements` 的源码声明顺序交错初始化 public/private 字段
+  （ES2024 §10.2.1.2），最后执行装饰器回调。
+- 静态私有方法/访问器在 add* 时即挂 brand；静态私有字段由
+  `initializeStaticPrivateField` 在声明位置初始化，可与 static block 交错。
 - `getPrivate`/`setPrivate` 只处理字段；brand-only 槽（方法/访问器）返回 TypeError，
   方法/访问器必须走 `getPrivateMethod/Getter/Setter`。
+- 私有方法/访问器读取做种类校验：方法位置读到访问器、访问器位置读到方法、
+  accessor 缺 getter/setter 均返回 TypeError（PrivateGet/PrivateSet 语义）。
+- `privateIn` 对非对象 RHS 返回 TypeError；`hasPrivate` 仅作引擎内部 brand 判定。
 - 静态私有访问以 `obj == classCtor` 区分，从 `staticPrivateElements` 取函数。
-- 普通对象（`ObjectData`）不能承载私有槽，`initializePrivateElements` 返回 TypeError。
-- `class extends Function` 的实例私有字段仍不支持（函数对象不是 `InstanceData`），
-  留待 P3。
+- 任意对象（对象字面量、函数、内建 exotic）都可承载私有槽，覆盖
+  `super()` 返回任意对象的规范语义。
 
 ## 后果
 

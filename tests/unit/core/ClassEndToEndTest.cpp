@@ -115,13 +115,13 @@ Value* initDerivedField(IContext* ctx, Value*, size_t, Value*[]) {
 }
 
 Value* baseCtor(IContext* ctx, Value* self, size_t, Value*[]) {
-    return ctx->initializeInstanceFields(self, g_baseCtor);
+    return ctx->initializeInstanceElements(self, g_baseCtor);
 }
 
 Value* derivedCtor(IContext* ctx, Value*, size_t, Value*[]) {
     Value* obj = ctx->constructSuper(g_baseCtor, ctx->newTarget(), 0, nullptr);
     if (neo::core::detail::isErrorValue(obj)) return obj;
-    return ctx->initializeInstanceFields(obj, g_derivedCtor);
+    return ctx->initializeInstanceElements(obj, g_derivedCtor);
 }
 
 Value* baseHello(IContext* ctx, Value*, size_t, Value*[]) {

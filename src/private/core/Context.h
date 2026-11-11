@@ -180,7 +180,7 @@ public:
     Value* createUninitialized() override;
     void addInstanceField(Value* classCtor, Value* key, Value* initializer) override;
     void addClassInitializer(Value* classCtor, Value* initializer) override;
-    Value* initializeInstanceFields(Value* instance, Value* classCtor) override;
+    Value* initializeInstanceElements(Value* instance, Value* classCtor) override;
 
     // 私有字段/方法/访问器（ADR-047 §5）
     PrivateName* createPrivateName(std::string_view description) override;
@@ -197,10 +197,11 @@ public:
                                 Value* method) override;
     void addStaticPrivateAccessor(Value* classCtor, PrivateName* name, Value* getter,
                                   Value* setter) override;
-    Value* initializePrivateElements(Value* instance, Value* classCtor) override;
+    Value* initializeStaticPrivateField(Value* classCtor, PrivateName* name) override;
     Value* initializeStaticPrivateElements(Value* classCtor) override;
     Value* getPrivate(Value* obj, PrivateName* name) override;
     Value* setPrivate(Value* obj, PrivateName* name, Value* value) override;
+    Value* privateIn(Value* obj, PrivateName* name) override;
     bool hasPrivate(Value* obj, PrivateName* name) override;
     Value* getPrivateMethod(Value* classCtor, Value* obj, PrivateName* name) override;
     Value* getPrivateGetter(Value* classCtor, Value* obj, PrivateName* name) override;
@@ -235,7 +236,6 @@ public:
     using IContext::defineAccessor;
 
     Value* createObject(std::string_view bindName = {}) override;
-    Value* createInstance(std::string_view bindName = {}) override;
     Value* createArray(std::string_view bindName = {}) override;
     Value* createPrimitiveWrapper(Value* primitive,
                                   std::string_view bindName = {}) override;

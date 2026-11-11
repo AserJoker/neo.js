@@ -202,15 +202,15 @@ TEST(ClassDataTest, SuperConstructorAndFieldsSurviveGc) {
     Value* cls = f.ctx->createNativeFunction(noop, 0, {}, opts);
 
     auto* cd = static_cast<ClassData*>(cls->data());
-    neo::core::FieldDef field;
+    neo::core::InstanceElement field;
     field.key = key;
     field.initializer = initializer;
-    cd->fields.push_back(field);
+    cd->instanceElements.push_back(field);
 
     f.ctx->gc()->collect();
 
     EXPECT_EQ(cd->superConstructor, superCtor);
-    ASSERT_EQ(cd->fields.size(), 1u);
-    EXPECT_EQ(cd->fields[0].key, key);
-    EXPECT_EQ(cd->fields[0].initializer, initializer);
+    ASSERT_EQ(cd->instanceElements.size(), 1u);
+    EXPECT_EQ(cd->instanceElements[0].key, key);
+    EXPECT_EQ(cd->instanceElements[0].initializer, initializer);
 }

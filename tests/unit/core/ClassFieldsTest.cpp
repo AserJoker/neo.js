@@ -1,10 +1,10 @@
 // ClassFieldsTest.cpp - class 字段初始化与方法/属性描述符（ADR-047 P1-4）
 //
 // 验证：
-// - initializeInstanceFields 按注册顺序执行字段初始化并定义自有属性
+// - initializeInstanceElements 按声明顺序执行 public/private 字段初始化
 // - 初始化函数的 this = 实例；异常透传
 // - classInitializers 在字段之后执行
-// - 私有字段本阶段显式报错
+// - 私有字段与 public 字段交错时保持源码顺序
 // - class 方法不可枚举、无 prototype；class 构造器 prototype 不可写/不可配置
 
 #include "core/IContext.h"
@@ -84,6 +84,21 @@ Value* classInit(IContext* ctx, Value*, size_t, Value*[]) {
     return ctx->createUndefined();
 }
 
+Value* initA(IContext* ctx, Value*, size_t, Value*[]) {
+    g_order.push_back("a");
+    return ctx->createNumber(1);
+}
+
+Value* initB(IContext* ctx, Value*, size_t, Value*[]) {
+    g_order.push_back("b");
+    return ctx->createNumber(2);
+}
+
+Value* initC(IContext* ctx, Value*, size_t, Value*[]) {
+    g_order.push_back("c");
+    return ctx->createNumber(3);
+}
+
 }  // namespace
 
 TEST(ClassFieldsTest, FieldsInitializeInRegistrationOrder) {
@@ -96,7 +111,7 @@ TEST(ClassFieldsTest, FieldsInitializeInRegistrationOrder) {
 
     Value* inst = f.ctx->createObject();
     g_order.clear();
-    Value* r = f.ctx->initializeInstanceFields(inst, cls);
+    Value* r = f.ctx->initializeInstanceElements(inst, cls);
     ASSERT_EQ(r->type()->kind(), TypeKind::Undefined);
     EXPECT_EQ(numOf(f.ctx->getProperty(inst, f.ctx->createString("a"))), 1.0);
     EXPECT_EQ(numOf(f.ctx->getProperty(inst, f.ctx->createString("b"))), 2.0);
@@ -112,7 +127,7 @@ TEST(ClassFieldsTest, FieldInitializerThisIsInstance) {
     f.ctx->addInstanceField(cls, f.ctx->createString("self"), init);
 
     Value* inst = f.ctx->createObject();
-    ASSERT_EQ(f.ctx->initializeInstanceFields(inst, cls)->type()->kind(),
+    ASSERT_EQ(f.ctx->initializeInstanceElements(inst, cls)->type()->kind(),
               TypeKind::Undefined);
     EXPECT_EQ(f.ctx->getProperty(inst, f.ctx->createString("self")), inst);
 }
@@ -124,7 +139,7 @@ TEST(ClassFieldsTest, FieldInitializerErrorPropagates) {
     f.ctx->addInstanceField(cls, f.ctx->createString("bad"), init);
 
     Value* inst = f.ctx->createObject();
-    Value* r = f.ctx->initializeInstanceFields(inst, cls);
+    Value* r = f.ctx->initializeInstanceElements(inst, cls);
     EXPECT_EQ(r->type()->kind(), TypeKind::Exception);
     // 出错字段未定义。
     EXPECT_EQ(f.ctx->getProperty(inst, f.ctx->createString("bad"))->type()->kind(),
@@ -141,7 +156,7 @@ TEST(ClassFieldsTest, ClassInitializersRunAfterFields) {
 
     Value* inst = f.ctx->createObject();
     g_order.clear();
-    ASSERT_EQ(f.ctx->initializeInstanceFields(inst, cls)->type()->kind(),
+    ASSERT_EQ(f.ctx->initializeInstanceElements(inst, cls)->type()->kind(),
               TypeKind::Undefined);
     ASSERT_EQ(g_order.size(), 2u);
     EXPECT_EQ(g_order[0], "one");
@@ -154,8 +169,8 @@ TEST(ClassFieldsTest, PrivateFieldIsRegisteredSeparately) {
     neo::core::PrivateName* name = f.ctx->createPrivateName("x");
     f.ctx->addPrivateField(cls, name, f.ctx->createNativeFunction(initOne, 0));
 
-    Value* inst = f.ctx->createInstance();
-    ASSERT_EQ(f.ctx->initializePrivateElements(inst, cls)->type()->kind(),
+    Value* inst = f.ctx->createObject();
+    ASSERT_EQ(f.ctx->initializeInstanceElements(inst, cls)->type()->kind(),
               TypeKind::Undefined);
     EXPECT_TRUE(f.ctx->hasPrivate(inst, name));
     EXPECT_EQ(numOf(f.ctx->getPrivate(inst, name)), 1.0);
@@ -167,6 +182,32 @@ TEST(ClassFieldsTest, PrivateFieldIsRegisteredSeparately) {
     EXPECT_EQ(keys->length(), 0u);
 
     f.ctx->releasePrivateName(name);
+}
+
+TEST(ClassFieldsTest, PublicAndPrivateFieldsInitializeInDeclarationOrder) {
+    Fixture f;
+    Value* cls = makeClass(f.ctx.get());
+    neo::core::PrivateName* b = f.ctx->createPrivateName("b");
+    // 声明顺序：public a; #b; public c。
+    f.ctx->addInstanceField(cls, f.ctx->createString("a"),
+                            f.ctx->createNativeFunction(initA, 0));
+    f.ctx->addPrivateField(cls, b, f.ctx->createNativeFunction(initB, 0));
+    f.ctx->addInstanceField(cls, f.ctx->createString("c"),
+                            f.ctx->createNativeFunction(initC, 0));
+
+    Value* inst = f.ctx->createObject();
+    g_order.clear();
+    ASSERT_EQ(f.ctx->initializeInstanceElements(inst, cls)->type()->kind(),
+              TypeKind::Undefined);
+    ASSERT_EQ(g_order.size(), 3u);
+    EXPECT_EQ(g_order[0], "a");
+    EXPECT_EQ(g_order[1], "b");
+    EXPECT_EQ(g_order[2], "c");
+    EXPECT_EQ(numOf(f.ctx->getProperty(inst, f.ctx->createString("a"))), 1.0);
+    EXPECT_EQ(numOf(f.ctx->getPrivate(inst, b)), 2.0);
+    EXPECT_EQ(numOf(f.ctx->getProperty(inst, f.ctx->createString("c"))), 3.0);
+
+    f.ctx->releasePrivateName(b);
 }
 
 TEST(ClassFieldsTest, SetFunctionClassConstructorUpdatesMetadata) {

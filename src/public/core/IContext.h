@@ -234,14 +234,15 @@ public:
     virtual Value* createUninitialized() = 0;
 
     // —— class 字段初始化（ADR-047 §4）——
-    // addInstanceField: 向 class 构造器注册实例字段（按调用顺序初始化）。
-    // initializer 为初始化函数（nullptr = undefined）。
+    // addInstanceField: 向 class 构造器注册 public 实例字段。VM 必须按源码声明
+    // 顺序调用 addInstanceField/addPrivateField，二者共享同一有序列表。
     virtual void addInstanceField(Value* classCtor, Value* key, Value* initializer) = 0;
     // addClassInitializer: 注册类级初始化回调（装饰器 addInitializer，P3）。
     virtual void addClassInitializer(Value* classCtor, Value* initializer) = 0;
-    // initializeInstanceFields: 按 ClassData 顺序初始化实例字段并执行类级初始化回调。
+    // initializeInstanceElements: 加私有方法/访问器 brand，再按声明顺序初始化
+    // public/private 实例字段，最后执行类级初始化回调。
     // 由 VM 在正确时机调用（基类构造体开头 / 派生类 super 返回后）。
-    virtual Value* initializeInstanceFields(Value* instance, Value* classCtor) = 0;
+    virtual Value* initializeInstanceElements(Value* instance, Value* classCtor) = 0;
 
     // —— 私有字段/方法/访问器（ADR-047 §5）——
     // createPrivateName: 创建私有名（refCount=1，调用方持有）。description 仅用于
@@ -267,18 +268,24 @@ public:
     virtual void addStaticPrivateAccessor(Value* classCtor, PrivateName* name,
                                           Value* getter, Value* setter) = 0;
 
-    // initializePrivateElements: 给实例加私有方法/访问器 brand，再按声明顺序
-    // 初始化私有字段。由 VM 在正确时机调用（基类构造体开头 / 派生类 super 后）。
-    virtual Value* initializePrivateElements(Value* instance, Value* classCtor) = 0;
-    // initializeStaticPrivateElements: 给 class 构造器加静态 brand 并初始化静态字段。
+    // initializeStaticPrivateField: 初始化单个静态私有字段（以构造器为 this）。
+    // VM 在每个静态私有字段的声明位置调用，以便与 static block/public static
+    // field 保持源码顺序。
+    virtual Value* initializeStaticPrivateField(Value* classCtor, PrivateName* name) = 0;
+    // initializeStaticPrivateElements: 批量初始化尚未初始化的静态私有字段
+    // （便捷入口；需要与 static block 交错时用单字段版本）。
+    // 静态私有方法/访问器的 brand 在 add* 时已挂到构造器。
     virtual Value* initializeStaticPrivateElements(Value* classCtor) = 0;
 
     // getPrivate/setPrivate: 私有字段读写。对象缺 brand 或该名不是字段时抛 TypeError。
     virtual Value* getPrivate(Value* obj, PrivateName* name) = 0;
     virtual Value* setPrivate(Value* obj, PrivateName* name, Value* value) = 0;
-    // hasPrivate: `#x in obj`（brand 或字段存在即为 true）。
+    // privateIn: `#x in obj`。RHS 非对象抛 TypeError；否则返回 Boolean。
+    virtual Value* privateIn(Value* obj, PrivateName* name) = 0;
+    // hasPrivate: 引擎内部 brand 判定（不表达 TypeError）。
     virtual bool hasPrivate(Value* obj, PrivateName* name) = 0;
     // 私有方法/访问器读取：先校验 obj 有 brand，再从 class 定义表取函数。
+    // 定义种类不匹配或访问器缺 getter/setter 时返回 TypeError（ES2024 PrivateGet/Set）。
     virtual Value* getPrivateMethod(Value* classCtor, Value* obj, PrivateName* name) = 0;
     virtual Value* getPrivateGetter(Value* classCtor, Value* obj, PrivateName* name) = 0;
     virtual Value* getPrivateSetter(Value* classCtor, Value* obj, PrivateName* name) = 0;
@@ -366,10 +373,6 @@ public:
     // 原型自动挂 Object.prototype（ADR-035 完整原型链）。
     // 返回 Value*：正常对象，或 OOM 哨兵（ADR-031）。
     virtual Value* createObject(std::string_view bindName = {}) = 0;
-
-    // createInstance: 创建可承载私有槽的空对象（InstanceData）。
-    // class 构造的 this 用它；普通对象字面量仍用 createObject，不付槽位开销。
-    virtual Value* createInstance(std::string_view bindName = {}) = 0;
 
     // createArray: 创建空数组 Value（elements 空，length=0）。
     // 原型自动挂 Array.prototype（ADR-018 §6）。bootstrap 期间原型未就绪时跳过。

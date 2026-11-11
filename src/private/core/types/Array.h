@@ -79,8 +79,8 @@ public:
     Value* setPrototype(IContext* ctx, Value* self, Value* proto) override;
 };
 
-// 数组负载：继承 InstanceData 复用对象容器与私有槽（class extends Array）。
-class ArrayData : public InstanceData {
+// 数组负载：继承 ObjectData 复用 properties/order/symbols/prototype/私有槽与 GC 遍历。
+class ArrayData : public ObjectData {
 public:
     // —— 索引元素（混合存储）——
     std::vector<Value*> dense;                    // 稠密模式：nullptr = 空洞

@@ -90,8 +90,8 @@ public:
     Value* setPrototype(IContext* ctx, Value* self, Value* proto) override;
 };
 
-// Promise 负载：继承 InstanceData 复用属性容器/原型链/GC 与私有槽。
-class PromiseData : public InstanceData {
+// Promise 负载：继承 ObjectData 复用属性容器/原型链/GC 与私有槽。
+class PromiseData : public ObjectData {
 public:
     PromiseState state = PromiseState::Pending;  // [[PromiseState]]
     Value* result = nullptr;                     // [[PromiseResult]]（Pending 时 undefined）

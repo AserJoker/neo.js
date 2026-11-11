@@ -148,30 +148,30 @@ void FunctionData::enumerateChildren(IGCVisitor* visitor) {
 
 ClassData::~ClassData() {
     // 私有名引用计数：定义表与静态槽各持一份，随 class data 销毁归还。
-    for (const PrivateFieldDef& f : privateFields) releasePrivateName(f.name);
+    for (const InstanceElement& e : instanceElements) {
+        if (e.kind == InstanceElement::Kind::PrivateField) releasePrivateName(e.name);
+    }
     for (const PrivateFieldDef& f : staticPrivateFields) releasePrivateName(f.name);
     for (const PrivateElement& e : privateElements) releasePrivateName(e.name);
     for (const PrivateElement& e : staticPrivateElements) releasePrivateName(e.name);
-    for (const PrivateSlot& s : staticSlots) releasePrivateName(s.name);
+    // 静态私有槽的 PrivateName 由 ObjectData 析构统一归还。
 }
 
 void ClassData::enumerateChildren(IGCVisitor* visitor) {
     FunctionData::enumerateChildren(visitor);
     if (superConstructor != nullptr) visitor->visit(superConstructor);
-    for (const FieldDef& f : fields) {
-        if (f.key != nullptr) visitor->visit(f.key);
-        if (f.initializer != nullptr) visitor->visit(f.initializer);
-        for (Value* extra : f.extraInitializers) {
+    // 实例字段（public key + 初始化器 + 装饰器回调；private 只有初始化器）
+    for (const InstanceElement& e : instanceElements) {
+        if (e.key != nullptr) visitor->visit(e.key);
+        if (e.initializer != nullptr) visitor->visit(e.initializer);
+        for (Value* extra : e.extraInitializers) {
             if (extra != nullptr) visitor->visit(extra);
         }
     }
     for (Value* init : classInitializers) {
         if (init != nullptr) visitor->visit(init);
     }
-    // 私有字段初始化器 + 私有方法/访问器函数
-    for (const PrivateFieldDef& f : privateFields) {
-        if (f.initializer != nullptr) visitor->visit(f.initializer);
-    }
+    // 静态私有字段初始化器 + 私有方法/访问器函数
     for (const PrivateFieldDef& f : staticPrivateFields) {
         if (f.initializer != nullptr) visitor->visit(f.initializer);
     }
@@ -185,10 +185,7 @@ void ClassData::enumerateChildren(IGCVisitor* visitor) {
         if (e.getter != nullptr) visitor->visit(e.getter);
         if (e.setter != nullptr) visitor->visit(e.setter);
     }
-    // 静态私有字段值（PrivateName 引用计数，不参与 GC）
-    for (const PrivateSlot& s : staticSlots) {
-        if (s.value != nullptr) visitor->visit(s.value);
-    }
+    // 静态私有字段值由 ObjectData::enumerateChildren 统一遍历。
 }
 
 // 构造调用（new，ADR-034）：
@@ -249,9 +246,8 @@ Value* FunctionType::construct(IContext* ctx, Value* self, size_t argc, Value* a
         }
 
         // 基类：OrdinaryCreateFromConstructor(newTarget)，字段由 VM 初始化。
-        // class 实例用 InstanceData 以承载私有槽（ADR-047 §5）。
         Value* proto = ctx->getProperty(nt, "prototype");
-        Value* thisObj = ctx->createInstance();
+        Value* thisObj = ctx->createObject();
         if (thisObj == ctx->oomValue()) return thisObj;
         if (detail::isObjectKind(proto->type()->kind())) {
             Value* r = ctx->setPrototype(thisObj, proto);
@@ -282,11 +278,8 @@ Value* FunctionType::construct(IContext* ctx, Value* self, size_t argc, Value* a
         proto = nullptr;
     }
 
-    // 新建 this 对象并挂原型。newTarget 是 class 构造器时（如 class extends Object），
-    // 该对象是 class 实例，需用 InstanceData 承载私有槽。
-    bool ntIsClass = nt != nullptr && nt->type()->kind() == TypeKind::Function &&
-                     static_cast<FunctionData*>(nt->data())->isClassConstructor;
-    Value* thisObj = ntIsClass ? ctx->createInstance() : ctx->createObject();
+    // 新建 this 对象并挂原型（所有对象负载都可承载私有槽，ADR-047 §5）。
+    Value* thisObj = ctx->createObject();
     if (thisObj == ctx->oomValue()) return thisObj;
     if (proto != nullptr) {
         Value* r = ctx->setPrototype(thisObj, proto);

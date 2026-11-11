@@ -142,19 +142,22 @@ public:
     }
 };
 
-// class 实例字段定义（ADR-047 §4）。P1 只用 initializer；extraInitializers 供
-// 装饰器 addInitializer 扩展，P3 启用。
-struct FieldDef {
-    Value* key = nullptr;                   // public key
+// 实例元素（ADR-047 §4/§5）：public/private 字段按声明顺序统一存放，
+// 保证初始化顺序与源码一致（public a; #b; c 必须按 a、b、c 执行）。
+struct InstanceElement {
+    enum class Kind { PublicField, PrivateField };
+    Kind kind = Kind::PublicField;
+    Value* key = nullptr;                   // PublicField 的属性键
+    PrivateName* name = nullptr;            // PrivateField 的私有名
     Value* initializer = nullptr;           // 初始化函数（nullptr = undefined）
-    std::vector<Value*> extraInitializers;  // 装饰器追加的初始化回调
-    bool isStatic = false;
+    std::vector<Value*> extraInitializers;  // public 字段装饰器（P3）
 };
 
-// 私有字段定义（ADR-047 §5）：name 引用计数由 ClassData 持有。
+// 静态私有字段定义（ADR-047 §5）：由 VM 按声明位置逐个初始化，
+// 以便与 static block / public static field 保持源码顺序。
 struct PrivateFieldDef {
     PrivateName* name = nullptr;
-    Value* initializer = nullptr;  // 以实例/构造器为 this 求值
+    Value* initializer = nullptr;  // 以构造器为 this 求值
 };
 
 // 私有方法/访问器定义：只存在于 class 上，实例只持有 brand（PrivateSlot.value=nullptr）。
@@ -172,24 +175,22 @@ class ClassData : public FunctionData {
 public:
     bool isDerived = false;              // [[ConstructorKind]]
     Value* superConstructor = nullptr;   // 父构造器（GC 遍历）
-    std::vector<FieldDef> fields;        // public 实例字段，按声明顺序
+    // public/private 实例字段统一按声明顺序存放（ADR-047 §4/§5）。
+    std::vector<InstanceElement> instanceElements;
     std::vector<Value*> classInitializers;  // 装饰器 addInitializer（P3）
 
     // —— 私有元素（ADR-047 §5）——
-    std::vector<PrivateFieldDef> privateFields;        // 实例私有字段
     std::vector<PrivateFieldDef> staticPrivateFields;  // 静态私有字段
     std::vector<PrivateElement> privateElements;       // 实例私有方法/访问器
     std::vector<PrivateElement> staticPrivateElements; // 静态私有方法/访问器
-    PrivateSlots staticSlots;  // 类构造器自身的私有槽（静态私有字段/brand）
+    // 静态私有字段/brand 直接存放在继承自 ObjectData 的 slots 中
+    // （class 构造器对象自身的私有槽）。
 
     ClassData(Scope* closure, Scope* root, NativeFn fn, size_t minArgs,
               NativeFn ctor = nullptr)
         : FunctionData(closure, root, fn, minArgs, ctor) {}
 
     ~ClassData() override;
-
-    // class 构造器对象的私有槽即静态私有槽。
-    PrivateSlots* privateSlots() override { return &staticSlots; }
 
     void enumerateChildren(IGCVisitor* visitor) override;
 };

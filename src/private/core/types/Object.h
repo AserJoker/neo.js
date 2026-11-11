@@ -105,32 +105,22 @@ public:
     std::unordered_map<const void*, SymbolProperty> symbols;
     std::vector<const void*> symbolOrder;                  // symbol 键保序遍历
     Value* prototype = nullptr;                            // 原型链指针（可空）
+    // 私有槽（ADR-047 §5）：所有对象都可承载，保证 super() 返回任意对象时
+    // 派生类私有字段仍可初始化。空 vector 不分配堆；后续用轻量容器优化。
+    PrivateSlots slots;
+
+    // 析构：归还槽位持有的 PrivateName 引用（引用计数）。
+    ~ObjectData() override;
 
     // GC 遍历：报告 prototype + 所有 property 的 value/getter/setter
-    // + symbol 属性的 key/setter/getter/value
+    // + symbol 属性的 key/setter/getter/value + 私有字段值
     void enumerateChildren(IGCVisitor* visitor) override;
 
     // clone：引用语义（ADR-019 §2）——ref++ 后返回 this，不复制容器
     IData* clone(neo::infra::IAllocator* alloc) const override;
 
-    // 私有槽访问（ADR-047 §5）：默认无私有槽；InstanceData/ClassData 覆盖。
-    virtual PrivateSlots* privateSlots() { return nullptr; }
-};
-
-// 可承载私有槽的对象负载。用户可 extends 的内建实例（Array/Error/包装/Promise）
-// 都继承它，避免 XXXInstanceData 组合爆炸；普通对象 {} 仍用 ObjectData，
-// 不付槽位开销（空 vector 不分配堆）。
-class InstanceData : public ObjectData {
-public:
-    PrivateSlots slots;
-
-    ~InstanceData() override;
-    PrivateSlots* privateSlots() override { return &slots; }
-    void enumerateChildren(IGCVisitor* visitor) override;
-    // clone：引用语义（ADR-019 §2）——ref++ 后返回 this，槽位随之共享。
-    IData* clone(neo::infra::IAllocator* alloc) const override {
-        return ObjectData::clone(alloc);
-    }
+    // 私有槽访问（ADR-047 §5）。
+    PrivateSlots* privateSlots() { return &slots; }
 };
 
 // 枚举自有属性键（ES2024 §10.1.11 OrdinaryOwnPropertyKeys 顺序）：
