@@ -23,6 +23,7 @@
 #include "core/Value.h"
 #include "core/types/Array.h"
 #include "core/types/Number.h"
+#include "core/types/Proxy.h"
 #include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
 
@@ -100,7 +101,12 @@ Value* arrayCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
 // Array.isArray(v)
 Value* arrayIsArray(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     if (argc == 0) return ctx->createBoolean(false);
-    return ctx->createBoolean(argv[0]->type()->kind() == TypeKind::Array);
+    // IsArray（ES2024 §7.2.2）：Proxy 递归检查 target。
+    Value* v = argv[0];
+    while (v != nullptr && v->type()->kind() == TypeKind::Proxy) {
+        v = proxyTarget(v);
+    }
+    return ctx->createBoolean(v != nullptr && v->type()->kind() == TypeKind::Array);
 }
 
 // —— prototype 方法 ——

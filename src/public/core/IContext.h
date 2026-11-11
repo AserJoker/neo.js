@@ -459,6 +459,12 @@ public:
     // 返回 Value*：正常对象，或 OOM 哨兵（ADR-031）。
     virtual Value* createObject(std::string_view bindName = {}) = 0;
 
+    // createProxy: 创建 Proxy exotic 对象（ES2024 §10.5.1 ProxyCreate）。
+    // target 必须是对象；handler 必须是对象（可为 Proxy）。失败返回 Exception/OOM。
+    // 返回的代理可调用/可构造性继承自 target。
+    virtual Value* createProxy(Value* target, Value* handler,
+                               std::string_view bindName = {}) = 0;
+
     // createArray: 创建空数组 Value（elements 空，length=0）。
     // 原型自动挂 Array.prototype（ADR-018 §6）。bootstrap 期间原型未就绪时跳过。
     // 返回 Value*：正常数组，或 OOM 哨兵（ADR-031）。

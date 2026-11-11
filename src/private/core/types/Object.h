@@ -36,15 +36,10 @@ namespace neo::core {
 
 class Value;
 
-// 属性描述符（ADR-018 §2）
-struct Property {
-    Value* value = nullptr;   // 属性值（数据属性）
-    bool writable = true;
-    bool enumerable = true;
-    bool configurable = true;
-    Value* getter = nullptr;  // 访问器属性 getter（阶段 5 启用）
-    Value* setter = nullptr;  // 访问器属性 setter（阶段 5 启用）
-};
+// 是否访问器属性（getter/setter 任一非空）
+inline bool isAccessorDescriptor(const Property& p) {
+    return p.getter != nullptr || p.setter != nullptr;
+}
 
 // symbol 属性描述符：额外持有 symbol key 本身（GC 需保活 key，且删除时需按身份比对）
 struct SymbolProperty {
@@ -130,9 +125,34 @@ public:
 //
 // enumerableOnly：只含 enumerable 的键（Object.keys 语义）；
 // includeSymbols：是否包含 symbol 键（Reflect.ownKeys 语义）。
-// 非对象（原始值）返回空 vector。返回的 Value* 均已归属 current scope。
-std::vector<Value*> ownPropertyKeys(IContext* ctx, Value* obj, bool enumerableOnly,
-                                    bool includeSymbols);
+// 非对象（原始值）返回空 vector。成功返回 nullptr 并写入 out；
+// Proxy trap 抛错返回 Exception/Fatal。返回的 Value* 均已归属 current scope。
+Value* ownPropertyKeys(IContext* ctx, Value* obj, bool enumerableOnly,
+                       bool includeSymbols, std::vector<Value*>& out);
+
+// ToPropertyKey（ES2024 §7.1.19）：把任意 Value* 规范化为 PropertyKey。
+// 成功返回 nullptr；失败返回 Exception/Fatal（对象键的 ToPrimitive 抛错等）。
+Value* toPropertyKey(IContext* ctx, Value* key, PropertyKey& out);
+
+// —— 普通对象内部方法（ES2024 §10.1）——
+// ProxyType 在 handler 无对应 trap 时回退到这些实现；ObjectType 的公开
+// 属性操作也由它们组合而成。所有函数都逐跳经 IType 内部方法分派，
+// 因此原型链上的 Proxy 会被正确触发。
+//
+// ordinaryGet（§10.1.8.1）：沿原型链读取，receiver 作为访问器 this。
+Value* ordinaryGet(IContext* ctx, Value* obj, const PropertyKey& key, Value* receiver);
+// ordinarySet（§10.1.9）：返回 nullptr 成功 / 错误值异常；ok=false 表示
+// [[Set]] 返回 false（调用方按严格模式决定是否抛 TypeError）。
+Value* ordinarySet(IContext* ctx, Value* obj, const PropertyKey& key, Value* value,
+                   Value* receiver, bool& ok);
+// ordinaryHas（§10.1.7.1）：自有 + 原型链。
+bool ordinaryHas(IContext* ctx, Value* obj, const PropertyKey& key);
+// ordinaryDelete（§10.1.10）：只操作自有属性；ok=false 表示不可配置。
+Value* ordinaryDelete(IContext* ctx, Value* obj, const PropertyKey& key, bool& ok);
+// ordinaryGetPrototype（§10.1.2）：无原型返回 null。
+Value* ordinaryGetPrototype(IContext* ctx, Value* obj);
+// ordinarySetPrototype（§10.1.3）：成功返回 obj；非法/成环返回 Exception。
+Value* ordinarySetPrototype(IContext* ctx, Value* obj, Value* proto);
 
 // super 属性访问（ADR-047）：从 obj（homeObject 的原型）开始沿链查找，
 // receiver 作为 getter/setter 的 this。get 跳过 receiver 自有属性；

@@ -136,6 +136,10 @@ bool resolveStringWrapperKey(IContext* ctx, const std::string* s, Value* key,
 
 bool PrimitiveWrapperType::hasIndexedElements() const { return true; }
 
+bool PrimitiveWrapperType::hasIndexedLength(Value* self) const {
+    return stringPayload(self) != nullptr;
+}
+
 uint32_t PrimitiveWrapperType::indexedLength(Value* self) const {
     const std::string* s = stringPayload(self);
     return s != nullptr ? static_cast<uint32_t>(s->size()) : 0;

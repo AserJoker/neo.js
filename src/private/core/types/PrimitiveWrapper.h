@@ -33,6 +33,7 @@ public:
 
     // String 包装具备索引元素与 length 自有属性（Boolean/Number/Symbol 包装没有）。
     bool hasIndexedElements() const override;
+    bool hasIndexedLength(Value* self) const override;
     uint32_t indexedLength(Value* self) const override;
     Value* indexedElement(IContext* ctx, Value* self, uint32_t index) const override;
 

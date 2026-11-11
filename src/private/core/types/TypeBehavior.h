@@ -24,6 +24,7 @@
 #include "core/types/Null.h"
 #include "core/types/Number.h"
 #include "core/types/PrimitiveWrapper.h"
+#include "core/types/Proxy.h"
 #include "core/types/String.h"
 
 #include <cmath>
@@ -179,16 +180,29 @@ inline Value* referenceError(IContext* ctx, const std::string& msg) {
     return errorOf(ctx, ErrorKind::ReferenceError, msg);
 }
 
-// 是否为可调用值（Function）
+// 是否为可调用值（Function 或指向可调用 target 的 Proxy）。
 inline bool isCallable(Value* v) {
-    return v != nullptr && v->type()->kind() == TypeKind::Function;
+    if (v == nullptr) return false;
+    TypeKind k = v->type()->kind();
+    if (k == TypeKind::Function) return true;
+    if (k == TypeKind::Proxy) {
+        Value* target = proxyTarget(v);
+        return target != nullptr && isCallable(target);
+    }
+    return false;
 }
 
 // IsConstructor(argument)（ES2024 §7.2.4）：
-//   仅 Function 类型可能可构造，由 FunctionData::constructible 显式标记；
-//   绑定函数在创建时继承 target 的可构造性（§10.4.1.3）。
+//   Function 由 FunctionData::constructible 显式标记；绑定函数在创建时继承
+//   target 的可构造性（§10.4.1.3）；Proxy 继承 target 的可构造性。
 inline bool isConstructor(Value* v) {
-    if (v == nullptr || v->type()->kind() != TypeKind::Function) return false;
+    if (v == nullptr) return false;
+    TypeKind k = v->type()->kind();
+    if (k == TypeKind::Proxy) {
+        Value* target = proxyTarget(v);
+        return target != nullptr && isConstructor(target);
+    }
+    if (k != TypeKind::Function) return false;
     return static_cast<FunctionData*>(v->data())->constructible;
 }
 
@@ -543,10 +557,13 @@ inline Value* iterableToList(IContext* ctx, Value* items, std::vector<Value*>& o
 inline Value* ordinaryHasInstance(IContext* ctx, Value* ctor, Value* obj) {
     if (!isCallable(ctor)) return ctx->createBoolean(false);
 
-    // 绑定函数：以被绑定目标递归（§7.3.21 step 2）
-    auto* fd = static_cast<FunctionData*>(ctor->data());
-    if (fd->boundTarget != nullptr) {
-        return ordinaryHasInstance(ctx, fd->boundTarget, obj);
+    // 绑定函数：以被绑定目标递归（§7.3.21 step 2）。
+    // Proxy 没有 [[BoundTargetFunction]] 内部槽，直接走 prototype 查找。
+    if (ctor->type()->kind() == TypeKind::Function) {
+        auto* fd = static_cast<FunctionData*>(ctor->data());
+        if (fd->boundTarget != nullptr) {
+            return ordinaryHasInstance(ctx, fd->boundTarget, obj);
+        }
     }
 
     if (!isObjectKind(obj->type()->kind())) return ctx->createBoolean(false);

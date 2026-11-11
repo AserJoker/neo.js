@@ -246,6 +246,8 @@ public:
     using IContext::defineAccessor;
 
     Value* createObject(std::string_view bindName = {}) override;
+    Value* createProxy(Value* target, Value* handler,
+                       std::string_view bindName = {}) override;
     Value* createArray(std::string_view bindName = {}) override;
     Value* createPrimitiveWrapper(Value* primitive,
                                   std::string_view bindName = {}) override;

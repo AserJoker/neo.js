@@ -21,6 +21,7 @@
 #include "core/IteratorBuiltins.h"
 #include "core/NativeCoroutine.h"
 #include "core/ObjectBuiltins.h"
+#include "core/ProxyBuiltins.h"
 #include "core/PromiseBuiltins.h"
 #include "core/PrimitiveWrapperBuiltins.h"
 #include "core/SymbolBuiltins.h"
@@ -41,6 +42,7 @@
 #include "core/types/Object.h"
 #include "core/types/PrimitiveWrapper.h"
 #include "core/types/Promise.h"
+#include "core/types/Proxy.h"
 #include "core/types/String.h"
 #include "core/types/Symbol.h"
 #include "core/types/TypeBehavior.h"
@@ -106,6 +108,12 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     // 8. 建立内建原型链并注册 Object / Function 构造函数（ADR-035）。
     //    必须在其它内建之后：此前创建的对象/函数不挂链，之后自动挂。
     if (!registerObjectFunctionBuiltins(this)) {
+        std::abort();
+    }
+
+    // 8b. 注册 Proxy 构造函数与 Proxy.revocable（ES2024 §28.2）。
+    //     依赖 Object.prototype / Function.prototype 已就绪。
+    if (!registerProxyBuiltins(this)) {
         std::abort();
     }
 
@@ -1225,11 +1233,8 @@ Value* Context::createBoundFunction(Value* target, Value* boundThis, size_t argc
     d->boundThis = boundThis != nullptr ? boundThis : createUndefined();
     if (argc > 0) d->boundArgs.assign(argv, argv + argc);
     // §10.4.1.3 step 2：绑定函数继承 target 的 [[Construct]] 能力
-    if (target->type()->kind() == TypeKind::Function) {
-        d->constructible = static_cast<FunctionData*>(target->data())->constructible;
-    } else {
-        d->constructible = false;
-    }
+    // （target 可以是可构造的 Proxy）。
+    d->constructible = detail::isConstructor(target);
 
     Value* fnValue = createTracked(getFunctionType(), d, {});
     if (fnValue == oomValue_) return fnValue;
@@ -1270,6 +1275,21 @@ Value* Context::createObject(std::string_view bindName) {
         static_cast<ObjectData*>(obj->data())->prototype = objectPrototype_;
     }
     return obj;
+}
+
+Value* Context::createProxy(Value* target, Value* handler, std::string_view bindName) {
+    // ProxyCreate（ES2024 §10.5.1）：target/handler 都必须是对象。
+    if (target == nullptr || !detail::isObjectKind(target->type()->kind())) {
+        return detail::typeError(this, "Cannot create proxy with a non-object target");
+    }
+    if (handler == nullptr || !detail::isObjectKind(handler->type()->kind())) {
+        return detail::typeError(this, "Cannot create proxy with a non-object handler");
+    }
+    auto* d = gc_->allocData<ProxyData>();
+    if (d == nullptr) return oomValue_;
+    d->target = target;
+    d->handler = handler;
+    return createTracked(getProxyType(), d, bindName);
 }
 
 Value* Context::createModuleNamespace(std::string_view bindName) {
@@ -1454,8 +1474,11 @@ Value* Context::setPrototype(Value* obj, Value* proto) {
 }
 
 Value* Context::ownPropertyKeys(Value* obj, bool enumerableOnly, bool includeSymbols) {
-    std::vector<Value*> keys =
-        neo::core::ownPropertyKeys(this, obj, enumerableOnly, includeSymbols);
+    std::vector<Value*> keys;
+    if (Value* err = neo::core::ownPropertyKeys(this, obj, enumerableOnly, includeSymbols,
+                                               keys)) {
+        return err;
+    }
     Value* arr = createArray();
     if (arr == oomValue_) return arr;
     auto* d = static_cast<ArrayData*>(arr->data());

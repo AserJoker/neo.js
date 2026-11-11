@@ -16,6 +16,7 @@ add_executable(core_unit_test
     PrivateNameTest.cpp
     NativeClassTest.cpp
     StaticBlockTest.cpp
+    ProxyTest.cpp
     TypeTest.cpp
     ContextTest.cpp
     CallStackTest.cpp

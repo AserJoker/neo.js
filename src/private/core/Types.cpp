@@ -23,6 +23,7 @@
 #include "core/types/Object.h"
 #include "core/types/Promise.h"
 #include "core/types/PrimitiveWrapper.h"
+#include "core/types/Proxy.h"
 #include "core/types/String.h"
 #include "core/types/Symbol.h"
 #include "core/types/Undefined.h"
@@ -135,6 +136,11 @@ IType* getModuleNamespaceType() {
     return &inst;
 }
 
+IType* getProxyType() {
+    static ProxyType inst;
+    return &inst;
+}
+
 // TypeKind → Type 单例映射（唯一真相源）。
 // 新增类型：在此加一行 case + 上面的 getXxxType()，对象模型分派点自动覆盖。
 IType* getTypeByKind(TypeKind k) {
@@ -160,6 +166,7 @@ IType* getTypeByKind(TypeKind k) {
         case TypeKind::Coroutine:        return getCoroutineType();
         case TypeKind::AsyncGenerator:   return getAsyncGeneratorType();
         case TypeKind::ModuleNamespace:  return getModuleNamespaceType();
+        case TypeKind::Proxy:            return getProxyType();
     }
     return nullptr;
 }

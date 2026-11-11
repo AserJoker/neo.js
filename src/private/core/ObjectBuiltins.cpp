@@ -76,6 +76,10 @@ Value* objectProtoToString(IContext* ctx, Value* self, size_t /*argc*/, Value* /
         }
         default:                  tag = "Object"; break;
     }
+    // 可调用 Proxy 的内建 tag 是 "Function"（IsCallable 判定，ES2024 §20.1.3.6）。
+    if (self->type()->kind() == TypeKind::Proxy && detail::isCallable(self)) {
+        tag = "Function";
+    }
     return ctx->createString(std::string("[object ") + tag + "]");
 }
 
@@ -92,24 +96,14 @@ Value* objectProtoHasOwnProperty(IContext* ctx, Value* self, size_t argc, Value*
             ctx, "Object.prototype.hasOwnProperty called on non-object");
     }
     if (argc == 0) return ctx->createBoolean(false);
-    Value* key = argv[0];
-    auto* d = static_cast<ObjectData*>(self->data());
-    if (key->type()->kind() == TypeKind::Symbol) {
-        return ctx->createBoolean(d->symbols.count(key->data()) != 0);
-    }
-    // ToPropertyKey（ES2024 §7.1.19）：对象键先 ToPrimitive(STRING)
-    std::string k;
-    if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
-    // 索引型 exotic（Array / String 包装 / 后续 TypedArray）：索引元素与 length 也是自有属性
-    IType* t = self->type();
-    if (t->hasIndexedElements()) {
-        if (k == "length") return ctx->createBoolean(true);
-        uint32_t index = 0;
-        if (parseArrayIndex(k, index)) {
-            return ctx->createBoolean(t->indexedElement(ctx, self, index) != nullptr);
-        }
-    }
-    return ctx->createBoolean(d->properties.count(k) != 0);
+    // 经内部方法 [[GetOwnProperty]]：Proxy 触发 getOwnPropertyDescriptor trap，
+    // 索引型 exotic（Array / String 包装）由默认实现覆盖。
+    PropertyKey pk;
+    if (Value* err = toPropertyKey(ctx, argv[0], pk)) return err;
+    Property desc;
+    bool exists = false;
+    if (Value* err = self->type()->getOwnProperty(ctx, self, pk, exists, desc)) return err;
+    return ctx->createBoolean(exists);
 }
 
 // Object.prototype.isPrototypeOf(v)（ES2024 §20.1.3.3）：
@@ -141,27 +135,12 @@ Value* objectProtoPropertyIsEnumerable(IContext* ctx, Value* self, size_t argc,
             ctx, "Object.prototype.propertyIsEnumerable called on non-object");
     }
     if (argc == 0) return ctx->createBoolean(false);
-    Value* key = argv[0];
-    auto* d = static_cast<ObjectData*>(self->data());
-
-    // symbol 键：查 symbols 容器
-    if (key->type()->kind() == TypeKind::Symbol) {
-        auto it = d->symbols.find(key->data());
-        return ctx->createBoolean(it != d->symbols.end() && it->second.prop.enumerable);
-    }
-    std::string k;
-    if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
-    // 索引型 exotic：索引元素可枚举，length 不可枚举
-    IType* t = self->type();
-    if (t->hasIndexedElements()) {
-        if (k == "length") return ctx->createBoolean(false);
-        uint32_t index = 0;
-        if (parseArrayIndex(k, index)) {
-            return ctx->createBoolean(t->indexedElement(ctx, self, index) != nullptr);
-        }
-    }
-    auto it = d->properties.find(k);
-    return ctx->createBoolean(it != d->properties.end() && it->second.enumerable);
+    PropertyKey pk;
+    if (Value* err = toPropertyKey(ctx, argv[0], pk)) return err;
+    Property desc;
+    bool exists = false;
+    if (Value* err = self->type()->getOwnProperty(ctx, self, pk, exists, desc)) return err;
+    return ctx->createBoolean(exists && desc.enumerable);
 }
 
 // Object.prototype.toLocaleString()（ES2024 §20.1.3.5）：
@@ -174,7 +153,7 @@ Value* objectProtoToLocaleString(IContext* ctx, Value* self, size_t /*argc*/,
     }
     Value* fn = ctx->getProperty(self, "toString");
     if (detail::isErrorValue(fn)) return fn;
-    if (fn->type()->kind() != TypeKind::Function) {
+    if (!detail::isCallable(fn)) {
         return detail::typeError(ctx, "toString is not a function");
     }
     return ctx->call(fn, self, 0, nullptr);
@@ -186,6 +165,10 @@ Value* objectProtoToLocaleString(IContext* ctx, Value* self, size_t /*argc*/,
 // 有源码切片时返回切片文本；native/裁剪后无源码时返回 "[native code]"。
 Value* functionProtoToString(IContext* ctx, Value* self, size_t /*argc*/,
                              Value* /*argv*/[]) {
+    // Proxy 没有源码表示，规范要求抛 TypeError（ES2024 §20.2.3.5 step 2）。
+    if (self != nullptr && self->type()->kind() == TypeKind::Proxy) {
+        return detail::typeError(ctx, "Function.prototype.toString on Proxy");
+    }
     if (self != nullptr && self->type()->kind() == TypeKind::Function) {
         auto* d = static_cast<FunctionData*>(self->data());
         if (d->source.source != nullptr) {
@@ -201,7 +184,7 @@ Value* functionProtoToString(IContext* ctx, Value* self, size_t /*argc*/,
 
 // Function.prototype.call(thisArg, ...args)
 Value* functionProtoCall(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    if (self == nullptr || self->type()->kind() != TypeKind::Function) {
+    if (!detail::isCallable(self)) {
         return detail::typeError(ctx, "Function.prototype.call called on non-function");
     }
     Value* thisArg = argc > 0 ? argv[0] : ctx->createUndefined();
@@ -212,7 +195,7 @@ Value* functionProtoCall(IContext* ctx, Value* self, size_t argc, Value* argv[])
 //   argsArray 为 null/undefined → 无参调用；
 //   否则按 arrayLike 读 length 与各索引展开为实参（CreateListFromArrayLike）。
 Value* functionProtoApply(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    if (self == nullptr || self->type()->kind() != TypeKind::Function) {
+    if (!detail::isCallable(self)) {
         return detail::typeError(ctx, "Function.prototype.apply called on non-function");
     }
     Value* thisArg = argc > 0 ? argv[0] : ctx->createUndefined();
@@ -251,7 +234,7 @@ Value* functionProtoHasInstance(IContext* ctx, Value* self, size_t argc, Value* 
 // Function.prototype.bind(thisArg, ...args)（ES2024 §20.2.3.2）
 // 返回绑定函数：调用时以 thisArg 为 this、前置 args 再拼接调用实参。
 Value* functionProtoBind(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    if (self == nullptr || self->type()->kind() != TypeKind::Function) {
+    if (!detail::isCallable(self)) {
         return detail::typeError(ctx, "Function.prototype.bind called on non-function");
     }
     Value* thisArg = argc > 0 ? argv[0] : ctx->createUndefined();
@@ -309,14 +292,17 @@ Value* toObjectOrThrow(IContext* ctx, Value* v) {
 Value* objectKeys(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* argv[]) {
     Value* target = toObjectOrThrow(ctx, argv[0]);
     if (detail::isErrorValue(target)) return target;
-    return keysToArray(ctx, neo::core::ownPropertyKeys(ctx, target, true, false));
+    std::vector<Value*> keys;
+    if (Value* err = neo::core::ownPropertyKeys(ctx, target, true, false, keys)) return err;
+    return keysToArray(ctx, keys);
 }
 
 // Object.values(obj)：自有 enumerable 字符串键对应的值（ES2024 §20.1.2.23）
 Value* objectValues(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* argv[]) {
     Value* target = toObjectOrThrow(ctx, argv[0]);
     if (detail::isErrorValue(target)) return target;
-    std::vector<Value*> keys = neo::core::ownPropertyKeys(ctx, target, true, false);
+    std::vector<Value*> keys;
+    if (Value* err = neo::core::ownPropertyKeys(ctx, target, true, false, keys)) return err;
     Value* arr = ctx->createArray();
     if (arr == ctx->oomValue()) return arr;
     auto* d = static_cast<ArrayData*>(arr->data());
@@ -332,7 +318,8 @@ Value* objectValues(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* argv
 Value* objectEntries(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* argv[]) {
     Value* target = toObjectOrThrow(ctx, argv[0]);
     if (detail::isErrorValue(target)) return target;
-    std::vector<Value*> keys = neo::core::ownPropertyKeys(ctx, target, true, false);
+    std::vector<Value*> keys;
+    if (Value* err = neo::core::ownPropertyKeys(ctx, target, true, false, keys)) return err;
     Value* arr = ctx->createArray();
     if (arr == ctx->oomValue()) return arr;
     auto* d = static_cast<ArrayData*>(arr->data());
@@ -360,7 +347,8 @@ Value* objectAssign(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) 
         if (sk == TypeKind::Undefined || sk == TypeKind::Null) continue;  // 跳过
         Value* from = toObjectOrThrow(ctx, src);
         if (detail::isErrorValue(from)) return from;
-        std::vector<Value*> keys = neo::core::ownPropertyKeys(ctx, from, true, true);
+        std::vector<Value*> keys;
+        if (Value* err = neo::core::ownPropertyKeys(ctx, from, true, true, keys)) return err;
         for (Value* key : keys) {
             Value* v = ctx->getProperty(from, key);
             if (detail::isErrorValue(v)) return v;
@@ -460,7 +448,9 @@ Value* objectGetOwnPropertyNames(IContext* ctx, Value* /*self*/, size_t /*argc*/
                                  Value* argv[]) {
     Value* target = toObjectOrThrow(ctx, argv[0]);
     if (detail::isErrorValue(target)) return target;
-    return keysToArray(ctx, neo::core::ownPropertyKeys(ctx, target, false, false));
+    std::vector<Value*> keys;
+    if (Value* err = neo::core::ownPropertyKeys(ctx, target, false, false, keys)) return err;
+    return keysToArray(ctx, keys);
 }
 
 // 把值挂到 global scope：add 跟踪 + bind 名字

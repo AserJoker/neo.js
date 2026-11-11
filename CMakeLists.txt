@@ -108,6 +108,7 @@ add_library(neojs STATIC
     src/private/core/Context.cpp
     src/private/core/Task.cpp
     src/private/core/ObjectBuiltins.cpp
+    src/private/core/ProxyBuiltins.cpp
     src/private/core/ArrayBuiltins.cpp
     src/private/core/IteratorBuiltins.cpp
     src/private/core/GeneratorBuiltins.cpp
@@ -141,6 +142,7 @@ add_library(neojs STATIC
     src/private/core/types/Coroutine.cpp
     src/private/core/types/AsyncGenerator.cpp
     src/private/core/types/ModuleNamespace.cpp
+    src/private/core/types/Proxy.cpp
     src/private/core/NativeCoroutine.cpp
     src/private/core/FunctionInvoke.cpp
     src/private/infra/MallocAllocator.cpp

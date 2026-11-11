@@ -14,13 +14,37 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace neo::core {
 
 // 前向声明
 class IContext;
 class Value;
+
+// 属性描述符（ADR-018 §2 / ES2024 §6.2.6）。
+// 数据属性：value + writable；访问器属性：getter/setter（任一非空即访问器）。
+// 位于公共头：内部方法层（IType::getOwnProperty）与 Proxy 需要跨层传递描述符。
+struct Property {
+    Value* value = nullptr;   // 属性值（数据属性）
+    bool writable = true;
+    bool enumerable = true;
+    bool configurable = true;
+    Value* getter = nullptr;  // 访问器属性 getter
+    Value* setter = nullptr;  // 访问器属性 setter
+};
+
+// 规范属性键（ES2024 §6.1.7）：String 或 Symbol。
+// 内部方法层用它避免在原型链每一跳重复 ToPropertyKey；
+// value 是规范键本身（Proxy trap 需要原样传给用户代码）。
+struct PropertyKey {
+    Value* value = nullptr;        // String 或 Symbol Value*
+    bool isSymbol = false;
+    std::string name;              // isSymbol == false 时的字符串键
+    const void* symbol = nullptr;  // isSymbol == true 时的 SymbolData* 身份
+};
 
 // 类型枚举：快速判同类型、分派调试、序列化
 enum class TypeKind : uint8_t {
@@ -65,6 +89,9 @@ enum class TypeKind : uint8_t {
     // 模块命名空间 exotic 对象（ES2024 §10.4.6）：原型为 null，导出属性为
     // 不可写/不可配置的活绑定——Property 直接持有模块作用域的 Value*，不 clone。
     ModuleNamespace,
+    // Proxy exotic 对象（ES2024 §10.5）：[[ProxyTarget]] + [[ProxyHandler]]，
+    // 所有内部方法转发到 handler 上的 trap。可调用/可构造性继承自 target。
+    Proxy,
     // 后续阶段：BigInt/...
 };
 
@@ -103,11 +130,37 @@ public:
     // indexedElement：第 index 个元素；不存在（空洞/越界）返回 nullptr。
     // 索引元素恒为 enumerable 的数据属性（Array/TypedArray/String 均如此）。
     virtual bool hasIndexedElements() const { return false; }
+    // 是否具备 "length" 自有属性。默认与 hasIndexedElements 一致；
+    // String 包装只有真正包装字符串时才有 length（Boolean/Number/Symbol 包装没有）。
+    virtual bool hasIndexedLength(Value* /*self*/) const { return hasIndexedElements(); }
     virtual uint32_t indexedLength(Value* /*self*/) const { return 0; }
     virtual Value* indexedElement(IContext* /*ctx*/, Value* /*self*/,
                                   uint32_t /*index*/) const {
         return nullptr;
     }
+
+    // —— 对象内部方法（ES2024 §10.1，Proxy 的落点）——
+    // 属性算法（Get/Set/Has/Delete/OwnPropertyKeys）必须逐跳经此分派，
+    // 否则原型链上的 Proxy 会被绕过。默认实现是 OrdinaryGetOwnProperty /
+    // OrdinaryOwnPropertyKeys（在 private/core/types/Object.cpp）。
+    //
+    // getOwnProperty（§10.1.5）：存在自有属性时 exists=true 并填充 out。
+    // 成功返回 nullptr；trap 抛错返回 Exception/Fatal。
+    virtual Value* getOwnProperty(IContext* ctx, Value* self, const PropertyKey& key,
+                                  bool& exists, Property& out) const;
+    // ownKeys（§10.1.11）：按规范顺序返回全部自有键（含 symbol）。
+    // 成功返回 nullptr 并写入 out；trap 抛错返回 Exception/Fatal。
+    virtual Value* ownKeys(IContext* ctx, Value* self,
+                           std::vector<Value*>& out) const;
+
+    // getWithReceiver（§10.1.8）：[[Get]]，receiver 作为访问器 this。
+    // 原型链上的 Proxy 必须经此触发 get trap（不能只查 getOwnProperty）。
+    virtual Value* getWithReceiver(IContext* ctx, Value* self, const PropertyKey& key,
+                                   Value* receiver);
+    // setWithReceiver（§10.1.9）：[[Set]]。返回 nullptr 成功 / 错误值异常；
+    // ok=false 表示 [[Set]] 返回 false（调用方按严格模式决定是否抛 TypeError）。
+    virtual Value* setWithReceiver(IContext* ctx, Value* self, const PropertyKey& key,
+                                   Value* value, Value* receiver, bool& ok);
 
     // —— 行为接口（ADR-016 修订 §3）——
     // 统一签名 Value* op(IContext* ctx, Value* a, Value* b) / Value* op(IContext* ctx, Value* self)。
@@ -195,6 +248,7 @@ IType* getInterruptType();
 IType* getCoroutineType();
 IType* getAsyncGeneratorType();
 IType* getModuleNamespaceType();
+IType* getProxyType();
 
 // —— TypeKind → Type 单例（Types.cpp 中的唯一映射表）——
 // 未注册的 kind 返回 nullptr。新增类型时只需在此加一行映射，

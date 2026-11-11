@@ -91,39 +91,10 @@ inline const void* symbolIdentity(Value* key) {
     return static_cast<const void*>(key->data());
 }
 
-// 沿原型链查找字符串键属性（含 self 自身）。返回命中的 Property，未找到 nullptr。
-Property* findInChain(Value* self, const std::string& key) {
-    for (Value* cur = self; cur != nullptr;) {
-        if (!kindHasObjectLayout(cur->type()->kind())) return nullptr;
-        auto* d = static_cast<ObjectData*>(cur->data());
-        auto it = d->properties.find(key);
-        if (it != d->properties.end()) return &it->second;
-        cur = d->prototype;
-    }
-    return nullptr;
-}
-
-// 沿原型链查找 symbol 键属性（含 self 自身）。返回命中的 Property，未找到 nullptr。
-Property* findSymbolInChain(Value* self, const void* ident) {
-    for (Value* cur = self; cur != nullptr;) {
-        if (!kindHasObjectLayout(cur->type()->kind())) return nullptr;
-        auto* d = static_cast<ObjectData*>(cur->data());
-        auto it = d->symbols.find(ident);
-        if (it != d->symbols.end()) return &it->second.prop;
-        cur = d->prototype;
-    }
-    return nullptr;
-}
-
 // 结果是否为错误值（Exception/Fatal），用于访问器调用的透传判断
 inline bool isErrorResult(Value* v) {
     TypeKind k = v->type()->kind();
     return k == TypeKind::Exception || k == TypeKind::Fatal;
-}
-
-// 是否访问器属性（getter/setter 任一非空）
-inline bool isAccessor(const Property& p) {
-    return p.getter != nullptr || p.setter != nullptr;
 }
 
 // 调用访问器函数：以 receiver 为 this。
@@ -138,7 +109,7 @@ Value* callAccessor(IContext* ctx, Value* fn, Value* receiver, size_t argc = 0,
 // getter 为空 → undefined；getter 抛错 → 透传。
 Value* readProperty(IContext* ctx, Property* p, Value* receiver) {
     if (p == nullptr) return ctx->createUndefined();
-    if (isAccessor(*p)) {
+    if (isAccessorDescriptor(*p)) {
         if (p->getter == nullptr) return ctx->createUndefined();
         return callAccessor(ctx, p->getter, receiver);
     }
@@ -147,181 +118,294 @@ Value* readProperty(IContext* ctx, Property* p, Value* receiver) {
 
 }  // namespace
 
-Value* ObjectType::getProperty(IContext* ctx, Value* self, Value* key) {
-    // 沿原型链查找（JS 读取语义）；命中访问器则以 self（receiver）为 this 调 getter
+// —— ToPropertyKey（ES2024 §7.1.19）——
+Value* toPropertyKey(IContext* ctx, Value* key, PropertyKey& out) {
     if (isSymbolKey(key)) {
-        return readProperty(ctx, findSymbolInChain(self, symbolIdentity(key)), self);
+        out.value = key;
+        out.isSymbol = true;
+        out.symbol = symbolIdentity(key);
+        out.name.clear();
+        return nullptr;
     }
     std::string k;
     if (Value* err = keyString(ctx, key, k)) return err;
-    return readProperty(ctx, findInChain(self, k), self);
+    out.value = ctx->createString(k);
+    if (out.value == ctx->oomValue()) return out.value;
+    out.isSymbol = false;
+    out.symbol = nullptr;
+    out.name = std::move(k);
+    return nullptr;
+}
+
+// —— 普通对象内部方法（ES2024 §10.1）——
+
+Value* ordinaryGet(IContext* ctx, Value* obj, const PropertyKey& key, Value* receiver) {
+    Property desc;
+    bool exists = false;
+    if (Value* err = obj->type()->getOwnProperty(ctx, obj, key, exists, desc)) return err;
+    if (exists) return readProperty(ctx, &desc, receiver);
+    Value* parent = obj->type()->getPrototype(ctx, obj);
+    if (isErrorResult(parent)) return parent;
+    if (parent == nullptr || !detail::isObjectKind(parent->type()->kind())) {
+        return ctx->createUndefined();
+    }
+    // 经父对象的 [[Get]] 分派：原型链上的 Proxy 在此触发 get trap。
+    return parent->type()->getWithReceiver(ctx, parent, key, receiver);
+}
+
+Value* ordinarySet(IContext* ctx, Value* obj, const PropertyKey& key, Value* value,
+                   Value* receiver, bool& ok) {
+    ok = true;
+    Property own;
+    bool hasOwn = false;
+    if (Value* err = obj->type()->getOwnProperty(ctx, obj, key, hasOwn, own)) return err;
+
+    if (!hasOwn) {
+        Value* parent = obj->type()->getPrototype(ctx, obj);
+        if (isErrorResult(parent)) return parent;
+        if (parent != nullptr && detail::isObjectKind(parent->type()->kind())) {
+            // 继承属性：交给父对象的 [[Set]]（原型链上的 Proxy 在此触发 set trap）。
+            return parent->type()->setWithReceiver(ctx, parent, key, value, receiver, ok);
+        }
+        // 无继承描述符：按默认可写数据属性在 receiver 上创建。
+        own = Property{};
+        own.writable = true;
+        own.enumerable = true;
+        own.configurable = true;
+    }
+
+    if (isAccessorDescriptor(own)) {
+        if (own.setter == nullptr) {
+            ok = false;
+            return nullptr;
+        }
+        Value* argv[1] = {value};
+        Value* r = callAccessor(ctx, own.setter, receiver, 1, argv);
+        return isErrorResult(r) ? r : nullptr;
+    }
+
+    if (!own.writable) {
+        ok = false;
+        return nullptr;
+    }
+    if (receiver == nullptr || !detail::isObjectKind(receiver->type()->kind())) {
+        ok = false;
+        return nullptr;
+    }
+
+    // Receiver 已有自有属性：数据属性可写则只更新值（保留属性特性）；
+    // 访问器或不可写 → [[Set]] 失败。
+    Property existing;
+    bool hasExisting = false;
+    if (Value* err = receiver->type()->getOwnProperty(ctx, receiver, key, hasExisting,
+                                                      existing)) {
+        return err;
+    }
+    if (hasExisting) {
+        if (isAccessorDescriptor(existing) || !existing.writable) {
+            ok = false;
+            return nullptr;
+        }
+        Value* r = receiver->type()->defineProperty(
+            ctx, receiver, key.value, value, existing.writable, existing.enumerable,
+            existing.configurable);
+        if (isErrorResult(r)) return r;
+        return nullptr;
+    }
+    Value* r = receiver->type()->defineProperty(ctx, receiver, key.value, value, true, true,
+                                                true);
+    if (isErrorResult(r)) return r;
+    return nullptr;
+}
+
+bool ordinaryHas(IContext* ctx, Value* obj, const PropertyKey& key) {
+    Property desc;
+    bool exists = false;
+    if (obj->type()->getOwnProperty(ctx, obj, key, exists, desc) != nullptr) return false;
+    if (exists) return true;
+    Value* parent = obj->type()->getPrototype(ctx, obj);
+    if (isErrorResult(parent)) return false;
+    if (parent == nullptr || !detail::isObjectKind(parent->type()->kind())) return false;
+    // 经父对象的 [[HasProperty]] 分派：原型链上的 Proxy 在此触发 has trap。
+    return parent->type()->hasProperty(ctx, parent, key.value);
+}
+
+Value* ordinaryDelete(IContext* ctx, Value* obj, const PropertyKey& key, bool& ok) {
+    ok = true;
+    Property desc;
+    bool exists = false;
+    if (Value* err = obj->type()->getOwnProperty(ctx, obj, key, exists, desc)) return err;
+    if (!exists) return nullptr;
+    if (!desc.configurable) {
+        ok = false;
+        return nullptr;
+    }
+    Value* r = obj->type()->deleteProperty(ctx, obj, key.value);
+    if (isErrorResult(r)) return r;
+    return nullptr;
+}
+
+Value* IType::getWithReceiver(IContext* ctx, Value* self, const PropertyKey& key,
+                              Value* receiver) {
+    return ordinaryGet(ctx, self, key, receiver);
+}
+
+Value* IType::setWithReceiver(IContext* ctx, Value* self, const PropertyKey& key,
+                              Value* value, Value* receiver, bool& ok) {
+    return ordinarySet(ctx, self, key, value, receiver, ok);
+}
+
+Value* ordinaryGetPrototype(IContext* ctx, Value* obj) {
+    return obj->type()->getPrototype(ctx, obj);
+}
+
+Value* ordinarySetPrototype(IContext* ctx, Value* obj, Value* proto) {
+    return obj->type()->setPrototype(ctx, obj, proto);
+}
+
+// —— 默认内部方法（OrdinaryGetOwnProperty / OrdinaryOwnPropertyKeys）——
+
+Value* IType::getOwnProperty(IContext* ctx, Value* self, const PropertyKey& key,
+                             bool& exists, Property& out) const {
+    exists = false;
+    if (!kindHasObjectLayout(kind())) return nullptr;
+    auto* d = static_cast<ObjectData*>(self->data());
+
+    if (key.isSymbol) {
+        auto it = d->symbols.find(key.symbol);
+        if (it == d->symbols.end()) return nullptr;
+        out = it->second.prop;
+        exists = true;
+        return nullptr;
+    }
+
+    if (hasIndexedElements()) {
+        if (key.name == "length" && hasIndexedLength(self)) {
+            Value* len = ctx->createNumber(static_cast<double>(indexedLength(self)));
+            if (len == ctx->oomValue()) return len;
+            // Array.length 可写；String 包装的 length 只读（ES2024 §10.4.3.1）。
+            out = Property{len, kind() == TypeKind::Array, false, false, nullptr, nullptr};
+            exists = true;
+            return nullptr;
+        }
+        uint32_t index = 0;
+        if (parseArrayIndex(key.name, index)) {
+            Value* v = indexedElement(ctx, self, index);
+            if (v != nullptr) {
+                out = Property{v, true, true, true, nullptr, nullptr};
+                exists = true;
+                return nullptr;
+            }
+            // 空洞/越界：继续查 properties（String 包装的越界索引可作普通属性定义）。
+        }
+    }
+
+    auto it = d->properties.find(key.name);
+    if (it == d->properties.end()) return nullptr;
+    out = it->second;
+    exists = true;
+    return nullptr;
+}
+
+Value* IType::ownKeys(IContext* ctx, Value* self, std::vector<Value*>& out) const {
+    if (!kindHasObjectLayout(kind())) return nullptr;
+    auto* d = static_cast<ObjectData*>(self->data());
+
+    // 1. 数组索引（升序）：索引型 exotic 的元素 + 普通对象 properties 中的数字串键
+    std::vector<uint32_t> indices;
+    if (hasIndexedElements()) {
+        uint32_t len = indexedLength(self);
+        for (uint32_t i = 0; i < len; ++i) {
+            if (indexedElement(ctx, self, i) != nullptr) indices.push_back(i);
+        }
+    }
+    for (const std::string& name : d->order) {
+        uint32_t index = 0;
+        if (parseArrayIndex(name, index)) indices.push_back(index);
+    }
+    std::sort(indices.begin(), indices.end());
+    indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
+    for (uint32_t index : indices) {
+        Value* k = ctx->createString(std::to_string(index));
+        if (k == ctx->oomValue()) return k;
+        out.push_back(k);
+    }
+
+    // 2. 字符串键（插入序，跳过已作为索引输出的键）。
+    // 索引型 exotic 的 "length" 是自有属性，且先于其他字符串键（创建最早）。
+    if (hasIndexedLength(self)) {
+        Value* k = ctx->createString("length");
+        if (k == ctx->oomValue()) return k;
+        out.push_back(k);
+    }
+    for (const std::string& name : d->order) {
+        uint32_t index = 0;
+        if (parseArrayIndex(name, index)) continue;
+        if (d->properties.find(name) == d->properties.end()) continue;
+        Value* k = ctx->createString(name);
+        if (k == ctx->oomValue()) return k;
+        out.push_back(k);
+    }
+
+    // 3. symbol 键（插入序）
+    for (const void* ident : d->symbolOrder) {
+        auto it = d->symbols.find(ident);
+        if (it == d->symbols.end()) continue;
+        out.push_back(it->second.key);
+    }
+    return nullptr;
+}
+
+Value* ObjectType::getProperty(IContext* ctx, Value* self, Value* key) {
+    PropertyKey pk;
+    if (Value* err = toPropertyKey(ctx, key, pk)) return err;
+    return ordinaryGet(ctx, self, pk, self);
 }
 
 Value* getPropertyWithReceiver(IContext* ctx, Value* obj, Value* key, Value* receiver) {
-    if (isSymbolKey(key)) {
-        return readProperty(ctx, findSymbolInChain(obj, symbolIdentity(key)), receiver);
-    }
-    std::string k;
-    if (Value* err = keyString(ctx, key, k)) return err;
-    return readProperty(ctx, findInChain(obj, k), receiver);
+    PropertyKey pk;
+    if (Value* err = toPropertyKey(ctx, key, pk)) return err;
+    // 经 [[Get]] 分派：base 是 Proxy 时触发 get trap。
+    return obj->type()->getWithReceiver(ctx, obj, pk, receiver);
 }
 
 Value* setPropertyWithReceiver(IContext* ctx, Value* obj, Value* key, Value* value,
                                Value* receiver) {
-    const bool strict = ctx->hasFlag("strict");
-    Property* p = nullptr;
-    std::string k;
-    if (isSymbolKey(key)) {
-        p = findSymbolInChain(obj, symbolIdentity(key));
-    } else {
-        if (Value* err = keyString(ctx, key, k)) return err;
-        p = findInChain(obj, k);
+    PropertyKey pk;
+    if (Value* err = toPropertyKey(ctx, key, pk)) return err;
+    bool ok = false;
+    // 经 [[Set]] 分派：base 是 Proxy 时触发 set trap。
+    Value* err = obj->type()->setWithReceiver(ctx, obj, pk, value, receiver, ok);
+    if (err != nullptr) return err;
+    if (!ok) {
+        if (!ctx->hasFlag("strict")) return value;
+        std::string name = pk.isSymbol ? detail::valueToString(key) : pk.name;
+        return detail::typeError(ctx, "Cannot set property '" + name + "'");
     }
-
-    if (p != nullptr) {
-        if (isAccessor(*p)) {
-            if (p->setter == nullptr) {
-                if (!strict) return value;
-                std::string name = isSymbolKey(key) ? detail::valueToString(key) : k;
-                return detail::typeError(
-                    ctx, "Cannot set property '" + name + "' which has only a getter");
-            }
-            Value* argv[1] = {value};
-            Value* r = callAccessor(ctx, p->setter, receiver, 1, argv);
-            return isErrorResult(r) ? r : value;
-        }
-        if (!p->writable) {
-            if (!strict) return value;
-            std::string name = isSymbolKey(key) ? detail::valueToString(key) : k;
-            return detail::typeError(
-                ctx, "Cannot assign to read only property '" + name + "'");
-        }
-    }
-
-    if (receiver == nullptr || !detail::isObjectKind(receiver->type()->kind())) {
-        return detail::typeError(ctx, "Cannot create property on non-object");
-    }
-    return receiver->type()->defineProperty(ctx, receiver, key, value, true, true, true);
+    return value;
 }
 
 Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* value) {
-    auto* d = static_cast<ObjectData*>(self->data());
-    // OrdinarySetWithOwnDescriptor（ES2024 §10.1.9.2）：
-    //   1. 自有属性存在 → 按其描述符处理（访问器调 setter；数据属性查 writable）
-    //   2. 自有不存在 → 沿原型链找继承描述符：
-    //        - 访问器有 setter → 以 receiver(self) 为 this 调用
-    //        - 访问器无 setter → 严格模式报错
-    //        - 数据属性不可写 → 严格模式报错
-    //        - 其余 → 在自身上新建数据属性
-    // 本阶段 receiver 恒为 self（无 Reflect.set 的显式 receiver 参数）。
-    // 严格性由当前作用域标注决定（Context::setFlag("strict")）：
-    // sloppy 模式下 [[Set]] 失败应静默（表达式值仍为 RHS），不抛 TypeError。
-    const bool strict = ctx->hasFlag("strict");
-
-    // —— symbol 键 ——
-    if (isSymbolKey(key)) {
-        const void* ident = symbolIdentity(key);
-        auto it = d->symbols.find(ident);
-        if (it != d->symbols.end()) {
-            Property& own = it->second.prop;
-            if (isAccessor(own)) {
-                if (own.setter == nullptr) {
-                    if (!strict) return value;
-                    std::string msg = "Cannot set property '" + detail::valueToString(key) +
-                                      "' which has only a getter";
-                    return detail::typeError(ctx, msg);
-                }
-                Value* argv[1] = {value};
-                Value* r = callAccessor(ctx, own.setter, self, 1, argv);
-                return isErrorResult(r) ? r : value;
-            }
-            if (!own.writable) {
-                if (!strict) return value;
-                std::string msg = "Cannot assign to read only property '" +
-                                  detail::valueToString(key) + "'";
-                return detail::typeError(ctx, msg);
-            }
-            own.value = value;
-            return value;
-        }
-        Property* inherited = findSymbolInChain(d->prototype, ident);
-        if (inherited != nullptr) {
-            if (isAccessor(*inherited)) {
-                if (inherited->setter == nullptr) {
-                    if (!strict) return value;
-                    std::string msg = "Cannot set property '" + detail::valueToString(key) +
-                                      "' which has only a getter";
-                    return detail::typeError(ctx, msg);
-                }
-                Value* argv[1] = {value};
-                Value* r = callAccessor(ctx, inherited->setter, self, 1, argv);
-                return isErrorResult(r) ? r : value;
-            }
-            if (!inherited->writable) {
-                if (!strict) return value;
-                std::string msg = "Cannot assign to read only property '" +
-                                  detail::valueToString(key) + "'";
-                return detail::typeError(ctx, msg);
-            }
-        }
-        d->symbols.emplace(ident, SymbolProperty{key, Property{value, true, true, true, nullptr, nullptr}});
-        d->symbolOrder.push_back(ident);
-        return value;
+    // OrdinarySetWithOwnDescriptor（ES2024 §10.1.9.2），逐跳经内部方法分派。
+    // 严格性由当前作用域标注决定：sloppy 模式下 [[Set]] 失败静默（表达式值仍为 RHS）。
+    PropertyKey pk;
+    if (Value* err = toPropertyKey(ctx, key, pk)) return err;
+    bool ok = false;
+    Value* err = ordinarySet(ctx, self, pk, value, self, ok);
+    if (err != nullptr) return err;
+    if (!ok) {
+        if (!ctx->hasFlag("strict")) return value;
+        std::string name = pk.isSymbol ? detail::valueToString(key) : pk.name;
+        return detail::typeError(ctx, "Cannot set property '" + name + "'");
     }
-
-    // —— 字符串键 ——
-    std::string k;
-    if (Value* err = keyString(ctx, key, k)) return err;
-    auto it = d->properties.find(k);
-    if (it != d->properties.end()) {
-        Property& own = it->second;
-        if (isAccessor(own)) {
-            if (own.setter == nullptr) {
-                if (!strict) return value;
-                std::string msg = "Cannot set property '" + k + "' which has only a getter";
-                return detail::typeError(ctx, msg);
-            }
-            Value* argv[1] = {value};
-                Value* r = callAccessor(ctx, own.setter, self, 1, argv);
-            return isErrorResult(r) ? r : value;
-        }
-        if (!own.writable) {
-            if (!strict) return value;
-            std::string msg = "Cannot assign to read only property '" + k + "'";
-            return detail::typeError(ctx, msg);
-        }
-        own.value = value;
-        return value;
-    }
-    Property* inherited = findInChain(d->prototype, k);
-    if (inherited != nullptr) {
-        if (isAccessor(*inherited)) {
-            if (inherited->setter == nullptr) {
-                if (!strict) return value;
-                std::string msg = "Cannot set property '" + k + "' which has only a getter";
-                return detail::typeError(ctx, msg);
-            }
-            Value* argv[1] = {value};
-                Value* r = callAccessor(ctx, inherited->setter, self, 1, argv);
-            return isErrorResult(r) ? r : value;
-        }
-        if (!inherited->writable) {
-            if (!strict) return value;
-            std::string msg = "Cannot assign to read only property '" + k + "'";
-            return detail::typeError(ctx, msg);
-        }
-    }
-    d->properties.emplace(k, Property{value, true, true, true, nullptr, nullptr});
-    d->order.push_back(k);
     return value;
 }
 
 bool ObjectType::hasProperty(IContext* ctx, Value* self, Value* key) {
-    // JS `in` 语义：自有 + 原型链
-    if (isSymbolKey(key)) return findSymbolInChain(self, symbolIdentity(key)) != nullptr;
-    std::string k;
-    if (keyString(ctx, key, k) != nullptr) return false;  // ToPropertyKey 失败 → 不存在
-    return findInChain(self, k) != nullptr;
+    // JS `in` 语义：自有 + 原型链（逐跳经内部方法分派）。
+    PropertyKey pk;
+    if (toPropertyKey(ctx, key, pk) != nullptr) return false;  // ToPropertyKey 失败 → 不存在
+    return ordinaryHas(ctx, self, pk);
 }
 
 Value* ObjectType::deleteProperty(IContext* ctx, Value* self, Value* key) {
@@ -460,7 +544,8 @@ Value* ObjectType::setPrototype(IContext* ctx, Value* self, Value* proto) {
         std::string msg = "Object prototype may only be an Object or null";
         return detail::typeError(ctx, msg);
     }
-    // 环检测：从 proto 沿原型链走到头，若遇到 self 则成环
+    // 环检测：从 proto 沿原型链走到头，若遇到 self 则成环。
+    // 经内部方法遍历，原型链上的 Proxy 也能正确参与（trap 抛错则透传）。
     std::unordered_set<Value*> seen;
     for (Value* cur = proto; cur != nullptr && kindHasObjectLayout(cur->type()->kind());) {
         if (cur == self) {
@@ -468,7 +553,9 @@ Value* ObjectType::setPrototype(IContext* ctx, Value* self, Value* proto) {
             return detail::typeError(ctx, msg);
         }
         if (!seen.insert(cur).second) break;  // 已有环（内部契约被破坏），终止遍历
-        cur = static_cast<ObjectData*>(cur->data())->prototype;
+        Value* next = cur->type()->getPrototype(ctx, cur);
+        if (isErrorResult(next)) return next;
+        cur = (next != nullptr && kindHasObjectLayout(next->type()->kind())) ? next : nullptr;
     }
     static_cast<ObjectData*>(self->data())->prototype = (pk == TypeKind::Null) ? nullptr : proto;
     return self;
@@ -515,72 +602,31 @@ IData* ObjectData::clone(neo::infra::IAllocator* /*alloc*/) const {
 }
 
 // —— 自有属性键枚举（ES2024 §10.1.11）——
+// 经内部方法 ownKeys 取全部键（Proxy 会触发 ownKeys trap），再按需过滤：
+// enumerableOnly 走 getOwnProperty（Proxy 会触发 getOwnPropertyDescriptor trap）。
+Value* ownPropertyKeys(IContext* ctx, Value* obj, bool enumerableOnly,
+                       bool includeSymbols, std::vector<Value*>& out) {
+    if (!detail::isObjectKind(obj->type()->kind())) return nullptr;
 
-namespace {
+    std::vector<Value*> all;
+    if (Value* err = obj->type()->ownKeys(ctx, obj, all)) return err;
 
-// 收集索引型 exotic 对象实际存在的索引键（升序）。
-// 经 IType::hasIndexedElements/indexedLength/indexedElement 访问，
-// 新增 TypedArray / arguments 等类型无需改这里。
-void collectIndexKeys(IContext* ctx, Value* obj, std::vector<uint32_t>& indices) {
-    IType* t = obj->type();
-    if (!t->hasIndexedElements()) return;
-    uint32_t len = t->indexedLength(obj);
-    for (uint32_t i = 0; i < len; ++i) {
-        if (t->indexedElement(ctx, obj, i) != nullptr) indices.push_back(i);
-    }
-}
-
-}  // namespace
-
-std::vector<Value*> ownPropertyKeys(IContext* ctx, Value* obj, bool enumerableOnly,
-                                    bool includeSymbols) {
-    std::vector<Value*> keys;
-    TypeKind k = obj->type()->kind();
-    if (!detail::isObjectKind(k)) return keys;
-
-    // 1. 数组索引（升序）：索引型 exotic 的元素 + 普通对象 properties 中的数字串键
-    std::vector<uint32_t> indices;
-    collectIndexKeys(ctx, obj, indices);
-    auto* d = static_cast<ObjectData*>(obj->data());
-    for (const std::string& name : d->order) {
-        uint32_t index = 0;
-        if (parseArrayIndex(name, index)) indices.push_back(index);
-    }
-    std::sort(indices.begin(), indices.end());
-    indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
-    for (uint32_t index : indices) {
-        // 元素型索引（Array/String 包装）恒可枚举；properties 中的数字串键按描述符判断
-        bool enumerable = true;
-        auto it = d->properties.find(std::to_string(index));
-        if (it != d->properties.end()) enumerable = it->second.enumerable;
-        if (enumerableOnly && !enumerable) continue;
-        keys.push_back(ctx->createString(std::to_string(index)));
-    }
-
-    // 2. 字符串键（插入序，跳过已作为索引输出的键）。
-    // 索引型 exotic 的 "length" 是自有属性且不可枚举。
-    if (obj->type()->hasIndexedElements()) {
-        if (!enumerableOnly) keys.push_back(ctx->createString("length"));
-    }
-    for (const std::string& name : d->order) {
-        uint32_t index = 0;
-        if (parseArrayIndex(name, index)) continue;  // 已在索引段输出
-        auto it = d->properties.find(name);
-        if (it == d->properties.end()) continue;  // 内部契约：order 与 map 同步
-        if (enumerableOnly && !it->second.enumerable) continue;
-        keys.push_back(ctx->createString(name));
-    }
-
-    // 3. symbol 键（插入序）
-    if (includeSymbols) {
-        for (const void* ident : d->symbolOrder) {
-            auto it = d->symbols.find(ident);
-            if (it == d->symbols.end()) continue;
-            if (enumerableOnly && !it->second.prop.enumerable) continue;
-            keys.push_back(it->second.key);
+    for (Value* k : all) {
+        bool isSymbol = k->type()->kind() == TypeKind::Symbol;
+        if (isSymbol && !includeSymbols) continue;
+        if (enumerableOnly) {
+            PropertyKey pk;
+            if (Value* err = toPropertyKey(ctx, k, pk)) return err;
+            Property desc;
+            bool exists = false;
+            if (Value* err = obj->type()->getOwnProperty(ctx, obj, pk, exists, desc)) {
+                return err;
+            }
+            if (!exists || !desc.enumerable) continue;
         }
+        out.push_back(k);
     }
-    return keys;
+    return nullptr;
 }
 
 }  // namespace neo::core
