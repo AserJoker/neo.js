@@ -200,14 +200,23 @@ void WithScope::destroySelf() {
 }
 
 Scope::~Scope() {
-    // 1. 先从父作用域摘除自己（避免父持悬垂指针）
-    if (parent_ != nullptr) {
+    // 1. 先从父作用域摘除自己（避免父持悬垂指针）。
+    //    linkedOnly 的 parent 仅用于查找，本作用域从未登记进 parent->children_。
+    if (parent_ != nullptr && !linkedOnly_) {
         parent_->removeChild(this);
     }
     // 2. 递归析构子作用域：while 循环（子析构会从本作用域 removeChild，children_ 动态收缩）
     //    子 Scope 是 placement new 对象，需显式调析构 + allocator_->free 释放内存。
+    //    仍被 Environment 闭包 pin 住的子作用域不能销毁：摘离本树并标记孤儿，
+    //    待闭包析构时按 captureRef 归 0 回收（ADR-036 扩展）。
     while (!children_.empty()) {
         Scope* child = *children_.begin();
+        if (child->captureRef() > 0) {
+            children_.erase(child);
+            child->parent_ = nullptr;
+            child->markAutoDispose();
+            continue;
+        }
         child->destroySelf();         // 虚析构 + 释放子 Scope 对象内存
     }
     // 3. 清空自己的 values（Value 的回收由 GC 的可达性标记决定）

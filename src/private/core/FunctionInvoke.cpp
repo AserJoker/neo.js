@@ -37,8 +37,9 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
     // 2. 切换到被调函数的模块根作用域
     ctx->setRootScope(d->rootScope);
 
-    // 3. 最外层调用才挂载闭包作用域（重入时已挂好，保持外层查找链）
-    if (d->activeCalls == 0) {
+    // 3. 最外层调用才挂载闭包作用域（重入时已挂好，保持外层查找链）。
+    //    Environment 模式闭包已常驻定义点环境链，调用期不挂载/摘除。
+    if (!d->capturesEnvironment && d->activeCalls == 0) {
         d->closureScope->reparent(d->rootScope);
     }
     ++d->activeCalls;
@@ -55,7 +56,7 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
         execScope = ctx->pushNewScope(d->closureScope);
         if (execScope == nullptr) {
             // 临时 scope 分配失败（OOM）：撤销挂载并恢复 root，返回 OOM 哨兵
-            if (--d->activeCalls == 0) {
+            if (--d->activeCalls == 0 && !d->capturesEnvironment) {
                 d->closureScope->reparent(nullptr);
             }
             ctx->setRootScope(savedRoot);
@@ -101,7 +102,7 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
             // （不能 popScope——那会销毁 execScope，跨 yield 状态全部丢失）。
             ctx->setCurrentScope(d->closureScope);
             execScope->reparent(nullptr);
-            if (--d->activeCalls == 0) {
+            if (--d->activeCalls == 0 && !d->capturesEnvironment) {
                 d->closureScope->reparent(nullptr);
             }
             ctx->setRootScope(savedRoot);
@@ -116,8 +117,9 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
         ctx->popScope();
     }
 
-    // 10. 最外层调用退出时摘除闭包作用域，恢复孤立状态（不再是 GC 根）
-    if (--d->activeCalls == 0) {
+    // 10. 最外层调用退出时摘除闭包作用域，恢复孤立状态（不再是 GC 根）。
+    //     Environment 模式常驻定义点环境链，不摘除。
+    if (--d->activeCalls == 0 && !d->capturesEnvironment) {
         d->closureScope->reparent(nullptr);
     }
 

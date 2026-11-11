@@ -165,6 +165,7 @@ public:
                                 std::string_view bindName = {}) override;
     void setFunctionName(Value* fn, std::string_view name) override;
     void setFunctionStrict(Value* fn) override;
+    void setFunctionCapturesEnvironment(Value* fn) override;
     void setFunctionConstructor(Value* fn, NativeFn ctor) override;
     void setFunctionConstructible(Value* fn, bool constructible) override;
     void setFunctionGenerator(Value* fn, bool generator) override;

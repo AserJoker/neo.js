@@ -226,6 +226,14 @@ public:
     // 避免受调用方 sloppy 影响。仅对 Function 类型有效，其他类型忽略。
     virtual void setFunctionStrict(Value* fn) = 0;
 
+    // setFunctionCapturesEnvironment: 把函数切换为 Environment 模式闭包。
+    // closureScope 以 lookup-only 方式挂到**当前作用域**（定义点环境链），并沿
+    // current → ... → root 逐层 captureRef++。此后调用期不再 reparent，函数可
+    // 动态看到定义点作用域（含直接 eval 注入的绑定）；析构时自底向上解 pin。
+    // 用于 Sema 标记含直接 eval 的函数，或测试模拟「作用域内存在 eval」。
+    // 已处于 Environment 模式时无操作；仅对 Function 类型有效。
+    virtual void setFunctionCapturesEnvironment(Value* fn) = 0;
+
     // setFunctionConstructible: 显式标记函数是否可构造（ES2024 §7.2.4 IsConstructor）。
     // native 函数默认可构造；箭头函数、方法、生成器等不可构造者置 false。
     // 绑定函数在创建时按 target 的可构造性继承，此后仍可显式覆盖。

@@ -74,6 +74,19 @@ class Scope {
     std::unordered_map<std::string, WithBinding> withBindings_;          // with 属性捕获
     std::unordered_set<std::string> flags_;                // 作用域标注（如 "strict"）
 
+    // —— 动态作用域（运行时闭包链）——
+    // captureRef_：Environment 模式闭包对定义点环境链的 pin 计数。> 0 表示本作用域
+    //   不能随 pop/父析构销毁，必须等闭包释放后回收。
+    // autoDispose_：已 pop 但仍被 pin 住的作用域（孤儿），计数归 0 时由闭包析构回收。
+    // dynamic_：本作用域内执行过直接 eval，之后在此（及子作用域）定义的函数需捕获
+    //   运行时环境链，而非静态 slot。
+    // linkedOnly_：parent_ 仅用于查找，不登记进 parent->children_（Environment 模式
+    //   闭包作用域的所有权仍归 FunctionData，避免与作用域树双重销毁）。
+    size_t captureRef_ = 0;
+    bool autoDispose_ = false;
+    bool dynamic_ = false;
+    bool linkedOnly_ = false;
+
 protected:
     // 派生作用域（WithScope）解析属性时借用 Context。
     IContext* context() const { return context_; }
@@ -124,11 +137,65 @@ public:
     // FunctionData），函数调用期间挂到模块根下使查找链成立，调用结束摘回孤立。
     // newParent 可为 nullptr。与当前父相同时无操作。
     void reparent(Scope* newParent) {
-        if (parent_ == newParent) return;
-        if (parent_ != nullptr) parent_->removeChild(this);
+        if (parent_ == newParent) {
+            // 从 lookup-only 转为真实子节点（仍挂在同一父下时补登记）。
+            if (newParent != nullptr && linkedOnly_) {
+                linkedOnly_ = false;
+                newParent->addChild(this);
+            }
+            return;
+        }
+        if (parent_ != nullptr && !linkedOnly_) parent_->removeChild(this);
+        linkedOnly_ = false;
         parent_ = newParent;
         if (parent_ != nullptr) parent_->addChild(this);
     }
+
+    // 只建立查找链，不登记进 parent->children_（Environment 模式闭包作用域用）。
+    // 生命周期仍归持有者（FunctionData），父作用域析构时不会连带销毁本作用域。
+    void linkLookupParent(Scope* newParent) {
+        if (parent_ != nullptr && !linkedOnly_) parent_->removeChild(this);
+        parent_ = newParent;
+        linkedOnly_ = true;
+    }
+
+    // 从作用域树摘除，但保留 parent_ 查找链（autoDispose 孤儿用）。
+    // 摘除后不再从 global 树可达：只有逃逸闭包（FunctionData）能标记它，
+    // 否则其 values 中的函数对象会反过来把作用域变成永久根。
+    void detachFromParentTree() {
+        if (parent_ != nullptr && !linkedOnly_) {
+            parent_->removeChild(this);
+            linkedOnly_ = true;
+        }
+    }
+
+    // —— 动态作用域 / pin 计数 ——
+    void incCaptureRef() { ++captureRef_; }
+
+    // 减少 pin 计数；若本次归 0 返回 true（调用方据此回收 autoDispose 孤儿）。
+    bool decCaptureRef() {
+        if (captureRef_ == 0) return false;
+        --captureRef_;
+        return captureRef_ == 0;
+    }
+
+    size_t captureRef() const { return captureRef_; }
+    void markAutoDispose() { autoDispose_ = true; }
+    bool autoDispose() const { return autoDispose_; }
+    void markDynamic() { dynamic_ = true; }
+    bool dynamic() const { return dynamic_; }
+
+    // 本作用域或任一祖先是否标记为 dynamic（直接 eval 沿链继承）。
+    bool dynamicChain() const {
+        const Scope* s = this;
+        while (s != nullptr) {
+            if (s->dynamic_) return true;
+            s = s->parent_;
+        }
+        return false;
+    }
+
+    bool linkedOnly() const { return linkedOnly_; }
 
     const std::unordered_set<Scope*>& children() const { return children_; }
     size_t childCount() const { return children_.size(); }

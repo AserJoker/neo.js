@@ -217,6 +217,14 @@ void Context::popScope() {
     if (parent == nullptr) return;
     Scope* top = current_;
     current_ = parent;
+    // 仍被 Environment 闭包 pin 住：延迟销毁（孤儿），保留 parent_ 查找链。
+    // 必须从作用域树摘除：否则其 values 中的函数对象会经 global 树永久可达，
+    // 闭包永远不回收。逃逸闭包由外部持有，GC 经 FunctionData 标记环境链。
+    if (top->captureRef() > 0) {
+        top->markAutoDispose();
+        top->detachFromParentTree();
+        return;
+    }
     // 销毁弹出的 scope：虚析构 + 递归释放子树 + 从父摘除自己
     top->destroySelf();
 }
@@ -227,6 +235,16 @@ void Context::popScope() {
 // OOM：allocData/createValue 失败时返回预分配 OOM 哨兵（ADR-031），不返回 nullptr。
 
 namespace {
+
+// 把函数的 closureScope 挂到定义点环境链（Environment 模式）：
+// lookup-only 挂载（不登记 children，所有权仍归 FunctionData），并沿 env → root
+// 逐层 pin（captureRef++）。单调性：子 scope 被 pin 则所有祖先都被 pin。
+void linkEnvironmentCapture(FunctionData* d, Scope* env) {
+    if (d->capturesEnvironment || d->closureScope == nullptr || env == nullptr) return;
+    d->closureScope->linkLookupParent(env);
+    for (Scope* s = env; s != nullptr; s = s->parent()) s->incCaptureRef();
+    d->capturesEnvironment = true;
+}
 
 // 把 Value 加入 current scope：add 跟踪 + 可选 bind 命名绑定。
 void trackValue(Scope* scope, Value* v, std::string_view name) {
@@ -357,6 +375,12 @@ Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_vi
         closure->destroySelf();
         return oomValue_;
     }
+    // 定义点处于 dynamic 作用域（直接 eval 沿链继承）时，函数必须捕获运行时
+    // 环境链而非静态 slot：closureScope 挂到 current 并 pin 整条链。
+    if (current_ != nullptr && current_->dynamicChain()) {
+        linkEnvironmentCapture(d, current_);
+    }
+
     // bindName 仅用于变量绑定（与函数名无关）
     Value* fnValue = createTracked(getFunctionType(), d, bindName);
     if (fnValue == oomValue_) return fnValue;
@@ -470,6 +494,12 @@ void Context::setFunctionStrict(Value* fn) {
     // 且平时孤立，不会泄漏给调用方。
     auto* d = static_cast<FunctionData*>(fn->data());
     if (d->closureScope != nullptr) d->closureScope->setFlag("strict");
+}
+
+void Context::setFunctionCapturesEnvironment(Value* fn) {
+    if (fn->type()->kind() != TypeKind::Function) return;
+    auto* d = static_cast<FunctionData*>(fn->data());
+    linkEnvironmentCapture(d, current_);
 }
 
 Value* Context::createBoundFunction(Value* target, Value* boundThis, size_t argc,
@@ -740,6 +770,9 @@ Value* Context::setClosure(Value* fn, std::string_view name) {
         return detail::typeError(this, msg);
     }
     auto* d = static_cast<FunctionData*>(fn->data());
+    // Environment 模式：名字运行时沿定义点环境链查找，不做静态 slot 捕获。
+    // 否则静态捕获会遮蔽 eval 之后注入的绑定（under-capture）。
+    if (d->capturesEnvironment) return fn;
     // with 属性：复制对象环境记录（withObject + key），而非当前值。
     // 属性后续被 setProperty 重新赋值时，闭包仍能读到新值。
     Value* withObject = nullptr;

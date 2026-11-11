@@ -7,6 +7,7 @@ add_executable(core_unit_test
     GcRootCycleTest.cpp
     ScopeTest.cpp
     WithScopeTest.cpp
+    DynamicScopeTest.cpp
     TypeTest.cpp
     ContextTest.cpp
     CallStackTest.cpp

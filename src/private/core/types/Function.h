@@ -102,6 +102,12 @@ public:
     bool generator = false;
     // 是否为异步生成器函数（async function*）。为 true 时 call 创建 AsyncGenerator。
     bool asyncGenerator = false;
+    // 是否为 Environment 模式闭包（定义点处于 dynamic 作用域，或函数含直接 eval）：
+    // closureScope 以 lookup-only 方式挂到定义点环境链，并沿链 pin（captureRef++）。
+    // 调用期不再 reparent，析构时先销毁 closureScope 再自底向上解 pin。
+    bool capturesEnvironment = false;
+    // 函数体含直接 eval（Sema 标记）。创建时据此强制 Environment 模式。
+    bool hasDirectEval = false;
     size_t activeCalls = 0;  // 进行中调用数（重入计数，闭包作用域挂载/摘除用）
     // bind 产生的绑定函数（ES2024 §10.4.1.3 BoundFunctionCreate）：
     // boundTarget 非空表示这是绑定函数，调用时以 boundThis 为 this、

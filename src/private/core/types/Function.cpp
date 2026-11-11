@@ -92,9 +92,25 @@ Value* FunctionType::call(IContext* ctx, Value* self, Value* thisArg,
 // 这些 Value 若已不可达，由下一轮 GC 回收（本轮标记阶段它们仍是根，不会误回收）。
 // 若 Fatal 路径遗留了挂载状态，~Scope 会先把自己从 rootScope 摘除。
 FunctionData::~FunctionData() {
-    if (closureScope != nullptr) {
+    if (closureScope == nullptr) return;
+    if (!capturesEnvironment) {
         closureScope->destroySelf();
         closureScope = nullptr;
+        return;
+    }
+    // Environment 模式：closureScope 以 lookup-only 挂到定义点环境链（不登记 children）。
+    // 回收顺序必须自底向上：先销毁 closureScope，再沿 parent 链逐层解 pin。
+    // 若先解 pin 销毁父作用域，会连带销毁 closureScope（悬垂）。
+    Scope* env = closureScope->parent();
+    closureScope->destroySelf();
+    closureScope = nullptr;
+    // 先把链收集下来：销毁 autoDispose 作用域会修改 parent 指针。
+    std::vector<Scope*> chain;
+    for (Scope* s = env; s != nullptr; s = s->parent()) chain.push_back(s);
+    for (Scope* s : chain) {
+        if (s->decCaptureRef() && s->autoDispose()) {
+            s->destroySelf();
+        }
     }
 }
 
@@ -108,7 +124,16 @@ void FunctionData::enumerateChildren(IGCVisitor* visitor) {
     // 孤立闭包作用域不在 global 作用域树上，只能由持有它的函数对象主动标记
     // （ADR-044）。函数对象不可达时本方法不会被调用，闭包作用域及其捕获值
     // 自然不被标记——「函数 → closureScope → 捕获值 → 函数」的环因此可回收。
-    if (closureScope != nullptr) visitor->visitScope(closureScope);
+    if (closureScope != nullptr) {
+        visitor->visitScope(closureScope);
+        // Environment 模式：closureScope 的 parent 链是定义点环境（可能含已 pop 的
+        // autoDispose 孤儿，它们已脱离作用域树），须由持有者主动标记保活。
+        if (capturesEnvironment) {
+            for (Scope* s = closureScope->parent(); s != nullptr; s = s->parent()) {
+                visitor->visitScope(s);
+            }
+        }
+    }
 }
 
 // 构造调用（new，ADR-034）：
