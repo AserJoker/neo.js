@@ -157,6 +157,53 @@ Value* ObjectType::getProperty(IContext* ctx, Value* self, Value* key) {
     return readProperty(ctx, findInChain(self, k), self);
 }
 
+Value* getPropertyWithReceiver(IContext* ctx, Value* obj, Value* key, Value* receiver) {
+    if (isSymbolKey(key)) {
+        return readProperty(ctx, findSymbolInChain(obj, symbolIdentity(key)), receiver);
+    }
+    std::string k;
+    if (Value* err = keyString(ctx, key, k)) return err;
+    return readProperty(ctx, findInChain(obj, k), receiver);
+}
+
+Value* setPropertyWithReceiver(IContext* ctx, Value* obj, Value* key, Value* value,
+                               Value* receiver) {
+    const bool strict = ctx->hasFlag("strict");
+    Property* p = nullptr;
+    std::string k;
+    if (isSymbolKey(key)) {
+        p = findSymbolInChain(obj, symbolIdentity(key));
+    } else {
+        if (Value* err = keyString(ctx, key, k)) return err;
+        p = findInChain(obj, k);
+    }
+
+    if (p != nullptr) {
+        if (isAccessor(*p)) {
+            if (p->setter == nullptr) {
+                if (!strict) return value;
+                std::string name = isSymbolKey(key) ? detail::valueToString(key) : k;
+                return detail::typeError(
+                    ctx, "Cannot set property '" + name + "' which has only a getter");
+            }
+            Value* argv[1] = {value};
+            Value* r = callAccessor(ctx, p->setter, receiver, 1, argv);
+            return isErrorResult(r) ? r : value;
+        }
+        if (!p->writable) {
+            if (!strict) return value;
+            std::string name = isSymbolKey(key) ? detail::valueToString(key) : k;
+            return detail::typeError(
+                ctx, "Cannot assign to read only property '" + name + "'");
+        }
+    }
+
+    if (receiver == nullptr || !detail::isObjectKind(receiver->type()->kind())) {
+        return detail::typeError(ctx, "Cannot create property on non-object");
+    }
+    return receiver->type()->defineProperty(ctx, receiver, key, value, true, true, true);
+}
+
 Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* value) {
     auto* d = static_cast<ObjectData*>(self->data());
     // OrdinarySetWithOwnDescriptor（ES2024 §10.1.9.2）：

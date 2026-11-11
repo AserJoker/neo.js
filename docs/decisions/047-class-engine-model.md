@@ -1,6 +1,6 @@
 # ADR-047: class 的引擎模型 — ClassData 派生 FunctionData + 函数环境 this/new.target
 
-- 状态: 提议中（设计稿，未实现）
+- 状态: 已接受 (2026-11-11)；P1（class 核心引擎原语）已实现，P2/P3 待实现
 - 决策者: aserjoker（项目负责人） + CodeAgent
 - 关联: ADR-013（三层作用域）、ADR-021（Function 结构）、ADR-022（函数调用）、
           ADR-032（对象/函数模型）、ADR-034（原型与 new）、ADR-036（闭包作用域孤立化）、
@@ -282,6 +282,36 @@ struct SourceSlice {
 - **P3：边角** — static block、`class extends null`、绑定函数/Reflect.construct 的
   newTarget 细节、装饰器、源码文本保真。
 - **P4：静态化/JIT** — ClassData 增加字段偏移/vtable/布局元数据，引擎只暴露查询。
+
+## P1 实现状态
+
+已落地：
+
+- `Scope` 增加 `thisValue_/hasOwnThis_`、`newTarget_/hasOwnNewTarget_` 专用槽；
+  `Context` 增加 `currentFunctionEnv_`，invoke 在所有返回路径保存/恢复。
+- `FunctionData` 增加 `isClassConstructor/homeObject/SourceSlice`；新增
+  `ClassData : FunctionData`（isDerived/superConstructor/fields/classInitializers）。
+- `FunctionCreateOptions` 支持 `constructible/hasPrototypeProperty/strict/
+  isClassConstructor/isDerived/homeObject/superConstructor/source`。
+- `SourceText` 引用计数 + `SourceSlice`；`Function.prototype.toString` 按切片输出。
+- `Context::construct(fn,newTarget,...)`、`constructSuper`、`getThis`、
+  `initializeThis`、`isThisInitialized`、`newTarget`、`getSuperProperty`、
+  `setSuperProperty`、`createUninitialized`。
+- `addInstanceField`、`addClassInitializer`、`initializeInstanceFields`；
+  `setFunctionClassConstructor` 仅更新已由创建选项分配 ClassData 的构造器。
+- 绑定函数构造：`newTarget == boundFn` 时替换为 target（ES2024 §10.4.1.3）。
+- 构造返回对象归属调用方作用域：派生类 this 由内层 execScope 的 super() 创建，
+  外层 construct 返回时显式 `current()->add(r)`，避免 execScope pop 后被 GC 回收。
+
+实现偏差/边界：
+
+- `getSuperProperty` 在 homeObject 原型为 null/undefined 时抛 TypeError（按
+  `Reflect.get(null, ...)` 语义）。
+- `setSuperProperty` 从 base 链找描述符：访问器以 receiver 为 this 调 setter；
+  数据属性可写时在 receiver 上定义自有属性。
+- 私有字段在 P1 显式返回 TypeError（"private fields are not implemented"）。
+- `this`/`new.target` 专用槽不进入 `namedValues_`，`load_this/load_new_target`
+  由 VM 专用 opcode 访问。
 
 ## 后果
 

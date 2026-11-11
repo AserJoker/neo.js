@@ -8,6 +8,11 @@ add_executable(core_unit_test
     ScopeTest.cpp
     WithScopeTest.cpp
     DynamicScopeTest.cpp
+    FunctionEnvironmentTest.cpp
+    ClassDataTest.cpp
+    ClassConstructTest.cpp
+    ClassFieldsTest.cpp
+    ClassEndToEndTest.cpp
     TypeTest.cpp
     ContextTest.cpp
     CallStackTest.cpp

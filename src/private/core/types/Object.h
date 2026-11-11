@@ -115,6 +115,13 @@ public:
 std::vector<Value*> ownPropertyKeys(IContext* ctx, Value* obj, bool enumerableOnly,
                                     bool includeSymbols);
 
+// super 属性访问（ADR-047）：从 obj（homeObject 的原型）开始沿链查找，
+// receiver 作为 getter/setter 的 this。get 跳过 receiver 自有属性；
+// set 按 base 的描述符决定调用 setter 还是在 receiver 上定义自有属性。
+Value* getPropertyWithReceiver(IContext* ctx, Value* obj, Value* key, Value* receiver);
+Value* setPropertyWithReceiver(IContext* ctx, Value* obj, Value* key, Value* value,
+                               Value* receiver);
+
 }  // namespace neo::core
 
 #endif  // NEO_CORE_PRIVATE_TYPES_OBJECT_H

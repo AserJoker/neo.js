@@ -44,6 +44,7 @@
 #include "core/types/String.h"
 #include "core/types/Symbol.h"
 #include "core/types/TypeBehavior.h"
+#include "core/types/Uninitialized.h"
 #include "core/types/Undefined.h"
 
 #include <algorithm>
@@ -66,8 +67,9 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     void* rp = alloc_->alloc(sizeof(Scope));
     root_ = new (rp) Scope(global_, alloc_, this);
     global_->addChild(root_);
-    // 3. current 初始 = root
+    // 3. current 初始 = root；顶层函数环境也指向 root（this/new.target 由 VM 入口绑定）
     current_ = root_;
+    currentFunctionEnv_ = root_;
     // 4. global 默认标注 strict（保持默认严格模式，后续由模块/函数体标注覆盖）
     global_->setFlag("strict");
     // 5. 预分配 OOM 哨兵（ADR-031）：最早分配，挂 global 使其存活于 Context 生命周期。
@@ -274,6 +276,10 @@ Value* Context::createUndefined(std::string_view name) {
     return createTracked(getUndefinedType(), gc_->allocData<UndefinedData>(), name);
 }
 
+Value* Context::createUninitialized() {
+    return createTracked(getUninitializedType(), gc_->allocData<UninitializedData>(), {});
+}
+
 Value* Context::createNull(std::string_view name) {
     return createTracked(getNullType(), gc_->allocData<NullData>(), name);
 }
@@ -354,27 +360,185 @@ Value* Context::call(Value* fn, Value* thisArg, size_t argc, Value* argv[]) {
 }
 
 Value* Context::construct(Value* fn, size_t argc, Value* argv[]) {
-    return fn->type()->construct(this, fn, argc, argv);
+    return construct(fn, fn, argc, argv);
+}
+
+Value* Context::construct(Value* fn, Value* newTarget, size_t argc, Value* argv[]) {
+    // new.target 是构造期的 Context 级动态值：保存/恢复，嵌套构造不串。
+    Value* saved = newTarget_;
+    newTarget_ = newTarget != nullptr ? newTarget : fn;
+    Value* r = fn->type()->construct(this, fn, argc, argv);
+    // 构造返回的对象归属调用方作用域：class 派生构造的 this 由 super() 在
+    // 内层 execScope 创建，若只返回裸指针，外层 execScope pop 后会被 GC 回收。
+    if (r != nullptr && detail::isObjectKind(r->type()->kind()) && current_ != nullptr) {
+        current_->add(r);
+    }
+    newTarget_ = saved;
+    return r;
+}
+
+Value* Context::constructSuper(Value* superCtor, Value* newTarget, size_t argc,
+                               Value* argv[]) {
+    if (superCtor == nullptr || superCtor->type()->kind() == TypeKind::Null ||
+        superCtor->type()->kind() == TypeKind::Undefined) {
+        return detail::typeError(this, "Super constructor null is not a constructor");
+    }
+    Scope* env = currentFunctionEnv_;
+    if (env != nullptr) {
+        Value* current = env->thisValue();
+        if (current != nullptr && current->type()->kind() != TypeKind::Uninitialized) {
+            return detail::referenceError(this, "Super constructor may only be called once");
+        }
+    }
+    Value* obj = construct(superCtor, newTarget, argc, argv);
+    if (detail::isErrorValue(obj)) return obj;
+    if (!detail::isObjectKind(obj->type()->kind())) {
+        return detail::typeError(this, "Super constructor must return an object");
+    }
+    if (env != nullptr) env->setThis(obj);
+    return obj;
+}
+
+Value* Context::getThis() {
+    Scope* env = currentFunctionEnv_;
+    Value* v = env != nullptr ? env->lookupThis() : nullptr;
+    if (v == nullptr || v->type()->kind() == TypeKind::Uninitialized) {
+        return detail::referenceError(
+            this, "Must call super constructor before accessing 'this'");
+    }
+    return v;
+}
+
+void Context::initializeThis(Value* value) {
+    if (currentFunctionEnv_ != nullptr) currentFunctionEnv_->setThis(value);
+}
+
+bool Context::isThisInitialized() {
+    Scope* env = currentFunctionEnv_;
+    Value* v = env != nullptr ? env->lookupThis() : nullptr;
+    return v != nullptr && v->type()->kind() != TypeKind::Uninitialized;
+}
+
+Value* Context::getSuperProperty(Value* homeObject, Value* key, Value* receiver) {
+    Value* base = getPrototype(homeObject);
+    if (base == nullptr || base->type()->kind() == TypeKind::Null ||
+        base->type()->kind() == TypeKind::Undefined) {
+        return detail::typeError(this, "Cannot read properties of null (reading 'super')");
+    }
+    return getPropertyWithReceiver(this, base, key, receiver);
+}
+
+Value* Context::setSuperProperty(Value* homeObject, Value* key, Value* value,
+                                 Value* receiver) {
+    Value* base = getPrototype(homeObject);
+    if (base == nullptr || base->type()->kind() == TypeKind::Null ||
+        base->type()->kind() == TypeKind::Undefined) {
+        return detail::typeError(this, "Cannot set properties of null (setting 'super')");
+    }
+    return setPropertyWithReceiver(this, base, key, value, receiver);
+}
+
+void Context::addInstanceField(Value* classCtor, Value* key, Value* initializer,
+                               bool isPrivate) {
+    if (classCtor == nullptr || classCtor->type()->kind() != TypeKind::Function) return;
+    auto* d = static_cast<FunctionData*>(classCtor->data());
+    if (!d->isClassConstructor) return;
+    auto* cd = static_cast<ClassData*>(d);
+    FieldDef field;
+    field.key = key;
+    field.initializer = initializer;
+    field.isPrivate = isPrivate;
+    cd->fields.push_back(field);
+}
+
+void Context::addClassInitializer(Value* classCtor, Value* initializer) {
+    if (classCtor == nullptr || classCtor->type()->kind() != TypeKind::Function) return;
+    auto* d = static_cast<FunctionData*>(classCtor->data());
+    if (!d->isClassConstructor) return;
+    static_cast<ClassData*>(d)->classInitializers.push_back(initializer);
+}
+
+Value* Context::initializeInstanceFields(Value* instance, Value* classCtor) {
+    if (instance == nullptr || !detail::isObjectKind(instance->type()->kind())) {
+        return detail::typeError(this, "instance field initialization on non-object");
+    }
+    if (classCtor == nullptr || classCtor->type()->kind() != TypeKind::Function) {
+        return detail::typeError(this, "instance field initialization on non-class");
+    }
+    auto* d = static_cast<FunctionData*>(classCtor->data());
+    if (!d->isClassConstructor) {
+        return detail::typeError(this, "instance field initialization on non-class");
+    }
+    auto* cd = static_cast<ClassData*>(d);
+
+    for (const FieldDef& f : cd->fields) {
+        if (f.isPrivate) {
+            return detail::typeError(this, "private fields are not implemented");
+        }
+        Value* value = createUndefined();
+        if (f.initializer != nullptr) {
+            value = call(f.initializer, instance, 0, nullptr);
+            if (detail::isErrorValue(value)) return value;
+        }
+        Value* r = defineProperty(instance, f.key, value, true, true, true);
+        if (detail::isErrorValue(r)) return r;
+        for (Value* extra : f.extraInitializers) {
+            Value* er = call(extra, instance, 0, nullptr);
+            if (detail::isErrorValue(er)) return er;
+        }
+    }
+    for (Value* init : cd->classInitializers) {
+        Value* r = call(init, instance, 0, nullptr);
+        if (detail::isErrorValue(r)) return r;
+    }
+    return createUndefined();
+}
+
+void Context::setFunctionClassConstructor(Value* fn, bool isDerived, Value* superCtor) {
+    if (fn == nullptr || fn->type()->kind() != TypeKind::Function) return;
+    auto* d = static_cast<FunctionData*>(fn->data());
+    // 只有创建时用 FunctionCreateOptions.isClassConstructor 分配了 ClassData 才可更新。
+    if (!d->isClassConstructor) return;
+    auto* cd = static_cast<ClassData*>(d);
+    cd->isDerived = isDerived;
+    cd->superConstructor = superCtor;
 }
 
 Value* Context::instanceOf(Value* value, Value* target) {
     return detail::instanceOf(this, value, target);
 }
 
-Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_view bindName) {
+Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_view bindName,
+                                     const FunctionCreateOptions& opts) {
     // closureScope 是**孤立**作用域（parent=nullptr），Sema 收集的穿透闭包变量绑定于此。
     // 不挂到 root 下：否则它常驻为 GC 根，函数对象不可达后其捕获值也不释放（ADR-036）。
     // 生命周期随 FunctionData（data ref 归 0 时析构销毁）；调用期间临时挂到 rootScope。
     void* p = alloc_->alloc(sizeof(Scope));
     if (p == nullptr) return oomValue_;
     Scope* closure = new (p) Scope(nullptr, alloc_, this);
-    // rootScope 借用当前 root（不拥有）
-    auto* d = gc_->allocData<FunctionData>(closure, root_, fn, minArgc);
+    // rootScope 借用当前 root（不拥有）。class 构造器用 ClassData 承载额外内部槽。
+    FunctionData* d = nullptr;
+    if (opts.isClassConstructor) {
+        d = gc_->allocData<ClassData>(closure, root_, fn, minArgc);
+    } else {
+        d = gc_->allocData<FunctionData>(closure, root_, fn, minArgc);
+    }
     if (d == nullptr) {
         // data 分配失败：闭包作用域已无所有者，显式销毁（否则泄漏）
         closure->destroySelf();
         return oomValue_;
     }
+    d->constructible = opts.constructible;
+    d->isClassConstructor = opts.isClassConstructor;
+    d->homeObject = opts.homeObject;
+    d->source = opts.source;
+    retainSourceText(d->source.source);
+    if (opts.isClassConstructor) {
+        auto* cd = static_cast<ClassData*>(d);
+        cd->isDerived = opts.isDerived;
+        cd->superConstructor = opts.superConstructor;
+    }
+    if (opts.strict) closure->setFlag("strict");
     // 定义点处于 dynamic 作用域（直接 eval 沿链继承）时，函数必须捕获运行时
     // 环境链而非静态 slot：closureScope 挂到 current 并 pin 整条链。
     if (current_ != nullptr && current_->dynamicChain()) {
@@ -411,21 +575,24 @@ Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_vi
     }
 
     // —— 自动创建 prototype（ADR-034）——
-    // 每个函数创建时生成一个普通对象作为 fn.prototype，并在其上定义 constructor 指回函数，
-    // 构成 JS 的「构造函数 ↔ 原型」双向引用。两者均不可枚举（与 ES 一致）。
+    // 每个可构造函数创建时生成一个普通对象作为 fn.prototype，并在其上定义 constructor
+    // 指回函数，构成 JS 的「构造函数 ↔ 原型」双向引用。两者均不可枚举（与 ES 一致）。
+    // class 方法/箭头函数等 hasPrototypeProperty=false：不创建 prototype 属性。
     // 存活：fn 的属性 value 被 ObjectData::enumerateChildren 遍历 → proto 保活；
     //       proto 的 constructor 属性同理保活 fn。
-    Value* proto = createObject();
-    if (proto == oomValue_) return proto;
-    // fn.prototype：writable，不可枚举，不可配置
-    if (defineProperty(fnValue, "prototype", proto, true, false, false)->type()->kind() ==
-        TypeKind::Exception) {
-        return oomValue_;
-    }
-    // proto.constructor：writable，不可枚举，可配置
-    if (defineProperty(proto, "constructor", fnValue, true, false, true)->type()->kind() ==
-        TypeKind::Exception) {
-        return oomValue_;
+    if (opts.hasPrototypeProperty) {
+        Value* proto = createObject();
+        if (proto == oomValue_) return proto;
+        // fn.prototype：writable，不可枚举，不可配置
+        if (defineProperty(fnValue, "prototype", proto, true, false, false)->type()->kind() ==
+            TypeKind::Exception) {
+            return oomValue_;
+        }
+        // proto.constructor：writable，不可枚举，可配置
+        if (defineProperty(proto, "constructor", fnValue, true, false, true)->type()->kind() ==
+            TypeKind::Exception) {
+            return oomValue_;
+        }
     }
     return fnValue;
 }
@@ -500,6 +667,24 @@ void Context::setFunctionCapturesEnvironment(Value* fn) {
     if (fn->type()->kind() != TypeKind::Function) return;
     auto* d = static_cast<FunctionData*>(fn->data());
     linkEnvironmentCapture(d, current_);
+}
+
+void Context::setFunctionHomeObject(Value* fn, Value* homeObject) {
+    if (fn->type()->kind() != TypeKind::Function) return;
+    static_cast<FunctionData*>(fn->data())->homeObject = homeObject;
+}
+
+void Context::setFunctionSource(Value* fn, const SourceSlice& slice) {
+    if (fn->type()->kind() != TypeKind::Function) return;
+    auto* d = static_cast<FunctionData*>(fn->data());
+    if (d->source.source == slice.source) {
+        // 同一 SourceText：只更新切片，不改变引用计数。
+        d->source = slice;
+        return;
+    }
+    releaseSourceText(d->source.source);
+    d->source = slice;
+    retainSourceText(d->source.source);
 }
 
 Value* Context::createBoundFunction(Value* target, Value* boundThis, size_t argc,

@@ -87,6 +87,16 @@ class Scope {
     bool dynamic_ = false;
     bool linkedOnly_ = false;
 
+    // —— 函数环境记录（ADR-047）——
+    // this / new.target 是函数环境专用槽，不是普通命名绑定：不参与 lookup，
+    // 不能被 with 拦截，也不能被 var/let this 声明或赋值。
+    // hasOwnThis_ 区分「本函数有自己的 this」与「箭头函数继承外层 this」。
+    // 值登记进 values_ 保活（GC 从作用域树标记）。
+    Value* thisValue_ = nullptr;
+    bool hasOwnThis_ = false;
+    Value* newTarget_ = nullptr;
+    bool hasOwnNewTarget_ = false;
+
 protected:
     // 派生作用域（WithScope）解析属性时借用 Context。
     IContext* context() const { return context_; }
@@ -196,6 +206,39 @@ public:
     }
 
     bool linkedOnly() const { return linkedOnly_; }
+
+    // —— 函数环境：this / new.target（ADR-047）——
+    // 专用槽位，不进入 namedValues_；set 时登记到 values_ 保活。
+    bool hasOwnThis() const { return hasOwnThis_; }
+    Value* thisValue() const { return thisValue_; }
+    void setThis(Value* v) {
+        thisValue_ = v;
+        hasOwnThis_ = true;
+        if (v != nullptr) add(v);
+    }
+
+    bool hasOwnNewTarget() const { return hasOwnNewTarget_; }
+    Value* newTarget() const { return newTarget_; }
+    void setNewTarget(Value* v) {
+        newTarget_ = v;
+        hasOwnNewTarget_ = true;
+        if (v != nullptr) add(v);
+    }
+
+    // 沿 parent 链找最近的函数环境槽（箭头函数没有自己的槽，继承外层）。
+    Value* lookupThis() const {
+        for (const Scope* s = this; s != nullptr; s = s->parent_) {
+            if (s->hasOwnThis_) return s->thisValue_;
+        }
+        return nullptr;
+    }
+
+    Value* lookupNewTarget() const {
+        for (const Scope* s = this; s != nullptr; s = s->parent_) {
+            if (s->hasOwnNewTarget_) return s->newTarget_;
+        }
+        return nullptr;
+    }
 
     const std::unordered_set<Scope*>& children() const { return children_; }
     size_t childCount() const { return children_.size(); }

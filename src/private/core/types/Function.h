@@ -45,6 +45,7 @@
 #include "core/IContext.h"  // NativeFn（public 层定义）
 #include "core/IData.h"
 #include "core/IType.h"
+#include "core/SourceText.h"    // SourceSlice（ADR-047 §6）
 #include "core/types/Object.h"  // FunctionData 继承 ObjectData
 #include "infra/IAllocator.h"
 
@@ -108,6 +109,12 @@ public:
     bool capturesEnvironment = false;
     // 函数体含直接 eval（Sema 标记）。创建时据此强制 Environment 模式。
     bool hasDirectEval = false;
+    // class 构造器标记（ADR-047）：call 抛 TypeError，construct 走 class 分支。
+    bool isClassConstructor = false;
+    // [[HomeObject]]（class 方法/构造器/字段初始化器）：super 属性查找基准。
+    Value* homeObject = nullptr;  // GC 需遍历
+    // 函数源码切片（ADR-047 §6）：Function.prototype.toString 按需生成字符串。
+    SourceSlice source;
     size_t activeCalls = 0;  // 进行中调用数（重入计数，闭包作用域挂载/摘除用）
     // bind 产生的绑定函数（ES2024 §10.4.1.3 BoundFunctionCreate）：
     // boundTarget 非空表示这是绑定函数，调用时以 boundThis 为 this、
@@ -133,6 +140,31 @@ public:
     IData* clone(neo::infra::IAllocator* alloc) const override {
         return ObjectData::clone(alloc);
     }
+};
+
+// class 实例字段定义（ADR-047 §4）。P1 只用 initializer；extraInitializers 供
+// 装饰器 addInitializer 扩展，P3 启用。
+struct FieldDef {
+    Value* key = nullptr;                   // public key（P2 私有字段用 PrivateName）
+    Value* initializer = nullptr;           // 初始化函数（nullptr = undefined）
+    std::vector<Value*> extraInitializers;  // 装饰器追加的初始化回调
+    bool isPrivate = false;
+    bool isStatic = false;
+};
+
+// class 构造器专属 data（ADR-047）：派生 FunctionData，复用函数生态。
+class ClassData : public FunctionData {
+public:
+    bool isDerived = false;              // [[ConstructorKind]]
+    Value* superConstructor = nullptr;   // 父构造器（GC 遍历）
+    std::vector<FieldDef> fields;        // 实例字段，按声明顺序
+    std::vector<Value*> classInitializers;  // 装饰器 addInitializer（P3）
+
+    ClassData(Scope* closure, Scope* root, NativeFn fn, size_t minArgs,
+              NativeFn ctor = nullptr)
+        : FunctionData(closure, root, fn, minArgs, ctor) {}
+
+    void enumerateChildren(IGCVisitor* visitor) override;
 };
 
 }  // namespace neo::core

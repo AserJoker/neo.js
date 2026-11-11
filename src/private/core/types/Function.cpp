@@ -63,6 +63,12 @@ Value* FunctionType::call(IContext* ctx, Value* self, Value* thisArg,
                           size_t argc, Value* argv[]) {
     auto* d = static_cast<FunctionData*>(self->data());
 
+    // class 构造器没有 [[Call]] 语义：只能 new（ES2024 §15.7.1）。
+    if (d->isClassConstructor) {
+        return detail::typeError(ctx,
+                                 "Class constructor cannot be invoked without 'new'");
+    }
+
     // 绑定函数（bind 产物）：以 boundThis 为 this，前置 boundArgs 再拼接实参。
     // ES2024 §10.4.1.3 [[Call]]。
     if (d->boundTarget != nullptr) {
@@ -92,6 +98,9 @@ Value* FunctionType::call(IContext* ctx, Value* self, Value* thisArg,
 // 这些 Value 若已不可达，由下一轮 GC 回收（本轮标记阶段它们仍是根，不会误回收）。
 // 若 Fatal 路径遗留了挂载状态，~Scope 会先把自己从 rootScope 摘除。
 FunctionData::~FunctionData() {
+    // 源码切片：释放对 SourceText 的引用（ADR-047 §6）。
+    releaseSourceText(source.source);
+    source = {};
     if (closureScope == nullptr) return;
     if (!capturesEnvironment) {
         closureScope->destroySelf();
@@ -118,6 +127,7 @@ void FunctionData::enumerateChildren(IGCVisitor* visitor) {
     ObjectData::enumerateChildren(visitor);
     if (boundTarget != nullptr) visitor->visit(boundTarget);
     if (boundThis != nullptr) visitor->visit(boundThis);
+    if (homeObject != nullptr) visitor->visit(homeObject);
     for (Value* v : boundArgs) {
         if (v != nullptr) visitor->visit(v);
     }
@@ -136,6 +146,21 @@ void FunctionData::enumerateChildren(IGCVisitor* visitor) {
     }
 }
 
+void ClassData::enumerateChildren(IGCVisitor* visitor) {
+    FunctionData::enumerateChildren(visitor);
+    if (superConstructor != nullptr) visitor->visit(superConstructor);
+    for (const FieldDef& f : fields) {
+        if (f.key != nullptr) visitor->visit(f.key);
+        if (f.initializer != nullptr) visitor->visit(f.initializer);
+        for (Value* extra : f.extraInitializers) {
+            if (extra != nullptr) visitor->visit(extra);
+        }
+    }
+    for (Value* init : classInitializers) {
+        if (init != nullptr) visitor->visit(init);
+    }
+}
+
 // 构造调用（new，ADR-034）：
 //   1. 新建 this 对象，原型 = fn.prototype（非 Object/null 时按 null 处理）
 //   2. 以 this 为 thisArg 调 native（new 强制新对象，忽略 bind 的 self）
@@ -149,26 +174,77 @@ Value* FunctionType::construct(IContext* ctx, Value* self, size_t argc, Value* a
     }
 
     // 绑定函数（bind 产物）：转发给 [[BoundTargetFunction]]，忽略 boundThis，
-    // 前置 boundArgs（ES2024 §10.4.1.3 [[Construct]]）。
+    // 前置 boundArgs（ES2024 §10.4.1.3 [[Construct]]）。new.target 原样传递。
     if (d->boundTarget != nullptr) {
         std::vector<Value*> args;
         args.reserve(d->boundArgs.size() + argc);
         args.insert(args.end(), d->boundArgs.begin(), d->boundArgs.end());
         if (argc > 0) args.insert(args.end(), argv, argv + argc);
-        return ctx->construct(d->boundTarget, static_cast<size_t>(args.size()),
-                              args.data());
+        // ES2024 §10.4.1.3 [[Construct]]：若 newTarget 就是绑定函数本身，
+        // 替换为 target；否则保留显式 newTarget（Reflect.construct）。
+        Value* nt = ctx->newTarget();
+        if (nt == self) nt = d->boundTarget;
+        return ctx->construct(d->boundTarget, nt,
+                              static_cast<size_t>(args.size()), args.data());
     }
 
     if (Value* err = checkMinArgc(ctx, d, argc)) return err;
 
+    Value* nt = ctx->newTarget();
+    if (nt == nullptr) nt = self;
+
+    // —— class 构造器（ADR-047）——
+    if (d->isClassConstructor) {
+        auto* cd = static_cast<ClassData*>(d);
+        if (cd->isDerived) {
+            // 派生类：this 初始为 Uninitialized，由 super() 创建并初始化。
+            Value* uninit = ctx->createUninitialized();
+            Value* thisOut = nullptr;
+            Value* res = invokeNativeFunction(ctx, self, uninit, argc, argv, nullptr,
+                                              nullptr, nt, &thisOut);
+            if (res == nullptr) res = ctx->createUndefined();
+            TypeKind rk = res->type()->kind();
+            if (rk == TypeKind::Exception || rk == TypeKind::Fatal) return res;
+            if (detail::isObjectKind(rk)) return res;
+            if (rk != TypeKind::Undefined) {
+                return detail::typeError(
+                    ctx, "Derived constructors may only return object or undefined");
+            }
+            if (thisOut == nullptr ||
+                thisOut->type()->kind() == TypeKind::Uninitialized) {
+                return detail::referenceError(
+                    ctx, "Must call super constructor before returning from derived constructor");
+            }
+            return thisOut;
+        }
+
+        // 基类：OrdinaryCreateFromConstructor(newTarget)，字段由 VM 初始化。
+        Value* proto = ctx->getProperty(nt, "prototype");
+        Value* thisObj = ctx->createObject();
+        if (thisObj == ctx->oomValue()) return thisObj;
+        if (detail::isObjectKind(proto->type()->kind())) {
+            Value* r = ctx->setPrototype(thisObj, proto);
+            if (r->type()->kind() == TypeKind::Exception) return r;
+        }
+        Value* res = invokeNativeFunction(ctx, self, thisObj, argc, argv, nullptr,
+                                          nullptr, nt);
+        if (res == nullptr) return thisObj;
+        TypeKind rk = res->type()->kind();
+        if (rk == TypeKind::Exception || rk == TypeKind::Fatal) return res;
+        if (detail::isObjectKind(rk)) return res;
+        // 基类构造器返回原始值：忽略，返回新建 this。
+        return thisObj;
+    }
+
     // 构造钩子：call/construct 语义不同的内建（包装类）走专用路径。
     // 钩子负责建对象、挂原型、设置内部槽，并返回对象（或 Exception/Fatal）。
     if (d->constructFn != nullptr) {
-        return invokeNativeFunction(ctx, self, nullptr, argc, argv, d->constructFn);
+        return invokeNativeFunction(ctx, self, nullptr, argc, argv, d->constructFn,
+                                    nullptr, nt);
     }
 
-    // 取 fn.prototype（沿原型链查找，与 JS 一致）
-    Value* proto = ctx->getProperty(self, "prototype");
+    // 取 newTarget.prototype（Reflect.construct 的 newTarget 可能不是 self）
+    Value* proto = ctx->getProperty(nt, "prototype");
     TypeKind pk = proto->type()->kind();
     if (!detail::isObjectKind(pk)) {
         // 非对象原型不显式挂链：新对象保留 createObject 的默认原型（Object.prototype）
@@ -183,7 +259,7 @@ Value* FunctionType::construct(IContext* ctx, Value* self, size_t argc, Value* a
         if (r->type()->kind() == TypeKind::Exception) return r;
     }
 
-    Value* res = invokeNativeFunction(ctx, self, thisObj, argc, argv);
+    Value* res = invokeNativeFunction(ctx, self, thisObj, argc, argv, nullptr, nullptr, nt);
     if (res == nullptr) return thisObj;
     // 异常/致命错误直接透传（new 失败）
     TypeKind rk = res->type()->kind();

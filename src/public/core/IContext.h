@@ -33,6 +33,7 @@
 #include "core/IteratorKind.h"
 #include "core/Module.h"
 #include "core/OperatorKind.h"
+#include "core/SourceText.h"
 #include "core/Task.h"
 #include "core/WellKnownSymbol.h"
 #include "infra/IAllocator.h"
@@ -55,6 +56,19 @@ class Value;
 // argc/argv=参数，返回 Value*（正常/异常同一通道）。
 class IContext;
 using NativeFn = Value* (*)(IContext* ctx, Value* self, size_t argc, Value* argv[]);
+
+// 函数创建选项（ADR-047）：class 构造器/方法、无 prototype 的方法、strict 等。
+// 默认值保持普通 native 函数行为。
+struct FunctionCreateOptions {
+    bool constructible = true;
+    bool hasPrototypeProperty = true;
+    bool strict = false;
+    bool isClassConstructor = false;
+    bool isDerived = false;
+    Value* homeObject = nullptr;       // [[HomeObject]]（借用，GC 由函数遍历）
+    Value* superConstructor = nullptr; // 派生类父构造器（借用，GC 由 ClassData 遍历）
+    SourceSlice source{};              // 函数源码切片（创建时 retain）
+};
 
 // 引擎门面：持有 GC 所有权 + 注入 IAllocator/Console + Scope 树
 class IContext {
@@ -80,6 +94,12 @@ public:
     // 调用方负责保存/恢复。
     virtual void setRootScope(Scope* s) = 0;
     virtual void setCurrentScope(Scope* s) = 0;
+
+    // currentFunctionEnv: 当前正在执行的函数环境记录（ADR-047）。
+    // this / new.target 存放在该 ArgumentScope 的专用槽中；invoke 在调用期间
+    // 设置，返回/Fatal/挂起时恢复调用方的函数环境。顶层为模块/全局环境。
+    virtual Scope* currentFunctionEnv() const = 0;
+    virtual void setCurrentFunctionEnv(Scope* s) = 0;
 
     // —— current scope 管理 ——
     // pushNewScope: 在 allocator 上新建 parent 的子 scope 并设为 current。
@@ -185,6 +205,49 @@ public:
     // 函数返回 Object/Function 则用它，否则用 this。非函数返回 Exception。
     virtual Value* construct(Value* fn, size_t argc, Value* argv[]) = 0;
 
+    // construct(fn, newTarget, ...)：带 new.target 的构造入口（ADR-047）。
+    // newTarget 为 nullptr 时取 fn；Reflect.construct / super() 可传不同值。
+    virtual Value* construct(Value* fn, Value* newTarget, size_t argc, Value* argv[]) = 0;
+
+    // —— class 构造原语（ADR-047）——
+    // constructSuper: 执行派生类构造器的 super(...)；用当前 new.target 构造父类，
+    // 成功后把当前函数环境的 this 槽原地替换为返回对象。super 两次抛 ReferenceError。
+    virtual Value* constructSuper(Value* superCtor, Value* newTarget, size_t argc,
+                                  Value* argv[]) = 0;
+
+    // getThis: 读取当前函数环境的 this；派生类 super() 前为 Uninitialized，抛 ReferenceError。
+    virtual Value* getThis() = 0;
+    // initializeThis: 初始化当前函数环境的 this（引擎构造路径/VM 使用）。
+    virtual void initializeThis(Value* value) = 0;
+    virtual bool isThisInitialized() = 0;
+
+    // newTarget: 当前构造调用的 new.target（非构造上下文为 nullptr）。
+    virtual Value* newTarget() = 0;
+
+    // super 属性访问：从 homeObject 的原型开始查找，receiver 作为 getter/setter 的 this。
+    virtual Value* getSuperProperty(Value* homeObject, Value* key, Value* receiver) = 0;
+    virtual Value* setSuperProperty(Value* homeObject, Value* key, Value* value,
+                                    Value* receiver) = 0;
+
+    // createUninitialized: 创建 TDZ 哨兵（派生类 this 初始化前使用）。
+    virtual Value* createUninitialized() = 0;
+
+    // —— class 字段初始化（ADR-047 §4）——
+    // addInstanceField: 向 class 构造器注册实例字段（按调用顺序初始化）。
+    // initializer 为初始化函数（nullptr = undefined）；isPrivate 预留给 P2。
+    virtual void addInstanceField(Value* classCtor, Value* key, Value* initializer,
+                                  bool isPrivate = false) = 0;
+    // addClassInitializer: 注册类级初始化回调（装饰器 addInitializer，P3）。
+    virtual void addClassInitializer(Value* classCtor, Value* initializer) = 0;
+    // initializeInstanceFields: 按 ClassData 顺序初始化实例字段并执行类级初始化回调。
+    // 由 VM 在正确时机调用（基类构造体开头 / 派生类 super 返回后）。
+    virtual Value* initializeInstanceFields(Value* instance, Value* classCtor) = 0;
+
+    // setFunctionClassConstructor: 更新已由创建选项标记的 class 构造器的
+    // isDerived/superConstructor（创建后再确定父构造器的场景）。
+    virtual void setFunctionClassConstructor(Value* fn, bool isDerived,
+                                             Value* superCtor) = 0;
+
     // instanceOf: `value instanceof target`（ES2024 §13.10.2）。
     // 优先走 target[@@hasInstance]（存在且非 null/undefined 时以其 ToBoolean 结果为准），
     // 否则按 OrdinaryHasInstance（§7.3.21）沿 value 的原型链找 target.prototype。
@@ -203,7 +266,8 @@ public:
     // 同时自动创建 fn.prototype（普通对象）并定义 proto.constructor 指回函数（ADR-034）。
     // 返回 Value*：正常函数值，或 OOM 哨兵（ADR-031）。
     virtual Value* createNativeFunction(NativeFn fn, size_t minArgc,
-                                        std::string_view bindName = {}) = 0;
+                                        std::string_view bindName = {},
+                                        const FunctionCreateOptions& opts = {}) = 0;
 
     // createBoundFunction: 创建绑定函数（ES2024 §10.4.1.3 BoundFunctionCreate）。
     // 返回的新函数调用时以 boundThis 为 this、前置 boundArgs 再拼接调用实参。
@@ -233,6 +297,14 @@ public:
     // 用于 Sema 标记含直接 eval 的函数，或测试模拟「作用域内存在 eval」。
     // 已处于 Environment 模式时无操作；仅对 Function 类型有效。
     virtual void setFunctionCapturesEnvironment(Value* fn) = 0;
+
+    // setFunctionHomeObject: 设置 [[HomeObject]]（class 方法/构造器/字段初始化器）。
+    // 仅对 Function 类型有效，其他类型忽略。
+    virtual void setFunctionHomeObject(Value* fn, Value* homeObject) = 0;
+
+    // setFunctionSource: 设置函数源码切片（Function.prototype.toString）。
+    // 内部 retain 新 source、release 旧 source；仅对 Function 类型有效。
+    virtual void setFunctionSource(Value* fn, const SourceSlice& slice) = 0;
 
     // setFunctionConstructible: 显式标记函数是否可构造（ES2024 §7.2.4 IsConstructor）。
     // native 函数默认可构造；箭头函数、方法、生成器等不可构造者置 false。

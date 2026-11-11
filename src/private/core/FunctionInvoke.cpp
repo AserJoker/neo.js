@@ -27,12 +27,14 @@
 namespace neo::core {
 
 Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t argc,
-                            Value* argv[], NativeFn overrideFn, Scope* resumeScope) {
+                            Value* argv[], NativeFn overrideFn, Scope* resumeScope,
+                            Value* newTarget, Value** outThis) {
     auto* d = static_cast<FunctionData*>(fn->data());
 
-    // 1. 保存调用方的 root/current scope
+    // 1. 保存调用方的 root/current scope 与当前函数环境（ADR-047）
     Scope* savedRoot = ctx->root();
     Scope* savedCurrent = ctx->current();
+    Scope* savedFunctionEnv = ctx->currentFunctionEnv();
 
     // 2. 切换到被调函数的模块根作用域
     ctx->setRootScope(d->rootScope);
@@ -61,12 +63,28 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
             }
             ctx->setRootScope(savedRoot);
             ctx->setCurrentScope(savedCurrent);
+            ctx->setCurrentFunctionEnv(savedFunctionEnv);
             return ctx->oomValue();
         }
     }
 
+    // 4.5 绑定函数环境（ADR-047）：this / new.target 放 execScope 专用槽。
+    //     协程恢复时槽已存在，保留首次绑定的值，不重复覆盖。
+    //     普通调用 thisArg 可能为 nullptr（如构造钩子），按 undefined 处理；
+    //     newTarget 为 nullptr 表示普通调用。
+    if (!execScope->hasOwnThis()) {
+        execScope->setThis(thisArg != nullptr ? thisArg : ctx->createUndefined());
+    }
+    if (!execScope->hasOwnNewTarget()) {
+        execScope->setNewTarget(newTarget != nullptr ? newTarget : ctx->createUndefined());
+    }
+    ctx->setCurrentFunctionEnv(execScope);
+
     // 5. native 调用（构造钩子优先由调用方显式传入）
     Value* res = (overrideFn != nullptr ? overrideFn : d->native)(ctx, thisArg, argc, argv);
+
+    // 5.5 派生类构造器：this 可能由 super() 初始化，在弹出 execScope 前写出最终值。
+    if (outThis != nullptr) *outThis = execScope->thisValue();
 
     // 6. Fatal 立即透传：不恢复现场、不平衡栈（不可捕获，交给最外层宿主）。
     //    仍须摘除闭包作用域——否则它挂在 root 下，会被 ~Context 的 root 递归析构，
@@ -78,6 +96,7 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
         }
         ctx->setRootScope(savedRoot);
         ctx->setCurrentScope(savedCurrent);
+        ctx->setCurrentFunctionEnv(savedFunctionEnv);
         return res;
     }
 
@@ -107,12 +126,15 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
             }
             ctx->setRootScope(savedRoot);
             ctx->setCurrentScope(savedCurrent);
+            ctx->setCurrentFunctionEnv(savedFunctionEnv);
             return res;
         }
     }
 
     // 9. 平衡栈：native 协议允许栈不平衡（如保存现场后不立即返回），
     //    循环 pop 直到 current 回到 closureScope（查找链的持久层）。
+    //    先把函数环境恢复为调用方，避免 execScope 被 pop 后缓存悬垂。
+    ctx->setCurrentFunctionEnv(savedFunctionEnv);
     while (ctx->current() != d->closureScope) {
         ctx->popScope();
     }

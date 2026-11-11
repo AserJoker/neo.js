@@ -36,6 +36,11 @@ class Context : public IContext {
     Scope* global_ = nullptr;              // Context 创建，析构时销毁（递归销毁整棵树）
     Scope* root_ = nullptr;                // 当前模块根作用域（可被 setRootScope 切换）
     Scope* current_ = nullptr;             // 当前作用域（Scope 的 parent 链即作用域栈）
+    // 当前函数环境（ADR-047）：this / new.target 的宿主 ArgumentScope。
+    // invoke 保存/恢复；顶层指向模块根作用域。
+    Scope* currentFunctionEnv_ = nullptr;
+    // 当前构造调用的 new.target（ADR-047）：Context::construct 保存/恢复。
+    Value* newTarget_ = nullptr;
     // 调用栈（ADR-037）：纯展示信息，与 Scope 链无关。栈顶在末尾。
     // 用 std::string 存帧，内存走宿主堆而非 IAllocator——调用栈是诊断信息，
     // 不应在 OOM 时因 Engine 配额耗尽而无法记录。
@@ -113,6 +118,8 @@ public:
 
     void setRootScope(Scope* s) override { root_ = s; }
     void setCurrentScope(Scope* s) override { current_ = s; }
+    Scope* currentFunctionEnv() const override { return currentFunctionEnv_; }
+    void setCurrentFunctionEnv(Scope* s) override { currentFunctionEnv_ = s; }
     Scope* pushNewScope(Scope* parent) override;
     Value* pushWithScope(Value* obj, Scope** outScope) override;
     void popScope() override;
@@ -160,12 +167,32 @@ public:
     // 函数调用
     Value* call(Value* fn, Value* thisArg, size_t argc, Value* argv[]) override;
     Value* construct(Value* fn, size_t argc, Value* argv[]) override;
+    Value* construct(Value* fn, Value* newTarget, size_t argc, Value* argv[]) override;
+    Value* constructSuper(Value* superCtor, Value* newTarget, size_t argc,
+                          Value* argv[]) override;
+    Value* getThis() override;
+    void initializeThis(Value* value) override;
+    bool isThisInitialized() override;
+    Value* newTarget() override { return newTarget_; }
+    Value* getSuperProperty(Value* homeObject, Value* key, Value* receiver) override;
+    Value* setSuperProperty(Value* homeObject, Value* key, Value* value,
+                            Value* receiver) override;
+    Value* createUninitialized() override;
+    void addInstanceField(Value* classCtor, Value* key, Value* initializer,
+                          bool isPrivate = false) override;
+    void addClassInitializer(Value* classCtor, Value* initializer) override;
+    Value* initializeInstanceFields(Value* instance, Value* classCtor) override;
+    void setFunctionClassConstructor(Value* fn, bool isDerived,
+                                     Value* superCtor) override;
     Value* instanceOf(Value* value, Value* target) override;
     Value* createNativeFunction(NativeFn fn, size_t minArgc,
-                                std::string_view bindName = {}) override;
+                                std::string_view bindName = {},
+                                const FunctionCreateOptions& opts = {}) override;
     void setFunctionName(Value* fn, std::string_view name) override;
     void setFunctionStrict(Value* fn) override;
     void setFunctionCapturesEnvironment(Value* fn) override;
+    void setFunctionHomeObject(Value* fn, Value* homeObject) override;
+    void setFunctionSource(Value* fn, const SourceSlice& slice) override;
     void setFunctionConstructor(Value* fn, NativeFn ctor) override;
     void setFunctionConstructible(Value* fn, bool constructible) override;
     void setFunctionGenerator(Value* fn, bool generator) override;

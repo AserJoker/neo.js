@@ -18,6 +18,7 @@
 #include "core/Scope.h"
 #include "core/Value.h"
 #include "core/types/Array.h"
+#include "core/types/Function.h"
 #include "core/types/Object.h"
 #include "core/types/PrimitiveWrapper.h"
 #include "core/types/String.h"
@@ -181,9 +182,20 @@ Value* objectProtoToLocaleString(IContext* ctx, Value* self, size_t /*argc*/,
 
 // —— Function.prototype 方法 ——
 
-// Function.prototype.toString()：占位，返回 "[native code]"
-Value* functionProtoToString(IContext* ctx, Value* /*self*/, size_t /*argc*/,
+// Function.prototype.toString()（ES2024 §20.2.3.5）：
+// 有源码切片时返回切片文本；native/裁剪后无源码时返回 "[native code]"。
+Value* functionProtoToString(IContext* ctx, Value* self, size_t /*argc*/,
                              Value* /*argv*/[]) {
+    if (self != nullptr && self->type()->kind() == TypeKind::Function) {
+        auto* d = static_cast<FunctionData*>(self->data());
+        if (d->source.source != nullptr) {
+            const std::string& text = d->source.source->text;
+            size_t offset = d->source.offset < text.size() ? d->source.offset : text.size();
+            size_t length = d->source.length;
+            if (length > text.size() - offset) length = text.size() - offset;
+            return ctx->createString(text.substr(offset, length));
+        }
+    }
     return ctx->createString("function () { [native code] }");
 }
 
