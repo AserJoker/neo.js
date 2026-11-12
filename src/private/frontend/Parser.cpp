@@ -357,7 +357,24 @@ NodePtr Parser::parseStatement() {
         return parseVariableDeclaration();
     }
     if (at(TokenKind::If)) return parseIfStatement();
+    if (at(TokenKind::While)) return parseWhileStatement();
     return parseExpressionStatement();
+}
+
+NodePtr Parser::parseWhileStatement() {
+    const SourceLocation start = current_.start;
+    advance();  // 'while'
+
+    if (!expect(TokenKind::LeftParen, "'('")) return nullptr;
+    NodePtr test = parseExpression();
+    if (test == nullptr) return nullptr;
+    if (!expect(TokenKind::RightParen, "')'")) return nullptr;
+
+    NodePtr body = parseStatement();
+    if (body == nullptr) return nullptr;
+
+    return std::make_unique<WhileStatement>(rangeFrom(start), std::move(test),
+                                            std::move(body));
 }
 
 NodePtr Parser::parseIfStatement() {

@@ -42,6 +42,7 @@ using neo::frontend::UpdateOperator;
 using neo::frontend::VariableDeclaration;
 using neo::frontend::VariableDeclarator;
 using neo::frontend::VariableKind;
+using neo::frontend::WhileStatement;
 
 ParseResult parse(std::string_view source) {
     Parser parser(source);
@@ -1432,6 +1433,59 @@ TEST(ParserTest, IfElseWithoutAsiReportsError) {
 
     ASSERT_NE(result.program, nullptr);
     ASSERT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, WhileStatement) {
+    ParseResult result = parse("while (a) b;");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    ASSERT_EQ(programOf(result).body[0]->kind(), NodeKind::WhileStatement);
+
+    const auto* statement =
+        static_cast<const WhileStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->test, nullptr);
+    EXPECT_EQ(statement->test->kind(), NodeKind::Identifier);
+    ASSERT_NE(statement->body, nullptr);
+    EXPECT_EQ(statement->body->kind(), NodeKind::ExpressionStatement);
+}
+
+TEST(ParserTest, WhileWithBlockBody) {
+    ParseResult result = parse("while (a) { }");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const WhileStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->body, nullptr);
+    EXPECT_EQ(statement->body->kind(), NodeKind::BlockStatement);
+}
+
+TEST(ParserTest, WhileWithEmptyBody) {
+    ParseResult result = parse("while (a);");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const WhileStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->body, nullptr);
+    EXPECT_EQ(statement->body->kind(), NodeKind::EmptyStatement);
+}
+
+TEST(ParserTest, NestedWhileStatement) {
+    ParseResult result = parse("while (a) while (b) c;");
+
+    ASSERT_TRUE(result.ok());
+    const auto* outer =
+        static_cast<const WhileStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(outer->body, nullptr);
+    EXPECT_EQ(outer->body->kind(), NodeKind::WhileStatement);
+}
+
+TEST(ParserTest, WhileMissingRightParenReportsError) {
+    ParseResult result = parse("while (a b;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Expected ')'"), std::string::npos);
 }
 
 TEST(ParserTest, ProgramRangeCoversConsumedInput) {

@@ -78,6 +78,7 @@ private:
     NodePtr parseVariableDeclaration();
     NodePtr parseVariableDeclarator();
     NodePtr parseIfStatement();
+    NodePtr parseWhileStatement();
     bool isLetDeclarationStart();
 
     // 表达式

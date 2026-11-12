@@ -45,6 +45,7 @@ enum class NodeKind : uint8_t {
     VariableDeclaration,
     VariableDeclarator,
     IfStatement,
+    WhileStatement,
 
     // 表达式
     Identifier,
@@ -160,6 +161,15 @@ struct IfStatement final : Node {
     NodePtr test;
     NodePtr consequent;
     NodePtr alternate;  // 可空
+};
+
+struct WhileStatement final : Node {
+    WhileStatement(SourceRange range, NodePtr test, NodePtr body)
+        : Node(NodeKind::WhileStatement, range),
+          test(std::move(test)),
+          body(std::move(body)) {}
+    NodePtr test;
+    NodePtr body;
 };
 
 // ---------------------------------------------------------------------------
