@@ -2,6 +2,7 @@
 
 #include "frontend/CharStream.h"
 
+#include "unicode/UnicodeClassification.h"
 #include "unicode/Utf8.h"
 
 namespace neo::frontend {
@@ -43,7 +44,8 @@ uint32_t CharStream::advance() {
         if (!lastWasCR_) ++line_;
         column_ = 1;
         lastWasCR_ = false;
-    } else if (cp == 0x2028u || cp == 0x2029u) {
+    } else if (unicode::isLineTerminator(cp)) {
+        // LS / PS（LF/CR 已在上面的分支处理）。
         ++line_;
         column_ = 1;
         lastWasCR_ = false;
