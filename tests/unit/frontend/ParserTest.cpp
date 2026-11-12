@@ -22,6 +22,7 @@ using neo::frontend::CallExpression;
 using neo::frontend::ConditionalExpression;
 using neo::frontend::ExpressionStatement;
 using neo::frontend::Identifier;
+using neo::frontend::IfStatement;
 using neo::frontend::LogicalExpression;
 using neo::frontend::LogicalOperator;
 using neo::frontend::MemberExpression;
@@ -1353,6 +1354,84 @@ TEST(ParserTest, ReservedWordAsBindingReportsError) {
     ASSERT_FALSE(result.errors.empty());
     EXPECT_NE(result.errors[0].message.find("Expected identifier"),
               std::string::npos);
+}
+
+TEST(ParserTest, IfStatement) {
+    ParseResult result = parse("if (a) b;");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    ASSERT_EQ(programOf(result).body[0]->kind(), NodeKind::IfStatement);
+
+    const auto* statement =
+        static_cast<const IfStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->test, nullptr);
+    EXPECT_EQ(statement->test->kind(), NodeKind::Identifier);
+    ASSERT_NE(statement->consequent, nullptr);
+    EXPECT_EQ(statement->consequent->kind(), NodeKind::ExpressionStatement);
+    EXPECT_EQ(statement->alternate, nullptr);
+}
+
+TEST(ParserTest, IfElseStatement) {
+    ParseResult result = parse("if (a) b; else c;");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const IfStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->alternate, nullptr);
+    EXPECT_EQ(statement->alternate->kind(), NodeKind::ExpressionStatement);
+}
+
+TEST(ParserTest, DanglingElseBindsToInnerIf) {
+    ParseResult result = parse("if (a) if (b) c; else d;");
+
+    ASSERT_TRUE(result.ok());
+    const auto* outer =
+        static_cast<const IfStatement*>(programOf(result).body[0].get());
+    EXPECT_EQ(outer->alternate, nullptr);
+    ASSERT_NE(outer->consequent, nullptr);
+    ASSERT_EQ(outer->consequent->kind(), NodeKind::IfStatement);
+
+    const auto* inner =
+        static_cast<const IfStatement*>(outer->consequent.get());
+    ASSERT_NE(inner->alternate, nullptr);
+}
+
+TEST(ParserTest, IfWithBlockBranches) {
+    ParseResult result = parse("if (a) { } else { }");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const IfStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->consequent, nullptr);
+    EXPECT_EQ(statement->consequent->kind(), NodeKind::BlockStatement);
+    ASSERT_NE(statement->alternate, nullptr);
+    EXPECT_EQ(statement->alternate->kind(), NodeKind::BlockStatement);
+}
+
+TEST(ParserTest, IfWithEmptyStatement) {
+    ParseResult result = parse("if (a) ;");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const IfStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->consequent, nullptr);
+    EXPECT_EQ(statement->consequent->kind(), NodeKind::EmptyStatement);
+}
+
+TEST(ParserTest, IfMissingRightParenReportsError) {
+    ParseResult result = parse("if (a b;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Expected ')'"), std::string::npos);
+}
+
+TEST(ParserTest, IfElseWithoutAsiReportsError) {
+    ParseResult result = parse("if (a) b else c;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
 }
 
 TEST(ParserTest, ProgramRangeCoversConsumedInput) {

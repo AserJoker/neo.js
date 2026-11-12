@@ -356,7 +356,31 @@ NodePtr Parser::parseStatement() {
         isLetDeclarationStart()) {
         return parseVariableDeclaration();
     }
+    if (at(TokenKind::If)) return parseIfStatement();
     return parseExpressionStatement();
+}
+
+NodePtr Parser::parseIfStatement() {
+    const SourceLocation start = current_.start;
+    advance();  // 'if'
+
+    if (!expect(TokenKind::LeftParen, "'('")) return nullptr;
+    NodePtr test = parseExpression();
+    if (test == nullptr) return nullptr;
+    if (!expect(TokenKind::RightParen, "')'")) return nullptr;
+
+    NodePtr consequent = parseStatement();
+    if (consequent == nullptr) return nullptr;
+
+    NodePtr alternate;
+    if (match(TokenKind::Else)) {
+        alternate = parseStatement();
+        if (alternate == nullptr) return nullptr;
+    }
+
+    return std::make_unique<IfStatement>(
+        rangeFrom(start), std::move(test), std::move(consequent),
+        std::move(alternate));
 }
 
 bool Parser::isLetDeclarationStart() {

@@ -44,6 +44,7 @@ enum class NodeKind : uint8_t {
     ExpressionStatement,
     VariableDeclaration,
     VariableDeclarator,
+    IfStatement,
 
     // 表达式
     Identifier,
@@ -147,6 +148,18 @@ struct VariableDeclaration final : Node {
           declarations(std::move(declarations)) {}
     VariableKind variableKind;
     NodeList declarations;
+};
+
+struct IfStatement final : Node {
+    IfStatement(SourceRange range, NodePtr test, NodePtr consequent,
+                NodePtr alternate)
+        : Node(NodeKind::IfStatement, range),
+          test(std::move(test)),
+          consequent(std::move(consequent)),
+          alternate(std::move(alternate)) {}
+    NodePtr test;
+    NodePtr consequent;
+    NodePtr alternate;  // 可空
 };
 
 // ---------------------------------------------------------------------------
