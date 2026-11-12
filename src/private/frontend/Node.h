@@ -59,6 +59,7 @@ enum class NodeKind : uint8_t {
     BinaryExpression,
     LogicalExpression,
     ConditionalExpression,
+    AssignmentExpression,
 };
 
 class Node {
@@ -300,6 +301,38 @@ struct ConditionalExpression final : Node {
     NodePtr test;
     NodePtr consequent;
     NodePtr alternate;
+};
+
+enum class AssignmentOperator : uint8_t {
+    Assign,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
+    Exponentiate,
+    LeftShift,
+    RightShift,
+    UnsignedRightShift,
+    BitAnd,
+    BitOr,
+    BitXor,
+    LogicalAnd,
+    LogicalOr,
+    Nullish,
+};
+
+// left op right
+struct AssignmentExpression final : Node {
+    AssignmentExpression(SourceRange range, AssignmentOperator op, NodePtr left,
+                         NodePtr right)
+        : Node(NodeKind::AssignmentExpression, range),
+          op(op),
+          left(std::move(left)),
+          right(std::move(right)) {}
+    AssignmentOperator op;
+    NodePtr left;
+    NodePtr right;
 };
 
 }  // namespace neo::frontend

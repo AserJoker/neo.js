@@ -11,6 +11,8 @@
 
 namespace {
 
+using neo::frontend::AssignmentExpression;
+using neo::frontend::AssignmentOperator;
 using neo::frontend::BigIntLiteral;
 using neo::frontend::BinaryExpression;
 using neo::frontend::BinaryOperator;
@@ -909,6 +911,118 @@ TEST(ParserTest, ConditionalMissingColonReportsError) {
 
 TEST(ParserTest, ConditionalMissingAlternateReportsError) {
     ParseResult result = parse("a ? b :;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, AssignmentOperators) {
+    struct Case {
+        const char* source;
+        AssignmentOperator op;
+    };
+    const Case cases[] = {
+        {"a = b;", AssignmentOperator::Assign},
+        {"a += b;", AssignmentOperator::Add},
+        {"a -= b;", AssignmentOperator::Subtract},
+        {"a *= b;", AssignmentOperator::Multiply},
+        {"a /= b;", AssignmentOperator::Divide},
+        {"a %= b;", AssignmentOperator::Remainder},
+        {"a **= b;", AssignmentOperator::Exponentiate},
+        {"a <<= b;", AssignmentOperator::LeftShift},
+        {"a >>= b;", AssignmentOperator::RightShift},
+        {"a >>>= b;", AssignmentOperator::UnsignedRightShift},
+        {"a &= b;", AssignmentOperator::BitAnd},
+        {"a |= b;", AssignmentOperator::BitOr},
+        {"a ^= b;", AssignmentOperator::BitXor},
+        {"a &&= b;", AssignmentOperator::LogicalAnd},
+        {"a ||= b;", AssignmentOperator::LogicalOr},
+        {"a ?" "?= b;", AssignmentOperator::Nullish},
+    };
+
+    for (const Case& item : cases) {
+        ParseResult result = parse(item.source);
+        ASSERT_TRUE(result.ok()) << item.source;
+        const auto& statement = statementOf(result, 0);
+        ASSERT_NE(statement.expression, nullptr) << item.source;
+        EXPECT_EQ(statement.expression->kind(), NodeKind::AssignmentExpression)
+            << item.source;
+        const auto* assignment =
+            static_cast<const AssignmentExpression*>(statement.expression.get());
+        EXPECT_EQ(assignment->op, item.op) << item.source;
+    }
+}
+
+TEST(ParserTest, AssignmentIsRightAssociative) {
+    ParseResult result = parse("a = b = c;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* outer =
+        static_cast<const AssignmentExpression*>(statement.expression.get());
+    EXPECT_EQ(outer->op, AssignmentOperator::Assign);
+    ASSERT_NE(outer->right, nullptr);
+    EXPECT_EQ(outer->right->kind(), NodeKind::AssignmentExpression);
+}
+
+TEST(ParserTest, AssignmentRhsCanBeConditional) {
+    ParseResult result = parse("a = b ? c : d;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* assignment =
+        static_cast<const AssignmentExpression*>(statement.expression.get());
+    ASSERT_NE(assignment->right, nullptr);
+    EXPECT_EQ(assignment->right->kind(), NodeKind::ConditionalExpression);
+}
+
+TEST(ParserTest, AssignmentInConditionalBranch) {
+    ParseResult result = parse("a ? b = c : d;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* conditional =
+        static_cast<const ConditionalExpression*>(statement.expression.get());
+    ASSERT_NE(conditional->consequent, nullptr);
+    EXPECT_EQ(conditional->consequent->kind(), NodeKind::AssignmentExpression);
+}
+
+TEST(ParserTest, AssignmentTargets) {
+    const char* sources[] = {
+        "a.b = c;",
+        "a[0] += 1;",
+    };
+
+    for (const char* source : sources) {
+        ParseResult result = parse(source);
+        ASSERT_TRUE(result.ok()) << source;
+        const auto& statement = statementOf(result, 0);
+        const auto* assignment =
+            static_cast<const AssignmentExpression*>(statement.expression.get());
+        EXPECT_EQ(assignment->left->kind(), NodeKind::MemberExpression)
+            << source;
+    }
+}
+
+TEST(ParserTest, InvalidAssignmentTargetReportsError) {
+    const char* sources[] = {
+        "a + b = c;",
+        "1 = 2;",
+        "a() = b;",
+    };
+
+    for (const char* source : sources) {
+        ParseResult result = parse(source);
+        EXPECT_FALSE(result.ok()) << source;
+        ASSERT_FALSE(result.errors.empty()) << source;
+        EXPECT_NE(result.errors[0].message.find("Invalid assignment target"),
+                  std::string::npos)
+            << source;
+    }
+}
+
+TEST(ParserTest, AssignmentMissingRhsReportsError) {
+    ParseResult result = parse("a =;");
 
     ASSERT_NE(result.program, nullptr);
     ASSERT_FALSE(result.errors.empty());

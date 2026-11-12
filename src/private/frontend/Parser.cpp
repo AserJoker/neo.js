@@ -120,6 +120,66 @@ bool logicalOperator(TokenKind kind, LogicalOperatorInfo& info) {
     }
 }
 
+bool assignmentOperator(TokenKind kind, AssignmentOperator& op) {
+    switch (kind) {
+        case TokenKind::Assign:
+            op = AssignmentOperator::Assign;
+            return true;
+        case TokenKind::PlusAssign:
+            op = AssignmentOperator::Add;
+            return true;
+        case TokenKind::MinusAssign:
+            op = AssignmentOperator::Subtract;
+            return true;
+        case TokenKind::StarAssign:
+            op = AssignmentOperator::Multiply;
+            return true;
+        case TokenKind::SlashAssign:
+            op = AssignmentOperator::Divide;
+            return true;
+        case TokenKind::PercentAssign:
+            op = AssignmentOperator::Remainder;
+            return true;
+        case TokenKind::StarStarAssign:
+            op = AssignmentOperator::Exponentiate;
+            return true;
+        case TokenKind::LeftShiftAssign:
+            op = AssignmentOperator::LeftShift;
+            return true;
+        case TokenKind::RightShiftAssign:
+            op = AssignmentOperator::RightShift;
+            return true;
+        case TokenKind::UnsignedRightShiftAssign:
+            op = AssignmentOperator::UnsignedRightShift;
+            return true;
+        case TokenKind::BitAndAssign:
+            op = AssignmentOperator::BitAnd;
+            return true;
+        case TokenKind::BitOrAssign:
+            op = AssignmentOperator::BitOr;
+            return true;
+        case TokenKind::BitXorAssign:
+            op = AssignmentOperator::BitXor;
+            return true;
+        case TokenKind::LogicalAndAssign:
+            op = AssignmentOperator::LogicalAnd;
+            return true;
+        case TokenKind::LogicalOrAssign:
+            op = AssignmentOperator::LogicalOr;
+            return true;
+        case TokenKind::NullishAssign:
+            op = AssignmentOperator::Nullish;
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool isSimpleAssignmentTarget(const Node* node) {
+    return node != nullptr && (node->kind() == NodeKind::Identifier ||
+                               node->kind() == NodeKind::MemberExpression);
+}
+
 bool isUnparenthesizedLogical(const Node* node, LogicalOperator op) {
     if (node == nullptr || node->kind() != NodeKind::LogicalExpression) {
         return false;
@@ -310,8 +370,29 @@ NodePtr Parser::parseExpressionStatement() {
 // ---------------------------------------------------------------------------
 
 NodePtr Parser::parseExpression() {
-    // 后续在条件表达式之上逐层加入赋值、序列等节点。
-    return parseConditionalExpression();
+    // 后续在赋值表达式之上加入序列表达式（逗号）。
+    return parseAssignmentExpression();
+}
+
+NodePtr Parser::parseAssignmentExpression() {
+    NodePtr left = parseConditionalExpression();
+    if (left == nullptr) return nullptr;
+
+    AssignmentOperator op;
+    if (!assignmentOperator(current_.kind, op)) return left;
+
+    if (!isSimpleAssignmentTarget(left.get())) {
+        error(left->range().start, "Invalid assignment target");
+        return nullptr;
+    }
+
+    const SourceLocation start = left->range().start;
+    advance();
+    NodePtr right = parseAssignmentExpression();
+    if (right == nullptr) return nullptr;
+
+    return std::make_unique<AssignmentExpression>(
+        rangeFrom(start), op, std::move(left), std::move(right));
 }
 
 NodePtr Parser::parseConditionalExpression() {
@@ -321,11 +402,10 @@ NodePtr Parser::parseConditionalExpression() {
     if (!match(TokenKind::Question)) return test;
 
     const SourceLocation start = test->range().start;
-    // consequent / alternate 目前用条件表达式占位；赋值表达式落地后替换。
-    NodePtr consequent = parseConditionalExpression();
+    NodePtr consequent = parseAssignmentExpression();
     if (consequent == nullptr) return nullptr;
     if (!expect(TokenKind::Colon, "':'")) return nullptr;
-    NodePtr alternate = parseConditionalExpression();
+    NodePtr alternate = parseAssignmentExpression();
     if (alternate == nullptr) return nullptr;
 
     return std::make_unique<ConditionalExpression>(
