@@ -1,7 +1,6 @@
 # ADR-048: Proxy 与对象内部方法层
 
-- 状态：P3 部分实现（P1/P2 完成；数组内建泛型化、class extends Proxy、
-  私有槽语义、GC/撤销压力测试已落地）
+- 状态：P4 已实现（P1/P2/P3 完成；Reflect 命名空间落地）
 - 日期：2026-11-11
 - 关联：ADR-016（Type 体系）、ADR-018（对象模型）、ADR-047（class）
 
@@ -149,11 +148,19 @@ trap 缺失（undefined/null）时回退到 target 的对应内部方法。
   - 私有槽不随 Proxy 转发：target 的 brand 对 proxy 不可见；派生类字段
     初始化在 `super()` 返回的 proxy 自身上。
   - GC/撤销压力测试（撤销后回收、批量短命 proxy、proxy 套 proxy）。
+- **P4**：`Reflect` 命名空间（ES2024 §28.1）：
+  - 13 个方法均为内部方法薄封装，target 必须是对象；
+  - `get`/`set` 支持 receiver，经逐跳虚分派（Proxy trap 正确触发）；
+  - `defineProperty`/`setPrototypeOf` 返回 Boolean（内部方法失败 → false）；
+  - `apply`/`construct` 用 CreateListFromArrayLike 解析参数数组；
+  - `Reflect[@@toStringTag] = "Reflect"`。
 
-## 8. 已知边界（P3）
+## 8. 已知边界（P4）
 
-- **TODO（后续单独实现）**：`Reflect` 命名空间。
 - **TODO（依赖 VM/字节码层）**：for-in 枚举顺序与 Proxy 的完整交互；JSON。
+- `Reflect.defineProperty` / `Reflect.setPrototypeOf` 目前把内部方法的
+  Exception 统一映射为 false；Proxy trap 主动抛出的异常也会被映射为 false
+  （规范要求透传）。后续给内部方法增加 boolean 通道后可精确区分。
 
 - `hasProperty` 返回 `Value*`（Boolean 或 Exception/Fatal），has trap
   抛错原样透传。

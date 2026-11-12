@@ -22,6 +22,7 @@
 #include "core/NativeCoroutine.h"
 #include "core/ObjectBuiltins.h"
 #include "core/ProxyBuiltins.h"
+#include "core/ReflectBuiltins.h"
 #include "core/PromiseBuiltins.h"
 #include "core/PrimitiveWrapperBuiltins.h"
 #include "core/SymbolBuiltins.h"
@@ -114,6 +115,12 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     // 8b. 注册 Proxy 构造函数与 Proxy.revocable（ES2024 §28.2）。
     //     依赖 Object.prototype / Function.prototype 已就绪。
     if (!registerProxyBuiltins(this)) {
+        std::abort();
+    }
+
+    // 8c. 注册 Reflect 命名空间（ES2024 §28.1）。
+    //     依赖 Object.prototype 与对象内部方法层已就绪。
+    if (!registerReflectBuiltins(this)) {
         std::abort();
     }
 

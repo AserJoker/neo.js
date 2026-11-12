@@ -109,6 +109,7 @@ add_library(neojs STATIC
     src/private/core/Task.cpp
     src/private/core/ObjectBuiltins.cpp
     src/private/core/ProxyBuiltins.cpp
+    src/private/core/ReflectBuiltins.cpp
     src/private/core/ArrayBuiltins.cpp
     src/private/core/IteratorBuiltins.cpp
     src/private/core/GeneratorBuiltins.cpp
