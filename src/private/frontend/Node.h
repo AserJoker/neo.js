@@ -42,6 +42,7 @@ enum class NodeKind : uint8_t {
     BlockStatement,
     EmptyStatement,
     ExpressionStatement,
+    Directive,
     VariableDeclaration,
     VariableDeclarator,
     IfStatement,
@@ -143,6 +144,21 @@ struct ExpressionStatement final : Node {
         : Node(NodeKind::ExpressionStatement, range),
           expression(std::move(expression)) {}
     NodePtr expression;
+};
+
+// 指令序言中的字符串字面量语句（如 "use strict"）。
+// value 是 cooked 值，raw 是含引号的源码切片；严格模式判定用 raw。
+struct Directive final : Node {
+    Directive(SourceRange range, std::string value, std::string raw)
+        : Node(NodeKind::Directive, range),
+          value(std::move(value)),
+          raw(std::move(raw)) {}
+    std::string value;
+    std::string raw;
+
+    bool isUseStrict() const {
+        return raw == "\"use strict\"" || raw == "'use strict'";
+    }
 };
 
 enum class VariableKind : uint8_t { Var, Let, Const };

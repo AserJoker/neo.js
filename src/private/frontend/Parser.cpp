@@ -249,35 +249,12 @@ ParseResult Parser::parseProgram() {
     bool inDirectivePrologue = true;
 
     while (!at(TokenKind::EndOfInput)) {
-        NodePtr statement = parseStatement();
+        NodePtr statement = parseStatementListItem(inDirectivePrologue);
         if (statement == nullptr) {
             inDirectivePrologue = false;
             synchronize();
             continue;
         }
-
-        if (inDirectivePrologue) {
-            if (statement->kind() == NodeKind::ExpressionStatement) {
-                auto* expressionStatement =
-                    static_cast<ExpressionStatement*>(statement.get());
-                if (expressionStatement->expression != nullptr &&
-                    expressionStatement->expression->kind() ==
-                        NodeKind::StringLiteral) {
-                    auto* literal = static_cast<StringLiteral*>(
-                        expressionStatement->expression.get());
-                    if (literal->value == "use strict") {
-                        strict_ = true;
-                        // 当前 token 已按旧严格性扫描，重扫一次。
-                        rescan(LexicalGoal::RegExp);
-                    }
-                } else {
-                    inDirectivePrologue = false;
-                }
-            } else {
-                inDirectivePrologue = false;
-            }
-        }
-
         body.push_back(std::move(statement));
     }
 
@@ -352,6 +329,55 @@ void Parser::synchronize(bool stopAtRightBrace) {
 // ---------------------------------------------------------------------------
 // 语句
 // ---------------------------------------------------------------------------
+
+NodePtr Parser::parseStatementListItem(bool& inDirectivePrologue) {
+    NodePtr statement = parseStatement();
+    if (statement == nullptr) return nullptr;
+
+    if (!inDirectivePrologue) return statement;
+
+    // 指令序言只接受“裸字符串字面量”表达式语句；任何延续（二元/成员/调用/
+    // 括号）都会让顶层节点不再是 StringLiteral，从而结束指令序言。
+    if (statement->kind() != NodeKind::ExpressionStatement) {
+        inDirectivePrologue = false;
+        return statement;
+    }
+    auto* expressionStatement =
+        static_cast<ExpressionStatement*>(statement.get());
+    if (expressionStatement->expression == nullptr ||
+        expressionStatement->expression->kind() != NodeKind::StringLiteral ||
+        expressionStatement->expression->isParenthesized()) {
+        inDirectivePrologue = false;
+        return statement;
+    }
+
+    NodePtr directive = parseDirective(std::move(statement));
+    if (directive != nullptr) {
+        auto* value = static_cast<Directive*>(directive.get());
+        if (value->isUseStrict()) {
+            strict_ = true;
+            // 当前 token 已按旧严格性扫描，重扫一次。
+            rescan(LexicalGoal::RegExp);
+        }
+    }
+    return directive;
+}
+
+NodePtr Parser::parseDirective(NodePtr statement) {
+    auto* expressionStatement =
+        static_cast<ExpressionStatement*>(statement.get());
+    NodePtr expression = std::move(expressionStatement->expression);
+    auto* literal = static_cast<StringLiteral*>(expression.get());
+
+    std::string value = literal->value;
+    const SourceRange literalRange = literal->range();
+    const std::string_view source = lexer_.stream().source();
+    const size_t length = literalRange.end.offset - literalRange.start.offset;
+    std::string raw(source.substr(literalRange.start.offset, length));
+
+    return std::make_unique<Directive>(statement->range(), std::move(value),
+                                       std::move(raw));
+}
 
 NodePtr Parser::parseStatement() {
     if (at(TokenKind::LeftBrace)) return parseBlockStatement();

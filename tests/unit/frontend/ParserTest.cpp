@@ -24,6 +24,7 @@ using neo::frontend::CatchClause;
 using neo::frontend::ConditionalExpression;
 using neo::frontend::ContinueStatement;
 using neo::frontend::DebuggerStatement;
+using neo::frontend::Directive;
 using neo::frontend::DoWhileStatement;
 using neo::frontend::ExpressionStatement;
 using neo::frontend::ForInStatement;
@@ -127,7 +128,7 @@ TEST(ParserTest, NumericLiteral) {
 }
 
 TEST(ParserTest, StringLiteral) {
-    ParseResult result = parse("\"hi\\n\";");
+    ParseResult result = parse("(\"hi\\n\");");
 
     ASSERT_TRUE(result.ok());
     const auto& statement = statementOf(result, 0);
@@ -2229,6 +2230,79 @@ TEST(ParserTest, DebuggerMissingSemicolonReportsError) {
     ASSERT_NE(result.program, nullptr);
     ASSERT_FALSE(result.errors.empty());
     EXPECT_NE(result.errors[0].message.find("Expected ';'"), std::string::npos);
+}
+
+TEST(ParserTest, UseStrictDirectiveNode) {
+    ParseResult result = parse("\"use strict\";");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    ASSERT_EQ(programOf(result).body[0]->kind(), NodeKind::Directive);
+    EXPECT_TRUE(programOf(result).strict);
+
+    const auto* directive =
+        static_cast<const Directive*>(programOf(result).body[0].get());
+    EXPECT_EQ(directive->value, "use strict");
+    EXPECT_EQ(directive->raw, "\"use strict\"");
+    EXPECT_TRUE(directive->isUseStrict());
+}
+
+TEST(ParserTest, SingleQuotedUseStrictDirective) {
+    ParseResult result = parse("'use strict';");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body[0]->kind(), NodeKind::Directive);
+    EXPECT_TRUE(programOf(result).strict);
+}
+
+TEST(ParserTest, DirectivePrologueContinuesThroughOtherDirectives) {
+    ParseResult result = parse("\"hello\"; \"use strict\";");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 2u);
+    EXPECT_EQ(programOf(result).body[0]->kind(), NodeKind::Directive);
+    EXPECT_EQ(programOf(result).body[1]->kind(), NodeKind::Directive);
+    EXPECT_TRUE(programOf(result).strict);
+}
+
+TEST(ParserTest, EscapedUseStrictIsDirectiveButNotStrictMode) {
+    ParseResult result = parse("\"use\\x20strict\";");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body[0]->kind(), NodeKind::Directive);
+    EXPECT_FALSE(programOf(result).strict);
+
+    const auto* directive =
+        static_cast<const Directive*>(programOf(result).body[0].get());
+    EXPECT_EQ(directive->value, "use strict");
+    EXPECT_FALSE(directive->isUseStrict());
+}
+
+TEST(ParserTest, StringWithContinuationIsNotDirective) {
+    ParseResult result = parse("\"use strict\" + x;");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    EXPECT_EQ(programOf(result).body[0]->kind(), NodeKind::ExpressionStatement);
+    EXPECT_FALSE(programOf(result).strict);
+}
+
+TEST(ParserTest, ParenthesizedStringIsNotDirective) {
+    ParseResult result = parse("(\"use strict\");");
+
+    ASSERT_TRUE(result.ok());
+    EXPECT_EQ(programOf(result).body[0]->kind(), NodeKind::ExpressionStatement);
+    EXPECT_FALSE(programOf(result).strict);
+}
+
+TEST(ParserTest, DirectivePrologueEndsAtFirstNonDirective) {
+    ParseResult result = parse("x; \"use strict\";");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 2u);
+    EXPECT_EQ(programOf(result).body[0]->kind(), NodeKind::ExpressionStatement);
+    EXPECT_EQ(programOf(result).body[1]->kind(), NodeKind::ExpressionStatement);
+    EXPECT_FALSE(programOf(result).strict);
 }
 
 TEST(ParserTest, ProgramRangeCoversConsumedInput) {

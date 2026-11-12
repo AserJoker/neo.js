@@ -71,6 +71,8 @@ private:
     }
 
     // 语句
+    NodePtr parseStatementListItem(bool& inDirectivePrologue);
+    NodePtr parseDirective(NodePtr statement);
     NodePtr parseStatement();
     NodePtr parseBlockStatement();
     NodePtr parseEmptyStatement();
