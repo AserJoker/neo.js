@@ -2,6 +2,7 @@
 
 add_executable(frontend_unit_test
     CharStreamTest.cpp
+    LexerTest.cpp
 )
 target_link_libraries(frontend_unit_test
     PRIVATE

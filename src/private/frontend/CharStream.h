@@ -29,6 +29,15 @@ struct SourceLocation {
     uint32_t column = 1;
 };
 
+// 可保存/恢复的游标状态（供 parser 做推测式 token 前瞻）。
+struct CharStreamState {
+    size_t offset = 0;
+    uint32_t line = 1;
+    uint32_t column = 1;
+    bool lastWasCR = false;
+    bool invalidUtf8 = false;
+};
+
 class CharStream {
 public:
     // 输入结束哨兵（不是合法 Unicode 码点）。
@@ -48,6 +57,17 @@ public:
     uint32_t line() const { return line_; }
     uint32_t column() const { return column_; }
     SourceLocation location() const { return {offset_, line_, column_}; }
+
+    CharStreamState save() const {
+        return {offset_, line_, column_, lastWasCR_, invalidUtf8_};
+    }
+    void restore(const CharStreamState& state) {
+        offset_ = state.offset;
+        line_ = state.line;
+        column_ = state.column;
+        lastWasCR_ = state.lastWasCR;
+        invalidUtf8_ = state.invalidUtf8;
+    }
 
     std::string_view source() const { return source_; }
 

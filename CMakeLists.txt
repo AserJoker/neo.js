@@ -159,6 +159,7 @@ add_library(neojs STATIC
     src/private/infra/CommandParser.cpp
     src/private/infra/NativeFileSystem.cpp
     src/private/frontend/CharStream.cpp
+    src/private/frontend/Lexer.cpp
 )
 target_include_directories(neojs
     PUBLIC
