@@ -349,7 +349,69 @@ void Parser::synchronize(bool stopAtRightBrace) {
 NodePtr Parser::parseStatement() {
     if (at(TokenKind::LeftBrace)) return parseBlockStatement();
     if (at(TokenKind::Semicolon)) return parseEmptyStatement();
+    if (at(TokenKind::Var) || at(TokenKind::Const)) {
+        return parseVariableDeclaration();
+    }
+    if (at(TokenKind::Identifier) && current_.text == "let" &&
+        isLetDeclarationStart()) {
+        return parseVariableDeclaration();
+    }
     return parseExpressionStatement();
+}
+
+bool Parser::isLetDeclarationStart() {
+    // `let` 是上下文关键字：`let x` 是声明，`let = 1` / `let;` 是标识符。
+    const Token next = peek();
+    return next.kind == TokenKind::Identifier ||
+           next.kind == TokenKind::LeftBracket ||
+           next.kind == TokenKind::LeftBrace;
+}
+
+NodePtr Parser::parseVariableDeclaration() {
+    const SourceLocation start = current_.start;
+    VariableKind kind = VariableKind::Var;
+    if (at(TokenKind::Var)) {
+        kind = VariableKind::Var;
+    } else if (at(TokenKind::Const)) {
+        kind = VariableKind::Const;
+    } else {
+        kind = VariableKind::Let;
+    }
+    advance();
+
+    NodeList declarations;
+    while (true) {
+        NodePtr declarator = parseVariableDeclarator();
+        if (declarator == nullptr) return nullptr;
+        if (kind == VariableKind::Const &&
+            static_cast<const VariableDeclarator*>(declarator.get())->init ==
+                nullptr) {
+            error(declarator->range().start,
+                  "Missing initializer in const declaration");
+            return nullptr;
+        }
+        declarations.push_back(std::move(declarator));
+        if (!match(TokenKind::Comma)) break;
+    }
+
+    if (!consumeSemicolon()) return nullptr;
+    return std::make_unique<VariableDeclaration>(
+        rangeFrom(start), kind, std::move(declarations));
+}
+
+NodePtr Parser::parseVariableDeclarator() {
+    const SourceLocation start = current_.start;
+    NodePtr id = parseIdentifier();
+    if (id == nullptr) return nullptr;
+
+    NodePtr init;
+    if (match(TokenKind::Assign)) {
+        init = parseAssignmentExpression();
+        if (init == nullptr) return nullptr;
+    }
+
+    return std::make_unique<VariableDeclarator>(rangeFrom(start),
+                                                std::move(id), std::move(init));
 }
 
 NodePtr Parser::parseBlockStatement() {
@@ -710,6 +772,10 @@ NodePtr Parser::parsePrimaryExpression() {
 }
 
 NodePtr Parser::parseIdentifier() {
+    if (!at(TokenKind::Identifier)) {
+        error(current_.start, "Expected identifier");
+        return nullptr;
+    }
     const SourceLocation start = current_.start;
     std::string name = current_.text;
     advance();

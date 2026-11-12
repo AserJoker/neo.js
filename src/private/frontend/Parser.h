@@ -75,6 +75,9 @@ private:
     NodePtr parseBlockStatement();
     NodePtr parseEmptyStatement();
     NodePtr parseExpressionStatement();
+    NodePtr parseVariableDeclaration();
+    NodePtr parseVariableDeclarator();
+    bool isLetDeclarationStart();
 
     // 表达式
     NodePtr parseExpression();

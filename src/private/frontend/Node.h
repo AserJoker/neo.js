@@ -42,6 +42,8 @@ enum class NodeKind : uint8_t {
     BlockStatement,
     EmptyStatement,
     ExpressionStatement,
+    VariableDeclaration,
+    VariableDeclarator,
 
     // 表达式
     Identifier,
@@ -124,6 +126,27 @@ struct ExpressionStatement final : Node {
         : Node(NodeKind::ExpressionStatement, range),
           expression(std::move(expression)) {}
     NodePtr expression;
+};
+
+enum class VariableKind : uint8_t { Var, Let, Const };
+
+struct VariableDeclarator final : Node {
+    VariableDeclarator(SourceRange range, NodePtr id, NodePtr init)
+        : Node(NodeKind::VariableDeclarator, range),
+          id(std::move(id)),
+          init(std::move(init)) {}
+    NodePtr id;
+    NodePtr init;  // 可空
+};
+
+struct VariableDeclaration final : Node {
+    VariableDeclaration(SourceRange range, VariableKind variableKind,
+                        NodeList declarations)
+        : Node(NodeKind::VariableDeclaration, range),
+          variableKind(variableKind),
+          declarations(std::move(declarations)) {}
+    VariableKind variableKind;
+    NodeList declarations;
 };
 
 // ---------------------------------------------------------------------------

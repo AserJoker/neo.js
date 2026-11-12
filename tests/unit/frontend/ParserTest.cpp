@@ -38,6 +38,9 @@ using neo::frontend::UnaryExpression;
 using neo::frontend::UnaryOperator;
 using neo::frontend::UpdateExpression;
 using neo::frontend::UpdateOperator;
+using neo::frontend::VariableDeclaration;
+using neo::frontend::VariableDeclarator;
+using neo::frontend::VariableKind;
 
 ParseResult parse(std::string_view source) {
     Parser parser(source);
@@ -1218,6 +1221,138 @@ TEST(ParserTest, BlockErrorRecoveryStopsAtBrace) {
     ASSERT_FALSE(result.errors.empty());
     ASSERT_EQ(programOf(result).body.size(), 1u);
     EXPECT_EQ(programOf(result).body[0]->kind(), NodeKind::BlockStatement);
+}
+
+TEST(ParserTest, VariableDeclarationKinds) {
+    struct Case {
+        const char* source;
+        VariableKind kind;
+    };
+    const Case cases[] = {
+        {"var x;", VariableKind::Var},
+        {"let x;", VariableKind::Let},
+        {"const x = 1;", VariableKind::Const},
+    };
+
+    for (const Case& item : cases) {
+        ParseResult result = parse(item.source);
+        ASSERT_TRUE(result.ok()) << item.source;
+        ASSERT_EQ(programOf(result).body.size(), 1u) << item.source;
+        const auto* declaration = static_cast<const VariableDeclaration*>(
+            programOf(result).body[0].get());
+        EXPECT_EQ(declaration->kind(), NodeKind::VariableDeclaration)
+            << item.source;
+        EXPECT_EQ(declaration->variableKind, item.kind) << item.source;
+        ASSERT_EQ(declaration->declarations.size(), 1u) << item.source;
+    }
+}
+
+TEST(ParserTest, VariableDeclarators) {
+    ParseResult result = parse("var x = 1, y = 2;");
+
+    ASSERT_TRUE(result.ok());
+    const auto* declaration = static_cast<const VariableDeclaration*>(
+        programOf(result).body[0].get());
+    ASSERT_EQ(declaration->declarations.size(), 2u);
+
+    const auto* first = static_cast<const VariableDeclarator*>(
+        declaration->declarations[0].get());
+    ASSERT_NE(first->id, nullptr);
+    EXPECT_EQ(static_cast<const Identifier*>(first->id.get())->name, "x");
+    ASSERT_NE(first->init, nullptr);
+    EXPECT_EQ(first->init->kind(), NodeKind::NumericLiteral);
+
+    const auto* second = static_cast<const VariableDeclarator*>(
+        declaration->declarations[1].get());
+    EXPECT_EQ(static_cast<const Identifier*>(second->id.get())->name, "y");
+    ASSERT_NE(second->init, nullptr);
+}
+
+TEST(ParserTest, DeclaratorWithoutInitializer) {
+    ParseResult result = parse("var x, y = 1;");
+
+    ASSERT_TRUE(result.ok());
+    const auto* declaration = static_cast<const VariableDeclaration*>(
+        programOf(result).body[0].get());
+    ASSERT_EQ(declaration->declarations.size(), 2u);
+    const auto* first = static_cast<const VariableDeclarator*>(
+        declaration->declarations[0].get());
+    EXPECT_EQ(first->init, nullptr);
+}
+
+TEST(ParserTest, DeclaratorInitStopsAtComma) {
+    ParseResult result = parse("var x = a, b;");
+
+    ASSERT_TRUE(result.ok());
+    const auto* declaration = static_cast<const VariableDeclaration*>(
+        programOf(result).body[0].get());
+    ASSERT_EQ(declaration->declarations.size(), 2u);
+    const auto* first = static_cast<const VariableDeclarator*>(
+        declaration->declarations[0].get());
+    ASSERT_NE(first->init, nullptr);
+    EXPECT_EQ(first->init->kind(), NodeKind::Identifier);
+    const auto* second = static_cast<const VariableDeclarator*>(
+        declaration->declarations[1].get());
+    EXPECT_EQ(second->init, nullptr);
+}
+
+TEST(ParserTest, ParenthesizedSequenceAsInitializer) {
+    ParseResult result = parse("var x = (a, b);");
+
+    ASSERT_TRUE(result.ok());
+    const auto* declaration = static_cast<const VariableDeclaration*>(
+        programOf(result).body[0].get());
+    const auto* declarator = static_cast<const VariableDeclarator*>(
+        declaration->declarations[0].get());
+    ASSERT_NE(declarator->init, nullptr);
+    EXPECT_EQ(declarator->init->kind(), NodeKind::SequenceExpression);
+}
+
+TEST(ParserTest, ConstRequiresInitializer) {
+    ParseResult result = parse("const x;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Missing initializer"),
+              std::string::npos);
+}
+
+TEST(ParserTest, LetAsIdentifier) {
+    ParseResult assignment = parse("let = 1;");
+    ASSERT_TRUE(assignment.ok());
+    EXPECT_EQ(statementOf(assignment, 0).expression->kind(),
+              NodeKind::AssignmentExpression);
+
+    ParseResult identifier = parse("let;");
+    ASSERT_TRUE(identifier.ok());
+    EXPECT_EQ(statementOf(identifier, 0).expression->kind(),
+              NodeKind::Identifier);
+}
+
+TEST(ParserTest, VariableDeclarationsAcrossLines) {
+    ParseResult result = parse("var x = 1\nvar y = 2;");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 2u);
+    EXPECT_EQ(programOf(result).body[0]->kind(), NodeKind::VariableDeclaration);
+    EXPECT_EQ(programOf(result).body[1]->kind(), NodeKind::VariableDeclaration);
+}
+
+TEST(ParserTest, MissingSemicolonBetweenDeclarationsReportsError) {
+    ParseResult result = parse("var x = 1 var y = 2;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Expected ';'"), std::string::npos);
+}
+
+TEST(ParserTest, ReservedWordAsBindingReportsError) {
+    ParseResult result = parse("var if;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Expected identifier"),
+              std::string::npos);
 }
 
 TEST(ParserTest, ProgramRangeCoversConsumedInput) {
