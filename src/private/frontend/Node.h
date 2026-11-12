@@ -54,6 +54,8 @@ enum class NodeKind : uint8_t {
     ThrowStatement,
     BreakStatement,
     ContinueStatement,
+    TryStatement,
+    CatchClause,
 
     // 表达式
     Identifier,
@@ -249,6 +251,27 @@ struct ContinueStatement final : Node {
     ContinueStatement(SourceRange range, std::string label)
         : Node(NodeKind::ContinueStatement, range), label(std::move(label)) {}
     std::string label;
+};
+
+struct CatchClause final : Node {
+    CatchClause(SourceRange range, NodePtr param, NodePtr body)
+        : Node(NodeKind::CatchClause, range),
+          param(std::move(param)),
+          body(std::move(body)) {}
+    NodePtr param;  // 可空（catch { }）
+    NodePtr body;
+};
+
+struct TryStatement final : Node {
+    TryStatement(SourceRange range, NodePtr block, NodePtr handler,
+                 NodePtr finalizer)
+        : Node(NodeKind::TryStatement, range),
+          block(std::move(block)),
+          handler(std::move(handler)),
+          finalizer(std::move(finalizer)) {}
+    NodePtr block;
+    NodePtr handler;    // CatchClause，可空
+    NodePtr finalizer;  // BlockStatement，可空
 };
 
 // ---------------------------------------------------------------------------

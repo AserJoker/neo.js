@@ -87,6 +87,8 @@ private:
     NodePtr parseThrowStatement();
     NodePtr parseBreakStatement();
     NodePtr parseContinueStatement();
+    NodePtr parseTryStatement();
+    NodePtr parseCatchClause();
     bool isLetDeclarationStart();
 
     // 表达式

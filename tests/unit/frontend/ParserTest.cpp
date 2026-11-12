@@ -20,6 +20,7 @@ using neo::frontend::BreakStatement;
 using neo::frontend::BinaryOperator;
 using neo::frontend::BooleanLiteral;
 using neo::frontend::CallExpression;
+using neo::frontend::CatchClause;
 using neo::frontend::ConditionalExpression;
 using neo::frontend::ContinueStatement;
 using neo::frontend::DoWhileStatement;
@@ -43,6 +44,7 @@ using neo::frontend::ReturnStatement;
 using neo::frontend::SequenceExpression;
 using neo::frontend::StringLiteral;
 using neo::frontend::ThrowStatement;
+using neo::frontend::TryStatement;
 using neo::frontend::UnaryExpression;
 using neo::frontend::UnaryOperator;
 using neo::frontend::UpdateExpression;
@@ -1929,6 +1931,87 @@ TEST(ParserTest, BreakMissingSemicolonReportsError) {
     ASSERT_NE(result.program, nullptr);
     ASSERT_FALSE(result.errors.empty());
     EXPECT_NE(result.errors[0].message.find("Expected ';'"), std::string::npos);
+}
+
+TEST(ParserTest, TryCatchStatement) {
+    ParseResult result = parse("try { } catch (e) { }");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    ASSERT_EQ(programOf(result).body[0]->kind(), NodeKind::TryStatement);
+
+    const auto* statement =
+        static_cast<const TryStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->block, nullptr);
+    EXPECT_EQ(statement->block->kind(), NodeKind::BlockStatement);
+    ASSERT_NE(statement->handler, nullptr);
+    EXPECT_EQ(statement->handler->kind(), NodeKind::CatchClause);
+    EXPECT_EQ(statement->finalizer, nullptr);
+
+    const auto* handler =
+        static_cast<const CatchClause*>(statement->handler.get());
+    ASSERT_NE(handler->param, nullptr);
+    EXPECT_EQ(handler->param->kind(), NodeKind::Identifier);
+    ASSERT_NE(handler->body, nullptr);
+    EXPECT_EQ(handler->body->kind(), NodeKind::BlockStatement);
+}
+
+TEST(ParserTest, TryFinallyStatement) {
+    ParseResult result = parse("try { } finally { }");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const TryStatement*>(programOf(result).body[0].get());
+    EXPECT_EQ(statement->handler, nullptr);
+    ASSERT_NE(statement->finalizer, nullptr);
+    EXPECT_EQ(statement->finalizer->kind(), NodeKind::BlockStatement);
+}
+
+TEST(ParserTest, TryCatchFinallyStatement) {
+    ParseResult result = parse("try { } catch (e) { } finally { }");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const TryStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->handler, nullptr);
+    ASSERT_NE(statement->finalizer, nullptr);
+}
+
+TEST(ParserTest, CatchWithoutBinding) {
+    ParseResult result = parse("try { } catch { }");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const TryStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->handler, nullptr);
+    const auto* handler =
+        static_cast<const CatchClause*>(statement->handler.get());
+    EXPECT_EQ(handler->param, nullptr);
+}
+
+TEST(ParserTest, TryWithoutCatchOrFinallyReportsError) {
+    ParseResult result = parse("try { }");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Missing catch or finally"),
+              std::string::npos);
+}
+
+TEST(ParserTest, CatchEmptyParenthesesReportsError) {
+    ParseResult result = parse("try { } catch () { }");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Expected catch parameter"),
+              std::string::npos);
+}
+
+TEST(ParserTest, CatchMissingBlockReportsError) {
+    ParseResult result = parse("try { } catch e { }");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
 }
 
 TEST(ParserTest, ProgramRangeCoversConsumedInput) {

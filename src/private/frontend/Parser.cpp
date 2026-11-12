@@ -371,7 +371,61 @@ NodePtr Parser::parseStatement() {
     if (at(TokenKind::Throw)) return parseThrowStatement();
     if (at(TokenKind::Break)) return parseBreakStatement();
     if (at(TokenKind::Continue)) return parseContinueStatement();
+    if (at(TokenKind::Try)) return parseTryStatement();
     return parseExpressionStatement();
+}
+
+NodePtr Parser::parseTryStatement() {
+    const SourceLocation start = current_.start;
+    advance();  // 'try'
+
+    NodePtr block = parseBlockStatement();
+    if (block == nullptr) return nullptr;
+
+    NodePtr handler;
+    if (at(TokenKind::Catch)) {
+        handler = parseCatchClause();
+        if (handler == nullptr) return nullptr;
+    }
+
+    NodePtr finalizer;
+    if (at(TokenKind::Finally)) {
+        advance();
+        finalizer = parseBlockStatement();
+        if (finalizer == nullptr) return nullptr;
+    }
+
+    if (handler == nullptr && finalizer == nullptr) {
+        error(start, "Missing catch or finally after try");
+        return nullptr;
+    }
+
+    return std::make_unique<TryStatement>(
+        rangeFrom(start), std::move(block), std::move(handler),
+        std::move(finalizer));
+}
+
+NodePtr Parser::parseCatchClause() {
+    const SourceLocation start = current_.start;
+    advance();  // 'catch'
+
+    NodePtr param;
+    if (at(TokenKind::LeftParen)) {
+        advance();
+        if (at(TokenKind::RightParen)) {
+            error(current_.start, "Expected catch parameter");
+            return nullptr;
+        }
+        param = parseIdentifier();
+        if (param == nullptr) return nullptr;
+        if (!expect(TokenKind::RightParen, "')'")) return nullptr;
+    }
+
+    NodePtr body = parseBlockStatement();
+    if (body == nullptr) return nullptr;
+
+    return std::make_unique<CatchClause>(rangeFrom(start), std::move(param),
+                                         std::move(body));
 }
 
 NodePtr Parser::parseBreakStatement() {
