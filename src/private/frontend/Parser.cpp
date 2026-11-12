@@ -358,7 +358,28 @@ NodePtr Parser::parseStatement() {
     }
     if (at(TokenKind::If)) return parseIfStatement();
     if (at(TokenKind::While)) return parseWhileStatement();
+    if (at(TokenKind::Do)) return parseDoWhileStatement();
     return parseExpressionStatement();
+}
+
+NodePtr Parser::parseDoWhileStatement() {
+    const SourceLocation start = current_.start;
+    advance();  // 'do'
+
+    NodePtr body = parseStatement();
+    if (body == nullptr) return nullptr;
+
+    if (!expect(TokenKind::While, "'while'")) return nullptr;
+    if (!expect(TokenKind::LeftParen, "'('")) return nullptr;
+    NodePtr test = parseExpression();
+    if (test == nullptr) return nullptr;
+    if (!expect(TokenKind::RightParen, "')'")) return nullptr;
+
+    // do-while 末尾的分号可由 ASI 无条件插入。
+    match(TokenKind::Semicolon);
+
+    return std::make_unique<DoWhileStatement>(rangeFrom(start),
+                                              std::move(body), std::move(test));
 }
 
 NodePtr Parser::parseWhileStatement() {

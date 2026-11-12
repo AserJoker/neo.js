@@ -20,6 +20,7 @@ using neo::frontend::BinaryOperator;
 using neo::frontend::BooleanLiteral;
 using neo::frontend::CallExpression;
 using neo::frontend::ConditionalExpression;
+using neo::frontend::DoWhileStatement;
 using neo::frontend::ExpressionStatement;
 using neo::frontend::Identifier;
 using neo::frontend::IfStatement;
@@ -1482,6 +1483,57 @@ TEST(ParserTest, NestedWhileStatement) {
 
 TEST(ParserTest, WhileMissingRightParenReportsError) {
     ParseResult result = parse("while (a b;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Expected ')'"), std::string::npos);
+}
+
+TEST(ParserTest, DoWhileStatement) {
+    ParseResult result = parse("do a; while (b);");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    ASSERT_EQ(programOf(result).body[0]->kind(), NodeKind::DoWhileStatement);
+
+    const auto* statement =
+        static_cast<const DoWhileStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->body, nullptr);
+    EXPECT_EQ(statement->body->kind(), NodeKind::ExpressionStatement);
+    ASSERT_NE(statement->test, nullptr);
+    EXPECT_EQ(statement->test->kind(), NodeKind::Identifier);
+}
+
+TEST(ParserTest, DoWhileWithBlockBody) {
+    ParseResult result = parse("do { } while (a)");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const DoWhileStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->body, nullptr);
+    EXPECT_EQ(statement->body->kind(), NodeKind::BlockStatement);
+}
+
+TEST(ParserTest, DoWhileSemicolonIsOptional) {
+    ParseResult result = parse("do a; while (b) c;");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 2u);
+    EXPECT_EQ(programOf(result).body[0]->kind(), NodeKind::DoWhileStatement);
+    EXPECT_EQ(programOf(result).body[1]->kind(), NodeKind::ExpressionStatement);
+}
+
+TEST(ParserTest, DoWhileMissingWhileReportsError) {
+    ParseResult result = parse("do a; b;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Expected 'while'"),
+              std::string::npos);
+}
+
+TEST(ParserTest, DoWhileMissingRightParenReportsError) {
+    ParseResult result = parse("do a; while (b;");
 
     ASSERT_NE(result.program, nullptr);
     ASSERT_FALSE(result.errors.empty());
