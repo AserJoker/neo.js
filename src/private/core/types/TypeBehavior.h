@@ -15,6 +15,7 @@
 #ifndef NEO_CORE_PRIVATE_TYPES_TYPE_BEHAVIOR_H
 #define NEO_CORE_PRIVATE_TYPES_TYPE_BEHAVIOR_H
 
+#include "core/BigIntOps.h"
 #include "core/IContext.h"
 #include "core/IType.h"
 #include "core/Value.h"
@@ -101,6 +102,8 @@ inline bool toBoolean(Value* v) {
             double n = static_cast<NumberData*>(v->data())->value;
             return n != 0.0 && !std::isnan(n);
         }
+        case TypeKind::BigInt:
+            return !bigIntValue(v).isZero();
         case TypeKind::String:
             return !static_cast<StringData*>(v->data())->value.empty();
         default:
@@ -125,6 +128,8 @@ inline bool strictEquals(Value* a, Value* b) {
             double y = static_cast<NumberData*>(b->data())->value;
             return x == y;  // NaN != NaN，+0 == -0
         }
+        case TypeKind::BigInt:
+            return bigIntValue(a) == bigIntValue(b);
         case TypeKind::String:
             return static_cast<StringData*>(a->data())->value ==
                    static_cast<StringData*>(b->data())->value;
@@ -324,6 +329,7 @@ inline std::string valueToString(Value* v) {
         case TypeKind::Null:      return "null";
         case TypeKind::Boolean:   return static_cast<BooleanData*>(v->data())->value ? "true" : "false";
         case TypeKind::Number:    return numberToString(static_cast<NumberData*>(v->data())->value);
+        case TypeKind::BigInt:    return bigIntValue(v).toString();
         case TypeKind::String:    return static_cast<StringData*>(v->data())->value;
         case TypeKind::Array:     return arrayToString(static_cast<ArrayData*>(v->data()));
         default: return "";  // 包装对象走 ToPrimitive；Exception/Fatal 入口拦截
@@ -358,6 +364,9 @@ inline std::string describeValue(IContext* ctx, Value* v) {
 inline Value* toNumberValue(IContext* ctx, Value* v) {
     TypeKind k = v->type()->kind();
     if (k == TypeKind::Number) return v;
+    if (k == TypeKind::BigInt) {
+        return typeError(ctx, "Cannot convert a BigInt value to a number");
+    }
     if (k == TypeKind::Symbol) {
         return typeError(ctx, "Cannot convert a Symbol value to a number");
     }
@@ -367,6 +376,19 @@ inline Value* toNumberValue(IContext* ctx, Value* v) {
         return toNumberValue(ctx, prim);
     }
     return ctx->createNumber(toNumber(v));
+}
+
+// ToNumeric(argument)（ES2024 §7.1.3）：对象先 ToPrimitive(NUMBER)，
+// BigInt 原样返回，其余走 ToNumber。
+inline Value* toNumericValue(IContext* ctx, Value* v) {
+    TypeKind k = v->type()->kind();
+    if (k == TypeKind::BigInt) return v;
+    if (isObjectKind(k)) {
+        Value* prim = toPrimitive(ctx, v, PreferredType::Number);
+        if (isErrorValue(prim)) return prim;
+        return toNumericValue(ctx, prim);
+    }
+    return toNumberValue(ctx, v);
 }
 
 // ToString(argument)（ES2024 §7.1.14）：
@@ -432,27 +454,54 @@ inline Value* addValues(IContext* ctx, Value* l, Value* r) {
         if (isErrorValue(rs)) return rs;
         return ctx->createString(valueToString(ls) + valueToString(rs));
     }
-    // 数值相加：两侧 ToNumber（Symbol 在此抛 TypeError，ES2024 §7.1.4）
-    Value* ln = toNumberValue(ctx, lp);
+    // 数值相加：两侧 ToNumeric（Symbol 在此抛 TypeError，ES2024 §7.1.4）
+    Value* ln = toNumericValue(ctx, lp);
     if (isErrorValue(ln)) return ln;
-    Value* rn = toNumberValue(ctx, rp);
+    Value* rn = toNumericValue(ctx, rp);
     if (isErrorValue(rn)) return rn;
+    const TypeKind lk = ln->type()->kind();
+    const TypeKind rk = rn->type()->kind();
+    if (lk == TypeKind::BigInt || rk == TypeKind::BigInt) {
+        if (lk != rk) {
+            return typeError(ctx,
+                             "Cannot mix BigInt and other types, use explicit conversions");
+        }
+        return createBigIntValue(ctx, bigIntValue(ln) + bigIntValue(rn));
+    }
     return ctx->createNumber(static_cast<NumberData*>(ln->data())->value +
                              static_cast<NumberData*>(rn->data())->value);
 }
 
-// 数值二元运算（- * /，ES2024 §13.15.4 等）：
-//   两侧 ToPrimitive(NUMBER) 后 ToNumber，再按 op 计算。
+// 数值二元运算（- * /，ES2024 §13.15.4 / §6.1.6.2）：
+//   两侧 ToPrimitive(NUMBER) 后 ToNumeric，再按 op 计算。
+//   BigInt 与 Number 混用抛 TypeError；BigInt 除零抛 RangeError。
 // op 为 '-'、'*'、'/' 之一。
 inline Value* numericOp(IContext* ctx, char op, Value* l, Value* r) {
     Value* lp = toPrimitive(ctx, l, PreferredType::Number);
     if (isErrorValue(lp)) return lp;
     Value* rp = toPrimitive(ctx, r, PreferredType::Number);
     if (isErrorValue(rp)) return rp;
-    Value* ln = toNumberValue(ctx, lp);
+    Value* ln = toNumericValue(ctx, lp);
     if (isErrorValue(ln)) return ln;
-    Value* rn = toNumberValue(ctx, rp);
+    Value* rn = toNumericValue(ctx, rp);
     if (isErrorValue(rn)) return rn;
+    const TypeKind lk = ln->type()->kind();
+    const TypeKind rk = rn->type()->kind();
+    if (lk == TypeKind::BigInt || rk == TypeKind::BigInt) {
+        if (lk != rk) {
+            return typeError(ctx,
+                             "Cannot mix BigInt and other types, use explicit conversions");
+        }
+        const neo::bigint::BigInt& a = bigIntValue(ln);
+        const neo::bigint::BigInt& b = bigIntValue(rn);
+        switch (op) {
+            case '-': return createBigIntValue(ctx, a - b);
+            case '*': return createBigIntValue(ctx, a * b);
+            default:
+                if (b.isZero()) return rangeError(ctx, "Division by zero");
+                return createBigIntValue(ctx, a / b);
+        }
+    }
     double a = static_cast<NumberData*>(ln->data())->value;
     double b = static_cast<NumberData*>(rn->data())->value;
     switch (op) {
@@ -659,6 +708,7 @@ inline std::string keyToString(Value* key) {
         case TypeKind::Null:      return "null";
         case TypeKind::Boolean:   return static_cast<BooleanData*>(key->data())->value ? "true" : "false";
         case TypeKind::Number:    return numberToString(static_cast<NumberData*>(key->data())->value);
+        case TypeKind::BigInt:    return bigIntValue(key).toString();
         case TypeKind::String:    return static_cast<StringData*>(key->data())->value;
         case TypeKind::Array:     return arrayToString(static_cast<ArrayData*>(key->data()));
         // 包装对象 ToPropertyKey：拆 [[PrimitiveValue]] 后递归（ES2024 §7.1.19）

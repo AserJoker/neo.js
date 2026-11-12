@@ -70,6 +70,9 @@ enum class TypeKind : uint8_t {
     Null,
     Boolean,
     Number,
+    // 任意精度有符号整数（ES2024 §6.1.4）：不可变原始值，无符号、无 -0。
+    // 负载见 types/BigInt.h 的 BigIntData（持 neo::bigint::BigInt）。
+    BigInt,
     String,
     Exception,      // 可捕获异常（ADR-017 §3）
     Fatal,          // 不可捕获致命错误（ADR-017 §4）
@@ -272,6 +275,7 @@ IType* getUndefinedType();
 IType* getNullType();
 IType* getBooleanType();
 IType* getNumberType();
+IType* getBigIntType();
 IType* getStringType();
 IType* getExceptionType();
 IType* getFatalType();

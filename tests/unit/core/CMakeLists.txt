@@ -51,6 +51,7 @@ add_executable(core_unit_test
     CoroutineTest.cpp
     AsyncNativeTest.cpp
     JSONTest.cpp
+    BigIntTypeTest.cpp
     GeneratorTest.cpp
     AsyncGeneratorTest.cpp
     ModuleTest.cpp

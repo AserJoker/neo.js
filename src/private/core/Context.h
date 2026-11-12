@@ -143,6 +143,8 @@ public:
     Value* createNull(std::string_view name = {}) override;
     Value* createBoolean(bool b, std::string_view name = {}) override;
     Value* createNumber(double n, std::string_view name = {}) override;
+    Value* createBigInt(const neo::bigint::BigInt& value,
+                        std::string_view name = {}) override;
     Value* createString(std::string_view s, std::string_view name = {}) override;
     Value* createSymbol(std::string_view description = {},
                         std::string_view name = {}) override;

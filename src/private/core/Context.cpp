@@ -30,6 +30,7 @@
 #include "core/TimerBuiltins.h"
 #include "core/types/Array.h"
 #include "core/types/AsyncGenerator.h"
+#include "core/types/BigInt.h"
 #include "core/types/Boolean.h"
 #include "core/types/Coroutine.h"
 #include "core/types/Error.h"
@@ -312,6 +313,11 @@ Value* Context::createBoolean(bool b, std::string_view name) {
 
 Value* Context::createNumber(double n, std::string_view name) {
     return createTracked(getNumberType(), gc_->allocData<NumberData>(n), name);
+}
+
+Value* Context::createBigInt(const neo::bigint::BigInt& value,
+                             std::string_view name) {
+    return createTracked(getBigIntType(), gc_->allocData<BigIntData>(value), name);
 }
 
 Value* Context::createString(std::string_view s, std::string_view name) {

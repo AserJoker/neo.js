@@ -19,6 +19,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <string>
 
 namespace neo::core::detail {
@@ -51,6 +52,37 @@ inline Value* abstractEquals(IContext* ctx, Value* a, Value* b) {
         return ctx->createBoolean(strictEquals(an, b));
     }
 
+    // BigInt == Number：按数学值精确比较（非整数/NaN/Infinity 均不等）。
+    if (ak == TypeKind::BigInt && bk == TypeKind::Number) {
+        bool unordered = false;
+        int cmp = compareBigIntDouble(bigIntValue(a),
+                                      static_cast<NumberData*>(b->data())->value,
+                                      unordered);
+        return ctx->createBoolean(!unordered && cmp == 0);
+    }
+    if (ak == TypeKind::Number && bk == TypeKind::BigInt) {
+        bool unordered = false;
+        int cmp = compareBigIntDouble(bigIntValue(b),
+                                      static_cast<NumberData*>(a->data())->value,
+                                      unordered);
+        return ctx->createBoolean(!unordered && cmp == 0);
+    }
+    // BigInt == String：StringToBigInt 后比较；非法数字串 → false。
+    if (ak == TypeKind::BigInt && bk == TypeKind::String) {
+        neo::bigint::BigInt parsed;
+        if (!stringToBigInt(static_cast<StringData*>(b->data())->value, parsed)) {
+            return ctx->createBoolean(false);
+        }
+        return ctx->createBoolean(bigIntValue(a) == parsed);
+    }
+    if (ak == TypeKind::String && bk == TypeKind::BigInt) {
+        neo::bigint::BigInt parsed;
+        if (!stringToBigInt(static_cast<StringData*>(a->data())->value, parsed)) {
+            return ctx->createBoolean(false);
+        }
+        return ctx->createBoolean(parsed == bigIntValue(b));
+    }
+
     // Boolean 先转数值
     if (ak == TypeKind::Boolean) {
         Value* an = toNumberValue(ctx, a);
@@ -67,9 +99,9 @@ inline Value* abstractEquals(IContext* ctx, Value* a, Value* b) {
     const bool aObject = isObjectKind(ak);
     const bool bObject = isObjectKind(bk);
     const bool aPrimitive = ak == TypeKind::String || ak == TypeKind::Number ||
-                            ak == TypeKind::Symbol;
+                            ak == TypeKind::BigInt || ak == TypeKind::Symbol;
     const bool bPrimitive = bk == TypeKind::String || bk == TypeKind::Number ||
-                            bk == TypeKind::Symbol;
+                            bk == TypeKind::BigInt || bk == TypeKind::Symbol;
     if (aObject && bPrimitive) {
         Value* ap = toPrimitive(ctx, a);
         if (isErrorValue(ap)) return ap;
@@ -101,10 +133,35 @@ inline Value* abstractLessThan(IContext* ctx, Value* a, Value* b,
         return ctx->createBoolean(x < y);
     }
 
-    Value* an = toNumberValue(ctx, ap);
+    Value* an = toNumericValue(ctx, ap);
     if (isErrorValue(an)) return an;
-    Value* bn = toNumberValue(ctx, bp);
+    Value* bn = toNumericValue(ctx, bp);
     if (isErrorValue(bn)) return bn;
+    const TypeKind ak = an->type()->kind();
+    const TypeKind bk = bn->type()->kind();
+    if (ak == TypeKind::BigInt || bk == TypeKind::BigInt) {
+        if (ak == TypeKind::BigInt && bk == TypeKind::BigInt) {
+            return ctx->createBoolean(bigIntValue(an) < bigIntValue(bn));
+        }
+        // 混合 BigInt/Number：精确数学比较；NaN → undefined。
+        bool unordered = false;
+        int cmp = 0;
+        if (ak == TypeKind::BigInt) {
+            cmp = compareBigIntDouble(
+                bigIntValue(an), static_cast<NumberData*>(bn->data())->value,
+                unordered);
+        } else {
+            cmp = compareBigIntDouble(
+                bigIntValue(bn), static_cast<NumberData*>(an->data())->value,
+                unordered);
+            cmp = -cmp;
+        }
+        if (unordered) {
+            undefinedOut = true;
+            return ctx->createBoolean(false);
+        }
+        return ctx->createBoolean(cmp < 0);
+    }
     double x = static_cast<NumberData*>(an->data())->value;
     double y = static_cast<NumberData*>(bn->data())->value;
     if (std::isnan(x) || std::isnan(y)) {
@@ -173,12 +230,55 @@ inline int32_t arithmeticShiftRight(int32_t x, uint32_t shift) {
     return static_cast<int32_t>(q);
 }
 
-// 位运算：两侧 ToNumber 后按 ToInt32/ToUint32 计算。
+// BigInt 移位：负移位数反向；超大移位数左移报 RangeError、右移得到 0/-1。
+inline Value* bigIntShiftOp(IContext* ctx, const neo::bigint::BigInt& value,
+                            const neo::bigint::BigInt& count, bool left) {
+    bool shiftLeft = left;
+    neo::bigint::BigInt magnitude = count;
+    if (count.isNegative()) {
+        shiftLeft = !shiftLeft;
+        magnitude = -count;
+    }
+    if (!magnitude.fitsUint64()) {
+        if (shiftLeft) return rangeError(ctx, "Maximum BigInt size exceeded");
+        return createBigIntValue(
+            ctx, value >> std::numeric_limits<uint64_t>::max());
+    }
+    const uint64_t bits = magnitude.toUint64();
+    return createBigIntValue(ctx, shiftLeft ? (value << bits) : (value >> bits));
+}
+
+// 位运算：BigInt 走补码位运算；Number 走 ToInt32/ToUint32。
 inline Value* bitwiseOp(IContext* ctx, BinaryOperator op, Value* a, Value* b) {
-    Value* an = toNumberValue(ctx, a);
+    Value* an = toNumericValue(ctx, a);
     if (isErrorValue(an)) return an;
-    Value* bn = toNumberValue(ctx, b);
+    Value* bn = toNumericValue(ctx, b);
     if (isErrorValue(bn)) return bn;
+
+    const TypeKind ak = an->type()->kind();
+    const TypeKind bk = bn->type()->kind();
+    if (ak == TypeKind::BigInt || bk == TypeKind::BigInt) {
+        if (ak != bk) {
+            return typeError(ctx,
+                             "Cannot mix BigInt and other types, use explicit conversions");
+        }
+        const neo::bigint::BigInt& x = bigIntValue(an);
+        const neo::bigint::BigInt& y = bigIntValue(bn);
+        switch (op) {
+            case BinaryOperator::BitAnd: return createBigIntValue(ctx, x & y);
+            case BinaryOperator::BitOr:  return createBigIntValue(ctx, x | y);
+            case BinaryOperator::BitXor: return createBigIntValue(ctx, x ^ y);
+            case BinaryOperator::ShiftLeft:
+                return bigIntShiftOp(ctx, x, y, true);
+            case BinaryOperator::ShiftRight:
+                return bigIntShiftOp(ctx, x, y, false);
+            case BinaryOperator::UnsignedShiftRight:
+                return typeError(
+                    ctx, "BigInts have no unsigned right shift, use >> instead");
+            default: break;
+        }
+    }
+
     double x = static_cast<NumberData*>(an->data())->value;
     double y = static_cast<NumberData*>(bn->data())->value;
 
@@ -230,6 +330,7 @@ inline const char* typeofName(Value* v) {
         case TypeKind::Null:      return "object";
         case TypeKind::Boolean:   return "boolean";
         case TypeKind::Number:    return "number";
+        case TypeKind::BigInt:    return "bigint";
         case TypeKind::String:    return "string";
         case TypeKind::Symbol:    return "symbol";
         case TypeKind::Function:  return "function";
@@ -253,19 +354,50 @@ inline Value* binaryOpValues(IContext* ctx, BinaryOperator op, Value* a,
         case BinaryOperator::Mul: return ctx->mul(a, b);
         case BinaryOperator::Div: return ctx->div(a, b);
         case BinaryOperator::Mod: {
-            Value* an = toNumberValue(ctx, a);
+            Value* an = toNumericValue(ctx, a);
             if (isErrorValue(an)) return an;
-            Value* bn = toNumberValue(ctx, b);
+            Value* bn = toNumericValue(ctx, b);
             if (isErrorValue(bn)) return bn;
+            const TypeKind ak = an->type()->kind();
+            const TypeKind bk = bn->type()->kind();
+            if (ak == TypeKind::BigInt || bk == TypeKind::BigInt) {
+                if (ak != bk) {
+                    return typeError(
+                        ctx,
+                        "Cannot mix BigInt and other types, use explicit conversions");
+                }
+                if (bigIntValue(bn).isZero()) {
+                    return rangeError(ctx, "Division by zero");
+                }
+                return createBigIntValue(ctx, bigIntValue(an) % bigIntValue(bn));
+            }
             double x = static_cast<NumberData*>(an->data())->value;
             double y = static_cast<NumberData*>(bn->data())->value;
             return ctx->createNumber(std::fmod(x, y));
         }
         case BinaryOperator::Exp: {
-            Value* an = toNumberValue(ctx, a);
+            Value* an = toNumericValue(ctx, a);
             if (isErrorValue(an)) return an;
-            Value* bn = toNumberValue(ctx, b);
+            Value* bn = toNumericValue(ctx, b);
             if (isErrorValue(bn)) return bn;
+            const TypeKind ak = an->type()->kind();
+            const TypeKind bk = bn->type()->kind();
+            if (ak == TypeKind::BigInt || bk == TypeKind::BigInt) {
+                if (ak != bk) {
+                    return typeError(
+                        ctx,
+                        "Cannot mix BigInt and other types, use explicit conversions");
+                }
+                const neo::bigint::BigInt& exponent = bigIntValue(bn);
+                if (exponent.isNegative()) {
+                    return rangeError(ctx, "Exponent must be non-negative");
+                }
+                if (!exponent.fitsUint64()) {
+                    return rangeError(ctx, "Maximum BigInt size exceeded");
+                }
+                return createBigIntValue(ctx,
+                                         bigIntValue(an).pow(exponent.toUint64()));
+            }
             double x = static_cast<NumberData*>(an->data())->value;
             double y = static_cast<NumberData*>(bn->data())->value;
             return ctx->createNumber(std::pow(x, y));
@@ -305,6 +437,9 @@ inline Value* unaryOpValues(IContext* ctx, UnaryOperator op, Value* v) {
         case UnaryOperator::Plus:
             return toNumberValue(ctx, v);
         case UnaryOperator::Minus: {
+            if (v->type()->kind() == TypeKind::BigInt) {
+                return createBigIntValue(ctx, -bigIntValue(v));
+            }
             Value* n = toNumberValue(ctx, v);
             if (isErrorValue(n)) return n;
             return ctx->createNumber(-static_cast<NumberData*>(n->data())->value);
@@ -312,6 +447,9 @@ inline Value* unaryOpValues(IContext* ctx, UnaryOperator op, Value* v) {
         case UnaryOperator::LogicalNot:
             return ctx->createBoolean(!toBoolean(v));
         case UnaryOperator::BitNot: {
+            if (v->type()->kind() == TypeKind::BigInt) {
+                return createBigIntValue(ctx, ~bigIntValue(v));
+            }
             Value* n = toNumberValue(ctx, v);
             if (isErrorValue(n)) return n;
             uint32_t u = static_cast<uint32_t>(

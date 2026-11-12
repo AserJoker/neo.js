@@ -127,6 +127,7 @@ add_library(neojs STATIC
     src/private/core/types/Null.cpp
     src/private/core/types/Boolean.cpp
     src/private/core/types/Number.cpp
+    src/private/core/types/BigInt.cpp
     src/private/core/types/String.cpp
     src/private/core/types/Exception.cpp
     src/private/core/types/Fatal.cpp

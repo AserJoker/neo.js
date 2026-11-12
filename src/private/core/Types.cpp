@@ -9,6 +9,7 @@
 
 #include "core/types/Array.h"
 #include "core/types/AsyncGenerator.h"
+#include "core/types/BigInt.h"
 #include "core/types/Boolean.h"
 #include "core/types/Coroutine.h"
 #include "core/types/Error.h"
@@ -48,6 +49,11 @@ IType* getBooleanType() {
 
 IType* getNumberType() {
     static NumberType inst;
+    return &inst;
+}
+
+IType* getBigIntType() {
+    static BigIntType inst;
     return &inst;
 }
 
@@ -149,6 +155,7 @@ IType* getTypeByKind(TypeKind k) {
         case TypeKind::Null:             return getNullType();
         case TypeKind::Boolean:          return getBooleanType();
         case TypeKind::Number:           return getNumberType();
+        case TypeKind::BigInt:           return getBigIntType();
         case TypeKind::String:           return getStringType();
         case TypeKind::Exception:        return getExceptionType();
         case TypeKind::Fatal:            return getFatalType();

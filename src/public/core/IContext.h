@@ -46,6 +46,12 @@
 #include <string_view>
 #include <vector>
 
+// BigInt 负载类型（纯 C++ 任意精度整数，见 private/bigint/BigInt.h）。
+// 公共接口只按引用传递，调用方需包含该头才能构造实参。
+namespace neo::bigint {
+class BigInt;
+}
+
 namespace neo::core {
 
 // 前向声明
@@ -213,6 +219,9 @@ public:
     virtual Value* createNull(std::string_view name = {}) = 0;
     virtual Value* createBoolean(bool b, std::string_view name = {}) = 0;
     virtual Value* createNumber(double n, std::string_view name = {}) = 0;
+    // createBigInt: 创建 bigint 原始值（ES2024 §6.1.4）。不可变，data 按共享语义克隆。
+    virtual Value* createBigInt(const neo::bigint::BigInt& value,
+                                std::string_view name = {}) = 0;
     virtual Value* createString(std::string_view s, std::string_view name = {}) = 0;
 
     // createSymbol: 创建 symbol 原始值（ES2024 §20.4.1.1）。
