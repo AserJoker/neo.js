@@ -23,6 +23,7 @@ using neo::frontend::CallExpression;
 using neo::frontend::CatchClause;
 using neo::frontend::ConditionalExpression;
 using neo::frontend::ContinueStatement;
+using neo::frontend::DebuggerStatement;
 using neo::frontend::DoWhileStatement;
 using neo::frontend::ExpressionStatement;
 using neo::frontend::ForInStatement;
@@ -30,6 +31,7 @@ using neo::frontend::ForOfStatement;
 using neo::frontend::ForStatement;
 using neo::frontend::Identifier;
 using neo::frontend::IfStatement;
+using neo::frontend::LabeledStatement;
 using neo::frontend::LogicalExpression;
 using neo::frontend::LogicalOperator;
 using neo::frontend::MemberExpression;
@@ -55,6 +57,7 @@ using neo::frontend::VariableDeclaration;
 using neo::frontend::VariableDeclarator;
 using neo::frontend::VariableKind;
 using neo::frontend::WhileStatement;
+using neo::frontend::WithStatement;
 
 ParseResult parse(std::string_view source) {
     Parser parser(source);
@@ -2117,6 +2120,115 @@ TEST(ParserTest, SwitchInvalidClauseReportsError) {
     ASSERT_FALSE(result.errors.empty());
     EXPECT_NE(result.errors[0].message.find("Expected 'case' or 'default'"),
               std::string::npos);
+}
+
+TEST(ParserTest, LabeledStatement) {
+    ParseResult result = parse("foo: bar;");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    ASSERT_EQ(programOf(result).body[0]->kind(), NodeKind::LabeledStatement);
+
+    const auto* statement =
+        static_cast<const LabeledStatement*>(programOf(result).body[0].get());
+    EXPECT_EQ(statement->label, "foo");
+    ASSERT_NE(statement->body, nullptr);
+    EXPECT_EQ(statement->body->kind(), NodeKind::ExpressionStatement);
+}
+
+TEST(ParserTest, NestedLabeledStatement) {
+    ParseResult result = parse("a: b: c;");
+
+    ASSERT_TRUE(result.ok());
+    const auto* outer =
+        static_cast<const LabeledStatement*>(programOf(result).body[0].get());
+    EXPECT_EQ(outer->label, "a");
+    ASSERT_NE(outer->body, nullptr);
+    EXPECT_EQ(outer->body->kind(), NodeKind::LabeledStatement);
+
+    const auto* inner =
+        static_cast<const LabeledStatement*>(outer->body.get());
+    EXPECT_EQ(inner->label, "b");
+}
+
+TEST(ParserTest, LabeledBlockStatement) {
+    ParseResult result = parse("foo: { }");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const LabeledStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->body, nullptr);
+    EXPECT_EQ(statement->body->kind(), NodeKind::BlockStatement);
+}
+
+TEST(ParserTest, ConditionalIsNotLabeledStatement) {
+    ParseResult result = parse("foo ? a : b;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    EXPECT_EQ(statement.expression->kind(), NodeKind::ConditionalExpression);
+}
+
+TEST(ParserTest, LabelWithoutBodyReportsError) {
+    ParseResult result = parse("foo:");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, WithStatement) {
+    ParseResult result = parse("with (obj) { }");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    ASSERT_EQ(programOf(result).body[0]->kind(), NodeKind::WithStatement);
+
+    const auto* statement =
+        static_cast<const WithStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->object, nullptr);
+    EXPECT_EQ(statement->object->kind(), NodeKind::Identifier);
+    ASSERT_NE(statement->body, nullptr);
+    EXPECT_EQ(statement->body->kind(), NodeKind::BlockStatement);
+}
+
+TEST(ParserTest, WithInStrictModeReportsError) {
+    ParseResult result = parse("\"use strict\"; with (obj) { }");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Strict mode"), std::string::npos);
+}
+
+TEST(ParserTest, DebuggerStatement) {
+    ParseResult result = parse("debugger;");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    EXPECT_EQ(programOf(result).body[0]->kind(), NodeKind::DebuggerStatement);
+}
+
+TEST(ParserTest, DebuggerAtEndOfInput) {
+    ParseResult result = parse("debugger");
+
+    ASSERT_TRUE(result.ok());
+    EXPECT_EQ(programOf(result).body[0]->kind(), NodeKind::DebuggerStatement);
+}
+
+TEST(ParserTest, DebuggerAllowsAsi) {
+    ParseResult result = parse("debugger\nx;");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 2u);
+    EXPECT_EQ(programOf(result).body[0]->kind(), NodeKind::DebuggerStatement);
+    EXPECT_EQ(programOf(result).body[1]->kind(), NodeKind::ExpressionStatement);
+}
+
+TEST(ParserTest, DebuggerMissingSemicolonReportsError) {
+    ParseResult result = parse("debugger x;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Expected ';'"), std::string::npos);
 }
 
 TEST(ParserTest, ProgramRangeCoversConsumedInput) {

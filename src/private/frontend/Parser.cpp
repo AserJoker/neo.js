@@ -373,7 +373,52 @@ NodePtr Parser::parseStatement() {
     if (at(TokenKind::Continue)) return parseContinueStatement();
     if (at(TokenKind::Try)) return parseTryStatement();
     if (at(TokenKind::Switch)) return parseSwitchStatement();
+    if (at(TokenKind::With)) return parseWithStatement();
+    if (at(TokenKind::Debugger)) return parseDebuggerStatement();
+    if (at(TokenKind::Identifier) && peek().kind == TokenKind::Colon) {
+        return parseLabeledStatement();
+    }
     return parseExpressionStatement();
+}
+
+NodePtr Parser::parseLabeledStatement() {
+    const SourceLocation start = current_.start;
+    std::string label = current_.text;
+    advance();  // label
+    if (!expect(TokenKind::Colon, "':'")) return nullptr;
+
+    NodePtr body = parseStatement();
+    if (body == nullptr) return nullptr;
+
+    return std::make_unique<LabeledStatement>(
+        rangeFrom(start), std::move(label), std::move(body));
+}
+
+NodePtr Parser::parseWithStatement() {
+    const SourceLocation start = current_.start;
+    if (strict_) {
+        error(start, "Strict mode code may not include a with statement");
+        return nullptr;
+    }
+    advance();  // 'with'
+
+    if (!expect(TokenKind::LeftParen, "'('")) return nullptr;
+    NodePtr object = parseExpression();
+    if (object == nullptr) return nullptr;
+    if (!expect(TokenKind::RightParen, "')'")) return nullptr;
+
+    NodePtr body = parseStatement();
+    if (body == nullptr) return nullptr;
+
+    return std::make_unique<WithStatement>(rangeFrom(start), std::move(object),
+                                           std::move(body));
+}
+
+NodePtr Parser::parseDebuggerStatement() {
+    const SourceLocation start = current_.start;
+    advance();  // 'debugger'
+    if (!consumeSemicolon()) return nullptr;
+    return std::make_unique<DebuggerStatement>(rangeFrom(start));
 }
 
 NodePtr Parser::parseSwitchStatement() {

@@ -58,6 +58,9 @@ enum class NodeKind : uint8_t {
     CatchClause,
     SwitchStatement,
     SwitchCase,
+    LabeledStatement,
+    WithStatement,
+    DebuggerStatement,
 
     // 表达式
     Identifier,
@@ -292,6 +295,29 @@ struct SwitchStatement final : Node {
           cases(std::move(cases)) {}
     NodePtr discriminant;
     NodeList cases;
+};
+
+struct LabeledStatement final : Node {
+    LabeledStatement(SourceRange range, std::string label, NodePtr body)
+        : Node(NodeKind::LabeledStatement, range),
+          label(std::move(label)),
+          body(std::move(body)) {}
+    std::string label;
+    NodePtr body;
+};
+
+struct WithStatement final : Node {
+    WithStatement(SourceRange range, NodePtr object, NodePtr body)
+        : Node(NodeKind::WithStatement, range),
+          object(std::move(object)),
+          body(std::move(body)) {}
+    NodePtr object;
+    NodePtr body;
+};
+
+struct DebuggerStatement final : Node {
+    explicit DebuggerStatement(SourceRange range)
+        : Node(NodeKind::DebuggerStatement, range) {}
 };
 
 // ---------------------------------------------------------------------------
