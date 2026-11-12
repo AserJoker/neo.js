@@ -1101,6 +1101,55 @@ TEST(ParserTest, SequenceMissingOperandReportsError) {
     ASSERT_FALSE(result.errors.empty());
 }
 
+TEST(ParserTest, ExpressionAsiKeepsValidContinuations) {
+    struct Case {
+        const char* source;
+        NodeKind kind;
+    };
+    const Case cases[] = {
+        {"a\n+b;", NodeKind::BinaryExpression},
+        {"a\n(b);", NodeKind::CallExpression},
+        {"a\n[0];", NodeKind::MemberExpression},
+        {"a\n? b : c;", NodeKind::ConditionalExpression},
+        {"a\n= b;", NodeKind::AssignmentExpression},
+        {"a\n, b;", NodeKind::SequenceExpression},
+        {"a\ninstanceof b;", NodeKind::BinaryExpression},
+    };
+
+    for (const Case& item : cases) {
+        ParseResult result = parse(item.source);
+        ASSERT_TRUE(result.ok()) << item.source;
+        ASSERT_EQ(programOf(result).body.size(), 1u) << item.source;
+        const auto& statement = statementOf(result, 0);
+        ASSERT_NE(statement.expression, nullptr) << item.source;
+        EXPECT_EQ(statement.expression->kind(), item.kind) << item.source;
+    }
+}
+
+TEST(ParserTest, ExpressionAsiInsertsBetweenStatements) {
+    ParseResult result = parse("a\nb;");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 2u);
+    EXPECT_EQ(statementOf(result, 0).expression->kind(), NodeKind::Identifier);
+    EXPECT_EQ(statementOf(result, 1).expression->kind(), NodeKind::Identifier);
+}
+
+TEST(ParserTest, ExpressionAsiDivisionAcrossLineTerminator) {
+    ParseResult result = parse("a\n/b/g;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* outer =
+        static_cast<const BinaryExpression*>(statement.expression.get());
+    EXPECT_EQ(outer->kind(), NodeKind::BinaryExpression);
+    EXPECT_EQ(outer->op, BinaryOperator::Divide);
+    ASSERT_NE(outer->left, nullptr);
+    EXPECT_EQ(outer->left->kind(), NodeKind::BinaryExpression);
+    EXPECT_EQ(static_cast<const BinaryExpression*>(outer->left.get())->op,
+              BinaryOperator::Divide);
+}
+
 TEST(ParserTest, ProgramRangeCoversConsumedInput) {
     ParseResult result = parse("42;");
 
