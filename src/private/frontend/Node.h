@@ -56,6 +56,8 @@ enum class NodeKind : uint8_t {
     ContinueStatement,
     TryStatement,
     CatchClause,
+    SwitchStatement,
+    SwitchCase,
 
     // 表达式
     Identifier,
@@ -272,6 +274,24 @@ struct TryStatement final : Node {
     NodePtr block;
     NodePtr handler;    // CatchClause，可空
     NodePtr finalizer;  // BlockStatement，可空
+};
+
+struct SwitchCase final : Node {
+    SwitchCase(SourceRange range, NodePtr test, NodeList consequent)
+        : Node(NodeKind::SwitchCase, range),
+          test(std::move(test)),
+          consequent(std::move(consequent)) {}
+    NodePtr test;  // nullptr 表示 default
+    NodeList consequent;
+};
+
+struct SwitchStatement final : Node {
+    SwitchStatement(SourceRange range, NodePtr discriminant, NodeList cases)
+        : Node(NodeKind::SwitchStatement, range),
+          discriminant(std::move(discriminant)),
+          cases(std::move(cases)) {}
+    NodePtr discriminant;
+    NodeList cases;
 };
 
 // ---------------------------------------------------------------------------

@@ -43,6 +43,8 @@ using neo::frontend::RegExpLiteral;
 using neo::frontend::ReturnStatement;
 using neo::frontend::SequenceExpression;
 using neo::frontend::StringLiteral;
+using neo::frontend::SwitchCase;
+using neo::frontend::SwitchStatement;
 using neo::frontend::ThrowStatement;
 using neo::frontend::TryStatement;
 using neo::frontend::UnaryExpression;
@@ -2012,6 +2014,109 @@ TEST(ParserTest, CatchMissingBlockReportsError) {
 
     ASSERT_NE(result.program, nullptr);
     ASSERT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, EmptySwitchStatement) {
+    ParseResult result = parse("switch (x) { }");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    ASSERT_EQ(programOf(result).body[0]->kind(), NodeKind::SwitchStatement);
+
+    const auto* statement =
+        static_cast<const SwitchStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->discriminant, nullptr);
+    EXPECT_EQ(statement->discriminant->kind(), NodeKind::Identifier);
+    EXPECT_TRUE(statement->cases.empty());
+}
+
+TEST(ParserTest, SwitchCases) {
+    ParseResult result = parse("switch (x) { case 1: a; case 2: b; }");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const SwitchStatement*>(programOf(result).body[0].get());
+    ASSERT_EQ(statement->cases.size(), 2u);
+
+    const auto* first =
+        static_cast<const SwitchCase*>(statement->cases[0].get());
+    ASSERT_NE(first->test, nullptr);
+    EXPECT_EQ(first->test->kind(), NodeKind::NumericLiteral);
+    ASSERT_EQ(first->consequent.size(), 1u);
+
+    const auto* second =
+        static_cast<const SwitchCase*>(statement->cases[1].get());
+    ASSERT_NE(second->test, nullptr);
+    ASSERT_EQ(second->consequent.size(), 1u);
+}
+
+TEST(ParserTest, SwitchDefaultCase) {
+    ParseResult result = parse("switch (x) { default: a; }");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const SwitchStatement*>(programOf(result).body[0].get());
+    ASSERT_EQ(statement->cases.size(), 1u);
+    const auto* clause =
+        static_cast<const SwitchCase*>(statement->cases[0].get());
+    EXPECT_EQ(clause->test, nullptr);
+    ASSERT_EQ(clause->consequent.size(), 1u);
+}
+
+TEST(ParserTest, SwitchFallthroughCase) {
+    ParseResult result = parse("switch (x) { case 1: case 2: a; }");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const SwitchStatement*>(programOf(result).body[0].get());
+    ASSERT_EQ(statement->cases.size(), 2u);
+    const auto* first =
+        static_cast<const SwitchCase*>(statement->cases[0].get());
+    EXPECT_TRUE(first->consequent.empty());
+    const auto* second =
+        static_cast<const SwitchCase*>(statement->cases[1].get());
+    ASSERT_EQ(second->consequent.size(), 1u);
+}
+
+TEST(ParserTest, SwitchDefaultInMiddle) {
+    ParseResult result = parse(
+        "switch (x) { case 1: a; default: b; case 2: c; }");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const SwitchStatement*>(programOf(result).body[0].get());
+    ASSERT_EQ(statement->cases.size(), 3u);
+    EXPECT_EQ(static_cast<const SwitchCase*>(statement->cases[1].get())->test,
+              nullptr);
+}
+
+TEST(ParserTest, SwitchCaseExpressionCanBeSequence) {
+    ParseResult result = parse("switch (x) { case a, b: c; }");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const SwitchStatement*>(programOf(result).body[0].get());
+    const auto* clause =
+        static_cast<const SwitchCase*>(statement->cases[0].get());
+    ASSERT_NE(clause->test, nullptr);
+    EXPECT_EQ(clause->test->kind(), NodeKind::SequenceExpression);
+}
+
+TEST(ParserTest, SwitchMissingRightParenReportsError) {
+    ParseResult result = parse("switch (x { }");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Expected ')'"), std::string::npos);
+}
+
+TEST(ParserTest, SwitchInvalidClauseReportsError) {
+    ParseResult result = parse("switch (x) { foo }");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Expected 'case' or 'default'"),
+              std::string::npos);
 }
 
 TEST(ParserTest, ProgramRangeCoversConsumedInput) {

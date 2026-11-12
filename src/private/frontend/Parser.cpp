@@ -372,7 +372,61 @@ NodePtr Parser::parseStatement() {
     if (at(TokenKind::Break)) return parseBreakStatement();
     if (at(TokenKind::Continue)) return parseContinueStatement();
     if (at(TokenKind::Try)) return parseTryStatement();
+    if (at(TokenKind::Switch)) return parseSwitchStatement();
     return parseExpressionStatement();
+}
+
+NodePtr Parser::parseSwitchStatement() {
+    const SourceLocation start = current_.start;
+    advance();  // 'switch'
+
+    if (!expect(TokenKind::LeftParen, "'('")) return nullptr;
+    NodePtr discriminant = parseExpression();
+    if (discriminant == nullptr) return nullptr;
+    if (!expect(TokenKind::RightParen, "')'")) return nullptr;
+    if (!expect(TokenKind::LeftBrace, "'{'")) return nullptr;
+
+    NodeList cases;
+    while (!at(TokenKind::RightBrace) && !at(TokenKind::EndOfInput)) {
+        NodePtr clause;
+        if (at(TokenKind::Case)) {
+            clause = parseSwitchCase(false);
+        } else if (at(TokenKind::Default)) {
+            clause = parseSwitchCase(true);
+        } else {
+            error(current_.start, "Expected 'case' or 'default'");
+            return nullptr;
+        }
+        if (clause == nullptr) return nullptr;
+        cases.push_back(std::move(clause));
+    }
+
+    if (!expect(TokenKind::RightBrace, "'}'")) return nullptr;
+    return std::make_unique<SwitchStatement>(
+        rangeFrom(start), std::move(discriminant), std::move(cases));
+}
+
+NodePtr Parser::parseSwitchCase(bool isDefault) {
+    const SourceLocation start = current_.start;
+    advance();  // 'case' / 'default'
+
+    NodePtr test;
+    if (!isDefault) {
+        test = parseExpression();
+        if (test == nullptr) return nullptr;
+    }
+    if (!expect(TokenKind::Colon, "':'")) return nullptr;
+
+    NodeList consequent;
+    while (!at(TokenKind::Case) && !at(TokenKind::Default) &&
+           !at(TokenKind::RightBrace) && !at(TokenKind::EndOfInput)) {
+        NodePtr statement = parseStatement();
+        if (statement == nullptr) break;
+        consequent.push_back(std::move(statement));
+    }
+
+    return std::make_unique<SwitchCase>(rangeFrom(start), std::move(test),
+                                        std::move(consequent));
 }
 
 NodePtr Parser::parseTryStatement() {

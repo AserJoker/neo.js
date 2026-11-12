@@ -89,6 +89,8 @@ private:
     NodePtr parseContinueStatement();
     NodePtr parseTryStatement();
     NodePtr parseCatchClause();
+    NodePtr parseSwitchStatement();
+    NodePtr parseSwitchCase(bool isDefault);
     bool isLetDeclarationStart();
 
     // 表达式
