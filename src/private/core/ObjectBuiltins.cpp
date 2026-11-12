@@ -57,6 +57,7 @@ Value* objectProtoToString(IContext* ctx, Value* self, size_t /*argc*/, Value* /
         case TypeKind::Null:      tag = "Null"; break;
         case TypeKind::Boolean:   tag = "Boolean"; break;
         case TypeKind::Number:    tag = "Number"; break;
+        case TypeKind::BigInt:    tag = "BigInt"; break;
         case TypeKind::String:    tag = "String"; break;
         case TypeKind::Symbol:    tag = "Symbol"; break;
         case TypeKind::Function:  tag = "Function"; break;
@@ -64,11 +65,13 @@ Value* objectProtoToString(IContext* ctx, Value* self, size_t /*argc*/, Value* /
         case TypeKind::Array:     tag = "Array"; break;
         case TypeKind::Error:     tag = "Error"; break;
         // 包装对象按 [[PrimitiveValue]] 的类型给出 tag（ES2024 §20.1.3.6）。
-        // 包装对象的 primitive 恒为 Boolean/Number/String/Symbol 之一（createPrimitiveWrapper 保证）。
+        // 包装对象的 primitive 恒为 Boolean/Number/BigInt/String/Symbol 之一
+        // （createPrimitiveWrapper 保证）。
         case TypeKind::PrimitiveWrapper: {
             switch (wrapperPrimitiveValue(self)->type()->kind()) {
                 case TypeKind::Boolean: tag = "Boolean"; break;
                 case TypeKind::Number:  tag = "Number"; break;
+                case TypeKind::BigInt:  tag = "BigInt"; break;
                 case TypeKind::String:  tag = "String"; break;
                 default:                tag = "Symbol"; break;
             }
@@ -248,14 +251,14 @@ Value* functionProtoBind(IContext* ctx, Value* self, size_t argc, Value* argv[])
 // Object(value)（ES2024 §20.1.1.1）：
 //   无参/undefined/null → 新建空对象；
 //   已是对象（含迭代器）→ 原样返回；
-//   原始值（Boolean/Number/String/Symbol）→ 包装对象。
+//   原始值（Boolean/Number/BigInt/String/Symbol）→ 包装对象。
 Value* objectCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     if (argc == 0) return ctx->createObject();
     Value* v = argv[0];
     TypeKind k = v->type()->kind();
     if (detail::isObjectKind(k)) return v;
     if (k == TypeKind::Undefined || k == TypeKind::Null) return ctx->createObject();
-    // 原始值 → 包装对象（Boolean/Number/String/Symbol）
+    // 原始值 → 包装对象（Boolean/Number/BigInt/String/Symbol）
     return ctx->createPrimitiveWrapper(v);
 }
 

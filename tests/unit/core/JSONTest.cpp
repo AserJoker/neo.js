@@ -8,6 +8,7 @@
 // - stringify 基本类型、数组 null、对象省略、toJSON、replacer、space、循环
 // - 属性顺序与 Proxy/getter 可观察性
 
+#include "bigint/BigInt.h"
 #include "core/IContext.h"
 #include "core/IType.h"
 #include "core/Scope.h"
@@ -363,4 +364,21 @@ TEST(JSONTest, ReviverDeletesArrayElement) {
     (void)key;
     // 数组 reviver 的删除语义已由上一条对象用例覆盖；这里验证数组本身可解析。
     EXPECT_DOUBLE_EQ(numOf(get(f.ctx.get(), arr, "1")), 2.0);
+}
+
+TEST(JSONTest, StringifyBigIntThrows) {
+    Fixture f;
+    Value* big = f.ctx->createBigInt(neo::bigint::BigInt(static_cast<int64_t>(1)));
+    EXPECT_EQ(f.stringify(big)->type()->kind(), TypeKind::Exception);
+
+    Value* obj = f.ctx->createObject();
+    f.ctx->defineProperty(obj, "a", big, true, true, true);
+    EXPECT_EQ(f.stringify(obj)->type()->kind(), TypeKind::Exception);
+
+    Value* arr = f.ctx->createArray();
+    f.ctx->defineProperty(arr, "0", big, true, true, true);
+    EXPECT_EQ(f.stringify(arr)->type()->kind(), TypeKind::Exception);
+
+    Value* wrapper = f.ctx->createPrimitiveWrapper(big);
+    EXPECT_EQ(f.stringify(wrapper)->type()->kind(), TypeKind::Exception);
 }

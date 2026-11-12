@@ -72,14 +72,44 @@ ADR-050 已提供纯 C++ `neo::bigint::BigInt`。本阶段把它接成引擎原�
 全部走 `Value*` 异常通道（ADR-006）：TypeError/RangeError 由
 `detail::typeError` / `detail::rangeError` 创建，不返回裸哨兵。
 
+### 7. 包装类与内建（第二步）
+
+- `BigInt.prototype` 是**普通对象**（ES2024 §21.2.3，不是 BigInt 包装对象），
+  原型为 `Object.prototype`；`createPrimitiveWrapper(BigInt)` 通过
+  `setBigIntPrototype` 拿到的原型挂链。
+- `BigInt` 可调用、**不可构造**（`new BigInt` → TypeError），但有
+  `prototype` 属性（不可写/不可枚举/不可配置）；`length === 1`。
+- `BigInt(value)`：先 ToPrimitive(number)；Number 必须为整数（否则 RangeError），
+  String 走 StringToBigInt（非法 → SyntaxError），其余走 ToBigInt
+  （null/undefined/Symbol/Number 直接传 → TypeError）。
+- `BigInt.prototype`：`toString(radix)`（默认 10，radix 越界 RangeError）、
+  `valueOf`、`toLocaleString`（无 Intl 时等价 toString）、`@@toStringTag = "BigInt"`。
+- `BigInt.asUintN/asIntN(bits, value)`：bits 走 ToIndex（BigInt → TypeError、
+  负数/超 2^53-1 → RangeError）；用 `2^bits` 取模，asIntN 再把
+  `[2^(bits-1), 2^bits)` 映射到负数。bits 实现上限 `2^24`，超过时仅在结果
+  可证明落在范围内才返回原值，否则 RangeError。
+- `Number(bigint)`：Number 构造改用 ToNumeric，BigInt 再经 `toDouble()`
+  （round-to-nearest-even，溢出 → ±Infinity）。`BigInt::fromDouble` 只接受
+  有限整数，供 `BigInt(number)` 校验。
+- `1n.toString()` 通过原始值属性访问自动 ToObject（BigInt 包装对象）可用。
+
+### 8. 周边联动（第三步）
+
+- `JSON.stringify` 对 BigInt（含包装对象、对象属性、数组元素）显式抛
+  TypeError（`Do not know how to serialize a BigInt`）。
+- `Object.prototype.toString`：BigInt 原始值 → `[object BigInt]`；
+  BigInt 包装对象按 `[[PrimitiveValue]]` → `[object BigInt]`。
+- `Object(bigint)` → BigInt 包装对象（`objectCtor` 走 createPrimitiveWrapper）。
+
 ## 后果
 
 - 优点：`1n + 1n` 与 `1 + 1n` 走同一条转换链；BigInt/Number 混用、除零、
-  负指数、`>>>` 的错误语义集中在一处；大整数比较不丢精度。
-- 缺点：`IContext` 暴露了私有类型的前向声明；指数受 `uint64_t` 限制。
-- 未覆盖（后续阶段）：`BigInt()` 构造与 `BigInt.prototype`、`asIntN/asUintN`、
-  `PrimitiveWrapper` 对 BigInt 的支持（`1n.toString()` 目前不可用）、
-  `Number(bigint)`（规范允许，需绕过 ToNumber）、JSON.stringify 的显式分支、
-  `Object.prototype.toString` 的 `[object BigInt]`、Unicode 空白。
-- 测试：`tests/unit/core/BigIntTypeTest.cpp`，8 例，覆盖类型/转换/算术/位运算/
-  精确比较/抽象相等/对象 valueOf/字符串拼接；全量回归通过。
+  负指数、`>>>` 的错误语义集中在一处；大整数比较与 Number 转换不丢精度。
+- 缺点：`IContext` 暴露了私有类型的前向声明；指数受 `uint64_t` 限制；
+  `asIntN/asUintN` 的 bits 有实现上限。
+- 未覆盖：Unicode 空白（StringToBigInt 仅 ASCII）；`BigInt.prototype.toString`
+  的 `radix` 不做 ToIntegerOrInfinity 的 ±Infinity 特判以外的扩展；Intl 格式化。
+- 测试：`tests/unit/bigint/BigIntTest.cpp`（15 例，含 double 互转）、
+  `tests/unit/core/BigIntTypeTest.cpp`（8 例）、
+  `tests/unit/core/BigIntBuiltinsTest.cpp`（6 例）、
+  JSON/ObjectBuiltins 的联动用例；全量回归通过。

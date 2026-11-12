@@ -13,12 +13,14 @@
 //
 // 关联 ADR: 020（标准库组织）、018（对象模型）、034（原型-构造函数）
 
+#include "bigint/BigInt.h"
 #include "core/IContext.h"
 #include "core/IGCEngine.h"
 #include "core/IType.h"
 #include "core/Scope.h"
 #include "core/Value.h"
 #include "core/types/Boolean.h"
+#include "core/types/PrimitiveWrapper.h"
 #include "core/types/Function.h"
 #include "core/types/Number.h"
 #include "core/types/Object.h"
@@ -2060,4 +2062,29 @@ TEST(ObjectBuiltinsTest, SealAndFreezeProxyForwardToTarget) {
     EXPECT_TRUE(boolOf(callObjectStatic(ctx.get(), "isFrozen", 1, args)));
     EXPECT_TRUE(boolOf(callObjectStatic(ctx.get(), "isFrozen", 1, &target)));
     EXPECT_FALSE(boolOf(callObjectStatic(ctx.get(), "isExtensible", 1, &target)));
+}
+
+TEST(ObjectBuiltinsTest, BigIntToStringTagAndWrapping) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* toString = ctx->getProperty(ctx->objectPrototype(), "toString");
+    Value* bigint = ctx->createBigInt(neo::bigint::BigInt(static_cast<int64_t>(7)));
+
+    Value* args[1] = {bigint};
+    EXPECT_EQ(strOf(ctx->call(toString, bigint, 0, args)), "[object BigInt]");
+
+    Value* wrapper = ctx->createPrimitiveWrapper(bigint);
+    Value* wrapperArgs[1] = {wrapper};
+    EXPECT_EQ(strOf(ctx->call(toString, wrapper, 0, wrapperArgs)),
+              "[object BigInt]");
+
+    // Object(1n) → BigInt 包装对象。
+    Value* objectCtor = globalOf(ctx.get(), "Object");
+    Value* objArgs[1] = {bigint};
+    Value* boxed = ctx->call(objectCtor, ctx->createUndefined(), 1, objArgs);
+    EXPECT_EQ(boxed->type()->kind(), TypeKind::PrimitiveWrapper);
+    EXPECT_EQ(neo::core::wrapperPrimitiveValue(boxed), bigint);
 }

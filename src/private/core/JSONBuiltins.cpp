@@ -603,12 +603,14 @@ private:
             case TypeKind::Function:
             case TypeKind::Symbol:
                 return nullptr;
+            case TypeKind::BigInt:
+                return detail::typeError(ctx_,
+                                         "Do not know how to serialize a BigInt");
             default:
                 break;
         }
 
         if (!detail::isObjectKind(k)) {
-            // 目前仅 BigInt 会落到这里；引擎尚未实现 BigInt。
             return detail::typeError(ctx_, "Do not know how to serialize a BigInt");
         }
 
