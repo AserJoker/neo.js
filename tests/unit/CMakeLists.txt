@@ -5,6 +5,7 @@
 
 add_subdirectory(core)
 add_subdirectory(infra)
+add_subdirectory(bigint)
 # 以下模块 M1 起填充：
 # add_subdirectory(gc)
 # add_subdirectory(vm)
