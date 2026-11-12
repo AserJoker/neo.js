@@ -16,6 +16,7 @@ using neo::frontend::BinaryExpression;
 using neo::frontend::BinaryOperator;
 using neo::frontend::BooleanLiteral;
 using neo::frontend::CallExpression;
+using neo::frontend::ConditionalExpression;
 using neo::frontend::ExpressionStatement;
 using neo::frontend::Identifier;
 using neo::frontend::LogicalExpression;
@@ -843,6 +844,74 @@ TEST(ParserTest, NullishMixingWithParenthesesIsAllowed) {
         ParseResult result = parse(source);
         EXPECT_TRUE(result.ok()) << source;
     }
+}
+
+TEST(ParserTest, ConditionalExpression) {
+    ParseResult result = parse("a ? b : c;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    ASSERT_NE(statement.expression, nullptr);
+    EXPECT_EQ(statement.expression->kind(), NodeKind::ConditionalExpression);
+
+    const auto* conditional =
+        static_cast<const ConditionalExpression*>(statement.expression.get());
+    ASSERT_NE(conditional->test, nullptr);
+    ASSERT_NE(conditional->consequent, nullptr);
+    ASSERT_NE(conditional->alternate, nullptr);
+    EXPECT_EQ(conditional->test->kind(), NodeKind::Identifier);
+    EXPECT_EQ(conditional->consequent->kind(), NodeKind::Identifier);
+    EXPECT_EQ(conditional->alternate->kind(), NodeKind::Identifier);
+}
+
+TEST(ParserTest, ConditionalIsRightAssociative) {
+    ParseResult result = parse("a ? b : c ? d : e;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* outer =
+        static_cast<const ConditionalExpression*>(statement.expression.get());
+    ASSERT_NE(outer->alternate, nullptr);
+    EXPECT_EQ(outer->alternate->kind(), NodeKind::ConditionalExpression);
+}
+
+TEST(ParserTest, NestedConditionalInConsequent) {
+    ParseResult result = parse("a ? b ? c : d : e;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* outer =
+        static_cast<const ConditionalExpression*>(statement.expression.get());
+    ASSERT_NE(outer->consequent, nullptr);
+    EXPECT_EQ(outer->consequent->kind(), NodeKind::ConditionalExpression);
+}
+
+TEST(ParserTest, ConditionalTestAndBranchesUseExpressionLayers) {
+    ParseResult result = parse("a || b ? c + d : e;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* conditional =
+        static_cast<const ConditionalExpression*>(statement.expression.get());
+    ASSERT_NE(conditional->test, nullptr);
+    EXPECT_EQ(conditional->test->kind(), NodeKind::LogicalExpression);
+    ASSERT_NE(conditional->consequent, nullptr);
+    EXPECT_EQ(conditional->consequent->kind(), NodeKind::BinaryExpression);
+}
+
+TEST(ParserTest, ConditionalMissingColonReportsError) {
+    ParseResult result = parse("a ? b;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Expected ':'"), std::string::npos);
+}
+
+TEST(ParserTest, ConditionalMissingAlternateReportsError) {
+    ParseResult result = parse("a ? b :;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
 }
 
 TEST(ParserTest, ProgramRangeCoversConsumedInput) {

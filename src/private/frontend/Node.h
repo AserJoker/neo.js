@@ -58,6 +58,7 @@ enum class NodeKind : uint8_t {
     UpdateExpression,
     BinaryExpression,
     LogicalExpression,
+    ConditionalExpression,
 };
 
 class Node {
@@ -286,6 +287,19 @@ struct LogicalExpression final : Node {
     LogicalOperator op;
     NodePtr left;
     NodePtr right;
+};
+
+// test ? consequent : alternate
+struct ConditionalExpression final : Node {
+    ConditionalExpression(SourceRange range, NodePtr test, NodePtr consequent,
+                          NodePtr alternate)
+        : Node(NodeKind::ConditionalExpression, range),
+          test(std::move(test)),
+          consequent(std::move(consequent)),
+          alternate(std::move(alternate)) {}
+    NodePtr test;
+    NodePtr consequent;
+    NodePtr alternate;
 };
 
 }  // namespace neo::frontend

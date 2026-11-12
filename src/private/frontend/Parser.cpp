@@ -310,8 +310,27 @@ NodePtr Parser::parseExpressionStatement() {
 // ---------------------------------------------------------------------------
 
 NodePtr Parser::parseExpression() {
-    // 后续在逻辑表达式之上逐层加入条件、赋值、序列等节点。
-    return parseLogicalExpression(1);
+    // 后续在条件表达式之上逐层加入赋值、序列等节点。
+    return parseConditionalExpression();
+}
+
+NodePtr Parser::parseConditionalExpression() {
+    NodePtr test = parseLogicalExpression(1);
+    if (test == nullptr) return nullptr;
+
+    if (!match(TokenKind::Question)) return test;
+
+    const SourceLocation start = test->range().start;
+    // consequent / alternate 目前用条件表达式占位；赋值表达式落地后替换。
+    NodePtr consequent = parseConditionalExpression();
+    if (consequent == nullptr) return nullptr;
+    if (!expect(TokenKind::Colon, "':'")) return nullptr;
+    NodePtr alternate = parseConditionalExpression();
+    if (alternate == nullptr) return nullptr;
+
+    return std::make_unique<ConditionalExpression>(
+        rangeFrom(start), std::move(test), std::move(consequent),
+        std::move(alternate));
 }
 
 NodePtr Parser::parseLogicalExpression(int minPrecedence) {
