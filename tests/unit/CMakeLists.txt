@@ -6,9 +6,9 @@
 add_subdirectory(core)
 add_subdirectory(infra)
 add_subdirectory(bigint)
+add_subdirectory(frontend)
 # 以下模块 M1 起填充：
 # add_subdirectory(gc)
 # add_subdirectory(vm)
-# add_subdirectory(frontend)
 # add_subdirectory(sema)
 # add_subdirectory(compiler)

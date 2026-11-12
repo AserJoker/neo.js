@@ -156,6 +156,8 @@ add_library(neojs STATIC
     src/private/infra/Console.cpp
     src/private/infra/SteadyClock.cpp
     src/private/infra/CommandParser.cpp
+    src/private/infra/NativeFileSystem.cpp
+    src/private/frontend/CharStream.cpp
 )
 target_include_directories(neojs
     PUBLIC

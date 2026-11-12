@@ -5,6 +5,7 @@ add_executable(infra_unit_test
     AllocatorTest.cpp
     ConsoleTest.cpp
     CommandTest.cpp
+    FileSystemTest.cpp
 )
 target_link_libraries(infra_unit_test
     PRIVATE
