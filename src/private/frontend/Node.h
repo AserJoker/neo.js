@@ -82,6 +82,9 @@ enum class NodeKind : uint8_t {
     ConditionalExpression,
     AssignmentExpression,
     SequenceExpression,
+
+    // 模式
+    RestElement,
 };
 
 class Node {
@@ -559,6 +562,14 @@ struct SequenceExpression final : Node {
         : Node(NodeKind::SequenceExpression, range),
           expressions(std::move(expressions)) {}
     NodeList expressions;
+};
+
+// ...argument（函数参数 / 解构模式中的 rest）
+struct RestElement final : Node {
+    RestElement(SourceRange range, NodePtr argument)
+        : Node(NodeKind::RestElement, range),
+          argument(std::move(argument)) {}
+    NodePtr argument;
 };
 
 }  // namespace neo::frontend
