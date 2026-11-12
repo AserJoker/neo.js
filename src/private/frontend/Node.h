@@ -39,6 +39,7 @@ enum class NodeKind : uint8_t {
     Program,
 
     // 语句
+    BlockStatement,
     EmptyStatement,
     ExpressionStatement,
 
@@ -106,6 +107,12 @@ struct Program final : Node {
 // ---------------------------------------------------------------------------
 // 语句
 // ---------------------------------------------------------------------------
+
+struct BlockStatement final : Node {
+    BlockStatement(SourceRange range, NodeList body)
+        : Node(NodeKind::BlockStatement, range), body(std::move(body)) {}
+    NodeList body;
+};
 
 struct EmptyStatement final : Node {
     explicit EmptyStatement(SourceRange range)

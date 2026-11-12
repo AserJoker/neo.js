@@ -15,6 +15,7 @@ using neo::frontend::AssignmentExpression;
 using neo::frontend::AssignmentOperator;
 using neo::frontend::BigIntLiteral;
 using neo::frontend::BinaryExpression;
+using neo::frontend::BlockStatement;
 using neo::frontend::BinaryOperator;
 using neo::frontend::BooleanLiteral;
 using neo::frontend::CallExpression;
@@ -1148,6 +1149,75 @@ TEST(ParserTest, ExpressionAsiDivisionAcrossLineTerminator) {
     EXPECT_EQ(outer->left->kind(), NodeKind::BinaryExpression);
     EXPECT_EQ(static_cast<const BinaryExpression*>(outer->left.get())->op,
               BinaryOperator::Divide);
+}
+
+TEST(ParserTest, BlockStatement) {
+    ParseResult result = parse("{ 1; 2; }");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    ASSERT_EQ(programOf(result).body[0]->kind(), NodeKind::BlockStatement);
+
+    const auto* block =
+        static_cast<const BlockStatement*>(programOf(result).body[0].get());
+    ASSERT_EQ(block->body.size(), 2u);
+    EXPECT_EQ(block->body[0]->kind(), NodeKind::ExpressionStatement);
+    EXPECT_EQ(block->body[1]->kind(), NodeKind::ExpressionStatement);
+}
+
+TEST(ParserTest, EmptyBlockStatement) {
+    ParseResult result = parse("{}");
+
+    ASSERT_TRUE(result.ok());
+    const auto* block =
+        static_cast<const BlockStatement*>(programOf(result).body[0].get());
+    EXPECT_TRUE(block->body.empty());
+}
+
+TEST(ParserTest, NestedBlockStatement) {
+    ParseResult result = parse("{ { } }");
+
+    ASSERT_TRUE(result.ok());
+    const auto* outer =
+        static_cast<const BlockStatement*>(programOf(result).body[0].get());
+    ASSERT_EQ(outer->body.size(), 1u);
+    EXPECT_EQ(outer->body[0]->kind(), NodeKind::BlockStatement);
+}
+
+TEST(ParserTest, BlockStatementAllowsAsiBeforeBrace) {
+    ParseResult result = parse("{ 1 }");
+
+    ASSERT_TRUE(result.ok());
+    const auto* block =
+        static_cast<const BlockStatement*>(programOf(result).body[0].get());
+    ASSERT_EQ(block->body.size(), 1u);
+    EXPECT_EQ(block->body[0]->kind(), NodeKind::ExpressionStatement);
+}
+
+TEST(ParserTest, BlockStatementFollowedByStatement) {
+    ParseResult result = parse("{ } 1;");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 2u);
+    EXPECT_EQ(programOf(result).body[0]->kind(), NodeKind::BlockStatement);
+    EXPECT_EQ(programOf(result).body[1]->kind(), NodeKind::ExpressionStatement);
+}
+
+TEST(ParserTest, MissingClosingBraceReportsError) {
+    ParseResult result = parse("{ 1;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Expected '}'"), std::string::npos);
+}
+
+TEST(ParserTest, BlockErrorRecoveryStopsAtBrace) {
+    ParseResult result = parse("{ 1 2; }");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    EXPECT_EQ(programOf(result).body[0]->kind(), NodeKind::BlockStatement);
 }
 
 TEST(ParserTest, ProgramRangeCoversConsumedInput) {

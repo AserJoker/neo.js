@@ -63,7 +63,8 @@ private:
     void rescan(LexicalGoal goal);
 
     void error(SourceLocation location, std::string message);
-    void synchronize();
+    // stopAtRightBrace：块内恢复时停在 `}`，交给块解析消费。
+    void synchronize(bool stopAtRightBrace = false);
 
     SourceRange rangeFrom(SourceLocation start) const {
         return SourceRange{start, previousEnd_};
@@ -71,6 +72,7 @@ private:
 
     // 语句
     NodePtr parseStatement();
+    NodePtr parseBlockStatement();
     NodePtr parseEmptyStatement();
     NodePtr parseExpressionStatement();
 

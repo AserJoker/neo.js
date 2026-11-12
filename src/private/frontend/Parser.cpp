@@ -331,8 +331,9 @@ void Parser::error(SourceLocation location, std::string message) {
     errors_.push_back(ParseError{location, std::move(message)});
 }
 
-void Parser::synchronize() {
+void Parser::synchronize(bool stopAtRightBrace) {
     while (!at(TokenKind::EndOfInput)) {
+        if (stopAtRightBrace && at(TokenKind::RightBrace)) return;
         if (at(TokenKind::Semicolon) || at(TokenKind::RightBrace)) {
             advance();
             return;
@@ -346,8 +347,27 @@ void Parser::synchronize() {
 // ---------------------------------------------------------------------------
 
 NodePtr Parser::parseStatement() {
+    if (at(TokenKind::LeftBrace)) return parseBlockStatement();
     if (at(TokenKind::Semicolon)) return parseEmptyStatement();
     return parseExpressionStatement();
+}
+
+NodePtr Parser::parseBlockStatement() {
+    const SourceLocation start = current_.start;
+    if (!expect(TokenKind::LeftBrace, "'{'")) return nullptr;
+
+    NodeList body;
+    while (!at(TokenKind::RightBrace) && !at(TokenKind::EndOfInput)) {
+        NodePtr statement = parseStatement();
+        if (statement != nullptr) {
+            body.push_back(std::move(statement));
+        } else {
+            synchronize(true);
+        }
+    }
+
+    if (!expect(TokenKind::RightBrace, "'}'")) return nullptr;
+    return std::make_unique<BlockStatement>(rangeFrom(start), std::move(body));
 }
 
 NodePtr Parser::parseEmptyStatement() {
