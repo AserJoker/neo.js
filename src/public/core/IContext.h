@@ -64,6 +64,9 @@ struct FunctionCreateOptions {
     bool constructible = true;
     bool hasPrototypeProperty = true;
     bool strict = false;
+    // async native：调用返回 Promise，函数体以协程阶段机执行。
+    // 自动强制 constructible=false、hasPrototypeProperty=false。
+    bool asyncNative = false;
     bool isClassConstructor = false;
     bool isDerived = false;
     Value* homeObject = nullptr;       // [[HomeObject]]（借用，GC 由函数遍历）

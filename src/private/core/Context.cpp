@@ -1070,7 +1070,8 @@ Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_vi
         closure->destroySelf();
         return oomValue_;
     }
-    d->constructible = opts.constructible;
+    d->constructible = opts.constructible && !opts.asyncNative;
+    d->asyncNative = opts.asyncNative;
     d->isClassConstructor = opts.isClassConstructor;
     d->homeObject = opts.homeObject;
     d->ownerClass = opts.ownerClass;
@@ -1123,7 +1124,7 @@ Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_vi
     // class 方法/箭头函数等 hasPrototypeProperty=false：不创建 prototype 属性。
     // 存活：fn 的属性 value 被 ObjectData::enumerateChildren 遍历 → proto 保活；
     //       proto 的 constructor 属性同理保活 fn。
-    if (opts.hasPrototypeProperty) {
+    if (opts.hasPrototypeProperty && !opts.asyncNative) {
         Value* proto = createObject();
         if (proto == oomValue_) return proto;
         // fn.prototype：writable，不可枚举，不可配置

@@ -9,6 +9,7 @@
 //
 // 关联 ADR: 005（native 等价）、021（Function 结构）、022（调用）
 
+#include "core/AsyncNative.h"
 #include "core/FunctionInvoke.h"
 #include "core/IContext.h"
 #include "core/Scope.h"
@@ -80,6 +81,11 @@ Value* FunctionType::call(IContext* ctx, Value* self, Value* thisArg,
                          static_cast<size_t>(args.size()), args.data());
     }
 
+    // async native：以协程阶段机运行函数体，返回 Promise。
+    if (d->asyncNative) {
+        if (Value* err = checkMinArgc(ctx, d, argc)) return err;
+        return runAsyncNative(ctx, self, thisArg, argc, argv);
+    }
     // 异步生成器函数（async function*）：创建 AsyncGenerator（Promise 请求队列）。
     if (d->asyncGenerator) {
         return ctx->createAsyncGenerator(self, thisArg, argc, argv);

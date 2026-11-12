@@ -9,6 +9,7 @@
 // - sentValue 由函数体经 getCurrentCoroutine 读取
 // - GC：不可达协程连同孤立 execScope 与捕获值一并回收
 
+#include "core/AsyncNative.h"
 #include "core/Coroutine.h"
 #include "core/IContext.h"
 #include "core/IGCEngine.h"
@@ -105,12 +106,11 @@ Value* awaited(IContext* ctx, Value*, size_t, Value*[]) {
 
     switch (co->resumePoint) {
         case 0: {
-            Value* x = ctx->createNumber(10, "__x");
-            if (x->type()->kind() == TypeKind::Exception) return x;
+            storeNativeLocal(ctx, "__x", ctx->createNumber(10));
             return ctx->createInterrupt(InterruptKind::Await, 1, ctx->createNumber(42));
         }
         case 1: {
-            Value* x = ctx->current()->lookup("__x");
+            Value* x = loadNativeLocal(ctx, "__x");
             if (neo::core::detail::isErrorValue(co->sentValue)) return co->sentValue;
             return ctx->createNumber(num(x) + num(co->sentValue));
         }

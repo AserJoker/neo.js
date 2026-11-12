@@ -103,6 +103,9 @@ public:
     bool generator = false;
     // 是否为异步生成器函数（async function*）。为 true 时 call 创建 AsyncGenerator。
     bool asyncGenerator = false;
+    // 是否为 async native 函数：call 以协程阶段机运行并返回 Promise。
+    // 不可构造、无 prototype 属性（与 async 函数一致）。
+    bool asyncNative = false;
     // 是否为 Environment 模式闭包（定义点处于 dynamic 作用域，或函数含直接 eval）：
     // closureScope 以 lookup-only 方式挂到定义点环境链，并沿链 pin（captureRef++）。
     // 调用期不再 reparent，析构时先销毁 closureScope 再自底向上解 pin。
