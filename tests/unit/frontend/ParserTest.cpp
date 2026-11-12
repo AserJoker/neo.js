@@ -13,8 +13,11 @@ namespace {
 
 using neo::frontend::BigIntLiteral;
 using neo::frontend::BooleanLiteral;
+using neo::frontend::CallExpression;
 using neo::frontend::ExpressionStatement;
 using neo::frontend::Identifier;
+using neo::frontend::MemberExpression;
+using neo::frontend::NewExpression;
 using neo::frontend::NodeKind;
 using neo::frontend::NumericLiteral;
 using neo::frontend::Parser;
@@ -217,6 +220,201 @@ TEST(ParserTest, UseStrictDirectiveAffectsFollowingTokens) {
         }
     }
     EXPECT_TRUE(sawOctalError);
+}
+
+TEST(ParserTest, MemberExpression) {
+    ParseResult result = parse("a.b;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    ASSERT_NE(statement.expression, nullptr);
+    EXPECT_EQ(statement.expression->kind(), NodeKind::MemberExpression);
+
+    const auto* member =
+        static_cast<const MemberExpression*>(statement.expression.get());
+    EXPECT_FALSE(member->computed);
+    ASSERT_NE(member->object, nullptr);
+    ASSERT_NE(member->property, nullptr);
+    EXPECT_EQ(member->object->kind(), NodeKind::Identifier);
+    EXPECT_EQ(member->property->kind(), NodeKind::Identifier);
+    EXPECT_EQ(static_cast<const Identifier*>(member->property.get())->name, "b");
+}
+
+TEST(ParserTest, ComputedMemberExpression) {
+    ParseResult result = parse("a[0];");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    ASSERT_NE(statement.expression, nullptr);
+    EXPECT_EQ(statement.expression->kind(), NodeKind::MemberExpression);
+
+    const auto* member =
+        static_cast<const MemberExpression*>(statement.expression.get());
+    EXPECT_TRUE(member->computed);
+    ASSERT_NE(member->property, nullptr);
+    EXPECT_EQ(member->property->kind(), NodeKind::NumericLiteral);
+}
+
+TEST(ParserTest, ChainedMemberExpression) {
+    ParseResult result = parse("a.b.c;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* outer =
+        static_cast<const MemberExpression*>(statement.expression.get());
+    ASSERT_NE(outer->object, nullptr);
+    EXPECT_EQ(outer->object->kind(), NodeKind::MemberExpression);
+}
+
+TEST(ParserTest, KeywordAsPropertyName) {
+    ParseResult result = parse("obj.if;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* member =
+        static_cast<const MemberExpression*>(statement.expression.get());
+    ASSERT_NE(member->property, nullptr);
+    EXPECT_EQ(static_cast<const Identifier*>(member->property.get())->name,
+              "if");
+}
+
+TEST(ParserTest, CallExpression) {
+    ParseResult result = parse("a();");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    ASSERT_NE(statement.expression, nullptr);
+    EXPECT_EQ(statement.expression->kind(), NodeKind::CallExpression);
+
+    const auto* call =
+        static_cast<const CallExpression*>(statement.expression.get());
+    ASSERT_NE(call->callee, nullptr);
+    EXPECT_EQ(call->callee->kind(), NodeKind::Identifier);
+    EXPECT_TRUE(call->arguments.empty());
+}
+
+TEST(ParserTest, CallArguments) {
+    ParseResult result = parse("a(1, \"x\",);");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* call =
+        static_cast<const CallExpression*>(statement.expression.get());
+    ASSERT_EQ(call->arguments.size(), 2u);
+    EXPECT_EQ(call->arguments[0]->kind(), NodeKind::NumericLiteral);
+    EXPECT_EQ(call->arguments[1]->kind(), NodeKind::StringLiteral);
+}
+
+TEST(ParserTest, CallOnMemberExpression) {
+    ParseResult result = parse("a.b(c);");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* call =
+        static_cast<const CallExpression*>(statement.expression.get());
+    EXPECT_EQ(call->kind(), NodeKind::CallExpression);
+    ASSERT_NE(call->callee, nullptr);
+    EXPECT_EQ(call->callee->kind(), NodeKind::MemberExpression);
+}
+
+TEST(ParserTest, MemberOnCallExpression) {
+    ParseResult result = parse("a().b;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* member =
+        static_cast<const MemberExpression*>(statement.expression.get());
+    EXPECT_EQ(member->kind(), NodeKind::MemberExpression);
+    ASSERT_NE(member->object, nullptr);
+    EXPECT_EQ(member->object->kind(), NodeKind::CallExpression);
+}
+
+TEST(ParserTest, NewExpressionWithoutArguments) {
+    ParseResult result = parse("new Foo;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    ASSERT_NE(statement.expression, nullptr);
+    EXPECT_EQ(statement.expression->kind(), NodeKind::NewExpression);
+
+    const auto* node =
+        static_cast<const NewExpression*>(statement.expression.get());
+    ASSERT_NE(node->callee, nullptr);
+    EXPECT_EQ(node->callee->kind(), NodeKind::Identifier);
+    EXPECT_TRUE(node->arguments.empty());
+}
+
+TEST(ParserTest, NewExpressionWithArguments) {
+    ParseResult result = parse("new Foo(1);");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* node =
+        static_cast<const NewExpression*>(statement.expression.get());
+    EXPECT_EQ(node->kind(), NodeKind::NewExpression);
+    ASSERT_EQ(node->arguments.size(), 1u);
+    EXPECT_EQ(node->arguments[0]->kind(), NodeKind::NumericLiteral);
+}
+
+TEST(ParserTest, NewExpressionCalleeIsMember) {
+    ParseResult result = parse("new Foo.bar();");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* node =
+        static_cast<const NewExpression*>(statement.expression.get());
+    EXPECT_EQ(node->kind(), NodeKind::NewExpression);
+    ASSERT_NE(node->callee, nullptr);
+    EXPECT_EQ(node->callee->kind(), NodeKind::MemberExpression);
+}
+
+TEST(ParserTest, MemberOnNewExpression) {
+    ParseResult result = parse("new Foo().bar;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* member =
+        static_cast<const MemberExpression*>(statement.expression.get());
+    EXPECT_EQ(member->kind(), NodeKind::MemberExpression);
+    ASSERT_NE(member->object, nullptr);
+    EXPECT_EQ(member->object->kind(), NodeKind::NewExpression);
+}
+
+TEST(ParserTest, NestedNewExpression) {
+    ParseResult result = parse("new new Foo();");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* outer =
+        static_cast<const NewExpression*>(statement.expression.get());
+    EXPECT_EQ(outer->kind(), NodeKind::NewExpression);
+    ASSERT_NE(outer->callee, nullptr);
+    EXPECT_EQ(outer->callee->kind(), NodeKind::NewExpression);
+}
+
+TEST(ParserTest, MixedMemberCallChain) {
+    ParseResult result = parse("a.b[c](d).e;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* outer =
+        static_cast<const MemberExpression*>(statement.expression.get());
+    EXPECT_EQ(outer->kind(), NodeKind::MemberExpression);
+    ASSERT_NE(outer->object, nullptr);
+    EXPECT_EQ(outer->object->kind(), NodeKind::CallExpression);
+
+    const auto* call =
+        static_cast<const CallExpression*>(outer->object.get());
+    ASSERT_NE(call->callee, nullptr);
+    EXPECT_EQ(call->callee->kind(), NodeKind::MemberExpression);
+}
+
+TEST(ParserTest, MissingPropertyNameReportsError) {
+    ParseResult result = parse("a.;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("property name"), std::string::npos);
 }
 
 TEST(ParserTest, ProgramRangeCoversConsumedInput) {

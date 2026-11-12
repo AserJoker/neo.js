@@ -76,7 +76,18 @@ private:
 
     // 表达式
     NodePtr parseExpression();
+    NodePtr parseLeftHandSideExpression();
+    NodePtr parseMemberExpression();
+    NodePtr parseCallExpression();
+    NodePtr parseNewExpression();
     NodePtr parsePrimaryExpression();
+
+    // 左值后缀与参数（辅助函数，不单独对应节点）
+    NodePtr parseMemberSuffix(NodePtr object, SourceLocation start);
+    NodePtr parseCallSuffix(NodePtr callee, SourceLocation start);
+    bool parseArguments(NodeList& arguments);
+    NodePtr parseIdentifierName();
+
     NodePtr parseIdentifier();
     NodePtr parseNumericLiteral();
     NodePtr parseBigIntLiteral();

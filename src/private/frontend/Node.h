@@ -50,6 +50,10 @@ enum class NodeKind : uint8_t {
     BooleanLiteral,
     NullLiteral,
     RegExpLiteral,
+
+    MemberExpression,
+    CallExpression,
+    NewExpression,
 };
 
 class Node {
@@ -152,6 +156,39 @@ struct RegExpLiteral final : Node {
           flags(std::move(flags)) {}
     std::string pattern;
     std::string flags;
+};
+
+// obj.property / obj[expression]
+struct MemberExpression final : Node {
+    MemberExpression(SourceRange range, NodePtr object, NodePtr property,
+                     bool computed)
+        : Node(NodeKind::MemberExpression, range),
+          object(std::move(object)),
+          property(std::move(property)),
+          computed(computed) {}
+    NodePtr object;
+    NodePtr property;
+    bool computed;
+};
+
+// callee(arguments)
+struct CallExpression final : Node {
+    CallExpression(SourceRange range, NodePtr callee, NodeList arguments)
+        : Node(NodeKind::CallExpression, range),
+          callee(std::move(callee)),
+          arguments(std::move(arguments)) {}
+    NodePtr callee;
+    NodeList arguments;
+};
+
+// new callee(arguments)
+struct NewExpression final : Node {
+    NewExpression(SourceRange range, NodePtr callee, NodeList arguments)
+        : Node(NodeKind::NewExpression, range),
+          callee(std::move(callee)),
+          arguments(std::move(arguments)) {}
+    NodePtr callee;
+    NodeList arguments;
 };
 
 }  // namespace neo::frontend

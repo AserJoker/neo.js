@@ -9,6 +9,19 @@
 
 namespace neo::frontend {
 
+namespace {
+
+// 属性名可以是任意 IdentifierName，包括保留字（obj.default）。
+// TokenKind 中 Break..False 是连续的固定保留字区间。
+bool isIdentifierName(TokenKind kind) {
+    if (kind == TokenKind::Identifier) return true;
+    const int value = static_cast<int>(kind);
+    return value >= static_cast<int>(TokenKind::Break) &&
+           value <= static_cast<int>(TokenKind::False);
+}
+
+}  // namespace
+
 Parser::Parser(std::string_view source) : lexer_(source) {
     // 程序起始位置是表达式起始位置，`/` 应优先按正则扫描。
     advance(LexicalGoal::RegExp);
@@ -148,8 +161,119 @@ NodePtr Parser::parseExpressionStatement() {
 // ---------------------------------------------------------------------------
 
 NodePtr Parser::parseExpression() {
-    // 后续在 primary 之上逐层加入一元、二元、赋值、条件等节点。
-    return parsePrimaryExpression();
+    // 后续在左值表达式之上逐层加入一元、二元、赋值、条件等节点。
+    return parseLeftHandSideExpression();
+}
+
+NodePtr Parser::parseLeftHandSideExpression() {
+    if (at(TokenKind::New)) return parseNewExpression();
+    return parseCallExpression();
+}
+
+NodePtr Parser::parseMemberExpression() {
+    const SourceLocation start = current_.start;
+    NodePtr object = parsePrimaryExpression();
+    if (object == nullptr) return nullptr;
+
+    while (at(TokenKind::Dot) || at(TokenKind::LeftBracket)) {
+        object = parseMemberSuffix(std::move(object), start);
+        if (object == nullptr) return nullptr;
+    }
+    return object;
+}
+
+NodePtr Parser::parseCallExpression() {
+    const SourceLocation start = current_.start;
+    NodePtr callee = parseMemberExpression();
+    if (callee == nullptr) return nullptr;
+    return parseCallSuffix(std::move(callee), start);
+}
+
+NodePtr Parser::parseNewExpression() {
+    const SourceLocation start = current_.start;
+    advance();  // 'new'
+
+    // new.target 暂不支持；先按普通 new 表达式处理。
+    NodePtr callee = at(TokenKind::New) ? parseNewExpression()
+                                        : parseMemberExpression();
+    if (callee == nullptr) return nullptr;
+
+    NodeList arguments;
+    if (at(TokenKind::LeftParen) && !parseArguments(arguments)) {
+        return nullptr;
+    }
+
+    NodePtr expression = std::make_unique<NewExpression>(
+        rangeFrom(start), std::move(callee), std::move(arguments));
+    // new Foo().bar / new Foo()()：new 表达式之后仍可继续成员与调用后缀。
+    return parseCallSuffix(std::move(expression), start);
+}
+
+NodePtr Parser::parseMemberSuffix(NodePtr object, SourceLocation start) {
+    if (at(TokenKind::Dot)) {
+        advance();
+        NodePtr property = parseIdentifierName();
+        if (property == nullptr) return nullptr;
+        return std::make_unique<MemberExpression>(
+            rangeFrom(start), std::move(object), std::move(property), false);
+    }
+
+    if (at(TokenKind::LeftBracket)) {
+        advance();
+        NodePtr property = parseExpression();
+        if (property == nullptr) return nullptr;
+        if (!expect(TokenKind::RightBracket, "']'")) return nullptr;
+        return std::make_unique<MemberExpression>(
+            rangeFrom(start), std::move(object), std::move(property), true);
+    }
+
+    return object;
+}
+
+NodePtr Parser::parseCallSuffix(NodePtr callee, SourceLocation start) {
+    while (true) {
+        if (at(TokenKind::LeftParen)) {
+            NodeList arguments;
+            if (!parseArguments(arguments)) return nullptr;
+            callee = std::make_unique<CallExpression>(
+                rangeFrom(start), std::move(callee), std::move(arguments));
+            continue;
+        }
+        if (at(TokenKind::Dot) || at(TokenKind::LeftBracket)) {
+            callee = parseMemberSuffix(std::move(callee), start);
+            if (callee == nullptr) return nullptr;
+            continue;
+        }
+        break;
+    }
+    return callee;
+}
+
+bool Parser::parseArguments(NodeList& arguments) {
+    if (!expect(TokenKind::LeftParen, "'('")) return false;
+    if (match(TokenKind::RightParen)) return true;
+
+    while (true) {
+        NodePtr argument = parseExpression();
+        if (argument == nullptr) return false;
+        arguments.push_back(std::move(argument));
+
+        if (!match(TokenKind::Comma)) break;
+        if (at(TokenKind::RightParen)) break;  // 尾随逗号
+    }
+
+    return expect(TokenKind::RightParen, "')'");
+}
+
+NodePtr Parser::parseIdentifierName() {
+    if (!isIdentifierName(current_.kind)) {
+        error(current_.start, "Expected property name");
+        return nullptr;
+    }
+    const SourceLocation start = current_.start;
+    std::string name = current_.text;
+    advance();
+    return std::make_unique<Identifier>(rangeFrom(start), std::move(name));
 }
 
 NodePtr Parser::parsePrimaryExpression() {
