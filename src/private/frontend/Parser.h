@@ -76,6 +76,7 @@ private:
 
     // 表达式
     NodePtr parseExpression();
+    NodePtr parseLogicalExpression(int minPrecedence);
     NodePtr parseBinaryExpression(int minPrecedence);
     NodePtr parseUnaryExpression();
     NodePtr parseUpdateExpression();

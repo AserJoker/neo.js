@@ -57,6 +57,7 @@ enum class NodeKind : uint8_t {
     UnaryExpression,
     UpdateExpression,
     BinaryExpression,
+    LogicalExpression,
 };
 
 class Node {
@@ -70,12 +71,17 @@ public:
     SourceRange range() const { return range_; }
     void setRange(SourceRange range) { range_ = range; }
 
+    // 是否由括号包裹；用于 ?? 与 ||/&& 的混用限制等语法判断。
+    bool isParenthesized() const { return parenthesized_; }
+    void setParenthesized(bool value) { parenthesized_ = value; }
+
 protected:
     Node(NodeKind kind, SourceRange range) : kind_(kind), range_(range) {}
 
 private:
     NodeKind kind_;
     SourceRange range_;
+    bool parenthesized_ = false;
 };
 
 using NodePtr = std::unique_ptr<Node>;
@@ -263,6 +269,21 @@ struct BinaryExpression final : Node {
           left(std::move(left)),
           right(std::move(right)) {}
     BinaryOperator op;
+    NodePtr left;
+    NodePtr right;
+};
+
+enum class LogicalOperator : uint8_t { And, Or, Nullish };
+
+// left op right（短路求值，与 BinaryExpression 分开）
+struct LogicalExpression final : Node {
+    LogicalExpression(SourceRange range, LogicalOperator op, NodePtr left,
+                      NodePtr right)
+        : Node(NodeKind::LogicalExpression, range),
+          op(op),
+          left(std::move(left)),
+          right(std::move(right)) {}
+    LogicalOperator op;
     NodePtr left;
     NodePtr right;
 };

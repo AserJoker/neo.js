@@ -18,6 +18,8 @@ using neo::frontend::BooleanLiteral;
 using neo::frontend::CallExpression;
 using neo::frontend::ExpressionStatement;
 using neo::frontend::Identifier;
+using neo::frontend::LogicalExpression;
+using neo::frontend::LogicalOperator;
 using neo::frontend::MemberExpression;
 using neo::frontend::NewExpression;
 using neo::frontend::NodeKind;
@@ -747,6 +749,100 @@ TEST(ParserTest, BinaryMissingOperandReportsError) {
 
     ASSERT_NE(result.program, nullptr);
     ASSERT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, LogicalOperators) {
+    struct Case {
+        const char* source;
+        LogicalOperator op;
+    };
+    const Case cases[] = {
+        {"a && b;", LogicalOperator::And},
+        {"a || b;", LogicalOperator::Or},
+        {"a ?? b;", LogicalOperator::Nullish},
+    };
+
+    for (const Case& item : cases) {
+        ParseResult result = parse(item.source);
+        ASSERT_TRUE(result.ok()) << item.source;
+        const auto& statement = statementOf(result, 0);
+        ASSERT_NE(statement.expression, nullptr) << item.source;
+        EXPECT_EQ(statement.expression->kind(), NodeKind::LogicalExpression)
+            << item.source;
+        const auto* logical =
+            static_cast<const LogicalExpression*>(statement.expression.get());
+        EXPECT_EQ(logical->op, item.op) << item.source;
+    }
+}
+
+TEST(ParserTest, LogicalPrecedence) {
+    ParseResult result = parse("a || b && c;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* outer =
+        static_cast<const LogicalExpression*>(statement.expression.get());
+    EXPECT_EQ(outer->op, LogicalOperator::Or);
+    ASSERT_NE(outer->right, nullptr);
+    EXPECT_EQ(outer->right->kind(), NodeKind::LogicalExpression);
+    EXPECT_EQ(static_cast<const LogicalExpression*>(outer->right.get())->op,
+              LogicalOperator::And);
+}
+
+TEST(ParserTest, LogicalBindsLooserThanBinary) {
+    ParseResult result = parse("a + b && c;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* outer =
+        static_cast<const LogicalExpression*>(statement.expression.get());
+    EXPECT_EQ(outer->op, LogicalOperator::And);
+    ASSERT_NE(outer->left, nullptr);
+    EXPECT_EQ(outer->left->kind(), NodeKind::BinaryExpression);
+}
+
+TEST(ParserTest, NullishIsLeftAssociative) {
+    ParseResult result = parse("a ?? b ?? c;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* outer =
+        static_cast<const LogicalExpression*>(statement.expression.get());
+    EXPECT_EQ(outer->op, LogicalOperator::Nullish);
+    ASSERT_NE(outer->left, nullptr);
+    EXPECT_EQ(outer->left->kind(), NodeKind::LogicalExpression);
+    EXPECT_EQ(static_cast<const LogicalExpression*>(outer->left.get())->op,
+              LogicalOperator::Nullish);
+}
+
+TEST(ParserTest, NullishMixingWithoutParenthesesIsError) {
+    const char* sources[] = {
+        "a || b ?? c;",
+        "a ?? b || c;",
+        "a && b ?? c;",
+        "a ?? b && c;",
+    };
+
+    for (const char* source : sources) {
+        ParseResult result = parse(source);
+        EXPECT_FALSE(result.ok()) << source;
+        ASSERT_FALSE(result.errors.empty()) << source;
+        EXPECT_NE(result.errors[0].message.find("Cannot mix"),
+                  std::string::npos)
+            << source;
+    }
+}
+
+TEST(ParserTest, NullishMixingWithParenthesesIsAllowed) {
+    const char* sources[] = {
+        "(a || b) ?? c;",
+        "a ?? (b && c);",
+    };
+
+    for (const char* source : sources) {
+        ParseResult result = parse(source);
+        EXPECT_TRUE(result.ok()) << source;
+    }
 }
 
 TEST(ParserTest, ProgramRangeCoversConsumedInput) {

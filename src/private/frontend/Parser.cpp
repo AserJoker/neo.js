@@ -99,6 +99,35 @@ bool binaryOperator(TokenKind kind, BinaryOperatorInfo& info) {
     }
 }
 
+struct LogicalOperatorInfo {
+    LogicalOperator op;
+    int precedence;
+};
+
+bool logicalOperator(TokenKind kind, LogicalOperatorInfo& info) {
+    switch (kind) {
+        case TokenKind::LogicalOr:
+            info = {LogicalOperator::Or, 1};
+            return true;
+        case TokenKind::NullishCoalescing:
+            info = {LogicalOperator::Nullish, 1};
+            return true;
+        case TokenKind::LogicalAnd:
+            info = {LogicalOperator::And, 2};
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool isUnparenthesizedLogical(const Node* node, LogicalOperator op) {
+    if (node == nullptr || node->kind() != NodeKind::LogicalExpression) {
+        return false;
+    }
+    if (node->isParenthesized()) return false;
+    return static_cast<const LogicalExpression*>(node)->op == op;
+}
+
 bool updateOperator(TokenKind kind, UpdateOperator& op) {
     switch (kind) {
         case TokenKind::PlusPlus:
@@ -281,8 +310,49 @@ NodePtr Parser::parseExpressionStatement() {
 // ---------------------------------------------------------------------------
 
 NodePtr Parser::parseExpression() {
-    // 后续在二元表达式之上逐层加入逻辑、赋值、条件等节点。
-    return parseBinaryExpression(1);
+    // 后续在逻辑表达式之上逐层加入条件、赋值、序列等节点。
+    return parseLogicalExpression(1);
+}
+
+NodePtr Parser::parseLogicalExpression(int minPrecedence) {
+    NodePtr left = parseBinaryExpression(1);
+    if (left == nullptr) return nullptr;
+
+    while (true) {
+        LogicalOperatorInfo info{};
+        if (!logicalOperator(current_.kind, info)) break;
+        if (info.precedence < minPrecedence) break;
+
+        const SourceLocation start = left->range().start;
+        advance();
+
+        NodePtr right = parseLogicalExpression(info.precedence + 1);
+        if (right == nullptr) return nullptr;
+
+        // ?? 不能与 || / && 直接混用；括号包裹的子树不算混用。
+        if (info.op == LogicalOperator::Nullish) {
+            if (isUnparenthesizedLogical(left.get(), LogicalOperator::And) ||
+                isUnparenthesizedLogical(left.get(), LogicalOperator::Or) ||
+                isUnparenthesizedLogical(right.get(), LogicalOperator::And) ||
+                isUnparenthesizedLogical(right.get(), LogicalOperator::Or)) {
+                error(start,
+                      "Cannot mix nullish coalescing with '||' or '&&' without parentheses");
+                return nullptr;
+            }
+        } else {
+            if (isUnparenthesizedLogical(left.get(), LogicalOperator::Nullish) ||
+                isUnparenthesizedLogical(right.get(),
+                                         LogicalOperator::Nullish)) {
+                error(start,
+                      "Cannot mix nullish coalescing with '||' or '&&' without parentheses");
+                return nullptr;
+            }
+        }
+
+        left = std::make_unique<LogicalExpression>(
+            rangeFrom(start), info.op, std::move(left), std::move(right));
+    }
+    return left;
 }
 
 NodePtr Parser::parseBinaryExpression(int minPrecedence) {
@@ -492,6 +562,7 @@ NodePtr Parser::parsePrimaryExpression() {
             if (expression == nullptr) return nullptr;
             if (!expect(TokenKind::RightParen, "')'")) return nullptr;
             expression->setRange(rangeFrom(start));
+            expression->setParenthesized(true);
             return expression;
         }
         default:
