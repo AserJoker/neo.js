@@ -146,7 +146,9 @@ add_library(neojs STATIC
     src/private/core/types/Proxy.cpp
     src/private/core/NativeCoroutine.cpp
     src/private/core/AsyncNative.cpp
+    src/private/core/JSONBuiltins.cpp
     src/private/core/FunctionInvoke.cpp
+    src/private/unicode/Utf8.cpp
     src/private/infra/MallocAllocator.cpp
     src/private/infra/Console.cpp
     src/private/infra/SteadyClock.cpp

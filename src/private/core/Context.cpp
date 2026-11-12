@@ -14,6 +14,7 @@
 
 #include "core/Context.h"
 #include "core/ArrayBuiltins.h"
+#include "core/JSONBuiltins.h"
 #include "core/AsyncGeneratorBuiltins.h"
 #include "core/ErrorBuiltins.h"
 #include "core/GeneratorBuiltins.h"
@@ -127,6 +128,12 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     // 9. 注册 Array 构造函数与 Array.prototype（ADR-018 §6）。
     //    依赖 Object.prototype / Function.prototype 已就绪。
     if (!registerArrayBuiltins(this)) {
+        std::abort();
+    }
+
+    // 9b. 注册 JSON 命名空间（ES2024 §25.5）。
+    //     依赖 Object.prototype / Array.prototype 已就绪。
+    if (!registerJSONBuiltins(this)) {
         std::abort();
     }
 
