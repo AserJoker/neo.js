@@ -84,6 +84,7 @@ private:
     NodePtr parseForInStatement(NodePtr left, SourceLocation start);
     NodePtr parseForOfStatement(NodePtr left, SourceLocation start);
     NodePtr parseReturnStatement();
+    NodePtr parseThrowStatement();
     bool isLetDeclarationStart();
 
     // 表达式

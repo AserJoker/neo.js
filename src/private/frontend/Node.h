@@ -51,6 +51,7 @@ enum class NodeKind : uint8_t {
     ForInStatement,
     ForOfStatement,
     ReturnStatement,
+    ThrowStatement,
 
     // 表达式
     Identifier,
@@ -227,6 +228,13 @@ struct ReturnStatement final : Node {
         : Node(NodeKind::ReturnStatement, range),
           argument(std::move(argument)) {}
     NodePtr argument;  // 可空
+};
+
+struct ThrowStatement final : Node {
+    ThrowStatement(SourceRange range, NodePtr argument)
+        : Node(NodeKind::ThrowStatement, range),
+          argument(std::move(argument)) {}
+    NodePtr argument;
 };
 
 // ---------------------------------------------------------------------------

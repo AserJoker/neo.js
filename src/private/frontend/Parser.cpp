@@ -368,7 +368,26 @@ NodePtr Parser::parseStatement() {
     if (at(TokenKind::Do)) return parseDoWhileStatement();
     if (at(TokenKind::For)) return parseForStatement();
     if (at(TokenKind::Return)) return parseReturnStatement();
+    if (at(TokenKind::Throw)) return parseThrowStatement();
     return parseExpressionStatement();
+}
+
+NodePtr Parser::parseThrowStatement() {
+    const SourceLocation start = current_.start;
+    advance();  // 'throw'
+
+    // 受限产生式：throw 后不允许行终止符。
+    if (current_.precededByLineTerminator) {
+        error(current_.start, "Illegal newline after throw");
+        return nullptr;
+    }
+
+    NodePtr argument = parseExpression();
+    if (argument == nullptr) return nullptr;
+    if (!consumeSemicolon()) return nullptr;
+
+    return std::make_unique<ThrowStatement>(rangeFrom(start),
+                                            std::move(argument));
 }
 
 NodePtr Parser::parseReturnStatement() {

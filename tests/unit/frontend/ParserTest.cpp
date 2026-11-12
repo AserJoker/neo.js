@@ -40,6 +40,7 @@ using neo::frontend::RegExpLiteral;
 using neo::frontend::ReturnStatement;
 using neo::frontend::SequenceExpression;
 using neo::frontend::StringLiteral;
+using neo::frontend::ThrowStatement;
 using neo::frontend::UnaryExpression;
 using neo::frontend::UnaryOperator;
 using neo::frontend::UpdateExpression;
@@ -1820,6 +1821,53 @@ TEST(ParserTest, ReturnMissingSemicolonReportsError) {
     ASSERT_NE(result.program, nullptr);
     ASSERT_FALSE(result.errors.empty());
     EXPECT_NE(result.errors[0].message.find("Expected ';'"), std::string::npos);
+}
+
+TEST(ParserTest, ThrowStatement) {
+    ParseResult result = parse("throw x + y;");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    ASSERT_EQ(programOf(result).body[0]->kind(), NodeKind::ThrowStatement);
+
+    const auto* statement =
+        static_cast<const ThrowStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->argument, nullptr);
+    EXPECT_EQ(statement->argument->kind(), NodeKind::BinaryExpression);
+}
+
+TEST(ParserTest, ThrowLineTerminatorReportsError) {
+    ParseResult result = parse("throw\nx;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Illegal newline after throw"),
+              std::string::npos);
+}
+
+TEST(ParserTest, ThrowWithoutArgumentReportsError) {
+    ParseResult result = parse("throw;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, ThrowMissingSemicolonReportsError) {
+    ParseResult result = parse("throw x y;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Expected ';'"), std::string::npos);
+}
+
+TEST(ParserTest, ThrowInsideBlock) {
+    ParseResult result = parse("{ throw x; }");
+
+    ASSERT_TRUE(result.ok());
+    const auto* block =
+        static_cast<const BlockStatement*>(programOf(result).body[0].get());
+    ASSERT_EQ(block->body.size(), 1u);
+    EXPECT_EQ(block->body[0]->kind(), NodeKind::ThrowStatement);
 }
 
 TEST(ParserTest, ProgramRangeCoversConsumedInput) {
