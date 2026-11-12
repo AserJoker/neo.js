@@ -569,18 +569,6 @@ Value* ProxyType::setPrototype(IContext* ctx, Value* self, Value* proto) {
     return ctx->createBoolean(true);
 }
 
-void ProxyType::setIndexedIntegrity(IContext* ctx, Value* self, bool frozen) {
-    auto* d = asProxy(self);
-    bool present = false;
-    Value* err = nullptr;
-    lookupTrap(ctx, d, "defineProperty", present, err);
-    // 无 defineProperty trap 时 [[DefineOwnProperty]] 直接落到 target；
-    // 有 trap 时由 trap 决定是否真正修改 target（规范语义）。
-    if (err == nullptr && !present) {
-        d->target->type()->setIndexedIntegrity(ctx, d->target, frozen);
-    }
-}
-
 Value* ProxyType::isExtensible(IContext* ctx, Value* self) {
     auto* d = asProxy(self);
     bool present = false;

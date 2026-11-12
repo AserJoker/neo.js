@@ -93,7 +93,6 @@ TEST(ArrayPipelineTest, SparseWriteMigrationAndTruncate) {
     ctx->setProperty(arr, "0", ctx->createString("a"));
     ctx->setProperty(arr, "1000", ctx->createString("z"));
 
-    EXPECT_TRUE(dataOf(arr)->sparseMode);
     EXPECT_EQ(dataOf(arr)->length(), 1001u);
     EXPECT_EQ(strOf(ctx->getProperty(arr, "0")), "a");
     EXPECT_EQ(strOf(ctx->getProperty(arr, "1000")), "z");

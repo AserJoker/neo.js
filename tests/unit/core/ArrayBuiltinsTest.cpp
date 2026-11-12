@@ -258,7 +258,6 @@ TEST(ArrayBuiltinsTest, PushGrowsBeyondDenseLimit) {
         callMethod(ctx.get(), arr, "push", 1, arg);
     }
     EXPECT_EQ(dataOf(arr)->length(), 100u);
-    EXPECT_TRUE(dataOf(arr)->sparseMode);
 }
 
 TEST(ArrayBuiltinsTest, PopRemovesAndReturnsLast) {

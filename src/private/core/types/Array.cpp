@@ -1,6 +1,6 @@
 // Array.cpp - ArrayType 行为方法 + ArrayData 元素容器实现
 //
-// 索引元素混合存储（见 Array.h）：小数组 vector（nullptr=空洞），超阈值迁移 map。
+// 索引元素按 idx -> Property 存储（见 Array.h）：正确性优先，不做稠密优化。
 // 命名属性/符号属性/原型链全部委托 ObjectType（ArrayData 继承 ObjectData）。
 //
 // 关联 ADR: 015（data 持子 value）、018（对象模型 §6）、019（赋值语义 §2）
@@ -12,6 +12,7 @@
 #include "core/types/PrimitiveWrapper.h"
 #include "core/types/TypeBehavior.h"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 
@@ -27,21 +28,6 @@ inline bool isSymbolKeyValue(Value* key) {
 // 创建 "Invalid array length" 异常
 Value* invalidLength(IContext* ctx) {
     return detail::rangeError(ctx, "Invalid array length");
-}
-
-// 沿原型链查找索引元素（含 self 自身）。
-// 链上任意具备对象布局的节点都参与：索引型 exotic 查其索引容器，
-// 其余（Object/Function/迭代器...）跳过该层继续沿 prototype 走。
-// 经 IType::hasIndexedElements/indexedElement 访问，新增索引型类型无需改这里。
-Value* findIndexInChain(IContext* ctx, Value* self, uint32_t index) {
-    for (Value* cur = self; cur != nullptr && kindHasObjectLayout(cur->type()->kind());) {
-        IType* t = cur->type();
-        if (t->hasIndexedElements()) {
-            if (Value* v = t->indexedElement(ctx, cur, index)) return v;
-        }
-        cur = static_cast<ObjectData*>(cur->data())->prototype;
-    }
-    return nullptr;
 }
 
 }  // namespace
@@ -65,68 +51,31 @@ bool parseArrayIndex(const std::string& key, uint32_t& out) {
 // —— ArrayData ——
 
 Value* ArrayData::elementAt(uint32_t index) const {
-    if (sparseMode) {
-        auto it = sparse.find(index);
-        return it == sparse.end() ? nullptr : it->second;
-    }
-    return index < dense.size() ? dense[index] : nullptr;
+    auto it = elements.find(index);
+    if (it == elements.end() || isAccessorDescriptor(it->second)) return nullptr;
+    return it->second.value;
 }
 
 bool ArrayData::hasElement(uint32_t index) const {
-    return elementAt(index) != nullptr;
-}
-
-void ArrayData::toSparse() {
-    if (sparseMode) return;
-    sparse.reserve(dense.size());
-    for (size_t i = 0; i < dense.size(); ++i) {
-        if (dense[i] != nullptr) {
-            sparse[static_cast<uint32_t>(i)] = dense[i];
-        }
-    }
-    dense.clear();
-    dense.shrink_to_fit();
-    sparseMode = true;
+    return elements.find(index) != elements.end();
 }
 
 void ArrayData::setElement(uint32_t index, Value* value) {
-    // 超过稠密阈值 → 一次性迁移到稀疏存储（不回切）
-    if (!sparseMode && index >= kArrayDenseLimit) toSparse();
-
-    if (sparseMode) {
-        sparse[index] = value;
-        if (index + 1 > length_) length_ = index + 1;
-        return;
-    }
-    if (index >= dense.size()) {
-        dense.resize(static_cast<size_t>(index) + 1, nullptr);
-    }
-    dense[index] = value;
-    length_ = static_cast<uint32_t>(dense.size());
+    elements[index] = Property{value, true, true, true, nullptr, nullptr};
+    if (index + 1 > length_) length_ = index + 1;
 }
 
 bool ArrayData::removeElement(uint32_t index) {
-    if (sparseMode) {
-        return sparse.erase(index) != 0;
-    }
-    if (index >= dense.size() || dense[index] == nullptr) return false;
-    dense[index] = nullptr;  // 置空洞，length 不变
-    return true;
+    return elements.erase(index) != 0;
 }
 
 void ArrayData::setLength(uint32_t n) {
-    if (!sparseMode && n > kArrayDenseLimit) toSparse();
-
-    if (sparseMode) {
-        for (auto it = sparse.begin(); it != sparse.end();) {
-            if (it->first >= n) {
-                it = sparse.erase(it);
-            } else {
-                ++it;
-            }
+    for (auto it = elements.begin(); it != elements.end();) {
+        if (it->first >= n) {
+            it = elements.erase(it);
+        } else {
+            ++it;
         }
-    } else {
-        dense.resize(n, nullptr);  // 截断或补空洞
     }
     length_ = n;
 }
@@ -134,16 +83,12 @@ void ArrayData::setLength(uint32_t n) {
 void ArrayData::enumerateChildren(IGCVisitor* visitor) {
     // 继承的对象字段：prototype + 命名属性 + 符号属性 + 私有槽
     ObjectData::enumerateChildren(visitor);
-    // 索引元素（空洞为 nullptr，跳过）
-    if (sparseMode) {
-        for (auto& [index, value] : sparse) {
-            (void)index;
-            if (value != nullptr) visitor->visit(value);
-        }
-        return;
-    }
-    for (Value* v : dense) {
-        if (v != nullptr) visitor->visit(v);
+    // 索引属性：value/getter/setter 全部保活。
+    for (auto& [index, prop] : elements) {
+        (void)index;
+        if (prop.value != nullptr) visitor->visit(prop.value);
+        if (prop.getter != nullptr) visitor->visit(prop.getter);
+        if (prop.setter != nullptr) visitor->visit(prop.setter);
     }
 }
 
@@ -211,25 +156,8 @@ uint32_t ArrayType::indexedLength(Value* self) const {
     return static_cast<ArrayData*>(self->data())->length();
 }
 
-bool ArrayType::indexedWritable(Value* self) const {
-    return !static_cast<ArrayData*>(self->data())->frozen;
-}
-
-bool ArrayType::indexedConfigurable(Value* self) const {
-    return !static_cast<ArrayData*>(self->data())->sealed;
-}
-
 bool ArrayType::indexedLengthWritable(Value* self) const {
     return static_cast<ArrayData*>(self->data())->lengthWritable;
-}
-
-void ArrayType::setIndexedIntegrity(IContext* /*ctx*/, Value* self, bool frozen) {
-    auto* d = static_cast<ArrayData*>(self->data());
-    d->sealed = true;
-    if (frozen) {
-        d->frozen = true;
-        d->lengthWritable = false;
-    }
 }
 
 Value* ArrayType::indexedElement(IContext* /*ctx*/, Value* self,
@@ -237,66 +165,74 @@ Value* ArrayType::indexedElement(IContext* /*ctx*/, Value* self,
     return static_cast<ArrayData*>(self->data())->elementAt(index);
 }
 
-Value* ArrayType::getProperty(IContext* ctx, Value* self, Value* key) {
-    std::string k;
-    if (!isSymbolKeyValue(key)) {
-        if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
-        if (k == "length") {
-            return ctx->createNumber(
-                static_cast<double>(static_cast<ArrayData*>(self->data())->length()));
+// 索引自有属性 / length：Array 自己维护；其余走普通对象算法。
+Value* ArrayType::getOwnProperty(IContext* ctx, Value* self, const PropertyKey& key,
+                                 bool& exists, Property& out) const {
+    exists = false;
+    auto* d = static_cast<ArrayData*>(self->data());
+    if (!key.isSymbol) {
+        if (key.name == "length") {
+            Value* len = ctx->createNumber(static_cast<double>(d->length_));
+            if (len == ctx->oomValue()) return len;
+            out = Property{len, d->lengthWritable, false, false, nullptr, nullptr};
+            exists = true;
+            return nullptr;
         }
         uint32_t index = 0;
-        if (parseArrayIndex(k, index)) {
-            // 沿原型链查找索引元素（空洞则继续向上，与普通属性查找一致）
-            if (Value* v = findIndexInChain(ctx, self, index)) return v;
+        if (parseArrayIndex(key.name, index)) {
+            auto it = d->elements.find(index);
+            if (it != d->elements.end()) {
+                out = it->second;
+                exists = true;
+            }
+            return nullptr;
         }
     }
+    return getObjectType()->getOwnProperty(ctx, self, key, exists, out);
+}
+
+Value* ArrayType::ownKeys(IContext* ctx, Value* self, std::vector<Value*>& out) const {
+    auto* d = static_cast<ArrayData*>(self->data());
+    std::vector<uint32_t> indices;
+    indices.reserve(d->elements.size());
+    for (const auto& [index, prop] : d->elements) {
+        (void)prop;
+        indices.push_back(index);
+    }
+    std::sort(indices.begin(), indices.end());
+    for (uint32_t index : indices) {
+        Value* k = ctx->createString(std::to_string(index));
+        if (k == ctx->oomValue()) return k;
+        out.push_back(k);
+    }
+    Value* lenKey = ctx->createString("length");
+    if (lenKey == ctx->oomValue()) return lenKey;
+    out.push_back(lenKey);
+    for (const std::string& name : d->order) {
+        uint32_t index = 0;
+        if (parseArrayIndex(name, index)) continue;
+        if (d->properties.find(name) == d->properties.end()) continue;
+        Value* k = ctx->createString(name);
+        if (k == ctx->oomValue()) return k;
+        out.push_back(k);
+    }
+    for (const void* ident : d->symbolOrder) {
+        auto it = d->symbols.find(ident);
+        if (it == d->symbols.end()) continue;
+        out.push_back(it->second.key);
+    }
+    return nullptr;
+}
+
+Value* ArrayType::getProperty(IContext* ctx, Value* self, Value* key) {
     return getObjectType()->getProperty(ctx, self, key);
 }
 
 Value* ArrayType::setProperty(IContext* ctx, Value* self, Value* key, Value* value) {
-    auto* d = static_cast<ArrayData*>(self->data());
-    std::string k;
-    if (!isSymbolKeyValue(key)) {
-        if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
-        // [[Set]] 失败：严格模式抛 TypeError，sloppy 静默返回 RHS。
-        auto failSet = [&](const std::string& name) -> Value* {
-            if (!ctx->hasFlag("strict")) return value;
-            return detail::typeError(ctx, "Cannot assign to read only property '" + name + "'");
-        };
-        if (k == "length") {
-            if (!d->lengthWritable) return failSet(k);
-            // ArraySetLength：值须为 0..2^32-1 的整数
-            if (value->type()->kind() != TypeKind::Number) return invalidLength(ctx);
-            double n = static_cast<NumberData*>(value->data())->value;
-            if (!std::isfinite(n) || n < 0.0 || n > static_cast<double>(kArrayMaxLength) ||
-                std::floor(n) != n) {
-                return invalidLength(ctx);
-            }
-            d->setLength(static_cast<uint32_t>(n));
-            return value;
-        }
-        uint32_t index = 0;
-        if (parseArrayIndex(k, index)) {
-            bool exists = d->hasElement(index);
-            if ((exists && d->frozen) || (!exists && !d->extensible)) return failSet(k);
-            d->setElement(index, value);
-            return value;
-        }
-    }
     return getObjectType()->setProperty(ctx, self, key, value);
 }
 
 Value* ArrayType::hasProperty(IContext* ctx, Value* self, Value* key) {
-    std::string k;
-    if (!isSymbolKeyValue(key)) {
-        if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
-        if (k == "length") return ctx->createBoolean(true);
-        uint32_t index = 0;
-        if (parseArrayIndex(k, index) && findIndexInChain(ctx, self, index) != nullptr) {
-            return ctx->createBoolean(true);
-        }
-    }
     return getObjectType()->hasProperty(ctx, self, key);
 }
 
@@ -308,15 +244,18 @@ Value* ArrayType::deleteProperty(IContext* ctx, Value* self, Value* key) {
         uint32_t index = 0;
         if (parseArrayIndex(k, index)) {
             auto* d = static_cast<ArrayData*>(self->data());
-            if (!d->hasElement(index)) return ctx->createBoolean(true);
-            if (d->sealed) return ctx->createBoolean(false);
-            d->removeElement(index);
+            auto it = d->elements.find(index);
+            if (it == d->elements.end()) return ctx->createBoolean(true);
+            if (!it->second.configurable) return ctx->createBoolean(false);
+            d->elements.erase(it);
             return ctx->createBoolean(true);
         }
     }
     return getObjectType()->deleteProperty(ctx, self, key);
 }
 
+// ArraySetLength（ES2024 §10.4.2.4）：缩短时逐个删除索引，
+// 遇到不可配置属性则失败并把 length 设为该索引 + 1。
 Value* ArrayType::defineProperty(IContext* ctx, Value* self, Value* key,
                                  Value* value, bool writable, bool enumerable,
                                  bool configurable) {
@@ -325,44 +264,66 @@ Value* ArrayType::defineProperty(IContext* ctx, Value* self, Value* key,
     if (!isSymbolKeyValue(key)) {
         if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
         if (k == "length") {
-            // length 不可配置、不可枚举；writable 可收紧不可恢复。
             if (enumerable || configurable) return ctx->createBoolean(false);
             if (!writable && d->lengthWritable) {
                 d->lengthWritable = false;
             } else if (writable && !d->lengthWritable) {
                 return ctx->createBoolean(false);
             }
-            if (value->type()->kind() != TypeKind::Number) return invalidLength(ctx);
-            double n = static_cast<NumberData*>(value->data())->value;
-            if (!std::isfinite(n) || n < 0.0 || n > static_cast<double>(kArrayMaxLength) ||
-                std::floor(n) != n) {
-                return invalidLength(ctx);
+            Value* nv = detail::toNumberValue(ctx, value);
+            if (detail::isErrorValue(nv)) return nv;
+            double num = static_cast<NumberData*>(nv->data())->value;
+            uint32_t newLen = 0;
+            if (!std::isnan(num) && !std::isinf(num) && num != 0.0) {
+                double mod = std::fmod(std::trunc(num), 4294967296.0);
+                if (mod < 0.0) mod += 4294967296.0;
+                newLen = static_cast<uint32_t>(mod);
             }
-            if (!d->lengthWritable && n != static_cast<double>(d->length())) {
+            if (static_cast<double>(newLen) != num) return invalidLength(ctx);
+            if (!d->lengthWritable && newLen != d->length_) {
                 return ctx->createBoolean(false);
             }
-            d->setLength(static_cast<uint32_t>(n));
+            if (newLen < d->length_) {
+                // 从高到低删除；不可配置索引阻断截断。
+                uint32_t blocked = 0;
+                bool hasBlocked = false;
+                for (auto it = d->elements.begin(); it != d->elements.end();) {
+                    if (it->first >= newLen) {
+                        if (!it->second.configurable) {
+                            if (!hasBlocked || it->first > blocked) {
+                                blocked = it->first;
+                                hasBlocked = true;
+                            }
+                            ++it;
+                        } else {
+                            it = d->elements.erase(it);
+                        }
+                    } else {
+                        ++it;
+                    }
+                }
+                if (hasBlocked) {
+                    d->length_ = blocked + 1;
+                    return ctx->createBoolean(false);
+                }
+            }
+            d->length_ = newLen;
             return ctx->createBoolean(true);
         }
         uint32_t index = 0;
         if (parseArrayIndex(k, index)) {
-            bool exists = d->hasElement(index);
-            if (!exists && !d->extensible) return ctx->createBoolean(false);
-            if (!enumerable) return ctx->createBoolean(false);
-            // 引擎不存逐元素描述符：未 seal 时只接受全默认特性；
-            // seal/freeze 通过 setIndexedIntegrity 预置整数组状态。
-            if (!d->sealed) {
-                if (!writable || !configurable) return ctx->createBoolean(false);
-                d->setElement(index, value);
-                return ctx->createBoolean(true);
+            Property desc{value, writable, enumerable, configurable, nullptr, nullptr};
+            auto it = d->elements.find(index);
+            if (it != d->elements.end()) {
+                if (!isCompatiblePropertyDescriptor(it->second, desc)) {
+                    return ctx->createBoolean(false);
+                }
+                it->second = desc;
+            } else {
+                if (!d->extensible) return ctx->createBoolean(false);
+                d->elements.emplace(index, desc);
             }
-            if (configurable) return ctx->createBoolean(false);
-            if (writable && d->frozen) return ctx->createBoolean(false);
-            if (d->frozen && exists &&
-                !detail::sameValue(value, d->elementAt(index))) {
-                return ctx->createBoolean(false);
-            }
-            d->setElement(index, value);
+            if (index + 1 > d->length_) d->length_ = index + 1;
             return ctx->createBoolean(true);
         }
     }
@@ -372,12 +333,26 @@ Value* ArrayType::defineProperty(IContext* ctx, Value* self, Value* key,
 
 Value* ArrayType::defineAccessor(IContext* ctx, Value* self, Value* key, Value* getter,
                                  Value* setter, bool enumerable, bool configurable) {
+    auto* d = static_cast<ArrayData*>(self->data());
     std::string k;
     if (!isSymbolKeyValue(key)) {
         if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
+        if (k == "length") return ctx->createBoolean(false);
         uint32_t index = 0;
-        if (k == "length" || parseArrayIndex(k, index)) {
-            return ctx->createBoolean(false);
+        if (parseArrayIndex(k, index)) {
+            Property desc{nullptr, false, enumerable, configurable, getter, setter};
+            auto it = d->elements.find(index);
+            if (it != d->elements.end()) {
+                if (!isCompatiblePropertyDescriptor(it->second, desc)) {
+                    return ctx->createBoolean(false);
+                }
+                it->second = desc;
+            } else {
+                if (!d->extensible) return ctx->createBoolean(false);
+                d->elements.emplace(index, desc);
+            }
+            if (index + 1 > d->length_) d->length_ = index + 1;
+            return ctx->createBoolean(true);
         }
     }
     return getObjectType()->defineAccessor(ctx, self, key, getter, setter, enumerable,

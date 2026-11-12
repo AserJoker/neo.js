@@ -184,9 +184,17 @@ false"表达结果，而是用 Value 的三态：
 - **TODO（依赖 VM/字节码层）**：for-in 枚举顺序与 Proxy 的完整交互；JSON。
 - `Object.seal/freeze/isSealed/isFrozen` 已实现（SetIntegrityLevel /
   TestIntegrityLevel），Proxy 经 trap 转发并校验不变量。
-- Array 不存逐元素描述符：seal/freeze 用整数组 `sealed`/`frozen` 标志
-  表达（`setIndexedIntegrity` 钩子），因此单独对某个索引调用
-  `Object.defineProperty` 收紧特性会被拒绝；整数组收紧是受支持路径。
+- Array 与普通对象同构：索引元素存 `idx -> Property`（逐元素描述符），
+  `length` 由 `ArraySetLength` 维护。seal/freeze 走通用逐属性循环，
+  截断 length 时不可配置索引会阻断并回填 `length`；支持单独收紧某个索引
+  及索引访问器。本阶段不做稠密/稀疏优化，正确性优先。
+- 部分描述符（`{value: 2}` 等）在 `Object.defineProperty/defineProperties`、
+  `Object.create` 第二参数与 `Reflect.defineProperty` 中与当前描述符合并，
+  缺失字段表示“不修改”；字段存在性用 HasProperty 判定，显式
+  `{value: undefined}` 与字段缺失语义不同。
+- Proxy 的 `[[DefineOwnProperty]]` 仍接收补全后的完整描述符（内部接口暂
+  只支持完整 Property）；为避免额外触发 `[[GetOwnProperty]]` trap，Proxy
+  路径不做调用前的合并。
 
 - `hasProperty` 返回 `Value*`（Boolean 或 Exception/Fatal），has trap
   抛错原样透传。

@@ -143,10 +143,6 @@ public:
     virtual bool indexedWritable(Value* /*self*/) const { return true; }
     virtual bool indexedConfigurable(Value* /*self*/) const { return true; }
     virtual bool indexedLengthWritable(Value* /*self*/) const { return false; }
-    // SetIntegrityLevel 钩子：索引型 exotic 收紧索引/length 的特性。
-    // 默认无操作；Proxy 在无 defineProperty trap 时转发 target。
-    virtual void setIndexedIntegrity(IContext* /*ctx*/, Value* /*self*/,
-                                     bool /*frozen*/) {}
 
     // —— 对象内部方法（ES2024 §10.1，Proxy 的落点）——
     // 属性算法（Get/Set/Has/Delete/OwnPropertyKeys）必须逐跳经此分派，

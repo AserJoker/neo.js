@@ -262,14 +262,15 @@ TEST(ArrayTest, InvalidLengthRejected) {
               TypeKind::Exception);
     EXPECT_EQ(ctx->setProperty(arr, "length", ctx->createNumber(1.5))->type()->kind(),
               TypeKind::Exception);
+    // ToUint32("2") = 2：字符串长度是合法的。
     EXPECT_EQ(ctx->setProperty(arr, "length", ctx->createString("2"))->type()->kind(),
-              TypeKind::Exception);
-    EXPECT_EQ(dataOf(arr)->length(), 0u);
+              TypeKind::String);
+    EXPECT_EQ(dataOf(arr)->length(), 2u);
 }
 
 // ===== 混合存储 =====
 
-TEST(ArrayTest, SmallArrayUsesDenseStorage) {
+TEST(ArrayTest, SmallArrayStoresElements) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
@@ -280,11 +281,11 @@ TEST(ArrayTest, SmallArrayUsesDenseStorage) {
         ctx->setProperty(arr, ctx->createNumber(static_cast<double>(i)),
                          ctx->createNumber(static_cast<double>(i)));
     }
-    EXPECT_FALSE(dataOf(arr)->sparseMode);
-    EXPECT_EQ(dataOf(arr)->dense.size(), kArrayDenseLimit);
+    EXPECT_EQ(dataOf(arr)->length(), kArrayDenseLimit);
+    EXPECT_EQ(dataOf(arr)->elements.size(), kArrayDenseLimit);
 }
 
-TEST(ArrayTest, LargeIndexMigratesToSparse) {
+TEST(ArrayTest, LargeIndexExtendsLength) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
@@ -294,14 +295,13 @@ TEST(ArrayTest, LargeIndexMigratesToSparse) {
     ctx->setProperty(arr, "0", ctx->createNumber(1));
     ctx->setProperty(arr, "100", ctx->createNumber(2));
 
-    EXPECT_TRUE(dataOf(arr)->sparseMode);
     EXPECT_EQ(dataOf(arr)->length(), 101u);
     EXPECT_EQ(numOf(ctx->getProperty(arr, "0")), 1.0);
     EXPECT_EQ(numOf(ctx->getProperty(arr, "100")), 2.0);
     EXPECT_FALSE(neo::test::hasProperty(ctx, arr, "50"));
 }
 
-TEST(ArrayTest, SparseModeDoesNotRevert) {
+TEST(ArrayTest, TruncateToZeroDropsElements) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
@@ -309,13 +309,12 @@ TEST(ArrayTest, SparseModeDoesNotRevert) {
 
     Value* arr = ctx->createArray();
     ctx->setProperty(arr, "100", ctx->createNumber(1));
-    ASSERT_TRUE(dataOf(arr)->sparseMode);
     ctx->setProperty(arr, "length", ctx->createNumber(0));
-    EXPECT_TRUE(dataOf(arr)->sparseMode);  // 不回切
     EXPECT_EQ(dataOf(arr)->length(), 0u);
+    EXPECT_TRUE(dataOf(arr)->elements.empty());
 }
 
-TEST(ArrayTest, LargeLengthMigratesToSparse) {
+TEST(ArrayTest, LargeLengthIsStored) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
@@ -323,7 +322,6 @@ TEST(ArrayTest, LargeLengthMigratesToSparse) {
 
     Value* arr = ctx->createArray();
     ctx->setProperty(arr, "length", ctx->createNumber(1000));
-    EXPECT_TRUE(dataOf(arr)->sparseMode);
     EXPECT_EQ(dataOf(arr)->length(), 1000u);
 }
 
@@ -470,23 +468,7 @@ TEST(ArrayTest, DeleteMissingIndexReturnsTrue) {
     EXPECT_FALSE(neo::test::hasProperty(ctx, arr, "100"));
 }
 
-TEST(ArrayTest, ToSparseIsIdempotent) {
-    auto alloc = createMallocAllocator();
-    NullSink sink;
-    Console console(&sink);
-    auto ctx = createContext(alloc.get(), &console);
-
-    Value* arr = ctx->createArray();
-    ctx->setProperty(arr, "0", ctx->createNumber(1));
-    auto* d = dataOf(arr);
-    d->toSparse();
-    ASSERT_TRUE(d->sparseMode);
-    d->toSparse();  // 已稀疏：直接返回
-    EXPECT_TRUE(d->sparseMode);
-    EXPECT_EQ(numOf(ctx->getProperty(arr, "0")), 1.0);
-}
-
-TEST(ArrayTest, DenseToSparseMigrationKeepsExistingElements) {
+TEST(ArrayTest, LargeIndexKeepsExistingElements) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
@@ -496,9 +478,7 @@ TEST(ArrayTest, DenseToSparseMigrationKeepsExistingElements) {
     ctx->setProperty(arr, "0", ctx->createNumber(1));
     ctx->setProperty(arr, "1", ctx->createNumber(2));
     ctx->setProperty(arr, "2", ctx->createNumber(3));
-    // 触发迁移
     ctx->setProperty(arr, "200", ctx->createNumber(4));
-    ASSERT_TRUE(dataOf(arr)->sparseMode);
     EXPECT_EQ(numOf(ctx->getProperty(arr, "0")), 1.0);
     EXPECT_EQ(numOf(ctx->getProperty(arr, "1")), 2.0);
     EXPECT_EQ(numOf(ctx->getProperty(arr, "2")), 3.0);
@@ -519,16 +499,22 @@ TEST(ArrayTest, DefineIndexProperty) {
     EXPECT_EQ(dataOf(arr)->length(), 3u);
 }
 
-TEST(ArrayTest, DefineIndexWithNonDefaultAttributesRejected) {
+TEST(ArrayTest, DefineIndexWithNonDefaultAttributes) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
 
     Value* arr = ctx->createArray();
-    EXPECT_EQ(ctx->defineProperty(arr, "0", ctx->createNumber(1), false, true, true)
-                  ->type()->kind(),
-              TypeKind::Exception);
+    // 逐元素描述符：只影响该索引。
+    EXPECT_EQ(numOf(ctx->defineProperty(arr, "0", ctx->createNumber(1), false, true, true)),
+              1.0);
+    ctx->setProperty(arr, "0", ctx->createNumber(2));
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(arr, "0")), 1.0);
+    // 其他索引不受影响。
+    ctx->setProperty(arr, "1", ctx->createNumber(3));
+    ctx->setProperty(arr, "1", ctx->createNumber(4));
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(arr, "1")), 4.0);
 }
 
 TEST(ArrayTest, DefineLengthRejectsEnumerableOrConfigurable) {
@@ -546,7 +532,7 @@ TEST(ArrayTest, DefineLengthRejectsEnumerableOrConfigurable) {
               TypeKind::Exception);
 }
 
-TEST(ArrayTest, DefineAccessorOnIndexRejected) {
+TEST(ArrayTest, DefineAccessorOnIndex) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
@@ -554,9 +540,10 @@ TEST(ArrayTest, DefineAccessorOnIndexRejected) {
 
     Value* arr = ctx->createArray();
     Value* getter = ctx->createNativeFunction(
-        [](IContext* c, Value*, size_t, Value*[]) { return c->createUndefined(); }, 0);
-    EXPECT_EQ(ctx->defineAccessor(arr, "0", getter, nullptr)->type()->kind(),
-              TypeKind::Exception);
+        [](IContext* c, Value*, size_t, Value*[]) { return c->createNumber(42); }, 0);
+    EXPECT_EQ(ctx->defineAccessor(arr, "0", getter, nullptr), arr);
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(arr, "0")), 42.0);
+    // length 仍不可定义访问器。
     EXPECT_EQ(ctx->defineAccessor(arr, "length", getter, nullptr)->type()->kind(),
               TypeKind::Exception);
 }

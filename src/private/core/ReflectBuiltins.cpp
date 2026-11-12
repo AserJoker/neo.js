@@ -102,15 +102,9 @@ Value* reflectDefineProperty(IContext* ctx, Value* /*self*/, size_t argc, Value*
     if (descObj == nullptr || !detail::isObjectKind(descObj->type()->kind())) {
         return detail::typeError(ctx, "Reflect.defineProperty: descriptor must be an object");
     }
-    Property desc;
-    if (Value* err = propertyDescriptorFromValue(ctx, descObj, desc)) return err;
-    Value* r = isAccessorDescriptor(desc)
-                   ? target->type()->defineAccessor(ctx, target, key.value, desc.getter,
-                                                    desc.setter, desc.enumerable,
-                                                    desc.configurable)
-                   : target->type()->defineProperty(ctx, target, key.value, desc.value,
-                                                    desc.writable, desc.enumerable,
-                                                    desc.configurable);
+    PropertyDescriptor desc;
+    if (Value* err = partialPropertyDescriptorFromValue(ctx, descObj, desc)) return err;
+    Value* r = definePropertyFromPartialDescriptor(ctx, target, key, desc);
     // 内部方法以 Value 表达三态：Exception = 抛出（透传），Boolean = 操作结果。
     if (detail::isErrorValue(r)) return r;
     return ctx->createBoolean(detail::toBoolean(r));

@@ -988,6 +988,38 @@ TEST(ObjectBuiltinsTest, ObjectDefinePropertyWithDescriptor) {
     EXPECT_EQ(ctx->getProperty(obj, "y"), obj);
 }
 
+TEST(ObjectBuiltinsTest, ObjectDefinePropertyMergesPartialDescriptor) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    ctx->defineProperty(obj, "x", ctx->createNumber(1), true, true, true);
+
+    // 只给 value：writable/enumerable/configurable 沿用当前值。
+    Value* desc = ctx->createObject();
+    ctx->setProperty(desc, "value", ctx->createNumber(2));
+    Value* args[3] = {obj, ctx->createString("x"), desc};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "defineProperty", 3, args), obj);
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(obj, "x")), 2.0);
+
+    Value* isEnum = ctx->getProperty(ctx->objectPrototype(), "propertyIsEnumerable");
+    Value* enumArg[1] = {ctx->createString("x")};
+    EXPECT_TRUE(boolOf(ctx->call(isEnum, obj, 1, enumArg)));
+
+    // writable 仍为 true：普通赋值可覆盖。
+    ctx->setProperty(obj, "x", ctx->createNumber(3));
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(obj, "x")), 3.0);
+
+    // 显式 {value: undefined} 与字段缺失不同：应把值改为 undefined。
+    Value* undefDesc = ctx->createObject();
+    ctx->setProperty(undefDesc, "value", ctx->createUndefined());
+    Value* args2[3] = {obj, ctx->createString("x"), undefDesc};
+    EXPECT_EQ(callObjectStatic(ctx.get(), "defineProperty", 3, args2), obj);
+    EXPECT_EQ(ctx->getProperty(obj, "x")->type()->kind(), TypeKind::Undefined);
+}
+
 TEST(ObjectBuiltinsTest, ObjectDefinePropertyRejectsBadArgs) {
     auto alloc = createMallocAllocator();
     NullSink sink;
@@ -1664,10 +1696,9 @@ TEST(ObjectBuiltinsTest, ArrayDefinePropertyRejectsBadAttributes) {
     EXPECT_EQ(ctx->defineProperty(arr, "length", ctx->createNumber(1), true, true, false)
                   ->type()->kind(),
               TypeKind::Exception);
-    // 索引元素属性不可定制
-    EXPECT_EQ(ctx->defineProperty(arr, "0", ctx->createNumber(1), false, true, true)
-                  ->type()->kind(),
-              TypeKind::Exception);
+    // 索引元素属性可逐元素定制
+    EXPECT_EQ(numOf(ctx->defineProperty(arr, "0", ctx->createNumber(1), false, true, true)),
+              1.0);
     // 合规属性：length 与索引均可正常定义
     EXPECT_EQ(ctx->defineProperty(arr, "length", ctx->createNumber(3), true, false, false)
                   ->type()->kind(),

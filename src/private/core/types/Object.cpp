@@ -139,41 +139,51 @@ Value* toPropertyKey(IContext* ctx, Value* key, PropertyKey& out) {
 
 // —— 属性描述符转换（ES2024 §6.2.6 / §10.1.6.2）——
 
-Value* propertyDescriptorFromValue(IContext* ctx, Value* descObj, Property& out) {
-    auto field = [&](const char* name) -> Value* {
-        return ctx->getProperty(descObj, ctx->createString(name));
+Value* partialPropertyDescriptorFromValue(IContext* ctx, Value* descObj,
+                                          PropertyDescriptor& out) {
+    out = PropertyDescriptor{};
+
+    // 规范用 HasProperty 判定字段是否存在：显式 {value: undefined} 也算“存在”，
+    // 与“字段缺失（不修改）”语义不同，不能用 Get 的结果是否为 undefined 代替。
+    auto read = [&](const char* name, bool& has, Value*& value) -> Value* {
+        Value* hasV = ctx->hasProperty(descObj, ctx->createString(name));
+        if (isErrorResult(hasV)) return hasV;
+        has = detail::toBoolean(hasV);
+        if (!has) {
+            value = nullptr;
+            return nullptr;
+        }
+        value = ctx->getProperty(descObj, ctx->createString(name));
+        return isErrorResult(value) ? value : nullptr;
     };
 
-    Value* enumerableV = field("enumerable");
-    if (isErrorResult(enumerableV)) return enumerableV;
-    Value* configurableV = field("configurable");
-    if (isErrorResult(configurableV)) return configurableV;
-    bool enumerable = detail::toBoolean(enumerableV);
-    bool configurable = detail::toBoolean(configurableV);
+    Value* enumerableV = nullptr;
+    Value* configurableV = nullptr;
+    Value* valueV = nullptr;
+    Value* writableV = nullptr;
+    Value* getter = nullptr;
+    Value* setter = nullptr;
+    // ToPropertyDescriptor 字段读取顺序（ES2024 §6.2.6）。
+    if (Value* err = read("enumerable", out.hasEnumerable, enumerableV)) return err;
+    if (Value* err = read("configurable", out.hasConfigurable, configurableV)) return err;
+    if (Value* err = read("value", out.hasValue, valueV)) return err;
+    if (Value* err = read("writable", out.hasWritable, writableV)) return err;
+    if (Value* err = read("get", out.hasGetter, getter)) return err;
+    if (Value* err = read("set", out.hasSetter, setter)) return err;
 
-    Value* getter = field("get");
-    if (isErrorResult(getter)) return getter;
-    Value* setter = field("set");
-    if (isErrorResult(setter)) return setter;
-    Value* value = field("value");
-    if (isErrorResult(value)) return value;
-    Value* writableV = field("writable");
-    if (isErrorResult(writableV)) return writableV;
+    out.enumerable = out.hasEnumerable && detail::toBoolean(enumerableV);
+    out.configurable = out.hasConfigurable && detail::toBoolean(configurableV);
+    out.writable = out.hasWritable && detail::toBoolean(writableV);
 
-    bool hasGet = getter->type()->kind() != TypeKind::Undefined;
-    bool hasSet = setter->type()->kind() != TypeKind::Undefined;
-    bool hasValue = value->type()->kind() != TypeKind::Undefined;
-    bool hasWritable = writableV->type()->kind() != TypeKind::Undefined;
-    bool isAccessor = hasGet || hasSet;
-    bool isData = hasValue || hasWritable;
-
+    bool isAccessor = out.hasGetter || out.hasSetter;
+    bool isData = out.hasValue || out.hasWritable;
     if (isAccessor && isData) {
         return detail::typeError(
             ctx, "Invalid property descriptor: cannot be both data and accessor");
     }
     if (isAccessor) {
         auto normalize = [&](Value* v) -> Value* {
-            if (v->type()->kind() == TypeKind::Undefined) return nullptr;
+            if (v == nullptr || v->type()->kind() == TypeKind::Undefined) return nullptr;
             if (!detail::isCallable(v)) {
                 return detail::typeError(ctx, "Getter/setter must be a function");
             }
@@ -183,14 +193,85 @@ Value* propertyDescriptorFromValue(IContext* ctx, Value* descObj, Property& out)
         if (g != nullptr && isErrorResult(g)) return g;
         Value* s = normalize(setter);
         if (s != nullptr && isErrorResult(s)) return s;
-        out = Property{nullptr, false, enumerable, configurable, g, s};
-        return nullptr;
+        out.getter = g;
+        out.setter = s;
+    } else {
+        out.value = out.hasValue ? valueV : ctx->createUndefined();
+        if (out.value == ctx->oomValue()) return out.value;
     }
-    Value* v = hasValue ? value : ctx->createUndefined();
-    if (v == ctx->oomValue()) return v;
-    out = Property{v, hasWritable ? detail::toBoolean(writableV) : false, enumerable,
-                   configurable, nullptr, nullptr};
     return nullptr;
+}
+
+void completePropertyDescriptor(const PropertyDescriptor& desc, bool exists,
+                                const Property& current, Property& out) {
+    bool isAccessor = desc.hasGetter || desc.hasSetter;
+    bool isData = desc.hasValue || desc.hasWritable;
+    bool currentAccessor = exists && isAccessorDescriptor(current);
+    if (isAccessor) {
+        out.value = nullptr;
+        out.writable = false;
+        out.getter = desc.hasGetter ? desc.getter : (currentAccessor ? current.getter : nullptr);
+        out.setter = desc.hasSetter ? desc.setter : (currentAccessor ? current.setter : nullptr);
+    } else if (isData) {
+        out.value = desc.hasValue ? desc.value
+                                  : (exists && !currentAccessor ? current.value
+                                                                : nullptr);
+        out.writable = desc.hasWritable ? desc.writable
+                                        : (exists && !currentAccessor ? current.writable
+                                                                      : false);
+        out.getter = nullptr;
+        out.setter = nullptr;
+    } else {
+        // 泛型描述符（只含 enumerable/configurable）：保持当前属性的种类不变。
+        if (exists) {
+            out.value = current.value;
+            out.writable = current.writable;
+            out.getter = current.getter;
+            out.setter = current.setter;
+        } else {
+            out.value = nullptr;
+            out.writable = false;
+            out.getter = nullptr;
+            out.setter = nullptr;
+        }
+    }
+    out.enumerable = desc.hasEnumerable ? desc.enumerable : (exists ? current.enumerable : false);
+    out.configurable =
+        desc.hasConfigurable ? desc.configurable : (exists ? current.configurable : false);
+}
+
+Value* propertyDescriptorFromValue(IContext* ctx, Value* descObj, Property& out) {
+    PropertyDescriptor desc;
+    if (Value* err = partialPropertyDescriptorFromValue(ctx, descObj, desc)) return err;
+    completePropertyDescriptor(desc, /*exists=*/false, Property{}, out);
+    return nullptr;
+}
+
+Value* definePropertyFromPartialDescriptor(IContext* ctx, Value* obj, const PropertyKey& key,
+                                           const PropertyDescriptor& desc) {
+    // Proxy 的 [[DefineOwnProperty]] 应把部分描述符原样交给 trap；当前内部接口只能
+    // 传完整描述符，故 Proxy 走原有补全路径，避免额外触发 [[GetOwnProperty]] trap。
+    if (obj->type()->kind() == TypeKind::Proxy) {
+        Property full;
+        completePropertyDescriptor(desc, /*exists=*/false, Property{}, full);
+        return isAccessorDescriptor(full)
+                   ? obj->type()->defineAccessor(ctx, obj, key.value, full.getter,
+                                                 full.setter, full.enumerable,
+                                                 full.configurable)
+                   : obj->type()->defineProperty(ctx, obj, key.value, full.value,
+                                                 full.writable, full.enumerable,
+                                                 full.configurable);
+    }
+    bool exists = false;
+    Property current;
+    if (Value* err = obj->type()->getOwnProperty(ctx, obj, key, exists, current)) return err;
+    Property full;
+    completePropertyDescriptor(desc, exists, current, full);
+    return isAccessorDescriptor(full)
+               ? obj->type()->defineAccessor(ctx, obj, key.value, full.getter, full.setter,
+                                             full.enumerable, full.configurable)
+               : obj->type()->defineProperty(ctx, obj, key.value, full.value, full.writable,
+                                             full.enumerable, full.configurable);
 }
 
 Value* propertyDescriptorToValue(IContext* ctx, const Property& p) {

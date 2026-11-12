@@ -65,7 +65,6 @@ public:
                            Value* value, Value* receiver) override;
     Value* isExtensible(IContext* ctx, Value* self) override;
     Value* preventExtensions(IContext* ctx, Value* self) override;
-    void setIndexedIntegrity(IContext* ctx, Value* self, bool frozen) override;
 };
 
 // 取 Proxy 的 [[ProxyTarget]]；非 Proxy 返回 nullptr。

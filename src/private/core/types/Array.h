@@ -52,10 +52,12 @@ public:
     bool hasIndexedElements() const override { return true; }
     uint32_t indexedLength(Value* self) const override;
     Value* indexedElement(IContext* ctx, Value* self, uint32_t index) const override;
-    bool indexedWritable(Value* self) const override;
-    bool indexedConfigurable(Value* self) const override;
     bool indexedLengthWritable(Value* self) const override;
-    void setIndexedIntegrity(IContext* ctx, Value* self, bool frozen) override;
+
+    // 索引与 length 的自有属性（逐元素描述符）。
+    Value* getOwnProperty(IContext* ctx, Value* self, const PropertyKey& key, bool& exists,
+                          Property& out) const override;
+    Value* ownKeys(IContext* ctx, Value* self, std::vector<Value*>& out) const override;
 
     // 运算：ToPrimitive → join(",") → 按 JS 规则参与运算
     Value* add(IContext* ctx, Value* a, Value* b) override;
@@ -86,35 +88,26 @@ public:
 // 数组负载：继承 ObjectData 复用 properties/order/symbols/prototype/私有槽与 GC 遍历。
 class ArrayData : public ObjectData {
 public:
-    // —— 索引元素（混合存储）——
-    std::vector<Value*> dense;                    // 稠密模式：nullptr = 空洞
-    std::unordered_map<uint32_t, Value*> sparse;  // 稀疏模式：只存实际存在的索引
-    bool sparseMode = false;
+    // —— 索引元素：idx -> Property（与普通对象属性同构）——
+    // 存在即自有属性；空洞 = 键缺席。正确性优先，本阶段不做稠密/稀疏优化。
+    std::unordered_map<uint32_t, Property> elements;
     uint32_t length_ = 0;
-    // Object.seal/freeze 对索引与 length 的属性特性收紧。
-    // 引擎不存储逐元素描述符：sealed 时全部索引 configurable=false，
-    // frozen 时再叠加 writable=false；length 的 writable 单独记录。
-    bool sealed = false;
-    bool frozen = false;
     bool lengthWritable = true;
 
     uint32_t length() const { return length_; }
 
-    // 读取索引元素；不存在（空洞/越界）返回 nullptr。
+    // 读取索引元素的数据值；不存在或访问器返回 nullptr。
     Value* elementAt(uint32_t index) const;
     bool hasElement(uint32_t index) const;
 
-    // 写入索引元素（index 必须 < 2^32-1，由调用方校验），必要时扩展 length。
+    // 以默认数据属性写入索引（内部构造用），必要时扩展 length。
     void setElement(uint32_t index, Value* value);
 
-    // 删除索引元素（置空洞 / 从 map 移除）。返回删除前是否存在。
+    // 删除索引元素。返回删除前是否存在。
     bool removeElement(uint32_t index);
 
-    // 设置 length：截断丢弃 ≥ n 的元素，扩展补空洞。
+    // 设置 length：截断丢弃 ≥ n 的元素，扩展仅更新 length。
     void setLength(uint32_t n);
-
-    // 迁移到稀疏模式（一次性，不回切）。
-    void toSparse();
 
     // GC 遍历：先报告继承的对象字段（prototype/properties/symbols），再报告索引元素。
     void enumerateChildren(IGCVisitor* visitor) override;

@@ -368,8 +368,8 @@ Value* definePropertiesFromObject(IContext* ctx, Value* target, Value* props) {
     if (Value* err = neo::core::ownPropertyKeys(ctx, from, false, true, keys)) return err;
 
     struct Pending {
-        Value* key;
-        Property prop;
+        PropertyKey key;
+        PropertyDescriptor desc;
     };
     std::vector<Pending> pending;
     pending.reserve(keys.size());
@@ -379,19 +379,20 @@ Value* definePropertiesFromObject(IContext* ctx, Value* target, Value* props) {
         if (!detail::isObjectKind(desc->type()->kind())) {
             return detail::typeError(ctx, "Property description must be an object");
         }
-        Property p;
-        if (Value* err = propertyDescriptorFromValue(ctx, desc, p)) return err;
-        pending.push_back(Pending{key, p});
+        PropertyDescriptor pd;
+        if (Value* err = partialPropertyDescriptorFromValue(ctx, desc, pd)) return err;
+        PropertyKey pk;
+        if (Value* err = toPropertyKey(ctx, key, pk)) return err;
+        pending.push_back(Pending{pk, pd});
     }
     for (const Pending& item : pending) {
-        Value* r = isAccessorDescriptor(item.prop)
-                       ? ctx->defineAccessor(target, item.key, item.prop.getter,
-                                             item.prop.setter, item.prop.enumerable,
-                                             item.prop.configurable)
-                       : ctx->defineProperty(target, item.key, item.prop.value,
-                                             item.prop.writable, item.prop.enumerable,
-                                             item.prop.configurable);
+        // DefinePropertyOrThrow：内部方法返回 false 时抛 TypeError。
+        Value* r = definePropertyFromPartialDescriptor(ctx, target, item.key, item.desc);
         if (detail::isErrorValue(r)) return r;
+        if (r->type()->kind() != TypeKind::Boolean) return r;
+        if (!detail::toBoolean(r)) {
+            return detail::typeError(ctx, "Cannot define property");
+        }
     }
     return nullptr;
 }
@@ -450,19 +451,19 @@ Value* objectSetPrototypeOf(IContext* ctx, Value* /*self*/, size_t /*argc*/, Val
 Value* objectDefineProperty(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* argv[]) {
     Value* target = toObjectOrThrow(ctx, argv[0]);
     if (detail::isErrorValue(target)) return target;
-    Value* key = argv[1];
+    PropertyKey key;
+    if (Value* err = toPropertyKey(ctx, argv[1], key)) return err;
     Value* desc = argv[2];
     if (!detail::isObjectKind(desc->type()->kind())) {
         return detail::typeError(ctx, "Property description must be an object");
     }
-    Property p;
-    if (Value* err = propertyDescriptorFromValue(ctx, desc, p)) return err;
-    Value* r = isAccessorDescriptor(p)
-                   ? ctx->defineAccessor(target, key, p.getter, p.setter, p.enumerable,
-                                         p.configurable)
-                   : ctx->defineProperty(target, key, p.value, p.writable, p.enumerable,
-                                         p.configurable);
-    return detail::isErrorValue(r) ? r : target;
+    PropertyDescriptor pd;
+    if (Value* err = partialPropertyDescriptorFromValue(ctx, desc, pd)) return err;
+    Value* r = definePropertyFromPartialDescriptor(ctx, target, key, pd);
+    if (detail::isErrorValue(r)) return r;
+    if (r->type()->kind() != TypeKind::Boolean) return r;
+    if (!detail::toBoolean(r)) return detail::typeError(ctx, "Cannot define property");
+    return target;
 }
 
 // Object.getOwnPropertyDescriptor(obj, key)：ES2024 §20.1.2.6
@@ -538,9 +539,6 @@ Value* setIntegrityLevel(IContext* ctx, Value* target, bool frozen) {
     Value* prev = target->type()->preventExtensions(ctx, target);
     if (detail::isErrorValue(prev)) return prev;
     if (!detail::toBoolean(prev)) return ctx->createBoolean(false);
-    // 索引型 exotic（Array）没有逐元素描述符，先收紧整数组状态；
-    // 普通对象为 no-op。Proxy 在无 defineProperty trap 时转发 target。
-    target->type()->setIndexedIntegrity(ctx, target, frozen);
 
     std::vector<Value*> keys;
     if (Value* err = neo::core::ownPropertyKeys(ctx, target, false, true, keys)) return err;
