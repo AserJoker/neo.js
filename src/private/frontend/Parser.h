@@ -77,6 +77,7 @@ private:
     // 表达式
     NodePtr parseExpression();
     NodePtr parseUnaryExpression();
+    NodePtr parseUpdateExpression();
     NodePtr parseLeftHandSideExpression();
     NodePtr parseMemberExpression();
     NodePtr parseCallExpression();

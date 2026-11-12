@@ -55,6 +55,7 @@ enum class NodeKind : uint8_t {
     CallExpression,
     NewExpression,
     UnaryExpression,
+    UpdateExpression,
 };
 
 class Node {
@@ -209,6 +210,21 @@ struct UnaryExpression final : Node {
           op(op),
           argument(std::move(argument)) {}
     UnaryOperator op;
+    NodePtr argument;
+};
+
+enum class UpdateOperator : uint8_t { Increment, Decrement };
+
+// prefix ? ++argument : argument++
+struct UpdateExpression final : Node {
+    UpdateExpression(SourceRange range, UpdateOperator op, bool prefix,
+                     NodePtr argument)
+        : Node(NodeKind::UpdateExpression, range),
+          op(op),
+          prefix(prefix),
+          argument(std::move(argument)) {}
+    UpdateOperator op;
+    bool prefix;
     NodePtr argument;
 };
 

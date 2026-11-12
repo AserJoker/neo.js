@@ -27,6 +27,8 @@ using neo::frontend::RegExpLiteral;
 using neo::frontend::StringLiteral;
 using neo::frontend::UnaryExpression;
 using neo::frontend::UnaryOperator;
+using neo::frontend::UpdateExpression;
+using neo::frontend::UpdateOperator;
 
 ParseResult parse(std::string_view source) {
     Parser parser(source);
@@ -499,6 +501,104 @@ TEST(ParserTest, UnaryMissingOperandReportsError) {
 
     ASSERT_NE(result.program, nullptr);
     ASSERT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, PostfixUpdateExpression) {
+    struct Case {
+        const char* source;
+        UpdateOperator op;
+    };
+    const Case cases[] = {
+        {"a++;", UpdateOperator::Increment},
+        {"a--;", UpdateOperator::Decrement},
+    };
+
+    for (const Case& item : cases) {
+        ParseResult result = parse(item.source);
+        ASSERT_TRUE(result.ok()) << item.source;
+        const auto& statement = statementOf(result, 0);
+        ASSERT_NE(statement.expression, nullptr) << item.source;
+        EXPECT_EQ(statement.expression->kind(), NodeKind::UpdateExpression)
+            << item.source;
+
+        const auto* update =
+            static_cast<const UpdateExpression*>(statement.expression.get());
+        EXPECT_EQ(update->op, item.op) << item.source;
+        EXPECT_FALSE(update->prefix) << item.source;
+        ASSERT_NE(update->argument, nullptr) << item.source;
+        EXPECT_EQ(update->argument->kind(), NodeKind::Identifier)
+            << item.source;
+    }
+}
+
+TEST(ParserTest, PrefixUpdateExpression) {
+    struct Case {
+        const char* source;
+        UpdateOperator op;
+    };
+    const Case cases[] = {
+        {"++a;", UpdateOperator::Increment},
+        {"--a;", UpdateOperator::Decrement},
+    };
+
+    for (const Case& item : cases) {
+        ParseResult result = parse(item.source);
+        ASSERT_TRUE(result.ok()) << item.source;
+        const auto& statement = statementOf(result, 0);
+        ASSERT_NE(statement.expression, nullptr) << item.source;
+        EXPECT_EQ(statement.expression->kind(), NodeKind::UpdateExpression)
+            << item.source;
+
+        const auto* update =
+            static_cast<const UpdateExpression*>(statement.expression.get());
+        EXPECT_EQ(update->op, item.op) << item.source;
+        EXPECT_TRUE(update->prefix) << item.source;
+        ASSERT_NE(update->argument, nullptr) << item.source;
+        EXPECT_EQ(update->argument->kind(), NodeKind::Identifier)
+            << item.source;
+    }
+}
+
+TEST(ParserTest, UpdateOnMemberExpression) {
+    ParseResult result = parse("a.b++;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* update =
+        static_cast<const UpdateExpression*>(statement.expression.get());
+    EXPECT_EQ(update->kind(), NodeKind::UpdateExpression);
+    EXPECT_FALSE(update->prefix);
+    ASSERT_NE(update->argument, nullptr);
+    EXPECT_EQ(update->argument->kind(), NodeKind::MemberExpression);
+}
+
+TEST(ParserTest, PostfixUpdateStopsAtLineTerminator) {
+    ParseResult result = parse("a\n++b;");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 2u);
+
+    const auto& first = statementOf(result, 0);
+    EXPECT_EQ(first.expression->kind(), NodeKind::Identifier);
+
+    const auto& second = statementOf(result, 1);
+    ASSERT_NE(second.expression, nullptr);
+    EXPECT_EQ(second.expression->kind(), NodeKind::UpdateExpression);
+    const auto* update =
+        static_cast<const UpdateExpression*>(second.expression.get());
+    EXPECT_TRUE(update->prefix);
+}
+
+TEST(ParserTest, PrefixUpdateAllowsLineTerminator) {
+    ParseResult result = parse("++\na;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    ASSERT_NE(statement.expression, nullptr);
+    EXPECT_EQ(statement.expression->kind(), NodeKind::UpdateExpression);
+    EXPECT_TRUE(
+        static_cast<const UpdateExpression*>(statement.expression.get())
+            ->prefix);
 }
 
 TEST(ParserTest, ProgramRangeCoversConsumedInput) {

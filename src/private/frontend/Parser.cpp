@@ -20,6 +20,19 @@ bool isIdentifierName(TokenKind kind) {
            value <= static_cast<int>(TokenKind::False);
 }
 
+bool updateOperator(TokenKind kind, UpdateOperator& op) {
+    switch (kind) {
+        case TokenKind::PlusPlus:
+            op = UpdateOperator::Increment;
+            return true;
+        case TokenKind::MinusMinus:
+            op = UpdateOperator::Decrement;
+            return true;
+        default:
+            return false;
+    }
+}
+
 bool unaryOperator(TokenKind kind, UnaryOperator& op) {
     switch (kind) {
         case TokenKind::Delete:
@@ -203,7 +216,33 @@ NodePtr Parser::parseUnaryExpression() {
         return std::make_unique<UnaryExpression>(
             rangeFrom(start), op, std::move(argument));
     }
-    return parseLeftHandSideExpression();
+    return parseUpdateExpression();
+}
+
+NodePtr Parser::parseUpdateExpression() {
+    UpdateOperator op;
+    if (updateOperator(current_.kind, op)) {
+        // 前缀 ++/-- 的操作数是 UnaryExpression。
+        const SourceLocation start = current_.start;
+        advance();
+        NodePtr argument = parseUnaryExpression();
+        if (argument == nullptr) return nullptr;
+        return std::make_unique<UpdateExpression>(
+            rangeFrom(start), op, true, std::move(argument));
+    }
+
+    NodePtr argument = parseLeftHandSideExpression();
+    if (argument == nullptr) return nullptr;
+
+    // 后缀 ++/-- 不能跨行终止符（ASI 会把 ++/-- 留给下一条语句）。
+    if (updateOperator(current_.kind, op) &&
+        !current_.precededByLineTerminator) {
+        const SourceLocation start = argument->range().start;
+        advance();
+        return std::make_unique<UpdateExpression>(
+            rangeFrom(start), op, false, std::move(argument));
+    }
+    return argument;
 }
 
 NodePtr Parser::parseLeftHandSideExpression() {
