@@ -180,6 +180,13 @@ bool isSimpleAssignmentTarget(const Node* node) {
                                node->kind() == NodeKind::MemberExpression);
 }
 
+bool isForInOfLeft(const Node* node) {
+    if (node == nullptr) return false;
+    return node->kind() == NodeKind::VariableDeclaration ||
+           node->kind() == NodeKind::Identifier ||
+           node->kind() == NodeKind::MemberExpression;
+}
+
 bool isUnparenthesizedLogical(const Node* node, LogicalOperator op) {
     if (node == nullptr || node->kind() != NodeKind::LogicalExpression) {
         return false;
@@ -375,12 +382,20 @@ NodePtr Parser::parseForStatement() {
             at(TokenKind::Var) || at(TokenKind::Const) ||
             (at(TokenKind::Identifier) && current_.text == "let" &&
              isLetDeclarationStart());
-        if (declaration) {
-            init = parseVariableDeclaration(false);
-        } else {
-            init = parseExpression();
-        }
+
+        // for 头部用 [~In] 解析，避免把 for-in 的 in 当成二元运算符。
+        const bool savedAllowIn = allowIn_;
+        allowIn_ = false;
+        init = declaration ? parseVariableDeclaration(false) : parseExpression();
+        allowIn_ = savedAllowIn;
         if (init == nullptr) return nullptr;
+
+        if (at(TokenKind::In)) {
+            return parseForInStatement(std::move(init), start);
+        }
+        if (at(TokenKind::Identifier) && current_.text == "of") {
+            return parseForOfStatement(std::move(init), start);
+        }
     }
     if (!expect(TokenKind::Semicolon, "';'")) return nullptr;
 
@@ -404,6 +419,43 @@ NodePtr Parser::parseForStatement() {
     return std::make_unique<ForStatement>(
         rangeFrom(start), std::move(init), std::move(test), std::move(update),
         std::move(body));
+}
+
+NodePtr Parser::parseForInStatement(NodePtr left, SourceLocation start) {
+    if (!isForInOfLeft(left.get())) {
+        error(left->range().start, "Invalid left-hand side in for-in");
+        return nullptr;
+    }
+    advance();  // 'in'
+
+    NodePtr right = parseExpression();
+    if (right == nullptr) return nullptr;
+    if (!expect(TokenKind::RightParen, "')'")) return nullptr;
+
+    NodePtr body = parseStatement();
+    if (body == nullptr) return nullptr;
+
+    return std::make_unique<ForInStatement>(
+        rangeFrom(start), std::move(left), std::move(right), std::move(body));
+}
+
+NodePtr Parser::parseForOfStatement(NodePtr left, SourceLocation start) {
+    if (!isForInOfLeft(left.get())) {
+        error(left->range().start, "Invalid left-hand side in for-of");
+        return nullptr;
+    }
+    advance();  // 'of'
+
+    // for-of 的右侧是 AssignmentExpression，逗号属于外层分隔。
+    NodePtr right = parseAssignmentExpression();
+    if (right == nullptr) return nullptr;
+    if (!expect(TokenKind::RightParen, "')'")) return nullptr;
+
+    NodePtr body = parseStatement();
+    if (body == nullptr) return nullptr;
+
+    return std::make_unique<ForOfStatement>(
+        rangeFrom(start), std::move(left), std::move(right), std::move(body));
 }
 
 NodePtr Parser::parseDoWhileStatement() {
@@ -667,6 +719,7 @@ NodePtr Parser::parseBinaryExpression(int minPrecedence) {
     while (true) {
         BinaryOperatorInfo info{};
         if (!binaryOperator(current_.kind, info)) break;
+        if (info.op == BinaryOperator::In && !allowIn_) break;
         if (info.precedence < minPrecedence) break;
 
         const SourceLocation start = left->range().start;
@@ -864,7 +917,11 @@ NodePtr Parser::parsePrimaryExpression() {
         case TokenKind::LeftParen: {
             const SourceLocation start = current_.start;
             advance();
+            // 括号重置 for 头部的 [~In] 限制。
+            const bool savedAllowIn = allowIn_;
+            allowIn_ = true;
             NodePtr expression = parseExpression();
+            allowIn_ = savedAllowIn;
             if (expression == nullptr) return nullptr;
             if (!expect(TokenKind::RightParen, "')'")) return nullptr;
             expression->setRange(rangeFrom(start));

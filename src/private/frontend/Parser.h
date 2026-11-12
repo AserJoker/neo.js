@@ -81,6 +81,8 @@ private:
     NodePtr parseWhileStatement();
     NodePtr parseDoWhileStatement();
     NodePtr parseForStatement();
+    NodePtr parseForInStatement(NodePtr left, SourceLocation start);
+    NodePtr parseForOfStatement(NodePtr left, SourceLocation start);
     bool isLetDeclarationStart();
 
     // 表达式
@@ -117,6 +119,8 @@ private:
     LexerState currentStart_;
     SourceLocation previousEnd_;
     bool strict_ = false;
+    // for 头部禁用 in 作为二元运算符，避免把 for-in 的 in 吃掉。
+    bool allowIn_ = true;
     std::vector<ParseError> errors_;
 };
 

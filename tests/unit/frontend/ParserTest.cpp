@@ -22,6 +22,8 @@ using neo::frontend::CallExpression;
 using neo::frontend::ConditionalExpression;
 using neo::frontend::DoWhileStatement;
 using neo::frontend::ExpressionStatement;
+using neo::frontend::ForInStatement;
+using neo::frontend::ForOfStatement;
 using neo::frontend::ForStatement;
 using neo::frontend::Identifier;
 using neo::frontend::IfStatement;
@@ -1634,6 +1636,128 @@ TEST(ParserTest, ForStatementMissingClauseSemicolonReportsError) {
     ASSERT_NE(result.program, nullptr);
     ASSERT_FALSE(result.errors.empty());
     EXPECT_NE(result.errors[0].message.find("Expected ';'"), std::string::npos);
+}
+
+TEST(ParserTest, ForInStatement) {
+    ParseResult result = parse("for (x in obj) ;");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    ASSERT_EQ(programOf(result).body[0]->kind(), NodeKind::ForInStatement);
+
+    const auto* statement =
+        static_cast<const ForInStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->left, nullptr);
+    EXPECT_EQ(statement->left->kind(), NodeKind::Identifier);
+    ASSERT_NE(statement->right, nullptr);
+    EXPECT_EQ(statement->right->kind(), NodeKind::Identifier);
+    ASSERT_NE(statement->body, nullptr);
+    EXPECT_EQ(statement->body->kind(), NodeKind::EmptyStatement);
+}
+
+TEST(ParserTest, ForInWithDeclaration) {
+    const char* sources[] = {
+        "for (var x in obj) ;",
+        "for (let x in obj) ;",
+    };
+
+    for (const char* source : sources) {
+        ParseResult result = parse(source);
+        ASSERT_TRUE(result.ok()) << source;
+        const auto* statement =
+            static_cast<const ForInStatement*>(programOf(result).body[0].get());
+        ASSERT_NE(statement->left, nullptr) << source;
+        EXPECT_EQ(statement->left->kind(), NodeKind::VariableDeclaration)
+            << source;
+    }
+}
+
+TEST(ParserTest, ForInLeftCanBeMember) {
+    ParseResult result = parse("for (x.y in obj) ;");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const ForInStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->left, nullptr);
+    EXPECT_EQ(statement->left->kind(), NodeKind::MemberExpression);
+}
+
+TEST(ParserTest, ForInRightCanBeSequence) {
+    ParseResult result = parse("for (x in a, b) ;");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const ForInStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->right, nullptr);
+    EXPECT_EQ(statement->right->kind(), NodeKind::SequenceExpression);
+}
+
+TEST(ParserTest, ForOfStatement) {
+    ParseResult result = parse("for (x of arr) ;");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    ASSERT_EQ(programOf(result).body[0]->kind(), NodeKind::ForOfStatement);
+
+    const auto* statement =
+        static_cast<const ForOfStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->left, nullptr);
+    EXPECT_EQ(statement->left->kind(), NodeKind::Identifier);
+    ASSERT_NE(statement->right, nullptr);
+    EXPECT_EQ(statement->right->kind(), NodeKind::Identifier);
+}
+
+TEST(ParserTest, ForOfWithDeclaration) {
+    ParseResult result = parse("for (var x of arr) ;");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const ForOfStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->left, nullptr);
+    EXPECT_EQ(statement->left->kind(), NodeKind::VariableDeclaration);
+}
+
+TEST(ParserTest, ForOfRightStopsAtComma) {
+    ParseResult result = parse("for (x of a, b) ;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, ForInInvalidLeftReportsError) {
+    ParseResult result = parse("for (a + b in obj) ;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Invalid left-hand side"),
+              std::string::npos);
+}
+
+TEST(ParserTest, ForInMissingRightParenReportsError) {
+    ParseResult result = parse("for (x in obj ;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Expected ')'"), std::string::npos);
+}
+
+TEST(ParserTest, ParenthesesResetNoInRestriction) {
+    ParseResult result = parse("for ((x in y); ; ) ;");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const ForStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->init, nullptr);
+    EXPECT_EQ(statement->init->kind(), NodeKind::BinaryExpression);
+    EXPECT_EQ(static_cast<const BinaryExpression*>(statement->init.get())->op,
+              BinaryOperator::In);
+}
+
+TEST(ParserTest, InOperatorNotAllowedInForInitWithoutParens) {
+    ParseResult result = parse("for (x in y; ; ) ;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
 }
 
 TEST(ParserTest, ProgramRangeCoversConsumedInput) {
