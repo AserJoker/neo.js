@@ -39,7 +39,7 @@ Value* resumeNativeCoroutine(IContext* ctx, Value* coroutine, Value* /*sentValue
     // 3. 判定挂起/完成。挂起分支已由 invokeNativeFunction 写入 resumePoint/yielded/
     //    execScope/savedCallStack；完成分支里 execScope 已被销毁，须清空指针。
     bool suspended = detail::isInterruptValue(res) &&
-                     asInterrupt(res)->kind == InterruptKind::Yield &&
+                     isSuspensionSignal(asInterrupt(res)->kind) &&
                      co->execScope != nullptr;
     if (suspended) {
         co->state = CoroutineState::Suspended;

@@ -17,9 +17,15 @@ namespace neo::core {
 enum class InterruptKind : uint8_t {
     Yield,   // 挂起并产出 value（函数返回方向）
     Return,  // 立即以 value 返回（外部注入方向；承载 finally 语义）
-    Await,   // 未来：等待 Promise 结果（VM 方向）
-    Throw,   // 未来：VM 内部 throw 信号，解包为 Exception（ADR-017 §6）
+    Await,   // 挂起并等待 Promise 结果（native/VM 通用，恢复值经 sentValue）
+    Throw,   // VM 专用：throw 语句信号，解包为 Exception（ADR-017 §6）
 };
+
+// 挂起信号：函数返回后必须保留现场（execScope/断点），等待 runner 恢复。
+// Yield 与 Await 都走同一条挂起/恢复通道；区别在 runner 如何消费载荷。
+inline bool isSuspensionSignal(InterruptKind kind) {
+    return kind == InterruptKind::Yield || kind == InterruptKind::Await;
+}
 
 }  // namespace neo::core
 

@@ -96,6 +96,29 @@ Value* staged(IContext* ctx, Value*, size_t, Value*[]) {
     }
 }
 
+// await 阶段机：
+//   stage 0：在 execScope 存 __x = 10，返回 Interrupt(Await, 1, promise 占位)
+//   stage 1：读 __x 与 sentValue，返回 __x + sent
+Value* awaited(IContext* ctx, Value*, size_t, Value*[]) {
+    CoroutineData* co = asCoroutine(ctx->getCurrentCoroutine());
+    if (co == nullptr) return ctx->createUndefined();
+
+    switch (co->resumePoint) {
+        case 0: {
+            Value* x = ctx->createNumber(10, "__x");
+            if (x->type()->kind() == TypeKind::Exception) return x;
+            return ctx->createInterrupt(InterruptKind::Await, 1, ctx->createNumber(42));
+        }
+        case 1: {
+            Value* x = ctx->current()->lookup("__x");
+            if (neo::core::detail::isErrorValue(co->sentValue)) return co->sentValue;
+            return ctx->createNumber(num(x) + num(co->sentValue));
+        }
+        default:
+            return ctx->createUndefined();
+    }
+}
+
 }  // namespace
 
 // ===== 类型 =====
@@ -177,6 +200,43 @@ TEST(CoroutineTest, SuspendResumeAndComplete) {
     // 已完成后再次 resume 返回 undefined
     Value* r4 = f.ctx->resumeCoroutine(co, nullptr);
     EXPECT_EQ(r4->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(CoroutineTest, AwaitSuspendsAndResumesWithSentValue) {
+    Fixture f;
+    Value* fn = f.ctx->createNativeFunction(awaited, 0);
+    Value* co = f.ctx->createCoroutine(fn, nullptr, 0, nullptr);
+    CoroutineData* d = asCoroutine(co);
+
+    // stage 0 返回 Interrupt(Await)：与 Yield 共用挂起通道，保留 execScope。
+    Value* r1 = f.ctx->resumeCoroutine(co, nullptr);
+    ASSERT_TRUE(isInterruptValue(r1));
+    EXPECT_EQ(asInterrupt(r1)->kind, InterruptKind::Await);
+    EXPECT_EQ(d->state, CoroutineState::Suspended);
+    EXPECT_EQ(d->resumePoint, 1u);
+    ASSERT_NE(d->execScope, nullptr);
+    EXPECT_EQ(d->execScope->parent(), nullptr);
+
+    // 业务临时变量 __x 存在 execScope，跨 Await 仍可读；sentValue 为恢复值。
+    Value* r2 = f.ctx->resumeCoroutine(co, f.ctx->createNumber(5));
+    ASSERT_FALSE(isInterruptValue(r2));
+    EXPECT_DOUBLE_EQ(num(r2), 15.0);
+    EXPECT_EQ(d->state, CoroutineState::Completed);
+    EXPECT_EQ(d->execScope, nullptr);
+}
+
+TEST(CoroutineTest, AwaitRejectionInjectedAsException) {
+    Fixture f;
+    Value* fn = f.ctx->createNativeFunction(awaited, 0);
+    Value* co = f.ctx->createCoroutine(fn, nullptr, 0, nullptr);
+    CoroutineData* d = asCoroutine(co);
+
+    (void)f.ctx->resumeCoroutine(co, nullptr);
+    // native 错误通道：拒绝以 Exception 注入（不是 Interrupt(Throw)）。
+    Value* exc = f.ctx->createException(f.ctx->createString("boom"));
+    Value* r = f.ctx->resumeCoroutine(co, exc);
+    EXPECT_EQ(r->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(d->state, CoroutineState::Completed);
 }
 
 TEST(CoroutineTest, SentValueVisibleToBody) {

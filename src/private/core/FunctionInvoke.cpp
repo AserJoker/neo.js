@@ -111,9 +111,9 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
         savedCurrent->add(res);
     }
 
-    // 8. 协程挂起：Interrupt(Yield) 且当前在协程恢复中 → 保留 execScope
+    // 8. 协程挂起：Interrupt(Yield/Await) 且当前在协程恢复中 → 保留 execScope
     if (res != nullptr && detail::isInterruptValue(res) &&
-        asInterrupt(res)->kind == InterruptKind::Yield) {
+        isSuspensionSignal(asInterrupt(res)->kind)) {
         if (CoroutineData* co = asCoroutine(ctx->getCurrentCoroutine())) {
             InterruptData* ir = asInterrupt(res);
             co->resumePoint = ir->offset;
