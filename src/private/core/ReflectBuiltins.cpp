@@ -111,9 +111,9 @@ Value* reflectDefineProperty(IContext* ctx, Value* /*self*/, size_t argc, Value*
                    : target->type()->defineProperty(ctx, target, key.value, desc.value,
                                                     desc.writable, desc.enumerable,
                                                     desc.configurable);
-    // [[DefineOwnProperty]] 返回 false（不可扩展/不可配置冲突）→ Reflect 返回 false。
-    if (detail::isErrorValue(r)) return ctx->createBoolean(false);
-    return ctx->createBoolean(true);
+    // 内部方法以 Value 表达三态：Exception = 抛出（透传），Boolean = 操作结果。
+    if (detail::isErrorValue(r)) return r;
+    return ctx->createBoolean(detail::toBoolean(r));
 }
 
 // Reflect.deleteProperty(target, propertyKey)
@@ -220,9 +220,9 @@ Value* reflectSetPrototypeOf(IContext* ctx, Value* /*self*/, size_t argc, Value*
     if (pk != TypeKind::Null && !detail::isObjectKind(pk)) {
         return detail::typeError(ctx, "Reflect.setPrototypeOf: proto must be an object or null");
     }
-    Value* r = ctx->setPrototype(target, proto);
-    if (detail::isErrorValue(r)) return ctx->createBoolean(false);
-    return ctx->createBoolean(true);
+    Value* r = target->type()->setPrototype(ctx, target, proto);
+    if (detail::isErrorValue(r)) return r;
+    return ctx->createBoolean(detail::toBoolean(r));
 }
 
 // 定义命名空间方法（writable/不可枚举/可配置，与 ES 一致）

@@ -320,6 +320,7 @@ Value* ordinarySet(IContext* ctx, Value* obj, const PropertyKey& key, Value* val
             ctx, receiver, key.value, value, existing.writable, existing.enumerable,
             existing.configurable);
         if (isErrorResult(r)) return r;
+        if (!detail::toBoolean(r)) ok = false;
         return nullptr;
     }
     Value* ext = receiver->type()->isExtensible(ctx, receiver);
@@ -331,6 +332,7 @@ Value* ordinarySet(IContext* ctx, Value* obj, const PropertyKey& key, Value* val
     Value* r = receiver->type()->defineProperty(ctx, receiver, key.value, value, true, true,
                                                 true);
     if (isErrorResult(r)) return r;
+    if (!detail::toBoolean(r)) ok = false;
     return nullptr;
 }
 
@@ -596,17 +598,15 @@ Value* ObjectType::defineProperty(IContext* ctx, Value* self, Value* key,
         auto it = d->symbols.find(ident);
         if (it != d->symbols.end()) {
             if (!isCompatiblePropertyDescriptor(it->second.prop, desc)) {
-                return detail::typeError(ctx, "Cannot redefine property");
+                return ctx->createBoolean(false);
             }
             it->second.prop = desc;
-            return value;
+            return ctx->createBoolean(true);
         }
-        if (!d->extensible) {
-            return detail::typeError(ctx, "Cannot define property on non-extensible object");
-        }
+        if (!d->extensible) return ctx->createBoolean(false);
         d->symbols.emplace(ident, SymbolProperty{key, desc});
         d->symbolOrder.push_back(ident);
-        return value;
+        return ctx->createBoolean(true);
     }
 
     // —— 字符串键 ——
@@ -615,18 +615,15 @@ Value* ObjectType::defineProperty(IContext* ctx, Value* self, Value* key,
     auto it = d->properties.find(k);
     if (it != d->properties.end()) {
         if (!isCompatiblePropertyDescriptor(it->second, desc)) {
-            return detail::typeError(ctx, "Cannot redefine property '" + k + "'");
+            return ctx->createBoolean(false);
         }
         it->second = desc;
-        return value;
+        return ctx->createBoolean(true);
     }
-    if (!d->extensible) {
-        return detail::typeError(ctx, "Cannot define property '" + k +
-                                          "' on non-extensible object");
-    }
+    if (!d->extensible) return ctx->createBoolean(false);
     d->properties.emplace(k, desc);
     d->order.push_back(k);
-    return value;
+    return ctx->createBoolean(true);
 }
 
 Value* ObjectType::defineAccessor(IContext* ctx, Value* self, Value* key, Value* getter,
@@ -653,17 +650,15 @@ Value* ObjectType::defineAccessor(IContext* ctx, Value* self, Value* key, Value*
         auto it = d->symbols.find(ident);
         if (it != d->symbols.end()) {
             if (!isCompatiblePropertyDescriptor(it->second.prop, acc)) {
-                return detail::typeError(ctx, "Cannot redefine property");
+                return ctx->createBoolean(false);
             }
             it->second.prop = acc;
-            return self;
+            return ctx->createBoolean(true);
         }
-        if (!d->extensible) {
-            return detail::typeError(ctx, "Cannot define property on non-extensible object");
-        }
+        if (!d->extensible) return ctx->createBoolean(false);
         d->symbols.emplace(ident, SymbolProperty{key, acc});
         d->symbolOrder.push_back(ident);
-        return self;
+        return ctx->createBoolean(true);
     }
 
     // —— 字符串键 ——
@@ -672,18 +667,15 @@ Value* ObjectType::defineAccessor(IContext* ctx, Value* self, Value* key, Value*
     auto it = d->properties.find(k);
     if (it != d->properties.end()) {
         if (!isCompatiblePropertyDescriptor(it->second, acc)) {
-            return detail::typeError(ctx, "Cannot redefine property '" + k + "'");
+            return ctx->createBoolean(false);
         }
         it->second = acc;
-        return self;
+        return ctx->createBoolean(true);
     }
-    if (!d->extensible) {
-        return detail::typeError(ctx, "Cannot define property '" + k +
-                                          "' on non-extensible object");
-    }
+    if (!d->extensible) return ctx->createBoolean(false);
     d->properties.emplace(k, acc);
     d->order.push_back(k);
-    return self;
+    return ctx->createBoolean(true);
 }
 
 // —— 原型链（ADR-018 §1）——
@@ -697,24 +689,20 @@ Value* ObjectType::setPrototype(IContext* ctx, Value* self, Value* proto) {
     // proto 只允许 Object/Function 或 null（undefined 等按 TypeError 处理）
     TypeKind pk = proto->type()->kind();
     if (!kindHasObjectLayout(pk) && pk != TypeKind::Null) {
-        std::string msg = "Object prototype may only be an Object or null";
-        return detail::typeError(ctx, msg);
+        return ctx->createBoolean(false);
     }
     // 环检测：从 proto 沿原型链走到头，若遇到 self 则成环。
     // 经内部方法遍历，原型链上的 Proxy 也能正确参与（trap 抛错则透传）。
     std::unordered_set<Value*> seen;
     for (Value* cur = proto; cur != nullptr && kindHasObjectLayout(cur->type()->kind());) {
-        if (cur == self) {
-            std::string msg = "Cyclic __proto__ value";
-            return detail::typeError(ctx, msg);
-        }
+        if (cur == self) return ctx->createBoolean(false);
         if (!seen.insert(cur).second) break;  // 已有环（内部契约被破坏），终止遍历
         Value* next = cur->type()->getPrototype(ctx, cur);
         if (isErrorResult(next)) return next;
         cur = (next != nullptr && kindHasObjectLayout(next->type()->kind())) ? next : nullptr;
     }
     static_cast<ObjectData*>(self->data())->prototype = (pk == TypeKind::Null) ? nullptr : proto;
-    return self;
+    return ctx->createBoolean(true);
 }
 
 // —— ObjectData ——

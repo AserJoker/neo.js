@@ -83,6 +83,14 @@ Value* makeArgs(IContext* ctx, std::initializer_list<Value*> items) {
     return arr;
 }
 
+Value* throwError(IContext* ctx, Value*, size_t, Value*[]) {
+    return ctx->createException(ctx->createString("boom"));
+}
+
+Value* returnFalse(IContext* ctx, Value*, size_t, Value*[]) {
+    return ctx->createBoolean(false);
+}
+
 Value* addOne(IContext* ctx, Value*, size_t argc, Value* argv[]) {
     if (argc == 0) return ctx->createNumber(1);
     return ctx->createNumber(numOf(argv[0]) + 1);
@@ -263,6 +271,64 @@ TEST(ReflectTest, ApplyAndConstruct) {
     // 非构造器 → TypeError。
     Value* badArgs[2] = {ctx->createObject(), emptyArgs};
     EXPECT_EQ(callReflect(ctx, "construct", 2, badArgs)->type()->kind(),
+              TypeKind::Exception);
+}
+
+TEST(ReflectTest, DefineAndSetPrototypeResultChannel) {
+    Fixture f;
+    IContext* ctx = f.ctx.get();
+
+    // 成功值本身是 false 时，Reflect.defineProperty 仍返回 true（Boolean 是操作结果，不是属性值）。
+    Value* obj = ctx->createObject();
+    Value* falseDesc = ctx->createObject();
+    ctx->setProperty(falseDesc, "value", ctx->createBoolean(false));
+    Value* args[3] = {obj, ctx->createString("x"), falseDesc};
+    Value* r = callReflect(ctx, "defineProperty", 3, args);
+    ASSERT_EQ(r->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(boolOf(r));
+
+    // Proxy trap 返回 false → Reflect 返回 false；trap 抛出 → 异常透传。
+    Value* target = ctx->createObject();
+    Value* falseHandler = ctx->createObject();
+    ctx->defineProperty(falseHandler, "defineProperty",
+                        ctx->createNativeFunction(returnFalse, 0), true, true, true);
+    Value* falseProxy = ctx->createProxy(target, falseHandler);
+    Value* proxyArgs[3] = {falseProxy, ctx->createString("y"), falseDesc};
+    Value* r2 = callReflect(ctx, "defineProperty", 3, proxyArgs);
+    ASSERT_EQ(r2->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(boolOf(r2));
+
+    Value* throwHandler = ctx->createObject();
+    ctx->defineProperty(throwHandler, "defineProperty",
+                        ctx->createNativeFunction(throwError, 0), true, true, true);
+    Value* throwProxy = ctx->createProxy(target, throwHandler);
+    Value* throwArgs[3] = {throwProxy, ctx->createString("y"), falseDesc};
+    EXPECT_EQ(callReflect(ctx, "defineProperty", 3, throwArgs)->type()->kind(),
+              TypeKind::Exception);
+
+    // Object.defineProperty 对 trap false 仍抛 TypeError（公共 API 语义）。
+    Value* objectFn = ctx->global()->lookup("Object");
+    Value* defineFn = ctx->getProperty(objectFn, "defineProperty");
+    EXPECT_EQ(ctx->call(defineFn, objectFn, 3, proxyArgs)->type()->kind(),
+              TypeKind::Exception);
+
+    // setPrototypeOf：trap false → false；trap 抛出 → 透传。
+    Value* proto = ctx->createObject();
+    Value* spFalseHandler = ctx->createObject();
+    ctx->defineProperty(spFalseHandler, "setPrototypeOf",
+                        ctx->createNativeFunction(returnFalse, 0), true, true, true);
+    Value* spFalseProxy = ctx->createProxy(ctx->createObject(), spFalseHandler);
+    Value* spArgs[2] = {spFalseProxy, proto};
+    Value* sp = callReflect(ctx, "setPrototypeOf", 2, spArgs);
+    ASSERT_EQ(sp->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(boolOf(sp));
+
+    Value* spThrowHandler = ctx->createObject();
+    ctx->defineProperty(spThrowHandler, "setPrototypeOf",
+                        ctx->createNativeFunction(throwError, 0), true, true, true);
+    Value* spThrowProxy = ctx->createProxy(ctx->createObject(), spThrowHandler);
+    Value* spThrowArgs[2] = {spThrowProxy, proto};
+    EXPECT_EQ(callReflect(ctx, "setPrototypeOf", 2, spThrowArgs)->type()->kind(),
               TypeKind::Exception);
 }
 

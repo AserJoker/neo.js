@@ -1468,15 +1468,27 @@ Value* Context::deleteProperty(Value* obj, Value* key) {
     return obj->type()->deleteProperty(this, obj, key);
 }
 
+// 内部 [[DefineOwnProperty]] / [[SetPrototypeOf]] 返回 Boolean：
+// false 表示操作失败，公共 API 按规范转为 TypeError；Exception 原样透传。
 Value* Context::defineProperty(Value* obj, Value* key, Value* value,
                                bool writable, bool enumerable, bool configurable) {
-    return obj->type()->defineProperty(this, obj, key, value, writable, enumerable, configurable);
+    Value* r = obj->type()->defineProperty(this, obj, key, value, writable, enumerable,
+                                           configurable);
+    if (detail::isErrorValue(r)) return r;
+    // Boolean = 规范结果；其他值 = 透传型（Uninitialized/Interrupt）原样返回。
+    if (r->type()->kind() != TypeKind::Boolean) return r;
+    if (!detail::toBoolean(r)) return detail::typeError(this, "Cannot define property");
+    return value;
 }
 
 Value* Context::defineAccessor(Value* obj, Value* key, Value* getter, Value* setter,
                                bool enumerable, bool configurable) {
-    return obj->type()->defineAccessor(this, obj, key, getter, setter, enumerable,
-                                       configurable);
+    Value* r = obj->type()->defineAccessor(this, obj, key, getter, setter, enumerable,
+                                           configurable);
+    if (detail::isErrorValue(r)) return r;
+    if (r->type()->kind() != TypeKind::Boolean) return r;
+    if (!detail::toBoolean(r)) return detail::typeError(this, "Cannot define accessor property");
+    return obj;
 }
 
 Value* Context::getPrototype(Value* obj) {
@@ -1484,7 +1496,11 @@ Value* Context::getPrototype(Value* obj) {
 }
 
 Value* Context::setPrototype(Value* obj, Value* proto) {
-    return obj->type()->setPrototype(this, obj, proto);
+    Value* r = obj->type()->setPrototype(this, obj, proto);
+    if (detail::isErrorValue(r)) return r;
+    if (r->type()->kind() != TypeKind::Boolean) return r;
+    if (!detail::toBoolean(r)) return detail::typeError(this, "Cannot set prototype");
+    return obj;
 }
 
 Value* Context::ownPropertyKeys(Value* obj, bool enumerableOnly, bool includeSymbols) {

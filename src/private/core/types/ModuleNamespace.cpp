@@ -61,16 +61,14 @@ Value* ModuleNamespaceType::deleteProperty(IContext* ctx, Value* /*self*/, Value
                  "' of module namespace");
 }
 
-Value* ModuleNamespaceType::defineAccessor(IContext* ctx, Value* /*self*/, Value* key,
+Value* ModuleNamespaceType::defineAccessor(IContext* ctx, Value* /*self*/, Value* /*key*/,
                                            Value* /*getter*/, Value* /*setter*/,
                                            bool /*enumerable*/, bool /*configurable*/) {
-    return detail::typeError(
-        ctx, "Cannot define accessor property '" + detail::valueToString(key) +
-                 "' on module namespace");
+    return ctx->createBoolean(false);
 }
 
 Value* ModuleNamespaceType::setPrototype(IContext* ctx, Value* /*self*/, Value* /*proto*/) {
-    return detail::typeError(ctx, "Cannot set prototype of module namespace");
+    return ctx->createBoolean(false);
 }
 
 Value* ModuleNamespaceType::defineProperty(IContext* ctx, Value* self, Value* key,
@@ -99,12 +97,12 @@ Value* ModuleNamespaceType::defineProperty(IContext* ctx, Value* self, Value* ke
         it->second.configurable = false;
         it->second.getter = nullptr;
         it->second.setter = nullptr;
-        return value;
+        return ctx->createBoolean(true);
     }
     d->properties.emplace(
         k, Property{value, false, true, false, nullptr, nullptr});
     d->order.push_back(k);
-    return value;
+    return ctx->createBoolean(true);
 }
 
 Value* defineIndirectExport(IContext* ctx, Value* exports, Value* key,

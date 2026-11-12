@@ -489,11 +489,9 @@ Value* ProxyType::defineProperty(IContext* ctx, Value* self, Value* key, Value* 
     Value* argv[3] = {d->target, pk.value, descObj};
     Value* r = ctx->call(trap, d->handler, 3, argv);
     if (detail::isErrorValue(r)) return r;
-    if (!detail::toBoolean(r)) {
-        return detail::typeError(ctx, "proxy defineProperty trap returned false");
-    }
+    if (!detail::toBoolean(r)) return ctx->createBoolean(false);
     if (Value* e = checkDefineInvariant(ctx, d->target, pk, desc)) return e;
-    return value;
+    return ctx->createBoolean(true);
 }
 
 Value* ProxyType::defineAccessor(IContext* ctx, Value* self, Value* key, Value* getter,
@@ -517,11 +515,9 @@ Value* ProxyType::defineAccessor(IContext* ctx, Value* self, Value* key, Value* 
     Value* argv[3] = {d->target, pk.value, descObj};
     Value* r = ctx->call(trap, d->handler, 3, argv);
     if (detail::isErrorValue(r)) return r;
-    if (!detail::toBoolean(r)) {
-        return detail::typeError(ctx, "proxy defineProperty trap returned false");
-    }
+    if (!detail::toBoolean(r)) return ctx->createBoolean(false);
     if (Value* e = checkDefineInvariant(ctx, d->target, pk, desc)) return e;
-    return self;
+    return ctx->createBoolean(true);
 }
 
 Value* ProxyType::getPrototype(IContext* ctx, Value* self) {
@@ -563,9 +559,7 @@ Value* ProxyType::setPrototype(IContext* ctx, Value* self, Value* proto) {
     Value* argv[2] = {d->target, proto};
     Value* r = ctx->call(trap, d->handler, 2, argv);
     if (detail::isErrorValue(r)) return r;
-    if (!detail::toBoolean(r)) {
-        return detail::typeError(ctx, "proxy setPrototypeOf trap returned false");
-    }
+    if (!detail::toBoolean(r)) return ctx->createBoolean(false);
 
     // —— 不变量（ES2024 §10.5.3）——
     Value* ext = targetExtensible(ctx, d->target);
@@ -578,7 +572,7 @@ Value* ProxyType::setPrototype(IContext* ctx, Value* self, Value* proto) {
                 ctx, "proxy setPrototypeOf trap cannot change the prototype of a non-extensible target");
         }
     }
-    return self;
+    return ctx->createBoolean(true);
 }
 
 Value* ProxyType::isExtensible(IContext* ctx, Value* self) {

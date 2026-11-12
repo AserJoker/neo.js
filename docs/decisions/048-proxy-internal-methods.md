@@ -155,12 +155,31 @@ trap 缺失（undefined/null）时回退到 target 的对应内部方法。
   - `apply`/`construct` 用 CreateListFromArrayLike 解析参数数组；
   - `Reflect[@@toStringTag] = "Reflect"`。
 
-## 8. 已知边界（P4）
+## 8. 内部方法的 Value 结果协议（P4）
+
+`[[DefineOwnProperty]]` / `[[DefineAccessor]]` / `[[SetPrototypeOf]]` 不再用
+native `bool&` 或"Exception 兼作 false"表达结果，而是用 Value 的三态：
+
+| 返回 | 含义 |
+| --- | --- |
+| `Boolean true` | 操作成功 |
+| `Boolean false` | 规范意义上的失败（不可扩展、不可配置冲突、成环、trap 返回 false） |
+| `Exception/Fatal` | 真正抛出（trap throw、不变量违反、描述符非法） |
+
+- 公共 API `Context::defineProperty/defineAccessor/setPrototype` 在 false 时
+  转 TypeError，成功时返回属性值/self，保持原有调用方语义。
+- `Reflect.defineProperty/setPrototypeOf` 直接返回 Boolean；Exception 原样透传。
+- `ordinarySet` 在 receiver 的 `[[DefineOwnProperty]]` 返回 false 时置
+  `ok=false`。
+- 透传型（Uninitialized/Interrupt）仍可返回自身，公共 API 原样透传。
+
+这样 `Reflect` 不需要 try/catch 式地猜测 Exception 来源，也不需要预检查
+可扩展性——Proxy 的 trap 必须被调用，结果由内部方法以 Value 表达。
+
+## 9. 已知边界（P4）
 
 - **TODO（依赖 VM/字节码层）**：for-in 枚举顺序与 Proxy 的完整交互；JSON。
-- `Reflect.defineProperty` / `Reflect.setPrototypeOf` 目前把内部方法的
-  Exception 统一映射为 false；Proxy trap 主动抛出的异常也会被映射为 false
-  （规范要求透传）。后续给内部方法增加 boolean 通道后可精确区分。
+- `[[Set]]` 仍使用 `bool& ok` 返回通道，后续可按同一 Value 协议统一。
 
 - `hasProperty` 返回 `Value*`（Boolean 或 Exception/Fatal），has trap
   抛错原样透传。

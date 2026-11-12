@@ -214,20 +214,23 @@ public:
     // 走错误通道，Proxy 的 has trap 抛错可原样透传。
     virtual Value* hasProperty(IContext* ctx, Value* self, Value* key) = 0;
     virtual Value* deleteProperty(IContext* ctx, Value* self, Value* key) = 0;
+    // [[DefineOwnProperty]]（ES2024 §10.1.6）：返回 Boolean（操作成功/失败），
+    // 或 Exception/Fatal（真正抛出）。Boolean 结果不携带属性值，公共 API
+    // （Context::defineProperty）在成功时返回被定义的值。
     virtual Value* defineProperty(IContext* ctx, Value* self, Value* key,
                                   Value* value, bool writable, bool enumerable,
                                   bool configurable) = 0;
 
     // 定义访问器属性（getter/setter 至少一个非空，ES2024 §10.1.6.3）。
-    // getter/setter 须为 Function 或 null；成功返回 self，失败返回 Exception。
-    // 非对象类型返回 Exception。
+    // getter/setter 须为 Function 或 null。返回值同 [[DefineOwnProperty]]：
+    // Boolean 表示结果，Exception 表示抛出。
     virtual Value* defineAccessor(IContext* ctx, Value* self, Value* key, Value* getter,
                                   Value* setter, bool enumerable, bool configurable) = 0;
 
     // —— 原型链（ADR-018 §1）——
     // getPrototype: 返回对象的原型；无原型返回 null。非对象类型返回 undefined。
-    // setPrototype: 设置原型（proto 必须是 Object 或 null），成功返回 self。
-    //               非对象类型 / proto 类型非法 / 成环 返回 Exception。
+    // setPrototype（[[SetPrototypeOf]]）：返回 Boolean（成功/失败）或 Exception。
+    //               公共 API（Context::setPrototype）成功时返回 self。
     virtual Value* getPrototype(IContext* ctx, Value* self) = 0;
     virtual Value* setPrototype(IContext* ctx, Value* self, Value* proto) = 0;
 };
