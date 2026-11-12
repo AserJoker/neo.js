@@ -310,3 +310,28 @@ TEST(BigIntTest, RandomizedLargeDivisionInvariant) {
         EXPECT_TRUE(r.abs() < d.abs());
     }
 }
+
+TEST(BigIntTest, DoubleConversion) {
+    BigInt out;
+    ASSERT_TRUE(BigInt::fromDouble(0.0, out));
+    EXPECT_EQ(out.toString(), "0");
+    ASSERT_TRUE(BigInt::fromDouble(-42.0, out));
+    EXPECT_EQ(out.toString(), "-42");
+    ASSERT_TRUE(BigInt::fromDouble(std::ldexp(1.0, 100), out));
+    EXPECT_EQ(out, BigInt(1) << 100);
+    EXPECT_FALSE(BigInt::fromDouble(1.5, out));
+    EXPECT_FALSE(BigInt::fromDouble(INFINITY, out));
+    EXPECT_FALSE(BigInt::fromDouble(std::nan(""), out));
+
+    EXPECT_DOUBLE_EQ(BigInt(0).toDouble(), 0.0);
+    EXPECT_DOUBLE_EQ(BigInt(42).toDouble(), 42.0);
+    EXPECT_DOUBLE_EQ(BigInt(-42).toDouble(), -42.0);
+    EXPECT_DOUBLE_EQ((BigInt(1) << 100).toDouble(), std::ldexp(1.0, 100));
+
+    // ties-to-even：2^53+1 → 2^53，2^53+3 → 2^53+4。
+    BigInt p53 = BigInt(1) << 53;
+    EXPECT_DOUBLE_EQ((p53 + BigInt(1)).toDouble(), std::ldexp(1.0, 53));
+    EXPECT_DOUBLE_EQ((p53 + BigInt(3)).toDouble(), std::ldexp(1.0, 53) + 4.0);
+
+    EXPECT_TRUE(std::isinf((BigInt(1) << 2000).toDouble()));
+}

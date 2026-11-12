@@ -60,6 +60,7 @@ class Context : public IContext {
     Value* numberPrototype_ = nullptr;
     Value* stringPrototype_ = nullptr;
     Value* symbolPrototype_ = nullptr;
+    Value* bigIntPrototype_ = nullptr;  // %BigInt.prototype%（普通对象，非包装）
     // 迭代器原型（ES2024 §23.1.5 / ES2025 §27.1.4.2）：
     // arrayIteratorPrototype_ 是 %ArrayIteratorPrototype%（其原型是 iteratorPrototype_），
     // iteratorWrapperPrototype_ 是 %WrapForValidIteratorPrototype%（同上）。
@@ -314,6 +315,7 @@ public:
         stringPrototype_ = stringProto;
         symbolPrototype_ = symbolProto;
     }
+    void setBigIntPrototype(Value* proto) override { bigIntPrototype_ = proto; }
     void setIteratorBuiltins(Value* iteratorProto, Value* iteratorCtor,
                              Value* arrayIteratorProto,
                              Value* iteratorWrapperProto) override {

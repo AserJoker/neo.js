@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <limits>
 
 namespace neo::bigint {
@@ -553,6 +554,66 @@ bool BigInt::fitsInt64() const {
     static const std::vector<uint32_t> kLimit = {0u, 0x80000000u};  // 2^63
     if (negative_) return compareMagnitude(mag_, kLimit) <= 0;
     return compareMagnitude(mag_, kLimit) < 0;
+}
+
+bool BigInt::fromDouble(double value, BigInt& out) {
+    if (!std::isfinite(value) || std::trunc(value) != value) return false;
+    if (value == 0.0) {
+        out = BigInt();
+        return true;
+    }
+    const bool negative = value < 0;
+    const double absValue = std::fabs(value);
+    int exponent = 0;
+    const double mantissa = std::frexp(absValue, &exponent);  // abs = m * 2^e
+    const uint64_t bits =
+        static_cast<uint64_t>(std::ldexp(mantissa, 53));  // 53 位有效位
+    const int shift = exponent - 53;
+    BigInt magnitude(bits);
+    if (shift >= 0) {
+        magnitude = magnitude << static_cast<uint64_t>(shift);
+    } else {
+        magnitude = magnitude >> static_cast<uint64_t>(-shift);
+    }
+    out = negative ? -magnitude : magnitude;
+    return true;
+}
+
+double BigInt::toDouble() const {
+    if (mag_.empty()) return 0.0;
+
+    const size_t bits = bitLength();
+    double value = 0.0;
+    if (bits <= 53) {
+        uint64_t magnitude = mag_[0];
+        if (mag_.size() > 1) {
+            magnitude |= static_cast<uint64_t>(mag_[1]) << 32;
+        }
+        value = static_cast<double>(magnitude);
+    } else {
+        // 保留 54 位（53 位尾数 + 1 位 guard），再按 round-to-nearest-even 舍入。
+        const size_t shift = bits - 53;
+        const size_t topShift = shift - 1;
+        const std::vector<uint32_t> topMag = shiftRightMagnitude(mag_, topShift);
+        const uint64_t top = BigInt(false, topMag).toUint64();  // 54 位
+        uint64_t mantissa = top >> 1;
+        const bool guard = (top & 1u) != 0;
+        const std::vector<uint32_t> lowMag = subMagnitude(
+            mag_, shiftLeftMagnitude(topMag, topShift));
+        const bool sticky = !lowMag.empty();
+        if (guard && (sticky || (mantissa & 1u) != 0)) {
+            ++mantissa;
+            if (mantissa == (1ULL << 53)) {
+                mantissa >>= 1;
+                value = std::ldexp(static_cast<double>(mantissa),
+                                   static_cast<int>(shift + 1));
+                return negative_ ? -value : value;
+            }
+        }
+        value = std::ldexp(static_cast<double>(mantissa),
+                           static_cast<int>(shift));
+    }
+    return negative_ ? -value : value;
 }
 
 }  // namespace neo::bigint

@@ -121,6 +121,7 @@ add_library(neojs STATIC
     src/private/core/PromiseBuiltins.cpp
     src/private/core/ErrorKind.cpp
     src/private/core/PrimitiveWrapperBuiltins.cpp
+    src/private/core/BigIntBuiltins.cpp
     src/private/core/SymbolBuiltins.cpp
     src/private/core/Types.cpp
     src/private/core/types/Undefined.cpp

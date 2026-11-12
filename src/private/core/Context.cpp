@@ -16,6 +16,7 @@
 #include "core/ArrayBuiltins.h"
 #include "core/JSONBuiltins.h"
 #include "core/AsyncGeneratorBuiltins.h"
+#include "core/BigIntBuiltins.h"
 #include "core/ErrorBuiltins.h"
 #include "core/GeneratorBuiltins.h"
 #include "core/IType.h"
@@ -141,6 +142,12 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     // 10. 注册 Boolean/Number/String 包装类与四个包装原型（ES2024 §10.4）。
     //     依赖 Object.prototype / Function.prototype / Symbol.prototype 已就绪。
     if (!registerPrimitiveWrapperBuiltins(this)) {
+        std::abort();
+    }
+
+    // 10b. 注册 BigInt 构造函数/原型（ES2024 §21.2）。
+    //      依赖 Object.prototype / Function.prototype 已就绪。
+    if (!registerBigIntBuiltins(this)) {
         std::abort();
     }
 
@@ -1343,12 +1350,13 @@ Value* Context::createArray(std::string_view bindName) {
 }
 
 Value* Context::createPrimitiveWrapper(Value* primitive, std::string_view bindName) {
-    // [[PrimitiveValue]] 必须是原始值之一（Boolean/Number/String/Symbol）。
+    // [[PrimitiveValue]] 必须是原始值之一（Boolean/Number/BigInt/String/Symbol）。
     // 调用方契约保证，非法类型返回 Exception（对外 API 边界校验）。
     Value* proto = nullptr;
     switch (primitive->type()->kind()) {
         case TypeKind::Boolean: proto = booleanPrototype_; break;
         case TypeKind::Number:  proto = numberPrototype_; break;
+        case TypeKind::BigInt:  proto = bigIntPrototype_; break;
         case TypeKind::String:  proto = stringPrototype_; break;
         case TypeKind::Symbol:  proto = symbolPrototype_; break;
         default:

@@ -21,6 +21,7 @@
 
 #include "core/PrimitiveWrapperBuiltins.h"
 
+#include "core/BigIntOps.h"
 #include "core/IContext.h"
 #include "core/IType.h"
 #include "core/Scope.h"
@@ -51,11 +52,16 @@ Value* booleanConstruct(IContext* ctx, Value* /*self*/, size_t argc, Value* argv
     return ctx->createPrimitiveWrapper(ctx->createBoolean(b));
 }
 
-// Number(value)：call → ToNumber（原始值）。
-// 走完整 ToNumber（ES2024 §7.1.4）：对象先 ToPrimitive，Symbol 抛 TypeError。
+// Number(value)：call → ToNumeric 后转 Number（ES2024 §21.1.1.1）。
+// BigInt 是特例：Number(1n) === 1（ToNumber 本身对 BigInt 抛错）。
 Value* numberCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     if (argc == 0) return ctx->createNumber(0.0);
-    return detail::toNumberValue(ctx, argv[0]);
+    Value* n = detail::toNumericValue(ctx, argv[0]);
+    if (detail::isErrorValue(n)) return n;
+    if (n->type()->kind() == TypeKind::BigInt) {
+        return ctx->createNumber(detail::bigIntValue(n).toDouble());
+    }
+    return n;
 }
 
 // new Number(value) → 包装对象

@@ -85,6 +85,11 @@ public:
     bool fitsUint64() const;
     bool fitsInt64() const;
 
+    // double 互转：fromDouble 仅接受有限整数值（BigInt(number) 的整数校验）；
+    // toDouble 按 round-to-nearest-even 舍入，溢出得到 ±Infinity。
+    static bool fromDouble(double value, BigInt& out);
+    double toDouble() const;
+
 private:
     BigInt(bool negative, std::vector<uint32_t> magnitude)
         : negative_(negative), mag_(std::move(magnitude)) {

@@ -483,7 +483,7 @@ public:
     virtual Value* createArray(std::string_view bindName = {}) = 0;
 
     // createPrimitiveWrapper: 创建原始值包装对象（ES2024 §10.4）。
-    // primitive 必须是 Boolean/Number/String/Symbol 之一，成为 [[PrimitiveValue]]。
+    // primitive 必须是 Boolean/Number/BigInt/String/Symbol 之一，成为 [[PrimitiveValue]]。
     // 原型按 primitive 的类型自动挂对应的 *Prototype；bootstrap 期间未就绪时跳过。
     // 其余对象行为（属性/原型/GC）与普通对象一致。
     // 返回 Value*：正常包装对象，或 OOM 哨兵（ADR-031）。
@@ -555,6 +555,10 @@ public:
     // 此后 createPrimitiveWrapper 按 primitive 类型自动挂链。宿主不应调用。
     virtual void setWrapperPrototypes(Value* booleanProto, Value* numberProto,
                                       Value* stringProto, Value* symbolProto) = 0;
+
+    // setBigIntPrototype: bootstrap 专用——BigInt.prototype 建立后设置，
+    // 此后 createPrimitiveWrapper(BigInt) 自动挂链。宿主不应调用。
+    virtual void setBigIntPrototype(Value* proto) = 0;
 
     // setIteratorBuiltins: bootstrap 专用——迭代器原型与构造函数建立后设置，
     // 此后 createArrayIterator / createIteratorWrapper 自动挂链。宿主不应调用。
