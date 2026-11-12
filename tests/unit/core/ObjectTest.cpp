@@ -18,6 +18,7 @@
 #include "core/Scope.h"
 #include "core/Value.h"
 #include "core/types/Object.h"
+#include "core/types/Boolean.h"
 #include "core/types/Number.h"
 #include "core/types/String.h"
 #include "infra/IAllocator.h"
@@ -240,7 +241,7 @@ TEST(ObjectTest, SetNonWritablePropertyReturnsException) {
     EXPECT_DOUBLE_EQ(static_cast<NumberData*>(ctx->getProperty(obj, "x")->data())->value, 1.0);
 }
 
-TEST(ObjectTest, DeleteNonConfigurableReturnsException) {
+TEST(ObjectTest, DeleteNonConfigurableReturnsFalse) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
@@ -250,7 +251,8 @@ TEST(ObjectTest, DeleteNonConfigurableReturnsException) {
     ctx->defineProperty(obj, "x", ctx->createNumber(1), true, true, /*configurable=*/false);
 
     Value* result = ctx->deleteProperty(obj, "x");
-    EXPECT_EQ(result->type()->kind(), TypeKind::Exception);
+    ASSERT_EQ(result->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(static_cast<neo::core::BooleanData*>(result->data())->value);
     EXPECT_TRUE(neo::test::hasProperty(ctx, obj, "x"));
 }
 

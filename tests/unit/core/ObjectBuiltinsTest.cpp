@@ -1762,9 +1762,11 @@ TEST(ObjectBuiltinsTest, SymbolPropertyDeleteAndOrder) {
     EXPECT_TRUE(boolOf(ctx->deleteProperty(obj, sym)));
     auto* d = static_cast<ObjectData*>(obj->data());
     EXPECT_TRUE(d->symbolOrder.empty());
-    // 不可配置 symbol → Exception
+    // 不可配置 symbol → [[Delete]] 返回 false
     ctx->defineProperty(obj, sym, ctx->createNumber(1), true, true, false);
-    EXPECT_EQ(ctx->deleteProperty(obj, sym)->type()->kind(), TypeKind::Exception);
+    Value* del = ctx->deleteProperty(obj, sym);
+    ASSERT_EQ(del->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(boolOf(del));
 }
 
 TEST(ObjectBuiltinsTest, InheritedStringAccessorAndReadOnly) {
@@ -1932,4 +1934,99 @@ TEST(ObjectBuiltinsTest, ObjectCreateAppliesPropertyDescriptors) {
     EXPECT_EQ(ctx->getPrototype(obj), proto);
     EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(obj, "x")), 7.0);
     EXPECT_TRUE(boolOf(callObjectStatic(ctx.get(), "isExtensible", 1, &obj)));
+}
+
+TEST(ObjectBuiltinsTest, SealAndFreezePlainObject) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* obj = ctx->createObject();
+    ctx->defineProperty(obj, "x", ctx->createNumber(1), true, true, true);
+    Value* args[1] = {obj};
+
+    // seal：不可扩展、属性不可配置，但仍可写。
+    EXPECT_EQ(callObjectStatic(ctx.get(), "seal", 1, args), obj);
+    EXPECT_TRUE(boolOf(callObjectStatic(ctx.get(), "isSealed", 1, args)));
+    EXPECT_FALSE(boolOf(callObjectStatic(ctx.get(), "isFrozen", 1, args)));
+    EXPECT_FALSE(boolOf(callObjectStatic(ctx.get(), "isExtensible", 1, args)));
+    ctx->setProperty(obj, "x", ctx->createNumber(2));
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(obj, "x")), 2.0);
+    EXPECT_EQ(ctx->defineProperty(obj, "y", ctx->createNumber(3), true, true, true)
+                  ->type()->kind(),
+              TypeKind::Exception);
+    Value* del = ctx->deleteProperty(obj, "x");
+    ASSERT_EQ(del->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(boolOf(del));
+
+    // freeze：再收紧 writable。
+    EXPECT_EQ(callObjectStatic(ctx.get(), "freeze", 1, args), obj);
+    EXPECT_TRUE(boolOf(callObjectStatic(ctx.get(), "isFrozen", 1, args)));
+    ctx->setProperty(obj, "x", ctx->createNumber(9));
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(obj, "x")), 2.0);
+    Value* descArgs[2] = {obj, ctx->createString("x")};
+    Value* desc = callObjectStatic(ctx.get(), "getOwnPropertyDescriptor", 2, descArgs);
+    EXPECT_FALSE(boolOf(ctx->getProperty(desc, "writable")));
+    EXPECT_FALSE(boolOf(ctx->getProperty(desc, "configurable")));
+
+    // 原始值：isSealed/isFrozen 为 true，seal/freeze 原样返回。
+    Value* prim = ctx->createNumber(1);
+    Value* primArgs[1] = {prim};
+    EXPECT_TRUE(boolOf(callObjectStatic(ctx.get(), "isSealed", 1, primArgs)));
+    EXPECT_TRUE(boolOf(callObjectStatic(ctx.get(), "isFrozen", 1, primArgs)));
+    EXPECT_EQ(callObjectStatic(ctx.get(), "freeze", 1, primArgs), prim);
+}
+
+TEST(ObjectBuiltinsTest, SealAndFreezeArray) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* arr = ctx->createArray();
+    ctx->setProperty(arr, "0", ctx->createNumber(1));
+    ctx->setProperty(arr, "1", ctx->createNumber(2));
+    Value* args[1] = {arr};
+
+    // seal：索引仍可写，但不可删除/新增；length 仍可写。
+    EXPECT_EQ(callObjectStatic(ctx.get(), "seal", 1, args), arr);
+    EXPECT_TRUE(boolOf(callObjectStatic(ctx.get(), "isSealed", 1, args)));
+    EXPECT_FALSE(boolOf(callObjectStatic(ctx.get(), "isFrozen", 1, args)));
+    ctx->setProperty(arr, "0", ctx->createNumber(7));
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(arr, "0")), 7.0);
+    Value* del = ctx->deleteProperty(arr, "0");
+    ASSERT_EQ(del->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(boolOf(del));
+    ctx->setProperty(arr, "2", ctx->createNumber(3));
+    EXPECT_EQ(ctx->getProperty(arr, "2")->type()->kind(), TypeKind::Undefined);
+
+    // freeze：索引不可写，length 不可写。
+    EXPECT_EQ(callObjectStatic(ctx.get(), "freeze", 1, args), arr);
+    EXPECT_TRUE(boolOf(callObjectStatic(ctx.get(), "isFrozen", 1, args)));
+    ctx->setProperty(arr, "0", ctx->createNumber(8));
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(arr, "0")), 7.0);
+    ctx->setProperty(arr, "length", ctx->createNumber(1));
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(arr, "length")), 2.0);
+
+    Value* descArgs[2] = {arr, ctx->createString("length")};
+    Value* lenDesc = callObjectStatic(ctx.get(), "getOwnPropertyDescriptor", 2, descArgs);
+    EXPECT_FALSE(boolOf(ctx->getProperty(lenDesc, "writable")));
+}
+
+TEST(ObjectBuiltinsTest, SealAndFreezeProxyForwardToTarget) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* target = ctx->createObject();
+    ctx->defineProperty(target, "x", ctx->createNumber(1), true, true, true);
+    Value* proxy = ctx->createProxy(target, ctx->createObject());
+    Value* args[1] = {proxy};
+
+    EXPECT_EQ(callObjectStatic(ctx.get(), "freeze", 1, args), proxy);
+    EXPECT_TRUE(boolOf(callObjectStatic(ctx.get(), "isFrozen", 1, args)));
+    EXPECT_TRUE(boolOf(callObjectStatic(ctx.get(), "isFrozen", 1, &target)));
+    EXPECT_FALSE(boolOf(callObjectStatic(ctx.get(), "isExtensible", 1, &target)));
 }

@@ -251,7 +251,8 @@ TEST(InstanceOfTest, FunctionProtoHasInstanceIsNonConfigurable) {
     EXPECT_EQ(str(f.ctx->getProperty(handler, "name")), "[Symbol.hasInstance]");
     // 不可配置：delete 失败
     Value* r = f.ctx->deleteProperty(functionProto, sym);
-    EXPECT_EQ(r->type()->kind(), TypeKind::Exception);
+    ASSERT_EQ(r->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(static_cast<neo::core::BooleanData*>(r->data())->value);
 }
 
 TEST(InstanceOfTest, FunctionProtoHasInstanceUsesOrdinary) {

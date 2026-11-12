@@ -20,6 +20,7 @@
 #include "core/Value.h"
 #include "core/types/Number.h"
 #include "core/types/Object.h"
+#include "core/types/TypeBehavior.h"
 #include "core/types/String.h"
 #include "infra/Console.h"
 #include "infra/IAllocator.h"
@@ -396,8 +397,10 @@ TEST(AccessorTest, AccessorDescriptorFlags) {
     EXPECT_EQ(p.value, nullptr);
     EXPECT_TRUE(p.enumerable);
     EXPECT_FALSE(p.configurable);
-    // 不可配置 → delete 报错
-    EXPECT_EQ(ctx->deleteProperty(obj, "x")->type()->kind(), TypeKind::Exception);
+    // 不可配置 → [[Delete]] 返回 false
+    Value* del = ctx->deleteProperty(obj, "x");
+    ASSERT_EQ(del->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(neo::core::detail::toBoolean(del));
 }
 
 // ===== GC =====
@@ -519,7 +522,9 @@ TEST(AccessorTest, SymbolKeyNonConfigurableAccessorRejectsDelete) {
     Value* sym = ctx->createSymbol("k");
     ctx->defineAccessor(obj, sym, ctx->createNativeFunction(getter42, 0), nullptr,
                         /*enumerable=*/false, /*configurable=*/false);
-    EXPECT_EQ(ctx->deleteProperty(obj, sym)->type()->kind(), TypeKind::Exception);
+    Value* del = ctx->deleteProperty(obj, sym);
+    ASSERT_EQ(del->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(neo::core::detail::toBoolean(del));
 }
 
 TEST(AccessorTest, SymbolKeyDefinePropertyOverridesAccessor) {

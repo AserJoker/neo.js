@@ -204,7 +204,7 @@ TEST(ArrayTest, DeleteLengthReturnsException) {
     auto ctx = createContext(alloc.get(), &console);
 
     Value* arr = ctx->createArray();
-    EXPECT_EQ(ctx->deleteProperty(arr, "length")->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(ctx->deleteProperty(arr, "length")->type()->kind(), TypeKind::Boolean);
 }
 
 // ===== length 语义 =====

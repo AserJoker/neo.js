@@ -211,6 +211,27 @@ uint32_t ArrayType::indexedLength(Value* self) const {
     return static_cast<ArrayData*>(self->data())->length();
 }
 
+bool ArrayType::indexedWritable(Value* self) const {
+    return !static_cast<ArrayData*>(self->data())->frozen;
+}
+
+bool ArrayType::indexedConfigurable(Value* self) const {
+    return !static_cast<ArrayData*>(self->data())->sealed;
+}
+
+bool ArrayType::indexedLengthWritable(Value* self) const {
+    return static_cast<ArrayData*>(self->data())->lengthWritable;
+}
+
+void ArrayType::setIndexedIntegrity(IContext* /*ctx*/, Value* self, bool frozen) {
+    auto* d = static_cast<ArrayData*>(self->data());
+    d->sealed = true;
+    if (frozen) {
+        d->frozen = true;
+        d->lengthWritable = false;
+    }
+}
+
 Value* ArrayType::indexedElement(IContext* /*ctx*/, Value* self,
                                  uint32_t index) const {
     return static_cast<ArrayData*>(self->data())->elementAt(index);
@@ -238,7 +259,13 @@ Value* ArrayType::setProperty(IContext* ctx, Value* self, Value* key, Value* val
     std::string k;
     if (!isSymbolKeyValue(key)) {
         if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
+        // [[Set]] 失败：严格模式抛 TypeError，sloppy 静默返回 RHS。
+        auto failSet = [&](const std::string& name) -> Value* {
+            if (!ctx->hasFlag("strict")) return value;
+            return detail::typeError(ctx, "Cannot assign to read only property '" + name + "'");
+        };
         if (k == "length") {
+            if (!d->lengthWritable) return failSet(k);
             // ArraySetLength：值须为 0..2^32-1 的整数
             if (value->type()->kind() != TypeKind::Number) return invalidLength(ctx);
             double n = static_cast<NumberData*>(value->data())->value;
@@ -251,6 +278,8 @@ Value* ArrayType::setProperty(IContext* ctx, Value* self, Value* key, Value* val
         }
         uint32_t index = 0;
         if (parseArrayIndex(k, index)) {
+            bool exists = d->hasElement(index);
+            if ((exists && d->frozen) || (!exists && !d->extensible)) return failSet(k);
             d->setElement(index, value);
             return value;
         }
@@ -275,12 +304,13 @@ Value* ArrayType::deleteProperty(IContext* ctx, Value* self, Value* key) {
     std::string k;
     if (!isSymbolKeyValue(key)) {
         if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
-        if (k == "length") {
-            return detail::typeError(ctx, "Cannot delete property 'length'");
-        }
+        if (k == "length") return ctx->createBoolean(false);
         uint32_t index = 0;
         if (parseArrayIndex(k, index)) {
-            static_cast<ArrayData*>(self->data())->removeElement(index);
+            auto* d = static_cast<ArrayData*>(self->data());
+            if (!d->hasElement(index)) return ctx->createBoolean(true);
+            if (d->sealed) return ctx->createBoolean(false);
+            d->removeElement(index);
             return ctx->createBoolean(true);
         }
     }
@@ -290,25 +320,50 @@ Value* ArrayType::deleteProperty(IContext* ctx, Value* self, Value* key) {
 Value* ArrayType::defineProperty(IContext* ctx, Value* self, Value* key,
                                  Value* value, bool writable, bool enumerable,
                                  bool configurable) {
+    auto* d = static_cast<ArrayData*>(self->data());
     std::string k;
     if (!isSymbolKeyValue(key)) {
         if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
         if (k == "length") {
-            // length 不可配置、不可枚举；writable 允许（本阶段忽略其后续约束）
-            if (enumerable || configurable) {
-                return detail::typeError(ctx, "Cannot redefine property: length");
+            // length 不可配置、不可枚举；writable 可收紧不可恢复。
+            if (enumerable || configurable) return ctx->createBoolean(false);
+            if (!writable && d->lengthWritable) {
+                d->lengthWritable = false;
+            } else if (writable && !d->lengthWritable) {
+                return ctx->createBoolean(false);
             }
-            return setProperty(ctx, self, key, value);
+            if (value->type()->kind() != TypeKind::Number) return invalidLength(ctx);
+            double n = static_cast<NumberData*>(value->data())->value;
+            if (!std::isfinite(n) || n < 0.0 || n > static_cast<double>(kArrayMaxLength) ||
+                std::floor(n) != n) {
+                return invalidLength(ctx);
+            }
+            if (!d->lengthWritable && n != static_cast<double>(d->length())) {
+                return ctx->createBoolean(false);
+            }
+            d->setLength(static_cast<uint32_t>(n));
+            return ctx->createBoolean(true);
         }
         uint32_t index = 0;
         if (parseArrayIndex(k, index)) {
-            // 本阶段索引元素恒为 writable/enumerable/configurable 的数据属性
-            if (!writable || !enumerable || !configurable) {
-                return detail::typeError(
-                    ctx, "Array index property attributes are not supported");
+            bool exists = d->hasElement(index);
+            if (!exists && !d->extensible) return ctx->createBoolean(false);
+            if (!enumerable) return ctx->createBoolean(false);
+            // 引擎不存逐元素描述符：未 seal 时只接受全默认特性；
+            // seal/freeze 通过 setIndexedIntegrity 预置整数组状态。
+            if (!d->sealed) {
+                if (!writable || !configurable) return ctx->createBoolean(false);
+                d->setElement(index, value);
+                return ctx->createBoolean(true);
             }
-            static_cast<ArrayData*>(self->data())->setElement(index, value);
-            return value;
+            if (configurable) return ctx->createBoolean(false);
+            if (writable && d->frozen) return ctx->createBoolean(false);
+            if (d->frozen && exists &&
+                !detail::sameValue(value, d->elementAt(index))) {
+                return ctx->createBoolean(false);
+            }
+            d->setElement(index, value);
+            return ctx->createBoolean(true);
         }
     }
     return getObjectType()->defineProperty(ctx, self, key, value, writable, enumerable,
@@ -322,8 +377,7 @@ Value* ArrayType::defineAccessor(IContext* ctx, Value* self, Value* key, Value* 
         if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
         uint32_t index = 0;
         if (k == "length" || parseArrayIndex(k, index)) {
-            return detail::typeError(
-                ctx, "Cannot define accessor on array index or length");
+            return ctx->createBoolean(false);
         }
     }
     return getObjectType()->defineAccessor(ctx, self, key, getter, setter, enumerable,

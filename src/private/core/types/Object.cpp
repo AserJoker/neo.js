@@ -395,7 +395,7 @@ Value* IType::getOwnProperty(IContext* ctx, Value* self, const PropertyKey& key,
             Value* len = ctx->createNumber(static_cast<double>(indexedLength(self)));
             if (len == ctx->oomValue()) return len;
             // Array.length 可写；String 包装的 length 只读（ES2024 §10.4.3.1）。
-            out = Property{len, kind() == TypeKind::Array, false, false, nullptr, nullptr};
+            out = Property{len, indexedLengthWritable(self), false, false, nullptr, nullptr};
             exists = true;
             return nullptr;
         }
@@ -403,7 +403,8 @@ Value* IType::getOwnProperty(IContext* ctx, Value* self, const PropertyKey& key,
         if (parseArrayIndex(key.name, index)) {
             Value* v = indexedElement(ctx, self, index);
             if (v != nullptr) {
-                out = Property{v, true, true, true, nullptr, nullptr};
+                out = Property{v, indexedWritable(self), true, indexedConfigurable(self),
+                               nullptr, nullptr};
                 exists = true;
                 return nullptr;
             }
@@ -525,10 +526,7 @@ Value* ObjectType::deleteProperty(IContext* ctx, Value* self, Value* key) {
         const void* ident = symbolIdentity(key);
         auto it = d->symbols.find(ident);
         if (it == d->symbols.end()) return ctx->createBoolean(true);
-        if (!it->second.prop.configurable) {
-            std::string msg = "Cannot delete property '" + detail::valueToString(key) + "'";
-            return detail::typeError(ctx, msg);
-        }
+        if (!it->second.prop.configurable) return ctx->createBoolean(false);
         d->symbols.erase(it);
         for (auto oit = d->symbolOrder.begin(); oit != d->symbolOrder.end(); ++oit) {
             if (*oit == ident) {
@@ -547,10 +545,7 @@ Value* ObjectType::deleteProperty(IContext* ctx, Value* self, Value* key) {
         // 不存在：delete 视为成功（JS 语义）
         return ctx->createBoolean(true);
     }
-    if (!it->second.configurable) {
-        std::string msg = "Cannot delete property '" + k + "'";
-        return detail::typeError(ctx, msg);
-    }
+    if (!it->second.configurable) return ctx->createBoolean(false);
     // 从 map 与 order 同步移除（O(n)，ADR-018 §4）
     d->properties.erase(it);
     for (auto oit = d->order.begin(); oit != d->order.end(); ++oit) {

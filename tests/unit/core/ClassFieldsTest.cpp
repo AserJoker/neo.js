@@ -11,6 +11,7 @@
 #include "core/Value.h"
 #include "core/types/Array.h"
 #include "core/types/Function.h"
+#include "core/types/Boolean.h"
 #include "core/types/Number.h"
 #include "core/types/TypeBehavior.h"
 #include "infra/Console.h"
@@ -250,5 +251,6 @@ TEST(ClassFieldsTest, ClassPrototypePropertyIsNonWritableNonConfigurable) {
                                   f.ctx->createObject());
     EXPECT_EQ(w->type()->kind(), TypeKind::Exception);
     Value* d = f.ctx->deleteProperty(cls, f.ctx->createString("prototype"));
-    EXPECT_EQ(d->type()->kind(), TypeKind::Exception);
+    ASSERT_EQ(d->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(static_cast<neo::core::BooleanData*>(d->data())->value);
 }

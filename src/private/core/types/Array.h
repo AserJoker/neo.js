@@ -52,6 +52,10 @@ public:
     bool hasIndexedElements() const override { return true; }
     uint32_t indexedLength(Value* self) const override;
     Value* indexedElement(IContext* ctx, Value* self, uint32_t index) const override;
+    bool indexedWritable(Value* self) const override;
+    bool indexedConfigurable(Value* self) const override;
+    bool indexedLengthWritable(Value* self) const override;
+    void setIndexedIntegrity(IContext* ctx, Value* self, bool frozen) override;
 
     // 运算：ToPrimitive → join(",") → 按 JS 规则参与运算
     Value* add(IContext* ctx, Value* a, Value* b) override;
@@ -87,6 +91,12 @@ public:
     std::unordered_map<uint32_t, Value*> sparse;  // 稀疏模式：只存实际存在的索引
     bool sparseMode = false;
     uint32_t length_ = 0;
+    // Object.seal/freeze 对索引与 length 的属性特性收紧。
+    // 引擎不存储逐元素描述符：sealed 时全部索引 configurable=false，
+    // frozen 时再叠加 writable=false；length 的 writable 单独记录。
+    bool sealed = false;
+    bool frozen = false;
+    bool lengthWritable = true;
 
     uint32_t length() const { return length_; }
 

@@ -182,6 +182,11 @@ false"表达结果，而是用 Value 的三态：
 ## 9. 已知边界（P4）
 
 - **TODO（依赖 VM/字节码层）**：for-in 枚举顺序与 Proxy 的完整交互；JSON。
+- `Object.seal/freeze/isSealed/isFrozen` 已实现（SetIntegrityLevel /
+  TestIntegrityLevel），Proxy 经 trap 转发并校验不变量。
+- Array 不存逐元素描述符：seal/freeze 用整数组 `sealed`/`frozen` 标志
+  表达（`setIndexedIntegrity` 钩子），因此单独对某个索引调用
+  `Object.defineProperty` 收紧特性会被拒绝；整数组收紧是受支持路径。
 
 - `hasProperty` 返回 `Value*`（Boolean 或 Exception/Fatal），has trap
   抛错原样透传。

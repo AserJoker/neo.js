@@ -134,10 +134,12 @@ TEST(ErrorKindTest, ArrayInvalidLengthIsRangeError) {
     expectError(f.ctx.get(), f.ctx->construct(arrayFn, 1, big), "RangeError");
 }
 
-TEST(ErrorKindTest, ArrayDeleteLengthIsTypeError) {
+TEST(ErrorKindTest, ArrayDeleteLengthReturnsFalse) {
     Fixture f;
     Value* arr = f.ctx->createArray();
-    expectError(f.ctx.get(), f.ctx->deleteProperty(arr, "length"), "TypeError");
+    Value* r = f.ctx->deleteProperty(arr, "length");
+    ASSERT_EQ(r->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(neo::core::detail::toBoolean(r));
 }
 
 TEST(ErrorKindTest, ArrayMethodOnNullOrUndefinedIsTypeError) {

@@ -522,6 +522,106 @@ Value* objectPreventExtensions(IContext* ctx, Value* /*self*/, size_t /*argc*/,
     return detail::isErrorValue(r) ? r : target;
 }
 
+// 按描述符调用 [[DefineOwnProperty]]（内部方法返回 Boolean 或 Exception）。
+Value* applyPropertyDescriptor(IContext* ctx, Value* target, Value* keyValue,
+                               const Property& p) {
+    return isAccessorDescriptor(p)
+               ? target->type()->defineAccessor(ctx, target, keyValue, p.getter, p.setter,
+                                                p.enumerable, p.configurable)
+               : target->type()->defineProperty(ctx, target, keyValue, p.value, p.writable,
+                                                p.enumerable, p.configurable);
+}
+
+// SetIntegrityLevel（ES2024 §7.3.15）：sealed 收紧 configurable，
+// frozen 再收紧数据属性的 writable。返回 Boolean 或 Exception。
+Value* setIntegrityLevel(IContext* ctx, Value* target, bool frozen) {
+    Value* prev = target->type()->preventExtensions(ctx, target);
+    if (detail::isErrorValue(prev)) return prev;
+    if (!detail::toBoolean(prev)) return ctx->createBoolean(false);
+    // 索引型 exotic（Array）没有逐元素描述符，先收紧整数组状态；
+    // 普通对象为 no-op。Proxy 在无 defineProperty trap 时转发 target。
+    target->type()->setIndexedIntegrity(ctx, target, frozen);
+
+    std::vector<Value*> keys;
+    if (Value* err = neo::core::ownPropertyKeys(ctx, target, false, true, keys)) return err;
+    for (Value* key : keys) {
+        PropertyKey pk;
+        if (Value* err = toPropertyKey(ctx, key, pk)) return err;
+        bool exists = false;
+        Property cur;
+        if (Value* err = target->type()->getOwnProperty(ctx, target, pk, exists, cur)) {
+            return err;
+        }
+        if (!exists) continue;
+        Property desc = cur;
+        desc.configurable = false;
+        if (frozen && !isAccessorDescriptor(cur)) desc.writable = false;
+        Value* r = applyPropertyDescriptor(ctx, target, key, desc);
+        if (detail::isErrorValue(r)) return r;
+        if (!detail::toBoolean(r)) return ctx->createBoolean(false);
+    }
+    return ctx->createBoolean(true);
+}
+
+// TestIntegrityLevel（ES2024 §7.3.16）：返回 Boolean 或 Exception。
+Value* testIntegrityLevel(IContext* ctx, Value* target, bool frozen) {
+    Value* ext = target->type()->isExtensible(ctx, target);
+    if (detail::isErrorValue(ext)) return ext;
+    if (detail::toBoolean(ext)) return ctx->createBoolean(false);
+
+    std::vector<Value*> keys;
+    if (Value* err = neo::core::ownPropertyKeys(ctx, target, false, true, keys)) return err;
+    for (Value* key : keys) {
+        PropertyKey pk;
+        if (Value* err = toPropertyKey(ctx, key, pk)) return err;
+        bool exists = false;
+        Property desc;
+        if (Value* err = target->type()->getOwnProperty(ctx, target, pk, exists, desc)) {
+            return err;
+        }
+        if (!exists) continue;
+        if (desc.configurable) return ctx->createBoolean(false);
+        if (frozen && !isAccessorDescriptor(desc) && desc.writable) {
+            return ctx->createBoolean(false);
+        }
+    }
+    return ctx->createBoolean(true);
+}
+
+// Object.seal(obj)：ES2024 §20.1.2.20
+Value* objectSeal(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* argv[]) {
+    Value* target = argv[0];
+    if (!detail::isObjectKind(target->type()->kind())) return target;
+    Value* r = setIntegrityLevel(ctx, target, /*frozen=*/false);
+    if (detail::isErrorValue(r)) return r;
+    if (!detail::toBoolean(r)) return detail::typeError(ctx, "Cannot seal object");
+    return target;
+}
+
+// Object.freeze(obj)：ES2024 §20.1.2.6
+Value* objectFreeze(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* argv[]) {
+    Value* target = argv[0];
+    if (!detail::isObjectKind(target->type()->kind())) return target;
+    Value* r = setIntegrityLevel(ctx, target, /*frozen=*/true);
+    if (detail::isErrorValue(r)) return r;
+    if (!detail::toBoolean(r)) return detail::typeError(ctx, "Cannot freeze object");
+    return target;
+}
+
+// Object.isSealed(obj)：ES2024 §20.1.2.15
+Value* objectIsSealed(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* argv[]) {
+    Value* target = argv[0];
+    if (!detail::isObjectKind(target->type()->kind())) return ctx->createBoolean(true);
+    return testIntegrityLevel(ctx, target, /*frozen=*/false);
+}
+
+// Object.isFrozen(obj)：ES2024 §20.1.2.13
+Value* objectIsFrozen(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* argv[]) {
+    Value* target = argv[0];
+    if (!detail::isObjectKind(target->type()->kind())) return ctx->createBoolean(true);
+    return testIntegrityLevel(ctx, target, /*frozen=*/true);
+}
+
 // Object.getOwnPropertyNames(obj)：自有字符串键（含不可枚举，ES2024 §20.1.2.11）
 Value* objectGetOwnPropertyNames(IContext* ctx, Value* /*self*/, size_t /*argc*/,
                                  Value* argv[]) {
@@ -668,6 +768,10 @@ bool registerObjectFunctionBuiltins(IContext* ctx) {
     if (!defineStatic(ctx, objectFn, "isExtensible", objectIsExtensible, 1)) return false;
     if (!defineStatic(ctx, objectFn, "preventExtensions", objectPreventExtensions, 1))
         return false;
+    if (!defineStatic(ctx, objectFn, "seal", objectSeal, 1)) return false;
+    if (!defineStatic(ctx, objectFn, "freeze", objectFreeze, 1)) return false;
+    if (!defineStatic(ctx, objectFn, "isSealed", objectIsSealed, 1)) return false;
+    if (!defineStatic(ctx, objectFn, "isFrozen", objectIsFrozen, 1)) return false;
     if (!defineStatic(ctx, objectFn, "getOwnPropertyNames", objectGetOwnPropertyNames, 1))
         return false;
 
