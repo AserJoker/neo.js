@@ -12,6 +12,8 @@
 namespace {
 
 using neo::frontend::BigIntLiteral;
+using neo::frontend::BinaryExpression;
+using neo::frontend::BinaryOperator;
 using neo::frontend::BooleanLiteral;
 using neo::frontend::CallExpression;
 using neo::frontend::ExpressionStatement;
@@ -599,6 +601,152 @@ TEST(ParserTest, PrefixUpdateAllowsLineTerminator) {
     EXPECT_TRUE(
         static_cast<const UpdateExpression*>(statement.expression.get())
             ->prefix);
+}
+
+TEST(ParserTest, BinaryOperatorPrecedence) {
+    ParseResult result = parse("a + b * c;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* add =
+        static_cast<const BinaryExpression*>(statement.expression.get());
+    EXPECT_EQ(add->kind(), NodeKind::BinaryExpression);
+    EXPECT_EQ(add->op, BinaryOperator::Add);
+    ASSERT_NE(add->right, nullptr);
+    EXPECT_EQ(add->right->kind(), NodeKind::BinaryExpression);
+    EXPECT_EQ(static_cast<const BinaryExpression*>(add->right.get())->op,
+              BinaryOperator::Multiply);
+}
+
+TEST(ParserTest, BinaryLeftAssociativity) {
+    ParseResult result = parse("a - b - c;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* outer =
+        static_cast<const BinaryExpression*>(statement.expression.get());
+    EXPECT_EQ(outer->op, BinaryOperator::Subtract);
+    ASSERT_NE(outer->left, nullptr);
+    EXPECT_EQ(outer->left->kind(), NodeKind::BinaryExpression);
+    EXPECT_EQ(static_cast<const BinaryExpression*>(outer->left.get())->op,
+              BinaryOperator::Subtract);
+}
+
+TEST(ParserTest, ExponentiateIsRightAssociative) {
+    ParseResult result = parse("a ** b ** c;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* outer =
+        static_cast<const BinaryExpression*>(statement.expression.get());
+    EXPECT_EQ(outer->op, BinaryOperator::Exponentiate);
+    ASSERT_NE(outer->right, nullptr);
+    EXPECT_EQ(outer->right->kind(), NodeKind::BinaryExpression);
+    EXPECT_EQ(static_cast<const BinaryExpression*>(outer->right.get())->op,
+              BinaryOperator::Exponentiate);
+}
+
+TEST(ParserTest, RelationalBindsTighterThanEquality) {
+    ParseResult result = parse("a < b == c;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* outer =
+        static_cast<const BinaryExpression*>(statement.expression.get());
+    EXPECT_EQ(outer->op, BinaryOperator::Equal);
+    ASSERT_NE(outer->left, nullptr);
+    EXPECT_EQ(outer->left->kind(), NodeKind::BinaryExpression);
+    EXPECT_EQ(static_cast<const BinaryExpression*>(outer->left.get())->op,
+              BinaryOperator::LessThan);
+}
+
+TEST(ParserTest, BitwisePrecedence) {
+    ParseResult result = parse("a | b & c;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* outer =
+        static_cast<const BinaryExpression*>(statement.expression.get());
+    EXPECT_EQ(outer->op, BinaryOperator::BitOr);
+    ASSERT_NE(outer->right, nullptr);
+    EXPECT_EQ(outer->right->kind(), NodeKind::BinaryExpression);
+    EXPECT_EQ(static_cast<const BinaryExpression*>(outer->right.get())->op,
+              BinaryOperator::BitAnd);
+}
+
+TEST(ParserTest, ShiftBindsLooserThanAdditive) {
+    ParseResult result = parse("a << b + c;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* outer =
+        static_cast<const BinaryExpression*>(statement.expression.get());
+    EXPECT_EQ(outer->op, BinaryOperator::LeftShift);
+    ASSERT_NE(outer->right, nullptr);
+    EXPECT_EQ(outer->right->kind(), NodeKind::BinaryExpression);
+    EXPECT_EQ(static_cast<const BinaryExpression*>(outer->right.get())->op,
+              BinaryOperator::Add);
+}
+
+TEST(ParserTest, RelationalKeywords) {
+    struct Case {
+        const char* source;
+        BinaryOperator op;
+    };
+    const Case cases[] = {
+        {"a instanceof b;", BinaryOperator::InstanceOf},
+        {"a in b;", BinaryOperator::In},
+    };
+
+    for (const Case& item : cases) {
+        ParseResult result = parse(item.source);
+        ASSERT_TRUE(result.ok()) << item.source;
+        const auto& statement = statementOf(result, 0);
+        const auto* binary =
+            static_cast<const BinaryExpression*>(statement.expression.get());
+        EXPECT_EQ(binary->kind(), NodeKind::BinaryExpression) << item.source;
+        EXPECT_EQ(binary->op, item.op) << item.source;
+    }
+}
+
+TEST(ParserTest, BinaryOperandsIncludeUnaryAndUpdate) {
+    ParseResult result = parse("typeof a + b++;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* add =
+        static_cast<const BinaryExpression*>(statement.expression.get());
+    EXPECT_EQ(add->op, BinaryOperator::Add);
+    ASSERT_NE(add->left, nullptr);
+    EXPECT_EQ(add->left->kind(), NodeKind::UnaryExpression);
+    ASSERT_NE(add->right, nullptr);
+    EXPECT_EQ(add->right->kind(), NodeKind::UpdateExpression);
+}
+
+TEST(ParserTest, DivisionAndRegExpOperand) {
+    ParseResult result = parse("a / b;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& division = statementOf(result, 0);
+    const auto* binary =
+        static_cast<const BinaryExpression*>(division.expression.get());
+    EXPECT_EQ(binary->op, BinaryOperator::Divide);
+
+    ParseResult regexpResult = parse("a + /b/;");
+    ASSERT_TRUE(regexpResult.ok());
+    const auto& statement = statementOf(regexpResult, 0);
+    const auto* add =
+        static_cast<const BinaryExpression*>(statement.expression.get());
+    EXPECT_EQ(add->op, BinaryOperator::Add);
+    ASSERT_NE(add->right, nullptr);
+    EXPECT_EQ(add->right->kind(), NodeKind::RegExpLiteral);
+}
+
+TEST(ParserTest, BinaryMissingOperandReportsError) {
+    ParseResult result = parse("a +;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
 }
 
 TEST(ParserTest, ProgramRangeCoversConsumedInput) {

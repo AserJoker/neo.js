@@ -56,6 +56,7 @@ enum class NodeKind : uint8_t {
     NewExpression,
     UnaryExpression,
     UpdateExpression,
+    BinaryExpression,
 };
 
 class Node {
@@ -226,6 +227,44 @@ struct UpdateExpression final : Node {
     UpdateOperator op;
     bool prefix;
     NodePtr argument;
+};
+
+enum class BinaryOperator : uint8_t {
+    Equal,
+    NotEqual,
+    StrictEqual,
+    StrictNotEqual,
+    LessThan,
+    LessThanEqual,
+    GreaterThan,
+    GreaterThanEqual,
+    LeftShift,
+    RightShift,
+    UnsignedRightShift,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
+    Exponentiate,
+    BitAnd,
+    BitOr,
+    BitXor,
+    In,
+    InstanceOf,
+};
+
+// left op right
+struct BinaryExpression final : Node {
+    BinaryExpression(SourceRange range, BinaryOperator op, NodePtr left,
+                     NodePtr right)
+        : Node(NodeKind::BinaryExpression, range),
+          op(op),
+          left(std::move(left)),
+          right(std::move(right)) {}
+    BinaryOperator op;
+    NodePtr left;
+    NodePtr right;
 };
 
 }  // namespace neo::frontend

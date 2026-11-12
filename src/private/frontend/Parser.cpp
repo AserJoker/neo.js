@@ -20,6 +20,85 @@ bool isIdentifierName(TokenKind kind) {
            value <= static_cast<int>(TokenKind::False);
 }
 
+struct BinaryOperatorInfo {
+    BinaryOperator op;
+    int precedence;
+    bool rightAssociative;
+};
+
+bool binaryOperator(TokenKind kind, BinaryOperatorInfo& info) {
+    switch (kind) {
+        case TokenKind::BitOr:
+            info = {BinaryOperator::BitOr, 3, false};
+            return true;
+        case TokenKind::BitXor:
+            info = {BinaryOperator::BitXor, 4, false};
+            return true;
+        case TokenKind::BitAnd:
+            info = {BinaryOperator::BitAnd, 5, false};
+            return true;
+        case TokenKind::EqualEqual:
+            info = {BinaryOperator::Equal, 6, false};
+            return true;
+        case TokenKind::NotEqual:
+            info = {BinaryOperator::NotEqual, 6, false};
+            return true;
+        case TokenKind::StrictEqual:
+            info = {BinaryOperator::StrictEqual, 6, false};
+            return true;
+        case TokenKind::StrictNotEqual:
+            info = {BinaryOperator::StrictNotEqual, 6, false};
+            return true;
+        case TokenKind::LessThan:
+            info = {BinaryOperator::LessThan, 7, false};
+            return true;
+        case TokenKind::GreaterThan:
+            info = {BinaryOperator::GreaterThan, 7, false};
+            return true;
+        case TokenKind::LessThanEqual:
+            info = {BinaryOperator::LessThanEqual, 7, false};
+            return true;
+        case TokenKind::GreaterThanEqual:
+            info = {BinaryOperator::GreaterThanEqual, 7, false};
+            return true;
+        case TokenKind::In:
+            info = {BinaryOperator::In, 7, false};
+            return true;
+        case TokenKind::InstanceOf:
+            info = {BinaryOperator::InstanceOf, 7, false};
+            return true;
+        case TokenKind::LeftShift:
+            info = {BinaryOperator::LeftShift, 8, false};
+            return true;
+        case TokenKind::RightShift:
+            info = {BinaryOperator::RightShift, 8, false};
+            return true;
+        case TokenKind::UnsignedRightShift:
+            info = {BinaryOperator::UnsignedRightShift, 8, false};
+            return true;
+        case TokenKind::Plus:
+            info = {BinaryOperator::Add, 9, false};
+            return true;
+        case TokenKind::Minus:
+            info = {BinaryOperator::Subtract, 9, false};
+            return true;
+        case TokenKind::Star:
+            info = {BinaryOperator::Multiply, 10, false};
+            return true;
+        case TokenKind::Slash:
+            info = {BinaryOperator::Divide, 10, false};
+            return true;
+        case TokenKind::Percent:
+            info = {BinaryOperator::Remainder, 10, false};
+            return true;
+        case TokenKind::StarStar:
+            info = {BinaryOperator::Exponentiate, 11, true};
+            return true;
+        default:
+            return false;
+    }
+}
+
 bool updateOperator(TokenKind kind, UpdateOperator& op) {
     switch (kind) {
         case TokenKind::PlusPlus:
@@ -202,8 +281,32 @@ NodePtr Parser::parseExpressionStatement() {
 // ---------------------------------------------------------------------------
 
 NodePtr Parser::parseExpression() {
-    // 后续在一元表达式之上逐层加入二元、赋值、条件等节点。
-    return parseUnaryExpression();
+    // 后续在二元表达式之上逐层加入逻辑、赋值、条件等节点。
+    return parseBinaryExpression(1);
+}
+
+NodePtr Parser::parseBinaryExpression(int minPrecedence) {
+    NodePtr left = parseUnaryExpression();
+    if (left == nullptr) return nullptr;
+
+    while (true) {
+        BinaryOperatorInfo info{};
+        if (!binaryOperator(current_.kind, info)) break;
+        if (info.precedence < minPrecedence) break;
+
+        const SourceLocation start = left->range().start;
+        advance();
+
+        // 左结合：右侧要求更高优先级；右结合（**）用当前优先级。
+        const int nextPrecedence =
+            info.rightAssociative ? info.precedence : info.precedence + 1;
+        NodePtr right = parseBinaryExpression(nextPrecedence);
+        if (right == nullptr) return nullptr;
+
+        left = std::make_unique<BinaryExpression>(
+            rangeFrom(start), info.op, std::move(left), std::move(right));
+    }
+    return left;
 }
 
 NodePtr Parser::parseUnaryExpression() {
