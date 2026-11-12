@@ -52,6 +52,8 @@ enum class NodeKind : uint8_t {
     ForOfStatement,
     ReturnStatement,
     ThrowStatement,
+    BreakStatement,
+    ContinueStatement,
 
     // 表达式
     Identifier,
@@ -235,6 +237,18 @@ struct ThrowStatement final : Node {
         : Node(NodeKind::ThrowStatement, range),
           argument(std::move(argument)) {}
     NodePtr argument;
+};
+
+struct BreakStatement final : Node {
+    BreakStatement(SourceRange range, std::string label)
+        : Node(NodeKind::BreakStatement, range), label(std::move(label)) {}
+    std::string label;  // 空串表示无标签
+};
+
+struct ContinueStatement final : Node {
+    ContinueStatement(SourceRange range, std::string label)
+        : Node(NodeKind::ContinueStatement, range), label(std::move(label)) {}
+    std::string label;
 };
 
 // ---------------------------------------------------------------------------

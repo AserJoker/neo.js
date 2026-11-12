@@ -16,10 +16,12 @@ using neo::frontend::AssignmentOperator;
 using neo::frontend::BigIntLiteral;
 using neo::frontend::BinaryExpression;
 using neo::frontend::BlockStatement;
+using neo::frontend::BreakStatement;
 using neo::frontend::BinaryOperator;
 using neo::frontend::BooleanLiteral;
 using neo::frontend::CallExpression;
 using neo::frontend::ConditionalExpression;
+using neo::frontend::ContinueStatement;
 using neo::frontend::DoWhileStatement;
 using neo::frontend::ExpressionStatement;
 using neo::frontend::ForInStatement;
@@ -1868,6 +1870,65 @@ TEST(ParserTest, ThrowInsideBlock) {
         static_cast<const BlockStatement*>(programOf(result).body[0].get());
     ASSERT_EQ(block->body.size(), 1u);
     EXPECT_EQ(block->body[0]->kind(), NodeKind::ThrowStatement);
+}
+
+TEST(ParserTest, BreakStatement) {
+    ParseResult plain = parse("break;");
+    ASSERT_TRUE(plain.ok());
+    ASSERT_EQ(programOf(plain).body[0]->kind(), NodeKind::BreakStatement);
+    const auto* noLabel =
+        static_cast<const BreakStatement*>(programOf(plain).body[0].get());
+    EXPECT_TRUE(noLabel->label.empty());
+
+    ParseResult labeled = parse("break outer;");
+    ASSERT_TRUE(labeled.ok());
+    const auto* withLabel =
+        static_cast<const BreakStatement*>(programOf(labeled).body[0].get());
+    EXPECT_EQ(withLabel->label, "outer");
+}
+
+TEST(ParserTest, BreakLabelStopsAtLineTerminator) {
+    ParseResult result = parse("break\nouter;");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 2u);
+    const auto* statement =
+        static_cast<const BreakStatement*>(programOf(result).body[0].get());
+    EXPECT_TRUE(statement->label.empty());
+    EXPECT_EQ(programOf(result).body[1]->kind(), NodeKind::ExpressionStatement);
+}
+
+TEST(ParserTest, ContinueStatement) {
+    ParseResult plain = parse("continue;");
+    ASSERT_TRUE(plain.ok());
+    ASSERT_EQ(programOf(plain).body[0]->kind(), NodeKind::ContinueStatement);
+    const auto* noLabel =
+        static_cast<const ContinueStatement*>(programOf(plain).body[0].get());
+    EXPECT_TRUE(noLabel->label.empty());
+
+    ParseResult labeled = parse("continue outer;");
+    ASSERT_TRUE(labeled.ok());
+    const auto* withLabel =
+        static_cast<const ContinueStatement*>(programOf(labeled).body[0].get());
+    EXPECT_EQ(withLabel->label, "outer");
+}
+
+TEST(ParserTest, ContinueLabelStopsAtLineTerminator) {
+    ParseResult result = parse("continue\nouter;");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 2u);
+    const auto* statement =
+        static_cast<const ContinueStatement*>(programOf(result).body[0].get());
+    EXPECT_TRUE(statement->label.empty());
+}
+
+TEST(ParserTest, BreakMissingSemicolonReportsError) {
+    ParseResult result = parse("break outer inner;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Expected ';'"), std::string::npos);
 }
 
 TEST(ParserTest, ProgramRangeCoversConsumedInput) {

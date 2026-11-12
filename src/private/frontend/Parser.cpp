@@ -369,7 +369,38 @@ NodePtr Parser::parseStatement() {
     if (at(TokenKind::For)) return parseForStatement();
     if (at(TokenKind::Return)) return parseReturnStatement();
     if (at(TokenKind::Throw)) return parseThrowStatement();
+    if (at(TokenKind::Break)) return parseBreakStatement();
+    if (at(TokenKind::Continue)) return parseContinueStatement();
     return parseExpressionStatement();
+}
+
+NodePtr Parser::parseBreakStatement() {
+    const SourceLocation start = current_.start;
+    advance();  // 'break'
+
+    std::string label;
+    if (at(TokenKind::Identifier) && !current_.precededByLineTerminator) {
+        label = current_.text;
+        advance();
+    }
+
+    if (!consumeSemicolon()) return nullptr;
+    return std::make_unique<BreakStatement>(rangeFrom(start), std::move(label));
+}
+
+NodePtr Parser::parseContinueStatement() {
+    const SourceLocation start = current_.start;
+    advance();  // 'continue'
+
+    std::string label;
+    if (at(TokenKind::Identifier) && !current_.precededByLineTerminator) {
+        label = current_.text;
+        advance();
+    }
+
+    if (!consumeSemicolon()) return nullptr;
+    return std::make_unique<ContinueStatement>(rangeFrom(start),
+                                               std::move(label));
 }
 
 NodePtr Parser::parseThrowStatement() {
