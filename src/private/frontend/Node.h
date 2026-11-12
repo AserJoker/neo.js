@@ -62,6 +62,11 @@ enum class NodeKind : uint8_t {
     LabeledStatement,
     WithStatement,
     DebuggerStatement,
+    FunctionDeclaration,
+
+    // 模块
+    ExportNamedDeclaration,
+    ExportDefaultDeclaration,
 
     // 表达式
     Identifier,
@@ -337,6 +342,44 @@ struct WithStatement final : Node {
 struct DebuggerStatement final : Node {
     explicit DebuggerStatement(SourceRange range)
         : Node(NodeKind::DebuggerStatement, range) {}
+};
+
+// function [*] name(params) { body }
+// id 可空仅用于 export default 的匿名函数声明。
+struct FunctionDeclaration final : Node {
+    FunctionDeclaration(SourceRange range, NodePtr id, NodeList params,
+                        NodePtr body, bool async, bool generator)
+        : Node(NodeKind::FunctionDeclaration, range),
+          id(std::move(id)),
+          params(std::move(params)),
+          body(std::move(body)),
+          async(async),
+          generator(generator) {}
+    NodePtr id;
+    NodeList params;
+    NodePtr body;  // BlockStatement
+    bool async;
+    bool generator;
+};
+
+// ---------------------------------------------------------------------------
+// 模块
+// ---------------------------------------------------------------------------
+
+// export function f() { }
+struct ExportNamedDeclaration final : Node {
+    ExportNamedDeclaration(SourceRange range, NodePtr declaration)
+        : Node(NodeKind::ExportNamedDeclaration, range),
+          declaration(std::move(declaration)) {}
+    NodePtr declaration;
+};
+
+// export default function [name]() { }
+struct ExportDefaultDeclaration final : Node {
+    ExportDefaultDeclaration(SourceRange range, NodePtr declaration)
+        : Node(NodeKind::ExportDefaultDeclaration, range),
+          declaration(std::move(declaration)) {}
+    NodePtr declaration;
 };
 
 // ---------------------------------------------------------------------------

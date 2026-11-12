@@ -26,8 +26,11 @@ using neo::frontend::ContinueStatement;
 using neo::frontend::DebuggerStatement;
 using neo::frontend::Directive;
 using neo::frontend::DoWhileStatement;
+using neo::frontend::ExportDefaultDeclaration;
+using neo::frontend::ExportNamedDeclaration;
 using neo::frontend::ExpressionStatement;
 using neo::frontend::ForInStatement;
+using neo::frontend::FunctionDeclaration;
 using neo::frontend::ForOfStatement;
 using neo::frontend::ForStatement;
 using neo::frontend::Identifier;
@@ -43,6 +46,7 @@ using neo::frontend::Parser;
 using neo::frontend::ParseResult;
 using neo::frontend::Program;
 using neo::frontend::RegExpLiteral;
+using neo::frontend::RestElement;
 using neo::frontend::ReturnStatement;
 using neo::frontend::SequenceExpression;
 using neo::frontend::StringLiteral;
@@ -2311,6 +2315,251 @@ TEST(ParserTest, ProgramRangeCoversConsumedInput) {
     ASSERT_NE(result.program, nullptr);
     EXPECT_EQ(result.program->range().start.offset, 0u);
     EXPECT_EQ(result.program->range().end.offset, 3u);
+}
+
+// ---------------------------------------------------------------------------
+// 函数声明
+// ---------------------------------------------------------------------------
+
+TEST(ParserTest, BasicFunctionDeclaration) {
+    ParseResult result = parse("function add(a, b) { return a + b; }");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    const auto& node = *programOf(result).body[0];
+    ASSERT_EQ(node.kind(), NodeKind::FunctionDeclaration);
+
+    const auto& function = static_cast<const FunctionDeclaration&>(node);
+    ASSERT_NE(function.id, nullptr);
+    EXPECT_EQ(static_cast<const Identifier&>(*function.id).name, "add");
+    EXPECT_FALSE(function.async);
+    EXPECT_FALSE(function.generator);
+
+    ASSERT_EQ(function.params.size(), 2u);
+    EXPECT_EQ(static_cast<const Identifier&>(*function.params[0]).name, "a");
+    EXPECT_EQ(static_cast<const Identifier&>(*function.params[1]).name, "b");
+
+    ASSERT_NE(function.body, nullptr);
+    ASSERT_EQ(function.body->kind(), NodeKind::BlockStatement);
+    const auto& body = static_cast<const BlockStatement&>(*function.body);
+    ASSERT_EQ(body.body.size(), 1u);
+    EXPECT_EQ(body.body[0]->kind(), NodeKind::ReturnStatement);
+}
+
+TEST(ParserTest, FunctionDeclarationWithEmptyParams) {
+    ParseResult result = parse("function f() {}");
+
+    ASSERT_TRUE(result.ok());
+    const auto& function =
+        static_cast<const FunctionDeclaration&>(*programOf(result).body[0]);
+    EXPECT_TRUE(function.params.empty());
+}
+
+TEST(ParserTest, FunctionDeclarationAllowsTrailingComma) {
+    ParseResult result = parse("function f(a,) {}");
+
+    ASSERT_TRUE(result.ok());
+    const auto& function =
+        static_cast<const FunctionDeclaration&>(*programOf(result).body[0]);
+    ASSERT_EQ(function.params.size(), 1u);
+}
+
+TEST(ParserTest, AsyncFunctionDeclaration) {
+    ParseResult result = parse("async function f() {}");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    const auto& function =
+        static_cast<const FunctionDeclaration&>(*programOf(result).body[0]);
+    EXPECT_TRUE(function.async);
+    EXPECT_FALSE(function.generator);
+}
+
+TEST(ParserTest, GeneratorFunctionDeclaration) {
+    ParseResult result = parse("function* gen() {}");
+
+    ASSERT_TRUE(result.ok());
+    const auto& function =
+        static_cast<const FunctionDeclaration&>(*programOf(result).body[0]);
+    EXPECT_FALSE(function.async);
+    EXPECT_TRUE(function.generator);
+    EXPECT_EQ(static_cast<const Identifier&>(*function.id).name, "gen");
+}
+
+TEST(ParserTest, AsyncGeneratorFunctionDeclaration) {
+    ParseResult result = parse("async function* gen() {}");
+
+    ASSERT_TRUE(result.ok());
+    const auto& function =
+        static_cast<const FunctionDeclaration&>(*programOf(result).body[0]);
+    EXPECT_TRUE(function.async);
+    EXPECT_TRUE(function.generator);
+}
+
+TEST(ParserTest, AsyncWithoutLineTerminatorIsDeclaration) {
+    ParseResult result = parse("async function f() {}");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    EXPECT_EQ(programOf(result).body[0]->kind(),
+              NodeKind::FunctionDeclaration);
+}
+
+TEST(ParserTest, AsyncFollowedByNewlineIsNotAsyncFunction) {
+    ParseResult result = parse("async\nfunction f() {}");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 2u);
+    EXPECT_EQ(programOf(result).body[0]->kind(), NodeKind::ExpressionStatement);
+    EXPECT_EQ(programOf(result).body[1]->kind(),
+              NodeKind::FunctionDeclaration);
+}
+
+TEST(ParserTest, RestParameter) {
+    ParseResult result = parse("function f(a, ...rest) {}");
+
+    ASSERT_TRUE(result.ok());
+    const auto& function =
+        static_cast<const FunctionDeclaration&>(*programOf(result).body[0]);
+    ASSERT_EQ(function.params.size(), 2u);
+    ASSERT_EQ(function.params[1]->kind(), NodeKind::RestElement);
+    const auto& rest = static_cast<const RestElement&>(*function.params[1]);
+    ASSERT_NE(rest.argument, nullptr);
+    EXPECT_EQ(static_cast<const Identifier&>(*rest.argument).name, "rest");
+}
+
+TEST(ParserTest, RestParameterMustBeLast) {
+    ParseResult result = parse("function f(...rest, b) {}");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, MissingFunctionNameReportsError) {
+    ParseResult result = parse("function () {}");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, DefaultParameterReportsError) {
+    ParseResult result = parse("function f(a = 1) {}");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, FunctionBodyUseStrictDoesNotLeak) {
+    ParseResult result = parse("function f() { \"use strict\"; } var x = 1;");
+
+    ASSERT_TRUE(result.ok());
+    EXPECT_FALSE(programOf(result).strict);
+    ASSERT_EQ(programOf(result).body.size(), 2u);
+
+    const auto& function =
+        static_cast<const FunctionDeclaration&>(*programOf(result).body[0]);
+    const auto& body = static_cast<const BlockStatement&>(*function.body);
+    ASSERT_EQ(body.body.size(), 1u);
+    EXPECT_EQ(body.body[0]->kind(), NodeKind::Directive);
+}
+
+TEST(ParserTest, FunctionDeclarationInsideBlock) {
+    ParseResult result = parse("{ function f() {} }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& block =
+        static_cast<const BlockStatement&>(*programOf(result).body[0]);
+    ASSERT_EQ(block.body.size(), 1u);
+    EXPECT_EQ(block.body[0]->kind(), NodeKind::FunctionDeclaration);
+}
+
+// ---------------------------------------------------------------------------
+// 顶层 export
+// ---------------------------------------------------------------------------
+
+TEST(ParserTest, ExportNamedFunctionDeclaration) {
+    ParseResult result = parse("export function f(a) {}");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    const auto& node = *programOf(result).body[0];
+    ASSERT_EQ(node.kind(), NodeKind::ExportNamedDeclaration);
+
+    const auto& exportNode =
+        static_cast<const ExportNamedDeclaration&>(node);
+    ASSERT_NE(exportNode.declaration, nullptr);
+    EXPECT_EQ(exportNode.declaration->kind(),
+              NodeKind::FunctionDeclaration);
+    const auto& function =
+        static_cast<const FunctionDeclaration&>(*exportNode.declaration);
+    EXPECT_EQ(static_cast<const Identifier&>(*function.id).name, "f");
+}
+
+TEST(ParserTest, ExportNamedAsyncGeneratorFunction) {
+    ParseResult result = parse("export async function* gen() {}");
+
+    ASSERT_TRUE(result.ok());
+    const auto& exportNode = static_cast<const ExportNamedDeclaration&>(
+        *programOf(result).body[0]);
+    const auto& function =
+        static_cast<const FunctionDeclaration&>(*exportNode.declaration);
+    EXPECT_TRUE(function.async);
+    EXPECT_TRUE(function.generator);
+}
+
+TEST(ParserTest, ExportDefaultNamedFunction) {
+    ParseResult result = parse("export default function f() {}");
+
+    ASSERT_TRUE(result.ok());
+    const auto& node = *programOf(result).body[0];
+    ASSERT_EQ(node.kind(), NodeKind::ExportDefaultDeclaration);
+
+    const auto& exportNode =
+        static_cast<const ExportDefaultDeclaration&>(node);
+    ASSERT_NE(exportNode.declaration, nullptr);
+    const auto& function =
+        static_cast<const FunctionDeclaration&>(*exportNode.declaration);
+    ASSERT_NE(function.id, nullptr);
+    EXPECT_EQ(static_cast<const Identifier&>(*function.id).name, "f");
+}
+
+TEST(ParserTest, ExportDefaultAnonymousFunction) {
+    ParseResult result = parse("export default function () {}");
+
+    ASSERT_TRUE(result.ok());
+    const auto& exportNode = static_cast<const ExportDefaultDeclaration&>(
+        *programOf(result).body[0]);
+    const auto& function =
+        static_cast<const FunctionDeclaration&>(*exportNode.declaration);
+    EXPECT_EQ(function.id, nullptr);
+}
+
+TEST(ParserTest, ExportDefaultAnonymousAsyncGenerator) {
+    ParseResult result = parse("export default async function* () {}");
+
+    ASSERT_TRUE(result.ok());
+    const auto& exportNode = static_cast<const ExportDefaultDeclaration&>(
+        *programOf(result).body[0]);
+    const auto& function =
+        static_cast<const FunctionDeclaration&>(*exportNode.declaration);
+    EXPECT_EQ(function.id, nullptr);
+    EXPECT_TRUE(function.async);
+    EXPECT_TRUE(function.generator);
+}
+
+TEST(ParserTest, ExportNonFunctionReportsError) {
+    ParseResult result = parse("export const x = 1;");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, ExportDefaultNonFunctionReportsError) {
+    ParseResult result = parse("export default 1;");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, ExportInsideBlockReportsError) {
+    ParseResult result = parse("{ export function f() {} }");
+
+    EXPECT_FALSE(result.errors.empty());
 }
 
 }  // namespace

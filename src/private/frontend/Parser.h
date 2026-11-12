@@ -96,7 +96,17 @@ private:
     NodePtr parseLabeledStatement();
     NodePtr parseWithStatement();
     NodePtr parseDebuggerStatement();
+    NodePtr parseFunctionDeclaration(bool async, bool allowAnonymous = false);
+    NodePtr parseFunctionBody();
+    bool parseFormalParameters(NodeList& params);
+    NodePtr parseRestElement();
     bool isLetDeclarationStart();
+    bool isAsyncFunctionStart();
+
+    // 模块
+    NodePtr parseExportDeclaration();
+    NodePtr parseExportNamedDeclaration(SourceLocation start);
+    NodePtr parseExportDefaultDeclaration(SourceLocation start);
 
     // 表达式
     NodePtr parseExpression();

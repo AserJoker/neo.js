@@ -249,7 +249,14 @@ ParseResult Parser::parseProgram() {
     bool inDirectivePrologue = true;
 
     while (!at(TokenKind::EndOfInput)) {
-        NodePtr statement = parseStatementListItem(inDirectivePrologue);
+        NodePtr statement;
+        if (at(TokenKind::Export)) {
+            // export 只允许出现在模块顶层。
+            inDirectivePrologue = false;
+            statement = parseExportDeclaration();
+        } else {
+            statement = parseStatementListItem(inDirectivePrologue);
+        }
         if (statement == nullptr) {
             inDirectivePrologue = false;
             synchronize();
@@ -401,6 +408,8 @@ NodePtr Parser::parseStatement() {
     if (at(TokenKind::Switch)) return parseSwitchStatement();
     if (at(TokenKind::With)) return parseWithStatement();
     if (at(TokenKind::Debugger)) return parseDebuggerStatement();
+    if (at(TokenKind::Function)) return parseFunctionDeclaration(false);
+    if (isAsyncFunctionStart()) return parseFunctionDeclaration(true);
     if (at(TokenKind::Identifier) && peek().kind == TokenKind::Colon) {
         return parseLabeledStatement();
     }
@@ -445,6 +454,156 @@ NodePtr Parser::parseDebuggerStatement() {
     advance();  // 'debugger'
     if (!consumeSemicolon()) return nullptr;
     return std::make_unique<DebuggerStatement>(rangeFrom(start));
+}
+
+bool Parser::isAsyncFunctionStart() {
+    // async 是上下文关键字：只有紧跟同一行的 function 才构成异步函数。
+    if (!at(TokenKind::Identifier) || current_.text != "async") return false;
+    const Token next = peek();
+    return next.kind == TokenKind::Function &&
+           !next.precededByLineTerminator;
+}
+
+NodePtr Parser::parseFunctionDeclaration(bool async, bool allowAnonymous) {
+    const SourceLocation start = current_.start;
+    if (async) advance();  // 'async'
+    if (!expect(TokenKind::Function, "'function'")) return nullptr;
+
+    const bool generator = match(TokenKind::Star);
+
+    NodePtr id;
+    if (at(TokenKind::Identifier)) {
+        id = parseIdentifier();
+    } else if (!allowAnonymous) {
+        error(current_.start, "Expected function name");
+        return nullptr;
+    }
+
+    NodeList params;
+    if (!parseFormalParameters(params)) return nullptr;
+
+    NodePtr body = parseFunctionBody();
+    if (body == nullptr) return nullptr;
+
+    return std::make_unique<FunctionDeclaration>(
+        rangeFrom(start), std::move(id), std::move(params), std::move(body),
+        async, generator);
+}
+
+bool Parser::parseFormalParameters(NodeList& params) {
+    if (!expect(TokenKind::LeftParen, "'('")) return false;
+    if (match(TokenKind::RightParen)) return true;
+
+    while (true) {
+        if (at(TokenKind::Ellipsis)) {
+            NodePtr rest = parseRestElement();
+            if (rest == nullptr) return false;
+            params.push_back(std::move(rest));
+            // rest 参数必须是最后一个，且后面不能有逗号。
+            if (at(TokenKind::Comma)) {
+                error(current_.start, "Rest parameter must be last");
+                return false;
+            }
+            break;
+        }
+
+        if (!at(TokenKind::Identifier)) {
+            error(current_.start, "Expected parameter name");
+            return false;
+        }
+        NodePtr param = parseIdentifier();
+        if (param == nullptr) return false;
+        params.push_back(std::move(param));
+
+        if (!match(TokenKind::Comma)) break;
+        if (at(TokenKind::RightParen)) break;  // 尾随逗号
+    }
+
+    return expect(TokenKind::RightParen, "')'");
+}
+
+NodePtr Parser::parseRestElement() {
+    const SourceLocation start = current_.start;
+    if (!expect(TokenKind::Ellipsis, "'...'")) return nullptr;
+    NodePtr argument = parseIdentifier();
+    if (argument == nullptr) return nullptr;
+    return std::make_unique<RestElement>(rangeFrom(start),
+                                         std::move(argument));
+}
+
+NodePtr Parser::parseFunctionBody() {
+    const SourceLocation start = current_.start;
+    if (!expect(TokenKind::LeftBrace, "'{'")) return nullptr;
+
+    // 函数体有自己的指令序言；"use strict" 只作用于该函数，解析完恢复。
+    const bool savedStrict = strict_;
+    bool inDirectivePrologue = true;
+    NodeList body;
+    while (!at(TokenKind::RightBrace) && !at(TokenKind::EndOfInput)) {
+        NodePtr statement = parseStatementListItem(inDirectivePrologue);
+        if (statement != nullptr) {
+            body.push_back(std::move(statement));
+        } else {
+            synchronize(true);
+        }
+    }
+
+    if (!expect(TokenKind::RightBrace, "'}'")) {
+        strict_ = savedStrict;
+        return nullptr;
+    }
+
+    strict_ = savedStrict;
+    // 当前 token 是在函数体严格性下扫描的，恢复后按外层严格性重扫。
+    rescan(LexicalGoal::RegExp);
+    return std::make_unique<BlockStatement>(rangeFrom(start), std::move(body));
+}
+
+// ---------------------------------------------------------------------------
+// 模块
+// ---------------------------------------------------------------------------
+
+NodePtr Parser::parseExportDeclaration() {
+    const SourceLocation start = current_.start;
+    advance();  // 'export'
+    if (match(TokenKind::Default)) {
+        return parseExportDefaultDeclaration(start);
+    }
+    return parseExportNamedDeclaration(start);
+}
+
+NodePtr Parser::parseExportNamedDeclaration(SourceLocation start) {
+    NodePtr declaration;
+    if (at(TokenKind::Function)) {
+        declaration = parseFunctionDeclaration(false);
+    } else if (isAsyncFunctionStart()) {
+        declaration = parseFunctionDeclaration(true);
+    } else {
+        error(current_.start,
+              "Only function declarations are supported in export");
+        return nullptr;
+    }
+    if (declaration == nullptr) return nullptr;
+
+    return std::make_unique<ExportNamedDeclaration>(rangeFrom(start),
+                                                    std::move(declaration));
+}
+
+NodePtr Parser::parseExportDefaultDeclaration(SourceLocation start) {
+    NodePtr declaration;
+    if (at(TokenKind::Function)) {
+        declaration = parseFunctionDeclaration(false, true);
+    } else if (isAsyncFunctionStart()) {
+        declaration = parseFunctionDeclaration(true, true);
+    } else {
+        error(current_.start,
+              "Only function declarations are supported in export default");
+        return nullptr;
+    }
+    if (declaration == nullptr) return nullptr;
+
+    return std::make_unique<ExportDefaultDeclaration>(rangeFrom(start),
+                                                      std::move(declaration));
 }
 
 NodePtr Parser::parseSwitchStatement() {
