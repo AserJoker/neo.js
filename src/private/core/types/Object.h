@@ -136,21 +136,7 @@ Value* ownPropertyKeys(IContext* ctx, Value* obj, bool enumerableOnly,
 Value* toPropertyKey(IContext* ctx, Value* key, PropertyKey& out);
 
 // —— 属性描述符转换（ES2024 §6.2.6 / §10.1.6.2）——
-// 部分描述符：只记录对象上实际存在的字段（缺失字段表示“不修改”）。
-struct PropertyDescriptor {
-    Value* value = nullptr;
-    bool hasValue = false;
-    bool writable = false;
-    bool hasWritable = false;
-    bool enumerable = false;
-    bool hasEnumerable = false;
-    bool configurable = false;
-    bool hasConfigurable = false;
-    Value* getter = nullptr;
-    bool hasGetter = false;
-    Value* setter = nullptr;
-    bool hasSetter = false;
-};
+// PropertyDescriptor（部分描述符）定义在公共 IType.h：内部方法层与 Proxy 跨层传递。
 
 // 描述符对象 → 部分描述符。数据与访问器字段混用、get/set 非可调用 → TypeError。
 Value* partialPropertyDescriptorFromValue(IContext* ctx, Value* descObj,
@@ -162,11 +148,9 @@ void completePropertyDescriptor(const PropertyDescriptor& desc, bool exists,
 Value* propertyDescriptorFromValue(IContext* ctx, Value* descObj, Property& out);
 // Property → 描述符对象（Object.getOwnPropertyDescriptor / Proxy trap 参数）。
 Value* propertyDescriptorToValue(IContext* ctx, const Property& p);
-// 用部分描述符定义属性（ES2024 §10.1.6.3）：先读当前描述符，缺失字段沿用当前值
-// （不存在则按规范默认值），再调用 [[DefineOwnProperty]]。
-// 返回内部方法原始结果（Boolean/Exception），由调用方决定是否转为 TypeError。
-Value* definePropertyFromPartialDescriptor(IContext* ctx, Value* obj, const PropertyKey& key,
-                                           const PropertyDescriptor& desc);
+// 部分描述符 → 描述符对象（FromPropertyDescriptor，Proxy defineProperty trap 参数）：
+// 只写实际存在的字段，缺失字段不出现。
+Value* partialPropertyDescriptorToValue(IContext* ctx, const PropertyDescriptor& desc);
 // IsCompatiblePropertyDescriptor(current, desc)：desc 能否应用到 current 上。
 bool isCompatiblePropertyDescriptor(const Property& current, const Property& desc);
 

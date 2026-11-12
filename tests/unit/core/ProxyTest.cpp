@@ -152,6 +152,19 @@ void defineNative(IContext* ctx, Value* obj, const char* name, neo::core::Native
     ctx->defineProperty(obj, name, f, true, true, true);
 }
 
+Value* callReflect(IContext* ctx, const char* name, size_t argc, Value* argv[]) {
+    Value* reflect = ctx->global()->lookup("Reflect");
+    Value* fn = ctx->getProperty(reflect, name);
+    return ctx->call(fn, reflect, argc, argv);
+}
+
+// 把 defineProperty trap 原样转发给 Reflect.defineProperty(target, key, desc)。
+Value* forwardDefineProperty(IContext* ctx, Value*, size_t argc, Value* argv[]) {
+    recordArgs(ctx, nullptr, argc, argv);
+    Value* args[3] = {argv[0], argv[1], argv[2]};
+    return callReflect(ctx, "defineProperty", 3, args);
+}
+
 Value* makeTargetWithX(IContext* ctx) {
     Value* target = ctx->createObject();
     ctx->defineProperty(target, "x", ctx->createNumber(1), true, true, true);
@@ -161,6 +174,8 @@ Value* makeTargetWithX(IContext* ctx) {
 Value* returnUndefined(IContext* ctx, Value*, size_t, Value*[]) {
     return ctx->createUndefined();
 }
+
+Value* returnsThis(IContext*, Value* self, size_t, Value*[]) { return self; }
 
 Value* ownKeysEmpty(IContext* ctx, Value*, size_t, Value*[]) {
     return ctx->createArray();
@@ -318,6 +333,127 @@ TEST(ProxyTest, DefinePropertyTrap) {
     ASSERT_EQ(g_arg2->type()->kind(), TypeKind::Object);
     EXPECT_EQ(numOf(ctx->getProperty(g_arg2, "value")), 7.0);
     EXPECT_FALSE(boolOf(ctx->getProperty(g_arg2, "enumerable")));
+}
+
+TEST(ProxyTest, DefinePropertyTrapReceivesPartialDescriptor) {
+    Fixture f;
+    IContext* ctx = f.ctx.get();
+
+    Value* target = makeTargetWithX(ctx);
+    Value* handler = ctx->createObject();
+    defineNative(ctx, handler, "defineProperty", defineTrue);
+    Value* proxy = ctx->createProxy(target, handler);
+
+    Value* desc = ctx->createObject();
+    ctx->setProperty(desc, "value", ctx->createNumber(2));
+    Value* args[3] = {proxy, ctx->createString("x"), desc};
+    Value* r = callReflect(ctx, "defineProperty", 3, args);
+    ASSERT_EQ(r->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(boolOf(r));
+
+    // FromPropertyDescriptor：缺失字段不应出现在 trap 参数里。
+    ASSERT_EQ(g_arg2->type()->kind(), TypeKind::Object);
+    EXPECT_TRUE(neo::test::hasProperty(ctx, g_arg2, "value"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, g_arg2, "writable"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, g_arg2, "enumerable"));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, g_arg2, "configurable"));
+}
+
+TEST(ProxyTest, DefinePropertyPartialDescriptorForwarding) {
+    Fixture f;
+    IContext* ctx = f.ctx.get();
+
+    Value* target = makeTargetWithX(ctx);  // x: writable/enumerable/configurable
+    Value* handler = ctx->createObject();
+    defineNative(ctx, handler, "defineProperty", forwardDefineProperty);
+    Value* proxy = ctx->createProxy(target, handler);
+
+    // 只改 value：其余特性应保持 target 原值，而非被补成 false。
+    Value* desc = ctx->createObject();
+    ctx->setProperty(desc, "value", ctx->createNumber(2));
+    Value* args[3] = {proxy, ctx->createString("x"), desc};
+    Value* r = callReflect(ctx, "defineProperty", 3, args);
+    ASSERT_EQ(r->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(boolOf(r));
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(target, "x")), 2.0);
+
+    // writable 仍为 true。
+    ctx->setProperty(target, "x", ctx->createNumber(3));
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(target, "x")), 3.0);
+    // enumerable 仍为 true。
+    Value* isEnum = ctx->getProperty(ctx->objectPrototype(), "propertyIsEnumerable");
+    Value* enumArg[1] = {ctx->createString("x")};
+    EXPECT_TRUE(boolOf(ctx->call(isEnum, target, 1, enumArg)));
+
+    // 泛型描述符 {enumerable:false}：只改 enumerable，value 不被抹掉。
+    Value* generic = ctx->createObject();
+    ctx->setProperty(generic, "enumerable", ctx->createBoolean(false));
+    Value* args2[3] = {proxy, ctx->createString("x"), generic};
+    Value* r2 = callReflect(ctx, "defineProperty", 3, args2);
+    ASSERT_EQ(r2->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(boolOf(r2));
+    EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(target, "x")), 3.0);
+    EXPECT_FALSE(boolOf(ctx->call(isEnum, target, 1, enumArg)));
+}
+
+TEST(ProxyTest, DefinePropertyPartialAccessorKeepsSetter) {
+    Fixture f;
+    IContext* ctx = f.ctx.get();
+
+    Value* target = ctx->createObject();
+    Value* getter = ctx->createNativeFunction(returnsThis, 0);
+    Value* setter = ctx->createNativeFunction(returnsThis, 0);
+    ctx->defineAccessor(target, "x", getter, setter, true, true);
+
+    Value* handler = ctx->createObject();
+    defineNative(ctx, handler, "defineProperty", forwardDefineProperty);
+    Value* proxy = ctx->createProxy(target, handler);
+
+    Value* newGetter = ctx->createNativeFunction(returnsThis, 0);
+    Value* desc = ctx->createObject();
+    ctx->setProperty(desc, "get", newGetter);
+    Value* args[3] = {proxy, ctx->createString("x"), desc};
+    Value* r = callReflect(ctx, "defineProperty", 3, args);
+    ASSERT_EQ(r->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(boolOf(r));
+
+    // 只给 get：原 setter 必须保留，不能被显式 set: undefined 抹掉。
+    neo::core::PropertyKey pk;
+    pk.value = ctx->createString("x");
+    pk.name = "x";
+    bool exists = false;
+    neo::core::Property prop;
+    ASSERT_EQ(target->type()->getOwnProperty(ctx, target, pk, exists, prop), nullptr);
+    ASSERT_TRUE(exists);
+    EXPECT_EQ(prop.getter, newGetter);
+    EXPECT_EQ(prop.setter, setter);
+}
+
+TEST(ProxyTest, DefinePropertyPartialInvariantUsesPartialDescriptor) {
+    Fixture f;
+    IContext* ctx = f.ctx.get();
+
+    // 不可配置、不可写的数据属性。
+    Value* target = ctx->createObject();
+    ctx->defineProperty(target, "x", ctx->createNumber(1), false, true, false);
+    Value* handler = ctx->createObject();
+    defineNative(ctx, handler, "defineProperty", defineTrue);
+    Value* proxy = ctx->createProxy(target, handler);
+
+    // {writable:false} 不含 value：与当前描述符兼容，trap 返回 true 应成功。
+    Value* desc = ctx->createObject();
+    ctx->setProperty(desc, "writable", ctx->createBoolean(false));
+    Value* args[3] = {proxy, ctx->createString("x"), desc};
+    Value* r = callReflect(ctx, "defineProperty", 3, args);
+    ASSERT_EQ(r->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(boolOf(r));
+
+    // {value:2} 与不可写当前值不兼容 → trap 返回 true 也抛 TypeError。
+    Value* bad = ctx->createObject();
+    ctx->setProperty(bad, "value", ctx->createNumber(2));
+    Value* args2[3] = {proxy, ctx->createString("x"), bad};
+    Value* r2 = callReflect(ctx, "defineProperty", 3, args2);
+    EXPECT_EQ(r2->type()->kind(), TypeKind::Exception);
 }
 
 TEST(ProxyTest, PrototypeTraps) {

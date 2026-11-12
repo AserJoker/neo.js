@@ -51,6 +51,10 @@ public:
                           bool configurable) override;
     Value* defineAccessor(IContext* ctx, Value* self, Value* key, Value* getter,
                           Value* setter, bool enumerable, bool configurable) override;
+    // 部分描述符入口：原样交给 defineProperty trap（FromPropertyDescriptor），
+    // 无 trap 时原样转发给 target 的 [[DefineOwnProperty]]。
+    Value* definePropertyFromDescriptor(IContext* ctx, Value* self, const PropertyKey& key,
+                                        const PropertyDescriptor& desc) override;
     Value* getPrototype(IContext* ctx, Value* self) override;
     Value* setPrototype(IContext* ctx, Value* self, Value* proto) override;
 

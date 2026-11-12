@@ -110,6 +110,79 @@ Value* checkDefineInvariant(IContext* ctx, Value* target, const PropertyKey& key
     return nullptr;
 }
 
+bool sameDescriptorValue(Value* a, Value* b) {
+    if (a == b) return true;
+    if (a == nullptr || b == nullptr) return false;
+    return detail::sameValue(a, b);
+}
+
+// IsCompatiblePropertyDescriptor(Desc, current)（部分 Desc，ES2024 §10.1.6.2）。
+bool isCompatiblePartialDescriptor(const Property& current,
+                                   const PropertyDescriptor& desc) {
+    bool currentAccessor = isAccessorDescriptor(current);
+    bool descAccessor = desc.hasGetter || desc.hasSetter;
+    bool descData = desc.hasValue || desc.hasWritable;
+    if (!current.configurable) {
+        if (desc.hasConfigurable && desc.configurable) return false;
+        if (desc.hasEnumerable && desc.enumerable != current.enumerable) return false;
+        if (descAccessor || descData) {
+            if (currentAccessor != descAccessor) return false;
+            if (currentAccessor) {
+                if (desc.hasGetter && !sameDescriptorValue(desc.getter, current.getter)) {
+                    return false;
+                }
+                if (desc.hasSetter && !sameDescriptorValue(desc.setter, current.setter)) {
+                    return false;
+                }
+            } else {
+                if (desc.hasWritable && desc.writable && !current.writable) return false;
+                if (!current.writable && desc.hasValue &&
+                    !sameDescriptorValue(desc.value, current.value)) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+// defineProperty trap（部分描述符）成功后的不变量（ES2024 §10.5.6）。
+Value* checkDefineInvariantPartial(IContext* ctx, Value* target, const PropertyKey& key,
+                                   const PropertyDescriptor& desc) {
+    Property targetDesc;
+    bool targetHas = false;
+    if (Value* e = targetOwnDescriptor(ctx, target, key, targetHas, targetDesc)) return e;
+    bool settingConfigFalse = desc.hasConfigurable && !desc.configurable;
+    Value* ext = targetExtensible(ctx, target);
+    if (detail::isErrorValue(ext)) return ext;
+    bool extensible = detail::toBoolean(ext);
+    if (!targetHas) {
+        if (!extensible) {
+            return detail::typeError(
+                ctx, "proxy defineProperty trap cannot add a property to a non-extensible target");
+        }
+        if (settingConfigFalse) {
+            return detail::typeError(
+                ctx, "proxy defineProperty trap cannot add a non-configurable property");
+        }
+        return nullptr;
+    }
+    if (!isCompatiblePartialDescriptor(targetDesc, desc)) {
+        return detail::typeError(
+            ctx, "proxy defineProperty trap returned success for an incompatible descriptor");
+    }
+    if (settingConfigFalse && targetDesc.configurable) {
+        return detail::typeError(
+            ctx, "proxy defineProperty trap cannot report a non-configurable property as configurable");
+    }
+    if (!isAccessorDescriptor(targetDesc) && !targetDesc.configurable &&
+        targetDesc.writable && desc.hasWritable && !desc.writable) {
+        return detail::typeError(
+            ctx, "proxy defineProperty trap cannot make a non-configurable writable property non-writable");
+    }
+    return nullptr;
+}
+
 // 把实参数组打包成 Array（apply/construct trap 的 argArray）。
 Value* makeArgArray(IContext* ctx, size_t argc, Value* argv[]) {
     Value* arr = ctx->createArray();
@@ -511,6 +584,29 @@ Value* ProxyType::defineAccessor(IContext* ctx, Value* self, Value* key, Value* 
     if (detail::isErrorValue(r)) return r;
     if (!detail::toBoolean(r)) return ctx->createBoolean(false);
     if (Value* e = checkDefineInvariant(ctx, d->target, pk, desc)) return e;
+    return ctx->createBoolean(true);
+}
+
+Value* ProxyType::definePropertyFromDescriptor(IContext* ctx, Value* self,
+                                               const PropertyKey& key,
+                                               const PropertyDescriptor& desc) {
+    auto* d = asProxy(self);
+    bool present = false;
+    Value* err = nullptr;
+    Value* trap = lookupTrap(ctx, d, "defineProperty", present, err);
+    if (err != nullptr) return err;
+    if (!present) {
+        // 无 trap：部分描述符原样转发给 target 的 [[DefineOwnProperty]]。
+        return d->target->type()->definePropertyFromDescriptor(ctx, d->target, key, desc);
+    }
+    // FromPropertyDescriptor：只输出实际存在的字段，缺失字段不出现。
+    Value* descObj = partialPropertyDescriptorToValue(ctx, desc);
+    if (detail::isErrorValue(descObj)) return descObj;
+    Value* argv[3] = {d->target, key.value, descObj};
+    Value* r = ctx->call(trap, d->handler, 3, argv);
+    if (detail::isErrorValue(r)) return r;
+    if (!detail::toBoolean(r)) return ctx->createBoolean(false);
+    if (Value* e = checkDefineInvariantPartial(ctx, d->target, key, desc)) return e;
     return ctx->createBoolean(true);
 }
 

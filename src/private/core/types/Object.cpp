@@ -247,31 +247,20 @@ Value* propertyDescriptorFromValue(IContext* ctx, Value* descObj, Property& out)
     return nullptr;
 }
 
-Value* definePropertyFromPartialDescriptor(IContext* ctx, Value* obj, const PropertyKey& key,
+// 默认 [[DefineOwnProperty]]：普通对象按“当前描述符 + 部分描述符”合并后应用。
+// Proxy 覆写此方法，把部分描述符原样交给 trap。
+Value* IType::definePropertyFromDescriptor(IContext* ctx, Value* self, const PropertyKey& key,
                                            const PropertyDescriptor& desc) {
-    // Proxy 的 [[DefineOwnProperty]] 应把部分描述符原样交给 trap；当前内部接口只能
-    // 传完整描述符，故 Proxy 走原有补全路径，避免额外触发 [[GetOwnProperty]] trap。
-    if (obj->type()->kind() == TypeKind::Proxy) {
-        Property full;
-        completePropertyDescriptor(desc, /*exists=*/false, Property{}, full);
-        return isAccessorDescriptor(full)
-                   ? obj->type()->defineAccessor(ctx, obj, key.value, full.getter,
-                                                 full.setter, full.enumerable,
-                                                 full.configurable)
-                   : obj->type()->defineProperty(ctx, obj, key.value, full.value,
-                                                 full.writable, full.enumerable,
-                                                 full.configurable);
-    }
     bool exists = false;
     Property current;
-    if (Value* err = obj->type()->getOwnProperty(ctx, obj, key, exists, current)) return err;
+    if (Value* err = getOwnProperty(ctx, self, key, exists, current)) return err;
     Property full;
     completePropertyDescriptor(desc, exists, current, full);
     return isAccessorDescriptor(full)
-               ? obj->type()->defineAccessor(ctx, obj, key.value, full.getter, full.setter,
-                                             full.enumerable, full.configurable)
-               : obj->type()->defineProperty(ctx, obj, key.value, full.value, full.writable,
-                                             full.enumerable, full.configurable);
+               ? defineAccessor(ctx, self, key.value, full.getter, full.setter,
+                                full.enumerable, full.configurable)
+               : defineProperty(ctx, self, key.value, full.value, full.writable,
+                                full.enumerable, full.configurable);
 }
 
 Value* propertyDescriptorToValue(IContext* ctx, const Property& p) {
@@ -296,6 +285,41 @@ Value* propertyDescriptorToValue(IContext* ctx, const Property& p) {
     return obj;
 }
 
+// FromPropertyDescriptor（ES2024 §6.2.6）：只输出部分描述符实际存在的字段。
+Value* partialPropertyDescriptorToValue(IContext* ctx, const PropertyDescriptor& desc) {
+    Value* obj = ctx->createObject();
+    if (obj == ctx->oomValue()) return obj;
+    auto def = [&](const char* name, Value* v) -> Value* {
+        Value* r = ctx->defineProperty(obj, ctx->createString(name), v, true, true, true);
+        return isErrorResult(r) ? r : nullptr;
+    };
+    if (desc.hasGetter || desc.hasSetter) {
+        if (desc.hasGetter) {
+            Value* g = desc.getter != nullptr ? desc.getter : ctx->createUndefined();
+            if (Value* e = def("get", g)) return e;
+        }
+        if (desc.hasSetter) {
+            Value* s = desc.setter != nullptr ? desc.setter : ctx->createUndefined();
+            if (Value* e = def("set", s)) return e;
+        }
+    } else {
+        if (desc.hasValue) {
+            Value* v = desc.value != nullptr ? desc.value : ctx->createUndefined();
+            if (Value* e = def("value", v)) return e;
+        }
+        if (desc.hasWritable) {
+            if (Value* e = def("writable", ctx->createBoolean(desc.writable))) return e;
+        }
+    }
+    if (desc.hasEnumerable) {
+        if (Value* e = def("enumerable", ctx->createBoolean(desc.enumerable))) return e;
+    }
+    if (desc.hasConfigurable) {
+        if (Value* e = def("configurable", ctx->createBoolean(desc.configurable))) return e;
+    }
+    return obj;
+}
+
 namespace {
 
 bool samePropertyValue(Value* a, Value* b) {
@@ -315,6 +339,7 @@ bool isCompatiblePropertyDescriptor(const Property& current, const Property& des
     }
     if (!current.configurable) {
         if (desc.configurable) return false;
+        if (desc.enumerable != current.enumerable) return false;
         if (currentAccessor) {
             if (desc.getter != current.getter || desc.setter != current.setter) return false;
         } else {

@@ -104,7 +104,7 @@ Value* reflectDefineProperty(IContext* ctx, Value* /*self*/, size_t argc, Value*
     }
     PropertyDescriptor desc;
     if (Value* err = partialPropertyDescriptorFromValue(ctx, descObj, desc)) return err;
-    Value* r = definePropertyFromPartialDescriptor(ctx, target, key, desc);
+    Value* r = target->type()->definePropertyFromDescriptor(ctx, target, key, desc);
     // 内部方法以 Value 表达三态：Exception = 抛出（透传），Boolean = 操作结果。
     if (detail::isErrorValue(r)) return r;
     return ctx->createBoolean(detail::toBoolean(r));

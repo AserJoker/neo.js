@@ -387,7 +387,8 @@ Value* definePropertiesFromObject(IContext* ctx, Value* target, Value* props) {
     }
     for (const Pending& item : pending) {
         // DefinePropertyOrThrow：内部方法返回 false 时抛 TypeError。
-        Value* r = definePropertyFromPartialDescriptor(ctx, target, item.key, item.desc);
+        Value* r = target->type()->definePropertyFromDescriptor(ctx, target, item.key,
+                                                                item.desc);
         if (detail::isErrorValue(r)) return r;
         if (r->type()->kind() != TypeKind::Boolean) return r;
         if (!detail::toBoolean(r)) {
@@ -459,7 +460,7 @@ Value* objectDefineProperty(IContext* ctx, Value* /*self*/, size_t /*argc*/, Val
     }
     PropertyDescriptor pd;
     if (Value* err = partialPropertyDescriptorFromValue(ctx, desc, pd)) return err;
-    Value* r = definePropertyFromPartialDescriptor(ctx, target, key, pd);
+    Value* r = target->type()->definePropertyFromDescriptor(ctx, target, key, pd);
     if (detail::isErrorValue(r)) return r;
     if (r->type()->kind() != TypeKind::Boolean) return r;
     if (!detail::toBoolean(r)) return detail::typeError(ctx, "Cannot define property");

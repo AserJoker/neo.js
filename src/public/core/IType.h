@@ -46,6 +46,24 @@ struct PropertyKey {
     const void* symbol = nullptr;  // isSymbol == true 时的 SymbolData* 身份
 };
 
+// 部分属性描述符（ES2024 §6.2.6）：只记录描述符对象上实际存在的字段。
+// 缺失字段表示“不修改”，是 [[DefineOwnProperty]] 与 Proxy trap 的规范输入。
+// 完整 Property 无法表达“字段缺失”，故内部方法层单独使用本结构。
+struct PropertyDescriptor {
+    Value* value = nullptr;
+    bool hasValue = false;
+    bool writable = false;
+    bool hasWritable = false;
+    bool enumerable = false;
+    bool hasEnumerable = false;
+    bool configurable = false;
+    bool hasConfigurable = false;
+    Value* getter = nullptr;
+    bool hasGetter = false;
+    Value* setter = nullptr;
+    bool hasSetter = false;
+};
+
 // 类型枚举：快速判同类型、分派调试、序列化
 enum class TypeKind : uint8_t {
     Undefined,
@@ -231,6 +249,14 @@ public:
     // Boolean 表示结果，Exception 表示抛出。
     virtual Value* defineAccessor(IContext* ctx, Value* self, Value* key, Value* getter,
                                   Value* setter, bool enumerable, bool configurable) = 0;
+
+    // [[DefineOwnProperty]]（部分描述符，ES2024 §10.1.6.3）：缺失字段表示“不修改”。
+    // 默认实现读当前描述符、合并缺失字段后调用 defineProperty / defineAccessor；
+    // Proxy 覆写为把部分描述符原样交给 defineProperty trap（FromPropertyDescriptor）。
+    // 返回 Boolean（操作结果）或 Exception/Fatal。
+    virtual Value* definePropertyFromDescriptor(IContext* ctx, Value* self,
+                                                const PropertyKey& key,
+                                                const PropertyDescriptor& desc);
 
     // —— 原型链（ADR-018 §1）——
     // getPrototype: 返回对象的原型；无原型返回 null。非对象类型返回 undefined。

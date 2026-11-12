@@ -192,9 +192,14 @@ false"表达结果，而是用 Value 的三态：
   `Object.create` 第二参数与 `Reflect.defineProperty` 中与当前描述符合并，
   缺失字段表示“不修改”；字段存在性用 HasProperty 判定，显式
   `{value: undefined}` 与字段缺失语义不同。
-- Proxy 的 `[[DefineOwnProperty]]` 仍接收补全后的完整描述符（内部接口暂
-  只支持完整 Property）；为避免额外触发 `[[GetOwnProperty]]` trap，Proxy
-  路径不做调用前的合并。
+- `[[DefineOwnProperty]]` 新增部分描述符入口
+  `IType::definePropertyFromDescriptor(ctx, self, key, PropertyDescriptor&)`：
+  默认实现读当前描述符并合并后调用完整 API；Proxy 覆写为
+  `FromPropertyDescriptor` 后原样交给 `defineProperty` trap，无 trap 时原样
+  转发给 target。trap 不变量用部分描述符判定（`IsCompatiblePropertyDescriptor`
+  的部分版本），不再把缺失字段补成 false/undefined。
+- `Object.defineProperty/defineProperties`、`Object.create` 第二参数、
+  `Reflect.defineProperty` 均走该入口，因此 Proxy 与普通对象语义一致。
 
 - `hasProperty` 返回 `Value*`（Boolean 或 Exception/Fatal），has trap
   抛错原样透传。
