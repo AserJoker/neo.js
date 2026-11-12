@@ -112,6 +112,10 @@ private:
     NodePtr parseExpression();
     NodePtr parseSequenceExpression();
     NodePtr parseAssignmentExpression();
+    NodePtr parseArrowFunction();
+    bool isArrowFunctionStart();
+    bool parenthesizedArrowAhead();
+    bool scanArrowAfterParen();
     NodePtr parseConditionalExpression();
     NodePtr parseLogicalExpression(int minPrecedence);
     NodePtr parseBinaryExpression(int minPrecedence);

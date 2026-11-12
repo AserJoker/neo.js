@@ -11,6 +11,7 @@
 
 namespace {
 
+using neo::frontend::ArrowFunctionExpression;
 using neo::frontend::AssignmentExpression;
 using neo::frontend::AssignmentOperator;
 using neo::frontend::BigIntLiteral;
@@ -2572,6 +2573,136 @@ TEST(ParserTest, ExportDefaultNonFunctionReportsError) {
 
 TEST(ParserTest, ExportInsideBlockReportsError) {
     ParseResult result = parse("{ export function f() {} }");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+// ---------------------------------------------------------------------------
+// 箭头函数
+// ---------------------------------------------------------------------------
+
+TEST(ParserTest, SingleParameterArrowFunction) {
+    ParseResult result = parse("x => x;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& expression = statementOf(result, 0).expression;
+    ASSERT_NE(expression, nullptr);
+    ASSERT_EQ(expression->kind(), NodeKind::ArrowFunctionExpression);
+
+    const auto& arrow =
+        static_cast<const ArrowFunctionExpression&>(*expression);
+    EXPECT_FALSE(arrow.async);
+    EXPECT_TRUE(arrow.expression);
+    ASSERT_EQ(arrow.params.size(), 1u);
+    EXPECT_EQ(static_cast<const Identifier&>(*arrow.params[0]).name, "x");
+    ASSERT_NE(arrow.body, nullptr);
+    EXPECT_EQ(arrow.body->kind(), NodeKind::Identifier);
+}
+
+TEST(ParserTest, ParenthesizedParametersArrowFunction) {
+    ParseResult result = parse("(a, b) => a + b;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& arrow = static_cast<const ArrowFunctionExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(arrow.params.size(), 2u);
+    EXPECT_EQ(static_cast<const Identifier&>(*arrow.params[0]).name, "a");
+    EXPECT_EQ(static_cast<const Identifier&>(*arrow.params[1]).name, "b");
+    EXPECT_TRUE(arrow.expression);
+    EXPECT_EQ(arrow.body->kind(), NodeKind::BinaryExpression);
+}
+
+TEST(ParserTest, EmptyParametersArrowFunction) {
+    ParseResult result = parse("() => 42;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& arrow = static_cast<const ArrowFunctionExpression&>(
+        *statementOf(result, 0).expression);
+    EXPECT_TRUE(arrow.params.empty());
+    EXPECT_TRUE(arrow.expression);
+    EXPECT_EQ(arrow.body->kind(), NodeKind::NumericLiteral);
+}
+
+TEST(ParserTest, ArrowFunctionWithBlockBody) {
+    ParseResult result = parse("(a) => { return a; };");
+
+    ASSERT_TRUE(result.ok());
+    const auto& arrow = static_cast<const ArrowFunctionExpression&>(
+        *statementOf(result, 0).expression);
+    EXPECT_FALSE(arrow.expression);
+    ASSERT_NE(arrow.body, nullptr);
+    ASSERT_EQ(arrow.body->kind(), NodeKind::BlockStatement);
+    const auto& body = static_cast<const BlockStatement&>(*arrow.body);
+    ASSERT_EQ(body.body.size(), 1u);
+    EXPECT_EQ(body.body[0]->kind(), NodeKind::ReturnStatement);
+}
+
+TEST(ParserTest, ArrowFunctionWithRestParameter) {
+    ParseResult result = parse("(...rest) => rest;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& arrow = static_cast<const ArrowFunctionExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(arrow.params.size(), 1u);
+    EXPECT_EQ(arrow.params[0]->kind(), NodeKind::RestElement);
+}
+
+TEST(ParserTest, AsyncSingleParameterArrowFunction) {
+    ParseResult result = parse("async x => x;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& arrow = static_cast<const ArrowFunctionExpression&>(
+        *statementOf(result, 0).expression);
+    EXPECT_TRUE(arrow.async);
+    ASSERT_EQ(arrow.params.size(), 1u);
+}
+
+TEST(ParserTest, AsyncParenthesizedArrowFunction) {
+    ParseResult result = parse("async (a, b) => a;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& arrow = static_cast<const ArrowFunctionExpression&>(
+        *statementOf(result, 0).expression);
+    EXPECT_TRUE(arrow.async);
+    ASSERT_EQ(arrow.params.size(), 2u);
+}
+
+TEST(ParserTest, ParenthesizedExpressionIsNotArrowFunction) {
+    ParseResult result = parse("(a);");
+
+    ASSERT_TRUE(result.ok());
+    const auto& expression = statementOf(result, 0).expression;
+    ASSERT_NE(expression, nullptr);
+    EXPECT_EQ(expression->kind(), NodeKind::Identifier);
+    EXPECT_TRUE(expression->isParenthesized());
+}
+
+TEST(ParserTest, ParenthesizedSequenceIsNotArrowFunction) {
+    ParseResult result = parse("(a, b);");
+
+    ASSERT_TRUE(result.ok());
+    const auto& expression = statementOf(result, 0).expression;
+    ASSERT_NE(expression, nullptr);
+    EXPECT_EQ(expression->kind(), NodeKind::SequenceExpression);
+}
+
+TEST(ParserTest, AsyncCallIsNotArrowFunction) {
+    ParseResult result = parse("async(x);");
+
+    ASSERT_TRUE(result.ok());
+    const auto& expression = statementOf(result, 0).expression;
+    ASSERT_NE(expression, nullptr);
+    EXPECT_EQ(expression->kind(), NodeKind::CallExpression);
+}
+
+TEST(ParserTest, LineTerminatorBeforeArrowReportsError) {
+    ParseResult result = parse("x\n=> x;");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, ParenthesizedLineTerminatorBeforeArrowReportsError) {
+    ParseResult result = parse("(x)\n=> x;");
 
     EXPECT_FALSE(result.errors.empty());
 }

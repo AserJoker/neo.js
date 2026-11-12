@@ -1037,7 +1037,100 @@ NodePtr Parser::parseSequenceExpression() {
                                                 std::move(expressions));
 }
 
+bool Parser::isArrowFunctionStart() {
+    if (at(TokenKind::LeftParen)) return parenthesizedArrowAhead();
+
+    if (!at(TokenKind::Identifier)) return false;
+    if (current_.text != "async") {
+        // 单参数箭头函数：name => ...，=> 前不允许行终止符。
+        const Token next = peek();
+        return next.kind == TokenKind::Arrow &&
+               !next.precededByLineTerminator;
+    }
+
+    // async 是上下文关键字：async [no LT] ArrowParameters [no LT] =>。
+    const LexerState state = lexer_.save();
+    const Token next = lexer_.next({LexicalGoal::Div, strict_});
+    bool result = false;
+    if (!next.precededByLineTerminator) {
+        if (next.kind == TokenKind::Identifier) {
+            const Token arrow = lexer_.next({LexicalGoal::Div, strict_});
+            result = arrow.kind == TokenKind::Arrow &&
+                     !arrow.precededByLineTerminator;
+        } else if (next.kind == TokenKind::LeftParen) {
+            result = scanArrowAfterParen();
+        }
+    }
+    lexer_.restore(state);
+    return result;
+}
+
+bool Parser::parenthesizedArrowAhead() {
+    const LexerState state = lexer_.save();
+    const bool result = scanArrowAfterParen();
+    lexer_.restore(state);
+    return result;
+}
+
+bool Parser::scanArrowAfterParen() {
+    // 调用时 lexer_ 已越过 '('，只需找到配对的 ')' 再看下一个 token。
+    int depth = 1;
+    while (true) {
+        const Token token = lexer_.next({LexicalGoal::Div, strict_});
+        if (token.kind == TokenKind::EndOfInput ||
+            token.kind == TokenKind::Illegal) {
+            return false;
+        }
+        if (token.kind == TokenKind::LeftParen) {
+            ++depth;
+        } else if (token.kind == TokenKind::RightParen) {
+            if (--depth == 0) {
+                const Token arrow = lexer_.next({LexicalGoal::Div, strict_});
+                return arrow.kind == TokenKind::Arrow &&
+                       !arrow.precededByLineTerminator;
+            }
+        }
+    }
+}
+
+NodePtr Parser::parseArrowFunction() {
+    const SourceLocation start = current_.start;
+    const bool async = at(TokenKind::Identifier) && current_.text == "async";
+    if (async) advance();  // 'async'
+
+    NodeList params;
+    if (at(TokenKind::LeftParen)) {
+        if (!parseFormalParameters(params)) return nullptr;
+    } else {
+        NodePtr param = parseIdentifier();
+        if (param == nullptr) return nullptr;
+        params.push_back(std::move(param));
+    }
+
+    if (at(TokenKind::Arrow) && current_.precededByLineTerminator) {
+        error(current_.start, "Line terminator before '=>'");
+        return nullptr;
+    }
+    if (!expect(TokenKind::Arrow, "'=>'")) return nullptr;
+
+    NodePtr body;
+    bool expression = false;
+    if (at(TokenKind::LeftBrace)) {
+        body = parseFunctionBody();
+        if (body == nullptr) return nullptr;
+    } else {
+        body = parseAssignmentExpression();
+        if (body == nullptr) return nullptr;
+        expression = true;
+    }
+
+    return std::make_unique<ArrowFunctionExpression>(
+        rangeFrom(start), std::move(params), std::move(body), async, expression);
+}
+
 NodePtr Parser::parseAssignmentExpression() {
+    if (isArrowFunctionStart()) return parseArrowFunction();
+
     NodePtr left = parseConditionalExpression();
     if (left == nullptr) return nullptr;
 

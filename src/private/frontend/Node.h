@@ -87,6 +87,7 @@ enum class NodeKind : uint8_t {
     ConditionalExpression,
     AssignmentExpression,
     SequenceExpression,
+    ArrowFunctionExpression,
 
     // 模式
     RestElement,
@@ -605,6 +606,22 @@ struct SequenceExpression final : Node {
         : Node(NodeKind::SequenceExpression, range),
           expressions(std::move(expressions)) {}
     NodeList expressions;
+};
+
+// [async] (params) => body / param => body
+// expression 为 true 时 body 是表达式（concise body），否则是 BlockStatement。
+struct ArrowFunctionExpression final : Node {
+    ArrowFunctionExpression(SourceRange range, NodeList params, NodePtr body,
+                            bool async, bool expression)
+        : Node(NodeKind::ArrowFunctionExpression, range),
+          params(std::move(params)),
+          body(std::move(body)),
+          async(async),
+          expression(expression) {}
+    NodeList params;
+    NodePtr body;
+    bool async;
+    bool expression;
 };
 
 // ...argument（函数参数 / 解构模式中的 rest）
