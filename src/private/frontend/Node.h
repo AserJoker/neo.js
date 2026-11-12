@@ -54,6 +54,7 @@ enum class NodeKind : uint8_t {
     MemberExpression,
     CallExpression,
     NewExpression,
+    UnaryExpression,
 };
 
 class Node {
@@ -189,6 +190,26 @@ struct NewExpression final : Node {
           arguments(std::move(arguments)) {}
     NodePtr callee;
     NodeList arguments;
+};
+
+enum class UnaryOperator : uint8_t {
+    Delete,
+    Void,
+    TypeOf,
+    Plus,
+    Minus,
+    BitNot,
+    LogicalNot,
+};
+
+// op argument
+struct UnaryExpression final : Node {
+    UnaryExpression(SourceRange range, UnaryOperator op, NodePtr argument)
+        : Node(NodeKind::UnaryExpression, range),
+          op(op),
+          argument(std::move(argument)) {}
+    UnaryOperator op;
+    NodePtr argument;
 };
 
 }  // namespace neo::frontend

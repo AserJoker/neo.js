@@ -20,6 +20,34 @@ bool isIdentifierName(TokenKind kind) {
            value <= static_cast<int>(TokenKind::False);
 }
 
+bool unaryOperator(TokenKind kind, UnaryOperator& op) {
+    switch (kind) {
+        case TokenKind::Delete:
+            op = UnaryOperator::Delete;
+            return true;
+        case TokenKind::Void:
+            op = UnaryOperator::Void;
+            return true;
+        case TokenKind::TypeOf:
+            op = UnaryOperator::TypeOf;
+            return true;
+        case TokenKind::Plus:
+            op = UnaryOperator::Plus;
+            return true;
+        case TokenKind::Minus:
+            op = UnaryOperator::Minus;
+            return true;
+        case TokenKind::BitNot:
+            op = UnaryOperator::BitNot;
+            return true;
+        case TokenKind::LogicalNot:
+            op = UnaryOperator::LogicalNot;
+            return true;
+        default:
+            return false;
+    }
+}
+
 }  // namespace
 
 Parser::Parser(std::string_view source) : lexer_(source) {
@@ -161,7 +189,20 @@ NodePtr Parser::parseExpressionStatement() {
 // ---------------------------------------------------------------------------
 
 NodePtr Parser::parseExpression() {
-    // 后续在左值表达式之上逐层加入一元、二元、赋值、条件等节点。
+    // 后续在一元表达式之上逐层加入二元、赋值、条件等节点。
+    return parseUnaryExpression();
+}
+
+NodePtr Parser::parseUnaryExpression() {
+    UnaryOperator op;
+    if (unaryOperator(current_.kind, op)) {
+        const SourceLocation start = current_.start;
+        advance();
+        NodePtr argument = parseUnaryExpression();
+        if (argument == nullptr) return nullptr;
+        return std::make_unique<UnaryExpression>(
+            rangeFrom(start), op, std::move(argument));
+    }
     return parseLeftHandSideExpression();
 }
 

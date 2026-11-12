@@ -25,6 +25,8 @@ using neo::frontend::ParseResult;
 using neo::frontend::Program;
 using neo::frontend::RegExpLiteral;
 using neo::frontend::StringLiteral;
+using neo::frontend::UnaryExpression;
+using neo::frontend::UnaryOperator;
 
 ParseResult parse(std::string_view source) {
     Parser parser(source);
@@ -415,6 +417,88 @@ TEST(ParserTest, MissingPropertyNameReportsError) {
     ASSERT_NE(result.program, nullptr);
     ASSERT_FALSE(result.errors.empty());
     EXPECT_NE(result.errors[0].message.find("property name"), std::string::npos);
+}
+
+TEST(ParserTest, UnaryOperators) {
+    struct Case {
+        const char* source;
+        UnaryOperator op;
+    };
+    const Case cases[] = {
+        {"!a;", UnaryOperator::LogicalNot},
+        {"~a;", UnaryOperator::BitNot},
+        {"+a;", UnaryOperator::Plus},
+        {"-a;", UnaryOperator::Minus},
+        {"void a;", UnaryOperator::Void},
+        {"typeof a;", UnaryOperator::TypeOf},
+        {"delete a;", UnaryOperator::Delete},
+    };
+
+    for (const Case& item : cases) {
+        ParseResult result = parse(item.source);
+        ASSERT_TRUE(result.ok()) << item.source;
+        const auto& statement = statementOf(result, 0);
+        ASSERT_NE(statement.expression, nullptr) << item.source;
+        EXPECT_EQ(statement.expression->kind(), NodeKind::UnaryExpression)
+            << item.source;
+        const auto* unary =
+            static_cast<const UnaryExpression*>(statement.expression.get());
+        EXPECT_EQ(unary->op, item.op) << item.source;
+        ASSERT_NE(unary->argument, nullptr) << item.source;
+        EXPECT_EQ(unary->argument->kind(), NodeKind::Identifier)
+            << item.source;
+    }
+}
+
+TEST(ParserTest, UnaryOnMemberCall) {
+    ParseResult result = parse("typeof a.b();");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* unary =
+        static_cast<const UnaryExpression*>(statement.expression.get());
+    EXPECT_EQ(unary->op, UnaryOperator::TypeOf);
+    ASSERT_NE(unary->argument, nullptr);
+    EXPECT_EQ(unary->argument->kind(), NodeKind::CallExpression);
+}
+
+TEST(ParserTest, NestedUnaryOperators) {
+    ParseResult result = parse("!!a;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* outer =
+        static_cast<const UnaryExpression*>(statement.expression.get());
+    EXPECT_EQ(outer->op, UnaryOperator::LogicalNot);
+    ASSERT_NE(outer->argument, nullptr);
+    EXPECT_EQ(outer->argument->kind(), NodeKind::UnaryExpression);
+
+    const auto* inner =
+        static_cast<const UnaryExpression*>(outer->argument.get());
+    EXPECT_EQ(inner->op, UnaryOperator::LogicalNot);
+    ASSERT_NE(inner->argument, nullptr);
+    EXPECT_EQ(inner->argument->kind(), NodeKind::Identifier);
+}
+
+TEST(ParserTest, UnaryMinusIsNotPartOfNumericLiteral) {
+    ParseResult result = parse("-1;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* unary =
+        static_cast<const UnaryExpression*>(statement.expression.get());
+    EXPECT_EQ(unary->op, UnaryOperator::Minus);
+    ASSERT_NE(unary->argument, nullptr);
+    EXPECT_EQ(unary->argument->kind(), NodeKind::NumericLiteral);
+    EXPECT_DOUBLE_EQ(
+        static_cast<const NumericLiteral*>(unary->argument.get())->value, 1.0);
+}
+
+TEST(ParserTest, UnaryMissingOperandReportsError) {
+    ParseResult result = parse("!;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
 }
 
 TEST(ParserTest, ProgramRangeCoversConsumedInput) {
