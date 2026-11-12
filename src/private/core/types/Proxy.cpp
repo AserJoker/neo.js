@@ -352,17 +352,17 @@ Value* ProxyType::getWithReceiver(IContext* ctx, Value* self, const PropertyKey&
 }
 
 Value* ProxyType::setWithReceiver(IContext* ctx, Value* self, const PropertyKey& key,
-                                  Value* value, Value* receiver, bool& ok) {
+                                  Value* value, Value* receiver) {
     auto* d = asProxy(self);
     bool present = false;
     Value* err = nullptr;
     Value* trap = lookupTrap(ctx, d, "set", present, err);
     if (err != nullptr) return err;
-    if (!present) return ordinarySet(ctx, d->target, key, value, receiver, ok);
+    if (!present) return ordinarySet(ctx, d->target, key, value, receiver);
     Value* argv[4] = {d->target, key.value, value, receiver};
     Value* r = ctx->call(trap, d->handler, 4, argv);
     if (detail::isErrorValue(r)) return r;
-    ok = detail::toBoolean(r);
+    bool ok = detail::toBoolean(r);
 
     // —— 不变量（ES2024 §10.5.9）——
     // target 有不可配置、不可写的数据属性时，不能报告成功写入不同值。
@@ -381,7 +381,7 @@ Value* ProxyType::setWithReceiver(IContext* ctx, Value* self, const PropertyKey&
             }
         }
     }
-    return nullptr;
+    return ctx->createBoolean(ok);
 }
 
 Value* ProxyType::getProperty(IContext* ctx, Value* self, Value* key) {
@@ -393,10 +393,9 @@ Value* ProxyType::getProperty(IContext* ctx, Value* self, Value* key) {
 Value* ProxyType::setProperty(IContext* ctx, Value* self, Value* key, Value* value) {
     PropertyKey pk;
     if (Value* err = toPropertyKey(ctx, key, pk)) return err;
-    bool ok = false;
-    Value* err = setWithReceiver(ctx, self, pk, value, self, ok);
-    if (err != nullptr) return err;
-    if (!ok) {
+    Value* r = setWithReceiver(ctx, self, pk, value, self);
+    if (detail::isErrorValue(r)) return r;
+    if (!detail::toBoolean(r)) {
         if (!ctx->hasFlag("strict")) return value;
         std::string name = pk.isSymbol ? detail::valueToString(key) : pk.name;
         return detail::typeError(ctx, "Cannot set property '" + name + "'");
@@ -447,12 +446,7 @@ Value* ProxyType::deleteProperty(IContext* ctx, Value* self, Value* key) {
     Value* err = nullptr;
     Value* trap = lookupTrap(ctx, d, "deleteProperty", present, err);
     if (err != nullptr) return err;
-    if (!present) {
-        bool ok = false;
-        Value* e = ordinaryDelete(ctx, d->target, pk, ok);
-        if (e != nullptr) return e;
-        return ctx->createBoolean(ok);
-    }
+    if (!present) return ordinaryDelete(ctx, d->target, pk);
     Value* argv[2] = {d->target, pk.value};
     Value* r = ctx->call(trap, d->handler, 2, argv);
     if (detail::isErrorValue(r)) return r;

@@ -204,11 +204,9 @@ Value* reflectSet(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     }
     Value* value = argc > 2 ? argv[2] : ctx->createUndefined();
     Value* receiver = argc > 3 ? argv[3] : target;
-    bool ok = false;
-    if (Value* err = target->type()->setWithReceiver(ctx, target, key, value, receiver, ok)) {
-        return err;
-    }
-    return ctx->createBoolean(ok);
+    Value* r = target->type()->setWithReceiver(ctx, target, key, value, receiver);
+    if (detail::isErrorValue(r)) return r;
+    return ctx->createBoolean(detail::toBoolean(r));
 }
 
 // Reflect.setPrototypeOf(target, proto)

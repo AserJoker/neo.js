@@ -151,14 +151,13 @@ bool isCompatiblePropertyDescriptor(const Property& current, const Property& des
 //
 // ordinaryGet（§10.1.8.1）：沿原型链读取，receiver 作为访问器 this。
 Value* ordinaryGet(IContext* ctx, Value* obj, const PropertyKey& key, Value* receiver);
-// ordinarySet（§10.1.9）：返回 nullptr 成功 / 错误值异常；ok=false 表示
-// [[Set]] 返回 false（调用方按严格模式决定是否抛 TypeError）。
+// ordinarySet（§10.1.9）：返回 Boolean（成功/失败）或 Exception/Fatal。
 Value* ordinarySet(IContext* ctx, Value* obj, const PropertyKey& key, Value* value,
-                   Value* receiver, bool& ok);
+                   Value* receiver);
 // ordinaryHas（§10.1.7.1）：自有 + 原型链。返回 Boolean 或 Exception/Fatal。
 Value* ordinaryHas(IContext* ctx, Value* obj, const PropertyKey& key);
-// ordinaryDelete（§10.1.10）：只操作自有属性；ok=false 表示不可配置。
-Value* ordinaryDelete(IContext* ctx, Value* obj, const PropertyKey& key, bool& ok);
+// ordinaryDelete（§10.1.10）：只操作自有属性。返回 Boolean 或 Exception/Fatal。
+Value* ordinaryDelete(IContext* ctx, Value* obj, const PropertyKey& key);
 // ordinaryGetPrototype（§10.1.2）：无原型返回 null。
 Value* ordinaryGetPrototype(IContext* ctx, Value* obj);
 // ordinarySetPrototype（§10.1.3）：成功返回 obj；非法/成环返回 Exception。

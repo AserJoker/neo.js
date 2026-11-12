@@ -157,10 +157,10 @@ public:
     // 原型链上的 Proxy 必须经此触发 get trap（不能只查 getOwnProperty）。
     virtual Value* getWithReceiver(IContext* ctx, Value* self, const PropertyKey& key,
                                    Value* receiver);
-    // setWithReceiver（§10.1.9）：[[Set]]。返回 nullptr 成功 / 错误值异常；
-    // ok=false 表示 [[Set]] 返回 false（调用方按严格模式决定是否抛 TypeError）。
+    // setWithReceiver（§10.1.9）：[[Set]]。返回 Boolean（成功/失败）或
+    // Exception/Fatal（真正抛出）。调用方按严格模式决定 false 是否转 TypeError。
     virtual Value* setWithReceiver(IContext* ctx, Value* self, const PropertyKey& key,
-                                   Value* value, Value* receiver, bool& ok);
+                                   Value* value, Value* receiver);
 
     // isExtensible（§10.1.3）/ preventExtensions（§10.1.4）：返回 Boolean 或错误值。
     // 默认实现读写 ObjectData::extensible；Proxy 转发 trap 并校验不变量。

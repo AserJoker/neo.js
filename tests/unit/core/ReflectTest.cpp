@@ -91,6 +91,10 @@ Value* returnFalse(IContext* ctx, Value*, size_t, Value*[]) {
     return ctx->createBoolean(false);
 }
 
+Value* returnTrue(IContext* ctx, Value*, size_t, Value*[]) {
+    return ctx->createBoolean(true);
+}
+
 Value* addOne(IContext* ctx, Value*, size_t argc, Value* argv[]) {
     if (argc == 0) return ctx->createNumber(1);
     return ctx->createNumber(numOf(argv[0]) + 1);
@@ -329,6 +333,48 @@ TEST(ReflectTest, DefineAndSetPrototypeResultChannel) {
     Value* spThrowProxy = ctx->createProxy(ctx->createObject(), spThrowHandler);
     Value* spThrowArgs[2] = {spThrowProxy, proto};
     EXPECT_EQ(callReflect(ctx, "setPrototypeOf", 2, spThrowArgs)->type()->kind(),
+              TypeKind::Exception);
+}
+
+TEST(ReflectTest, SetResultChannel) {
+    Fixture f;
+    IContext* ctx = f.ctx.get();
+
+    // 普通对象不可写属性 → [[Set]] 返回 false。
+    Value* obj = ctx->createObject();
+    ctx->defineProperty(obj, "x", ctx->createNumber(1), false, true, true);
+    Value* args[3] = {obj, ctx->createString("x"), ctx->createNumber(2)};
+    Value* r = callReflect(ctx, "set", 3, args);
+    ASSERT_EQ(r->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(boolOf(r));
+
+    // Proxy trap 返回 false → Reflect 返回 false；trap 抛出 → 透传。
+    Value* target = ctx->createObject();
+    Value* falseHandler = ctx->createObject();
+    ctx->defineProperty(falseHandler, "set",
+                        ctx->createNativeFunction(returnFalse, 0), true, true, true);
+    Value* falseProxy = ctx->createProxy(target, falseHandler);
+    Value* proxyArgs[3] = {falseProxy, ctx->createString("y"), ctx->createNumber(2)};
+    Value* r2 = callReflect(ctx, "set", 3, proxyArgs);
+    ASSERT_EQ(r2->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(boolOf(r2));
+
+    Value* throwHandler = ctx->createObject();
+    ctx->defineProperty(throwHandler, "set",
+                        ctx->createNativeFunction(throwError, 0), true, true, true);
+    Value* throwProxy = ctx->createProxy(target, throwHandler);
+    Value* throwArgs[3] = {throwProxy, ctx->createString("y"), ctx->createNumber(2)};
+    EXPECT_EQ(callReflect(ctx, "set", 3, throwArgs)->type()->kind(), TypeKind::Exception);
+
+    // 不变量：不可配置不可写属性被报告成功写入不同值 → TypeError。
+    Value* locked = ctx->createObject();
+    ctx->defineProperty(locked, "z", ctx->createNumber(1), false, false, false);
+    Value* trueHandler = ctx->createObject();
+    ctx->defineProperty(trueHandler, "set",
+                        ctx->createNativeFunction(returnTrue, 0), true, true, true);
+    Value* lockedProxy = ctx->createProxy(locked, trueHandler);
+    Value* lockedArgs[3] = {lockedProxy, ctx->createString("z"), ctx->createNumber(2)};
+    EXPECT_EQ(callReflect(ctx, "set", 3, lockedArgs)->type()->kind(),
               TypeKind::Exception);
 }
 

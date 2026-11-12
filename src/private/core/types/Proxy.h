@@ -62,7 +62,7 @@ public:
     Value* getWithReceiver(IContext* ctx, Value* self, const PropertyKey& key,
                            Value* receiver) override;
     Value* setWithReceiver(IContext* ctx, Value* self, const PropertyKey& key,
-                           Value* value, Value* receiver, bool& ok) override;
+                           Value* value, Value* receiver) override;
     Value* isExtensible(IContext* ctx, Value* self) override;
     Value* preventExtensions(IContext* ctx, Value* self) override;
 };

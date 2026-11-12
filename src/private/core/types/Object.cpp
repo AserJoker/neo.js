@@ -264,8 +264,7 @@ Value* ordinaryGet(IContext* ctx, Value* obj, const PropertyKey& key, Value* rec
 }
 
 Value* ordinarySet(IContext* ctx, Value* obj, const PropertyKey& key, Value* value,
-                   Value* receiver, bool& ok) {
-    ok = true;
+                   Value* receiver) {
     Property own;
     bool hasOwn = false;
     if (Value* err = obj->type()->getOwnProperty(ctx, obj, key, hasOwn, own)) return err;
@@ -275,7 +274,7 @@ Value* ordinarySet(IContext* ctx, Value* obj, const PropertyKey& key, Value* val
         if (isErrorResult(parent)) return parent;
         if (parent != nullptr && detail::isObjectKind(parent->type()->kind())) {
             // 继承属性：交给父对象的 [[Set]]（原型链上的 Proxy 在此触发 set trap）。
-            return parent->type()->setWithReceiver(ctx, parent, key, value, receiver, ok);
+            return parent->type()->setWithReceiver(ctx, parent, key, value, receiver);
         }
         // 无继承描述符：按默认可写数据属性在 receiver 上创建。
         own = Property{};
@@ -285,22 +284,15 @@ Value* ordinarySet(IContext* ctx, Value* obj, const PropertyKey& key, Value* val
     }
 
     if (isAccessorDescriptor(own)) {
-        if (own.setter == nullptr) {
-            ok = false;
-            return nullptr;
-        }
+        if (own.setter == nullptr) return ctx->createBoolean(false);
         Value* argv[1] = {value};
         Value* r = callAccessor(ctx, own.setter, receiver, 1, argv);
-        return isErrorResult(r) ? r : nullptr;
+        return isErrorResult(r) ? r : ctx->createBoolean(true);
     }
 
-    if (!own.writable) {
-        ok = false;
-        return nullptr;
-    }
+    if (!own.writable) return ctx->createBoolean(false);
     if (receiver == nullptr || !detail::isObjectKind(receiver->type()->kind())) {
-        ok = false;
-        return nullptr;
+        return ctx->createBoolean(false);
     }
 
     // Receiver 已有自有属性：数据属性可写则只更新值（保留属性特性）；
@@ -313,27 +305,17 @@ Value* ordinarySet(IContext* ctx, Value* obj, const PropertyKey& key, Value* val
     }
     if (hasExisting) {
         if (isAccessorDescriptor(existing) || !existing.writable) {
-            ok = false;
-            return nullptr;
+            return ctx->createBoolean(false);
         }
-        Value* r = receiver->type()->defineProperty(
-            ctx, receiver, key.value, value, existing.writable, existing.enumerable,
-            existing.configurable);
-        if (isErrorResult(r)) return r;
-        if (!detail::toBoolean(r)) ok = false;
-        return nullptr;
+        return receiver->type()->defineProperty(ctx, receiver, key.value, value,
+                                                existing.writable, existing.enumerable,
+                                                existing.configurable);
     }
     Value* ext = receiver->type()->isExtensible(ctx, receiver);
     if (isErrorResult(ext)) return ext;
-    if (!detail::toBoolean(ext)) {
-        ok = false;
-        return nullptr;
-    }
-    Value* r = receiver->type()->defineProperty(ctx, receiver, key.value, value, true, true,
-                                                true);
-    if (isErrorResult(r)) return r;
-    if (!detail::toBoolean(r)) ok = false;
-    return nullptr;
+    if (!detail::toBoolean(ext)) return ctx->createBoolean(false);
+    return receiver->type()->defineProperty(ctx, receiver, key.value, value, true, true,
+                                            true);
 }
 
 Value* ordinaryHas(IContext* ctx, Value* obj, const PropertyKey& key) {
@@ -350,19 +332,15 @@ Value* ordinaryHas(IContext* ctx, Value* obj, const PropertyKey& key) {
     return parent->type()->hasProperty(ctx, parent, key.value);
 }
 
-Value* ordinaryDelete(IContext* ctx, Value* obj, const PropertyKey& key, bool& ok) {
-    ok = true;
+Value* ordinaryDelete(IContext* ctx, Value* obj, const PropertyKey& key) {
     Property desc;
     bool exists = false;
     if (Value* err = obj->type()->getOwnProperty(ctx, obj, key, exists, desc)) return err;
-    if (!exists) return nullptr;
-    if (!desc.configurable) {
-        ok = false;
-        return nullptr;
-    }
+    if (!exists) return ctx->createBoolean(true);
+    if (!desc.configurable) return ctx->createBoolean(false);
     Value* r = obj->type()->deleteProperty(ctx, obj, key.value);
     if (isErrorResult(r)) return r;
-    return nullptr;
+    return r;
 }
 
 Value* IType::getWithReceiver(IContext* ctx, Value* self, const PropertyKey& key,
@@ -371,8 +349,8 @@ Value* IType::getWithReceiver(IContext* ctx, Value* self, const PropertyKey& key
 }
 
 Value* IType::setWithReceiver(IContext* ctx, Value* self, const PropertyKey& key,
-                              Value* value, Value* receiver, bool& ok) {
-    return ordinarySet(ctx, self, key, value, receiver, ok);
+                              Value* value, Value* receiver) {
+    return ordinarySet(ctx, self, key, value, receiver);
 }
 
 Value* IType::isExtensible(IContext* ctx, Value* self) {
@@ -506,11 +484,10 @@ Value* setPropertyWithReceiver(IContext* ctx, Value* obj, Value* key, Value* val
                                Value* receiver) {
     PropertyKey pk;
     if (Value* err = toPropertyKey(ctx, key, pk)) return err;
-    bool ok = false;
     // 经 [[Set]] 分派：base 是 Proxy 时触发 set trap。
-    Value* err = obj->type()->setWithReceiver(ctx, obj, pk, value, receiver, ok);
-    if (err != nullptr) return err;
-    if (!ok) {
+    Value* r = obj->type()->setWithReceiver(ctx, obj, pk, value, receiver);
+    if (isErrorResult(r)) return r;
+    if (!detail::toBoolean(r)) {
         if (!ctx->hasFlag("strict")) return value;
         std::string name = pk.isSymbol ? detail::valueToString(key) : pk.name;
         return detail::typeError(ctx, "Cannot set property '" + name + "'");
@@ -523,10 +500,9 @@ Value* ObjectType::setProperty(IContext* ctx, Value* self, Value* key, Value* va
     // 严格性由当前作用域标注决定：sloppy 模式下 [[Set]] 失败静默（表达式值仍为 RHS）。
     PropertyKey pk;
     if (Value* err = toPropertyKey(ctx, key, pk)) return err;
-    bool ok = false;
-    Value* err = ordinarySet(ctx, self, pk, value, self, ok);
-    if (err != nullptr) return err;
-    if (!ok) {
+    Value* r = ordinarySet(ctx, self, pk, value, self);
+    if (isErrorResult(r)) return r;
+    if (!detail::toBoolean(r)) {
         if (!ctx->hasFlag("strict")) return value;
         std::string name = pk.isSymbol ? detail::valueToString(key) : pk.name;
         return detail::typeError(ctx, "Cannot set property '" + name + "'");

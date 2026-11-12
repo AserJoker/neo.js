@@ -27,15 +27,15 @@ trap。若属性算法继续直接读取 `ObjectData::properties/prototype`，�
 | `[[GetOwnProperty]]` | `getOwnProperty(ctx, self, key, exists, out)` | OrdinaryGetOwnProperty |
 | `[[OwnPropertyKeys]]` | `ownKeys(ctx, self, out)` | OrdinaryOwnPropertyKeys |
 | `[[Get]]` | `getWithReceiver(ctx, self, key, receiver)` | OrdinaryGet |
-| `[[Set]]` | `setWithReceiver(ctx, self, key, value, receiver, ok)` | OrdinarySet |
+| `[[Set]]` | `setWithReceiver(ctx, self, key, value, receiver)` | OrdinarySet |
 | `[[IsExtensible]]` | `isExtensible(ctx, self)` | `ObjectData::extensible` |
 | `[[PreventExtensions]]` | `preventExtensions(ctx, self)` | 置 `extensible=false` |
 
 约定：
 
-- 成功返回 `nullptr`；trap 抛错返回 `Exception/Fatal`；
-- `ok=false` 表示 `[[Set]]` 返回 false，由调用方按严格模式决定是否抛
-  TypeError；
+- 结果型内部方法返回 Boolean（成功/失败），真正抛出返回 `Exception/Fatal`
+  （详见 §8 的 Value 结果协议）；
+- 调用方按严格模式决定 Boolean false 是否转 TypeError；
 - 原型链遍历必须调用父对象的 `getWithReceiver` / `setWithReceiver` /
   `hasProperty`，不能只查 `getOwnProperty`——否则 Proxy 的 get/set/has trap
   不会触发；
@@ -157,8 +157,9 @@ trap 缺失（undefined/null）时回退到 target 的对应内部方法。
 
 ## 8. 内部方法的 Value 结果协议（P4）
 
-`[[DefineOwnProperty]]` / `[[DefineAccessor]]` / `[[SetPrototypeOf]]` 不再用
-native `bool&` 或"Exception 兼作 false"表达结果，而是用 Value 的三态：
+`[[DefineOwnProperty]]` / `[[DefineAccessor]]` / `[[Set]]` /
+`[[Delete]]` / `[[SetPrototypeOf]]` 不再用 native `bool&` 或"Exception 兼作
+false"表达结果，而是用 Value 的三态：
 
 | 返回 | 含义 |
 | --- | --- |
@@ -168,9 +169,11 @@ native `bool&` 或"Exception 兼作 false"表达结果，而是用 Value 的三�
 
 - 公共 API `Context::defineProperty/defineAccessor/setPrototype` 在 false 时
   转 TypeError，成功时返回属性值/self，保持原有调用方语义。
-- `Reflect.defineProperty/setPrototypeOf` 直接返回 Boolean；Exception 原样透传。
-- `ordinarySet` 在 receiver 的 `[[DefineOwnProperty]]` 返回 false 时置
-  `ok=false`。
+- `Reflect.defineProperty/set/deleteProperty/setPrototypeOf` 直接返回 Boolean；
+  Exception 原样透传。
+- `setProperty` / `setPropertyWithReceiver` 在 `[[Set]]` 返回 false 时按
+  当前作用域严格性决定静默或抛 TypeError。
+- `ordinarySet` 直接返回 receiver `[[DefineOwnProperty]]` 的 Boolean。
 - 透传型（Uninitialized/Interrupt）仍可返回自身，公共 API 原样透传。
 
 这样 `Reflect` 不需要 try/catch 式地猜测 Exception 来源，也不需要预检查
@@ -179,7 +182,6 @@ native `bool&` 或"Exception 兼作 false"表达结果，而是用 Value 的三�
 ## 9. 已知边界（P4）
 
 - **TODO（依赖 VM/字节码层）**：for-in 枚举顺序与 Proxy 的完整交互；JSON。
-- `[[Set]]` 仍使用 `bool& ok` 返回通道，后续可按同一 Value 协议统一。
 
 - `hasProperty` 返回 `Value*`（Boolean 或 Exception/Fatal），has trap
   抛错原样透传。
