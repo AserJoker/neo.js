@@ -31,6 +31,7 @@ using neo::frontend::Parser;
 using neo::frontend::ParseResult;
 using neo::frontend::Program;
 using neo::frontend::RegExpLiteral;
+using neo::frontend::SequenceExpression;
 using neo::frontend::StringLiteral;
 using neo::frontend::UnaryExpression;
 using neo::frontend::UnaryOperator;
@@ -1023,6 +1024,78 @@ TEST(ParserTest, InvalidAssignmentTargetReportsError) {
 
 TEST(ParserTest, AssignmentMissingRhsReportsError) {
     ParseResult result = parse("a =;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, SequenceExpression) {
+    ParseResult result = parse("a, b, c;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    ASSERT_NE(statement.expression, nullptr);
+    EXPECT_EQ(statement.expression->kind(), NodeKind::SequenceExpression);
+
+    const auto* sequence =
+        static_cast<const SequenceExpression*>(statement.expression.get());
+    ASSERT_EQ(sequence->expressions.size(), 3u);
+    for (const auto& expression : sequence->expressions) {
+        EXPECT_EQ(expression->kind(), NodeKind::Identifier);
+    }
+}
+
+TEST(ParserTest, SequenceBindsLooserThanAssignment) {
+    ParseResult result = parse("a = b, c;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* sequence =
+        static_cast<const SequenceExpression*>(statement.expression.get());
+    ASSERT_EQ(sequence->expressions.size(), 2u);
+    EXPECT_EQ(sequence->expressions[0]->kind(),
+              NodeKind::AssignmentExpression);
+    EXPECT_EQ(sequence->expressions[1]->kind(), NodeKind::Identifier);
+}
+
+TEST(ParserTest, ArgumentCommasAreNotSequence) {
+    ParseResult result = parse("f(a, b);");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* call =
+        static_cast<const CallExpression*>(statement.expression.get());
+    EXPECT_EQ(call->kind(), NodeKind::CallExpression);
+    ASSERT_EQ(call->arguments.size(), 2u);
+    EXPECT_EQ(call->arguments[0]->kind(), NodeKind::Identifier);
+    EXPECT_EQ(call->arguments[1]->kind(), NodeKind::Identifier);
+}
+
+TEST(ParserTest, ParenthesizedSequenceAsArgument) {
+    ParseResult result = parse("f((a, b));");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* call =
+        static_cast<const CallExpression*>(statement.expression.get());
+    ASSERT_EQ(call->arguments.size(), 1u);
+    EXPECT_EQ(call->arguments[0]->kind(), NodeKind::SequenceExpression);
+}
+
+TEST(ParserTest, SequenceWithConditionalFirst) {
+    ParseResult result = parse("a ? b : c, d;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    const auto* sequence =
+        static_cast<const SequenceExpression*>(statement.expression.get());
+    ASSERT_EQ(sequence->expressions.size(), 2u);
+    EXPECT_EQ(sequence->expressions[0]->kind(),
+              NodeKind::ConditionalExpression);
+}
+
+TEST(ParserTest, SequenceMissingOperandReportsError) {
+    ParseResult result = parse("a, ;");
 
     ASSERT_NE(result.program, nullptr);
     ASSERT_FALSE(result.errors.empty());

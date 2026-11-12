@@ -370,8 +370,26 @@ NodePtr Parser::parseExpressionStatement() {
 // ---------------------------------------------------------------------------
 
 NodePtr Parser::parseExpression() {
-    // 后续在赋值表达式之上加入序列表达式（逗号）。
-    return parseAssignmentExpression();
+    return parseSequenceExpression();
+}
+
+NodePtr Parser::parseSequenceExpression() {
+    NodePtr first = parseAssignmentExpression();
+    if (first == nullptr) return nullptr;
+    if (!at(TokenKind::Comma)) return first;
+
+    const SourceLocation start = first->range().start;
+    NodeList expressions;
+    expressions.push_back(std::move(first));
+
+    while (match(TokenKind::Comma)) {
+        NodePtr next = parseAssignmentExpression();
+        if (next == nullptr) return nullptr;
+        expressions.push_back(std::move(next));
+    }
+
+    return std::make_unique<SequenceExpression>(rangeFrom(start),
+                                                std::move(expressions));
 }
 
 NodePtr Parser::parseAssignmentExpression() {
@@ -606,7 +624,8 @@ bool Parser::parseArguments(NodeList& arguments) {
     if (match(TokenKind::RightParen)) return true;
 
     while (true) {
-        NodePtr argument = parseExpression();
+        // 参数之间用逗号分隔，因此每个参数只解析到赋值表达式，不能吞掉逗号。
+        NodePtr argument = parseAssignmentExpression();
         if (argument == nullptr) return false;
         arguments.push_back(std::move(argument));
 

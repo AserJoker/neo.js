@@ -76,6 +76,7 @@ private:
 
     // 表达式
     NodePtr parseExpression();
+    NodePtr parseSequenceExpression();
     NodePtr parseAssignmentExpression();
     NodePtr parseConditionalExpression();
     NodePtr parseLogicalExpression(int minPrecedence);

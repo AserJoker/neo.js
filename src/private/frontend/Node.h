@@ -60,6 +60,7 @@ enum class NodeKind : uint8_t {
     LogicalExpression,
     ConditionalExpression,
     AssignmentExpression,
+    SequenceExpression,
 };
 
 class Node {
@@ -333,6 +334,14 @@ struct AssignmentExpression final : Node {
     AssignmentOperator op;
     NodePtr left;
     NodePtr right;
+};
+
+// expr1, expr2, ...
+struct SequenceExpression final : Node {
+    SequenceExpression(SourceRange range, NodeList expressions)
+        : Node(NodeKind::SequenceExpression, range),
+          expressions(std::move(expressions)) {}
+    NodeList expressions;
 };
 
 }  // namespace neo::frontend
