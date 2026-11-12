@@ -88,6 +88,7 @@ enum class NodeKind : uint8_t {
     AssignmentExpression,
     SequenceExpression,
     ArrowFunctionExpression,
+    ArrayExpression,
 
     // 模式
     RestElement,
@@ -606,6 +607,15 @@ struct SequenceExpression final : Node {
         : Node(NodeKind::SequenceExpression, range),
           expressions(std::move(expressions)) {}
     NodeList expressions;
+};
+
+// [element, ...]
+// elements 中的空指针表示 elision（如 [1, , 3] 的中间位置）。
+struct ArrayExpression final : Node {
+    ArrayExpression(SourceRange range, NodeList elements)
+        : Node(NodeKind::ArrayExpression, range),
+          elements(std::move(elements)) {}
+    NodeList elements;
 };
 
 // [async] (params) => body / param => body

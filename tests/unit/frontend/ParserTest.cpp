@@ -11,6 +11,7 @@
 
 namespace {
 
+using neo::frontend::ArrayExpression;
 using neo::frontend::ArrowFunctionExpression;
 using neo::frontend::AssignmentExpression;
 using neo::frontend::AssignmentOperator;
@@ -2703,6 +2704,112 @@ TEST(ParserTest, LineTerminatorBeforeArrowReportsError) {
 
 TEST(ParserTest, ParenthesizedLineTerminatorBeforeArrowReportsError) {
     ParseResult result = parse("(x)\n=> x;");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+// ---------------------------------------------------------------------------
+// 数组字面量
+// ---------------------------------------------------------------------------
+
+TEST(ParserTest, EmptyArrayLiteral) {
+    ParseResult result = parse("[];");
+
+    ASSERT_TRUE(result.ok());
+    const auto& array = static_cast<const ArrayExpression&>(
+        *statementOf(result, 0).expression);
+    EXPECT_TRUE(array.elements.empty());
+}
+
+TEST(ParserTest, ArrayLiteralElements) {
+    ParseResult result = parse("[1, \"two\", x];");
+
+    ASSERT_TRUE(result.ok());
+    const auto& array = static_cast<const ArrayExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(array.elements.size(), 3u);
+    EXPECT_EQ(array.elements[0]->kind(), NodeKind::NumericLiteral);
+    EXPECT_EQ(array.elements[1]->kind(), NodeKind::StringLiteral);
+    EXPECT_EQ(array.elements[2]->kind(), NodeKind::Identifier);
+}
+
+TEST(ParserTest, ArrayLiteralElision) {
+    ParseResult result = parse("[1, , 3];");
+
+    ASSERT_TRUE(result.ok());
+    const auto& array = static_cast<const ArrayExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(array.elements.size(), 3u);
+    EXPECT_NE(array.elements[0], nullptr);
+    EXPECT_EQ(array.elements[1], nullptr);
+    EXPECT_NE(array.elements[2], nullptr);
+}
+
+TEST(ParserTest, ArrayLiteralLeadingElision) {
+    ParseResult result = parse("[, 1];");
+
+    ASSERT_TRUE(result.ok());
+    const auto& array = static_cast<const ArrayExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(array.elements.size(), 2u);
+    EXPECT_EQ(array.elements[0], nullptr);
+    EXPECT_NE(array.elements[1], nullptr);
+}
+
+TEST(ParserTest, ArrayLiteralSingleElision) {
+    ParseResult result = parse("[,];");
+
+    ASSERT_TRUE(result.ok());
+    const auto& array = static_cast<const ArrayExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(array.elements.size(), 1u);
+    EXPECT_EQ(array.elements[0], nullptr);
+}
+
+TEST(ParserTest, ArrayLiteralTrailingCommaIsNotElision) {
+    ParseResult result = parse("[1, 2,];");
+
+    ASSERT_TRUE(result.ok());
+    const auto& array = static_cast<const ArrayExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(array.elements.size(), 2u);
+    EXPECT_NE(array.elements[0], nullptr);
+    EXPECT_NE(array.elements[1], nullptr);
+}
+
+TEST(ParserTest, NestedArrayLiteral) {
+    ParseResult result = parse("[[1], [2, 3]];");
+
+    ASSERT_TRUE(result.ok());
+    const auto& array = static_cast<const ArrayExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(array.elements.size(), 2u);
+    EXPECT_EQ(array.elements[0]->kind(), NodeKind::ArrayExpression);
+    EXPECT_EQ(array.elements[1]->kind(), NodeKind::ArrayExpression);
+}
+
+TEST(ParserTest, ArrayLiteralInMemberExpression) {
+    ParseResult result = parse("[1, 2].length;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& member = static_cast<const MemberExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_NE(member.object, nullptr);
+    EXPECT_EQ(member.object->kind(), NodeKind::ArrayExpression);
+}
+
+TEST(ParserTest, ArrayLiteralAsArgument) {
+    ParseResult result = parse("f([1, 2]);");
+
+    ASSERT_TRUE(result.ok());
+    const auto& call = static_cast<const CallExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(call.arguments.size(), 1u);
+    EXPECT_EQ(call.arguments[0]->kind(), NodeKind::ArrayExpression);
+}
+
+TEST(ParserTest, ArrayLiteralMissingBracketReportsError) {
+    ParseResult result = parse("[1, 2;");
 
     EXPECT_FALSE(result.errors.empty());
 }

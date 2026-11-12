@@ -1403,6 +1403,8 @@ NodePtr Parser::parsePrimaryExpression() {
             return parseNullLiteral();
         case TokenKind::RegularExpressionLiteral:
             return parseRegExpLiteral();
+        case TokenKind::LeftBracket:
+            return parseArrayExpression();
         case TokenKind::Slash:
         case TokenKind::SlashAssign:
             // 当前 `/` 是按除法目标扫出来的，进入表达式起始位置后重扫为正则。
@@ -1486,6 +1488,31 @@ NodePtr Parser::parseRegExpLiteral() {
     advance();
     return std::make_unique<RegExpLiteral>(rangeFrom(start), std::move(pattern),
                                            std::move(flags));
+}
+
+NodePtr Parser::parseArrayExpression() {
+    const SourceLocation start = current_.start;
+    if (!expect(TokenKind::LeftBracket, "'['")) return nullptr;
+
+    NodeList elements;
+    while (!at(TokenKind::RightBracket) && !at(TokenKind::EndOfInput)) {
+        if (at(TokenKind::Comma)) {
+            // elision：连续逗号之间的空位用空指针表示。
+            elements.push_back(nullptr);
+            advance();
+            continue;
+        }
+
+        NodePtr element = parseAssignmentExpression();
+        if (element == nullptr) return nullptr;
+        elements.push_back(std::move(element));
+
+        if (!match(TokenKind::Comma)) break;
+    }
+
+    if (!expect(TokenKind::RightBracket, "']'")) return nullptr;
+    return std::make_unique<ArrayExpression>(rangeFrom(start),
+                                             std::move(elements));
 }
 
 }  // namespace neo::frontend
