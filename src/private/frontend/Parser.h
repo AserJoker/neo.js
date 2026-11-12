@@ -75,11 +75,12 @@ private:
     NodePtr parseBlockStatement();
     NodePtr parseEmptyStatement();
     NodePtr parseExpressionStatement();
-    NodePtr parseVariableDeclaration();
+    NodePtr parseVariableDeclaration(bool consumeTerminator = true);
     NodePtr parseVariableDeclarator();
     NodePtr parseIfStatement();
     NodePtr parseWhileStatement();
     NodePtr parseDoWhileStatement();
+    NodePtr parseForStatement();
     bool isLetDeclarationStart();
 
     // 表达式

@@ -47,6 +47,7 @@ enum class NodeKind : uint8_t {
     IfStatement,
     WhileStatement,
     DoWhileStatement,
+    ForStatement,
 
     // 表达式
     Identifier,
@@ -180,6 +181,20 @@ struct DoWhileStatement final : Node {
           test(std::move(test)) {}
     NodePtr body;
     NodePtr test;
+};
+
+struct ForStatement final : Node {
+    ForStatement(SourceRange range, NodePtr init, NodePtr test, NodePtr update,
+                 NodePtr body)
+        : Node(NodeKind::ForStatement, range),
+          init(std::move(init)),
+          test(std::move(test)),
+          update(std::move(update)),
+          body(std::move(body)) {}
+    NodePtr init;  // 可空；VariableDeclaration 或 Expression
+    NodePtr test;
+    NodePtr update;
+    NodePtr body;
 };
 
 // ---------------------------------------------------------------------------

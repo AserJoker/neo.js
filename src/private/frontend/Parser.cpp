@@ -359,7 +359,51 @@ NodePtr Parser::parseStatement() {
     if (at(TokenKind::If)) return parseIfStatement();
     if (at(TokenKind::While)) return parseWhileStatement();
     if (at(TokenKind::Do)) return parseDoWhileStatement();
+    if (at(TokenKind::For)) return parseForStatement();
     return parseExpressionStatement();
+}
+
+NodePtr Parser::parseForStatement() {
+    const SourceLocation start = current_.start;
+    advance();  // 'for'
+
+    if (!expect(TokenKind::LeftParen, "'('")) return nullptr;
+
+    NodePtr init;
+    if (!at(TokenKind::Semicolon)) {
+        const bool declaration =
+            at(TokenKind::Var) || at(TokenKind::Const) ||
+            (at(TokenKind::Identifier) && current_.text == "let" &&
+             isLetDeclarationStart());
+        if (declaration) {
+            init = parseVariableDeclaration(false);
+        } else {
+            init = parseExpression();
+        }
+        if (init == nullptr) return nullptr;
+    }
+    if (!expect(TokenKind::Semicolon, "';'")) return nullptr;
+
+    NodePtr test;
+    if (!at(TokenKind::Semicolon)) {
+        test = parseExpression();
+        if (test == nullptr) return nullptr;
+    }
+    if (!expect(TokenKind::Semicolon, "';'")) return nullptr;
+
+    NodePtr update;
+    if (!at(TokenKind::RightParen)) {
+        update = parseExpression();
+        if (update == nullptr) return nullptr;
+    }
+    if (!expect(TokenKind::RightParen, "')'")) return nullptr;
+
+    NodePtr body = parseStatement();
+    if (body == nullptr) return nullptr;
+
+    return std::make_unique<ForStatement>(
+        rangeFrom(start), std::move(init), std::move(test), std::move(update),
+        std::move(body));
 }
 
 NodePtr Parser::parseDoWhileStatement() {
@@ -429,7 +473,7 @@ bool Parser::isLetDeclarationStart() {
            next.kind == TokenKind::LeftBrace;
 }
 
-NodePtr Parser::parseVariableDeclaration() {
+NodePtr Parser::parseVariableDeclaration(bool consumeTerminator) {
     const SourceLocation start = current_.start;
     VariableKind kind = VariableKind::Var;
     if (at(TokenKind::Var)) {
@@ -456,7 +500,7 @@ NodePtr Parser::parseVariableDeclaration() {
         if (!match(TokenKind::Comma)) break;
     }
 
-    if (!consumeSemicolon()) return nullptr;
+    if (consumeTerminator && !consumeSemicolon()) return nullptr;
     return std::make_unique<VariableDeclaration>(
         rangeFrom(start), kind, std::move(declarations));
 }

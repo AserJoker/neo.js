@@ -22,6 +22,7 @@ using neo::frontend::CallExpression;
 using neo::frontend::ConditionalExpression;
 using neo::frontend::DoWhileStatement;
 using neo::frontend::ExpressionStatement;
+using neo::frontend::ForStatement;
 using neo::frontend::Identifier;
 using neo::frontend::IfStatement;
 using neo::frontend::LogicalExpression;
@@ -1538,6 +1539,101 @@ TEST(ParserTest, DoWhileMissingRightParenReportsError) {
     ASSERT_NE(result.program, nullptr);
     ASSERT_FALSE(result.errors.empty());
     EXPECT_NE(result.errors[0].message.find("Expected ')'"), std::string::npos);
+}
+
+TEST(ParserTest, ForStatementEmptyClauses) {
+    ParseResult result = parse("for (;;) ;");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    ASSERT_EQ(programOf(result).body[0]->kind(), NodeKind::ForStatement);
+
+    const auto* statement =
+        static_cast<const ForStatement*>(programOf(result).body[0].get());
+    EXPECT_EQ(statement->init, nullptr);
+    EXPECT_EQ(statement->test, nullptr);
+    EXPECT_EQ(statement->update, nullptr);
+    ASSERT_NE(statement->body, nullptr);
+    EXPECT_EQ(statement->body->kind(), NodeKind::EmptyStatement);
+}
+
+TEST(ParserTest, ForStatementWithExpressionClauses) {
+    ParseResult result = parse("for (i = 0; i < 10; i++) { }");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const ForStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->init, nullptr);
+    EXPECT_EQ(statement->init->kind(), NodeKind::AssignmentExpression);
+    ASSERT_NE(statement->test, nullptr);
+    EXPECT_EQ(statement->test->kind(), NodeKind::BinaryExpression);
+    ASSERT_NE(statement->update, nullptr);
+    EXPECT_EQ(statement->update->kind(), NodeKind::UpdateExpression);
+    ASSERT_NE(statement->body, nullptr);
+    EXPECT_EQ(statement->body->kind(), NodeKind::BlockStatement);
+}
+
+TEST(ParserTest, ForStatementWithDeclarationInit) {
+    struct Case {
+        const char* source;
+        VariableKind kind;
+    };
+    const Case cases[] = {
+        {"for (var i = 0; i < 10; i++);", VariableKind::Var},
+        {"for (let i = 0; i < 10; i++);", VariableKind::Let},
+        {"for (const i = 0; i < 10; i++);", VariableKind::Const},
+    };
+
+    for (const Case& item : cases) {
+        ParseResult result = parse(item.source);
+        ASSERT_TRUE(result.ok()) << item.source;
+        const auto* statement =
+            static_cast<const ForStatement*>(programOf(result).body[0].get());
+        ASSERT_NE(statement->init, nullptr) << item.source;
+        EXPECT_EQ(statement->init->kind(), NodeKind::VariableDeclaration)
+            << item.source;
+        const auto* declaration =
+            static_cast<const VariableDeclaration*>(statement->init.get());
+        EXPECT_EQ(declaration->variableKind, item.kind) << item.source;
+    }
+}
+
+TEST(ParserTest, ForStatementInitCanBeSequence) {
+    ParseResult result = parse("for (i = 0, j = 0; i < 10; i++);");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const ForStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->init, nullptr);
+    EXPECT_EQ(statement->init->kind(), NodeKind::SequenceExpression);
+}
+
+TEST(ParserTest, ForStatementOptionalTestAndUpdate) {
+    ParseResult result = parse("for (; i < 10;);");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const ForStatement*>(programOf(result).body[0].get());
+    EXPECT_EQ(statement->init, nullptr);
+    ASSERT_NE(statement->test, nullptr);
+    EXPECT_EQ(statement->test->kind(), NodeKind::BinaryExpression);
+    EXPECT_EQ(statement->update, nullptr);
+}
+
+TEST(ParserTest, ForStatementMissingRightParenReportsError) {
+    ParseResult result = parse("for (;; i++");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Expected ')'"), std::string::npos);
+}
+
+TEST(ParserTest, ForStatementMissingClauseSemicolonReportsError) {
+    ParseResult result = parse("for (var i = 0 i < 10; i++);");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Expected ';'"), std::string::npos);
 }
 
 TEST(ParserTest, ProgramRangeCoversConsumedInput) {
