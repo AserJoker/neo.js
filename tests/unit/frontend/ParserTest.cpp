@@ -37,6 +37,7 @@ using neo::frontend::Parser;
 using neo::frontend::ParseResult;
 using neo::frontend::Program;
 using neo::frontend::RegExpLiteral;
+using neo::frontend::ReturnStatement;
 using neo::frontend::SequenceExpression;
 using neo::frontend::StringLiteral;
 using neo::frontend::UnaryExpression;
@@ -1758,6 +1759,67 @@ TEST(ParserTest, InOperatorNotAllowedInForInitWithoutParens) {
 
     ASSERT_NE(result.program, nullptr);
     ASSERT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, ReturnStatementWithoutArgument) {
+    ParseResult result = parse("return;");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    ASSERT_EQ(programOf(result).body[0]->kind(), NodeKind::ReturnStatement);
+
+    const auto* statement =
+        static_cast<const ReturnStatement*>(programOf(result).body[0].get());
+    EXPECT_EQ(statement->argument, nullptr);
+}
+
+TEST(ParserTest, ReturnStatementWithExpression) {
+    ParseResult result = parse("return x + y;");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const ReturnStatement*>(programOf(result).body[0].get());
+    ASSERT_NE(statement->argument, nullptr);
+    EXPECT_EQ(statement->argument->kind(), NodeKind::BinaryExpression);
+}
+
+TEST(ParserTest, ReturnLineTerminatorEndsStatement) {
+    ParseResult result = parse("return\nx;");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 2u);
+
+    const auto* statement =
+        static_cast<const ReturnStatement*>(programOf(result).body[0].get());
+    EXPECT_EQ(statement->argument, nullptr);
+    EXPECT_EQ(programOf(result).body[1]->kind(), NodeKind::ExpressionStatement);
+}
+
+TEST(ParserTest, ReturnAtEndOfInput) {
+    ParseResult result = parse("return");
+
+    ASSERT_TRUE(result.ok());
+    const auto* statement =
+        static_cast<const ReturnStatement*>(programOf(result).body[0].get());
+    EXPECT_EQ(statement->argument, nullptr);
+}
+
+TEST(ParserTest, ReturnInsideBlock) {
+    ParseResult result = parse("{ return; }");
+
+    ASSERT_TRUE(result.ok());
+    const auto* block =
+        static_cast<const BlockStatement*>(programOf(result).body[0].get());
+    ASSERT_EQ(block->body.size(), 1u);
+    EXPECT_EQ(block->body[0]->kind(), NodeKind::ReturnStatement);
+}
+
+TEST(ParserTest, ReturnMissingSemicolonReportsError) {
+    ParseResult result = parse("return x y;");
+
+    ASSERT_NE(result.program, nullptr);
+    ASSERT_FALSE(result.errors.empty());
+    EXPECT_NE(result.errors[0].message.find("Expected ';'"), std::string::npos);
 }
 
 TEST(ParserTest, ProgramRangeCoversConsumedInput) {
