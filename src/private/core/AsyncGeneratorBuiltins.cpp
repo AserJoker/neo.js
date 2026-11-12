@@ -4,7 +4,7 @@
 //   - 每个 next/return/throw 创建一个新 Promise（capability）并入队；
 //   - 请求串行处理：同一时刻只有一个请求在 Executing/Awaiting*；
 //   - yield 的值先 Await（Promise.resolve(v).then）再 resolve {value,done:false}；
-//   - Await 拒绝时把异常抛回生成器（yield 表达式处），由函数体决定 catch/finally；
+//   - Await 拒绝时以 Exception 注入生成器（yield 表达式处），由函数体决定 catch/finally；
 //   - 正常完成/return 的值 await 后 resolve {value,done:true}；
 //   - 未启动时 return 直接完成、throw 直接 reject，不运行函数体；
 //   - 已完成时 next resolve {undefined,true}、return resolve {value,true}、throw reject。
@@ -127,10 +127,10 @@ Value* awaitRejected(IContext* ctx, Value*, size_t argc, Value* argv[]) {
     Value* reason = argc > 0 ? argv[0] : undefinedOf(ctx);
 
     if (kind == 0) {
-        // yield 值 await 失败：把异常抛回生成器（yield 表达式处），当前请求保持挂起。
+        // yield 值 await 失败：以 Exception 作为 sentValue 注入（yield 表达式处），
+        // 由函数体决定透传或捕获。Interrupt(Throw) 仅 VM 专用。
         Value* exc = asException(ctx, reason);
-        Value* sig = ctx->createInterrupt(InterruptKind::Throw, ag->resumePoint, exc);
-        resumeBody(ctx, gen, sig);
+        resumeBody(ctx, gen, exc);
     } else {
         ag->asyncState = AsyncGeneratorState::Completed;
         settleReject(ctx, ag, reason);

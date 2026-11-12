@@ -251,8 +251,8 @@ AsyncGenerator = Coroutine + Promise 请求队列，不需要新的执行模型�
 
 - 每次 `next/return/throw` **新建** capability 并入队；并发调用串行处理。
 - `yield v` 先 `Await(v)`（`Promise.resolve(v).then`），成功才 resolve
-  `{value, done:false}`；拒绝则把异常**抛回生成器**（yield 表达式处），
-  由函数体决定 catch/finally。
+  `{value, done:false}`；拒绝则以 `Exception` 作为 sentValue 注入生成器
+  （yield 表达式处），由函数体决定透传或 catch/finally。
 - 正常完成 / `return` 的值 await 后 resolve `{value, done:true}`。
 - 未启动时 `return` 直接完成、`throw` 直接 reject，不运行函数体。
 - 已完成时 `next` resolve `{undefined,true}`、`return` resolve `{value,true}`、
@@ -264,6 +264,22 @@ AsyncGenerator = Coroutine + Promise 请求队列，不需要新的执行模型�
 
 `await` 语法本身仍由编译器 lowering 成 `Interrupt(Await)` + 同一异步驱动，
 engine 层不引入 `async` 标记；native 函数体可直接 yield/return Promise。
+
+### 8.3 Async native（native 阶段机 + await 驱动）
+
+- `FunctionData::asyncNative` / `FunctionCreateOptions::asyncNative`：调用返回
+  Promise，不可构造、无 `prototype` 属性。
+- 函数体返回 `Interrupt(Await, nextStage, awaitable)` 挂起；与 `Yield` 共用
+  `isSuspensionSignal` 挂起通道，保留 `execScope` 与断点。
+- `runAsyncNative`：`createPromiseCapability` + `createCoroutine` + resume；
+  Await 时 `Promise.resolve(awaitable).then(onFulfilled, onRejected)`，回调
+  `captureValue` 捕获协程与 capability 保活。
+- **sentValue 约定**：正常值 或 `Exception`。await 拒绝以
+  `createException(reason)` 注入；native 直接返回 `Exception` 表示抛错。
+  `Interrupt(Throw)` 仅 VM 字节码 `throw` 专用，native 不产生/不消费。
+- **变量分层**：业务临时变量经 `storeNativeLocal` / `loadNativeLocal` 写入
+  函数 `execScope`（Scope-Value-Slot），跨 stage 持久；C++ 局部变量只作
+  单 stage 临时，返回 Interrupt 后即失效。
 
 ### 9. 已知限制与待定问题
 
@@ -279,7 +295,11 @@ engine 层不引入 `async` 标记；native 函数体可直接 yield/return Prom
    后走自己的 try/finally；VM 侧把 interrupt/exception 压栈恢复，由正常的
    try/finally 指令逻辑处理（自动的 try-finally）。
 5. **协程与 Promise 的交互**：协程层本身不感知 Promise；AsyncGenerator 在
-   上层用请求队列 + await 语义组合（§8.2）。
+   上层用请求队列 + await 语义组合（§8.2），async native 用 `runAsyncNative`
+   驱动（§8.3）。
+6. **AsyncGenerator 拒绝注入已对齐**：`AsyncGeneratorBuiltins.cpp` 的 await
+   拒绝改为以 `createException(reason)` 作为 sentValue 注入 native 生成器体；
+   `Interrupt(Throw)` 仅保留给 VM 字节码 `throw` 与生成器 `.throw(e)` 外部注入。
 
 ### 10. 与 ADR-023 的关系
 

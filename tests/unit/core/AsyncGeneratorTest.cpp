@@ -98,6 +98,11 @@ bool flag(Value* v) { return neo::core::detail::toBoolean(v); }
 
 bool handleInjected(CoroutineData* co, Value** out) {
     Value* sent = co->sentValue;
+    // await 拒绝以 Exception 注入；未捕获则沿 native 错误通道原样返回。
+    if (neo::core::detail::isErrorValue(sent)) {
+        *out = sent;
+        return true;
+    }
     if (!isInterruptValue(sent)) return false;
     InterruptData* ir = asInterrupt(sent);
     if (ir->kind == InterruptKind::Return || ir->kind == InterruptKind::Throw) {
@@ -135,6 +140,10 @@ Value* bodyYieldValue(IContext* ctx, Value*, size_t, Value*[]) {
 Value* bodyCatchYield(IContext* ctx, Value*, size_t, Value*[]) {
     CoroutineData* co = asCoroutine(ctx->getCurrentCoroutine());
     Value* sent = co->sentValue;
+    // await 拒绝（Exception）可被函数体捕获。
+    if (neo::core::detail::isErrorValue(sent)) {
+        return ctx->createInterrupt(InterruptKind::Yield, 2, ctx->createNumber(99));
+    }
     if (isInterruptValue(sent)) {
         InterruptData* ir = asInterrupt(sent);
         if (ir->kind == InterruptKind::Throw) {
