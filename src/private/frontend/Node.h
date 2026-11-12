@@ -345,7 +345,7 @@ struct DebuggerStatement final : Node {
 };
 
 // function [*] name(params) { body }
-// id 可空仅用于 export default 的匿名函数声明。
+// id 可空：名字是否必需由 Sema 判定（普通声明必需，export default 可匿名）。
 struct FunctionDeclaration final : Node {
     FunctionDeclaration(SourceRange range, NodePtr id, NodeList params,
                         NodePtr body, bool async, bool generator)

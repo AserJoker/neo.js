@@ -2434,10 +2434,24 @@ TEST(ParserTest, RestParameterMustBeLast) {
     EXPECT_FALSE(result.errors.empty());
 }
 
-TEST(ParserTest, MissingFunctionNameReportsError) {
+TEST(ParserTest, MissingFunctionNameIsLeftToSema) {
     ParseResult result = parse("function () {}");
 
-    EXPECT_FALSE(result.errors.empty());
+    ASSERT_TRUE(result.ok());
+    const auto& function =
+        static_cast<const FunctionDeclaration&>(*programOf(result).body[0]);
+    EXPECT_EQ(function.id, nullptr);
+}
+
+TEST(ParserTest, ExportNamedAnonymousFunctionIsLeftToSema) {
+    ParseResult result = parse("export function () {}");
+
+    ASSERT_TRUE(result.ok());
+    const auto& exportNode = static_cast<const ExportNamedDeclaration&>(
+        *programOf(result).body[0]);
+    const auto& function =
+        static_cast<const FunctionDeclaration&>(*exportNode.declaration);
+    EXPECT_EQ(function.id, nullptr);
 }
 
 TEST(ParserTest, DefaultParameterReportsError) {

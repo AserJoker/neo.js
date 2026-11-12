@@ -464,19 +464,18 @@ bool Parser::isAsyncFunctionStart() {
            !next.precededByLineTerminator;
 }
 
-NodePtr Parser::parseFunctionDeclaration(bool async, bool allowAnonymous) {
+NodePtr Parser::parseFunctionDeclaration(bool async) {
     const SourceLocation start = current_.start;
     if (async) advance();  // 'async'
     if (!expect(TokenKind::Function, "'function'")) return nullptr;
 
     const bool generator = match(TokenKind::Star);
 
+    // 名字是否必需由 Sema 在遍历语法树时判定（普通声明必需，
+    // export default 可匿名），Parser 只记录实际出现的名字。
     NodePtr id;
     if (at(TokenKind::Identifier)) {
         id = parseIdentifier();
-    } else if (!allowAnonymous) {
-        error(current_.start, "Expected function name");
-        return nullptr;
     }
 
     NodeList params;
@@ -592,9 +591,9 @@ NodePtr Parser::parseExportNamedDeclaration(SourceLocation start) {
 NodePtr Parser::parseExportDefaultDeclaration(SourceLocation start) {
     NodePtr declaration;
     if (at(TokenKind::Function)) {
-        declaration = parseFunctionDeclaration(false, true);
+        declaration = parseFunctionDeclaration(false);
     } else if (isAsyncFunctionStart()) {
-        declaration = parseFunctionDeclaration(true, true);
+        declaration = parseFunctionDeclaration(true);
     } else {
         error(current_.start,
               "Only function declarations are supported in export default");

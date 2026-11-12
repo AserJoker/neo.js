@@ -96,7 +96,7 @@ private:
     NodePtr parseLabeledStatement();
     NodePtr parseWithStatement();
     NodePtr parseDebuggerStatement();
-    NodePtr parseFunctionDeclaration(bool async, bool allowAnonymous = false);
+    NodePtr parseFunctionDeclaration(bool async);
     NodePtr parseFunctionBody();
     bool parseFormalParameters(NodeList& params);
     NodePtr parseRestElement();
