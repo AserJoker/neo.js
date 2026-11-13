@@ -25,6 +25,9 @@ using neo::frontend::BinaryOperator;
 using neo::frontend::BooleanLiteral;
 using neo::frontend::CallExpression;
 using neo::frontend::CatchClause;
+using neo::frontend::ClassBody;
+using neo::frontend::ClassDeclaration;
+using neo::frontend::ClassExpression;
 using neo::frontend::ConditionalExpression;
 using neo::frontend::ContinueStatement;
 using neo::frontend::DebuggerStatement;
@@ -44,11 +47,15 @@ using neo::frontend::LabeledStatement;
 using neo::frontend::LogicalExpression;
 using neo::frontend::LogicalOperator;
 using neo::frontend::MemberExpression;
+using neo::frontend::MethodDefinition;
+using neo::frontend::MethodKind;
 using neo::frontend::NewExpression;
 using neo::frontend::NodeKind;
 using neo::frontend::ObjectExpression;
 using neo::frontend::ObjectPattern;
+using neo::frontend::PrivateIdentifier;
 using neo::frontend::Property;
+using neo::frontend::PropertyDefinition;
 using neo::frontend::PropertyKind;
 using neo::frontend::NumericLiteral;
 using neo::frontend::Parser;
@@ -60,6 +67,7 @@ using neo::frontend::ReturnStatement;
 using neo::frontend::SequenceExpression;
 using neo::frontend::SpreadElement;
 using neo::frontend::StringLiteral;
+using neo::frontend::SuperExpression;
 using neo::frontend::SwitchCase;
 using neo::frontend::SwitchStatement;
 using neo::frontend::ThisExpression;
@@ -3577,6 +3585,226 @@ TEST(ParserTest, MethodInDestructuringAssignmentReportsError) {
     ParseResult result = parse("({f() {}} = obj);");
 
     EXPECT_FALSE(result.errors.empty());
+}
+
+// ---------------------------------------------------------------------------
+// class
+// ---------------------------------------------------------------------------
+
+namespace {
+
+const ClassBody& classBodyOf(const ParseResult& result, size_t index = 0) {
+    const auto& declaration = static_cast<const ClassDeclaration&>(
+        *programOf(result).body[index]);
+    return static_cast<const ClassBody&>(*declaration.body);
+}
+
+}  // namespace
+
+TEST(ParserTest, EmptyClassDeclaration) {
+    ParseResult result = parse("class A {}");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ClassDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_NE(declaration.id, nullptr);
+    EXPECT_EQ(static_cast<const Identifier&>(*declaration.id).name, "A");
+    EXPECT_EQ(declaration.superClass, nullptr);
+    ASSERT_NE(declaration.body, nullptr);
+    EXPECT_EQ(declaration.body->kind(), NodeKind::ClassBody);
+    EXPECT_TRUE(classBodyOf(result).elements.empty());
+}
+
+TEST(ParserTest, ClassExtends) {
+    ParseResult result = parse("class A extends B.C {}");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ClassDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_NE(declaration.superClass, nullptr);
+    EXPECT_EQ(declaration.superClass->kind(), NodeKind::MemberExpression);
+}
+
+TEST(ParserTest, AnonymousClassExpression) {
+    ParseResult result = parse("(class {});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& expression = statementOf(result, 0).expression;
+    ASSERT_EQ(expression->kind(), NodeKind::ClassExpression);
+    const auto& classExpression =
+        static_cast<const ClassExpression&>(*expression);
+    EXPECT_EQ(classExpression.id, nullptr);
+}
+
+TEST(ParserTest, NamedClassExpression) {
+    ParseResult result = parse("(class A {});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& classExpression = static_cast<const ClassExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_NE(classExpression.id, nullptr);
+    EXPECT_EQ(static_cast<const Identifier&>(*classExpression.id).name, "A");
+}
+
+TEST(ParserTest, ClassConstructor) {
+    ParseResult result = parse("class A { constructor(x) { this.x = x; } }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& body = classBodyOf(result);
+    ASSERT_EQ(body.elements.size(), 1u);
+    ASSERT_EQ(body.elements[0]->kind(), NodeKind::MethodDefinition);
+    const auto& method = static_cast<const MethodDefinition&>(*body.elements[0]);
+    EXPECT_EQ(method.methodKind, MethodKind::Constructor);
+    EXPECT_FALSE(method.isStatic);
+    const auto& function =
+        static_cast<const FunctionExpression&>(*method.value);
+    ASSERT_EQ(function.params.size(), 1u);
+}
+
+TEST(ParserTest, ClassMethods) {
+    ParseResult result = parse(
+        "class A { m() {} static s() {} get g() {} set s2(v) {} *gen() {} "
+        "async a() {} async *ag() {} [k]() {} }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& body = classBodyOf(result);
+    ASSERT_EQ(body.elements.size(), 8u);
+
+    EXPECT_EQ(static_cast<const MethodDefinition&>(*body.elements[0]).methodKind,
+              MethodKind::Method);
+    EXPECT_TRUE(static_cast<const MethodDefinition&>(*body.elements[1]).isStatic);
+    EXPECT_EQ(static_cast<const MethodDefinition&>(*body.elements[2]).methodKind,
+              MethodKind::Get);
+    EXPECT_EQ(static_cast<const MethodDefinition&>(*body.elements[3]).methodKind,
+              MethodKind::Set);
+    EXPECT_TRUE(static_cast<const FunctionExpression&>(
+                    *static_cast<const MethodDefinition&>(*body.elements[4])
+                         .value)
+                    .generator);
+    EXPECT_TRUE(static_cast<const FunctionExpression&>(
+                    *static_cast<const MethodDefinition&>(*body.elements[5])
+                         .value)
+                    .async);
+    EXPECT_TRUE(static_cast<const FunctionExpression&>(
+                    *static_cast<const MethodDefinition&>(*body.elements[6])
+                         .value)
+                    .generator);
+    EXPECT_TRUE(
+        static_cast<const MethodDefinition&>(*body.elements[7]).computed);
+}
+
+TEST(ParserTest, ClassFields) {
+    ParseResult result = parse("class A { x; y = 1; static z = 2; }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& body = classBodyOf(result);
+    ASSERT_EQ(body.elements.size(), 3u);
+
+    const auto& first = static_cast<const PropertyDefinition&>(*body.elements[0]);
+    EXPECT_EQ(first.value, nullptr);
+    EXPECT_FALSE(first.isStatic);
+
+    const auto& second =
+        static_cast<const PropertyDefinition&>(*body.elements[1]);
+    ASSERT_NE(second.value, nullptr);
+    EXPECT_EQ(second.value->kind(), NodeKind::NumericLiteral);
+
+    const auto& third = static_cast<const PropertyDefinition&>(*body.elements[2]);
+    EXPECT_TRUE(third.isStatic);
+}
+
+TEST(ParserTest, ClassPrivateMembers) {
+    ParseResult result = parse("class A { #x = 1; #m() {} }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& body = classBodyOf(result);
+    ASSERT_EQ(body.elements.size(), 2u);
+
+    const auto& field = static_cast<const PropertyDefinition&>(*body.elements[0]);
+    ASSERT_EQ(field.key->kind(), NodeKind::PrivateIdentifier);
+    EXPECT_EQ(static_cast<const PrivateIdentifier&>(*field.key).name, "x");
+
+    const auto& method = static_cast<const MethodDefinition&>(*body.elements[1]);
+    ASSERT_EQ(method.key->kind(), NodeKind::PrivateIdentifier);
+    EXPECT_EQ(static_cast<const PrivateIdentifier&>(*method.key).name, "m");
+}
+
+TEST(ParserTest, ClassMethodNamedStatic) {
+    ParseResult result = parse("class A { static() {} static = 1; }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& body = classBodyOf(result);
+    ASSERT_EQ(body.elements.size(), 2u);
+
+    const auto& method = static_cast<const MethodDefinition&>(*body.elements[0]);
+    EXPECT_FALSE(method.isStatic);
+    EXPECT_EQ(static_cast<const Identifier&>(*method.key).name, "static");
+
+    const auto& field = static_cast<const PropertyDefinition&>(*body.elements[1]);
+    EXPECT_FALSE(field.isStatic);
+    EXPECT_EQ(static_cast<const Identifier&>(*field.key).name, "static");
+}
+
+TEST(ParserTest, ClassBodyIsStrict) {
+    ParseResult result = parse("class A { m() { 010; } }");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, ExportClassDeclaration) {
+    ParseResult result = parse("export class A {}");
+
+    ASSERT_TRUE(result.ok());
+    const auto& exportNode = static_cast<const ExportNamedDeclaration&>(
+        *programOf(result).body[0]);
+    EXPECT_EQ(exportNode.declaration->kind(), NodeKind::ClassDeclaration);
+}
+
+TEST(ParserTest, ExportDefaultAnonymousClass) {
+    ParseResult result = parse("export default class {}");
+
+    ASSERT_TRUE(result.ok());
+    const auto& exportNode = static_cast<const ExportDefaultDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_EQ(exportNode.declaration->kind(), NodeKind::ClassDeclaration);
+    const auto& declaration =
+        static_cast<const ClassDeclaration&>(*exportNode.declaration);
+    EXPECT_EQ(declaration.id, nullptr);
+}
+
+TEST(ParserTest, SuperCallAndMember) {
+    ParseResult result = parse("class A extends B { constructor() { super(); } }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& body = classBodyOf(result);
+    const auto& method = static_cast<const MethodDefinition&>(*body.elements[0]);
+    const auto& function =
+        static_cast<const FunctionExpression&>(*method.value);
+    const auto& block = static_cast<const BlockStatement&>(*function.body);
+    const auto& statement =
+        static_cast<const ExpressionStatement&>(*block.body[0]);
+    ASSERT_EQ(statement.expression->kind(), NodeKind::CallExpression);
+    const auto& call =
+        static_cast<const CallExpression&>(*statement.expression);
+    ASSERT_NE(call.callee, nullptr);
+    EXPECT_EQ(call.callee->kind(), NodeKind::SuperExpression);
+}
+
+TEST(ParserTest, SuperMemberExpression) {
+    ParseResult result = parse("class A extends B { m() { super.x; } }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& body = classBodyOf(result);
+    const auto& method = static_cast<const MethodDefinition&>(*body.elements[0]);
+    const auto& function =
+        static_cast<const FunctionExpression&>(*method.value);
+    const auto& block = static_cast<const BlockStatement&>(*function.body);
+    const auto& statement =
+        static_cast<const ExpressionStatement&>(*block.body[0]);
+    ASSERT_EQ(statement.expression->kind(), NodeKind::MemberExpression);
+    const auto& member =
+        static_cast<const MemberExpression&>(*statement.expression);
+    EXPECT_EQ(member.object->kind(), NodeKind::SuperExpression);
 }
 
 }  // namespace

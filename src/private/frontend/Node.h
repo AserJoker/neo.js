@@ -63,6 +63,10 @@ enum class NodeKind : uint8_t {
     WithStatement,
     DebuggerStatement,
     FunctionDeclaration,
+    ClassDeclaration,
+    ClassBody,
+    MethodDefinition,
+    PropertyDefinition,
 
     // 模块
     ExportNamedDeclaration,
@@ -77,7 +81,10 @@ enum class NodeKind : uint8_t {
     NullLiteral,
     RegExpLiteral,
     ThisExpression,
+    SuperExpression,
     FunctionExpression,
+    ClassExpression,
+    PrivateIdentifier,
 
     MemberExpression,
     CallExpression,
@@ -372,6 +379,60 @@ struct FunctionDeclaration final : Node {
     bool generator;
 };
 
+enum class MethodKind : uint8_t { Method, Get, Set, Constructor };
+
+// key(params) { body } / get key() {} / set key(v) {} / constructor(...) {}
+struct MethodDefinition final : Node {
+    MethodDefinition(SourceRange range, NodePtr key, NodePtr value,
+                     bool computed, bool isStatic, MethodKind methodKind)
+        : Node(NodeKind::MethodDefinition, range),
+          key(std::move(key)),
+          value(std::move(value)),
+          computed(computed),
+          isStatic(isStatic),
+          methodKind(methodKind) {}
+    NodePtr key;
+    NodePtr value;  // FunctionExpression
+    bool computed;
+    bool isStatic;
+    MethodKind methodKind;
+};
+
+// key; / key = value;
+struct PropertyDefinition final : Node {
+    PropertyDefinition(SourceRange range, NodePtr key, NodePtr value,
+                       bool computed, bool isStatic)
+        : Node(NodeKind::PropertyDefinition, range),
+          key(std::move(key)),
+          value(std::move(value)),
+          computed(computed),
+          isStatic(isStatic) {}
+    NodePtr key;
+    NodePtr value;  // 可空
+    bool computed;
+    bool isStatic;
+};
+
+struct ClassBody final : Node {
+    ClassBody(SourceRange range, NodeList elements)
+        : Node(NodeKind::ClassBody, range), elements(std::move(elements)) {}
+    NodeList elements;  // MethodDefinition | PropertyDefinition
+};
+
+// class [id] [extends superClass] { body }
+// id 可空（export default / 类表达式），名字是否必需由 Sema 判定。
+struct ClassDeclaration final : Node {
+    ClassDeclaration(SourceRange range, NodePtr id, NodePtr superClass,
+                     NodePtr body)
+        : Node(NodeKind::ClassDeclaration, range),
+          id(std::move(id)),
+          superClass(std::move(superClass)),
+          body(std::move(body)) {}
+    NodePtr id;
+    NodePtr superClass;  // 可空
+    NodePtr body;        // ClassBody
+};
+
 // ---------------------------------------------------------------------------
 // 模块
 // ---------------------------------------------------------------------------
@@ -448,6 +509,18 @@ struct ThisExpression final : Node {
         : Node(NodeKind::ThisExpression, range) {}
 };
 
+struct SuperExpression final : Node {
+    explicit SuperExpression(SourceRange range)
+        : Node(NodeKind::SuperExpression, range) {}
+};
+
+// #name（私有字段/方法名，name 不含 '#'）
+struct PrivateIdentifier final : Node {
+    PrivateIdentifier(SourceRange range, std::string name)
+        : Node(NodeKind::PrivateIdentifier, range), name(std::move(name)) {}
+    std::string name;
+};
+
 // function [*] [name](params) { body }
 // id 可空（匿名函数表达式）。
 struct FunctionExpression final : Node {
@@ -464,6 +537,19 @@ struct FunctionExpression final : Node {
     NodePtr body;  // BlockStatement
     bool async;
     bool generator;
+};
+
+// class [id] [extends superClass] { body }
+struct ClassExpression final : Node {
+    ClassExpression(SourceRange range, NodePtr id, NodePtr superClass,
+                    NodePtr body)
+        : Node(NodeKind::ClassExpression, range),
+          id(std::move(id)),
+          superClass(std::move(superClass)),
+          body(std::move(body)) {}
+    NodePtr id;
+    NodePtr superClass;  // 可空
+    NodePtr body;        // ClassBody
 };
 
 // obj.property / obj[expression]

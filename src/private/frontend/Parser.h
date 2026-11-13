@@ -98,6 +98,16 @@ private:
     NodePtr parseDebuggerStatement();
     NodePtr parseFunctionDeclaration(bool async);
     NodePtr parseFunctionExpression(bool async);
+    NodePtr parseClassDeclaration();
+    NodePtr parseClassExpression();
+    NodePtr parseClassBody();
+    NodePtr parseClassElement();
+    NodePtr parseClassKey(bool& computed, bool& identifierKey);
+    NodePtr parseClassMethod(SourceLocation start, bool isStatic, bool async,
+                             bool generator, MethodKind methodKind);
+    NodePtr parseClassMethodWithKey(SourceLocation start, NodePtr key,
+                                    bool computed, bool isStatic, bool async,
+                                    bool generator, MethodKind methodKind);
     NodePtr parseFunctionBody();
     bool parseFormalParameters(NodeList& params);
     NodePtr parseRestElement();
@@ -143,6 +153,7 @@ private:
     NodePtr parseNullLiteral();
     NodePtr parseRegExpLiteral();
     NodePtr parseThisExpression();
+    NodePtr parseSuperExpression();
     NodePtr parseArrayExpression();
     NodePtr parseObjectExpression();
     NodePtr parseProperty();

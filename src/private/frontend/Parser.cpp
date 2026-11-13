@@ -419,6 +419,7 @@ NodePtr Parser::parseStatement() {
     if (at(TokenKind::Debugger)) return parseDebuggerStatement();
     if (at(TokenKind::Function)) return parseFunctionDeclaration(false);
     if (isAsyncFunctionStart()) return parseFunctionDeclaration(true);
+    if (at(TokenKind::Class)) return parseClassDeclaration();
     if (at(TokenKind::Identifier) && peek().kind == TokenKind::Colon) {
         return parseLabeledStatement();
     }
@@ -492,6 +493,7 @@ NodePtr Parser::parseFunctionDeclaration(bool async) {
 
     NodePtr body = parseFunctionBody();
     if (body == nullptr) return nullptr;
+    rescan(LexicalGoal::RegExp);
 
     return std::make_unique<FunctionDeclaration>(
         rangeFrom(start), std::move(id), std::move(params), std::move(body),
@@ -516,6 +518,7 @@ NodePtr Parser::parseFunctionExpression(bool async) {
 
     NodePtr body = parseFunctionBody();
     if (body == nullptr) return nullptr;
+    rescan(LexicalGoal::Div);
 
     return std::make_unique<FunctionExpression>(
         rangeFrom(start), std::move(id), std::move(params), std::move(body),
@@ -591,9 +594,228 @@ NodePtr Parser::parseFunctionBody() {
     }
 
     strict_ = savedStrict;
-    // 当前 token 是在函数体严格性下扫描的，恢复后按外层严格性重扫。
-    rescan(LexicalGoal::RegExp);
+    // 当前 token 是在函数体严格性下扫描的；调用方按自己的语法位置
+    // 选择词法目标重扫（声明用 RegExp，表达式用 Div）。
     return std::make_unique<BlockStatement>(rangeFrom(start), std::move(body));
+}
+
+// ---------------------------------------------------------------------------
+// class
+// ---------------------------------------------------------------------------
+
+NodePtr Parser::parseClassDeclaration() {
+    const SourceLocation start = current_.start;
+    advance();  // 'class'
+
+    // 名字是否必需由 Sema 判定（export default 可匿名）。
+    NodePtr id;
+    if (at(TokenKind::Identifier)) {
+        id = parseIdentifier();
+    }
+
+    NodePtr superClass;
+    if (match(TokenKind::Extends)) {
+        superClass = parseLeftHandSideExpression();
+        if (superClass == nullptr) return nullptr;
+    }
+
+    NodePtr body = parseClassBody();
+    if (body == nullptr) return nullptr;
+    rescan(LexicalGoal::RegExp);
+
+    return std::make_unique<ClassDeclaration>(
+        rangeFrom(start), std::move(id), std::move(superClass),
+        std::move(body));
+}
+
+NodePtr Parser::parseClassExpression() {
+    const SourceLocation start = current_.start;
+    advance();  // 'class'
+
+    NodePtr id;
+    if (at(TokenKind::Identifier)) {
+        id = parseIdentifier();
+    }
+
+    NodePtr superClass;
+    if (match(TokenKind::Extends)) {
+        superClass = parseLeftHandSideExpression();
+        if (superClass == nullptr) return nullptr;
+    }
+
+    NodePtr body = parseClassBody();
+    if (body == nullptr) return nullptr;
+    rescan(LexicalGoal::Div);
+
+    return std::make_unique<ClassExpression>(
+        rangeFrom(start), std::move(id), std::move(superClass),
+        std::move(body));
+}
+
+NodePtr Parser::parseClassBody() {
+    const SourceLocation start = current_.start;
+
+    // class 体始终是严格模式代码。
+    const bool savedStrict = strict_;
+    strict_ = true;
+    if (!expect(TokenKind::LeftBrace, "'{'")) {
+        strict_ = savedStrict;
+        return nullptr;
+    }
+
+    NodeList elements;
+    while (!at(TokenKind::RightBrace) && !at(TokenKind::EndOfInput)) {
+        if (match(TokenKind::Semicolon)) continue;
+        NodePtr element = parseClassElement();
+        if (element == nullptr) {
+            strict_ = savedStrict;
+            return nullptr;
+        }
+        elements.push_back(std::move(element));
+    }
+
+    if (!expect(TokenKind::RightBrace, "'}'")) {
+        strict_ = savedStrict;
+        return nullptr;
+    }
+
+    strict_ = savedStrict;
+    // 调用方按声明/表达式位置选择词法目标重扫。
+    return std::make_unique<ClassBody>(rangeFrom(start), std::move(elements));
+}
+
+NodePtr Parser::parseClassKey(bool& computed, bool& identifierKey) {
+    if (at(TokenKind::PrivateIdentifier)) {
+        const SourceLocation start = current_.start;
+        std::string name = current_.text;
+        advance();
+        computed = false;
+        identifierKey = false;
+        return std::make_unique<PrivateIdentifier>(rangeFrom(start),
+                                                   std::move(name));
+    }
+    return parsePropertyKey(computed, identifierKey);
+}
+
+NodePtr Parser::parseClassElement() {
+    const SourceLocation start = current_.start;
+
+    bool isStatic = false;
+    if (at(TokenKind::Identifier) && current_.text == "static") {
+        const Token next = peek();
+        if (next.kind == TokenKind::LeftBrace) {
+            error(current_.start, "Static blocks are not supported");
+            return nullptr;
+        }
+        if (next.kind == TokenKind::Star ||
+            next.kind == TokenKind::PrivateIdentifier ||
+            isPropertyNameStart(next.kind)) {
+            isStatic = true;
+            advance();  // 'static'
+        }
+    }
+
+    // 生成器方法：*key() {}
+    if (at(TokenKind::Star)) {
+        advance();
+        return parseClassMethod(start, isStatic, false, true,
+                                MethodKind::Method);
+    }
+
+    // get/set 访问器
+    if (at(TokenKind::Identifier) &&
+        (current_.text == "get" || current_.text == "set")) {
+        const Token next = peek();
+        if (next.kind == TokenKind::PrivateIdentifier ||
+            isPropertyNameStart(next.kind)) {
+            const bool getter = current_.text == "get";
+            advance();  // 'get' / 'set'
+            return parseClassMethod(start, isStatic, false, false,
+                                    getter ? MethodKind::Get
+                                           : MethodKind::Set);
+        }
+    }
+
+    // async 方法：async key() {} / async *key() {}
+    if (at(TokenKind::Identifier) && current_.text == "async") {
+        const Token next = peek();
+        if (!next.precededByLineTerminator &&
+            (next.kind == TokenKind::Star ||
+             next.kind == TokenKind::PrivateIdentifier ||
+             isPropertyNameStart(next.kind))) {
+            advance();  // 'async'
+            const bool generator = match(TokenKind::Star);
+            return parseClassMethod(start, isStatic, true, generator,
+                                    MethodKind::Method);
+        }
+    }
+
+    bool computed = false;
+    bool identifierKey = false;
+    NodePtr key = parseClassKey(computed, identifierKey);
+    if (key == nullptr) return nullptr;
+
+    if (at(TokenKind::LeftParen)) {
+        MethodKind methodKind = MethodKind::Method;
+        if (!isStatic && !computed) {
+            if ((key->kind() == NodeKind::Identifier &&
+                 static_cast<const Identifier&>(*key).name == "constructor") ||
+                (key->kind() == NodeKind::StringLiteral &&
+                 static_cast<const StringLiteral&>(*key).value ==
+                     "constructor")) {
+                methodKind = MethodKind::Constructor;
+            }
+        }
+        return parseClassMethodWithKey(start, std::move(key), computed,
+                                       isStatic, false, false, methodKind);
+    }
+
+    // 字段：key; / key = value;
+    NodePtr value;
+    if (match(TokenKind::Assign)) {
+        value = parseAssignmentExpression();
+        if (value == nullptr) return nullptr;
+    }
+    if (!consumeSemicolon()) return nullptr;
+
+    return std::make_unique<PropertyDefinition>(
+        rangeFrom(start), std::move(key), std::move(value), computed, isStatic);
+}
+
+NodePtr Parser::parseClassMethod(SourceLocation start, bool isStatic,
+                                 bool async, bool generator,
+                                 MethodKind methodKind) {
+    bool computed = false;
+    bool identifierKey = false;
+    NodePtr key = parseClassKey(computed, identifierKey);
+    if (key == nullptr) return nullptr;
+    return parseClassMethodWithKey(start, std::move(key), computed, isStatic,
+                                   async, generator, methodKind);
+}
+
+NodePtr Parser::parseClassMethodWithKey(SourceLocation start, NodePtr key,
+                                        bool computed, bool isStatic,
+                                        bool async, bool generator,
+                                        MethodKind methodKind) {
+    NodeList params;
+    if (!parseFormalParameters(params)) return nullptr;
+
+    NodePtr body = parseFunctionBody();
+    if (body == nullptr) return nullptr;
+    rescan(LexicalGoal::Div);
+
+    auto function = std::make_unique<FunctionExpression>(
+        rangeFrom(start), nullptr, std::move(params), std::move(body), async,
+        generator);
+    return std::make_unique<MethodDefinition>(
+        rangeFrom(start), std::move(key), std::move(function), computed,
+        isStatic, methodKind);
+}
+
+NodePtr Parser::parseSuperExpression() {
+    const SourceLocation start = current_.start;
+    advance();  // 'super'
+    return std::make_unique<SuperExpression>(rangeFrom(start));
 }
 
 // ---------------------------------------------------------------------------
@@ -615,9 +837,11 @@ NodePtr Parser::parseExportNamedDeclaration(SourceLocation start) {
         declaration = parseFunctionDeclaration(false);
     } else if (isAsyncFunctionStart()) {
         declaration = parseFunctionDeclaration(true);
+    } else if (at(TokenKind::Class)) {
+        declaration = parseClassDeclaration();
     } else {
         error(current_.start,
-              "Only function declarations are supported in export");
+              "Only function and class declarations are supported in export");
         return nullptr;
     }
     if (declaration == nullptr) return nullptr;
@@ -632,9 +856,12 @@ NodePtr Parser::parseExportDefaultDeclaration(SourceLocation start) {
         declaration = parseFunctionDeclaration(false);
     } else if (isAsyncFunctionStart()) {
         declaration = parseFunctionDeclaration(true);
+    } else if (at(TokenKind::Class)) {
+        declaration = parseClassDeclaration();
     } else {
         error(current_.start,
-              "Only function declarations are supported in export default");
+              "Only function and class declarations are supported in export "
+              "default");
         return nullptr;
     }
     if (declaration == nullptr) return nullptr;
@@ -1184,6 +1411,7 @@ NodePtr Parser::parseArrowFunction() {
     if (at(TokenKind::LeftBrace)) {
         body = parseFunctionBody();
         if (body == nullptr) return nullptr;
+        rescan(LexicalGoal::Div);
     } else {
         body = parseAssignmentExpression();
         if (body == nullptr) return nullptr;
@@ -1478,8 +1706,12 @@ NodePtr Parser::parsePrimaryExpression() {
             return parseIdentifier();
         case TokenKind::This:
             return parseThisExpression();
+        case TokenKind::Super:
+            return parseSuperExpression();
         case TokenKind::Function:
             return parseFunctionExpression(false);
+        case TokenKind::Class:
+            return parseClassExpression();
         case TokenKind::NumericLiteral:
             return parseNumericLiteral();
         case TokenKind::BigIntLiteral:
@@ -1682,6 +1914,7 @@ NodePtr Parser::parseMethodPropertyWithKey(SourceLocation start, NodePtr key,
 
     NodePtr body = parseFunctionBody();
     if (body == nullptr) return nullptr;
+    rescan(LexicalGoal::Div);
 
     auto function = std::make_unique<FunctionExpression>(
         rangeFrom(start), nullptr, std::move(params), std::move(body), async,
