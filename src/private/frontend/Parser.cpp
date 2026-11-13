@@ -1542,15 +1542,37 @@ NodePtr Parser::parseUpdateExpression() {
 
 NodePtr Parser::parseLeftHandSideExpression() {
     if (at(TokenKind::New)) return parseNewExpression();
-    return parseCallExpression();
+
+    bool optionalChain = false;
+    NodePtr expression = parseCallExpression(optionalChain);
+    if (expression == nullptr) return nullptr;
+    if (optionalChain) {
+        return std::make_unique<ChainExpression>(expression->range(),
+                                                 std::move(expression));
+    }
+    return expression;
 }
 
-NodePtr Parser::parseMemberExpression() {
+NodePtr Parser::parseMemberExpression(bool& optionalChain) {
     const SourceLocation start = current_.start;
     NodePtr object = parsePrimaryExpression();
     if (object == nullptr) return nullptr;
 
     while (true) {
+        if (at(TokenKind::QuestionDot)) {
+            const Token next = peek();
+            if (isIdentifierName(next.kind) ||
+                next.kind == TokenKind::LeftBracket ||
+                next.kind == TokenKind::PrivateIdentifier) {
+                optionalChain = true;
+                advance();  // '?.'
+                object = parseMemberSuffix(std::move(object), start, true);
+                if (object == nullptr) return nullptr;
+                continue;
+            }
+            // '?.' 后是 '('：调用后缀，交给 parseCallSuffix。
+            break;
+        }
         if (at(TokenKind::NoSubstitutionTemplate) ||
             at(TokenKind::TemplateHead)) {
             object = parseTaggedTemplateExpression(std::move(object), start);
@@ -1567,11 +1589,11 @@ NodePtr Parser::parseMemberExpression() {
     return object;
 }
 
-NodePtr Parser::parseCallExpression() {
+NodePtr Parser::parseCallExpression(bool& optionalChain) {
     const SourceLocation start = current_.start;
-    NodePtr callee = parseMemberExpression();
+    NodePtr callee = parseMemberExpression(optionalChain);
     if (callee == nullptr) return nullptr;
-    return parseCallSuffix(std::move(callee), start);
+    return parseCallSuffix(std::move(callee), start, optionalChain);
 }
 
 NodePtr Parser::parseNewExpression() {
@@ -1579,9 +1601,16 @@ NodePtr Parser::parseNewExpression() {
     advance();  // 'new'
 
     // new.target 暂不支持；先按普通 new 表达式处理。
-    NodePtr callee = at(TokenKind::New) ? parseNewExpression()
-                                        : parseMemberExpression();
+    bool optionalChain = false;
+    NodePtr callee = at(TokenKind::New)
+                         ? parseNewExpression()
+                         : parseMemberExpression(optionalChain);
     if (callee == nullptr) return nullptr;
+    if (optionalChain) {
+        error(callee->range().start,
+              "Invalid optional chain in new expression");
+        return nullptr;
+    }
 
     NodeList arguments;
     if (at(TokenKind::LeftParen) && !parseArguments(arguments)) {
@@ -1591,10 +1620,45 @@ NodePtr Parser::parseNewExpression() {
     NodePtr expression = std::make_unique<NewExpression>(
         rangeFrom(start), std::move(callee), std::move(arguments));
     // new Foo().bar / new Foo()()：new 表达式之后仍可继续成员与调用后缀。
-    return parseCallSuffix(std::move(expression), start);
+    expression = parseCallSuffix(std::move(expression), start, optionalChain);
+    if (expression == nullptr) return nullptr;
+    if (optionalChain) {
+        return std::make_unique<ChainExpression>(expression->range(),
+                                                 std::move(expression));
+    }
+    return expression;
 }
 
-NodePtr Parser::parseMemberSuffix(NodePtr object, SourceLocation start) {
+NodePtr Parser::parseMemberSuffix(NodePtr object, SourceLocation start,
+                                  bool optional) {
+    if (optional) {
+        // '?.' 之后：IdentifierName / [expr] / #private
+        if (at(TokenKind::LeftBracket)) {
+            advance();
+            NodePtr property = parseExpression();
+            if (property == nullptr) return nullptr;
+            if (!expect(TokenKind::RightBracket, "']'")) return nullptr;
+            return std::make_unique<MemberExpression>(
+                rangeFrom(start), std::move(object), std::move(property), true,
+                true);
+        }
+        if (at(TokenKind::PrivateIdentifier)) {
+            const SourceLocation propertyStart = current_.start;
+            std::string name = current_.text;
+            advance();
+            NodePtr property = std::make_unique<PrivateIdentifier>(
+                rangeFrom(propertyStart), std::move(name));
+            return std::make_unique<MemberExpression>(
+                rangeFrom(start), std::move(object), std::move(property), false,
+                true);
+        }
+        NodePtr property = parseIdentifierName();
+        if (property == nullptr) return nullptr;
+        return std::make_unique<MemberExpression>(
+            rangeFrom(start), std::move(object), std::move(property), false,
+            true);
+    }
+
     if (at(TokenKind::Dot)) {
         advance();
         NodePtr property = parseIdentifierName();
@@ -1615,8 +1679,24 @@ NodePtr Parser::parseMemberSuffix(NodePtr object, SourceLocation start) {
     return object;
 }
 
-NodePtr Parser::parseCallSuffix(NodePtr callee, SourceLocation start) {
+NodePtr Parser::parseCallSuffix(NodePtr callee, SourceLocation start,
+                                bool& optionalChain) {
     while (true) {
+        if (at(TokenKind::QuestionDot)) {
+            optionalChain = true;
+            advance();  // '?.'
+            if (at(TokenKind::LeftParen)) {
+                NodeList arguments;
+                if (!parseArguments(arguments)) return nullptr;
+                callee = std::make_unique<CallExpression>(
+                    rangeFrom(start), std::move(callee), std::move(arguments),
+                    true);
+                continue;
+            }
+            callee = parseMemberSuffix(std::move(callee), start, true);
+            if (callee == nullptr) return nullptr;
+            continue;
+        }
         if (at(TokenKind::LeftParen)) {
             NodeList arguments;
             if (!parseArguments(arguments)) return nullptr;

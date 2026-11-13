@@ -91,6 +91,7 @@ enum class NodeKind : uint8_t {
 
     MemberExpression,
     CallExpression,
+    ChainExpression,
     NewExpression,
     UnaryExpression,
     UpdateExpression,
@@ -596,24 +597,37 @@ struct ClassExpression final : Node {
 // obj.property / obj[expression]
 struct MemberExpression final : Node {
     MemberExpression(SourceRange range, NodePtr object, NodePtr property,
-                     bool computed)
+                     bool computed, bool optional = false)
         : Node(NodeKind::MemberExpression, range),
           object(std::move(object)),
           property(std::move(property)),
-          computed(computed) {}
+          computed(computed),
+          optional(optional) {}
     NodePtr object;
     NodePtr property;
     bool computed;
+    bool optional;  // obj?.prop / obj?.[expr]
 };
 
 // callee(arguments)
 struct CallExpression final : Node {
-    CallExpression(SourceRange range, NodePtr callee, NodeList arguments)
+    CallExpression(SourceRange range, NodePtr callee, NodeList arguments,
+                   bool optional = false)
         : Node(NodeKind::CallExpression, range),
           callee(std::move(callee)),
-          arguments(std::move(arguments)) {}
+          arguments(std::move(arguments)),
+          optional(optional) {}
     NodePtr callee;
     NodeList arguments;
+    bool optional;  // fn?.(args)
+};
+
+// a?.b.c：包住整条可选链，短路语义作用于整个表达式。
+struct ChainExpression final : Node {
+    ChainExpression(SourceRange range, NodePtr expression)
+        : Node(NodeKind::ChainExpression, range),
+          expression(std::move(expression)) {}
+    NodePtr expression;
 };
 
 // new callee(arguments)

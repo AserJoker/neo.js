@@ -134,14 +134,16 @@ private:
     NodePtr parseUnaryExpression();
     NodePtr parseUpdateExpression();
     NodePtr parseLeftHandSideExpression();
-    NodePtr parseMemberExpression();
-    NodePtr parseCallExpression();
+    NodePtr parseMemberExpression(bool& optionalChain);
+    NodePtr parseCallExpression(bool& optionalChain);
     NodePtr parseNewExpression();
     NodePtr parsePrimaryExpression();
 
     // 左值后缀与参数（辅助函数，不单独对应节点）
-    NodePtr parseMemberSuffix(NodePtr object, SourceLocation start);
-    NodePtr parseCallSuffix(NodePtr callee, SourceLocation start);
+    NodePtr parseMemberSuffix(NodePtr object, SourceLocation start,
+                              bool optional = false);
+    NodePtr parseCallSuffix(NodePtr callee, SourceLocation start,
+                            bool& optionalChain);
     bool parseArguments(NodeList& arguments);
     NodePtr parseIdentifierName();
 

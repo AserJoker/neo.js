@@ -25,6 +25,7 @@ using neo::frontend::BinaryOperator;
 using neo::frontend::BooleanLiteral;
 using neo::frontend::CallExpression;
 using neo::frontend::CatchClause;
+using neo::frontend::ChainExpression;
 using neo::frontend::ClassBody;
 using neo::frontend::ClassDeclaration;
 using neo::frontend::ClassExpression;
@@ -3920,6 +3921,120 @@ TEST(ParserTest, TaggedTemplateFollowedByCall) {
     const auto& call = static_cast<const CallExpression&>(
         *statementOf(result, 0).expression);
     EXPECT_EQ(call.callee->kind(), NodeKind::TaggedTemplateExpression);
+}
+
+// ---------------------------------------------------------------------------
+// 可选链
+// ---------------------------------------------------------------------------
+
+TEST(ParserTest, OptionalMemberExpression) {
+    ParseResult result = parse("a?.b;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& chain = static_cast<const ChainExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_NE(chain.expression, nullptr);
+    ASSERT_EQ(chain.expression->kind(), NodeKind::MemberExpression);
+    const auto& member =
+        static_cast<const MemberExpression&>(*chain.expression);
+    EXPECT_TRUE(member.optional);
+    EXPECT_FALSE(member.computed);
+}
+
+TEST(ParserTest, OptionalComputedMemberExpression) {
+    ParseResult result = parse("a?.[k];");
+
+    ASSERT_TRUE(result.ok());
+    const auto& chain = static_cast<const ChainExpression&>(
+        *statementOf(result, 0).expression);
+    const auto& member =
+        static_cast<const MemberExpression&>(*chain.expression);
+    EXPECT_TRUE(member.optional);
+    EXPECT_TRUE(member.computed);
+}
+
+TEST(ParserTest, OptionalCallExpression) {
+    ParseResult result = parse("f?.();");
+
+    ASSERT_TRUE(result.ok());
+    const auto& chain = static_cast<const ChainExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(chain.expression->kind(), NodeKind::CallExpression);
+    const auto& call = static_cast<const CallExpression&>(*chain.expression);
+    EXPECT_TRUE(call.optional);
+}
+
+TEST(ParserTest, OptionalChainCoversFollowingSegments) {
+    ParseResult result = parse("a?.b.c;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& chain = static_cast<const ChainExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(chain.expression->kind(), NodeKind::MemberExpression);
+    const auto& outer =
+        static_cast<const MemberExpression&>(*chain.expression);
+    EXPECT_FALSE(outer.optional);
+    ASSERT_EQ(outer.object->kind(), NodeKind::MemberExpression);
+    EXPECT_TRUE(static_cast<const MemberExpression&>(*outer.object).optional);
+}
+
+TEST(ParserTest, OptionalCallAfterOptionalMember) {
+    ParseResult result = parse("a?.b?.();");
+
+    ASSERT_TRUE(result.ok());
+    const auto& chain = static_cast<const ChainExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(chain.expression->kind(), NodeKind::CallExpression);
+    const auto& call = static_cast<const CallExpression&>(*chain.expression);
+    EXPECT_TRUE(call.optional);
+    ASSERT_EQ(call.callee->kind(), NodeKind::MemberExpression);
+    EXPECT_TRUE(static_cast<const MemberExpression&>(*call.callee).optional);
+}
+
+TEST(ParserTest, NormalCallAfterOptionalMember) {
+    ParseResult result = parse("a?.b(c);");
+
+    ASSERT_TRUE(result.ok());
+    const auto& chain = static_cast<const ChainExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(chain.expression->kind(), NodeKind::CallExpression);
+    const auto& call = static_cast<const CallExpression&>(*chain.expression);
+    EXPECT_FALSE(call.optional);
+    EXPECT_TRUE(static_cast<const MemberExpression&>(*call.callee).optional);
+}
+
+TEST(ParserTest, OptionalChainIsNotAssignmentTarget) {
+    ParseResult result = parse("a?.b = c;");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, OptionalChainInNewCalleeReportsError) {
+    ParseResult result = parse("new a?.b();");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, OptionalChainAfterNewExpression) {
+    ParseResult result = parse("new a()?.b;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& chain = static_cast<const ChainExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(chain.expression->kind(), NodeKind::MemberExpression);
+    EXPECT_EQ(static_cast<const MemberExpression&>(*chain.expression)
+                  .object->kind(),
+              NodeKind::NewExpression);
+}
+
+TEST(ParserTest, DeleteOptionalChain) {
+    ParseResult result = parse("delete a?.b;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& unary = static_cast<const UnaryExpression&>(
+        *statementOf(result, 0).expression);
+    EXPECT_EQ(unary.op, UnaryOperator::Delete);
+    EXPECT_EQ(unary.argument->kind(), NodeKind::ChainExpression);
 }
 
 TEST(ParserTest, SuperMemberExpression) {
