@@ -160,7 +160,9 @@ add_library(neojs STATIC
     src/private/infra/NativeFileSystem.cpp
     src/private/frontend/CharStream.cpp
     src/private/frontend/Lexer.cpp
+    src/private/frontend/Node.cpp
     src/private/frontend/Parser.cpp
+    src/private/sema/Walker.cpp
 )
 target_include_directories(neojs
     PUBLIC

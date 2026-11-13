@@ -270,6 +270,8 @@ Parser::Parser(std::string_view source) : lexer_(source) {
 }
 
 ParseResult Parser::parseProgram() {
+    // 每次 parse 从 1 重新分配节点 id；Sema/desugar 新建节点沿用同一空间。
+    NodeIdScope idScope;
     const SourceLocation start = current_.start;
     NodeList body;
     bool inDirectivePrologue = true;
@@ -2134,7 +2136,16 @@ NodePtr Parser::parseMemberSuffix(NodePtr object, SourceLocation start,
 
     if (at(TokenKind::Dot)) {
         advance();
-        NodePtr property = parseIdentifierName();
+        NodePtr property;
+        if (at(TokenKind::PrivateIdentifier)) {
+            const SourceLocation propertyStart = current_.start;
+            std::string name = current_.text;
+            advance();
+            property = std::make_unique<PrivateIdentifier>(
+                rangeFrom(propertyStart), std::move(name));
+        } else {
+            property = parseIdentifierName();
+        }
         if (property == nullptr) return nullptr;
         return std::make_unique<MemberExpression>(
             rangeFrom(start), std::move(object), std::move(property), false);

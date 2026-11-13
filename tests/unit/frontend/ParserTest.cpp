@@ -3783,6 +3783,26 @@ TEST(ParserTest, ClassPrivateMembers) {
     EXPECT_EQ(static_cast<const PrivateIdentifier&>(*method.key).name, "m");
 }
 
+TEST(ParserTest, PrivateMemberAccess) {
+    ParseResult result = parse("class A { #x = 1; m() { return this.#x; } }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& body = classBodyOf(result);
+    ASSERT_EQ(body.elements.size(), 2u);
+
+    const auto& method = static_cast<const MethodDefinition&>(*body.elements[1]);
+    const auto& function =
+        static_cast<const FunctionExpression&>(*method.value);
+    const auto& block =
+        static_cast<const BlockStatement&>(*function.body);
+    const auto& statement =
+        static_cast<const ReturnStatement&>(*block.body[0]);
+    const auto& member =
+        static_cast<const MemberExpression&>(*statement.argument);
+    EXPECT_EQ(member.property->kind(), NodeKind::PrivateIdentifier);
+    EXPECT_EQ(static_cast<const PrivateIdentifier&>(*member.property).name, "x");
+}
+
 TEST(ParserTest, EmptyStaticBlock) {
     ParseResult result = parse("class A { static {} }");
 

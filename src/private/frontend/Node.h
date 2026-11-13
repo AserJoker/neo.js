@@ -1,7 +1,7 @@
 // frontend/Node.h - AST 节点基类
 //
-// Parser 产出、Sema 标注、Compiler 消费的语法树。当前只落地基类与最小节点集：
-// Program、空语句、表达式语句、标识符与各类字面量。后续按语法族逐个加入。
+// Parser 产出、Sema 标注、Compiler 消费的语法树。
+// 标注不挂在 Node 上，而是由 Sema 的 AnnotationStore 按 NodeId 存放（ADR-058）。
 //
 // 约定：**一个节点一个 parse 函数**（如 parseNumericLiteral / parseStringLiteral），
 // 解析函数只负责该节点的语法与构造，不承担上层分派。
@@ -14,7 +14,8 @@
 //       auto* id = static_cast<const Identifier*>(node.get());
 //   }
 //
-// 关联 ADR: 001（前端架构）、025（Sema 两遍 walk）、055（Parser 与 AST）
+// 关联 ADR: 001（前端架构）、025（Sema 两遍 walk）、055（Parser 与 AST）、
+//           058（Sema Walker 与节点标注）
 
 #ifndef NEO_FRONTEND_NODE_H
 #define NEO_FRONTEND_NODE_H
@@ -123,7 +124,15 @@ enum class NodeKind : uint8_t {
     ArrayPattern,
     AssignmentPattern,
     RestElement,
+
+    // 哨兵：分派表大小与遍历覆盖测试使用，不是真实节点。
+    Count,
 };
+
+// 节点在一次 Program 生命周期内的唯一标识。
+// 0 保留为无效值；id 不跨 parse 稳定，不能作为持久身份。
+using NodeId = uint32_t;
+inline constexpr NodeId kInvalidNodeId = 0;
 
 class Node {
 public:
@@ -133,20 +142,43 @@ public:
     Node& operator=(const Node&) = delete;
 
     NodeKind kind() const { return kind_; }
+    NodeId id() const { return id_; }
     SourceRange range() const { return range_; }
     void setRange(SourceRange range) { range_ = range; }
+
+    // 节点替换时继承旧 id，从而让 AnnotationStore 中的标注继续生效。
+    // 仅用于“只改变语法形状”的 desugar；新语义实体应使用新 id。
+    void adoptIdFrom(const Node& other) { id_ = other.id_; }
 
     // 是否由括号包裹；用于 ?? 与 ||/&& 的混用限制等语法判断。
     bool isParenthesized() const { return parenthesized_; }
     void setParenthesized(bool value) { parenthesized_ = value; }
 
 protected:
-    Node(NodeKind kind, SourceRange range) : kind_(kind), range_(range) {}
+    Node(NodeKind kind, SourceRange range)
+        : kind_(kind), range_(range), id_(allocateId()) {}
 
 private:
+    friend class NodeIdScope;
+
+    static NodeId allocateId();
+    static void resetIdCounter();
+
     NodeKind kind_;
     SourceRange range_;
+    NodeId id_;
     bool parenthesized_ = false;
+};
+
+// 每次 parse 从 1 重新分配 id，保证同一份源码的 id 可复现。
+// 不恢复旧计数：parse 之后 Sema/desugar 新建的节点继续使用同一 id 空间。
+class NodeIdScope {
+public:
+    NodeIdScope() { Node::resetIdCounter(); }
+    ~NodeIdScope() = default;
+
+    NodeIdScope(const NodeIdScope&) = delete;
+    NodeIdScope& operator=(const NodeIdScope&) = delete;
 };
 
 using NodePtr = std::unique_ptr<Node>;
