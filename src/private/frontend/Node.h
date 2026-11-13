@@ -72,6 +72,7 @@ enum class NodeKind : uint8_t {
     // 模块
     ImportSpecifier,
     ImportDefaultSpecifier,
+    ImportNamespaceSpecifier,
     ExportNamedDeclaration,
     ExportDefaultDeclaration,
 
@@ -466,6 +467,14 @@ struct ImportSpecifier final : Node {
 struct ImportDefaultSpecifier final : Node {
     ImportDefaultSpecifier(SourceRange range, NodePtr local)
         : Node(NodeKind::ImportDefaultSpecifier, range),
+          local(std::move(local)) {}
+    NodePtr local;  // Identifier
+};
+
+// import * as local from "..."
+struct ImportNamespaceSpecifier final : Node {
+    ImportNamespaceSpecifier(SourceRange range, NodePtr local)
+        : Node(NodeKind::ImportNamespaceSpecifier, range),
           local(std::move(local)) {}
     NodePtr local;  // Identifier
 };
