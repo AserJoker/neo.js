@@ -1300,6 +1300,14 @@ NodePtr Parser::parseForStatement() {
     const SourceLocation start = current_.start;
     advance();  // 'for'
 
+    // for await (...) 只允许搭配 of；上下文合法性（是否在 async 函数 /
+    // 模块顶层）留给 Sema。
+    bool forAwait = false;
+    if (at(TokenKind::Identifier) && current_.text == "await") {
+        advance();  // 'await'
+        forAwait = true;
+    }
+
     if (!expect(TokenKind::LeftParen, "'('")) return nullptr;
 
     NodePtr init;
@@ -1317,10 +1325,18 @@ NodePtr Parser::parseForStatement() {
         if (init == nullptr) return nullptr;
 
         if (at(TokenKind::In)) {
+            if (forAwait) {
+                error(current_.start, "for await requires 'of'");
+                return nullptr;
+            }
             return parseForInStatement(std::move(init), start);
         }
         if (at(TokenKind::Identifier) && current_.text == "of") {
-            return parseForOfStatement(std::move(init), start);
+            return parseForOfStatement(std::move(init), start, forAwait);
+        }
+        if (forAwait) {
+            error(current_.start, "for await requires 'of'");
+            return nullptr;
         }
 
         // 不是 for-in/of，const 声明必须有初始化。
@@ -1339,6 +1355,10 @@ NodePtr Parser::parseForStatement() {
                 }
             }
         }
+    }
+    if (forAwait) {
+        error(current_.start, "for await requires 'of'");
+        return nullptr;
     }
     if (!expect(TokenKind::Semicolon, "';'")) return nullptr;
 
@@ -1387,7 +1407,8 @@ NodePtr Parser::parseForInStatement(NodePtr left, SourceLocation start) {
         rangeFrom(start), std::move(left), std::move(right), std::move(body));
 }
 
-NodePtr Parser::parseForOfStatement(NodePtr left, SourceLocation start) {
+NodePtr Parser::parseForOfStatement(NodePtr left, SourceLocation start,
+                                    bool await) {
     if (left->kind() == NodeKind::ArrayExpression ||
         left->kind() == NodeKind::ObjectExpression) {
         left = convertToAssignmentPattern(std::move(left));
@@ -1408,7 +1429,8 @@ NodePtr Parser::parseForOfStatement(NodePtr left, SourceLocation start) {
     if (body == nullptr) return nullptr;
 
     return std::make_unique<ForOfStatement>(
-        rangeFrom(start), std::move(left), std::move(right), std::move(body));
+        rangeFrom(start), std::move(left), std::move(right), std::move(body),
+        await);
 }
 
 NodePtr Parser::parseDoWhileStatement() {

@@ -275,14 +275,17 @@ struct ForInStatement final : Node {
 };
 
 struct ForOfStatement final : Node {
-    ForOfStatement(SourceRange range, NodePtr left, NodePtr right, NodePtr body)
+    ForOfStatement(SourceRange range, NodePtr left, NodePtr right, NodePtr body,
+                   bool await)
         : Node(NodeKind::ForOfStatement, range),
           left(std::move(left)),
           right(std::move(right)),
-          body(std::move(body)) {}
+          body(std::move(body)),
+          await(await) {}
     NodePtr left;
     NodePtr right;
     NodePtr body;
+    bool await;  // for await (... of ...)
 };
 
 struct ReturnStatement final : Node {

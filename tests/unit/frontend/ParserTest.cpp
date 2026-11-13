@@ -1764,6 +1764,33 @@ TEST(ParserTest, ForOfWithDeclaration) {
     EXPECT_EQ(statement->left->kind(), NodeKind::VariableDeclaration);
 }
 
+TEST(ParserTest, ForAwaitOfStatement) {
+    ParseResult result = parse("async function f() { for await (x of arr) ; }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& function = static_cast<const FunctionDeclaration&>(
+        *programOf(result).body[0]);
+    const auto& body = static_cast<const BlockStatement&>(*function.body);
+    const auto& statement =
+        static_cast<const ForOfStatement&>(*body.body[0]);
+    EXPECT_TRUE(statement.await);
+}
+
+TEST(ParserTest, ForAwaitWithoutOfReportsError) {
+    ParseResult result = parse("async function f() { for await (x in arr) ; }");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, PlainForOfIsNotAwait) {
+    ParseResult result = parse("for (x of arr) ;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement =
+        static_cast<const ForOfStatement&>(*programOf(result).body[0]);
+    EXPECT_FALSE(statement.await);
+}
+
 TEST(ParserTest, ForOfRightStopsAtComma) {
     ParseResult result = parse("for (x of a, b) ;");
 

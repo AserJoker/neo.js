@@ -84,7 +84,8 @@ private:
     NodePtr parseDoWhileStatement();
     NodePtr parseForStatement();
     NodePtr parseForInStatement(NodePtr left, SourceLocation start);
-    NodePtr parseForOfStatement(NodePtr left, SourceLocation start);
+    NodePtr parseForOfStatement(NodePtr left, SourceLocation start,
+                                bool await = false);
     NodePtr parseReturnStatement();
     NodePtr parseThrowStatement();
     NodePtr parseBreakStatement();
