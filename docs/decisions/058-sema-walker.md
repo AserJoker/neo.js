@@ -175,3 +175,13 @@ Sema 采用“收集错误、继续分析”，不 fail-fast；遍历由树结�
   - 类字段初始化器与 static block 的 `ContainsArguments`：箭头不隔断，
     普通函数隔断；通过 ResolvePass 的 `IdentifierBinding` 区分引用与
     绑定/属性名。
+- M5：`ModulePass`，模块绑定与导出早期错误：
+  - `import`/`export` 声明与 `import.meta` 仅允许出现在模块；
+  - ExportedNames 唯一：重复导出、重复 `default`、声明与 specifier
+    重复、`export * as ns` 重复；
+  - `export { x }` 的本地绑定必须已在模块作用域声明（`export ... from`
+    不检查本地绑定）；块级 `let`/strict 块级函数不可导出，`var` 提升后
+    可导出；
+  - `import` 绑定名必须是 Identifier。
+  - 已知 Parser 限制：ModuleExportName 的字符串形式
+    （`export { "x" as y }` / `import { "x" as y }`）尚未解析。
