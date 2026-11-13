@@ -865,14 +865,17 @@ NodePtr Parser::parseImportDeclaration() {
     advance();  // 'import'
 
     NodeList specifiers;
+    NodeList attributes;
     NodePtr source;
 
     if (at(TokenKind::StringLiteral)) {
         // 副作用导入：import "mod";
         source = parseStringLiteral();
+        if (!parseImportAttributes(attributes)) return nullptr;
         if (!consumeSemicolon()) return nullptr;
         return std::make_unique<ImportDeclaration>(
-            rangeFrom(start), std::move(specifiers), std::move(source));
+            rangeFrom(start), std::move(specifiers), std::move(source),
+            std::move(attributes));
     }
 
     if (at(TokenKind::Identifier)) {
@@ -911,10 +914,54 @@ NodePtr Parser::parseImportDeclaration() {
         return nullptr;
     }
     source = parseStringLiteral();
+    if (!parseImportAttributes(attributes)) return nullptr;
     if (!consumeSemicolon()) return nullptr;
 
     return std::make_unique<ImportDeclaration>(
-        rangeFrom(start), std::move(specifiers), std::move(source));
+        rangeFrom(start), std::move(specifiers), std::move(source),
+        std::move(attributes));
+}
+
+bool Parser::parseImportAttributes(NodeList& attributes) {
+    if (!at(TokenKind::With)) return true;
+    advance();  // 'with'
+
+    if (!expect(TokenKind::LeftBrace, "'{'")) return false;
+    if (match(TokenKind::RightBrace)) return true;
+
+    while (true) {
+        NodePtr attribute = parseImportAttribute();
+        if (attribute == nullptr) return false;
+        attributes.push_back(std::move(attribute));
+
+        if (!match(TokenKind::Comma)) break;
+        if (at(TokenKind::RightBrace)) break;
+    }
+
+    return expect(TokenKind::RightBrace, "'}'");
+}
+
+NodePtr Parser::parseImportAttribute() {
+    const SourceLocation start = current_.start;
+
+    NodePtr key;
+    if (at(TokenKind::StringLiteral)) {
+        key = parseStringLiteral();
+    } else {
+        key = parseIdentifierName();
+    }
+    if (key == nullptr) return nullptr;
+
+    if (!expect(TokenKind::Colon, "':'")) return nullptr;
+    if (!at(TokenKind::StringLiteral)) {
+        error(current_.start, "Expected string value in import attribute");
+        return nullptr;
+    }
+    NodePtr value = parseStringLiteral();
+    if (value == nullptr) return nullptr;
+
+    return std::make_unique<ImportAttribute>(rangeFrom(start), std::move(key),
+                                             std::move(value));
 }
 
 bool Parser::parseImportSpecifiers(NodeList& specifiers) {
@@ -1017,16 +1064,19 @@ NodePtr Parser::parseExportAllDeclaration(SourceLocation start) {
     }
     NodePtr source = parseStringLiteral();
     if (source == nullptr) return nullptr;
+    NodeList attributes;
+    if (!parseImportAttributes(attributes)) return nullptr;
     if (!consumeSemicolon()) return nullptr;
 
-    return std::make_unique<ExportAllDeclaration>(rangeFrom(start),
-                                                  std::move(exported),
-                                                  std::move(source));
+    return std::make_unique<ExportAllDeclaration>(
+        rangeFrom(start), std::move(exported), std::move(source),
+        std::move(attributes));
 }
 
 NodePtr Parser::parseExportNamedDeclaration(SourceLocation start) {
     NodePtr declaration;
     NodeList specifiers;
+    NodeList attributes;
     NodePtr source;
 
     if (at(TokenKind::LeftBrace)) {
@@ -1039,11 +1089,12 @@ NodePtr Parser::parseExportNamedDeclaration(SourceLocation start) {
             }
             source = parseStringLiteral();
             if (source == nullptr) return nullptr;
+            if (!parseImportAttributes(attributes)) return nullptr;
         }
         if (!consumeSemicolon()) return nullptr;
         return std::make_unique<ExportNamedDeclaration>(
             rangeFrom(start), nullptr, std::move(specifiers),
-            std::move(source));
+            std::move(source), std::move(attributes));
     }
 
     if (at(TokenKind::Var) || at(TokenKind::Const) ||
@@ -1065,7 +1116,7 @@ NodePtr Parser::parseExportNamedDeclaration(SourceLocation start) {
 
     return std::make_unique<ExportNamedDeclaration>(
         rangeFrom(start), std::move(declaration), std::move(specifiers),
-        std::move(source));
+        std::move(source), std::move(attributes));
 }
 
 bool Parser::parseExportSpecifiers(NodeList& specifiers) {

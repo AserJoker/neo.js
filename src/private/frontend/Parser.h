@@ -124,6 +124,8 @@ private:
     NodePtr parseImportDefaultSpecifier();
     NodePtr parseImportNamespaceSpecifier();
     bool parseImportSpecifiers(NodeList& specifiers);
+    bool parseImportAttributes(NodeList& attributes);
+    NodePtr parseImportAttribute();
     NodePtr parseExportDeclaration();
     NodePtr parseExportAllDeclaration(SourceLocation start);
     NodePtr parseExportNamedDeclaration(SourceLocation start);

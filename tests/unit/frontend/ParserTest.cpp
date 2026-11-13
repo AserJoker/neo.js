@@ -47,6 +47,7 @@ using neo::frontend::ForStatement;
 using neo::frontend::FunctionExpression;
 using neo::frontend::Identifier;
 using neo::frontend::IfStatement;
+using neo::frontend::ImportAttribute;
 using neo::frontend::ImportDeclaration;
 using neo::frontend::ImportDefaultSpecifier;
 using neo::frontend::ImportExpression;
@@ -4288,6 +4289,48 @@ TEST(ParserTest, ReservedNamedImportRequiresAs) {
     EXPECT_EQ(static_cast<const Identifier&>(*specifier.local).name, "d");
 }
 
+TEST(ParserTest, ImportDeclarationWithAttributes) {
+    ParseResult result = parse("import d from \"mod\" with { type: \"json\" };");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ImportDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_EQ(declaration.attributes.size(), 1u);
+    const auto& attribute = static_cast<const ImportAttribute&>(
+        *declaration.attributes[0]);
+    EXPECT_EQ(static_cast<const Identifier&>(*attribute.key).name, "type");
+    EXPECT_EQ(static_cast<const StringLiteral&>(*attribute.value).value,
+              "json");
+}
+
+TEST(ParserTest, SideEffectImportWithAttributes) {
+    ParseResult result = parse("import \"mod\" with { type: \"json\" };");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ImportDeclaration&>(
+        *programOf(result).body[0]);
+    EXPECT_TRUE(declaration.specifiers.empty());
+    ASSERT_EQ(declaration.attributes.size(), 1u);
+}
+
+TEST(ParserTest, ImportAttributeWithStringKey) {
+    ParseResult result = parse("import \"mod\" with { \"type\": \"json\" };");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ImportDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_EQ(declaration.attributes.size(), 1u);
+    const auto& attribute = static_cast<const ImportAttribute&>(
+        *declaration.attributes[0]);
+    EXPECT_EQ(attribute.key->kind(), NodeKind::StringLiteral);
+}
+
+TEST(ParserTest, ImportAttributeNonStringValueReportsError) {
+    ParseResult result = parse("import \"mod\" with { type: json };");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
 TEST(ParserTest, ReservedNamedImportWithoutAsReportsError) {
     ParseResult result = parse("import { if } from \"mod\";");
 
@@ -4373,6 +4416,26 @@ TEST(ParserTest, EmptyExportSpecifiers) {
         *programOf(result).body[0]);
     EXPECT_TRUE(declaration.specifiers.empty());
     EXPECT_EQ(declaration.declaration, nullptr);
+}
+
+TEST(ParserTest, ExportAllWithAttributes) {
+    ParseResult result = parse("export * from \"mod\" with { type: \"json\" };");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ExportAllDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_EQ(declaration.attributes.size(), 1u);
+}
+
+TEST(ParserTest, ExportNamedWithSourceAndAttributes) {
+    ParseResult result =
+        parse("export { a } from \"mod\" with { type: \"json\" };");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ExportNamedDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_NE(declaration.source, nullptr);
+    ASSERT_EQ(declaration.attributes.size(), 1u);
 }
 
 TEST(ParserTest, ExportNamedSpecifiersWithoutSourceReportsError) {

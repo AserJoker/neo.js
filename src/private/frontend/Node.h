@@ -74,6 +74,7 @@ enum class NodeKind : uint8_t {
     ImportDefaultSpecifier,
     ImportNamespaceSpecifier,
     ImportDeclaration,
+    ImportAttribute,
     ExportSpecifier,
     ExportAllDeclaration,
     ExportNamedDeclaration,
@@ -485,15 +486,28 @@ struct ImportNamespaceSpecifier final : Node {
     NodePtr local;  // Identifier
 };
 
-// import ... from "source" / import "source"
+// with { type: "json" } 中的一项
+struct ImportAttribute final : Node {
+    ImportAttribute(SourceRange range, NodePtr key, NodePtr value)
+        : Node(NodeKind::ImportAttribute, range),
+          key(std::move(key)),
+          value(std::move(value)) {}
+    NodePtr key;    // IdentifierName 或 StringLiteral
+    NodePtr value;  // StringLiteral
+};
+
+// import ... from "source" [with { ... }] / import "source" [with { ... }]
 struct ImportDeclaration final : Node {
-    ImportDeclaration(SourceRange range, NodeList specifiers, NodePtr source)
+    ImportDeclaration(SourceRange range, NodeList specifiers, NodePtr source,
+                      NodeList attributes)
         : Node(NodeKind::ImportDeclaration, range),
           specifiers(std::move(specifiers)),
-          source(std::move(source)) {}
+          source(std::move(source)),
+          attributes(std::move(attributes)) {}
     NodeList specifiers;  // ImportSpecifier / ImportDefaultSpecifier /
                           // ImportNamespaceSpecifier
     NodePtr source;       // StringLiteral
+    NodeList attributes;  // ImportAttribute
 };
 
 // export { local as exported }
@@ -508,26 +522,32 @@ struct ExportSpecifier final : Node {
 
 // export * [as exported] from "source"
 struct ExportAllDeclaration final : Node {
-    ExportAllDeclaration(SourceRange range, NodePtr exported, NodePtr source)
+    ExportAllDeclaration(SourceRange range, NodePtr exported, NodePtr source,
+                         NodeList attributes)
         : Node(NodeKind::ExportAllDeclaration, range),
           exported(std::move(exported)),
-          source(std::move(source)) {}
-    NodePtr exported;  // IdentifierName（export * as ns）
-    NodePtr source;    // StringLiteral
+          source(std::move(source)),
+          attributes(std::move(attributes)) {}
+    NodePtr exported;     // IdentifierName（export * as ns）
+    NodePtr source;       // StringLiteral
+    NodeList attributes;  // ImportAttribute
 };
 
 // export { a, b as c } [from "source"] / export var x = 1
 struct ExportNamedDeclaration final : Node {
     ExportNamedDeclaration(SourceRange range, NodePtr declaration,
-                           NodeList specifiers, NodePtr source)
+                           NodeList specifiers, NodePtr source,
+                           NodeList attributes)
         : Node(NodeKind::ExportNamedDeclaration, range),
           declaration(std::move(declaration)),
           specifiers(std::move(specifiers)),
-          source(std::move(source)) {}
+          source(std::move(source)),
+          attributes(std::move(attributes)) {}
     NodePtr declaration;  // VariableDeclaration / FunctionDeclaration /
                           // ClassDeclaration
     NodeList specifiers;  // ExportSpecifier
     NodePtr source;       // StringLiteral（仅 export ... from 形式）
+    NodeList attributes;  // ImportAttribute
 };
 
 // export default function [name]() { }
