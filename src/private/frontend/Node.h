@@ -224,12 +224,18 @@ struct ExpressionStatement final : Node {
 // 指令序言中的字符串字面量语句（如 "use strict"）。
 // value 是 cooked 值，raw 是含引号的源码切片；严格模式判定用 raw。
 struct Directive final : Node {
-    Directive(SourceRange range, std::string value, std::string raw)
+    Directive(SourceRange range, std::string value, std::string raw,
+              bool legacyOctalEscape = false, bool legacyEightOrNine = false)
         : Node(NodeKind::Directive, range),
           value(std::move(value)),
-          raw(std::move(raw)) {}
+          raw(std::move(raw)),
+          legacyOctalEscape(legacyOctalEscape),
+          legacyEightOrNine(legacyEightOrNine) {}
     std::string value;
     std::string raw;
+    // 严格模式下非法的转义形态，由 Sema 判定。
+    bool legacyOctalEscape;
+    bool legacyEightOrNine;
 
     bool isUseStrict() const {
         return raw == "\"use strict\"" || raw == "'use strict'";

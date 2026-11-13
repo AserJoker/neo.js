@@ -134,3 +134,6 @@ Sema 采用“收集错误、继续分析”，不 fail-fast；遍历由树结�
 
 - M0：`NodeId` / `NodeIdScope`、`AnnotationStore`、`Walker`、`IVisitor`、
   `SemaContext`、全节点子节点枚举与覆盖测试。
+- M1：`StrictnessPass`，覆盖严格性作用域、legacy 字面量/转义、`with`、
+  `delete identifier`、重复参数、`eval`/`arguments` 绑定与赋值目标、
+  严格模式保留字、非简单参数 + `"use strict"`。

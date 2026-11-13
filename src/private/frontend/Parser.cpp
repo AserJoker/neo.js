@@ -411,8 +411,9 @@ NodePtr Parser::parseDirective(NodePtr statement) {
     const size_t length = literalRange.end.offset - literalRange.start.offset;
     std::string raw(source.substr(literalRange.start.offset, length));
 
-    return std::make_unique<Directive>(statement->range(), std::move(value),
-                                       std::move(raw));
+    return std::make_unique<Directive>(
+        statement->range(), std::move(value), std::move(raw),
+        literal->legacyOctalEscape, literal->legacyEightOrNine);
 }
 
 NodePtr Parser::parseStatement() {

@@ -163,6 +163,7 @@ add_library(neojs STATIC
     src/private/frontend/Node.cpp
     src/private/frontend/Parser.cpp
     src/private/sema/Walker.cpp
+    src/private/sema/StrictnessPass.cpp
 )
 target_include_directories(neojs
     PUBLIC
