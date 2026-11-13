@@ -479,7 +479,13 @@ NodePtr Parser::parseFunctionDeclaration(bool async) {
     NodeList params;
     if (!parseFormalParameters(params)) return nullptr;
 
+    const bool savedAsync = inAsync_;
+    const bool savedGenerator = inGenerator_;
+    inAsync_ = async;
+    inGenerator_ = generator;
     NodePtr body = parseFunctionBody();
+    inAsync_ = savedAsync;
+    inGenerator_ = savedGenerator;
     if (body == nullptr) return nullptr;
     rescan(LexicalGoal::RegExp);
 
@@ -504,7 +510,13 @@ NodePtr Parser::parseFunctionExpression(bool async) {
     NodeList params;
     if (!parseFormalParameters(params)) return nullptr;
 
+    const bool savedAsync = inAsync_;
+    const bool savedGenerator = inGenerator_;
+    inAsync_ = async;
+    inGenerator_ = generator;
     NodePtr body = parseFunctionBody();
+    inAsync_ = savedAsync;
+    inGenerator_ = savedGenerator;
     if (body == nullptr) return nullptr;
     rescan(LexicalGoal::Div);
 
@@ -739,7 +751,14 @@ NodePtr Parser::parseClassElement() {
     // 字段：key; / key = value;
     NodePtr value;
     if (match(TokenKind::Assign)) {
+        // 字段初始化器不在 async/generator 上下文中。
+        const bool savedAsync = inAsync_;
+        const bool savedGenerator = inGenerator_;
+        inAsync_ = false;
+        inGenerator_ = false;
         value = parseAssignmentExpression();
+        inAsync_ = savedAsync;
+        inGenerator_ = savedGenerator;
         if (value == nullptr) return nullptr;
     }
     if (!consumeSemicolon()) return nullptr;
@@ -766,7 +785,13 @@ NodePtr Parser::parseClassMethodWithKey(SourceLocation start, NodePtr key,
     NodeList params;
     if (!parseFormalParameters(params)) return nullptr;
 
+    const bool savedAsync = inAsync_;
+    const bool savedGenerator = inGenerator_;
+    inAsync_ = async;
+    inGenerator_ = generator;
     NodePtr body = parseFunctionBody();
+    inAsync_ = savedAsync;
+    inGenerator_ = savedGenerator;
     if (body == nullptr) return nullptr;
     rescan(LexicalGoal::Div);
 
@@ -1372,17 +1397,33 @@ NodePtr Parser::parseArrowFunction() {
     }
     if (!expect(TokenKind::Arrow, "'=>'")) return nullptr;
 
+    const bool savedAsync = inAsync_;
+    const bool savedGenerator = inGenerator_;
+    inAsync_ = async;
+    inGenerator_ = false;
+
     NodePtr body;
     bool expression = false;
     if (at(TokenKind::LeftBrace)) {
         body = parseFunctionBody();
-        if (body == nullptr) return nullptr;
+        if (body == nullptr) {
+            inAsync_ = savedAsync;
+            inGenerator_ = savedGenerator;
+            return nullptr;
+        }
         rescan(LexicalGoal::Div);
     } else {
         body = parseAssignmentExpression();
-        if (body == nullptr) return nullptr;
+        if (body == nullptr) {
+            inAsync_ = savedAsync;
+            inGenerator_ = savedGenerator;
+            return nullptr;
+        }
         expression = true;
     }
+
+    inAsync_ = savedAsync;
+    inGenerator_ = savedGenerator;
 
     return std::make_unique<ArrowFunctionExpression>(
         rangeFrom(start), std::move(params), std::move(body), async, expression);
@@ -1502,6 +1543,10 @@ NodePtr Parser::parseBinaryExpression(int minPrecedence) {
 }
 
 NodePtr Parser::parseUnaryExpression() {
+    if (inAsync_ && at(TokenKind::Identifier) && current_.text == "await") {
+        return parseAwaitExpression();
+    }
+
     UnaryOperator op;
     if (unaryOperator(current_.kind, op)) {
         const SourceLocation start = current_.start;
@@ -1512,6 +1557,15 @@ NodePtr Parser::parseUnaryExpression() {
             rangeFrom(start), op, std::move(argument));
     }
     return parseUpdateExpression();
+}
+
+NodePtr Parser::parseAwaitExpression() {
+    const SourceLocation start = current_.start;
+    advance();  // 'await'
+    NodePtr argument = parseUnaryExpression();
+    if (argument == nullptr) return nullptr;
+    return std::make_unique<AwaitExpression>(rangeFrom(start),
+                                             std::move(argument));
 }
 
 NodePtr Parser::parseUpdateExpression() {
@@ -2114,7 +2168,13 @@ NodePtr Parser::parseMethodPropertyWithKey(SourceLocation start, NodePtr key,
     NodeList params;
     if (!parseFormalParameters(params)) return nullptr;
 
+    const bool savedAsync = inAsync_;
+    const bool savedGenerator = inGenerator_;
+    inAsync_ = async;
+    inGenerator_ = generator;
     NodePtr body = parseFunctionBody();
+    inAsync_ = savedAsync;
+    inGenerator_ = savedGenerator;
     if (body == nullptr) return nullptr;
     rescan(LexicalGoal::Div);
 

@@ -17,6 +17,7 @@ using neo::frontend::ArrowFunctionExpression;
 using neo::frontend::AssignmentPattern;
 using neo::frontend::AssignmentExpression;
 using neo::frontend::AssignmentOperator;
+using neo::frontend::AwaitExpression;
 using neo::frontend::BigIntLiteral;
 using neo::frontend::BinaryExpression;
 using neo::frontend::BlockStatement;
@@ -4111,6 +4112,75 @@ TEST(ParserTest, ImportExpressionWithoutArgumentReportsError) {
     ParseResult result = parse("import();");
 
     EXPECT_FALSE(result.errors.empty());
+}
+
+// ---------------------------------------------------------------------------
+// await
+// ---------------------------------------------------------------------------
+
+TEST(ParserTest, AwaitInAsyncFunction) {
+    ParseResult result = parse("async function f() { await x; }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& function =
+        static_cast<const FunctionDeclaration&>(*programOf(result).body[0]);
+    const auto& body = static_cast<const BlockStatement&>(*function.body);
+    ASSERT_EQ(body.body.size(), 1u);
+    const auto& statement =
+        static_cast<const ExpressionStatement&>(*body.body[0]);
+    ASSERT_EQ(statement.expression->kind(), NodeKind::AwaitExpression);
+    const auto& await =
+        static_cast<const AwaitExpression&>(*statement.expression);
+    EXPECT_EQ(await.argument->kind(), NodeKind::Identifier);
+}
+
+TEST(ParserTest, AwaitInAsyncArrowExpressionBody) {
+    ParseResult result = parse("async () => await x;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& arrow = static_cast<const ArrowFunctionExpression&>(
+        *statementOf(result, 0).expression);
+    EXPECT_TRUE(arrow.expression);
+    EXPECT_EQ(arrow.body->kind(), NodeKind::AwaitExpression);
+}
+
+TEST(ParserTest, AwaitBindsTighterThanBinary) {
+    ParseResult result = parse("async function f() { await a + b; }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& function =
+        static_cast<const FunctionDeclaration&>(*programOf(result).body[0]);
+    const auto& body = static_cast<const BlockStatement&>(*function.body);
+    const auto& statement =
+        static_cast<const ExpressionStatement&>(*body.body[0]);
+    ASSERT_EQ(statement.expression->kind(), NodeKind::BinaryExpression);
+    const auto& binary =
+        static_cast<const BinaryExpression&>(*statement.expression);
+    EXPECT_EQ(binary.left->kind(), NodeKind::AwaitExpression);
+}
+
+TEST(ParserTest, AwaitIsIdentifierOutsideAsync) {
+    ParseResult result = parse("await;");
+
+    ASSERT_TRUE(result.ok());
+    EXPECT_EQ(statementOf(result, 0).expression->kind(),
+              NodeKind::Identifier);
+}
+
+TEST(ParserTest, NestedFunctionResetsAsyncContext) {
+    ParseResult result = parse(
+        "async function f() { function g() { await; } }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& function =
+        static_cast<const FunctionDeclaration&>(*programOf(result).body[0]);
+    const auto& body = static_cast<const BlockStatement&>(*function.body);
+    const auto& inner =
+        static_cast<const FunctionDeclaration&>(*body.body[0]);
+    const auto& innerBody = static_cast<const BlockStatement&>(*inner.body);
+    const auto& statement =
+        static_cast<const ExpressionStatement&>(*innerBody.body[0]);
+    EXPECT_EQ(statement.expression->kind(), NodeKind::Identifier);
 }
 
 TEST(ParserTest, DeleteOptionalChain) {

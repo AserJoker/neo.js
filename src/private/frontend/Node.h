@@ -95,6 +95,7 @@ enum class NodeKind : uint8_t {
     NewExpression,
     MetaProperty,
     ImportExpression,
+    AwaitExpression,
     UnaryExpression,
     UpdateExpression,
     BinaryExpression,
@@ -640,6 +641,14 @@ struct MetaProperty final : Node {
           property(std::move(property)) {}
     NodePtr meta;
     NodePtr property;
+};
+
+// await argument（仅 async 上下文）
+struct AwaitExpression final : Node {
+    AwaitExpression(SourceRange range, NodePtr argument)
+        : Node(NodeKind::AwaitExpression, range),
+          argument(std::move(argument)) {}
+    NodePtr argument;
 };
 
 // import(source)

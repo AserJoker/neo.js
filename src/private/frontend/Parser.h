@@ -132,6 +132,7 @@ private:
     NodePtr parseLogicalExpression(int minPrecedence);
     NodePtr parseBinaryExpression(int minPrecedence);
     NodePtr parseUnaryExpression();
+    NodePtr parseAwaitExpression();
     NodePtr parseUpdateExpression();
     NodePtr parseLeftHandSideExpression();
     NodePtr parseMemberExpression(bool& optionalChain);
@@ -186,6 +187,9 @@ private:
     SourceLocation previousEnd_;
     // for 头部禁用 in 作为二元运算符，避免把 for-in 的 in 吃掉。
     bool allowIn_ = true;
+    // 当前函数体的上下文关键字状态（await / yield）。
+    bool inAsync_ = false;
+    bool inGenerator_ = false;
     std::vector<ParseError> errors_;
 };
 
