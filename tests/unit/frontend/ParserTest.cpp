@@ -44,6 +44,7 @@ using neo::frontend::ForStatement;
 using neo::frontend::FunctionExpression;
 using neo::frontend::Identifier;
 using neo::frontend::IfStatement;
+using neo::frontend::ImportExpression;
 using neo::frontend::LabeledStatement;
 using neo::frontend::LogicalExpression;
 using neo::frontend::LogicalOperator;
@@ -4070,6 +4071,44 @@ TEST(ParserTest, InvalidNewPropertyReportsError) {
 
 TEST(ParserTest, InvalidImportPropertyReportsError) {
     ParseResult result = parse("import.foo;");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, ImportExpression) {
+    ParseResult result = parse("import(\"mod\");");
+
+    ASSERT_TRUE(result.ok());
+    const auto& expression = statementOf(result, 0).expression;
+    ASSERT_EQ(expression->kind(), NodeKind::ImportExpression);
+    const auto& import = static_cast<const ImportExpression&>(*expression);
+    ASSERT_NE(import.source, nullptr);
+    EXPECT_EQ(import.source->kind(), NodeKind::StringLiteral);
+}
+
+TEST(ParserTest, ImportExpressionWithBinarySource) {
+    ParseResult result = parse("import(a + b);");
+
+    ASSERT_TRUE(result.ok());
+    const auto& import = static_cast<const ImportExpression&>(
+        *statementOf(result, 0).expression);
+    EXPECT_EQ(import.source->kind(), NodeKind::BinaryExpression);
+}
+
+TEST(ParserTest, ImportExpressionFollowedByMember) {
+    ParseResult result = parse("import(\"mod\").then(f);");
+
+    ASSERT_TRUE(result.ok());
+    const auto& call = static_cast<const CallExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(call.callee->kind(), NodeKind::MemberExpression);
+    const auto& member =
+        static_cast<const MemberExpression&>(*call.callee);
+    EXPECT_EQ(member.object->kind(), NodeKind::ImportExpression);
+}
+
+TEST(ParserTest, ImportExpressionWithoutArgumentReportsError) {
+    ParseResult result = parse("import();");
 
     EXPECT_FALSE(result.errors.empty());
 }

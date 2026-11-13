@@ -1660,6 +1660,17 @@ NodePtr Parser::parseMetaProperty(std::string metaName,
                                           std::move(property));
 }
 
+NodePtr Parser::parseImportExpression(SourceLocation start) {
+    if (!expect(TokenKind::LeftParen, "'('")) return nullptr;
+
+    NodePtr source = parseAssignmentExpression();
+    if (source == nullptr) return nullptr;
+
+    if (!expect(TokenKind::RightParen, "')'")) return nullptr;
+    return std::make_unique<ImportExpression>(rangeFrom(start),
+                                              std::move(source));
+}
+
 NodePtr Parser::parseMemberSuffix(NodePtr object, SourceLocation start,
                                   bool optional) {
     if (optional) {
@@ -1812,7 +1823,10 @@ NodePtr Parser::parsePrimaryExpression() {
                 return parseMetaProperty("import", "meta",
                                          SourceRange{start, previousEnd_});
             }
-            error(start, "Expected import.meta");
+            if (at(TokenKind::LeftParen)) {
+                return parseImportExpression(start);
+            }
+            error(start, "Expected import.meta or import(...)");
             return nullptr;
         }
         case TokenKind::NumericLiteral:
