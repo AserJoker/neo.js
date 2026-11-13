@@ -374,3 +374,56 @@ TEST(StrictnessPassTest, ArrowNonSimpleParamsWithUseStrict) {
     ASSERT_TRUE(result.parsed.ok());
     EXPECT_FALSE(result.errors.empty());
 }
+
+// ---------------------------------------------------------------------------
+// 函数声明位置（B.3.1 / B.3.3）
+// ---------------------------------------------------------------------------
+
+TEST(StrictnessPassTest, SloppyIfClauseFunctionIsAllowed) {
+    Analysis result = analyze("if (true) function f() { }");
+
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_TRUE(result.errors.empty());
+}
+
+TEST(StrictnessPassTest, StrictIfClauseFunctionIsError) {
+    Analysis result = analyze("\"use strict\"; if (true) function f() { }");
+
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(StrictnessPassTest, SloppyLabelledFunctionIsAllowed) {
+    Analysis result = analyze("label: function f() { }");
+
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_TRUE(result.errors.empty());
+}
+
+TEST(StrictnessPassTest, StrictLabelledFunctionIsError) {
+    Analysis result = analyze("\"use strict\"; label: function f() { }");
+
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(StrictnessPassTest, LoopBodyFunctionIsError) {
+    Analysis result = analyze("while (false) function f() { }");
+
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(StrictnessPassTest, IfBodyLabelledFunctionIsError) {
+    Analysis result = analyze("if (true) label: function f() { }");
+
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(StrictnessPassTest, WithBodyLabelledFunctionIsError) {
+    Analysis result = analyze("with (o) label: function f() { }");
+
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.errors.empty());
+}

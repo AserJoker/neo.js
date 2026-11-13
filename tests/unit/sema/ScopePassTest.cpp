@@ -265,6 +265,7 @@ TEST(ScopePassTest, StaticBlockHasVarScope) {
     ASSERT_EQ(blocks.size(), 1u);
     ShadowScope* scope = result.graph.findScope(blocks[0]->id());
     ASSERT_NE(scope, nullptr);
+    EXPECT_EQ(scope->kind, ShadowScopeKind::StaticBlock);
     ASSERT_NE(findBinding(scope, "x"), nullptr);
     EXPECT_EQ(findBinding(result.graph.root.get(), "x"), nullptr);
 }
@@ -466,17 +467,242 @@ TEST(ScopePassTest, DuplicateLetAcrossSwitchCases) {
     EXPECT_FALSE(result.errors.empty());
 }
 
-TEST(ScopePassTest, FunctionDeclarationInBlockIsBlockScoped) {
+TEST(ScopePassTest, BlockFunctionIsLexicalAndGetsAnnexBVar) {
     ScopeAnalysis result = analyze("{ function f() { } }");
     ASSERT_TRUE(result.parsed.ok());
     ASSERT_TRUE(result.errors.empty());
 
-    EXPECT_EQ(findBinding(result.graph.root.get(), "f"), nullptr);
     std::vector<Node*> blocks =
         collect(*result.parsed.program, NodeKind::BlockStatement);
     ASSERT_GE(blocks.size(), 1u);  // 外层 block + 函数体 block
     ShadowScope* block = result.graph.findScope(blocks[0]->id());
     ASSERT_NE(block, nullptr);
     EXPECT_EQ(block->kind, ShadowScopeKind::Block);
-    ASSERT_NE(findBinding(block, "f"), nullptr);
+    const ShadowBinding* local = findBinding(block, "f");
+    ASSERT_NE(local, nullptr);
+    EXPECT_EQ(local->kind, ShadowBindingKind::LexicalFunction);
+
+    // sloppy 块级函数额外创建 Annex B var 绑定。
+    const ShadowBinding* hoisted = findBinding(result.graph.root.get(), "f");
+    ASSERT_NE(hoisted, nullptr);
+    EXPECT_EQ(hoisted->kind, ShadowBindingKind::Var);
 }
+
+TEST(ScopePassTest, StrictBlockFunctionHasNoAnnexBVar) {
+    ScopeAnalysis result = analyze("\"use strict\"; { function f() { } }");
+    ASSERT_TRUE(result.parsed.ok());
+    ASSERT_TRUE(result.errors.empty());
+
+    EXPECT_EQ(findBinding(result.graph.root.get(), "f"), nullptr);
+}
+
+TEST(ScopePassTest, SloppyBlockDuplicateFunctionAllowed) {
+    ScopeAnalysis result =
+        analyze("{ function f() { } function f() { } }");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_TRUE(result.errors.empty());
+}
+
+TEST(ScopePassTest, StrictBlockDuplicateFunctionIsError) {
+    ScopeAnalysis result =
+        analyze("\"use strict\"; { function f() { } function f() { } }");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ScopePassTest, BlockFunctionConflictsWithSameBlockVar) {
+    ScopeAnalysis result = analyze("{ function f() { } var f; }");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ScopePassTest, BlockFunctionConflictsWithSameBlockLet) {
+    ScopeAnalysis result = analyze("{ function f() { } let f; }");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ScopePassTest, AnnexBSkippedWhenOuterLetConflicts) {
+    ScopeAnalysis result = analyze("let f; { function f() { } }");
+    ASSERT_TRUE(result.parsed.ok());
+    ASSERT_TRUE(result.errors.empty());
+
+    const ShadowBinding* root = findBinding(result.graph.root.get(), "f");
+    ASSERT_NE(root, nullptr);
+    EXPECT_EQ(root->kind, ShadowBindingKind::Let);
+}
+
+TEST(ScopePassTest, AnnexBSkippedForParameterName) {
+    ScopeAnalysis result =
+        analyze("function g(f) { { function f() { } } }");
+    ASSERT_TRUE(result.parsed.ok());
+    ASSERT_TRUE(result.errors.empty());
+
+    std::vector<Node*> functions =
+        collect(*result.parsed.program, NodeKind::FunctionDeclaration);
+    ASSERT_EQ(functions.size(), 2u);  // 外层 g + 块级 f
+    const auto& scopes = result.graph.functions.at(functions[0]->id());
+    EXPECT_EQ(findBinding(scopes.body, "f"), nullptr);
+}
+
+TEST(ScopePassTest, AnnexBSkippedForArgumentsName) {
+    ScopeAnalysis result =
+        analyze("function g() { { function arguments() { } } }");
+    ASSERT_TRUE(result.parsed.ok());
+    ASSERT_TRUE(result.errors.empty());
+
+    std::vector<Node*> functions =
+        collect(*result.parsed.program, NodeKind::FunctionDeclaration);
+    ASSERT_EQ(functions.size(), 2u);  // 外层 g + 块级 arguments
+    const auto& scopes = result.graph.functions.at(functions[0]->id());
+    const ShadowBinding* arguments = findBinding(scopes.arguments, "arguments");
+    ASSERT_NE(arguments, nullptr);
+    EXPECT_EQ(arguments->kind, ShadowBindingKind::Arguments);
+    EXPECT_EQ(findBinding(scopes.body, "arguments"), nullptr);
+}
+
+TEST(ScopePassTest, AnnexBAppliesToCatchBlockFunction) {
+    ScopeAnalysis result =
+        analyze("try { throw 1; } catch (e) { function f() { } }");
+    ASSERT_TRUE(result.parsed.ok());
+    ASSERT_TRUE(result.errors.empty());
+
+    const ShadowBinding* hoisted = findBinding(result.graph.root.get(), "f");
+    ASSERT_NE(hoisted, nullptr);
+    EXPECT_EQ(hoisted->kind, ShadowBindingKind::Var);
+}
+
+TEST(ScopePassTest, CatchFunctionConflictsWithCatchParam) {
+    ScopeAnalysis result = analyze("try { } catch (e) { function e() { } }");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ScopePassTest, DestructuringCatchParamRejectsVar) {
+    ScopeAnalysis result = analyze("try { } catch ({ e }) { var e; }");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ScopePassTest, SimpleCatchParamAllowsVarInStrict) {
+    ScopeAnalysis result =
+        analyze("\"use strict\"; try { } catch (e) { var e; }");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_TRUE(result.errors.empty());
+}
+
+TEST(ScopePassTest, ScriptTopLevelDuplicateFunctionAllowed) {
+    ScopeAnalysis result = analyze("function f() { } function f() { }");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_TRUE(result.errors.empty());
+
+    const ShadowBinding* f = findBinding(result.graph.root.get(), "f");
+    ASSERT_NE(f, nullptr);
+    EXPECT_EQ(f->kind, ShadowBindingKind::Function);
+}
+
+TEST(ScopePassTest, FunctionBodyTopLevelDuplicateFunctionAllowedInStrict) {
+    ScopeAnalysis result =
+        analyze("function g() { \"use strict\"; function f() { } "
+                "function f() { } }");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_TRUE(result.errors.empty());
+}
+
+TEST(ScopePassTest, ModuleTopLevelDuplicateFunctionIsError) {
+    ScopeAnalysis result =
+        analyze("export {}; function f() { } function f() { }");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ScopePassTest, ModuleTopLevelFunctionIsLexical) {
+    ScopeAnalysis result = analyze("export {}; function f() { }");
+    ASSERT_TRUE(result.parsed.ok());
+    ASSERT_TRUE(result.errors.empty());
+
+    const ShadowBinding* f = findBinding(result.graph.root.get(), "f");
+    ASSERT_NE(f, nullptr);
+    EXPECT_EQ(f->kind, ShadowBindingKind::LexicalFunction);
+}
+
+TEST(ScopePassTest, ModuleTopLevelFunctionConflictsWithVar) {
+    ScopeAnalysis result = analyze("export {}; function f() { } var f;");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ScopePassTest, ModuleBlockDuplicateFunctionIsError) {
+    ScopeAnalysis result =
+        analyze("export {}; { function f() { } function f() { } }");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ScopePassTest, StaticBlockTopLevelDuplicateFunctionAllowed) {
+    ScopeAnalysis result =
+        analyze("class A { static { function f() { } function f() { } } }");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_TRUE(result.errors.empty());
+}
+
+TEST(ScopePassTest, StaticBlockInnerBlockDuplicateFunctionIsError) {
+    ScopeAnalysis result = analyze(
+        "class A { static { { function f() { } function f() { } } } }");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ScopePassTest, StaticBlockTopLevelFunctionIsVarLike) {
+    ScopeAnalysis result =
+        analyze("class A { static { function f() { } var f; } }");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_TRUE(result.errors.empty());
+}
+
+TEST(ScopePassTest, IfClauseFunctionGetsAnnexBVar) {
+    ScopeAnalysis result = analyze("if (true) function f() { }");
+    ASSERT_TRUE(result.parsed.ok());
+    ASSERT_TRUE(result.errors.empty());
+
+    const ShadowBinding* f = findBinding(result.graph.root.get(), "f");
+    ASSERT_NE(f, nullptr);
+    EXPECT_EQ(f->kind, ShadowBindingKind::Var);
+}
+
+TEST(ScopePassTest, IfClauseFunctionIsNotTopLevelVarLike) {
+    // 合成 Block 中的函数与顶层 let 不冲突，且 Annex B var 被抑制。
+    ScopeAnalysis result = analyze("if (true) function f() { } let f;");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_TRUE(result.errors.empty());
+
+    const ShadowBinding* f = findBinding(result.graph.root.get(), "f");
+    ASSERT_NE(f, nullptr);
+    EXPECT_EQ(f->kind, ShadowBindingKind::Let);
+}
+
+TEST(ScopePassTest, StrictIfClauseFunctionHasNoAnnexBVar) {
+    ScopeAnalysis result =
+        analyze("\"use strict\"; if (true) function f() { }");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_TRUE(result.errors.empty());
+
+    EXPECT_EQ(findBinding(result.graph.root.get(), "f"), nullptr);
+}
+
+TEST(ScopePassTest, LabelledFunctionIsVarLikeInBlock) {
+    ScopeAnalysis result = analyze("{ label: function f() { } }");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_TRUE(result.errors.empty());
+
+    const ShadowBinding* f = findBinding(result.graph.root.get(), "f");
+    ASSERT_NE(f, nullptr);
+    EXPECT_EQ(f->kind, ShadowBindingKind::Function);
+}
+
+TEST(ScopePassTest, LabelledFunctionConflictsWithBlockLet) {
+    ScopeAnalysis result = analyze("{ label: function f() { } let f; }");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.errors.empty());
+}
+

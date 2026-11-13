@@ -24,15 +24,19 @@ using frontend::CatchClause;
 using frontend::ClassBody;
 using frontend::ClassDeclaration;
 using frontend::ClassExpression;
+using frontend::Directive;
 using frontend::FunctionDeclaration;
 using frontend::FunctionExpression;
 using frontend::Identifier;
+using frontend::IfStatement;
+using frontend::LabeledStatement;
 using frontend::Node;
 using frontend::NodeId;
 using frontend::NodeKind;
 using frontend::NodeList;
 using frontend::NodePtr;
 using frontend::Program;
+using frontend::SourceType;
 using frontend::SwitchStatement;
 using frontend::VariableDeclaration;
 using frontend::VariableDeclarator;
@@ -41,7 +45,8 @@ using frontend::WithStatement;
 
 bool isVarScope(ShadowScopeKind kind) {
     return kind == ShadowScopeKind::Program ||
-           kind == ShadowScopeKind::FunctionBody;
+           kind == ShadowScopeKind::FunctionBody ||
+           kind == ShadowScopeKind::StaticBlock;
 }
 
 bool isLexicalKind(ShadowBindingKind kind) {
@@ -53,34 +58,34 @@ bool isLexicalKind(ShadowBindingKind kind) {
         case ShadowBindingKind::CatchParam:
         case ShadowBindingKind::FunctionName:
         case ShadowBindingKind::ClassName:
+        case ShadowBindingKind::LexicalFunction:
             return true;
         default:
             return false;
     }
 }
 
-// var 与 lexical 冲突检查时，catch 参数不构成冲突（catch (e) { var e; } 合法）。
-bool isVarConflictKind(ShadowBindingKind kind) {
-    return isLexicalKind(kind) && kind != ShadowBindingKind::CatchParam;
+// var 与同名 lexical 绑定冲突。
+// catch 参数仅在简单 BindingIdentifier 时豁免（Annex B B.3.4）。
+bool varConflictsWith(const ShadowScope& scope, ShadowBindingKind kind) {
+    if (kind == ShadowBindingKind::CatchParam) {
+        return !scope.simpleCatchParameter;
+    }
+    return isLexicalKind(kind);
 }
 
-bool isDuplicateAllowed(ShadowBindingKind existing, ShadowBindingKind incoming) {
-    if (existing == ShadowBindingKind::Param &&
-        incoming == ShadowBindingKind::Param) {
-        // 重复参数的严格性由 StrictnessPass 判定。
-        return true;
-    }
-    if (incoming == ShadowBindingKind::Var &&
-        (existing == ShadowBindingKind::Var ||
-         existing == ShadowBindingKind::Function)) {
-        return true;
-    }
-    if (incoming == ShadowBindingKind::Function &&
-        (existing == ShadowBindingKind::Var ||
-         existing == ShadowBindingKind::Function)) {
-        return true;
+bool hasUseStrictDirective(const NodeList& body) {
+    for (const NodePtr& statement : body) {
+        if (!statement || statement->kind() != NodeKind::Directive) break;
+        if (static_cast<const Directive&>(*statement).isUseStrict()) return true;
     }
     return false;
+}
+
+bool hasUseStrictDirective(const Node* body) {
+    if (!body || body->kind() != NodeKind::BlockStatement) return false;
+    return hasUseStrictDirective(
+        static_cast<const frontend::BlockStatement&>(*body).body);
 }
 
 struct PendingClass {
@@ -92,6 +97,13 @@ struct SwitchContext {
     NodeId switchId;
     ShadowScope* scope;
     bool pushed = false;
+};
+
+// Annex B B.3.2：sloppy 块级函数可能额外创建 var 绑定。
+// 候选在遍历结束后统一判定，避免依赖声明出现顺序。
+struct AnnexBCandidate {
+    ShadowScope* blockScope;
+    BindingName binding;
 };
 
 class ScopeBuilder final : public IVisitor {
@@ -108,6 +120,12 @@ public:
                 break;
             case NodeKind::FunctionDeclaration:
                 enterFunctionDeclaration(node);
+                break;
+            case NodeKind::IfStatement:
+                enterIf(node);
+                break;
+            case NodeKind::LabeledStatement:
+                enterLabeled(node);
                 break;
             case NodeKind::FunctionExpression:
             case NodeKind::ArrowFunctionExpression:
@@ -168,13 +186,16 @@ public:
             case NodeKind::FunctionDeclaration:
             case NodeKind::FunctionExpression:
             case NodeKind::ArrowFunctionExpression:
+            case NodeKind::ClassBody:
+            case NodeKind::StaticBlock:
+                popScopes(node.id());
+                popStrictness();
+                break;
             case NodeKind::BlockStatement:
             case NodeKind::ForStatement:
             case NodeKind::ForInStatement:
             case NodeKind::ForOfStatement:
             case NodeKind::CatchClause:
-            case NodeKind::ClassBody:
-            case NodeKind::StaticBlock:
                 popScopes(node.id());
                 break;
             default:
@@ -183,6 +204,8 @@ public:
                 break;
         }
     }
+
+    void finish() { applyAnnexB(); }
 
     ScopeGraph takeGraph() { return std::move(graph_); }
 
@@ -247,18 +270,57 @@ private:
 
     void enterProgram(Node& node) {
         auto& program = static_cast<Program&>(node);
+        module_ = program.sourceType == SourceType::Module;
+        pushStrictness(module_ || hasUseStrictDirective(program.body));
+
         ShadowScope* scope = createScope(ShadowScopeKind::Program, nullptr);
         pushScope(program.id(), scope);
         mapScope(program.id(), scope);
     }
 
+    void enterIf(Node& node) {
+        auto& statement = static_cast<IfStatement&>(node);
+        markIfClauseFunction(statement.consequent.get());
+        markIfClauseFunction(statement.alternate.get());
+    }
+
+    // B.3.3：if 子句中的函数声明按“合成 BlockStatement”处理。
+    void markIfClauseFunction(Node* clause) {
+        if (clause && clause->kind() == NodeKind::FunctionDeclaration) {
+            syntheticBlockFunctions_.insert(clause->id());
+        }
+    }
+
+    void enterLabeled(Node& node) {
+        auto& statement = static_cast<LabeledStatement&>(node);
+        if (statement.body &&
+            statement.body->kind() == NodeKind::FunctionDeclaration) {
+            labelledFunctions_.insert(statement.body->id());
+        }
+    }
+
     void enterFunctionDeclaration(Node& node) {
         auto& function = static_cast<FunctionDeclaration&>(node);
-        if (function.id && function.id->kind() == NodeKind::Identifier) {
+        const bool hasName =
+            function.id && function.id->kind() == NodeKind::Identifier;
+        BindingName binding;
+        if (hasName) {
             const auto& identifier =
                 static_cast<const Identifier&>(*function.id);
-            declareFunction(BindingName{identifier.name, identifier.range()});
+            binding = BindingName{identifier.name, identifier.range()};
         }
+
+        if (hasName && labelledFunctions_.count(node.id()) != 0) {
+            // 标签函数声明使用 FunctionDeclaration 求值语义：var 型绑定。
+            declareVarLikeFunction(binding);
+        } else if (syntheticBlockFunctions_.count(node.id()) != 0) {
+            ShadowScope* block = createScope(ShadowScopeKind::Block, current());
+            pushScope(node.id(), block);
+            if (hasName) declareFunction(binding);
+        } else if (hasName) {
+            declareFunction(binding);
+        }
+
         enterFunction(node);
     }
 
@@ -297,6 +359,9 @@ private:
             default:
                 return;
         }
+
+        // 严格性：继承外层，或函数体自带 "use strict" 指令。
+        pushStrictness(strict() || hasUseStrictDirective(body));
 
         ShadowScope* closure =
             createScope(ShadowScopeKind::FunctionClosure, current());
@@ -369,6 +434,7 @@ private:
         std::vector<BindingName> names;
         bool nonSimple = false;
         collectBindingNames(clause.param.get(), names, nonSimple);
+        scope->simpleCatchParameter = !nonSimple;
         for (const BindingName& name : names) {
             declareBinding(scope, name, ShadowBindingKind::CatchParam, true,
                            true);
@@ -435,6 +501,8 @@ private:
     }
 
     void enterClassBody(Node& node) {
+        // 类体（含字段初始化器与方法）恒为严格模式。
+        pushStrictness(true);
         ShadowScope* scope = createScope(ShadowScopeKind::Class, current());
         pushScope(node.id(), scope);
         mapScope(node.id(), scope);
@@ -450,8 +518,10 @@ private:
     }
 
     void enterStaticBlock(Node& node) {
+        // static block 恒为严格模式，且自身是 var 作用域。
+        pushStrictness(true);
         ShadowScope* scope =
-            createScope(ShadowScopeKind::FunctionBody, current());
+            createScope(ShadowScopeKind::StaticBlock, current());
         pushScope(node.id(), scope);
         mapScope(node.id(), scope);
         graph_.functions[node.id()] = FunctionScopes{nullptr, nullptr, scope};
@@ -522,13 +592,21 @@ private:
     }
 
     void declareVar(const BindingName& binding) {
+        declareVarScoped(binding, ShadowBindingKind::Var);
+    }
+
+    void declareVarLikeFunction(const BindingName& binding) {
+        declareVarScoped(binding, ShadowBindingKind::Function);
+    }
+
+    void declareVarScoped(const BindingName& binding, ShadowBindingKind kind) {
         ShadowScope* target = varScope();
 
         for (ShadowScope* scope = current(); scope != nullptr;
              scope = scope->parent) {
             const auto it = scope->bindings.find(binding.name);
             if (it != scope->bindings.end() &&
-                isVarConflictKind(it->second.kind)) {
+                varConflictsWith(*scope, it->second.kind)) {
                 duplicateError(binding);
                 return;
             }
@@ -541,12 +619,33 @@ private:
             if (scope == target) break;
         }
 
-        declareBinding(target, binding, ShadowBindingKind::Var, true, true);
+        declareBinding(target, binding, kind, true, true);
     }
 
     void declareFunction(const BindingName& binding) {
-        declareBinding(current(), binding, ShadowBindingKind::Function, true,
-                       true);
+        ShadowScope* scope = current();
+        ShadowBindingKind kind = ShadowBindingKind::LexicalFunction;
+        switch (scope->kind) {
+            case ShadowScopeKind::Program:
+                // Script 顶层函数是 var 型；Module 顶层函数是 lexical 型。
+                kind = module_ ? ShadowBindingKind::LexicalFunction
+                               : ShadowBindingKind::Function;
+                break;
+            case ShadowScopeKind::FunctionBody:
+            case ShadowScopeKind::StaticBlock:
+                kind = ShadowBindingKind::Function;
+                break;
+            default:
+                kind = ShadowBindingKind::LexicalFunction;
+                break;
+        }
+
+        declareBinding(scope, binding, kind, true, true);
+
+        // Annex B B.3.2 仅适用于 sloppy 的块级函数声明。
+        if (kind == ShadowBindingKind::LexicalFunction && !strict()) {
+            annexBCandidates_.push_back(AnnexBCandidate{scope, binding});
+        }
     }
 
     void declareBinding(ShadowScope* scope, const BindingName& binding,
@@ -595,6 +694,107 @@ private:
                            "' has already been declared");
     }
 
+    bool isDuplicateAllowed(ShadowBindingKind existing,
+                            ShadowBindingKind incoming) const {
+        if (existing == ShadowBindingKind::Param &&
+            incoming == ShadowBindingKind::Param) {
+            // 重复参数的严格性由 StrictnessPass 判定。
+            return true;
+        }
+        if (incoming == ShadowBindingKind::Var &&
+            (existing == ShadowBindingKind::Var ||
+             existing == ShadowBindingKind::Function)) {
+            return true;
+        }
+        if (incoming == ShadowBindingKind::Function &&
+            (existing == ShadowBindingKind::Var ||
+             existing == ShadowBindingKind::Function)) {
+            return true;
+        }
+        // sloppy 块级重复函数声明合法（Annex B）；strict 下报错。
+        if (existing == ShadowBindingKind::LexicalFunction &&
+            incoming == ShadowBindingKind::LexicalFunction && !strict()) {
+            return true;
+        }
+        return false;
+    }
+
+    bool strict() const {
+        return !strictStack_.empty() && strictStack_.back();
+    }
+
+    void pushStrictness(bool value) { strictStack_.push_back(value); }
+
+    void popStrictness() {
+        if (!strictStack_.empty()) strictStack_.pop_back();
+    }
+
+    // Annex B B.3.2：为 sloppy 块级函数补建 var 绑定。
+    // 判定等价于“把该函数声明替换成同名 var 声明是否产生早期错误”。
+    void applyAnnexB() {
+        for (const AnnexBCandidate& candidate : annexBCandidates_) {
+            const std::string& name = candidate.binding.name;
+
+            ShadowScope* varScope = nullptr;
+            for (ShadowScope* scope = candidate.blockScope; scope != nullptr;
+                 scope = scope->parent) {
+                if (isVarScope(scope->kind)) {
+                    varScope = scope;
+                    break;
+                }
+            }
+            if (!varScope) continue;
+
+            if (varScope->kind == ShadowScopeKind::FunctionBody) {
+                // 函数代码中名为 arguments 的块级函数不创建 var 绑定。
+                if (name == "arguments") continue;
+                ShadowScope* args = varScope->parent;
+                if (args && args->kind == ShadowScopeKind::FunctionArguments) {
+                    const auto param = args->bindings.find(name);
+                    if (param != args->bindings.end() &&
+                        param->second.kind == ShadowBindingKind::Param) {
+                        continue;
+                    }
+                }
+            }
+
+            bool conflict = false;
+            for (ShadowScope* scope = candidate.blockScope; scope != nullptr;
+                 scope = scope->parent) {
+                if (scope == varScope) {
+                    const auto it = scope->bindings.find(name);
+                    if (it != scope->bindings.end() &&
+                        isLexicalKind(it->second.kind)) {
+                        conflict = true;
+                    }
+                    break;
+                }
+                // 同块已有 var 声明：原代码本身已是早期错误。
+                if (scope->varNames.count(name) != 0) {
+                    conflict = true;
+                    break;
+                }
+                const auto it = scope->bindings.find(name);
+                if (it != scope->bindings.end()) {
+                    const ShadowBindingKind kind = it->second.kind;
+                    // 同名块级函数（重复声明）不阻止 var 绑定。
+                    if (kind == ShadowBindingKind::LexicalFunction) continue;
+                    if (isLexicalKind(kind)) {
+                        conflict = true;
+                        break;
+                    }
+                }
+            }
+            if (conflict) continue;
+
+            if (varScope->bindings.find(name) == varScope->bindings.end()) {
+                varScope->bindings.emplace(
+                    name, ShadowBinding{name, ShadowBindingKind::Var, true,
+                                        true, candidate.binding.range});
+            }
+        }
+    }
+
     ScopeGraph graph_;
     std::vector<ShadowScope*> stack_;
     std::unordered_map<NodeId, std::vector<ShadowScope*>> pushedScopes_;
@@ -603,6 +803,11 @@ private:
     std::unordered_map<NodeId, ShadowScope*> withBodyScopes_;
     std::vector<SwitchContext> switchContexts_;
     std::vector<PendingClass> pendingClasses_;
+    std::vector<AnnexBCandidate> annexBCandidates_;
+    std::unordered_set<NodeId> syntheticBlockFunctions_;
+    std::unordered_set<NodeId> labelledFunctions_;
+    std::vector<bool> strictStack_;
+    bool module_ = false;
     SemaContext& context_;
 };
 
@@ -618,6 +823,7 @@ ScopeGraph runScopePass(frontend::Node& program, SemaContext& context) {
     walker.addAll(std::move(builder));
     walker.walk(program, context);
 
+    raw->finish();
     return raw->takeGraph();
 }
 

@@ -24,11 +24,15 @@ using frontend::ClassBody;
 using frontend::ClassDeclaration;
 using frontend::ClassExpression;
 using frontend::Directive;
+using frontend::DoWhileStatement;
 using frontend::ForInStatement;
 using frontend::ForOfStatement;
+using frontend::ForStatement;
 using frontend::FunctionDeclaration;
 using frontend::FunctionExpression;
 using frontend::Identifier;
+using frontend::IfStatement;
+using frontend::LabeledStatement;
 using frontend::Node;
 using frontend::NodeId;
 using frontend::NodeKind;
@@ -46,6 +50,8 @@ using frontend::UnaryExpression;
 using frontend::UnaryOperator;
 using frontend::VariableDeclaration;
 using frontend::VariableDeclarator;
+using frontend::WhileStatement;
+using frontend::WithStatement;
 
 bool isStrictReserved(std::string_view name) {
     return name == "implements" || name == "interface" || name == "let" ||
@@ -68,6 +74,19 @@ bool hasUseStrictDirective(const NodeList& body) {
 bool hasUseStrictDirective(const Node* body) {
     if (!body || body->kind() != NodeKind::BlockStatement) return false;
     return hasUseStrictDirective(static_cast<const BlockStatement&>(*body).body);
+}
+
+// 14.13.2 IsLabelledFunction：标签链末端是否为 FunctionDeclaration。
+bool isLabelledFunction(const Node* statement) {
+    while (statement && statement->kind() == NodeKind::LabeledStatement) {
+        const auto& labelled = static_cast<const LabeledStatement&>(*statement);
+        if (labelled.body &&
+            labelled.body->kind() == NodeKind::FunctionDeclaration) {
+            return true;
+        }
+        statement = labelled.body.get();
+    }
+    return false;
 }
 
 void checkBindingName(const BindingName& binding, SemaContext& context,
@@ -157,18 +176,53 @@ public:
             case NodeKind::ClassBody:
                 push(true);
                 break;
-            case NodeKind::WithStatement:
+            case NodeKind::IfStatement: {
+                auto& statement = static_cast<IfStatement&>(node);
+                checkIfClause(statement.consequent.get(), context);
+                checkIfClause(statement.alternate.get(), context);
+                break;
+            }
+            case NodeKind::WhileStatement: {
+                auto& statement = static_cast<WhileStatement&>(node);
+                checkLoopBody(statement.body.get(), context);
+                break;
+            }
+            case NodeKind::DoWhileStatement: {
+                auto& statement = static_cast<DoWhileStatement&>(node);
+                checkLoopBody(statement.body.get(), context);
+                break;
+            }
+            case NodeKind::ForStatement: {
+                auto& statement = static_cast<ForStatement&>(node);
+                checkLoopBody(statement.body.get(), context);
+                break;
+            }
+            case NodeKind::WithStatement: {
+                auto& statement = static_cast<WithStatement&>(node);
                 if (strict()) {
                     context.error(node.range().start,
                                   "With statement is not allowed in strict mode");
                 }
+                if (isLabelledFunction(statement.body.get())) {
+                    context.error(node.range().start,
+                                  "Labelled function declaration is not allowed "
+                                  "as the body of a with statement");
+                }
                 break;
+            }
             case NodeKind::LabeledStatement: {
-                auto& statement =
-                    static_cast<frontend::LabeledStatement&>(node);
+                auto& statement = static_cast<LabeledStatement&>(node);
                 if (strict()) {
                     checkStrictReservedName(statement.label,
                                             statement.range(), context);
+                    if (statement.body &&
+                        statement.body->kind() ==
+                            NodeKind::FunctionDeclaration) {
+                        context.error(
+                            node.range().start,
+                            "In strict mode code, functions can only be "
+                            "declared at top level or inside a block");
+                    }
                 }
                 break;
             }
@@ -238,8 +292,9 @@ public:
                 break;
             }
             case NodeKind::ForInStatement: {
+                auto& statement = static_cast<ForInStatement&>(node);
+                checkLoopBody(statement.body.get(), context);
                 if (strict()) {
-                    auto& statement = static_cast<ForInStatement&>(node);
                     if (statement.left &&
                         statement.left->kind() !=
                             NodeKind::VariableDeclaration) {
@@ -249,8 +304,9 @@ public:
                 break;
             }
             case NodeKind::ForOfStatement: {
+                auto& statement = static_cast<ForOfStatement&>(node);
+                checkLoopBody(statement.body.get(), context);
                 if (strict()) {
-                    auto& statement = static_cast<ForOfStatement&>(node);
                     if (statement.left &&
                         statement.left->kind() !=
                             NodeKind::VariableDeclaration) {
@@ -380,6 +436,40 @@ public:
     }
 
 private:
+    // 14.6.1 / B.3.3：if 子句允许直接 FunctionDeclaration 仅限非严格代码；
+    // 标签链末端为函数声明时一律报错（IsLabelledFunction）。
+    void checkIfClause(Node* clause, SemaContext& context) {
+        if (!clause) return;
+        if (isLabelledFunction(clause)) {
+            context.error(clause->range().start,
+                          "Labelled function declaration is not allowed as the "
+                          "body of an if statement");
+            return;
+        }
+        if (strict() && clause->kind() == NodeKind::FunctionDeclaration) {
+            context.error(clause->range().start,
+                          "In strict mode code, functions can only be declared "
+                          "at top level or inside a block");
+        }
+    }
+
+    // 循环体 / with 体必须是 Statement，FunctionDeclaration 不是 Statement。
+    void checkLoopBody(Node* body, SemaContext& context) {
+        if (!body) return;
+        if (isLabelledFunction(body)) {
+            context.error(body->range().start,
+                          "Labelled function declaration is not allowed as the "
+                          "body of an iteration statement");
+            return;
+        }
+        if (body->kind() == NodeKind::FunctionDeclaration) {
+            context.error(body->range().start,
+                          "In non-strict mode code, functions can only be "
+                          "declared at top level, inside a block, or as the "
+                          "body of an if statement");
+        }
+    }
+
     bool strict() const {
         return !strictStack_.empty() && strictStack_.back();
     }

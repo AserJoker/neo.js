@@ -140,4 +140,14 @@ Sema 采用“收集错误、继续分析”，不 fail-fast；遍历由树结�
 - M2：`ScopePass`，建立 shadow_scope 树（Program / closure / arguments /
   body / block / for / catch / switch / class / with / static block），
   完成 var 提升、lexical 绑定、参数与隐式 `arguments`、重复声明与
-  var/lexical 冲突检查。
+  var/lexical 冲突检查。按 ECMA-262 第 17 版补齐语言语义：
+  - 严格性栈与 script/module 区分：Script 顶层函数为 var 型，Module
+    顶层函数为 lexical 型；FunctionBody / StaticBlock 顶层函数为 var 型；
+    Block / CaseBlock / Catch body 为 lexical 型。
+  - `StaticBlock` 独立作用域类型（var 作用域，恒严格）。
+  - Annex B B.3.2：sloppy 块级函数在遍历结束后按完整作用域树判定是否
+    补建 var 绑定（外层 lexical 冲突、参数名、`arguments` 均抑制）。
+  - Annex B B.3.4：仅简单 CatchParameter 允许同名 `var`。
+  - Annex B B.3.3 / B.3.1：if 子句函数按合成 Block 处理；标签函数声明
+    按 FunctionDeclaration 求值语义作 var 型绑定；对应早期错误在
+    `StrictnessPass` 中检查。

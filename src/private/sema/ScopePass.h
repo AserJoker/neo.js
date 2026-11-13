@@ -38,6 +38,7 @@ enum class ShadowScopeKind : uint8_t {
     Catch,
     Class,
     With,
+    StaticBlock,
 };
 
 enum class ShadowBindingKind : uint8_t {
@@ -52,6 +53,8 @@ enum class ShadowBindingKind : uint8_t {
     CatchParam,
     FunctionName,
     ClassName,
+    // 块级 / 模块级函数声明：lexical 绑定，与 var 型 Function 区分。
+    LexicalFunction,
 };
 
 struct ShadowBinding {
@@ -72,6 +75,9 @@ struct ShadowScope {
     std::unordered_map<std::string, ShadowBinding> bindings;
     // 本作用域语法范围内出现的 var 名字（用于 var/lexical 冲突检查）。
     std::unordered_set<std::string> varNames;
+    // catch 作用域：CatchParameter 是否为简单 BindingIdentifier。
+    // 仅简单参数允许 Annex B B.3.4 的同名 var 绑定。
+    bool simpleCatchParameter = true;
 
     ShadowBinding* findLocal(std::string_view name) {
         const auto it = bindings.find(std::string(name));
