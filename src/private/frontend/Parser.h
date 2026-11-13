@@ -97,6 +97,7 @@ private:
     NodePtr parseWithStatement();
     NodePtr parseDebuggerStatement();
     NodePtr parseFunctionDeclaration(bool async);
+    NodePtr parseFunctionExpression(bool async);
     NodePtr parseFunctionBody();
     bool parseFormalParameters(NodeList& params);
     NodePtr parseRestElement();
@@ -141,9 +142,17 @@ private:
     NodePtr parseBooleanLiteral();
     NodePtr parseNullLiteral();
     NodePtr parseRegExpLiteral();
+    NodePtr parseThisExpression();
     NodePtr parseArrayExpression();
     NodePtr parseObjectExpression();
     NodePtr parseProperty();
+    NodePtr parsePropertyKey(bool& computed, bool& identifierKey);
+    NodePtr parseMethodProperty(SourceLocation start, bool async,
+                                bool generator, PropertyKind propertyKind);
+    NodePtr parseMethodPropertyWithKey(SourceLocation start, NodePtr key,
+                                       bool computed, bool async,
+                                       bool generator,
+                                       PropertyKind propertyKind);
 
     // 模式
     NodePtr parseBindingPattern();

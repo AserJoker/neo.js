@@ -76,6 +76,8 @@ enum class NodeKind : uint8_t {
     BooleanLiteral,
     NullLiteral,
     RegExpLiteral,
+    ThisExpression,
+    FunctionExpression,
 
     MemberExpression,
     CallExpression,
@@ -441,6 +443,29 @@ struct RegExpLiteral final : Node {
     std::string flags;
 };
 
+struct ThisExpression final : Node {
+    explicit ThisExpression(SourceRange range)
+        : Node(NodeKind::ThisExpression, range) {}
+};
+
+// function [*] [name](params) { body }
+// id 可空（匿名函数表达式）。
+struct FunctionExpression final : Node {
+    FunctionExpression(SourceRange range, NodePtr id, NodeList params,
+                       NodePtr body, bool async, bool generator)
+        : Node(NodeKind::FunctionExpression, range),
+          id(std::move(id)),
+          params(std::move(params)),
+          body(std::move(body)),
+          async(async),
+          generator(generator) {}
+    NodePtr id;
+    NodeList params;
+    NodePtr body;  // BlockStatement
+    bool async;
+    bool generator;
+};
+
 // obj.property / obj[expression]
 struct MemberExpression final : Node {
     MemberExpression(SourceRange range, NodePtr object, NodePtr property,
@@ -624,20 +649,28 @@ struct ArrayExpression final : Node {
     NodeList elements;
 };
 
-// key: value / key / [key]: value
+enum class PropertyKind : uint8_t { Init, Get, Set };
+
+// key: value / key / [key]: value / key() {} / get key() {} / set key(v) {}
 // shorthand 为 true 时 key 与 value 指向同一个名字（value 是独立的 Identifier）。
+// method 为 true 时 value 是 FunctionExpression。
 struct Property final : Node {
     Property(SourceRange range, NodePtr key, NodePtr value, bool computed,
-             bool shorthand)
+             bool shorthand, bool method = false,
+             PropertyKind propertyKind = PropertyKind::Init)
         : Node(NodeKind::Property, range),
           key(std::move(key)),
           value(std::move(value)),
           computed(computed),
-          shorthand(shorthand) {}
+          shorthand(shorthand),
+          method(method),
+          propertyKind(propertyKind) {}
     NodePtr key;
     NodePtr value;
     bool computed;
     bool shorthand;
+    bool method;
+    PropertyKind propertyKind;
 };
 
 // { property, ...spread }

@@ -20,6 +20,13 @@ bool isIdentifierName(TokenKind kind) {
            value <= static_cast<int>(TokenKind::False);
 }
 
+bool isPropertyNameStart(TokenKind kind) {
+    return isIdentifierName(kind) || kind == TokenKind::StringLiteral ||
+           kind == TokenKind::NumericLiteral ||
+           kind == TokenKind::BigIntLiteral ||
+           kind == TokenKind::LeftBracket;
+}
+
 struct BinaryOperatorInfo {
     BinaryOperator op;
     int precedence;
@@ -487,6 +494,30 @@ NodePtr Parser::parseFunctionDeclaration(bool async) {
     if (body == nullptr) return nullptr;
 
     return std::make_unique<FunctionDeclaration>(
+        rangeFrom(start), std::move(id), std::move(params), std::move(body),
+        async, generator);
+}
+
+NodePtr Parser::parseFunctionExpression(bool async) {
+    const SourceLocation start = current_.start;
+    if (async) advance();  // 'async'
+    if (!expect(TokenKind::Function, "'function'")) return nullptr;
+
+    const bool generator = match(TokenKind::Star);
+
+    // 函数表达式的名字可选（命名函数表达式）。
+    NodePtr id;
+    if (at(TokenKind::Identifier)) {
+        id = parseIdentifier();
+    }
+
+    NodeList params;
+    if (!parseFormalParameters(params)) return nullptr;
+
+    NodePtr body = parseFunctionBody();
+    if (body == nullptr) return nullptr;
+
+    return std::make_unique<FunctionExpression>(
         rangeFrom(start), std::move(id), std::move(params), std::move(body),
         async, generator);
 }
@@ -1433,9 +1464,22 @@ NodePtr Parser::parseIdentifierName() {
 }
 
 NodePtr Parser::parsePrimaryExpression() {
+    // async function 表达式（async 与 function 之间不允许行终止符）。
+    if (at(TokenKind::Identifier) && current_.text == "async") {
+        const Token next = peek();
+        if (next.kind == TokenKind::Function &&
+            !next.precededByLineTerminator) {
+            return parseFunctionExpression(true);
+        }
+    }
+
     switch (current_.kind) {
         case TokenKind::Identifier:
             return parseIdentifier();
+        case TokenKind::This:
+            return parseThisExpression();
+        case TokenKind::Function:
+            return parseFunctionExpression(false);
         case TokenKind::NumericLiteral:
             return parseNumericLiteral();
         case TokenKind::BigIntLiteral:
@@ -1480,6 +1524,12 @@ NodePtr Parser::parsePrimaryExpression() {
             error(current_.start, "Unexpected token in expression");
             return nullptr;
     }
+}
+
+NodePtr Parser::parseThisExpression() {
+    const SourceLocation start = current_.start;
+    advance();  // 'this'
+    return std::make_unique<ThisExpression>(rangeFrom(start));
 }
 
 NodePtr Parser::parseIdentifier() {
@@ -1591,37 +1641,107 @@ NodePtr Parser::parseObjectExpression() {
                                               std::move(properties));
 }
 
-NodePtr Parser::parseProperty() {
-    const SourceLocation start = current_.start;
-
-    bool computed = false;
-    bool identifierKey = false;
-    NodePtr key;
+NodePtr Parser::parsePropertyKey(bool& computed, bool& identifierKey) {
+    computed = false;
+    identifierKey = false;
 
     if (at(TokenKind::LeftBracket)) {
         computed = true;
         advance();  // '['
-        key = parseAssignmentExpression();
+        NodePtr key = parseAssignmentExpression();
         if (key == nullptr) return nullptr;
         if (!expect(TokenKind::RightBracket, "']'")) return nullptr;
-    } else if (at(TokenKind::StringLiteral)) {
-        key = parseStringLiteral();
-    } else if (at(TokenKind::NumericLiteral)) {
-        key = parseNumericLiteral();
-    } else if (at(TokenKind::BigIntLiteral)) {
-        key = parseBigIntLiteral();
-    } else {
-        // 非计算键可以是任意 IdentifierName（含保留字）。
-        identifierKey = at(TokenKind::Identifier);
-        key = parseIdentifierName();
-        if (key == nullptr) return nullptr;
+        return key;
     }
+    if (at(TokenKind::StringLiteral)) return parseStringLiteral();
+    if (at(TokenKind::NumericLiteral)) return parseNumericLiteral();
+    if (at(TokenKind::BigIntLiteral)) return parseBigIntLiteral();
+
+    // 非计算键可以是任意 IdentifierName（含保留字）。
+    identifierKey = at(TokenKind::Identifier);
+    return parseIdentifierName();
+}
+
+NodePtr Parser::parseMethodProperty(SourceLocation start, bool async,
+                                    bool generator,
+                                    PropertyKind propertyKind) {
+    bool computed = false;
+    bool identifierKey = false;
+    NodePtr key = parsePropertyKey(computed, identifierKey);
+    if (key == nullptr) return nullptr;
+    return parseMethodPropertyWithKey(start, std::move(key), computed, async,
+                                      generator, propertyKind);
+}
+
+NodePtr Parser::parseMethodPropertyWithKey(SourceLocation start, NodePtr key,
+                                           bool computed, bool async,
+                                           bool generator,
+                                           PropertyKind propertyKind) {
+    NodeList params;
+    if (!parseFormalParameters(params)) return nullptr;
+
+    NodePtr body = parseFunctionBody();
+    if (body == nullptr) return nullptr;
+
+    auto function = std::make_unique<FunctionExpression>(
+        rangeFrom(start), nullptr, std::move(params), std::move(body), async,
+        generator);
+    return std::make_unique<Property>(rangeFrom(start), std::move(key),
+                                      std::move(function), computed, false,
+                                      true, propertyKind);
+}
+
+NodePtr Parser::parseProperty() {
+    const SourceLocation start = current_.start;
+
+    // 生成器方法：*key() {}
+    if (at(TokenKind::Star)) {
+        advance();
+        return parseMethodProperty(start, false, true, PropertyKind::Init);
+    }
+
+    // get/set 访问器：get key() {} / set key(v) {}
+    if (at(TokenKind::Identifier) &&
+        (current_.text == "get" || current_.text == "set")) {
+        const Token next = peek();
+        if (isPropertyNameStart(next.kind)) {
+            const bool getter = current_.text == "get";
+            advance();  // 'get' / 'set'
+            return parseMethodProperty(start, false, false,
+                                       getter ? PropertyKind::Get
+                                              : PropertyKind::Set);
+        }
+    }
+
+    // async 方法：async key() {} / async *key() {}
+    if (at(TokenKind::Identifier) && current_.text == "async") {
+        const Token next = peek();
+        if (!next.precededByLineTerminator &&
+            (next.kind == TokenKind::Star ||
+             isPropertyNameStart(next.kind))) {
+            advance();  // 'async'
+            const bool generator = match(TokenKind::Star);
+            return parseMethodProperty(start, true, generator,
+                                       PropertyKind::Init);
+        }
+    }
+
+    bool computed = false;
+    bool identifierKey = false;
+    NodePtr key = parsePropertyKey(computed, identifierKey);
+    if (key == nullptr) return nullptr;
 
     if (match(TokenKind::Colon)) {
         NodePtr value = parseAssignmentExpression();
         if (value == nullptr) return nullptr;
         return std::make_unique<Property>(rangeFrom(start), std::move(key),
                                           std::move(value), computed, false);
+    }
+
+    // 方法简写：key() {}
+    if (at(TokenKind::LeftParen)) {
+        return parseMethodPropertyWithKey(start, std::move(key), computed,
+                                          false, false, PropertyKind::Init);
     }
 
     // 简写 {a}：只有普通标识符可以简写，保留字/字面量键不行。
@@ -1850,6 +1970,11 @@ NodePtr Parser::convertToAssignmentPattern(NodePtr node) {
                 }
 
                 auto* entry = static_cast<Property*>(property.get());
+                if (entry->method ||
+                    entry->propertyKind != PropertyKind::Init) {
+                    error(entry->range().start, "Invalid assignment target");
+                    return nullptr;
+                }
                 NodePtr value =
                     convertToAssignmentPattern(std::move(entry->value));
                 if (value == nullptr) return nullptr;

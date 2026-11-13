@@ -37,6 +37,7 @@ using neo::frontend::ForInStatement;
 using neo::frontend::FunctionDeclaration;
 using neo::frontend::ForOfStatement;
 using neo::frontend::ForStatement;
+using neo::frontend::FunctionExpression;
 using neo::frontend::Identifier;
 using neo::frontend::IfStatement;
 using neo::frontend::LabeledStatement;
@@ -48,6 +49,7 @@ using neo::frontend::NodeKind;
 using neo::frontend::ObjectExpression;
 using neo::frontend::ObjectPattern;
 using neo::frontend::Property;
+using neo::frontend::PropertyKind;
 using neo::frontend::NumericLiteral;
 using neo::frontend::Parser;
 using neo::frontend::ParseResult;
@@ -60,6 +62,7 @@ using neo::frontend::SpreadElement;
 using neo::frontend::StringLiteral;
 using neo::frontend::SwitchCase;
 using neo::frontend::SwitchStatement;
+using neo::frontend::ThisExpression;
 using neo::frontend::ThrowStatement;
 using neo::frontend::TryStatement;
 using neo::frontend::UnaryExpression;
@@ -3346,6 +3349,234 @@ TEST(ParserTest, ObjectLiteralShorthandDefaultIsCoverGrammar) {
     const auto& property = static_cast<const Property&>(*object.properties[0]);
     EXPECT_TRUE(property.shorthand);
     EXPECT_EQ(property.value->kind(), NodeKind::AssignmentExpression);
+}
+
+// ---------------------------------------------------------------------------
+// this 与函数表达式
+// ---------------------------------------------------------------------------
+
+TEST(ParserTest, ThisExpression) {
+    ParseResult result = parse("this;");
+
+    ASSERT_TRUE(result.ok());
+    EXPECT_EQ(statementOf(result, 0).expression->kind(),
+              NodeKind::ThisExpression);
+}
+
+TEST(ParserTest, ThisInMemberExpression) {
+    ParseResult result = parse("this.x;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& member = static_cast<const MemberExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_NE(member.object, nullptr);
+    EXPECT_EQ(member.object->kind(), NodeKind::ThisExpression);
+}
+
+TEST(ParserTest, AnonymousFunctionExpression) {
+    ParseResult result = parse("(function () {});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& expression = statementOf(result, 0).expression;
+    ASSERT_EQ(expression->kind(), NodeKind::FunctionExpression);
+    const auto& function =
+        static_cast<const FunctionExpression&>(*expression);
+    EXPECT_EQ(function.id, nullptr);
+    EXPECT_FALSE(function.async);
+    EXPECT_FALSE(function.generator);
+    ASSERT_NE(function.body, nullptr);
+    EXPECT_EQ(function.body->kind(), NodeKind::BlockStatement);
+}
+
+TEST(ParserTest, NamedFunctionExpression) {
+    ParseResult result = parse("(function f(a) { return a; });");
+
+    ASSERT_TRUE(result.ok());
+    const auto& function = static_cast<const FunctionExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_NE(function.id, nullptr);
+    EXPECT_EQ(static_cast<const Identifier&>(*function.id).name, "f");
+    ASSERT_EQ(function.params.size(), 1u);
+}
+
+TEST(ParserTest, AsyncGeneratorFunctionExpression) {
+    ParseResult result = parse("(async function* gen() {});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& function = static_cast<const FunctionExpression&>(
+        *statementOf(result, 0).expression);
+    EXPECT_TRUE(function.async);
+    EXPECT_TRUE(function.generator);
+    ASSERT_NE(function.id, nullptr);
+}
+
+TEST(ParserTest, FunctionExpressionAsCallArgument) {
+    ParseResult result = parse("f(function () {});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& call = static_cast<const CallExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(call.arguments.size(), 1u);
+    EXPECT_EQ(call.arguments[0]->kind(), NodeKind::FunctionExpression);
+}
+
+// ---------------------------------------------------------------------------
+// 对象方法 / 访问器
+// ---------------------------------------------------------------------------
+
+TEST(ParserTest, ObjectMethodShorthand) {
+    ParseResult result = parse("({f(a) { return a; }});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    const auto& property = static_cast<const Property&>(*object.properties[0]);
+    EXPECT_TRUE(property.method);
+    EXPECT_EQ(property.propertyKind, PropertyKind::Init);
+    ASSERT_NE(property.value, nullptr);
+    ASSERT_EQ(property.value->kind(), NodeKind::FunctionExpression);
+    const auto& function =
+        static_cast<const FunctionExpression&>(*property.value);
+    ASSERT_EQ(function.params.size(), 1u);
+}
+
+TEST(ParserTest, ObjectGeneratorMethod) {
+    ParseResult result = parse("({*g() {}});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    const auto& property = static_cast<const Property&>(*object.properties[0]);
+    EXPECT_TRUE(property.method);
+    const auto& function =
+        static_cast<const FunctionExpression&>(*property.value);
+    EXPECT_TRUE(function.generator);
+    EXPECT_FALSE(function.async);
+}
+
+TEST(ParserTest, ObjectAsyncMethod) {
+    ParseResult result = parse("({async f() {}});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    const auto& property = static_cast<const Property&>(*object.properties[0]);
+    EXPECT_TRUE(property.method);
+    const auto& function =
+        static_cast<const FunctionExpression&>(*property.value);
+    EXPECT_TRUE(function.async);
+    EXPECT_FALSE(function.generator);
+}
+
+TEST(ParserTest, ObjectAsyncGeneratorMethod) {
+    ParseResult result = parse("({async *g() {}});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    const auto& function = static_cast<const FunctionExpression&>(
+        *static_cast<const Property&>(*object.properties[0]).value);
+    EXPECT_TRUE(function.async);
+    EXPECT_TRUE(function.generator);
+}
+
+TEST(ParserTest, ObjectComputedMethod) {
+    ParseResult result = parse("({[k]() {}});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    const auto& property = static_cast<const Property&>(*object.properties[0]);
+    EXPECT_TRUE(property.method);
+    EXPECT_TRUE(property.computed);
+}
+
+TEST(ParserTest, ObjectGetter) {
+    ParseResult result = parse("({get a() { return 1; }});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    const auto& property = static_cast<const Property&>(*object.properties[0]);
+    EXPECT_TRUE(property.method);
+    EXPECT_EQ(property.propertyKind, PropertyKind::Get);
+    EXPECT_EQ(static_cast<const Identifier&>(*property.key).name, "a");
+}
+
+TEST(ParserTest, ObjectSetter) {
+    ParseResult result = parse("({set a(v) {}});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    const auto& property = static_cast<const Property&>(*object.properties[0]);
+    EXPECT_TRUE(property.method);
+    EXPECT_EQ(property.propertyKind, PropertyKind::Set);
+    const auto& function =
+        static_cast<const FunctionExpression&>(*property.value);
+    ASSERT_EQ(function.params.size(), 1u);
+}
+
+TEST(ParserTest, MethodNamedGet) {
+    ParseResult result = parse("({get() {}});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    const auto& property = static_cast<const Property&>(*object.properties[0]);
+    EXPECT_TRUE(property.method);
+    EXPECT_EQ(property.propertyKind, PropertyKind::Init);
+    EXPECT_EQ(static_cast<const Identifier&>(*property.key).name, "get");
+}
+
+TEST(ParserTest, PropertyNamedGet) {
+    ParseResult result = parse("({get: 1});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    const auto& property = static_cast<const Property&>(*object.properties[0]);
+    EXPECT_FALSE(property.method);
+    EXPECT_EQ(property.value->kind(), NodeKind::NumericLiteral);
+}
+
+TEST(ParserTest, ShorthandNamedGet) {
+    ParseResult result = parse("({get});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    const auto& property = static_cast<const Property&>(*object.properties[0]);
+    EXPECT_TRUE(property.shorthand);
+}
+
+TEST(ParserTest, PropertyNamedAsync) {
+    ParseResult result = parse("({async: 1});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    const auto& property = static_cast<const Property&>(*object.properties[0]);
+    EXPECT_FALSE(property.method);
+}
+
+TEST(ParserTest, MethodNamedAsync) {
+    ParseResult result = parse("({async() {}});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    const auto& property = static_cast<const Property&>(*object.properties[0]);
+    EXPECT_TRUE(property.method);
+    const auto& function =
+        static_cast<const FunctionExpression&>(*property.value);
+    EXPECT_FALSE(function.async);
+}
+
+TEST(ParserTest, MethodInDestructuringAssignmentReportsError) {
+    ParseResult result = parse("({f() {}} = obj);");
+
+    EXPECT_FALSE(result.errors.empty());
 }
 
 }  // namespace
