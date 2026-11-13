@@ -89,6 +89,7 @@ using neo::frontend::VariableDeclarator;
 using neo::frontend::VariableKind;
 using neo::frontend::WhileStatement;
 using neo::frontend::WithStatement;
+using neo::frontend::YieldExpression;
 
 ParseResult parse(std::string_view source) {
     Parser parser(source);
@@ -4165,6 +4166,112 @@ TEST(ParserTest, AwaitIsIdentifierOutsideAsync) {
     ASSERT_TRUE(result.ok());
     EXPECT_EQ(statementOf(result, 0).expression->kind(),
               NodeKind::Identifier);
+}
+
+// ---------------------------------------------------------------------------
+// yield
+// ---------------------------------------------------------------------------
+
+namespace {
+
+const BlockStatement& generatorBodyOf(const ParseResult& result) {
+    const auto& function =
+        static_cast<const FunctionDeclaration&>(*programOf(result).body[0]);
+    return static_cast<const BlockStatement&>(*function.body);
+}
+
+}  // namespace
+
+TEST(ParserTest, YieldExpression) {
+    ParseResult result = parse("function* g() { yield x; }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& body = generatorBodyOf(result);
+    ASSERT_EQ(body.body.size(), 1u);
+    const auto& statement =
+        static_cast<const ExpressionStatement&>(*body.body[0]);
+    ASSERT_EQ(statement.expression->kind(), NodeKind::YieldExpression);
+    const auto& yield =
+        static_cast<const YieldExpression&>(*statement.expression);
+    EXPECT_FALSE(yield.delegate);
+    ASSERT_NE(yield.argument, nullptr);
+    EXPECT_EQ(yield.argument->kind(), NodeKind::Identifier);
+}
+
+TEST(ParserTest, YieldWithoutArgument) {
+    ParseResult result = parse("function* g() { yield; }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& body = generatorBodyOf(result);
+    const auto& statement =
+        static_cast<const ExpressionStatement&>(*body.body[0]);
+    const auto& yield =
+        static_cast<const YieldExpression&>(*statement.expression);
+    EXPECT_FALSE(yield.delegate);
+    EXPECT_EQ(yield.argument, nullptr);
+}
+
+TEST(ParserTest, YieldDelegate) {
+    ParseResult result = parse("function* g() { yield* inner; }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& body = generatorBodyOf(result);
+    const auto& statement =
+        static_cast<const ExpressionStatement&>(*body.body[0]);
+    const auto& yield =
+        static_cast<const YieldExpression&>(*statement.expression);
+    EXPECT_TRUE(yield.delegate);
+    ASSERT_NE(yield.argument, nullptr);
+    EXPECT_EQ(yield.argument->kind(), NodeKind::Identifier);
+}
+
+TEST(ParserTest, YieldStopsAtLineTerminator) {
+    ParseResult result = parse("function* g() { yield\nx; }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& body = generatorBodyOf(result);
+    ASSERT_EQ(body.body.size(), 2u);
+    const auto& first =
+        static_cast<const ExpressionStatement&>(*body.body[0]);
+    const auto& yield =
+        static_cast<const YieldExpression&>(*first.expression);
+    EXPECT_EQ(yield.argument, nullptr);
+    EXPECT_EQ(body.body[1]->kind(), NodeKind::ExpressionStatement);
+}
+
+TEST(ParserTest, YieldIsIdentifierOutsideGenerator) {
+    ParseResult result = parse("yield;");
+
+    ASSERT_TRUE(result.ok());
+    EXPECT_EQ(statementOf(result, 0).expression->kind(),
+              NodeKind::Identifier);
+}
+
+TEST(ParserTest, NestedFunctionResetsGeneratorContext) {
+    ParseResult result = parse(
+        "function* g() { function f() { yield; } }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& body = generatorBodyOf(result);
+    const auto& inner =
+        static_cast<const FunctionDeclaration&>(*body.body[0]);
+    const auto& innerBody = static_cast<const BlockStatement&>(*inner.body);
+    const auto& statement =
+        static_cast<const ExpressionStatement&>(*innerBody.body[0]);
+    EXPECT_EQ(statement.expression->kind(), NodeKind::Identifier);
+}
+
+TEST(ParserTest, AsyncGeneratorYieldAwait) {
+    ParseResult result = parse("async function* g() { yield await x; }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& body = generatorBodyOf(result);
+    const auto& statement =
+        static_cast<const ExpressionStatement&>(*body.body[0]);
+    const auto& yield =
+        static_cast<const YieldExpression&>(*statement.expression);
+    ASSERT_NE(yield.argument, nullptr);
+    EXPECT_EQ(yield.argument->kind(), NodeKind::AwaitExpression);
 }
 
 TEST(ParserTest, NestedFunctionResetsAsyncContext) {

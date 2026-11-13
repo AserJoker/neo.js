@@ -133,6 +133,7 @@ private:
     NodePtr parseBinaryExpression(int minPrecedence);
     NodePtr parseUnaryExpression();
     NodePtr parseAwaitExpression();
+    NodePtr parseYieldExpression();
     NodePtr parseUpdateExpression();
     NodePtr parseLeftHandSideExpression();
     NodePtr parseMemberExpression(bool& optionalChain);

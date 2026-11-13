@@ -96,6 +96,7 @@ enum class NodeKind : uint8_t {
     MetaProperty,
     ImportExpression,
     AwaitExpression,
+    YieldExpression,
     UnaryExpression,
     UpdateExpression,
     BinaryExpression,
@@ -649,6 +650,16 @@ struct AwaitExpression final : Node {
         : Node(NodeKind::AwaitExpression, range),
           argument(std::move(argument)) {}
     NodePtr argument;
+};
+
+// yield [argument] / yield* argument（仅 generator 上下文）
+struct YieldExpression final : Node {
+    YieldExpression(SourceRange range, NodePtr argument, bool delegate)
+        : Node(NodeKind::YieldExpression, range),
+          argument(std::move(argument)),
+          delegate(delegate) {}
+    NodePtr argument;  // 可空
+    bool delegate;
 };
 
 // import(source)

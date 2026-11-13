@@ -20,6 +20,23 @@ bool isIdentifierName(TokenKind kind) {
            value <= static_cast<int>(TokenKind::False);
 }
 
+// 判断 token 是否能作为表达式的起始（用于 yield 的可选参数）。
+bool canStartExpression(TokenKind kind) {
+    switch (kind) {
+        case TokenKind::EndOfInput:
+        case TokenKind::Semicolon:
+        case TokenKind::RightBrace:
+        case TokenKind::RightParen:
+        case TokenKind::RightBracket:
+        case TokenKind::Comma:
+        case TokenKind::Colon:
+        case TokenKind::Arrow:
+            return false;
+        default:
+            return true;
+    }
+}
+
 bool isPropertyNameStart(TokenKind kind) {
     return isIdentifierName(kind) || kind == TokenKind::StringLiteral ||
            kind == TokenKind::NumericLiteral ||
@@ -1430,6 +1447,10 @@ NodePtr Parser::parseArrowFunction() {
 }
 
 NodePtr Parser::parseAssignmentExpression() {
+    if (inGenerator_ && at(TokenKind::Identifier) &&
+        current_.text == "yield") {
+        return parseYieldExpression();
+    }
     if (isArrowFunctionStart()) return parseArrowFunction();
 
     NodePtr left = parseConditionalExpression();
@@ -1456,6 +1477,30 @@ NodePtr Parser::parseAssignmentExpression() {
 
     return std::make_unique<AssignmentExpression>(
         rangeFrom(start), op, std::move(left), std::move(right));
+}
+
+NodePtr Parser::parseYieldExpression() {
+    const SourceLocation start = current_.start;
+    advance();  // 'yield'
+
+    bool delegate = false;
+    if (at(TokenKind::Star)) {
+        delegate = true;
+        advance();
+    }
+
+    NodePtr argument;
+    if (delegate) {
+        argument = parseAssignmentExpression();
+        if (argument == nullptr) return nullptr;
+    } else if (!current_.precededByLineTerminator &&
+               canStartExpression(current_.kind)) {
+        argument = parseAssignmentExpression();
+        if (argument == nullptr) return nullptr;
+    }
+
+    return std::make_unique<YieldExpression>(rangeFrom(start),
+                                             std::move(argument), delegate);
 }
 
 NodePtr Parser::parseConditionalExpression() {
