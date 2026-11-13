@@ -82,6 +82,7 @@ enum class NodeKind : uint8_t {
     RegExpLiteral,
     TemplateElement,
     TemplateLiteral,
+    TaggedTemplateExpression,
     ThisExpression,
     SuperExpression,
     FunctionExpression,
@@ -532,6 +533,16 @@ struct TemplateLiteral final : Node {
           expressions(std::move(expressions)) {}
     NodeList quasis;       // TemplateElement
     NodeList expressions;
+};
+
+// tag`a${b}c`
+struct TaggedTemplateExpression final : Node {
+    TaggedTemplateExpression(SourceRange range, NodePtr tag, NodePtr quasi)
+        : Node(NodeKind::TaggedTemplateExpression, range),
+          tag(std::move(tag)),
+          quasi(std::move(quasi)) {}
+    NodePtr tag;
+    NodePtr quasi;  // TemplateLiteral
 };
 
 struct ThisExpression final : Node {

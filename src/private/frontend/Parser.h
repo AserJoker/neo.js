@@ -153,6 +153,7 @@ private:
     NodePtr parseNullLiteral();
     NodePtr parseRegExpLiteral();
     NodePtr parseTemplateLiteral();
+    NodePtr parseTaggedTemplateExpression(NodePtr tag, SourceLocation start);
     NodePtr parseThisExpression();
     NodePtr parseSuperExpression();
     NodePtr parseArrayExpression();

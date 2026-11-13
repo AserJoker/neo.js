@@ -1550,9 +1550,19 @@ NodePtr Parser::parseMemberExpression() {
     NodePtr object = parsePrimaryExpression();
     if (object == nullptr) return nullptr;
 
-    while (at(TokenKind::Dot) || at(TokenKind::LeftBracket)) {
-        object = parseMemberSuffix(std::move(object), start);
-        if (object == nullptr) return nullptr;
+    while (true) {
+        if (at(TokenKind::NoSubstitutionTemplate) ||
+            at(TokenKind::TemplateHead)) {
+            object = parseTaggedTemplateExpression(std::move(object), start);
+            if (object == nullptr) return nullptr;
+            continue;
+        }
+        if (at(TokenKind::Dot) || at(TokenKind::LeftBracket)) {
+            object = parseMemberSuffix(std::move(object), start);
+            if (object == nullptr) return nullptr;
+            continue;
+        }
+        break;
     }
     return object;
 }
@@ -1616,6 +1626,12 @@ NodePtr Parser::parseCallSuffix(NodePtr callee, SourceLocation start) {
         }
         if (at(TokenKind::Dot) || at(TokenKind::LeftBracket)) {
             callee = parseMemberSuffix(std::move(callee), start);
+            if (callee == nullptr) return nullptr;
+            continue;
+        }
+        if (at(TokenKind::NoSubstitutionTemplate) ||
+            at(TokenKind::TemplateHead)) {
+            callee = parseTaggedTemplateExpression(std::move(callee), start);
             if (callee == nullptr) return nullptr;
             continue;
         }
@@ -1861,6 +1877,14 @@ NodePtr Parser::parseTemplateLiteral() {
 
     return std::make_unique<TemplateLiteral>(
         rangeFrom(start), std::move(quasis), std::move(expressions));
+}
+
+NodePtr Parser::parseTaggedTemplateExpression(NodePtr tag,
+                                              SourceLocation start) {
+    NodePtr quasi = parseTemplateLiteral();
+    if (quasi == nullptr) return nullptr;
+    return std::make_unique<TaggedTemplateExpression>(
+        rangeFrom(start), std::move(tag), std::move(quasi));
 }
 
 NodePtr Parser::parseArrayExpression() {

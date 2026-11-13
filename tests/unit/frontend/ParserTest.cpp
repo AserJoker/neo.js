@@ -70,6 +70,7 @@ using neo::frontend::StringLiteral;
 using neo::frontend::SuperExpression;
 using neo::frontend::SwitchCase;
 using neo::frontend::SwitchStatement;
+using neo::frontend::TaggedTemplateExpression;
 using neo::frontend::TemplateElement;
 using neo::frontend::TemplateLiteral;
 using neo::frontend::ThisExpression;
@@ -3876,6 +3877,49 @@ TEST(ParserTest, UnterminatedTemplateReportsError) {
     ParseResult result = parse("`abc");
 
     EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, TaggedTemplateExpression) {
+    ParseResult result = parse("tag`abc`;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& expression = statementOf(result, 0).expression;
+    ASSERT_EQ(expression->kind(), NodeKind::TaggedTemplateExpression);
+    const auto& tagged =
+        static_cast<const TaggedTemplateExpression&>(*expression);
+    EXPECT_EQ(tagged.tag->kind(), NodeKind::Identifier);
+    ASSERT_NE(tagged.quasi, nullptr);
+    EXPECT_EQ(tagged.quasi->kind(), NodeKind::TemplateLiteral);
+}
+
+TEST(ParserTest, TaggedTemplateWithMemberTag) {
+    ParseResult result = parse("obj.tag`a${b}`;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& tagged = static_cast<const TaggedTemplateExpression&>(
+        *statementOf(result, 0).expression);
+    EXPECT_EQ(tagged.tag->kind(), NodeKind::MemberExpression);
+    const auto& quasi =
+        static_cast<const TemplateLiteral&>(*tagged.quasi);
+    ASSERT_EQ(quasi.expressions.size(), 1u);
+}
+
+TEST(ParserTest, TaggedTemplateFollowedByMember) {
+    ParseResult result = parse("tag`abc`.x;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& member = static_cast<const MemberExpression&>(
+        *statementOf(result, 0).expression);
+    EXPECT_EQ(member.object->kind(), NodeKind::TaggedTemplateExpression);
+}
+
+TEST(ParserTest, TaggedTemplateFollowedByCall) {
+    ParseResult result = parse("tag`abc`(x);");
+
+    ASSERT_TRUE(result.ok());
+    const auto& call = static_cast<const CallExpression&>(
+        *statementOf(result, 0).expression);
+    EXPECT_EQ(call.callee->kind(), NodeKind::TaggedTemplateExpression);
 }
 
 TEST(ParserTest, SuperMemberExpression) {
