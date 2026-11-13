@@ -186,3 +186,8 @@ Sema 采用“收集错误、继续分析”，不 fail-fast；遍历由树结�
   - Parser 已支持 ModuleExportName 的字符串形式：
     `import { "x" as y }`、`export { "x" } from "m"`、
     `export { x as "y" }`、`export * as "ns" from "m"`。
+  - Parser 的 `sourceType` 作为构造期上下文参数
+    （`ParserOptions{sourceType}`）传入：未指定时按顶层 import/export
+    声明自动推断，显式指定时以调用方为准；显式 Module 在解析开始即允许
+    顶层 `await`，显式 Script 仍宽容解析 import/export 声明，sourceType
+    约束由 `ModulePass` 报告。

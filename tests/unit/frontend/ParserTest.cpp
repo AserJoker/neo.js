@@ -36,6 +36,7 @@ using neo::frontend::DebuggerStatement;
 using neo::frontend::Directive;
 using neo::frontend::DoWhileStatement;
 using neo::frontend::ExportAllDeclaration;
+using neo::frontend::ParserOptions;
 using neo::frontend::SourceType;
 using neo::frontend::ExportDefaultDeclaration;
 using neo::frontend::ExportNamedDeclaration;
@@ -102,6 +103,11 @@ using neo::frontend::YieldExpression;
 
 ParseResult parse(std::string_view source) {
     Parser parser(source);
+    return parser.parseProgram();
+}
+
+ParseResult parseAs(std::string_view source, SourceType sourceType) {
+    Parser parser(source, ParserOptions{sourceType});
     return parser.parseProgram();
 }
 
@@ -4388,6 +4394,42 @@ TEST(ParserTest, ImportMetaDoesNotMakeModule) {
 
     ASSERT_TRUE(result.ok());
     EXPECT_EQ(programOf(result).sourceType, SourceType::Script);
+}
+
+TEST(ParserTest, ExplicitModuleWithoutModuleSyntax) {
+    ParseResult result = parseAs("var x = 1;", SourceType::Module);
+
+    ASSERT_TRUE(result.ok());
+    EXPECT_EQ(programOf(result).sourceType, SourceType::Module);
+}
+
+TEST(ParserTest, ExplicitScriptOverridesModuleSyntax) {
+    ParseResult result = parseAs("export const x = 1;", SourceType::Script);
+
+    ASSERT_TRUE(result.ok());
+    EXPECT_EQ(programOf(result).sourceType, SourceType::Script);
+}
+
+TEST(ParserTest, ExplicitModuleAllowsTopLevelAwait) {
+    ParseResult result = parseAs("await 1;", SourceType::Module);
+
+    ASSERT_TRUE(result.ok());
+    EXPECT_EQ(programOf(result).body[0]->kind(),
+              NodeKind::ExpressionStatement);
+}
+
+TEST(ParserTest, ScriptTopLevelAwaitIsIdentifier) {
+    ParseResult result = parseAs("await;", SourceType::Script);
+
+    ASSERT_TRUE(result.ok());
+    EXPECT_EQ(programOf(result).body[0]->kind(),
+              NodeKind::ExpressionStatement);
+}
+
+TEST(ParserTest, ModuleTopLevelAwaitWithoutOperandIsError) {
+    ParseResult result = parseAs("await;", SourceType::Module);
+
+    EXPECT_FALSE(result.errors.empty());
 }
 
 TEST(ParserTest, ExportAllDeclaration) {

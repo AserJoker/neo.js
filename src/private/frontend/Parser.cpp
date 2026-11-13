@@ -264,7 +264,8 @@ bool unaryOperator(TokenKind kind, UnaryOperator& op) {
 
 }  // namespace
 
-Parser::Parser(std::string_view source) : lexer_(source) {
+Parser::Parser(std::string_view source, ParserOptions options)
+    : lexer_(source), options_(options) {
     // 程序起始位置是表达式起始位置，`/` 应优先按正则扫描。
     advance(LexicalGoal::RegExp);
 }
@@ -275,7 +276,11 @@ ParseResult Parser::parseProgram() {
     const SourceLocation start = current_.start;
     NodeList body;
     bool inDirectivePrologue = true;
-    bool module = false;
+    bool module = options_.sourceType.has_value()
+                      ? *options_.sourceType == SourceType::Module
+                      : false;
+    // 模块顶层允许 await；嵌套函数/箭头会自行保存并恢复该状态。
+    if (module) inAsync_ = true;
 
     while (!at(TokenKind::EndOfInput)) {
         NodePtr statement;
@@ -301,10 +306,14 @@ ParseResult Parser::parseProgram() {
         body.push_back(std::move(statement));
     }
 
+    // 显式 sourceType 优先；未指定时按是否出现模块语法自动推断。
+    const SourceType sourceType =
+        options_.sourceType.value_or(module ? SourceType::Module
+                                            : SourceType::Script);
+
     ParseResult result;
     result.program = std::make_unique<Program>(
-        SourceRange{start, previousEnd_}, std::move(body),
-        module ? SourceType::Module : SourceType::Script);
+        SourceRange{start, previousEnd_}, std::move(body), sourceType);
     result.errors = std::move(errors_);
     return result;
 }

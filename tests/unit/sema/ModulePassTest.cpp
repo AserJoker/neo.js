@@ -16,7 +16,7 @@ namespace {
 
 using neo::frontend::ParseResult;
 using neo::frontend::Parser;
-using neo::frontend::Program;
+using neo::frontend::ParserOptions;
 using neo::frontend::SourceType;
 using neo::sema::AnnotationStore;
 using neo::sema::ScopeGraph;
@@ -47,13 +47,10 @@ Analysis analyze(std::string_view source) {
 }
 
 Analysis analyzeAsScript(std::string_view source) {
-    Parser parser(source);
+    Parser parser(source, ParserOptions{SourceType::Script});
     Analysis result;
     result.parsed = parser.parseProgram();
     if (!result.parsed.program) return result;
-
-    static_cast<Program&>(*result.parsed.program).sourceType =
-        SourceType::Script;
 
     SemaContext context;
     AnnotationStore annotations;
