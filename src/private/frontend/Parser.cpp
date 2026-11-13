@@ -998,6 +998,13 @@ NodePtr Parser::parseExportDeclaration() {
 NodePtr Parser::parseExportAllDeclaration(SourceLocation start) {
     advance();  // '*'
 
+    NodePtr exported;
+    if (at(TokenKind::Identifier) && current_.text == "as") {
+        advance();  // 'as'
+        exported = parseIdentifierName();
+        if (exported == nullptr) return nullptr;
+    }
+
     if (!at(TokenKind::Identifier) || current_.text != "from") {
         error(current_.start, "Expected 'from'");
         return nullptr;
@@ -1013,6 +1020,7 @@ NodePtr Parser::parseExportAllDeclaration(SourceLocation start) {
     if (!consumeSemicolon()) return nullptr;
 
     return std::make_unique<ExportAllDeclaration>(rangeFrom(start),
+                                                  std::move(exported),
                                                   std::move(source));
 }
 

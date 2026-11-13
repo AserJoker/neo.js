@@ -4258,6 +4258,19 @@ TEST(ParserTest, ExportAllDeclaration) {
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ExportAllDeclaration&>(
         *programOf(result).body[0]);
+    EXPECT_EQ(declaration.exported, nullptr);
+    ASSERT_NE(declaration.source, nullptr);
+    EXPECT_EQ(declaration.source->kind(), NodeKind::StringLiteral);
+}
+
+TEST(ParserTest, ExportAllAsNamespace) {
+    ParseResult result = parse("export * as ns from \"mod\";");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ExportAllDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_NE(declaration.exported, nullptr);
+    EXPECT_EQ(static_cast<const Identifier&>(*declaration.exported).name, "ns");
     ASSERT_NE(declaration.source, nullptr);
     EXPECT_EQ(declaration.source->kind(), NodeKind::StringLiteral);
 }

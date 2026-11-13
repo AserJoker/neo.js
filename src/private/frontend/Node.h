@@ -503,12 +503,14 @@ struct ExportSpecifier final : Node {
     NodePtr exported;  // IdentifierName
 };
 
-// export * from "source"
+// export * [as exported] from "source"
 struct ExportAllDeclaration final : Node {
-    ExportAllDeclaration(SourceRange range, NodePtr source)
+    ExportAllDeclaration(SourceRange range, NodePtr exported, NodePtr source)
         : Node(NodeKind::ExportAllDeclaration, range),
+          exported(std::move(exported)),
           source(std::move(source)) {}
-    NodePtr source;  // StringLiteral
+    NodePtr exported;  // IdentifierName（export * as ns）
+    NodePtr source;    // StringLiteral
 };
 
 // export { a, b as c } [from "source"] / export var x = 1
