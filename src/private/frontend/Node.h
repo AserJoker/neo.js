@@ -80,6 +80,7 @@ enum class NodeKind : uint8_t {
     BooleanLiteral,
     NullLiteral,
     RegExpLiteral,
+    TemplateElement,
     ThisExpression,
     SuperExpression,
     FunctionExpression,
@@ -512,6 +513,14 @@ struct RegExpLiteral final : Node {
           flags(std::move(flags)) {}
     std::string pattern;
     std::string flags;
+};
+
+// 模板字面量的一段 cooked 文本（quasi）。
+struct TemplateElement final : Node {
+    TemplateElement(SourceRange range, std::string cooked)
+        : Node(NodeKind::TemplateElement, range),
+          cooked(std::move(cooked)) {}
+    std::string cooked;
 };
 
 struct ThisExpression final : Node {
