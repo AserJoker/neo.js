@@ -679,6 +679,25 @@ NodePtr Parser::parseClassBody() {
     return std::make_unique<ClassBody>(rangeFrom(start), std::move(elements));
 }
 
+NodePtr Parser::parseStaticBlock() {
+    const SourceLocation start = current_.start;
+
+    // 静态块不在 async/generator 上下文中。
+    const bool savedAsync = inAsync_;
+    const bool savedGenerator = inGenerator_;
+    inAsync_ = false;
+    inGenerator_ = false;
+
+    NodePtr block = parseBlockStatement();
+    inAsync_ = savedAsync;
+    inGenerator_ = savedGenerator;
+    if (block == nullptr) return nullptr;
+
+    auto* blockStatement = static_cast<BlockStatement*>(block.get());
+    return std::make_unique<StaticBlock>(rangeFrom(start),
+                                         std::move(blockStatement->body));
+}
+
 NodePtr Parser::parseClassKey(bool& computed, bool& identifierKey) {
     if (at(TokenKind::PrivateIdentifier)) {
         const SourceLocation start = current_.start;
@@ -699,8 +718,8 @@ NodePtr Parser::parseClassElement() {
     if (at(TokenKind::Identifier) && current_.text == "static") {
         const Token next = peek();
         if (next.kind == TokenKind::LeftBrace) {
-            error(current_.start, "Static blocks are not supported");
-            return nullptr;
+            advance();  // 'static'
+            return parseStaticBlock();
         }
         if (next.kind == TokenKind::Star ||
             next.kind == TokenKind::PrivateIdentifier ||

@@ -70,6 +70,7 @@ using neo::frontend::RestElement;
 using neo::frontend::ReturnStatement;
 using neo::frontend::SequenceExpression;
 using neo::frontend::SpreadElement;
+using neo::frontend::StaticBlock;
 using neo::frontend::StringLiteral;
 using neo::frontend::SuperExpression;
 using neo::frontend::SwitchCase;
@@ -3725,6 +3726,37 @@ TEST(ParserTest, ClassPrivateMembers) {
     const auto& method = static_cast<const MethodDefinition&>(*body.elements[1]);
     ASSERT_EQ(method.key->kind(), NodeKind::PrivateIdentifier);
     EXPECT_EQ(static_cast<const PrivateIdentifier&>(*method.key).name, "m");
+}
+
+TEST(ParserTest, EmptyStaticBlock) {
+    ParseResult result = parse("class A { static {} }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& body = classBodyOf(result);
+    ASSERT_EQ(body.elements.size(), 1u);
+    ASSERT_EQ(body.elements[0]->kind(), NodeKind::StaticBlock);
+    const auto& block = static_cast<const StaticBlock&>(*body.elements[0]);
+    EXPECT_TRUE(block.body.empty());
+}
+
+TEST(ParserTest, StaticBlockWithStatements) {
+    ParseResult result = parse("class A { static { this.x = 1; } }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& body = classBodyOf(result);
+    const auto& block = static_cast<const StaticBlock&>(*body.elements[0]);
+    ASSERT_EQ(block.body.size(), 1u);
+    EXPECT_EQ(block.body[0]->kind(), NodeKind::ExpressionStatement);
+}
+
+TEST(ParserTest, StaticBlockDoesNotConsumeFollowingElement) {
+    ParseResult result = parse("class A { static {} x; }");
+
+    ASSERT_TRUE(result.ok());
+    const auto& body = classBodyOf(result);
+    ASSERT_EQ(body.elements.size(), 2u);
+    EXPECT_EQ(body.elements[0]->kind(), NodeKind::StaticBlock);
+    EXPECT_EQ(body.elements[1]->kind(), NodeKind::PropertyDefinition);
 }
 
 TEST(ParserTest, ClassMethodNamedStatic) {

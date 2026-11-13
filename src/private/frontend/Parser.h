@@ -102,6 +102,7 @@ private:
     NodePtr parseClassExpression();
     NodePtr parseClassBody();
     NodePtr parseClassElement();
+    NodePtr parseStaticBlock();
     NodePtr parseClassKey(bool& computed, bool& identifierKey);
     NodePtr parseClassMethod(SourceLocation start, bool isStatic, bool async,
                              bool generator, MethodKind methodKind);

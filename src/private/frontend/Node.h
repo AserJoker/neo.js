@@ -67,6 +67,7 @@ enum class NodeKind : uint8_t {
     ClassBody,
     MethodDefinition,
     PropertyDefinition,
+    StaticBlock,
 
     // 模块
     ExportNamedDeclaration,
@@ -416,6 +417,13 @@ struct PropertyDefinition final : Node {
     NodePtr value;  // 可空
     bool computed;
     bool isStatic;
+};
+
+// static { ... }
+struct StaticBlock final : Node {
+    StaticBlock(SourceRange range, NodeList body)
+        : Node(NodeKind::StaticBlock, range), body(std::move(body)) {}
+    NodeList body;
 };
 
 struct ClassBody final : Node {
