@@ -1,6 +1,8 @@
 // frontend/Lexer.h - 拉取式词法器
 //
-// Parser 决定词法目标（正则/除法、模板续段）和严格模式，Lexer 按需扫描一个 Token。
+// Parser 决定词法目标（正则/除法、模板续段），Lexer 按需扫描一个 Token。
+// Lexer 不感知严格模式：sloppy 超集形态（legacy octal / octal escape）
+// 照常扫描并在 Token 上打标，由 Sema 按作用域严格性判定。
 // 不预生成 token 流：`/` 的正则/除法、模板的 `}` 续段都依赖 parser 上下文。
 //
 // 用法：
@@ -32,7 +34,6 @@ enum class LexicalGoal {
 
 struct LexicalContext {
     LexicalGoal goal = LexicalGoal::Div;
-    bool strict = false;
 };
 
 struct LexerState {
@@ -59,17 +60,16 @@ private:
 
     bool scanIdentifier(Token& token, bool allowEscape);
     bool scanPrivateIdentifier(Token& token);
-    bool scanNumber(Token& token, const LexicalContext& context);
-    bool scanString(Token& token, const LexicalContext& context);
-    bool scanTemplate(Token& token, bool head, const LexicalContext& context);
+    bool scanNumber(Token& token);
+    bool scanString(Token& token);
+    bool scanTemplate(Token& token, bool head);
     bool scanRegExp(Token& token);
     bool scanPunctuator(Token& token, const LexicalContext& context);
 
     bool scanDigits(int radix, std::string& digits, bool requireOne = true);
     bool scanUnicodeEscape(uint32_t& cp);
     bool scanUnicodeEscapeBody(uint32_t& cp);
-    bool scanStringEscape(std::string& out, bool templateMode,
-                          const LexicalContext& context);
+    bool scanStringEscape(std::string& out, bool templateMode, Token& token);
 
     CharStream stream_;
     // 最近一次扫描失败的原因；next() 用它构造 Illegal token。

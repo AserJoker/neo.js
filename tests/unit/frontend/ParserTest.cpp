@@ -105,7 +105,6 @@ TEST(ParserTest, EmptyProgram) {
     ASSERT_NE(result.program, nullptr);
     EXPECT_EQ(result.program->kind(), NodeKind::Program);
     EXPECT_TRUE(programOf(result).body.empty());
-    EXPECT_FALSE(programOf(result).strict);
 }
 
 TEST(ParserTest, TriviaOnlyProgram) {
@@ -263,20 +262,18 @@ TEST(ParserTest, IllegalTokenReportsError) {
               std::string::npos);
 }
 
-TEST(ParserTest, UseStrictDirectiveAffectsFollowingTokens) {
+TEST(ParserTest, LegacyOctalIsRecordedForSema) {
     ParseResult result = parse("\"use strict\"; 077;");
 
-    ASSERT_NE(result.program, nullptr);
-    EXPECT_TRUE(programOf(result).strict);
-    ASSERT_FALSE(result.errors.empty());
-
-    bool sawOctalError = false;
-    for (const auto& error : result.errors) {
-        if (error.message.find("Legacy octal") != std::string::npos) {
-            sawOctalError = true;
-        }
-    }
-    EXPECT_TRUE(sawOctalError);
+    // Parser 不判定严格性：077 正常成树，并带上 legacy 标记。
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 2u);
+    const auto& statement = statementOf(result, 1);
+    ASSERT_EQ(statement.expression->kind(), NodeKind::NumericLiteral);
+    const auto& literal =
+        static_cast<const NumericLiteral&>(*statement.expression);
+    EXPECT_DOUBLE_EQ(literal.value, 63.0);
+    EXPECT_TRUE(literal.legacyLeadingZero);
 }
 
 TEST(ParserTest, MemberExpression) {
@@ -2215,12 +2212,13 @@ TEST(ParserTest, WithStatement) {
     EXPECT_EQ(statement->body->kind(), NodeKind::BlockStatement);
 }
 
-TEST(ParserTest, WithInStrictModeReportsError) {
+TEST(ParserTest, WithInStrictModeIsParsedForSema) {
     ParseResult result = parse("\"use strict\"; with (obj) { }");
 
-    ASSERT_NE(result.program, nullptr);
-    ASSERT_FALSE(result.errors.empty());
-    EXPECT_NE(result.errors[0].message.find("Strict mode"), std::string::npos);
+    // 严格性检查属于 Sema；Parser 只负责成树。
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 2u);
+    EXPECT_EQ(programOf(result).body[1]->kind(), NodeKind::WithStatement);
 }
 
 TEST(ParserTest, DebuggerStatement) {
@@ -2261,7 +2259,6 @@ TEST(ParserTest, UseStrictDirectiveNode) {
     ASSERT_TRUE(result.ok());
     ASSERT_EQ(programOf(result).body.size(), 1u);
     ASSERT_EQ(programOf(result).body[0]->kind(), NodeKind::Directive);
-    EXPECT_TRUE(programOf(result).strict);
 
     const auto* directive =
         static_cast<const Directive*>(programOf(result).body[0].get());
@@ -2275,7 +2272,6 @@ TEST(ParserTest, SingleQuotedUseStrictDirective) {
 
     ASSERT_TRUE(result.ok());
     ASSERT_EQ(programOf(result).body[0]->kind(), NodeKind::Directive);
-    EXPECT_TRUE(programOf(result).strict);
 }
 
 TEST(ParserTest, DirectivePrologueContinuesThroughOtherDirectives) {
@@ -2285,7 +2281,6 @@ TEST(ParserTest, DirectivePrologueContinuesThroughOtherDirectives) {
     ASSERT_EQ(programOf(result).body.size(), 2u);
     EXPECT_EQ(programOf(result).body[0]->kind(), NodeKind::Directive);
     EXPECT_EQ(programOf(result).body[1]->kind(), NodeKind::Directive);
-    EXPECT_TRUE(programOf(result).strict);
 }
 
 TEST(ParserTest, EscapedUseStrictIsDirectiveButNotStrictMode) {
@@ -2293,7 +2288,6 @@ TEST(ParserTest, EscapedUseStrictIsDirectiveButNotStrictMode) {
 
     ASSERT_TRUE(result.ok());
     ASSERT_EQ(programOf(result).body[0]->kind(), NodeKind::Directive);
-    EXPECT_FALSE(programOf(result).strict);
 
     const auto* directive =
         static_cast<const Directive*>(programOf(result).body[0].get());
@@ -2307,7 +2301,6 @@ TEST(ParserTest, StringWithContinuationIsNotDirective) {
     ASSERT_TRUE(result.ok());
     ASSERT_EQ(programOf(result).body.size(), 1u);
     EXPECT_EQ(programOf(result).body[0]->kind(), NodeKind::ExpressionStatement);
-    EXPECT_FALSE(programOf(result).strict);
 }
 
 TEST(ParserTest, ParenthesizedStringIsNotDirective) {
@@ -2315,7 +2308,6 @@ TEST(ParserTest, ParenthesizedStringIsNotDirective) {
 
     ASSERT_TRUE(result.ok());
     EXPECT_EQ(programOf(result).body[0]->kind(), NodeKind::ExpressionStatement);
-    EXPECT_FALSE(programOf(result).strict);
 }
 
 TEST(ParserTest, DirectivePrologueEndsAtFirstNonDirective) {
@@ -2325,7 +2317,6 @@ TEST(ParserTest, DirectivePrologueEndsAtFirstNonDirective) {
     ASSERT_EQ(programOf(result).body.size(), 2u);
     EXPECT_EQ(programOf(result).body[0]->kind(), NodeKind::ExpressionStatement);
     EXPECT_EQ(programOf(result).body[1]->kind(), NodeKind::ExpressionStatement);
-    EXPECT_FALSE(programOf(result).strict);
 }
 
 TEST(ParserTest, ProgramRangeCoversConsumedInput) {
@@ -2491,7 +2482,6 @@ TEST(ParserTest, FunctionBodyUseStrictDoesNotLeak) {
     ParseResult result = parse("function f() { \"use strict\"; } var x = 1;");
 
     ASSERT_TRUE(result.ok());
-    EXPECT_FALSE(programOf(result).strict);
     ASSERT_EQ(programOf(result).body.size(), 2u);
 
     const auto& function =
@@ -3745,10 +3735,21 @@ TEST(ParserTest, ClassMethodNamedStatic) {
     EXPECT_EQ(static_cast<const Identifier&>(*field.key).name, "static");
 }
 
-TEST(ParserTest, ClassBodyIsStrict) {
+TEST(ParserTest, ClassBodyLegacyOctalIsRecordedForSema) {
     ParseResult result = parse("class A { m() { 010; } }");
 
-    EXPECT_FALSE(result.errors.empty());
+    // class 体恒 strict 由 Sema 判定；Parser 只记录 legacy 形态。
+    ASSERT_TRUE(result.ok());
+    const auto& body = classBodyOf(result);
+    const auto& method = static_cast<const MethodDefinition&>(*body.elements[0]);
+    const auto& function =
+        static_cast<const FunctionExpression&>(*method.value);
+    const auto& block = static_cast<const BlockStatement&>(*function.body);
+    const auto& statement =
+        static_cast<const ExpressionStatement&>(*block.body[0]);
+    const auto& literal =
+        static_cast<const NumericLiteral&>(*statement.expression);
+    EXPECT_TRUE(literal.legacyLeadingZero);
 }
 
 TEST(ParserTest, ExportClassDeclaration) {

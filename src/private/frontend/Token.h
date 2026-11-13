@@ -157,6 +157,12 @@ struct Token {
     int numericRadix = 10;
     // RegularExpressionLiteral 的 flags。
     std::string regexFlags;
+
+    // 以下形态在 sloppy 下合法、在 strict 下是早期错误。Lexer 只记录，
+    // 由 Sema 按作用域严格性判定。
+    bool legacyLeadingZero = false;   // 010 / 08 / 09
+    bool legacyOctalEscape = false;   // \1 ... \7
+    bool legacyEightOrNine = false;   // \8 / \9
 };
 
 }  // namespace neo::frontend

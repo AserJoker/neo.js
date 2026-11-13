@@ -177,7 +177,6 @@ private:
     Token current_;
     LexerState currentStart_;
     SourceLocation previousEnd_;
-    bool strict_ = false;
     // for 头部禁用 in 作为二元运算符，避免把 for-in 的 in 吃掉。
     bool allowIn_ = true;
     std::vector<ParseError> errors_;

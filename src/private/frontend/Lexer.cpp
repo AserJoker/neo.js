@@ -94,7 +94,7 @@ Token Lexer::next(const LexicalContext& context) {
     if (context.goal == LexicalGoal::TemplateContinuation) {
         if (cp == '}') {
             stream_.advance();
-            ok = scanTemplate(token, false, context);
+            ok = scanTemplate(token, false);
         } else {
             stream_.advance();
             error_ = "Expected '}' to continue template literal";
@@ -108,12 +108,12 @@ Token Lexer::next(const LexicalContext& context) {
         ok = scanPrivateIdentifier(token);
     } else if (isDecimalDigit(cp) ||
                (cp == '.' && isDecimalDigit(stream_.peek(1)))) {
-        ok = scanNumber(token, context);
+        ok = scanNumber(token);
     } else if (cp == '"' || cp == '\'') {
-        ok = scanString(token, context);
+        ok = scanString(token);
     } else if (cp == '`') {
         stream_.advance();
-        ok = scanTemplate(token, true, context);
+        ok = scanTemplate(token, true);
     } else {
         ok = scanPunctuator(token, context);
     }
@@ -279,7 +279,7 @@ bool Lexer::scanDigits(int radix, std::string& digits, bool requireOne) {
     return true;
 }
 
-bool Lexer::scanNumber(Token& token, const LexicalContext& context) {
+bool Lexer::scanNumber(Token& token) {
     const uint32_t first = stream_.peek();
 
     // 0x / 0o / 0b
@@ -366,10 +366,8 @@ bool Lexer::scanNumber(Token& token, const LexicalContext& context) {
             error_ = "Invalid numeric separator";
             return false;
         }
-        if (context.strict) {
-            error_ = "Legacy octal literals are not allowed in strict mode";
-            return false;
-        }
+        // 严格模式下非法，但词法阶段只记录形态，由 Sema 判定。
+        token.legacyLeadingZero = true;
 
         bool octal = true;
         for (const char digit : intDigits) {
@@ -444,7 +442,7 @@ bool Lexer::scanNumber(Token& token, const LexicalContext& context) {
     return true;
 }
 
-bool Lexer::scanString(Token& token, const LexicalContext& context) {
+bool Lexer::scanString(Token& token) {
     const uint32_t quote = stream_.advance();
     token.text.clear();
 
@@ -463,7 +461,7 @@ bool Lexer::scanString(Token& token, const LexicalContext& context) {
             return false;
         }
         if (cp == '\\') {
-            if (!scanStringEscape(token.text, false, context)) return false;
+            if (!scanStringEscape(token.text, false, token)) return false;
             continue;
         }
         unicode::encodeCodePoint(cp, token.text);
@@ -474,8 +472,7 @@ bool Lexer::scanString(Token& token, const LexicalContext& context) {
     return true;
 }
 
-bool Lexer::scanTemplate(Token& token, bool head,
-                         const LexicalContext& context) {
+bool Lexer::scanTemplate(Token& token, bool head) {
     token.text.clear();
 
     while (true) {
@@ -499,7 +496,7 @@ bool Lexer::scanTemplate(Token& token, bool head,
             return true;
         }
         if (cp == '\\') {
-            if (!scanStringEscape(token.text, true, context)) return false;
+            if (!scanStringEscape(token.text, true, token)) return false;
             continue;
         }
         if (cp == '\r') {
@@ -515,7 +512,7 @@ bool Lexer::scanTemplate(Token& token, bool head,
 }
 
 bool Lexer::scanStringEscape(std::string& out, bool templateMode,
-                             const LexicalContext& context) {
+                             Token& token) {
     stream_.advance();  // '\\'
     if (stream_.atEnd()) {
         error_ = "Unterminated escape sequence";
@@ -551,10 +548,12 @@ bool Lexer::scanStringEscape(std::string& out, bool templateMode,
         case '0':
             stream_.advance();
             if (isDecimalDigit(stream_.peek())) {
-                if (templateMode || context.strict) {
+                // 模板中始终非法；字符串中仅 strict 非法，记录后交给 Sema。
+                if (templateMode) {
                     error_ = "Octal escape sequences are not allowed here";
                     return false;
                 }
+                token.legacyOctalEscape = true;
                 int value = 0;
                 int count = 0;
                 while (count < 2 && stream_.peek() >= '0' &&
@@ -575,10 +574,11 @@ bool Lexer::scanStringEscape(std::string& out, bool templateMode,
         case '5':
         case '6':
         case '7': {
-            if (templateMode || context.strict) {
+            if (templateMode) {
                 error_ = "Octal escape sequences are not allowed here";
                 return false;
             }
+            token.legacyOctalEscape = true;
             int value = 0;
             int count = 0;
             while (count < 3 && stream_.peek() >= '0' &&
@@ -596,10 +596,11 @@ bool Lexer::scanStringEscape(std::string& out, bool templateMode,
         }
         case '8':
         case '9':
-            if (templateMode || context.strict) {
+            if (templateMode) {
                 error_ = "\\8 and \\9 are not allowed here";
                 return false;
             }
+            token.legacyEightOrNine = true;
             out.push_back(static_cast<char>(cp));
             stream_.advance();
             return true;

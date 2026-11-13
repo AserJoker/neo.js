@@ -276,7 +276,7 @@ ParseResult Parser::parseProgram() {
 
     ParseResult result;
     result.program = std::make_unique<Program>(
-        SourceRange{start, previousEnd_}, std::move(body), strict_);
+        SourceRange{start, previousEnd_}, std::move(body));
     result.errors = std::move(errors_);
     return result;
 }
@@ -306,7 +306,7 @@ bool Parser::consumeSemicolon() {
 void Parser::advance(LexicalGoal goal) {
     previousEnd_ = current_.end;
     currentStart_ = lexer_.save();
-    current_ = lexer_.next({goal, strict_});
+    current_ = lexer_.next({goal});
     if (current_.kind == TokenKind::Illegal) {
         error(current_.start, current_.text);
     }
@@ -314,14 +314,14 @@ void Parser::advance(LexicalGoal goal) {
 
 Token Parser::peek(LexicalGoal goal) {
     const LexerState state = lexer_.save();
-    Token token = lexer_.next({goal, strict_});
+    Token token = lexer_.next({goal});
     lexer_.restore(state);
     return token;
 }
 
 void Parser::rescan(LexicalGoal goal) {
     lexer_.restore(currentStart_);
-    current_ = lexer_.next({goal, strict_});
+    current_ = lexer_.next({goal});
     if (current_.kind == TokenKind::Illegal) {
         error(current_.start, current_.text);
     }
@@ -367,16 +367,8 @@ NodePtr Parser::parseStatementListItem(bool& inDirectivePrologue) {
         return statement;
     }
 
-    NodePtr directive = parseDirective(std::move(statement));
-    if (directive != nullptr) {
-        auto* value = static_cast<Directive*>(directive.get());
-        if (value->isUseStrict()) {
-            strict_ = true;
-            // 当前 token 已按旧严格性扫描，重扫一次。
-            rescan(LexicalGoal::RegExp);
-        }
-    }
-    return directive;
+    // 严格性不在 Parser 判定；Directive 节点保留给 Sema。
+    return parseDirective(std::move(statement));
 }
 
 NodePtr Parser::parseDirective(NodePtr statement) {
@@ -441,10 +433,6 @@ NodePtr Parser::parseLabeledStatement() {
 
 NodePtr Parser::parseWithStatement() {
     const SourceLocation start = current_.start;
-    if (strict_) {
-        error(start, "Strict mode code may not include a with statement");
-        return nullptr;
-    }
     advance();  // 'with'
 
     if (!expect(TokenKind::LeftParen, "'('")) return nullptr;
@@ -575,8 +563,7 @@ NodePtr Parser::parseFunctionBody() {
     const SourceLocation start = current_.start;
     if (!expect(TokenKind::LeftBrace, "'{'")) return nullptr;
 
-    // 函数体有自己的指令序言；"use strict" 只作用于该函数，解析完恢复。
-    const bool savedStrict = strict_;
+    // 函数体有自己的指令序言；严格性由 Sema 根据 Directive 节点判定。
     bool inDirectivePrologue = true;
     NodeList body;
     while (!at(TokenKind::RightBrace) && !at(TokenKind::EndOfInput)) {
@@ -588,14 +575,7 @@ NodePtr Parser::parseFunctionBody() {
         }
     }
 
-    if (!expect(TokenKind::RightBrace, "'}'")) {
-        strict_ = savedStrict;
-        return nullptr;
-    }
-
-    strict_ = savedStrict;
-    // 当前 token 是在函数体严格性下扫描的；调用方按自己的语法位置
-    // 选择词法目标重扫（声明用 RegExp，表达式用 Div）。
+    if (!expect(TokenKind::RightBrace, "'}'")) return nullptr;
     return std::make_unique<BlockStatement>(rangeFrom(start), std::move(body));
 }
 
@@ -655,32 +635,18 @@ NodePtr Parser::parseClassExpression() {
 NodePtr Parser::parseClassBody() {
     const SourceLocation start = current_.start;
 
-    // class 体始终是严格模式代码。
-    const bool savedStrict = strict_;
-    strict_ = true;
-    if (!expect(TokenKind::LeftBrace, "'{'")) {
-        strict_ = savedStrict;
-        return nullptr;
-    }
+    // class 体恒为严格模式代码，由 Sema 根据节点类型判定。
+    if (!expect(TokenKind::LeftBrace, "'{'")) return nullptr;
 
     NodeList elements;
     while (!at(TokenKind::RightBrace) && !at(TokenKind::EndOfInput)) {
         if (match(TokenKind::Semicolon)) continue;
         NodePtr element = parseClassElement();
-        if (element == nullptr) {
-            strict_ = savedStrict;
-            return nullptr;
-        }
+        if (element == nullptr) return nullptr;
         elements.push_back(std::move(element));
     }
 
-    if (!expect(TokenKind::RightBrace, "'}'")) {
-        strict_ = savedStrict;
-        return nullptr;
-    }
-
-    strict_ = savedStrict;
-    // 调用方按声明/表达式位置选择词法目标重扫。
+    if (!expect(TokenKind::RightBrace, "'}'")) return nullptr;
     return std::make_unique<ClassBody>(rangeFrom(start), std::move(elements));
 }
 
@@ -1343,11 +1309,11 @@ bool Parser::isArrowFunctionStart() {
 
     // async 是上下文关键字：async [no LT] ArrowParameters [no LT] =>。
     const LexerState state = lexer_.save();
-    const Token next = lexer_.next({LexicalGoal::Div, strict_});
+    const Token next = lexer_.next({LexicalGoal::Div});
     bool result = false;
     if (!next.precededByLineTerminator) {
         if (next.kind == TokenKind::Identifier) {
-            const Token arrow = lexer_.next({LexicalGoal::Div, strict_});
+            const Token arrow = lexer_.next({LexicalGoal::Div});
             result = arrow.kind == TokenKind::Arrow &&
                      !arrow.precededByLineTerminator;
         } else if (next.kind == TokenKind::LeftParen) {
@@ -1369,7 +1335,7 @@ bool Parser::scanArrowAfterParen() {
     // 调用时 lexer_ 已越过 '('，只需找到配对的 ')' 再看下一个 token。
     int depth = 1;
     while (true) {
-        const Token token = lexer_.next({LexicalGoal::Div, strict_});
+        const Token token = lexer_.next({LexicalGoal::Div});
         if (token.kind == TokenKind::EndOfInput ||
             token.kind == TokenKind::Illegal) {
             return false;
@@ -1378,7 +1344,7 @@ bool Parser::scanArrowAfterParen() {
             ++depth;
         } else if (token.kind == TokenKind::RightParen) {
             if (--depth == 0) {
-                const Token arrow = lexer_.next({LexicalGoal::Div, strict_});
+                const Token arrow = lexer_.next({LexicalGoal::Div});
                 return arrow.kind == TokenKind::Arrow &&
                        !arrow.precededByLineTerminator;
             }
@@ -1778,8 +1744,10 @@ NodePtr Parser::parseIdentifier() {
 NodePtr Parser::parseNumericLiteral() {
     const SourceLocation start = current_.start;
     const double value = current_.numberValue;
+    const bool legacyLeadingZero = current_.legacyLeadingZero;
     advance();
-    return std::make_unique<NumericLiteral>(rangeFrom(start), value);
+    return std::make_unique<NumericLiteral>(rangeFrom(start), value,
+                                            legacyLeadingZero);
 }
 
 NodePtr Parser::parseBigIntLiteral() {
@@ -1794,8 +1762,12 @@ NodePtr Parser::parseBigIntLiteral() {
 NodePtr Parser::parseStringLiteral() {
     const SourceLocation start = current_.start;
     std::string value = current_.text;
+    const bool legacyOctalEscape = current_.legacyOctalEscape;
+    const bool legacyEightOrNine = current_.legacyEightOrNine;
     advance();
-    return std::make_unique<StringLiteral>(rangeFrom(start), std::move(value));
+    return std::make_unique<StringLiteral>(rangeFrom(start), std::move(value),
+                                           legacyOctalEscape,
+                                           legacyEightOrNine);
 }
 
 NodePtr Parser::parseBooleanLiteral() {

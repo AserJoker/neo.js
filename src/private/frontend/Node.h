@@ -141,12 +141,9 @@ using NodeList = std::vector<NodePtr>;
 // ---------------------------------------------------------------------------
 
 struct Program final : Node {
-    Program(SourceRange range, NodeList body, bool strict)
-        : Node(NodeKind::Program, range),
-          body(std::move(body)),
-          strict(strict) {}
+    Program(SourceRange range, NodeList body)
+        : Node(NodeKind::Program, range), body(std::move(body)) {}
     NodeList body;
-    bool strict;
 };
 
 // ---------------------------------------------------------------------------
@@ -464,9 +461,14 @@ struct Identifier final : Node {
 };
 
 struct NumericLiteral final : Node {
-    NumericLiteral(SourceRange range, double value)
-        : Node(NodeKind::NumericLiteral, range), value(value) {}
+    NumericLiteral(SourceRange range, double value,
+                   bool legacyLeadingZero = false)
+        : Node(NodeKind::NumericLiteral, range),
+          value(value),
+          legacyLeadingZero(legacyLeadingZero) {}
     double value;
+    // 010 / 08 / 09：严格模式下是早期错误，由 Sema 判定。
+    bool legacyLeadingZero;
 };
 
 struct BigIntLiteral final : Node {
@@ -479,9 +481,17 @@ struct BigIntLiteral final : Node {
 };
 
 struct StringLiteral final : Node {
-    StringLiteral(SourceRange range, std::string value)
-        : Node(NodeKind::StringLiteral, range), value(std::move(value)) {}
+    StringLiteral(SourceRange range, std::string value,
+                  bool legacyOctalEscape = false,
+                  bool legacyEightOrNine = false)
+        : Node(NodeKind::StringLiteral, range),
+          value(std::move(value)),
+          legacyOctalEscape(legacyOctalEscape),
+          legacyEightOrNine(legacyEightOrNine) {}
     std::string value;
+    // 严格模式下非法的转义形态，由 Sema 判定。
+    bool legacyOctalEscape;
+    bool legacyEightOrNine;
 };
 
 struct BooleanLiteral final : Node {

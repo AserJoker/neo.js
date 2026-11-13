@@ -110,15 +110,26 @@ TEST(LexerTest, LegacyOctal) {
     Token token = lexOne("077");
     EXPECT_EQ(token.kind, TokenKind::NumericLiteral);
     EXPECT_DOUBLE_EQ(token.numberValue, 63.0);
+    EXPECT_TRUE(token.legacyLeadingZero);
 
     token = lexOne("089");
     EXPECT_EQ(token.kind, TokenKind::NumericLiteral);
     EXPECT_DOUBLE_EQ(token.numberValue, 89.0);
+    EXPECT_TRUE(token.legacyLeadingZero);
 
-    LexicalContext strict;
-    strict.strict = true;
-    token = lexOne("077", strict);
-    EXPECT_EQ(token.kind, TokenKind::Illegal);
+    EXPECT_FALSE(lexOne("77").legacyLeadingZero);
+}
+
+TEST(LexerTest, LegacyStringEscapesAreRecorded) {
+    Token token = lexOne("\"\\1\"");
+    EXPECT_EQ(token.kind, TokenKind::StringLiteral);
+    EXPECT_TRUE(token.legacyOctalEscape);
+    EXPECT_FALSE(token.legacyEightOrNine);
+
+    token = lexOne("\"\\8\"");
+    EXPECT_EQ(token.kind, TokenKind::StringLiteral);
+    EXPECT_FALSE(token.legacyOctalEscape);
+    EXPECT_TRUE(token.legacyEightOrNine);
 }
 
 TEST(LexerTest, StringEscapes) {
