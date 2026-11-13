@@ -4457,6 +4457,83 @@ TEST(ParserTest, ExportNamedSpecifiersWithSource) {
     EXPECT_EQ(declaration.source->kind(), NodeKind::StringLiteral);
 }
 
+TEST(ParserTest, StringNamedImportRequiresAs) {
+    ParseResult result = parse("import { \"x\" } from \"mod\";");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, StringNamedImportWithAs) {
+    ParseResult result = parse("import { \"x\" as y } from \"mod\";");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ImportDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_EQ(declaration.specifiers.size(), 1u);
+    const auto& specifier = static_cast<const ImportSpecifier&>(
+        *declaration.specifiers[0]);
+    EXPECT_EQ(specifier.imported->kind(), NodeKind::StringLiteral);
+    EXPECT_EQ(static_cast<const StringLiteral&>(*specifier.imported).value,
+              "x");
+    EXPECT_EQ(static_cast<const Identifier&>(*specifier.local).name, "y");
+}
+
+TEST(ParserTest, ExportStringLocalWithSource) {
+    ParseResult result = parse("export { \"x\" } from \"mod\";");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ExportNamedDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_EQ(declaration.specifiers.size(), 1u);
+    const auto& specifier = static_cast<const ExportSpecifier&>(
+        *declaration.specifiers[0]);
+    EXPECT_EQ(specifier.local->kind(), NodeKind::StringLiteral);
+    EXPECT_EQ(static_cast<const StringLiteral&>(*specifier.local).value, "x");
+    EXPECT_EQ(specifier.exported->kind(), NodeKind::StringLiteral);
+    EXPECT_EQ(static_cast<const StringLiteral&>(*specifier.exported).value,
+              "x");
+}
+
+TEST(ParserTest, ExportStringLocalWithAsAndSource) {
+    ParseResult result = parse("export { \"x\" as y } from \"mod\";");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ExportNamedDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_EQ(declaration.specifiers.size(), 1u);
+    const auto& specifier = static_cast<const ExportSpecifier&>(
+        *declaration.specifiers[0]);
+    EXPECT_EQ(specifier.local->kind(), NodeKind::StringLiteral);
+    EXPECT_EQ(static_cast<const Identifier&>(*specifier.exported).name, "y");
+}
+
+TEST(ParserTest, ExportStringExportedName) {
+    ParseResult result = parse("export { x as \"y\" };");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ExportNamedDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_EQ(declaration.specifiers.size(), 1u);
+    const auto& specifier = static_cast<const ExportSpecifier&>(
+        *declaration.specifiers[0]);
+    EXPECT_EQ(static_cast<const Identifier&>(*specifier.local).name, "x");
+    EXPECT_EQ(specifier.exported->kind(), NodeKind::StringLiteral);
+    EXPECT_EQ(static_cast<const StringLiteral&>(*specifier.exported).value,
+              "y");
+}
+
+TEST(ParserTest, ExportAllAsStringNamespace) {
+    ParseResult result = parse("export * as \"ns\" from \"mod\";");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ExportAllDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_NE(declaration.exported, nullptr);
+    EXPECT_EQ(declaration.exported->kind(), NodeKind::StringLiteral);
+    EXPECT_EQ(static_cast<const StringLiteral&>(*declaration.exported).value,
+              "ns");
+}
+
 TEST(ParserTest, EmptyExportSpecifiers) {
     ParseResult result = parse("export {};");
 

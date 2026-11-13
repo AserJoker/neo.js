@@ -183,5 +183,6 @@ Sema 采用“收集错误、继续分析”，不 fail-fast；遍历由树结�
     不检查本地绑定）；块级 `let`/strict 块级函数不可导出，`var` 提升后
     可导出；
   - `import` 绑定名必须是 Identifier。
-  - 已知 Parser 限制：ModuleExportName 的字符串形式
-    （`export { "x" as y }` / `import { "x" as y }`）尚未解析。
+  - Parser 已支持 ModuleExportName 的字符串形式：
+    `import { "x" as y }`、`export { "x" } from "m"`、
+    `export { x as "y" }`、`export * as "ns" from "m"`。

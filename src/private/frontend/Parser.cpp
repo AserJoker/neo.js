@@ -991,7 +991,7 @@ NodePtr Parser::parseImportSpecifier() {
     const SourceLocation start = current_.start;
     const bool importedIsIdentifier = at(TokenKind::Identifier);
 
-    NodePtr imported = parseIdentifierName();
+    NodePtr imported = parseModuleExportName();
     if (imported == nullptr) return nullptr;
 
     NodePtr local;
@@ -1055,7 +1055,7 @@ NodePtr Parser::parseExportAllDeclaration(SourceLocation start) {
     NodePtr exported;
     if (at(TokenKind::Identifier) && current_.text == "as") {
         advance();  // 'as'
-        exported = parseIdentifierName();
+        exported = parseModuleExportName();
         if (exported == nullptr) return nullptr;
     }
 
@@ -1144,19 +1144,30 @@ bool Parser::parseExportSpecifiers(NodeList& specifiers) {
 
 NodePtr Parser::parseExportSpecifier() {
     const SourceLocation start = current_.start;
-    NodePtr local = parseIdentifierName();
+    NodePtr local = parseModuleExportName();
     if (local == nullptr) return nullptr;
 
     NodePtr exported;
     if (at(TokenKind::Identifier) && current_.text == "as") {
         advance();  // 'as'
-        exported = parseIdentifierName();
+        exported = parseModuleExportName();
         if (exported == nullptr) return nullptr;
     } else {
         // 简写 export { a }：exported 与 local 同名。
-        const auto* identifier = static_cast<const Identifier*>(local.get());
-        exported = std::make_unique<Identifier>(identifier->range(),
-                                                identifier->name);
+        // 字符串 local 仅在 export ... from 中合法，是否允许由 Sema 判定。
+        if (local->kind() == NodeKind::Identifier) {
+            const auto& identifier = static_cast<const Identifier&>(*local);
+            exported = std::make_unique<Identifier>(identifier.range(),
+                                                    identifier.name);
+        } else if (local->kind() == NodeKind::StringLiteral) {
+            const auto& literal = static_cast<const StringLiteral&>(*local);
+            exported = std::make_unique<StringLiteral>(
+                literal.range(), literal.value, literal.legacyOctalEscape,
+                literal.legacyEightOrNine);
+        } else {
+            error(current_.start, "Expected 'as'");
+            return nullptr;
+        }
     }
 
     return std::make_unique<ExportSpecifier>(rangeFrom(start),
@@ -2236,6 +2247,11 @@ NodePtr Parser::parseIdentifierName() {
     std::string name = current_.text;
     advance();
     return std::make_unique<Identifier>(rangeFrom(start), std::move(name));
+}
+
+NodePtr Parser::parseModuleExportName() {
+    if (at(TokenKind::StringLiteral)) return parseStringLiteral();
+    return parseIdentifierName();
 }
 
 NodePtr Parser::parsePrimaryExpression() {

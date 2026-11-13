@@ -132,6 +132,8 @@ private:
     bool parseExportSpecifiers(NodeList& specifiers);
     NodePtr parseExportSpecifier();
     NodePtr parseExportDefaultDeclaration(SourceLocation start);
+    // ModuleExportName : IdentifierName | StringLiteral
+    NodePtr parseModuleExportName();
 
     // 表达式
     NodePtr parseExpression();

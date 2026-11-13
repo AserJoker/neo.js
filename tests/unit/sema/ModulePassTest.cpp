@@ -142,6 +142,24 @@ TEST(ModulePassTest, ExportFromSkipsLocalCheck) {
     EXPECT_TRUE(result.errors.empty());
 }
 
+TEST(ModulePassTest, ExportStringLocalWithoutFromIsError) {
+    Analysis result = analyze("export { \"x\" as y };");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ModulePassTest, ExportStringLocalWithFromIsAllowed) {
+    Analysis result = analyze("export { \"x\" as y } from \"m\";");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_TRUE(result.errors.empty());
+}
+
+TEST(ModulePassTest, ExportStringExportedNameIsAllowed) {
+    Analysis result = analyze("var x; export { x as \"y\" };");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_TRUE(result.errors.empty());
+}
+
 // ---------------------------------------------------------------------------
 // 重复导出
 // ---------------------------------------------------------------------------
@@ -265,4 +283,10 @@ TEST(ModulePassTest, ImportDeclarationInScriptIsError) {
     Analysis result = analyzeAsScript("import \"m\";");
     ASSERT_TRUE(result.parsed.ok());
     EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ModulePassTest, StringImportedNameIsAllowed) {
+    Analysis result = analyze("import { \"x\" as y } from \"m\"; y;");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_TRUE(result.errors.empty());
 }
