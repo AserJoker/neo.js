@@ -989,7 +989,31 @@ NodePtr Parser::parseExportDeclaration() {
     if (match(TokenKind::Default)) {
         return parseExportDefaultDeclaration(start);
     }
+    if (at(TokenKind::Star)) {
+        return parseExportAllDeclaration(start);
+    }
     return parseExportNamedDeclaration(start);
+}
+
+NodePtr Parser::parseExportAllDeclaration(SourceLocation start) {
+    advance();  // '*'
+
+    if (!at(TokenKind::Identifier) || current_.text != "from") {
+        error(current_.start, "Expected 'from'");
+        return nullptr;
+    }
+    advance();  // 'from'
+
+    if (!at(TokenKind::StringLiteral)) {
+        error(current_.start, "Expected module source");
+        return nullptr;
+    }
+    NodePtr source = parseStringLiteral();
+    if (source == nullptr) return nullptr;
+    if (!consumeSemicolon()) return nullptr;
+
+    return std::make_unique<ExportAllDeclaration>(rangeFrom(start),
+                                                  std::move(source));
 }
 
 NodePtr Parser::parseExportNamedDeclaration(SourceLocation start) {

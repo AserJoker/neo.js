@@ -75,6 +75,7 @@ enum class NodeKind : uint8_t {
     ImportNamespaceSpecifier,
     ImportDeclaration,
     ExportSpecifier,
+    ExportAllDeclaration,
     ExportNamedDeclaration,
     ExportDefaultDeclaration,
 
@@ -500,6 +501,14 @@ struct ExportSpecifier final : Node {
           exported(std::move(exported)) {}
     NodePtr local;     // IdentifierName
     NodePtr exported;  // IdentifierName
+};
+
+// export * from "source"
+struct ExportAllDeclaration final : Node {
+    ExportAllDeclaration(SourceRange range, NodePtr source)
+        : Node(NodeKind::ExportAllDeclaration, range),
+          source(std::move(source)) {}
+    NodePtr source;  // StringLiteral
 };
 
 // export function f() { }

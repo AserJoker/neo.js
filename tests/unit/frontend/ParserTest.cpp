@@ -35,6 +35,7 @@ using neo::frontend::ContinueStatement;
 using neo::frontend::DebuggerStatement;
 using neo::frontend::Directive;
 using neo::frontend::DoWhileStatement;
+using neo::frontend::ExportAllDeclaration;
 using neo::frontend::ExportDefaultDeclaration;
 using neo::frontend::ExportNamedDeclaration;
 using neo::frontend::ExpressionStatement;
@@ -4222,6 +4223,32 @@ TEST(ParserTest, ReservedNamedImportRequiresAs) {
 
 TEST(ParserTest, ReservedNamedImportWithoutAsReportsError) {
     ParseResult result = parse("import { if } from \"mod\";");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+// ---------------------------------------------------------------------------
+// export 声明
+// ---------------------------------------------------------------------------
+
+TEST(ParserTest, ExportAllDeclaration) {
+    ParseResult result = parse("export * from \"mod\";");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ExportAllDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_NE(declaration.source, nullptr);
+    EXPECT_EQ(declaration.source->kind(), NodeKind::StringLiteral);
+}
+
+TEST(ParserTest, ExportAllWithoutFromReportsError) {
+    ParseResult result = parse("export * \"mod\";");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, ExportAllWithoutSourceReportsError) {
+    ParseResult result = parse("export * from;");
 
     EXPECT_FALSE(result.errors.empty());
 }
