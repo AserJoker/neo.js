@@ -152,6 +152,7 @@ private:
     NodePtr parseBooleanLiteral();
     NodePtr parseNullLiteral();
     NodePtr parseRegExpLiteral();
+    NodePtr parseTemplateLiteral();
     NodePtr parseThisExpression();
     NodePtr parseSuperExpression();
     NodePtr parseArrayExpression();

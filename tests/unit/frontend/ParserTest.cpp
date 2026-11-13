@@ -70,6 +70,8 @@ using neo::frontend::StringLiteral;
 using neo::frontend::SuperExpression;
 using neo::frontend::SwitchCase;
 using neo::frontend::SwitchStatement;
+using neo::frontend::TemplateElement;
+using neo::frontend::TemplateLiteral;
 using neo::frontend::ThisExpression;
 using neo::frontend::ThrowStatement;
 using neo::frontend::TryStatement;
@@ -3789,6 +3791,91 @@ TEST(ParserTest, SuperCallAndMember) {
         static_cast<const CallExpression&>(*statement.expression);
     ASSERT_NE(call.callee, nullptr);
     EXPECT_EQ(call.callee->kind(), NodeKind::SuperExpression);
+}
+
+// ---------------------------------------------------------------------------
+// 模板字面量
+// ---------------------------------------------------------------------------
+
+TEST(ParserTest, NoSubstitutionTemplateLiteral) {
+    ParseResult result = parse("`abc`;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& literal = static_cast<const TemplateLiteral&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(literal.quasis.size(), 1u);
+    EXPECT_TRUE(literal.expressions.empty());
+    const auto& element =
+        static_cast<const TemplateElement&>(*literal.quasis[0]);
+    EXPECT_EQ(element.cooked, "abc");
+}
+
+TEST(ParserTest, TemplateLiteralWithSubstitution) {
+    ParseResult result = parse("`a${b}c`;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& literal = static_cast<const TemplateLiteral&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(literal.quasis.size(), 2u);
+    ASSERT_EQ(literal.expressions.size(), 1u);
+    EXPECT_EQ(static_cast<const TemplateElement&>(*literal.quasis[0]).cooked,
+              "a");
+    EXPECT_EQ(static_cast<const TemplateElement&>(*literal.quasis[1]).cooked,
+              "c");
+    EXPECT_EQ(literal.expressions[0]->kind(), NodeKind::Identifier);
+}
+
+TEST(ParserTest, TemplateLiteralWithMultipleSubstitutions) {
+    ParseResult result = parse("`a${b}c${d}e`;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& literal = static_cast<const TemplateLiteral&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(literal.quasis.size(), 3u);
+    ASSERT_EQ(literal.expressions.size(), 2u);
+    EXPECT_EQ(static_cast<const TemplateElement&>(*literal.quasis[1]).cooked,
+              "c");
+    EXPECT_EQ(static_cast<const TemplateElement&>(*literal.quasis[2]).cooked,
+              "e");
+}
+
+TEST(ParserTest, NestedTemplateLiteral) {
+    ParseResult result = parse("`a${`b${c}d`}e`;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& outer = static_cast<const TemplateLiteral&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(outer.expressions.size(), 1u);
+    ASSERT_EQ(outer.expressions[0]->kind(), NodeKind::TemplateLiteral);
+    const auto& inner =
+        static_cast<const TemplateLiteral&>(*outer.expressions[0]);
+    ASSERT_EQ(inner.expressions.size(), 1u);
+}
+
+TEST(ParserTest, TemplateSubstitutionAllowsObjectLiteral) {
+    ParseResult result = parse("`${{a: 1}.a}`;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& literal = static_cast<const TemplateLiteral&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(literal.expressions.size(), 1u);
+    EXPECT_EQ(literal.expressions[0]->kind(), NodeKind::MemberExpression);
+}
+
+TEST(ParserTest, TemplateLiteralInCall) {
+    ParseResult result = parse("f(`a${b}`);");
+
+    ASSERT_TRUE(result.ok());
+    const auto& call = static_cast<const CallExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(call.arguments.size(), 1u);
+    EXPECT_EQ(call.arguments[0]->kind(), NodeKind::TemplateLiteral);
+}
+
+TEST(ParserTest, UnterminatedTemplateReportsError) {
+    ParseResult result = parse("`abc");
+
+    EXPECT_FALSE(result.errors.empty());
 }
 
 TEST(ParserTest, SuperMemberExpression) {

@@ -81,6 +81,7 @@ enum class NodeKind : uint8_t {
     NullLiteral,
     RegExpLiteral,
     TemplateElement,
+    TemplateLiteral,
     ThisExpression,
     SuperExpression,
     FunctionExpression,
@@ -521,6 +522,16 @@ struct TemplateElement final : Node {
         : Node(NodeKind::TemplateElement, range),
           cooked(std::move(cooked)) {}
     std::string cooked;
+};
+
+// `a${b}c`：quasis 数量恒为 expressions.size() + 1。
+struct TemplateLiteral final : Node {
+    TemplateLiteral(SourceRange range, NodeList quasis, NodeList expressions)
+        : Node(NodeKind::TemplateLiteral, range),
+          quasis(std::move(quasis)),
+          expressions(std::move(expressions)) {}
+    NodeList quasis;       // TemplateElement
+    NodeList expressions;
 };
 
 struct ThisExpression final : Node {

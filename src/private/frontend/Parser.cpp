@@ -1691,6 +1691,9 @@ NodePtr Parser::parsePrimaryExpression() {
             return parseNullLiteral();
         case TokenKind::RegularExpressionLiteral:
             return parseRegExpLiteral();
+        case TokenKind::NoSubstitutionTemplate:
+        case TokenKind::TemplateHead:
+            return parseTemplateLiteral();
         case TokenKind::LeftBracket:
             return parseArrayExpression();
         case TokenKind::LeftBrace:
@@ -1790,6 +1793,74 @@ NodePtr Parser::parseRegExpLiteral() {
     advance();
     return std::make_unique<RegExpLiteral>(rangeFrom(start), std::move(pattern),
                                            std::move(flags));
+}
+
+NodePtr Parser::parseTemplateLiteral() {
+    const SourceLocation start = current_.start;
+    NodeList quasis;
+    NodeList expressions;
+
+    if (at(TokenKind::NoSubstitutionTemplate)) {
+        const SourceLocation elementStart = current_.start;
+        std::string cooked = current_.text;
+        advance();
+        quasis.push_back(std::make_unique<TemplateElement>(
+            rangeFrom(elementStart), std::move(cooked)));
+        return std::make_unique<TemplateLiteral>(
+            rangeFrom(start), std::move(quasis), std::move(expressions));
+    }
+
+    if (!at(TokenKind::TemplateHead)) {
+        error(current_.start, "Expected template literal");
+        return nullptr;
+    }
+
+    {
+        const SourceLocation elementStart = current_.start;
+        std::string cooked = current_.text;
+        advance(LexicalGoal::RegExp);
+        quasis.push_back(std::make_unique<TemplateElement>(
+            rangeFrom(elementStart), std::move(cooked)));
+    }
+
+    while (true) {
+        // 模板替换表达式是完整的 Expression，不受外层 [~In] 影响。
+        const bool savedAllowIn = allowIn_;
+        allowIn_ = true;
+        NodePtr expression = parseExpression();
+        allowIn_ = savedAllowIn;
+        if (expression == nullptr) return nullptr;
+        expressions.push_back(std::move(expression));
+
+        if (!at(TokenKind::RightBrace)) {
+            error(current_.start, "Expected '}' in template literal");
+            return nullptr;
+        }
+        rescan(LexicalGoal::TemplateContinuation);
+
+        if (at(TokenKind::TemplateMiddle)) {
+            const SourceLocation elementStart = current_.start;
+            std::string cooked = current_.text;
+            advance(LexicalGoal::RegExp);
+            quasis.push_back(std::make_unique<TemplateElement>(
+                rangeFrom(elementStart), std::move(cooked)));
+            continue;
+        }
+        if (at(TokenKind::TemplateTail)) {
+            const SourceLocation elementStart = current_.start;
+            std::string cooked = current_.text;
+            advance();
+            quasis.push_back(std::make_unique<TemplateElement>(
+                rangeFrom(elementStart), std::move(cooked)));
+            break;
+        }
+
+        error(current_.start, "Expected template continuation");
+        return nullptr;
+    }
+
+    return std::make_unique<TemplateLiteral>(
+        rangeFrom(start), std::move(quasis), std::move(expressions));
 }
 
 NodePtr Parser::parseArrayExpression() {
