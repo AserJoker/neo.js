@@ -164,3 +164,14 @@ Sema 采用“收集错误、继续分析”，不 fail-fast；遍历由树结�
     Compiler/Runtime 回退 Environment 链；间接 eval 不标注。
   - TDZ 不做静态早期错误（规范中是运行时 ReferenceError），由运行时
     UNINITIALIZED 槽位执行。
+- M4：`ControlFlowPass`，控制流上下文早期错误：
+  - `return` 仅限函数/箭头函数；`break`/`continue` 的循环、switch、
+    标签匹配不跨函数与 static block 边界；重复标签检查。
+  - `new.target` 仅限函数上下文（含方法/字段/static block，箭头继承）。
+  - `super()` 仅限派生类构造函数；`super.prop` 仅限方法/对象方法/
+    字段初始化器/static block；箭头继承，普通函数隔断。
+  - `await`/`yield`/`for await` 的 async / generator / module 上下文；
+    `for await` 允许 async 函数与 module 顶层。
+  - 类字段初始化器与 static block 的 `ContainsArguments`：箭头不隔断，
+    普通函数隔断；通过 ResolvePass 的 `IdentifierBinding` 区分引用与
+    绑定/属性名。

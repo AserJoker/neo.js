@@ -5,6 +5,7 @@ add_executable(sema_unit_test
     StrictnessPassTest.cpp
     ScopePassTest.cpp
     ResolvePassTest.cpp
+    ControlFlowPassTest.cpp
 )
 target_link_libraries(sema_unit_test
     PRIVATE
