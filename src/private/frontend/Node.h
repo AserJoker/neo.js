@@ -744,10 +744,12 @@ struct YieldExpression final : Node {
 
 // import(source)
 struct ImportExpression final : Node {
-    ImportExpression(SourceRange range, NodePtr source)
+    ImportExpression(SourceRange range, NodePtr source, NodePtr options)
         : Node(NodeKind::ImportExpression, range),
-          source(std::move(source)) {}
+          source(std::move(source)),
+          options(std::move(options)) {}
     NodePtr source;
+    NodePtr options;  // import(source, options) 的第二参数
 };
 
 // new callee(arguments)

@@ -4173,6 +4173,25 @@ TEST(ParserTest, ImportExpression) {
     EXPECT_EQ(import.source->kind(), NodeKind::StringLiteral);
 }
 
+TEST(ParserTest, ImportExpressionWithoutOptions) {
+    ParseResult result = parse("import(\"mod\");");
+
+    ASSERT_TRUE(result.ok());
+    const auto& import = static_cast<const ImportExpression&>(
+        *statementOf(result, 0).expression);
+    EXPECT_EQ(import.options, nullptr);
+}
+
+TEST(ParserTest, ImportExpressionWithOptions) {
+    ParseResult result = parse("import(\"mod\", { with: { type: \"json\" } });");
+
+    ASSERT_TRUE(result.ok());
+    const auto& import = static_cast<const ImportExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_NE(import.options, nullptr);
+    EXPECT_EQ(import.options->kind(), NodeKind::ObjectExpression);
+}
+
 TEST(ParserTest, ImportExpressionWithBinarySource) {
     ParseResult result = parse("import(a + b);");
 

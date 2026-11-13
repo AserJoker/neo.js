@@ -2035,9 +2035,16 @@ NodePtr Parser::parseImportExpression(SourceLocation start) {
     NodePtr source = parseAssignmentExpression();
     if (source == nullptr) return nullptr;
 
+    NodePtr options;
+    if (match(TokenKind::Comma)) {
+        options = parseAssignmentExpression();
+        if (options == nullptr) return nullptr;
+    }
+
     if (!expect(TokenKind::RightParen, "')'")) return nullptr;
     return std::make_unique<ImportExpression>(rangeFrom(start),
-                                              std::move(source));
+                                              std::move(source),
+                                              std::move(options));
 }
 
 NodePtr Parser::parseMemberSuffix(NodePtr object, SourceLocation start,
