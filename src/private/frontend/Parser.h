@@ -126,6 +126,8 @@ private:
     NodePtr parseExportDeclaration();
     NodePtr parseExportAllDeclaration(SourceLocation start);
     NodePtr parseExportNamedDeclaration(SourceLocation start);
+    bool parseExportSpecifiers(NodeList& specifiers);
+    NodePtr parseExportSpecifier();
     NodePtr parseExportDefaultDeclaration(SourceLocation start);
 
     // 表达式

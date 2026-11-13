@@ -38,6 +38,7 @@ using neo::frontend::DoWhileStatement;
 using neo::frontend::ExportAllDeclaration;
 using neo::frontend::ExportDefaultDeclaration;
 using neo::frontend::ExportNamedDeclaration;
+using neo::frontend::ExportSpecifier;
 using neo::frontend::ExpressionStatement;
 using neo::frontend::ForInStatement;
 using neo::frontend::FunctionDeclaration;
@@ -2589,8 +2590,8 @@ TEST(ParserTest, ExportDefaultAnonymousAsyncGenerator) {
     EXPECT_TRUE(function.generator);
 }
 
-TEST(ParserTest, ExportNonFunctionReportsError) {
-    ParseResult result = parse("export const x = 1;");
+TEST(ParserTest, ExportNonDeclarationReportsError) {
+    ParseResult result = parse("export 1;");
 
     EXPECT_FALSE(result.errors.empty());
 }
@@ -4251,6 +4252,84 @@ TEST(ParserTest, ExportAllWithoutSourceReportsError) {
     ParseResult result = parse("export * from;");
 
     EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, ExportNamedSpecifiers) {
+    ParseResult result = parse("export { a, b as c };");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ExportNamedDeclaration&>(
+        *programOf(result).body[0]);
+    EXPECT_EQ(declaration.declaration, nullptr);
+    EXPECT_EQ(declaration.source, nullptr);
+    ASSERT_EQ(declaration.specifiers.size(), 2u);
+
+    const auto& first = static_cast<const ExportSpecifier&>(
+        *declaration.specifiers[0]);
+    EXPECT_EQ(static_cast<const Identifier&>(*first.local).name, "a");
+    EXPECT_EQ(static_cast<const Identifier&>(*first.exported).name, "a");
+
+    const auto& second = static_cast<const ExportSpecifier&>(
+        *declaration.specifiers[1]);
+    EXPECT_EQ(static_cast<const Identifier&>(*second.local).name, "b");
+    EXPECT_EQ(static_cast<const Identifier&>(*second.exported).name, "c");
+}
+
+TEST(ParserTest, ExportNamedSpecifiersWithSource) {
+    ParseResult result = parse("export { a, b as c } from \"mod\";");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ExportNamedDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_EQ(declaration.specifiers.size(), 2u);
+    ASSERT_NE(declaration.source, nullptr);
+    EXPECT_EQ(declaration.source->kind(), NodeKind::StringLiteral);
+}
+
+TEST(ParserTest, EmptyExportSpecifiers) {
+    ParseResult result = parse("export {};");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ExportNamedDeclaration&>(
+        *programOf(result).body[0]);
+    EXPECT_TRUE(declaration.specifiers.empty());
+    EXPECT_EQ(declaration.declaration, nullptr);
+}
+
+TEST(ParserTest, ExportNamedSpecifiersWithoutSourceReportsError) {
+    ParseResult result = parse("export { a } from;");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, ExportVariableDeclaration) {
+    ParseResult result = parse("export var x = 1;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ExportNamedDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_NE(declaration.declaration, nullptr);
+    EXPECT_EQ(declaration.declaration->kind(), NodeKind::VariableDeclaration);
+}
+
+TEST(ParserTest, ExportLetDeclaration) {
+    ParseResult result = parse("export let x = 1;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ExportNamedDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_NE(declaration.declaration, nullptr);
+    EXPECT_EQ(declaration.declaration->kind(), NodeKind::VariableDeclaration);
+}
+
+TEST(ParserTest, ExportConstDeclaration) {
+    ParseResult result = parse("export const x = 1;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ExportNamedDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_NE(declaration.declaration, nullptr);
+    EXPECT_EQ(declaration.declaration->kind(), NodeKind::VariableDeclaration);
 }
 
 TEST(ParserTest, DefaultAndNamedImportDeclaration) {

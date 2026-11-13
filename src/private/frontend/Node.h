@@ -511,12 +511,18 @@ struct ExportAllDeclaration final : Node {
     NodePtr source;  // StringLiteral
 };
 
-// export function f() { }
+// export { a, b as c } [from "source"] / export var x = 1
 struct ExportNamedDeclaration final : Node {
-    ExportNamedDeclaration(SourceRange range, NodePtr declaration)
+    ExportNamedDeclaration(SourceRange range, NodePtr declaration,
+                           NodeList specifiers, NodePtr source)
         : Node(NodeKind::ExportNamedDeclaration, range),
-          declaration(std::move(declaration)) {}
-    NodePtr declaration;
+          declaration(std::move(declaration)),
+          specifiers(std::move(specifiers)),
+          source(std::move(source)) {}
+    NodePtr declaration;  // VariableDeclaration / FunctionDeclaration /
+                          // ClassDeclaration
+    NodeList specifiers;  // ExportSpecifier
+    NodePtr source;       // StringLiteral（仅 export ... from 形式）
 };
 
 // export default function [name]() { }

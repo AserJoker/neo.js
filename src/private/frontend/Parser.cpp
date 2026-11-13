@@ -1018,7 +1018,31 @@ NodePtr Parser::parseExportAllDeclaration(SourceLocation start) {
 
 NodePtr Parser::parseExportNamedDeclaration(SourceLocation start) {
     NodePtr declaration;
-    if (at(TokenKind::Function)) {
+    NodeList specifiers;
+    NodePtr source;
+
+    if (at(TokenKind::LeftBrace)) {
+        if (!parseExportSpecifiers(specifiers)) return nullptr;
+        if (at(TokenKind::Identifier) && current_.text == "from") {
+            advance();  // 'from'
+            if (!at(TokenKind::StringLiteral)) {
+                error(current_.start, "Expected module source");
+                return nullptr;
+            }
+            source = parseStringLiteral();
+            if (source == nullptr) return nullptr;
+        }
+        if (!consumeSemicolon()) return nullptr;
+        return std::make_unique<ExportNamedDeclaration>(
+            rangeFrom(start), nullptr, std::move(specifiers),
+            std::move(source));
+    }
+
+    if (at(TokenKind::Var) || at(TokenKind::Const) ||
+        (at(TokenKind::Identifier) && current_.text == "let" &&
+         isLetDeclarationStart())) {
+        declaration = parseVariableDeclaration();
+    } else if (at(TokenKind::Function)) {
         declaration = parseFunctionDeclaration(false);
     } else if (isAsyncFunctionStart()) {
         declaration = parseFunctionDeclaration(true);
@@ -1026,13 +1050,52 @@ NodePtr Parser::parseExportNamedDeclaration(SourceLocation start) {
         declaration = parseClassDeclaration();
     } else {
         error(current_.start,
-              "Only function and class declarations are supported in export");
+              "Expected declaration or export specifier list in export");
         return nullptr;
     }
     if (declaration == nullptr) return nullptr;
 
-    return std::make_unique<ExportNamedDeclaration>(rangeFrom(start),
-                                                    std::move(declaration));
+    return std::make_unique<ExportNamedDeclaration>(
+        rangeFrom(start), std::move(declaration), std::move(specifiers),
+        std::move(source));
+}
+
+bool Parser::parseExportSpecifiers(NodeList& specifiers) {
+    if (!expect(TokenKind::LeftBrace, "'{'")) return false;
+    if (match(TokenKind::RightBrace)) return true;
+
+    while (true) {
+        NodePtr specifier = parseExportSpecifier();
+        if (specifier == nullptr) return false;
+        specifiers.push_back(std::move(specifier));
+
+        if (!match(TokenKind::Comma)) break;
+        if (at(TokenKind::RightBrace)) break;
+    }
+
+    return expect(TokenKind::RightBrace, "'}'");
+}
+
+NodePtr Parser::parseExportSpecifier() {
+    const SourceLocation start = current_.start;
+    NodePtr local = parseIdentifierName();
+    if (local == nullptr) return nullptr;
+
+    NodePtr exported;
+    if (at(TokenKind::Identifier) && current_.text == "as") {
+        advance();  // 'as'
+        exported = parseIdentifierName();
+        if (exported == nullptr) return nullptr;
+    } else {
+        // 简写 export { a }：exported 与 local 同名。
+        const auto* identifier = static_cast<const Identifier*>(local.get());
+        exported = std::make_unique<Identifier>(identifier->range(),
+                                                identifier->name);
+    }
+
+    return std::make_unique<ExportSpecifier>(rangeFrom(start),
+                                             std::move(local),
+                                             std::move(exported));
 }
 
 NodePtr Parser::parseExportDefaultDeclaration(SourceLocation start) {
