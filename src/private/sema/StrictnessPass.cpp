@@ -219,6 +219,32 @@ public:
                                   "With statement is not allowed in strict mode");
                 }
                 break;
+            case NodeKind::LabeledStatement: {
+                auto& statement =
+                    static_cast<frontend::LabeledStatement&>(node);
+                if (strict()) {
+                    checkStrictReservedName(statement.label,
+                                            statement.range(), context);
+                }
+                break;
+            }
+            case NodeKind::BreakStatement: {
+                auto& statement = static_cast<frontend::BreakStatement&>(node);
+                if (strict() && !statement.label.empty()) {
+                    checkStrictReservedName(statement.label,
+                                            statement.range(), context);
+                }
+                break;
+            }
+            case NodeKind::ContinueStatement: {
+                auto& statement =
+                    static_cast<frontend::ContinueStatement&>(node);
+                if (strict() && !statement.label.empty()) {
+                    checkStrictReservedName(statement.label,
+                                            statement.range(), context);
+                }
+                break;
+            }
             case NodeKind::NumericLiteral: {
                 auto& literal = static_cast<NumericLiteral&>(node);
                 if (strict() && literal.legacyLeadingZero) {

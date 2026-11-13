@@ -301,6 +301,27 @@ TEST(StrictnessPassTest, StrictReservedPropertyNameIsAllowed) {
     EXPECT_TRUE(result.errors.empty());
 }
 
+TEST(StrictnessPassTest, StrictReservedLabel) {
+    Analysis result = analyze("\"use strict\"; let: ;");
+
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(StrictnessPassTest, StrictReservedBreakLabel) {
+    Analysis result = analyze("\"use strict\"; while (x) { break let; }");
+
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(StrictnessPassTest, OrdinaryLabelIsAllowed) {
+    Analysis result = analyze("\"use strict\"; label: ;");
+
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_TRUE(result.errors.empty());
+}
+
 TEST(StrictnessPassTest, StrictReservedInSloppyMode) {
     Analysis result = analyze("var implements = 1; implements;");
 
