@@ -89,6 +89,8 @@ enum class NodeKind : uint8_t {
     SequenceExpression,
     ArrowFunctionExpression,
     ArrayExpression,
+    ObjectExpression,
+    Property,
     SpreadElement,
 
     // 模式
@@ -617,6 +619,30 @@ struct ArrayExpression final : Node {
         : Node(NodeKind::ArrayExpression, range),
           elements(std::move(elements)) {}
     NodeList elements;
+};
+
+// key: value / key / [key]: value
+// shorthand 为 true 时 key 与 value 指向同一个名字（value 是独立的 Identifier）。
+struct Property final : Node {
+    Property(SourceRange range, NodePtr key, NodePtr value, bool computed,
+             bool shorthand)
+        : Node(NodeKind::Property, range),
+          key(std::move(key)),
+          value(std::move(value)),
+          computed(computed),
+          shorthand(shorthand) {}
+    NodePtr key;
+    NodePtr value;
+    bool computed;
+    bool shorthand;
+};
+
+// { property, ...spread }
+struct ObjectExpression final : Node {
+    ObjectExpression(SourceRange range, NodeList properties)
+        : Node(NodeKind::ObjectExpression, range),
+          properties(std::move(properties)) {}
+    NodeList properties;
 };
 
 // ...argument（数组字面量 / 调用参数中的展开）

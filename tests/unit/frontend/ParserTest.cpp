@@ -43,6 +43,8 @@ using neo::frontend::LogicalOperator;
 using neo::frontend::MemberExpression;
 using neo::frontend::NewExpression;
 using neo::frontend::NodeKind;
+using neo::frontend::ObjectExpression;
+using neo::frontend::Property;
 using neo::frontend::NumericLiteral;
 using neo::frontend::Parser;
 using neo::frontend::ParseResult;
@@ -2900,6 +2902,156 @@ TEST(ParserTest, SpreadArgumentIsAssignmentExpression) {
         static_cast<const SpreadElement&>(*call.arguments[0]);
     ASSERT_NE(spread.argument, nullptr);
     EXPECT_EQ(spread.argument->kind(), NodeKind::BinaryExpression);
+}
+
+// ---------------------------------------------------------------------------
+// 对象字面量
+// ---------------------------------------------------------------------------
+
+TEST(ParserTest, EmptyObjectLiteral) {
+    ParseResult result = parse("({});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    EXPECT_TRUE(object.properties.empty());
+}
+
+TEST(ParserTest, ObjectLiteralProperties) {
+    ParseResult result = parse("({a: 1, b: 2});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(object.properties.size(), 2u);
+
+    const auto& first = static_cast<const Property&>(*object.properties[0]);
+    EXPECT_EQ(first.key->kind(), NodeKind::Identifier);
+    EXPECT_EQ(static_cast<const Identifier&>(*first.key).name, "a");
+    EXPECT_EQ(first.value->kind(), NodeKind::NumericLiteral);
+    EXPECT_FALSE(first.computed);
+    EXPECT_FALSE(first.shorthand);
+}
+
+TEST(ParserTest, ObjectLiteralShorthand) {
+    ParseResult result = parse("({a, b});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(object.properties.size(), 2u);
+
+    const auto& property = static_cast<const Property&>(*object.properties[0]);
+    EXPECT_TRUE(property.shorthand);
+    EXPECT_FALSE(property.computed);
+    EXPECT_EQ(property.key->kind(), NodeKind::Identifier);
+    ASSERT_NE(property.value, nullptr);
+    EXPECT_EQ(static_cast<const Identifier&>(*property.value).name, "a");
+}
+
+TEST(ParserTest, ObjectLiteralComputedKey) {
+    ParseResult result = parse("({[k]: v});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(object.properties.size(), 1u);
+
+    const auto& property = static_cast<const Property&>(*object.properties[0]);
+    EXPECT_TRUE(property.computed);
+    EXPECT_FALSE(property.shorthand);
+    EXPECT_EQ(property.key->kind(), NodeKind::Identifier);
+    EXPECT_EQ(property.value->kind(), NodeKind::Identifier);
+}
+
+TEST(ParserTest, ObjectLiteralLiteralKeys) {
+    ParseResult result = parse("({\"s\": 1, 42: 2, 1n: 3});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(object.properties.size(), 3u);
+    EXPECT_EQ(static_cast<const Property&>(*object.properties[0]).key->kind(),
+              NodeKind::StringLiteral);
+    EXPECT_EQ(static_cast<const Property&>(*object.properties[1]).key->kind(),
+              NodeKind::NumericLiteral);
+    EXPECT_EQ(static_cast<const Property&>(*object.properties[2]).key->kind(),
+              NodeKind::BigIntLiteral);
+}
+
+TEST(ParserTest, ObjectLiteralReservedWordKey) {
+    ParseResult result = parse("({default: 1, if: 2});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(object.properties.size(), 2u);
+    EXPECT_EQ(static_cast<const Identifier&>(
+                  *static_cast<const Property&>(*object.properties[0]).key)
+                  .name,
+              "default");
+}
+
+TEST(ParserTest, ObjectLiteralSpread) {
+    ParseResult result = parse("({...base, a: 1});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(object.properties.size(), 2u);
+    EXPECT_EQ(object.properties[0]->kind(), NodeKind::SpreadElement);
+    EXPECT_EQ(object.properties[1]->kind(), NodeKind::Property);
+}
+
+TEST(ParserTest, ObjectLiteralTrailingComma) {
+    ParseResult result = parse("({a: 1,});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(object.properties.size(), 1u);
+}
+
+TEST(ParserTest, NestedObjectLiteral) {
+    ParseResult result = parse("({a: {b: 1}});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    const auto& property = static_cast<const Property&>(*object.properties[0]);
+    EXPECT_EQ(property.value->kind(), NodeKind::ObjectExpression);
+}
+
+TEST(ParserTest, ObjectLiteralInCallAndMember) {
+    ParseResult result = parse("f({a: 1}).a;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& member = static_cast<const MemberExpression&>(
+        *statementOf(result, 0).expression);
+    const auto& call =
+        static_cast<const CallExpression&>(*member.object);
+    ASSERT_EQ(call.arguments.size(), 1u);
+    EXPECT_EQ(call.arguments[0]->kind(), NodeKind::ObjectExpression);
+}
+
+TEST(ParserTest, ObjectLiteralMissingColonReportsError) {
+    ParseResult result = parse("({a 1});");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, ObjectLiteralReservedWordShorthandReportsError) {
+    ParseResult result = parse("({if});");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, BraceAtStatementStartIsBlock) {
+    ParseResult result = parse("{a: 1}");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    EXPECT_EQ(programOf(result).body[0]->kind(), NodeKind::BlockStatement);
 }
 
 }  // namespace

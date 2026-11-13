@@ -1419,6 +1419,8 @@ NodePtr Parser::parsePrimaryExpression() {
             return parseRegExpLiteral();
         case TokenKind::LeftBracket:
             return parseArrayExpression();
+        case TokenKind::LeftBrace:
+            return parseObjectExpression();
         case TokenKind::Slash:
         case TokenKind::SlashAssign:
             // 当前 `/` 是按除法目标扫出来的，进入表达式起始位置后重扫为正则。
@@ -1532,6 +1534,75 @@ NodePtr Parser::parseArrayExpression() {
     if (!expect(TokenKind::RightBracket, "']'")) return nullptr;
     return std::make_unique<ArrayExpression>(rangeFrom(start),
                                              std::move(elements));
+}
+
+NodePtr Parser::parseObjectExpression() {
+    const SourceLocation start = current_.start;
+    if (!expect(TokenKind::LeftBrace, "'{'")) return nullptr;
+
+    NodeList properties;
+    while (!at(TokenKind::RightBrace) && !at(TokenKind::EndOfInput)) {
+        NodePtr property;
+        if (at(TokenKind::Ellipsis)) {
+            property = parseSpreadElement();
+        } else {
+            property = parseProperty();
+        }
+        if (property == nullptr) return nullptr;
+        properties.push_back(std::move(property));
+
+        if (!match(TokenKind::Comma)) break;
+    }
+
+    if (!expect(TokenKind::RightBrace, "'}'")) return nullptr;
+    return std::make_unique<ObjectExpression>(rangeFrom(start),
+                                              std::move(properties));
+}
+
+NodePtr Parser::parseProperty() {
+    const SourceLocation start = current_.start;
+
+    bool computed = false;
+    bool identifierKey = false;
+    NodePtr key;
+
+    if (at(TokenKind::LeftBracket)) {
+        computed = true;
+        advance();  // '['
+        key = parseAssignmentExpression();
+        if (key == nullptr) return nullptr;
+        if (!expect(TokenKind::RightBracket, "']'")) return nullptr;
+    } else if (at(TokenKind::StringLiteral)) {
+        key = parseStringLiteral();
+    } else if (at(TokenKind::NumericLiteral)) {
+        key = parseNumericLiteral();
+    } else if (at(TokenKind::BigIntLiteral)) {
+        key = parseBigIntLiteral();
+    } else {
+        // 非计算键可以是任意 IdentifierName（含保留字）。
+        identifierKey = at(TokenKind::Identifier);
+        key = parseIdentifierName();
+        if (key == nullptr) return nullptr;
+    }
+
+    if (match(TokenKind::Colon)) {
+        NodePtr value = parseAssignmentExpression();
+        if (value == nullptr) return nullptr;
+        return std::make_unique<Property>(rangeFrom(start), std::move(key),
+                                          std::move(value), computed, false);
+    }
+
+    // 简写 {a}：只有普通标识符可以简写，保留字/字面量键不行。
+    if (identifierKey && (at(TokenKind::Comma) || at(TokenKind::RightBrace))) {
+        const auto* identifier = static_cast<const Identifier*>(key.get());
+        auto value = std::make_unique<Identifier>(identifier->range(),
+                                                  identifier->name);
+        return std::make_unique<Property>(rangeFrom(start), std::move(key),
+                                          std::move(value), false, true);
+    }
+
+    error(current_.start, "Expected ':'");
+    return nullptr;
 }
 
 }  // namespace neo::frontend

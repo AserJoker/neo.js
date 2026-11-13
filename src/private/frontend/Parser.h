@@ -142,6 +142,8 @@ private:
     NodePtr parseNullLiteral();
     NodePtr parseRegExpLiteral();
     NodePtr parseArrayExpression();
+    NodePtr parseObjectExpression();
+    NodePtr parseProperty();
 
     Lexer lexer_;
     Token current_;
