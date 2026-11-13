@@ -93,6 +93,7 @@ enum class NodeKind : uint8_t {
     CallExpression,
     ChainExpression,
     NewExpression,
+    MetaProperty,
     UnaryExpression,
     UpdateExpression,
     BinaryExpression,
@@ -628,6 +629,16 @@ struct ChainExpression final : Node {
         : Node(NodeKind::ChainExpression, range),
           expression(std::move(expression)) {}
     NodePtr expression;
+};
+
+// new.target / import.meta
+struct MetaProperty final : Node {
+    MetaProperty(SourceRange range, NodePtr meta, NodePtr property)
+        : Node(NodeKind::MetaProperty, range),
+          meta(std::move(meta)),
+          property(std::move(property)) {}
+    NodePtr meta;
+    NodePtr property;
 };
 
 // new callee(arguments)

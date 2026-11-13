@@ -1600,7 +1600,20 @@ NodePtr Parser::parseNewExpression() {
     const SourceLocation start = current_.start;
     advance();  // 'new'
 
-    // new.target 暂不支持；先按普通 new 表达式处理。
+    if (at(TokenKind::Dot)) {
+        NodePtr meta = parseMetaProperty("new", "target",
+                                         SourceRange{start, previousEnd_});
+        if (meta == nullptr) return nullptr;
+        bool optionalChain = false;
+        meta = parseCallSuffix(std::move(meta), start, optionalChain);
+        if (meta == nullptr) return nullptr;
+        if (optionalChain) {
+            return std::make_unique<ChainExpression>(meta->range(),
+                                                     std::move(meta));
+        }
+        return meta;
+    }
+
     bool optionalChain = false;
     NodePtr callee = at(TokenKind::New)
                          ? parseNewExpression()
@@ -1627,6 +1640,24 @@ NodePtr Parser::parseNewExpression() {
                                                  std::move(expression));
     }
     return expression;
+}
+
+NodePtr Parser::parseMetaProperty(std::string metaName,
+                                  std::string propertyName,
+                                  SourceRange metaRange) {
+    if (!expect(TokenKind::Dot, "'.'")) return nullptr;
+    if (!at(TokenKind::Identifier) || current_.text != propertyName) {
+        error(current_.start, "Expected '" + propertyName + "'");
+        return nullptr;
+    }
+    NodePtr property = parseIdentifierName();
+    if (property == nullptr) return nullptr;
+
+    NodePtr meta =
+        std::make_unique<Identifier>(metaRange, std::move(metaName));
+    return std::make_unique<MetaProperty>(rangeFrom(metaRange.start),
+                                          std::move(meta),
+                                          std::move(property));
 }
 
 NodePtr Parser::parseMemberSuffix(NodePtr object, SourceLocation start,
@@ -1774,6 +1805,16 @@ NodePtr Parser::parsePrimaryExpression() {
             return parseFunctionExpression(false);
         case TokenKind::Class:
             return parseClassExpression();
+        case TokenKind::Import: {
+            const SourceLocation start = current_.start;
+            advance();  // 'import'
+            if (at(TokenKind::Dot)) {
+                return parseMetaProperty("import", "meta",
+                                         SourceRange{start, previousEnd_});
+            }
+            error(start, "Expected import.meta");
+            return nullptr;
+        }
         case TokenKind::NumericLiteral:
             return parseNumericLiteral();
         case TokenKind::BigIntLiteral:

@@ -137,6 +137,8 @@ private:
     NodePtr parseMemberExpression(bool& optionalChain);
     NodePtr parseCallExpression(bool& optionalChain);
     NodePtr parseNewExpression();
+    NodePtr parseMetaProperty(std::string metaName, std::string propertyName,
+                              SourceRange metaRange);
     NodePtr parsePrimaryExpression();
 
     // 左值后缀与参数（辅助函数，不单独对应节点）

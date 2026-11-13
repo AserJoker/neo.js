@@ -48,6 +48,7 @@ using neo::frontend::LabeledStatement;
 using neo::frontend::LogicalExpression;
 using neo::frontend::LogicalOperator;
 using neo::frontend::MemberExpression;
+using neo::frontend::MetaProperty;
 using neo::frontend::MethodDefinition;
 using neo::frontend::MethodKind;
 using neo::frontend::NewExpression;
@@ -4025,6 +4026,52 @@ TEST(ParserTest, OptionalChainAfterNewExpression) {
     EXPECT_EQ(static_cast<const MemberExpression&>(*chain.expression)
                   .object->kind(),
               NodeKind::NewExpression);
+}
+
+// ---------------------------------------------------------------------------
+// MetaProperty
+// ---------------------------------------------------------------------------
+
+TEST(ParserTest, NewTarget) {
+    ParseResult result = parse("new.target;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& expression = statementOf(result, 0).expression;
+    ASSERT_EQ(expression->kind(), NodeKind::MetaProperty);
+    const auto& meta = static_cast<const MetaProperty&>(*expression);
+    EXPECT_EQ(static_cast<const Identifier&>(*meta.meta).name, "new");
+    EXPECT_EQ(static_cast<const Identifier&>(*meta.property).name, "target");
+}
+
+TEST(ParserTest, ImportMeta) {
+    ParseResult result = parse("import.meta;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& meta = static_cast<const MetaProperty&>(
+        *statementOf(result, 0).expression);
+    EXPECT_EQ(static_cast<const Identifier&>(*meta.meta).name, "import");
+    EXPECT_EQ(static_cast<const Identifier&>(*meta.property).name, "meta");
+}
+
+TEST(ParserTest, NewTargetMember) {
+    ParseResult result = parse("new.target.x;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& member = static_cast<const MemberExpression&>(
+        *statementOf(result, 0).expression);
+    EXPECT_EQ(member.object->kind(), NodeKind::MetaProperty);
+}
+
+TEST(ParserTest, InvalidNewPropertyReportsError) {
+    ParseResult result = parse("new.foo;");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, InvalidImportPropertyReportsError) {
+    ParseResult result = parse("import.foo;");
+
+    EXPECT_FALSE(result.errors.empty());
 }
 
 TEST(ParserTest, DeleteOptionalChain) {
