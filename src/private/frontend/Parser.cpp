@@ -530,6 +530,15 @@ NodePtr Parser::parseRestElement() {
                                          std::move(argument));
 }
 
+NodePtr Parser::parseSpreadElement() {
+    const SourceLocation start = current_.start;
+    if (!expect(TokenKind::Ellipsis, "'...'")) return nullptr;
+    NodePtr argument = parseAssignmentExpression();
+    if (argument == nullptr) return nullptr;
+    return std::make_unique<SpreadElement>(rangeFrom(start),
+                                           std::move(argument));
+}
+
 NodePtr Parser::parseFunctionBody() {
     const SourceLocation start = current_.start;
     if (!expect(TokenKind::LeftBrace, "'{'")) return nullptr;
@@ -1364,7 +1373,12 @@ bool Parser::parseArguments(NodeList& arguments) {
 
     while (true) {
         // 参数之间用逗号分隔，因此每个参数只解析到赋值表达式，不能吞掉逗号。
-        NodePtr argument = parseAssignmentExpression();
+        NodePtr argument;
+        if (at(TokenKind::Ellipsis)) {
+            argument = parseSpreadElement();
+        } else {
+            argument = parseAssignmentExpression();
+        }
         if (argument == nullptr) return false;
         arguments.push_back(std::move(argument));
 
@@ -1503,7 +1517,12 @@ NodePtr Parser::parseArrayExpression() {
             continue;
         }
 
-        NodePtr element = parseAssignmentExpression();
+        NodePtr element;
+        if (at(TokenKind::Ellipsis)) {
+            element = parseSpreadElement();
+        } else {
+            element = parseAssignmentExpression();
+        }
         if (element == nullptr) return nullptr;
         elements.push_back(std::move(element));
 

@@ -51,6 +51,7 @@ using neo::frontend::RegExpLiteral;
 using neo::frontend::RestElement;
 using neo::frontend::ReturnStatement;
 using neo::frontend::SequenceExpression;
+using neo::frontend::SpreadElement;
 using neo::frontend::StringLiteral;
 using neo::frontend::SwitchCase;
 using neo::frontend::SwitchStatement;
@@ -2812,6 +2813,93 @@ TEST(ParserTest, ArrayLiteralMissingBracketReportsError) {
     ParseResult result = parse("[1, 2;");
 
     EXPECT_FALSE(result.errors.empty());
+}
+
+// ---------------------------------------------------------------------------
+// SpreadElement
+// ---------------------------------------------------------------------------
+
+TEST(ParserTest, ArrayLiteralSpreadElement) {
+    ParseResult result = parse("[...a];");
+
+    ASSERT_TRUE(result.ok());
+    const auto& array = static_cast<const ArrayExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(array.elements.size(), 1u);
+    ASSERT_EQ(array.elements[0]->kind(), NodeKind::SpreadElement);
+    const auto& spread =
+        static_cast<const SpreadElement&>(*array.elements[0]);
+    ASSERT_NE(spread.argument, nullptr);
+    EXPECT_EQ(spread.argument->kind(), NodeKind::Identifier);
+}
+
+TEST(ParserTest, ArrayLiteralSpreadAmongElements) {
+    ParseResult result = parse("[1, ...a, 2];");
+
+    ASSERT_TRUE(result.ok());
+    const auto& array = static_cast<const ArrayExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(array.elements.size(), 3u);
+    EXPECT_EQ(array.elements[0]->kind(), NodeKind::NumericLiteral);
+    EXPECT_EQ(array.elements[1]->kind(), NodeKind::SpreadElement);
+    EXPECT_EQ(array.elements[2]->kind(), NodeKind::NumericLiteral);
+}
+
+TEST(ParserTest, ArrayLiteralMultipleSpreadElements) {
+    ParseResult result = parse("[...a, ...b];");
+
+    ASSERT_TRUE(result.ok());
+    const auto& array = static_cast<const ArrayExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(array.elements.size(), 2u);
+    EXPECT_EQ(array.elements[0]->kind(), NodeKind::SpreadElement);
+    EXPECT_EQ(array.elements[1]->kind(), NodeKind::SpreadElement);
+}
+
+TEST(ParserTest, ArrayLiteralSpreadAllowsTrailingComma) {
+    ParseResult result = parse("[...a,];");
+
+    ASSERT_TRUE(result.ok());
+    const auto& array = static_cast<const ArrayExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(array.elements.size(), 1u);
+    EXPECT_EQ(array.elements[0]->kind(), NodeKind::SpreadElement);
+}
+
+TEST(ParserTest, CallSpreadArguments) {
+    ParseResult result = parse("f(a, ...b, c);");
+
+    ASSERT_TRUE(result.ok());
+    const auto& call = static_cast<const CallExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(call.arguments.size(), 3u);
+    EXPECT_EQ(call.arguments[0]->kind(), NodeKind::Identifier);
+    EXPECT_EQ(call.arguments[1]->kind(), NodeKind::SpreadElement);
+    EXPECT_EQ(call.arguments[2]->kind(), NodeKind::Identifier);
+}
+
+TEST(ParserTest, NewSpreadArguments) {
+    ParseResult result = parse("new F(...args);");
+
+    ASSERT_TRUE(result.ok());
+    const auto& call = static_cast<const NewExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(call.arguments.size(), 1u);
+    EXPECT_EQ(call.arguments[0]->kind(), NodeKind::SpreadElement);
+}
+
+TEST(ParserTest, SpreadArgumentIsAssignmentExpression) {
+    ParseResult result = parse("f(...a + b);");
+
+    ASSERT_TRUE(result.ok());
+    const auto& call = static_cast<const CallExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(call.arguments.size(), 1u);
+    ASSERT_EQ(call.arguments[0]->kind(), NodeKind::SpreadElement);
+    const auto& spread =
+        static_cast<const SpreadElement&>(*call.arguments[0]);
+    ASSERT_NE(spread.argument, nullptr);
+    EXPECT_EQ(spread.argument->kind(), NodeKind::BinaryExpression);
 }
 
 }  // namespace

@@ -89,6 +89,7 @@ enum class NodeKind : uint8_t {
     SequenceExpression,
     ArrowFunctionExpression,
     ArrayExpression,
+    SpreadElement,
 
     // 模式
     RestElement,
@@ -616,6 +617,16 @@ struct ArrayExpression final : Node {
         : Node(NodeKind::ArrayExpression, range),
           elements(std::move(elements)) {}
     NodeList elements;
+};
+
+// ...argument（数组字面量 / 调用参数中的展开）
+// 与 RestElement 结构相同但语义不同：SpreadElement 求值展开，
+// RestElement 是模式中的绑定目标。
+struct SpreadElement final : Node {
+    SpreadElement(SourceRange range, NodePtr argument)
+        : Node(NodeKind::SpreadElement, range),
+          argument(std::move(argument)) {}
+    NodePtr argument;
 };
 
 // [async] (params) => body / param => body

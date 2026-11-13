@@ -100,6 +100,7 @@ private:
     NodePtr parseFunctionBody();
     bool parseFormalParameters(NodeList& params);
     NodePtr parseRestElement();
+    NodePtr parseSpreadElement();
     bool isLetDeclarationStart();
     bool isAsyncFunctionStart();
 
