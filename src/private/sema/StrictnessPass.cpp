@@ -2,6 +2,7 @@
 
 #include "sema/StrictnessPass.h"
 
+#include "sema/BindingNames.h"
 #include "sema/Walker.h"
 
 #include <cstddef>
@@ -67,63 +68,6 @@ bool hasUseStrictDirective(const NodeList& body) {
 bool hasUseStrictDirective(const Node* body) {
     if (!body || body->kind() != NodeKind::BlockStatement) return false;
     return hasUseStrictDirective(static_cast<const BlockStatement&>(*body).body);
-}
-
-struct BindingName {
-    std::string name;
-    SourceRange range;
-};
-
-// 收集绑定模式中的名字。非简单参数（默认值/解构/rest）会把 nonSimple 置真。
-void collectBindingNames(Node* node, std::vector<BindingName>& names,
-                         bool& nonSimple) {
-    if (!node) return;
-
-    switch (node->kind()) {
-        case NodeKind::Identifier: {
-            const auto& identifier = static_cast<Identifier&>(*node);
-            names.push_back(BindingName{identifier.name, identifier.range()});
-            break;
-        }
-        case NodeKind::AssignmentPattern: {
-            nonSimple = true;
-            auto& pattern = static_cast<AssignmentPattern&>(*node);
-            collectBindingNames(pattern.left.get(), names, nonSimple);
-            break;
-        }
-        case NodeKind::ObjectPattern: {
-            nonSimple = true;
-            auto& pattern = static_cast<ObjectPattern&>(*node);
-            for (NodePtr& property : pattern.properties) {
-                if (!property) continue;
-                if (property->kind() == NodeKind::Property) {
-                    auto& entry = static_cast<Property&>(*property);
-                    collectBindingNames(entry.value.get(), names, nonSimple);
-                } else if (property->kind() == NodeKind::RestElement) {
-                    auto& rest = static_cast<RestElement&>(*property);
-                    collectBindingNames(rest.argument.get(), names, nonSimple);
-                }
-            }
-            break;
-        }
-        case NodeKind::ArrayPattern: {
-            nonSimple = true;
-            auto& pattern = static_cast<ArrayPattern&>(*node);
-            for (NodePtr& element : pattern.elements) {
-                collectBindingNames(element.get(), names, nonSimple);
-            }
-            break;
-        }
-        case NodeKind::RestElement: {
-            nonSimple = true;
-            auto& rest = static_cast<RestElement&>(*node);
-            collectBindingNames(rest.argument.get(), names, nonSimple);
-            break;
-        }
-        default:
-            nonSimple = true;
-            break;
-    }
 }
 
 void checkBindingName(const BindingName& binding, SemaContext& context,

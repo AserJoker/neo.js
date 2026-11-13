@@ -137,3 +137,7 @@ Sema 采用“收集错误、继续分析”，不 fail-fast；遍历由树结�
 - M1：`StrictnessPass`，覆盖严格性作用域、legacy 字面量/转义、`with`、
   `delete identifier`、重复参数、`eval`/`arguments` 绑定与赋值目标、
   严格模式保留字、非简单参数 + `"use strict"`。
+- M2：`ScopePass`，建立 shadow_scope 树（Program / closure / arguments /
+  body / block / for / catch / switch / class / with / static block），
+  完成 var 提升、lexical 绑定、参数与隐式 `arguments`、重复声明与
+  var/lexical 冲突检查。

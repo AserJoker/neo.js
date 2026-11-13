@@ -3,6 +3,7 @@
 add_executable(sema_unit_test
     SemaWalkerTest.cpp
     StrictnessPassTest.cpp
+    ScopePassTest.cpp
 )
 target_link_libraries(sema_unit_test
     PRIVATE
