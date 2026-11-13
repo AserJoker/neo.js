@@ -184,7 +184,9 @@ bool isForInOfLeft(const Node* node) {
     if (node == nullptr) return false;
     return node->kind() == NodeKind::VariableDeclaration ||
            node->kind() == NodeKind::Identifier ||
-           node->kind() == NodeKind::MemberExpression;
+           node->kind() == NodeKind::MemberExpression ||
+           node->kind() == NodeKind::ArrayPattern ||
+           node->kind() == NodeKind::ObjectPattern;
 }
 
 bool isUnparenthesizedLogical(const Node* node, LogicalOperator op) {
@@ -506,11 +508,7 @@ bool Parser::parseFormalParameters(NodeList& params) {
             break;
         }
 
-        if (!at(TokenKind::Identifier)) {
-            error(current_.start, "Expected parameter name");
-            return false;
-        }
-        NodePtr param = parseIdentifier();
+        NodePtr param = parseBindingElement();
         if (param == nullptr) return false;
         params.push_back(std::move(param));
 
@@ -524,7 +522,7 @@ bool Parser::parseFormalParameters(NodeList& params) {
 NodePtr Parser::parseRestElement() {
     const SourceLocation start = current_.start;
     if (!expect(TokenKind::Ellipsis, "'...'")) return nullptr;
-    NodePtr argument = parseIdentifier();
+    NodePtr argument = parseBindingPattern();
     if (argument == nullptr) return nullptr;
     return std::make_unique<RestElement>(rangeFrom(start),
                                          std::move(argument));
@@ -708,7 +706,7 @@ NodePtr Parser::parseCatchClause() {
             error(current_.start, "Expected catch parameter");
             return nullptr;
         }
-        param = parseIdentifier();
+        param = parseBindingPattern();
         if (param == nullptr) return nullptr;
         if (!expect(TokenKind::RightParen, "')'")) return nullptr;
     }
@@ -810,6 +808,23 @@ NodePtr Parser::parseForStatement() {
         if (at(TokenKind::Identifier) && current_.text == "of") {
             return parseForOfStatement(std::move(init), start);
         }
+
+        // 不是 for-in/of，const 声明必须有初始化。
+        if (declaration) {
+            const auto* variableDeclaration =
+                static_cast<const VariableDeclaration*>(init.get());
+            if (variableDeclaration->variableKind == VariableKind::Const) {
+                for (const NodePtr& declarator :
+                     variableDeclaration->declarations) {
+                    if (static_cast<const VariableDeclarator*>(declarator.get())
+                            ->init == nullptr) {
+                        error(declarator->range().start,
+                              "Missing initializer in const declaration");
+                        return nullptr;
+                    }
+                }
+            }
+        }
     }
     if (!expect(TokenKind::Semicolon, "';'")) return nullptr;
 
@@ -836,6 +851,11 @@ NodePtr Parser::parseForStatement() {
 }
 
 NodePtr Parser::parseForInStatement(NodePtr left, SourceLocation start) {
+    if (left->kind() == NodeKind::ArrayExpression ||
+        left->kind() == NodeKind::ObjectExpression) {
+        left = convertToAssignmentPattern(std::move(left));
+        if (left == nullptr) return nullptr;
+    }
     if (!isForInOfLeft(left.get())) {
         error(left->range().start, "Invalid left-hand side in for-in");
         return nullptr;
@@ -854,6 +874,11 @@ NodePtr Parser::parseForInStatement(NodePtr left, SourceLocation start) {
 }
 
 NodePtr Parser::parseForOfStatement(NodePtr left, SourceLocation start) {
+    if (left->kind() == NodeKind::ArrayExpression ||
+        left->kind() == NodeKind::ObjectExpression) {
+        left = convertToAssignmentPattern(std::move(left));
+        if (left == nullptr) return nullptr;
+    }
     if (!isForInOfLeft(left.get())) {
         error(left->range().start, "Invalid left-hand side in for-of");
         return nullptr;
@@ -955,7 +980,8 @@ NodePtr Parser::parseVariableDeclaration(bool consumeTerminator) {
     while (true) {
         NodePtr declarator = parseVariableDeclarator();
         if (declarator == nullptr) return nullptr;
-        if (kind == VariableKind::Const &&
+        // for-in/of 头部允许 const 不带初始化，由 parseForStatement 区分。
+        if (consumeTerminator && kind == VariableKind::Const &&
             static_cast<const VariableDeclarator*>(declarator.get())->init ==
                 nullptr) {
             error(declarator->range().start,
@@ -973,7 +999,7 @@ NodePtr Parser::parseVariableDeclaration(bool consumeTerminator) {
 
 NodePtr Parser::parseVariableDeclarator() {
     const SourceLocation start = current_.start;
-    NodePtr id = parseIdentifier();
+    NodePtr id = parseBindingPattern();
     if (id == nullptr) return nullptr;
 
     NodePtr init;
@@ -1146,7 +1172,13 @@ NodePtr Parser::parseAssignmentExpression() {
     AssignmentOperator op;
     if (!assignmentOperator(current_.kind, op)) return left;
 
-    if (!isSimpleAssignmentTarget(left.get())) {
+    // 解构赋值左侧先按字面量解析，再重解释为模式；复合赋值仍只接受简单目标。
+    if (op == AssignmentOperator::Assign &&
+        (left->kind() == NodeKind::ArrayExpression ||
+         left->kind() == NodeKind::ObjectExpression)) {
+        left = convertToAssignmentPattern(std::move(left));
+        if (left == nullptr) return nullptr;
+    } else if (!isSimpleAssignmentTarget(left.get())) {
         error(left->range().start, "Invalid assignment target");
         return nullptr;
     }
@@ -1593,16 +1625,259 @@ NodePtr Parser::parseProperty() {
     }
 
     // 简写 {a}：只有普通标识符可以简写，保留字/字面量键不行。
-    if (identifierKey && (at(TokenKind::Comma) || at(TokenKind::RightBrace))) {
+    // `{a = 1}` 先按 cover grammar 接受，只有转换为赋值模式时才合法。
+    if (identifierKey && (at(TokenKind::Comma) || at(TokenKind::RightBrace) ||
+                          at(TokenKind::Assign))) {
         const auto* identifier = static_cast<const Identifier*>(key.get());
-        auto value = std::make_unique<Identifier>(identifier->range(),
-                                                  identifier->name);
+        const SourceLocation valueStart = identifier->range().start;
+        NodePtr value = std::make_unique<Identifier>(identifier->range(),
+                                                     identifier->name);
+        if (match(TokenKind::Assign)) {
+            NodePtr right = parseAssignmentExpression();
+            if (right == nullptr) return nullptr;
+            value = std::make_unique<AssignmentExpression>(
+                rangeFrom(valueStart), AssignmentOperator::Assign,
+                std::move(value), std::move(right));
+        }
         return std::make_unique<Property>(rangeFrom(start), std::move(key),
                                           std::move(value), false, true);
     }
 
     error(current_.start, "Expected ':'");
     return nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// 模式
+// ---------------------------------------------------------------------------
+
+NodePtr Parser::parseBindingPattern() {
+    if (at(TokenKind::LeftBrace)) return parseObjectPattern();
+    if (at(TokenKind::LeftBracket)) return parseArrayPattern();
+    return parseIdentifier();
+}
+
+NodePtr Parser::parseBindingElement() {
+    const SourceLocation start = current_.start;
+    NodePtr target = parseBindingPattern();
+    if (target == nullptr) return nullptr;
+
+    if (match(TokenKind::Assign)) {
+        NodePtr right = parseAssignmentExpression();
+        if (right == nullptr) return nullptr;
+        return std::make_unique<AssignmentPattern>(
+            rangeFrom(start), std::move(target), std::move(right));
+    }
+    return target;
+}
+
+NodePtr Parser::parseObjectPattern() {
+    const SourceLocation start = current_.start;
+    if (!expect(TokenKind::LeftBrace, "'{'")) return nullptr;
+
+    NodeList properties;
+    while (!at(TokenKind::RightBrace) && !at(TokenKind::EndOfInput)) {
+        if (at(TokenKind::Ellipsis)) {
+            NodePtr rest = parseRestElement();
+            if (rest == nullptr) return nullptr;
+            const auto* restElement = static_cast<const RestElement*>(rest.get());
+            if (restElement->argument->kind() != NodeKind::Identifier) {
+                error(restElement->argument->range().start,
+                      "Rest property must be an identifier");
+                return nullptr;
+            }
+            properties.push_back(std::move(rest));
+            if (at(TokenKind::Comma)) {
+                error(current_.start, "Rest property must be last");
+                return nullptr;
+            }
+            break;
+        }
+
+        NodePtr property = parseObjectPatternProperty();
+        if (property == nullptr) return nullptr;
+        properties.push_back(std::move(property));
+
+        if (!match(TokenKind::Comma)) break;
+    }
+
+    if (!expect(TokenKind::RightBrace, "'}'")) return nullptr;
+    return std::make_unique<ObjectPattern>(rangeFrom(start),
+                                           std::move(properties));
+}
+
+NodePtr Parser::parseObjectPatternProperty() {
+    const SourceLocation start = current_.start;
+
+    bool computed = false;
+    bool identifierKey = false;
+    NodePtr key;
+
+    if (at(TokenKind::LeftBracket)) {
+        computed = true;
+        advance();  // '['
+        key = parseAssignmentExpression();
+        if (key == nullptr) return nullptr;
+        if (!expect(TokenKind::RightBracket, "']'")) return nullptr;
+    } else if (at(TokenKind::StringLiteral)) {
+        key = parseStringLiteral();
+    } else if (at(TokenKind::NumericLiteral)) {
+        key = parseNumericLiteral();
+    } else if (at(TokenKind::BigIntLiteral)) {
+        key = parseBigIntLiteral();
+    } else {
+        identifierKey = at(TokenKind::Identifier);
+        key = parseIdentifierName();
+        if (key == nullptr) return nullptr;
+    }
+
+    if (match(TokenKind::Colon)) {
+        NodePtr value = parseBindingElement();
+        if (value == nullptr) return nullptr;
+        return std::make_unique<Property>(rangeFrom(start), std::move(key),
+                                          std::move(value), computed, false);
+    }
+
+    if (identifierKey && (at(TokenKind::Comma) || at(TokenKind::RightBrace) ||
+                          at(TokenKind::Assign))) {
+        const auto* identifier = static_cast<const Identifier*>(key.get());
+        const SourceLocation valueStart = identifier->range().start;
+        NodePtr value = std::make_unique<Identifier>(identifier->range(),
+                                                     identifier->name);
+        if (match(TokenKind::Assign)) {
+            NodePtr right = parseAssignmentExpression();
+            if (right == nullptr) return nullptr;
+            value = std::make_unique<AssignmentPattern>(
+                rangeFrom(valueStart), std::move(value), std::move(right));
+        }
+        return std::make_unique<Property>(rangeFrom(start), std::move(key),
+                                          std::move(value), false, true);
+    }
+
+    error(current_.start, "Expected ':'");
+    return nullptr;
+}
+
+NodePtr Parser::parseArrayPattern() {
+    const SourceLocation start = current_.start;
+    if (!expect(TokenKind::LeftBracket, "'['")) return nullptr;
+
+    NodeList elements;
+    while (!at(TokenKind::RightBracket) && !at(TokenKind::EndOfInput)) {
+        if (at(TokenKind::Comma)) {
+            elements.push_back(nullptr);
+            advance();
+            continue;
+        }
+
+        const bool rest = at(TokenKind::Ellipsis);
+        NodePtr element = rest ? parseRestElement() : parseBindingElement();
+        if (element == nullptr) return nullptr;
+        elements.push_back(std::move(element));
+
+        if (rest) {
+            if (at(TokenKind::Comma)) {
+                error(current_.start, "Rest element must be last");
+                return nullptr;
+            }
+            break;
+        }
+
+        if (!match(TokenKind::Comma)) break;
+    }
+
+    if (!expect(TokenKind::RightBracket, "']'")) return nullptr;
+    return std::make_unique<ArrayPattern>(rangeFrom(start),
+                                          std::move(elements));
+}
+
+NodePtr Parser::convertToAssignmentPattern(NodePtr node) {
+    switch (node->kind()) {
+        case NodeKind::Identifier:
+        case NodeKind::MemberExpression:
+            return node;
+
+        case NodeKind::ArrayExpression: {
+            auto* array = static_cast<ArrayExpression*>(node.get());
+            NodeList elements;
+            for (size_t i = 0; i < array->elements.size(); ++i) {
+                NodePtr& element = array->elements[i];
+                if (element == nullptr) {
+                    elements.push_back(nullptr);
+                    continue;
+                }
+                if (element->kind() == NodeKind::SpreadElement) {
+                    if (i + 1 != array->elements.size()) {
+                        error(element->range().start,
+                              "Rest element must be last");
+                        return nullptr;
+                    }
+                    auto* spread = static_cast<SpreadElement*>(element.get());
+                    NodePtr argument =
+                        convertToAssignmentPattern(std::move(spread->argument));
+                    if (argument == nullptr) return nullptr;
+                    elements.push_back(std::make_unique<RestElement>(
+                        element->range(), std::move(argument)));
+                    continue;
+                }
+                NodePtr converted =
+                    convertToAssignmentPattern(std::move(element));
+                if (converted == nullptr) return nullptr;
+                elements.push_back(std::move(converted));
+            }
+            return std::make_unique<ArrayPattern>(node->range(),
+                                                  std::move(elements));
+        }
+
+        case NodeKind::ObjectExpression: {
+            auto* object = static_cast<ObjectExpression*>(node.get());
+            NodeList properties;
+            for (size_t i = 0; i < object->properties.size(); ++i) {
+                NodePtr& property = object->properties[i];
+                if (property->kind() == NodeKind::SpreadElement) {
+                    if (i + 1 != object->properties.size()) {
+                        error(property->range().start,
+                              "Rest property must be last");
+                        return nullptr;
+                    }
+                    auto* spread = static_cast<SpreadElement*>(property.get());
+                    NodePtr argument =
+                        convertToAssignmentPattern(std::move(spread->argument));
+                    if (argument == nullptr) return nullptr;
+                    properties.push_back(std::make_unique<RestElement>(
+                        property->range(), std::move(argument)));
+                    continue;
+                }
+
+                auto* entry = static_cast<Property*>(property.get());
+                NodePtr value =
+                    convertToAssignmentPattern(std::move(entry->value));
+                if (value == nullptr) return nullptr;
+                properties.push_back(std::make_unique<Property>(
+                    entry->range(), std::move(entry->key), std::move(value),
+                    entry->computed, entry->shorthand));
+            }
+            return std::make_unique<ObjectPattern>(node->range(),
+                                                   std::move(properties));
+        }
+
+        case NodeKind::AssignmentExpression: {
+            auto* assignment = static_cast<AssignmentExpression*>(node.get());
+            if (assignment->op != AssignmentOperator::Assign) {
+                error(node->range().start, "Invalid assignment target");
+                return nullptr;
+            }
+            NodePtr left =
+                convertToAssignmentPattern(std::move(assignment->left));
+            if (left == nullptr) return nullptr;
+            return std::make_unique<AssignmentPattern>(
+                node->range(), std::move(left), std::move(assignment->right));
+        }
+
+        default:
+            error(node->range().start, "Invalid assignment target");
+            return nullptr;
+    }
 }
 
 }  // namespace neo::frontend

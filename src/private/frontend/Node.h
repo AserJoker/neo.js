@@ -94,6 +94,9 @@ enum class NodeKind : uint8_t {
     SpreadElement,
 
     // 模式
+    ObjectPattern,
+    ArrayPattern,
+    AssignmentPattern,
     RestElement,
 };
 
@@ -669,6 +672,34 @@ struct ArrowFunctionExpression final : Node {
     NodePtr body;
     bool async;
     bool expression;
+};
+
+// { property, ...rest }（绑定/赋值模式）
+// properties 中的元素是 Property 或 RestElement。
+struct ObjectPattern final : Node {
+    ObjectPattern(SourceRange range, NodeList properties)
+        : Node(NodeKind::ObjectPattern, range),
+          properties(std::move(properties)) {}
+    NodeList properties;
+};
+
+// [element, ...]（绑定/赋值模式）
+// elements 中的空指针表示 elision。
+struct ArrayPattern final : Node {
+    ArrayPattern(SourceRange range, NodeList elements)
+        : Node(NodeKind::ArrayPattern, range),
+          elements(std::move(elements)) {}
+    NodeList elements;
+};
+
+// target = default（模式中的默认值）
+struct AssignmentPattern final : Node {
+    AssignmentPattern(SourceRange range, NodePtr left, NodePtr right)
+        : Node(NodeKind::AssignmentPattern, range),
+          left(std::move(left)),
+          right(std::move(right)) {}
+    NodePtr left;
+    NodePtr right;
 };
 
 // ...argument（函数参数 / 解构模式中的 rest）

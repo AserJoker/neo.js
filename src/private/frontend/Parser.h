@@ -145,6 +145,14 @@ private:
     NodePtr parseObjectExpression();
     NodePtr parseProperty();
 
+    // 模式
+    NodePtr parseBindingPattern();
+    NodePtr parseBindingElement();
+    NodePtr parseObjectPattern();
+    NodePtr parseObjectPatternProperty();
+    NodePtr parseArrayPattern();
+    NodePtr convertToAssignmentPattern(NodePtr node);
+
     Lexer lexer_;
     Token current_;
     LexerState currentStart_;

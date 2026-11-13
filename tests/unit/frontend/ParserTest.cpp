@@ -12,7 +12,9 @@
 namespace {
 
 using neo::frontend::ArrayExpression;
+using neo::frontend::ArrayPattern;
 using neo::frontend::ArrowFunctionExpression;
+using neo::frontend::AssignmentPattern;
 using neo::frontend::AssignmentExpression;
 using neo::frontend::AssignmentOperator;
 using neo::frontend::BigIntLiteral;
@@ -44,6 +46,7 @@ using neo::frontend::MemberExpression;
 using neo::frontend::NewExpression;
 using neo::frontend::NodeKind;
 using neo::frontend::ObjectExpression;
+using neo::frontend::ObjectPattern;
 using neo::frontend::Property;
 using neo::frontend::NumericLiteral;
 using neo::frontend::Parser;
@@ -2459,10 +2462,18 @@ TEST(ParserTest, ExportNamedAnonymousFunctionIsLeftToSema) {
     EXPECT_EQ(function.id, nullptr);
 }
 
-TEST(ParserTest, DefaultParameterReportsError) {
+TEST(ParserTest, DefaultParameter) {
     ParseResult result = parse("function f(a = 1) {}");
 
-    EXPECT_FALSE(result.errors.empty());
+    ASSERT_TRUE(result.ok());
+    const auto& function =
+        static_cast<const FunctionDeclaration&>(*programOf(result).body[0]);
+    ASSERT_EQ(function.params.size(), 1u);
+    ASSERT_EQ(function.params[0]->kind(), NodeKind::AssignmentPattern);
+    const auto& parameter =
+        static_cast<const AssignmentPattern&>(*function.params[0]);
+    EXPECT_EQ(parameter.left->kind(), NodeKind::Identifier);
+    EXPECT_EQ(parameter.right->kind(), NodeKind::NumericLiteral);
 }
 
 TEST(ParserTest, FunctionBodyUseStrictDoesNotLeak) {
@@ -3052,6 +3063,289 @@ TEST(ParserTest, BraceAtStatementStartIsBlock) {
     ASSERT_TRUE(result.ok());
     ASSERT_EQ(programOf(result).body.size(), 1u);
     EXPECT_EQ(programOf(result).body[0]->kind(), NodeKind::BlockStatement);
+}
+
+// ---------------------------------------------------------------------------
+// 解构模式
+// ---------------------------------------------------------------------------
+
+namespace {
+
+const VariableDeclarator& declaratorOf(const ParseResult& result) {
+    const auto& declaration = static_cast<const VariableDeclaration&>(
+        *programOf(result).body[0]);
+    return static_cast<const VariableDeclarator&>(*declaration.declarations[0]);
+}
+
+}  // namespace
+
+TEST(ParserTest, ArrayBindingPattern) {
+    ParseResult result = parse("var [a, b] = arr;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declarator = declaratorOf(result);
+    ASSERT_EQ(declarator.id->kind(), NodeKind::ArrayPattern);
+    const auto& pattern = static_cast<const ArrayPattern&>(*declarator.id);
+    ASSERT_EQ(pattern.elements.size(), 2u);
+    EXPECT_EQ(static_cast<const Identifier&>(*pattern.elements[0]).name, "a");
+    EXPECT_EQ(static_cast<const Identifier&>(*pattern.elements[1]).name, "b");
+}
+
+TEST(ParserTest, ArrayBindingPatternElision) {
+    ParseResult result = parse("var [, a] = arr;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& pattern = static_cast<const ArrayPattern&>(*declaratorOf(result).id);
+    ASSERT_EQ(pattern.elements.size(), 2u);
+    EXPECT_EQ(pattern.elements[0], nullptr);
+    EXPECT_NE(pattern.elements[1], nullptr);
+}
+
+TEST(ParserTest, ArrayBindingPatternRest) {
+    ParseResult result = parse("var [a, ...rest] = arr;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& pattern = static_cast<const ArrayPattern&>(*declaratorOf(result).id);
+    ASSERT_EQ(pattern.elements.size(), 2u);
+    EXPECT_EQ(pattern.elements[1]->kind(), NodeKind::RestElement);
+}
+
+TEST(ParserTest, ObjectBindingPattern) {
+    ParseResult result = parse("var {a, b: c} = obj;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& pattern = static_cast<const ObjectPattern&>(*declaratorOf(result).id);
+    ASSERT_EQ(pattern.properties.size(), 2u);
+
+    const auto& shorthand = static_cast<const Property&>(*pattern.properties[0]);
+    EXPECT_TRUE(shorthand.shorthand);
+    EXPECT_EQ(static_cast<const Identifier&>(*shorthand.value).name, "a");
+
+    const auto& renamed = static_cast<const Property&>(*pattern.properties[1]);
+    EXPECT_FALSE(renamed.shorthand);
+    EXPECT_EQ(static_cast<const Identifier&>(*renamed.key).name, "b");
+    EXPECT_EQ(static_cast<const Identifier&>(*renamed.value).name, "c");
+}
+
+TEST(ParserTest, ObjectBindingPatternDefault) {
+    ParseResult result = parse("var {a = 1} = obj;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& pattern = static_cast<const ObjectPattern&>(*declaratorOf(result).id);
+    ASSERT_EQ(pattern.properties.size(), 1u);
+    const auto& property = static_cast<const Property&>(*pattern.properties[0]);
+    ASSERT_EQ(property.value->kind(), NodeKind::AssignmentPattern);
+    const auto& assignment =
+        static_cast<const AssignmentPattern&>(*property.value);
+    EXPECT_EQ(assignment.left->kind(), NodeKind::Identifier);
+    EXPECT_EQ(assignment.right->kind(), NodeKind::NumericLiteral);
+}
+
+TEST(ParserTest, ObjectBindingPatternRenamedDefault) {
+    ParseResult result = parse("var {a: b = 1} = obj;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& pattern = static_cast<const ObjectPattern&>(*declaratorOf(result).id);
+    const auto& property = static_cast<const Property&>(*pattern.properties[0]);
+    ASSERT_EQ(property.value->kind(), NodeKind::AssignmentPattern);
+}
+
+TEST(ParserTest, ObjectBindingPatternRest) {
+    ParseResult result = parse("var {a, ...rest} = obj;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& pattern = static_cast<const ObjectPattern&>(*declaratorOf(result).id);
+    ASSERT_EQ(pattern.properties.size(), 2u);
+    EXPECT_EQ(pattern.properties[1]->kind(), NodeKind::RestElement);
+}
+
+TEST(ParserTest, NestedBindingPattern) {
+    ParseResult result = parse("var {a: [b, {c}]} = obj;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& pattern = static_cast<const ObjectPattern&>(*declaratorOf(result).id);
+    const auto& property = static_cast<const Property&>(*pattern.properties[0]);
+    ASSERT_EQ(property.value->kind(), NodeKind::ArrayPattern);
+    const auto& array = static_cast<const ArrayPattern&>(*property.value);
+    ASSERT_EQ(array.elements.size(), 2u);
+    EXPECT_EQ(array.elements[1]->kind(), NodeKind::ObjectPattern);
+}
+
+TEST(ParserTest, FunctionParametersCanBePatterns) {
+    ParseResult result = parse("function f({a}, [b]) {}");
+
+    ASSERT_TRUE(result.ok());
+    const auto& function =
+        static_cast<const FunctionDeclaration&>(*programOf(result).body[0]);
+    ASSERT_EQ(function.params.size(), 2u);
+    EXPECT_EQ(function.params[0]->kind(), NodeKind::ObjectPattern);
+    EXPECT_EQ(function.params[1]->kind(), NodeKind::ArrayPattern);
+}
+
+TEST(ParserTest, ArrowParametersCanBePatterns) {
+    ParseResult result = parse("({a}, [b]) => a;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& arrow = static_cast<const ArrowFunctionExpression&>(
+        *statementOf(result, 0).expression);
+    ASSERT_EQ(arrow.params.size(), 2u);
+    EXPECT_EQ(arrow.params[0]->kind(), NodeKind::ObjectPattern);
+    EXPECT_EQ(arrow.params[1]->kind(), NodeKind::ArrayPattern);
+}
+
+TEST(ParserTest, CatchParameterCanBePattern) {
+    ParseResult result = parse("try {} catch ({message}) {}");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = static_cast<const TryStatement&>(
+        *programOf(result).body[0]);
+    ASSERT_NE(statement.handler, nullptr);
+    const auto& clause = static_cast<const CatchClause&>(*statement.handler);
+    ASSERT_NE(clause.param, nullptr);
+    EXPECT_EQ(clause.param->kind(), NodeKind::ObjectPattern);
+}
+
+TEST(ParserTest, ForOfVariableDeclarationPattern) {
+    ParseResult result = parse("for (const [k, v] of entries) {}");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = static_cast<const ForOfStatement&>(
+        *programOf(result).body[0]);
+    const auto& declaration =
+        static_cast<const VariableDeclaration&>(*statement.left);
+    const auto& declarator =
+        static_cast<const VariableDeclarator&>(*declaration.declarations[0]);
+    EXPECT_EQ(declarator.id->kind(), NodeKind::ArrayPattern);
+}
+
+TEST(ParserTest, ForOfConstWithoutInitializer) {
+    ParseResult result = parse("for (const x of entries) {}");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = static_cast<const ForOfStatement&>(
+        *programOf(result).body[0]);
+    EXPECT_EQ(statement.left->kind(), NodeKind::VariableDeclaration);
+}
+
+TEST(ParserTest, ForInConstWithoutInitializer) {
+    ParseResult result = parse("for (const x in obj) {}");
+
+    ASSERT_TRUE(result.ok());
+}
+
+TEST(ParserTest, ForStatementConstRequiresInitializer) {
+    ParseResult result = parse("for (const x;;) {}");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, ForOfExpressionPattern) {
+    ParseResult result = parse("for ([a, b] of entries) {}");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = static_cast<const ForOfStatement&>(
+        *programOf(result).body[0]);
+    EXPECT_EQ(statement.left->kind(), NodeKind::ArrayPattern);
+}
+
+TEST(ParserTest, ArrayDestructuringAssignment) {
+    ParseResult result = parse("[a, b] = arr;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& assignment = static_cast<const AssignmentExpression&>(
+        *statementOf(result, 0).expression);
+    EXPECT_EQ(assignment.left->kind(), NodeKind::ArrayPattern);
+}
+
+TEST(ParserTest, ObjectDestructuringAssignment) {
+    ParseResult result = parse("({a, b: c} = obj);");
+
+    ASSERT_TRUE(result.ok());
+    const auto& assignment = static_cast<const AssignmentExpression&>(
+        *statementOf(result, 0).expression);
+    EXPECT_EQ(assignment.left->kind(), NodeKind::ObjectPattern);
+}
+
+TEST(ParserTest, DestructuringAssignmentDefault) {
+    ParseResult result = parse("[a = 1] = arr;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& assignment = static_cast<const AssignmentExpression&>(
+        *statementOf(result, 0).expression);
+    const auto& pattern = static_cast<const ArrayPattern&>(*assignment.left);
+    ASSERT_EQ(pattern.elements.size(), 1u);
+    EXPECT_EQ(pattern.elements[0]->kind(), NodeKind::AssignmentPattern);
+}
+
+TEST(ParserTest, ObjectDestructuringAssignmentDefault) {
+    ParseResult result = parse("({a = 1} = obj);");
+
+    ASSERT_TRUE(result.ok());
+    const auto& assignment = static_cast<const AssignmentExpression&>(
+        *statementOf(result, 0).expression);
+    const auto& pattern = static_cast<const ObjectPattern&>(*assignment.left);
+    ASSERT_EQ(pattern.properties.size(), 1u);
+    const auto& property = static_cast<const Property&>(*pattern.properties[0]);
+    EXPECT_EQ(property.value->kind(), NodeKind::AssignmentPattern);
+}
+
+TEST(ParserTest, DestructuringAssignmentRest) {
+    ParseResult result = parse("[a, ...rest] = arr;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& assignment = static_cast<const AssignmentExpression&>(
+        *statementOf(result, 0).expression);
+    const auto& pattern = static_cast<const ArrayPattern&>(*assignment.left);
+    ASSERT_EQ(pattern.elements.size(), 2u);
+    EXPECT_EQ(pattern.elements[1]->kind(), NodeKind::RestElement);
+}
+
+TEST(ParserTest, DestructuringAssignmentMemberTarget) {
+    ParseResult result = parse("[a.b] = arr;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& assignment = static_cast<const AssignmentExpression&>(
+        *statementOf(result, 0).expression);
+    const auto& pattern = static_cast<const ArrayPattern&>(*assignment.left);
+    ASSERT_EQ(pattern.elements.size(), 1u);
+    EXPECT_EQ(pattern.elements[0]->kind(), NodeKind::MemberExpression);
+}
+
+TEST(ParserTest, InvalidDestructuringAssignmentTargetReportsError) {
+    ParseResult result = parse("[a + b] = arr;");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, ArrayRestMustBeLastInAssignment) {
+    ParseResult result = parse("[...a, b] = arr;");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, ObjectRestMustBeLastInAssignment) {
+    ParseResult result = parse("({...a, b} = obj);");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, ObjectPatternRestMustBeIdentifier) {
+    ParseResult result = parse("var {...{a}} = obj;");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, ObjectLiteralShorthandDefaultIsCoverGrammar) {
+    // `{a = 1}` 只在模式中合法；表达式位置先按 cover grammar 接受，
+    // 早期错误留给 Sema。
+    ParseResult result = parse("({a = 1});");
+
+    ASSERT_TRUE(result.ok());
+    const auto& object = static_cast<const ObjectExpression&>(
+        *statementOf(result, 0).expression);
+    const auto& property = static_cast<const Property&>(*object.properties[0]);
+    EXPECT_TRUE(property.shorthand);
+    EXPECT_EQ(property.value->kind(), NodeKind::AssignmentExpression);
 }
 
 }  // namespace
