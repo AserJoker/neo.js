@@ -117,6 +117,12 @@ private:
     bool isAsyncFunctionStart();
 
     // 模块
+    bool isImportDeclarationStart();
+    NodePtr parseImportDeclaration();
+    NodePtr parseImportSpecifier();
+    NodePtr parseImportDefaultSpecifier();
+    NodePtr parseImportNamespaceSpecifier();
+    bool parseImportSpecifiers(NodeList& specifiers);
     NodePtr parseExportDeclaration();
     NodePtr parseExportNamedDeclaration(SourceLocation start);
     NodePtr parseExportDefaultDeclaration(SourceLocation start);

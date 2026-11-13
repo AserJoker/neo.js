@@ -45,7 +45,11 @@ using neo::frontend::ForStatement;
 using neo::frontend::FunctionExpression;
 using neo::frontend::Identifier;
 using neo::frontend::IfStatement;
+using neo::frontend::ImportDeclaration;
+using neo::frontend::ImportDefaultSpecifier;
 using neo::frontend::ImportExpression;
+using neo::frontend::ImportNamespaceSpecifier;
+using neo::frontend::ImportSpecifier;
 using neo::frontend::LabeledStatement;
 using neo::frontend::LogicalExpression;
 using neo::frontend::LogicalOperator;
@@ -4139,6 +4143,131 @@ TEST(ParserTest, ImportExpressionFollowedByMember) {
     const auto& member =
         static_cast<const MemberExpression&>(*call.callee);
     EXPECT_EQ(member.object->kind(), NodeKind::ImportExpression);
+}
+
+// ---------------------------------------------------------------------------
+// import 声明
+// ---------------------------------------------------------------------------
+
+TEST(ParserTest, SideEffectImportDeclaration) {
+    ParseResult result = parse("import \"mod\";");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ImportDeclaration&>(
+        *programOf(result).body[0]);
+    EXPECT_TRUE(declaration.specifiers.empty());
+    ASSERT_NE(declaration.source, nullptr);
+    EXPECT_EQ(declaration.source->kind(), NodeKind::StringLiteral);
+}
+
+TEST(ParserTest, DefaultImportDeclaration) {
+    ParseResult result = parse("import d from \"mod\";");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ImportDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_EQ(declaration.specifiers.size(), 1u);
+    ASSERT_EQ(declaration.specifiers[0]->kind(),
+              NodeKind::ImportDefaultSpecifier);
+    const auto& specifier = static_cast<const ImportDefaultSpecifier&>(
+        *declaration.specifiers[0]);
+    EXPECT_EQ(static_cast<const Identifier&>(*specifier.local).name, "d");
+}
+
+TEST(ParserTest, NamespaceImportDeclaration) {
+    ParseResult result = parse("import * as ns from \"mod\";");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ImportDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_EQ(declaration.specifiers.size(), 1u);
+    ASSERT_EQ(declaration.specifiers[0]->kind(),
+              NodeKind::ImportNamespaceSpecifier);
+    const auto& specifier = static_cast<const ImportNamespaceSpecifier&>(
+        *declaration.specifiers[0]);
+    EXPECT_EQ(static_cast<const Identifier&>(*specifier.local).name, "ns");
+}
+
+TEST(ParserTest, NamedImportDeclaration) {
+    ParseResult result = parse("import { a, b as c } from \"mod\";");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ImportDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_EQ(declaration.specifiers.size(), 2u);
+
+    const auto& first = static_cast<const ImportSpecifier&>(
+        *declaration.specifiers[0]);
+    EXPECT_EQ(static_cast<const Identifier&>(*first.imported).name, "a");
+    EXPECT_EQ(static_cast<const Identifier&>(*first.local).name, "a");
+
+    const auto& second = static_cast<const ImportSpecifier&>(
+        *declaration.specifiers[1]);
+    EXPECT_EQ(static_cast<const Identifier&>(*second.imported).name, "b");
+    EXPECT_EQ(static_cast<const Identifier&>(*second.local).name, "c");
+}
+
+TEST(ParserTest, ReservedNamedImportRequiresAs) {
+    ParseResult result = parse("import { default as d } from \"mod\";");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ImportDeclaration&>(
+        *programOf(result).body[0]);
+    const auto& specifier = static_cast<const ImportSpecifier&>(
+        *declaration.specifiers[0]);
+    EXPECT_EQ(static_cast<const Identifier&>(*specifier.imported).name,
+              "default");
+    EXPECT_EQ(static_cast<const Identifier&>(*specifier.local).name, "d");
+}
+
+TEST(ParserTest, ReservedNamedImportWithoutAsReportsError) {
+    ParseResult result = parse("import { if } from \"mod\";");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, DefaultAndNamedImportDeclaration) {
+    ParseResult result = parse("import d, { a } from \"mod\";");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ImportDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_EQ(declaration.specifiers.size(), 2u);
+    EXPECT_EQ(declaration.specifiers[0]->kind(),
+              NodeKind::ImportDefaultSpecifier);
+    EXPECT_EQ(declaration.specifiers[1]->kind(), NodeKind::ImportSpecifier);
+}
+
+TEST(ParserTest, DefaultAndNamespaceImportDeclaration) {
+    ParseResult result = parse("import d, * as ns from \"mod\";");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ImportDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_EQ(declaration.specifiers.size(), 2u);
+    EXPECT_EQ(declaration.specifiers[0]->kind(),
+              NodeKind::ImportDefaultSpecifier);
+    EXPECT_EQ(declaration.specifiers[1]->kind(),
+              NodeKind::ImportNamespaceSpecifier);
+}
+
+TEST(ParserTest, ImportDeclarationMissingFromReportsError) {
+    ParseResult result = parse("import d \"mod\";");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, ImportDeclarationInsideBlockReportsError) {
+    ParseResult result = parse("{ import \"mod\"; }");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, DynamicImportIsNotDeclaration) {
+    ParseResult result = parse("import(\"mod\");");
+
+    ASSERT_TRUE(result.ok());
+    EXPECT_EQ(programOf(result).body[0]->kind(), NodeKind::ExpressionStatement);
 }
 
 TEST(ParserTest, ImportExpressionWithoutArgumentReportsError) {

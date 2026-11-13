@@ -280,6 +280,11 @@ ParseResult Parser::parseProgram() {
             // export 只允许出现在模块顶层。
             inDirectivePrologue = false;
             statement = parseExportDeclaration();
+        } else if (at(TokenKind::Import) && isImportDeclarationStart()) {
+            // import 声明只允许出现在模块顶层；import(...) / import.meta
+            // 是表达式，仍走普通语句。
+            inDirectivePrologue = false;
+            statement = parseImportDeclaration();
         } else {
             statement = parseStatementListItem(inDirectivePrologue);
         }
@@ -848,6 +853,135 @@ NodePtr Parser::parseSuperExpression() {
 // ---------------------------------------------------------------------------
 // 模块
 // ---------------------------------------------------------------------------
+
+bool Parser::isImportDeclarationStart() {
+    const Token next = peek();
+    return next.kind != TokenKind::LeftParen &&
+           next.kind != TokenKind::Dot;
+}
+
+NodePtr Parser::parseImportDeclaration() {
+    const SourceLocation start = current_.start;
+    advance();  // 'import'
+
+    NodeList specifiers;
+    NodePtr source;
+
+    if (at(TokenKind::StringLiteral)) {
+        // 副作用导入：import "mod";
+        source = parseStringLiteral();
+        if (!consumeSemicolon()) return nullptr;
+        return std::make_unique<ImportDeclaration>(
+            rangeFrom(start), std::move(specifiers), std::move(source));
+    }
+
+    if (at(TokenKind::Identifier)) {
+        specifiers.push_back(parseImportDefaultSpecifier());
+        if (specifiers.back() == nullptr) return nullptr;
+
+        if (match(TokenKind::Comma)) {
+            if (at(TokenKind::Star)) {
+                specifiers.push_back(parseImportNamespaceSpecifier());
+            } else if (at(TokenKind::LeftBrace)) {
+                if (!parseImportSpecifiers(specifiers)) return nullptr;
+            } else {
+                error(current_.start, "Expected import specifier");
+                return nullptr;
+            }
+            if (specifiers.back() == nullptr) return nullptr;
+        }
+    } else if (at(TokenKind::Star)) {
+        specifiers.push_back(parseImportNamespaceSpecifier());
+        if (specifiers.back() == nullptr) return nullptr;
+    } else if (at(TokenKind::LeftBrace)) {
+        if (!parseImportSpecifiers(specifiers)) return nullptr;
+    } else {
+        error(current_.start, "Expected import specifier or module source");
+        return nullptr;
+    }
+
+    if (!at(TokenKind::Identifier) || current_.text != "from") {
+        error(current_.start, "Expected 'from'");
+        return nullptr;
+    }
+    advance();  // 'from'
+
+    if (!at(TokenKind::StringLiteral)) {
+        error(current_.start, "Expected module source");
+        return nullptr;
+    }
+    source = parseStringLiteral();
+    if (!consumeSemicolon()) return nullptr;
+
+    return std::make_unique<ImportDeclaration>(
+        rangeFrom(start), std::move(specifiers), std::move(source));
+}
+
+bool Parser::parseImportSpecifiers(NodeList& specifiers) {
+    if (!expect(TokenKind::LeftBrace, "'{'")) return false;
+    if (match(TokenKind::RightBrace)) return true;
+
+    while (true) {
+        NodePtr specifier = parseImportSpecifier();
+        if (specifier == nullptr) return false;
+        specifiers.push_back(std::move(specifier));
+
+        if (!match(TokenKind::Comma)) break;
+        if (at(TokenKind::RightBrace)) break;
+    }
+
+    return expect(TokenKind::RightBrace, "'}'");
+}
+
+NodePtr Parser::parseImportSpecifier() {
+    const SourceLocation start = current_.start;
+    const bool importedIsIdentifier = at(TokenKind::Identifier);
+
+    NodePtr imported = parseIdentifierName();
+    if (imported == nullptr) return nullptr;
+
+    NodePtr local;
+    if (at(TokenKind::Identifier) && current_.text == "as") {
+        advance();  // 'as'
+        local = parseIdentifier();
+        if (local == nullptr) return nullptr;
+    } else {
+        // 简写 import { a }：保留字必须写 as。
+        if (!importedIsIdentifier) {
+            error(current_.start, "Expected 'as'");
+            return nullptr;
+        }
+        const auto* identifier = static_cast<const Identifier*>(imported.get());
+        local = std::make_unique<Identifier>(identifier->range(),
+                                             identifier->name);
+    }
+
+    return std::make_unique<ImportSpecifier>(rangeFrom(start),
+                                             std::move(imported),
+                                             std::move(local));
+}
+
+NodePtr Parser::parseImportDefaultSpecifier() {
+    const SourceLocation start = current_.start;
+    NodePtr local = parseIdentifier();
+    if (local == nullptr) return nullptr;
+    return std::make_unique<ImportDefaultSpecifier>(rangeFrom(start),
+                                                    std::move(local));
+}
+
+NodePtr Parser::parseImportNamespaceSpecifier() {
+    const SourceLocation start = current_.start;
+    if (!expect(TokenKind::Star, "'*'")) return nullptr;
+    if (!at(TokenKind::Identifier) || current_.text != "as") {
+        error(current_.start, "Expected 'as'");
+        return nullptr;
+    }
+    advance();  // 'as'
+    NodePtr local = parseIdentifier();
+    if (local == nullptr) return nullptr;
+    return std::make_unique<ImportNamespaceSpecifier>(rangeFrom(start),
+                                                      std::move(local));
+}
 
 NodePtr Parser::parseExportDeclaration() {
     const SourceLocation start = current_.start;
