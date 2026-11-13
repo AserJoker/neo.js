@@ -151,3 +151,16 @@ Sema 采用“收集错误、继续分析”，不 fail-fast；遍历由树结�
   - Annex B B.3.3 / B.3.1：if 子句函数按合成 Block 处理；标签函数声明
     按 FunctionDeclaration 求值语义作 var 型绑定；对应早期错误在
     `StrictnessPass` 中检查。
+- M3：`ResolvePass`，标识符引用解析与闭包穿透捕获：
+  - 每个引用标注 `IdentifierBinding`（`Local / Captured / Global /
+    Unresolved`）并指向稳定的 `ShadowBinding`。
+  - 跨函数边界时在被穿越的每个函数上登记捕获名，去重排序后输出
+    `FunctionCaptures`；捕获是查询路径的自然结果，不是向父函数传播。
+  - 绑定位置（声明、参数、catch 参数、import、非计算属性名、标签等）
+    不参与解析；计算属性名与解构赋值目标仍是引用。
+  - 字段初始化器与 static block 按规范都是独立函数对象，构成捕获边界；
+    计算属性 key 在类定义期求值，不属于字段初始化器边界。
+  - 直接 `eval` 在所属函数上标注 `FunctionFlags::hasDirectEval`，供
+    Compiler/Runtime 回退 Environment 链；间接 eval 不标注。
+  - TDZ 不做静态早期错误（规范中是运行时 ReferenceError），由运行时
+    UNINITIALIZED 槽位执行。

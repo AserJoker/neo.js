@@ -95,6 +95,10 @@ struct ScopeGraph {
     std::unique_ptr<ShadowScope> root;
     std::unordered_map<frontend::NodeId, ShadowScope*> scopes;
     std::unordered_map<frontend::NodeId, FunctionScopes> functions;
+    // 每个节点所处的词法作用域（ResolvePass 按节点查作用域）。
+    std::unordered_map<frontend::NodeId, ShadowScope*> nodeScopes;
+    // 捕获边界作用域（FunctionClosure / StaticBlock）→ 所属节点。
+    std::unordered_map<ShadowScope*, frontend::NodeId> closureOwners;
 
     ShadowScope* findScope(frontend::NodeId id) const {
         const auto it = scopes.find(id);

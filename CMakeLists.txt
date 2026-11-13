@@ -165,6 +165,7 @@ add_library(neojs STATIC
     src/private/sema/Walker.cpp
     src/private/sema/StrictnessPass.cpp
     src/private/sema/ScopePass.cpp
+    src/private/sema/ResolvePass.cpp
 )
 target_include_directories(neojs
     PUBLIC

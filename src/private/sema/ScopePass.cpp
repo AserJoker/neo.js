@@ -174,6 +174,9 @@ public:
             default:
                 break;
         }
+
+        // 记录节点所处的词法作用域（本节点压入的作用域已生效）。
+        graph_.nodeScopes[node.id()] = current();
     }
 
     void leave(Walker& /*walker*/, SemaContext& /*context*/,
@@ -365,6 +368,7 @@ private:
 
         ShadowScope* closure =
             createScope(ShadowScopeKind::FunctionClosure, current());
+        graph_.closureOwners[closure] = node.id();
         ShadowScope* arguments =
             createScope(ShadowScopeKind::FunctionArguments, closure);
         ShadowScope* functionBody =
@@ -524,6 +528,8 @@ private:
             createScope(ShadowScopeKind::StaticBlock, current());
         pushScope(node.id(), scope);
         mapScope(node.id(), scope);
+        // static block 体按规范是独立函数对象，构成捕获边界。
+        graph_.closureOwners[scope] = node.id();
         graph_.functions[node.id()] = FunctionScopes{nullptr, nullptr, scope};
     }
 
