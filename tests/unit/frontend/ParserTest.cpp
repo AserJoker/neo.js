@@ -2596,8 +2596,28 @@ TEST(ParserTest, ExportNonDeclarationReportsError) {
     EXPECT_FALSE(result.errors.empty());
 }
 
-TEST(ParserTest, ExportDefaultNonFunctionReportsError) {
+TEST(ParserTest, ExportDefaultExpression) {
     ParseResult result = parse("export default 1;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ExportDefaultDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_NE(declaration.declaration, nullptr);
+    EXPECT_EQ(declaration.declaration->kind(), NodeKind::NumericLiteral);
+}
+
+TEST(ParserTest, ExportDefaultBinaryExpression) {
+    ParseResult result = parse("export default a + b;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& declaration = static_cast<const ExportDefaultDeclaration&>(
+        *programOf(result).body[0]);
+    ASSERT_NE(declaration.declaration, nullptr);
+    EXPECT_EQ(declaration.declaration->kind(), NodeKind::BinaryExpression);
+}
+
+TEST(ParserTest, ExportDefaultMissingExpressionReportsError) {
+    ParseResult result = parse("export default ;");
 
     EXPECT_FALSE(result.errors.empty());
 }

@@ -1107,10 +1107,10 @@ NodePtr Parser::parseExportDefaultDeclaration(SourceLocation start) {
     } else if (at(TokenKind::Class)) {
         declaration = parseClassDeclaration();
     } else {
-        error(current_.start,
-              "Only function and class declarations are supported in export "
-              "default");
-        return nullptr;
+        // export default AssignmentExpression ;
+        declaration = parseAssignmentExpression();
+        if (declaration == nullptr) return nullptr;
+        if (!consumeSemicolon()) return nullptr;
     }
     if (declaration == nullptr) return nullptr;
 
