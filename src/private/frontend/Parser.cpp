@@ -273,17 +273,20 @@ ParseResult Parser::parseProgram() {
     const SourceLocation start = current_.start;
     NodeList body;
     bool inDirectivePrologue = true;
+    bool module = false;
 
     while (!at(TokenKind::EndOfInput)) {
         NodePtr statement;
         if (at(TokenKind::Export)) {
             // export 只允许出现在模块顶层。
             inDirectivePrologue = false;
+            module = true;
             statement = parseExportDeclaration();
         } else if (at(TokenKind::Import) && isImportDeclarationStart()) {
             // import 声明只允许出现在模块顶层；import(...) / import.meta
             // 是表达式，仍走普通语句。
             inDirectivePrologue = false;
+            module = true;
             statement = parseImportDeclaration();
         } else {
             statement = parseStatementListItem(inDirectivePrologue);
@@ -298,7 +301,8 @@ ParseResult Parser::parseProgram() {
 
     ParseResult result;
     result.program = std::make_unique<Program>(
-        SourceRange{start, previousEnd_}, std::move(body));
+        SourceRange{start, previousEnd_}, std::move(body),
+        module ? SourceType::Module : SourceType::Script);
     result.errors = std::move(errors_);
     return result;
 }

@@ -36,6 +36,7 @@ using neo::frontend::DebuggerStatement;
 using neo::frontend::Directive;
 using neo::frontend::DoWhileStatement;
 using neo::frontend::ExportAllDeclaration;
+using neo::frontend::SourceType;
 using neo::frontend::ExportDefaultDeclaration;
 using neo::frontend::ExportNamedDeclaration;
 using neo::frontend::ExportSpecifier;
@@ -4340,6 +4341,34 @@ TEST(ParserTest, ReservedNamedImportWithoutAsReportsError) {
 // ---------------------------------------------------------------------------
 // export 声明
 // ---------------------------------------------------------------------------
+
+TEST(ParserTest, ProgramIsScriptWithoutModuleSyntax) {
+    ParseResult result = parse("var x = 1;");
+
+    ASSERT_TRUE(result.ok());
+    EXPECT_EQ(programOf(result).sourceType, SourceType::Script);
+}
+
+TEST(ParserTest, ProgramIsModuleWithExport) {
+    ParseResult result = parse("export const x = 1;");
+
+    ASSERT_TRUE(result.ok());
+    EXPECT_EQ(programOf(result).sourceType, SourceType::Module);
+}
+
+TEST(ParserTest, ProgramIsModuleWithImport) {
+    ParseResult result = parse("import x from \"mod\";");
+
+    ASSERT_TRUE(result.ok());
+    EXPECT_EQ(programOf(result).sourceType, SourceType::Module);
+}
+
+TEST(ParserTest, ImportMetaDoesNotMakeModule) {
+    ParseResult result = parse("import.meta;");
+
+    ASSERT_TRUE(result.ok());
+    EXPECT_EQ(programOf(result).sourceType, SourceType::Script);
+}
 
 TEST(ParserTest, ExportAllDeclaration) {
     ParseResult result = parse("export * from \"mod\";");

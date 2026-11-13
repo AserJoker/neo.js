@@ -156,10 +156,15 @@ using NodeList = std::vector<NodePtr>;
 // Program
 // ---------------------------------------------------------------------------
 
+enum class SourceType : uint8_t { Script, Module };
+
 struct Program final : Node {
-    Program(SourceRange range, NodeList body)
-        : Node(NodeKind::Program, range), body(std::move(body)) {}
+    Program(SourceRange range, NodeList body, SourceType sourceType)
+        : Node(NodeKind::Program, range),
+          body(std::move(body)),
+          sourceType(sourceType) {}
     NodeList body;
+    SourceType sourceType;
 };
 
 // ---------------------------------------------------------------------------
