@@ -24,7 +24,7 @@
 // VM 主循环只负责取 opcode、分派、按处理函数报告的字节数推进 pc。
 //
 // 栈契约（每条指令前后操作数栈深度）：
-//   push_*        d → d + 1
+//   push_*        d → d + 1        （push_uninitialized 压 TDZ 哨兵）
 //   pop           d → d - 1
 //   dup           d → d + 1
 //   swap          d → d
@@ -61,6 +61,7 @@ namespace neo::vm {
 
 enum class OpCode : uint16_t {
     PushUndefined,
+    PushUninitialized,  // TDZ 哨兵（let/const 提升建槽）
     PushNull,
     PushTrue,
     PushFalse,

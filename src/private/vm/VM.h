@@ -90,6 +90,7 @@ private:
 
     // —— 指令处理函数 ——
     neo::core::Value* opPushUndefined();
+    neo::core::Value* opPushUninitialized();
     neo::core::Value* opPushNull();
     neo::core::Value* opPushTrue();
     neo::core::Value* opPushFalse();

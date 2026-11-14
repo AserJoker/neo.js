@@ -46,6 +46,7 @@ uint32_t readU32(const uint8_t* p) {
 const char* opCodeName(OpCode op) {
     switch (op) {
         case OpCode::PushUndefined: return "push_undefined";
+        case OpCode::PushUninitialized: return "push_uninitialized";
         case OpCode::PushNull:      return "push_null";
         case OpCode::PushTrue:      return "push_true";
         case OpCode::PushFalse:     return "push_false";
@@ -94,6 +95,7 @@ VM::VM(IContext* ctx, const Code* code)
 const VM::Handler* VM::handlers() {
     static const Handler table[kOpCodeCount] = {
         &VM::opPushUndefined,
+        &VM::opPushUninitialized,
         &VM::opPushNull,
         &VM::opPushTrue,
         &VM::opPushFalse,
@@ -183,6 +185,11 @@ Value* VM::run(uint32_t entryPc) {
 
 Value* VM::opPushUndefined() {
     push(ctx_->createUndefined());
+    return nullptr;
+}
+
+Value* VM::opPushUninitialized() {
+    push(ctx_->createUninitialized());
     return nullptr;
 }
 

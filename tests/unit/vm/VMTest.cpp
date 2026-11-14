@@ -177,6 +177,23 @@ TEST(VMTest, InitializeReleasesTdz) {
     EXPECT_DOUBLE_EQ(numberValue(result), 7.0);
 }
 
+TEST(VMTest, PushUninitializedCreatesTdzSlot) {
+    Fixture f;
+    Code code;
+    code.pushUninitialized();
+    code.define("x", true, false);
+    code.load("x");
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    Value* result = vm.run();
+
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(propertyString(f.ctx.get(), errorChild(result), "name"),
+              "ReferenceError");
+}
+
 TEST(VMTest, LoadBeforeInitializeFailsWithTdz) {
     Fixture f;
     Code code;

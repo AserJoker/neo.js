@@ -113,6 +113,7 @@ struct Code {
     }
 
     uint32_t pushUndefined() { return emitOp(OpCode::PushUndefined); }
+    uint32_t pushUninitialized() { return emitOp(OpCode::PushUninitialized); }
     uint32_t pushNull() { return emitOp(OpCode::PushNull); }
     uint32_t pushBoolean(bool value) {
         return emitOp(value ? OpCode::PushTrue : OpCode::PushFalse);
