@@ -19,6 +19,7 @@
 
 #include "frontend/Node.h"
 #include "sema/AnnotationStore.h"
+#include "sema/FunctionInfo.h"
 #include "sema/ScopePass.h"
 #include "sema/SemaContext.h"
 
@@ -49,11 +50,6 @@ struct IdentifierBinding final : IMeta {
 // 函数/字段初始化器的显式捕获列表（去重、按名字排序）。
 struct FunctionCaptures final : IMeta {
     std::vector<std::string> names;
-};
-
-// 影响代码生成的函数级标记。
-struct FunctionFlags final : IMeta {
-    bool hasDirectEval = false;
 };
 
 void runResolvePass(frontend::Node& program, ScopeGraph& graph,

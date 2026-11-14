@@ -353,7 +353,7 @@ private:
         if (callee.name != "eval") return;
 
         assert(!ownerStack_.empty());
-        annotations_.emplace<FunctionFlags>(ownerStack_.back()).hasDirectEval =
+        annotations_.emplace<FunctionInfo>(ownerStack_.back()).hasDirectEval =
             true;
     }
 

@@ -51,10 +51,9 @@ resolve.walk(*program, context);
 2. `ScopePass`：建 shadow_scope、变量提升、重复声明。
 3. `ResolvePass`：标识符解析、闭包穿透捕获、TDZ、未定义引用。
 4. `ControlFlowPass`：`break`/`continue`/label、`return` 位置、
-   `new.target`/`super`/`await`/`yield` 上下文。
+   `new.target`/`super`/`await`/`yield` 上下文；同时产出 Compiler 需要的
+   `FunctionInfo`（函数种类、方法/构造函数、static block、hasDirectEval）。
 5. `ModulePass`：import/export 绑定、重复导出、`sourceType` 约束。
-6. `AnnotatePass`：输出 Compiler 需要的 capture list、binding kind、
-   function flags。
 
 ### 3. Visitor 接口
 
@@ -160,7 +159,7 @@ Sema 采用“收集错误、继续分析”，不 fail-fast；遍历由树结�
     不参与解析；计算属性名与解构赋值目标仍是引用。
   - 字段初始化器与 static block 按规范都是独立函数对象，构成捕获边界；
     计算属性 key 在类定义期求值，不属于字段初始化器边界。
-  - 直接 `eval` 在所属函数上标注 `FunctionFlags::hasDirectEval`，供
+  - 直接 `eval` 在所属函数上标注 `FunctionInfo::hasDirectEval`，供
     Compiler/Runtime 回退 Environment 链；间接 eval 不标注。
   - TDZ 不做静态早期错误（规范中是运行时 ReferenceError），由运行时
     UNINITIALIZED 槽位执行。
@@ -190,12 +189,12 @@ Sema 采用“收集错误、继续分析”，不 fail-fast；遍历由树结�
     （`ParserOptions{sourceType}`）必填，Parser 不做推断；Module 在解析
     开始即允许顶层 `await`，Script 仍宽容解析 import/export 声明，
     sourceType 约束由 `ModulePass` 报告。
-- M6：`AnnotatePass` 与 `runSema` 入口：
-  - `AnnotatePass` 为函数/箭头/方法/构造函数/static block 产出
-    `FunctionInfo`（isArrow / isAsync / isGenerator / isMethod /
-    isConstructor / isDerivedConstructor / isStaticBlock / hasDirectEval）；
-    派生构造函数标记依赖类是否 `extends`，对象字面量方法同样标记
-    isMethod。
+- M6：`FunctionInfo` 与 `runSema` 入口：
+  - `ControlFlowPass` 复用已有的函数/类/方法上下文，为函数/箭头/方法/
+    构造函数/static block 产出 `FunctionInfo`（isArrow / isAsync /
+    isGenerator / isMethod / isConstructor / isDerivedConstructor /
+    isStaticBlock）；派生构造函数标记依赖类是否 `extends`，对象字面量
+    方法同样标记 isMethod。ResolvePass 写入 hasDirectEval。
   - `runSema` 按 StrictnessPass → ScopePass → ResolvePass →
-    ControlFlowPass → ModulePass → AnnotatePass 串联，返回
+    ControlFlowPass → ModulePass 串联，返回
     `SemaResult{annotations, errors}`；ScopeGraph 等 scratch 不输出。

@@ -130,15 +130,19 @@ public:
                 enterObjectMethod(node);
                 break;
             case NodeKind::FunctionDeclaration:
+                annotateFunctionDeclaration(node);
                 pushContext(normalFunctionContext(node));
                 break;
             case NodeKind::FunctionExpression:
+                annotateFunctionExpression(node);
                 pushContext(functionExpressionContext(node));
                 break;
             case NodeKind::ArrowFunctionExpression:
+                annotateArrow(node);
                 pushContext(arrowFunctionContext(node));
                 break;
             case NodeKind::StaticBlock:
+                annotateStaticBlock(node);
                 pushContext(classElementContext());
                 break;
             case NodeKind::WhileStatement:
@@ -273,6 +277,44 @@ private:
                        true,
                        program.sourceType == SourceType::Module,
                        false};
+    }
+
+    FunctionInfo& functionInfo(NodeId id) {
+        return annotations_.emplace<FunctionInfo>(id);
+    }
+
+    void annotateFunctionDeclaration(Node& node) {
+        auto& function = static_cast<FunctionDeclaration&>(node);
+        FunctionInfo& info = functionInfo(node.id());
+        info.isAsync = function.async;
+        info.isGenerator = function.generator;
+    }
+
+    void annotateFunctionExpression(Node& node) {
+        auto& function = static_cast<FunctionExpression&>(node);
+        FunctionInfo& info = functionInfo(node.id());
+        info.isAsync = function.async;
+        info.isGenerator = function.generator;
+
+        const auto method = methodInfo_.find(node.id());
+        if (method != methodInfo_.end()) {
+            info.isMethod = true;
+            info.isConstructor =
+                method->second.kind == MethodKind::Constructor;
+            info.isDerivedConstructor =
+                info.isConstructor && method->second.derived;
+        }
+    }
+
+    void annotateArrow(Node& node) {
+        auto& function = static_cast<ArrowFunctionExpression&>(node);
+        FunctionInfo& info = functionInfo(node.id());
+        info.isArrow = true;
+        info.isAsync = function.async;
+    }
+
+    void annotateStaticBlock(Node& node) {
+        functionInfo(node.id()).isStaticBlock = true;
     }
 
     Context normalFunctionContext(Node& node) {

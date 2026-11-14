@@ -2,7 +2,6 @@
 
 #include "sema/Sema.h"
 
-#include "sema/AnnotatePass.h"
 #include "sema/ControlFlowPass.h"
 #include "sema/ModulePass.h"
 #include "sema/ResolvePass.h"
@@ -23,7 +22,6 @@ SemaResult runSema(frontend::Node& program) {
     runResolvePass(program, graph, context, annotations);
     runControlFlowPass(program, context, annotations);
     runModulePass(program, context, annotations);
-    runAnnotatePass(program, context, annotations);
 
     SemaResult result;
     result.annotations = std::move(annotations);

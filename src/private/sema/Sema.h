@@ -2,7 +2,7 @@
 //
 // 顺序遵循 ADR-058：
 //   StrictnessPass → ScopePass → ResolvePass → ControlFlowPass →
-//   ModulePass → AnnotatePass
+//   ModulePass
 //
 // ScopeGraph 等 scratch 不进入 SemaResult；Compiler 只消费 AnnotationStore
 // 中的标注与错误列表。

@@ -1,7 +1,7 @@
-// tests/unit/sema/AnnotatePassTest.cpp - 函数级标注测试
+// tests/unit/sema/FunctionInfoTest.cpp - 函数级标注测试（ControlFlowPass 产出）
 
 #include "frontend/Parser.h"
-#include "sema/AnnotatePass.h"
+#include "sema/ControlFlowPass.h"
 #include "sema/AnnotationStore.h"
 #include "sema/ResolvePass.h"
 #include "sema/ScopePass.h"
@@ -28,7 +28,7 @@ using neo::sema::IVisitor;
 using neo::sema::ScopeGraph;
 using neo::sema::SemaContext;
 using neo::sema::Walker;
-using neo::sema::runAnnotatePass;
+using neo::sema::runControlFlowPass;
 using neo::sema::runResolvePass;
 using neo::sema::runScopePass;
 
@@ -46,7 +46,7 @@ Analysis analyze(std::string_view source) {
     SemaContext context;
     ScopeGraph graph = runScopePass(*result.parsed.program, context);
     runResolvePass(*result.parsed.program, graph, context, result.annotations);
-    runAnnotatePass(*result.parsed.program, context, result.annotations);
+    runControlFlowPass(*result.parsed.program, context, result.annotations);
     return result;
 }
 
@@ -83,7 +83,7 @@ const FunctionInfo* infoOf(Analysis& analysis, Node* node) {
 
 }  // namespace
 
-TEST(AnnotatePassTest, FunctionDeclarationFlags) {
+TEST(FunctionInfoTest, FunctionDeclarationFlags) {
     Analysis result = analyze("async function* f() { }");
     ASSERT_TRUE(result.parsed.ok());
 
@@ -99,7 +99,7 @@ TEST(AnnotatePassTest, FunctionDeclarationFlags) {
     EXPECT_FALSE(info->hasDirectEval);
 }
 
-TEST(AnnotatePassTest, ArrowFunctionFlags) {
+TEST(FunctionInfoTest, ArrowFunctionFlags) {
     Analysis result = analyze("const f = async () => 1;");
     ASSERT_TRUE(result.parsed.ok());
 
@@ -113,7 +113,7 @@ TEST(AnnotatePassTest, ArrowFunctionFlags) {
     EXPECT_FALSE(info->isGenerator);
 }
 
-TEST(AnnotatePassTest, ClassMethodFlags) {
+TEST(FunctionInfoTest, ClassMethodFlags) {
     Analysis result = analyze("class C { m() { } get g() { } }");
     ASSERT_TRUE(result.parsed.ok());
 
@@ -128,7 +128,7 @@ TEST(AnnotatePassTest, ClassMethodFlags) {
     }
 }
 
-TEST(AnnotatePassTest, DerivedConstructorFlags) {
+TEST(FunctionInfoTest, DerivedConstructorFlags) {
     Analysis result = analyze("class C extends B { constructor() { } }");
     ASSERT_TRUE(result.parsed.ok());
 
@@ -142,7 +142,7 @@ TEST(AnnotatePassTest, DerivedConstructorFlags) {
     EXPECT_TRUE(info->isDerivedConstructor);
 }
 
-TEST(AnnotatePassTest, BaseConstructorIsNotDerived) {
+TEST(FunctionInfoTest, BaseConstructorIsNotDerived) {
     Analysis result = analyze("class C { constructor() { } }");
     ASSERT_TRUE(result.parsed.ok());
 
@@ -155,7 +155,7 @@ TEST(AnnotatePassTest, BaseConstructorIsNotDerived) {
     EXPECT_FALSE(info->isDerivedConstructor);
 }
 
-TEST(AnnotatePassTest, ObjectMethodFlags) {
+TEST(FunctionInfoTest, ObjectMethodFlags) {
     Analysis result = analyze("({ m() { } });");
     ASSERT_TRUE(result.parsed.ok());
 
@@ -168,7 +168,7 @@ TEST(AnnotatePassTest, ObjectMethodFlags) {
     EXPECT_FALSE(info->isConstructor);
 }
 
-TEST(AnnotatePassTest, StaticBlockFlags) {
+TEST(FunctionInfoTest, StaticBlockFlags) {
     Analysis result = analyze("class C { static { } }");
     ASSERT_TRUE(result.parsed.ok());
 
@@ -179,7 +179,7 @@ TEST(AnnotatePassTest, StaticBlockFlags) {
     EXPECT_TRUE(info->isStaticBlock);
 }
 
-TEST(AnnotatePassTest, DirectEvalFlagIsCopied) {
+TEST(FunctionInfoTest, DirectEvalFlagIsCopied) {
     Analysis result = analyze("function f() { eval(\"x\"); }");
     ASSERT_TRUE(result.parsed.ok());
 

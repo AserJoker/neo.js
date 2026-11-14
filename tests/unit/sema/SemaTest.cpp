@@ -1,7 +1,7 @@
 // tests/unit/sema/SemaTest.cpp - Sema 入口流水线测试
 
 #include "frontend/Parser.h"
-#include "sema/AnnotatePass.h"
+#include "sema/ControlFlowPass.h"
 #include "sema/ResolvePass.h"
 #include "sema/Sema.h"
 

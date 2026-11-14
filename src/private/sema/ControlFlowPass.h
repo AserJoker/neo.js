@@ -18,6 +18,7 @@
 
 #include "frontend/Node.h"
 #include "sema/AnnotationStore.h"
+#include "sema/FunctionInfo.h"
 #include "sema/SemaContext.h"
 
 namespace neo::sema {

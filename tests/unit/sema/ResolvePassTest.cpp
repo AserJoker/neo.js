@@ -27,7 +27,7 @@ using neo::frontend::SourceType;
 using neo::sema::AnnotationStore;
 using neo::sema::BindingLocation;
 using neo::sema::FunctionCaptures;
-using neo::sema::FunctionFlags;
+using neo::sema::FunctionInfo;
 using neo::sema::IdentifierBinding;
 using neo::sema::IVisitor;
 using neo::sema::ScopeGraph;
@@ -549,10 +549,10 @@ TEST(ResolvePassTest, DirectEvalMarksEnclosingFunction) {
     auto functions = collect(*result.parsed.program,
                              NodeKind::FunctionDeclaration);
     ASSERT_EQ(functions.size(), 1u);
-    const auto* flags =
-        result.annotations.get<FunctionFlags>(functions[0]->id());
-    ASSERT_NE(flags, nullptr);
-    EXPECT_TRUE(flags->hasDirectEval);
+    const auto* info =
+        result.annotations.get<FunctionInfo>(functions[0]->id());
+    ASSERT_NE(info, nullptr);
+    EXPECT_TRUE(info->hasDirectEval);
 }
 
 TEST(ResolvePassTest, IndirectEvalDoesNotMarkFunction) {
@@ -562,7 +562,7 @@ TEST(ResolvePassTest, IndirectEvalDoesNotMarkFunction) {
     auto functions = collect(*result.parsed.program,
                              NodeKind::FunctionDeclaration);
     ASSERT_EQ(functions.size(), 1u);
-    const auto* flags =
-        result.annotations.get<FunctionFlags>(functions[0]->id());
-    EXPECT_EQ(flags, nullptr);
+    const auto* info =
+        result.annotations.get<FunctionInfo>(functions[0]->id());
+    EXPECT_EQ(info, nullptr);
 }
