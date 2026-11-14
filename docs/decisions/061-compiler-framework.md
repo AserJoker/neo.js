@@ -92,8 +92,6 @@ public:
 | ObjectExpression | `new_object` + 每个属性 `dup; key; value; define_prop; pop` |
 | ArrayExpression | `new_array N` + 每个元素 `dup; index; value; define_prop; pop` |
 | ThisExpression | `load_this` |
-| ThrowStatement | 表达式 + `throw` |
-| TryStatement | `try_begin` + try 块 + `try_end`；catch/finally 各自 `try_end` |
 | IfStatement | test + `jfalse` else；then；有 else 时 `jmp end` + 回填 |
 | WhileStatement | loop：test + `jfalse end`；body；`jmp loop`；回填 end |
 | DoWhileStatement | loop：body；test + `jtrue loop` |
@@ -106,8 +104,8 @@ initialized=false)`；直接函数声明先建 undefined 槽，再创建函数�
 函数体序言：形参 `push_undefined; define` → `store_this` → 按序 `store` 实参 →
 `push_scope` → 函数体 → `push_undefined; ret`。
 
-展开语法、对象访问器/`__proto__`、可选链、复合成员赋值、for/switch、
-break/continue、模块等节点暂记录 unsupported 错误，
+展开语法、对象访问器/`__proto__`、可选链、复合成员赋值、异常、模块等节点
+暂记录 unsupported 错误，
 在后续切片中逐个补齐；每补一个节点，同时补 Compiler 测试与 VM 端到端测试。
 
 **break / continue 先延后**：它们依赖 label 栈与跨作用域跳转（ADR-060 V4），
@@ -127,6 +125,7 @@ tests/unit/compiler/
 
 - 优点：Compiler 与 Parser 同构，节点覆盖度可逐条推进；错误显式；SourceMap
   与 VM 的异常定位直接对接；后续只需在分派表里补节点。
-- 缺点：尚未覆盖 for/switch、break/continue 与模块，真实程序还不能完整编译；
+- 缺点：初始子集不含对象/属性、异常与模块，真实程序还不能完整编译；
   函数声明提升已按「先建槽 → 再创建函数 → store」实现，但尚未独立函数定义区。
-- 待定：模块绑定、常量池去重、SourceMap 对多字节指令的精确边界。
+- 待定：成员调用（依赖 `get_prop`）、模块绑定、常量池去重、
+  SourceMap 对多字节指令的精确边界。

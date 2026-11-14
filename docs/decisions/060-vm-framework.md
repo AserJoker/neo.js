@@ -220,30 +220,14 @@ Value* VM::run(uint32_t entryPc = 0);
   块作用域的 `push_scope`/`pop_scope` 由编译器成对发射。
 - VM 不拥有作用域；作用域的创建/销毁仍由 Context/Function 生命周期管理。
 
-### 7. try / label
+### 7. try / label（后续，不在第一步）
 
-**V3 已实现 try 栈**（label 栈仍留给 V4）：
+第一步不设计、不实现 try 栈与 label 栈。V0–V2 只做线性执行与条件跳转；
+等 V3/V4 再单独定结构：
 
-```cpp
-struct TryFrame {
-    uint32_t catchPc, finallyPc, endTryPc;  // 0 = 无
-    size_t stackDepth;                      // 保护区域入口的操作数栈深
-    Scope* scope;                           // 保护区域入口的当前作用域
-    TryPhase phase;                         // Try / Catch / Finally
-    PendingKind pending;                    // None / Return / Throw
-    Value* pendingValue;
-};
-```
-
-- `try_begin catchPc, finallyPc, endTryPc` 压帧并记录栈深/作用域。
-- `try_end`：帧处于 Try/Catch 且有 finally → 切到 Finally 并跳 `finallyPc`；
-  否则弹帧，有 pending completion 则继续展开。
-- 异常进入 catch 时绑定 `Exception.child`（被抛出的值），不是 Exception 通道。
-- `ret` 走 `unwindReturn`：有 finally 先执行 finally；finally 内的 return/throw
-  覆盖 pending，并跳到 `endTryPc`。
-- 展开时 `restoreFrame` 截断操作数栈并 `popScope` 回到帧入口作用域。
-- Fatal 不进入 try 展开（ADR-017）。
-- label 栈仍待 V4：需要记录 break/continue 目标与跨 finally 的 completion。
+- try 栈需要记录 catch/finally 目标、操作数栈深、作用域深；
+- label 栈需要记录 break/continue 目标与跨 finally 的 completion；
+- 两者都会影响异常展开与作用域回退，必须在有真实语法切片时一起设计。
 
 ### 8. 挂起/恢复
 
@@ -297,7 +281,7 @@ tests/unit/vm/
 | V0 | 字面量、表达式语句、`return` | push_* / add / load / store / define / ret / hlt | 手工 Code：`1+2`、变量读写 |
 | V1 | `var/let/const`、块、if/while | define(flags) / initialize / lt/gt/le/ge / jmp / jtrue / jfalse / push_scope / pop_scope | 手工 Code + 简单 Compiler |
 | V2 | 函数声明/调用、箭头 | push_function / set_closure / call / call_method / store_this / load_this | 脚本函数调用、成员调用 this |
-| V3 | try/catch/finally、throw | try 栈、completion、异常展开（已实现） | 异常路径 |
+| V3 | try/catch/finally、throw | try 栈、completion、异常展开 | 异常路径 |
 | V4 | break/continue/标签 | label 栈、跨 finally 跳转 | 循环/标签 |
 | V5 | 对象/数组/属性 | get_prop/set_prop | 对象操作 |
 | V6 | import/export | 模块三段式、槽位提升、link | 模块端到端 |
