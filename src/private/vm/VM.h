@@ -151,6 +151,8 @@ private:
         std::string label;
         uint32_t startPc = 0;
         uint32_t endPc = 0;
+        // 进入 label 时的作用域：break/continue 跳过块作用域时据此回退。
+        neo::core::Scope* scope = nullptr;
     };
 
     std::vector<neo::core::Value*> stack_;

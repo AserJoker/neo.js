@@ -203,6 +203,8 @@ _func_end:
 - `break` 弹出目标帧及内层帧后跳到 `endPc`；`continue` 只弹内层帧并跳到
   `startPc`，目标循环帧保留。
 - `push_label` 的 start/end 前向目标先占位，布局完成后 `patchU32`。
+- label 帧同时记录进入时的作用域；break/continue 跳转前回退作用域，
+  补做被跳过的块 `pop_scope`。
 - break/continue 指令本身不处理跳转：回调只产生 Interrupt，由 `VM::run`
   统一消费（与 try/finally 的耦合在 try 组实现时再处理）。
 

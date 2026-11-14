@@ -229,6 +229,7 @@ struct LabelFrame {
     std::string label;   // "" = 无标签
     uint32_t startPc;    // continue 目标；0 = 不可 continue
     uint32_t endPc;      // break 目标
+    Scope* scope;        // 进入时的作用域：跳过块作用域时回退
 };
 ```
 
@@ -236,6 +237,8 @@ struct LabelFrame {
 - `break`/`continue` 指令回调只产生 `Interrupt(Break/Continue, labelIndex)`，
   由 `VM::run` 主循环消费：解析 label 栈、平衡帧、更新 pc。
 - `break` 弹出目标帧及内层帧；`continue` 只弹内层帧并保留目标循环帧。
+- 两者跳转前都把作用域回退到目标帧记录的 `scope`：break/continue 跳过了
+  块作用域的 `pop_scope`，必须由 VM 补做，否则后续名字解析会落到已退出的块。
 
 **try 栈（V3，待设计）**：独立于 label 栈，记录 catch/finally 目标、栈深、作用域。
 两组栈存在双向耦合（try 展开需恢复 label 栈；break/continue 跨 finally 需消费

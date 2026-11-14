@@ -939,6 +939,38 @@ TEST(CompilerTest, DoWhileContinueJumpsToTest) {
     EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
 }
 
+TEST(CompilerTest, BreakRestoresScopePastInnerBlock) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(letDeclaration(range, "x", 1.0));
+
+    NodeList innerBlock;
+    innerBlock.push_back(letDeclaration(range, "x", 2.0));
+    innerBlock.push_back(std::make_unique<BreakStatement>(range, ""));
+
+    NodeList loopBody;
+    loopBody.push_back(std::make_unique<BlockStatement>(
+        range, std::move(innerBlock)));
+    body.push_back(std::make_unique<WhileStatement>(
+        range, std::make_unique<BooleanLiteral>(range, true),
+        std::make_unique<BlockStatement>(range, std::move(loopBody))));
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<Identifier>(range, "x")));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
 TEST(CompilerTest, SourceMapRecordsNodePosition) {
     CompileResult result = compileSource("1 + 2;", "entry.js");
     ASSERT_TRUE(result.ok());

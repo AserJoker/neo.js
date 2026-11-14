@@ -515,7 +515,7 @@ Value* VM::opPushLabel() {
     if (label == nullptr) {
         return badBytecode("push_label: label index out of range");
     }
-    labelStack_.push_back(LabelFrame{*label, startPc, endPc});
+    labelStack_.push_back(LabelFrame{*label, startPc, endPc, ctx_->current()});
     return nullptr;
 }
 
@@ -577,6 +577,11 @@ Value* VM::handleLabelInterrupt(Value* interrupt) {
             const LabelFrame& frame = labelStack_[i - 1];
             if (!label->empty() && frame.label != *label) continue;
             uint32_t target = frame.endPc;
+            // 跳过块作用域时回退到 label 入口作用域（pop_scope 不会执行）。
+            while (ctx_->current() != nullptr &&
+                   ctx_->current() != frame.scope) {
+                ctx_->popScope();
+            }
             // break 退出目标语句：目标帧及内层帧都由 VM 弹出。
             labelStack_.resize(i - 1);
             pc_ = target;
@@ -590,6 +595,11 @@ Value* VM::handleLabelInterrupt(Value* interrupt) {
         if (frame.startPc == 0) continue;  // switch / 非循环标签
         if (!label->empty() && frame.label != *label) continue;
         uint32_t target = frame.startPc;
+        // 跳过块作用域时回退到 label 入口作用域。
+        while (ctx_->current() != nullptr &&
+               ctx_->current() != frame.scope) {
+            ctx_->popScope();
+        }
         // continue 留在目标循环内：只弹内层帧。
         labelStack_.resize(i);
         pc_ = target;
