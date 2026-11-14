@@ -200,6 +200,18 @@ struct Code {
         return pc;
     }
 
+    // try 帧：catch/finally/endTry 目标先以 0 占位，布局完成后 patchU32。
+    uint32_t tryBegin(uint32_t catchPc = 0, uint32_t finallyPc = 0,
+                      uint32_t endTryPc = 0) {
+        uint32_t pc = emitOp(OpCode::TryBegin);
+        emitU32(catchPc);
+        emitU32(finallyPc);
+        emitU32(endTryPc);
+        return pc;
+    }
+    uint32_t tryEnd() { return emitOp(OpCode::TryEnd); }
+    uint32_t throwValue() { return emitOp(OpCode::Throw); }
+
     uint32_t pushScope() { return emitOp(OpCode::PushScope); }
     uint32_t popScope() { return emitOp(OpCode::PopScope); }
 

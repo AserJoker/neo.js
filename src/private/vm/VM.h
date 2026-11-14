@@ -78,7 +78,30 @@ private:
     neo::core::Value* top() const { return stack_.back(); }
 
     // 指令失败：补全异常栈后返回错误值（Exception/Fatal）。
+    // Exception 先交给 try 帧；Fatal 不可捕获，直接返回。
     neo::core::Value* fail(neo::core::Value* error);
+
+    // try 帧：保护区域入口记录操作数栈深与当前作用域，异常/return 时据此回退。
+    enum class TryPhase { Try, Catch, Finally };
+    enum class PendingKind { None, Return, Throw };
+    struct TryFrame {
+        uint32_t catchPc = 0;
+        uint32_t finallyPc = 0;
+        uint32_t endTryPc = 0;
+        size_t stackDepth = 0;
+        neo::core::Scope* scope = nullptr;
+        TryPhase phase = TryPhase::Try;
+        PendingKind pending = PendingKind::None;
+        neo::core::Value* pendingValue = nullptr;
+    };
+
+    // 回到帧入口的栈深/作用域。
+    void restoreFrame(const TryFrame& frame);
+    // return 展开：有 finally 先跳 finally；全部处理完返回 value。
+    // 返回 nullptr 表示已跳转，调用方继续执行。
+    neo::core::Value* unwindReturn(neo::core::Value* value);
+    // 异常展开：catch → finally → 外层；无处理器时返回 error。
+    neo::core::Value* dispatchException(neo::core::Value* error);
     // 内部字节码错误（栈下溢/常量下标越界/操作数截断）。
     neo::core::Value* badBytecode(const char* message);
 
@@ -120,6 +143,9 @@ private:
     neo::core::Value* opJmp();
     neo::core::Value* opJTrue();
     neo::core::Value* opJFalse();
+    neo::core::Value* opTryBegin();
+    neo::core::Value* opTryEnd();
+    neo::core::Value* opThrow();
     neo::core::Value* opPushScope();
     neo::core::Value* opPopScope();
     neo::core::Value* opPushFunction();
@@ -139,6 +165,7 @@ private:
     // 当前指令的起始字节偏移：处理函数推进 pc 后，异常位置仍能反查到本条指令。
     uint32_t instructionPc_ = 0;
     std::vector<neo::core::Value*> stack_;
+    std::vector<TryFrame> tryStack_;
 
     // 本次执行的入口作用域与模块根作用域（借用，V0 仅记录）。
     neo::core::Scope* entryScope_ = nullptr;

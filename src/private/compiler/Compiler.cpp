@@ -78,6 +78,14 @@ void Compiler::compileStatement(const Node& node) {
             compileDoWhileStatement(
                 static_cast<const frontend::DoWhileStatement&>(node));
             break;
+        case NodeKind::ThrowStatement:
+            compileThrowStatement(
+                static_cast<const frontend::ThrowStatement&>(node));
+            break;
+        case NodeKind::TryStatement:
+            compileTryStatement(
+                static_cast<const frontend::TryStatement&>(node));
+            break;
         default:
             error(node, "compiler: unsupported statement node kind " +
                             std::to_string(static_cast<int>(node.kind())));
@@ -216,6 +224,81 @@ void Compiler::compileDoWhileStatement(
     if (node.body) compileStatement(*node.body);
     compileExpression(*node.test);
     code_->jtrue(loop);
+}
+
+void Compiler::compileThrowStatement(const frontend::ThrowStatement& node) {
+    if (node.argument) {
+        compileExpression(*node.argument);
+    } else {
+        code_->pushUndefined();
+    }
+    code_->throwValue();
+}
+
+void Compiler::compileTryStatement(const frontend::TryStatement& node) {
+    // try_begin 的三个目标先占位，布局完成后再回填。
+    uint32_t tryBeginPc = code_->tryBegin();
+
+    if (node.block) compileStatement(*node.block);
+    uint32_t tryEndPc = code_->tryEnd();
+
+    bool hasFinally = node.finalizer != nullptr;
+    // 无 finally 时，try 正常完成后要跳过 catch。
+    uint32_t skipCatch = 0;
+    if (!hasFinally && node.handler) skipCatch = code_->jmp();
+
+    uint32_t catchPc = 0;
+    if (node.handler) {
+        if (node.handler->kind() != NodeKind::CatchClause) {
+            error(*node.handler, "compiler: unsupported catch clause");
+        } else {
+            catchPc = code_->here();
+            compileCatchClause(
+                static_cast<const frontend::CatchClause&>(*node.handler));
+            code_->tryEnd();
+        }
+    }
+
+    uint32_t finallyPc = 0;
+    uint32_t endTryPc = tryEndPc;
+    if (hasFinally) {
+        finallyPc = code_->here();
+        compileStatement(*node.finalizer);
+        // 该 try_end 是 finally 的出口，也是 finally 内 return/throw 的跳转目标。
+        endTryPc = code_->tryEnd();
+    }
+
+    uint32_t endPc = code_->here();
+    if (skipCatch != 0) code_->patchU32(skipCatch + 2, endPc);
+    code_->patchU32(tryBeginPc + 2, catchPc);
+    code_->patchU32(tryBeginPc + 6, finallyPc);
+    code_->patchU32(tryBeginPc + 10, endTryPc);
+}
+
+void Compiler::compileCatchClause(const frontend::CatchClause& node) {
+    // 异常值由 VM 压在栈顶。
+    code_->pushScope();
+    if (node.param) {
+        if (node.param->kind() == NodeKind::Identifier) {
+            code_->define(
+                static_cast<const frontend::Identifier&>(*node.param).name);
+        } else {
+            error(*node.param, "compiler: unsupported catch parameter");
+            code_->pop();
+        }
+    } else {
+        code_->pop();
+    }
+
+    if (node.body) {
+        if (node.body->kind() == NodeKind::BlockStatement) {
+            compileBlockStatement(
+                static_cast<const frontend::BlockStatement&>(*node.body));
+        } else {
+            compileStatement(*node.body);
+        }
+    }
+    code_->popScope();
 }
 
 // —— 表达式 ——

@@ -67,6 +67,9 @@ private:
     void compileIfStatement(const frontend::IfStatement& node);
     void compileWhileStatement(const frontend::WhileStatement& node);
     void compileDoWhileStatement(const frontend::DoWhileStatement& node);
+    void compileThrowStatement(const frontend::ThrowStatement& node);
+    void compileTryStatement(const frontend::TryStatement& node);
+    void compileCatchClause(const frontend::CatchClause& node);
 
     // —— 表达式 ——
     void compileIdentifier(const frontend::Identifier& node);

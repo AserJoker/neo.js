@@ -19,6 +19,7 @@
 //   call          u32 argc
 //   call_method   u32 argc
 //   new_array     u32 length
+//   try_begin     u32 catchPc, u32 finallyPc, u32 endTryPc
 //   其余指令      无操作数
 //
 // 操作数的读取由各指令处理函数自己负责——只有它知道需要几个、什么类型。
@@ -43,6 +44,9 @@
 //   lt/gt/le/ge   d → d - 1        （弹右、左，压 Boolean）
 //   jmp           d → d            （pc = target）
 //   jtrue/jfalse  d → d - 1        （弹条件，按 ToBoolean 决定是否跳转）
+//   try_begin     d → d            （压 try 帧，记录栈深/作用域）
+//   try_end       d → d            （结束保护区域；有 finally 先进入）
+//   throw         d → d - 1        （弹值，包成 Exception 并展开）
 //   push_scope    d → d            （创建子作用域并设为 current）
 //   pop_scope     d → d            （销毁 current，回到 parent）
 //   push_function d → d + 1
@@ -108,6 +112,11 @@ enum class OpCode : uint16_t {
     Jmp,          // u32 targetPc
     JTrue,        // u32 targetPc：弹条件，ToBoolean 为真则跳转
     JFalse,       // u32 targetPc：弹条件，ToBoolean 为假则跳转
+
+    // 异常
+    TryBegin,     // u32 catchPc, u32 finallyPc, u32 endTryPc（0 = 无）
+    TryEnd,       // 结束 try/catch 区域；有 finally 则先进入 finally
+    Throw,        // 弹值，包成 Exception 并展开
 
     // 作用域
     PushScope,

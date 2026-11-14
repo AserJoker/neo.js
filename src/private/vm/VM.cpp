@@ -12,6 +12,7 @@
 #include "core/IContext.h"
 #include "core/OperatorKind.h"
 #include "core/Scope.h"
+#include "core/types/Exception.h"
 #include "core/types/TypeBehavior.h"
 
 #include <string>
@@ -76,6 +77,9 @@ const char* opCodeName(OpCode op) {
         case OpCode::Jmp:           return "jmp";
         case OpCode::JTrue:         return "jtrue";
         case OpCode::JFalse:        return "jfalse";
+        case OpCode::TryBegin:      return "try_begin";
+        case OpCode::TryEnd:        return "try_end";
+        case OpCode::Throw:         return "throw";
         case OpCode::PushScope:     return "push_scope";
         case OpCode::PopScope:      return "pop_scope";
         case OpCode::PushFunction:  return "push_function";
@@ -131,6 +135,9 @@ const VM::Handler* VM::handlers() {
         &VM::opJmp,
         &VM::opJTrue,
         &VM::opJFalse,
+        &VM::opTryBegin,
+        &VM::opTryEnd,
+        &VM::opThrow,
         &VM::opPushScope,
         &VM::opPopScope,
         &VM::opPushFunction,
@@ -160,6 +167,72 @@ const std::string* VM::stringOperand(uint32_t index) const {
 Value* VM::fail(Value* error) {
     // Engine 原语创建错误时不知道 pc；VM 用 SourceMap 补全异常栈顶位置。
     ctx_->setExceptionPosition(error, currentPosition());
+    // Fatal 不可捕获（ADR-017）：不进入 try 展开。
+    if (error->type()->kind() == neo::core::TypeKind::Fatal) return error;
+    return dispatchException(error);
+}
+
+void VM::restoreFrame(const TryFrame& frame) {
+    if (stack_.size() > frame.stackDepth) stack_.resize(frame.stackDepth);
+    while (ctx_->current() != nullptr && ctx_->current() != frame.scope) {
+        ctx_->popScope();
+    }
+}
+
+Value* VM::unwindReturn(Value* value) {
+    while (!tryStack_.empty()) {
+        TryFrame& frame = tryStack_.back();
+        if (frame.phase == TryPhase::Finally) {
+            // finally 内的 return 覆盖待处理 completion，直接到 try_end。
+            frame.pending = PendingKind::Return;
+            frame.pendingValue = value;
+            pc_ = frame.endTryPc;
+            return nullptr;
+        }
+        if (frame.finallyPc != 0) {
+            restoreFrame(frame);
+            frame.phase = TryPhase::Finally;
+            frame.pending = PendingKind::Return;
+            frame.pendingValue = value;
+            pc_ = frame.finallyPc;
+            return nullptr;
+        }
+        // catch 不处理 return；无 finally 时继续向外展开。
+        restoreFrame(frame);
+        tryStack_.pop_back();
+    }
+    return value;
+}
+
+Value* VM::dispatchException(Value* error) {
+    while (!tryStack_.empty()) {
+        TryFrame& frame = tryStack_.back();
+        if (frame.phase == TryPhase::Finally) {
+            // finally 抛出的异常覆盖待处理 completion，由 try_end 向外展开。
+            frame.pending = PendingKind::Throw;
+            frame.pendingValue = error;
+            pc_ = frame.endTryPc;
+            return nullptr;
+        }
+        if (frame.phase == TryPhase::Try && frame.catchPc != 0) {
+            restoreFrame(frame);
+            frame.phase = TryPhase::Catch;
+            // catch 绑定的是被抛出的值（Exception.child），不是 Exception 通道本身。
+            push(static_cast<neo::core::ExceptionData*>(error->data())->child);
+            pc_ = frame.catchPc;
+            return nullptr;
+        }
+        if (frame.finallyPc != 0) {
+            restoreFrame(frame);
+            frame.phase = TryPhase::Finally;
+            frame.pending = PendingKind::Throw;
+            frame.pendingValue = error;
+            pc_ = frame.finallyPc;
+            return nullptr;
+        }
+        restoreFrame(frame);
+        tryStack_.pop_back();
+    }
     return error;
 }
 
@@ -476,6 +549,50 @@ Value* VM::opJFalse() {
     return nullptr;
 }
 
+// —— 异常 ——
+
+Value* VM::opTryBegin() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 12) {
+        return badBytecode("try_begin: truncated operand");
+    }
+    TryFrame frame;
+    frame.catchPc = readU32(bytes.data() + pc_);
+    frame.finallyPc = readU32(bytes.data() + pc_ + 4);
+    frame.endTryPc = readU32(bytes.data() + pc_ + 8);
+    pc_ += 12;
+    frame.stackDepth = stack_.size();
+    frame.scope = ctx_->current();
+    tryStack_.push_back(frame);
+    return nullptr;
+}
+
+Value* VM::opTryEnd() {
+    if (tryStack_.empty()) return badBytecode("try_end: try stack underflow");
+    TryFrame& frame = tryStack_.back();
+    if (frame.phase != TryPhase::Finally && frame.finallyPc != 0) {
+        // 正常完成 try/catch：进入 finally，帧保留到 finally 结束。
+        frame.phase = TryPhase::Finally;
+        pc_ = frame.finallyPc;
+        return nullptr;
+    }
+
+    PendingKind pending = frame.pending;
+    Value* pendingValue = frame.pendingValue;
+    tryStack_.pop_back();
+    if (pending == PendingKind::None) return nullptr;
+    if (pending == PendingKind::Return) return unwindReturn(pendingValue);
+    return dispatchException(pendingValue);
+}
+
+Value* VM::opThrow() {
+    if (stack_.empty()) return badBytecode("throw: operand stack underflow");
+    Value* value = pop();
+    Value* exception = ctx_->createException(value);
+    if (exception == ctx_->oomValue()) return exception;
+    return fail(exception);
+}
+
 // —— 作用域 ——
 
 Value* VM::opPushScope() {
@@ -610,7 +727,8 @@ Value* VM::opCallMethod() {
 // —— 结束 ——
 
 Value* VM::opRet() {
-    return stack_.empty() ? ctx_->createUndefined() : pop();
+    Value* value = stack_.empty() ? ctx_->createUndefined() : pop();
+    return unwindReturn(value);
 }
 
 Value* VM::opHalt() {
