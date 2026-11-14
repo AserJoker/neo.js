@@ -98,6 +98,7 @@ private:
     neo::core::Value* opPushString();
     neo::core::Value* opPop();
     neo::core::Value* opDup();
+    neo::core::Value* opClone();
     neo::core::Value* opSwap();
     neo::core::Value* opDefine();
     neo::core::Value* opInitialize();

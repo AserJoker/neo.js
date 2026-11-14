@@ -80,6 +80,8 @@ public:
 | Numeric/String/Boolean/NullLiteral | `push_*` |
 | Identifier | `load` |
 | VariableDeclaration | 声明点 `store`（var）/ `initialize`（let/const） |
+| AssignmentExpression | `=`：右值 + `dup` + `store`；复合：`load` + 右值 + 运算 + `dup` + `store` |
+| UpdateExpression | 前缀：`load` + 1 + 运算 + `dup` + `store`；后缀：`load` + `clone` + `swap` + 1 + 运算 + `store` |
 | BinaryExpression（+ - * / < <= > >=） | 左、右 + 对应指令 |
 | FunctionDeclaration/Expression | 跳过函数体 + 函数体 + `push_function` + `set_func_name` + `set_closure` + `define`（声明） |
 | ArrowFunctionExpression | 同上，另加 `load_this` + `bind_this`，无 prototype/不可构造 |
@@ -115,7 +117,7 @@ tests/unit/compiler/
 
 - 优点：Compiler 与 Parser 同构，节点覆盖度可逐条推进；错误显式；SourceMap
   与 VM 的异常定位直接对接；后续只需在分派表里补节点。
-- 缺点：初始子集不含变量提升/TDZ 预扫描、对象/属性与模块，真实程序还不能
-  完整编译；函数声明暂按源码顺序定义，尚未做提升三段式。
-- 待定：变量提升三段式、成员调用（依赖 `get_prop`）、模块绑定、
-  常量池去重、SourceMap 对多字节指令的精确边界。
+- 缺点：初始子集不含对象/属性、异常与模块，真实程序还不能完整编译；
+  函数声明提升已按「先建槽 → 再创建函数 → store」实现，但尚未独立函数定义区。
+- 待定：成员调用（依赖 `get_prop`）、模块绑定、常量池去重、
+  SourceMap 对多字节指令的精确边界。

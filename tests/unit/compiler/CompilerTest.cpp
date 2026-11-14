@@ -31,11 +31,14 @@ using neo::core::NumberData;
 using neo::core::TypeKind;
 using neo::core::Value;
 using neo::core::createContext;
+using neo::frontend::AssignmentExpression;
+using neo::frontend::AssignmentOperator;
 using neo::frontend::BinaryExpression;
 using neo::frontend::BinaryOperator;
 using neo::frontend::BlockStatement;
 using neo::frontend::CallExpression;
 using neo::frontend::DebuggerStatement;
+using neo::frontend::ExpressionStatement;
 using neo::frontend::FunctionDeclaration;
 using neo::frontend::Identifier;
 using neo::frontend::NodeList;
@@ -46,6 +49,8 @@ using neo::frontend::Program;
 using neo::frontend::ReturnStatement;
 using neo::frontend::SourceRange;
 using neo::frontend::SourceType;
+using neo::frontend::UpdateExpression;
+using neo::frontend::UpdateOperator;
 using neo::frontend::VariableDeclaration;
 using neo::frontend::VariableDeclarator;
 using neo::frontend::VariableKind;
@@ -306,6 +311,139 @@ TEST(CompilerTest, FunctionDeclarationIsHoisted) {
     ASSERT_NE(value, nullptr);
     ASSERT_EQ(value->type()->kind(), TypeKind::Number);
     EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, AssignmentExpressionLeavesValue) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(letDeclaration(range, "x", 1.0));
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<BinaryExpression>(
+                   range, BinaryOperator::Add,
+                   std::make_unique<AssignmentExpression>(
+                       range, AssignmentOperator::Assign,
+                       std::make_unique<Identifier>(range, "x"),
+                       std::make_unique<NumericLiteral>(range, 2.0)),
+                   std::make_unique<Identifier>(range, "x"))));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 4.0);  // (x=2) + x
+}
+
+TEST(CompilerTest, CompoundAssignmentUpdatesBinding) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(letDeclaration(range, "x", 1.0));
+    body.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Add,
+                   std::make_unique<Identifier>(range, "x"),
+                   std::make_unique<NumericLiteral>(range, 2.0))));
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<Identifier>(range, "x")));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+namespace {
+
+neo::frontend::NodePtr letFromExpression(const SourceRange& range,
+                                         const char* name,
+                                         neo::frontend::NodePtr init) {
+    NodeList declarations;
+    declarations.push_back(std::make_unique<VariableDeclarator>(
+        range, std::make_unique<Identifier>(range, name), std::move(init)));
+    return std::make_unique<VariableDeclaration>(
+        range, VariableKind::Let, std::move(declarations));
+}
+
+}  // namespace
+
+TEST(CompilerTest, PostfixUpdateYieldsOldValue) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(letDeclaration(range, "x", 1.0));
+    body.push_back(letFromExpression(
+        range, "y",
+        std::make_unique<UpdateExpression>(
+            range, UpdateOperator::Increment, false,
+            std::make_unique<Identifier>(range, "x"))));
+    // y * 10 + x  => 1 * 10 + 2 = 12
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<BinaryExpression>(
+                   range, BinaryOperator::Add,
+                   std::make_unique<BinaryExpression>(
+                       range, BinaryOperator::Multiply,
+                       std::make_unique<Identifier>(range, "y"),
+                       std::make_unique<NumericLiteral>(range, 10.0)),
+                   std::make_unique<Identifier>(range, "x"))));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 12.0);
+}
+
+TEST(CompilerTest, PrefixUpdateYieldsNewValue) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(letDeclaration(range, "x", 1.0));
+    body.push_back(letFromExpression(
+        range, "y",
+        std::make_unique<UpdateExpression>(
+            range, UpdateOperator::Increment, true,
+            std::make_unique<Identifier>(range, "x"))));
+    // y * 10 + x  => 2 * 10 + 2 = 22
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<BinaryExpression>(
+                   range, BinaryOperator::Add,
+                   std::make_unique<BinaryExpression>(
+                       range, BinaryOperator::Multiply,
+                       std::make_unique<Identifier>(range, "y"),
+                       std::make_unique<NumericLiteral>(range, 10.0)),
+                   std::make_unique<Identifier>(range, "x"))));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 22.0);
 }
 
 TEST(CompilerTest, SourceMapRecordsNodePosition) {

@@ -670,6 +670,10 @@ public:
     // 调用时 invoke 优先使用该值，忽略调用点传入的 thisArg。
     virtual void bindFunctionThis(Value* fn, Value* thisValue) = 0;
 
+    // cloneValue: 复制一个 Value（data 层 clone）并登记进当前作用域。
+    // 用于需要快照旧值的场景（如后缀 ++/--：绑定槽会被原地改写）。
+    virtual Value* cloneValue(Value* source) = 0;
+
     // setClosure: 把当前作用域链上名为 name 的变量加入函数的闭包作用域（ADR-013 §2）。
     // 绑定 = 共享同一 Value（不复制），closureScope 登记同一 Value。
     // 查找沿 current 的 parent 链（lookupChain）。

@@ -243,6 +243,7 @@ public:
                                 bool constructible, bool hasPrototypeProperty,
                                 std::string_view bindName = {}) override;
     void bindFunctionThis(Value* fn, Value* thisValue) override;
+    Value* cloneValue(Value* source) override;
     Value* setClosure(Value* fn, std::string_view name) override;
     Value* captureValue(Value* fn, std::string_view name, Value* value) override;
 

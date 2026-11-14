@@ -27,6 +27,7 @@
 //   push_*        d → d + 1        （push_uninitialized 压 TDZ 哨兵）
 //   pop           d → d - 1
 //   dup           d → d + 1
+//   clone         d → d + 1        （复制栈顶 data，得到独立快照）
 //   swap          d → d
 //   define        d → d - 1        （弹初始值，建绑定）
 //   initialize    d → d - 1        （弹值，解除 TDZ）
@@ -70,6 +71,7 @@ enum class OpCode : uint16_t {
 
     Pop,
     Dup,
+    Clone,  // [v] → [v, copy]：复制 data，快照旧值
     Swap,
 
     Define,       // u32 Code::strings 下标（名字），u32 flags

@@ -115,6 +115,14 @@ void Compiler::compileExpression(const Node& node) {
             compileThisExpression(
                 static_cast<const frontend::ThisExpression&>(node));
             break;
+        case NodeKind::AssignmentExpression:
+            compileAssignmentExpression(
+                static_cast<const frontend::AssignmentExpression&>(node));
+            break;
+        case NodeKind::UpdateExpression:
+            compileUpdateExpression(
+                static_cast<const frontend::UpdateExpression&>(node));
+            break;
         default:
             error(node, "compiler: unsupported expression node kind " +
                             std::to_string(static_cast<int>(node.kind())));
@@ -253,6 +261,82 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
 
 void Compiler::compileThisExpression(const frontend::ThisExpression&) {
     code_->loadThis();
+}
+
+void Compiler::compileAssignmentExpression(
+    const frontend::AssignmentExpression& node) {
+    if (!node.left || node.left->kind() != NodeKind::Identifier) {
+        error(node, "compiler: assignment target must be an identifier");
+        code_->pushUndefined();
+        return;
+    }
+    if (!node.right) {
+        error(node, "compiler: assignment missing right-hand side");
+        code_->pushUndefined();
+        return;
+    }
+    const std::string& name =
+        static_cast<const frontend::Identifier&>(*node.left).name;
+
+    if (node.op == frontend::AssignmentOperator::Assign) {
+        compileExpression(*node.right);
+        code_->dup();
+        code_->store(name);
+        return;
+    }
+
+    // 复合赋值：load 旧值 → 右值 → 运算 → dup（表达式值）→ store。
+    code_->load(name);
+    compileExpression(*node.right);
+    switch (node.op) {
+        case frontend::AssignmentOperator::Add:      code_->add(); break;
+        case frontend::AssignmentOperator::Subtract: code_->sub(); break;
+        case frontend::AssignmentOperator::Multiply: code_->mul(); break;
+        case frontend::AssignmentOperator::Divide:   code_->div(); break;
+        default:
+            error(node, "compiler: unsupported assignment operator " +
+                            std::to_string(static_cast<int>(node.op)));
+            code_->pop();
+            code_->pop();
+            code_->pushUndefined();
+            return;
+    }
+    code_->dup();
+    code_->store(name);
+}
+
+void Compiler::compileUpdateExpression(
+    const frontend::UpdateExpression& node) {
+    if (!node.argument || node.argument->kind() != NodeKind::Identifier) {
+        error(node, "compiler: update target must be an identifier");
+        code_->pushUndefined();
+        return;
+    }
+    const std::string& name =
+        static_cast<const frontend::Identifier&>(*node.argument).name;
+
+    code_->load(name);
+    if (node.prefix) {
+        code_->push(1.0);
+        if (node.op == frontend::UpdateOperator::Increment) {
+            code_->add();
+        } else {
+            code_->sub();
+        }
+        code_->dup();
+        code_->store(name);
+    } else {
+        // 后缀：快照旧值留在栈上作为表达式结果（绑定槽会被 store 原地改写）。
+        code_->clone();
+        code_->swap();
+        code_->push(1.0);
+        if (node.op == frontend::UpdateOperator::Increment) {
+            code_->add();
+        } else {
+            code_->sub();
+        }
+        code_->store(name);
+    }
 }
 
 // —— 函数 ——

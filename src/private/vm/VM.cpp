@@ -54,6 +54,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::PushString:    return "push_string";
         case OpCode::Pop:           return "pop";
         case OpCode::Dup:           return "dup";
+        case OpCode::Clone:         return "clone";
         case OpCode::Swap:          return "swap";
         case OpCode::Define:        return "define";
         case OpCode::Initialize:    return "initialize";
@@ -103,6 +104,7 @@ const VM::Handler* VM::handlers() {
         &VM::opPushString,
         &VM::opPop,
         &VM::opDup,
+        &VM::opClone,
         &VM::opSwap,
         &VM::opDefine,
         &VM::opInitialize,
@@ -248,6 +250,14 @@ Value* VM::opPop() {
 Value* VM::opDup() {
     if (stack_.empty()) return badBytecode("dup: operand stack underflow");
     push(top());
+    return nullptr;
+}
+
+Value* VM::opClone() {
+    if (stack_.empty()) return badBytecode("clone: operand stack underflow");
+    Value* copy = ctx_->cloneValue(top());
+    if (copy == ctx_->oomValue()) return copy;
+    push(copy);
     return nullptr;
 }
 

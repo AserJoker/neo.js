@@ -449,6 +449,30 @@ TEST(VMTest, CallPassesUndefinedThis) {
     EXPECT_EQ(result->type()->kind(), TypeKind::Undefined);
 }
 
+TEST(VMTest, CloneSnapshotsValueBeforeStore) {
+    Fixture f;
+    Code code;
+    code.push(1.0);
+    code.define("x");
+    // 快照旧值 → 计算新值并 store → 旧快照 + 新值 = 3
+    code.load("x");
+    code.clone();
+    code.swap();
+    code.push(1.0);
+    code.add();
+    code.store("x");
+    code.load("x");
+    code.add();
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    Value* result = vm.run();
+
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(result), 3.0);
+}
+
 TEST(VMTest, BuilderEmitsSemanticInstructions) {
     Code code;
     EXPECT_EQ(code.here(), 0u);

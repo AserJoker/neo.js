@@ -1203,6 +1203,13 @@ void Context::bindFunctionThis(Value* fn, Value* thisValue) {
     static_cast<FunctionData*>(fn->data())->self = thisValue;
 }
 
+Value* Context::cloneValue(Value* source) {
+    if (source == nullptr) return createUndefined();
+    IData* cloned = cloneForNewValue(source);
+    if (cloned == nullptr) return oomValue_;
+    return createTracked(source->type(), cloned, {});
+}
+
 void Context::setFunctionConstructor(Value* fn, NativeFn ctor) {
     // 仅对 Function 类型有效（内建注册用），其他类型忽略
     if (fn->type()->kind() != TypeKind::Function) return;

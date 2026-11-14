@@ -59,7 +59,8 @@ _func_end:
 | `push_number <n>` | `[] → [n]` | |
 | `push_string <s>` | `[] → [s]` | |
 | `pop` | `[a] → []` | 丢弃表达式语句结果 |
-| `dup` | `[a] → [a, a]` | |
+| `dup` | `[a] → [a, a]` | 共享同一 Value |
+| `clone` | `[a] → [a, copy]` | 复制 data，得到独立快照（后缀 ++/--） |
 | `swap` | `[a, b] → [b, a]` | |
 
 #### 2.2 变量操作

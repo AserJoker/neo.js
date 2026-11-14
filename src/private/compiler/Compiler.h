@@ -77,6 +77,9 @@ private:
         const frontend::ArrowFunctionExpression& node);
     void compileCallExpression(const frontend::CallExpression& node);
     void compileThisExpression(const frontend::ThisExpression& node);
+    void compileAssignmentExpression(
+        const frontend::AssignmentExpression& node);
+    void compileUpdateExpression(const frontend::UpdateExpression& node);
 
     // —— 函数体 ——
     // 发射函数值：跳过函数体 → 函数体 → push_function → 名称/捕获/this 绑定。

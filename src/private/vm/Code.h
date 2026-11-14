@@ -133,6 +133,7 @@ struct Code {
 
     uint32_t pop() { return emitOp(OpCode::Pop); }
     uint32_t dup() { return emitOp(OpCode::Dup); }
+    uint32_t clone() { return emitOp(OpCode::Clone); }
     uint32_t swap() { return emitOp(OpCode::Swap); }
 
     // 定义绑定：mutableBinding=false 为 const，initialized=false 表示提升建槽
