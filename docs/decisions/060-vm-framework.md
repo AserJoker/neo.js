@@ -319,7 +319,7 @@ tests/unit/vm/
 | V3 | try/catch/finally、throw | try 栈、completion、异常展开 | 异常路径 |
 | V4 | break/continue/标签 | label 栈、跨 finally 跳转 | 循环/标签 |
 | V5 | 对象/数组/属性 | get_prop/set_prop | 对象操作 |
-| V6 | import/export | 模块三段式、槽位提升、link | 模块端到端 |
+| V6 | import/export | 模块三段式、槽位提升、link（已实现） | 模块端到端 |
 | V7 | generator/async/await | VmState 链、Interrupt 消费 | 挂起恢复 |
 
 V0 是第一个可真实运行的 VM→Engine 链路：不依赖 Compiler，直接在测试里

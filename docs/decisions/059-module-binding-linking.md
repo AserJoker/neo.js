@@ -85,9 +85,17 @@ Module Namespace 对象仍然保留，用于 `import * as ns`、动态 `import()
 3. 建立导出表，把 import / re-export 解析为共享槽位；
 4. 按 DFS 后序求值模块体。
 
-当前 `importModule` 仍是“惰性加载 + 立即执行”，native loader 需自行先建槽位
-并 `exportSlot`，再 `importModule`，最后 `initialize`。这是过渡形态；Compiler
-接入后由 link 阶段统一完成。
+编译模块（`setModuleCompilation`）由 `Context::importModule` 按以下顺序编排：
+
+1. **declare**：递归执行依赖的符号定义区（`declarePc`），只建槽；本地绑定
+   导出立即建立槽位映射，保证循环依赖中依赖方可以解析。
+2. **instantiate**：绑定 import 别名（依赖已声明），重试声明期无法解析的
+   import 别名导出，建立 re-export / `export *` 映射，最后执行函数定义区
+   （`instantiatePc`）创建函数对象。
+3. **evaluate**：按依赖 DFS 后序执行模块体（`evaluatePc`）。
+
+循环依赖由 `declaring` / `instantiating` / `loading` 三个标记短路；native
+loader 仍走原有的“惰性加载 + 立即执行”路径。
 
 ## 后果
 
@@ -106,3 +114,7 @@ Module Namespace 对象仍然保留，用于 `import * as ns`、动态 `import()
 - `exportSlot`、`getExportSlot`、`exportBinding` 槽位化；`IndirectExport` 删除。
 - `ModuleTest` 覆盖槽位别名、只读、TDZ、namespace TDZ、re-export 别名、
   闭包捕获与 GC。
+- `ModuleCompilation` + `IContext::setModuleCompilation`：Compiler 产出三段式
+  入口与 import/export 元数据，Context 驱动 declare → instantiate → evaluate。
+- `ModuleCompilerTest` 覆盖 named/default/namespace import、活绑定、re-export、
+  `export *`、`export * as ns`、循环依赖与三段式布局。

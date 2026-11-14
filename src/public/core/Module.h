@@ -13,7 +13,15 @@
 #ifndef NEO_CORE_MODULE_H
 #define NEO_CORE_MODULE_H
 
+#include <cstdint>
+#include <memory>
+#include <string>
 #include <string_view>
+#include <vector>
+
+namespace neo::vm {
+struct Code;
+}  // namespace neo::vm
 
 namespace neo::core {
 
@@ -31,6 +39,50 @@ using ModuleLoader = Value* (*)(IContext* ctx, Value* exports);
 struct ModuleInfo {
     Scope* scope = nullptr;    // 模块 root scope（生命周期由 global 作用域树持有）
     Value* exports = nullptr;  // 导出对象（原型为 null）
+};
+
+// —— 编译产物的静态链接元数据（Compiler 产出，Context link 期消费）——
+
+// import 声明：localName 绑定到 specifier 模块的 importName 槽位。
+// namespaceImport=true 时 importName 为空，绑定到模块命名空间对象。
+struct ModuleImportBinding {
+    std::string localName;
+    std::string specifier;
+    std::string importName;
+    bool namespaceImport = false;
+};
+
+// export 声明：
+//   exportAll=true          —— export * from specifier（exportName 为空）
+//   specifier 非空          —— re-export / export * as ns
+//   specifier 为空          —— 本地绑定导出（localName）
+struct ModuleExportBinding {
+    std::string exportName;
+    std::string localName;
+    std::string specifier;
+    std::string importName;
+    bool exportAll = false;
+};
+
+// 一个模块的编译产物。code 由 Module 唯一持有，VM 只借用 const Code*。
+// 三段式入口：
+//   declarePc     —— 符号定义区（建槽；所有模块先声明，再 link）
+//   instantiatePc —— 函数定义区（创建函数对象；此时 import 已绑定）
+//   evaluatePc    —— 源码逻辑入口
+struct ModuleCompilation {
+    std::unique_ptr<vm::Code> code;
+    uint32_t declarePc = 0;
+    uint32_t instantiatePc = 0;
+    uint32_t evaluatePc = 0;
+    std::vector<ModuleImportBinding> imports;
+    std::vector<ModuleExportBinding> exports;
+
+    ModuleCompilation();
+    ~ModuleCompilation();
+    ModuleCompilation(ModuleCompilation&&) noexcept;
+    ModuleCompilation& operator=(ModuleCompilation&&) noexcept;
+    ModuleCompilation(const ModuleCompilation&) = delete;
+    ModuleCompilation& operator=(const ModuleCompilation&) = delete;
 };
 
 }  // namespace neo::core

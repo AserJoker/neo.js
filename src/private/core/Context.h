@@ -296,6 +296,8 @@ public:
     bool hasModule(std::string_view id) const override;
     ModuleInfo getModule(std::string_view id) override;
     void setModuleLoader(std::string_view id, ModuleLoader loader) override;
+    bool setModuleCompilation(std::string_view id,
+                              ModuleCompilation compilation) override;
     Value* importModule(std::string_view id) override;
     Value* createModuleNamespace(std::string_view bindName = {}) override;
     Value* exportBinding(Value* exports, std::string_view exportName,
@@ -434,6 +436,19 @@ private:
     Value* defineCloned(Scope* scope, std::string_view name, Value* source,
                         bool mutableBinding = true,
                         bool initialized = true);
+
+    // —— 编译模块的声明/实例化/求值（ADR-059 §5）——
+    // declareModule: 递归执行依赖的符号定义区（只建槽，不绑定 import）。
+    Value* declareModule(Module* mod);
+    // instantiateModule: 绑定 import/export 槽位 + 创建函数对象。
+    // 成功返回 nullptr，失败返回错误值。
+    Value* instantiateModule(Module* mod);
+    // evaluateModule: 按依赖 DFS 后序执行模块体。成功返回 nullptr。
+    Value* evaluateModule(Module* mod);
+    // 在模块 root scope 下执行 code 的某一段。
+    Value* runModuleCode(Module* mod, uint32_t entryPc);
+    // 取/创建 id 对应的 Module；失败返回 nullptr。
+    Module* findModule(std::string_view id);
 };
 
 }  // namespace neo::core

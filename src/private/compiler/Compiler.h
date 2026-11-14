@@ -15,6 +15,7 @@
 #ifndef NEO_COMPILER_COMPILER_H
 #define NEO_COMPILER_COMPILER_H
 
+#include "core/Module.h"
 #include "frontend/Node.h"
 #include "sema/Sema.h"
 #include "vm/Code.h"
@@ -42,6 +43,13 @@ struct CompileResult {
     std::unique_ptr<vm::Code> code;
     std::vector<CompileError> errors;
 
+    // 模块编译产物的三段式入口与静态链接元数据（Script 为空/0）。
+    uint32_t declarePc = 0;
+    uint32_t instantiatePc = 0;
+    uint32_t evaluatePc = 0;
+    std::vector<neo::core::ModuleImportBinding> imports;
+    std::vector<neo::core::ModuleExportBinding> exports;
+
     bool ok() const { return code != nullptr && errors.empty(); }
 };
 
@@ -56,6 +64,8 @@ public:
 private:
     // —— 分派 ——
     void compileProgram();
+    // 模块三段式：符号定义区 + 函数定义区（instantiate）→ 源码逻辑入口（evaluate）。
+    void compileModule();
     void compileStatement(const frontend::Node& node);
     void compileExpression(const frontend::Node& node);
 
@@ -76,6 +86,13 @@ private:
     void compileThrowStatement(const frontend::ThrowStatement& node);
     void compileTryStatement(const frontend::TryStatement& node);
     void compileCatchClause(const frontend::CatchClause& node);
+    void compileImportDeclaration(const frontend::ImportDeclaration& node);
+    void compileExportNamedDeclaration(
+        const frontend::ExportNamedDeclaration& node);
+    void compileExportDefaultDeclaration(
+        const frontend::ExportDefaultDeclaration& node);
+    void compileExportAllDeclaration(
+        const frontend::ExportAllDeclaration& node);
 
     // —— 表达式 ——
     void compileIdentifier(const frontend::Identifier& node);
@@ -117,8 +134,17 @@ private:
     //   直接 let/const → uninitialized 槽（TDZ）；
     //   直接函数声明 → 先建 undefined 槽，再创建函数并 store（支持互相引用）。
     void hoistScope(const frontend::NodeList& body, bool varScope);
+    // 模块三段式拆分：建槽（var/let/const/函数占位）与函数对象创建分开发射。
+    void hoistSlots(const frontend::NodeList& body, bool varScope);
+    void hoistFunctions(const frontend::NodeList& body);
     void collectVarNames(const frontend::Node& statement,
                          std::vector<std::string>& names);
+
+    // 取 export 声明内层声明（无则 nullptr）。
+    static const frontend::Node* declarationOf(const frontend::Node& node);
+    // export default 是否使用隐藏槽位（匿名函数/类或表达式）。
+    static bool usesDefaultSlot(const frontend::ExportDefaultDeclaration& node);
+    static constexpr std::string_view kDefaultSlot = "*default*";
 
     // —— 辅助 ——
     void error(const frontend::Node& node, std::string message);
@@ -130,6 +156,12 @@ private:
     CompilerOptions options_;
     std::unique_ptr<vm::Code> code_ = std::make_unique<vm::Code>();
     std::vector<CompileError> errors_;
+    // 模块三段式入口与链接元数据（Script 保持 0/空）。
+    uint32_t declarePc_ = 0;
+    uint32_t instantiatePc_ = 0;
+    uint32_t evaluatePc_ = 0;
+    std::vector<neo::core::ModuleImportBinding> imports_;
+    std::vector<neo::core::ModuleExportBinding> exports_;
 };
 
 }  // namespace neo::compiler

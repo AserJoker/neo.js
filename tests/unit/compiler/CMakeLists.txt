@@ -2,6 +2,7 @@
 
 add_executable(compiler_unit_test
     CompilerTest.cpp
+    ModuleCompilerTest.cpp
 )
 target_link_libraries(compiler_unit_test
     PRIVATE

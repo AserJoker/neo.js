@@ -773,6 +773,15 @@ public:
     // loader 在模块 root scope 下执行；已加载的模块不会被重新执行。
     virtual void setModuleLoader(std::string_view id, ModuleLoader loader) = 0;
 
+    // setModuleCompilation: 绑定模块的编译产物与静态链接元数据（模块不存在则
+    // 先创建）。importModule 首次加载时依次执行：
+    //   1. instantiate：符号定义区 + 函数定义区（建槽、创建函数对象）；
+    //   2. link：递归实例化依赖，建立 import 槽位别名与 export 槽位映射；
+    //   3. evaluate：按依赖 DFS 后序执行模块体。
+    // 成功返回 true；模块创建失败（OOM）返回 false。
+    virtual bool setModuleCompilation(std::string_view id,
+                                      ModuleCompilation compilation) = 0;
+
     // importModule: 取模块；若尚未加载且已登记 loader，则在模块 root scope 下
     // 执行 loader 并标记已加载。循环依赖时直接返回当前（部分）导出对象。
     // specifier 可为绝对路径，或以 ./ ../ 开头的相对路径——后者以当前正在

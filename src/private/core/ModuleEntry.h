@@ -15,13 +15,22 @@
 namespace neo::core {
 
 struct Module {
+    Module();
+    ~Module();
+
     std::string id;              // 唯一 id（绝对路径）
     std::string dirname;         // id 的目录部分（绝对路径），用于解析相对 import
     Scope* scope = nullptr;      // 模块 root scope（借用，挂在 global 下）
     Value* exports = nullptr;    // 导出对象（借用，原型为 null）
-    ModuleLoader loader = nullptr;  // 模块代码（可为空：仅占位，无字节码）
-    bool loaded = false;         // loader 是否已成功执行
+    ModuleLoader loader = nullptr;  // 原生 loader（可为空）
+    ModuleCompilation compilation;  // 编译产物（可为空：仅占位/原生 loader）
+    bool loaded = false;         // loader/编译产物是否已成功执行
     bool loading = false;        // 循环依赖保护：正在执行中
+    bool declared = false;       // 符号定义区是否已执行（槽位已建）
+    bool declaring = false;      // 循环依赖保护：正在声明
+    bool instantiated = false;   // import/export 槽位与函数对象是否已建立
+    bool instantiating = false;  // 循环依赖保护：正在实例化
+    bool evaluated = false;      // 模块体是否已求值
 };
 
 }  // namespace neo::core

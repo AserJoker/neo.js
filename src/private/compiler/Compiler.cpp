@@ -15,6 +15,23 @@ namespace neo::compiler {
 
 using frontend::Node;
 using frontend::NodeKind;
+using frontend::NodePtr;
+using frontend::SourceType;
+
+namespace {
+
+std::string exportNameOf(const Node* node) {
+    if (node == nullptr) return {};
+    if (node->kind() == NodeKind::Identifier) {
+        return static_cast<const frontend::Identifier&>(*node).name;
+    }
+    if (node->kind() == NodeKind::StringLiteral) {
+        return static_cast<const frontend::StringLiteral&>(*node).value;
+    }
+    return {};
+}
+
+}  // namespace
 
 Compiler::Compiler(const frontend::Program& program,
                    const sema::SemaResult& sema, CompilerOptions options)
@@ -24,6 +41,8 @@ CompileResult Compiler::compile() {
     // 前置条件被破坏时不在错误 AST 上继续生成字节码。
     if (!sema_.ok()) {
         errors_.push_back({program_.range(), "compiler: sema reported errors"});
+    } else if (program_.sourceType == SourceType::Module) {
+        compileModule();
     } else {
         compileProgram();
     }
@@ -31,12 +50,46 @@ CompileResult Compiler::compile() {
     CompileResult result;
     result.code = std::move(code_);
     result.errors = std::move(errors_);
+    result.declarePc = declarePc_;
+    result.instantiatePc = instantiatePc_;
+    result.evaluatePc = evaluatePc_;
+    result.imports = std::move(imports_);
+    result.exports = std::move(exports_);
     return result;
 }
 
 void Compiler::compileProgram() {
     hoistScope(program_.body, true);
     for (const frontend::NodePtr& statement : program_.body) {
+        if (statement) compileStatement(*statement);
+    }
+    code_->halt();
+}
+
+void Compiler::compileModule() {
+    // [1] 符号定义区：只建槽。所有模块先声明，再统一 link。
+    declarePc_ = code_->here();
+    hoistSlots(program_.body, true);
+    // export default 的匿名函数/表达式需要一个隐藏槽位承载默认导出值。
+    for (const NodePtr& statement : program_.body) {
+        if (statement && statement->kind() == NodeKind::ExportDefaultDeclaration &&
+            usesDefaultSlot(static_cast<const frontend::ExportDefaultDeclaration&>(
+                *statement))) {
+            code_->pushUninitialized();
+            code_->define(kDefaultSlot, false, false);
+            break;
+        }
+    }
+    code_->halt();
+
+    // [2] 函数定义区：import 绑定完成后创建函数对象。
+    instantiatePc_ = code_->here();
+    hoistFunctions(program_.body);
+    code_->halt();
+
+    // [3] 源码逻辑入口：求值阶段执行。
+    evaluatePc_ = code_->here();
+    for (const NodePtr& statement : program_.body) {
         if (statement) compileStatement(*statement);
     }
     code_->halt();
@@ -97,6 +150,22 @@ void Compiler::compileStatement(const Node& node) {
         case NodeKind::TryStatement:
             compileTryStatement(
                 static_cast<const frontend::TryStatement&>(node));
+            break;
+        case NodeKind::ImportDeclaration:
+            compileImportDeclaration(
+                static_cast<const frontend::ImportDeclaration&>(node));
+            break;
+        case NodeKind::ExportNamedDeclaration:
+            compileExportNamedDeclaration(
+                static_cast<const frontend::ExportNamedDeclaration&>(node));
+            break;
+        case NodeKind::ExportDefaultDeclaration:
+            compileExportDefaultDeclaration(
+                static_cast<const frontend::ExportDefaultDeclaration&>(node));
+            break;
+        case NodeKind::ExportAllDeclaration:
+            compileExportAllDeclaration(
+                static_cast<const frontend::ExportAllDeclaration&>(node));
             break;
         default:
             error(node, "compiler: unsupported statement node kind " +
@@ -389,6 +458,243 @@ void Compiler::compileCatchClause(const frontend::CatchClause& node) {
         }
     }
     code_->popScope();
+}
+
+// —— 模块声明 ——
+
+void Compiler::compileImportDeclaration(
+    const frontend::ImportDeclaration& node) {
+    // import 不产生运行期字节码：槽位别名在 link 阶段建立。
+    if (!node.source || node.source->kind() != NodeKind::StringLiteral) {
+        error(node, "compiler: import source must be a string literal");
+        return;
+    }
+    const std::string& specifier =
+        static_cast<const frontend::StringLiteral&>(*node.source).value;
+
+    for (const NodePtr& specifierNode : node.specifiers) {
+        if (!specifierNode) continue;
+        std::string localName;
+        std::string importName;
+        bool namespaceImport = false;
+        switch (specifierNode->kind()) {
+            case NodeKind::ImportDefaultSpecifier: {
+                const auto& entry =
+                    static_cast<const frontend::ImportDefaultSpecifier&>(
+                        *specifierNode);
+                if (entry.local &&
+                    entry.local->kind() == NodeKind::Identifier) {
+                    localName =
+                        static_cast<const frontend::Identifier&>(*entry.local)
+                            .name;
+                }
+                importName = "default";
+                break;
+            }
+            case NodeKind::ImportNamespaceSpecifier: {
+                const auto& entry =
+                    static_cast<const frontend::ImportNamespaceSpecifier&>(
+                        *specifierNode);
+                if (entry.local &&
+                    entry.local->kind() == NodeKind::Identifier) {
+                    localName =
+                        static_cast<const frontend::Identifier&>(*entry.local)
+                            .name;
+                }
+                namespaceImport = true;
+                break;
+            }
+            case NodeKind::ImportSpecifier: {
+                const auto& entry =
+                    static_cast<const frontend::ImportSpecifier&>(
+                        *specifierNode);
+                if (entry.local &&
+                    entry.local->kind() == NodeKind::Identifier) {
+                    localName =
+                        static_cast<const frontend::Identifier&>(*entry.local)
+                            .name;
+                }
+                importName = exportNameOf(entry.imported.get());
+                break;
+            }
+            default:
+                error(*specifierNode, "compiler: unsupported import specifier");
+                continue;
+        }
+        if (localName.empty()) {
+            error(*specifierNode, "compiler: import binding must be an identifier");
+            continue;
+        }
+        imports_.push_back(
+            neo::core::ModuleImportBinding{localName, specifier, importName,
+                                           namespaceImport});
+    }
+}
+
+void Compiler::compileExportNamedDeclaration(
+    const frontend::ExportNamedDeclaration& node) {
+    if (node.declaration) {
+        const Node& declaration = *node.declaration;
+        switch (declaration.kind()) {
+            case NodeKind::VariableDeclaration:
+                compileVariableDeclaration(
+                    static_cast<const frontend::VariableDeclaration&>(
+                        declaration));
+                break;
+            case NodeKind::FunctionDeclaration:
+                // 函数对象在实例化阶段创建，逻辑入口无操作。
+                break;
+            default:
+                error(declaration,
+                      "compiler: unsupported exported declaration");
+                break;
+        }
+        // export var/let/const/function：导出名即本地绑定名。
+        const Node* inner = declarationOf(declaration);
+        if (inner != nullptr) {
+            switch (inner->kind()) {
+                case NodeKind::VariableDeclaration: {
+                    const auto& variables =
+                        static_cast<const frontend::VariableDeclaration&>(
+                            *inner);
+                    for (const NodePtr& declarator : variables.declarations) {
+                        if (!declarator ||
+                            declarator->kind() != NodeKind::VariableDeclarator) {
+                            continue;
+                        }
+                        const auto& entry =
+                            static_cast<const frontend::VariableDeclarator&>(
+                                *declarator);
+                        if (entry.id &&
+                            entry.id->kind() == NodeKind::Identifier) {
+                            const std::string& name =
+                                static_cast<const frontend::Identifier&>(
+                                    *entry.id)
+                                    .name;
+                            exports_.push_back(neo::core::ModuleExportBinding{
+                                name, name, {}, {}, false});
+                        }
+                    }
+                    break;
+                }
+                case NodeKind::FunctionDeclaration: {
+                    const auto& function =
+                        static_cast<const frontend::FunctionDeclaration&>(
+                            *inner);
+                    if (function.id &&
+                        function.id->kind() == NodeKind::Identifier) {
+                        const std::string& name =
+                            static_cast<const frontend::Identifier&>(
+                                *function.id)
+                                .name;
+                        exports_.push_back(neo::core::ModuleExportBinding{
+                            name, name, {}, {}, false});
+                    }
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
+    }
+
+    if (!node.specifiers.empty()) {
+        std::string source;
+        if (node.source && node.source->kind() == NodeKind::StringLiteral) {
+            source =
+                static_cast<const frontend::StringLiteral&>(*node.source).value;
+        }
+        for (const NodePtr& specifierNode : node.specifiers) {
+            if (!specifierNode ||
+                specifierNode->kind() != NodeKind::ExportSpecifier) {
+                continue;
+            }
+            const auto& entry =
+                static_cast<const frontend::ExportSpecifier&>(*specifierNode);
+            std::string exportName = exportNameOf(entry.exported.get());
+            std::string localName = exportNameOf(entry.local.get());
+            if (exportName.empty() || localName.empty()) {
+                error(*specifierNode, "compiler: invalid export specifier");
+                continue;
+            }
+            if (source.empty()) {
+                exports_.push_back(neo::core::ModuleExportBinding{
+                    exportName, localName, {}, {}, false});
+            } else {
+                exports_.push_back(neo::core::ModuleExportBinding{
+                    exportName, {}, source, localName, false});
+            }
+        }
+    }
+}
+
+void Compiler::compileExportDefaultDeclaration(
+    const frontend::ExportDefaultDeclaration& node) {
+    if (!node.declaration) {
+        error(node, "compiler: export default missing declaration");
+        return;
+    }
+    const Node& declaration = *node.declaration;
+
+    // export default function f() {}：f 是模块作用域绑定，默认导出指向它。
+    if (declaration.kind() == NodeKind::FunctionDeclaration) {
+        const auto& function =
+            static_cast<const frontend::FunctionDeclaration&>(declaration);
+        if (function.id &&
+            function.id->kind() == NodeKind::Identifier) {
+            const std::string& name =
+                static_cast<const frontend::Identifier&>(*function.id).name;
+            exports_.push_back(
+                neo::core::ModuleExportBinding{"default", name, {}, {}, false});
+            return;
+        }
+        if (!function.body) {
+            error(declaration, "compiler: function missing body");
+            code_->pushUndefined();
+            return;
+        }
+        compileFunctionObject(declaration, function.params, *function.body,
+                              false, "default");
+        code_->initialize(kDefaultSlot);
+        exports_.push_back(neo::core::ModuleExportBinding{
+            "default", std::string(kDefaultSlot), {}, {}, false});
+        return;
+    }
+
+    if (declaration.kind() == NodeKind::ClassDeclaration) {
+        error(declaration, "compiler: exported class not supported");
+        code_->pushUndefined();
+        return;
+    }
+
+    // export default <expression>：求值后存入隐藏槽位。
+    compileExpression(declaration);
+    code_->initialize(kDefaultSlot);
+    exports_.push_back(neo::core::ModuleExportBinding{
+        "default", std::string(kDefaultSlot), {}, {}, false});
+}
+
+void Compiler::compileExportAllDeclaration(
+    const frontend::ExportAllDeclaration& node) {
+    if (!node.source || node.source->kind() != NodeKind::StringLiteral) {
+        error(node, "compiler: export source must be a string literal");
+        return;
+    }
+    std::string specifier =
+        static_cast<const frontend::StringLiteral&>(*node.source).value;
+    if (node.exported) {
+        // export * as ns from "m"：导出命名空间对象本身。
+        std::string exportName = exportNameOf(node.exported.get());
+        if (exportName.empty()) {
+            error(node, "compiler: invalid export name");
+            return;
+        }
+        exports_.push_back(neo::core::ModuleExportBinding{
+            exportName, {}, specifier, {}, false});
+    } else {
+        exports_.push_back(
+            neo::core::ModuleExportBinding{{}, {}, specifier, {}, true});
+    }
 }
 
 // —— 表达式 ——
@@ -872,7 +1178,38 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
 
 // —— 声明提升 ——
 
+const Node* Compiler::declarationOf(const Node& node) {
+    switch (node.kind()) {
+        case NodeKind::ExportNamedDeclaration:
+            return static_cast<const frontend::ExportNamedDeclaration&>(node)
+                .declaration.get();
+        case NodeKind::ExportDefaultDeclaration:
+            return static_cast<const frontend::ExportDefaultDeclaration&>(node)
+                .declaration.get();
+        default:
+            return &node;
+    }
+}
+
+bool Compiler::usesDefaultSlot(
+    const frontend::ExportDefaultDeclaration& node) {
+    if (!node.declaration) return false;
+    const Node& declaration = *node.declaration;
+    if (declaration.kind() == NodeKind::FunctionDeclaration) {
+        const auto& function =
+            static_cast<const frontend::FunctionDeclaration&>(declaration);
+        return !(function.id &&
+                 function.id->kind() == NodeKind::Identifier);
+    }
+    return true;
+}
+
 void Compiler::hoistScope(const frontend::NodeList& body, bool varScope) {
+    hoistSlots(body, varScope);
+    hoistFunctions(body);
+}
+
+void Compiler::hoistSlots(const frontend::NodeList& body, bool varScope) {
     // 1. var：递归收集（不进入嵌套函数），在函数/模块作用域建 undefined 槽。
     if (varScope) {
         std::vector<std::string> varNames;
@@ -889,15 +1226,18 @@ void Compiler::hoistScope(const frontend::NodeList& body, bool varScope) {
 
     // 2. 直接 let/const：建 uninitialized 槽（TDZ）。
     for (const frontend::NodePtr& statement : body) {
-        if (!statement || statement->kind() != NodeKind::VariableDeclaration) {
+        const Node* declaration = statement ? declarationOf(*statement)
+                                            : nullptr;
+        if (declaration == nullptr ||
+            declaration->kind() != NodeKind::VariableDeclaration) {
             continue;
         }
-        const auto& declaration =
-            static_cast<const frontend::VariableDeclaration&>(*statement);
-        if (declaration.variableKind == frontend::VariableKind::Var) continue;
+        const auto& variables =
+            static_cast<const frontend::VariableDeclaration&>(*declaration);
+        if (variables.variableKind == frontend::VariableKind::Var) continue;
         bool mutableBinding =
-            declaration.variableKind == frontend::VariableKind::Let;
-        for (const frontend::NodePtr& declarator : declaration.declarations) {
+            variables.variableKind == frontend::VariableKind::Let;
+        for (const frontend::NodePtr& declarator : variables.declarations) {
             if (!declarator ||
                 declarator->kind() != NodeKind::VariableDeclarator) {
                 continue;
@@ -915,36 +1255,47 @@ void Compiler::hoistScope(const frontend::NodeList& body, bool varScope) {
         }
     }
 
-    // 3. 直接函数声明：先建 undefined 槽，再创建函数并 store。
-    //    分两步保证函数之间可以互相捕获（此时所有槽位都已存在）。
+    // 3. 直接函数声明：先建 undefined 槽（函数对象在 hoistFunctions 创建）。
     for (const frontend::NodePtr& statement : body) {
-        if (!statement || statement->kind() != NodeKind::FunctionDeclaration) {
+        const Node* declaration = statement ? declarationOf(*statement)
+                                            : nullptr;
+        if (declaration == nullptr ||
+            declaration->kind() != NodeKind::FunctionDeclaration) {
             continue;
         }
-        const auto& declaration =
-            static_cast<const frontend::FunctionDeclaration&>(*statement);
-        if (!declaration.id || declaration.id->kind() != NodeKind::Identifier) {
-            error(*statement, "compiler: function declaration missing name");
+        const auto& function =
+            static_cast<const frontend::FunctionDeclaration&>(*declaration);
+        if (!function.id || function.id->kind() != NodeKind::Identifier) {
+            // 匿名 export default function 由隐藏槽位承载。
+            if (statement->kind() != NodeKind::ExportDefaultDeclaration) {
+                error(*statement, "compiler: function declaration missing name");
+            }
             continue;
         }
         code_->pushUndefined();
         code_->define(
-            static_cast<const frontend::Identifier&>(*declaration.id).name);
+            static_cast<const frontend::Identifier&>(*function.id).name);
     }
+}
+
+void Compiler::hoistFunctions(const frontend::NodeList& body) {
     for (const frontend::NodePtr& statement : body) {
-        if (!statement || statement->kind() != NodeKind::FunctionDeclaration) {
+        const Node* declaration = statement ? declarationOf(*statement)
+                                            : nullptr;
+        if (declaration == nullptr ||
+            declaration->kind() != NodeKind::FunctionDeclaration) {
             continue;
         }
-        const auto& declaration =
-            static_cast<const frontend::FunctionDeclaration&>(*statement);
-        if (!declaration.id || declaration.id->kind() != NodeKind::Identifier ||
-            !declaration.body) {
+        const auto& function =
+            static_cast<const frontend::FunctionDeclaration&>(*declaration);
+        if (!function.id || function.id->kind() != NodeKind::Identifier ||
+            !function.body) {
             continue;
         }
         const std::string& name =
-            static_cast<const frontend::Identifier&>(*declaration.id).name;
-        compileFunctionObject(declaration, declaration.params,
-                              *declaration.body, false, name);
+            static_cast<const frontend::Identifier&>(*function.id).name;
+        compileFunctionObject(*declaration, function.params, *function.body,
+                              false, name);
         code_->store(name);
     }
 }
@@ -952,6 +1303,12 @@ void Compiler::hoistScope(const frontend::NodeList& body, bool varScope) {
 void Compiler::collectVarNames(const frontend::Node& statement,
                                std::vector<std::string>& names) {
     switch (statement.kind()) {
+        case NodeKind::ExportNamedDeclaration:
+        case NodeKind::ExportDefaultDeclaration: {
+            const Node* declaration = declarationOf(statement);
+            if (declaration != nullptr) collectVarNames(*declaration, names);
+            break;
+        }
         case NodeKind::VariableDeclaration: {
             const auto& declaration =
                 static_cast<const frontend::VariableDeclaration&>(statement);

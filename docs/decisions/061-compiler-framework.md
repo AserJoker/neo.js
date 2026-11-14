@@ -100,6 +100,10 @@ public:
 | ContinueStatement | `continue "label"`（空串 = 最近循环） |
 | ThrowStatement | 表达式 + `throw` |
 | TryStatement | `try_begin` + try 块 + `try_body_end`；catch/finally 独立块 + 各自 end |
+| ImportDeclaration | 无字节码；产出 `ModuleImportBinding`（link 期绑定槽位） |
+| ExportNamedDeclaration | 编译内层声明；产出 `ModuleExportBinding`（本地 / `from` re-export） |
+| ExportDefaultDeclaration | 具名函数导出其绑定；匿名函数/表达式存入隐藏槽位 `*default*` |
+| ExportAllDeclaration | 无字节码；产出 `exportAll` 或 `export * as ns` 元数据 |
 
 声明提升：作用域入口先建槽——`var`（递归收集，不穿透函数）→
 `push_undefined; define`；直接 `let/const` → `push_uninitialized; define(mutable,
@@ -109,9 +113,14 @@ initialized=false)`；直接函数声明先建 undefined 槽，再创建函数�
 函数体序言：形参 `push_undefined; define` → `store_this` → 按序 `store` 实参 →
 `push_scope` → 函数体 → `push_undefined; ret`。
 
-展开语法、对象访问器/`__proto__`、可选链、复合成员赋值、模块等节点
+展开语法、对象访问器/`__proto__`、可选链、复合成员赋值、`export class` 等节点
 暂记录 unsupported 错误，
 在后续切片中逐个补齐；每补一个节点，同时补 Compiler 测试与 VM 端到端测试。
+
+**模块**：`Program.sourceType == Module` 时按三段式发射——`declarePc`（符号
+定义区）、`instantiatePc`（函数定义区）、`evaluatePc`（源码逻辑入口），
+三段各自以 `halt` 结束；import/export 声明不产生运行期字节码，只产出
+`CompileResult::imports/exports` 元数据，由 Context 在 link 阶段消费。
 
 **break / continue 已接入 label 栈**（ADR-060 §7）：循环/switch/带标签语句
 成对发射 `push_label`/`pop_label`；跨 finally 的展开留给 try 组实现时处理。

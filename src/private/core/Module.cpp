@@ -18,14 +18,29 @@
 
 #include "core/Context.h"
 
+#include "core/types/Array.h"
 #include "core/types/ModuleNamespace.h"
+#include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
+#include "vm/Code.h"
+#include "vm/VM.h"
 
 #include <new>
 #include <string>
 #include <utility>
 
 namespace neo::core {
+
+// ModuleCompilation 持有 unique_ptr<vm::Code>，而 vm::Code 在公共头中只有
+// 前向声明；特殊成员必须在包含完整类型的 TU 里定义。
+ModuleCompilation::ModuleCompilation() = default;
+ModuleCompilation::~ModuleCompilation() = default;
+ModuleCompilation::ModuleCompilation(ModuleCompilation&&) noexcept = default;
+ModuleCompilation& ModuleCompilation::operator=(ModuleCompilation&&) noexcept =
+    default;
+
+Module::Module() = default;
+Module::~Module() = default;
 
 namespace {
 
@@ -147,6 +162,257 @@ void Context::setModuleLoader(std::string_view id, ModuleLoader loader) {
     if (it != modules_.end()) it->second->loader = loader;
 }
 
+Module* Context::findModule(std::string_view id) {
+    ModuleInfo info = getModule(id);
+    if (info.scope == nullptr) return nullptr;
+    auto it = modules_.find(std::string(id));
+    return it == modules_.end() ? nullptr : it->second.get();
+}
+
+bool Context::setModuleCompilation(std::string_view id,
+                                   ModuleCompilation compilation) {
+    Module* mod = findModule(id);
+    if (mod == nullptr) return false;
+    mod->compilation = std::move(compilation);
+    mod->declared = false;
+    mod->declaring = false;
+    mod->instantiated = false;
+    mod->instantiating = false;
+    mod->evaluated = false;
+    mod->loaded = false;
+    return true;
+}
+
+Value* Context::runModuleCode(Module* mod, uint32_t entryPc) {
+    if (mod->compilation.code == nullptr) return nullptr;
+    Scope* savedRoot = root_;
+    Scope* savedCurrent = current_;
+    root_ = mod->scope;
+    current_ = mod->scope;
+    vm::VM machine(this, mod->compilation.code.get());
+    Value* res = machine.run(entryPc);
+    root_ = savedRoot;
+    current_ = savedCurrent;
+    return res;
+}
+
+Value* Context::declareModule(Module* mod) {
+    if (mod->declared) return nullptr;
+    // 循环依赖：依赖方槽位尚未建立，先返回让其继续声明。
+    if (mod->declaring) return nullptr;
+
+    mod->declaring = true;
+    moduleStack_.push_back(mod);
+
+    Scope* savedRoot = root_;
+    Scope* savedCurrent = current_;
+    root_ = mod->scope;
+    current_ = mod->scope;
+    auto fail = [&](Value* error) -> Value* {
+        moduleStack_.pop_back();
+        mod->declaring = false;
+        root_ = savedRoot;
+        current_ = savedCurrent;
+        return error;
+    };
+
+    // 1. 符号定义区：建槽。
+    Value* res = runModuleCode(mod, mod->compilation.declarePc);
+    if (res != nullptr && detail::isErrorValue(res)) return fail(res);
+
+    // 2. 本地绑定导出：槽位已存在，先建立映射（循环依赖时依赖方即可解析）。
+    //    导出名指向 import 别名的条目此时还无法解析，留到 instantiate 重试。
+    for (const ModuleExportBinding& exp : mod->compilation.exports) {
+        if (!exp.specifier.empty() || exp.exportAll) continue;
+        if (current()->lookupBindingChain(exp.localName) == nullptr) continue;
+        Value* exportRes =
+            exportBinding(mod->exports, exp.exportName, exp.localName);
+        if (detail::isErrorValue(exportRes)) return fail(exportRes);
+    }
+
+    // 3. 递归声明依赖（import 与 re-export 的源模块）。
+    for (const ModuleImportBinding& imp : mod->compilation.imports) {
+        Module* dep = findModule(resolveSpecifier(moduleStack_, imp.specifier));
+        if (dep == nullptr) return fail(oomValue_);
+        Value* depRes = declareModule(dep);
+        if (depRes != nullptr && detail::isErrorValue(depRes)) {
+            return fail(depRes);
+        }
+    }
+    for (const ModuleExportBinding& exp : mod->compilation.exports) {
+        if (exp.specifier.empty()) continue;
+        Module* dep = findModule(resolveSpecifier(moduleStack_, exp.specifier));
+        if (dep == nullptr) return fail(oomValue_);
+        Value* depRes = declareModule(dep);
+        if (depRes != nullptr && detail::isErrorValue(depRes)) {
+            return fail(depRes);
+        }
+    }
+
+    moduleStack_.pop_back();
+    mod->declaring = false;
+    root_ = savedRoot;
+    current_ = savedCurrent;
+    mod->declared = true;
+    return nullptr;
+}
+
+Value* Context::instantiateModule(Module* mod) {
+    if (mod->instantiated) return nullptr;
+    // 循环依赖：依赖方的 import/export 尚未建立，先返回让其继续实例化。
+    if (mod->instantiating) return nullptr;
+
+    Value* declared = declareModule(mod);
+    if (declared != nullptr && detail::isErrorValue(declared)) return declared;
+
+    mod->instantiating = true;
+    moduleStack_.push_back(mod);
+
+    // link 期需要 current 指向模块作用域（import 绑定与 export 槽位查找）。
+    Scope* savedRoot = root_;
+    Scope* savedCurrent = current_;
+    root_ = mod->scope;
+    current_ = mod->scope;
+    auto fail = [&](Value* error) -> Value* {
+        moduleStack_.pop_back();
+        mod->instantiating = false;
+        root_ = savedRoot;
+        current_ = savedCurrent;
+        return error;
+    };
+
+    // 1. import：依赖已在 declare 阶段建好本地导出槽位，这里建立共享别名。
+    for (const ModuleImportBinding& imp : mod->compilation.imports) {
+        std::string depId = resolveSpecifier(moduleStack_, imp.specifier);
+        Module* dep = findModule(depId);
+        if (dep == nullptr) return fail(oomValue_);
+        Value* depRes = instantiateModule(dep);
+        if (depRes != nullptr && detail::isErrorValue(depRes)) {
+            return fail(depRes);
+        }
+        Value* bindRes =
+            imp.namespaceImport
+                ? bindImportSlot(imp.localName, dep->exports)
+                : bindImport(imp.localName, dep->exports, imp.importName);
+        if (bindRes != nullptr && detail::isErrorValue(bindRes)) {
+            return fail(bindRes);
+        }
+    }
+
+    // 2. 本地导出重试：声明阶段无法解析的 import 别名现在可以建立。
+    for (const ModuleExportBinding& exp : mod->compilation.exports) {
+        if (!exp.specifier.empty() || exp.exportAll) continue;
+        if (findExportSlot(mod->exports, exp.exportName) != nullptr) continue;
+        Value* exportRes =
+            exportBinding(mod->exports, exp.exportName, exp.localName);
+        if (detail::isErrorValue(exportRes)) return fail(exportRes);
+    }
+
+    // 3. re-export / export *：依赖的导出表此时已建立。
+    for (const ModuleExportBinding& exp : mod->compilation.exports) {
+        if (exp.exportAll) {
+            std::string depId = resolveSpecifier(moduleStack_, exp.specifier);
+            Module* dep = findModule(depId);
+            if (dep == nullptr) return fail(oomValue_);
+            Value* depRes = instantiateModule(dep);
+            if (depRes != nullptr && detail::isErrorValue(depRes)) {
+                return fail(depRes);
+            }
+            Value* keys = ownPropertyKeys(dep->exports, true, false);
+            if (detail::isErrorValue(keys)) return fail(keys);
+            auto* elements = static_cast<ArrayData*>(keys->data());
+            for (uint32_t i = 0; i < elements->length(); ++i) {
+                Value* key = elements->elementAt(i);
+                if (key == nullptr || key->type()->kind() != TypeKind::String) {
+                    continue;
+                }
+                std::string name =
+                    static_cast<StringData*>(key->data())->value;
+                if (name == "default") continue;
+                Value* slot = findExportSlot(dep->exports, name);
+                if (slot == nullptr) continue;
+                Value* exportRes = exportSlot(mod->exports, name, slot);
+                if (detail::isErrorValue(exportRes)) return fail(exportRes);
+            }
+            continue;
+        }
+
+        if (exp.specifier.empty()) continue;
+        std::string depId = resolveSpecifier(moduleStack_, exp.specifier);
+        Module* dep = findModule(depId);
+        if (dep == nullptr) return fail(oomValue_);
+        Value* depRes = instantiateModule(dep);
+        if (depRes != nullptr && detail::isErrorValue(depRes)) {
+            return fail(depRes);
+        }
+        // importName 为空：export * as ns，导出命名空间对象本身。
+        Value* slot = exp.importName.empty()
+                          ? dep->exports
+                          : getExportSlot(dep->exports, exp.importName);
+        if (detail::isErrorValue(slot)) return fail(slot);
+        Value* exportRes =
+            exportSlot(mod->exports, exp.exportName, slot);
+        if (detail::isErrorValue(exportRes)) return fail(exportRes);
+    }
+
+    // 4. 函数定义区：import 已绑定，set_closure 可解析。
+    Value* res = runModuleCode(mod, mod->compilation.instantiatePc);
+    if (res != nullptr && detail::isErrorValue(res)) return fail(res);
+
+    moduleStack_.pop_back();
+    mod->instantiating = false;
+    root_ = savedRoot;
+    current_ = savedCurrent;
+    mod->instantiated = true;
+    return nullptr;
+}
+
+Value* Context::evaluateModule(Module* mod) {
+    if (mod->evaluated || mod->loading) return nullptr;
+    mod->loading = true;
+    moduleStack_.push_back(mod);
+
+    // 依赖 DFS 后序：先求值所有 import 与 re-export 的源模块。
+    auto evaluateDependency = [this](const std::string& specifier) -> Value* {
+        std::string depId = resolveSpecifier(moduleStack_, specifier);
+        Module* dep = findModule(depId);
+        if (dep == nullptr) return oomValue_;
+        if (dep->compilation.code != nullptr) {
+            Value* res = instantiateModule(dep);
+            if (res != nullptr && detail::isErrorValue(res)) return res;
+            return evaluateModule(dep);
+        }
+        // 原生 loader 模块：沿用惰性执行路径。
+        return importModule(specifier);
+    };
+
+    for (const ModuleImportBinding& imp : mod->compilation.imports) {
+        Value* res = evaluateDependency(imp.specifier);
+        if (res != nullptr && detail::isErrorValue(res)) {
+            moduleStack_.pop_back();
+            mod->loading = false;
+            return res;
+        }
+    }
+    for (const ModuleExportBinding& exp : mod->compilation.exports) {
+        if (exp.specifier.empty()) continue;
+        Value* res = evaluateDependency(exp.specifier);
+        if (res != nullptr && detail::isErrorValue(res)) {
+            moduleStack_.pop_back();
+            mod->loading = false;
+            return res;
+        }
+    }
+
+    Value* res = runModuleCode(mod, mod->compilation.evaluatePc);
+    moduleStack_.pop_back();
+    mod->loading = false;
+    if (res != nullptr && detail::isErrorValue(res)) return res;
+    mod->evaluated = true;
+    mod->loaded = true;
+    return nullptr;
+}
+
 Value* Context::importModule(std::string_view specifier) {
     // 相对说明符以「当前正在加载的模块」的目录为基准解析。
     std::string id = resolveSpecifier(moduleStack_, specifier);
@@ -154,6 +420,17 @@ Value* Context::importModule(std::string_view specifier) {
     if (info.scope == nullptr) return oomValue_;
 
     Module* mod = modules_.find(id)->second.get();
+
+    // 编译模块：实例化 → 链接 → 求值（循环依赖由 loading 标记短路）。
+    if (mod->compilation.code != nullptr) {
+        if (mod->evaluated) return mod->exports;
+        Value* err = instantiateModule(mod);
+        if (err != nullptr && detail::isErrorValue(err)) return err;
+        err = evaluateModule(mod);
+        if (err != nullptr && detail::isErrorValue(err)) return err;
+        return mod->exports;
+    }
+
     // 已加载 / 正在加载（循环依赖）/ 无 loader：直接返回当前导出对象。
     if (mod->loaded || mod->loading || mod->loader == nullptr) {
         return mod->exports;
