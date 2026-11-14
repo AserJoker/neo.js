@@ -198,10 +198,11 @@ Value* loaderImporterReadOnly(IContext* ctx, Value* /*exports*/) {
 }
 
 Value* loaderExporterLate(IContext* ctx, Value* exports) {
-    // importer 先绑定，此时 x 尚未导出。
+    // 提升：先建槽位并导出，再让 importer 绑定，最后初始化。
+    Value* slot = ctx->define("x", ctx->createUninitialized(), true, false);
+    ctx->exportSlot(exports, "x", slot);
     ctx->importModule("/impLate.js");
-    ctx->define("x", ctx->createNumber(7));
-    ctx->exportBinding(exports, "x", "x");
+    ctx->initialize("x", ctx->createNumber(7));
     return ctx->createUndefined();
 }
 
@@ -232,10 +233,11 @@ Value* dummyNative(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* /*arg
 }
 
 Value* loaderExporterClosureLate(IContext* ctx, Value* exports) {
-    // importer 先捕获导入绑定，此时 x 尚未导出。
+    // 提升：先建槽位并导出，再让 importer 捕获，最后初始化。
+    Value* slot = ctx->define("x", ctx->createUninitialized(), true, false);
+    ctx->exportSlot(exports, "x", slot);
     ctx->importModule("/impClosureLate.js");
-    ctx->define("x", ctx->createNumber(7));
-    ctx->exportBinding(exports, "x", "x");
+    ctx->initialize("x", ctx->createNumber(7));
     return ctx->createUndefined();
 }
 
@@ -250,15 +252,16 @@ Value* loaderImporterClosureLate(IContext* ctx, Value* /*exports*/) {
 Value* loaderReexporter(IContext* ctx, Value* exports) {
     Value* ns = ctx->importModule("/srcLate.js");
     ctx->bindImport("x", ns, "x");
-    // 源导出尚未出现：re-export 仍应保持间接，晚到后可解析。
+    // re-export 直接别名到源槽位（与源导出是否已初始化无关）。
     g_exportResult = ctx->exportBinding(exports, "x", "x");
     return ctx->createUndefined();
 }
 
 Value* loaderSrcLate(IContext* ctx, Value* exports) {
+    Value* slot = ctx->define("x", ctx->createUninitialized(), true, false);
+    ctx->exportSlot(exports, "x", slot);
     ctx->importModule("/reexporter.js");
-    ctx->define("x", ctx->createNumber(7));
-    ctx->exportBinding(exports, "x", "x");
+    ctx->initialize("x", ctx->createNumber(7));
     return ctx->createUndefined();
 }
 
@@ -617,7 +620,7 @@ TEST(ModuleTest, ImportBindingRejectsNonNamespaceTarget) {
     EXPECT_TRUE(isErrorValue(g_importResult));
 }
 
-TEST(ModuleTest, ClosureCapturesIndirectBindingForLateExport) {
+TEST(ModuleTest, ClosureCapturesImportBindingForLateExport) {
     Fixture f;
     g_closure = nullptr;
     f.ctx->setModuleLoader("/expClosureLate.js", loaderExporterClosureLate);
@@ -628,14 +631,14 @@ TEST(ModuleTest, ClosureCapturesIndirectBindingForLateExport) {
 
     ASSERT_NE(g_closure, nullptr);
     auto* d = static_cast<FunctionData*>(g_closure->data());
-    // 捕获的是间接绑定，而非捕获时的 undefined。
-    EXPECT_EQ(d->closureScope->bindingKind("x"), Scope::BindingKind::Indirect);
+    // 捕获的是导入绑定（共享槽位），而非捕获时的 undefined。
+    EXPECT_EQ(d->closureScope->bindingKind("x"), Scope::BindingKind::Import);
     Value* resolved = d->closureScope->lookup("x");
     ASSERT_NE(resolved, nullptr);
     EXPECT_EQ(numOf(resolved), 7.0);
 }
 
-TEST(ModuleTest, ReexportRemainsIndirectForLateExport) {
+TEST(ModuleTest, ReexportAliasesSourceSlotForLateExport) {
     Fixture f;
     g_exportResult = nullptr;
     f.ctx->setModuleLoader("/srcLate.js", loaderSrcLate);
@@ -650,6 +653,99 @@ TEST(ModuleTest, ReexportRemainsIndirectForLateExport) {
     Value* resolved = f.ctx->getProperty(re.exports, key);
     ASSERT_NE(resolved, nullptr);
     EXPECT_EQ(numOf(resolved), 7.0);
+}
+
+// —— 槽位共享导入 / TDZ ——
+
+TEST(ModuleTest, ImportSlotAliasesExporterBinding) {
+    Fixture f;
+    ModuleInfo a = f.ctx->getModule("/a.js");
+    ModuleInfo b = f.ctx->getModule("/b.js");
+
+    f.ctx->setCurrentScope(a.scope);
+    Value* slot = f.ctx->define("x", f.ctx->createNumber(1));
+    f.ctx->exportSlot(a.exports, "x", slot);
+
+    f.ctx->setCurrentScope(b.scope);
+    EXPECT_EQ(f.ctx->bindImportSlot("x", slot), slot);
+    EXPECT_EQ(b.scope->lookup("x"), slot);
+
+    // 导出方 store 原地替换槽位，导入方直接看到最新值。
+    f.ctx->setCurrentScope(a.scope);
+    f.ctx->store("x", f.ctx->createNumber(2));
+    f.ctx->setCurrentScope(b.scope);
+    EXPECT_EQ(f.ctx->load("x"), slot);
+    EXPECT_EQ(numOf(f.ctx->load("x")), 2.0);
+}
+
+TEST(ModuleTest, ImportSlotIsReadOnlyEvenIfExporterMutable) {
+    Fixture f;
+    ModuleInfo a = f.ctx->getModule("/a.js");
+    ModuleInfo b = f.ctx->getModule("/b.js");
+
+    f.ctx->setCurrentScope(a.scope);
+    Value* slot = f.ctx->define("x", f.ctx->createNumber(1));
+    f.ctx->exportSlot(a.exports, "x", slot);
+
+    f.ctx->setCurrentScope(b.scope);
+    f.ctx->bindImportSlot("x", slot);
+
+    Value* result = f.ctx->store("x", f.ctx->createNumber(2));
+    EXPECT_TRUE(isErrorValue(result));
+
+    f.ctx->setCurrentScope(a.scope);
+    EXPECT_EQ(numOf(f.ctx->load("x")), 1.0);
+}
+
+TEST(ModuleTest, ImportSlotTDZ) {
+    Fixture f;
+    ModuleInfo a = f.ctx->getModule("/a.js");
+    ModuleInfo b = f.ctx->getModule("/b.js");
+
+    f.ctx->setCurrentScope(a.scope);
+    Value* slot = f.ctx->define("x", f.ctx->createUninitialized(), true, false);
+    f.ctx->exportSlot(a.exports, "x", slot);
+
+    f.ctx->setCurrentScope(b.scope);
+    f.ctx->bindImportSlot("x", slot);
+    EXPECT_TRUE(isErrorValue(f.ctx->load("x")));
+
+    f.ctx->setCurrentScope(a.scope);
+    f.ctx->initialize("x", f.ctx->createNumber(5));
+
+    f.ctx->setCurrentScope(b.scope);
+    EXPECT_EQ(numOf(f.ctx->load("x")), 5.0);
+}
+
+TEST(ModuleTest, NamespaceReadOfUninitializedExportIsTDZ) {
+    Fixture f;
+    ModuleInfo a = f.ctx->getModule("/a.js");
+
+    f.ctx->setCurrentScope(a.scope);
+    Value* slot = f.ctx->define("x", f.ctx->createUninitialized(), true, false);
+    f.ctx->exportSlot(a.exports, "x", slot);
+
+    Value* key = f.ctx->createString("x");
+    EXPECT_TRUE(isErrorValue(f.ctx->getProperty(a.exports, key)));
+
+    f.ctx->initialize("x", f.ctx->createNumber(5));
+    EXPECT_EQ(numOf(f.ctx->getProperty(a.exports, key)), 5.0);
+}
+
+TEST(ModuleTest, ReexportAliasesSourceSlot) {
+    Fixture f;
+    ModuleInfo a = f.ctx->getModule("/a.js");
+    ModuleInfo b = f.ctx->getModule("/b.js");
+
+    f.ctx->setCurrentScope(a.scope);
+    Value* slot = f.ctx->define("x", f.ctx->createNumber(1));
+    f.ctx->exportSlot(a.exports, "x", slot);
+
+    f.ctx->setCurrentScope(b.scope);
+    f.ctx->bindImportSlot("x", slot);
+    f.ctx->exportBinding(b.exports, "x", "x");
+
+    EXPECT_EQ(f.ctx->getExportSlot(b.exports, "x"), slot);
 }
 
 TEST(ModuleTest, ReexportNameIsEnumerable) {

@@ -1562,10 +1562,10 @@ Value* Context::setClosure(Value* fn, std::string_view name) {
         (void)d->closureScope->defineWith(name, withObject, withKey);
         return fn;
     }
-    // 导入绑定：复制间接绑定而非当前解析值，闭包在导出晚到时仍能实时解析。
-    if (current()->bindingKindChain(name) == Scope::BindingKind::Indirect) {
+    // 导入绑定：复制共享槽位（不是当前值），闭包读取始终看到导出方最新值。
+    if (current()->bindingKindChain(name) == Scope::BindingKind::Import) {
         // 已捕获同名绑定视为幂等（与直接绑定的 define 语义一致）。
-        (void)current()->copyIndirectBindingTo(d->closureScope, name);
+        (void)current()->copyImportBindingTo(d->closureScope, name);
         return fn;
     }
     // 沿当前作用域链查找闭包变量
@@ -1843,13 +1843,24 @@ Value* Context::initialize(std::string_view name, Value* source) {
 Value* Context::load(std::string_view name) {
     for (Scope* s = current(); s != nullptr; s = s->parent()) {
         Scope::Binding* binding = s->lookupBinding(name);
-        if (binding == nullptr) continue;
-        if (!binding->initialized) {
-            return detail::referenceError(
-                this, "Cannot access '" + std::string(name) +
-                          "' before initialization");
+        if (binding != nullptr) {
+            if (!binding->initialized) {
+                return detail::referenceError(
+                    this, "Cannot access '" + std::string(name) +
+                              "' before initialization");
+            }
+            return binding->value;
         }
-        return binding->value;
+        if (s->bindingKind(name) == Scope::BindingKind::Import) {
+            Value* slot = s->lookup(name);
+            if (slot != nullptr &&
+                slot->type()->kind() == TypeKind::Uninitialized) {
+                return detail::referenceError(
+                    this, "Cannot access '" + std::string(name) +
+                              "' before initialization");
+            }
+            return slot;
+        }
     }
     // with 属性 / 间接绑定等动态路径。
     Value* value = current()->lookupChain(name);
@@ -1872,7 +1883,7 @@ Value* Context::store(std::string_view name, Value* source) {
         if (outcome == Scope::StoreOutcome::Error) return result;
 
         switch (s->bindingKind(name)) {
-            case Scope::BindingKind::Indirect:
+            case Scope::BindingKind::Import:
                 // 导入绑定只读：必须在解析前拦截，否则会写穿到导出方槽位。
                 // 放在运行时而非 Sema，是因为 eval/with 等动态路径绕过静态分析。
                 return detail::typeError(

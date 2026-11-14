@@ -20,33 +20,21 @@
 
 #include "core/types/Object.h"
 
+#include <string_view>
+
 namespace neo::core {
 
-// 间接导出（re-export）：exportName -> sourceNamespace[sourceExportKey]。
-// 读取时实时解析，故源导出晚到也能看到。
-struct IndirectExport {
-    Value* namespaceObj = nullptr;
-    Value* exportKey = nullptr;
-};
-
-// 模块命名空间专用布局：在 ObjectData 基础上记录间接导出。
-// 间接导出同时以占位 Property 登记到 ObjectData 的 properties/order，
-// 使 ownPropertyKeys 能枚举到名字；读取由 ModuleNamespaceType 拦截解析。
-class ModuleNamespaceData : public ObjectData {
-public:
-    std::unordered_map<std::string, IndirectExport> indirectExports;
-
-    void enumerateChildren(IGCVisitor* visitor) override;
-};
+// 模块命名空间专用布局。所有导出（含 re-export）都统一为 Property::value
+// 指向导出方的绑定槽位，link 期建立，不再有读取时二次解析的间接导出。
+class ModuleNamespaceData : public ObjectData {};
 
 class ModuleNamespaceType : public ObjectType {
 public:
     ModuleNamespaceType() : ObjectType(TypeKind::ModuleNamespace) {}
     const char* name() const override { return "module namespace"; }
 
-    // 读取：间接导出实时解析到源命名空间属性；其余走普通对象读取。
+    // 读取：导出槽位尚未初始化（TDZ）时返回 ReferenceError。
     Value* getProperty(IContext* ctx, Value* self, Value* key) override;
-    Value* hasProperty(IContext* ctx, Value* self, Value* key) override;
 
     // 导出属性只读：外部赋值/删除/定义访问器/改原型均报 TypeError。
     Value* setProperty(IContext* ctx, Value* self, Value* key, Value* value) override;
@@ -62,10 +50,9 @@ public:
                           bool configurable) override;
 };
 
-// 为模块命名空间添加间接导出属性：key -> sourceNamespace[sourceExportKey]。
-// 返回 key 当前解析值（源导出尚不存在时为 undefined），或 Exception。
-Value* defineIndirectExport(IContext* ctx, Value* exports, Value* key,
-                            Value* sourceNamespace, Value* sourceExportKey);
+// 取导出名对应的绑定槽位（Property::value），不读取槽位当前值。
+// 不存在返回 nullptr。供 link 期 import/re-export 直接别名。
+Value* findExportSlot(Value* exports, std::string_view name);
 
 }  // namespace neo::core
 

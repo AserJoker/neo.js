@@ -762,12 +762,23 @@ public:
     virtual Value* exportBinding(Value* exports, std::string_view exportName,
                                  std::string_view localName) = 0;
 
-    // bindImport: 在当前作用域建立导入绑定 localName -> namespaceObj[exportName]。
-    // **间接绑定**：读取时经命名空间实时解析，故导出方后续更新、循环依赖中晚到的
-    // 导出都能被看到；写入恒返回 TypeError（导入绑定只读）。
-    // 只读在运行时绑定层强制，eval/with 等动态路径同样受约束。
-    // namespaceObj 必须是模块命名空间；重复声明返回 SyntaxError。
-    // 返回 localName 当前解析值（导出尚不存在时为 undefined），或 Exception。
+    // exportSlot: 把导出名直接映射到绑定槽位（link 期建立，不 clone）。
+    // 槽位可以是本地绑定、导入别名或 re-export 的源槽位。
+    virtual Value* exportSlot(Value* exports, std::string_view exportName,
+                              Value* slot) = 0;
+
+    // getExportSlot: 取导出名对应的绑定槽位（不读取当前值）。
+    // 不存在返回 ReferenceError。
+    virtual Value* getExportSlot(Value* exports,
+                                 std::string_view exportName) = 0;
+
+    // bindImportSlot: 在当前作用域建立导入绑定 localName -> 共享槽位。
+    // 绑定只读；读取直接返回槽位当前值，导出方 store 原地替换即可见。
+    // 重复声明返回 SyntaxError。
+    virtual Value* bindImportSlot(std::string_view localName, Value* slot) = 0;
+
+    // bindImport: bindImportSlot 的便捷形式——从 namespace 解析 exportName
+    // 对应的槽位后建立别名。导出不存在返回 ReferenceError。
     virtual Value* bindImport(std::string_view localName, Value* namespaceObj,
                               std::string_view exportName) = 0;
 

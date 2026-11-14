@@ -60,14 +60,6 @@ public:
     };
 
 private:
-    // 间接绑定（导入绑定）：名字解析为 namespaceObj[exportKey]，读取时实时求值。
-    // 不持有值槽位，因此导出方后续更新（含循环依赖中晚到的导出）都能被看到。
-    // namespaceObj/exportKey 均为 GC 托管 Value*，登记到 values_ 保活。
-    struct IndirectBinding {
-        Value* namespaceObj = nullptr;
-        Value* exportKey = nullptr;
-    };
-
     // with 对象属性绑定（闭包捕获用）：name -> withObject[key]。
     // 读取走 getProperty、写入走 setProperty，保持对象环境记录的动态语义。
     struct WithBinding {
@@ -81,7 +73,9 @@ private:
     std::unordered_set<Scope*> children_;                  // 子作用域（无序、去重，析构时递归释放）
     std::vector<Value*> values_;                           // 跟踪的 value（含匿名临时值）
     std::unordered_map<std::string, Binding> namedValues_; // 命名绑定（借用 Value）
-    std::unordered_map<std::string, IndirectBinding> indirectBindings_;  // 导入绑定
+    // 导入绑定：本地名字别名到导出方的同一个 Value* 槽位（只读）。
+    // 槽位由导出方模块作用域持有；本作用域登记到 values_ 保活。
+    std::unordered_map<std::string, Value*> importBindings_;
     std::unordered_map<std::string, WithBinding> withBindings_;          // with 属性捕获
     std::unordered_set<std::string> flags_;                // 作用域标注（如 "strict"）
 
@@ -114,7 +108,7 @@ protected:
 
 public:
     // 绑定种类：store 需据此区分「直接槽位」「只读导入绑定」「with 属性」。
-    enum class BindingKind { None, Direct, Indirect, With };
+    enum class BindingKind { None, Direct, Import, With };
 
     // 赋值处理结果：NotFound 表示本作用域不处理，继续沿 parent 链查找。
     enum class StoreOutcome { NotFound, Handled, Error };
@@ -273,7 +267,7 @@ public:
     // 绑定名字→Value（借用，不影响可达性；Value 需先 add 跟踪）。
     // 重名绑定覆盖旧条目（同时清除同名间接绑定）。
     void bind(std::string_view name, Value* v, bool mutableBinding = true) {
-        indirectBindings_.erase(std::string(name));
+        importBindings_.erase(std::string(name));
         namedValues_[std::string(name)] =
             Binding{v, mutableBinding, true};
     }
@@ -318,14 +312,13 @@ public:
         return nullptr;
     }
 
-    // 定义导入绑定：name → namespaceObj[exportKey]，读取时实时解析，写入恒拒绝。
+    // 定义导入绑定：name 别名到导出方的同一个 Value* 槽位，写入恒拒绝。
     // 与直接绑定共享同一套查找路径，故 eval/with 等动态路径也受只读约束。
-    // 重复定义返回 false。namespaceObj/exportKey 登记到 values_ 保活。
-    bool defineIndirect(std::string_view name, Value* namespaceObj, Value* exportKey) {
+    // 重复定义返回 false。槽位登记到 values_ 保活。
+    bool defineImport(std::string_view name, Value* slot) {
         if (bindingKind(name) != BindingKind::None) return false;
-        add(namespaceObj);
-        add(exportKey);
-        indirectBindings_[std::string(name)] = IndirectBinding{namespaceObj, exportKey};
+        add(slot);
+        importBindings_[std::string(name)] = slot;
         return true;
     }
 
@@ -365,8 +358,8 @@ public:
         if (withBindings_.find(std::string(name)) != withBindings_.end()) {
             return BindingKind::With;
         }
-        if (indirectBindings_.find(std::string(name)) != indirectBindings_.end()) {
-            return BindingKind::Indirect;
+        if (importBindings_.find(std::string(name)) != importBindings_.end()) {
+            return BindingKind::Import;
         }
         return BindingKind::None;
     }
@@ -382,14 +375,13 @@ public:
         return BindingKind::None;
     }
 
-    // 沿 parent 链取间接绑定的 namespace/key。
-    // 找到返回 true；若最近的是直接绑定（遮蔽）或不存在返回 false。
-    bool getIndirectBindingChain(std::string_view name, Value*& namespaceObj,
-                                 Value*& exportKey) const;
+    // 沿 parent 链取导入绑定的共享槽位。
+    // 找到返回 true；若最近的是直接/with 绑定（遮蔽）或不存在返回 false。
+    bool getImportBindingChain(std::string_view name, Value*& slot) const;
 
-    // 把本作用域链上的间接绑定复制到 dst（闭包捕获用）。
-    // 找到并复制成功返回 true；无间接绑定或 dst 已有同名绑定返回 false。
-    bool copyIndirectBindingTo(Scope* dst, std::string_view name) const;
+    // 把本作用域链上的导入绑定复制到 dst（闭包捕获用）。
+    // 找到并复制成功返回 true；无导入绑定或 dst 已有同名绑定返回 false。
+    bool copyImportBindingTo(Scope* dst, std::string_view name) const;
 
     // 沿 parent 链取 with 属性绑定（动态 WithScope 或静态 withBindings_）。
     // 找到返回 true；直接/间接绑定遮蔽或不存在返回 false。

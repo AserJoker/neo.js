@@ -60,28 +60,25 @@ Value* Scope::lookup(std::string_view name) const {
         return context_->getProperty(wit->second.withObject, wit->second.key);
     }
 
-    auto iit = indirectBindings_.find(std::string(name));
-    if (iit == indirectBindings_.end()) return nullptr;
-    // 间接绑定：读取时经命名空间解析，导出方后续更新/晚到导出都能看到。
-    if (context_ == nullptr) return nullptr;
-    return context_->getProperty(iit->second.namespaceObj, iit->second.exportKey);
+    auto iit = importBindings_.find(std::string(name));
+    if (iit == importBindings_.end()) return nullptr;
+    // 导入绑定：直接返回导出方共享槽位的当前值。
+    return iit->second;
 }
 
-bool Scope::getIndirectBindingChain(std::string_view name, Value*& namespaceObj,
-                                    Value*& exportKey) const {
+bool Scope::getImportBindingChain(std::string_view name, Value*& slot) const {
     const Scope* s = this;
     while (s != nullptr) {
-        // 直接/with 绑定优先：一旦遇到，间接绑定被遮蔽。
+        // 直接/with 绑定优先：一旦遇到，导入绑定被遮蔽。
         if (s->namedValues_.find(std::string(name)) != s->namedValues_.end()) {
             return false;
         }
         if (s->withBindings_.find(std::string(name)) != s->withBindings_.end()) {
             return false;
         }
-        auto it = s->indirectBindings_.find(std::string(name));
-        if (it != s->indirectBindings_.end()) {
-            namespaceObj = it->second.namespaceObj;
-            exportKey = it->second.exportKey;
+        auto it = s->importBindings_.find(std::string(name));
+        if (it != s->importBindings_.end()) {
+            slot = it->second;
             return true;
         }
         s = s->parent_;
@@ -89,11 +86,10 @@ bool Scope::getIndirectBindingChain(std::string_view name, Value*& namespaceObj,
     return false;
 }
 
-bool Scope::copyIndirectBindingTo(Scope* dst, std::string_view name) const {
-    Value* namespaceObj = nullptr;
-    Value* exportKey = nullptr;
-    if (!getIndirectBindingChain(name, namespaceObj, exportKey)) return false;
-    return dst->defineIndirect(name, namespaceObj, exportKey);
+bool Scope::copyImportBindingTo(Scope* dst, std::string_view name) const {
+    Value* slot = nullptr;
+    if (!getImportBindingChain(name, slot)) return false;
+    return dst->defineImport(name, slot);
 }
 
 bool Scope::getWithBindingChain(std::string_view name, Value*& withObject,
@@ -111,8 +107,8 @@ bool Scope::getWithBindingChain(std::string_view name, Value*& withObject,
             key = it->second.key;
             return true;
         }
-        // 间接绑定同样遮蔽 with 对象。
-        if (s->indirectBindings_.find(std::string(name)) != s->indirectBindings_.end()) {
+        // 导入绑定同样遮蔽 with 对象。
+        if (s->importBindings_.find(std::string(name)) != s->importBindings_.end()) {
             return false;
         }
         // 动态 WithScope：对象真正绑定该名字（考虑 @@unscopables）时捕获。
@@ -224,7 +220,7 @@ Scope::~Scope() {
     // 3. 清空自己的 values（Value 的回收由 GC 的可达性标记决定）
     values_.clear();
     namedValues_.clear();
-    indirectBindings_.clear();
+    importBindings_.clear();
     withBindings_.clear();
 }
 

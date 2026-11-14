@@ -292,6 +292,11 @@ public:
     Value* createModuleNamespace(std::string_view bindName = {}) override;
     Value* exportBinding(Value* exports, std::string_view exportName,
                          std::string_view localName) override;
+    Value* exportSlot(Value* exports, std::string_view exportName,
+                      Value* slot) override;
+    Value* getExportSlot(Value* exports,
+                         std::string_view exportName) override;
+    Value* bindImportSlot(std::string_view localName, Value* slot) override;
     Value* bindImport(std::string_view localName, Value* namespaceObj,
                       std::string_view exportName) override;
 

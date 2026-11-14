@@ -171,27 +171,65 @@ Value* Context::importModule(std::string_view specifier) {
     return mod->exports;
 }
 
-Value* Context::exportBinding(Value* exports, std::string_view exportName,
-                              std::string_view localName) {
+Value* Context::exportSlot(Value* exports, std::string_view exportName,
+                           Value* slot) {
+    if (detail::isErrorValue(exports)) return exports;
     if (exports->type()->kind() != TypeKind::ModuleNamespace) {
         return detail::typeError(this, "export target is not a module namespace");
     }
-    // re-export：localName 本身是导入绑定时，导出也保持间接，源导出晚到仍可解析。
-    Value* sourceNamespace = nullptr;
-    Value* sourceExportKey = nullptr;
-    if (current()->getIndirectBindingChain(localName, sourceNamespace, sourceExportKey)) {
-        Value* key = createString(exportName);
-        if (key == oomValue_) return key;
-        return defineIndirectExport(this, exports, key, sourceNamespace, sourceExportKey);
+    if (slot == nullptr) {
+        return detail::referenceError(
+            this, "export '" + std::string(exportName) + "' has no binding");
     }
-    // 活绑定：直接取模块作用域里的槽位 Value*（顶层绑定由模块 scope 持有）。
-    Value* binding = current()->lookupChain(localName);
-    if (binding == nullptr) {
+    // ModuleNamespaceType::defineProperty 直接存槽位 Value*，不 clone。
+    return defineProperty(exports, exportName, slot, false, true, false);
+}
+
+Value* Context::getExportSlot(Value* exports, std::string_view exportName) {
+    if (detail::isErrorValue(exports)) return exports;
+    Value* slot = findExportSlot(exports, exportName);
+    if (slot == nullptr) {
+        return detail::referenceError(
+            this, "export '" + std::string(exportName) + "' is not defined");
+    }
+    return slot;
+}
+
+Value* Context::bindImportSlot(std::string_view localName, Value* slot) {
+    if (detail::isErrorValue(slot)) return slot;
+    if (slot == nullptr) {
+        return detail::referenceError(
+            this, "import binding '" + std::string(localName) + "' has no slot");
+    }
+    if (!current()->defineImport(localName, slot)) {
+        return detail::errorOf(this, ErrorKind::SyntaxError,
+                               "Identifier '" + std::string(localName) +
+                                   "' has already been declared");
+    }
+    // 返回槽位当前值；未初始化时返回 undefined（读取仍由 load 抛 TDZ）。
+    return slot->type()->kind() == TypeKind::Uninitialized ? createUndefined()
+                                                           : slot;
+}
+
+Value* Context::exportBinding(Value* exports, std::string_view exportName,
+                              std::string_view localName) {
+    if (detail::isErrorValue(exports)) return exports;
+    if (exports->type()->kind() != TypeKind::ModuleNamespace) {
+        return detail::typeError(this, "export target is not a module namespace");
+    }
+    // re-export：localName 是导入绑定时，导出直接指向同一个源槽位。
+    Value* slot = nullptr;
+    if (!current()->getImportBindingChain(localName, slot)) {
+        // 本地导出：直接取模块作用域里的绑定槽位。
+        const Scope::Binding* binding =
+            current()->lookupBindingChain(localName);
+        if (binding != nullptr) slot = binding->value;
+    }
+    if (slot == nullptr) {
         return detail::referenceError(
             this, "export '" + std::string(localName) + "' is not defined");
     }
-    // ModuleNamespaceType::defineProperty 直接存 Value*，不 clone。
-    return defineProperty(exports, exportName, binding, false, true, false);
+    return exportSlot(exports, exportName, slot);
 }
 
 Value* Context::bindImport(std::string_view localName, Value* namespaceObj,
@@ -200,17 +238,12 @@ Value* Context::bindImport(std::string_view localName, Value* namespaceObj,
     if (namespaceObj->type()->kind() != TypeKind::ModuleNamespace) {
         return detail::typeError(this, "import target is not a module namespace");
     }
-    // exportKey 缓存为 Value*：间接绑定每次读取复用，避免重复建键。
-    Value* key = createString(exportName);
-    if (key == oomValue_) return key;
-    if (!current()->defineIndirect(localName, namespaceObj, key)) {
-        return detail::errorOf(this, ErrorKind::SyntaxError,
-                               "Identifier '" + std::string(localName) +
-                                   "' has already been declared");
+    Value* slot = findExportSlot(namespaceObj, exportName);
+    if (slot == nullptr) {
+        return detail::referenceError(
+            this, "export '" + std::string(exportName) + "' is not defined");
     }
-    // 当前解析值（导出尚不存在时为 undefined）；绑定本身已建立。
-    Value* value = current()->lookup(localName);
-    return value != nullptr ? value : createUndefined();
+    return bindImportSlot(localName, slot);
 }
 
 }  // namespace neo::core
