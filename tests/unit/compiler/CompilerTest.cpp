@@ -36,11 +36,14 @@ using neo::frontend::AssignmentOperator;
 using neo::frontend::BinaryExpression;
 using neo::frontend::BinaryOperator;
 using neo::frontend::BlockStatement;
+using neo::frontend::BooleanLiteral;
 using neo::frontend::CallExpression;
 using neo::frontend::DebuggerStatement;
 using neo::frontend::ExpressionStatement;
+using neo::frontend::DoWhileStatement;
 using neo::frontend::FunctionDeclaration;
 using neo::frontend::Identifier;
+using neo::frontend::IfStatement;
 using neo::frontend::NodeList;
 using neo::frontend::NumericLiteral;
 using neo::frontend::Parser;
@@ -54,6 +57,7 @@ using neo::frontend::UpdateOperator;
 using neo::frontend::VariableDeclaration;
 using neo::frontend::VariableDeclarator;
 using neo::frontend::VariableKind;
+using neo::frontend::WhileStatement;
 using neo::infra::Console;
 using neo::infra::IOutputSink;
 using neo::infra::createMallocAllocator;
@@ -444,6 +448,132 @@ TEST(CompilerTest, PrefixUpdateYieldsNewValue) {
     ASSERT_NE(value, nullptr);
     ASSERT_EQ(value->type()->kind(), TypeKind::Number);
     EXPECT_DOUBLE_EQ(numberValue(value), 22.0);
+}
+
+TEST(CompilerTest, CompilesIfElseBranch) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(letDeclaration(range, "x", 0.0));
+
+    NodeList thenBody;
+    thenBody.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Assign,
+                   std::make_unique<Identifier>(range, "x"),
+                   std::make_unique<NumericLiteral>(range, 3.0))));
+    NodeList elseBody;
+    elseBody.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Assign,
+                   std::make_unique<Identifier>(range, "x"),
+                   std::make_unique<NumericLiteral>(range, 4.0))));
+
+    body.push_back(std::make_unique<IfStatement>(
+        range,
+        std::make_unique<BinaryExpression>(
+            range, BinaryOperator::LessThan,
+            std::make_unique<NumericLiteral>(range, 1.0),
+            std::make_unique<NumericLiteral>(range, 2.0)),
+        std::make_unique<BlockStatement>(range, std::move(thenBody)),
+        std::make_unique<BlockStatement>(range, std::move(elseBody))));
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<Identifier>(range, "x")));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, CompilesWhileLoop) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(letDeclaration(range, "i", 0.0));
+    body.push_back(letDeclaration(range, "sum", 0.0));
+
+    NodeList loopBody;
+    loopBody.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Assign,
+                   std::make_unique<Identifier>(range, "sum"),
+                   std::make_unique<BinaryExpression>(
+                       range, BinaryOperator::Add,
+                       std::make_unique<Identifier>(range, "sum"),
+                       std::make_unique<Identifier>(range, "i")))));
+    loopBody.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Assign,
+                   std::make_unique<Identifier>(range, "i"),
+                   std::make_unique<BinaryExpression>(
+                       range, BinaryOperator::Add,
+                       std::make_unique<Identifier>(range, "i"),
+                       std::make_unique<NumericLiteral>(range, 1.0)))));
+
+    body.push_back(std::make_unique<WhileStatement>(
+        range,
+        std::make_unique<BinaryExpression>(
+            range, BinaryOperator::LessThan,
+            std::make_unique<Identifier>(range, "i"),
+            std::make_unique<NumericLiteral>(range, 5.0)),
+        std::make_unique<BlockStatement>(range, std::move(loopBody))));
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<Identifier>(range, "sum")));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 10.0);
+}
+
+TEST(CompilerTest, CompilesDoWhileLoopAtLeastOnce) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(letDeclaration(range, "n", 0.0));
+
+    NodeList loopBody;
+    loopBody.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Assign,
+                   std::make_unique<Identifier>(range, "n"),
+                   std::make_unique<BinaryExpression>(
+                       range, BinaryOperator::Add,
+                       std::make_unique<Identifier>(range, "n"),
+                       std::make_unique<NumericLiteral>(range, 1.0)))));
+
+    body.push_back(std::make_unique<DoWhileStatement>(
+        range, std::make_unique<BlockStatement>(range, std::move(loopBody)),
+        std::make_unique<BooleanLiteral>(range, false)));
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<Identifier>(range, "n")));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
 }
 
 TEST(CompilerTest, SourceMapRecordsNodePosition) {

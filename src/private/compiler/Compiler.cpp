@@ -66,6 +66,18 @@ void Compiler::compileStatement(const Node& node) {
             compileVariableDeclaration(
                 static_cast<const frontend::VariableDeclaration&>(node));
             break;
+        case NodeKind::IfStatement:
+            compileIfStatement(
+                static_cast<const frontend::IfStatement&>(node));
+            break;
+        case NodeKind::WhileStatement:
+            compileWhileStatement(
+                static_cast<const frontend::WhileStatement&>(node));
+            break;
+        case NodeKind::DoWhileStatement:
+            compileDoWhileStatement(
+                static_cast<const frontend::DoWhileStatement&>(node));
+            break;
         default:
             error(node, "compiler: unsupported statement node kind " +
                             std::to_string(static_cast<int>(node.kind())));
@@ -158,6 +170,40 @@ void Compiler::compileReturnStatement(const frontend::ReturnStatement& node) {
         code_->pushUndefined();
     }
     code_->ret();
+}
+
+void Compiler::compileIfStatement(const frontend::IfStatement& node) {
+    if (!node.test) return;
+    compileExpression(*node.test);
+    uint32_t toElse = code_->jfalse();
+    if (node.consequent) compileStatement(*node.consequent);
+    if (node.alternate) {
+        uint32_t toEnd = code_->jmp();
+        code_->patchU32(toElse + 2, code_->here());
+        compileStatement(*node.alternate);
+        code_->patchU32(toEnd + 2, code_->here());
+    } else {
+        code_->patchU32(toElse + 2, code_->here());
+    }
+}
+
+void Compiler::compileWhileStatement(const frontend::WhileStatement& node) {
+    if (!node.test) return;
+    uint32_t loop = code_->here();
+    compileExpression(*node.test);
+    uint32_t toEnd = code_->jfalse();
+    if (node.body) compileStatement(*node.body);
+    code_->jmp(loop);
+    code_->patchU32(toEnd + 2, code_->here());
+}
+
+void Compiler::compileDoWhileStatement(
+    const frontend::DoWhileStatement& node) {
+    if (!node.test) return;
+    uint32_t loop = code_->here();
+    if (node.body) compileStatement(*node.body);
+    compileExpression(*node.test);
+    code_->jtrue(loop);
 }
 
 // —— 表达式 ——

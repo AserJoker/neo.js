@@ -87,6 +87,9 @@ public:
 | ArrowFunctionExpression | 同上，另加 `load_this` + `bind_this`，无 prototype/不可构造 |
 | CallExpression（非成员） | callee + args + `call N` |
 | ThisExpression | `load_this` |
+| IfStatement | test + `jfalse` else；then；有 else 时 `jmp end` + 回填 |
+| WhileStatement | loop：test + `jfalse end`；body；`jmp loop`；回填 end |
+| DoWhileStatement | loop：body；test + `jtrue loop` |
 
 声明提升：作用域入口先建槽——`var`（递归收集，不穿透函数）→
 `push_undefined; define`；直接 `let/const` → `push_uninitialized; define(mutable,
@@ -97,7 +100,7 @@ initialized=false)`；直接函数声明先建 undefined 槽，再创建函数�
 `push_scope` → 函数体 → `push_undefined; ret`。成员调用需 `get_prop`（V5），
 当前记录 unsupported 错误。
 
-变量声明、函数、调用、对象、异常、模块等节点暂记录 unsupported 错误，
+对象/数组字面量、成员访问与调用、异常、模块等节点暂记录 unsupported 错误，
 在后续切片中逐个补齐；每补一个节点，同时补 Compiler 测试与 VM 端到端测试。
 
 **break / continue 先延后**：它们依赖 label 栈与跨作用域跳转（ADR-060 V4），

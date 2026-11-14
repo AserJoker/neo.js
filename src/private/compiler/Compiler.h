@@ -64,6 +64,9 @@ private:
     void compileExpressionStatement(const frontend::ExpressionStatement& node);
     void compileReturnStatement(const frontend::ReturnStatement& node);
     void compileVariableDeclaration(const frontend::VariableDeclaration& node);
+    void compileIfStatement(const frontend::IfStatement& node);
+    void compileWhileStatement(const frontend::WhileStatement& node);
+    void compileDoWhileStatement(const frontend::DoWhileStatement& node);
 
     // —— 表达式 ——
     void compileIdentifier(const frontend::Identifier& node);
