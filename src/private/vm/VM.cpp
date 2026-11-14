@@ -10,8 +10,10 @@
 
 #include "core/ErrorKind.h"
 #include "core/IContext.h"
+#include "core/InterruptKind.h"
 #include "core/OperatorKind.h"
 #include "core/Scope.h"
+#include "core/types/Interrupt.h"
 #include "core/types/TypeBehavior.h"
 
 #include <string>
@@ -76,6 +78,10 @@ const char* opCodeName(OpCode op) {
         case OpCode::Jmp:           return "jmp";
         case OpCode::JTrue:         return "jtrue";
         case OpCode::JFalse:        return "jfalse";
+        case OpCode::PushLabel:     return "push_label";
+        case OpCode::PopLabel:      return "pop_label";
+        case OpCode::Break:         return "break";
+        case OpCode::Continue:      return "continue";
         case OpCode::PushScope:     return "push_scope";
         case OpCode::PopScope:      return "pop_scope";
         case OpCode::PushFunction:  return "push_function";
@@ -131,6 +137,10 @@ const VM::Handler* VM::handlers() {
         &VM::opJmp,
         &VM::opJTrue,
         &VM::opJFalse,
+        &VM::opPushLabel,
+        &VM::opPopLabel,
+        &VM::opBreak,
+        &VM::opContinue,
         &VM::opPushScope,
         &VM::opPopScope,
         &VM::opPushFunction,
@@ -187,7 +197,20 @@ Value* VM::run(uint32_t entryPc) {
         instructionPc_ = pc_;
         pc_ += 2;  // 取指：跳过 opcode，处理函数继续推进操作数
         Value* signal = (this->*table[op])();
-        if (signal != nullptr) return signal;
+        if (signal != nullptr) {
+            // Break/Continue 是 VM 内部信号：由主循环消费，不逃逸到调用方。
+            if (detail::isInterruptValue(signal)) {
+                auto* data = neo::core::asInterrupt(signal);
+                if (data != nullptr &&
+                    (data->kind == neo::core::InterruptKind::Break ||
+                     data->kind == neo::core::InterruptKind::Continue)) {
+                    Value* error = handleLabelInterrupt(signal);
+                    if (error != nullptr) return error;
+                    continue;
+                }
+            }
+            return signal;
+        }
     }
     // 指令流自然结束：等价于 hlt。
     return ctx_->createUndefined();
@@ -474,6 +497,105 @@ Value* VM::opJFalse() {
     if (stack_.empty()) return badBytecode("jfalse: operand stack underflow");
     if (!ctx_->toBoolean(pop())) pc_ = target;
     return nullptr;
+}
+
+// —— label 栈 ——
+
+Value* VM::opPushLabel() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 12) {
+        return badBytecode("push_label: truncated operand");
+    }
+    uint32_t labelIndex = readU32(bytes.data() + pc_);
+    uint32_t startPc = readU32(bytes.data() + pc_ + 4);
+    uint32_t endPc = readU32(bytes.data() + pc_ + 8);
+    pc_ += 12;
+
+    const std::string* label = stringOperand(labelIndex);
+    if (label == nullptr) {
+        return badBytecode("push_label: label index out of range");
+    }
+    labelStack_.push_back(LabelFrame{*label, startPc, endPc});
+    return nullptr;
+}
+
+Value* VM::opPopLabel() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("pop_label: truncated operand");
+    }
+    uint32_t labelIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+
+    const std::string* label = stringOperand(labelIndex);
+    if (label == nullptr) {
+        return badBytecode("pop_label: label index out of range");
+    }
+    if (labelStack_.empty()) {
+        return badBytecode("pop_label: label stack underflow");
+    }
+    if (labelStack_.back().label != *label) {
+        return badBytecode("pop_label: label mismatch");
+    }
+    labelStack_.pop_back();
+    return nullptr;
+}
+
+Value* VM::opBreak() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) return badBytecode("break: truncated operand");
+    uint32_t labelIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    Value* interrupt = ctx_->createInterrupt(neo::core::InterruptKind::Break,
+                                             labelIndex, nullptr);
+    return interrupt;
+}
+
+Value* VM::opContinue() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("continue: truncated operand");
+    }
+    uint32_t labelIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    Value* interrupt = ctx_->createInterrupt(
+        neo::core::InterruptKind::Continue, labelIndex, nullptr);
+    return interrupt;
+}
+
+Value* VM::handleLabelInterrupt(Value* interrupt) {
+    auto* data = neo::core::asInterrupt(interrupt);
+    if (data == nullptr) return badBytecode("label interrupt: bad payload");
+    uint32_t labelIndex = static_cast<uint32_t>(data->offset);
+    const std::string* label = stringOperand(labelIndex);
+    if (label == nullptr) {
+        return badBytecode("label interrupt: label index out of range");
+    }
+
+    if (data->kind == neo::core::InterruptKind::Break) {
+        for (size_t i = labelStack_.size(); i > 0; --i) {
+            const LabelFrame& frame = labelStack_[i - 1];
+            if (!label->empty() && frame.label != *label) continue;
+            uint32_t target = frame.endPc;
+            // break 退出目标语句：目标帧及内层帧都由 VM 弹出。
+            labelStack_.resize(i - 1);
+            pc_ = target;
+            return nullptr;
+        }
+        return badBytecode("break: label not found");
+    }
+
+    for (size_t i = labelStack_.size(); i > 0; --i) {
+        const LabelFrame& frame = labelStack_[i - 1];
+        if (frame.startPc == 0) continue;  // switch / 非循环标签
+        if (!label->empty() && frame.label != *label) continue;
+        uint32_t target = frame.startPc;
+        // continue 留在目标循环内：只弹内层帧。
+        labelStack_.resize(i);
+        pc_ = target;
+        return nullptr;
+    }
+    return badBytecode("continue: loop label not found");
 }
 
 // —— 作用域 ——

@@ -82,6 +82,10 @@ private:
     // 内部字节码错误（栈下溢/常量下标越界/操作数截断）。
     neo::core::Value* badBytecode(const char* message);
 
+    // 消费 Break/Continue Interrupt：解析 label 栈并跳转。
+    // 成功返回 nullptr（pc 已更新），失败返回错误值。
+    neo::core::Value* handleLabelInterrupt(neo::core::Value* interrupt);
+
     // 取 Code::strings[index]；越界返回 nullptr。
     const std::string* stringOperand(uint32_t index) const;
 
@@ -120,6 +124,10 @@ private:
     neo::core::Value* opJmp();
     neo::core::Value* opJTrue();
     neo::core::Value* opJFalse();
+    neo::core::Value* opPushLabel();
+    neo::core::Value* opPopLabel();
+    neo::core::Value* opBreak();
+    neo::core::Value* opContinue();
     neo::core::Value* opPushScope();
     neo::core::Value* opPopScope();
     neo::core::Value* opPushFunction();
@@ -138,7 +146,15 @@ private:
     uint32_t pc_ = 0;
     // 当前指令的起始字节偏移：处理函数推进 pc 后，异常位置仍能反查到本条指令。
     uint32_t instructionPc_ = 0;
+    // label 帧：label 为空表示无标签；startPc=0 表示不是 continue 目标。
+    struct LabelFrame {
+        std::string label;
+        uint32_t startPc = 0;
+        uint32_t endPc = 0;
+    };
+
     std::vector<neo::core::Value*> stack_;
+    std::vector<LabelFrame> labelStack_;
 
     // 本次执行的入口作用域与模块根作用域（借用，V0 仅记录）。
     neo::core::Scope* entryScope_ = nullptr;

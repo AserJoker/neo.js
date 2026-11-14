@@ -622,3 +622,61 @@ TEST(VMTest, NewArrayPresetsLengthAndDefinesElements) {
     ASSERT_EQ(element->type()->kind(), TypeKind::Number);
     EXPECT_DOUBLE_EQ(numberValue(element), 5.0);
 }
+
+TEST(VMTest, BreakJumpsToLabelEndAndPopsFrame) {
+    Fixture f;
+    Code code;
+    uint32_t push = code.pushLabel("", 0, 0);
+    code.breakTo("");
+    code.push(99.0);
+    code.ret();
+    uint32_t exitPc = code.here();
+    code.popLabel("");
+    uint32_t endPc = code.here();
+    code.patchU32(push + 10, endPc);
+    code.push(7.0);
+    code.ret();
+    (void)exitPc;
+
+    VM vm(f.ctx.get(), &code);
+    Value* result = vm.run();
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(result), 7.0);
+}
+
+TEST(VMTest, ContinueJumpsToLoopStart) {
+    Fixture f;
+    f.ctx->define("i", f.ctx->createNumber(0.0));
+
+    Code code;
+    uint32_t push = code.pushLabel("", 0, 0);
+    uint32_t loop = code.here();
+    code.patchU32(push + 6, loop);
+    code.load("i");
+    code.push(3.0);
+    code.lt();
+    uint32_t toExit = code.jfalse();
+    code.load("i");
+    code.push(1.0);
+    code.add();
+    code.store("i");
+    code.continueTo("");
+    code.push(99.0);
+    code.pop();
+    code.jmp(loop);
+
+    uint32_t exitPc = code.here();
+    code.patchU32(toExit + 2, exitPc);
+    code.popLabel("");
+    uint32_t endPc = code.here();
+    code.patchU32(push + 10, endPc);
+    code.load("i");
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    Value* result = vm.run();
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(result), 3.0);
+}

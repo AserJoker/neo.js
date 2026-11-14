@@ -19,6 +19,10 @@
 //   call          u32 argc
 //   call_method   u32 argc
 //   new_array     u32 length
+//   push_label    u32 labelIndex, u32 startPc, u32 endPc
+//   pop_label     u32 labelIndex
+//   break         u32 labelIndex
+//   continue      u32 labelIndex
 //   其余指令      无操作数
 //
 // 操作数的读取由各指令处理函数自己负责——只有它知道需要几个、什么类型。
@@ -43,6 +47,9 @@
 //   lt/gt/le/ge   d → d - 1        （弹右、左，压 Boolean）
 //   jmp           d → d            （pc = target）
 //   jtrue/jfalse  d → d - 1        （弹条件，按 ToBoolean 决定是否跳转）
+//   push_label    d → d            （压 label 帧）
+//   pop_label     d → d            （弹 label 帧）
+//   break/continue d → d           （按 label 帧跳转并平衡 label 栈）
 //   push_scope    d → d            （创建子作用域并设为 current）
 //   pop_scope     d → d            （销毁 current，回到 parent）
 //   push_function d → d + 1
@@ -108,6 +115,12 @@ enum class OpCode : uint16_t {
     Jmp,          // u32 targetPc
     JTrue,        // u32 targetPc：弹条件，ToBoolean 为真则跳转
     JFalse,       // u32 targetPc：弹条件，ToBoolean 为假则跳转
+
+    // label 栈：循环/switch/带标签语句
+    PushLabel,    // u32 labelIndex, u32 startPc（continue）, u32 endPc（break）
+    PopLabel,     // u32 labelIndex
+    Break,        // u32 labelIndex（"" = 最近可 break 目标）
+    Continue,     // u32 labelIndex（"" = 最近循环）
 
     // 作用域
     PushScope,

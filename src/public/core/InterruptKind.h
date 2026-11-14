@@ -19,6 +19,8 @@ enum class InterruptKind : uint8_t {
     Return,  // 立即以 value 返回（外部注入方向；承载 finally 语义）
     Await,   // 挂起并等待 Promise 结果（native/VM 通用，恢复值经 sentValue）
     Throw,   // VM 专用：throw 语句信号，解包为 Exception（ADR-017 §6）
+    Break,   // VM 专用：break 语句信号，offset = label 字符串下标
+    Continue,// VM 专用：continue 语句信号，offset = label 字符串下标
 };
 
 // 挂起信号：函数返回后必须保留现场（execScope/断点），等待 runner 恢复。

@@ -65,8 +65,14 @@ private:
     void compileReturnStatement(const frontend::ReturnStatement& node);
     void compileVariableDeclaration(const frontend::VariableDeclaration& node);
     void compileIfStatement(const frontend::IfStatement& node);
-    void compileWhileStatement(const frontend::WhileStatement& node);
-    void compileDoWhileStatement(const frontend::DoWhileStatement& node);
+    void compileWhileStatement(const frontend::WhileStatement& node,
+                               const std::vector<std::string>& labels = {});
+    void compileDoWhileStatement(
+        const frontend::DoWhileStatement& node,
+        const std::vector<std::string>& labels = {});
+    void compileLabeledStatement(const frontend::LabeledStatement& node);
+    void compileBreakStatement(const frontend::BreakStatement& node);
+    void compileContinueStatement(const frontend::ContinueStatement& node);
 
     // —— 表达式 ——
     void compileIdentifier(const frontend::Identifier& node);

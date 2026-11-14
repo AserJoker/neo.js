@@ -78,6 +78,18 @@ void Compiler::compileStatement(const Node& node) {
             compileDoWhileStatement(
                 static_cast<const frontend::DoWhileStatement&>(node));
             break;
+        case NodeKind::LabeledStatement:
+            compileLabeledStatement(
+                static_cast<const frontend::LabeledStatement&>(node));
+            break;
+        case NodeKind::BreakStatement:
+            compileBreakStatement(
+                static_cast<const frontend::BreakStatement&>(node));
+            break;
+        case NodeKind::ContinueStatement:
+            compileContinueStatement(
+                static_cast<const frontend::ContinueStatement&>(node));
+            break;
         default:
             error(node, "compiler: unsupported statement node kind " +
                             std::to_string(static_cast<int>(node.kind())));
@@ -199,23 +211,108 @@ void Compiler::compileIfStatement(const frontend::IfStatement& node) {
     }
 }
 
-void Compiler::compileWhileStatement(const frontend::WhileStatement& node) {
+void Compiler::compileWhileStatement(
+    const frontend::WhileStatement& node,
+    const std::vector<std::string>& labels) {
     if (!node.test) return;
+
+    std::vector<std::string> effective = labels;
+    if (effective.empty()) effective.push_back("");
+    std::vector<uint32_t> pushes;
+    for (const std::string& label : effective) {
+        pushes.push_back(code_->pushLabel(label, 0, 0));
+    }
+    // continue/回跳目标在 push_label 之后，避免重复压帧。
     uint32_t loop = code_->here();
+    for (uint32_t push : pushes) code_->patchU32(push + 6, loop);
+
     compileExpression(*node.test);
     uint32_t toEnd = code_->jfalse();
     if (node.body) compileStatement(*node.body);
     code_->jmp(loop);
-    code_->patchU32(toEnd + 2, code_->here());
+
+    // 正常退出先执行 pop_label；break 目标在 pop_label 之后。
+    uint32_t exitPc = code_->here();
+    code_->patchU32(toEnd + 2, exitPc);
+    for (auto it = effective.rbegin(); it != effective.rend(); ++it) {
+        code_->popLabel(*it);
+    }
+    uint32_t endPc = code_->here();
+    for (uint32_t push : pushes) code_->patchU32(push + 10, endPc);
 }
 
 void Compiler::compileDoWhileStatement(
-    const frontend::DoWhileStatement& node) {
+    const frontend::DoWhileStatement& node,
+    const std::vector<std::string>& labels) {
     if (!node.test) return;
+
+    std::vector<std::string> effective = labels;
+    if (effective.empty()) effective.push_back("");
+    std::vector<uint32_t> pushes;
+    for (const std::string& label : effective) {
+        pushes.push_back(code_->pushLabel(label, 0, 0));
+    }
     uint32_t loop = code_->here();
+
     if (node.body) compileStatement(*node.body);
+    uint32_t testPc = code_->here();
+    for (uint32_t push : pushes) code_->patchU32(push + 6, testPc);
     compileExpression(*node.test);
     code_->jtrue(loop);
+
+    uint32_t exitPc = code_->here();
+    for (auto it = effective.rbegin(); it != effective.rend(); ++it) {
+        code_->popLabel(*it);
+    }
+    uint32_t endPc = code_->here();
+    for (uint32_t push : pushes) code_->patchU32(push + 10, endPc);
+    (void)exitPc;
+}
+
+void Compiler::compileLabeledStatement(
+    const frontend::LabeledStatement& node) {
+    // 收集嵌套标签：a: b: while (...) 共享同一 start/end。
+    std::vector<std::string> labels;
+    const frontend::Node* body = &node;
+    while (body != nullptr && body->kind() == NodeKind::LabeledStatement) {
+        const auto& labeled = static_cast<const frontend::LabeledStatement&>(*body);
+        labels.push_back(labeled.label);
+        body = labeled.body.get();
+    }
+    if (body == nullptr) return;
+
+    if (body->kind() == NodeKind::WhileStatement) {
+        compileWhileStatement(
+            static_cast<const frontend::WhileStatement&>(*body), labels);
+        return;
+    }
+    if (body->kind() == NodeKind::DoWhileStatement) {
+        compileDoWhileStatement(
+            static_cast<const frontend::DoWhileStatement&>(*body), labels);
+        return;
+    }
+
+    // 非循环标签：startPc=0（不可 continue），endPc 为 break 目标。
+    std::vector<uint32_t> pushes;
+    for (const std::string& label : labels) {
+        pushes.push_back(code_->pushLabel(label, 0, 0));
+    }
+    compileStatement(*body);
+    for (auto it = labels.rbegin(); it != labels.rend(); ++it) {
+        code_->popLabel(*it);
+    }
+    uint32_t endPc = code_->here();
+    for (uint32_t push : pushes) code_->patchU32(push + 10, endPc);
+}
+
+void Compiler::compileBreakStatement(
+    const frontend::BreakStatement& node) {
+    code_->breakTo(node.label);
+}
+
+void Compiler::compileContinueStatement(
+    const frontend::ContinueStatement& node) {
+    code_->continueTo(node.label);
 }
 
 // —— 表达式 ——

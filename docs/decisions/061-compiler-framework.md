@@ -93,8 +93,11 @@ public:
 | ArrayExpression | `new_array N` + 每个元素 `dup; index; value; define_prop; pop` |
 | ThisExpression | `load_this` |
 | IfStatement | test + `jfalse` else；then；有 else 时 `jmp end` + 回填 |
-| WhileStatement | loop：test + `jfalse end`；body；`jmp loop`；回填 end |
-| DoWhileStatement | loop：body；test + `jtrue loop` |
+| WhileStatement | `push_label`；loop：test + `jfalse exit`；body；`jmp loop`；exit：`pop_label` |
+| DoWhileStatement | `push_label`；loop：body；test + `jtrue loop`；exit：`pop_label` |
+| LabeledStatement | 标签传给循环；非循环标签单独 `push_label`/`pop_label` |
+| BreakStatement | `break "label"`（空串 = 最近可 break 目标） |
+| ContinueStatement | `continue "label"`（空串 = 最近循环） |
 
 声明提升：作用域入口先建槽——`var`（递归收集，不穿透函数）→
 `push_undefined; define`；直接 `let/const` → `push_uninitialized; define(mutable,
@@ -108,8 +111,8 @@ initialized=false)`；直接函数声明先建 undefined 槽，再创建函数�
 暂记录 unsupported 错误，
 在后续切片中逐个补齐；每补一个节点，同时补 Compiler 测试与 VM 端到端测试。
 
-**break / continue 先延后**：它们依赖 label 栈与跨作用域跳转（ADR-060 V4），
-在 try/finally 与 label 结构确定前不编译，遇到时记录 unsupported 错误。
+**break / continue 已接入 label 栈**（ADR-060 §7）：循环/switch/带标签语句
+成对发射 `push_label`/`pop_label`；跨 finally 的展开留给 try 组实现时处理。
 
 ### 5. 文件布局
 
@@ -125,7 +128,6 @@ tests/unit/compiler/
 
 - 优点：Compiler 与 Parser 同构，节点覆盖度可逐条推进；错误显式；SourceMap
   与 VM 的异常定位直接对接；后续只需在分派表里补节点。
-- 缺点：初始子集不含对象/属性、异常与模块，真实程序还不能完整编译；
+- 缺点：尚未覆盖 for/switch、异常与模块，真实程序还不能完整编译；
   函数声明提升已按「先建槽 → 再创建函数 → store」实现，但尚未独立函数定义区。
-- 待定：成员调用（依赖 `get_prop`）、模块绑定、常量池去重、
-  SourceMap 对多字节指令的精确边界。
+- 待定：模块绑定、常量池去重、SourceMap 对多字节指令的精确边界。

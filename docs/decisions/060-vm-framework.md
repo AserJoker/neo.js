@@ -220,14 +220,26 @@ Value* VM::run(uint32_t entryPc = 0);
   块作用域的 `push_scope`/`pop_scope` 由编译器成对发射。
 - VM 不拥有作用域；作用域的创建/销毁仍由 Context/Function 生命周期管理。
 
-### 7. try / label（后续，不在第一步）
+### 7. label 栈与 try 栈（独立两组）
 
-第一步不设计、不实现 try 栈与 label 栈。V0–V2 只做线性执行与条件跳转；
-等 V3/V4 再单独定结构：
+**label 栈（V4，已实现）**：
 
-- try 栈需要记录 catch/finally 目标、操作数栈深、作用域深；
-- label 栈需要记录 break/continue 目标与跨 finally 的 completion；
-- 两者都会影响异常展开与作用域回退，必须在有真实语法切片时一起设计。
+```cpp
+struct LabelFrame {
+    std::string label;   // "" = 无标签
+    uint32_t startPc;    // continue 目标；0 = 不可 continue
+    uint32_t endPc;      // break 目标
+};
+```
+
+- 编译器为每个循环/switch/带标签语句发射 `push_label ...; ...; pop_label`。
+- `break`/`continue` 指令回调只产生 `Interrupt(Break/Continue, labelIndex)`，
+  由 `VM::run` 主循环消费：解析 label 栈、平衡帧、更新 pc。
+- `break` 弹出目标帧及内层帧；`continue` 只弹内层帧并保留目标循环帧。
+
+**try 栈（V3，待设计）**：独立于 label 栈，记录 catch/finally 目标、栈深、作用域。
+两组栈存在双向耦合（try 展开需恢复 label 栈；break/continue 跨 finally 需消费
+try 帧），具体 completion 结构在实现 try 时统一设计。
 
 ### 8. 挂起/恢复
 

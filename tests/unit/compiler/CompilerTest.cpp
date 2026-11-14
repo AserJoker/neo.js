@@ -40,7 +40,10 @@ using neo::frontend::BinaryExpression;
 using neo::frontend::BinaryOperator;
 using neo::frontend::BlockStatement;
 using neo::frontend::BooleanLiteral;
+using neo::frontend::BreakStatement;
 using neo::frontend::CallExpression;
+using neo::frontend::ContinueStatement;
+using neo::frontend::LabeledStatement;
 using neo::frontend::DebuggerStatement;
 using neo::frontend::ExpressionStatement;
 using neo::frontend::DoWhileStatement;
@@ -744,6 +747,183 @@ TEST(CompilerTest, ArrayElisionPreservesLength) {
                    range,
                    std::make_unique<ArrayExpression>(range, std::move(elements)),
                    std::make_unique<Identifier>(range, "length"), false)));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, WhileBreakAndContinue) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(letDeclaration(range, "i", 0.0));
+
+    NodeList loopBody;
+    loopBody.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Assign,
+                   std::make_unique<Identifier>(range, "i"),
+                   std::make_unique<BinaryExpression>(
+                       range, BinaryOperator::Add,
+                       std::make_unique<Identifier>(range, "i"),
+                       std::make_unique<NumericLiteral>(range, 1.0)))));
+    loopBody.push_back(std::make_unique<IfStatement>(
+        range,
+        std::make_unique<BinaryExpression>(
+            range, BinaryOperator::LessThan,
+            std::make_unique<Identifier>(range, "i"),
+            std::make_unique<NumericLiteral>(range, 3.0)),
+        std::make_unique<ContinueStatement>(range, ""), nullptr));
+    loopBody.push_back(std::make_unique<BreakStatement>(range, ""));
+
+    body.push_back(std::make_unique<WhileStatement>(
+        range, std::make_unique<BooleanLiteral>(range, true),
+        std::make_unique<BlockStatement>(range, std::move(loopBody))));
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<Identifier>(range, "i")));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, LabeledBreakExitsOuterLoop) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(letDeclaration(range, "n", 0.0));
+
+    NodeList innerBody;
+    innerBody.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Assign,
+                   std::make_unique<Identifier>(range, "n"),
+                   std::make_unique<BinaryExpression>(
+                       range, BinaryOperator::Add,
+                       std::make_unique<Identifier>(range, "n"),
+                       std::make_unique<NumericLiteral>(range, 1.0)))));
+    innerBody.push_back(std::make_unique<BreakStatement>(range, "outer"));
+    auto inner = std::make_unique<WhileStatement>(
+        range, std::make_unique<BooleanLiteral>(range, true),
+        std::make_unique<BlockStatement>(range, std::move(innerBody)));
+
+    NodeList outerBody;
+    outerBody.push_back(std::move(inner));
+    auto outer = std::make_unique<WhileStatement>(
+        range, std::make_unique<BooleanLiteral>(range, true),
+        std::make_unique<BlockStatement>(range, std::move(outerBody)));
+    body.push_back(std::make_unique<LabeledStatement>(
+        range, "outer", std::move(outer)));
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<Identifier>(range, "n")));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, LabeledContinueTargetsOuterLoop) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(letDeclaration(range, "i", 0.0));
+
+    NodeList outerBody;
+    outerBody.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Assign,
+                   std::make_unique<Identifier>(range, "i"),
+                   std::make_unique<BinaryExpression>(
+                       range, BinaryOperator::Add,
+                       std::make_unique<Identifier>(range, "i"),
+                       std::make_unique<NumericLiteral>(range, 1.0)))));
+    NodeList innerBody;
+    innerBody.push_back(std::make_unique<ContinueStatement>(range, "outer"));
+    outerBody.push_back(std::make_unique<WhileStatement>(
+        range, std::make_unique<BooleanLiteral>(range, true),
+        std::make_unique<BlockStatement>(range, std::move(innerBody))));
+
+    auto outer = std::make_unique<WhileStatement>(
+        range,
+        std::make_unique<BinaryExpression>(
+            range, BinaryOperator::LessThan,
+            std::make_unique<Identifier>(range, "i"),
+            std::make_unique<NumericLiteral>(range, 3.0)),
+        std::make_unique<BlockStatement>(range, std::move(outerBody)));
+    body.push_back(std::make_unique<LabeledStatement>(
+        range, "outer", std::move(outer)));
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<Identifier>(range, "i")));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, DoWhileContinueJumpsToTest) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(letDeclaration(range, "i", 0.0));
+
+    NodeList loopBody;
+    loopBody.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Assign,
+                   std::make_unique<Identifier>(range, "i"),
+                   std::make_unique<BinaryExpression>(
+                       range, BinaryOperator::Add,
+                       std::make_unique<Identifier>(range, "i"),
+                       std::make_unique<NumericLiteral>(range, 1.0)))));
+    loopBody.push_back(std::make_unique<IfStatement>(
+        range,
+        std::make_unique<BinaryExpression>(
+            range, BinaryOperator::LessThan,
+            std::make_unique<Identifier>(range, "i"),
+            std::make_unique<NumericLiteral>(range, 3.0)),
+        std::make_unique<ContinueStatement>(range, ""), nullptr));
+
+    body.push_back(std::make_unique<DoWhileStatement>(
+        range, std::make_unique<BlockStatement>(range, std::move(loopBody)),
+        std::make_unique<BinaryExpression>(
+            range, BinaryOperator::LessThan,
+            std::make_unique<Identifier>(range, "i"),
+            std::make_unique<NumericLiteral>(range, 3.0))));
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<Identifier>(range, "i")));
 
     Program program(range, std::move(body), SourceType::Script);
     SemaResult sema;

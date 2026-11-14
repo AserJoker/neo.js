@@ -200,6 +200,31 @@ struct Code {
         return pc;
     }
 
+    // label 栈：startPc = continue 目标，endPc = break 目标（均为 0 表示无）。
+    uint32_t pushLabel(std::string_view label, uint32_t startPc = 0,
+                       uint32_t endPc = 0) {
+        uint32_t pc = emitOp(OpCode::PushLabel);
+        emitU32(addString(std::string(label)));
+        emitU32(startPc);
+        emitU32(endPc);
+        return pc;
+    }
+    uint32_t popLabel(std::string_view label) {
+        uint32_t pc = emitOp(OpCode::PopLabel);
+        emitU32(addString(std::string(label)));
+        return pc;
+    }
+    uint32_t breakTo(std::string_view label) {
+        uint32_t pc = emitOp(OpCode::Break);
+        emitU32(addString(std::string(label)));
+        return pc;
+    }
+    uint32_t continueTo(std::string_view label) {
+        uint32_t pc = emitOp(OpCode::Continue);
+        emitU32(addString(std::string(label)));
+        return pc;
+    }
+
     uint32_t pushScope() { return emitOp(OpCode::PushScope); }
     uint32_t popScope() { return emitOp(OpCode::PopScope); }
 

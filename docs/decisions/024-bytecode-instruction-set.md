@@ -188,6 +188,24 @@ _func_end:
 
 - statement 保证栈平衡（ADR-004），跳转发生在 statement 边界，栈深可预期。
 
+#### 2.5.1 label 栈
+
+| 指令 | 栈契约 | 说明 |
+|------|--------|------|
+| `push_label "name", startPc, endPc` | `d → d` | 压 label 帧；start=continue 目标，end=break 目标 |
+| `pop_label "name"` | `d → d` | 弹栈顶并校验 label |
+| `break "name"` | `d → d` | 返回 Interrupt(Break)，主循环解析 label 栈 |
+| `continue "name"` | `d → d` | 返回 Interrupt(Continue)，主循环解析 label 栈 |
+
+- 每个循环（for/while/do-while）、switch、带标签语句都发射
+  `push_label ...; ...; pop_label`；无标签时 name 为 `""`。
+- `startPc=0` 表示不可 continue（switch / 非循环标签）；`continue` 跳过这类帧。
+- `break` 弹出目标帧及内层帧后跳到 `endPc`；`continue` 只弹内层帧并跳到
+  `startPc`，目标循环帧保留。
+- `push_label` 的 start/end 前向目标先占位，布局完成后 `patchU32`。
+- break/continue 指令本身不处理跳转：回调只产生 Interrupt，由 `VM::run`
+  统一消费（与 try/finally 的耦合在 try 组实现时再处理）。
+
 #### 2.6 作用域
 
 | 指令 | 说明 |
@@ -336,6 +354,7 @@ hlt
 - 优点：三段式模块组织统一所有声明的处理路径；call/序言栈契约清晰；
   箭头/普通函数字节码层无特例（统一 store_this）；定义点退化为 store 简化语义。
 - 缺点：函数调用创建/销毁 VM 有开销（ADR-004）；箭头函数 bind_this 多两条指令。
-- 待定：对象/数组字面量、try/catch（异常即值走 return 通道）、for 循环
-  （init_scope/body_scope）。属性访问已定：`get_prop`/`set_prop` 无操作数，
-  key 由栈传递；`call_method` 只负责 thisArg，属性查找由 `get_prop` 完成。
+- 待定：try/catch（异常即值走 return 通道）、for 循环（init_scope/body_scope）。
+  属性访问已定：`get_prop`/`set_prop` 无操作数，key 由栈传递；
+  `call_method` 只负责 thisArg，属性查找由 `get_prop` 完成。
+  label 栈已定：`push_label`/`pop_label`/`break`/`continue`（ADR-060 §7）。

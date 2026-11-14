@@ -30,6 +30,8 @@ enum class InterruptKind : uint8_t {
     Return,  // 立即以 value 返回（外部注入方向）
     Await,   // 未来：等待 Promise 结果（VM 方向）
     Throw,   // 未来：VM 内部 throw 信号，解包为 Exception（ADR-017 §6）
+    Break,   // VM 内部：break 信号，offset = label 字符串下标
+    Continue,// VM 内部：continue 信号，offset = label 字符串下标
 };
 
 struct InterruptData : public IData {
@@ -46,6 +48,9 @@ struct InterruptData : public IData {
 | `kind` | 控制信号种类，决定消费方如何处理 |
 | `offset` | 断点位置。抽象层视为**不透明整数**，由 runner 解释（native=stage，VM=PC） |
 | `value` | 载荷。Yield 的产出值、Return 的返回值、Await 的结果、Throw 的错误值 |
+
+> `Break`/`Continue` 只由 VM 指令回调产生，由 `VM::run` 主循环消费（解析 label 栈并跳转），
+> 不会逃逸到调用方；它们与协程挂起信号共用 Interrupt 通道，但消费方不同。
 
 ### 2. offset 的双向语义
 
