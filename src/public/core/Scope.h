@@ -282,12 +282,13 @@ public:
     // 重复定义返回 false（调用方报错），成功返回 true。
     // 重复检查无条件生效——var/let/const 的差异在 Sema 阶段已抹平，与 strict 无关。
     // 与 bind 的区别：bind 覆盖重名且不 add 跟踪；define 重复检查 + add 跟踪。
-    bool define(std::string_view name, Value* v, bool mutableBinding = true) {
+    bool define(std::string_view name, Value* v, bool mutableBinding = true,
+                bool initialized = true) {
         // 只检查本作用域的直接/间接绑定；with 对象属性不是声明。
         if (bindingKind(name) != BindingKind::None) return false;
         add(v);
         namedValues_[std::string(name)] =
-            Binding{v, mutableBinding, true};
+            Binding{v, mutableBinding, initialized};
         return true;
     }
 

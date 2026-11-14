@@ -714,3 +714,94 @@ TEST(MutableTest, ImmutableExceptionPassthroughStillWorks) {
     auto* result = ctx->store("c", exc);
     EXPECT_EQ(result, exc);
 }
+
+// ===== TDZ / 提升初始化 =====
+
+namespace {
+
+std::string errorName(IContext* ctx, Value* exception) {
+    auto* exc = static_cast<ExceptionData*>(exception->data());
+    Value* name = ctx->getProperty(exc->child, "name");
+    return static_cast<StringData*>(name->data())->value;
+}
+
+}  // namespace
+
+TEST(TdzTest, HoistedConstReadBeforeInitIsReferenceError) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    ctx->define("c", ctx->createUninitialized(), false, false);
+
+    Value* read = ctx->load("c");
+    ASSERT_EQ(read->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(errorName(ctx.get(), read), "ReferenceError");
+
+    Value* write = ctx->store("c", ctx->createNumber(1.0));
+    ASSERT_EQ(write->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(errorName(ctx.get(), write), "ReferenceError");
+}
+
+TEST(TdzTest, InitializeConstThenStoreIsTypeError) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* slot = ctx->define("c", ctx->createUninitialized(), false, false);
+    Value* initialized = ctx->initialize("c", ctx->createNumber(1.0));
+    EXPECT_EQ(initialized, slot);
+    EXPECT_DOUBLE_EQ(static_cast<NumberData*>(slot->data())->value, 1.0);
+
+    Value* read = ctx->load("c");
+    EXPECT_EQ(read, slot);
+
+    Value* write = ctx->store("c", ctx->createNumber(2.0));
+    ASSERT_EQ(write->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(errorName(ctx.get(), write), "TypeError");
+    EXPECT_DOUBLE_EQ(static_cast<NumberData*>(slot->data())->value, 1.0);
+}
+
+TEST(TdzTest, InitializeLetThenStoreSucceeds) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* slot = ctx->define("v", ctx->createUninitialized(), true, false);
+    ctx->initialize("v", ctx->createNumber(1.0));
+
+    Value* result = ctx->store("v", ctx->createNumber(2.0));
+    EXPECT_EQ(result, slot);
+    EXPECT_DOUBLE_EQ(static_cast<NumberData*>(slot->data())->value, 2.0);
+}
+
+TEST(TdzTest, InitializeTwiceIsError) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    ctx->define("v", ctx->createUninitialized(), true, false);
+    ctx->initialize("v", ctx->createNumber(1.0));
+
+    Value* again = ctx->initialize("v", ctx->createNumber(2.0));
+    ASSERT_EQ(again->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(errorName(ctx.get(), again), "TypeError");
+}
+
+TEST(TdzTest, VarHoistedAsUndefinedIsReadable) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    ctx->define("v", ctx->createUndefined(), true, true);
+
+    Value* read = ctx->load("v");
+    EXPECT_EQ(read->type()->kind(), TypeKind::Undefined);
+    EXPECT_EQ(ctx->store("v", ctx->createNumber(1.0))->type()->kind(),
+              TypeKind::Number);
+}

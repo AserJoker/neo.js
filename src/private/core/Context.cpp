@@ -1791,7 +1791,8 @@ IData* Context::cloneForNewValue(Value* source) {
 }
 
 // clone source 的 data 到 scope 定义新槽位。失败返回 OOM 哨兵（ADR-031）。
-Value* Context::defineCloned(Scope* scope, std::string_view name, Value* source) {
+Value* Context::defineCloned(Scope* scope, std::string_view name, Value* source,
+                             bool mutableBinding, bool initialized) {
     IData* cloned = cloneForNewValue(source);
     if (cloned == nullptr) return oomValue_;
     Value* slot = gc_->createValue(source->type(), cloned);
@@ -1799,11 +1800,12 @@ Value* Context::defineCloned(Scope* scope, std::string_view name, Value* source)
         gc_->releaseData(cloned);
         return oomValue_;
     }
-    scope->define(name, slot);
+    scope->define(name, slot, mutableBinding, initialized);
     return slot;
 }
 
-Value* Context::define(std::string_view name, Value* source) {
+Value* Context::define(std::string_view name, Value* source, bool mutableBinding,
+                       bool initialized) {
     // Exception/Fatal 永远不出现在左右值，提前透传
     if (isErrorValue(source)) return source;
     // 同一作用域重复定义无条件报错：var/let/const 的差异在 Sema 阶段已抹平，
@@ -1813,7 +1815,47 @@ Value* Context::define(std::string_view name, Value* source) {
         std::string msg = "Identifier '" + std::string(name) + "' has already been declared";
         return detail::errorOf(this, ErrorKind::SyntaxError, msg);
     }
-    return defineCloned(current(), name, source);
+    return defineCloned(current(), name, source, mutableBinding, initialized);
+}
+
+Value* Context::initialize(std::string_view name, Value* source) {
+    if (isErrorValue(source)) return source;
+
+    for (Scope* s = current(); s != nullptr; s = s->parent()) {
+        Scope::Binding* binding = s->lookupBinding(name);
+        if (binding == nullptr) continue;
+        if (binding->initialized) {
+            return detail::typeError(
+                this, "Binding '" + std::string(name) +
+                          "' has already been initialized");
+        }
+        IData* cloned = cloneForNewValue(source);
+        if (cloned == nullptr) return oomValue_;
+        IData* old = binding->value->replaceMeta(source->type(), cloned);
+        gc_->releaseData(old);
+        binding->initialized = true;
+        return binding->value;
+    }
+    return detail::referenceError(
+        this, "Binding '" + std::string(name) + "' is not defined");
+}
+
+Value* Context::load(std::string_view name) {
+    for (Scope* s = current(); s != nullptr; s = s->parent()) {
+        Scope::Binding* binding = s->lookupBinding(name);
+        if (binding == nullptr) continue;
+        if (!binding->initialized) {
+            return detail::referenceError(
+                this, "Cannot access '" + std::string(name) +
+                          "' before initialization");
+        }
+        return binding->value;
+    }
+    // with 属性 / 间接绑定等动态路径。
+    Value* value = current()->lookupChain(name);
+    if (value != nullptr) return value;
+    return detail::referenceError(
+        this, "'" + std::string(name) + "' is not defined");
 }
 
 Value* Context::store(std::string_view name, Value* source) {
@@ -1840,6 +1882,12 @@ Value* Context::store(std::string_view name, Value* source) {
                 if (binding == nullptr) break;  // 内部契约：Direct 必有条目
                 Value* target = binding->value;
                 if (target == nullptr) break;
+                // TDZ：声明已提升但尚未初始化
+                if (!binding->initialized) {
+                    return detail::referenceError(
+                        this, "Cannot access '" + std::string(name) +
+                                  "' before initialization");
+                }
                 // 不可赋值（const 声明）：拦截并报错
                 if (!binding->mutableBinding) {
                     return detail::typeError(

@@ -799,8 +799,21 @@ public:
     // store: 从 current scope 开始向上查找 name，找到则 clone source 的 data 替换其 type+data。
     //        找不到时：按 "strict" 标注分派——严格返回 Exception，非严格在 global 定义。
     //        source 若是 Exception/Fatal 直接透传。
-    virtual Value* define(std::string_view name, Value* source) = 0;
+    // mutableBinding/initialized 用于模块提升：lexical 声明先以
+    // <uninitialized> 建槽（initialized=false），求值期再 initialize。
+    virtual Value* define(std::string_view name, Value* source,
+                          bool mutableBinding = true,
+                          bool initialized = true) = 0;
     virtual Value* store(std::string_view name, Value* source) = 0;
+
+    // initialize: 初始化一个已提升但尚未初始化的绑定（TDZ 解除）。
+    // 允许写 <uninitialized> 槽位，不受 const 的 mutableBinding=false 限制；
+    // 已初始化或绑定不存在返回 Exception。
+    virtual Value* initialize(std::string_view name, Value* source) = 0;
+
+    // load: 语言级标识符读取。未初始化绑定返回 ReferenceError；
+    // 未找到返回 ReferenceError。内部槽位访问用 Scope::lookup。
+    virtual Value* load(std::string_view name) = 0;
 
     // —— 可赋值性（ADR-030 阶段 5）——
     // mutability 属于作用域绑定而不是 Value：同一个 Value* 可以在不同绑定中

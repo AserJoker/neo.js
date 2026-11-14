@@ -361,8 +361,12 @@ public:
     Value* oomValue() const override { return oomValue_; }
 
     // 变量定义与赋值
-    Value* define(std::string_view name, Value* source) override;
+    Value* define(std::string_view name, Value* source,
+                  bool mutableBinding = true,
+                  bool initialized = true) override;
     Value* store(std::string_view name, Value* source) override;
+    Value* initialize(std::string_view name, Value* source) override;
+    Value* load(std::string_view name) override;
 
     // 可赋值性（绑定维度）
     void setBindingMutable(Scope* scope, std::string_view name,
@@ -414,7 +418,9 @@ private:
     // 失败返回 nullptr（OOM）。
     IData* cloneForNewValue(Value* source);
     // clone source 的 data 到 scope 定义新槽位。失败返回 OOM 哨兵（ADR-031）。
-    Value* defineCloned(Scope* scope, std::string_view name, Value* source);
+    Value* defineCloned(Scope* scope, std::string_view name, Value* source,
+                        bool mutableBinding = true,
+                        bool initialized = true);
 };
 
 }  // namespace neo::core
