@@ -18,7 +18,13 @@
 #include "sema/AnnotationStore.h"
 #include "sema/SemaContext.h"
 
+#include <memory>
+
 namespace neo::sema {
+
+class IVisitor;
+
+std::unique_ptr<IVisitor> makeModuleVisitor(AnnotationStore& annotations);
 
 void runModulePass(frontend::Node& program, SemaContext& context,
                    AnnotationStore& annotations);

@@ -267,10 +267,14 @@ private:
 
 }  // namespace
 
+std::unique_ptr<IVisitor> makeModuleVisitor(AnnotationStore& annotations) {
+    return std::make_unique<ModuleVisitor>(annotations);
+}
+
 void runModulePass(frontend::Node& program, SemaContext& context,
                    AnnotationStore& annotations) {
     Walker walker(annotations);
-    walker.addAll(std::make_unique<ModuleVisitor>(annotations));
+    walker.addAll(makeModuleVisitor(annotations));
     walker.walk(program, context);
 }
 

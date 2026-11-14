@@ -168,6 +168,7 @@ add_library(neojs STATIC
     src/private/sema/ResolvePass.cpp
     src/private/sema/ControlFlowPass.cpp
     src/private/sema/ModulePass.cpp
+    src/private/sema/EarlyErrorPass.cpp
     src/private/sema/Sema.cpp
 )
 target_include_directories(neojs

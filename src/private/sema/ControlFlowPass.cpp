@@ -572,10 +572,15 @@ private:
 
 }  // namespace
 
+std::unique_ptr<IVisitor> makeControlFlowVisitor(
+    AnnotationStore& annotations) {
+    return std::make_unique<ControlFlowVisitor>(annotations);
+}
+
 void runControlFlowPass(frontend::Node& program, SemaContext& context,
                         AnnotationStore& annotations) {
     Walker walker(annotations);
-    walker.addAll(std::make_unique<ControlFlowVisitor>(annotations));
+    walker.addAll(makeControlFlowVisitor(annotations));
     walker.walk(program, context);
 }
 

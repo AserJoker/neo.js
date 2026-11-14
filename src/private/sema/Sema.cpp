@@ -2,11 +2,9 @@
 
 #include "sema/Sema.h"
 
-#include "sema/ControlFlowPass.h"
-#include "sema/ModulePass.h"
+#include "sema/EarlyErrorPass.h"
 #include "sema/ResolvePass.h"
 #include "sema/ScopePass.h"
-#include "sema/StrictnessPass.h"
 
 #include <utility>
 
@@ -16,12 +14,9 @@ SemaResult runSema(frontend::Node& program) {
     SemaContext context;
     AnnotationStore annotations;
 
-    runStrictnessPass(program, context, annotations);
-
     ScopeGraph graph = runScopePass(program, context);
     runResolvePass(program, graph, context, annotations);
-    runControlFlowPass(program, context, annotations);
-    runModulePass(program, context, annotations);
+    runEarlyErrorPass(program, context, annotations);
 
     SemaResult result;
     result.annotations = std::move(annotations);

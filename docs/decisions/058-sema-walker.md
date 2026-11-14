@@ -47,13 +47,18 @@ resolve.walk(*program, context);
 
 建议的 pass 顺序：
 
-1. `StrictnessPass`：Directive 栈、legacy octal/escape、`with`、重复参数等。
-2. `ScopePass`：建 shadow_scope、变量提升、重复声明。
-3. `ResolvePass`：标识符解析、闭包穿透捕获、TDZ、未定义引用。
-4. `ControlFlowPass`：`break`/`continue`/label、`return` 位置、
-   `new.target`/`super`/`await`/`yield` 上下文；同时产出 Compiler 需要的
-   `FunctionInfo`（函数种类、方法/构造函数、static block、hasDirectEval）。
-5. `ModulePass`：import/export 绑定、重复导出、`sourceType` 约束。
+1. `ScopePass`：建 shadow_scope、变量提升、重复声明。
+2. `ResolvePass`：标识符解析、闭包穿透捕获、TDZ、未定义引用。
+3. `EarlyErrorPass`：一次 walk 内注册三个 visitor：
+   - `StrictnessPass`：Directive 栈、legacy octal/escape、`with`、重复参数等；
+   - `ControlFlowPass`：`break`/`continue`/label、`return` 位置、
+     `new.target`/`super`/`await`/`yield` 上下文；同时产出 Compiler 需要的
+     `FunctionInfo`（函数种类、方法/构造函数、static block、hasDirectEval）；
+   - `ModulePass`：import/export 绑定、重复导出、`sourceType` 约束。
+
+   三者都是只读的“上下文栈 + 早期错误”pass，无相互数据依赖，合并 walk
+    不改变语义；严格性错误因此排在 Resolve 之后，但 Sema 只收集错误、
+    不 fail-fast。
 
 ### 3. Visitor 接口
 
@@ -195,6 +200,7 @@ Sema 采用“收集错误、继续分析”，不 fail-fast；遍历由树结�
     isGenerator / isMethod / isConstructor / isDerivedConstructor /
     isStaticBlock）；派生构造函数标记依赖类是否 `extends`，对象字面量
     方法同样标记 isMethod。ResolvePass 写入 hasDirectEval。
-  - `runSema` 按 StrictnessPass → ScopePass → ResolvePass →
-    ControlFlowPass → ModulePass 串联，返回
-    `SemaResult{annotations, errors}`；ScopeGraph 等 scratch 不输出。
+  - `runSema` 按 ScopePass → ResolvePass → EarlyErrorPass 串联，返回
+    `SemaResult{annotations, errors}`；EarlyErrorPass 一次 walk 内执行
+    Strictness / ControlFlow / Module 三个 visitor；ScopeGraph 等 scratch
+    不输出。

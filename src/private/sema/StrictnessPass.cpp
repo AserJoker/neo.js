@@ -608,10 +608,14 @@ private:
 
 }  // namespace
 
+std::unique_ptr<IVisitor> makeStrictnessVisitor() {
+    return std::make_unique<StrictnessVisitor>();
+}
+
 void runStrictnessPass(frontend::Node& program, SemaContext& context,
                        AnnotationStore& annotations) {
     Walker walker(annotations);
-    walker.addAll(std::make_unique<StrictnessVisitor>());
+    walker.addAll(makeStrictnessVisitor());
     walker.walk(program, context);
 }
 

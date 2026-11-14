@@ -1,8 +1,8 @@
 // sema/Sema.h - Sema 入口：串联全部 pass 并输出标注
 //
 // 顺序遵循 ADR-058：
-//   StrictnessPass → ScopePass → ResolvePass → ControlFlowPass →
-//   ModulePass
+//   ScopePass → ResolvePass → EarlyErrorPass
+//   （EarlyErrorPass 一次 walk 内执行 Strictness / ControlFlow / Module）
 //
 // ScopeGraph 等 scratch 不进入 SemaResult；Compiler 只消费 AnnotationStore
 // 中的标注与错误列表。

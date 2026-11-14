@@ -17,7 +17,14 @@
 #include "sema/AnnotationStore.h"
 #include "sema/SemaContext.h"
 
+#include <memory>
+
 namespace neo::sema {
+
+class IVisitor;
+
+// 供 EarlyErrorPass 与独立 pass 共用同一个 visitor 实现。
+std::unique_ptr<IVisitor> makeStrictnessVisitor();
 
 void runStrictnessPass(frontend::Node& program, SemaContext& context,
                        AnnotationStore& annotations);

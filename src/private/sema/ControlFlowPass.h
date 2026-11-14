@@ -21,7 +21,13 @@
 #include "sema/FunctionInfo.h"
 #include "sema/SemaContext.h"
 
+#include <memory>
+
 namespace neo::sema {
+
+class IVisitor;
+
+std::unique_ptr<IVisitor> makeControlFlowVisitor(AnnotationStore& annotations);
 
 void runControlFlowPass(frontend::Node& program, SemaContext& context,
                         AnnotationStore& annotations);
