@@ -51,7 +51,7 @@ void Scope::destroySelf() {
 
 Value* Scope::lookup(std::string_view name) const {
     auto it = namedValues_.find(std::string(name));
-    if (it != namedValues_.end()) return it->second;
+    if (it != namedValues_.end()) return it->second.value;
 
     auto wit = withBindings_.find(std::string(name));
     if (wit != withBindings_.end()) {

@@ -803,11 +803,15 @@ public:
     virtual Value* store(std::string_view name, Value* source) = 0;
 
     // —— 可赋值性（ADR-030 阶段 5）——
-    // setMutable: 设置 Value 是否可赋值（const 声明由 Sema 置 false）。
-    // isMutable: 查询 Value 是否可赋值。
-    // store 对 mutable=false 的 target 返回 Exception（禁止赋值）。
-    virtual void setMutable(Value* v, bool m) = 0;
-    virtual bool isMutable(Value* v) const = 0;
+    // mutability 属于作用域绑定而不是 Value：同一个 Value* 可以在不同绑定中
+    // 具有不同的可变性（例如 export let 在导入方是只读）。
+    // setBindingMutable: 设置 scope 中 name 绑定的可变性（const 为 false）。
+    // isBindingMutable: 查询绑定可变性；绑定不存在时返回 true。
+    // store 对 mutableBinding=false 的 target 返回 Exception（禁止赋值）。
+    virtual void setBindingMutable(Scope* scope, std::string_view name,
+                                   bool m) = 0;
+    virtual bool isBindingMutable(const Scope* scope,
+                                  std::string_view name) const = 0;
 
     // —— 作用域标注（ADR-030 阶段 5）——
     // setFlag: 在当前 scope 标注 name（如 "strict"）。语法上仅模块作用域/函数体可标注。

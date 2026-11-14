@@ -594,30 +594,52 @@ TEST(ScopeFlagTest, StrictStoreStillErrors) {
 
 // ===== 可赋值性（mutable）=====
 
-TEST(MutableTest, ValueDefaultsToMutable) {
+TEST(MutableTest, BindingDefaultsToMutable) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
 
-    auto* v = ctx->createNumber(1.0);
-    EXPECT_TRUE(v->isMutable());
-    EXPECT_TRUE(ctx->isMutable(v));
+    ctx->define("v", ctx->createNumber(1.0));
+    EXPECT_TRUE(ctx->isBindingMutable(ctx->current(), "v"));
 }
 
-TEST(MutableTest, SetMutableFalse) {
+TEST(MutableTest, SetBindingMutableFalse) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
 
-    auto* v = ctx->createNumber(1.0);
-    ctx->setMutable(v, false);
-    EXPECT_FALSE(v->isMutable());
-    EXPECT_FALSE(ctx->isMutable(v));
+    ctx->define("v", ctx->createNumber(1.0));
+    ctx->setBindingMutable(ctx->current(), "v", false);
+    EXPECT_FALSE(ctx->isBindingMutable(ctx->current(), "v"));
 
-    ctx->setMutable(v, true);
-    EXPECT_TRUE(v->isMutable());
+    ctx->setBindingMutable(ctx->current(), "v", true);
+    EXPECT_TRUE(ctx->isBindingMutable(ctx->current(), "v"));
+}
+
+TEST(MutableTest, SameValueDifferentBindingMutability) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    // 模拟 import 槽位共享：两个 scope 绑定同一个 Value*，可变性不同。
+    Value* shared = ctx->define("x", ctx->createNumber(1.0));
+    ctx->setBindingMutable(ctx->current(), "x", true);
+
+    Scope* child = makeScope(alloc.get(), ctx->current());
+    ctx->current()->addChild(child);
+    child->define("x", shared, false);
+    ctx->setCurrentScope(child);
+
+    auto* result = ctx->store("x", ctx->createNumber(2.0));
+    EXPECT_EQ(result->type()->kind(), TypeKind::Exception);
+
+    ctx->popScope();
+    EXPECT_DOUBLE_EQ(
+        static_cast<NumberData*>(ctx->current()->lookup("x")->data())->value,
+        1.0);
 }
 
 TEST(MutableTest, StoreOnImmutableReturnsException) {
@@ -628,7 +650,7 @@ TEST(MutableTest, StoreOnImmutableReturnsException) {
 
     ctx->define("c", ctx->createNumber(1.0));
     Value* slot = ctx->current()->lookup("c");
-    ctx->setMutable(slot, false);  // 模拟 const 声明
+    ctx->setBindingMutable(ctx->current(), "c", false);  // 模拟 const 声明
 
     auto* result = ctx->store("c", ctx->createNumber(99.0));
 
@@ -647,7 +669,7 @@ TEST(MutableTest, StoreOnMutableSucceeds) {
 
     ctx->define("v", ctx->createNumber(1.0));
     Value* slot = ctx->current()->lookup("v");
-    EXPECT_TRUE(slot->isMutable());
+    EXPECT_TRUE(ctx->isBindingMutable(ctx->current(), "v"));
 
     auto* result = ctx->store("v", ctx->createNumber(42.0));
 
@@ -663,7 +685,7 @@ TEST(MutableTest, ImmutableInParentScopeBlocksChildStore) {
     auto ctx = createContext(alloc.get(), &console);
 
     ctx->define("c", ctx->createNumber(1.0));
-    ctx->setMutable(ctx->current()->lookup("c"), false);
+    ctx->setBindingMutable(ctx->current(), "c", false);
 
     Scope* s = makeScope(alloc.get(), ctx->current());
     ctx->current()->addChild(s);
@@ -685,7 +707,7 @@ TEST(MutableTest, ImmutableExceptionPassthroughStillWorks) {
     auto ctx = createContext(alloc.get(), &console);
 
     ctx->define("c", ctx->createNumber(1.0));
-    ctx->setMutable(ctx->current()->lookup("c"), false);
+    ctx->setBindingMutable(ctx->current(), "c", false);
 
     // source 是 Exception 时透传优先于 immutable 检查
     auto* exc = ctx->createException(ctx->createString("err"));

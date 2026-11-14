@@ -28,7 +28,6 @@ class Value {
     IType* type_;          // meta：类型描述（单例/共享，GC 不管理 Type 生命周期）
     IData* data_;          // data：数据负载（引用计数管理，ADR-015）
     int   pinRef_ = 0;     // 手工钉住计数（>0 即额外 GC 根，ADR-044）
-    bool  mutable_ = true;  // 是否可赋值（const 声明由 Sema 置 false，store 时拦截）
 
 public:
     // 构造时 data->ref++（建立"Value 指向 data"引用关系）
@@ -44,11 +43,6 @@ public:
     IType* type() const { return type_; }
     IData* data() const { return data_; }
     int   pinRef() const { return pinRef_; }
-
-    // 可赋值性（ADR-030 阶段 5）：const 声明的变量槽位 mutable=false，
-    // store 时拦截并报错。默认 true（var/let 可赋值）。
-    bool isMutable() const { return mutable_; }
-    void setMutable(bool m) { mutable_ = m; }
 
     // 手工钉住/解除（ADR-044）：>0 时该 Value 是 GC 根，与作用域树可达性无关。
     // 供调度器（Task::entity）等 GC 图之外的强引用使用。

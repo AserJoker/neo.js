@@ -364,9 +364,11 @@ public:
     Value* define(std::string_view name, Value* source) override;
     Value* store(std::string_view name, Value* source) override;
 
-    // 可赋值性
-    void setMutable(Value* v, bool m) override;
-    bool isMutable(Value* v) const override;
+    // 可赋值性（绑定维度）
+    void setBindingMutable(Scope* scope, std::string_view name,
+                           bool m) override;
+    bool isBindingMutable(const Scope* scope,
+                          std::string_view name) const override;
 
     // 作用域标注
     void setFlag(std::string_view name) override;

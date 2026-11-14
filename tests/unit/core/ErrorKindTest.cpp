@@ -210,8 +210,8 @@ TEST(ErrorKindTest, RedeclarationIsSyntaxError) {
 TEST(ErrorKindTest, AssignToConstIsTypeError) {
     Fixture f;
     Value* v = f.ctx->createNumber(1);
-    Value* slot = f.ctx->define("c", v);
-    f.ctx->setMutable(slot, false);
+    f.ctx->define("c", v);
+    f.ctx->setBindingMutable(f.ctx->current(), "c", false);
     expectError(f.ctx.get(), f.ctx->store("c", f.ctx->createNumber(2)), "TypeError");
 }
 

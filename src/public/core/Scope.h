@@ -49,6 +49,17 @@ namespace neo::core {
 class IContext;
 
 class Scope {
+public:
+    // 命名绑定（环境记录条目）。
+    // mutability 属于绑定而不是 Value：同一个 Value* 可以在导出方是 mutable、
+    // 在导入方是只读；闭包捕获时复制绑定属性。
+    struct Binding {
+        Value* value = nullptr;
+        bool mutableBinding = true;
+        bool initialized = true;  // false 表示 TDZ
+    };
+
+private:
     // 间接绑定（导入绑定）：名字解析为 namespaceObj[exportKey]，读取时实时求值。
     // 不持有值槽位，因此导出方后续更新（含循环依赖中晚到的导出）都能被看到。
     // namespaceObj/exportKey 均为 GC 托管 Value*，登记到 values_ 保活。
@@ -69,7 +80,7 @@ class Scope {
     IContext* context_ = nullptr;                           // 借用，解析间接绑定用
     std::unordered_set<Scope*> children_;                  // 子作用域（无序、去重，析构时递归释放）
     std::vector<Value*> values_;                           // 跟踪的 value（含匿名临时值）
-    std::unordered_map<std::string, Value*> namedValues_; // 命名绑定（借用）
+    std::unordered_map<std::string, Binding> namedValues_; // 命名绑定（借用 Value）
     std::unordered_map<std::string, IndirectBinding> indirectBindings_;  // 导入绑定
     std::unordered_map<std::string, WithBinding> withBindings_;          // with 属性捕获
     std::unordered_set<std::string> flags_;                // 作用域标注（如 "strict"）
@@ -261,21 +272,49 @@ public:
 
     // 绑定名字→Value（借用，不影响可达性；Value 需先 add 跟踪）。
     // 重名绑定覆盖旧条目（同时清除同名间接绑定）。
-    void bind(std::string_view name, Value* v) {
+    void bind(std::string_view name, Value* v, bool mutableBinding = true) {
         indirectBindings_.erase(std::string(name));
-        namedValues_[std::string(name)] = v;
+        namedValues_[std::string(name)] =
+            Binding{v, mutableBinding, true};
     }
 
     // 定义变量（ADR-030 阶段 5）：仅在当前 scope 绑定 name→v + add 跟踪。
     // 重复定义返回 false（调用方报错），成功返回 true。
     // 重复检查无条件生效——var/let/const 的差异在 Sema 阶段已抹平，与 strict 无关。
     // 与 bind 的区别：bind 覆盖重名且不 add 跟踪；define 重复检查 + add 跟踪。
-    bool define(std::string_view name, Value* v) {
+    bool define(std::string_view name, Value* v, bool mutableBinding = true) {
         // 只检查本作用域的直接/间接绑定；with 对象属性不是声明。
         if (bindingKind(name) != BindingKind::None) return false;
         add(v);
-        namedValues_[std::string(name)] = v;
+        namedValues_[std::string(name)] =
+            Binding{v, mutableBinding, true};
         return true;
+    }
+
+    // 本作用域的直接绑定条目（不解析 parent，不触发 TDZ）。
+    Binding* lookupBinding(std::string_view name) {
+        auto it = namedValues_.find(std::string(name));
+        return it == namedValues_.end() ? nullptr : &it->second;
+    }
+
+    const Binding* lookupBinding(std::string_view name) const {
+        auto it = namedValues_.find(std::string(name));
+        return it == namedValues_.end() ? nullptr : &it->second;
+    }
+
+    // 沿 parent 链查找直接绑定条目；with/间接绑定不返回。
+    Binding* lookupBindingChain(std::string_view name) {
+        for (Scope* s = this; s != nullptr; s = s->parent_) {
+            if (Binding* b = s->lookupBinding(name)) return b;
+        }
+        return nullptr;
+    }
+
+    const Binding* lookupBindingChain(std::string_view name) const {
+        for (const Scope* s = this; s != nullptr; s = s->parent_) {
+            if (const Binding* b = s->lookupBinding(name)) return b;
+        }
+        return nullptr;
     }
 
     // 定义导入绑定：name → namespaceObj[exportKey]，读取时实时解析，写入恒拒绝。

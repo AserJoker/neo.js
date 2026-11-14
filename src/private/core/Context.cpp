@@ -1575,8 +1575,11 @@ Value* Context::setClosure(Value* fn, std::string_view name) {
         return detail::referenceError(this, msg);
     }
     if (detail::isErrorValue(v)) return v;
-    // 绑定 = 共享同一 Value（ADR-013 §2）：closureScope 登记同一 Value
-    d->closureScope->define(name, v);
+    // 绑定 = 共享同一 Value（ADR-013 §2）：closureScope 登记同一 Value。
+    // mutability 属于绑定，捕获时必须复制（const 捕获后仍不可写）。
+    const Scope::Binding* source = current()->lookupBindingChain(name);
+    d->closureScope->define(name, v,
+                            source == nullptr || source->mutableBinding);
     return fn;
 }
 
@@ -1833,10 +1836,12 @@ Value* Context::store(std::string_view name, Value* source) {
                 return detail::typeError(
                     this, "Assignment to import binding '" + std::string(name) + "'");
             case Scope::BindingKind::Direct: {
-                Value* target = s->lookup(name);
-                if (target == nullptr) break;  // 内部契约：Direct 必有槽位
+                Scope::Binding* binding = s->lookupBinding(name);
+                if (binding == nullptr) break;  // 内部契约：Direct 必有条目
+                Value* target = binding->value;
+                if (target == nullptr) break;
                 // 不可赋值（const 声明）：拦截并报错
-                if (!target->isMutable()) {
+                if (!binding->mutableBinding) {
                     return detail::typeError(
                         this, "Assignment to constant variable '" + std::string(name) + "'");
                 }
@@ -1866,12 +1871,17 @@ Value* Context::store(std::string_view name, Value* source) {
 
 // —— 可赋值性（ADR-030 阶段 5）——
 
-void Context::setMutable(Value* v, bool m) {
-    v->setMutable(m);
+void Context::setBindingMutable(Scope* scope, std::string_view name, bool m) {
+    if (scope == nullptr) return;
+    Scope::Binding* binding = scope->lookupBinding(name);
+    if (binding != nullptr) binding->mutableBinding = m;
 }
 
-bool Context::isMutable(Value* v) const {
-    return v->isMutable();
+bool Context::isBindingMutable(const Scope* scope,
+                               std::string_view name) const {
+    if (scope == nullptr) return true;
+    const Scope::Binding* binding = scope->lookupBinding(name);
+    return binding == nullptr || binding->mutableBinding;
 }
 
 // —— 作用域标注（ADR-030 阶段 5）——
