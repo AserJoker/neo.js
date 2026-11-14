@@ -6,9 +6,15 @@
 //
 // import 的本质：惰性创建模块 → 若未加载则在其 root scope 下执行 loader →
 // 返回导出对象。循环依赖时返回当前（部分）导出对象。
+//
+// 绑定模型（ADR-059）：导入是导出方槽位的只读别名；导出是槽位映射。
+// native loader 需先提升建槽并 exportSlot，再 importModule，最后 initialize。
+// 完整的 Module Instantiation / Linking 由 Compiler/宿主编排。
+//
 // 每个模块记录自己的 dirname；相对说明符（./ ../）以当前加载模块的 dirname 为基准。
 //
-// 关联 ADR: 011（Context 门面）、012（Scope 树）、044（可达性标记）
+// 关联 ADR: 011（Context 门面）、012（Scope 树）、044（可达性标记）、
+//          059（模块绑定与槽位共享 import）
 
 #include "core/Context.h"
 

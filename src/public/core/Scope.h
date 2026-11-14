@@ -17,7 +17,8 @@
 // 不释放内存（placement new 对象需显式 free）。
 //
 // lookupChain 沿 parent 链向上查找命名 value（ADR-013 查找路径基础版）。
-// namedValues_ 是名字→Value 映射（借用，不拥有）。
+// namedValues_ 是名字→Binding 映射（借用 Value，不拥有）。mutability 与
+// TDZ 状态属于绑定而不是 Value（ADR-059）。
 //
 // 闭包作用域（ADR-036）是**孤立**的 Scope：parent_ = nullptr，不挂在 root 下，
 // 生命周期随持有它的 FunctionData（data 引用计数归 0 时 destroySelf）。函数调用

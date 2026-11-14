@@ -13,7 +13,7 @@
 //
 // 对象布局复用 ObjectData（属性容器/GC 遍历），只替换类型与属性语义。
 //
-// 关联 ADR: 018（对象模型）、044（可达性标记）
+// 关联 ADR: 018（对象模型）、044（可达性标记）、059（模块绑定与槽位共享 import）
 
 #ifndef NEO_CORE_PRIVATE_TYPES_MODULE_NAMESPACE_H
 #define NEO_CORE_PRIVATE_TYPES_MODULE_NAMESPACE_H
