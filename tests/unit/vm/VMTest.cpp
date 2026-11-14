@@ -357,6 +357,81 @@ TEST(VMTest, RetPreservesScopeForCallerToBalance) {
     EXPECT_NE(f.ctx->current(), entry);
 }
 
+TEST(VMTest, CallInvokesScriptFunction) {
+    Fixture f;
+    Code code;
+
+    uint32_t skip = code.jmp();
+    uint32_t fnPc = code.here();
+    // function(a) { return a + 1; }
+    code.pushUndefined();
+    code.define("a");
+    code.storeThis();
+    code.store("a");
+    code.pushScope();
+    code.load("a");
+    code.push(1.0);
+    code.add();
+    code.ret();
+    uint32_t afterBody = code.here();
+    code.patchU32(skip + 2, afterBody);
+
+    code.pushFunction(fnPc, 1);
+    code.push(2.0);
+    code.call(1);
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    Value* result = vm.run();
+
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(result), 3.0);
+}
+
+namespace {
+
+Value* returnThis(IContext* ctx, Value* self, size_t, Value*[]) {
+    return self != nullptr ? self : ctx->createUndefined();
+}
+
+}  // namespace
+
+TEST(VMTest, CallMethodPassesReceiverAsThis) {
+    Fixture f;
+    Value* receiver = f.ctx->createObject();
+    Value* fn = f.ctx->createNativeFunction(&returnThis, 0);
+    ASSERT_NE(fn, f.ctx->oomValue());
+
+    Code code;
+    code.callMethod(0);
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    vm.push(receiver);
+    vm.push(fn);
+    Value* result = vm.run();
+
+    EXPECT_EQ(result, receiver);
+}
+
+TEST(VMTest, CallPassesUndefinedThis) {
+    Fixture f;
+    Value* fn = f.ctx->createNativeFunction(&returnThis, 0);
+    ASSERT_NE(fn, f.ctx->oomValue());
+
+    Code code;
+    code.call(0);
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    vm.push(fn);
+    Value* result = vm.run();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->type()->kind(), TypeKind::Undefined);
+}
+
 TEST(VMTest, BuilderEmitsSemanticInstructions) {
     Code code;
     EXPECT_EQ(code.here(), 0u);

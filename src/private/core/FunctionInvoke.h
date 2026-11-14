@@ -31,6 +31,12 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
                             Scope* resumeScope = nullptr, Value* newTarget = nullptr,
                             Value** outThis = nullptr);
 
+// 以 thisArg/argc/argv 调用 fn 的 script 函数体（ADR-060 §9）：
+// 切换作用域、创建新 VM、按序压入形参与 self，从 entryPc 执行。
+// fn 必须是 isScript 的 Function；返回正常值/Exception/Fatal/Interrupt。
+Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t argc,
+                            Value* argv[]);
+
 }  // namespace neo::core
 
 #endif  // NEO_CORE_PRIVATE_FUNCTION_INVOKE_H

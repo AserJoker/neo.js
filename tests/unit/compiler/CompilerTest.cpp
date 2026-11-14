@@ -33,7 +33,11 @@ using neo::core::Value;
 using neo::core::createContext;
 using neo::frontend::BinaryExpression;
 using neo::frontend::BinaryOperator;
+using neo::frontend::BlockStatement;
+using neo::frontend::CallExpression;
 using neo::frontend::DebuggerStatement;
+using neo::frontend::FunctionDeclaration;
+using neo::frontend::Identifier;
 using neo::frontend::NodeList;
 using neo::frontend::NumericLiteral;
 using neo::frontend::Parser;
@@ -110,6 +114,50 @@ TEST(CompilerTest, CompilesReturnBinaryExpression) {
     Program program(range, std::move(body), SourceType::Script);
 
     SemaResult sema;  // 手工 AST：无标注、无错误
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, CompilesFunctionDeclarationAndCall) {
+    SourceRange range{};
+
+    // function add(a, b) { return a + b; }  return add(1, 2);
+    NodeList params;
+    params.push_back(std::make_unique<Identifier>(range, "a"));
+    params.push_back(std::make_unique<Identifier>(range, "b"));
+
+    NodeList bodyStatements;
+    bodyStatements.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<BinaryExpression>(
+                   range, BinaryOperator::Add,
+                   std::make_unique<Identifier>(range, "a"),
+                   std::make_unique<Identifier>(range, "b"))));
+    auto fnBody = std::make_unique<BlockStatement>(
+        range, std::move(bodyStatements));
+
+    NodeList programBody;
+    programBody.push_back(std::make_unique<FunctionDeclaration>(
+        range, std::make_unique<Identifier>(range, "add"), std::move(params),
+        std::move(fnBody), false, false));
+
+    NodeList args;
+    args.push_back(std::make_unique<NumericLiteral>(range, 1.0));
+    args.push_back(std::make_unique<NumericLiteral>(range, 2.0));
+    programBody.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<CallExpression>(
+                   range, std::make_unique<Identifier>(range, "add"),
+                   std::move(args))));
+
+    Program program(range, std::move(programBody), SourceType::Script);
+    SemaResult sema;
     Compiler compiler(program, sema);
     CompileResult result = compiler.compile();
     ASSERT_TRUE(result.ok());

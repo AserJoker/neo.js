@@ -80,9 +80,20 @@ public:
 | Numeric/String/Boolean/NullLiteral | `push_*` |
 | Identifier | `load` |
 | BinaryExpression（+ - * / < <= > >=） | 左、右 + 对应指令 |
+| FunctionDeclaration/Expression | 跳过函数体 + 函数体 + `push_function` + `set_func_name` + `set_closure` + `define`（声明） |
+| ArrowFunctionExpression | 同上，另加 `load_this` + `bind_this`，无 prototype/不可构造 |
+| CallExpression（非成员） | callee + args + `call N` |
+| ThisExpression | `load_this` |
+
+函数体序言：形参 `push_undefined; define` → `store_this` → 按序 `store` 实参 →
+`push_scope` → 函数体 → `push_undefined; ret`。成员调用需 `get_prop`（V5），
+当前记录 unsupported 错误。
 
 变量声明、函数、调用、对象、异常、模块等节点暂记录 unsupported 错误，
 在后续切片中逐个补齐；每补一个节点，同时补 Compiler 测试与 VM 端到端测试。
+
+**break / continue 先延后**：它们依赖 label 栈与跨作用域跳转（ADR-060 V4），
+在 try/finally 与 label 结构确定前不编译，遇到时记录 unsupported 错误。
 
 ### 5. 文件布局
 
@@ -98,7 +109,7 @@ tests/unit/compiler/
 
 - 优点：Compiler 与 Parser 同构，节点覆盖度可逐条推进；错误显式；SourceMap
   与 VM 的异常定位直接对接；后续只需在分派表里补节点。
-- 缺点：初始子集不含变量提升/TDZ 预扫描、函数与模块，真实程序还不能编译；
-  这些需要 Compiler 自己的作用域/函数上下文，在后续切片引入。
-- 待定：函数体编译上下文（return 目标、闭包捕获发射）、模块三段式、
+- 缺点：初始子集不含变量提升/TDZ 预扫描、对象/属性与模块，真实程序还不能
+  完整编译；函数声明暂按源码顺序定义，尚未做提升三段式。
+- 待定：变量提升三段式、成员调用（依赖 `get_prop`）、模块绑定、
   常量池去重、SourceMap 对多字节指令的精确边界。

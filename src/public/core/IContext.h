@@ -52,6 +52,10 @@ namespace neo::bigint {
 class BigInt;
 }
 
+namespace neo::vm {
+struct Code;
+}  // namespace neo::vm
+
 namespace neo::core {
 
 // 前向声明
@@ -651,6 +655,20 @@ public:
 
     // ownEnumerableStringKeys: 便捷形式——只含 enumerable 的字符串键（Object.keys）。
     virtual Value* ownEnumerableStringKeys(Value* obj) = 0;
+
+    // createScriptFunction: 创建 script 函数 Value（ADR-060 §9）。
+    //   code/entryPc 借用（Module 持有 Code）；paramCount 用于 length 与实参补齐；
+    //   hasRest 标记 rest 参数；constructible/hasPrototypeProperty 区分普通函数
+    //   与箭头函数/方法。返回函数值或 OOM 哨兵。
+    virtual Value* createScriptFunction(const vm::Code* code, uint32_t entryPc,
+                                        size_t paramCount, bool hasRest,
+                                        bool constructible,
+                                        bool hasPrototypeProperty,
+                                        std::string_view bindName = {}) = 0;
+
+    // bindFunctionThis: 把 this 焊死到函数（箭头函数/显式绑定）。
+    // 调用时 invoke 优先使用该值，忽略调用点传入的 thisArg。
+    virtual void bindFunctionThis(Value* fn, Value* thisValue) = 0;
 
     // setClosure: 把当前作用域链上名为 name 的变量加入函数的闭包作用域（ADR-013 §2）。
     // 绑定 = 共享同一 Value（不复制），closureScope 登记同一 Value。

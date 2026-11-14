@@ -194,13 +194,18 @@ Value* VM::run(uint32_t entryPc = 0);
 沿用 ADR-024：
 
 ```
-[fn, argv0..argvN-1]  call N  →  [ret]
+[fn, argv0..argvN-1]              call N         → [ret]
+[receiver, fn, argv0..argvN-1]    call_method N  → [ret]
 ```
 
-- `call N` 从栈上弹出 fn 与 N 个实参，调用 `ctx->invoke(fn, undefined, N, args)`；
+- `call N`：弹 fn + N 个实参，`ctx->call(fn, undefined, N, args)`；
+- `call_method N`：弹 receiver + fn + N 个实参，
+  `ctx->call(fn, receiver, N, args)`。**属性查找不在此指令内**：编译器先求值
+  receiver、用 `get_prop`/`load` 取方法，再压 args 发射 `call_method`；
+  receiver 只求值一次，同时用于取方法和作为 thisArg。
 - script 函数由 invoke 创建新 VM，native 函数直接执行；
 - 返回值压回调用方操作数栈；
-- `call` 前后调用点栈平衡：`d → d - N`（弹 N+1 压 1）。
+- 栈平衡：`call` 为 `d → d - N`；`call_method` 为 `d → d - N - 1`。
 
 **编译器约束：函数体每条控制流路径都必须以 `ret` 结束。** 编译器在函数体末尾
 统一补 `push_undefined; ret`（隐式 `return undefined`），分支/循环的每个出口也
@@ -243,11 +248,15 @@ const Code* code = nullptr;
 uint32_t entryPc = 0;
 size_t paramCount = 0;
 bool hasRest = false;
+Value* self = nullptr;   // 箭头/显式绑定的 this（GC 遍历）
 ```
 
 - native 函数保持现状；
 - script 函数的 `invoke` 分支创建 VM，从 `entryPc` 开始执行；
-- `push_function` 创建 script 函数对象并绑定 `code/entryPc/closureScope`。
+- `IContext::createScriptFunction` 统一创建 script 函数（借用 `const Code*`）；
+- `push_function` 创建 script 函数对象并绑定 `code/entryPc/closureScope`；
+- `invoke` 逆序压入 `paramCount` 个形参（缺省补 undefined），最后压 self；
+- `call` 传 thisArg=undefined，`call_method` 传栈上的 receiver。
 
 ### 10. 文件布局
 
@@ -271,10 +280,10 @@ tests/unit/vm/
 |------|----------|---------|------|
 | V0 | 字面量、表达式语句、`return` | push_* / add / load / store / define / ret / hlt | 手工 Code：`1+2`、变量读写 |
 | V1 | `var/let/const`、块、if/while | define(flags) / initialize / lt/gt/le/ge / jmp / jtrue / jfalse / push_scope / pop_scope | 手工 Code + 简单 Compiler |
-| V2 | 函数声明/调用、箭头 | push_function / set_closure / call / store_this / load_this | 脚本函数调用 |
+| V2 | 函数声明/调用、箭头 | push_function / set_closure / call / call_method / store_this / load_this | 脚本函数调用、成员调用 this |
 | V3 | try/catch/finally、throw | try 栈、completion、异常展开 | 异常路径 |
 | V4 | break/continue/标签 | label 栈、跨 finally 跳转 | 循环/标签 |
-| V5 | 对象/数组/属性/方法调用 | get_prop/set_prop/call_method | 对象操作 |
+| V5 | 对象/数组/属性 | get_prop/set_prop | 对象操作 |
 | V6 | import/export | 模块三段式、槽位提升、link | 模块端到端 |
 | V7 | generator/async/await | VmState 链、Interrupt 消费 | 挂起恢复 |
 
@@ -288,4 +297,4 @@ V0 是第一个可真实运行的 VM→Engine 链路：不依赖 Compiler，直�
 - 缺点：需要扩展 FunctionData 与 invoke 分支；挂起恢复需要 VmState 链，
   在 V5 前只能做同步执行。
 - 待定：`Code` 的所有权与跨模块共享、常量池对对象字面量的表示、
-  `call_method` 的 self 传递细节、异常跨 VM 的调用栈快照合并。
+  异常跨 VM 的调用栈快照合并。

@@ -5,6 +5,8 @@
 
 #include "compiler/Compiler.h"
 
+#include "sema/ResolvePass.h"
+
 #include <string>
 #include <utility>
 
@@ -55,6 +57,10 @@ void Compiler::compileStatement(const Node& node) {
             compileBlockStatement(
                 static_cast<const frontend::BlockStatement&>(node));
             break;
+        case NodeKind::FunctionDeclaration:
+            compileFunctionDeclaration(
+                static_cast<const frontend::FunctionDeclaration&>(node));
+            break;
         default:
             error(node, "compiler: unsupported statement node kind " +
                             std::to_string(static_cast<int>(node.kind())));
@@ -87,6 +93,22 @@ void Compiler::compileExpression(const Node& node) {
         case NodeKind::BinaryExpression:
             compileBinaryExpression(
                 static_cast<const frontend::BinaryExpression&>(node));
+            break;
+        case NodeKind::FunctionExpression:
+            compileFunctionExpression(
+                static_cast<const frontend::FunctionExpression&>(node));
+            break;
+        case NodeKind::ArrowFunctionExpression:
+            compileArrowFunctionExpression(
+                static_cast<const frontend::ArrowFunctionExpression&>(node));
+            break;
+        case NodeKind::CallExpression:
+            compileCallExpression(
+                static_cast<const frontend::CallExpression&>(node));
+            break;
+        case NodeKind::ThisExpression:
+            compileThisExpression(
+                static_cast<const frontend::ThisExpression&>(node));
             break;
         default:
             error(node, "compiler: unsupported expression node kind " +
@@ -170,6 +192,173 @@ void Compiler::compileBinaryExpression(
                             std::to_string(static_cast<int>(node.op)));
             break;
     }
+}
+
+void Compiler::compileFunctionExpression(
+    const frontend::FunctionExpression& node) {
+    std::string name;
+    if (node.id && node.id->kind() == NodeKind::Identifier) {
+        name = static_cast<const frontend::Identifier&>(*node.id).name;
+    }
+    if (!node.body) {
+        error(node, "compiler: function expression missing body");
+        code_->pushUndefined();
+        return;
+    }
+    compileFunctionObject(node, node.params, *node.body, false, name);
+}
+
+void Compiler::compileArrowFunctionExpression(
+    const frontend::ArrowFunctionExpression& node) {
+    if (!node.body) {
+        error(node, "compiler: arrow function missing body");
+        code_->pushUndefined();
+        return;
+    }
+    compileFunctionObject(node, node.params, *node.body, true, {});
+}
+
+void Compiler::compileCallExpression(const frontend::CallExpression& node) {
+    if (!node.callee) {
+        error(node, "compiler: call expression missing callee");
+        code_->pushUndefined();
+        return;
+    }
+    // 成员调用需要 get_prop（V5）；先显式报错，避免生成错误的 this。
+    if (node.callee->kind() == NodeKind::MemberExpression) {
+        error(node, "compiler: member call requires get_prop (V5)");
+        code_->pushUndefined();
+        return;
+    }
+
+    compileExpression(*node.callee);
+    uint32_t argc = 0;
+    for (const frontend::NodePtr& argument : node.arguments) {
+        if (!argument) continue;
+        if (argument->kind() == NodeKind::SpreadElement) {
+            error(*argument, "compiler: spread arguments not supported");
+            continue;
+        }
+        compileExpression(*argument);
+        ++argc;
+    }
+    code_->call(argc);
+}
+
+void Compiler::compileThisExpression(const frontend::ThisExpression&) {
+    code_->loadThis();
+}
+
+// —— 函数 ——
+
+void Compiler::compileFunctionDeclaration(
+    const frontend::FunctionDeclaration& node) {
+    if (!node.id || node.id->kind() != NodeKind::Identifier) {
+        error(node, "compiler: function declaration missing name");
+        return;
+    }
+    if (!node.body) {
+        error(node, "compiler: function declaration missing body");
+        return;
+    }
+    const std::string& name =
+        static_cast<const frontend::Identifier&>(*node.id).name;
+    compileFunctionObject(node, node.params, *node.body, false, name);
+    code_->define(name);
+}
+
+void Compiler::compileFunctionObject(const Node& node,
+                                     const frontend::NodeList& params,
+                                     const Node& body, bool arrow,
+                                     std::string_view name) {
+    // 函数体内联在当前位置，执行路径先跳过它。
+    uint32_t skip = code_->jmp();
+    uint32_t entryPc = code_->here();
+    compileFunctionBody(params, body, arrow);
+    uint32_t afterBody = code_->here();
+    code_->patchU32(skip + 2, afterBody);
+
+    uint32_t paramCount = 0;
+    bool hasRest = false;
+    for (const frontend::NodePtr& param : params) {
+        if (!param) continue;
+        if (param->kind() == NodeKind::Identifier) {
+            ++paramCount;
+        } else if (param->kind() == NodeKind::RestElement) {
+            hasRest = true;
+        } else {
+            error(*param, "compiler: unsupported parameter pattern");
+        }
+    }
+
+    uint32_t flags = 0;
+    if (hasRest) flags |= vm::kFunctionHasRest;
+    if (!arrow) flags |= vm::kFunctionConstructible | vm::kFunctionHasPrototype;
+    code_->pushFunction(entryPc, paramCount, flags);
+
+    if (!name.empty()) code_->setFuncName(name);
+
+    // Sema 的捕获列表（穿透捕获）：逐个从定义点作用域链绑进闭包。
+    if (const auto* captures =
+            sema_.annotations.get<sema::FunctionCaptures>(node.id())) {
+        for (const std::string& capture : captures->names) {
+            code_->setClosure(capture);
+        }
+    }
+
+    // 箭头函数在定义点焊死外层 this。
+    if (arrow) {
+        code_->loadThis();
+        code_->bindThis();
+    }
+}
+
+void Compiler::compileFunctionBody(const frontend::NodeList& params,
+                                   const Node& body, bool arrow) {
+    // 形参建槽（argument_scope）：push_undefined; define "p"
+    for (const frontend::NodePtr& param : params) {
+        if (!param) continue;
+        if (param->kind() == NodeKind::Identifier) {
+            const auto& id = static_cast<const frontend::Identifier&>(*param);
+            code_->pushUndefined();
+            code_->define(id.name);
+        } else if (param->kind() == NodeKind::RestElement) {
+            error(*param, "compiler: rest parameters not supported");
+        } else {
+            error(*param, "compiler: unsupported parameter pattern");
+        }
+    }
+
+    // 栈顶是 self，先消费；随后按顺序绑定实参（栈上 argv0 在顶）。
+    code_->storeThis();
+    for (const frontend::NodePtr& param : params) {
+        if (param && param->kind() == NodeKind::Identifier) {
+            const auto& id = static_cast<const frontend::Identifier&>(*param);
+            code_->store(id.name);
+        }
+    }
+
+    code_->pushScope();
+
+    if (arrow && body.kind() != NodeKind::BlockStatement) {
+        // 表达式体箭头：表达式值即返回值。
+        compileExpression(body);
+        code_->ret();
+        return;
+    }
+
+    if (body.kind() == NodeKind::BlockStatement) {
+        const auto& block = static_cast<const frontend::BlockStatement&>(body);
+        for (const frontend::NodePtr& statement : block.body) {
+            if (statement) compileStatement(*statement);
+        }
+    } else {
+        error(body, "compiler: unsupported function body");
+    }
+
+    // 编译器统一补隐式 return undefined（ADR-024）。
+    code_->pushUndefined();
+    code_->ret();
 }
 
 // —— 辅助 ——

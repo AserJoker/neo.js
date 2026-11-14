@@ -55,6 +55,10 @@
 #include <string_view>
 #include <vector>
 
+namespace neo::vm {
+struct Code;
+}  // namespace neo::vm
+
 namespace neo::core {
 
 class Scope;
@@ -94,8 +98,17 @@ class FunctionData : public ObjectData {
 public:
     Scope* closureScope;   // 闭包作用域（孤立，生命周期随本 data，ADR-036）
     Scope* rootScope;      // 模块根作用域（借用，不拥有）
-    NativeFn native;       // native 函数指针
+    NativeFn native;       // native 函数指针（script 函数为占位，不会执行）
     size_t minArgc;        // 最少参数数量（调用时校验）
+
+    // —— script 函数（ADR-060 §9）——
+    bool isScript = false;
+    const vm::Code* code = nullptr;  // 借用，由 Module 持有
+    uint32_t entryPc = 0;            // 函数入口字节偏移
+    size_t paramCount = 0;           // 形参个数（length 属性/实参补齐）
+    bool hasRest = false;            // 是否有 rest 参数
+    // 箭头函数/显式绑定的 this（ADR-021 §2b）。非空时 invoke 优先于传入 thisArg。
+    Value* self = nullptr;           // GC 需遍历
     NativeFn constructFn;  // 可选构造钩子（nullptr = native + 默认 this 语义）
     bool constructible = true;  // 是否可作为构造函数（IsConstructor，§7.2.4）
     // 是否为生成器函数（function*，ADR-045 §8）。为 true 时 call 不执行函数体，

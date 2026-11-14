@@ -21,6 +21,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace neo::compiler {
@@ -62,6 +63,7 @@ private:
     void compileBlockStatement(const frontend::BlockStatement& node);
     void compileExpressionStatement(const frontend::ExpressionStatement& node);
     void compileReturnStatement(const frontend::ReturnStatement& node);
+    void compileFunctionDeclaration(const frontend::FunctionDeclaration& node);
 
     // —— 表达式 ——
     void compileIdentifier(const frontend::Identifier& node);
@@ -70,6 +72,22 @@ private:
     void compileBooleanLiteral(const frontend::BooleanLiteral& node);
     void compileNullLiteral(const frontend::NullLiteral& node);
     void compileBinaryExpression(const frontend::BinaryExpression& node);
+    void compileFunctionExpression(const frontend::FunctionExpression& node);
+    void compileArrowFunctionExpression(
+        const frontend::ArrowFunctionExpression& node);
+    void compileCallExpression(const frontend::CallExpression& node);
+    void compileThisExpression(const frontend::ThisExpression& node);
+
+    // —— 函数体 ——
+    // 发射函数值：跳过函数体 → 函数体 → push_function → 名称/捕获/this 绑定。
+    // 结果函数值留在操作数栈上。
+    void compileFunctionObject(const frontend::Node& node,
+                               const frontend::NodeList& params,
+                               const frontend::Node& body, bool arrow,
+                               std::string_view name);
+    // 函数序言 + 函数体 + 隐式 return undefined。
+    void compileFunctionBody(const frontend::NodeList& params,
+                             const frontend::Node& body, bool arrow);
 
     // —— 辅助 ——
     void error(const frontend::Node& node, std::string message);

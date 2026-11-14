@@ -1161,6 +1161,48 @@ Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_vi
     return fnValue;
 }
 
+namespace {
+
+// script 函数不使用 native 指针；FunctionType::call 在 isScript 分支提前分派。
+Value* scriptFunctionPlaceholder(IContext* ctx, Value*, size_t, Value*[]) {
+    return ctx->createUndefined();
+}
+
+}  // namespace
+
+Value* Context::createScriptFunction(const vm::Code* code, uint32_t entryPc,
+                                     size_t paramCount, bool hasRest,
+                                     bool constructible,
+                                     bool hasPrototypeProperty,
+                                     std::string_view bindName) {
+    FunctionCreateOptions opts;
+    opts.constructible = constructible;
+    opts.hasPrototypeProperty = hasPrototypeProperty;
+    Value* fn = createNativeFunction(&scriptFunctionPlaceholder, 0, bindName, opts);
+    if (fn == oomValue_) return fn;
+
+    auto* d = static_cast<FunctionData*>(fn->data());
+    d->isScript = true;
+    d->code = code;
+    d->entryPc = entryPc;
+    d->paramCount = paramCount;
+    d->hasRest = hasRest;
+
+    // length 属性按形参个数重定义（createNativeFunction 用 minArgc=0 建过）。
+    Value* length = createNumber(static_cast<double>(paramCount));
+    if (length == oomValue_) return length;
+    if (defineProperty(fn, "length", length, false, false, true)->type()->kind() ==
+        TypeKind::Exception) {
+        return oomValue_;
+    }
+    return fn;
+}
+
+void Context::bindFunctionThis(Value* fn, Value* thisValue) {
+    if (fn == nullptr || fn->type()->kind() != TypeKind::Function) return;
+    static_cast<FunctionData*>(fn->data())->self = thisValue;
+}
+
 void Context::setFunctionConstructor(Value* fn, NativeFn ctor) {
     // 仅对 Function 类型有效（内建注册用），其他类型忽略
     if (fn->type()->kind() != TypeKind::Function) return;

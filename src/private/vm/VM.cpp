@@ -71,6 +71,14 @@ const char* opCodeName(OpCode op) {
         case OpCode::JFalse:        return "jfalse";
         case OpCode::PushScope:     return "push_scope";
         case OpCode::PopScope:      return "pop_scope";
+        case OpCode::PushFunction:  return "push_function";
+        case OpCode::SetClosure:    return "set_closure";
+        case OpCode::SetFuncName:   return "set_func_name";
+        case OpCode::BindThis:      return "bind_this";
+        case OpCode::LoadThis:      return "load_this";
+        case OpCode::StoreThis:     return "store_this";
+        case OpCode::Call:          return "call";
+        case OpCode::CallMethod:    return "call_method";
         case OpCode::Ret:           return "ret";
         case OpCode::Halt:          return "hlt";
     }
@@ -111,6 +119,14 @@ const VM::Handler* VM::handlers() {
         &VM::opJFalse,
         &VM::opPushScope,
         &VM::opPopScope,
+        &VM::opPushFunction,
+        &VM::opSetClosure,
+        &VM::opSetFuncName,
+        &VM::opBindThis,
+        &VM::opLoadThis,
+        &VM::opStoreThis,
+        &VM::opCall,
+        &VM::opCallMethod,
         &VM::opRet,
         &VM::opHalt,
     };
@@ -375,6 +391,125 @@ Value* VM::opPushScope() {
 
 Value* VM::opPopScope() {
     ctx_->popScope();
+    return nullptr;
+}
+
+// —— 函数定义 ——
+
+Value* VM::opPushFunction() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 12) {
+        return badBytecode("push_function: truncated operand");
+    }
+    uint32_t entryPc = readU32(bytes.data() + pc_);
+    uint32_t paramCount = readU32(bytes.data() + pc_ + 4);
+    uint32_t flags = readU32(bytes.data() + pc_ + 8);
+    pc_ += 12;
+
+    Value* fn = ctx_->createScriptFunction(
+        code_, entryPc, paramCount, (flags & kFunctionHasRest) != 0,
+        (flags & kFunctionConstructible) != 0,
+        (flags & kFunctionHasPrototype) != 0);
+    if (fn == ctx_->oomValue()) return fn;
+    push(fn);
+    return nullptr;
+}
+
+Value* VM::opSetClosure() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("set_closure: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) return badBytecode("set_closure: name index out of range");
+    if (stack_.empty()) return badBytecode("set_closure: operand stack underflow");
+
+    Value* result = ctx_->setClosure(top(), *name);
+    if (detail::isErrorValue(result)) return fail(result);
+    return nullptr;
+}
+
+Value* VM::opSetFuncName() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("set_func_name: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) return badBytecode("set_func_name: name index out of range");
+    if (stack_.empty()) return badBytecode("set_func_name: operand stack underflow");
+
+    ctx_->setFunctionName(top(), *name);
+    return nullptr;
+}
+
+Value* VM::opBindThis() {
+    if (stack_.size() < 2) {
+        return badBytecode("bind_this: operand stack underflow");
+    }
+    Value* self = pop();
+    ctx_->bindFunctionThis(top(), self);
+    return nullptr;
+}
+
+Value* VM::opLoadThis() {
+    Value* value = ctx_->getThis();
+    if (detail::isErrorValue(value)) return fail(value);
+    push(value);
+    return nullptr;
+}
+
+Value* VM::opStoreThis() {
+    if (stack_.empty()) return badBytecode("store_this: operand stack underflow");
+    ctx_->initializeThis(pop());
+    return nullptr;
+}
+
+// —— 调用 ——
+
+Value* VM::opCall() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) return badBytecode("call: truncated operand");
+    uint32_t argc = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (stack_.size() < static_cast<size_t>(argc) + 1) {
+        return badBytecode("call: operand stack underflow");
+    }
+
+    std::vector<Value*> args(argc);
+    for (uint32_t i = argc; i > 0; --i) args[i - 1] = pop();
+    Value* fn = pop();
+
+    Value* result = ctx_->call(fn, ctx_->createUndefined(), argc, args.data());
+    if (detail::isErrorValue(result)) return fail(result);
+    if (detail::isInterruptValue(result)) return result;
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opCallMethod() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) return badBytecode("call_method: truncated operand");
+    uint32_t argc = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (stack_.size() < static_cast<size_t>(argc) + 2) {
+        return badBytecode("call_method: operand stack underflow");
+    }
+
+    std::vector<Value*> args(argc);
+    for (uint32_t i = argc; i > 0; --i) args[i - 1] = pop();
+    Value* fn = pop();
+    Value* receiver = pop();
+
+    Value* result = ctx_->call(fn, receiver, argc, args.data());
+    if (detail::isErrorValue(result)) return fail(result);
+    if (detail::isInterruptValue(result)) return result;
+    push(result);
     return nullptr;
 }
 

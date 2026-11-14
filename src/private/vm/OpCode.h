@@ -13,6 +13,11 @@
 //   store         u32 nameIndex
 //   jmp           u32 targetPc（字节偏移）
 //   jtrue/jfalse  u32 targetPc（字节偏移）
+//   push_function u32 entryPc, u32 paramCount, u32 flags
+//   set_closure   u32 nameIndex
+//   set_func_name u32 nameIndex
+//   call          u32 argc
+//   call_method   u32 argc
 //   其余指令      无操作数
 //
 // 操作数的读取由各指令处理函数自己负责——只有它知道需要几个、什么类型。
@@ -33,6 +38,14 @@
 //   jtrue/jfalse  d → d - 1        （弹条件，按 ToBoolean 决定是否跳转）
 //   push_scope    d → d            （创建子作用域并设为 current）
 //   pop_scope     d → d            （销毁 current，回到 parent）
+//   push_function d → d + 1
+//   set_closure   d → d
+//   set_func_name d → d
+//   bind_this     d → d - 1        （弹 self，焊到 fn）
+//   load_this     d → d + 1
+//   store_this    d → d - 1
+//   call N        d → d - N        （弹 fn + N args，压返回值）
+//   call_method N d → d - N - 1    （弹 receiver + fn + N args，压返回值）
 //   ret           d → 0            （弹返回值并结束）
 //   hlt           d → d            （结束，返回 undefined）
 //
@@ -83,6 +96,18 @@ enum class OpCode : uint16_t {
     PushScope,
     PopScope,
 
+    // 函数定义
+    PushFunction,   // u32 entryPc, u32 paramCount, u32 flags
+    SetClosure,     // u32 nameIndex：把作用域链上的变量绑进函数闭包
+    SetFuncName,    // u32 nameIndex：设置函数 name
+    BindThis,       // [fn, self] → [fn]：把 self 焊死到函数（箭头）
+    LoadThis,       // [] → [this]
+    StoreThis,      // [self] → []：写入当前函数环境 this
+
+    // 调用
+    Call,           // u32 argc：[fn, argv...] → [ret]，thisArg=undefined
+    CallMethod,     // u32 argc：[receiver, fn, argv...] → [ret]，thisArg=receiver
+
     Ret,
     Halt,
 };
@@ -95,6 +120,11 @@ inline constexpr size_t kOpCodeCount = static_cast<size_t>(OpCode::Halt) + 1;
 //   initialized —— 绑定已初始化（let/const 提升建槽时为 false，进入 TDZ）
 inline constexpr uint32_t kDefineMutable = 1u << 0;
 inline constexpr uint32_t kDefineInitialized = 1u << 1;
+
+// push_function 的 flags 位。
+inline constexpr uint32_t kFunctionHasRest = 1u << 0;
+inline constexpr uint32_t kFunctionConstructible = 1u << 1;
+inline constexpr uint32_t kFunctionHasPrototype = 1u << 2;
 
 // 指令名（诊断/测试用）。
 const char* opCodeName(OpCode op);

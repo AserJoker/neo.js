@@ -238,6 +238,11 @@ public:
     void setFunctionAsyncGenerator(Value* fn, bool asyncGenerator) override;
     Value* createBoundFunction(Value* target, Value* boundThis, size_t argc,
                                Value* argv[]) override;
+    Value* createScriptFunction(const vm::Code* code, uint32_t entryPc,
+                                size_t paramCount, bool hasRest,
+                                bool constructible, bool hasPrototypeProperty,
+                                std::string_view bindName = {}) override;
+    void bindFunctionThis(Value* fn, Value* thisValue) override;
     Value* setClosure(Value* fn, std::string_view name) override;
     Value* captureValue(Value* fn, std::string_view name, Value* value) override;
 

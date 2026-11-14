@@ -98,8 +98,8 @@ _func_end:
 
 | 指令 | 栈契约 | 说明 |
 |------|--------|------|
-| `call N` | `[fn, argv0..argvN-1] → [ret]` | 弹 fn + N args，self=undefined，调 invoke，压返回值 |
-| `call_method N` | `[fn, argv0..argvN-1] → [ret]` | 同上，self=undefined（方法调用 this 由 fn.bind 决定） |
+| `call N` | `[fn, argv0..argvN-1] → [ret]` | 弹 fn + N args，thisArg=undefined，调 invoke，压返回值 |
+| `call_method N` | `[receiver, fn, argv0..argvN-1] → [ret]` | 弹 receiver + fn + N args，thisArg=receiver，调 invoke，压返回值 |
 | `ret` | `[val] → []` | 函数返回，弹栈顶作为返回值，结束当前 VM |
 | `hlt` | `[] → ∅` | 模块执行结束 |
 
@@ -122,6 +122,31 @@ _func_end:
 - 箭头函数：call 仍传 self=undefined，但 invoke 里 `func->data->self` 优先
   （绑定的外层 this）→ 压栈的是正确 this → StoreThis 取出正确 this。
   **统一调用约定，箭头/普通无特例**。
+
+**call_method N 栈契约（成员调用）**：
+
+```
+调用点栈（call_method 之前）：
+[receiver]        <- 方法接收者，只求值一次
+[fn]              <- 从 receiver 上取到的方法
+[argv0]
+...
+[argvN-1]         call_method N  ⇒  invoke(fn, thisArg=receiver, N, args)
+弹出 N+2 个（receiver + fn + N args）
+压入 1 个返回值
+栈深变化：d → d - N - 1
+```
+
+- **属性查找与调用分离**：`call_method` 不做属性查找。编译器先发射
+  receiver 求值，再用 `get_prop` / `load` 取方法，最后压实参并发射
+  `call_method N`。
+- **receiver 只求值一次**：`getObj().m()` 中 `getObj()` 的结果同时用于
+  取方法和作为 this，不能重复求值。
+- **thisArg 显式传递**：`call_method` 以栈上的 receiver 调
+  `ctx->call(fn, receiver, N, args)`；`call` 则传 `undefined`。
+  这样普通调用与成员调用在字节码层完全分离，不需要靠 `fn.bind` 特判。
+- `super.method()`：receiver 仍是当前 this，属性查找基准由后续的
+  `super` 属性指令负责；`call_method` 只关心 thisArg。
 
 #### 2.5 控制流
 
@@ -284,4 +309,5 @@ hlt
   箭头/普通函数字节码层无特例（统一 store_this）；定义点退化为 store 简化语义。
 - 缺点：函数调用创建/销毁 VM 有开销（ADR-004）；箭头函数 bind_this 多两条指令。
 - 待定：对象/数组字面量、try/catch（异常即值走 return 通道）、for 循环
-  （init_scope/body_scope）、属性访问/方法调用的字节码细节后续 ADR 细化。
+  （init_scope/body_scope）、`get_prop`/`set_prop` 的具体编码后续 ADR 细化。
+  方法调用已定：`call_method` 只负责 thisArg，属性查找由 `get_prop` 完成。

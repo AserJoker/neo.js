@@ -23,6 +23,7 @@
 #include "core/types/Function.h"
 #include "core/types/Interrupt.h"
 #include "core/types/TypeBehavior.h"
+#include "vm/VM.h"
 
 namespace neo::core {
 
@@ -152,6 +153,87 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
     }
 
     // 11. 恢复调用方 root/current（closureScope 不在调用方链上，须显式恢复）
+    ctx->setCurrentScope(savedCurrent);
+    ctx->setRootScope(savedRoot);
+    return res;
+}
+
+Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t argc,
+                            Value* argv[]) {
+    auto* d = static_cast<FunctionData*>(fn->data());
+    if (d->code == nullptr) {
+        return detail::typeError(ctx, "script function has no code");
+    }
+
+    // 1. 保存调用方状态
+    Scope* savedRoot = ctx->root();
+    Scope* savedCurrent = ctx->current();
+    Scope* savedFunctionEnv = ctx->currentFunctionEnv();
+    Value* savedFunction = ctx->currentFunction();
+
+    // 2. 切换到被调函数的模块根作用域，最外层调用挂载闭包作用域
+    ctx->setRootScope(d->rootScope);
+    if (!d->capturesEnvironment && d->activeCalls == 0) {
+        d->closureScope->reparent(d->rootScope);
+    }
+    ++d->activeCalls;
+
+    // 3. 执行作用域（execScope → closureScope → rootScope → global）
+    Scope* execScope = ctx->pushNewScope(d->closureScope);
+    if (execScope == nullptr) {
+        if (--d->activeCalls == 0 && !d->capturesEnvironment) {
+            d->closureScope->reparent(nullptr);
+        }
+        ctx->setRootScope(savedRoot);
+        ctx->setCurrentScope(savedCurrent);
+        ctx->setCurrentFunctionEnv(savedFunctionEnv);
+        ctx->setCurrentFunction(savedFunction);
+        return ctx->oomValue();
+    }
+
+    // this 优先级：函数自身绑定（箭头/bind）> 调用点传入 > undefined
+    Value* boundThis = d->self != nullptr
+                           ? d->self
+                           : (thisArg != nullptr ? thisArg : ctx->createUndefined());
+    execScope->setThis(boundThis);
+    execScope->setNewTarget(ctx->createUndefined());
+    ctx->setCurrentFunctionEnv(execScope);
+    ctx->setCurrentFunction(fn);
+
+    // 4. 新 VM：逆序压形参（缺省补 undefined），self 最后压入（栈顶）
+    vm::VM machine(ctx, d->code);
+    for (size_t i = d->paramCount; i > 0; --i) {
+        size_t index = i - 1;
+        machine.push(index < argc ? argv[index] : ctx->createUndefined());
+    }
+    machine.push(boundThis);
+
+    Value* res = machine.run(d->entryPc);
+
+    // 5. Fatal：不恢复现场、不平衡栈（不可捕获），只摘除闭包挂载
+    if (res != nullptr && res->type()->kind() == TypeKind::Fatal) {
+        if (--d->activeCalls == 0 && !d->capturesEnvironment) {
+            d->closureScope->reparent(nullptr);
+        }
+        ctx->setRootScope(savedRoot);
+        ctx->setCurrentScope(savedCurrent);
+        ctx->setCurrentFunctionEnv(savedFunctionEnv);
+        ctx->setCurrentFunction(savedFunction);
+        return res;
+    }
+
+    // 6. 返回值归属调用方作用域（restoreValue 语义）
+    if (res != nullptr) savedCurrent->add(res);
+
+    // 7. 平衡作用域并恢复调用方
+    ctx->setCurrentFunctionEnv(savedFunctionEnv);
+    ctx->setCurrentFunction(savedFunction);
+    while (ctx->current() != d->closureScope) {
+        ctx->popScope();
+    }
+    if (--d->activeCalls == 0 && !d->capturesEnvironment) {
+        d->closureScope->reparent(nullptr);
+    }
     ctx->setCurrentScope(savedCurrent);
     ctx->setRootScope(savedRoot);
     return res;

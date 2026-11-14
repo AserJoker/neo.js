@@ -191,6 +191,42 @@ struct Code {
     uint32_t pushScope() { return emitOp(OpCode::PushScope); }
     uint32_t popScope() { return emitOp(OpCode::PopScope); }
 
+    // —— 函数定义 ——
+    uint32_t pushFunction(uint32_t entryPc, uint32_t paramCount,
+                          uint32_t flags = kFunctionConstructible |
+                                           kFunctionHasPrototype) {
+        uint32_t pc = emitOp(OpCode::PushFunction);
+        emitU32(entryPc);
+        emitU32(paramCount);
+        emitU32(flags);
+        return pc;
+    }
+    uint32_t setClosure(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::SetClosure);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t setFuncName(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::SetFuncName);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t bindThis() { return emitOp(OpCode::BindThis); }
+    uint32_t loadThis() { return emitOp(OpCode::LoadThis); }
+    uint32_t storeThis() { return emitOp(OpCode::StoreThis); }
+
+    // —— 调用 ——
+    uint32_t call(uint32_t argc) {
+        uint32_t pc = emitOp(OpCode::Call);
+        emitU32(argc);
+        return pc;
+    }
+    uint32_t callMethod(uint32_t argc) {
+        uint32_t pc = emitOp(OpCode::CallMethod);
+        emitU32(argc);
+        return pc;
+    }
+
     uint32_t ret() { return emitOp(OpCode::Ret); }
     uint32_t halt() { return emitOp(OpCode::Halt); }
 

@@ -59,6 +59,9 @@ public:
     uint32_t pc() const { return pc_; }
     const std::vector<neo::core::Value*>& stack() const { return stack_; }
 
+    // 供 Function::invoke 在启动 VM 前压入形参与 self（ADR-022）。
+    void push(neo::core::Value* value) { stack_.push_back(value); }
+
 private:
     // 指令处理函数：自行读取操作数并推进 pc。
     // 返回 nullptr 表示继续；非空表示执行信号，由 run 消费。
@@ -67,7 +70,6 @@ private:
     // 分派表（OpCode → 成员函数指针）。
     static const Handler* handlers();
 
-    void push(neo::core::Value* value) { stack_.push_back(value); }
     neo::core::Value* pop() {
         neo::core::Value* value = stack_.back();
         stack_.pop_back();
@@ -113,6 +115,14 @@ private:
     neo::core::Value* opJFalse();
     neo::core::Value* opPushScope();
     neo::core::Value* opPopScope();
+    neo::core::Value* opPushFunction();
+    neo::core::Value* opSetClosure();
+    neo::core::Value* opSetFuncName();
+    neo::core::Value* opBindThis();
+    neo::core::Value* opLoadThis();
+    neo::core::Value* opStoreThis();
+    neo::core::Value* opCall();
+    neo::core::Value* opCallMethod();
     neo::core::Value* opRet();
     neo::core::Value* opHalt();
 

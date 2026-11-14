@@ -81,6 +81,11 @@ Value* FunctionType::call(IContext* ctx, Value* self, Value* thisArg,
                          static_cast<size_t>(args.size()), args.data());
     }
 
+    // script 函数：创建新 VM，从 entryPc 执行（ADR-060 §9）。
+    if (d->isScript) {
+        return invokeScriptFunction(ctx, self, thisArg, argc, argv);
+    }
+
     // async native：以协程阶段机运行函数体，返回 Promise。
     if (d->asyncNative) {
         if (Value* err = checkMinArgc(ctx, d, argc)) return err;
@@ -133,6 +138,7 @@ void FunctionData::enumerateChildren(IGCVisitor* visitor) {
     ObjectData::enumerateChildren(visitor);
     if (boundTarget != nullptr) visitor->visit(boundTarget);
     if (boundThis != nullptr) visitor->visit(boundThis);
+    if (self != nullptr) visitor->visit(self);
     if (homeObject != nullptr) visitor->visit(homeObject);
     if (ownerClass != nullptr) visitor->visit(ownerClass);
     for (Value* v : boundArgs) {
