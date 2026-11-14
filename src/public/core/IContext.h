@@ -211,6 +211,13 @@ public:
     virtual const std::vector<CallFrame>& callStack() const = 0;
     virtual void setCallStack(std::vector<CallFrame> stack) = 0;
 
+    // setExceptionPosition：用当前源码位置补全异常值的 stack。
+    // VM 在指令失败点调用——Engine 原语创建错误时不知道 pc，只有 VM 能通过
+    // SourceMap 反查位置。exception 为 Exception 且载荷为 Error 对象时，
+    // 按 trace(position) 重渲染其 stack 属性；其余情况无操作。
+    virtual void setExceptionPosition(Value* exception,
+                                      const SourcePosition& position) = 0;
+
     // —— Value 创建便捷接口（ADR-030 阶段 4）——
     // 内部封装 gc->allocData<T> + gc->createValue(type, data)，把 Value 加入 current scope
     // 登记到 current scope（从 global 树可达）。可选 name：指定则同时 bind（命名绑定）。

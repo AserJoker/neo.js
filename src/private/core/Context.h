@@ -139,6 +139,8 @@ public:
     void setCallStack(std::vector<CallFrame> stack) override {
         callStack_ = std::move(stack);
     }
+    void setExceptionPosition(Value* exception,
+                              const SourcePosition& position) override;
 
     Value* createUndefined(std::string_view name = {}) override;
     Value* createNull(std::string_view name = {}) override;

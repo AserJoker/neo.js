@@ -1973,6 +1973,29 @@ std::vector<CallFrame> Context::trace(const SourcePosition& callSite) const {
     return snapshot;
 }
 
+void Context::setExceptionPosition(Value* exception,
+                                   const SourcePosition& position) {
+    // 只有 Exception 且载荷是 Error 对象时才需要重渲染 stack。
+    if (exception == nullptr || exception->type()->kind() != TypeKind::Exception) {
+        return;
+    }
+    Value* err = static_cast<ExceptionData*>(exception->data())->child;
+    if (err == nullptr || err->type()->kind() != TypeKind::Error) return;
+
+    std::string name = "Error";
+    std::string message;
+    Value* nameValue = getProperty(err, "name");
+    if (!detail::isErrorValue(nameValue)) name = detail::valueToString(nameValue);
+    Value* messageValue = getProperty(err, "message");
+    if (!detail::isErrorValue(messageValue)) {
+        message = detail::valueToString(messageValue);
+    }
+
+    Value* stack = createString(renderStack(trace(position), name, message));
+    if (stack == oomValue_) return;
+    defineProperty(err, "stack", stack, true, false, true);
+}
+
 // —— 事件循环（非阻塞调度）——
 
 // 任务实体作为动态 GC 根（ADR-042/044）：**不挂任何 scope**，由 Context 直接

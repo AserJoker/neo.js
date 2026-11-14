@@ -170,6 +170,7 @@ add_library(neojs STATIC
     src/private/sema/ModulePass.cpp
     src/private/sema/EarlyErrorPass.cpp
     src/private/sema/Sema.cpp
+    src/private/vm/VM.cpp
 )
 target_include_directories(neojs
     PUBLIC
