@@ -10,6 +10,6 @@ add_subdirectory(frontend)
 add_subdirectory(sema)
 add_subdirectory(unicode)
 add_subdirectory(vm)
+add_subdirectory(compiler)
 # 以下模块 M1 起填充：
 # add_subdirectory(gc)
-# add_subdirectory(compiler)
