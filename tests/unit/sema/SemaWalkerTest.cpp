@@ -24,6 +24,7 @@ using neo::frontend::NodeKind;
 using neo::frontend::NodeIdScope;
 using neo::frontend::ParseResult;
 using neo::frontend::Parser;
+using neo::frontend::ParserOptions;
 using neo::frontend::Program;
 using neo::frontend::SourceRange;
 using neo::frontend::SourceType;
@@ -34,7 +35,7 @@ using neo::sema::SemaContext;
 using neo::sema::Walker;
 
 ParseResult parse(std::string_view source) {
-    Parser parser(source);
+    Parser parser(source, ParserOptions{SourceType::Script});
     return parser.parseProgram();
 }
 

@@ -187,7 +187,15 @@ Sema 采用“收集错误、继续分析”，不 fail-fast；遍历由树结�
     `import { "x" as y }`、`export { "x" } from "m"`、
     `export { x as "y" }`、`export * as "ns" from "m"`。
   - Parser 的 `sourceType` 作为构造期上下文参数
-    （`ParserOptions{sourceType}`）传入：未指定时按顶层 import/export
-    声明自动推断，显式指定时以调用方为准；显式 Module 在解析开始即允许
-    顶层 `await`，显式 Script 仍宽容解析 import/export 声明，sourceType
-    约束由 `ModulePass` 报告。
+    （`ParserOptions{sourceType}`）必填，Parser 不做推断；Module 在解析
+    开始即允许顶层 `await`，Script 仍宽容解析 import/export 声明，
+    sourceType 约束由 `ModulePass` 报告。
+- M6：`AnnotatePass` 与 `runSema` 入口：
+  - `AnnotatePass` 为函数/箭头/方法/构造函数/static block 产出
+    `FunctionInfo`（isArrow / isAsync / isGenerator / isMethod /
+    isConstructor / isDerivedConstructor / isStaticBlock / hasDirectEval）；
+    派生构造函数标记依赖类是否 `extends`，对象字面量方法同样标记
+    isMethod。
+  - `runSema` 按 StrictnessPass → ScopePass → ResolvePass →
+    ControlFlowPass → ModulePass → AnnotatePass 串联，返回
+    `SemaResult{annotations, errors}`；ScopeGraph 等 scratch 不输出。

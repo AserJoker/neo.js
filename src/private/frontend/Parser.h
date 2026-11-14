@@ -23,7 +23,6 @@
 #include "frontend/Lexer.h"
 #include "frontend/Node.h"
 
-#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -32,11 +31,11 @@ namespace neo::frontend {
 
 // Parser 的通用上下文参数。
 //
-// sourceType 未设置时按源码自动推断（出现顶层 import/export 声明即为
-// Module）；显式设置时以调用方为准，Parser 仍宽容解析 import/export
-// 声明，sourceType 约束由 Sema 的 ModulePass 报告。
+// sourceType 必填：Parser 不做推断，调用方决定按 Script 还是 Module
+// 解析。Parser 本身仍宽容解析 import/export 声明，sourceType 约束由
+// Sema 的 ModulePass 报告。
 struct ParserOptions {
-    std::optional<SourceType> sourceType;
+    SourceType sourceType;
 };
 
 struct ParseError {
@@ -53,7 +52,7 @@ struct ParseResult {
 
 class Parser {
 public:
-    explicit Parser(std::string_view source, ParserOptions options = {});
+    Parser(std::string_view source, ParserOptions options);
 
     ParseResult parseProgram();
 

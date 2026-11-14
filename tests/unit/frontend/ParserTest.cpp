@@ -101,14 +101,17 @@ using neo::frontend::WhileStatement;
 using neo::frontend::WithStatement;
 using neo::frontend::YieldExpression;
 
-ParseResult parse(std::string_view source) {
-    Parser parser(source);
-    return parser.parseProgram();
-}
-
 ParseResult parseAs(std::string_view source, SourceType sourceType) {
     Parser parser(source, ParserOptions{sourceType});
     return parser.parseProgram();
+}
+
+ParseResult parse(std::string_view source) {
+    return parseAs(source, SourceType::Script);
+}
+
+ParseResult parseModule(std::string_view source) {
+    return parseAs(source, SourceType::Module);
 }
 
 const Program& programOf(const ParseResult& result) {
@@ -2504,7 +2507,7 @@ TEST(ParserTest, MissingFunctionNameIsLeftToSema) {
 }
 
 TEST(ParserTest, ExportNamedAnonymousFunctionIsLeftToSema) {
-    ParseResult result = parse("export function () {}");
+    ParseResult result = parseModule("export function () {}");
 
     ASSERT_TRUE(result.ok());
     const auto& exportNode = static_cast<const ExportNamedDeclaration&>(
@@ -2556,7 +2559,7 @@ TEST(ParserTest, FunctionDeclarationInsideBlock) {
 // ---------------------------------------------------------------------------
 
 TEST(ParserTest, ExportNamedFunctionDeclaration) {
-    ParseResult result = parse("export function f(a) {}");
+    ParseResult result = parseModule("export function f(a) {}");
 
     ASSERT_TRUE(result.ok());
     ASSERT_EQ(programOf(result).body.size(), 1u);
@@ -2574,7 +2577,7 @@ TEST(ParserTest, ExportNamedFunctionDeclaration) {
 }
 
 TEST(ParserTest, ExportNamedAsyncGeneratorFunction) {
-    ParseResult result = parse("export async function* gen() {}");
+    ParseResult result = parseModule("export async function* gen() {}");
 
     ASSERT_TRUE(result.ok());
     const auto& exportNode = static_cast<const ExportNamedDeclaration&>(
@@ -2586,7 +2589,7 @@ TEST(ParserTest, ExportNamedAsyncGeneratorFunction) {
 }
 
 TEST(ParserTest, ExportDefaultNamedFunction) {
-    ParseResult result = parse("export default function f() {}");
+    ParseResult result = parseModule("export default function f() {}");
 
     ASSERT_TRUE(result.ok());
     const auto& node = *programOf(result).body[0];
@@ -2602,7 +2605,7 @@ TEST(ParserTest, ExportDefaultNamedFunction) {
 }
 
 TEST(ParserTest, ExportDefaultAnonymousFunction) {
-    ParseResult result = parse("export default function () {}");
+    ParseResult result = parseModule("export default function () {}");
 
     ASSERT_TRUE(result.ok());
     const auto& exportNode = static_cast<const ExportDefaultDeclaration&>(
@@ -2613,7 +2616,7 @@ TEST(ParserTest, ExportDefaultAnonymousFunction) {
 }
 
 TEST(ParserTest, ExportDefaultAnonymousAsyncGenerator) {
-    ParseResult result = parse("export default async function* () {}");
+    ParseResult result = parseModule("export default async function* () {}");
 
     ASSERT_TRUE(result.ok());
     const auto& exportNode = static_cast<const ExportDefaultDeclaration&>(
@@ -2626,13 +2629,13 @@ TEST(ParserTest, ExportDefaultAnonymousAsyncGenerator) {
 }
 
 TEST(ParserTest, ExportNonDeclarationReportsError) {
-    ParseResult result = parse("export 1;");
+    ParseResult result = parseModule("export 1;");
 
     EXPECT_FALSE(result.errors.empty());
 }
 
 TEST(ParserTest, ExportDefaultExpression) {
-    ParseResult result = parse("export default 1;");
+    ParseResult result = parseModule("export default 1;");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ExportDefaultDeclaration&>(
@@ -2642,7 +2645,7 @@ TEST(ParserTest, ExportDefaultExpression) {
 }
 
 TEST(ParserTest, ExportDefaultBinaryExpression) {
-    ParseResult result = parse("export default a + b;");
+    ParseResult result = parseModule("export default a + b;");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ExportDefaultDeclaration&>(
@@ -2652,7 +2655,7 @@ TEST(ParserTest, ExportDefaultBinaryExpression) {
 }
 
 TEST(ParserTest, ExportDefaultMissingExpressionReportsError) {
-    ParseResult result = parse("export default ;");
+    ParseResult result = parseModule("export default ;");
 
     EXPECT_FALSE(result.errors.empty());
 }
@@ -3874,7 +3877,7 @@ TEST(ParserTest, ClassBodyLegacyOctalIsRecordedForSema) {
 }
 
 TEST(ParserTest, ExportClassDeclaration) {
-    ParseResult result = parse("export class A {}");
+    ParseResult result = parseModule("export class A {}");
 
     ASSERT_TRUE(result.ok());
     const auto& exportNode = static_cast<const ExportNamedDeclaration&>(
@@ -3883,7 +3886,7 @@ TEST(ParserTest, ExportClassDeclaration) {
 }
 
 TEST(ParserTest, ExportDefaultAnonymousClass) {
-    ParseResult result = parse("export default class {}");
+    ParseResult result = parseModule("export default class {}");
 
     ASSERT_TRUE(result.ok());
     const auto& exportNode = static_cast<const ExportDefaultDeclaration&>(
@@ -4246,7 +4249,7 @@ TEST(ParserTest, ImportExpressionFollowedByMember) {
 // ---------------------------------------------------------------------------
 
 TEST(ParserTest, SideEffectImportDeclaration) {
-    ParseResult result = parse("import \"mod\";");
+    ParseResult result = parseModule("import \"mod\";");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ImportDeclaration&>(
@@ -4257,7 +4260,7 @@ TEST(ParserTest, SideEffectImportDeclaration) {
 }
 
 TEST(ParserTest, DefaultImportDeclaration) {
-    ParseResult result = parse("import d from \"mod\";");
+    ParseResult result = parseModule("import d from \"mod\";");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ImportDeclaration&>(
@@ -4271,7 +4274,7 @@ TEST(ParserTest, DefaultImportDeclaration) {
 }
 
 TEST(ParserTest, NamespaceImportDeclaration) {
-    ParseResult result = parse("import * as ns from \"mod\";");
+    ParseResult result = parseModule("import * as ns from \"mod\";");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ImportDeclaration&>(
@@ -4285,7 +4288,7 @@ TEST(ParserTest, NamespaceImportDeclaration) {
 }
 
 TEST(ParserTest, NamedImportDeclaration) {
-    ParseResult result = parse("import { a, b as c } from \"mod\";");
+    ParseResult result = parseModule("import { a, b as c } from \"mod\";");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ImportDeclaration&>(
@@ -4304,7 +4307,7 @@ TEST(ParserTest, NamedImportDeclaration) {
 }
 
 TEST(ParserTest, ReservedNamedImportRequiresAs) {
-    ParseResult result = parse("import { default as d } from \"mod\";");
+    ParseResult result = parseModule("import { default as d } from \"mod\";");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ImportDeclaration&>(
@@ -4317,7 +4320,7 @@ TEST(ParserTest, ReservedNamedImportRequiresAs) {
 }
 
 TEST(ParserTest, ImportDeclarationWithAttributes) {
-    ParseResult result = parse("import d from \"mod\" with { type: \"json\" };");
+    ParseResult result = parseModule("import d from \"mod\" with { type: \"json\" };");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ImportDeclaration&>(
@@ -4331,7 +4334,7 @@ TEST(ParserTest, ImportDeclarationWithAttributes) {
 }
 
 TEST(ParserTest, SideEffectImportWithAttributes) {
-    ParseResult result = parse("import \"mod\" with { type: \"json\" };");
+    ParseResult result = parseModule("import \"mod\" with { type: \"json\" };");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ImportDeclaration&>(
@@ -4341,7 +4344,7 @@ TEST(ParserTest, SideEffectImportWithAttributes) {
 }
 
 TEST(ParserTest, ImportAttributeWithStringKey) {
-    ParseResult result = parse("import \"mod\" with { \"type\": \"json\" };");
+    ParseResult result = parseModule("import \"mod\" with { \"type\": \"json\" };");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ImportDeclaration&>(
@@ -4353,13 +4356,13 @@ TEST(ParserTest, ImportAttributeWithStringKey) {
 }
 
 TEST(ParserTest, ImportAttributeNonStringValueReportsError) {
-    ParseResult result = parse("import \"mod\" with { type: json };");
+    ParseResult result = parseModule("import \"mod\" with { type: json };");
 
     EXPECT_FALSE(result.errors.empty());
 }
 
 TEST(ParserTest, ReservedNamedImportWithoutAsReportsError) {
-    ParseResult result = parse("import { if } from \"mod\";");
+    ParseResult result = parseModule("import { if } from \"mod\";");
 
     EXPECT_FALSE(result.errors.empty());
 }
@@ -4376,14 +4379,14 @@ TEST(ParserTest, ProgramIsScriptWithoutModuleSyntax) {
 }
 
 TEST(ParserTest, ProgramIsModuleWithExport) {
-    ParseResult result = parse("export const x = 1;");
+    ParseResult result = parseModule("export const x = 1;");
 
     ASSERT_TRUE(result.ok());
     EXPECT_EQ(programOf(result).sourceType, SourceType::Module);
 }
 
 TEST(ParserTest, ProgramIsModuleWithImport) {
-    ParseResult result = parse("import x from \"mod\";");
+    ParseResult result = parseModule("import x from \"mod\";");
 
     ASSERT_TRUE(result.ok());
     EXPECT_EQ(programOf(result).sourceType, SourceType::Module);
@@ -4433,7 +4436,7 @@ TEST(ParserTest, ModuleTopLevelAwaitWithoutOperandIsError) {
 }
 
 TEST(ParserTest, ExportAllDeclaration) {
-    ParseResult result = parse("export * from \"mod\";");
+    ParseResult result = parseModule("export * from \"mod\";");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ExportAllDeclaration&>(
@@ -4444,7 +4447,7 @@ TEST(ParserTest, ExportAllDeclaration) {
 }
 
 TEST(ParserTest, ExportAllAsNamespace) {
-    ParseResult result = parse("export * as ns from \"mod\";");
+    ParseResult result = parseModule("export * as ns from \"mod\";");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ExportAllDeclaration&>(
@@ -4456,19 +4459,19 @@ TEST(ParserTest, ExportAllAsNamespace) {
 }
 
 TEST(ParserTest, ExportAllWithoutFromReportsError) {
-    ParseResult result = parse("export * \"mod\";");
+    ParseResult result = parseModule("export * \"mod\";");
 
     EXPECT_FALSE(result.errors.empty());
 }
 
 TEST(ParserTest, ExportAllWithoutSourceReportsError) {
-    ParseResult result = parse("export * from;");
+    ParseResult result = parseModule("export * from;");
 
     EXPECT_FALSE(result.errors.empty());
 }
 
 TEST(ParserTest, ExportNamedSpecifiers) {
-    ParseResult result = parse("export { a, b as c };");
+    ParseResult result = parseModule("export { a, b as c };");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ExportNamedDeclaration&>(
@@ -4489,7 +4492,7 @@ TEST(ParserTest, ExportNamedSpecifiers) {
 }
 
 TEST(ParserTest, ExportNamedSpecifiersWithSource) {
-    ParseResult result = parse("export { a, b as c } from \"mod\";");
+    ParseResult result = parseModule("export { a, b as c } from \"mod\";");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ExportNamedDeclaration&>(
@@ -4500,13 +4503,13 @@ TEST(ParserTest, ExportNamedSpecifiersWithSource) {
 }
 
 TEST(ParserTest, StringNamedImportRequiresAs) {
-    ParseResult result = parse("import { \"x\" } from \"mod\";");
+    ParseResult result = parseModule("import { \"x\" } from \"mod\";");
 
     EXPECT_FALSE(result.errors.empty());
 }
 
 TEST(ParserTest, StringNamedImportWithAs) {
-    ParseResult result = parse("import { \"x\" as y } from \"mod\";");
+    ParseResult result = parseModule("import { \"x\" as y } from \"mod\";");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ImportDeclaration&>(
@@ -4521,7 +4524,7 @@ TEST(ParserTest, StringNamedImportWithAs) {
 }
 
 TEST(ParserTest, ExportStringLocalWithSource) {
-    ParseResult result = parse("export { \"x\" } from \"mod\";");
+    ParseResult result = parseModule("export { \"x\" } from \"mod\";");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ExportNamedDeclaration&>(
@@ -4537,7 +4540,7 @@ TEST(ParserTest, ExportStringLocalWithSource) {
 }
 
 TEST(ParserTest, ExportStringLocalWithAsAndSource) {
-    ParseResult result = parse("export { \"x\" as y } from \"mod\";");
+    ParseResult result = parseModule("export { \"x\" as y } from \"mod\";");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ExportNamedDeclaration&>(
@@ -4550,7 +4553,7 @@ TEST(ParserTest, ExportStringLocalWithAsAndSource) {
 }
 
 TEST(ParserTest, ExportStringExportedName) {
-    ParseResult result = parse("export { x as \"y\" };");
+    ParseResult result = parseModule("export { x as \"y\" };");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ExportNamedDeclaration&>(
@@ -4565,7 +4568,7 @@ TEST(ParserTest, ExportStringExportedName) {
 }
 
 TEST(ParserTest, ExportAllAsStringNamespace) {
-    ParseResult result = parse("export * as \"ns\" from \"mod\";");
+    ParseResult result = parseModule("export * as \"ns\" from \"mod\";");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ExportAllDeclaration&>(
@@ -4577,7 +4580,7 @@ TEST(ParserTest, ExportAllAsStringNamespace) {
 }
 
 TEST(ParserTest, EmptyExportSpecifiers) {
-    ParseResult result = parse("export {};");
+    ParseResult result = parseModule("export {};");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ExportNamedDeclaration&>(
@@ -4587,7 +4590,7 @@ TEST(ParserTest, EmptyExportSpecifiers) {
 }
 
 TEST(ParserTest, ExportAllWithAttributes) {
-    ParseResult result = parse("export * from \"mod\" with { type: \"json\" };");
+    ParseResult result = parseModule("export * from \"mod\" with { type: \"json\" };");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ExportAllDeclaration&>(
@@ -4597,7 +4600,7 @@ TEST(ParserTest, ExportAllWithAttributes) {
 
 TEST(ParserTest, ExportNamedWithSourceAndAttributes) {
     ParseResult result =
-        parse("export { a } from \"mod\" with { type: \"json\" };");
+        parseModule("export { a } from \"mod\" with { type: \"json\" };");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ExportNamedDeclaration&>(
@@ -4607,13 +4610,13 @@ TEST(ParserTest, ExportNamedWithSourceAndAttributes) {
 }
 
 TEST(ParserTest, ExportNamedSpecifiersWithoutSourceReportsError) {
-    ParseResult result = parse("export { a } from;");
+    ParseResult result = parseModule("export { a } from;");
 
     EXPECT_FALSE(result.errors.empty());
 }
 
 TEST(ParserTest, ExportVariableDeclaration) {
-    ParseResult result = parse("export var x = 1;");
+    ParseResult result = parseModule("export var x = 1;");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ExportNamedDeclaration&>(
@@ -4623,7 +4626,7 @@ TEST(ParserTest, ExportVariableDeclaration) {
 }
 
 TEST(ParserTest, ExportLetDeclaration) {
-    ParseResult result = parse("export let x = 1;");
+    ParseResult result = parseModule("export let x = 1;");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ExportNamedDeclaration&>(
@@ -4633,7 +4636,7 @@ TEST(ParserTest, ExportLetDeclaration) {
 }
 
 TEST(ParserTest, ExportConstDeclaration) {
-    ParseResult result = parse("export const x = 1;");
+    ParseResult result = parseModule("export const x = 1;");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ExportNamedDeclaration&>(
@@ -4643,7 +4646,7 @@ TEST(ParserTest, ExportConstDeclaration) {
 }
 
 TEST(ParserTest, DefaultAndNamedImportDeclaration) {
-    ParseResult result = parse("import d, { a } from \"mod\";");
+    ParseResult result = parseModule("import d, { a } from \"mod\";");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ImportDeclaration&>(
@@ -4655,7 +4658,7 @@ TEST(ParserTest, DefaultAndNamedImportDeclaration) {
 }
 
 TEST(ParserTest, DefaultAndNamespaceImportDeclaration) {
-    ParseResult result = parse("import d, * as ns from \"mod\";");
+    ParseResult result = parseModule("import d, * as ns from \"mod\";");
 
     ASSERT_TRUE(result.ok());
     const auto& declaration = static_cast<const ImportDeclaration&>(
@@ -4668,7 +4671,7 @@ TEST(ParserTest, DefaultAndNamespaceImportDeclaration) {
 }
 
 TEST(ParserTest, ImportDeclarationMissingFromReportsError) {
-    ParseResult result = parse("import d \"mod\";");
+    ParseResult result = parseModule("import d \"mod\";");
 
     EXPECT_FALSE(result.errors.empty());
 }

@@ -32,7 +32,7 @@ struct Analysis {
 };
 
 Analysis analyze(std::string_view source) {
-    Parser parser(source);
+    Parser parser(source, ParserOptions{SourceType::Module});
     Analysis result;
     result.parsed = parser.parseProgram();
     if (!result.parsed.program) return result;
@@ -265,7 +265,7 @@ TEST(ModulePassTest, ImportMetaInModuleIsAllowed) {
 }
 
 TEST(ModulePassTest, ImportMetaInScriptIsError) {
-    Analysis result = analyze("import.meta;");
+    Analysis result = analyzeAsScript("import.meta;");
     ASSERT_TRUE(result.parsed.ok());
     EXPECT_FALSE(result.errors.empty());
 }

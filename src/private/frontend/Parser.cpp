@@ -276,24 +276,20 @@ ParseResult Parser::parseProgram() {
     const SourceLocation start = current_.start;
     NodeList body;
     bool inDirectivePrologue = true;
-    bool module = options_.sourceType.has_value()
-                      ? *options_.sourceType == SourceType::Module
-                      : false;
+    const SourceType sourceType = options_.sourceType;
     // 模块顶层允许 await；嵌套函数/箭头会自行保存并恢复该状态。
-    if (module) inAsync_ = true;
+    if (sourceType == SourceType::Module) inAsync_ = true;
 
     while (!at(TokenKind::EndOfInput)) {
         NodePtr statement;
         if (at(TokenKind::Export)) {
-            // export 只允许出现在模块顶层。
+            // export 只允许出现在模块顶层；是否允许由 ModulePass 判定。
             inDirectivePrologue = false;
-            module = true;
             statement = parseExportDeclaration();
         } else if (at(TokenKind::Import) && isImportDeclarationStart()) {
             // import 声明只允许出现在模块顶层；import(...) / import.meta
             // 是表达式，仍走普通语句。
             inDirectivePrologue = false;
-            module = true;
             statement = parseImportDeclaration();
         } else {
             statement = parseStatementListItem(inDirectivePrologue);
@@ -305,11 +301,6 @@ ParseResult Parser::parseProgram() {
         }
         body.push_back(std::move(statement));
     }
-
-    // 显式 sourceType 优先；未指定时按是否出现模块语法自动推断。
-    const SourceType sourceType =
-        options_.sourceType.value_or(module ? SourceType::Module
-                                            : SourceType::Script);
 
     ParseResult result;
     result.program = std::make_unique<Program>(

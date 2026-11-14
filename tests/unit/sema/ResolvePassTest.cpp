@@ -22,6 +22,8 @@ using neo::frontend::Node;
 using neo::frontend::NodeKind;
 using neo::frontend::ParseResult;
 using neo::frontend::Parser;
+using neo::frontend::ParserOptions;
+using neo::frontend::SourceType;
 using neo::sema::AnnotationStore;
 using neo::sema::BindingLocation;
 using neo::sema::FunctionCaptures;
@@ -44,8 +46,9 @@ struct ResolveAnalysis {
     std::vector<SemaError> errors;
 };
 
-ResolveAnalysis analyze(std::string_view source) {
-    Parser parser(source);
+ResolveAnalysis analyze(std::string_view source,
+                        SourceType sourceType = SourceType::Script) {
+    Parser parser(source, ParserOptions{sourceType});
     ResolveAnalysis result;
     result.parsed = parser.parseProgram();
     if (!result.parsed.program) return result;
@@ -187,7 +190,8 @@ TEST(ResolvePassTest, CatchParamIsLocal) {
 }
 
 TEST(ResolvePassTest, ImportBindingIsLocal) {
-    ResolveAnalysis result = analyze("import { x } from \"m\"; x;");
+    ResolveAnalysis result =
+        analyze("import { x } from \"m\"; x;", SourceType::Module);
     ASSERT_TRUE(result.parsed.ok());
 
     auto refs = references(result, "x");
@@ -311,7 +315,8 @@ TEST(ResolvePassTest, ParameterDefaultCannotSeeBodyVar) {
 
 TEST(ResolvePassTest, ModuleTopLevelCapture) {
     ResolveAnalysis result =
-        analyze("export {}; var a; function f(){ return a; }");
+        analyze("export {}; var a; function f(){ return a; }",
+                SourceType::Module);
     ASSERT_TRUE(result.parsed.ok());
 
     auto refs = references(result, "a");
@@ -356,7 +361,8 @@ TEST(ResolvePassTest, UnresolvedInScriptIsGlobal) {
 }
 
 TEST(ResolvePassTest, UnresolvedInModuleIsUnresolved) {
-    ResolveAnalysis result = analyze("export {}; x;");
+    ResolveAnalysis result =
+        analyze("export {}; x;", SourceType::Module);
     ASSERT_TRUE(result.parsed.ok());
 
     auto refs = references(result, "x");
@@ -425,7 +431,8 @@ TEST(ResolvePassTest, DestructuringAssignmentTargetIsReference) {
 }
 
 TEST(ResolvePassTest, ExportLocalIsReference) {
-    ResolveAnalysis result = analyze("export {}; var a; export { a };");
+    ResolveAnalysis result =
+        analyze("export {}; var a; export { a };", SourceType::Module);
     ASSERT_TRUE(result.parsed.ok());
 
     auto refs = references(result, "a");

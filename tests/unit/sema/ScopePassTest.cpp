@@ -19,6 +19,8 @@ using neo::frontend::Node;
 using neo::frontend::NodeKind;
 using neo::frontend::ParseResult;
 using neo::frontend::Parser;
+using neo::frontend::ParserOptions;
+using neo::frontend::SourceType;
 using neo::sema::AnnotationStore;
 using neo::sema::IVisitor;
 using neo::sema::ScopeGraph;
@@ -37,8 +39,9 @@ struct ScopeAnalysis {
     std::vector<SemaError> errors;
 };
 
-ScopeAnalysis analyze(std::string_view source) {
-    Parser parser(source);
+ScopeAnalysis analyze(std::string_view source,
+                      SourceType sourceType = SourceType::Script) {
+    Parser parser(source, ParserOptions{sourceType});
     ScopeAnalysis result;
     result.parsed = parser.parseProgram();
     if (!result.parsed.program) return result;
@@ -425,13 +428,15 @@ TEST(ScopePassTest, ArrowParamConflictsWithBodyLet) {
 
 TEST(ScopePassTest, DuplicateImportIsError) {
     ScopeAnalysis result =
-        analyze("import { x } from \"a\"; import { x } from \"b\";");
+        analyze("import { x } from \"a\"; import { x } from \"b\";",
+                SourceType::Module);
     ASSERT_TRUE(result.parsed.ok());
     EXPECT_FALSE(result.errors.empty());
 }
 
 TEST(ScopePassTest, ImportThenVarIsError) {
-    ScopeAnalysis result = analyze("import { x } from \"a\"; var x;");
+    ScopeAnalysis result =
+        analyze("import { x } from \"a\"; var x;", SourceType::Module);
     ASSERT_TRUE(result.parsed.ok());
     EXPECT_FALSE(result.errors.empty());
 }
@@ -611,13 +616,15 @@ TEST(ScopePassTest, FunctionBodyTopLevelDuplicateFunctionAllowedInStrict) {
 
 TEST(ScopePassTest, ModuleTopLevelDuplicateFunctionIsError) {
     ScopeAnalysis result =
-        analyze("export {}; function f() { } function f() { }");
+        analyze("export {}; function f() { } function f() { }",
+                SourceType::Module);
     ASSERT_TRUE(result.parsed.ok());
     EXPECT_FALSE(result.errors.empty());
 }
 
 TEST(ScopePassTest, ModuleTopLevelFunctionIsLexical) {
-    ScopeAnalysis result = analyze("export {}; function f() { }");
+    ScopeAnalysis result =
+        analyze("export {}; function f() { }", SourceType::Module);
     ASSERT_TRUE(result.parsed.ok());
     ASSERT_TRUE(result.errors.empty());
 
@@ -627,14 +634,16 @@ TEST(ScopePassTest, ModuleTopLevelFunctionIsLexical) {
 }
 
 TEST(ScopePassTest, ModuleTopLevelFunctionConflictsWithVar) {
-    ScopeAnalysis result = analyze("export {}; function f() { } var f;");
+    ScopeAnalysis result =
+        analyze("export {}; function f() { } var f;", SourceType::Module);
     ASSERT_TRUE(result.parsed.ok());
     EXPECT_FALSE(result.errors.empty());
 }
 
 TEST(ScopePassTest, ModuleBlockDuplicateFunctionIsError) {
     ScopeAnalysis result =
-        analyze("export {}; { function f() { } function f() { } }");
+        analyze("export {}; { function f() { } function f() { } }",
+                SourceType::Module);
     ASSERT_TRUE(result.parsed.ok());
     EXPECT_FALSE(result.errors.empty());
 }

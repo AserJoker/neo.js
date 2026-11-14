@@ -15,6 +15,8 @@ namespace {
 
 using neo::frontend::ParseResult;
 using neo::frontend::Parser;
+using neo::frontend::ParserOptions;
+using neo::frontend::SourceType;
 using neo::sema::AnnotationStore;
 using neo::sema::SemaContext;
 using neo::sema::SemaError;
@@ -25,8 +27,9 @@ struct Analysis {
     std::vector<SemaError> errors;
 };
 
-Analysis analyze(std::string_view source) {
-    Parser parser(source);
+Analysis analyze(std::string_view source,
+                 SourceType sourceType = SourceType::Script) {
+    Parser parser(source, ParserOptions{sourceType});
     Analysis result;
     result.parsed = parser.parseProgram();
     if (!result.parsed.program) return result;
@@ -59,7 +62,8 @@ TEST(StrictnessPassTest, ScriptUseStrictRejectsWith) {
 }
 
 TEST(StrictnessPassTest, ModuleIsAlwaysStrict) {
-    Analysis result = analyze("export {}; with (o) { }");
+    Analysis result =
+        analyze("export {}; with (o) { }", SourceType::Module);
 
     ASSERT_TRUE(result.parsed.ok());
     EXPECT_FALSE(result.errors.empty());
@@ -254,7 +258,8 @@ TEST(StrictnessPassTest, FunctionNameEvalWithOwnUseStrict) {
 }
 
 TEST(StrictnessPassTest, ImportBindingEvalInModule) {
-    Analysis result = analyze("import eval from \"m\";");
+    Analysis result =
+        analyze("import eval from \"m\";", SourceType::Module);
 
     ASSERT_TRUE(result.parsed.ok());
     EXPECT_FALSE(result.errors.empty());

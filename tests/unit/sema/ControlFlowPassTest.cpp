@@ -16,6 +16,8 @@ namespace {
 
 using neo::frontend::ParseResult;
 using neo::frontend::Parser;
+using neo::frontend::ParserOptions;
+using neo::frontend::SourceType;
 using neo::sema::AnnotationStore;
 using neo::sema::ScopeGraph;
 using neo::sema::SemaContext;
@@ -29,8 +31,9 @@ struct Analysis {
     std::vector<SemaError> errors;
 };
 
-Analysis analyze(std::string_view source) {
-    Parser parser(source);
+Analysis analyze(std::string_view source,
+                 SourceType sourceType = SourceType::Script) {
+    Parser parser(source, ParserOptions{sourceType});
     Analysis result;
     result.parsed = parser.parseProgram();
     if (!result.parsed.program) return result;
@@ -365,7 +368,9 @@ TEST(ControlFlowPassTest, ForAwaitInNonAsyncFunctionIsError) {
 }
 
 TEST(ControlFlowPassTest, ForAwaitAtModuleTopLevelIsAllowed) {
-    Analysis result = analyze("export {}; for await (const x of y) { }");
+    Analysis result =
+        analyze("export {}; for await (const x of y) { }",
+                SourceType::Module);
     ASSERT_TRUE(result.parsed.ok());
     EXPECT_TRUE(result.errors.empty());
 }
