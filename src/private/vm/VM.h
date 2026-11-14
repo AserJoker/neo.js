@@ -83,7 +83,7 @@ private:
     // 取 Code::strings[index]；越界返回 nullptr。
     const std::string* stringOperand(uint32_t index) const;
 
-    // 二元算术公共实现（Add/Sub/Mul/Div 处理函数委托到此）。
+    // 二元运算公共实现（算术/关系处理函数委托到此）。
     neo::core::Value* binary(neo::core::BinaryOperator op);
 
     // —— 指令处理函数 ——
@@ -104,6 +104,15 @@ private:
     neo::core::Value* opSub();
     neo::core::Value* opMul();
     neo::core::Value* opDiv();
+    neo::core::Value* opLt();
+    neo::core::Value* opGt();
+    neo::core::Value* opLe();
+    neo::core::Value* opGe();
+    neo::core::Value* opJmp();
+    neo::core::Value* opJTrue();
+    neo::core::Value* opJFalse();
+    neo::core::Value* opPushScope();
+    neo::core::Value* opPopScope();
     neo::core::Value* opRet();
     neo::core::Value* opHalt();
 

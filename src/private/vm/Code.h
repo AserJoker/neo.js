@@ -94,6 +94,14 @@ struct Code {
         bytecode.push_back(static_cast<uint8_t>((value >> 24) & 0xFFu));
     }
 
+    // 回填已发射的 u32 操作数（前向跳转/标签解析用）。at 为操作数字节偏移。
+    void patchU32(uint32_t at, uint32_t value) {
+        bytecode[at] = static_cast<uint8_t>(value & 0xFFu);
+        bytecode[at + 1] = static_cast<uint8_t>((value >> 8) & 0xFFu);
+        bytecode[at + 2] = static_cast<uint8_t>((value >> 16) & 0xFFu);
+        bytecode[at + 3] = static_cast<uint8_t>((value >> 24) & 0xFFu);
+    }
+
     uint32_t addNumber(double value) {
         numbers.push_back(value);
         return static_cast<uint32_t>(numbers.size() - 1);
@@ -157,6 +165,31 @@ struct Code {
     uint32_t sub() { return emitOp(OpCode::Sub); }
     uint32_t mul() { return emitOp(OpCode::Mul); }
     uint32_t div() { return emitOp(OpCode::Div); }
+
+    uint32_t lt() { return emitOp(OpCode::Lt); }
+    uint32_t gt() { return emitOp(OpCode::Gt); }
+    uint32_t le() { return emitOp(OpCode::Le); }
+    uint32_t ge() { return emitOp(OpCode::Ge); }
+
+    // 跳转：target 为字节偏移。前向跳转先以 0 占位，稍后 patchU32(pc + 2, target)。
+    uint32_t jmp(uint32_t target = 0) {
+        uint32_t pc = emitOp(OpCode::Jmp);
+        emitU32(target);
+        return pc;
+    }
+    uint32_t jtrue(uint32_t target = 0) {
+        uint32_t pc = emitOp(OpCode::JTrue);
+        emitU32(target);
+        return pc;
+    }
+    uint32_t jfalse(uint32_t target = 0) {
+        uint32_t pc = emitOp(OpCode::JFalse);
+        emitU32(target);
+        return pc;
+    }
+
+    uint32_t pushScope() { return emitOp(OpCode::PushScope); }
+    uint32_t popScope() { return emitOp(OpCode::PopScope); }
 
     uint32_t ret() { return emitOp(OpCode::Ret); }
     uint32_t halt() { return emitOp(OpCode::Halt); }

@@ -223,6 +223,140 @@ TEST(VMTest, HaltReturnsUndefined) {
     EXPECT_EQ(result->type()->kind(), TypeKind::Undefined);
 }
 
+TEST(VMTest, JmpSkipsInstructions) {
+    Fixture f;
+    Code code;
+    code.push(1.0);
+    uint32_t jump = code.jmp();
+    code.push(2.0);
+    uint32_t end = code.ret();
+    code.patchU32(jump + 2, end);
+
+    VM vm(f.ctx.get(), &code);
+    Value* result = vm.run();
+
+    ASSERT_EQ(result->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(result), 1.0);
+}
+
+TEST(VMTest, JFalseBranchesToElse) {
+    Fixture f;
+    Code code;
+    code.pushBoolean(false);
+    uint32_t branch = code.jfalse();
+    code.push(1.0);
+    code.ret();
+    uint32_t elsePc = code.here();
+    code.patchU32(branch + 2, elsePc);
+    code.push(2.0);
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    Value* result = vm.run();
+
+    ASSERT_EQ(result->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(result), 2.0);
+}
+
+TEST(VMTest, JTrueBranchesToThen) {
+    Fixture f;
+    Code code;
+    code.pushBoolean(true);
+    uint32_t branch = code.jtrue();
+    code.push(2.0);
+    code.ret();
+    uint32_t thenPc = code.here();
+    code.patchU32(branch + 2, thenPc);
+    code.push(1.0);
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    Value* result = vm.run();
+
+    ASSERT_EQ(result->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(result), 1.0);
+}
+
+TEST(VMTest, WhileLoopSumsWithBackwardJump) {
+    Fixture f;
+    Code code;
+    code.push(0.0);
+    code.define("sum");
+    code.push(0.0);
+    code.define("i");
+
+    uint32_t loop = code.here();
+    code.load("i");
+    code.push(3.0);
+    code.lt();
+    uint32_t exit = code.jfalse();
+
+    code.load("sum");
+    code.load("i");
+    code.add();
+    code.store("sum");
+
+    code.load("i");
+    code.push(1.0);
+    code.add();
+    code.store("i");
+
+    uint32_t back = code.jmp();
+    code.patchU32(back + 2, loop);
+
+    uint32_t end = code.here();
+    code.patchU32(exit + 2, end);
+    code.load("sum");
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    Value* result = vm.run();
+
+    ASSERT_EQ(result->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(result), 3.0);  // 0 + 1 + 2
+}
+
+TEST(VMTest, BlockScopeShadowsOuterBinding) {
+    Fixture f;
+    Code code;
+    code.push(1.0);
+    code.define("x");
+
+    code.pushScope();
+    code.push(2.0);
+    code.define("x");
+    code.load("x");
+    code.popScope();
+
+    code.load("x");
+    code.add();
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    Value* result = vm.run();
+
+    ASSERT_EQ(result->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(result), 3.0);  // 内层 2 + 外层 1
+}
+
+TEST(VMTest, RetPreservesScopeForCallerToBalance) {
+    Fixture f;
+    neo::core::Scope* entry = f.ctx->current();
+
+    Code code;
+    code.pushScope();
+    code.push(5.0);
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    Value* result = vm.run();
+
+    ASSERT_EQ(result->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(result), 5.0);
+    // VM 不弹作用域：保留现场返回，由 Function::invoke 负责恢复。
+    EXPECT_NE(f.ctx->current(), entry);
+}
+
 TEST(VMTest, BuilderEmitsSemanticInstructions) {
     Code code;
     EXPECT_EQ(code.here(), 0u);

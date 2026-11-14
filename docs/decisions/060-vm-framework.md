@@ -88,6 +88,7 @@ struct Code {
 | `push_string` | `u32` strings 下标 |
 | `define` | `u32` name 下标 + `u32` flags |
 | `initialize` / `load` / `store` | `u32` name 下标 |
+| `jmp` / `jtrue` / `jfalse` | `u32` targetPc（字节偏移） |
 | 其余 | 无 |
 
 - **常量表由 Compiler 阶段生成**：字节码里不内联字符串/数值，避免指令变长。
@@ -207,8 +208,9 @@ Value* VM::run(uint32_t entryPc = 0);
 
 - statement 执行前后操作数栈深度必须一致（ADR-004）。
 - VM 记录 `entryScope_`；函数序言通过 `push_scope` 建 body scope。
-- 正常 `ret`、异常展开、break/continue 跨作用域时，VM 按 try/label 条目
-  记录的 `scopeDepth` 逐层 `popScope`，回到目标深度。
+- **VM 不负责平衡作用域栈**：`ret`/异常只保留现场返回，不主动 `popScope`。
+  调用方（`Function::invoke`）在拿到返回值后负责把 current 恢复到调用前状态。
+  块作用域的 `push_scope`/`pop_scope` 由编译器成对发射。
 - VM 不拥有作用域；作用域的创建/销毁仍由 Context/Function 生命周期管理。
 
 ### 7. try / label（后续，不在第一步）
@@ -266,7 +268,7 @@ tests/unit/vm/
 | 切片 | AST/语法 | VM 能力 | 验证 |
 |------|----------|---------|------|
 | V0 | 字面量、表达式语句、`return` | push_* / add / load / store / define / ret / hlt | 手工 Code：`1+2`、变量读写 |
-| V1 | `var/let/const`、块、if/while | define(flags) / initialize / jmp / jtrue / jfalse / push_scope | 手工 Code + 简单 Compiler |
+| V1 | `var/let/const`、块、if/while | define(flags) / initialize / lt/gt/le/ge / jmp / jtrue / jfalse / push_scope / pop_scope | 手工 Code + 简单 Compiler |
 | V2 | 函数声明/调用、箭头 | push_function / set_closure / call / store_this / load_this | 脚本函数调用 |
 | V3 | try/catch/finally、throw | try 栈、completion、异常展开 | 异常路径 |
 | V4 | break/continue/标签 | label 栈、跨 finally 跳转 | 循环/标签 |

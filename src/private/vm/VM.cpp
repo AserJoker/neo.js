@@ -62,6 +62,15 @@ const char* opCodeName(OpCode op) {
         case OpCode::Sub:           return "sub";
         case OpCode::Mul:           return "mul";
         case OpCode::Div:           return "div";
+        case OpCode::Lt:            return "lt";
+        case OpCode::Gt:            return "gt";
+        case OpCode::Le:            return "le";
+        case OpCode::Ge:            return "ge";
+        case OpCode::Jmp:           return "jmp";
+        case OpCode::JTrue:         return "jtrue";
+        case OpCode::JFalse:        return "jfalse";
+        case OpCode::PushScope:     return "push_scope";
+        case OpCode::PopScope:      return "pop_scope";
         case OpCode::Ret:           return "ret";
         case OpCode::Halt:          return "hlt";
     }
@@ -93,6 +102,15 @@ const VM::Handler* VM::handlers() {
         &VM::opSub,
         &VM::opMul,
         &VM::opDiv,
+        &VM::opLt,
+        &VM::opGt,
+        &VM::opLe,
+        &VM::opGe,
+        &VM::opJmp,
+        &VM::opJTrue,
+        &VM::opJFalse,
+        &VM::opPushScope,
+        &VM::opPopScope,
         &VM::opRet,
         &VM::opHalt,
     };
@@ -309,6 +327,56 @@ Value* VM::opAdd() { return binary(BinaryOperator::Add); }
 Value* VM::opSub() { return binary(BinaryOperator::Sub); }
 Value* VM::opMul() { return binary(BinaryOperator::Mul); }
 Value* VM::opDiv() { return binary(BinaryOperator::Div); }
+
+Value* VM::opLt() { return binary(BinaryOperator::LessThan); }
+Value* VM::opGt() { return binary(BinaryOperator::GreaterThan); }
+Value* VM::opLe() { return binary(BinaryOperator::LessThanOrEqual); }
+Value* VM::opGe() { return binary(BinaryOperator::GreaterThanOrEqual); }
+
+// —— 控制流 ——
+
+Value* VM::opJmp() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) return badBytecode("jmp: truncated operand");
+    uint32_t target = readU32(bytes.data() + pc_);
+    if (target > bytes.size()) return badBytecode("jmp: target out of range");
+    pc_ = target;
+    return nullptr;
+}
+
+Value* VM::opJTrue() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) return badBytecode("jtrue: truncated operand");
+    uint32_t target = readU32(bytes.data() + pc_);
+    if (target > bytes.size()) return badBytecode("jtrue: target out of range");
+    pc_ += 4;
+    if (stack_.empty()) return badBytecode("jtrue: operand stack underflow");
+    if (ctx_->toBoolean(pop())) pc_ = target;
+    return nullptr;
+}
+
+Value* VM::opJFalse() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) return badBytecode("jfalse: truncated operand");
+    uint32_t target = readU32(bytes.data() + pc_);
+    if (target > bytes.size()) return badBytecode("jfalse: target out of range");
+    pc_ += 4;
+    if (stack_.empty()) return badBytecode("jfalse: operand stack underflow");
+    if (!ctx_->toBoolean(pop())) pc_ = target;
+    return nullptr;
+}
+
+// —— 作用域 ——
+
+Value* VM::opPushScope() {
+    if (ctx_->pushNewScope(ctx_->current()) == nullptr) return ctx_->oomValue();
+    return nullptr;
+}
+
+Value* VM::opPopScope() {
+    ctx_->popScope();
+    return nullptr;
+}
 
 // —— 结束 ——
 

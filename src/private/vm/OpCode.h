@@ -11,6 +11,8 @@
 //   initialize    u32 nameIndex
 //   load          u32 nameIndex
 //   store         u32 nameIndex
+//   jmp           u32 targetPc（字节偏移）
+//   jtrue/jfalse  u32 targetPc（字节偏移）
 //   其余指令      无操作数
 //
 // 操作数的读取由各指令处理函数自己负责——只有它知道需要几个、什么类型。
@@ -26,6 +28,11 @@
 //   load          d → d + 1
 //   store         d → d - 1        （弹值，写绑定）
 //   add/sub/mul/div  d → d - 1     （弹右、左，压结果）
+//   lt/gt/le/ge   d → d - 1        （弹右、左，压 Boolean）
+//   jmp           d → d            （pc = target）
+//   jtrue/jfalse  d → d - 1        （弹条件，按 ToBoolean 决定是否跳转）
+//   push_scope    d → d            （创建子作用域并设为 current）
+//   pop_scope     d → d            （销毁 current，回到 parent）
 //   ret           d → 0            （弹返回值并结束）
 //   hlt           d → d            （结束，返回 undefined）
 //
@@ -60,6 +67,21 @@ enum class OpCode : uint16_t {
     Sub,
     Mul,
     Div,
+
+    // 关系运算（if/while 条件所需）
+    Lt,
+    Gt,
+    Le,
+    Ge,
+
+    // 控制流
+    Jmp,          // u32 targetPc
+    JTrue,        // u32 targetPc：弹条件，ToBoolean 为真则跳转
+    JFalse,       // u32 targetPc：弹条件，ToBoolean 为假则跳转
+
+    // 作用域
+    PushScope,
+    PopScope,
 
     Ret,
     Halt,
