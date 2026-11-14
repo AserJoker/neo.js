@@ -8,6 +8,7 @@
 #include "sema/ResolvePass.h"
 
 #include <string>
+#include <unordered_set>
 #include <utility>
 
 namespace neo::compiler {
@@ -34,6 +35,7 @@ CompileResult Compiler::compile() {
 }
 
 void Compiler::compileProgram() {
+    hoistScope(program_.body, true);
     for (const frontend::NodePtr& statement : program_.body) {
         if (statement) compileStatement(*statement);
     }
@@ -58,8 +60,11 @@ void Compiler::compileStatement(const Node& node) {
                 static_cast<const frontend::BlockStatement&>(node));
             break;
         case NodeKind::FunctionDeclaration:
-            compileFunctionDeclaration(
-                static_cast<const frontend::FunctionDeclaration&>(node));
+            // 已在作用域入口提升并创建，执行期无操作。
+            break;
+        case NodeKind::VariableDeclaration:
+            compileVariableDeclaration(
+                static_cast<const frontend::VariableDeclaration&>(node));
             break;
         default:
             error(node, "compiler: unsupported statement node kind " +
@@ -124,6 +129,7 @@ void Compiler::compileExpression(const Node& node) {
 
 void Compiler::compileBlockStatement(const frontend::BlockStatement& node) {
     code_->pushScope();
+    hoistScope(node.body, false);
     for (const frontend::NodePtr& statement : node.body) {
         if (statement) compileStatement(*statement);
     }
@@ -251,20 +257,35 @@ void Compiler::compileThisExpression(const frontend::ThisExpression&) {
 
 // —— 函数 ——
 
-void Compiler::compileFunctionDeclaration(
-    const frontend::FunctionDeclaration& node) {
-    if (!node.id || node.id->kind() != NodeKind::Identifier) {
-        error(node, "compiler: function declaration missing name");
-        return;
+void Compiler::compileVariableDeclaration(
+    const frontend::VariableDeclaration& node) {
+    for (const frontend::NodePtr& declarator : node.declarations) {
+        if (!declarator || declarator->kind() != NodeKind::VariableDeclarator) {
+            continue;
+        }
+        const auto& decl =
+            static_cast<const frontend::VariableDeclarator&>(*declarator);
+        if (!decl.id || decl.id->kind() != NodeKind::Identifier) {
+            error(*declarator, "compiler: unsupported binding pattern");
+            continue;
+        }
+        const std::string& name =
+            static_cast<const frontend::Identifier&>(*decl.id).name;
+
+        if (decl.init) {
+            compileExpression(*decl.init);
+        } else {
+            code_->pushUndefined();
+        }
+
+        if (node.variableKind == frontend::VariableKind::Var) {
+            // var 槽已在函数/模块入口提升为 undefined，这里只赋值。
+            code_->store(name);
+        } else {
+            // let/const 槽已提升为 uninitialized，这里解除 TDZ。
+            code_->initialize(name);
+        }
     }
-    if (!node.body) {
-        error(node, "compiler: function declaration missing body");
-        return;
-    }
-    const std::string& name =
-        static_cast<const frontend::Identifier&>(*node.id).name;
-    compileFunctionObject(node, node.params, *node.body, false, name);
-    code_->define(name);
 }
 
 void Compiler::compileFunctionObject(const Node& node,
@@ -349,6 +370,7 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
 
     if (body.kind() == NodeKind::BlockStatement) {
         const auto& block = static_cast<const frontend::BlockStatement&>(body);
+        hoistScope(block.body, true);
         for (const frontend::NodePtr& statement : block.body) {
             if (statement) compileStatement(*statement);
         }
@@ -359,6 +381,195 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
     // 编译器统一补隐式 return undefined（ADR-024）。
     code_->pushUndefined();
     code_->ret();
+}
+
+// —— 声明提升 ——
+
+void Compiler::hoistScope(const frontend::NodeList& body, bool varScope) {
+    // 1. var：递归收集（不进入嵌套函数），在函数/模块作用域建 undefined 槽。
+    if (varScope) {
+        std::vector<std::string> varNames;
+        for (const frontend::NodePtr& statement : body) {
+            if (statement) collectVarNames(*statement, varNames);
+        }
+        std::unordered_set<std::string> seen;
+        for (const std::string& name : varNames) {
+            if (!seen.insert(name).second) continue;
+            code_->pushUndefined();
+            code_->define(name);
+        }
+    }
+
+    // 2. 直接 let/const：建 uninitialized 槽（TDZ）。
+    for (const frontend::NodePtr& statement : body) {
+        if (!statement || statement->kind() != NodeKind::VariableDeclaration) {
+            continue;
+        }
+        const auto& declaration =
+            static_cast<const frontend::VariableDeclaration&>(*statement);
+        if (declaration.variableKind == frontend::VariableKind::Var) continue;
+        bool mutableBinding =
+            declaration.variableKind == frontend::VariableKind::Let;
+        for (const frontend::NodePtr& declarator : declaration.declarations) {
+            if (!declarator ||
+                declarator->kind() != NodeKind::VariableDeclarator) {
+                continue;
+            }
+            const auto& decl =
+                static_cast<const frontend::VariableDeclarator&>(*declarator);
+            if (!decl.id || decl.id->kind() != NodeKind::Identifier) {
+                error(*declarator, "compiler: unsupported binding pattern");
+                continue;
+            }
+            const std::string& name =
+                static_cast<const frontend::Identifier&>(*decl.id).name;
+            code_->pushUninitialized();
+            code_->define(name, mutableBinding, false);
+        }
+    }
+
+    // 3. 直接函数声明：先建 undefined 槽，再创建函数并 store。
+    //    分两步保证函数之间可以互相捕获（此时所有槽位都已存在）。
+    for (const frontend::NodePtr& statement : body) {
+        if (!statement || statement->kind() != NodeKind::FunctionDeclaration) {
+            continue;
+        }
+        const auto& declaration =
+            static_cast<const frontend::FunctionDeclaration&>(*statement);
+        if (!declaration.id || declaration.id->kind() != NodeKind::Identifier) {
+            error(*statement, "compiler: function declaration missing name");
+            continue;
+        }
+        code_->pushUndefined();
+        code_->define(
+            static_cast<const frontend::Identifier&>(*declaration.id).name);
+    }
+    for (const frontend::NodePtr& statement : body) {
+        if (!statement || statement->kind() != NodeKind::FunctionDeclaration) {
+            continue;
+        }
+        const auto& declaration =
+            static_cast<const frontend::FunctionDeclaration&>(*statement);
+        if (!declaration.id || declaration.id->kind() != NodeKind::Identifier ||
+            !declaration.body) {
+            continue;
+        }
+        const std::string& name =
+            static_cast<const frontend::Identifier&>(*declaration.id).name;
+        compileFunctionObject(declaration, declaration.params,
+                              *declaration.body, false, name);
+        code_->store(name);
+    }
+}
+
+void Compiler::collectVarNames(const frontend::Node& statement,
+                               std::vector<std::string>& names) {
+    switch (statement.kind()) {
+        case NodeKind::VariableDeclaration: {
+            const auto& declaration =
+                static_cast<const frontend::VariableDeclaration&>(statement);
+            if (declaration.variableKind != frontend::VariableKind::Var) break;
+            for (const frontend::NodePtr& declarator : declaration.declarations) {
+                if (!declarator ||
+                    declarator->kind() != NodeKind::VariableDeclarator) {
+                    continue;
+                }
+                const auto& decl =
+                    static_cast<const frontend::VariableDeclarator&>(*declarator);
+                if (decl.id && decl.id->kind() == NodeKind::Identifier) {
+                    names.push_back(
+                        static_cast<const frontend::Identifier&>(*decl.id).name);
+                }
+            }
+            break;
+        }
+        case NodeKind::BlockStatement: {
+            const auto& block =
+                static_cast<const frontend::BlockStatement&>(statement);
+            for (const frontend::NodePtr& child : block.body) {
+                if (child) collectVarNames(*child, names);
+            }
+            break;
+        }
+        case NodeKind::IfStatement: {
+            const auto& node =
+                static_cast<const frontend::IfStatement&>(statement);
+            if (node.consequent) collectVarNames(*node.consequent, names);
+            if (node.alternate) collectVarNames(*node.alternate, names);
+            break;
+        }
+        case NodeKind::WhileStatement: {
+            const auto& node =
+                static_cast<const frontend::WhileStatement&>(statement);
+            if (node.body) collectVarNames(*node.body, names);
+            break;
+        }
+        case NodeKind::DoWhileStatement: {
+            const auto& node =
+                static_cast<const frontend::DoWhileStatement&>(statement);
+            if (node.body) collectVarNames(*node.body, names);
+            break;
+        }
+        case NodeKind::ForStatement: {
+            const auto& node =
+                static_cast<const frontend::ForStatement&>(statement);
+            if (node.init) collectVarNames(*node.init, names);
+            if (node.body) collectVarNames(*node.body, names);
+            break;
+        }
+        case NodeKind::ForInStatement: {
+            const auto& node =
+                static_cast<const frontend::ForInStatement&>(statement);
+            if (node.left) collectVarNames(*node.left, names);
+            if (node.body) collectVarNames(*node.body, names);
+            break;
+        }
+        case NodeKind::ForOfStatement: {
+            const auto& node =
+                static_cast<const frontend::ForOfStatement&>(statement);
+            if (node.left) collectVarNames(*node.left, names);
+            if (node.body) collectVarNames(*node.body, names);
+            break;
+        }
+        case NodeKind::LabeledStatement: {
+            const auto& node =
+                static_cast<const frontend::LabeledStatement&>(statement);
+            if (node.body) collectVarNames(*node.body, names);
+            break;
+        }
+        case NodeKind::TryStatement: {
+            const auto& node =
+                static_cast<const frontend::TryStatement&>(statement);
+            if (node.block) collectVarNames(*node.block, names);
+            if (node.handler) collectVarNames(*node.handler, names);
+            if (node.finalizer) collectVarNames(*node.finalizer, names);
+            break;
+        }
+        case NodeKind::CatchClause: {
+            const auto& node =
+                static_cast<const frontend::CatchClause&>(statement);
+            if (node.body) collectVarNames(*node.body, names);
+            break;
+        }
+        case NodeKind::SwitchStatement: {
+            const auto& node =
+                static_cast<const frontend::SwitchStatement&>(statement);
+            for (const frontend::NodePtr& caseNode : node.cases) {
+                if (!caseNode || caseNode->kind() != NodeKind::SwitchCase) {
+                    continue;
+                }
+                const auto& switchCase =
+                    static_cast<const frontend::SwitchCase&>(*caseNode);
+                for (const frontend::NodePtr& child : switchCase.consequent) {
+                    if (child) collectVarNames(*child, names);
+                }
+            }
+            break;
+        }
+        default:
+            // 函数/类边界：var 不穿透。
+            break;
+    }
 }
 
 // —— 辅助 ——

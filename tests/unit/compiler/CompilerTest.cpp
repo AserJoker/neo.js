@@ -46,6 +46,9 @@ using neo::frontend::Program;
 using neo::frontend::ReturnStatement;
 using neo::frontend::SourceRange;
 using neo::frontend::SourceType;
+using neo::frontend::VariableDeclaration;
+using neo::frontend::VariableDeclarator;
+using neo::frontend::VariableKind;
 using neo::infra::Console;
 using neo::infra::IOutputSink;
 using neo::infra::createMallocAllocator;
@@ -157,6 +160,141 @@ TEST(CompilerTest, CompilesFunctionDeclarationAndCall) {
                    std::move(args))));
 
     Program program(range, std::move(programBody), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+namespace {
+
+neo::frontend::NodePtr letDeclaration(const SourceRange& range,
+                                      const char* name, double value) {
+    NodeList declarations;
+    declarations.push_back(std::make_unique<VariableDeclarator>(
+        range, std::make_unique<Identifier>(range, name),
+        std::make_unique<NumericLiteral>(range, value)));
+    return std::make_unique<VariableDeclaration>(
+        range, VariableKind::Let, std::move(declarations));
+}
+
+neo::frontend::NodePtr varDeclaration(const SourceRange& range,
+                                      const char* name, double value) {
+    NodeList declarations;
+    declarations.push_back(std::make_unique<VariableDeclarator>(
+        range, std::make_unique<Identifier>(range, name),
+        std::make_unique<NumericLiteral>(range, value)));
+    return std::make_unique<VariableDeclaration>(
+        range, VariableKind::Var, std::move(declarations));
+}
+
+}  // namespace
+
+TEST(CompilerTest, CompilesLetDeclarations) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(letDeclaration(range, "x", 1.0));
+    body.push_back(letDeclaration(range, "y", 2.0));
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<BinaryExpression>(
+                   range, BinaryOperator::Add,
+                   std::make_unique<Identifier>(range, "x"),
+                   std::make_unique<Identifier>(range, "y"))));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, LetReadBeforeDeclarationIsTdz) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<Identifier>(range, "x")));
+    body.push_back(letDeclaration(range, "x", 1.0));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    EXPECT_EQ(value->type()->kind(), TypeKind::Exception);
+}
+
+TEST(CompilerTest, VarInBlockHoistsToProgramScope) {
+    SourceRange range{};
+    NodeList blockBody;
+    blockBody.push_back(varDeclaration(range, "x", 7.0));
+    NodeList body;
+    body.push_back(std::make_unique<BlockStatement>(range,
+                                                    std::move(blockBody)));
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<Identifier>(range, "x")));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 7.0);
+}
+
+TEST(CompilerTest, FunctionDeclarationIsHoisted) {
+    SourceRange range{};
+
+    NodeList params;
+    params.push_back(std::make_unique<Identifier>(range, "a"));
+    params.push_back(std::make_unique<Identifier>(range, "b"));
+    NodeList fnBody;
+    fnBody.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<BinaryExpression>(
+                   range, BinaryOperator::Add,
+                   std::make_unique<Identifier>(range, "a"),
+                   std::make_unique<Identifier>(range, "b"))));
+
+    NodeList args;
+    args.push_back(std::make_unique<NumericLiteral>(range, 1.0));
+    args.push_back(std::make_unique<NumericLiteral>(range, 2.0));
+
+    NodeList body;
+    // 调用在声明之前：依赖函数声明提升。
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<CallExpression>(
+                   range, std::make_unique<Identifier>(range, "add"),
+                   std::move(args))));
+    body.push_back(std::make_unique<FunctionDeclaration>(
+        range, std::make_unique<Identifier>(range, "add"), std::move(params),
+        std::make_unique<BlockStatement>(range, std::move(fnBody)), false,
+        false));
+
+    Program program(range, std::move(body), SourceType::Script);
     SemaResult sema;
     Compiler compiler(program, sema);
     CompileResult result = compiler.compile();

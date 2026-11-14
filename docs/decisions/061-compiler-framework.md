@@ -79,11 +79,17 @@ public:
 | BlockStatement | `push_scope` + 语句 + `pop_scope` |
 | Numeric/String/Boolean/NullLiteral | `push_*` |
 | Identifier | `load` |
+| VariableDeclaration | 声明点 `store`（var）/ `initialize`（let/const） |
 | BinaryExpression（+ - * / < <= > >=） | 左、右 + 对应指令 |
 | FunctionDeclaration/Expression | 跳过函数体 + 函数体 + `push_function` + `set_func_name` + `set_closure` + `define`（声明） |
 | ArrowFunctionExpression | 同上，另加 `load_this` + `bind_this`，无 prototype/不可构造 |
 | CallExpression（非成员） | callee + args + `call N` |
 | ThisExpression | `load_this` |
+
+声明提升：作用域入口先建槽——`var`（递归收集，不穿透函数）→
+`push_undefined; define`；直接 `let/const` → `push_uninitialized; define(mutable,
+initialized=false)`；直接函数声明先建 undefined 槽，再创建函数并 `store`
+（分两步保证函数间可互相捕获）。声明点只做 `store` / `initialize`。
 
 函数体序言：形参 `push_undefined; define` → `store_this` → 按序 `store` 实参 →
 `push_scope` → 函数体 → `push_undefined; ret`。成员调用需 `get_prop`（V5），

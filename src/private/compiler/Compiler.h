@@ -63,7 +63,7 @@ private:
     void compileBlockStatement(const frontend::BlockStatement& node);
     void compileExpressionStatement(const frontend::ExpressionStatement& node);
     void compileReturnStatement(const frontend::ReturnStatement& node);
-    void compileFunctionDeclaration(const frontend::FunctionDeclaration& node);
+    void compileVariableDeclaration(const frontend::VariableDeclaration& node);
 
     // —— 表达式 ——
     void compileIdentifier(const frontend::Identifier& node);
@@ -88,6 +88,15 @@ private:
     // 函数序言 + 函数体 + 隐式 return undefined。
     void compileFunctionBody(const frontend::NodeList& params,
                              const frontend::Node& body, bool arrow);
+
+    // —— 声明提升 ——
+    // 在当前作用域入口发射提升槽位：
+    //   varScope=true：递归收集 var（不进入嵌套函数）→ undefined 槽；
+    //   直接 let/const → uninitialized 槽（TDZ）；
+    //   直接函数声明 → 先建 undefined 槽，再创建函数并 store（支持互相引用）。
+    void hoistScope(const frontend::NodeList& body, bool varScope);
+    void collectVarNames(const frontend::Node& statement,
+                         std::vector<std::string>& names);
 
     // —— 辅助 ——
     void error(const frontend::Node& node, std::string message);
