@@ -200,6 +200,20 @@ struct Code {
         return pc;
     }
 
+    // try：catch/finally 为 out-of-line 块，tryEnd 为整条语句之后的位置。
+    uint32_t tryBegin(uint32_t catchStart = 0, uint32_t finallyStart = 0,
+                      uint32_t tryEnd = 0) {
+        uint32_t pc = emitOp(OpCode::TryBegin);
+        emitU32(catchStart);
+        emitU32(finallyStart);
+        emitU32(tryEnd);
+        return pc;
+    }
+    uint32_t tryBodyEnd() { return emitOp(OpCode::TryBodyEnd); }
+    uint32_t catchEnd() { return emitOp(OpCode::CatchEnd); }
+    uint32_t finallyEnd() { return emitOp(OpCode::FinallyEnd); }
+    uint32_t throwValue() { return emitOp(OpCode::Throw); }
+
     // label 栈：startPc = continue 目标，endPc = break 目标（均为 0 表示无）。
     uint32_t pushLabel(std::string_view label, uint32_t startPc = 0,
                        uint32_t endPc = 0) {

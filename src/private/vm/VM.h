@@ -86,6 +86,34 @@ private:
     // 成功返回 nullptr（pc 已更新），失败返回错误值。
     neo::core::Value* handleLabelInterrupt(neo::core::Value* interrupt);
 
+    // try 帧：catch/finally 为 out-of-line 块，出口由 VM 裁决。
+    // catchStart/finallyStart 为 0 表示“不存在或已消费”；res 自描述 completion：
+    //   nullptr = 正常；Exception = 待传播；Interrupt = break/continue；其他 = 返回值。
+    struct TryFrame {
+        uint32_t catchStart = 0;
+        uint32_t finallyStart = 0;
+        uint32_t tryEnd = 0;
+        neo::core::Value* res = nullptr;
+        neo::core::Scope* scope = nullptr;
+        size_t stackDepth = 0;
+        size_t labelDepth = 0;
+    };
+
+    // 回到 try 帧入口：截断操作数栈、回退 label 栈、回退作用域。
+    void restoreFrame(const TryFrame& frame);
+    // 把 pending 值挂到帧入口作用域，保证 restore/GC 期间存活。
+    void trackRes(TryFrame& frame, neo::core::Value* res);
+    // res 分派：Exception 找 catch；Interrupt 走 label；其他按返回值消费 finally。
+    neo::core::Value* dispatchPending(neo::core::Value* res);
+    // 返回值展开：消费 finally，耗尽后返回 value；跳转时返回 nullptr。
+    neo::core::Value* unwindReturn(neo::core::Value* value);
+    // 异常展开：从当前帧向外找 catch；无处理器时返回 exception。
+    neo::core::Value* dispatchException(neo::core::Value* exception);
+    // 三个出口信号。
+    neo::core::Value* handleTryBodyEnd();
+    neo::core::Value* handleCatchEnd();
+    neo::core::Value* handleFinallyEnd();
+
     // 取 Code::strings[index]；越界返回 nullptr。
     const std::string* stringOperand(uint32_t index) const;
 
@@ -124,6 +152,11 @@ private:
     neo::core::Value* opJmp();
     neo::core::Value* opJTrue();
     neo::core::Value* opJFalse();
+    neo::core::Value* opTryBegin();
+    neo::core::Value* opTryBodyEnd();
+    neo::core::Value* opCatchEnd();
+    neo::core::Value* opFinallyEnd();
+    neo::core::Value* opThrow();
     neo::core::Value* opPushLabel();
     neo::core::Value* opPopLabel();
     neo::core::Value* opBreak();
@@ -151,12 +184,15 @@ private:
         std::string label;
         uint32_t startPc = 0;
         uint32_t endPc = 0;
-        // 进入 label 时的作用域：break/continue 跳过块作用域时据此回退。
+        // 进入 label 时的作用域与栈深：break/continue 跳过块时据此回退。
         neo::core::Scope* scope = nullptr;
+        size_t stackDepth = 0;
+        size_t tryDepth = 0;
     };
 
     std::vector<neo::core::Value*> stack_;
     std::vector<LabelFrame> labelStack_;
+    std::vector<TryFrame> tryStack_;
 
     // 本次执行的入口作用域与模块根作用域（借用，V0 仅记录）。
     neo::core::Scope* entryScope_ = nullptr;

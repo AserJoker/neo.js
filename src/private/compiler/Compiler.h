@@ -73,6 +73,9 @@ private:
     void compileLabeledStatement(const frontend::LabeledStatement& node);
     void compileBreakStatement(const frontend::BreakStatement& node);
     void compileContinueStatement(const frontend::ContinueStatement& node);
+    void compileThrowStatement(const frontend::ThrowStatement& node);
+    void compileTryStatement(const frontend::TryStatement& node);
+    void compileCatchClause(const frontend::CatchClause& node);
 
     // —— 表达式 ——
     void compileIdentifier(const frontend::Identifier& node);

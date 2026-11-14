@@ -21,6 +21,9 @@ enum class InterruptKind : uint8_t {
     Throw,   // VM 专用：throw 语句信号，解包为 Exception（ADR-017 §6）
     Break,   // VM 专用：break 语句信号，offset = label 字符串下标
     Continue,// VM 专用：continue 语句信号，offset = label 字符串下标
+    TryBodyEnd,  // VM 专用：try 块正常完成，由 VM 裁决 finally/try_end
+    CatchEnd,    // VM 专用：catch 块正常完成，由 VM 裁决 finally/try_end
+    FinallyEnd,  // VM 专用：finally 块完成，由 VM 裁决 res/try_end
 };
 
 // 挂起信号：函数返回后必须保留现场（execScope/断点），等待 runner 恢复。

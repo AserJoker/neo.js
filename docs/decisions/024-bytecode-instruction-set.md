@@ -208,6 +208,23 @@ _func_end:
 - break/continue 指令本身不处理跳转：回调只产生 Interrupt，由 `VM::run`
   统一消费（与 try/finally 的耦合在 try 组实现时再处理）。
 
+#### 2.5.2 异常
+
+| 指令 | 栈契约 | 说明 |
+|------|--------|------|
+| `try_begin catchStart, finallyStart, tryEnd` | `d → d` | 压 try 帧；0 表示无该目标 |
+| `try_body_end` | `d → d` | 产生 Interrupt(TryBodyEnd)，VM 裁决 finally/try_end |
+| `catch_end` | `d → d` | 产生 Interrupt(CatchEnd)，规则同 try_body_end |
+| `finally_end` | `d → d` | 产生 Interrupt(FinallyEnd)，VM 按 res 分派 |
+| `throw` | `[value] → []` | 包成 Exception 交给 VM 展开 |
+
+- catch/finally 是 out-of-line 块，线性流程通过 end Interrupt 跳过，不发射 `jmp`。
+- `try_end` 是整条 try 语句之后的位置，不是指令；`pop_try` 是 VM 内部动作。
+- try 帧：`catchStart`/`finallyStart`/`tryEnd`/`res`/入口作用域/操作数栈深/label 栈深。
+- `res` 自描述：`nullptr` 正常；Exception 待传播；Interrupt(Break/Continue) 待跳转；
+  其他 Value 为返回值。
+- 进入 catch/finally 前清零对应地址，防止重入；Fatal 不参与展开。
+
 #### 2.6 作用域
 
 | 指令 | 说明 |
@@ -356,7 +373,7 @@ hlt
 - 优点：三段式模块组织统一所有声明的处理路径；call/序言栈契约清晰；
   箭头/普通函数字节码层无特例（统一 store_this）；定义点退化为 store 简化语义。
 - 缺点：函数调用创建/销毁 VM 有开销（ADR-004）；箭头函数 bind_this 多两条指令。
-- 待定：try/catch（异常即值走 return 通道）、for 循环（init_scope/body_scope）。
+- 待定：for 循环（init_scope/body_scope）。
   属性访问已定：`get_prop`/`set_prop` 无操作数，key 由栈传递；
   `call_method` 只负责 thisArg，属性查找由 `get_prop` 完成。
   label 栈已定：`push_label`/`pop_label`/`break`/`continue`（ADR-060 §7）。

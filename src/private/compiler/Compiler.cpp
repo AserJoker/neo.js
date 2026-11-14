@@ -90,6 +90,14 @@ void Compiler::compileStatement(const Node& node) {
             compileContinueStatement(
                 static_cast<const frontend::ContinueStatement&>(node));
             break;
+        case NodeKind::ThrowStatement:
+            compileThrowStatement(
+                static_cast<const frontend::ThrowStatement&>(node));
+            break;
+        case NodeKind::TryStatement:
+            compileTryStatement(
+                static_cast<const frontend::TryStatement&>(node));
+            break;
         default:
             error(node, "compiler: unsupported statement node kind " +
                             std::to_string(static_cast<int>(node.kind())));
@@ -313,6 +321,74 @@ void Compiler::compileBreakStatement(
 void Compiler::compileContinueStatement(
     const frontend::ContinueStatement& node) {
     code_->continueTo(node.label);
+}
+
+void Compiler::compileThrowStatement(const frontend::ThrowStatement& node) {
+    if (node.argument) {
+        compileExpression(*node.argument);
+    } else {
+        code_->pushUndefined();
+    }
+    code_->throwValue();
+}
+
+void Compiler::compileTryStatement(const frontend::TryStatement& node) {
+    // catch/finally 是 out-of-line 块；出口由 try_body_end/catch_end/finally_end
+    // 产生 Interrupt，VM 负责跳转与 try 帧平衡，编译器不发射 jmp。
+    uint32_t tryBeginPc = code_->tryBegin();
+
+    if (node.block) compileStatement(*node.block);
+    code_->tryBodyEnd();
+
+    uint32_t catchStart = 0;
+    if (node.handler) {
+        if (node.handler->kind() != NodeKind::CatchClause) {
+            error(*node.handler, "compiler: unsupported catch clause");
+        } else {
+            catchStart = code_->here();
+            compileCatchClause(
+                static_cast<const frontend::CatchClause&>(*node.handler));
+            code_->catchEnd();
+        }
+    }
+
+    uint32_t finallyStart = 0;
+    if (node.finalizer) {
+        finallyStart = code_->here();
+        compileStatement(*node.finalizer);
+        code_->finallyEnd();
+    }
+
+    uint32_t tryEnd = code_->here();
+    code_->patchU32(tryBeginPc + 2, catchStart);
+    code_->patchU32(tryBeginPc + 6, finallyStart);
+    code_->patchU32(tryBeginPc + 10, tryEnd);
+}
+
+void Compiler::compileCatchClause(const frontend::CatchClause& node) {
+    // 异常 child 由 VM 压在栈顶；catch 建立自己的作用域并绑定参数。
+    code_->pushScope();
+    if (node.param) {
+        if (node.param->kind() == NodeKind::Identifier) {
+            code_->define(
+                static_cast<const frontend::Identifier&>(*node.param).name);
+        } else {
+            error(*node.param, "compiler: unsupported catch parameter");
+            code_->pop();
+        }
+    } else {
+        code_->pop();
+    }
+
+    if (node.body) {
+        if (node.body->kind() == NodeKind::BlockStatement) {
+            compileBlockStatement(
+                static_cast<const frontend::BlockStatement&>(*node.body));
+        } else {
+            compileStatement(*node.body);
+        }
+    }
+    code_->popScope();
 }
 
 // —— 表达式 ——

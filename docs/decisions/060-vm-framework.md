@@ -240,9 +240,29 @@ struct LabelFrame {
 - 两者跳转前都把作用域回退到目标帧记录的 `scope`：break/continue 跳过了
   块作用域的 `pop_scope`，必须由 VM 补做，否则后续名字解析会落到已退出的块。
 
-**try 栈（V3，待设计）**：独立于 label 栈，记录 catch/finally 目标、栈深、作用域。
-两组栈存在双向耦合（try 展开需恢复 label 栈；break/continue 跨 finally 需消费
-try 帧），具体 completion 结构在实现 try 时统一设计。
+**try 栈（V3，已实现）**：独立于 label 栈。
+
+```cpp
+struct TryFrame {
+    uint32_t catchStart;    // 0 = 无/已消费
+    uint32_t finallyStart;  // 0 = 无/已消费
+    uint32_t tryEnd;        // 整条 try 语句之后的位置
+    Value* res;             // nullptr=正常；Exception/Interrupt/返回值自描述
+    Scope* scope;           // 入口作用域
+    size_t stackDepth;      // 入口操作数栈深
+    size_t labelDepth;      // 入口 label 栈深
+};
+```
+
+- `try_body_end`/`catch_end`/`finally_end` 产生 Interrupt，由 VM 裁决 pc 与弹帧；
+  catch/finally 是 out-of-line 块，线性流程不会落入。
+- 进入 catch/finally：清零对应地址防重入；先 `restoreFrame` 回到 try 入口。
+- `restoreFrame`：截断操作数栈、回退 label 栈、回退作用域；`res` 不动。
+- `res` 分派：Exception 向外找 catch；返回值消费 finally 直到耗尽；
+  Break/Continue 先消费目标 try 深度的 finally 再跳 label。
+- pending `res` 在 restore 前挂到帧入口作用域保活；跨帧时重新挂到下一层作用域。
+- catch 绑定 `Exception.child`；Fatal 不参与展开。
+- try 帧不穿透函数调用；label 帧记录 `tryDepth`/`scope`/`stackDepth`，形成双向记录。
 
 ### 8. 挂起/恢复
 

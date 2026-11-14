@@ -98,6 +98,8 @@ public:
 | LabeledStatement | 标签传给循环；非循环标签单独 `push_label`/`pop_label` |
 | BreakStatement | `break "label"`（空串 = 最近可 break 目标） |
 | ContinueStatement | `continue "label"`（空串 = 最近循环） |
+| ThrowStatement | 表达式 + `throw` |
+| TryStatement | `try_begin` + try 块 + `try_body_end`；catch/finally 独立块 + 各自 end |
 
 声明提升：作用域入口先建槽——`var`（递归收集，不穿透函数）→
 `push_undefined; define`；直接 `let/const` → `push_uninitialized; define(mutable,
@@ -107,7 +109,7 @@ initialized=false)`；直接函数声明先建 undefined 槽，再创建函数�
 函数体序言：形参 `push_undefined; define` → `store_this` → 按序 `store` 实参 →
 `push_scope` → 函数体 → `push_undefined; ret`。
 
-展开语法、对象访问器/`__proto__`、可选链、复合成员赋值、异常、模块等节点
+展开语法、对象访问器/`__proto__`、可选链、复合成员赋值、模块等节点
 暂记录 unsupported 错误，
 在后续切片中逐个补齐；每补一个节点，同时补 Compiler 测试与 VM 端到端测试。
 
@@ -128,6 +130,6 @@ tests/unit/compiler/
 
 - 优点：Compiler 与 Parser 同构，节点覆盖度可逐条推进；错误显式；SourceMap
   与 VM 的异常定位直接对接；后续只需在分派表里补节点。
-- 缺点：尚未覆盖 for/switch、异常与模块，真实程序还不能完整编译；
+- 缺点：尚未覆盖 for/switch 与模块，真实程序还不能完整编译；
   函数声明提升已按「先建槽 → 再创建函数 → store」实现，但尚未独立函数定义区。
 - 待定：模块绑定、常量池去重、SourceMap 对多字节指令的精确边界。

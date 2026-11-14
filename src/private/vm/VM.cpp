@@ -13,6 +13,7 @@
 #include "core/InterruptKind.h"
 #include "core/OperatorKind.h"
 #include "core/Scope.h"
+#include "core/types/Exception.h"
 #include "core/types/Interrupt.h"
 #include "core/types/TypeBehavior.h"
 
@@ -78,6 +79,11 @@ const char* opCodeName(OpCode op) {
         case OpCode::Jmp:           return "jmp";
         case OpCode::JTrue:         return "jtrue";
         case OpCode::JFalse:        return "jfalse";
+        case OpCode::TryBegin:      return "try_begin";
+        case OpCode::TryBodyEnd:    return "try_body_end";
+        case OpCode::CatchEnd:      return "catch_end";
+        case OpCode::FinallyEnd:    return "finally_end";
+        case OpCode::Throw:         return "throw";
         case OpCode::PushLabel:     return "push_label";
         case OpCode::PopLabel:      return "pop_label";
         case OpCode::Break:         return "break";
@@ -137,6 +143,11 @@ const VM::Handler* VM::handlers() {
         &VM::opJmp,
         &VM::opJTrue,
         &VM::opJFalse,
+        &VM::opTryBegin,
+        &VM::opTryBodyEnd,
+        &VM::opCatchEnd,
+        &VM::opFinallyEnd,
+        &VM::opThrow,
         &VM::opPushLabel,
         &VM::opPopLabel,
         &VM::opBreak,
@@ -169,12 +180,145 @@ const std::string* VM::stringOperand(uint32_t index) const {
 
 Value* VM::fail(Value* error) {
     // Engine 原语创建错误时不知道 pc；VM 用 SourceMap 补全异常栈顶位置。
+    // 异常展开由 run 主循环统一处理（Fatal 不参与）。
     ctx_->setExceptionPosition(error, currentPosition());
     return error;
 }
 
 Value* VM::badBytecode(const char* message) {
     return fail(ctx_->createErrorException(ErrorKind::Error, message));
+}
+
+void VM::restoreFrame(const TryFrame& frame) {
+    if (stack_.size() > frame.stackDepth) stack_.resize(frame.stackDepth);
+    if (labelStack_.size() > frame.labelDepth) {
+        labelStack_.resize(frame.labelDepth);
+    }
+    while (ctx_->current() != nullptr && ctx_->current() != frame.scope) {
+        ctx_->popScope();
+    }
+}
+
+void VM::trackRes(TryFrame& frame, Value* res) {
+    if (res != nullptr && frame.scope != nullptr) frame.scope->add(res);
+}
+
+Value* VM::unwindReturn(Value* value) {
+    while (!tryStack_.empty()) {
+        TryFrame& frame = tryStack_.back();
+        if (frame.finallyStart != 0) {
+            uint32_t finallyPc = frame.finallyStart;
+            frame.finallyStart = 0;
+            frame.res = value;
+            trackRes(frame, value);
+            restoreFrame(frame);
+            pc_ = finallyPc;
+            return nullptr;
+        }
+        restoreFrame(frame);
+        tryStack_.pop_back();
+    }
+    return value;
+}
+
+Value* VM::dispatchException(Value* exception) {
+    while (!tryStack_.empty()) {
+        TryFrame& frame = tryStack_.back();
+        if (frame.catchStart != 0) {
+            uint32_t catchPc = frame.catchStart;
+            frame.catchStart = 0;
+            // restore 可能 pop 作用域并触发 GC，先把异常挂到入口作用域。
+            trackRes(frame, exception);
+            restoreFrame(frame);
+
+            Value* child =
+                static_cast<neo::core::ExceptionData*>(exception->data())->child;
+            // catch 作用域由编译器创建；在此之前先挂在入口作用域保活。
+            trackRes(frame, child);
+            push(child);
+            pc_ = catchPc;
+            return nullptr;
+        }
+        if (frame.finallyStart != 0) {
+            uint32_t finallyPc = frame.finallyStart;
+            frame.finallyStart = 0;
+            frame.res = exception;
+            trackRes(frame, exception);
+            restoreFrame(frame);
+            pc_ = finallyPc;
+            return nullptr;
+        }
+        restoreFrame(frame);
+        tryStack_.pop_back();
+    }
+    return exception;
+}
+
+Value* VM::dispatchPending(Value* res) {
+    if (res == nullptr) return nullptr;
+    if (res->type()->kind() == neo::core::TypeKind::Exception) {
+        return dispatchException(res);
+    }
+    if (detail::isInterruptValue(res)) {
+        auto* data = neo::core::asInterrupt(res);
+        if (data != nullptr &&
+            (data->kind == neo::core::InterruptKind::Break ||
+             data->kind == neo::core::InterruptKind::Continue)) {
+            return handleLabelInterrupt(res);
+        }
+    }
+    return unwindReturn(res);
+}
+
+Value* VM::handleTryBodyEnd() {
+    if (tryStack_.empty()) return badBytecode("try_body_end: empty try stack");
+    TryFrame& frame = tryStack_.back();
+    if (frame.finallyStart != 0) {
+        uint32_t finallyPc = frame.finallyStart;
+        frame.finallyStart = 0;
+        restoreFrame(frame);
+        pc_ = finallyPc;
+        return nullptr;
+    }
+    uint32_t endPc = frame.tryEnd;
+    restoreFrame(frame);
+    tryStack_.pop_back();
+    pc_ = endPc;
+    return nullptr;
+}
+
+Value* VM::handleCatchEnd() {
+    if (tryStack_.empty()) return badBytecode("catch_end: empty try stack");
+    TryFrame& frame = tryStack_.back();
+    if (frame.finallyStart != 0) {
+        uint32_t finallyPc = frame.finallyStart;
+        frame.finallyStart = 0;
+        restoreFrame(frame);
+        pc_ = finallyPc;
+        return nullptr;
+    }
+    uint32_t endPc = frame.tryEnd;
+    restoreFrame(frame);
+    tryStack_.pop_back();
+    pc_ = endPc;
+    return nullptr;
+}
+
+Value* VM::handleFinallyEnd() {
+    if (tryStack_.empty()) return badBytecode("finally_end: empty try stack");
+    TryFrame& frame = tryStack_.back();
+    Value* res = frame.res;
+    uint32_t endPc = frame.tryEnd;
+    restoreFrame(frame);
+    tryStack_.pop_back();
+
+    if (res == nullptr) {
+        pc_ = endPc;
+        return nullptr;
+    }
+    // 帧已弹出：先把 pending 值挂到当前作用域，跨帧展开期间保活。
+    if (ctx_->current() != nullptr) ctx_->current()->add(res);
+    return dispatchPending(res);
 }
 
 Value* VM::run(uint32_t entryPc) {
@@ -198,16 +342,37 @@ Value* VM::run(uint32_t entryPc) {
         pc_ += 2;  // 取指：跳过 opcode，处理函数继续推进操作数
         Value* signal = (this->*table[op])();
         if (signal != nullptr) {
-            // Break/Continue 是 VM 内部信号：由主循环消费，不逃逸到调用方。
+            // VM 内部信号：由主循环消费，不逃逸到调用方。
             if (detail::isInterruptValue(signal)) {
                 auto* data = neo::core::asInterrupt(signal);
-                if (data != nullptr &&
-                    (data->kind == neo::core::InterruptKind::Break ||
-                     data->kind == neo::core::InterruptKind::Continue)) {
-                    Value* error = handleLabelInterrupt(signal);
+                if (data != nullptr) {
+                    Value* error = nullptr;
+                    switch (data->kind) {
+                        case neo::core::InterruptKind::Break:
+                        case neo::core::InterruptKind::Continue:
+                            error = handleLabelInterrupt(signal);
+                            break;
+                        case neo::core::InterruptKind::TryBodyEnd:
+                            error = handleTryBodyEnd();
+                            break;
+                        case neo::core::InterruptKind::CatchEnd:
+                            error = handleCatchEnd();
+                            break;
+                        case neo::core::InterruptKind::FinallyEnd:
+                            error = handleFinallyEnd();
+                            break;
+                        default:
+                            return signal;  // Yield/Await 交给调用方
+                    }
                     if (error != nullptr) return error;
                     continue;
                 }
+            }
+            // Exception 进入 try 展开；Fatal 与正常返回值直接返回。
+            if (signal->type()->kind() == neo::core::TypeKind::Exception) {
+                Value* error = dispatchException(signal);
+                if (error != nullptr) return error;
+                continue;
             }
             return signal;
         }
@@ -499,6 +664,45 @@ Value* VM::opJFalse() {
     return nullptr;
 }
 
+// —— try ——
+
+Value* VM::opTryBegin() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 12) {
+        return badBytecode("try_begin: truncated operand");
+    }
+    TryFrame frame;
+    frame.catchStart = readU32(bytes.data() + pc_);
+    frame.finallyStart = readU32(bytes.data() + pc_ + 4);
+    frame.tryEnd = readU32(bytes.data() + pc_ + 8);
+    pc_ += 12;
+    frame.scope = ctx_->current();
+    frame.stackDepth = stack_.size();
+    frame.labelDepth = labelStack_.size();
+    tryStack_.push_back(frame);
+    return nullptr;
+}
+
+Value* VM::opTryBodyEnd() {
+    return ctx_->createInterrupt(neo::core::InterruptKind::TryBodyEnd, pc_, nullptr);
+}
+
+Value* VM::opCatchEnd() {
+    return ctx_->createInterrupt(neo::core::InterruptKind::CatchEnd, pc_, nullptr);
+}
+
+Value* VM::opFinallyEnd() {
+    return ctx_->createInterrupt(neo::core::InterruptKind::FinallyEnd, pc_, nullptr);
+}
+
+Value* VM::opThrow() {
+    if (stack_.empty()) return badBytecode("throw: operand stack underflow");
+    Value* value = pop();
+    Value* exception = ctx_->createException(value);
+    if (exception == ctx_->oomValue()) return exception;
+    return fail(exception);
+}
+
 // —— label 栈 ——
 
 Value* VM::opPushLabel() {
@@ -515,7 +719,8 @@ Value* VM::opPushLabel() {
     if (label == nullptr) {
         return badBytecode("push_label: label index out of range");
     }
-    labelStack_.push_back(LabelFrame{*label, startPc, endPc, ctx_->current()});
+    labelStack_.push_back(LabelFrame{*label, startPc, endPc, ctx_->current(),
+                                     stack_.size(), tryStack_.size()});
     return nullptr;
 }
 
@@ -572,40 +777,51 @@ Value* VM::handleLabelInterrupt(Value* interrupt) {
         return badBytecode("label interrupt: label index out of range");
     }
 
-    if (data->kind == neo::core::InterruptKind::Break) {
-        for (size_t i = labelStack_.size(); i > 0; --i) {
-            const LabelFrame& frame = labelStack_[i - 1];
-            if (!label->empty() && frame.label != *label) continue;
-            uint32_t target = frame.endPc;
-            // 跳过块作用域时回退到 label 入口作用域（pop_scope 不会执行）。
-            while (ctx_->current() != nullptr &&
-                   ctx_->current() != frame.scope) {
-                ctx_->popScope();
-            }
-            // break 退出目标语句：目标帧及内层帧都由 VM 弹出。
-            labelStack_.resize(i - 1);
-            pc_ = target;
-            return nullptr;
-        }
-        return badBytecode("break: label not found");
-    }
-
+    bool isBreak = data->kind == neo::core::InterruptKind::Break;
+    size_t targetIndex = labelStack_.size();
     for (size_t i = labelStack_.size(); i > 0; --i) {
         const LabelFrame& frame = labelStack_[i - 1];
-        if (frame.startPc == 0) continue;  // switch / 非循环标签
+        if (!isBreak && frame.startPc == 0) continue;
         if (!label->empty() && frame.label != *label) continue;
-        uint32_t target = frame.startPc;
-        // 跳过块作用域时回退到 label 入口作用域。
-        while (ctx_->current() != nullptr &&
-               ctx_->current() != frame.scope) {
-            ctx_->popScope();
-        }
-        // continue 留在目标循环内：只弹内层帧。
-        labelStack_.resize(i);
-        pc_ = target;
-        return nullptr;
+        targetIndex = i - 1;
+        break;
     }
-    return badBytecode("continue: loop label not found");
+    if (targetIndex == labelStack_.size()) {
+        return badBytecode(isBreak ? "break: label not found"
+                                   : "continue: loop label not found");
+    }
+
+    // 先消费目标 try 深度之上的 finally/帧；目标 label 在 try 外，索引保持有效。
+    const size_t targetTryDepth = labelStack_[targetIndex].tryDepth;
+    while (tryStack_.size() > targetTryDepth) {
+        TryFrame& frame = tryStack_.back();
+        if (frame.finallyStart != 0) {
+            uint32_t finallyPc = frame.finallyStart;
+            frame.finallyStart = 0;
+            frame.res = interrupt;
+            trackRes(frame, interrupt);
+            restoreFrame(frame);
+            pc_ = finallyPc;
+            return nullptr;
+        }
+        restoreFrame(frame);
+        tryStack_.pop_back();
+    }
+
+    const LabelFrame target = labelStack_[targetIndex];
+    while (ctx_->current() != nullptr && ctx_->current() != target.scope) {
+        ctx_->popScope();
+    }
+    if (stack_.size() > target.stackDepth) stack_.resize(target.stackDepth);
+
+    if (isBreak) {
+        labelStack_.resize(targetIndex);
+        pc_ = target.endPc;
+    } else {
+        labelStack_.resize(targetIndex + 1);
+        pc_ = target.startPc;
+    }
+    return nullptr;
 }
 
 // —— 作用域 ——
@@ -742,7 +958,8 @@ Value* VM::opCallMethod() {
 // —— 结束 ——
 
 Value* VM::opRet() {
-    return stack_.empty() ? ctx_->createUndefined() : pop();
+    Value* value = stack_.empty() ? ctx_->createUndefined() : pop();
+    return unwindReturn(value);
 }
 
 Value* VM::opHalt() {

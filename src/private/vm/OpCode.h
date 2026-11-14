@@ -19,6 +19,7 @@
 //   call          u32 argc
 //   call_method   u32 argc
 //   new_array     u32 length
+//   try_begin     u32 catchStart, u32 finallyStart, u32 tryEnd
 //   push_label    u32 labelIndex, u32 startPc, u32 endPc
 //   pop_label     u32 labelIndex
 //   break         u32 labelIndex
@@ -47,6 +48,11 @@
 //   lt/gt/le/ge   d → d - 1        （弹右、左，压 Boolean）
 //   jmp           d → d            （pc = target）
 //   jtrue/jfalse  d → d - 1        （弹条件，按 ToBoolean 决定是否跳转）
+//   try_begin     d → d            （压 try 帧）
+//   try_body_end  d → d            （产生 TryBodyEnd 信号）
+//   catch_end     d → d            （产生 CatchEnd 信号）
+//   finally_end   d → d            （产生 FinallyEnd 信号）
+//   throw         d → d - 1        （弹值，包成 Exception）
 //   push_label    d → d            （压 label 帧）
 //   pop_label     d → d            （弹 label 帧）
 //   break/continue d → d           （按 label 帧跳转并平衡 label 栈）
@@ -115,6 +121,13 @@ enum class OpCode : uint16_t {
     Jmp,          // u32 targetPc
     JTrue,        // u32 targetPc：弹条件，ToBoolean 为真则跳转
     JFalse,       // u32 targetPc：弹条件，ToBoolean 为假则跳转
+
+    // try：catch/finally 为 out-of-line 块，出口产生 Interrupt 交给 VM 裁决
+    TryBegin,     // u32 catchStart, u32 finallyStart, u32 tryEnd（0 = 无）
+    TryBodyEnd,   // 产生 Interrupt(TryBodyEnd)
+    CatchEnd,     // 产生 Interrupt(CatchEnd)
+    FinallyEnd,   // 产生 Interrupt(FinallyEnd)
+    Throw,        // 弹值，包成 Exception 并交给 VM 展开
 
     // label 栈：循环/switch/带标签语句
     PushLabel,    // u32 labelIndex, u32 startPc（continue）, u32 endPc（break）

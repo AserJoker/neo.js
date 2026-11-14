@@ -42,6 +42,7 @@ using neo::frontend::BlockStatement;
 using neo::frontend::BooleanLiteral;
 using neo::frontend::BreakStatement;
 using neo::frontend::CallExpression;
+using neo::frontend::CatchClause;
 using neo::frontend::ContinueStatement;
 using neo::frontend::LabeledStatement;
 using neo::frontend::DebuggerStatement;
@@ -61,6 +62,8 @@ using neo::frontend::Program;
 using neo::frontend::ReturnStatement;
 using neo::frontend::SourceRange;
 using neo::frontend::StringLiteral;
+using neo::frontend::ThrowStatement;
+using neo::frontend::TryStatement;
 using neo::frontend::SourceType;
 using neo::frontend::UpdateExpression;
 using neo::frontend::UpdateOperator;
@@ -969,6 +972,436 @@ TEST(CompilerTest, BreakRestoresScopePastInnerBlock) {
     ASSERT_NE(value, nullptr);
     ASSERT_EQ(value->type()->kind(), TypeKind::Number);
     EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, CompilesTryCatch) {
+    SourceRange range{};
+    NodeList tryBody;
+    tryBody.push_back(std::make_unique<ThrowStatement>(
+        range, std::make_unique<NumericLiteral>(range, 1.0)));
+
+    NodeList catchBody;
+    catchBody.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<Identifier>(range, "e")));
+    auto handler = std::make_unique<CatchClause>(
+        range, std::make_unique<Identifier>(range, "e"),
+        std::make_unique<BlockStatement>(range, std::move(catchBody)));
+
+    NodeList body;
+    body.push_back(std::make_unique<TryStatement>(
+        range, std::make_unique<BlockStatement>(range, std::move(tryBody)),
+        std::move(handler), nullptr));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, FinallyRunsOnNormalCompletion) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(letDeclaration(range, "x", 0.0));
+
+    NodeList tryBody;
+    tryBody.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Assign,
+                   std::make_unique<Identifier>(range, "x"),
+                   std::make_unique<NumericLiteral>(range, 1.0))));
+    NodeList finallyBody;
+    finallyBody.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Assign,
+                   std::make_unique<Identifier>(range, "x"),
+                   std::make_unique<BinaryExpression>(
+                       range, BinaryOperator::Add,
+                       std::make_unique<Identifier>(range, "x"),
+                       std::make_unique<NumericLiteral>(range, 1.0)))));
+    body.push_back(std::make_unique<TryStatement>(
+        range, std::make_unique<BlockStatement>(range, std::move(tryBody)),
+        nullptr,
+        std::make_unique<BlockStatement>(range, std::move(finallyBody))));
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<Identifier>(range, "x")));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 2.0);
+}
+
+TEST(CompilerTest, FinallyReturnOverridesTryReturn) {
+    SourceRange range{};
+    NodeList tryBody;
+    tryBody.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<NumericLiteral>(range, 1.0)));
+    NodeList finallyBody;
+    finallyBody.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<NumericLiteral>(range, 2.0)));
+
+    NodeList body;
+    body.push_back(std::make_unique<TryStatement>(
+        range, std::make_unique<BlockStatement>(range, std::move(tryBody)),
+        nullptr,
+        std::make_unique<BlockStatement>(range, std::move(finallyBody))));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 2.0);
+}
+
+TEST(CompilerTest, FinallyReturnOverridesCatchThrow) {
+    SourceRange range{};
+    NodeList tryBody;
+    tryBody.push_back(std::make_unique<ThrowStatement>(
+        range, std::make_unique<NumericLiteral>(range, 1.0)));
+    NodeList catchBody;
+    catchBody.push_back(std::make_unique<ThrowStatement>(
+        range, std::make_unique<NumericLiteral>(range, 2.0)));
+    auto handler = std::make_unique<CatchClause>(
+        range, std::make_unique<Identifier>(range, "e"),
+        std::make_unique<BlockStatement>(range, std::move(catchBody)));
+    NodeList finallyBody;
+    finallyBody.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<NumericLiteral>(range, 3.0)));
+
+    NodeList body;
+    body.push_back(std::make_unique<TryStatement>(
+        range, std::make_unique<BlockStatement>(range, std::move(tryBody)),
+        std::move(handler),
+        std::make_unique<BlockStatement>(range, std::move(finallyBody))));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, CatchRethrowConsumesFinallyBeforeOuterCatch) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(letDeclaration(range, "x", 0.0));
+
+    NodeList innerTryBody;
+    innerTryBody.push_back(std::make_unique<ThrowStatement>(
+        range, std::make_unique<NumericLiteral>(range, 1.0)));
+    NodeList innerFinallyBody;
+    innerFinallyBody.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Assign,
+                   std::make_unique<Identifier>(range, "x"),
+                   std::make_unique<NumericLiteral>(range, 5.0))));
+    NodeList outerTryBody;
+    outerTryBody.push_back(std::make_unique<TryStatement>(
+        range,
+        std::make_unique<BlockStatement>(range, std::move(innerTryBody)),
+        nullptr,
+        std::make_unique<BlockStatement>(range, std::move(innerFinallyBody))));
+
+    NodeList catchBody;
+    catchBody.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<BinaryExpression>(
+                   range, BinaryOperator::Add,
+                   std::make_unique<Identifier>(range, "e"),
+                   std::make_unique<Identifier>(range, "x"))));
+    auto handler = std::make_unique<CatchClause>(
+        range, std::make_unique<Identifier>(range, "e"),
+        std::make_unique<BlockStatement>(range, std::move(catchBody)));
+
+    body.push_back(std::make_unique<TryStatement>(
+        range, std::make_unique<BlockStatement>(range, std::move(outerTryBody)),
+        std::move(handler), nullptr));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 6.0);
+}
+
+TEST(CompilerTest, CatchRethrowRunsOwnFinallyBeforeOuterCatch) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(letDeclaration(range, "x", 0.0));
+
+    NodeList innerTryBody;
+    innerTryBody.push_back(std::make_unique<ThrowStatement>(
+        range, std::make_unique<NumericLiteral>(range, 1.0)));
+    NodeList innerCatchBody;
+    innerCatchBody.push_back(std::make_unique<ThrowStatement>(
+        range, std::make_unique<NumericLiteral>(range, 2.0)));
+    auto innerHandler = std::make_unique<CatchClause>(
+        range, std::make_unique<Identifier>(range, "e"),
+        std::make_unique<BlockStatement>(range, std::move(innerCatchBody)));
+    NodeList innerFinallyBody;
+    innerFinallyBody.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Assign,
+                   std::make_unique<Identifier>(range, "x"),
+                   std::make_unique<NumericLiteral>(range, 5.0))));
+    NodeList outerTryBody;
+    outerTryBody.push_back(std::make_unique<TryStatement>(
+        range,
+        std::make_unique<BlockStatement>(range, std::move(innerTryBody)),
+        std::move(innerHandler),
+        std::make_unique<BlockStatement>(range, std::move(innerFinallyBody))));
+
+    NodeList catchBody;
+    catchBody.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<BinaryExpression>(
+                   range, BinaryOperator::Add,
+                   std::make_unique<Identifier>(range, "e"),
+                   std::make_unique<Identifier>(range, "x"))));
+    auto handler = std::make_unique<CatchClause>(
+        range, std::make_unique<Identifier>(range, "e"),
+        std::make_unique<BlockStatement>(range, std::move(catchBody)));
+
+    body.push_back(std::make_unique<TryStatement>(
+        range, std::make_unique<BlockStatement>(range, std::move(outerTryBody)),
+        std::move(handler), nullptr));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 7.0);
+}
+
+TEST(CompilerTest, BreakCrossesFinally) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(letDeclaration(range, "i", 0.0));
+
+    NodeList tryBody;
+    tryBody.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Assign,
+                   std::make_unique<Identifier>(range, "i"),
+                   std::make_unique<NumericLiteral>(range, 1.0))));
+    tryBody.push_back(std::make_unique<BreakStatement>(range, ""));
+    NodeList finallyBody;
+    finallyBody.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Assign,
+                   std::make_unique<Identifier>(range, "i"),
+                   std::make_unique<BinaryExpression>(
+                       range, BinaryOperator::Add,
+                       std::make_unique<Identifier>(range, "i"),
+                       std::make_unique<NumericLiteral>(range, 1.0)))));
+    NodeList loopBody;
+    loopBody.push_back(std::make_unique<TryStatement>(
+        range, std::make_unique<BlockStatement>(range, std::move(tryBody)),
+        nullptr,
+        std::make_unique<BlockStatement>(range, std::move(finallyBody))));
+
+    body.push_back(std::make_unique<WhileStatement>(
+        range, std::make_unique<BooleanLiteral>(range, true),
+        std::make_unique<BlockStatement>(range, std::move(loopBody))));
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<Identifier>(range, "i")));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 2.0);
+}
+
+TEST(CompilerTest, ContinueCrossesFinally) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(letDeclaration(range, "i", 0.0));
+
+    NodeList tryBody;
+    tryBody.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Assign,
+                   std::make_unique<Identifier>(range, "i"),
+                   std::make_unique<BinaryExpression>(
+                       range, BinaryOperator::Add,
+                       std::make_unique<Identifier>(range, "i"),
+                       std::make_unique<NumericLiteral>(range, 1.0)))));
+    tryBody.push_back(std::make_unique<ContinueStatement>(range, ""));
+    NodeList finallyBody;
+    finallyBody.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Assign,
+                   std::make_unique<Identifier>(range, "i"),
+                   std::make_unique<BinaryExpression>(
+                       range, BinaryOperator::Add,
+                       std::make_unique<Identifier>(range, "i"),
+                       std::make_unique<NumericLiteral>(range, 10.0)))));
+    NodeList loopBody;
+    loopBody.push_back(std::make_unique<TryStatement>(
+        range, std::make_unique<BlockStatement>(range, std::move(tryBody)),
+        nullptr,
+        std::make_unique<BlockStatement>(range, std::move(finallyBody))));
+
+    body.push_back(std::make_unique<WhileStatement>(
+        range,
+        std::make_unique<BinaryExpression>(
+            range, BinaryOperator::LessThan,
+            std::make_unique<Identifier>(range, "i"),
+            std::make_unique<NumericLiteral>(range, 2.0)),
+        std::make_unique<BlockStatement>(range, std::move(loopBody))));
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<Identifier>(range, "i")));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 11.0);
+}
+
+TEST(CompilerTest, NestedFinallyRunsInnerToOuter) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(letDeclaration(range, "trace", 0.0));
+    body.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Assign,
+                   std::make_unique<Identifier>(range, "trace"),
+                   std::make_unique<StringLiteral>(range, ""))));
+
+    NodeList innerFinally;
+    innerFinally.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Assign,
+                   std::make_unique<Identifier>(range, "trace"),
+                   std::make_unique<BinaryExpression>(
+                       range, BinaryOperator::Add,
+                       std::make_unique<Identifier>(range, "trace"),
+                       std::make_unique<StringLiteral>(range, "a")))));
+    NodeList innerTry;
+    innerTry.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<NumericLiteral>(range, 1.0)));
+    auto inner = std::make_unique<TryStatement>(
+        range, std::make_unique<BlockStatement>(range, std::move(innerTry)),
+        nullptr,
+        std::make_unique<BlockStatement>(range, std::move(innerFinally)));
+
+    NodeList outerFinally;
+    outerFinally.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Assign,
+                   std::make_unique<Identifier>(range, "trace"),
+                   std::make_unique<BinaryExpression>(
+                       range, BinaryOperator::Add,
+                       std::make_unique<Identifier>(range, "trace"),
+                       std::make_unique<StringLiteral>(range, "b")))));
+    outerFinally.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<Identifier>(range, "trace")));
+
+    NodeList outerTry;
+    outerTry.push_back(std::move(inner));
+    body.push_back(std::make_unique<TryStatement>(
+        range, std::make_unique<BlockStatement>(range, std::move(outerTry)),
+        nullptr,
+        std::make_unique<BlockStatement>(range, std::move(outerFinally))));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "ab");
+}
+
+TEST(CompilerTest, ThrowInFinallyOverridesPendingReturn) {
+    SourceRange range{};
+    NodeList tryBody;
+    tryBody.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<NumericLiteral>(range, 1.0)));
+    NodeList finallyBody;
+    finallyBody.push_back(std::make_unique<ThrowStatement>(
+        range, std::make_unique<NumericLiteral>(range, 2.0)));
+
+    NodeList body;
+    body.push_back(std::make_unique<TryStatement>(
+        range, std::make_unique<BlockStatement>(range, std::move(tryBody)),
+        nullptr,
+        std::make_unique<BlockStatement>(range, std::move(finallyBody))));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    EXPECT_EQ(value->type()->kind(), TypeKind::Exception);
 }
 
 TEST(CompilerTest, SourceMapRecordsNodePosition) {

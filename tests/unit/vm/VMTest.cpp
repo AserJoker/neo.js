@@ -680,3 +680,109 @@ TEST(VMTest, ContinueJumpsToLoopStart) {
     ASSERT_EQ(result->type()->kind(), TypeKind::Number);
     EXPECT_DOUBLE_EQ(numberValue(result), 3.0);
 }
+
+TEST(VMTest, TryCatchHandlesThrow) {
+    Fixture f;
+    Code code;
+    uint32_t tryBegin = code.tryBegin();
+    code.push(1.0);
+    code.throwValue();
+    code.tryBodyEnd();
+    uint32_t catchStart = code.here();
+    code.pop();  // Exception.child
+    code.push(42.0);
+    code.ret();
+    code.catchEnd();
+    uint32_t tryEnd = code.here();
+    code.patchU32(tryBegin + 2, catchStart);
+    code.patchU32(tryBegin + 6, 0);
+    code.patchU32(tryBegin + 10, tryEnd);
+
+    VM vm(f.ctx.get(), &code);
+    Value* result = vm.run();
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(result), 42.0);
+}
+
+TEST(VMTest, UncaughtThrowReturnsException) {
+    Fixture f;
+    Code code;
+    code.push(1.0);
+    code.throwValue();
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    Value* result = vm.run();
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->type()->kind(), TypeKind::Exception);
+}
+
+TEST(VMTest, FinallyRunsOnNormalCompletion) {
+    Fixture f;
+    Code code;
+    uint32_t tryBegin = code.tryBegin();
+    code.push(1.0);
+    code.pop();
+    code.tryBodyEnd();
+    uint32_t finallyStart = code.here();
+    code.push(7.0);
+    code.ret();
+    code.finallyEnd();
+    uint32_t tryEnd = code.here();
+    code.patchU32(tryBegin + 2, 0);
+    code.patchU32(tryBegin + 6, finallyStart);
+    code.patchU32(tryBegin + 10, tryEnd);
+
+    VM vm(f.ctx.get(), &code);
+    Value* result = vm.run();
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(result), 7.0);
+}
+
+TEST(VMTest, FinallyReturnOverridesPendingReturn) {
+    Fixture f;
+    Code code;
+    uint32_t tryBegin = code.tryBegin();
+    code.push(1.0);
+    code.ret();
+    code.tryBodyEnd();
+    uint32_t finallyStart = code.here();
+    code.push(2.0);
+    code.ret();
+    code.finallyEnd();
+    uint32_t tryEnd = code.here();
+    code.patchU32(tryBegin + 2, 0);
+    code.patchU32(tryBegin + 6, finallyStart);
+    code.patchU32(tryBegin + 10, tryEnd);
+
+    VM vm(f.ctx.get(), &code);
+    Value* result = vm.run();
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(result), 2.0);
+}
+
+TEST(VMTest, FinallyReturnOverridesPendingThrow) {
+    Fixture f;
+    Code code;
+    uint32_t tryBegin = code.tryBegin();
+    code.push(1.0);
+    code.throwValue();
+    code.tryBodyEnd();
+    uint32_t finallyStart = code.here();
+    code.push(3.0);
+    code.ret();
+    code.finallyEnd();
+    uint32_t tryEnd = code.here();
+    code.patchU32(tryBegin + 2, 0);
+    code.patchU32(tryBegin + 6, finallyStart);
+    code.patchU32(tryBegin + 10, tryEnd);
+
+    VM vm(f.ctx.get(), &code);
+    Value* result = vm.run();
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(result), 3.0);
+}
