@@ -82,6 +82,10 @@ private:
     void compileMemberExpression(const frontend::MemberExpression& node);
     // 把成员访问的 key 压栈（computed 求值，否则标识符名）。
     void compileMemberKey(const frontend::MemberExpression& node);
+    void compileObjectExpression(const frontend::ObjectExpression& node);
+    void compileArrayExpression(const frontend::ArrayExpression& node);
+    // 把对象字面量属性的 key 压栈。
+    void compilePropertyKey(const frontend::Property& node);
     void compileThisExpression(const frontend::ThisExpression& node);
     void compileAssignmentExpression(
         const frontend::AssignmentExpression& node);

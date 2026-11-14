@@ -89,6 +89,20 @@ _func_end:
 - 成员调用：`obj; dup; key; get_prop; args; call_method N`，`dup` 保留
   receiver 作为 thisArg，且 receiver 只求值一次。
 
+#### 2.2.2 对象/数组字面量
+
+| 指令 | 栈契约 | 说明 |
+|------|--------|------|
+| `new_object` | `[] → [obj]` | 创建空对象 |
+| `new_array N` | `[] → [arr]` | 创建 length=N 的数组（elision 用） |
+| `define_prop` | `[obj, key, value] → [obj]` | CreateDataProperty，不走原型 setter |
+
+- 对象字面量：`new_object`，每个属性 `dup; key; value; define_prop; pop`。
+- 数组字面量：`new_array N`，每个非 elision 元素
+  `dup; push index; value; define_prop; pop`；elision 直接跳过。
+- 字面量必须用 `define_prop` 而非 `set_prop`：前者创建自有数据属性，
+  后者会触发原型链 setter，语义不同。
+
 #### 2.3 函数定义
 
 | 指令 | 栈契约 | 说明 |

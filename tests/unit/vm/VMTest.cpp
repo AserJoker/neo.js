@@ -576,3 +576,49 @@ TEST(VMTest, SetPropWritesAndYieldsValue) {
     ASSERT_EQ(stored->type()->kind(), TypeKind::Number);
     EXPECT_DOUBLE_EQ(numberValue(stored), 7.0);
 }
+
+TEST(VMTest, NewObjectAndDefinePropBuildOwnProperty) {
+    Fixture f;
+    Code code;
+    code.newObject();
+    code.dup();
+    code.push("a");
+    code.push(1.0);
+    code.defineProp();
+    code.pop();
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    Value* object = vm.run();
+    ASSERT_NE(object, nullptr);
+    Value* stored = f.ctx->getProperty(object, "a");
+    ASSERT_NE(stored, nullptr);
+    ASSERT_EQ(stored->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(stored), 1.0);
+}
+
+TEST(VMTest, NewArrayPresetsLengthAndDefinesElements) {
+    Fixture f;
+    Code code;
+    code.newArray(3);
+    code.dup();
+    code.push(1.0);
+    code.push(5.0);
+    code.defineProp();
+    code.pop();
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    Value* array = vm.run();
+    ASSERT_NE(array, nullptr);
+
+    Value* length = f.ctx->getProperty(array, "length");
+    ASSERT_NE(length, nullptr);
+    ASSERT_EQ(length->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(length), 3.0);
+
+    Value* element = f.ctx->getProperty(array, "1");
+    ASSERT_NE(element, nullptr);
+    ASSERT_EQ(element->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(element), 5.0);
+}

@@ -89,6 +89,8 @@ public:
 | CallExpression（成员） | obj + `dup` + key + `get_prop` + args + `call_method N` |
 | MemberExpression | obj + key + `get_prop` |
 | 成员赋值（`=`） | obj + key + RHS + `set_prop` |
+| ObjectExpression | `new_object` + 每个属性 `dup; key; value; define_prop; pop` |
+| ArrayExpression | `new_array N` + 每个元素 `dup; index; value; define_prop; pop` |
 | ThisExpression | `load_this` |
 | IfStatement | test + `jfalse` else；then；有 else 时 `jmp end` + 回填 |
 | WhileStatement | loop：test + `jfalse end`；body；`jmp loop`；回填 end |
@@ -102,7 +104,8 @@ initialized=false)`；直接函数声明先建 undefined 槽，再创建函数�
 函数体序言：形参 `push_undefined; define` → `store_this` → 按序 `store` 实参 →
 `push_scope` → 函数体 → `push_undefined; ret`。
 
-对象/数组字面量、可选链、复合成员赋值、异常、模块等节点暂记录 unsupported 错误，
+展开语法、对象访问器/`__proto__`、可选链、复合成员赋值、异常、模块等节点
+暂记录 unsupported 错误，
 在后续切片中逐个补齐；每补一个节点，同时补 Compiler 测试与 VM 端到端测试。
 
 **break / continue 先延后**：它们依赖 label 栈与跨作用域跳转（ADR-060 V4），

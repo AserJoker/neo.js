@@ -106,6 +106,9 @@ private:
     neo::core::Value* opStore();
     neo::core::Value* opGetProp();
     neo::core::Value* opSetProp();
+    neo::core::Value* opNewObject();
+    neo::core::Value* opNewArray();
+    neo::core::Value* opDefineProp();
     neo::core::Value* opAdd();
     neo::core::Value* opSub();
     neo::core::Value* opMul();

@@ -18,6 +18,7 @@
 //   set_func_name u32 nameIndex
 //   call          u32 argc
 //   call_method   u32 argc
+//   new_array     u32 length
 //   其余指令      无操作数
 //
 // 操作数的读取由各指令处理函数自己负责——只有它知道需要几个、什么类型。
@@ -35,6 +36,9 @@
 //   store         d → d - 1        （弹值，写绑定）
 //   get_prop      d → d - 1        （弹 key、obj，压属性值）
 //   set_prop      d → d - 2        （弹 value、key、obj，压 RHS 值）
+//   new_object    d → d + 1
+//   new_array N   d → d + 1        （创建 length=N 的数组）
+//   define_prop   d → d - 2        （弹 value、key、obj，压 obj）
 //   add/sub/mul/div  d → d - 1     （弹右、左，压结果）
 //   lt/gt/le/ge   d → d - 1        （弹右、左，压 Boolean）
 //   jmp           d → d            （pc = target）
@@ -84,6 +88,10 @@ enum class OpCode : uint16_t {
     // 属性访问：[obj, key] → [value] / [obj, key, value] → [value]
     GetProp,
     SetProp,
+    // 对象/数组字面量
+    NewObject,     // [] → [obj]
+    NewArray,      // u32 length：[] → [arr]（预置 length，支持 elision）
+    DefineProp,    // [obj, key, value] → [obj]：CreateDataProperty
 
     Add,
     Sub,

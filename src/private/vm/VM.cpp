@@ -62,6 +62,9 @@ const char* opCodeName(OpCode op) {
         case OpCode::Store:         return "store";
         case OpCode::GetProp:       return "get_prop";
         case OpCode::SetProp:       return "set_prop";
+        case OpCode::NewObject:     return "new_object";
+        case OpCode::NewArray:      return "new_array";
+        case OpCode::DefineProp:    return "define_prop";
         case OpCode::Add:           return "add";
         case OpCode::Sub:           return "sub";
         case OpCode::Mul:           return "mul";
@@ -114,6 +117,9 @@ const VM::Handler* VM::handlers() {
         &VM::opStore,
         &VM::opGetProp,
         &VM::opSetProp,
+        &VM::opNewObject,
+        &VM::opNewArray,
+        &VM::opDefineProp,
         &VM::opAdd,
         &VM::opSub,
         &VM::opMul,
@@ -368,6 +374,46 @@ Value* VM::opSetProp() {
     Value* result = ctx_->setProperty(object, key, value);
     if (detail::isErrorValue(result)) return fail(result);
     push(result);
+    return nullptr;
+}
+
+Value* VM::opNewObject() {
+    Value* object = ctx_->createObject();
+    if (object == ctx_->oomValue()) return object;
+    push(object);
+    return nullptr;
+}
+
+Value* VM::opNewArray() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("new_array: truncated operand");
+    }
+    uint32_t length = readU32(bytes.data() + pc_);
+    pc_ += 4;
+
+    Value* array = ctx_->createArray();
+    if (array == ctx_->oomValue()) return array;
+    if (length != 0) {
+        Value* result = ctx_->defineProperty(
+            array, "length", ctx_->createNumber(static_cast<double>(length)),
+            true, false, false);
+        if (detail::isErrorValue(result)) return fail(result);
+    }
+    push(array);
+    return nullptr;
+}
+
+Value* VM::opDefineProp() {
+    if (stack_.size() < 3) {
+        return badBytecode("define_prop: operand stack underflow");
+    }
+    Value* value = pop();
+    Value* key = pop();
+    Value* object = pop();
+    Value* result = ctx_->defineProperty(object, key, value);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(object);
     return nullptr;
 }
 

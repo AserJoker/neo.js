@@ -127,6 +127,14 @@ void Compiler::compileExpression(const Node& node) {
             compileMemberExpression(
                 static_cast<const frontend::MemberExpression&>(node));
             break;
+        case NodeKind::ObjectExpression:
+            compileObjectExpression(
+                static_cast<const frontend::ObjectExpression&>(node));
+            break;
+        case NodeKind::ArrayExpression:
+            compileArrayExpression(
+                static_cast<const frontend::ArrayExpression&>(node));
+            break;
         case NodeKind::ThisExpression:
             compileThisExpression(
                 static_cast<const frontend::ThisExpression&>(node));
@@ -362,6 +370,93 @@ void Compiler::compileMemberKey(const frontend::MemberExpression& node) {
     }
     code_->push(
         static_cast<const frontend::Identifier&>(*node.property).name);
+}
+
+void Compiler::compileObjectExpression(
+    const frontend::ObjectExpression& node) {
+    code_->newObject();
+    for (const frontend::NodePtr& property : node.properties) {
+        if (!property) continue;
+        if (property->kind() != NodeKind::Property) {
+            error(*property, "compiler: object spread not supported");
+            continue;
+        }
+        const auto& prop = static_cast<const frontend::Property&>(*property);
+        if (prop.propertyKind != frontend::PropertyKind::Init) {
+            error(*property, "compiler: object accessor not supported");
+            continue;
+        }
+        // __proto__: value 是设置原型而非定义自有属性，语义不同，暂不支持。
+        if (!prop.computed && prop.key &&
+            prop.key->kind() == NodeKind::Identifier &&
+            static_cast<const frontend::Identifier&>(*prop.key).name ==
+                "__proto__") {
+            error(*property, "compiler: __proto__ property not supported");
+            continue;
+        }
+
+        // define_prop 消费 obj，栈上保留一份继续累积属性。
+        code_->dup();
+        compilePropertyKey(prop);
+        if (prop.value) {
+            compileExpression(*prop.value);
+        } else {
+            code_->pushUndefined();
+        }
+        code_->defineProp();
+        code_->pop();
+    }
+}
+
+void Compiler::compileArrayExpression(const frontend::ArrayExpression& node) {
+    code_->newArray(static_cast<uint32_t>(node.elements.size()));
+    uint32_t index = 0;
+    for (const frontend::NodePtr& element : node.elements) {
+        if (element && element->kind() == NodeKind::SpreadElement) {
+            error(*element, "compiler: array spread not supported");
+            ++index;
+            continue;
+        }
+        // 空指针是 elision：跳过该下标，保留 length 造成的空洞。
+        if (element) {
+            code_->dup();
+            code_->push(static_cast<double>(index));
+            compileExpression(*element);
+            code_->defineProp();
+            code_->pop();
+        }
+        ++index;
+    }
+}
+
+void Compiler::compilePropertyKey(const frontend::Property& node) {
+    if (!node.key) {
+        error(node, "compiler: property missing key");
+        code_->pushUndefined();
+        return;
+    }
+    if (node.computed) {
+        compileExpression(*node.key);
+        return;
+    }
+    switch (node.key->kind()) {
+        case NodeKind::Identifier:
+            code_->push(
+                static_cast<const frontend::Identifier&>(*node.key).name);
+            break;
+        case NodeKind::StringLiteral:
+            code_->push(
+                static_cast<const frontend::StringLiteral&>(*node.key).value);
+            break;
+        case NodeKind::NumericLiteral:
+            code_->push(
+                static_cast<const frontend::NumericLiteral&>(*node.key).value);
+            break;
+        default:
+            error(*node.key, "compiler: unsupported property key");
+            code_->pushUndefined();
+            break;
+    }
 }
 
 void Compiler::compileThisExpression(const frontend::ThisExpression&) {

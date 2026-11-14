@@ -34,6 +34,7 @@ using neo::core::TypeKind;
 using neo::core::Value;
 using neo::core::createContext;
 using neo::frontend::AssignmentExpression;
+using neo::frontend::ArrayExpression;
 using neo::frontend::AssignmentOperator;
 using neo::frontend::BinaryExpression;
 using neo::frontend::BinaryOperator;
@@ -49,7 +50,9 @@ using neo::frontend::IfStatement;
 using neo::frontend::MemberExpression;
 using neo::frontend::NodeList;
 using neo::frontend::NumericLiteral;
+using neo::frontend::ObjectExpression;
 using neo::frontend::Parser;
+using neo::frontend::Property;
 using neo::frontend::ParserOptions;
 using neo::frontend::Program;
 using neo::frontend::ReturnStatement;
@@ -669,6 +672,91 @@ TEST(CompilerTest, CompilesComputedMemberAssignment) {
     ASSERT_NE(value, nullptr);
     ASSERT_EQ(value->type()->kind(), TypeKind::Number);
     EXPECT_DOUBLE_EQ(numberValue(value), 5.0);
+}
+
+TEST(CompilerTest, CompilesObjectLiteral) {
+    SourceRange range{};
+    NodeList properties;
+    properties.push_back(std::make_unique<Property>(
+        range, std::make_unique<Identifier>(range, "x"),
+        std::make_unique<NumericLiteral>(range, 42.0), false, false));
+
+    NodeList body;
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<MemberExpression>(
+                   range,
+                   std::make_unique<ObjectExpression>(range,
+                                                      std::move(properties)),
+                   std::make_unique<Identifier>(range, "x"), false)));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 42.0);
+}
+
+TEST(CompilerTest, CompilesArrayLiteral) {
+    SourceRange range{};
+    NodeList elements;
+    elements.push_back(std::make_unique<NumericLiteral>(range, 1.0));
+    elements.push_back(std::make_unique<NumericLiteral>(range, 2.0));
+    elements.push_back(std::make_unique<NumericLiteral>(range, 3.0));
+
+    NodeList body;
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<MemberExpression>(
+                   range,
+                   std::make_unique<ArrayExpression>(range, std::move(elements)),
+                   std::make_unique<NumericLiteral>(range, 1.0), true)));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 2.0);
+}
+
+TEST(CompilerTest, ArrayElisionPreservesLength) {
+    SourceRange range{};
+    NodeList elements;
+    elements.push_back(std::make_unique<NumericLiteral>(range, 1.0));
+    elements.push_back(nullptr);
+    elements.push_back(std::make_unique<NumericLiteral>(range, 3.0));
+
+    NodeList body;
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<MemberExpression>(
+                   range,
+                   std::make_unique<ArrayExpression>(range, std::move(elements)),
+                   std::make_unique<Identifier>(range, "length"), false)));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
 }
 
 TEST(CompilerTest, SourceMapRecordsNodePosition) {

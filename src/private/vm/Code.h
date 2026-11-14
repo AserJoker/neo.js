@@ -165,6 +165,13 @@ struct Code {
 
     uint32_t getProp() { return emitOp(OpCode::GetProp); }
     uint32_t setProp() { return emitOp(OpCode::SetProp); }
+    uint32_t newObject() { return emitOp(OpCode::NewObject); }
+    uint32_t newArray(uint32_t length = 0) {
+        uint32_t pc = emitOp(OpCode::NewArray);
+        emitU32(length);
+        return pc;
+    }
+    uint32_t defineProp() { return emitOp(OpCode::DefineProp); }
 
     uint32_t add() { return emitOp(OpCode::Add); }
     uint32_t sub() { return emitOp(OpCode::Sub); }
