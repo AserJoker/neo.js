@@ -1,7 +1,20 @@
-// OpCode.h - VM 指令枚举（ADR-060）
+// OpCode.h - VM 指令枚举与字节编码（ADR-060）
 //
-// V0 只覆盖字面量、变量绑定、算术与返回协议。跳转/函数调用/异常/try/label
-// 按纵向切片逐步加入（V1+）。
+// 字节码是**完全扁平的字节数组**（std::vector<uint8_t>），pc 是字节偏移，
+// 与 CPU 取指流程一致：读一个 opcode 字节，再按该指令的格式读操作数。
+//
+// 编码（小端）：
+//   [opcode:u16][operand...]
+//   push_number   u32 constIndex
+//   push_string   u32 constIndex
+//   define        u32 nameIndex, u32 flags
+//   initialize    u32 nameIndex
+//   load          u32 nameIndex
+//   store         u32 nameIndex
+//   其余指令      无操作数
+//
+// 操作数的读取由各指令处理函数自己负责——只有它知道需要几个、什么类型。
+// VM 主循环只负责取 opcode、分派、按处理函数报告的字节数推进 pc。
 //
 // 栈契约（每条指令前后操作数栈深度）：
 //   push_*        d → d + 1
@@ -21,6 +34,7 @@
 #ifndef NEO_VM_OPCODE_H
 #define NEO_VM_OPCODE_H
 
+#include <cstddef>
 #include <cstdint>
 
 namespace neo::vm {
@@ -30,17 +44,17 @@ enum class OpCode : uint16_t {
     PushNull,
     PushTrue,
     PushFalse,
-    PushNumber,   // a = Code::numbers 下标
-    PushString,   // a = Code::strings 下标
+    PushNumber,   // u32 Code::numbers 下标
+    PushString,   // u32 Code::strings 下标
 
     Pop,
     Dup,
     Swap,
 
-    Define,       // a = Code::strings 下标（名字），b = flags
-    Initialize,   // a = Code::strings 下标（名字）
-    Load,         // a = Code::strings 下标（名字）
-    Store,        // a = Code::strings 下标（名字）
+    Define,       // u32 Code::strings 下标（名字），u32 flags
+    Initialize,   // u32 Code::strings 下标（名字）
+    Load,         // u32 Code::strings 下标（名字）
+    Store,        // u32 Code::strings 下标（名字）
 
     Add,
     Sub,
@@ -51,7 +65,10 @@ enum class OpCode : uint16_t {
     Halt,
 };
 
-// Define 的 b 操作数位标志。未置位即 false：
+// 指令总数（分派表大小）。
+inline constexpr size_t kOpCodeCount = static_cast<size_t>(OpCode::Halt) + 1;
+
+// Define 的 flags 位。未置位即 false：
 //   mutable    —— 绑定可被 store 改写（const 为 false）
 //   initialized —— 绑定已初始化（let/const 提升建槽时为 false，进入 TDZ）
 inline constexpr uint32_t kDefineMutable = 1u << 0;

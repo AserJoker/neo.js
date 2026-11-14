@@ -1,6 +1,6 @@
 // VM.cpp - V0 执行循环（ADR-060）
 //
-// 只实现 pc + 操作数栈模型：字面量、变量绑定、算术、ret/hlt。
+// 主循环只取 opcode、查分派表、消费处理函数返回的信号；pc 由处理函数推进。
 // 所有 JS 语义（转换/运算/绑定规则）都交给 Engine 原语，VM 不重复编排。
 //
 // 关联 ADR: 004（执行模型）、006（异常即值）、016（运算符原语）、
@@ -26,6 +26,22 @@ using neo::core::ErrorKind;
 using neo::core::IContext;
 using neo::core::SourcePosition;
 using neo::core::Value;
+
+namespace {
+
+uint16_t readU16(const uint8_t* p) {
+    return static_cast<uint16_t>(static_cast<uint16_t>(p[0]) |
+                                 (static_cast<uint16_t>(p[1]) << 8));
+}
+
+uint32_t readU32(const uint8_t* p) {
+    return static_cast<uint32_t>(p[0]) |
+           (static_cast<uint32_t>(p[1]) << 8) |
+           (static_cast<uint32_t>(p[2]) << 16) |
+           (static_cast<uint32_t>(p[3]) << 24);
+}
+
+}  // namespace
 
 const char* opCodeName(OpCode op) {
     switch (op) {
@@ -58,8 +74,33 @@ VM::VM(IContext* ctx, const Code* code)
       entryScope_(ctx->current()),
       rootScope_(ctx->root()) {}
 
+const VM::Handler* VM::handlers() {
+    static const Handler table[kOpCodeCount] = {
+        &VM::opPushUndefined,
+        &VM::opPushNull,
+        &VM::opPushTrue,
+        &VM::opPushFalse,
+        &VM::opPushNumber,
+        &VM::opPushString,
+        &VM::opPop,
+        &VM::opDup,
+        &VM::opSwap,
+        &VM::opDefine,
+        &VM::opInitialize,
+        &VM::opLoad,
+        &VM::opStore,
+        &VM::opAdd,
+        &VM::opSub,
+        &VM::opMul,
+        &VM::opDiv,
+        &VM::opRet,
+        &VM::opHalt,
+    };
+    return table;
+}
+
 SourcePosition VM::currentPosition() const {
-    const SourcePosition* position = code_->sourceMap.lookup(pc_);
+    const SourcePosition* position = code_->sourceMap.lookup(instructionPc_);
     return position == nullptr ? SourcePosition{} : *position;
 }
 
@@ -80,134 +121,202 @@ Value* VM::badBytecode(const char* message) {
 
 Value* VM::run(uint32_t entryPc) {
     pc_ = entryPc;
-    if (pc_ > code_->instructions.size()) {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (pc_ > bytes.size()) {
         return badBytecode("run: entry pc out of range");
     }
-    while (pc_ < code_->instructions.size()) {
-        const Instruction instruction = code_->instructions[pc_];
 
-        switch (instruction.op) {
-            case OpCode::PushUndefined:
-                push(ctx_->createUndefined());
-                break;
-            case OpCode::PushNull:
-                push(ctx_->createNull());
-                break;
-            case OpCode::PushTrue:
-                push(ctx_->createBoolean(true));
-                break;
-            case OpCode::PushFalse:
-                push(ctx_->createBoolean(false));
-                break;
-            case OpCode::PushNumber:
-                if (instruction.a >= code_->numbers.size()) {
-                    return badBytecode("push_number: constant index out of range");
-                }
-                push(ctx_->createNumber(code_->numbers[instruction.a]));
-                break;
-            case OpCode::PushString: {
-                const std::string* value = stringOperand(instruction.a);
-                if (value == nullptr) {
-                    return badBytecode("push_string: constant index out of range");
-                }
-                push(ctx_->createString(*value));
-                break;
-            }
-            case OpCode::Pop:
-                if (stack_.empty()) return badBytecode("pop: operand stack underflow");
-                pop();
-                break;
-            case OpCode::Dup:
-                if (stack_.empty()) return badBytecode("dup: operand stack underflow");
-                push(top());
-                break;
-            case OpCode::Swap:
-                if (stack_.size() < 2) {
-                    return badBytecode("swap: operand stack underflow");
-                }
-                std::swap(stack_[stack_.size() - 1], stack_[stack_.size() - 2]);
-                break;
-            case OpCode::Define: {
-                const std::string* name = stringOperand(instruction.a);
-                if (name == nullptr) {
-                    return badBytecode("define: name index out of range");
-                }
-                if (stack_.empty()) {
-                    return badBytecode("define: operand stack underflow");
-                }
-                Value* value = pop();
-                Value* result = ctx_->define(
-                    *name, value, (instruction.b & kDefineMutable) != 0,
-                    (instruction.b & kDefineInitialized) != 0);
-                if (detail::isErrorValue(result)) return fail(result);
-                break;
-            }
-            case OpCode::Initialize: {
-                const std::string* name = stringOperand(instruction.a);
-                if (name == nullptr) {
-                    return badBytecode("initialize: name index out of range");
-                }
-                if (stack_.empty()) {
-                    return badBytecode("initialize: operand stack underflow");
-                }
-                Value* result = ctx_->initialize(*name, pop());
-                if (detail::isErrorValue(result)) return fail(result);
-                break;
-            }
-            case OpCode::Load: {
-                const std::string* name = stringOperand(instruction.a);
-                if (name == nullptr) {
-                    return badBytecode("load: name index out of range");
-                }
-                Value* result = ctx_->load(*name);
-                if (detail::isErrorValue(result)) return fail(result);
-                push(result);
-                break;
-            }
-            case OpCode::Store: {
-                const std::string* name = stringOperand(instruction.a);
-                if (name == nullptr) {
-                    return badBytecode("store: name index out of range");
-                }
-                if (stack_.empty()) {
-                    return badBytecode("store: operand stack underflow");
-                }
-                Value* result = ctx_->store(*name, pop());
-                if (detail::isErrorValue(result)) return fail(result);
-                break;
-            }
-            case OpCode::Add:
-            case OpCode::Sub:
-            case OpCode::Mul:
-            case OpCode::Div: {
-                if (stack_.size() < 2) {
-                    return badBytecode("binary op: operand stack underflow");
-                }
-                Value* right = pop();
-                Value* left = pop();
-                BinaryOperator op = BinaryOperator::Add;
-                switch (instruction.op) {
-                    case OpCode::Add: op = BinaryOperator::Add; break;
-                    case OpCode::Sub: op = BinaryOperator::Sub; break;
-                    case OpCode::Mul: op = BinaryOperator::Mul; break;
-                    default:          op = BinaryOperator::Div; break;
-                }
-                Value* result = ctx_->binaryOp(op, left, right);
-                if (detail::isErrorValue(result)) return fail(result);
-                // Interrupt 是控制流信号（协程/异步挂起），原样交给外部消费。
-                if (detail::isInterruptValue(result)) return result;
-                push(result);
-                break;
-            }
-            case OpCode::Ret:
-                return stack_.empty() ? ctx_->createUndefined() : pop();
-            case OpCode::Halt:
-                return ctx_->createUndefined();
+    const Handler* table = handlers();
+    while (pc_ < bytes.size()) {
+        if (bytes.size() - pc_ < 2) {
+            return badBytecode("truncated opcode");
+        }
+        uint16_t op = readU16(bytes.data() + pc_);
+        if (op >= kOpCodeCount) {
+            return badBytecode("unknown opcode");
         }
 
-        ++pc_;
+        instructionPc_ = pc_;
+        pc_ += 2;  // 取指：跳过 opcode，处理函数继续推进操作数
+        Value* signal = (this->*table[op])();
+        if (signal != nullptr) return signal;
     }
     // 指令流自然结束：等价于 hlt。
+    return ctx_->createUndefined();
+}
+
+// —— 字面量 ——
+
+Value* VM::opPushUndefined() {
+    push(ctx_->createUndefined());
+    return nullptr;
+}
+
+Value* VM::opPushNull() {
+    push(ctx_->createNull());
+    return nullptr;
+}
+
+Value* VM::opPushTrue() {
+    push(ctx_->createBoolean(true));
+    return nullptr;
+}
+
+Value* VM::opPushFalse() {
+    push(ctx_->createBoolean(false));
+    return nullptr;
+}
+
+Value* VM::opPushNumber() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("push_number: truncated operand");
+    }
+    uint32_t index = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (index >= code_->numbers.size()) {
+        return badBytecode("push_number: constant index out of range");
+    }
+    push(ctx_->createNumber(code_->numbers[index]));
+    return nullptr;
+}
+
+Value* VM::opPushString() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("push_string: truncated operand");
+    }
+    uint32_t index = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* value = stringOperand(index);
+    if (value == nullptr) {
+        return badBytecode("push_string: constant index out of range");
+    }
+    push(ctx_->createString(*value));
+    return nullptr;
+}
+
+// —— 栈操作 ——
+
+Value* VM::opPop() {
+    if (stack_.empty()) return badBytecode("pop: operand stack underflow");
+    pop();
+    return nullptr;
+}
+
+Value* VM::opDup() {
+    if (stack_.empty()) return badBytecode("dup: operand stack underflow");
+    push(top());
+    return nullptr;
+}
+
+Value* VM::opSwap() {
+    if (stack_.size() < 2) return badBytecode("swap: operand stack underflow");
+    std::swap(stack_[stack_.size() - 1], stack_[stack_.size() - 2]);
+    return nullptr;
+}
+
+// —— 绑定 ——
+
+Value* VM::opDefine() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 8) {
+        return badBytecode("define: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    uint32_t flags = readU32(bytes.data() + pc_ + 4);
+    pc_ += 8;
+
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) return badBytecode("define: name index out of range");
+    if (stack_.empty()) return badBytecode("define: operand stack underflow");
+
+    Value* result = ctx_->define(*name, pop(),
+                                 (flags & kDefineMutable) != 0,
+                                 (flags & kDefineInitialized) != 0);
+    if (detail::isErrorValue(result)) return fail(result);
+    return nullptr;
+}
+
+Value* VM::opInitialize() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("initialize: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) return badBytecode("initialize: name index out of range");
+    if (stack_.empty()) return badBytecode("initialize: operand stack underflow");
+
+    Value* result = ctx_->initialize(*name, pop());
+    if (detail::isErrorValue(result)) return fail(result);
+    return nullptr;
+}
+
+Value* VM::opLoad() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("load: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) return badBytecode("load: name index out of range");
+
+    Value* result = ctx_->load(*name);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opStore() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("store: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) return badBytecode("store: name index out of range");
+    if (stack_.empty()) return badBytecode("store: operand stack underflow");
+
+    Value* result = ctx_->store(*name, pop());
+    if (detail::isErrorValue(result)) return fail(result);
+    return nullptr;
+}
+
+// —— 算术 ——
+
+Value* VM::binary(BinaryOperator op) {
+    if (stack_.size() < 2) {
+        return badBytecode("binary op: operand stack underflow");
+    }
+    Value* right = pop();
+    Value* left = pop();
+    Value* result = ctx_->binaryOp(op, left, right);
+    if (detail::isErrorValue(result)) return fail(result);
+    // Interrupt 是控制流信号（协程/异步挂起），原样交给外部消费。
+    if (detail::isInterruptValue(result)) return result;
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opAdd() { return binary(BinaryOperator::Add); }
+Value* VM::opSub() { return binary(BinaryOperator::Sub); }
+Value* VM::opMul() { return binary(BinaryOperator::Mul); }
+Value* VM::opDiv() { return binary(BinaryOperator::Div); }
+
+// —— 结束 ——
+
+Value* VM::opRet() {
+    return stack_.empty() ? ctx_->createUndefined() : pop();
+}
+
+Value* VM::opHalt() {
     return ctx_->createUndefined();
 }
 

@@ -40,8 +40,6 @@ using neo::vm::Code;
 using neo::vm::OpCode;
 using neo::vm::SourceMap;
 using neo::vm::VM;
-using neo::vm::kDefineInitialized;
-using neo::vm::kDefineMutable;
 
 class NullSink : public IOutputSink {
 public:
@@ -96,12 +94,12 @@ TEST(VMTest, AddNumbers) {
 TEST(VMTest, RunStartsAtEntryPc) {
     Fixture f;
     Code code;
-    code.halt();       // pc 0：模块顶层占位
-    code.push(42.0);   // pc 1：函数入口（entryPc）
-    code.ret();        // pc 2
+    code.halt();       // pc 0：模块顶层占位（2 字节）
+    code.push(42.0);   // pc 2：函数入口（entryPc）
+    code.ret();        // pc 8
 
     VM vm(f.ctx.get(), &code);
-    Value* result = vm.run(1);
+    Value* result = vm.run(2);
 
     ASSERT_EQ(result->type()->kind(), TypeKind::Number);
     EXPECT_DOUBLE_EQ(numberValue(result), 42.0);
@@ -113,7 +111,7 @@ TEST(VMTest, EntryPcOutOfRangeFails) {
     code.halt();
 
     VM vm(f.ctx.get(), &code);
-    Value* result = vm.run(2);
+    Value* result = vm.run(3);
 
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->type()->kind(), TypeKind::Exception);
@@ -228,12 +226,12 @@ TEST(VMTest, HaltReturnsUndefined) {
 TEST(VMTest, BuilderEmitsSemanticInstructions) {
     Code code;
     EXPECT_EQ(code.here(), 0u);
-    EXPECT_EQ(code.push(1.5), 0u);
-    EXPECT_EQ(code.push("x"), 1u);
-    EXPECT_EQ(code.define("v"), 2u);
-    EXPECT_EQ(code.load("v"), 3u);
-    EXPECT_EQ(code.ret(), 4u);
-    EXPECT_EQ(code.here(), 5u);
+    EXPECT_EQ(code.push(1.5), 0u);       // opcode 2 + u32 4 = 6 字节
+    EXPECT_EQ(code.push("x"), 6u);
+    EXPECT_EQ(code.define("v"), 12u);    // opcode 2 + u32 name 4 + u32 flags 4
+    EXPECT_EQ(code.load("v"), 22u);
+    EXPECT_EQ(code.ret(), 28u);
+    EXPECT_EQ(code.here(), 30u);
 
     ASSERT_EQ(code.numbers.size(), 1u);
     EXPECT_DOUBLE_EQ(code.numbers[0], 1.5);
@@ -243,14 +241,16 @@ TEST(VMTest, BuilderEmitsSemanticInstructions) {
     EXPECT_EQ(code.strings[1], "v");
     EXPECT_EQ(code.strings[2], "v");
 
-    ASSERT_EQ(code.instructions.size(), 5u);
-    EXPECT_EQ(code.instructions[0].op, OpCode::PushNumber);
-    EXPECT_EQ(code.instructions[0].a, 0u);
-    EXPECT_EQ(code.instructions[1].op, OpCode::PushString);
-    EXPECT_EQ(code.instructions[1].a, 0u);
-    EXPECT_EQ(code.instructions[2].op, OpCode::Define);
-    EXPECT_EQ(code.instructions[2].a, 1u);
-    EXPECT_EQ(code.instructions[2].b, kDefineMutable | kDefineInitialized);
+    auto opAt = [&code](uint32_t pc) {
+        return static_cast<uint16_t>(static_cast<uint16_t>(code.bytecode[pc]) |
+                                     (static_cast<uint16_t>(code.bytecode[pc + 1])
+                                      << 8));
+    };
+    EXPECT_EQ(opAt(0), static_cast<uint16_t>(OpCode::PushNumber));
+    EXPECT_EQ(opAt(6), static_cast<uint16_t>(OpCode::PushString));
+    EXPECT_EQ(opAt(12), static_cast<uint16_t>(OpCode::Define));
+    EXPECT_EQ(opAt(22), static_cast<uint16_t>(OpCode::Load));
+    EXPECT_EQ(opAt(28), static_cast<uint16_t>(OpCode::Ret));
 }
 
 TEST(VMTest, SourceMapLookupPrefersInnermostRange) {
@@ -272,7 +272,8 @@ TEST(VMTest, FailureAnnotatesExceptionStackWithSourcePosition) {
     Code code;
     uint32_t loadPc = code.load("missing");
     code.ret();
-    code.mapSource(loadPc, loadPc + 1, SourcePosition("entry.js", 4, 9));
+    // load = opcode 2 + u32 name 4 = 6 字节。
+    code.mapSource(loadPc, loadPc + 6, SourcePosition("entry.js", 4, 9));
 
     // 调用栈由调用点维护（ADR-037）：先压入本次执行的帧，出错位置才能落到栈顶。
     f.ctx->pushFrame(SourcePosition{}, "top");

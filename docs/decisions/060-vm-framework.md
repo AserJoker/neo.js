@@ -40,7 +40,7 @@ VM 是临时 CPU 状态。**try 栈与 label 栈属于本次执行的控制状�
 ```cpp
 class VM {
     const Code* code_;          // 本次执行的字节码
-    uint32_t pc_ = 0;           // 指令下标（不是字节偏移）
+    uint32_t pc_ = 0;           // 字节偏移（扁平字节码）
     std::vector<Value*> stack_; // 操作数栈（借用，不 pin）
 
     Scope* entryScope_;         // 本次执行的入口作用域
@@ -56,7 +56,7 @@ class VM {
 
 | 结构 | 职责 |
 |------|------|
-| `pc_` | 当前指令下标；跳转/挂起恢复的唯一位置 |
+| `pc_` | 当前字节偏移；跳转/挂起恢复的唯一位置 |
 | `stack_` | 操作数栈；所有表达式求值经此 |
 
 **操作数栈不 pin Value**：栈上元素都是 Engine 已创建、由当前作用域跟踪的
@@ -66,52 +66,58 @@ class VM {
 
 ### 3. 字节码表示
 
-```cpp
-enum class OpCode : uint16_t { ... };
+字节码是**完全扁平的字节数组**，`pc` 是**字节偏移**，与 CPU 取指流程一致：
+读一个 opcode，再按该指令的格式读操作数。
 
-struct Instruction {
-    OpCode op;
-    uint32_t a = 0;   // name index / const index / target pc / argc
-    uint32_t b = 0;   // 第二操作数（flags / label id 等）
-};
+```cpp
+enum class OpCode : uint16_t { ... };   // 操作码空间 2^16
 
 struct Code {
-    std::vector<Instruction> instructions;
-    std::vector<double> numbers;        // 数值常量
+    std::vector<uint8_t> bytecode;      // [opcode:u16][operand...]，小端
+    std::vector<double> numbers;        // 数值常量表
     std::vector<std::string> strings;   // 字符串/名字表
-    SourceMap sourceMap;                // 源码位置 ↔ 指令范围
+    SourceMap sourceMap;                // 源码位置 ↔ 字节范围
 };
 ```
 
-- `pc` 是**指令下标**，不是字节偏移；标签直接解析为指令下标。
-- **字符串表由 Compiler 阶段生成**：`push_string <id>` 的操作数是
-  `Code::strings` 的下标，字节码里不内联字符串，避免指令变长。
-- 数值同理用 `numbers` 表 + `push_number <id>`；VM 执行时再通过 Engine
-  创建 Value，自动归属当前作用域，避免 Code 成为 GC 根。
+编码：
+
+| 指令 | 操作数 |
+|------|--------|
+| `push_number` | `u32` numbers 下标 |
+| `push_string` | `u32` strings 下标 |
+| `define` | `u32` name 下标 + `u32` flags |
+| `initialize` / `load` / `store` | `u32` name 下标 |
+| 其余 | 无 |
+
+- **常量表由 Compiler 阶段生成**：字节码里不内联字符串/数值，避免指令变长。
+  VM 执行时再通过 Engine 创建 Value，自动归属当前作用域，避免 Code 成为 GC 根。
+- **操作数的读取由各指令处理函数自己负责**——只有它知道需要几个、什么类型；
+  主循环只取 opcode、查分派表、消费信号。
 - `Code` 是纯数据，由 Module / script Function 持有；VM 只借用。
 
-**构造 API 由 Code 自己提供**：Compiler 与测试都只调语义化方法，不手工拼
-`Instruction`、不手工算常量下标。
+**构造 API 由 Code 自己提供**：Compiler 与测试都只调语义化方法，不手工拼字节、
+不手工算常量下标。
 
 ```cpp
 Code code;
 code.push(1.0);          // numbers.push_back + push_number <id>
 code.push("x");          // strings.push_back + push_string <id>
-code.define("v");        // push_scope 之外的绑定：define <name> <flags>
+code.define("v");        // define <name> <flags>
 code.load("v");
 code.add();
 code.ret();
 
-uint32_t pc = code.here();        // 下一条指令下标
-code.mapSource(pc, pc + 1, pos);  // 登记源码范围
+uint32_t pc = code.here();        // 下一条指令的字节偏移
+code.mapSource(pc, pc + 6, pos);  // 登记源码范围（load 占 2+4 字节）
 ```
 
-- `emit(op, a, b)` 是唯一直接追加指令的入口，返回该指令 pc；
+- `emitOp(op)` 追加 u16 opcode 并返回起始偏移，`emitU32(v)` 追加操作数；
 - `push(double)` / `push(string_view)` / `push(const char*)` 自动进常量表；
   `pushBoolean` / `pushNull` / `pushUndefined` 用独立名字避免重载歧义；
-- `define(name, mutableBinding, initialized)` 把两个布尔折成 `b` 的位标志；
+- `define(name, mutableBinding, initialized)` 把两个布尔折成 flags 位；
 - `here()` 供 Compiler 记录 AST 节点的 `[pcBegin, pcEnd)`；
-- 所有方法返回 pc，便于跳转回填与 SourceMap 登记。
+- 所有方法返回指令起始字节偏移，便于跳转回填与 SourceMap 登记。
 
 ### 3.1 SourceMap：源码位置 → 指令范围
 
@@ -153,9 +159,18 @@ public:
 Value* VM::run(uint32_t entryPc = 0);
 ```
 
-- `entryPc` 是本次执行的入口指令下标。函数调用本质上就是「借用同一份
+- `entryPc` 是本次执行的入口字节偏移。函数调用本质上就是「借用同一份
   `Code` + 从函数地址 `entryPc` 开始执行」，由 `Function::invoke` 传入；
   模块顶层 / eval 传 0。`run` 返回后 `pc_` 停在结束位置（诊断用）。
+- **分派表取代 switch**：`OpCode → 成员函数指针` 的静态表。主循环只做
+  「读 opcode → 查表调用 → 消费返回值」；**pc 由处理函数自行推进**（它才知道
+  本条指令有几个操作数）。
+- 处理函数签名 `Value* (VM::*)()`：
+  - 返回 `nullptr`：正常执行完，继续下一条；
+  - 返回非空：执行信号（`ret` 的值 / `Exception` / `Fatal` / `Interrupt`），
+    主循环立即返回给调用方。
+- 处理函数推进 pc 后，异常位置仍用 `instructionPc_`（指令起始偏移）反查
+  SourceMap，避免 pc 已越过本条指令导致查不到位置。
 - **不引入 `VmResult`/`VmStatus`**：返回值本身就是自描述的，外部按类型分派：
 
   | 返回类型 | 含义 |
