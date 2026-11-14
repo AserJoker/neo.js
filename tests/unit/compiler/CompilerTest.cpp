@@ -9,6 +9,7 @@
 #include "compiler/Compiler.h"
 #include "core/IContext.h"
 #include "core/types/Number.h"
+#include "core/types/String.h"
 #include "frontend/Parser.h"
 #include "infra/Console.h"
 #include "infra/IAllocator.h"
@@ -28,6 +29,7 @@ using neo::compiler::Compiler;
 using neo::compiler::CompilerOptions;
 using neo::core::IContext;
 using neo::core::NumberData;
+using neo::core::StringData;
 using neo::core::TypeKind;
 using neo::core::Value;
 using neo::core::createContext;
@@ -44,6 +46,7 @@ using neo::frontend::DoWhileStatement;
 using neo::frontend::FunctionDeclaration;
 using neo::frontend::Identifier;
 using neo::frontend::IfStatement;
+using neo::frontend::MemberExpression;
 using neo::frontend::NodeList;
 using neo::frontend::NumericLiteral;
 using neo::frontend::Parser;
@@ -51,6 +54,7 @@ using neo::frontend::ParserOptions;
 using neo::frontend::Program;
 using neo::frontend::ReturnStatement;
 using neo::frontend::SourceRange;
+using neo::frontend::StringLiteral;
 using neo::frontend::SourceType;
 using neo::frontend::UpdateExpression;
 using neo::frontend::UpdateOperator;
@@ -574,6 +578,97 @@ TEST(CompilerTest, CompilesDoWhileLoopAtLeastOnce) {
     ASSERT_NE(value, nullptr);
     ASSERT_EQ(value->type()->kind(), TypeKind::Number);
     EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+namespace {
+
+neo::frontend::NodePtr arrayCall(const SourceRange& range) {
+    NodeList args;
+    args.push_back(std::make_unique<NumericLiteral>(range, 1.0));
+    args.push_back(std::make_unique<NumericLiteral>(range, 2.0));
+    return std::make_unique<CallExpression>(
+        range, std::make_unique<Identifier>(range, "Array"), std::move(args));
+}
+
+}  // namespace
+
+TEST(CompilerTest, CompilesMemberRead) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<MemberExpression>(
+                   range, arrayCall(range),
+                   std::make_unique<Identifier>(range, "length"), false)));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 2.0);
+}
+
+TEST(CompilerTest, CompilesMethodCallWithReceiverThis) {
+    SourceRange range{};
+    NodeList args;
+    args.push_back(std::make_unique<StringLiteral>(range, "-"));
+    NodeList body;
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<CallExpression>(
+                   range,
+                   std::make_unique<MemberExpression>(
+                       range, arrayCall(range),
+                       std::make_unique<Identifier>(range, "join"), false),
+                   std::move(args))));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "1-2");
+}
+
+TEST(CompilerTest, CompilesComputedMemberAssignment) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(letFromExpression(range, "a", arrayCall(range)));
+    body.push_back(std::make_unique<ExpressionStatement>(
+        range, std::make_unique<AssignmentExpression>(
+                   range, AssignmentOperator::Assign,
+                   std::make_unique<MemberExpression>(
+                       range, std::make_unique<Identifier>(range, "a"),
+                       std::make_unique<NumericLiteral>(range, 0.0), true),
+                   std::make_unique<NumericLiteral>(range, 5.0))));
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<MemberExpression>(
+                   range, std::make_unique<Identifier>(range, "a"),
+                   std::make_unique<NumericLiteral>(range, 0.0), true)));
+
+    Program program(range, std::move(body), SourceType::Script);
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 5.0);
 }
 
 TEST(CompilerTest, SourceMapRecordsNodePosition) {

@@ -33,6 +33,8 @@
 //   initialize    d → d - 1        （弹值，解除 TDZ）
 //   load          d → d + 1
 //   store         d → d - 1        （弹值，写绑定）
+//   get_prop      d → d - 1        （弹 key、obj，压属性值）
+//   set_prop      d → d - 2        （弹 value、key、obj，压 RHS 值）
 //   add/sub/mul/div  d → d - 1     （弹右、左，压结果）
 //   lt/gt/le/ge   d → d - 1        （弹右、左，压 Boolean）
 //   jmp           d → d            （pc = target）
@@ -78,6 +80,10 @@ enum class OpCode : uint16_t {
     Initialize,   // u32 Code::strings 下标（名字）
     Load,         // u32 Code::strings 下标（名字）
     Store,        // u32 Code::strings 下标（名字）
+
+    // 属性访问：[obj, key] → [value] / [obj, key, value] → [value]
+    GetProp,
+    SetProp,
 
     Add,
     Sub,

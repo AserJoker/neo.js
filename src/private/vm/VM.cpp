@@ -60,6 +60,8 @@ const char* opCodeName(OpCode op) {
         case OpCode::Initialize:    return "initialize";
         case OpCode::Load:          return "load";
         case OpCode::Store:         return "store";
+        case OpCode::GetProp:       return "get_prop";
+        case OpCode::SetProp:       return "set_prop";
         case OpCode::Add:           return "add";
         case OpCode::Sub:           return "sub";
         case OpCode::Mul:           return "mul";
@@ -110,6 +112,8 @@ const VM::Handler* VM::handlers() {
         &VM::opInitialize,
         &VM::opLoad,
         &VM::opStore,
+        &VM::opGetProp,
+        &VM::opSetProp,
         &VM::opAdd,
         &VM::opSub,
         &VM::opMul,
@@ -337,6 +341,33 @@ Value* VM::opStore() {
 
     Value* result = ctx_->store(*name, pop());
     if (detail::isErrorValue(result)) return fail(result);
+    return nullptr;
+}
+
+// —— 属性 ——
+
+Value* VM::opGetProp() {
+    if (stack_.size() < 2) {
+        return badBytecode("get_prop: operand stack underflow");
+    }
+    Value* key = pop();
+    Value* object = pop();
+    Value* result = ctx_->getProperty(object, key);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opSetProp() {
+    if (stack_.size() < 3) {
+        return badBytecode("set_prop: operand stack underflow");
+    }
+    Value* value = pop();
+    Value* key = pop();
+    Value* object = pop();
+    Value* result = ctx_->setProperty(object, key, value);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
     return nullptr;
 }
 

@@ -76,6 +76,19 @@ _func_end:
   （ADR-014 第 5 节）。
 - `load`/`store` 均沿 scope 链向上，找不到 → ReferenceError。
 
+#### 2.2.1 属性访问
+
+| 指令 | 栈契约 | 说明 |
+|------|--------|------|
+| `get_prop` | `[obj, key] → [val]` | `ctx->getProperty(obj, key)` |
+| `set_prop` | `[obj, key, value] → [value]` | `ctx->setProperty`，RHS 即表达式值 |
+
+- key 是 `Value*`：computed 访问求值表达式，非 computed 压入属性名字符串。
+- 成员读：`obj; key; get_prop`。
+- 成员写：`obj; key; RHS; set_prop`（无需 `dup`，`set_prop` 留下 RHS）。
+- 成员调用：`obj; dup; key; get_prop; args; call_method N`，`dup` 保留
+  receiver 作为 thisArg，且 receiver 只求值一次。
+
 #### 2.3 函数定义
 
 | 指令 | 栈契约 | 说明 |
@@ -310,5 +323,5 @@ hlt
   箭头/普通函数字节码层无特例（统一 store_this）；定义点退化为 store 简化语义。
 - 缺点：函数调用创建/销毁 VM 有开销（ADR-004）；箭头函数 bind_this 多两条指令。
 - 待定：对象/数组字面量、try/catch（异常即值走 return 通道）、for 循环
-  （init_scope/body_scope）、`get_prop`/`set_prop` 的具体编码后续 ADR 细化。
-  方法调用已定：`call_method` 只负责 thisArg，属性查找由 `get_prop` 完成。
+  （init_scope/body_scope）。属性访问已定：`get_prop`/`set_prop` 无操作数，
+  key 由栈传递；`call_method` 只负责 thisArg，属性查找由 `get_prop` 完成。

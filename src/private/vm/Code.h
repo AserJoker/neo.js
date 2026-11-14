@@ -163,6 +163,9 @@ struct Code {
         return pc;
     }
 
+    uint32_t getProp() { return emitOp(OpCode::GetProp); }
+    uint32_t setProp() { return emitOp(OpCode::SetProp); }
+
     uint32_t add() { return emitOp(OpCode::Add); }
     uint32_t sub() { return emitOp(OpCode::Sub); }
     uint32_t mul() { return emitOp(OpCode::Mul); }

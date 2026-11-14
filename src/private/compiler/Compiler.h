@@ -79,6 +79,9 @@ private:
     void compileArrowFunctionExpression(
         const frontend::ArrowFunctionExpression& node);
     void compileCallExpression(const frontend::CallExpression& node);
+    void compileMemberExpression(const frontend::MemberExpression& node);
+    // 把成员访问的 key 压栈（computed 求值，否则标识符名）。
+    void compileMemberKey(const frontend::MemberExpression& node);
     void compileThisExpression(const frontend::ThisExpression& node);
     void compileAssignmentExpression(
         const frontend::AssignmentExpression& node);

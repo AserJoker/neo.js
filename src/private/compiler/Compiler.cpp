@@ -123,6 +123,10 @@ void Compiler::compileExpression(const Node& node) {
             compileCallExpression(
                 static_cast<const frontend::CallExpression&>(node));
             break;
+        case NodeKind::MemberExpression:
+            compileMemberExpression(
+                static_cast<const frontend::MemberExpression&>(node));
+            break;
         case NodeKind::ThisExpression:
             compileThisExpression(
                 static_cast<const frontend::ThisExpression&>(node));
@@ -284,14 +288,29 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
         code_->pushUndefined();
         return;
     }
-    // 成员调用需要 get_prop（V5）；先显式报错，避免生成错误的 this。
-    if (node.callee->kind() == NodeKind::MemberExpression) {
-        error(node, "compiler: member call requires get_prop (V5)");
-        code_->pushUndefined();
-        return;
+    bool isMember = node.callee->kind() == NodeKind::MemberExpression;
+    if (isMember) {
+        const auto& member =
+            static_cast<const frontend::MemberExpression&>(*node.callee);
+        if (member.optional || node.optional) {
+            error(node, "compiler: optional call not supported");
+            code_->pushUndefined();
+            return;
+        }
+        if (!member.object) {
+            error(node, "compiler: member call missing object");
+            code_->pushUndefined();
+            return;
+        }
+        // receiver 只求值一次：栈上保留一份作为 thisArg，另一份用于取方法。
+        compileExpression(*member.object);
+        code_->dup();
+        compileMemberKey(member);
+        code_->getProp();
+    } else {
+        compileExpression(*node.callee);
     }
 
-    compileExpression(*node.callee);
     uint32_t argc = 0;
     for (const frontend::NodePtr& argument : node.arguments) {
         if (!argument) continue;
@@ -302,7 +321,47 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
         compileExpression(*argument);
         ++argc;
     }
-    code_->call(argc);
+    if (isMember) {
+        code_->callMethod(argc);
+    } else {
+        code_->call(argc);
+    }
+}
+
+void Compiler::compileMemberExpression(
+    const frontend::MemberExpression& node) {
+    if (node.optional) {
+        error(node, "compiler: optional chaining not supported");
+        code_->pushUndefined();
+        return;
+    }
+    if (!node.object) {
+        error(node, "compiler: member expression missing object");
+        code_->pushUndefined();
+        return;
+    }
+    compileExpression(*node.object);
+    compileMemberKey(node);
+    code_->getProp();
+}
+
+void Compiler::compileMemberKey(const frontend::MemberExpression& node) {
+    if (!node.property) {
+        error(node, "compiler: member expression missing property");
+        code_->pushUndefined();
+        return;
+    }
+    if (node.computed) {
+        compileExpression(*node.property);
+        return;
+    }
+    if (node.property->kind() != NodeKind::Identifier) {
+        error(*node.property, "compiler: unsupported property key");
+        code_->pushUndefined();
+        return;
+    }
+    code_->push(
+        static_cast<const frontend::Identifier&>(*node.property).name);
 }
 
 void Compiler::compileThisExpression(const frontend::ThisExpression&) {
@@ -311,13 +370,43 @@ void Compiler::compileThisExpression(const frontend::ThisExpression&) {
 
 void Compiler::compileAssignmentExpression(
     const frontend::AssignmentExpression& node) {
-    if (!node.left || node.left->kind() != NodeKind::Identifier) {
-        error(node, "compiler: assignment target must be an identifier");
+    if (!node.left) {
+        error(node, "compiler: assignment missing target");
         code_->pushUndefined();
         return;
     }
     if (!node.right) {
         error(node, "compiler: assignment missing right-hand side");
+        code_->pushUndefined();
+        return;
+    }
+    if (node.left->kind() == NodeKind::MemberExpression) {
+        const auto& member =
+            static_cast<const frontend::MemberExpression&>(*node.left);
+        if (node.op != frontend::AssignmentOperator::Assign) {
+            error(node, "compiler: compound member assignment not supported");
+            code_->pushUndefined();
+            return;
+        }
+        if (member.optional) {
+            error(node, "compiler: optional chaining not supported");
+            code_->pushUndefined();
+            return;
+        }
+        if (!member.object) {
+            error(node, "compiler: assignment target missing object");
+            code_->pushUndefined();
+            return;
+        }
+        // set_prop 本身把 RHS 作为表达式值留下。
+        compileExpression(*member.object);
+        compileMemberKey(member);
+        compileExpression(*node.right);
+        code_->setProp();
+        return;
+    }
+    if (node.left->kind() != NodeKind::Identifier) {
+        error(node, "compiler: assignment target must be an identifier");
         code_->pushUndefined();
         return;
     }

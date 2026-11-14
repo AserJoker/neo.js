@@ -535,3 +535,44 @@ TEST(VMTest, FailureAnnotatesExceptionStackWithSourcePosition) {
     std::string stack = propertyString(f.ctx.get(), errorChild(result), "stack");
     EXPECT_NE(stack.find("entry.js:4:9"), std::string::npos) << stack;
 }
+
+TEST(VMTest, GetPropReadsObjectProperty) {
+    Fixture f;
+    Value* object = f.ctx->createObject();
+    f.ctx->setProperty(object, "x", f.ctx->createNumber(42.0));
+
+    Code code;
+    code.push("x");
+    code.getProp();
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    vm.push(object);
+    Value* result = vm.run();
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(result), 42.0);
+}
+
+TEST(VMTest, SetPropWritesAndYieldsValue) {
+    Fixture f;
+    Value* object = f.ctx->createObject();
+
+    Code code;
+    code.push("y");
+    code.push(7.0);
+    code.setProp();
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    vm.push(object);
+    Value* result = vm.run();
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(result), 7.0);
+
+    Value* stored = f.ctx->getProperty(object, "y");
+    ASSERT_NE(stored, nullptr);
+    ASSERT_EQ(stored->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(stored), 7.0);
+}
