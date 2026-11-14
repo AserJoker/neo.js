@@ -68,17 +68,21 @@ const std::string* VM::stringOperand(uint32_t index) const {
     return &code_->strings[index];
 }
 
-VmResult VM::fail(Value* error) {
+Value* VM::fail(Value* error) {
     // Engine 原语创建错误时不知道 pc；VM 用 SourceMap 补全异常栈顶位置。
     ctx_->setExceptionPosition(error, currentPosition());
-    return VmResult{VmStatus::Failed, error};
+    return error;
 }
 
-VmResult VM::badBytecode(const char* message) {
+Value* VM::badBytecode(const char* message) {
     return fail(ctx_->createErrorException(ErrorKind::Error, message));
 }
 
-VmResult VM::run() {
+Value* VM::run(uint32_t entryPc) {
+    pc_ = entryPc;
+    if (pc_ > code_->instructions.size()) {
+        return badBytecode("run: entry pc out of range");
+    }
     while (pc_ < code_->instructions.size()) {
         const Instruction instruction = code_->instructions[pc_];
 
@@ -190,23 +194,21 @@ VmResult VM::run() {
                 }
                 Value* result = ctx_->binaryOp(op, left, right);
                 if (detail::isErrorValue(result)) return fail(result);
-                if (detail::isInterruptValue(result)) {
-                    return VmResult{VmStatus::Suspended, result};
-                }
+                // Interrupt 是控制流信号（协程/异步挂起），原样交给外部消费。
+                if (detail::isInterruptValue(result)) return result;
                 push(result);
                 break;
             }
             case OpCode::Ret:
-                return VmResult{VmStatus::Returned,
-                                stack_.empty() ? ctx_->createUndefined() : pop()};
+                return stack_.empty() ? ctx_->createUndefined() : pop();
             case OpCode::Halt:
-                return VmResult{VmStatus::Halted, ctx_->createUndefined()};
+                return ctx_->createUndefined();
         }
 
         ++pc_;
     }
     // 指令流自然结束：等价于 hlt。
-    return VmResult{VmStatus::Halted, ctx_->createUndefined()};
+    return ctx_->createUndefined();
 }
 
 }  // namespace neo::vm

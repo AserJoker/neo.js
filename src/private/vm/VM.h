@@ -27,26 +27,22 @@ class Scope;
 
 namespace neo::vm {
 
-enum class VmStatus {
-    Returned,   // ret：value 为返回值
-    Halted,     // hlt：value 为 undefined
-    Suspended,  // Interrupt：V0 不产生
-    Failed,     // Exception/Fatal：value 为错误值
-};
-
-struct VmResult {
-    VmStatus status = VmStatus::Halted;
-    neo::core::Value* value = nullptr;
-};
-
 class VM {
 public:
     // ctx 借用；code 借用（生命周期由 Module / script Function 持有）。
     // 入口作用域取 ctx->current()，root 取 ctx->root()。
     VM(neo::core::IContext* ctx, const Code* code);
 
-    // 从 pc=0 执行到 ret/hlt/失败。
-    VmResult run();
+    // 从 entryPc 执行到 ret/hlt/失败，返回执行结果值。
+    // 函数调用即「借用同一份 Code + 从函数地址（entryPc）开始执行」，
+    // 故入口 pc 由调用方（Function::invoke）传入；模块顶层/eval 传 0。
+    //
+    // 返回值自描述，调用方按类型分派，不需要额外 status：
+    //   - Interrupt：协程/异步挂起信号；
+    //   - Exception：未捕获异常；
+    //   - Fatal：不可恢复异常；
+    //   - 其他：正常返回（ret 的值 / hlt 与自然结束的 undefined）。
+    neo::core::Value* run(uint32_t entryPc = 0);
 
     // 当前指令对应的源码位置（SourceMap 反查）；无映射返回空位置。
     neo::core::SourcePosition currentPosition() const;
@@ -63,10 +59,10 @@ private:
     }
     neo::core::Value* top() const { return stack_.back(); }
 
-    // 指令失败：补全异常栈后返回 Failed。
-    VmResult fail(neo::core::Value* error);
+    // 指令失败：补全异常栈后返回错误值（Exception/Fatal）。
+    neo::core::Value* fail(neo::core::Value* error);
     // 内部字节码错误（栈下溢/常量下标越界）。
-    VmResult badBytecode(const char* message);
+    neo::core::Value* badBytecode(const char* message);
 
     // 取 Code::strings[a]；越界返回 nullptr。
     const std::string* stringOperand(uint32_t index) const;

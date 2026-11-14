@@ -25,7 +25,6 @@
 
 namespace {
 
-using neo::core::CallFrame;
 using neo::core::ExceptionData;
 using neo::core::IContext;
 using neo::core::NumberData;
@@ -38,13 +37,9 @@ using neo::infra::Console;
 using neo::infra::IOutputSink;
 using neo::infra::createMallocAllocator;
 using neo::vm::Code;
-using neo::vm::Instruction;
 using neo::vm::OpCode;
 using neo::vm::SourceMap;
-using neo::vm::SourceMapEntry;
 using neo::vm::VM;
-using neo::vm::VmResult;
-using neo::vm::VmStatus;
 using neo::vm::kDefineInitialized;
 using neo::vm::kDefineMutable;
 
@@ -86,155 +81,176 @@ std::string propertyString(IContext* ctx, Value* object, const char* name) {
 TEST(VMTest, AddNumbers) {
     Fixture f;
     Code code;
-    code.numbers = {1.0, 2.0};
-    code.instructions = {
-        Instruction{OpCode::PushNumber, 0},
-        Instruction{OpCode::PushNumber, 1},
-        Instruction{OpCode::Add},
-        Instruction{OpCode::Ret},
-    };
+    code.push(1.0);
+    code.push(2.0);
+    code.add();
+    code.ret();
 
     VM vm(f.ctx.get(), &code);
-    VmResult result = vm.run();
+    Value* result = vm.run();
 
-    ASSERT_EQ(result.status, VmStatus::Returned);
-    ASSERT_EQ(result.value->type()->kind(), TypeKind::Number);
-    EXPECT_DOUBLE_EQ(numberValue(result.value), 3.0);
+    ASSERT_EQ(result->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(result), 3.0);
+}
+
+TEST(VMTest, RunStartsAtEntryPc) {
+    Fixture f;
+    Code code;
+    code.halt();       // pc 0：模块顶层占位
+    code.push(42.0);   // pc 1：函数入口（entryPc）
+    code.ret();        // pc 2
+
+    VM vm(f.ctx.get(), &code);
+    Value* result = vm.run(1);
+
+    ASSERT_EQ(result->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(result), 42.0);
+}
+
+TEST(VMTest, EntryPcOutOfRangeFails) {
+    Fixture f;
+    Code code;
+    code.halt();
+
+    VM vm(f.ctx.get(), &code);
+    Value* result = vm.run(2);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->type()->kind(), TypeKind::Exception);
 }
 
 TEST(VMTest, PushStringUsesStringTable) {
     Fixture f;
     Code code;
-    code.strings = {"hello"};
-    code.instructions = {
-        Instruction{OpCode::PushString, 0},
-        Instruction{OpCode::Ret},
-    };
+    code.push("hello");
+    code.ret();
 
     VM vm(f.ctx.get(), &code);
-    VmResult result = vm.run();
+    Value* result = vm.run();
 
-    ASSERT_EQ(result.status, VmStatus::Returned);
-    ASSERT_EQ(result.value->type()->kind(), TypeKind::String);
-    EXPECT_EQ(stringValue(result.value), "hello");
+    ASSERT_EQ(result->type()->kind(), TypeKind::String);
+    EXPECT_EQ(stringValue(result), "hello");
 }
 
 TEST(VMTest, DefineAndLoad) {
     Fixture f;
     Code code;
-    code.numbers = {42.0};
-    code.strings = {"x"};
-    code.instructions = {
-        Instruction{OpCode::PushNumber, 0},
-        Instruction{OpCode::Define, 0, kDefineMutable | kDefineInitialized},
-        Instruction{OpCode::Load, 0},
-        Instruction{OpCode::Ret},
-    };
+    code.push(42.0);
+    code.define("x");
+    code.load("x");
+    code.ret();
 
     VM vm(f.ctx.get(), &code);
-    VmResult result = vm.run();
+    Value* result = vm.run();
 
-    ASSERT_EQ(result.status, VmStatus::Returned);
-    EXPECT_DOUBLE_EQ(numberValue(result.value), 42.0);
+    EXPECT_DOUBLE_EQ(numberValue(result), 42.0);
 }
 
 TEST(VMTest, StoreUpdatesBinding) {
     Fixture f;
     Code code;
-    code.numbers = {1.0, 2.0};
-    code.strings = {"x"};
-    code.instructions = {
-        Instruction{OpCode::PushNumber, 0},
-        Instruction{OpCode::Define, 0, kDefineMutable | kDefineInitialized},
-        Instruction{OpCode::PushNumber, 1},
-        Instruction{OpCode::Store, 0},
-        Instruction{OpCode::Load, 0},
-        Instruction{OpCode::Ret},
-    };
+    code.push(1.0);
+    code.define("x");
+    code.push(2.0);
+    code.store("x");
+    code.load("x");
+    code.ret();
 
     VM vm(f.ctx.get(), &code);
-    VmResult result = vm.run();
+    Value* result = vm.run();
 
-    ASSERT_EQ(result.status, VmStatus::Returned);
-    EXPECT_DOUBLE_EQ(numberValue(result.value), 2.0);
+    EXPECT_DOUBLE_EQ(numberValue(result), 2.0);
 }
 
 TEST(VMTest, InitializeReleasesTdz) {
     Fixture f;
     Code code;
-    code.numbers = {7.0};
-    code.strings = {"x"};
-    code.instructions = {
-        Instruction{OpCode::PushUndefined},
-        // 提升建槽：mutable 但未初始化（TDZ）
-        Instruction{OpCode::Define, 0, kDefineMutable},
-        Instruction{OpCode::PushNumber, 0},
-        Instruction{OpCode::Initialize, 0},
-        Instruction{OpCode::Load, 0},
-        Instruction{OpCode::Ret},
-    };
+    code.pushUndefined();
+    // 提升建槽：mutable 但未初始化（TDZ）
+    code.define("x", true, false);
+    code.push(7.0);
+    code.initialize("x");
+    code.load("x");
+    code.ret();
 
     VM vm(f.ctx.get(), &code);
-    VmResult result = vm.run();
+    Value* result = vm.run();
 
-    ASSERT_EQ(result.status, VmStatus::Returned);
-    EXPECT_DOUBLE_EQ(numberValue(result.value), 7.0);
+    EXPECT_DOUBLE_EQ(numberValue(result), 7.0);
 }
 
 TEST(VMTest, LoadBeforeInitializeFailsWithTdz) {
     Fixture f;
     Code code;
-    code.strings = {"x"};
-    code.instructions = {
-        Instruction{OpCode::PushUndefined},
-        Instruction{OpCode::Define, 0, kDefineMutable},
-        Instruction{OpCode::Load, 0},
-        Instruction{OpCode::Ret},
-    };
+    code.pushUndefined();
+    code.define("x", true, false);
+    code.load("x");
+    code.ret();
 
     VM vm(f.ctx.get(), &code);
-    VmResult result = vm.run();
+    Value* result = vm.run();
 
-    ASSERT_EQ(result.status, VmStatus::Failed);
-    ASSERT_EQ(result.value->type()->kind(), TypeKind::Exception);
-    EXPECT_EQ(propertyString(f.ctx.get(), errorChild(result.value), "name"),
+    ASSERT_EQ(result->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(propertyString(f.ctx.get(), errorChild(result), "name"),
               "ReferenceError");
 }
 
 TEST(VMTest, StoreToConstFails) {
     Fixture f;
     Code code;
-    code.numbers = {1.0, 2.0};
-    code.strings = {"x"};
-    code.instructions = {
-        Instruction{OpCode::PushNumber, 0},
-        // const：不可变且已初始化
-        Instruction{OpCode::Define, 0, kDefineInitialized},
-        Instruction{OpCode::PushNumber, 1},
-        Instruction{OpCode::Store, 0},
-        Instruction{OpCode::Ret},
-    };
+    code.push(1.0);
+    // const：不可变且已初始化
+    code.define("x", false, true);
+    code.push(2.0);
+    code.store("x");
+    code.ret();
 
     VM vm(f.ctx.get(), &code);
-    VmResult result = vm.run();
+    Value* result = vm.run();
 
-    ASSERT_EQ(result.status, VmStatus::Failed);
-    ASSERT_EQ(result.value->type()->kind(), TypeKind::Exception);
-    EXPECT_EQ(propertyString(f.ctx.get(), errorChild(result.value), "name"),
+    ASSERT_EQ(result->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(propertyString(f.ctx.get(), errorChild(result), "name"),
               "TypeError");
 }
 
 TEST(VMTest, HaltReturnsUndefined) {
     Fixture f;
     Code code;
-    code.instructions = {Instruction{OpCode::Halt}};
+    code.halt();
 
     VM vm(f.ctx.get(), &code);
-    VmResult result = vm.run();
+    Value* result = vm.run();
 
-    ASSERT_EQ(result.status, VmStatus::Halted);
-    ASSERT_NE(result.value, nullptr);
-    EXPECT_EQ(result.value->type()->kind(), TypeKind::Undefined);
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(VMTest, BuilderEmitsSemanticInstructions) {
+    Code code;
+    EXPECT_EQ(code.here(), 0u);
+    EXPECT_EQ(code.push(1.5), 0u);
+    EXPECT_EQ(code.push("x"), 1u);
+    EXPECT_EQ(code.define("v"), 2u);
+    EXPECT_EQ(code.load("v"), 3u);
+    EXPECT_EQ(code.ret(), 4u);
+    EXPECT_EQ(code.here(), 5u);
+
+    ASSERT_EQ(code.numbers.size(), 1u);
+    EXPECT_DOUBLE_EQ(code.numbers[0], 1.5);
+    // 字符串表不做去重：push "x"、define "v"、load "v" 各登记一次。
+    ASSERT_EQ(code.strings.size(), 3u);
+    EXPECT_EQ(code.strings[0], "x");
+    EXPECT_EQ(code.strings[1], "v");
+    EXPECT_EQ(code.strings[2], "v");
+
+    ASSERT_EQ(code.instructions.size(), 5u);
+    EXPECT_EQ(code.instructions[0].op, OpCode::PushNumber);
+    EXPECT_EQ(code.instructions[0].a, 0u);
+    EXPECT_EQ(code.instructions[1].op, OpCode::PushString);
+    EXPECT_EQ(code.instructions[1].a, 0u);
+    EXPECT_EQ(code.instructions[2].op, OpCode::Define);
+    EXPECT_EQ(code.instructions[2].a, 1u);
+    EXPECT_EQ(code.instructions[2].b, kDefineMutable | kDefineInitialized);
 }
 
 TEST(VMTest, SourceMapLookupPrefersInnermostRange) {
@@ -254,21 +270,17 @@ TEST(VMTest, SourceMapLookupPrefersInnermostRange) {
 TEST(VMTest, FailureAnnotatesExceptionStackWithSourcePosition) {
     Fixture f;
     Code code;
-    code.strings = {"missing"};
-    code.instructions = {
-        Instruction{OpCode::Load, 0},
-        Instruction{OpCode::Ret},
-    };
-    code.sourceMap.add(0, 1, SourcePosition("entry.js", 4, 9));
+    uint32_t loadPc = code.load("missing");
+    code.ret();
+    code.mapSource(loadPc, loadPc + 1, SourcePosition("entry.js", 4, 9));
 
     // 调用栈由调用点维护（ADR-037）：先压入本次执行的帧，出错位置才能落到栈顶。
     f.ctx->pushFrame(SourcePosition{}, "top");
 
     VM vm(f.ctx.get(), &code);
-    VmResult result = vm.run();
+    Value* result = vm.run();
 
-    ASSERT_EQ(result.status, VmStatus::Failed);
-    ASSERT_EQ(result.value->type()->kind(), TypeKind::Exception);
-    std::string stack = propertyString(f.ctx.get(), errorChild(result.value), "stack");
+    ASSERT_EQ(result->type()->kind(), TypeKind::Exception);
+    std::string stack = propertyString(f.ctx.get(), errorChild(result), "stack");
     EXPECT_NE(stack.find("entry.js:4:9"), std::string::npos) << stack;
 }

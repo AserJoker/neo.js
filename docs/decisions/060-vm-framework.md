@@ -90,6 +90,29 @@ struct Code {
   创建 Value，自动归属当前作用域，避免 Code 成为 GC 根。
 - `Code` 是纯数据，由 Module / script Function 持有；VM 只借用。
 
+**构造 API 由 Code 自己提供**：Compiler 与测试都只调语义化方法，不手工拼
+`Instruction`、不手工算常量下标。
+
+```cpp
+Code code;
+code.push(1.0);          // numbers.push_back + push_number <id>
+code.push("x");          // strings.push_back + push_string <id>
+code.define("v");        // push_scope 之外的绑定：define <name> <flags>
+code.load("v");
+code.add();
+code.ret();
+
+uint32_t pc = code.here();        // 下一条指令下标
+code.mapSource(pc, pc + 1, pos);  // 登记源码范围
+```
+
+- `emit(op, a, b)` 是唯一直接追加指令的入口，返回该指令 pc；
+- `push(double)` / `push(string_view)` / `push(const char*)` 自动进常量表；
+  `pushBoolean` / `pushNull` / `pushUndefined` 用独立名字避免重载歧义；
+- `define(name, mutableBinding, initialized)` 把两个布尔折成 `b` 的位标志；
+- `here()` 供 Compiler 记录 AST 节点的 `[pcBegin, pcEnd)`；
+- 所有方法返回 pc，便于跳转回填与 SourceMap 登记。
+
 ### 3.1 SourceMap：源码位置 → 指令范围
 
 异常可能在任何表达式指令上产生，而 Engine 的运算原语不知道当前 pc。
@@ -127,22 +150,27 @@ public:
 ### 4. 执行循环与返回协议
 
 ```cpp
-enum class VmStatus { Returned, Halted, Suspended, Failed };
-
-struct VmResult {
-    VmStatus status;
-    Value* value;   // Returned/Suspended/Failed 的载荷；Halted 为 undefined
-};
-
-VmResult VM::run();
+Value* VM::run(uint32_t entryPc = 0);
 ```
 
+- `entryPc` 是本次执行的入口指令下标。函数调用本质上就是「借用同一份
+  `Code` + 从函数地址 `entryPc` 开始执行」，由 `Function::invoke` 传入；
+  模块顶层 / eval 传 0。`run` 返回后 `pc_` 停在结束位置（诊断用）。
+- **不引入 `VmResult`/`VmStatus`**：返回值本身就是自描述的，外部按类型分派：
+
+  | 返回类型 | 含义 |
+  |----------|------|
+  | `Interrupt` | 协程/异步挂起信号（外部消费） |
+  | `Exception` | 未捕获异常 |
+  | `Fatal` | 不可恢复异常 |
+  | 其他 | 正常返回（`ret` 的值；`hlt`/自然结束为 `undefined`） |
+
+  `ret` 与 `hlt` 无需区分：两者都只是「本次执行结束并给出一个值」。
 - 每条指令执行后检查 Engine 返回的 `Value*`：
   - Exception / Fatal → 先用 `currentPosition()` 补全异常栈，再走 `tryStack_`；
-    无处理器则 `Failed` 返回；
-  - Interrupt(Yield/Await) → `Suspended` 返回，保存 `VmState`；
+    无处理器则原样返回；
+  - Interrupt(Yield/Await) → 原样返回，保存 `VmState`；
   - 正常值 → 继续。
-- `ret` → `Returned`；`hlt` → `Halted`。
 - 不使用 C++ 异常；错误统一走 Engine 的 `Value*` 返回通道（ADR-006）。
 
 ### 5. 调用约定
@@ -181,7 +209,7 @@ VmResult VM::run();
 
 - VM 可序列化为 `VmState`：pc、操作数栈、作用域指针、函数/argc/argv。
   后续引入 try/label 后，再把对应栈加入快照。
-- `Suspended` 时把 `VmState` 交给 Coroutine；恢复时重建 VM，先压入外部
+- 返回 `Interrupt` 时把 `VmState` 交给 Coroutine；恢复时重建 VM，先压入外部
   注入值（yield/await 结果），再从 `pc` 继续（ADR-023）。
 - 嵌套调用挂起时，每一层 VM 都保存自己的 `VmState`，形成调用链；
   Coroutine 持有这条链。同步执行的 V0–V4 不依赖该机制，V5 后再接入。
@@ -208,7 +236,7 @@ bool hasRest = false;
 src/private/vm/
   OpCode.h        // 指令枚举 + 栈契约注释
   Code.h          // Instruction / Code / SourceMap
-  VM.h            // VM（pc/stack）与 VmResult
+  VM.h            // VM（pc/stack）与 run 返回协议
   VM.cpp          // 执行循环与指令实现
   VmState.h       // 挂起状态（后续接入）
 tests/unit/vm/
