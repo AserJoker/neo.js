@@ -4,6 +4,7 @@
 
 #include <limits>
 #include <new>
+#include <utility>
 
 namespace neo::regex {
 
@@ -56,15 +57,63 @@ MatchResult RegexVM::exec(ExecOptions options) {
 bool RegexVM::runAt(std::size_t start, MatchResult& out) {
     captures_.assign((static_cast<std::size_t>(program_.captureCount) + 1) * 2,
                      kUnset);
-    undo_.clear();
-    stack_.clear();
-    scratch_.assign(program_.scratchCount, 0);
-    pc_ = 0;
-    pos_ = start;
+
+    std::size_t matchEnd = 0;
+    if (!execute(program_.instructions, program_.classes,
+                 program_.scratchCount, captures_, start, &matchEnd)) {
+        return false;
+    }
+
+    out.start = captures_[0] != kUnset ? captures_[0] : start;
+    out.end = captures_[1] != kUnset ? captures_[1] : matchEnd;
+    for (std::uint32_t i = 0; i <= program_.captureCount; ++i) {
+        const std::size_t captureStart =
+            captures_[static_cast<std::size_t>(i) * 2];
+        const std::size_t captureEnd =
+            captures_[static_cast<std::size_t>(i) * 2 + 1];
+        out.captures[i] = Capture{captureStart != kUnset &&
+                                      captureEnd != kUnset,
+                                  captureStart, captureEnd};
+    }
+    return true;
+}
+
+bool RegexVM::runSub(const SubProgram& sub, std::size_t start,
+                     std::vector<std::size_t>& captures,
+                     std::size_t* matchEnd) {
+    return execute(sub.instructions, sub.classes, sub.scratchCount, captures,
+                   start, matchEnd);
+}
+
+bool RegexVM::execute(const std::vector<Instruction>& instructions,
+                      const std::vector<CharClassTable>& classes,
+                      std::uint32_t scratchCount,
+                      std::vector<std::size_t>& captures, std::size_t start,
+                      std::size_t* matchEnd) {
+    std::vector<Frame> stack;
+    std::vector<Undo> undo;
+    std::vector<std::size_t> scratch(scratchCount, 0);
+    std::size_t pc = 0;
+    std::size_t pos = start;
+
+    auto backtrack = [&]() -> bool {
+        if (stack.empty()) return false;
+        const Frame frame = stack.back();
+        stack.pop_back();
+        while (undo.size() > frame.undoMark) {
+            const Undo entry = undo.back();
+            undo.pop_back();
+            captures[entry.slot] = entry.oldValue;
+        }
+        pc = frame.pc;
+        pos = frame.pos;
+        return true;
+    };
 
     for (;;) {
-        if (pc_ >= program_.instructions.size()) return false;
-        const Instruction& instruction = program_.instructions[pc_];
+        if (aborted_) return false;
+        if (pc >= instructions.size()) return false;
+        const Instruction instruction = instructions[pc];
         ++steps_;
         if ((steps_ & 1023u) == 0 && host_.shouldAbort(steps_)) {
             aborted_ = true;
@@ -73,148 +122,221 @@ bool RegexVM::runAt(std::size_t start, MatchResult& out) {
 
         switch (instruction.op) {
             case OpCode::Char:
-                if (pos_ < subject_.size() &&
-                    matchChar(subject_[pos_], instruction.a)) {
-                    ++pos_;
-                    ++pc_;
+                if (pos < subject_.size() &&
+                    matchChar(subject_[pos], instruction.a)) {
+                    ++pos;
+                    ++pc;
                 } else if (!backtrack()) {
                     return false;
                 }
                 break;
             case OpCode::CharClass:
-                if (pos_ < subject_.size() &&
-                    classMatches(program_.classes[instruction.a],
-                                 subject_[pos_])) {
-                    ++pos_;
-                    ++pc_;
+                if (pos < subject_.size() &&
+                    classMatches(classes[instruction.a], subject_[pos])) {
+                    ++pos;
+                    ++pc;
                 } else if (!backtrack()) {
                     return false;
                 }
                 break;
             case OpCode::Any:
-                if (pos_ < subject_.size() &&
+                if (pos < subject_.size() &&
                     (program_.flags.dotAll ||
-                     !isLineTerminator(subject_[pos_]))) {
-                    ++pos_;
-                    ++pc_;
+                     !isLineTerminator(subject_[pos]))) {
+                    ++pos;
+                    ++pc;
                 } else if (!backtrack()) {
                     return false;
                 }
                 break;
             case OpCode::Split:
-                stack_.push_back(Frame{instruction.b, pos_, undo_.size()});
-                pc_ = instruction.a;
+                stack.push_back(Frame{instruction.b, pos, undo.size()});
+                pc = instruction.a;
                 break;
             case OpCode::Jmp:
-                pc_ = instruction.a;
+                pc = instruction.a;
                 break;
             case OpCode::Save:
-                undo_.push_back(Undo{instruction.a, captures_[instruction.a]});
-                captures_[instruction.a] = pos_;
-                ++pc_;
+                undo.push_back(Undo{instruction.a, captures[instruction.a]});
+                captures[instruction.a] = pos;
+                ++pc;
                 break;
             case OpCode::AssertStart:
-                if (pos_ == 0 ||
+                if (pos == 0 ||
                     (program_.flags.multiline &&
-                     isLineTerminator(subject_[pos_ - 1]))) {
-                    ++pc_;
+                     isLineTerminator(subject_[pos - 1]))) {
+                    ++pc;
                 } else if (!backtrack()) {
                     return false;
                 }
                 break;
             case OpCode::AssertEnd:
-                if (pos_ == subject_.size() ||
-                    (program_.flags.multiline && pos_ < subject_.size() &&
-                     isLineTerminator(subject_[pos_]))) {
-                    ++pc_;
+                if (pos == subject_.size() ||
+                    (program_.flags.multiline && pos < subject_.size() &&
+                     isLineTerminator(subject_[pos]))) {
+                    ++pc;
                 } else if (!backtrack()) {
                     return false;
                 }
                 break;
             case OpCode::AssertWordBoundary: {
-                const bool previous =
-                    pos_ > 0 && isWord(subject_[pos_ - 1]);
+                const bool previous = pos > 0 && isWord(subject_[pos - 1]);
                 const bool current =
-                    pos_ < subject_.size() && isWord(subject_[pos_]);
+                    pos < subject_.size() && isWord(subject_[pos]);
                 if (previous != current) {
-                    ++pc_;
+                    ++pc;
                 } else if (!backtrack()) {
                     return false;
                 }
                 break;
             }
             case OpCode::AssertNotWordBoundary: {
-                const bool previous =
-                    pos_ > 0 && isWord(subject_[pos_ - 1]);
+                const bool previous = pos > 0 && isWord(subject_[pos - 1]);
                 const bool current =
-                    pos_ < subject_.size() && isWord(subject_[pos_]);
+                    pos < subject_.size() && isWord(subject_[pos]);
                 if (previous == current) {
-                    ++pc_;
+                    ++pc;
                 } else if (!backtrack()) {
                     return false;
                 }
                 break;
             }
             case OpCode::Mark:
-                scratch_[instruction.a] = pos_;
-                ++pc_;
+                scratch[instruction.a] = pos;
+                ++pc;
                 break;
             case OpCode::Progress:
-                if (scratch_[instruction.a] == pos_) {
-                    pc_ = instruction.b;
+                if (scratch[instruction.a] == pos) {
+                    pc = instruction.b;
                 } else {
-                    ++pc_;
+                    ++pc;
                 }
                 break;
             case OpCode::SetCounter:
-                scratch_[instruction.a] = instruction.b;
-                ++pc_;
+                scratch[instruction.a] = instruction.b;
+                ++pc;
                 break;
             case OpCode::IncCounter:
-                ++scratch_[instruction.a];
-                ++pc_;
+                ++scratch[instruction.a];
+                ++pc;
                 break;
             case OpCode::CounterLt:
-                if (scratch_[instruction.a] < instruction.b) {
-                    pc_ = instruction.c;
+                if (scratch[instruction.a] < instruction.b) {
+                    pc = instruction.c;
                 } else {
-                    ++pc_;
+                    ++pc;
                 }
                 break;
-            case OpCode::Match: {
-                const std::size_t matchStart =
-                    captures_[0] != kUnset ? captures_[0] : start;
-                const std::size_t matchEnd =
-                    captures_[1] != kUnset ? captures_[1] : pos_;
-                out.start = matchStart;
-                out.end = matchEnd;
-                for (std::uint32_t i = 0; i <= program_.captureCount; ++i) {
-                    const std::size_t captureStart =
-                        captures_[static_cast<std::size_t>(i) * 2];
-                    const std::size_t captureEnd =
-                        captures_[static_cast<std::size_t>(i) * 2 + 1];
-                    out.captures[i] = Capture{
-                        captureStart != kUnset && captureEnd != kUnset,
-                        captureStart, captureEnd};
+            case OpCode::Backref: {
+                const std::size_t group = instruction.a;
+                bool ok = true;
+                if (group == 0 || group > program_.captureCount) {
+                    ok = false;
+                } else {
+                    const std::size_t begin = captures[group * 2];
+                    const std::size_t end = captures[group * 2 + 1];
+                    // 未参与匹配的捕获组按空串处理。
+                    if (begin != kUnset && end != kUnset) {
+                        const std::size_t length = end - begin;
+                        if (pos + length > subject_.size()) {
+                            ok = false;
+                        } else {
+                            for (std::size_t i = 0; i < length; ++i) {
+                                if (!matchChar(subject_[pos + i],
+                                               subject_[begin + i])) {
+                                    ok = false;
+                                    break;
+                                }
+                            }
+                            if (ok) pos += length;
+                        }
+                    }
                 }
-                return true;
+                if (ok) {
+                    ++pc;
+                } else if (!backtrack()) {
+                    return false;
+                }
+                break;
             }
+            case OpCode::Lookahead: {
+                const SubProgram& sub =
+                    program_.subPrograms[instruction.a];
+                const bool negate = instruction.b != 0;
+                std::vector<std::size_t> snapshot = captures;
+                std::size_t subEnd = 0;
+                const bool matched = runSub(sub, pos, captures, &subEnd);
+                if (aborted_) return false;
+                if (negate) {
+                    captures = std::move(snapshot);
+                    if (matched) {
+                        if (!backtrack()) return false;
+                    } else {
+                        ++pc;
+                    }
+                } else if (matched) {
+                    ++pc;
+                } else {
+                    captures = std::move(snapshot);
+                    if (!backtrack()) return false;
+                }
+                break;
+            }
+            case OpCode::Lookbehind: {
+                const SubProgram& sub =
+                    program_.subPrograms[instruction.a];
+                const bool negate = instruction.b != 0;
+                const std::vector<std::size_t> snapshot = captures;
+                bool found = false;
+                std::vector<std::size_t> foundCaptures;
+
+                // R2：从最左候选起点枚举，要求子匹配恰好结束于 pos。
+                // 变长后瞻因此可用；反向匹配优化留 R6。
+                std::size_t candidate = 0;
+                while (candidate <= pos) {
+                    captures = snapshot;
+                    std::size_t subEnd = 0;
+                    if (runSub(sub, candidate, captures, &subEnd)) {
+                        if (aborted_) return false;
+                        if (subEnd == pos) {
+                            found = true;
+                            foundCaptures = captures;
+                            break;
+                        }
+                    } else if (aborted_) {
+                        return false;
+                    }
+                    if (candidate >= pos) break;
+                    if (program_.flags.unicode) {
+                        std::size_t width = 0;
+                        (void)subject_.codePointAt(candidate, width);
+                        candidate += width;
+                    } else {
+                        ++candidate;
+                    }
+                }
+
+                if (negate) {
+                    captures = snapshot;
+                    if (found) {
+                        if (!backtrack()) return false;
+                    } else {
+                        ++pc;
+                    }
+                } else if (found) {
+                    captures = std::move(foundCaptures);
+                    ++pc;
+                } else {
+                    captures = snapshot;
+                    if (!backtrack()) return false;
+                }
+                break;
+            }
+            case OpCode::Match:
+                *matchEnd = pos;
+                return true;
         }
     }
-}
-
-bool RegexVM::backtrack() {
-    if (stack_.empty()) return false;
-    const Frame frame = stack_.back();
-    stack_.pop_back();
-    while (undo_.size() > frame.undoMark) {
-        const Undo undo = undo_.back();
-        undo_.pop_back();
-        captures_[undo.slot] = undo.oldValue;
-    }
-    pc_ = frame.pc;
-    pos_ = frame.pos;
-    return true;
 }
 
 bool RegexVM::matchChar(char16_t value, std::uint32_t pattern) const {

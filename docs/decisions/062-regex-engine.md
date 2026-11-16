@@ -199,6 +199,20 @@ Match
 - 非 sticky 的 `exec` 从 `startIndex` 向后逐个起点尝试；sticky 只尝试
   `startIndex`。`g`/`y` 的 `lastIndex` 更新由 JS 层负责。
 
+**R2 前后瞻与反向引用实现**：
+
+- 前后瞻编译为独立 `SubProgram`（指令/字符类/scratch 独立），捕获槽与
+  主程序共享；嵌套前后瞻的子程序统一登记在 `Program::subPrograms`。
+- 正向前瞻保留子匹配产生的捕获；负向前瞻无论成败都恢复进入前的捕获
+  快照。子匹配失败时同样恢复快照，避免污染外层回溯。
+- 后瞻 R2 采用**正向枚举候选起点**（`0..pos`，要求子匹配恰好结束于
+  `pos`）：变长后瞻可直接工作，捕获取最左（最长）成功起点。反向匹配
+  优化与更精确的 lazy 捕获顺序留 R6。
+- 反向引用比较 UTF-16 码元，遵循 `i` 标志；引用未参与匹配的捕获组按
+  空串处理（ECMAScript 语义）。
+- `d` 标志不需要 VM 额外工作：`MatchResult::Capture` 已携带每个捕获组
+  的 `start/end`，R4 由 JS 层据此构造 `indices` 数组与 `groups`。
+
 ### 7. Unicode 数据
 
 - 沿用 ADR-053 的「生成表、零依赖」路线，从 UCD 生成：

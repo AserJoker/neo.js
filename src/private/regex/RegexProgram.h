@@ -35,6 +35,9 @@ enum class OpCode : std::uint8_t {
     SetCounter,  // a = scratch 槽，b = 初值
     IncCounter,  // a = scratch 槽
     CounterLt,   // a = scratch 槽，b = 上界，c = 目标 pc（槽 < 上界时跳转）
+    Backref,     // a = 捕获组编号（1-based）
+    Lookahead,   // a = subPrograms 下标，b = 1 表示否定
+    Lookbehind,  // a = subPrograms 下标，b = 1 表示否定
     Match,
 };
 
@@ -55,6 +58,13 @@ struct CharClassTable {
     std::vector<CharRange> ranges;
 };
 
+// 前后瞻子程序：指令下标、字符类表、scratch 槽均独立；捕获槽与主程序共享。
+struct SubProgram {
+    std::vector<Instruction> instructions;
+    std::vector<CharClassTable> classes;
+    std::uint32_t scratchCount = 0;
+};
+
 struct Program {
     std::string source;
     Flags flags;
@@ -64,6 +74,7 @@ struct Program {
     std::unordered_map<std::string, std::uint32_t> namedGroups;
     std::vector<Instruction> instructions;
     std::vector<CharClassTable> classes;
+    std::vector<SubProgram> subPrograms;
 };
 
 struct CompileResult {

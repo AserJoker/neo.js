@@ -222,9 +222,91 @@ TEST(RegexVMTest, StepBudgetAborts) {
     EXPECT_EQ(result.status, neo::regex::MatchStatus::Aborted);
 }
 
+TEST(RegexVMTest, Backreferences) {
+    Fixture f;
+    auto literal = f.compile("(a)\\1");
+    MatchResult result = f.exec(literal, "aa");
+    expectMatch(result, 0, 2);
+    expectCapture(result, 1, 0, 1);
+
+    auto alternative = f.compile("(a|b)\\1");
+    expectMatch(f.exec(alternative, "bb"), 0, 2);
+
+    auto named = f.compile("(?<x>a)\\k<x>");
+    expectMatch(f.exec(named, "aa"), 0, 2);
+
+    auto quantified = f.compile("(a)\\1+");
+    expectMatch(f.exec(quantified, "aaa"), 0, 3);
+
+    auto ignoreCase = f.compile("(a)\\1", "i");
+    expectMatch(f.exec(ignoreCase, "aA"), 0, 2);
+}
+
+TEST(RegexVMTest, BackreferenceToUnmatchedGroupMatchesEmpty) {
+    Fixture f;
+    auto compiled = f.compile("(a)?\\1b");
+    expectMatch(f.exec(compiled, "b"), 0, 1);
+}
+
+TEST(RegexVMTest, Lookahead) {
+    Fixture f;
+    expectMatch(f.exec(f.compile("a(?=b)"), "ab"), 0, 1);
+    EXPECT_FALSE(f.exec(f.compile("a(?=b)"), "ac").matched());
+    expectMatch(f.exec(f.compile("a(?!b)"), "ac"), 0, 1);
+    EXPECT_FALSE(f.exec(f.compile("a(?!b)"), "ab").matched());
+    expectMatch(f.exec(f.compile("(?=ab)a"), "ab"), 0, 1);
+}
+
+TEST(RegexVMTest, LookaheadCaptureSemantics) {
+    Fixture f;
+    auto positive = f.compile("(?=(a))a");
+    MatchResult kept = f.exec(positive, "a");
+    expectMatch(kept, 0, 1);
+    expectCapture(kept, 1, 0, 1);
+
+    auto negative = f.compile("(?!(a))b");
+    MatchResult discarded = f.exec(negative, "b");
+    expectMatch(discarded, 0, 1);
+    ASSERT_GT(discarded.captures.size(), 1u);
+    EXPECT_FALSE(discarded.captures[1].matched);
+}
+
+TEST(RegexVMTest, Lookbehind) {
+    Fixture f;
+    expectMatch(f.exec(f.compile("(?<=a)b"), "ab"), 1, 2);
+    EXPECT_FALSE(f.exec(f.compile("(?<=a)b"), "cb").matched());
+    expectMatch(f.exec(f.compile("(?<!a)b"), "cb"), 1, 2);
+    EXPECT_FALSE(f.exec(f.compile("(?<!a)b"), "ab").matched());
+    expectMatch(f.exec(f.compile("(?<!a)b"), "b"), 0, 1);
+}
+
+TEST(RegexVMTest, VariableLengthLookbehind) {
+    Fixture f;
+    auto plain = f.compile("(?<=a+)b");
+    expectMatch(f.exec(plain, "aaab"), 3, 4);
+
+    auto captured = f.compile("(?<=(a+))b");
+    MatchResult result = f.exec(captured, "aaab");
+    expectMatch(result, 3, 4);
+    expectCapture(result, 1, 0, 3);
+}
+
+TEST(RegexVMTest, NestedLookaround) {
+    Fixture f;
+    auto compiled = f.compile("(?=a(?=b))ab");
+    expectMatch(f.exec(compiled, "ab"), 0, 2);
+}
+
+TEST(RegexVMTest, NamedCaptureIndices) {
+    Fixture f;
+    auto compiled = f.compile("(?<year>\\d{4})-(?<month>\\d{2})", "d");
+    MatchResult result = f.exec(compiled, "2026-11");
+    expectMatch(result, 0, 7);
+    expectCapture(result, 1, 0, 4);
+    expectCapture(result, 2, 5, 7);
+}
+
 TEST(RegexVMTest, CompilerRejectsUnimplementedNodes) {
     Fixture f;
-    expectCompileError(f.compile("(a)\\1"), "backreferences");
-    expectCompileError(f.compile("(?=a)"), "lookaround");
     expectCompileError(f.compile("\\p{Letter}", "u"), "property escapes");
 }

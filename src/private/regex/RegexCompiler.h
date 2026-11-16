@@ -40,6 +40,8 @@ private:
     void compileCharacter(const Character& node);
     void compileCharacterClass(const CharacterClass& node);
     void compileGroup(const Group& node);
+    void compileLookaround(const Group& node, bool behind, bool negate);
+    void compileBackreference(const Backreference& node);
     void compileQuantifier(const Quantifier& node);
     void compileAssertion(const Assertion& node);
 

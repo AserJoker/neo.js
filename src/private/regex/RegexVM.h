@@ -1,7 +1,7 @@
 // RegexVM.h - 回溯匹配执行器（ADR-062）
 //
-// 显式回溯栈 + 捕获 undo log，不使用 C++ 递归。执行状态全部在单次 exec
-// 内部；Program 保持不可变。
+// 显式回溯栈 + 捕获 undo log，不使用 C++ 递归。前后瞻编译为子程序，
+// 由 execute() 递归调用（嵌套深度由 pattern 决定）；捕获槽共享。
 //
 // 关联 ADR: 062（正则引擎）
 
@@ -38,7 +38,13 @@ private:
     };
 
     bool runAt(std::size_t start, MatchResult& out);
-    bool backtrack();
+    bool execute(const std::vector<Instruction>& instructions,
+                 const std::vector<CharClassTable>& classes,
+                 std::uint32_t scratchCount,
+                 std::vector<std::size_t>& captures, std::size_t start,
+                 std::size_t* matchEnd);
+    bool runSub(const SubProgram& sub, std::size_t start,
+                std::vector<std::size_t>& captures, std::size_t* matchEnd);
 
     bool matchChar(char16_t value, std::uint32_t pattern) const;
     bool classMatches(const CharClassTable& table, char16_t value) const;
@@ -53,15 +59,9 @@ private:
     const Subject& subject_;
     RegexHost& host_;
 
-    std::uint32_t pc_ = 0;
-    std::size_t pos_ = 0;
     std::uint64_t steps_ = 0;
     bool aborted_ = false;
-
     std::vector<std::size_t> captures_;
-    std::vector<Undo> undo_;
-    std::vector<Frame> stack_;
-    std::vector<std::size_t> scratch_;
 };
 
 }  // namespace neo::regex

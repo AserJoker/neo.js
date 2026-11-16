@@ -85,7 +85,7 @@ void RegexCompiler::compileNode(const Node& node) {
             compileAssertion(static_cast<const Assertion&>(node));
             break;
         case NodeKind::Backreference:
-            error(node, "compiler: backreferences not implemented until R2");
+            compileBackreference(static_cast<const Backreference&>(node));
             break;
         case NodeKind::PropertyEscape:
             error(node,
@@ -167,12 +167,64 @@ void RegexCompiler::compileGroup(const Group& node) {
             compileNode(*node.body);
             break;
         case Group::Kind::Lookahead:
+            compileLookaround(node, false, false);
+            break;
         case Group::Kind::NegativeLookahead:
+            compileLookaround(node, false, true);
+            break;
         case Group::Kind::Lookbehind:
+            compileLookaround(node, true, false);
+            break;
         case Group::Kind::NegativeLookbehind:
-            error(node, "compiler: lookaround not implemented until R2");
+            compileLookaround(node, true, true);
             break;
     }
+}
+
+void RegexCompiler::compileLookaround(const Group& node, bool behind,
+                                      bool negate) {
+    if (!node.body) return;
+
+    // 子程序拥有独立的指令/字符类/scratch，捕获槽与主程序共享。
+    std::vector<Instruction> savedInstructions =
+        std::move(program_.instructions);
+    std::vector<CharClassTable> savedClasses = std::move(program_.classes);
+    const std::uint32_t savedScratch = scratchCount_;
+
+    program_.instructions.clear();
+    program_.classes.clear();
+    scratchCount_ = 0;
+    compileNode(*node.body);
+    if (!failed_) emit(OpCode::Match);
+
+    SubProgram sub;
+    sub.instructions = std::move(program_.instructions);
+    sub.classes = std::move(program_.classes);
+    sub.scratchCount = scratchCount_;
+
+    program_.instructions = std::move(savedInstructions);
+    program_.classes = std::move(savedClasses);
+    scratchCount_ = savedScratch;
+    if (failed_) return;
+
+    const std::uint32_t index =
+        static_cast<std::uint32_t>(program_.subPrograms.size());
+    program_.subPrograms.push_back(std::move(sub));
+    emit(behind ? OpCode::Lookbehind : OpCode::Lookahead, index,
+         negate ? 1u : 0u);
+}
+
+void RegexCompiler::compileBackreference(const Backreference& node) {
+    std::uint32_t index = node.index;
+    if (index == 0) {
+        auto it = program_.namedGroups.find(node.name);
+        if (it == program_.namedGroups.end()) {
+            error(node, "compiler: unknown named capture");
+            return;
+        }
+        index = it->second;
+    }
+    emit(OpCode::Backref, index);
 }
 
 void RegexCompiler::compileQuantifier(const Quantifier& node) {
