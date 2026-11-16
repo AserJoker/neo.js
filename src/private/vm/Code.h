@@ -240,6 +240,11 @@ struct Code {
         emitU32(addString(std::string(label)));
         return pc;
     }
+    uint32_t popLabelIfTop(std::string_view label) {
+        uint32_t pc = emitOp(OpCode::PopLabelIfTop);
+        emitU32(addString(std::string(label)));
+        return pc;
+    }
     uint32_t breakTo(std::string_view label) {
         uint32_t pc = emitOp(OpCode::Break);
         emitU32(addString(std::string(label)));
@@ -253,6 +258,20 @@ struct Code {
 
     uint32_t pushScope() { return emitOp(OpCode::PushScope); }
     uint32_t popScope() { return emitOp(OpCode::PopScope); }
+
+    // 逐迭代环境：u32 count + count × u32 nameIndex。
+    uint32_t iterationEnv(const std::vector<std::string>& names) {
+        uint32_t pc = emitOp(OpCode::IterationEnv);
+        emitU32(static_cast<uint32_t>(names.size()));
+        for (const std::string& name : names) emitU32(addString(name));
+        return pc;
+    }
+    uint32_t commitIterationEnv(const std::vector<std::string>& names) {
+        uint32_t pc = emitOp(OpCode::CommitIterationEnv);
+        emitU32(static_cast<uint32_t>(names.size()));
+        for (const std::string& name : names) emitU32(addString(name));
+        return pc;
+    }
 
     // —— 函数定义 ——
     uint32_t pushFunction(uint32_t entryPc, uint32_t paramCount,

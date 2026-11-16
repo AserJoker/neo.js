@@ -369,6 +369,71 @@ void Compiler::compileForStatement(
 
     std::vector<std::string> effective = labels;
     if (effective.empty()) effective.push_back("");
+
+    if (lexicalInit != nullptr) {
+        // 逐迭代环境：循环作用域持有 let/const 槽；每次迭代复制到子作用域，
+        // 闭包捕获的是该迭代的子作用域，迭代结束后写回循环作用域。
+        std::vector<std::string> names;
+        for (const NodePtr& declarator : lexicalInit->declarations) {
+            if (!declarator ||
+                declarator->kind() != NodeKind::VariableDeclarator) {
+                continue;
+            }
+            const auto& decl =
+                static_cast<const frontend::VariableDeclarator&>(*declarator);
+            if (decl.id && decl.id->kind() == NodeKind::Identifier) {
+                names.push_back(
+                    static_cast<const frontend::Identifier&>(*decl.id).name);
+            }
+        }
+
+        uint32_t loop = code_->here();
+        code_->iterationEnv(names);
+        // label 帧指向本次迭代作用域：continue 不会提前弹掉它。
+        std::vector<uint32_t> pushes;
+        for (const std::string& label : effective) {
+            pushes.push_back(code_->pushLabel(label, 0, 0));
+        }
+
+        uint32_t toEnd = 0;
+        if (node.test) {
+            compileExpression(*node.test);
+            toEnd = code_->jfalse();
+        }
+        if (node.body) compileStatement(*node.body);
+
+        // continue 目标是 update；先清理本次迭代的 label 帧，再写回并弹出作用域。
+        uint32_t updatePc = code_->here();
+        for (uint32_t push : pushes) code_->patchU32(push + 6, updatePc);
+        for (auto it = effective.rbegin(); it != effective.rend(); ++it) {
+            code_->popLabelIfTop(*it);
+        }
+        code_->commitIterationEnv(names);
+        if (node.update) {
+            compileExpression(*node.update);
+            code_->pop();
+        }
+        code_->jmp(loop);
+
+        // 正常退出：清理 label、迭代作用域与循环作用域。
+        uint32_t exitPc = code_->here();
+        if (toEnd != 0) code_->patchU32(toEnd + 2, exitPc);
+        for (auto it = effective.rbegin(); it != effective.rend(); ++it) {
+            code_->popLabelIfTop(*it);
+        }
+        code_->popScope();
+        code_->popScope();
+        uint32_t done = code_->jmp();
+
+        // break 已由 VM 回退到本次迭代作用域，只需弹两层作用域。
+        uint32_t breakTarget = code_->here();
+        code_->popScope();
+        code_->popScope();
+        code_->patchU32(done + 2, code_->here());
+        for (uint32_t push : pushes) code_->patchU32(push + 10, breakTarget);
+        return;
+    }
+
     std::vector<uint32_t> pushes;
     for (const std::string& label : effective) {
         pushes.push_back(code_->pushLabel(label, 0, 0));
@@ -391,18 +456,14 @@ void Compiler::compileForStatement(
     }
     code_->jmp(loop);
 
-    // 正常退出：pop_label；break 目标在其后，先清理循环作用域。
+    // 正常退出：pop_label；break 目标在其后。
     uint32_t exitPc = code_->here();
     if (toEnd != 0) code_->patchU32(toEnd + 2, exitPc);
     for (auto it = effective.rbegin(); it != effective.rend(); ++it) {
         code_->popLabel(*it);
     }
-    // break 已由 VM 回退到循环作用域，只需跳过 pop_label 直接清理作用域。
-    uint32_t breakTarget = code_->here();
-    if (lexicalInit != nullptr) code_->popScope();
     uint32_t endPc = code_->here();
-    for (uint32_t push : pushes) code_->patchU32(push + 10, breakTarget);
-    (void)endPc;
+    for (uint32_t push : pushes) code_->patchU32(push + 10, endPc);
 }
 
 void Compiler::compileWhileStatement(

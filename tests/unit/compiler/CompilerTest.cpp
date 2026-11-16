@@ -1700,3 +1700,81 @@ TEST(CompilerTest, ForLoopWithoutTestStopsOnBreak) {
     ASSERT_EQ(value->type()->kind(), TypeKind::Number);
     EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
 }
+
+TEST(CompilerTest, ForLetCreatesPerIterationBinding) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "var g0;"
+        "var g1;"
+        "for (let i = 0; i < 2; i = i + 1) {"
+        "  if (i < 1) { g0 = function () { return i; }; }"
+        "  else { g1 = function () { return i; }; }"
+        "}"
+        "result = g0() * 10 + g1();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, ForLetMultipleLabelsContinue) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "a: b: for (let i = 0; i < 3; i = i + 1) {"
+        "  if (i < 1) continue a;"
+        "  result = result + i;"
+        "}");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, ForLetMultipleLabelsBreak) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "a: b: for (let i = 0; i < 10; i = i + 1) {"
+        "  if (i > 2) break a;"
+        "  result = result + i;"
+        "}");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, NestedForLetLabeledContinueOuter) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "outer: for (let i = 0; i < 3; i = i + 1) {"
+        "  for (let j = 0; j < 3; j = j + 1) {"
+        "    if (j > 1) continue outer;"
+        "    result = result + 1;"
+        "  }"
+        "}");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 6.0);
+}
+
+TEST(CompilerTest, ForLetPerIterationSurvivesContinue) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "var g0;"
+        "var g1;"
+        "for (let i = 0; i < 3; i = i + 1) {"
+        "  if (i < 1) { g0 = function () { return i; }; continue; }"
+        "  if (i < 2) { g1 = function () { return i; }; }"
+        "}"
+        "result = g0() * 10 + g1();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}

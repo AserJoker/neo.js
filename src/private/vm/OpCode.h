@@ -136,12 +136,18 @@ enum class OpCode : uint16_t {
     // label 栈：循环/switch/带标签语句
     PushLabel,    // u32 labelIndex, u32 startPc（continue）, u32 endPc（break）
     PopLabel,     // u32 labelIndex
+    PopLabelIfTop,  // u32 labelIndex：栈顶匹配才弹（逐迭代 label 清理用）
     Break,        // u32 labelIndex（"" = 最近可 break 目标）
     Continue,     // u32 labelIndex（"" = 最近循环）
 
     // 作用域
     PushScope,
     PopScope,
+    // 逐迭代环境（for let/const）：u32 count, count × u32 nameIndex。
+    // IterationEnv：在当前作用域下新建子作用域，把同名绑定复制进去并设为 current。
+    // CommitIterationEnv：把同名绑定写回父作用域，然后 pop 当前子作用域。
+    IterationEnv,
+    CommitIterationEnv,
 
     // 函数定义
     PushFunction,   // u32 entryPc, u32 paramCount, u32 flags

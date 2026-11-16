@@ -203,6 +203,7 @@ _func_end:
 |------|--------|------|
 | `push_label "name", startPc, endPc` | `d → d` | 压 label 帧；start=continue 目标，end=break 目标 |
 | `pop_label "name"` | `d → d` | 弹栈顶并校验 label |
+| `pop_label_if_top "name"` | `d → d` | 栈顶匹配才弹；逐迭代 label 清理用 |
 | `break "name"` | `d → d` | 返回 Interrupt(Break)，主循环解析 label 栈 |
 | `continue "name"` | `d → d` | 返回 Interrupt(Continue)，主循环解析 label 栈 |
 
@@ -242,9 +243,14 @@ _func_end:
 |------|------|
 | `pushScope` | 创建 body_scope，parent=argument_scope（ADR-013） |
 | `popScope` | 弹出 body_scope（函数退出时） |
+| `iteration_env n, name...` | 新建子作用域，把同名绑定克隆进去并设为 current |
+| `commit_iteration_env n, name...` | 把同名绑定写回父作用域（新 Value 作下一轮种子），再 pop 子作用域 |
 
 - `pushScope` 在函数序言参数 store **之后**创建 body_scope。
 - 局部变量（body 内 let/const）属于 body_scope；形参属于 argument_scope。
+- `iteration_env` 用于 `for (let/const ...)` 的 CreatePerIterationEnvironment：
+  每次迭代克隆独立 Value，闭包捕获的是该迭代的槽位；`commit_iteration_env`
+  再克隆一份作为下一轮种子，避免 update 的原地赋值写穿到已捕获的 Value。
 
 #### 2.7 this 绑定
 
@@ -384,7 +390,7 @@ hlt
 - 优点：三段式模块组织统一所有声明的处理路径；call/序言栈契约清晰；
   箭头/普通函数字节码层无特例（统一 store_this）；定义点退化为 store 简化语义。
 - 缺点：函数调用创建/销毁 VM 有开销（ADR-004）；箭头函数 bind_this 多两条指令。
-- 待定：for 循环（init_scope/body_scope）。
+- for 的 let/const 已定：`iteration_env` / `commit_iteration_env` 实现逐迭代环境。
   属性访问已定：`get_prop`/`set_prop` 无操作数，key 由栈传递；
   `call_method` 只负责 thisArg，属性查找由 `get_prop` 完成。
   label 栈已定：`push_label`/`pop_label`/`break`/`continue`（ADR-060 §7）。

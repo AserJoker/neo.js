@@ -27,6 +27,7 @@ namespace detail = neo::core::detail;
 using neo::core::BinaryOperator;
 using neo::core::ErrorKind;
 using neo::core::IContext;
+using neo::core::Scope;
 using neo::core::SourcePosition;
 using neo::core::Value;
 
@@ -88,10 +89,13 @@ const char* opCodeName(OpCode op) {
         case OpCode::Throw:         return "throw";
         case OpCode::PushLabel:     return "push_label";
         case OpCode::PopLabel:      return "pop_label";
+        case OpCode::PopLabelIfTop: return "pop_label_if_top";
         case OpCode::Break:         return "break";
         case OpCode::Continue:      return "continue";
         case OpCode::PushScope:     return "push_scope";
         case OpCode::PopScope:      return "pop_scope";
+        case OpCode::IterationEnv:  return "iteration_env";
+        case OpCode::CommitIterationEnv: return "commit_iteration_env";
         case OpCode::PushFunction:  return "push_function";
         case OpCode::SetClosure:    return "set_closure";
         case OpCode::SetFuncName:   return "set_func_name";
@@ -156,10 +160,13 @@ const VM::Handler* VM::handlers() {
         &VM::opThrow,
         &VM::opPushLabel,
         &VM::opPopLabel,
+        &VM::opPopLabelIfTop,
         &VM::opBreak,
         &VM::opContinue,
         &VM::opPushScope,
         &VM::opPopScope,
+        &VM::opIterationEnv,
+        &VM::opCommitIterationEnv,
         &VM::opPushFunction,
         &VM::opSetClosure,
         &VM::opSetFuncName,
@@ -838,6 +845,24 @@ Value* VM::opPopLabel() {
     return nullptr;
 }
 
+Value* VM::opPopLabelIfTop() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("pop_label_if_top: truncated operand");
+    }
+    uint32_t labelIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+
+    const std::string* label = stringOperand(labelIndex);
+    if (label == nullptr) {
+        return badBytecode("pop_label_if_top: label index out of range");
+    }
+    if (!labelStack_.empty() && labelStack_.back().label == *label) {
+        labelStack_.pop_back();
+    }
+    return nullptr;
+}
+
 Value* VM::opBreak() {
     const std::vector<uint8_t>& bytes = code_->bytecode;
     if (bytes.size() - pc_ < 4) return badBytecode("break: truncated operand");
@@ -924,6 +949,87 @@ Value* VM::opPushScope() {
 }
 
 Value* VM::opPopScope() {
+    ctx_->popScope();
+    return nullptr;
+}
+
+Value* VM::opIterationEnv() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("iteration_env: truncated count");
+    }
+    uint32_t count = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (count > (bytes.size() - pc_) / 4) {
+        return badBytecode("iteration_env: truncated names");
+    }
+    std::vector<const std::string*> names;
+    names.reserve(count);
+    for (uint32_t i = 0; i < count; ++i) {
+        uint32_t index = readU32(bytes.data() + pc_);
+        pc_ += 4;
+        const std::string* name = stringOperand(index);
+        if (name == nullptr) {
+            return badBytecode("iteration_env: name index out of range");
+        }
+        names.push_back(name);
+    }
+
+    Scope* parent = ctx_->current();
+    Scope* child = ctx_->pushNewScope(parent);
+    if (child == nullptr) return ctx_->oomValue();
+    for (const std::string* name : names) {
+        const Scope::Binding* binding = parent->lookupBinding(*name);
+        if (binding == nullptr) continue;
+        // 每次迭代用独立 Value：闭包捕获本次迭代的槽位，后续迭代的赋值
+        // 只改写新 Value，不会回写已捕获的旧 Value。
+        Value* copy = ctx_->cloneValue(binding->value);
+        if (copy == ctx_->oomValue()) return copy;
+        child->define(*name, copy, binding->mutableBinding, binding->initialized);
+    }
+    return nullptr;
+}
+
+Value* VM::opCommitIterationEnv() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("commit_iteration_env: truncated count");
+    }
+    uint32_t count = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (count > (bytes.size() - pc_) / 4) {
+        return badBytecode("commit_iteration_env: truncated names");
+    }
+    std::vector<const std::string*> names;
+    names.reserve(count);
+    for (uint32_t i = 0; i < count; ++i) {
+        uint32_t index = readU32(bytes.data() + pc_);
+        pc_ += 4;
+        const std::string* name = stringOperand(index);
+        if (name == nullptr) {
+            return badBytecode("commit_iteration_env: name index out of range");
+        }
+        names.push_back(name);
+    }
+
+    Scope* current = ctx_->current();
+    Scope* parent = current->parent();
+    if (parent == nullptr) {
+        return badBytecode("commit_iteration_env: no parent scope");
+    }
+    for (const std::string* name : names) {
+        const Scope::Binding* source = current->lookupBinding(*name);
+        if (source == nullptr) continue;
+        Scope::Binding* target = parent->lookupBinding(*name);
+        if (target == nullptr) continue;
+        // 下一轮种子必须是新 Value：本次迭代的 Value 可能已被闭包捕获，
+        // update 的原地赋值不能改到闭包看到的值。
+        Value* seed = ctx_->cloneValue(source->value);
+        if (seed == ctx_->oomValue()) return seed;
+        target->value = seed;
+        target->initialized = source->initialized;
+        parent->add(seed);
+    }
     ctx_->popScope();
     return nullptr;
 }

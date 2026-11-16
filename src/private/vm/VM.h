@@ -160,10 +160,13 @@ private:
     neo::core::Value* opThrow();
     neo::core::Value* opPushLabel();
     neo::core::Value* opPopLabel();
+    neo::core::Value* opPopLabelIfTop();
     neo::core::Value* opBreak();
     neo::core::Value* opContinue();
     neo::core::Value* opPushScope();
     neo::core::Value* opPopScope();
+    neo::core::Value* opIterationEnv();
+    neo::core::Value* opCommitIterationEnv();
     neo::core::Value* opPushFunction();
     neo::core::Value* opSetClosure();
     neo::core::Value* opSetFuncName();
