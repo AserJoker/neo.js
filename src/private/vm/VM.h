@@ -150,6 +150,7 @@ private:
     neo::core::Value* opNewArray();
     neo::core::Value* opDefineProp();
     neo::core::Value* opDefineAccessor();
+    neo::core::Value* opSetProtoLiteral();
     neo::core::Value* opTemplateObject();
     neo::core::Value* opArrayAppend();
     neo::core::Value* opArrayGrow();

@@ -108,7 +108,7 @@ public:
 | class 字段 | 初始化器编译为无参脚本函数（method 模式）；实例字段登记到 ClassData，静态字段定义期以构造器为 this 求值 |
 | super() | `construct_super N` / `construct_super_spread`；成功后 `initializeInstanceElements` |
 | super.x / super.x = v | `get_super_prop` / `set_super_prop`（homeObject + 当前 this） |
-| ObjectExpression | `new_object` + 每个属性 `dup; key; value; define_prop; pop`；spread 用 `object_spread`；get/set 用 `dup; key; getter; setter; define_accessor flags; pop`（缺失侧压 null） |
+| ObjectExpression | `new_object` + 每个属性 `dup; key; value; define_prop; pop`；spread 用 `object_spread`；get/set 用 `dup; key; getter; setter; define_accessor flags; pop`（缺失侧压 null）；`__proto__: v` 用 `dup; v; set_proto_literal; pop` |
 | ArrayExpression | `new_array N` + 每个元素 `dup; index; value; define_prop; pop`；含 spread 改为 `new_array 0` + `array_append`/`array_grow`/`array_spread` |
 | 解构声明（Array/ObjectPattern） | `compileBindingPattern`：数组模式 `get_iterator` + `iterator_next` 逐项写入目标；对象模式 `get_prop` 逐属性；rest 用 `object_rest`；默认值 `strict_equal(undefined)` + `jfalse`。数组模式整体包在 `try/finally` 中：迭代器未耗尽时（正常或异常退出）执行 `iterator_close` |
 | 解构赋值 | RHS + `dup` + `compileBindingPattern(lexical=false)`；表达式值保留 RHS |

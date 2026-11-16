@@ -190,6 +190,7 @@ struct Code {
         return pc;
     }
     uint32_t defineProp() { return emitOp(OpCode::DefineProp); }
+    uint32_t setProtoLiteral() { return emitOp(OpCode::SetProtoLiteral); }
     uint32_t defineAccessor(bool hasGetter, bool hasSetter) {
         uint32_t pc = emitOp(OpCode::DefineAccessor);
         emitU32((hasGetter ? 1u : 0u) | (hasSetter ? 2u : 0u));

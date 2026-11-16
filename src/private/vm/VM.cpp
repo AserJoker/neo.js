@@ -32,6 +32,7 @@ using neo::core::ErrorKind;
 using neo::core::IContext;
 using neo::core::Scope;
 using neo::core::SourcePosition;
+using neo::core::TypeKind;
 using neo::core::Value;
 
 namespace {
@@ -95,6 +96,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::NewArray:      return "new_array";
         case OpCode::DefineProp:    return "define_prop";
         case OpCode::DefineAccessor: return "define_accessor";
+        case OpCode::SetProtoLiteral: return "set_proto_literal";
         case OpCode::TemplateObject: return "template_object";
         case OpCode::ArrayAppend:   return "array_append";
         case OpCode::ArrayGrow:     return "array_grow";
@@ -211,6 +213,7 @@ const VM::Handler* VM::handlers() {
         &VM::opNewArray,
         &VM::opDefineProp,
         &VM::opDefineAccessor,
+        &VM::opSetProtoLiteral,
         &VM::opTemplateObject,
         &VM::opArrayAppend,
         &VM::opArrayGrow,
@@ -882,6 +885,22 @@ Value* VM::opDefineAccessor() {
         object, key, getter, (flags & 1u) != 0, setter, (flags & 2u) != 0,
         true, true);
     if (detail::isErrorValue(result)) return fail(result);
+    push(object);
+    return nullptr;
+}
+
+Value* VM::opSetProtoLiteral() {
+    if (stack_.size() < 2) {
+        return badBytecode("set_proto_literal: operand stack underflow");
+    }
+    Value* proto = pop();
+    Value* object = pop();
+    // B.3.1：proto 既非 Object 也非 null 时静默忽略。
+    if (proto->type()->kind() == TypeKind::Null ||
+        proto->type()->hasObjectLayout()) {
+        Value* result = ctx_->setPrototype(object, proto);
+        if (detail::isErrorValue(result)) return fail(result);
+    }
     push(object);
     return nullptr;
 }

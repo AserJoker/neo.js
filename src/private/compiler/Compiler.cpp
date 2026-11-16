@@ -1962,12 +1962,20 @@ void Compiler::compileObjectExpression(
             code_->pop();
             continue;
         }
-        // __proto__: value 是设置原型而非定义自有属性，语义不同，暂不支持。
-        if (!prop.computed && prop.key &&
+        // __proto__: value 是设置原型而非定义自有属性（B.3.1）；
+        // 仅限非 computed、非 shorthand、非方法的 Init 属性。
+        if (!prop.computed && !prop.shorthand && !prop.method && prop.key &&
             prop.key->kind() == NodeKind::Identifier &&
             static_cast<const frontend::Identifier&>(*prop.key).name ==
                 "__proto__") {
-            error(*property, "compiler: __proto__ property not supported");
+            code_->dup();
+            if (prop.value) {
+                compileExpression(*prop.value);
+            } else {
+                code_->pushUndefined();
+            }
+            code_->setProtoLiteral();
+            code_->pop();
             continue;
         }
 

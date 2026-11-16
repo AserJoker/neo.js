@@ -1699,6 +1699,40 @@ TEST(CompilerTest, CompilesComputedAccessor) {
     EXPECT_DOUBLE_EQ(numberValue(value), 7.0);
 }
 
+TEST(CompilerTest, CompilesObjectLiteralProto) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var p = { a: 1 };"
+        "var o = { __proto__: p };"
+        "var result = o.a;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, CompilesObjectLiteralProtoNonObjectIsNoOp) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var o = { __proto__: 42 };"
+        "var result = Object.getPrototypeOf(o) === Object.prototype;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<BooleanData*>(value->data())->value);
+}
+
+TEST(CompilerTest, CompilesComputedProtoAsOwnProperty) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var o = { ['__proto__']: 1 };"
+        "var result = o.__proto__;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
 TEST(CompilerTest, CompilesForLoopWithVar) {
     Fixture f;
     Value* value = runScriptResult(

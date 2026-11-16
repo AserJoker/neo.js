@@ -78,6 +78,19 @@ TEST(SemaTest, ReportsModuleErrors) {
     EXPECT_FALSE(result.sema.ok());
 }
 
+TEST(SemaTest, ReportsDuplicateProtoError) {
+    Analysis result = analyze("var o = { __proto__: null, __proto__: null };");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.sema.ok());
+}
+
+TEST(SemaTest, AllowsComputedAndAccessorProto) {
+    Analysis result = analyze(
+        "var o = { ['__proto__']: 1, get __proto__() { return 2; } };");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_TRUE(result.sema.ok());
+}
+
 TEST(SemaTest, CleanProgramHasNoErrors) {
     Analysis result = analyze("function f(a) { return a + 1; } f(1);");
     ASSERT_TRUE(result.parsed.ok());
