@@ -1364,6 +1364,9 @@ Value* VM::opPushFunction() {
     if ((flags & kFunctionAsync) != 0) {
         ctx_->setFunctionAsync(fn, true);
     }
+    if ((flags & kFunctionAsyncGenerator) != 0) {
+        ctx_->setFunctionAsyncGenerator(fn, true);
+    }
     push(fn);
     return nullptr;
 }

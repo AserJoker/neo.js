@@ -1632,6 +1632,17 @@ Value* runScriptResult(Fixture& f, const std::string& source) {
     return f.ctx->root()->lookup("result");
 }
 
+// 执行脚本并排空任务队列（Promise/async 结果需要微任务推进）。
+Value* runScriptResultDrained(Fixture& f, const std::string& source) {
+    CompileResult result = compileSource(source);
+    EXPECT_TRUE(result.ok());
+    if (!result.ok()) return nullptr;
+    VM vm(f.ctx.get(), result.code.get());
+    (void)vm.run();
+    while (f.ctx->hasRunnableTask()) (void)f.ctx->runOneTask();
+    return f.ctx->root()->lookup("result");
+}
+
 }  // namespace
 
 TEST(CompilerTest, CompilesForLoopWithVar) {
@@ -2536,6 +2547,59 @@ TEST(CompilerTest, PatternParameterDefault) {
     ASSERT_NE(value, nullptr);
     ASSERT_EQ(value->type()->kind(), TypeKind::Number);
     EXPECT_DOUBLE_EQ(numberValue(value), 9.0);
+}
+
+TEST(CompilerTest, AsyncGeneratorYield) {
+    Fixture f;
+    Value* value = runScriptResultDrained(
+        f,
+        "async function* g() { yield 1; yield 2; }"
+        "var it = g();"
+        "var result = 0;"
+        "it.next().then(function (r) { result = r.value; });");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, AsyncGeneratorAwait) {
+    Fixture f;
+    Value* value = runScriptResultDrained(
+        f,
+        "async function* g() { var x = await 5; yield x; }"
+        "var it = g();"
+        "var result = 0;"
+        "it.next().then(function (r) { result = r.value; });");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 5.0);
+}
+
+TEST(CompilerTest, AsyncGeneratorSequentialNext) {
+    Fixture f;
+    Value* value = runScriptResultDrained(
+        f,
+        "async function* g() { yield 1; yield 2; }"
+        "var it = g();"
+        "var result = 0;"
+        "it.next().then(function (r) { result = r.value * 10; return it.next(); })"
+        ".then(function (r) { result = result + r.value; });");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 12.0);
+}
+
+TEST(CompilerTest, AsyncGeneratorReturn) {
+    Fixture f;
+    Value* value = runScriptResultDrained(
+        f,
+        "async function* g() { yield 1; }"
+        "var it = g();"
+        "var result = 0;"
+        "it.return(9).then(function (r) { result = (r.done ? 10 : 0) + r.value; });");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 19.0);
 }
 
 TEST(CompilerTest, YieldDelegateArray) {

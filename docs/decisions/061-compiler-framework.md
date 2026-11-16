@@ -115,6 +115,7 @@ public:
 | YieldExpression | 参数（或 `push_undefined`）+ `yield`；`yield*` 用 `yield_delegate`（VM 转发 next/throw/return） |
 | AwaitExpression | 参数 + `await` |
 | async FunctionDeclaration/Expression/Arrow | `push_function` 带 `kFunctionAsync`，不可构造、无 prototype |
+| async function* | `push_function` 带 `kFunctionGenerator | kFunctionAsyncGenerator | kFunctionHasPrototype`；引擎以协程 + 请求队列驱动，await 由 AsyncGenerator 回调继续 resume |
 | FunctionDeclaration/Expression（`function*`） | `push_function` 带 `kFunctionGenerator`，不可构造、有 prototype |
 | IfStatement | test + `jfalse` else；then；有 else 时 `jmp end` + 回填 |
 | ForStatement | let/const init 先 `push_scope` 并直接 `define`；每次迭代 `iteration_env` + `push_label`（continue→update）；test + `jfalse exit`；body；`pop_label_if_top` + `commit_iteration_env` + update；exit：清理 label/作用域 |

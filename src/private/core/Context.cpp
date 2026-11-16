@@ -2080,7 +2080,7 @@ Value* Context::createAsyncGenerator(Value* target, Value* receiver, size_t argc
     d->sentValue = createUndefined();
     if (d->sentValue == oomValue_) return d->sentValue;
     if (argc > 0) d->initialArgs.assign(argv, argv + argc);
-    d->resume = resumeNativeCoroutine;
+    d->resume = fd->isScript ? resumeScriptCoroutine : resumeNativeCoroutine;
 
     Value* gen = createTracked(getAsyncGeneratorType(), d, bindName);
     if (gen == oomValue_) return gen;

@@ -2681,6 +2681,10 @@ void Compiler::compileFunctionObject(const Node& node,
     if (hasRest) flags |= vm::kFunctionHasRest;
     if (method) {
         // class 方法/字段初始化器：不可构造、无 prototype。
+    } else if (generator && async) {
+        // async generator：不可构造，有 prototype（挂 %AsyncGeneratorPrototype%）。
+        flags |= vm::kFunctionGenerator | vm::kFunctionAsyncGenerator |
+                 vm::kFunctionHasPrototype;
     } else if (generator) {
         // 生成器函数不可构造，但有 prototype 属性（其原型链挂 %GeneratorPrototype%）。
         flags |= vm::kFunctionGenerator | vm::kFunctionHasPrototype;

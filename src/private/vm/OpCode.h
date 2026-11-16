@@ -242,6 +242,8 @@ inline constexpr uint32_t kFunctionConstructible = 1u << 1;
 inline constexpr uint32_t kFunctionHasPrototype = 1u << 2;
 inline constexpr uint32_t kFunctionGenerator = 1u << 3;
 inline constexpr uint32_t kFunctionAsync = 1u << 4;
+// async function*：同时是生成器与异步生成器。
+inline constexpr uint32_t kFunctionAsyncGenerator = 1u << 6;
 // push_class：派生类（extends 非 null）。
 inline constexpr uint32_t kClassDerived = 1u << 5;
 

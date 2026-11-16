@@ -161,6 +161,7 @@ _func_end:
 | `load_new_target` | `[] → [new.target]` | 从当前作用域链取 `new.target`；普通调用为 undefined |
 | `rest_args` | `[argvFixed..argvN-1] → [array]` | 把序言栈上剩余实参按顺序收集成数组（rest 参数） |
 | `push_class entry,paramCount,flags` | `[superCtor] → [ctor]` | 创建脚本 class 构造器；flags 含 `kClassDerived` |
+| `push_function`（flag） | — | `kFunctionAsyncGenerator` 标记 async function*（同时是生成器） |
 | `set_strict` | `[fn] → [fn]` | 把函数闭包作用域标记为严格模式 |
 | `init_instance_elements` | `[] → []` | 以当前 this 初始化当前 class 的实例元素 |
 | `construct_super N` | `[argv...] → [this]` | 派生构造器的 `super(...)`；成功后初始化实例元素 |

@@ -207,6 +207,72 @@ void awaitValue(IContext* ctx, Value* gen, Value* value, int kind) {
     }
 }
 
+// —— script async generator 的 await：等待后继续 resume 函数体 ——
+
+Value* scriptAwaitFulfilled(IContext* ctx, Value*, size_t argc, Value* argv[]) {
+    Value* gen = captured(ctx, "__gen");
+    if (gen == nullptr) return undefinedOf(ctx);
+    Value* v = argc > 0 ? argv[0] : undefinedOf(ctx);
+    resumeBody(ctx, gen, v);
+    return undefinedOf(ctx);
+}
+
+Value* scriptAwaitRejected(IContext* ctx, Value*, size_t argc, Value* argv[]) {
+    Value* gen = captured(ctx, "__gen");
+    if (gen == nullptr) return undefinedOf(ctx);
+    Value* reason = argc > 0 ? argv[0] : undefinedOf(ctx);
+    Value* thrown = ctx->createInterrupt(InterruptKind::Throw, 0,
+                                         asException(ctx, reason));
+    resumeBody(ctx, gen, thrown);
+    return undefinedOf(ctx);
+}
+
+void awaitScriptValue(IContext* ctx, Value* gen, Value* value) {
+    AsyncGeneratorData* ag = asAsyncGenerator(gen);
+    Value* ctor = ctx->promiseCtor();
+    if (ag == nullptr || ctor == nullptr) return;
+
+    Value* resolveFn = ctx->getProperty(ctor, "resolve");
+    if (detail::isErrorValue(resolveFn)) {
+        ag->asyncState = AsyncGeneratorState::Completed;
+        settleReject(ctx, ag, reasonOf(resolveFn));
+        asyncGeneratorResumeNext(ctx, gen);
+        return;
+    }
+    Value* promise = ctx->call(resolveFn, ctor, 1, &value);
+    if (detail::isErrorValue(promise)) {
+        ag->asyncState = AsyncGeneratorState::Completed;
+        settleReject(ctx, ag, reasonOf(promise));
+        asyncGeneratorResumeNext(ctx, gen);
+        return;
+    }
+    Value* thenFn = ctx->getProperty(promise, "then");
+    if (detail::isErrorValue(thenFn)) {
+        ag->asyncState = AsyncGeneratorState::Completed;
+        settleReject(ctx, ag, reasonOf(thenFn));
+        asyncGeneratorResumeNext(ctx, gen);
+        return;
+    }
+    Value* onFulfilled = ctx->createNativeFunction(scriptAwaitFulfilled, 1);
+    Value* onRejected = ctx->createNativeFunction(scriptAwaitRejected, 1);
+    if (onFulfilled == ctx->oomValue() || onRejected == ctx->oomValue()) {
+        ag->asyncState = AsyncGeneratorState::Completed;
+        settleReject(ctx, ag, ctx->oomValue());
+        asyncGeneratorResumeNext(ctx, gen);
+        return;
+    }
+    ctx->captureValue(onFulfilled, "__gen", gen);
+    ctx->captureValue(onRejected, "__gen", gen);
+
+    Value* args[2] = {onFulfilled, onRejected};
+    Value* r = ctx->call(thenFn, promise, 2, args);
+    if (detail::isErrorValue(r)) {
+        ag->asyncState = AsyncGeneratorState::Completed;
+        settleReject(ctx, ag, reasonOf(r));
+        asyncGeneratorResumeNext(ctx, gen);
+    }
+}
+
 // —— resume 一次函数体并解释结果 ——
 
 void resumeBody(IContext* ctx, Value* gen, Value* sent) {
@@ -230,6 +296,12 @@ void resumeBody(IContext* ctx, Value* gen, Value* sent) {
         if (ir->kind == InterruptKind::Yield) {
             ag->asyncState = AsyncGeneratorState::AwaitingYield;
             awaitValue(ctx, gen, ir->value, 0);
+            return;
+        }
+        if (ir->kind == InterruptKind::Await) {
+            // script async generator：等待 await 值后继续 resume 函数体。
+            ag->asyncState = AsyncGeneratorState::Executing;
+            awaitScriptValue(ctx, gen, ir->value);
             return;
         }
         if (ir->kind == InterruptKind::Throw) {
