@@ -1104,6 +1104,16 @@ void Compiler::compileCatchClause(const frontend::CatchClause& node) {
         if (node.param->kind() == NodeKind::Identifier) {
             code_->define(
                 static_cast<const frontend::Identifier&>(*node.param).name);
+        } else if (node.param->kind() == NodeKind::ArrayPattern ||
+                   node.param->kind() == NodeKind::ObjectPattern) {
+            // 先为模式中的名字建槽，再用解构写入（与参数模式同策略）。
+            std::vector<std::string> names;
+            collectPatternNames(*node.param, names);
+            for (const std::string& name : names) {
+                code_->pushUndefined();
+                code_->define(name);
+            }
+            compileBindingPattern(*node.param, false, 0);
         } else {
             error(*node.param, "compiler: unsupported catch parameter");
             code_->pop();

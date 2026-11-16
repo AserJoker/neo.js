@@ -132,7 +132,7 @@ public:
 | BreakStatement | `break "label"`（空串 = 最近可 break 目标） |
 | ContinueStatement | `continue "label"`（空串 = 最近循环） |
 | ThrowStatement | 表达式 + `throw` |
-| TryStatement | `try_begin` + try 块 + `try_body_end`；catch/finally 独立块 + 各自 end |
+| TryStatement | `try_begin` + try 块 + `try_body_end`；catch/finally 独立块 + 各自 end；catch 参数支持标识符与数组/对象解构 |
 | ImportDeclaration | 无字节码；产出 `ModuleImportBinding`（link 期绑定槽位） |
 | ExportNamedDeclaration | 编译内层声明（含 class）；产出 `ModuleExportBinding`（本地 / `from` re-export） |
 | ExportDefaultDeclaration | 具名函数/class 导出其绑定；匿名函数/class/表达式存入隐藏槽位 `*default*` |

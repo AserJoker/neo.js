@@ -1722,6 +1722,29 @@ TEST(CompilerTest, CompilesWithStatementWrite) {
     EXPECT_DOUBLE_EQ(numberValue(value), 7.0);
 }
 
+TEST(CompilerTest, CompilesCatchArrayPattern) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "try { throw [1, 2]; } catch ([a, b]) { result = a + b; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, CompilesCatchObjectPattern) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "try { throw { x: 3, y: 4 }; }"
+        "catch ({ x, ...rest }) { result = x + rest.y; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 7.0);
+}
+
 TEST(CompilerTest, CompilesObjectLiteralProto) {
     Fixture f;
     Value* value = runScriptResult(
