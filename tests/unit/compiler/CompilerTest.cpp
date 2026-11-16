@@ -1793,6 +1793,50 @@ TEST(CompilerTest, PrivateInOutsideClassIsRejected) {
     EXPECT_FALSE(result.ok());
 }
 
+TEST(CompilerTest, CompilesDeleteOptionalChainShortCircuit) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var a = null; var result = delete a?.b;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<BooleanData*>(value->data())->value);
+}
+
+TEST(CompilerTest, CompilesDeleteOptionalChain) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var o = { b: 1 };"
+        "var deleted = delete o?.b;"
+        "var result = deleted && !('b' in o);");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<BooleanData*>(value->data())->value);
+}
+
+TEST(CompilerTest, CompilesDeleteNestedOptionalChain) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var o = { b: { c: 1 } };"
+        "var deleted = delete o?.b.c;"
+        "var result = deleted && !('c' in o.b);");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<BooleanData*>(value->data())->value);
+}
+
+TEST(CompilerTest, CompilesDeleteOptionalChainMidShortCircuit) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var o = { b: null };"
+        "var result = delete o.b?.c;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<BooleanData*>(value->data())->value);
+}
+
 TEST(CompilerTest, CompilesObjectLiteralProto) {
     Fixture f;
     Value* value = runScriptResult(

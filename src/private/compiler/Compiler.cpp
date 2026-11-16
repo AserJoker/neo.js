@@ -1485,14 +1485,18 @@ void Compiler::compileDeleteExpression(const frontend::Node& argument) {
             code_->pushUndefined();
             return;
         }
-        if (member.optional) {
-            error(argument, "compiler: delete of optional chain not supported");
-            code_->pushUndefined();
-            return;
-        }
         if (!member.object) {
             error(argument, "compiler: delete target missing object");
             code_->pushUndefined();
+            return;
+        }
+        if (member.optional) {
+            // 未包在 ChainExpression 中的可选成员（防御性处理）。
+            const bool savedDelete = deleteChain_;
+            deleteChain_ = true;
+            deleteChainTarget_ = true;
+            compileMemberExpression(member);
+            deleteChain_ = savedDelete;
             return;
         }
         compileExpression(*member.object);
@@ -1501,8 +1505,17 @@ void Compiler::compileDeleteExpression(const frontend::Node& argument) {
         return;
     }
     if (argument.kind() == NodeKind::ChainExpression) {
-        error(argument, "compiler: delete of optional chain not supported");
-        code_->pushUndefined();
+        const auto& chain =
+            static_cast<const frontend::ChainExpression&>(argument);
+        const bool target =
+            chain.expression &&
+            chain.expression->kind() == NodeKind::MemberExpression;
+        compileDeleteChain(chain);
+        if (!target) {
+            // 非引用（如 `delete a?.()`）：求值后返回 true。
+            code_->pop();
+            code_->pushBoolean(true);
+        }
         return;
     }
     if (argument.kind() == NodeKind::Identifier) {
@@ -1931,10 +1944,36 @@ void Compiler::compileMemberExpression(
         code_->getSuperProp();
         return;
     }
+    const bool deleteTarget = deleteChainTarget_;
+    deleteChainTarget_ = false;
     compileExpression(*node.object);
     if (node.optional) emitOptionalGuard();
     compileMemberKey(node);
-    code_->getProp();
+    if (deleteTarget) {
+        code_->deleteProp();
+    } else {
+        code_->getProp();
+    }
+}
+
+void Compiler::compileDeleteChain(const frontend::ChainExpression& node) {
+    if (!node.expression) {
+        error(node, "compiler: chain expression missing operand");
+        code_->pushBoolean(true);
+        return;
+    }
+    const bool savedDelete = deleteChain_;
+    const bool savedTarget = deleteChainTarget_;
+    deleteChain_ = true;
+    deleteChainTarget_ = node.expression->kind() == NodeKind::MemberExpression;
+    chainEndPatches_.emplace_back();
+    compileExpression(*node.expression);
+    std::vector<uint32_t> ends = std::move(chainEndPatches_.back());
+    chainEndPatches_.pop_back();
+    uint32_t endPc = code_->here();
+    for (uint32_t patch : ends) code_->patchU32(patch + 2, endPc);
+    deleteChain_ = savedDelete;
+    deleteChainTarget_ = savedTarget;
 }
 
 void Compiler::compileChainExpression(
@@ -1957,7 +1996,11 @@ void Compiler::emitOptionalGuard(uint32_t extraPops) {
     uint32_t cont = code_->jNotNullish();
     code_->pop();
     for (uint32_t i = 0; i < extraPops; ++i) code_->pop();
-    code_->pushUndefined();
+    if (deleteChain_) {
+        code_->pushBoolean(true);  // delete 可选链短路结果为 true。
+    } else {
+        code_->pushUndefined();
+    }
     uint32_t end = code_->jmp();
     if (!chainEndPatches_.empty()) {
         chainEndPatches_.back().push_back(end);
