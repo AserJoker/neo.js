@@ -2062,6 +2062,77 @@ TEST(CompilerTest, SwitchContinueTargetsEnclosingLoop) {
     EXPECT_DOUBLE_EQ(numberValue(value), 2.0);
 }
 
+TEST(CompilerTest, NewConstructsObject) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function C(x) { this.x = x; }"
+        "var o = new C(7);"
+        "var result = o.x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 7.0);
+}
+
+TEST(CompilerTest, NewWithoutArguments) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function C() { this.x = 3; }"
+        "var result = (new C()).x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, NewObjectReturnOverridesInstance) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function C() { this.x = 1; return { x: 2 }; }"
+        "var result = (new C()).x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 2.0);
+}
+
+TEST(CompilerTest, NewPrimitiveReturnIgnored) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function C() { this.x = 1; return 5; }"
+        "var result = (new C()).x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, NewTargetInConstructorIsCallee) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var t;"
+        "function F() { t = new.target; }"
+        "new F();"
+        "var result = t === F ? 1 : 0;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, NewTargetInPlainCallIsUndefined) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var t;"
+        "function F() { t = new.target; }"
+        "F();"
+        "var result = t === void 0 ? 1 : 0;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
 TEST(CompilerTest, ForLetCreatesPerIterationBinding) {
     Fixture f;
     Value* value = runScriptResult(

@@ -166,6 +166,8 @@ enum class OpCode : uint16_t {
     // 调用
     Call,           // u32 argc：[fn, argv...] → [ret]，thisArg=undefined
     CallMethod,     // u32 argc：[receiver, fn, argv...] → [ret]，thisArg=receiver
+    New,            // u32 argc：[ctor, argv...] → [instance]，new.target=ctor
+    LoadNewTarget,  // [] → [new.target]（普通调用为 undefined）
 
     // 生成器/async 挂起：[value] → [sent]（恢复时压入外部注入值）
     Yield,

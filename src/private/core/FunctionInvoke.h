@@ -34,8 +34,9 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
 // 以 thisArg/argc/argv 调用 fn 的 script 函数体（ADR-060 §9）：
 // 切换作用域、创建新 VM、按序压入形参与 self，从 entryPc 执行。
 // fn 必须是 isScript 的 Function；返回正常值/Exception/Fatal/Interrupt。
+// newTarget：构造调用传入 new.target（nullptr = 普通调用，new.target 为 undefined）。
 Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t argc,
-                            Value* argv[]);
+                            Value* argv[], Value* newTarget = nullptr);
 
 // script 生成器的恢复驱动（CoroutineRunner）：首次恢复创建执行作用域并运行
 // 到首个 yield；后续恢复重建 VM 并从 VmState 继续。

@@ -159,7 +159,7 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
 }
 
 Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t argc,
-                            Value* argv[]) {
+                            Value* argv[], Value* newTarget) {
     auto* d = static_cast<FunctionData*>(fn->data());
     if (d->code == nullptr) {
         return detail::typeError(ctx, "script function has no code");
@@ -196,7 +196,8 @@ Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
                            ? d->self
                            : (thisArg != nullptr ? thisArg : ctx->createUndefined());
     execScope->setThis(boundThis);
-    execScope->setNewTarget(ctx->createUndefined());
+    execScope->setNewTarget(newTarget != nullptr ? newTarget
+                                                 : ctx->createUndefined());
     ctx->setCurrentFunctionEnv(execScope);
     ctx->setCurrentFunction(fn);
 

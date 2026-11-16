@@ -91,6 +91,9 @@ public:
 | ArrowFunctionExpression | 同上，另加 `load_this` + `bind_this`，无 prototype/不可构造 |
 | CallExpression（非成员） | callee + args + `call N` |
 | CallExpression（成员） | obj + `dup` + key + `get_prop` + args + `call_method N` |
+| NewExpression | callee + args + `new N`；spread 实参暂 unsupported |
+| MetaProperty | `new.target` → `load_new_target`；`import.meta` 暂 unsupported |
+| SuperExpression | 暂 unsupported（依赖 class/home object 编译） |
 | MemberExpression | obj + key + `get_prop` |
 | 成员赋值（`=`） | obj + key + RHS + `set_prop` |
 | ObjectExpression | `new_object` + 每个属性 `dup; key; value; define_prop; pop` |
@@ -155,6 +158,6 @@ tests/unit/compiler/
 
 - 优点：Compiler 与 Parser 同构，节点覆盖度可逐条推进；错误显式；SourceMap
   与 VM 的异常定位直接对接；后续只需在分派表里补节点。
-- 缺点：尚未覆盖 class、模板字符串与正则字面量，真实程序还不能完整编译；
-  `for await` 暂 unsupported。
+- 缺点：尚未覆盖 class、`super`、模板字符串与正则字面量，真实程序还不能完整编译；
+  `for await`、spread 实参暂 unsupported。
 - 待定：常量池去重、SourceMap 对多字节指令的精确边界。

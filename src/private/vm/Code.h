@@ -314,6 +314,12 @@ struct Code {
         emitU32(argc);
         return pc;
     }
+    uint32_t construct(uint32_t argc) {
+        uint32_t pc = emitOp(OpCode::New);
+        emitU32(argc);
+        return pc;
+    }
+    uint32_t loadNewTarget() { return emitOp(OpCode::LoadNewTarget); }
 
     uint32_t yieldValue() { return emitOp(OpCode::Yield); }
     uint32_t awaitValue() { return emitOp(OpCode::Await); }

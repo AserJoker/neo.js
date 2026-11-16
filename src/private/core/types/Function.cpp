@@ -282,6 +282,24 @@ Value* FunctionType::construct(IContext* ctx, Value* self, size_t argc, Value* a
         return thisObj;
     }
 
+    // script 函数：新建 this（原型取 newTarget.prototype），以 this 运行函数体。
+    // 返回值按 [[Construct]] 语义处理：对象覆盖 this，原始值忽略。
+    if (d->isScript) {
+        Value* proto = ctx->getProperty(nt, "prototype");
+        Value* thisObj = ctx->createObject();
+        if (thisObj == ctx->oomValue()) return thisObj;
+        if (detail::isObjectKind(proto->type()->kind())) {
+            Value* r = ctx->setPrototype(thisObj, proto);
+            if (r->type()->kind() == TypeKind::Exception) return r;
+        }
+        Value* res = invokeScriptFunction(ctx, self, thisObj, argc, argv, nt);
+        if (res == nullptr) return thisObj;
+        TypeKind rk = res->type()->kind();
+        if (rk == TypeKind::Exception || rk == TypeKind::Fatal) return res;
+        if (detail::isObjectKind(rk)) return res;
+        return thisObj;
+    }
+
     // 构造钩子：call/construct 语义不同的内建（包装类）走专用路径。
     // 钩子负责建对象、挂原型、设置内部槽，并返回对象（或 Exception/Fatal）。
     if (d->constructFn != nullptr) {

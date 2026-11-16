@@ -142,6 +142,8 @@ _func_end:
 |------|--------|------|
 | `call N` | `[fn, argv0..argvN-1] → [ret]` | 弹 fn + N args，thisArg=undefined，调 invoke，压返回值 |
 | `call_method N` | `[receiver, fn, argv0..argvN-1] → [ret]` | 弹 receiver + fn + N args，thisArg=receiver，调 invoke，压返回值 |
+| `new N` | `[ctor, argv0..argvN-1] → [instance]` | 弹 ctor + N args，调 `ctx->construct`，new.target=ctor，压构造结果 |
+| `load_new_target` | `[] → [new.target]` | 从当前作用域链取 `new.target`；普通调用为 undefined |
 | `ret` | `[val] → []` | 函数返回，弹栈顶作为返回值，结束当前 VM |
 | `hlt` | `[] → ∅` | 模块执行结束 |
 
@@ -189,6 +191,12 @@ _func_end:
   这样普通调用与成员调用在字节码层完全分离，不需要靠 `fn.bind` 特判。
 - `super.method()`：receiver 仍是当前 this，属性查找基准由后续的
   `super` 属性指令负责；`call_method` 只关心 thisArg。
+- **`new N` 与 script 函数**：`ctx->construct` 为 script 函数新建 this
+  （原型取 `newTarget.prototype`），以该 this 运行函数体，并把 newTarget
+  传入函数环境槽；函数返回对象则用它，返回原始值则忽略、保留新建 this。
+- **`new.target`**：函数环境槽由 `invokeScriptFunction` 写入；普通调用写
+  undefined，构造调用写 ctor。`load_new_target` 沿作用域链查找，箭头函数
+  自然继承外层函数环境的值。
 
 #### 2.5 控制流
 

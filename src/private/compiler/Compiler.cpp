@@ -257,6 +257,14 @@ void Compiler::compileExpression(const Node& node) {
             compileCallExpression(
                 static_cast<const frontend::CallExpression&>(node));
             break;
+        case NodeKind::NewExpression:
+            compileNewExpression(
+                static_cast<const frontend::NewExpression&>(node));
+            break;
+        case NodeKind::MetaProperty:
+            compileMetaProperty(
+                static_cast<const frontend::MetaProperty&>(node));
+            break;
         case NodeKind::MemberExpression:
             compileMemberExpression(
                 static_cast<const frontend::MemberExpression&>(node));
@@ -288,6 +296,10 @@ void Compiler::compileExpression(const Node& node) {
         case NodeKind::UpdateExpression:
             compileUpdateExpression(
                 static_cast<const frontend::UpdateExpression&>(node));
+            break;
+        case NodeKind::SuperExpression:
+            error(node, "compiler: super is not supported");
+            code_->pushUndefined();
             break;
         default:
             error(node, "compiler: unsupported expression node kind " +
@@ -1479,6 +1491,48 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
     } else {
         code_->call(argc);
     }
+}
+
+void Compiler::compileNewExpression(const frontend::NewExpression& node) {
+    if (!node.callee) {
+        error(node, "compiler: new expression missing callee");
+        code_->pushUndefined();
+        return;
+    }
+    compileExpression(*node.callee);
+
+    uint32_t argc = 0;
+    for (const frontend::NodePtr& argument : node.arguments) {
+        if (!argument) continue;
+        if (argument->kind() == NodeKind::SpreadElement) {
+            error(*argument, "compiler: spread arguments not supported");
+            continue;
+        }
+        compileExpression(*argument);
+        ++argc;
+    }
+    code_->construct(argc);
+}
+
+void Compiler::compileMetaProperty(const frontend::MetaProperty& node) {
+    if (node.meta != nullptr && node.property != nullptr &&
+        node.meta->kind() == NodeKind::Identifier &&
+        node.property->kind() == NodeKind::Identifier) {
+        const std::string& meta =
+            static_cast<const frontend::Identifier&>(*node.meta).name;
+        const std::string& property =
+            static_cast<const frontend::Identifier&>(*node.property).name;
+        if (meta == "new" && property == "target") {
+            code_->loadNewTarget();
+            return;
+        }
+        error(node, "compiler: unsupported meta property " + meta + "." +
+                        property);
+        code_->pushUndefined();
+        return;
+    }
+    error(node, "compiler: malformed meta property");
+    code_->pushUndefined();
 }
 
 void Compiler::compileMemberExpression(

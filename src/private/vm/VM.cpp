@@ -110,6 +110,8 @@ const char* opCodeName(OpCode op) {
         case OpCode::StoreThis:     return "store_this";
         case OpCode::Call:          return "call";
         case OpCode::CallMethod:    return "call_method";
+        case OpCode::New:           return "new";
+        case OpCode::LoadNewTarget: return "load_new_target";
         case OpCode::Yield:         return "yield";
         case OpCode::Await:         return "await";
         case OpCode::Ret:           return "ret";
@@ -187,6 +189,8 @@ const VM::Handler* VM::handlers() {
         &VM::opStoreThis,
         &VM::opCall,
         &VM::opCallMethod,
+        &VM::opNew,
+        &VM::opLoadNewTarget,
         &VM::opYield,
         &VM::opAwait,
         &VM::opRet,
@@ -1232,6 +1236,34 @@ Value* VM::opCallMethod() {
     if (detail::isErrorValue(result)) return fail(result);
     if (detail::isInterruptValue(result)) return result;
     push(result);
+    return nullptr;
+}
+
+Value* VM::opNew() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) return badBytecode("new: truncated operand");
+    uint32_t argc = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (stack_.size() < static_cast<size_t>(argc) + 1) {
+        return badBytecode("new: operand stack underflow");
+    }
+
+    std::vector<Value*> args(argc);
+    for (uint32_t i = argc; i > 0; --i) args[i - 1] = pop();
+    Value* ctor = pop();
+
+    Value* result = ctx_->construct(ctor, argc, args.data());
+    if (detail::isErrorValue(result)) return fail(result);
+    if (detail::isInterruptValue(result)) return result;
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opLoadNewTarget() {
+    Value* value = ctx_->current() != nullptr
+                       ? ctx_->current()->lookupNewTarget()
+                       : nullptr;
+    push(value != nullptr ? value : ctx_->createUndefined());
     return nullptr;
 }
 

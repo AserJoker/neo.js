@@ -181,6 +181,8 @@ private:
     neo::core::Value* opStoreThis();
     neo::core::Value* opCall();
     neo::core::Value* opCallMethod();
+    neo::core::Value* opNew();
+    neo::core::Value* opLoadNewTarget();
     neo::core::Value* opYield();
     neo::core::Value* opAwait();
     neo::core::Value* opRet();
