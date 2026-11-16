@@ -3203,3 +3203,69 @@ TEST(CompilerTest, DeleteIdentifierReturnsFalseAndKeepsBinding) {
     ASSERT_EQ(value->type()->kind(), TypeKind::Number);
     EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
 }
+
+TEST(CompilerTest, ArrayDestructuringClosesIteratorOnEarlyExit) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var closed = false;"
+        "var iterable = {};"
+        "iterable[Symbol.iterator] = function () {"
+        "  var i = 0;"
+        "  return {"
+        "    next: function () { return { value: i++, done: false }; },"
+        "    return: function () { closed = true; return { done: true }; }"
+        "  };"
+        "};"
+        "var [a] = iterable;"
+        "result = (closed ? 10 : 0) + a;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 10.0);
+}
+
+TEST(CompilerTest, ArrayDestructuringClosesIteratorOnBindingThrow) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var closed = false;"
+        "var iterable = {};"
+        "iterable[Symbol.iterator] = function () {"
+        "  return {"
+        "    next: function () { return { value: 1, done: false }; },"
+        "    return: function () { closed = true; return { done: true }; }"
+        "  };"
+        "};"
+        "function boom() { throw 1; }"
+        "try { var [a = boom()] = iterable; } catch (e) {}"
+        "result = closed ? 1 : 0;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, ArrayDestructuringDoesNotCloseExhaustedIterator) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var closed = false;"
+        "var iterable = {};"
+        "iterable[Symbol.iterator] = function () {"
+        "  var i = 0;"
+        "  return {"
+        "    next: function () {"
+        "      if (i < 2) return { value: i++, done: false };"
+        "      return { value: void 0, done: true };"
+        "    },"
+        "    return: function () { closed = true; return { done: true }; }"
+        "  };"
+        "};"
+        "var [a, b, c] = iterable;"
+        "result = (closed ? 100 : 0) + a + b * 10 + (c === void 0 ? 1 : 0);");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 11.0);
+}

@@ -2297,17 +2297,32 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
                 "*dest-iter-" + std::to_string(depth) + "*";
             const std::string resultName =
                 "*dest-res-" + std::to_string(depth) + "*";
+            const std::string doneName =
+                "*dest-done-" + std::to_string(depth) + "*";
             code_->getIterator();
             code_->define(iterName);
             code_->pushUndefined();
             code_->define(resultName);
+            code_->pushBoolean(false);
+            code_->define(doneName);
+
+            // 整个解构包在 try/finally 中：正常或异常退出时，若迭代器尚未
+            // 耗尽则 IteratorClose（§8.6.3 / §14.3.3.5）。
+            uint32_t tryBeginPc = code_->tryBegin();
 
             for (const frontend::NodePtr& element : node.elements) {
                 if (!element) {
-                    // elision：推进迭代器，丢弃结果。
+                    // elision：推进迭代器，记录 done 后丢弃结果。
                     code_->load(iterName);
                     code_->iteratorNext();
-                    code_->pop();
+                    code_->store(resultName);
+                    code_->load(resultName);
+                    code_->push("done");
+                    code_->getProp();
+                    uint32_t notDone = code_->jfalse();
+                    code_->pushBoolean(true);
+                    code_->store(doneName);
+                    code_->patchU32(notDone + 2, code_->here());
                     continue;
                 }
                 if (element->kind() == NodeKind::RestElement) {
@@ -2324,7 +2339,11 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
                     code_->load(resultName);
                     code_->push("done");
                     code_->getProp();
-                    uint32_t exit = code_->jtrue();
+                    uint32_t notDone = code_->jfalse();
+                    code_->pushBoolean(true);
+                    code_->store(doneName);
+                    uint32_t exit = code_->jmp();
+                    code_->patchU32(notDone + 2, code_->here());
                     code_->load(arrayName);
                     code_->load(resultName);
                     code_->push("value");
@@ -2350,6 +2369,8 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
                 code_->push("done");
                 code_->getProp();
                 uint32_t haveValue = code_->jfalse();
+                code_->pushBoolean(true);
+                code_->store(doneName);
                 code_->pushUndefined();
                 uint32_t gotValue = code_->jmp();
                 code_->patchU32(haveValue + 2, code_->here());
@@ -2359,6 +2380,19 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
                 code_->patchU32(gotValue + 2, code_->here());
                 compileBindingPattern(*element, lexical, depth + 1);
             }
+
+            code_->tryBodyEnd();
+            uint32_t finallyStart = code_->here();
+            code_->load(doneName);
+            uint32_t skipClose = code_->jtrue();
+            code_->load(iterName);
+            code_->iteratorClose();
+            code_->patchU32(skipClose + 2, code_->here());
+            code_->finallyEnd();
+            uint32_t tryEnd = code_->here();
+            code_->patchU32(tryBeginPc + 2, 0);  // 无 catch
+            code_->patchU32(tryBeginPc + 6, finallyStart);
+            code_->patchU32(tryBeginPc + 10, tryEnd);
             return;
         }
         case NodeKind::ObjectPattern: {
