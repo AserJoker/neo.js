@@ -170,7 +170,9 @@ private:
                              bool initInstanceElements = false);
 
     // —— class ——
-    void compileClassDeclaration(const frontend::ClassDeclaration& node);
+    // leaveValue=true 时保留构造器值（匿名 export default class 用）。
+    void compileClassDeclaration(const frontend::ClassDeclaration& node,
+                                 bool leaveValue = false);
     void compileClassExpression(const frontend::ClassExpression& node);
     // 编译 class 构造器（含默认构造器）并留下构造器值。
     void compileClassConstructor(const frontend::ClassBody& body,

@@ -136,6 +136,62 @@ TEST(ModuleCompilerTest, DefaultExportAndImport) {
     EXPECT_DOUBLE_EQ(number(get(f.ctx.get(), ns, "result")), 8.0);
 }
 
+TEST(ModuleCompilerTest, NamedExportClass) {
+    Fixture f;
+    ASSERT_TRUE(addModule(f, "/a.js",
+                          "export class A { value() { return 7; } }"));
+    ASSERT_TRUE(addModule(f, "/b.js",
+                          "import { A } from './a.js';\n"
+                          "export const result = new A().value();"));
+
+    Value* ns = f.ctx->importModule("/b.js");
+    ASSERT_FALSE(isErrorValue(ns)) << errorText(f.ctx.get(), ns);
+    EXPECT_DOUBLE_EQ(number(get(f.ctx.get(), ns, "result")), 7.0);
+}
+
+TEST(ModuleCompilerTest, DefaultNamedClassIsExported) {
+    Fixture f;
+    ASSERT_TRUE(addModule(f, "/a.js",
+                          "export default class A { value() { return 9; } }"));
+    ASSERT_TRUE(addModule(f, "/b.js",
+                          "import A from './a.js';\n"
+                          "export const result = new A().value();"));
+
+    Value* ns = f.ctx->importModule("/b.js");
+    ASSERT_FALSE(isErrorValue(ns)) << errorText(f.ctx.get(), ns);
+    EXPECT_DOUBLE_EQ(number(get(f.ctx.get(), ns, "result")), 9.0);
+}
+
+TEST(ModuleCompilerTest, DefaultAnonymousClassIsExported) {
+    Fixture f;
+    ASSERT_TRUE(addModule(f, "/a.js",
+                          "export default class { value() { return 3; } }"));
+    ASSERT_TRUE(addModule(f, "/b.js",
+                          "import A from './a.js';\n"
+                          "export const result = new A().value();"));
+
+    Value* ns = f.ctx->importModule("/b.js");
+    ASSERT_FALSE(isErrorValue(ns)) << errorText(f.ctx.get(), ns);
+    EXPECT_DOUBLE_EQ(number(get(f.ctx.get(), ns, "result")), 3.0);
+}
+
+TEST(ModuleCompilerTest, DefaultNamedClassLocalBinding) {
+    Fixture f;
+    ASSERT_TRUE(addModule(f, "/a.js",
+                          "export default class A {}\n"
+                          "export const same = A;"));
+    ASSERT_TRUE(addModule(f, "/b.js",
+                          "import A, { same } from './a.js';\n"
+                          "export const result = A === same;"));
+
+    Value* ns = f.ctx->importModule("/b.js");
+    ASSERT_FALSE(isErrorValue(ns)) << errorText(f.ctx.get(), ns);
+    Value* result = get(f.ctx.get(), ns, "result");
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<neo::core::BooleanData*>(result->data())->value);
+}
+
 TEST(ModuleCompilerTest, DefaultNamedFunctionIsExported) {
     Fixture f;
     ASSERT_TRUE(addModule(f, "/a.js",

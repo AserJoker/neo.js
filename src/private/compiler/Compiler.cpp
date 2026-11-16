@@ -1192,6 +1192,11 @@ void Compiler::compileExportNamedDeclaration(
             case NodeKind::FunctionDeclaration:
                 // 函数对象在实例化阶段创建，逻辑入口无操作。
                 break;
+            case NodeKind::ClassDeclaration:
+                compileClassDeclaration(
+                    static_cast<const frontend::ClassDeclaration&>(
+                        declaration));
+                break;
             default:
                 error(declaration,
                       "compiler: unsupported exported declaration");
@@ -1234,6 +1239,19 @@ void Compiler::compileExportNamedDeclaration(
                         const std::string& name =
                             static_cast<const frontend::Identifier&>(
                                 *function.id)
+                                .name;
+                        exports_.push_back(neo::core::ModuleExportBinding{
+                            name, name, {}, {}, false});
+                    }
+                    break;
+                }
+                case NodeKind::ClassDeclaration: {
+                    const auto& klass =
+                        static_cast<const frontend::ClassDeclaration&>(*inner);
+                    if (klass.id &&
+                        klass.id->kind() == NodeKind::Identifier) {
+                        const std::string& name =
+                            static_cast<const frontend::Identifier&>(*klass.id)
                                 .name;
                         exports_.push_back(neo::core::ModuleExportBinding{
                             name, name, {}, {}, false});
@@ -1311,8 +1329,21 @@ void Compiler::compileExportDefaultDeclaration(
     }
 
     if (declaration.kind() == NodeKind::ClassDeclaration) {
-        error(declaration, "compiler: exported class not supported");
-        code_->pushUndefined();
+        const auto& klass =
+            static_cast<const frontend::ClassDeclaration&>(declaration);
+        const bool named =
+            klass.id && klass.id->kind() == NodeKind::Identifier;
+        compileClassDeclaration(klass, !named);
+        if (named) {
+            const std::string& name =
+                static_cast<const frontend::Identifier&>(*klass.id).name;
+            exports_.push_back(
+                neo::core::ModuleExportBinding{"default", name, {}, {}, false});
+        } else {
+            code_->initialize(kDefaultSlot);
+            exports_.push_back(neo::core::ModuleExportBinding{
+                "default", std::string(kDefaultSlot), {}, {}, false});
+        }
         return;
     }
 
@@ -2586,7 +2617,7 @@ void Compiler::compileVariableDeclaration(
 }
 
 void Compiler::compileClassDeclaration(
-    const frontend::ClassDeclaration& node) {
+    const frontend::ClassDeclaration& node, bool leaveValue) {
     if (!node.body || node.body->kind() != NodeKind::ClassBody) {
         error(node, "compiler: class declaration missing body");
         code_->pushUndefined();
@@ -2611,7 +2642,7 @@ void Compiler::compileClassDeclaration(
     }
     compileClassElements(body);
     privateScopes_.pop_back();
-    code_->pop();
+    if (!leaveValue) code_->pop();
 }
 
 void Compiler::compileClassExpression(const frontend::ClassExpression& node) {
@@ -3309,6 +3340,11 @@ bool Compiler::usesDefaultSlot(
             static_cast<const frontend::FunctionDeclaration&>(declaration);
         return !(function.id &&
                  function.id->kind() == NodeKind::Identifier);
+    }
+    if (declaration.kind() == NodeKind::ClassDeclaration) {
+        const auto& klass =
+            static_cast<const frontend::ClassDeclaration&>(declaration);
+        return !(klass.id && klass.id->kind() == NodeKind::Identifier);
     }
     return true;
 }

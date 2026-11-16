@@ -133,8 +133,8 @@ public:
 | ThrowStatement | 表达式 + `throw` |
 | TryStatement | `try_begin` + try 块 + `try_body_end`；catch/finally 独立块 + 各自 end |
 | ImportDeclaration | 无字节码；产出 `ModuleImportBinding`（link 期绑定槽位） |
-| ExportNamedDeclaration | 编译内层声明；产出 `ModuleExportBinding`（本地 / `from` re-export） |
-| ExportDefaultDeclaration | 具名函数导出其绑定；匿名函数/表达式存入隐藏槽位 `*default*` |
+| ExportNamedDeclaration | 编译内层声明（含 class）；产出 `ModuleExportBinding`（本地 / `from` re-export） |
+| ExportDefaultDeclaration | 具名函数/class 导出其绑定；匿名函数/class/表达式存入隐藏槽位 `*default*` |
 | ExportAllDeclaration | 无字节码；产出 `exportAll` 或 `export * as ns` 元数据 |
 
 for 的 let/const 通过 `iteration_env` / `commit_iteration_env` 实现规范的
