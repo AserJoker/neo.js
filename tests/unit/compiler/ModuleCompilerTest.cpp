@@ -164,6 +164,56 @@ TEST(ModuleCompilerTest, ImportMetaIsPerModule) {
     EXPECT_EQ(static_cast<neo::core::StringData*>(url->data())->value, "/b.js");
 }
 
+void drainMicrotasks(IContext* ctx) {
+    while (ctx->hasRunnableTask()) (void)ctx->runOneTask();
+}
+
+TEST(ModuleCompilerTest, DynamicImportResolvesNamespace) {
+    Fixture f;
+    ASSERT_TRUE(addModule(f, "/a.js", "export const answer = 42;"));
+    ASSERT_TRUE(addModule(
+        f, "/b.js",
+        "export let result = 0;"
+        "import('./a.js').then(function (m) { result = m.answer; });"));
+
+    Value* ns = f.ctx->importModule("/b.js");
+    ASSERT_FALSE(isErrorValue(ns)) << errorText(f.ctx.get(), ns);
+    drainMicrotasks(f.ctx.get());
+    EXPECT_DOUBLE_EQ(number(get(f.ctx.get(), ns, "result")), 42.0);
+}
+
+TEST(ModuleCompilerTest, DynamicImportRelativeToReferrer) {
+    Fixture f;
+    ASSERT_TRUE(addModule(f, "/dir/b.js", "export const value = 7;"));
+    ASSERT_TRUE(addModule(
+        f, "/dir/a.js",
+        "export let result = 0;"
+        "import('./b.js').then(function (m) { result = m.value; });"));
+
+    Value* ns = f.ctx->importModule("/dir/a.js");
+    ASSERT_FALSE(isErrorValue(ns)) << errorText(f.ctx.get(), ns);
+    drainMicrotasks(f.ctx.get());
+    EXPECT_DOUBLE_EQ(number(get(f.ctx.get(), ns, "result")), 7.0);
+}
+
+TEST(ModuleCompilerTest, DynamicImportRejectsWhenSpecifierThrows) {
+    Fixture f;
+    ASSERT_TRUE(addModule(
+        f, "/a.js",
+        "export let result = '';"
+        "import({ toString: function () { throw new Error('boom'); } })"
+        ".catch(function (e) { result = e.message; });"));
+
+    Value* ns = f.ctx->importModule("/a.js");
+    ASSERT_FALSE(isErrorValue(ns)) << errorText(f.ctx.get(), ns);
+    drainMicrotasks(f.ctx.get());
+    Value* result = get(f.ctx.get(), ns, "result");
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<neo::core::StringData*>(result->data())->value,
+              "boom");
+}
+
 TEST(ModuleCompilerTest, DefaultExportAndImport) {
     Fixture f;
     ASSERT_TRUE(addModule(f, "/a.js", "export default 7;"));

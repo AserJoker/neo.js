@@ -132,6 +132,7 @@ private:
     void compileCallExpression(const frontend::CallExpression& node);
     void compileNewExpression(const frontend::NewExpression& node);
     void compileMetaProperty(const frontend::MetaProperty& node);
+    void compileImportExpression(const frontend::ImportExpression& node);
     void compileTemplateLiteral(const frontend::TemplateLiteral& node);
     void compileTaggedTemplateExpression(
         const frontend::TaggedTemplateExpression& node);

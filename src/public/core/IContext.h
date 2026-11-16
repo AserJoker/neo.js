@@ -878,6 +878,14 @@ public:
     // 返回导出对象；loader 失败时原样返回其 Exception/Fatal。
     virtual Value* importModule(std::string_view specifier) = 0;
 
+    // importModuleDynamic: 动态 import()。specifier 经 ToString 后解析（相对路径
+    // 以 referrer 模块 id 的目录为基准），返回 Promise：
+    //   - 成功 → 以模块命名空间 fulfill；
+    //   - 说明符转换或加载失败 → 以错误对象 reject。
+    // 本引擎的加载器是同步的，Promise 在返回前已 settle（reaction 仍走微任务）。
+    virtual Value* importModuleDynamic(Value* specifier,
+                                       std::string_view referrer) = 0;
+
     // createModuleNamespace: 创建模块命名空间 exotic 对象（原型为 null，
     // @@toStringTag = "Module"）。导出属性是活绑定，见 exportBinding。
     virtual Value* createModuleNamespace(std::string_view bindName = {}) = 0;

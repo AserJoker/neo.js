@@ -270,10 +270,12 @@ enum class OpCode : uint16_t {
     PrivateIn,
     // [] → [import.meta]：当前模块的 import.meta 对象（按模块缓存）。
     ImportMeta,
+    // [specifier] → [promise]：动态 import()，返回解析为模块命名空间的 Promise。
+    DynamicImport,
 };
 
 // 指令总数（分派表大小）。
-inline constexpr size_t kOpCodeCount = static_cast<size_t>(OpCode::ImportMeta) + 1;
+inline constexpr size_t kOpCodeCount = static_cast<size_t>(OpCode::DynamicImport) + 1;
 
 // Define 的 flags 位。未置位即 false：
 //   mutable    —— 绑定可被 store 改写（const 为 false）

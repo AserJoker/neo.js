@@ -1015,6 +1015,14 @@ Value* createPromiseCapability(IContext* ctx, Value* ctor, PromiseCapability& ou
     return newPromiseCapability(ctx, ctor, out);
 }
 
+void promiseFulfill(IContext* ctx, Value* promise, Value* value) {
+    fulfillPromise(ctx, promise, value);
+}
+
+void promiseReject(IContext* ctx, Value* promise, Value* reason) {
+    rejectPromise(ctx, promise, reason);
+}
+
 bool registerPromiseBuiltins(IContext* ctx) {
     // —— 1. Promise.prototype（普通对象，原型 = Object.prototype）——
     Value* promiseProto = ctx->createObject();

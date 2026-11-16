@@ -19,6 +19,12 @@
 namespace neo::core {
 
 class IContext;
+class Value;
+
+// 状态迁移（§27.2.1.4 / §27.2.1.7）：供引擎内部同步 settle Promise。
+// 对非 Pending 的 promise 为 no-op。
+void promiseFulfill(IContext* ctx, Value* promise, Value* value);
+void promiseReject(IContext* ctx, Value* promise, Value* reason);
 
 // 建立 %Promise.prototype% 并注册 Promise 构造函数到 global。
 // Context 构造末尾调用一次。OOM 或注册失败返回 false（调用方 abort）。

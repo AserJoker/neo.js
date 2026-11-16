@@ -101,6 +101,8 @@ Compiler::Compiler(const frontend::Program& program,
     : program_(program), sema_(sema), options_(std::move(options)) {}
 
 CompileResult Compiler::compile() {
+    // 动态 import 的相对说明符以本 Code 所属模块 id 为基准。
+    code_->moduleId = options_.filename;
     // 前置条件被破坏时不在错误 AST 上继续生成字节码。
     if (!sema_.ok()) {
         errors_.push_back({program_.range(), "compiler: sema reported errors"});
@@ -328,6 +330,10 @@ void Compiler::compileExpression(const Node& node) {
         case NodeKind::MetaProperty:
             compileMetaProperty(
                 static_cast<const frontend::MetaProperty&>(node));
+            break;
+        case NodeKind::ImportExpression:
+            compileImportExpression(
+                static_cast<const frontend::ImportExpression&>(node));
             break;
         case NodeKind::TemplateLiteral:
             compileTemplateLiteral(
@@ -1873,6 +1879,22 @@ void Compiler::compileMetaProperty(const frontend::MetaProperty& node) {
     }
     error(node, "compiler: malformed meta property");
     code_->pushUndefined();
+}
+
+void Compiler::compileImportExpression(
+    const frontend::ImportExpression& node) {
+    // 动态 import：specifier 先求值；options（若存在）求值后丢弃——
+    // 本引擎没有 host import attributes，但仍需保持求值副作用。
+    if (node.source) {
+        compileExpression(*node.source);
+    } else {
+        code_->pushUndefined();
+    }
+    if (node.options) {
+        compileExpression(*node.options);
+        code_->pop();
+    }
+    code_->dynamicImport();
 }
 
 void Compiler::compileTemplateLiteral(

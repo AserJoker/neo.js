@@ -184,6 +184,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::SetOwnerClass: return "set_owner_class";
         case OpCode::PrivateIn:     return "private_in";
         case OpCode::ImportMeta:    return "import_meta";
+        case OpCode::DynamicImport: return "dynamic_import";
     }
     return "<unknown>";
 }
@@ -306,6 +307,7 @@ const VM::Handler* VM::handlers() {
         &VM::opSetOwnerClass,
         &VM::opPrivateIn,
         &VM::opImportMeta,
+        &VM::opDynamicImport,
     };
     return table;
 }
@@ -1754,6 +1756,17 @@ Value* VM::opImportMeta() {
     Value* meta = ctx_->importMeta();
     if (detail::isErrorValue(meta)) return fail(meta);
     push(meta);
+    return nullptr;
+}
+
+Value* VM::opDynamicImport() {
+    if (stack_.empty()) {
+        return badBytecode("dynamic_import: operand stack underflow");
+    }
+    Value* specifier = pop();
+    Value* promise = ctx_->importModuleDynamic(specifier, code_->moduleId);
+    if (detail::isErrorValue(promise)) return fail(promise);
+    push(promise);
     return nullptr;
 }
 

@@ -172,6 +172,7 @@ _func_end:
 | `new_spread` | `[ctor, argsArray] → [instance]` | new.target=ctor |
 | `load_new_target` | `[] → [new.target]` | 从当前作用域链取 `new.target`；普通调用为 undefined |
 | `import_meta` | `[] → [import.meta]` | 当前模块的 import.meta 对象（含 `url`），按模块缓存 |
+| `dynamic_import` | `[specifier] → [promise]` | 动态 import()：ToString 后加载模块，Promise 以命名空间 fulfill / 错误 reject |
 | `rest_args` | `[argvFixed..argvN-1] → [array]` | 把序言栈上剩余实参按顺序收集成数组（rest 参数） |
 | `push_class entry,paramCount,flags` | `[superCtor] → [ctor]` | 创建脚本 class 构造器；flags 含 `kClassDerived` |
 | `push_function`（flag） | — | `kFunctionAsyncGenerator` 标记 async function*（同时是生成器） |

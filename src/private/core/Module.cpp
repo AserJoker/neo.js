@@ -18,7 +18,10 @@
 
 #include "core/Context.h"
 
+#include "core/PromiseBuiltins.h"
+
 #include "core/types/Array.h"
+#include "core/types/Exception.h"
 #include "core/types/ModuleNamespace.h"
 #include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
@@ -452,6 +455,50 @@ Value* Context::importModule(std::string_view specifier) {
     if (result != nullptr && detail::isErrorValue(result)) return result;
     mod->loaded = true;
     return mod->exports;
+}
+
+Value* Context::importModuleDynamic(Value* specifier,
+                                    std::string_view referrer) {
+    Value* promise = createPromise();
+    if (promise == oomValue_) return promise;
+
+    // §13.3.10.1：specifier 先 ToString；失败则 reject。
+    Value* str = toString(specifier);
+    if (str == oomValue_) {
+        promiseReject(this, promise, str);
+        return promise;
+    }
+    if (detail::isErrorValue(str)) {
+        promiseReject(this, promise,
+                      str->type()->kind() == TypeKind::Exception
+                          ? static_cast<ExceptionData*>(str->data())->child
+                          : str);
+        return promise;
+    }
+
+    std::string id = static_cast<StringData*>(str->data())->value;
+    if (isRelativeSpecifier(id) && !referrer.empty()) {
+        std::string joined = dirnameOf(std::string(referrer));
+        if (!joined.empty()) joined.push_back('/');
+        joined += id;
+        id = normalizePath(joined);
+    }
+
+    Value* ns = importModule(id);
+    if (ns != nullptr && detail::isErrorValue(ns)) {
+        promiseReject(this, promise,
+                      ns->type()->kind() == TypeKind::Exception
+                          ? static_cast<ExceptionData*>(ns->data())->child
+                          : ns);
+        return promise;
+    }
+    Value* value = ns != nullptr ? ns : createUndefined();
+    if (value == oomValue_) {
+        promiseReject(this, promise, value);
+    } else {
+        promiseFulfill(this, promise, value);
+    }
+    return promise;
 }
 
 Value* Context::importMeta() {

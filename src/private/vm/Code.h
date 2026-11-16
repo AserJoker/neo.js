@@ -77,6 +77,8 @@ struct Code {
     std::vector<double> numbers;       // 数值常量表
     std::vector<std::string> strings;  // 字符串/名字表
     SourceMap sourceMap;
+    // 本 Code 所属模块 id（动态 import 相对说明符的基准）；script 为文件名。
+    std::string moduleId;
     // 标签模板对象缓存（§13.2.8.2）：pc → 模板对象。同一 Code 的同一调用点
     // 复用同一对象；Value 由 Context 挂到 global scope 作 GC 根。
     mutable std::vector<std::pair<uint32_t, neo::core::Value*>> templateCache;
@@ -384,6 +386,7 @@ struct Code {
     uint32_t constructSpread() { return emitOp(OpCode::NewSpread); }
     uint32_t loadNewTarget() { return emitOp(OpCode::LoadNewTarget); }
     uint32_t importMeta() { return emitOp(OpCode::ImportMeta); }
+    uint32_t dynamicImport() { return emitOp(OpCode::DynamicImport); }
 
     uint32_t yieldValue() { return emitOp(OpCode::Yield); }
     uint32_t yieldDelegate() { return emitOp(OpCode::YieldDelegate); }

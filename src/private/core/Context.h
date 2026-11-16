@@ -324,6 +324,8 @@ public:
     bool setModuleCompilation(std::string_view id,
                               ModuleCompilation compilation) override;
     Value* importModule(std::string_view id) override;
+    Value* importModuleDynamic(Value* specifier,
+                               std::string_view referrer) override;
     Value* createModuleNamespace(std::string_view bindName = {}) override;
     Value* importMeta() override;
     Value* exportBinding(Value* exports, std::string_view exportName,

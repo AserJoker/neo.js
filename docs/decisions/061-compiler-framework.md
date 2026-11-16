@@ -96,6 +96,7 @@ public:
 | CallExpression（成员） | obj + `dup` + key + `get_prop` + args + `call_method N`；含 spread 时 `call_method_spread` |
 | NewExpression | callee + args + `new N`；含 spread 时 args 数组 + `new_spread` |
 | MetaProperty | `new.target` → `load_new_target`；`import.meta` → `import_meta`（模块级缓存对象，含 `url`） |
+| ImportExpression | specifier（+ options 求值后丢弃）→ `dynamic_import`；相对说明符以所属模块 id 为基准 |
 | TemplateLiteral | 首段 cooked + 每个替换 `toString`/`add` + 后续 cooked `add` |
 | TaggedTemplateExpression | tag（成员 tag 用 receiver + `get_prop`）+ `template_object` + 替换表达式 + `call`/`call_method` |
 | SuperExpression | 暂 unsupported（依赖 class/home object 编译） |
