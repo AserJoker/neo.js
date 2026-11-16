@@ -5,6 +5,7 @@
 
 #include "compiler/Compiler.h"
 
+#include "core/OperatorKind.h"
 #include "sema/ResolvePass.h"
 
 #include <string>
@@ -99,6 +100,8 @@ void Compiler::compileStatement(const Node& node) {
     uint32_t begin = code_->here();
     switch (node.kind()) {
         case NodeKind::EmptyStatement:
+        case NodeKind::DebuggerStatement:
+            // debugger 暂为 no-op。
             break;
         case NodeKind::ExpressionStatement:
             compileExpressionStatement(
@@ -199,6 +202,22 @@ void Compiler::compileExpression(const Node& node) {
         case NodeKind::BinaryExpression:
             compileBinaryExpression(
                 static_cast<const frontend::BinaryExpression&>(node));
+            break;
+        case NodeKind::UnaryExpression:
+            compileUnaryExpression(
+                static_cast<const frontend::UnaryExpression&>(node));
+            break;
+        case NodeKind::LogicalExpression:
+            compileLogicalExpression(
+                static_cast<const frontend::LogicalExpression&>(node));
+            break;
+        case NodeKind::ConditionalExpression:
+            compileConditionalExpression(
+                static_cast<const frontend::ConditionalExpression&>(node));
+            break;
+        case NodeKind::SequenceExpression:
+            compileSequenceExpression(
+                static_cast<const frontend::SequenceExpression&>(node));
             break;
         case NodeKind::FunctionExpression:
             compileFunctionExpression(
@@ -751,6 +770,103 @@ void Compiler::compileBinaryExpression(
             error(node, "compiler: unsupported binary operator " +
                             std::to_string(static_cast<int>(node.op)));
             break;
+    }
+}
+
+void Compiler::compileUnaryExpression(const frontend::UnaryExpression& node) {
+    if (!node.argument) {
+        error(node, "compiler: unary expression missing operand");
+        code_->pushUndefined();
+        return;
+    }
+    if (node.op == frontend::UnaryOperator::Delete) {
+        error(node, "compiler: delete is not supported");
+        code_->pushUndefined();
+        return;
+    }
+
+    neo::core::UnaryOperator op = neo::core::UnaryOperator::Plus;
+    switch (node.op) {
+        case frontend::UnaryOperator::Plus:       op = neo::core::UnaryOperator::Plus; break;
+        case frontend::UnaryOperator::Minus:      op = neo::core::UnaryOperator::Minus; break;
+        case frontend::UnaryOperator::LogicalNot: op = neo::core::UnaryOperator::LogicalNot; break;
+        case frontend::UnaryOperator::BitNot:     op = neo::core::UnaryOperator::BitNot; break;
+        case frontend::UnaryOperator::TypeOf:     op = neo::core::UnaryOperator::TypeOf; break;
+        case frontend::UnaryOperator::Void:       op = neo::core::UnaryOperator::Void; break;
+        default:
+            error(node, "compiler: unsupported unary operator");
+            code_->pushUndefined();
+            return;
+    }
+
+    compileExpression(*node.argument);
+    code_->unary(static_cast<uint32_t>(op));
+}
+
+void Compiler::compileLogicalExpression(
+    const frontend::LogicalExpression& node) {
+    if (!node.left || !node.right) {
+        error(node, "compiler: logical expression missing operand");
+        code_->pushUndefined();
+        return;
+    }
+    compileExpression(*node.left);
+    code_->dup();
+
+    uint32_t jump = 0;
+    switch (node.op) {
+        case frontend::LogicalOperator::And:
+            jump = code_->jfalse();
+            break;
+        case frontend::LogicalOperator::Or:
+            jump = code_->jtrue();
+            break;
+        case frontend::LogicalOperator::Nullish:
+            jump = code_->jNotNullish();
+            break;
+        default:
+            error(node, "compiler: unsupported logical operator");
+            code_->pop();
+            code_->pushUndefined();
+            return;
+    }
+
+    // 短路：保留左值；否则丢弃左值并求右值。
+    code_->pop();
+    compileExpression(*node.right);
+    code_->patchU32(jump + 2, code_->here());
+}
+
+void Compiler::compileConditionalExpression(
+    const frontend::ConditionalExpression& node) {
+    if (!node.test || !node.consequent || !node.alternate) {
+        error(node, "compiler: conditional expression missing operand");
+        code_->pushUndefined();
+        return;
+    }
+    compileExpression(*node.test);
+    uint32_t toElse = code_->jfalse();
+    compileExpression(*node.consequent);
+    uint32_t toEnd = code_->jmp();
+    code_->patchU32(toElse + 2, code_->here());
+    compileExpression(*node.alternate);
+    code_->patchU32(toEnd + 2, code_->here());
+}
+
+void Compiler::compileSequenceExpression(
+    const frontend::SequenceExpression& node) {
+    if (node.expressions.empty()) {
+        code_->pushUndefined();
+        return;
+    }
+    for (size_t i = 0; i < node.expressions.size(); ++i) {
+        const frontend::NodePtr& expression = node.expressions[i];
+        if (!expression) {
+            code_->pushUndefined();
+        } else {
+            compileExpression(*expression);
+        }
+        if (i + 1 < node.expressions.size()) code_->pop();
     }
 }
 

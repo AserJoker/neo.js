@@ -103,6 +103,15 @@ _func_end:
 - 字面量必须用 `define_prop` 而非 `set_prop`：前者创建自有数据属性，
   后者会触发原型链 setter，语义不同。
 
+#### 2.2.3 一元运算
+
+| 指令 | 栈契约 | 说明 |
+|------|--------|------|
+| `unary <op>` | `[a] → [result]` | op 为 `core::UnaryOperator`；`delete` 暂不支持 |
+
+- 一元运算符统一走 `ctx->unaryOp(op, value)`，与二元运算一致由引擎负责
+  类型转换与异常。
+
 #### 2.3 函数定义
 
 | 指令 | 栈契约 | 说明 |
@@ -183,7 +192,7 @@ _func_end:
 | `jmp <label>` | 无条件跳转 |
 | `jtrue <label>` | 弹栈顶，真则跳 |
 | `jfalse <label>` | 弹栈顶，假则跳 |
-| `jnull <label>` | 弹栈顶，null/undefined 则跳 |
+| `jnotnullish <label>` | 弹栈顶，非 null/undefined 则跳（`??` 短路） |
 | `<label>:` | 跳转目标标记 |
 
 - statement 保证栈平衡（ADR-004），跳转发生在 statement 边界，栈深可预期。

@@ -76,9 +76,11 @@ const char* opCodeName(OpCode op) {
         case OpCode::Gt:            return "gt";
         case OpCode::Le:            return "le";
         case OpCode::Ge:            return "ge";
+        case OpCode::Unary:         return "unary";
         case OpCode::Jmp:           return "jmp";
         case OpCode::JTrue:         return "jtrue";
         case OpCode::JFalse:        return "jfalse";
+        case OpCode::JNotNullish:   return "jnotnullish";
         case OpCode::TryBegin:      return "try_begin";
         case OpCode::TryBodyEnd:    return "try_body_end";
         case OpCode::CatchEnd:      return "catch_end";
@@ -142,9 +144,11 @@ const VM::Handler* VM::handlers() {
         &VM::opGt,
         &VM::opLe,
         &VM::opGe,
+        &VM::opUnary,
         &VM::opJmp,
         &VM::opJTrue,
         &VM::opJFalse,
+        &VM::opJNotNullish,
         &VM::opTryBegin,
         &VM::opTryBodyEnd,
         &VM::opCatchEnd,
@@ -684,6 +688,20 @@ Value* VM::opGt() { return binary(BinaryOperator::GreaterThan); }
 Value* VM::opLe() { return binary(BinaryOperator::LessThanOrEqual); }
 Value* VM::opGe() { return binary(BinaryOperator::GreaterThanOrEqual); }
 
+Value* VM::opUnary() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) return badBytecode("unary: truncated operand");
+    uint32_t op = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (stack_.empty()) return badBytecode("unary: operand stack underflow");
+    Value* value = pop();
+    Value* result =
+        ctx_->unaryOp(static_cast<neo::core::UnaryOperator>(op), value);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
+}
+
 // —— 控制流 ——
 
 Value* VM::opJmp() {
@@ -714,6 +732,27 @@ Value* VM::opJFalse() {
     pc_ += 4;
     if (stack_.empty()) return badBytecode("jfalse: operand stack underflow");
     if (!ctx_->toBoolean(pop())) pc_ = target;
+    return nullptr;
+}
+
+Value* VM::opJNotNullish() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("jnotnullish: truncated operand");
+    }
+    uint32_t target = readU32(bytes.data() + pc_);
+    if (target > bytes.size()) {
+        return badBytecode("jnotnullish: target out of range");
+    }
+    pc_ += 4;
+    if (stack_.empty()) {
+        return badBytecode("jnotnullish: operand stack underflow");
+    }
+    neo::core::TypeKind kind = pop()->type()->kind();
+    if (kind != neo::core::TypeKind::Null &&
+        kind != neo::core::TypeKind::Undefined) {
+        pc_ = target;
+    }
     return nullptr;
 }
 

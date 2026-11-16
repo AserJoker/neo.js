@@ -117,10 +117,14 @@ enum class OpCode : uint16_t {
     Le,
     Ge,
 
+    // 一元运算：u32 core::UnaryOperator
+    Unary,
+
     // 控制流
     Jmp,          // u32 targetPc
     JTrue,        // u32 targetPc：弹条件，ToBoolean 为真则跳转
     JFalse,       // u32 targetPc：弹条件，ToBoolean 为假则跳转
+    JNotNullish,  // u32 targetPc：弹条件，非 null/undefined 则跳转（?? 短路）
 
     // try：catch/finally 为 out-of-line 块，出口产生 Interrupt 交给 VM 裁决
     TryBegin,     // u32 catchStart, u32 finallyStart, u32 tryEnd（0 = 无）

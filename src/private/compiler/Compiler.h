@@ -101,6 +101,11 @@ private:
     void compileBooleanLiteral(const frontend::BooleanLiteral& node);
     void compileNullLiteral(const frontend::NullLiteral& node);
     void compileBinaryExpression(const frontend::BinaryExpression& node);
+    void compileUnaryExpression(const frontend::UnaryExpression& node);
+    void compileLogicalExpression(const frontend::LogicalExpression& node);
+    void compileConditionalExpression(
+        const frontend::ConditionalExpression& node);
+    void compileSequenceExpression(const frontend::SequenceExpression& node);
     void compileFunctionExpression(const frontend::FunctionExpression& node);
     void compileArrowFunctionExpression(
         const frontend::ArrowFunctionExpression& node);

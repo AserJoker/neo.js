@@ -148,9 +148,11 @@ private:
     neo::core::Value* opGt();
     neo::core::Value* opLe();
     neo::core::Value* opGe();
+    neo::core::Value* opUnary();
     neo::core::Value* opJmp();
     neo::core::Value* opJTrue();
     neo::core::Value* opJFalse();
+    neo::core::Value* opJNotNullish();
     neo::core::Value* opTryBegin();
     neo::core::Value* opTryBodyEnd();
     neo::core::Value* opCatchEnd();

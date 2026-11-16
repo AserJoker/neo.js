@@ -73,7 +73,7 @@ public:
 | AST 节点 | 字节码 |
 |----------|--------|
 | Program | 逐条语句 + `halt` |
-| EmptyStatement | 无 |
+| EmptyStatement / DebuggerStatement | 无（debugger 暂为 no-op） |
 | ExpressionStatement | 表达式 + `pop` |
 | ReturnStatement | 表达式（或 `push_undefined`）+ `ret` |
 | BlockStatement | `push_scope` + 语句 + `pop_scope` |
@@ -83,6 +83,10 @@ public:
 | AssignmentExpression | `=`：右值 + `dup` + `store`；复合：`load` + 右值 + 运算 + `dup` + `store` |
 | UpdateExpression | 前缀：`load` + 1 + 运算 + `dup` + `store`；后缀：`load` + `clone` + `swap` + 1 + 运算 + `store` |
 | BinaryExpression（+ - * / < <= > >=） | 左、右 + 对应指令 |
+| UnaryExpression（+ - ! ~ typeof void） | 参数 + `unary op`；`delete` 暂 unsupported |
+| LogicalExpression（&& \|\| ??） | 左 + `dup` + `jfalse`/`jtrue`/`jnotnullish` end；`pop` + 右；回填 end |
+| ConditionalExpression | test + `jfalse` alternate；consequent + `jmp` end；alternate |
+| SequenceExpression | 逐项求值，非末项 `pop` |
 | FunctionDeclaration/Expression | 跳过函数体 + 函数体 + `push_function` + `set_func_name` + `set_closure` + `define`（声明） |
 | ArrowFunctionExpression | 同上，另加 `load_this` + `bind_this`，无 prototype/不可构造 |
 | CallExpression（非成员） | callee + args + `call N` |

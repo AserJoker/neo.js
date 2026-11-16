@@ -178,6 +178,13 @@ struct Code {
     uint32_t mul() { return emitOp(OpCode::Mul); }
     uint32_t div() { return emitOp(OpCode::Div); }
 
+    // 一元运算：op 为 core::UnaryOperator 的数值。
+    uint32_t unary(uint32_t op) {
+        uint32_t pc = emitOp(OpCode::Unary);
+        emitU32(op);
+        return pc;
+    }
+
     uint32_t lt() { return emitOp(OpCode::Lt); }
     uint32_t gt() { return emitOp(OpCode::Gt); }
     uint32_t le() { return emitOp(OpCode::Le); }
@@ -196,6 +203,11 @@ struct Code {
     }
     uint32_t jfalse(uint32_t target = 0) {
         uint32_t pc = emitOp(OpCode::JFalse);
+        emitU32(target);
+        return pc;
+    }
+    uint32_t jNotNullish(uint32_t target = 0) {
+        uint32_t pc = emitOp(OpCode::JNotNullish);
         emitU32(target);
         return pc;
     }

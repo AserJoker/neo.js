@@ -8,6 +8,7 @@
 
 #include "compiler/Compiler.h"
 #include "core/IContext.h"
+#include "core/types/Boolean.h"
 #include "core/types/Number.h"
 #include "core/types/String.h"
 #include "frontend/Parser.h"
@@ -28,6 +29,7 @@ using neo::compiler::CompileResult;
 using neo::compiler::Compiler;
 using neo::compiler::CompilerOptions;
 using neo::core::IContext;
+using neo::core::BooleanData;
 using neo::core::NumberData;
 using neo::core::StringData;
 using neo::core::TypeKind;
@@ -43,8 +45,14 @@ using neo::frontend::BooleanLiteral;
 using neo::frontend::BreakStatement;
 using neo::frontend::CallExpression;
 using neo::frontend::CatchClause;
+using neo::frontend::ConditionalExpression;
 using neo::frontend::ContinueStatement;
 using neo::frontend::LabeledStatement;
+using neo::frontend::LogicalExpression;
+using neo::frontend::LogicalOperator;
+using neo::frontend::SequenceExpression;
+using neo::frontend::UnaryExpression;
+using neo::frontend::UnaryOperator;
 using neo::frontend::DebuggerStatement;
 using neo::frontend::ExpressionStatement;
 using neo::frontend::DoWhileStatement;
@@ -107,6 +115,23 @@ CompileResult compileSource(const std::string& source,
     Compiler compiler(static_cast<const Program&>(*parsed.program), sema,
                       CompilerOptions{filename});
     return compiler.compile();
+}
+
+// 手工 AST：return <expr>;，编译执行后返回结果值（生命周期归 ctx）。
+Value* runReturnExpression(Fixture& f, neo::frontend::NodePtr expression) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(std::make_unique<ReturnStatement>(range,
+                                                     std::move(expression)));
+    Program program(range, std::move(body), SourceType::Script);
+
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    EXPECT_TRUE(result.ok());
+
+    VM vm(f.ctx.get(), result.code.get());
+    return vm.run();
 }
 
 }  // namespace
@@ -1415,10 +1440,35 @@ TEST(CompilerTest, SourceMapRecordsNodePosition) {
     EXPECT_EQ(position->column, 1u);
 }
 
-TEST(CompilerTest, UnsupportedStatementRecordsError) {
+TEST(CompilerTest, DebuggerStatementIsNoOp) {
     SourceRange range{};
     NodeList body;
     body.push_back(std::make_unique<DebuggerStatement>(range));
+    body.push_back(std::make_unique<ReturnStatement>(
+        range, std::make_unique<BinaryExpression>(
+                   range, BinaryOperator::Add,
+                   std::make_unique<NumericLiteral>(range, 1.0),
+                   std::make_unique<NumericLiteral>(range, 2.0))));
+    Program program(range, std::move(body), SourceType::Script);
+
+    SemaResult sema;
+    Compiler compiler(program, sema);
+    CompileResult result = compiler.compile();
+    ASSERT_TRUE(result.ok());
+
+    Fixture f;
+    VM vm(f.ctx.get(), result.code.get());
+    Value* value = vm.run();
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, UnsupportedStatementRecordsError) {
+    SourceRange range{};
+    NodeList body;
+    body.push_back(std::make_unique<neo::frontend::ForStatement>(
+        range, nullptr, nullptr, nullptr, nullptr));
     Program program(range, std::move(body), SourceType::Script);
 
     SemaResult sema;
@@ -1444,4 +1494,127 @@ TEST(CompilerTest, SemaErrorsPreventCompilation) {
     ASSERT_EQ(result.errors.size(), 1u);
     EXPECT_NE(result.errors[0].message.find("sema reported errors"),
               std::string::npos);
+}
+
+TEST(CompilerTest, CompilesUnaryOperators) {
+    SourceRange range{};
+    Fixture f;
+
+    Value* negated = runReturnExpression(
+        f, std::make_unique<UnaryExpression>(
+               range, UnaryOperator::Minus,
+               std::make_unique<NumericLiteral>(range, 5.0)));
+    ASSERT_NE(negated, nullptr);
+    ASSERT_EQ(negated->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(negated), -5.0);
+
+    Value* notZero = runReturnExpression(
+        f, std::make_unique<UnaryExpression>(
+               range, UnaryOperator::LogicalNot,
+               std::make_unique<NumericLiteral>(range, 0.0)));
+    ASSERT_NE(notZero, nullptr);
+    ASSERT_EQ(notZero->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<BooleanData*>(notZero->data())->value);
+
+    Value* bitNot = runReturnExpression(
+        f, std::make_unique<UnaryExpression>(
+               range, UnaryOperator::BitNot,
+               std::make_unique<NumericLiteral>(range, 1.0)));
+    ASSERT_NE(bitNot, nullptr);
+    ASSERT_EQ(bitNot->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(bitNot), -2.0);
+
+    Value* typeOf = runReturnExpression(
+        f, std::make_unique<UnaryExpression>(
+               range, UnaryOperator::TypeOf,
+               std::make_unique<NumericLiteral>(range, 1.0)));
+    ASSERT_NE(typeOf, nullptr);
+    ASSERT_EQ(typeOf->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(typeOf->data())->value, "number");
+
+    Value* voided = runReturnExpression(
+        f, std::make_unique<UnaryExpression>(
+               range, UnaryOperator::Void,
+               std::make_unique<NumericLiteral>(range, 1.0)));
+    ASSERT_NE(voided, nullptr);
+    EXPECT_EQ(voided->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(CompilerTest, CompilesLogicalOperatorsWithShortCircuit) {
+    SourceRange range{};
+    Fixture f;
+
+    Value* andValue = runReturnExpression(
+        f, std::make_unique<LogicalExpression>(
+               range, LogicalOperator::And,
+               std::make_unique<NumericLiteral>(range, 0.0),
+               std::make_unique<NumericLiteral>(range, 1.0)));
+    ASSERT_NE(andValue, nullptr);
+    ASSERT_EQ(andValue->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(andValue), 0.0);
+
+    Value* orValue = runReturnExpression(
+        f, std::make_unique<LogicalExpression>(
+               range, LogicalOperator::Or,
+               std::make_unique<NumericLiteral>(range, 1.0),
+               std::make_unique<NumericLiteral>(range, 2.0)));
+    ASSERT_NE(orValue, nullptr);
+    ASSERT_EQ(orValue->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(orValue), 1.0);
+
+    Value* nullish = runReturnExpression(
+        f, std::make_unique<LogicalExpression>(
+               range, LogicalOperator::Nullish,
+               std::make_unique<neo::frontend::NullLiteral>(range),
+               std::make_unique<NumericLiteral>(range, 3.0)));
+    ASSERT_NE(nullish, nullptr);
+    ASSERT_EQ(nullish->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(nullish), 3.0);
+
+    Value* notNullish = runReturnExpression(
+        f, std::make_unique<LogicalExpression>(
+               range, LogicalOperator::Nullish,
+               std::make_unique<NumericLiteral>(range, 0.0),
+               std::make_unique<NumericLiteral>(range, 3.0)));
+    ASSERT_NE(notNullish, nullptr);
+    ASSERT_EQ(notNullish->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(notNullish), 0.0);
+}
+
+TEST(CompilerTest, CompilesConditionalExpression) {
+    SourceRange range{};
+    Fixture f;
+
+    Value* consequent = runReturnExpression(
+        f, std::make_unique<ConditionalExpression>(
+               range, std::make_unique<NumericLiteral>(range, 1.0),
+               std::make_unique<NumericLiteral>(range, 2.0),
+               std::make_unique<NumericLiteral>(range, 3.0)));
+    ASSERT_NE(consequent, nullptr);
+    ASSERT_EQ(consequent->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(consequent), 2.0);
+
+    Value* alternate = runReturnExpression(
+        f, std::make_unique<ConditionalExpression>(
+               range, std::make_unique<NumericLiteral>(range, 0.0),
+               std::make_unique<NumericLiteral>(range, 2.0),
+               std::make_unique<NumericLiteral>(range, 3.0)));
+    ASSERT_NE(alternate, nullptr);
+    ASSERT_EQ(alternate->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(alternate), 3.0);
+}
+
+TEST(CompilerTest, CompilesSequenceExpression) {
+    SourceRange range{};
+    NodeList expressions;
+    expressions.push_back(std::make_unique<NumericLiteral>(range, 1.0));
+    expressions.push_back(std::make_unique<NumericLiteral>(range, 2.0));
+    expressions.push_back(std::make_unique<NumericLiteral>(range, 3.0));
+
+    Fixture f;
+    Value* value = runReturnExpression(
+        f, std::make_unique<SequenceExpression>(range, std::move(expressions)));
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
 }
