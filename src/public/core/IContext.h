@@ -709,6 +709,27 @@ public:
                                         bool hasPrototypeProperty,
                                         std::string_view bindName = {}) = 0;
 
+    // createScriptClassConstructor: 创建脚本 class 构造器（ClassData）。
+    // superCtor 为 nullptr 表示 base；Null Value 表示 extends null。负责创建
+    // prototype、链接原型链并设置 name/ownerClass。
+    virtual Value* createScriptClassConstructor(const vm::Code* code,
+                                                uint32_t entryPc,
+                                                size_t paramCount, bool hasRest,
+                                                bool isDerived, Value* superCtor,
+                                                std::string_view name) = 0;
+
+    // defineClassMethod: 把已创建的脚本函数定义为 class 方法/访问器。
+    // isStatic=false 落到 prototype，否则落到构造器自身；kind: 0=data,
+    // 1=getter, 2=setter。设置 [[HomeObject]]/ownerClass 并标记不可构造。
+    virtual Value* defineClassMethod(Value* classCtor, Value* key, Value* fn,
+                                     bool isStatic, uint32_t kind) = 0;
+
+    // defineClassField: 注册 public 字段。initializer 为脚本函数或 undefined
+    // （无初始化器）。实例字段延后到构造期初始化；静态字段立即以 classCtor
+    // 为 this 求值并按源码顺序定义。
+    virtual Value* defineClassField(Value* classCtor, Value* key,
+                                    Value* initializer, bool isStatic) = 0;
+
     // bindFunctionThis: 把 this 焊死到函数（箭头函数/显式绑定）。
     // 调用时 invoke 优先使用该值，忽略调用点传入的 thisArg。
     virtual void bindFunctionThis(Value* fn, Value* thisValue) = 0;

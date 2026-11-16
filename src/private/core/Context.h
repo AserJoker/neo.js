@@ -244,6 +244,14 @@ public:
                                 size_t paramCount, bool hasRest,
                                 bool constructible, bool hasPrototypeProperty,
                                 std::string_view bindName = {}) override;
+    Value* createScriptClassConstructor(const vm::Code* code, uint32_t entryPc,
+                                        size_t paramCount, bool hasRest,
+                                        bool isDerived, Value* superCtor,
+                                        std::string_view name) override;
+    Value* defineClassMethod(Value* classCtor, Value* key, Value* fn,
+                             bool isStatic, uint32_t kind) override;
+    Value* defineClassField(Value* classCtor, Value* key, Value* initializer,
+                            bool isStatic) override;
     void bindFunctionThis(Value* fn, Value* thisValue) override;
     Value* cloneValue(Value* source) override;
     Value* setClosure(Value* fn, std::string_view name) override;

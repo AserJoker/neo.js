@@ -1200,6 +1200,144 @@ Value* Context::createScriptFunction(const vm::Code* code, uint32_t entryPc,
     return fn;
 }
 
+Value* Context::createScriptClassConstructor(const vm::Code* code,
+                                             uint32_t entryPc,
+                                             size_t paramCount, bool hasRest,
+                                             bool isDerived, Value* superCtor,
+                                             std::string_view name) {
+    Value* proto = createObject();
+    if (proto == oomValue_) return proto;
+
+    FunctionCreateOptions opts;
+    opts.isClassConstructor = true;
+    opts.isDerived = isDerived;
+    opts.hasPrototypeProperty = false;
+    opts.superConstructor = superCtor;
+    opts.homeObject = proto;
+    Value* ctor = createNativeFunction(&scriptFunctionPlaceholder, 0, {}, opts);
+    if (ctor == oomValue_) return ctor;
+
+    auto* d = static_cast<FunctionData*>(ctor->data());
+    d->isScript = true;
+    d->code = code;
+    d->entryPc = entryPc;
+    d->paramCount = paramCount;
+    d->hasRest = hasRest;
+    d->ownerClass = ctor;
+
+    Value* r = defineProperty(ctor, "prototype", proto, false, false, false);
+    if (detail::isErrorValue(r)) return r;
+    r = defineProperty(proto, "constructor", ctor, true, false, true);
+    if (detail::isErrorValue(r)) return r;
+
+    if (isDerived) {
+        const bool nullSuper =
+            superCtor != nullptr && superCtor->type()->kind() == TypeKind::Null;
+        if (nullSuper) {
+            r = setPrototype(proto, superCtor);
+            if (detail::isErrorValue(r)) return r;
+            if (functionPrototype_ != nullptr) {
+                r = setPrototype(ctor, functionPrototype_);
+                if (detail::isErrorValue(r)) return r;
+            }
+        } else {
+            if (!detail::isConstructor(superCtor)) {
+                return detail::typeError(
+                    this, "Class extends value is not a constructor");
+            }
+            Value* superProto = getProperty(superCtor, "prototype");
+            if (detail::isErrorValue(superProto)) return superProto;
+            TypeKind spk = superProto->type()->kind();
+            if (spk != TypeKind::Null && !detail::isObjectKind(spk)) {
+                return detail::typeError(
+                    this,
+                    "Class extends value does not have valid prototype property");
+            }
+            r = setPrototype(proto, superProto);
+            if (detail::isErrorValue(r)) return r;
+            r = setPrototype(ctor, superCtor);
+            if (detail::isErrorValue(r)) return r;
+        }
+    }
+
+    setFunctionName(ctor, name);
+
+    Value* length = createNumber(static_cast<double>(paramCount));
+    if (length == oomValue_) return length;
+    r = defineProperty(ctor, "length", length, false, false, true);
+    if (detail::isErrorValue(r)) return r;
+    return ctor;
+}
+
+Value* Context::defineClassMethod(Value* classCtor, Value* key, Value* fn,
+                                  bool isStatic, uint32_t kind) {
+    if (classCtor == nullptr || fn == nullptr) {
+        return detail::typeError(this, "class method missing function");
+    }
+    Value* target = classCtor;
+    if (!isStatic) {
+        target = getProperty(classCtor, "prototype");
+        if (detail::isErrorValue(target)) return target;
+    }
+    if (fn->type()->kind() == TypeKind::Function) {
+        auto* d = static_cast<FunctionData*>(fn->data());
+        d->homeObject = target;
+        d->ownerClass = classCtor;
+        d->constructible = false;
+    }
+
+    if (kind == 0) {
+        Value* r = defineProperty(target, key, fn, true, false, true);
+        if (detail::isErrorValue(r)) return r;
+        return classCtor;
+    }
+
+    // 访问器：与同名既有访问器合并（getter/setter 可分别声明）。
+    Value* getter = kind == 1 ? fn : nullptr;
+    Value* setter = kind == 2 ? fn : nullptr;
+    PropertyKey pk;
+    if (Value* err = neo::core::toPropertyKey(this, key, pk)) return err;
+    Property desc;
+    bool exists = false;
+    if (Value* err =
+            target->type()->getOwnProperty(this, target, pk, exists, desc)) {
+        return err;
+    }
+    if (exists && desc.getter != nullptr) {
+        if (getter == nullptr) getter = desc.getter;
+    }
+    if (exists && desc.setter != nullptr) {
+        if (setter == nullptr) setter = desc.setter;
+    }
+    Value* r = defineAccessor(target, key, getter, setter, false, true);
+    if (detail::isErrorValue(r)) return r;
+    return classCtor;
+}
+
+Value* Context::defineClassField(Value* classCtor, Value* key,
+                                 Value* initializer, bool isStatic) {
+    if (classCtor == nullptr) {
+        return detail::typeError(this, "class field missing constructor");
+    }
+    Value* init = nullptr;
+    if (initializer != nullptr &&
+        initializer->type()->kind() != TypeKind::Undefined) {
+        init = initializer;
+    }
+    if (!isStatic) {
+        addInstanceField(classCtor, key, init);
+        return classCtor;
+    }
+    Value* value = createUndefined();
+    if (init != nullptr) {
+        value = call(init, classCtor, 0, nullptr);
+        if (detail::isErrorValue(value)) return value;
+    }
+    Value* r = defineProperty(classCtor, key, value, true, true, true);
+    if (detail::isErrorValue(r)) return r;
+    return classCtor;
+}
+
 void Context::bindFunctionThis(Value* fn, Value* thisValue) {
     if (fn == nullptr || fn->type()->kind() != TypeKind::Function) return;
     static_cast<FunctionData*>(fn->data())->self = thisValue;

@@ -158,10 +158,30 @@ private:
                                const frontend::NodeList& params,
                                const frontend::Node& body, bool arrow,
                                std::string_view name, bool generator = false,
-                               bool async = false);
+                               bool async = false, bool method = false);
     // 函数序言 + 函数体 + 隐式 return undefined。
+    // initInstanceElements：class 基类构造器在序言后初始化实例字段。
     void compileFunctionBody(const frontend::NodeList& params,
-                             const frontend::Node& body, bool arrow);
+                             const frontend::Node& body, bool arrow,
+                             bool initInstanceElements = false);
+
+    // —— class ——
+    void compileClassDeclaration(const frontend::ClassDeclaration& node);
+    void compileClassExpression(const frontend::ClassExpression& node);
+    // 编译 class 构造器（含默认构造器）并留下构造器值。
+    void compileClassConstructor(const frontend::ClassBody& body,
+                                 bool isDerived, std::string_view name);
+    // 把 class 元素（方法/字段/static block）逐个定义到构造器上。
+    void compileClassElements(const frontend::ClassBody& body);
+    // 字段初始化器：无参函数，返回表达式值（this 为实例/构造器）。
+    // owner 为 PropertyDefinition 的节点 id（Sema 捕获标注挂在该节点）。
+    void compileFieldInitializer(const frontend::Node& value,
+                                 frontend::NodeId owner);
+    // 访问器/方法函数：method=true（不可构造、无 prototype、严格）。
+    void compileMethodFunction(const frontend::FunctionExpression& function,
+                               std::string_view name);
+    // 把 class 元素的 key 压栈（computed 求值，否则标识符名）。
+    void compileClassKey(const frontend::Node& key, bool computed);
 
     // —— 声明提升 ——
     // 在当前作用域入口发射提升槽位：

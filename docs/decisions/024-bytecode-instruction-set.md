@@ -160,6 +160,15 @@ _func_end:
 | `new_spread` | `[ctor, argsArray] → [instance]` | new.target=ctor |
 | `load_new_target` | `[] → [new.target]` | 从当前作用域链取 `new.target`；普通调用为 undefined |
 | `rest_args` | `[argvFixed..argvN-1] → [array]` | 把序言栈上剩余实参按顺序收集成数组（rest 参数） |
+| `push_class entry,paramCount,flags` | `[superCtor] → [ctor]` | 创建脚本 class 构造器；flags 含 `kClassDerived` |
+| `set_strict` | `[fn] → [fn]` | 把函数闭包作用域标记为严格模式 |
+| `init_instance_elements` | `[] → []` | 以当前 this 初始化当前 class 的实例元素 |
+| `construct_super N` | `[argv...] → [this]` | 派生构造器的 `super(...)`；成功后初始化实例元素 |
+| `construct_super_spread` | `[argsArray] → [this]` | 同上，实参来自数组 |
+| `get_super_prop` | `[key] → [value]` | 从 homeObject 原型链读取，receiver=当前 this |
+| `set_super_prop` | `[key,value] → [value]` | 同上写入 |
+| `define_class_method flags` | `[ctor,key,fn] → [ctor]` | flags: bit0=isStatic，bit1..2=kind（0 data/1 get/2 set） |
+| `define_class_field flags` | `[ctor,key,init] → [ctor]` | bit0=isStatic；实例字段登记，静态字段立即求值 |
 | `ret` | `[val] → []` | 函数返回，弹栈顶作为返回值，结束当前 VM |
 | `hlt` | `[] → ∅` | 模块执行结束 |
 

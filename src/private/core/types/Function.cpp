@@ -246,8 +246,12 @@ Value* FunctionType::construct(IContext* ctx, Value* self, size_t argc, Value* a
             // 派生类：this 初始为 Uninitialized，由 super() 创建并初始化。
             Value* uninit = ctx->createUninitialized();
             Value* thisOut = nullptr;
-            Value* res = invokeNativeFunction(ctx, self, uninit, argc, argv, nullptr,
-                                              nullptr, nt, &thisOut);
+            Value* res = d->isScript
+                             ? invokeScriptFunction(ctx, self, uninit, argc, argv,
+                                                    nt, &thisOut)
+                             : invokeNativeFunction(ctx, self, uninit, argc, argv,
+                                                    nullptr, nullptr, nt,
+                                                    &thisOut);
             if (res == nullptr) res = ctx->createUndefined();
             TypeKind rk = res->type()->kind();
             if (rk == TypeKind::Exception || rk == TypeKind::Fatal) return res;
@@ -272,8 +276,10 @@ Value* FunctionType::construct(IContext* ctx, Value* self, size_t argc, Value* a
             Value* r = ctx->setPrototype(thisObj, proto);
             if (r->type()->kind() == TypeKind::Exception) return r;
         }
-        Value* res = invokeNativeFunction(ctx, self, thisObj, argc, argv, nullptr,
-                                          nullptr, nt);
+        Value* res = d->isScript
+                         ? invokeScriptFunction(ctx, self, thisObj, argc, argv, nt)
+                         : invokeNativeFunction(ctx, self, thisObj, argc, argv,
+                                                nullptr, nullptr, nt);
         if (res == nullptr) return thisObj;
         TypeKind rk = res->type()->kind();
         if (rk == TypeKind::Exception || rk == TypeKind::Fatal) return res;

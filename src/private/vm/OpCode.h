@@ -201,10 +201,31 @@ enum class OpCode : uint16_t {
     // rest 参数：[] → [array]。把函数序言栈上剩余实参（argv[paramCount..]）
     // 按顺序收集成数组；调用方已按 hasRest 压入全部实参。
     RestArgs,
+
+    // —— class ——
+    // push_class u32 entryPc, u32 paramCount, u32 flags：[superCtor] → [ctor]。
+    // flags 含 kFunctionHasRest / kClassDerived。
+    PushClass,
+    // set_strict：[fn] → [fn]，把函数闭包作用域标记为严格模式。
+    SetStrict,
+    // init_instance_elements：[] → []，以当前 this 初始化当前 class 的实例元素。
+    InitInstanceElements,
+    // construct_super u32 argc：[argv...] → [this]，派生构造器的 super(...)。
+    ConstructSuper,
+    // construct_super_spread：[argsArray] → [this]。
+    ConstructSuperSpread,
+    // get_super_prop：[key] → [value]；set_super_prop：[key,value] → [value]。
+    GetSuperProp,
+    SetSuperProp,
+    // define_class_method u32 flags：[ctor,key,fn] → [ctor]。
+    // flags: bit0=isStatic, bit1..2=kind(0 data/1 getter/2 setter)。
+    DefineClassMethod,
+    // define_class_field u32 flags：[ctor,key,init] → [ctor]；bit0=isStatic。
+    DefineClassField,
 };
 
 // 指令总数（分派表大小）。
-inline constexpr size_t kOpCodeCount = static_cast<size_t>(OpCode::RestArgs) + 1;
+inline constexpr size_t kOpCodeCount = static_cast<size_t>(OpCode::DefineClassField) + 1;
 
 // Define 的 flags 位。未置位即 false：
 //   mutable    —— 绑定可被 store 改写（const 为 false）
@@ -218,6 +239,8 @@ inline constexpr uint32_t kFunctionConstructible = 1u << 1;
 inline constexpr uint32_t kFunctionHasPrototype = 1u << 2;
 inline constexpr uint32_t kFunctionGenerator = 1u << 3;
 inline constexpr uint32_t kFunctionAsync = 1u << 4;
+// push_class：派生类（extends 非 null）。
+inline constexpr uint32_t kClassDerived = 1u << 5;
 
 // 指令名（诊断/测试用）。
 const char* opCodeName(OpCode op);

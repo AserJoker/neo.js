@@ -196,6 +196,15 @@ private:
     neo::core::Value* opYield();
     neo::core::Value* opAwait();
     neo::core::Value* opRestArgs();
+    neo::core::Value* opPushClass();
+    neo::core::Value* opSetStrict();
+    neo::core::Value* opInitInstanceElements();
+    neo::core::Value* opConstructSuper();
+    neo::core::Value* opConstructSuperSpread();
+    neo::core::Value* opGetSuperProp();
+    neo::core::Value* opSetSuperProp();
+    neo::core::Value* opDefineClassMethod();
+    neo::core::Value* opDefineClassField();
     neo::core::Value* opRet();
     neo::core::Value* opHalt();
 

@@ -2538,6 +2538,143 @@ TEST(CompilerTest, PatternParameterDefault) {
     EXPECT_DOUBLE_EQ(numberValue(value), 9.0);
 }
 
+TEST(CompilerTest, ClassMethodCall) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "class A { m() { return 5; } }"
+        "var result = new A().m();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 5.0);
+}
+
+TEST(CompilerTest, ClassConstructor) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "class A { constructor(x) { this.x = x; } }"
+        "var result = new A(7).x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 7.0);
+}
+
+TEST(CompilerTest, ClassFields) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "class A { x = 2; y = this.x + 1; }"
+        "var result = new A().y;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, ClassStaticMembers) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "class A { static m() { return 4; } static x = 6; }"
+        "var result = A.m() * 10 + A.x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 46.0);
+}
+
+TEST(CompilerTest, ClassGetter) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "class A { get x() { return 8; } }"
+        "var result = new A().x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 8.0);
+}
+
+TEST(CompilerTest, ClassStaticBlock) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "class A { static x; static { A.x = 11; } }"
+        "var result = A.x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 11.0);
+}
+
+TEST(CompilerTest, ClassExpression) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var C = class { m() { return 1; } };"
+        "var result = new C().m();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, ClassExtendsInheritsMethod) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "class B { m() { return 2; } }"
+        "class A extends B { n() { return this.m() + 1; } }"
+        "var result = new A().n();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, ClassSuperConstructor) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "class B { constructor(x) { this.x = x; } }"
+        "class A extends B { constructor() { super(9); } }"
+        "var result = new A().x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 9.0);
+}
+
+TEST(CompilerTest, ClassDefaultDerivedConstructor) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "class B { constructor(x) { this.x = x; } }"
+        "class A extends B {}"
+        "var result = new A(5).x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 5.0);
+}
+
+TEST(CompilerTest, ClassSuperMethod) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "class B { m() { return 3; } }"
+        "class A extends B { m() { return super.m() + 1; } }"
+        "var result = new A().m();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 4.0);
+}
+
+TEST(CompilerTest, ClassDerivedFields) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "class B { constructor() { this.a = 1; } }"
+        "class A extends B { b = this.a + 1; }"
+        "var result = new A().b;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 2.0);
+}
+
 TEST(CompilerTest, OptionalMemberShortCircuits) {
     Fixture f;
     Value* value = runScriptResult(

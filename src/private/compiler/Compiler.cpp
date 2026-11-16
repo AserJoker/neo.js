@@ -180,6 +180,10 @@ void Compiler::compileStatement(const Node& node) {
         case NodeKind::FunctionDeclaration:
             // 已在作用域入口提升并创建，执行期无操作。
             break;
+        case NodeKind::ClassDeclaration:
+            compileClassDeclaration(
+                static_cast<const frontend::ClassDeclaration&>(node));
+            break;
         case NodeKind::VariableDeclaration:
             compileVariableDeclaration(
                 static_cast<const frontend::VariableDeclaration&>(node));
@@ -332,6 +336,10 @@ void Compiler::compileExpression(const Node& node) {
         case NodeKind::ChainExpression:
             compileChainExpression(
                 static_cast<const frontend::ChainExpression&>(node));
+            break;
+        case NodeKind::ClassExpression:
+            compileClassExpression(
+                static_cast<const frontend::ClassExpression&>(node));
             break;
         case NodeKind::ObjectExpression:
             compileObjectExpression(
@@ -1517,6 +1525,29 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
         code_->pushUndefined();
         return;
     }
+    if (node.callee->kind() == NodeKind::SuperExpression) {
+        bool hasSpread = false;
+        for (const frontend::NodePtr& argument : node.arguments) {
+            if (argument && argument->kind() == NodeKind::SpreadElement) {
+                hasSpread = true;
+                break;
+            }
+        }
+        if (hasSpread) {
+            compileArgumentsArray(node.arguments);
+            code_->constructSuperSpread();
+            return;
+        }
+        uint32_t argc = 0;
+        for (const frontend::NodePtr& argument : node.arguments) {
+            if (!argument) continue;
+            compileExpression(*argument);
+            ++argc;
+        }
+        code_->constructSuper(argc);
+        return;
+    }
+
     bool isMember = node.callee->kind() == NodeKind::MemberExpression;
     if (isMember) {
         const auto& member =
@@ -1524,6 +1555,33 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
         if (!member.object) {
             error(node, "compiler: member call missing object");
             code_->pushUndefined();
+            return;
+        }
+        if (member.object->kind() == NodeKind::SuperExpression) {
+            // super.m()：receiver 是当前 this，方法从 homeObject 原型链取。
+            code_->loadThis();
+            compileMemberKey(member);
+            code_->getSuperProp();
+            // 后续实参与 call_method 复用下面的公共路径。
+            bool hasSpread = false;
+            for (const frontend::NodePtr& argument : node.arguments) {
+                if (argument && argument->kind() == NodeKind::SpreadElement) {
+                    hasSpread = true;
+                    break;
+                }
+            }
+            if (hasSpread) {
+                compileArgumentsArray(node.arguments);
+                code_->callMethodSpread();
+                return;
+            }
+            uint32_t argc = 0;
+            for (const frontend::NodePtr& argument : node.arguments) {
+                if (!argument) continue;
+                compileExpression(*argument);
+                ++argc;
+            }
+            code_->callMethod(argc);
             return;
         }
         // receiver 只求值一次：栈上保留一份作为 thisArg，另一份用于取方法。
@@ -1733,6 +1791,11 @@ void Compiler::compileMemberExpression(
     if (!node.object) {
         error(node, "compiler: member expression missing object");
         code_->pushUndefined();
+        return;
+    }
+    if (node.object->kind() == NodeKind::SuperExpression) {
+        compileMemberKey(node);
+        code_->getSuperProp();
         return;
     }
     compileExpression(*node.object);
@@ -1989,6 +2052,12 @@ void Compiler::compileAssignmentExpression(
             return;
         }
         // set_prop 本身把 RHS 作为表达式值留下。
+        if (member.object->kind() == NodeKind::SuperExpression) {
+            compileMemberKey(member);
+            compileExpression(*node.right);
+            code_->setSuperProp();
+            return;
+        }
         compileExpression(*member.object);
         compileMemberKey(member);
         compileExpression(*node.right);
@@ -2306,15 +2375,285 @@ void Compiler::compileVariableDeclaration(
     }
 }
 
+void Compiler::compileClassDeclaration(
+    const frontend::ClassDeclaration& node) {
+    if (!node.body || node.body->kind() != NodeKind::ClassBody) {
+        error(node, "compiler: class declaration missing body");
+        code_->pushUndefined();
+        return;
+    }
+    std::string name;
+    if (node.id && node.id->kind() == NodeKind::Identifier) {
+        name = static_cast<const frontend::Identifier&>(*node.id).name;
+    }
+    if (node.superClass) {
+        compileExpression(*node.superClass);
+    } else {
+        code_->pushUndefined();
+    }
+    const auto& body = static_cast<const frontend::ClassBody&>(*node.body);
+    compileClassConstructor(body, node.superClass != nullptr, name);
+    // 静态元素执行期间类名必须可见：先初始化绑定，再定义元素。
+    if (!name.empty()) {
+        code_->dup();
+        code_->initialize(name);
+    }
+    compileClassElements(body);
+    code_->pop();
+}
+
+void Compiler::compileClassExpression(const frontend::ClassExpression& node) {
+    if (!node.body || node.body->kind() != NodeKind::ClassBody) {
+        error(node, "compiler: class expression missing body");
+        code_->pushUndefined();
+        return;
+    }
+    std::string name;
+    if (node.id && node.id->kind() == NodeKind::Identifier) {
+        name = static_cast<const frontend::Identifier&>(*node.id).name;
+    }
+    if (node.superClass) {
+        compileExpression(*node.superClass);
+    } else {
+        code_->pushUndefined();
+    }
+    const auto& body = static_cast<const frontend::ClassBody&>(*node.body);
+    compileClassConstructor(body, node.superClass != nullptr, name);
+    compileClassElements(body);
+}
+
+void Compiler::compileClassConstructor(const frontend::ClassBody& body,
+                                       bool isDerived,
+                                       std::string_view name) {
+    const frontend::MethodDefinition* constructor = nullptr;
+    for (const frontend::NodePtr& element : body.elements) {
+        if (!element || element->kind() != NodeKind::MethodDefinition) continue;
+        const auto& method =
+            static_cast<const frontend::MethodDefinition&>(*element);
+        if (method.methodKind == frontend::MethodKind::Constructor) {
+            constructor = &method;
+            break;
+        }
+    }
+
+    uint32_t skip = code_->jmp();
+    uint32_t entryPc = code_->here();
+    uint32_t paramCount = 0;
+    bool hasRest = false;
+
+    if (constructor != nullptr && constructor->value &&
+        constructor->value->kind() == NodeKind::FunctionExpression) {
+        const auto& function = static_cast<const frontend::FunctionExpression&>(
+            *constructor->value);
+        for (const frontend::NodePtr& param : function.params) {
+            if (!param) continue;
+            if (param->kind() == NodeKind::RestElement) {
+                hasRest = true;
+            } else {
+                ++paramCount;
+            }
+        }
+        if (function.body) {
+            compileFunctionBody(function.params, *function.body, false,
+                                !isDerived);
+        } else {
+            error(*constructor->value,
+                  "compiler: class constructor missing body");
+            code_->pushUndefined();
+            code_->ret();
+        }
+    } else if (isDerived) {
+        // 默认派生构造器：constructor(...args) { super(...args); }
+        hasRest = true;
+        code_->storeThis();
+        code_->restArgs();
+        code_->constructSuperSpread();
+        code_->pop();
+        code_->pushUndefined();
+        code_->ret();
+    } else {
+        // 默认基类构造器：初始化实例元素后返回 undefined。
+        code_->storeThis();
+        code_->initInstanceElements();
+        code_->pushUndefined();
+        code_->ret();
+    }
+
+    uint32_t afterBody = code_->here();
+    code_->patchU32(skip + 2, afterBody);
+
+    uint32_t flags = isDerived ? vm::kClassDerived : 0;
+    if (hasRest) flags |= vm::kFunctionHasRest;
+    code_->pushClass(entryPc, paramCount, flags);
+    if (!name.empty()) code_->setFuncName(name);
+    code_->setStrict();
+
+    if (constructor != nullptr && constructor->value) {
+        if (const auto* captures = sema_.annotations.get<sema::FunctionCaptures>(
+                constructor->value->id())) {
+            for (const std::string& capture : captures->names) {
+                code_->setClosure(capture);
+            }
+        }
+    }
+}
+
+void Compiler::compileClassElements(const frontend::ClassBody& body) {
+    for (const frontend::NodePtr& element : body.elements) {
+        if (!element) continue;
+        switch (element->kind()) {
+            case NodeKind::MethodDefinition: {
+                const auto& method =
+                    static_cast<const frontend::MethodDefinition&>(*element);
+                if (method.methodKind == frontend::MethodKind::Constructor) {
+                    continue;  // 已作为构造器编译
+                }
+                if (!method.value ||
+                    method.value->kind() != NodeKind::FunctionExpression) {
+                    error(*element, "compiler: malformed class method");
+                    continue;
+                }
+                const auto& function =
+                    static_cast<const frontend::FunctionExpression&>(
+                        *method.value);
+                std::string methodName;
+                if (!method.computed && method.key &&
+                    method.key->kind() == NodeKind::Identifier) {
+                    methodName = static_cast<const frontend::Identifier&>(
+                                     *method.key)
+                                     .name;
+                }
+                compileClassKey(*method.key, method.computed);
+                compileMethodFunction(function, methodName);
+                uint32_t kind = 0;
+                if (method.methodKind == frontend::MethodKind::Get) kind = 1;
+                if (method.methodKind == frontend::MethodKind::Set) kind = 2;
+                uint32_t flags = (method.isStatic ? 1u : 0u) | (kind << 1);
+                code_->defineClassMethod(flags);
+                break;
+            }
+            case NodeKind::PropertyDefinition: {
+                const auto& field =
+                    static_cast<const frontend::PropertyDefinition&>(*element);
+                if (field.key) {
+                    compileClassKey(*field.key, field.computed);
+                } else {
+                    error(*element, "compiler: class field missing key");
+                    code_->pushUndefined();
+                }
+                if (field.value) {
+                    compileFieldInitializer(*field.value, field.id());
+                } else {
+                    code_->pushUndefined();
+                }
+                code_->defineClassField(field.isStatic ? 1u : 0u);
+                break;
+            }
+            case NodeKind::StaticBlock: {
+                const auto& block =
+                    static_cast<const frontend::StaticBlock&>(*element);
+                // 保留构造器：call_method 会消费 receiver。
+                code_->dup();
+                uint32_t skip = code_->jmp();
+                uint32_t entryPc = code_->here();
+                code_->storeThis();
+                code_->pushScope();
+                hoistScope(block.body, true);
+                for (const frontend::NodePtr& statement : block.body) {
+                    if (statement) compileStatement(*statement);
+                }
+                code_->pushUndefined();
+                code_->ret();
+                uint32_t afterBody = code_->here();
+                code_->patchU32(skip + 2, afterBody);
+                code_->pushFunction(entryPc, 0, 0);
+                code_->setStrict();
+                if (const auto* captures =
+                        sema_.annotations.get<sema::FunctionCaptures>(
+                            element->id())) {
+                    for (const std::string& capture : captures->names) {
+                        code_->setClosure(capture);
+                    }
+                }
+                // this = class 构造器；丢弃返回值。
+                code_->callMethod(0);
+                code_->pop();
+                break;
+            }
+            default:
+                error(*element, "compiler: unsupported class element");
+                break;
+        }
+    }
+}
+
+void Compiler::compileFieldInitializer(const frontend::Node& value,
+                                       frontend::NodeId owner) {
+    uint32_t skip = code_->jmp();
+    uint32_t entryPc = code_->here();
+    code_->storeThis();
+    code_->pushScope();
+    compileExpression(value);
+    code_->ret();
+    uint32_t afterBody = code_->here();
+    code_->patchU32(skip + 2, afterBody);
+    code_->pushFunction(entryPc, 0, 0);
+    code_->setStrict();
+    if (const auto* captures =
+            sema_.annotations.get<sema::FunctionCaptures>(owner)) {
+        for (const std::string& capture : captures->names) {
+            code_->setClosure(capture);
+        }
+    }
+}
+
+void Compiler::compileMethodFunction(
+    const frontend::FunctionExpression& function, std::string_view name) {
+    if (!function.body) {
+        error(function, "compiler: class method missing body");
+        code_->pushUndefined();
+        return;
+    }
+    compileFunctionObject(function, function.params, *function.body, false,
+                          name, function.generator, function.async, true);
+}
+
+void Compiler::compileClassKey(const frontend::Node& key, bool computed) {
+    if (computed) {
+        compileExpression(key);
+        return;
+    }
+    switch (key.kind()) {
+        case NodeKind::Identifier:
+            code_->push(static_cast<const frontend::Identifier&>(key).name);
+            return;
+        case NodeKind::StringLiteral:
+            code_->push(static_cast<const frontend::StringLiteral&>(key).value);
+            return;
+        case NodeKind::NumericLiteral:
+            compileNumericLiteral(
+                static_cast<const frontend::NumericLiteral&>(key));
+            return;
+        case NodeKind::PrivateIdentifier:
+            error(key, "compiler: private class elements not supported");
+            code_->pushUndefined();
+            return;
+        default:
+            error(key, "compiler: unsupported class element key");
+            code_->pushUndefined();
+            return;
+    }
+}
+
 void Compiler::compileFunctionObject(const Node& node,
                                      const frontend::NodeList& params,
                                      const Node& body, bool arrow,
                                      std::string_view name, bool generator,
-                                     bool async) {
+                                     bool async, bool method) {
     // 函数体内联在当前位置，执行路径先跳过它。
     uint32_t skip = code_->jmp();
     uint32_t entryPc = code_->here();
-    compileFunctionBody(params, body, arrow);
+    compileFunctionBody(params, body, arrow || method);
     uint32_t afterBody = code_->here();
     code_->patchU32(skip + 2, afterBody);
 
@@ -2336,7 +2675,9 @@ void Compiler::compileFunctionObject(const Node& node,
 
     uint32_t flags = 0;
     if (hasRest) flags |= vm::kFunctionHasRest;
-    if (generator) {
+    if (method) {
+        // class 方法/字段初始化器：不可构造、无 prototype。
+    } else if (generator) {
         // 生成器函数不可构造，但有 prototype 属性（其原型链挂 %GeneratorPrototype%）。
         flags |= vm::kFunctionGenerator | vm::kFunctionHasPrototype;
     } else if (async) {
@@ -2348,6 +2689,7 @@ void Compiler::compileFunctionObject(const Node& node,
     code_->pushFunction(entryPc, paramCount, flags);
 
     if (!name.empty()) code_->setFuncName(name);
+    if (method) code_->setStrict();
 
     // Sema 的捕获列表（穿透捕获）：逐个从定义点作用域链绑进闭包。
     if (const auto* captures =
@@ -2357,15 +2699,16 @@ void Compiler::compileFunctionObject(const Node& node,
         }
     }
 
-    // 箭头函数在定义点焊死外层 this。
-    if (arrow) {
+    // 箭头函数在定义点焊死外层 this（class 方法不绑定）。
+    if (arrow && !method) {
         code_->loadThis();
         code_->bindThis();
     }
 }
 
 void Compiler::compileFunctionBody(const frontend::NodeList& params,
-                                   const Node& body, bool arrow) {
+                                   const Node& body, bool arrow,
+                                   bool initInstanceElements) {
     // 形参建槽（argument_scope）：push_undefined; define "p"
     for (const frontend::NodePtr& param : params) {
         if (!param) continue;
@@ -2399,6 +2742,7 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
 
     // 栈顶是 self，先消费；随后按顺序绑定实参（栈上 argv0 在顶）。
     code_->storeThis();
+    if (initInstanceElements) code_->initInstanceElements();
     for (const frontend::NodePtr& param : params) {
         if (!param) continue;
         if (param->kind() == NodeKind::Identifier) {
@@ -2495,6 +2839,18 @@ void Compiler::hoistSlots(const frontend::NodeList& body, bool varScope) {
     for (const frontend::NodePtr& statement : body) {
         const Node* declaration = statement ? declarationOf(*statement)
                                             : nullptr;
+        if (declaration != nullptr &&
+            declaration->kind() == NodeKind::ClassDeclaration) {
+            const auto& klass =
+                static_cast<const frontend::ClassDeclaration&>(*declaration);
+            if (klass.id && klass.id->kind() == NodeKind::Identifier) {
+                code_->pushUninitialized();
+                code_->define(
+                    static_cast<const frontend::Identifier&>(*klass.id).name,
+                    true, false);
+            }
+            continue;
+        }
         if (declaration == nullptr ||
             declaration->kind() != NodeKind::VariableDeclaration) {
             continue;

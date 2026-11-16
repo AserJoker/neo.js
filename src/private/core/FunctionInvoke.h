@@ -35,8 +35,10 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
 // 切换作用域、创建新 VM、按序压入形参与 self，从 entryPc 执行。
 // fn 必须是 isScript 的 Function；返回正常值/Exception/Fatal/Interrupt。
 // newTarget：构造调用传入 new.target（nullptr = 普通调用，new.target 为 undefined）。
+// outThis：非空时写出函数环境的最终 this（派生类构造器可能由 super() 初始化）。
 Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t argc,
-                            Value* argv[], Value* newTarget = nullptr);
+                            Value* argv[], Value* newTarget = nullptr,
+                            Value** outThis = nullptr);
 
 // script 生成器的恢复驱动（CoroutineRunner）：首次恢复创建执行作用域并运行
 // 到首个 yield；后续恢复重建 VM 并从 VmState 继续。

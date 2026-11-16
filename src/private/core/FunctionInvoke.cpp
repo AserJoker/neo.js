@@ -159,7 +159,7 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
 }
 
 Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t argc,
-                            Value* argv[], Value* newTarget) {
+                            Value* argv[], Value* newTarget, Value** outThis) {
     auto* d = static_cast<FunctionData*>(fn->data());
     if (d->code == nullptr) {
         return detail::typeError(ctx, "script function has no code");
@@ -228,6 +228,7 @@ Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
 
     // 6. 返回值归属调用方作用域（restoreValue 语义）
     if (res != nullptr) savedCurrent->add(res);
+    if (outThis != nullptr) *outThis = execScope->thisValue();
 
     // 7. 平衡作用域并恢复调用方
     ctx->setCurrentFunctionEnv(savedFunctionEnv);

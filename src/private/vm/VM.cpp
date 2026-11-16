@@ -149,6 +149,15 @@ const char* opCodeName(OpCode op) {
         case OpCode::Ret:           return "ret";
         case OpCode::Halt:          return "hlt";
         case OpCode::RestArgs:      return "rest_args";
+        case OpCode::PushClass:     return "push_class";
+        case OpCode::SetStrict:     return "set_strict";
+        case OpCode::InitInstanceElements: return "init_instance_elements";
+        case OpCode::ConstructSuper: return "construct_super";
+        case OpCode::ConstructSuperSpread: return "construct_super_spread";
+        case OpCode::GetSuperProp:  return "get_super_prop";
+        case OpCode::SetSuperProp:  return "set_super_prop";
+        case OpCode::DefineClassMethod: return "define_class_method";
+        case OpCode::DefineClassField: return "define_class_field";
     }
     return "<unknown>";
 }
@@ -239,6 +248,15 @@ const VM::Handler* VM::handlers() {
         &VM::opRet,
         &VM::opHalt,
         &VM::opRestArgs,
+        &VM::opPushClass,
+        &VM::opSetStrict,
+        &VM::opInitInstanceElements,
+        &VM::opConstructSuper,
+        &VM::opConstructSuperSpread,
+        &VM::opGetSuperProp,
+        &VM::opSetSuperProp,
+        &VM::opDefineClassMethod,
+        &VM::opDefineClassField,
     };
     return table;
 }
@@ -1537,6 +1555,155 @@ Value* VM::opRet() {
 
 Value* VM::opHalt() {
     return ctx_->createUndefined();
+}
+
+Value* VM::opPushClass() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 12) {
+        return badBytecode("push_class: truncated operand");
+    }
+    uint32_t entryPc = readU32(bytes.data() + pc_);
+    uint32_t paramCount = readU32(bytes.data() + pc_ + 4);
+    uint32_t flags = readU32(bytes.data() + pc_ + 8);
+    pc_ += 12;
+
+    if (stack_.empty()) return badBytecode("push_class: missing super constructor");
+    Value* superCtor = pop();
+    bool isDerived = (flags & kClassDerived) != 0;
+    Value* ctor = ctx_->createScriptClassConstructor(
+        code_, entryPc, paramCount, (flags & kFunctionHasRest) != 0, isDerived,
+        superCtor, "");
+    if (detail::isErrorValue(ctor)) return fail(ctor);
+    push(ctor);
+    return nullptr;
+}
+
+Value* VM::opSetStrict() {
+    if (stack_.empty()) return badBytecode("set_strict: operand stack underflow");
+    ctx_->setFunctionStrict(top());
+    return nullptr;
+}
+
+Value* VM::opInitInstanceElements() {
+    Value* thisValue = ctx_->getThis();
+    if (detail::isErrorValue(thisValue)) return fail(thisValue);
+    Value* result =
+        ctx_->initializeInstanceElements(thisValue, ctx_->currentFunction());
+    if (detail::isErrorValue(result)) return fail(result);
+    return nullptr;
+}
+
+Value* VM::opConstructSuper() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("construct_super: truncated operand");
+    }
+    uint32_t argc = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (stack_.size() < argc) {
+        return badBytecode("construct_super: operand stack underflow");
+    }
+    std::vector<Value*> args(argc);
+    for (uint32_t i = argc; i > 0; --i) args[i - 1] = pop();
+
+    Value* superCtor = ctx_->classSuperConstructor(ctx_->currentFunction());
+    Value* result = ctx_->constructSuper(superCtor, ctx_->newTarget(), argc,
+                                         args.empty() ? nullptr : args.data());
+    if (detail::isErrorValue(result)) return fail(result);
+    // super() 返回后初始化当前 class 的实例元素（字段/私有 brand）。
+    Value* init =
+        ctx_->initializeInstanceElements(result, ctx_->currentFunction());
+    if (detail::isErrorValue(init)) return fail(init);
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opConstructSuperSpread() {
+    if (stack_.empty()) {
+        return badBytecode("construct_super_spread: operand stack underflow");
+    }
+    Value* argsArray = pop();
+    std::vector<Value*> args;
+    if (Value* err = readArrayElements(ctx_, argsArray, args)) return fail(err);
+
+    Value* superCtor = ctx_->classSuperConstructor(ctx_->currentFunction());
+    Value* result = ctx_->constructSuper(superCtor, ctx_->newTarget(),
+                                         args.size(), args.data());
+    if (detail::isErrorValue(result)) return fail(result);
+    Value* init =
+        ctx_->initializeInstanceElements(result, ctx_->currentFunction());
+    if (detail::isErrorValue(init)) return fail(init);
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opGetSuperProp() {
+    if (stack_.empty()) return badBytecode("get_super_prop: operand stack underflow");
+    Value* key = pop();
+    Value* homeObject = ctx_->functionHomeObject(ctx_->currentFunction());
+    Value* receiver = ctx_->getThis();
+    if (detail::isErrorValue(receiver)) return fail(receiver);
+    Value* result = ctx_->getSuperProperty(homeObject, key, receiver);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opSetSuperProp() {
+    if (stack_.size() < 2) {
+        return badBytecode("set_super_prop: operand stack underflow");
+    }
+    Value* value = pop();
+    Value* key = pop();
+    Value* homeObject = ctx_->functionHomeObject(ctx_->currentFunction());
+    Value* receiver = ctx_->getThis();
+    if (detail::isErrorValue(receiver)) return fail(receiver);
+    Value* result =
+        ctx_->setSuperProperty(homeObject, key, value, receiver);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opDefineClassMethod() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("define_class_method: truncated operand");
+    }
+    uint32_t flags = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (stack_.size() < 3) {
+        return badBytecode("define_class_method: operand stack underflow");
+    }
+    Value* fn = pop();
+    Value* key = pop();
+    Value* ctor = pop();
+    bool isStatic = (flags & 1u) != 0;
+    uint32_t kind = (flags >> 1) & 3u;
+    Value* result = ctx_->defineClassMethod(ctor, key, fn, isStatic, kind);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opDefineClassField() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("define_class_field: truncated operand");
+    }
+    uint32_t flags = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (stack_.size() < 3) {
+        return badBytecode("define_class_field: operand stack underflow");
+    }
+    Value* initializer = pop();
+    Value* key = pop();
+    Value* ctor = pop();
+    Value* result =
+        ctx_->defineClassField(ctor, key, initializer, (flags & 1u) != 0);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
 }
 
 Value* VM::opRestArgs() {

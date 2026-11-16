@@ -99,6 +99,12 @@ public:
 | MemberExpression | obj + key + `get_prop` |
 | ChainExpression / 可选链 | 整条链共用一个短路出口：每个 `?.` 处 `dup; jnotnullish cont; pop; [pop receiver]; push_undefined; jmp end`；链尾回填全部跳转 |
 | 成员赋值（`=`） | obj + key + RHS + `set_prop` |
+| ClassDeclaration / ClassExpression | superClass（或 undefined）+ `push_class`；先 `dup; initialize` 让静态元素可见类名；再逐个 `define_class_method`/`define_class_field`；static block 用函数 + `call_method`（保留构造器） |
+| class 构造器 | 显式 constructor 内联为脚本函数（基类序言 `init_instance_elements`）；无构造器时生成默认基类/派生构造器（派生用 `rest_args` + `construct_super_spread`） |
+| class 方法/访问器 | `push_function` flags=0（不可构造、无 prototype）+ `set_strict` + `define_class_method`；getter/setter 与同名访问器合并 |
+| class 字段 | 初始化器编译为无参脚本函数（method 模式）；实例字段登记到 ClassData，静态字段定义期以构造器为 this 求值 |
+| super() | `construct_super N` / `construct_super_spread`；成功后 `initializeInstanceElements` |
+| super.x / super.x = v | `get_super_prop` / `set_super_prop`（homeObject + 当前 this） |
 | ObjectExpression | `new_object` + 每个属性 `dup; key; value; define_prop; pop`；spread 用 `object_spread` |
 | ArrayExpression | `new_array N` + 每个元素 `dup; index; value; define_prop; pop`；含 spread 改为 `new_array 0` + `array_append`/`array_grow`/`array_spread` |
 | 解构声明（Array/ObjectPattern） | `compileBindingPattern`：数组模式 `get_iterator` + `iterator_next` 逐项写入目标；对象模式 `get_prop` 逐属性；rest 用 `object_rest`；默认值 `strict_equal(undefined)` + `jfalse` |
@@ -139,7 +145,7 @@ initialized=false)`；直接函数声明先建 undefined 槽，再创建函数�
 函数体序言：形参 `push_undefined; define` → `store_this` → 按序 `store` 实参 →
 `push_scope` → 函数体 → `push_undefined; ret`。
 
-对象访问器/`__proto__`、复合成员赋值、`export class` 等节点
+对象访问器/`__proto__`、复合成员赋值等节点
 暂记录 unsupported 错误，
 在后续切片中逐个补齐；每补一个节点，同时补 Compiler 测试与 VM 端到端测试。
 
@@ -165,8 +171,9 @@ tests/unit/compiler/
 
 - 优点：Compiler 与 Parser 同构，节点覆盖度可逐条推进；错误显式；SourceMap
   与 VM 的异常定位直接对接；后续只需在分派表里补节点。
-- 缺点：尚未覆盖 class、`super` 与正则字面量，真实程序还不能完整编译；
-  `for await` 暂 unsupported；解构过程中的 IteratorClose 尚未发射；
-  对象 rest 与 computed key 组合暂 unsupported；
-  标签模板中的非法转义尚未按规范产出 cooked=undefined（当前仍报词法错误）。
+- 缺点：尚未覆盖正则字面量，真实程序还不能完整编译；`for await` 暂
+  unsupported；解构过程中的 IteratorClose 尚未发射；对象 rest 与 computed
+  key 组合暂 unsupported；class 私有元素（`#x`/私有方法/访问器）暂
+  unsupported；class 表达式自身名字在类体内的内层绑定尚未建立；标签模板
+  中的非法转义尚未按规范产出 cooked=undefined（当前仍报词法错误）。
 - 待定：常量池去重、SourceMap 对多字节指令的精确边界。

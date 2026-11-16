@@ -363,6 +363,39 @@ struct Code {
     uint32_t halt() { return emitOp(OpCode::Halt); }
     uint32_t restArgs() { return emitOp(OpCode::RestArgs); }
 
+    // —— class ——
+    uint32_t pushClass(uint32_t entryPc, uint32_t paramCount, uint32_t flags) {
+        uint32_t pc = emitOp(OpCode::PushClass);
+        emitU32(entryPc);
+        emitU32(paramCount);
+        emitU32(flags);
+        return pc;
+    }
+    uint32_t setStrict() { return emitOp(OpCode::SetStrict); }
+    uint32_t initInstanceElements() {
+        return emitOp(OpCode::InitInstanceElements);
+    }
+    uint32_t constructSuper(uint32_t argc) {
+        uint32_t pc = emitOp(OpCode::ConstructSuper);
+        emitU32(argc);
+        return pc;
+    }
+    uint32_t constructSuperSpread() {
+        return emitOp(OpCode::ConstructSuperSpread);
+    }
+    uint32_t getSuperProp() { return emitOp(OpCode::GetSuperProp); }
+    uint32_t setSuperProp() { return emitOp(OpCode::SetSuperProp); }
+    uint32_t defineClassMethod(uint32_t flags) {
+        uint32_t pc = emitOp(OpCode::DefineClassMethod);
+        emitU32(flags);
+        return pc;
+    }
+    uint32_t defineClassField(uint32_t flags) {
+        uint32_t pc = emitOp(OpCode::DefineClassField);
+        emitU32(flags);
+        return pc;
+    }
+
     // 登记源码位置范围（Compiler 发射 AST 节点时调用）。
     void mapSource(uint32_t pcBegin, uint32_t pcEnd,
                    neo::core::SourcePosition position) {
