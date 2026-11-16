@@ -100,6 +100,7 @@ private:
     void compileBreakStatement(const frontend::BreakStatement& node);
     void compileContinueStatement(const frontend::ContinueStatement& node);
     void compileThrowStatement(const frontend::ThrowStatement& node);
+    void compileWithStatement(const frontend::WithStatement& node);
     void compileTryStatement(const frontend::TryStatement& node);
     void compileCatchClause(const frontend::CatchClause& node);
     void compileImportDeclaration(const frontend::ImportDeclaration& node);

@@ -1468,8 +1468,7 @@ TEST(CompilerTest, DebuggerStatementIsNoOp) {
 TEST(CompilerTest, UnsupportedStatementRecordsError) {
     SourceRange range{};
     NodeList body;
-    body.push_back(std::make_unique<neo::frontend::WithStatement>(
-        range, nullptr, nullptr));
+    body.push_back(std::make_unique<Identifier>(range, "x"));
     Program program(range, std::move(body), SourceType::Script);
 
     SemaResult sema;
@@ -1693,6 +1692,30 @@ TEST(CompilerTest, CompilesComputedAccessor) {
         f,
         "var k = 'x';"
         "var o = { get [k]() { return 7; } };"
+        "var result = o.x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 7.0);
+}
+
+TEST(CompilerTest, CompilesWithStatementRead) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var o = { x: 5 };"
+        "with (o) { result = x; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 5.0);
+}
+
+TEST(CompilerTest, CompilesWithStatementWrite) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var o = { x: 1 };"
+        "with (o) { x = 7; }"
         "var result = o.x;");
     ASSERT_NE(value, nullptr);
     ASSERT_EQ(value->type()->kind(), TypeKind::Number);

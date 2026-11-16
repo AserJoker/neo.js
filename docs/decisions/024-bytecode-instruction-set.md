@@ -309,6 +309,7 @@ _func_end:
 |------|------|
 | `pushScope` | 创建 body_scope，parent=argument_scope（ADR-013） |
 | `popScope` | 弹出 body_scope（函数退出时） |
+| `push_with_scope` | `[obj] → []`：以 obj 创建 WithScope 并设为 current（Sema 已保证 sloppy） |
 | `iteration_env n, name...` | 新建子作用域，把同名绑定克隆进去并设为 current |
 | `commit_iteration_env n, name...` | 把同名绑定写回父作用域（新 Value 作下一轮种子），再 pop 子作用域 |
 

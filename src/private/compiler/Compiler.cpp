@@ -232,6 +232,10 @@ void Compiler::compileStatement(const Node& node) {
             compileThrowStatement(
                 static_cast<const frontend::ThrowStatement&>(node));
             break;
+        case NodeKind::WithStatement:
+            compileWithStatement(
+                static_cast<const frontend::WithStatement&>(node));
+            break;
         case NodeKind::TryStatement:
             compileTryStatement(
                 static_cast<const frontend::TryStatement&>(node));
@@ -1047,6 +1051,17 @@ void Compiler::compileThrowStatement(const frontend::ThrowStatement& node) {
         code_->pushUndefined();
     }
     code_->throwValue();
+}
+
+void Compiler::compileWithStatement(const frontend::WithStatement& node) {
+    if (!node.object) {
+        error(node, "compiler: with missing object");
+        return;
+    }
+    compileExpression(*node.object);
+    code_->pushWithScope();
+    if (node.body) compileStatement(*node.body);
+    code_->popScope();
 }
 
 void Compiler::compileTryStatement(const frontend::TryStatement& node) {

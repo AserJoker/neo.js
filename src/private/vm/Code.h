@@ -317,6 +317,7 @@ struct Code {
 
     uint32_t pushScope() { return emitOp(OpCode::PushScope); }
     uint32_t popScope() { return emitOp(OpCode::PopScope); }
+    uint32_t pushWithScope() { return emitOp(OpCode::PushWithScope); }
 
     // 逐迭代环境：u32 count + count × u32 nameIndex。
     uint32_t iterationEnv(const std::vector<std::string>& names) {

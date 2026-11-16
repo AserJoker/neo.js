@@ -218,9 +218,9 @@ Scope* Context::pushNewScope(Scope* parent) {
     return s;
 }
 
-Value* Context::pushWithScope(Value* obj, Scope** outScope) {
+Value* Context::pushWithScope(Value* obj, Scope** outScope, bool checkStrict) {
     // with 在严格模式是语法错误（ES2024 §14.11.2）。
-    if (hasFlag("strict")) {
+    if (checkStrict && hasFlag("strict")) {
         return detail::errorOf(this, ErrorKind::SyntaxError,
                                "Strict mode code may not include a with statement");
     }

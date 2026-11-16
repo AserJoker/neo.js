@@ -59,6 +59,7 @@
 //   pop_label     d → d            （弹 label 帧）
 //   break/continue d → d           （按 label 帧跳转并平衡 label 栈）
 //   push_scope    d → d            （创建子作用域并设为 current）
+//   push_with_scope d → d - 1      （弹 obj，创建 WithScope 并设为 current）
 //   pop_scope     d → d            （销毁 current，回到 parent）
 //   push_function d → d + 1
 //   set_closure   d → d
@@ -177,6 +178,8 @@ enum class OpCode : uint16_t {
     // 作用域
     PushScope,
     PopScope,
+    // [obj] → []：以 obj 为 with 对象创建 WithScope 并设为 current。
+    PushWithScope,
     // 逐迭代环境（for let/const）：u32 count, count × u32 nameIndex。
     // IterationEnv：在当前作用域下新建子作用域，把同名绑定复制进去并设为 current。
     // CommitIterationEnv：把同名绑定写回父作用域，然后 pop 当前子作用域。

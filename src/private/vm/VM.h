@@ -189,6 +189,7 @@ private:
     neo::core::Value* opContinue();
     neo::core::Value* opPushScope();
     neo::core::Value* opPopScope();
+    neo::core::Value* opPushWithScope();
     neo::core::Value* opIterationEnv();
     neo::core::Value* opCommitIterationEnv();
     neo::core::Value* opPushFunction();

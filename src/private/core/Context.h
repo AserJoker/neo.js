@@ -127,7 +127,8 @@ public:
     Value* currentFunction() const override { return currentFunction_; }
     void setCurrentFunction(Value* fn) override { currentFunction_ = fn; }
     Scope* pushNewScope(Scope* parent) override;
-    Value* pushWithScope(Value* obj, Scope** outScope) override;
+    Value* pushWithScope(Value* obj, Scope** outScope,
+                         bool checkStrict = true) override;
     void popScope() override;
 
     // 调用栈（ADR-037）：纯展示信息，不参与变量解析

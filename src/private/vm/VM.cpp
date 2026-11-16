@@ -135,6 +135,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::Continue:      return "continue";
         case OpCode::PushScope:     return "push_scope";
         case OpCode::PopScope:      return "pop_scope";
+        case OpCode::PushWithScope: return "push_with_scope";
         case OpCode::IterationEnv:  return "iteration_env";
         case OpCode::CommitIterationEnv: return "commit_iteration_env";
         case OpCode::PushFunction:  return "push_function";
@@ -252,6 +253,7 @@ const VM::Handler* VM::handlers() {
         &VM::opContinue,
         &VM::opPushScope,
         &VM::opPopScope,
+        &VM::opPushWithScope,
         &VM::opIterationEnv,
         &VM::opCommitIterationEnv,
         &VM::opPushFunction,
@@ -1412,6 +1414,17 @@ Value* VM::opPushScope() {
 
 Value* VM::opPopScope() {
     ctx_->popScope();
+    return nullptr;
+}
+
+Value* VM::opPushWithScope() {
+    if (stack_.empty()) {
+        return badBytecode("push_with_scope: operand stack underflow");
+    }
+    Value* object = pop();
+    Scope* scope = nullptr;
+    Value* result = ctx_->pushWithScope(object, &scope, false);
+    if (result != nullptr && detail::isErrorValue(result)) return fail(result);
     return nullptr;
 }
 

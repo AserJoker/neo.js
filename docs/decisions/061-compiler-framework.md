@@ -77,6 +77,7 @@ public:
 | ExpressionStatement | 表达式 + `pop` |
 | ReturnStatement | 表达式（或 `push_undefined`）+ `ret` |
 | BlockStatement | `push_scope` + 语句 + `pop_scope` |
+| WithStatement | `obj` + `push_with_scope` + body + `pop_scope` |
 | Numeric/String/Boolean/NullLiteral | `push_*` |
 | BigIntLiteral | `push_bigint digits, radix` |
 | Identifier | `load` |

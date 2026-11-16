@@ -188,7 +188,10 @@ public:
     // obj 先 ToObject（null/undefined -> TypeError；原始值 -> 包装对象）。
     // 严格模式禁止 with（SyntaxError）。成功返回 nullptr 并写 outScope；
     // 失败返回 Exception/Fatal（outScope 不变）。
-    virtual Value* pushWithScope(Value* obj, Scope** outScope) = 0;
+    // checkStrict=false 由 Compiler 使用：Sema 已确认该 with 位于 sloppy 代码，
+    // 但引擎默认作用域可能被标注 strict。
+    virtual Value* pushWithScope(Value* obj, Scope** outScope,
+                                 bool checkStrict = true) = 0;
 
     // popScope: 销毁 current scope 并回到其 parent（~Scope 递归释放子树 + allocator->free）。
     // global/root 不可 pop（parent 为 global 或为 nullptr 时无操作）。
