@@ -454,6 +454,31 @@ Value* Context::importModule(std::string_view specifier) {
     return mod->exports;
 }
 
+Value* Context::importMeta() {
+    if (moduleStack_.empty()) return createUndefined();
+    Module* mod = moduleStack_.back();
+    if (mod->importMeta != nullptr) return mod->importMeta;
+
+    // 在模块 root scope 下创建，保证对象从 global 作用域树可达（ADR-044）。
+    Scope* savedCurrent = current_;
+    current_ = mod->scope;
+    Value* meta = createObject();
+    if (meta == oomValue_) {
+        current_ = savedCurrent;
+        return meta;
+    }
+    Value* url = createString(mod->id);
+    if (url == oomValue_) {
+        current_ = savedCurrent;
+        return url;
+    }
+    Value* result = setProperty(meta, "url", url);
+    current_ = savedCurrent;
+    if (detail::isErrorValue(result)) return result;
+    mod->importMeta = meta;
+    return meta;
+}
+
 Value* Context::exportSlot(Value* exports, std::string_view exportName,
                            Value* slot) {
     if (detail::isErrorValue(exports)) return exports;

@@ -383,6 +383,7 @@ struct Code {
     }
     uint32_t constructSpread() { return emitOp(OpCode::NewSpread); }
     uint32_t loadNewTarget() { return emitOp(OpCode::LoadNewTarget); }
+    uint32_t importMeta() { return emitOp(OpCode::ImportMeta); }
 
     uint32_t yieldValue() { return emitOp(OpCode::Yield); }
     uint32_t yieldDelegate() { return emitOp(OpCode::YieldDelegate); }

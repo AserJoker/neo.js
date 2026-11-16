@@ -22,6 +22,7 @@ struct Module {
     std::string dirname;         // id 的目录部分（绝对路径），用于解析相对 import
     Scope* scope = nullptr;      // 模块 root scope（借用，挂在 global 下）
     Value* exports = nullptr;    // 导出对象（借用，原型为 null）
+    Value* importMeta = nullptr; // import.meta 对象（借用，首次访问时创建）
     ModuleLoader loader = nullptr;  // 原生 loader（可为空）
     ModuleCompilation compilation;  // 编译产物（可为空：仅占位/原生 loader）
     bool loaded = false;         // loader/编译产物是否已成功执行

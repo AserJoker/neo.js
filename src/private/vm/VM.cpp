@@ -183,6 +183,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::SetPrivateSetterKeep: return "set_private_setter_keep";
         case OpCode::SetOwnerClass: return "set_owner_class";
         case OpCode::PrivateIn:     return "private_in";
+        case OpCode::ImportMeta:    return "import_meta";
     }
     return "<unknown>";
 }
@@ -304,6 +305,7 @@ const VM::Handler* VM::handlers() {
         &VM::opSetPrivateSetterKeep,
         &VM::opSetOwnerClass,
         &VM::opPrivateIn,
+        &VM::opImportMeta,
     };
     return table;
 }
@@ -1745,6 +1747,13 @@ Value* VM::opNewSpread() {
     if (detail::isErrorValue(result)) return fail(result);
     if (detail::isInterruptValue(result)) return result;
     push(result);
+    return nullptr;
+}
+
+Value* VM::opImportMeta() {
+    Value* meta = ctx_->importMeta();
+    if (detail::isErrorValue(meta)) return fail(meta);
+    push(meta);
     return nullptr;
 }
 

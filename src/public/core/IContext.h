@@ -882,6 +882,11 @@ public:
     // @@toStringTag = "Module"）。导出属性是活绑定，见 exportBinding。
     virtual Value* createModuleNamespace(std::string_view bindName = {}) = 0;
 
+    // importMeta: 当前正在执行的模块的 import.meta 对象（首次访问时创建并
+    // 缓存在 Module 上）。对象含 url 属性，值为模块 id。非模块上下文返回
+    // undefined（Sema 已禁止该用法，此处仅作防御）。
+    virtual Value* importMeta() = 0;
+
     // exportBinding: 把当前作用域链上的 localName 槽位以 exportName 暴露到
     // exports（模块命名空间对象）。属性直接持有该槽位 Value*，**不 clone**；
     // 后续 store 原地替换槽位的 meta+data，导入方读取即可见最新值。

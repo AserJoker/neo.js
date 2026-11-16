@@ -325,6 +325,7 @@ public:
                               ModuleCompilation compilation) override;
     Value* importModule(std::string_view id) override;
     Value* createModuleNamespace(std::string_view bindName = {}) override;
+    Value* importMeta() override;
     Value* exportBinding(Value* exports, std::string_view exportName,
                          std::string_view localName) override;
     Value* exportSlot(Value* exports, std::string_view exportName,

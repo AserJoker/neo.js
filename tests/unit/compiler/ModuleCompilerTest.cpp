@@ -124,6 +124,46 @@ TEST(ModuleCompilerTest, NamedExportAndImport) {
     EXPECT_DOUBLE_EQ(number(get(f.ctx.get(), ns, "doubled")), 84.0);
 }
 
+TEST(ModuleCompilerTest, ImportMetaUrl) {
+    Fixture f;
+    ASSERT_TRUE(addModule(f, "/a.js",
+                          "export const url = import.meta.url;\n"
+                          "export const same = import.meta === import.meta;"));
+
+    Value* ns = f.ctx->importModule("/a.js");
+    ASSERT_FALSE(isErrorValue(ns)) << errorText(f.ctx.get(), ns);
+    Value* url = get(f.ctx.get(), ns, "url");
+    ASSERT_NE(url, nullptr);
+    ASSERT_EQ(url->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<neo::core::StringData*>(url->data())->value, "/a.js");
+    Value* same = get(f.ctx.get(), ns, "same");
+    ASSERT_NE(same, nullptr);
+    ASSERT_EQ(same->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<neo::core::BooleanData*>(same->data())->value);
+}
+
+TEST(ModuleCompilerTest, ImportMetaIsPerModule) {
+    Fixture f;
+    ASSERT_TRUE(addModule(f, "/a.js", "export const meta = import.meta;"));
+    ASSERT_TRUE(addModule(f, "/b.js", "export const meta = import.meta;"));
+    ASSERT_TRUE(addModule(f, "/c.js",
+                          "import { meta as a } from './a.js';\n"
+                          "import { meta as b } from './b.js';\n"
+                          "export const distinct = a !== b;\n"
+                          "export const url = b.url;"));
+
+    Value* ns = f.ctx->importModule("/c.js");
+    ASSERT_FALSE(isErrorValue(ns)) << errorText(f.ctx.get(), ns);
+    Value* distinct = get(f.ctx.get(), ns, "distinct");
+    ASSERT_NE(distinct, nullptr);
+    ASSERT_EQ(distinct->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<neo::core::BooleanData*>(distinct->data())->value);
+    Value* url = get(f.ctx.get(), ns, "url");
+    ASSERT_NE(url, nullptr);
+    ASSERT_EQ(url->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<neo::core::StringData*>(url->data())->value, "/b.js");
+}
+
 TEST(ModuleCompilerTest, DefaultExportAndImport) {
     Fixture f;
     ASSERT_TRUE(addModule(f, "/a.js", "export default 7;"));

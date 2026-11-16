@@ -1862,6 +1862,10 @@ void Compiler::compileMetaProperty(const frontend::MetaProperty& node) {
             code_->loadNewTarget();
             return;
         }
+        if (meta == "import" && property == "meta") {
+            code_->importMeta();
+            return;
+        }
         error(node, "compiler: unsupported meta property " + meta + "." +
                         property);
         code_->pushUndefined();

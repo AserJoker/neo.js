@@ -207,6 +207,7 @@ private:
     neo::core::Value* opNew();
     neo::core::Value* opNewSpread();
     neo::core::Value* opLoadNewTarget();
+    neo::core::Value* opImportMeta();
     neo::core::Value* opYield();
     neo::core::Value* opYieldDelegate();
     neo::core::Value* opAwait();
