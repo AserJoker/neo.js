@@ -117,6 +117,8 @@ private:
     void compileNullLiteral(const frontend::NullLiteral& node);
     void compileBinaryExpression(const frontend::BinaryExpression& node);
     void compileUnaryExpression(const frontend::UnaryExpression& node);
+    // delete 运算符：成员删除返回 deleteProperty 结果；标识符/非引用按规范返回布尔。
+    void compileDeleteExpression(const frontend::Node& argument);
     void compileLogicalExpression(const frontend::LogicalExpression& node);
     void compileConditionalExpression(
         const frontend::ConditionalExpression& node);
@@ -202,6 +204,9 @@ private:
     static constexpr std::string_view kDefaultSlot = "*default*";
 
     // —— 辅助 ——
+    // 复合赋值运算符 → 二元指令；不支持时记录错误并压 undefined。
+    bool emitCompoundBinary(frontend::AssignmentOperator op,
+                            const frontend::Node& node);
     void error(const frontend::Node& node, std::string message);
     // 把 [begin, code_.here()) 映射到 node 的源码起始位置。
     void mapNode(const frontend::Node& node, uint32_t begin);

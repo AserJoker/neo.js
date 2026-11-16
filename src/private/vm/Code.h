@@ -142,6 +142,7 @@ struct Code {
     uint32_t dup() { return emitOp(OpCode::Dup); }
     uint32_t clone() { return emitOp(OpCode::Clone); }
     uint32_t swap() { return emitOp(OpCode::Swap); }
+    uint32_t dup2() { return emitOp(OpCode::Dup2); }
 
     // 定义绑定：mutableBinding=false 为 const，initialized=false 表示提升建槽
     // 后仍处于 TDZ（后续用 initialize 解除）。
@@ -172,6 +173,8 @@ struct Code {
 
     uint32_t getProp() { return emitOp(OpCode::GetProp); }
     uint32_t setProp() { return emitOp(OpCode::SetProp); }
+    uint32_t deleteProp() { return emitOp(OpCode::DeleteProp); }
+    uint32_t setPropKeep() { return emitOp(OpCode::SetPropKeep); }
     uint32_t newObject() { return emitOp(OpCode::NewObject); }
     uint32_t newArray(uint32_t length = 0) {
         uint32_t pc = emitOp(OpCode::NewArray);
@@ -386,6 +389,7 @@ struct Code {
     }
     uint32_t getSuperProp() { return emitOp(OpCode::GetSuperProp); }
     uint32_t setSuperProp() { return emitOp(OpCode::SetSuperProp); }
+    uint32_t setSuperPropKeep() { return emitOp(OpCode::SetSuperPropKeep); }
     uint32_t defineClassMethod(uint32_t flags) {
         uint32_t pc = emitOp(OpCode::DefineClassMethod);
         emitU32(flags);

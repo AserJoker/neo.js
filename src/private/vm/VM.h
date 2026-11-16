@@ -135,6 +135,10 @@ private:
     neo::core::Value* opDup();
     neo::core::Value* opClone();
     neo::core::Value* opSwap();
+    neo::core::Value* opDup2();
+    neo::core::Value* opDeleteProp();
+    neo::core::Value* opSetPropKeep();
+    neo::core::Value* opSetSuperPropKeep();
     neo::core::Value* opDefine();
     neo::core::Value* opInitialize();
     neo::core::Value* opLoad();

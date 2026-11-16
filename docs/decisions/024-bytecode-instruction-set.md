@@ -82,10 +82,18 @@ _func_end:
 |------|--------|------|
 | `get_prop` | `[obj, key] → [val]` | `ctx->getProperty(obj, key)` |
 | `set_prop` | `[obj, key, value] → [value]` | `ctx->setProperty`，RHS 即表达式值 |
+| `delete_prop` | `[obj, key] → [bool]` | `ctx->deleteProperty`；返回删除是否成功 |
+| `set_prop_keep` | `[obj, key, value, keep] → [keep]` | `set_prop` 后保留 `keep`（后缀 `++/--` 保留旧值） |
+| `dup2` | `[a, b] → [a, b, a, b]` | 复合成员赋值/更新只求值一次 obj 与 key |
 
 - key 是 `Value*`：computed 访问求值表达式，非 computed 压入属性名字符串。
 - 成员读：`obj; key; get_prop`。
 - 成员写：`obj; key; RHS; set_prop`（无需 `dup`，`set_prop` 留下 RHS）。
+- 复合成员写：`obj; key; dup2; get_prop; RHS; 运算; set_prop`。
+- 后缀成员更新：`obj; key; dup2; get_prop; clone; 1; 运算; swap; set_prop_keep`
+  （`swap` 把 `[old, new]` 调整为 `[new, old]`，`set_prop_keep` 写 new、留 old）。
+- `delete obj.x` / `delete obj[k]`：`obj; key; delete_prop`；`delete` 标识符压
+  `false`（已解析绑定不可删除），非引用表达式求值后 `pop` 并压 `true`。
 - 成员调用：`obj; dup; key; get_prop; args; call_method N`，`dup` 保留
   receiver 作为 thisArg，且 receiver 只求值一次。
 
@@ -124,7 +132,7 @@ _func_end:
 
 | 指令 | 栈契约 | 说明 |
 |------|--------|------|
-| `unary <op>` | `[a] → [result]` | op 为 `core::UnaryOperator`；`delete` 暂不支持 |
+| `unary <op>` | `[a] → [result]` | op 为 `core::UnaryOperator`；`delete` 走 `delete_prop`，不经过 `unary` |
 
 - 一元运算符统一走 `ctx->unaryOp(op, value)`，与二元运算一致由引擎负责
   类型转换与异常。
@@ -168,6 +176,7 @@ _func_end:
 | `construct_super_spread` | `[argsArray] → [this]` | 同上，实参来自数组 |
 | `get_super_prop` | `[key] → [value]` | 从 homeObject 原型链读取，receiver=当前 this |
 | `set_super_prop` | `[key,value] → [value]` | 同上写入 |
+| `set_super_prop_keep` | `[key,value,keep] → [keep]` | 写入后保留 `keep`（后缀更新） |
 | `define_class_method flags` | `[ctor,key,fn] → [ctor]` | flags: bit0=isStatic，bit1..2=kind（0 data/1 get/2 set） |
 | `define_class_field flags` | `[ctor,key,init] → [ctor]` | bit0=isStatic；实例字段登记，静态字段立即求值 |
 | `yield_delegate` | `[iterable] → [completion]` | `yield*`：维护被委托迭代器，恢复时转发 next/throw/return |

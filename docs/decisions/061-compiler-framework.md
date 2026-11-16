@@ -80,10 +80,11 @@ public:
 | Numeric/String/Boolean/NullLiteral | `push_*` |
 | Identifier | `load` |
 | VariableDeclaration | 声明点 `store`（var）/ `initialize`（let/const） |
-| AssignmentExpression | `=`：右值 + `dup` + `store`；复合：`load` + 右值 + 运算 + `dup` + `store` |
-| UpdateExpression | 前缀：`load` + 1 + 运算 + `dup` + `store`；后缀：`load` + `clone` + `swap` + 1 + 运算 + `store` |
+| AssignmentExpression | `=`：右值 + `dup` + `store`；复合标识符：`load` + 右值 + 运算 + `dup` + `store`；复合成员：`obj` + key + `dup2` + `get_prop` + 右值 + 运算 + `set_prop` |
+| UpdateExpression | 标识符前缀：`load` + 1 + 运算 + `dup` + `store`；标识符后缀：`load` + `clone` + `swap` + 1 + 运算 + `store`；成员前缀：`obj` + key + `dup2` + `get_prop` + 1 + 运算 + `set_prop`；成员后缀：`...` + `clone` + 1 + 运算 + `swap` + `set_prop_keep` |
 | BinaryExpression（+ - * / < <= > >= === !==） | 左、右 + 对应指令；`!==` 为 `strict_equal` + 逻辑非 |
-| UnaryExpression（+ - ! ~ typeof void） | 参数 + `unary op`；`delete` 暂 unsupported |
+| UnaryExpression（+ - ! ~ typeof void） | 参数 + `unary op` |
+| delete | 成员：`obj` + key + `delete_prop`；标识符压 `false`；非引用求值 + `pop` + 压 `true`；`delete super.x` 为早期错误 |
 | LogicalExpression（&& \|\| ??） | 左 + `dup` + `jfalse`/`jtrue`/`jnotnullish` end；`pop` + 右；回填 end |
 | ConditionalExpression | test + `jfalse` alternate；consequent + `jmp` end；alternate |
 | SequenceExpression | 逐项求值，非末项 `pop` |
@@ -146,7 +147,7 @@ initialized=false)`；直接函数声明先建 undefined 槽，再创建函数�
 函数体序言：形参 `push_undefined; define` → `store_this` → 按序 `store` 实参 →
 `push_scope` → 函数体 → `push_undefined; ret`。
 
-对象访问器/`__proto__`、复合成员赋值等节点
+对象访问器/`__proto__`、`delete` 可选链等节点
 暂记录 unsupported 错误，
 在后续切片中逐个补齐；每补一个节点，同时补 Compiler 测试与 VM 端到端测试。
 

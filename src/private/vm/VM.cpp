@@ -159,6 +159,10 @@ const char* opCodeName(OpCode op) {
         case OpCode::DefineClassMethod: return "define_class_method";
         case OpCode::DefineClassField: return "define_class_field";
         case OpCode::YieldDelegate: return "yield_delegate";
+        case OpCode::Dup2:          return "dup2";
+        case OpCode::DeleteProp:    return "delete_prop";
+        case OpCode::SetPropKeep:   return "set_prop_keep";
+        case OpCode::SetSuperPropKeep: return "set_super_prop_keep";
     }
     return "<unknown>";
 }
@@ -259,6 +263,10 @@ const VM::Handler* VM::handlers() {
         &VM::opDefineClassMethod,
         &VM::opDefineClassField,
         &VM::opYieldDelegate,
+        &VM::opDup2,
+        &VM::opDeleteProp,
+        &VM::opSetPropKeep,
+        &VM::opSetSuperPropKeep,
     };
     return table;
 }
@@ -614,6 +622,58 @@ Value* VM::opClone() {
 Value* VM::opSwap() {
     if (stack_.size() < 2) return badBytecode("swap: operand stack underflow");
     std::swap(stack_[stack_.size() - 1], stack_[stack_.size() - 2]);
+    return nullptr;
+}
+
+Value* VM::opDup2() {
+    if (stack_.size() < 2) return badBytecode("dup2: operand stack underflow");
+    Value* a = stack_[stack_.size() - 2];
+    Value* b = stack_[stack_.size() - 1];
+    stack_.push_back(a);
+    stack_.push_back(b);
+    return nullptr;
+}
+
+Value* VM::opDeleteProp() {
+    if (stack_.size() < 2) {
+        return badBytecode("delete_prop: operand stack underflow");
+    }
+    Value* key = pop();
+    Value* object = pop();
+    Value* result = ctx_->deleteProperty(object, key);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opSetPropKeep() {
+    if (stack_.size() < 4) {
+        return badBytecode("set_prop_keep: operand stack underflow");
+    }
+    Value* keep = pop();
+    Value* value = pop();
+    Value* key = pop();
+    Value* object = pop();
+    Value* result = ctx_->setProperty(object, key, value);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(keep);
+    return nullptr;
+}
+
+Value* VM::opSetSuperPropKeep() {
+    if (stack_.size() < 3) {
+        return badBytecode("set_super_prop_keep: operand stack underflow");
+    }
+    Value* keep = pop();
+    Value* value = pop();
+    Value* key = pop();
+    Value* homeObject = ctx_->functionHomeObject(ctx_->currentFunction());
+    Value* receiver = ctx_->getThis();
+    if (detail::isErrorValue(receiver)) return fail(receiver);
+    Value* result =
+        ctx_->setSuperProperty(homeObject, key, value, receiver);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(keep);
     return nullptr;
 }
 

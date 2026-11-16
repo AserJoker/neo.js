@@ -3039,3 +3039,145 @@ TEST(CompilerTest, ForLetPerIterationSurvivesContinue) {
     ASSERT_EQ(value->type()->kind(), TypeKind::Number);
     EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
 }
+
+TEST(CompilerTest, CompoundMemberAssignment) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var o = { x: 2 };"
+        "o.x += 3;"
+        "result = o.x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 5.0);
+}
+
+TEST(CompilerTest, CompoundComputedMemberEvaluatesKeyOnce) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var n = 0;"
+        "var o = { x: 1 };"
+        "function k() { n = n + 1; return 'x'; }"
+        "o[k()] += 2;"
+        "result = o.x * 10 + n;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 31.0);
+}
+
+TEST(CompilerTest, CompoundSuperMemberAssignment) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "class A { get x() { return 1; } set x(v) { this._x = v; } }"
+        "class B extends A { bump() { super.x += 2; return this._x; } }"
+        "result = new B().bump();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, MemberPostfixUpdateReturnsOldValue) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var o = { x: 1 };"
+        "result = o.x++ + o.x * 10;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 21.0);
+}
+
+TEST(CompilerTest, MemberPrefixUpdateReturnsNewValue) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var o = { x: 1 };"
+        "result = ++o.x + o.x * 10;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 22.0);
+}
+
+TEST(CompilerTest, ComputedMemberUpdateEvaluatesKeyOnce) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var n = 0;"
+        "var o = { x: 1 };"
+        "function k() { n = n + 1; return 'x'; }"
+        "o[k()]++;"
+        "result = n * 10 + o.x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 12.0);
+}
+
+TEST(CompilerTest, SuperPostfixUpdateReturnsOldValue) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "class A { get x() { return 1; } set x(v) { this._x = v; } }"
+        "class B extends A { post() { return super.x++ + this._x * 10; } }"
+        "result = new B().post();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 21.0);
+}
+
+TEST(CompilerTest, DeleteMemberProperty) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var o = { x: 1 };"
+        "var r = delete o.x;"
+        "result = (r ? 10 : 0) + (o.x === void 0 ? 1 : 0);");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 11.0);
+}
+
+TEST(CompilerTest, DeleteComputedMemberProperty) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var o = { x: 1 };"
+        "result = delete o['x'] ? 1 : 0;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, DeleteNonReferenceReturnsTrue) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "result = delete (1 + 2) ? 1 : 0;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, DeleteIdentifierReturnsFalseAndKeepsBinding) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var x = 1;"
+        "var r = delete x;"
+        "result = (r ? 10 : 0) + x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}

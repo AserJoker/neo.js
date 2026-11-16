@@ -1396,6 +1396,47 @@ void Compiler::compileBinaryExpression(
     }
 }
 
+void Compiler::compileDeleteExpression(const frontend::Node& argument) {
+    if (argument.kind() == NodeKind::MemberExpression) {
+        const auto& member =
+            static_cast<const frontend::MemberExpression&>(argument);
+        if (member.object &&
+            member.object->kind() == NodeKind::SuperExpression) {
+            error(argument, "compiler: delete of super property is invalid");
+            code_->pushUndefined();
+            return;
+        }
+        if (member.optional) {
+            error(argument, "compiler: delete of optional chain not supported");
+            code_->pushUndefined();
+            return;
+        }
+        if (!member.object) {
+            error(argument, "compiler: delete target missing object");
+            code_->pushUndefined();
+            return;
+        }
+        compileExpression(*member.object);
+        compileMemberKey(member);
+        code_->deleteProp();
+        return;
+    }
+    if (argument.kind() == NodeKind::ChainExpression) {
+        error(argument, "compiler: delete of optional chain not supported");
+        code_->pushUndefined();
+        return;
+    }
+    if (argument.kind() == NodeKind::Identifier) {
+        // 已解析的绑定不可删除；sloppy 下返回 false。
+        code_->pushBoolean(false);
+        return;
+    }
+    // 非引用：求值副作用后返回 true。
+    compileExpression(argument);
+    code_->pop();
+    code_->push(true);
+}
+
 void Compiler::compileUnaryExpression(const frontend::UnaryExpression& node) {
     if (!node.argument) {
         error(node, "compiler: unary expression missing operand");
@@ -1403,8 +1444,7 @@ void Compiler::compileUnaryExpression(const frontend::UnaryExpression& node) {
         return;
     }
     if (node.op == frontend::UnaryOperator::Delete) {
-        error(node, "compiler: delete is not supported");
-        code_->pushUndefined();
+        compileDeleteExpression(*node.argument);
         return;
     }
 
@@ -2040,11 +2080,6 @@ void Compiler::compileAssignmentExpression(
     if (node.left->kind() == NodeKind::MemberExpression) {
         const auto& member =
             static_cast<const frontend::MemberExpression&>(*node.left);
-        if (node.op != frontend::AssignmentOperator::Assign) {
-            error(node, "compiler: compound member assignment not supported");
-            code_->pushUndefined();
-            return;
-        }
         if (member.optional) {
             error(node, "compiler: optional chaining not supported");
             code_->pushUndefined();
@@ -2055,17 +2090,34 @@ void Compiler::compileAssignmentExpression(
             code_->pushUndefined();
             return;
         }
-        // set_prop 本身把 RHS 作为表达式值留下。
+        bool compound = node.op != frontend::AssignmentOperator::Assign;
         if (member.object->kind() == NodeKind::SuperExpression) {
             compileMemberKey(member);
-            compileExpression(*node.right);
-            code_->setSuperProp();
+            if (compound) {
+                code_->dup();
+                code_->getSuperProp();
+                compileExpression(*node.right);
+                if (!emitCompoundBinary(node.op, node)) return;
+                code_->setSuperProp();
+            } else {
+                compileExpression(*node.right);
+                code_->setSuperProp();
+            }
             return;
         }
         compileExpression(*member.object);
         compileMemberKey(member);
-        compileExpression(*node.right);
-        code_->setProp();
+        if (compound) {
+            // obj/key 只求值一次：复制一份用于读取旧值。
+            code_->dup2();
+            code_->getProp();
+            compileExpression(*node.right);
+            if (!emitCompoundBinary(node.op, node)) return;
+            code_->setProp();
+        } else {
+            compileExpression(*node.right);
+            code_->setProp();
+        }
         return;
     }
     if (node.left->kind() != NodeKind::Identifier) {
@@ -2086,27 +2138,86 @@ void Compiler::compileAssignmentExpression(
     // 复合赋值：load 旧值 → 右值 → 运算 → dup（表达式值）→ store。
     code_->load(name);
     compileExpression(*node.right);
-    switch (node.op) {
-        case frontend::AssignmentOperator::Add:      code_->add(); break;
-        case frontend::AssignmentOperator::Subtract: code_->sub(); break;
-        case frontend::AssignmentOperator::Multiply: code_->mul(); break;
-        case frontend::AssignmentOperator::Divide:   code_->div(); break;
-        default:
-            error(node, "compiler: unsupported assignment operator " +
-                            std::to_string(static_cast<int>(node.op)));
-            code_->pop();
-            code_->pop();
-            code_->pushUndefined();
-            return;
-    }
+    if (!emitCompoundBinary(node.op, node)) return;
     code_->dup();
     code_->store(name);
 }
 
+bool Compiler::emitCompoundBinary(frontend::AssignmentOperator op,
+                                  const frontend::Node& node) {
+    switch (op) {
+        case frontend::AssignmentOperator::Add:      code_->add(); return true;
+        case frontend::AssignmentOperator::Subtract: code_->sub(); return true;
+        case frontend::AssignmentOperator::Multiply: code_->mul(); return true;
+        case frontend::AssignmentOperator::Divide:   code_->div(); return true;
+        default:
+            error(node, "compiler: unsupported assignment operator " +
+                            std::to_string(static_cast<int>(op)));
+            code_->pop();
+            code_->pop();
+            code_->pushUndefined();
+            return false;
+    }
+}
+
 void Compiler::compileUpdateExpression(
     const frontend::UpdateExpression& node) {
+    if (node.argument &&
+        node.argument->kind() == NodeKind::MemberExpression) {
+        const auto& member =
+            static_cast<const frontend::MemberExpression&>(*node.argument);
+        if (member.optional) {
+            error(node, "compiler: optional chaining not supported");
+            code_->pushUndefined();
+            return;
+        }
+        if (!member.object) {
+            error(node, "compiler: update target missing object");
+            code_->pushUndefined();
+            return;
+        }
+        if (member.object->kind() == NodeKind::SuperExpression) {
+            compileMemberKey(member);
+            code_->dup();
+            code_->getSuperProp();
+            if (!node.prefix) code_->clone();
+            code_->push(1.0);
+            if (node.op == frontend::UpdateOperator::Increment) {
+                code_->add();
+            } else {
+                code_->sub();
+            }
+            if (node.prefix) {
+                code_->setSuperProp();
+            } else {
+                // 后缀：栈为 [key, old, new]，交换成 [key, new, old] 供 set_*_keep。
+                code_->swap();
+                code_->setSuperPropKeep();
+            }
+            return;
+        }
+        compileExpression(*member.object);
+        compileMemberKey(member);
+        code_->dup2();
+        code_->getProp();
+        if (!node.prefix) code_->clone();
+        code_->push(1.0);
+        if (node.op == frontend::UpdateOperator::Increment) {
+            code_->add();
+        } else {
+            code_->sub();
+        }
+        if (node.prefix) {
+            code_->setProp();
+        } else {
+            // 后缀：栈为 [obj, key, old, new]，交换成 [obj, key, new, old]。
+            code_->swap();
+            code_->setPropKeep();
+        }
+        return;
+    }
     if (!node.argument || node.argument->kind() != NodeKind::Identifier) {
-        error(node, "compiler: update target must be an identifier");
+        error(node, "compiler: update target must be an identifier or member");
         code_->pushUndefined();
         return;
     }

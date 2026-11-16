@@ -225,10 +225,18 @@ enum class OpCode : uint16_t {
     // yield* 委托：[iterable] → [completion]。内部维护被委托迭代器，
     // 恢复时把 next/throw/return 转发给它。
     YieldDelegate,
+    // [a,b] → [a,b,a,b]：复合成员赋值/更新只求值一次 obj 与 key。
+    Dup2,
+    // delete obj[key]：[obj,key] → [bool]。
+    DeleteProp,
+    // [obj,key,value,keep] → [keep]：set_prop 后保留 keep（后缀更新）。
+    SetPropKeep,
+    // [key,value,keep] → [keep]：set_super_prop 后保留 keep。
+    SetSuperPropKeep,
 };
 
 // 指令总数（分派表大小）。
-inline constexpr size_t kOpCodeCount = static_cast<size_t>(OpCode::YieldDelegate) + 1;
+inline constexpr size_t kOpCodeCount = static_cast<size_t>(OpCode::SetSuperPropKeep) + 1;
 
 // Define 的 flags 位。未置位即 false：
 //   mutable    —— 绑定可被 store 改写（const 为 false）
