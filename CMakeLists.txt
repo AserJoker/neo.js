@@ -152,6 +152,10 @@ add_library(neojs STATIC
     src/private/core/FunctionInvoke.cpp
     src/private/unicode/Utf8.cpp
     src/private/unicode/UnicodeClassification.cpp
+    src/private/regex/RegexFlags.cpp
+    src/private/regex/RegexParser.cpp
+    src/private/regex/RegexSubject.cpp
+    src/private/regex/RegexEngine.cpp
     src/private/bigint/BigInt.cpp
     src/private/infra/MallocAllocator.cpp
     src/private/infra/Console.cpp

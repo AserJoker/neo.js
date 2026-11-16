@@ -9,6 +9,7 @@ add_subdirectory(bigint)
 add_subdirectory(frontend)
 add_subdirectory(sema)
 add_subdirectory(unicode)
+add_subdirectory(regex)
 add_subdirectory(vm)
 add_subdirectory(compiler)
 # 以下模块 M1 起填充：
