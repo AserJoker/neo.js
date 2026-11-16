@@ -220,6 +220,10 @@ struct Code {
     uint32_t getIterator() { return emitOp(OpCode::GetIterator); }
     uint32_t iteratorNext() { return emitOp(OpCode::IteratorNext); }
     uint32_t iteratorClose() { return emitOp(OpCode::IteratorClose); }
+    uint32_t getAsyncIterator() { return emitOp(OpCode::GetAsyncIterator); }
+    uint32_t asyncIteratorClose() {
+        return emitOp(OpCode::AsyncIteratorClose);
+    }
 
     uint32_t add() { return emitOp(OpCode::Add); }
     uint32_t sub() { return emitOp(OpCode::Sub); }

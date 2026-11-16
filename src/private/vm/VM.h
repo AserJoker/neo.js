@@ -163,6 +163,8 @@ private:
     neo::core::Value* opGetIterator();
     neo::core::Value* opIteratorNext();
     neo::core::Value* opIteratorClose();
+    neo::core::Value* opGetAsyncIterator();
+    neo::core::Value* opAsyncIteratorClose();
     neo::core::Value* opAdd();
     neo::core::Value* opSub();
     neo::core::Value* opMul();

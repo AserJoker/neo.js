@@ -9,6 +9,7 @@
 #include "compiler/Compiler.h"
 #include "core/IContext.h"
 #include "core/Scope.h"
+#include "core/types/Boolean.h"
 #include "core/types/Exception.h"
 #include "core/types/Number.h"
 #include "core/types/String.h"
@@ -169,6 +170,78 @@ TEST(AsyncCompilerTest, AwaitRejectionIsCatchable) {
     ASSERT_FALSE(isErrorValue(promise));
     settle(f.ctx.get(), promise);
     EXPECT_EQ(string(g_captured), "caught:boom");
+}
+
+TEST(AsyncCompilerTest, ForAwaitSyncIterable) {
+    Fixture f;
+    Value* promise = runScript(
+        f,
+        "async function f() {\n"
+        "  var sum = 0;\n"
+        "  for await (var x of [1, 2, 3]) sum += x;\n"
+        "  return sum;\n"
+        "}\n"
+        "var p = f();",
+        "p");
+    ASSERT_FALSE(isErrorValue(promise));
+    settle(f.ctx.get(), promise);
+    EXPECT_DOUBLE_EQ(number(g_captured), 6.0);
+}
+
+TEST(AsyncCompilerTest, ForAwaitAsyncGenerator) {
+    Fixture f;
+    Value* promise = runScript(
+        f,
+        "async function* gen() { yield 1; yield 2; }\n"
+        "async function f() {\n"
+        "  var sum = 0;\n"
+        "  for await (var x of gen()) sum += x;\n"
+        "  return sum;\n"
+        "}\n"
+        "var p = f();",
+        "p");
+    ASSERT_FALSE(isErrorValue(promise));
+    settle(f.ctx.get(), promise);
+    EXPECT_DOUBLE_EQ(number(g_captured), 3.0);
+}
+
+TEST(AsyncCompilerTest, ForAwaitBreakClosesIterator) {
+    Fixture f;
+    Value* promise = runScript(
+        f,
+        "var closed = false;\n"
+        "var iter = {\n"
+        "  [Symbol.asyncIterator]() { return this; },\n"
+        "  next() { return Promise.resolve({ value: 1, done: false }); },\n"
+        "  return() { closed = true; return Promise.resolve({ done: true }); }\n"
+        "};\n"
+        "async function f() {\n"
+        "  for await (var x of iter) break;\n"
+        "  return closed;\n"
+        "}\n"
+        "var p = f();",
+        "p");
+    ASSERT_FALSE(isErrorValue(promise));
+    settle(f.ctx.get(), promise);
+    ASSERT_NE(g_captured, nullptr);
+    ASSERT_EQ(g_captured->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<neo::core::BooleanData*>(g_captured->data())->value);
+}
+
+TEST(AsyncCompilerTest, ForAwaitDestructuring) {
+    Fixture f;
+    Value* promise = runScript(
+        f,
+        "async function f() {\n"
+        "  var s = '';\n"
+        "  for await (var [a, b] of [[1, 2], [3, 4]]) s += a + b;\n"
+        "  return s;\n"
+        "}\n"
+        "var p = f();",
+        "p");
+    ASSERT_FALSE(isErrorValue(promise));
+    settle(f.ctx.get(), promise);
+    EXPECT_EQ(string(g_captured), "37");
 }
 
 TEST(AsyncCompilerTest, UncaughtRejectionPropagates) {

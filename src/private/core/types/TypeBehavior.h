@@ -533,6 +533,21 @@ inline Value* getIterator(IContext* ctx, Value* obj) {
     return iter;
 }
 
+// GetIterator(obj, async)（ES2024 §7.4.2）：优先 @@asyncIterator；缺失时回退
+// 同步 @@iterator（for await 允许同步可迭代对象）。
+inline Value* getAsyncIterator(IContext* ctx, Value* obj) {
+    Value* method = ctx->getProperty(
+        obj, ctx->getWellKnownSymbol(WellKnownSymbol::AsyncIterator));
+    if (isErrorValue(method)) return method;
+    if (!isCallable(method)) return getIterator(ctx, obj);
+    Value* iter = ctx->call(method, obj, 0, nullptr);
+    if (isErrorValue(iter)) return iter;
+    if (!isObjectKind(iter->type()->kind())) {
+        return typeError(ctx, "iterator result is not an object");
+    }
+    return iter;
+}
+
 // IteratorNext(iterator, value)（ES2024 §7.4.3）：
 //   调 iterator.next()，结果须为对象。成功返回结果对象；失败返回 Exception/Fatal。
 inline Value* iteratorNext(IContext* ctx, Value* iterator) {
@@ -587,6 +602,28 @@ inline Value* iteratorClose(IContext* ctx, Value* iterator, Value* completion) {
                    : typeError(ctx, "iterator result is not an object");
     }
     return completion;
+}
+
+// AsyncIteratorClose(iterator)（ES2024 §7.4.7）：取 return 并调用。
+// 无 return 时 result=undefined；否则 result 为 return() 的返回值（调用方负责
+// Await）。成功返回 nullptr，失败返回错误值。
+inline Value* asyncIteratorClose(IContext* ctx, Value* iterator,
+                                 Value*& result) {
+    result = nullptr;
+    Value* ret = ctx->getProperty(iterator, "return");
+    if (isErrorValue(ret)) return ret;
+    if (ret->type()->kind() == TypeKind::Undefined ||
+        ret->type()->kind() == TypeKind::Null) {
+        result = ctx->createUndefined();
+        return nullptr;
+    }
+    if (!isCallable(ret)) {
+        return typeError(ctx, "iterator return is not a function");
+    }
+    Value* r = ctx->call(ret, iterator, 0, nullptr);
+    if (isErrorValue(r)) return r;
+    result = r;
+    return nullptr;
 }
 
 // IterableToList(items)（ES2024 §7.4.2.1）：

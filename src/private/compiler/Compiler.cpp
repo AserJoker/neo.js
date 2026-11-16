@@ -783,10 +783,6 @@ void Compiler::compileForInStatement(
 void Compiler::compileForOfStatement(
     const frontend::ForOfStatement& node,
     const std::vector<std::string>& labels) {
-    if (node.await) {
-        error(node, "compiler: for await is not supported");
-        return;
-    }
     if (!node.right) {
         error(node, "compiler: for-of missing right-hand side");
         return;
@@ -814,7 +810,11 @@ void Compiler::compileForOfStatement(
     code_->define(kForDone);
 
     compileExpression(*node.right);
-    code_->getIterator();
+    if (node.await) {
+        code_->getAsyncIterator();
+    } else {
+        code_->getIterator();
+    }
     code_->store(kForIterator);
     code_->pushBoolean(false);
     code_->store(kForDone);
@@ -830,6 +830,7 @@ void Compiler::compileForOfStatement(
 
     code_->load(kForIterator);
     code_->iteratorNext();
+    if (node.await) code_->awaitValue();
     code_->store(kForResult);
 
     code_->load(kForResult);
@@ -869,7 +870,14 @@ void Compiler::compileForOfStatement(
     code_->load(kForDone);
     uint32_t toSkipClose = code_->jtrue();
     code_->load(kForIterator);
-    code_->iteratorClose();
+    if (node.await) {
+        // AsyncIteratorClose：调用 return 并 Await 其结果（§7.4.7）。
+        code_->asyncIteratorClose();
+        code_->awaitValue();
+        code_->pop();
+    } else {
+        code_->iteratorClose();
+    }
     uint32_t skipClose = code_->here();
     code_->patchU32(toSkipClose + 2, skipClose);
     code_->finallyEnd();

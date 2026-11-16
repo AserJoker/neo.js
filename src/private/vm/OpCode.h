@@ -272,10 +272,16 @@ enum class OpCode : uint16_t {
     ImportMeta,
     // [specifier] → [promise]：动态 import()，返回解析为模块命名空间的 Promise。
     DynamicImport,
+    // [iterable] → [iterator]：GetIterator(iterable, async)，优先 @@asyncIterator。
+    GetAsyncIterator,
+    // [iterator] → [returnResult]：AsyncIteratorClose 前半（取 return 并调用）；
+    // 无 return 时压 undefined。调用方随后 await 并丢弃结果。
+    AsyncIteratorClose,
 };
 
 // 指令总数（分派表大小）。
-inline constexpr size_t kOpCodeCount = static_cast<size_t>(OpCode::DynamicImport) + 1;
+inline constexpr size_t kOpCodeCount =
+    static_cast<size_t>(OpCode::AsyncIteratorClose) + 1;
 
 // Define 的 flags 位。未置位即 false：
 //   mutable    —— 绑定可被 store 改写（const 为 false）

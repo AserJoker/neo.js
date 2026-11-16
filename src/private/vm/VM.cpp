@@ -185,6 +185,8 @@ const char* opCodeName(OpCode op) {
         case OpCode::PrivateIn:     return "private_in";
         case OpCode::ImportMeta:    return "import_meta";
         case OpCode::DynamicImport: return "dynamic_import";
+        case OpCode::GetAsyncIterator: return "get_async_iterator";
+        case OpCode::AsyncIteratorClose: return "async_iterator_close";
     }
     return "<unknown>";
 }
@@ -308,6 +310,8 @@ const VM::Handler* VM::handlers() {
         &VM::opPrivateIn,
         &VM::opImportMeta,
         &VM::opDynamicImport,
+        &VM::opGetAsyncIterator,
+        &VM::opAsyncIteratorClose,
     };
     return table;
 }
@@ -1153,6 +1157,38 @@ Value* VM::opIteratorClose() {
         }
         return fail(error);
     }
+    return nullptr;
+}
+
+Value* VM::opGetAsyncIterator() {
+    if (stack_.empty()) {
+        return badBytecode("get_async_iterator: operand stack underflow");
+    }
+    Value* iterable = pop();
+    Value* iterator = detail::getAsyncIterator(ctx_, iterable);
+    if (detail::isErrorValue(iterator)) return fail(iterator);
+    push(iterator);
+    return nullptr;
+}
+
+Value* VM::opAsyncIteratorClose() {
+    if (stack_.empty()) {
+        return badBytecode("async_iterator_close: operand stack underflow");
+    }
+    Value* iterator = pop();
+    Value* result = nullptr;
+    Value* error = detail::asyncIteratorClose(ctx_, iterator, result);
+    if (error != nullptr && detail::isErrorValue(error)) {
+        // 已有异常在展开时，close 的错误不覆盖原异常（§7.4.7）。
+        if (!tryStack_.empty() && tryStack_.back().res != nullptr &&
+            tryStack_.back().res->type()->kind() ==
+                neo::core::TypeKind::Exception) {
+            push(ctx_->createUndefined());
+            return nullptr;
+        }
+        return fail(error);
+    }
+    push(result != nullptr ? result : ctx_->createUndefined());
     return nullptr;
 }
 

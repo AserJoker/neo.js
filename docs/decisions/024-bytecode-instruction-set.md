@@ -120,6 +120,8 @@ _func_end:
 | `get_iterator` | `[iterable] → [iterator]` | GetIterator(iterable, sync) |
 | `iterator_next` | `[iterator] → [iterResult]` | 调 `iterator.next()` |
 | `iterator_close` | `[iterator] → []` | 调 `iterator.return()`；缺失则忽略 |
+| `get_async_iterator` | `[iterable] → [iterator]` | GetIterator(iterable, async)：优先 `@@asyncIterator`，缺失回退 `@@iterator` |
+| `async_iterator_close` | `[iterator] → [returnResult]` | AsyncIteratorClose 前半：调 `iterator.return()`；缺失压 undefined；调用方随后 `await` 并丢弃 |
 
 - 对象字面量：`new_object`，每个属性 `dup; key; value; define_prop; pop`。
 - 数组字面量：`new_array N`，每个非 elision 元素
