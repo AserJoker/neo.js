@@ -94,6 +94,7 @@ enum class OpCode : uint16_t {
     PushFalse,
     PushNumber,   // u32 Code::numbers 下标
     PushString,   // u32 Code::strings 下标
+    PushBigInt,   // u32 Code::strings 下标（digits），u32 radix
 
     Pop,
     Dup,

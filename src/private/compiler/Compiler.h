@@ -113,6 +113,7 @@ private:
     // —— 表达式 ——
     void compileIdentifier(const frontend::Identifier& node);
     void compileNumericLiteral(const frontend::NumericLiteral& node);
+    void compileBigIntLiteral(const frontend::BigIntLiteral& node);
     void compileStringLiteral(const frontend::StringLiteral& node);
     void compileBooleanLiteral(const frontend::BooleanLiteral& node);
     void compileNullLiteral(const frontend::NullLiteral& node);

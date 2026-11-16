@@ -136,6 +136,13 @@ struct Code {
         emitU32(addString(std::string(value)));
         return pc;
     }
+    // BigInt 字面量：digits 不含前缀，radix 为 2/8/10/16。
+    uint32_t pushBigInt(std::string_view digits, uint32_t radix) {
+        uint32_t pc = emitOp(OpCode::PushBigInt);
+        emitU32(addString(std::string(digits)));
+        emitU32(radix);
+        return pc;
+    }
     // 字面量字符串走精确匹配，避免与数值重载产生歧义。
     uint32_t push(const char* value) { return push(std::string_view(value)); }
 

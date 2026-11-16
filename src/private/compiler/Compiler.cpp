@@ -270,6 +270,10 @@ void Compiler::compileExpression(const Node& node) {
             compileNumericLiteral(
                 static_cast<const frontend::NumericLiteral&>(node));
             break;
+        case NodeKind::BigIntLiteral:
+            compileBigIntLiteral(
+                static_cast<const frontend::BigIntLiteral&>(node));
+            break;
         case NodeKind::StringLiteral:
             compileStringLiteral(
                 static_cast<const frontend::StringLiteral&>(node));
@@ -1350,6 +1354,10 @@ void Compiler::compileIdentifier(const frontend::Identifier& node) {
 
 void Compiler::compileNumericLiteral(const frontend::NumericLiteral& node) {
     code_->push(node.value);
+}
+
+void Compiler::compileBigIntLiteral(const frontend::BigIntLiteral& node) {
+    code_->pushBigInt(node.digits, static_cast<uint32_t>(node.radix));
 }
 
 void Compiler::compileStringLiteral(const frontend::StringLiteral& node) {

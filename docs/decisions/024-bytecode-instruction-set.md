@@ -58,6 +58,7 @@ _func_end:
 | `push_true` / `push_false` | `[] → [bool]` | |
 | `push_number <n>` | `[] → [n]` | |
 | `push_string <s>` | `[] → [s]` | |
+| `push_bigint <digits>, <radix>` | `[] → [bigint]` | digits 不含前缀；radix 2/8/10/16 |
 | `pop` | `[a] → []` | 丢弃表达式语句结果 |
 | `dup` | `[a] → [a, a]` | 共享同一 Value |
 | `clone` | `[a] → [a, copy]` | 复制 data，得到独立快照（后缀 ++/--） |

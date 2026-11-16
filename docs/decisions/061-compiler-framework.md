@@ -78,6 +78,7 @@ public:
 | ReturnStatement | 表达式（或 `push_undefined`）+ `ret` |
 | BlockStatement | `push_scope` + 语句 + `pop_scope` |
 | Numeric/String/Boolean/NullLiteral | `push_*` |
+| BigIntLiteral | `push_bigint digits, radix` |
 | Identifier | `load` |
 | VariableDeclaration | 声明点 `store`（var）/ `initialize`（let/const） |
 | AssignmentExpression | `=`：右值 + `dup` + `store`；复合标识符：`load` + 右值 + 运算 + `dup` + `store`；复合成员：`obj` + key + `dup2` + `get_prop` + 右值 + 运算 + `set_prop` |

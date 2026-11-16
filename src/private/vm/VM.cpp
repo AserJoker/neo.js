@@ -18,6 +18,8 @@
 #include "core/types/Number.h"
 #include "core/types/TypeBehavior.h"
 
+#include "bigint/BigInt.h"
+
 #include <string>
 #include <utility>
 
@@ -78,6 +80,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::PushFalse:     return "push_false";
         case OpCode::PushNumber:    return "push_number";
         case OpCode::PushString:    return "push_string";
+        case OpCode::PushBigInt:    return "push_bigint";
         case OpCode::Pop:           return "pop";
         case OpCode::Dup:           return "dup";
         case OpCode::Clone:         return "clone";
@@ -192,6 +195,7 @@ const VM::Handler* VM::handlers() {
         &VM::opPushFalse,
         &VM::opPushNumber,
         &VM::opPushString,
+        &VM::opPushBigInt,
         &VM::opPop,
         &VM::opDup,
         &VM::opClone,
@@ -614,6 +618,27 @@ Value* VM::opPushString() {
         return badBytecode("push_string: constant index out of range");
     }
     push(ctx_->createString(*value));
+    return nullptr;
+}
+
+Value* VM::opPushBigInt() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 8) {
+        return badBytecode("push_bigint: truncated operand");
+    }
+    uint32_t index = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    uint32_t radix = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* digits = stringOperand(index);
+    if (digits == nullptr) {
+        return badBytecode("push_bigint: constant index out of range");
+    }
+    neo::bigint::BigInt value;
+    if (!neo::bigint::BigInt::parse(*digits, static_cast<int>(radix), value)) {
+        return badBytecode("push_bigint: invalid literal");
+    }
+    push(ctx_->createBigInt(value));
     return nullptr;
 }
 

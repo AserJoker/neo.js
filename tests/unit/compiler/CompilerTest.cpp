@@ -9,6 +9,7 @@
 #include "compiler/Compiler.h"
 #include "core/IContext.h"
 #include "core/Scope.h"
+#include "core/types/BigInt.h"
 #include "core/types/Boolean.h"
 #include "core/types/Number.h"
 #include "core/types/String.h"
@@ -1643,6 +1644,26 @@ Value* runScriptResultDrained(Fixture& f, const std::string& source) {
 }
 
 }  // namespace
+
+TEST(CompilerTest, CompilesBigIntLiteral) {
+    Fixture f;
+    Value* value =
+        runScriptResult(f, "var result = 12345678901234567890n;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::BigInt);
+    auto* data = static_cast<neo::core::BigIntData*>(value->data());
+    EXPECT_EQ(data->value.toString(10), "12345678901234567890");
+}
+
+TEST(CompilerTest, CompilesBigIntLiteralWithRadix) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var result = 0xffn + 0b101n + 0o17n;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::BigInt);
+    auto* data = static_cast<neo::core::BigIntData*>(value->data());
+    EXPECT_EQ(data->value.toString(10), "275");
+}
 
 TEST(CompilerTest, CompilesForLoopWithVar) {
     Fixture f;
