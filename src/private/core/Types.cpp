@@ -107,6 +107,11 @@ IType* getArrayIteratorType() {
     return &inst;
 }
 
+IType* getStringIteratorType() {
+    static StringIteratorType inst;
+    return &inst;
+}
+
 IType* getIteratorWrapperType() {
     static IteratorWrapperType inst;
     return &inst;
@@ -166,6 +171,7 @@ IType* getTypeByKind(TypeKind k) {
         case TypeKind::Symbol:           return getSymbolType();
         case TypeKind::PrimitiveWrapper: return getPrimitiveWrapperType();
         case TypeKind::ArrayIterator:    return getArrayIteratorType();
+        case TypeKind::StringIterator:   return getStringIteratorType();
         case TypeKind::IteratorWrapper:  return getIteratorWrapperType();
         case TypeKind::Error:            return getErrorType();
         case TypeKind::Promise:          return getPromiseType();

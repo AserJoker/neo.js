@@ -85,6 +85,23 @@ public:
     IData* clone(neo::infra::IAllocator* alloc) const override;
 };
 
+class StringIteratorType : public IteratorObjectType {
+public:
+    StringIteratorType() : IteratorObjectType(TypeKind::StringIterator) {}
+    const char* name() const override { return "string iterator"; }
+};
+
+// 字符串迭代器负载：继承 ObjectData 复用对象模型。
+// iteratedString 是不可变 String 原始值，nextIndex 是 UTF-8 字节偏移。
+class StringIteratorData : public ObjectData {
+public:
+    Value* iteratedString = nullptr;  // [[IteratedString]]
+    uint32_t nextIndex = 0;           // [[StringIteratorNextIndex]]
+
+    void enumerateChildren(IGCVisitor* visitor) override;
+    IData* clone(neo::infra::IAllocator* alloc) const override;
+};
+
 class IteratorWrapperType : public IteratorObjectType {
 public:
     IteratorWrapperType() : IteratorObjectType(TypeKind::IteratorWrapper) {}

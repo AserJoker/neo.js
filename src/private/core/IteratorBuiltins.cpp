@@ -34,6 +34,8 @@
 #include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
 
+#include "unicode/Utf8.h"
+
 #include <string>
 
 namespace neo::core {
@@ -110,6 +112,52 @@ Value* arrayIteratorNext(IContext* ctx, Value* self, size_t /*argc*/, Value* /*a
         }
     }
     return createIterResult(ctx, ctx->createUndefined(), true);
+}
+
+// —— %StringIteratorPrototype%.next（ES2024 §22.1.5.2.1）——
+// 按码点迭代：每次解码一个 UTF-8 码点（代理对视为一个字符）。
+Value* stringIteratorNext(IContext* ctx, Value* self, size_t /*argc*/,
+                          Value* /*argv*/[]) {
+    if (self == nullptr || self->type()->kind() != TypeKind::StringIterator) {
+        return detail::typeError(ctx,
+                                 "String Iterator.prototype.next called on incompatible receiver");
+    }
+    auto* d = static_cast<StringIteratorData*>(self->data());
+    if (d->iteratedString == nullptr) {
+        return createIterResult(ctx, ctx->createUndefined(), true);
+    }
+    const std::string& source =
+        static_cast<StringData*>(d->iteratedString->data())->value;
+    if (d->nextIndex >= source.size()) {
+        return createIterResult(ctx, ctx->createUndefined(), true);
+    }
+
+    size_t index = d->nextIndex;
+    uint32_t codePoint = 0;
+    if (!unicode::decodeCodePoint(source, index, codePoint)) {
+        // 非法字节：按单字节前进，避免死循环。
+        index = static_cast<size_t>(d->nextIndex) + 1;
+        codePoint = static_cast<unsigned char>(source[d->nextIndex]);
+    }
+    d->nextIndex = static_cast<uint32_t>(index);
+
+    std::string text;
+    unicode::encodeCodePoint(codePoint, text);
+    return createIterResult(ctx, ctx->createString(text), false);
+}
+
+// String.prototype[@@iterator]（ES2024 §22.1.3.36）：返回字符串迭代器。
+Value* stringProtoIterator(IContext* ctx, Value* self, size_t /*argc*/,
+                           Value* /*argv*/[]) {
+    if (self == nullptr ||
+        self->type()->kind() == TypeKind::Undefined ||
+        self->type()->kind() == TypeKind::Null) {
+        return detail::typeError(ctx,
+                                 "String.prototype[Symbol.iterator] called on null or undefined");
+    }
+    Value* string = detail::toStringValue(ctx, self);
+    if (detail::isErrorValue(string)) return string;
+    return ctx->createStringIterator(string);
 }
 
 // —— %WrapForValidIteratorPrototype%.next（ES2025 §27.1.4.2.1）——
@@ -332,6 +380,13 @@ bool registerIteratorBuiltins(IContext* ctx) {
     ok &= ctx->setPrototype(arrayIterProto, iteratorProto)->type()->kind() !=
           TypeKind::Exception;
 
+    // —— 3b. %StringIteratorPrototype%（原型 = %Iterator.prototype%）——
+    Value* stringIterProto = ctx->createObject();
+    ok &= stringIterProto != ctx->oomValue();
+    if (!ok) return false;
+    ok &= ctx->setPrototype(stringIterProto, iteratorProto)->type()->kind() !=
+          TypeKind::Exception;
+
     // —— 4. %WrapForValidIteratorPrototype%（原型 = %Iterator.prototype%）——
     Value* wrapperProto = ctx->createObject();
     ok &= wrapperProto != ctx->oomValue();
@@ -340,7 +395,8 @@ bool registerIteratorBuiltins(IContext* ctx) {
           TypeKind::Exception;
 
     // —— 5. 原型就绪：此后 createArrayIterator / createIteratorWrapper 自动挂链 ——
-    ctx->setIteratorBuiltins(iteratorProto, iteratorFn, arrayIterProto, wrapperProto);
+    ctx->setIteratorBuiltins(iteratorProto, iteratorFn, arrayIterProto,
+                             stringIterProto, wrapperProto);
 
     // —— 6. Iterator.prototype 成员 ——
     // constructor 访问器（ES2025 §27.1.3.1）：getter 返回 Iterator，setter 建自有属性
@@ -383,6 +439,13 @@ bool registerIteratorBuiltins(IContext* ctx) {
                               ctx->createString("Array Iterator"), false, false, true)
               ->type()->kind() != TypeKind::Exception;
 
+    // —— 7b. %StringIteratorPrototype% 成员 ——
+    ok &= defineMethod(ctx, stringIterProto, "next", stringIteratorNext, 0);
+    ok &= ctx->defineProperty(stringIterProto,
+                              ctx->getWellKnownSymbol(WellKnownSymbol::ToStringTag),
+                              ctx->createString("String Iterator"), false, false, true)
+              ->type()->kind() != TypeKind::Exception;
+
     // —— 8. %WrapForValidIteratorPrototype% 成员 ——
     ok &= defineMethod(ctx, wrapperProto, "next", wrapForValidIteratorNext, 0);
     ok &= defineMethod(ctx, wrapperProto, "return", wrapForValidIteratorReturn, 0);
@@ -400,6 +463,12 @@ bool registerIteratorBuiltins(IContext* ctx) {
     ok &= ctx->defineProperty(arrayProto, ctx->getWellKnownSymbol(WellKnownSymbol::Iterator),
                               valuesFn, true, false, true)
               ->type()->kind() != TypeKind::Exception;
+
+    // —— 9b. String.prototype[@@iterator]（§22.1.3.36）——
+    Value* stringProto = ctx->stringPrototype();
+    if (stringProto == nullptr) return false;
+    ok &= defineSymbolMethod(ctx, stringProto, WellKnownSymbol::Iterator,
+                             "[Symbol.iterator]", stringProtoIterator, 0);
 
     // —— 10. 注册到 global ——
     bindGlobal(ctx, "Iterator", iteratorFn);

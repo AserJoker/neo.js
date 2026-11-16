@@ -1839,6 +1839,47 @@ TEST(CompilerTest, ForOfIteratesArray) {
     EXPECT_DOUBLE_EQ(numberValue(value), 6.0);
 }
 
+TEST(CompilerTest, ForOfIteratesString) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = '';"
+        "for (var ch of 'ab') { result = result + ch; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "ab");
+}
+
+TEST(CompilerTest, ForOfStringIteratesCodePoints) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var count = 0;"
+        "var astral = 0;"
+        "for (var ch of 'a😀') {"
+        "  count = count + 1;"
+        "  if (ch === '😀') astral = 1;"
+        "}"
+        "var result = count * 10 + astral;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 21.0);
+}
+
+TEST(CompilerTest, StringIteratorNext) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var it = 'ab'[Symbol.iterator]();"
+        "var a = it.next().value;"
+        "var b = it.next().value;"
+        "var done = it.next().done;"
+        "var result = a + b + (done ? '1' : '0');");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "ab1");
+}
+
 TEST(CompilerTest, BreakThroughFinally) {
     Fixture f;
     Value* value = runScriptResult(

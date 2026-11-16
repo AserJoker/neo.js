@@ -529,6 +529,12 @@ public:
     virtual Value* createIteratorWrapper(Value* iterated, Value* nextMethod,
                                          std::string_view bindName = {}) = 0;
 
+    // createStringIterator: 创建字符串迭代器（ES2024 §22.1.5.1）。
+    // string 必须是 String 原始值；按码点迭代（代理对作为一个字符）。
+    // 原型自动挂 %StringIteratorPrototype%；bootstrap 期间尚未建立时跳过。
+    virtual Value* createStringIterator(Value* string,
+                                        std::string_view bindName = {}) = 0;
+
     // createError: 创建 Error 对象（ES2024 §20.5.1.1 Error 构造的简化版）。
     //   message  —— 消息（空则不定义 message 属性）；
     //   name     —— 渲染 stack 首行的错误名（"Error"/"TypeError"...）；
@@ -585,9 +591,11 @@ public:
     virtual void setBigIntPrototype(Value* proto) = 0;
 
     // setIteratorBuiltins: bootstrap 专用——迭代器原型与构造函数建立后设置，
-    // 此后 createArrayIterator / createIteratorWrapper 自动挂链。宿主不应调用。
+    // 此后 createArrayIterator / createStringIterator / createIteratorWrapper
+    // 自动挂链。宿主不应调用。
     virtual void setIteratorBuiltins(Value* iteratorProto, Value* iteratorCtor,
                                      Value* arrayIteratorProto,
+                                     Value* stringIteratorProto,
                                      Value* iteratorWrapperProto) = 0;
 
     // iteratorPrototype / iteratorCtor: %Iterator.prototype% 与 Iterator 构造函数。

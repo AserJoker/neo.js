@@ -103,6 +103,19 @@ IData* ArrayIteratorData::clone(neo::infra::IAllocator* /*alloc*/) const {
     return self;
 }
 
+// —— StringIteratorData ——
+
+void StringIteratorData::enumerateChildren(IGCVisitor* visitor) {
+    ObjectData::enumerateChildren(visitor);
+    if (iteratedString != nullptr) visitor->visit(iteratedString);
+}
+
+IData* StringIteratorData::clone(neo::infra::IAllocator* /*alloc*/) const {
+    auto* self = const_cast<StringIteratorData*>(this);
+    self->refInc();
+    return self;
+}
+
 // —— IteratorWrapperData ——
 
 void IteratorWrapperData::enumerateChildren(IGCVisitor* visitor) {

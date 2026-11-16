@@ -377,13 +377,13 @@ TEST(IteratorTest, FromAcceptsStringByWrapping) {
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
 
-    // String.prototype[@@iterator] 尚未实现，故 String 包装对象无 @@iterator，
-    // 按 Iterator.from 规范走包装路径（有 String 迭代器后应改为原样返回）。
+    // String 有 @@iterator 且其迭代器继承 %Iterator.prototype%，
+    // 故 Iterator.from 按规范原样返回 String 迭代器。
     Value* iteratorFn = globalOf(ctx.get(), "Iterator");
     Value* from = ctx->getProperty(iteratorFn, "from");
     Value* args[1] = {ctx->createString("ab")};
     Value* iter = ctx->call(from, iteratorFn, 1, args);
-    ASSERT_EQ(iter->type()->kind(), TypeKind::IteratorWrapper);
+    ASSERT_EQ(iter->type()->kind(), TypeKind::StringIterator);
     EXPECT_EQ(ctx->getPrototype(ctx->getPrototype(iter)), ctx->iteratorPrototype());
 }
 

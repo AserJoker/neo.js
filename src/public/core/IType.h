@@ -87,6 +87,9 @@ enum class TypeKind : uint8_t {
     // 数组迭代器（ES2024 §23.1.5）：Array.prototype.keys/values/entries 的产物。
     // 持 [[IteratedObject]]/[[ArrayIteratorNextIndex]]/[[ArrayIterationKind]] 内部槽。
     ArrayIterator,
+    // 字符串迭代器（ES2024 §22.1.5）：String.prototype[@@iterator] 的产物。
+    // 持 [[IteratedString]]/[[StringIteratorNextIndex]] 内部槽，按码点迭代。
+    StringIterator,
     // 迭代器包装对象（ES2025 §27.1.4.2 Iterator.from 的 %WrapForValidIteratorPrototype% 实例）。
     // 持 [[Iterated]] 内部槽（iterator + nextMethod），把任意 iterator-like 对象提升为 Iterator。
     IteratorWrapper,
@@ -286,6 +289,7 @@ IType* getArrayType();
 IType* getSymbolType();
 IType* getPrimitiveWrapperType();
 IType* getArrayIteratorType();
+IType* getStringIteratorType();
 IType* getIteratorWrapperType();
 IType* getErrorType();
 IType* getPromiseType();

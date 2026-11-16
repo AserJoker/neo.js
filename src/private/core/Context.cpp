@@ -1513,6 +1513,22 @@ Value* Context::createArrayIterator(Value* iteratedObject, ArrayIterationKind ki
     return iter;
 }
 
+Value* Context::createStringIterator(Value* string, std::string_view bindName) {
+    if (string == nullptr || string->type()->kind() != TypeKind::String) {
+        return detail::typeError(this, "String iterator requires a string");
+    }
+    auto* d = gc_->allocData<StringIteratorData>();
+    if (d == nullptr) return oomValue_;
+    d->iteratedString = string;
+    d->nextIndex = 0;
+    Value* iter = createTracked(getStringIteratorType(), d, bindName);
+    if (iter != oomValue_ && stringIteratorPrototype_ != nullptr) {
+        static_cast<ObjectData*>(iter->data())->prototype =
+            stringIteratorPrototype_;
+    }
+    return iter;
+}
+
 Value* Context::createIteratorWrapper(Value* iterated, Value* nextMethod,
                                       std::string_view bindName) {
     auto* d = gc_->allocData<IteratorWrapperData>();

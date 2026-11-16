@@ -67,6 +67,7 @@ class Context : public IContext {
     Value* iteratorPrototype_ = nullptr;
     Value* iteratorCtor_ = nullptr;
     Value* arrayIteratorPrototype_ = nullptr;
+    Value* stringIteratorPrototype_ = nullptr;
     Value* iteratorWrapperPrototype_ = nullptr;
     Value* generatorPrototype_ = nullptr;  // %GeneratorPrototype%（ADR-045 §8）
     Value* asyncIteratorPrototype_ = nullptr;   // %AsyncIteratorPrototype%
@@ -270,6 +271,8 @@ public:
                                std::string_view bindName = {}) override;
     Value* createIteratorWrapper(Value* iterated, Value* nextMethod,
                                  std::string_view bindName = {}) override;
+    Value* createStringIterator(Value* string,
+                                std::string_view bindName = {}) override;
 
     // Error 对象（ADR-038）
     Value* createError(std::string_view message, std::string_view name = "Error",
@@ -337,10 +340,12 @@ public:
     void setBigIntPrototype(Value* proto) override { bigIntPrototype_ = proto; }
     void setIteratorBuiltins(Value* iteratorProto, Value* iteratorCtor,
                              Value* arrayIteratorProto,
+                             Value* stringIteratorProto,
                              Value* iteratorWrapperProto) override {
         iteratorPrototype_ = iteratorProto;
         iteratorCtor_ = iteratorCtor;
         arrayIteratorPrototype_ = arrayIteratorProto;
+        stringIteratorPrototype_ = stringIteratorProto;
         iteratorWrapperPrototype_ = iteratorWrapperProto;
     }
     Value* iteratorPrototype() const override { return iteratorPrototype_; }
