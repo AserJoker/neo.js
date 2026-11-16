@@ -1745,6 +1745,28 @@ TEST(CompilerTest, CompilesCatchObjectPattern) {
     EXPECT_DOUBLE_EQ(numberValue(value), 7.0);
 }
 
+TEST(CompilerTest, CompilesNamedClassExpressionInnerBinding) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var C = class Inner { m() { return Inner; } };"
+        "var result = new C().m() === C;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<BooleanData*>(value->data())->value);
+}
+
+TEST(CompilerTest, CompilesNamedClassExpressionStaticBinding) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var C = class Inner { static get() { return Inner; } };"
+        "var result = C.get() === C;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<BooleanData*>(value->data())->value);
+}
+
 TEST(CompilerTest, CompilesObjectLiteralProto) {
     Fixture f;
     Value* value = runScriptResult(

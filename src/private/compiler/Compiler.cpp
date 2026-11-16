@@ -2686,10 +2686,21 @@ void Compiler::compileClassExpression(const frontend::ClassExpression& node) {
         code_->pushUndefined();
     }
     const auto& body = static_cast<const frontend::ClassBody&>(*node.body);
+    // 具名 class 表达式在类体内建立不可变的 ClassName 绑定（§15.7.14）。
+    if (!name.empty()) {
+        code_->pushScope();
+        code_->pushUninitialized();
+        code_->define(name, false, false);
+    }
     privateScopes_.push_back(collectPrivateElements(body));
     compileClassConstructor(body, node.superClass != nullptr, name);
+    if (!name.empty()) {
+        code_->dup();
+        code_->initialize(name);
+    }
     compileClassElements(body);
     privateScopes_.pop_back();
+    if (!name.empty()) code_->popScope();
 }
 
 void Compiler::compileClassConstructor(const frontend::ClassBody& body,

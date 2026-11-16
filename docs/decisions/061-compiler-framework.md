@@ -178,5 +178,5 @@ tests/unit/compiler/
   与 VM 的异常定位直接对接；后续只需在分派表里补节点。
 - 缺点：尚未覆盖正则字面量，真实程序还不能完整编译；`for await` 暂
   unsupported；对象 rest 与 computed key 组合暂 unsupported；`#x in obj`
-  暂 unsupported；class 表达式自身名字在类体内的内层绑定尚未建立。
+  暂 unsupported。
 - 待定：常量池去重、SourceMap 对多字节指令的精确边界。
