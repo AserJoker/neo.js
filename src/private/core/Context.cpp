@@ -1474,6 +1474,59 @@ Value* Context::createTemplateObject(
     return cooked;
 }
 
+Value* Context::arrayAppend(Value* array, Value* value) {
+    Value* lengthValue = getProperty(array, "length");
+    if (detail::isErrorValue(lengthValue)) return lengthValue;
+    Value* lengthNumber = detail::toNumberValue(this, lengthValue);
+    if (detail::isErrorValue(lengthNumber)) return lengthNumber;
+    double length = static_cast<NumberData*>(lengthNumber->data())->value;
+    Value* key = createNumber(length);
+    Value* r = defineProperty(array, key, value, true, true, true);
+    if (detail::isErrorValue(r)) return r;
+    return array;
+}
+
+Value* Context::copyDataProperties(Value* target, Value* source,
+                                   const std::vector<Value*>& excluded) {
+    if (source == nullptr) return target;
+    TypeKind sourceKind = source->type()->kind();
+    if (sourceKind == TypeKind::Undefined || sourceKind == TypeKind::Null) {
+        return target;
+    }
+    Value* from = detail::isObjectKind(sourceKind)
+                      ? source
+                      : createPrimitiveWrapper(source);
+    if (detail::isErrorValue(from)) return from;
+
+    std::vector<Value*> keys;
+    if (Value* err = from->type()->ownKeys(this, from, keys)) return err;
+    for (Value* key : keys) {
+        bool skip = false;
+        for (Value* excludedKey : excluded) {
+            if (detail::strictEquals(key, excludedKey)) {
+                skip = true;
+                break;
+            }
+        }
+        if (skip) continue;
+
+        PropertyKey pk;
+        if (Value* err = neo::core::toPropertyKey(this, key, pk)) return err;
+        bool exists = false;
+        Property desc;
+        if (Value* err = from->type()->getOwnProperty(this, from, pk, exists,
+                                                      desc)) {
+            return err;
+        }
+        if (!exists || !desc.enumerable) continue;
+        Value* value = getProperty(from, key);
+        if (detail::isErrorValue(value)) return value;
+        Value* r = defineProperty(target, key, value, true, true, true);
+        if (detail::isErrorValue(r)) return r;
+    }
+    return target;
+}
+
 Value* Context::createPrimitiveWrapper(Value* primitive, std::string_view bindName) {
     // [[PrimitiveValue]] 必须是原始值之一（Boolean/Number/BigInt/String/Symbol）。
     // 调用方契约保证，非法类型返回 Exception（对外 API 边界校验）。

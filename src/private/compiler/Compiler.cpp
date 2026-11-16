@@ -31,6 +31,58 @@ constexpr std::string_view kForResult = "*for-result*";
 constexpr std::string_view kForDone = "*for-done*";
 constexpr std::string_view kSwitchDisc = "*switch-disc*";
 
+// 收集绑定模式中的标识符名（解构声明/参数提升用）。
+void collectPatternNames(const frontend::Node& pattern,
+                         std::vector<std::string>& names) {
+    switch (pattern.kind()) {
+        case NodeKind::Identifier:
+            names.push_back(
+                static_cast<const frontend::Identifier&>(pattern).name);
+            break;
+        case NodeKind::AssignmentPattern: {
+            const auto& node =
+                static_cast<const frontend::AssignmentPattern&>(pattern);
+            if (node.left) collectPatternNames(*node.left, names);
+            break;
+        }
+        case NodeKind::RestElement: {
+            const auto& node =
+                static_cast<const frontend::RestElement&>(pattern);
+            if (node.argument) collectPatternNames(*node.argument, names);
+            break;
+        }
+        case NodeKind::ArrayPattern: {
+            const auto& node =
+                static_cast<const frontend::ArrayPattern&>(pattern);
+            for (const frontend::NodePtr& element : node.elements) {
+                if (element) collectPatternNames(*element, names);
+            }
+            break;
+        }
+        case NodeKind::ObjectPattern: {
+            const auto& node =
+                static_cast<const frontend::ObjectPattern&>(pattern);
+            for (const frontend::NodePtr& property : node.properties) {
+                if (!property) continue;
+                if (property->kind() == NodeKind::Property) {
+                    const auto& prop =
+                        static_cast<const frontend::Property&>(*property);
+                    if (prop.value) collectPatternNames(*prop.value, names);
+                } else if (property->kind() == NodeKind::RestElement) {
+                    const auto& rest =
+                        static_cast<const frontend::RestElement&>(*property);
+                    if (rest.argument) {
+                        collectPatternNames(*rest.argument, names);
+                    }
+                }
+            }
+            break;
+        }
+        default:
+            break;
+    }
+}
+
 std::string exportNameOf(const Node* node) {
     if (node == nullptr) return {};
     if (node->kind() == NodeKind::Identifier) {
@@ -1484,13 +1536,26 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
         compileExpression(*node.callee);
     }
 
+    bool hasSpread = false;
+    for (const frontend::NodePtr& argument : node.arguments) {
+        if (argument && argument->kind() == NodeKind::SpreadElement) {
+            hasSpread = true;
+            break;
+        }
+    }
+    if (hasSpread) {
+        compileArgumentsArray(node.arguments);
+        if (isMember) {
+            code_->callMethodSpread();
+        } else {
+            code_->callSpread();
+        }
+        return;
+    }
+
     uint32_t argc = 0;
     for (const frontend::NodePtr& argument : node.arguments) {
         if (!argument) continue;
-        if (argument->kind() == NodeKind::SpreadElement) {
-            error(*argument, "compiler: spread arguments not supported");
-            continue;
-        }
         compileExpression(*argument);
         ++argc;
     }
@@ -1498,6 +1563,26 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
         code_->callMethod(argc);
     } else {
         code_->call(argc);
+    }
+}
+
+void Compiler::compileArgumentsArray(const frontend::NodeList& arguments) {
+    code_->newArray(0);
+    for (const frontend::NodePtr& argument : arguments) {
+        if (!argument) continue;
+        if (argument->kind() == NodeKind::SpreadElement) {
+            const auto& spread =
+                static_cast<const frontend::SpreadElement&>(*argument);
+            if (spread.argument) {
+                compileExpression(*spread.argument);
+            } else {
+                code_->pushUndefined();
+            }
+            code_->arraySpread();
+            continue;
+        }
+        compileExpression(*argument);
+        code_->arrayAppend();
     }
 }
 
@@ -1509,13 +1594,22 @@ void Compiler::compileNewExpression(const frontend::NewExpression& node) {
     }
     compileExpression(*node.callee);
 
+    bool hasSpread = false;
+    for (const frontend::NodePtr& argument : node.arguments) {
+        if (argument && argument->kind() == NodeKind::SpreadElement) {
+            hasSpread = true;
+            break;
+        }
+    }
+    if (hasSpread) {
+        compileArgumentsArray(node.arguments);
+        code_->constructSpread();
+        return;
+    }
+
     uint32_t argc = 0;
     for (const frontend::NodePtr& argument : node.arguments) {
         if (!argument) continue;
-        if (argument->kind() == NodeKind::SpreadElement) {
-            error(*argument, "compiler: spread arguments not supported");
-            continue;
-        }
         compileExpression(*argument);
         ++argc;
     }
@@ -1672,8 +1766,19 @@ void Compiler::compileObjectExpression(
     code_->newObject();
     for (const frontend::NodePtr& property : node.properties) {
         if (!property) continue;
+        if (property->kind() == NodeKind::SpreadElement) {
+            const auto& spread =
+                static_cast<const frontend::SpreadElement&>(*property);
+            if (spread.argument) {
+                compileExpression(*spread.argument);
+            } else {
+                code_->pushUndefined();
+            }
+            code_->objectSpread();
+            continue;
+        }
         if (property->kind() != NodeKind::Property) {
-            error(*property, "compiler: object spread not supported");
+            error(*property, "compiler: unsupported object literal element");
             continue;
         }
         const auto& prop = static_cast<const frontend::Property&>(*property);
@@ -1704,23 +1809,52 @@ void Compiler::compileObjectExpression(
 }
 
 void Compiler::compileArrayExpression(const frontend::ArrayExpression& node) {
-    code_->newArray(static_cast<uint32_t>(node.elements.size()));
-    uint32_t index = 0;
+    bool hasSpread = false;
     for (const frontend::NodePtr& element : node.elements) {
         if (element && element->kind() == NodeKind::SpreadElement) {
-            error(*element, "compiler: array spread not supported");
+            hasSpread = true;
+            break;
+        }
+    }
+
+    if (!hasSpread) {
+        code_->newArray(static_cast<uint32_t>(node.elements.size()));
+        uint32_t index = 0;
+        for (const frontend::NodePtr& element : node.elements) {
+            // 空指针是 elision：跳过该下标，保留 length 造成的空洞。
+            if (element) {
+                code_->dup();
+                code_->push(static_cast<double>(index));
+                compileExpression(*element);
+                code_->defineProp();
+                code_->pop();
+            }
             ++index;
+        }
+        return;
+    }
+
+    // 含展开：长度动态增长，普通元素逐个 append；elision 只推进 length。
+    code_->newArray(0);
+    for (const frontend::NodePtr& element : node.elements) {
+        if (!element) {
+            // elision：只推进 length，保留空洞。
+            code_->arrayGrow();
             continue;
         }
-        // 空指针是 elision：跳过该下标，保留 length 造成的空洞。
-        if (element) {
-            code_->dup();
-            code_->push(static_cast<double>(index));
-            compileExpression(*element);
-            code_->defineProp();
-            code_->pop();
+        if (element->kind() == NodeKind::SpreadElement) {
+            const auto& spread =
+                static_cast<const frontend::SpreadElement&>(*element);
+            if (spread.argument) {
+                compileExpression(*spread.argument);
+            } else {
+                code_->pushUndefined();
+            }
+            code_->arraySpread();
+            continue;
         }
-        ++index;
+        compileExpression(*element);
+        code_->arrayAppend();
     }
 }
 
@@ -1791,6 +1925,19 @@ void Compiler::compileAssignmentExpression(
     if (!node.right) {
         error(node, "compiler: assignment missing right-hand side");
         code_->pushUndefined();
+        return;
+    }
+    if (node.left->kind() == NodeKind::ArrayPattern ||
+        node.left->kind() == NodeKind::ObjectPattern) {
+        if (node.op != frontend::AssignmentOperator::Assign) {
+            error(node, "compiler: compound destructuring assignment not supported");
+            code_->pushUndefined();
+            return;
+        }
+        compileExpression(*node.right);
+        // 赋值表达式的值就是 RHS：保留一份，模式消费另一份。
+        code_->dup();
+        compileBindingPattern(*node.left, false, 0);
         return;
     }
     if (node.left->kind() == NodeKind::MemberExpression) {
@@ -1889,6 +2036,224 @@ void Compiler::compileUpdateExpression(
 
 // —— 函数 ——
 
+void Compiler::compileBindingPattern(const frontend::Node& pattern,
+                                     bool lexical, uint32_t depth) {
+    switch (pattern.kind()) {
+        case NodeKind::Identifier: {
+            const std::string& name =
+                static_cast<const frontend::Identifier&>(pattern).name;
+            if (lexical) {
+                code_->initialize(name);
+            } else {
+                code_->store(name);
+            }
+            return;
+        }
+        case NodeKind::AssignmentPattern: {
+            const auto& node =
+                static_cast<const frontend::AssignmentPattern&>(pattern);
+            if (!node.left) {
+                error(pattern, "compiler: assignment pattern missing target");
+                code_->pop();
+                return;
+            }
+            // [v] → [v, v === undefined]；非 undefined 跳过后面的默认值。
+            code_->dup();
+            code_->pushUndefined();
+            code_->strictEqual();
+            uint32_t keep = code_->jfalse();
+            code_->pop();
+            if (node.right) {
+                compileExpression(*node.right);
+            } else {
+                code_->pushUndefined();
+            }
+            code_->patchU32(keep + 2, code_->here());
+            compileBindingPattern(*node.left, lexical, depth + 1);
+            return;
+        }
+        case NodeKind::ArrayPattern: {
+            const auto& node =
+                static_cast<const frontend::ArrayPattern&>(pattern);
+            const std::string iterName =
+                "*dest-iter-" + std::to_string(depth) + "*";
+            const std::string resultName =
+                "*dest-res-" + std::to_string(depth) + "*";
+            code_->getIterator();
+            code_->define(iterName);
+            code_->pushUndefined();
+            code_->define(resultName);
+
+            for (const frontend::NodePtr& element : node.elements) {
+                if (!element) {
+                    // elision：推进迭代器，丢弃结果。
+                    code_->load(iterName);
+                    code_->iteratorNext();
+                    code_->pop();
+                    continue;
+                }
+                if (element->kind() == NodeKind::RestElement) {
+                    const auto& rest =
+                        static_cast<const frontend::RestElement&>(*element);
+                    const std::string arrayName =
+                        "*dest-rest-" + std::to_string(depth) + "*";
+                    code_->newArray(0);
+                    code_->define(arrayName);
+                    uint32_t loop = code_->here();
+                    code_->load(iterName);
+                    code_->iteratorNext();
+                    code_->store(resultName);
+                    code_->load(resultName);
+                    code_->push("done");
+                    code_->getProp();
+                    uint32_t exit = code_->jtrue();
+                    code_->load(arrayName);
+                    code_->load(resultName);
+                    code_->push("value");
+                    code_->getProp();
+                    code_->arrayAppend();
+                    code_->pop();
+                    code_->jmp(loop);
+                    code_->patchU32(exit + 2, code_->here());
+                    code_->load(arrayName);
+                    if (rest.argument) {
+                        compileBindingPattern(*rest.argument, lexical,
+                                              depth + 1);
+                    } else {
+                        code_->pop();
+                    }
+                    continue;
+                }
+
+                code_->load(iterName);
+                code_->iteratorNext();
+                code_->store(resultName);
+                code_->load(resultName);
+                code_->push("done");
+                code_->getProp();
+                uint32_t haveValue = code_->jfalse();
+                code_->pushUndefined();
+                uint32_t gotValue = code_->jmp();
+                code_->patchU32(haveValue + 2, code_->here());
+                code_->load(resultName);
+                code_->push("value");
+                code_->getProp();
+                code_->patchU32(gotValue + 2, code_->here());
+                compileBindingPattern(*element, lexical, depth + 1);
+            }
+            return;
+        }
+        case NodeKind::ObjectPattern: {
+            const auto& node =
+                static_cast<const frontend::ObjectPattern&>(pattern);
+            const std::string objectName =
+                "*dest-obj-" + std::to_string(depth) + "*";
+            code_->define(objectName);
+
+            for (const frontend::NodePtr& property : node.properties) {
+                if (!property) continue;
+                if (property->kind() == NodeKind::RestElement) {
+                    const auto& rest =
+                        static_cast<const frontend::RestElement&>(*property);
+                    std::vector<std::string> excluded;
+                    bool unsupported = false;
+                    for (const frontend::NodePtr& other : node.properties) {
+                        if (!other || other == property) continue;
+                        if (other->kind() != NodeKind::Property) continue;
+                        const auto& prop =
+                            static_cast<const frontend::Property&>(*other);
+                        if (prop.computed || !prop.key) {
+                            unsupported = true;
+                            break;
+                        }
+                        if (prop.key->kind() == NodeKind::Identifier) {
+                            excluded.push_back(
+                                static_cast<const frontend::Identifier&>(
+                                    *prop.key).name);
+                        } else if (prop.key->kind() ==
+                                   NodeKind::StringLiteral) {
+                            excluded.push_back(
+                                static_cast<const frontend::StringLiteral&>(
+                                    *prop.key).value);
+                        } else if (prop.key->kind() ==
+                                   NodeKind::NumericLiteral) {
+                            excluded.push_back(std::to_string(
+                                static_cast<long long>(
+                                    static_cast<const frontend::NumericLiteral&>(
+                                        *prop.key).value)));
+                        } else {
+                            unsupported = true;
+                            break;
+                        }
+                    }
+                    if (unsupported) {
+                        error(*property,
+                              "compiler: object rest with computed key not supported");
+                        code_->pop();
+                        continue;
+                    }
+                    code_->newObject();
+                    code_->load(objectName);
+                    code_->objectRest(excluded);
+                    if (rest.argument) {
+                        compileBindingPattern(*rest.argument, lexical,
+                                              depth + 1);
+                    } else {
+                        code_->pop();
+                    }
+                    continue;
+                }
+                if (property->kind() != NodeKind::Property) {
+                    error(*property, "compiler: unsupported object pattern element");
+                    continue;
+                }
+                const auto& prop =
+                    static_cast<const frontend::Property&>(*property);
+                if (prop.propertyKind != frontend::PropertyKind::Init) {
+                    error(*property, "compiler: accessor in pattern not supported");
+                    continue;
+                }
+                code_->load(objectName);
+                compilePropertyKey(prop);
+                code_->getProp();
+                if (prop.value) {
+                    compileBindingPattern(*prop.value, lexical, depth + 1);
+                } else {
+                    code_->pop();
+                }
+            }
+            return;
+        }
+        case NodeKind::MemberExpression: {
+            const auto& member =
+                static_cast<const frontend::MemberExpression&>(pattern);
+            if (member.optional) {
+                error(pattern, "compiler: optional chaining not supported");
+                code_->pop();
+                return;
+            }
+            if (!member.object) {
+                error(pattern, "compiler: assignment target missing object");
+                code_->pop();
+                return;
+            }
+            const std::string valueName =
+                "*dest-val-" + std::to_string(depth) + "*";
+            code_->define(valueName);
+            compileExpression(*member.object);
+            compileMemberKey(member);
+            code_->load(valueName);
+            code_->setProp();
+            code_->pop();
+            return;
+        }
+        default:
+            error(pattern, "compiler: unsupported binding pattern");
+            code_->pop();
+            return;
+    }
+}
+
 void Compiler::compileVariableDeclaration(
     const frontend::VariableDeclaration& node) {
     for (const frontend::NodePtr& declarator : node.declarations) {
@@ -1897,12 +2262,9 @@ void Compiler::compileVariableDeclaration(
         }
         const auto& decl =
             static_cast<const frontend::VariableDeclarator&>(*declarator);
-        if (!decl.id || decl.id->kind() != NodeKind::Identifier) {
-            error(*declarator, "compiler: unsupported binding pattern");
-            continue;
-        }
-        const std::string& name =
-            static_cast<const frontend::Identifier&>(*decl.id).name;
+        if (!decl.id) continue;
+        const bool lexical =
+            node.variableKind != frontend::VariableKind::Var;
 
         if (decl.init) {
             compileExpression(*decl.init);
@@ -1910,13 +2272,7 @@ void Compiler::compileVariableDeclaration(
             code_->pushUndefined();
         }
 
-        if (node.variableKind == frontend::VariableKind::Var) {
-            // var 槽已在函数/模块入口提升为 undefined，这里只赋值。
-            code_->store(name);
-        } else {
-            // let/const 槽已提升为 uninitialized，这里解除 TDZ。
-            code_->initialize(name);
-        }
+        compileBindingPattern(*decl.id, lexical, 0);
     }
 }
 
@@ -1936,7 +2292,10 @@ void Compiler::compileFunctionObject(const Node& node,
     bool hasRest = false;
     for (const frontend::NodePtr& param : params) {
         if (!param) continue;
-        if (param->kind() == NodeKind::Identifier) {
+        if (param->kind() == NodeKind::Identifier ||
+            param->kind() == NodeKind::ArrayPattern ||
+            param->kind() == NodeKind::ObjectPattern ||
+            param->kind() == NodeKind::AssignmentPattern) {
             ++paramCount;
         } else if (param->kind() == NodeKind::RestElement) {
             hasRest = true;
@@ -1986,6 +2345,15 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
             code_->define(id.name);
         } else if (param->kind() == NodeKind::RestElement) {
             error(*param, "compiler: rest parameters not supported");
+        } else if (param->kind() == NodeKind::ArrayPattern ||
+                   param->kind() == NodeKind::ObjectPattern ||
+                   param->kind() == NodeKind::AssignmentPattern) {
+            std::vector<std::string> names;
+            collectPatternNames(*param, names);
+            for (const std::string& name : names) {
+                code_->pushUndefined();
+                code_->define(name);
+            }
         } else {
             error(*param, "compiler: unsupported parameter pattern");
         }
@@ -1994,9 +2362,14 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
     // 栈顶是 self，先消费；随后按顺序绑定实参（栈上 argv0 在顶）。
     code_->storeThis();
     for (const frontend::NodePtr& param : params) {
-        if (param && param->kind() == NodeKind::Identifier) {
+        if (!param) continue;
+        if (param->kind() == NodeKind::Identifier) {
             const auto& id = static_cast<const frontend::Identifier&>(*param);
             code_->store(id.name);
+        } else if (param->kind() == NodeKind::ArrayPattern ||
+                   param->kind() == NodeKind::ObjectPattern ||
+                   param->kind() == NodeKind::AssignmentPattern) {
+            compileBindingPattern(*param, false, 0);
         }
     }
 
@@ -2092,14 +2465,13 @@ void Compiler::hoistSlots(const frontend::NodeList& body, bool varScope) {
             }
             const auto& decl =
                 static_cast<const frontend::VariableDeclarator&>(*declarator);
-            if (!decl.id || decl.id->kind() != NodeKind::Identifier) {
-                error(*declarator, "compiler: unsupported binding pattern");
-                continue;
+            if (!decl.id) continue;
+            std::vector<std::string> names;
+            collectPatternNames(*decl.id, names);
+            for (const std::string& name : names) {
+                code_->pushUninitialized();
+                code_->define(name, mutableBinding, false);
             }
-            const std::string& name =
-                static_cast<const frontend::Identifier&>(*decl.id).name;
-            code_->pushUninitialized();
-            code_->define(name, mutableBinding, false);
         }
     }
 
@@ -2169,10 +2541,7 @@ void Compiler::collectVarNames(const frontend::Node& statement,
                 }
                 const auto& decl =
                     static_cast<const frontend::VariableDeclarator&>(*declarator);
-                if (decl.id && decl.id->kind() == NodeKind::Identifier) {
-                    names.push_back(
-                        static_cast<const frontend::Identifier&>(*decl.id).name);
-                }
+                if (decl.id) collectPatternNames(*decl.id, names);
             }
             break;
         }

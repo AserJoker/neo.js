@@ -2271,6 +2271,273 @@ TEST(CompilerTest, StringRawInterleavesSubstitutions) {
     EXPECT_EQ(static_cast<StringData*>(value->data())->value, "a1b2c");
 }
 
+TEST(CompilerTest, ArraySpread) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var a = [1, 2];"
+        "var b = [...a, 3];"
+        "var result = b.length * 10 + b[2];");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 33.0);
+}
+
+TEST(CompilerTest, ArraySpreadString) {
+    Fixture f;
+    Value* value = runScriptResult(f, "var result = [...'ab'].length;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 2.0);
+}
+
+TEST(CompilerTest, ArraySpreadWithElision) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var result = [1, , ...['x']].length;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, ObjectSpread) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var a = { x: 1 };"
+        "var b = { ...a, y: 2 };"
+        "var result = b.x * 10 + b.y;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 12.0);
+}
+
+TEST(CompilerTest, ObjectSpreadLaterPropertyWins) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var result = ({ x: 1, ...{ x: 2 } }).x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 2.0);
+}
+
+TEST(CompilerTest, ObjectSpreadNullIsIgnored) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var result = ({ ...null, x: 1 }).x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, CallSpread) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function f(a, b, c) { return a + b + c; }"
+        "var args = [1, 2, 3];"
+        "var result = f(...args);");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 6.0);
+}
+
+TEST(CompilerTest, CallMethodSpreadKeepsReceiver) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var o = { base: 10, add: function (a, b) { return this.base + a + b; } };"
+        "var args = [1, 2];"
+        "var result = o.add(...args);");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 13.0);
+}
+
+TEST(CompilerTest, NewSpread) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function C(a, b) { this.v = a + b; }"
+        "var args = [1, 2];"
+        "var result = (new C(...args)).v;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, ArrayPatternDeclaration) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var [a, b] = [1, 2]; var result = a * 10 + b;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 12.0);
+}
+
+TEST(CompilerTest, ArrayPatternDefaults) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var [a = 5, b = 6] = [1]; var result = a * 10 + b;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 16.0);
+}
+
+TEST(CompilerTest, ArrayPatternRest) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var [a, ...rest] = [1, 2, 3];"
+        "var result = a * 10 + rest.length * 10 + rest[0];");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 32.0);
+}
+
+TEST(CompilerTest, ArrayPatternElision) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var [, b] = [1, 2]; var result = b;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 2.0);
+}
+
+TEST(CompilerTest, ObjectPatternDeclaration) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var { x, y } = { x: 1, y: 2 }; var result = x * 10 + y;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 12.0);
+}
+
+TEST(CompilerTest, ObjectPatternRename) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var { x: a } = { x: 7 }; var result = a;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 7.0);
+}
+
+TEST(CompilerTest, ObjectPatternDefault) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var { x = 5 } = {}; var result = x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 5.0);
+}
+
+TEST(CompilerTest, ObjectPatternRest) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var { x, ...rest } = { x: 1, y: 2, z: 3 };"
+        "var result = x * 100 + rest.y * 10 + rest.z;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 123.0);
+}
+
+TEST(CompilerTest, NestedPatternDeclaration) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var { a: [b] } = { a: [9] }; var result = b;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 9.0);
+}
+
+TEST(CompilerTest, LetPatternDeclaration) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "let [a, b] = [1, 2]; var result = a + b;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, ArrayDestructuringAssignment) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var a, b; [a, b] = [1, 2]; var result = a * 10 + b;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 12.0);
+}
+
+TEST(CompilerTest, ObjectDestructuringAssignment) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var a, b; ({ a, b } = { a: 1, b: 2 }); var result = a * 10 + b;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 12.0);
+}
+
+TEST(CompilerTest, DestructuringAssignmentValueIsRhs) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var a; var result = ([a] = [7])[0];");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 7.0);
+}
+
+TEST(CompilerTest, DestructuringAssignmentToMember) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var o = {}; [o.x] = [5]; var result = o.x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 5.0);
+}
+
+TEST(CompilerTest, ArrayPatternParameter) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function f([a, b]) { return a * 10 + b; }"
+        "var result = f([1, 2]);");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 12.0);
+}
+
+TEST(CompilerTest, ObjectPatternParameter) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function f({ x, y }) { return x * 10 + y; }"
+        "var result = f({ x: 1, y: 2 });");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 12.0);
+}
+
+TEST(CompilerTest, DefaultParameter) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "function f(a = 5) { return a; } var result = f();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 5.0);
+}
+
+TEST(CompilerTest, PatternParameterDefault) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function f([a] = [9]) { return a; }"
+        "var result = f();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 9.0);
+}
+
 TEST(CompilerTest, ForLetCreatesPerIterationBinding) {
     Fixture f;
     Value* value = runScriptResult(

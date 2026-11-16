@@ -265,6 +265,10 @@ public:
     Value* createTemplateObject(
         const std::vector<std::pair<std::string, std::string>>& quasis)
         override;
+    Value* arrayAppend(Value* array, Value* value) override;
+    Value* copyDataProperties(Value* target, Value* source,
+                              const std::vector<Value*>& excluded = {})
+        override;
     Value* createPrimitiveWrapper(Value* primitive,
                                   std::string_view bindName = {}) override;
     Value* createArrayIterator(Value* iteratedObject, ArrayIterationKind kind,

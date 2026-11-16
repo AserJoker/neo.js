@@ -66,6 +66,13 @@
 //   store_this    d → d - 1
 //   call N        d → d - N        （弹 fn + N args，压返回值）
 //   call_method N d → d - N - 1    （弹 receiver + fn + N args，压返回值）
+//   array_append  d → d - 1        （弹 value，追加到数组）
+//   array_grow    d → d            （length += 1，保留空洞）
+//   array_spread  d → d - 1        （弹 iterable，追加到数组）
+//   object_spread d → d - 1        （弹 source，复制到 target）
+//   call_spread   d → d - 1        （弹 argsArray 与 fn，压返回值）
+//   call_method_spread d → d - 2   （弹 argsArray、fn、receiver，压返回值）
+//   new_spread    d → d - 1        （弹 argsArray 与 ctor，压实例）
 //   ret           d → 0            （弹返回值并结束）
 //   hlt           d → d            （结束，返回 undefined）
 //
@@ -108,6 +115,14 @@ enum class OpCode : uint16_t {
     // 标签模板对象（§13.2.8.2）：u32 count + count × (u32 cookedIndex, u32 rawIndex)。
     // [] → [templateObject]：cooked 数组 + 冻结的 raw 数组，按 site 缓存。
     TemplateObject,
+    // 展开：[arr, value] → [arr] / [arr, iterable] → [arr] / [target, source] → [target]
+    ArrayAppend,
+    ArrayGrow,  // [arr] → [arr]：length += 1（elision 空洞）
+    ArraySpread,
+    ObjectSpread,
+    // 对象解构 rest：u32 count + count × u32 nameIndex。
+    // [target, source] → [target]：复制 source 自有 enumerable 属性，排除列出的键。
+    ObjectRest,
     ForInKeys,     // [obj] → [entries]：for-in 候选 [owner,key,...]（含原型链、去重）
     IsEnumerableOwn,  // [obj, key] → [bool]：自有属性存在且 enumerable
     GetIterator,   // [iterable] → [iterator]：GetIterator(iterable, sync)
@@ -171,7 +186,10 @@ enum class OpCode : uint16_t {
     // 调用
     Call,           // u32 argc：[fn, argv...] → [ret]，thisArg=undefined
     CallMethod,     // u32 argc：[receiver, fn, argv...] → [ret]，thisArg=receiver
+    CallSpread,     // [fn, argsArray] → [ret]，thisArg=undefined
+    CallMethodSpread,  // [receiver, fn, argsArray] → [ret]，thisArg=receiver
     New,            // u32 argc：[ctor, argv...] → [instance]，new.target=ctor
+    NewSpread,      // [ctor, argsArray] → [instance]，new.target=ctor
     LoadNewTarget,  // [] → [new.target]（普通调用为 undefined）
 
     // 生成器/async 挂起：[value] → [sent]（恢复时压入外部注入值）

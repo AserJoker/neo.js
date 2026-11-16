@@ -179,6 +179,18 @@ struct Code {
         return pc;
     }
     uint32_t defineProp() { return emitOp(OpCode::DefineProp); }
+    uint32_t arrayAppend() { return emitOp(OpCode::ArrayAppend); }
+    uint32_t arrayGrow() { return emitOp(OpCode::ArrayGrow); }
+    uint32_t arraySpread() { return emitOp(OpCode::ArraySpread); }
+    uint32_t objectSpread() { return emitOp(OpCode::ObjectSpread); }
+    uint32_t objectRest(const std::vector<std::string>& excluded) {
+        uint32_t pc = emitOp(OpCode::ObjectRest);
+        emitU32(static_cast<uint32_t>(excluded.size()));
+        for (const std::string& key : excluded) {
+            emitU32(addString(key));
+        }
+        return pc;
+    }
     uint32_t forInKeys() { return emitOp(OpCode::ForInKeys); }
     uint32_t isEnumerableOwn() { return emitOp(OpCode::IsEnumerableOwn); }
     uint32_t getIterator() { return emitOp(OpCode::GetIterator); }
@@ -335,11 +347,14 @@ struct Code {
         emitU32(argc);
         return pc;
     }
+    uint32_t callSpread() { return emitOp(OpCode::CallSpread); }
+    uint32_t callMethodSpread() { return emitOp(OpCode::CallMethodSpread); }
     uint32_t construct(uint32_t argc) {
         uint32_t pc = emitOp(OpCode::New);
         emitU32(argc);
         return pc;
     }
+    uint32_t constructSpread() { return emitOp(OpCode::NewSpread); }
     uint32_t loadNewTarget() { return emitOp(OpCode::LoadNewTarget); }
 
     uint32_t yieldValue() { return emitOp(OpCode::Yield); }

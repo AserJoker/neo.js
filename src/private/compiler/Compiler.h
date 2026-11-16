@@ -74,6 +74,10 @@ private:
     void compileExpressionStatement(const frontend::ExpressionStatement& node);
     void compileReturnStatement(const frontend::ReturnStatement& node);
     void compileVariableDeclaration(const frontend::VariableDeclaration& node);
+    // 绑定模式：栈顶值写入 pattern（Identifier/Array/Object/Assignment/Rest）。
+    // lexical=true 用 initialize（let/const），否则 store（var/参数）。
+    void compileBindingPattern(const frontend::Node& pattern, bool lexical,
+                               uint32_t depth);
     void compileIfStatement(const frontend::IfStatement& node);
     void compileForStatement(const frontend::ForStatement& node,
                              const std::vector<std::string>& labels = {});
@@ -130,6 +134,8 @@ private:
     // 把成员访问的 key 压栈（computed 求值，否则标识符名）。
     void compileMemberKey(const frontend::MemberExpression& node);
     void compileObjectExpression(const frontend::ObjectExpression& node);
+    // 把实参列表编译成数组（含展开），结果数组留在栈上。
+    void compileArgumentsArray(const frontend::NodeList& arguments);
     void compileArrayExpression(const frontend::ArrayExpression& node);
     // 把对象字面量属性的 key 压栈。
     void compilePropertyKey(const frontend::Property& node);

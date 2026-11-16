@@ -506,6 +506,17 @@ public:
     virtual Value* createTemplateObject(
         const std::vector<std::pair<std::string, std::string>>& quasis) = 0;
 
+    // arrayAppend: 在数组末尾追加一个元素（CreateDataPropertyOrThrow(length, v)）。
+    // 返回 array 本身或错误值。展开语法与解构 rest 共用。
+    virtual Value* arrayAppend(Value* array, Value* value) = 0;
+
+    // copyDataProperties: ES2024 §7.3.23，把 source 的自有 enumerable 属性
+    // （字符串 + symbol）复制到 target；excluded 中的键跳过。
+    // source 为 null/undefined 时不做任何事。返回 target 或错误值。
+    virtual Value* copyDataProperties(
+        Value* target, Value* source,
+        const std::vector<Value*>& excluded = {}) = 0;
+
     // createPrimitiveWrapper: 创建原始值包装对象（ES2024 §10.4）。
     // primitive 必须是 Boolean/Number/BigInt/String/Symbol 之一，成为 [[PrimitiveValue]]。
     // 原型按 primitive 的类型自动挂对应的 *Prototype；bootstrap 期间未就绪时跳过。

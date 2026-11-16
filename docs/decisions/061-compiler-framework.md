@@ -89,17 +89,20 @@ public:
 | SequenceExpression | 逐项求值，非末项 `pop` |
 | FunctionDeclaration/Expression | 跳过函数体 + 函数体 + `push_function` + `set_func_name` + `set_closure` + `define`（声明） |
 | ArrowFunctionExpression | 同上，另加 `load_this` + `bind_this`，无 prototype/不可构造 |
-| CallExpression（非成员） | callee + args + `call N` |
-| CallExpression（成员） | obj + `dup` + key + `get_prop` + args + `call_method N` |
-| NewExpression | callee + args + `new N`；spread 实参暂 unsupported |
+| CallExpression（非成员） | callee + args + `call N`；含 spread 时 args 先编译成数组 + `call_spread` |
+| CallExpression（成员） | obj + `dup` + key + `get_prop` + args + `call_method N`；含 spread 时 `call_method_spread` |
+| NewExpression | callee + args + `new N`；含 spread 时 args 数组 + `new_spread` |
 | MetaProperty | `new.target` → `load_new_target`；`import.meta` 暂 unsupported |
 | TemplateLiteral | 首段 cooked + 每个替换 `toString`/`add` + 后续 cooked `add` |
 | TaggedTemplateExpression | tag（成员 tag 用 receiver + `get_prop`）+ `template_object` + 替换表达式 + `call`/`call_method` |
 | SuperExpression | 暂 unsupported（依赖 class/home object 编译） |
 | MemberExpression | obj + key + `get_prop` |
 | 成员赋值（`=`） | obj + key + RHS + `set_prop` |
-| ObjectExpression | `new_object` + 每个属性 `dup; key; value; define_prop; pop` |
-| ArrayExpression | `new_array N` + 每个元素 `dup; index; value; define_prop; pop` |
+| ObjectExpression | `new_object` + 每个属性 `dup; key; value; define_prop; pop`；spread 用 `object_spread` |
+| ArrayExpression | `new_array N` + 每个元素 `dup; index; value; define_prop; pop`；含 spread 改为 `new_array 0` + `array_append`/`array_grow`/`array_spread` |
+| 解构声明（Array/ObjectPattern） | `compileBindingPattern`：数组模式 `get_iterator` + `iterator_next` 逐项写入目标；对象模式 `get_prop` 逐属性；rest 用 `object_rest`；默认值 `strict_equal(undefined)` + `jfalse` |
+| 解构赋值 | RHS + `dup` + `compileBindingPattern(lexical=false)`；表达式值保留 RHS |
+| 解构参数 | 形参槽先全部提升，再对模式参数逐个 `store` 到临时槽 + `compileBindingPattern` |
 | ThisExpression | `load_this` |
 | YieldExpression | 参数（或 `push_undefined`）+ `yield`；`yield*` 暂 unsupported |
 | AwaitExpression | 参数 + `await` |
@@ -134,7 +137,7 @@ initialized=false)`；直接函数声明先建 undefined 槽，再创建函数�
 函数体序言：形参 `push_undefined; define` → `store_this` → 按序 `store` 实参 →
 `push_scope` → 函数体 → `push_undefined; ret`。
 
-展开语法、对象访问器/`__proto__`、可选链、复合成员赋值、`export class` 等节点
+对象访问器/`__proto__`、可选链、复合成员赋值、`export class` 等节点
 暂记录 unsupported 错误，
 在后续切片中逐个补齐；每补一个节点，同时补 Compiler 测试与 VM 端到端测试。
 
@@ -161,6 +164,7 @@ tests/unit/compiler/
 - 优点：Compiler 与 Parser 同构，节点覆盖度可逐条推进；错误显式；SourceMap
   与 VM 的异常定位直接对接；后续只需在分派表里补节点。
 - 缺点：尚未覆盖 class、`super` 与正则字面量，真实程序还不能完整编译；
-  `for await`、spread 实参暂 unsupported；标签模板中的非法转义尚未按规范
-  产出 cooked=undefined（当前仍报词法错误）。
+  `for await`、rest 参数（`function f(...args)`）暂 unsupported；解构过程中
+  的 IteratorClose 尚未发射；对象 rest 与 computed key 组合暂 unsupported；
+  标签模板中的非法转义尚未按规范产出 cooked=undefined（当前仍报词法错误）。
 - 待定：常量池去重、SourceMap 对多字节指令的精确边界。

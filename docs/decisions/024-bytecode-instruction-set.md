@@ -98,6 +98,11 @@ _func_end:
 | `define_prop` | `[obj, key, value] → [obj]` | CreateDataProperty，不走原型 setter |
 | `template_object n, (cooked,raw)...` | `[] → [templateObject]` | 标签模板对象：冻结的 cooked 数组 + 冻结 raw 数组；按 Code+pc 缓存 |
 | `to_string` | `[v] → [string]` | ToString（§7.1.14，hint string）；模板替换用 |
+| `array_append` | `[arr, value] → [arr]` | 追加元素（数组字面量非展开项） |
+| `array_grow` | `[arr] → [arr]` | `length += 1`，保留 elision 空洞 |
+| `array_spread` | `[arr, iterable] → [arr]` | 迭代 iterable 并逐个追加（§13.2.5.5） |
+| `object_spread` | `[target, source] → [target]` | CopyDataProperties（§7.3.26），跳过 null/undefined |
+| `object_rest n, keys...` | `[target, source] → [target]` | 复制 source 自有 enumerable 属性，排除列出的键 |
 | `for_in_keys` | `[obj] → [entries]` | for-in 候选：原型链全部自有字符串键，扁平 `[owner,key,...]`，按名去重 |
 | `is_enumerable_own` | `[obj, key] → [bool]` | 处理候选时重查：自有属性存在且 enumerable |
 | `get_iterator` | `[iterable] → [iterator]` | GetIterator(iterable, sync) |
@@ -150,6 +155,9 @@ _func_end:
 | `call N` | `[fn, argv0..argvN-1] → [ret]` | 弹 fn + N args，thisArg=undefined，调 invoke，压返回值 |
 | `call_method N` | `[receiver, fn, argv0..argvN-1] → [ret]` | 弹 receiver + fn + N args，thisArg=receiver，调 invoke，压返回值 |
 | `new N` | `[ctor, argv0..argvN-1] → [instance]` | 弹 ctor + N args，调 `ctx->construct`，new.target=ctor，压构造结果 |
+| `call_spread` | `[fn, argsArray] → [ret]` | 从类数组 argsArray 取实参，thisArg=undefined |
+| `call_method_spread` | `[receiver, fn, argsArray] → [ret]` | thisArg=receiver |
+| `new_spread` | `[ctor, argsArray] → [instance]` | new.target=ctor |
 | `load_new_target` | `[] → [new.target]` | 从当前作用域链取 `new.target`；普通调用为 undefined |
 | `ret` | `[val] → []` | 函数返回，弹栈顶作为返回值，结束当前 VM |
 | `hlt` | `[] → ∅` | 模块执行结束 |

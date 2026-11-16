@@ -141,6 +141,11 @@ private:
     neo::core::Value* opNewArray();
     neo::core::Value* opDefineProp();
     neo::core::Value* opTemplateObject();
+    neo::core::Value* opArrayAppend();
+    neo::core::Value* opArrayGrow();
+    neo::core::Value* opArraySpread();
+    neo::core::Value* opObjectSpread();
+    neo::core::Value* opObjectRest();
     neo::core::Value* opForInKeys();
     neo::core::Value* opIsEnumerableOwn();
     neo::core::Value* opGetIterator();
@@ -183,7 +188,10 @@ private:
     neo::core::Value* opStoreThis();
     neo::core::Value* opCall();
     neo::core::Value* opCallMethod();
+    neo::core::Value* opCallSpread();
+    neo::core::Value* opCallMethodSpread();
     neo::core::Value* opNew();
+    neo::core::Value* opNewSpread();
     neo::core::Value* opLoadNewTarget();
     neo::core::Value* opYield();
     neo::core::Value* opAwait();

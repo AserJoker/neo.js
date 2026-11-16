@@ -15,6 +15,7 @@
 #include "core/Scope.h"
 #include "core/types/Exception.h"
 #include "core/types/Interrupt.h"
+#include "core/types/Number.h"
 #include "core/types/TypeBehavior.h"
 
 #include <string>
@@ -32,6 +33,27 @@ using neo::core::SourcePosition;
 using neo::core::Value;
 
 namespace {
+
+// 把类数组的 length 个元素读入 out（展开调用实参用）。
+// 成功返回 nullptr，失败返回错误值。
+Value* readArrayElements(IContext* ctx, Value* array,
+                         std::vector<Value*>& out) {
+    Value* lengthValue = ctx->getProperty(array, "length");
+    if (detail::isErrorValue(lengthValue)) return lengthValue;
+    Value* lengthNumber = ctx->toNumber(lengthValue);
+    if (detail::isErrorValue(lengthNumber)) return lengthNumber;
+    double length = static_cast<neo::core::NumberData*>(lengthNumber->data())->value;
+    if (length <= 0.0) return nullptr;
+    const size_t count = static_cast<size_t>(length);
+    out.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+        Value* value =
+            ctx->getProperty(array, ctx->createString(std::to_string(i)));
+        if (detail::isErrorValue(value)) return value;
+        out.push_back(value);
+    }
+    return nullptr;
+}
 
 uint16_t readU16(const uint8_t* p) {
     return static_cast<uint16_t>(static_cast<uint16_t>(p[0]) |
@@ -70,6 +92,11 @@ const char* opCodeName(OpCode op) {
         case OpCode::NewArray:      return "new_array";
         case OpCode::DefineProp:    return "define_prop";
         case OpCode::TemplateObject: return "template_object";
+        case OpCode::ArrayAppend:   return "array_append";
+        case OpCode::ArrayGrow:     return "array_grow";
+        case OpCode::ArraySpread:   return "array_spread";
+        case OpCode::ObjectSpread:  return "object_spread";
+        case OpCode::ObjectRest:    return "object_rest";
         case OpCode::ForInKeys:     return "for_in_keys";
         case OpCode::IsEnumerableOwn: return "is_enumerable_own";
         case OpCode::GetIterator:   return "get_iterator";
@@ -112,7 +139,10 @@ const char* opCodeName(OpCode op) {
         case OpCode::StoreThis:     return "store_this";
         case OpCode::Call:          return "call";
         case OpCode::CallMethod:    return "call_method";
+        case OpCode::CallSpread:    return "call_spread";
+        case OpCode::CallMethodSpread: return "call_method_spread";
         case OpCode::New:           return "new";
+        case OpCode::NewSpread:     return "new_spread";
         case OpCode::LoadNewTarget: return "load_new_target";
         case OpCode::Yield:         return "yield";
         case OpCode::Await:         return "await";
@@ -151,6 +181,11 @@ const VM::Handler* VM::handlers() {
         &VM::opNewArray,
         &VM::opDefineProp,
         &VM::opTemplateObject,
+        &VM::opArrayAppend,
+        &VM::opArrayGrow,
+        &VM::opArraySpread,
+        &VM::opObjectSpread,
+        &VM::opObjectRest,
         &VM::opForInKeys,
         &VM::opIsEnumerableOwn,
         &VM::opGetIterator,
@@ -193,7 +228,10 @@ const VM::Handler* VM::handlers() {
         &VM::opStoreThis,
         &VM::opCall,
         &VM::opCallMethod,
+        &VM::opCallSpread,
+        &VM::opCallMethodSpread,
         &VM::opNew,
+        &VM::opNewSpread,
         &VM::opLoadNewTarget,
         &VM::opYield,
         &VM::opAwait,
@@ -723,6 +761,115 @@ Value* VM::opTemplateObject() {
     if (detail::isErrorValue(object)) return fail(object);
     code_->templateCache.emplace_back(instructionPc_, object);
     push(object);
+    return nullptr;
+}
+
+Value* VM::opArrayAppend() {
+    if (stack_.size() < 2) {
+        return badBytecode("array_append: operand stack underflow");
+    }
+    Value* value = pop();
+    Value* array = pop();
+    Value* result = ctx_->arrayAppend(array, value);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(array);
+    return nullptr;
+}
+
+Value* VM::opArrayGrow() {
+    if (stack_.empty()) {
+        return badBytecode("array_grow: operand stack underflow");
+    }
+    Value* array = pop();
+    Value* lengthValue = ctx_->getProperty(array, "length");
+    if (detail::isErrorValue(lengthValue)) return fail(lengthValue);
+    Value* lengthNumber = ctx_->toNumber(lengthValue);
+    if (detail::isErrorValue(lengthNumber)) return fail(lengthNumber);
+    double length = static_cast<neo::core::NumberData*>(lengthNumber->data())->value;
+    Value* newLength = ctx_->createNumber(length + 1.0);
+    Value* result = ctx_->setProperty(array, "length", newLength);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(array);
+    return nullptr;
+}
+
+Value* VM::opArraySpread() {
+    if (stack_.size() < 2) {
+        return badBytecode("array_spread: operand stack underflow");
+    }
+    Value* iterable = pop();
+    Value* array = pop();
+    Value* iterator = detail::getIterator(ctx_, iterable);
+    if (detail::isErrorValue(iterator)) return fail(iterator);
+
+    while (true) {
+        Value* result = detail::iteratorNext(ctx_, iterator);
+        if (detail::isErrorValue(result)) {
+            (void)detail::iteratorClose(ctx_, iterator, nullptr);
+            return fail(result);
+        }
+        Value* done = ctx_->getProperty(result, "done");
+        if (detail::isErrorValue(done)) {
+            (void)detail::iteratorClose(ctx_, iterator, nullptr);
+            return fail(done);
+        }
+        if (detail::toBoolean(done)) break;
+        Value* value = ctx_->getProperty(result, "value");
+        if (detail::isErrorValue(value)) {
+            (void)detail::iteratorClose(ctx_, iterator, nullptr);
+            return fail(value);
+        }
+        Value* appended = ctx_->arrayAppend(array, value);
+        if (detail::isErrorValue(appended)) {
+            (void)detail::iteratorClose(ctx_, iterator, nullptr);
+            return fail(appended);
+        }
+    }
+    push(array);
+    return nullptr;
+}
+
+Value* VM::opObjectSpread() {
+    if (stack_.size() < 2) {
+        return badBytecode("object_spread: operand stack underflow");
+    }
+    Value* source = pop();
+    Value* target = pop();
+    Value* result = ctx_->copyDataProperties(target, source);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(target);
+    return nullptr;
+}
+
+Value* VM::opObjectRest() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("object_rest: truncated operand");
+    }
+    uint32_t count = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (bytes.size() - pc_ < static_cast<size_t>(count) * 4) {
+        return badBytecode("object_rest: truncated keys");
+    }
+    std::vector<Value*> excluded;
+    excluded.reserve(count);
+    for (uint32_t i = 0; i < count; ++i) {
+        uint32_t index = readU32(bytes.data() + pc_);
+        pc_ += 4;
+        const std::string* key = stringOperand(index);
+        if (key == nullptr) {
+            return badBytecode("object_rest: string index out of range");
+        }
+        excluded.push_back(ctx_->createString(*key));
+    }
+    if (stack_.size() < 2) {
+        return badBytecode("object_rest: operand stack underflow");
+    }
+    Value* source = pop();
+    Value* target = pop();
+    Value* result = ctx_->copyDataProperties(target, source, excluded);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(target);
     return nullptr;
 }
 
@@ -1289,6 +1436,40 @@ Value* VM::opCallMethod() {
     return nullptr;
 }
 
+Value* VM::opCallSpread() {
+    if (stack_.size() < 2) {
+        return badBytecode("call_spread: operand stack underflow");
+    }
+    Value* argsArray = pop();
+    Value* fn = pop();
+    std::vector<Value*> args;
+    if (Value* err = readArrayElements(ctx_, argsArray, args)) return fail(err);
+    Value* result =
+        ctx_->call(fn, ctx_->createUndefined(),
+                   static_cast<size_t>(args.size()), args.data());
+    if (detail::isErrorValue(result)) return fail(result);
+    if (detail::isInterruptValue(result)) return result;
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opCallMethodSpread() {
+    if (stack_.size() < 3) {
+        return badBytecode("call_method_spread: operand stack underflow");
+    }
+    Value* argsArray = pop();
+    Value* fn = pop();
+    Value* receiver = pop();
+    std::vector<Value*> args;
+    if (Value* err = readArrayElements(ctx_, argsArray, args)) return fail(err);
+    Value* result = ctx_->call(fn, receiver, static_cast<size_t>(args.size()),
+                               args.data());
+    if (detail::isErrorValue(result)) return fail(result);
+    if (detail::isInterruptValue(result)) return result;
+    push(result);
+    return nullptr;
+}
+
 Value* VM::opNew() {
     const std::vector<uint8_t>& bytes = code_->bytecode;
     if (bytes.size() - pc_ < 4) return badBytecode("new: truncated operand");
@@ -1303,6 +1484,22 @@ Value* VM::opNew() {
     Value* ctor = pop();
 
     Value* result = ctx_->construct(ctor, argc, args.data());
+    if (detail::isErrorValue(result)) return fail(result);
+    if (detail::isInterruptValue(result)) return result;
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opNewSpread() {
+    if (stack_.size() < 2) {
+        return badBytecode("new_spread: operand stack underflow");
+    }
+    Value* argsArray = pop();
+    Value* ctor = pop();
+    std::vector<Value*> args;
+    if (Value* err = readArrayElements(ctx_, argsArray, args)) return fail(err);
+    Value* result =
+        ctx_->construct(ctor, static_cast<size_t>(args.size()), args.data());
     if (detail::isErrorValue(result)) return fail(result);
     if (detail::isInterruptValue(result)) return result;
     push(result);
