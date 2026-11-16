@@ -2,7 +2,9 @@
 
 #include "regex/RegexEngine.h"
 
+#include "regex/RegexCompiler.h"
 #include "regex/RegexParser.h"
+#include "regex/RegexVM.h"
 
 #include <memory>
 #include <utility>
@@ -12,8 +14,6 @@ namespace neo::regex {
 RegexEngine::RegexEngine(RegexHost& host,
                          std::pmr::memory_resource* memory)
     : host_(host), memory_(memory) {
-    // R0 尚未使用 Host/分配器；显式读取避免未使用字段告警。
-    (void)host_;
     (void)memory_;
 }
 
@@ -33,13 +33,14 @@ CompileResult RegexEngine::compile(std::string_view pattern, Flags flags,
         return CompileResult{nullptr, std::move(parsed.error)};
     }
 
-    auto program = std::make_shared<Program>();
-    program->source = std::string(pattern);
-    program->flags = flags;
-    program->dialect = dialect;
-    program->captureCount = parsed.captureCount;
-    program->namedGroups = std::move(parsed.namedGroups);
-    return CompileResult{std::move(program), std::nullopt};
+    RegexCompiler compiler;
+    return compiler.compile(parsed, pattern, flags, dialect);
+}
+
+MatchResult RegexEngine::exec(const Program& program, const Subject& subject,
+                              ExecOptions options) {
+    RegexVM vm(program, subject, host_);
+    return vm.exec(options);
 }
 
 }  // namespace neo::regex

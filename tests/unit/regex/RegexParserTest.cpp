@@ -2,9 +2,11 @@
 //
 // 引擎单测不依赖 IContext：TestHost 只提供空的 Unicode 表与永不中止策略。
 
+#include "regex/RegexAST.h"
 #include "regex/RegexEngine.h"
 #include "regex/RegexFlags.h"
 #include "regex/RegexHost.h"
+#include "regex/RegexParser.h"
 #include "regex/RegexSubject.h"
 
 #include <gtest/gtest.h>
@@ -43,6 +45,16 @@ struct Fixture {
         EXPECT_TRUE(parsed.ok())
             << (parsed.error ? parsed.error->message : std::string());
         return engine.compile(pattern, parsed.flags);
+    }
+
+    // 只测语法：不进入 Compiler，允许 R2/R3 才实现的节点。
+    neo::regex::ParseResult parse(const std::string& pattern,
+                                  const std::string& flags = "") {
+        auto parsed = neo::regex::parseFlags(flags);
+        EXPECT_TRUE(parsed.ok())
+            << (parsed.error ? parsed.error->message : std::string());
+        neo::regex::RegexParser parser(pattern, parsed.flags, {});
+        return parser.parse();
     }
 };
 
@@ -120,18 +132,18 @@ TEST(RegexParserTest, ParsesQuantifiers) {
 
 TEST(RegexParserTest, ParsesCharacterClass) {
     Fixture f;
-    EXPECT_TRUE(f.compile("[a-z\\d\\p{Letter}]", "u").ok());
+    EXPECT_TRUE(f.parse("[a-z\\d\\p{Letter}]", "u").ok());
 }
 
 TEST(RegexParserTest, ParsesAssertions) {
     Fixture f;
-    EXPECT_TRUE(f.compile("^$\\b\\B(?=a)(?!b)(?<=c)(?<!d)").ok());
+    EXPECT_TRUE(f.parse("^$\\b\\B(?=a)(?!b)(?<=c)(?<!d)").ok());
 }
 
 TEST(RegexParserTest, ParsesBackreferences) {
     Fixture f;
-    EXPECT_TRUE(f.compile("(a)\\1").ok());
-    EXPECT_TRUE(f.compile("(?<x>a)\\k<x>").ok());
+    EXPECT_TRUE(f.parse("(a)\\1").ok());
+    EXPECT_TRUE(f.parse("(?<x>a)\\k<x>").ok());
 }
 
 TEST(RegexParserTest, ParsesUnicodeCodePointEscape) {

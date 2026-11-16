@@ -2,6 +2,7 @@
 
 add_executable(regex_unit_test
     RegexParserTest.cpp
+    RegexVMTest.cpp
 )
 target_link_libraries(regex_unit_test
     PRIVATE

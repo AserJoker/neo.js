@@ -87,11 +87,19 @@ struct Capture {
     size_t end = 0;
 };
 
+enum class MatchStatus { Matched, NoMatch, Aborted, Oom };
+
 struct MatchResult {
-    bool matched = false;
+    MatchStatus status = MatchStatus::NoMatch;
     size_t start = 0;
     size_t end = 0;
     std::vector<Capture> captures;  // [0] 为整体匹配
+    bool matched() const { return status == MatchStatus::Matched; }
+};
+
+struct ExecOptions {
+    size_t startIndex = 0;
+    bool anchored = false;  // true = sticky：只在 startIndex 尝试
 };
 
 class RegexHost {
@@ -111,7 +119,7 @@ public:
     CompileResult compile(std::string_view pattern, Flags flags,
                           Dialect dialect = {});
     MatchResult exec(const Program& program, const Subject& subject,
-                     size_t startIndex);
+                     ExecOptions options = {});
 };
 
 }  // namespace neo::regex
@@ -162,10 +170,15 @@ AssertWordBoundary / AssertNotWordBoundary
 Backref(group, ignoreCase)
 Lookahead(programIndex, negate)
 Lookbehind(programIndex, negate)
+Mark(slot) / Progress(slot, exitPc)       // 空匹配保护
+SetCounter(slot, value) / IncCounter(slot)
+CounterLt(slot, value, targetPc)          // 计数循环
 Match
 ```
 
-- 量词编译为 `Split`/`Jmp` 循环；有界量词用计数指令或展开。
+- 量词统一编译为计数循环：`CounterLt` 保证 `min`/`max`，可选分支用
+  `Split`；无上界时省略 `max` 检查，可选分支的 `Mark`/`Progress` 防止
+  空匹配死循环。有界量词不展开，避免 `{0,1000000}` 的编译期膨胀。
 - 同一套指令流同时服务回溯 VM，并为将来的 Pike VM 线性兜底保留可能。
 - 字符类在编译期展开为范围表/位图；`\p{...}` 在编译期解析为范围集。
 
@@ -181,7 +194,10 @@ Match
   leftmost-longest。
 - **步数预算**：每 N 条指令检查 `shouldAbort()`；中止时返回
   `ExecStatus::Aborted`，由宿主决定抛错或返回 null。
-- 执行结果状态：`Matched / NoMatch / Aborted / Oom`，不抛 C++ 异常。
+- 执行结果状态：`Matched / NoMatch / Aborted / Oom`，不抛 C++ 异常
+  （`std::bad_alloc` 在 `exec` 边界转成 `Oom`）。
+- 非 sticky 的 `exec` 从 `startIndex` 向后逐个起点尝试；sticky 只尝试
+  `startIndex`。`g`/`y` 的 `lastIndex` 更新由 JS 层负责。
 
 ### 7. Unicode 数据
 

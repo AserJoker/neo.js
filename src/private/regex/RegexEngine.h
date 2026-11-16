@@ -12,22 +12,14 @@
 
 #include "regex/RegexFlags.h"
 #include "regex/RegexHost.h"
+#include "regex/RegexMatch.h"
 #include "regex/RegexProgram.h"
 #include "regex/RegexSubject.h"
 
-#include <memory>
 #include <memory_resource>
-#include <optional>
 #include <string_view>
 
 namespace neo::regex {
-
-struct CompileResult {
-    std::shared_ptr<const Program> program;
-    std::optional<CompileError> error;
-
-    bool ok() const { return program != nullptr && !error.has_value(); }
-};
 
 class RegexEngine {
 public:
@@ -37,7 +29,9 @@ public:
     CompileResult compile(std::string_view pattern, Flags flags,
                           Dialect dialect = {});
 
-    // R1: MatchResult exec(const Program&, const Subject&, size_t startIndex);
+    // 从 options.startIndex 开始尝试；anchored=false 时向后搜索。
+    MatchResult exec(const Program& program, const Subject& subject,
+                     ExecOptions options = {});
 
 private:
     RegexHost& host_;
