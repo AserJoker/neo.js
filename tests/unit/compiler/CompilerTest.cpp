@@ -8,6 +8,7 @@
 
 #include "compiler/Compiler.h"
 #include "core/IContext.h"
+#include "core/Scope.h"
 #include "core/types/Boolean.h"
 #include "core/types/Number.h"
 #include "core/types/String.h"
@@ -1467,8 +1468,8 @@ TEST(CompilerTest, DebuggerStatementIsNoOp) {
 TEST(CompilerTest, UnsupportedStatementRecordsError) {
     SourceRange range{};
     NodeList body;
-    body.push_back(std::make_unique<neo::frontend::ForStatement>(
-        range, nullptr, nullptr, nullptr, nullptr));
+    body.push_back(std::make_unique<neo::frontend::SwitchStatement>(
+        range, nullptr, NodeList{}));
     Program program(range, std::move(body), SourceType::Script);
 
     SemaResult sema;
@@ -1614,6 +1615,87 @@ TEST(CompilerTest, CompilesSequenceExpression) {
     Fixture f;
     Value* value = runReturnExpression(
         f, std::make_unique<SequenceExpression>(range, std::move(expressions)));
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+namespace {
+
+// 执行脚本并从全局作用域读取 result（脚本以 `var result` 承载结果）。
+Value* runScriptResult(Fixture& f, const std::string& source) {
+    CompileResult result = compileSource(source);
+    EXPECT_TRUE(result.ok());
+    if (!result.ok()) return nullptr;
+    VM vm(f.ctx.get(), result.code.get());
+    (void)vm.run();
+    return f.ctx->root()->lookup("result");
+}
+
+}  // namespace
+
+TEST(CompilerTest, CompilesForLoopWithVar) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "for (var i = 0; i < 5; i = i + 1) { result = result + i; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 10.0);
+}
+
+TEST(CompilerTest, CompilesForLoopWithLet) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "for (let i = 0; i < 5; i = i + 1) { result = result + i; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 10.0);
+}
+
+TEST(CompilerTest, ForLoopContinueAndBreak) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "for (var i = 0; i < 10; i = i + 1) {"
+        "  if (i < 3) continue;"
+        "  if (i > 5) break;"
+        "  result = result + i;"
+        "}");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 12.0);
+}
+
+TEST(CompilerTest, ForLoopLabeledContinue) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "outer: for (var i = 0; i < 3; i = i + 1) {"
+        "  for (var j = 0; j < 3; j = j + 1) {"
+        "    if (j > 1) continue outer;"
+        "    result = result + 1;"
+        "  }"
+        "}");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 6.0);
+}
+
+TEST(CompilerTest, ForLoopWithoutTestStopsOnBreak) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "for (var i = 0; ; i = i + 1) {"
+        "  if (i > 2) break;"
+        "  result = result + i;"
+        "}");
     ASSERT_NE(value, nullptr);
     ASSERT_EQ(value->type()->kind(), TypeKind::Number);
     EXPECT_DOUBLE_EQ(numberValue(value), 3.0);

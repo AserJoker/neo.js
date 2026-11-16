@@ -126,6 +126,10 @@ void Compiler::compileStatement(const Node& node) {
             compileIfStatement(
                 static_cast<const frontend::IfStatement&>(node));
             break;
+        case NodeKind::ForStatement:
+            compileForStatement(
+                static_cast<const frontend::ForStatement&>(node));
+            break;
         case NodeKind::WhileStatement:
             compileWhileStatement(
                 static_cast<const frontend::WhileStatement&>(node));
@@ -315,6 +319,92 @@ void Compiler::compileIfStatement(const frontend::IfStatement& node) {
     }
 }
 
+void Compiler::compileForStatement(
+    const frontend::ForStatement& node,
+    const std::vector<std::string>& labels) {
+    // for 的 let/const 初始化器不在外层提升：在循环作用域内直接建槽。
+    const frontend::VariableDeclaration* lexicalInit = nullptr;
+    if (node.init && node.init->kind() == NodeKind::VariableDeclaration) {
+        const auto& declaration =
+            static_cast<const frontend::VariableDeclaration&>(*node.init);
+        if (declaration.variableKind != frontend::VariableKind::Var) {
+            lexicalInit = &declaration;
+        }
+    }
+
+    if (lexicalInit != nullptr) code_->pushScope();
+
+    if (node.init) {
+        if (node.init->kind() != NodeKind::VariableDeclaration) {
+            compileExpression(*node.init);
+            code_->pop();
+        } else if (lexicalInit == nullptr) {
+            compileVariableDeclaration(
+                static_cast<const frontend::VariableDeclaration&>(*node.init));
+        } else {
+            bool mutableBinding =
+                lexicalInit->variableKind == frontend::VariableKind::Let;
+            for (const NodePtr& declarator : lexicalInit->declarations) {
+                if (!declarator ||
+                    declarator->kind() != NodeKind::VariableDeclarator) {
+                    continue;
+                }
+                const auto& decl = static_cast<const frontend::VariableDeclarator&>(
+                    *declarator);
+                if (!decl.id || decl.id->kind() != NodeKind::Identifier) {
+                    error(*declarator, "compiler: unsupported binding pattern");
+                    continue;
+                }
+                if (decl.init) {
+                    compileExpression(*decl.init);
+                } else {
+                    code_->pushUndefined();
+                }
+                code_->define(
+                    static_cast<const frontend::Identifier&>(*decl.id).name,
+                    mutableBinding);
+            }
+        }
+    }
+
+    std::vector<std::string> effective = labels;
+    if (effective.empty()) effective.push_back("");
+    std::vector<uint32_t> pushes;
+    for (const std::string& label : effective) {
+        pushes.push_back(code_->pushLabel(label, 0, 0));
+    }
+
+    uint32_t loop = code_->here();
+    uint32_t toEnd = 0;
+    if (node.test) {
+        compileExpression(*node.test);
+        toEnd = code_->jfalse();
+    }
+    if (node.body) compileStatement(*node.body);
+
+    // continue 目标是 update，而不是循环头（否则 update 会被跳过）。
+    uint32_t updatePc = code_->here();
+    for (uint32_t push : pushes) code_->patchU32(push + 6, updatePc);
+    if (node.update) {
+        compileExpression(*node.update);
+        code_->pop();
+    }
+    code_->jmp(loop);
+
+    // 正常退出：pop_label；break 目标在其后，先清理循环作用域。
+    uint32_t exitPc = code_->here();
+    if (toEnd != 0) code_->patchU32(toEnd + 2, exitPc);
+    for (auto it = effective.rbegin(); it != effective.rend(); ++it) {
+        code_->popLabel(*it);
+    }
+    // break 已由 VM 回退到循环作用域，只需跳过 pop_label 直接清理作用域。
+    uint32_t breakTarget = code_->here();
+    if (lexicalInit != nullptr) code_->popScope();
+    uint32_t endPc = code_->here();
+    for (uint32_t push : pushes) code_->patchU32(push + 10, breakTarget);
+    (void)endPc;
+}
+
 void Compiler::compileWhileStatement(
     const frontend::WhileStatement& node,
     const std::vector<std::string>& labels) {
@@ -385,6 +475,11 @@ void Compiler::compileLabeledStatement(
     }
     if (body == nullptr) return;
 
+    if (body->kind() == NodeKind::ForStatement) {
+        compileForStatement(
+            static_cast<const frontend::ForStatement&>(*body), labels);
+        return;
+    }
     if (body->kind() == NodeKind::WhileStatement) {
         compileWhileStatement(
             static_cast<const frontend::WhileStatement&>(*body), labels);

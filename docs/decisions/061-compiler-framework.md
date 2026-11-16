@@ -101,6 +101,7 @@ public:
 | async FunctionDeclaration/Expression/Arrow | `push_function` 带 `kFunctionAsync`，不可构造、无 prototype |
 | FunctionDeclaration/Expression（`function*`） | `push_function` 带 `kFunctionGenerator`，不可构造、有 prototype |
 | IfStatement | test + `jfalse` else；then；有 else 时 `jmp end` + 回填 |
+| ForStatement | let/const init 先 `push_scope` 并直接 `define`；`push_label`（continue→update）；test + `jfalse exit`；body；update + `jmp loop`；exit：`pop_label` + `pop_scope` |
 | WhileStatement | `push_label`；loop：test + `jfalse exit`；body；`jmp loop`；exit：`pop_label` |
 | DoWhileStatement | `push_label`；loop：body；test + `jtrue loop`；exit：`pop_label` |
 | LabeledStatement | 标签传给循环；非循环标签单独 `push_label`/`pop_label` |
@@ -112,6 +113,10 @@ public:
 | ExportNamedDeclaration | 编译内层声明；产出 `ModuleExportBinding`（本地 / `from` re-export） |
 | ExportDefaultDeclaration | 具名函数导出其绑定；匿名函数/表达式存入隐藏槽位 `*default*` |
 | ExportAllDeclaration | 无字节码；产出 `exportAll` 或 `export * as ns` 元数据 |
+
+for 的 let/const 目前使用单一循环作用域：循环变量在每次迭代间共享同一绑定，
+闭包捕获到的是最终值。规范的 CreatePerIterationEnvironment（每次迭代复制
+绑定到新环境）留待后续实现。
 
 声明提升：作用域入口先建槽——`var`（递归收集，不穿透函数）→
 `push_undefined; define`；直接 `let/const` → `push_uninitialized; define(mutable,
@@ -147,6 +152,6 @@ tests/unit/compiler/
 
 - 优点：Compiler 与 Parser 同构，节点覆盖度可逐条推进；错误显式；SourceMap
   与 VM 的异常定位直接对接；后续只需在分派表里补节点。
-- 缺点：尚未覆盖 for/switch 与模块，真实程序还不能完整编译；
-  函数声明提升已按「先建槽 → 再创建函数 → store」实现，但尚未独立函数定义区。
-- 待定：模块绑定、常量池去重、SourceMap 对多字节指令的精确边界。
+- 缺点：尚未覆盖 for-in/for-of、switch、class、模板字符串与正则字面量，
+  真实程序还不能完整编译；for 的 let/const 尚未实现逐迭代环境。
+- 待定：常量池去重、SourceMap 对多字节指令的精确边界。

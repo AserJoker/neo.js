@@ -75,6 +75,8 @@ private:
     void compileReturnStatement(const frontend::ReturnStatement& node);
     void compileVariableDeclaration(const frontend::VariableDeclaration& node);
     void compileIfStatement(const frontend::IfStatement& node);
+    void compileForStatement(const frontend::ForStatement& node,
+                             const std::vector<std::string>& labels = {});
     void compileWhileStatement(const frontend::WhileStatement& node,
                                const std::vector<std::string>& labels = {});
     void compileDoWhileStatement(
