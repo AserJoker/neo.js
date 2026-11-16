@@ -329,6 +329,10 @@ void Compiler::compileExpression(const Node& node) {
             compileMemberExpression(
                 static_cast<const frontend::MemberExpression&>(node));
             break;
+        case NodeKind::ChainExpression:
+            compileChainExpression(
+                static_cast<const frontend::ChainExpression&>(node));
+            break;
         case NodeKind::ObjectExpression:
             compileObjectExpression(
                 static_cast<const frontend::ObjectExpression&>(node));
@@ -1517,11 +1521,6 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
     if (isMember) {
         const auto& member =
             static_cast<const frontend::MemberExpression&>(*node.callee);
-        if (member.optional || node.optional) {
-            error(node, "compiler: optional call not supported");
-            code_->pushUndefined();
-            return;
-        }
         if (!member.object) {
             error(node, "compiler: member call missing object");
             code_->pushUndefined();
@@ -1529,11 +1528,15 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
         }
         // receiver 只求值一次：栈上保留一份作为 thisArg，另一份用于取方法。
         compileExpression(*member.object);
+        if (member.optional) emitOptionalGuard();
         code_->dup();
         compileMemberKey(member);
         code_->getProp();
+        // `obj.m?.()`：fn 为 nullish 时 receiver 与 fn 都要丢弃。
+        if (node.optional) emitOptionalGuard(1);
     } else {
         compileExpression(*node.callee);
+        if (node.optional) emitOptionalGuard();
     }
 
     bool hasSpread = false;
@@ -1727,19 +1730,46 @@ void Compiler::compileTaggedTemplateExpression(
 
 void Compiler::compileMemberExpression(
     const frontend::MemberExpression& node) {
-    if (node.optional) {
-        error(node, "compiler: optional chaining not supported");
-        code_->pushUndefined();
-        return;
-    }
     if (!node.object) {
         error(node, "compiler: member expression missing object");
         code_->pushUndefined();
         return;
     }
     compileExpression(*node.object);
+    if (node.optional) emitOptionalGuard();
     compileMemberKey(node);
     code_->getProp();
+}
+
+void Compiler::compileChainExpression(
+    const frontend::ChainExpression& node) {
+    if (!node.expression) {
+        error(node, "compiler: chain expression missing operand");
+        code_->pushUndefined();
+        return;
+    }
+    chainEndPatches_.emplace_back();
+    compileExpression(*node.expression);
+    std::vector<uint32_t> ends = std::move(chainEndPatches_.back());
+    chainEndPatches_.pop_back();
+    uint32_t endPc = code_->here();
+    for (uint32_t patch : ends) code_->patchU32(patch + 2, endPc);
+}
+
+void Compiler::emitOptionalGuard(uint32_t extraPops) {
+    code_->dup();
+    uint32_t cont = code_->jNotNullish();
+    code_->pop();
+    for (uint32_t i = 0; i < extraPops; ++i) code_->pop();
+    code_->pushUndefined();
+    uint32_t end = code_->jmp();
+    if (!chainEndPatches_.empty()) {
+        chainEndPatches_.back().push_back(end);
+    } else {
+        // 可选节点必然位于 ChainExpression 内；兜底避免留下悬空跳转。
+        code_->patchU32(end + 2, code_->here());
+    }
+    code_->patchU32(cont + 2, code_->here());
 }
 
 void Compiler::compileMemberKey(const frontend::MemberExpression& node) {

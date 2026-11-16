@@ -2538,6 +2538,99 @@ TEST(CompilerTest, PatternParameterDefault) {
     EXPECT_DOUBLE_EQ(numberValue(value), 9.0);
 }
 
+TEST(CompilerTest, OptionalMemberShortCircuits) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var o = null; var result = o?.x;");
+    ASSERT_NE(value, nullptr);
+    EXPECT_EQ(value->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(CompilerTest, OptionalMemberReadsWhenPresent) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var o = { x: 7 }; var result = o?.x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 7.0);
+}
+
+TEST(CompilerTest, OptionalChainSkipsRemainingSuffixes) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var o = null; var result = o?.x.y.z;");
+    ASSERT_NE(value, nullptr);
+    EXPECT_EQ(value->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(CompilerTest, OptionalComputedMember) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var o = null; var result = o?.['x'];");
+    ASSERT_NE(value, nullptr);
+    EXPECT_EQ(value->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(CompilerTest, OptionalCallShortCircuits) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var fn = null; var result = fn?.();");
+    ASSERT_NE(value, nullptr);
+    EXPECT_EQ(value->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(CompilerTest, OptionalCallSkipsArguments) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var n = 0;"
+        "function bump() { n = n + 1; }"
+        "var fn = null;"
+        "var skipped = fn?.(bump());"
+        "var result = n;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 0.0);
+}
+
+TEST(CompilerTest, OptionalCallInvokesWhenPresent) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var fn = function () { return 5; };"
+        "var result = fn?.();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 5.0);
+}
+
+TEST(CompilerTest, OptionalMethodCallKeepsReceiver) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var o = { x: 3, m: function () { return this.x; } };"
+        "var result = o.m?.();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, OptionalMethodCallShortCircuits) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var o = {}; var result = o.m?.();");
+    ASSERT_NE(value, nullptr);
+    EXPECT_EQ(value->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(CompilerTest, OptionalMemberCallShortCircuits) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var o = null; var result = o?.m();");
+    ASSERT_NE(value, nullptr);
+    EXPECT_EQ(value->type()->kind(), TypeKind::Undefined);
+}
+
 TEST(CompilerTest, RestParameter) {
     Fixture f;
     Value* value = runScriptResult(

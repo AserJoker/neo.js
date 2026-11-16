@@ -97,6 +97,7 @@ public:
 | TaggedTemplateExpression | tag（成员 tag 用 receiver + `get_prop`）+ `template_object` + 替换表达式 + `call`/`call_method` |
 | SuperExpression | 暂 unsupported（依赖 class/home object 编译） |
 | MemberExpression | obj + key + `get_prop` |
+| ChainExpression / 可选链 | 整条链共用一个短路出口：每个 `?.` 处 `dup; jnotnullish cont; pop; [pop receiver]; push_undefined; jmp end`；链尾回填全部跳转 |
 | 成员赋值（`=`） | obj + key + RHS + `set_prop` |
 | ObjectExpression | `new_object` + 每个属性 `dup; key; value; define_prop; pop`；spread 用 `object_spread` |
 | ArrayExpression | `new_array N` + 每个元素 `dup; index; value; define_prop; pop`；含 spread 改为 `new_array 0` + `array_append`/`array_grow`/`array_spread` |
@@ -138,7 +139,7 @@ initialized=false)`；直接函数声明先建 undefined 槽，再创建函数�
 函数体序言：形参 `push_undefined; define` → `store_this` → 按序 `store` 实参 →
 `push_scope` → 函数体 → `push_undefined; ret`。
 
-对象访问器/`__proto__`、可选链、复合成员赋值、`export class` 等节点
+对象访问器/`__proto__`、复合成员赋值、`export class` 等节点
 暂记录 unsupported 错误，
 在后续切片中逐个补齐；每补一个节点，同时补 Compiler 测试与 VM 端到端测试。
 

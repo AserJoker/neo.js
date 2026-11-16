@@ -131,6 +131,11 @@ private:
     void compileTaggedTemplateExpression(
         const frontend::TaggedTemplateExpression& node);
     void compileMemberExpression(const frontend::MemberExpression& node);
+    // 可选链：整条链共用短路出口，任一 `?.` 命中 nullish 即跳到链尾。
+    void compileChainExpression(const frontend::ChainExpression& node);
+    // 栈顶为待检查值；nullish 时弹掉它（再弹 extraPops 个）并压 undefined，
+    // 跳到当前链尾。非 nullish 继续执行。
+    void emitOptionalGuard(uint32_t extraPops = 0);
     // 把成员访问的 key 压栈（computed 求值，否则标识符名）。
     void compileMemberKey(const frontend::MemberExpression& node);
     void compileObjectExpression(const frontend::ObjectExpression& node);
@@ -192,6 +197,8 @@ private:
     uint32_t evaluatePc_ = 0;
     std::vector<neo::core::ModuleImportBinding> imports_;
     std::vector<neo::core::ModuleExportBinding> exports_;
+    // 每层 ChainExpression 一个待回填的短路跳转列表（支持嵌套链）。
+    std::vector<std::vector<uint32_t>> chainEndPatches_;
 };
 
 }  // namespace neo::compiler
