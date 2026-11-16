@@ -25,6 +25,7 @@ namespace {
 constexpr std::string_view kForKeys = "*for-keys*";
 constexpr std::string_view kForIndex = "*for-index*";
 constexpr std::string_view kForValue = "*for-value*";
+constexpr std::string_view kForOwner = "*for-owner*";
 constexpr std::string_view kForIterator = "*for-iterator*";
 constexpr std::string_view kForResult = "*for-result*";
 constexpr std::string_view kForDone = "*for-done*";
@@ -574,6 +575,8 @@ void Compiler::compileForInStatement(
     code_->define(kForIndex);
     code_->pushUndefined();
     code_->define(kForValue);
+    code_->pushUndefined();
+    code_->define(kForOwner);
 
     compileExpression(*node.right);
     code_->forInKeys();
@@ -596,11 +599,23 @@ void Compiler::compileForInStatement(
     code_->lt();
     uint32_t toEnd = code_->jfalse();
 
-    // value = keys[index]
+    // owner = entries[index]; key = entries[index + 1]
     code_->load(kForKeys);
     code_->load(kForIndex);
     code_->getProp();
+    code_->store(kForOwner);
+    code_->load(kForKeys);
+    code_->load(kForIndex);
+    code_->push(1.0);
+    code_->add();
+    code_->getProp();
     code_->store(kForValue);
+
+    // 处理时重新检查：属性可能已被删除或改为非 enumerable。
+    code_->load(kForOwner);
+    code_->load(kForValue);
+    code_->isEnumerableOwn();
+    uint32_t toSkip = code_->jfalse();
 
     if (lexical) code_->pushScope();
     code_->load(kForValue);
@@ -608,8 +623,10 @@ void Compiler::compileForInStatement(
     if (node.body) compileStatement(*node.body);
     if (lexical) code_->popScope();
 
+    uint32_t skipPc = code_->here();
+    code_->patchU32(toSkip + 2, skipPc);
     code_->load(kForIndex);
-    code_->push(1.0);
+    code_->push(2.0);
     code_->add();
     code_->store(kForIndex);
     code_->jmp(loop);

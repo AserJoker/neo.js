@@ -96,7 +96,8 @@ _func_end:
 | `new_object` | `[] → [obj]` | 创建空对象 |
 | `new_array N` | `[] → [arr]` | 创建 length=N 的数组（elision 用） |
 | `define_prop` | `[obj, key, value] → [obj]` | CreateDataProperty，不走原型 setter |
-| `for_in_keys` | `[obj] → [keys]` | for-in 键快照：原型链 enumerable 字符串键，去重 |
+| `for_in_keys` | `[obj] → [entries]` | for-in 候选：原型链全部自有字符串键，扁平 `[owner,key,...]`，按名去重 |
+| `is_enumerable_own` | `[obj, key] → [bool]` | 处理候选时重查：自有属性存在且 enumerable |
 | `get_iterator` | `[iterable] → [iterator]` | GetIterator(iterable, sync) |
 | `iterator_next` | `[iterator] → [iterResult]` | 调 `iterator.next()` |
 | `iterator_close` | `[iterator] → []` | 调 `iterator.return()`；缺失则忽略 |

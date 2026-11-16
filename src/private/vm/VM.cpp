@@ -70,6 +70,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::NewArray:      return "new_array";
         case OpCode::DefineProp:    return "define_prop";
         case OpCode::ForInKeys:     return "for_in_keys";
+        case OpCode::IsEnumerableOwn: return "is_enumerable_own";
         case OpCode::GetIterator:   return "get_iterator";
         case OpCode::IteratorNext:  return "iterator_next";
         case OpCode::IteratorClose: return "iterator_close";
@@ -145,6 +146,7 @@ const VM::Handler* VM::handlers() {
         &VM::opNewArray,
         &VM::opDefineProp,
         &VM::opForInKeys,
+        &VM::opIsEnumerableOwn,
         &VM::opGetIterator,
         &VM::opIteratorNext,
         &VM::opIteratorClose,
@@ -685,6 +687,18 @@ Value* VM::opForInKeys() {
     Value* keys = ctx_->forInKeys(object);
     if (detail::isErrorValue(keys)) return fail(keys);
     push(keys);
+    return nullptr;
+}
+
+Value* VM::opIsEnumerableOwn() {
+    if (stack_.size() < 2) {
+        return badBytecode("is_enumerable_own: operand stack underflow");
+    }
+    Value* key = pop();
+    Value* object = pop();
+    Value* result = ctx_->isEnumerableOwn(object, key);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
     return nullptr;
 }
 

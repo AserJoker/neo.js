@@ -367,6 +367,7 @@ public:
                            bool includeSymbols) override;
     Value* ownEnumerableStringKeys(Value* obj) override;
     Value* forInKeys(Value* obj) override;
+    Value* isEnumerableOwn(Value* obj, Value* key) override;
 
     // 错误值创建
     Value* createException(Value* child) override;

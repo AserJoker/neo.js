@@ -105,7 +105,8 @@ enum class OpCode : uint16_t {
     NewObject,     // [] → [obj]
     NewArray,      // u32 length：[] → [arr]（预置 length，支持 elision）
     DefineProp,    // [obj, key, value] → [obj]：CreateDataProperty
-    ForInKeys,     // [obj] → [keys]：for-in 键快照（含原型链、去重）
+    ForInKeys,     // [obj] → [entries]：for-in 候选 [owner,key,...]（含原型链、去重）
+    IsEnumerableOwn,  // [obj, key] → [bool]：自有属性存在且 enumerable
     GetIterator,   // [iterable] → [iterator]：GetIterator(iterable, sync)
     IteratorNext,  // [iterator] → [iterResult]：调 iterator.next()
     IteratorClose, // [iterator] → []：调 iterator.return()（忽略缺失）

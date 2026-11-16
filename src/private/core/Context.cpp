@@ -1613,13 +1613,15 @@ Value* Context::forInKeys(Value* obj) {
         if (target == oomValue_) return target;
     }
 
-    std::vector<Value*> keys;
+    // 扁平条目 [owner, key, owner, key, ...]：保留 owner 以便处理时重新
+    // 查询描述符（删除/非 enumerable 的键必须跳过）。
+    std::vector<Value*> entries;
     std::unordered_set<std::string> seen;
     Value* current = target;
     while (current != nullptr &&
            detail::isObjectKind(current->type()->kind())) {
         std::vector<Value*> own;
-        if (Value* err = neo::core::ownPropertyKeys(this, current, true, false,
+        if (Value* err = neo::core::ownPropertyKeys(this, current, false, false,
                                                     own)) {
             return err;
         }
@@ -1627,7 +1629,10 @@ Value* Context::forInKeys(Value* obj) {
             if (key->type()->kind() != TypeKind::String) continue;
             const std::string& name =
                 static_cast<StringData*>(key->data())->value;
-            if (seen.insert(name).second) keys.push_back(key);
+            // 遮蔽判定不看 enumerable：前层处理过的名字不再从原型产出。
+            if (!seen.insert(name).second) continue;
+            entries.push_back(current);
+            entries.push_back(key);
         }
         Value* proto = getPrototype(current);
         if (detail::isErrorValue(proto)) return proto;
@@ -1637,10 +1642,21 @@ Value* Context::forInKeys(Value* obj) {
     Value* arr = createArray();
     if (arr == oomValue_) return arr;
     auto* data = static_cast<ArrayData*>(arr->data());
-    for (size_t i = 0; i < keys.size(); ++i) {
-        data->setElement(static_cast<uint32_t>(i), keys[i]);
+    for (size_t i = 0; i < entries.size(); ++i) {
+        data->setElement(static_cast<uint32_t>(i), entries[i]);
     }
     return arr;
+}
+
+Value* Context::isEnumerableOwn(Value* obj, Value* key) {
+    PropertyKey pk;
+    if (Value* err = neo::core::toPropertyKey(this, key, pk)) return err;
+    Property desc;
+    bool exists = false;
+    if (Value* err = obj->type()->getOwnProperty(this, obj, pk, exists, desc)) {
+        return err;
+    }
+    return createBoolean(exists && desc.enumerable);
 }
 
 Value* Context::setClosure(Value* fn, std::string_view name) {

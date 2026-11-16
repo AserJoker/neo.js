@@ -102,7 +102,7 @@ public:
 | FunctionDeclaration/Expression（`function*`） | `push_function` 带 `kFunctionGenerator`，不可构造、有 prototype |
 | IfStatement | test + `jfalse` else；then；有 else 时 `jmp end` + 回填 |
 | ForStatement | let/const init 先 `push_scope` 并直接 `define`；每次迭代 `iteration_env` + `push_label`（continue→update）；test + `jfalse exit`；body；`pop_label_if_top` + `commit_iteration_env` + update；exit：清理 label/作用域 |
-| ForInStatement | 循环作用域存 `*for-keys*`/`*for-index*`/`*for-value*`；`for_in_keys` 快照；按 index 取键并写入目标；let/const 每次迭代 `push_scope` + `define` |
+| ForInStatement | 循环作用域存 keys/index/owner/value；`for_in_keys` 取候选 `[owner,key]`；每步 `is_enumerable_own` 重查后写入目标；let/const 每次迭代 `push_scope` + `define` |
 | ForOfStatement | `get_iterator` 存 `*for-iterator*`；try/finally 中 `iterator_next` + `done` 判断；let/const 每次迭代 `push_scope`；非正常完成时 `iterator_close` |
 | WhileStatement | `push_label`；loop：test + `jfalse exit`；body；`jmp loop`；exit：`pop_label` |
 | DoWhileStatement | `push_label`；loop：body；test + `jtrue loop`；exit：`pop_label` |

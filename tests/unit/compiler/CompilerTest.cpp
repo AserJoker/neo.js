@@ -1728,6 +1728,50 @@ TEST(CompilerTest, ForInIncludesInheritedKeysAndSkipsShadowed) {
     EXPECT_DOUBLE_EQ(numberValue(value), 2.0);
 }
 
+TEST(CompilerTest, ForInSkipsDeletedKey) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var o = { a: 1, b: 2 };"
+        "var result = 0;"
+        "for (var k in o) {"
+        "  result = result + 1;"
+        "  Reflect.deleteProperty(o, 'b');"
+        "}");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, ForInSkipsKeyMadeNonEnumerable) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var o = { a: 1, b: 2 };"
+        "var result = 0;"
+        "for (var k in o) {"
+        "  result = result + 1;"
+        "  Object.defineProperty(o, 'b', { value: 2, enumerable: false });"
+        "}");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, ForInNonEnumerableOwnShadowsPrototype) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var p = { a: 1 };"
+        "var o = Object.create(p);"
+        "Object.defineProperty(o, 'a', { value: 2, enumerable: false });"
+        "var result = 0;"
+        "for (var k in o) { result = result + 1; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 0.0);
+}
+
 TEST(CompilerTest, ForInOverArray) {
     Fixture f;
     Value* value = runScriptResult(

@@ -660,10 +660,16 @@ public:
     // ownEnumerableStringKeys: 便捷形式——只含 enumerable 的字符串键（Object.keys）。
     virtual Value* ownEnumerableStringKeys(Value* obj) = 0;
 
-    // forInKeys: for-in 的键快照（ES2024 §14.7.5.9 EnumerateObjectProperties）。
-    // 沿原型链收集 enumerable 字符串键，跳过已被前层遮蔽的同名键；
-    // null/undefined 返回空数组，原始值先 ToObject。返回键数组或错误值。
+    // forInKeys: for-in 的候选条目（ES2024 §14.7.5.9 EnumerateObjectProperties）。
+    // 沿原型链收集所有自有字符串键（含非 enumerable），跳过已被前层处理过的
+    // 同名键；返回扁平数组 [owner0, key0, owner1, key1, ...]。
+    // 是否产出由 isEnumerableOwn 在处理时再次判定（删除/改属性可见）。
+    // null/undefined 返回空数组，原始值先 ToObject。返回数组或错误值。
     virtual Value* forInKeys(Value* obj) = 0;
+
+    // isEnumerableOwn: 处理 for-in 候选时检查自有属性仍存在且 enumerable。
+    // 返回 Boolean 或错误值。
+    virtual Value* isEnumerableOwn(Value* obj, Value* key) = 0;
 
     // createScriptFunction: 创建 script 函数 Value（ADR-060 §9）。
     //   code/entryPc 借用（Module 持有 Code）；paramCount 用于 length 与实参补齐；

@@ -173,6 +173,7 @@ struct Code {
     }
     uint32_t defineProp() { return emitOp(OpCode::DefineProp); }
     uint32_t forInKeys() { return emitOp(OpCode::ForInKeys); }
+    uint32_t isEnumerableOwn() { return emitOp(OpCode::IsEnumerableOwn); }
     uint32_t getIterator() { return emitOp(OpCode::GetIterator); }
     uint32_t iteratorNext() { return emitOp(OpCode::IteratorNext); }
     uint32_t iteratorClose() { return emitOp(OpCode::IteratorClose); }
