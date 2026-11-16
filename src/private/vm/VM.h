@@ -171,6 +171,7 @@ private:
     neo::core::Value* opLe();
     neo::core::Value* opGe();
     neo::core::Value* opStrictEqual();
+    neo::core::Value* opIn();
     neo::core::Value* opUnary();
     neo::core::Value* opToString();
     neo::core::Value* opJmp();
@@ -228,6 +229,7 @@ private:
     neo::core::Value* opSetPrivateFieldKeep();
     neo::core::Value* opSetPrivateSetterKeep();
     neo::core::Value* opSetOwnerClass();
+    neo::core::Value* opPrivateIn();
     neo::core::Value* opRet();
     neo::core::Value* opHalt();
 

@@ -84,7 +84,7 @@ public:
 | VariableDeclaration | 声明点 `store`（var）/ `initialize`（let/const） |
 | AssignmentExpression | `=`：右值 + `dup` + `store`；复合标识符：`load` + 右值 + 运算 + `dup` + `store`；复合成员：`obj` + key + `dup2` + `get_prop` + 右值 + 运算 + `set_prop` |
 | UpdateExpression | 标识符前缀：`load` + 1 + 运算 + `dup` + `store`；标识符后缀：`load` + `clone` + `swap` + 1 + 运算 + `store`；成员前缀：`obj` + key + `dup2` + `get_prop` + 1 + 运算 + `set_prop`；成员后缀：`...` + `clone` + 1 + 运算 + `swap` + `set_prop_keep` |
-| BinaryExpression（+ - * / < <= > >= === !==） | 左、右 + 对应指令；`!==` 为 `strict_equal` + 逻辑非 |
+| BinaryExpression（+ - * / < <= > >= === !== in） | 左、右 + 对应指令；`!==` 为 `strict_equal` + 逻辑非；`#x in obj` 为右值 + `private_in` |
 | UnaryExpression（+ - ! ~ typeof void） | 参数 + `unary op` |
 | delete | 成员：`obj` + key + `delete_prop`；标识符压 `false`；非引用求值 + `pop` + 压 `true`；`delete super.x` 为早期错误 |
 | LogicalExpression（&& \|\| ??） | 左 + `dup` + `jfalse`/`jtrue`/`jnotnullish` end；`pop` + 右；回填 end |
@@ -177,6 +177,5 @@ tests/unit/compiler/
 - 优点：Compiler 与 Parser 同构，节点覆盖度可逐条推进；错误显式；SourceMap
   与 VM 的异常定位直接对接；后续只需在分派表里补节点。
 - 缺点：尚未覆盖正则字面量，真实程序还不能完整编译；`for await` 暂
-  unsupported；对象 rest 与 computed key 组合暂 unsupported；`#x in obj`
-  暂 unsupported。
+  unsupported；对象 rest 与 computed key 组合暂 unsupported。
 - 待定：常量池去重、SourceMap 对多字节指令的精确边界。

@@ -149,6 +149,7 @@ enum class OpCode : uint16_t {
     Le,
     Ge,
     StrictEqual,  // ===（switch 匹配与用户代码共用）
+    In,           // [left, right] → [bool]：left in right（HasProperty）
 
     // 一元运算：u32 core::UnaryOperator
     Unary,
@@ -262,10 +263,12 @@ enum class OpCode : uint16_t {
     SetPrivateSetterKeep,
     // [fn, ctor] → [fn]：设置函数 ownerClass（static block 私有访问用）。
     SetOwnerClass,
+    // u32 nameIndex：[obj] → [bool]：`#x in obj`（PrivateIn）。
+    PrivateIn,
 };
 
 // 指令总数（分派表大小）。
-inline constexpr size_t kOpCodeCount = static_cast<size_t>(OpCode::SetOwnerClass) + 1;
+inline constexpr size_t kOpCodeCount = static_cast<size_t>(OpCode::PrivateIn) + 1;
 
 // Define 的 flags 位。未置位即 false：
 //   mutable    —— 绑定可被 store 改写（const 为 false）

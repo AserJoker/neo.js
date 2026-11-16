@@ -117,6 +117,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::Le:            return "le";
         case OpCode::Ge:            return "ge";
         case OpCode::StrictEqual:   return "strict_equal";
+        case OpCode::In:            return "in";
         case OpCode::Unary:         return "unary";
         case OpCode::ToString:      return "to_string";
         case OpCode::Jmp:           return "jmp";
@@ -180,6 +181,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::SetPrivateFieldKeep: return "set_private_field_keep";
         case OpCode::SetPrivateSetterKeep: return "set_private_setter_keep";
         case OpCode::SetOwnerClass: return "set_owner_class";
+        case OpCode::PrivateIn:     return "private_in";
     }
     return "<unknown>";
 }
@@ -235,6 +237,7 @@ const VM::Handler* VM::handlers() {
         &VM::opLe,
         &VM::opGe,
         &VM::opStrictEqual,
+        &VM::opIn,
         &VM::opUnary,
         &VM::opToString,
         &VM::opJmp,
@@ -298,6 +301,7 @@ const VM::Handler* VM::handlers() {
         &VM::opSetPrivateFieldKeep,
         &VM::opSetPrivateSetterKeep,
         &VM::opSetOwnerClass,
+        &VM::opPrivateIn,
     };
     return table;
 }
@@ -1149,6 +1153,18 @@ Value* VM::opGt() { return binary(BinaryOperator::GreaterThan); }
 Value* VM::opLe() { return binary(BinaryOperator::LessThanOrEqual); }
 Value* VM::opGe() { return binary(BinaryOperator::GreaterThanOrEqual); }
 Value* VM::opStrictEqual() { return binary(BinaryOperator::StrictEqual); }
+
+Value* VM::opIn() {
+    if (stack_.size() < 2) {
+        return badBytecode("in: operand stack underflow");
+    }
+    Value* right = pop();
+    Value* left = pop();
+    Value* result = ctx_->hasProperty(right, left);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
+}
 
 Value* VM::opUnary() {
     const std::vector<uint8_t>& bytes = code_->bytecode;
@@ -2292,6 +2308,31 @@ Value* VM::opSetOwnerClass() {
     Value* fn = pop();
     ctx_->setFunctionOwnerClass(fn, ctor);
     push(fn);
+    return nullptr;
+}
+
+Value* VM::opPrivateIn() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    uint32_t nameIndex = 0;
+    if (!readPrivateName(this, bytes, pc_, nameIndex)) {
+        return badBytecode("private_in: truncated operand");
+    }
+    const std::string* desc = stringOperand(nameIndex);
+    if (desc == nullptr) {
+        return badBytecode("private_in: string index out of range");
+    }
+    if (stack_.empty()) {
+        return badBytecode("private_in: operand stack underflow");
+    }
+    Value* object = pop();
+    neo::core::PrivateName* name = resolvePrivateName(ctx_, *desc);
+    if (name == nullptr) {
+        return fail(detail::typeError(
+            ctx_, "Private member #" + *desc + " is not defined"));
+    }
+    Value* result = ctx_->privateIn(object, name);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
     return nullptr;
 }
 

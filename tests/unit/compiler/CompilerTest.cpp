@@ -1767,6 +1767,32 @@ TEST(CompilerTest, CompilesNamedClassExpressionStaticBinding) {
     EXPECT_TRUE(static_cast<BooleanData*>(value->data())->value);
 }
 
+TEST(CompilerTest, CompilesPrivateIn) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "class A { #x = 1; has(o) { return #x in o; } }"
+        "var a = new A();"
+        "var result = a.has(a) && !a.has({});");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<BooleanData*>(value->data())->value);
+}
+
+TEST(CompilerTest, CompilesInOperator) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var result = 'x' in { x: 1 } && !('y' in { x: 1 });");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<BooleanData*>(value->data())->value);
+}
+
+TEST(CompilerTest, PrivateInOutsideClassIsRejected) {
+    CompileResult result = compileSource("var result = #x in {};");
+    EXPECT_FALSE(result.ok());
+}
+
 TEST(CompilerTest, CompilesObjectLiteralProto) {
     Fixture f;
     Value* value = runScriptResult(

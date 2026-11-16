@@ -1435,6 +1435,20 @@ void Compiler::compileBinaryExpression(
         code_->pushUndefined();
         return;
     }
+    // `#x in obj`：左操作数是私有名，不是普通表达式。
+    if (node.op == frontend::BinaryOperator::In &&
+        node.left->kind() == NodeKind::PrivateIdentifier) {
+        const std::string& name =
+            static_cast<const frontend::PrivateIdentifier&>(*node.left).name;
+        if (findPrivateInfo(name) == nullptr) {
+            error(*node.left, "compiler: undeclared private name #" + name);
+            code_->pushUndefined();
+            return;
+        }
+        compileExpression(*node.right);
+        code_->privateIn(name);
+        return;
+    }
     compileExpression(*node.left);
     compileExpression(*node.right);
 
@@ -1448,6 +1462,7 @@ void Compiler::compileBinaryExpression(
         case frontend::BinaryOperator::GreaterThan:      code_->gt(); break;
         case frontend::BinaryOperator::GreaterThanEqual: code_->ge(); break;
         case frontend::BinaryOperator::StrictEqual:      code_->strictEqual(); break;
+        case frontend::BinaryOperator::In:               code_->in(); break;
         case frontend::BinaryOperator::StrictNotEqual:
             code_->strictEqual();
             code_->unary(static_cast<uint32_t>(

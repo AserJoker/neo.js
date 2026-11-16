@@ -248,6 +248,7 @@ struct Code {
     uint32_t le() { return emitOp(OpCode::Le); }
     uint32_t ge() { return emitOp(OpCode::Ge); }
     uint32_t strictEqual() { return emitOp(OpCode::StrictEqual); }
+    uint32_t in() { return emitOp(OpCode::In); }
 
     // 跳转：target 为字节偏移。前向跳转先以 0 占位，稍后 patchU32(pc + 2, target)。
     uint32_t jmp(uint32_t target = 0) {
@@ -467,6 +468,11 @@ struct Code {
         return pc;
     }
     uint32_t setOwnerClass() { return emitOp(OpCode::SetOwnerClass); }
+    uint32_t privateIn(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::PrivateIn);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
 
     // 登记源码位置范围（Compiler 发射 AST 节点时调用）。
     void mapSource(uint32_t pcBegin, uint32_t pcEnd,

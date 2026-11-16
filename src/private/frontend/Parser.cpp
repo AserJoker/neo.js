@@ -1928,7 +1928,21 @@ NodePtr Parser::parseLogicalExpression(int minPrecedence) {
 }
 
 NodePtr Parser::parseBinaryExpression(int minPrecedence) {
-    NodePtr left = parseUnaryExpression();
+    NodePtr left;
+    if (at(TokenKind::PrivateIdentifier)) {
+        // PrivateIdentifier 只能作为 `#x in obj` 的左操作数（§13.10.1）。
+        const SourceLocation start = current_.start;
+        std::string name = current_.text;
+        advance();
+        if (!allowIn_ || !at(TokenKind::In)) {
+            error(start, "Private identifier is only valid in '#x in obj'");
+            return nullptr;
+        }
+        left = std::make_unique<PrivateIdentifier>(rangeFrom(start),
+                                                   std::move(name));
+    } else {
+        left = parseUnaryExpression();
+    }
     if (left == nullptr) return nullptr;
 
     while (true) {

@@ -257,8 +257,9 @@ _func_end:
 | `jfalse <label>` | 弹栈顶，假则跳 |
 | `jnotnullish <label>` | 弹栈顶，非 null/undefined 则跳（`??` 短路） |
 
-关系/相等指令：`lt/gt/le/ge` 与 `strict_equal` 均为 `[a, b] → [Boolean]`；
-`strict_equal` 供 `===` 与 switch 的 case 匹配共用。
+关系/相等指令：`lt/gt/le/ge`、`strict_equal` 与 `in` 均为 `[a, b] → [Boolean]`；
+`strict_equal` 供 `===` 与 switch 的 case 匹配共用；`in` 走 HasProperty。
+`private_in <name>` 为 `[obj] → [Boolean]`，用于 `#x in obj`。
 | `<label>:` | 跳转目标标记 |
 
 - statement 保证栈平衡（ADR-004），跳转发生在 statement 边界，栈深可预期。
