@@ -1837,6 +1837,50 @@ TEST(CompilerTest, CompilesDeleteOptionalChainMidShortCircuit) {
     EXPECT_TRUE(static_cast<BooleanData*>(value->data())->value);
 }
 
+TEST(CompilerTest, CompilesForOfArrayPattern) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "for (const [a, b] of [[1, 2], [3, 4]]) { result += a + b; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 10.0);
+}
+
+TEST(CompilerTest, CompilesForOfObjectPattern) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "for (const { x } of [{ x: 1 }, { x: 2 }]) { result += x; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, CompilesForInArrayPattern) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = '';"
+        "for (var [a] in { ab: 1, cd: 2 }) { result += a; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "ac");
+}
+
+TEST(CompilerTest, CompilesForOfAssignmentPattern) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var a, b, result;"
+        "for ([a, b] of [[1, 2]]) { result = a + b; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
 TEST(CompilerTest, CompilesObjectLiteralProto) {
     Fixture f;
     Value* value = runScriptResult(

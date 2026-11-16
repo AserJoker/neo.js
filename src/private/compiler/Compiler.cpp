@@ -601,20 +601,56 @@ void Compiler::compileForTarget(const frontend::NodePtr& left,
                 break;
             }
         }
-        if (target == nullptr || !*target ||
-            (*target)->kind() != NodeKind::Identifier) {
-            error(*left, "compiler: unsupported for-in/of binding pattern");
+        if (target == nullptr || !*target) {
+            error(*left, "compiler: for-in/of missing binding target");
             code_->pop();
             return;
         }
-        const std::string& name =
-            static_cast<const frontend::Identifier&>(**target).name;
-        if (declaration.variableKind == frontend::VariableKind::Var) {
-            code_->store(name);
-        } else {
-            code_->define(name,
-                          declaration.variableKind == frontend::VariableKind::Let);
+        const frontend::Node& pattern = **target;
+        if (pattern.kind() == NodeKind::Identifier) {
+            const std::string& name =
+                static_cast<const frontend::Identifier&>(pattern).name;
+            if (declaration.variableKind == frontend::VariableKind::Var) {
+                code_->store(name);
+            } else {
+                code_->define(
+                    name,
+                    declaration.variableKind == frontend::VariableKind::Let);
+            }
+            return;
         }
+        if (pattern.kind() == NodeKind::ArrayPattern ||
+            pattern.kind() == NodeKind::ObjectPattern) {
+            // var 的名字已在函数/模块作用域提升；let/const 在当前迭代作用域建槽。
+            if (declaration.variableKind != frontend::VariableKind::Var) {
+                const bool mutableBinding =
+                    declaration.variableKind == frontend::VariableKind::Let;
+                std::vector<std::string> names;
+                collectPatternNames(pattern, names);
+                for (const std::string& name : names) {
+                    code_->pushUninitialized();
+                    code_->define(name, mutableBinding, false);
+                }
+                // 解构临时槽位放在独立子作用域，避免下一轮重复 define。
+                code_->pushScope();
+                compileBindingPattern(pattern, true, 0);
+                code_->popScope();
+            } else {
+                code_->pushScope();
+                compileBindingPattern(pattern, false, 0);
+                code_->popScope();
+            }
+            return;
+        }
+        error(*left, "compiler: unsupported for-in/of binding pattern");
+        code_->pop();
+        return;
+    }
+    if (left->kind() == NodeKind::ArrayPattern ||
+        left->kind() == NodeKind::ObjectPattern) {
+        code_->pushScope();
+        compileBindingPattern(*left, false, 0);
+        code_->popScope();
         return;
     }
     if (left->kind() == NodeKind::Identifier) {
