@@ -1701,6 +1701,221 @@ TEST(CompilerTest, ForLoopWithoutTestStopsOnBreak) {
     EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
 }
 
+TEST(CompilerTest, ForInEnumeratesOwnKeys) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "var o = { a: 1, b: 2, c: 3 };"
+        "for (var k in o) { result = result + o[k]; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 6.0);
+}
+
+TEST(CompilerTest, ForInIncludesInheritedKeysAndSkipsShadowed) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "var p = { a: 1 };"
+        "var o = Object.create(p);"
+        "o.a = 2;"
+        "o.b = 3;"
+        "for (var k in o) { result = result + 1; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 2.0);
+}
+
+TEST(CompilerTest, ForInOverArray) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "var a = [10, 20];"
+        "for (var k in a) { result = result + a[k]; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 30.0);
+}
+
+TEST(CompilerTest, ForInNullIsNoOp) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "for (var k in null) { result = 1; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 0.0);
+}
+
+TEST(CompilerTest, ForInLetCreatesPerIterationBinding) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "var g0;"
+        "var g1;"
+        "var n = 0;"
+        "var o = { a: 1, b: 2 };"
+        "for (let k in o) {"
+        "  if (n < 1) { g0 = function () { return k; }; }"
+        "  else { g1 = function () { return k; }; }"
+        "  n = n + 1;"
+        "}"
+        "result = (g0() < g1()) ? 1 : 0;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, ForInMemberTarget) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "var box = {};"
+        "var o = { a: 1, b: 2 };"
+        "for (box.k in o) { result = result + 1; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 2.0);
+}
+
+TEST(CompilerTest, ForOfIteratesArray) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "for (var v of [1, 2, 3]) { result = result + v; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 6.0);
+}
+
+TEST(CompilerTest, BreakThroughFinally) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "while (true) { try { break; } finally { result = 1; } }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, ForOfContinueOnArray) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "for (var v of [1, 2, 3]) { if (v < 2) continue; result = result + v; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 5.0);
+}
+
+TEST(CompilerTest, ForOfBreakOnArray) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "for (var v of [1, 2, 3]) { if (v > 1) break; result = result + v; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, ForOfBreakClosesIterator) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "var closed = 0;"
+        "var n = 0;"
+        "var iterable = {};"
+        "iterable[Symbol.iterator] = function () {"
+        "  return {"
+        "    next: function () { n = n + 1; return { done: false, value: n }; },"
+        "    return: function () { closed = 1; return {}; }"
+        "  };"
+        "};"
+        "for (var v of iterable) { if (v > 2) break; result = result + v; }"
+        "result = result + closed * 100;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 103.0);
+}
+
+TEST(CompilerTest, ForOfNormalCompletionDoesNotCloseIterator) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "var closed = 0;"
+        "var n = 0;"
+        "var iterable = {};"
+        "iterable[Symbol.iterator] = function () {"
+        "  return {"
+        "    next: function () {"
+        "      n = n + 1;"
+        "      if (n < 2) { return { done: false, value: n }; }"
+        "      return { done: true };"
+        "    },"
+        "    return: function () { closed = 1; return {}; }"
+        "  };"
+        "};"
+        "for (var v of iterable) { result = result + v; }"
+        "result = result + closed * 100;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, ForOfReturnClosesIterator) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var closed = 0;"
+        "var n = 0;"
+        "var iterable = {};"
+        "iterable[Symbol.iterator] = function () {"
+        "  return {"
+        "    next: function () { n = n + 1; return { done: false, value: n }; },"
+        "    return: function () { closed = 1; return {}; }"
+        "  };"
+        "};"
+        "function f() {"
+        "  for (var v of iterable) { if (v > 1) return 5; }"
+        "  return 0;"
+        "}"
+        "var result = f() + closed * 100;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 105.0);
+}
+
+TEST(CompilerTest, ForOfLetCreatesPerIterationBinding) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "var g0;"
+        "var g1;"
+        "var n = 0;"
+        "for (let v of [10, 20]) {"
+        "  if (n < 1) { g0 = function () { return v; }; }"
+        "  else { g1 = function () { return v; }; }"
+        "  n = n + 1;"
+        "}"
+        "result = g0() + g1();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 30.0);
+}
+
 TEST(CompilerTest, ForLetCreatesPerIterationBinding) {
     Fixture f;
     Value* value = runScriptResult(

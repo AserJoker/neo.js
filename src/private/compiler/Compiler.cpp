@@ -21,6 +21,14 @@ using frontend::SourceType;
 
 namespace {
 
+// for-in/of 的编译器内部槽位（JS 标识符不可能包含 '*'，不会与用户绑定冲突）。
+constexpr std::string_view kForKeys = "*for-keys*";
+constexpr std::string_view kForIndex = "*for-index*";
+constexpr std::string_view kForValue = "*for-value*";
+constexpr std::string_view kForIterator = "*for-iterator*";
+constexpr std::string_view kForResult = "*for-result*";
+constexpr std::string_view kForDone = "*for-done*";
+
 std::string exportNameOf(const Node* node) {
     if (node == nullptr) return {};
     if (node->kind() == NodeKind::Identifier) {
@@ -129,6 +137,14 @@ void Compiler::compileStatement(const Node& node) {
         case NodeKind::ForStatement:
             compileForStatement(
                 static_cast<const frontend::ForStatement&>(node));
+            break;
+        case NodeKind::ForInStatement:
+            compileForInStatement(
+                static_cast<const frontend::ForInStatement&>(node));
+            break;
+        case NodeKind::ForOfStatement:
+            compileForOfStatement(
+                static_cast<const frontend::ForOfStatement&>(node));
             break;
         case NodeKind::WhileStatement:
             compileWhileStatement(
@@ -466,6 +482,250 @@ void Compiler::compileForStatement(
     for (uint32_t push : pushes) code_->patchU32(push + 10, endPc);
 }
 
+void Compiler::compileForTarget(const frontend::NodePtr& left,
+                                std::string_view tempName) {
+    // 前置条件：栈顶是本次迭代的值。
+    if (!left) {
+        error(program_, "compiler: for-in/of missing binding target");
+        code_->pop();
+        return;
+    }
+    if (left->kind() == NodeKind::VariableDeclaration) {
+        const auto& declaration =
+            static_cast<const frontend::VariableDeclaration&>(*left);
+        const frontend::NodePtr* target = nullptr;
+        for (const frontend::NodePtr& declarator : declaration.declarations) {
+            if (declarator &&
+                declarator->kind() == NodeKind::VariableDeclarator) {
+                target = &static_cast<const frontend::VariableDeclarator&>(
+                             *declarator)
+                             .id;
+                break;
+            }
+        }
+        if (target == nullptr || !*target ||
+            (*target)->kind() != NodeKind::Identifier) {
+            error(*left, "compiler: unsupported for-in/of binding pattern");
+            code_->pop();
+            return;
+        }
+        const std::string& name =
+            static_cast<const frontend::Identifier&>(**target).name;
+        if (declaration.variableKind == frontend::VariableKind::Var) {
+            code_->store(name);
+        } else {
+            code_->define(name,
+                          declaration.variableKind == frontend::VariableKind::Let);
+        }
+        return;
+    }
+    if (left->kind() == NodeKind::Identifier) {
+        code_->store(static_cast<const frontend::Identifier&>(*left).name);
+        return;
+    }
+    if (left->kind() == NodeKind::MemberExpression) {
+        const auto& member =
+            static_cast<const frontend::MemberExpression&>(*left);
+        if (member.optional) {
+            error(*left, "compiler: optional chaining not supported");
+            code_->pop();
+            return;
+        }
+        if (!member.object) {
+            error(*left, "compiler: for-in/of target missing object");
+            code_->pop();
+            return;
+        }
+        code_->store(tempName);
+        compileExpression(*member.object);
+        compileMemberKey(member);
+        code_->load(tempName);
+        code_->setProp();
+        code_->pop();
+        return;
+    }
+    error(*left, "compiler: unsupported for-in/of binding target");
+    code_->pop();
+}
+
+void Compiler::compileForInStatement(
+    const frontend::ForInStatement& node,
+    const std::vector<std::string>& labels) {
+    if (!node.right) {
+        error(node, "compiler: for-in missing right-hand side");
+        return;
+    }
+
+    const frontend::VariableDeclaration* declaration = nullptr;
+    if (node.left && node.left->kind() == NodeKind::VariableDeclaration) {
+        declaration = &static_cast<const frontend::VariableDeclaration&>(
+            *node.left);
+    }
+    bool lexical = declaration != nullptr &&
+                   declaration->variableKind != frontend::VariableKind::Var;
+
+    std::vector<std::string> effective = labels;
+    if (effective.empty()) effective.push_back("");
+
+    code_->pushScope();
+    code_->pushUndefined();
+    code_->define(kForKeys);
+    code_->pushUndefined();
+    code_->define(kForIndex);
+    code_->pushUndefined();
+    code_->define(kForValue);
+
+    compileExpression(*node.right);
+    code_->forInKeys();
+    code_->store(kForKeys);
+    code_->push(0.0);
+    code_->store(kForIndex);
+
+    std::vector<uint32_t> pushes;
+    for (const std::string& label : effective) {
+        pushes.push_back(code_->pushLabel(label, 0, 0));
+    }
+    uint32_t loop = code_->here();
+    for (uint32_t push : pushes) code_->patchU32(push + 6, loop);
+
+    // index < keys.length
+    code_->load(kForIndex);
+    code_->load(kForKeys);
+    code_->push("length");
+    code_->getProp();
+    code_->lt();
+    uint32_t toEnd = code_->jfalse();
+
+    // value = keys[index]
+    code_->load(kForKeys);
+    code_->load(kForIndex);
+    code_->getProp();
+    code_->store(kForValue);
+
+    if (lexical) code_->pushScope();
+    code_->load(kForValue);
+    compileForTarget(node.left, kForValue);
+    if (node.body) compileStatement(*node.body);
+    if (lexical) code_->popScope();
+
+    code_->load(kForIndex);
+    code_->push(1.0);
+    code_->add();
+    code_->store(kForIndex);
+    code_->jmp(loop);
+
+    uint32_t exitPc = code_->here();
+    code_->patchU32(toEnd + 2, exitPc);
+    for (auto it = effective.rbegin(); it != effective.rend(); ++it) {
+        code_->popLabel(*it);
+    }
+    code_->popScope();
+    uint32_t endPc = code_->here();
+    for (uint32_t push : pushes) code_->patchU32(push + 10, endPc);
+}
+
+void Compiler::compileForOfStatement(
+    const frontend::ForOfStatement& node,
+    const std::vector<std::string>& labels) {
+    if (node.await) {
+        error(node, "compiler: for await is not supported");
+        return;
+    }
+    if (!node.right) {
+        error(node, "compiler: for-of missing right-hand side");
+        return;
+    }
+
+    const frontend::VariableDeclaration* declaration = nullptr;
+    if (node.left && node.left->kind() == NodeKind::VariableDeclaration) {
+        declaration = &static_cast<const frontend::VariableDeclaration&>(
+            *node.left);
+    }
+    bool lexical = declaration != nullptr &&
+                   declaration->variableKind != frontend::VariableKind::Var;
+
+    std::vector<std::string> effective = labels;
+    if (effective.empty()) effective.push_back("");
+
+    code_->pushScope();
+    code_->pushUndefined();
+    code_->define(kForIterator);
+    code_->pushUndefined();
+    code_->define(kForResult);
+    code_->pushUndefined();
+    code_->define(kForValue);
+    code_->pushUndefined();
+    code_->define(kForDone);
+
+    compileExpression(*node.right);
+    code_->getIterator();
+    code_->store(kForIterator);
+    code_->pushBoolean(false);
+    code_->store(kForDone);
+
+    // try/finally：非正常完成（break/return/throw）时 IteratorClose。
+    uint32_t tryBeginPc = code_->tryBegin();
+    std::vector<uint32_t> pushes;
+    for (const std::string& label : effective) {
+        pushes.push_back(code_->pushLabel(label, 0, 0));
+    }
+    uint32_t loop = code_->here();
+    for (uint32_t push : pushes) code_->patchU32(push + 6, loop);
+
+    code_->load(kForIterator);
+    code_->iteratorNext();
+    code_->store(kForResult);
+
+    code_->load(kForResult);
+    code_->push("done");
+    code_->getProp();
+    uint32_t toNotDone = code_->jfalse();
+
+    // done：标记正常完成并跳到出口（不 close）。
+    code_->push(true);
+    code_->store(kForDone);
+    uint32_t toExit = code_->jmp();
+
+    uint32_t notDone = code_->here();
+    code_->patchU32(toNotDone + 2, notDone);
+    code_->load(kForResult);
+    code_->push("value");
+    code_->getProp();
+    code_->store(kForValue);
+
+    if (lexical) code_->pushScope();
+    code_->load(kForValue);
+    compileForTarget(node.left, kForValue);
+    if (node.body) compileStatement(*node.body);
+    if (lexical) code_->popScope();
+    code_->jmp(loop);
+
+    uint32_t exitPc = code_->here();
+    code_->patchU32(toExit + 2, exitPc);
+    for (auto it = effective.rbegin(); it != effective.rend(); ++it) {
+        code_->popLabelIfTop(*it);
+    }
+    uint32_t breakTarget = code_->here();
+    for (uint32_t push : pushes) code_->patchU32(push + 10, breakTarget);
+    code_->tryBodyEnd();
+
+    uint32_t finallyStart = code_->here();
+    code_->load(kForDone);
+    uint32_t toSkipClose = code_->jtrue();
+    code_->load(kForIterator);
+    code_->iteratorClose();
+    uint32_t skipClose = code_->here();
+    code_->patchU32(toSkipClose + 2, skipClose);
+    code_->finallyEnd();
+
+    uint32_t tryEnd = code_->here();
+    code_->patchU32(tryBeginPc + 2, 0);
+    code_->patchU32(tryBeginPc + 6, finallyStart);
+    code_->patchU32(tryBeginPc + 10, tryEnd);
+
+    code_->popScope();
+}
+
 void Compiler::compileWhileStatement(
     const frontend::WhileStatement& node,
     const std::vector<std::string>& labels) {
@@ -539,6 +799,16 @@ void Compiler::compileLabeledStatement(
     if (body->kind() == NodeKind::ForStatement) {
         compileForStatement(
             static_cast<const frontend::ForStatement&>(*body), labels);
+        return;
+    }
+    if (body->kind() == NodeKind::ForInStatement) {
+        compileForInStatement(
+            static_cast<const frontend::ForInStatement&>(*body), labels);
+        return;
+    }
+    if (body->kind() == NodeKind::ForOfStatement) {
+        compileForOfStatement(
+            static_cast<const frontend::ForOfStatement&>(*body), labels);
         return;
     }
     if (body->kind() == NodeKind::WhileStatement) {

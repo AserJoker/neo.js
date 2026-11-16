@@ -69,6 +69,10 @@ const char* opCodeName(OpCode op) {
         case OpCode::NewObject:     return "new_object";
         case OpCode::NewArray:      return "new_array";
         case OpCode::DefineProp:    return "define_prop";
+        case OpCode::ForInKeys:     return "for_in_keys";
+        case OpCode::GetIterator:   return "get_iterator";
+        case OpCode::IteratorNext:  return "iterator_next";
+        case OpCode::IteratorClose: return "iterator_close";
         case OpCode::Add:           return "add";
         case OpCode::Sub:           return "sub";
         case OpCode::Mul:           return "mul";
@@ -140,6 +144,10 @@ const VM::Handler* VM::handlers() {
         &VM::opNewObject,
         &VM::opNewArray,
         &VM::opDefineProp,
+        &VM::opForInKeys,
+        &VM::opGetIterator,
+        &VM::opIteratorNext,
+        &VM::opIteratorClose,
         &VM::opAdd,
         &VM::opSub,
         &VM::opMul,
@@ -666,6 +674,57 @@ Value* VM::opDefineProp() {
     Value* result = ctx_->defineProperty(object, key, value);
     if (detail::isErrorValue(result)) return fail(result);
     push(object);
+    return nullptr;
+}
+
+Value* VM::opForInKeys() {
+    if (stack_.empty()) {
+        return badBytecode("for_in_keys: operand stack underflow");
+    }
+    Value* object = pop();
+    Value* keys = ctx_->forInKeys(object);
+    if (detail::isErrorValue(keys)) return fail(keys);
+    push(keys);
+    return nullptr;
+}
+
+Value* VM::opGetIterator() {
+    if (stack_.empty()) {
+        return badBytecode("get_iterator: operand stack underflow");
+    }
+    Value* iterable = pop();
+    Value* iterator = detail::getIterator(ctx_, iterable);
+    if (detail::isErrorValue(iterator)) return fail(iterator);
+    push(iterator);
+    return nullptr;
+}
+
+Value* VM::opIteratorNext() {
+    if (stack_.empty()) {
+        return badBytecode("iterator_next: operand stack underflow");
+    }
+    Value* iterator = pop();
+    Value* result = detail::iteratorNext(ctx_, iterator);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opIteratorClose() {
+    if (stack_.empty()) {
+        return badBytecode("iterator_close: operand stack underflow");
+    }
+    Value* iterator = pop();
+    Value* error = detail::iteratorClose(ctx_, iterator, nullptr);
+    if (error != nullptr && detail::isErrorValue(error)) {
+        // 已有异常在展开时，IteratorClose 的错误不覆盖原异常（§7.4.6）。
+        if (!tryStack_.empty() && tryStack_.back().res != nullptr &&
+            tryStack_.back().res->type()->kind() ==
+                neo::core::TypeKind::Exception) {
+            return nullptr;
+        }
+        return fail(error);
+    }
     return nullptr;
 }
 

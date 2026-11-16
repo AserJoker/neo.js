@@ -140,6 +140,10 @@ private:
     neo::core::Value* opNewObject();
     neo::core::Value* opNewArray();
     neo::core::Value* opDefineProp();
+    neo::core::Value* opForInKeys();
+    neo::core::Value* opGetIterator();
+    neo::core::Value* opIteratorNext();
+    neo::core::Value* opIteratorClose();
     neo::core::Value* opAdd();
     neo::core::Value* opSub();
     neo::core::Value* opMul();

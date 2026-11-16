@@ -77,6 +77,13 @@ private:
     void compileIfStatement(const frontend::IfStatement& node);
     void compileForStatement(const frontend::ForStatement& node,
                              const std::vector<std::string>& labels = {});
+    void compileForInStatement(const frontend::ForInStatement& node,
+                               const std::vector<std::string>& labels = {});
+    void compileForOfStatement(const frontend::ForOfStatement& node,
+                               const std::vector<std::string>& labels = {});
+    // for-in/of 左侧目标：栈顶值写入目标。member 目标用 tempName 暂存值。
+    void compileForTarget(const frontend::NodePtr& left,
+                          std::string_view tempName);
     void compileWhileStatement(const frontend::WhileStatement& node,
                                const std::vector<std::string>& labels = {});
     void compileDoWhileStatement(

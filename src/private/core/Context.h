@@ -366,6 +366,7 @@ public:
     Value* ownPropertyKeys(Value* obj, bool enumerableOnly,
                            bool includeSymbols) override;
     Value* ownEnumerableStringKeys(Value* obj) override;
+    Value* forInKeys(Value* obj) override;
 
     // 错误值创建
     Value* createException(Value* child) override;

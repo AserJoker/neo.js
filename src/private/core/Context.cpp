@@ -58,6 +58,7 @@
 #include <cstdlib>
 #include <new>
 #include <string>
+#include <unordered_set>
 
 namespace neo::core {
 
@@ -1599,6 +1600,47 @@ Value* Context::ownPropertyKeys(Value* obj, bool enumerableOnly, bool includeSym
 
 Value* Context::ownEnumerableStringKeys(Value* obj) {
     return ownPropertyKeys(obj, true, false);
+}
+
+Value* Context::forInKeys(Value* obj) {
+    TypeKind kind = obj->type()->kind();
+    if (kind == TypeKind::Null || kind == TypeKind::Undefined) {
+        return createArray();
+    }
+    Value* target = obj;
+    if (!detail::isObjectKind(kind)) {
+        target = createPrimitiveWrapper(obj);
+        if (target == oomValue_) return target;
+    }
+
+    std::vector<Value*> keys;
+    std::unordered_set<std::string> seen;
+    Value* current = target;
+    while (current != nullptr &&
+           detail::isObjectKind(current->type()->kind())) {
+        std::vector<Value*> own;
+        if (Value* err = neo::core::ownPropertyKeys(this, current, true, false,
+                                                    own)) {
+            return err;
+        }
+        for (Value* key : own) {
+            if (key->type()->kind() != TypeKind::String) continue;
+            const std::string& name =
+                static_cast<StringData*>(key->data())->value;
+            if (seen.insert(name).second) keys.push_back(key);
+        }
+        Value* proto = getPrototype(current);
+        if (detail::isErrorValue(proto)) return proto;
+        current = proto;
+    }
+
+    Value* arr = createArray();
+    if (arr == oomValue_) return arr;
+    auto* data = static_cast<ArrayData*>(arr->data());
+    for (size_t i = 0; i < keys.size(); ++i) {
+        data->setElement(static_cast<uint32_t>(i), keys[i]);
+    }
+    return arr;
 }
 
 Value* Context::setClosure(Value* fn, std::string_view name) {
