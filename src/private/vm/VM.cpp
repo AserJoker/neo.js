@@ -99,6 +99,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::Call:          return "call";
         case OpCode::CallMethod:    return "call_method";
         case OpCode::Yield:         return "yield";
+        case OpCode::Await:         return "await";
         case OpCode::Ret:           return "ret";
         case OpCode::Halt:          return "hlt";
     }
@@ -164,6 +165,7 @@ const VM::Handler* VM::handlers() {
         &VM::opCall,
         &VM::opCallMethod,
         &VM::opYield,
+        &VM::opAwait,
         &VM::opRet,
         &VM::opHalt,
     };
@@ -907,6 +909,9 @@ Value* VM::opPushFunction() {
     if ((flags & kFunctionGenerator) != 0) {
         ctx_->setFunctionGenerator(fn, true);
     }
+    if ((flags & kFunctionAsync) != 0) {
+        ctx_->setFunctionAsync(fn, true);
+    }
     push(fn);
     return nullptr;
 }
@@ -1015,6 +1020,12 @@ Value* VM::opYield() {
     if (stack_.empty()) return badBytecode("yield: operand stack underflow");
     Value* value = pop();
     return ctx_->createInterrupt(neo::core::InterruptKind::Yield, pc_, value);
+}
+
+Value* VM::opAwait() {
+    if (stack_.empty()) return badBytecode("await: operand stack underflow");
+    Value* value = pop();
+    return ctx_->createInterrupt(neo::core::InterruptKind::Await, pc_, value);
 }
 
 Value* VM::opRet() {

@@ -305,7 +305,13 @@ Value* resumeScriptCoroutine(IContext* ctx, Value* coroutine, Value* sentValue) 
                          : ctx->createUndefined());
         res = machine.run(d->entryPc);
     } else {
-        res = machine.resume(*co->vmState, sentValue);
+        // async script：await 拒绝以 Exception 注入，需转为挂起点的 throw。
+        Value* injected = sentValue;
+        if (d->asyncScript && sentValue != nullptr &&
+            sentValue->type()->kind() == TypeKind::Exception) {
+            injected = ctx->createInterrupt(InterruptKind::Throw, 0, sentValue);
+        }
+        res = machine.resume(*co->vmState, injected);
     }
 
     const bool suspended =

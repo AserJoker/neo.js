@@ -476,6 +476,10 @@ public:
     // 同时置 generator/asyncGenerator；call 创建 AsyncGenerator 对象；不可构造。
     virtual void setFunctionAsyncGenerator(Value* fn, bool asyncGenerator) = 0;
 
+    // setFunctionAsync: 标记 script async 函数。call 创建协程并返回 Promise；
+    // await 产生 Interrupt(Await)。不可构造、无 prototype 属性。
+    virtual void setFunctionAsync(Value* fn, bool async) = 0;
+
     // —— 对象与属性（ADR-018 对象模型）——
     // createObject: 创建空对象 Value（properties/order/symbols 空）。
     // 原型自动挂 Object.prototype（ADR-035 完整原型链）。

@@ -4,6 +4,7 @@ add_executable(compiler_unit_test
     CompilerTest.cpp
     ModuleCompilerTest.cpp
     GeneratorCompilerTest.cpp
+    AsyncCompilerTest.cpp
 )
 target_link_libraries(compiler_unit_test
     PRIVATE

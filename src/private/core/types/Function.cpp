@@ -91,6 +91,11 @@ Value* FunctionType::call(IContext* ctx, Value* self, Value* thisArg,
         return ctx->createCoroutine(self, thisArg, argc, argv);
     }
 
+    // script async 函数：以协程运行 VM 并返回 Promise（await → Interrupt(Await)）。
+    if (d->asyncScript) {
+        return runAsyncScript(ctx, self, thisArg, argc, argv);
+    }
+
     // script 函数：创建新 VM，从 entryPc 执行（ADR-060 §9）。
     if (d->isScript) {
         return invokeScriptFunction(ctx, self, thisArg, argc, argv);

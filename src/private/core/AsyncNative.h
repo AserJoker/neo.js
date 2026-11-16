@@ -35,6 +35,11 @@ void storeNativeLocal(IContext* ctx, std::string_view name, Value* value);
 Value* runAsyncNative(IContext* ctx, Value* fn, Value* thisArg, size_t argc,
                       Value* argv[]);
 
+// 以 script 函数为函数体运行 async 语义，返回 Promise。
+// await 产生 Interrupt(Await)；恢复时正常值压栈、Exception 转为抛出。
+Value* runAsyncScript(IContext* ctx, Value* fn, Value* thisArg, size_t argc,
+                      Value* argv[]);
+
 }  // namespace neo::core
 
 #endif  // NEO_CORE_PRIVATE_ASYNC_NATIVE_H

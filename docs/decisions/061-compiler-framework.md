@@ -93,6 +93,8 @@ public:
 | ArrayExpression | `new_array N` + 每个元素 `dup; index; value; define_prop; pop` |
 | ThisExpression | `load_this` |
 | YieldExpression | 参数（或 `push_undefined`）+ `yield`；`yield*` 暂 unsupported |
+| AwaitExpression | 参数 + `await` |
+| async FunctionDeclaration/Expression/Arrow | `push_function` 带 `kFunctionAsync`，不可构造、无 prototype |
 | FunctionDeclaration/Expression（`function*`） | `push_function` 带 `kFunctionGenerator`，不可构造、有 prototype |
 | IfStatement | test + `jfalse` else；then；有 else 时 `jmp end` + 回填 |
 | WhileStatement | `push_label`；loop：test + `jfalse exit`；body；`jmp loop`；exit：`pop_label` |

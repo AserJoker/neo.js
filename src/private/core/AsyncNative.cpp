@@ -173,6 +173,26 @@ Value* runAsyncNative(IContext* ctx, Value* fn, Value* thisArg, size_t argc,
     return cap.promise;
 }
 
+Value* runAsyncScript(IContext* ctx, Value* fn, Value* thisArg, size_t argc,
+                      Value* argv[]) {
+    Value* ctor = ctx->promiseCtor();
+    if (ctor == nullptr) {
+        return detail::typeError(ctx, "Promise is not initialized");
+    }
+    PromiseCapability cap;
+    if (Value* err = createPromiseCapability(ctx, ctor, cap)) return err;
+
+    Value* co = ctx->createCoroutine(fn, thisArg, argc, argv);
+    if (co->type()->kind() == TypeKind::Exception ||
+        co->type()->kind() == TypeKind::Fatal) {
+        return co;
+    }
+
+    Value* res = ctx->resumeCoroutine(co, nullptr);
+    driveAsyncCoroutine(ctx, co, res, cap.resolve, cap.reject);
+    return cap.promise;
+}
+
 Value* loadNativeLocal(IContext* ctx, std::string_view name) {
     Scope* env = ctx->currentFunctionEnv();
     return env != nullptr ? env->lookup(name) : nullptr;

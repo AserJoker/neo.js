@@ -1259,6 +1259,13 @@ void Context::setFunctionAsyncGenerator(Value* fn, bool asyncGenerator) {
     }
 }
 
+void Context::setFunctionAsync(Value* fn, bool async) {
+    if (fn->type()->kind() != TypeKind::Function) return;
+    auto* d = static_cast<FunctionData*>(fn->data());
+    d->asyncScript = async;
+    if (async) d->constructible = false;
+}
+
 void Context::setFunctionName(Value* fn, std::string_view name) {
     // 仅对 Function 类型有效（setname 字节码），其他类型忽略
     if (fn->type()->kind() != TypeKind::Function) return;

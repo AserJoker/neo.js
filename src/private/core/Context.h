@@ -235,6 +235,7 @@ public:
     void setFunctionConstructor(Value* fn, NativeFn ctor) override;
     void setFunctionConstructible(Value* fn, bool constructible) override;
     void setFunctionGenerator(Value* fn, bool generator) override;
+    void setFunctionAsync(Value* fn, bool async) override;
     void setFunctionAsyncGenerator(Value* fn, bool asyncGenerator) override;
     Value* createBoundFunction(Value* target, Value* boundThis, size_t argc,
                                Value* argv[]) override;

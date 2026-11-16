@@ -171,6 +171,7 @@ private:
     neo::core::Value* opCall();
     neo::core::Value* opCallMethod();
     neo::core::Value* opYield();
+    neo::core::Value* opAwait();
     neo::core::Value* opRet();
     neo::core::Value* opHalt();
 

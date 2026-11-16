@@ -280,8 +280,11 @@ struct TryFrame {
   压形参与 self；挂起时保存 VmState 并把 execScope 摘成孤立子树；
   后续恢复重挂子树并从 pc 继续。`throw/return` 注入在挂起点展开，
   finally 由正常 try/finally 控制流处理。
-- 嵌套调用挂起时，每一层 VM 各自保存 `VmState`，形成调用链；
-  async/await 的 Promise 驱动留待后续切片。
+- `await`：与 `yield` 同构，产生 `Interrupt(Await, pc, value)`。
+- script async 函数由 `runAsyncScript` 驱动：创建 Promise capability 与协程，
+  首次恢复运行到首个 await；`driveAsyncCoroutine` 订阅 awaitable，
+  结算值恢复正常值、拒绝以 Exception 注入（runner 转为挂起点 throw）。
+- 嵌套调用挂起时，每一层 VM 各自保存 `VmState`，形成调用链。
 
 ### 9. 函数对象扩展
 
@@ -330,7 +333,7 @@ tests/unit/vm/
 | V4 | break/continue/标签 | label 栈、跨 finally 跳转 | 循环/标签 |
 | V5 | 对象/数组/属性 | get_prop/set_prop | 对象操作 |
 | V6 | import/export | 模块三段式、槽位提升、link（已实现） | 模块端到端 |
-| V7 | generator/async/await | VmState 链、Interrupt 消费（generator 已实现） | 挂起恢复 |
+| V7 | generator/async/await | VmState 链、Interrupt 消费（已实现） | 挂起恢复 |
 
 V0 是第一个可真实运行的 VM→Engine 链路：不依赖 Compiler，直接在测试里
 构造 `Code`，验证操作数栈、变量绑定、算术与返回协议。

@@ -341,3 +341,6 @@ ADR-023 的 VM 实现因此成为本抽象的一个 runner，而非独立机制�
   `%AsyncGeneratorPrototype%` 与异步请求队列驱动；
 - `FunctionData::generator` + `IContext::setFunctionGenerator`：`function*` 标记，
   `FunctionType::call` 直接创建 Suspended 协程。
+- `FunctionData::asyncScript` + `IContext::setFunctionAsync`：script async 函数
+  由 `runAsyncScript` 创建 Promise capability 并以协程运行；`await` 复用
+  `Interrupt(Await)` 与 `VmState` 恢复。
