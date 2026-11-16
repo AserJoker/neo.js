@@ -163,6 +163,16 @@ const char* opCodeName(OpCode op) {
         case OpCode::DeleteProp:    return "delete_prop";
         case OpCode::SetPropKeep:   return "set_prop_keep";
         case OpCode::SetSuperPropKeep: return "set_super_prop_keep";
+        case OpCode::DefinePrivateField: return "define_private_field";
+        case OpCode::DefinePrivateMethod: return "define_private_method";
+        case OpCode::GetPrivateField: return "get_private_field";
+        case OpCode::GetPrivateMethod: return "get_private_method";
+        case OpCode::GetPrivateGetter: return "get_private_getter";
+        case OpCode::SetPrivateField: return "set_private_field";
+        case OpCode::SetPrivateSetter: return "set_private_setter";
+        case OpCode::SetPrivateFieldKeep: return "set_private_field_keep";
+        case OpCode::SetPrivateSetterKeep: return "set_private_setter_keep";
+        case OpCode::SetOwnerClass: return "set_owner_class";
     }
     return "<unknown>";
 }
@@ -267,6 +277,16 @@ const VM::Handler* VM::handlers() {
         &VM::opDeleteProp,
         &VM::opSetPropKeep,
         &VM::opSetSuperPropKeep,
+        &VM::opDefinePrivateField,
+        &VM::opDefinePrivateMethod,
+        &VM::opGetPrivateField,
+        &VM::opGetPrivateMethod,
+        &VM::opGetPrivateGetter,
+        &VM::opSetPrivateField,
+        &VM::opSetPrivateSetter,
+        &VM::opSetPrivateFieldKeep,
+        &VM::opSetPrivateSetterKeep,
+        &VM::opSetOwnerClass,
     };
     return table;
 }
@@ -1903,6 +1923,294 @@ Value* VM::opDefineClassField() {
         ctx_->defineClassField(ctor, key, initializer, (flags & 1u) != 0);
     if (detail::isErrorValue(result)) return fail(result);
     push(result);
+    return nullptr;
+}
+
+namespace {
+// 私有元素操作数：u32 名字下标（不含 '#'）。
+bool readPrivateName(VM* /*vm*/, const std::vector<uint8_t>& bytes, uint32_t& pc,
+                     uint32_t& index) {
+    if (bytes.size() - pc < 4) return false;
+    index = readU32(bytes.data() + pc);
+    pc += 4;
+    return true;
+}
+}  // namespace
+
+Value* VM::opDefinePrivateField() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    uint32_t nameIndex = 0;
+    if (!readPrivateName(this, bytes, pc_, nameIndex)) {
+        return badBytecode("define_private_field: truncated operand");
+    }
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("define_private_field: truncated operand");
+    }
+    uint32_t flags = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* desc = stringOperand(nameIndex);
+    if (desc == nullptr) {
+        return badBytecode("define_private_field: string index out of range");
+    }
+    if (stack_.size() < 2) {
+        return badBytecode("define_private_field: operand stack underflow");
+    }
+    Value* initializer = pop();
+    Value* ctor = pop();
+    neo::core::PrivateName* name = ctx_->ensureClassPrivateName(ctor, *desc);
+    bool isStatic = (flags & 1u) != 0;
+    if (initializer != nullptr &&
+        initializer->type()->kind() == neo::core::TypeKind::Function) {
+        ctx_->setFunctionOwnerClass(initializer, ctor);
+    }
+    if (isStatic) {
+        ctx_->addStaticPrivateField(ctor, name, initializer);
+        Value* result = ctx_->initializeStaticPrivateField(ctor, name);
+        ctx_->releasePrivateName(name);
+        if (detail::isErrorValue(result)) return fail(result);
+    } else {
+        ctx_->addPrivateField(ctor, name, initializer);
+        ctx_->releasePrivateName(name);
+    }
+    push(ctor);
+    return nullptr;
+}
+
+Value* VM::opDefinePrivateMethod() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    uint32_t nameIndex = 0;
+    if (!readPrivateName(this, bytes, pc_, nameIndex)) {
+        return badBytecode("define_private_method: truncated operand");
+    }
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("define_private_method: truncated operand");
+    }
+    uint32_t flags = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* desc = stringOperand(nameIndex);
+    if (desc == nullptr) {
+        return badBytecode("define_private_method: string index out of range");
+    }
+    if (stack_.size() < 2) {
+        return badBytecode("define_private_method: operand stack underflow");
+    }
+    Value* fn = pop();
+    Value* ctor = pop();
+    neo::core::PrivateName* name = ctx_->ensureClassPrivateName(ctor, *desc);
+    ctx_->definePrivateElement(ctor, name, fn, (flags & 1u) != 0,
+                               (flags >> 1) & 3u);
+    ctx_->releasePrivateName(name);
+    push(ctor);
+    return nullptr;
+}
+
+namespace {
+// 解析当前函数所属 class 的私有名；未声明返回 nullptr。
+neo::core::PrivateName* resolvePrivateName(neo::core::IContext* ctx,
+                                std::string_view description) {
+    return ctx->classPrivateName(ctx->currentFunction(), description);
+}
+}  // namespace
+
+Value* VM::opGetPrivateField() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    uint32_t nameIndex = 0;
+    if (!readPrivateName(this, bytes, pc_, nameIndex)) {
+        return badBytecode("get_private_field: truncated operand");
+    }
+    const std::string* desc = stringOperand(nameIndex);
+    if (desc == nullptr) {
+        return badBytecode("get_private_field: string index out of range");
+    }
+    if (stack_.empty()) {
+        return badBytecode("get_private_field: operand stack underflow");
+    }
+    Value* object = pop();
+    neo::core::PrivateName* name = resolvePrivateName(ctx_, *desc);
+    if (name == nullptr) {
+        return fail(detail::typeError(
+            ctx_, "Private member #" + *desc + " is not defined"));
+    }
+    Value* result = ctx_->getPrivate(object, name);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opGetPrivateMethod() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    uint32_t nameIndex = 0;
+    if (!readPrivateName(this, bytes, pc_, nameIndex)) {
+        return badBytecode("get_private_method: truncated operand");
+    }
+    const std::string* desc = stringOperand(nameIndex);
+    if (desc == nullptr) {
+        return badBytecode("get_private_method: string index out of range");
+    }
+    if (stack_.empty()) {
+        return badBytecode("get_private_method: operand stack underflow");
+    }
+    Value* object = pop();
+    neo::core::PrivateName* name = resolvePrivateName(ctx_, *desc);
+    if (name == nullptr) {
+        return fail(detail::typeError(
+            ctx_, "Private member #" + *desc + " is not defined"));
+    }
+    Value* result =
+        ctx_->getPrivateMethod(ctx_->currentFunction(), object, name);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opGetPrivateGetter() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    uint32_t nameIndex = 0;
+    if (!readPrivateName(this, bytes, pc_, nameIndex)) {
+        return badBytecode("get_private_getter: truncated operand");
+    }
+    const std::string* desc = stringOperand(nameIndex);
+    if (desc == nullptr) {
+        return badBytecode("get_private_getter: string index out of range");
+    }
+    if (stack_.empty()) {
+        return badBytecode("get_private_getter: operand stack underflow");
+    }
+    Value* object = pop();
+    neo::core::PrivateName* name = resolvePrivateName(ctx_, *desc);
+    if (name == nullptr) {
+        return fail(detail::typeError(
+            ctx_, "Private member #" + *desc + " is not defined"));
+    }
+    Value* getter =
+        ctx_->getPrivateGetter(ctx_->currentFunction(), object, name);
+    if (detail::isErrorValue(getter)) return fail(getter);
+    Value* result = ctx_->call(getter, object, 0, nullptr);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opSetPrivateField() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    uint32_t nameIndex = 0;
+    if (!readPrivateName(this, bytes, pc_, nameIndex)) {
+        return badBytecode("set_private_field: truncated operand");
+    }
+    const std::string* desc = stringOperand(nameIndex);
+    if (desc == nullptr) {
+        return badBytecode("set_private_field: string index out of range");
+    }
+    if (stack_.size() < 2) {
+        return badBytecode("set_private_field: operand stack underflow");
+    }
+    Value* value = pop();
+    Value* object = pop();
+    neo::core::PrivateName* name = resolvePrivateName(ctx_, *desc);
+    if (name == nullptr) {
+        return fail(detail::typeError(
+            ctx_, "Private member #" + *desc + " is not defined"));
+    }
+    Value* result = ctx_->setPrivate(object, name, value);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(value);
+    return nullptr;
+}
+
+Value* VM::opSetPrivateSetter() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    uint32_t nameIndex = 0;
+    if (!readPrivateName(this, bytes, pc_, nameIndex)) {
+        return badBytecode("set_private_setter: truncated operand");
+    }
+    const std::string* desc = stringOperand(nameIndex);
+    if (desc == nullptr) {
+        return badBytecode("set_private_setter: string index out of range");
+    }
+    if (stack_.size() < 2) {
+        return badBytecode("set_private_setter: operand stack underflow");
+    }
+    Value* value = pop();
+    Value* object = pop();
+    neo::core::PrivateName* name = resolvePrivateName(ctx_, *desc);
+    if (name == nullptr) {
+        return fail(detail::typeError(
+            ctx_, "Private member #" + *desc + " is not defined"));
+    }
+    Value* setter =
+        ctx_->getPrivateSetter(ctx_->currentFunction(), object, name);
+    if (detail::isErrorValue(setter)) return fail(setter);
+    Value* result = ctx_->call(setter, object, 1, &value);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(value);
+    return nullptr;
+}
+
+Value* VM::opSetPrivateFieldKeep() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    uint32_t nameIndex = 0;
+    if (!readPrivateName(this, bytes, pc_, nameIndex)) {
+        return badBytecode("set_private_field_keep: truncated operand");
+    }
+    const std::string* desc = stringOperand(nameIndex);
+    if (desc == nullptr) {
+        return badBytecode("set_private_field_keep: string index out of range");
+    }
+    if (stack_.size() < 3) {
+        return badBytecode("set_private_field_keep: operand stack underflow");
+    }
+    Value* keep = pop();
+    Value* value = pop();
+    Value* object = pop();
+    neo::core::PrivateName* name = resolvePrivateName(ctx_, *desc);
+    if (name == nullptr) {
+        return fail(detail::typeError(
+            ctx_, "Private member #" + *desc + " is not defined"));
+    }
+    Value* result = ctx_->setPrivate(object, name, value);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(keep);
+    return nullptr;
+}
+
+Value* VM::opSetPrivateSetterKeep() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    uint32_t nameIndex = 0;
+    if (!readPrivateName(this, bytes, pc_, nameIndex)) {
+        return badBytecode("set_private_setter_keep: truncated operand");
+    }
+    const std::string* desc = stringOperand(nameIndex);
+    if (desc == nullptr) {
+        return badBytecode("set_private_setter_keep: string index out of range");
+    }
+    if (stack_.size() < 3) {
+        return badBytecode("set_private_setter_keep: operand stack underflow");
+    }
+    Value* keep = pop();
+    Value* value = pop();
+    Value* object = pop();
+    neo::core::PrivateName* name = resolvePrivateName(ctx_, *desc);
+    if (name == nullptr) {
+        return fail(detail::typeError(
+            ctx_, "Private member #" + *desc + " is not defined"));
+    }
+    Value* setter =
+        ctx_->getPrivateSetter(ctx_->currentFunction(), object, name);
+    if (detail::isErrorValue(setter)) return fail(setter);
+    Value* result = ctx_->call(setter, object, 1, &value);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(keep);
+    return nullptr;
+}
+
+Value* VM::opSetOwnerClass() {
+    if (stack_.size() < 2) {
+        return badBytecode("set_owner_class: operand stack underflow");
+    }
+    Value* ctor = pop();
+    Value* fn = pop();
+    ctx_->setFunctionOwnerClass(fn, ctor);
+    push(fn);
     return nullptr;
 }
 

@@ -233,10 +233,28 @@ enum class OpCode : uint16_t {
     SetPropKeep,
     // [key,value,keep] → [keep]：set_super_prop 后保留 keep。
     SetSuperPropKeep,
+
+    // —— class 私有元素（名字操作数为 u32 下标，不含 '#'）——
+    // [ctor, init] → [ctor]：注册私有字段；静态字段同时执行初始化器。
+    DefinePrivateField,
+    // [ctor, fn] → [ctor]：注册私有方法/访问器；flags: bit0=static, bit1..2=kind。
+    DefinePrivateMethod,
+    // [obj] → [value]：读私有字段 / 取私有方法 / 调私有 getter。
+    GetPrivateField,
+    GetPrivateMethod,
+    GetPrivateGetter,
+    // [obj, value] → [value]：写私有字段 / 调私有 setter。
+    SetPrivateField,
+    SetPrivateSetter,
+    // [obj, value, keep] → [keep]：写私有字段/调 setter 后保留 keep（后缀更新）。
+    SetPrivateFieldKeep,
+    SetPrivateSetterKeep,
+    // [fn, ctor] → [fn]：设置函数 ownerClass（static block 私有访问用）。
+    SetOwnerClass,
 };
 
 // 指令总数（分派表大小）。
-inline constexpr size_t kOpCodeCount = static_cast<size_t>(OpCode::SetSuperPropKeep) + 1;
+inline constexpr size_t kOpCodeCount = static_cast<size_t>(OpCode::SetOwnerClass) + 1;
 
 // Define 的 flags 位。未置位即 false：
 //   mutable    —— 绑定可被 store 改写（const 为 false）

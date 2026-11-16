@@ -23,6 +23,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace neo::compiler {
@@ -185,6 +186,27 @@ private:
     // 把 class 元素的 key 压栈（computed 求值，否则标识符名）。
     void compileClassKey(const frontend::Node& key, bool computed);
 
+    // —— class 私有元素 ——
+    // 私有名在 class 内的种类（同一名字可能是 getter+setter）。
+    struct PrivateInfo {
+        bool field = false;
+        bool method = false;
+        bool getter = false;
+        bool setter = false;
+    };
+    // 收集 class body 内的私有声明（不含 '#'）。
+    std::unordered_map<std::string, PrivateInfo> collectPrivateElements(
+        const frontend::ClassBody& body) const;
+    // 从最内层 class 向外查找私有名；未声明返回 nullptr。
+    const PrivateInfo* findPrivateInfo(std::string_view name) const;
+    void compilePrivateRead(const frontend::MemberExpression& member);
+    void compilePrivateWrite(const frontend::MemberExpression& member,
+                             const frontend::AssignmentExpression& node);
+    void compilePrivateUpdate(const frontend::MemberExpression& member,
+                              const frontend::UpdateExpression& node);
+    void compilePrivateCall(const frontend::MemberExpression& member,
+                            const frontend::CallExpression& node);
+
     // —— 声明提升 ——
     // 在当前作用域入口发射提升槽位：
     //   varScope=true：递归收集 var（不进入嵌套函数）→ undefined 槽；
@@ -224,6 +246,8 @@ private:
     std::vector<neo::core::ModuleExportBinding> exports_;
     // 每层 ChainExpression 一个待回填的短路跳转列表（支持嵌套链）。
     std::vector<std::vector<uint32_t>> chainEndPatches_;
+    // 每层 class 的私有名表（支持嵌套 class 的词法解析）。
+    std::vector<std::unordered_map<std::string, PrivateInfo>> privateScopes_;
 };
 
 }  // namespace neo::compiler

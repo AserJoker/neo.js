@@ -214,6 +214,16 @@ private:
     neo::core::Value* opSetSuperProp();
     neo::core::Value* opDefineClassMethod();
     neo::core::Value* opDefineClassField();
+    neo::core::Value* opDefinePrivateField();
+    neo::core::Value* opDefinePrivateMethod();
+    neo::core::Value* opGetPrivateField();
+    neo::core::Value* opGetPrivateMethod();
+    neo::core::Value* opGetPrivateGetter();
+    neo::core::Value* opSetPrivateField();
+    neo::core::Value* opSetPrivateSetter();
+    neo::core::Value* opSetPrivateFieldKeep();
+    neo::core::Value* opSetPrivateSetterKeep();
+    neo::core::Value* opSetOwnerClass();
     neo::core::Value* opRet();
     neo::core::Value* opHalt();
 

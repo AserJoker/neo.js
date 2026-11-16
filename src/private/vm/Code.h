@@ -404,6 +404,55 @@ struct Code {
         emitU32(flags);
         return pc;
     }
+    // —— class 私有元素 ——
+    uint32_t definePrivateField(std::string_view name, uint32_t flags = 0) {
+        uint32_t pc = emitOp(OpCode::DefinePrivateField);
+        emitU32(addString(std::string(name)));
+        emitU32(flags);
+        return pc;
+    }
+    uint32_t definePrivateMethod(std::string_view name, uint32_t flags) {
+        uint32_t pc = emitOp(OpCode::DefinePrivateMethod);
+        emitU32(addString(std::string(name)));
+        emitU32(flags);
+        return pc;
+    }
+    uint32_t getPrivateField(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::GetPrivateField);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t getPrivateMethod(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::GetPrivateMethod);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t getPrivateGetter(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::GetPrivateGetter);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t setPrivateField(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::SetPrivateField);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t setPrivateSetter(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::SetPrivateSetter);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t setPrivateFieldKeep(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::SetPrivateFieldKeep);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t setPrivateSetterKeep(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::SetPrivateSetterKeep);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t setOwnerClass() { return emitOp(OpCode::SetOwnerClass); }
 
     // 登记源码位置范围（Compiler 发射 AST 节点时调用）。
     void mapSource(uint32_t pcBegin, uint32_t pcEnd,

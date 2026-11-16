@@ -1597,6 +1597,11 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
             code_->pushUndefined();
             return;
         }
+        if (member.property &&
+            member.property->kind() == NodeKind::PrivateIdentifier) {
+            compilePrivateCall(member, node);
+            return;
+        }
         if (member.object->kind() == NodeKind::SuperExpression) {
             // super.m()：receiver 是当前 this，方法从 homeObject 原型链取。
             code_->loadThis();
@@ -1835,6 +1840,11 @@ void Compiler::compileMemberExpression(
     if (!node.object) {
         error(node, "compiler: member expression missing object");
         code_->pushUndefined();
+        return;
+    }
+    if (node.property &&
+        node.property->kind() == NodeKind::PrivateIdentifier) {
+        compilePrivateRead(node);
         return;
     }
     if (node.object->kind() == NodeKind::SuperExpression) {
@@ -2095,6 +2105,11 @@ void Compiler::compileAssignmentExpression(
             return;
         }
         bool compound = node.op != frontend::AssignmentOperator::Assign;
+        if (member.property &&
+            member.property->kind() == NodeKind::PrivateIdentifier) {
+            compilePrivateWrite(member, node);
+            return;
+        }
         if (member.object->kind() == NodeKind::SuperExpression) {
             compileMemberKey(member);
             if (compound) {
@@ -2178,6 +2193,11 @@ void Compiler::compileUpdateExpression(
         if (!member.object) {
             error(node, "compiler: update target missing object");
             code_->pushUndefined();
+            return;
+        }
+        if (member.property &&
+            member.property->kind() == NodeKind::PrivateIdentifier) {
+            compilePrivateUpdate(member, node);
             return;
         }
         if (member.object->kind() == NodeKind::SuperExpression) {
@@ -2545,6 +2565,7 @@ void Compiler::compileClassDeclaration(
         code_->pushUndefined();
     }
     const auto& body = static_cast<const frontend::ClassBody&>(*node.body);
+    privateScopes_.push_back(collectPrivateElements(body));
     compileClassConstructor(body, node.superClass != nullptr, name);
     // 静态元素执行期间类名必须可见：先初始化绑定，再定义元素。
     if (!name.empty()) {
@@ -2552,6 +2573,7 @@ void Compiler::compileClassDeclaration(
         code_->initialize(name);
     }
     compileClassElements(body);
+    privateScopes_.pop_back();
     code_->pop();
 }
 
@@ -2571,8 +2593,10 @@ void Compiler::compileClassExpression(const frontend::ClassExpression& node) {
         code_->pushUndefined();
     }
     const auto& body = static_cast<const frontend::ClassBody&>(*node.body);
+    privateScopes_.push_back(collectPrivateElements(body));
     compileClassConstructor(body, node.superClass != nullptr, name);
     compileClassElements(body);
+    privateScopes_.pop_back();
 }
 
 void Compiler::compileClassConstructor(const frontend::ClassBody& body,
@@ -2651,6 +2675,245 @@ void Compiler::compileClassConstructor(const frontend::ClassBody& body,
     }
 }
 
+std::unordered_map<std::string, Compiler::PrivateInfo>
+Compiler::collectPrivateElements(const frontend::ClassBody& body) const {
+    std::unordered_map<std::string, PrivateInfo> result;
+    for (const frontend::NodePtr& element : body.elements) {
+        if (!element) continue;
+        if (element->kind() == NodeKind::MethodDefinition) {
+            const auto& method =
+                static_cast<const frontend::MethodDefinition&>(*element);
+            if (!method.key ||
+                method.key->kind() != NodeKind::PrivateIdentifier) {
+                continue;
+            }
+            const std::string& name =
+                static_cast<const frontend::PrivateIdentifier&>(*method.key)
+                    .name;
+            PrivateInfo& info = result[name];
+            switch (method.methodKind) {
+                case frontend::MethodKind::Get:
+                    info.getter = true;
+                    break;
+                case frontend::MethodKind::Set:
+                    info.setter = true;
+                    break;
+                case frontend::MethodKind::Constructor:
+                    break;
+                default:
+                    info.method = true;
+                    break;
+            }
+            continue;
+        }
+        if (element->kind() == NodeKind::PropertyDefinition) {
+            const auto& field =
+                static_cast<const frontend::PropertyDefinition&>(*element);
+            if (!field.key ||
+                field.key->kind() != NodeKind::PrivateIdentifier) {
+                continue;
+            }
+            result[static_cast<const frontend::PrivateIdentifier&>(*field.key)
+                       .name]
+                .field = true;
+        }
+    }
+    return result;
+}
+
+const Compiler::PrivateInfo* Compiler::findPrivateInfo(
+    std::string_view name) const {
+    for (auto it = privateScopes_.rbegin(); it != privateScopes_.rend(); ++it) {
+        const auto found = it->find(std::string(name));
+        if (found != it->end()) return &found->second;
+    }
+    return nullptr;
+}
+
+void Compiler::compilePrivateRead(
+    const frontend::MemberExpression& member) {
+    if (!member.property ||
+        member.property->kind() != NodeKind::PrivateIdentifier) {
+        error(member, "compiler: malformed private member");
+        code_->pushUndefined();
+        return;
+    }
+    const std::string& name =
+        static_cast<const frontend::PrivateIdentifier&>(*member.property).name;
+    const PrivateInfo* info = findPrivateInfo(name);
+    if (info == nullptr) {
+        error(member, "compiler: undeclared private name #" + name);
+        code_->pushUndefined();
+        return;
+    }
+    if (!member.object) {
+        error(member, "compiler: private member missing object");
+        code_->pushUndefined();
+        return;
+    }
+    compileExpression(*member.object);
+    if (info->field) {
+        code_->getPrivateField(name);
+    } else if (info->method) {
+        code_->getPrivateMethod(name);
+    } else {
+        code_->getPrivateGetter(name);
+    }
+}
+
+void Compiler::compilePrivateWrite(
+    const frontend::MemberExpression& member,
+    const frontend::AssignmentExpression& node) {
+    if (!member.property ||
+        member.property->kind() != NodeKind::PrivateIdentifier) {
+        error(member, "compiler: malformed private member");
+        code_->pushUndefined();
+        return;
+    }
+    const std::string& name =
+        static_cast<const frontend::PrivateIdentifier&>(*member.property).name;
+    const PrivateInfo* info = findPrivateInfo(name);
+    if (info == nullptr) {
+        error(member, "compiler: undeclared private name #" + name);
+        code_->pushUndefined();
+        return;
+    }
+    if (!member.object) {
+        error(member, "compiler: private member missing object");
+        code_->pushUndefined();
+        return;
+    }
+    compileExpression(*member.object);
+    bool compound = node.op != frontend::AssignmentOperator::Assign;
+    if (compound) {
+        code_->dup();
+        if (info->field) {
+            code_->getPrivateField(name);
+        } else if (info->method) {
+            code_->getPrivateMethod(name);
+        } else {
+            code_->getPrivateGetter(name);
+        }
+        compileExpression(*node.right);
+        if (!emitCompoundBinary(node.op, node)) return;
+    } else {
+        compileExpression(*node.right);
+    }
+    if (info->field) {
+        code_->setPrivateField(name);
+    } else {
+        code_->setPrivateSetter(name);
+    }
+}
+
+void Compiler::compilePrivateUpdate(
+    const frontend::MemberExpression& member,
+    const frontend::UpdateExpression& node) {
+    if (!member.property ||
+        member.property->kind() != NodeKind::PrivateIdentifier) {
+        error(member, "compiler: malformed private member");
+        code_->pushUndefined();
+        return;
+    }
+    const std::string& name =
+        static_cast<const frontend::PrivateIdentifier&>(*member.property).name;
+    const PrivateInfo* info = findPrivateInfo(name);
+    if (info == nullptr) {
+        error(member, "compiler: undeclared private name #" + name);
+        code_->pushUndefined();
+        return;
+    }
+    if (!member.object) {
+        error(member, "compiler: private member missing object");
+        code_->pushUndefined();
+        return;
+    }
+    compileExpression(*member.object);
+    code_->dup();
+    if (info->field) {
+        code_->getPrivateField(name);
+    } else if (info->method) {
+        code_->getPrivateMethod(name);
+    } else {
+        code_->getPrivateGetter(name);
+    }
+    if (!node.prefix) code_->clone();
+    code_->push(1.0);
+    if (node.op == frontend::UpdateOperator::Increment) {
+        code_->add();
+    } else {
+        code_->sub();
+    }
+    if (node.prefix) {
+        if (info->field) {
+            code_->setPrivateField(name);
+        } else {
+            code_->setPrivateSetter(name);
+        }
+        return;
+    }
+    // 后缀：栈为 [obj, old, new]，交换成 [obj, new, old] 保留旧值。
+    code_->swap();
+    if (info->field) {
+        code_->setPrivateFieldKeep(name);
+    } else {
+        code_->setPrivateSetterKeep(name);
+    }
+}
+
+void Compiler::compilePrivateCall(
+    const frontend::MemberExpression& member,
+    const frontend::CallExpression& node) {
+    if (!member.property ||
+        member.property->kind() != NodeKind::PrivateIdentifier) {
+        error(member, "compiler: malformed private member");
+        code_->pushUndefined();
+        return;
+    }
+    const std::string& name =
+        static_cast<const frontend::PrivateIdentifier&>(*member.property).name;
+    const PrivateInfo* info = findPrivateInfo(name);
+    if (info == nullptr) {
+        error(member, "compiler: undeclared private name #" + name);
+        code_->pushUndefined();
+        return;
+    }
+    if (!member.object) {
+        error(member, "compiler: private member missing object");
+        code_->pushUndefined();
+        return;
+    }
+    compileExpression(*member.object);
+    code_->dup();
+    if (info->method) {
+        code_->getPrivateMethod(name);
+    } else if (info->field) {
+        code_->getPrivateField(name);
+    } else {
+        code_->getPrivateGetter(name);
+    }
+
+    bool hasSpread = false;
+    for (const frontend::NodePtr& argument : node.arguments) {
+        if (argument && argument->kind() == NodeKind::SpreadElement) {
+            hasSpread = true;
+            break;
+        }
+    }
+    if (hasSpread) {
+        compileArgumentsArray(node.arguments);
+        code_->callMethodSpread();
+        return;
+    }
+    uint32_t argc = 0;
+    for (const frontend::NodePtr& argument : node.arguments) {
+        if (!argument) continue;
+        compileExpression(*argument);
+        ++argc;
+    }
+    code_->callMethod(argc);
+}
+
 void Compiler::compileClassElements(const frontend::ClassBody& body) {
     for (const frontend::NodePtr& element : body.elements) {
         if (!element) continue;
@@ -2669,6 +2932,25 @@ void Compiler::compileClassElements(const frontend::ClassBody& body) {
                 const auto& function =
                     static_cast<const frontend::FunctionExpression&>(
                         *method.value);
+                if (method.key &&
+                    method.key->kind() == NodeKind::PrivateIdentifier) {
+                    const std::string& privateName =
+                        static_cast<const frontend::PrivateIdentifier&>(
+                            *method.key)
+                            .name;
+                    compileMethodFunction(function, "#" + privateName);
+                    uint32_t privateKind = 0;
+                    if (method.methodKind == frontend::MethodKind::Get) {
+                        privateKind = 1;
+                    }
+                    if (method.methodKind == frontend::MethodKind::Set) {
+                        privateKind = 2;
+                    }
+                    uint32_t flags =
+                        (method.isStatic ? 1u : 0u) | (privateKind << 1);
+                    code_->definePrivateMethod(privateName, flags);
+                    break;
+                }
                 std::string methodName;
                 if (!method.computed && method.key &&
                     method.key->kind() == NodeKind::Identifier) {
@@ -2688,6 +2970,21 @@ void Compiler::compileClassElements(const frontend::ClassBody& body) {
             case NodeKind::PropertyDefinition: {
                 const auto& field =
                     static_cast<const frontend::PropertyDefinition&>(*element);
+                if (field.key &&
+                    field.key->kind() == NodeKind::PrivateIdentifier) {
+                    const std::string& privateName =
+                        static_cast<const frontend::PrivateIdentifier&>(
+                            *field.key)
+                            .name;
+                    if (field.value) {
+                        compileFieldInitializer(*field.value, field.id());
+                    } else {
+                        code_->pushUndefined();
+                    }
+                    code_->definePrivateField(
+                        privateName, field.isStatic ? 1u : 0u);
+                    break;
+                }
                 if (field.key) {
                     compileClassKey(*field.key, field.computed);
                 } else {
@@ -2705,7 +3002,9 @@ void Compiler::compileClassElements(const frontend::ClassBody& body) {
             case NodeKind::StaticBlock: {
                 const auto& block =
                     static_cast<const frontend::StaticBlock&>(*element);
-                // 保留构造器：call_method 会消费 receiver。
+                // 保留构造器：call_method 会消费 receiver；多留一份供
+                // set_owner_class 使用后仍保留类声明栈上的构造器。
+                code_->dup();
                 code_->dup();
                 uint32_t skip = code_->jmp();
                 uint32_t entryPc = code_->here();
@@ -2728,6 +3027,11 @@ void Compiler::compileClassElements(const frontend::ClassBody& body) {
                         code_->setClosure(capture);
                     }
                 }
+                // static block 函数需要 ownerClass 才能解析私有名。
+                // 栈为 [ctor, receiver, ctor, fn]：swap 后 [ctor, receiver, fn, ctor]，
+                // set_owner_class 消费 fn/ctor 并压回 fn → [ctor, receiver, fn]。
+                code_->swap();
+                code_->setOwnerClass();
                 // this = class 构造器；丢弃返回值。
                 code_->callMethod(0);
                 code_->pop();

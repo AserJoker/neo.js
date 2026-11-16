@@ -801,33 +801,52 @@ Value* privateElementAccess(IContext* ctx, Value* obj, PrivateName* name,
 
 namespace {
 
-// obj == classCtor 表示静态私有访问（this 是类构造器本身）。
-const PrivateElement* lookupPrivateElement(ClassData* cd, Value* classCtor, Value* obj,
-                                           PrivateName* name) {
+// obj 是 class 构造器本身时表示静态私有访问。
+const PrivateElement* lookupPrivateElement(ClassData* cd, Value* /*classCtor*/,
+                                           Value* obj, PrivateName* name) {
     if (cd == nullptr) return nullptr;
+    // class 绑定与定义时的构造器可能是不同 Value（initialize 会克隆槽位），
+    // 因此按 ClassData 身份判断是否为静态访问。
     const auto& elements =
-        obj == classCtor ? cd->staticPrivateElements : cd->privateElements;
+        classDataOf(obj) == cd ? cd->staticPrivateElements : cd->privateElements;
     return findPrivateElement(elements, name);
 }
 
 }  // namespace
 
+namespace {
+// classCtor 可以是构造器本身或 class 成员函数；统一取真正的构造器。
+Value* actualClassConstructor(Value* classCtor) {
+    if (classCtor != nullptr &&
+        classCtor->type()->kind() == TypeKind::Function) {
+        auto* d = static_cast<FunctionData*>(classCtor->data());
+        if (!d->isClassConstructor && d->ownerClass != nullptr) {
+            return d->ownerClass;
+        }
+    }
+    return classCtor;
+}
+}  // namespace
+
 Value* Context::getPrivateMethod(Value* classCtor, Value* obj, PrivateName* name) {
-    ClassData* cd = classDataOf(classCtor);
+    ClassData* cd = classDataOfMember(classCtor);
+    Value* owner = actualClassConstructor(classCtor);
     return privateElementAccess(this, obj, name,
-                                lookupPrivateElement(cd, classCtor, obj, name), 0);
+                                lookupPrivateElement(cd, owner, obj, name), 0);
 }
 
 Value* Context::getPrivateGetter(Value* classCtor, Value* obj, PrivateName* name) {
-    ClassData* cd = classDataOf(classCtor);
+    ClassData* cd = classDataOfMember(classCtor);
+    Value* owner = actualClassConstructor(classCtor);
     return privateElementAccess(this, obj, name,
-                                lookupPrivateElement(cd, classCtor, obj, name), 1);
+                                lookupPrivateElement(cd, owner, obj, name), 1);
 }
 
 Value* Context::getPrivateSetter(Value* classCtor, Value* obj, PrivateName* name) {
-    ClassData* cd = classDataOf(classCtor);
+    ClassData* cd = classDataOfMember(classCtor);
+    Value* owner = actualClassConstructor(classCtor);
     return privateElementAccess(this, obj, name,
-                                lookupPrivateElement(cd, classCtor, obj, name), 2);
+                                lookupPrivateElement(cd, owner, obj, name), 2);
 }
 
 void Context::setFunctionClassConstructor(Value* fn, bool isDerived, Value* superCtor) {
@@ -1042,6 +1061,65 @@ PrivateName* Context::classPrivateName(Value* classCtor, std::string_view descri
         if (matches(e.name)) return e.name;
     }
     return nullptr;
+}
+
+PrivateName* Context::ensureClassPrivateName(Value* classCtor,
+                                             std::string_view description) {
+    if (PrivateName* existing = classPrivateName(classCtor, description)) {
+        retainPrivateName(existing);
+        return existing;
+    }
+    return createPrivateName(description);
+}
+
+void Context::definePrivateElement(Value* classCtor, PrivateName* name,
+                                   Value* fn, bool isStatic, uint32_t kind) {
+    ClassData* cd = classDataOf(classCtor);
+    if (cd == nullptr || name == nullptr || fn == nullptr) return;
+
+    if (fn->type()->kind() == TypeKind::Function) {
+        auto* d = static_cast<FunctionData*>(fn->data());
+        d->ownerClass = classCtor;
+        d->constructible = false;
+        if (!isStatic) {
+            d->homeObject = getProperty(classCtor, "prototype");
+        } else {
+            d->homeObject = classCtor;
+        }
+    }
+
+    std::vector<PrivateElement>& elements =
+        isStatic ? cd->staticPrivateElements : cd->privateElements;
+    if (kind == 0) {
+        if (isStatic) {
+            addStaticPrivateMethod(classCtor, name, fn);
+        } else {
+            addPrivateMethod(classCtor, name, fn);
+        }
+        return;
+    }
+
+    for (PrivateElement& e : elements) {
+        if (e.name != name || e.kind != PrivateElement::Kind::Accessor) continue;
+        if (kind == 1) {
+            e.getter = fn;
+        } else {
+            e.setter = fn;
+        }
+        return;
+    }
+    if (isStatic) {
+        addStaticPrivateAccessor(classCtor, name, kind == 1 ? fn : nullptr,
+                                 kind == 2 ? fn : nullptr);
+    } else {
+        addPrivateAccessor(classCtor, name, kind == 1 ? fn : nullptr,
+                           kind == 2 ? fn : nullptr);
+    }
+}
+
+void Context::setFunctionOwnerClass(Value* fn, Value* ownerClass) {
+    if (fn == nullptr || fn->type()->kind() != TypeKind::Function) return;
+    static_cast<FunctionData*>(fn->data())->ownerClass = ownerClass;
 }
 
 Value* Context::functionHomeObject(Value* fn) {

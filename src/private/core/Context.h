@@ -207,6 +207,11 @@ public:
                                 Value* method) override;
     void addStaticPrivateAccessor(Value* classCtor, PrivateName* name, Value* getter,
                                   Value* setter) override;
+    PrivateName* ensureClassPrivateName(Value* classCtor,
+                                        std::string_view description) override;
+    void definePrivateElement(Value* classCtor, PrivateName* name, Value* fn,
+                              bool isStatic, uint32_t kind) override;
+    void setFunctionOwnerClass(Value* fn, Value* ownerClass) override;
     Value* initializeStaticPrivateField(Value* classCtor, PrivateName* name) override;
     Value* initializeStaticPrivateElements(Value* classCtor) override;
     Value* getPrivate(Value* obj, PrivateName* name) override;

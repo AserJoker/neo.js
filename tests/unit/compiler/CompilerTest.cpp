@@ -21,7 +21,6 @@
 
 #include <gtest/gtest.h>
 
-#include <memory>
 #include <string>
 
 namespace {
@@ -3268,4 +3267,126 @@ TEST(CompilerTest, ArrayDestructuringDoesNotCloseExhaustedIterator) {
     ASSERT_NE(value, nullptr);
     ASSERT_EQ(value->type()->kind(), TypeKind::Number);
     EXPECT_DOUBLE_EQ(numberValue(value), 11.0);
+}
+
+TEST(CompilerTest, PrivateFieldReadWrite) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "class A {"
+        "  #x = 1;"
+        "  get() { return this.#x; }"
+        "  set(v) { this.#x = v; }"
+        "}"
+        "var a = new A();"
+        "a.set(5);"
+        "result = a.get();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 5.0);
+}
+
+TEST(CompilerTest, PrivateMethodCall) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "class A {"
+        "  #m() { return 3; }"
+        "  call() { return this.#m(); }"
+        "}"
+        "result = new A().call();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, PrivateAccessorReadWrite) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "class A {"
+        "  #v = 2;"
+        "  get #x() { return this.#v; }"
+        "  set #x(v) { this.#v = v; }"
+        "  run() { this.#x = 7; return this.#x; }"
+        "}"
+        "result = new A().run();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 7.0);
+}
+
+TEST(CompilerTest, StaticPrivateFieldAndMethod) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "class A {"
+        "  static #x = 4;"
+        "  static #m() { return this.#x; }"
+        "  static run() { return A.#m(); }"
+        "}"
+        "result = A.run();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 4.0);
+}
+
+TEST(CompilerTest, PrivateCompoundAndUpdate) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "class A {"
+        "  #x = 1;"
+        "  run() { this.#x += 2; this.#x++; return this.#x; }"
+        "}"
+        "result = new A().run();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 4.0);
+}
+
+TEST(CompilerTest, PrivateFieldInitializerReadsPrivate) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "class A {"
+        "  #a = 2;"
+        "  #b = this.#a + 1;"
+        "  get() { return this.#b; }"
+        "}"
+        "result = new A().get();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, StaticBlockAccessesPrivate) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "class A {"
+        "  static #x = 3;"
+        "  static { A.#x = A.#x + 1; }"
+        "  static get() { return A.#x; }"
+        "}"
+        "result = A.get();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 4.0);
+}
+
+TEST(CompilerTest, PrivateAccessOutsideClassIsRejected) {
+    Fixture f;
+    CompileResult result = compileSource(
+        "class A { #x = 1; }"
+        "var a = new A();"
+        "result = a.#x;");
+    EXPECT_FALSE(result.ok());
 }

@@ -103,6 +103,7 @@ public:
 | ClassDeclaration / ClassExpression | superClass（或 undefined）+ `push_class`；先 `dup; initialize` 让静态元素可见类名；再逐个 `define_class_method`/`define_class_field`；static block 用函数 + `call_method`（保留构造器） |
 | class 构造器 | 显式 constructor 内联为脚本函数（基类序言 `init_instance_elements`）；无构造器时生成默认基类/派生构造器（派生用 `rest_args` + `construct_super_spread`） |
 | class 方法/访问器 | `push_function` flags=0（不可构造、无 prototype）+ `set_strict` + `define_class_method`；getter/setter 与同名访问器合并 |
+| class 私有元素 | 私有字段 `define_private_field`；私有方法/访问器 `define_private_method`；读/写/调用按种类发射 `get_private_field`/`get_private_method`/`get_private_getter`/`set_private_field`/`set_private_setter`；static block 先 `set_owner_class` |
 | class 字段 | 初始化器编译为无参脚本函数（method 模式）；实例字段登记到 ClassData，静态字段定义期以构造器为 this 求值 |
 | super() | `construct_super N` / `construct_super_spread`；成功后 `initializeInstanceElements` |
 | super.x / super.x = v | `get_super_prop` / `set_super_prop`（homeObject + 当前 this） |
@@ -174,7 +175,6 @@ tests/unit/compiler/
 - 优点：Compiler 与 Parser 同构，节点覆盖度可逐条推进；错误显式；SourceMap
   与 VM 的异常定位直接对接；后续只需在分派表里补节点。
 - 缺点：尚未覆盖正则字面量，真实程序还不能完整编译；`for await` 暂
-  unsupported；对象 rest 与 computed key 组合暂 unsupported；class 私有元素
-  （`#x`/私有方法/访问器）暂 unsupported；class 表达式自身名字在类体内的
-  内层绑定尚未建立。
+  unsupported；对象 rest 与 computed key 组合暂 unsupported；`#x in obj`
+  暂 unsupported；class 表达式自身名字在类体内的内层绑定尚未建立。
 - 待定：常量池去重、SourceMap 对多字节指令的精确边界。

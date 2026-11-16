@@ -179,6 +179,15 @@ _func_end:
 | `set_super_prop_keep` | `[key,value,keep] → [keep]` | 写入后保留 `keep`（后缀更新） |
 | `define_class_method flags` | `[ctor,key,fn] → [ctor]` | flags: bit0=isStatic，bit1..2=kind（0 data/1 get/2 set） |
 | `define_class_field flags` | `[ctor,key,init] → [ctor]` | bit0=isStatic；实例字段登记，静态字段立即求值 |
+| `define_private_field "name",flags` | `[ctor,init] → [ctor]` | 注册私有字段；bit0=isStatic（静态字段立即求值） |
+| `define_private_method "name",flags` | `[ctor,fn] → [ctor]` | 注册私有方法/访问器；bit0=isStatic，bit1..2=kind |
+| `get_private_field "name"` | `[obj] → [value]` | 读私有字段 |
+| `get_private_method "name"` | `[obj] → [fn]` | 取私有方法（未绑定，调用方提供 receiver） |
+| `get_private_getter "name"` | `[obj] → [value]` | 调私有 getter，this=obj |
+| `set_private_field "name"` | `[obj,value] → [value]` | 写私有字段 |
+| `set_private_setter "name"` | `[obj,value] → [value]` | 调私有 setter，this=obj |
+| `set_private_field_keep` / `set_private_setter_keep` | `[obj,value,keep] → [keep]` | 后缀更新保留旧值 |
+| `set_owner_class` | `[fn,ctor] → [fn]` | 设置函数 ownerClass（static block 私有名解析） |
 | `yield_delegate` | `[iterable] → [completion]` | `yield*`：维护被委托迭代器，恢复时转发 next/throw/return |
 | `ret` | `[val] → []` | 函数返回，弹栈顶作为返回值，结束当前 VM |
 | `hlt` | `[] → ∅` | 模块执行结束 |

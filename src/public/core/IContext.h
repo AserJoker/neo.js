@@ -355,6 +355,18 @@ public:
     virtual void addStaticPrivateAccessor(Value* classCtor, PrivateName* name,
                                           Value* getter, Value* setter) = 0;
 
+    // ensureClassPrivateName: 按 description 查找 class 已注册的私有名；
+    // 不存在则新建。返回一个调用方持有的引用（用完 release）。
+    virtual PrivateName* ensureClassPrivateName(Value* classCtor,
+                                                std::string_view description) = 0;
+    // definePrivateElement: 注册私有方法/访问器（kind: 0=method,1=getter,
+    // 2=setter），设置 ownerClass/homeObject，并合并同名访问器。
+    virtual void definePrivateElement(Value* classCtor, PrivateName* name,
+                                      Value* fn, bool isStatic,
+                                      uint32_t kind) = 0;
+    // setFunctionOwnerClass: 设置函数所属 class（私有名解析用）。
+    virtual void setFunctionOwnerClass(Value* fn, Value* ownerClass) = 0;
+
     // initializeStaticPrivateField: 初始化单个静态私有字段（以构造器为 this）。
     // VM 在每个静态私有字段的声明位置调用，以便与 static block/public static
     // field 保持源码顺序。
