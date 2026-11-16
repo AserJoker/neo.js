@@ -69,6 +69,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::NewObject:     return "new_object";
         case OpCode::NewArray:      return "new_array";
         case OpCode::DefineProp:    return "define_prop";
+        case OpCode::TemplateObject: return "template_object";
         case OpCode::ForInKeys:     return "for_in_keys";
         case OpCode::IsEnumerableOwn: return "is_enumerable_own";
         case OpCode::GetIterator:   return "get_iterator";
@@ -84,6 +85,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::Ge:            return "ge";
         case OpCode::StrictEqual:   return "strict_equal";
         case OpCode::Unary:         return "unary";
+        case OpCode::ToString:      return "to_string";
         case OpCode::Jmp:           return "jmp";
         case OpCode::JTrue:         return "jtrue";
         case OpCode::JFalse:        return "jfalse";
@@ -148,6 +150,7 @@ const VM::Handler* VM::handlers() {
         &VM::opNewObject,
         &VM::opNewArray,
         &VM::opDefineProp,
+        &VM::opTemplateObject,
         &VM::opForInKeys,
         &VM::opIsEnumerableOwn,
         &VM::opGetIterator,
@@ -163,6 +166,7 @@ const VM::Handler* VM::handlers() {
         &VM::opGe,
         &VM::opStrictEqual,
         &VM::opUnary,
+        &VM::opToString,
         &VM::opJmp,
         &VM::opJTrue,
         &VM::opJFalse,
@@ -685,6 +689,43 @@ Value* VM::opDefineProp() {
     return nullptr;
 }
 
+Value* VM::opTemplateObject() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("template_object: truncated operand");
+    }
+    uint32_t count = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (bytes.size() - pc_ < static_cast<size_t>(count) * 8) {
+        return badBytecode("template_object: truncated quasis");
+    }
+    std::vector<std::pair<std::string, std::string>> quasis;
+    quasis.reserve(count);
+    for (uint32_t i = 0; i < count; ++i) {
+        uint32_t cookedIndex = readU32(bytes.data() + pc_);
+        pc_ += 4;
+        uint32_t rawIndex = readU32(bytes.data() + pc_);
+        pc_ += 4;
+        const std::string* cooked = stringOperand(cookedIndex);
+        const std::string* raw = stringOperand(rawIndex);
+        if (cooked == nullptr || raw == nullptr) {
+            return badBytecode("template_object: string index out of range");
+        }
+        quasis.emplace_back(*cooked, *raw);
+    }
+    for (const auto& entry : code_->templateCache) {
+        if (entry.first == instructionPc_) {
+            push(entry.second);
+            return nullptr;
+        }
+    }
+    Value* object = ctx_->createTemplateObject(quasis);
+    if (detail::isErrorValue(object)) return fail(object);
+    code_->templateCache.emplace_back(instructionPc_, object);
+    push(object);
+    return nullptr;
+}
+
 Value* VM::opForInKeys() {
     if (stack_.empty()) {
         return badBytecode("for_in_keys: operand stack underflow");
@@ -784,6 +825,15 @@ Value* VM::opUnary() {
     Value* value = pop();
     Value* result =
         ctx_->unaryOp(static_cast<neo::core::UnaryOperator>(op), value);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opToString() {
+    if (stack_.empty()) return badBytecode("to_string: operand stack underflow");
+    Value* value = pop();
+    Value* result = ctx_->toString(value);
     if (detail::isErrorValue(result)) return fail(result);
     push(result);
     return nullptr;

@@ -37,6 +37,32 @@ bool canStartExpression(TokenKind kind) {
     }
 }
 
+// 从模板 token 的源码切片提取 raw 值：去掉首尾定界符（` / } / ${），
+// 保留转义序列原文，行终止符 CRLF / CR 归一化为 LF。
+std::string templateRawFromLexeme(std::string_view lexeme) {
+    size_t begin = 0;
+    if (!lexeme.empty() && (lexeme.front() == '`' || lexeme.front() == '}')) {
+        begin = 1;
+    }
+    size_t end = lexeme.size();
+    if (end >= begin + 2 && lexeme.substr(end - 2) == "${") {
+        end -= 2;
+    } else if (end > begin && lexeme.back() == '`') {
+        end -= 1;
+    }
+    std::string raw;
+    raw.reserve(end - begin);
+    for (size_t i = begin; i < end; ++i) {
+        if (lexeme[i] == '\r') {
+            raw.push_back('\n');
+            if (i + 1 < end && lexeme[i + 1] == '\n') ++i;
+        } else {
+            raw.push_back(lexeme[i]);
+        }
+    }
+    return raw;
+}
+
 bool isPropertyNameStart(TokenKind kind) {
     return isIdentifierName(kind) || kind == TokenKind::StringLiteral ||
            kind == TokenKind::NumericLiteral ||
@@ -2413,9 +2439,10 @@ NodePtr Parser::parseTemplateLiteral() {
     if (at(TokenKind::NoSubstitutionTemplate)) {
         const SourceLocation elementStart = current_.start;
         std::string cooked = current_.text;
+        std::string raw = templateRawFromLexeme(current_.lexeme);
         advance();
         quasis.push_back(std::make_unique<TemplateElement>(
-            rangeFrom(elementStart), std::move(cooked)));
+            rangeFrom(elementStart), std::move(cooked), std::move(raw)));
         return std::make_unique<TemplateLiteral>(
             rangeFrom(start), std::move(quasis), std::move(expressions));
     }
@@ -2428,9 +2455,10 @@ NodePtr Parser::parseTemplateLiteral() {
     {
         const SourceLocation elementStart = current_.start;
         std::string cooked = current_.text;
+        std::string raw = templateRawFromLexeme(current_.lexeme);
         advance(LexicalGoal::RegExp);
         quasis.push_back(std::make_unique<TemplateElement>(
-            rangeFrom(elementStart), std::move(cooked)));
+            rangeFrom(elementStart), std::move(cooked), std::move(raw)));
     }
 
     while (true) {
@@ -2451,17 +2479,19 @@ NodePtr Parser::parseTemplateLiteral() {
         if (at(TokenKind::TemplateMiddle)) {
             const SourceLocation elementStart = current_.start;
             std::string cooked = current_.text;
+            std::string raw = templateRawFromLexeme(current_.lexeme);
             advance(LexicalGoal::RegExp);
             quasis.push_back(std::make_unique<TemplateElement>(
-                rangeFrom(elementStart), std::move(cooked)));
+                rangeFrom(elementStart), std::move(cooked), std::move(raw)));
             continue;
         }
         if (at(TokenKind::TemplateTail)) {
             const SourceLocation elementStart = current_.start;
             std::string cooked = current_.text;
+            std::string raw = templateRawFromLexeme(current_.lexeme);
             advance();
             quasis.push_back(std::make_unique<TemplateElement>(
-                rangeFrom(elementStart), std::move(cooked)));
+                rangeFrom(elementStart), std::move(cooked), std::move(raw)));
             break;
         }
 

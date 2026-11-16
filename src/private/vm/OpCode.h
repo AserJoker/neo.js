@@ -105,6 +105,9 @@ enum class OpCode : uint16_t {
     NewObject,     // [] → [obj]
     NewArray,      // u32 length：[] → [arr]（预置 length，支持 elision）
     DefineProp,    // [obj, key, value] → [obj]：CreateDataProperty
+    // 标签模板对象（§13.2.8.2）：u32 count + count × (u32 cookedIndex, u32 rawIndex)。
+    // [] → [templateObject]：cooked 数组 + 冻结的 raw 数组，按 site 缓存。
+    TemplateObject,
     ForInKeys,     // [obj] → [entries]：for-in 候选 [owner,key,...]（含原型链、去重）
     IsEnumerableOwn,  // [obj, key] → [bool]：自有属性存在且 enumerable
     GetIterator,   // [iterable] → [iterator]：GetIterator(iterable, sync)
@@ -125,6 +128,8 @@ enum class OpCode : uint16_t {
 
     // 一元运算：u32 core::UnaryOperator
     Unary,
+    // ToString（模板替换用）：[v] → [string]，走完整 §7.1.14（ToPrimitive hint string）
+    ToString,
 
     // 控制流
     Jmp,          // u32 targetPc

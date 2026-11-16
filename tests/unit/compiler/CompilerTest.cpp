@@ -2133,6 +2133,103 @@ TEST(CompilerTest, NewTargetInPlainCallIsUndefined) {
     EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
 }
 
+TEST(CompilerTest, TemplateNoSubstitution) {
+    Fixture f;
+    Value* value = runScriptResult(f, "var result = `hello`;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "hello");
+}
+
+TEST(CompilerTest, TemplateInterpolation) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var x = 2; var result = `a${x}b${x + 1}`;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "a2b3");
+}
+
+TEST(CompilerTest, TemplateSubstitutionUsesStringHint) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var o = { toString: function () { return 's'; },"
+        "          valueOf: function () { return 1; } };"
+        "var result = `${o}`;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "s");
+}
+
+TEST(CompilerTest, TaggedTemplateReceivesCookedAndRaw) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function tag(strings) {"
+        "  return strings.length * 10 + strings.raw.length;"
+        "}"
+        "var result = tag`a${1}b`;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 22.0);
+}
+
+TEST(CompilerTest, TaggedTemplateRawPreservesEscapes) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function tag(strings) { return strings.raw[0]; }"
+        "var result = tag`a\\nb`;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "a\\nb");
+}
+
+TEST(CompilerTest, TaggedTemplateObjectIsCachedPerSite) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function tag(strings) { return strings; }"
+        "function get() { return tag`x`; }"
+        "var a = get();"
+        "var b = get();"
+        "var result = a === b ? 1 : 0;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, TaggedTemplateMemberUsesReceiverAsThis) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var obj = { name: 'o',"
+        "            tag: function (strings) { return this.name + strings[0]; } };"
+        "var result = obj.tag`!`;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "o!");
+}
+
+TEST(CompilerTest, StringRawUsesRawSegments) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var result = String.raw`a\\nb`;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "a\\nb");
+}
+
+TEST(CompilerTest, StringRawInterleavesSubstitutions) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var result = String.raw`a${1}b${2}c`;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "a1b2c");
+}
+
 TEST(CompilerTest, ForLetCreatesPerIterationBinding) {
     Fixture f;
     Value* value = runScriptResult(

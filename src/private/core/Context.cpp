@@ -1407,6 +1407,73 @@ Value* Context::createArray(std::string_view bindName) {
     return arr;
 }
 
+namespace {
+
+// 冻结对象（§7.3.15 SetIntegrityLevel frozen）：preventExtensions 后把每个
+// 自有数据属性改为不可写/不可配置。成功返回 nullptr，失败返回错误值。
+Value* freezeObject(IContext* ctx, Value* obj) {
+    Value* prev = obj->type()->preventExtensions(ctx, obj);
+    if (detail::isErrorValue(prev)) return prev;
+    std::vector<Value*> keys;
+    if (Value* err = obj->type()->ownKeys(ctx, obj, keys)) return err;
+    for (Value* key : keys) {
+        PropertyKey pk;
+        if (Value* err = toPropertyKey(ctx, key, pk)) return err;
+        bool exists = false;
+        Property cur;
+        if (Value* err =
+                obj->type()->getOwnProperty(ctx, obj, pk, exists, cur)) {
+            return err;
+        }
+        if (!exists) continue;
+        Property desc = cur;
+        desc.configurable = false;
+        if (!isAccessorDescriptor(cur)) desc.writable = false;
+        Value* r =
+            isAccessorDescriptor(desc)
+                ? obj->type()->defineAccessor(ctx, obj, key, desc.getter,
+                                              desc.setter, desc.enumerable,
+                                              desc.configurable)
+                : obj->type()->defineProperty(ctx, obj, key, desc.value,
+                                              desc.writable, desc.enumerable,
+                                              desc.configurable);
+        if (detail::isErrorValue(r)) return r;
+    }
+    return nullptr;
+}
+
+}  // namespace
+
+Value* Context::createTemplateObject(
+    const std::vector<std::pair<std::string, std::string>>& quasis) {
+    Value* cooked = createArray();
+    if (cooked == oomValue_) return cooked;
+    Value* raw = createArray();
+    if (raw == oomValue_) return raw;
+
+    for (size_t i = 0; i < quasis.size(); ++i) {
+        Value* key = createNumber(static_cast<double>(i));
+        Value* cookedValue = createString(quasis[i].first);
+        Value* rawValue = createString(quasis[i].second);
+        if (cookedValue == oomValue_ || rawValue == oomValue_) {
+            return oomValue_;
+        }
+        Value* r = defineProperty(cooked, key, cookedValue, true, true, true);
+        if (detail::isErrorValue(r)) return r;
+        r = defineProperty(raw, key, rawValue, true, true, true);
+        if (detail::isErrorValue(r)) return r;
+    }
+
+    Value* r = defineProperty(cooked, "raw", raw, false, false, false);
+    if (detail::isErrorValue(r)) return r;
+    if (Value* err = freezeObject(this, raw)) return err;
+    if (Value* err = freezeObject(this, cooked)) return err;
+
+    // 缓存对象由 Code 持有裸指针，挂到 global scope 作 GC 根。
+    if (global_ != nullptr) global_->add(cooked);
+    return cooked;
+}
+
 Value* Context::createPrimitiveWrapper(Value* primitive, std::string_view bindName) {
     // [[PrimitiveValue]] 必须是原始值之一（Boolean/Number/BigInt/String/Symbol）。
     // 调用方契约保证，非法类型返回 Exception（对外 API 边界校验）。

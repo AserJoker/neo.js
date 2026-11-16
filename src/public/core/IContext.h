@@ -43,7 +43,9 @@
 
 #include <cstddef>
 #include <memory>
+#include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 // BigInt 负载类型（纯 C++ 任意精度整数，见 private/bigint/BigInt.h）。
@@ -496,6 +498,13 @@ public:
     // 原型自动挂 Array.prototype（ADR-018 §6）。bootstrap 期间原型未就绪时跳过。
     // 返回 Value*：正常数组，或 OOM 哨兵（ADR-031）。
     virtual Value* createArray(std::string_view bindName = {}) = 0;
+
+    // createTemplateObject: 构造标签模板的模板对象（ES2024 §13.2.8.2）。
+    // quasis 为 (cooked, raw) 对；返回冻结的 cooked 数组，其 raw 属性指向
+    // 冻结的 raw 数组。调用点缓存由 VM 按 Code+pc 维护。
+    // 返回 Value*：正常数组，或 OOM/异常值。
+    virtual Value* createTemplateObject(
+        const std::vector<std::pair<std::string, std::string>>& quasis) = 0;
 
     // createPrimitiveWrapper: 创建原始值包装对象（ES2024 §10.4）。
     // primitive 必须是 Boolean/Number/BigInt/String/Symbol 之一，成为 [[PrimitiveValue]]。

@@ -93,6 +93,8 @@ public:
 | CallExpression（成员） | obj + `dup` + key + `get_prop` + args + `call_method N` |
 | NewExpression | callee + args + `new N`；spread 实参暂 unsupported |
 | MetaProperty | `new.target` → `load_new_target`；`import.meta` 暂 unsupported |
+| TemplateLiteral | 首段 cooked + 每个替换 `toString`/`add` + 后续 cooked `add` |
+| TaggedTemplateExpression | tag（成员 tag 用 receiver + `get_prop`）+ `template_object` + 替换表达式 + `call`/`call_method` |
 | SuperExpression | 暂 unsupported（依赖 class/home object 编译） |
 | MemberExpression | obj + key + `get_prop` |
 | 成员赋值（`=`） | obj + key + RHS + `set_prop` |
@@ -158,6 +160,7 @@ tests/unit/compiler/
 
 - 优点：Compiler 与 Parser 同构，节点覆盖度可逐条推进；错误显式；SourceMap
   与 VM 的异常定位直接对接；后续只需在分派表里补节点。
-- 缺点：尚未覆盖 class、`super`、模板字符串与正则字面量，真实程序还不能完整编译；
-  `for await`、spread 实参暂 unsupported。
+- 缺点：尚未覆盖 class、`super` 与正则字面量，真实程序还不能完整编译；
+  `for await`、spread 实参暂 unsupported；标签模板中的非法转义尚未按规范
+  产出 cooked=undefined（当前仍报词法错误）。
 - 待定：常量池去重、SourceMap 对多字节指令的精确边界。

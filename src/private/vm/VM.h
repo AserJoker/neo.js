@@ -140,6 +140,7 @@ private:
     neo::core::Value* opNewObject();
     neo::core::Value* opNewArray();
     neo::core::Value* opDefineProp();
+    neo::core::Value* opTemplateObject();
     neo::core::Value* opForInKeys();
     neo::core::Value* opIsEnumerableOwn();
     neo::core::Value* opGetIterator();
@@ -155,6 +156,7 @@ private:
     neo::core::Value* opGe();
     neo::core::Value* opStrictEqual();
     neo::core::Value* opUnary();
+    neo::core::Value* opToString();
     neo::core::Value* opJmp();
     neo::core::Value* opJTrue();
     neo::core::Value* opJFalse();

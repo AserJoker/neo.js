@@ -32,6 +32,7 @@
 #include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
 
+#include <cmath>
 #include <string>
 
 namespace neo::core {
@@ -78,6 +79,52 @@ Value* stringCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     if (argc == 0) return ctx->createString("");
     if (argv[0]->type()->kind() == TypeKind::Symbol) return ctx->toString(argv[0]);
     return detail::toStringValue(ctx, argv[0]);
+}
+
+// String.raw(template, ...substitutions)：ES2024 §22.1.2.4。
+// 按 raw 数组逐段拼接；raw[i] 之间插入 ToString(substitutions[i])。
+Value* stringRaw(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
+    if (argc == 0 || !detail::isObjectKind(argv[0]->type()->kind())) {
+        return detail::typeError(ctx, "String.raw requires a template object");
+    }
+    Value* raw = ctx->getProperty(argv[0], "raw");
+    if (detail::isErrorValue(raw)) return raw;
+    TypeKind rawKind = raw->type()->kind();
+    if (rawKind == TypeKind::Undefined || rawKind == TypeKind::Null) {
+        return detail::typeError(ctx,
+                                 "String.raw template raw is null or undefined");
+    }
+    Value* rawObject =
+        detail::isObjectKind(rawKind) ? raw : ctx->createPrimitiveWrapper(raw);
+
+    Value* lengthValue = ctx->getProperty(rawObject, "length");
+    if (detail::isErrorValue(lengthValue)) return lengthValue;
+    Value* lengthNumber = detail::toNumberValue(ctx, lengthValue);
+    if (detail::isErrorValue(lengthNumber)) return lengthNumber;
+    double length = static_cast<NumberData*>(lengthNumber->data())->value;
+    if (std::isnan(length) || length <= 0.0) return ctx->createString("");
+    if (length > 4294967295.0) length = 4294967295.0;
+    const uint32_t count = static_cast<uint32_t>(length);
+
+    std::string result;
+    for (uint32_t i = 0; i < count; ++i) {
+        Value* key = ctx->createString(std::to_string(i));
+        Value* segment = ctx->getProperty(rawObject, key);
+        if (detail::isErrorValue(segment)) return segment;
+        Value* segmentString = detail::toStringValue(ctx, segment);
+        if (detail::isErrorValue(segmentString)) return segmentString;
+        result += static_cast<StringData*>(segmentString->data())->value;
+
+        if (i + 1 < count) {
+            if (static_cast<size_t>(i + 1) < argc) {
+                Value* substitution =
+                    detail::toStringValue(ctx, argv[i + 1]);
+                if (detail::isErrorValue(substitution)) return substitution;
+                result += static_cast<StringData*>(substitution->data())->value;
+            }
+        }
+    }
+    return ctx->createString(result);
 }
 
 // new String(value) → 包装对象
@@ -175,9 +222,10 @@ bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
 // proto 是已建好的包装原型对象；constructFn 是 new 路径（返回包装对象）。
 bool registerWrapperCtor(IContext* ctx, const char* name, NativeFn ctor, NativeFn constructFn,
                          Value* proto, NativeFn valueOf, NativeFn toString,
-                         const char* typeTag) {
+                         const char* typeTag, Value** outFn = nullptr) {
     Value* fn = ctx->createNativeFunction(ctor, 0);
     if (fn == ctx->oomValue()) return false;
+    if (outFn != nullptr) *outFn = fn;
     ctx->setFunctionName(fn, name);
     // call/construct 语义不同：new 走专用钩子返回包装对象
     ctx->setFunctionConstructor(fn, constructFn);
@@ -253,8 +301,18 @@ bool registerPrimitiveWrapperBuiltins(IContext* ctx) {
                              numberValueOf, numberToStringFn, "Number")) {
         return false;
     }
-    if (!registerWrapperCtor(ctx, "String", stringCtor, stringConstruct, stringProto,
-                             stringValueOf, stringToStringFn, "String")) {
+    Value* stringFn = nullptr;
+    if (!registerWrapperCtor(ctx, "String", stringCtor, stringConstruct,
+                             stringProto, stringValueOf, stringToStringFn,
+                             "String", &stringFn)) {
+        return false;
+    }
+    // String.raw（ES2024 §22.1.2.4）：不可写/不可枚举/可配置的静态方法。
+    Value* rawFn = ctx->createNativeFunction(stringRaw, 1);
+    if (rawFn == ctx->oomValue()) return false;
+    ctx->setFunctionName(rawFn, "raw");
+    if (ctx->defineProperty(stringFn, "raw", rawFn, true, false, true)
+            ->type()->kind() == TypeKind::Exception) {
         return false;
     }
     return true;

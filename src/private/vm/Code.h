@@ -23,6 +23,10 @@
 #include <utility>
 #include <vector>
 
+namespace neo::core {
+class Value;
+}  // namespace neo::core
+
 namespace neo::vm {
 
 // 一条源码→字节码映射：字节范围 [pcBegin, pcEnd) 对应 position。
@@ -72,6 +76,9 @@ struct Code {
     std::vector<double> numbers;       // 数值常量表
     std::vector<std::string> strings;  // 字符串/名字表
     SourceMap sourceMap;
+    // 标签模板对象缓存（§13.2.8.2）：pc → 模板对象。同一 Code 的同一调用点
+    // 复用同一对象；Value 由 Context 挂到 global scope 作 GC 根。
+    mutable std::vector<std::pair<uint32_t, neo::core::Value*>> templateCache;
 
     // —— 构造 API（Compiler 与测试共用）——
     // 语义化发射：常量自动进表、操作数按指令格式编码，调用方不直接拼字节。
@@ -187,6 +194,20 @@ struct Code {
     uint32_t unary(uint32_t op) {
         uint32_t pc = emitOp(OpCode::Unary);
         emitU32(op);
+        return pc;
+    }
+
+    uint32_t toString() { return emitOp(OpCode::ToString); }
+
+    // 标签模板对象：quasis 为 (cooked, raw) 字符串对。
+    uint32_t templateObject(
+        const std::vector<std::pair<std::string, std::string>>& quasis) {
+        uint32_t pc = emitOp(OpCode::TemplateObject);
+        emitU32(static_cast<uint32_t>(quasis.size()));
+        for (const auto& quasi : quasis) {
+            emitU32(addString(quasi.first));
+            emitU32(addString(quasi.second));
+        }
         return pc;
     }
 

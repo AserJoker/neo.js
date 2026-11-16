@@ -261,6 +261,9 @@ public:
     Value* createProxy(Value* target, Value* handler,
                        std::string_view bindName = {}) override;
     Value* createArray(std::string_view bindName = {}) override;
+    Value* createTemplateObject(
+        const std::vector<std::pair<std::string, std::string>>& quasis)
+        override;
     Value* createPrimitiveWrapper(Value* primitive,
                                   std::string_view bindName = {}) override;
     Value* createArrayIterator(Value* iteratedObject, ArrayIterationKind kind,

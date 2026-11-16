@@ -265,6 +265,14 @@ void Compiler::compileExpression(const Node& node) {
             compileMetaProperty(
                 static_cast<const frontend::MetaProperty&>(node));
             break;
+        case NodeKind::TemplateLiteral:
+            compileTemplateLiteral(
+                static_cast<const frontend::TemplateLiteral&>(node));
+            break;
+        case NodeKind::TaggedTemplateExpression:
+            compileTaggedTemplateExpression(
+                static_cast<const frontend::TaggedTemplateExpression&>(node));
+            break;
         case NodeKind::MemberExpression:
             compileMemberExpression(
                 static_cast<const frontend::MemberExpression&>(node));
@@ -1533,6 +1541,94 @@ void Compiler::compileMetaProperty(const frontend::MetaProperty& node) {
     }
     error(node, "compiler: malformed meta property");
     code_->pushUndefined();
+}
+
+void Compiler::compileTemplateLiteral(
+    const frontend::TemplateLiteral& node) {
+    if (node.quasis.empty()) {
+        code_->push("");
+        return;
+    }
+    const auto& first =
+        static_cast<const frontend::TemplateElement&>(*node.quasis[0]);
+    code_->push(first.cooked);
+
+    for (size_t i = 0; i < node.expressions.size(); ++i) {
+        if (node.expressions[i]) {
+            compileExpression(*node.expressions[i]);
+            code_->toString();
+            code_->add();
+        }
+        const size_t next = i + 1;
+        if (next < node.quasis.size() && node.quasis[next]) {
+            const auto& quasi =
+                static_cast<const frontend::TemplateElement&>(
+                    *node.quasis[next]);
+            code_->push(quasi.cooked);
+            code_->add();
+        }
+    }
+}
+
+void Compiler::compileTaggedTemplateExpression(
+    const frontend::TaggedTemplateExpression& node) {
+    if (!node.tag || !node.quasi ||
+        node.quasi->kind() != NodeKind::TemplateLiteral) {
+        error(node, "compiler: malformed tagged template");
+        code_->pushUndefined();
+        return;
+    }
+    const auto& quasi =
+        static_cast<const frontend::TemplateLiteral&>(*node.quasi);
+
+    bool isMember = node.tag->kind() == NodeKind::MemberExpression;
+    if (isMember) {
+        const auto& member =
+            static_cast<const frontend::MemberExpression&>(*node.tag);
+        if (member.optional) {
+            error(node, "compiler: optional chaining not supported");
+            code_->pushUndefined();
+            return;
+        }
+        if (!member.object) {
+            error(node, "compiler: tagged template missing receiver");
+            code_->pushUndefined();
+            return;
+        }
+        compileExpression(*member.object);
+        code_->dup();
+        compileMemberKey(member);
+        code_->getProp();
+    } else {
+        compileExpression(*node.tag);
+    }
+
+    std::vector<std::pair<std::string, std::string>> quasis;
+    quasis.reserve(quasi.quasis.size());
+    for (const frontend::NodePtr& element : quasi.quasis) {
+        if (!element ||
+            element->kind() != NodeKind::TemplateElement) {
+            error(node, "compiler: malformed template element");
+            continue;
+        }
+        const auto& el =
+            static_cast<const frontend::TemplateElement&>(*element);
+        quasis.emplace_back(el.cooked, el.raw);
+    }
+    code_->templateObject(quasis);
+
+    uint32_t argc = 1;
+    for (const frontend::NodePtr& expression : quasi.expressions) {
+        if (!expression) continue;
+        compileExpression(*expression);
+        ++argc;
+    }
+
+    if (isMember) {
+        code_->callMethod(argc);
+    } else {
+        code_->call(argc);
+    }
 }
 
 void Compiler::compileMemberExpression(

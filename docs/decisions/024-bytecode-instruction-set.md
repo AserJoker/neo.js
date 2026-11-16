@@ -96,6 +96,8 @@ _func_end:
 | `new_object` | `[] → [obj]` | 创建空对象 |
 | `new_array N` | `[] → [arr]` | 创建 length=N 的数组（elision 用） |
 | `define_prop` | `[obj, key, value] → [obj]` | CreateDataProperty，不走原型 setter |
+| `template_object n, (cooked,raw)...` | `[] → [templateObject]` | 标签模板对象：冻结的 cooked 数组 + 冻结 raw 数组；按 Code+pc 缓存 |
+| `to_string` | `[v] → [string]` | ToString（§7.1.14，hint string）；模板替换用 |
 | `for_in_keys` | `[obj] → [entries]` | for-in 候选：原型链全部自有字符串键，扁平 `[owner,key,...]`，按名去重 |
 | `is_enumerable_own` | `[obj, key] → [bool]` | 处理候选时重查：自有属性存在且 enumerable |
 | `get_iterator` | `[iterable] → [iterator]` | GetIterator(iterable, sync) |
@@ -107,6 +109,11 @@ _func_end:
   `dup; push index; value; define_prop; pop`；elision 直接跳过。
 - 字面量必须用 `define_prop` 而非 `set_prop`：前者创建自有数据属性，
   后者会触发原型链 setter，语义不同。
+- 无标签模板：`push cooked0` + 每个替换 `expr; to_string; add; push cookedN; add`。
+  替换必须走 `to_string`（hint string），不能用 `+` 隐式转换（hint default）。
+- 标签模板：tag 求值（成员 tag 保留 receiver）+ `template_object` + 替换表达式
+  + `call`/`call_method`。模板对象按 Code+pc 缓存，同一调用点复用同一对象；
+  raw 保留源码转义原文（行终止符归一化为 LF）。
 
 #### 2.2.3 一元运算
 
