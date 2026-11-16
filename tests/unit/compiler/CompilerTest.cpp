@@ -2538,6 +2538,94 @@ TEST(CompilerTest, PatternParameterDefault) {
     EXPECT_DOUBLE_EQ(numberValue(value), 9.0);
 }
 
+TEST(CompilerTest, YieldDelegateArray) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function* g() { yield* [1, 2, 3]; }"
+        "var it = g();"
+        "var a = it.next().value;"
+        "var b = it.next().value;"
+        "var c = it.next().value;"
+        "var result = a * 100 + b * 10 + c;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 123.0);
+}
+
+TEST(CompilerTest, YieldDelegateNested) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function* inner() { yield 1; yield 2; }"
+        "function* outer() { yield 0; yield* inner(); yield 3; }"
+        "var it = outer();"
+        "var result = 0;"
+        "var step = it.next();"
+        "while (!step.done) { result = result * 10 + step.value; step = it.next(); }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 123.0);
+}
+
+TEST(CompilerTest, YieldDelegateForwardsSentValue) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function* inner() { var x = yield 1; yield x; }"
+        "function* outer() { yield* inner(); }"
+        "var it = outer();"
+        "it.next();"
+        "var result = it.next(42).value;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 42.0);
+}
+
+TEST(CompilerTest, YieldDelegateCompletionValue) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function* g() { var x = yield* [1, 2]; return x; }"
+        "var it = g();"
+        "it.next();"
+        "it.next();"
+        "var result = it.next().done ? 1 : 0;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, YieldDelegateForwardsThrow) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function* inner() { try { yield 1; } catch (e) { yield e; } }"
+        "function* outer() { yield* inner(); }"
+        "var it = outer();"
+        "it.next();"
+        "var result = it.throw(7).value;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 7.0);
+}
+
+TEST(CompilerTest, YieldDelegateForwardsReturn) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var log = 0;"
+        "function* inner() { try { yield 1; } finally { log = 1; } }"
+        "function* outer() { yield* inner(); }"
+        "var it = outer();"
+        "it.next();"
+        "var r = it.return(9);"
+        "var result = log * 10 + (r.done ? 1 : 0);");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 11.0);
+}
+
 TEST(CompilerTest, ClassMethodCall) {
     Fixture f;
     Value* value = runScriptResult(

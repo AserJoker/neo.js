@@ -358,6 +358,7 @@ struct Code {
     uint32_t loadNewTarget() { return emitOp(OpCode::LoadNewTarget); }
 
     uint32_t yieldValue() { return emitOp(OpCode::Yield); }
+    uint32_t yieldDelegate() { return emitOp(OpCode::YieldDelegate); }
     uint32_t awaitValue() { return emitOp(OpCode::Await); }
     uint32_t ret() { return emitOp(OpCode::Ret); }
     uint32_t halt() { return emitOp(OpCode::Halt); }

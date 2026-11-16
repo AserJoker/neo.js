@@ -58,6 +58,8 @@ struct VmState {
     neo::core::Scope* rootScope = nullptr;
     // 挂起时最内层作用域（可能是块作用域）；恢复时据此还原 current。
     neo::core::Scope* currentScope = nullptr;
+    // yield* 委托中的被委托迭代器（非空表示当前挂起点属于委托）。
+    neo::core::Value* delegateIterator = nullptr;
 };
 
 // GC 遍历：栈上的 Value 与 try 帧的 res。作用域由协程的 execScope 遍历覆盖。
@@ -68,6 +70,9 @@ inline void visitVmState(VmState* state, neo::core::IGCVisitor* visitor) {
     }
     for (const TryFrame& frame : state->tryStack) {
         if (frame.res != nullptr) visitor->visit(frame.res);
+    }
+    if (state->delegateIterator != nullptr) {
+        visitor->visit(state->delegateIterator);
     }
 }
 

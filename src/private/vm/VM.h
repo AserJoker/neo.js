@@ -113,6 +113,10 @@ private:
     neo::core::Value* handleCatchEnd();
     neo::core::Value* handleFinallyEnd();
 
+    // yield* 单步：把 sent（正常值/Throw/Return）转发给被委托迭代器。
+    // 返回 nullptr 表示委托完成（结果已压栈）；否则返回 Yield Interrupt 或错误。
+    neo::core::Value* delegateStep(neo::core::Value* sent);
+
     // 取 Code::strings[index]；越界返回 nullptr。
     const std::string* stringOperand(uint32_t index) const;
 
@@ -194,6 +198,7 @@ private:
     neo::core::Value* opNewSpread();
     neo::core::Value* opLoadNewTarget();
     neo::core::Value* opYield();
+    neo::core::Value* opYieldDelegate();
     neo::core::Value* opAwait();
     neo::core::Value* opRestArgs();
     neo::core::Value* opPushClass();
@@ -219,6 +224,8 @@ private:
     std::vector<neo::core::Value*> stack_;
     std::vector<LabelFrame> labelStack_;
     std::vector<TryFrame> tryStack_;
+    // yield* 委托中的被委托迭代器（nullptr = 不在委托中）。
+    neo::core::Value* delegateIterator_ = nullptr;
 
     // 本次执行的入口作用域与模块根作用域（借用，V0 仅记录）。
     neo::core::Scope* entryScope_ = nullptr;

@@ -1987,8 +1987,12 @@ void Compiler::compileThisExpression(const frontend::ThisExpression&) {
 
 void Compiler::compileYieldExpression(const frontend::YieldExpression& node) {
     if (node.delegate) {
-        error(node, "compiler: yield* is not supported");
-        code_->pushUndefined();
+        if (node.argument) {
+            compileExpression(*node.argument);
+        } else {
+            code_->pushUndefined();
+        }
+        code_->yieldDelegate();
         return;
     }
     if (node.argument) {

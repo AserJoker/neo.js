@@ -158,6 +158,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::SetSuperProp:  return "set_super_prop";
         case OpCode::DefineClassMethod: return "define_class_method";
         case OpCode::DefineClassField: return "define_class_field";
+        case OpCode::YieldDelegate: return "yield_delegate";
     }
     return "<unknown>";
 }
@@ -257,6 +258,7 @@ const VM::Handler* VM::handlers() {
         &VM::opSetSuperProp,
         &VM::opDefineClassMethod,
         &VM::opDefineClassField,
+        &VM::opYieldDelegate,
     };
     return table;
 }
@@ -423,6 +425,7 @@ VmState VM::snapshot() const {
     state.entryScope = entryScope_;
     state.rootScope = rootScope_;
     state.currentScope = ctx_->current();
+    state.delegateIterator = delegateIterator_;
     return state;
 }
 
@@ -434,6 +437,7 @@ void VM::restore(const VmState& state) {
     tryStack_ = state.tryStack;
     entryScope_ = state.entryScope;
     rootScope_ = state.rootScope;
+    delegateIterator_ = state.delegateIterator;
     if (state.currentScope != nullptr) {
         ctx_->setCurrentScope(state.currentScope);
     }
@@ -441,6 +445,12 @@ void VM::restore(const VmState& state) {
 
 Value* VM::resume(const VmState& state, Value* sent) {
     restore(state);
+    // yield* 挂起点：把注入值转发给被委托迭代器，而不是当作普通 yield 结果。
+    if (delegateIterator_ != nullptr) {
+        Value* pending = delegateStep(sent);
+        if (pending != nullptr) return pending;
+        return execute();
+    }
     if (sent != nullptr && detail::isInterruptValue(sent)) {
         auto* data = neo::core::asInterrupt(sent);
         if (data != nullptr) {
@@ -1540,6 +1550,126 @@ Value* VM::opYield() {
     if (stack_.empty()) return badBytecode("yield: operand stack underflow");
     Value* value = pop();
     return ctx_->createInterrupt(neo::core::InterruptKind::Yield, pc_, value);
+}
+
+Value* VM::opYieldDelegate() {
+    if (stack_.empty()) {
+        return badBytecode("yield_delegate: operand stack underflow");
+    }
+    Value* iterable = pop();
+    Value* iterator = detail::getIterator(ctx_, iterable);
+    if (detail::isErrorValue(iterator)) return fail(iterator);
+    delegateIterator_ = iterator;
+    Value* pending = delegateStep(ctx_->createUndefined());
+    if (pending != nullptr) return pending;
+    return nullptr;
+}
+
+Value* VM::delegateStep(Value* sent) {
+    Value* iterator = delegateIterator_;
+    if (iterator == nullptr) return badBytecode("yield_delegate: missing iterator");
+
+    auto finish = [this]() { delegateIterator_ = nullptr; };
+    auto stepResult = [this](Value* result) -> Value* {
+        Value* done = ctx_->getProperty(result, "done");
+        if (detail::isErrorValue(done)) {
+            delegateIterator_ = nullptr;
+            return fail(done);
+        }
+        Value* value = ctx_->getProperty(result, "value");
+        if (detail::isErrorValue(value)) {
+            delegateIterator_ = nullptr;
+            return fail(value);
+        }
+        if (ctx_->toBoolean(done)) {
+            delegateIterator_ = nullptr;
+            push(value);
+            return nullptr;
+        }
+        return ctx_->createInterrupt(neo::core::InterruptKind::Yield, pc_, value);
+    };
+
+    bool isThrow = false;
+    bool isReturn = false;
+    Value* payload = nullptr;
+    if (sent != nullptr && detail::isInterruptValue(sent)) {
+        auto* data = neo::core::asInterrupt(sent);
+        if (data != nullptr) {
+            isThrow = data->kind == neo::core::InterruptKind::Throw;
+            isReturn = data->kind == neo::core::InterruptKind::Return;
+            payload = data->value;
+        }
+    }
+
+    if (isThrow) {
+        Value* method = ctx_->getProperty(iterator, "throw");
+        if (detail::isErrorValue(method)) {
+            finish();
+            return fail(method);
+        }
+        if (!detail::isCallable(method)) {
+            detail::iteratorClose(ctx_, iterator, nullptr);
+            finish();
+            return fail(detail::typeError(
+                ctx_, "The iterator does not provide a 'throw' method"));
+        }
+        Value* result = ctx_->call(method, iterator, 1, &payload);
+        if (detail::isErrorValue(result)) {
+            finish();
+            return fail(result);
+        }
+        return stepResult(result);
+    }
+
+    if (isReturn) {
+        Value* method = ctx_->getProperty(iterator, "return");
+        if (detail::isErrorValue(method)) {
+            finish();
+            return fail(method);
+        }
+        if (!detail::isCallable(method)) {
+            finish();
+            return unwindReturn(payload);
+        }
+        Value* result = ctx_->call(method, iterator, 1, &payload);
+        if (detail::isErrorValue(result)) {
+            finish();
+            return fail(result);
+        }
+        Value* done = ctx_->getProperty(result, "done");
+        if (detail::isErrorValue(done)) {
+            finish();
+            return fail(done);
+        }
+        Value* value = ctx_->getProperty(result, "value");
+        if (detail::isErrorValue(value)) {
+            finish();
+            return fail(value);
+        }
+        if (ctx_->toBoolean(done)) {
+            finish();
+            return unwindReturn(value);
+        }
+        return ctx_->createInterrupt(neo::core::InterruptKind::Yield, pc_, value);
+    }
+
+    Value* method = ctx_->getProperty(iterator, "next");
+    if (detail::isErrorValue(method)) {
+        finish();
+        return fail(method);
+    }
+    if (!detail::isCallable(method)) {
+        finish();
+        return fail(detail::typeError(
+            ctx_, "The iterator does not provide a 'next' method"));
+    }
+    Value* arg = sent != nullptr ? sent : ctx_->createUndefined();
+    Value* result = ctx_->call(method, iterator, 1, &arg);
+    if (detail::isErrorValue(result)) {
+        finish();
+        return fail(result);
+    }
+    return stepResult(result);
 }
 
 Value* VM::opAwait() {

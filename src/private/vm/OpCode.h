@@ -222,10 +222,13 @@ enum class OpCode : uint16_t {
     DefineClassMethod,
     // define_class_field u32 flags：[ctor,key,init] → [ctor]；bit0=isStatic。
     DefineClassField,
+    // yield* 委托：[iterable] → [completion]。内部维护被委托迭代器，
+    // 恢复时把 next/throw/return 转发给它。
+    YieldDelegate,
 };
 
 // 指令总数（分派表大小）。
-inline constexpr size_t kOpCodeCount = static_cast<size_t>(OpCode::DefineClassField) + 1;
+inline constexpr size_t kOpCodeCount = static_cast<size_t>(OpCode::YieldDelegate) + 1;
 
 // Define 的 flags 位。未置位即 false：
 //   mutable    —— 绑定可被 store 改写（const 为 false）

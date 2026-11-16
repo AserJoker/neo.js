@@ -112,7 +112,7 @@ public:
 | 解构参数 | 形参槽先全部提升，再对模式参数逐个 `store` 到临时槽 + `compileBindingPattern` |
 | rest 参数 | `push_function` 置 `kFunctionHasRest`（不计入 paramCount）；序言 `rest_args` 把剩余实参收集成数组，再按模式绑定 |
 | ThisExpression | `load_this` |
-| YieldExpression | 参数（或 `push_undefined`）+ `yield`；`yield*` 暂 unsupported |
+| YieldExpression | 参数（或 `push_undefined`）+ `yield`；`yield*` 用 `yield_delegate`（VM 转发 next/throw/return） |
 | AwaitExpression | 参数 + `await` |
 | async FunctionDeclaration/Expression/Arrow | `push_function` 带 `kFunctionAsync`，不可构造、无 prototype |
 | FunctionDeclaration/Expression（`function*`） | `push_function` 带 `kFunctionGenerator`，不可构造、有 prototype |

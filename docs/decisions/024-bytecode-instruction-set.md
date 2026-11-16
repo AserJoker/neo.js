@@ -169,6 +169,7 @@ _func_end:
 | `set_super_prop` | `[key,value] → [value]` | 同上写入 |
 | `define_class_method flags` | `[ctor,key,fn] → [ctor]` | flags: bit0=isStatic，bit1..2=kind（0 data/1 get/2 set） |
 | `define_class_field flags` | `[ctor,key,init] → [ctor]` | bit0=isStatic；实例字段登记，静态字段立即求值 |
+| `yield_delegate` | `[iterable] → [completion]` | `yield*`：维护被委托迭代器，恢复时转发 next/throw/return |
 | `ret` | `[val] → []` | 函数返回，弹栈顶作为返回值，结束当前 VM |
 | `hlt` | `[] → ∅` | 模块执行结束 |
 
