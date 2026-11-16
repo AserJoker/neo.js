@@ -82,7 +82,7 @@ public:
 | VariableDeclaration | 声明点 `store`（var）/ `initialize`（let/const） |
 | AssignmentExpression | `=`：右值 + `dup` + `store`；复合：`load` + 右值 + 运算 + `dup` + `store` |
 | UpdateExpression | 前缀：`load` + 1 + 运算 + `dup` + `store`；后缀：`load` + `clone` + `swap` + 1 + 运算 + `store` |
-| BinaryExpression（+ - * / < <= > >=） | 左、右 + 对应指令 |
+| BinaryExpression（+ - * / < <= > >= === !==） | 左、右 + 对应指令；`!==` 为 `strict_equal` + 逻辑非 |
 | UnaryExpression（+ - ! ~ typeof void） | 参数 + `unary op`；`delete` 暂 unsupported |
 | LogicalExpression（&& \|\| ??） | 左 + `dup` + `jfalse`/`jtrue`/`jnotnullish` end；`pop` + 右；回填 end |
 | ConditionalExpression | test + `jfalse` alternate；consequent + `jmp` end；alternate |
@@ -104,6 +104,7 @@ public:
 | ForStatement | let/const init 先 `push_scope` 并直接 `define`；每次迭代 `iteration_env` + `push_label`（continue→update）；test + `jfalse exit`；body；`pop_label_if_top` + `commit_iteration_env` + update；exit：清理 label/作用域 |
 | ForInStatement | 循环作用域存 keys/index/owner/value；`for_in_keys` 取候选 `[owner,key]`；每步 `is_enumerable_own` 重查后写入目标；let/const 每次迭代 `push_scope` + `define` |
 | ForOfStatement | `get_iterator` 存 `*for-iterator*`；try/finally 中 `iterator_next` + `done` 判断；let/const 每次迭代 `push_scope`；非正常完成时 `iterator_close` |
+| SwitchStatement | `push_scope` + 全 clause 提升；discriminant 存隐藏槽；顺序发射 case 测试（`strict_equal` + `jtrue`）；body 顺序排列支持 fallthrough；无匹配跳 default 或出口 |
 | WhileStatement | `push_label`；loop：test + `jfalse exit`；body；`jmp loop`；exit：`pop_label` |
 | DoWhileStatement | `push_label`；loop：body；test + `jtrue loop`；exit：`pop_label` |
 | LabeledStatement | 标签传给循环；非循环标签单独 `push_label`/`pop_label` |
@@ -154,6 +155,6 @@ tests/unit/compiler/
 
 - 优点：Compiler 与 Parser 同构，节点覆盖度可逐条推进；错误显式；SourceMap
   与 VM 的异常定位直接对接；后续只需在分派表里补节点。
-- 缺点：尚未覆盖 switch、class、模板字符串与正则字面量，真实程序还不能完整编译；
+- 缺点：尚未覆盖 class、模板字符串与正则字面量，真实程序还不能完整编译；
   `for await` 暂 unsupported。
 - 待定：常量池去重、SourceMap 对多字节指令的精确边界。

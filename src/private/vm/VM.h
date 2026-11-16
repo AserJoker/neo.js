@@ -153,6 +153,7 @@ private:
     neo::core::Value* opGt();
     neo::core::Value* opLe();
     neo::core::Value* opGe();
+    neo::core::Value* opStrictEqual();
     neo::core::Value* opUnary();
     neo::core::Value* opJmp();
     neo::core::Value* opJTrue();

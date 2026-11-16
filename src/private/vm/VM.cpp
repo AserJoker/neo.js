@@ -82,6 +82,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::Gt:            return "gt";
         case OpCode::Le:            return "le";
         case OpCode::Ge:            return "ge";
+        case OpCode::StrictEqual:   return "strict_equal";
         case OpCode::Unary:         return "unary";
         case OpCode::Jmp:           return "jmp";
         case OpCode::JTrue:         return "jtrue";
@@ -158,6 +159,7 @@ const VM::Handler* VM::handlers() {
         &VM::opGt,
         &VM::opLe,
         &VM::opGe,
+        &VM::opStrictEqual,
         &VM::opUnary,
         &VM::opJmp,
         &VM::opJTrue,
@@ -767,6 +769,7 @@ Value* VM::opLt() { return binary(BinaryOperator::LessThan); }
 Value* VM::opGt() { return binary(BinaryOperator::GreaterThan); }
 Value* VM::opLe() { return binary(BinaryOperator::LessThanOrEqual); }
 Value* VM::opGe() { return binary(BinaryOperator::GreaterThanOrEqual); }
+Value* VM::opStrictEqual() { return binary(BinaryOperator::StrictEqual); }
 
 Value* VM::opUnary() {
     const std::vector<uint8_t>& bytes = code_->bytecode;

@@ -121,6 +121,7 @@ enum class OpCode : uint16_t {
     Gt,
     Le,
     Ge,
+    StrictEqual,  // ===（switch 匹配与用户代码共用）
 
     // 一元运算：u32 core::UnaryOperator
     Unary,

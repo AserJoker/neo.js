@@ -81,6 +81,8 @@ private:
                                const std::vector<std::string>& labels = {});
     void compileForOfStatement(const frontend::ForOfStatement& node,
                                const std::vector<std::string>& labels = {});
+    void compileSwitchStatement(const frontend::SwitchStatement& node,
+                                const std::vector<std::string>& labels = {});
     // for-in/of 左侧目标：栈顶值写入目标。member 目标用 tempName 暂存值。
     void compileForTarget(const frontend::NodePtr& left,
                           std::string_view tempName);

@@ -1468,8 +1468,8 @@ TEST(CompilerTest, DebuggerStatementIsNoOp) {
 TEST(CompilerTest, UnsupportedStatementRecordsError) {
     SourceRange range{};
     NodeList body;
-    body.push_back(std::make_unique<neo::frontend::SwitchStatement>(
-        range, nullptr, NodeList{}));
+    body.push_back(std::make_unique<neo::frontend::WithStatement>(
+        range, nullptr, nullptr));
     Program program(range, std::move(body), SourceType::Script);
 
     SemaResult sema;
@@ -1958,6 +1958,108 @@ TEST(CompilerTest, ForOfLetCreatesPerIterationBinding) {
     ASSERT_NE(value, nullptr);
     ASSERT_EQ(value->type()->kind(), TypeKind::Number);
     EXPECT_DOUBLE_EQ(numberValue(value), 30.0);
+}
+
+TEST(CompilerTest, SwitchMatchesCaseAndBreaks) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "switch (2) {"
+        "  case 1: result = 1; break;"
+        "  case 2: result = 2; break;"
+        "  default: result = 3;"
+        "}");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 2.0);
+}
+
+TEST(CompilerTest, SwitchFallsThrough) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "switch (1) {"
+        "  case 1: result = result + 1;"
+        "  case 2: result = result + 2; break;"
+        "  case 3: result = result + 3;"
+        "}");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, SwitchDefaultInMiddleFallsThrough) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "switch (9) {"
+        "  case 1: result = 1; break;"
+        "  default: result = 2;"
+        "  case 3: result = result + 3; break;"
+        "}");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 5.0);
+}
+
+TEST(CompilerTest, SwitchUsesStrictEquality) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "switch ('1') {"
+        "  case 1: result = 1; break;"
+        "  default: result = 2;"
+        "}");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 2.0);
+}
+
+TEST(CompilerTest, SwitchCaseHasSharedLexicalScope) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "switch (1) {"
+        "  case 1: let x = 5; result = x; break;"
+        "  default: result = 9;"
+        "}");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 5.0);
+}
+
+TEST(CompilerTest, SwitchLabeledBreak) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "a: switch (1) {"
+        "  case 1: result = 1; break a;"
+        "  default: result = 2;"
+        "}"
+        "result = result + 10;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 11.0);
+}
+
+TEST(CompilerTest, SwitchContinueTargetsEnclosingLoop) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "for (var i = 0; i < 3; i = i + 1) {"
+        "  switch (i) { case 1: continue; }"
+        "  result = result + i;"
+        "}");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 2.0);
 }
 
 TEST(CompilerTest, ForLetCreatesPerIterationBinding) {

@@ -194,6 +194,7 @@ struct Code {
     uint32_t gt() { return emitOp(OpCode::Gt); }
     uint32_t le() { return emitOp(OpCode::Le); }
     uint32_t ge() { return emitOp(OpCode::Ge); }
+    uint32_t strictEqual() { return emitOp(OpCode::StrictEqual); }
 
     // 跳转：target 为字节偏移。前向跳转先以 0 占位，稍后 patchU32(pc + 2, target)。
     uint32_t jmp(uint32_t target = 0) {

@@ -29,6 +29,7 @@ constexpr std::string_view kForOwner = "*for-owner*";
 constexpr std::string_view kForIterator = "*for-iterator*";
 constexpr std::string_view kForResult = "*for-result*";
 constexpr std::string_view kForDone = "*for-done*";
+constexpr std::string_view kSwitchDisc = "*switch-disc*";
 
 std::string exportNameOf(const Node* node) {
     if (node == nullptr) return {};
@@ -146,6 +147,10 @@ void Compiler::compileStatement(const Node& node) {
         case NodeKind::ForOfStatement:
             compileForOfStatement(
                 static_cast<const frontend::ForOfStatement&>(node));
+            break;
+        case NodeKind::SwitchStatement:
+            compileSwitchStatement(
+                static_cast<const frontend::SwitchStatement&>(node));
             break;
         case NodeKind::WhileStatement:
             compileWhileStatement(
@@ -743,6 +748,86 @@ void Compiler::compileForOfStatement(
     code_->popScope();
 }
 
+void Compiler::compileSwitchStatement(
+    const frontend::SwitchStatement& node,
+    const std::vector<std::string>& labels) {
+    if (!node.discriminant) {
+        error(node, "compiler: switch missing discriminant");
+        return;
+    }
+
+    // CaseBlock 共享一个词法作用域：先为所有 clause 的 let/const/函数建槽。
+    code_->pushScope();
+    code_->pushUndefined();
+    code_->define(kSwitchDisc);
+    for (const NodePtr& caseNode : node.cases) {
+        if (!caseNode || caseNode->kind() != NodeKind::SwitchCase) continue;
+        hoistScope(
+            static_cast<const frontend::SwitchCase&>(*caseNode).consequent,
+            false);
+    }
+
+    compileExpression(*node.discriminant);
+    code_->store(kSwitchDisc);
+
+    std::vector<std::string> effective = labels;
+    if (effective.empty()) effective.push_back("");
+    std::vector<uint32_t> pushes;
+    for (const std::string& label : effective) {
+        pushes.push_back(code_->pushLabel(label, 0, 0));
+    }
+
+    // 先发射全部 case 测试（default 跳过），匹配后跳到对应 body。
+    std::vector<uint32_t> matchJumps(node.cases.size(), 0);
+    int defaultIndex = -1;
+    for (size_t i = 0; i < node.cases.size(); ++i) {
+        const NodePtr& caseNode = node.cases[i];
+        if (!caseNode || caseNode->kind() != NodeKind::SwitchCase) continue;
+        const auto& switchCase =
+            static_cast<const frontend::SwitchCase&>(*caseNode);
+        if (!switchCase.test) {
+            defaultIndex = static_cast<int>(i);
+            continue;
+        }
+        code_->load(kSwitchDisc);
+        compileExpression(*switchCase.test);
+        code_->strictEqual();
+        matchJumps[i] = code_->jtrue();
+    }
+    uint32_t noMatch = code_->jmp();
+
+    // 顺序发射 case body，支持 fallthrough。
+    std::vector<uint32_t> bodyPc(node.cases.size(), 0);
+    for (size_t i = 0; i < node.cases.size(); ++i) {
+        bodyPc[i] = code_->here();
+        const NodePtr& caseNode = node.cases[i];
+        if (!caseNode || caseNode->kind() != NodeKind::SwitchCase) continue;
+        const auto& switchCase =
+            static_cast<const frontend::SwitchCase&>(*caseNode);
+        for (const NodePtr& statement : switchCase.consequent) {
+            if (statement) compileStatement(*statement);
+        }
+    }
+    uint32_t normalEnd = code_->here();
+
+    for (size_t i = 0; i < matchJumps.size(); ++i) {
+        if (matchJumps[i] != 0) code_->patchU32(matchJumps[i] + 2, bodyPc[i]);
+    }
+    code_->patchU32(noMatch + 2,
+                    defaultIndex >= 0 ? bodyPc[static_cast<size_t>(defaultIndex)]
+                                      : normalEnd);
+
+    for (auto it = effective.rbegin(); it != effective.rend(); ++it) {
+        code_->popLabel(*it);
+    }
+    // break 已由 VM 回退到 switch 作用域，只需跳过 pop_label 清理作用域。
+    uint32_t breakTarget = code_->here();
+    code_->popScope();
+    uint32_t endPc = code_->here();
+    for (uint32_t push : pushes) code_->patchU32(push + 10, breakTarget);
+    (void)endPc;
+}
+
 void Compiler::compileWhileStatement(
     const frontend::WhileStatement& node,
     const std::vector<std::string>& labels) {
@@ -826,6 +911,11 @@ void Compiler::compileLabeledStatement(
     if (body->kind() == NodeKind::ForOfStatement) {
         compileForOfStatement(
             static_cast<const frontend::ForOfStatement&>(*body), labels);
+        return;
+    }
+    if (body->kind() == NodeKind::SwitchStatement) {
+        compileSwitchStatement(
+            static_cast<const frontend::SwitchStatement&>(*body), labels);
         return;
     }
     if (body->kind() == NodeKind::WhileStatement) {
@@ -1209,6 +1299,12 @@ void Compiler::compileBinaryExpression(
         case frontend::BinaryOperator::LessThanEqual:    code_->le(); break;
         case frontend::BinaryOperator::GreaterThan:      code_->gt(); break;
         case frontend::BinaryOperator::GreaterThanEqual: code_->ge(); break;
+        case frontend::BinaryOperator::StrictEqual:      code_->strictEqual(); break;
+        case frontend::BinaryOperator::StrictNotEqual:
+            code_->strictEqual();
+            code_->unary(static_cast<uint32_t>(
+                neo::core::UnaryOperator::LogicalNot));
+            break;
         default:
             error(node, "compiler: unsupported binary operator " +
                             std::to_string(static_cast<int>(node.op)));
