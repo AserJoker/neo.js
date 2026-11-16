@@ -190,6 +190,11 @@ struct Code {
         return pc;
     }
     uint32_t defineProp() { return emitOp(OpCode::DefineProp); }
+    uint32_t defineAccessor(bool hasGetter, bool hasSetter) {
+        uint32_t pc = emitOp(OpCode::DefineAccessor);
+        emitU32((hasGetter ? 1u : 0u) | (hasSetter ? 2u : 0u));
+        return pc;
+    }
     uint32_t arrayAppend() { return emitOp(OpCode::ArrayAppend); }
     uint32_t arrayGrow() { return emitOp(OpCode::ArrayGrow); }
     uint32_t arraySpread() { return emitOp(OpCode::ArraySpread); }

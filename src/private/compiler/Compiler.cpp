@@ -1938,7 +1938,28 @@ void Compiler::compileObjectExpression(
         }
         const auto& prop = static_cast<const frontend::Property&>(*property);
         if (prop.propertyKind != frontend::PropertyKind::Init) {
-            error(*property, "compiler: object accessor not supported");
+            // get/set：缺失的一侧压 null（引擎按无访问器处理）。
+            code_->dup();
+            compilePropertyKey(prop);
+            const bool getter =
+                prop.propertyKind == frontend::PropertyKind::Get;
+            if (getter) {
+                if (prop.value) {
+                    compileExpression(*prop.value);
+                } else {
+                    code_->pushUndefined();
+                }
+                code_->pushNull();
+            } else {
+                code_->pushNull();
+                if (prop.value) {
+                    compileExpression(*prop.value);
+                } else {
+                    code_->pushUndefined();
+                }
+            }
+            code_->defineAccessor(getter, !getter);
+            code_->pop();
             continue;
         }
         // __proto__: value 是设置原型而非定义自有属性，语义不同，暂不支持。

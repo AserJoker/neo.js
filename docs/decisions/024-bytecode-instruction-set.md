@@ -105,6 +105,7 @@ _func_end:
 | `new_object` | `[] → [obj]` | 创建空对象 |
 | `new_array N` | `[] → [arr]` | 创建 length=N 的数组（elision 用） |
 | `define_prop` | `[obj, key, value] → [obj]` | CreateDataProperty，不走原型 setter |
+| `define_accessor flags` | `[obj, key, getter, setter] → [obj]` | flags bit0=hasGetter、bit1=hasSetter；缺失侧保留已有描述符（对象字面量 get/set 合并） |
 | `template_object n, (cooked,raw)...` | `[] → [templateObject]` | 标签模板对象：冻结的 cooked 数组 + 冻结 raw 数组；按 Code+pc 缓存。cooked 下标 `0xFFFFFFFF` 表示非法转义（undefined） |
 | `to_string` | `[v] → [string]` | ToString（§7.1.14，hint string）；模板替换用 |
 | `array_append` | `[arr, value] → [arr]` | 追加元素（数组字面量非展开项） |

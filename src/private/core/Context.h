@@ -386,6 +386,9 @@ public:
                           bool configurable = true) override;
     Value* defineAccessor(Value* obj, Value* key, Value* getter, Value* setter,
                           bool enumerable = false, bool configurable = true) override;
+    Value* defineAccessorPartial(Value* obj, Value* key, Value* getter,
+                                 bool hasGetter, Value* setter, bool hasSetter,
+                                 bool enumerable, bool configurable) override;
     Value* getPrototype(Value* obj) override;
     Value* setPrototype(Value* obj, Value* proto) override;
     Value* ownPropertyKeys(Value* obj, bool enumerableOnly,

@@ -44,6 +44,7 @@
 //   new_object    d → d + 1
 //   new_array N   d → d + 1        （创建 length=N 的数组）
 //   define_prop   d → d - 2        （弹 value、key、obj，压 obj）
+//   define_accessor d → d - 3      （u32 flags；弹 setter、getter、key、obj，压 obj）
 //   add/sub/mul/div  d → d - 1     （弹右、左，压结果）
 //   lt/gt/le/ge   d → d - 1        （弹右、左，压 Boolean）
 //   jmp           d → d            （pc = target）
@@ -113,6 +114,9 @@ enum class OpCode : uint16_t {
     NewObject,     // [] → [obj]
     NewArray,      // u32 length：[] → [arr]（预置 length，支持 elision）
     DefineProp,    // [obj, key, value] → [obj]：CreateDataProperty
+    // u32 flags（bit0=hasGetter, bit1=hasSetter）：[obj, key, getter, setter] → [obj]。
+    // 缺失的一侧不修改已有描述符（对象字面量 get/set 合并）。
+    DefineAccessor,
     // 标签模板对象（§13.2.8.2）：u32 count + count × (u32 cookedIndex, u32 rawIndex)。
     // [] → [templateObject]：cooked 数组 + 冻结的 raw 数组，按 site 缓存。
     TemplateObject,

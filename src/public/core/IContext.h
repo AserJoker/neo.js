@@ -658,6 +658,13 @@ public:
     virtual Value* defineAccessor(Value* obj, Value* key, Value* getter, Value* setter,
                                   bool enumerable = false, bool configurable = true) = 0;
 
+    // defineAccessorPartial: 只定义实际存在的一侧，缺失侧保留已有描述符
+    // （对象字面量 get/set 合并，ES2024 §13.2.5.5）。成功返回 obj，失败返回 Exception。
+    virtual Value* defineAccessorPartial(Value* obj, Value* key, Value* getter,
+                                         bool hasGetter, Value* setter,
+                                         bool hasSetter, bool enumerable,
+                                         bool configurable) = 0;
+
     // 字符串键便捷重载：内部 createString(key) 后走上面的 Value* 版本。
     // 用于 C++ 侧固定键（如 "prototype"/"constructor"/"name"）。
     Value* getProperty(Value* obj, std::string_view key) {

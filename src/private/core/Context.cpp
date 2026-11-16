@@ -1926,6 +1926,29 @@ Value* Context::defineAccessor(Value* obj, Value* key, Value* getter, Value* set
     return obj;
 }
 
+Value* Context::defineAccessorPartial(Value* obj, Value* key, Value* getter,
+                                      bool hasGetter, Value* setter,
+                                      bool hasSetter, bool enumerable,
+                                      bool configurable) {
+    PropertyKey pk;
+    if (Value* err = neo::core::toPropertyKey(this, key, pk)) return err;
+    PropertyDescriptor desc;
+    desc.hasGetter = hasGetter;
+    desc.getter = hasGetter ? getter : nullptr;
+    desc.hasSetter = hasSetter;
+    desc.setter = hasSetter ? setter : nullptr;
+    desc.hasEnumerable = true;
+    desc.enumerable = enumerable;
+    desc.hasConfigurable = true;
+    desc.configurable = configurable;
+    Value* r = obj->type()->definePropertyFromDescriptor(this, obj, pk, desc);
+    if (detail::isErrorValue(r)) return r;
+    if (r->type()->kind() == TypeKind::Boolean && !detail::toBoolean(r)) {
+        return detail::typeError(this, "Cannot define accessor property");
+    }
+    return obj;
+}
+
 Value* Context::getPrototype(Value* obj) {
     return obj->type()->getPrototype(this, obj);
 }

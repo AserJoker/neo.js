@@ -1665,6 +1665,40 @@ TEST(CompilerTest, CompilesBigIntLiteralWithRadix) {
     EXPECT_EQ(data->value.toString(10), "275");
 }
 
+TEST(CompilerTest, CompilesObjectAccessor) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var o = { _v: 1, get x() { return this._v; },"
+        "          set x(v) { this._v = v; } };"
+        "o.x = 5;"
+        "var result = o.x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 5.0);
+}
+
+TEST(CompilerTest, CompilesGetterOnlyAccessor) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var o = { get x() { return 42; } }; var result = o.x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 42.0);
+}
+
+TEST(CompilerTest, CompilesComputedAccessor) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var k = 'x';"
+        "var o = { get [k]() { return 7; } };"
+        "var result = o.x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 7.0);
+}
+
 TEST(CompilerTest, CompilesForLoopWithVar) {
     Fixture f;
     Value* value = runScriptResult(

@@ -94,6 +94,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::NewObject:     return "new_object";
         case OpCode::NewArray:      return "new_array";
         case OpCode::DefineProp:    return "define_prop";
+        case OpCode::DefineAccessor: return "define_accessor";
         case OpCode::TemplateObject: return "template_object";
         case OpCode::ArrayAppend:   return "array_append";
         case OpCode::ArrayGrow:     return "array_grow";
@@ -209,6 +210,7 @@ const VM::Handler* VM::handlers() {
         &VM::opNewObject,
         &VM::opNewArray,
         &VM::opDefineProp,
+        &VM::opDefineAccessor,
         &VM::opTemplateObject,
         &VM::opArrayAppend,
         &VM::opArrayGrow,
@@ -857,6 +859,28 @@ Value* VM::opDefineProp() {
     Value* key = pop();
     Value* object = pop();
     Value* result = ctx_->defineProperty(object, key, value);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(object);
+    return nullptr;
+}
+
+Value* VM::opDefineAccessor() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("define_accessor: truncated operand");
+    }
+    uint32_t flags = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (stack_.size() < 4) {
+        return badBytecode("define_accessor: operand stack underflow");
+    }
+    Value* setter = pop();
+    Value* getter = pop();
+    Value* key = pop();
+    Value* object = pop();
+    Value* result = ctx_->defineAccessorPartial(
+        object, key, getter, (flags & 1u) != 0, setter, (flags & 2u) != 0,
+        true, true);
     if (detail::isErrorValue(result)) return fail(result);
     push(object);
     return nullptr;
