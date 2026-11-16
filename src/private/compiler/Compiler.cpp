@@ -1798,7 +1798,7 @@ void Compiler::compileTaggedTemplateExpression(
         compileExpression(*node.tag);
     }
 
-    std::vector<std::pair<std::string, std::string>> quasis;
+    std::vector<std::pair<std::optional<std::string>, std::string>> quasis;
     quasis.reserve(quasi.quasis.size());
     for (const frontend::NodePtr& element : quasi.quasis) {
         if (!element ||
@@ -1808,7 +1808,11 @@ void Compiler::compileTaggedTemplateExpression(
         }
         const auto& el =
             static_cast<const frontend::TemplateElement&>(*element);
-        quasis.emplace_back(el.cooked, el.raw);
+        if (el.cookedValid) {
+            quasis.emplace_back(el.cooked, el.raw);
+        } else {
+            quasis.emplace_back(std::nullopt, el.raw);
+        }
     }
     code_->templateObject(quasis);
 

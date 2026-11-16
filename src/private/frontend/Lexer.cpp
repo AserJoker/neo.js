@@ -548,10 +548,16 @@ bool Lexer::scanStringEscape(std::string& out, bool templateMode,
         case '0':
             stream_.advance();
             if (isDecimalDigit(stream_.peek())) {
-                // 模板中始终非法；字符串中仅 strict 非法，记录后交给 Sema。
+                // 模板中始终非法（cooked=undefined）；字符串中仅 strict 非法。
                 if (templateMode) {
-                    error_ = "Octal escape sequences are not allowed here";
-                    return false;
+                    token.invalidTemplateEscape = true;
+                    int count = 0;
+                    while (count < 2 && stream_.peek() >= '0' &&
+                           stream_.peek() <= '7') {
+                        stream_.advance();
+                        ++count;
+                    }
+                    return true;
                 }
                 token.legacyOctalEscape = true;
                 int value = 0;
@@ -575,8 +581,14 @@ bool Lexer::scanStringEscape(std::string& out, bool templateMode,
         case '6':
         case '7': {
             if (templateMode) {
-                error_ = "Octal escape sequences are not allowed here";
-                return false;
+                token.invalidTemplateEscape = true;
+                int count = 0;
+                while (count < 3 && stream_.peek() >= '0' &&
+                       stream_.peek() <= '7') {
+                    stream_.advance();
+                    ++count;
+                }
+                return true;
             }
             token.legacyOctalEscape = true;
             int value = 0;
@@ -597,8 +609,9 @@ bool Lexer::scanStringEscape(std::string& out, bool templateMode,
         case '8':
         case '9':
             if (templateMode) {
-                error_ = "\\8 and \\9 are not allowed here";
-                return false;
+                token.invalidTemplateEscape = true;
+                stream_.advance();
+                return true;
             }
             token.legacyEightOrNine = true;
             out.push_back(static_cast<char>(cp));
@@ -610,6 +623,10 @@ bool Lexer::scanStringEscape(std::string& out, bool templateMode,
             for (int index = 0; index < 2; ++index) {
                 const int digit = digitValue(stream_.peek());
                 if (digit < 0) {
+                    if (templateMode) {
+                        token.invalidTemplateEscape = true;
+                        return true;
+                    }
                     error_ = "Invalid hexadecimal escape sequence";
                     return false;
                 }
@@ -622,7 +639,14 @@ bool Lexer::scanStringEscape(std::string& out, bool templateMode,
         case 'u': {
             stream_.advance();
             uint32_t value = 0;
-            if (!scanUnicodeEscapeBody(value)) return false;
+            if (!scanUnicodeEscapeBody(value)) {
+                if (templateMode) {
+                    error_.clear();
+                    token.invalidTemplateEscape = true;
+                    return true;
+                }
+                return false;
+            }
             unicode::encodeCodePoint(value, out);
             return true;
         }

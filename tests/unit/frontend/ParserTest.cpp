@@ -3932,6 +3932,27 @@ TEST(ParserTest, NoSubstitutionTemplateLiteral) {
     EXPECT_EQ(element.cooked, "abc");
 }
 
+TEST(ParserTest, TaggedTemplateInvalidEscapeKeepsRawAndMarksCooked) {
+    ParseResult result = parse("tag`\\8`;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& tagged = static_cast<const TaggedTemplateExpression&>(
+        *statementOf(result, 0).expression);
+    const auto& literal =
+        static_cast<const TemplateLiteral&>(*tagged.quasi);
+    ASSERT_EQ(literal.quasis.size(), 1u);
+    const auto& element =
+        static_cast<const TemplateElement&>(*literal.quasis[0]);
+    EXPECT_FALSE(element.cookedValid);
+    EXPECT_EQ(element.raw, "\\8");
+}
+
+TEST(ParserTest, UntaggedTemplateInvalidEscapeIsRejected) {
+    ParseResult result = parse("`\\8`;");
+
+    EXPECT_FALSE(result.ok());
+}
+
 TEST(ParserTest, TemplateLiteralWithSubstitution) {
     ParseResult result = parse("`a${b}c`;");
 

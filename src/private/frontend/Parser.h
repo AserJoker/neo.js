@@ -183,7 +183,8 @@ private:
     NodePtr parseBooleanLiteral();
     NodePtr parseNullLiteral();
     NodePtr parseRegExpLiteral();
-    NodePtr parseTemplateLiteral();
+    // tagged=true 时允许非法转义（cooked=undefined）；否则报早期错误。
+    NodePtr parseTemplateLiteral(bool tagged = false);
     NodePtr parseTaggedTemplateExpression(NodePtr tag, SourceLocation start);
     NodePtr parseThisExpression();
     NodePtr parseSuperExpression();

@@ -2238,6 +2238,28 @@ TEST(CompilerTest, TaggedTemplateRawPreservesEscapes) {
     EXPECT_EQ(static_cast<StringData*>(value->data())->value, "a\\nb");
 }
 
+TEST(CompilerTest, TaggedTemplateInvalidEscapeHasUndefinedCooked) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function tag(strings) { return strings[0] === void 0 ? 1 : 0; }"
+        "var result = tag`\\8`;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, TaggedTemplateInvalidEscapeKeepsRaw) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function tag(strings) { return strings.raw[0]; }"
+        "var result = tag`\\8`;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "\\8");
+}
+
 TEST(CompilerTest, TaggedTemplateObjectIsCachedPerSite) {
     Fixture f;
     Value* value = runScriptResult(

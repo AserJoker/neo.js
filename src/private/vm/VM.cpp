@@ -827,16 +827,23 @@ Value* VM::opTemplateObject() {
     if (bytes.size() - pc_ < static_cast<size_t>(count) * 8) {
         return badBytecode("template_object: truncated quasis");
     }
-    std::vector<std::pair<std::string, std::string>> quasis;
+    std::vector<std::pair<std::optional<std::string>, std::string>> quasis;
     quasis.reserve(count);
     for (uint32_t i = 0; i < count; ++i) {
         uint32_t cookedIndex = readU32(bytes.data() + pc_);
         pc_ += 4;
         uint32_t rawIndex = readU32(bytes.data() + pc_);
         pc_ += 4;
-        const std::string* cooked = stringOperand(cookedIndex);
         const std::string* raw = stringOperand(rawIndex);
-        if (cooked == nullptr || raw == nullptr) {
+        if (raw == nullptr) {
+            return badBytecode("template_object: string index out of range");
+        }
+        if (cookedIndex == Code::kUndefinedString) {
+            quasis.emplace_back(std::nullopt, *raw);
+            continue;
+        }
+        const std::string* cooked = stringOperand(cookedIndex);
+        if (cooked == nullptr) {
             return badBytecode("template_object: string index out of range");
         }
         quasis.emplace_back(*cooked, *raw);

@@ -271,8 +271,8 @@ public:
                        std::string_view bindName = {}) override;
     Value* createArray(std::string_view bindName = {}) override;
     Value* createTemplateObject(
-        const std::vector<std::pair<std::string, std::string>>& quasis)
-        override;
+        const std::vector<std::pair<std::optional<std::string>, std::string>>&
+            quasis) override;
     Value* arrayAppend(Value* array, Value* value) override;
     Value* copyDataProperties(Value* target, Value* source,
                               const std::vector<Value*>& excluded = {})

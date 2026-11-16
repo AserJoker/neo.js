@@ -176,6 +176,5 @@ tests/unit/compiler/
 - 缺点：尚未覆盖正则字面量，真实程序还不能完整编译；`for await` 暂
   unsupported；解构过程中的 IteratorClose 尚未发射；对象 rest 与 computed
   key 组合暂 unsupported；class 私有元素（`#x`/私有方法/访问器）暂
-  unsupported；class 表达式自身名字在类体内的内层绑定尚未建立；标签模板
-  中的非法转义尚未按规范产出 cooked=undefined（当前仍报词法错误）。
+  unsupported；class 表达式自身名字在类体内的内层绑定尚未建立。
 - 待定：常量池去重、SourceMap 对多字节指令的精确边界。

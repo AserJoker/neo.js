@@ -43,6 +43,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -500,11 +501,13 @@ public:
     virtual Value* createArray(std::string_view bindName = {}) = 0;
 
     // createTemplateObject: 构造标签模板的模板对象（ES2024 §13.2.8.2）。
-    // quasis 为 (cooked, raw) 对；返回冻结的 cooked 数组，其 raw 属性指向
-    // 冻结的 raw 数组。调用点缓存由 VM 按 Code+pc 维护。
+    // quasis 为 (cooked, raw) 对；cooked 为空表示非法转义（undefined）。
+    // 返回冻结的 cooked 数组，其 raw 属性指向冻结的 raw 数组。
+    // 调用点缓存由 VM 按 Code+pc 维护。
     // 返回 Value*：正常数组，或 OOM/异常值。
     virtual Value* createTemplateObject(
-        const std::vector<std::pair<std::string, std::string>>& quasis) = 0;
+        const std::vector<std::pair<std::optional<std::string>, std::string>>&
+            quasis) = 0;
 
     // arrayAppend: 在数组末尾追加一个元素（CreateDataPropertyOrThrow(length, v)）。
     // 返回 array 本身或错误值。展开语法与解构 rest 共用。

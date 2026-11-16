@@ -72,7 +72,9 @@ parser 在表达式起始位置传 `RegExp`，其余位置传 `Div`；模板替�
   octal 与 `\8`/`\9` 在严格模式下报错。
 - 字符串：简单转义、`\xHH`、`\uXXXX`、`\u{...}`、行延续；legacy octal 在
   严格模式报错；孤立代理按 WTF-8 保留。
-- 模板：cooked 值把 CRLF / CR 归一化为 LF；禁止 octal 与 `\8`/`\9`。
+- 模板：cooked 值把 CRLF / CR 归一化为 LF；octal 与 `\8`/`\9` 等非法转义
+  不报词法错误，而是标记 `Token.invalidTemplateEscape`：标签模板的 cooked 为
+  undefined，无标签模板由 Parser 报早期错误。
 - 正则：跟踪字符类 `[...]`，`/` 在类内不结束；flags 按 IdentifierPart 收集；
   flags 的合法性由后续正则编译器校验。
 - 标点：最长匹配；`?.` 后跟数字时不合并（`a?.5` 是 `a ? .5`）。

@@ -2431,18 +2431,30 @@ NodePtr Parser::parseRegExpLiteral() {
                                            std::move(flags));
 }
 
-NodePtr Parser::parseTemplateLiteral() {
+NodePtr Parser::parseTemplateLiteral(bool tagged) {
     const SourceLocation start = current_.start;
     NodeList quasis;
     NodeList expressions;
 
-    if (at(TokenKind::NoSubstitutionTemplate)) {
-        const SourceLocation elementStart = current_.start;
+    auto makeElement = [&](SourceLocation elementStart) {
         std::string cooked = current_.text;
         std::string raw = templateRawFromLexeme(current_.lexeme);
+        bool cookedValid = !current_.invalidTemplateEscape;
+        if (!tagged && !cookedValid) {
+            error(elementStart, "Invalid escape sequence in template literal");
+        }
+        return std::make_unique<TemplateElement>(
+            rangeFrom(elementStart), std::move(cooked), std::move(raw),
+            cookedValid);
+    };
+
+    if (at(TokenKind::NoSubstitutionTemplate)) {
+        const SourceLocation elementStart = current_.start;
+        auto element = makeElement(elementStart);
+        bool cookedValid = element->cookedValid;
+        quasis.push_back(std::move(element));
         advance();
-        quasis.push_back(std::make_unique<TemplateElement>(
-            rangeFrom(elementStart), std::move(cooked), std::move(raw)));
+        if (!tagged && !cookedValid) return nullptr;
         return std::make_unique<TemplateLiteral>(
             rangeFrom(start), std::move(quasis), std::move(expressions));
     }
@@ -2454,11 +2466,8 @@ NodePtr Parser::parseTemplateLiteral() {
 
     {
         const SourceLocation elementStart = current_.start;
-        std::string cooked = current_.text;
-        std::string raw = templateRawFromLexeme(current_.lexeme);
+        quasis.push_back(makeElement(elementStart));
         advance(LexicalGoal::RegExp);
-        quasis.push_back(std::make_unique<TemplateElement>(
-            rangeFrom(elementStart), std::move(cooked), std::move(raw)));
     }
 
     while (true) {
@@ -2478,25 +2487,30 @@ NodePtr Parser::parseTemplateLiteral() {
 
         if (at(TokenKind::TemplateMiddle)) {
             const SourceLocation elementStart = current_.start;
-            std::string cooked = current_.text;
-            std::string raw = templateRawFromLexeme(current_.lexeme);
+            quasis.push_back(makeElement(elementStart));
             advance(LexicalGoal::RegExp);
-            quasis.push_back(std::make_unique<TemplateElement>(
-                rangeFrom(elementStart), std::move(cooked), std::move(raw)));
             continue;
         }
         if (at(TokenKind::TemplateTail)) {
             const SourceLocation elementStart = current_.start;
-            std::string cooked = current_.text;
-            std::string raw = templateRawFromLexeme(current_.lexeme);
+            quasis.push_back(makeElement(elementStart));
             advance();
-            quasis.push_back(std::make_unique<TemplateElement>(
-                rangeFrom(elementStart), std::move(cooked), std::move(raw)));
             break;
         }
 
         error(current_.start, "Expected template continuation");
         return nullptr;
+    }
+
+    if (!tagged) {
+        for (const NodePtr& element : quasis) {
+            if (static_cast<const TemplateElement&>(*element).cookedValid) {
+                continue;
+            }
+            error(element->range().start,
+                  "Invalid escape sequence in template literal");
+            return nullptr;
+        }
     }
 
     return std::make_unique<TemplateLiteral>(
@@ -2505,7 +2519,7 @@ NodePtr Parser::parseTemplateLiteral() {
 
 NodePtr Parser::parseTaggedTemplateExpression(NodePtr tag,
                                               SourceLocation start) {
-    NodePtr quasi = parseTemplateLiteral();
+    NodePtr quasi = parseTemplateLiteral(true);
     if (quasi == nullptr) return nullptr;
     return std::make_unique<TaggedTemplateExpression>(
         rangeFrom(start), std::move(tag), std::move(quasi));

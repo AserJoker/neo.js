@@ -1583,7 +1583,8 @@ Value* freezeObject(IContext* ctx, Value* obj) {
 }  // namespace
 
 Value* Context::createTemplateObject(
-    const std::vector<std::pair<std::string, std::string>>& quasis) {
+    const std::vector<std::pair<std::optional<std::string>, std::string>>&
+        quasis) {
     Value* cooked = createArray();
     if (cooked == oomValue_) return cooked;
     Value* raw = createArray();
@@ -1591,7 +1592,9 @@ Value* Context::createTemplateObject(
 
     for (size_t i = 0; i < quasis.size(); ++i) {
         Value* key = createNumber(static_cast<double>(i));
-        Value* cookedValue = createString(quasis[i].first);
+        Value* cookedValue = quasis[i].first
+                                 ? createString(*quasis[i].first)
+                                 : createUndefined();
         Value* rawValue = createString(quasis[i].second);
         if (cookedValue == oomValue_ || rawValue == oomValue_) {
             return oomValue_;

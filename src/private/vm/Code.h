@@ -18,6 +18,7 @@
 #include "vm/OpCode.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -215,12 +216,15 @@ struct Code {
     uint32_t toString() { return emitOp(OpCode::ToString); }
 
     // 标签模板对象：quasis 为 (cooked, raw) 字符串对。
+    // cooked 为空表示非法转义（cooked=undefined），用 0xFFFFFFFF 哨兵编码。
+    static constexpr uint32_t kUndefinedString = 0xFFFFFFFFu;
     uint32_t templateObject(
-        const std::vector<std::pair<std::string, std::string>>& quasis) {
+        const std::vector<std::pair<std::optional<std::string>, std::string>>&
+            quasis) {
         uint32_t pc = emitOp(OpCode::TemplateObject);
         emitU32(static_cast<uint32_t>(quasis.size()));
         for (const auto& quasi : quasis) {
-            emitU32(addString(quasi.first));
+            emitU32(quasi.first ? addString(*quasi.first) : kUndefinedString);
             emitU32(addString(quasi.second));
         }
         return pc;

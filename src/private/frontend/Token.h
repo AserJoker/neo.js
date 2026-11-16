@@ -163,6 +163,9 @@ struct Token {
     bool legacyLeadingZero = false;   // 010 / 08 / 09
     bool legacyOctalEscape = false;   // \1 ... \7
     bool legacyEightOrNine = false;   // \8 / \9
+    // 模板中出现非法转义（\8、八进制、非法 \x/\u）。标签模板合法且 cooked
+    // 为 undefined；无标签模板由 Parser 报早期错误。
+    bool invalidTemplateEscape = false;
 };
 
 }  // namespace neo::frontend

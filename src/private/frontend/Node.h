@@ -668,12 +668,16 @@ struct RegExpLiteral final : Node {
 // 模板字面量的一段文本（quasi）：cooked 是转义解码后的值，raw 是源码原文
 // （保留转义序列，行终止符归一化为 LF）。
 struct TemplateElement final : Node {
-    TemplateElement(SourceRange range, std::string cooked, std::string raw)
+    TemplateElement(SourceRange range, std::string cooked, std::string raw,
+                    bool cookedValid = true)
         : Node(NodeKind::TemplateElement, range),
           cooked(std::move(cooked)),
-          raw(std::move(raw)) {}
+          raw(std::move(raw)),
+          cookedValid(cookedValid) {}
     std::string cooked;
     std::string raw;
+    // 标签模板中的非法转义：cooked 为 undefined，raw 保留源码原文。
+    bool cookedValid = true;
 };
 
 // `a${b}c`：quasis 数量恒为 expressions.size() + 1。
