@@ -361,6 +361,7 @@ struct Code {
     uint32_t awaitValue() { return emitOp(OpCode::Await); }
     uint32_t ret() { return emitOp(OpCode::Ret); }
     uint32_t halt() { return emitOp(OpCode::Halt); }
+    uint32_t restArgs() { return emitOp(OpCode::RestArgs); }
 
     // 登记源码位置范围（Compiler 发射 AST 节点时调用）。
     void mapSource(uint32_t pcBegin, uint32_t pcEnd,

@@ -201,9 +201,12 @@ Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
     ctx->setCurrentFunctionEnv(execScope);
     ctx->setCurrentFunction(fn);
 
-    // 4. 新 VM：逆序压形参（缺省补 undefined），self 最后压入（栈顶）
+    // 4. 新 VM：逆序压形参（缺省补 undefined），self 最后压入（栈顶）。
+    //    rest 函数需保留全部实参，由序言 RestArgs 收集多余部分。
     vm::VM machine(ctx, d->code);
-    for (size_t i = d->paramCount; i > 0; --i) {
+    size_t total = d->paramCount;
+    if (d->hasRest && argc > total) total = argc;
+    for (size_t i = total; i > 0; --i) {
         size_t index = i - 1;
         machine.push(index < argc ? argv[index] : ctx->createUndefined());
     }
@@ -295,11 +298,13 @@ Value* resumeScriptCoroutine(IContext* ctx, Value* coroutine, Value* sentValue) 
     vm::VM machine(ctx, d->code);
     Value* res = nullptr;
     if (first) {
-        for (size_t i = d->paramCount; i > 0; --i) {
+        size_t argc = co->initialArgs.size();
+        size_t total = d->paramCount;
+        if (d->hasRest && argc > total) total = argc;
+        for (size_t i = total; i > 0; --i) {
             size_t index = i - 1;
-            machine.push(index < co->initialArgs.size()
-                             ? co->initialArgs[index]
-                             : ctx->createUndefined());
+            machine.push(index < argc ? co->initialArgs[index]
+                                      : ctx->createUndefined());
         }
         machine.push(execScope->thisValue() != nullptr
                          ? execScope->thisValue()

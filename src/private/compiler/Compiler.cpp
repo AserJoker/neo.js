@@ -2344,7 +2344,15 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
             code_->pushUndefined();
             code_->define(id.name);
         } else if (param->kind() == NodeKind::RestElement) {
-            error(*param, "compiler: rest parameters not supported");
+            const auto& rest = static_cast<const frontend::RestElement&>(*param);
+            if (rest.argument) {
+                std::vector<std::string> names;
+                collectPatternNames(*rest.argument, names);
+                for (const std::string& name : names) {
+                    code_->pushUndefined();
+                    code_->define(name);
+                }
+            }
         } else if (param->kind() == NodeKind::ArrayPattern ||
                    param->kind() == NodeKind::ObjectPattern ||
                    param->kind() == NodeKind::AssignmentPattern) {
@@ -2366,6 +2374,14 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
         if (param->kind() == NodeKind::Identifier) {
             const auto& id = static_cast<const frontend::Identifier&>(*param);
             code_->store(id.name);
+        } else if (param->kind() == NodeKind::RestElement) {
+            const auto& rest = static_cast<const frontend::RestElement&>(*param);
+            code_->restArgs();
+            if (rest.argument) {
+                compileBindingPattern(*rest.argument, false, 0);
+            } else {
+                code_->pop();
+            }
         } else if (param->kind() == NodeKind::ArrayPattern ||
                    param->kind() == NodeKind::ObjectPattern ||
                    param->kind() == NodeKind::AssignmentPattern) {

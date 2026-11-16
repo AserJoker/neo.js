@@ -2538,6 +2538,48 @@ TEST(CompilerTest, PatternParameterDefault) {
     EXPECT_DOUBLE_EQ(numberValue(value), 9.0);
 }
 
+TEST(CompilerTest, RestParameter) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function f(...args) { return args.length * 10 + args[0]; }"
+        "var result = f(3, 4, 5);");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 33.0);
+}
+
+TEST(CompilerTest, RestParameterEmpty) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "function f(...args) { return args.length; } var result = f();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 0.0);
+}
+
+TEST(CompilerTest, RestParameterWithFixed) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function f(a, ...rest) { return a * 100 + rest.length * 10 + rest[0]; }"
+        "var result = f(1, 2, 3);");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 122.0);
+}
+
+TEST(CompilerTest, RestParameterPattern) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function f(...[a, b]) { return a * 10 + b; }"
+        "var result = f(1, 2);");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 12.0);
+}
+
 TEST(CompilerTest, ForLetCreatesPerIterationBinding) {
     Fixture f;
     Value* value = runScriptResult(

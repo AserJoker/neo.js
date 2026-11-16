@@ -159,6 +159,7 @@ _func_end:
 | `call_method_spread` | `[receiver, fn, argsArray] → [ret]` | thisArg=receiver |
 | `new_spread` | `[ctor, argsArray] → [instance]` | new.target=ctor |
 | `load_new_target` | `[] → [new.target]` | 从当前作用域链取 `new.target`；普通调用为 undefined |
+| `rest_args` | `[argvFixed..argvN-1] → [array]` | 把序言栈上剩余实参按顺序收集成数组（rest 参数） |
 | `ret` | `[val] → []` | 函数返回，弹栈顶作为返回值，结束当前 VM |
 | `hlt` | `[] → ∅` | 模块执行结束 |
 
@@ -176,6 +177,8 @@ _func_end:
 ```
 
 - **self 不在调用点栈上**：`call N` 隐式以 `self=undefined` 调 invoke。
+- **rest 函数**：`kFunctionHasRest` 置位时 invoke 压入全部实参（不足 paramCount
+  补 undefined），序言 `rest_args` 收集 `argv[paramCount..]`。
 - invoke（ADR-022）内部把 self 压到新 VM 栈顶，再逆序压 argv，
   序言 `StoreThis` 从新 VM 栈消费 self。
 - 箭头函数：call 仍传 self=undefined，但 invoke 里 `func->data->self` 优先

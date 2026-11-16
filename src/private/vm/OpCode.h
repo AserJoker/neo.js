@@ -198,10 +198,13 @@ enum class OpCode : uint16_t {
 
     Ret,
     Halt,
+    // rest 参数：[] → [array]。把函数序言栈上剩余实参（argv[paramCount..]）
+    // 按顺序收集成数组；调用方已按 hasRest 压入全部实参。
+    RestArgs,
 };
 
 // 指令总数（分派表大小）。
-inline constexpr size_t kOpCodeCount = static_cast<size_t>(OpCode::Halt) + 1;
+inline constexpr size_t kOpCodeCount = static_cast<size_t>(OpCode::RestArgs) + 1;
 
 // Define 的 flags 位。未置位即 false：
 //   mutable    —— 绑定可被 store 改写（const 为 false）

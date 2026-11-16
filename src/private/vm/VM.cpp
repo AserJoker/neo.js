@@ -148,6 +148,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::Await:         return "await";
         case OpCode::Ret:           return "ret";
         case OpCode::Halt:          return "hlt";
+        case OpCode::RestArgs:      return "rest_args";
     }
     return "<unknown>";
 }
@@ -237,6 +238,7 @@ const VM::Handler* VM::handlers() {
         &VM::opAwait,
         &VM::opRet,
         &VM::opHalt,
+        &VM::opRestArgs,
     };
     return table;
 }
@@ -1535,6 +1537,19 @@ Value* VM::opRet() {
 
 Value* VM::opHalt() {
     return ctx_->createUndefined();
+}
+
+Value* VM::opRestArgs() {
+    // 序言栈上此时只剩 argv[paramCount..]：栈顶是第一个 rest 实参。
+    Value* array = ctx_->createArray();
+    if (array == ctx_->oomValue()) return array;
+    for (size_t i = stack_.size(); i > 0; --i) {
+        Value* result = ctx_->arrayAppend(array, stack_[i - 1]);
+        if (detail::isErrorValue(result)) return fail(result);
+    }
+    stack_.clear();
+    push(array);
+    return nullptr;
 }
 
 }  // namespace neo::vm

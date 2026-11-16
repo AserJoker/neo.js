@@ -195,6 +195,7 @@ private:
     neo::core::Value* opLoadNewTarget();
     neo::core::Value* opYield();
     neo::core::Value* opAwait();
+    neo::core::Value* opRestArgs();
     neo::core::Value* opRet();
     neo::core::Value* opHalt();
 
