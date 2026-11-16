@@ -157,6 +157,7 @@ private:
     neo::core::Value* opArraySpread();
     neo::core::Value* opObjectSpread();
     neo::core::Value* opObjectRest();
+    neo::core::Value* opObjectRestDynamic();
     neo::core::Value* opForInKeys();
     neo::core::Value* opIsEnumerableOwn();
     neo::core::Value* opGetIterator();

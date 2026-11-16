@@ -103,6 +103,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::ArraySpread:   return "array_spread";
         case OpCode::ObjectSpread:  return "object_spread";
         case OpCode::ObjectRest:    return "object_rest";
+        case OpCode::ObjectRestDynamic: return "object_rest_dynamic";
         case OpCode::ForInKeys:     return "for_in_keys";
         case OpCode::IsEnumerableOwn: return "is_enumerable_own";
         case OpCode::GetIterator:   return "get_iterator";
@@ -223,6 +224,7 @@ const VM::Handler* VM::handlers() {
         &VM::opArraySpread,
         &VM::opObjectSpread,
         &VM::opObjectRest,
+        &VM::opObjectRestDynamic,
         &VM::opForInKeys,
         &VM::opIsEnumerableOwn,
         &VM::opGetIterator,
@@ -1055,6 +1057,29 @@ Value* VM::opObjectRest() {
     }
     if (stack_.size() < 2) {
         return badBytecode("object_rest: operand stack underflow");
+    }
+    Value* source = pop();
+    Value* target = pop();
+    Value* result = ctx_->copyDataProperties(target, source, excluded);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(target);
+    return nullptr;
+}
+
+Value* VM::opObjectRestDynamic() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("object_rest_dynamic: truncated operand");
+    }
+    uint32_t count = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (stack_.size() < static_cast<size_t>(count) + 2) {
+        return badBytecode("object_rest_dynamic: operand stack underflow");
+    }
+    std::vector<Value*> excluded;
+    excluded.reserve(count);
+    for (uint32_t i = 0; i < count; ++i) {
+        excluded.push_back(pop());
     }
     Value* source = pop();
     Value* target = pop();

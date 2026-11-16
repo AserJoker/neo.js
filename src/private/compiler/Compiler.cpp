@@ -2609,51 +2609,48 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
                 "*dest-obj-" + std::to_string(depth) + "*";
             code_->define(objectName);
 
+            // computed 键只求值一次：非 rest 属性在解构时把键存入临时槽，
+            // rest 再按源码顺序取回，避免重复求值（可能带副作用）。
+            std::vector<std::string> keySlots(node.properties.size());
+            uint32_t computedIndex = 0;
+            for (size_t i = 0; i < node.properties.size(); ++i) {
+                const frontend::NodePtr& property = node.properties[i];
+                if (!property || property->kind() != NodeKind::Property) {
+                    continue;
+                }
+                const auto& prop =
+                    static_cast<const frontend::Property&>(*property);
+                if (prop.computed) {
+                    keySlots[i] = "*dest-key-" + std::to_string(depth) + "-" +
+                                  std::to_string(computedIndex++) + "*";
+                }
+            }
+
+            size_t propertyIndex = 0;
             for (const frontend::NodePtr& property : node.properties) {
+                const size_t index = propertyIndex++;
                 if (!property) continue;
                 if (property->kind() == NodeKind::RestElement) {
                     const auto& rest =
                         static_cast<const frontend::RestElement&>(*property);
-                    std::vector<std::string> excluded;
-                    bool unsupported = false;
-                    for (const frontend::NodePtr& other : node.properties) {
-                        if (!other || other == property) continue;
-                        if (other->kind() != NodeKind::Property) continue;
-                        const auto& prop =
-                            static_cast<const frontend::Property&>(*other);
-                        if (prop.computed || !prop.key) {
-                            unsupported = true;
-                            break;
-                        }
-                        if (prop.key->kind() == NodeKind::Identifier) {
-                            excluded.push_back(
-                                static_cast<const frontend::Identifier&>(
-                                    *prop.key).name);
-                        } else if (prop.key->kind() ==
-                                   NodeKind::StringLiteral) {
-                            excluded.push_back(
-                                static_cast<const frontend::StringLiteral&>(
-                                    *prop.key).value);
-                        } else if (prop.key->kind() ==
-                                   NodeKind::NumericLiteral) {
-                            excluded.push_back(std::to_string(
-                                static_cast<long long>(
-                                    static_cast<const frontend::NumericLiteral&>(
-                                        *prop.key).value)));
-                        } else {
-                            unsupported = true;
-                            break;
-                        }
-                    }
-                    if (unsupported) {
-                        error(*property,
-                              "compiler: object rest with computed key not supported");
-                        code_->pop();
-                        continue;
-                    }
                     code_->newObject();
                     code_->load(objectName);
-                    code_->objectRest(excluded);
+                    uint32_t excludedCount = 0;
+                    for (size_t i = 0; i < index; ++i) {
+                        const frontend::NodePtr& other = node.properties[i];
+                        if (!other || other->kind() != NodeKind::Property) {
+                            continue;
+                        }
+                        const auto& prop =
+                            static_cast<const frontend::Property&>(*other);
+                        if (prop.computed) {
+                            code_->load(keySlots[i]);
+                        } else {
+                            compilePropertyKey(prop);
+                        }
+                        ++excludedCount;
+                    }
+                    code_->objectRestDynamic(excludedCount);
                     if (rest.argument) {
                         compileBindingPattern(*rest.argument, lexical,
                                               depth + 1);
@@ -2674,6 +2671,11 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
                 }
                 code_->load(objectName);
                 compilePropertyKey(prop);
+                if (prop.computed) {
+                    // 保留一份键值给 rest 排除；define 弹走副本。
+                    code_->dup();
+                    code_->define(keySlots[index]);
+                }
                 code_->getProp();
                 if (prop.value) {
                     compileBindingPattern(*prop.value, lexical, depth + 1);

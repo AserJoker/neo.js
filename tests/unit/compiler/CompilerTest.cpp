@@ -2745,6 +2745,52 @@ TEST(CompilerTest, ObjectPatternRest) {
     EXPECT_DOUBLE_EQ(numberValue(value), 123.0);
 }
 
+TEST(CompilerTest, ObjectPatternComputedKey) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f, "var k = 'x'; var { [k]: a } = { x: 7 }; var result = a;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 7.0);
+}
+
+TEST(CompilerTest, ObjectPatternRestWithComputedKey) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var k = 'x';"
+        "var { [k]: a, ...rest } = { x: 1, y: 2, z: 3 };"
+        "var result = a * 100 + rest.y * 10 + rest.z;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 123.0);
+}
+
+TEST(CompilerTest, ObjectPatternRestComputedKeyEvaluatedOnce) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var n = 0;"
+        "function key() { n++; return 'x'; }"
+        "var { [key()]: a, ...rest } = { x: 1, y: 2 };"
+        "var result = n * 100 + a * 10 + rest.y;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 112.0);
+}
+
+TEST(CompilerTest, ObjectPatternRestMixedKeys) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var k = 'y';"
+        "var { x, [k]: y, ...rest } = { x: 1, y: 2, z: 3 };"
+        "var result = x * 100 + y * 10 + rest.z;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 123.0);
+}
+
 TEST(CompilerTest, NestedPatternDeclaration) {
     Fixture f;
     Value* value = runScriptResult(

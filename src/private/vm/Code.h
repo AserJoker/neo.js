@@ -200,6 +200,11 @@ struct Code {
     uint32_t arrayGrow() { return emitOp(OpCode::ArrayGrow); }
     uint32_t arraySpread() { return emitOp(OpCode::ArraySpread); }
     uint32_t objectSpread() { return emitOp(OpCode::ObjectSpread); }
+    uint32_t objectRestDynamic(uint32_t count) {
+        uint32_t pc = emitOp(OpCode::ObjectRestDynamic);
+        emitU32(count);
+        return pc;
+    }
     uint32_t objectRest(const std::vector<std::string>& excluded) {
         uint32_t pc = emitOp(OpCode::ObjectRest);
         emitU32(static_cast<uint32_t>(excluded.size()));

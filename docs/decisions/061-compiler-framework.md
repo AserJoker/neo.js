@@ -111,7 +111,7 @@ public:
 | super.x / super.x = v | `get_super_prop` / `set_super_prop`（homeObject + 当前 this） |
 | ObjectExpression | `new_object` + 每个属性 `dup; key; value; define_prop; pop`；spread 用 `object_spread`；get/set 用 `dup; key; getter; setter; define_accessor flags; pop`（缺失侧压 null）；`__proto__: v` 用 `dup; v; set_proto_literal; pop` |
 | ArrayExpression | `new_array N` + 每个元素 `dup; index; value; define_prop; pop`；含 spread 改为 `new_array 0` + `array_append`/`array_grow`/`array_spread` |
-| 解构声明（Array/ObjectPattern） | `compileBindingPattern`：数组模式 `get_iterator` + `iterator_next` 逐项写入目标；对象模式 `get_prop` 逐属性；rest 用 `object_rest`；默认值 `strict_equal(undefined)` + `jfalse`。数组模式整体包在 `try/finally` 中：迭代器未耗尽时（正常或异常退出）执行 `iterator_close` |
+| 解构声明（Array/ObjectPattern） | `compileBindingPattern`：数组模式 `get_iterator` + `iterator_next` 逐项写入目标；对象模式 `get_prop` 逐属性（computed 键求值后 `dup; define` 存入临时槽，供 rest 复用，保证只求值一次）；rest 用 `object_rest`（全静态键）或 `object_rest_dynamic`（含 computed 键，按源码顺序压入运行期键）；默认值 `strict_equal(undefined)` + `jfalse`。数组模式整体包在 `try/finally` 中：迭代器未耗尽时（正常或异常退出）执行 `iterator_close` |
 | 解构赋值 | RHS + `dup` + `compileBindingPattern(lexical=false)`；表达式值保留 RHS |
 | 解构参数 | 形参槽先全部提升，再对模式参数逐个 `store` 到临时槽 + `compileBindingPattern` |
 | rest 参数 | `push_function` 置 `kFunctionHasRest`（不计入 paramCount）；序言 `rest_args` 把剩余实参收集成数组，再按模式绑定 |
@@ -176,5 +176,5 @@ tests/unit/compiler/
 - 优点：Compiler 与 Parser 同构，节点覆盖度可逐条推进；错误显式；SourceMap
   与 VM 的异常定位直接对接；后续只需在分派表里补节点。
 - 缺点：尚未覆盖正则字面量，真实程序还不能完整编译；`for await` 暂
-  unsupported；对象 rest 与 computed key 组合暂 unsupported。
+  unsupported。
 - 待定：常量池去重、SourceMap 对多字节指令的精确边界。

@@ -114,6 +114,7 @@ _func_end:
 | `array_spread` | `[arr, iterable] → [arr]` | 迭代 iterable 并逐个追加（§13.2.5.5） |
 | `object_spread` | `[target, source] → [target]` | CopyDataProperties（§7.3.26），跳过 null/undefined |
 | `object_rest n, keys...` | `[target, source] → [target]` | 复制 source 自有 enumerable 属性，排除列出的键 |
+| `object_rest_dynamic n` | `[target, source, key1..keyN] → [target]` | 同上，排除键为运行期值（computed key）；键已按源码顺序求值 |
 | `for_in_keys` | `[obj] → [entries]` | for-in 候选：原型链全部自有字符串键，扁平 `[owner,key,...]`，按名去重 |
 | `is_enumerable_own` | `[obj, key] → [bool]` | 处理候选时重查：自有属性存在且 enumerable |
 | `get_iterator` | `[iterable] → [iterator]` | GetIterator(iterable, sync) |

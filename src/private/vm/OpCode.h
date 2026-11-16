@@ -73,6 +73,7 @@
 //   array_grow    d → d            （length += 1，保留空洞）
 //   array_spread  d → d - 1        （弹 iterable，追加到数组）
 //   object_spread d → d - 1        （弹 source，复制到 target）
+//   object_rest_dynamic d → d - 2 - n（弹 n 个键、source、target，压 target）
 //   call_spread   d → d - 1        （弹 argsArray 与 fn，压返回值）
 //   call_method_spread d → d - 2   （弹 argsArray、fn、receiver，压返回值）
 //   new_spread    d → d - 1        （弹 argsArray 与 ctor，压实例）
@@ -132,6 +133,8 @@ enum class OpCode : uint16_t {
     // 对象解构 rest：u32 count + count × u32 nameIndex。
     // [target, source] → [target]：复制 source 自有 enumerable 属性，排除列出的键。
     ObjectRest,
+    // 运行期键版本：u32 count；[target, source, key1..keyN] → [target]。
+    ObjectRestDynamic,
     ForInKeys,     // [obj] → [entries]：for-in 候选 [owner,key,...]（含原型链、去重）
     IsEnumerableOwn,  // [obj, key] → [bool]：自有属性存在且 enumerable
     GetIterator,   // [iterable] → [iterator]：GetIterator(iterable, sync)
