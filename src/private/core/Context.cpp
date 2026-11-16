@@ -17,6 +17,7 @@
 #include "core/JSONBuiltins.h"
 #include "core/AsyncGeneratorBuiltins.h"
 #include "core/BigIntBuiltins.h"
+#include "core/FunctionInvoke.h"
 #include "core/ErrorBuiltins.h"
 #include "core/GeneratorBuiltins.h"
 #include "core/IType.h"
@@ -1680,8 +1681,11 @@ Value* Context::createCoroutine(Value* target, Value* receiver, size_t argc, Val
         return detail::typeError(this, "coroutine target is not a function");
     }
     auto* fd = static_cast<FunctionData*>(target->data());
-    // 绑定函数没有自己的 native 函数体，不能作为协程 target
-    if (fd->boundTarget != nullptr || fd->native == nullptr) {
+    // 绑定函数没有自己的函数体，不能作为协程 target。
+    if (fd->boundTarget != nullptr) {
+        return detail::typeError(this, "coroutine target is not resumable");
+    }
+    if (!fd->isScript && fd->native == nullptr) {
         return detail::typeError(this, "coroutine target is not resumable");
     }
 
@@ -1697,8 +1701,8 @@ Value* Context::createCoroutine(Value* target, Value* receiver, size_t argc, Val
     d->sentValue = createUndefined();
     if (d->sentValue == oomValue_) return d->sentValue;
     if (argc > 0) d->initialArgs.assign(argv, argv + argc);
-    // 恢复驱动按 target 种类选择（未来 VM 函数 → resumeVmCoroutine）
-    d->resume = resumeNativeCoroutine;
+    // 恢复驱动按 target 种类选择：script 函数走 VM 状态快照，native 走阶段机。
+    d->resume = fd->isScript ? resumeScriptCoroutine : resumeNativeCoroutine;
 
     Value* co = createTracked(getCoroutineType(), d, bindName);
     if (co == oomValue_) return co;

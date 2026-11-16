@@ -264,14 +264,24 @@ struct TryFrame {
 - catch 绑定 `Exception.child`；Fatal 不参与展开。
 - try 帧不穿透函数调用；label 帧记录 `tryDepth`/`scope`/`stackDepth`，形成双向记录。
 
-### 8. 挂起/恢复
+### 8. 挂起/恢复（V7 已实现 generator）
 
-- VM 可序列化为 `VmState`：pc、操作数栈、作用域指针、函数/argc/argv。
-  后续引入 try/label 后，再把对应栈加入快照。
-- 返回 `Interrupt` 时把 `VmState` 交给 Coroutine；恢复时重建 VM，先压入外部
-  注入值（yield/await 结果），再从 `pc` 继续（ADR-023）。
-- 嵌套调用挂起时，每一层 VM 都保存自己的 `VmState`，形成调用链；
-  Coroutine 持有这条链。同步执行的 V0–V4 不依赖该机制，V5 后再接入。
+`VmState`（`vm/VmState.h`）保存：pc、操作数栈、label 栈、try 栈、入口/根作用域、
+挂起时最内层作用域。`VM::snapshot()` / `VM::restore()` 负责存取。
+
+- `yield`：弹出产出值，返回 `Interrupt(Yield, pc, value)`；栈契约
+  `[value] → [sent]`，恢复时压入外部注入值作为 yield 表达式结果。
+- 恢复：`VM::resume(state, sent)` 先 restore，再按 sent 类型分派——
+  普通值压栈；`Interrupt(Throw)` 走 `dispatchException`；
+  `Interrupt(Return)` 走 `unwindReturn`；随后继续执行循环。
+- `CoroutineData::vmState` 独占持有 `VmState*`；GC 标记时遍历栈上的 Value
+  与 try 帧的 `res`，作用域由 `execScope` 遍历覆盖。
+- script 生成器由 `resumeScriptCoroutine` 驱动：首次恢复创建 execScope、
+  压形参与 self；挂起时保存 VmState 并把 execScope 摘成孤立子树；
+  后续恢复重挂子树并从 pc 继续。`throw/return` 注入在挂起点展开，
+  finally 由正常 try/finally 控制流处理。
+- 嵌套调用挂起时，每一层 VM 各自保存 `VmState`，形成调用链；
+  async/await 的 Promise 驱动留待后续切片。
 
 ### 9. 函数对象扩展
 
@@ -320,7 +330,7 @@ tests/unit/vm/
 | V4 | break/continue/标签 | label 栈、跨 finally 跳转 | 循环/标签 |
 | V5 | 对象/数组/属性 | get_prop/set_prop | 对象操作 |
 | V6 | import/export | 模块三段式、槽位提升、link（已实现） | 模块端到端 |
-| V7 | generator/async/await | VmState 链、Interrupt 消费 | 挂起恢复 |
+| V7 | generator/async/await | VmState 链、Interrupt 消费（generator 已实现） | 挂起恢复 |
 
 V0 是第一个可真实运行的 VM→Engine 链路：不依赖 Compiler，直接在测试里
 构造 `Code`，验证操作数栈、变量绑定、算术与返回协议。

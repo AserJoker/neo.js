@@ -239,4 +239,114 @@ Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
     return res;
 }
 
+Value* resumeScriptCoroutine(IContext* ctx, Value* coroutine, Value* sentValue) {
+    auto* co = asCoroutine(coroutine);
+    if (co == nullptr || co->target == nullptr) {
+        return detail::typeError(ctx, "coroutine has no target");
+    }
+    auto* d = static_cast<FunctionData*>(co->target->data());
+    if (d->code == nullptr) {
+        return detail::typeError(ctx, "script function has no code");
+    }
+
+    // 1. 保存调用方状态
+    Scope* savedRoot = ctx->root();
+    Scope* savedCurrent = ctx->current();
+    Scope* savedFunctionEnv = ctx->currentFunctionEnv();
+    Value* savedFunction = ctx->currentFunction();
+
+    // 2. 切换到生成器函数的模块根作用域并挂载闭包作用域
+    ctx->setRootScope(d->rootScope);
+    if (!d->capturesEnvironment && d->activeCalls == 0) {
+        d->closureScope->reparent(d->rootScope);
+    }
+    ++d->activeCalls;
+
+    const bool first = co->execScope == nullptr;
+    Scope* execScope = co->execScope;
+    if (first) {
+        execScope = ctx->pushNewScope(d->closureScope);
+        if (execScope == nullptr) {
+            if (--d->activeCalls == 0 && !d->capturesEnvironment) {
+                d->closureScope->reparent(nullptr);
+            }
+            ctx->setRootScope(savedRoot);
+            ctx->setCurrentScope(savedCurrent);
+            ctx->setCurrentFunctionEnv(savedFunctionEnv);
+            ctx->setCurrentFunction(savedFunction);
+            return ctx->oomValue();
+        }
+        co->execScope = execScope;
+        Value* boundThis = d->self != nullptr
+                               ? d->self
+                               : (co->receiver != nullptr ? co->receiver
+                                                          : ctx->createUndefined());
+        execScope->setThis(boundThis);
+        execScope->setNewTarget(ctx->createUndefined());
+    } else {
+        // 恢复：重新挂上孤立的执行子树，并从保存的最内层作用域继续。
+        execScope->reparent(d->closureScope);
+    }
+    ctx->setCurrentFunctionEnv(execScope);
+    ctx->setCurrentFunction(co->target);
+
+    // 3. 首次运行压入形参与 self；后续从 VmState 恢复。
+    vm::VM machine(ctx, d->code);
+    Value* res = nullptr;
+    if (first) {
+        for (size_t i = d->paramCount; i > 0; --i) {
+            size_t index = i - 1;
+            machine.push(index < co->initialArgs.size()
+                             ? co->initialArgs[index]
+                             : ctx->createUndefined());
+        }
+        machine.push(execScope->thisValue() != nullptr
+                         ? execScope->thisValue()
+                         : ctx->createUndefined());
+        res = machine.run(d->entryPc);
+    } else {
+        res = machine.resume(*co->vmState, sentValue);
+    }
+
+    const bool suspended =
+        res != nullptr && detail::isInterruptValue(res) &&
+        isSuspensionSignal(asInterrupt(res)->kind);
+
+    if (suspended) {
+        // 保存 VM 状态；execScope 摘成孤立子树，由协程对象持有并标记。
+        if (co->vmState == nullptr) co->vmState = new vm::VmState();
+        *co->vmState = machine.snapshot();
+        co->yielded = asInterrupt(res)->value;
+        execScope->reparent(nullptr);
+        co->state = CoroutineState::Suspended;
+        if (--d->activeCalls == 0 && !d->capturesEnvironment) {
+            d->closureScope->reparent(nullptr);
+        }
+        ctx->setCurrentFunctionEnv(savedFunctionEnv);
+        ctx->setCurrentFunction(savedFunction);
+        ctx->setCurrentScope(savedCurrent);
+        ctx->setRootScope(savedRoot);
+        return res;
+    }
+
+    // 4. 完成：销毁执行子树、释放 VM 状态。
+    if (res != nullptr) savedCurrent->add(res);
+    co->state = CoroutineState::Completed;
+    co->yielded = res;
+    delete co->vmState;
+    co->vmState = nullptr;
+    ctx->setCurrentFunctionEnv(savedFunctionEnv);
+    ctx->setCurrentFunction(savedFunction);
+    while (ctx->current() != d->closureScope) {
+        ctx->popScope();
+    }
+    co->execScope = nullptr;
+    if (--d->activeCalls == 0 && !d->capturesEnvironment) {
+        d->closureScope->reparent(nullptr);
+    }
+    ctx->setCurrentScope(savedCurrent);
+    ctx->setRootScope(savedRoot);
+    return res;
+}
+
 }  // namespace neo::core

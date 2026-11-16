@@ -92,6 +92,8 @@ public:
 | ObjectExpression | `new_object` + 每个属性 `dup; key; value; define_prop; pop` |
 | ArrayExpression | `new_array N` + 每个元素 `dup; index; value; define_prop; pop` |
 | ThisExpression | `load_this` |
+| YieldExpression | 参数（或 `push_undefined`）+ `yield`；`yield*` 暂 unsupported |
+| FunctionDeclaration/Expression（`function*`） | `push_function` 带 `kFunctionGenerator`，不可构造、有 prototype |
 | IfStatement | test + `jfalse` else；then；有 else 时 `jmp end` + 回填 |
 | WhileStatement | `push_label`；loop：test + `jfalse exit`；body；`jmp loop`；exit：`pop_label` |
 | DoWhileStatement | `push_label`；loop：body；test + `jtrue loop`；exit：`pop_label` |

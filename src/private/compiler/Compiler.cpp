@@ -228,6 +228,10 @@ void Compiler::compileExpression(const Node& node) {
             compileThisExpression(
                 static_cast<const frontend::ThisExpression&>(node));
             break;
+        case NodeKind::YieldExpression:
+            compileYieldExpression(
+                static_cast<const frontend::YieldExpression&>(node));
+            break;
         case NodeKind::AssignmentExpression:
             compileAssignmentExpression(
                 static_cast<const frontend::AssignmentExpression&>(node));
@@ -654,7 +658,7 @@ void Compiler::compileExportDefaultDeclaration(
             return;
         }
         compileFunctionObject(declaration, function.params, *function.body,
-                              false, "default");
+                              false, "default", function.generator);
         code_->initialize(kDefaultSlot);
         exports_.push_back(neo::core::ModuleExportBinding{
             "default", std::string(kDefaultSlot), {}, {}, false});
@@ -756,7 +760,8 @@ void Compiler::compileFunctionExpression(
         code_->pushUndefined();
         return;
     }
-    compileFunctionObject(node, node.params, *node.body, false, name);
+    compileFunctionObject(node, node.params, *node.body, false, name,
+                          node.generator);
 }
 
 void Compiler::compileArrowFunctionExpression(
@@ -942,6 +947,20 @@ void Compiler::compileThisExpression(const frontend::ThisExpression&) {
     code_->loadThis();
 }
 
+void Compiler::compileYieldExpression(const frontend::YieldExpression& node) {
+    if (node.delegate) {
+        error(node, "compiler: yield* is not supported");
+        code_->pushUndefined();
+        return;
+    }
+    if (node.argument) {
+        compileExpression(*node.argument);
+    } else {
+        code_->pushUndefined();
+    }
+    code_->yieldValue();
+}
+
 void Compiler::compileAssignmentExpression(
     const frontend::AssignmentExpression& node) {
     if (!node.left) {
@@ -1084,7 +1103,7 @@ void Compiler::compileVariableDeclaration(
 void Compiler::compileFunctionObject(const Node& node,
                                      const frontend::NodeList& params,
                                      const Node& body, bool arrow,
-                                     std::string_view name) {
+                                     std::string_view name, bool generator) {
     // 函数体内联在当前位置，执行路径先跳过它。
     uint32_t skip = code_->jmp();
     uint32_t entryPc = code_->here();
@@ -1107,7 +1126,12 @@ void Compiler::compileFunctionObject(const Node& node,
 
     uint32_t flags = 0;
     if (hasRest) flags |= vm::kFunctionHasRest;
-    if (!arrow) flags |= vm::kFunctionConstructible | vm::kFunctionHasPrototype;
+    if (generator) {
+        // 生成器函数不可构造，但有 prototype 属性（其原型链挂 %GeneratorPrototype%）。
+        flags |= vm::kFunctionGenerator | vm::kFunctionHasPrototype;
+    } else if (!arrow) {
+        flags |= vm::kFunctionConstructible | vm::kFunctionHasPrototype;
+    }
     code_->pushFunction(entryPc, paramCount, flags);
 
     if (!name.empty()) code_->setFuncName(name);
@@ -1295,7 +1319,7 @@ void Compiler::hoistFunctions(const frontend::NodeList& body) {
         const std::string& name =
             static_cast<const frontend::Identifier&>(*function.id).name;
         compileFunctionObject(*declaration, function.params, *function.body,
-                              false, name);
+                              false, name, function.generator);
         code_->store(name);
     }
 }

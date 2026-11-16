@@ -151,6 +151,9 @@ enum class OpCode : uint16_t {
     Call,           // u32 argc：[fn, argv...] → [ret]，thisArg=undefined
     CallMethod,     // u32 argc：[receiver, fn, argv...] → [ret]，thisArg=receiver
 
+    // 生成器挂起：[value] → [sent]（恢复时压入外部注入值）
+    Yield,
+
     Ret,
     Halt,
 };
@@ -168,6 +171,7 @@ inline constexpr uint32_t kDefineInitialized = 1u << 1;
 inline constexpr uint32_t kFunctionHasRest = 1u << 0;
 inline constexpr uint32_t kFunctionConstructible = 1u << 1;
 inline constexpr uint32_t kFunctionHasPrototype = 1u << 2;
+inline constexpr uint32_t kFunctionGenerator = 1u << 3;
 
 // 指令名（诊断/测试用）。
 const char* opCodeName(OpCode op);

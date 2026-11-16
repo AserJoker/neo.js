@@ -98,6 +98,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::StoreThis:     return "store_this";
         case OpCode::Call:          return "call";
         case OpCode::CallMethod:    return "call_method";
+        case OpCode::Yield:         return "yield";
         case OpCode::Ret:           return "ret";
         case OpCode::Halt:          return "hlt";
     }
@@ -162,6 +163,7 @@ const VM::Handler* VM::handlers() {
         &VM::opStoreThis,
         &VM::opCall,
         &VM::opCallMethod,
+        &VM::opYield,
         &VM::opRet,
         &VM::opHalt,
     };
@@ -321,8 +323,57 @@ Value* VM::handleFinallyEnd() {
     return dispatchPending(res);
 }
 
+VmState VM::snapshot() const {
+    VmState state;
+    state.pc = pc_;
+    state.stack = stack_;
+    state.labelStack = labelStack_;
+    state.tryStack = tryStack_;
+    state.entryScope = entryScope_;
+    state.rootScope = rootScope_;
+    state.currentScope = ctx_->current();
+    return state;
+}
+
+void VM::restore(const VmState& state) {
+    pc_ = state.pc;
+    instructionPc_ = state.pc;
+    stack_ = state.stack;
+    labelStack_ = state.labelStack;
+    tryStack_ = state.tryStack;
+    entryScope_ = state.entryScope;
+    rootScope_ = state.rootScope;
+    if (state.currentScope != nullptr) {
+        ctx_->setCurrentScope(state.currentScope);
+    }
+}
+
+Value* VM::resume(const VmState& state, Value* sent) {
+    restore(state);
+    if (sent != nullptr && detail::isInterruptValue(sent)) {
+        auto* data = neo::core::asInterrupt(sent);
+        if (data != nullptr) {
+            Value* pending = nullptr;
+            if (data->kind == neo::core::InterruptKind::Throw) {
+                pending = dispatchException(data->value);
+            } else if (data->kind == neo::core::InterruptKind::Return) {
+                pending = unwindReturn(data->value);
+            }
+            if (pending != nullptr) return pending;
+        }
+    } else {
+        push(sent != nullptr ? sent : ctx_->createUndefined());
+    }
+    return execute();
+}
+
 Value* VM::run(uint32_t entryPc) {
     pc_ = entryPc;
+    instructionPc_ = entryPc;
+    return execute();
+}
+
+Value* VM::execute() {
     const std::vector<uint8_t>& bytes = code_->bytecode;
     if (pc_ > bytes.size()) {
         return badBytecode("run: entry pc out of range");
@@ -853,6 +904,9 @@ Value* VM::opPushFunction() {
         (flags & kFunctionConstructible) != 0,
         (flags & kFunctionHasPrototype) != 0);
     if (fn == ctx_->oomValue()) return fn;
+    if ((flags & kFunctionGenerator) != 0) {
+        ctx_->setFunctionGenerator(fn, true);
+    }
     push(fn);
     return nullptr;
 }
@@ -956,6 +1010,12 @@ Value* VM::opCallMethod() {
 }
 
 // —— 结束 ——
+
+Value* VM::opYield() {
+    if (stack_.empty()) return badBytecode("yield: operand stack underflow");
+    Value* value = pop();
+    return ctx_->createInterrupt(neo::core::InterruptKind::Yield, pc_, value);
+}
 
 Value* VM::opRet() {
     Value* value = stack_.empty() ? ctx_->createUndefined() : pop();

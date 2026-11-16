@@ -12,6 +12,7 @@
 #include "core/Value.h"
 #include "core/types/Coroutine.h"
 #include "core/types/TypeBehavior.h"
+#include "vm/VmState.h"
 
 namespace neo::core {
 
@@ -84,6 +85,8 @@ CoroutineData::~CoroutineData() {
         execScope->destroySelf();
         execScope = nullptr;
     }
+    delete vmState;
+    vmState = nullptr;
 }
 
 void CoroutineData::enumerateChildren(IGCVisitor* visitor) {
@@ -95,7 +98,7 @@ void CoroutineData::enumerateChildren(IGCVisitor* visitor) {
     for (Value* v : initialArgs) {
         if (v != nullptr) visitor->visit(v);
     }
-    if (vmState != nullptr) visitor->visit(vmState);
+    neo::vm::visitVmState(vmState, visitor);
     // 孤立执行作用域不在 global 作用域树上，只能由持有它的协程对象主动标记
     // （ADR-044）。协程不可达时本方法不会被调用，作用域及其捕获值自然不被标记。
     if (execScope != nullptr) visitor->visitScope(execScope);

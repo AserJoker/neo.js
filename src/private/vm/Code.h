@@ -278,6 +278,7 @@ struct Code {
         return pc;
     }
 
+    uint32_t yieldValue() { return emitOp(OpCode::Yield); }
     uint32_t ret() { return emitOp(OpCode::Ret); }
     uint32_t halt() { return emitOp(OpCode::Halt); }
 

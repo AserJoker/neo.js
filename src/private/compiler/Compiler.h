@@ -113,6 +113,7 @@ private:
     // 把对象字面量属性的 key 压栈。
     void compilePropertyKey(const frontend::Property& node);
     void compileThisExpression(const frontend::ThisExpression& node);
+    void compileYieldExpression(const frontend::YieldExpression& node);
     void compileAssignmentExpression(
         const frontend::AssignmentExpression& node);
     void compileUpdateExpression(const frontend::UpdateExpression& node);
@@ -123,7 +124,7 @@ private:
     void compileFunctionObject(const frontend::Node& node,
                                const frontend::NodeList& params,
                                const frontend::Node& body, bool arrow,
-                               std::string_view name);
+                               std::string_view name, bool generator = false);
     // 函数序言 + 函数体 + 隐式 return undefined。
     void compileFunctionBody(const frontend::NodeList& params,
                              const frontend::Node& body, bool arrow);

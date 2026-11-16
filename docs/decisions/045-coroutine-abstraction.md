@@ -59,7 +59,7 @@ ADR-023 把挂起/恢复描述为「VM 保存现场 + 外部压栈 + 恢复 PC�
 | `Scope* execScope` | 保存的执行作用域子树根（挂起期间孤立；首次运行前为 nullptr） |
 | `std::vector<CallFrame> savedCallStack` | 挂起时的调用栈快照（ADR-037） |
 | `CoroutineRunner resume` | 恢复驱动（多态入口，见 §4） |
-| `Value* vmState` | 未来 VM 的挂起状态（native 恒为 nullptr） |
+| `vm::VmState* vmState` | VM 挂起状态（script 函数；native 恒为 nullptr） |
 
 状态机：
 
@@ -127,7 +127,7 @@ using CoroutineRunner = Value* (*)(IContext* ctx, Value* coroutine, Value* sentV
 | target | runner | resumePoint 语义 |
 |--------|--------|------------------|
 | native 函数 | `resumeNativeCoroutine` | 阶段号 |
-| VM 函数（未来） | `resumeVmCoroutine` | PC |
+| script 函数（已实现） | `resumeScriptCoroutine` | PC（`VmState` 快照） |
 
 Generator 内建（`next/return/throw`）只调 `resume`，不关心底层是 native 还是 VM。
 这正是「不为具体任务泛化机制，把逻辑放进多态入口」的延续（ADR-043 §5）。

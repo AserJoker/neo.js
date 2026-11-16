@@ -35,6 +35,10 @@
 #include <cstdint>
 #include <vector>
 
+namespace neo::vm {
+struct VmState;
+}  // namespace neo::vm
+
 namespace neo::core {
 
 class Scope;
@@ -86,7 +90,9 @@ public:
     Scope* execScope = nullptr;                        // 孤立执行作用域子树根
     std::vector<CallFrame> savedCallStack;             // 挂起时的调用栈快照
     CoroutineRunner resume = nullptr;                  // 恢复驱动（多态）
-    Value* vmState = nullptr;                          // 未来 VM 挂起状态
+    // VM 挂起状态（script 函数；native 恒为 nullptr）。由本 data 独占持有，
+    // 栈上的 Value 与 try 帧 res 在 GC 标记时遍历。
+    neo::vm::VmState* vmState = nullptr;
 
     ~CoroutineData() override;
 

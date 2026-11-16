@@ -217,6 +217,7 @@ _func_end:
 | `catch_end` | `d → d` | 产生 Interrupt(CatchEnd)，规则同 try_body_end |
 | `finally_end` | `d → d` | 产生 Interrupt(FinallyEnd)，VM 按 res 分派 |
 | `throw` | `[value] → []` | 包成 Exception 交给 VM 展开 |
+| `yield` | `[value] → [sent]` | 产生 Interrupt(Yield)；恢复时压入外部注入值 |
 
 - catch/finally 是 out-of-line 块，线性流程通过 end Interrupt 跳过，不发射 `jmp`。
 - `try_end` 是整条 try 语句之后的位置，不是指令；`pop_try` 是 VM 内部动作。

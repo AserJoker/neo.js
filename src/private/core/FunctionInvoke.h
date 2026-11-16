@@ -37,6 +37,10 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
 Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t argc,
                             Value* argv[]);
 
+// script 生成器的恢复驱动（CoroutineRunner）：首次恢复创建执行作用域并运行
+// 到首个 yield；后续恢复重建 VM 并从 VmState 继续。
+Value* resumeScriptCoroutine(IContext* ctx, Value* coroutine, Value* sentValue);
+
 }  // namespace neo::core
 
 #endif  // NEO_CORE_PRIVATE_FUNCTION_INVOKE_H
