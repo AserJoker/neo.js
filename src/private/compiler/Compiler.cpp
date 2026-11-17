@@ -6,8 +6,10 @@
 #include "compiler/Compiler.h"
 
 #include "core/OperatorKind.h"
+#include "regex/RegexEngine.h"
 #include "sema/ResolvePass.h"
 
+#include <memory>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -1475,7 +1477,15 @@ void Compiler::compileStringLiteral(const frontend::StringLiteral& node) {
 }
 
 void Compiler::compileRegExpLiteral(const frontend::RegExpLiteral& node) {
-    code_->pushRegExp(node.pattern, node.flags);
+    // 字面量在编译期预编译 Program，运行期直接复用。Sema 已做过早期校验，
+    // 这里的失败只可能是内部不一致；此时回退到运行期编译路径。
+    std::shared_ptr<const neo::regex::Program> program;
+    auto parsed = neo::regex::parseFlags(node.flags);
+    if (parsed.ok()) {
+        auto compiled = neo::regex::compilePattern(node.pattern, parsed.flags);
+        if (compiled.ok()) program = std::move(compiled.program);
+    }
+    code_->pushRegExp(node.pattern, node.flags, std::move(program));
 }
 
 void Compiler::compileBooleanLiteral(const frontend::BooleanLiteral& node) {

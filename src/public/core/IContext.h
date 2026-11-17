@@ -59,6 +59,11 @@ namespace neo::vm {
 struct Code;
 }  // namespace neo::vm
 
+// 正则编译产物（不可变，见 private/regex/RegexProgram.h）。
+namespace neo::regex {
+struct Program;
+}  // namespace neo::regex
+
 namespace neo::core {
 
 // 前向声明
@@ -569,6 +574,13 @@ public:
     // 原型自动挂 regexpPrototype()。
     virtual Value* createRegExp(std::string_view pattern, std::string_view flags,
                                 std::string_view bindName = {}) = 0;
+
+    // 复用 Compiler 预编译的 Program（字面量路径）：program 非空时跳过编译，
+    // 仅解析 flags 填充 RegExpData 的布尔槽位。program 为空等价于上面的重载。
+    virtual Value* createRegExp(
+        std::string_view pattern, std::string_view flags,
+        const std::shared_ptr<const neo::regex::Program>& program,
+        std::string_view bindName = {}) = 0;
 
     // createRegExpStringIterator: 创建 @@matchAll 的惰性迭代器
     // （ES2024 §22.2.9）。原型挂 %Iterator.prototype%，next 由调用方定义。

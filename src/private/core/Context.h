@@ -295,6 +295,10 @@ public:
                                 std::string_view bindName = {}) override;
     Value* createRegExp(std::string_view pattern, std::string_view flags,
                         std::string_view bindName = {}) override;
+    Value* createRegExp(
+        std::string_view pattern, std::string_view flags,
+        const std::shared_ptr<const neo::regex::Program>& program,
+        std::string_view bindName = {}) override;
     Value* createRegExpStringIterator(Value* regexp, Value* string, bool global,
                                       bool unicode,
                                       std::string_view bindName = {}) override;

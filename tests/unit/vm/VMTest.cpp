@@ -11,10 +11,12 @@
 #include "core/Scope.h"
 #include "core/types/Exception.h"
 #include "core/types/Number.h"
+#include "core/types/RegExp.h"
 #include "core/types/String.h"
 #include "infra/Console.h"
 #include "infra/IAllocator.h"
 #include "infra/MallocAllocator.h"
+#include "regex/RegexEngine.h"
 #include "vm/Code.h"
 #include "vm/VM.h"
 
@@ -33,6 +35,7 @@ using neo::core::StringData;
 using neo::core::TypeKind;
 using neo::core::Value;
 using neo::core::createContext;
+using neo::core::regexpData;
 using neo::infra::Console;
 using neo::infra::IOutputSink;
 using neo::infra::createMallocAllocator;
@@ -128,6 +131,37 @@ TEST(VMTest, PushStringUsesStringTable) {
 
     ASSERT_EQ(result->type()->kind(), TypeKind::String);
     EXPECT_EQ(stringValue(result), "hello");
+}
+
+TEST(VMTest, PushRegExpUsesPrecompiledProgram) {
+    Fixture f;
+    auto compiled = neo::regex::compilePattern("b+", neo::regex::Flags{});
+    ASSERT_TRUE(compiled.ok());
+
+    Code code;
+    code.pushRegExp("b+", "", compiled.program);
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    Value* result = vm.run();
+
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->type()->kind(), TypeKind::RegExp);
+    EXPECT_EQ(regexpData(result)->program, compiled.program);
+}
+
+TEST(VMTest, PushRegExpFallsBackToRuntimeCompile) {
+    Fixture f;
+    Code code;
+    code.pushRegExp("b+", "");
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    Value* result = vm.run();
+
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->type()->kind(), TypeKind::RegExp);
+    EXPECT_NE(regexpData(result)->program, nullptr);
 }
 
 TEST(VMTest, DefineAndLoad) {

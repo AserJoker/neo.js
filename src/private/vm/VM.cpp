@@ -667,19 +667,30 @@ Value* VM::opPushBigInt() {
 
 Value* VM::opPushRegExp() {
     const std::vector<uint8_t>& bytes = code_->bytecode;
-    if (bytes.size() - pc_ < 8) {
+    if (bytes.size() - pc_ < 12) {
         return badBytecode("push_regexp: truncated operand");
     }
     const uint32_t patternIndex = readU32(bytes.data() + pc_);
     pc_ += 4;
     const uint32_t flagsIndex = readU32(bytes.data() + pc_);
     pc_ += 4;
+    const uint32_t programIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
     const std::string* pattern = stringOperand(patternIndex);
     const std::string* flags = stringOperand(flagsIndex);
     if (pattern == nullptr || flags == nullptr) {
         return badBytecode("push_regexp: constant index out of range");
     }
-    Value* regexp = ctx_->createRegExp(*pattern, *flags);
+    Value* regexp = nullptr;
+    if (programIndex == Code::kNoRegexProgram) {
+        regexp = ctx_->createRegExp(*pattern, *flags);
+    } else {
+        if (programIndex >= code_->regexPrograms.size()) {
+            return badBytecode("push_regexp: program index out of range");
+        }
+        regexp = ctx_->createRegExp(*pattern, *flags,
+                                    code_->regexPrograms[programIndex]);
+    }
     if (detail::isErrorValue(regexp)) return regexp;
     push(regexp);
     return nullptr;

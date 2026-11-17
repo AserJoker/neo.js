@@ -1831,18 +1831,37 @@ Value* Context::createRegExpStringIterator(Value* regexp, Value* string,
 
 Value* Context::createRegExp(std::string_view pattern, std::string_view flags,
                              std::string_view bindName) {
-    std::shared_ptr<const neo::regex::Program> program;
+    return createRegExp(pattern, flags,
+                        std::shared_ptr<const neo::regex::Program>{}, bindName);
+}
+
+Value* Context::createRegExp(
+    std::string_view pattern, std::string_view flags,
+    const std::shared_ptr<const neo::regex::Program>& program,
+    std::string_view bindName) {
+    std::shared_ptr<const neo::regex::Program> compiled = program;
     neo::regex::Flags parsedFlags;
     std::string error;
-    if (!compileRegExp(pattern, flags, program, parsedFlags, error)) {
-        return detail::errorOf(this, ErrorKind::SyntaxError, error);
+    if (compiled == nullptr) {
+        if (!compileRegExp(pattern, flags, compiled, parsedFlags, error)) {
+            return detail::errorOf(this, ErrorKind::SyntaxError, error);
+        }
+    } else {
+        // 预编译产物已由 Compiler 校验；这里只解析 flags 填充布尔槽位。
+        auto parsed = neo::regex::parseFlags(flags);
+        if (!parsed.ok()) {
+            return detail::errorOf(
+                this, ErrorKind::SyntaxError,
+                parsed.error ? parsed.error->message : "Invalid flags");
+        }
+        parsedFlags = parsed.flags;
     }
 
     auto* d = gc_->allocData<RegExpData>();
     if (d == nullptr) return oomValue_;
     d->source = std::string(pattern);
     d->flags = std::string(flags);
-    d->program = std::move(program);
+    d->program = std::move(compiled);
     d->global = parsedFlags.global;
     d->ignoreCase = parsedFlags.ignoreCase;
     d->multiline = parsedFlags.multiline;

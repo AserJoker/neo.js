@@ -357,8 +357,16 @@ Match
   传入匹配、捕获、offset、input 与 groups。
 - `@@split` 使用 `SpeciesConstructor` 构造 flags 追加 `y` 的 splitter，并按
   规范以 `RegExpExec` + `lastIndex` 推进；captures 直接取结果对象元素。
-- 字面量在 Compiler 阶段预编译 `Program` 仍留待后续（当前依赖运行时 LRU
-  缓存；Sema 已做早期校验）。
+**端到端接入（P2）**：
+
+- 正则字面量在 Compiler 阶段调用 host-free 的 `regex::compilePattern()`
+  预编译 `Program`，写入 `Code::regexPrograms`；`push_regexp` 指令新增第三个
+  操作数（program 表下标，`kNoRegexProgram` 表示无预编译产物）。
+- `IContext::createRegExp(pattern, flags, program, bindName)` 重载复用预编译
+  `Program`，只解析 flags 填充 `RegExpData` 的布尔槽位，不再走运行期编译；
+  program 为空时保持原路径（`new RegExp`/`compile` 仍依赖运行时 LRU 缓存）。
+- Compiler 预编译失败（Sema 已拦截，正常不可达）时回退为 `kNoRegexProgram`，
+  VM 仍可运行期编译，保证不产生半成品字节码。
 
 ### 10. 文件布局
 

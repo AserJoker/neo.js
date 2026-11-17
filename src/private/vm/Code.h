@@ -18,6 +18,7 @@
 #include "vm/OpCode.h"
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -28,6 +29,10 @@
 namespace neo::core {
 class Value;
 }  // namespace neo::core
+
+namespace neo::regex {
+struct Program;
+}  // namespace neo::regex
 
 namespace neo::vm {
 
@@ -79,6 +84,9 @@ struct Code {
     std::vector<std::string> strings;  // 字符串/名字表
     // 字符串常量去重：value → strings 下标。
     std::unordered_map<std::string, uint32_t> stringIndex;
+    // 正则字面量的编译产物（Compiler 预编译；VM 直接复用，避免运行期重编译）。
+    // 与 pattern/flags 字符串常量分开存放，Program 是不可变纯 C++ 数据。
+    std::vector<std::shared_ptr<const neo::regex::Program>> regexPrograms;
     SourceMap sourceMap;
     // 本 Code 所属模块 id（动态 import 相对说明符的基准）；script 为文件名。
     std::string moduleId;
@@ -152,11 +160,21 @@ struct Code {
         emitU32(radix);
         return pc;
     }
-    // 正则字面量：pattern 与 flags 分别进字符串常量表。
-    uint32_t pushRegExp(std::string_view pattern, std::string_view flags) {
+    // 正则字面量：pattern 与 flags 分别进字符串常量表；program 为 Compiler
+    // 预编译产物（可空，空时 VM 回退到 createRegExp 的运行期编译）。
+    static constexpr uint32_t kNoRegexProgram = 0xFFFFFFFFu;
+    uint32_t pushRegExp(std::string_view pattern, std::string_view flags,
+                        std::shared_ptr<const neo::regex::Program> program =
+                            nullptr) {
         uint32_t pc = emitOp(OpCode::PushRegExp);
         emitU32(addString(std::string(pattern)));
         emitU32(addString(std::string(flags)));
+        uint32_t programIndex = kNoRegexProgram;
+        if (program != nullptr) {
+            programIndex = static_cast<uint32_t>(regexPrograms.size());
+            regexPrograms.push_back(std::move(program));
+        }
+        emitU32(programIndex);
         return pc;
     }
     // 字面量字符串走精确匹配，避免与数值重载产生歧义。
