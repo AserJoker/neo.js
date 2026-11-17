@@ -24,9 +24,18 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace neo::compiler {
+
+// 私有名声明种类（编译期决定发射哪条私有访问指令）。
+struct PrivateNameInfo {
+    bool field = false;
+    bool method = false;
+    bool getter = false;
+    bool setter = false;
+};
 
 struct CompilerOptions {
     // SourceMap 中记录的文件名；无文件名时用 "<anonymous>"。
@@ -36,6 +45,12 @@ struct CompilerOptions {
     bool eval = false;
     // eval 代码按严格模式编译（调用方严格或源码含 "use strict"）。
     bool evalStrict = false;
+    // 直接 eval 继承调用方 PrivateEnvironment（§19.2.1.1 step 10）：
+    // 名字 → 声明种类。仅当源码不在 class 体内时作为最外层私有名可见集。
+    std::unordered_map<std::string, PrivateNameInfo> privateEnvironment;
+
+    CompilerOptions() = default;
+    explicit CompilerOptions(std::string file) : filename(std::move(file)) {}
 };
 
 struct CompileError {
@@ -203,12 +218,7 @@ private:
 
     // —— class 私有元素 ——
     // 私有名在 class 内的种类（同一名字可能是 getter+setter）。
-    struct PrivateInfo {
-        bool field = false;
-        bool method = false;
-        bool getter = false;
-        bool setter = false;
-    };
+    using PrivateInfo = PrivateNameInfo;
     // 收集 class body 内的私有声明（不含 '#'）。
     std::unordered_map<std::string, PrivateInfo> collectPrivateElements(
         const frontend::ClassBody& body) const;

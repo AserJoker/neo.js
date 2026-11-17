@@ -3035,6 +3035,9 @@ const Compiler::PrivateInfo* Compiler::findPrivateInfo(
         const auto found = it->find(std::string(name));
         if (found != it->end()) return &found->second;
     }
+    // 直接 eval：继承调用方 PrivateEnvironment（最外层可见集）。
+    const auto inherited = options_.privateEnvironment.find(std::string(name));
+    if (inherited != options_.privateEnvironment.end()) return &inherited->second;
     return nullptr;
 }
 

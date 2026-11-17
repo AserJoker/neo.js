@@ -275,6 +275,51 @@ TEST(EvalTest, EvalHasNoPrototype) {
     EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
 }
 
+TEST(EvalTest, DirectEvalInMethodSeesPrivateField) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "class A {\n"
+                          "  #x = 5;\n"
+                          "  m() { return eval('this.#x'); }\n"
+                          "}\n"
+                          "var out = new A().m();\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 5.0);
+}
+
+TEST(EvalTest, DirectEvalCanWritePrivateField) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "class A {\n"
+                          "  #x = 1;\n"
+                          "  m() { eval('this.#x = 7;'); return this.#x; }\n"
+                          "}\n"
+                          "var out = new A().m();\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 7.0);
+}
+
+TEST(EvalTest, DirectEvalPrivateInOperator) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "class A {\n"
+                          "  #x = 1;\n"
+                          "  m() { return eval('#x in this'); }\n"
+                          "}\n"
+                          "var out = new A().m();\n"));
+    EXPECT_TRUE(neo::core::detail::toBoolean(lookupOut(f)));
+}
+
+TEST(EvalTest, DirectEvalCallsPrivateMethod) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "class A {\n"
+                          "  #v = 3;\n"
+                          "  #m() { return this.#v; }\n"
+                          "  run() { return eval('this.#m()'); }\n"
+                          "}\n"
+                          "var out = new A().run();\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 3.0);
+}
+
 TEST(EvalTest, ClosureCreatedByEvalCapturesInjectedBinding) {
     Fixture f;
     f.ctx->global()->clearFlag("strict");

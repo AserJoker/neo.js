@@ -111,6 +111,51 @@ Value* Context::evalSource(Value* source, Scope* callerScope, bool direct) {
     options.filename = "<eval>";
     options.eval = true;
     options.evalStrict = strict;
+
+    // 直接 eval 继承调用方 PrivateEnvironment（§19.2.1.1 step 10）：
+    // 从当前函数的 ownerClass 还原可见私有名及其声明种类。
+    if (direct && currentFunction_ != nullptr &&
+        currentFunction_->type()->kind() == TypeKind::Function) {
+        auto* fd = static_cast<FunctionData*>(currentFunction_->data());
+        if (fd->ownerClass != nullptr &&
+            fd->ownerClass->type()->kind() == TypeKind::Function) {
+            auto* cd = static_cast<ClassData*>(fd->ownerClass->data());
+            for (const InstanceElement& e : cd->instanceElements) {
+                if (e.kind != InstanceElement::Kind::PrivateField ||
+                    e.name == nullptr) {
+                    continue;
+                }
+                options.privateEnvironment[e.name->description].field = true;
+            }
+            for (const PrivateFieldDef& f : cd->staticPrivateFields) {
+                if (f.name != nullptr) {
+                    options.privateEnvironment[f.name->description].field = true;
+                }
+            }
+            for (const PrivateElement& e : cd->privateElements) {
+                if (e.name == nullptr) continue;
+                compiler::PrivateNameInfo& info =
+                    options.privateEnvironment[e.name->description];
+                if (e.kind == PrivateElement::Kind::Method) {
+                    info.method = true;
+                } else {
+                    info.getter = e.getter != nullptr;
+                    info.setter = e.setter != nullptr;
+                }
+            }
+            for (const PrivateElement& e : cd->staticPrivateElements) {
+                if (e.name == nullptr) continue;
+                compiler::PrivateNameInfo& info =
+                    options.privateEnvironment[e.name->description];
+                if (e.kind == PrivateElement::Kind::Method) {
+                    info.method = true;
+                } else {
+                    info.getter = e.getter != nullptr;
+                    info.setter = e.setter != nullptr;
+                }
+            }
+        }
+    }
     compiler::Compiler compiler(
         static_cast<const frontend::Program&>(*parsed.program), sema, options);
     compiler::CompileResult compiled = compiler.compile();

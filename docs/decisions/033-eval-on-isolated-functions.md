@@ -169,3 +169,15 @@ eval 源码不是独立 Script，其 Sema 早期错误判定依赖调用方上�
 该快照是 eval 特例的临时 Env 回退：纯数据、可测试，不把宿主上下文耦合进
 Sema/Compiler。私有名可见集、arguments 对象、全局词法冲突与完整
 Completion Record 仍待后续补齐。
+
+### 私有名可见集（2026-11-17）
+
+直接 eval 继承调用方 PrivateEnvironment（§19.2.1.1 step 10）。`CompilerOptions`
+新增 `privateEnvironment`（名字 → field/method/getter/setter），`findPrivateInfo`
+在 class 体作用域栈未命中时回退到该表。`Context::evalSource` 在直接 eval 时从
+`currentFunction_->ownerClass`（`ClassData`）还原实例/静态私有字段、私有方法与
+访问器，使 `eval('this.#x')`、`eval('#x in this')`、`eval('this.#m()')` 可编译并
+经既有 VM 私有指令执行。
+
+限制：只取当前函数所属 class 的私有环境；嵌套 class 中引用外层 class 的私有名
+仍不可见（静态编译路径同样受运行时 `ownerClass` 单层限制）。
