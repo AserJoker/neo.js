@@ -16,6 +16,7 @@
 #include "core/Scope.h"
 #include "core/Value.h"
 #include "core/types/Array.h"
+#include "core/types/Iterator.h"
 #include "core/types/Number.h"
 #include "core/types/Object.h"
 #include "core/types/RegExp.h"
@@ -314,7 +315,14 @@ Value* execString(IContext* ctx, Value* regexp, const RegExpData& data,
     std::size_t start = 0;
     Value* error = nullptr;
     if (!readLastIndex(ctx, regexp, start, error)) return error;
-    if (start > subject.size()) start = subject.size();
+    if (start > subject.size()) {
+        // §22.2.7.2 step 13.a：lastIndex 越界时重置并直接失败。
+        if (data.global || data.sticky) {
+            Value* reset = setLastIndex(ctx, regexp, 0);
+            if (isError(reset)) return reset;
+        }
+        return nullOf(ctx);
+    }
 
     regex::MatchResult result;
     if (!runEngine(ctx, data, subject, start, data.sticky, result, error)) {
@@ -376,6 +384,69 @@ Value* regexpCtor(IContext* ctx, Value*, size_t argc, Value* argv[]) {
     return regexpCreate(ctx, argc, argv, false);
 }
 
+// Annex B B.2.4.1 RegExp.prototype.compile：原地重新初始化。
+Value* regexpCompile(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    RegExpData* data = regexpData(self);
+    if (data == nullptr) {
+        return detail::typeError(
+            ctx, "RegExp.prototype.compile called on incompatible receiver");
+    }
+
+    Value* patternArg = argc > 0 ? argv[0] : undefinedOf(ctx);
+    Value* flagsArg = argc > 1 ? argv[1] : undefinedOf(ctx);
+
+    std::string pattern;
+    std::string flags;
+    if (patternArg->type()->kind() == TypeKind::RegExp) {
+        // §22.2.4.1 step 4：P 取 [[OriginalSource]]，与 flags 是否给出无关。
+        RegExpData* source = regexpData(patternArg);
+        pattern = source->source;
+        if (flagsArg->type()->kind() == TypeKind::Undefined) {
+            flags = source->flags;
+        } else {
+            Value* text = toStringArg(ctx, flagsArg);
+            if (isError(text)) return text;
+            flags = *stringData(text);
+        }
+    } else {
+        if (patternArg->type()->kind() == TypeKind::Undefined) {
+            pattern.clear();
+        } else {
+            Value* text = toStringArg(ctx, patternArg);
+            if (isError(text)) return text;
+            pattern = *stringData(text);
+        }
+        if (argc > 1) {
+            Value* text = toStringArg(ctx, flagsArg);
+            if (isError(text)) return text;
+            flags = *stringData(text);
+        }
+    }
+
+    std::shared_ptr<const regex::Program> program;
+    regex::Flags parsedFlags;
+    std::string error;
+    if (!compileRegExp(pattern, flags, program, parsedFlags, error)) {
+        return detail::errorOf(ctx, ErrorKind::SyntaxError, error);
+    }
+
+    data->source = std::move(pattern);
+    data->flags = std::move(flags);
+    data->program = std::move(program);
+    data->global = parsedFlags.global;
+    data->ignoreCase = parsedFlags.ignoreCase;
+    data->multiline = parsedFlags.multiline;
+    data->dotAll = parsedFlags.dotAll;
+    data->unicode = parsedFlags.unicode;
+    data->unicodeSets = parsedFlags.unicodeSets;
+    data->sticky = parsedFlags.sticky;
+    data->hasIndices = parsedFlags.hasIndices;
+
+    Value* reset = setLastIndex(ctx, self, 0);
+    if (isError(reset)) return reset;
+    return self;
+}
+
 Value* regexpConstruct(IContext* ctx, Value*, size_t argc, Value* argv[]) {
     return regexpCreate(ctx, argc, argv, true);
 }
@@ -394,8 +465,35 @@ Value* regexpExec(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     return execString(ctx, self, *data, toUtf16(*stringData(input)), input);
 }
 
+// ES2024 §22.2.7.1 RegExpExec：优先调用可覆写的 exec。
+Value* regExpExecValue(IContext* ctx, Value* regexp, const RegExpData& data,
+                       Value* input) {
+    Value* exec = ctx->getProperty(regexp, "exec");
+    if (isError(exec)) return exec;
+    if (detail::isCallable(exec)) {
+        Value* args[1] = {input};
+        Value* result = ctx->call(exec, regexp, 1, args);
+        if (isError(result)) return result;
+        if (result->type()->kind() != TypeKind::Null &&
+            !detail::isObjectKind(result->type()->kind())) {
+            return detail::typeError(
+                ctx, "RegExp exec result must be an object or null");
+        }
+        return result;
+    }
+    return execString(ctx, regexp, data, toUtf16(*stringData(input)), input);
+}
+
 Value* regexpTest(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    Value* result = regexpExec(ctx, self, argc, argv);
+    RegExpData* data = regexpData(self);
+    if (data == nullptr) {
+        return detail::typeError(
+            ctx, "RegExp.prototype.test called on incompatible receiver");
+    }
+    Value* input = argc > 0 ? toStringArg(ctx, argv[0])
+                            : ctx->createString("undefined");
+    if (isError(input)) return input;
+    Value* result = regExpExecValue(ctx, self, *data, input);
     if (isError(result)) return result;
     return ctx->createBoolean(result->type()->kind() != TypeKind::Null);
 }
@@ -765,10 +863,19 @@ Value* regexpSymbolSplit(IContext* ctx, Value* self, size_t argc,
 
     Value* result = ctx->createArray();
     if (result == ctx->oomValue()) return result;
+
+    // §22.2.6.16：内部使用 sticky 克隆，不改动原对象的 lastIndex。
+    std::string splitFlags = data->flags;
+    if (splitFlags.find('y') == std::string::npos) splitFlags += 'y';
+    Value* splitter = ctx->createRegExp(data->source, splitFlags);
+    if (isError(splitter)) return splitter;
+    RegExpData* splitData = regexpData(splitter);
+    if (splitData == nullptr) return ctx->oomValue();
+
     if (subject.empty()) {
         regex::MatchResult match;
         Value* error = nullptr;
-        if (!runEngine(ctx, *data, subject, 0, data->sticky, match, error)) {
+        if (!runEngine(ctx, *splitData, subject, 0, true, match, error)) {
             return error;
         }
         if (!match.matched()) {
@@ -783,11 +890,15 @@ Value* regexpSymbolSplit(IContext* ctx, Value* self, size_t argc,
     while (searchStart <= subject.size()) {
         regex::MatchResult match;
         Value* error = nullptr;
-        if (!runEngine(ctx, *data, subject, searchStart, data->sticky, match,
+        if (!runEngine(ctx, *splitData, subject, searchStart, true, match,
                        error)) {
             return error;
         }
-        if (!match.matched()) break;
+        if (!match.matched()) {
+            if (searchStart >= subject.size()) break;
+            ++searchStart;
+            continue;
+        }
         if (match.end == last && match.start == last) {
             if (searchStart >= subject.size()) break;
             ++searchStart;
@@ -822,6 +933,93 @@ Value* regexpSymbolSplit(IContext* ctx, Value* self, size_t argc,
     return result;
 }
 
+Value* makeIterResult(IContext* ctx, Value* value, bool done) {
+    Value* result = ctx->createObject();
+    if (isError(result)) return result;
+    if (isError(ctx->defineProperty(result, "value", value, true, true, true)))
+        return ctx->oomValue();
+    if (isError(ctx->defineProperty(result, "done", ctx->createBoolean(done),
+                                    true, true, true)))
+        return ctx->oomValue();
+    return result;
+}
+
+// ES2024 §22.2.9.1.1 %RegExpStringIteratorPrototype%.next。
+Value* regexpStringIteratorNext(IContext* ctx, Value* self, size_t,
+                                Value*[]) {
+    if (self == nullptr ||
+        self->type()->kind() != TypeKind::RegExpStringIterator) {
+        return detail::typeError(
+            ctx, "RegExp String Iterator.prototype.next called on "
+                 "incompatible receiver");
+    }
+    auto* data = static_cast<RegExpStringIteratorData*>(self->data());
+    if (data->done) {
+        return makeIterResult(ctx, ctx->createUndefined(), true);
+    }
+
+    RegExpData* matcher = regexpData(data->regexp);
+    if (matcher == nullptr) {
+        data->done = true;
+        return makeIterResult(ctx, ctx->createUndefined(), true);
+    }
+
+    Value* match = regExpExecValue(ctx, data->regexp, *matcher, data->string);
+    if (isError(match)) return match;
+    if (match->type()->kind() == TypeKind::Null) {
+        data->done = true;
+        return makeIterResult(ctx, ctx->createUndefined(), true);
+    }
+
+    if (data->global) {
+        Value* matched = ctx->getProperty(match, "0");
+        if (isError(matched)) return matched;
+        if (stringData(matched)->empty()) {
+            std::size_t last = 0;
+            Value* error = nullptr;
+            if (!readLastIndex(ctx, data->regexp, last, error)) return error;
+            const std::u16string subject = toUtf16(*stringData(data->string));
+            std::size_t width = 1;
+            if (data->unicode && last + 1 < subject.size()) {
+                const char16_t high = subject[last];
+                const char16_t low = subject[last + 1];
+                if (high >= 0xD800 && high <= 0xDBFF && low >= 0xDC00 &&
+                    low <= 0xDFFF) {
+                    width = 2;
+                }
+            }
+            Value* advanced = setLastIndex(ctx, data->regexp, last + width);
+            if (isError(advanced)) return advanced;
+        }
+        return makeIterResult(ctx, match, false);
+    }
+
+    data->done = true;
+    return makeIterResult(ctx, match, false);
+}
+
+// ES2024 §7.3.20 SpeciesConstructor。
+Value* speciesConstructor(IContext* ctx, Value* regexp) {
+    Value* ctor = ctx->getProperty(regexp, "constructor");
+    if (isError(ctor)) return ctor;
+    if (ctor->type()->kind() == TypeKind::Undefined) return ctx->regexpCtor();
+    if (!detail::isObjectKind(ctor->type()->kind())) {
+        return detail::typeError(ctx, "RegExp constructor is not an object");
+    }
+
+    Value* species = ctx->getProperty(
+        ctor, ctx->getWellKnownSymbol(WellKnownSymbol::Species));
+    if (isError(species)) return species;
+    if (species->type()->kind() == TypeKind::Null ||
+        species->type()->kind() == TypeKind::Undefined) {
+        return ctx->regexpCtor();
+    }
+    if (!detail::isConstructor(species)) {
+        return detail::typeError(ctx, "RegExp species is not a constructor");
+    }
+    return species;
+}
+
 Value* regexpSymbolMatchAll(IContext* ctx, Value* self, size_t argc,
                             Value* argv[]) {
     RegExpData* data = regexpData(self);
@@ -830,34 +1028,53 @@ Value* regexpSymbolMatchAll(IContext* ctx, Value* self, size_t argc,
                                  "RegExp.prototype[Symbol.matchAll] called on "
                                  "incompatible receiver");
     }
-    if (!data->global) {
+
+    Value* flagsValue = ctx->getProperty(self, "flags");
+    if (isError(flagsValue)) return flagsValue;
+    Value* flagsText = toStringArg(ctx, flagsValue);
+    if (isError(flagsText)) return flagsText;
+    const std::string flags = *stringData(flagsText);
+    if (flags.find('g') == std::string::npos) {
         return detail::typeError(
             ctx, "String.prototype.matchAll called with a non-global RegExp");
     }
+
     Value* input = argc > 0 ? toStringArg(ctx, argv[0]) : undefinedOf(ctx);
     if (isError(input)) return input;
-    const std::u16string subject = toUtf16(*stringData(input));
 
-    Value* results = ctx->createArray();
-    if (results == ctx->oomValue()) return results;
-    if (isError(setLastIndex(ctx, self, 0))) return ctx->oomValue();
+    Value* ctor = speciesConstructor(ctx, self);
+    if (isError(ctor)) return ctor;
 
-    for (;;) {
-        Value* match = execString(ctx, self, *data, subject, input);
-        if (isError(match)) return match;
-        if (match->type()->kind() == TypeKind::Null) break;
-        if (isError(ctx->arrayAppend(results, match))) return ctx->oomValue();
-        Value* first = ctx->getProperty(match, "0");
-        if (isError(first)) return first;
-        if (stringData(first)->empty()) {
-            std::size_t next = 0;
-            Value* error = nullptr;
-            if (!readLastIndex(ctx, self, next, error)) return error;
-            if (next >= subject.size()) break;
-            if (isError(setLastIndex(ctx, self, next + 1))) return ctx->oomValue();
-        }
-    }
-    return ctx->createArrayIterator(results, ArrayIterationKind::Value);
+    Value* ctorArgs[2] = {self, flagsText};
+    Value* matcher = ctx->construct(ctor, 2, ctorArgs);
+    if (isError(matcher)) return matcher;
+
+    std::size_t start = 0;
+    Value* error = nullptr;
+    if (!readLastIndex(ctx, self, start, error)) return error;
+    Value* lastIndex =
+        ctx->createNumber(static_cast<double>(start));
+    if (isError(lastIndex)) return lastIndex;
+    Value* setResult = ctx->setProperty(matcher, "lastIndex", lastIndex);
+    if (isError(setResult)) return setResult;
+
+    const bool unicode = flags.find('u') != std::string::npos ||
+                         flags.find('v') != std::string::npos;
+    Value* iterator =
+        ctx->createRegExpStringIterator(matcher, input, true, unicode);
+    if (isError(iterator)) return iterator;
+
+    Value* next = ctx->createNativeFunction(regexpStringIteratorNext, 0);
+    if (isError(next)) return next;
+    ctx->setFunctionName(next, "next");
+    if (isError(ctx->defineProperty(iterator, "next", next, true, false, true)))
+        return ctx->oomValue();
+    if (isError(ctx->defineProperty(
+            iterator,
+            ctx->getWellKnownSymbol(WellKnownSymbol::ToStringTag),
+            ctx->createString("RegExp String Iterator"), false, false, true)))
+        return ctx->oomValue();
+    return iterator;
 }
 
 // —— String.prototype 六个方法 ——
@@ -1030,6 +1247,7 @@ bool registerRegExpBuiltins(IContext* ctx) {
 
     if (!defineMethod(ctx, proto, "exec", regexpExec, 0)) return false;
     if (!defineMethod(ctx, proto, "test", regexpTest, 0)) return false;
+    if (!defineMethod(ctx, proto, "compile", regexpCompile, 0)) return false;
     if (!defineMethod(ctx, proto, "toString", regexpToString, 0)) return false;
 
     if (!defineGetter(ctx, proto, "source", regexpSourceGetter)) return false;

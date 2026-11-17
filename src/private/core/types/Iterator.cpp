@@ -116,6 +116,21 @@ IData* StringIteratorData::clone(neo::infra::IAllocator* /*alloc*/) const {
     return self;
 }
 
+// —— RegExpStringIteratorData ——
+
+void RegExpStringIteratorData::enumerateChildren(IGCVisitor* visitor) {
+    ObjectData::enumerateChildren(visitor);
+    if (regexp != nullptr) visitor->visit(regexp);
+    if (string != nullptr) visitor->visit(string);
+}
+
+IData* RegExpStringIteratorData::clone(
+    neo::infra::IAllocator* /*alloc*/) const {
+    auto* self = const_cast<RegExpStringIteratorData*>(this);
+    self->refInc();
+    return self;
+}
+
 // —— IteratorWrapperData ——
 
 void IteratorWrapperData::enumerateChildren(IGCVisitor* visitor) {

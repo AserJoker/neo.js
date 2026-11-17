@@ -335,6 +335,21 @@ Match
   U+2028/U+2029；空 pattern 返回 `(?:)`。
 - `@@search` 保存 `lastIndex`，非 0 时置 0，执行后恢复原值。
 
+**端到端接入（P1）**：
+
+- `RegExp.prototype.compile`（Annex B）原地重新初始化 source/flags/Program
+  与 flags 布尔值，并重置 `lastIndex`。
+- `@@split` 内部用同 source/flags + `y` 的 sticky 克隆匹配，不改动原对象
+  `lastIndex`；不再依赖原对象是否 sticky。
+- `test` 走 `RegExpExec`：优先调用可覆写的 `exec` 属性，返回值必须是对象
+  或 null；未覆写时回退内置执行。
+- `@@matchAll` 按规范使用 `SpeciesConstructor` 克隆 matcher，读取原对象
+  `lastIndex` 写入克隆，返回惰性 `RegExpStringIterator`（新增
+  `TypeKind::RegExpStringIterator` 与 `Context::createRegExpStringIterator`）。
+  空匹配按 `AdvanceStringIndex` 推进克隆的 `lastIndex`。
+- `RegExpBuiltinExec` 修正 `lastIndex > length`：global/sticky 时重置为 0
+  并返回 null，不再钳制到字符串末尾。
+
 ### 10. 文件布局
 
 ```

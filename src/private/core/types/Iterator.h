@@ -102,6 +102,26 @@ public:
     IData* clone(neo::infra::IAllocator* alloc) const override;
 };
 
+class RegExpStringIteratorType : public IteratorObjectType {
+public:
+    RegExpStringIteratorType()
+        : IteratorObjectType(TypeKind::RegExpStringIterator) {}
+    const char* name() const override { return "regexp string iterator"; }
+};
+
+// 正则字符串迭代器负载（ES2024 §22.2.9）。
+class RegExpStringIteratorData : public ObjectData {
+public:
+    Value* regexp = nullptr;  // [[IteratingRegExp]]
+    Value* string = nullptr;  // [[IteratedString]]
+    bool global = false;      // [[Global]]
+    bool unicode = false;     // [[Unicode]]
+    bool done = false;        // [[Done]]
+
+    void enumerateChildren(IGCVisitor* visitor) override;
+    IData* clone(neo::infra::IAllocator* alloc) const override;
+};
+
 class IteratorWrapperType : public IteratorObjectType {
 public:
     IteratorWrapperType() : IteratorObjectType(TypeKind::IteratorWrapper) {}

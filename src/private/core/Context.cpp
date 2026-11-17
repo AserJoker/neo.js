@@ -1809,6 +1809,26 @@ Value* Context::createStringIterator(Value* string, std::string_view bindName) {
     return iter;
 }
 
+Value* Context::createRegExpStringIterator(Value* regexp, Value* string,
+                                           bool global, bool unicode,
+                                           std::string_view bindName) {
+    if (regexp == nullptr || string == nullptr) {
+        return detail::typeError(this, "invalid RegExp string iterator");
+    }
+    auto* d = gc_->allocData<RegExpStringIteratorData>();
+    if (d == nullptr) return oomValue_;
+    d->regexp = regexp;
+    d->string = string;
+    d->global = global;
+    d->unicode = unicode;
+    d->done = false;
+    Value* iter = createTracked(getRegExpStringIteratorType(), d, bindName);
+    if (iter != oomValue_ && iteratorPrototype_ != nullptr) {
+        static_cast<ObjectData*>(iter->data())->prototype = iteratorPrototype_;
+    }
+    return iter;
+}
+
 Value* Context::createRegExp(std::string_view pattern, std::string_view flags,
                              std::string_view bindName) {
     std::shared_ptr<const neo::regex::Program> program;

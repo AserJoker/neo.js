@@ -295,6 +295,9 @@ public:
                                 std::string_view bindName = {}) override;
     Value* createRegExp(std::string_view pattern, std::string_view flags,
                         std::string_view bindName = {}) override;
+    Value* createRegExpStringIterator(Value* regexp, Value* string, bool global,
+                                      bool unicode,
+                                      std::string_view bindName = {}) override;
     Value* regexpPrototype() const override { return regexpPrototype_; }
     void setRegExpPrototype(Value* proto) override { regexpPrototype_ = proto; }
     Value* regexpCtor() const override { return regexpCtor_; }

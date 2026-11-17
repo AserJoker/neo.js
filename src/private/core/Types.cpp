@@ -158,6 +158,11 @@ IType* getRegExpType() {
     return &inst;
 }
 
+IType* getRegExpStringIteratorType() {
+    static RegExpStringIteratorType inst;
+    return &inst;
+}
+
 // TypeKind → Type 单例映射（唯一真相源）。
 // 新增类型：在此加一行 case + 上面的 getXxxType()，对象模型分派点自动覆盖。
 IType* getTypeByKind(TypeKind k) {
@@ -187,6 +192,8 @@ IType* getTypeByKind(TypeKind k) {
         case TypeKind::ModuleNamespace:  return getModuleNamespaceType();
         case TypeKind::Proxy:            return getProxyType();
         case TypeKind::RegExp:           return getRegExpType();
+        case TypeKind::RegExpStringIterator:
+            return getRegExpStringIteratorType();
     }
     return nullptr;
 }

@@ -570,6 +570,12 @@ public:
     virtual Value* createRegExp(std::string_view pattern, std::string_view flags,
                                 std::string_view bindName = {}) = 0;
 
+    // createRegExpStringIterator: 创建 @@matchAll 的惰性迭代器
+    // （ES2024 §22.2.9）。原型挂 %Iterator.prototype%，next 由调用方定义。
+    virtual Value* createRegExpStringIterator(Value* regexp, Value* string,
+                                              bool global, bool unicode,
+                                              std::string_view bindName = {}) = 0;
+
     // regexpPrototype / regexpCtor: %RegExp.prototype% 与 %RegExp% 构造函数。
     // 由 RegExpBuiltins 建立，生命周期与 Context 一致。
     virtual Value* regexpPrototype() const = 0;

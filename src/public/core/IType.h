@@ -119,6 +119,9 @@ enum class TypeKind : uint8_t {
     // RegExp 对象（ES2024 §22.2）：普通对象 + 编译后的正则程序与原始 source/flags。
     // lastIndex 是普通自有数据属性，不进入内部槽。
     RegExp,
+    // 正则字符串迭代器（ES2024 §22.2.9）：@@matchAll 的惰性迭代器。
+    // 持 [[IteratingRegExp]]/[[IteratedString]]/[[Global]]/[[Unicode]]/[[Done]]。
+    RegExpStringIterator,
     // 后续阶段：BigInt/...
 };
 
@@ -302,6 +305,7 @@ IType* getAsyncGeneratorType();
 IType* getModuleNamespaceType();
 IType* getProxyType();
 IType* getRegExpType();
+IType* getRegExpStringIteratorType();
 
 // —— TypeKind → Type 单例（Types.cpp 中的唯一映射表）——
 // 未注册的 kind 返回 nullptr。新增类型时只需在此加一行映射，

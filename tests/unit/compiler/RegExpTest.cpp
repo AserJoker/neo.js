@@ -266,3 +266,59 @@ TEST(RegExpTest, SymbolSearchRestoresLastIndex) {
         "var result = index + ':' + r.lastIndex;");
     EXPECT_EQ(stringValue(result), "1:5");
 }
+
+TEST(RegExpTest, CompileReinitializesInPlace) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var r = /a/;"
+        "r.compile('b+', 'g');"
+        "var matched = r.test('bbb');"
+        "var result = r.source + ':' + r.flags + ':' + matched + ':' + r.lastIndex;");
+    EXPECT_EQ(stringValue(result), "b+:g:true:3");
+}
+
+TEST(RegExpTest, SplitUsesStickyClone) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var r = /,/y;"
+        "r.lastIndex = 99;"
+        "var parts = 'a,b,c'.split(r);"
+        "var result = parts.join('|') + ':' + r.lastIndex;");
+    EXPECT_EQ(stringValue(result), "a|b|c:99");
+}
+
+TEST(RegExpTest, TestUsesOverridableExec) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var r = /a/;"
+        "r.exec = function() { return null; };"
+        "var result = r.test('a');");
+    EXPECT_FALSE(boolValue(result));
+}
+
+TEST(RegExpTest, MatchAllDoesNotMutateLastIndex) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var r = /(\\d)/g;"
+        "r.lastIndex = 0;"
+        "var it = r[Symbol.matchAll]('a1b2');"
+        "var before = r.lastIndex;"
+        "var first = it.next().value;"
+        "var result = before + ':' + first[0] + ':' + r.lastIndex;");
+    EXPECT_EQ(stringValue(result), "0:1:0");
+}
+
+TEST(RegExpTest, MatchAllAdvancesOnEmptyMatches) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var it = 'ab'.matchAll(/(?:)/g);"
+        "var count = 0;"
+        "while (!it.next().done) count++;"
+        "var result = count;");
+    EXPECT_DOUBLE_EQ(numberValue(result), 3.0);
+}
