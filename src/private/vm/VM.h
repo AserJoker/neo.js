@@ -148,6 +148,7 @@ private:
     neo::core::Value* opInitialize();
     neo::core::Value* opLoad();
     neo::core::Value* opStore();
+    neo::core::Value* opStoreVar();
     neo::core::Value* opGetProp();
     neo::core::Value* opSetProp();
     neo::core::Value* opNewObject();
@@ -196,6 +197,7 @@ private:
     neo::core::Value* opBreak();
     neo::core::Value* opContinue();
     neo::core::Value* opPushScope();
+    neo::core::Value* opPushVarScope();
     neo::core::Value* opPopScope();
     neo::core::Value* opPushWithScope();
     neo::core::Value* opIterationEnv();

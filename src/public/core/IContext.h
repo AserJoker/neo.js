@@ -1009,6 +1009,11 @@ public:
                           bool initialized = true) = 0;
     virtual Value* store(std::string_view name, Value* source) = 0;
 
+    // storeVar: 写入变量环境绑定（跳过中间的词法作用域）。
+    // 目标依次为 eval 变量环境、当前函数环境、模块根。用于 Annex B.3.3
+    // 块级函数同步到外层 var 绑定。
+    virtual Value* storeVar(std::string_view name, Value* source) = 0;
+
     // initialize: 初始化一个已提升但尚未初始化的绑定（TDZ 解除）。
     // 允许写 <uninitialized> 槽位，不受 const 的 mutableBinding=false 限制；
     // 已初始化或绑定不存在返回 Exception。

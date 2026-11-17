@@ -2648,6 +2648,43 @@ Value* Context::store(std::string_view name, Value* source) {
     return defineCloned(global(), name, source);
 }
 
+Value* Context::storeVar(std::string_view name, Value* source) {
+    if (isErrorValue(source)) return source;
+    // 变量环境：eval 用调用方变量环境；普通函数用函数体 "var-scope" 作用域
+    // （execScope 只承载 this/new.target，var 绑定在其子作用域）。
+    Scope* target = evalVarScope_;
+    if (target == nullptr) {
+        for (Scope* s = current(); s != nullptr; s = s->parent()) {
+            if (!s->hasFlag("var-scope")) continue;
+            target = s;
+            break;
+        }
+    }
+    if (target == nullptr) {
+        target = currentFunctionEnv_ != nullptr ? currentFunctionEnv_ : root_;
+    }
+    Scope::Binding* binding =
+        target != nullptr ? target->lookupBinding(name) : nullptr;
+    // 变量环境没有该绑定（动态路径）：回退普通 store。
+    if (binding == nullptr || binding->value == nullptr) {
+        return store(name, source);
+    }
+    if (!binding->initialized) {
+        return detail::referenceError(
+            this, "Cannot access '" + std::string(name) +
+                      "' before initialization");
+    }
+    if (!binding->mutableBinding) {
+        return detail::typeError(
+            this, "Assignment to constant variable '" + std::string(name) + "'");
+    }
+    IData* cloned = cloneForNewValue(source);
+    if (cloned == nullptr) return oomValue_;
+    IData* old = binding->value->replaceMeta(source->type(), cloned);
+    gc_->releaseData(old);
+    return binding->value;
+}
+
 // —— 可赋值性（ADR-030 阶段 5）——
 
 void Context::setBindingMutable(Scope* scope, std::string_view name, bool m) {

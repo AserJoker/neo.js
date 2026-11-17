@@ -109,6 +109,9 @@ enum class OpCode : uint16_t {
     Initialize,   // u32 Code::strings 下标（名字）
     Load,         // u32 Code::strings 下标（名字）
     Store,        // u32 Code::strings 下标（名字）
+    // u32 名字：[value] → []，写入变量环境绑定（跳过词法作用域）。
+    // Annex B.3.3 块级函数同步到外层 var 绑定用。
+    StoreVar,
 
     // 属性访问：[obj, key] → [value] / [obj, key, value] → [value]
     GetProp,
@@ -181,6 +184,9 @@ enum class OpCode : uint16_t {
 
     // 作用域
     PushScope,
+    // 函数体变量环境作用域：与 PushScope 相同，但标注 "var-scope"，
+    // 供 store_var 定位 Annex B.3.3 的变量绑定。
+    PushVarScope,
     PopScope,
     // [obj] → []：以 obj 为 with 对象创建 WithScope 并设为 current。
     PushWithScope,

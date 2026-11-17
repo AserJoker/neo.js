@@ -218,6 +218,11 @@ struct Code {
         emitU32(addString(std::string(name)));
         return pc;
     }
+    uint32_t storeVar(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::StoreVar);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
 
     uint32_t getProp() { return emitOp(OpCode::GetProp); }
     uint32_t setProp() { return emitOp(OpCode::SetProp); }
@@ -366,6 +371,7 @@ struct Code {
     }
 
     uint32_t pushScope() { return emitOp(OpCode::PushScope); }
+    uint32_t pushVarScope() { return emitOp(OpCode::PushVarScope); }
     uint32_t popScope() { return emitOp(OpCode::PopScope); }
     uint32_t pushWithScope() { return emitOp(OpCode::PushWithScope); }
 

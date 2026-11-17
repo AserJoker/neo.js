@@ -194,7 +194,13 @@ private:
     void compileFunctionBody(const frontend::NodeList& params,
                              const frontend::Node& body, bool arrow,
                              bool initInstanceElements = false,
-                             bool hasArguments = false);
+                             bool hasArguments = false, bool strict = false);
+    // Annex B.3.3：if 子句/标签函数声明按 var 语义创建并写入变量环境。
+    void compileAnnexBFunction(const frontend::FunctionDeclaration& function,
+                               bool blockScoped);
+    void collectAnnexBFunctionNames(const frontend::Node& statement,
+                                    std::vector<std::string>& names,
+                                    bool topLevel);
 
     // —— class ——
     // leaveValue=true 时保留构造器值（匿名 export default class 用）。
@@ -237,13 +243,14 @@ private:
     //   varScope=true：递归收集 var（不进入嵌套函数）→ undefined 槽；
     //   直接 let/const → uninitialized 槽（TDZ）；
     //   直接函数声明 → 先建 undefined 槽，再创建函数并 store（支持互相引用）。
-    void hoistScope(const frontend::NodeList& body, bool varScope);
+    void hoistScope(const frontend::NodeList& body, bool varScope,
+                    bool annexB = false);
     // 模块三段式拆分：建槽（var/let/const/函数占位）与函数对象创建分开发射。
     void hoistSlots(const frontend::NodeList& body, bool varScope);
     // eval：var 槽与词法槽分开提升（sloppy 模式 var 进调用方变量环境）。
     void hoistVarSlots(const frontend::NodeList& body, bool declare);
     void hoistLexicalSlots(const frontend::NodeList& body);
-    void hoistFunctions(const frontend::NodeList& body);
+    void hoistFunctions(const frontend::NodeList& body, bool annexB = false);
     void hoistEvalFunctions(const frontend::NodeList& body);
     void collectVarNames(const frontend::Node& statement,
                          std::vector<std::string>& names);
@@ -284,6 +291,8 @@ private:
     bool evalCompletion_ = false;
     // 当前函数有隐式 arguments 绑定：var arguments 是 no-op，不重复建槽。
     bool hasArgumentsBinding_ = false;
+    // 当前代码是否严格模式（决定 Annex B 块级函数是否额外建 var 绑定）。
+    bool strict_ = false;
     void compileDeleteChain(const frontend::ChainExpression& node);
 };
 

@@ -90,6 +90,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::Initialize:    return "initialize";
         case OpCode::Load:          return "load";
         case OpCode::Store:         return "store";
+        case OpCode::StoreVar:      return "store_var";
         case OpCode::GetProp:       return "get_prop";
         case OpCode::SetProp:       return "set_prop";
         case OpCode::NewObject:     return "new_object";
@@ -136,6 +137,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::Break:         return "break";
         case OpCode::Continue:      return "continue";
         case OpCode::PushScope:     return "push_scope";
+        case OpCode::PushVarScope:  return "push_var_scope";
         case OpCode::PopScope:      return "pop_scope";
         case OpCode::PushWithScope: return "push_with_scope";
         case OpCode::IterationEnv:  return "iteration_env";
@@ -221,6 +223,7 @@ const VM::Handler* VM::handlers() {
         &VM::opInitialize,
         &VM::opLoad,
         &VM::opStore,
+        &VM::opStoreVar,
         &VM::opGetProp,
         &VM::opSetProp,
         &VM::opNewObject,
@@ -267,6 +270,7 @@ const VM::Handler* VM::handlers() {
         &VM::opBreak,
         &VM::opContinue,
         &VM::opPushScope,
+        &VM::opPushVarScope,
         &VM::opPopScope,
         &VM::opPushWithScope,
         &VM::opIterationEnv,
@@ -855,6 +859,23 @@ Value* VM::opStore() {
     if (stack_.empty()) return badBytecode("store: operand stack underflow");
 
     Value* result = ctx_->store(*name, pop());
+    if (detail::isErrorValue(result)) return fail(result);
+    return nullptr;
+}
+
+Value* VM::opStoreVar() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("store_var: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) return badBytecode("store_var: name index out of range");
+    if (stack_.empty()) return badBytecode("store_var: operand stack underflow");
+
+    Value* result = ctx_->storeVar(*name, pop());
     if (detail::isErrorValue(result)) return fail(result);
     return nullptr;
 }
@@ -1533,6 +1554,13 @@ Value* VM::handleLabelInterrupt(Value* interrupt) {
 
 Value* VM::opPushScope() {
     if (ctx_->pushNewScope(ctx_->current()) == nullptr) return ctx_->oomValue();
+    return nullptr;
+}
+
+Value* VM::opPushVarScope() {
+    Scope* scope = ctx_->pushNewScope(ctx_->current());
+    if (scope == nullptr) return ctx_->oomValue();
+    scope->setFlag("var-scope");
     return nullptr;
 }
 

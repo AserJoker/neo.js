@@ -17,6 +17,23 @@
 
 namespace neo::compiler {
 
+namespace {
+
+// 指令序言中是否含 "use strict"（只看开头 Directive 序列）。
+bool hasUseStrictDirective(const frontend::NodeList& body) {
+    for (const frontend::NodePtr& statement : body) {
+        if (!statement || statement->kind() != frontend::NodeKind::Directive) {
+            break;
+        }
+        if (static_cast<const frontend::Directive&>(*statement).isUseStrict()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace
+
 using frontend::Node;
 using frontend::NodeKind;
 using frontend::NodePtr;
@@ -130,6 +147,7 @@ CompileResult Compiler::compile() {
 }
 
 void Compiler::compileProgram() {
+    strict_ = hasUseStrictDirective(program_.body);
     hoistScope(program_.body, true);
     for (const frontend::NodePtr& statement : program_.body) {
         if (statement) compileStatement(*statement);
@@ -138,6 +156,7 @@ void Compiler::compileProgram() {
 }
 
 void Compiler::compileEvalProgram() {
+    strict_ = options_.evalStrict;
     // sloppy direct eval：var/函数声明进入调用方变量环境（declare_var 只建
     // 缺失的槽，不覆盖已有绑定）；let/const 进入 eval 自己的词法作用域。
     if (!options_.evalStrict) {
@@ -165,6 +184,7 @@ void Compiler::compileEvalProgram() {
 }
 
 void Compiler::compileModule() {
+    strict_ = true;
     // [1] 符号定义区：只建槽。所有模块先声明，再统一 link。
     declarePc_ = code_->here();
     hoistSlots(program_.body, true);
@@ -439,7 +459,7 @@ void Compiler::compileExpression(const Node& node) {
 
 void Compiler::compileBlockStatement(const frontend::BlockStatement& node) {
     code_->pushScope();
-    hoistScope(node.body, false);
+    hoistScope(node.body, false, true);
     for (const frontend::NodePtr& statement : node.body) {
         if (statement) compileStatement(*statement);
     }
@@ -470,11 +490,22 @@ void Compiler::compileIfStatement(const frontend::IfStatement& node) {
     if (!node.test) return;
     compileExpression(*node.test);
     uint32_t toElse = code_->jfalse();
-    if (node.consequent) compileStatement(*node.consequent);
+    auto compileBranch = [&](const frontend::NodePtr& branch) {
+        if (!branch) return;
+        // Annex B.3.3：if 子句中的函数声明按合成块处理。
+        if (!strict_ && branch->kind() == NodeKind::FunctionDeclaration) {
+            compileAnnexBFunction(
+                static_cast<const frontend::FunctionDeclaration&>(*branch),
+                true);
+            return;
+        }
+        compileStatement(*branch);
+    };
+    compileBranch(node.consequent);
     if (node.alternate) {
         uint32_t toEnd = code_->jmp();
         code_->patchU32(toElse + 2, code_->here());
-        compileStatement(*node.alternate);
+        compileBranch(node.alternate);
         code_->patchU32(toEnd + 2, code_->here());
     } else {
         code_->patchU32(toElse + 2, code_->here());
@@ -948,7 +979,7 @@ void Compiler::compileSwitchStatement(
         if (!caseNode || caseNode->kind() != NodeKind::SwitchCase) continue;
         hoistScope(
             static_cast<const frontend::SwitchCase&>(*caseNode).consequent,
-            false);
+            false, true);
     }
 
     compileExpression(*node.discriminant);
@@ -1081,6 +1112,13 @@ void Compiler::compileLabeledStatement(
         body = labeled.body.get();
     }
     if (body == nullptr) return;
+
+    // Annex B.3.3：标签函数声明按 var 语义创建（Sema 已按 var-like 绑定）。
+    if (!strict_ && body->kind() == NodeKind::FunctionDeclaration) {
+        compileAnnexBFunction(
+            static_cast<const frontend::FunctionDeclaration&>(*body), false);
+        return;
+    }
 
     if (body->kind() == NodeKind::ForStatement) {
         compileForStatement(
@@ -2940,7 +2978,7 @@ void Compiler::compileClassConstructor(const frontend::ClassBody& body,
         }
         if (function.body) {
             compileFunctionBody(function.params, *function.body, false,
-                                !isDerived, true);
+                                !isDerived, true, true);
         } else {
             error(*constructor->value,
                   "compiler: class constructor missing body");
@@ -3424,10 +3462,15 @@ void Compiler::compileFunctionObject(const Node& node,
                                      const Node& body, bool arrow,
                                      std::string_view name, bool generator,
                                      bool async, bool method) {
+    // 函数严格性：class 方法恒严格，其余取 Sema 标注。
+    const sema::FunctionInfo* info =
+        sema_.annotations.get<sema::FunctionInfo>(node.id());
+    const bool strict = method || (info != nullptr && info->isStrict);
+
     // 函数体内联在当前位置，执行路径先跳过它。
     uint32_t skip = code_->jmp();
     uint32_t entryPc = code_->here();
-    compileFunctionBody(params, body, arrow || method, false, !arrow);
+    compileFunctionBody(params, body, arrow || method, false, !arrow, strict);
     uint32_t afterBody = code_->here();
     code_->patchU32(skip + 2, afterBody);
 
@@ -3448,9 +3491,6 @@ void Compiler::compileFunctionObject(const Node& node,
     }
 
     // arguments（§10.4.4）：非箭头函数都创建；仅非严格 + 简单形参列表建立映射。
-    const sema::FunctionInfo* info =
-        sema_.annotations.get<sema::FunctionInfo>(node.id());
-    const bool strict = method || (info != nullptr && info->isStrict);
     std::vector<std::string> paramNames;
     bool simpleParams = true;
     for (const frontend::NodePtr& param : params) {
@@ -3506,12 +3546,14 @@ void Compiler::compileFunctionObject(const Node& node,
 void Compiler::compileFunctionBody(const frontend::NodeList& params,
                                    const Node& body, bool arrow,
                                    bool initInstanceElements,
-                                   bool hasArguments) {
+                                   bool hasArguments, bool strict) {
     // 函数体是独立执行上下文：不写外层 eval 的完成值槽。
     const bool savedEvalCompletion = evalCompletion_;
     evalCompletion_ = false;
     const bool savedHasArguments = hasArgumentsBinding_;
     hasArgumentsBinding_ = hasArguments;
+    const bool savedStrict = strict_;
+    strict_ = strict;
     // 形参建槽（argument_scope）：push_undefined; define "p"
     for (const frontend::NodePtr& param : params) {
         if (!param) continue;
@@ -3566,7 +3608,7 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
         }
     }
 
-    code_->pushScope();
+    code_->pushVarScope();
 
     if (arrow && body.kind() != NodeKind::BlockStatement) {
         // 表达式体箭头：表达式值即返回值。
@@ -3574,6 +3616,7 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
         code_->ret();
         evalCompletion_ = savedEvalCompletion;
         hasArgumentsBinding_ = savedHasArguments;
+        strict_ = savedStrict;
         return;
     }
 
@@ -3592,6 +3635,7 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
     code_->ret();
     evalCompletion_ = savedEvalCompletion;
     hasArgumentsBinding_ = savedHasArguments;
+    strict_ = savedStrict;
 }
 
 // —— 声明提升 ——
@@ -3627,9 +3671,10 @@ bool Compiler::usesDefaultSlot(
     return true;
 }
 
-void Compiler::hoistScope(const frontend::NodeList& body, bool varScope) {
+void Compiler::hoistScope(const frontend::NodeList& body, bool varScope,
+                          bool annexB) {
     hoistSlots(body, varScope);
-    hoistFunctions(body);
+    hoistFunctions(body, annexB);
 }
 
 void Compiler::hoistSlots(const frontend::NodeList& body, bool varScope) {
@@ -3663,7 +3708,10 @@ void Compiler::hoistVarSlots(const frontend::NodeList& body, bool declare) {
     // var：递归收集（不进入嵌套函数），在函数/模块/eval 变量环境建槽。
     std::vector<std::string> varNames;
     for (const frontend::NodePtr& statement : body) {
-        if (statement) collectVarNames(*statement, varNames);
+        if (!statement) continue;
+        collectVarNames(*statement, varNames);
+        // Annex B.3.3：非严格模式下块级/if 子句函数声明也建 var 绑定。
+        if (!strict_) collectAnnexBFunctionNames(*statement, varNames, true);
     }
     std::unordered_set<std::string> seen;
     for (const std::string& name : varNames) {
@@ -3723,7 +3771,7 @@ void Compiler::hoistLexicalSlots(const frontend::NodeList& body) {
     }
 }
 
-void Compiler::hoistFunctions(const frontend::NodeList& body) {
+void Compiler::hoistFunctions(const frontend::NodeList& body, bool annexB) {
     for (const frontend::NodePtr& statement : body) {
         const Node* declaration = statement ? declarationOf(*statement)
                                             : nullptr;
@@ -3743,6 +3791,35 @@ void Compiler::hoistFunctions(const frontend::NodeList& body) {
                               false, name, function.generator,
                               function.async);
         code_->store(name);
+        // Annex B.3.3：块级函数在块入口同步写入外层 var 绑定。
+        if (annexB && !strict_) {
+            code_->load(name);
+            code_->storeVar(name);
+        }
+    }
+}
+
+void Compiler::compileAnnexBFunction(
+    const frontend::FunctionDeclaration& function, bool blockScoped) {
+    if (!function.id || function.id->kind() != NodeKind::Identifier ||
+        !function.body) {
+        return;
+    }
+    const std::string& name =
+        static_cast<const frontend::Identifier&>(*function.id).name;
+    if (blockScoped) code_->pushScope();
+    if (blockScoped) {
+        code_->pushUndefined();
+        code_->define(name);
+    }
+    compileFunctionObject(function, function.params, *function.body, false,
+                          name, function.generator, function.async);
+    code_->store(name);
+    if (blockScoped) {
+        // 同步写入外层变量环境（Annex B.3.3）。
+        code_->load(name);
+        code_->storeVar(name);
+        code_->popScope();
     }
 }
 
@@ -3882,6 +3959,123 @@ void Compiler::collectVarNames(const frontend::Node& statement,
         default:
             // 函数/类边界：var 不穿透。
             break;
+    }
+}
+
+// Annex B.3.3：收集非顶层（块/if 子句/标签）函数声明的名字。
+// 顶层函数声明已由 hoistFunctions 在变量环境建槽，不在此重复。
+void Compiler::collectAnnexBFunctionNames(const frontend::Node& statement,
+                                          std::vector<std::string>& names,
+                                          bool topLevel) {
+    switch (statement.kind()) {
+        case NodeKind::FunctionDeclaration: {
+            if (topLevel) return;
+            const auto& function =
+                static_cast<const frontend::FunctionDeclaration&>(statement);
+            if (function.id &&
+                function.id->kind() == NodeKind::Identifier) {
+                names.push_back(
+                    static_cast<const frontend::Identifier&>(*function.id).name);
+            }
+            return;
+        }
+        case NodeKind::ClassDeclaration:
+        case NodeKind::ClassExpression:
+        case NodeKind::FunctionExpression:
+        case NodeKind::ArrowFunctionExpression:
+            return;
+        case NodeKind::BlockStatement: {
+            const auto& block =
+                static_cast<const frontend::BlockStatement&>(statement);
+            for (const frontend::NodePtr& child : block.body) {
+                if (child) collectAnnexBFunctionNames(*child, names, false);
+            }
+            return;
+        }
+        case NodeKind::IfStatement: {
+            const auto& node =
+                static_cast<const frontend::IfStatement&>(statement);
+            if (node.consequent) {
+                collectAnnexBFunctionNames(*node.consequent, names, false);
+            }
+            if (node.alternate) {
+                collectAnnexBFunctionNames(*node.alternate, names, false);
+            }
+            return;
+        }
+        case NodeKind::WhileStatement: {
+            const auto& node =
+                static_cast<const frontend::WhileStatement&>(statement);
+            if (node.body) collectAnnexBFunctionNames(*node.body, names, false);
+            return;
+        }
+        case NodeKind::DoWhileStatement: {
+            const auto& node =
+                static_cast<const frontend::DoWhileStatement&>(statement);
+            if (node.body) collectAnnexBFunctionNames(*node.body, names, false);
+            return;
+        }
+        case NodeKind::ForStatement: {
+            const auto& node =
+                static_cast<const frontend::ForStatement&>(statement);
+            if (node.body) collectAnnexBFunctionNames(*node.body, names, false);
+            return;
+        }
+        case NodeKind::ForInStatement: {
+            const auto& node =
+                static_cast<const frontend::ForInStatement&>(statement);
+            if (node.body) collectAnnexBFunctionNames(*node.body, names, false);
+            return;
+        }
+        case NodeKind::ForOfStatement: {
+            const auto& node =
+                static_cast<const frontend::ForOfStatement&>(statement);
+            if (node.body) collectAnnexBFunctionNames(*node.body, names, false);
+            return;
+        }
+        case NodeKind::LabeledStatement: {
+            const auto& node =
+                static_cast<const frontend::LabeledStatement&>(statement);
+            if (node.body) collectAnnexBFunctionNames(*node.body, names, false);
+            return;
+        }
+        case NodeKind::TryStatement: {
+            const auto& node =
+                static_cast<const frontend::TryStatement&>(statement);
+            if (node.block) collectAnnexBFunctionNames(*node.block, names, false);
+            if (node.handler) {
+                collectAnnexBFunctionNames(*node.handler, names, false);
+            }
+            if (node.finalizer) {
+                collectAnnexBFunctionNames(*node.finalizer, names, false);
+            }
+            return;
+        }
+        case NodeKind::CatchClause: {
+            const auto& node =
+                static_cast<const frontend::CatchClause&>(statement);
+            if (node.body) collectAnnexBFunctionNames(*node.body, names, false);
+            return;
+        }
+        case NodeKind::SwitchStatement: {
+            const auto& node =
+                static_cast<const frontend::SwitchStatement&>(statement);
+            for (const frontend::NodePtr& caseNode : node.cases) {
+                if (!caseNode || caseNode->kind() != NodeKind::SwitchCase) {
+                    continue;
+                }
+                const auto& switchCase =
+                    static_cast<const frontend::SwitchCase&>(*caseNode);
+                for (const frontend::NodePtr& child : switchCase.consequent) {
+                    if (child) {
+                        collectAnnexBFunctionNames(*child, names, false);
+                    }
+                }
+            }
+            return;
+        }
+        default:
+            return;
     }
 }
 

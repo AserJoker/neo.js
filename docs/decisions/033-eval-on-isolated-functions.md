@@ -189,3 +189,22 @@ Completion Record 仍待后续补齐。
 eval 的 `var e` 仍建在变量环境，但初始化器经正常 `store` 写回 catch 参数
 （符合 Annex B「不遮蔽 catch 参数」）。解构 catch 参数不标记，仍报
 SyntaxError。
+
+### 块级函数声明（Annex B.3.3，2026-11-17）
+
+非严格模式下，块、`if` 子句与标签语句中的函数声明除块级绑定外，还必须在
+变量环境中建立同名 `var` 绑定，并在该声明执行时同步赋值：
+
+- **严格性跟踪**：Compiler 新增 `strict_`，由 Script 的 `"use strict"` 指令、
+  eval 的继承严格性、Module 恒严格三处初始化，并在函数体编译时保存/恢复。
+- **变量槽收集**：`hoistVarSlots` 在非严格模式下额外用
+  `collectAnnexBFunctionNames` 递归收集块/if/循环/try/catch/switch/labeled 中的
+  函数名（跳过函数/类边界，顶层函数不重复加入），在函数/模块/eval 变量环境建槽。
+- **块入口赋值**：块级 `hoistFunctions` 在非严格模式创建函数对象后，经
+  `load + store_var` 同步写外层变量绑定。`if` 子句函数按合成块处理，在分支
+  执行时创建并赋值；标签函数按 `var` 语义直接在当前位置赋值。
+- **变量环境定位**：新增 `push_var_scope` 指令，函数体作用域带 `"var-scope"`
+  标记；`Context::storeVar` 优先用 eval 变量环境，否则沿作用域链找最近的
+  `"var-scope"`（跳过块/with/catch 等词法作用域），最后回退
+  `currentFunctionEnv_`/root。这样块级绑定仍独立存在，闭包捕获的是块级槽位，
+  而外层 `var` 只观察赋值结果，符合 Annex B 的双绑定语义。

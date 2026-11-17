@@ -10,6 +10,7 @@ add_executable(core_unit_test
     DynamicScopeTest.cpp
     EvalTest.cpp
     ArgumentsTest.cpp
+    AnnexBFunctionTest.cpp
     FunctionEnvironmentTest.cpp
     ClassDataTest.cpp
     ClassConstructTest.cpp
