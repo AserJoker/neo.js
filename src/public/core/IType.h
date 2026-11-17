@@ -116,6 +116,9 @@ enum class TypeKind : uint8_t {
     // Proxy exotic 对象（ES2024 §10.5）：[[ProxyTarget]] + [[ProxyHandler]]，
     // 所有内部方法转发到 handler 上的 trap。可调用/可构造性继承自 target。
     Proxy,
+    // RegExp 对象（ES2024 §22.2）：普通对象 + 编译后的正则程序与原始 source/flags。
+    // lastIndex 是普通自有数据属性，不进入内部槽。
+    RegExp,
     // 后续阶段：BigInt/...
 };
 
@@ -298,6 +301,7 @@ IType* getCoroutineType();
 IType* getAsyncGeneratorType();
 IType* getModuleNamespaceType();
 IType* getProxyType();
+IType* getRegExpType();
 
 // —— TypeKind → Type 单例（Types.cpp 中的唯一映射表）——
 // 未注册的 kind 返回 nullptr。新增类型时只需在此加一行映射，

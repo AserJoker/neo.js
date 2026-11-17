@@ -75,6 +75,8 @@ class Context : public IContext {
     Value* errorPrototype_ = nullptr;   // %Error.prototype%（ADR-038）
     Value* promisePrototype_ = nullptr; // %Promise.prototype%（ADR-043）
     Value* promiseCtor_ = nullptr;      // %Promise% 内建构造函数（异步机制用）
+    Value* regexpPrototype_ = nullptr;  // %RegExp.prototype%（ADR-062 R4）
+    Value* regexpCtor_ = nullptr;       // %RegExp% 构造函数
     // Symbol.for 全局注册表（ES2024 §20.4.2.1）：key → symbol Value。
     // 双向查找（keyFor）用 symbol data 指针反查，故另存反向表。
     std::unordered_map<std::string, Value*> symbolRegistry_;
@@ -291,6 +293,12 @@ public:
                                  std::string_view bindName = {}) override;
     Value* createStringIterator(Value* string,
                                 std::string_view bindName = {}) override;
+    Value* createRegExp(std::string_view pattern, std::string_view flags,
+                        std::string_view bindName = {}) override;
+    Value* regexpPrototype() const override { return regexpPrototype_; }
+    void setRegExpPrototype(Value* proto) override { regexpPrototype_ = proto; }
+    Value* regexpCtor() const override { return regexpCtor_; }
+    void setRegExpCtor(Value* ctor) override { regexpCtor_ = ctor; }
 
     // Error 对象（ADR-038）
     Value* createError(std::string_view message, std::string_view name = "Error",

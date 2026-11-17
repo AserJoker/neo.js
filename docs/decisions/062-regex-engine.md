@@ -265,6 +265,25 @@ Match
 | Context | 新增 `TypeKind::RegExp`、`RegExpData`、`createRegExp`、bootstrap |
 | String | 补 `match/matchAll/replace/replaceAll/search/split` 与 `Symbol.*` |
 
+**R4 实现**：
+
+- `TypeKind::RegExp` + `RegExpData`（继承 `ObjectData`）持有
+  `[[OriginalSource]]`、`[[OriginalFlags]]`、`shared_ptr<const Program>` 与
+  flags 布尔值；`lastIndex` 建为普通自有数据属性（writable / 不可枚举 /
+  不可配置）。
+- `IContext::createRegExp(pattern, flags)` 编译失败返回 `SyntaxError` 异常值；
+  `RegExp` 构造器 call/new 共用创建逻辑，`new RegExp(re)` 复制 source/flags。
+- `RegExp.prototype`：`exec`、`test`、`toString`、`source`/`flags`/`global`/
+  `ignoreCase`/`multiline`/`dotAll`/`unicode`/`unicodeSets`/`sticky`/
+  `hasIndices` 访问器，以及 `@@match`/`@@matchAll`/`@@search`/`@@replace`/
+  `@@split`；构造器带 `@@species`。
+- `exec` 把 UTF-8 `StringData` 转为 UTF-16 Subject 后调用引擎；结果数组包含
+  捕获、`index`、`input`、命名 `groups`，`d` 标志额外提供 `indices`。
+- `String.prototype` 六个方法经 `@@match` 等协议转发；`replace` 支持字符串
+  替换（`$$`/`$&`/`` $` ``/`$'`/`$n`/`$<name>`）与函数替换。
+- Compiler 新增 `push_regexp`（pattern/flags 两个字符串常量下标），VM
+  `opPushRegExp` 调用 `IContext::createRegExp`。
+
 `RegExpData` 持有 `shared_ptr<const regex::Program>`，并保存
 `[[OriginalSource]]`、`[[OriginalFlags]]`；`lastIndex` 是普通自有数据属性，
 由 JS 层读写，不进入引擎。
@@ -286,13 +305,15 @@ src/private/regex/
   RegexEngine.h/.cpp
   RegexVM.h/.cpp
 src/private/core/
-  types/RegExp.h/.cpp
+  types/RegExp.h
   RegExpBuiltins.h/.cpp
 tests/unit/regex/
   RegexParserTest.cpp
   RegexCompilerTest.cpp
   RegexVMTest.cpp
   RegexUnicodeTest.cpp
+tests/unit/compiler/
+  RegExpTest.cpp          // JS API 端到端
 ```
 
 ### 11. 测试策略

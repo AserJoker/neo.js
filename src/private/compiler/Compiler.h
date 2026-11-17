@@ -116,6 +116,7 @@ private:
     void compileNumericLiteral(const frontend::NumericLiteral& node);
     void compileBigIntLiteral(const frontend::BigIntLiteral& node);
     void compileStringLiteral(const frontend::StringLiteral& node);
+    void compileRegExpLiteral(const frontend::RegExpLiteral& node);
     void compileBooleanLiteral(const frontend::BooleanLiteral& node);
     void compileNullLiteral(const frontend::NullLiteral& node);
     void compileBinaryExpression(const frontend::BinaryExpression& node);

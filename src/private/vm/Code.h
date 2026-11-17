@@ -145,6 +145,13 @@ struct Code {
         emitU32(radix);
         return pc;
     }
+    // 正则字面量：pattern 与 flags 分别进字符串常量表。
+    uint32_t pushRegExp(std::string_view pattern, std::string_view flags) {
+        uint32_t pc = emitOp(OpCode::PushRegExp);
+        emitU32(addString(std::string(pattern)));
+        emitU32(addString(std::string(flags)));
+        return pc;
+    }
     // 字面量字符串走精确匹配，避免与数值重载产生歧义。
     uint32_t push(const char* value) { return push(std::string_view(value)); }
 

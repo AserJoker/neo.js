@@ -132,6 +132,7 @@ private:
     neo::core::Value* opPushNumber();
     neo::core::Value* opPushString();
     neo::core::Value* opPushBigInt();
+    neo::core::Value* opPushRegExp();
     neo::core::Value* opPop();
     neo::core::Value* opDup();
     neo::core::Value* opClone();

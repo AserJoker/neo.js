@@ -187,6 +187,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::DynamicImport: return "dynamic_import";
         case OpCode::GetAsyncIterator: return "get_async_iterator";
         case OpCode::AsyncIteratorClose: return "async_iterator_close";
+        case OpCode::PushRegExp:    return "push_regexp";
     }
     return "<unknown>";
 }
@@ -312,6 +313,7 @@ const VM::Handler* VM::handlers() {
         &VM::opDynamicImport,
         &VM::opGetAsyncIterator,
         &VM::opAsyncIteratorClose,
+        &VM::opPushRegExp,
     };
     return table;
 }
@@ -660,6 +662,26 @@ Value* VM::opPushBigInt() {
         return badBytecode("push_bigint: invalid literal");
     }
     push(ctx_->createBigInt(value));
+    return nullptr;
+}
+
+Value* VM::opPushRegExp() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 8) {
+        return badBytecode("push_regexp: truncated operand");
+    }
+    const uint32_t patternIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const uint32_t flagsIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* pattern = stringOperand(patternIndex);
+    const std::string* flags = stringOperand(flagsIndex);
+    if (pattern == nullptr || flags == nullptr) {
+        return badBytecode("push_regexp: constant index out of range");
+    }
+    Value* regexp = ctx_->createRegExp(*pattern, *flags);
+    if (detail::isErrorValue(regexp)) return regexp;
+    push(regexp);
     return nullptr;
 }
 

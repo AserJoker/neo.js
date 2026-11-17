@@ -28,6 +28,7 @@
 #include "core/ReflectBuiltins.h"
 #include "core/PromiseBuiltins.h"
 #include "core/PrimitiveWrapperBuiltins.h"
+#include "core/RegExpBuiltins.h"
 #include "core/SymbolBuiltins.h"
 #include "core/TimerBuiltins.h"
 #include "core/types/Array.h"
@@ -48,6 +49,7 @@
 #include "core/types/PrimitiveWrapper.h"
 #include "core/types/Promise.h"
 #include "core/types/Proxy.h"
+#include "core/types/RegExp.h"
 #include "core/types/String.h"
 #include "core/types/Symbol.h"
 #include "core/types/TypeBehavior.h"
@@ -144,6 +146,12 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     // 10. 注册 Boolean/Number/String 包装类与四个包装原型（ES2024 §10.4）。
     //     依赖 Object.prototype / Function.prototype / Symbol.prototype 已就绪。
     if (!registerPrimitiveWrapperBuiltins(this)) {
+        std::abort();
+    }
+
+    // 10a. 注册 RegExp 构造函数/prototype 与 String 六个正则方法（ADR-062 R4）。
+    //      依赖 Object/Function/String.prototype 已就绪。
+    if (!registerRegExpBuiltins(this)) {
         std::abort();
     }
 
@@ -1799,6 +1807,39 @@ Value* Context::createStringIterator(Value* string, std::string_view bindName) {
             stringIteratorPrototype_;
     }
     return iter;
+}
+
+Value* Context::createRegExp(std::string_view pattern, std::string_view flags,
+                             std::string_view bindName) {
+    std::shared_ptr<const neo::regex::Program> program;
+    neo::regex::Flags parsedFlags;
+    std::string error;
+    if (!compileRegExp(pattern, flags, program, parsedFlags, error)) {
+        return detail::errorOf(this, ErrorKind::SyntaxError, error);
+    }
+
+    auto* d = gc_->allocData<RegExpData>();
+    if (d == nullptr) return oomValue_;
+    d->source = std::string(pattern);
+    d->flags = std::string(flags);
+    d->program = std::move(program);
+    d->global = parsedFlags.global;
+    d->ignoreCase = parsedFlags.ignoreCase;
+    d->multiline = parsedFlags.multiline;
+    d->dotAll = parsedFlags.dotAll;
+    d->unicode = parsedFlags.unicode;
+    d->unicodeSets = parsedFlags.unicodeSets;
+    d->sticky = parsedFlags.sticky;
+    d->hasIndices = parsedFlags.hasIndices;
+
+    Value* regexp = createTracked(getRegExpType(), d, bindName);
+    if (regexp == oomValue_) return regexp;
+    if (regexpPrototype_ != nullptr) {
+        static_cast<ObjectData*>(regexp->data())->prototype = regexpPrototype_;
+    }
+    Value* result = defineProperty(regexp, "lastIndex", createNumber(0.0), true,
+                                   false, false);
+    return detail::isErrorValue(result) ? result : regexp;
 }
 
 Value* Context::createIteratorWrapper(Value* iterated, Value* nextMethod,

@@ -284,6 +284,10 @@ void Compiler::compileExpression(const Node& node) {
             compileStringLiteral(
                 static_cast<const frontend::StringLiteral&>(node));
             break;
+        case NodeKind::RegExpLiteral:
+            compileRegExpLiteral(
+                static_cast<const frontend::RegExpLiteral&>(node));
+            break;
         case NodeKind::BooleanLiteral:
             compileBooleanLiteral(
                 static_cast<const frontend::BooleanLiteral&>(node));
@@ -1468,6 +1472,10 @@ void Compiler::compileBigIntLiteral(const frontend::BigIntLiteral& node) {
 
 void Compiler::compileStringLiteral(const frontend::StringLiteral& node) {
     code_->push(node.value);
+}
+
+void Compiler::compileRegExpLiteral(const frontend::RegExpLiteral& node) {
+    code_->pushRegExp(node.pattern, node.flags);
 }
 
 void Compiler::compileBooleanLiteral(const frontend::BooleanLiteral& node) {
