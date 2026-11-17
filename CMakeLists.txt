@@ -155,6 +155,7 @@ add_library(neojs STATIC
     src/private/regex/RegexFlags.cpp
     src/private/regex/RegexParser.cpp
     src/private/regex/RegexCompiler.cpp
+    src/private/regex/RegexUnicode.cpp
     src/private/regex/RegexVM.cpp
     src/private/regex/RegexSubject.cpp
     src/private/regex/RegexEngine.cpp
