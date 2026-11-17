@@ -353,3 +353,54 @@ TEST(RegExpTest, MatchAllAdvancesOnEmptyMatches) {
         "var result = count;");
     EXPECT_DOUBLE_EQ(numberValue(result), 3.0);
 }
+
+TEST(RegExpTest, EscapeSpecialCharacters) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var result = RegExp.escape('a.b*c');");
+    EXPECT_EQ(stringValue(result), "\\x61\\.b\\*c");
+}
+
+TEST(RegExpTest, EscapeLeadingDigitAndPunctuator) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var result = RegExp.escape('1') + ':' + RegExp.escape('-');");
+    EXPECT_EQ(stringValue(result), "\\x31:\\x2d");
+}
+
+TEST(RegExpTest, EscapeWhitespaceAndLineTerminators) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var result = RegExp.escape(' \\n\\t\\u3000');");
+    EXPECT_EQ(stringValue(result), "\\x20\\n\\t\\u3000");
+}
+
+TEST(RegExpTest, EscapeSurrogateAndNonAscii) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var result = RegExp.escape('\\uD800') + ':' + RegExp.escape('中');");
+    EXPECT_EQ(stringValue(result), "\\ud800:中");
+}
+
+TEST(RegExpTest, EscapeRoundTripsAsPattern) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var s = 'a.b*c? [d]';"
+        "var result = new RegExp('^' + RegExp.escape(s) + '$').test(s);");
+    EXPECT_TRUE(boolValue(result));
+}
+
+TEST(RegExpTest, EscapeRejectsNonString) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var result = 'none';"
+        "try { RegExp.escape(1); }"
+        "catch (e) { result = e.name; }");
+    EXPECT_EQ(stringValue(result), "TypeError");
+}

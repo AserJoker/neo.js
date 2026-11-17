@@ -1252,6 +1252,161 @@ Value* stringSplit(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
                             args);
 }
 
+// ES2025 §22.2.5.1 RegExp.escape：把字符串转义为可安全嵌入 Pattern 的形式。
+namespace {
+
+bool isSyntaxCharacter(std::uint32_t cp) {
+    switch (cp) {
+        case '^':
+        case '$':
+        case '\\':
+        case '.':
+        case '*':
+        case '+':
+        case '?':
+        case '(':
+        case ')':
+        case '[':
+        case ']':
+        case '{':
+        case '}':
+        case '|':
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool isRegExpEscapeWhiteSpace(std::uint32_t cp) {
+    if (cp == 0x20 || cp == 0xA0 || cp == 0xFEFF || cp == 0x1680 ||
+        cp == 0x202F || cp == 0x205F || cp == 0x3000) {
+        return true;
+    }
+    return cp >= 0x2000 && cp <= 0x200A;
+}
+
+bool isRegExpEscapeLineTerminator(std::uint32_t cp) {
+    return cp == 0x0A || cp == 0x0D || cp == 0x2028 || cp == 0x2029;
+}
+
+bool isOtherPunctuator(std::uint32_t cp) {
+    switch (cp) {
+        case ',':
+        case '-':
+        case '=':
+        case '<':
+        case '>':
+        case '#':
+        case '&':
+        case '!':
+        case '%':
+        case ':':
+        case ';':
+        case '@':
+        case '~':
+        case '\'':
+        case '`':
+        case '"':
+            return true;
+        default:
+            return false;
+    }
+}
+
+void appendHex(std::uint32_t value, int width, std::string& out) {
+    static constexpr char kDigits[] = "0123456789abcdef";
+    for (int shift = (width - 1) * 4; shift >= 0; shift -= 4) {
+        out.push_back(kDigits[(value >> static_cast<unsigned>(shift)) & 0xFu]);
+    }
+}
+
+void appendUnicodeEscape(std::uint32_t codeUnit, std::string& out) {
+    out += "\\u";
+    appendHex(codeUnit, 4, out);
+}
+
+// §22.2.5.1.1 EncodeForRegExpEscape。
+void encodeForRegExpEscape(std::uint32_t cp, std::string& out) {
+    if (isSyntaxCharacter(cp) || cp == '/') {
+        out.push_back('\\');
+        unicode::encodeCodePoint(cp, out);
+        return;
+    }
+    switch (cp) {
+        case 0x09:
+            out += "\\t";
+            return;
+        case 0x0A:
+            out += "\\n";
+            return;
+        case 0x0B:
+            out += "\\v";
+            return;
+        case 0x0C:
+            out += "\\f";
+            return;
+        case 0x0D:
+            out += "\\r";
+            return;
+        default:
+            break;
+    }
+    if (isOtherPunctuator(cp) || isRegExpEscapeWhiteSpace(cp) ||
+        isRegExpEscapeLineTerminator(cp) || unicode::isHighSurrogate(cp) ||
+        unicode::isLowSurrogate(cp)) {
+        if (cp <= 0xFF) {
+            out += "\\x";
+            appendHex(cp, 2, out);
+        } else if (cp <= 0xFFFF) {
+            appendUnicodeEscape(cp, out);
+        } else {
+            const std::uint32_t high = 0xD800u + ((cp - 0x10000u) >> 10);
+            const std::uint32_t low = 0xDC00u + ((cp - 0x10000u) & 0x3FFu);
+            appendUnicodeEscape(high, out);
+            appendUnicodeEscape(low, out);
+        }
+        return;
+    }
+    unicode::encodeCodePoint(cp, out);
+}
+
+Value* regexpEscape(IContext* ctx, Value*, size_t argc, Value* argv[]) {
+    Value* input = argc > 0 ? argv[0] : undefinedOf(ctx);
+    if (input->type()->kind() != TypeKind::String) {
+        return detail::typeError(ctx, "RegExp.escape requires a string");
+    }
+    const std::string& text = static_cast<StringData*>(input->data())->value;
+    std::string escaped;
+    escaped.reserve(text.size());
+    bool leading = true;
+    std::size_t i = 0;
+    while (i < text.size()) {
+        const std::size_t start = i;
+        std::uint32_t cp = 0;
+        if (!unicode::decodeCodePoint(text, i, cp)) {
+            // 非法字节：按原样保留并前进一个字节。
+            escaped.push_back(text[start]);
+            i = start + 1;
+            leading = false;
+            continue;
+        }
+        const bool asciiAlnum =
+            (cp >= '0' && cp <= '9') || (cp >= 'A' && cp <= 'Z') ||
+            (cp >= 'a' && cp <= 'z');
+        if (leading && asciiAlnum) {
+            // 首个 ASCII 字母/数字用 \xHH，避免与前置 \c / \0 / \1 连读。
+            escaped += "\\x";
+            appendHex(cp, 2, escaped);
+        } else {
+            encodeForRegExpEscape(cp, escaped);
+        }
+        leading = false;
+    }
+    return ctx->createString(escaped);
+}
+
+}  // namespace
+
 // —— 注册 ——
 
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
@@ -1380,6 +1535,8 @@ bool registerRegExpBuiltins(IContext* ctx) {
             ctor, ctx->getWellKnownSymbol(WellKnownSymbol::Species), species,
             nullptr, false, true)))
         return false;
+
+    if (!defineMethod(ctx, ctor, "escape", regexpEscape, 1)) return false;
 
     ctx->global()->add(ctor);
     ctx->global()->bind("RegExp", ctor);

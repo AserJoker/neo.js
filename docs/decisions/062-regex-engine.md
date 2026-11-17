@@ -368,6 +368,14 @@ Match
 - Compiler 预编译失败（Sema 已拦截，正常不可达）时回退为 `kNoRegexProgram`，
   VM 仍可运行期编译，保证不产生半成品字节码。
 
+**ES2025 补全**：
+
+- `RegExp.escape(S)`（§22.2.5.1）：非 String 抛 TypeError；按码点遍历，
+  首个 ASCII 字母/数字用 `\xHH`，其余走 `EncodeForRegExpEscape`
+  （SyntaxCharacter/`/` 加反斜杠、控制字符简写、其余标点/空白/行终止符/
+  代理码点用 `\xHH` 或 `\uXXXX`，普通非 ASCII 原样保留）。
+- 码点遍历复用 `unicode::decodeCodePoint`（UTF-8/WTF-8），孤立代理可往返。
+
 ### 10. 文件布局
 
 ```
