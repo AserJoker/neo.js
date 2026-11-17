@@ -293,8 +293,17 @@ private:
     bool hasArgumentsBinding_ = false;
     // 当前代码是否严格模式（决定 Annex B 块级函数是否额外建 var 绑定）。
     bool strict_ = false;
-    // finally 块嵌套深度：eval 下 break/continue 离开 finally 时清除完成值。
-    int finallyDepth_ = 0;
+    // eval 完成值保存槽/循环 V 槽的唯一编号（惰性定义在运行时作用域）。
+    int completionSlotCounter_ = 0;
+    std::string newCompletionSlot(std::string_view prefix);
+    void emitDefineCompletionSlot(const std::string& slot);
+    void emitSaveCompletion(const std::string& slot);
+    void emitMergeCompletion(const std::string& slot);
+    void emitCompletionToUndefined();
+    void emitClearCompletion();
+    void emitUpdateLoopValue(const std::string& slot);
+    void emitLoopEnd(const std::string& slot);
+    void emitLabelledEnd();
     void compileDeleteChain(const frontend::ChainExpression& node);
 };
 

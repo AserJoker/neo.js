@@ -131,8 +131,10 @@ popScope():
 - **作用域模型**：编译产物入口 `pushScope` 建立 eval 词法作用域；sloppy 直接 eval 的
   var/函数声明经 `DeclareVar` 进入调用方变量环境（`currentFunctionEnv_`），let/const
   留在 eval 词法作用域；严格 eval 的 var 也不外泄。间接 eval 在 global 执行。
-- **完成值**：表达式语句（含块/if/循环内）执行后写入隐藏槽 `*eval-completion*`，
-  由 `ret` 返回；嵌套函数体与 static block 关闭该行为。
+- **完成值**：隐藏绑定 `*eval-completion*` 作为 Completion Record 寄存器，
+  `EMPTY` 用 `Uninitialized` 哨兵表示；各构造按 `UpdateEmpty` 规则在边界
+  Save/Merge，`ret` 前用 `load_completion_result` 把 EMPTY 归一为 `undefined`。
+  嵌套函数体与 static block 关闭该行为。
 - **%eval% 形态**：不可构造、无 `prototype` 属性（`FunctionCreateOptions`）。
 - **词法冲突**：sloppy 直接 eval 的 var 声明若与调用方词法绑定同名，
   `declareVar` 在 current → 变量环境之间检测到直接绑定并返回 SyntaxError。
@@ -144,9 +146,8 @@ popScope():
   闭包链引用的 parent 作用域。
 
 当前限制：直接 eval 的调用点识别只看语法上的 `eval(...)`，实际是否直接 eval 由
-运行时函数同一性判定；完成值对 try/finally 等复杂控制流按「最后执行的表达式语句」
-近似，未实现完整的 Completion Record 传播；eval 内函数对调用方后续新增绑定的
-under-capture 依赖 Environment 链，已由 dynamic 标记覆盖。
+运行时函数同一性判定；eval 内函数对调用方后续新增绑定的 under-capture 依赖
+Environment 链，已由 dynamic 标记覆盖。
 
 ## 上下文快照：SourceType::Eval + SemaOptions（2026-11-17）
 
@@ -229,21 +230,31 @@ SyntaxError。
 已知限制：全局内建（如 `Math`）通过 `bind` 落在 `global_`，间接 eval 的
 `var Math` 仍会在 `scriptRoot_` 建遮蔽绑定，未按全局对象属性复用。
 
-### 完成值：try/catch/finally（2026-11-17）
+### 完成值：Completion Record 寄存器（2026-11-17）
 
-完成值仍用隐藏槽 `*eval-completion*` 近似，但补齐了 try 语句的 Completion
-Record 组合语义：
+完成值不再用「最后执行的表达式语句值」近似，而是显式建模 Completion Record
+的 `[[Value]]` 与 `EMPTY`：
 
-- **catch 入口清空**：catch 只在异常路径进入，try 体抛错前的完成值作废；
-  catch 入口把完成值槽置 undefined，catch 内表达式语句再更新。
-- **finally 丢弃自身值**：finally 入口用 `load_finally_completion` 把待保留的
-  完成值压栈并克隆（完成值槽是活绑定，store 会原地改写同一 Value，必须存副本）；
-  finally 正常结束时写回。若入口有 pending 完成（异常/break/continue），
-  UpdateEmpty 视为 undefined，压 undefined。
-- **finally 内 break/continue**：编译期跟踪 `finallyDepth_`，在 finally 内的
-  break/continue 前把完成值槽清为 undefined；若该跳转仍留在 finally 内，
-  finally 正常结束的写回会覆盖清除，语义仍正确。
+- **寄存器与哨兵**：隐藏绑定 `*eval-completion*` 保存当前完成值；`EMPTY` 用
+  `Uninitialized` 哨兵表示，与 `undefined` 严格区分（ADR-024 指令组）。
+- **构造边界**：if/循环/switch/labelled/try 在入口 `SaveCompletion` 到惰性定义
+  的隐藏槽，出口 `MergeCompletion` 实现 `UpdateEmpty(inner, outer)`；if 与 try
+  按规范把 EMPTY 归一为 `undefined`，labelled 保留 EMPTY 交给外层 StatementList。
+- **循环 V**：每个循环维护 V 槽（初值 `undefined`），每轮 body 完成后
+  `update_loop_value` 累积；break 时 `loop_end` 取 break 值（EMPTY 则取 V）。
+- **continue**：`continue_value` 携带当前 StatementList 值；label 帧记录目标
+  循环的 V 槽下标，VM 在完成 try 帧展开（含 EMPTY→undefined 归一化）后写入 V
+  （§14.7.5.7 step m）。
+- **try**：try/catch 体从 EMPTY 开始；`UpdateEmpty(C, undefined)`。finally 入口
+  保存 B/C（可能 EMPTY）并清空寄存器，正常结束恢复 B/C 后归一；finally 自身
+  的 abrupt 完成由 `frame.res` 覆盖。用户 try 跨出时把 break/continue 的 EMPTY
+  归一为 `undefined`；for-of 的 IteratorClose 使用 `try_begin_internal` 排除该
+  归一化，使 break 值仍交给外层循环 V。
+- **switch**：V 初值 `undefined`，每个 clause 从 EMPTY 开始并在正常结束后更新 V；
+  break 时 `loop_end` 取 break 值（EMPTY 则取 V）。
+- **with**：`UpdateEmpty(C, undefined)`。正常路径在体后归一 EMPTY；abrupt 路径
+  借一个无目标的 `try_begin` 帧，在 break/continue 跨出时完成同样的归一化。
 
-新增指令 `load_finally_completion`（ADR-024）。限制：完成值仍是「最后执行的
-表达式语句值」的槽位近似，未建模每个语句的 Completion Record 结构本身；
-switch/循环等路径依赖表达式语句写入槽位，暂未发现可观察偏差。
+新增指令见 ADR-024「Completion Record 指令组」。回归用例覆盖空循环/空 if/
+无匹配 switch/空 try、break 穿过 finally、finally 内 break、continue 更新 V、
+labelled break 与 switch fallthrough 等路径。

@@ -31,6 +31,9 @@ struct LabelFrame {
     std::string label;
     uint32_t startPc = 0;
     uint32_t endPc = 0;
+    // 循环 V 槽的字符串下标（UINT32_MAX = 非循环标签/无完成值模式）。
+    // continue 到达目标循环时把携带的完成值写入该槽（§14.7.5.7 step m）。
+    uint32_t loopValueName = UINT32_MAX;
     neo::core::Scope* scope = nullptr;
     size_t stackDepth = 0;
     size_t tryDepth = 0;
@@ -47,6 +50,10 @@ struct TryFrame {
     neo::core::Scope* scope = nullptr;
     size_t stackDepth = 0;
     size_t labelDepth = 0;
+    // 跨出 try 时是否把 break/continue 的 EMPTY 完成值归一化为 undefined
+    // （try 语句的 UpdateEmpty(abrupt, undefined)）。内部实现帧（如 for-of
+    // 的 IteratorClose）关闭此归一化。
+    bool normalizeAbruptCompletion = true;
 };
 
 struct VmState {

@@ -219,9 +219,45 @@ struct Code {
         emitU32(addString(std::string(name)));
         return pc;
     }
-    uint32_t loadFinallyCompletion(std::string_view name) {
-        uint32_t pc = emitOp(OpCode::LoadFinallyCompletion);
+    uint32_t defineIfMissing(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::DefineIfMissing);
         emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t enableCompletion() { return emitOp(OpCode::EnableCompletion); }
+    uint32_t mergeCompletion(std::string_view completionName,
+                             std::string_view slotName) {
+        uint32_t pc = emitOp(OpCode::MergeCompletion);
+        emitU32(addString(std::string(completionName)));
+        emitU32(addString(std::string(slotName)));
+        return pc;
+    }
+    uint32_t completionToUndefined(std::string_view completionName) {
+        uint32_t pc = emitOp(OpCode::CompletionToUndefined);
+        emitU32(addString(std::string(completionName)));
+        return pc;
+    }
+    uint32_t updateLoopValue(std::string_view completionName,
+                             std::string_view loopSlot) {
+        uint32_t pc = emitOp(OpCode::UpdateLoopValue);
+        emitU32(addString(std::string(completionName)));
+        emitU32(addString(std::string(loopSlot)));
+        return pc;
+    }
+    uint32_t loopEnd(std::string_view completionName, std::string_view loopSlot) {
+        uint32_t pc = emitOp(OpCode::LoopEnd);
+        emitU32(addString(std::string(completionName)));
+        emitU32(addString(std::string(loopSlot)));
+        return pc;
+    }
+    uint32_t labelledEnd(std::string_view completionName) {
+        uint32_t pc = emitOp(OpCode::LabelledEnd);
+        emitU32(addString(std::string(completionName)));
+        return pc;
+    }
+    uint32_t loadCompletionResult(std::string_view completionName) {
+        uint32_t pc = emitOp(OpCode::LoadCompletionResult);
+        emitU32(addString(std::string(completionName)));
         return pc;
     }
     uint32_t store(std::string_view name) {
@@ -346,18 +382,30 @@ struct Code {
         emitU32(tryEnd);
         return pc;
     }
+    uint32_t tryBeginInternal(uint32_t catchStart = 0,
+                              uint32_t finallyStart = 0,
+                              uint32_t tryEnd = 0) {
+        uint32_t pc = emitOp(OpCode::TryBeginInternal);
+        emitU32(catchStart);
+        emitU32(finallyStart);
+        emitU32(tryEnd);
+        return pc;
+    }
     uint32_t tryBodyEnd() { return emitOp(OpCode::TryBodyEnd); }
     uint32_t catchEnd() { return emitOp(OpCode::CatchEnd); }
     uint32_t finallyEnd() { return emitOp(OpCode::FinallyEnd); }
     uint32_t throwValue() { return emitOp(OpCode::Throw); }
 
     // label 栈：startPc = continue 目标，endPc = break 目标（均为 0 表示无）。
+    // loopValueName 为循环 V 槽的字符串下标（UINT32_MAX = 无）。
     uint32_t pushLabel(std::string_view label, uint32_t startPc = 0,
-                       uint32_t endPc = 0) {
+                       uint32_t endPc = 0,
+                       uint32_t loopValueName = UINT32_MAX) {
         uint32_t pc = emitOp(OpCode::PushLabel);
         emitU32(addString(std::string(label)));
         emitU32(startPc);
         emitU32(endPc);
+        emitU32(loopValueName);
         return pc;
     }
     uint32_t popLabel(std::string_view label) {
@@ -377,6 +425,16 @@ struct Code {
     }
     uint32_t continueTo(std::string_view label) {
         uint32_t pc = emitOp(OpCode::Continue);
+        emitU32(addString(std::string(label)));
+        return pc;
+    }
+    uint32_t breakValue(std::string_view label) {
+        uint32_t pc = emitOp(OpCode::BreakValue);
+        emitU32(addString(std::string(label)));
+        return pc;
+    }
+    uint32_t continueValue(std::string_view label) {
+        uint32_t pc = emitOp(OpCode::ContinueValue);
         emitU32(addString(std::string(label)));
         return pc;
     }

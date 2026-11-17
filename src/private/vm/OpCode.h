@@ -111,9 +111,8 @@ enum class OpCode : uint16_t {
     // 同 Load，但名字完全未解析时压 undefined（typeof 未声明标识符）。
     // TDZ/Import 未初始化仍报 ReferenceError。
     LoadSoft,     // u32 Code::strings 下标（名字）
-    // finally 入口：当前 try 帧无 pending 完成时压完成值槽，否则压 undefined
-    // （break/continue/异常路径的完成值按 UpdateEmpty 视为 undefined）。
-    LoadFinallyCompletion,  // u32 Code::strings 下标（完成值槽名）
+    // 当前作用域无该绑定时才定义（完成值保存槽的惰性定义）。
+    DefineIfMissing,  // u32 Code::strings 下标（名字）
     Store,        // u32 Code::strings 下标（名字）
     // u32 名字：[value] → []，写入变量环境绑定（跳过词法作用域）。
     // Annex B.3.3 块级函数同步到外层 var 绑定用。
@@ -176,6 +175,9 @@ enum class OpCode : uint16_t {
 
     // try：catch/finally 为 out-of-line 块，出口产生 Interrupt 交给 VM 裁决
     TryBegin,     // u32 catchStart, u32 finallyStart, u32 tryEnd（0 = 无）
+    // 同 TryBegin，但内部实现用（如 for-of 的 IteratorClose），不做
+    // eval 完成值的 UpdateEmpty(abrupt, undefined) 归一化。
+    TryBeginInternal,
     TryBodyEnd,   // 产生 Interrupt(TryBodyEnd)
     CatchEnd,     // 产生 Interrupt(CatchEnd)
     FinallyEnd,   // 产生 Interrupt(FinallyEnd)
@@ -187,6 +189,25 @@ enum class OpCode : uint16_t {
     PopLabelIfTop,  // u32 labelIndex：栈顶匹配才弹（逐迭代 label 清理用）
     Break,        // u32 labelIndex（"" = 最近可 break 目标）
     Continue,     // u32 labelIndex（"" = 最近循环）
+    // eval 完成值：break/continue 携带当前完成值（EMPTY 用 Uninitialized 哨兵）。
+    BreakValue,     // u32 labelIndex：[value] → []，创建带完成值的 Break 信号
+    ContinueValue,  // u32 labelIndex：[value] → []，创建带完成值的 Continue 信号
+
+    // —— eval 完成值（Completion Record 近似，ADR-033）——
+    // 完成值寄存器为隐藏绑定 *eval-completion*，EMPTY 用 Uninitialized 哨兵。
+    EnableCompletion,       // 开启完成值模式（break/continue 携带值、try 帧归一化）
+    // UpdateEmpty(inner, outer)：inner（寄存器）为 EMPTY 时写入 outer 槽。
+    MergeCompletion,        // u32 completionName, u32 slotName
+    // UpdateEmpty(inner, undefined)：寄存器为 EMPTY 时写入 undefined。
+    CompletionToUndefined,  // u32 completionName
+    // 循环 V 累积：寄存器非 EMPTY 时写入 loopSlot。
+    UpdateLoopValue,        // u32 completionName, u32 loopSlot
+    // 循环/switch 结束：有 pending break 时取 break 值（EMPTY 则取 V），否则取 V。
+    LoopEnd,                // u32 completionName, u32 loopSlot
+    // 标签语句结束：有 pending break 时寄存器 = break 值（EMPTY 保持 EMPTY）。
+    LabelledEnd,            // u32 completionName
+    // 最终结果：寄存器为 EMPTY 时压 undefined，否则压寄存器值。
+    LoadCompletionResult,   // u32 completionName
 
     // 作用域
     PushScope,

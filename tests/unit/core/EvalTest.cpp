@@ -450,18 +450,18 @@ TEST(EvalTest, CatchValueWinsOverTryValue) {
     EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 3.0);
 }
 
-TEST(EvalTest, BreakThroughFinallyClearsCompletion) {
+TEST(EvalTest, BreakThroughFinallyKeepsBreakValue) {
     Fixture f;
     ASSERT_TRUE(runScript(f,
                           "var out = eval('for (;;) { try { 1; break; } finally { 2; } }');\n"));
-    EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 1.0);
 }
 
-TEST(EvalTest, BreakInsideFinallyClearsCompletion) {
+TEST(EvalTest, BreakInsideFinallyKeepsFinallyBreakValue) {
     Fixture f;
     ASSERT_TRUE(runScript(f,
                           "var out = eval('for (;;) { try { 1; } finally { 2; break; } }');\n"));
-    EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 2.0);
 }
 
 TEST(EvalTest, NestedFinallyKeepsOuterTryValue) {
@@ -476,4 +476,129 @@ TEST(EvalTest, FinallyValueIgnoredBeforeLaterStatement) {
     ASSERT_TRUE(runScript(f,
                           "var out = eval('try { 1; } finally { 2; } 3;');\n"));
     EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 3.0);
+}
+
+TEST(EvalTest, EmptyLoopCompletionIsUndefined) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f, "var out = eval('1; while (false) { 2; }');\n"));
+    EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(EvalTest, EmptyForCompletionIsUndefined) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f, "var out = eval('1; for (; false;) { 2; }');\n"));
+    EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(EvalTest, DoWhileCompletionKeepsBodyValue) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f, "var out = eval('1; do { 2; } while (false)');\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 2.0);
+}
+
+TEST(EvalTest, IfFalseCompletionIsUndefined) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f, "var out = eval('1; if (false) 2;');\n"));
+    EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(EvalTest, SwitchNoMatchCompletionIsUndefined) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f, "var out = eval('1; switch (2) { case 1: 3; }');\n"));
+    EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(EvalTest, EmptyTryCatchCompletionIsUndefined) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f, "var out = eval('1; try { } catch (e) { }');\n"));
+    EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(EvalTest, EmptyTryFinallyCompletionIsUndefined) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f, "var out = eval('1; try { } finally { }');\n"));
+    EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(EvalTest, BreakWithEmptyBodyCompletionIsUndefined) {
+    Fixture f;
+    ASSERT_TRUE(runScript(
+        f, "var out = eval('1; while (true) { if (true) break; }');\n"));
+    EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(EvalTest, ContinueUpdatesLoopValue) {
+    Fixture f;
+    ASSERT_TRUE(runScript(
+        f, "var out = eval('for (let i = 0; i < 2; i++) { i; continue; }');\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 1.0);
+}
+
+TEST(EvalTest, ContinueThroughTryNormalizesEmptyToUndefined) {
+    Fixture f;
+    ASSERT_TRUE(runScript(
+        f,
+        "var out = eval('for (let i = 0; i < 2; i++) {"
+        " if (i === 0) { 5; continue; } try { continue; } finally { } }');\n"));
+    EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(EvalTest, LabelledBreakKeepsValue) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f, "var out = eval('l: { 1; break l; }');\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 1.0);
+}
+
+TEST(EvalTest, LabelledBreakEmptyFallsBackToPreviousValue) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f, "var out = eval('1; l: { break l; }');\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 1.0);
+}
+
+TEST(EvalTest, SwitchBreakKeepsClauseValue) {
+    Fixture f;
+    ASSERT_TRUE(runScript(
+        f, "var out = eval('switch (1) { case 1: 2; break; case 2: 3; }');\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 2.0);
+}
+
+TEST(EvalTest, SwitchFallthroughKeepsLastValue) {
+    Fixture f;
+    ASSERT_TRUE(runScript(
+        f, "var out = eval('switch (1) { case 1: 2; case 2: 3; }');\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 3.0);
+}
+
+TEST(EvalTest, TryNormalPathKeepsValue) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f, "var out = eval('try { 1; } catch (e) { }');\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 1.0);
+}
+
+TEST(EvalTest, EmptyBlockFallsBackToPreviousValue) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f, "var out = eval('1; { }');\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 1.0);
+}
+
+// 间接 eval 在 global 执行且不继承调用方严格模式，可覆盖 sloppy-only 的 with。
+TEST(EvalTest, WithEmptyBodyCompletionIsUndefined) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f, "var out = (0, eval)('1; with ({}) { }');\n"));
+    EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(EvalTest, WithBodyValueIsCompletion) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f, "var out = (0, eval)('with ({}) { 2; }');\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 2.0);
+}
+
+TEST(EvalTest, BreakThroughWithNormalizesEmptyToUndefined) {
+    Fixture f;
+    ASSERT_TRUE(runScript(
+        f,
+        "var out = (0, eval)('for (let i = 0; i < 2; i++) {"
+        " if (i === 0) { 5; continue; } with ({}) { break; } }');\n"));
+    EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
 }

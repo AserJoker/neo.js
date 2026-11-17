@@ -295,6 +295,7 @@ _func_end:
 | 指令 | 栈契约 | 说明 |
 |------|--------|------|
 | `try_begin catchStart, finallyStart, tryEnd` | `d → d` | 压 try 帧；0 表示无该目标 |
+| `try_begin_internal ...` | `d → d` | 同上，但跨出时不归一化 break/continue 的 EMPTY 完成值（for-of 的 IteratorClose 用） |
 | `try_body_end` | `d → d` | 产生 Interrupt(TryBodyEnd)，VM 裁决 finally/try_end |
 | `catch_end` | `d → d` | 产生 Interrupt(CatchEnd)，规则同 try_body_end |
 | `finally_end` | `d → d` | 产生 Interrupt(FinallyEnd)，VM 按 res 分派 |
@@ -304,10 +305,14 @@ _func_end:
 
 - catch/finally 是 out-of-line 块，线性流程通过 end Interrupt 跳过，不发射 `jmp`。
 - `try_end` 是整条 try 语句之后的位置，不是指令；`pop_try` 是 VM 内部动作。
-- try 帧：`catchStart`/`finallyStart`/`tryEnd`/`res`/入口作用域/操作数栈深/label 栈深。
+- try 帧：`catchStart`/`finallyStart`/`tryEnd`/`res`/入口作用域/操作数栈深/label 栈深/
+  `normalizeAbruptCompletion`。
 - `res` 自描述：`nullptr` 正常；Exception 待传播；Interrupt(Break/Continue) 待跳转；
   其他 Value 为返回值。
 - 进入 catch/finally 前清零对应地址，防止重入；Fatal 不参与展开。
+- 用户 try 语句跨出时把 break/continue 的 EMPTY 完成值归一化为 undefined
+  （`UpdateEmpty(abrupt, undefined)`）；`try_begin_internal` 关闭该行为，供
+  VM 内部实现帧（for-of 的 IteratorClose）使用。
 
 #### 2.6 作用域
 
@@ -477,10 +482,30 @@ ReferenceError，而 §13.5.3 要求 `typeof undeclared` 求值为 `"undefined"`
 Compiler 在 `typeof` + `Identifier` 时发射 `load_soft`，其余表达式保持
 普通求值（`typeof a.b` 的未解析 `a` 仍抛错）。
 
-## 追加：load_finally_completion（eval 完成值，2026-11-17）
+## 追加：Completion Record 指令组（eval 完成值，2026-11-17）
 
-`load_finally_completion u32 nameIndex`：finally 入口专用。若当前 try 帧存在
-pending 完成（异常/break/continue），压 `undefined`（UpdateEmpty 语义）；
-否则读取完成值槽并压入**克隆**（完成值槽是活绑定，store 原地改写同一 Value，
-直接压指针会被 finally 内的写入污染）。finally 正常结束时由普通 `store`
-写回，从而丢弃 finally 自身的完成值。
+完成值寄存器是隐藏绑定 `*eval-completion*`，`EMPTY` 用 `Uninitialized` 哨兵
+表示（与 `undefined` 严格区分）。保存槽/循环 V 槽也是隐藏绑定，用
+`define_if_missing` 惰性定义，避免预扫描槽数量。
+
+| 指令 | 栈契约 | 说明 |
+|------|--------|------|
+| `define_if_missing u32 nameIndex` | `[v] → []` | 当前作用域无该绑定时才定义（保存槽） |
+| `enable_completion` | `d → d` | 开启完成值模式（break/continue 携带值、try 帧归一化） |
+| `merge_completion u32 completion, u32 slot` | `d → d` | `UpdateEmpty`：寄存器为 EMPTY 时写入 slot |
+| `completion_to_undefined u32 completion` | `d → d` | 寄存器为 EMPTY 时写入 `undefined` |
+| `update_loop_value u32 completion, u32 slot` | `d → d` | 循环 step m：寄存器非 EMPTY 时写入 V |
+| `loop_end u32 completion, u32 slot` | `d → d` | 有 pending break 时取 break 值（EMPTY 则取 V），否则取 V |
+| `labelled_end u32 completion` | `d → d` | 有 pending break 时寄存器 = break 值（EMPTY 保持 EMPTY） |
+| `load_completion_result u32 completion` | `d → d + 1` | 寄存器为 EMPTY 时压 `undefined`，否则压寄存器值 |
+| `break_value u32 labelIndex` | `[value] → []` | 带完成值的 break 信号 |
+| `continue_value u32 labelIndex` | `[value] → []` | 带完成值的 continue 信号 |
+
+- `push_label` 追加第 4 个操作数 `loopValueName`（UINT32_MAX = 非循环标签）：
+  continue 到达目标循环时把携带的完成值写入该 V 槽（§14.7.5.7 step m）。
+  该操作数位于既有 start/end 之后，原有 `patchU32` 偏移不变。
+- `break`/`continue` 的完成值取当前 StatementList 值（`load *eval-completion*`），
+  EMPTY 以 `Uninitialized` 携带；消费方按 `UpdateEmpty` 规则裁决。
+- 用户 try 帧跨出时归一化 EMPTY → undefined；`try_begin_internal` 不归一化。
+- 编译器对 if/循环/switch/labelled/try 在构造边界发射 Save/Merge，实现
+  `UpdateEmpty(inner, outer)` 与循环 V 累积。

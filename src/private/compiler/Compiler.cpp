@@ -170,17 +170,60 @@ void Compiler::compileEvalProgram() {
     }
     hoistLexicalSlots(program_.body);
 
-    // 完成值槽：执行到的最后一个表达式语句的值（嵌套函数体不参与）。
-    code_->pushUndefined();
+    // 完成值寄存器：初始 EMPTY（Uninitialized 哨兵），由各语句按
+    // Completion Record 规则写入；嵌套函数体不参与。
+    code_->pushUninitialized();
     code_->define(kEvalCompletion, true, true);
+    code_->enableCompletion();
     evalCompletion_ = true;
     for (const frontend::NodePtr& statement : program_.body) {
         if (statement) compileStatement(*statement);
     }
     evalCompletion_ = false;
-    code_->load(kEvalCompletion);
+    code_->loadCompletionResult(kEvalCompletion);
     // 作用域由 evalSource 在返回值归属调用方后再弹出（异常路径也统一收口）。
     code_->ret();
+}
+
+std::string Compiler::newCompletionSlot(std::string_view prefix) {
+    return std::string(prefix) + std::to_string(completionSlotCounter_++);
+}
+
+void Compiler::emitDefineCompletionSlot(const std::string& slot) {
+    code_->pushUndefined();
+    code_->defineIfMissing(slot);
+}
+
+void Compiler::emitSaveCompletion(const std::string& slot) {
+    code_->load(kEvalCompletion);
+    code_->store(slot);
+    code_->pushUninitialized();
+    code_->store(kEvalCompletion);
+}
+
+void Compiler::emitMergeCompletion(const std::string& slot) {
+    code_->mergeCompletion(kEvalCompletion, slot);
+}
+
+void Compiler::emitCompletionToUndefined() {
+    code_->completionToUndefined(kEvalCompletion);
+}
+
+void Compiler::emitClearCompletion() {
+    code_->pushUninitialized();
+    code_->store(kEvalCompletion);
+}
+
+void Compiler::emitUpdateLoopValue(const std::string& slot) {
+    code_->updateLoopValue(kEvalCompletion, slot);
+}
+
+void Compiler::emitLoopEnd(const std::string& slot) {
+    code_->loopEnd(kEvalCompletion, slot);
+}
+
+void Compiler::emitLabelledEnd() {
+    code_->labelledEnd(kEvalCompletion);
 }
 
 void Compiler::compileModule() {
@@ -488,6 +531,12 @@ void Compiler::compileReturnStatement(const frontend::ReturnStatement& node) {
 
 void Compiler::compileIfStatement(const frontend::IfStatement& node) {
     if (!node.test) return;
+    std::string completionSlot;
+    if (evalCompletion_) {
+        completionSlot = newCompletionSlot("*eval-if-");
+        emitDefineCompletionSlot(completionSlot);
+        emitSaveCompletion(completionSlot);
+    }
     compileExpression(*node.test);
     uint32_t toElse = code_->jfalse();
     auto compileBranch = [&](const frontend::NodePtr& branch) {
@@ -510,6 +559,10 @@ void Compiler::compileIfStatement(const frontend::IfStatement& node) {
     } else {
         code_->patchU32(toElse + 2, code_->here());
     }
+    if (evalCompletion_) {
+        emitCompletionToUndefined();
+        emitMergeCompletion(completionSlot);
+    }
 }
 
 void Compiler::compileForStatement(
@@ -523,6 +576,18 @@ void Compiler::compileForStatement(
         if (declaration.variableKind != frontend::VariableKind::Var) {
             lexicalInit = &declaration;
         }
+    }
+
+    std::string outerSlot;
+    std::string loopSlot;
+    if (evalCompletion_) {
+        outerSlot = newCompletionSlot("*eval-loop-outer-");
+        loopSlot = newCompletionSlot("*eval-loop-v-");
+        emitDefineCompletionSlot(outerSlot);
+        emitDefineCompletionSlot(loopSlot);
+        emitSaveCompletion(outerSlot);
+        code_->pushUndefined();
+        code_->store(loopSlot);
     }
 
     if (lexicalInit != nullptr) code_->pushScope();
@@ -562,6 +627,8 @@ void Compiler::compileForStatement(
 
     std::vector<std::string> effective = labels;
     if (effective.empty()) effective.push_back("");
+    const uint32_t loopValueName =
+        evalCompletion_ ? code_->addString(loopSlot) : UINT32_MAX;
 
     if (lexicalInit != nullptr) {
         // 逐迭代环境：循环作用域持有 let/const 槽；每次迭代复制到子作用域，
@@ -585,7 +652,7 @@ void Compiler::compileForStatement(
         // label 帧指向本次迭代作用域：continue 不会提前弹掉它。
         std::vector<uint32_t> pushes;
         for (const std::string& label : effective) {
-            pushes.push_back(code_->pushLabel(label, 0, 0));
+            pushes.push_back(code_->pushLabel(label, 0, 0, loopValueName));
         }
 
         uint32_t toEnd = 0;
@@ -593,7 +660,9 @@ void Compiler::compileForStatement(
             compileExpression(*node.test);
             toEnd = code_->jfalse();
         }
+        if (evalCompletion_) emitClearCompletion();
         if (node.body) compileStatement(*node.body);
+        if (evalCompletion_) emitUpdateLoopValue(loopSlot);
 
         // continue 目标是 update；先清理本次迭代的 label 帧，再写回并弹出作用域。
         uint32_t updatePc = code_->here();
@@ -624,12 +693,16 @@ void Compiler::compileForStatement(
         code_->popScope();
         code_->patchU32(done + 2, code_->here());
         for (uint32_t push : pushes) code_->patchU32(push + 10, breakTarget);
+        if (evalCompletion_) {
+            emitLoopEnd(loopSlot);
+            emitMergeCompletion(outerSlot);
+        }
         return;
     }
 
     std::vector<uint32_t> pushes;
     for (const std::string& label : effective) {
-        pushes.push_back(code_->pushLabel(label, 0, 0));
+        pushes.push_back(code_->pushLabel(label, 0, 0, loopValueName));
     }
 
     uint32_t loop = code_->here();
@@ -638,7 +711,9 @@ void Compiler::compileForStatement(
         compileExpression(*node.test);
         toEnd = code_->jfalse();
     }
+    if (evalCompletion_) emitClearCompletion();
     if (node.body) compileStatement(*node.body);
+    if (evalCompletion_) emitUpdateLoopValue(loopSlot);
 
     // continue 目标是 update，而不是循环头（否则 update 会被跳过）。
     uint32_t updatePc = code_->here();
@@ -657,6 +732,10 @@ void Compiler::compileForStatement(
     }
     uint32_t endPc = code_->here();
     for (uint32_t push : pushes) code_->patchU32(push + 10, endPc);
+    if (evalCompletion_) {
+        emitLoopEnd(loopSlot);
+        emitMergeCompletion(outerSlot);
+    }
 }
 
 void Compiler::compileForTarget(const frontend::NodePtr& left,
@@ -780,6 +859,20 @@ void Compiler::compileForInStatement(
     std::vector<std::string> effective = labels;
     if (effective.empty()) effective.push_back("");
 
+    std::string outerSlot;
+    std::string loopSlot;
+    if (evalCompletion_) {
+        outerSlot = newCompletionSlot("*eval-loop-outer-");
+        loopSlot = newCompletionSlot("*eval-loop-v-");
+        emitDefineCompletionSlot(outerSlot);
+        emitDefineCompletionSlot(loopSlot);
+        emitSaveCompletion(outerSlot);
+        code_->pushUndefined();
+        code_->store(loopSlot);
+    }
+    const uint32_t loopValueName =
+        evalCompletion_ ? code_->addString(loopSlot) : UINT32_MAX;
+
     code_->pushScope();
     code_->pushUndefined();
     code_->define(kForKeys);
@@ -798,7 +891,7 @@ void Compiler::compileForInStatement(
 
     std::vector<uint32_t> pushes;
     for (const std::string& label : effective) {
-        pushes.push_back(code_->pushLabel(label, 0, 0));
+        pushes.push_back(code_->pushLabel(label, 0, 0, loopValueName));
     }
     uint32_t loop = code_->here();
     for (uint32_t push : pushes) code_->patchU32(push + 6, loop);
@@ -832,7 +925,9 @@ void Compiler::compileForInStatement(
     if (lexical) code_->pushScope();
     code_->load(kForValue);
     compileForTarget(node.left, kForValue);
+    if (evalCompletion_) emitClearCompletion();
     if (node.body) compileStatement(*node.body);
+    if (evalCompletion_) emitUpdateLoopValue(loopSlot);
     if (lexical) code_->popScope();
 
     uint32_t skipPc = code_->here();
@@ -851,6 +946,10 @@ void Compiler::compileForInStatement(
     code_->popScope();
     uint32_t endPc = code_->here();
     for (uint32_t push : pushes) code_->patchU32(push + 10, endPc);
+    if (evalCompletion_) {
+        emitLoopEnd(loopSlot);
+        emitMergeCompletion(outerSlot);
+    }
 }
 
 void Compiler::compileForOfStatement(
@@ -871,6 +970,20 @@ void Compiler::compileForOfStatement(
 
     std::vector<std::string> effective = labels;
     if (effective.empty()) effective.push_back("");
+
+    std::string outerSlot;
+    std::string loopSlot;
+    if (evalCompletion_) {
+        outerSlot = newCompletionSlot("*eval-loop-outer-");
+        loopSlot = newCompletionSlot("*eval-loop-v-");
+        emitDefineCompletionSlot(outerSlot);
+        emitDefineCompletionSlot(loopSlot);
+        emitSaveCompletion(outerSlot);
+        code_->pushUndefined();
+        code_->store(loopSlot);
+    }
+    const uint32_t loopValueName =
+        evalCompletion_ ? code_->addString(loopSlot) : UINT32_MAX;
 
     code_->pushScope();
     code_->pushUndefined();
@@ -893,10 +1006,12 @@ void Compiler::compileForOfStatement(
     code_->store(kForDone);
 
     // try/finally：非正常完成（break/return/throw）时 IteratorClose。
-    uint32_t tryBeginPc = code_->tryBegin();
+    // 内部实现帧：跨出时不把 break/continue 的 EMPTY 完成值归一化为
+    // undefined（该归一化只属于用户 try 语句）。
+    uint32_t tryBeginPc = code_->tryBeginInternal();
     std::vector<uint32_t> pushes;
     for (const std::string& label : effective) {
-        pushes.push_back(code_->pushLabel(label, 0, 0));
+        pushes.push_back(code_->pushLabel(label, 0, 0, loopValueName));
     }
     uint32_t loop = code_->here();
     for (uint32_t push : pushes) code_->patchU32(push + 6, loop);
@@ -926,7 +1041,9 @@ void Compiler::compileForOfStatement(
     if (lexical) code_->pushScope();
     code_->load(kForValue);
     compileForTarget(node.left, kForValue);
+    if (evalCompletion_) emitClearCompletion();
     if (node.body) compileStatement(*node.body);
+    if (evalCompletion_) emitUpdateLoopValue(loopSlot);
     if (lexical) code_->popScope();
     code_->jmp(loop);
 
@@ -959,6 +1076,10 @@ void Compiler::compileForOfStatement(
     code_->patchU32(tryBeginPc + 2, 0);
     code_->patchU32(tryBeginPc + 6, finallyStart);
     code_->patchU32(tryBeginPc + 10, tryEnd);
+    if (evalCompletion_) {
+        emitLoopEnd(loopSlot);
+        emitMergeCompletion(outerSlot);
+    }
 
     code_->popScope();
 }
@@ -969,6 +1090,19 @@ void Compiler::compileSwitchStatement(
     if (!node.discriminant) {
         error(node, "compiler: switch missing discriminant");
         return;
+    }
+
+    std::string outerSlot;
+    std::string loopSlot;
+    if (evalCompletion_) {
+        outerSlot = newCompletionSlot("*eval-loop-outer-");
+        loopSlot = newCompletionSlot("*eval-loop-v-");
+        emitDefineCompletionSlot(outerSlot);
+        emitDefineCompletionSlot(loopSlot);
+        emitSaveCompletion(outerSlot);
+        // CaseBlockEvaluation：V 从 undefined 开始（不是 EMPTY）。
+        code_->pushUndefined();
+        code_->store(loopSlot);
     }
 
     // CaseBlock 共享一个词法作用域：先为所有 clause 的 let/const/函数建槽。
@@ -1019,9 +1153,12 @@ void Compiler::compileSwitchStatement(
         if (!caseNode || caseNode->kind() != NodeKind::SwitchCase) continue;
         const auto& switchCase =
             static_cast<const frontend::SwitchCase&>(*caseNode);
+        // 每个 clause 从 EMPTY 开始；正常完成后若非 EMPTY 则更新 V。
+        if (evalCompletion_) emitClearCompletion();
         for (const NodePtr& statement : switchCase.consequent) {
             if (statement) compileStatement(*statement);
         }
+        if (evalCompletion_) emitUpdateLoopValue(loopSlot);
     }
     uint32_t normalEnd = code_->here();
 
@@ -1037,6 +1174,11 @@ void Compiler::compileSwitchStatement(
     }
     // break 已由 VM 回退到 switch 作用域，只需跳过 pop_label 清理作用域。
     uint32_t breakTarget = code_->here();
+    if (evalCompletion_) {
+        // 有 pending break 时取 break 值（EMPTY 则取 V），否则取 V。
+        emitLoopEnd(loopSlot);
+        emitMergeCompletion(outerSlot);
+    }
     code_->popScope();
     uint32_t endPc = code_->here();
     for (uint32_t push : pushes) code_->patchU32(push + 10, breakTarget);
@@ -1048,11 +1190,25 @@ void Compiler::compileWhileStatement(
     const std::vector<std::string>& labels) {
     if (!node.test) return;
 
+    std::string outerSlot;
+    std::string loopSlot;
+    if (evalCompletion_) {
+        outerSlot = newCompletionSlot("*eval-loop-outer-");
+        loopSlot = newCompletionSlot("*eval-loop-v-");
+        emitDefineCompletionSlot(outerSlot);
+        emitDefineCompletionSlot(loopSlot);
+        emitSaveCompletion(outerSlot);
+        code_->pushUndefined();
+        code_->store(loopSlot);
+    }
+
     std::vector<std::string> effective = labels;
     if (effective.empty()) effective.push_back("");
+    const uint32_t loopValueName =
+        evalCompletion_ ? code_->addString(loopSlot) : UINT32_MAX;
     std::vector<uint32_t> pushes;
     for (const std::string& label : effective) {
-        pushes.push_back(code_->pushLabel(label, 0, 0));
+        pushes.push_back(code_->pushLabel(label, 0, 0, loopValueName));
     }
     // continue/回跳目标在 push_label 之后，避免重复压帧。
     uint32_t loop = code_->here();
@@ -1060,7 +1216,9 @@ void Compiler::compileWhileStatement(
 
     compileExpression(*node.test);
     uint32_t toEnd = code_->jfalse();
+    if (evalCompletion_) emitClearCompletion();
     if (node.body) compileStatement(*node.body);
+    if (evalCompletion_) emitUpdateLoopValue(loopSlot);
     code_->jmp(loop);
 
     // 正常退出先执行 pop_label；break 目标在 pop_label 之后。
@@ -1071,6 +1229,10 @@ void Compiler::compileWhileStatement(
     }
     uint32_t endPc = code_->here();
     for (uint32_t push : pushes) code_->patchU32(push + 10, endPc);
+    if (evalCompletion_) {
+        emitLoopEnd(loopSlot);
+        emitMergeCompletion(outerSlot);
+    }
 }
 
 void Compiler::compileDoWhileStatement(
@@ -1078,15 +1240,31 @@ void Compiler::compileDoWhileStatement(
     const std::vector<std::string>& labels) {
     if (!node.test) return;
 
+    std::string outerSlot;
+    std::string loopSlot;
+    if (evalCompletion_) {
+        outerSlot = newCompletionSlot("*eval-loop-outer-");
+        loopSlot = newCompletionSlot("*eval-loop-v-");
+        emitDefineCompletionSlot(outerSlot);
+        emitDefineCompletionSlot(loopSlot);
+        emitSaveCompletion(outerSlot);
+        code_->pushUndefined();
+        code_->store(loopSlot);
+    }
+
     std::vector<std::string> effective = labels;
     if (effective.empty()) effective.push_back("");
+    const uint32_t loopValueName =
+        evalCompletion_ ? code_->addString(loopSlot) : UINT32_MAX;
     std::vector<uint32_t> pushes;
     for (const std::string& label : effective) {
-        pushes.push_back(code_->pushLabel(label, 0, 0));
+        pushes.push_back(code_->pushLabel(label, 0, 0, loopValueName));
     }
     uint32_t loop = code_->here();
 
+    if (evalCompletion_) emitClearCompletion();
     if (node.body) compileStatement(*node.body);
+    if (evalCompletion_) emitUpdateLoopValue(loopSlot);
     uint32_t testPc = code_->here();
     for (uint32_t push : pushes) code_->patchU32(push + 6, testPc);
     compileExpression(*node.test);
@@ -1098,6 +1276,10 @@ void Compiler::compileDoWhileStatement(
     }
     uint32_t endPc = code_->here();
     for (uint32_t push : pushes) code_->patchU32(push + 10, endPc);
+    if (evalCompletion_) {
+        emitLoopEnd(loopSlot);
+        emitMergeCompletion(outerSlot);
+    }
     (void)exitPc;
 }
 
@@ -1152,6 +1334,12 @@ void Compiler::compileLabeledStatement(
     }
 
     // 非循环标签：startPc=0（不可 continue），endPc 为 break 目标。
+    std::string outerSlot;
+    if (evalCompletion_) {
+        outerSlot = newCompletionSlot("*eval-label-");
+        emitDefineCompletionSlot(outerSlot);
+        emitSaveCompletion(outerSlot);
+    }
     std::vector<uint32_t> pushes;
     for (const std::string& label : labels) {
         pushes.push_back(code_->pushLabel(label, 0, 0));
@@ -1162,24 +1350,32 @@ void Compiler::compileLabeledStatement(
     }
     uint32_t endPc = code_->here();
     for (uint32_t push : pushes) code_->patchU32(push + 10, endPc);
+    if (evalCompletion_) {
+        // 匹配 label 的 break 转 NormalCompletion(break 值)，EMPTY 保持 EMPTY；
+        // 再由外层 StatementList 的 UpdateEmpty 填入先前值。
+        emitLabelledEnd();
+        emitMergeCompletion(outerSlot);
+    }
 }
 
 void Compiler::compileBreakStatement(
     const frontend::BreakStatement& node) {
-    // finally 内的 break 若离开 finally，其完成值为空（UpdateEmpty → undefined）；
-    // 若仍留在 finally 内，finally 正常结束时的写回会覆盖这里的清除。
-    if (evalCompletion_ && finallyDepth_ > 0) {
-        code_->pushUndefined();
-        code_->store(kEvalCompletion);
+    if (evalCompletion_) {
+        // break 的完成值 = 当前 StatementList 值（UpdateEmpty(break, sl)）。
+        // EMPTY 用 Uninitialized 哨兵携带，由消费方（循环/switch/标签）裁决。
+        code_->load(kEvalCompletion);
+        code_->breakValue(node.label);
+        return;
     }
     code_->breakTo(node.label);
 }
 
 void Compiler::compileContinueStatement(
     const frontend::ContinueStatement& node) {
-    if (evalCompletion_ && finallyDepth_ > 0) {
-        code_->pushUndefined();
-        code_->store(kEvalCompletion);
+    if (evalCompletion_) {
+        code_->load(kEvalCompletion);
+        code_->continueValue(node.label);
+        return;
     }
     code_->continueTo(node.label);
 }
@@ -1200,7 +1396,22 @@ void Compiler::compileWithStatement(const frontend::WithStatement& node) {
     }
     compileExpression(*node.object);
     code_->pushWithScope();
+    // WithStatement 返回 UpdateEmpty(C, undefined)：正常路径把 EMPTY 归一为
+    // undefined；abrupt 路径借一个无目标的 try 帧做同样的归一化。
+    uint32_t tryBeginPc = 0;
+    if (evalCompletion_) {
+        tryBeginPc = code_->tryBegin();
+        emitClearCompletion();
+    }
     if (node.body) compileStatement(*node.body);
+    if (evalCompletion_) {
+        emitCompletionToUndefined();
+        code_->tryBodyEnd();
+        uint32_t tryEnd = code_->here();
+        code_->patchU32(tryBeginPc + 2, 0);
+        code_->patchU32(tryBeginPc + 6, 0);
+        code_->patchU32(tryBeginPc + 10, tryEnd);
+    }
     code_->popScope();
 }
 
@@ -1209,7 +1420,11 @@ void Compiler::compileTryStatement(const frontend::TryStatement& node) {
     // 产生 Interrupt，VM 负责跳转与 try 帧平衡，编译器不发射 jmp。
     uint32_t tryBeginPc = code_->tryBegin();
 
+    // try 体独立求值：B 从 EMPTY 开始（不继承外层 StatementList 值）。
+    if (evalCompletion_) emitClearCompletion();
     if (node.block) compileStatement(*node.block);
+    // try/catch（无 finally）：C = B，正常出口做 UpdateEmpty(C, undefined)。
+    if (evalCompletion_ && !node.finalizer) emitCompletionToUndefined();
     code_->tryBodyEnd();
 
     uint32_t catchStart = 0;
@@ -1218,14 +1433,12 @@ void Compiler::compileTryStatement(const frontend::TryStatement& node) {
             error(*node.handler, "compiler: unsupported catch clause");
         } else {
             catchStart = code_->here();
-            // catch 只在异常路径进入：try 体抛错前的完成值作废，
-            // catch 完成值从空开始（UpdateEmpty 视为 undefined）。
-            if (evalCompletion_) {
-                code_->pushUndefined();
-                code_->store(kEvalCompletion);
-            }
+            // catch 只在异常路径进入：C 从 catch 体求值开始，先清空寄存器。
+            if (evalCompletion_) emitClearCompletion();
             compileCatchClause(
                 static_cast<const frontend::CatchClause&>(*node.handler));
+            // try/catch（无 finally）：UpdateEmpty(C, undefined)。
+            if (evalCompletion_ && !node.finalizer) emitCompletionToUndefined();
             code_->catchEnd();
         }
     }
@@ -1233,15 +1446,21 @@ void Compiler::compileTryStatement(const frontend::TryStatement& node) {
     uint32_t finallyStart = 0;
     if (node.finalizer) {
         finallyStart = code_->here();
-        // finally 的完成值不参与结果（F normal 时取 try/catch 的完成值）。
-        // 入口把待保留的完成值压栈（abrupt 路径压 undefined），块内正常结束
-        // 时写回；块内 break/continue 离开 finally 时写回被跳过，完成值
-        // 由 break/continue 编译点清为 undefined。
-        if (evalCompletion_) code_->loadFinallyCompletion(kEvalCompletion);
-        ++finallyDepth_;
+        std::string finallySlot;
+        if (evalCompletion_) {
+            // 保存 B/C（可能 EMPTY），清空寄存器供 finally 求值。
+            finallySlot = newCompletionSlot("*eval-finally-");
+            emitDefineCompletionSlot(finallySlot);
+            emitSaveCompletion(finallySlot);
+        }
         compileStatement(*node.finalizer);
-        --finallyDepth_;
-        if (evalCompletion_) code_->store(kEvalCompletion);
+        if (evalCompletion_) {
+            // F normal → F = B/C（恢复保存值），再 UpdateEmpty(F, undefined)。
+            // F abrupt 时由 finally_end 分派 frame.res，寄存器不参与。
+            code_->load(finallySlot);
+            code_->store(kEvalCompletion);
+            emitCompletionToUndefined();
+        }
         code_->finallyEnd();
     }
 

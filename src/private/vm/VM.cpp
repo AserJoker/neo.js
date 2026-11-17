@@ -90,7 +90,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::Initialize:    return "initialize";
         case OpCode::Load:          return "load";
         case OpCode::LoadSoft:      return "load_soft";
-        case OpCode::LoadFinallyCompletion: return "load_finally_completion";
+        case OpCode::DefineIfMissing: return "define_if_missing";
         case OpCode::Store:         return "store";
         case OpCode::StoreVar:      return "store_var";
         case OpCode::GetProp:       return "get_prop";
@@ -129,6 +129,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::JFalse:        return "jfalse";
         case OpCode::JNotNullish:   return "jnotnullish";
         case OpCode::TryBegin:      return "try_begin";
+        case OpCode::TryBeginInternal: return "try_begin_internal";
         case OpCode::TryBodyEnd:    return "try_body_end";
         case OpCode::CatchEnd:      return "catch_end";
         case OpCode::FinallyEnd:    return "finally_end";
@@ -138,6 +139,15 @@ const char* opCodeName(OpCode op) {
         case OpCode::PopLabelIfTop: return "pop_label_if_top";
         case OpCode::Break:         return "break";
         case OpCode::Continue:      return "continue";
+        case OpCode::BreakValue:    return "break_value";
+        case OpCode::ContinueValue: return "continue_value";
+        case OpCode::EnableCompletion: return "enable_completion";
+        case OpCode::MergeCompletion: return "merge_completion";
+        case OpCode::CompletionToUndefined: return "completion_to_undefined";
+        case OpCode::UpdateLoopValue: return "update_loop_value";
+        case OpCode::LoopEnd:       return "loop_end";
+        case OpCode::LabelledEnd:   return "labelled_end";
+        case OpCode::LoadCompletionResult: return "load_completion_result";
         case OpCode::PushScope:     return "push_scope";
         case OpCode::PushVarScope:  return "push_var_scope";
         case OpCode::PopScope:      return "pop_scope";
@@ -225,7 +235,7 @@ const VM::Handler* VM::handlers() {
         &VM::opInitialize,
         &VM::opLoad,
         &VM::opLoadSoft,
-        &VM::opLoadFinallyCompletion,
+        &VM::opDefineIfMissing,
         &VM::opStore,
         &VM::opStoreVar,
         &VM::opGetProp,
@@ -264,6 +274,7 @@ const VM::Handler* VM::handlers() {
         &VM::opJFalse,
         &VM::opJNotNullish,
         &VM::opTryBegin,
+        &VM::opTryBeginInternal,
         &VM::opTryBodyEnd,
         &VM::opCatchEnd,
         &VM::opFinallyEnd,
@@ -273,6 +284,15 @@ const VM::Handler* VM::handlers() {
         &VM::opPopLabelIfTop,
         &VM::opBreak,
         &VM::opContinue,
+        &VM::opBreakValue,
+        &VM::opContinueValue,
+        &VM::opEnableCompletion,
+        &VM::opMergeCompletion,
+        &VM::opCompletionToUndefined,
+        &VM::opUpdateLoopValue,
+        &VM::opLoopEnd,
+        &VM::opLabelledEnd,
+        &VM::opLoadCompletionResult,
         &VM::opPushScope,
         &VM::opPushVarScope,
         &VM::opPopScope,
@@ -483,6 +503,19 @@ Value* VM::handleFinallyEnd() {
     if (res == nullptr) {
         pc_ = endPc;
         return nullptr;
+    }
+    // try/finally 返回 UpdateEmpty(F, undefined)：break/continue 的 EMPTY
+    // 完成值在离开 try 时归一化为 undefined。
+    if (completionMode_ && frame.normalizeAbruptCompletion &&
+        detail::isInterruptValue(res)) {
+        auto* data = neo::core::asInterrupt(res);
+        if (data != nullptr &&
+            (data->kind == neo::core::InterruptKind::Break ||
+             data->kind == neo::core::InterruptKind::Continue) &&
+            data->value != nullptr &&
+            data->value->type()->kind() == neo::core::TypeKind::Uninitialized) {
+            data->value = ctx_->createUndefined();
+        }
     }
     // 帧已弹出：先把 pending 值挂到当前作用域，跨帧展开期间保活。
     if (ctx_->current() != nullptr) ctx_->current()->add(res);
@@ -870,32 +903,173 @@ Value* VM::opLoadSoft() {
     return nullptr;
 }
 
-Value* VM::opLoadFinallyCompletion() {
+Value* VM::opDefineIfMissing() {
     const std::vector<uint8_t>& bytes = code_->bytecode;
     if (bytes.size() - pc_ < 4) {
-        return badBytecode("load_finally_completion: truncated operand");
+        return badBytecode("define_if_missing: truncated operand");
     }
     uint32_t nameIndex = readU32(bytes.data() + pc_);
     pc_ += 4;
 
     const std::string* name = stringOperand(nameIndex);
     if (name == nullptr) {
-        return badBytecode("load_finally_completion: name index out of range");
+        return badBytecode("define_if_missing: name index out of range");
     }
+    if (stack_.empty()) {
+        return badBytecode("define_if_missing: operand stack underflow");
+    }
+    Value* value = pop();
+    Scope* scope = ctx_->current();
+    if (scope == nullptr) return badBytecode("define_if_missing: no scope");
+    if (scope->bindingKind(*name) != Scope::BindingKind::None) return nullptr;
+    if (!scope->define(*name, value)) {
+        return badBytecode("define_if_missing: define failed");
+    }
+    return nullptr;
+}
 
-    // 进入 finally 时若有 pending 完成（异常/break/continue），其完成值为
-    // 空，UpdateEmpty 视为 undefined。
-    if (!tryStack_.empty() && tryStack_.back().res != nullptr) {
-        push(ctx_->createUndefined());
-        return nullptr;
+namespace {
+// 完成值寄存器当前是否为 EMPTY（用 Uninitialized 哨兵表示）。
+bool isCompletionEmpty(Value* value) {
+    return value != nullptr &&
+           value->type()->kind() == TypeKind::Uninitialized;
+}
+}  // namespace
+
+Value* VM::opEnableCompletion() {
+    completionMode_ = true;
+    return nullptr;
+}
+
+Value* VM::opMergeCompletion() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 8) {
+        return badBytecode("merge_completion: truncated operands");
     }
-    Value* result = ctx_->load(*name);
+    uint32_t completionIndex = readU32(bytes.data() + pc_);
+    uint32_t slotIndex = readU32(bytes.data() + pc_ + 4);
+    pc_ += 8;
+
+    const std::string* completionName = stringOperand(completionIndex);
+    const std::string* slotName = stringOperand(slotIndex);
+    if (completionName == nullptr || slotName == nullptr) {
+        return badBytecode("merge_completion: name index out of range");
+    }
+    Value* current = ctx_->load(*completionName);
+    if (detail::isErrorValue(current)) return fail(current);
+    if (!isCompletionEmpty(current)) return nullptr;
+    Value* outer = ctx_->load(*slotName);
+    if (detail::isErrorValue(outer)) return fail(outer);
+    Value* result = ctx_->store(*completionName, outer);
     if (detail::isErrorValue(result)) return fail(result);
-    // 完成值槽是活绑定：store 会原地改写同一个 Value。这里必须压入副本，
-    // 否则 finally 内对槽位的写入会改掉已保存的值。
-    Value* saved = ctx_->cloneValue(result);
-    if (saved == ctx_->oomValue()) return saved;
-    push(saved);
+    return nullptr;
+}
+
+Value* VM::opCompletionToUndefined() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("completion_to_undefined: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("completion_to_undefined: name index out of range");
+    }
+    Value* current = ctx_->load(*name);
+    if (detail::isErrorValue(current)) return fail(current);
+    if (!isCompletionEmpty(current)) return nullptr;
+    Value* result = ctx_->store(*name, ctx_->createUndefined());
+    if (detail::isErrorValue(result)) return fail(result);
+    return nullptr;
+}
+
+Value* VM::opUpdateLoopValue() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 8) {
+        return badBytecode("update_loop_value: truncated operands");
+    }
+    uint32_t completionIndex = readU32(bytes.data() + pc_);
+    uint32_t slotIndex = readU32(bytes.data() + pc_ + 4);
+    pc_ += 8;
+
+    const std::string* completionName = stringOperand(completionIndex);
+    const std::string* slotName = stringOperand(slotIndex);
+    if (completionName == nullptr || slotName == nullptr) {
+        return badBytecode("update_loop_value: name index out of range");
+    }
+    Value* current = ctx_->load(*completionName);
+    if (detail::isErrorValue(current)) return fail(current);
+    if (isCompletionEmpty(current)) return nullptr;
+    Value* result = ctx_->store(*slotName, current);
+    if (detail::isErrorValue(result)) return fail(result);
+    return nullptr;
+}
+
+Value* VM::opLoopEnd() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 8) {
+        return badBytecode("loop_end: truncated operands");
+    }
+    uint32_t completionIndex = readU32(bytes.data() + pc_);
+    uint32_t slotIndex = readU32(bytes.data() + pc_ + 4);
+    pc_ += 8;
+
+    const std::string* completionName = stringOperand(completionIndex);
+    const std::string* slotName = stringOperand(slotIndex);
+    if (completionName == nullptr || slotName == nullptr) {
+        return badBytecode("loop_end: name index out of range");
+    }
+    Value* value = nullptr;
+    if (completionMode_ && hasPendingBreak_ && !pendingBreakEmpty_) {
+        value = pendingBreakValue_;
+    } else {
+        value = ctx_->load(*slotName);
+        if (detail::isErrorValue(value)) return fail(value);
+    }
+    hasPendingBreak_ = false;
+    Value* result = ctx_->store(*completionName, value);
+    if (detail::isErrorValue(result)) return fail(result);
+    return nullptr;
+}
+
+Value* VM::opLabelledEnd() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("labelled_end: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("labelled_end: name index out of range");
+    }
+    if (!completionMode_ || !hasPendingBreak_) return nullptr;
+    Value* value = pendingBreakEmpty_ ? ctx_->createUninitialized()
+                                      : pendingBreakValue_;
+    hasPendingBreak_ = false;
+    Value* result = ctx_->store(*name, value);
+    if (detail::isErrorValue(result)) return fail(result);
+    return nullptr;
+}
+
+Value* VM::opLoadCompletionResult() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("load_completion_result: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("load_completion_result: name index out of range");
+    }
+    Value* current = ctx_->load(*name);
+    if (detail::isErrorValue(current)) return fail(current);
+    push(isCompletionEmpty(current) ? ctx_->createUndefined() : current);
     return nullptr;
 }
 
@@ -1440,6 +1614,25 @@ Value* VM::opTryBegin() {
     frame.scope = ctx_->current();
     frame.stackDepth = stack_.size();
     frame.labelDepth = labelStack_.size();
+    frame.normalizeAbruptCompletion = true;
+    tryStack_.push_back(frame);
+    return nullptr;
+}
+
+Value* VM::opTryBeginInternal() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 12) {
+        return badBytecode("try_begin_internal: truncated operand");
+    }
+    TryFrame frame;
+    frame.catchStart = readU32(bytes.data() + pc_);
+    frame.finallyStart = readU32(bytes.data() + pc_ + 4);
+    frame.tryEnd = readU32(bytes.data() + pc_ + 8);
+    pc_ += 12;
+    frame.scope = ctx_->current();
+    frame.stackDepth = stack_.size();
+    frame.labelDepth = labelStack_.size();
+    frame.normalizeAbruptCompletion = false;
     tryStack_.push_back(frame);
     return nullptr;
 }
@@ -1468,20 +1661,22 @@ Value* VM::opThrow() {
 
 Value* VM::opPushLabel() {
     const std::vector<uint8_t>& bytes = code_->bytecode;
-    if (bytes.size() - pc_ < 12) {
+    if (bytes.size() - pc_ < 16) {
         return badBytecode("push_label: truncated operand");
     }
     uint32_t labelIndex = readU32(bytes.data() + pc_);
     uint32_t startPc = readU32(bytes.data() + pc_ + 4);
     uint32_t endPc = readU32(bytes.data() + pc_ + 8);
-    pc_ += 12;
+    uint32_t loopValueName = readU32(bytes.data() + pc_ + 12);
+    pc_ += 16;
 
     const std::string* label = stringOperand(labelIndex);
     if (label == nullptr) {
         return badBytecode("push_label: label index out of range");
     }
-    labelStack_.push_back(LabelFrame{*label, startPc, endPc, ctx_->current(),
-                                     stack_.size(), tryStack_.size()});
+    labelStack_.push_back(LabelFrame{*label, startPc, endPc, loopValueName,
+                                     ctx_->current(), stack_.size(),
+                                     tryStack_.size()});
     return nullptr;
 }
 
@@ -1547,6 +1742,32 @@ Value* VM::opContinue() {
     return interrupt;
 }
 
+Value* VM::opBreakValue() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("break_value: truncated operand");
+    }
+    uint32_t labelIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (stack_.empty()) return badBytecode("break_value: stack underflow");
+    Value* value = pop();
+    return ctx_->createInterrupt(neo::core::InterruptKind::Break, labelIndex,
+                                 value);
+}
+
+Value* VM::opContinueValue() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("continue_value: truncated operand");
+    }
+    uint32_t labelIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (stack_.empty()) return badBytecode("continue_value: stack underflow");
+    Value* value = pop();
+    return ctx_->createInterrupt(neo::core::InterruptKind::Continue, labelIndex,
+                                 value);
+}
+
 Value* VM::handleLabelInterrupt(Value* interrupt) {
     auto* data = neo::core::asInterrupt(interrupt);
     if (data == nullptr) return badBytecode("label interrupt: bad payload");
@@ -1583,6 +1804,13 @@ Value* VM::handleLabelInterrupt(Value* interrupt) {
             pc_ = finallyPc;
             return nullptr;
         }
+        // try 语句返回 UpdateEmpty(abrupt, undefined)：break/continue 的
+        // EMPTY 完成值在跨出 try 时归一化为 undefined。
+        if (completionMode_ && frame.normalizeAbruptCompletion &&
+            data->value != nullptr &&
+            data->value->type()->kind() == neo::core::TypeKind::Uninitialized) {
+            data->value = ctx_->createUndefined();
+        }
         restoreFrame(frame);
         tryStack_.pop_back();
     }
@@ -1594,9 +1822,26 @@ Value* VM::handleLabelInterrupt(Value* interrupt) {
     if (stack_.size() > target.stackDepth) stack_.resize(target.stackDepth);
 
     if (isBreak) {
+        if (completionMode_) {
+            hasPendingBreak_ = true;
+            pendingBreakEmpty_ =
+                data->value != nullptr &&
+                data->value->type()->kind() == neo::core::TypeKind::Uninitialized;
+            pendingBreakValue_ = data->value;
+        }
         labelStack_.resize(targetIndex);
         pc_ = target.endPc;
     } else {
+        // §14.7.5.7 step m：continue 的完成值非 EMPTY 时写入目标循环的 V。
+        if (completionMode_ && target.loopValueName != UINT32_MAX &&
+            data->value != nullptr && !isCompletionEmpty(data->value)) {
+            const std::string* slotName = stringOperand(target.loopValueName);
+            if (slotName == nullptr) {
+                return badBytecode("continue: loop value index out of range");
+            }
+            Value* stored = ctx_->store(*slotName, data->value);
+            if (detail::isErrorValue(stored)) return fail(stored);
+        }
         labelStack_.resize(targetIndex + 1);
         pc_ = target.startPc;
     }

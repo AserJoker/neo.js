@@ -148,7 +148,14 @@ private:
     neo::core::Value* opInitialize();
     neo::core::Value* opLoad();
     neo::core::Value* opLoadSoft();
-    neo::core::Value* opLoadFinallyCompletion();
+    neo::core::Value* opDefineIfMissing();
+    neo::core::Value* opEnableCompletion();
+    neo::core::Value* opMergeCompletion();
+    neo::core::Value* opCompletionToUndefined();
+    neo::core::Value* opUpdateLoopValue();
+    neo::core::Value* opLoopEnd();
+    neo::core::Value* opLabelledEnd();
+    neo::core::Value* opLoadCompletionResult();
     neo::core::Value* opStore();
     neo::core::Value* opStoreVar();
     neo::core::Value* opGetProp();
@@ -189,6 +196,7 @@ private:
     neo::core::Value* opJFalse();
     neo::core::Value* opJNotNullish();
     neo::core::Value* opTryBegin();
+    neo::core::Value* opTryBeginInternal();
     neo::core::Value* opTryBodyEnd();
     neo::core::Value* opCatchEnd();
     neo::core::Value* opFinallyEnd();
@@ -198,6 +206,8 @@ private:
     neo::core::Value* opPopLabelIfTop();
     neo::core::Value* opBreak();
     neo::core::Value* opContinue();
+    neo::core::Value* opBreakValue();
+    neo::core::Value* opContinueValue();
     neo::core::Value* opPushScope();
     neo::core::Value* opPushVarScope();
     neo::core::Value* opPopScope();
@@ -261,6 +271,14 @@ private:
     std::vector<TryFrame> tryStack_;
     // yield* 委托中的被委托迭代器（nullptr = 不在委托中）。
     neo::core::Value* delegateIterator_ = nullptr;
+
+    // eval 完成值模式（ADR-033）：break/continue 携带完成值，try 帧做
+    // UpdateEmpty(abrupt, undefined) 归一化。
+    bool completionMode_ = false;
+    // 最近一次被消费的 break 的完成值（EMPTY 用 Uninitialized 哨兵）。
+    bool hasPendingBreak_ = false;
+    bool pendingBreakEmpty_ = true;
+    neo::core::Value* pendingBreakValue_ = nullptr;
 
     // 本次执行的入口作用域与模块根作用域（借用，V0 仅记录）。
     neo::core::Scope* entryScope_ = nullptr;
