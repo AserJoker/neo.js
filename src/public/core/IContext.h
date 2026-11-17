@@ -1026,6 +1026,10 @@ public:
     // 未找到返回 ReferenceError。内部槽位访问用 Scope::lookup。
     virtual Value* load(std::string_view name) = 0;
 
+    // loadSoft: typeof 专用标识符读取。名字完全未解析时返回 undefined
+    // （§13.5.3）；TDZ/未初始化 import 仍返回 ReferenceError。
+    virtual Value* loadSoft(std::string_view name) = 0;
+
     // —— eval（§19.2.1）——
     // declareVar: eval 的 var 声明——只在变量环境缺失时建 undefined 槽，
     // 已有绑定保持原值。成功返回 nullptr，失败返回错误值。

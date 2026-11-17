@@ -11,6 +11,7 @@ add_executable(core_unit_test
     EvalTest.cpp
     ArgumentsTest.cpp
     AnnexBFunctionTest.cpp
+    TypeOfTest.cpp
     FunctionEnvironmentTest.cpp
     ClassDataTest.cpp
     ClassConstructTest.cpp

@@ -2569,6 +2569,35 @@ Value* Context::load(std::string_view name) {
         this, "'" + std::string(name) + "' is not defined");
 }
 
+Value* Context::loadSoft(std::string_view name) {
+    // typeof 未声明标识符不抛错：完全未解析时返回 undefined。
+    // 已解析但未初始化（TDZ/import）仍按 load 报 ReferenceError。
+    for (Scope* s = current(); s != nullptr; s = s->parent()) {
+        Scope::Binding* binding = s->lookupBinding(name);
+        if (binding != nullptr) {
+            if (!binding->initialized) {
+                return detail::referenceError(
+                    this, "Cannot access '" + std::string(name) +
+                              "' before initialization");
+            }
+            return binding->value;
+        }
+        if (s->bindingKind(name) == Scope::BindingKind::Import) {
+            Value* slot = s->lookup(name);
+            if (slot != nullptr &&
+                slot->type()->kind() == TypeKind::Uninitialized) {
+                return detail::referenceError(
+                    this, "Cannot access '" + std::string(name) +
+                              "' before initialization");
+            }
+            return slot;
+        }
+    }
+    Value* value = current()->lookupChain(name);
+    if (value != nullptr) return value;
+    return createUndefined();
+}
+
 Value* Context::declareVar(std::string_view name) {
     // eval 的 var 声明：只补缺失槽，不覆盖已有绑定（§19.2.1.3）。
     Scope* target = evalVarScope_ != nullptr ? evalVarScope_ : current();

@@ -1698,6 +1698,16 @@ void Compiler::compileUnaryExpression(const frontend::UnaryExpression& node) {
             return;
     }
 
+    // typeof 裸标识符：未声明时求值为 undefined，不能走会抛 ReferenceError
+    // 的普通 load（§13.5.3）。
+    if (node.op == frontend::UnaryOperator::TypeOf &&
+        node.argument->kind() == NodeKind::Identifier) {
+        const auto& id = static_cast<const frontend::Identifier&>(*node.argument);
+        code_->loadSoft(id.name);
+        code_->unary(static_cast<uint32_t>(op));
+        return;
+    }
+
     compileExpression(*node.argument);
     code_->unary(static_cast<uint32_t>(op));
 }

@@ -458,6 +458,7 @@ public:
     Value* storeVar(std::string_view name, Value* source) override;
     Value* initialize(std::string_view name, Value* source) override;
     Value* load(std::string_view name) override;
+    Value* loadSoft(std::string_view name) override;
 
     // eval（§19.2.1）
     Value* declareVar(std::string_view name) override;

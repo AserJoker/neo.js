@@ -147,6 +147,7 @@ private:
     neo::core::Value* opDefine();
     neo::core::Value* opInitialize();
     neo::core::Value* opLoad();
+    neo::core::Value* opLoadSoft();
     neo::core::Value* opStore();
     neo::core::Value* opStoreVar();
     neo::core::Value* opGetProp();

@@ -467,3 +467,12 @@ hlt
   属性访问已定：`get_prop`/`set_prop` 无操作数，key 由栈传递；
   `call_method` 只负责 thisArg，属性查找由 `get_prop` 完成。
   label 栈已定：`push_label`/`pop_label`/`break`/`continue`（ADR-060 §7）。
+
+## 追加：load_soft（typeof 未声明标识符，2026-11-17）
+
+`typeof` 的裸标识符参数不能复用 `load`：`load` 在名字完全未解析时返回
+ReferenceError，而 §13.5.3 要求 `typeof undeclared` 求值为 `"undefined"`。
+新增 `load_soft u32 nameIndex`：与 `load` 相同的解析路径，仅在完全未解析时
+压 `undefined`；已解析但未初始化（TDZ / import）仍返回 ReferenceError。
+Compiler 在 `typeof` + `Identifier` 时发射 `load_soft`，其余表达式保持
+普通求值（`typeof a.b` 的未解析 `a` 仍抛错）。

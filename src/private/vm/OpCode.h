@@ -108,6 +108,9 @@ enum class OpCode : uint16_t {
     Define,       // u32 Code::strings 下标（名字），u32 flags
     Initialize,   // u32 Code::strings 下标（名字）
     Load,         // u32 Code::strings 下标（名字）
+    // 同 Load，但名字完全未解析时压 undefined（typeof 未声明标识符）。
+    // TDZ/Import 未初始化仍报 ReferenceError。
+    LoadSoft,     // u32 Code::strings 下标（名字）
     Store,        // u32 Code::strings 下标（名字）
     // u32 名字：[value] → []，写入变量环境绑定（跳过词法作用域）。
     // Annex B.3.3 块级函数同步到外层 var 绑定用。

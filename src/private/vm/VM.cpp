@@ -89,6 +89,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::Define:        return "define";
         case OpCode::Initialize:    return "initialize";
         case OpCode::Load:          return "load";
+        case OpCode::LoadSoft:      return "load_soft";
         case OpCode::Store:         return "store";
         case OpCode::StoreVar:      return "store_var";
         case OpCode::GetProp:       return "get_prop";
@@ -222,6 +223,7 @@ const VM::Handler* VM::handlers() {
         &VM::opDefine,
         &VM::opInitialize,
         &VM::opLoad,
+        &VM::opLoadSoft,
         &VM::opStore,
         &VM::opStoreVar,
         &VM::opGetProp,
@@ -842,6 +844,25 @@ Value* VM::opLoad() {
     if (name == nullptr) return badBytecode("load: name index out of range");
 
     Value* result = ctx_->load(*name);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opLoadSoft() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("load_soft: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("load_soft: name index out of range");
+    }
+
+    Value* result = ctx_->loadSoft(*name);
     if (detail::isErrorValue(result)) return fail(result);
     push(result);
     return nullptr;
