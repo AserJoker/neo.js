@@ -107,6 +107,11 @@ public:
     uint32_t entryPc = 0;            // 函数入口字节偏移
     size_t paramCount = 0;           // 形参个数（length 属性/实参补齐）
     bool hasRest = false;            // 是否有 rest 参数
+    // arguments 对象（ES2024 §10.4.4）：非箭头 script 函数调用时创建。
+    // argumentsMapped 表示非严格简单形参，索引与形参绑定保持活别名。
+    bool needsArguments = false;
+    bool argumentsMapped = false;
+    std::vector<std::string> paramNames;  // mapped arguments 的索引→形参名
     // 箭头函数/显式绑定的 this（ADR-021 §2b）。非空时 invoke 优先于传入 thisArg。
     Value* self = nullptr;           // GC 需遍历
     NativeFn constructFn;  // 可选构造钩子（nullptr = native + 默认 this 语义）

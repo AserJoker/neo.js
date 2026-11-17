@@ -141,6 +141,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::IterationEnv:  return "iteration_env";
         case OpCode::CommitIterationEnv: return "commit_iteration_env";
         case OpCode::PushFunction:  return "push_function";
+        case OpCode::SetParamNames: return "set_param_names";
         case OpCode::SetClosure:    return "set_closure";
         case OpCode::SetFuncName:   return "set_func_name";
         case OpCode::BindThis:      return "bind_this";
@@ -270,6 +271,7 @@ const VM::Handler* VM::handlers() {
         &VM::opIterationEnv,
         &VM::opCommitIterationEnv,
         &VM::opPushFunction,
+        &VM::opSetParamNames,
         &VM::opSetClosure,
         &VM::opSetFuncName,
         &VM::opBindThis,
@@ -1646,6 +1648,8 @@ Value* VM::opPushFunction() {
         (flags & kFunctionConstructible) != 0,
         (flags & kFunctionHasPrototype) != 0);
     if (fn == ctx_->oomValue()) return fn;
+    ctx_->setFunctionArguments(fn, (flags & kFunctionHasArguments) != 0,
+                               (flags & kFunctionArgumentsMapped) != 0);
     if ((flags & kFunctionGenerator) != 0) {
         ctx_->setFunctionGenerator(fn, true);
     }
@@ -1656,6 +1660,34 @@ Value* VM::opPushFunction() {
         ctx_->setFunctionAsyncGenerator(fn, true);
     }
     push(fn);
+    return nullptr;
+}
+
+Value* VM::opSetParamNames() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("set_param_names: truncated operand");
+    }
+    uint32_t count = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (stack_.empty()) {
+        return badBytecode("set_param_names: operand stack underflow");
+    }
+    std::vector<std::string> names;
+    names.reserve(count);
+    for (uint32_t i = 0; i < count; ++i) {
+        if (bytes.size() - pc_ < 4) {
+            return badBytecode("set_param_names: truncated name index");
+        }
+        uint32_t nameIndex = readU32(bytes.data() + pc_);
+        pc_ += 4;
+        const std::string* name = stringOperand(nameIndex);
+        if (name == nullptr) {
+            return badBytecode("set_param_names: invalid name index");
+        }
+        names.push_back(*name);
+    }
+    ctx_->setFunctionParamNames(top(), names);
     return nullptr;
 }
 
@@ -2077,6 +2109,8 @@ Value* VM::opPushClass() {
         code_, entryPc, paramCount, (flags & kFunctionHasRest) != 0, isDerived,
         superCtor, "");
     if (detail::isErrorValue(ctor)) return fail(ctor);
+    ctx_->setFunctionArguments(ctor, (flags & kFunctionHasArguments) != 0,
+                               (flags & kFunctionArgumentsMapped) != 0);
     push(ctor);
     return nullptr;
 }

@@ -7,6 +7,7 @@
 //
 // 关联 ADR: 016（Type 体系修订）
 
+#include "core/types/Arguments.h"
 #include "core/types/Array.h"
 #include "core/types/AsyncGenerator.h"
 #include "core/types/BigInt.h"
@@ -194,6 +195,7 @@ IType* getTypeByKind(TypeKind k) {
         case TypeKind::RegExp:           return getRegExpType();
         case TypeKind::RegExpStringIterator:
             return getRegExpStringIteratorType();
+        case TypeKind::Arguments:        return getArgumentsType();
     }
     return nullptr;
 }

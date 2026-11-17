@@ -57,6 +57,8 @@ class Context : public IContext {
     // 不应在 OOM 时因 Engine 配额耗尽而无法记录。
     std::vector<CallFrame> callStack_;
     Value* oomValue_ = nullptr;            // OOM 哨兵（预分配 Fatal，挂 global，ADR-031）
+    // %ThrowTypeError%（unmapped arguments 的 callee 访问器），惰性创建并挂 global。
+    Value* argumentsThrower_ = nullptr;
     Value* wellKnownSymbols_[kWellKnownSymbolCount] = {};  // well-known symbols（挂 global）
     // 内建原型（ADR-035）：Object.prototype 是所有普通对象原型链的终点，
     // Function.prototype 是所有函数对象的原型（其自身原型是 Object.prototype）。
@@ -258,6 +260,10 @@ public:
     void setFunctionGenerator(Value* fn, bool generator) override;
     void setFunctionAsync(Value* fn, bool async) override;
     void setFunctionAsyncGenerator(Value* fn, bool asyncGenerator) override;
+    void setFunctionArguments(Value* fn, bool needsArguments,
+                              bool mapped) override;
+    void setFunctionParamNames(Value* fn,
+                               const std::vector<std::string>& names) override;
     Value* createBoundFunction(Value* target, Value* boundThis, size_t argc,
                                Value* argv[]) override;
     Value* createScriptFunction(const vm::Code* code, uint32_t entryPc,
@@ -290,6 +296,10 @@ public:
     Value* createProxy(Value* target, Value* handler,
                        std::string_view bindName = {}) override;
     Value* createArray(std::string_view bindName = {}) override;
+    Value* createArgumentsObject(Value* callee, size_t argc, Value* argv[],
+                                 bool mapped) override;
+    Value* storeBinding(Scope* scope, std::string_view name,
+                        Value* source) override;
     Value* createTemplateObject(
         const std::vector<std::pair<std::optional<std::string>, std::string>>&
             quasis) override;

@@ -503,6 +503,15 @@ public:
     // await 产生 Interrupt(Await)。不可构造、无 prototype 属性。
     virtual void setFunctionAsync(Value* fn, bool async) = 0;
 
+    // setFunctionArguments: 标记 script 函数在调用时创建 arguments 对象。
+    // mapped 为 true 表示非严格简单形参：索引与形参绑定保持活别名。
+    virtual void setFunctionArguments(Value* fn, bool needsArguments,
+                                      bool mapped) = 0;
+
+    // setFunctionParamNames: 记录形参名字（mapped arguments 的映射表来源）。
+    virtual void setFunctionParamNames(
+        Value* fn, const std::vector<std::string>& names) = 0;
+
     // —— 对象与属性（ADR-018 对象模型）——
     // createObject: 创建空对象 Value（properties/order/symbols 空）。
     // 原型自动挂 Object.prototype（ADR-035 完整原型链）。
@@ -519,6 +528,18 @@ public:
     // 原型自动挂 Array.prototype（ADR-018 §6）。bootstrap 期间原型未就绪时跳过。
     // 返回 Value*：正常数组，或 OOM 哨兵（ADR-031）。
     virtual Value* createArray(std::string_view bindName = {}) = 0;
+
+    // createArgumentsObject: 为当前 script 函数调用创建 arguments 对象
+    // （ES2024 §10.4.4）。使用 currentFunctionEnv() 作为映射/保活作用域；
+    // callee 为当前函数，argv 为实际实参。mapped 时按函数记录的形参名建立
+    // 索引→绑定映射。返回正常对象或 OOM 哨兵。
+    virtual Value* createArgumentsObject(Value* callee, size_t argc,
+                                         Value* argv[], bool mapped) = 0;
+
+    // storeBinding: 向指定作用域的绑定赋值（mapped arguments 写回形参）。
+    // 处理 TDZ/不可赋值；成功返回绑定槽位 Value*，失败返回 Exception/OOM。
+    virtual Value* storeBinding(Scope* scope, std::string_view name,
+                                Value* source) = 0;
 
     // createTemplateObject: 构造标签模板的模板对象（ES2024 §13.2.8.2）。
     // quasis 为 (cooked, raw) 对；cooked 为空表示非法转义（undefined）。

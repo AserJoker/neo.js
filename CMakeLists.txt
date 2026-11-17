@@ -149,6 +149,7 @@ add_library(neojs STATIC
     src/private/core/types/Function.cpp
     src/private/core/types/Object.cpp
     src/private/core/types/Array.cpp
+    src/private/core/types/Arguments.cpp
     src/private/core/types/Iterator.cpp
     src/private/core/types/Error.cpp
     src/private/core/types/PrimitiveWrapper.cpp

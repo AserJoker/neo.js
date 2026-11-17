@@ -178,7 +178,8 @@ private:
     // initInstanceElements：class 基类构造器在序言后初始化实例字段。
     void compileFunctionBody(const frontend::NodeList& params,
                              const frontend::Node& body, bool arrow,
-                             bool initInstanceElements = false);
+                             bool initInstanceElements = false,
+                             bool hasArguments = false);
 
     // —— class ——
     // leaveValue=true 时保留构造器值（匿名 export default class 用）。
@@ -271,6 +272,8 @@ private:
     bool deleteChainTarget_ = false;
     // eval 完成值：表达式语句执行后写入 *eval-completion*（嵌套函数体关闭）。
     bool evalCompletion_ = false;
+    // 当前函数有隐式 arguments 绑定：var arguments 是 no-op，不重复建槽。
+    bool hasArgumentsBinding_ = false;
     void compileDeleteChain(const frontend::ChainExpression& node);
 };
 

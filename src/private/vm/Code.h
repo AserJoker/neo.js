@@ -393,6 +393,12 @@ struct Code {
         emitU32(flags);
         return pc;
     }
+    uint32_t setParamNames(const std::vector<std::string>& names) {
+        uint32_t pc = emitOp(OpCode::SetParamNames);
+        emitU32(static_cast<uint32_t>(names.size()));
+        for (const std::string& name : names) emitU32(addString(name));
+        return pc;
+    }
     uint32_t setClosure(std::string_view name) {
         uint32_t pc = emitOp(OpCode::SetClosure);
         emitU32(addString(std::string(name)));

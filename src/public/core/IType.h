@@ -122,7 +122,9 @@ enum class TypeKind : uint8_t {
     // 正则字符串迭代器（ES2024 §22.2.9）：@@matchAll 的惰性迭代器。
     // 持 [[IteratingRegExp]]/[[IteratedString]]/[[Global]]/[[Unicode]]/[[Done]]。
     RegExpStringIterator,
-    // 后续阶段：BigInt/...
+    // arguments exotic 对象（ES2024 §10.4.4）：索引元素 + length + callee，
+    // 非严格简单形参下索引与形参绑定保持映射（mapped arguments）。
+    Arguments,
 };
 
 // Value 的 meta：抽象接口，每种 JS 类型一个实现类（单例）。

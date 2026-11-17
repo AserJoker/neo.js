@@ -7,6 +7,7 @@
 
 #include "core/OperatorKind.h"
 #include "regex/RegexEngine.h"
+#include "sema/FunctionInfo.h"
 #include "sema/ResolvePass.h"
 
 #include <memory>
@@ -2825,6 +2826,13 @@ void Compiler::compileVariableDeclaration(
         const bool lexical =
             node.variableKind != frontend::VariableKind::Var;
 
+        // var x;（无初始化）是 no-op：提升阶段已建槽，不能把已有值重置为
+        // undefined（尤其 var arguments 不能覆盖隐式 arguments 对象）。
+        if (!lexical && !decl.init &&
+            decl.id->kind() == NodeKind::Identifier) {
+            continue;
+        }
+
         if (decl.init) {
             compileExpression(*decl.init);
         } else {
@@ -2930,7 +2938,7 @@ void Compiler::compileClassConstructor(const frontend::ClassBody& body,
         }
         if (function.body) {
             compileFunctionBody(function.params, *function.body, false,
-                                !isDerived);
+                                !isDerived, true);
         } else {
             error(*constructor->value,
                   "compiler: class constructor missing body");
@@ -2959,6 +2967,8 @@ void Compiler::compileClassConstructor(const frontend::ClassBody& body,
 
     uint32_t flags = isDerived ? vm::kClassDerived : 0;
     if (hasRest) flags |= vm::kFunctionHasRest;
+    // class 构造器是严格代码：创建 arguments 但不建立形参映射。
+    flags |= vm::kFunctionHasArguments;
     code_->pushClass(entryPc, paramCount, flags);
     if (!name.empty()) code_->setFuncName(name);
     code_->setStrict();
@@ -3412,7 +3422,7 @@ void Compiler::compileFunctionObject(const Node& node,
     // 函数体内联在当前位置，执行路径先跳过它。
     uint32_t skip = code_->jmp();
     uint32_t entryPc = code_->here();
-    compileFunctionBody(params, body, arrow || method);
+    compileFunctionBody(params, body, arrow || method, false, !arrow);
     uint32_t afterBody = code_->here();
     code_->patchU32(skip + 2, afterBody);
 
@@ -3432,8 +3442,26 @@ void Compiler::compileFunctionObject(const Node& node,
         }
     }
 
+    // arguments（§10.4.4）：非箭头函数都创建；仅非严格 + 简单形参列表建立映射。
+    const sema::FunctionInfo* info =
+        sema_.annotations.get<sema::FunctionInfo>(node.id());
+    const bool strict = method || (info != nullptr && info->isStrict);
+    std::vector<std::string> paramNames;
+    bool simpleParams = true;
+    for (const frontend::NodePtr& param : params) {
+        if (param && param->kind() == NodeKind::Identifier) {
+            paramNames.push_back(
+                static_cast<const frontend::Identifier&>(*param).name);
+        } else if (param) {
+            simpleParams = false;
+        }
+    }
+    const bool mapped = !arrow && !strict && simpleParams;
+
     uint32_t flags = 0;
     if (hasRest) flags |= vm::kFunctionHasRest;
+    if (!arrow) flags |= vm::kFunctionHasArguments;
+    if (mapped) flags |= vm::kFunctionArgumentsMapped;
     if (method) {
         // class 方法/字段初始化器：不可构造、无 prototype。
     } else if (generator && async) {
@@ -3450,9 +3478,10 @@ void Compiler::compileFunctionObject(const Node& node,
         flags |= vm::kFunctionConstructible | vm::kFunctionHasPrototype;
     }
     code_->pushFunction(entryPc, paramCount, flags);
+    if (mapped) code_->setParamNames(paramNames);
+    if (strict) code_->setStrict();
 
     if (!name.empty()) code_->setFuncName(name);
-    if (method) code_->setStrict();
 
     // Sema 的捕获列表（穿透捕获）：逐个从定义点作用域链绑进闭包。
     if (const auto* captures =
@@ -3471,10 +3500,13 @@ void Compiler::compileFunctionObject(const Node& node,
 
 void Compiler::compileFunctionBody(const frontend::NodeList& params,
                                    const Node& body, bool arrow,
-                                   bool initInstanceElements) {
+                                   bool initInstanceElements,
+                                   bool hasArguments) {
     // 函数体是独立执行上下文：不写外层 eval 的完成值槽。
     const bool savedEvalCompletion = evalCompletion_;
     evalCompletion_ = false;
+    const bool savedHasArguments = hasArgumentsBinding_;
+    hasArgumentsBinding_ = hasArguments;
     // 形参建槽（argument_scope）：push_undefined; define "p"
     for (const frontend::NodePtr& param : params) {
         if (!param) continue;
@@ -3536,6 +3568,7 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
         compileExpression(body);
         code_->ret();
         evalCompletion_ = savedEvalCompletion;
+        hasArgumentsBinding_ = savedHasArguments;
         return;
     }
 
@@ -3553,6 +3586,7 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
     code_->pushUndefined();
     code_->ret();
     evalCompletion_ = savedEvalCompletion;
+    hasArgumentsBinding_ = savedHasArguments;
 }
 
 // —— 声明提升 ——
@@ -3629,6 +3663,8 @@ void Compiler::hoistVarSlots(const frontend::NodeList& body, bool declare) {
     std::unordered_set<std::string> seen;
     for (const std::string& name : varNames) {
         if (!seen.insert(name).second) continue;
+        // 函数已有隐式 arguments 绑定：var arguments 是 no-op（§10.2.1.2）。
+        if (hasArgumentsBinding_ && name == "arguments") continue;
         if (declare) {
             code_->declareVar(name);
         } else {

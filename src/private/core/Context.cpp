@@ -32,6 +32,7 @@
 #include "core/RegExpBuiltins.h"
 #include "core/SymbolBuiltins.h"
 #include "core/TimerBuiltins.h"
+#include "core/types/Arguments.h"
 #include "core/types/Array.h"
 #include "core/types/AsyncGenerator.h"
 #include "core/types/BigInt.h"
@@ -284,6 +285,13 @@ void Context::popScope() {
 // OOM：allocData/createValue 失败时返回预分配 OOM 哨兵（ADR-031），不返回 nullptr。
 
 namespace {
+
+// %ThrowTypeError%：unmapped arguments 的 callee 访问器。
+Value* throwTypeErrorNative(IContext* ctx, Value* /*self*/, size_t /*argc*/,
+                            Value* /*argv*/[]) {
+    return detail::typeError(ctx,
+                             "'callee' is not allowed in strict mode arguments");
+}
 
 // 把函数的 closureScope 挂到定义点环境链（Environment 模式）：
 // lookup-only 挂载（不登记 children，所有权仍归 FunctionData），并沿 env → root
@@ -1502,6 +1510,19 @@ void Context::setFunctionAsync(Value* fn, bool async) {
     if (async) d->constructible = false;
 }
 
+void Context::setFunctionArguments(Value* fn, bool needsArguments, bool mapped) {
+    if (fn->type()->kind() != TypeKind::Function) return;
+    auto* d = static_cast<FunctionData*>(fn->data());
+    d->needsArguments = needsArguments;
+    d->argumentsMapped = mapped;
+}
+
+void Context::setFunctionParamNames(Value* fn,
+                                    const std::vector<std::string>& names) {
+    if (fn->type()->kind() != TypeKind::Function) return;
+    static_cast<FunctionData*>(fn->data())->paramNames = names;
+}
+
 void Context::setFunctionName(Value* fn, std::string_view name) {
     // 仅对 Function 类型有效（setname 字节码），其他类型忽略
     if (fn->type()->kind() != TypeKind::Function) return;
@@ -1640,6 +1661,93 @@ Value* Context::createArray(std::string_view bindName) {
         static_cast<ObjectData*>(arr->data())->prototype = arrayPrototype_;
     }
     return arr;
+}
+
+Value* Context::createArgumentsObject(Value* callee, size_t argc, Value* argv[],
+                                      bool mapped) {
+    Scope* env = currentFunctionEnv();
+    auto* d = gc_->allocData<ArgumentsData>();
+    if (d == nullptr) return oomValue_;
+    d->scope = env;
+    d->callee = callee;
+    d->length = static_cast<uint32_t>(argc);
+    // 逃逸的 arguments 必须保活函数环境：pin 住，popScope 会转为 autoDispose。
+    if (env != nullptr) env->incCaptureRef();
+
+    Value* obj = createTracked(getArgumentsType(), d, {});
+    if (obj == oomValue_) return obj;
+    static_cast<ObjectData*>(obj->data())->prototype = objectPrototype_;
+
+    if (mapped) {
+        auto* fd = static_cast<FunctionData*>(callee->data());
+        size_t count = fd->paramNames.size() < argc ? fd->paramNames.size() : argc;
+        d->mappedNames.assign(fd->paramNames.begin(),
+                              fd->paramNames.begin() +
+                                  static_cast<std::ptrdiff_t>(count));
+    }
+
+    // 索引元素：映射索引由 indexedElement 实时读绑定；其余存普通属性。
+    for (size_t i = 0; i < argc; ++i) {
+        if (mapped && i < d->mappedNames.size()) continue;
+        Value* key = createString(std::to_string(i));
+        if (key == oomValue_) return key;
+        Value* r = defineProperty(obj, key, argv[i], true, true, true);
+        if (detail::isErrorValue(r)) return r;
+    }
+
+    // callee：mapped 为数据属性；unmapped 为抛 TypeError 的访问器（§10.4.4.6）。
+    if (mapped) {
+        Value* r = defineProperty(obj, "callee", callee, true, false, true);
+        if (detail::isErrorValue(r)) return r;
+    } else {
+        if (argumentsThrower_ == nullptr) {
+            FunctionCreateOptions opts;
+            opts.constructible = false;
+            opts.hasPrototypeProperty = false;
+            opts.strict = true;
+            Value* thrower =
+                createNativeFunction(throwTypeErrorNative, 0, {}, opts);
+            if (thrower == oomValue_) return thrower;
+            setFunctionName(thrower, "ThrowTypeError");
+            global_->add(thrower);
+            argumentsThrower_ = thrower;
+        }
+        Value* r = defineAccessor(obj, "callee", argumentsThrower_,
+                                  argumentsThrower_, false, true);
+        if (detail::isErrorValue(r)) return r;
+    }
+
+    // %Symbol.iterator% = Array.prototype.values（§10.4.4.7）。
+    if (arrayPrototype_ != nullptr) {
+        Value* values = getProperty(arrayPrototype_, "values");
+        if (detail::isErrorValue(values)) return values;
+        Value* r = defineProperty(obj, getWellKnownSymbol(WellKnownSymbol::Iterator),
+                                  values, true, false, true);
+        if (detail::isErrorValue(r)) return r;
+    }
+    return obj;
+}
+
+Value* Context::storeBinding(Scope* scope, std::string_view name,
+                             Value* source) {
+    if (detail::isErrorValue(source)) return source;
+    if (scope == nullptr) return source;
+    Scope::Binding* binding = scope->lookupBinding(name);
+    if (binding == nullptr || binding->value == nullptr) return source;
+    if (!binding->initialized) {
+        return detail::referenceError(
+            this, "Cannot access '" + std::string(name) +
+                      "' before initialization");
+    }
+    if (!binding->mutableBinding) {
+        return detail::typeError(
+            this, "Assignment to constant variable '" + std::string(name) + "'");
+    }
+    IData* cloned = cloneForNewValue(source);
+    if (cloned == nullptr) return oomValue_;
+    IData* old = binding->value->replaceMeta(source->type(), cloned);
+    gc_->releaseData(old);
+    return binding->value;
 }
 
 namespace {

@@ -82,7 +82,14 @@ Value* CoroutineType::setPrototype(IContext* ctx, Value* self, Value* proto) {
 // 这里负责把它连同捕获值一起销毁（下一轮 GC 回收这些 Value）。
 CoroutineData::~CoroutineData() {
     if (execScope != nullptr) {
-        execScope->destroySelf();
+        // 逃逸的 arguments 等对象 pin 住执行作用域时，不能直接销毁：
+        // 转为 autoDispose 孤儿，由最后一个引用者回收。
+        if (execScope->captureRef() > 0) {
+            execScope->markAutoDispose();
+            execScope->detachFromParentTree();
+        } else {
+            execScope->destroySelf();
+        }
         execScope = nullptr;
     }
     delete vmState;

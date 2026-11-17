@@ -3,6 +3,7 @@
 #include "sema/StrictnessPass.h"
 
 #include "sema/BindingNames.h"
+#include "sema/FunctionInfo.h"
 #include "sema/Walker.h"
 
 #include <cstddef>
@@ -158,7 +159,7 @@ public:
     explicit StrictnessVisitor(bool inheritedStrict)
         : inheritedStrict_(inheritedStrict) {}
 
-    void enter(Walker& /*walker*/, SemaContext& context,
+    void enter(Walker& walker, SemaContext& context,
                Node& node) override {
         switch (node.kind()) {
             case NodeKind::Program: {
@@ -171,7 +172,7 @@ public:
             case NodeKind::FunctionDeclaration:
             case NodeKind::FunctionExpression:
             case NodeKind::ArrowFunctionExpression:
-                handleFunction(node, context);
+                handleFunction(walker, node, context);
                 break;
             case NodeKind::ClassDeclaration:
             case NodeKind::ClassExpression:
@@ -513,7 +514,7 @@ private:
                       "strict mode");
     }
 
-    void handleFunction(Node& node, SemaContext& context) {
+    void handleFunction(Walker& walker, Node& node, SemaContext& context) {
         Node* id = nullptr;
         NodeList* params = nullptr;
         Node* body = nullptr;
@@ -546,6 +547,10 @@ private:
 
         const bool bodyStrict = hasUseStrictDirective(body);
         const bool functionStrict = strict() || bodyStrict;
+
+        // 供 Compiler 发射 set_strict / 判定 mapped arguments。
+        walker.annotations().emplace<FunctionInfo>(node.id()).isStrict =
+            functionStrict;
 
         if (id && id->kind() == NodeKind::Identifier && functionStrict) {
             const auto& identifier = static_cast<const Identifier&>(*id);

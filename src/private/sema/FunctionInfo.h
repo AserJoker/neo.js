@@ -20,6 +20,9 @@ struct FunctionInfo final : IMeta {
     bool isDerivedConstructor = false;
     bool isStaticBlock = false;
     bool hasDirectEval = false;
+    // 函数体按严格模式执行（继承外层、模块、或自身 "use strict"）。
+    // Compiler 据此发射 set_strict，并决定 arguments 是否 mapped。
+    bool isStrict = false;
 };
 
 }  // namespace neo::sema

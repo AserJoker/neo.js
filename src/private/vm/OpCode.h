@@ -192,6 +192,9 @@ enum class OpCode : uint16_t {
 
     // 函数定义
     PushFunction,   // u32 entryPc, u32 paramCount, u32 flags
+    // set_param_names u32 count, count × u32 nameIndex：[fn] → [fn]。
+    // 记录形参名，供 mapped arguments 建立索引→绑定映射。
+    SetParamNames,
     SetClosure,     // u32 nameIndex：把作用域链上的变量绑进函数闭包
     SetFuncName,    // u32 nameIndex：设置函数 name
     BindThis,       // [fn, self] → [fn]：把 self 焊死到函数（箭头）
@@ -305,6 +308,10 @@ inline constexpr uint32_t kFunctionGenerator = 1u << 3;
 inline constexpr uint32_t kFunctionAsync = 1u << 4;
 // async function*：同时是生成器与异步生成器。
 inline constexpr uint32_t kFunctionAsyncGenerator = 1u << 6;
+// 非箭头 script 函数：调用时创建 arguments 对象。
+inline constexpr uint32_t kFunctionHasArguments = 1u << 7;
+// arguments 与形参绑定映射（非严格 + 简单形参列表）。
+inline constexpr uint32_t kFunctionArgumentsMapped = 1u << 8;
 // push_class：派生类（extends 非 null）。
 inline constexpr uint32_t kClassDerived = 1u << 5;
 

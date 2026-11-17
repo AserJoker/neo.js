@@ -27,6 +27,20 @@
 
 namespace neo::core {
 
+namespace {
+
+// 创建并绑定 arguments 到函数执行作用域（§10.4.4）。
+// 成功返回 nullptr；失败返回错误值（OOM 等）。
+Value* bindArgumentsObject(IContext* ctx, Scope* execScope, Value* fn,
+                           size_t argc, Value* argv[], bool mapped) {
+    Value* args = ctx->createArgumentsObject(fn, argc, argv, mapped);
+    if (detail::isErrorValue(args)) return args;
+    execScope->bind("arguments", args);
+    return nullptr;
+}
+
+}  // namespace
+
 Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t argc,
                             Value* argv[], NativeFn overrideFn, Scope* resumeScope,
                             Value* newTarget, Value** outThis) {
@@ -201,7 +215,25 @@ Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
     ctx->setCurrentFunctionEnv(execScope);
     ctx->setCurrentFunction(fn);
 
-    // 4. 新 VM：逆序压形参（缺省补 undefined），self 最后压入（栈顶）。
+    // 4. arguments 对象（§10.4.4）：在形参绑定与函数体执行前创建，
+    //    使默认参数表达式与 eval 也能看到它。
+    if (d->needsArguments) {
+        Value* err = bindArgumentsObject(ctx, execScope, fn, argc, argv,
+                                         d->argumentsMapped);
+        if (err != nullptr) {
+            ctx->setCurrentFunctionEnv(savedFunctionEnv);
+            ctx->setCurrentFunction(savedFunction);
+            while (ctx->current() != d->closureScope) ctx->popScope();
+            if (--d->activeCalls == 0 && !d->capturesEnvironment) {
+                d->closureScope->reparent(nullptr);
+            }
+            ctx->setCurrentScope(savedCurrent);
+            ctx->setRootScope(savedRoot);
+            return err;
+        }
+    }
+
+    // 5. 新 VM：逆序压形参（缺省补 undefined），self 最后压入（栈顶）。
     //    rest 函数需保留全部实参，由序言 RestArgs 收集多余部分。
     vm::VM machine(ctx, d->code);
     size_t total = d->paramCount;
@@ -295,7 +327,26 @@ Value* resumeScriptCoroutine(IContext* ctx, Value* coroutine, Value* sentValue) 
     ctx->setCurrentFunctionEnv(execScope);
     ctx->setCurrentFunction(co->target);
 
-    // 3. 首次运行压入形参与 self；后续从 VmState 恢复。
+    // 3. 首次运行创建 arguments（生成器/async 在首次 resume 时执行函数体）。
+    if (first && d->needsArguments) {
+        const size_t argc = co->initialArgs.size();
+        Value* err = bindArgumentsObject(ctx, execScope, co->target, argc,
+                                         co->initialArgs.data(),
+                                         d->argumentsMapped);
+        if (err != nullptr) {
+            ctx->setCurrentFunctionEnv(savedFunctionEnv);
+            ctx->setCurrentFunction(savedFunction);
+            while (ctx->current() != d->closureScope) ctx->popScope();
+            if (--d->activeCalls == 0 && !d->capturesEnvironment) {
+                d->closureScope->reparent(nullptr);
+            }
+            ctx->setCurrentScope(savedCurrent);
+            ctx->setRootScope(savedRoot);
+            return err;
+        }
+    }
+
+    // 4. 首次运行压入形参与 self；后续从 VmState 恢复。
     vm::VM machine(ctx, d->code);
     Value* res = nullptr;
     if (first) {

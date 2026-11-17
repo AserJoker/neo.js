@@ -201,6 +201,7 @@ private:
     neo::core::Value* opIterationEnv();
     neo::core::Value* opCommitIterationEnv();
     neo::core::Value* opPushFunction();
+    neo::core::Value* opSetParamNames();
     neo::core::Value* opSetClosure();
     neo::core::Value* opSetFuncName();
     neo::core::Value* opBindThis();
