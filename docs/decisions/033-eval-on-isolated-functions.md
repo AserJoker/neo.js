@@ -228,3 +228,22 @@ SyntaxError。
 
 已知限制：全局内建（如 `Math`）通过 `bind` 落在 `global_`，间接 eval 的
 `var Math` 仍会在 `scriptRoot_` 建遮蔽绑定，未按全局对象属性复用。
+
+### 完成值：try/catch/finally（2026-11-17）
+
+完成值仍用隐藏槽 `*eval-completion*` 近似，但补齐了 try 语句的 Completion
+Record 组合语义：
+
+- **catch 入口清空**：catch 只在异常路径进入，try 体抛错前的完成值作废；
+  catch 入口把完成值槽置 undefined，catch 内表达式语句再更新。
+- **finally 丢弃自身值**：finally 入口用 `load_finally_completion` 把待保留的
+  完成值压栈并克隆（完成值槽是活绑定，store 会原地改写同一 Value，必须存副本）；
+  finally 正常结束时写回。若入口有 pending 完成（异常/break/continue），
+  UpdateEmpty 视为 undefined，压 undefined。
+- **finally 内 break/continue**：编译期跟踪 `finallyDepth_`，在 finally 内的
+  break/continue 前把完成值槽清为 undefined；若该跳转仍留在 finally 内，
+  finally 正常结束的写回会覆盖清除，语义仍正确。
+
+新增指令 `load_finally_completion`（ADR-024）。限制：完成值仍是「最后执行的
+表达式语句值」的槽位近似，未建模每个语句的 Completion Record 结构本身；
+switch/循环等路径依赖表达式语句写入槽位，暂未发现可观察偏差。

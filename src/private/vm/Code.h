@@ -219,6 +219,11 @@ struct Code {
         emitU32(addString(std::string(name)));
         return pc;
     }
+    uint32_t loadFinallyCompletion(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::LoadFinallyCompletion);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
     uint32_t store(std::string_view name) {
         uint32_t pc = emitOp(OpCode::Store);
         emitU32(addString(std::string(name)));

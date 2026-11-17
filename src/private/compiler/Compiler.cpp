@@ -1166,11 +1166,21 @@ void Compiler::compileLabeledStatement(
 
 void Compiler::compileBreakStatement(
     const frontend::BreakStatement& node) {
+    // finally 内的 break 若离开 finally，其完成值为空（UpdateEmpty → undefined）；
+    // 若仍留在 finally 内，finally 正常结束时的写回会覆盖这里的清除。
+    if (evalCompletion_ && finallyDepth_ > 0) {
+        code_->pushUndefined();
+        code_->store(kEvalCompletion);
+    }
     code_->breakTo(node.label);
 }
 
 void Compiler::compileContinueStatement(
     const frontend::ContinueStatement& node) {
+    if (evalCompletion_ && finallyDepth_ > 0) {
+        code_->pushUndefined();
+        code_->store(kEvalCompletion);
+    }
     code_->continueTo(node.label);
 }
 
@@ -1208,6 +1218,12 @@ void Compiler::compileTryStatement(const frontend::TryStatement& node) {
             error(*node.handler, "compiler: unsupported catch clause");
         } else {
             catchStart = code_->here();
+            // catch 只在异常路径进入：try 体抛错前的完成值作废，
+            // catch 完成值从空开始（UpdateEmpty 视为 undefined）。
+            if (evalCompletion_) {
+                code_->pushUndefined();
+                code_->store(kEvalCompletion);
+            }
             compileCatchClause(
                 static_cast<const frontend::CatchClause&>(*node.handler));
             code_->catchEnd();
@@ -1217,7 +1233,15 @@ void Compiler::compileTryStatement(const frontend::TryStatement& node) {
     uint32_t finallyStart = 0;
     if (node.finalizer) {
         finallyStart = code_->here();
+        // finally 的完成值不参与结果（F normal 时取 try/catch 的完成值）。
+        // 入口把待保留的完成值压栈（abrupt 路径压 undefined），块内正常结束
+        // 时写回；块内 break/continue 离开 finally 时写回被跳过，完成值
+        // 由 break/continue 编译点清为 undefined。
+        if (evalCompletion_) code_->loadFinallyCompletion(kEvalCompletion);
+        ++finallyDepth_;
         compileStatement(*node.finalizer);
+        --finallyDepth_;
+        if (evalCompletion_) code_->store(kEvalCompletion);
         code_->finallyEnd();
     }
 

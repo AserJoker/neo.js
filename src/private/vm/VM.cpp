@@ -90,6 +90,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::Initialize:    return "initialize";
         case OpCode::Load:          return "load";
         case OpCode::LoadSoft:      return "load_soft";
+        case OpCode::LoadFinallyCompletion: return "load_finally_completion";
         case OpCode::Store:         return "store";
         case OpCode::StoreVar:      return "store_var";
         case OpCode::GetProp:       return "get_prop";
@@ -224,6 +225,7 @@ const VM::Handler* VM::handlers() {
         &VM::opInitialize,
         &VM::opLoad,
         &VM::opLoadSoft,
+        &VM::opLoadFinallyCompletion,
         &VM::opStore,
         &VM::opStoreVar,
         &VM::opGetProp,
@@ -865,6 +867,35 @@ Value* VM::opLoadSoft() {
     Value* result = ctx_->loadSoft(*name);
     if (detail::isErrorValue(result)) return fail(result);
     push(result);
+    return nullptr;
+}
+
+Value* VM::opLoadFinallyCompletion() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("load_finally_completion: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("load_finally_completion: name index out of range");
+    }
+
+    // 进入 finally 时若有 pending 完成（异常/break/continue），其完成值为
+    // 空，UpdateEmpty 视为 undefined。
+    if (!tryStack_.empty() && tryStack_.back().res != nullptr) {
+        push(ctx_->createUndefined());
+        return nullptr;
+    }
+    Value* result = ctx_->load(*name);
+    if (detail::isErrorValue(result)) return fail(result);
+    // 完成值槽是活绑定：store 会原地改写同一个 Value。这里必须压入副本，
+    // 否则 finally 内对槽位的写入会改掉已保存的值。
+    Value* saved = ctx_->cloneValue(result);
+    if (saved == ctx_->oomValue()) return saved;
+    push(saved);
     return nullptr;
 }
 

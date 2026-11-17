@@ -293,6 +293,8 @@ private:
     bool hasArgumentsBinding_ = false;
     // 当前代码是否严格模式（决定 Annex B 块级函数是否额外建 var 绑定）。
     bool strict_ = false;
+    // finally 块嵌套深度：eval 下 break/continue 离开 finally 时清除完成值。
+    int finallyDepth_ = 0;
     void compileDeleteChain(const frontend::ChainExpression& node);
 };
 

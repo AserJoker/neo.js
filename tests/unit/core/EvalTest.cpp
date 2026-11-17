@@ -423,3 +423,57 @@ TEST(EvalTest, DirectEvalVarReusesCallerVar) {
                           "var out = f();\n"));
     EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 2.0);
 }
+
+TEST(EvalTest, TryFinallyDiscardsFinallyValue) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f, "var out = eval('try { 1; } finally { 2; }');\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 1.0);
+}
+
+TEST(EvalTest, TryFinallyEmptyTryIsUndefined) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f, "var out = eval('try { } finally { 2; }');\n"));
+    EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(EvalTest, CatchEmptyCompletionIsUndefined) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "var out = eval('try { 1; throw 2; } catch (e) { }');\n"));
+    EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(EvalTest, CatchValueWinsOverTryValue) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "var out = eval('try { 1; throw 2; } catch (e) { 3; }');\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 3.0);
+}
+
+TEST(EvalTest, BreakThroughFinallyClearsCompletion) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "var out = eval('for (;;) { try { 1; break; } finally { 2; } }');\n"));
+    EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(EvalTest, BreakInsideFinallyClearsCompletion) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "var out = eval('for (;;) { try { 1; } finally { 2; break; } }');\n"));
+    EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(EvalTest, NestedFinallyKeepsOuterTryValue) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "var out = eval('try { 1; } finally { try { 2; } finally { 3; } }');\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 1.0);
+}
+
+TEST(EvalTest, FinallyValueIgnoredBeforeLaterStatement) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "var out = eval('try { 1; } finally { 2; } 3;');\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 3.0);
+}

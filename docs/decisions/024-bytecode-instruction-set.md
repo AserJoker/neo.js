@@ -476,3 +476,11 @@ ReferenceError，而 §13.5.3 要求 `typeof undeclared` 求值为 `"undefined"`
 压 `undefined`；已解析但未初始化（TDZ / import）仍返回 ReferenceError。
 Compiler 在 `typeof` + `Identifier` 时发射 `load_soft`，其余表达式保持
 普通求值（`typeof a.b` 的未解析 `a` 仍抛错）。
+
+## 追加：load_finally_completion（eval 完成值，2026-11-17）
+
+`load_finally_completion u32 nameIndex`：finally 入口专用。若当前 try 帧存在
+pending 完成（异常/break/continue），压 `undefined`（UpdateEmpty 语义）；
+否则读取完成值槽并压入**克隆**（完成值槽是活绑定，store 原地改写同一 Value，
+直接压指针会被 finally 内的写入污染）。finally 正常结束时由普通 `store`
+写回，从而丢弃 finally 自身的完成值。

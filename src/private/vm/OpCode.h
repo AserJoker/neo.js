@@ -111,6 +111,9 @@ enum class OpCode : uint16_t {
     // 同 Load，但名字完全未解析时压 undefined（typeof 未声明标识符）。
     // TDZ/Import 未初始化仍报 ReferenceError。
     LoadSoft,     // u32 Code::strings 下标（名字）
+    // finally 入口：当前 try 帧无 pending 完成时压完成值槽，否则压 undefined
+    // （break/continue/异常路径的完成值按 UpdateEmpty 视为 undefined）。
+    LoadFinallyCompletion,  // u32 Code::strings 下标（完成值槽名）
     Store,        // u32 Code::strings 下标（名字）
     // u32 名字：[value] → []，写入变量环境绑定（跳过词法作用域）。
     // Annex B.3.3 块级函数同步到外层 var 绑定用。
