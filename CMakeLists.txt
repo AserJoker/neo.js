@@ -37,6 +37,16 @@ option(NEO_BUILD_HELLO "Build HelloWorld executable (default ON)" ON)
 option(NEO_ENABLE_COVERAGE "Enable llvm-cov source-based coverage (ADR-027)" OFF)
 option(NEO_BUILD_FUZZERS "Build libFuzzer targets (Clang only, ADR-062)" OFF)
 
+# clang_rt.fuzzer 在 Windows 上使用 Release 静态 CRT；必须与项目运行时一致。
+if(NEO_BUILD_FUZZERS)
+    if(NOT CMAKE_BUILD_TYPE STREQUAL "Release")
+        message(FATAL_ERROR
+            "NEO_BUILD_FUZZERS requires CMAKE_BUILD_TYPE=Release "
+            "(clang_rt.fuzzer uses the release static CRT)")
+    endif()
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded" CACHE STRING "" FORCE)
+endif()
+
 # ---------------------------------------------------------------------------
 # 编译器配置：强制 Clang
 # ---------------------------------------------------------------------------

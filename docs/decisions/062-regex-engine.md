@@ -332,6 +332,8 @@ Match
   分为 pattern/subject，并映射到受限字母表；覆盖 Parser/Compiler/Pike VM/
   回溯 VM。Windows 上 clang_rt.fuzzer 与 ASan 运行时 ABI 注解不兼容，
   默认仅启用覆盖率引导，sanitizer 需用匹配运行时单独构建。
+  构建：`cmake -DNEO_BUILD_FUZZERS=ON -DCMAKE_BUILD_TYPE=Release ...`
+  （Windows 自动切到静态 CRT），然后 `ninja regex_fuzz`。
 
 **端到端接入（P0）**：
 
