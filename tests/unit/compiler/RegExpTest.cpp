@@ -332,6 +332,17 @@ TEST(RegExpTest, SymbolSearchUsesOverridableExec) {
     EXPECT_DOUBLE_EQ(numberValue(result), -1.0);
 }
 
+TEST(RegExpTest, SymbolReplaceUsesOverridableExec) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var r = /a/;"
+        "r.exec = function() { return null; };"
+        "var result = 'a'.replace(r, 'x') + ':' + "
+        "'a'.replace(r, function() { return 'y'; });");
+    EXPECT_EQ(stringValue(result), "a:a");
+}
+
 TEST(RegExpTest, MatchAllAdvancesOnEmptyMatches) {
     Fixture f;
     Value* result = runScript(

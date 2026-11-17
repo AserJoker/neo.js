@@ -352,8 +352,13 @@ Match
 - `@@match` 与 `@@search` 统一走 `RegExpExec`（含 global 空匹配的
   `AdvanceStringIndex` 推进），可被覆写的 `exec` 对二者生效。
 - `Code::addString` 增加字符串常量去重，重复的 pattern/flags/名字只登记一次。
-- 仍未统一：`@@replace` 与 `@@split` 内部仍使用引擎结果，`@@split` 尚未
-  使用 `SpeciesConstructor`；留待后续按需收敛。
+- `@@replace` 统一走 `RegExpExec`：字符串替换按结果对象的 `index`/捕获/
+  `groups` 展开 `$&`、`` $` ``、`$'`、`$n`、`$<name>`；函数替换按规范
+  传入匹配、捕获、offset、input 与 groups。
+- `@@split` 使用 `SpeciesConstructor` 构造 flags 追加 `y` 的 splitter，并按
+  规范以 `RegExpExec` + `lastIndex` 推进；captures 直接取结果对象元素。
+- 字面量在 Compiler 阶段预编译 `Program` 仍留待后续（当前依赖运行时 LRU
+  缓存；Sema 已做早期校验）。
 
 ### 10. 文件布局
 

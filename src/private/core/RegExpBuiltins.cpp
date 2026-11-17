@@ -677,12 +677,37 @@ Value* regexpSymbolSearch(IContext* ctx, Value* self, size_t argc,
     return ctx->getProperty(match, "index");
 }
 
-std::string expandReplacement(const std::string& replacement,
-                              const std::u16string& subject,
-                              const RegExpData& data,
-                              const regex::MatchResult& match) {
+Value* matchElement(IContext* ctx, Value* match, std::size_t index) {
+    return ctx->getProperty(match, std::to_string(index));
+}
+
+Value* matchText(IContext* ctx, Value* match, std::size_t index) {
+    Value* value = matchElement(ctx, match, index);
+    if (isError(value)) return value;
+    return toStringArg(ctx, value);
+}
+
+// 基于 RegExpExec 结果对象的 Get(match, "index")。
+Value* matchIndexValue(IContext* ctx, Value* match, std::size_t& out) {
+    Value* value = ctx->getProperty(match, "index");
+    if (isError(value)) return value;
+    uint32_t index = 0;
+    if (Value* error = detail::toLengthValue(ctx, value, index)) return error;
+    out = index;
+    return nullptr;
+}
+
+Value* expandReplacementValue(IContext* ctx, const std::string& replacement,
+                              const std::u16string& subject, Value* match) {
+    Value* matchedValue = matchText(ctx, match, 0);
+    if (isError(matchedValue)) return matchedValue;
+    const std::string matched = *stringData(matchedValue);
+    const std::size_t matchedLength = toUtf16(matched).size();
+
+    std::size_t index = 0;
+    if (Value* error = matchIndexValue(ctx, match, index)) return error;
+
     std::string out;
-    const std::string matched = slice(subject, match.start, match.end);
     for (std::size_t i = 0; i < replacement.size(); ++i) {
         if (replacement[i] != '$' || i + 1 >= replacement.size()) {
             out += replacement[i];
@@ -696,26 +721,33 @@ std::string expandReplacement(const std::string& replacement,
             out += matched;
             ++i;
         } else if (next == '`') {
-            out += slice(subject, 0, match.start);
+            out += slice(subject, 0, index);
             ++i;
         } else if (next == '\'') {
-            out += slice(subject, match.end, subject.size());
+            out += slice(subject, index + matchedLength, subject.size());
             ++i;
         } else if (next >= '1' && next <= '9') {
-            std::size_t index = static_cast<std::size_t>(next - '0');
+            std::size_t captureIndex =
+                static_cast<std::size_t>(next - '0');
             std::size_t consumed = 1;
             if (i + 2 < replacement.size() && replacement[i + 2] >= '0' &&
                 replacement[i + 2] <= '9') {
                 const std::size_t two =
-                    index * 10 + static_cast<std::size_t>(replacement[i + 2] - '0');
-                if (two < match.captures.size()) {
-                    index = two;
+                    captureIndex * 10 +
+                    static_cast<std::size_t>(replacement[i + 2] - '0');
+                Value* candidate = matchElement(ctx, match, two);
+                if (isError(candidate)) return candidate;
+                if (candidate->type()->kind() != TypeKind::Undefined) {
+                    captureIndex = two;
                     consumed = 2;
                 }
             }
-            if (index < match.captures.size() && match.captures[index].matched) {
-                const regex::Capture& capture = match.captures[index];
-                out += slice(subject, capture.start, capture.end);
+            Value* capture = matchElement(ctx, match, captureIndex);
+            if (isError(capture)) return capture;
+            if (capture->type()->kind() != TypeKind::Undefined) {
+                Value* text = toStringArg(ctx, capture);
+                if (isError(text)) return text;
+                out += *stringData(text);
             }
             i += consumed;
         } else if (next == '<') {
@@ -725,32 +757,45 @@ std::string expandReplacement(const std::string& replacement,
                 continue;
             }
             const std::string name = replacement.substr(i + 2, close - i - 2);
-            auto it = data.program->namedGroups.find(name);
-            if (it != data.program->namedGroups.end() &&
-                it->second < match.captures.size() &&
-                match.captures[it->second].matched) {
-                const regex::Capture& capture = match.captures[it->second];
-                out += slice(subject, capture.start, capture.end);
+            Value* groups = ctx->getProperty(match, "groups");
+            if (isError(groups)) return groups;
+            if (groups->type()->kind() != TypeKind::Undefined) {
+                Value* capture = ctx->getProperty(groups, name);
+                if (isError(capture)) return capture;
+                if (capture->type()->kind() != TypeKind::Undefined) {
+                    Value* text = toStringArg(ctx, capture);
+                    if (isError(text)) return text;
+                    out += *stringData(text);
+                }
             }
             i = close;
         } else {
             out += replacement[i];
         }
     }
-    return out;
+    return ctx->createString(out);
 }
 
-Value* callReplacement(IContext* ctx, Value* replaceValue,
-                       const std::u16string& subject,
-                       const regex::MatchResult& match, Value* input) {
+Value* callReplacementValue(IContext* ctx, Value* replaceValue,
+                            Value* match, Value* input) {
+    uint32_t length = 0;
+    if (Value* error = detail::lengthOf(ctx, match, length)) return error;
+
     std::vector<Value*> args;
-    args.reserve(match.captures.size() + 2);
-    for (const regex::Capture& capture : match.captures) {
-        args.push_back(captureValue(ctx, subject, capture));
-        if (isError(args.back())) return args.back();
+    args.reserve(static_cast<std::size_t>(length) + 3);
+    for (uint32_t i = 0; i < length; ++i) {
+        Value* value = matchElement(ctx, match, i);
+        if (isError(value)) return value;
+        args.push_back(value);
     }
-    args.push_back(ctx->createNumber(static_cast<double>(match.start)));
+    Value* index = ctx->getProperty(match, "index");
+    if (isError(index)) return index;
+    args.push_back(index);
     args.push_back(input);
+    Value* groups = ctx->getProperty(match, "groups");
+    if (isError(groups)) return groups;
+    if (groups->type()->kind() != TypeKind::Undefined) args.push_back(groups);
+
     Value* result = ctx->call(replaceValue, undefinedOf(ctx), args.size(),
                               args.data());
     if (isError(result)) return result;
@@ -778,66 +823,57 @@ Value* regexpSymbolReplace(IContext* ctx, Value* self, size_t argc,
         replacement = *stringData(text);
     }
 
-    std::size_t start = 0;
     if (data->global) {
         if (isError(setLastIndex(ctx, self, 0))) return ctx->oomValue();
-    } else {
-        Value* error = nullptr;
-        if (!readLastIndex(ctx, self, start, error)) return error;
-        if (start > subject.size()) start = subject.size();
     }
 
     std::string out;
     std::size_t last = 0;
-    std::size_t searchStart = start;
     bool any = false;
 
     for (;;) {
-        regex::MatchResult match;
-        Value* error = nullptr;
-        if (!runEngine(ctx, *data, subject, searchStart, data->sticky, match,
-                       error)) {
-            return error;
-        }
-        if (!match.matched()) break;
+        Value* match = regExpExecValue(ctx, self, *data, input);
+        if (isError(match)) return match;
+        if (match->type()->kind() == TypeKind::Null) break;
         any = true;
 
-        out += slice(subject, last, match.start);
+        std::size_t index = 0;
+        if (Value* error = matchIndexValue(ctx, match, index)) return error;
+        Value* matchedValue = matchText(ctx, match, 0);
+        if (isError(matchedValue)) return matchedValue;
+        const std::size_t matchedLength =
+            toUtf16(*stringData(matchedValue)).size();
+
+        out += slice(subject, last, index);
         if (functional) {
-            Value* text =
-                callReplacement(ctx, replaceValue, subject, match, input);
+            Value* text = callReplacementValue(ctx, replaceValue, match, input);
             if (isError(text)) return text;
             out += *stringData(text);
         } else {
-            out += expandReplacement(replacement, subject, *data, match);
+            Value* text =
+                expandReplacementValue(ctx, replacement, subject, match);
+            if (isError(text)) return text;
+            out += *stringData(text);
         }
 
-        last = match.end;
-        if (data->global) {
-            if (isError(setLastIndex(ctx, self, match.end)))
-                return ctx->oomValue();
-        }
+        last = index + matchedLength;
         if (!data->global) break;
 
-        if (match.end == match.start) {
-            if (match.end >= subject.size()) {
-                searchStart = subject.size() + 1;
-                break;
-            }
+        if (matchedLength == 0) {
+            std::size_t next = 0;
+            Value* error = nullptr;
+            if (!readLastIndex(ctx, self, next, error)) return error;
             std::size_t width = 1;
-            if (data->unicode && match.end + 1 < subject.size()) {
-                const char16_t first = subject[match.end];
-                const char16_t second = subject[match.end + 1];
+            if (data->unicode && next + 1 < subject.size()) {
+                const char16_t first = subject[next];
+                const char16_t second = subject[next + 1];
                 if (first >= 0xD800 && first <= 0xDBFF && second >= 0xDC00 &&
                     second <= 0xDFFF) {
                     width = 2;
                 }
             }
-            out += slice(subject, match.end, match.end + width);
-            last = match.end + width;
-            searchStart = last;
-        } else {
-            searchStart = match.end;
+            if (isError(setLastIndex(ctx, self, next + width)))
+                return ctx->oomValue();
         }
     }
 
@@ -845,6 +881,8 @@ Value* regexpSymbolReplace(IContext* ctx, Value* self, size_t argc,
     out += slice(subject, last, subject.size());
     return ctx->createString(out);
 }
+
+Value* speciesConstructor(IContext* ctx, Value* regexp);
 
 Value* regexpSymbolSplit(IContext* ctx, Value* self, size_t argc,
                          Value* argv[]) {
@@ -871,70 +909,100 @@ Value* regexpSymbolSplit(IContext* ctx, Value* self, size_t argc,
     Value* result = ctx->createArray();
     if (result == ctx->oomValue()) return result;
 
-    // §22.2.6.16：内部使用 sticky 克隆，不改动原对象的 lastIndex。
-    std::string splitFlags = data->flags;
-    if (splitFlags.find('y') == std::string::npos) splitFlags += 'y';
-    Value* splitter = ctx->createRegExp(data->source, splitFlags);
+    // §22.2.6.14：SpeciesConstructor + flags 追加 "y" 的 sticky 克隆。
+    Value* flagsValue = ctx->getProperty(self, "flags");
+    if (isError(flagsValue)) return flagsValue;
+    Value* flagsText = toStringArg(ctx, flagsValue);
+    if (isError(flagsText)) return flagsText;
+    const std::string flags = *stringData(flagsText);
+    const bool unicode = flags.find('u') != std::string::npos ||
+                         flags.find('v') != std::string::npos;
+    const std::string newFlags =
+        flags.find('y') == std::string::npos ? flags + "y" : flags;
+
+    Value* ctor = speciesConstructor(ctx, self);
+    if (isError(ctor)) return ctor;
+    Value* ctorArgs[2] = {self, ctx->createString(newFlags)};
+    if (isError(ctorArgs[1])) return ctorArgs[1];
+    Value* splitter = ctx->construct(ctor, 2, ctorArgs);
     if (isError(splitter)) return splitter;
     RegExpData* splitData = regexpData(splitter);
-    if (splitData == nullptr) return ctx->oomValue();
+    if (splitData == nullptr) {
+        return detail::typeError(ctx,
+                                 "RegExp species must return a RegExp object");
+    }
+
+    auto advance = [&subject, unicode](std::size_t index) {
+        if (!unicode || index + 1 >= subject.size()) return index + 1;
+        const char16_t high = subject[index];
+        const char16_t low = subject[index + 1];
+        if (high >= 0xD800 && high <= 0xDBFF && low >= 0xDC00 &&
+            low <= 0xDFFF) {
+            return index + 2;
+        }
+        return index + 1;
+    };
 
     if (subject.empty()) {
-        regex::MatchResult match;
-        Value* error = nullptr;
-        if (!runEngine(ctx, *splitData, subject, 0, true, match, error)) {
-            return error;
-        }
-        if (!match.matched()) {
-            (void)ctx->arrayAppend(result, ctx->createString(""));
-        }
+        Value* match = regExpExecValue(ctx, splitter, *splitData, input);
+        if (isError(match)) return match;
+        if (match->type()->kind() != TypeKind::Null) return result;
+        if (isError(ctx->arrayAppend(result, ctx->createString(""))))
+            return ctx->oomValue();
         return result;
     }
 
-    std::size_t last = 0;
-    std::size_t searchStart = 0;
+    std::size_t p = 0;
+    std::size_t q = 0;
     std::uint32_t count = 0;
-    while (searchStart <= subject.size()) {
-        regex::MatchResult match;
-        Value* error = nullptr;
-        if (!runEngine(ctx, *splitData, subject, searchStart, true, match,
-                       error)) {
-            return error;
-        }
-        if (!match.matched()) {
-            if (searchStart >= subject.size()) break;
-            ++searchStart;
-            continue;
-        }
-        if (match.end == last && match.start == last) {
-            if (searchStart >= subject.size()) break;
-            ++searchStart;
+    while (q < subject.size()) {
+        Value* setResult = ctx->setProperty(
+            splitter, "lastIndex",
+            ctx->createNumber(static_cast<double>(q)));
+        if (isError(setResult)) return setResult;
+
+        Value* match = regExpExecValue(ctx, splitter, *splitData, input);
+        if (isError(match)) return match;
+        if (match->type()->kind() == TypeKind::Null) {
+            q = advance(q);
             continue;
         }
 
-        if (isError(ctx->arrayAppend(result,
-                                     ctx->createString(slice(subject, last,
-                                                             match.start)))))
+        std::size_t end = 0;
+        Value* error = nullptr;
+        if (!readLastIndex(ctx, splitter, end, error)) return error;
+        if (end > subject.size()) end = subject.size();
+        if (end == p) {
+            q = advance(q);
+            continue;
+        }
+
+        if (isError(ctx->arrayAppend(
+                result, ctx->createString(slice(subject, p, q)))))
             return ctx->oomValue();
         ++count;
         if (count >= limit) return result;
+        p = end;
 
-        for (std::size_t i = 1; i < match.captures.size(); ++i) {
-            if (isError(ctx->arrayAppend(
-                    result, captureValue(ctx, subject, match.captures[i]))))
+        uint32_t captures = 0;
+        if (Value* lengthError = detail::lengthOf(ctx, match, captures))
+            return lengthError;
+        captures = captures > 0 ? captures - 1 : 0;
+        for (uint32_t i = 1; i <= captures; ++i) {
+            Value* capture = matchElement(ctx, match, i);
+            if (isError(capture)) return capture;
+            if (isError(ctx->arrayAppend(result, capture)))
                 return ctx->oomValue();
             ++count;
             if (count >= limit) return result;
         }
-
-        last = match.end;
-        searchStart = match.end == match.start ? match.end + 1 : match.end;
+        q = p;
     }
 
     if (count < limit) {
         if (isError(ctx->arrayAppend(
                 result,
-                ctx->createString(slice(subject, last, subject.size())))))
+                ctx->createString(slice(subject, p, subject.size())))))
             return ctx->oomValue();
     }
     return result;
