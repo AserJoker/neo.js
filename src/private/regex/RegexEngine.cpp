@@ -73,6 +73,26 @@ void RegexEngine::remember(const CacheKey& key,
     cache_.emplace(key, CacheEntry{std::move(program), lru_.begin()});
 }
 
+CompileResult compilePattern(std::string_view pattern, Flags flags,
+                             Dialect dialect) {
+    if (flags.unicode && flags.unicodeSets) {
+        return CompileResult{
+            nullptr,
+            CompileError{0,
+                         "Regular expression flags 'u' and 'v' are mutually "
+                         "exclusive"}};
+    }
+
+    RegexParser parser(pattern, flags, dialect);
+    ParseResult parsed = parser.parse();
+    if (!parsed.ok()) {
+        return CompileResult{nullptr, std::move(parsed.error)};
+    }
+
+    RegexCompiler compiler;
+    return compiler.compile(parsed, pattern, flags, dialect);
+}
+
 CompileResult RegexEngine::compile(std::string_view pattern, Flags flags,
                                    Dialect dialect) {
     if (flags.unicode && flags.unicodeSets) {
@@ -90,14 +110,7 @@ CompileResult RegexEngine::compile(std::string_view pattern, Flags flags,
         return CompileResult{it->second.program, std::nullopt};
     }
 
-    RegexParser parser(pattern, flags, dialect);
-    ParseResult parsed = parser.parse();
-    if (!parsed.ok()) {
-        return CompileResult{nullptr, std::move(parsed.error)};
-    }
-
-    RegexCompiler compiler;
-    CompileResult result = compiler.compile(parsed, pattern, flags, dialect);
+    CompileResult result = compilePattern(pattern, flags, dialect);
     if (result.ok()) remember(key, result.program);
     return result;
 }

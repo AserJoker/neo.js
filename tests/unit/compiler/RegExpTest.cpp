@@ -235,3 +235,34 @@ TEST(RegExpTest, AnnexBLegacyOctalInLiteral) {
         "var result = /^\\1$/.test('\\x01');");
     EXPECT_TRUE(boolValue(result));
 }
+
+TEST(RegExpTest, SourceEscapesPattern) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var a = new RegExp('').source;"
+        "var b = new RegExp('a/b').source;"
+        "var c = new RegExp('\\n').source;"
+        "var d = new RegExp('\\u2028').source;"
+        "var result = a + '|' + b + '|' + c + '|' + d;");
+    EXPECT_EQ(stringValue(result), "(?:)|a\\/b|\\n|\\u2028");
+}
+
+TEST(RegExpTest, ToStringUsesEscapedSource) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var result = new RegExp('').toString();");
+    EXPECT_EQ(stringValue(result), "/(?:)/");
+}
+
+TEST(RegExpTest, SymbolSearchRestoresLastIndex) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var r = /b/;"
+        "r.lastIndex = 5;"
+        "var index = r[Symbol.search]('abc');"
+        "var result = index + ':' + r.lastIndex;");
+    EXPECT_EQ(stringValue(result), "1:5");
+}

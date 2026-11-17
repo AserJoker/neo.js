@@ -172,6 +172,9 @@ bool readLastIndex(IContext* ctx, Value* regexp, std::size_t& out,
 
 // —— 引擎执行 ——
 
+// 单次 exec 的默认指令预算：高阈值，只用于兜住灾难性回溯，不影响正常匹配。
+constexpr std::uint64_t kDefaultStepLimit = 10'000'000u;
+
 bool runEngine(IContext* ctx, const RegExpData& data,
                const std::u16string& subject, std::size_t start,
                bool anchored, regex::MatchResult& result, Value*& error) {
@@ -181,6 +184,7 @@ bool runEngine(IContext* ctx, const RegExpData& data,
     regex::ExecOptions options;
     options.startIndex = start;
     options.anchored = anchored;
+    options.stepLimit = kDefaultStepLimit;
     result = engine.exec(*data.program, view, options);
     if (result.status == regex::MatchStatus::Aborted) {
         error = detail::errorOf(ctx, ErrorKind::RangeError,
@@ -396,6 +400,44 @@ Value* regexpTest(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     return ctx->createBoolean(result->type()->kind() != TypeKind::Null);
 }
 
+// ES2024 §22.2.6.13 EscapeRegExpPattern：转义 '/' 与行终止符。
+std::string escapeRegExpPattern(const std::string& source) {
+    if (source.empty()) return "(?:)";
+    std::string out;
+    out.reserve(source.size());
+    for (std::size_t i = 0; i < source.size(); ++i) {
+        const unsigned char byte = static_cast<unsigned char>(source[i]);
+        switch (byte) {
+            case '/':
+                out += "\\/";
+                break;
+            case '\n':
+                out += "\\n";
+                break;
+            case '\r':
+                out += "\\r";
+                break;
+            case 0xE2:
+                if (i + 2 < source.size() &&
+                    static_cast<unsigned char>(source[i + 1]) == 0x80 &&
+                    (static_cast<unsigned char>(source[i + 2]) == 0xA8 ||
+                     static_cast<unsigned char>(source[i + 2]) == 0xA9)) {
+                    out += static_cast<unsigned char>(source[i + 2]) == 0xA8
+                               ? "\\u2028"
+                               : "\\u2029";
+                    i += 2;
+                } else {
+                    out.push_back(source[i]);
+                }
+                break;
+            default:
+                out.push_back(source[i]);
+                break;
+        }
+    }
+    return out;
+}
+
 Value* regexpToString(IContext* ctx, Value* self, size_t, Value*[]) {
     RegExpData* data = regexpData(self);
     if (data == nullptr) {
@@ -403,7 +445,7 @@ Value* regexpToString(IContext* ctx, Value* self, size_t, Value*[]) {
             ctx, "RegExp.prototype.toString called on incompatible receiver");
     }
     std::string text = "/";
-    text += data->source;
+    text += escapeRegExpPattern(data->source);
     text += "/";
     text += data->flags;
     return ctx->createString(text);
@@ -415,7 +457,7 @@ Value* regexpSourceGetter(IContext* ctx, Value* self, size_t, Value*[]) {
         return detail::typeError(
             ctx, "RegExp.prototype.source called on incompatible receiver");
     }
-    return ctx->createString(data->source.empty() ? "(?:)" : data->source);
+    return ctx->createString(escapeRegExpPattern(data->source));
 }
 
 Value* regexpFlagsGetter(IContext* ctx, Value* self, size_t, Value*[]) {
@@ -504,18 +546,28 @@ Value* regexpSymbolSearch(IContext* ctx, Value* self, size_t argc,
     if (isError(input)) return input;
     const std::u16string subject = toUtf16(*stringData(input));
 
-    std::size_t start = 0;
-    if (data->sticky) {
-        Value* error = nullptr;
-        if (!readLastIndex(ctx, self, start, error)) return error;
+    // §22.2.6.14：保存 lastIndex，非 0 时置 0，执行后恢复原值。
+    Value* previous = ctx->getProperty(self, "lastIndex");
+    if (isError(previous)) return previous;
+    Value* zero = ctx->createNumber(0.0);
+    if (isError(zero)) return zero;
+    if (!detail::sameValue(previous, zero)) {
+        Value* reset = ctx->setProperty(self, "lastIndex", zero);
+        if (isError(reset)) return reset;
     }
-    if (start > subject.size()) start = subject.size();
 
     regex::MatchResult result;
     Value* error = nullptr;
-    if (!runEngine(ctx, *data, subject, start, data->sticky, result, error)) {
-        return error;
+    const bool ok =
+        runEngine(ctx, *data, subject, 0, data->sticky, result, error);
+
+    Value* current = ctx->getProperty(self, "lastIndex");
+    if (isError(current)) return current;
+    if (!detail::sameValue(current, previous)) {
+        Value* restore = ctx->setProperty(self, "lastIndex", previous);
+        if (isError(restore)) return restore;
     }
+    if (!ok) return error;
     if (!result.matched()) return ctx->createNumber(-1.0);
     return ctx->createNumber(static_cast<double>(result.start));
 }

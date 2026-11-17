@@ -27,6 +27,11 @@
 
 namespace neo::regex {
 
+// 不依赖 Host 的编译入口：Sema/Compiler 做早期校验、或调用方只需 Program
+// 时使用。u/v 互斥等 flags 校验也在这里统一完成。
+CompileResult compilePattern(std::string_view pattern, Flags flags,
+                             Dialect dialect = {});
+
 class RegexEngine {
 public:
     // Program 缓存容量上限；超出后按 LRU 淘汰。

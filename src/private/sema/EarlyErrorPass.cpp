@@ -2,6 +2,7 @@
 
 #include "sema/EarlyErrorPass.h"
 
+#include "regex/RegexEngine.h"
 #include "sema/ControlFlowPass.h"
 #include "sema/ModulePass.h"
 #include "sema/StrictnessPass.h"
@@ -43,6 +44,46 @@ public:
     }
 };
 
+// 正则字面量：flags 与 pattern 必须在 Parse/Sema 阶段报 SyntaxError，
+// 不能推迟到 push_regexp 执行期。
+class RegExpLiteralVisitor final : public IVisitor {
+public:
+    void enter(Walker&, SemaContext& context, frontend::Node& node) override {
+        if (node.kind() != frontend::NodeKind::RegExpLiteral) return;
+        auto& literal = static_cast<frontend::RegExpLiteral&>(node);
+
+        const regex::FlagsResult flags = regex::parseFlags(literal.flags);
+        if (!flags.ok()) {
+            context.error(
+                shift(literal, 1 + literal.pattern.size() + 1,
+                      flags.error ? flags.error->offset : 0),
+                flags.error ? flags.error->message
+                            : "Invalid regular expression flags");
+            return;
+        }
+
+        const regex::CompileResult compiled =
+            regex::compilePattern(literal.pattern, flags.flags);
+        if (!compiled.ok()) {
+            context.error(
+                shift(literal, 1,
+                      compiled.error ? compiled.error->offset : 0),
+                compiled.error ? compiled.error->message
+                               : "Invalid regular expression");
+        }
+    }
+
+private:
+    static frontend::SourceLocation shift(
+        const frontend::RegExpLiteral& literal, std::size_t base,
+        std::size_t delta) {
+        frontend::SourceLocation location = literal.range().start;
+        location.offset += base + delta;
+        location.column += static_cast<std::uint32_t>(base + delta);
+        return location;
+    }
+};
+
 }  // namespace
 
 void runEarlyErrorPass(frontend::Node& program, SemaContext& context,
@@ -52,6 +93,7 @@ void runEarlyErrorPass(frontend::Node& program, SemaContext& context,
     walker.addAll(makeControlFlowVisitor(annotations));
     walker.addAll(makeModuleVisitor(annotations));
     walker.addAll(std::make_unique<DuplicateProtoVisitor>());
+    walker.addAll(std::make_unique<RegExpLiteralVisitor>());
     walker.walk(program, context);
 }
 

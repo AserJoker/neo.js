@@ -96,3 +96,21 @@ TEST(SemaTest, CleanProgramHasNoErrors) {
     ASSERT_TRUE(result.parsed.ok());
     EXPECT_TRUE(result.sema.ok());
 }
+
+TEST(SemaTest, ReportsInvalidRegExpFlags) {
+    Analysis result = analyze("var r = /a/gg;");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.sema.ok());
+}
+
+TEST(SemaTest, ReportsInvalidRegExpPattern) {
+    Analysis result = analyze("var r = /(/;");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.sema.ok());
+}
+
+TEST(SemaTest, AcceptsValidRegExpLiteral) {
+    Analysis result = analyze("var r = /a+/giu;");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_TRUE(result.sema.ok());
+}

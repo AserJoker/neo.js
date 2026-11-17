@@ -323,6 +323,18 @@ Match
   语义，风险高于本阶段收益，留待后续独立 ADR。libFuzzer 目标同理，
   当前以确定性随机压力测试覆盖基本健壮性。
 
+**端到端接入（P0）**：
+
+- Sema `EarlyErrorPass` 新增 `RegExpLiteralVisitor`：字面量在 Parse/Sema
+  阶段校验 flags 与 pattern，错误位置映射回源码（pattern 起点 +1，flags
+  起点为 pattern 结束后再 +1）。为此 regex 模块新增不依赖 Host 的
+  `compilePattern()`，`RegexEngine::compile` 在缓存未命中时复用它。
+- JS 运行时 `runEngine` 设置默认 `stepLimit = 10'000'000`，使 ReDoS 防护
+  在生产路径生效；`Aborted` 仍映射为 `RangeError`。
+- `source`/`toString` 按 `EscapeRegExpPattern` 转义 `/`、`\n`、`\r`、
+  U+2028/U+2029；空 pattern 返回 `(?:)`。
+- `@@search` 保存 `lastIndex`，非 0 时置 0，执行后恢复原值。
+
 ### 10. 文件布局
 
 ```
