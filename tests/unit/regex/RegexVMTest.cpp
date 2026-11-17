@@ -415,3 +415,84 @@ TEST(RegexVMTest, CompilerRejectsUnknownProperty) {
     expectCompileError(f.compile("\\p{Script=NotAScript}", "u"),
                        "Invalid property name");
 }
+
+// —— R5：v 模式（Unicode sets） ——
+
+TEST(RegexVMTest, VModeIntersection) {
+    Fixture f;
+    auto letters = f.compile("[\\p{ASCII}&&\\p{Letter}]+", "v");
+    expectMatch(f.exec(letters, "abc"), 0, 3);
+    expectMatch(f.exec(letters, "a1"), 0, 1);
+}
+
+TEST(RegexVMTest, VModeSubtraction) {
+    Fixture f;
+    auto consonants = f.compile("[[a-z]--[aeiou]]+", "v");
+    expectMatch(f.exec(consonants, "bcdf"), 0, 4);
+    EXPECT_FALSE(f.exec(consonants, "ae").matched());
+}
+
+TEST(RegexVMTest, VModeNestedNegatedClass) {
+    Fixture f;
+    auto notA = f.compile("[[a-z]&&[^a]]+", "v");
+    expectMatch(f.exec(notA, "bcd"), 0, 3);
+    EXPECT_FALSE(f.exec(notA, "a").matched());
+}
+
+TEST(RegexVMTest, VModeQStrings) {
+    Fixture f;
+    auto compiled = f.compile("[\\q{a|b}]+", "v");
+    expectMatch(f.exec(compiled, "abba"), 0, 4);
+    EXPECT_FALSE(f.exec(compiled, "c").matched());
+}
+
+TEST(RegexVMTest, VModeReservedDashRequiresEscape) {
+    Fixture f;
+    expectCompileError(f.compile("[a-]", "v"), "Invalid character class");
+    auto escaped = f.compile("[a\\-]", "v");
+    expectMatch(f.exec(escaped, "-"), 0, 1);
+}
+
+TEST(RegexVMTest, VModeRejectsMultiCodePointQ) {
+    Fixture f;
+    expectCompileError(f.compile("[\\q{ab}]", "v"),
+                       "properties of strings not implemented");
+}
+
+// —— R5：Annex B 兼容 ——
+
+TEST(RegexVMTest, AnnexBIdentityEscapeEightNine) {
+    Fixture f;
+    expectMatch(f.exec(f.compile("\\8"), "8"), 0, 1);
+    expectMatch(f.exec(f.compile("\\9"), "9"), 0, 1);
+    expectCompileError(f.compile("\\8", "u"), "Invalid backreference");
+}
+
+TEST(RegexVMTest, AnnexBLegacyOctalBackreference) {
+    Fixture f;
+    expectMatch(f.exec(f.compile("\\1"), std::string_view("\x01", 1)), 0, 1);
+    expectMatch(f.exec(f.compile("\\12"), std::string_view("\x0A", 1)), 0, 1);
+    // 首位 4-7 只取两位八进制：\118 -> \011 + '8'。
+    expectMatch(f.exec(f.compile("\\118"), std::string_view("\x09" "8", 2)),
+                0, 2);
+}
+
+TEST(RegexVMTest, AnnexBValidBackreferenceStillWins) {
+    Fixture f;
+    auto compiled = f.compile("(a)\\1");
+    expectMatch(f.exec(compiled, "aa"), 0, 2);
+}
+
+TEST(RegexVMTest, AnnexBClassControlEscapeFallsBack) {
+    Fixture f;
+    auto compiled = f.compile("[\\c]");
+    expectMatch(f.exec(compiled, "c"), 0, 1);
+    expectMatch(f.exec(compiled, "\\"), 0, 1);
+}
+
+TEST(RegexVMTest, AnnexBClassEscapeAsRangeEndpoint) {
+    Fixture f;
+    auto compiled = f.compile("[\\d-a]+");
+    expectMatch(f.exec(compiled, "5-a"), 0, 3);
+    EXPECT_FALSE(f.exec(compiled, "b").matched());
+}

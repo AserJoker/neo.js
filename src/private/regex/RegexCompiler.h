@@ -51,6 +51,13 @@ private:
                      std::uint32_t to);
     void appendEscape(CharClassTable& table, ClassItem::EscapeKind kind);
     void appendProperty(CharClassTable& table, const ClassItem& item);
+    void collectClassRanges(const CharacterClass& node,
+                            std::vector<CharRange>& out);
+    static std::vector<CharRange> intersectRanges(
+        std::vector<CharRange> left, std::vector<CharRange> right);
+    static std::vector<CharRange> subtractRanges(
+        std::vector<CharRange> left, std::vector<CharRange> right);
+    void emitLegacyOctal(const std::string& digits);
     static bool resolveProperty(std::string_view name,
                                 UnicodeProperty& property);
     static void appendComplement(std::vector<CharRange>& out,

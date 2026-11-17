@@ -143,7 +143,8 @@ NodePtr RegexParser::parseAtom() {
         case '(':
             return parseGroup();
         case '[':
-            return parseCharacterClass();
+            return flags_.unicodeSets ? parseVCharacterClass()
+                                      : parseCharacterClass();
         case '.':
             advance();
             return std::make_unique<Dot>(start);
@@ -282,6 +283,20 @@ NodePtr RegexParser::parseCharacterClass() {
             ClassItem second;
             if (!parseClassAtom(second)) return nullptr;
             if (second.kind != ClassItem::Kind::Range) {
+                // Annex B：ClassEscape 作为范围端点时按并集处理
+                // （[\d-a] → \d ∪ '-' ∪ 'a'）。
+                if (!(flags_.unicode || flags_.unicodeSets) &&
+                    dialect_.annexB) {
+                    characterClass->items.push_back(first);
+                    ClassItem dashLiteral;
+                    dashLiteral.kind = ClassItem::Kind::Range;
+                    dashLiteral.offset = dash;
+                    dashLiteral.from = '-';
+                    dashLiteral.to = '-';
+                    characterClass->items.push_back(dashLiteral);
+                    characterClass->items.push_back(second);
+                    continue;
+                }
                 fail(dash, "Invalid character class range");
                 return nullptr;
             }
@@ -311,6 +326,377 @@ NodePtr RegexParser::parseCharacterClass() {
         return nullptr;
     }
     return characterClass;
+}
+
+namespace {
+
+bool isVClassReserved(std::uint32_t cp) {
+    switch (cp) {
+        case '(':
+        case ')':
+        case '[':
+        case ']':
+        case '{':
+        case '}':
+        case '/':
+        case '-':
+        case '|':
+            return true;
+        default:
+            return false;
+    }
+}
+
+}  // namespace
+
+NodePtr RegexParser::parseVCharacterClass() {
+    const std::size_t start = here();
+    advance();  // '['
+    auto node = std::make_unique<CharacterClass>(start);
+    node->negated = eat('^');
+
+    std::shared_ptr<CharacterClass> current = parseVClassUnion();
+    if (!current) return nullptr;
+
+    while (!atEnd() && peek() != ']') {
+        CharacterClass::SetOp op = CharacterClass::SetOp::Union;
+        if (peek() == '&' && peekNext() == '&') {
+            advance();
+            advance();
+            op = CharacterClass::SetOp::Intersection;
+        } else if (peek() == '-' && peekNext() == '-') {
+            advance();
+            advance();
+            op = CharacterClass::SetOp::Subtraction;
+        } else {
+            fail(here(), "Invalid character class");
+            return nullptr;
+        }
+        std::shared_ptr<CharacterClass> right = parseVClassUnion();
+        if (!right) return nullptr;
+        auto combined = std::make_shared<CharacterClass>(start);
+        combined->setOp = op;
+        combined->left = std::move(current);
+        combined->right = std::move(right);
+        current = std::move(combined);
+    }
+
+    if (!eat(']')) {
+        fail(start, "Unterminated character class");
+        return nullptr;
+    }
+
+    if (current->left) {
+        node->setOp = current->setOp;
+        node->left = std::move(current->left);
+        node->right = std::move(current->right);
+    } else {
+        node->items = std::move(current->items);
+    }
+    return node;
+}
+
+std::shared_ptr<CharacterClass> RegexParser::parseVClassUnion() {
+    auto leaf = std::make_shared<CharacterClass>(here());
+    bool any = false;
+    while (!atEnd() && peek() != ']') {
+        if ((peek() == '&' && peekNext() == '&') ||
+            (peek() == '-' && peekNext() == '-')) {
+            break;
+        }
+
+        ClassItem item;
+        bool single = false;
+        std::uint32_t codePoint = 0;
+        if (!parseVClassAtom(item, single, codePoint)) return nullptr;
+
+        if (single && peek() == '-' && peekNext() != '-' && peekNext() != ']') {
+            const std::size_t dash = here();
+            advance();
+            ClassItem second;
+            bool secondSingle = false;
+            std::uint32_t secondCodePoint = 0;
+            if (!parseVClassAtom(second, secondSingle, secondCodePoint)) {
+                return nullptr;
+            }
+            if (!secondSingle) {
+                fail(dash, "Invalid character class range");
+                return nullptr;
+            }
+            if (secondCodePoint < codePoint) {
+                fail(dash, "Range out of order in character class");
+                return nullptr;
+            }
+            ClassItem range;
+            range.kind = ClassItem::Kind::Range;
+            range.offset = item.offset;
+            range.from = codePoint;
+            range.to = secondCodePoint;
+            leaf->items.push_back(range);
+        } else {
+            leaf->items.push_back(std::move(item));
+        }
+        any = true;
+    }
+    if (!any) {
+        fail(here(), "Invalid character class");
+        return nullptr;
+    }
+    return leaf;
+}
+
+bool RegexParser::parseVClassAtom(ClassItem& item, bool& singleCodePoint,
+                                  std::uint32_t& codePoint) {
+    if (atEnd()) {
+        fail(here(), "Unterminated character class");
+        return false;
+    }
+    if (peek() == '[') {
+        NodePtr nested = parseVCharacterClass();
+        if (!nested) return false;
+        item.kind = ClassItem::Kind::Nested;
+        item.offset = nested->offset;
+        item.nested = std::shared_ptr<CharacterClass>(
+            static_cast<CharacterClass*>(nested.release()));
+        singleCodePoint = false;
+        return true;
+    }
+    if (peek() == '\\') {
+        return parseVClassEscape(item, singleCodePoint, codePoint);
+    }
+    if (isVClassReserved(peek())) {
+        fail(here(), "Invalid character class");
+        return false;
+    }
+    const std::size_t start = here();
+    const std::uint32_t cp = advance();
+    item.kind = ClassItem::Kind::Range;
+    item.offset = start;
+    item.from = cp;
+    item.to = cp;
+    singleCodePoint = true;
+    codePoint = cp;
+    return true;
+}
+
+bool RegexParser::parseVClassEscape(ClassItem& item, bool& singleCodePoint,
+                                    std::uint32_t& codePoint) {
+    const std::size_t start = here();
+    advance();  // '\'
+    if (atEnd()) {
+        fail(start, "\\ at end of pattern");
+        return false;
+    }
+
+    const std::uint32_t cp = peek();
+    switch (cp) {
+        case 'd':
+        case 'D':
+        case 's':
+        case 'S':
+        case 'w':
+        case 'W':
+            item.kind = ClassItem::Kind::Escape;
+            item.offset = start;
+            switch (cp) {
+                case 'd': item.escape = ClassItem::EscapeKind::Digit; break;
+                case 'D': item.escape = ClassItem::EscapeKind::NotDigit; break;
+                case 's': item.escape = ClassItem::EscapeKind::Space; break;
+                case 'S': item.escape = ClassItem::EscapeKind::NotSpace; break;
+                case 'w': item.escape = ClassItem::EscapeKind::Word; break;
+                default: item.escape = ClassItem::EscapeKind::NotWord; break;
+            }
+            advance();
+            singleCodePoint = false;
+            return true;
+        case 'p':
+        case 'P': {
+            const bool negated = cp == 'P';
+            advance();
+            if (!eat('{')) {
+                fail(start, "Invalid property escape");
+                return false;
+            }
+            std::string name;
+            if (!parsePropertyName(name)) return false;
+            item.kind = ClassItem::Kind::Property;
+            item.offset = start;
+            item.negated = negated;
+            item.property = std::move(name);
+            singleCodePoint = false;
+            return true;
+        }
+        case 'q': {
+            advance();
+            if (!eat('{')) {
+                fail(start, "Invalid \\q escape");
+                return false;
+            }
+            auto leaf = std::make_shared<CharacterClass>(start);
+            std::vector<std::uint32_t> current;
+            bool any = false;
+            while (!atEnd() && peek() != '}') {
+                if (peek() == '|') {
+                    if (current.size() != 1) {
+                        fail(start, "properties of strings not implemented");
+                        return false;
+                    }
+                    ClassItem alt;
+                    alt.kind = ClassItem::Kind::Range;
+                    alt.offset = start;
+                    alt.from = current[0];
+                    alt.to = current[0];
+                    leaf->items.push_back(alt);
+                    current.clear();
+                    advance();
+                    any = true;
+                    continue;
+                }
+                if (peek() == '\\') {
+                    fail(start, "Invalid \\q escape");
+                    return false;
+                }
+                current.push_back(advance());
+            }
+            if (!eat('}')) {
+                fail(start, "Unterminated \\q escape");
+                return false;
+            }
+            if (current.size() != 1) {
+                fail(start, "properties of strings not implemented");
+                return false;
+            }
+            ClassItem alt;
+            alt.kind = ClassItem::Kind::Range;
+            alt.offset = start;
+            alt.from = current[0];
+            alt.to = current[0];
+            leaf->items.push_back(alt);
+            (void)any;
+            item.kind = ClassItem::Kind::Nested;
+            item.offset = start;
+            item.nested = std::move(leaf);
+            singleCodePoint = false;
+            return true;
+        }
+        case 'b':
+            advance();
+            item.kind = ClassItem::Kind::Range;
+            item.offset = start;
+            item.from = 0x08;
+            item.to = 0x08;
+            singleCodePoint = true;
+            codePoint = 0x08;
+            return true;
+        case '0':
+            advance();
+            if (!atEnd() && isAsciiDigit(peek())) {
+                fail(start, "Invalid decimal escape");
+                return false;
+            }
+            item.kind = ClassItem::Kind::Range;
+            item.offset = start;
+            item.from = 0;
+            item.to = 0;
+            singleCodePoint = true;
+            codePoint = 0;
+            return true;
+        case 'x': {
+            advance();
+            std::uint32_t value = 0;
+            if (!parseHex(2, value)) {
+                fail(start, "Invalid escape");
+                return false;
+            }
+            item.kind = ClassItem::Kind::Range;
+            item.offset = start;
+            item.from = value;
+            item.to = value;
+            singleCodePoint = true;
+            codePoint = value;
+            return true;
+        }
+        case 'u': {
+            advance();
+            std::uint32_t value = 0;
+            bool ok = false;
+            if (eat('{')) {
+                const std::size_t begin = here();
+                std::uint32_t codePointValue = 0;
+                std::uint32_t digits = 0;
+                while (!atEnd() && peek() != '}') {
+                    const int digit = hexValue(peek());
+                    if (digit < 0 || codePointValue > 0x10FFFFu / 16u) {
+                        fail(begin, "Invalid Unicode escape");
+                        return false;
+                    }
+                    codePointValue = codePointValue * 16u +
+                                     static_cast<std::uint32_t>(digit);
+                    if (codePointValue > 0x10FFFFu) {
+                        fail(begin, "Invalid Unicode escape");
+                        return false;
+                    }
+                    advance();
+                    ++digits;
+                }
+                if (digits == 0 || !eat('}')) {
+                    fail(begin, "Invalid Unicode escape");
+                    return false;
+                }
+                value = codePointValue;
+                ok = true;
+            } else {
+                ok = parseHex(4, value);
+            }
+            if (!ok) {
+                fail(start, "Invalid escape");
+                return false;
+            }
+            item.kind = ClassItem::Kind::Range;
+            item.offset = start;
+            item.from = value;
+            item.to = value;
+            singleCodePoint = true;
+            codePoint = value;
+            return true;
+        }
+        case 'c': {
+            advance();
+            if (atEnd() || !isAsciiLetter(peek())) {
+                fail(start, "Invalid control escape");
+                return false;
+            }
+            const std::uint32_t letter = advance();
+            item.kind = ClassItem::Kind::Range;
+            item.offset = start;
+            item.from = letter % 32;
+            item.to = letter % 32;
+            singleCodePoint = true;
+            codePoint = letter % 32;
+            return true;
+        }
+        default:
+            break;
+    }
+
+    if (cp >= '1' && cp <= '9') {
+        fail(start, "Invalid class escape");
+        return false;
+    }
+    if (!isSyntaxCharacter(cp) && !isVClassReserved(cp) && cp != '^' &&
+        cp != '$' && cp != '.' && cp != '*' && cp != '+' && cp != '?' &&
+        cp != '\\') {
+        fail(start, "Invalid escape");
+        return false;
+    }
+    advance();
+    item.kind = ClassItem::Kind::Range;
+    item.offset = start;
+    item.from = cp;
+    item.to = cp;
+    singleCodePoint = true;
+    codePoint = cp;
+    return true;
 }
 
 bool RegexParser::parseClassAtom(ClassItem& item) {
@@ -389,7 +775,21 @@ bool RegexParser::parseClassEscape(ClassItem& item) {
             return true;
         case 'c': {
             advance();
-            if (atEnd() || !isAsciiLetter(peek())) {
+            const bool valid = !atEnd() &&
+                               (isAsciiLetter(peek()) || isAsciiDigit(peek()) ||
+                                peek() == '_');
+            if (!valid) {
+                // Annex B：ClassControlLetter 非法时，'\' 作为字面量，
+                // 'c' 留给后续原子解析。
+                if (!(flags_.unicode || flags_.unicodeSets) &&
+                    dialect_.annexB) {
+                    --pos_;
+                    item.kind = ClassItem::Kind::Range;
+                    item.offset = start;
+                    item.from = '\\';
+                    item.to = '\\';
+                    return true;
+                }
                 fail(start, "Invalid control escape");
                 return false;
             }
@@ -622,8 +1022,10 @@ NodePtr RegexParser::parseAtomEscape() {
             }
             std::string name;
             if (!parseGroupName(name)) return nullptr;
-            backrefs_.push_back(BackrefRef{start, 0, name});
-            return std::make_unique<Backreference>(start, 0, std::move(name));
+            auto node =
+                std::make_unique<Backreference>(start, 0, name);
+            backrefs_.push_back(BackrefRef{start, 0, name, node.get()});
+            return node;
         }
         case 'b':
         case 'B': {
@@ -733,23 +1135,34 @@ NodePtr RegexParser::parseAtomEscape() {
     }
 
     if (cp >= '1' && cp <= '9') {
+        // Annex B：非 unicode 模式下 \8 / \9 是身份转义（字面量 8/9）。
+        if ((cp == '8' || cp == '9') && !(flags_.unicode || flags_.unicodeSets) &&
+            dialect_.annexB) {
+            advance();
+            return std::make_unique<Character>(start, cp);
+        }
         if (!dialect_.allowBackrefs) {
             fail(start, "Backreferences are disabled");
             return nullptr;
         }
         std::uint64_t index = 0;
+        std::string digits;
         while (!atEnd() && isAsciiDigit(peek())) {
             index = index * 10u + static_cast<std::uint64_t>(peek() - '0');
             if (index > std::numeric_limits<std::uint32_t>::max()) {
                 fail(start, "Backreference index too large");
                 return nullptr;
             }
+            digits.push_back(static_cast<char>(peek()));
             advance();
         }
-        backrefs_.push_back(
-            BackrefRef{start, static_cast<std::uint32_t>(index), {}});
-        return std::make_unique<Backreference>(
+        auto node = std::make_unique<Backreference>(
             start, static_cast<std::uint32_t>(index));
+        node->digits = std::move(digits);
+        backrefs_.push_back(BackrefRef{start,
+                                       static_cast<std::uint32_t>(index), {},
+                                       node.get()});
+        return node;
     }
 
     if ((flags_.unicode || flags_.unicodeSets) && !isSyntaxCharacter(cp) &&
@@ -912,6 +1325,12 @@ void RegexParser::validateBackrefs() {
             continue;
         }
         if (ref.index == 0 || ref.index > captureCount_) {
+            // Annex B：无效数字反向引用退化为 LegacyOctalEscapeSequence。
+            if (!(flags_.unicode || flags_.unicodeSets) && dialect_.annexB &&
+                ref.node != nullptr) {
+                ref.node->legacyOctal = true;
+                continue;
+            }
             fail(ref.offset, "Invalid backreference");
             return;
         }

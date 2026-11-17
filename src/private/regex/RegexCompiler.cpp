@@ -132,24 +132,147 @@ void RegexCompiler::compileCharacter(const Character& node) {
 void RegexCompiler::compileCharacterClass(const CharacterClass& node) {
     CharClassTable table;
     table.negated = node.negated;
-    for (const ClassItem& item : node.items) {
-        switch (item.kind) {
-            case ClassItem::Kind::Range:
-                appendRange(table, item.from, item.to);
-                break;
-            case ClassItem::Kind::Escape:
-                appendEscape(table, item.escape);
-                break;
-            case ClassItem::Kind::Property:
-                appendProperty(table, item);
-                if (failed_) return;
-                break;
-        }
-    }
+    collectClassRanges(node, table.ranges);
+    if (failed_) return;
     normalize(table.ranges);
     program_.classes.push_back(std::move(table));
     emit(OpCode::CharClass,
          static_cast<std::uint32_t>(program_.classes.size() - 1));
+}
+
+void RegexCompiler::collectClassRanges(const CharacterClass& node,
+                                       std::vector<CharRange>& out) {
+    if (node.left && node.right) {
+        std::vector<CharRange> left;
+        std::vector<CharRange> right;
+        collectClassRanges(*node.left, left);
+        if (failed_) return;
+        collectClassRanges(*node.right, right);
+        if (failed_) return;
+        switch (node.setOp) {
+            case CharacterClass::SetOp::Union:
+                out.insert(out.end(), left.begin(), left.end());
+                out.insert(out.end(), right.begin(), right.end());
+                break;
+            case CharacterClass::SetOp::Intersection: {
+                std::vector<CharRange> result =
+                    intersectRanges(std::move(left), std::move(right));
+                out.insert(out.end(), result.begin(), result.end());
+                break;
+            }
+            case CharacterClass::SetOp::Subtraction: {
+                std::vector<CharRange> result =
+                    subtractRanges(std::move(left), std::move(right));
+                out.insert(out.end(), result.begin(), result.end());
+                break;
+            }
+        }
+        return;
+    }
+
+    for (const ClassItem& item : node.items) {
+        switch (item.kind) {
+            case ClassItem::Kind::Range:
+                out.push_back(CharRange{item.from, item.to});
+                break;
+            case ClassItem::Kind::Escape: {
+                CharClassTable temp;
+                appendEscape(temp, item.escape);
+                out.insert(out.end(), temp.ranges.begin(), temp.ranges.end());
+                break;
+            }
+            case ClassItem::Kind::Property: {
+                UnicodeProperty property;
+                if (!resolveProperty(item.property, property)) {
+                    error(item.offset, "Invalid property name");
+                    return;
+                }
+                std::vector<CharRange> ranges;
+                ranges.reserve(property.count);
+                for (std::size_t i = 0; i < property.count; ++i) {
+                    ranges.push_back(CharRange{property.ranges[i].from,
+                                               property.ranges[i].to});
+                }
+                if (item.negated) {
+                    appendComplement(out, std::move(ranges));
+                } else {
+                    out.insert(out.end(), ranges.begin(), ranges.end());
+                }
+                break;
+            }
+            case ClassItem::Kind::Nested: {
+                if (!item.nested) break;
+                std::vector<CharRange> ranges;
+                collectClassRanges(*item.nested, ranges);
+                if (failed_) return;
+                if (item.nested->negated) {
+                    appendComplement(out, std::move(ranges));
+                } else {
+                    out.insert(out.end(), ranges.begin(), ranges.end());
+                }
+                break;
+            }
+            case ClassItem::Kind::String:
+                if (item.chars.size() != 1) {
+                    error(item.offset,
+                          "properties of strings not implemented");
+                    return;
+                }
+                out.push_back(CharRange{item.chars[0], item.chars[0]});
+                break;
+        }
+    }
+}
+
+std::vector<CharRange> RegexCompiler::intersectRanges(
+    std::vector<CharRange> left, std::vector<CharRange> right) {
+    normalize(left);
+    normalize(right);
+    std::vector<CharRange> out;
+    std::size_t i = 0;
+    std::size_t j = 0;
+    while (i < left.size() && j < right.size()) {
+        const std::uint32_t from =
+            left[i].from > right[j].from ? left[i].from : right[j].from;
+        const std::uint32_t to =
+            left[i].to < right[j].to ? left[i].to : right[j].to;
+        if (from <= to) out.push_back(CharRange{from, to});
+        if (left[i].to < right[j].to) {
+            ++i;
+        } else {
+            ++j;
+        }
+    }
+    return out;
+}
+
+std::vector<CharRange> RegexCompiler::subtractRanges(
+    std::vector<CharRange> left, std::vector<CharRange> right) {
+    normalize(left);
+    normalize(right);
+    std::vector<CharRange> out;
+    for (const CharRange& range : left) {
+        std::vector<CharRange> pieces{range};
+        for (const CharRange& cut : right) {
+            std::vector<CharRange> next;
+            for (const CharRange& piece : pieces) {
+                if (cut.to < piece.from || cut.from > piece.to) {
+                    next.push_back(piece);
+                    continue;
+                }
+                if (piece.from < cut.from) {
+                    next.push_back(CharRange{piece.from, cut.from - 1});
+                }
+                if (piece.to > cut.to) {
+                    next.push_back(CharRange{cut.to + 1, piece.to});
+                }
+            }
+            pieces = std::move(next);
+            if (pieces.empty()) break;
+        }
+        out.insert(out.end(), pieces.begin(), pieces.end());
+    }
+    return out;
 }
 
 void RegexCompiler::compileGroup(const Group& node) {
@@ -214,6 +337,10 @@ void RegexCompiler::compileLookaround(const Group& node, bool behind,
 }
 
 void RegexCompiler::compileBackreference(const Backreference& node) {
+    if (node.legacyOctal) {
+        emitLegacyOctal(node.digits);
+        return;
+    }
     std::uint32_t index = node.index;
     if (index == 0) {
         auto it = program_.namedGroups.find(node.name);
@@ -224,6 +351,38 @@ void RegexCompiler::compileBackreference(const Backreference& node) {
         index = it->second;
     }
     emit(OpCode::Backref, index);
+}
+
+// Annex B LegacyOctalEscapeSequence：最多 3 位八进制；首位为 4-7 时只取 2 位。
+// 未被八进制消费的尾部数字按普通字符发射。
+void RegexCompiler::emitLegacyOctal(const std::string& digits) {
+    std::size_t count = 0;
+    std::uint32_t value = 0;
+    while (count < digits.size() && count < 3) {
+        const char c = digits[count];
+        if (c < '0' || c > '7') break;
+        const std::uint32_t digit = static_cast<std::uint32_t>(c - '0');
+        if (count == 0 && digit > 3) {
+            value = digit;
+            ++count;
+            if (count < digits.size() && digits[count] >= '0' &&
+                digits[count] <= '7') {
+                value = value * 8u +
+                        static_cast<std::uint32_t>(digits[count] - '0');
+                ++count;
+            }
+            break;
+        }
+        value = value * 8u + digit;
+        ++count;
+    }
+
+    if (count > 0) emit(OpCode::Char, value);
+    for (std::size_t i = count; i < digits.size(); ++i) {
+        emit(OpCode::Char,
+             static_cast<std::uint32_t>(
+                 static_cast<unsigned char>(digits[i])));
+    }
 }
 
 void RegexCompiler::compilePropertyEscape(const PropertyEscape& node) {

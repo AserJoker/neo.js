@@ -87,6 +87,9 @@ struct Backreference final : Node {
           name(std::move(name)) {}
     std::uint32_t index;  // 0 表示按 name 解析
     std::string name;
+    // Annex B：无效数字反向引用退化为 LegacyOctalEscapeSequence。
+    bool legacyOctal = false;
+    std::string digits;
 };
 
 struct PropertyEscape final : Node {
@@ -98,8 +101,10 @@ struct PropertyEscape final : Node {
     std::string property;
 };
 
+struct CharacterClass;
+
 struct ClassItem {
-    enum class Kind { Range, Escape, Property };
+    enum class Kind { Range, Escape, Property, Nested, String };
     enum class EscapeKind { Digit, NotDigit, Word, NotWord, Space, NotSpace };
 
     Kind kind = Kind::Range;
@@ -112,13 +117,24 @@ struct ClassItem {
     // Property
     bool negated = false;
     std::string property;
+    // Nested（v 模式字符类嵌套）
+    std::shared_ptr<CharacterClass> nested;
+    // String（v 模式 \q{...} 的单个替代项；R5 只支持单码点）
+    std::vector<std::uint32_t> chars;
 };
 
 struct CharacterClass final : Node {
+    enum class SetOp { Union, Intersection, Subtraction };
+
     explicit CharacterClass(std::size_t offset)
         : Node(NodeKind::CharacterClass, offset) {}
     bool negated = false;
     std::vector<ClassItem> items;
+    // v 模式集合运算：left/right 非空时，本节点表示二元运算；
+    // 否则 items 是隐式并集。
+    SetOp setOp = SetOp::Union;
+    std::shared_ptr<CharacterClass> left;
+    std::shared_ptr<CharacterClass> right;
 };
 
 struct Group final : Node {

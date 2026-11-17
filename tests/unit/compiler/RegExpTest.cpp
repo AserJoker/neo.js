@@ -217,3 +217,21 @@ TEST(RegExpTest, SymbolSpeciesReturnsThis) {
         "var result = RegExp[Symbol.species] === RegExp;");
     EXPECT_TRUE(boolValue(result));
 }
+
+TEST(RegExpTest, VModeUnicodeSets) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var a = /[\\p{ASCII}&&\\p{Letter}]+/v.test('abc');"
+        "var b = /[[a-z]--[aeiou]]+/v.test('bcdf');"
+        "var result = a && b;");
+    EXPECT_TRUE(boolValue(result));
+}
+
+TEST(RegExpTest, AnnexBLegacyOctalInLiteral) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var result = /^\\1$/.test('\\x01');");
+    EXPECT_TRUE(boolValue(result));
+}

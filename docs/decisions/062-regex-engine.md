@@ -288,6 +288,25 @@ Match
 `[[OriginalSource]]`、`[[OriginalFlags]]`；`lastIndex` 是普通自有数据属性，
 由 JS 层读写，不进入引擎。
 
+**R5 实现**：
+
+- v 模式（`unicodeSets`）走独立字符类语法：`CharacterClass` 增加
+  `SetOp{Union,Intersection,Subtraction}` 与 `left/right` 二叉运算树；
+  `ClassItem` 增加 `Nested`（嵌套字符类）与 `String`（`\q{...}`）。
+- Parser 新增 `parseVCharacterClass/parseVClassUnion/parseVClassAtom/
+  parseVClassEscape`：`&&` 交集、`--` 差集、嵌套类、`\q{a|b}` 单码点替代；
+  v 模式下 `-`、`[`、`]`、`(`、`)`、`{`、`}`、`/`、`|` 为保留字符，必须转义。
+- Compiler 在编译期把集合运算求值为范围表：`collectClassRanges` 递归处理
+  并集/交集/差集与嵌套类，`intersectRanges`/`subtractRanges` 做归一化后的
+  双指针求值；多码点 `\q` 显式报 `properties of strings not implemented`。
+- Annex B（非 u/v 且 `Dialect::annexB`）：
+  - `\8`/`\9` 为身份转义；
+  - 无效数字反向引用退化为 `LegacyOctalEscapeSequence`：最多 3 位八进制，
+    首位 4-7 时只取 2 位，未被消费的尾部数字按字面量发射；
+  - 字符类中 `\c` 后接非 ASCII 字母/数字/`_` 时，`\` 作为字面量、`c` 继续
+    按普通原子解析；
+  - `ClassEscape` 作为范围端点（如 `[\d-a]`）按并集 `\d ∪ '-' ∪ 'a'` 处理。
+
 ### 10. 文件布局
 
 ```

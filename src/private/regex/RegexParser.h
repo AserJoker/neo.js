@@ -40,6 +40,7 @@ private:
         std::size_t offset = 0;
         std::uint32_t index = 0;
         std::string name;
+        Backreference* node = nullptr;
     };
 
     // —— 语法 ——
@@ -50,6 +51,12 @@ private:
     NodePtr parseAssertion();
     NodePtr parseGroup();
     NodePtr parseCharacterClass();
+    NodePtr parseVCharacterClass();
+    std::shared_ptr<CharacterClass> parseVClassUnion();
+    bool parseVClassAtom(ClassItem& item, bool& singleCodePoint,
+                         std::uint32_t& codePoint);
+    bool parseVClassEscape(ClassItem& item, bool& singleCodePoint,
+                           std::uint32_t& codePoint);
     NodePtr parseAtomEscape();
     bool parseClassAtom(ClassItem& item);
     bool parseClassEscape(ClassItem& item);

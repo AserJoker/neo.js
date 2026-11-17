@@ -183,7 +183,8 @@ TEST(RegexParserTest, RejectsUnknownNamedBackreference) {
 
 TEST(RegexParserTest, RejectsUnknownBackreference) {
     Fixture f;
-    expectError(f.compile("\\1"), "Invalid backreference");
+    // Annex B 下 \1 退化为 LegacyOctalEscapeSequence；u 模式仍报错。
+    expectError(f.compile("\\1", "u"), "Invalid backreference");
 }
 
 TEST(RegexParserTest, RejectsInvalidGroup) {
