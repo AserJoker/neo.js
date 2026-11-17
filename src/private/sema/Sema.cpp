@@ -16,8 +16,7 @@ SemaResult runSema(frontend::Node& program, SemaOptions options) {
 
     ScopeGraph graph = runScopePass(program, context);
     runResolvePass(program, graph, context, annotations);
-    runEarlyErrorPass(program, context, annotations,
-                      options.inheritedStrict);
+    runEarlyErrorPass(program, context, annotations, options);
 
     SemaResult result;
     result.annotations = std::move(annotations);

@@ -109,7 +109,7 @@ CompileResult Compiler::compile() {
     // 前置条件被破坏时不在错误 AST 上继续生成字节码。
     if (!sema_.ok()) {
         errors_.push_back({program_.range(), "compiler: sema reported errors"});
-    } else if (options_.eval) {
+    } else if (options_.eval || program_.sourceType == SourceType::Eval) {
         compileEvalProgram();
     } else if (program_.sourceType == SourceType::Module) {
         compileModule();

@@ -211,6 +211,32 @@ TEST(EvalTest, ShadowedEvalIsOrdinaryCall) {
     EXPECT_EQ(stringOf(lookupOut(f)), "shadow:1 + 2");
 }
 
+TEST(EvalTest, DirectEvalInheritsNewTarget) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "function F() { this.v = eval('new.target === F ? 1 : 2'); }\n"
+                          "var out = (new F()).v;\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 1.0);
+}
+
+TEST(EvalTest, DirectEvalInMethodAllowsSuperProperty) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "class A { m() { return 1; } }\n"
+                          "class B extends A { m() { return eval('super.m()'); } }\n"
+                          "var out = new B().m();\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 1.0);
+}
+
+TEST(EvalTest, DirectEvalInDerivedConstructorAllowsSuperCall) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "class A { constructor() { this.x = 1; } }\n"
+                          "class B extends A { constructor() { eval('super()'); } }\n"
+                          "var out = new B().x;\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 1.0);
+}
+
 TEST(EvalTest, SloppyEvalVarConflictsWithCallerLexicalBinding) {
     Fixture f;
     f.ctx->global()->clearFlag("strict");

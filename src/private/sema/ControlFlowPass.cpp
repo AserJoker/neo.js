@@ -103,8 +103,8 @@ struct SavedState {
 
 class ControlFlowVisitor final : public IVisitor {
 public:
-    explicit ControlFlowVisitor(AnnotationStore& annotations)
-        : annotations_(annotations) {}
+    ControlFlowVisitor(AnnotationStore& annotations, const SemaOptions& options)
+        : annotations_(annotations), options_(options) {}
 
     void enter(Walker& /*walker*/, SemaContext& context,
                Node& node) override {
@@ -269,6 +269,17 @@ private:
 
     Context programContext(Node& node) {
         auto& program = static_cast<Program&>(node);
+        // eval 继承调用方上下文（§19.2.1.1 step 10/11）。
+        if (options_.evalContext) {
+            return Context{false,
+                           false,
+                           options_.allowsNewTarget,
+                           options_.allowsSuperCall,
+                           options_.allowsSuperProperty,
+                           options_.allowsArguments,
+                           false,
+                           false};
+        }
         return Context{false,
                        false,
                        false,
@@ -558,6 +569,7 @@ private:
     }
 
     AnnotationStore& annotations_;
+    SemaOptions options_;
     std::vector<Context> contexts_;
     std::vector<SavedState> saved_;
     std::vector<bool> classStack_;
@@ -573,14 +585,15 @@ private:
 }  // namespace
 
 std::unique_ptr<IVisitor> makeControlFlowVisitor(
-    AnnotationStore& annotations) {
-    return std::make_unique<ControlFlowVisitor>(annotations);
+    AnnotationStore& annotations, const SemaOptions& options) {
+    return std::make_unique<ControlFlowVisitor>(annotations, options);
 }
 
 void runControlFlowPass(frontend::Node& program, SemaContext& context,
-                        AnnotationStore& annotations) {
+                        AnnotationStore& annotations,
+                        const SemaOptions& options) {
     Walker walker(annotations);
-    walker.addAll(makeControlFlowVisitor(annotations));
+    walker.addAll(makeControlFlowVisitor(annotations, options));
     walker.walk(program, context);
 }
 

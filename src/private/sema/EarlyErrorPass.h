@@ -12,12 +12,13 @@
 #include "frontend/Node.h"
 #include "sema/AnnotationStore.h"
 #include "sema/SemaContext.h"
+#include "sema/SemaOptions.h"
 
 namespace neo::sema {
 
 void runEarlyErrorPass(frontend::Node& program, SemaContext& context,
                        AnnotationStore& annotations,
-                       bool inheritedStrict = false);
+                       const SemaOptions& options = {});
 
 }  // namespace neo::sema
 

@@ -188,7 +188,7 @@ using NodeList = std::vector<NodePtr>;
 // Program
 // ---------------------------------------------------------------------------
 
-enum class SourceType : uint8_t { Script, Module };
+enum class SourceType : uint8_t { Script, Module, Eval };
 
 struct Program final : Node {
     Program(SourceRange range, NodeList body, SourceType sourceType)

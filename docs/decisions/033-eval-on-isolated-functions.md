@@ -147,3 +147,25 @@ popScope():
 运行时函数同一性判定；完成值对 try/finally 等复杂控制流按「最后执行的表达式语句」
 近似，未实现完整的 Completion Record 传播；eval 内函数对调用方后续新增绑定的
 under-capture 依赖 Environment 链，已由 dynamic 标记覆盖。
+
+## 上下文快照：SourceType::Eval + SemaOptions（2026-11-17）
+
+eval 源码不是独立 Script，其 Sema 早期错误判定依赖调用方上下文
+（§19.2.1.1 step 10/11）。为避免把 `IContext*` 直接传入 Sema/Compiler，
+引入只读上下文快照：
+
+- **`frontend::SourceType::Eval`**：Parser 标注 eval 源码；Compiler 据此走
+  `compileEvalProgram`，与 `CompilerOptions::eval` 共同作为入口开关。
+- **`SemaOptions` 扩展**：`evalContext`、`allowsNewTarget`、`allowsSuperCall`、
+  `allowsSuperProperty`、`allowsArguments`。`ControlFlowPass` 在
+  `evalContext` 下用这些字段构造顶层 `Context`，替代 Script/Module 的硬编码。
+- **快照来源**：`Context::evalSource` 在直接 eval 时从运行时 `currentFunction_`
+  提取 `FunctionData`/`ClassData`：`new.target` 恒可继承；`super()` 仅派生类
+  构造器；`super.prop` 要求 `homeObject != nullptr` 且非基类构造器。
+  间接 eval 不继承（在 global 执行）。
+- **严格性**：`inheritedStrict`（直接 eval 查调用方 scope flag 链）或源码自身
+  `"use strict"`，同时传给 Sema 与 Compiler。
+
+该快照是 eval 特例的临时 Env 回退：纯数据、可测试，不把宿主上下文耦合进
+Sema/Compiler。私有名可见集、arguments 对象、全局词法冲突与完整
+Completion Record 仍待后续补齐。

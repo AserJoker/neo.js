@@ -18,6 +18,7 @@
 
 #include "core/Context.h"
 #include "core/Scope.h"
+#include "core/types/Function.h"
 #include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
 #include "frontend/Node.h"
@@ -60,9 +61,9 @@ Value* Context::evalSource(Value* source, Scope* callerScope, bool direct) {
 
     const std::string& text = static_cast<StringData*>(source->data())->value;
 
-    // 1. 解析为 Script（eval 代码不是模块）。
+    // 1. 解析为 Eval（Script 语义，但 Sema 需继承调用方上下文）。
     frontend::Parser parser(text,
-                            frontend::ParserOptions{frontend::SourceType::Script});
+                            frontend::ParserOptions{frontend::SourceType::Eval});
     frontend::ParseResult parsed = parser.parseProgram();
     if (!parsed.ok()) {
         std::string message = !parsed.errors.empty()
@@ -79,8 +80,27 @@ Value* Context::evalSource(Value* source, Scope* callerScope, bool direct) {
     const bool strict =
         inheritedStrict || hasUseStrictDirective(program.body);
 
+    // 运行时 Context → Sema 上下文快照（§19.2.1.1 step 10/11）。
+    sema::SemaOptions semaOptions;
+    semaOptions.inheritedStrict = strict;
+    semaOptions.evalContext = true;
+    if (direct && currentFunction_ != nullptr &&
+        currentFunction_->type()->kind() == TypeKind::Function) {
+        auto* d = static_cast<FunctionData*>(currentFunction_->data());
+        semaOptions.allowsNewTarget = true;
+        bool baseConstructor = false;
+        if (d->isClassConstructor) {
+            auto* cd = static_cast<ClassData*>(d);
+            semaOptions.allowsSuperCall = cd->isDerived;
+            baseConstructor = !cd->isDerived;
+        }
+        // HasSuperBinding：有 [[HomeObject]] 且不是基类构造器。
+        semaOptions.allowsSuperProperty =
+            d->homeObject != nullptr && !baseConstructor;
+    }
+
     sema::SemaResult sema =
-        sema::runSema(*parsed.program, sema::SemaOptions{strict});
+        sema::runSema(*parsed.program, semaOptions);
     if (!sema.ok()) {
         std::string message = !sema.errors.empty() ? sema.errors.front().message
                                                    : "Invalid eval source";

@@ -20,6 +20,7 @@
 #include "sema/AnnotationStore.h"
 #include "sema/FunctionInfo.h"
 #include "sema/SemaContext.h"
+#include "sema/SemaOptions.h"
 
 #include <memory>
 
@@ -27,10 +28,12 @@ namespace neo::sema {
 
 class IVisitor;
 
-std::unique_ptr<IVisitor> makeControlFlowVisitor(AnnotationStore& annotations);
+std::unique_ptr<IVisitor> makeControlFlowVisitor(
+    AnnotationStore& annotations, const SemaOptions& options = {});
 
 void runControlFlowPass(frontend::Node& program, SemaContext& context,
-                        AnnotationStore& annotations);
+                        AnnotationStore& annotations,
+                        const SemaOptions& options = {});
 
 }  // namespace neo::sema
 
