@@ -16,7 +16,8 @@
 namespace neo::sema {
 
 void runEarlyErrorPass(frontend::Node& program, SemaContext& context,
-                       AnnotationStore& annotations);
+                       AnnotationStore& annotations,
+                       bool inheritedStrict = false);
 
 }  // namespace neo::sema
 

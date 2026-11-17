@@ -25,7 +25,12 @@ struct SemaResult {
     bool ok() const { return errors.empty(); }
 };
 
-SemaResult runSema(frontend::Node& program);
+struct SemaOptions {
+    // 直接 eval 继承调用方严格模式；脚本/模块默认 false。
+    bool inheritedStrict = false;
+};
+
+SemaResult runSema(frontend::Node& program, SemaOptions options = {});
 
 }  // namespace neo::sema
 

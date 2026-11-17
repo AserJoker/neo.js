@@ -25,6 +25,10 @@
 #include <utility>
 #include <vector>
 
+namespace neo::vm {
+struct Code;
+}  // namespace neo::vm
+
 namespace neo::core {
 
 class Context : public IContext {
@@ -41,6 +45,11 @@ class Context : public IContext {
     Scope* currentFunctionEnv_ = nullptr;
     // 当前正在执行的函数 Value（ADR-047 native 扩展库）：invoke 保存/恢复。
     Value* currentFunction_ = nullptr;
+    // 内建 %eval% 函数对象（直接 eval 判定用，bootstrap 注册）。
+    Value* evalFunction_ = nullptr;
+    // eval 执行期间的变量环境：declare_var 优先落在这里（sloppy 直接 eval
+    // 进入调用方函数环境）。nullptr 表示落在 current()。
+    Scope* evalVarScope_ = nullptr;
     // 当前构造调用的 new.target（ADR-047）：Context::construct 保存/恢复。
     Value* newTarget_ = nullptr;
     // 调用栈（ADR-037）：纯展示信息，与 Scope 链无关。栈顶在末尾。
@@ -108,6 +117,9 @@ class Context : public IContext {
     // 当前正在恢复的协程栈（ADR-045 §7）：嵌套生成器要求取最内层。
     // runner 进入时 push、退出时 pop；getCurrentCoroutine 取栈顶。
     std::vector<Value*> coroutineStack_;
+    // eval 编译产物：eval 内创建的函数可能逃逸并长期引用 Code，
+    // 故 Code 由 Context 持有到析构（按 eval 调用次数增长，可接受）。
+    std::vector<std::unique_ptr<vm::Code>> evalCodes_;
 
 public:
     Context(infra::IAllocator* alloc, infra::Console* console,
@@ -432,6 +444,12 @@ public:
     Value* store(std::string_view name, Value* source) override;
     Value* initialize(std::string_view name, Value* source) override;
     Value* load(std::string_view name) override;
+
+    // eval（§19.2.1）
+    Value* declareVar(std::string_view name) override;
+    Value* evalSource(Value* source, Scope* callerScope, bool direct) override;
+    Value* evalFunction() const override { return evalFunction_; }
+    void setEvalFunction(Value* fn) override { evalFunction_ = fn; }
 
     // 可赋值性（绑定维度）
     void setBindingMutable(Scope* scope, std::string_view name,

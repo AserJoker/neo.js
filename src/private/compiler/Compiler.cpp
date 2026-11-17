@@ -24,6 +24,7 @@ using frontend::SourceType;
 namespace {
 
 // for-in/of 的编译器内部槽位（JS 标识符不可能包含 '*'，不会与用户绑定冲突）。
+constexpr std::string_view kEvalCompletion = "*eval-completion*";
 constexpr std::string_view kForKeys = "*for-keys*";
 constexpr std::string_view kForIndex = "*for-index*";
 constexpr std::string_view kForValue = "*for-value*";
@@ -108,6 +109,8 @@ CompileResult Compiler::compile() {
     // 前置条件被破坏时不在错误 AST 上继续生成字节码。
     if (!sema_.ok()) {
         errors_.push_back({program_.range(), "compiler: sema reported errors"});
+    } else if (options_.eval) {
+        compileEvalProgram();
     } else if (program_.sourceType == SourceType::Module) {
         compileModule();
     } else {
@@ -131,6 +134,43 @@ void Compiler::compileProgram() {
         if (statement) compileStatement(*statement);
     }
     code_->halt();
+}
+
+void Compiler::compileEvalProgram() {
+    // sloppy direct eval：var/函数声明进入调用方变量环境（declare_var 只建
+    // 缺失的槽，不覆盖已有绑定）；let/const 进入 eval 自己的词法作用域。
+    if (!options_.evalStrict) {
+        hoistVarSlots(program_.body, true);
+        hoistEvalFunctions(program_.body);
+    }
+    code_->pushScope();
+    if (options_.evalStrict) {
+        hoistVarSlots(program_.body, true);
+        hoistEvalFunctions(program_.body);
+    }
+    hoistLexicalSlots(program_.body);
+
+    // 完成值槽：最后一个顶层表达式语句的值。
+    code_->pushUndefined();
+    code_->define(kEvalCompletion, true, true);
+    for (const frontend::NodePtr& statement : program_.body) {
+        if (!statement) continue;
+        if (statement->kind() == NodeKind::ExpressionStatement) {
+            const auto& expression =
+                static_cast<const frontend::ExpressionStatement&>(*statement);
+            if (expression.expression) {
+                compileExpression(*expression.expression);
+                code_->dup();
+                code_->store(kEvalCompletion);
+                code_->pop();
+            }
+            continue;
+        }
+        compileStatement(*statement);
+    }
+    code_->load(kEvalCompletion);
+    // 作用域由 evalSource 在返回值归属调用方后再弹出（异常路径也统一收口）。
+    code_->ret();
 }
 
 void Compiler::compileModule() {
@@ -167,7 +207,8 @@ void Compiler::compileStatement(const Node& node) {
     switch (node.kind()) {
         case NodeKind::EmptyStatement:
         case NodeKind::DebuggerStatement:
-            // debugger 暂为 no-op。
+        case NodeKind::Directive:
+            // debugger 暂为 no-op；指令序言（"use strict"）只影响 Sema/编译选项。
             break;
         case NodeKind::ExpressionStatement:
             compileExpressionStatement(
@@ -1825,8 +1866,16 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
         compileExpression(*argument);
         ++argc;
     }
+    // 直接 eval 候选点：无成员访问、非可选调用、无展开。VM 在执行期校验
+    // 被调函数是否仍是内建 %eval%（被遮蔽时回退普通调用）。
+    const bool directEvalCandidate =
+        !isMember && !node.optional &&
+        node.callee->kind() == NodeKind::Identifier &&
+        static_cast<const frontend::Identifier&>(*node.callee).name == "eval";
     if (isMember) {
         code_->callMethod(argc);
+    } else if (directEvalCandidate) {
+        code_->directEval(argc);
     } else {
         code_->call(argc);
     }
@@ -3539,21 +3588,52 @@ void Compiler::hoistScope(const frontend::NodeList& body, bool varScope) {
 }
 
 void Compiler::hoistSlots(const frontend::NodeList& body, bool varScope) {
-    // 1. var：递归收集（不进入嵌套函数），在函数/模块作用域建 undefined 槽。
-    if (varScope) {
-        std::vector<std::string> varNames;
-        for (const frontend::NodePtr& statement : body) {
-            if (statement) collectVarNames(*statement, varNames);
+    if (varScope) hoistVarSlots(body, false);
+    hoistLexicalSlots(body);
+
+    // 直接函数声明：先建 undefined 槽（函数对象在 hoistFunctions 创建）。
+    for (const frontend::NodePtr& statement : body) {
+        const Node* declaration = statement ? declarationOf(*statement)
+                                            : nullptr;
+        if (declaration == nullptr ||
+            declaration->kind() != NodeKind::FunctionDeclaration) {
+            continue;
         }
-        std::unordered_set<std::string> seen;
-        for (const std::string& name : varNames) {
-            if (!seen.insert(name).second) continue;
+        const auto& function =
+            static_cast<const frontend::FunctionDeclaration&>(*declaration);
+        if (!function.id || function.id->kind() != NodeKind::Identifier) {
+            // 匿名 export default function 由隐藏槽位承载。
+            if (statement->kind() != NodeKind::ExportDefaultDeclaration) {
+                error(*statement, "compiler: function declaration missing name");
+            }
+            continue;
+        }
+        code_->pushUndefined();
+        code_->define(
+            static_cast<const frontend::Identifier&>(*function.id).name);
+    }
+}
+
+void Compiler::hoistVarSlots(const frontend::NodeList& body, bool declare) {
+    // var：递归收集（不进入嵌套函数），在函数/模块/eval 变量环境建槽。
+    std::vector<std::string> varNames;
+    for (const frontend::NodePtr& statement : body) {
+        if (statement) collectVarNames(*statement, varNames);
+    }
+    std::unordered_set<std::string> seen;
+    for (const std::string& name : varNames) {
+        if (!seen.insert(name).second) continue;
+        if (declare) {
+            code_->declareVar(name);
+        } else {
             code_->pushUndefined();
             code_->define(name);
         }
     }
+}
 
-    // 2. 直接 let/const：建 uninitialized 槽（TDZ）。
+void Compiler::hoistLexicalSlots(const frontend::NodeList& body) {
+    // 直接 let/const：建 uninitialized 槽（TDZ）。
     for (const frontend::NodePtr& statement : body) {
         const Node* declaration = statement ? declarationOf(*statement)
                                             : nullptr;
@@ -3594,28 +3674,6 @@ void Compiler::hoistSlots(const frontend::NodeList& body, bool varScope) {
             }
         }
     }
-
-    // 3. 直接函数声明：先建 undefined 槽（函数对象在 hoistFunctions 创建）。
-    for (const frontend::NodePtr& statement : body) {
-        const Node* declaration = statement ? declarationOf(*statement)
-                                            : nullptr;
-        if (declaration == nullptr ||
-            declaration->kind() != NodeKind::FunctionDeclaration) {
-            continue;
-        }
-        const auto& function =
-            static_cast<const frontend::FunctionDeclaration&>(*declaration);
-        if (!function.id || function.id->kind() != NodeKind::Identifier) {
-            // 匿名 export default function 由隐藏槽位承载。
-            if (statement->kind() != NodeKind::ExportDefaultDeclaration) {
-                error(*statement, "compiler: function declaration missing name");
-            }
-            continue;
-        }
-        code_->pushUndefined();
-        code_->define(
-            static_cast<const frontend::Identifier&>(*function.id).name);
-    }
 }
 
 void Compiler::hoistFunctions(const frontend::NodeList& body) {
@@ -3634,6 +3692,32 @@ void Compiler::hoistFunctions(const frontend::NodeList& body) {
         }
         const std::string& name =
             static_cast<const frontend::Identifier&>(*function.id).name;
+        compileFunctionObject(*declaration, function.params, *function.body,
+                              false, name, function.generator,
+                              function.async);
+        code_->store(name);
+    }
+}
+
+void Compiler::hoistEvalFunctions(const frontend::NodeList& body) {
+    // sloppy eval：函数声明进入变量环境；declareVar 只补缺失槽，
+    // 随后 store 覆盖为函数对象（允许与已有 var/function 同名）。
+    for (const frontend::NodePtr& statement : body) {
+        const Node* declaration = statement ? declarationOf(*statement)
+                                            : nullptr;
+        if (declaration == nullptr ||
+            declaration->kind() != NodeKind::FunctionDeclaration) {
+            continue;
+        }
+        const auto& function =
+            static_cast<const frontend::FunctionDeclaration&>(*declaration);
+        if (!function.id || function.id->kind() != NodeKind::Identifier ||
+            !function.body) {
+            continue;
+        }
+        const std::string& name =
+            static_cast<const frontend::Identifier&>(*function.id).name;
+        code_->declareVar(name);
         compileFunctionObject(*declaration, function.params, *function.body,
                               false, name, function.generator,
                               function.async);

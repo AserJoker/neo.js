@@ -111,3 +111,35 @@ popScope():
 - 待定：eval_flag 在字节码/FunctionData 中的具体表示（如 FunctionData 增加 bool 字段）、
   `eval_ref` 计数是否需要记录"pin 起点"以支持更复杂的嵌套回收场景，
   后续在实现前细化。
+
+## 实现落地（2026-11-17）
+
+上述机制在运行时以如下形态落地（字段名与 ADR 草案不同）：
+
+- **动态作用域标记**：`Scope::dynamic_` 取代 `eval_flag`；直接 eval 执行前对调用方
+  current 调 `markDynamic()`，`dynamicChain()` 沿 parent 链继承。定义点处于 dynamic
+  链上的函数由 `createNativeFunction` 自动进入 Environment 模式
+  （`linkEnvironmentCapture`：closureScope `linkLookupParent(current)` 并沿链
+  `captureRef++`），复用 ADR-036 的 `captureRef` / `autoDispose` 孤儿回收，不再新增
+  `eval_ref` 字段。
+- **编译期直接 eval 调用点**：Compiler 对非可选、无展开的 `eval(...)` 发射
+  `DirectEval`；VM 在执行期比较被调函数与内建 `%eval%`，相同才走直接 eval
+  （被遮蔽时回退普通调用）。
+- **运行时管线**：`Context::evalSource` 依次执行 Parser(Script) → Sema
+  （`SemaOptions::inheritedStrict` 继承调用方严格模式）→ Compiler
+  （`CompilerOptions::eval/evalStrict`）→ VM。
+- **作用域模型**：编译产物入口 `pushScope` 建立 eval 词法作用域；sloppy 直接 eval 的
+  var/函数声明经 `DeclareVar` 进入调用方变量环境（`currentFunctionEnv_`），let/const
+  留在 eval 词法作用域；严格 eval 的 var 也不外泄。间接 eval 在 global 执行。
+- **完成值**：最后一个顶层表达式语句写入隐藏槽 `*eval-completion*`，由 `ret` 返回。
+- **Code 生命周期**：eval 内创建的函数可能逃逸并长期引用字节码，故 eval 的 `Code`
+  由 `Context::evalCodes_` 持有到 Context 析构。
+- **闭包作用域所有权**：FunctionData 对 closureScope 持有一个 `captureRef` 所有者 pin。
+  析构时先释放所有者 pin；若仍有其他 Environment 闭包链引用，则标记 autoDispose 并
+  脱离作用域树，由最后一个引用者回收。这样 GC 任意析构顺序下都不会释放仍被后代
+  闭包链引用的 parent 作用域。
+
+当前限制：直接 eval 的调用点识别只看语法上的 `eval(...)`，实际是否直接 eval 由
+运行时函数同一性判定；带展开的 `eval(...args)` 暂按普通调用处理；
+eval 内函数对调用方后续新增绑定的 under-capture 依赖 Environment 链，已由
+dynamic 标记覆盖。

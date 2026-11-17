@@ -128,6 +128,7 @@ add_library(neojs STATIC
     src/private/core/Module.cpp
     src/private/core/OperatorPrimitives.cpp
     src/private/core/TimerBuiltins.cpp
+    src/private/core/EvalBuiltins.cpp
     src/private/core/ErrorBuiltins.cpp
     src/private/core/PromiseBuiltins.cpp
     src/private/core/ErrorKind.cpp

@@ -155,13 +155,17 @@ void checkAssignmentTarget(Node* target, SemaContext& context) {
 
 class StrictnessVisitor final : public IVisitor {
 public:
+    explicit StrictnessVisitor(bool inheritedStrict)
+        : inheritedStrict_(inheritedStrict) {}
+
     void enter(Walker& /*walker*/, SemaContext& context,
                Node& node) override {
         switch (node.kind()) {
             case NodeKind::Program: {
                 auto& program = static_cast<Program&>(node);
                 const bool module = program.sourceType == SourceType::Module;
-                push(module || hasUseStrictDirective(program.body));
+                push(module || inheritedStrict_ ||
+                     hasUseStrictDirective(program.body));
                 break;
             }
             case NodeKind::FunctionDeclaration:
@@ -604,18 +608,19 @@ private:
 
     std::vector<bool> strictStack_;
     std::unordered_set<NodeId> nonReference_;
+    bool inheritedStrict_ = false;
 };
 
 }  // namespace
 
-std::unique_ptr<IVisitor> makeStrictnessVisitor() {
-    return std::make_unique<StrictnessVisitor>();
+std::unique_ptr<IVisitor> makeStrictnessVisitor(bool inheritedStrict) {
+    return std::make_unique<StrictnessVisitor>(inheritedStrict);
 }
 
 void runStrictnessPass(frontend::Node& program, SemaContext& context,
-                       AnnotationStore& annotations) {
+                       AnnotationStore& annotations, bool inheritedStrict) {
     Walker walker(annotations);
-    walker.addAll(makeStrictnessVisitor());
+    walker.addAll(makeStrictnessVisitor(inheritedStrict));
     walker.walk(program, context);
 }
 

@@ -119,17 +119,24 @@ FunctionData::~FunctionData() {
     releaseSourceText(source.source);
     source = {};
     if (closureScope == nullptr) return;
-    if (!capturesEnvironment) {
-        closureScope->destroySelf();
-        closureScope = nullptr;
-        return;
-    }
-    // Environment 模式：closureScope 以 lookup-only 挂到定义点环境链（不登记 children）。
-    // 回收顺序必须自底向上：先销毁 closureScope，再沿 parent 链逐层解 pin。
-    // 若先解 pin 销毁父作用域，会连带销毁 closureScope（悬垂）。
-    Scope* env = closureScope->parent();
-    closureScope->destroySelf();
+    Scope* closure = closureScope;
     closureScope = nullptr;
+    // Environment 模式：closureScope 以 lookup-only 挂到定义点环境链（不登记 children）。
+    // 先取 parent 链：销毁 closureScope 后 parent 指针不可再用。
+    Scope* env = capturesEnvironment ? closure->parent() : nullptr;
+
+    // 释放所有者 pin。仍有其他 Environment 闭包链引用时（captureRef > 0），
+    // 标记孤儿并脱离作用域树，由最后一个引用者解 pin 时回收——否则先析构的
+    // 祖先函数会释放仍被后代闭包链引用的作用域（悬垂 parent 链）。
+    if (closure->decCaptureRef()) {
+        closure->destroySelf();
+    } else {
+        closure->markAutoDispose();
+        closure->detachFromParentTree();
+    }
+    if (!capturesEnvironment || env == nullptr) return;
+
+    // 回收顺序自底向上：沿 parent 链逐层解 pin。
     // 先把链收集下来：销毁 autoDispose 作用域会修改 parent 指针。
     std::vector<Scope*> chain;
     for (Scope* s = env; s != nullptr; s = s->parent()) chain.push_back(s);

@@ -188,6 +188,8 @@ const char* opCodeName(OpCode op) {
         case OpCode::GetAsyncIterator: return "get_async_iterator";
         case OpCode::AsyncIteratorClose: return "async_iterator_close";
         case OpCode::PushRegExp:    return "push_regexp";
+        case OpCode::DeclareVar:    return "declare_var";
+        case OpCode::DirectEval:    return "direct_eval";
     }
     return "<unknown>";
 }
@@ -314,6 +316,8 @@ const VM::Handler* VM::handlers() {
         &VM::opGetAsyncIterator,
         &VM::opAsyncIteratorClose,
         &VM::opPushRegExp,
+        &VM::opDeclareVar,
+        &VM::opDirectEval,
     };
     return table;
 }
@@ -1724,6 +1728,47 @@ Value* VM::opCall() {
     Value* fn = pop();
 
     Value* result = ctx_->call(fn, ctx_->createUndefined(), argc, args.data());
+    if (detail::isErrorValue(result)) return fail(result);
+    if (detail::isInterruptValue(result)) return result;
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opDeclareVar() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) return badBytecode("declare_var: truncated operand");
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) return badBytecode("declare_var: name index out of range");
+
+    Value* result = ctx_->declareVar(*name);
+    if (result != nullptr && detail::isErrorValue(result)) return fail(result);
+    return nullptr;
+}
+
+Value* VM::opDirectEval() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) return badBytecode("direct_eval: truncated operand");
+    uint32_t argc = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (stack_.size() < static_cast<size_t>(argc) + 1) {
+        return badBytecode("direct_eval: operand stack underflow");
+    }
+
+    std::vector<Value*> args(argc);
+    for (uint32_t i = argc; i > 0; --i) args[i - 1] = pop();
+    Value* fn = pop();
+
+    Value* result = nullptr;
+    if (fn == ctx_->evalFunction()) {
+        // 直接 eval：在调用方当前作用域执行（§19.2.1.1）。
+        Value* source = argc > 0 ? args[0] : ctx_->createUndefined();
+        result = ctx_->evalSource(source, ctx_->current(), true);
+    } else {
+        // eval 被遮蔽：按普通函数调用处理。
+        result = ctx_->call(fn, ctx_->createUndefined(), argc, args.data());
+    }
     if (detail::isErrorValue(result)) return fail(result);
     if (detail::isInterruptValue(result)) return result;
     push(result);

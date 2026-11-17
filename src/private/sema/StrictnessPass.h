@@ -24,10 +24,11 @@ namespace neo::sema {
 class IVisitor;
 
 // 供 EarlyErrorPass 与独立 pass 共用同一个 visitor 实现。
-std::unique_ptr<IVisitor> makeStrictnessVisitor();
+std::unique_ptr<IVisitor> makeStrictnessVisitor(bool inheritedStrict = false);
 
 void runStrictnessPass(frontend::Node& program, SemaContext& context,
-                       AnnotationStore& annotations);
+                       AnnotationStore& annotations,
+                       bool inheritedStrict = false);
 
 }  // namespace neo::sema
 

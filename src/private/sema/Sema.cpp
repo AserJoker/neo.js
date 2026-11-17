@@ -10,13 +10,14 @@
 
 namespace neo::sema {
 
-SemaResult runSema(frontend::Node& program) {
+SemaResult runSema(frontend::Node& program, SemaOptions options) {
     SemaContext context;
     AnnotationStore annotations;
 
     ScopeGraph graph = runScopePass(program, context);
     runResolvePass(program, graph, context, annotations);
-    runEarlyErrorPass(program, context, annotations);
+    runEarlyErrorPass(program, context, annotations,
+                      options.inheritedStrict);
 
     SemaResult result;
     result.annotations = std::move(annotations);

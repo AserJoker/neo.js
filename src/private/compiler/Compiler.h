@@ -31,6 +31,11 @@ namespace neo::compiler {
 struct CompilerOptions {
     // SourceMap 中记录的文件名；无文件名时用 "<anonymous>"。
     std::string filename = "<anonymous>";
+    // eval 代码：完成值取最后一个顶层表达式语句；var/函数声明在 sloppy
+    // 模式下进入调用方变量环境，let/const 进入 eval 自己的词法作用域。
+    bool eval = false;
+    // eval 代码按严格模式编译（调用方严格或源码含 "use strict"）。
+    bool evalStrict = false;
 };
 
 struct CompileError {
@@ -65,6 +70,9 @@ public:
 private:
     // —— 分派 ——
     void compileProgram();
+    // eval 代码：var/函数提升到变量环境，let/const 进入 eval 词法作用域，
+    // 最后一个顶层表达式语句作为完成值返回。
+    void compileEvalProgram();
     // 模块三段式：符号定义区 + 函数定义区（instantiate）→ 源码逻辑入口（evaluate）。
     void compileModule();
     void compileStatement(const frontend::Node& node);
@@ -221,7 +229,11 @@ private:
     void hoistScope(const frontend::NodeList& body, bool varScope);
     // 模块三段式拆分：建槽（var/let/const/函数占位）与函数对象创建分开发射。
     void hoistSlots(const frontend::NodeList& body, bool varScope);
+    // eval：var 槽与词法槽分开提升（sloppy 模式 var 进调用方变量环境）。
+    void hoistVarSlots(const frontend::NodeList& body, bool declare);
+    void hoistLexicalSlots(const frontend::NodeList& body);
     void hoistFunctions(const frontend::NodeList& body);
+    void hoistEvalFunctions(const frontend::NodeList& body);
     void collectVarNames(const frontend::Node& statement,
                          std::vector<std::string>& names);
 

@@ -19,6 +19,7 @@
 #include "core/BigIntBuiltins.h"
 #include "core/FunctionInvoke.h"
 #include "core/ErrorBuiltins.h"
+#include "core/EvalBuiltins.h"
 #include "core/GeneratorBuiltins.h"
 #include "core/IType.h"
 #include "core/IteratorBuiltins.h"
@@ -55,6 +56,7 @@
 #include "core/types/TypeBehavior.h"
 #include "core/types/Uninitialized.h"
 #include "core/types/Undefined.h"
+#include "vm/Code.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -173,8 +175,13 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
         std::abort();
     }
 
-    // 12. 注册定时器（setTimeout/setInterval/clear*），事件循环的宿主侧入口。
-    //     依赖 global scope 与事件循环（本类成员）已就绪。
+    // 12. 注册全局 eval（直接 eval 判定依赖 %eval% 函数对象）。
+    if (!registerEvalBuiltin(this)) {
+        std::abort();
+    }
+
+    // 12b. 注册定时器（setTimeout/setInterval/clear*），事件循环的宿主侧入口。
+    //      依赖 global scope 与事件循环（本类成员）已就绪。
     if (!registerTimerBuiltins(this)) {
         std::abort();
     }
@@ -1166,6 +1173,10 @@ Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_vi
     void* p = alloc_->alloc(sizeof(Scope));
     if (p == nullptr) return oomValue_;
     Scope* closure = new (p) Scope(nullptr, alloc_, this);
+    // 所有者 pin：FunctionData 是 closureScope 的默认持有者。与 Environment 模式
+    // 闭包的外部 pin 共用 captureRef，保证「先析构的祖先函数」不会释放仍被
+    // 其他闭包链引用的作用域（析构顺序由引用计数裁决）。
+    closure->incCaptureRef();
     // rootScope 借用当前 root（不拥有）。class 构造器用 ClassData 承载额外内部槽。
     FunctionData* d = nullptr;
     if (opts.isClassConstructor) {
@@ -2443,6 +2454,20 @@ Value* Context::load(std::string_view name) {
     if (value != nullptr) return value;
     return detail::referenceError(
         this, "'" + std::string(name) + "' is not defined");
+}
+
+Value* Context::declareVar(std::string_view name) {
+    // eval 的 var 声明：只补缺失槽，不覆盖已有绑定（§19.2.1.3）。
+    Scope* target = evalVarScope_ != nullptr ? evalVarScope_ : current();
+    if (target->bindingKind(name) != Scope::BindingKind::None) return nullptr;
+    Value* value = createUndefined();
+    if (value == oomValue_) return value;
+    if (!target->define(name, value)) {
+        std::string msg =
+            "Identifier '" + std::string(name) + "' has already been declared";
+        return detail::errorOf(this, ErrorKind::SyntaxError, msg);
+    }
+    return nullptr;
 }
 
 Value* Context::store(std::string_view name, Value* source) {

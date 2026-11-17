@@ -87,9 +87,9 @@ private:
 }  // namespace
 
 void runEarlyErrorPass(frontend::Node& program, SemaContext& context,
-                       AnnotationStore& annotations) {
+                       AnnotationStore& annotations, bool inheritedStrict) {
     Walker walker(annotations);
-    walker.addAll(makeStrictnessVisitor());
+    walker.addAll(makeStrictnessVisitor(inheritedStrict));
     walker.addAll(makeControlFlowVisitor(annotations));
     walker.addAll(makeModuleVisitor(annotations));
     walker.addAll(std::make_unique<DuplicateProtoVisitor>());

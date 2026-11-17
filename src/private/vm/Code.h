@@ -197,6 +197,12 @@ struct Code {
         emitU32(flags);
         return pc;
     }
+    // eval 变量声明：只在变量环境缺失时建 undefined 槽，已有绑定保持原值。
+    uint32_t declareVar(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::DeclareVar);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
     uint32_t initialize(std::string_view name) {
         uint32_t pc = emitOp(OpCode::Initialize);
         emitU32(addString(std::string(name)));
@@ -404,6 +410,13 @@ struct Code {
     // —— 调用 ——
     uint32_t call(uint32_t argc) {
         uint32_t pc = emitOp(OpCode::Call);
+        emitU32(argc);
+        return pc;
+    }
+    // 直接 eval 调用点：栈上 [callee, args...]；callee 不是内建 eval 时
+    // 按普通调用处理。
+    uint32_t directEval(uint32_t argc) {
+        uint32_t pc = emitOp(OpCode::DirectEval);
         emitU32(argc);
         return pc;
     }

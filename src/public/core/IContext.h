@@ -997,6 +997,21 @@ public:
     // 未找到返回 ReferenceError。内部槽位访问用 Scope::lookup。
     virtual Value* load(std::string_view name) = 0;
 
+    // —— eval（§19.2.1）——
+    // declareVar: eval 的 var 声明——只在变量环境缺失时建 undefined 槽，
+    // 已有绑定保持原值。成功返回 nullptr，失败返回错误值。
+    virtual Value* declareVar(std::string_view name) = 0;
+
+    // evalSource: 执行 eval 源码。source 非 String 时原样返回。
+    // direct=true 时在 callerScope 的词法环境中执行，var 进入调用方变量环境；
+    // direct=false（间接 eval）在 global 执行，var 进入 global。
+    // 解析/编译错误返回 SyntaxError。
+    virtual Value* evalSource(Value* source, Scope* callerScope, bool direct) = 0;
+
+    // evalFunction: 内建 %eval% 函数对象（直接 eval 判定用）。
+    virtual Value* evalFunction() const = 0;
+    virtual void setEvalFunction(Value* fn) = 0;
+
     // —— 可赋值性（ADR-030 阶段 5）——
     // mutability 属于作用域绑定而不是 Value：同一个 Value* 可以在不同绑定中
     // 具有不同的可变性（例如 export let 在导入方是只读）。
