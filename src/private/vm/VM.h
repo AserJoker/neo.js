@@ -222,6 +222,7 @@ private:
     neo::core::Value* opRestArgs();
     neo::core::Value* opPushClass();
     neo::core::Value* opSetStrict();
+    neo::core::Value* opMarkCatchScope();
     neo::core::Value* opInitInstanceElements();
     neo::core::Value* opConstructSuper();
     neo::core::Value* opConstructSuperSpread();

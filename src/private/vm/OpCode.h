@@ -226,6 +226,9 @@ enum class OpCode : uint16_t {
     PushClass,
     // set_strict：[fn] → [fn]，把函数闭包作用域标记为严格模式。
     SetStrict,
+    // mark_catch_scope：[] → []，把当前作用域标记为简单 catch 参数作用域
+    // （Annex B.3.4：eval 的 var 声明可与其同名）。
+    MarkCatchScope,
     // init_instance_elements：[] → []，以当前 this 初始化当前 class 的实例元素。
     InitInstanceElements,
     // construct_super u32 argc：[argv...] → [this]，派生构造器的 super(...)。

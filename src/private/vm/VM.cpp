@@ -161,6 +161,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::RestArgs:      return "rest_args";
         case OpCode::PushClass:     return "push_class";
         case OpCode::SetStrict:     return "set_strict";
+        case OpCode::MarkCatchScope: return "mark_catch_scope";
         case OpCode::InitInstanceElements: return "init_instance_elements";
         case OpCode::ConstructSuper: return "construct_super";
         case OpCode::ConstructSuperSpread: return "construct_super_spread";
@@ -291,6 +292,7 @@ const VM::Handler* VM::handlers() {
         &VM::opRestArgs,
         &VM::opPushClass,
         &VM::opSetStrict,
+        &VM::opMarkCatchScope,
         &VM::opInitInstanceElements,
         &VM::opConstructSuper,
         &VM::opConstructSuperSpread,
@@ -2118,6 +2120,11 @@ Value* VM::opPushClass() {
 Value* VM::opSetStrict() {
     if (stack_.empty()) return badBytecode("set_strict: operand stack underflow");
     ctx_->setFunctionStrict(top());
+    return nullptr;
+}
+
+Value* VM::opMarkCatchScope() {
+    ctx_->current()->setFlag("catch");
     return nullptr;
 }
 

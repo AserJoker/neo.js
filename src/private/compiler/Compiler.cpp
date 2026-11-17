@@ -1194,6 +1194,8 @@ void Compiler::compileCatchClause(const frontend::CatchClause& node) {
     code_->pushScope();
     if (node.param) {
         if (node.param->kind() == NodeKind::Identifier) {
+            // Annex B.3.4：简单 catch 参数允许 eval 的 var 同名声明。
+            code_->markCatchScope();
             code_->define(
                 static_cast<const frontend::Identifier&>(*node.param).name);
         } else if (node.param->kind() == NodeKind::ArrayPattern ||

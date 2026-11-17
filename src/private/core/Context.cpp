@@ -2570,11 +2570,13 @@ Value* Context::declareVar(std::string_view name) {
     // 变量环境与调用点之间的直接绑定只能是词法声明（var/函数已提升到变量
     // 环境），与之同名时 var 声明是早期错误（§19.2.1.3）。
     for (Scope* s = current(); s != nullptr && s != target; s = s->parent()) {
-        if (s->bindingKind(name) == Scope::BindingKind::Direct) {
-            std::string msg = "Identifier '" + std::string(name) +
-                              "' has already been declared";
-            return detail::errorOf(this, ErrorKind::SyntaxError, msg);
-        }
+        if (s->bindingKind(name) != Scope::BindingKind::Direct) continue;
+        // Annex B.3.4：简单 catch 参数允许 var 同名；初始化器随后经 store
+        // 写入 catch 参数，而 var 绑定仍建在变量环境。
+        if (s->hasFlag("catch")) continue;
+        std::string msg = "Identifier '" + std::string(name) +
+                          "' has already been declared";
+        return detail::errorOf(this, ErrorKind::SyntaxError, msg);
     }
     if (target->bindingKind(name) != Scope::BindingKind::None) return nullptr;
     Value* value = createUndefined();

@@ -275,6 +275,46 @@ TEST(EvalTest, EvalHasNoPrototype) {
     EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
 }
 
+TEST(EvalTest, SloppyEvalVarInCatchAssignsCatchParameter) {
+    Fixture f;
+    f.ctx->global()->clearFlag("strict");
+    ASSERT_TRUE(runScript(f,
+                          "function f() {\n"
+                          "  try { throw 1; } catch (e) {\n"
+                          "    eval('var e = 9;');\n"
+                          "    return e;\n"
+                          "  }\n"
+                          "}\n"
+                          "var out = f();\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 9.0);
+}
+
+TEST(EvalTest, SloppyEvalVarInCatchDoesNotLeakValue) {
+    Fixture f;
+    f.ctx->global()->clearFlag("strict");
+    ASSERT_TRUE(runScript(f,
+                          "function f() {\n"
+                          "  try { throw 1; } catch (e) { eval('var e = 9;'); }\n"
+                          "  return e;\n"
+                          "}\n"
+                          "var out = f();\n"));
+    EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(EvalTest, EvalVarInDestructuringCatchIsSyntaxError) {
+    Fixture f;
+    f.ctx->global()->clearFlag("strict");
+    ASSERT_TRUE(runScript(f,
+                          "function f() {\n"
+                          "  try { throw { e: 1 }; } catch ({ e }) {\n"
+                          "    try { eval('var e = 2;'); return 'no'; }\n"
+                          "    catch (err) { return err.name; }\n"
+                          "  }\n"
+                          "}\n"
+                          "var out = f();\n"));
+    EXPECT_EQ(stringOf(lookupOut(f)), "SyntaxError");
+}
+
 TEST(EvalTest, DirectEvalInMethodSeesPrivateField) {
     Fixture f;
     ASSERT_TRUE(runScript(f,

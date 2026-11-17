@@ -181,3 +181,11 @@ Completion Record 仍待后续补齐。
 
 限制：只取当前函数所属 class 的私有环境；嵌套 class 中引用外层 class 的私有名
 仍不可见（静态编译路径同样受运行时 `ownerClass` 单层限制）。
+
+### catch 参数同名 var（Annex B.3.4，2026-11-17）
+
+简单 catch 参数（标识符）作用域由 Compiler 发射 `mark_catch_scope` 打上
+`"catch"` 标记。`Context::declareVar` 在扫描词法冲突时跳过该标记作用域：
+eval 的 `var e` 仍建在变量环境，但初始化器经正常 `store` 写回 catch 参数
+（符合 Annex B「不遮蔽 catch 参数」）。解构 catch 参数不标记，仍报
+SyntaxError。

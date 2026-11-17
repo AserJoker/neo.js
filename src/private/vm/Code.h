@@ -463,6 +463,7 @@ struct Code {
         return pc;
     }
     uint32_t setStrict() { return emitOp(OpCode::SetStrict); }
+    uint32_t markCatchScope() { return emitOp(OpCode::MarkCatchScope); }
     uint32_t initInstanceElements() {
         return emitOp(OpCode::InitInstanceElements);
     }
