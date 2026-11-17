@@ -110,6 +110,12 @@ regex::RegexHost& regexHost() {
     return host;
 }
 
+// 进程内共享的引擎实例：Program 缓存需要跨调用存活，且缓存有界。
+regex::RegexEngine& regexEngine() {
+    static regex::RegexEngine engine(regexHost());
+    return engine;
+}
+
 // —— 小工具 ——
 
 Value* undefinedOf(IContext* ctx) { return ctx->createUndefined(); }
@@ -171,7 +177,7 @@ bool runEngine(IContext* ctx, const RegExpData& data,
                bool anchored, regex::MatchResult& result, Value*& error) {
     error = nullptr;
     const regex::Subject view = regex::Subject::fromUtf16(subject);
-    regex::RegexEngine engine(regexHost());
+    regex::RegexEngine& engine = regexEngine();
     regex::ExecOptions options;
     options.startIndex = start;
     options.anchored = anchored;
@@ -941,7 +947,7 @@ bool compileRegExp(std::string_view pattern, std::string_view flags,
         error = parsed.error ? parsed.error->message : "Invalid flags";
         return false;
     }
-    neo::regex::RegexEngine engine(regexHost());
+    neo::regex::RegexEngine& engine = regexEngine();
     neo::regex::CompileResult result = engine.compile(pattern, parsed.flags);
     if (!result.ok()) {
         error = result.error ? result.error->message : "Invalid regular expression";

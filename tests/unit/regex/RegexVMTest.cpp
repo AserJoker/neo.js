@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <random>
 #include <string>
 #include <string_view>
 
@@ -495,4 +496,90 @@ TEST(RegexVMTest, AnnexBClassEscapeAsRangeEndpoint) {
     auto compiled = f.compile("[\\d-a]+");
     expectMatch(f.exec(compiled, "5-a"), 0, 3);
     EXPECT_FALSE(f.exec(compiled, "b").matched());
+}
+
+// —— R6：Program 缓存、步数预算与随机压力 ——
+
+TEST(RegexVMTest, CacheReturnsSameProgram) {
+    Fixture f;
+    auto first = f.compile("a+b");
+    auto second = f.compile("a+b");
+    ASSERT_TRUE(first.ok());
+    ASSERT_TRUE(second.ok());
+    EXPECT_EQ(first.program.get(), second.program.get());
+    EXPECT_EQ(f.engine.cacheSize(), 1u);
+
+    auto caseInsensitive = f.compile("a+b", "i");
+    EXPECT_NE(first.program.get(), caseInsensitive.program.get());
+    EXPECT_EQ(f.engine.cacheSize(), 2u);
+}
+
+TEST(RegexVMTest, CacheEvictsLeastRecentlyUsed) {
+    Fixture f;
+    auto first = f.compile("a0");
+    ASSERT_TRUE(first.ok());
+
+    for (std::size_t i = 1; i <= RegexEngine::kCacheCapacity; ++i) {
+        auto compiled = f.compile("a" + std::to_string(i));
+        ASSERT_TRUE(compiled.ok());
+    }
+    EXPECT_EQ(f.engine.cacheSize(), RegexEngine::kCacheCapacity);
+
+    auto reloaded = f.compile("a0");
+    ASSERT_TRUE(reloaded.ok());
+    EXPECT_NE(first.program.get(), reloaded.program.get());
+}
+
+TEST(RegexVMTest, StepLimitAbortsCatastrophicBacktracking) {
+    Fixture f;
+    auto compiled = f.compile("(a+)+$");
+    ASSERT_TRUE(compiled.ok());
+
+    std::string subject(30, 'a');
+    subject.push_back('X');
+    ExecOptions options;
+    options.stepLimit = 5000;
+    MatchResult result = f.exec(compiled, subject, options);
+    EXPECT_EQ(result.status, neo::regex::MatchStatus::Aborted);
+}
+
+TEST(RegexVMTest, StepLimitAllowsNormalMatch) {
+    Fixture f;
+    auto compiled = f.compile("a+");
+    ExecOptions options;
+    options.stepLimit = 100;
+    expectMatch(f.exec(compiled, "aaa", options), 0, 3);
+}
+
+TEST(RegexVMTest, RandomPatternsDoNotCrash) {
+    Fixture f;
+    std::mt19937 rng(0xC0FFEEu);
+    const std::string patternAlphabet =
+        "ab()[]{}|*+?\\^$.-0123456789dDsSwWpPq&";
+    const std::string subjectAlphabet = "ab01- \n";
+
+    for (int iteration = 0; iteration < 300; ++iteration) {
+        std::string pattern;
+        const std::size_t patternLength = 1 + rng() % 12;
+        for (std::size_t i = 0; i < patternLength; ++i) {
+            pattern.push_back(patternAlphabet[rng() % patternAlphabet.size()]);
+        }
+        std::string subject;
+        const std::size_t subjectLength = rng() % 16;
+        for (std::size_t i = 0; i < subjectLength; ++i) {
+            subject.push_back(subjectAlphabet[rng() % subjectAlphabet.size()]);
+        }
+
+        auto compiled = f.engine.compile(pattern, neo::regex::Flags{});
+        if (!compiled.ok()) continue;
+
+        ExecOptions options;
+        options.stepLimit = 20000;
+        MatchResult result = f.exec(compiled, subject, options);
+        EXPECT_TRUE(result.status == neo::regex::MatchStatus::Matched ||
+                    result.status == neo::regex::MatchStatus::NoMatch ||
+                    result.status == neo::regex::MatchStatus::Aborted ||
+                    result.status == neo::regex::MatchStatus::Oom)
+            << "pattern=" << pattern;
+    }
 }

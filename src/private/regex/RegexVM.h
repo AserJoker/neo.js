@@ -63,6 +63,7 @@ private:
     RegexHost& host_;
 
     std::uint64_t steps_ = 0;
+    std::uint64_t stepLimit_ = 0;
     bool aborted_ = false;
     std::vector<std::size_t> captures_;
 };

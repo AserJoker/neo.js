@@ -9,6 +9,7 @@
 #define NEO_REGEX_MATCH_H
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 namespace neo::regex {
@@ -39,6 +40,8 @@ struct ExecOptions {
     std::size_t startIndex = 0;
     // true：只在 startIndex 尝试（sticky）；false：向后搜索。
     bool anchored = false;
+    // 本次 exec 的指令步数上限；0 表示不限制（仍受 Host::shouldAbort 约束）。
+    std::uint64_t stepLimit = 0;
 };
 
 }  // namespace neo::regex

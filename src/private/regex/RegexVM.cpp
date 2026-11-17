@@ -25,6 +25,7 @@ MatchResult RegexVM::exec(ExecOptions options) {
     result.captures.resize(program_.captureCount + 1);
     steps_ = 0;
     aborted_ = false;
+    stepLimit_ = options.stepLimit;
 
     try {
         std::size_t start = options.startIndex;
@@ -117,6 +118,10 @@ bool RegexVM::execute(const std::vector<Instruction>& instructions,
         if (pc >= instructions.size()) return false;
         const Instruction instruction = instructions[pc];
         ++steps_;
+        if (stepLimit_ != 0 && steps_ > stepLimit_) {
+            aborted_ = true;
+            return false;
+        }
         if ((steps_ & 1023u) == 0 && host_.shouldAbort(steps_)) {
             aborted_ = true;
             return false;

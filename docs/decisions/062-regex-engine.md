@@ -307,6 +307,22 @@ Match
     按普通原子解析；
   - `ClassEscape` 作为范围端点（如 `[\d-a]`）按并集 `\d ∪ '-' ∪ 'a'` 处理。
 
+**R6 实现**：
+
+- `RegexEngine` 内置有界 LRU Program 缓存（容量 `kCacheCapacity = 128`），
+  键为 `(pattern, flags 位集, dialect 位集)`；命中时把条目移到 LRU 头，
+  超限淘汰尾部。编译失败不缓存。JS 层通过进程内共享的 `regexEngine()`
+  使用同一实例，`new RegExp(用户输入)` 不会无限增长。
+- `ExecOptions::stepLimit` 提供单次 `exec` 的指令步数硬上限（0 = 不限）；
+  VM 每条指令递增后检查，超限返回 `MatchStatus::Aborted`。Host 的
+  `shouldAbort()` 仍每 1024 步检查一次，作为外部中断通道。
+- 新增 ReDoS 回归测试（`(a+)+$` + 失败尾字符 + 小步数预算）与固定种子的
+  随机 pattern/subject 压力测试，断言不崩溃且状态合法。
+- **Pike VM 线性兜底暂不实现**：当前回溯 VM 已通过步数预算把最坏情况
+  限制在可中止范围内；引入 Pike VM 需要重做捕获优先级与 leftmost-first
+  语义，风险高于本阶段收益，留待后续独立 ADR。libFuzzer 目标同理，
+  当前以确定性随机压力测试覆盖基本健壮性。
+
 ### 10. 文件布局
 
 ```
