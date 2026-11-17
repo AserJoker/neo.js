@@ -485,11 +485,10 @@ TEST(VMTest, BuilderEmitsSemanticInstructions) {
 
     ASSERT_EQ(code.numbers.size(), 1u);
     EXPECT_DOUBLE_EQ(code.numbers[0], 1.5);
-    // 字符串表不做去重：push "x"、define "v"、load "v" 各登记一次。
-    ASSERT_EQ(code.strings.size(), 3u);
+    // 字符串表去重：push "x"、define "v"、load "v" 只登记两个常量。
+    ASSERT_EQ(code.strings.size(), 2u);
     EXPECT_EQ(code.strings[0], "x");
     EXPECT_EQ(code.strings[1], "v");
-    EXPECT_EQ(code.strings[2], "v");
 
     auto opAt = [&code](uint32_t pc) {
         return static_cast<uint16_t>(static_cast<uint16_t>(code.bytecode[pc]) |

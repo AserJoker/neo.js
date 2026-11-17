@@ -349,6 +349,11 @@ Match
   空匹配按 `AdvanceStringIndex` 推进克隆的 `lastIndex`。
 - `RegExpBuiltinExec` 修正 `lastIndex > length`：global/sticky 时重置为 0
   并返回 null，不再钳制到字符串末尾。
+- `@@match` 与 `@@search` 统一走 `RegExpExec`（含 global 空匹配的
+  `AdvanceStringIndex` 推进），可被覆写的 `exec` 对二者生效。
+- `Code::addString` 增加字符串常量去重，重复的 pattern/flags/名字只登记一次。
+- 仍未统一：`@@replace` 与 `@@split` 内部仍使用引擎结果，`@@split` 尚未
+  使用 `SpeciesConstructor`；留待后续按需收敛。
 
 ### 10. 文件布局
 

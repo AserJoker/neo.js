@@ -312,6 +312,26 @@ TEST(RegExpTest, MatchAllDoesNotMutateLastIndex) {
     EXPECT_EQ(stringValue(result), "0:1:0");
 }
 
+TEST(RegExpTest, SymbolMatchUsesOverridableExec) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var r = /a/;"
+        "r.exec = function() { return null; };"
+        "var result = r[Symbol.match]('a');");
+    EXPECT_EQ(result->type()->kind(), TypeKind::Null);
+}
+
+TEST(RegExpTest, SymbolSearchUsesOverridableExec) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var r = /a/;"
+        "r.exec = function() { return null; };"
+        "var result = r[Symbol.search]('a');");
+    EXPECT_DOUBLE_EQ(numberValue(result), -1.0);
+}
+
 TEST(RegExpTest, MatchAllAdvancesOnEmptyMatches) {
     Fixture f;
     Value* result = runScript(

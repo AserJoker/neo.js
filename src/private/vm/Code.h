@@ -21,6 +21,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -76,6 +77,8 @@ struct Code {
     std::vector<uint8_t> bytecode;
     std::vector<double> numbers;       // 数值常量表
     std::vector<std::string> strings;  // 字符串/名字表
+    // 字符串常量去重：value → strings 下标。
+    std::unordered_map<std::string, uint32_t> stringIndex;
     SourceMap sourceMap;
     // 本 Code 所属模块 id（动态 import 相对说明符的基准）；script 为文件名。
     std::string moduleId;
@@ -118,8 +121,12 @@ struct Code {
     }
 
     uint32_t addString(std::string value) {
+        auto it = stringIndex.find(value);
+        if (it != stringIndex.end()) return it->second;
+        const uint32_t index = static_cast<uint32_t>(strings.size());
+        stringIndex.emplace(value, index);
         strings.push_back(std::move(value));
-        return static_cast<uint32_t>(strings.size() - 1);
+        return index;
     }
 
     uint32_t pushUndefined() { return emitOp(OpCode::PushUndefined); }

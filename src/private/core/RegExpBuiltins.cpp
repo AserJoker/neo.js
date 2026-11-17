@@ -606,7 +606,7 @@ Value* regexpSymbolMatch(IContext* ctx, Value* self, size_t argc,
     if (isError(input)) return input;
     const std::u16string subject = toUtf16(*stringData(input));
 
-    if (!data->global) return execString(ctx, self, *data, subject, input);
+    if (!data->global) return regExpExecValue(ctx, self, *data, input);
 
     Value* results = ctx->createArray();
     if (results == ctx->oomValue()) return results;
@@ -614,19 +614,30 @@ Value* regexpSymbolMatch(IContext* ctx, Value* self, size_t argc,
 
     bool any = false;
     for (;;) {
-        Value* match = execString(ctx, self, *data, subject, input);
+        Value* match = regExpExecValue(ctx, self, *data, input);
         if (isError(match)) return match;
         if (match->type()->kind() == TypeKind::Null) break;
         any = true;
         Value* first = ctx->getProperty(match, "0");
         if (isError(first)) return first;
-        if (isError(ctx->arrayAppend(results, first))) return ctx->oomValue();
-        if (stringData(first)->empty()) {
+        Value* firstText = toStringArg(ctx, first);
+        if (isError(firstText)) return firstText;
+        if (isError(ctx->arrayAppend(results, firstText))) return ctx->oomValue();
+        if (stringData(firstText)->empty()) {
             std::size_t next = 0;
             Value* error = nullptr;
             if (!readLastIndex(ctx, self, next, error)) return error;
-            if (next >= subject.size()) break;
-            if (isError(setLastIndex(ctx, self, next + 1))) return ctx->oomValue();
+            std::size_t width = 1;
+            if (data->unicode && next + 1 < subject.size()) {
+                const char16_t high = subject[next];
+                const char16_t low = subject[next + 1];
+                if (high >= 0xD800 && high <= 0xDBFF && low >= 0xDC00 &&
+                    low <= 0xDFFF) {
+                    width = 2;
+                }
+            }
+            if (isError(setLastIndex(ctx, self, next + width)))
+                return ctx->oomValue();
         }
     }
     return any ? results : nullOf(ctx);
@@ -642,7 +653,6 @@ Value* regexpSymbolSearch(IContext* ctx, Value* self, size_t argc,
     }
     Value* input = argc > 0 ? toStringArg(ctx, argv[0]) : undefinedOf(ctx);
     if (isError(input)) return input;
-    const std::u16string subject = toUtf16(*stringData(input));
 
     // §22.2.6.14：保存 lastIndex，非 0 时置 0，执行后恢复原值。
     Value* previous = ctx->getProperty(self, "lastIndex");
@@ -654,10 +664,7 @@ Value* regexpSymbolSearch(IContext* ctx, Value* self, size_t argc,
         if (isError(reset)) return reset;
     }
 
-    regex::MatchResult result;
-    Value* error = nullptr;
-    const bool ok =
-        runEngine(ctx, *data, subject, 0, data->sticky, result, error);
+    Value* match = regExpExecValue(ctx, self, *data, input);
 
     Value* current = ctx->getProperty(self, "lastIndex");
     if (isError(current)) return current;
@@ -665,9 +672,9 @@ Value* regexpSymbolSearch(IContext* ctx, Value* self, size_t argc,
         Value* restore = ctx->setProperty(self, "lastIndex", previous);
         if (isError(restore)) return restore;
     }
-    if (!ok) return error;
-    if (!result.matched()) return ctx->createNumber(-1.0);
-    return ctx->createNumber(static_cast<double>(result.start));
+    if (isError(match)) return match;
+    if (match->type()->kind() == TypeKind::Null) return ctx->createNumber(-1.0);
+    return ctx->getProperty(match, "index");
 }
 
 std::string expandReplacement(const std::string& replacement,
