@@ -83,6 +83,9 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     // 3. current 初始 = root；顶层函数环境也指向 root（this/new.target 由 VM 入口绑定）
     current_ = root_;
     currentFunctionEnv_ = root_;
+    // 脚本顶层环境固定为构造时的 root：间接 eval 从它进入，能看到脚本
+    // 顶层 var/let/const，同时经 parent 链到达 global 内建。
+    scriptRoot_ = root_;
     // 4. global 默认标注 strict（保持默认严格模式，后续由模块/函数体标注覆盖）
     global_->setFlag("strict");
     // 5. 预分配 OOM 哨兵（ADR-031）：最早分配，挂 global 使其存活于 Context 生命周期。
@@ -2487,7 +2490,8 @@ IData* Context::cloneForNewValue(Value* source) {
 
 // clone source 的 data 到 scope 定义新槽位。失败返回 OOM 哨兵（ADR-031）。
 Value* Context::defineCloned(Scope* scope, std::string_view name, Value* source,
-                             bool mutableBinding, bool initialized) {
+                             bool mutableBinding, bool initialized,
+                             bool varBinding) {
     IData* cloned = cloneForNewValue(source);
     if (cloned == nullptr) return oomValue_;
     Value* slot = gc_->createValue(source->type(), cloned);
@@ -2495,12 +2499,12 @@ Value* Context::defineCloned(Scope* scope, std::string_view name, Value* source,
         gc_->releaseData(cloned);
         return oomValue_;
     }
-    scope->define(name, slot, mutableBinding, initialized);
+    scope->define(name, slot, mutableBinding, initialized, varBinding);
     return slot;
 }
 
 Value* Context::define(std::string_view name, Value* source, bool mutableBinding,
-                       bool initialized) {
+                       bool initialized, bool varBinding) {
     // Exception/Fatal 永远不出现在左右值，提前透传
     if (isErrorValue(source)) return source;
     // 同一作用域重复定义无条件报错：var/let/const 的差异在 Sema 阶段已抹平，
@@ -2510,7 +2514,8 @@ Value* Context::define(std::string_view name, Value* source, bool mutableBinding
         std::string msg = "Identifier '" + std::string(name) + "' has already been declared";
         return detail::errorOf(this, ErrorKind::SyntaxError, msg);
     }
-    return defineCloned(current(), name, source, mutableBinding, initialized);
+    return defineCloned(current(), name, source, mutableBinding, initialized,
+                        varBinding);
 }
 
 Value* Context::initialize(std::string_view name, Value* source) {
@@ -2570,7 +2575,10 @@ Value* Context::declareVar(std::string_view name) {
     // 变量环境与调用点之间的直接绑定只能是词法声明（var/函数已提升到变量
     // 环境），与之同名时 var 声明是早期错误（§19.2.1.3）。
     for (Scope* s = current(); s != nullptr && s != target; s = s->parent()) {
-        if (s->bindingKind(name) != Scope::BindingKind::Direct) continue;
+        Scope::Binding* binding = s->lookupBinding(name);
+        if (binding == nullptr) continue;
+        // 变量环境绑定（var/函数/形参）可同名复用。
+        if (binding->varBinding) continue;
         // Annex B.3.4：简单 catch 参数允许 var 同名；初始化器随后经 store
         // 写入 catch 参数，而 var 绑定仍建在变量环境。
         if (s->hasFlag("catch")) continue;
@@ -2578,10 +2586,16 @@ Value* Context::declareVar(std::string_view name) {
                           "' has already been declared";
         return detail::errorOf(this, ErrorKind::SyntaxError, msg);
     }
-    if (target->bindingKind(name) != Scope::BindingKind::None) return nullptr;
+    if (Scope::Binding* existing = target->lookupBinding(name)) {
+        // 变量环境已有 var 绑定：复用；同名词法绑定则是早期错误。
+        if (existing->varBinding) return nullptr;
+        std::string msg = "Identifier '" + std::string(name) +
+                          "' has already been declared";
+        return detail::errorOf(this, ErrorKind::SyntaxError, msg);
+    }
     Value* value = createUndefined();
     if (value == oomValue_) return value;
-    if (!target->define(name, value)) {
+    if (!target->define(name, value, true, true, true)) {
         std::string msg =
             "Identifier '" + std::string(name) + "' has already been declared";
         return detail::errorOf(this, ErrorKind::SyntaxError, msg);

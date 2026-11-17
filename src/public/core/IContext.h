@@ -1004,9 +1004,12 @@ public:
     //        source 若是 Exception/Fatal 直接透传。
     // mutableBinding/initialized 用于模块提升：lexical 声明先以
     // <uninitialized> 建槽（initialized=false），求值期再 initialize。
+    // varBinding: 标记变量环境绑定（var/函数声明/形参），eval 的 var
+    // 声明可与之同名复用，而非报词法冲突。
     virtual Value* define(std::string_view name, Value* source,
                           bool mutableBinding = true,
-                          bool initialized = true) = 0;
+                          bool initialized = true,
+                          bool varBinding = false) = 0;
     virtual Value* store(std::string_view name, Value* source) = 0;
 
     // storeVar: 写入变量环境绑定（跳过中间的词法作用域）。

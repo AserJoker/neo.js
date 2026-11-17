@@ -189,11 +189,12 @@ struct Code {
     // 定义绑定：mutableBinding=false 为 const，initialized=false 表示提升建槽
     // 后仍处于 TDZ（后续用 initialize 解除）。
     uint32_t define(std::string_view name, bool mutableBinding = true,
-                    bool initialized = true) {
+                    bool initialized = true, bool varBinding = false) {
         uint32_t pc = emitOp(OpCode::Define);
         emitU32(addString(std::string(name)));
         uint32_t flags = (mutableBinding ? kDefineMutable : 0u) |
-                         (initialized ? kDefineInitialized : 0u);
+                         (initialized ? kDefineInitialized : 0u) |
+                         (varBinding ? kDefineVar : 0u);
         emitU32(flags);
         return pc;
     }

@@ -39,6 +39,8 @@ class Context : public IContext {
 
     Scope* global_ = nullptr;              // Context 创建，析构时销毁（递归销毁整棵树）
     Scope* root_ = nullptr;                // 当前模块根作用域（可被 setRootScope 切换）
+    // 脚本顶层环境（构造时创建，永不切换）：间接 eval 的词法环境入口。
+    Scope* scriptRoot_ = nullptr;
     Scope* current_ = nullptr;             // 当前作用域（Scope 的 parent 链即作用域栈）
     // 当前函数环境（ADR-047）：this / new.target 的宿主 ArgumentScope。
     // invoke 保存/恢复；顶层指向模块根作用域。
@@ -450,7 +452,8 @@ public:
     // 变量定义与赋值
     Value* define(std::string_view name, Value* source,
                   bool mutableBinding = true,
-                  bool initialized = true) override;
+                  bool initialized = true,
+                  bool varBinding = false) override;
     Value* store(std::string_view name, Value* source) override;
     Value* storeVar(std::string_view name, Value* source) override;
     Value* initialize(std::string_view name, Value* source) override;
@@ -514,7 +517,8 @@ private:
     // clone source 的 data 到 scope 定义新槽位。失败返回 OOM 哨兵（ADR-031）。
     Value* defineCloned(Scope* scope, std::string_view name, Value* source,
                         bool mutableBinding = true,
-                        bool initialized = true);
+                        bool initialized = true,
+                        bool varBinding = false);
 
     // —— 编译模块的声明/实例化/求值（ADR-059 §5）——
     // declareModule: 递归执行依赖的符号定义区（只建槽，不绑定 import）。

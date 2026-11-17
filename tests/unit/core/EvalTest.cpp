@@ -111,13 +111,13 @@ TEST(EvalTest, IndirectEvalNoArgumentReturnsUndefined) {
     EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
 }
 
-TEST(EvalTest, IndirectEvalVarGoesToGlobal) {
+TEST(EvalTest, IndirectEvalVarGoesToGlobalEnvironment) {
     Fixture f;
     ASSERT_TRUE(runScript(f,
                           "var e = eval;\n"
                           "var out = e('var gv = 7; gv + 1');\n"));
     EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 8.0);
-    Value* gv = f.ctx->global()->lookup("gv");
+    Value* gv = f.ctx->root()->lookup("gv");
     ASSERT_NE(gv, nullptr);
     EXPECT_DOUBLE_EQ(numberOf(gv), 7.0);
 }
@@ -372,3 +372,54 @@ TEST(EvalTest, ClosureCreatedByEvalCapturesInjectedBinding) {
 }
 
 }  // namespace
+
+TEST(EvalTest, IndirectEvalSeesScriptVar) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "var sv = 3;\n"
+                          "var e = eval;\n"
+                          "var out = e('sv');\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 3.0);
+}
+
+TEST(EvalTest, IndirectEvalSeesScriptLet) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "let sl = 4;\n"
+                          "var e = eval;\n"
+                          "var out = e('sl');\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 4.0);
+}
+
+TEST(EvalTest, IndirectEvalVarConflictsWithScriptLet) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "let x = 1;\n"
+                          "var e = eval;\n"
+                          "try { e('var x = 2;'); var out = 'no error'; }\n"
+                          "catch (err) { var out = err.name; }\n"));
+    EXPECT_EQ(stringOf(lookupOut(f)), "SyntaxError");
+}
+
+TEST(EvalTest, IndirectEvalVarReusesScriptVar) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "var x = 1;\n"
+                          "var e = eval;\n"
+                          "try { e('var x = 2;'); var out = x; }\n"
+                          "catch (err) { var out = err.name; }\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 2.0);
+}
+
+TEST(EvalTest, DirectEvalVarReusesCallerVar) {
+    Fixture f;
+    f.ctx->global()->clearFlag("strict");
+    ASSERT_TRUE(runScript(f,
+                          "function f() {\n"
+                          "  var x = 1;\n"
+                          "  try { eval('var x = 2;'); return x; }\n"
+                          "  catch (err) { return err.name; }\n"
+                          "}\n"
+                          "var out = f();\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 2.0);
+}

@@ -208,3 +208,23 @@ SyntaxError。
   `"var-scope"`（跳过块/with/catch 等词法作用域），最后回退
   `currentFunctionEnv_`/root。这样块级绑定仍独立存在，闭包捕获的是块级槽位，
   而外层 `var` 只观察赋值结果，符合 Annex B 的双绑定语义。
+
+### 全局词法环境与 var 复用（2026-11-17）
+
+间接 eval 必须在脚本全局环境中执行，能同时看到全局对象记录（内建/var）与
+全局词法记录（顶层 let/const）。此前间接 eval 入口取 `global_`（仅内建），
+看不到脚本顶层 var/let/const。修正：
+
+- **脚本顶层环境固定**：Context 新增 `scriptRoot_`，构造时指向 root 且永不随
+  `setRootScope` 切换。间接 eval 的词法环境入口改为 `scriptRoot_`，沿 parent
+  链仍可达 `global_` 内建；间接 eval 的变量环境也改为 `scriptRoot_`，使其
+  `var` 与脚本顶层 `var` 同槽复用，而不是在 `global_` 另建一份。
+- **var 绑定标记**：`Scope::Binding` 新增 `varBinding`，`define`/`Define`
+  指令新增对应 flag。var 声明、顶层函数声明与形参在建槽时标记为变量环境绑定。
+- **冲突判定**：`declareVar` 扫描调用点到变量环境之间的绑定时跳过
+  `varBinding`（同名 var/函数/形参可复用）；变量环境内已有同名词法绑定时
+  返回 SyntaxError。这样 `function f(){var x; eval('var x=2')}` 与
+  `let x; eval('var x')` 分别得到复用与早期错误。
+
+已知限制：全局内建（如 `Math`）通过 `bind` 落在 `global_`，间接 eval 的
+`var Math` 仍会在 `scriptRoot_` 建遮蔽绑定，未按全局对象属性复用。

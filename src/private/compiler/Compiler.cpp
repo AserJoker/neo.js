@@ -3560,7 +3560,7 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
         if (param->kind() == NodeKind::Identifier) {
             const auto& id = static_cast<const frontend::Identifier&>(*param);
             code_->pushUndefined();
-            code_->define(id.name);
+            code_->define(id.name, true, true, true);
         } else if (param->kind() == NodeKind::RestElement) {
             const auto& rest = static_cast<const frontend::RestElement&>(*param);
             if (rest.argument) {
@@ -3568,7 +3568,7 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
                 collectPatternNames(*rest.argument, names);
                 for (const std::string& name : names) {
                     code_->pushUndefined();
-                    code_->define(name);
+                    code_->define(name, true, true, true);
                 }
             }
         } else if (param->kind() == NodeKind::ArrayPattern ||
@@ -3578,7 +3578,7 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
             collectPatternNames(*param, names);
             for (const std::string& name : names) {
                 code_->pushUndefined();
-                code_->define(name);
+                code_->define(name, true, true, true);
             }
         } else {
             error(*param, "compiler: unsupported parameter pattern");
@@ -3700,7 +3700,8 @@ void Compiler::hoistSlots(const frontend::NodeList& body, bool varScope) {
         }
         code_->pushUndefined();
         code_->define(
-            static_cast<const frontend::Identifier&>(*function.id).name);
+            static_cast<const frontend::Identifier&>(*function.id).name,
+            true, true, true);
     }
 }
 
@@ -3722,7 +3723,7 @@ void Compiler::hoistVarSlots(const frontend::NodeList& body, bool declare) {
             code_->declareVar(name);
         } else {
             code_->pushUndefined();
-            code_->define(name);
+            code_->define(name, true, true, true);
         }
     }
 }

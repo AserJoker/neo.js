@@ -807,7 +807,8 @@ Value* VM::opDefine() {
 
     Value* result = ctx_->define(*name, pop(),
                                  (flags & kDefineMutable) != 0,
-                                 (flags & kDefineInitialized) != 0);
+                                 (flags & kDefineInitialized) != 0,
+                                 (flags & kDefineVar) != 0);
     if (detail::isErrorValue(result)) return fail(result);
     return nullptr;
 }

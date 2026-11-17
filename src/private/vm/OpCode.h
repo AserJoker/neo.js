@@ -306,8 +306,10 @@ inline constexpr size_t kOpCodeCount =
 // Define 的 flags 位。未置位即 false：
 //   mutable    —— 绑定可被 store 改写（const 为 false）
 //   initialized —— 绑定已初始化（let/const 提升建槽时为 false，进入 TDZ）
+//   var        —— 变量环境绑定（var/函数/形参），eval 的 var 可同名复用
 inline constexpr uint32_t kDefineMutable = 1u << 0;
 inline constexpr uint32_t kDefineInitialized = 1u << 1;
+inline constexpr uint32_t kDefineVar = 1u << 2;
 
 // push_function 的 flags 位。
 inline constexpr uint32_t kFunctionHasRest = 1u << 0;

@@ -58,6 +58,8 @@ public:
         Value* value = nullptr;
         bool mutableBinding = true;
         bool initialized = true;  // false 表示 TDZ
+        // 变量环境绑定（var/函数声明/形参）：eval 的 var 声明可与之同名复用。
+        bool varBinding = false;
     };
 
 private:
@@ -270,7 +272,7 @@ public:
     void bind(std::string_view name, Value* v, bool mutableBinding = true) {
         importBindings_.erase(std::string(name));
         namedValues_[std::string(name)] =
-            Binding{v, mutableBinding, true};
+            Binding{v, mutableBinding, true, false};
     }
 
     // 定义变量（ADR-030 阶段 5）：仅在当前 scope 绑定 name→v + add 跟踪。
@@ -278,12 +280,12 @@ public:
     // 重复检查无条件生效——var/let/const 的差异在 Sema 阶段已抹平，与 strict 无关。
     // 与 bind 的区别：bind 覆盖重名且不 add 跟踪；define 重复检查 + add 跟踪。
     bool define(std::string_view name, Value* v, bool mutableBinding = true,
-                bool initialized = true) {
+                bool initialized = true, bool varBinding = false) {
         // 只检查本作用域的直接/间接绑定；with 对象属性不是声明。
         if (bindingKind(name) != BindingKind::None) return false;
         add(v);
         namedValues_[std::string(name)] =
-            Binding{v, mutableBinding, initialized};
+            Binding{v, mutableBinding, initialized, varBinding};
         return true;
     }
 
