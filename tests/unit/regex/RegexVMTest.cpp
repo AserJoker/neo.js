@@ -55,6 +55,15 @@ struct Fixture {
         Subject view = Subject::fromAscii(subject);
         return engine.exec(*compiled.program, view, options);
     }
+
+    MatchResult execUtf16(const CompileResult& compiled,
+                          std::u16string_view subject,
+                          ExecOptions options = {}) {
+        EXPECT_TRUE(compiled.ok())
+            << (compiled.error ? compiled.error->message : std::string());
+        Subject view = Subject::fromUtf16(subject);
+        return engine.exec(*compiled.program, view, options);
+    }
 };
 
 void expectMatch(const MatchResult& result, std::size_t start,
@@ -306,7 +315,103 @@ TEST(RegexVMTest, NamedCaptureIndices) {
     expectCapture(result, 2, 5, 7);
 }
 
-TEST(RegexVMTest, CompilerRejectsUnimplementedNodes) {
+TEST(RegexVMTest, UnicodeModeMatchesCodePoints) {
     Fixture f;
-    expectCompileError(f.compile("\\p{Letter}", "u"), "property escapes");
+    const std::u16string emoji = u"\U0001F600";
+
+    auto dot = f.compile(".", "u");
+    expectMatch(f.execUtf16(dot, emoji), 0, 2);
+
+    auto literal = f.compile("\\u{1F600}", "u");
+    expectMatch(f.execUtf16(literal, emoji), 0, 2);
+
+    auto classLiteral = f.compile("[\\u{1F600}]", "u");
+    expectMatch(f.execUtf16(classLiteral, emoji), 0, 2);
+
+    auto range = f.compile("[\\u{1F600}-\\u{1F64F}]", "u");
+    expectMatch(f.execUtf16(range, emoji), 0, 2);
+
+    auto emojiProperty = f.compile("\\p{Emoji}", "u");
+    expectMatch(f.execUtf16(emojiProperty, emoji), 0, 2);
+}
+
+TEST(RegexVMTest, NonUnicodeModeUsesCodeUnits) {
+    Fixture f;
+    const std::u16string emoji = u"\U0001F600";
+
+    auto dot = f.compile(".");
+    expectMatch(f.execUtf16(dot, emoji), 0, 1);
+
+    auto high = f.compile("\\uD83D");
+    expectMatch(f.execUtf16(high, emoji), 0, 1);
+
+    auto highUnicode = f.compile("\\uD83D", "u");
+    EXPECT_FALSE(f.execUtf16(highUnicode, emoji).matched());
+}
+
+TEST(RegexVMTest, UnicodeGeneralCategoryProperties) {
+    Fixture f;
+    expectMatch(f.exec(f.compile("\\p{Letter}+", "u"), "abc"), 0, 3);
+    expectMatch(f.exec(f.compile("\\p{Lu}+", "u"), "ABC"), 0, 3);
+    EXPECT_FALSE(f.exec(f.compile("\\p{Lu}+", "u"), "abc").matched());
+    expectMatch(f.exec(f.compile("\\p{ASCII}+", "u"), "abc"), 0, 3);
+    expectMatch(f.exec(f.compile("\\P{Letter}+", "u"), "123"), 0, 3);
+    expectMatch(f.exec(f.compile("\\p{General_Category=Lu}+", "u"), "ABC"),
+                0, 3);
+}
+
+TEST(RegexVMTest, UnicodeScriptProperties) {
+    Fixture f;
+    const std::u16string greek = u"\u03B1\u03B2\u03B3";
+    expectMatch(f.execUtf16(f.compile("\\p{Script=Greek}+", "u"), greek), 0,
+                3);
+    expectMatch(f.execUtf16(f.compile("\\p{sc=Grek}+", "u"), greek), 0, 3);
+    expectMatch(f.execUtf16(f.compile("\\p{scx=Greek}+", "u"), greek), 0, 3);
+}
+
+TEST(RegexVMTest, UnicodePropertyInsideClass) {
+    Fixture f;
+    auto compiled = f.compile("[\\p{Lu}\\p{Nd}]+", "u");
+    expectMatch(f.exec(compiled, "A1"), 0, 2);
+    EXPECT_FALSE(f.exec(compiled, "a").matched());
+}
+
+TEST(RegexVMTest, UnicodeIgnoreCaseUsesSimpleFolding) {
+    Fixture f;
+    const std::u16string kelvin = u"\u212A";
+
+    auto k = f.compile("k", "iu");
+    expectMatch(f.execUtf16(k, kelvin), 0, 1);
+
+    auto kelvinPattern = f.compile("\\u{212A}", "iu");
+    expectMatch(f.exec(kelvinPattern, "k"), 0, 1);
+
+    auto range = f.compile("[a-z]+", "iu");
+    expectMatch(f.execUtf16(range, kelvin), 0, 1);
+
+    auto greek = f.compile("\\u{3B1}", "iu");
+    expectMatch(f.execUtf16(greek, u"\u0391"), 0, 1);
+
+    auto sharpS = f.compile("\\u{1E9E}", "iu");
+    expectMatch(f.execUtf16(sharpS, u"\u00DF"), 0, 1);
+}
+
+TEST(RegexVMTest, UnicodeIgnoreCaseWordBoundary) {
+    Fixture f;
+    auto compiled = f.compile("\\b\\u{212A}\\b", "iu");
+    expectMatch(f.execUtf16(compiled, u"\u212A"), 0, 1);
+}
+
+TEST(RegexVMTest, NonUnicodeIgnoreCaseStaysAscii) {
+    Fixture f;
+    auto compiled = f.compile("k", "i");
+    EXPECT_FALSE(f.execUtf16(compiled, u"\u212A").matched());
+}
+
+TEST(RegexVMTest, CompilerRejectsUnknownProperty) {
+    Fixture f;
+    expectCompileError(f.compile("\\p{NotAProperty}", "u"),
+                       "Invalid property name");
+    expectCompileError(f.compile("\\p{Script=NotAScript}", "u"),
+                       "Invalid property name");
 }

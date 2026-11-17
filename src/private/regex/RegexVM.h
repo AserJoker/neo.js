@@ -46,14 +46,17 @@ private:
     bool runSub(const SubProgram& sub, std::size_t start,
                 std::vector<std::size_t>& captures, std::size_t* matchEnd);
 
-    bool matchChar(char16_t value, std::uint32_t pattern) const;
-    bool classMatches(const CharClassTable& table, char16_t value) const;
+    bool matchChar(std::uint32_t value, std::uint32_t pattern) const;
+    bool classMatches(const CharClassTable& table,
+                      std::uint32_t codePoint) const;
     static bool inRanges(const std::vector<CharRange>& ranges,
                          std::uint32_t codePoint);
     static std::uint32_t asciiUpper(std::uint32_t codePoint);
     static std::uint32_t asciiLower(std::uint32_t codePoint);
     static bool isLineTerminator(std::uint32_t codePoint);
-    static bool isWord(char16_t value);
+    bool isWord(std::uint32_t value) const;
+    bool isWordAt(std::size_t pos) const;
+    bool isWordBefore(std::size_t pos) const;
 
     const Program& program_;
     const Subject& subject_;

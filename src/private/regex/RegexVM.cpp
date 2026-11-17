@@ -2,6 +2,8 @@
 
 #include "regex/RegexVM.h"
 
+#include "regex/RegexUnicode.h"
+
 #include <limits>
 #include <new>
 #include <utility>
@@ -121,34 +123,81 @@ bool RegexVM::execute(const std::vector<Instruction>& instructions,
         }
 
         switch (instruction.op) {
-            case OpCode::Char:
-                if (pos < subject_.size() &&
-                    matchChar(subject_[pos], instruction.a)) {
-                    ++pos;
+            case OpCode::Char: {
+                bool matched = false;
+                if (pos < subject_.size()) {
+                    if (program_.flags.unicode) {
+                        std::size_t width = 0;
+                        const std::uint32_t codePoint =
+                            subject_.codePointAt(pos, width);
+                        if (matchChar(codePoint, instruction.a)) {
+                            pos += width;
+                            matched = true;
+                        }
+                    } else if (matchChar(
+                                   static_cast<std::uint32_t>(subject_[pos]),
+                                   instruction.a)) {
+                        ++pos;
+                        matched = true;
+                    }
+                }
+                if (matched) {
                     ++pc;
                 } else if (!backtrack()) {
                     return false;
                 }
                 break;
-            case OpCode::CharClass:
-                if (pos < subject_.size() &&
-                    classMatches(classes[instruction.a], subject_[pos])) {
-                    ++pos;
+            }
+            case OpCode::CharClass: {
+                bool matched = false;
+                if (pos < subject_.size()) {
+                    if (program_.flags.unicode) {
+                        std::size_t width = 0;
+                        const std::uint32_t codePoint =
+                            subject_.codePointAt(pos, width);
+                        if (classMatches(classes[instruction.a], codePoint)) {
+                            pos += width;
+                            matched = true;
+                        }
+                    } else if (classMatches(
+                                   classes[instruction.a],
+                                   static_cast<std::uint32_t>(subject_[pos]))) {
+                        ++pos;
+                        matched = true;
+                    }
+                }
+                if (matched) {
                     ++pc;
                 } else if (!backtrack()) {
                     return false;
                 }
                 break;
-            case OpCode::Any:
-                if (pos < subject_.size() &&
-                    (program_.flags.dotAll ||
-                     !isLineTerminator(subject_[pos]))) {
-                    ++pos;
+            }
+            case OpCode::Any: {
+                bool matched = false;
+                if (pos < subject_.size()) {
+                    if (program_.flags.unicode) {
+                        std::size_t width = 0;
+                        const std::uint32_t codePoint =
+                            subject_.codePointAt(pos, width);
+                        if (program_.flags.dotAll ||
+                            !isLineTerminator(codePoint)) {
+                            pos += width;
+                            matched = true;
+                        }
+                    } else if (program_.flags.dotAll ||
+                               !isLineTerminator(subject_[pos])) {
+                        ++pos;
+                        matched = true;
+                    }
+                }
+                if (matched) {
                     ++pc;
                 } else if (!backtrack()) {
                     return false;
                 }
                 break;
+            }
             case OpCode::Split:
                 stack.push_back(Frame{instruction.b, pos, undo.size()});
                 pc = instruction.a;
@@ -180,9 +229,8 @@ bool RegexVM::execute(const std::vector<Instruction>& instructions,
                 }
                 break;
             case OpCode::AssertWordBoundary: {
-                const bool previous = pos > 0 && isWord(subject_[pos - 1]);
-                const bool current =
-                    pos < subject_.size() && isWord(subject_[pos]);
+                const bool previous = isWordBefore(pos);
+                const bool current = isWordAt(pos);
                 if (previous != current) {
                     ++pc;
                 } else if (!backtrack()) {
@@ -191,9 +239,8 @@ bool RegexVM::execute(const std::vector<Instruction>& instructions,
                 break;
             }
             case OpCode::AssertNotWordBoundary: {
-                const bool previous = pos > 0 && isWord(subject_[pos - 1]);
-                const bool current =
-                    pos < subject_.size() && isWord(subject_[pos]);
+                const bool previous = isWordBefore(pos);
+                const bool current = isWordAt(pos);
                 if (previous == current) {
                     ++pc;
                 } else if (!backtrack()) {
@@ -339,20 +386,32 @@ bool RegexVM::execute(const std::vector<Instruction>& instructions,
     }
 }
 
-bool RegexVM::matchChar(char16_t value, std::uint32_t pattern) const {
-    const std::uint32_t codePoint = static_cast<std::uint32_t>(value);
-    if (codePoint == pattern) return true;
+bool RegexVM::matchChar(std::uint32_t value, std::uint32_t pattern) const {
+    if (value == pattern) return true;
     if (!program_.flags.ignoreCase) return false;
-    return asciiUpper(codePoint) == asciiUpper(pattern);
+    if (program_.flags.unicode) {
+        return simpleFold(value) == simpleFold(pattern);
+    }
+    return asciiUpper(value) == asciiUpper(pattern);
 }
 
 bool RegexVM::classMatches(const CharClassTable& table,
-                           char16_t value) const {
-    const std::uint32_t codePoint = static_cast<std::uint32_t>(value);
+                           std::uint32_t codePoint) const {
     bool matched = inRanges(table.ranges, codePoint);
     if (!matched && program_.flags.ignoreCase) {
-        matched = inRanges(table.ranges, asciiUpper(codePoint)) ||
-                  inRanges(table.ranges, asciiLower(codePoint));
+        if (program_.flags.unicode) {
+            const FoldPair* begin = foldOrbitBegin(codePoint);
+            const FoldPair* end = foldOrbitEnd(codePoint);
+            for (const FoldPair* it = begin; it != end; ++it) {
+                if (inRanges(table.ranges, it->to)) {
+                    matched = true;
+                    break;
+                }
+            }
+        } else {
+            matched = inRanges(table.ranges, asciiUpper(codePoint)) ||
+                      inRanges(table.ranges, asciiLower(codePoint));
+        }
     }
     return table.negated ? !matched : matched;
 }
@@ -380,10 +439,41 @@ bool RegexVM::isLineTerminator(std::uint32_t codePoint) {
            codePoint == 0x2029;
 }
 
-bool RegexVM::isWord(char16_t value) {
-    return (value >= u'A' && value <= u'Z') ||
-           (value >= u'a' && value <= u'z') ||
-           (value >= u'0' && value <= u'9') || value == u'_';
+bool RegexVM::isWord(std::uint32_t value) const {
+    const auto asciiWord = [](std::uint32_t codePoint) {
+        return (codePoint >= u'A' && codePoint <= u'Z') ||
+               (codePoint >= u'a' && codePoint <= u'z') ||
+               (codePoint >= u'0' && codePoint <= u'9') ||
+               codePoint == u'_';
+    };
+    if (asciiWord(value)) return true;
+    if (program_.flags.unicode && program_.flags.ignoreCase) {
+        return asciiWord(simpleFold(value));
+    }
+    return false;
+}
+
+bool RegexVM::isWordAt(std::size_t pos) const {
+    if (pos >= subject_.size()) return false;
+    if (!program_.flags.unicode) {
+        return isWord(static_cast<std::uint32_t>(subject_[pos]));
+    }
+    std::size_t width = 0;
+    return isWord(subject_.codePointAt(pos, width));
+}
+
+bool RegexVM::isWordBefore(std::size_t pos) const {
+    if (pos == 0) return false;
+    if (!program_.flags.unicode) {
+        return isWord(static_cast<std::uint32_t>(subject_[pos - 1]));
+    }
+    std::size_t start = pos - 1;
+    if (start > 0 && subject_[start] >= 0xDC00 && subject_[start] <= 0xDFFF &&
+        subject_[start - 1] >= 0xD800 && subject_[start - 1] <= 0xDBFF) {
+        --start;
+    }
+    std::size_t width = 0;
+    return isWord(subject_.codePointAt(start, width));
 }
 
 }  // namespace neo::regex

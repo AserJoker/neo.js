@@ -224,6 +224,26 @@ Match
 - ASCII 走常量快速路径；非 ASCII 用排序区间 + 二分或两级 trie。
 - ICU 保持可选，不作为默认路径；默认构建行为与 ICU 开关无关。
 
+**R3 实现**：
+
+- `tools/gen_unicode_regex_tables.py` 从 Unicode 15.1.0 的 `UnicodeData.txt`、
+  `Scripts.txt`、`ScriptExtensions.txt`、`PropList.txt`、
+  `DerivedCoreProperties.txt`、`emoji-data.txt`、`PropertyValueAliases.txt`、
+  `CaseFolding.txt` 生成 `RegexUnicodeTables.inc`（排序区间 + 属性名索引）。
+- `\p{...}` / `\P{...}` 支持：
+  - General_Category（短名/长名/分组，如 `Lu`、`Uppercase_Letter`、`L`）；
+  - Script / Script_Extensions（`Script=Greek`、`sc=Grek`、`scx=...`）；
+  - ECMAScript 白名单内的 binary properties（`ASCII`、`Alphabetic`、
+    `White_Space`、`Emoji`、`ID_Start` 等）。
+  - 未知属性名返回 `CompileError`；属性在编译期展开为字符类范围表。
+- `u` 模式按码点匹配：`Char`/`CharClass`/`Any` 解码 Subject 的码点并按其
+  码元宽度推进；`\uD83D` 不再匹配代理对的一半。
+- `i+u` 使用 CaseFolding.txt 的 C+S simple folding；字符类匹配检查折叠
+  等价类，`\b`/`\B` 的 word 判定同样考虑折叠到 ASCII word 的字符。
+- 非 `u` 模式的 `i` 仍保持 ASCII 折叠（ECMAScript Canonicalize 的完整
+  Unicode 版本留后续阶段）；Host 注入 Unicode 表的能力保留，R3 默认使用
+  模块内生成表。
+
 ### 8. 错误模型与缓存
 
 - 编译错误：`CompileError{offset, message}`；JS 层映射为 `SyntaxError`。
@@ -261,6 +281,7 @@ src/private/regex/
   RegexCompiler.h/.cpp
   RegexSubject.h/.cpp
   RegexUnicode.h/.cpp
+  RegexUnicodeTables.inc   // 生成产物
   RegexHost.h
   RegexEngine.h/.cpp
   RegexVM.h/.cpp

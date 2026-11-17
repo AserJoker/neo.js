@@ -88,8 +88,7 @@ void RegexCompiler::compileNode(const Node& node) {
             compileBackreference(static_cast<const Backreference&>(node));
             break;
         case NodeKind::PropertyEscape:
-            error(node,
-                  "compiler: property escapes not implemented until R3");
+            compilePropertyEscape(static_cast<const PropertyEscape&>(node));
             break;
     }
 }
@@ -142,9 +141,9 @@ void RegexCompiler::compileCharacterClass(const CharacterClass& node) {
                 appendEscape(table, item.escape);
                 break;
             case ClassItem::Kind::Property:
-                error(node,
-                      "compiler: property escapes not implemented until R3");
-                return;
+                appendProperty(table, item);
+                if (failed_) return;
+                break;
         }
     }
     normalize(table.ranges);
@@ -225,6 +224,56 @@ void RegexCompiler::compileBackreference(const Backreference& node) {
         index = it->second;
     }
     emit(OpCode::Backref, index);
+}
+
+void RegexCompiler::compilePropertyEscape(const PropertyEscape& node) {
+    UnicodeProperty property;
+    if (!resolveProperty(node.property, property)) {
+        error(node, "Invalid property name");
+        return;
+    }
+
+    CharClassTable table;
+    table.negated = node.negated;
+    table.ranges.reserve(property.count);
+    for (std::size_t i = 0; i < property.count; ++i) {
+        table.ranges.push_back(
+            CharRange{property.ranges[i].from, property.ranges[i].to});
+    }
+    program_.classes.push_back(std::move(table));
+    emit(OpCode::CharClass,
+         static_cast<std::uint32_t>(program_.classes.size() - 1));
+}
+
+void RegexCompiler::appendProperty(CharClassTable& table,
+                                   const ClassItem& item) {
+    UnicodeProperty property;
+    if (!resolveProperty(item.property, property)) {
+        error(item.offset, "Invalid property name");
+        return;
+    }
+
+    std::vector<CharRange> ranges;
+    ranges.reserve(property.count);
+    for (std::size_t i = 0; i < property.count; ++i) {
+        ranges.push_back(
+            CharRange{property.ranges[i].from, property.ranges[i].to});
+    }
+    if (item.negated) {
+        appendComplement(table.ranges, std::move(ranges));
+    } else {
+        table.ranges.insert(table.ranges.end(), ranges.begin(), ranges.end());
+    }
+}
+
+bool RegexCompiler::resolveProperty(std::string_view name,
+                                    UnicodeProperty& property) {
+    const std::size_t equals = name.find('=');
+    if (equals == std::string_view::npos) {
+        return resolveUnicodeProperty(name, property);
+    }
+    return resolveUnicodeProperty(name.substr(0, equals),
+                                  name.substr(equals + 1), property);
 }
 
 void RegexCompiler::compileQuantifier(const Quantifier& node) {
@@ -371,9 +420,13 @@ void RegexCompiler::normalize(std::vector<CharRange>& ranges) {
 }
 
 void RegexCompiler::error(const Node& node, std::string message) {
+    error(node.offset, std::move(message));
+}
+
+void RegexCompiler::error(std::size_t offset, std::string message) {
     if (failed_) return;
     failed_ = true;
-    error_ = CompileError{node.offset, std::move(message)};
+    error_ = CompileError{offset, std::move(message)};
 }
 
 }  // namespace neo::regex

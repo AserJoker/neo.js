@@ -1,8 +1,8 @@
 // RegexCompiler.h - RegexAST -> Program 指令流（ADR-062）
 //
 // 一个 AST 节点一个 compile 函数；量词编译为 Split/计数循环，捕获组用
-// Save 槽位。未实现的节点（反向引用/前后瞻/Unicode 属性）记录 CompileError，
-// 不生成语义错误的指令流。
+// Save 槽位。Unicode 属性在编译期展开为字符类范围表；未知属性记录
+// CompileError，不生成语义错误的指令流。
 //
 // 关联 ADR: 062（正则引擎）
 
@@ -12,6 +12,7 @@
 #include "regex/RegexAST.h"
 #include "regex/RegexFlags.h"
 #include "regex/RegexProgram.h"
+#include "regex/RegexUnicode.h"
 
 #include <cstdint>
 #include <optional>
@@ -42,17 +43,22 @@ private:
     void compileGroup(const Group& node);
     void compileLookaround(const Group& node, bool behind, bool negate);
     void compileBackreference(const Backreference& node);
+    void compilePropertyEscape(const PropertyEscape& node);
     void compileQuantifier(const Quantifier& node);
     void compileAssertion(const Assertion& node);
 
     void appendRange(CharClassTable& table, std::uint32_t from,
                      std::uint32_t to);
     void appendEscape(CharClassTable& table, ClassItem::EscapeKind kind);
+    void appendProperty(CharClassTable& table, const ClassItem& item);
+    static bool resolveProperty(std::string_view name,
+                                UnicodeProperty& property);
     static void appendComplement(std::vector<CharRange>& out,
                                  std::vector<CharRange> base);
     static void normalize(std::vector<CharRange>& ranges);
 
     void error(const Node& node, std::string message);
+    void error(std::size_t offset, std::string message);
 
     Program program_;
     bool failed_ = false;
