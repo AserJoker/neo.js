@@ -33,6 +33,8 @@ CompileResult RegexCompiler::compile(const ParseResult& parsed,
     emit(OpCode::Save, 1);
     emit(OpCode::Match);
     program_.scratchCount = scratchCount_;
+    program_.scratchKinds = scratchKinds_;
+    program_.scratchLimits = scratchLimits_;
     return CompileResult{std::make_shared<Program>(std::move(program_)),
                          std::nullopt};
 }
@@ -312,10 +314,14 @@ void RegexCompiler::compileLookaround(const Group& node, bool behind,
         std::move(program_.instructions);
     std::vector<CharClassTable> savedClasses = std::move(program_.classes);
     const std::uint32_t savedScratch = scratchCount_;
+    std::vector<ScratchKind> savedKinds = std::move(scratchKinds_);
+    std::vector<std::uint32_t> savedLimits = std::move(scratchLimits_);
 
     program_.instructions.clear();
     program_.classes.clear();
     scratchCount_ = 0;
+    scratchKinds_.clear();
+    scratchLimits_.clear();
     compileNode(*node.body);
     if (!failed_) emit(OpCode::Match);
 
@@ -323,10 +329,14 @@ void RegexCompiler::compileLookaround(const Group& node, bool behind,
     sub.instructions = std::move(program_.instructions);
     sub.classes = std::move(program_.classes);
     sub.scratchCount = scratchCount_;
+    sub.scratchKinds = std::move(scratchKinds_);
+    sub.scratchLimits = std::move(scratchLimits_);
 
     program_.instructions = std::move(savedInstructions);
     program_.classes = std::move(savedClasses);
     scratchCount_ = savedScratch;
+    scratchKinds_ = std::move(savedKinds);
+    scratchLimits_ = std::move(savedLimits);
     if (failed_) return;
 
     const std::uint32_t index =
@@ -440,6 +450,15 @@ void RegexCompiler::compileQuantifier(const Quantifier& node) {
 
     const std::uint32_t counter = scratchCount_++;
     const std::uint32_t progress = scratchCount_++;
+    // 计数器只需区分是否达到 min/max：无上界时钳制到 min，有上界时钳制到
+    // max。Pike VM 依赖该上界把线程状态收敛为有限集合。
+    const std::uint32_t counterLimit =
+        node.max == std::numeric_limits<std::uint32_t>::max() ? node.min
+                                                              : node.max;
+    scratchKinds_.push_back(ScratchKind::Counter);
+    scratchLimits_.push_back(counterLimit);
+    scratchKinds_.push_back(ScratchKind::Progress);
+    scratchLimits_.push_back(0);
     emit(OpCode::SetCounter, counter, 0);
 
     const std::uint32_t loop = here();

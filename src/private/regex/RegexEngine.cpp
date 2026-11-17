@@ -4,6 +4,7 @@
 
 #include "regex/RegexCompiler.h"
 #include "regex/RegexParser.h"
+#include "regex/RegexPikeVM.h"
 #include "regex/RegexVM.h"
 
 #include <cstdint>
@@ -117,6 +118,12 @@ CompileResult RegexEngine::compile(std::string_view pattern, Flags flags,
 
 MatchResult RegexEngine::exec(const Program& program, const Subject& subject,
                               ExecOptions options) {
+    // regular 子集走线性 Pike VM，避免灾难性回溯；反向引用/前后瞻仍由
+    // 回溯 VM 执行（受 stepLimit 预算保护）。
+    if (supportsPikeVM(program)) {
+        RegexPikeVM vm(program, subject, host_);
+        return vm.exec(options);
+    }
     RegexVM vm(program, subject, host_);
     return vm.exec(options);
 }

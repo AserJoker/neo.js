@@ -35,6 +35,7 @@ option(NEO_ENABLE_ICU "Enable ICU Unicode subsystem (default OFF, M1+)" OFF)
 option(NEO_ENABLE_TESTS "Build tests (default ON)" ON)
 option(NEO_BUILD_HELLO "Build HelloWorld executable (default ON)" ON)
 option(NEO_ENABLE_COVERAGE "Enable llvm-cov source-based coverage (ADR-027)" OFF)
+option(NEO_BUILD_FUZZERS "Build libFuzzer targets (Clang only, ADR-062)" OFF)
 
 # ---------------------------------------------------------------------------
 # 编译器配置：强制 Clang
@@ -158,6 +159,7 @@ add_library(neojs STATIC
     src/private/regex/RegexCompiler.cpp
     src/private/regex/RegexUnicode.cpp
     src/private/regex/RegexVM.cpp
+    src/private/regex/RegexPikeVM.cpp
     src/private/regex/RegexSubject.cpp
     src/private/regex/RegexEngine.cpp
     src/private/bigint/BigInt.cpp
@@ -218,4 +220,23 @@ if(NEO_ENABLE_TESTS)
     enable_testing()
     add_subdirectory(third_party/googletest)
     add_subdirectory(tests)
+endif()
+
+# ---------------------------------------------------------------------------
+# libFuzzer 目标（默认关闭；开启时给 neojs 插桩，fuzz 可执行提供 fuzzer 入口）
+# ---------------------------------------------------------------------------
+if(NEO_BUILD_FUZZERS)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "NEO_BUILD_FUZZERS requires Clang")
+    endif()
+    # Windows 上 clang_rt.fuzzer 与 ASan 运行时的 ABI 注解不一致，默认只启用
+    # 覆盖率引导；需要 ASan/UBSan 时请用匹配的 sanitizer 运行时单独构建。
+    target_compile_options(neojs PRIVATE -fsanitize=fuzzer-no-link)
+
+    add_executable(regex_fuzz tests/fuzz/RegexFuzz.cpp)
+    target_include_directories(regex_fuzz PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/private)
+    target_link_libraries(regex_fuzz PRIVATE neojs)
+    target_compile_options(regex_fuzz PRIVATE -fsanitize=fuzzer)
+    target_link_options(regex_fuzz PRIVATE -fsanitize=fuzzer)
 endif()

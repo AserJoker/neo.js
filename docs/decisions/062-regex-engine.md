@@ -318,10 +318,20 @@ Match
   `shouldAbort()` 仍每 1024 步检查一次，作为外部中断通道。
 - 新增 ReDoS 回归测试（`(a+)+$` + 失败尾字符 + 小步数预算）与固定种子的
   随机 pattern/subject 压力测试，断言不崩溃且状态合法。
-- **Pike VM 线性兜底暂不实现**：当前回溯 VM 已通过步数预算把最坏情况
-  限制在可中止范围内；引入 Pike VM 需要重做捕获优先级与 leftmost-first
-  语义，风险高于本阶段收益，留待后续独立 ADR。libFuzzer 目标同理，
-  当前以确定性随机压力测试覆盖基本健壮性。
+- **Pike VM 线性兜底**：新增 `RegexPikeVM`，`RegexEngine::exec` 对 regular
+  子集（无 `Backref`/`Lookahead`/`Lookbehind`）自动切换。线程按优先级排序，
+  遇到 `Match` 即截断更低优先级线程，保持 leftmost-first 捕获语义；同一
+  输入边界按 `(pc, scratch)` 去重，避免指数级线程增长。
+  - `Program`/`SubProgram` 新增 `scratchKinds`/`scratchLimits`：计数器按
+    min/max 钳制，空匹配进度标记按当前位置归零，使线程状态有界。
+  - u 模式以码点边界推进（从 `startIndex` 起按码点宽度建边界表），与回溯
+    VM 的起点扫描一致。
+  - 反向引用/前后瞻仍走回溯 VM，由 `stepLimit` 保护。
+- **libFuzzer 目标**：新增 `tests/fuzz/RegexFuzz.cpp` 与
+  `NEO_BUILD_FUZZERS` 选项（默认 OFF）。输入首字节为 flags 位集，其余对半
+  分为 pattern/subject，并映射到受限字母表；覆盖 Parser/Compiler/Pike VM/
+  回溯 VM。Windows 上 clang_rt.fuzzer 与 ASan 运行时 ABI 注解不兼容，
+  默认仅启用覆盖率引导，sanitizer 需用匹配运行时单独构建。
 
 **端到端接入（P0）**：
 
@@ -392,6 +402,7 @@ src/private/regex/
   RegexHost.h
   RegexEngine.h/.cpp
   RegexVM.h/.cpp
+  RegexPikeVM.h/.cpp
 src/private/core/
   types/RegExp.h
   RegExpBuiltins.h/.cpp
@@ -402,6 +413,8 @@ tests/unit/regex/
   RegexUnicodeTest.cpp
 tests/unit/compiler/
   RegExpTest.cpp          // JS API 端到端
+tests/fuzz/
+  RegexFuzz.cpp           // libFuzzer（NEO_BUILD_FUZZERS）
 ```
 
 ### 11. 测试策略

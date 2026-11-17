@@ -4,8 +4,10 @@
 #include "regex/RegexFlags.h"
 #include "regex/RegexHost.h"
 #include "regex/RegexMatch.h"
+#include "regex/RegexPikeVM.h"
 #include "regex/RegexProgram.h"
 #include "regex/RegexSubject.h"
+#include "regex/RegexVM.h"
 
 #include <gtest/gtest.h>
 
@@ -13,6 +15,7 @@
 #include <random>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -530,7 +533,7 @@ TEST(RegexVMTest, CacheEvictsLeastRecentlyUsed) {
     EXPECT_NE(first.program.get(), reloaded.program.get());
 }
 
-TEST(RegexVMTest, StepLimitAbortsCatastrophicBacktracking) {
+TEST(RegexVMTest, PikeVMHandlesCatastrophicBacktracking) {
     Fixture f;
     auto compiled = f.compile("(a+)+$");
     ASSERT_TRUE(compiled.ok());
@@ -540,7 +543,140 @@ TEST(RegexVMTest, StepLimitAbortsCatastrophicBacktracking) {
     ExecOptions options;
     options.stepLimit = 5000;
     MatchResult result = f.exec(compiled, subject, options);
+    // regular 子集走 Pike VM：不产生指数级回溯，预算内直接判定不匹配。
+    EXPECT_EQ(result.status, neo::regex::MatchStatus::NoMatch);
+}
+
+TEST(RegexVMTest, BacktrackingVMAbortsCatastrophicBacktracking) {
+    Fixture f;
+    auto compiled = f.compile("(a+)+$");
+    ASSERT_TRUE(compiled.ok());
+
+    std::string subject(30, 'a');
+    subject.push_back('X');
+    Subject view = Subject::fromAscii(subject);
+    ExecOptions options;
+    options.stepLimit = 5000;
+    neo::regex::RegexVM vm(*compiled.program, view, f.host);
+    MatchResult result = vm.exec(options);
     EXPECT_EQ(result.status, neo::regex::MatchStatus::Aborted);
+}
+
+TEST(RegexVMTest, PikeVMMatchesBacktrackingSemantics) {
+    Fixture f;
+    const std::vector<std::string> patterns = {
+        "a|ab",       "ab|a",        "(a|b)*c",   "a*?b",
+        "(a+)+",      "(a)?b",       "a{2,3}",    "a{0,2}?",
+        "\\bcat\\b",  "^a.*z$",      "[a-c]+",    "(ab|a)(b?)",
+        "(a*)*",      "(a?)*",       "a(b|c)*d",  "(a|ab)c",
+    };
+    const std::vector<std::string> subjects = {
+        "", "a", "ab", "aaab", "xabcabcz", "cat", "aXb", "aaaa",
+    };
+
+    for (const std::string& pattern : patterns) {
+        auto compiled = f.compile(pattern);
+        ASSERT_TRUE(compiled.ok()) << pattern;
+        for (const std::string& subject : subjects) {
+            Subject view = Subject::fromAscii(subject);
+            MatchResult pike = f.engine.exec(*compiled.program, view);
+            neo::regex::RegexVM backtracking(*compiled.program, view, f.host);
+            MatchResult slow = backtracking.exec(ExecOptions{});
+
+            EXPECT_EQ(pike.status, slow.status) << pattern << " / " << subject;
+            if (pike.status != neo::regex::MatchStatus::Matched) continue;
+            EXPECT_EQ(pike.start, slow.start) << pattern << " / " << subject;
+            EXPECT_EQ(pike.end, slow.end) << pattern << " / " << subject;
+            ASSERT_EQ(pike.captures.size(), slow.captures.size());
+            for (std::size_t i = 0; i < pike.captures.size(); ++i) {
+                EXPECT_EQ(pike.captures[i].matched,
+                          slow.captures[i].matched)
+                    << pattern << " / " << subject << " #" << i;
+                if (!pike.captures[i].matched) continue;
+                EXPECT_EQ(pike.captures[i].start, slow.captures[i].start)
+                    << pattern << " / " << subject << " #" << i;
+                EXPECT_EQ(pike.captures[i].end, slow.captures[i].end)
+                    << pattern << " / " << subject << " #" << i;
+            }
+        }
+    }
+}
+
+TEST(RegexVMTest, PikeVMUnicodeMatchesBacktracking) {
+    Fixture f;
+    auto compiled = f.compile("(.+?)(b)", "u");
+    ASSERT_TRUE(compiled.ok());
+    std::u16string subject = u"a";
+    subject.push_back(static_cast<char16_t>(0xD83D));
+    subject.push_back(static_cast<char16_t>(0xDE00));
+    subject.push_back(u'b');
+    Subject view = Subject::fromUtf16(subject);
+
+    MatchResult pike = f.engine.exec(*compiled.program, view);
+    neo::regex::RegexVM backtracking(*compiled.program, view, f.host);
+    MatchResult slow = backtracking.exec(ExecOptions{});
+
+    ASSERT_EQ(pike.status, slow.status);
+    EXPECT_EQ(pike.start, slow.start);
+    EXPECT_EQ(pike.end, slow.end);
+    ASSERT_EQ(pike.captures.size(), slow.captures.size());
+    for (std::size_t i = 0; i < pike.captures.size(); ++i) {
+        EXPECT_EQ(pike.captures[i].matched, slow.captures[i].matched);
+        if (!pike.captures[i].matched) continue;
+        EXPECT_EQ(pike.captures[i].start, slow.captures[i].start);
+        EXPECT_EQ(pike.captures[i].end, slow.captures[i].end);
+    }
+}
+
+TEST(RegexVMTest, RandomRegularPatternsMatchBacktracking) {
+    Fixture f;
+    std::mt19937 rng(0x5EEDu);
+    const std::string patternAlphabet =
+        "ab()[]{}|*+?\\^$.-0123dDsSwW";
+    const std::string subjectAlphabet = "ab01- \n";
+
+    for (int iteration = 0; iteration < 500; ++iteration) {
+        std::string pattern;
+        const std::size_t patternLength = 1 + rng() % 10;
+        for (std::size_t i = 0; i < patternLength; ++i) {
+            pattern.push_back(patternAlphabet[rng() % patternAlphabet.size()]);
+        }
+        auto compiled = f.compile(pattern);
+        if (!compiled.ok()) continue;
+        if (!neo::regex::supportsPikeVM(*compiled.program)) continue;
+
+        std::string subject;
+        const std::size_t subjectLength = rng() % 9;
+        for (std::size_t i = 0; i < subjectLength; ++i) {
+            subject.push_back(subjectAlphabet[rng() % subjectAlphabet.size()]);
+        }
+
+        Subject view = Subject::fromAscii(subject);
+        ExecOptions options;
+        options.stepLimit = 1000000;
+        MatchResult pike = f.engine.exec(*compiled.program, view, options);
+        neo::regex::RegexVM backtracking(*compiled.program, view, f.host);
+        MatchResult slow = backtracking.exec(options);
+        if (pike.status == neo::regex::MatchStatus::Aborted ||
+            slow.status == neo::regex::MatchStatus::Aborted) {
+            continue;
+        }
+
+        EXPECT_EQ(pike.status, slow.status) << pattern << " / " << subject;
+        if (pike.status != neo::regex::MatchStatus::Matched) continue;
+        EXPECT_EQ(pike.start, slow.start) << pattern << " / " << subject;
+        EXPECT_EQ(pike.end, slow.end) << pattern << " / " << subject;
+        ASSERT_EQ(pike.captures.size(), slow.captures.size());
+        for (std::size_t i = 0; i < pike.captures.size(); ++i) {
+            EXPECT_EQ(pike.captures[i].matched, slow.captures[i].matched)
+                << pattern << " / " << subject << " #" << i;
+            if (!pike.captures[i].matched) continue;
+            EXPECT_EQ(pike.captures[i].start, slow.captures[i].start)
+                << pattern << " / " << subject << " #" << i;
+            EXPECT_EQ(pike.captures[i].end, slow.captures[i].end)
+                << pattern << " / " << subject << " #" << i;
+        }
+    }
 }
 
 TEST(RegexVMTest, StepLimitAllowsNormalMatch) {

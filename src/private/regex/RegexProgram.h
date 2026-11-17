@@ -58,11 +58,20 @@ struct CharClassTable {
     std::vector<CharRange> ranges;
 };
 
+// scratch 槽语义：Pike VM 需要区分计数器与空匹配进度标记，以便对线程
+// 状态做有界规范化（计数器按上界钳制、进度标记按当前位置归零）。
+enum class ScratchKind : std::uint8_t {
+    Counter,   // SetCounter / IncCounter / CounterLt
+    Progress,  // Mark / Progress
+};
+
 // 前后瞻子程序：指令下标、字符类表、scratch 槽均独立；捕获槽与主程序共享。
 struct SubProgram {
     std::vector<Instruction> instructions;
     std::vector<CharClassTable> classes;
     std::uint32_t scratchCount = 0;
+    std::vector<ScratchKind> scratchKinds;
+    std::vector<std::uint32_t> scratchLimits;  // Counter 的钳制上界
 };
 
 struct Program {
@@ -71,6 +80,8 @@ struct Program {
     Dialect dialect;
     std::uint32_t captureCount = 0;  // 捕获组数量（不含整体匹配 group 0）
     std::uint32_t scratchCount = 0;
+    std::vector<ScratchKind> scratchKinds;
+    std::vector<std::uint32_t> scratchLimits;  // Counter 的钳制上界
     std::unordered_map<std::string, std::uint32_t> namedGroups;
     std::vector<Instruction> instructions;
     std::vector<CharClassTable> classes;

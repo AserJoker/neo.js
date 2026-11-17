@@ -71,6 +71,8 @@ private:
     bool failed_ = false;
     std::optional<CompileError> error_;
     std::uint32_t scratchCount_ = 0;
+    std::vector<ScratchKind> scratchKinds_;
+    std::vector<std::uint32_t> scratchLimits_;
 };
 
 }  // namespace neo::regex
