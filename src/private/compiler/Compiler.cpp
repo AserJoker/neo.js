@@ -150,24 +150,14 @@ void Compiler::compileEvalProgram() {
     }
     hoistLexicalSlots(program_.body);
 
-    // 完成值槽：最后一个顶层表达式语句的值。
+    // 完成值槽：执行到的最后一个表达式语句的值（嵌套函数体不参与）。
     code_->pushUndefined();
     code_->define(kEvalCompletion, true, true);
+    evalCompletion_ = true;
     for (const frontend::NodePtr& statement : program_.body) {
-        if (!statement) continue;
-        if (statement->kind() == NodeKind::ExpressionStatement) {
-            const auto& expression =
-                static_cast<const frontend::ExpressionStatement&>(*statement);
-            if (expression.expression) {
-                compileExpression(*expression.expression);
-                code_->dup();
-                code_->store(kEvalCompletion);
-                code_->pop();
-            }
-            continue;
-        }
-        compileStatement(*statement);
+        if (statement) compileStatement(*statement);
     }
+    evalCompletion_ = false;
     code_->load(kEvalCompletion);
     // 作用域由 evalSource 在返回值归属调用方后再弹出（异常路径也统一收口）。
     code_->ret();
@@ -459,6 +449,10 @@ void Compiler::compileExpressionStatement(
     const frontend::ExpressionStatement& node) {
     if (!node.expression) return;
     compileExpression(*node.expression);
+    if (evalCompletion_) {
+        code_->dup();
+        code_->store(kEvalCompletion);
+    }
     code_->pop();
 }
 
@@ -1843,6 +1837,13 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
         if (node.optional) emitOptionalGuard();
     }
 
+    // 直接 eval 候选点：无成员访问、非可选调用。VM 在执行期校验被调函数
+    // 是否仍是内建 %eval%（被遮蔽时回退普通调用）。
+    const bool directEvalCandidate =
+        !isMember && !node.optional &&
+        node.callee->kind() == NodeKind::Identifier &&
+        static_cast<const frontend::Identifier&>(*node.callee).name == "eval";
+
     bool hasSpread = false;
     for (const frontend::NodePtr& argument : node.arguments) {
         if (argument && argument->kind() == NodeKind::SpreadElement) {
@@ -1854,6 +1855,8 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
         compileArgumentsArray(node.arguments);
         if (isMember) {
             code_->callMethodSpread();
+        } else if (directEvalCandidate) {
+            code_->directEvalSpread();
         } else {
             code_->callSpread();
         }
@@ -1866,12 +1869,6 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
         compileExpression(*argument);
         ++argc;
     }
-    // 直接 eval 候选点：无成员访问、非可选调用、无展开。VM 在执行期校验
-    // 被调函数是否仍是内建 %eval%（被遮蔽时回退普通调用）。
-    const bool directEvalCandidate =
-        !isMember && !node.optional &&
-        node.callee->kind() == NodeKind::Identifier &&
-        static_cast<const frontend::Identifier&>(*node.callee).name == "eval";
     if (isMember) {
         code_->callMethod(argc);
     } else if (directEvalCandidate) {
@@ -3312,9 +3309,13 @@ void Compiler::compileClassElements(const frontend::ClassBody& body) {
                 code_->storeThis();
                 code_->pushScope();
                 hoistScope(block.body, true);
+                // static block 是独立执行上下文：不写外层 eval 完成值槽。
+                const bool savedEvalCompletion = evalCompletion_;
+                evalCompletion_ = false;
                 for (const frontend::NodePtr& statement : block.body) {
                     if (statement) compileStatement(*statement);
                 }
+                evalCompletion_ = savedEvalCompletion;
                 code_->pushUndefined();
                 code_->ret();
                 uint32_t afterBody = code_->here();
@@ -3471,6 +3472,9 @@ void Compiler::compileFunctionObject(const Node& node,
 void Compiler::compileFunctionBody(const frontend::NodeList& params,
                                    const Node& body, bool arrow,
                                    bool initInstanceElements) {
+    // 函数体是独立执行上下文：不写外层 eval 的完成值槽。
+    const bool savedEvalCompletion = evalCompletion_;
+    evalCompletion_ = false;
     // 形参建槽（argument_scope）：push_undefined; define "p"
     for (const frontend::NodePtr& param : params) {
         if (!param) continue;
@@ -3531,6 +3535,7 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
         // 表达式体箭头：表达式值即返回值。
         compileExpression(body);
         code_->ret();
+        evalCompletion_ = savedEvalCompletion;
         return;
     }
 
@@ -3547,6 +3552,7 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
     // 编译器统一补隐式 return undefined（ADR-024）。
     code_->pushUndefined();
     code_->ret();
+    evalCompletion_ = savedEvalCompletion;
 }
 
 // —— 声明提升 ——

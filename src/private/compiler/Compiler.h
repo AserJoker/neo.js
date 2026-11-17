@@ -269,6 +269,8 @@ private:
     // delete 可选链：短路出口压 true，最外层成员改为 delete_prop。
     bool deleteChain_ = false;
     bool deleteChainTarget_ = false;
+    // eval 完成值：表达式语句执行后写入 *eval-completion*（嵌套函数体关闭）。
+    bool evalCompletion_ = false;
     void compileDeleteChain(const frontend::ChainExpression& node);
 };
 

@@ -190,6 +190,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::PushRegExp:    return "push_regexp";
         case OpCode::DeclareVar:    return "declare_var";
         case OpCode::DirectEval:    return "direct_eval";
+        case OpCode::DirectEvalSpread: return "direct_eval_spread";
     }
     return "<unknown>";
 }
@@ -318,6 +319,7 @@ const VM::Handler* VM::handlers() {
         &VM::opPushRegExp,
         &VM::opDeclareVar,
         &VM::opDirectEval,
+        &VM::opDirectEvalSpread,
     };
     return table;
 }
@@ -1768,6 +1770,29 @@ Value* VM::opDirectEval() {
     } else {
         // eval 被遮蔽：按普通函数调用处理。
         result = ctx_->call(fn, ctx_->createUndefined(), argc, args.data());
+    }
+    if (detail::isErrorValue(result)) return fail(result);
+    if (detail::isInterruptValue(result)) return result;
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opDirectEvalSpread() {
+    if (stack_.size() < 2) {
+        return badBytecode("direct_eval_spread: operand stack underflow");
+    }
+    Value* argsArray = pop();
+    Value* fn = pop();
+    std::vector<Value*> args;
+    if (Value* err = readArrayElements(ctx_, argsArray, args)) return fail(err);
+
+    Value* result = nullptr;
+    if (fn == ctx_->evalFunction()) {
+        Value* source = args.empty() ? ctx_->createUndefined() : args[0];
+        result = ctx_->evalSource(source, ctx_->current(), true);
+    } else {
+        result = ctx_->call(fn, ctx_->createUndefined(),
+                            static_cast<size_t>(args.size()), args.data());
     }
     if (detail::isErrorValue(result)) return fail(result);
     if (detail::isInterruptValue(result)) return result;

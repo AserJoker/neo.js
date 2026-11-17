@@ -142,7 +142,11 @@ Value* Context::evalSource(Value* source, Scope* callerScope, bool direct) {
 }
 
 bool registerEvalBuiltin(IContext* ctx) {
-    Value* fn = ctx->createNativeFunction(evalNative, 1);
+    // %eval% 是普通函数，不可构造、无 prototype（§19.2.1）。
+    FunctionCreateOptions options;
+    options.constructible = false;
+    options.hasPrototypeProperty = false;
+    Value* fn = ctx->createNativeFunction(evalNative, 1, {}, options);
     if (fn == ctx->oomValue()) return false;
     ctx->setFunctionName(fn, "eval");
     ctx->global()->add(fn);

@@ -135,6 +135,7 @@ private:
     neo::core::Value* opPushRegExp();
     neo::core::Value* opDeclareVar();
     neo::core::Value* opDirectEval();
+    neo::core::Value* opDirectEvalSpread();
     neo::core::Value* opPop();
     neo::core::Value* opDup();
     neo::core::Value* opClone();

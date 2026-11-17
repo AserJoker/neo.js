@@ -174,6 +174,27 @@ TEST(EvalTest, DirectEvalCompletionValue) {
     EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 3.0);
 }
 
+TEST(EvalTest, CompletionValuePropagatesThroughBlockAndIf) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "var out = eval('if (true) { 1; 2; }');\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 2.0);
+}
+
+TEST(EvalTest, CompletionValueNotClobberedByNestedFunctionBody) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "var out = eval('function g() { 9; } 5;');\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 5.0);
+}
+
+TEST(EvalTest, CompletionValueFromLoopBody) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "var out = eval('for (var i = 0; i < 3; i = i + 1) i;');\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 2.0);
+}
+
 TEST(EvalTest, EvalSyntaxErrorBecomesSyntaxErrorException) {
     Fixture f;
     ASSERT_TRUE(runScript(f,
@@ -188,6 +209,44 @@ TEST(EvalTest, ShadowedEvalIsOrdinaryCall) {
                           "function f(eval) { return eval('1 + 2'); }\n"
                           "var out = f(function(s) { return 'shadow:' + s; });\n"));
     EXPECT_EQ(stringOf(lookupOut(f)), "shadow:1 + 2");
+}
+
+TEST(EvalTest, SloppyEvalVarConflictsWithCallerLexicalBinding) {
+    Fixture f;
+    f.ctx->global()->clearFlag("strict");
+    ASSERT_TRUE(runScript(f,
+                          "function f() {\n"
+                          "  let x = 1;\n"
+                          "  try { eval('var x = 2;'); return 'no'; }\n"
+                          "  catch (e) { return e.name; }\n"
+                          "}\n"
+                          "var out = f();\n"));
+    EXPECT_EQ(stringOf(lookupOut(f)), "SyntaxError");
+}
+
+TEST(EvalTest, DirectEvalWithSpreadUsesCallerScope) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "function f() {\n"
+                          "  var x = 1;\n"
+                          "  return eval(...['x + 1']);\n"
+                          "}\n"
+                          "var out = f();\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 2.0);
+}
+
+TEST(EvalTest, EvalIsNotConstructor) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "var out;\n"
+                          "try { new eval(); } catch (e) { out = e.name; }\n"));
+    EXPECT_EQ(stringOf(lookupOut(f)), "TypeError");
+}
+
+TEST(EvalTest, EvalHasNoPrototype) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f, "var out = eval.prototype;"));
+    EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
 }
 
 TEST(EvalTest, ClosureCreatedByEvalCapturesInjectedBinding) {

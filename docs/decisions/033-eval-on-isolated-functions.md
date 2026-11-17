@@ -122,16 +122,20 @@ popScope():
   （`linkEnvironmentCapture`：closureScope `linkLookupParent(current)` 并沿链
   `captureRef++`），复用 ADR-036 的 `captureRef` / `autoDispose` 孤儿回收，不再新增
   `eval_ref` 字段。
-- **编译期直接 eval 调用点**：Compiler 对非可选、无展开的 `eval(...)` 发射
-  `DirectEval`；VM 在执行期比较被调函数与内建 `%eval%`，相同才走直接 eval
-  （被遮蔽时回退普通调用）。
+- **编译期直接 eval 调用点**：Compiler 对非可选的 `eval(...)` 发射 `DirectEval`，
+  带展开的发射 `DirectEvalSpread`；VM 在执行期比较被调函数与内建 `%eval%`，
+  相同才走直接 eval（被遮蔽时回退普通调用）。
 - **运行时管线**：`Context::evalSource` 依次执行 Parser(Script) → Sema
   （`SemaOptions::inheritedStrict` 继承调用方严格模式）→ Compiler
   （`CompilerOptions::eval/evalStrict`）→ VM。
 - **作用域模型**：编译产物入口 `pushScope` 建立 eval 词法作用域；sloppy 直接 eval 的
   var/函数声明经 `DeclareVar` 进入调用方变量环境（`currentFunctionEnv_`），let/const
   留在 eval 词法作用域；严格 eval 的 var 也不外泄。间接 eval 在 global 执行。
-- **完成值**：最后一个顶层表达式语句写入隐藏槽 `*eval-completion*`，由 `ret` 返回。
+- **完成值**：表达式语句（含块/if/循环内）执行后写入隐藏槽 `*eval-completion*`，
+  由 `ret` 返回；嵌套函数体与 static block 关闭该行为。
+- **%eval% 形态**：不可构造、无 `prototype` 属性（`FunctionCreateOptions`）。
+- **词法冲突**：sloppy 直接 eval 的 var 声明若与调用方词法绑定同名，
+  `declareVar` 在 current → 变量环境之间检测到直接绑定并返回 SyntaxError。
 - **Code 生命周期**：eval 内创建的函数可能逃逸并长期引用字节码，故 eval 的 `Code`
   由 `Context::evalCodes_` 持有到 Context 析构。
 - **闭包作用域所有权**：FunctionData 对 closureScope 持有一个 `captureRef` 所有者 pin。
@@ -140,6 +144,6 @@ popScope():
   闭包链引用的 parent 作用域。
 
 当前限制：直接 eval 的调用点识别只看语法上的 `eval(...)`，实际是否直接 eval 由
-运行时函数同一性判定；带展开的 `eval(...args)` 暂按普通调用处理；
-eval 内函数对调用方后续新增绑定的 under-capture 依赖 Environment 链，已由
-dynamic 标记覆盖。
+运行时函数同一性判定；完成值对 try/finally 等复杂控制流按「最后执行的表达式语句」
+近似，未实现完整的 Completion Record 传播；eval 内函数对调用方后续新增绑定的
+under-capture 依赖 Environment 链，已由 dynamic 标记覆盖。

@@ -2459,6 +2459,15 @@ Value* Context::load(std::string_view name) {
 Value* Context::declareVar(std::string_view name) {
     // eval 的 var 声明：只补缺失槽，不覆盖已有绑定（§19.2.1.3）。
     Scope* target = evalVarScope_ != nullptr ? evalVarScope_ : current();
+    // 变量环境与调用点之间的直接绑定只能是词法声明（var/函数已提升到变量
+    // 环境），与之同名时 var 声明是早期错误（§19.2.1.3）。
+    for (Scope* s = current(); s != nullptr && s != target; s = s->parent()) {
+        if (s->bindingKind(name) == Scope::BindingKind::Direct) {
+            std::string msg = "Identifier '" + std::string(name) +
+                              "' has already been declared";
+            return detail::errorOf(this, ErrorKind::SyntaxError, msg);
+        }
+    }
     if (target->bindingKind(name) != Scope::BindingKind::None) return nullptr;
     Value* value = createUndefined();
     if (value == oomValue_) return value;

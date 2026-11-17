@@ -283,11 +283,13 @@ enum class OpCode : uint16_t {
     DeclareVar,
     // u32 argc：[callee, args...] → [result]：直接 eval 调用点。
     DirectEval,
+    // [callee, argsArray] → [result]：带展开的直接 eval 调用点。
+    DirectEvalSpread,
 };
 
 // 指令总数（分派表大小）。
 inline constexpr size_t kOpCodeCount =
-    static_cast<size_t>(OpCode::DirectEval) + 1;
+    static_cast<size_t>(OpCode::DirectEvalSpread) + 1;
 
 // Define 的 flags 位。未置位即 false：
 //   mutable    —— 绑定可被 store 改写（const 为 false）

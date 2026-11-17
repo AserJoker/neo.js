@@ -420,6 +420,10 @@ struct Code {
         emitU32(argc);
         return pc;
     }
+    // 带展开的直接 eval 调用点：栈上 [callee, argsArray]。
+    uint32_t directEvalSpread() {
+        return emitOp(OpCode::DirectEvalSpread);
+    }
     uint32_t callMethod(uint32_t argc) {
         uint32_t pc = emitOp(OpCode::CallMethod);
         emitU32(argc);
