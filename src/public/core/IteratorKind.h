@@ -34,6 +34,21 @@ enum class CollectionKind : uint8_t { Map, Set, WeakMap, WeakSet };
 // 集合迭代器产出种类（ES2024 §24.1.5 / §24.2.5）。
 enum class CollectionIterationKind : uint8_t { Key, Value, KeyAndValue };
 
+// TypedArray 元素类型（ES2024 §25.2.1）。
+enum class TypedArrayKind : uint8_t {
+    Int8,
+    Uint8,
+    Uint8Clamped,
+    Int16,
+    Uint16,
+    Int32,
+    Uint32,
+    Float32,
+    Float64,
+    BigInt64,
+    BigUint64,
+};
+
 }  // namespace neo::core
 
 #endif  // NEO_CORE_ITERATOR_KIND_H

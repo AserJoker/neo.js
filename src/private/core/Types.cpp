@@ -16,6 +16,7 @@
 #include "core/types/Date.h"
 #include "core/types/ArrayBuffer.h"
 #include "core/types/DataView.h"
+#include "core/types/TypedArray.h"
 #include "core/types/Coroutine.h"
 #include "core/types/Error.h"
 #include "core/types/Exception.h"
@@ -153,6 +154,11 @@ IType* getDataViewType() {
     return &inst;
 }
 
+IType* getTypedArrayType() {
+    static TypedArrayType inst;
+    return &inst;
+}
+
 IType* getErrorType() {
     static ErrorType inst;
     return &inst;
@@ -225,6 +231,7 @@ IType* getTypeByKind(TypeKind k) {
         case TypeKind::Date:             return getDateType();
         case TypeKind::ArrayBuffer:      return getArrayBufferType();
         case TypeKind::DataView:         return getDataViewType();
+        case TypeKind::TypedArray:       return getTypedArrayType();
         case TypeKind::Error:            return getErrorType();
         case TypeKind::Promise:          return getPromiseType();
         case TypeKind::Interrupt:        return getInterruptType();

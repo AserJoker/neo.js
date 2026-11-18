@@ -648,6 +648,18 @@ public:
     virtual void setArrayBufferPrototype(Value* proto) = 0;
     virtual void setDataViewPrototype(Value* proto) = 0;
 
+    // createTypedArray: 创建 TypedArray 视图（ES2024 §25.2.5.1）。
+    // 调用方负责校验 byteOffset/length 是否落在 buffer 范围内且对齐。
+    // 原型按 kind 挂对应的 %Int8Array.prototype% 等。
+    virtual Value* createTypedArray(Value* buffer, size_t byteOffset, size_t length,
+                                    TypedArrayKind kind,
+                                    std::string_view bindName = {}) = 0;
+
+    // setTypedArrayPrototype / typedArrayPrototype: bootstrap 专用，
+    // 每种元素类型一个原型对象（其 [[Prototype]] 是 %TypedArray.prototype%）。
+    virtual void setTypedArrayPrototype(TypedArrayKind kind, Value* proto) = 0;
+    virtual Value* typedArrayPrototype(TypedArrayKind kind) const = 0;
+
     // createRegExp: 编译 pattern/flags 并创建 RegExp 对象（ES2024 §22.2.3.1）。
     // 编译失败返回 SyntaxError 异常值；成功返回 RegExp（lastIndex 初始化为 0）。
     // 原型自动挂 regexpPrototype()。

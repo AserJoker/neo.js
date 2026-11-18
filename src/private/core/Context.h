@@ -95,6 +95,9 @@ class Context : public IContext {
     Value* datePrototype_ = nullptr;
     Value* arrayBufferPrototype_ = nullptr;
     Value* dataViewPrototype_ = nullptr;
+    // %Int8Array.prototype% … %BigUint64Array.prototype%，
+    // 每种元素类型一个（下标即 TypedArrayKind）。
+    Value* typedArrayPrototypes_[11] = {};
     Value* generatorPrototype_ = nullptr;  // %GeneratorPrototype%（ADR-045 §8）
     Value* asyncIteratorPrototype_ = nullptr;   // %AsyncIteratorPrototype%
     Value* asyncGeneratorPrototype_ = nullptr;  // %AsyncGeneratorPrototype%
@@ -347,6 +350,9 @@ public:
                              std::string_view bindName = {}) override;
     Value* createDataView(Value* buffer, size_t byteOffset, size_t byteLength,
                           std::string_view bindName = {}) override;
+    Value* createTypedArray(Value* buffer, size_t byteOffset, size_t length,
+                            TypedArrayKind kind,
+                            std::string_view bindName = {}) override;
     Value* createRegExp(std::string_view pattern, std::string_view flags,
                         std::string_view bindName = {}) override;
     Value* createRegExp(
@@ -469,6 +475,12 @@ public:
         arrayBufferPrototype_ = proto;
     }
     void setDataViewPrototype(Value* proto) override { dataViewPrototype_ = proto; }
+    void setTypedArrayPrototype(TypedArrayKind kind, Value* proto) override {
+        typedArrayPrototypes_[static_cast<size_t>(kind)] = proto;
+    }
+    Value* typedArrayPrototype(TypedArrayKind kind) const override {
+        return typedArrayPrototypes_[static_cast<size_t>(kind)];
+    }
     void setGeneratorPrototype(Value* proto) override { generatorPrototype_ = proto; }
     Value* generatorPrototype() const override { return generatorPrototype_; }
     void setAsyncIteratorPrototype(Value* proto) override {

@@ -107,6 +107,8 @@ enum class TypeKind : uint8_t {
     ArrayBuffer,
     // DataView（ES2024 §25.3）：普通对象 + 对 ArrayBuffer 的窗口。
     DataView,
+    // TypedArray（ES2024 §25.2）：整数索引 exotic 对象 + ArrayBuffer 视图。
+    TypedArray,
     // Error 对象（ES2024 §20.5）：普通对象 + [[ErrorData]] 内部槽。
     // 内部槽是标记性的（无状态），用于类型判定（Object.prototype.toString 的 tag、
     // 后续 Error.isError）。TypeError/RangeError 等子类共用本 kind，只差原型与 name。
@@ -319,6 +321,7 @@ IType* getCollectionIteratorType();
 IType* getDateType();
 IType* getArrayBufferType();
 IType* getDataViewType();
+IType* getTypedArrayType();
 IType* getErrorType();
 IType* getPromiseType();
 IType* getInterruptType();

@@ -21,6 +21,7 @@
 #include "core/ConsoleBuiltins.h"
 #include "core/DateBuiltins.h"
 #include "core/ArrayBufferBuiltins.h"
+#include "core/TypedArrayBuiltins.h"
 #include "core/FunctionInvoke.h"
 #include "core/ErrorBuiltins.h"
 #include "core/EvalBuiltins.h"
@@ -46,6 +47,7 @@
 #include "core/types/Date.h"
 #include "core/types/ArrayBuffer.h"
 #include "core/types/DataView.h"
+#include "core/types/TypedArray.h"
 #include "core/types/Boolean.h"
 #include "core/types/Coroutine.h"
 #include "core/types/Error.h"
@@ -216,6 +218,12 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
 
     // 11a. 注册 ArrayBuffer/DataView（ES2024 §25）。依赖 Object.prototype。
     if (!registerArrayBufferBuiltins(this)) {
+        std::abort();
+    }
+
+    // 11a. 注册 TypedArray（ES2024 §25.2）。依赖 Object.prototype 与
+    //      %Iterator.prototype%（迭代器复用 createArrayIterator）。
+    if (!registerTypedArrayBuiltins(this)) {
         std::abort();
     }
 
@@ -2172,6 +2180,24 @@ Value* Context::createDataView(Value* buffer, size_t byteOffset, size_t byteLeng
     Value* view = createTracked(getDataViewType(), d, bindName);
     if (view != oomValue_ && dataViewPrototype_ != nullptr) {
         static_cast<ObjectData*>(view->data())->prototype = dataViewPrototype_;
+    }
+    return view;
+}
+
+Value* Context::createTypedArray(Value* buffer, size_t byteOffset, size_t length,
+                                 TypedArrayKind kind, std::string_view bindName) {
+    auto* d = gc_->allocData<TypedArrayData>();
+    if (d == nullptr) return oomValue_;
+    d->buffer = buffer;
+    d->byteOffset = byteOffset;
+    d->length = length;
+    d->kind = kind;
+    Value* view = createTracked(getTypedArrayType(), d, bindName);
+    if (view != oomValue_) {
+        Value* proto = typedArrayPrototypes_[static_cast<size_t>(kind)];
+        if (proto != nullptr) {
+            static_cast<ObjectData*>(view->data())->prototype = proto;
+        }
     }
     return view;
 }
