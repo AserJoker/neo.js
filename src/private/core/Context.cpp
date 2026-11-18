@@ -21,7 +21,9 @@
 #include "core/ErrorBuiltins.h"
 #include "core/EvalBuiltins.h"
 #include "core/GeneratorBuiltins.h"
+#include "core/GlobalFunctionBuiltins.h"
 #include "core/IType.h"
+#include "core/MathBuiltins.h"
 #include "core/IteratorBuiltins.h"
 #include "core/NativeCoroutine.h"
 #include "core/ObjectBuiltins.h"
@@ -168,6 +170,15 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     // 9b. 注册 JSON 命名空间（ES2024 §25.5）。
     //     依赖 Object.prototype / Array.prototype 已就绪。
     if (!registerJSONBuiltins(this)) {
+        std::abort();
+    }
+
+    // 9c. 注册 Math 命名空间与全局函数（ES2024 §19.2 / §21.3）。
+    //     依赖 Object.prototype / Function.prototype 已就绪。
+    if (!registerMathBuiltins(this)) {
+        std::abort();
+    }
+    if (!registerGlobalFunctionBuiltins(this)) {
         std::abort();
     }
 
