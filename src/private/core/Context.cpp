@@ -17,6 +17,7 @@
 #include "core/JSONBuiltins.h"
 #include "core/AsyncGeneratorBuiltins.h"
 #include "core/BigIntBuiltins.h"
+#include "core/CollectionBuiltins.h"
 #include "core/FunctionInvoke.h"
 #include "core/ErrorBuiltins.h"
 #include "core/EvalBuiltins.h"
@@ -38,6 +39,7 @@
 #include "core/types/Array.h"
 #include "core/types/AsyncGenerator.h"
 #include "core/types/BigInt.h"
+#include "core/types/Collection.h"
 #include "core/types/Boolean.h"
 #include "core/types/Coroutine.h"
 #include "core/types/Error.h"
@@ -203,6 +205,12 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     // 11. 注册 Iterator 抽象类与数组迭代器内建（ES2024 §23.1.5 / ES2025 §27.1）。
     //     依赖 Object.prototype / Function.prototype / Array.prototype 已就绪。
     if (!registerIteratorBuiltins(this)) {
+        std::abort();
+    }
+
+    // 11a. 注册 Map/Set/WeakMap/WeakSet（ES2024 §24）。
+    //      依赖 Object.prototype 与 %Iterator.prototype% 已就绪。
+    if (!registerCollectionBuiltins(this)) {
         std::abort();
     }
 
@@ -2065,6 +2073,46 @@ Value* Context::createIteratorHelper(Value* underlying, Value* nextMethod,
         static_cast<ObjectData*>(helper->data())->prototype = iteratorHelperPrototype_;
     }
     return helper;
+}
+
+Value* Context::createCollection(CollectionKind kind, std::string_view bindName) {
+    auto* d = gc_->allocData<CollectionData>();
+    if (d == nullptr) return oomValue_;
+    d->kind = kind;
+    Value* collection = createTracked(getCollectionType(), d, bindName);
+    if (collection == oomValue_) return collection;
+    Value* proto = nullptr;
+    switch (kind) {
+        case CollectionKind::Map: proto = mapPrototype_; break;
+        case CollectionKind::Set: proto = setPrototype_; break;
+        case CollectionKind::WeakMap: proto = weakMapPrototype_; break;
+        case CollectionKind::WeakSet: proto = weakSetPrototype_; break;
+    }
+    if (proto != nullptr) {
+        static_cast<ObjectData*>(collection->data())->prototype = proto;
+    }
+    return collection;
+}
+
+Value* Context::createCollectionIterator(Value* collection,
+                                         CollectionIterationKind kind,
+                                         std::string_view bindName) {
+    auto* d = gc_->allocData<CollectionIteratorData>();
+    if (d == nullptr) return oomValue_;
+    d->collection = collection;
+    d->kind = kind;
+    Value* iterator = createTracked(getCollectionIteratorType(), d, bindName);
+    if (iterator == oomValue_) return iterator;
+    CollectionData* cd = asCollection(collection);
+    Value* proto = nullptr;
+    if (cd != nullptr) {
+        proto = cd->kind == CollectionKind::Set ? setIteratorPrototype_
+                                                : mapIteratorPrototype_;
+    }
+    if (proto != nullptr) {
+        static_cast<ObjectData*>(iterator->data())->prototype = proto;
+    }
+    return iterator;
 }
 
 // —— Error 对象（ADR-038）——

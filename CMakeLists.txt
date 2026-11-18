@@ -151,6 +151,7 @@ add_library(neojs STATIC
     src/private/core/types/Array.cpp
     src/private/core/types/Arguments.cpp
     src/private/core/types/Iterator.cpp
+    src/private/core/types/Collection.cpp
     src/private/core/types/Error.cpp
     src/private/core/types/PrimitiveWrapper.cpp
     src/private/core/types/Promise.cpp
@@ -167,6 +168,7 @@ add_library(neojs STATIC
     src/private/core/GlobalFunctionBuiltins.cpp
     src/private/core/StringBuiltins.cpp
     src/private/core/NumberBuiltins.cpp
+    src/private/core/CollectionBuiltins.cpp
     src/private/core/FunctionInvoke.cpp
     src/private/unicode/Utf8.cpp
     src/private/unicode/UnicodeClassification.cpp

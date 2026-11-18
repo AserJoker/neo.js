@@ -12,6 +12,7 @@
 #include "core/types/AsyncGenerator.h"
 #include "core/types/BigInt.h"
 #include "core/types/Boolean.h"
+#include "core/types/Collection.h"
 #include "core/types/Coroutine.h"
 #include "core/types/Error.h"
 #include "core/types/Exception.h"
@@ -124,6 +125,16 @@ IType* getIteratorHelperType() {
     return &inst;
 }
 
+IType* getCollectionType() {
+    static CollectionType inst;
+    return &inst;
+}
+
+IType* getCollectionIteratorType() {
+    static CollectionIteratorType inst;
+    return &inst;
+}
+
 IType* getErrorType() {
     static ErrorType inst;
     return &inst;
@@ -191,6 +202,8 @@ IType* getTypeByKind(TypeKind k) {
         case TypeKind::StringIterator:   return getStringIteratorType();
         case TypeKind::IteratorWrapper:  return getIteratorWrapperType();
         case TypeKind::IteratorHelper:   return getIteratorHelperType();
+        case TypeKind::Collection:       return getCollectionType();
+        case TypeKind::CollectionIterator: return getCollectionIteratorType();
         case TypeKind::Error:            return getErrorType();
         case TypeKind::Promise:          return getPromiseType();
         case TypeKind::Interrupt:        return getInterruptType();

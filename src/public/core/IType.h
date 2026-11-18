@@ -96,6 +96,11 @@ enum class TypeKind : uint8_t {
     // Iterator 辅助方法（map/filter/take/drop/flatMap）的惰性迭代器
     // （ES2025 §27.1.3.3）。持底层迭代器、回调与计数器。
     IteratorHelper,
+    // 集合对象（ES2024 §24.1/§24.2/§24.3）：Map/Set/WeakMap/WeakSet 共用，
+    // 差异由 CollectionData::kind 区分。持有序条目列表。
+    Collection,
+    // 集合迭代器（ES2024 §24.1.5 / §24.2.5）：Map/Set 的 keys/values/entries。
+    CollectionIterator,
     // Error 对象（ES2024 §20.5）：普通对象 + [[ErrorData]] 内部槽。
     // 内部槽是标记性的（无状态），用于类型判定（Object.prototype.toString 的 tag、
     // 后续 Error.isError）。TypeError/RangeError 等子类共用本 kind，只差原型与 name。
@@ -303,6 +308,8 @@ IType* getArrayIteratorType();
 IType* getStringIteratorType();
 IType* getIteratorWrapperType();
 IType* getIteratorHelperType();
+IType* getCollectionType();
+IType* getCollectionIteratorType();
 IType* getErrorType();
 IType* getPromiseType();
 IType* getInterruptType();

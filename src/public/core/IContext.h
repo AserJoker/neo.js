@@ -606,6 +606,24 @@ public:
     virtual void setIteratorHelperPrototype(Value* proto) = 0;
     virtual Value* iteratorHelperPrototype() const = 0;
 
+    // createCollection: 创建空集合对象（ES2024 §24.1.1.1 等）。
+    // kind 决定原型（Map/Set/WeakMap/WeakSet.prototype）。
+    virtual Value* createCollection(CollectionKind kind,
+                                    std::string_view bindName = {}) = 0;
+
+    // createCollectionIterator: 创建集合迭代器（§24.1.5.1 / §24.2.5.1）。
+    // 按 collection 的 CollectionKind 自动挂 %MapIteratorPrototype% 或
+    // %SetIteratorPrototype%。
+    virtual Value* createCollectionIterator(Value* collection,
+                                            CollectionIterationKind kind,
+                                            std::string_view bindName = {}) = 0;
+
+    // setCollectionPrototypes: bootstrap 专用——集合原型与迭代器原型建立后设置。
+    virtual void setCollectionPrototypes(Value* mapProto, Value* setProto,
+                                         Value* weakMapProto, Value* weakSetProto,
+                                         Value* mapIteratorProto,
+                                         Value* setIteratorProto) = 0;
+
     // createRegExp: 编译 pattern/flags 并创建 RegExp 对象（ES2024 §22.2.3.1）。
     // 编译失败返回 SyntaxError 异常值；成功返回 RegExp（lastIndex 初始化为 0）。
     // 原型自动挂 regexpPrototype()。

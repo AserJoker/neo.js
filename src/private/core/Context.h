@@ -85,6 +85,13 @@ class Context : public IContext {
     Value* stringIteratorPrototype_ = nullptr;
     Value* iteratorWrapperPrototype_ = nullptr;
     Value* iteratorHelperPrototype_ = nullptr;
+    // 集合原型与迭代器原型（ES2024 §24）
+    Value* mapPrototype_ = nullptr;
+    Value* setPrototype_ = nullptr;
+    Value* weakMapPrototype_ = nullptr;
+    Value* weakSetPrototype_ = nullptr;
+    Value* mapIteratorPrototype_ = nullptr;
+    Value* setIteratorPrototype_ = nullptr;
     Value* generatorPrototype_ = nullptr;  // %GeneratorPrototype%（ADR-045 §8）
     Value* asyncIteratorPrototype_ = nullptr;   // %AsyncIteratorPrototype%
     Value* asyncGeneratorPrototype_ = nullptr;  // %AsyncGeneratorPrototype%
@@ -327,6 +334,11 @@ public:
                                 IteratorHelperKind kind, Value* callback,
                                 double counter,
                                 std::string_view bindName = {}) override;
+    Value* createCollection(CollectionKind kind,
+                            std::string_view bindName = {}) override;
+    Value* createCollectionIterator(Value* collection,
+                                    CollectionIterationKind kind,
+                                    std::string_view bindName = {}) override;
     Value* createRegExp(std::string_view pattern, std::string_view flags,
                         std::string_view bindName = {}) override;
     Value* createRegExp(
@@ -431,6 +443,17 @@ public:
     }
     Value* iteratorHelperPrototype() const override {
         return iteratorHelperPrototype_;
+    }
+    void setCollectionPrototypes(Value* mapProto, Value* setProto,
+                                 Value* weakMapProto, Value* weakSetProto,
+                                 Value* mapIteratorProto,
+                                 Value* setIteratorProto) override {
+        mapPrototype_ = mapProto;
+        setPrototype_ = setProto;
+        weakMapPrototype_ = weakMapProto;
+        weakSetPrototype_ = weakSetProto;
+        mapIteratorPrototype_ = mapIteratorProto;
+        setIteratorPrototype_ = setIteratorProto;
     }
     void setGeneratorPrototype(Value* proto) override { generatorPrototype_ = proto; }
     Value* generatorPrototype() const override { return generatorPrototype_; }

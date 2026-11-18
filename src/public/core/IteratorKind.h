@@ -28,6 +28,12 @@ enum class IteratorHelperKind : uint8_t {
     FlatMap,
 };
 
+// 集合种类（Map/Set/WeakMap/WeakSet 共用一套对象布局与类型）。
+enum class CollectionKind : uint8_t { Map, Set, WeakMap, WeakSet };
+
+// 集合迭代器产出种类（ES2024 §24.1.5 / §24.2.5）。
+enum class CollectionIterationKind : uint8_t { Key, Value, KeyAndValue };
+
 }  // namespace neo::core
 
 #endif  // NEO_CORE_ITERATOR_KIND_H
