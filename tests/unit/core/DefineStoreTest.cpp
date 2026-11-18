@@ -145,7 +145,7 @@ TEST(DefineStoreTest, DefineOnlyAffectsCurrentScope) {
     // 子 scope 有 y，父 scope 没有
     EXPECT_NE(ctx->current()->lookup("y"), nullptr);
     ctx->popScope();
-    EXPECT_EQ(ctx->root()->lookup("y"), nullptr);
+    EXPECT_EQ(ctx->root()->lookupChain("y"), nullptr);
 }
 
 TEST(DefineStoreTest, DefineWithExceptionSourcePassthrough) {
@@ -239,7 +239,7 @@ TEST(DefineStoreTest, StoreFindsInParentScope) {
 
     // 子 scope store 修改父 scope 的 x
     ctx->store("x", ctx->createNumber(42.0));
-    auto* d = static_cast<NumberData*>(ctx->root()->lookup("x")->data());
+    auto* d = static_cast<NumberData*>(ctx->root()->lookupChain("x")->data());
     EXPECT_DOUBLE_EQ(d->value, 42.0);
 
     ctx->popScope();

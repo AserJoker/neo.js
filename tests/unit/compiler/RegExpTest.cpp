@@ -75,7 +75,7 @@ Value* runScript(Fixture& f, const std::string& source) {
     if (!result.ok()) return nullptr;
     VM vm(f.ctx.get(), result.code.get());
     (void)vm.run();
-    return f.ctx->root()->lookup("result");
+    return f.ctx->root()->lookupChain("result");
 }
 
 std::string stringValue(Value* value) {

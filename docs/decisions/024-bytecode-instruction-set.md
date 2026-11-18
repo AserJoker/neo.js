@@ -509,3 +509,20 @@ Compiler 在 `typeof` + `Identifier` 时发射 `load_soft`，其余表达式保�
 - 用户 try 帧跨出时归一化 EMPTY → undefined；`try_begin_internal` 不归一化。
 - 编译器对 if/循环/switch/labelled/try 在构造边界发射 Save/Merge，实现
   `UpdateEmpty(inner, outer)` 与循环 V 累积。
+
+## 追加：全局声明指令组（Global Environment Record，2026-11-18）
+
+脚本全局代码（`Compiler::globalCode_`）的 var/函数/词法声明按 §9.1.1.4
+落到全局对象属性与全局声明记录：
+
+| 指令 | 栈契约 | 说明 |
+|------|--------|------|
+| `declare_global_var u32 nameIndex` | `d → d` | CreateGlobalVarBinding：属性已存在则 no-op，否则定义 undefined 数据属性 |
+| `declare_global_function u32 nameIndex` | `d → d` | CreateGlobalFunctionBinding：重配置/替换已有属性，非法重定义报 TypeError |
+| `check_global_lexical u32 nameIndex` | `d → d` | HasRestrictedGlobalProperty：不可配置全局属性与 let/const 冲突报 SyntaxError |
+
+- `declare_global_var`/`declare_global_function` 由 `hoistVarSlots` 与
+  `hoistSlots` 在 `globalCode_ && varScope` 时发射；模块与函数体不进入该模式。
+- `check_global_lexical` 由 `hoistLexicalSlots` 在全局词法声明 define 前发射。
+- 运行时分别调用 `IContext::declareGlobalVar` / `declareGlobalFunction` /
+  `checkGlobalLexical`，由 `Context` 在 `globalObject_` 上执行属性算法。

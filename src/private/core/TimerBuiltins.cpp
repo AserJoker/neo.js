@@ -101,8 +101,7 @@ bool bindGlobalFn(IContext* ctx, const char* name, NativeFn fn, size_t minArgc) 
     Value* f = ctx->createNativeFunction(fn, minArgc);
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
-    ctx->global()->add(f);
-    ctx->global()->bind(name, f);
+    ctx->defineGlobal(name, f, true, false, true);
     return true;
 }
 

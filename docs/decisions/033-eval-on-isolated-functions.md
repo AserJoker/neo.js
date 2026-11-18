@@ -227,8 +227,35 @@ SyntaxError。
   返回 SyntaxError。这样 `function f(){var x; eval('var x=2')}` 与
   `let x; eval('var x')` 分别得到复用与早期错误。
 
-已知限制：全局内建（如 `Math`）通过 `bind` 落在 `global_`，间接 eval 的
-`var Math` 仍会在 `scriptRoot_` 建遮蔽绑定，未按全局对象属性复用。
+### 全局环境记录：对象记录 + 声明记录（B1，2026-11-18）
+
+此前全局内建通过 `Scope::bind` 落在 `global_`，脚本顶层 `var` 落在
+`scriptRoot_`，`var Math` 会在 `scriptRoot_` 建 undefined 遮蔽绑定，违反
+§9.1.1.4 的 Global Environment Record 语义。B1 落地：
+
+- **GlobalScope 对象记录门面**：`GlobalScope : Scope` 持有唯一 `globalObject_`
+  （普通对象，原型回填 `Object.prototype`）。`lookup` 先查声明绑定，未命中再
+  按 `HasProperty` 回退到全局对象属性；`store` 对声明绑定返回 NotFound，
+  其余走 `setProperty`（严格模式下不存在的属性交给 Context 的 strict 兜底）。
+- **内建属性化**：所有内建注册从 `global()->bind` 改为
+  `IContext::defineGlobal`，成为全局对象属性（可写/不可枚举/可配置）。
+  `globalThis`、`undefined`、`NaN`、`Infinity` 在构造期定义；全局 `this` 为
+  `globalObject_`。
+- **全局 var/函数声明**：脚本编译进入 `globalCode_` 模式，var 发射
+  `declare_global_var`（CreateGlobalVarBinding：属性已存在则 no-op），函数声明
+  发射 `declare_global_function`（CreateGlobalFunctionBinding：重配置/替换）。
+  顶层 let/const 在定义前发射 `check_global_lexical`
+  （HasRestrictedGlobalProperty）。
+- **模块根**：模块 root 的 parent 改为 `scriptRoot_`（全局声明记录），再经其
+  parent 到达 GlobalScope；模块顶层 `this` 显式设为 `undefined`。
+- **闭包捕获**：全局对象属性没有 `Binding` 条目，`setClosure` 不再捕获其当前
+  值快照（否则会永久指向函数声明的 undefined 占位），改为运行时沿作用域链
+  动态读取。
+
+B2（后续优化，未实施）：让 `GlobalScope` 同时持有声明记录，所有 root scope
+直接以 `GlobalScope` 为父；脚本顶层 let/const 用 `DefineGlobalLexical` 定义到
+`GlobalScope`，删除独立的 `scriptRoot_` 层。B1 保留该层是为了不引入新的
+全局词法定义指令，改动面更小。
 
 ### arguments 复用（2026-11-18）
 

@@ -162,6 +162,8 @@ public:
     virtual Scope* global() const = 0;
     virtual Scope* root() const = 0;
     virtual Scope* current() const = 0;
+    // 唯一的 JS 全局对象（Global Environment Record 的对象记录）。
+    virtual Value* globalObject() const = 0;
 
     // —— scope 切换（ADR-022 函数调用）——
     // Scope 的 parent 链本身就是作用域栈，Context 只需保存 root/current 两个指针，无须额外栈。
@@ -708,6 +710,12 @@ public:
                                   bool writable = true, bool enumerable = true,
                                   bool configurable = true) = 0;
 
+    // defineGlobal: 在全局对象上定义属性（内建注册用）。
+    // 成功返回 true；OOM/定义失败返回 false。
+    virtual bool defineGlobal(std::string_view name, Value* value,
+                              bool writable = true, bool enumerable = false,
+                              bool configurable = true) = 0;
+
     // defineAccessor: 定义访问器属性（getter/setter 须为 Function 或 null）。
     // 成功返回 obj，失败返回 Exception。
     virtual Value* defineAccessor(Value* obj, Value* key, Value* getter, Value* setter,
@@ -1034,6 +1042,19 @@ public:
     // declareVar: eval 的 var 声明——只在变量环境缺失时建 undefined 槽，
     // 已有绑定保持原值。成功返回 nullptr，失败返回错误值。
     virtual Value* declareVar(std::string_view name) = 0;
+
+    // —— 全局声明（§16.1.7 / §19.2.1.3）——
+    // declareGlobalVar: CreateGlobalVarBinding。全局对象已有同名属性则复用
+    // （不初始化）；否则按 configurable 创建 undefined 数据属性。
+    virtual Value* declareGlobalVar(std::string_view name,
+                                    bool configurable) = 0;
+    // declareGlobalFunction: CreateGlobalFunctionBinding 的声明阶段。
+    // 校验/重配置全局对象属性，函数对象随后由 store 写入。
+    virtual Value* declareGlobalFunction(std::string_view name,
+                                         bool configurable) = 0;
+    // checkGlobalLexical: HasRestrictedGlobalProperty。全局 let/const 名与
+    // 全局对象上不可配置的自有属性冲突时返回 SyntaxError。
+    virtual Value* checkGlobalLexical(std::string_view name) = 0;
 
     // evalSource: 执行 eval 源码。source 非 String 时原样返回。
     // direct=true 时在 callerScope 的词法环境中执行，var 进入调用方变量环境；

@@ -151,6 +151,55 @@ Scope::StoreOutcome Scope::store(IContext* ctx, std::string_view name,
     return StoreOutcome::NotFound;
 }
 
+// —— GlobalScope ——
+
+GlobalScope::GlobalScope(Scope* parent, infra::IAllocator* alloc,
+                         IContext* context, Value* globalObject)
+    : Scope(parent, alloc, context), globalObject_(globalObject) {
+    if (globalObject_ != nullptr) add(globalObject_);
+}
+
+Value* GlobalScope::lookup(std::string_view name) const {
+    Value* value = Scope::lookup(name);
+    if (value != nullptr) return value;
+    IContext* ctx = context();
+    if (ctx == nullptr || globalObject_ == nullptr) return nullptr;
+    Value* key = ctx->createString(name);
+    if (key == ctx->oomValue()) return key;
+    // 对象环境记录用 HasProperty（含原型链），不能用 getProperty 是否为
+    // undefined 判断——`undefined` 属性本身的值就是 undefined。
+    Value* has = ctx->hasProperty(globalObject_, key);
+    if (detail::isErrorValue(has)) return has;
+    if (!detail::toBoolean(has)) return nullptr;
+    return ctx->getProperty(globalObject_, key);
+}
+
+Scope::StoreOutcome GlobalScope::store(IContext* ctx, std::string_view name,
+                                       Value* source, Value*& result) {
+    // 声明绑定（全局 let/const、内部值）由 Context::store 处理 TDZ/const。
+    if (bindingKind(name) != BindingKind::None) return StoreOutcome::NotFound;
+    // 严格模式下给不存在的全局属性赋值是 ReferenceError（§9.1.1.4.5
+    // SetMutableBinding 把 S=true 传给对象记录），交给 Context::store 的
+    // strict 兜底统一报错。
+    Value* has = ctx->hasProperty(globalObject_, name);
+    if (detail::isErrorValue(has)) {
+        result = has;
+        return StoreOutcome::Error;
+    }
+    if (!detail::toBoolean(has) && ctx->hasFlag("strict")) {
+        return StoreOutcome::NotFound;
+    }
+    result = ctx->setProperty(globalObject_, name, source);
+    return detail::isErrorValue(result) ? StoreOutcome::Error
+                                        : StoreOutcome::Handled;
+}
+
+void GlobalScope::destroySelf() {
+    infra::IAllocator* alloc = allocator();
+    this->~GlobalScope();
+    alloc->free(this);
+}
+
 // —— WithScope ——
 
 WithScope::WithScope(Scope* parent, infra::IAllocator* alloc, IContext* context,

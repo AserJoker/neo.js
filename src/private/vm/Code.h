@@ -204,6 +204,21 @@ struct Code {
         emitU32(addString(std::string(name)));
         return pc;
     }
+    uint32_t declareGlobalVar(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::DeclareGlobalVar);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t declareGlobalFunction(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::DeclareGlobalFunction);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t checkGlobalLexical(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::CheckGlobalLexical);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
     uint32_t initialize(std::string_view name) {
         uint32_t pc = emitOp(OpCode::Initialize);
         emitU32(addString(std::string(name)));

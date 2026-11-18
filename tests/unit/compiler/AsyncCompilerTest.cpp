@@ -98,7 +98,7 @@ Value* runScript(Fixture& f, const std::string& source, const char* name) {
     VM vm(f.ctx.get(), f.code.get());
     Value* res = vm.run();
     EXPECT_FALSE(isErrorValue(res)) << errorText(f.ctx.get(), res);
-    return f.ctx->current()->lookup(name);
+    return f.ctx->current()->lookupChain(name);
 }
 
 Value* get(IContext* ctx, Value* obj, const char* name) {

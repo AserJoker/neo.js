@@ -189,8 +189,9 @@ Value* Context::evalSource(Value* source, Scope* callerScope, bool direct) {
     }
     if (direct) entry->markDynamic();
     current_ = entry;
-    // 间接 eval 在全局环境中执行：新建函数的模块根取 global。
-    if (!direct) root_ = global_;
+    // 间接 eval 在全局环境中执行：新建函数的模块根取脚本全局声明记录，
+    // 其 parent 再回退到 GlobalScope 的对象记录。
+    if (!direct) root_ = scriptRoot_;
 
     // eval 内创建的函数可能逃逸并长期引用 Code，故 Code 由 Context 持有。
     vm::Code* code = compiled.code.release();
@@ -219,8 +220,7 @@ bool registerEvalBuiltin(IContext* ctx) {
     Value* fn = ctx->createNativeFunction(evalNative, 1, {}, options);
     if (fn == ctx->oomValue()) return false;
     ctx->setFunctionName(fn, "eval");
-    ctx->global()->add(fn);
-    ctx->global()->bind("eval", fn);
+    ctx->defineGlobal("eval", fn, true, false, true);
     ctx->setEvalFunction(fn);
     return true;
 }

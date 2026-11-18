@@ -38,6 +38,8 @@ class Context : public IContext {
     infra::IClock* clock_;                 // 注入，无所有权（事件循环时间源）
 
     Scope* global_ = nullptr;              // Context 创建，析构时销毁（递归销毁整棵树）
+    // 全局对象（GlobalScope 的对象记录）：全局 var/函数声明与内建都落在它上面。
+    Value* globalObject_ = nullptr;
     Scope* root_ = nullptr;                // 当前模块根作用域（可被 setRootScope 切换）
     // 脚本顶层环境（构造时创建，永不切换）：间接 eval 的词法环境入口。
     Scope* scriptRoot_ = nullptr;
@@ -135,6 +137,7 @@ public:
     infra::Console* console() const override { return console_; }
 
     Scope* global() const override { return global_; }
+    Value* globalObject() const override { return globalObject_; }
     Scope* root() const override { return root_; }
     Scope* current() const override { return current_; }
 
@@ -462,6 +465,13 @@ public:
 
     // eval（§19.2.1）
     Value* declareVar(std::string_view name) override;
+    // 全局环境记录（§9.1.1.4）：对象记录落在 globalObject_，声明记录落在 scriptRoot_。
+    bool defineGlobal(std::string_view name, Value* value, bool writable,
+                      bool enumerable, bool configurable) override;
+    Value* declareGlobalVar(std::string_view name, bool configurable) override;
+    Value* declareGlobalFunction(std::string_view name,
+                                 bool configurable) override;
+    Value* checkGlobalLexical(std::string_view name) override;
     Value* evalSource(Value* source, Scope* callerScope, bool direct) override;
     Value* evalFunction() const override { return evalFunction_; }
     void setEvalFunction(Value* fn) override { evalFunction_ = fn; }

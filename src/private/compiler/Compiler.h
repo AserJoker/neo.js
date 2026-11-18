@@ -249,7 +249,8 @@ private:
     void hoistSlots(const frontend::NodeList& body, bool varScope);
     // eval：var 槽与词法槽分开提升（sloppy 模式 var 进调用方变量环境）。
     void hoistVarSlots(const frontend::NodeList& body, bool declare);
-    void hoistLexicalSlots(const frontend::NodeList& body);
+    void hoistLexicalSlots(const frontend::NodeList& body,
+                           bool globalLexical = false);
     void hoistFunctions(const frontend::NodeList& body, bool annexB = false);
     void hoistEvalFunctions(const frontend::NodeList& body);
     void collectVarNames(const frontend::Node& statement,
@@ -293,6 +294,9 @@ private:
     bool hasArgumentsBinding_ = false;
     // 当前代码是否严格模式（决定 Annex B 块级函数是否额外建 var 绑定）。
     bool strict_ = false;
+    // 当前代码是否是脚本全局代码：var/函数声明落到 global object 属性，
+    // let/const 需检查不可配置全局属性冲突（§9.1.1.4）。
+    bool globalCode_ = false;
     // eval 完成值保存槽/循环 V 槽的唯一编号（惰性定义在运行时作用域）。
     int completionSlotCounter_ = 0;
     std::string newCompletionSlot(std::string_view prefix);

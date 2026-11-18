@@ -320,6 +320,12 @@ enum class OpCode : uint16_t {
     PushRegExp,
     // u32 nameIndex：[] → []：eval 变量声明（缺失才建槽，已有绑定不变）。
     DeclareVar,
+    // u32 nameIndex：[] → []：全局 var 声明（CreateGlobalVarBinding）。
+    DeclareGlobalVar,
+    // u32 nameIndex：[] → []：全局函数声明（CreateGlobalFunctionBinding）。
+    DeclareGlobalFunction,
+    // u32 nameIndex：[] → []：全局 let/const 与不可配置全局属性冲突检查。
+    CheckGlobalLexical,
     // u32 argc：[callee, args...] → [result]：直接 eval 调用点。
     DirectEval,
     // [callee, argsArray] → [result]：带展开的直接 eval 调用点。

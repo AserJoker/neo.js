@@ -91,10 +91,9 @@ Value* symbolKeyFor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) 
     return ctx->symbolKeyFor(argv[0]);
 }
 
-// 把值挂到 global scope：add 跟踪 + bind 名字
+// 把值定义为 global object 属性（全局环境记录的对象记录）。
 void bindGlobal(IContext* ctx, std::string_view name, Value* v) {
-    ctx->global()->add(v);
-    ctx->global()->bind(name, v);
+    ctx->defineGlobal(name, v, true, false, true);
 }
 
 }  // namespace

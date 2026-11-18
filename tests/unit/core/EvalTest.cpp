@@ -81,7 +81,22 @@ bool runScript(Fixture& f, const std::string& source) {
     return !neo::core::detail::isErrorValue(result);
 }
 
-Value* lookupOut(Fixture& f) { return f.ctx->root()->lookup("out"); }
+// 编译并执行脚本，返回 VM 结果（用于断言早期错误）。
+Value* runScriptRaw(Fixture& f, const std::string& source) {
+    Parser parser(source, ParserOptions{SourceType::Script});
+    auto parsed = parser.parseProgram();
+    if (!parsed.ok()) return nullptr;
+    auto sema = runSema(*parsed.program);
+    if (!sema.ok()) return nullptr;
+    Compiler compiler(static_cast<const Program&>(*parsed.program), sema,
+                      CompilerOptions{"eval-test.js"});
+    auto compiled = compiler.compile();
+    if (!compiled.ok()) return nullptr;
+    VM machine(f.ctx.get(), compiled.code.get());
+    return machine.run();
+}
+
+Value* lookupOut(Fixture& f) { return f.ctx->root()->lookupChain("out"); }
 
 double numberOf(Value* v) {
     EXPECT_EQ(v->type()->kind(), TypeKind::Number);
@@ -117,7 +132,7 @@ TEST(EvalTest, IndirectEvalVarGoesToGlobalEnvironment) {
                           "var e = eval;\n"
                           "var out = e('var gv = 7; gv + 1');\n"));
     EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 8.0);
-    Value* gv = f.ctx->root()->lookup("gv");
+    Value* gv = f.ctx->root()->lookupChain("gv");
     ASSERT_NE(gv, nullptr);
     EXPECT_DOUBLE_EQ(numberOf(gv), 7.0);
 }
@@ -633,4 +648,76 @@ TEST(EvalTest, BreakThroughWithNormalizesEmptyToUndefined) {
         "var out = (0, eval)('for (let i = 0; i < 2; i++) {"
         " if (i === 0) { 5; continue; } with ({}) { break; } }');\n"));
     EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
+}
+
+// —— 全局环境记录（B1）：对象记录 + 声明记录 ——
+
+TEST(EvalTest, GlobalVarDoesNotShadowBuiltin) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f, "var JSON;\nvar out = typeof JSON;\n"));
+    EXPECT_EQ(stringOf(lookupOut(f)), "object");
+}
+
+TEST(EvalTest, GlobalVarReusesBuiltinProperty) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f, "var JSON;\nvar out = typeof JSON.stringify;\n"));
+    EXPECT_EQ(stringOf(lookupOut(f)), "function");
+}
+
+TEST(EvalTest, GlobalFunctionRedefinesBuiltinProperty) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "function Math() { return 1; }\n"
+                          "var out = typeof Math;\n"));
+    EXPECT_EQ(stringOf(lookupOut(f)), "function");
+}
+
+TEST(EvalTest, GlobalVarAssignsGlobalObjectProperty) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "var Math = 1;\n"
+                          "var out = globalThis.Math;\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 1.0);
+}
+
+TEST(EvalTest, GlobalThisIsTopLevelThis) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f, "var out = globalThis === this;\n"));
+    EXPECT_TRUE(neo::core::detail::toBoolean(lookupOut(f)));
+}
+
+TEST(EvalTest, GlobalVarVisibleOnGlobalObject) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "var x = 7;\n"
+                          "var out = globalThis.x;\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 7.0);
+}
+
+TEST(EvalTest, GlobalLetIsNotGlobalObjectProperty) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "let y = 1;\n"
+                          "var out = globalThis.y;\n"));
+    EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(EvalTest, UndefinedIsGlobalProperty) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f, "var out = typeof undefined;\n"));
+    EXPECT_EQ(stringOf(lookupOut(f)), "undefined");
+}
+
+TEST(EvalTest, GlobalLetConflictsWithNonConfigurableBuiltin) {
+    Fixture f;
+    Value* result = runScriptRaw(f, "let undefined = 1;\n");
+    ASSERT_TRUE(result != nullptr);
+    EXPECT_TRUE(neo::core::detail::isErrorValue(result));
+}
+
+TEST(EvalTest, GlobalVarConflictsWithScriptLet) {
+    Fixture f;
+    // Sema 已把同名词法/var 声明判为早期错误；运行时路径同样拒绝。
+    Value* result = runScriptRaw(f, "let x = 1;\nvar x = 2;\n");
+    EXPECT_TRUE(result == nullptr || neo::core::detail::isErrorValue(result));
 }

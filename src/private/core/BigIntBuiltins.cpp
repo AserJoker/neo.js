@@ -279,8 +279,7 @@ bool registerBigIntBuiltins(IContext* ctx) {
     if (!defineStaticMethod(ctx, ctor, "asUintN", bigintAsUintN)) return false;
     if (!defineStaticMethod(ctx, ctor, "asIntN", bigintAsIntN)) return false;
 
-    ctx->global()->add(ctor);
-    ctx->global()->bind("BigInt", ctor);
+    ctx->defineGlobal("BigInt", ctor, true, false, true);
     return true;
 }
 

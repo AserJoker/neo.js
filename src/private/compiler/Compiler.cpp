@@ -148,6 +148,7 @@ CompileResult Compiler::compile() {
 
 void Compiler::compileProgram() {
     strict_ = hasUseStrictDirective(program_.body);
+    globalCode_ = true;
     hoistScope(program_.body, true);
     for (const frontend::NodePtr& statement : program_.body) {
         if (statement) compileStatement(*statement);
@@ -157,6 +158,7 @@ void Compiler::compileProgram() {
 
 void Compiler::compileEvalProgram() {
     strict_ = options_.evalStrict;
+    globalCode_ = false;
     // sloppy direct eval：var/函数声明进入调用方变量环境（declare_var 只建
     // 缺失的槽，不覆盖已有绑定）；let/const 进入 eval 自己的词法作用域。
     if (!options_.evalStrict) {
@@ -228,6 +230,7 @@ void Compiler::emitLabelledEnd() {
 
 void Compiler::compileModule() {
     strict_ = true;
+    globalCode_ = false;
     // [1] 符号定义区：只建槽。所有模块先声明，再统一 link。
     declarePc_ = code_->here();
     hoistSlots(program_.body, true);
@@ -3803,6 +3806,8 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
     // 函数体是独立执行上下文：不写外层 eval 的完成值槽。
     const bool savedEvalCompletion = evalCompletion_;
     evalCompletion_ = false;
+    const bool savedGlobalCode = globalCode_;
+    globalCode_ = false;
     const bool savedHasArguments = hasArgumentsBinding_;
     hasArgumentsBinding_ = hasArguments;
     const bool savedStrict = strict_;
@@ -3870,6 +3875,7 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
         evalCompletion_ = savedEvalCompletion;
         hasArgumentsBinding_ = savedHasArguments;
         strict_ = savedStrict;
+        globalCode_ = savedGlobalCode;
         return;
     }
 
@@ -3889,6 +3895,7 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
     evalCompletion_ = savedEvalCompletion;
     hasArgumentsBinding_ = savedHasArguments;
     strict_ = savedStrict;
+    globalCode_ = savedGlobalCode;
 }
 
 // —— 声明提升 ——
@@ -3932,7 +3939,7 @@ void Compiler::hoistScope(const frontend::NodeList& body, bool varScope,
 
 void Compiler::hoistSlots(const frontend::NodeList& body, bool varScope) {
     if (varScope) hoistVarSlots(body, false);
-    hoistLexicalSlots(body);
+    hoistLexicalSlots(body, varScope && globalCode_);
 
     // 直接函数声明：先建 undefined 槽（函数对象在 hoistFunctions 创建）。
     for (const frontend::NodePtr& statement : body) {
@@ -3951,10 +3958,15 @@ void Compiler::hoistSlots(const frontend::NodeList& body, bool varScope) {
             }
             continue;
         }
-        code_->pushUndefined();
-        code_->define(
-            static_cast<const frontend::Identifier&>(*function.id).name,
-            true, true, true);
+        const std::string& name =
+            static_cast<const frontend::Identifier&>(*function.id).name;
+        if (globalCode_ && varScope) {
+            // 全局函数声明：属性落到 global object（CreateGlobalFunctionBinding）。
+            code_->declareGlobalFunction(name);
+        } else {
+            code_->pushUndefined();
+            code_->define(name, true, true, true);
+        }
     }
 }
 
@@ -3974,6 +3986,9 @@ void Compiler::hoistVarSlots(const frontend::NodeList& body, bool declare) {
         if (hasArgumentsBinding_ && name == "arguments") continue;
         if (declare) {
             code_->declareVar(name);
+        } else if (globalCode_) {
+            // 脚本全局 var：属性落到 global object（CreateGlobalVarBinding）。
+            code_->declareGlobalVar(name);
         } else {
             code_->pushUndefined();
             code_->define(name, true, true, true);
@@ -3981,7 +3996,8 @@ void Compiler::hoistVarSlots(const frontend::NodeList& body, bool declare) {
     }
 }
 
-void Compiler::hoistLexicalSlots(const frontend::NodeList& body) {
+void Compiler::hoistLexicalSlots(const frontend::NodeList& body,
+                                 bool globalLexical) {
     // 直接 let/const：建 uninitialized 槽（TDZ）。
     for (const frontend::NodePtr& statement : body) {
         const Node* declaration = statement ? declarationOf(*statement)
@@ -3991,10 +4007,11 @@ void Compiler::hoistLexicalSlots(const frontend::NodeList& body) {
             const auto& klass =
                 static_cast<const frontend::ClassDeclaration&>(*declaration);
             if (klass.id && klass.id->kind() == NodeKind::Identifier) {
+                const std::string& name =
+                    static_cast<const frontend::Identifier&>(*klass.id).name;
+                if (globalLexical) code_->checkGlobalLexical(name);
                 code_->pushUninitialized();
-                code_->define(
-                    static_cast<const frontend::Identifier&>(*klass.id).name,
-                    true, false);
+                code_->define(name, true, false);
             }
             continue;
         }
@@ -4018,6 +4035,7 @@ void Compiler::hoistLexicalSlots(const frontend::NodeList& body) {
             std::vector<std::string> names;
             collectPatternNames(*decl.id, names);
             for (const std::string& name : names) {
+                if (globalLexical) code_->checkGlobalLexical(name);
                 code_->pushUninitialized();
                 code_->define(name, mutableBinding, false);
             }

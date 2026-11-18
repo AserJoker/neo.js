@@ -134,6 +134,9 @@ private:
     neo::core::Value* opPushBigInt();
     neo::core::Value* opPushRegExp();
     neo::core::Value* opDeclareVar();
+    neo::core::Value* opDeclareGlobalVar();
+    neo::core::Value* opDeclareGlobalFunction();
+    neo::core::Value* opCheckGlobalLexical();
     neo::core::Value* opDirectEval();
     neo::core::Value* opDirectEvalSpread();
     neo::core::Value* opPop();

@@ -82,8 +82,7 @@ bool registerProxyBuiltins(IContext* ctx) {
 
     if (!defineMethod(ctx, proxyFn, "revocable", proxyRevocable, 2)) return false;
 
-    ctx->global()->add(proxyFn);
-    ctx->global()->bind("Proxy", proxyFn);
+    ctx->defineGlobal("Proxy", proxyFn, true, false, true);
     return true;
 }
 

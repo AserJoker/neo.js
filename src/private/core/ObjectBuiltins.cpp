@@ -634,10 +634,9 @@ Value* objectGetOwnPropertyNames(IContext* ctx, Value* /*self*/, size_t /*argc*/
     return keysToArray(ctx, keys);
 }
 
-// 把值挂到 global scope：add 跟踪 + bind 名字
+// 把值定义为 global object 属性（全局环境记录的对象记录）。
 void bindGlobal(IContext* ctx, std::string_view name, Value* v) {
-    ctx->global()->add(v);
-    ctx->global()->bind(name, v);
+    ctx->defineGlobal(name, v, true, false, true);
 }
 
 // 定义 prototype 方法（writable/不可枚举/可配置，与 ES 一致）

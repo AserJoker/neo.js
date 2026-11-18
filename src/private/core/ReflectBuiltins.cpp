@@ -259,8 +259,7 @@ bool registerReflectBuiltins(IContext* ctx) {
         return false;
     }
 
-    ctx->global()->add(reflect);
-    ctx->global()->bind("Reflect", reflect);
+    ctx->defineGlobal("Reflect", reflect, true, false, true);
     return true;
 }
 

@@ -799,8 +799,7 @@ bool registerJSONBuiltins(IContext* ctx) {
         return false;
     }
 
-    ctx->global()->add(json);
-    ctx->global()->bind("JSON", json);
+    ctx->defineGlobal("JSON", json, true, false, true);
     return true;
 }
 

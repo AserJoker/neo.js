@@ -77,7 +77,7 @@ bool runScript(Fixture& f, const std::string& source) {
     return !neo::core::detail::isErrorValue(result);
 }
 
-Value* lookupOut(Fixture& f) { return f.ctx->root()->lookup("out"); }
+Value* lookupOut(Fixture& f) { return f.ctx->root()->lookupChain("out"); }
 
 std::string stringOf(Value* v) {
     EXPECT_EQ(v->type()->kind(), TypeKind::String);

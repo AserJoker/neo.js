@@ -1538,8 +1538,7 @@ bool registerRegExpBuiltins(IContext* ctx) {
 
     if (!defineMethod(ctx, ctor, "escape", regexpEscape, 1)) return false;
 
-    ctx->global()->add(ctor);
-    ctx->global()->bind("RegExp", ctor);
+    ctx->defineGlobal("RegExp", ctor, true, false, true);
 
     // String.prototype 六个方法
     Value* stringCtor = ctx->global()->lookup("String");

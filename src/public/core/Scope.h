@@ -427,6 +427,35 @@ public:
     const std::vector<Value*>& values() const { return values_; }
 };
 
+// 全局作用域（ES2024 §9.1.1.4 Global Environment Records 的对象记录部分）：
+// 位于作用域链最末端，parent=nullptr，是 GC 根。声明绑定（全局 let/const 与
+// 内部值）仍走基类 namedValues_；未命中时回退到唯一的 global object 属性。
+//
+// 与 WithScope 的区别：global object 是固定对象，不参与 with 的 @@unscopables；
+// 写入走 setProperty（writable/setter/strict 语义），声明绑定仍由 Context 处理。
+class GlobalScope : public Scope {
+    Value* globalObject_ = nullptr;
+
+public:
+    GlobalScope(Scope* parent, infra::IAllocator* alloc, IContext* context,
+                Value* globalObject);
+
+    void setGlobalObject(Value* v) {
+        globalObject_ = v;
+        if (v != nullptr) add(v);
+    }
+    Value* globalObject() const { return globalObject_; }
+
+    // 读取：先查声明绑定，再查 global object 自有/原型属性。
+    Value* lookup(std::string_view name) const override;
+
+    // 写入：声明绑定交给 Context；对象属性走 setProperty。
+    StoreOutcome store(IContext* ctx, std::string_view name, Value* source,
+                       Value*& result) override;
+
+    void destroySelf() override;
+};
+
 // with 作用域（ES2024 §9.1.1.2 Object Environment Records）：
 // 在普通作用域链上插入一个对象环境——名字先查 with 对象（含原型链），
 // 命中则读写对象属性；未命中回退到外层作用域。

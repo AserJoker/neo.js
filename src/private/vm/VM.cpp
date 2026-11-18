@@ -20,6 +20,7 @@
 
 #include "bigint/BigInt.h"
 
+#include <cstdio>
 #include <string>
 #include <utility>
 
@@ -205,6 +206,9 @@ const char* opCodeName(OpCode op) {
         case OpCode::AsyncIteratorClose: return "async_iterator_close";
         case OpCode::PushRegExp:    return "push_regexp";
         case OpCode::DeclareVar:    return "declare_var";
+        case OpCode::DeclareGlobalVar: return "declare_global_var";
+        case OpCode::DeclareGlobalFunction: return "declare_global_function";
+        case OpCode::CheckGlobalLexical: return "check_global_lexical";
         case OpCode::DirectEval:    return "direct_eval";
         case OpCode::DirectEvalSpread: return "direct_eval_spread";
     }
@@ -350,6 +354,9 @@ const VM::Handler* VM::handlers() {
         &VM::opAsyncIteratorClose,
         &VM::opPushRegExp,
         &VM::opDeclareVar,
+        &VM::opDeclareGlobalVar,
+        &VM::opDeclareGlobalFunction,
+        &VM::opCheckGlobalLexical,
         &VM::opDirectEval,
         &VM::opDirectEvalSpread,
     };
@@ -2105,6 +2112,54 @@ Value* VM::opDeclareVar() {
     if (name == nullptr) return badBytecode("declare_var: name index out of range");
 
     Value* result = ctx_->declareVar(*name);
+    if (result != nullptr && detail::isErrorValue(result)) return fail(result);
+    return nullptr;
+}
+
+Value* VM::opDeclareGlobalVar() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("declare_global_var: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("declare_global_var: name index out of range");
+    }
+    Value* result = ctx_->declareGlobalVar(*name, true);
+    if (result != nullptr && detail::isErrorValue(result)) return fail(result);
+    return nullptr;
+}
+
+Value* VM::opDeclareGlobalFunction() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("declare_global_function: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("declare_global_function: name index out of range");
+    }
+    Value* result = ctx_->declareGlobalFunction(*name, true);
+    if (result != nullptr && detail::isErrorValue(result)) return fail(result);
+    return nullptr;
+}
+
+Value* VM::opCheckGlobalLexical() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("check_global_lexical: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("check_global_lexical: name index out of range");
+    }
+    Value* result = ctx_->checkGlobalLexical(*name);
     if (result != nullptr && detail::isErrorValue(result)) return fail(result);
     return nullptr;
 }

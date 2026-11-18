@@ -1628,7 +1628,7 @@ Value* runScriptResult(Fixture& f, const std::string& source) {
     if (!result.ok()) return nullptr;
     VM vm(f.ctx.get(), result.code.get());
     (void)vm.run();
-    return f.ctx->root()->lookup("result");
+    return f.ctx->root()->lookupChain("result");
 }
 
 // 执行脚本并排空任务队列（Promise/async 结果需要微任务推进）。
@@ -1639,7 +1639,7 @@ Value* runScriptResultDrained(Fixture& f, const std::string& source) {
     VM vm(f.ctx.get(), result.code.get());
     (void)vm.run();
     while (f.ctx->hasRunnableTask()) (void)f.ctx->runOneTask();
-    return f.ctx->root()->lookup("result");
+    return f.ctx->root()->lookupChain("result");
 }
 
 }  // namespace

@@ -61,6 +61,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <limits>
 #include <new>
 #include <string>
 #include <unordered_set>
@@ -73,22 +74,14 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
       clock_(clock != nullptr ? clock : infra::defaultClock()) {
     // 1. 创建 global scope（根，parent=nullptr）。
     //    所有权移交 GC（ADR-044）：GC 从它出发标记可达性，并在自身析构时销毁整棵树。
-    void* gp = alloc_->alloc(sizeof(Scope));
-    global_ = new (gp) Scope(nullptr, alloc_, this);
+    //    GlobalScope 同时是全局环境记录的对象记录门面（§9.1.1.4）：查找链末端
+    //    回退到 global object 属性（内建、全局 var/函数声明）。
+    void* gp = alloc_->alloc(sizeof(GlobalScope));
+    global_ = new (gp) GlobalScope(nullptr, alloc_, this, nullptr);
     gc_->setRootScope(global_);
-    // 2. 创建 root scope（parent=global），作为 global 的子
-    void* rp = alloc_->alloc(sizeof(Scope));
-    root_ = new (rp) Scope(global_, alloc_, this);
-    global_->addChild(root_);
-    // 3. current 初始 = root；顶层函数环境也指向 root（this/new.target 由 VM 入口绑定）
-    current_ = root_;
-    currentFunctionEnv_ = root_;
-    // 脚本顶层环境固定为构造时的 root：间接 eval 从它进入，能看到脚本
-    // 顶层 var/let/const，同时经 parent 链到达 global 内建。
-    scriptRoot_ = root_;
-    // 4. global 默认标注 strict（保持默认严格模式，后续由模块/函数体标注覆盖）
-    global_->setFlag("strict");
-    // 5. 预分配 OOM 哨兵（ADR-031）：最早分配，挂 global 使其存活于 Context 生命周期。
+    // 2. current 暂时指向 global：global object 及其属性值需登记进根作用域。
+    current_ = global_;
+    // 3. 预分配 OOM 哨兵（ADR-031）：最早分配，挂 global 使其存活于 Context 生命周期。
     //    连哨兵都分配不出说明系统不可用，直接 abort。
     auto* oomData = gc_->allocData<FatalData>("out of memory");
     oomValue_ = oomData != nullptr ? gc_->createValue(getFatalType(), oomData) : nullptr;
@@ -97,8 +90,39 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     }
     global_->add(oomValue_);
     global_->bind("__oom__", oomValue_);
+    // 4. 创建唯一的 global object（普通对象；原型在 Object.prototype 就绪后回填）。
+    globalObject_ = createObject();
+    if (globalObject_ == oomValue_) std::abort();
+    static_cast<GlobalScope*>(global_)->setGlobalObject(globalObject_);
+    // 5. 创建 root scope（parent=global），作为 global 的子
+    void* rp = alloc_->alloc(sizeof(Scope));
+    root_ = new (rp) Scope(global_, alloc_, this);
+    global_->addChild(root_);
+    // 6. current 初始 = root；顶层函数环境也指向 root（this/new.target 由 VM 入口绑定）
+    current_ = root_;
+    currentFunctionEnv_ = root_;
+    // 脚本顶层环境固定为构造时的 root：间接 eval 从它进入，能看到脚本
+    // 顶层 var/let/const，同时经 parent 链到达 global 内建。
+    scriptRoot_ = root_;
+    // 7. global 默认标注 strict（保持默认严格模式，后续由模块/函数体标注覆盖）
+    global_->setFlag("strict");
+    // 8. 全局 this = global object（§9.1.1.4 [[GlobalThisValue]]）。
+    global_->setThis(globalObject_);
+    // 9. 全局对象的标准属性（§19.1）：globalThis 可写/可配置，其余只读/不可配置。
+    if (!defineGlobal("globalThis", globalObject_, true, false, true)) std::abort();
+    if (!defineGlobal("undefined", createUndefined(), false, false, false)) {
+        std::abort();
+    }
+    if (!defineGlobal("NaN", createNumber(std::numeric_limits<double>::quiet_NaN()),
+                      false, false, false)) {
+        std::abort();
+    }
+    if (!defineGlobal("Infinity", createNumber(std::numeric_limits<double>::infinity()),
+                      false, false, false)) {
+        std::abort();
+    }
 
-    // 6. 预生成全部 well-known symbols（ES2024 §6.1.5.1），挂 global 使其存活于
+    // 10. 预生成全部 well-known symbols（ES2024 §6.1.5.1），挂 global 使其存活于
     //    Context 生命周期。description 与属性名一致（如 "Symbol.iterator"）。
     //    OOM 时同样 abort（系统不可用）。
     for (size_t i = 0; i < kWellKnownSymbolCount; ++i) {
@@ -124,6 +148,8 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     if (!registerObjectFunctionBuiltins(this)) {
         std::abort();
     }
+    // global object 在 Object.prototype 就绪前创建（原型为 null），此处回填。
+    static_cast<ObjectData*>(globalObject_->data())->prototype = objectPrototype_;
 
     // 8b. 注册 Proxy 构造函数与 Proxy.revocable（ES2024 §28.2）。
     //     依赖 Object.prototype / Function.prototype 已就绪。
@@ -2270,11 +2296,15 @@ Value* Context::setClosure(Value* fn, std::string_view name) {
         return detail::referenceError(this, msg);
     }
     if (detail::isErrorValue(v)) return v;
+    // 全局对象属性（内建、全局 var/函数声明）没有 Binding 条目：不能捕获
+    // 当前值快照——全局函数声明会先占位 undefined、随后 store 替换属性值，
+    // 快照会永久指向占位值。此类名字留给运行时沿作用域链（GlobalScope）
+    // 动态读取。
+    const Scope::Binding* source = current()->lookupBindingChain(name);
+    if (source == nullptr) return fn;
     // 绑定 = 共享同一 Value（ADR-013 §2）：closureScope 登记同一 Value。
     // mutability 属于绑定，捕获时必须复制（const 捕获后仍不可写）。
-    const Scope::Binding* source = current()->lookupBindingChain(name);
-    d->closureScope->define(name, v,
-                            source == nullptr || source->mutableBinding);
+    d->closureScope->define(name, v, source->mutableBinding);
     return fn;
 }
 
@@ -2628,11 +2658,115 @@ Value* Context::declareVar(std::string_view name) {
         // 不新建槽（§19.2.1.3 step 18.b）。
         return nullptr;
     }
+    // 全局变量环境是对象记录：var 声明落到 global object 属性上，
+    // 已存在的属性（如内建 Math）不重复定义（§9.1.1.4.16 CreateGlobalVarBinding）。
+    if (target == scriptRoot_) return declareGlobalVar(name, true);
     Value* value = createUndefined();
     if (value == oomValue_) return value;
     if (!target->define(name, value, true, true, true)) {
         std::string msg =
             "Identifier '" + std::string(name) + "' has already been declared";
+        return detail::errorOf(this, ErrorKind::SyntaxError, msg);
+    }
+    return nullptr;
+}
+
+bool Context::defineGlobal(std::string_view name, Value* value, bool writable,
+                           bool enumerable, bool configurable) {
+    if (globalObject_ == nullptr) return false;
+    Value* r = defineProperty(globalObject_, name, value, writable, enumerable,
+                              configurable);
+    return !detail::isErrorValue(r);
+}
+
+Value* Context::declareGlobalVar(std::string_view name, bool configurable) {
+    // 声明记录（scriptRoot_ 的 let/const/class）与 var 同名是早期错误。
+    if (scriptRoot_->lookupBinding(name) != nullptr) {
+        std::string msg = "Identifier '" + std::string(name) +
+                          "' has already been declared";
+        return detail::errorOf(this, ErrorKind::SyntaxError, msg);
+    }
+    Value* key = createString(name);
+    if (key == oomValue_) return key;
+    PropertyKey pk;
+    if (Value* err = neo::core::toPropertyKey(this, key, pk)) return err;
+    bool exists = false;
+    Property out;
+    if (Value* err = globalObject_->type()->getOwnProperty(
+            this, globalObject_, pk, exists, out)) {
+        return err;
+    }
+    // 属性已存在：CreateGlobalVarBinding 是 no-op（复用已有属性，如内建）。
+    if (exists) return nullptr;
+    Value* ext = globalObject_->type()->isExtensible(this, globalObject_);
+    if (detail::isErrorValue(ext)) return ext;
+    if (!detail::toBoolean(ext)) {
+        return detail::typeError(this, "Cannot define global variable '" +
+                                           std::string(name) + "'");
+    }
+    Value* value = createUndefined();
+    if (value == oomValue_) return value;
+    Value* r = defineProperty(globalObject_, key, value, true, true, configurable);
+    return detail::isErrorValue(r) ? r : nullptr;
+}
+
+Value* Context::declareGlobalFunction(std::string_view name, bool configurable) {
+    if (scriptRoot_->lookupBinding(name) != nullptr) {
+        std::string msg = "Identifier '" + std::string(name) +
+                          "' has already been declared";
+        return detail::errorOf(this, ErrorKind::SyntaxError, msg);
+    }
+    Value* key = createString(name);
+    if (key == oomValue_) return key;
+    PropertyKey pk;
+    if (Value* err = neo::core::toPropertyKey(this, key, pk)) return err;
+    bool exists = false;
+    Property out;
+    if (Value* err = globalObject_->type()->getOwnProperty(
+            this, globalObject_, pk, exists, out)) {
+        return err;
+    }
+    if (exists) {
+        // CreateGlobalFunctionBinding：不可配置属性必须已是可写、可枚举的数据属性。
+        if (!out.configurable &&
+            (out.getter != nullptr || out.setter != nullptr || !out.writable ||
+             !out.enumerable)) {
+            return detail::typeError(this, "Cannot redefine global function '" +
+                                               std::string(name) + "'");
+        }
+        Value* value = createUndefined();
+        if (value == oomValue_) return value;
+        Value* r = defineProperty(globalObject_, key, value, true, true,
+                                  out.configurable && configurable);
+        return detail::isErrorValue(r) ? r : nullptr;
+    }
+    Value* ext = globalObject_->type()->isExtensible(this, globalObject_);
+    if (detail::isErrorValue(ext)) return ext;
+    if (!detail::toBoolean(ext)) {
+        return detail::typeError(this, "Cannot define global function '" +
+                                           std::string(name) + "'");
+    }
+    Value* value = createUndefined();
+    if (value == oomValue_) return value;
+    Value* r = defineProperty(globalObject_, key, value, true, true, configurable);
+    return detail::isErrorValue(r) ? r : nullptr;
+}
+
+Value* Context::checkGlobalLexical(std::string_view name) {
+    Value* key = createString(name);
+    if (key == oomValue_) return key;
+    PropertyKey pk;
+    if (Value* err = neo::core::toPropertyKey(this, key, pk)) return err;
+    bool exists = false;
+    Property out;
+    if (Value* err = globalObject_->type()->getOwnProperty(
+            this, globalObject_, pk, exists, out)) {
+        return err;
+    }
+    // HasRestrictedGlobalProperty：不可配置的全局对象属性不能被 let/const 遮蔽。
+    if (exists && !out.configurable) {
+        std::string msg = "Identifier '" + std::string(name) +
+                          "' has already been declared";
         return detail::errorOf(this, ErrorKind::SyntaxError, msg);
     }
     return nullptr;
@@ -2693,8 +2827,8 @@ Value* Context::store(std::string_view name, Value* source) {
         std::string msg = "Assignment to undeclared identifier '" + std::string(name) + "'";
         return detail::referenceError(this, msg);
     }
-    // 非严格模式：在 global 定义全局变量
-    return defineCloned(global(), name, source);
+    // 非严格模式：在 global object 上创建全局变量属性（对象记录）。
+    return setProperty(globalObject_, name, source);
 }
 
 Value* Context::storeVar(std::string_view name, Value* source) {
