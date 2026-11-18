@@ -45,6 +45,7 @@ add_executable(core_unit_test
     ObjectBuiltinsTest.cpp
     ArrayTest.cpp
     ArrayBuiltinsTest.cpp
+    ArrayMethodsTest.cpp
     IteratorTest.cpp
     IteratorProtocolTest.cpp
     TaskTest.cpp
