@@ -103,6 +103,10 @@ enum class TypeKind : uint8_t {
     CollectionIterator,
     // Date 对象（ES2024 §21.4）：普通对象 + [[DateValue]]（毫秒时间值，NaN = Invalid Date）。
     Date,
+    // ArrayBuffer（ES2024 §25.1）：普通对象 + 字节缓冲区。
+    ArrayBuffer,
+    // DataView（ES2024 §25.3）：普通对象 + 对 ArrayBuffer 的窗口。
+    DataView,
     // Error 对象（ES2024 §20.5）：普通对象 + [[ErrorData]] 内部槽。
     // 内部槽是标记性的（无状态），用于类型判定（Object.prototype.toString 的 tag、
     // 后续 Error.isError）。TypeError/RangeError 等子类共用本 kind，只差原型与 name。
@@ -313,6 +317,8 @@ IType* getIteratorHelperType();
 IType* getCollectionType();
 IType* getCollectionIteratorType();
 IType* getDateType();
+IType* getArrayBufferType();
+IType* getDataViewType();
 IType* getErrorType();
 IType* getPromiseType();
 IType* getInterruptType();

@@ -153,6 +153,8 @@ add_library(neojs STATIC
     src/private/core/types/Iterator.cpp
     src/private/core/types/Collection.cpp
     src/private/core/types/Date.cpp
+    src/private/core/types/ArrayBuffer.cpp
+    src/private/core/types/DataView.cpp
     src/private/core/types/Error.cpp
     src/private/core/types/PrimitiveWrapper.cpp
     src/private/core/types/Promise.cpp
@@ -172,6 +174,7 @@ add_library(neojs STATIC
     src/private/core/CollectionBuiltins.cpp
     src/private/core/ConsoleBuiltins.cpp
     src/private/core/DateBuiltins.cpp
+    src/private/core/ArrayBufferBuiltins.cpp
     src/private/core/FunctionInvoke.cpp
     src/private/unicode/Utf8.cpp
     src/private/unicode/UnicodeClassification.cpp

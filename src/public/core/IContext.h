@@ -633,6 +633,21 @@ public:
     virtual void setDatePrototype(Value* proto) = 0;
     virtual Value* datePrototype() const = 0;
 
+    // createArrayBuffer: 创建 ArrayBuffer（ES2024 §25.1.3.1）。
+    // byteLength 为字节数；分配失败返回 OOM 哨兵。
+    virtual Value* createArrayBuffer(size_t byteLength,
+                                     std::string_view bindName = {}) = 0;
+
+    // createDataView: 创建 DataView（§25.3.2.1）。调用方负责校验
+    // byteOffset/byteLength 是否落在 buffer 范围内。
+    virtual Value* createDataView(Value* buffer, size_t byteOffset,
+                                  size_t byteLength,
+                                  std::string_view bindName = {}) = 0;
+
+    // setArrayBufferPrototype / setDataViewPrototype: bootstrap 专用。
+    virtual void setArrayBufferPrototype(Value* proto) = 0;
+    virtual void setDataViewPrototype(Value* proto) = 0;
+
     // createRegExp: 编译 pattern/flags 并创建 RegExp 对象（ES2024 §22.2.3.1）。
     // 编译失败返回 SyntaxError 异常值；成功返回 RegExp（lastIndex 初始化为 0）。
     // 原型自动挂 regexpPrototype()。

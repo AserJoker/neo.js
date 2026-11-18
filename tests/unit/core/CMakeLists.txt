@@ -65,6 +65,7 @@ add_executable(core_unit_test
     CollectionTest.cpp
     ConsoleBuiltinsTest.cpp
     DateBuiltinsTest.cpp
+    ArrayBufferTest.cpp
     BigIntTypeTest.cpp
     BigIntBuiltinsTest.cpp
     GeneratorTest.cpp

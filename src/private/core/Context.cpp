@@ -20,6 +20,7 @@
 #include "core/CollectionBuiltins.h"
 #include "core/ConsoleBuiltins.h"
 #include "core/DateBuiltins.h"
+#include "core/ArrayBufferBuiltins.h"
 #include "core/FunctionInvoke.h"
 #include "core/ErrorBuiltins.h"
 #include "core/EvalBuiltins.h"
@@ -43,6 +44,8 @@
 #include "core/types/BigInt.h"
 #include "core/types/Collection.h"
 #include "core/types/Date.h"
+#include "core/types/ArrayBuffer.h"
+#include "core/types/DataView.h"
 #include "core/types/Boolean.h"
 #include "core/types/Coroutine.h"
 #include "core/types/Error.h"
@@ -208,6 +211,11 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     // 11. 注册 Iterator 抽象类与数组迭代器内建（ES2024 §23.1.5 / ES2025 §27.1）。
     //     依赖 Object.prototype / Function.prototype / Array.prototype 已就绪。
     if (!registerIteratorBuiltins(this)) {
+        std::abort();
+    }
+
+    // 11a. 注册 ArrayBuffer/DataView（ES2024 §25）。依赖 Object.prototype。
+    if (!registerArrayBufferBuiltins(this)) {
         std::abort();
     }
 
@@ -2137,6 +2145,35 @@ Value* Context::createDate(double timeValue, std::string_view bindName) {
         static_cast<ObjectData*>(date->data())->prototype = datePrototype_;
     }
     return date;
+}
+
+Value* Context::createArrayBuffer(size_t byteLength, std::string_view bindName) {
+    auto* d = gc_->allocData<ArrayBufferData>();
+    if (d == nullptr) return oomValue_;
+    try {
+        d->bytes.resize(byteLength);
+    } catch (...) {
+        return oomValue_;
+    }
+    Value* buffer = createTracked(getArrayBufferType(), d, bindName);
+    if (buffer != oomValue_ && arrayBufferPrototype_ != nullptr) {
+        static_cast<ObjectData*>(buffer->data())->prototype = arrayBufferPrototype_;
+    }
+    return buffer;
+}
+
+Value* Context::createDataView(Value* buffer, size_t byteOffset, size_t byteLength,
+                               std::string_view bindName) {
+    auto* d = gc_->allocData<DataViewData>();
+    if (d == nullptr) return oomValue_;
+    d->buffer = buffer;
+    d->byteOffset = byteOffset;
+    d->byteLength = byteLength;
+    Value* view = createTracked(getDataViewType(), d, bindName);
+    if (view != oomValue_ && dataViewPrototype_ != nullptr) {
+        static_cast<ObjectData*>(view->data())->prototype = dataViewPrototype_;
+    }
+    return view;
 }
 
 // —— Error 对象（ADR-038）——

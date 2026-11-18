@@ -93,6 +93,8 @@ class Context : public IContext {
     Value* mapIteratorPrototype_ = nullptr;
     Value* setIteratorPrototype_ = nullptr;
     Value* datePrototype_ = nullptr;
+    Value* arrayBufferPrototype_ = nullptr;
+    Value* dataViewPrototype_ = nullptr;
     Value* generatorPrototype_ = nullptr;  // %GeneratorPrototype%（ADR-045 §8）
     Value* asyncIteratorPrototype_ = nullptr;   // %AsyncIteratorPrototype%
     Value* asyncGeneratorPrototype_ = nullptr;  // %AsyncGeneratorPrototype%
@@ -341,6 +343,10 @@ public:
                                     CollectionIterationKind kind,
                                     std::string_view bindName = {}) override;
     Value* createDate(double timeValue, std::string_view bindName = {}) override;
+    Value* createArrayBuffer(size_t byteLength,
+                             std::string_view bindName = {}) override;
+    Value* createDataView(Value* buffer, size_t byteOffset, size_t byteLength,
+                          std::string_view bindName = {}) override;
     Value* createRegExp(std::string_view pattern, std::string_view flags,
                         std::string_view bindName = {}) override;
     Value* createRegExp(
@@ -459,6 +465,10 @@ public:
     }
     void setDatePrototype(Value* proto) override { datePrototype_ = proto; }
     Value* datePrototype() const override { return datePrototype_; }
+    void setArrayBufferPrototype(Value* proto) override {
+        arrayBufferPrototype_ = proto;
+    }
+    void setDataViewPrototype(Value* proto) override { dataViewPrototype_ = proto; }
     void setGeneratorPrototype(Value* proto) override { generatorPrototype_ = proto; }
     Value* generatorPrototype() const override { return generatorPrototype_; }
     void setAsyncIteratorPrototype(Value* proto) override {
