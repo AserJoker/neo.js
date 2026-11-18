@@ -165,6 +165,7 @@ add_library(neojs STATIC
     src/private/core/JSONBuiltins.cpp
     src/private/core/MathBuiltins.cpp
     src/private/core/GlobalFunctionBuiltins.cpp
+    src/private/core/StringBuiltins.cpp
     src/private/core/FunctionInvoke.cpp
     src/private/unicode/Utf8.cpp
     src/private/unicode/UnicodeClassification.cpp

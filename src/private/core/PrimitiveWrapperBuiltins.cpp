@@ -23,6 +23,7 @@
 
 #include "core/BigIntOps.h"
 #include "core/IContext.h"
+#include "core/StringBuiltins.h"
 #include "core/IType.h"
 #include "core/Scope.h"
 #include "core/Value.h"
@@ -306,6 +307,8 @@ bool registerPrimitiveWrapperBuiltins(IContext* ctx) {
                              "String", &stringFn)) {
         return false;
     }
+    // String.prototype 常用方法（ES2024 §22.1.3）。
+    if (!registerStringBuiltins(ctx, stringProto)) return false;
     // String.raw（ES2024 §22.1.2.4）：不可写/不可枚举/可配置的静态方法。
     Value* rawFn = ctx->createNativeFunction(stringRaw, 1);
     if (rawFn == ctx->oomValue()) return false;

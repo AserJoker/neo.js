@@ -2,8 +2,10 @@
 
 #include "regex/RegexUnicode.h"
 
+#include <cstddef>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 
 namespace neo::regex {
 
@@ -103,6 +105,22 @@ std::uint32_t simpleFold(std::uint32_t codePoint) {
         return kSimpleFold[low].to;
     }
     return codePoint;
+}
+
+std::uint32_t simpleUpper(std::uint32_t codePoint) {
+    static const std::unordered_map<std::uint32_t, std::uint32_t> upper = [] {
+        std::unordered_map<std::uint32_t, std::uint32_t> map;
+        for (std::size_t i = 0; i < kSimpleFoldCount; ++i) {
+            const std::uint32_t from = kSimpleFold[i].from;
+            const std::uint32_t to = kSimpleFold[i].to;
+            if (from == to) continue;
+            auto it = map.find(to);
+            if (it == map.end() || from < it->second) map[to] = from;
+        }
+        return map;
+    }();
+    auto it = upper.find(codePoint);
+    return it == upper.end() ? codePoint : it->second;
 }
 
 const FoldPair* foldOrbitBegin(std::uint32_t codePoint) {

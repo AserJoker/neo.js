@@ -58,6 +58,7 @@ add_executable(core_unit_test
     JSONTest.cpp
     MathBuiltinsTest.cpp
     GlobalFunctionTest.cpp
+    StringMethodsTest.cpp
     BigIntTypeTest.cpp
     BigIntBuiltinsTest.cpp
     GeneratorTest.cpp

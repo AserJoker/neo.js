@@ -43,6 +43,10 @@ bool resolveUnicodeProperty(std::string_view property,
 // CaseFolding.txt 的 C+S 映射；无映射时返回 cp 本身。
 std::uint32_t simpleFold(std::uint32_t codePoint);
 
+// simpleFold 的逆映射（取最小原像）；无映射时返回 cp 本身。
+// 供 String.prototype.toUpperCase 的简单大小写映射使用。
+std::uint32_t simpleUpper(std::uint32_t codePoint);
+
 // cp 的简单折叠等价类（不含 cp 本身）；返回有序区间 [begin, end)。
 const FoldPair* foldOrbitBegin(std::uint32_t codePoint);
 const FoldPair* foldOrbitEnd(std::uint32_t codePoint);
