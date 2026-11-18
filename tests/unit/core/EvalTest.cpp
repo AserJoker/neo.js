@@ -424,6 +424,38 @@ TEST(EvalTest, DirectEvalVarReusesCallerVar) {
     EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 2.0);
 }
 
+TEST(EvalTest, DirectEvalSeesCallerArguments) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "function f(a) { return eval('arguments[0]'); }\n"
+                          "var out = f(7);\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 7.0);
+}
+
+TEST(EvalTest, DirectEvalVarArgumentsReusesCallerBinding) {
+    Fixture f;
+    f.ctx->global()->clearFlag("strict");
+    ASSERT_TRUE(runScript(f,
+                          "function f() {\n"
+                          "  eval('var arguments = 3;');\n"
+                          "  return arguments;\n"
+                          "}\n"
+                          "var out = f();\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 3.0);
+}
+
+TEST(EvalTest, DirectEvalBareVarArgumentsKeepsArgumentsObject) {
+    Fixture f;
+    f.ctx->global()->clearFlag("strict");
+    ASSERT_TRUE(runScript(f,
+                          "function f(a) {\n"
+                          "  eval('var arguments;');\n"
+                          "  return arguments[0];\n"
+                          "}\n"
+                          "var out = f(4);\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 4.0);
+}
+
 TEST(EvalTest, TryFinallyDiscardsFinallyValue) {
     Fixture f;
     ASSERT_TRUE(runScript(f, "var out = eval('try { 1; } finally { 2; }');\n"));

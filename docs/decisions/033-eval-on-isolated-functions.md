@@ -230,6 +230,18 @@ SyntaxError。
 已知限制：全局内建（如 `Math`）通过 `bind` 落在 `global_`，间接 eval 的
 `var Math` 仍会在 `scriptRoot_` 建遮蔽绑定，未按全局对象属性复用。
 
+### arguments 复用（2026-11-18）
+
+§19.2.1.3 step 18.b：var 名在变量环境中已有绑定时不新建槽，初始化直接写入
+既有绑定。此前 `declareVar` 把变量环境内的非 `varBinding` 绑定一律判为
+SyntaxError，导致 sloppy 直接 eval 的 `var arguments` 报错。修正：
+
+- 目标变量环境为**函数环境**时，已有绑定（`arguments`、形参、函数名）直接
+  复用，不新建槽；`var arguments = 3` 因此写入调用方的 `arguments` 绑定。
+- 目标为**全局变量环境**（`scriptRoot_`）时，同名词法绑定仍是早期错误
+  （step 3.a），保持 `let x; eval('var x')` 的 SyntaxError。
+- 直接 eval 的读取路径本就沿调用方作用域链，`eval('arguments[0]')` 可见。
+
 ### 完成值：Completion Record 寄存器（2026-11-17）
 
 完成值不再用「最后执行的表达式语句值」近似，而是显式建模 Completion Record

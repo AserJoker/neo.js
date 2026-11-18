@@ -2616,11 +2616,17 @@ Value* Context::declareVar(std::string_view name) {
         return detail::errorOf(this, ErrorKind::SyntaxError, msg);
     }
     if (Scope::Binding* existing = target->lookupBinding(name)) {
-        // 变量环境已有 var 绑定：复用；同名词法绑定则是早期错误。
+        // 变量环境已有 var 绑定：复用。
         if (existing->varBinding) return nullptr;
-        std::string msg = "Identifier '" + std::string(name) +
-                          "' has already been declared";
-        return detail::errorOf(this, ErrorKind::SyntaxError, msg);
+        // 全局变量环境：同名词法声明是早期错误（§19.2.1.3 step 3.a）。
+        if (target == scriptRoot_) {
+            std::string msg = "Identifier '" + std::string(name) +
+                              "' has already been declared";
+            return detail::errorOf(this, ErrorKind::SyntaxError, msg);
+        }
+        // 函数变量环境：已有绑定（arguments/形参/函数名）直接复用，
+        // 不新建槽（§19.2.1.3 step 18.b）。
+        return nullptr;
     }
     Value* value = createUndefined();
     if (value == oomValue_) return value;
