@@ -283,6 +283,8 @@ enum class OpCode : uint16_t {
     Dup2,
     // delete obj[key]：[obj,key] → [bool]。
     DeleteProp,
+    // u32 nameIndex：[] → [boolean]：sloppy `delete Identifier`。
+    DeleteIdentifier,
     // [obj,key,value,keep] → [keep]：set_prop 后保留 keep（后缀更新）。
     SetPropKeep,
     // [key,value,keep] → [keep]：set_super_prop 后保留 keep。
@@ -332,11 +334,13 @@ enum class OpCode : uint16_t {
     DirectEval,
     // [callee, argsArray] → [result]：带展开的直接 eval 调用点。
     DirectEvalSpread,
+    // [] → []：把当前作用域标注为严格模式（严格 eval 的 eval 词法作用域）。
+    SetScopeStrict,
 };
 
 // 指令总数（分派表大小）。
 inline constexpr size_t kOpCodeCount =
-    static_cast<size_t>(OpCode::DirectEvalSpread) + 1;
+    static_cast<size_t>(OpCode::SetScopeStrict) + 1;
 
 // Define 的 flags 位。未置位即 false：
 //   mutable    —— 绑定可被 store 改写（const 为 false）

@@ -84,6 +84,7 @@ _func_end:
 | `get_prop` | `[obj, key] → [val]` | `ctx->getProperty(obj, key)` |
 | `set_prop` | `[obj, key, value] → [value]` | `ctx->setProperty`，RHS 即表达式值 |
 | `delete_prop` | `[obj, key] → [bool]` | `ctx->deleteProperty`；返回删除是否成功 |
+| `delete_identifier u32 nameIndex` | `[] → [bool]` | `delete Identifier`：with 属性走 DeleteProperty；已解析绑定返回 false；未解析全局对象属性走 DeleteProperty；未解析且不存在返回 true |
 | `set_prop_keep` | `[obj, key, value, keep] → [keep]` | `set_prop` 后保留 `keep`（后缀 `++/--` 保留旧值） |
 | `dup2` | `[a, b] → [a, b, a, b]` | 复合成员赋值/更新只求值一次 obj 与 key |
 
@@ -93,8 +94,9 @@ _func_end:
 - 复合成员写：`obj; key; dup2; get_prop; RHS; 运算; set_prop`。
 - 后缀成员更新：`obj; key; dup2; get_prop; clone; 1; 运算; swap; set_prop_keep`
   （`swap` 把 `[old, new]` 调整为 `[new, old]`，`set_prop_keep` 写 new、留 old）。
-- `delete obj.x` / `delete obj[k]`：`obj; key; delete_prop`；`delete` 标识符压
-  `false`（已解析绑定不可删除），非引用表达式求值后 `pop` 并压 `true`。
+- `delete obj.x` / `delete obj[k]`：`obj; key; delete_prop`；`delete` 标识符发射
+  `delete_identifier`（严格模式下由 Sema 早期拒绝），非引用表达式求值后 `pop`
+  并压 `true`。
 - 成员调用：`obj; dup; key; get_prop; args; call_method N`，`dup` 保留
   receiver 作为 thisArg，且 receiver 只求值一次。
 
@@ -179,6 +181,7 @@ _func_end:
 | `push_class entry,paramCount,flags` | `[superCtor] → [ctor]` | 创建脚本 class 构造器；flags 含 `kClassDerived` |
 | `push_function`（flag） | — | `kFunctionAsyncGenerator` 标记 async function*（同时是生成器） |
 | `set_strict` | `[fn] → [fn]` | 把函数闭包作用域标记为严格模式 |
+| `set_scope_strict` | `[] → []` | 把当前作用域标记为严格模式（严格 eval 的 eval 词法作用域） |
 | `init_instance_elements` | `[] → []` | 以当前 this 初始化当前 class 的实例元素 |
 | `construct_super N` | `[argv...] → [this]` | 派生构造器的 `super(...)`；成功后初始化实例元素 |
 | `construct_super_spread` | `[argsArray] → [this]` | 同上，实参来自数组 |

@@ -55,6 +55,25 @@ ClassBody              → 恒 strict
 - 非简单参数 + `"use strict"`
 - 块级函数等 Annex B 差异
 
+### 4. 运行期严格性标注（执行模型）
+
+Sema 只负责早期错误；运行期需要严格性判定的操作（未声明赋值、只读属性写、
+`with` 环境、`delete` 等）读取当前作用域链上的 `"strict"` 标注。标注来源：
+
+```text
+GlobalScope            → 不标注（脚本默认 sloppy）
+Script 执行            → VM 入口建临时脚本作用域，仅 code.strict 时标注
+ModuleScope            → 恒标注 strict（§16.2.1.1）
+Class 方法/字段初始化   → set_strict 标注函数闭包作用域
+Function               → 自身指令序言或外围严格代码（Sema 判定后发射 set_strict）
+直接 eval              → 继承调用方
+严格 eval              → eval 词法作用域发射 set_scope_strict
+```
+
+脚本临时作用域只承载执行模式：顶层 `let/const` 仍经 `define_global_lexical`
+写入 GlobalScope 声明记录，`var`/函数声明仍落 global object 属性，`this`
+仍由 `currentFunctionEnv_ = global_` 解析。因此严格性标注不会改变全局绑定归属。
+
 ## 不推迟的内容
 
 以下属于语法形状，仍由 Parser 决定：
@@ -69,4 +88,6 @@ ClassBody              → 恒 strict
 - Lexer/Parser 不再有严格性状态与相关 `rescan`。
 - 报错时 AST 完整，Sema 能给出带作用域上下文的语义化诊断。
 - 严格性作用域与继承关系集中在一处维护。
+- 运行期不再把 GlobalScope 默认标为 strict；脚本、模块、函数、eval 各自
+  按规范来源标注，脚本默认 sloppy。
 - 代价是 Token/字面量节点需要携带 legacy 形态标记。

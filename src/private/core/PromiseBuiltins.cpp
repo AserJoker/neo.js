@@ -1075,8 +1075,9 @@ bool registerPromiseBuiltins(IContext* ctx) {
     }
 
     // —— 6. 静态方法 ——
-    if (!defineMethod(ctx, promiseFn, "resolve", promiseResolveStatic, 1)) return false;
-    if (!defineMethod(ctx, promiseFn, "reject", promiseRejectStatic, 1)) return false;
+    // resolve/reject 的参数可省略（缺省 undefined），不设最小实参数。
+    if (!defineMethod(ctx, promiseFn, "resolve", promiseResolveStatic, 0, 1)) return false;
+    if (!defineMethod(ctx, promiseFn, "reject", promiseRejectStatic, 0, 1)) return false;
     if (!defineMethod(ctx, promiseFn, "all", promiseAll, 1)) return false;
     if (!defineMethod(ctx, promiseFn, "race", promiseRace, 1)) return false;
     if (!defineMethod(ctx, promiseFn, "allSettled", promiseAllSettled, 1)) return false;

@@ -262,9 +262,31 @@ Value* objectCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     return ctx->createPrimitiveWrapper(v);
 }
 
-// Function(...)：new Function 暂不支持，调用/构造均返回 Exception
-Value* functionCtor(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* /*argv*/[]) {
-    return detail::typeError(ctx, "Function constructor is not implemented");
+// Function(...args) / new Function(...args)（ES2024 §20.2.1.1）：
+// 前 n-1 个参数是形参源码（逗号拼接），最后一个参数是函数体源码。
+// 在全局环境创建，不捕获调用方作用域；严格性只由函数体自身的指令序言决定。
+Value* functionCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
+    std::string params;
+    std::string body;
+    for (size_t i = 0; i < argc; ++i) {
+        Value* text = ctx->toString(argv[i]);
+        if (detail::isErrorValue(text)) return text;
+        const std::string& str =
+            static_cast<StringData*>(text->data())->value;
+        if (i + 1 == argc) {
+            body = str;
+        } else {
+            if (!params.empty()) params += ",";
+            params += str;
+        }
+    }
+    // 合成函数表达式后走间接 eval 路径：解析/语义/编译复用现有管线，
+    // 且 root_ 固定为 GlobalScope，函数不会闭包调用方局部变量。
+    std::string source =
+        "(function anonymous(" + params + "\n) {\n" + body + "\n})";
+    Value* src = ctx->createString(source);
+    if (src == ctx->oomValue()) return src;
+    return ctx->evalSource(src, nullptr, false);
 }
 
 // —— Object 静态方法（ES2024 §20.1.2）——

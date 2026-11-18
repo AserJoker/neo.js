@@ -305,6 +305,14 @@ TEST(ModuleTest, ModuleScopeIsChildOfGlobal) {
     EXPECT_EQ(info.scope->parent(), f.ctx->global());
 }
 
+TEST(ModuleTest, ModuleScopeIsAlwaysStrict) {
+    Fixture f;
+    ModuleInfo info = f.ctx->getModule("/strict.js");
+    ASSERT_NE(info.scope, nullptr);
+    EXPECT_TRUE(info.scope->hasFlag("strict"));
+    EXPECT_TRUE(info.scope->lookupFlagChain("strict"));
+}
+
 TEST(ModuleTest, ImportWithoutLoaderReturnsExports) {
     Fixture f;
     ModuleInfo info = f.ctx->getModule("/a.js");

@@ -148,6 +148,8 @@ CompileResult Compiler::compile() {
 
 void Compiler::compileProgram() {
     strict_ = hasUseStrictDirective(program_.body);
+    code_->isScriptProgram = true;
+    code_->strict = strict_;
     globalCode_ = true;
     hoistScope(program_.body, true);
     for (const frontend::NodePtr& statement : program_.body) {
@@ -166,6 +168,9 @@ void Compiler::compileEvalProgram() {
         hoistEvalFunctions(program_.body);
     }
     code_->pushScope();
+    // 严格 eval 的 eval 词法作用域自身带 strict 标志，供 with/未声明赋值/
+    // delete 等运行期严格性判定使用；sloppy eval 保持继承的宽松语义。
+    if (options_.evalStrict) code_->setScopeStrict();
     if (options_.evalStrict) {
         hoistVarSlots(program_.body, true);
         hoistEvalFunctions(program_.body);
@@ -1909,8 +1914,10 @@ void Compiler::compileDeleteExpression(const frontend::Node& argument) {
         return;
     }
     if (argument.kind() == NodeKind::Identifier) {
-        // 已解析的绑定不可删除；sloppy 下返回 false。
-        code_->pushBoolean(false);
+        // sloppy `delete Identifier`：声明绑定 false，全局对象属性按可配置性，
+        // 未解析引用 true。strict 下 Sema 已提前报错。
+        code_->deleteIdentifier(
+            static_cast<const frontend::Identifier&>(argument).name);
         return;
     }
     // 非引用：求值副作用后返回 true。

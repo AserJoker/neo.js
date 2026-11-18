@@ -242,6 +242,7 @@ TEST(ClassFieldsTest, MethodIsNonEnumerableAndHasNoPrototype) {
 
 TEST(ClassFieldsTest, ClassPrototypePropertyIsNonWritableNonConfigurable) {
     Fixture f;
+    f.ctx->setFlag("strict");
     Value* cls = makeClass(f.ctx.get());
     Value* proto = f.ctx->createObject();
     f.ctx->defineProperty(cls, "prototype", proto, false, false, false);

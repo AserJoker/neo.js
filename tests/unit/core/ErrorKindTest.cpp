@@ -168,6 +168,7 @@ TEST(ErrorKindTest, ConstructingNonConstructorIsTypeError) {
 
 TEST(ErrorKindTest, AssignToReadOnlyIsTypeError) {
     Fixture f;
+    f.ctx->global()->setFlag("strict");
     Value* obj = f.ctx->createObject();
     f.ctx->defineProperty(obj, "x", f.ctx->createNumber(1), false, true, true);
     Value* r = f.ctx->setProperty(obj, "x", f.ctx->createNumber(2));
@@ -217,7 +218,7 @@ TEST(ErrorKindTest, AssignToConstIsTypeError) {
 
 TEST(ErrorKindTest, StrictUndeclaredAssignmentIsReferenceError) {
     Fixture f;
-    // global 默认标注 strict
+    f.ctx->global()->setFlag("strict");
     expectError(f.ctx.get(), f.ctx->store("undeclared", f.ctx->createNumber(1)),
                 "ReferenceError");
 }

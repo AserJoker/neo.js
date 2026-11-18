@@ -165,6 +165,7 @@ TEST(EvalTest, StrictDirectEvalVarDoesNotLeak) {
     Fixture f;
     ASSERT_TRUE(runScript(f,
                           "function f() {\n"
+                          "  'use strict';\n"
                           "  eval('var strictLeak = 1;');\n"
                           "  try { return strictLeak; } catch (e) { return 'missing'; }\n"
                           "}\n"
@@ -720,4 +721,75 @@ TEST(EvalTest, GlobalVarConflictsWithScriptLet) {
     // Sema 已把同名词法/var 声明判为早期错误；运行时路径同样拒绝。
     Value* result = runScriptRaw(f, "let x = 1;\nvar x = 2;\n");
     EXPECT_TRUE(result == nullptr || neo::core::detail::isErrorValue(result));
+}
+
+// ===== 脚本默认 sloppy / 严格性来源 =====
+
+TEST(EvalTest, SloppyScriptAllowsUndeclaredAssignment) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "undeclaredGlobal = 5;\n"
+                          "var out = globalThis.undeclaredGlobal;\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 5.0);
+}
+
+TEST(EvalTest, StrictScriptRejectsUndeclaredAssignment) {
+    Fixture f;
+    Value* result = runScriptRaw(f, "\"use strict\";\nundeclaredGlobal = 5;\n");
+    ASSERT_TRUE(result != nullptr);
+    EXPECT_TRUE(neo::core::detail::isErrorValue(result));
+}
+
+TEST(EvalTest, SloppyScriptAllowsWith) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "var o = { x: 3 };\n"
+                          "var out;\n"
+                          "with (o) { out = x; }\n"));
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 3.0);
+}
+
+TEST(EvalTest, StrictScriptRejectsWith) {
+    Fixture f;
+    // with 在严格模式下是早期错误。
+    Value* result = runScriptRaw(f, "\"use strict\";\nwith ({}) {}\n");
+    EXPECT_TRUE(result == nullptr || neo::core::detail::isErrorValue(result));
+}
+
+TEST(EvalTest, SloppyVarUndefinedAssignmentIsSilent) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "var undefined = 1;\n"
+                          "var out = typeof undefined;\n"));
+    EXPECT_EQ(stringOf(lookupOut(f)), "undefined");
+}
+
+TEST(EvalTest, StrictVarUndefinedAssignmentThrows) {
+    Fixture f;
+    Value* result = runScriptRaw(f, "\"use strict\";\nvar undefined = 1;\n");
+    ASSERT_TRUE(result != nullptr);
+    EXPECT_TRUE(neo::core::detail::isErrorValue(result));
+}
+
+TEST(EvalTest, StrictEvalScopeRejectsUndeclaredAssignment) {
+    Fixture f;
+    Value* result = runScriptRaw(f, "eval('\"use strict\"; undeclaredEval = 1;');\n");
+    ASSERT_TRUE(result != nullptr);
+    EXPECT_TRUE(neo::core::detail::isErrorValue(result));
+}
+
+TEST(EvalTest, DeleteUnresolvedIdentifierReturnsTrue) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "var out = delete neverDeclared;\n"));
+    EXPECT_TRUE(neo::core::detail::toBoolean(lookupOut(f)));
+}
+
+TEST(EvalTest, DeleteGlobalObjectPropertyReturnsTrue) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "globalThis.tempProp = 1;\n"
+                          "var out = delete tempProp;\n"));
+    EXPECT_TRUE(neo::core::detail::toBoolean(lookupOut(f)));
+    EXPECT_EQ(lookupOut(f)->type()->kind(), TypeKind::Boolean);
 }

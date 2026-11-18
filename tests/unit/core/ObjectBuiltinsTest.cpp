@@ -224,7 +224,7 @@ TEST(ObjectBuiltinsTest, ObjectPrimitiveWrappingReturnsWrapper) {
 
 // ===== Function 构造函数占位 =====
 
-TEST(ObjectBuiltinsTest, FunctionCallIsNotImplemented) {
+TEST(ObjectBuiltinsTest, FunctionConstructorCreatesCallable) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
@@ -232,17 +232,31 @@ TEST(ObjectBuiltinsTest, FunctionCallIsNotImplemented) {
 
     Value* functionFn = globalOf(ctx.get(), "Function");
     ASSERT_EQ(functionFn->type()->kind(), TypeKind::Function);
-    EXPECT_EQ(ctx->call(functionFn, nullptr, 0, nullptr)->type()->kind(), TypeKind::Exception);
+
+    // Function("a", "b", "return a + b;") 动态创建可调用函数。
+    Value* args[3] = {ctx->createString("a"), ctx->createString("b"),
+                      ctx->createString("return a + b;")};
+    Value* fn = ctx->call(functionFn, nullptr, 3, args);
+    ASSERT_EQ(fn->type()->kind(), TypeKind::Function);
+    Value* callArgs[2] = {ctx->createNumber(2), ctx->createNumber(3)};
+    Value* result = ctx->call(fn, nullptr, 2, callArgs);
+    ASSERT_EQ(result->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numOf(result), 5.0);
 }
 
-TEST(ObjectBuiltinsTest, NewFunctionIsNotImplemented) {
+TEST(ObjectBuiltinsTest, NewFunctionCreatesCallable) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
 
-    EXPECT_EQ(ctx->construct(globalOf(ctx.get(), "Function"), 0, nullptr)->type()->kind(),
-              TypeKind::Exception);
+    Value* args[2] = {ctx->createString("a"), ctx->createString("return a * 2;")};
+    Value* fn = ctx->construct(globalOf(ctx.get(), "Function"), 2, args);
+    ASSERT_EQ(fn->type()->kind(), TypeKind::Function);
+    Value* callArgs[1] = {ctx->createNumber(4)};
+    Value* result = ctx->call(fn, nullptr, 1, callArgs);
+    ASSERT_EQ(result->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numOf(result), 8.0);
 }
 
 // ===== Object.prototype 方法 =====
@@ -1581,6 +1595,7 @@ TEST(ObjectBuiltinsTest, SymbolPropertyAssignmentUpdatesExisting) {
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
+    ctx->global()->setFlag("strict");
 
     Value* obj = ctx->createObject();
     Value* sym = ctx->createSymbol("s");
@@ -1656,6 +1671,7 @@ TEST(ObjectBuiltinsTest, SymbolAccessorSetPaths) {
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
+    ctx->global()->setFlag("strict");
 
     Value* sym = ctx->createSymbol("s");
     Value* setter = ctx->createNativeFunction(returnsThis, 0);
@@ -1807,6 +1823,7 @@ TEST(ObjectBuiltinsTest, InheritedStringAccessorAndReadOnly) {
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
+    ctx->global()->setFlag("strict");
 
     Value* setter = ctx->createNativeFunction(returnsThis, 0);
     Value* proto = ctx->createObject();

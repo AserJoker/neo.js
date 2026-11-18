@@ -18,11 +18,16 @@
 
 #include "core/Context.h"
 
+#include "core/AsyncNative.h"
 #include "core/PromiseBuiltins.h"
+#include "core/PromiseCapability.h"
 
 #include "core/types/Array.h"
+#include "core/types/Coroutine.h"
 #include "core/types/Exception.h"
+#include "core/types/Interrupt.h"
 #include "core/types/ModuleNamespace.h"
+#include "core/types/Promise.h"
 #include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
 #include "vm/Code.h"
@@ -117,6 +122,81 @@ std::string resolveSpecifier(const std::vector<Module*>& stack,
     return normalizePath(joined);
 }
 
+// —— 顶层 await 的 Promise 回调（ADR-064）——
+
+// 取 native 回调闭包作用域里捕获的值（与 AsyncNative 同模式）。
+Value* captured(IContext* ctx, const char* name) {
+    Scope* cur = ctx->current();
+    Scope* closure = cur != nullptr ? cur->parent() : nullptr;
+    return closure != nullptr ? closure->lookup(name) : nullptr;
+}
+
+Value* undefinedOf(IContext* ctx) { return ctx->createUndefined(); }
+
+// 异常值 → 拒绝原因（Exception 携带的 Error 对象；其他值原样）。
+Value* reasonOf(Value* v) {
+    if (v != nullptr && v->type()->kind() == TypeKind::Exception) {
+        return static_cast<ExceptionData*>(v->data())->child;
+    }
+    return v;
+}
+
+void settle(IContext* ctx, Value* fn, Value* value) {
+    if (fn == nullptr) return;
+    Value* args[1] = {value};
+    (void)ctx->call(fn, undefinedOf(ctx), 1, args);
+}
+
+// 依赖全部完成：首次恢复模块协程，执行模块体。
+Value* moduleDepsFulfilled(IContext* ctx, Value*, size_t /*argc*/,
+                           Value* /*argv*/[]) {
+    Value* co = captured(ctx, "__co");
+    Value* resolve = captured(ctx, "__resolve");
+    Value* reject = captured(ctx, "__reject");
+    if (co == nullptr) return undefinedOf(ctx);
+    Value* res = ctx->resumeCoroutine(co, nullptr);
+    driveAsyncCoroutine(ctx, co, res, resolve, reject);
+    return undefinedOf(ctx);
+}
+
+// 依赖拒绝：模块求值失败，拒绝模块 Promise 并缓存错误。
+Value* moduleDepsRejected(IContext* ctx, Value*, size_t argc, Value* argv[]) {
+    Value* reject = captured(ctx, "__reject");
+    Value* idValue = captured(ctx, "__modId");
+    Value* reason = argc > 0 ? argv[0] : undefinedOf(ctx);
+    settle(ctx, reject, reason);
+    if (idValue != nullptr && idValue->type()->kind() == TypeKind::String) {
+        Module* mod = static_cast<Context*>(ctx)->findModule(
+            static_cast<StringData*>(idValue->data())->value);
+        if (mod != nullptr) {
+            mod->evaluating = false;
+            mod->evaluationFailed = true;
+            Value* exc = ctx->createException(reason);
+            if (!detail::isErrorValue(exc)) {
+                mod->evaluationError = exc;
+                mod->scope->add(exc);
+            }
+        }
+    }
+    return undefinedOf(ctx);
+}
+
+// 动态 import() 等待模块异步求值完成后再 settle 命名空间。
+Value* dynamicImportFulfilled(IContext* ctx, Value*, size_t /*argc*/,
+                              Value* /*argv*/[]) {
+    Value* promise = captured(ctx, "__promise");
+    Value* ns = captured(ctx, "__ns");
+    if (promise != nullptr && ns != nullptr) promiseFulfill(ctx, promise, ns);
+    return undefinedOf(ctx);
+}
+
+Value* dynamicImportRejected(IContext* ctx, Value*, size_t argc, Value* argv[]) {
+    Value* promise = captured(ctx, "__promise");
+    Value* reason = argc > 0 ? argv[0] : undefinedOf(ctx);
+    if (promise != nullptr) promiseReject(ctx, promise, reason);
+    return undefinedOf(ctx);
+}
+
 }  // namespace
 
 bool Context::hasModule(std::string_view id) const {
@@ -135,6 +215,8 @@ ModuleInfo Context::getModule(std::string_view id) {
     if (p == nullptr) return ModuleInfo{};
     Scope* scope = new (p) Scope(global_, alloc_, this);
     global_->addChild(scope);
+    // 模块代码恒为严格模式（§16.2.1.1），模块作用域自身标注。
+    scope->setFlag("strict");
 
     // 导出对象必须在模块 scope 下创建，才能被作用域树跟踪。
     // 它是模块命名空间 exotic 对象（原型 null、导出属性为活绑定）。
@@ -374,10 +456,245 @@ Value* Context::instantiateModule(Module* mod) {
     return nullptr;
 }
 
+Value* Context::createModuleCoroutine(Module* mod) {
+    auto* d = gc_->allocData<CoroutineData>();
+    if (d == nullptr) return oomValue_;
+    d->state = CoroutineState::Suspended;
+    d->receiver = createUndefined();
+    if (d->receiver == oomValue_) return d->receiver;
+    d->yielded = createUndefined();
+    if (d->yielded == oomValue_) return d->yielded;
+    d->sentValue = createUndefined();
+    if (d->sentValue == oomValue_) return d->sentValue;
+    d->module = mod;
+    d->resume = &Context::resumeModuleCoroutine;
+
+    Value* co = createTracked(getCoroutineType(), d, {});
+    if (co == oomValue_) return co;
+    if (objectPrototype_ != nullptr) {
+        static_cast<ObjectData*>(co->data())->prototype = objectPrototype_;
+    }
+    return co;
+}
+
+Value* Context::resumeModuleCoroutine(IContext* ctx, Value* coroutine,
+                                      Value* sentValue) {
+    auto* co = asCoroutine(coroutine);
+    if (co == nullptr || co->module == nullptr) {
+        return detail::typeError(ctx, "module coroutine has no module");
+    }
+    Module* mod = co->module;
+    if (mod->compilation.code == nullptr) {
+        return detail::typeError(ctx, "module has no compiled code");
+    }
+    auto* self = static_cast<Context*>(ctx);
+
+    Scope* savedRoot = ctx->root();
+    Scope* savedCurrent = ctx->current();
+    Scope* savedFunctionEnv = ctx->currentFunctionEnv();
+    Value* savedFunction = ctx->currentFunction();
+
+    ctx->setRootScope(mod->scope);
+    ctx->setCurrentScope(mod->scope);
+    self->moduleStack_.push_back(mod);
+
+    auto restore = [&]() {
+        self->moduleStack_.pop_back();
+        ctx->setCurrentFunctionEnv(savedFunctionEnv);
+        ctx->setCurrentFunction(savedFunction);
+        ctx->setCurrentScope(savedCurrent);
+        ctx->setRootScope(savedRoot);
+    };
+
+    vm::VM machine(ctx, mod->compilation.code.get());
+    Value* res = nullptr;
+    if (!co->started) {
+        co->started = true;
+        res = machine.run(mod->compilation.evaluatePc);
+    } else {
+        // await 拒绝以 Exception 注入，转为挂起点的 throw。
+        Value* injected = sentValue;
+        if (sentValue != nullptr &&
+            sentValue->type()->kind() == TypeKind::Exception) {
+            injected = ctx->createInterrupt(InterruptKind::Throw, 0, sentValue);
+        }
+        res = machine.resume(*co->vmState, injected);
+    }
+
+    const bool suspended =
+        res != nullptr && detail::isInterruptValue(res) &&
+        isSuspensionSignal(asInterrupt(res)->kind);
+    if (suspended) {
+        if (co->vmState == nullptr) co->vmState = new vm::VmState();
+        *co->vmState = machine.snapshot();
+        co->yielded = asInterrupt(res)->value;
+        co->state = CoroutineState::Suspended;
+        restore();
+        return res;
+    }
+
+    if (res == nullptr) res = ctx->createUndefined();
+    co->state = CoroutineState::Completed;
+    co->yielded = res;
+    delete co->vmState;
+    co->vmState = nullptr;
+    if (detail::isErrorValue(res)) {
+        mod->evaluationFailed = true;
+        mod->evaluationError = res;
+        mod->scope->add(res);
+    } else {
+        mod->evaluated = true;
+        mod->loaded = true;
+    }
+    mod->evaluating = false;
+    restore();
+    return res;
+}
+
+Value* Context::subscribeModuleAwait(Module* mod, Value* co, Value* res) {
+    if (mod->cycleWaiting) {
+        return detail::typeError(
+            this, "top-level await in a cyclic module graph is not implemented");
+    }
+    Value* ctor = promiseCtor();
+    if (ctor == nullptr) {
+        return detail::typeError(this, "Promise is not initialized");
+    }
+    PromiseCapability cap;
+    if (Value* err = createPromiseCapability(this, ctor, cap)) return err;
+    mod->evaluationPromise = cap.promise;
+    mod->scope->add(cap.promise);
+    driveAsyncCoroutine(this, co, res, cap.resolve, cap.reject);
+    return cap.promise;
+}
+
+Value* Context::startModuleBody(Module* mod) {
+    Value* co = createModuleCoroutine(mod);
+    if (detail::isErrorValue(co)) return co;
+    mod->evaluationCoroutine = co;
+    mod->scope->add(co);
+
+    Value* res = resumeCoroutine(co, nullptr);
+    if (res == nullptr) res = createUndefined();
+    if (detail::isErrorValue(res)) {
+        mod->evaluating = false;
+        mod->evaluationFailed = true;
+        mod->evaluationError = res;
+        mod->scope->add(res);
+        return res;
+    }
+    if (detail::isInterruptValue(res) &&
+        isSuspensionSignal(asInterrupt(res)->kind)) {
+        return subscribeModuleAwait(mod, co, res);
+    }
+    if (detail::isInterruptValue(res)) {
+        Value* err = detail::typeError(
+            this, "module top-level code returned an unsupported interrupt");
+        mod->evaluating = false;
+        mod->evaluationFailed = true;
+        mod->evaluationError = err;
+        mod->scope->add(err);
+        return err;
+    }
+    return nullptr;
+}
+
+Value* Context::startAsyncModuleEvaluation(
+    Module* mod, const std::vector<Value*>& depPromises) {
+    if (mod->cycleWaiting) {
+        return detail::typeError(
+            this, "top-level await in a cyclic module graph is not implemented");
+    }
+    Value* ctor = promiseCtor();
+    if (ctor == nullptr) {
+        return detail::typeError(this, "Promise is not initialized");
+    }
+    PromiseCapability cap;
+    if (Value* err = createPromiseCapability(this, ctor, cap)) return err;
+    mod->evaluationPromise = cap.promise;
+    mod->scope->add(cap.promise);
+
+    Value* co = createModuleCoroutine(mod);
+    if (detail::isErrorValue(co)) {
+        settle(this, cap.reject, reasonOf(co));
+        return co;
+    }
+    mod->evaluationCoroutine = co;
+    mod->scope->add(co);
+
+    Value* array = createArray();
+    if (array == oomValue_) {
+        settle(this, cap.reject, oomValue_);
+        return array;
+    }
+    auto* elements = static_cast<ArrayData*>(array->data());
+    for (size_t i = 0; i < depPromises.size(); ++i) {
+        elements->setElement(static_cast<uint32_t>(i), depPromises[i]);
+    }
+
+    Value* allFn = getProperty(ctor, "all");
+    if (detail::isErrorValue(allFn)) {
+        settle(this, cap.reject, reasonOf(allFn));
+        return allFn;
+    }
+    Value* allArgs[1] = {array};
+    Value* allPromise = call(allFn, ctor, 1, allArgs);
+    if (detail::isErrorValue(allPromise)) {
+        settle(this, cap.reject, reasonOf(allPromise));
+        return allPromise;
+    }
+    Value* thenFn = getProperty(allPromise, "then");
+    if (detail::isErrorValue(thenFn)) {
+        settle(this, cap.reject, reasonOf(thenFn));
+        return thenFn;
+    }
+
+    Value* onFulfilled = createNativeFunction(moduleDepsFulfilled, 1);
+    Value* onRejected = createNativeFunction(moduleDepsRejected, 1);
+    if (onFulfilled == oomValue_ || onRejected == oomValue_) {
+        settle(this, cap.reject, oomValue_);
+        return oomValue_;
+    }
+    Value* moduleId = createString(mod->id);
+    if (moduleId == oomValue_) {
+        settle(this, cap.reject, moduleId);
+        return moduleId;
+    }
+    captureValue(onFulfilled, "__co", co);
+    captureValue(onFulfilled, "__resolve", cap.resolve);
+    captureValue(onFulfilled, "__reject", cap.reject);
+    captureValue(onRejected, "__reject", cap.reject);
+    captureValue(onRejected, "__modId", moduleId);
+
+    Value* args[2] = {onFulfilled, onRejected};
+    Value* thenRes = call(thenFn, allPromise, 2, args);
+    if (detail::isErrorValue(thenRes)) {
+        settle(this, cap.reject, reasonOf(thenRes));
+        return thenRes;
+    }
+    return cap.promise;
+}
+
 Value* Context::evaluateModule(Module* mod) {
-    if (mod->evaluated || mod->loading) return nullptr;
-    mod->loading = true;
+    if (mod->evaluated) return nullptr;
+    if (mod->evaluationFailed) return mod->evaluationError;
+    // 循环依赖：异步求值中返回其 Promise；同步循环返回 nullptr（依赖方继续）。
+    // 若该模块随后变成异步，cycleWaiting 让求值显式报 not implemented。
+    if (mod->evaluating) {
+        if (mod->evaluationPromise == nullptr) mod->cycleWaiting = true;
+        return mod->evaluationPromise;
+    }
+
+    mod->evaluating = true;
     moduleStack_.push_back(mod);
+    auto fail = [&](Value* error) -> Value* {
+        moduleStack_.pop_back();
+        mod->evaluating = false;
+        mod->evaluationFailed = true;
+        mod->evaluationError = error;
+        if (error != nullptr) mod->scope->add(error);
+        return error;
+    };
 
     // 依赖 DFS 后序：先求值所有 import 与 re-export 的源模块。
     auto evaluateDependency = [this](const std::string& specifier) -> Value* {
@@ -393,31 +710,41 @@ Value* Context::evaluateModule(Module* mod) {
         return importModule(specifier);
     };
 
-    for (const ModuleImportBinding& imp : mod->compilation.imports) {
-        Value* res = evaluateDependency(imp.specifier);
-        if (res != nullptr && detail::isErrorValue(res)) {
-            moduleStack_.pop_back();
-            mod->loading = false;
-            return res;
+    std::vector<Value*> depPromises;
+    auto collect = [&](Value* res) -> Value* {
+        if (res != nullptr && detail::isErrorValue(res)) return res;
+        if (res != nullptr && res->type()->kind() == TypeKind::Promise) {
+            depPromises.push_back(res);
         }
+        return nullptr;
+    };
+
+    for (const ModuleImportBinding& imp : mod->compilation.imports) {
+        Value* err = collect(evaluateDependency(imp.specifier));
+        if (err != nullptr) return fail(err);
     }
     for (const ModuleExportBinding& exp : mod->compilation.exports) {
         if (exp.specifier.empty()) continue;
-        Value* res = evaluateDependency(exp.specifier);
-        if (res != nullptr && detail::isErrorValue(res)) {
-            moduleStack_.pop_back();
-            mod->loading = false;
-            return res;
-        }
+        Value* err = collect(evaluateDependency(exp.specifier));
+        if (err != nullptr) return fail(err);
     }
 
-    Value* res = runModuleCode(mod, mod->compilation.evaluatePc);
+    if (!depPromises.empty()) {
+        Value* promise = startAsyncModuleEvaluation(mod, depPromises);
+        moduleStack_.pop_back();
+        if (detail::isErrorValue(promise)) {
+            mod->evaluating = false;
+            mod->evaluationFailed = true;
+            mod->evaluationError = promise;
+            mod->scope->add(promise);
+            return promise;
+        }
+        return promise;
+    }
+
+    Value* res = startModuleBody(mod);
     moduleStack_.pop_back();
-    mod->loading = false;
-    if (res != nullptr && detail::isErrorValue(res)) return res;
-    mod->evaluated = true;
-    mod->loaded = true;
-    return nullptr;
+    return res;
 }
 
 Value* Context::importModule(std::string_view specifier) {
@@ -499,9 +826,36 @@ Value* Context::importModuleDynamic(Value* specifier,
     Value* value = ns != nullptr ? ns : createUndefined();
     if (value == oomValue_) {
         promiseReject(this, promise, value);
-    } else {
-        promiseFulfill(this, promise, value);
+        return promise;
     }
+
+    // 顶层 await：模块求值尚未完成时，等其 Promise settle 后再交付命名空间。
+    Module* mod = findModule(id);
+    if (mod != nullptr && mod->compilation.code != nullptr && !mod->evaluated &&
+        mod->evaluationPromise != nullptr) {
+        Value* thenFn = getProperty(mod->evaluationPromise, "then");
+        if (detail::isErrorValue(thenFn)) {
+            promiseReject(this, promise, reasonOf(thenFn));
+            return promise;
+        }
+        Value* onFulfilled = createNativeFunction(dynamicImportFulfilled, 1);
+        Value* onRejected = createNativeFunction(dynamicImportRejected, 1);
+        if (onFulfilled == oomValue_ || onRejected == oomValue_) {
+            promiseReject(this, promise, oomValue_);
+            return promise;
+        }
+        captureValue(onFulfilled, "__promise", promise);
+        captureValue(onFulfilled, "__ns", value);
+        captureValue(onRejected, "__promise", promise);
+        Value* args[2] = {onFulfilled, onRejected};
+        Value* thenRes = call(thenFn, mod->evaluationPromise, 2, args);
+        if (detail::isErrorValue(thenRes)) {
+            promiseReject(this, promise, reasonOf(thenRes));
+        }
+        return promise;
+    }
+
+    promiseFulfill(this, promise, value);
     return promise;
 }
 

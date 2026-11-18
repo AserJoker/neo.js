@@ -706,6 +706,11 @@ public:
     // hasProperty: `in` / [[HasProperty]]，返回 Boolean 或 Exception/Fatal。
     virtual Value* hasProperty(Value* obj, Value* key) = 0;
     virtual Value* deleteProperty(Value* obj, Value* key) = 0;
+
+    // deleteIdentifier: sloppy `delete Identifier`（§13.5.1.2）。
+    // 声明绑定（含全局声明记录）不可删除返回 false；with 属性与全局对象属性
+    // 走 DeleteProperty；未解析引用返回 true。strict 下由 Sema 提前报错。
+    virtual Value* deleteIdentifier(std::string_view name) = 0;
     virtual Value* defineProperty(Value* obj, Value* key, Value* value,
                                   bool writable = true, bool enumerable = true,
                                   bool configurable = true) = 0;

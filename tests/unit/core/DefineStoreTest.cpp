@@ -250,6 +250,7 @@ TEST(DefineStoreTest, StoreUndefinedReturnsException) {
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
+    ctx->global()->setFlag("strict");
 
     auto* result = ctx->store("nonexistent", ctx->createNumber(1.0));
 
@@ -464,16 +465,16 @@ TEST(DefineStoreTest, StoreOldDataReachableByGcWhileScoped) {
 
 // ===== 作用域标注（scope flags）=====
 
-TEST(ScopeFlagTest, GlobalDefaultsToStrict) {
+TEST(ScopeFlagTest, GlobalDefaultsToSloppy) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
 
-    // global 默认标注 strict，current(=root) 沿链继承
-    EXPECT_TRUE(ctx->global()->hasFlag("strict"));
-    EXPECT_TRUE(ctx->root()->lookupFlagChain("strict"));
-    EXPECT_TRUE(ctx->hasFlag("strict"));
+    // 脚本默认 sloppy：严格性由脚本指令序言/模块/函数自身标注。
+    EXPECT_FALSE(ctx->global()->hasFlag("strict"));
+    EXPECT_FALSE(ctx->root()->lookupFlagChain("strict"));
+    EXPECT_FALSE(ctx->hasFlag("strict"));
 }
 
 TEST(ScopeFlagTest, SetFlagOnCurrentScope) {
@@ -584,8 +585,9 @@ TEST(ScopeFlagTest, StrictStoreStillErrors) {
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
+    ctx->global()->setFlag("strict");
 
-    // 默认严格模式，未定义变量 store → Exception
+    // 严格模式，未定义变量 store → Exception
     auto* result = ctx->store("undeclared", ctx->createNumber(1.0));
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->type()->kind(), TypeKind::Exception);

@@ -183,7 +183,7 @@ TEST(WithScopeTest, NullAndUndefinedAreRejected) {
 
 TEST(WithScopeTest, StrictModeRejectsWith) {
     Fixture f;
-    // Context 默认 global 标注 strict。
+    f.ctx->global()->setFlag("strict");
     Scope* ws = nullptr;
     Value* err = f.ctx->pushWithScope(f.ctx->createObject(), &ws);
     ASSERT_NE(err, nullptr);
@@ -302,7 +302,7 @@ TEST(WithScopeTest, SloppyAssignmentToReadOnlyIsSilent) {
 
 TEST(WithScopeTest, StrictAssignmentToReadOnlyThrows) {
     Fixture f;
-    // Context 默认 global 标注 strict。
+    f.ctx->global()->setFlag("strict");
     Value* obj = f.ctx->createObject();
     f.ctx->defineProperty(obj, "x", f.ctx->createNumber(1), false, true, true);
 

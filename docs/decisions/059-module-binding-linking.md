@@ -118,3 +118,4 @@ loader 仍走原有的“惰性加载 + 立即执行”路径。
   入口与 import/export 元数据，Context 驱动 declare → instantiate → evaluate。
 - `ModuleCompilerTest` 覆盖 named/default/namespace import、活绑定、re-export、
   `export *`、`export * as ns`、循环依赖与三段式布局。
+- 模块顶层 await 的异步求值与依赖传播见 ADR-064。

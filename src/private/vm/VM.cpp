@@ -187,6 +187,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::YieldDelegate: return "yield_delegate";
         case OpCode::Dup2:          return "dup2";
         case OpCode::DeleteProp:    return "delete_prop";
+        case OpCode::DeleteIdentifier: return "delete_identifier";
         case OpCode::SetPropKeep:   return "set_prop_keep";
         case OpCode::SetSuperPropKeep: return "set_super_prop_keep";
         case OpCode::DefinePrivateField: return "define_private_field";
@@ -212,6 +213,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::DefineGlobalLexical: return "define_global_lexical";
         case OpCode::DirectEval:    return "direct_eval";
         case OpCode::DirectEvalSpread: return "direct_eval_spread";
+        case OpCode::SetScopeStrict: return "set_scope_strict";
     }
     return "<unknown>";
 }
@@ -336,6 +338,7 @@ const VM::Handler* VM::handlers() {
         &VM::opYieldDelegate,
         &VM::opDup2,
         &VM::opDeleteProp,
+        &VM::opDeleteIdentifier,
         &VM::opSetPropKeep,
         &VM::opSetSuperPropKeep,
         &VM::opDefinePrivateField,
@@ -361,6 +364,7 @@ const VM::Handler* VM::handlers() {
         &VM::opDefineGlobalLexical,
         &VM::opDirectEval,
         &VM::opDirectEvalSpread,
+        &VM::opSetScopeStrict,
     };
     return table;
 }
@@ -584,9 +588,25 @@ Value* VM::resume(const VmState& state, Value* sent) {
 }
 
 Value* VM::run(uint32_t entryPc) {
+    // 脚本默认 sloppy：为本次执行建立临时作用域，只有源码含 "use strict"
+    // 时才标注 strict。作用域只承载执行模式，声明仍落 GlobalScope/global object。
+    Scope* scriptScope = nullptr;
+    if (code_->isScriptProgram && ctx_->current() == ctx_->global()) {
+        scriptScope = ctx_->pushNewScope(ctx_->global());
+        if (scriptScope == nullptr) return ctx_->oomValue();
+        if (code_->strict) scriptScope->setFlag("strict");
+    }
     pc_ = entryPc;
     instructionPc_ = entryPc;
-    return execute();
+    Value* result = execute();
+    // 异常路径可能遗留未弹出的块级作用域：先回到脚本作用域再弹出。
+    if (scriptScope != nullptr) {
+        while (ctx_->current() != nullptr && ctx_->current() != scriptScope) {
+            ctx_->popScope();
+        }
+        if (ctx_->current() == scriptScope) ctx_->popScope();
+    }
+    return result;
 }
 
 Value* VM::execute() {
@@ -800,6 +820,23 @@ Value* VM::opDeleteProp() {
     Value* key = pop();
     Value* object = pop();
     Value* result = ctx_->deleteProperty(object, key);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opDeleteIdentifier() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("delete_identifier: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("delete_identifier: name index out of range");
+    }
+    Value* result = ctx_->deleteIdentifier(*name);
     if (detail::isErrorValue(result)) return fail(result);
     push(result);
     return nullptr;
@@ -2129,7 +2166,8 @@ Value* VM::opDeclareGlobalVar() {
     if (name == nullptr) {
         return badBytecode("declare_global_var: name index out of range");
     }
-    Value* result = ctx_->declareGlobalVar(*name, true);
+    // 脚本顶层 var：CreateGlobalVarBinding，属性不可配置（§9.1.1.4.17）。
+    Value* result = ctx_->declareGlobalVar(*name, false);
     if (result != nullptr && detail::isErrorValue(result)) return fail(result);
     return nullptr;
 }
@@ -2145,7 +2183,8 @@ Value* VM::opDeclareGlobalFunction() {
     if (name == nullptr) {
         return badBytecode("declare_global_function: name index out of range");
     }
-    Value* result = ctx_->declareGlobalFunction(*name, true);
+    // 脚本顶层函数声明：属性不可配置（§9.1.1.4.18）。
+    Value* result = ctx_->declareGlobalFunction(*name, false);
     if (result != nullptr && detail::isErrorValue(result)) return fail(result);
     return nullptr;
 }
@@ -2525,6 +2564,11 @@ Value* VM::opPushClass() {
 Value* VM::opSetStrict() {
     if (stack_.empty()) return badBytecode("set_strict: operand stack underflow");
     ctx_->setFunctionStrict(top());
+    return nullptr;
+}
+
+Value* VM::opSetScopeStrict() {
+    ctx_->current()->setFlag("strict");
     return nullptr;
 }
 

@@ -131,6 +131,7 @@ TEST(ConstructTest, NameIsNonWritableProperty) {
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
+    ctx->global()->setFlag("strict");
 
     Value* fn = ctx->createNativeFunction(recordThisFn, 0);
     auto* fd = static_cast<ObjectData*>(fn->data());

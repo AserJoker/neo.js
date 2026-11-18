@@ -51,8 +51,8 @@ void awaitCoroutine(IContext* ctx, Value* co, Value* awaitable, Value* resolve,
                     Value* reject);
 
 // 解释一次 resume 的结果：Await → 继续订阅；完成 → settle 外层 Promise。
-void driveAsyncCoroutine(IContext* ctx, Value* co, Value* res, Value* resolve,
-                         Value* reject) {
+void driveAsyncCoroutineImpl(IContext* ctx, Value* co, Value* res, Value* resolve,
+                             Value* reject) {
     if (res == nullptr) res = undefinedOf(ctx);
 
     TypeKind k = res->type()->kind();
@@ -85,7 +85,7 @@ Value* awaitFulfilled(IContext* ctx, Value*, size_t argc, Value* argv[]) {
     if (co == nullptr) return undefinedOf(ctx);
     Value* v = argc > 0 ? argv[0] : undefinedOf(ctx);
     Value* res = ctx->resumeCoroutine(co, v);
-    driveAsyncCoroutine(ctx, co, res, resolve, reject);
+    driveAsyncCoroutineImpl(ctx, co, res, resolve, reject);
     return undefinedOf(ctx);
 }
 
@@ -103,7 +103,7 @@ Value* awaitRejected(IContext* ctx, Value*, size_t argc, Value* argv[]) {
         return undefinedOf(ctx);
     }
     Value* res = ctx->resumeCoroutine(co, exc);
-    driveAsyncCoroutine(ctx, co, res, resolve, reject);
+    driveAsyncCoroutineImpl(ctx, co, res, resolve, reject);
     return undefinedOf(ctx);
 }
 
@@ -152,6 +152,11 @@ void awaitCoroutine(IContext* ctx, Value* co, Value* awaitable, Value* resolve,
 }
 
 }  // namespace
+
+void driveAsyncCoroutine(IContext* ctx, Value* co, Value* res, Value* resolve,
+                         Value* reject) {
+    driveAsyncCoroutineImpl(ctx, co, res, resolve, reject);
+}
 
 Value* runAsyncNative(IContext* ctx, Value* fn, Value* thisArg, size_t argc,
                       Value* argv[]) {

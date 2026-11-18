@@ -100,8 +100,8 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     // 6. current 初始 = global；顶层函数环境也指向它（this/new.target 由 VM 入口绑定）
     current_ = root_;
     currentFunctionEnv_ = root_;
-    // 7. global 默认标注 strict（保持默认严格模式，后续由模块/函数体标注覆盖）
-    global_->setFlag("strict");
+    // 7. 脚本默认 sloppy：严格性由脚本指令序言、模块/class 体或函数自身标注，
+    //    不再给全局作用域统一打 strict 标志。
     // 8. 全局 this = global object（§9.1.1.4 [[GlobalThisValue]]）。
     global_->setThis(globalObject_);
     // 9. 全局对象的标准属性（§19.1）：globalThis 可写/可配置，其余只读/不可配置。
@@ -2125,6 +2125,32 @@ Value* Context::hasProperty(Value* obj, Value* key) {
 
 Value* Context::deleteProperty(Value* obj, Value* key) {
     return obj->type()->deleteProperty(this, obj, key);
+}
+
+Value* Context::deleteIdentifier(std::string_view name) {
+    // with 对象属性：DeleteBinding 作用于对象环境记录。
+    Value* withObject = nullptr;
+    Value* withKey = nullptr;
+    if (current()->getWithBindingChain(name, withObject, withKey)) {
+        return deleteProperty(withObject, withKey);
+    }
+    // 声明绑定（函数内 var/形参、全局 let/const）不可删除。
+    if (current()->lookupBindingChain(name) != nullptr) {
+        return createBoolean(false);
+    }
+    // 全局对象记录：只有自有属性可删；不存在视为已删除（返回 true）。
+    Value* key = createString(name);
+    if (key == oomValue_) return key;
+    PropertyKey pk;
+    if (Value* err = neo::core::toPropertyKey(this, key, pk)) return err;
+    bool exists = false;
+    Property out;
+    if (Value* err = globalObject_->type()->getOwnProperty(
+            this, globalObject_, pk, exists, out)) {
+        return err;
+    }
+    if (!exists) return createBoolean(true);
+    return deleteProperty(globalObject_, key);
 }
 
 // 内部 [[DefineOwnProperty]] / [[SetPrototypeOf]] 返回 Boolean：

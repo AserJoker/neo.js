@@ -35,6 +35,11 @@ void storeNativeLocal(IContext* ctx, std::string_view name, Value* value);
 Value* runAsyncNative(IContext* ctx, Value* fn, Value* thisArg, size_t argc,
                       Value* argv[]);
 
+// 解释一次协程 resume 的结果：Await 继续订阅；完成 settle 外层 Promise。
+// 供模块顶层 await 等非函数体协程复用（ADR-064）。
+void driveAsyncCoroutine(IContext* ctx, Value* co, Value* res, Value* resolve,
+                         Value* reject);
+
 // 以 script 函数为函数体运行 async 语义，返回 Promise。
 // await 产生 Interrupt(Await)；恢复时正常值压栈、Exception 转为抛出。
 Value* runAsyncScript(IContext* ctx, Value* fn, Value* thisArg, size_t argc,

@@ -41,6 +41,7 @@ struct VmState;
 
 namespace neo::core {
 
+struct Module;
 class Scope;
 class Value;
 
@@ -93,6 +94,10 @@ public:
     // VM 挂起状态（script 函数；native 恒为 nullptr）。由本 data 独占持有，
     // 栈上的 Value 与 try 帧 res 在 GC 标记时遍历。
     neo::vm::VmState* vmState = nullptr;
+    // 模块顶层求值协程（ADR-064）：非空时 resume 驱动为 resumeModuleCoroutine。
+    // 模块作用域常驻 global 树，不走 execScope 孤立化。
+    Module* module = nullptr;
+    bool started = false;  // 模块协程是否已首次运行
 
     ~CoroutineData() override;
 

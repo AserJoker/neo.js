@@ -408,3 +408,73 @@ TEST(ModuleCompilerTest, ModuleHasThreeSectionLayout) {
     EXPECT_LT(result.instantiatePc, result.evaluatePc);
     EXPECT_LT(result.evaluatePc, result.code->bytecode.size());
 }
+
+// ===== 模块顶层 await（ADR-064）=====
+
+namespace {
+
+Value* g_dynamicNamespace = nullptr;
+
+Value* captureNamespace(IContext* ctx, Value*, size_t argc, Value* argv[]) {
+    g_dynamicNamespace = argc > 0 ? argv[0] : nullptr;
+    return ctx->createUndefined();
+}
+
+}  // namespace
+
+TEST(ModuleCompilerTest, TopLevelAwaitDefersModuleBody) {
+    Fixture f;
+    ASSERT_TRUE(addModule(f, "/tla.js",
+                          "export let value = 0;\n"
+                          "await Promise.resolve();\n"
+                          "value = 7;\n"));
+    Value* ns = f.ctx->importModule("/tla.js");
+    ASSERT_FALSE(isErrorValue(ns)) << errorText(f.ctx.get(), ns);
+    // 模块体在 await 处挂起，赋值尚未执行。
+    EXPECT_DOUBLE_EQ(number(get(f.ctx.get(), ns, "value")), 0.0);
+    drainMicrotasks(f.ctx.get());
+    EXPECT_DOUBLE_EQ(number(get(f.ctx.get(), ns, "value")), 7.0);
+}
+
+TEST(ModuleCompilerTest, TopLevelAwaitPropagatesToImporters) {
+    Fixture f;
+    ASSERT_TRUE(addModule(f, "/dep.js",
+                          "export const a = await Promise.resolve(2);\n"));
+    ASSERT_TRUE(addModule(f, "/main.js",
+                          "import { a } from './dep.js';\n"
+                          "export const b = a + 1;\n"));
+    Value* ns = f.ctx->importModule("/main.js");
+    ASSERT_FALSE(isErrorValue(ns));
+    drainMicrotasks(f.ctx.get());
+    EXPECT_DOUBLE_EQ(number(get(f.ctx.get(), ns, "b")), 3.0);
+}
+
+TEST(ModuleCompilerTest, TopLevelAwaitRejectionFailsModule) {
+    Fixture f;
+    ASSERT_TRUE(addModule(f, "/bad.js",
+                          "await Promise.reject(new Error('boom'));\n"
+                          "export const x = 1;\n"));
+    Value* ns = f.ctx->importModule("/bad.js");
+    ASSERT_FALSE(isErrorValue(ns));
+    drainMicrotasks(f.ctx.get());
+    // 失败被缓存：再次 import 返回错误值。
+    Value* err = f.ctx->importModule("/bad.js");
+    ASSERT_TRUE(isErrorValue(err));
+    EXPECT_EQ(errorText(f.ctx.get(), err), "boom");
+}
+
+TEST(ModuleCompilerTest, DynamicImportWaitsForTopLevelAwait) {
+    Fixture f;
+    g_dynamicNamespace = nullptr;
+    ASSERT_TRUE(addModule(f, "/dyn.js",
+                          "export const v = await Promise.resolve(9);\n"));
+    Value* promise = f.ctx->importModuleDynamic(f.ctx->createString("/dyn.js"), "");
+    ASSERT_EQ(promise->type()->kind(), TypeKind::Promise);
+    Value* thenFn = get(f.ctx.get(), promise, "then");
+    Value* callback = f.ctx->createNativeFunction(captureNamespace, 1);
+    Value* args[1] = {callback};
+    ASSERT_FALSE(isErrorValue(f.ctx->call(thenFn, promise, 1, args)));
+    drainMicrotasks(f.ctx.get());
+    ASSERT_NE(g_dynamicNamespace, nullptr);
+    EXPECT_DOUBLE_EQ(number(get(f.ctx.get(), g_dynamicNamespace, "v")), 9.0);
+}

@@ -208,6 +208,7 @@ TEST(AccessorTest, GetterOnlyRejectsSet) {
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
+    ctx->global()->setFlag("strict");
 
     Value* obj = ctx->createObject();
     ctx->defineAccessor(obj, "x", ctx->createNativeFunction(getter42, 0), nullptr);
@@ -311,6 +312,7 @@ TEST(AccessorTest, InheritedGetterOnlyRejectsSet) {
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
+    ctx->global()->setFlag("strict");
 
     Value* proto = ctx->createObject();
     ctx->defineAccessor(proto, "x", ctx->createNativeFunction(getter42, 0), nullptr);
@@ -440,6 +442,7 @@ TEST(AccessorTest, SymbolKeyGetterOnlyRejectsSet) {
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
+    ctx->global()->setFlag("strict");
 
     Value* obj = ctx->createObject();
     Value* sym = ctx->createSymbol("k");
@@ -453,6 +456,7 @@ TEST(AccessorTest, SymbolKeyReadOnlyDataPropertyRejectsSet) {
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
+    ctx->global()->setFlag("strict");
 
     Value* obj = ctx->createObject();
     Value* sym = ctx->createSymbol("k");
@@ -487,6 +491,7 @@ TEST(AccessorTest, InheritedSymbolGetterOnlyRejectsSet) {
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
+    ctx->global()->setFlag("strict");
 
     Value* proto = ctx->createObject();
     Value* sym = ctx->createSymbol("k");
@@ -502,6 +507,7 @@ TEST(AccessorTest, InheritedSymbolReadOnlyRejectsSet) {
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
+    ctx->global()->setFlag("strict");
 
     Value* proto = ctx->createObject();
     Value* sym = ctx->createSymbol("k");

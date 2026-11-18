@@ -561,6 +561,7 @@ TEST(PrimitiveWrapperTest, StringWrapperLengthAndIndexAreReadOnly) {
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
+    ctx->global()->setFlag("strict");
 
     Value* w = ctx->createPrimitiveWrapper(ctx->createString("abc"));
     EXPECT_EQ(ctx->setProperty(w, "length", ctx->createNumber(1))->type()->kind(),

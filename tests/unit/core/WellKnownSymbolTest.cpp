@@ -252,6 +252,7 @@ TEST(WellKnownSymbolTest, WellKnownPropertiesAreReadOnly) {
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
+    ctx->global()->setFlag("strict");
 
     Value* symbolFn = ctx->global()->lookup("Symbol");
     auto* d = static_cast<ObjectData*>(symbolFn->data());

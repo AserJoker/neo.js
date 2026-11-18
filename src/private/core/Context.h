@@ -361,6 +361,8 @@ public:
 
     // —— ES Module 基础设施 ——
     bool hasModule(std::string_view id) const override;
+    // 取/创建 id 对应的 Module；失败返回 nullptr。异步模块回调按 id 反查用。
+    Module* findModule(std::string_view id);
     ModuleInfo getModule(std::string_view id) override;
     void setModuleLoader(std::string_view id, ModuleLoader loader) override;
     bool setModuleCompilation(std::string_view id,
@@ -427,6 +429,7 @@ public:
     Value* setProperty(Value* obj, Value* key, Value* value) override;
     Value* hasProperty(Value* obj, Value* key) override;
     Value* deleteProperty(Value* obj, Value* key) override;
+    Value* deleteIdentifier(std::string_view name) override;
     Value* defineProperty(Value* obj, Value* key, Value* value,
                           bool writable = true, bool enumerable = true,
                           bool configurable = true) override;
@@ -540,12 +543,19 @@ private:
     // instantiateModule: 绑定 import/export 槽位 + 创建函数对象。
     // 成功返回 nullptr，失败返回错误值。
     Value* instantiateModule(Module* mod);
-    // evaluateModule: 按依赖 DFS 后序执行模块体。成功返回 nullptr。
+    // evaluateModule: 按依赖 DFS 后序执行模块体。
+    // 同步成功返回 nullptr；异步求值返回其 Promise；失败返回错误值。
     Value* evaluateModule(Module* mod);
     // 在模块 root scope 下执行 code 的某一段。
     Value* runModuleCode(Module* mod, uint32_t entryPc);
-    // 取/创建 id 对应的 Module；失败返回 nullptr。
-    Module* findModule(std::string_view id);
+    // 模块顶层 await（ADR-064）：以协程持有 VM 挂起状态。
+    Value* createModuleCoroutine(Module* mod);
+    static Value* resumeModuleCoroutine(IContext* ctx, Value* coroutine,
+                                        Value* sentValue);
+    Value* startModuleBody(Module* mod);
+    Value* startAsyncModuleEvaluation(Module* mod,
+                                      const std::vector<Value*>& depPromises);
+    Value* subscribeModuleAwait(Module* mod, Value* co, Value* res);
 };
 
 }  // namespace neo::core

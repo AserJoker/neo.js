@@ -90,6 +90,10 @@ struct Code {
     SourceMap sourceMap;
     // 本 Code 所属模块 id（动态 import 相对说明符的基准）；script 为文件名。
     std::string moduleId;
+    // 脚本程序（compileProgram）：VM 入口为其建立临时执行作用域，
+    // strict 决定该作用域是否标注 "strict"（脚本默认 sloppy）。
+    bool isScriptProgram = false;
+    bool strict = false;
     // 标签模板对象缓存（§13.2.8.2）：pc → 模板对象。同一 Code 的同一调用点
     // 复用同一对象；Value 由 Context 挂到 global scope 作 GC 根。
     mutable std::vector<std::pair<uint32_t, neo::core::Value*>> templateCache;
@@ -299,6 +303,11 @@ struct Code {
     uint32_t getProp() { return emitOp(OpCode::GetProp); }
     uint32_t setProp() { return emitOp(OpCode::SetProp); }
     uint32_t deleteProp() { return emitOp(OpCode::DeleteProp); }
+    uint32_t deleteIdentifier(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::DeleteIdentifier);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
     uint32_t setPropKeep() { return emitOp(OpCode::SetPropKeep); }
     uint32_t newObject() { return emitOp(OpCode::NewObject); }
     uint32_t newArray(uint32_t length = 0) {
@@ -465,6 +474,8 @@ struct Code {
     }
 
     uint32_t pushScope() { return emitOp(OpCode::PushScope); }
+    // 把当前作用域标注为严格模式（严格 eval 的 eval 词法作用域）。
+    uint32_t setScopeStrict() { return emitOp(OpCode::SetScopeStrict); }
     uint32_t pushVarScope() { return emitOp(OpCode::PushVarScope); }
     uint32_t popScope() { return emitOp(OpCode::PopScope); }
     uint32_t pushWithScope() { return emitOp(OpCode::PushWithScope); }

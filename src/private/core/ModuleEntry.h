@@ -32,6 +32,13 @@ struct Module {
     bool instantiated = false;   // import/export 槽位与函数对象是否已建立
     bool instantiating = false;  // 循环依赖保护：正在实例化
     bool evaluated = false;      // 模块体是否已求值
+    // —— 顶层 await（ADR-064）——
+    bool evaluating = false;       // 求值中（含异步挂起），循环依赖保护
+    bool evaluationFailed = false; // 求值已失败（错误缓存，不重试）
+    bool cycleWaiting = false;     // 循环依赖方在本模块求值中访问过它
+    Value* evaluationPromise = nullptr;   // 异步求值的 Promise（借用，挂模块 scope）
+    Value* evaluationError = nullptr;     // 失败错误值（借用，挂模块 scope）
+    Value* evaluationCoroutine = nullptr; // 顶层求值协程（借用，挂模块 scope）
 };
 
 }  // namespace neo::core

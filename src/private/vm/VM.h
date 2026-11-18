@@ -146,6 +146,7 @@ private:
     neo::core::Value* opSwap();
     neo::core::Value* opDup2();
     neo::core::Value* opDeleteProp();
+    neo::core::Value* opDeleteIdentifier();
     neo::core::Value* opSetPropKeep();
     neo::core::Value* opSetSuperPropKeep();
     neo::core::Value* opDefine();
@@ -240,6 +241,7 @@ private:
     neo::core::Value* opRestArgs();
     neo::core::Value* opPushClass();
     neo::core::Value* opSetStrict();
+    neo::core::Value* opSetScopeStrict();
     neo::core::Value* opMarkCatchScope();
     neo::core::Value* opInitInstanceElements();
     neo::core::Value* opConstructSuper();

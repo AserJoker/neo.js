@@ -231,6 +231,7 @@ TEST(ObjectTest, SetNonWritablePropertyReturnsException) {
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
+    ctx->global()->setFlag("strict");
 
     Value* obj = ctx->createObject();
     ctx->defineProperty(obj, "x", ctx->createNumber(1), /*writable=*/false);
@@ -539,6 +540,7 @@ TEST(ObjectTest, SetRejectsReadOnlyInheritedProperty) {
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
+    ctx->global()->setFlag("strict");
 
     Value* proto = ctx->createObject();
     ctx->defineProperty(proto, "x", ctx->createNumber(1), /*writable=*/false);
@@ -719,6 +721,7 @@ TEST(ObjectTest, SymbolKeyDefinePropertyDescriptor) {
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
+    ctx->global()->setFlag("strict");
 
     Value* obj = ctx->createObject();
     Value* sym = ctx->createSymbol("k");
